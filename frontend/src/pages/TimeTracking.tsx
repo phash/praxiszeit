@@ -50,6 +50,9 @@ interface TimeEntry extends StampEntry {
   clamp_grace_minutes?: number | null;
 }
 
+/** P3: heutiger anerkannter Eintrag — weder direkt noch per Antrag änderbar. */
+const CREDITED_TODAY_HINT = 'Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung';
+
 interface DailyScheduleUser {
   use_daily_schedule: boolean;
   hours_monday: number | null;
@@ -512,18 +515,24 @@ export default function TimeTracking() {
   const totalNet = entries.reduce((sum, entry) => sum + entry.net_hours, 0);
   const weekdayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
   const isAdmin = user?.role === 'admin';
-  // Spec P21: Mitarbeitende beantragen die Anrechnung an eigenen, geschlossenen,
-  // nicht anerkannten Einträgen vergangener Tage (Anträge gibt es nur dort).
+  // Spec P21: die Anrechnung wird an eigenen, geschlossenen, nicht anerkannten
+  // Einträgen vergangener Tage beantragt (Anträge gibt es nur dort). Die
+  // Zeiterfassung ist die eigene Ansicht — auch für Admins, die selbst Zeit
+  // erfassen (Spec 6.2/13.1: der Lückentext ihrer Mitarbeiterpfade verweist
+  // hierher; das Monatsjournal unter /journal bietet die Aktion ebenso an).
   // Ob nicht angerechnete Zeit vorliegt, entscheidet RawStampNote.
   const creditRequestFor = (entry: TimeEntry) => (
-    !isAdmin && !!entry.end_time && !entry.credit_override
+    !!entry.end_time && !entry.credit_override
       && entry.date < format(new Date(), 'yyyy-MM-dd')
       ? () => openChangeRequest(entry, 'update', true)
       : undefined
   );
   // P3: ein anerkannter Eintrag ist für Mitarbeitende nur per Antrag änderbar
-  // (der Server antwortet auf PUT/DELETE mit 409).
-  const directlyEditable = (entry: TimeEntry) => entry.is_editable && !(entry.credit_override && !isAdmin);
+  // (der Server antwortet auf PUT/DELETE mit 409). Ist er von heute (für
+  // Mitarbeitende heißt `is_editable` genau das), scheitern auch Änderungs- und
+  // Löschantrag (400, Anträge nur für vergangene Tage) — dann nur der Hinweis.
+  const lockedAsCredited = (entry: TimeEntry) => entry.is_editable && !!entry.credit_override && !isAdmin;
+  const directlyEditable = (entry: TimeEntry) => entry.is_editable && !lockedAsCredited(entry);
   // #502: Mitarbeitende verschieben einen Eintrag beim Bearbeiten nicht auf
   // einen anderen Tag — der Server lehnt jedes andere Datum als heute mit 403
   // ab (Einträge vergangener Tage nur per Änderungsantrag). Gespeichert wird
@@ -975,6 +984,11 @@ export default function TimeTracking() {
                               <Trash2 size={16} />
                             </button>
                           </>
+                        ) : lockedAsCredited(entry) ? (
+                          <span title={CREDITED_TODAY_HINT}>
+                            <Lock size={14} className="inline text-gray-400" aria-hidden="true" />
+                            <span className="sr-only">{CREDITED_TODAY_HINT}</span>
+                          </span>
                         ) : (
                           <>
                             <span title="Gesperrt"><Lock size={14} className="inline text-gray-400 mr-1" /></span>
@@ -1075,6 +1089,8 @@ export default function TimeTracking() {
                             <Trash2 size={14} /> Löschen
                           </button>
                         </div>
+                      ) : lockedAsCredited(entry) ? (
+                        <p className="text-xs text-text-secondary">{CREDITED_TODAY_HINT}</p>
                       ) : (
                         <div className="flex gap-2">
                           <button

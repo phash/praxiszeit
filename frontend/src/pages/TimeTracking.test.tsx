@@ -359,22 +359,53 @@ describe('<TimeTracking /> Anrechnung beantragen und anerkannte Einträge (Spec 
     expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
   });
 
-  it('Admins bieten die Aktion nicht an (sie erkennen selbst an)', async () => {
+  // Spec 6.2/13.1: die Aktion hängt an der eigenen Ansicht, nicht an der Rolle.
+  // Die Lückentexte der Mitarbeiterpfade (clock_out, create_time_entry) weisen
+  // auch Admins, die selbst Zeit erfassen, auf „Zeiterfassung → Eintrag →
+  // „Anrechnung beantragen"" hin — wie das Monatsjournal (isAdminView=false).
+  it('Admins sehen die Aktion an eigenen vergangenen Einträgen (Spec 6.2, 13.1)', async () => {
     mockRole = 'admin';
-    mockEntries([past]);
+    mockEntries([{ ...past, is_editable: true }]);
+    renderPage();
+    const [button] = await screen.findAllByRole('button', { name: 'Anrechnung beantragen' });
+    fireEvent.click(button);
+    expect(await screen.findByRole('heading', { name: 'Änderungsantrag: Anrechnung beantragen' })).toBeInTheDocument();
+  });
+
+  it('Admins: an heutigen Einträgen auch dort keine Aktion', async () => {
+    mockRole = 'admin';
+    mockEntries([{ ...past, date: today, is_editable: true }]);
     renderPage();
     await screen.findAllByText(/4:00 h nicht angerechnet/);
     expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
   });
 
-  it('anerkannter Eintrag: kein direktes Bearbeiten, nur Antrag', async () => {
-    mockEntries([{ ...closedEntry, credit_override: true }]);
+  it('anerkannter Eintrag eines vergangenen Tages: kein direktes Bearbeiten, nur Antrag', async () => {
+    mockEntries([{ ...closedEntry, date: '2026-06-01', is_editable: false, credit_override: true }]);
     renderPage();
     await screen.findAllByLabelText(/Änderungsantrag für/);
     expect(screen.queryByLabelText(/bearbeiten/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Löschantrag für/)).toBeInTheDocument();
     // Mobilkarte: auch dort kein „Bearbeiten", sondern „Ändern" per Antrag.
     expect(screen.queryByRole('button', { name: /bearbeiten/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Ändern/ })).toBeInTheDocument();
+  });
+
+  // P3 + Antragsregeln: direktes PUT/DELETE → 409, Änderungs- und Löschantrag
+  // für heute → 400 (Anträge nur für vergangene Tage). Keine Knöpfe anbieten,
+  // die garantiert scheitern — nur der Hinweis.
+  it('anerkannter Eintrag von heute: weder Bearbeiten noch Anträge, sondern Hinweis', async () => {
+    mockEntries([{ ...closedEntry, credit_override: true }]);
+    renderPage();
+    expect(await screen.findAllByText(
+      'Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung',
+    )).toHaveLength(2);
+    expect(screen.queryByLabelText(/bearbeiten/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/löschen/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Änderungsantrag für/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Löschantrag für/)).not.toBeInTheDocument();
+    // Mobilkarte: weder „Bearbeiten"/„Löschen" noch „Ändern".
+    expect(screen.queryByRole('button', { name: /Bearbeiten|Löschen|Ändern/ })).not.toBeInTheDocument();
   });
 
   it('Kontrolltest: Admins bearbeiten einen anerkannten Eintrag weiter direkt (P3)', async () => {
