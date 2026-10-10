@@ -97,6 +97,20 @@ def test_only_actual_credits_can_be_reduced(db, test_user, typ, reduction):
     assert (_day_saldo(db, test_user, MON) < saldo_before) is reduction
 
 
+def test_half_day_with_odd_cent_target_is_not_falsely_clamped(db, test_user):
+    """Tagessoll 7,25 h: der Halbtag ist 3,625 → 3,62 h, quantisiert VOR der
+    Klemmung wie im Bestand. Der Rest nach 2 h Arbeit (5,25 h) liegt darüber, die
+    Klemmung greift also nicht — sonst meldete 3,62 < 3,625 eine Schein-Klemmung
+    und ``absence_f1_adjustments`` zählte jeden halbtägigen Misch-Tag bei einem
+    Tagessoll mit ungeradem Cent-Wert mit (Review Task 6)."""
+    absence(db, test_user, MON, AbsenceType.SICK, 4.0, half_day=True)
+    entry(db, test_user, MON, t(13), t(15), grace=None)
+    add_row(db, test_user, date(2026, 9, 1), day_hours=(7.25, 8, 8, 8, 8))
+    [rec] = _run(db, test_user)
+    assert (rec.old_hours, rec.new_hours, rec.f1_clamped, rec.credit_reduction) == (
+        Decimal("4.00"), Decimal("3.62"), False, False)
+
+
 def test_sick_day_without_work_follows_the_target(db, test_user):
     absence(db, test_user, MON, AbsenceType.SICK, 8.0)
     add_row(db, test_user, date(2026, 9, 1), weekly_hours=30)

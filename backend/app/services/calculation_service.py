@@ -629,7 +629,12 @@ def retarget_absence_hours(
         if target <= 0:
             continue
 
-        new_hours_f = float((target / 2) if a.half_day else target)
+        # Auf 0,01 h quantisiert VOR der F1-Klemmung (Spec 9.6: „nach der
+        # Berechnung von new_hours" — im Bestand war das an dieser Stelle schon
+        # quantisiert). Sonst meldete ein Halbtag bei ungeradem Cent-Tagessoll
+        # (7,25 h → 3,625) eine Schein-Klemmung, weil round(…, 2) = 3,62 < 3,625.
+        # Ohne Klemmung byte-gleich zum Bestand (quantize, ROUND_HALF_EVEN).
+        new_hours_f = float(Decimal(str((target / 2) if a.half_day else target)).quantize(Decimal('0.01')))
         old_hours_f = float(a.hours)
         f1_clamped = False
         credit_reduction = False
