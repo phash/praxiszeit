@@ -448,4 +448,54 @@ describe('<TimeTracking /> Blöcke von heute (Spec 8.4, 14)', () => {
     await waitFor(() => expect(postMock).toHaveBeenCalled());
     expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '08:00', end_time: '18:00', break_minutes: 0 });
   });
+
+  // Spec 8.2 + E80: bestehende Einträge des Tages gehen mit IHREM Puffer in die
+  // §4-Vorprüfung ein. Ihre Lückensegmente zählen als Pause und der gespeicherte
+  // `uncredited_minutes` als Abzug — weicht Σ Segmente vom gespeicherten Wert ab,
+  // zählt er nur als Abzug (strenge Richtung), wie `break_block_for_entry`.
+  // Der Tag 08:00–18:00 hat bei Puffer 15 genau ein Segment: 12:15–14:45 = 150 Min.
+  const dayEntry = {
+    ...closedEntry, id: 'te-day', start_time: '08:00:00', end_time: '18:00:00',
+    break_minutes: 0, uncredited_minutes: 150, clamp_grace_minutes: 15,
+  };
+
+  async function submitShortEntryAfter(existing: Record<string, unknown>) {
+    useSystemStore.setState({ info: { deployment_mode: 'onprem', version: '' }, isLoaded: true });
+    mockWithBlocks([existing]);
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('18:00'));
+    fireEvent.change(screen.getByLabelText('Von'), { target: { value: '18:00' } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '18:10' } });
+    fireEvent.change(screen.getByLabelText('Pause (Min.)'), { target: { value: '0' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+  }
+
+  it('wertet das Lückensegment eines bestehenden Eintrags als Pause und den gespeicherten Wert als Abzug', async () => {
+    // Brutto 600 − 150 + 10 = 460 Min > 6 h, Pause 150 aus dem Segment → kein Hinweis.
+    await submitShortEntryAfter(dayEntry);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '18:00', end_time: '18:10', break_minutes: 0 });
+    expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
+  });
+
+  it('rechnet streng, wenn Σ Segmente vom gespeicherten Wert abweicht (keine Pausensegmente, Abzug = gespeichert)', async () => {
+    // Brutto 600 − 120 + 10 = 490 Min > 6 h, keine Pause → §4-Hinweis (die >9-h-
+    // Meldung käme, wenn der gespeicherte Abzug fehlte: 610 Min).
+    await submitShortEntryAfter({ ...dayEntry, uncredited_minutes: 120 });
+    expect(
+      await screen.findByText('Bei >6h Arbeitszeit sind mind. 30 Min. Pause erforderlich (ArbZG §4)'),
+    ).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('nimmt den Puffer des Eintrags, nicht den aus /clock-status (E80)', async () => {
+    // Puffer 0 → Segment 12:00–15:00 = 180 = gespeichert → Pause 180, kein Hinweis.
+    // Mit dem Puffer 15 aus /clock-status wären es 150 ≠ 180 → streng → Hinweis.
+    await submitShortEntryAfter({ ...dayEntry, uncredited_minutes: 180, clamp_grace_minutes: 0 });
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '18:00', end_time: '18:10', break_minutes: 0 });
+    expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
+  });
 });
