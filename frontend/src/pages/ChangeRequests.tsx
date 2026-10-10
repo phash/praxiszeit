@@ -11,6 +11,7 @@ import EmptyState from '../components/EmptyState';
 
 interface ChangeRequest {
   id: string;
+  time_entry_id?: string | null;
   request_type: string;
   status: string;
   entry_kind?: string;
@@ -30,6 +31,10 @@ interface ChangeRequest {
   original_note?: string;
   original_absence_type?: string;
   original_absence_hours?: number;
+  // Spec 2026-10-08 P21 / Gesamtreview PR2 (Fund 5): Antrag „Anrechnung
+  // beantragen" und AKTUELLER Zustand des Zieleintrags (anerkannt?).
+  request_credit_override?: boolean;
+  entry_credit_override?: boolean;
   reason: string;
   rejection_reason?: string;
   reviewer_first_name?: string;
@@ -140,7 +145,7 @@ export default function ChangeRequests() {
             return (
               <div key={cr.id} className="bg-white rounded-xl shadow-xs border border-gray-200 p-6">
                 <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center space-x-3">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${config.color}`}>
                       <StatusIcon size={14} className="mr-1" />
                       {config.label}
@@ -148,6 +153,26 @@ export default function ChangeRequests() {
                     <span className="text-sm font-medium text-gray-700">
                       {typeLabels[cr.request_type] || cr.request_type}
                     </span>
+                    {/* Fund 5: dasselbe Kennzeichen wie in der Admin-Prüfung. Nach der
+                        Genehmigung, ob die Anrechnung gewährt wurde — „Genehmigt" allein
+                        verschwiege, dass die Zeit ohne Anerkennen gekappt bleibt. Kein Pfad
+                        nimmt ein Anerkennen zurück (P3/P11): ist der Eintrag jetzt nicht
+                        anerkannt, wurde ohne Anerkennen genehmigt. Ohne Zieleintrag
+                        (inzwischen gelöscht) kein Urteil. */}
+                    {cr.request_credit_override && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-800">
+                        Anrechnung beantragt
+                      </span>
+                    )}
+                    {cr.request_credit_override && cr.status === 'approved' && cr.time_entry_id && (
+                      cr.entry_credit_override ? (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-gray-100 text-gray-600">
+                          anerkannt
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-600">ohne Anerkennen genehmigt</span>
+                      )
+                    )}
                     <span className="text-xs text-gray-500">
                       {format(new Date(cr.created_at), 'dd.MM.yyyy HH:mm')}
                     </span>
