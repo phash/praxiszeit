@@ -93,11 +93,19 @@ interface AverageEmployee {
   presence_weeks?: { iso_week: string; presence_hours: number }[];
 }
 
+// Gesamtreview PR2 (Fund 8): „2026-W05" → „KW 5/2026" wie WeekSelector und
+// Dashboard (#500). Das 24-Wochen-Fenster kann einen Jahreswechsel enthalten —
+// deshalb immer mit Jahr. Unbekanntes Format bleibt unverändert.
+function isoWeekLabel(isoWeek: string): string {
+  const m = /^(\d{4})-W(\d{1,2})$/.exec(isoWeek);
+  return m ? `KW ${Number(m[2])}/${m[1]}` : isoWeek;
+}
+
 // P22: Wochen über der 48-h-Grenze laut Stempel — Text der Spalte, sonst „–".
 function weeksOver48Text(weeks: AverageEmployee['presence_weeks']): string {
   const over = (weeks ?? []).filter((w) => w.presence_hours > 48);
   if (over.length === 0) return '–';
-  return `${over.length} (${over.map((w) => `${w.iso_week}: ${formatHoursHM(w.presence_hours)} h`).join(', ')})`;
+  return `${over.length} (${over.map((w) => `${isoWeekLabel(w.iso_week)}: ${formatHoursHM(w.presence_hours)} h`).join(', ')})`;
 }
 
 interface AverageReport {
@@ -886,57 +894,60 @@ export default function Reports() {
         </div>
 
         {avgReport !== null && (
-          <table aria-label="24-Wochen-Durchschnitt" className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase">Mitarbeiter:in</th>
-                <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Ø angerechnet / Tag</th>
-                <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Anwesenheit laut Stempel (Ø / Tag)</th>
-                <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Angerechnet gesamt</th>
-                <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Anwesenheit laut Stempel gesamt</th>
-                <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Wochen &gt; 48 h laut Stempel</th>
-                <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Tage &gt; 8 h</th>
-                <th className="px-4 py-2 text-center text-xs text-gray-500 uppercase">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {avgReport.employees.map((emp) => {
-                // Ohne Soll-Arbeitstag (z. B. track_hours=False, ganzes Fenster
-                // außerhalb der Beschäftigung) fehlt der Nenner: das Backend liefert
-                // dann Ø 0 und compliant=true — kein Urteil, keine Ø-Werte zeigen.
-                const noScheduledDays = emp.scheduled_work_days === 0;
-                // P22 / Pflicht 4: Der Status folgt der angerechneten Zeit (Spec 8.1).
-                // Senkt eine Neukappung sie unter 8 h, darf ein Ø laut Stempel über
-                // der Grenze nicht als unauffällige graue Zahl neben „Konform“ stehen.
-                const presenceOver8 = !noScheduledDays && emp.presence_average > 8;
-                return (
-                  <tr key={emp.user_id} className={`hover:bg-gray-50 ${!noScheduledDays && !emp.compliant ? 'bg-red-50' : ''}`}>
-                    <td className="px-4 py-2 font-medium text-gray-900">{emp.first_name} {emp.last_name}</td>
-                    <td className="px-4 py-2 text-right text-gray-700">{noScheduledDays ? '–' : formatHoursHM(emp.average_daily_hours)}</td>
-                    <td className={`px-4 py-2 text-right ${presenceOver8 ? 'text-red-700 font-medium' : 'text-gray-700'}`}>
-                      {noScheduledDays ? '–' : formatHoursHM(emp.presence_average)}
-                    </td>
-                    <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.total_hours)}</td>
-                    <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.presence_hours)}</td>
-                    <td className={`px-4 py-2 text-right ${weeksOver48Text(emp.presence_weeks) === '–' ? 'text-gray-700' : 'text-red-700 font-medium'}`}>
-                      {weeksOver48Text(emp.presence_weeks)}
-                    </td>
-                    <td className="px-4 py-2 text-right text-gray-700">{emp.days_over_8h}</td>
-                    <td className="px-4 py-2 text-center">
-                      {noScheduledDays
-                        ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-gray-100 text-gray-700">keine Soll-Arbeitstage</span>
-                        : emp.compliant
-                          ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
-                          : <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>}
-                      {presenceOver8 && emp.compliant && (
-                        <div className="mt-1 text-xs font-medium text-red-700">laut Stempel Ø &gt; 8 h</div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          // Fund 8: acht Spalten — auf Telefonbreite scrollt die Tabelle, nicht die Seite.
+          <div className="overflow-x-auto">
+            <table aria-label="24-Wochen-Durchschnitt" className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase">Mitarbeiter:in</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Ø angerechnet / Tag</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Anwesenheit laut Stempel (Ø / Tag)</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Angerechnet gesamt</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Anwesenheit laut Stempel gesamt</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Wochen &gt; 48 h laut Stempel</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Tage &gt; 8 h</th>
+                  <th className="px-4 py-2 text-center text-xs text-gray-500 uppercase">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {avgReport.employees.map((emp) => {
+                  // Ohne Soll-Arbeitstag (z. B. track_hours=False, ganzes Fenster
+                  // außerhalb der Beschäftigung) fehlt der Nenner: das Backend liefert
+                  // dann Ø 0 und compliant=true — kein Urteil, keine Ø-Werte zeigen.
+                  const noScheduledDays = emp.scheduled_work_days === 0;
+                  // P22 / Pflicht 4: Der Status folgt der angerechneten Zeit (Spec 8.1).
+                  // Senkt eine Neukappung sie unter 8 h, darf ein Ø laut Stempel über
+                  // der Grenze nicht als unauffällige graue Zahl neben „Konform“ stehen.
+                  const presenceOver8 = !noScheduledDays && emp.presence_average > 8;
+                  return (
+                    <tr key={emp.user_id} className={`hover:bg-gray-50 ${!noScheduledDays && !emp.compliant ? 'bg-red-50' : ''}`}>
+                      <td className="px-4 py-2 font-medium text-gray-900">{emp.first_name} {emp.last_name}</td>
+                      <td className="px-4 py-2 text-right text-gray-700">{noScheduledDays ? '–' : formatHoursHM(emp.average_daily_hours)}</td>
+                      <td className={`px-4 py-2 text-right ${presenceOver8 ? 'text-red-700 font-medium' : 'text-gray-700'}`}>
+                        {noScheduledDays ? '–' : formatHoursHM(emp.presence_average)}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.total_hours)}</td>
+                      <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.presence_hours)}</td>
+                      <td className={`px-4 py-2 text-right ${weeksOver48Text(emp.presence_weeks) === '–' ? 'text-gray-700' : 'text-red-700 font-medium'}`}>
+                        {weeksOver48Text(emp.presence_weeks)}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-700">{emp.days_over_8h}</td>
+                      <td className="px-4 py-2 text-center">
+                        {noScheduledDays
+                          ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-gray-100 text-gray-700">keine Soll-Arbeitstage</span>
+                          : emp.compliant
+                            ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
+                            : <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>}
+                        {presenceOver8 && emp.compliant && (
+                          <div className="mt-1 text-xs font-medium text-red-700">laut Stempel Ø &gt; 8 h</div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

@@ -57,7 +57,29 @@ describe('<Reports /> 24-Wochen-Durchschnitt (Spec 8.1, P22)', () => {
     render(<Reports />);
     fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
     const table = await screen.findByRole('table', { name: '24-Wochen-Durchschnitt' });
-    expect(within(table).getByText('1 (2026-W23: 50:00 h)')).toBeInTheDocument();
+    // Gesamtreview PR2 (Fund 8): „KW 23/2026" wie WeekSelector/Dashboard, nicht ISO „2026-W23";
+    // das Fenster kann einen Jahreswechsel enthalten, deshalb mit Jahr.
+    expect(within(table).getByText('1 (KW 23/2026: 50:00 h)')).toBeInTheDocument();
+    // Acht Spalten: auf Telefonbreite scrollt die Tabelle, nicht die Seite.
+    expect(table.parentElement?.className).toMatch(/overflow-x-auto/);
+  });
+
+  it('KW ohne führende Null, über den Jahreswechsel mit dem jeweiligen Jahr (Fund 8)', async () => {
+    getMock.mockResolvedValue({
+      data: {
+        window_start: '2025-12-19', window_end: '2026-06-12', non_compliant_count: 0,
+        employees: [{
+          user_id: 'u5', first_name: 'Eva', last_name: 'Wechsel', total_hours: 67.5,
+          scheduled_work_days: 10, average_daily_hours: 6.75, days_over_8h: 0, compliant: true,
+          presence_hours: 100, presence_average: 9,
+          presence_weeks: [{ iso_week: '2025-W52', presence_hours: 49 }, { iso_week: '2026-W05', presence_hours: 51 }],
+        }],
+      },
+    });
+    render(<Reports />);
+    fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
+    const table = await screen.findByRole('table', { name: '24-Wochen-Durchschnitt' });
+    expect(within(table).getByText('2 (KW 52/2025: 49:00 h, KW 5/2026: 51:00 h)')).toBeInTheDocument();
   });
 
   it('urteilt ohne Soll-Arbeitstage nicht (z. B. track_hours=False)', async () => {
@@ -83,7 +105,7 @@ describe('<Reports /> 24-Wochen-Durchschnitt (Spec 8.1, P22)', () => {
     expect(within(table).getAllByText('–')).toHaveLength(2);
     // Gesamtwerte und Wochen > 48 h bleiben stehen
     expect(within(table).getAllByText('100:00')).toHaveLength(2);
-    expect(within(table).getByText('2 (2026-W23: 50:00 h, 2026-W24: 50:00 h)')).toBeInTheDocument();
+    expect(within(table).getByText('2 (KW 23/2026: 50:00 h, KW 24/2026: 50:00 h)')).toBeInTheDocument();
   });
 
   it('hebt Ø laut Stempel über 8 h hervor, auch wenn die angerechnete Zeit konform ist (P22, Pflicht 4)', async () => {
