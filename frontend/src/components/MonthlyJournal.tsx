@@ -14,6 +14,7 @@ import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
 import { RawStampNote } from './RawStampNote';
 import CreditOverrideButton from './CreditOverrideButton';
+import ChangeRequestForm from './ChangeRequestForm';
 import { stampNoteProps } from '../utils/workBlocks';
 import { myReasons } from '../api/absenceReasons';
 import type { AbsenceReason } from '../api/absenceReasons';
@@ -216,6 +217,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [submitReason, setSubmitReason] = useState('');
   const [savingChangeRequest, setSavingChangeRequest] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  // Spec P21: „Anrechnung beantragen" aus der Mitarbeiter-Ansicht.
+  const [creditRequest, setCreditRequest] = useState<{ day: JournalDay; entry: TimeEntryItem } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -630,6 +633,31 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
+      {creditRequest && (
+        <ChangeRequestForm
+          entry={{
+            id: creditRequest.entry.id,
+            date: creditRequest.day.date,
+            start_time: creditRequest.entry.start_time ?? '',
+            end_time: creditRequest.entry.end_time,
+            break_minutes: creditRequest.entry.break_minutes,
+            raw_start_time: creditRequest.entry.raw_start_time,
+            raw_end_time: creditRequest.entry.raw_end_time,
+            auto_closed: creditRequest.entry.auto_closed,
+            sunday_exception_reason: creditRequest.entry.sunday_exception_reason,
+            // `note` bewusst nicht gesetzt: das Journal kennt sie nicht, das
+            // Formular sendet dann keine (die gespeicherte bleibt stehen).
+          }}
+          requestType="update"
+          requestCredit
+          onClose={() => setCreditRequest(null)}
+          onSuccess={() => {
+            setCreditRequest(null);
+            toast.success('Antrag auf Anrechnung eingereicht');
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
       <MonthSelector
         value={selectedMonth}
         onChange={(month) => {
@@ -806,7 +834,16 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               {day.time_entries.map((e, i) => (
                                 <div key={`w${i}`}>
                                   {e.start_time && e.end_time ? `${e.start_time.substring(0, 5)}–${e.end_time.substring(0, 5)}` : '–'}
-                                  <RawStampNote {...stampNoteProps(e)} className="text-xs text-gray-500" />
+                                  <RawStampNote
+                                    {...stampNoteProps(e)}
+                                    className="text-xs text-gray-500"
+                                    onRequestCredit={
+                                      // Anträge gibt es nur für vergangene Tage; Admins erkennen selbst an.
+                                      !isAdminView && isPastDay(day.date) && e.end_time && !e.credit_override
+                                        ? () => setCreditRequest({ day, entry: e })
+                                        : undefined
+                                    }
+                                  />
                                   {isAdminView && (
                                     <CreditOverrideButton entry={e} onDone={() => setReloadKey((k) => k + 1)} />
                                   )}

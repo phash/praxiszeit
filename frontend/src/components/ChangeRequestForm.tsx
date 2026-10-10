@@ -16,6 +16,10 @@ interface TimeEntry {
   note?: string;
   is_sunday_or_holiday?: boolean;
   sunday_exception_reason?: string | null;
+  // Spec 2026-10-08 P21: „Anrechnung beantragen" belegt die Rohstempel vor.
+  raw_start_time?: string | null;
+  raw_end_time?: string | null;
+  auto_closed?: boolean | null;
 }
 
 // #491 F4: Wortgleich zum Monatsjournal, damit beide Antragswege dasselbe fragen.
@@ -24,15 +28,43 @@ const SUNDAY_REASON_LABEL = 'Ausnahmegrund (§10 ArbZG)';
 interface Props {
   entry: TimeEntry | null; // null for CREATE
   requestType: 'create' | 'update' | 'delete';
+  /** Spec P21: „Anrechnung beantragen" — Zeiten = Rohstempel, Genehmigung = Anerkennen. */
+  requestCredit?: boolean;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function ChangeRequestForm({ entry, requestType, onClose, onSuccess }: Props) {
+/** Auto-Close-Ende (P18): ein synthetischer Wert, nie ein echter Stempel. */
+const AUTO_CLOSE_END = '23:59';
+
+/**
+ * P18/P21: Bringt ein Antrag zu einem automatisch geschlossenen Eintrag KEIN
+ * tatsächliches Ende mit? Dieselbe Regel wie der Server
+ * (`credit_override_service.lacks_actual_end`): leer, das synthetische 23:59,
+ * das gespeicherte (gekappte) Ende oder das Rohende zählen nicht — die
+ * Genehmigung machte daraus wieder 23:59 (bis zu 16 h angerechnet). Minutengenau.
+ */
+function lacksActualEnd(entry: TimeEntry, proposedEnd: string): boolean {
+  if (!entry.auto_closed) return false;
+  const end = proposedEnd.substring(0, 5);
+  return !end || [entry.end_time, entry.raw_end_time, AUTO_CLOSE_END]
+    .some((t) => !!t && t.substring(0, 5) === end);
+}
+
+export default function ChangeRequestForm({ entry, requestType, requestCredit = false, onClose, onSuccess }: Props) {
+  // P21: die gestempelten (Roh-)Zeiten vorbelegen. Ein automatisch geschlossener
+  // Eintrag hat kein echtes Ende (P18) — das Feld bleibt leer und ist Pflicht.
+  // Erkannt über `auto_closed`, nie über „Rohende leer": ein verschobener
+  // Auto-Close-Eintrag trägt kein bzw. ein übernommenes Rohende.
+  const creditStart = entry?.raw_start_time ?? entry?.start_time ?? null;
+  const creditEnd = entry?.auto_closed ? '' : (entry?.raw_end_time ?? entry?.end_time ?? '');
+  const needsActualEnd = requestCredit && !!entry?.auto_closed;
   const [formData, setFormData] = useState({
     proposed_date: entry?.date || '',
-    proposed_start_time: entry?.start_time?.substring(0, 5) || '08:00',
-    proposed_end_time: entry?.end_time?.substring(0, 5) || '17:00',
+    proposed_start_time: (requestCredit ? creditStart : entry?.start_time)?.substring(0, 5) || '08:00',
+    proposed_end_time: requestCredit
+      ? creditEnd.substring(0, 5)
+      : entry?.end_time?.substring(0, 5) || '17:00',
     proposed_break_minutes: entry?.break_minutes ?? 0,
     proposed_note: entry?.note || '',
     reason: '',
@@ -60,6 +92,10 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
       setError('Bitte geben Sie eine Begründung an');
       return;
     }
+    if (needsActualEnd && entry && lacksActualEnd(entry, formData.proposed_end_time)) {
+      setError('Der Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende angeben.');
+      return;
+    }
     if (showWaiver && !breakWaiverReason.trim()) {
       setError('Bitte begründen Sie, warum die Pflicht-Pause nicht möglich war.');
       return;
@@ -76,10 +112,16 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
         proposed_start_time: requestType !== 'delete' ? formData.proposed_start_time : null,
         proposed_end_time: requestType !== 'delete' ? formData.proposed_end_time : null,
         proposed_break_minutes: requestType !== 'delete' ? formData.proposed_break_minutes : null,
-        proposed_note: requestType !== 'delete' ? formData.proposed_note : null,
+        // Kennt der Aufrufer die Notiz nicht (Monatsjournal: JournalTimeEntry
+        // führt sie nicht) und bleibt das Feld leer, kein '' senden — die
+        // Genehmigung übernimmt jede nicht-null Notiz und löschte die gespeicherte.
+        proposed_note: requestType === 'delete' || (entry && entry.note === undefined && !formData.proposed_note)
+          ? null
+          : formData.proposed_note,
         reason: formData.reason,
         break_waiver_reason: showWaiver && breakWaiverReason.trim() ? breakWaiverReason.trim() : null,
         proposed_sunday_exception_reason: showSundayReason && sundayReason.trim() ? sundayReason.trim() : null,
+        ...(requestCredit ? { request_credit_override: true } : {}),
       });
       onSuccess();
     } catch (err: any) {
@@ -121,7 +163,7 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
       <FocusTrap focusTrapOptions={{ allowOutsideClick: true, initialFocus: false }}>
       <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-amber-500 text-white rounded-t-xl">
-          <h2 className="text-lg font-bold">Änderungsantrag: {typeLabels[requestType]}</h2>
+          <h2 className="text-lg font-bold">Änderungsantrag: {requestCredit ? 'Anrechnung beantragen' : typeLabels[requestType]}</h2>
           <button onClick={onClose} className="hover:bg-white/20 rounded-lg p-1 transition">
             <X size={20} />
           </button>
@@ -165,6 +207,13 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
             </div>
           )}
 
+          {requestCredit && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+              Die gesamte gestempelte Zeit soll angerechnet werden. Bitte begründen Sie, warum Sie in dieser Zeit gearbeitet haben.
+              {needsActualEnd && ' Der Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende angeben.'}
+            </div>
+          )}
+
           {/* Proposed values form (for CREATE and UPDATE) */}
           {requestType !== 'delete' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -197,7 +246,9 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
                   type="time"
                   value={formData.proposed_end_time}
                   onChange={(e) => setFormData({ ...formData, proposed_end_time: e.target.value })}
-                  required
+                  // P18: bei fehlendem Ende prüft handleSubmit selbst und nennt den Grund
+                  // (die Browser-Pflichtfeldmeldung sagte nicht, warum das Ende fehlt).
+                  required={!needsActualEnd}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
                 />
               </div>

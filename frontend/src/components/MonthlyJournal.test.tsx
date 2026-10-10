@@ -706,3 +706,53 @@ describe('<MonthlyJournal /> Anerkennen und Monatssumme (Spec 13.2/13.3)', () =>
     expect(screen.queryByText(/Anwesenheit nicht angerechnet/)).not.toBeInTheDocument();
   });
 });
+
+describe('<MonthlyJournal /> Anrechnung beantragen (Spec P21)', () => {
+  function mockMe(journal: unknown) {
+    getMock.mockImplementation((url: string) =>
+      String(url).startsWith('/journal/me')
+        ? Promise.resolve({ data: journal })
+        : Promise.resolve({ data: [] }));
+  }
+
+  it('Mitarbeiter-Ansicht: öffnet den Antrag mit den Rohstempeln', async () => {
+    mockMe(creditJournal);
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Anrechnung beantragen' }));
+    expect(await screen.findByRole('heading', { name: 'Änderungsantrag: Anrechnung beantragen' })).toBeInTheDocument();
+    expect((screen.getByLabelText('Von') as HTMLInputElement).value).toBe('07:00');
+  });
+
+  it('sendet den Antrag mit Kennzeichen, ohne die (unbekannte) Notiz zu überschreiben, und lädt neu', async () => {
+    mockMe(creditJournal);
+    postMock.mockResolvedValue({ data: {} });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Anrechnung beantragen' }));
+    fireEvent.change(screen.getByPlaceholderText('Warum ist diese Änderung notwendig?'), {
+      target: { value: 'Patientin in der Mittagspause versorgt' },
+    });
+    const journalCalls = () => getMock.mock.calls.filter(c => String(c[0]).includes('/journal')).length;
+    const before = journalCalls();
+    fireEvent.click(screen.getByRole('button', { name: 'Antrag stellen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests', expect.objectContaining({
+      request_type: 'update', time_entry_id: 'te1', proposed_date: '2026-06-01',
+      proposed_start_time: '07:00', proposed_end_time: '19:00', request_credit_override: true,
+      proposed_note: null,
+    })));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Antrag auf Anrechnung eingereicht'));
+    await waitFor(() => expect(journalCalls()).toBeGreaterThan(before));
+  });
+
+  it('anerkannte Einträge und die Admin-Ansicht bieten die Aktion nicht an', async () => {
+    mockMe({ ...creditJournal, days: [{ ...validDay, time_entries: [{ ...k7Entry, credit_override: true }] }] });
+    const { unmount } = render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    await screen.findByText('anerkannt');
+    expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
+    unmount();
+
+    getMock.mockResolvedValue({ data: creditJournal });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByRole('button', { name: 'Anerkennen' });
+    expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
+  });
+});

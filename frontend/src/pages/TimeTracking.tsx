@@ -232,6 +232,7 @@ export default function TimeTracking() {
   const [crModalOpen, setCrModalOpen] = useState(false);
   const [crEntry, setCrEntry] = useState<TimeEntry | null>(null);
   const [crType, setCrType] = useState<'create' | 'update' | 'delete'>('update');
+  const [crRequestCredit, setCrRequestCredit] = useState(false);  // Spec P21
 
   // Tab navigation
   const [searchParams, setSearchParams] = useSearchParams();
@@ -474,15 +475,17 @@ export default function TimeTracking() {
     });
   };
 
-  const openChangeRequest = (entry: TimeEntry, type: 'update' | 'delete') => {
+  const openChangeRequest = (entry: TimeEntry, type: 'update' | 'delete', requestCredit = false) => {
     setCrEntry(entry);
     setCrType(type);
+    setCrRequestCredit(requestCredit);
     setCrModalOpen(true);
   };
 
   const openCreateChangeRequest = () => {
     setCrEntry(null);
     setCrType('create');
+    setCrRequestCredit(false);
     setCrModalOpen(true);
   };
 
@@ -509,6 +512,18 @@ export default function TimeTracking() {
   const totalNet = entries.reduce((sum, entry) => sum + entry.net_hours, 0);
   const weekdayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
   const isAdmin = user?.role === 'admin';
+  // Spec P21: Mitarbeitende beantragen die Anrechnung an eigenen, geschlossenen,
+  // nicht anerkannten Einträgen vergangener Tage (Anträge gibt es nur dort).
+  // Ob nicht angerechnete Zeit vorliegt, entscheidet RawStampNote.
+  const creditRequestFor = (entry: TimeEntry) => (
+    !isAdmin && !!entry.end_time && !entry.credit_override
+      && entry.date < format(new Date(), 'yyyy-MM-dd')
+      ? () => openChangeRequest(entry, 'update', true)
+      : undefined
+  );
+  // P3: ein anerkannter Eintrag ist für Mitarbeitende nur per Antrag änderbar
+  // (der Server antwortet auf PUT/DELETE mit 409).
+  const directlyEditable = (entry: TimeEntry) => entry.is_editable && !(entry.credit_override && !isAdmin);
   // #502: Mitarbeitende verschieben einen Eintrag beim Bearbeiten nicht auf
   // einen anderen Tag — der Server lehnt jedes andere Datum als heute mit 403
   // ab (Einträge vergangener Tage nur per Änderungsantrag). Gespeichert wird
@@ -531,10 +546,11 @@ export default function TimeTracking() {
         <ChangeRequestForm
           entry={crEntry}
           requestType={crType}
+          requestCredit={crRequestCredit}
           onClose={() => setCrModalOpen(false)}
           onSuccess={() => {
             setCrModalOpen(false);
-            toast.success('Änderungsantrag erfolgreich erstellt');
+            toast.success(crRequestCredit ? 'Antrag auf Anrechnung eingereicht' : 'Änderungsantrag erfolgreich erstellt');
           }}
         />
       )}
@@ -906,7 +922,7 @@ export default function TimeTracking() {
                   const entryDate = new Date(entry.date + 'T00:00:00');
                   const weekday = weekdayNames[entryDate.getDay()];
                   return (
-                    <tr key={entry.id} className={`hover:bg-gray-50 ${!entry.end_time && new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'bg-red-50 border-l-4 border-l-danger' : !entry.is_editable ? 'bg-gray-50/50' : ''} ${entry.is_sunday_or_holiday ? 'bg-orange-50/40' : ''}`}>
+                    <tr key={entry.id} className={`hover:bg-gray-50 ${!entry.end_time && new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'bg-red-50 border-l-4 border-l-danger' : !directlyEditable(entry) ? 'bg-gray-50/50' : ''} ${entry.is_sunday_or_holiday ? 'bg-orange-50/40' : ''}`}>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         <div className="flex flex-col gap-1">
                           <span>{format(entryDate, 'dd.MM.yyyy')}</span>
@@ -927,7 +943,7 @@ export default function TimeTracking() {
                       <td className="px-6 py-4 text-sm text-gray-500">{weekday}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {entry.start_time.substring(0, 5)}
-                        <RawStampNote {...stampNoteProps(entry)} />
+                        <RawStampNote {...stampNoteProps(entry)} onRequestCredit={creditRequestFor(entry)} />
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {entry.end_time ? (
@@ -942,7 +958,7 @@ export default function TimeTracking() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{entry.note || '-'}</td>
                       <td className="px-6 py-4 text-right text-sm space-x-1">
-                        {entry.is_editable ? (
+                        {directlyEditable(entry) ? (
                           <>
                             <button
                               onClick={() => handleEdit(entry)}
@@ -1027,12 +1043,12 @@ export default function TimeTracking() {
                       <div className="flex justify-between items-start">
                         <div className="font-semibold text-text-primary">
                           {format(entryDate, 'EEEE, d. MMMM', { locale: de })}
-                          {!entry.is_editable && <Lock size={12} className="inline ml-1 text-text-secondary" />}
+                          {!directlyEditable(entry) && <Lock size={12} className="inline ml-1 text-text-secondary" />}
                         </div>
                         <span className="text-lg font-bold tabular-nums text-primary">{formatHoursHM(entry.net_hours)}h</span>
                       </div>
                       <TimeBar startTime={entry.start_time} endTime={entry.end_time} />
-                      <RawStampNote {...stampNoteProps(entry)} className="text-xs text-gray-500 mb-2 space-y-0.5" />
+                      <RawStampNote {...stampNoteProps(entry)} className="text-xs text-gray-500 mb-2 space-y-0.5" onRequestCredit={creditRequestFor(entry)} />
                       <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                         <div className="flex justify-between">
                           <span className="text-text-secondary">Arbeitszeit</span>
@@ -1044,7 +1060,7 @@ export default function TimeTracking() {
                         </div>
                       </div>
                       {entry.note && <p className="text-sm text-text-secondary mb-3">{entry.note}</p>}
-                      {entry.is_editable ? (
+                      {directlyEditable(entry) ? (
                         <div className="flex gap-2">
                           <button
                             onClick={() => handleEdit(entry)}

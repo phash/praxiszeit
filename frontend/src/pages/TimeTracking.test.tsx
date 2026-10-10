@@ -334,3 +334,53 @@ describe('<TimeTracking /> RawStampNote (Spec 13.1)', () => {
     )).toHaveLength(2);
   });
 });
+
+describe('<TimeTracking /> Anrechnung beantragen und anerkannte Einträge (Spec P21, P3)', () => {
+  const past = {
+    ...closedEntry, id: 'te-past', date: '2026-06-01', is_editable: false,
+    start_time: '07:45:00', end_time: '18:15:00', raw_start_time: '07:00:00', raw_end_time: '19:00:00',
+    break_minutes: 0, net_hours: 8, uncredited_minutes: 150, not_credited_minutes: 240,
+    credit_override: false, auto_closed: false,
+  };
+
+  it('öffnet an einem vergangenen Eintrag den Antrag mit den Rohstempeln', async () => {
+    mockEntries([past]);
+    renderPage();
+    const [button] = await screen.findAllByRole('button', { name: 'Anrechnung beantragen' });
+    fireEvent.click(button);
+    expect(await screen.findByRole('heading', { name: 'Änderungsantrag: Anrechnung beantragen' })).toBeInTheDocument();
+    expect((screen.getByLabelText('Von') as HTMLInputElement).value).toBe('07:00');
+  });
+
+  it('heutige Einträge bieten die Aktion nicht an (Anträge nur für vergangene Tage)', async () => {
+    mockEntries([{ ...past, date: today, is_editable: true }]);
+    renderPage();
+    await screen.findAllByText(/4:00 h nicht angerechnet/);
+    expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
+  });
+
+  it('Admins bieten die Aktion nicht an (sie erkennen selbst an)', async () => {
+    mockRole = 'admin';
+    mockEntries([past]);
+    renderPage();
+    await screen.findAllByText(/4:00 h nicht angerechnet/);
+    expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
+  });
+
+  it('anerkannter Eintrag: kein direktes Bearbeiten, nur Antrag', async () => {
+    mockEntries([{ ...closedEntry, credit_override: true }]);
+    renderPage();
+    await screen.findAllByLabelText(/Änderungsantrag für/);
+    expect(screen.queryByLabelText(/bearbeiten/i)).not.toBeInTheDocument();
+    // Mobilkarte: auch dort kein „Bearbeiten", sondern „Ändern" per Antrag.
+    expect(screen.queryByRole('button', { name: /bearbeiten/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ändern/ })).toBeInTheDocument();
+  });
+
+  it('Kontrolltest: Admins bearbeiten einen anerkannten Eintrag weiter direkt (P3)', async () => {
+    mockRole = 'admin';
+    mockEntries([{ ...closedEntry, credit_override: true }]);
+    renderPage();
+    expect(await screen.findByLabelText(/bearbeiten/i)).toBeInTheDocument();
+  });
+});

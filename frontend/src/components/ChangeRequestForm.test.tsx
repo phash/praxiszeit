@@ -107,3 +107,85 @@ describe('ChangeRequestForm — §10-Ausnahmegrund (#491 F4)', () => {
     expect(screen.queryByLabelText(LABEL)).not.toBeInTheDocument();
   });
 });
+
+describe('ChangeRequestForm — Anrechnung beantragen (Spec P21)', () => {
+  const K7 = {
+    id: 'te1', date: '2026-06-01', start_time: '07:45:00', end_time: '18:15:00',
+    raw_start_time: '07:00:00', raw_end_time: '19:00:00', break_minutes: 0,
+  };
+  const AUTO_CLOSED_MSG = 'Der Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende angeben.';
+  const autoClosedK15 = { ...K7, start_time: '08:00:00', raw_start_time: null, raw_end_time: '23:59:00', auto_closed: true };
+
+  it('belegt die Rohstempel vor und sendet das Kennzeichen', async () => {
+    const onSuccess = vi.fn();
+    render(<ChangeRequestForm entry={K7} requestType="update" requestCredit onClose={vi.fn()} onSuccess={onSuccess} />);
+    expect(screen.getByRole('heading', { name: 'Änderungsantrag: Anrechnung beantragen' })).toBeInTheDocument();
+    expect((screen.getByLabelText('Von') as HTMLInputElement).value).toBe('07:00');
+    expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('19:00');
+    submitWithReason();
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(post).toHaveBeenCalledWith('/change-requests', expect.objectContaining({
+      request_type: 'update', time_entry_id: 'te1', proposed_start_time: '07:00',
+      proposed_end_time: '19:00', request_credit_override: true,
+    }));
+  });
+
+  it('verlangt bei einem automatisch geschlossenen Eintrag das tatsächliche Ende (P18)', async () => {
+    render(<ChangeRequestForm
+      entry={autoClosedK15}
+      requestType="update" requestCredit onClose={vi.fn()} onSuccess={vi.fn()} />);
+    expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('');
+    submitWithReason();
+    expect(await screen.findByText(AUTO_CLOSED_MSG)).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  // Dieselbe Regel wie der Server (credit_override_service.lacks_actual_end):
+  // das gespeicherte (gekappte) Ende ist kein tatsächliches Ende.
+  it('lehnt das gekappte Ende 18:15 eines automatisch geschlossenen Eintrags ab, ein echtes Ende geht durch', async () => {
+    const onSuccess = vi.fn();
+    render(<ChangeRequestForm
+      entry={autoClosedK15}
+      requestType="update" requestCredit onClose={vi.fn()} onSuccess={onSuccess} />);
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '18:15' } });
+    submitWithReason();
+    expect(await screen.findByText(AUTO_CLOSED_MSG)).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '17:30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Antrag stellen' }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(post).toHaveBeenCalledWith('/change-requests', expect.objectContaining({
+      proposed_start_time: '08:00', proposed_end_time: '17:30', request_credit_override: true,
+    }));
+  });
+
+  it('ein gewöhnlicher Änderungsantrag sendet kein Kennzeichen', async () => {
+    const onSuccess = vi.fn();
+    render(<ChangeRequestForm entry={K7} requestType="update" onClose={vi.fn()} onSuccess={onSuccess} />);
+    expect((screen.getByLabelText('Von') as HTMLInputElement).value).toBe('07:45');
+    submitWithReason();
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(post.mock.calls[0][1]).not.toHaveProperty('request_credit_override');
+  });
+
+  // Das Monatsjournal kennt die Notiz eines Eintrags nicht (JournalTimeEntry
+  // führt sie nicht). Ein leeres Feld darf die gespeicherte Notiz dann nicht
+  // überschreiben — die Genehmigung übernimmt jede nicht-null proposed_note.
+  it('sendet keine Notiz, wenn der Aufrufer sie nicht kennt und das Feld leer bleibt', async () => {
+    const onSuccess = vi.fn();
+    render(<ChangeRequestForm entry={K7} requestType="update" requestCredit onClose={vi.fn()} onSuccess={onSuccess} />);
+    submitWithReason();
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(post.mock.calls[0][1].proposed_note).toBeNull();
+  });
+
+  it('Kontrolltest: eine bekannte, geleerte Notiz wird weiter als leer gesendet', async () => {
+    const onSuccess = vi.fn();
+    render(<ChangeRequestForm entry={{ ...K7, note: 'alt' }} requestType="update" onClose={vi.fn()} onSuccess={onSuccess} />);
+    fireEvent.change(screen.getByLabelText('Notiz'), { target: { value: '' } });
+    submitWithReason();
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(post.mock.calls[0][1].proposed_note).toBe('');
+  });
+});

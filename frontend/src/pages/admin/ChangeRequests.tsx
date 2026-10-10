@@ -6,6 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { showArbzgWarnings } from '../../utils/arbzgWarnings';
+import { formatHoursHM } from '../../utils/formatters';
 
 interface ChangeRequest {
   id: string;
@@ -31,6 +32,13 @@ interface ChangeRequest {
   original_note?: string;
   original_absence_type?: string;
   original_absence_hours?: number;
+  // Spec 2026-10-08 P21/P28/P3/P18: Antrag „Anrechnung beantragen", Vorher-
+  // Snapshot der Lückenminuten, aktueller Zustand des Zieleintrags.
+  request_credit_override?: boolean;
+  original_uncredited_minutes?: number | null;
+  entry_credit_override?: boolean;
+  entry_not_credited_minutes?: number;
+  entry_auto_closed?: boolean;
   reason: string;
   rejection_reason?: string;
   reviewer_first_name?: string;
@@ -73,6 +81,19 @@ function getDateRange(range: TimeRange): { from: string; to: string } {
     case 'custom':
       return { from: '', to: '' };
   }
+}
+
+/**
+ * P18: Bringt ein Antrag zu einem automatisch geschlossenen Eintrag ein
+ * tatsächliches Ende mit? Sonst lehnt der Server das Anerkennen mit 400 ab
+ * (`credit_override_service.lacks_actual_end`) — das gespeicherte Ende und das
+ * synthetische 23:59 zählen nicht. Das Rohende kennt der Antrag nicht; diesen
+ * Rest fängt der Server ab.
+ */
+function bringsActualEnd(cr: ChangeRequest): boolean {
+  if (!cr.entry_auto_closed) return true;
+  const end = cr.proposed_end_time?.substring(0, 5);
+  return !!end && end !== '23:59' && end !== cr.original_end_time?.substring(0, 5);
 }
 
 function formatDateDE(dateStr: string): string {
@@ -143,12 +164,14 @@ export default function AdminChangeRequests() {
   // Bulk-Pfad ist via bulkProcessing bereits geschützt).
   const actionLock = useRef(false);
 
-  const handleApprove = async (id: string) => {
+  const handleApprove = async (id: string, grant?: boolean) => {
     if (actionLock.current) return;
     actionLock.current = true;
     try {
+      // Spec P21: ohne `grant` gilt der Antragswert (request_credit_override).
       const response = await apiClient.post(`/admin/change-requests/${id}/review`, {
         action: 'approve',
+        ...(grant === undefined ? {} : { grant_credit_override: grant }),
       });
       toast.success('Antrag genehmigt');
       // ArbZG-Warnungen der Genehmigung anzeigen (§3 >48h/Woche, §6 Nacht) —
@@ -441,6 +464,11 @@ export default function AdminChangeRequests() {
                         {config.label}
                       </span>
                       <span className="text-sm text-gray-600">{typeLabels[cr.request_type]}</span>
+                      {cr.request_credit_override && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-800">
+                          Anrechnung beantragt
+                        </span>
+                      )}
                     </div>
                     <span className="text-xs text-gray-500">
                       Erstellt: {format(new Date(cr.created_at), 'dd.MM.yyyy HH:mm')}
@@ -487,6 +515,9 @@ export default function AdminChangeRequests() {
                             <p>Datum: <span className="font-medium">{formatDateDE(cr.original_date)}</span></p>
                             <p>Zeit: <span className="font-medium">{cr.original_start_time?.substring(0, 5)} – {cr.original_end_time?.substring(0, 5)}</span></p>
                             <p>Pause: <span className="font-medium">{cr.original_break_minutes} min</span></p>
+                            {(cr.original_uncredited_minutes ?? 0) > 0 && (
+                              <p>{`Nicht angerechnet (Lücke): ${formatHoursHM((cr.original_uncredited_minutes ?? 0) / 60)} h`}</p>
+                            )}
                             {cr.original_note && <p>Notiz: {cr.original_note}</p>}
                           </div>
                         </div>
@@ -508,6 +539,12 @@ export default function AdminChangeRequests() {
                     </>
                   )}
                 </div>
+
+                {cr.entry_kind !== 'absence' && cr.request_type === 'update' && cr.entry_credit_override && (
+                  <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
+                    Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.
+                  </div>
+                )}
 
                 {/* Reason */}
                 <div className="text-sm mb-4">
@@ -559,14 +596,45 @@ export default function AdminChangeRequests() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex space-x-3">
-                        <button
-                          onClick={() => handleApprove(cr.id)}
-                          className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition"
-                        >
-                          <Check size={16} />
-                          <span>Genehmigen</span>
-                        </button>
+                      <div className="flex flex-wrap gap-3">
+                        {cr.request_credit_override ? (
+                          <>
+                            <button
+                              onClick={() => handleApprove(cr.id)}
+                              className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition"
+                            >
+                              <Check size={16} />
+                              <span>Genehmigen und anerkennen</span>
+                            </button>
+                            <button
+                              onClick={() => handleApprove(cr.id, false)}
+                              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg transition"
+                            >
+                              Ohne Anerkennen genehmigen
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleApprove(cr.id)}
+                              className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition"
+                            >
+                              <Check size={16} />
+                              <span>Genehmigen</span>
+                            </button>
+                            {/* P21: jeder UPDATE-Antrag auf einen Eintrag mit nicht angerechneter Zeit */}
+                            {cr.entry_kind !== 'absence' && cr.request_type === 'update'
+                              && !cr.entry_credit_override && (cr.entry_not_credited_minutes ?? 0) > 0
+                              && bringsActualEnd(cr) && (
+                              <button
+                                onClick={() => handleApprove(cr.id, true)}
+                                className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-800 text-sm rounded-lg transition"
+                              >
+                                Genehmigen und anerkennen
+                              </button>
+                            )}
+                          </>
+                        )}
                         <button
                           onClick={() => setRejectingId(cr.id)}
                           className="flex items-center space-x-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm rounded-lg transition"
