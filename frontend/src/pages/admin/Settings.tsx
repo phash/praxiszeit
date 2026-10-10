@@ -1379,9 +1379,18 @@ const saveYearEndProjection = async () => {
       {/* Soll-Fenster-Puffer (#201) */}
       <div className="bg-white rounded-xl shadow-sm p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Soll-Arbeitszeit-Fenster</h2>
+        <p className="text-sm text-gray-500 mb-2">
+          Anwesenheit vor dem ersten und nach dem letzten Arbeitszeit-Block zählt nur bis zu diesem Puffer zur
+          Arbeitszeit; Stempel außerhalb werden auf diese Grenze gekürzt. Der Puffer gilt an jedem Blockrand, auch
+          zwischen zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet.
+        </p>
         <p className="text-sm text-gray-500 mb-4">
-          Anwesenheit vor oder nach dem Soll-Fenster zählt nur bis zu diesem Puffer zur Arbeitszeit.
-          Stempel außerhalb des Puffers werden auf die Fenstergrenze gekürzt.
+          Eine Änderung des Puffers wirkt auf neue Einträge. Jeder gekappte Eintrag merkt sich seinen Puffer und behält
+          ihn, auch wenn er später bearbeitet wird. Nur eine Arbeitszeit-Änderung mit Neuberechnung kappt die
+          betroffenen Einträge mit dem dann gültigen Puffer neu; die Vorschau nennt ihn, und verliert dabei ein Eintrag
+          angerechnete Zeit, gilt der Verkürzungsschutz. Einträge aus der Zeit vor Version 1.20.0 tragen keinen
+          gespeicherten Puffer und werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt. Bereits gespeicherte
+          Einträge ändern sich durch das Speichern dieser Einstellung allein nicht.
         </p>
         <div className="flex items-end gap-4">
           <div>

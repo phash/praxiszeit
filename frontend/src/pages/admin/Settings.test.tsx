@@ -82,3 +82,17 @@ describe('<Settings /> Pflicht-Pause-Ausnahme an/aus (#499)', () => {
     await waitFor(() => expect(getMock).toHaveBeenCalledWith('/system/info'));
   });
 });
+
+describe('<Settings /> Puffer-Hinweis (Spec 2026-10-08, 12.3)', () => {
+  it('nennt die Blockränder und dass Einträge ihren Puffer behalten', async () => {
+    mockSettings([]);
+    render(<Settings />);
+    expect(await screen.findByText(
+      /gilt an jedem Blockrand, auch zwischen zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet/,
+    )).toBeInTheDocument();
+    expect(screen.getByText(/^Eine Änderung des Puffers wirkt auf neue Einträge\./)).toBeInTheDocument();
+    expect(screen.getByText(
+      /Bereits gespeicherte Einträge ändern sich durch das Speichern dieser Einstellung allein nicht\.$/,
+    )).toBeInTheDocument();
+  });
+});

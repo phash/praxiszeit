@@ -9,6 +9,7 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 // dieselben Audit-Zeilen und dürfen sich nicht auseinanderentwickeln.
 import AuditValues, { auditPillText, formatAuditNote } from '../../components/AuditValues';
 import SecurityEventsCard from '../../components/SecurityEventsCard';
+import { AUDIT_SOURCE_LABELS as sourceLabels } from '../../constants/auditSources';
 
 interface AuditEntry {
   id: string;
@@ -75,17 +76,6 @@ const actionColors: Record<string, string> = {
   self_data_export: 'bg-gray-100 text-gray-700',
   arbzg_superadmin_export: 'bg-amber-100 text-amber-800',
   license_readonly_mode_entered: 'bg-amber-100 text-amber-800',
-};
-
-const sourceLabels: Record<string, string> = {
-  manual: 'Admin',
-  change_request: 'Antrag',
-  import: 'Import',
-  dsgvo: 'DSGVO',
-  break_waiver: 'Pausen-Verzicht',
-  vacation_request_cancel: 'Urlaub storniert',
-  license_startup: 'Lizenz',
-  wh_change: 'Stundenänderung',
 };
 
 export default function AuditLog() {
