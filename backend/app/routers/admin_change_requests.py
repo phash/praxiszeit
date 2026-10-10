@@ -381,6 +381,15 @@ def review_change_request(
                 auto_closed=entry.auto_closed, prev_date=entry.date,
                 target_date=cr.proposed_date,
             )
+            # Die Genehmigung prüft die Reihenfolge sonst gar nicht: ``end_input_for``
+            # kann das Ende vor den Beginn legen (verschobener Auto-Close-Eintrag,
+            # späterer Beginn) — auch bei einem Antrag, der vor dieser Prüfung
+            # gestellt wurde. Vor der Vorprüfung und vor jeder Statusänderung.
+            _order_error = work_window_service.input_order_error(
+                _in_start, _in_end, auto_closed=entry.auto_closed,
+            )
+            if _order_error:
+                raise HTTPException(status_code=400, detail=_order_error)
 
         # C-1: Re-validate §3 (daily hard cap) and §4 (breaks) against the
         # CURRENT DB state before materialising a CREATE/UPDATE. The CR was

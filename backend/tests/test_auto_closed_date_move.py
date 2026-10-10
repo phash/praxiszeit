@@ -277,3 +277,108 @@ def test_end_input_for(incoming, eff, raw, auto_closed, prev, target, expected):
     from app.services.work_window_service import end_input_for
     assert end_input_for(incoming, eff, raw, auto_closed=auto_closed,
                          prev_date=prev, target_date=target) == expected
+
+
+# ── Reihenfolge der tatsächlichen Kappungseingaben (PR1-Review N2-Nachzug) ──
+#
+# ``end_input_for`` ersetzt beim Verschieben das synthetische 23:59 durch das
+# wirksame Ende 18:15 — die Prüfung „Endzeit muss nach Startzeit liegen" lief
+# aber vorher auf der rohen Eingabe (23:59 bzw. dem Rückfall darauf). Mit einem
+# späteren Beginn landete der Eintrag als 20:00–18:15, net 0, ohne Warnung —
+# genau der Zustand, den der Release-Review 1.16.0 ausschließen wollte (der Tag
+# verschwindet still aus Saldo und §16-Beleg). Jetzt 400, Eintrag unverändert.
+
+def _assert_unchanged(db, e):
+    # Produktiv schließt ``get_db`` die Sitzung (= Rollback); im Test teilen sich
+    # Route und Test die Sitzung — die MA-Route setzt Felder vor dem 400.
+    db.rollback()
+    db.refresh(e)
+    assert (e.date, e.start_time, e.end_time, e.raw_end_time, e.net_hours, e.auto_closed) == (
+        MON, time(15, 0), time(18, 15), time(23, 59), Decimal("3.25"), True)
+
+
+def _assert_order_rejected(resp):
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert detail.startswith("Endzeit muss nach Startzeit liegen")
+    # Hinweis: das Ende ist kein Stempel, ein tatsächliches Ende ist einzutragen.
+    assert "automatisch geschlossen" in detail
+
+
+@pytest.mark.parametrize("route", ["/api/admin/time-entries", "/api/time-entries"],
+                         ids=["admin-route", "ma-route"])
+@pytest.mark.parametrize("target, start", [
+    pytest.param(SAT, "20:00", id="samstag"),
+    pytest.param(MON2, "19:00", id="naechster-montag"),
+])
+@pytest.mark.parametrize("end", ["23:59", None], ids=["ende-2359-eingetippt", "ohne-ende"])
+def test_route_start_after_effective_end_rejected(_db_session, auto_closed_entry, admin_client,
+                                                  route, target, start, end):
+    payload = {"date": target.isoformat(), "start_time": start}
+    if end is not None:
+        payload.update({"end_time": end, "break_minutes": 0})
+    resp = admin_client.put(f"{route}/{auto_closed_entry.id}", json=payload)
+    if route == "/api/time-entries" and end is None:
+        # Die MA-Route füllt das Ende mit dem gespeicherten wirksamen Ende auf —
+        # die bestehende Prüfung greift schon (ohne Hinweis).
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"].startswith("Endzeit muss nach Startzeit liegen")
+    else:
+        _assert_order_rejected(resp)
+    _assert_unchanged(_db_session, auto_closed_entry)
+
+
+@pytest.mark.parametrize("target, start", [
+    pytest.param(SAT, "20:00", id="samstag"),
+    pytest.param(MON2, "19:00", id="naechster-montag"),
+])
+def test_change_request_start_after_effective_end_rejected(_db_session, auto_closed_entry,
+                                                           employee_client, target, start):
+    resp = employee_client.post("/api/change-requests/", json={
+        "request_type": "update", "time_entry_id": str(auto_closed_entry.id),
+        "proposed_date": target.isoformat(), "proposed_start_time": start,
+        "proposed_end_time": "23:59", "proposed_break_minutes": 0,
+        "reason": "Falscher Tag erfasst"})
+    _assert_order_rejected(resp)
+    assert _db_session.query(ChangeRequest).count() == 0
+    _assert_unchanged(_db_session, auto_closed_entry)
+
+
+@pytest.mark.parametrize("target, start", [
+    pytest.param(SAT, time(20, 0), id="samstag"),
+    pytest.param(MON2, time(19, 0), id="naechster-montag"),
+])
+def test_cr_approval_start_after_effective_end_rejected(_db_session, employee_user, auto_closed_entry,
+                                                        admin_client, target, start):
+    """Auch ein älterer Antrag (vor dieser Prüfung gestellt) wird nicht genehmigt —
+    vor der Vorprüfung und vor jeder Statusänderung."""
+    cr = ChangeRequest(user_id=employee_user.id, tenant_id=DEFAULT_TENANT_ID, entry_kind="time_entry",
+                       request_type=ChangeRequestType.UPDATE, status=ChangeRequestStatus.PENDING,
+                       time_entry_id=auto_closed_entry.id, proposed_date=target,
+                       proposed_start_time=start, proposed_end_time=time(23, 59),
+                       proposed_break_minutes=0, reason="Falscher Tag erfasst")
+    _db_session.add(cr)
+    _db_session.commit()
+    resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
+    _assert_order_rejected(resp)
+    _assert_unchanged(_db_session, auto_closed_entry)
+    _db_session.refresh(cr)
+    assert cr.status == ChangeRequestStatus.PENDING
+
+
+@pytest.mark.parametrize("start, end, auto_closed, expected", [
+    (time(20, 0), time(18, 15), True, "auto"),
+    (time(18, 15), time(18, 15), True, "auto"),
+    (time(20, 0), time(18, 15), False, "plain"),
+    (time(15, 0), time(18, 15), True, None),
+    (time(15, 0), None, True, None),
+    (None, time(18, 15), False, None),
+])
+def test_input_order_error(start, end, auto_closed, expected):
+    from app.services.work_window_service import input_order_error
+    detail = input_order_error(start, end, auto_closed=auto_closed)
+    if expected is None:
+        assert detail is None
+    else:
+        assert detail.startswith("Endzeit muss nach Startzeit liegen")
+        assert ("automatisch geschlossen" in detail) is (expected == "auto")

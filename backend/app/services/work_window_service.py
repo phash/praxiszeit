@@ -390,6 +390,38 @@ def end_input_for(
     return unclamp_input(incoming, prev_eff, prev_raw)
 
 
+ORDER_ERROR_DETAIL = "Endzeit muss nach Startzeit liegen"
+
+
+def input_order_error(
+    start: Optional[time], end: Optional[time], *, auto_closed: bool,
+) -> Optional[str]:
+    """Reihenfolge der TATSÄCHLICHEN Kappungseingaben — nach ``unclamp_input`` /
+    ``end_input_for``, direkt vor ``clamp``. ``None`` = in Ordnung.
+
+    PR1-Review (Nachzug N2): Die Prüfung „Endzeit muss nach Startzeit liegen"
+    läuft in allen Pfaden auf der rohen Eingabe (das eingetippte oder als
+    Rückfall eingesetzte Rohende 23:59). ``end_input_for`` ersetzt 23:59 beim
+    Verschieben eines automatisch geschlossenen Eintrags durch dessen
+    wirksames Ende — mit einem späteren Beginn lag das Ende dann VOR dem
+    Beginn (Samstag 20:00–18:15, ``net_hours`` 0 über den Floor, ohne Warnung):
+    genau der Zustand, den der Release-Review 1.16.0 ausschließt. Deshalb jeder
+    Pfad ein zweites Mal hier. ``unclamp_input`` allein dreht die Reihenfolge
+    nie um (``clamp`` legt den Rohbeginn nie nach den wirksamen, das Rohende nie
+    vor das wirksame — auch beim Kollaps nicht): ist sie beim automatisch
+    geschlossenen Eintrag verkehrt, war es ``end_input_for``, und der Hinweis
+    nennt diese Ursache. Ohne Kennzeichen bleibt die Prüfung reine Absicherung."""
+    if start is None or end is None or end > start:
+        return None
+    if not auto_closed:
+        return ORDER_ERROR_DETAIL
+    return (
+        f"{ORDER_ERROR_DETAIL}. Der Eintrag wurde automatisch geschlossen — "
+        f"23:59 ist kein Stempel, es gilt das Ende {end:%H:%M}. "
+        "Bitte das tatsächliche Ende eintragen."
+    )
+
+
 def not_credited_minutes(entry) -> int:
     """P19: nicht angerechnete Anwesenheit eines Eintrags = ``uncredited_minutes``
     + von der Hülle gekappte Minuten (``eff_start − raw_start``,

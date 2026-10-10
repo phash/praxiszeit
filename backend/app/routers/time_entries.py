@@ -1257,6 +1257,14 @@ def update_time_entry(
         auto_closed=orig_snapshot["auto_closed"], prev_date=orig_snapshot["date"],
         target_date=entry.date,
     )
+    # Die Prüfung oben sah die rohe Eingabe; ``end_input_for`` kann das Ende davor
+    # legen (verschobener Auto-Close-Eintrag, späterer Beginn) — gespeichert würde
+    # end < start mit net 0, ohne Warnung.
+    _order_error = work_window_service.input_order_error(
+        _clamp_start, _clamp_end, auto_closed=orig_snapshot["auto_closed"],
+    )
+    if _order_error:
+        raise HTTPException(status_code=400, detail=_order_error)
     _r = work_window_service.clamp(
         db, _entry_owner, entry.date, _clamp_start, _clamp_end, _grace,
         credit_override=entry.credit_override,

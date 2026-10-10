@@ -231,6 +231,13 @@ def create_change_request(
             _cr_grace = work_window_service.grace_for_entry(db, entry)
         else:
             _cr_grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+        # Die Prüfung oben sah den rohen Vorschlag; ``end_input_for`` kann das Ende
+        # davor legen (verschobener Auto-Close-Eintrag, späterer Beginn).
+        _order_error = work_window_service.input_order_error(
+            _in_start, _in_end, auto_closed=bool(entry is not None and entry.auto_closed),
+        )
+        if _order_error:
+            raise HTTPException(status_code=400, detail=_order_error)
         _cr_clamp = work_window_service.clamp(
             db, current_user, data.proposed_date, _in_start, _in_end, _cr_grace,
             credit_override=_override,

@@ -338,6 +338,14 @@ def admin_update_time_entry(
         update_end_time, entry.end_time, entry.raw_end_time,
         auto_closed=entry.auto_closed, prev_date=entry.date, target_date=update_date,
     )
+    # Die Prüfung oben sah die rohe Eingabe; ``end_input_for`` kann das Ende davor
+    # legen (verschobener Auto-Close-Eintrag, späterer Beginn) — gespeichert würde
+    # end < start mit net 0, ohne Warnung.
+    _order_error = work_window_service.input_order_error(
+        update_start_time, update_end_time, auto_closed=entry.auto_closed,
+    )
+    if _order_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_order_error)
 
     # #201: Clamp start/end to the affected employee's soll window.
     # Use `affected_user` (the employee whose entry this is), NOT current_user (admin).
