@@ -639,7 +639,8 @@ describe('<MonthlyJournal /> §10-Ausnahmegrund (#485)', () => {
     }]);
     render(<MonthlyJournal userId="u1" isAdminView />);
     expect(await screen.findByText('§10: KV-Notdienst')).toBeInTheDocument();
-    expect(screen.getByText(/gestempelt 08:52/)).toBeInTheDocument();
+    // Von–Bis-Spalte und Mobilzeile (Gesamtreview PR2, Fund 9)
+    expect(screen.getAllByText(/gestempelt 08:52/)).toHaveLength(2);
   });
 });
 
@@ -654,9 +655,10 @@ describe('<MonthlyJournal /> nicht angerechnete Zeit (Spec 13.1, PR2)', () => {
   it('zeigt die Zeile „nicht angerechnet" am Eintrag', async () => {
     getMock.mockResolvedValue({ data: creditJournal });
     render(<MonthlyJournal userId="u1" isAdminView={false} />);
-    expect(await screen.findByText(
+    // Von–Bis-Spalte und Mobilzeile (Gesamtreview PR2, Fund 9)
+    expect(await screen.findAllByText(
       'gestempelt 07:00–19:00 · angerechnet 8:00 h (07:45–18:15) · 4:00 h nicht angerechnet, davon 2:30 h zwischen den Blöcken',
-    )).toBeInTheDocument();
+    )).toHaveLength(2);
   });
 });
 
@@ -669,7 +671,7 @@ describe('<MonthlyJournal /> Anerkennen und Monatssumme (Spec 13.2/13.3)', () =>
   it('Admin-Ansicht: „Anerkennen" am Eintrag und die Summenzeile', async () => {
     getMock.mockResolvedValue({ data: withTotal(450) });
     render(<MonthlyJournal userId="u1" isAdminView />);
-    expect(await screen.findByRole('button', { name: 'Anerkennen' })).toBeInTheDocument();
+    expect(await screen.findAllByRole('button', { name: 'Anerkennen' })).toHaveLength(2); // + Mobilzeile
     expect(screen.getByText('Anwesenheit nicht angerechnet: 7:30 h')).toBeInTheDocument();
   });
 
@@ -677,7 +679,7 @@ describe('<MonthlyJournal /> Anerkennen und Monatssumme (Spec 13.2/13.3)', () =>
     getMock.mockResolvedValue({ data: withTotal(450) });
     postMock.mockResolvedValue({ data: { warnings: [] } });
     render(<MonthlyJournal userId="u1" isAdminView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Anerkennen' }));
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Anerkennen' }))[0]);
     const journalCalls = () => getMock.mock.calls.filter(c => String(c[0]).includes('/journal')).length;
     const before = journalCalls();
     fireEvent.click(screen.getByRole('button', { name: 'Zeit anerkennen' }));
@@ -694,14 +696,16 @@ describe('<MonthlyJournal /> Anerkennen und Monatssumme (Spec 13.2/13.3)', () =>
       data: { ...withTotal(195), days: [{ ...validDay, time_entries: [autoClosed] }] },
     });
     render(<MonthlyJournal userId="u1" isAdminView />);
-    expect(await screen.findByRole('button', { name: 'Anerkennen' })).toBeDisabled();
-    expect(screen.getByText(AUTO_CLOSED_HINT)).toBeInTheDocument();
+    const buttons = await screen.findAllByRole('button', { name: 'Anerkennen' });
+    expect(buttons).toHaveLength(2); // + Mobilzeile
+    buttons.forEach((b) => expect(b).toBeDisabled());
+    expect(screen.getAllByText(AUTO_CLOSED_HINT)).toHaveLength(2);
   });
 
   it('Mitarbeiter-Ansicht: kein „Anerkennen"; ohne nicht angerechnete Zeit keine Summenzeile', async () => {
     getMock.mockResolvedValue({ data: withTotal(0) });
     render(<MonthlyJournal userId="u1" isAdminView={false} />);
-    await screen.findByText(/gestempelt 07:00–19:00/);
+    await screen.findAllByText(/gestempelt 07:00–19:00/);
     expect(screen.queryByRole('button', { name: 'Anerkennen' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Anwesenheit nicht angerechnet/)).not.toBeInTheDocument();
   });
@@ -718,7 +722,7 @@ describe('<MonthlyJournal /> Anrechnung beantragen (Spec P21)', () => {
   it('Mitarbeiter-Ansicht: öffnet den Antrag mit den Rohstempeln', async () => {
     mockMe(creditJournal);
     render(<MonthlyJournal userId="u1" isAdminView={false} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Anrechnung beantragen' }));
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Anrechnung beantragen' }))[0]);
     expect(await screen.findByRole('heading', { name: 'Änderungsantrag: Anrechnung beantragen' })).toBeInTheDocument();
     expect((screen.getByLabelText('Von') as HTMLInputElement).value).toBe('07:00');
   });
@@ -727,7 +731,7 @@ describe('<MonthlyJournal /> Anrechnung beantragen (Spec P21)', () => {
     mockMe(creditJournal);
     postMock.mockResolvedValue({ data: {} });
     render(<MonthlyJournal userId="u1" isAdminView={false} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Anrechnung beantragen' }));
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Anrechnung beantragen' }))[0]);
     fireEvent.change(screen.getByPlaceholderText('Warum ist diese Änderung notwendig?'), {
       target: { value: 'Patientin in der Mittagspause versorgt' },
     });
@@ -749,20 +753,60 @@ describe('<MonthlyJournal /> Anrechnung beantragen (Spec P21)', () => {
     const today = format(new Date(), 'yyyy-MM-dd');
     mockMe({ ...creditJournal, days: [{ ...validDay, date: today, time_entries: [k7Entry] }] });
     render(<MonthlyJournal userId="u1" isAdminView={false} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Anrechnung beantragen' }));
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Anrechnung beantragen' }))[0]);
     expect((await screen.findByLabelText('Datum') as HTMLInputElement).value).toBe(today);
   });
 
   it('anerkannte Einträge und die Admin-Ansicht bieten die Aktion nicht an', async () => {
     mockMe({ ...creditJournal, days: [{ ...validDay, time_entries: [{ ...k7Entry, credit_override: true }] }] });
     const { unmount } = render(<MonthlyJournal userId="u1" isAdminView={false} />);
-    await screen.findByText('anerkannt');
+    await screen.findAllByText('anerkannt');
     expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
     unmount();
 
     getMock.mockResolvedValue({ data: creditJournal });
     render(<MonthlyJournal userId="u1" isAdminView />);
-    await screen.findByRole('button', { name: 'Anerkennen' });
+    await screen.findAllByRole('button', { name: 'Anerkennen' });
     expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
+  });
+});
+
+// Gesamtreview PR2 (Fund 9): die Spalte „Von–Bis" ist unterhalb von md
+// ausgeblendet, eine Mobil-Alternative gab es nicht — auf dem Telefon fehlten
+// Eintragszeile, „Anrechnung beantragen" und „Anerkennen". Eine eigene Zeile
+// (md:hidden) unter dem Tag trägt sie dort; am Desktop bleibt alles in der Spalte.
+describe('<MonthlyJournal /> nicht angerechnete Zeit auf schmalen Bildschirmen (Fund 9)', () => {
+  const inMobileRow = (el: HTMLElement) => !!el.closest('tr')?.className.split(/\s+/).includes('md:hidden');
+  const inDesktopCell = (el: HTMLElement) => !!el.closest('td')?.className.includes('hidden md:table-cell');
+
+  it('Mitarbeiter-Ansicht: Zeile und „Anrechnung beantragen" auch unterhalb von md', async () => {
+    getMock.mockResolvedValue({ data: creditJournal });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    const buttons = await screen.findAllByRole('button', { name: 'Anrechnung beantragen' });
+    expect(buttons).toHaveLength(2);
+    expect(buttons.filter(inMobileRow)).toHaveLength(1);
+    expect(buttons.filter(inDesktopCell)).toHaveLength(1);
+    const notes = screen.getAllByText(/^gestempelt 07:00–19:00/);
+    expect(notes.filter(inMobileRow)).toHaveLength(1);
+    // Mobil fehlt die Von–Bis-Spalte — die Zeile nennt die angerechnete Spanne mit.
+    const mobileRow = buttons.find(inMobileRow)!.closest('tr')!;
+    expect(mobileRow.textContent).toContain('07:45–18:15');
+  });
+
+  it('Admin-Ansicht: „Anerkennen" auch unterhalb von md', async () => {
+    getMock.mockResolvedValue({ data: creditJournal });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    const buttons = await screen.findAllByRole('button', { name: 'Anerkennen' });
+    expect(buttons.filter(inMobileRow)).toHaveLength(1);
+    expect(buttons.filter(inDesktopCell)).toHaveLength(1);
+  });
+
+  it('ohne Kappung keine zusätzliche Mobilzeile', async () => {
+    getMock.mockResolvedValue({ data: { ...validJournal, days: [{ ...validDay, time_entries: [{
+      id: 'te2', start_time: '08:00', end_time: '16:30', break_minutes: 30, net_hours: 8,
+    }] }] } });
+    const { container } = render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    await screen.findByText('08:00–16:30');
+    expect(container.querySelectorAll('tr.md\\:hidden')).toHaveLength(0);
   });
 });

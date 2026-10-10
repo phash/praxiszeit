@@ -600,6 +600,60 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   // #485: §10-Ausnahmegrund — eigene Zeile, damit das Feld auch auf schmalen
   // Bildschirmen Platz hat (die Zeitspalten sind dort ausgeblendet). Steht
   // unter der Zeile, in der gerade bearbeitet bzw. hinzugefuegt wird.
+  // Spec 13.1/13.3/14: Eintragszeile (RawStampNote) samt „Anrechnung
+  // beantragen" (eigene Ansicht) bzw. „Anerkennen" (Admin-Ansicht) — EINE
+  // Quelle für die Von–Bis-Spalte und die Mobilzeile darunter.
+  function renderCreditNote(day: JournalDay, e: TimeEntryItem) {
+    return (
+      <>
+        <RawStampNote
+          {...stampNoteProps(e)}
+          className="text-xs text-gray-500"
+          onRequestCredit={
+            // Vergangene Tage und heute (Gesamtreview PR2, Fund 1: der
+            // Lückentext beim Ausstempeln verweist hierher); Admins
+            // erkennen selbst an.
+            !isAdminView && !isFutureDay(day.date) && e.end_time && !e.credit_override
+              ? () => setCreditRequest({ day, entry: e })
+              : undefined
+          }
+        />
+        {isAdminView && (
+          <CreditOverrideButton entry={e} onDone={() => setReloadKey((k) => k + 1)} />
+        )}
+      </>
+    );
+  }
+
+  // Gesamtreview PR2 (Fund 9): „Von–Bis" ist unterhalb von md ausgeblendet —
+  // ohne diese Zeile sähe man auf dem Telefon nur die Monatssumme „Anwesenheit
+  // nicht angerechnet", nicht die Einträge dazu und keine der beiden Aktionen.
+  // Nur Einträge, zu denen RawStampNote etwas sagt (gekappt, anerkannt,
+  // automatisch geschlossen); die Spanne steht mit dabei, weil die Spalte fehlt.
+  function renderMobileCreditRow(day: JournalDay, rowClass: string) {
+    const shown = day.time_entries.filter((e) => {
+      const p = stampNoteProps(e);
+      return p.creditOverride || p.autoClosed || p.notCreditedMinutes > 0;
+    });
+    if (shown.length === 0) return null;
+    return (
+      <tr key={`${day.date}-credit-mobile`} className={`md:hidden ${rowClass}`}>
+        <td colSpan={fixedMode ? 8 : 9} className="px-3 pb-2 pt-0">
+          <div className="space-y-1">
+            {shown.map((e) => (
+              <div key={e.id} className="text-xs text-gray-600">
+                <span className="font-medium">
+                  {e.start_time && e.end_time ? `${e.start_time.substring(0, 5)}–${e.end_time.substring(0, 5)}` : e.start_time?.substring(0, 5)}
+                </span>
+                {renderCreditNote(day, e)}
+              </div>
+            ))}
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
   function renderSundayReasonRow(day: JournalDay) {
     if (editState.entryType !== 'work' || !needsSundayReason(day)) return null;
     return (
@@ -834,21 +888,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               {day.time_entries.map((e, i) => (
                                 <div key={`w${i}`}>
                                   {e.start_time && e.end_time ? `${e.start_time.substring(0, 5)}–${e.end_time.substring(0, 5)}` : '–'}
-                                  <RawStampNote
-                                    {...stampNoteProps(e)}
-                                    className="text-xs text-gray-500"
-                                    onRequestCredit={
-                                      // Vergangene Tage und heute (Gesamtreview PR2, Fund 1: der
-                                      // Lückentext beim Ausstempeln verweist hierher); Admins
-                                      // erkennen selbst an.
-                                      !isAdminView && !isFutureDay(day.date) && e.end_time && !e.credit_override
-                                        ? () => setCreditRequest({ day, entry: e })
-                                        : undefined
-                                    }
-                                  />
-                                  {isAdminView && (
-                                    <CreditOverrideButton entry={e} onDone={() => setReloadKey((k) => k + 1)} />
-                                  )}
+                                  {renderCreditNote(day, e)}
                                   {e.sunday_exception_reason && (
                                     <div className="text-xs text-amber-700">§10: {e.sunday_exception_reason}</div>
                                   )}
@@ -990,6 +1030,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           ) : null}
                         </td>
                       </tr>
+                      {!hideEntries && editingDate !== day.date && renderMobileCreditRow(day, rowClass)}
                       {editingDate === day.date && renderSundayReasonRow(day)}
                       {/* Add-new-entry row */}
                       {addingDate === day.date && isAdminView && (
