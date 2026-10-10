@@ -12,7 +12,7 @@ from app.services.xls_import_service import (
 )
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_xls_import_service import _dt, _make_data_row, _make_xls_bytes
-from tests.work_blocks_fixtures import K_BLOCKS, MON, legacy_week
+from tests.work_blocks_fixtures import K_BLOCKS, MON, block_week, legacy_week
 
 HEADER = ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"]
 LEGACY = legacy_week(mon=("08:00", "17:00"))
@@ -59,14 +59,20 @@ def test_auto_pause_rest(start, end, segments, expected):
 def test_k1_preview_gap_note_without_raw_and_no_s3_s4_warning(db, test_user):
     """8.2: K1 als Import ergibt keine §3/§4-Warnung (angerechnet 7:30 h, Lücke
     deckt §4) — auch nicht in der Tagesaggregation mit einem DB-Eintrag direkt
-    danach; der reine Lückenfall bekommt trotzdem den Kappungshinweis."""
+    danach; der reine Lückenfall bekommt trotzdem den Kappungshinweis.
+
+    Die harten Prüfungen der Vorschau melden „… Netto-Arbeitszeit …"; der weiche
+    Anwesenheits-Hinweis (8.3, PR2) beginnt ebenfalls mit „§4 ArbZG:" und ist
+    für K1 laut Spec gewollt — er rechnet auf den Stempeln, nicht auf der
+    angerechneten Zeit."""
     test_user.work_blocks = K_BLOCKS
     db.commit()
     _entry(db, test_user, time(18), time(18, 30))
     [row] = parse_xls(_xls((_dt(2026, 6, 1, 8, 0), _dt(2026, 6, 1, 18, 0))), test_user.id, db)
     assert (row.start_time, row.end_time, row.raw_start_time, row.raw_end_time) == (time(8), time(18), None, None)
     assert (row.uncredited_minutes, row.break_minutes) == (150, 0)
-    assert not [w for w in row.arbzg_warnings if w.startswith(("§3", "§4"))], row.arbzg_warnings
+    assert not [w for w in row.arbzg_warnings if "Netto-Arbeitszeit" in w], row.arbzg_warnings
+    assert any(w.startswith("§4 ArbZG: Durchgehend über die Lücke") for w in row.arbzg_warnings)
     assert any(w.startswith("Zwischen den Arbeitsblöcken (12:15–14:45") for w in row.arbzg_warnings)
 
 
@@ -229,3 +235,98 @@ def test_overwrite_skips_when_the_new_start_is_taken(db, test_user, test_admin):
     assert any("beginnt bereits um 07:30" in w for w in result.warnings)
     db.refresh(x)
     assert x.start_time == time(7)
+
+
+# ── PR2: Netto vom Server und Anwesenheits-Hinweise in der Vorschau (7.4, 8.3) ──
+def _k1_row():
+    return _xls((datetime(2026, 6, 1, 8, 0), datetime(2026, 6, 1, 18, 0)))
+
+
+def test_preview_net_hours_from_the_server(db, test_user):
+    test_user.work_blocks = K_BLOCKS
+    db.commit()
+    [e] = parse_xls(_k1_row(), test_user.id, db)
+    assert (e.uncredited_minutes, e.break_minutes, e.net_hours) == (150, 0, 7.5)
+
+
+def test_preview_not_credited_counts_gap_and_envelope(db, test_user):
+    """P19: „nicht angerechnet" der Vorschau = Lücke + Hülle — dieselbe Quelle
+    wie RawStampNote/Journal/Export (``work_window_service.not_credited_minutes``),
+    nie ``uncredited_minutes`` allein. 07:00–19:00 bei K-Blöcken: Hülle 45 + 45,
+    Lücke 150 → 4:00 h; angerechnet 8:00 h (07:45–18:15 − 2:30)."""
+    test_user.work_blocks = K_BLOCKS
+    db.commit()
+    [e] = parse_xls(_xls((datetime(2026, 6, 1, 7, 0), datetime(2026, 6, 1, 19, 0))), test_user.id, db)
+    assert (e.uncredited_minutes, e.not_credited_minutes, e.net_hours) == (150, 240, 8.0)
+    assert e.model_dump()["not_credited_minutes"] == 240
+
+
+def test_preview_lists_the_presence_hint_as_plain_text(db, test_user):
+    test_user.work_blocks = K_BLOCKS
+    db.commit()
+    [e] = parse_xls(_k1_row(), test_user.id, db)
+    assert any(w.startswith("§4 ArbZG: Durchgehend über die Lücke") for w in e.arbzg_warnings)
+    assert not any(w.startswith(("PRESENCE_", "BREAK_IN_GAP")) for w in e.arbzg_warnings)
+
+
+# Review Focus 4: der überschriebene Bestandseintrag zählt in der Anwesenheit nicht doppelt.
+def test_reimport_does_not_double_count_presence(db, test_user):
+    test_user.work_blocks = K_BLOCKS
+    _entry(db, test_user, time(8), time(12, 30), uncredited_minutes=15, clamp_grace_minutes=15)
+    [e] = parse_xls(_xls((datetime(2026, 6, 1, 8, 0), datetime(2026, 6, 1, 12, 30))), test_user.id, db)
+    assert e.has_conflict is True
+    assert not any("Laut Stempel" in w or "Durchgehend" in w for w in e.arbzg_warnings), e.arbzg_warnings
+
+
+def test_exempt_person_gets_no_presence_hint(db, test_user):
+    test_user.work_blocks = K_BLOCKS
+    test_user.exempt_from_arbzg = True
+    db.commit()
+    [e] = parse_xls(_k1_row(), test_user.id, db)
+    assert not any("Laut Stempel" in w or "Durchgehend" in w for w in e.arbzg_warnings)
+
+
+def test_preview_week_presence_hint(db, test_user):
+    """Spec 8.3 (P22) „Ausgegeben an … XLS-Vorschau": Mo–Fr 08:00–18:00 bei
+    Blöcken 08–12 + 15–18 → angerechnet 37:30 h, anwesend 50 h. Die Freitagszeile
+    trägt den Wochenhinweis (Bestand + bisherige Zeilen der Woche), Donnerstag
+    (40 h) noch nicht."""
+    days = ("mon", "tue", "wed", "thu", "fri")
+    test_user.work_blocks = block_week(**{d: [("08:00", "12:00"), ("15:00", "18:00")] for d in days})
+    db.commit()
+    rows = [(datetime(2026, 6, i, 8, 0), datetime(2026, 6, i, 18, 0)) for i in range(1, 6)]
+    preview = parse_xls(_xls(*rows), test_user.id, db)
+    week = "§3 ArbZG: Laut Stempel 50:00 h in dieser Woche anwesend"
+    assert any(w.startswith(week) for w in preview[4].arbzg_warnings), preview[4].arbzg_warnings
+    assert "Angerechnet werden 37:30 h" in next(w for w in preview[4].arbzg_warnings if w.startswith(week))
+    assert not any("in dieser Woche" in w for p in preview[:4] for w in p.arbzg_warnings)
+
+
+def test_preview_break_in_gap_hint_as_plain_text(db, test_user):
+    """8.4: Pause > 0 und Lücke am selben Eintrag. Blöcke 08–12 + 12:50–17:00,
+    Puffer 15 → Lückensegment 12:15–12:35 (20 Min) deckt §4 nur zu 20 von 30 Min;
+    die Auto-Pause trägt den Rest (10 → 15, §4 Satz 2). Beide Abzüge stehen in
+    der Vorschau als Klartext ohne Code."""
+    test_user.work_blocks = block_week(mon=[("08:00", "12:00"), ("12:50", "17:00")])
+    db.commit()
+    [e] = parse_xls(_xls((datetime(2026, 6, 1, 8, 0), datetime(2026, 6, 1, 17, 0))), test_user.id, db)
+    assert (e.uncredited_minutes, e.break_minutes, e.net_hours) == (20, 15, 8.42)
+    assert ("Pause in der Lücke wird zusätzlich abgezogen: 15 Min Pause und 0:20 h nicht angerechnet "
+            "zwischen den Arbeitsblöcken. Lag die Pause in der Lücke, bitte die Pause auf 0 setzen."
+            ) in e.arbzg_warnings, e.arbzg_warnings
+    assert any(w.startswith("§4 ArbZG: Durchgehend über die Lücke") for w in e.arbzg_warnings)
+
+
+def test_confirm_schema_has_no_net_or_not_credited_input():
+    """E11: ``net_hours`` und ``not_credited_minutes`` sind nur Anzeige der
+    Vorschau — ``/confirm`` rechnet neu und nimmt sie nicht an."""
+    from app.routers.import_xls import ConfirmRequest
+
+    body = ConfirmRequest.model_validate({
+        "user_id": str(uuid.uuid4()), "overwrite": False,
+        "entries": [{"date": MON.isoformat(), "start_time": "08:00", "end_time": "18:00",
+                     "break_minutes": 0, "note": None, "has_conflict": False,
+                     "arbzg_warnings": [], "net_hours": 99.0, "not_credited_minutes": 999}],
+    })
+    fields = type(body.entries[0]).model_fields
+    assert "net_hours" not in fields and "not_credited_minutes" not in fields

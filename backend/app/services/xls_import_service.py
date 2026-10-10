@@ -5,13 +5,14 @@ Dateiformat: Sheet "Zeiterfassung", Spalten: Datum, Tag, Total, Ein, Aus, Tagesn
 import uuid
 import xlrd
 from datetime import datetime, timedelta, date, time
+from types import SimpleNamespace
 from typing import Optional, Sequence
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 from app.models import TimeEntry, TimeEntryAuditLog, User
 from app.services.arbzg_utils import is_night_work
-from app.services import work_window_service
+from app.services import presence_service, work_window_service
 from app.services.break_validation_service import (
     BreakBlock, break_block_for_entry, break_block_for_new, daily_break_figures,
 )
@@ -50,6 +51,18 @@ class ImportedEntry(ImportedEntryIn):
     # Spec 2026-10-08 (7.1 Nr. 11): nur ANZEIGE der Vorschau. ``/confirm``
     # nimmt den Wert nicht an (E11) — ``_execute_import_inner`` rechnet neu.
     uncredited_minutes: int = 0
+    # Spec 7.4 (PR2): Netto der Vorschau vom Server — ImportXls.tsx rechnet nicht
+    # mehr selbst. Nur Anzeige; /confirm rechnet neu (wie ``uncredited_minutes``).
+    net_hours: float = 0.0
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def not_credited_minutes(self) -> int:
+        """P19: „nicht angerechnet" der Vorschauzeile = Lücke + von der Hülle
+        gekappte Anwesenheit — DIE eine Quelle wie ``TimeEntryResponse``, damit
+        ImportXls.tsx nie ``uncredited_minutes`` allein als „nicht angerechnet"
+        ausweist. Nur Anzeige (E11)."""
+        return work_window_service.not_credited_minutes(self)
 
 
 class ImportResult(BaseModel):
@@ -274,6 +287,13 @@ def parse_xls(
     batch_blocks_by_date: dict[date, list[BreakBlock]] = {}
     db_blocks_by_date: dict[date, list[BreakBlock]] = {}
 
+    # Spec 8.3 (PR2): Anwesenheit laut Stempel je Kalenderwoche (Tag und Woche,
+    # P22) — Bestand + bisherige Zeilen der Datei; von einer Importzeile
+    # überschriebene Bestandseinträge zählen nicht mit (Review Focus 4).
+    db_presence_by_week: dict[date, list] = {}
+    batch_presence_by_week: dict[date, list] = {}
+    replaced_ids: set = set()
+
     for row_idx in range(ws.nrows):
         # Datenzeile erkennbar durch numerischen ctype (3) in Ein-Spalte (D)
         if ws.cell(row_idx, 3).ctype != 3:
@@ -359,6 +379,15 @@ def parse_xls(
             uncredited_segments=segs,
             rest_start=raw_start_t or start_t,
         )
+        # P14: §4 auf angerechneter Zeit „bestanden" = keine §4-Meldung der Vorschau.
+        break_passed = not any(w.startswith("§4 ArbZG") for w in arbzg_warnings)
+
+        # Spec 7.4: Netto wie TimeEntry.net_hours (E13) — dieselbe Formel, die
+        # der Import speichert.
+        net = float(TimeEntry(
+            start_time=start_t, end_time=end_t, break_minutes=break_min,
+            uncredited_minutes=r.uncredited_minutes,
+        ).net_hours)
 
         # #462: Die Kappung darf auch hier nicht stumm passieren. Spec 7.1 Nr. 11:
         # auch ein reiner Lückenfall (K1, ohne raw_*) bekommt den Hinweis.
@@ -371,6 +400,34 @@ def parse_xls(
                 arbzg_warnings = arbzg_warnings + [clamp_note]
         if override:
             arbzg_warnings = arbzg_warnings + [CREDIT_OVERRIDE_IMPORT_NOTE]
+
+        # Spec 8.3/8.4: weiche Anwesenheits-Hinweise (Tag, Woche, Pause in der
+        # Lücke) als Klartext ohne Code — dieselben Regeln wie in den
+        # Schreibpfaden (presence_service.presence_hints). §18 → keine.
+        if not exempt:
+            row_view = SimpleNamespace(
+                date=entry_date, start_time=start_t, end_time=end_t,
+                raw_start_time=raw_start_t, raw_end_time=raw_end_t, break_minutes=break_min,
+                auto_closed=False, uncredited_minutes=r.uncredited_minutes, net_hours=net,
+            )
+            monday = entry_date - timedelta(days=entry_date.weekday())
+            if monday not in db_presence_by_week:
+                db_presence_by_week[monday] = presence_service.closed_entries(
+                    db, user, monday, monday + timedelta(days=6),
+                )
+            if existing is not None:
+                replaced_ids.add(existing.id)
+            week_rows = (
+                [e for e in db_presence_by_week[monday] if e.id not in replaced_ids]
+                + batch_presence_by_week.get(monday, [])
+                + [row_view]
+            )
+            hints = presence_service.presence_hints(
+                row_view, [e for e in week_rows if e.date == entry_date], week_rows,
+                break_check_passed=break_passed,
+            )
+            arbzg_warnings = arbzg_warnings + [presence_service.plain_text(h) for h in hints]
+            batch_presence_by_week.setdefault(monday, []).append(row_view)
 
         # Diesen Block für nachfolgende Zeilen am selben Tag merken
         batch_blocks_by_date.setdefault(entry_date, []).append(
@@ -388,6 +445,7 @@ def parse_xls(
             raw_start_time=raw_start_t,
             raw_end_time=raw_end_t,
             uncredited_minutes=r.uncredited_minutes,
+            net_hours=net,
         ))
 
         prev_end_dt = datetime.combine(entry_date, raw_end_t or end_t)

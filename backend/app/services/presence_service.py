@@ -168,22 +168,42 @@ def break_in_gap_warning(entry) -> Optional[str]:
     return None
 
 
-def presence_warnings(db: Session, user, d: date, *, break_check_passed: bool, entry=None) -> list:
-    """Alle weichen Warnungen aus 8.3/8.4 für den Tag ``d`` — NACH dem Schreiben
-    aufrufen (die DB enthält den Eintrag). ``entry`` = der eben geschriebene
-    Eintrag (für ``BREAK_IN_GAP``). §18 (``exempt_from_arbzg``) → keine."""
-    if user is None or getattr(user, "exempt_from_arbzg", False):
-        return []
+def presence_hints(entry, day_entries: Sequence, week_entries: Sequence, *,
+                   break_check_passed: bool) -> list:
+    """Die weichen Warnungen aus 8.3/8.4 über bereits gesammelte Einträge —
+    Reihenfolge ``BREAK_IN_GAP``, Tag, Woche. EINE Quelle für die Schreibpfade
+    (``presence_warnings``, Einträge aus der DB) und die XLS-Vorschau (Bestand
+    plus Zeilen der Datei, ohne die von einer Zeile überschriebenen Einträge).
+    Prüft §18 NICHT — das tut der Aufrufer."""
     out = []
     if entry is not None:
         gap = break_in_gap_warning(entry)
         if gap:
             out.append(gap)
     out.extend(daily_presence_warnings(
-        day_presence(closed_entries(db, user, d, d)), break_check_passed=break_check_passed,
+        day_presence(day_entries), break_check_passed=break_check_passed,
     ))
-    monday = d - timedelta(days=d.weekday())
-    weekly = weekly_presence_warning(closed_entries(db, user, monday, monday + timedelta(days=6)))
+    weekly = weekly_presence_warning(week_entries)
     if weekly:
         out.append(weekly)
     return out
+
+
+def plain_text(warning: str) -> str:
+    """Spec 8.3: die XLS-Vorschau zeigt die Warnung als Klartext ohne Code."""
+    return warning.split(": ", 1)[1]
+
+
+def presence_warnings(db: Session, user, d: date, *, break_check_passed: bool, entry=None) -> list:
+    """Alle weichen Warnungen aus 8.3/8.4 für den Tag ``d`` — NACH dem Schreiben
+    aufrufen (die DB enthält den Eintrag). ``entry`` = der eben geschriebene
+    Eintrag (für ``BREAK_IN_GAP``). §18 (``exempt_from_arbzg``) → keine."""
+    if user is None or getattr(user, "exempt_from_arbzg", False):
+        return []
+    monday = d - timedelta(days=d.weekday())
+    return presence_hints(
+        entry,
+        closed_entries(db, user, d, d),
+        closed_entries(db, user, monday, monday + timedelta(days=6)),
+        break_check_passed=break_check_passed,
+    )

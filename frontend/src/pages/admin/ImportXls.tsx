@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import type { User } from '../../types/user';
+import { formatHoursHM } from '../../utils/formatters';
 
 // ── Typen ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,14 @@ interface ImportedEntry {
   note: string | null;
   has_conflict: boolean;
   arbzg_warnings: string[];
+  raw_start_time?: string | null;
+  raw_end_time?: string | null;
+  // Spec 2026-10-08 (7.4): Netto und nicht angerechnete Zeit rechnet der Server.
+  // not_credited_minutes = Lücke + Hülle (P19); uncredited_minutes ist nur die Lücke.
+  // Alle drei sind reine Anzeige — /confirm rechnet neu und nimmt sie nicht an.
+  uncredited_minutes?: number;
+  not_credited_minutes?: number;
+  net_hours?: number;
 }
 
 interface PreviewResponse {
@@ -47,16 +56,6 @@ function formatTime(t: string): string {
 function formatDate(d: string): string {
   const [y, m, day] = d.split('-');
   return `${day}.${m}.${y}`;
-}
-
-function calcNetHours(start: string, end: string, breakMin: number): string {
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  const gross = (eh * 60 + em) - (sh * 60 + sm);
-  const net = gross - breakMin;
-  const h = Math.floor(net / 60);
-  const m = net % 60;
-  return `${h}:${String(m).padStart(2, '0')}`;
 }
 
 // ── StepIndicator ─────────────────────────────────────────────────────────────
@@ -342,7 +341,14 @@ export default function ImportXls() {
                     <td className="px-3 py-2">{formatTime(e.start_time)}</td>
                     <td className="px-3 py-2">{formatTime(e.end_time)}</td>
                     <td className="px-3 py-2">{e.break_minutes} min</td>
-                    <td className="px-3 py-2">{calcNetHours(e.start_time, e.end_time, e.break_minutes)}</td>
+                    <td className="px-3 py-2">
+                      {formatHoursHM(e.net_hours ?? 0)}
+                      {(e.not_credited_minutes ?? 0) > 0 && (
+                        <div className="text-xs text-gray-500">
+                          {`${formatHoursHM((e.not_credited_minutes ?? 0) / 60)} h nicht angerechnet`}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-gray-500">{e.note || '–'}</td>
                     <td className="px-3 py-2">
                       {e.has_conflict ? (
