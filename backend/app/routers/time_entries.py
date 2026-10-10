@@ -306,6 +306,34 @@ def _today_target_hours(db: Session, user: User, today: date) -> float:
     return float(calculation_service.get_day_presence_target(db, user, today))
 
 
+def _clock_blocks_and_grace(db: Session, user: User, today: date, open_entry) -> tuple:
+    """Spec 2026-10-08, 8.4/11.1/14 (PR2): Blöcke von heute als ``{"start",
+    "end"}`` und der Puffer, mit dem ``clock_out`` kappen wird — der
+    gespeicherte des offenen Eintrags (E80), sonst der aktuelle
+    Mandanten-Puffer. Ohne Stundenzählung kappt nichts → keine Blöcke.
+
+    Die Blöcke kommen datumsaufgelöst über ``get_scheduled_blocks`` (leer am
+    Wochenende, an Feiertagen und freien Sondertagen, #484) — nie aus der
+    Live-Spalte ``users.work_blocks``."""
+    from app.services import work_blocks_service, work_window_service
+
+    grace = (
+        work_window_service.grace_for_entry(db, open_entry)
+        if open_entry is not None
+        else work_window_service.get_grace_minutes(db, user.tenant_id)
+    )
+    if not getattr(user, "track_hours", True):
+        return [], grace
+    blocks = [
+        {
+            "start": work_blocks_service.minutes_to_hhmm(start),
+            "end": work_blocks_service.minutes_to_hhmm(end),
+        }
+        for start, end in work_window_service.get_scheduled_blocks(db, user, today)
+    ]
+    return blocks, grace
+
+
 @router.get("/clock-status", response_model=ClockStatusResponse)
 def get_clock_status(
     db: Session = Depends(get_db),
@@ -338,12 +366,18 @@ def get_clock_status(
 
     closed_minutes = _today_closed_net_minutes(db, current_user, today)
     target_hours = _today_target_hours(db, current_user, today)
+    # Spec 2026-10-08 (11.1): in JEDEM Zweig — auch nach dem Stale-Auto-Close
+    # (``open_entry`` ist dann None → Mandanten-Puffer) und gerade im nicht
+    # eingestempelten Zustand (Dashboard-Status in der Lücke, E69).
+    blocks_today, grace_minutes = _clock_blocks_and_grace(db, current_user, today, open_entry)
 
     if not open_entry:
         return ClockStatusResponse(
             is_clocked_in=False,
             today_net_minutes=closed_minutes,
             today_target_hours=target_hours,
+            blocks_today=blocks_today,
+            grace_minutes=grace_minutes,
         )
 
     # Calculate elapsed minutes in local time
@@ -364,6 +398,8 @@ def get_clock_status(
         elapsed_minutes=elapsed,
         today_net_minutes=closed_minutes + running_net,
         today_target_hours=target_hours,
+        blocks_today=blocks_today,
+        grace_minutes=grace_minutes,
     )
 
 

@@ -149,6 +149,12 @@ class ClockOutRequest(BaseModel):
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)
 
 
+class ClockBlock(BaseModel):
+    """Spec 2026-10-08, 8.4/14: ein Arbeitszeit-Block des heutigen Tages."""
+    start: str  # "HH:MM"
+    end: str    # "HH:MM"
+
+
 class ClockStatusResponse(BaseModel):
     is_clocked_in: bool
     current_entry: Optional[TimeEntryResponse] = None
@@ -162,3 +168,8 @@ class ClockStatusResponse(BaseModel):
     # #494/#431: Tagessoll von heute aus dem datumsaufgelösten Vertrags-Snapshot
     # (nicht aus den Live-Feldern der User-Zeile). Wochenende/track_hours=False → 0.
     today_target_hours: float = 0.0
+    # Spec 2026-10-08 (8.4, 11.1, 14): die Blöcke von heute — für die §4-Vorprüfung
+    # im StampWidget und den Dashboard-Status in der Lücke (E69) — und der
+    # Puffer, mit dem das Ausstempeln kappen wird (E80). In JEDEM Zweig.
+    blocks_today: List[ClockBlock] = []
+    grace_minutes: int = 15
