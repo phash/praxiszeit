@@ -30,10 +30,12 @@ vi.mock('../api/client', () => ({
 vi.mock('../contexts/ToastContext', () => ({
   useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
 }));
+// #502: Rolle je Test umschaltbar (Datumsfeld beim Bearbeiten nur fuer Admins).
+let mockRole: 'employee' | 'admin' = 'employee';
 vi.mock('../stores/authStore', () => ({
   useAuthStore: () => ({
     user: {
-      id: 'u1', role: 'employee', weekly_hours: 40, work_days_per_week: 5,
+      id: 'u1', role: mockRole, weekly_hours: 40, work_days_per_week: 5,
       exempt_from_arbzg: false,
     },
   }),
@@ -81,6 +83,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  mockRole = 'employee';
   getMock.mockReset();
   putMock.mockReset();
   postMock.mockReset();
@@ -234,5 +237,51 @@ describe('<TimeTracking /> Pflicht-Pause-Ausnahme (#499)', () => {
     fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
     await waitFor(() => expect(putMock).toHaveBeenCalled());
     expect(putMock.mock.calls[0][1]).not.toHaveProperty('break_waiver_reason');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #502: Mitarbeitende verschieben einen Eintrag nicht ueber das Datumsfeld des
+// Bearbeiten-Formulars auf einen anderen Tag — der Server lehnt das mit 403 ab
+// (Einträge vergangener Tage nur per Änderungsantrag). Das Feld ist beim
+// Bearbeiten deshalb gesperrt und sagt, warum; Admins behalten es.
+// ---------------------------------------------------------------------------
+describe('<TimeTracking /> Datum beim Bearbeiten (#502)', () => {
+  it('sperrt das Datumsfeld beim Bearbeiten fuer Mitarbeitende und nennt den Weg', async () => {
+    mockEntries([closedEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+
+    const dateInput = screen.getByLabelText('Datum') as HTMLInputElement;
+    expect(dateInput.disabled).toBe(true);
+    expect(dateInput.value).toBe(today);
+    const hint = screen.getByText(/nur per Änderungsantrag/);
+    expect(dateInput.getAttribute('aria-describedby')).toBe(hint.id);
+  });
+
+  it('schickt beim Speichern weiterhin das heutige Datum mit', async () => {
+    mockEntries([closedEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).toMatchObject({ date: today });
+  });
+
+  it('laesst das Datumsfeld beim NEUEN Eintrag offen', async () => {
+    mockEntries([]);
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    expect((screen.getByLabelText('Datum') as HTMLInputElement).disabled).toBe(false);
+    expect(screen.queryByText(/nur per Änderungsantrag/)).not.toBeInTheDocument();
+  });
+
+  it('laesst Admins das Datum beim Bearbeiten aendern', async () => {
+    mockRole = 'admin';
+    mockEntries([closedEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    expect((screen.getByLabelText('Datum') as HTMLInputElement).disabled).toBe(false);
+    expect(screen.queryByText(/nur per Änderungsantrag/)).not.toBeInTheDocument();
   });
 });

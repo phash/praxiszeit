@@ -502,6 +502,11 @@ export default function TimeTracking() {
   const totalNet = entries.reduce((sum, entry) => sum + entry.net_hours, 0);
   const weekdayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
   const isAdmin = user?.role === 'admin';
+  // #502: Mitarbeitende verschieben einen Eintrag beim Bearbeiten nicht auf
+  // einen anderen Tag — der Server lehnt jedes andere Datum als heute mit 403
+  // ab (Einträge vergangener Tage nur per Änderungsantrag). Gespeichert wird
+  // weiter mit dem Datum des Eintrags (= heute).
+  const dateLocked = !!editingId && !isAdmin;
 
   return (
     <div>
@@ -708,8 +713,15 @@ export default function TimeTracking() {
                   setErrors({});
                 }}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                disabled={dateLocked}
+                aria-describedby={dateLocked ? 'tt-date-locked-hint' : undefined}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
               />
+              {dateLocked && (
+                <p id="tt-date-locked-hint" className="text-sm text-gray-500 mt-1">
+                  Das Datum lässt sich nur per Änderungsantrag ändern.
+                </p>
+              )}
             </div>
             <div>
               <label htmlFor="start-time" className="block text-sm font-medium text-gray-700 mb-1">Von</label>
