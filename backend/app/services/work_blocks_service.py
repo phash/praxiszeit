@@ -244,9 +244,13 @@ def block_break_notices(week: Optional[list], grace: int, *, exempt: bool) -> li
                 )
         if not exempt:
             if net > 10 * 60:
+                # Erfassen (manuell, Admin, Antrag) sperrt die 10-h-Grenze hart (422);
+                # das Ausstempeln schließt den Eintrag und meldet nur DAILY_HOURS_HARD
+                # (Review R2-b in time_entries.clock_out) — der Text verspricht keine
+                # Sperre, die es dort nicht gibt.
                 notices.append(
-                    f"{label}: Tagessoll {_hm(net)} h – geplanter Verstoß gegen § 3 ArbZG; eine Erfassung "
-                    f"nach diesem Plan lehnt die Zeiterfassung mit 400 ab."
+                    f"{label}: Tagessoll {_hm(net)} h – geplanter Verstoß gegen § 3 ArbZG; ein Eintrag "
+                    f"nach diesem Plan wird beim Erfassen abgelehnt und beim Ausstempeln als Verstoß gemeldet."
                 )
             elif net > 8 * 60:
                 notices.append(

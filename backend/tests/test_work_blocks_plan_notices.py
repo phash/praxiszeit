@@ -16,8 +16,10 @@ def test_two_20_minute_gaps_are_not_enough_for_10_20_hours():
     week = block_week(mon=[("07:00", "10:40"), ("11:00", "14:20"), ("14:40", "18:00")])
     notices = block_break_notices(week, 0, exempt=False)
     assert "Mo: geplant 10:20 h Arbeit, eingeplante Pausen 40 Min – nach § 4 ArbZG sind mindestens 45 Minuten nötig." in notices
-    assert ("Mo: Tagessoll 10:20 h – geplanter Verstoß gegen § 3 ArbZG; eine Erfassung nach diesem Plan lehnt "
-            "die Zeiterfassung mit 400 ab.") in notices
+    # Review Task 5: die harte 10-h-Sperre antwortet mit 422 (nicht 400), und das
+    # Ausstempeln sperrt gar nicht (Review R2-b, Spec 8.1 „beim Ausstempeln Warnung“).
+    assert ("Mo: Tagessoll 10:20 h – geplanter Verstoß gegen § 3 ArbZG; ein Eintrag nach diesem Plan wird "
+            "beim Erfassen abgelehnt und beim Ausstempeln als Verstoß gemeldet.") in notices
 
 
 def test_lunch_gap_of_30_minutes_at_grace_15_disappears():
