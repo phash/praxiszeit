@@ -22,7 +22,7 @@ test.describe('Employee Time Tracking', () => {
 
     // Check for success toast
     await expect(
-      employeePage.locator('[role="alert"]').filter({ hasText: 'erstellt' })
+      employeePage.locator('[role="alert"]').filter({ hasText: 'Zeiteintrag erfolgreich erstellt' })
     ).toBeVisible({ timeout: 10000 });
 
     // Verify the entry appears in the table (use .first() since desktop+mobile views may both show it)
