@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  blocksSpan, formatWeekBlocks, gapSegments, hhmmToMinutes, isInBlockGap, isLegacyWeek,
+  blocksSpan, formatWeekBlocks, gapSegments, hhmmToMinutes, hullClamp, isInBlockGap, isLegacyWeek,
   notCreditedMinutes, stampNoteProps,
 } from './workBlocks';
 import { K_CASES_FE } from './workBlocksCases';
@@ -81,6 +81,37 @@ describe('gapSegments — Zwilling von gap_segments (Σ = uncredited_minutes)', 
     expect(gapSegments(B, 0, '08:00', '18:00')).toEqual([180]);
     expect(gapSegments(B, 30, '08:00', '18:00')).toEqual([120]);
     expect(gapSegments(B, 90, '08:00', '18:00')).toEqual([]); // Lücke 180 ≤ 2 × 90
+  });
+});
+
+// Gesamtreview PR2 (Fund 13): der Server prüft §4 auf der GEKAPPTEN Zeit (E43).
+// Die Vorprüfung im Browser zog bis dahin nur die Lückensegmente ab und zählte
+// Stempelzeit außerhalb der Hülle als Arbeitszeit — Altfenster = alle Bestandskunden.
+describe('hullClamp — Zwilling der Hülle in clamp (Spec 6.1)', () => {
+  const closed = K_CASES_FE.filter((k) => k.end !== null && !k.creditOverride);
+  it.each(closed.map((k) => [k.id, k] as const))('%s: gespeicherte wirksame Zeiten', (_id, k) => {
+    expect(hullClamp(k.dayBlocks, 15, k.start, k.end!)).toEqual({
+      start: k.stored.start_time.substring(0, 5),
+      end: k.stored.end_time!.substring(0, 5),
+    });
+  });
+
+  it('Altfenster 08:00–13:30, gestempelt 07:45–14:30 → 07:45–13:45 (6:00 h)', () => {
+    expect(hullClamp([{ start: '08:00', end: '13:30' }], 15, '07:45', '14:30'))
+      .toEqual({ start: '07:45', end: '13:45' });
+  });
+
+  it('Platzhalter 23:59 (halboffenes Altfenster) kappt das Ende nicht', () => {
+    expect(hullClamp([{ start: '07:30', end: '23:59' }], 15, '07:00', '23:30'))
+      .toEqual({ start: '07:15', end: '23:30' });
+  });
+
+  it('ohne Blöcke, über Mitternacht und mit Sekunden', () => {
+    expect(hullClamp([], 15, '07:00', '19:00')).toEqual({ start: '07:00', end: '19:00' });
+    expect(hullClamp([{ start: '08:00', end: '16:00' }], 15, '22:00', '06:00'))
+      .toEqual({ start: '22:00', end: '06:00' });
+    expect(hullClamp([{ start: '08:00', end: '16:00' }], 15, '07:00:00', '17:00:00'))
+      .toEqual({ start: '07:45', end: '16:15' });
   });
 });
 

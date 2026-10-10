@@ -8,7 +8,7 @@ import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { computeBreakError } from '../utils/breakValidation';
 import { isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
-import { gapSegments } from '../utils/workBlocks';
+import { gapSegments, hullClamp } from '../utils/workBlocks';
 import type { TimeBlock } from '../types/workBlocks';
 
 interface ClockStatus {
@@ -137,8 +137,13 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
       const endHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       // Spec 8.4: eine Lücke zwischen den Arbeitsblöcken (Segment ≥ 15 Min) deckt
       // §4 — dann keine Pausenabfrage; der Server rechnet genauso (E43).
-      const segs = gapSegments(status?.blocks_today ?? [], status?.grace_minutes ?? 15, startHHMM, endHHMM);
-      const breakErr = computeBreakError([], startHHMM, endHHMM, breakMinutes, false, segs);
+      // Gesamtreview PR2 (Fund 13): auch die Hülle — §4 gilt der ANGERECHNETEN
+      // Zeit, Stempelzeit nach [letzter Block + Puffer] ist keine Arbeitszeit.
+      const blocks = status?.blocks_today ?? [];
+      const grace = status?.grace_minutes ?? 15;
+      const credited = hullClamp(blocks, grace, startHHMM, endHHMM);
+      const segs = gapSegments(blocks, grace, credited.start, credited.end);
+      const breakErr = computeBreakError([], credited.start, credited.end, breakMinutes, false, segs);
       if (breakErr && !waiver) {
         setBreakWarn(breakErr);
         notifyStillClockedIn(breakErr);

@@ -187,6 +187,28 @@ describe('<StampWidget /> §4-Vorprüfung mit Lückensegmenten (Spec 8.4)', () =
       '/time-entries/clock-out', expect.objectContaining({ break_minutes: 0 })));
   });
 
+  // Gesamtreview PR2 (Fund 13): Altfenster 08:00–13:30, Puffer 15, eingestempelt
+  // 07:45, Ausstempeln 14:30 — angerechnet 07:45–13:45 = 6:00 h, der Server
+  // braucht keine Pause (E43; die Anwesenheit meldet er nur weich, P14). Wer
+  // hier eine nicht genommene Pause einträgt, verlöre 30 Min angerechnete Zeit.
+  it('rechnet §4 auf der gekappten Zeit: Altfenster, Ausstempeln nach der Hülle', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-01T14:30:00'));
+    getMock.mockImplementation((url: string) =>
+      url === '/time-entries/clock-status'
+        ? Promise.resolve({ data: {
+          is_clocked_in: true, current_entry: { id: 'te-open', start_time: '07:45:00' },
+          elapsed_minutes: 405, blocks_today: [{ start: '08:00', end: '13:30' }], grace_minutes: 15,
+        } })
+        : Promise.resolve({ data: {} }));
+    postMock.mockResolvedValueOnce({ data: { warnings: [] } });
+    await openBreakDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
+      '/time-entries/clock-out', expect.objectContaining({ break_minutes: 0 })));
+    expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
+  });
+
   it('Kontrolle: ohne Blöcke greift die Vorprüfung wie bisher (10 h ohne Pause)', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-06-01T18:00:00'));

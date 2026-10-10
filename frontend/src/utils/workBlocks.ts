@@ -34,6 +34,11 @@ export function hhmmToMinutes(value: string): number {
   return h * 60 + m;
 }
 
+/** Minuten seit Mitternacht → "HH:MM". */
+function toHHMM(m: number): string {
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
 function sortedMinutes(blocks: TimeBlock[]): [number, number][] {
   return blocks
     .map((b) => [hhmmToMinutes(b.start), hhmmToMinutes(b.end)] as [number, number])
@@ -68,6 +73,40 @@ export function gapSegments(
   return out;
 }
 
+/**
+ * Zwilling der Hülle in `work_window_service._clamp_core` (Spec 6.1): Beginn vor
+ * [erster Block − Puffer] und Ende nach [letzter Block + Puffer] werden darauf
+ * gekappt — dieselben floor/ceil-Werte wie `gapSegments`. Ein letzter Block bis
+ * 23:59 ist der Ende-Platzhalter eines halboffenen Altfensters und kappt das
+ * Ende nicht (Spec 5.3). Liegt der Eintrag ganz außerhalb der Hülle (Kollaps),
+ * gilt Beginn = Ende = eingetragener Beginn: angerechnet 0 h, wie der Server.
+ *
+ * Gesamtreview PR2 (Fund 13): der Server prüft §4 auf der GEKAPPTEN Zeit (E43).
+ * Die Vorprüfungen im Browser (StampWidget, TimeTracking) rechnen deshalb mit
+ * diesen Zeiten — sonst verlangten sie für Stempelzeit außerhalb der Hülle
+ * eine Pause, die angerechnete Zeit kostet. Ohne Blöcke und bei Ende ≤ Beginn
+ * (über Mitternacht) unverändert.
+ */
+export function hullClamp(
+  blocks: TimeBlock[] | null | undefined, grace: number, start: string, end: string,
+): { start: string; end: string } {
+  const startHHMM = start.substring(0, 5);
+  const endHHMM = end.substring(0, 5);
+  if (!blocks || blocks.length === 0) return { start: startHHMM, end: endHHMM };
+  const s = hhmmToMinutes(start);
+  const e = hhmmToMinutes(end);
+  // Unvollständige Eingabe (leeres Feld) oder über Mitternacht: unverändert.
+  if (Number.isNaN(s) || Number.isNaN(e) || e <= s) return { start: startHHMM, end: endHHMM };
+  const mins = sortedMinutes(blocks);
+  const lastEnd = mins[mins.length - 1][1];
+  const floor = Math.max(0, Math.min(mins[0][0] - grace, LAST_MINUTE));
+  const ceil = Math.max(0, Math.min(lastEnd + grace, LAST_MINUTE));
+  const effS = s < floor ? floor : s;
+  const effE = lastEnd < LAST_MINUTE && e > ceil ? ceil : e;
+  if (effS >= effE) return { start: startHHMM, end: startHHMM };
+  return { start: toHHMM(effS), end: toHHMM(effE) };
+}
+
 /** Spec 14 / E69: liegt `minutes` in einer UNGESCHRUMPFTEN Lücke (Ende Block i
  * bis Beginn Block i+1)? Laut Plan beginnt die Pause am Blockende, nicht erst
  * nach dem Puffer — der geschrumpfte Wert gilt nur für die Anrechnung. */
@@ -92,7 +131,6 @@ export function blocksSpan(blocks: TimeBlock[] | null | undefined): { start: str
   const first = mins[0][0];
   const last = Math.max(...mins.map(([, e]) => e));
   if (first === 0 || last === LAST_MINUTE) return null;
-  const toHHMM = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
   return { start: toHHMM(first), end: toHHMM(last) };
 }
 

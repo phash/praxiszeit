@@ -24,7 +24,7 @@ import { BREAK_EXCEPTION_DISABLED_HINT } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
 import { useUIStore } from '../stores/uiStore';
 import { RawStampNote } from '../components/RawStampNote';
-import { blocksSpan, gapSegments, hhmmToMinutes, stampNoteProps, type StampEntry } from '../utils/workBlocks';
+import { blocksSpan, gapSegments, hhmmToMinutes, hullClamp, stampNoteProps, type StampEntry } from '../utils/workBlocks';
 import type { TimeBlock } from '../types/workBlocks';
 
 interface TimeEntry extends StampEntry {
@@ -389,13 +389,21 @@ export default function TimeTracking() {
       };
     });
     const editing = editingId ? entries.find((x) => x.id === editingId) : undefined;
+    // Gesamtreview PR2 (Fund 13): §4 rechnet der Server auf der GEKAPPTEN Zeit
+    // (E43) — auch die Hülle, nicht nur die Lücke. Bestehende Einträge tragen
+    // ihre wirksamen Zeiten schon; die Eingabe wird hier wie beim Speichern
+    // gekappt. Ein anerkannter Eintrag wird nicht gekappt (P3).
+    const newGrace = editing?.clamp_grace_minutes ?? clockInfo.grace;
+    const newSpan = editing?.credit_override
+      ? { start: formData.start_time, end: formData.end_time }
+      : hullClamp(dayBlocks, newGrace, formData.start_time, formData.end_time);
     const newSegs = editing?.credit_override
       ? []
-      : gapSegments(dayBlocks, editing?.clamp_grace_minutes ?? clockInfo.grace, formData.start_time, formData.end_time);
+      : gapSegments(dayBlocks, newGrace, newSpan.start, newSpan.end);
     const breakError = computeBreakError(
       existingBlocks,
-      formData.start_time,
-      formData.end_time,
+      newSpan.start,
+      newSpan.end,
       formData.break_minutes,
       !!user?.exempt_from_arbzg,
       newSegs,
@@ -436,9 +444,15 @@ export default function TimeTracking() {
     // deckt (sonst würde die Pause zusätzlich zur Lücke abgezogen).
     let submitData: typeof formData & { break_waiver_reason?: string } = { ...formData };
     if (!editingId && submitData.break_minutes === 0) {
-      const gross = hhmmToMinutes(submitData.end_time) - hhmmToMinutes(submitData.start_time);
-      const segs = submitData.date === format(new Date(), 'yyyy-MM-dd')
-        ? gapSegments(clockInfo.blocks, clockInfo.grace, submitData.start_time, submitData.end_time)
+      // Gesamtreview PR2 (Fund 13): angerechnet = gekappt (Hülle) minus Lücke —
+      // eine Pause für Stempelzeit außerhalb der Hülle kostete angerechnete Zeit.
+      const isToday = submitData.date === format(new Date(), 'yyyy-MM-dd');
+      const span = isToday
+        ? hullClamp(clockInfo.blocks, clockInfo.grace, submitData.start_time, submitData.end_time)
+        : { start: submitData.start_time, end: submitData.end_time };
+      const gross = hhmmToMinutes(span.end) - hhmmToMinutes(span.start);
+      const segs = isToday
+        ? gapSegments(clockInfo.blocks, clockInfo.grace, span.start, span.end)
         : [];
       const credited = gross - segs.reduce((a, b) => a + b, 0);
       const covered = segs.filter((s) => s >= 15).reduce((a, b) => a + b, 0);

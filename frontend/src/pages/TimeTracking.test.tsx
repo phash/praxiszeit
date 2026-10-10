@@ -460,6 +460,52 @@ describe('<TimeTracking /> Blöcke von heute (Spec 8.4, 14)', () => {
     expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '08:00', end_time: '18:00', break_minutes: 0 });
   });
 
+  // Gesamtreview PR2 (Fund 13): Altfenster 08:00–13:30, Puffer 15. Eingetragen
+  // 07:45–14:30 = 6:45 h brutto, angerechnet 07:45–13:45 = 6:00 h — der Server
+  // prüft §4 darauf (E43) und braucht keine Pause. Weder Hinweis noch die
+  // automatische 30-Min-Pause (sie kostete 30 Min angerechnete Zeit).
+  it('Altfenster: §4 und automatische Pause rechnen mit der gekappten Zeit', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') {
+        return Promise.resolve({ data: { is_clocked_in: false, blocks_today: [{ start: '08:00', end: '13:30' }], grace_minutes: 15 } });
+      }
+      if (url.includes('/settings')) return Promise.resolve({ data: {} });
+      if (url.includes('/time-entries')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [] });
+    });
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('13:30'));
+    fireEvent.change(screen.getByLabelText('Von'), { target: { value: '07:45' } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '14:30' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '07:45', end_time: '14:30', break_minutes: 0 });
+    expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
+  });
+
+  it('Kontrolle: angerechnet über 6 h bleibt der §4-Hinweis', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') {
+        return Promise.resolve({ data: { is_clocked_in: false, blocks_today: [{ start: '08:00', end: '15:00' }], grace_minutes: 15 } });
+      }
+      if (url.includes('/settings')) return Promise.resolve({ data: {} });
+      if (url.includes('/time-entries')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [] });
+    });
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('15:00'));
+    fireEvent.change(screen.getByLabelText('Von'), { target: { value: '07:45' } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '16:00' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    // angerechnet 07:45–15:15 = 7:30 h → §4-Hinweis (Pause 0) wie bisher
+    expect(await screen.findByText(/Bei >6h Arbeitszeit sind mind\. 30 Min\. Pause erforderlich \(ArbZG §4\)/)).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
   // Spec 8.2 + E80: bestehende Einträge des Tages gehen mit IHREM Puffer in die
   // §4-Vorprüfung ein. Ihre Lückensegmente zählen als Pause und der gespeicherte
   // `uncredited_minutes` als Abzug — weicht Σ Segmente vom gespeicherten Wert ab,
