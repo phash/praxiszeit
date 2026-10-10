@@ -306,4 +306,7 @@ def test_open_entry_loses_checks_every_kink():
     assert wws.open_entry_loses(old, [(540, 720)], 15, time(8), time(8, 10)) is True  # Beginn vor neuer Hülle
     assert wws.open_entry_loses([(480, 720), (900, 1080)], [(480, 720), (840, 1080)], 15,
                                 time(8), time(10)) is False                          # Lücke kleiner
+    # Verlust nur an der inneren Knickstelle 12:15 (alt 255 gegen neu 225 Min) —
+    # bei „jetzt" (120/120) und 23:59 (255/285) verliert der Eintrag nichts
+    assert wws.open_entry_loses([(480, 720)], [(480, 600), (660, 780)], 15, time(8), time(10)) is True
     assert wws.open_entry_loses([], [], 15, time(8), time(10)) is False
