@@ -1,11 +1,13 @@
 import re
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
-from typing import Any, Optional
+from typing import Any, List, Optional
 from datetime import datetime, date
 from decimal import Decimal
 from uuid import UUID
 from app.models.user import UserRole
-from app.schemas.validators import strip_legacy_window_fields, validate_employment_order
+from app.schemas.validators import strip_legacy_window_fields, validate_employment_order, validate_week_blocks
+from app.schemas.working_hours_change import DayBlocksIn
+from app.services import work_blocks_service
 
 
 def _validate_password_complexity(password: str) -> str:
@@ -78,6 +80,9 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(..., min_length=10)
     role: UserRole = UserRole.EMPLOYEE
+    # Spec 2026-10-08 (E28, 4.2): Startvertrag mit Arbeitszeit-Blöcken. STRENG
+    # geprüft — nur in diesem Schreibschema, nie in den Leseschemas (E29).
+    work_blocks: Optional[List[DayBlocksIn]] = None
     # Spec 11.4 (E26): gesetzt vom before-Validator, nie serialisiert.
     legacy_window_fields_sent: bool = Field(False, exclude=True)
 
@@ -90,6 +95,31 @@ class UserCreate(UserBase):
     @classmethod
     def check_password(cls, v: str) -> str:
         return _validate_password_complexity(v)
+
+    # Reihenfolge zählt: Pydantic führt die ``after``-Validatoren einer Klasse in
+    # Definitionsreihenfolge aus — ``derive_from_work_blocks`` muss das Soll
+    # setzen, BEVOR ``check_daily_schedule_matches_weekly_hours`` den Tagesplan
+    # prüft und ``weekly_hours`` summiert.
+    @model_validator(mode='after')
+    def derive_from_work_blocks(self):
+        """Spec 4.2: ableiten und ÜBERSCHREIBEN statt 422 — ``UserBase.weekly_hours``
+        ist Pflichtfeld, das Anlegeformular schickt es immer mit (Präzedenz
+        „Fund E"). Bewusst anders als ``WorkingHoursChangeCreate.derive_from_blocks``,
+        das ``weekly_hours``/``hours_*`` neben ``blocks`` mit 422 ablehnt.
+        ``track_hours=False`` wird angenommen (11.2): die Zeile speichert Blöcke
+        und abgeleitete ``hours_*``, ohne Stundenzählung wirken aber weder Soll
+        noch Kappung (E35, E63)."""
+        if self.work_blocks is None:
+            return self
+        week = validate_week_blocks(self.work_blocks)
+        derived = work_blocks_service.derive_targets(week)
+        self.work_blocks = [DayBlocksIn.model_validate(d) for d in week]
+        self.use_daily_schedule = True
+        for field in work_blocks_service.HOURS_FIELDS:
+            setattr(self, field, float(derived[field]))
+        self.weekly_hours = float(derived["weekly_hours"])
+        self.work_days_per_week = derived["work_days_per_week"]
+        return self
 
     @model_validator(mode='after')
     def check_daily_schedule_matches_weekly_hours(self):

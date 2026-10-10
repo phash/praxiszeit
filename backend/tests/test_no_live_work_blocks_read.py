@@ -6,7 +6,9 @@ Der Guard prüft per ``ast`` jeden Attributzugriff ``.work_blocks`` und jedes
 ``getattr/setattr/hasattr(…, "work_blocks", …)`` in ``app/`` und vergleicht die
 Fundstellen (Datei, umschließende Funktion) mit der Erlaubnisliste. PR2 ergänzt
 den Art.-15/20-Export (``lifecycle_service._user_dict``, ``auth`` ``/me/export``)
-und den §16-Notfallexport (``superadmin._user_dict``).
+und den §16-Notfallexport (``superadmin._user_dict``), PR3 den Startvertrag
+beim Anlegen (``admin_users.create_user`` und die Ableitung im Schreibschema
+``UserCreate.derive_from_work_blocks``, Spec 4.2/E28).
 ``work_blocks_today`` ist ein anderer Name und entsteht über den Resolver.
 """
 import ast
@@ -21,6 +23,8 @@ ALLOWED = {
     ("app/services/lifecycle_service.py", "_user_dict"),
     ("app/routers/auth.py", "export_my_data"),
     ("app/routers/superadmin.py", "_user_dict"),
+    ("app/routers/admin_users.py", "create_user"),           # Spec 9.8 / E28: Startvertrag
+    ("app/schemas/user.py", "derive_from_work_blocks"),      # Spec 4.2: Ableitung im Schreibschema
 }
 
 

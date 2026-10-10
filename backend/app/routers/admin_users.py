@@ -1169,6 +1169,13 @@ def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_us
         milog_working_time_account=user_data.milog_working_time_account,  # #377
         agreed_monthly_hours=user_data.agreed_monthly_hours,  # #377 Baustein 2a
         use_fixed_monthly_target=user_data.use_fixed_monthly_target,  # #377 Baustein 2b
+        # Spec E28: Startvertrag — kanonische JSON-Woche (Strings, nie time).
+        # Soll (use_daily_schedule/hours_*/weekly_hours/work_days_per_week) hat
+        # UserCreate.derive_from_work_blocks bereits daraus abgeleitet.
+        work_blocks=(
+            [d.model_dump() for d in user_data.work_blocks]
+            if user_data.work_blocks is not None else None
+        ),
         tenant_id=current_user.tenant_id,
     )
 

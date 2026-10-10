@@ -215,3 +215,41 @@ def test_put_response_carries_work_blocks_today(admin_client, employee_user, _db
     assert resp.status_code == 200, resp.text
     assert resp.json()["work_blocks"] == ODD
     assert resp.json()["work_blocks_today"] == LATER
+
+
+# --- PR3 Task 4 (Spec E28, 4.2, 9.8): Startvertrag mit Blöcken beim Anlegen ---
+
+from tests.work_blocks_fixtures import K_BLOCKS, block_week  # noqa: E402
+
+BLOCK_USER = {**NEW_USER, "username": "blockneu", "weekly_hours": 40.0, "work_days_per_week": 5,
+              "use_daily_schedule": False, "hours_monday": 9.0}
+ANNA = block_week(pause=0, mon=[("08:00", "12:00"), ("15:00", "18:00")], tue=[("08:00", "12:00")],
+                  thu=[("08:00", "12:00")])
+
+
+def test_post_with_work_blocks_derives_and_overrides(admin_client, _db_session):
+    """Spec 4.2: abweichende Clientwerte werden überschrieben, kein 422."""
+    resp = admin_client.post("/api/admin/users", json={**BLOCK_USER, "work_blocks": ANNA})
+    assert resp.status_code == 201, resp.text
+    body = resp.json()["user"]
+    assert body["use_daily_schedule"] is True
+    assert (body["hours_monday"], body["hours_tuesday"], body["hours_wednesday"]) == (7.0, 4.0, 0.0)
+    assert (body["weekly_hours"], body["work_days_per_week"]) == (15.0, 3)
+    assert body["work_blocks"] == ANNA
+    assert body["work_blocks_today"] == ANNA
+
+
+def test_post_with_invalid_work_blocks_is_422(admin_client):
+    resp = admin_client.post("/api/admin/users",
+                             json={**BLOCK_USER, "work_blocks": block_week(mon=[("08:07", "12:00")])})
+    assert resp.status_code == 422, resp.text
+    assert "5-Minuten-Raster" in resp.text
+
+
+def test_post_with_work_blocks_and_track_hours_off_is_accepted(admin_client):
+    """Spec 11.2: angenommen, ohne Wirkung, solange keine Stunden gezählt werden."""
+    resp = admin_client.post("/api/admin/users",
+                             json={**BLOCK_USER, "username": "blockleitend", "track_hours": False,
+                                   "work_blocks": K_BLOCKS})
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["user"]["work_blocks"] == K_BLOCKS
