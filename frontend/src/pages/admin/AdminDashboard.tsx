@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
-import { Users, Clock, TrendingUp, X, Calendar, FileText, ChevronRight, Mail, Briefcase, ArrowUp, ArrowDown, Search, Plus, Edit2, Trash2, Save, ScrollText, BookCheck } from 'lucide-react';
+import { Users, Clock, TrendingUp, X, Calendar, FileText, ChevronRight, Mail, Briefcase, ArrowUp, ArrowDown, Search, Plus, Trash2, Save, ScrollText, BookCheck } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -19,7 +19,7 @@ import UpdateBanner from '../../components/UpdateBanner';
 // Geteilt mit dem Änderungsprotokoll (`admin/AuditLog.tsx`) — dieselben
 // Audit-Zeilen, dieselbe Darstellung.
 import AuditValues from '../../components/AuditValues';
-import { RawStampNote } from '../../components/RawStampNote';
+import EmployeeTimeEntryTable, { type EmployeeTimeEntry } from './EmployeeTimeEntryTable';
 
 interface EmployeeReport {
   user_id: string;
@@ -46,19 +46,10 @@ interface EmployeeReport {
   weekly_hours_changes?: WeeklyHoursChangeInPeriod[];
 }
 
-interface TimeEntry {
-  id: string;
-  date: string;
-  start_time: string;
-  end_time: string | null; // #382: null bei offenem (eingestempeltem) Eintrag — Deref nur über formatClockTime
-  break_minutes: number;
-  note?: string;
-  // #201/#462: gesetzt, wenn die Zeit auf das Arbeitszeit-Fenster gekappt wurde.
-  // Ohne die Anzeige sieht der Admin nur die gekappte Zeit und erfährt nie, dass
-  // seine Eingabe verändert wurde — der Kern der Meldung #462.
-  raw_start_time?: string | null;
-  raw_end_time?: string | null;
-}
+// Spec 2026-10-08 (12.3): Felder inkl. nicht angerechneter Zeit — eine Quelle
+// mit der herausgelösten Detailtabelle. #201/#462: raw_start_time/raw_end_time
+// bleiben dort Teil des Typs; ohne die Anzeige sähe der Admin nur die gekappte Zeit.
+type TimeEntry = EmployeeTimeEntry;
 
 interface Absence {
   id: string;
@@ -1485,51 +1476,11 @@ export default function AdminDashboard() {
                       {employeeTimeEntries.length === 0 ? (
                         <p className="px-4 py-3 text-sm text-gray-500">Keine Zeiteinträge vorhanden</p>
                       ) : (
-                        <table className="w-full">
-                          <thead className="bg-gray-50 sticky top-0">
-                            <tr>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Datum</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Von</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Bis</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Pause</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Notiz</th>
-                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Aktionen</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {employeeTimeEntries.map((entry) => (
-                              <tr key={entry.id} className="hover:bg-gray-50">
-                                <td className="px-4 py-2 text-sm">{format(new Date(entry.date), 'dd.MM.yyyy')}</td>
-                                <td className="px-4 py-2 text-sm">
-                                  {formatClockTime(entry.start_time)}
-                                  <RawStampNote raw={entry.raw_start_time} effective={entry.start_time} side="start" />
-                                </td>
-                                <td className="px-4 py-2 text-sm">
-                                  {formatClockTime(entry.end_time, 'offen')}
-                                  <RawStampNote raw={entry.raw_end_time} effective={entry.end_time} side="end" />
-                                </td>
-                                <td className="px-4 py-2 text-sm">{entry.break_minutes} min</td>
-                                <td className="px-4 py-2 text-sm text-gray-500">{entry.note || '-'}</td>
-                                <td className="px-4 py-2 text-right text-sm space-x-1">
-                                  <button
-                                    onClick={() => handleAdminEditEntry(entry)}
-                                    className="text-primary hover:text-primary-dark p-1 rounded-sm"
-                                    aria-label={`Eintrag vom ${format(new Date(entry.date), 'dd.MM.yyyy')} bearbeiten`}
-                                  >
-                                    <Edit2 size={14} aria-hidden="true" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleAdminDeleteEntry(entry.id)}
-                                    className="text-red-600 hover:text-red-800 p-1 rounded-sm"
-                                    aria-label={`Eintrag vom ${format(new Date(entry.date), 'dd.MM.yyyy')} löschen`}
-                                  >
-                                    <Trash2 size={14} aria-hidden="true" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                        <EmployeeTimeEntryTable
+                          entries={employeeTimeEntries}
+                          onEdit={handleAdminEditEntry}
+                          onDelete={handleAdminDeleteEntry}
+                        />
                       )}
                     </div>
                   </div>

@@ -641,3 +641,20 @@ describe('<MonthlyJournal /> §10-Ausnahmegrund (#485)', () => {
     expect(screen.getByText(/gestempelt 08:52/)).toBeInTheDocument();
   });
 });
+
+const k7Entry = {
+  id: 'te1', start_time: '07:45', end_time: '18:15', break_minutes: 0, net_hours: 8,
+  raw_start_time: '07:00', raw_end_time: '19:00', uncredited_minutes: 150,
+  not_credited_minutes: 240, credit_override: false, auto_closed: false,
+};
+const creditJournal = { ...validJournal, days: [{ ...validDay, time_entries: [k7Entry] }] };
+
+describe('<MonthlyJournal /> nicht angerechnete Zeit (Spec 13.1, PR2)', () => {
+  it('zeigt die Zeile „nicht angerechnet" am Eintrag', async () => {
+    getMock.mockResolvedValue({ data: creditJournal });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    expect(await screen.findByText(
+      'gestempelt 07:00–19:00 · angerechnet 8:00 h (07:45–18:15) · 4:00 h nicht angerechnet, davon 2:30 h zwischen den Blöcken',
+    )).toBeInTheDocument();
+  });
+});

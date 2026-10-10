@@ -24,8 +24,9 @@ import { BREAK_EXCEPTION_DISABLED_HINT } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
 import { useUIStore } from '../stores/uiStore';
 import { RawStampNote } from '../components/RawStampNote';
+import { stampNoteProps, type StampEntry } from '../utils/workBlocks';
 
-interface TimeEntry {
+interface TimeEntry extends StampEntry {
   id: string;
   date: string;
   start_time: string;
@@ -41,6 +42,12 @@ interface TimeEntry {
   break_waiver_reason?: string | null;
   raw_start_time?: string | null;
   raw_end_time?: string | null;
+  // Spec 2026-10-08 (7.1, P19): nur lesend, vom Server abgeleitet.
+  uncredited_minutes?: number;
+  not_credited_minutes?: number;
+  credit_override?: boolean;
+  auto_closed?: boolean;
+  clamp_grace_minutes?: number | null;
 }
 
 interface DailyScheduleUser {
@@ -920,14 +927,11 @@ export default function TimeTracking() {
                       <td className="px-6 py-4 text-sm text-gray-500">{weekday}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {entry.start_time.substring(0, 5)}
-                        <RawStampNote raw={entry.raw_start_time} effective={entry.start_time} side="start" />
+                        <RawStampNote {...stampNoteProps(entry)} />
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {entry.end_time ? (
-                          <>
-                            {entry.end_time.substring(0, 5)}
-                            <RawStampNote raw={entry.raw_end_time} effective={entry.end_time} side="end" />
-                          </>
+                          entry.end_time.substring(0, 5)
                         ) : (
                           <span className={`font-medium ${new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'text-danger' : 'text-green-600'}`}>offen</span>
                         )}
@@ -1028,16 +1032,7 @@ export default function TimeTracking() {
                         <span className="text-lg font-bold tabular-nums text-primary">{formatHoursHM(entry.net_hours)}h</span>
                       </div>
                       <TimeBar startTime={entry.start_time} endTime={entry.end_time} />
-                      {(entry.raw_start_time || entry.raw_end_time) && (
-                        <div className="text-xs text-gray-500 mb-2 space-y-0.5">
-                          {entry.raw_start_time && (
-                            <div>gestempelt {entry.raw_start_time.substring(0, 5)} · angerechnet ab {entry.start_time.substring(0, 5)}</div>
-                          )}
-                          {entry.raw_end_time && entry.end_time && (
-                            <div>gestempelt {entry.raw_end_time.substring(0, 5)} · angerechnet bis {entry.end_time.substring(0, 5)}</div>
-                          )}
-                        </div>
-                      )}
+                      <RawStampNote {...stampNoteProps(entry)} className="text-xs text-gray-500 mb-2 space-y-0.5" />
                       <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                         <div className="flex justify-between">
                           <span className="text-text-secondary">Arbeitszeit</span>

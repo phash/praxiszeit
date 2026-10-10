@@ -13,6 +13,7 @@ import ConfirmDialog from './ConfirmDialog';
 import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
 import { RawStampNote } from './RawStampNote';
+import { stampNoteProps } from '../utils/workBlocks';
 import { myReasons } from '../api/absenceReasons';
 import type { AbsenceReason } from '../api/absenceReasons';
 
@@ -27,6 +28,11 @@ interface TimeEntryItem {
   raw_start_time?: string | null;
   raw_end_time?: string | null;
   sunday_exception_reason?: string | null; // #485 §10 ArbZG
+  // Spec 2026-10-08 (13.2): nicht angerechnete Zeit, Anerkennung, Auto-Close.
+  uncredited_minutes?: number;
+  not_credited_minutes?: number;
+  credit_override?: boolean;
+  auto_closed?: boolean;
 }
 
 interface AbsenceItem {
@@ -797,8 +803,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               {day.time_entries.map((e, i) => (
                                 <div key={`w${i}`}>
                                   {e.start_time && e.end_time ? `${e.start_time.substring(0, 5)}–${e.end_time.substring(0, 5)}` : '–'}
-                                  <RawStampNote raw={e.raw_start_time} effective={e.start_time} side="start" className="text-xs text-gray-500" />
-                                  <RawStampNote raw={e.raw_end_time} effective={e.end_time} side="end" className="text-xs text-gray-500" />
+                                  <RawStampNote {...stampNoteProps(e)} className="text-xs text-gray-500" />
                                   {e.sunday_exception_reason && (
                                     <div className="text-xs text-amber-700">§10: {e.sunday_exception_reason}</div>
                                   )}

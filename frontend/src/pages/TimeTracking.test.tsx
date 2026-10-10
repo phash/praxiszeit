@@ -311,3 +311,26 @@ describe('<TimeTracking /> Datum beim Bearbeiten (#502)', () => {
     expect(screen.queryByText(HINT)).not.toBeInTheDocument();
   });
 });
+
+describe('<TimeTracking /> RawStampNote (Spec 13.1)', () => {
+  it('Tabelle und Mobilkarte nutzen dieselbe Komponente', async () => {
+    mockEntries([{
+      ...closedEntry, start_time: '07:45:00', raw_start_time: '07:37:00', not_credited_minutes: 8,
+    }]);
+    renderPage();
+    expect(await screen.findAllByText('gestempelt 07:37 · angerechnet ab 07:45')).toHaveLength(2);
+  });
+
+  // Die alte Inline-Kopie der Mobilkarte kannte nur die Hüllen-Zeilen — die
+  // Lückenzeile beweist, dass auch die Karte die Komponente nutzt.
+  it('Lückenzeile in Tabelle UND Mobilkarte', async () => {
+    mockEntries([{
+      ...closedEntry, start_time: '08:00:00', end_time: '18:00:00', break_minutes: 0, net_hours: 7.5,
+      uncredited_minutes: 150, not_credited_minutes: 150,
+    }]);
+    renderPage();
+    expect(await screen.findAllByText(
+      'gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet',
+    )).toHaveLength(2);
+  });
+});
