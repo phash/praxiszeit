@@ -9,8 +9,10 @@ vergangenen Tag, ohne Änderungsantrag. Einträge vergangener Tage ändern
 Mitarbeitende nur per Antrag; Anlegen und Löschen setzten das bereits durch.
 
 Zusätzlich: ein Datumswechsel prüft das Beschäftigungsfenster der Person des
-Eintrags (wie ``create_time_entry``), und ``TimeEntryUpdate.date`` lehnt ein
-Datum in der Zukunft ab (wie ``TimeEntryBase``)."""
+Eintrags (wie ``create_time_entry``) — auf beiden Bearbeiten-Routen, und das
+Admin-Anlegen (``admin_create_time_entry``) ebenso —, und
+``TimeEntryUpdate.date`` lehnt ein Datum in der Zukunft ab (wie
+``TimeEntryBase``)."""
 import datetime as dt
 from datetime import date, time, timedelta
 
@@ -108,50 +110,103 @@ def test_admin_future_date_rejected_by_schema(_db_session, employee_user, admin_
 
 
 # ── (b) Beschäftigungsfenster der Person des Eintrags ────────────────────────
+# Beide Routen, die ein Datum verschieben: die MA-Route (Admins bearbeiten dort
+# auch fremde Einträge) UND ``admin_update_time_entry`` — die Fläche, über die
+# AdminDashboard und Monatsjournal fremde Einträge tatsächlich bearbeiten.
+# Ohne die Prüfung dort landete ein Eintrag vor dem ersten Arbeitstag, und die
+# Ist-Rechnung (Fenster, #195) liess seine Stunden still aus dem Saldo fallen.
 
-def test_date_change_before_first_work_day_rejected(_db_session, employee_user, admin_user, admin_client):
+UPDATE_ROUTES = ["/api/time-entries/{id}", "/api/admin/time-entries/{id}"]
+
+
+@pytest.mark.parametrize("route", UPDATE_ROUTES)
+def test_date_change_before_first_work_day_rejected(_db_session, employee_user, admin_user, admin_client, route):
     employee_user.first_work_day = MON
     _db_session.commit()
     e = _entry(_db_session, employee_user, MON)
-    resp = admin_client.put(f"/api/time-entries/{e.id}", json={"date": FRI_BEFORE.isoformat()})
+    resp = admin_client.put(route.format(id=e.id), json={"date": FRI_BEFORE.isoformat()})
     assert resp.status_code == 400, resp.text
     assert resp.json()["detail"] == "Datum liegt vor dem ersten Arbeitstag"
     _db_session.refresh(e)
     assert e.date == MON
 
 
-def test_date_change_after_last_work_day_rejected(_db_session, employee_user, admin_user, admin_client):
+@pytest.mark.parametrize("route", UPDATE_ROUTES)
+def test_date_change_after_last_work_day_rejected(_db_session, employee_user, admin_user, admin_client, route):
     employee_user.last_work_day = date(2026, 5, 27)
     _db_session.commit()
     e = _entry(_db_session, employee_user, date(2026, 5, 25))
-    resp = admin_client.put(f"/api/time-entries/{e.id}", json={"date": FRI_BEFORE.isoformat()})
+    resp = admin_client.put(route.format(id=e.id), json={"date": FRI_BEFORE.isoformat()})
     assert resp.status_code == 400, resp.text
     assert resp.json()["detail"] == "Datum liegt nach dem letzten Arbeitstag"
     _db_session.refresh(e)
     assert e.date == date(2026, 5, 25)
 
 
-def test_window_check_uses_entry_owner_not_admin(_db_session, employee_user, admin_user, admin_client):
-    """Diese Route lässt Admins fremde Einträge bearbeiten — maßgeblich ist das
-    Fenster der Person des Eintrags, nicht das der bearbeitenden Admin."""
+@pytest.mark.parametrize("route", UPDATE_ROUTES)
+def test_window_check_uses_entry_owner_not_admin(_db_session, employee_user, admin_user, admin_client, route):
+    """Admins bearbeiten fremde Einträge — maßgeblich ist das Fenster der
+    Person des Eintrags, nicht das der bearbeitenden Admin."""
     admin_user.first_work_day = MON
     _db_session.commit()
     e = _entry(_db_session, employee_user, MON)
-    resp = admin_client.put(f"/api/time-entries/{e.id}", json={"date": FRI_BEFORE.isoformat()})
+    resp = admin_client.put(route.format(id=e.id), json={"date": FRI_BEFORE.isoformat()})
     assert resp.status_code == 200, resp.text
     _db_session.refresh(e)
     assert e.date == FRI_BEFORE
 
 
-def test_unchanged_date_outside_window_does_not_block_edit(_db_session, employee_user, admin_user, admin_client):
+@pytest.mark.parametrize("route", UPDATE_ROUTES)
+def test_unchanged_date_outside_window_does_not_block_edit(_db_session, employee_user, admin_user, admin_client, route):
     """Nur ein WECHSEL des Datums wird geprüft: das Formular schickt das
     gespeicherte Datum immer mit. Ein Alteintrag außerhalb eines später
     gesetzten Fensters bleibt per Notiz-/Zeitkorrektur reparierbar."""
     employee_user.first_work_day = MON
     _db_session.commit()
     e = _entry(_db_session, employee_user, FRI_BEFORE)
-    resp = admin_client.put(f"/api/time-entries/{e.id}", json={
+    resp = admin_client.put(route.format(id=e.id), json={
         "date": FRI_BEFORE.isoformat(), "note": "korrigiert"})
     assert resp.status_code == 200, resp.text
     _db_session.refresh(e)
     assert (e.date, e.note) == (FRI_BEFORE, "korrigiert")
+
+
+# ── (d) Admin-Anlegen: dasselbe Fenster wie beim MA-Anlegen ──────────────────
+# Parallelpfad zu ``create_time_entry``: das Monatsjournal und das
+# AdminDashboard legen fremde Einträge über ``admin_create_time_entry`` an.
+
+def _admin_create(admin_client, user, d):
+    return admin_client.post(f"/api/admin/users/{user.id}/time-entries", json={
+        "date": d.isoformat(), "start_time": "08:00", "end_time": "12:00", "break_minutes": 0})
+
+
+def _entries_on(db, user, d):
+    return db.query(TimeEntry).filter(TimeEntry.user_id == user.id, TimeEntry.date == d).count()
+
+
+def test_admin_create_before_first_work_day_rejected(_db_session, employee_user, admin_user, admin_client):
+    employee_user.first_work_day = MON
+    _db_session.commit()
+    resp = _admin_create(admin_client, employee_user, FRI_BEFORE)
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"] == "Datum liegt vor dem ersten Arbeitstag"
+    assert _entries_on(_db_session, employee_user, FRI_BEFORE) == 0
+
+
+def test_admin_create_after_last_work_day_rejected(_db_session, employee_user, admin_user, admin_client):
+    employee_user.last_work_day = date(2026, 5, 27)
+    _db_session.commit()
+    resp = _admin_create(admin_client, employee_user, FRI_BEFORE)
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"] == "Datum liegt nach dem letzten Arbeitstag"
+    assert _entries_on(_db_session, employee_user, FRI_BEFORE) == 0
+
+
+def test_admin_create_uses_target_window_not_admin(_db_session, employee_user, admin_user, admin_client):
+    """Kontrolltest: das Fenster der ADMIN spielt beim Anlegen für eine andere
+    Person keine Rolle."""
+    admin_user.first_work_day = MON
+    _db_session.commit()
+    resp = _admin_create(admin_client, employee_user, FRI_BEFORE)
+    assert resp.status_code == 201, resp.text
+    assert _entries_on(_db_session, employee_user, FRI_BEFORE) == 1

@@ -15,7 +15,7 @@ from app.services.break_validation_service import validate_daily_break, break_wa
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_DAILY_HOURS_WARN, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
-    BREAK_WAIVER_SOURCE,
+    BREAK_WAIVER_SOURCE, _assert_within_employment_window,
 )
 from app.services.arbzg_utils import is_night_work
 from app.services import work_window_service
@@ -81,6 +81,12 @@ def admin_create_time_entry(
     ).first()
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    # #502-Review: Parallelpfad zu ``create_time_entry`` — dasselbe
+    # Beschäftigungsfenster der Zielperson (nicht der Admin). Ein Eintrag vor
+    # dem ersten / nach dem letzten Arbeitstag fiele sonst still aus dem Ist
+    # (#195 fenstert die Ist-Seite).
+    _assert_within_employment_window(user, entry_data.date)
 
     # P5: Ankersperre auf die Zielperson vor Puffer, Snapshot und clamp.
     lock_user_row(db, current_user.tenant_id, user.id)
@@ -266,6 +272,16 @@ def admin_update_time_entry(
     # Spec 8.2: §4 und die Lückensegmente brauchen die betroffene Person.
     if affected_user is None:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    # #502-Review: ein Datums**wechsel** landet nur im Beschäftigungsfenster der
+    # Person des Eintrags — wie in ``update_time_entry``. Diese Route ist die,
+    # über die AdminDashboard und Monatsjournal fremde Einträge tatsächlich
+    # bearbeiten. Das unverändert mitgeschickte Datum wird nicht geprüft
+    # (Alteintrag außerhalb eines später gesetzten Fensters bleibt korrigierbar).
+    if (entry_data.date is not None
+            and "date" in entry_data.model_fields_set
+            and entry_data.date != entry.date):
+        _assert_within_employment_window(affected_user, entry_data.date)
 
     # Use provided values or fall back to existing.
     # Release-Review 1.18.2: der Rückfallwert ist der ROHSTEMPEL, nicht die
