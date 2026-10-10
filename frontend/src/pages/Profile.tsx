@@ -6,6 +6,7 @@ import { Lock, Save, Palette, User as UserIcon, Download, ShieldCheck, ShieldOff
 import { QRCodeSVG } from 'qrcode.react';
 import PasswordInput from '../components/PasswordInput';
 import MyQualificationsCard from '../components/MyQualificationsCard';
+import MyWorkScheduleCard from '../components/MyWorkScheduleCard';
 import { getErrorMessage } from '../utils/errorMessage';
 import { useToast } from '../contexts/ToastContext';
 import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../utils/calendarColors';
@@ -491,8 +492,10 @@ export default function Profile() {
         )}
       </div>
 
-      {/* #305 M2d: Meine Einweisungen (nur wenn Schichtplanung aktiv) */}
-      <div className="mt-6">
+      {/* Spec 2026-10-08, 14 / E67: Meine Arbeitszeit (heute gültige Blöcke + Verlauf);
+          #305 M2d: Meine Einweisungen (nur wenn Schichtplanung aktiv) */}
+      <div className="mt-6 space-y-6">
+        <MyWorkScheduleCard />
         <MyQualificationsCard />
       </div>
 

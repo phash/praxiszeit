@@ -48,7 +48,9 @@ from app.schemas.user import (
     ChangePasswordRequest, UpdateCalendarColorRequest,
     TotpSetupRequest, TotpSetupResponse, TotpVerifyRequest, TotpDisableRequest,
 )
+from app.schemas.work_schedule import MyWorkScheduleResponse
 from app.services import auth_service
+from app.services import work_schedule_service
 from app.middleware.auth import get_current_user
 from app.config import settings
 
@@ -412,6 +414,16 @@ def get_me(current_user: User = Depends(get_current_user)):
     Use this to lazily load data not included in the login response.
     """
     return UserResponse.model_validate(current_user)
+
+
+@router.get("/me/work-schedule", response_model=MyWorkScheduleResponse)
+def get_my_work_schedule(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Spec 2026-10-08, 14 / E67: die heute gültigen Arbeitszeit-Blöcke und ihr
+    Verlauf — nur eigene Daten, ohne Freitext (P12)."""
+    return work_schedule_service.build_my_work_schedule(db, current_user, now_local().date())
 
 
 @router.post("/change-password")
