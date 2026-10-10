@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { format } from 'date-fns';
 import MonthlyJournal, { isJournalData } from './MonthlyJournal';
+import { AUTO_CLOSED_HINT } from './CreditOverrideButton';
 
 // #382: clicking a user opens the journal. A non-journal 200 body (e.g. an HTML
 // login page returned in the auth-edge after a token_version-invalidated
@@ -682,6 +683,19 @@ describe('<MonthlyJournal /> Anerkennen und Monatssumme (Spec 13.2/13.3)', () =>
     fireEvent.click(screen.getByRole('button', { name: 'Zeit anerkennen' }));
     await waitFor(() => expect(postMock).toHaveBeenCalledWith('/admin/time-entries/te1/credit-override'));
     await waitFor(() => expect(journalCalls()).toBeGreaterThan(before));
+  });
+
+  // Spec 17.7 / Review Task 15: nicht nur auf Komponentenebene — ein Journal-seitiger
+  // Fehler (Mapping/Typ verliert `auto_closed`) fiele sonst nicht auf.
+  it('Admin-Ansicht: „Anerkennen" ist bei automatisch geschlossenen Einträgen deaktiviert (P18)', async () => {
+    // Endseite bei auto_closed ausgenommen (P19): 150 Lücke + 45 vorne = 195.
+    const autoClosed = { ...k7Entry, auto_closed: true, not_credited_minutes: 195 };
+    getMock.mockResolvedValue({
+      data: { ...withTotal(195), days: [{ ...validDay, time_entries: [autoClosed] }] },
+    });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    expect(await screen.findByRole('button', { name: 'Anerkennen' })).toBeDisabled();
+    expect(screen.getByText(AUTO_CLOSED_HINT)).toBeInTheDocument();
   });
 
   it('Mitarbeiter-Ansicht: kein „Anerkennen"; ohne nicht angerechnete Zeit keine Summenzeile', async () => {
