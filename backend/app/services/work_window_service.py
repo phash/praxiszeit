@@ -12,10 +12,12 @@ Keine Kappung an Wochenenden, Feiertagen und freien Sondertagen (#484), bei
 ``track_hours=False`` und für anerkannte Einträge (``credit_override``).
 """
 from datetime import date, time
-from typing import NamedTuple, Optional
+from decimal import Decimal
+from typing import Any, NamedTuple, Optional
 
 from sqlalchemy.orm import Session
 
+from app.models import TimeEntry, WorkingHoursChange
 from app.models.system_setting import SystemSetting
 from app.services import calculation_service
 
@@ -408,10 +410,22 @@ def end_input_for(
     if auto_closed and not end_is_correction(incoming, prev_eff, prev_raw, auto_closed):
         if target_date == prev_date:
             return unclamp_input(prev_eff, prev_eff, prev_raw)
-        if prev_raw is not None and not same_minute(prev_raw, AUTO_CLOSE_RAW_END):
-            return prev_raw
-        return prev_eff
+        return _auto_closed_end_input(prev_eff, prev_raw)
     return unclamp_input(incoming, prev_eff, prev_raw)
+
+
+def _auto_closed_end_input(prev_eff: Optional[time], prev_raw: Optional[time]) -> Optional[time]:
+    """P18: Kappungseingabe für das Ende eines automatisch geschlossenen
+    Eintrags, wenn sich das Raster ändert, gegen das er gekappt wird
+    (Verschieben auf einen anderen Tag, Massen-Neukappung 9.2) — das
+    gespeicherte Rohende, sofern es nicht das synthetische 23:59 ist (nach einem
+    früheren Verschieben bzw. einer kürzeren Hülle trägt es das zuvor
+    angerechnete Ende), sonst das gespeicherte WIRKSAME Ende. Nie 23:59: eine
+    spätere Hülle verlängert sonst die Anrechnung eines Eintrags, an dem nie
+    jemand ausgestempelt hat (PR1-Review F1/N2)."""
+    if prev_raw is not None and not same_minute(prev_raw, AUTO_CLOSE_RAW_END):
+        return prev_raw
+    return prev_eff
 
 
 ORDER_ERROR_DETAIL = "Endzeit muss nach Startzeit liegen"
@@ -499,3 +513,205 @@ def credit_summary_text(entry) -> str:
     if brk > 0:
         parts.append(f"Pause {_hm(brk)} h")
     return ", ".join(parts)
+
+
+# ── Spec 9.2: Massen-Neukappung einer Arbeitszeit-Änderung ─────────────────
+
+
+class ReclampChange(NamedTuple):
+    entry_id: Any
+    date: date
+    old_start: Optional[time]
+    old_end: Optional[time]
+    old_uncredited: int
+    old_net: Decimal
+    new_start: Optional[time]
+    new_end: Optional[time]
+    new_uncredited: int
+    new_net: Decimal
+    not_extendable: Optional[str]      # None | "start" | "end" | "both" (E50)
+    old_grace: Optional[int]           # clamp_grace_minutes vorher (E79); neu = grace
+
+
+class ReclampSkip(NamedTuple):
+    entry_id: Any
+    date: date
+    reason: str   # open | soll_free_day | track_hours_off | outside_employment
+                  # | credit_override | unique_collision
+
+
+class ReclampResult(NamedTuple):
+    changed: list
+    skipped: list
+    flagged: list      # nicht erweiterbar, auch wenn unverändert (E50)
+
+
+def _soll_free_dates(db: Session, tenant_id, start: date, end: date) -> set:
+    """Feiertage + freie Sondertage des Fensters — EIN Vorladen für die
+    Neukappung (6.1-Vorladeparameter von ``clamp``)."""
+    from app.models.public_holiday import PublicHoliday
+    from app.services.special_days_service import free_special_days_in_range
+
+    holidays = {
+        h.date for h in db.query(PublicHoliday).filter(
+            PublicHoliday.tenant_id == tenant_id,  # F-026
+            PublicHoliday.date >= start,
+            PublicHoliday.date <= end,
+        ).all()
+    }
+    return holidays | set(free_special_days_in_range(db, tenant_id, start, end))
+
+
+def _not_extendable(entry, old_day: list, new_day: list, grace: int,
+                    old_grace: Optional[int]) -> Optional[str]:
+    """E50: Seite ohne Rohstempel, gespeicherte Zeit exakt auf der ALTEN
+    Hüllenkante (mit dem gespeicherten Puffer, sonst dem aktuellen) und die neue
+    Hülle ist auf dieser Seite weiter → der Eintrag kann nicht erweitert werden,
+    weil der echte Stempel vor 1.19.1 verloren ging."""
+    if not old_day or not new_day:
+        return None
+    g_old = old_grace if old_grace is not None else grace
+    sides = []
+    if entry.raw_start_time is None and entry.start_time is not None and entry.start_time.second == 0:
+        old_floor = _shift_min(old_day[0][0], -g_old)
+        if _min(entry.start_time) == old_floor and _shift_min(new_day[0][0], -grace) < old_floor:
+            sides.append("start")
+    if entry.raw_end_time is None and entry.end_time is not None and entry.end_time.second == 0:
+        old_ceil = _shift_min(old_day[-1][1], g_old)
+        if _min(entry.end_time) == old_ceil and _shift_min(new_day[-1][1], grace) > old_ceil:
+            sides.append("end")
+    if not sides:
+        return None
+    return sides[0] if len(sides) == 1 else "both"
+
+
+def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: set,
+                         prev_blocks_by_weekday: Optional[tuple], grace: int) -> ReclampResult:
+    """Spec 9.2 — kappt die Einträge in ``[start, end]`` an den geänderten
+    ``weekdays`` gegen den NEUEN Snapshot (der Aufrufer hat ihn bereits
+    geflusht). Quelle ist der Rohstempel, sonst die gespeicherte Zeit (E48).
+    Aktueller Mandanten-Puffer ``grace`` (E47), geschrieben in jeden geprüften
+    Eintrag (E79, auch ohne Zeitänderung, ohne Eintrag in ``changed``).
+    Setzt ORM-Attribute (kein ``query.update``), kein commit, kein Protokoll —
+    beides gehört dem Router; die Vorschau rollt zurück. Idempotent.
+
+    Automatisch geschlossene Einträge (P18): Eingabe für das Ende ist nie das
+    synthetische 23:59, sondern ``_auto_closed_end_input`` (wie beim
+    Verschieben) — sonst verlängerte eine spätere Hülle die Anrechnung eines
+    Eintrags, an dem nie ausgestempelt wurde. Das Kennzeichen bleibt; wird das
+    Ende nicht gekappt, kehrt das Rohende zum Protokollwert 23:59 zurück, sofern
+    der Eintrag eines trug (Rücknahme einer Änderung stellt den Zustand des
+    Auto-Close byte-gleich wieder her, 17.5 „Reversibilität")."""
+    weekdays = set(weekdays)
+    if not weekdays or start > end:
+        return ReclampResult([], [], [])
+    entries = [
+        e for e in db.query(TimeEntry).filter(
+            TimeEntry.user_id == user.id,
+            TimeEntry.tenant_id == user.tenant_id,  # F-026
+            TimeEntry.date >= start,
+            TimeEntry.date <= end,
+        ).order_by(TimeEntry.date, TimeEntry.start_time).all()
+        if e.date.weekday() in weekdays
+    ]
+    if not entries:
+        return ReclampResult([], [], [])
+    if not getattr(user, "track_hours", True):  # Schritt 1
+        return ReclampResult([], [ReclampSkip(e.id, e.date, "track_hours_off") for e in entries], [])
+
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+    ).all()
+    soll_free = _soll_free_dates(db, user.tenant_id, start, end)
+    planned_start = {e.id: e.start_time for e in entries}
+    same_day: dict = {}
+    for e in entries:
+        same_day.setdefault(e.date, []).append(e)
+
+    changed, skipped, flagged = [], [], []
+    for e in entries:
+        wd = e.date.weekday()
+        if e.end_time is None:                                            # Schritt 2
+            skipped.append(ReclampSkip(e.id, e.date, "open"))
+            continue
+        if not calculation_service._within_employment_window(user, e.date):  # Schritt 3
+            skipped.append(ReclampSkip(e.id, e.date, "outside_employment"))
+            continue
+        if e.credit_override:                                              # Schritt 4
+            skipped.append(ReclampSkip(e.id, e.date, "credit_override"))
+            continue
+        new_sched = calculation_service.get_schedule_for_date(db, user, e.date, wh_changes)
+        day_has_blocks = wd < 5 and bool(new_sched.blocks) and bool(new_sched.blocks[wd])
+        if day_has_blocks and e.date in soll_free:                         # Schritt 5
+            skipped.append(ReclampSkip(e.id, e.date, "soll_free_day"))
+            continue
+        src_start = e.raw_start_time or e.start_time                      # Schritt 6 (E48)
+        if e.auto_closed:                                                  # P18: nie 23:59
+            src_end = _auto_closed_end_input(e.end_time, e.raw_end_time)
+        else:
+            src_end = e.raw_end_time or e.end_time
+        r = clamp(db, user, e.date, src_start, src_end, grace, credit_override=False,
+                  wh_changes=wh_changes, soll_free_dates=soll_free)       # Schritt 7
+        if r.eff_start in {planned_start[o.id] for o in same_day[e.date] if o.id != e.id}:  # Schritt 8
+            skipped.append(ReclampSkip(e.id, e.date, "unique_collision"))
+            continue
+        old_grace = e.clamp_grace_minutes                                  # Schritt 9
+        old_day = list(prev_blocks_by_weekday[wd]) if prev_blocks_by_weekday else []
+        new_day = get_scheduled_blocks(db, user, e.date, wh_changes=wh_changes, soll_free_dates=soll_free)
+        flag = _not_extendable(e, old_day, new_day, grace, old_grace)    # Schritt 12 (vor dem Setzen)
+        if r.grace_minutes is not None:
+            e.clamp_grace_minutes = r.grace_minutes
+        new_raw_end = r.raw_end
+        if e.auto_closed and new_raw_end is None and e.raw_end_time is not None:
+            new_raw_end = AUTO_CLOSE_RAW_END                               # P18: Protokollwert bleibt
+        old_vals = (e.start_time, e.end_time, e.raw_start_time, e.raw_end_time, int(e.uncredited_minutes or 0))
+        new_vals = (r.eff_start, r.eff_end, r.raw_start, new_raw_end, int(r.uncredited_minutes))
+        old_net = Decimal(str(e.net_hours))
+        if old_vals == new_vals:                                           # Schritt 10
+            if flag:
+                flagged.append(ReclampChange(e.id, e.date, e.start_time, e.end_time, old_vals[4], old_net,
+                                             e.start_time, e.end_time, old_vals[4], old_net, flag, old_grace))
+            continue
+        (e.start_time, e.end_time, e.raw_start_time, e.raw_end_time, e.uncredited_minutes) = new_vals  # Schritt 11
+        planned_start[e.id] = r.eff_start
+        change = ReclampChange(e.id, e.date, old_vals[0], old_vals[1], old_vals[4], old_net,
+                               r.eff_start, r.eff_end, new_vals[4], Decimal(str(e.net_hours)), flag, old_grace)
+        changed.append(change)
+        if flag:
+            flagged.append(change)
+    return ReclampResult(changed, skipped, flagged)
+
+
+def credited_minutes_for(blocks: list, grace: int, start_min: int, end_min: int) -> int:
+    """Angerechnete Minuten (ohne Pause) eines Eintrags ``start``–``end`` gegen
+    die Blöcke EINES Tages — dieselbe Regel wie ``_clamp_core``, rein in Minuten
+    und ohne Datenbank (für die P1-Knickstellen-Prüfung)."""
+    if not blocks:
+        return max(0, end_min - start_min)
+    s = max(start_min, _shift_min(blocks[0][0], -grace))
+    e = min(end_min, _shift_min(blocks[-1][1], grace))
+    if s >= e:
+        return 0
+    return e - s - sum(_overlap(s, e, gs, ge) for gs, ge in credit_gaps(blocks, grace))
+
+
+def open_entry_loses(old_blocks: list, new_blocks: list, grace: int, start: time, now: time) -> bool:
+    """P1: verliert der offene Eintrag von heute für IRGENDEIN mögliches Ende ≥
+    jetzt? ``angerechnet_neu(Ende) − angerechnet_alt(Ende)`` ist stückweise linear
+    mit Knicken an Hüllen- und Lückenkanten beider Snapshots — geprüft wird an
+    ``max(jetzt, Beginn)``, an jeder Knickstelle danach und an 23:59. Gleicher
+    Puffer für beide Seiten: das Ausstempeln kappt mit dem gespeicherten
+    Puffer des Eintrags (E80)."""
+    s = _min(start)
+    lo = max(_min(now), s)
+    points = {lo, _LAST_MINUTE}
+    for blocks in (old_blocks, new_blocks):
+        if blocks:
+            points.update({_shift_min(blocks[0][0], -grace), _shift_min(blocks[-1][1], grace)})
+            for gs, ge in credit_gaps(blocks, grace):
+                points.update({gs, ge})
+    for p in sorted(x for x in points if lo <= x <= _LAST_MINUTE):
+        if credited_minutes_for(new_blocks, grace, s, p) < credited_minutes_for(old_blocks, grace, s, p):
+            return True
+    return False
