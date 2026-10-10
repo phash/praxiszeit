@@ -80,12 +80,20 @@ export function isInBlockGap(blocks: TimeBlock[] | null | undefined, minutes: nu
   return false;
 }
 
-/** Erster Beginn bis letztes Ende (Vorbelegung neuer Einträge, Spec 14). */
+/** Erster Beginn bis letztes Ende (Vorbelegung neuer Einträge, Spec 14).
+ * `null` ohne Blöcke UND bei den Platzhaltern halboffener Altfenster (Spec 5.3):
+ * Ende 23:59 heißt „kein Ende" (neue Zeilen enden spätestens 23:55, Spec 3.5),
+ * Beginn 00:00 heißt „kein Beginn" — wie im Backend (`_clamp_core` kappt das
+ * Ende nur bei `blocks[-1][1] < _LAST_MINUTE`). Der Aufrufer behält dann seine
+ * bisherige Vorbelegung; sonst stünde 07:30–23:59 im Formular (→ DAILY_HOURS_HARD). */
 export function blocksSpan(blocks: TimeBlock[] | null | undefined): { start: string; end: string } | null {
   if (!blocks || blocks.length === 0) return null;
   const mins = sortedMinutes(blocks);
+  const first = mins[0][0];
+  const last = Math.max(...mins.map(([, e]) => e));
+  if (first === 0 || last === LAST_MINUTE) return null;
   const toHHMM = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-  return { start: toHHMM(mins[0][0]), end: toHHMM(Math.max(...mins.map(([, e]) => e))) };
+  return { start: toHHMM(first), end: toHHMM(last) };
 }
 
 export interface CreditEntry {

@@ -105,6 +105,14 @@ describe('blocksSpan', () => {
       .toEqual({ start: '08:00', end: '18:00' });
     expect(blocksSpan([])).toBeNull();
   });
+
+  // Spec 5.3/3.5: 23:59 als Ende bzw. 00:00 als Beginn sind die Platzhalter
+  // halboffener Altfenster aus Migration 073 („kein Ende"/„kein Beginn") —
+  // keine Uhrzeit für die Vorbelegung (sonst 07:30–23:59 → DAILY_HOURS_HARD).
+  it('liefert null für die Platzhalter halboffener Altfenster', () => {
+    expect(blocksSpan([{ start: '07:30', end: '23:59' }])).toBeNull();
+    expect(blocksSpan([{ start: '00:00', end: '16:30' }])).toBeNull();
+  });
 });
 
 describe('stampNoteProps', () => {
