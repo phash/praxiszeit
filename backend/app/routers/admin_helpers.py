@@ -3,12 +3,13 @@
 from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
-from app.models import User, UserRole, ChangeRequest, TimeEntryAuditLog, WorkingHoursChange
+from app.models import User, UserRole, ChangeRequest, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
 from app.models.vacation_request import VacationRequest
 from app.schemas.change_request import ChangeRequestResponse
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.schemas.vacation_request import VacationRequestResponse
 from app.services.calculation_service import request_day_count
+from app.services import work_window_service
 
 
 # ── Anker-Sperre auf Benutzerzeilen ──────────────────────────────────────────
@@ -242,10 +243,22 @@ def _enrich_cr_responses(crs: list, db: Session) -> list[ChangeRequestResponse]:
         else []
     )
     user_map = {u.id: u for u in users}
+    # Spec 2026-10-08 P3/P21: aktueller Zustand der Zieleinträge — EIN Query, F-026.
+    entry_ids = {cr.time_entry_id for cr in crs if cr.time_entry_id}
+    entries = {
+        e.id: e for e in db.query(TimeEntry).filter(
+            TimeEntry.id.in_(entry_ids), TimeEntry.tenant_id.in_(tenant_ids),
+        ).all()
+    } if entry_ids else {}
 
     results = []
     for cr in crs:
         response = ChangeRequestResponse.model_validate(cr)
+        target = entries.get(cr.time_entry_id)
+        if target is not None:
+            response.entry_credit_override = bool(target.credit_override)
+            response.entry_auto_closed = bool(target.auto_closed)
+            response.entry_not_credited_minutes = work_window_service.not_credited_minutes(target)
         user = user_map.get(cr.user_id)
         if user:
             response.user_first_name = user.first_name

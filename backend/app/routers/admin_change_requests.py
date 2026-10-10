@@ -33,11 +33,19 @@ from app.services.calculation_service import (
     get_daily_target, child_sick_cap, child_sick_days_used, half_special_day_weight,
     is_vacation_billable_day,
 )
-from app.services import work_window_service, settings_service, special_days_service
+from app.services import (
+    credit_override_service, presence_service, settings_service, special_days_service,
+    work_window_service,
+)
 from app.services.closure_split_service import resplit_year_closures
 from app.models.time_entry_audit_log import TimeEntryAuditLog
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
+# Spec 2026-10-08 P21 / 13.3: „Genehmigen = Anerkennen" nur an Zeiteinträgen.
+GRANT_ONLY_UPDATE_DETAIL = (
+    "Anerkennen ist nur bei einem Änderungsantrag zu einem bestehenden Zeiteintrag möglich."
+)
 
 
 def _vacation_day_contribution(db, user, d, half_day) -> float:
@@ -306,6 +314,19 @@ def review_change_request(
             ),
         )
 
+    # Spec 2026-10-08 P21 / 13.3: „Genehmigen = Anerkennen". Ohne Angabe gilt der
+    # Wert des Antrags — auch in der Sammel-Genehmigung (ChangeRequestReview ohne
+    # grant_credit_override). Precondition VOR der Statusänderung.
+    grant_override = (
+        review.grant_credit_override
+        if review.grant_credit_override is not None
+        else bool(cr.request_credit_override)
+    )
+    if grant_override and (
+        cr.entry_kind == "absence" or cr.request_type != ChangeRequestType.UPDATE
+    ):
+        raise HTTPException(status_code=400, detail=GRANT_ONLY_UPDATE_DETAIL)
+
     # Approve: validate preconditions BEFORE changing status
     entry = None
     # Release-Review 1.19.3 (F1): Eingabezeiten fuer clamp. Bei UPDATE unten durch
@@ -335,6 +356,18 @@ def review_change_request(
             ).with_for_update().first()
             if not entry:
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
+            # P18/P21: Anerkennen setzt ein tatsächliches Ende voraus. Ohne es
+            # bliebe der Eintrag nach dem UPDATE-Zweig ``auto_closed`` und
+            # ``apply_credit_override`` lehnte erst NACH der Statusänderung ab;
+            # ein 23:59 nach einem Verschieben (Rohende 18:15) hielte
+            # ``end_is_correction`` sogar für ein echtes Ende. Dieselbe Regel wie
+            # beim Stellen des Antrags — sie greift auch für ältere Anträge.
+            if grant_override and credit_override_service.lacks_actual_end(
+                entry, cr.proposed_end_time,
+            ):
+                raise HTTPException(
+                    status_code=400, detail=credit_override_service.AUTO_CLOSED_DETAIL,
+                )
             # Check for unique constraint violation on date/start_time change
             if cr.proposed_date != entry.date or cr.proposed_start_time != entry.start_time:
                 dup = db.query(TimeEntry).filter(
@@ -653,6 +686,17 @@ def review_change_request(
             # ohne Angabe bleibt der bestehende stehen.
             if cr.proposed_sunday_exception_reason is not None:
                 entry.sunday_exception_reason = cr.proposed_sunday_exception_reason
+            # Spec 13.3 Schritte 2–6 im Genehmigungspfad (P21) — die Ankersperre
+            # hält dieser Pfad schon (Anker vor Antrag vor Eintrag, P5).
+            if grant_override:
+                credit_override_service.apply_credit_override(
+                    db, entry,
+                    changed_by_id=current_user.id,
+                    on_request=bool(cr.request_credit_override),
+                    change_request_id=cr.id,
+                )
+                # Die Kappungswarnung dieser Genehmigung gilt nicht mehr.
+                _clamp_warn = None
 
         elif cr.request_type == ChangeRequestType.DELETE:
             # entry already fetched in precondition check above
@@ -1136,6 +1180,22 @@ def review_change_request(
                 cr_response.warnings.append(
                     f"§3 ArbZG: Wochenarbeitszeit {weekly:.1f}h überschreitet 48h-Grenze."
                 )
+
+            # Spec 8.3/8.4: weiche Anwesenheits-Warnungen und Pausen-Doppelabzug —
+            # nach „Anerkennen" stattdessen die weichen Warnungen aus 13.3 Schritt 6
+            # (P4; die 48-h-Warnung steht schon oben). ``_w_entry`` ist der eben
+            # geschriebene Eintrag (CREATE- bzw. UPDATE-Zweig). §4 hat die
+            # Vorprüfung auf angerechneter Zeit hart geprüft — außer bei einer
+            # mitgebrachten Ausnahme (P14: dann kein PRESENCE_BREAK zusätzlich).
+            if grant_override:
+                cr_response.warnings.extend(credit_override_service.override_warnings(
+                    db, cr_user, _w_entry, include_weekly=False,
+                ))
+            else:
+                cr_response.warnings.extend(presence_service.presence_warnings(
+                    db, cr_user, _w_entry.date,
+                    break_check_passed=waiver_reason is None, entry=_w_entry,
+                ))
 
     return cr_response
 

@@ -21,11 +21,16 @@ class ChangeRequestCreate(BaseModel):
     # SEC-D: cap length to prevent storage DoS via unbounded free text.
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG
     proposed_sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # #485 §10 ArbZG
+    # Spec 2026-10-08 P21: „Anrechnung beantragen" — Genehmigung = Anerkennen.
+    request_credit_override: bool = False
 
 
 class ChangeRequestReview(BaseModel):
     action: str  # "approve" or "reject"
     rejection_reason: Optional[str] = None
+    # Spec 2026-10-08 P21 / 13.3: None = Wert des Antrags (request_credit_override);
+    # True auch für „genehmigen und anerkennen" eines gewöhnlichen UPDATE-Antrags.
+    grant_credit_override: Optional[bool] = None
 
 
 class ChangeRequestBulkReview(BaseModel):
@@ -78,6 +83,15 @@ class ChangeRequestResponse(BaseModel):
     original_note: Optional[str] = None
     original_absence_type: Optional[str] = None
     original_absence_hours: Optional[float] = None
+    # Spec 2026-10-08 P21/P28: Antragskennzeichen und Vorher-Snapshot der Lücke.
+    request_credit_override: bool = False
+    original_uncredited_minutes: Optional[int] = None
+    # Spec P3/P21: AKTUELLER Zustand des Zieleintrags (batch-geladen in
+    # admin_helpers._enrich_cr_responses) — Hinweis „Eintrag ist anerkannt …"
+    # und die Option „genehmigen und anerkennen".
+    entry_credit_override: bool = False
+    entry_not_credited_minutes: int = 0
+    entry_auto_closed: bool = False
 
     reason: str
     break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG

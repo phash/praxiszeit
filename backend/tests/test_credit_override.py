@@ -267,3 +267,222 @@ def test_admin_absence_over_recognized_entry_stays_allowed(_db_session, employee
     assert _db_session.get(TimeEntry, e.id) is None
     [log] = _delete_logs(_db_session, e)
     assert log.source == "absence_creation"
+
+
+# ── „Anrechnung beantragen" (P21) und „genehmigen und anerkennen" ──────────────
+import pytest  # noqa: E402
+
+from app.models import ChangeRequest  # noqa: E402
+from app.models.change_request import ChangeRequestStatus, ChangeRequestType  # noqa: E402
+from app.routers.admin_change_requests import GRANT_ONLY_UPDATE_DETAIL  # noqa: E402
+from app.routers.change_requests import CREDIT_REQUEST_REJECTED_DETAIL  # noqa: E402
+
+
+def _request(client, entry, **kw):
+    body = {
+        "request_type": kw.pop("request_type", "update"),
+        "time_entry_id": str(entry.id) if entry is not None else None,
+        "proposed_date": MON.isoformat(),
+        "proposed_start_time": kw.pop("start", "07:00"),
+        "proposed_end_time": kw.pop("end", "19:00"),
+        "proposed_break_minutes": 0,
+        "reason": "Habe in der Lücke Patienten versorgt",
+        "request_credit_override": True,
+    }
+    body.update(kw)
+    return client.post("/api/change-requests/", json=body)
+
+
+def test_employee_can_request_credit(_db_session, employee_user, employee_client):
+    e = _k7(_db_session, employee_user)
+    r = _request(employee_client, e)
+    assert r.status_code == 201, r.text
+    assert r.json()["request_credit_override"] is True
+    cr = _db_session.query(ChangeRequest).one()
+    assert (cr.request_credit_override, cr.original_uncredited_minutes) == (True, 150)
+
+
+def test_request_rejected_without_not_credited_time(_db_session, employee_user, employee_client):
+    e = _entry(_db_session, employee_user, time(8), time(16), break_minutes=30)
+    r = _request(employee_client, e, start="08:00", end="16:00")
+    assert (r.status_code, r.json()["detail"]) == (400, CREDIT_REQUEST_REJECTED_DETAIL)
+
+
+def test_request_rejected_for_recognized_entry_create_and_absence(_db_session, employee_user,
+                                                                   employee_client):
+    e = _k7(_db_session, employee_user)
+    e.credit_override = True
+    _db_session.commit()
+    assert _request(employee_client, e).json()["detail"] == CREDIT_REQUEST_REJECTED_DETAIL
+    r = _request(employee_client, None, request_type="create", start="08:00", end="12:00")
+    assert (r.status_code, r.json()["detail"]) == (400, CREDIT_REQUEST_REJECTED_DETAIL)
+    r = employee_client.post("/api/change-requests/", json={
+        "request_type": "create", "entry_kind": "absence", "proposed_date": MON.isoformat(),
+        "proposed_absence_type": "sick", "proposed_absence_hours": 8, "reason": "krank",
+        "request_credit_override": True,
+    })
+    assert (r.status_code, r.json()["detail"]) == (400, CREDIT_REQUEST_REJECTED_DETAIL)
+    assert _db_session.query(ChangeRequest).count() == 0
+
+
+def test_request_on_a_foreign_entry_is_404_like_an_unknown_id(_db_session, employee_user,
+                                                               admin_user, employee_client):
+    """Spec 11.4 nennt „fremd" in der 400-Zeile — die Eigentümerprüfung (#120)
+    läuft aber vorher und antwortet wie bei einer unbekannten ID mit 404. Ein
+    400 nur für fremde Einträge verriete deren Existenz (vgl. 7.1, Review N3)."""
+    admin_user.work_blocks = K_BLOCKS
+    foreign = _entry(_db_session, admin_user, time(7, 45), time(18, 15), raw_start_time=time(7),
+                     raw_end_time=time(19), uncredited_minutes=150)
+    r_foreign = _request(employee_client, foreign)
+    r_unknown = _request(employee_client, None, time_entry_id=str(uuid.uuid4()))
+    assert (r_foreign.status_code, r_foreign.json()) == (r_unknown.status_code, r_unknown.json())
+    assert r_foreign.status_code == 404
+    assert _db_session.query(ChangeRequest).count() == 0
+
+
+# Review Focus 3: 18:15 (gekapptes Ende) und 23:59 liefen über unclamp_input wieder auf 23:59.
+@pytest.mark.parametrize("end, status", [("18:15", 400), ("23:59", 400), ("17:30", 201)])
+def test_auto_closed_needs_the_actual_end(_db_session, employee_user, employee_client, end, status):
+    employee_user.work_blocks = K_BLOCKS
+    e = _entry(_db_session, employee_user, time(8), time(18, 15), raw_end_time=time(23, 59),
+               uncredited_minutes=150, auto_closed=True, clamp_grace_minutes=15)
+    r = _request(employee_client, e, start="08:00", end=end)
+    assert r.status_code == status, r.text
+    if status == 400:
+        assert r.json()["detail"] == cos.AUTO_CLOSED_DETAIL
+
+
+def _cr(db, user, entry, **kw):
+    cr = ChangeRequest(
+        tenant_id=DEFAULT_TENANT_ID, user_id=user.id, entry_kind="time_entry",
+        request_type=kw.pop("request_type", ChangeRequestType.UPDATE),
+        status=ChangeRequestStatus.PENDING,
+        time_entry_id=entry.id if entry is not None else None,
+        proposed_date=MON, proposed_start_time=kw.pop("start", time(7)),
+        proposed_end_time=kw.pop("end", time(19)), proposed_break_minutes=0,
+        reason="Habe in der Lücke Patienten versorgt", **kw)
+    db.add(cr)
+    db.commit()
+    return cr
+
+
+def _review(client, cr, **body):
+    return client.post(f"/api/admin/change-requests/{cr.id}/review",
+                       json={"action": "approve", **body})
+
+
+def test_approving_a_credit_request_recognizes_the_entry(_db_session, employee_user, admin_client):
+    e = _k7(_db_session, employee_user)
+    cr = _cr(_db_session, employee_user, e, request_credit_override=True,
+             original_uncredited_minutes=150)
+    r = _review(admin_client, cr)
+    assert r.status_code == 200, r.text
+    _db_session.refresh(e)
+    assert (e.credit_override, e.start_time, e.end_time, e.uncredited_minutes) == (
+        True, time(7), time(19), 0)
+    [log] = _override_logs(_db_session)
+    assert log.new_note == (
+        "angerechnet 12:00 h — auf Antrag der beschäftigten Person von der Verwaltung anerkannt")
+    assert log.change_request_id == cr.id
+    codes = _codes(r)
+    assert "WORK_WINDOW_CLAMPED" not in codes   # jetzt ungekappt angerechnet
+    assert "DAILY_HOURS_HARD" in codes          # P4: nur weich
+
+
+def test_admin_can_decline_the_recognition(_db_session, employee_user, admin_client):
+    e = _k7(_db_session, employee_user)
+    cr = _cr(_db_session, employee_user, e, request_credit_override=True)
+    assert _review(admin_client, cr, grant_credit_override=False).status_code == 200
+    _db_session.refresh(e)
+    assert e.credit_override is False
+    assert _override_logs(_db_session) == []
+
+
+def test_approve_and_recognize_an_ordinary_update(_db_session, employee_user, admin_client):
+    e = _k7(_db_session, employee_user)
+    cr = _cr(_db_session, employee_user, e)
+    assert _review(admin_client, cr, grant_credit_override=True).status_code == 200
+    [log] = _override_logs(_db_session)
+    assert log.new_note == "angerechnet 12:00 h — von der Verwaltung anerkannt"
+
+
+def test_grant_only_for_updates_and_cr_stays_pending(_db_session, employee_user, admin_client):
+    cr = _cr(_db_session, employee_user, None, request_type=ChangeRequestType.CREATE,
+             start=time(8), end=time(12))
+    r = _review(admin_client, cr, grant_credit_override=True)
+    assert (r.status_code, r.json()["detail"]) == (400, GRANT_ONLY_UPDATE_DETAIL)
+    _db_session.refresh(cr)
+    assert cr.status == ChangeRequestStatus.PENDING
+
+
+@pytest.mark.parametrize("raw_end, end", [
+    (time(23, 59), time(18, 15)),
+    (time(23, 59), time(23, 59)),
+    # Nach einem Verschieben trägt der Eintrag kein Rohende 23:59 mehr —
+    # ``end_is_correction`` hielte ein eingereichtes 23:59 dann für ein echtes
+    # Ende, und Anerkennen rechnete 08:00–23:59 an.
+    (None, time(23, 59)),
+])
+def test_grant_on_auto_closed_entry_needs_the_actual_end(_db_session, employee_user,
+                                                         admin_client, raw_end, end):
+    """P18/P21 an der Genehmigung: ein gewöhnlicher Antrag ohne tatsächliches
+    Ende (gekapptes Ende 18:15 oder 23:59) + „genehmigen und anerkennen" würde
+    das synthetische 23:59 anerkennen. Precondition VOR der Statusänderung —
+    der Antrag bleibt offen, der Eintrag unverändert."""
+    employee_user.work_blocks = K_BLOCKS
+    e = _entry(_db_session, employee_user, time(8), time(18, 15), raw_end_time=raw_end,
+               uncredited_minutes=150, auto_closed=True, clamp_grace_minutes=15)
+    cr = _cr(_db_session, employee_user, e, start=time(8), end=end)
+    r = _review(admin_client, cr, grant_credit_override=True)
+    assert (r.status_code, r.json()["detail"]) == (400, cos.AUTO_CLOSED_DETAIL)
+    _db_session.refresh(cr)
+    _db_session.refresh(e)
+    assert cr.status == ChangeRequestStatus.PENDING
+    assert (e.credit_override, e.auto_closed, e.end_time) == (False, True, time(18, 15))
+    assert _override_logs(_db_session) == []
+
+
+def test_grant_on_auto_closed_entry_with_the_actual_end(_db_session, employee_user, admin_client):
+    """Mit tatsächlichem Ende (17:30) hebt der UPDATE-Zweig ``auto_closed`` auf
+    (``end_is_correction``), danach wird anerkannt: 08:00–17:30 = 9:30 h."""
+    employee_user.work_blocks = K_BLOCKS
+    e = _entry(_db_session, employee_user, time(8), time(18, 15), raw_end_time=time(23, 59),
+               uncredited_minutes=150, auto_closed=True, clamp_grace_minutes=15)
+    cr = _cr(_db_session, employee_user, e, start=time(8), end=time(17, 30),
+             request_credit_override=True)
+    r = _review(admin_client, cr)
+    assert r.status_code == 200, r.text
+    _db_session.refresh(e)
+    assert (e.credit_override, e.auto_closed, e.start_time, e.end_time, e.uncredited_minutes) == (
+        True, False, time(8), time(17, 30), 0)
+    assert float(e.net_hours) == 9.5
+
+
+def test_bulk_approval_takes_the_request_value(_db_session, employee_user, admin_client):
+    e = _k7(_db_session, employee_user)
+    cr = _cr(_db_session, employee_user, e, request_credit_override=True)
+    r = admin_client.post("/api/admin/change-requests/bulk-review",
+                          json={"request_ids": [str(cr.id)], "action": "approve"})
+    assert r.status_code == 200 and r.json()["succeeded"] == 1, r.text
+    _db_session.refresh(e)
+    assert e.credit_override is True
+
+
+def test_response_carries_entry_state_and_snapshot(_db_session, employee_user, admin_client):
+    e = _k7(_db_session, employee_user)
+    cr = _cr(_db_session, employee_user, e, request_credit_override=True,
+             original_uncredited_minutes=150)
+    body = admin_client.get(f"/api/admin/change-requests/{cr.id}").json()
+    assert body["request_credit_override"] is True
+    assert body["original_uncredited_minutes"] == 150
+    assert (body["entry_credit_override"], body["entry_not_credited_minutes"],
+            body["entry_auto_closed"]) == (False, 240, False)
+
+
+def test_approval_reports_presence_warnings(_db_session, employee_user, admin_client):
+    employee_user.work_blocks = K_BLOCKS
+    e = _entry(_db_session, employee_user, time(8), time(12))
+    cr = _cr(_db_session, employee_user, e, start=time(8), end=time(18))
+    r = _review(admin_client, cr)
+    assert r.status_code == 200, r.text
+    assert {"WORK_WINDOW_CLAMPED", "PRESENCE_BREAK"} <= set(_codes(r))

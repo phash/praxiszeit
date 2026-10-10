@@ -29,6 +29,19 @@ def start_taken_detail(t: time) -> str:
     return f"Ein anderer Eintrag an diesem Tag beginnt bereits um {t.strftime('%H:%M')}."
 
 
+def lacks_actual_end(entry: TimeEntry, proposed_end: Optional[time]) -> bool:
+    """P18/P21: Bringt ein Antrag zu einem automatisch geschlossenen Eintrag
+    KEIN tatsächliches Ende mit? Das gespeicherte (gekappte) Ende, das Rohende
+    und das synthetische 23:59 zählen nicht: die Genehmigung machte über
+    ``unclamp_input`` daraus wieder 23:59 (Review Focus 3), und Anerkennen
+    rechnete bis dorthin an — bis zu 16 h, das Schlupfloch, das E36/E42
+    schließen. EINE Regel für „Anrechnung beantragen" (MA-Antrag) und
+    „genehmigen und anerkennen" (Genehmigung, Precondition)."""
+    return bool(entry.auto_closed) and proposed_end in (
+        entry.end_time, entry.raw_end_time, work_window_service.AUTO_CLOSE_RAW_END,
+    )
+
+
 def load_entry_locked(db: Session, tenant_id, entry_id) -> Optional[TimeEntry]:
     """Den Eintrag mit Zeilensperre laden — NACH der Ankersperre (P5)."""
     return (

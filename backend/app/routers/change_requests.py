@@ -16,11 +16,15 @@ from app.routers.time_entries import (
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
 )
 from app.services.arbzg_utils import is_night_work
+from app.services import credit_override_service, work_window_service
 # #219: single shared CR-enricher (was duplicated per-item here vs the batch in
 # admin_helpers). _enrich_cr_response wraps the batch _enrich_cr_responses([cr]).
 from app.routers.admin_helpers import _enrich_cr_response as _enrich_response
 
 router = APIRouter(prefix="/api/change-requests", tags=["change-requests"])
+
+# Spec 2026-10-08, 11.4 / P21 (wörtlich).
+CREDIT_REQUEST_REJECTED_DETAIL = "Für diesen Eintrag kann keine Anrechnung beantragt werden."
 
 
 @router.post("/", response_model=ChangeRequestResponse, status_code=status.HTTP_201_CREATED)
@@ -38,6 +42,10 @@ def create_change_request(
     # Validate entry_kind
     if data.entry_kind not in ("time_entry", "absence"):
         raise HTTPException(status_code=400, detail="Ungültiger Antragstyp (entry_kind)")
+
+    # Spec 2026-10-08 P21: „Anrechnung beantragen" gibt es nur für Zeiteinträge.
+    if data.request_credit_override and data.entry_kind != "time_entry":
+        raise HTTPException(status_code=400, detail=CREDIT_REQUEST_REJECTED_DETAIL)
 
     # --- Absence CR branch ---
     if data.entry_kind == "absence":
@@ -186,6 +194,25 @@ def create_change_request(
             if current_user.last_work_day and data.proposed_date > current_user.last_work_day:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Datum liegt nach dem letzten Arbeitstag")
 
+    # Spec 2026-10-08 P21: nur als Änderung (UPDATE) an einem eigenen (die
+    # Eigentümerprüfung oben antwortet für fremde Einträge wie für unbekannte
+    # mit 404, #120), geschlossenen, noch nicht anerkannten Eintrag mit nicht
+    # angerechneter Zeit (P19: Lücke und Hülle). Ein automatisch geschlossener
+    # Eintrag braucht das TATSÄCHLICHE Ende im selben Antrag (P18): 23:59 ist
+    # kein Stempel, und das gekappte Ende liefe bei der Genehmigung über
+    # unclamp_input wieder auf 23:59 hinaus.
+    if data.request_credit_override:
+        if (
+            data.request_type != "update"
+            or entry is None
+            or entry.end_time is None
+            or entry.credit_override
+            or work_window_service.not_credited_minutes(entry) <= 0
+        ):
+            raise HTTPException(status_code=400, detail=CREDIT_REQUEST_REJECTED_DETAIL)
+        if credit_override_service.lacks_actual_end(entry, data.proposed_end_time):
+            raise HTTPException(status_code=400, detail=credit_override_service.AUTO_CLOSED_DETAIL)
+
     # Time range validation for CREATE and UPDATE
     if data.request_type in ("create", "update") and data.proposed_start_time and data.proposed_end_time:
         if data.proposed_start_time >= data.proposed_end_time:
@@ -206,7 +233,6 @@ def create_change_request(
     # E40 (Spec 2026-10-08): der Antrag prüft §3/§4/§6/48 h auf der
     # ANGERECHNETEN Zeit — wie die Genehmigung. Gespeichert werden weiter die
     # ROHEN Vorschläge (die Genehmigung kappt genau einmal, admin_change_requests).
-    from app.services import work_window_service
     _cr_clamp = None
     _cr_segs: list = []
     if (data.request_type in ("create", "update")
@@ -335,6 +361,7 @@ def create_change_request(
         proposed_sunday_exception_reason=(
             (data.proposed_sunday_exception_reason or "").strip() or None
         ),
+        request_credit_override=bool(data.request_credit_override),  # P21
     )
 
     # Snapshot original values
