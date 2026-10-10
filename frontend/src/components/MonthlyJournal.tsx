@@ -838,8 +838,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                     {...stampNoteProps(e)}
                                     className="text-xs text-gray-500"
                                     onRequestCredit={
-                                      // Anträge gibt es nur für vergangene Tage; Admins erkennen selbst an.
-                                      !isAdminView && isPastDay(day.date) && e.end_time && !e.credit_override
+                                      // Vergangene Tage und heute (Gesamtreview PR2, Fund 1: der
+                                      // Lückentext beim Ausstempeln verweist hierher); Admins
+                                      // erkennen selbst an.
+                                      !isAdminView && !isFutureDay(day.date) && e.end_time && !e.credit_override
                                         ? () => setCreditRequest({ day, entry: e })
                                         : undefined
                                     }

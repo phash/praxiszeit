@@ -352,10 +352,22 @@ describe('<TimeTracking /> Anrechnung beantragen und anerkannte Einträge (Spec 
     expect((screen.getByLabelText('Von') as HTMLInputElement).value).toBe('07:00');
   });
 
-  it('heutige Einträge bieten die Aktion nicht an (Anträge nur für vergangene Tage)', async () => {
+  // Gesamtreview PR2 (Fund 1): der Lückentext an clock_out/create/update —
+  // für Mitarbeitende immer der HEUTIGE Eintrag — verweist auf diese Aktion;
+  // der Server nimmt den Antrag für den heutigen, geschlossenen Eintrag an.
+  it('heutige geschlossene Einträge bieten die Aktion an (Fund 1)', async () => {
     mockEntries([{ ...past, date: today, is_editable: true }]);
     renderPage();
-    await screen.findAllByText(/4:00 h nicht angerechnet/);
+    const [button] = await screen.findAllByRole('button', { name: 'Anrechnung beantragen' });
+    fireEvent.click(button);
+    expect(await screen.findByRole('heading', { name: 'Änderungsantrag: Anrechnung beantragen' })).toBeInTheDocument();
+    expect((screen.getByLabelText('Datum') as HTMLInputElement).value).toBe(today);
+  });
+
+  it('der laufende Eintrag von heute bietet die Aktion nicht an (erst nach dem Ausstempeln)', async () => {
+    mockEntries([{ ...past, date: today, is_editable: true, end_time: null, raw_end_time: null, uncredited_minutes: 0 }]);
+    renderPage();
+    await screen.findAllByText(/gestempelt 07:00 · angerechnet ab 07:45/);
     expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
   });
 
@@ -372,12 +384,11 @@ describe('<TimeTracking /> Anrechnung beantragen und anerkannte Einträge (Spec 
     expect(await screen.findByRole('heading', { name: 'Änderungsantrag: Anrechnung beantragen' })).toBeInTheDocument();
   });
 
-  it('Admins: an heutigen Einträgen auch dort keine Aktion', async () => {
+  it('Admins: an eigenen heutigen, geschlossenen Einträgen ebenso (Fund 1)', async () => {
     mockRole = 'admin';
     mockEntries([{ ...past, date: today, is_editable: true }]);
     renderPage();
-    await screen.findAllByText(/4:00 h nicht angerechnet/);
-    expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
+    expect((await screen.findAllByRole('button', { name: 'Anrechnung beantragen' })).length).toBeGreaterThan(0);
   });
 
   it('anerkannter Eintrag eines vergangenen Tages: kein direktes Bearbeiten, nur Antrag', async () => {

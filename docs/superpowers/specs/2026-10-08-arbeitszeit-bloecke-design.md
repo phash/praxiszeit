@@ -1796,7 +1796,8 @@ reine Blockänderung ist damit eine Änderung (Basis-Zeile, Segment, Neukappung)
 | 400 | Anerkennen eines automatisch geschlossenen Eintrags (`auto_closed`, P18) | „Automatisch geschlossener Eintrag: Bitte zuerst das tatsächliche Ende eintragen." |
 | 409 | Anerkennen: anderer Eintrag beginnt bereits zur Rohzeit | „Ein anderer Eintrag an diesem Tag beginnt bereits um {HH:MM}." |
 | 409 | MA-`PUT` auf einen anerkannten Eintrag (P3) | „Anerkannter Eintrag – Änderung bitte per Änderungsantrag." |
-| 400 | `request_credit_override` an einem Eintrag ohne nicht angerechnete Zeit, offen, anerkannt oder fremd | „Für diesen Eintrag kann keine Anrechnung beantragt werden." |
+| 400 | `request_credit_override` an einem Eintrag ohne nicht angerechnete Zeit, offen, anerkannt oder fremd; mit einem anderen `proposed_date` als dem Datum des Eintrags (Gesamtreview PR2, Fund 3) | „Für diesen Eintrag kann keine Anrechnung beantragt werden." |
+| 400 | `request_credit_override` am heutigen Eintrag mit einem Ende in der Zukunft (Gesamtreview PR2, Fund 1) | „Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden." |
 
 Altfelder werden **ohne** ihre wörtlichen Namen erkannt (sonst bräche der Guard-Test 17.6):
 `UserCreate` und `UserUpdate` bekommen einen `model_validator(mode="before")`, der prüft
@@ -2228,7 +2229,15 @@ eigene Rücknahme gibt es nicht (P11).
   `not_credited_minutes > 0`, nicht anerkannt, Aktion „Anrechnung beantragen" in
   Zeiterfassung und Monatsjournal → Änderungsantrag (UPDATE, Zeiten = Rohstempel,
   `request_credit_override=true`, Begründung Pflicht). Bei `auto_closed` muss die Person
-  das tatsächliche Ende im selben Antrag angeben. Bei anerkannten Einträgen ist das direkte
+  das tatsächliche Ende im selben Antrag angeben. **Entschieden 2026-10-10 (Gesamtreview
+  PR2, Fund 1/3):** auch am **heutigen** geschlossenen Eintrag — der Lückentext an
+  `clock_out`/`create_time_entry`/`update_time_entry` (6.2) gilt für Mitarbeitende immer dem
+  heutigen Eintrag und verwiese sonst auf eine Aktion, die es erst ab morgen gibt; heute nur
+  mit einem Ende, das nicht in der Zukunft liegt (400 „Das Ende liegt in der Zukunft – die
+  Anrechnung kann erst nach Arbeitsende beantragt werden."), gewöhnliche Änderungsanträge
+  bleiben auf vergangene Tage beschränkt. Das Datum ist das des Eintrags (Formularfeld
+  gesperrt; ein anderes `proposed_date` → 400 wie unten): Nicht-Anrechnung und Begründung
+  gehören zum Ursprungstag, die Genehmigung kappte sonst gegen die Blöcke des Zieltags. Bei anerkannten Einträgen ist das direkte
   Bearbeiten gesperrt (409, P3); die Oberfläche bietet stattdessen „Änderung beantragen".
 - **Warnungen** beim Stempeln/Erfassen über `showArbzgWarnings` (Abschnitt 6.2/8); die
   Lückentexte enthalten den Hinweis auf „Anrechnung beantragen" (6.2).

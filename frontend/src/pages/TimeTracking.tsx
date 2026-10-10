@@ -576,14 +576,16 @@ export default function TimeTracking() {
   const weekdayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
   const isAdmin = user?.role === 'admin';
   // Spec P21: die Anrechnung wird an eigenen, geschlossenen, nicht anerkannten
-  // Einträgen vergangener Tage beantragt (Anträge gibt es nur dort). Die
-  // Zeiterfassung ist die eigene Ansicht — auch für Admins, die selbst Zeit
-  // erfassen (Spec 6.2/13.1: der Lückentext ihrer Mitarbeiterpfade verweist
-  // hierher; das Monatsjournal unter /journal bietet die Aktion ebenso an).
-  // Ob nicht angerechnete Zeit vorliegt, entscheidet RawStampNote.
+  // Einträgen beantragt — auch am heutigen (Gesamtreview PR2, Fund 1: der
+  // Lückentext an clock_out/create/update betrifft für Mitarbeitende immer den
+  // heutigen Eintrag; der Server nimmt den Antrag dafür an, solange das Datum
+  // bleibt). Die Zeiterfassung ist die eigene Ansicht — auch für Admins, die
+  // selbst Zeit erfassen (Spec 6.2/13.1: der Lückentext ihrer Mitarbeiterpfade
+  // verweist hierher; das Monatsjournal unter /journal bietet die Aktion ebenso
+  // an). Ob nicht angerechnete Zeit vorliegt, entscheidet RawStampNote.
   const creditRequestFor = (entry: TimeEntry) => (
     !!entry.end_time && !entry.credit_override
-      && entry.date < format(new Date(), 'yyyy-MM-dd')
+      && entry.date <= format(new Date(), 'yyyy-MM-dd')
       ? () => openChangeRequest(entry, 'update', true)
       : undefined
   );

@@ -130,6 +130,24 @@ describe('ChangeRequestForm — Anrechnung beantragen (Spec P21)', () => {
     }));
   });
 
+  // Gesamtreview PR2 (Fund 3): die Anrechnung bezieht sich auf den Tag des
+  // Eintrags — das Datum ist fest (der Server lehnt ein anderes mit 400 ab).
+  it('sperrt das Datum im Modus „Anrechnung beantragen" und sendet das des Eintrags', async () => {
+    const onSuccess = vi.fn();
+    render(<ChangeRequestForm entry={K7} requestType="update" requestCredit onClose={vi.fn()} onSuccess={onSuccess} />);
+    const dateInput = screen.getByLabelText('Datum') as HTMLInputElement;
+    expect(dateInput.readOnly).toBe(true);
+    expect(dateInput.value).toBe('2026-06-01');
+    submitWithReason();
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(post.mock.calls[0][1]).toMatchObject({ proposed_date: '2026-06-01' });
+  });
+
+  it('Kontrolltest: ein gewöhnlicher Änderungsantrag lässt das Datum offen', () => {
+    render(<ChangeRequestForm entry={K7} requestType="update" onClose={vi.fn()} onSuccess={vi.fn()} />);
+    expect((screen.getByLabelText('Datum') as HTMLInputElement).readOnly).toBe(false);
+  });
+
   it('verlangt bei einem automatisch geschlossenen Eintrag das tatsächliche Ende (P18)', async () => {
     render(<ChangeRequestForm
       entry={autoClosedK15}

@@ -743,6 +743,16 @@ describe('<MonthlyJournal /> Anrechnung beantragen (Spec P21)', () => {
     await waitFor(() => expect(journalCalls()).toBeGreaterThan(before));
   });
 
+  // Gesamtreview PR2 (Fund 1): der Lückentext beim Ausstempeln verweist auf
+  // die Aktion — sie gilt auch am heutigen, geschlossenen Eintrag.
+  it('Mitarbeiter-Ansicht: auch am heutigen Tag', async () => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    mockMe({ ...creditJournal, days: [{ ...validDay, date: today, time_entries: [k7Entry] }] });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Anrechnung beantragen' }));
+    expect((await screen.findByLabelText('Datum') as HTMLInputElement).value).toBe(today);
+  });
+
   it('anerkannte Einträge und die Admin-Ansicht bieten die Aktion nicht an', async () => {
     mockMe({ ...creditJournal, days: [{ ...validDay, time_entries: [{ ...k7Entry, credit_override: true }] }] });
     const { unmount } = render(<MonthlyJournal userId="u1" isAdminView={false} />);

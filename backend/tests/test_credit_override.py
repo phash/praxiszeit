@@ -380,6 +380,65 @@ def test_auto_closed_needs_the_actual_end(_db_session, employee_user, employee_c
         assert r.json()["detail"] == cos.AUTO_CLOSED_DETAIL
 
 
+import app.routers.change_requests as cr_router  # noqa: E402
+
+
+def _today_is_mon(monkeypatch, hour=20):
+    from datetime import datetime
+    monkeypatch.setattr(cr_router, "today_local", lambda: MON)
+    monkeypatch.setattr(cr_router, "now_local", lambda: datetime.combine(MON, time(hour)))
+
+
+def test_request_for_todays_closed_entry_is_allowed(_db_session, employee_user, employee_client,
+                                                    monkeypatch):
+    """Gesamtreview PR2 (Fund 1): der Lückentext an clock_out/create/update —
+    für Mitarbeitende immer der HEUTIGE Eintrag — verweist auf „Anrechnung
+    beantragen". Spec 14 kennt keine Tagesgrenze: ein geschlossener Eintrag
+    von heute ist beantragbar, solange das Datum bleibt."""
+    _today_is_mon(monkeypatch)
+    e = _k7(_db_session, employee_user)
+    r = _request(employee_client, e)
+    assert r.status_code == 201, r.text
+    assert _db_session.query(ChangeRequest).one().request_credit_override is True
+
+
+def test_todays_ordinary_update_request_stays_rejected(_db_session, employee_user,
+                                                       employee_client, monkeypatch):
+    """Nur die Anrechnung öffnet heute — eine gewöhnliche Änderung des
+    heutigen Eintrags geht weiter direkt (Anträge nur für vergangene Tage)."""
+    _today_is_mon(monkeypatch)
+    e = _k7(_db_session, employee_user)
+    r = _request(employee_client, e, request_credit_override=False)
+    assert (r.status_code, r.json()["detail"]) == (
+        400, "Änderungsanträge sind nur für vergangene Tage möglich")
+
+
+def test_todays_request_with_an_end_in_the_future_is_rejected(_db_session, employee_user,
+                                                              employee_client, monkeypatch):
+    """Heute lässt das Anlegen ein späteres Ende zu — anerkannt würde dauerhaft
+    (P11) eine Zeit, die noch gar nicht gearbeitet ist."""
+    _today_is_mon(monkeypatch, hour=18)
+    e = _k7(_db_session, employee_user)
+    r = _request(employee_client, e)
+    assert (r.status_code, r.json()["detail"]) == (400, cr_router.CREDIT_REQUEST_FUTURE_END_DETAIL)
+    assert _db_session.query(ChangeRequest).count() == 0
+
+
+@pytest.mark.parametrize("today", [False, True])
+def test_credit_request_keeps_the_date_of_the_entry(_db_session, employee_user, employee_client,
+                                                    monkeypatch, today):
+    """Gesamtreview PR2 (Fund 3): Nicht-Anrechnung und Begründung gehören zum
+    Tag des Eintrags — die Genehmigung kappte sonst gegen die Blöcke des
+    Zieltags und erkennte die Zeiten dort an."""
+    if today:
+        _today_is_mon(monkeypatch)
+    e = _k7(_db_session, employee_user)
+    from datetime import timedelta
+    r = _request(employee_client, e, proposed_date=(MON - timedelta(days=7)).isoformat())
+    assert (r.status_code, r.json()["detail"]) == (400, CREDIT_REQUEST_REJECTED_DETAIL)
+    assert _db_session.query(ChangeRequest).count() == 0
+
+
 def _cr(db, user, entry, **kw):
     cr = ChangeRequest(
         tenant_id=DEFAULT_TENANT_ID, user_id=user.id, entry_kind="time_entry",

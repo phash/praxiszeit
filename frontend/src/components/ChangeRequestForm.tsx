@@ -219,13 +219,16 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="cr-date" className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
+                {/* Gesamtreview PR2 (Fund 3): die Anrechnung gilt dem Tag des
+                    Eintrags — ein anderes Datum lehnt der Server mit 400 ab. */}
                 <input
                   id="cr-date"
                   type="date"
                   value={formData.proposed_date}
                   onChange={(e) => setFormData({ ...formData, proposed_date: e.target.value })}
+                  readOnly={requestCredit}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+                  className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500${requestCredit ? ' bg-gray-50 text-gray-600' : ''}`}
                 />
               </div>
               <div>

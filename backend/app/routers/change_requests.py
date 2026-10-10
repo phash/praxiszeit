@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date
-from app.services.timezone_service import today_local
+from app.services.timezone_service import now_local, today_local
 from app.database import get_db
 from app.models import (
     User, TimeEntry, ChangeRequest, ChangeRequestType, ChangeRequestStatus, UserRole, Absence, AbsenceType,
@@ -27,6 +27,10 @@ router = APIRouter(prefix="/api/change-requests", tags=["change-requests"])
 
 # Spec 2026-10-08, 11.4 / P21 (wörtlich).
 CREDIT_REQUEST_REJECTED_DETAIL = "Für diesen Eintrag kann keine Anrechnung beantragt werden."
+# Gesamtreview PR2 (Fund 1): heute beantragbar, aber nur für bereits vergangene Zeit.
+CREDIT_REQUEST_FUTURE_END_DETAIL = (
+    "Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden."
+)
 
 
 @router.post("/", response_model=ChangeRequestResponse, status_code=status.HTTP_201_CREATED)
@@ -35,7 +39,8 @@ def create_change_request(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Employee creates a change request for a past day."""
+    """Employee creates a change request for a past day (Anrechnung beantragen:
+    auch für den heutigen, geschlossenen Eintrag — Gesamtreview PR2, Fund 1)."""
 
     # Validate request_type
     if data.request_type not in ("create", "update", "delete"):
@@ -183,11 +188,23 @@ def create_change_request(
         if current_user.last_work_day and data.proposed_date > current_user.last_work_day:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Datum liegt nach dem letzten Arbeitstag")
 
+    # Gesamtreview PR2 (Fund 1): „Anrechnung beantragen" auch für den HEUTIGEN,
+    # geschlossenen Eintrag — der Lückentext an clock_out/create/update (für
+    # Mitarbeitende immer heute) verweist genau darauf, und Spec 14 kennt keine
+    # Tagesgrenze. Nur bei gleichbleibendem Datum (heute → heute, wie #502);
+    # gewöhnliche Änderungen des heutigen Eintrags laufen weiter direkt.
+    _credit_today = bool(
+        data.request_credit_override
+        and entry is not None
+        and entry.date == today_local()
+        and data.proposed_date == entry.date
+    )
+
     # For UPDATE, proposed values required and must be for past day
     if data.request_type == "update":
         if not all([data.proposed_date, data.proposed_start_time, data.proposed_end_time]):
             raise HTTPException(status_code=400, detail="Datum, Von und Bis sind erforderlich")
-        if data.proposed_date >= today_local():
+        if data.proposed_date >= today_local() and not _credit_today:
             raise HTTPException(status_code=400, detail="Änderungsanträge sind nur für vergangene Tage möglich")
         # Arbeitszeitraum-Prüfung (I1)
         if data.proposed_date:
@@ -210,10 +227,18 @@ def create_change_request(
             or entry.end_time is None
             or entry.credit_override
             or work_window_service.not_credited_minutes(entry) <= 0
+            # Gesamtreview PR2 (Fund 3): Nicht-Anrechnung und Begründung gehören
+            # zum Tag des Eintrags. Ein anderes Datum kappte die Genehmigung gegen
+            # die Blöcke des Zieltags und erkennte die Zeiten DORT an.
+            or data.proposed_date != entry.date
         ):
             raise HTTPException(status_code=400, detail=CREDIT_REQUEST_REJECTED_DETAIL)
         if credit_override_service.lacks_actual_end(entry, data.proposed_end_time):
             raise HTTPException(status_code=400, detail=credit_override_service.AUTO_CLOSED_DETAIL)
+        # Heute lässt das Anlegen ein späteres Ende zu (time_entries.create_time_entry);
+        # anerkannt würde dauerhaft (P11) noch nicht gearbeitete Zeit.
+        if _credit_today and data.proposed_end_time > now_local().time():
+            raise HTTPException(status_code=400, detail=CREDIT_REQUEST_FUTURE_END_DETAIL)
 
     # Time range validation for CREATE and UPDATE
     if data.request_type in ("create", "update") and data.proposed_start_time and data.proposed_end_time:
