@@ -108,3 +108,29 @@ def test_is_legacy_week_with_single_none_pause():
     mixed[0]["pause_minutes"] = None
     assert wbs.is_legacy_week(wbs.parse_week_blocks(mixed)) is True
     assert wbs.is_legacy_week(None) is False
+
+
+def test_changed_weekdays_compares_blocks_without_pause():
+    old = wbs.parse_week_blocks(block_week(pause=30, mon=[("08:00", "12:00"), ("15:00", "18:00")],
+                                           tue=[("08:00", "12:00")]))
+    pause_only = wbs.parse_week_blocks(block_week(pause=60, mon=[("08:00", "12:00"), ("15:00", "18:00")],
+                                                  tue=[("08:00", "12:00")]))
+    shorter_mon = wbs.parse_week_blocks(block_week(mon=[("08:00", "12:00"), ("15:00", "17:00")],
+                                                   tue=[("08:00", "12:00")]))
+    assert wbs.changed_weekdays(old.blocks, pause_only.blocks) == []
+    assert wbs.changed_weekdays(old.blocks, shorter_mon.blocks) == [0]
+    assert wbs.changed_weekdays(None, old.blocks) == [0, 1]
+    assert wbs.changed_weekdays(old.blocks, None) == [0, 1]
+    assert wbs.changed_weekdays(None, None) == []
+
+
+def test_blocks_text_long_and_compact():
+    parsed = wbs.parse_week_blocks(block_week(pause=30, mon=[("08:00", "12:00"), ("15:00", "18:00")],
+                                              tue=[("08:00", "13:00")]))
+    pauses = (30, 30, 0, 0, 0)
+    assert wbs.blocks_text(parsed.blocks, pauses, compact=False) == (
+        "Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–13:00 (Pause 30 Min)")
+    assert wbs.blocks_text(parsed.blocks, (30, 0, 0, 0, 0), compact=True) == (
+        "Mo 08:00–12:00+15:00–18:00 P30 / Di 08:00–13:00")
+    legacy = wbs.parse_week_blocks(legacy_week(mon=("07:37", "16:30"), fri=("07:30", None)))
+    assert wbs.blocks_text(legacy.blocks, legacy.pauses, compact=False) == "Mo 07:37–16:30 / Fr 07:30–23:59"

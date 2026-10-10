@@ -10,6 +10,7 @@ STRENGE Prüfung (5-Minuten-Raster, höchstens drei Blöcke, Pause < Σ) gehört
 die Schreibschemas (PR3), nie hierher: ein Lesepfad, der Altwerte ablehnt,
 machte den Login einer Person mit Altfenster zu HTTP 500 (E29).
 """
+from decimal import Decimal, ROUND_HALF_EVEN
 from typing import Any, NamedTuple, Optional
 
 WEEKDAY_LABELS = ("Mo", "Di", "Mi", "Do", "Fr")
@@ -99,3 +100,61 @@ def is_legacy_week(parsed: Optional[ParsedWeek]) -> bool:
     """Spec 3.3: eine Zeile mit mindestens einem ``pause_minutes`` None ist eine
     Altzeile (Fenster aus Migration 073 — kappt, treibt kein Soll)."""
     return parsed is not None and any(p is None for p in parsed.pauses)
+
+
+HOURS_FIELDS = ("hours_monday", "hours_tuesday", "hours_wednesday", "hours_thursday", "hours_friday")
+
+
+def derive_targets(week_blocks: list) -> dict:
+    """Spec 4.1 — DIE eine Soll-Ableitung aus NEUEN Blöcken (``pause_minutes`` int).
+
+    Erwartet die bereits validierte kanonische JSON-Woche (``validate_week_blocks``).
+    Tagessoll = (Σ Blockdauer − Pause) / 60, ``quantize(0.01, ROUND_HALF_EVEN)``;
+    ``weekly_hours`` = Σ der gerundeten Tageswerte. Genutzt von
+    ``WorkingHoursChangeCreate`` und ``UserCreate``; Frontend-Zwilling
+    ``utils/workBlocks.ts::deriveTargets`` (wortgleiche Testfälle)."""
+    hours = []
+    for day in week_blocks:
+        blocks = day.get("blocks") or []
+        total = sum(hhmm_to_minutes(b["end"]) - hhmm_to_minutes(b["start"]) for b in blocks)
+        net = total - int(day.get("pause_minutes") or 0) if blocks else 0
+        hours.append((Decimal(net) / Decimal(60)).quantize(Decimal("0.01"), ROUND_HALF_EVEN))
+    derived = dict(zip(HOURS_FIELDS, hours))
+    derived.update(
+        weekly_hours=sum(hours, Decimal("0")),
+        work_days_per_week=sum(1 for d in week_blocks if d.get("blocks")),
+        use_daily_schedule=True,
+    )
+    return derived
+
+
+def changed_weekdays(old_blocks: Optional[tuple], new_blocks: Optional[tuple]) -> list:
+    """Spec 9.1: Wochentage (0 = Mo … 4 = Fr), deren Blocklisten sich zwischen dem
+    alten und dem neuen Snapshot unterscheiden — OHNE Pause (eine reine
+    Pausenänderung kappt nichts neu). Schedule-Format: ``None`` == fünf leere Tage
+    (3.3, der Resolver normalisiert bereits)."""
+    old = old_blocks or ((),) * 5
+    new = new_blocks or ((),) * 5
+    return [i for i in range(5) if tuple(old[i]) != tuple(new[i])]
+
+
+def blocks_text(blocks: tuple, pauses: Optional[tuple], *, compact: bool) -> str:
+    """Blöcke als Klartext, nur Tage mit Blöcken.
+
+    lang (Dashboard-Hinweis, Berichtstext 15.2):
+    ``Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–13:00``;
+    kurz (Sammelzeile „Vertrag:", PDF-Kurzform 15.2):
+    ``Mo 08:00–12:00+15:00–18:00 P30 / Di 08:00–13:00``.
+    „Pause" nur bei Pause > 0; Altzeilen (Pause ``None``) ohne Pausenangabe."""
+    parts = []
+    for idx, day in enumerate(blocks or ()):
+        if not day:
+            continue
+        spans = [f"{minutes_to_hhmm(s)}–{minutes_to_hhmm(e)}" for s, e in day]
+        pause = pauses[idx] if pauses else None
+        if compact:
+            text = "+".join(spans) + (f" P{pause}" if pause else "")
+        else:
+            text = " + ".join(spans) + (f" (Pause {pause} Min)" if pause else "")
+        parts.append(f"{WEEKDAY_LABELS[idx]} {text}")
+    return " / ".join(parts)

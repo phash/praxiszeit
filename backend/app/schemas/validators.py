@@ -8,6 +8,8 @@ das Verhalten exakt gleich, aber es gibt nur noch EINE Quelle der Wahrheit.
 """
 from typing import Any
 
+from app.services.work_blocks_service import WEEKDAY_LABELS, hhmm_to_minutes
+
 # Erlaubte absence_type-Werte für Urlaubs-/Abwesenheitsanträge.
 VACATION_REQUEST_ABSENCE_TYPES = {"vacation", "training", "overtime", "other"}
 
@@ -67,3 +69,77 @@ def strip_legacy_window_fields(data: Any) -> Any:
         }
         data["legacy_window_fields_sent"] = True
     return data
+
+
+# Spec 3.4: Obergrenze der Wochensumme (bestehende Grenze der Wochenstunden).
+WEEK_LIMIT_MINUTES = 60 * 60
+
+
+def _as_dict(value: Any) -> Any:
+    return value.model_dump() if hasattr(value, "model_dump") else value
+
+
+def validate_week_blocks(value: Any) -> list:
+    """Spec 2026-10-08, 3.4 — strenge Prüfung NUR für Schreibschemas
+    (``UserCreate``, ``WorkingHoursChangeCreate``), nie für Leseschemas (E29).
+
+    Wirft ``ValueError`` mit dem deutschen Text der ERSTEN verletzten Regel und
+    liefert sonst die kanonische JSON-Woche. Frontend-Zwilling:
+    ``utils/workBlocks.ts::validateWeekBlocks`` (wortgleiche Texte und Fälle).
+    Die ArbZG-Plausibilität des Plans ist KEINE Regel hier (P9: Hinweise)."""
+    if not isinstance(value, list) or len(value) != 5:
+        raise ValueError("Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet.")
+    week = []
+    total_net = 0
+    for idx, raw_day in enumerate(value):
+        day = _as_dict(raw_day)
+        if not isinstance(day, dict):
+            raise ValueError("Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet.")
+        label = WEEKDAY_LABELS[idx]
+        raw_blocks = day.get("blocks") or []
+        if not isinstance(raw_blocks, (list, tuple)):
+            # Sonst iterierte ``for b in 5`` mit TypeError — in einem
+            # Pydantic-Validator ein 500 statt einer Meldung. Wortlaut wie im
+            # lesenden ``work_blocks_service.parse_week_blocks``.
+            raise ValueError(f"{label}: Tag nicht in der Form {{blocks, pause_minutes}}.")
+        blocks = [_as_dict(b) for b in raw_blocks]
+        if len(blocks) > 3:
+            raise ValueError(f"{label}: höchstens drei Blöcke je Tag.")
+        spans = []
+        for n, block in enumerate(blocks, start=1):
+            try:
+                start = hhmm_to_minutes(block.get("start"))
+                end = hhmm_to_minutes(block.get("end"))
+            except (ValueError, TypeError, AttributeError):
+                raise ValueError(f"{label}, Block {n}: Uhrzeit im Format HH:MM angeben.") from None
+            if start % 5 or end % 5:
+                raise ValueError(f"{label}, Block {n}: Uhrzeiten im 5-Minuten-Raster (z. B. 08:05).")
+            if start >= end:
+                raise ValueError(f"{label}, Block {n}: Beginn muss vor dem Ende liegen.")
+            spans.append((start, end))
+        for n in range(1, len(spans)):
+            if spans[n][0] <= spans[n - 1][1]:
+                raise ValueError(
+                    f"{label}: Block {n + 1} muss nach dem Ende von Block {n} beginnen; "
+                    "aneinandergrenzende Blöcke bitte als einen Block erfassen."
+                )
+        pause = day.get("pause_minutes")
+        if pause is None:
+            raise ValueError(f"{label}: Pause angeben (0, wenn keine).")
+        if isinstance(pause, bool) or not isinstance(pause, int) or pause < 0 or pause % 5:
+            raise ValueError(f"{label}: Pause in Minuten im 5-Minuten-Raster angeben.")
+        if not spans and pause != 0:
+            raise ValueError(f"{label}: Pause nur an Tagen mit Blöcken.")
+        gross = sum(e - s for s, e in spans)
+        if spans and pause >= gross:
+            raise ValueError(f"{label}: Pause muss kürzer sein als die Gesamtzeit der Blöcke.")
+        total_net += gross - pause if spans else 0
+        week.append({
+            "blocks": [{"start": b["start"], "end": b["end"]} for b in blocks],
+            "pause_minutes": pause,
+        })
+    if not any(d["blocks"] for d in week):
+        raise ValueError("Mindestens ein Wochentag braucht einen Block.")
+    if total_net > WEEK_LIMIT_MINUTES:
+        raise ValueError("Die Wochensumme darf 60 Stunden nicht überschreiten.")
+    return week
