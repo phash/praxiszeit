@@ -1857,6 +1857,23 @@ def _nested_block_label(loc: tuple) -> Optional[str]:
     return None
 
 
+def _block_root_error(loc: tuple) -> Optional[str]:
+    """Spec 3.4, Regel „genau 5 Einträge": ein Verstoß an der Wurzel der Woche,
+    den Pydantic VOR ``validate_week_blocks`` abfängt — ``blocks``/``work_blocks``
+    als String oder Objekt (``list_type`` an ``("work_blocks",)``) oder ein
+    Typfehler ab dem sechsten Tag (``("work_blocks", 5, …)``). Beides heißt „keine
+    Woche aus fünf Tagen" und bekommt denselben Text, den die Regel bei ``[]``
+    oder sechs gültigen Tagen liefert; ohne diesen Zweig kam beim Anlegen FastAPIs
+    englische Standard-422, in der Vorschau „Ungültige Eingabe.".
+
+    Mo–Fr (Index 0–4) gehören dem Tageslabel (``_nested_block_label``) → ``None``."""
+    if not loc or loc[0] not in _BLOCK_ROOTS:
+        return None
+    if len(loc) == 1 or (isinstance(loc[1], int) and not 0 <= loc[1] < 5):
+        return work_blocks_service.WEEK_SHAPE_TEXT
+    return None
+
+
 def _schedule_input_error(exc: ValidationError) -> str:
     """Ein Verstoß gegen die Snapshot-Regeln als deutscher Klartext für
     ``blocked_reason``.
@@ -1896,10 +1913,14 @@ def _labelled_input_error(exc: ValidationError) -> Optional[str]:
     err = errors[0]
     if err.get("type") == "value_error":
         return str(err.get("msg", "Ungültige Eingabe.")).removeprefix("Value error, ")
+    loc = tuple(err.get("loc") or ())
+    root = _block_root_error(loc)
+    if root is not None:
+        return root
     # Spec 3.4: Typfehler in den verschachtelten Blöcken (z. B. Beginn als Zahl)
     # bekommen „Mo, Block 2, Beginn" als Label; die Regeltexte selbst kommen als
     # value_error aus ``validate_week_blocks`` (Zweig darüber).
-    nested = _nested_block_label(tuple(err.get("loc") or ()))
+    nested = _nested_block_label(loc)
     if nested is not None:
         return f"{nested}: ungültiger Wert."
     label = next(

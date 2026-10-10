@@ -14,6 +14,10 @@ from decimal import Decimal, ROUND_HALF_EVEN
 from typing import Any, NamedTuple, Optional
 
 WEEKDAY_LABELS = ("Mo", "Di", "Mi", "Do", "Fr")
+# Spec 3.4, Regel „genau 5 Einträge" — eine Quelle für Lese-/Schreibprüfung und die
+# 422/``blocked_reason`` bei falscher Form an der Wurzel (``admin_users._block_root_error``).
+# Frontend-Zwilling: ``utils/workBlocks.ts::validateWeekBlocks`` (wortgleich).
+WEEK_SHAPE_TEXT = "Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet."
 _LAST_MINUTE = 23 * 60 + 59
 
 
@@ -53,7 +57,7 @@ def parse_week_blocks(raw: Any) -> Optional[ParsedWeek]:
     if raw is None:
         return None
     if not isinstance(raw, list) or len(raw) != 5:
-        raise ValueError("Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet.")
+        raise ValueError(WEEK_SHAPE_TEXT)
     all_blocks, pauses = [], []
     for idx, day in enumerate(raw):
         label = WEEKDAY_LABELS[idx]

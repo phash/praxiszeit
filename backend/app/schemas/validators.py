@@ -9,7 +9,7 @@ das Verhalten exakt gleich, aber es gibt nur noch EINE Quelle der Wahrheit.
 from decimal import Decimal
 from typing import Any
 
-from app.services.work_blocks_service import WEEKDAY_LABELS, derive_targets, hhmm_to_minutes
+from app.services.work_blocks_service import WEEK_SHAPE_TEXT, WEEKDAY_LABELS, derive_targets, hhmm_to_minutes
 
 # Erlaubte absence_type-Werte für Urlaubs-/Abwesenheitsanträge.
 VACATION_REQUEST_ABSENCE_TYPES = {"vacation", "training", "overtime", "other"}
@@ -91,12 +91,12 @@ def validate_week_blocks(value: Any) -> list:
     ``utils/workBlocks.ts::validateWeekBlocks`` (wortgleiche Texte und Fälle).
     Die ArbZG-Plausibilität des Plans ist KEINE Regel hier (P9: Hinweise)."""
     if not isinstance(value, list) or len(value) != 5:
-        raise ValueError("Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet.")
+        raise ValueError(WEEK_SHAPE_TEXT)
     week = []
     for idx, raw_day in enumerate(value):
         day = _as_dict(raw_day)
         if not isinstance(day, dict):
-            raise ValueError("Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet.")
+            raise ValueError(WEEK_SHAPE_TEXT)
         label = WEEKDAY_LABELS[idx]
         raw_blocks = day.get("blocks") or []
         if not isinstance(raw_blocks, (list, tuple)):

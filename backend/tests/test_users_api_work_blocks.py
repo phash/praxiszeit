@@ -309,6 +309,24 @@ def test_post_block_type_error_names_weekday_block_and_field(admin_client):
     assert resp.json()["detail"] == "Di, Block 2, Ende: ungültiger Wert."
 
 
+def _six_days_sixth_broken():
+    week = block_week(mon=[("08:00", "12:00")])
+    week.append({"blocks": [{"start": 1, "end": "12:00"}], "pause_minutes": 0})
+    return week
+
+
+@pytest.mark.parametrize("work_blocks", ["x", {"mo": []}, _six_days_sixth_broken()],
+                         ids=["text", "objekt", "sechster-tag-typfehler"])
+def test_post_wrong_week_shape_gets_the_five_days_text(admin_client, work_blocks):
+    """Review Task 4: ``work_blocks`` als String/Objekt (``list_type`` an der Wurzel)
+    oder ein Typfehler am sechsten Tag fängt Pydantic vor ``validate_week_blocks`` ab.
+    Ohne eigenen Zweig kam FastAPIs englische Standard-422 („Input should be a valid
+    list") — Spec 3.4 sieht für „genau 5 Einträge" den deutschen Text vor."""
+    resp = admin_client.post("/api/admin/users", json={**BLOCK_USER, "work_blocks": work_blocks})
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == "Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet."
+
+
 def test_post_labelled_field_and_other_rule_texts_are_german_too(admin_client):
     """Dieselbe Übersetzung greift für die Feld-Labels aus ``_schedule_input_error``
     und für die übrigen ``UserCreate``-Regeltexte (ohne „Value error, ")."""

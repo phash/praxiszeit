@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.routers.admin_users import _nested_block_label, _schedule_input_error
+from app.routers.admin_users import _block_root_error, _nested_block_label, _schedule_input_error
 from app.schemas.working_hours_change import (
     BLOCKS_WITH_HOURS_DETAIL, WorkingHoursChangeCreate, WorkingHoursChangeDelete,
     WorkingHoursChangePreview, WorkingHoursChangeResponse,
@@ -75,7 +75,46 @@ def test_nested_type_errors_get_a_label():
     week[0]["blocks"] = 5
     assert _error({"effective_from": EFF, "blocks": week}) == "Mo: ungültiger Wert."
     assert _error({"effective_from": EFF, "blocks": [1, 2, 3, 4, 5]}) == "Mo: ungültiger Wert."
-    assert _error({"effective_from": EFF, "blocks": "Mo 8-12"}) == "Ungültige Eingabe."
+
+
+WEEK_SHAPE = "Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet."
+
+
+def _six_days_sixth_broken():
+    """Sechs Tage, der sechste mit einem Typfehler (``start: 1``) — Pydantic meldet
+    ihn an ``("blocks", 5, "blocks", 0, "start")``, BEVOR ``validate_week_blocks``
+    die Länge prüfen kann."""
+    week = block_week(mon=[("08:00", "12:00")])
+    week.append({"blocks": [{"start": 1, "end": "12:00"}], "pause_minutes": 0})
+    return week
+
+
+@pytest.mark.parametrize("blocks", ["Mo 8-12", {"mo": []}, _six_days_sixth_broken()],
+                         ids=["text", "objekt", "sechster-tag-typfehler"])
+def test_wrong_week_shape_gets_the_five_days_text(blocks):
+    """Review Task 4: eine falsche Form an der Wurzel (keine Liste, Typfehler ab dem
+    sechsten Tag) fängt Pydantic vor ``validate_week_blocks`` ab — ohne eigenen Zweig
+    gab die Vorschau „Ungültige Eingabe." statt des 3.4-Texts der Regel „genau 5
+    Einträge", den dieselbe Regel bei ``[]`` oder sechs gültigen Tagen schon liefert."""
+    assert _error({"effective_from": EFF, "blocks": blocks}) == WEEK_SHAPE
+    assert _error({"effective_from": EFF, "blocks": []}) == WEEK_SHAPE
+
+
+@pytest.mark.parametrize("loc, expected", [
+    (("blocks",), WEEK_SHAPE),
+    (("work_blocks",), WEEK_SHAPE),
+    (("blocks", 5, "blocks", 0, "start"), WEEK_SHAPE),
+    (("work_blocks", 7), WEEK_SHAPE),
+    (("blocks", -1), WEEK_SHAPE),
+    # Mo–Fr gehören dem Tageslabel (``_nested_block_label``), nicht der Wurzel.
+    (("blocks", 0, "blocks", 0, "start"), None),
+    (("work_blocks", 4), None),
+    (("blocks", "x"), None),
+    (("weekly_hours",), None),
+    ((), None),
+])
+def test_block_root_error(loc, expected):
+    assert _block_root_error(loc) == expected
 
 
 @pytest.mark.parametrize("pause", ["x", "30", 30.0, True])
