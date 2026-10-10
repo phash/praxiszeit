@@ -249,3 +249,141 @@ def test_presence_warnings_week(db, test_user):
     db.commit()
     codes = _codes(ps.presence_warnings(db, test_user, MON + timedelta(days=4), break_check_passed=True))
     assert codes == ["PRESENCE_BREAK", "PRESENCE_WEEKLY_HOURS"]
+
+
+# ── Schreibpfade (Spec 8.3 „Ausgegeben an") und Falltabelle (6.3) ─────────────
+import datetime as dt  # noqa: E402
+
+import pytest  # noqa: E402
+
+import app.routers.time_entries as te  # noqa: E402
+import app.schemas.time_entry as te_schema  # noqa: E402
+from app.models.public_holiday import PublicHoliday  # noqa: E402
+from app.models.system_setting import SystemSetting  # noqa: E402
+from app.services.holiday_service import invalidate_holiday_cache  # noqa: E402
+from tests.test_endpoints import (  # noqa: F401,E402 — Fixtures
+    _db_session, admin_client, admin_user, employee_client, employee_user, tenant,
+)
+from tests.work_blocks_cases import EASTER_MONDAY, K_CASES, K_CODES, K_HTTP_400  # noqa: E402
+from tests.work_blocks_fixtures import K_BLOCKS, block_week  # noqa: E402
+
+HTTP_CASES = [c for c in K_CASES if K_CODES[c.id] is not None]
+
+
+@pytest.fixture
+def k_http(_db_session, employee_user):
+    _db_session.add(PublicHoliday(date=EASTER_MONDAY, name="Ostermontag", year=2026,
+                                  tenant_id=DEFAULT_TENANT_ID))
+    _db_session.add(SystemSetting(key="special_day_dec24_mode", value="half_day",
+                                  tenant_id=DEFAULT_TENANT_ID))
+    _db_session.commit()
+    invalidate_holiday_cache()
+    yield
+    invalidate_holiday_cache()
+
+
+def _today(monkeypatch, d, hh=10):
+    monkeypatch.setattr(te, "_today_local", lambda: d)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(d.year, d.month, d.day, hh, 0))
+    monkeypatch.setattr(te_schema, "today_local", lambda: d)
+
+
+def _resp_codes(r):
+    return {w.split(":", 1)[0] for w in r.json()["warnings"]}
+
+
+@pytest.mark.parametrize("case", HTTP_CASES, ids=[c.id for c in HTTP_CASES])
+def test_k_table_codes_on_manual_create(_db_session, employee_user, employee_client, k_http,
+                                        monkeypatch, case):
+    """Spec 6.3, Spalte „Meldung": POST /api/time-entries/ durch die Person selbst."""
+    employee_user.work_blocks = case.blocks
+    employee_user.track_hours = case.track_hours
+    _db_session.commit()
+    _today(monkeypatch, case.day)
+    r = employee_client.post("/api/time-entries/", json={
+        "date": case.day.isoformat(),
+        "start_time": case.start.strftime("%H:%M"),
+        "end_time": case.end.strftime("%H:%M"),
+        "break_minutes": case.break_minutes,
+    })
+    if K_CODES[case.id] == frozenset({K_HTTP_400}):
+        assert r.status_code == 400, r.text   # K6: harte §4-Sperre wie heute
+        return
+    assert r.status_code == 201, r.text
+    assert _resp_codes(r) == K_CODES[case.id]
+
+
+def test_clock_out_reports_presence_break(_db_session, employee_user, employee_client, monkeypatch):
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, date=MON,
+                              start_time=time(8), end_time=None, break_minutes=0,
+                              clamp_grace_minutes=15))
+    _db_session.commit()
+    _today(monkeypatch, MON, 18)
+    r = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 0})
+    assert r.status_code == 200, r.text
+    assert {"WORK_WINDOW_CLAMPED", "PRESENCE_BREAK"} <= _resp_codes(r)
+
+
+def test_employee_update_reports_presence(_db_session, employee_user, employee_client, monkeypatch):
+    employee_user.work_blocks = K_BLOCKS
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, date=MON,
+                  start_time=time(8), end_time=time(12), break_minutes=0)
+    _db_session.add(e)
+    _db_session.commit()
+    _today(monkeypatch, MON, 19)
+    r = employee_client.put(f"/api/time-entries/{e.id}", json={"end_time": "18:00"})
+    assert r.status_code == 200, r.text
+    assert "PRESENCE_BREAK" in _resp_codes(r)
+
+
+def test_exempt_person_gets_no_presence_warnings(_db_session, employee_user, employee_client,
+                                                 monkeypatch):
+    employee_user.work_blocks = K_BLOCKS
+    employee_user.exempt_from_arbzg = True
+    _db_session.commit()
+    _today(monkeypatch, MON)
+    r = employee_client.post("/api/time-entries/", json={
+        "date": MON.isoformat(), "start_time": "07:00", "end_time": "19:00", "break_minutes": 30,
+    })
+    assert r.status_code == 201, r.text
+    assert _resp_codes(r) == {"WORK_WINDOW_CLAMPED"}
+
+
+def test_weekly_presence_on_create(_db_session, employee_user, employee_client, monkeypatch):
+    week = [("08:00", "12:00"), ("15:00", "18:00")]
+    employee_user.work_blocks = block_week(mon=week, tue=week, wed=week, thu=week, fri=week)
+    for i in range(4):
+        _db_session.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id,
+                                  date=MON + timedelta(days=i), start_time=time(8),
+                                  end_time=time(18), break_minutes=0, uncredited_minutes=150,
+                                  clamp_grace_minutes=15))
+    _db_session.commit()
+    friday = MON + timedelta(days=4)
+    _today(monkeypatch, friday)
+    r = employee_client.post("/api/time-entries/", json={
+        "date": friday.isoformat(), "start_time": "08:00", "end_time": "18:00", "break_minutes": 0,
+    })
+    assert r.status_code == 201, r.text
+    codes = _resp_codes(r)
+    assert "PRESENCE_WEEKLY_HOURS" in codes
+    assert "WEEKLY_HOURS_WARNING" not in codes   # angerechnet 37:30 h
+
+
+def test_admin_create_and_update_report_presence(_db_session, employee_user, admin_client):
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    r = admin_client.post(f"/api/admin/users/{employee_user.id}/time-entries", json={
+        "date": MON.isoformat(), "start_time": "08:00", "end_time": "18:00", "break_minutes": 30,
+    })
+    assert r.status_code == 201, r.text
+    assert {"WORK_WINDOW_CLAMPED", "BREAK_IN_GAP", "PRESENCE_BREAK"} <= _resp_codes(r)
+
+    other = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id,
+                      date=MON + timedelta(days=7), start_time=time(8), end_time=time(12),
+                      break_minutes=0)
+    _db_session.add(other)
+    _db_session.commit()
+    r = admin_client.put(f"/api/admin/time-entries/{other.id}", json={"end_time": "18:00"})
+    assert r.status_code == 200, r.text
+    assert "PRESENCE_BREAK" in _resp_codes(r)

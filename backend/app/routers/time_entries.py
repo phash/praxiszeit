@@ -10,7 +10,7 @@ from app.models import (
     User, TimeEntry, UserRole, TimeEntryAuditLog,
     ChangeRequest, ChangeRequestType, ChangeRequestStatus,
 )
-from app.services import settings_service, milog_service, calculation_service
+from app.services import settings_service, milog_service, calculation_service, presence_service
 from app.middleware.auth import get_current_user
 from app.schemas.time_entry import (
     TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse,
@@ -763,6 +763,14 @@ def clock_out(
                 "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
             )
 
+    # Spec 8.3/8.4 (P14, P22): weiche Warnungen auf der Anwesenheit laut Stempel
+    # und der Pausen-Doppelabzug — nach dem Commit, die Tagessumme enthält den
+    # eben geschlossenen Eintrag. §4 „bestanden" = weder 400 (oben) noch Ausnahme.
+    clock_out_warnings.extend(presence_service.presence_warnings(
+        db, current_user, open_entry.date,
+        break_check_passed=break_error is None, entry=open_entry,
+    ))
+
     # #377 § 2 Abs. 2 MiLoG: weiche Warnung, wenn die Konto-Plusstunden dieses
     # Monats (month-to-date, inkl. des eben geschlossenen Eintrags) 50 % der
     # vereinbarten Monatszeit reißen. Unabhängig von `exempt` (keine ArbZG-§18-Frage).
@@ -1106,6 +1114,13 @@ def create_time_entry(
 
     db.commit()
     db.refresh(entry)
+
+    # Spec 8.3/8.4 (P14, P22): §4 „bestanden" = keine Ausnahme nötig (400 und
+    # der 202-Antrag sind oben schon zurückgekehrt).
+    warnings.extend(presence_service.presence_warnings(
+        db, current_user, entry.date,
+        break_check_passed=not break_waiver_active, entry=entry,
+    ))
 
     # #377 § 2 Abs. 2 MiLoG: manuell buchende Minijobber erreichen clock_out nie —
     # daher auch hier die weiche 50-%-Warnung (month-to-date inkl. dieses Eintrags).
@@ -1592,6 +1607,15 @@ def update_time_entry(
                 f"§6 ArbZG: Nachtarbeitnehmer – Tageslimit 8h überschritten ({saved_hours:.1f}h). "
                 "Verlängerung auf 10h nur mit 1-Monats-Ausgleich zulässig."
             )
+
+    # Spec 8.3/8.4 (P14, P22): wie beim Anlegen; nur für geschlossene Einträge.
+    # Die Person des Eintrags (``_entry_owner``) — auch wenn eine Admin hier
+    # einen fremden Eintrag bearbeitet; §18 entscheidet deren Freistellung.
+    if entry.end_time is not None:
+        update_warnings.extend(presence_service.presence_warnings(
+            db, _entry_owner, entry.date,
+            break_check_passed=not break_waiver_active, entry=entry,
+        ))
 
     # #377 § 2 Abs. 2 MiLoG: auch beim Bearbeiten (verändert die Monatssumme).
     # Nur bei Selbst-Bearbeitung — die Warnung gilt dem Eintrags-Eigentümer, nicht

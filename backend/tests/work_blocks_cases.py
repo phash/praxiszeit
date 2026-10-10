@@ -74,6 +74,41 @@ K_CASES = [
     KCase("K21", K_BLOCKS, MON, _t(8), _t(18), 45, True, False, False, _t(8), _t(18), None, None, 150, 15, "6.75", 150, "gap"),
 ]
 
+# Spec 6.3, Spalte „Meldung" (PR2): Warncodes, die POST /api/time-entries/ —
+# manuelles Anlegen durch die Person selbst, Falltag = heute — für den
+# GESCHLOSSENEN Eintrag liefert. None = über diesen Pfad nicht erzeugbar
+# (offen K2/K14, anerkannt K10 → Task 5, Auto-Close K15). K20 hier als ein
+# Eintrag 07:00–18:00 (EARLY_START gibt es nur beim Einstempeln). K_HTTP_400 =
+# harte §4-Sperre (K6). Der Frontend-Zwilling utils/workBlocksCases.ts führt
+# dieselben IDs.
+K_HTTP_400 = "HTTP_400"
+_CLAMPED = "WORK_WINDOW_CLAMPED"
+K_CODES: dict = {
+    "K1": frozenset({_CLAMPED, "PRESENCE_BREAK"}),
+    "K2": None,
+    "K2b": frozenset({_CLAMPED}),
+    "K3": frozenset({_CLAMPED}),
+    "K4": frozenset(),
+    "K5": frozenset({_CLAMPED}),
+    "K6": frozenset({K_HTTP_400}),
+    "K7": frozenset({_CLAMPED, "PRESENCE_DAILY_HOURS", "PRESENCE_BREAK"}),
+    "K8": frozenset({_CLAMPED}),
+    "K9": frozenset({_CLAMPED, "BREAK_IN_GAP", "PRESENCE_BREAK"}),
+    "K10": None,
+    "K11": frozenset({"HOLIDAY_WORK", "DAILY_HOURS_WARNING"}),
+    "K12": frozenset({"SUNDAY_WORK", "DAILY_HOURS_WARNING"}),
+    "K13": frozenset({"DAILY_HOURS_WARNING"}),
+    "K14": None,
+    "K15": None,
+    "K16": frozenset({_CLAMPED}),
+    "K17": frozenset({_CLAMPED, "DAILY_HOURS_WARNING", "PRESENCE_DAILY_HOURS", "PRESENCE_BREAK"}),
+    "K18": frozenset({_CLAMPED, "PRESENCE_BREAK"}),
+    "K19": frozenset({_CLAMPED, "PRESENCE_BREAK"}),
+    "K20": frozenset({_CLAMPED, "PRESENCE_DAILY_HOURS", "PRESENCE_BREAK"}),
+    "K21": frozenset({_CLAMPED, "BREAK_IN_GAP"}),
+}
+assert set(K_CODES) == {c.id for c in K_CASES}
+
 
 def k_user(case: KCase) -> User:
     """Transiente Person ohne Verlauf → der Resolver nimmt ``work_blocks``."""

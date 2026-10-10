@@ -18,7 +18,7 @@ from app.routers.time_entries import (
     BREAK_WAIVER_SOURCE, _assert_within_employment_window,
 )
 from app.services.arbzg_utils import is_night_work
-from app.services import work_window_service
+from app.services import presence_service, work_window_service
 from app.routers.absences import _MASKED_ABSENCE_TYPES
 from app.services.export_service import ABSENCE_TYPE_LABELS_DE
 
@@ -227,6 +227,10 @@ def admin_create_time_entry(
 
     db.commit()
     db.refresh(entry)
+    # Spec 8.3/8.4 (P14, P22): weiche Anwesenheits-Warnungen für die Person.
+    admin_create_warnings.extend(presence_service.presence_warnings(
+        db, user, entry.date, break_check_passed=not break_waiver_active, entry=entry,
+    ))
     response = TimeEntryResponse.model_validate(entry)
     response.warnings = admin_create_warnings
     return response
@@ -539,6 +543,14 @@ def admin_update_time_entry(
 
     db.commit()
     db.refresh(entry)
+
+    # Spec 8.3/8.4 (P14, P22): weiche Anwesenheits-Warnungen für die Person —
+    # nur für geschlossene Einträge (``affected_user`` ist oben schon geprüft).
+    if entry.end_time is not None:
+        admin_update_warnings.extend(presence_service.presence_warnings(
+            db, affected_user, entry.date,
+            break_check_passed=not break_waiver_active, entry=entry,
+        ))
 
     response = TimeEntryResponse.model_validate(entry)
     response.warnings = admin_update_warnings
