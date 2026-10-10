@@ -141,14 +141,23 @@ class WorkingHoursChangeCreate(WorkingHoursChangeBase, RetroReasonFields):
     @model_validator(mode='after')
     def check_note_length(self):
         """Spec 9.5: Grund (mit Präfix) + Notiz ≤ 500 Zeichen (``note`` ist
-        ``String(500)``) — keine stille Kürzung. Geprüft wird exakt der Text, den
-        der Schreibpfad über ``compose_change_note`` speichert. Lokaler Import:
-        ``reclamp_audit`` zieht den Export-Service."""
-        from app.services.reclamp_audit import NOTE_MAX_LENGTH, NOTE_TOO_LONG_DETAIL, compose_change_note
+        ``String(500)``) — keine stille Kürzung. Geprüft wird jeder Text, den der
+        Schreibpfad über ``compose_change_note`` speichern KANN: ob die Änderung
+        verkürzt (und der Grund davorkommt), weiß erst der Router. Verkürzt sie
+        nicht, landet die Notiz allein und ungetrimmt in der Spalte — die braucht
+        deshalb immer ihre eigene Prüfung, sonst bricht PostgreSQL mit 22001 ab
+        (HTTP 500, Review Task 3). Lokaler Import: ``reclamp_audit`` zieht den
+        Export-Service."""
+        from app.services.reclamp_audit import (
+            NOTE_MAX_LENGTH, NOTE_ONLY_TOO_LONG_DETAIL, NOTE_TOO_LONG_DETAIL, compose_change_note,
+        )
         if self.retroactive_reason_type and self.retroactive_reason_text:
             composed = compose_change_note(self.note, self.retroactive_reason_type, self.retroactive_reason_text)
             if composed is not None and len(composed) > NOTE_MAX_LENGTH:
                 raise ValueError(NOTE_TOO_LONG_DETAIL)
+        alone = compose_change_note(self.note, None, None)
+        if alone is not None and len(alone) > NOTE_MAX_LENGTH:
+            raise ValueError(NOTE_ONLY_TOO_LONG_DETAIL)
         return self
 
 

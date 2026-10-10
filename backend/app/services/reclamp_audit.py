@@ -23,6 +23,9 @@ from app.services.export_service import format_day_plan, format_hours_de
 AUDIT_SOURCE = "wh_reclamp"  # 10 Zeichen, varchar(40)
 NOTE_MAX_LENGTH = 500
 NOTE_TOO_LONG_DETAIL = "Notiz und Begründung zusammen höchstens 500 Zeichen."
+# Review Task 3: ohne Begründung steht die Notiz allein in der Spalte — „und
+# Begründung" wäre dort ein Satz über ein Feld, das niemand ausgefüllt hat.
+NOTE_ONLY_TOO_LONG_DETAIL = "Die Notiz darf höchstens 500 Zeichen lang sein."
 
 
 class ReasonType(NamedTuple):
@@ -84,8 +87,9 @@ def compose_change_note(note: Optional[str], reason_type: Optional[str],
     """Spec 9.5: ``working_hours_changes.note`` = Grund mit Präfix, eine zusätzliche
     Notiz mit „ · " angehängt. Ohne Grund bleibt die Notiz wie eingegeben.
 
-    Die Längenprüfung (> :data:`NOTE_MAX_LENGTH` → 422 :data:`NOTE_TOO_LONG_DETAIL`)
-    gehört dem Schreibschema — hier wird nie still gekürzt."""
+    Die Längenprüfung (> :data:`NOTE_MAX_LENGTH` → 422 :data:`NOTE_TOO_LONG_DETAIL`,
+    Notiz allein :data:`NOTE_ONLY_TOO_LONG_DETAIL`) gehört dem Schreibschema —
+    hier wird nie still gekürzt."""
     if not reason_type:
         return note
     base = reason_text(reason_type, text)

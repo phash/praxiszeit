@@ -131,6 +131,34 @@ def test_note_total_boundary_is_exactly_500():
     assert _error(dict(base, note="n" * 68)) == "Notiz und Begründung zusammen höchstens 500 Zeichen."
 
 
+def test_note_without_reason_is_capped_at_500():
+    """Review Task 3: ``working_hours_changes.note`` ist ``String(500)``. Ohne
+    Begründung speichert der Schreibpfad die Notiz unverändert — 501 Zeichen
+    liefen bisher durchs Schema und brachen erst auf PostgreSQL mit SQLSTATE
+    22001 ab (HTTP 500; ``db_errors`` übersetzt nur 22P02). SQLite sieht die
+    Spaltenlänge nicht, deshalb sitzt der Beleg am Schema."""
+    from app.services.reclamp_audit import NOTE_ONLY_TOO_LONG_DETAIL
+    base = {"effective_from": EFF, "weekly_hours": 30}
+    assert WorkingHoursChangeCreate.model_validate(dict(base, note="n" * 500)).note == "n" * 500
+    assert _error(dict(base, note="n" * 501)) == NOTE_ONLY_TOO_LONG_DETAIL
+    assert NOTE_ONLY_TOO_LONG_DETAIL == "Die Notiz darf höchstens 500 Zeichen lang sein."
+    # Grundtyp ohne Begründungstext: der Schreibpfad setzt keinen Präfix davor
+    # (ohne Text gibt es kein Schutzpaket), gespeichert wird die Notiz allein.
+    assert _error(dict(base, note="n" * 501, retroactive_reason_type="sonstiges")) == (
+        NOTE_ONLY_TOO_LONG_DETAIL)
+
+
+def test_padded_note_with_reason_is_measured_as_stored_without_reason():
+    """Das Schema weiß nicht, ob die Änderung verkürzt: verkürzt sie nicht,
+    speichert der Schreibpfad die Notiz OHNE Grund und UNGETRIMMT
+    (``compose_change_note(note, None, …)``). Eine mit Leerzeichen aufgefüllte
+    Notiz passt dann zusammengesetzt (getrimmt), roh aber nicht in die Spalte."""
+    body = {"effective_from": EFF, "weekly_hours": 30, "retroactive_reason_type": "einvernehmlich",
+            "retroactive_reason_text": "Montags bis 19 Uhr vereinbart", "note": "Teilzeit" + " " * 493}
+    from app.services.reclamp_audit import NOTE_ONLY_TOO_LONG_DETAIL
+    assert _error(body) == NOTE_ONLY_TOO_LONG_DETAIL
+
+
 def test_reason_text_of_the_wrong_type_gets_a_singular_sentence():
     """Review Task 3: „Die Begründung" ist das einzige Label im Singular — der
     Plural-Ausweichtext („… sind kein gültiger Wert.") passt dort nicht. Ab der

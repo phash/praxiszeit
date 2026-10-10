@@ -1425,7 +1425,10 @@ Warnung zum Direktionsrecht mit eigenem Haken. Fehlt `other_reason_risk_confirme
 Speicherung des Grundes in `working_hours_changes.note` (String(500)):
 `"[Erfassungsfehler korrigiert] <Begründung>"` bzw. `"[Einvernehmlich vereinbart] …"` /
 `"[Sonstiges] …"`; eine zusätzliche Notiz wird mit `" · "` angehängt. Gesamtlänge > 500 →
-422 „Notiz und Begründung zusammen höchstens 500 Zeichen." (keine stille Kürzung). Die
+422 „Notiz und Begründung zusammen höchstens 500 Zeichen." (keine stille Kürzung). Ohne
+Grund steht die Notiz allein in der Spalte; auch sie ist auf 500 begrenzt → 422 „Die Notiz
+darf höchstens 500 Zeichen lang sein." Das Schreibschema prüft beide Fassungen, weil erst der
+Router weiß, ob die Änderung verkürzt und der Grund davorkommt. Die
 Präfixe bleiben trotz der neuen Beschriftungen unverändert (19.1 Nr. 7) — sie stehen
 schon so in Protokoll und Parser. Schlüssel, Präfix und Beschriftung stehen als **eine**
 Konstante `REASON_TYPES` in `reclamp_audit.py`:
