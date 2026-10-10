@@ -81,6 +81,21 @@ def _min(t: time) -> int:
     return t.hour * 60 + t.minute
 
 
+def same_minute(a: Optional[time], b: Optional[time]) -> bool:
+    """Minutengenauer Vergleich zweier Uhrzeiten (``None`` gleicht nur ``None``).
+
+    Alle Zeitrechnungen arbeiten minutengenau (``_min``), die Eingabeschemata
+    (``ChangeRequestCreate``, ``TimeEntryUpdate`` …) lassen Sekunden aber zu.
+    Review Task 6 (PR2): ein exakter Vergleich ließ „23:59:30" — in der
+    Oberfläche „23:59" — an jeder Sperre für das synthetische 23:59 vorbei
+    (``end_is_correction``, ``end_input_for``,
+    ``credit_override_service.lacks_actual_end``); Anerkennen rechnete danach
+    bis 23:59:30 an."""
+    if a is None or b is None:
+        return a is b
+    return _min(a) == _min(b)
+
+
 def _t(minutes: int) -> time:
     return time(minutes // 60, minutes % 60)
 
@@ -345,10 +360,11 @@ def end_is_correction(
     ersten Vergleich. Ein ``None``-Ende gilt hier als Änderung; ob ein
     fehlendes bzw. ``None``-Ende überhaupt geprüft wird, entscheidet der
     Aufrufer. Dieselbe Regel gilt in allen drei Schreibpfaden (MA-Route,
-    Admin-Bearbeitung, Antragsgenehmigung)."""
-    if incoming == prev_eff:
+    Admin-Bearbeitung, Antragsgenehmigung). Verglichen wird minutengenau
+    (``same_minute``, Review Task 6): ein 23:59:30 ist kein tatsächliches Ende."""
+    if same_minute(incoming, prev_eff):
         return False
-    if auto_closed and prev_raw is not None and incoming == prev_raw:
+    if auto_closed and prev_raw is not None and same_minute(incoming, prev_raw):
         return False
     return True
 
@@ -381,10 +397,18 @@ def end_input_for(
     später als das ursprüngliche wirksame Ende). PR1-Review N2: mit dem schon
     gekürzten wirksamen Ende weiterzurechnen machte das Ergebnis von der
     Reihenfolge der Verschiebungen abhängig — Montag (Hülle 18:15) → Freitag
-    (Hülle 16:15) → nächster Montag landete still bei 16:15 statt 18:15."""
-    if (auto_closed and target_date != prev_date
-            and not end_is_correction(incoming, prev_eff, prev_raw, auto_closed)):
-        if prev_raw is not None and prev_raw != AUTO_CLOSE_RAW_END:
+    (Hülle 16:15) → nächster Montag landete still bei 16:15 statt 18:15.
+
+    Review Task 6 (PR2): ``end_is_correction`` vergleicht minutengenau. Ist die
+    Eingabe keine Korrektur, rechnet auch der gleiche Tag mit dem GESPEICHERTEN
+    Paar weiter (``unclamp_input`` mit dem wirksamen Ende als Eingabe) statt mit
+    der Eingabe — sonst landete ein 23:59:30 als Rohende. Für sekundenfreie
+    Eingaben ist das dasselbe Ergebnis wie bisher. Ebenso gilt ein Rohende
+    23:59:xx beim Verschieben als synthetisch."""
+    if auto_closed and not end_is_correction(incoming, prev_eff, prev_raw, auto_closed):
+        if target_date == prev_date:
+            return unclamp_input(prev_eff, prev_eff, prev_raw)
+        if prev_raw is not None and not same_minute(prev_raw, AUTO_CLOSE_RAW_END):
             return prev_raw
         return prev_eff
     return unclamp_input(incoming, prev_eff, prev_raw)

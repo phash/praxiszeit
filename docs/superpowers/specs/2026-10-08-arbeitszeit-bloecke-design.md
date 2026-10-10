@@ -989,6 +989,15 @@ zweites Mal (`work_window_service.input_order_error`; in 7/9 vor der Vorprüfung
 Statusänderung, damit auch ältere Anträge nicht durchgehen) → 400 mit dem Hinweis, dass der Eintrag
 automatisch geschlossen wurde und ein tatsächliches Ende einzutragen ist; der Eintrag bleibt
 unverändert. Die Prüfung der rohen Eingabe bleibt (Formulareingabe Ende vor Beginn am selben Tag).
+**Entschieden 2026-10-10 (PR2-Review Task 6):** Alle Vergleiche gegen das gespeicherte Ende, das
+Rohende und das synthetische 23:59 sind **minutengenau** (`work_window_service.same_minute`) —
+`end_is_correction`, `end_input_for` und die Antrags-/Genehmigungssperre „Anrechnung beantragen"
+bzw. „genehmigen und anerkennen" ohne tatsächliches Ende (`credit_override_service.lacks_actual_end`,
+400 wie beim Anerkennen). Die Eingabeschemata lassen Sekunden zu; ein „23:59:30" (in der Oberfläche
+„23:59") kam am exakten Vergleich vorbei, hob `auto_closed` auf und wurde bis 23:59:30 anerkannt.
+Ist die Eingabe minutengenau keine Korrektur, rechnet `end_input_for` auch am gleichen Tag mit dem
+gespeicherten Paar weiter (für sekundenfreie Eingaben dasselbe Ergebnis wie bisher), damit kein
+Rohende mit Sekunden gespeichert wird.
 
 **Puffer je Zeile (E79/E80):** aktueller Mandanten-Puffer bei Neuanlagen — Nr. 1, 3, 5, 8,
 Neuanlage-Zweig von 11/12 und die CREATE-Prüfungen in 7 und 14; `grace_for_entry(db, entry)`

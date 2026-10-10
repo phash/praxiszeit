@@ -36,9 +36,15 @@ def lacks_actual_end(entry: TimeEntry, proposed_end: Optional[time]) -> bool:
     ``unclamp_input`` daraus wieder 23:59 (Review Focus 3), und Anerkennen
     rechnete bis dorthin an — bis zu 16 h, das Schlupfloch, das E36/E42
     schließen. EINE Regel für „Anrechnung beantragen" (MA-Antrag) und
-    „genehmigen und anerkennen" (Genehmigung, Precondition)."""
-    return bool(entry.auto_closed) and proposed_end in (
-        entry.end_time, entry.raw_end_time, work_window_service.AUTO_CLOSE_RAW_END,
+    „genehmigen und anerkennen" (Genehmigung, Precondition).
+
+    Minutengenau (``work_window_service.same_minute``, Review Task 6): die
+    Schemata lassen Sekunden zu, ein „23:59:30" (angezeigt „23:59") kam am
+    exakten Vergleich vorbei und wurde bis 23:59:30 anerkannt. Ein ``None``-Ende
+    trifft wie bisher nur ein fehlendes gespeichertes Ende bzw. Rohende."""
+    return bool(entry.auto_closed) and any(
+        work_window_service.same_minute(proposed_end, t)
+        for t in (entry.end_time, entry.raw_end_time, work_window_service.AUTO_CLOSE_RAW_END)
     )
 
 

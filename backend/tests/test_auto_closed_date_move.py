@@ -272,6 +272,14 @@ def test_cr_approval_two_moves_do_not_depend_on_order(_db_session, employee_user
     (time(16, 15), time(16, 15), time(18, 15), True, FRI, FRI, time(18, 15)),
     # Ende entfernt
     (None, time(18, 15), time(23, 59), True, MON, SAT, None),
+    # Review Task 6 (PR2): minutengenau — 23:59:30 ist das synthetische 23:59,
+    # am selben Tag bleibt das gespeicherte Rohende (keine Sekunden), beim
+    # Verschieben gilt das wirksame Ende
+    (time(23, 59, 30), time(18, 15), time(23, 59), True, MON, MON, time(23, 59)),
+    (time(23, 59, 30), time(18, 15), time(23, 59), True, MON, SAT, time(18, 15)),
+    (time(18, 15, 30), time(18, 15), time(23, 59), True, MON, MON, time(23, 59)),
+    # ein gespeichertes Rohende 23:59:xx gilt ebenfalls als synthetisch
+    (time(18, 15), time(18, 15), time(23, 59, 30), True, MON, SAT, time(18, 15)),
 ])
 def test_end_input_for(incoming, eff, raw, auto_closed, prev, target, expected):
     from app.services.work_window_service import end_input_for

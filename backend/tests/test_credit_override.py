@@ -365,7 +365,11 @@ def test_request_rejected_for_delete(_db_session, employee_user, employee_client
 
 
 # Review Focus 3: 18:15 (gekapptes Ende) und 23:59 liefen über unclamp_input wieder auf 23:59.
-@pytest.mark.parametrize("end, status", [("18:15", 400), ("23:59", 400), ("17:30", 201)])
+# Review Task 6 (PR2): minutengenau — die Schemata lassen Sekunden zu, ein
+# exakter Vergleich ließ „23:59:30" (angezeigt „23:59") an der Sperre vorbei.
+@pytest.mark.parametrize("end, status", [
+    ("18:15", 400), ("23:59", 400), ("23:59:30", 400), ("18:15:30", 400), ("17:30", 201),
+])
 def test_auto_closed_needs_the_actual_end(_db_session, employee_user, employee_client, end, status):
     employee_user.work_blocks = K_BLOCKS
     e = _entry(_db_session, employee_user, time(8), time(18, 15), raw_end_time=time(23, 59),
@@ -475,6 +479,9 @@ def test_grant_rejected_for_absence_request(_db_session, employee_user, admin_cl
     # ``end_is_correction`` hielte ein eingereichtes 23:59 dann für ein echtes
     # Ende, und Anerkennen rechnete 08:00–23:59 an.
     (None, time(23, 59)),
+    # Review Task 6 (PR2): Sekunden ändern nichts — 23:59:30 ist dieselbe Minute.
+    (time(23, 59), time(23, 59, 30)),
+    (None, time(23, 59, 30)),
 ])
 def test_grant_on_auto_closed_entry_needs_the_actual_end(_db_session, employee_user,
                                                          admin_client, raw_end, end):
@@ -509,6 +516,28 @@ def test_grant_on_auto_closed_entry_with_the_actual_end(_db_session, employee_us
     assert (e.credit_override, e.auto_closed, e.start_time, e.end_time, e.uncredited_minutes) == (
         True, False, time(8), time(17, 30), 0)
     assert float(e.net_hours) == 9.5
+
+
+def test_seconds_do_not_turn_the_synthetic_end_into_a_stamp(_db_session, employee_user,
+                                                            admin_client):
+    """Review Task 6 (PR2): ein gewöhnlicher Antrag mit „23:59:30" (in der
+    Oberfläche „23:59") hob ``auto_closed`` auf — ``end_is_correction``
+    verglich sekundengenau. Danach rechnete ein Anerkennen der Verwaltung bis
+    23:59:30 an. Minutengenau ist es das synthetische 23:59: das Kennzeichen
+    bleibt, das gespeicherte Paar unverändert, Anerkennen verlangt weiter das
+    tatsächliche Ende."""
+    employee_user.work_blocks = K_BLOCKS
+    e = _entry(_db_session, employee_user, time(8), time(18, 15), raw_end_time=time(23, 59),
+               uncredited_minutes=150, auto_closed=True, clamp_grace_minutes=15)
+    cr = _cr(_db_session, employee_user, e, start=time(8), end=time(23, 59, 30))
+    assert _review(admin_client, cr).status_code == 200
+    _db_session.refresh(e)
+    assert (e.auto_closed, e.end_time, e.raw_end_time) == (True, time(18, 15), time(23, 59))
+    r = _post(admin_client, e)
+    assert (r.status_code, r.json()["detail"]) == (400, cos.AUTO_CLOSED_DETAIL)
+    _db_session.refresh(e)
+    assert e.credit_override is False
+    assert _override_logs(_db_session) == []
 
 
 def test_bulk_approval_takes_the_request_value(_db_session, employee_user, admin_client):

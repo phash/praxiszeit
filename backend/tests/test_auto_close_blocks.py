@@ -236,33 +236,37 @@ def test_waiver_cr_without_end_keeps_flag(_db_session, employee_user, admin_clie
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(17, 15), time(23, 59), True)
 
 
-def test_cr_update_raw_end_keeps_flag(_db_session, employee_user, admin_client):
+# Review Task 6 (PR2): auch mit Sekunden (angezeigt „23:59") bleibt es das synthetische 23:59.
+@pytest.mark.parametrize("end", [time(23, 59), time(23, 59, 30)])
+def test_cr_update_raw_end_keeps_flag(_db_session, employee_user, admin_client, end):
     employee_user.work_blocks = K_BLOCKS
     _db_session.commit()
     e = _open(_db_session, employee_user)
     _auto_close_directly(_db_session, e)
-    _approve_update_cr(_db_session, admin_client, employee_user, e, time(23, 59))
+    _approve_update_cr(_db_session, admin_client, employee_user, e, end)
     _db_session.refresh(e)
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
 
 
-def test_employee_route_raw_end_keeps_flag(_db_session, employee_user, admin_client):
+@pytest.mark.parametrize("end", ["23:59", "23:59:30"])
+def test_employee_route_raw_end_keeps_flag(_db_session, employee_user, admin_client, end):
     employee_user.work_blocks = K_BLOCKS
     _db_session.commit()
     e = _open(_db_session, employee_user)
     _auto_close_directly(_db_session, e)
-    resp = admin_client.put(f"/api/time-entries/{e.id}", json={"end_time": "23:59"})
+    resp = admin_client.put(f"/api/time-entries/{e.id}", json={"end_time": end})
     assert resp.status_code == 200, resp.text
     _db_session.refresh(e)
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
 
 
-def test_admin_route_raw_end_keeps_flag(_db_session, employee_user, admin_client):
+@pytest.mark.parametrize("end", ["23:59", "23:59:30"])
+def test_admin_route_raw_end_keeps_flag(_db_session, employee_user, admin_client, end):
     employee_user.work_blocks = K_BLOCKS
     _db_session.commit()
     e = _open(_db_session, employee_user)
     _auto_close_directly(_db_session, e)
-    resp = admin_client.put(f"/api/admin/time-entries/{e.id}", json={"end_time": "23:59"})
+    resp = admin_client.put(f"/api/admin/time-entries/{e.id}", json={"end_time": end})
     assert resp.status_code == 200, resp.text
     _db_session.refresh(e)
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
@@ -290,6 +294,11 @@ def test_raw_end_of_regular_entry_is_still_a_correction(_db_session, employee_us
     (time(23, 59), time(23, 59), None, True, False),           # ohne Blöcke: 23:59 = wirksam
     (None, time(23, 59), None, True, True),                    # Ende entfernt: Aufrufer entscheidet
     (time(19, 0), time(18, 15), time(19, 0), False, True),     # Rohwert eines echten Stempels
+    # Review Task 6 (PR2): minutengenau — Sekunden machen keine Korrektur.
+    (time(23, 59, 30), time(18, 15), time(23, 59), True, False),
+    (time(18, 15, 30), time(18, 15), time(23, 59), True, False),
+    (time(23, 59, 30), time(23, 59), None, True, False),
+    (time(17, 0, 30), time(18, 15), time(23, 59), True, True),
 ])
 def test_end_is_correction(incoming, eff, raw, auto_closed, expected):
     from app.services.work_window_service import end_is_correction
