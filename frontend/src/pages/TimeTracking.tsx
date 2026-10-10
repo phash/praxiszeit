@@ -540,12 +540,16 @@ export default function TimeTracking() {
               <Button
                 variant="secondary"
                 size="md"
-                icon={FileEdit}
                 onClick={openCreateChangeRequest}
                 title="Antrag für vergangenen Tag stellen"
                 className="bg-amber-500 hover:bg-amber-600 text-white focus:ring-amber-400"
               >
-                <span className="hidden sm:inline">Antrag</span>
+                {/* #502-Review: der Datums-Hinweis im Formular verweist auf
+                    diesen Knopf über seine Beschriftung — sie steht deshalb auf
+                    jeder Breite. Unter sm entfällt dafür das Symbol, sonst
+                    kürzt die Kopfzeile „Zeiterfassung" schon auf 360-px-Handys. */}
+                <FileEdit size={20} className="hidden sm:inline mr-2" aria-hidden="true" />
+                Antrag
               </Button>
             )}
             <Button

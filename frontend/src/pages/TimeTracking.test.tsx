@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { format } from 'date-fns';
 import TimeTracking from './TimeTracking';
@@ -269,6 +269,20 @@ describe('<TimeTracking /> Datum beim Bearbeiten (#502)', () => {
     expect(screen.getByTitle('Antrag für vergangenen Tag stellen')).toBeInTheDocument();
     expect(screen.getByLabelText(/Eintrag vom .* löschen/)).toBeInTheDocument();
     expect(screen.queryByLabelText(/Änderungsantrag für/)).not.toBeInTheDocument();
+  });
+
+  it('beschriftet den genannten Knopf „Antrag" auf jeder Breite', async () => {
+    // #502-Review: der Hinweis verweist auf den Knopf über seine Beschriftung.
+    // Unter 640 px stand dort bis dahin nur das Symbol (`hidden sm:inline`) —
+    // wer am Handy einen Knopf „Antrag" suchte, fand keinen. jsdom wendet kein
+    // CSS an, deshalb prüft der Test die Klassen zwischen Text und Knopf.
+    mockEntries([]);
+    renderPage();
+    const button = await screen.findByRole('button', { name: 'Antrag' });
+    const label = within(button).getByText('Antrag');
+    for (let el: HTMLElement | null = label; el && el !== button.parentElement; el = el.parentElement) {
+      expect(el.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    }
   });
 
   it('schickt beim Speichern weiterhin das heutige Datum mit', async () => {
