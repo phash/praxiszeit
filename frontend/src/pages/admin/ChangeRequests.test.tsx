@@ -83,6 +83,36 @@ describe('<AdminChangeRequests /> Sammel-Genehmigung (#486)', () => {
   });
 });
 
+describe('<AdminChangeRequests /> Sammel-Genehmigung mit Anrechnungsanträgen (Gesamtreview PR2, Fund 4)', () => {
+  const creditPending = {
+    ...pendingCr, id: 'cr9', request_type: 'update', time_entry_id: 'te9',
+    request_credit_override: true, entry_not_credited_minutes: 240,
+  };
+
+  it('nennt die Anträge, die anerkannt würden, und fragt vorher nach', async () => {
+    mockApi([pendingCr, creditPending]);
+    postMock.mockResolvedValue({ data: { succeeded: 2, failed: 0, items: [] } });
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByText('Alle 2 auswählen'));
+    fireEvent.click(screen.getByRole('button', { name: '2 genehmigen, davon 1 mit Anerkennen' }));
+    expect(await screen.findByText(/dauerhaft an/)).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Alle genehmigen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/admin/change-requests/bulk-review', {
+      request_ids: ['cr1', 'cr9'], action: 'approve', rejection_reason: undefined,
+    }));
+  });
+
+  it('Kontrolltest: ohne Anrechnungsantrag ohne Rückfrage', async () => {
+    mockApi([pendingCr]);
+    postMock.mockResolvedValue({ data: { succeeded: 1, failed: 0, items: [] } });
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByLabelText('Antrag von Anna Meier auswählen'));
+    fireEvent.click(screen.getByRole('button', { name: '1 genehmigen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+  });
+});
+
 describe('<AdminChangeRequests /> Anrechnung beantragen (Spec P21, P3)', () => {
   const creditCr = {
     ...pendingCr, id: 'cr2', request_type: 'update', time_entry_id: 'te1',

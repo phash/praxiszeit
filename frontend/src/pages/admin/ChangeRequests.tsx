@@ -7,6 +7,8 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { showArbzgWarnings } from '../../utils/arbzgWarnings';
 import { formatHoursHM } from '../../utils/formatters';
+import { useConfirm } from '../../hooks/useConfirm';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface ChangeRequest {
   id: string;
@@ -161,6 +163,7 @@ export default function AdminChangeRequests() {
   const [bulkRejectMode, setBulkRejectMode] = useState(false);
   const [bulkRejectionReason, setBulkRejectionReason] = useState('');
   const [bulkProcessing, setBulkProcessing] = useState(false);
+  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
   useEffect(() => {
     apiClient.get('/admin/users').then(res => {
@@ -252,6 +255,31 @@ export default function AdminChangeRequests() {
   const pendingIds = requests.filter(r => r.status === 'pending').map(r => r.id);
   const allPendingSelected = pendingIds.length > 0 && pendingIds.every(id => selectedIds.has(id));
 
+  // Gesamtreview PR2 (Fund 4): die Sammel-Genehmigung übernimmt den
+  // Antragswert (P21) — ausgewählte „Anrechnung beantragt"-Anträge werden damit
+  // dauerhaft anerkannt (P11). Der Knopf nennt sie, und vorher wird gefragt.
+  const creditSelectedCount = requests.filter(
+    (r) => r.status === 'pending' && selectedIds.has(r.id) && r.request_credit_override,
+  ).length;
+
+  const startBulkApprove = () => {
+    if (creditSelectedCount === 0) {
+      void runBulkReview('approve');
+      return;
+    }
+    confirm({
+      title: 'Genehmigen mit Anerkennen',
+      message:
+        `${creditSelectedCount} der ${selectedIds.size} ausgewählten Anträge beantragen die Anrechnung. `
+        + 'Genehmigen erkennt dort die gesamte beantragte Zeit dauerhaft an – auch bei späteren '
+        + 'Neuberechnungen; eine Rücknahme gibt es nicht. Soll ein Antrag ohne Anerkennen genehmigt '
+        + 'werden, ihn abwählen und einzeln mit „Ohne Anerkennen genehmigen" bearbeiten.',
+      confirmLabel: 'Alle genehmigen',
+      variant: 'warning',
+      onConfirm: () => { void runBulkReview('approve'); },
+    });
+  };
+
   const toggleOne = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -314,6 +342,15 @@ export default function AdminChangeRequests() {
 
   return (
     <div>
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Änderungsanträge</h1>
@@ -423,11 +460,14 @@ export default function AdminChangeRequests() {
             {selectedIds.size > 0 && !bulkRejectMode && (
               <div className="flex gap-2">
                 <button
-                  onClick={() => runBulkReview('approve')}
+                  onClick={startBulkApprove}
                   disabled={bulkProcessing}
                   className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm rounded-lg transition"
                 >
-                  <Check size={16} /> {selectedIds.size} genehmigen
+                  <Check size={16} />
+                  {creditSelectedCount > 0
+                    ? `${selectedIds.size} genehmigen, davon ${creditSelectedCount} mit Anerkennen`
+                    : `${selectedIds.size} genehmigen`}
                 </button>
                 <button
                   onClick={() => setBulkRejectMode(true)}
