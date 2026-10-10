@@ -905,11 +905,17 @@ export default function Reports() {
                 // außerhalb der Beschäftigung) fehlt der Nenner: das Backend liefert
                 // dann Ø 0 und compliant=true — kein Urteil, keine Ø-Werte zeigen.
                 const noScheduledDays = emp.scheduled_work_days === 0;
+                // P22 / Pflicht 4: Der Status folgt der angerechneten Zeit (Spec 8.1).
+                // Senkt eine Neukappung sie unter 8 h, darf ein Ø laut Stempel über
+                // der Grenze nicht als unauffällige graue Zahl neben „Konform“ stehen.
+                const presenceOver8 = !noScheduledDays && emp.presence_average > 8;
                 return (
                   <tr key={emp.user_id} className={`hover:bg-gray-50 ${!noScheduledDays && !emp.compliant ? 'bg-red-50' : ''}`}>
                     <td className="px-4 py-2 font-medium text-gray-900">{emp.first_name} {emp.last_name}</td>
                     <td className="px-4 py-2 text-right text-gray-700">{noScheduledDays ? '–' : formatHoursHM(emp.average_daily_hours)}</td>
-                    <td className="px-4 py-2 text-right text-gray-700">{noScheduledDays ? '–' : formatHoursHM(emp.presence_average)}</td>
+                    <td className={`px-4 py-2 text-right ${presenceOver8 ? 'text-red-700 font-medium' : 'text-gray-700'}`}>
+                      {noScheduledDays ? '–' : formatHoursHM(emp.presence_average)}
+                    </td>
                     <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.total_hours)}</td>
                     <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.presence_hours)}</td>
                     <td className={`px-4 py-2 text-right ${weeksOver48Text(emp.presence_weeks) === '–' ? 'text-gray-700' : 'text-red-700 font-medium'}`}>
@@ -922,6 +928,9 @@ export default function Reports() {
                         : emp.compliant
                           ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
                           : <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>}
+                      {presenceOver8 && emp.compliant && (
+                        <div className="mt-1 text-xs font-medium text-red-700">laut Stempel Ø &gt; 8 h</div>
+                      )}
                     </td>
                   </tr>
                 );

@@ -86,6 +86,40 @@ describe('<Reports /> 24-Wochen-Durchschnitt (Spec 8.1, P22)', () => {
     expect(within(table).getByText('2 (2026-W23: 50:00 h, 2026-W24: 50:00 h)')).toBeInTheDocument();
   });
 
+  it('hebt Ø laut Stempel über 8 h hervor, auch wenn die angerechnete Zeit konform ist (P22, Pflicht 4)', async () => {
+    // Nach einer Neukappung sinkt der angerechnete Ø unter 8 h und der Status wird
+    // grün — der Verstoß laut Stempel darf dabei nicht optisch verschwinden.
+    getMock.mockResolvedValue({
+      data: {
+        window_start: '2025-12-19', window_end: '2026-06-05', non_compliant_count: 0,
+        employees: [
+          {
+            user_id: 'u4', first_name: 'Dora', last_name: 'Lang', total_hours: 790,
+            scheduled_work_days: 100, average_daily_hours: 7.9, days_over_8h: 0, compliant: true,
+            presence_hours: 860, presence_average: 8.6, presence_weeks: [],
+          },
+          {
+            user_id: 'u5', first_name: 'Emil', last_name: 'Grenze', total_hours: 780,
+            scheduled_work_days: 100, average_daily_hours: 7.8, days_over_8h: 0, compliant: true,
+            presence_hours: 800, presence_average: 8, presence_weeks: [],
+          },
+        ],
+      },
+    });
+    render(<Reports />);
+    fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
+    const table = await screen.findByRole('table', { name: '24-Wochen-Durchschnitt' });
+    const rowOver = within(table).getByText('Dora Lang').closest('tr') as HTMLElement;
+    expect(within(rowOver).getByText('8:36')).toHaveClass('text-red-700');
+    // Der Status bleibt der angerechnete Hybridwert (Spec 8.1), trägt aber den Zusatz.
+    expect(within(rowOver).getByText('✓ Konform')).toBeInTheDocument();
+    expect(within(rowOver).getByText('laut Stempel Ø > 8 h')).toBeInTheDocument();
+    // Genau 8 h liegt nicht über der Grenze.
+    const rowAt = within(table).getByText('Emil Grenze').closest('tr') as HTMLElement;
+    expect(within(rowAt).getByText('8:00')).not.toHaveClass('text-red-700');
+    expect(within(rowAt).queryByText('laut Stempel Ø > 8 h')).not.toBeInTheDocument();
+  });
+
   it('bindet die gesetzliche Grenze an die tatsächliche Arbeitszeit (Spec 8.3/19)', () => {
     render(<Reports />);
     // Eine Neukappung senkt die angerechnete Zeit — der Hinweis darf nicht nahelegen,
