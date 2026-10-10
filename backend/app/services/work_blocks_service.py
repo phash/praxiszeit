@@ -162,3 +162,92 @@ def blocks_text(blocks: tuple, pauses: Optional[tuple], *, compact: bool) -> str
             text = " + ".join(spans) + (f" (Pause {pause} Min)" if pause else "")
         parts.append(f"{WEEKDAY_LABELS[idx]} {text}")
     return " / ".join(parts)
+
+
+def _hm(minutes: int) -> str:
+    """Stunden als ``H:MM`` wie ``work_window_service._hm`` und der Frontend-Zwilling
+    ``formatHoursHM`` — hier eigenständig, weil dieses Modul die unterste Schicht ist
+    (``calculation_service`` → ``work_window_service`` importieren es; ein Import in
+    die Gegenrichtung wäre zirkulär)."""
+    return f"{minutes // 60}:{minutes % 60:02d}"
+
+
+def _stretches(spans: list) -> list:
+    """Zusammenhängende Arbeitsstrecken: Blöcke mit einer Lücke unter 15 Minuten
+    gelten als eine Strecke (§ 4 ArbZG: Pausenabschnitte ab 15 Minuten)."""
+    merged = []
+    for start, end in spans:
+        if merged and start - merged[-1][1] < 15:
+            merged[-1] = (merged[-1][0], end)
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def block_break_notices(week: Optional[list], grace: int, *, exempt: bool) -> list:
+    """Spec P9 — nicht blockierende Plan-Hinweise aus dem GANZEN Tagesplan.
+
+    (a) § 4: geplante Arbeit = Σ Blöcke − Pause, Bedarf 30 bzw. 45 Min; geplante
+        Pausen = Pause + Σ ROHE Lücken ≥ 15 Min; bei Pause 0 zusätzlich eine
+        Strecke ohne Lücke ≥ 15 Min über 6 h.
+    (b) Eine Lücke ≤ 2 × aktueller Puffer verschwindet in der Anrechnung.
+    (c) § 3: Tagessoll > 10 h (geplanter Verstoß), > 8 h (24-Wochen-Schnitt),
+        Wochensoll > 48 h.
+    ``exempt`` (§ 18 ArbZG) unterdrückt (a) und (c). Erwartet eine gültige neue
+    Woche (``validate_week_blocks``); ``None`` und Altzeilen (eine Pause ``None``,
+    Spec 3.3/4.4 — kappen nur, treiben kein Soll) → keine Hinweise. Nie ein 422:
+    die Prüfung beim Erfassen bleibt abschließend."""
+    notices: list = []
+    if not week or any(day.get("pause_minutes") is None for day in week):
+        return notices
+    weekly_net = 0
+    for idx, day in enumerate(week):
+        spans = sorted(
+            (hhmm_to_minutes(b["start"]), hhmm_to_minutes(b["end"])) for b in day.get("blocks") or []
+        )
+        if not spans:
+            continue
+        label = WEEKDAY_LABELS[idx]
+        pause = int(day.get("pause_minutes") or 0)
+        net = sum(end - start for start, end in spans) - pause
+        weekly_net += net
+        gaps = [(spans[i][1], spans[i + 1][0]) for i in range(len(spans) - 1)]
+        if not exempt:
+            need = 45 if net > 9 * 60 else 30 if net > 6 * 60 else 0
+            planned = pause + sum(ge - gs for gs, ge in gaps if ge - gs >= 15)
+            if need and planned < need:
+                notices.append(
+                    f"{label}: geplant {_hm(net)} h Arbeit, eingeplante Pausen {planned} Min – "
+                    f"nach § 4 ArbZG sind mindestens {need} Minuten nötig."
+                )
+            elif pause == 0:
+                for start, end in _stretches(spans):
+                    if end - start > 6 * 60:
+                        notices.append(
+                            f"{label}: geplant mehr als 6 Stunden am Stück ohne Lücke von mindestens "
+                            f"15 Minuten ({minutes_to_hhmm(start)}–{minutes_to_hhmm(end)}) – nach § 4 ArbZG "
+                            f"ist spätestens nach 6 Stunden eine Pause nötig."
+                        )
+                        break
+        for gs, ge in gaps:
+            if ge - gs <= 2 * grace:
+                notices.append(
+                    # Wortlaut zusammenhängend halten — das Doku-Gate (PR4) sucht ihn per grep.
+                    f"{label}: Die Lücke {minutes_to_hhmm(gs)}–{minutes_to_hhmm(ge)} "
+                    f"ist nicht länger als der doppelte Puffer ({grace} Min) und wird vollständig angerechnet. "
+                    f"Eine geplante Pause bitte als „Pause innerhalb der Blöcke“ erfassen."
+                )
+        if not exempt:
+            if net > 10 * 60:
+                notices.append(
+                    f"{label}: Tagessoll {_hm(net)} h – geplanter Verstoß gegen § 3 ArbZG; eine Erfassung "
+                    f"nach diesem Plan lehnt die Zeiterfassung mit 400 ab."
+                )
+            elif net > 8 * 60:
+                notices.append(
+                    f"{label}: Tagessoll {_hm(net)} h – mehr als 8 Stunden sind nur zulässig, wenn im "
+                    f"Durchschnitt von 24 Wochen 8 Stunden je Werktag nicht überschritten werden (§ 3 ArbZG)."
+                )
+    if not exempt and weekly_net > 48 * 60:
+        notices.append(f"Wochensoll {_hm(weekly_net)} h – mehr als 48 Stunden je Woche (§ 3 ArbZG).")
+    return notices
