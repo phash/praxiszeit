@@ -480,6 +480,8 @@ def _lock_and_reload(db: Session, current_user: User, user: User) -> None:
     sogar im Zustand der ersten stehen, obwohl die zweite erfolgreich meldete.
 
     Die Sperre wartet auf die Gegenseite; ``refresh`` holt danach deren Stand.
+    Dieselbe Falle hat jede Arbeitszeit-Änderung (E52/P5) — auch sie sperrt
+    über diesen Helfer, nie über ein nacktes ``lock_user_row``.
     Reihenfolge: NACH ``_is_last_active_admin`` (das ggf. alle aktiven
     Admin-Zeilen sortiert sperrt) — erst die Admin-Menge, dann die Zielzeile,
     sonst verklemmen sich zwei gleichzeitige Admin-Deaktivierungen ueber Kreuz.
@@ -1774,8 +1776,13 @@ def create_working_hours_change(
     change_data = _parse_change_body(change_data)
     user = _get_user_in_tenant(db, user_id, current_user)
     # E52/P5: Ankersperre ZUERST — vor Snapshot, clamp und jeder Zeilensperre;
-    # parallele Schreiber warten und lösen danach den neuen Snapshot auf.
-    lock_user_row(db, current_user.tenant_id, user.id)
+    # parallele Schreiber warten und lösen danach den neuen Snapshot auf. Das
+    # setzt das Neuladen voraus (#491 API-2): ``_get_user_in_tenant`` las
+    # ungesperrt, und die Sperre allein überschreibt die geladenen Attribute
+    # nicht — Neukappung (track_hours, Beschäftigungsfenster), Normalisierung
+    # und ``_sync_user_from_change`` rechneten sonst auf dem Stand VOR einer
+    # gerade committeten Gegenseite (E9: User-Zeile ≠ jüngste Zeile ≤ heute).
+    _lock_and_reload(db, current_user, user)
 
     if db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,

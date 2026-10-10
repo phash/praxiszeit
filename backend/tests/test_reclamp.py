@@ -5,6 +5,7 @@ test_wh_change_service.py; hier geht es um Sperre, Schutzpaket, 400/404/422,
 Rollback, Antwortfelder und Protokoll."""
 from datetime import date, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,10 +15,10 @@ from app.models import (
     AbsenceType, TimeEntry, TimeEntryAuditLog, User, UserRole, WorkingHoursChange, YearCarryover,
 )
 from app.services import calculation_service, lifecycle_service, reclamp_audit, wh_change_service
-from tests.conftest import DEFAULT_TENANT_ID
+from tests.conftest import DEFAULT_TENANT_ID, TestingSessionLocal
 from tests.test_endpoints import test_app
 from tests.wh_change_helpers import (
-    ANNA_WEEK, EFF, MONDAYS, RETRO_REASON, absence, add_row, admin_client, entry, freeze, reclamp_logs,
+    ANNA_WEEK, EFF, MONDAYS, RETRO_REASON, absence, add_row, admin_client, change_row, entry, freeze, reclamp_logs,
     set_grace, t, with_pauses,
 )
 from tests.work_blocks_fixtures import K_BLOCKS, block_week, legacy_week
@@ -272,6 +273,41 @@ class TestModesAndFlags:
                             lambda *a, **k: calls.append("run") or real_run(*a, **k))
         assert _post(client, test_user, {"effective_from": "2026-11-02", "weekly_hours": 30}).status_code == 201
         assert calls == ["lock", "run"]
+
+    def test_parallel_change_committed_during_the_lock_wait_is_seen(self, client, db, test_user, monkeypatch):
+        """E52/P5 + E9: eine parallele Arbeitszeit-Änderung committet, während
+        dieser Request auf die Ankersperre wartet. Ohne Neuladen nach der Sperre
+        arbeitete er auf der ungesperrt gelesenen User-Zeile (30 h) weiter —
+        ``_sync_user_from_change`` schrieb die 30 h nicht zurück (das ORM
+        überspringt einen „unveränderten" Wert), und die User-Zeile blieb auf den
+        35 h der Gegenseite stehen, obwohl die jüngste Zeile ≤ heute 30 h sagt."""
+        assert _post(client, test_user, {"effective_from": "2026-09-01", "weekly_hours": 30}).status_code == 201
+        user_id = test_user.id
+        real_lock = admin_users_router.lock_user_row
+
+        def lock_after_parallel_commit(d, tenant_id, uid):
+            other = TestingSessionLocal()  # die Gegenseite: eigene Session, eigener commit
+            try:
+                other.add(change_row(SimpleNamespace(id=uid), date(2026, 10, 1), weekly_hours=35))
+                other.get(User, uid).weekly_hours = 35
+                other.commit()
+            finally:
+                other.close()
+            return real_lock(d, tenant_id, uid)
+
+        monkeypatch.setattr(admin_users_router, "lock_user_row", lock_after_parallel_commit)
+        resp = _post(client, test_user, {"effective_from": "2026-10-05", "weekly_hours": 30})
+        assert resp.status_code == 201, resp.text
+        db.expire_all()
+        rows = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user_id,
+            WorkingHoursChange.tenant_id == DEFAULT_TENANT_ID,
+        ).order_by(WorkingHoursChange.effective_from).all()
+        assert [(r.effective_from, float(r.weekly_hours)) for r in rows] == [
+            (date(2026, 8, 31), 40.0),  # Basiszeile des Vorgängerstands
+            (date(2026, 9, 1), 30.0), (date(2026, 10, 1), 35.0), (date(2026, 10, 5), 30.0)]
+        # E9/#431: die User-Zeile spiegelt die jüngste Zeile ≤ heute (05.10., 30 h)
+        assert float(db.get(User, user_id).weekly_hours) == 30.0
 
 
 class TestResetOfChange:
