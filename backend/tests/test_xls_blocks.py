@@ -278,6 +278,43 @@ def test_reimport_does_not_double_count_presence(db, test_user):
     assert not any("Laut Stempel" in w or "Durchgehend" in w for w in e.arbzg_warnings), e.arbzg_warnings
 
 
+# Review Focus 4 (Review Task 12): auch die harte §3/§4-Tagesaggregation zählt den
+# überschriebenen Bestandseintrag nicht mit. Sonst stünde in derselben Zeile ein
+# doppelt gezählter §3-Hinweis neben dem Anwesenheits-Hinweis, der ihn korrekt
+# weglässt — und das daraus abgeleitete „§4 bestanden" (P14) wäre ebenfalls falsch.
+def test_reimport_k1_does_not_double_count_the_hard_checks(db, test_user):
+    test_user.work_blocks = K_BLOCKS
+    db.commit()
+    _entry(db, test_user, time(8), time(18), uncredited_minutes=150, clamp_grace_minutes=15)
+    [e] = parse_xls(_k1_row(), test_user.id, db)
+    assert e.has_conflict is True
+    assert not [w for w in e.arbzg_warnings if "Netto-Arbeitszeit" in w], e.arbzg_warnings
+    assert any(w.startswith("§4 ArbZG: Durchgehend über die Lücke") for w in e.arbzg_warnings)
+
+
+def test_reimport_clamped_row_shows_presence_but_no_hard_s3(db, test_user):
+    """07:00–19:00 bei K-Blöcken: angerechnet 8:00 h, anwesend 12:00 h. Der
+    Re-Import meldet nur PRESENCE_DAILY — kein §3 „16.0h" aus doppelter Zählung,
+    das dem „Angerechnet werden 8:00 h" daneben widerspräche."""
+    test_user.work_blocks = K_BLOCKS
+    db.commit()
+    _entry(db, test_user, time(7, 45), time(18, 15), raw_start_time=time(7), raw_end_time=time(19),
+           uncredited_minutes=150, clamp_grace_minutes=15)
+    [e] = parse_xls(_xls((datetime(2026, 6, 1, 7, 0), datetime(2026, 6, 1, 19, 0))), test_user.id, db)
+    assert e.has_conflict is True
+    assert not [w for w in e.arbzg_warnings if "Netto-Arbeitszeit" in w], e.arbzg_warnings
+    assert any(w.startswith("§3 ArbZG: Laut Stempel 12:00 h anwesend") for w in e.arbzg_warnings)
+
+
+def test_reimport_of_a_legacy_row_has_no_warnings(db, test_user):
+    test_user.work_blocks = LEGACY
+    db.commit()
+    _entry(db, test_user, time(8), time(16, 30), break_minutes=30)
+    [e] = parse_xls(_xls((datetime(2026, 6, 1, 8, 0), datetime(2026, 6, 1, 16, 30))), test_user.id, db)
+    assert e.has_conflict is True
+    assert e.arbzg_warnings == []
+
+
 def test_exempt_person_gets_no_presence_hint(db, test_user):
     test_user.work_blocks = K_BLOCKS
     test_user.exempt_from_arbzg = True

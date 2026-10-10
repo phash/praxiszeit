@@ -283,15 +283,19 @@ def parse_xls(
     prev_end_dt: Optional[datetime] = None
     first_import_date: Optional[date] = None
 
-    # §3/§4 Tagesaggregation: BreakBlocks pro Datum (Import-Batch + DB-Einträge)
+    # §3/§4 Tagesaggregation: BreakBlocks pro Datum (Import-Batch + DB-Einträge).
+    # DB-Blöcke mit der ID ihres Eintrags — ein von einer Importzeile
+    # überschriebener Eintrag zählt nicht mit (siehe ``replaced_ids``).
     batch_blocks_by_date: dict[date, list[BreakBlock]] = {}
-    db_blocks_by_date: dict[date, list[BreakBlock]] = {}
+    db_blocks_by_date: dict[date, list[tuple[uuid.UUID, BreakBlock]]] = {}
 
     # Spec 8.3 (PR2): Anwesenheit laut Stempel je Kalenderwoche (Tag und Woche,
-    # P22) — Bestand + bisherige Zeilen der Datei; von einer Importzeile
-    # überschriebene Bestandseinträge zählen nicht mit (Review Focus 4).
+    # P22) — Bestand + bisherige Zeilen der Datei.
     db_presence_by_week: dict[date, list] = {}
     batch_presence_by_week: dict[date, list] = {}
+    # Review Focus 4: Bestandseinträge, die eine Zeile der Datei überschreibt,
+    # zählen weder in der harten §3/§4-Aggregation noch in der Anwesenheit —
+    # sonst stünde der Tag doppelt da (§3 „16.0h" neben „Angerechnet 8:00 h").
     replaced_ids: set = set()
 
     for row_idx in range(ws.nrows):
@@ -321,6 +325,8 @@ def parse_xls(
         existing = _find_existing_entry(
             db, user_id, user_tenant, entry_date, starts=(r.eff_start,), raw_start=file_start,
         )
+        if existing is not None:
+            replaced_ids.add(existing.id)
         override = bool(existing is not None and existing.credit_override)
         row_grace = (
             work_window_service.grace_for_entry(db, existing) if existing is not None else grace
@@ -360,7 +366,7 @@ def parse_xls(
         # §3/§4 Tagesaggregation: bestehende DB-Einträge für diesen Tag einmalig laden
         if entry_date not in db_blocks_by_date:
             db_blocks_by_date[entry_date] = [
-                break_block_for_entry(db, user, e)
+                (e.id, break_block_for_entry(db, user, e))
                 for e in db.query(TimeEntry).filter(
                     TimeEntry.user_id == user_id,
                     TimeEntry.tenant_id == user_tenant,  # F-026
@@ -369,8 +375,12 @@ def parse_xls(
                 if e.end_time is not None
             ]
 
-        # Alle anderen Blöcke am selben Tag = DB-Blöcke + bisher im Batch gesammelte Blöcke
-        other_blocks = db_blocks_by_date[entry_date] + batch_blocks_by_date.get(entry_date, [])
+        # Alle anderen Blöcke am selben Tag = DB-Blöcke (ohne überschriebene) +
+        # bisher im Batch gesammelte Blöcke
+        other_blocks = (
+            [b for eid, b in db_blocks_by_date[entry_date] if eid not in replaced_ids]
+            + batch_blocks_by_date.get(entry_date, [])
+        )
 
         arbzg_warnings = _check_arbzg(
             entry_date, start_t, end_t, break_min, check_prev,
@@ -415,8 +425,6 @@ def parse_xls(
                 db_presence_by_week[monday] = presence_service.closed_entries(
                     db, user, monday, monday + timedelta(days=6),
                 )
-            if existing is not None:
-                replaced_ids.add(existing.id)
             week_rows = (
                 [e for e in db_presence_by_week[monday] if e.id not in replaced_ids]
                 + batch_presence_by_week.get(monday, [])
