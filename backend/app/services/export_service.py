@@ -2,7 +2,7 @@ from io import BytesIO
 from datetime import date, datetime, timedelta
 from calendar import monthrange
 from decimal import Decimal
-from typing import List
+from typing import List, NamedTuple, Optional
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from openpyxl import Workbook
@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.comments import Comment
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, AbsenceReason, WorkingHoursChange, Tenant
-from app.services import calculation_service, practice_name_service, special_days_service
+from app.services import calculation_service, practice_name_service, special_days_service, work_window_service
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_year, date_in_month, date_in_year_up_to_month
 from app.config import settings
@@ -63,10 +63,9 @@ def day_work_blocks(day_entries):
       ueberlappenden Eintraegen (Netto summiert ``net_hours`` und zaehlt die
       Ueberlappung doppelt; eine Ueberschneidungspruefung gibt es nicht), bei
       einem noch laufenden Eintrag (0 h, „Bis" = spaetestes geschlossenes
-      Ende) und ausserhalb des Beschaeftigungsfensters (Netto 0). Kommt eine
-      weitere Abzugsgroesse innerhalb von Von/Bis hinzu (z. B. nicht
-      angerechnete Luecke eines Eintrags), gehoert sie hierher, damit die
-      Zeilenregel an EINER Stelle gerechnet wird.
+      Ende) und ausserhalb des Beschaeftigungsfensters (Netto 0). Die nicht
+      angerechnete Luecke eines Eintrags (Arbeitszeit-Bloecke) rechnet
+      ``day_credit_minutes`` — die vollstaendige Zeilenregel steht dort.
 
     Bewusst die Luecke OHNE 15-Minuten-Schwelle: die Spalte soll die Zeile
     rechnerisch schliessen. Ob ein Abschnitt als Ruhepause nach §4 Satz 2 zaehlt
@@ -93,6 +92,36 @@ def day_work_blocks(day_entries):
         for e in ordered
     )
     return blocks, gap_minutes
+
+
+# Spec 2026-10-08, 15.1: angehängte Spalte (XLSX/ODS 13, PDF 12) — Name bleibt.
+NOT_CREDITED_HEADER = "Nicht angerechnet (Min)"
+PDF_NOT_CREDITED_HEADER = "Nicht angerechnet\n(Min)"
+
+
+class DayCredit(NamedTuple):
+    not_credited: Optional[int]   # Σ not_credited_minutes (Lücke + Hülle, P19); None ohne Eintrag
+    gap_uncredited: int           # Σ uncredited_minutes (nur die Lücke zwischen den Blöcken)
+
+
+def day_credit_minutes(day_entries) -> DayCredit:
+    """Spec 15.1: nicht angerechnete Anwesenheit eines Tages.
+
+    ``not_credited`` speist die Spalte „Nicht angerechnet (Min)" — Lücke UND
+    von der Hülle gekappte Anwesenheit, ohne die synthetische Auto-Close-Endseite
+    (``work_window_service.not_credited_minutes``, DIE eine Quelle).
+
+    Zeilenregel der Tageszeile (#498 + E13):
+    ``Bis − Von − Pause − Unterbrechung − gap_uncredited = Netto``.
+    NICHT „− Nicht angerechnet": die Spalte enthält zusätzlich die Hüllenminuten,
+    und die liegen AUSSERHALB der (gekappten) Von/Bis, die die Datei zeigt
+    (K7: 240 in der Spalte, 150 in der Zeilenregel)."""
+    if not day_entries:
+        return DayCredit(None, 0)
+    return DayCredit(
+        sum(work_window_service.not_credited_minutes(e) for e in day_entries),
+        sum(int(e.uncredited_minutes or 0) for e in day_entries),
+    )
 
 
 def neutralize_spreadsheet_formula(value):
@@ -512,6 +541,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     - Bemerkung
     - Unterbrechung (Min)   (#498, angehängt)
     - Arbeitsblöcke         (#498, angehängt)
+    - Nicht angerechnet (Min) (Spec 2026-10-08, angehängt)
     """
     sheet = wb.create_sheet(title=f"{user.last_name} {user.first_name}"[:31])  # Excel sheet name max 31 chars
 
@@ -558,9 +588,9 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
 
     # Row 4: Column headers
     # #498: Spalten 11/12 ANGEHÄNGT, nie eingeschoben — Kundenauswertungen lesen
-    # die Spalten 1–10 positionsweise.
+    # die Spalten 1–10 positionsweise. Spec 2026-10-08, 15.1: Spalte 13 ebenso.
     headers = ["Datum", "Wochentag", "Von", "Bis", "Pause (Min)", "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
-               "Unterbrechung (Min)", "Arbeitsblöcke"]
+               "Unterbrechung (Min)", "Arbeitsblöcke", NOT_CREDITED_HEADER]
     for col_num, header in enumerate(headers, 1):
         cell = sheet.cell(row=4, column=col_num)
         cell.value = header
@@ -617,6 +647,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     total_net = Decimal('0.00')
     total_target = Decimal('0.00')
     night_work_count = 0
+    month_not_credited = 0  # Spec 15.1: Summenzeile
 
     # Iterate through all days of the month
     for day in range(1, last_day + 1):
@@ -678,6 +709,10 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             sheet.cell(row=row, column=11).value = _gap
             if _blocks:
                 sheet.cell(row=row, column=12).value = _blocks
+            # Spec 15.1: Spalte 13 — Lücke + Hülle (P19), angehängt.
+            _credit = day_credit_minutes(day_entries)
+            sheet.cell(row=row, column=13).value = _credit.not_credited
+            month_not_credited += _credit.not_credited
             # Bemerkung (col 10): §10-Ausnahmegrund hat Vorrang, dann entry.note
             bemerkung_parts = []
             for e in day_entries:
@@ -718,7 +753,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
             sheet.cell(row=row, column=9).value = abw
-            for col in range(1, 13):
+            for col in range(1, 14):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
         elif is_holiday:
             target = Decimal('0.00')
@@ -731,7 +766,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                 abw += " | Nachtarbeit (§6 ArbZG)"
             sheet.cell(row=row, column=9).value = abw
             # col 10 (Bemerkung) bereits oben gesetzt – NICHT mit holiday.name überschreiben
-            for col in range(1, 13):
+            for col in range(1, 14):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
@@ -768,7 +803,8 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         # wie get_monthly_actual (credit_day_weight: Wochenende/Feiertag 0,
         # Halbtags-Sondertag 0,5). „Netto (Std)" bleibt die angerechnete Zeit
         # der Zeiteintraege OHNE Gutschrift (bei #201-Fenster die gekappte Zeit,
-        # nicht der Rohstempel).
+        # nicht der Rohstempel); die nicht angerechnete Zeit steht in der
+        # letzten Spalte (Spec 2026-10-08, 15.1).
         credit = (calculation_service.credited_absence_hours(
             day_absences, current_date, set(holidays_by_date), special_day_config)
             if in_window else Decimal('0.00'))
@@ -820,8 +856,12 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # Die Per-Tag-Spalte "Netto (Std)" (zwischen "Pause (Min)" und "Soll (Std)")
     # zeigt die angerechnete Zeit der Zeiteintraege OHNE Gutschrift — bei
     # Soll-Arbeitszeit-Fenster (#201) die gekappte Zeit, die Rohstempel stehen
-    # nicht in der Datei. An einem Kranktag bleibt sie 0; woher die Gutschrift
-    # kommt, sagt Spalte "Abwesenheit" ("Krank (8.0h)"). Die Tagesspalte
+    # nicht in der Datei. Die nicht angerechnete Zeit (Luecke zwischen den
+    # Arbeitsbloecken + von der Huelle gekappte Anwesenheit) steht in der
+    # letzten Spalte "Nicht angerechnet (Min)" (Spec 2026-10-08, 15.1;
+    # Zeilenregel siehe day_credit_minutes). An einem Kranktag bleibt "Netto"
+    # 0; woher die Gutschrift kommt, sagt Spalte "Abwesenheit"
+    # ("Krank (8.0h)"). Die Tagesspalte
     # "Differenz" zieht die Gutschrift seit #497 mit (credited_absence_hours),
     # damit Σ Differenz = Saldo Monat. Die Summenzeile ist die verbindliche
     # Kennzahl.
@@ -878,6 +918,11 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     sheet.cell(row=row, column=2).value = night_work_count
     sheet.cell(row=row, column=1).font = Font(bold=True)
 
+    row += 1
+    sheet.cell(row=row, column=1).value = "Nicht angerechnet (Min) Monat:"
+    sheet.cell(row=row, column=2).value = month_not_credited
+    sheet.cell(row=row, column=1).font = Font(bold=True)
+
     # Adjust column widths
     sheet.column_dimensions['A'].width = 12
     sheet.column_dimensions['B'].width = 10
@@ -891,6 +936,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     sheet.column_dimensions['J'].width = 35
     sheet.column_dimensions['K'].width = 14
     sheet.column_dimensions['L'].width = 26
+    sheet.column_dimensions['M'].width = 16
 
 
 def generate_yearly_report(db: Session, year: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
@@ -1148,7 +1194,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     # Title
     sheet.cell(row=1, column=1).value = neutralize_spreadsheet_formula(f"{user.first_name} {user.last_name} - Jahresreport {year}")
     sheet.cell(row=1, column=1).font = Font(bold=True, size=14)
-    sheet.merge_cells('A1:L1')  # #498: inkl. der angehängten Spalten 11/12
+    sheet.merge_cells('A1:M1')  # #498 + Spec 2026-10-08: inkl. der angehängten Spalten 11–13
 
     # Row 2: ArbZG-relevante Mitarbeiter-Flags (§16 ArbZG Aufzeichnungspflicht)
     sheet.cell(row=2, column=1).value = "§18 ArbZG-befreit:"
@@ -1172,9 +1218,9 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
 
     # Row 3: Column headers
     # #498: Spalten 11/12 ANGEHÄNGT, nie eingeschoben — Kundenauswertungen lesen
-    # die Spalten 1–10 positionsweise.
+    # die Spalten 1–10 positionsweise. Spec 2026-10-08, 15.1: Spalte 13 ebenso.
     headers = ["Datum", "Wochentag", "Von", "Bis", "Pause (Min)", "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
-               "Unterbrechung (Min)", "Arbeitsblöcke"]
+               "Unterbrechung (Min)", "Arbeitsblöcke", NOT_CREDITED_HEADER]
     for col_num, header in enumerate(headers, 1):
         cell = sheet.cell(row=3, column=col_num)
         cell.value = header
@@ -1220,6 +1266,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     total_net = Decimal('0.00')
     total_target = Decimal('0.00')
     night_work_count = 0
+    year_not_credited = 0  # Spec 15.1: Summenzeile
     current_month = 0
 
     # Iterate through all days of the year
@@ -1242,7 +1289,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             sheet.cell(row=row, column=1).value = month_names[current_month - 1]
             sheet.cell(row=row, column=1).font = Font(bold=True, size=12)
             sheet.cell(row=row, column=1).fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
-            sheet.merge_cells(f'A{row}:L{row}')
+            sheet.merge_cells(f'A{row}:M{row}')  # inkl. Spalte 13 (Spec 2026-10-08)
             row += 1
 
         weekday = current_date.weekday()
@@ -1297,6 +1344,10 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             sheet.cell(row=row, column=11).value = _gap
             if _blocks:
                 sheet.cell(row=row, column=12).value = _blocks
+            # Spec 15.1: Spalte 13 — Lücke + Hülle (P19), angehängt.
+            _credit = day_credit_minutes(day_entries)
+            sheet.cell(row=row, column=13).value = _credit.not_credited
+            year_not_credited += _credit.not_credited
             # Bemerkung (col 10): §10-Ausnahmegrund hat Vorrang, dann entry.note
             bemerkung_parts = []
             for e in day_entries:
@@ -1334,7 +1385,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
             sheet.cell(row=row, column=9).value = abw
-            for col in range(1, 13):
+            for col in range(1, 14):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
         elif is_holiday:
             target = Decimal('0.00')
@@ -1346,7 +1397,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
             sheet.cell(row=row, column=9).value = abw
-            for col in range(1, 13):
+            for col in range(1, 14):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
@@ -1381,7 +1432,8 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         # wie get_monthly_actual (credit_day_weight: Wochenende/Feiertag 0,
         # Halbtags-Sondertag 0,5). „Netto (Std)" bleibt die angerechnete Zeit
         # der Zeiteintraege OHNE Gutschrift (bei #201-Fenster die gekappte Zeit,
-        # nicht der Rohstempel).
+        # nicht der Rohstempel); die nicht angerechnete Zeit steht in der
+        # letzten Spalte (Spec 2026-10-08, 15.1).
         credit = (calculation_service.credited_absence_hours(
             day_absences, current_date, set(holidays_by_date), special_day_config)
             if in_window else Decimal('0.00'))
@@ -1477,6 +1529,11 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.cell(row=row, column=2).value = night_work_count
     sheet.cell(row=row, column=1).font = Font(bold=True)
 
+    row += 1
+    sheet.cell(row=row, column=1).value = "Nicht angerechnet (Min) Jahr:"
+    sheet.cell(row=row, column=2).value = year_not_credited
+    sheet.cell(row=row, column=1).font = Font(bold=True)
+
     # Adjust column widths
     sheet.column_dimensions['A'].width = 12
     sheet.column_dimensions['B'].width = 10
@@ -1490,6 +1547,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.column_dimensions['J'].width = 35
     sheet.column_dimensions['K'].width = 14
     sheet.column_dimensions['L'].width = 26
+    sheet.column_dimensions['M'].width = 16
 
 
 def generate_yearly_report_classic(db: Session, year: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
@@ -1884,7 +1942,12 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
     # Bemerkung genommen). Im PDF bewusst NEBEN der Pause statt hinten angehängt:
     # es wird gelesen, nicht maschinell ausgewertet — und für die §4-Prüfung
     # gehören erklärte Pause und Unterbrechung nebeneinander.
-    col_widths = [22*mm, 10*mm, 13*mm, 13*mm, 15*mm, 15*mm, 16*mm, 14*mm, 16*mm, 67*mm, 66*mm]
+    # Spec 2026-10-08, 15.1: „Nicht angerechnet (Min)" als 12. und letzte Spalte
+    # (24 mm, je 12 mm aus Abwesenheit/Bemerkung) — Spalte 6 bleibt die
+    # Unterbrechung. 24 mm ist die kleinste Breite, bei der „Nicht angerechnet"
+    # (Helvetica-Bold 7 pt + 2×3 pt Innenabstand) in EINE Zeile passt und der
+    # Kopf zweizeilig bleibt; bei 18 mm brach reportlab ihn dreizeilig um.
+    col_widths = [22*mm, 10*mm, 13*mm, 13*mm, 15*mm, 15*mm, 16*mm, 14*mm, 16*mm, 55*mm, 54*mm, 24*mm]
     weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
     absence_type_map = ABSENCE_TYPE_LABELS_DE
 
@@ -1967,7 +2030,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
 
         # ── Build table ──
-        headers = ['Datum', 'WT', 'Von', 'Bis', 'Pause\n(Min)', 'Unterbr.\n(Min)', 'Netto\n(Std)', 'Soll\n(Std)', 'Diff.', 'Abwesenheit', 'Bemerkung']
+        headers = ['Datum', 'WT', 'Von', 'Bis', 'Pause\n(Min)', 'Unterbr.\n(Min)', 'Netto\n(Std)', 'Soll\n(Std)', 'Diff.', 'Abwesenheit', 'Bemerkung', PDF_NOT_CREDITED_HEADER]
         table_data = [[Paragraph(h, ParagraphStyle('hdr', fontName='Helvetica-Bold', fontSize=7,
                                                     leading=9, alignment=TA_CENTER))
                        for h in headers]]
@@ -1978,6 +2041,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         total_net = Decimal('0.00')
         total_target = Decimal('0.00')
         night_work_count = 0
+        month_not_credited = 0  # Spec 15.1: Summenzeile
 
         for day in range(1, last_day + 1):
             cur = date(year, month, day)
@@ -2017,6 +2081,10 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                     bis = day_entries[0].end_time.strftime('%H:%M') if day_entries[0].end_time else 'offen'
                 _blocks, _gap = day_work_blocks(day_entries)
                 gap_str = str(_gap)
+                # Spec 15.1: letzte Spalte — Lücke + Hülle (P19).
+                _credit = day_credit_minutes(day_entries)
+                nc_str = str(_credit.not_credited)
+                month_not_credited += _credit.not_credited
                 pause_str = str(sum(e.break_minutes or 0 for e in day_entries))
                 total_day_net = sum(e.net_hours for e in day_entries)
                 if not in_window:
@@ -2032,7 +2100,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                         bem_parts.append(e.note)
                 bem = " | ".join(bem_parts)
             else:
-                von = bis = pause_str = gap_str = bem = ''
+                von = bis = pause_str = gap_str = bem = nc_str = ''
                 netto_val = 0.0
                 net = Decimal('0.00')
 
@@ -2113,6 +2181,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 diff_cell,
                 Paragraph(escape_pdf_text(abw), s_normal),
                 Paragraph(escape_pdf_text(bem), s_normal),
+                Paragraph(nc_str, s_center),
             ]
             table_data.append(row)
             if bg:
@@ -2176,6 +2245,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
              Paragraph(f"{float(vacation_account['remaining_hours']):.2f} h", s_sum_val)],
             [Paragraph('Nachtarbeitstage (\u00a76 ArbZG):', s_sum_lbl),
              Paragraph(str(night_work_count), s_sum_val)],
+            [Paragraph('Nicht angerechnet (Min):', s_sum_lbl),
+             Paragraph(str(month_not_credited), s_sum_val)],
         ]
         sum_tbl = Table(summary_rows, colWidths=[55 * mm, 35 * mm])
         sum_tbl.setStyle(TableStyle([

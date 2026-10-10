@@ -26,6 +26,7 @@ from app.services.export_service import (
     neutralize_spreadsheet_formula, _load_reason_names, _absence_export_label, _group_by_date,
     format_weekly_hours_history,  # #415
     day_work_blocks,  # #498
+    day_credit_minutes, NOT_CREDITED_HEADER,  # Spec 2026-10-08, 15.1
 )
 
 
@@ -225,6 +226,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
         # #498: angehängt, nie eingeschoben (Parität zu XLSX).
         "Unterbrechung (Min)", "Arbeitsblöcke",
+        NOT_CREDITED_HEADER,  # Spec 2026-10-08, 15.1: Spalte 13
     ]
     table.addElement(_header_row(headers, bold))
 
@@ -260,6 +262,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     total_net = Decimal("0.00")
     total_target = Decimal("0.00")
     night_work_count = 0
+    month_not_credited = 0  # Spec 15.1: Summenzeile
 
     for day in range(1, last_day + 1):
         current_date = date(year, month, day)
@@ -403,6 +406,10 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         _blocks, _gap = day_work_blocks(day_entries)
         tr.addElement(_int_cell(_gap) if _gap is not None else _empty_cell())
         tr.addElement(_str_cell(_blocks))
+        # Spec 15.1: Spalte 13 — Lücke + Hülle (P19).
+        _credit = day_credit_minutes(day_entries)
+        tr.addElement(_int_cell(_credit.not_credited) if _credit.not_credited is not None else _empty_cell())
+        month_not_credited += _credit.not_credited or 0
 
         total_target += target
         table.addElement(tr)
@@ -448,6 +455,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     table.addElement(summary_row("Urlaub genommen (Std):", float(vac["used_hours"])))
     table.addElement(summary_row("Urlaub Rest (Std):", float(vac["remaining_hours"])))
     table.addElement(summary_int_row("Nachtarbeitstage (§6 ArbZG):", night_work_count))
+    table.addElement(summary_int_row("Nicht angerechnet (Min) Monat:", month_not_credited))
 
 
 # ---------------------------------------------------------------------------
@@ -620,6 +628,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
         # #498: angehängt, nie eingeschoben (Parität zu XLSX).
         "Unterbrechung (Min)", "Arbeitsblöcke",
+        NOT_CREDITED_HEADER,  # Spec 2026-10-08, 15.1: Spalte 13
     ]
     table.addElement(_header_row(headers, bold))
 
@@ -776,6 +785,9 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         _blocks, _gap = day_work_blocks(day_entries)
         tr.addElement(_int_cell(_gap) if _gap is not None else _empty_cell())
         tr.addElement(_str_cell(_blocks))
+        # Spec 15.1: Spalte 13 (s. Monatsblatt).
+        _credit = day_credit_minutes(day_entries)
+        tr.addElement(_int_cell(_credit.not_credited) if _credit.not_credited is not None else _empty_cell())
 
         table.addElement(tr)
         current_date += timedelta(days=1)
