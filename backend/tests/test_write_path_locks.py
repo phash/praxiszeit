@@ -254,6 +254,20 @@ def test_update_foreign_entry_takes_no_lock(_db_session, employee_user, employee
     assert _db_session.get(TimeEntry, e.id).end_time == time(11)
 
 
+def test_update_unknown_entry_takes_no_lock(_db_session, employee_user, employee_client, calls, monkeypatch):
+    """Gegenstück zum fremden Eintrag (Review N3, Nachzug 2026-10-10): auch eine
+    UNBEKANNTE ID bricht vor der Zeilensperre mit 404 ab. Bis dahin übersprang
+    ``_owner_id is None`` nur die Ankersperre und lud danach noch einmal mit
+    ``FOR UPDATE`` — eine unbekannte ID kostete damit einen Datenbankzugriff
+    mehr als eine fremde, und das Timing-Orakel lief nur andersherum."""
+    _clock(monkeypatch, MON, 13)
+    resp = employee_client.put(f"/api/time-entries/{uuid.uuid4()}", json={"end_time": "12:00"})
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Zeiteintrag nicht gefunden"
+    assert not [c for c in calls if c[0] == "lock"], calls
+    assert ("row_lock",) not in calls, calls
+
+
 def test_delete_foreign_entry_takes_no_lock(_db_session, employee_user, employee_client, calls, monkeypatch):
     """Gegenstück zum Bearbeiten: auch der Löschpfad sperrt für einen fremden
     Eintrag nichts, bevor die Eigentümerprüfung mit 404 abbricht."""

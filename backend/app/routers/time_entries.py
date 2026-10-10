@@ -1096,16 +1096,19 @@ def update_time_entry(
     # existiert — #120 verbirgt das nur in Statuscode und Antworttext
     # (ENTRY_NOT_FOUND, derselbe Text wie für eine unbekannte ID). Die Prüfung
     # nach dem gesperrten Laden unten bleibt als Rückversicherung stehen.
-    if (_owner_id is not None and _owner_id != current_user.id
-            and current_user.role != UserRole.ADMIN):
+    # Eine UNBEKANNTE ID bricht an derselben Stelle ab (Review N3, Nachzug
+    # 2026-10-10): sonst lud sie danach noch einmal mit FOR UPDATE und kostete
+    # einen Datenbankzugriff mehr als eine fremde — das Orakel nur umgedreht.
+    if _owner_id is None or (_owner_id != current_user.id
+                             and current_user.role != UserRole.ADMIN):
         raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
-    if _owner_id is not None:
-        lock_user_row(db, current_user.tenant_id, _owner_id)
+    lock_user_row(db, current_user.tenant_id, _owner_id)
     entry = db.query(TimeEntry).filter(
         TimeEntry.id == entry_id,
         TimeEntry.tenant_id == current_user.tenant_id,  # F-026
     ).with_for_update().first()
 
+    # Rückversicherung: zwischen Eigentümer-Lesen und Sperre gelöscht.
     if not entry:
         raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
 
