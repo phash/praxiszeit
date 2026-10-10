@@ -23,6 +23,10 @@ DEFAULT_GRACE_MINUTES = 15
 # #462: Kennung der weichen Warnung ("CODE: Text", läuft durch showArbzgWarnings).
 CLAMP_WARNING_CODE = "WORK_WINDOW_CLAMPED"
 _LAST_MINUTE = 23 * 60 + 59
+# P18: Ende, mit dem der Auto-Close einen offenen Eintrag schließt — ein
+# synthetischer Wert, nie ein Stempel (``time_entries._close_stale_entry``,
+# ``end_input_for``).
+AUTO_CLOSE_RAW_END = time(23, 59)
 # Spec 6.2 / P21: nur Mitarbeiterpfade, nur an Lückentexten geschlossener Einträge.
 EMPLOYEE_CREDIT_HINT = (
     " Haben Sie in dieser Zeit gearbeitet, beantragen Sie die Anrechnung "
@@ -363,14 +367,25 @@ def end_input_for(
     verschoben und das eingereichte Ende ist keine Korrektur
     (``end_is_correction``: das wirksame Ende oder das Rohende 23:59 kommt
     zurück, auch als Rückfall eines Teil-Updates ohne Ende). Dann ist das
-    gespeicherte WIRKSAME Ende die Eingabe — 23:59 ist kein Stempel. Bis zum
+    gespeicherte Rohende die Eingabe, sofern es nicht das synthetische 23:59
+    ist, sonst das gespeicherte WIRKSAME Ende — 23:59 ist kein Stempel. Bis zum
     Fix stellte ``unclamp_input`` das synthetische 23:59 wieder her, und am
     Zieltag ohne Blöcke (Samstag, Feiertag, freier Tag) blieb es ungekappt:
     15:00–23:59 ≈ 9 h statt 3,25 h; an einem Tag mit späterer Hülle wurde bis
     zu ihr angerechnet. Bei gleichem Datum bleibt alles wie in P18 (das Rohende
-    wird gegen dieselben Blöcke wieder auf dieselbe Hülle gekappt)."""
+    wird gegen dieselben Blöcke wieder auf dieselbe Hülle gekappt).
+
+    Ein anderes Rohende als 23:59 trägt ein automatisch geschlossener Eintrag
+    nur nach einem früheren Verschieben auf einen Tag mit früherer Hülle: dort
+    wurde das übernommene wirksame Ende gekappt und als Rohende abgelegt (nie
+    später als das ursprüngliche wirksame Ende). PR1-Review N2: mit dem schon
+    gekürzten wirksamen Ende weiterzurechnen machte das Ergebnis von der
+    Reihenfolge der Verschiebungen abhängig — Montag (Hülle 18:15) → Freitag
+    (Hülle 16:15) → nächster Montag landete still bei 16:15 statt 18:15."""
     if (auto_closed and target_date != prev_date
             and not end_is_correction(incoming, prev_eff, prev_raw, auto_closed)):
+        if prev_raw is not None and prev_raw != AUTO_CLOSE_RAW_END:
+            return prev_raw
         return prev_eff
     return unclamp_input(incoming, prev_eff, prev_raw)
 

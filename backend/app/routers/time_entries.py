@@ -229,7 +229,7 @@ def _close_stale_entry(
     old_note = entry.note
 
     r = work_window_service.clamp(
-        db, owner, entry.date, entry.start_time, time(23, 59),
+        db, owner, entry.date, entry.start_time, work_window_service.AUTO_CLOSE_RAW_END,
         work_window_service.grace_for_entry(db, entry),
         credit_override=entry.credit_override,
     )

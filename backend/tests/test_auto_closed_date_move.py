@@ -16,6 +16,11 @@ weiter als Kappungseingabe, Hülle 18:15, Kennzeichen bleibt).
 Je Pfad: MA-Antrag (E40, nur Prüfung), Antragsgenehmigung UPDATE (Vorprüfung +
 Schreiben), Admin-Bearbeitung (``/api/admin/time-entries``) und die
 Bearbeiten-Route der Beschäftigten, über die Admins fremde Einträge verschieben.
+
+Zwei Schritte (PR1-Review N2): Montag → Freitag (frühere Hülle bis 16:15) →
+nächster Montag muss dasselbe ergeben wie der direkte Weg (18:15, 3,25 h).
+Nach dem ersten Schritt trägt das Rohende das übernommene wirksame Ende 18:15 —
+es ist die Kappungseingabe des zweiten Schritts, nicht das schon gekürzte 16:15.
 """
 from datetime import date, time
 from decimal import Decimal
@@ -37,10 +42,14 @@ import app.routers.time_entries as te
 
 SAT = date(2026, 6, 6)    # Samstag — keine Blöcke
 WED = date(2026, 6, 3)    # Mittwoch — Block bis 20:00, Hülle bis 20:15
-# Montag wie K_BLOCKS (Hülle 07:45–18:15), Mittwoch mit späterer Hülle.
+FRI = date(2026, 6, 5)    # Freitag — letzter Block bis 16:00, Hülle bis 16:15
+MON2 = date(2026, 6, 8)   # nächster Montag — Hülle wie MON bis 18:15
+# Montag wie K_BLOCKS (Hülle 07:45–18:15), Mittwoch mit späterer Hülle,
+# Freitag mit früherer Hülle.
 WEEK = block_week(
     mon=[("08:00", "12:00"), ("15:00", "18:00")],
     wed=[("08:00", "20:00")],
+    fri=[("08:00", "12:00"), ("15:00", "16:00")],
 )
 
 
@@ -68,6 +77,7 @@ _MOVED = [
     pytest.param(SAT, (time(18, 15), None), id="samstag"),
     pytest.param(EASTER_MONDAY, (time(18, 15), None), id="feiertag"),
     pytest.param(WED, (time(18, 15), None), id="spaetere-huelle"),
+    pytest.param(MON2, (time(18, 15), None), id="naechster-montag"),
     pytest.param(MON, (time(18, 15), time(23, 59)), id="gleiches-datum"),
 ]
 
@@ -182,6 +192,63 @@ def test_employee_route_date_move_keeps_effective_end(_db_session, auto_closed_e
     _assert_moved(_db_session, auto_closed_entry, target, ends, 30 if form else 0)
 
 
+# ── Zwei Schritte: Ergebnis unabhängig von der Reihenfolge (PR1-Review N2) ──
+
+def _assert_on_friday(db, e):
+    """Montag → Freitag: 18:15 wird auf die Hülle 16:15 gekappt, das Rohende trägt
+    das übernommene wirksame Ende 18:15 (kein Stempel, Kennzeichen bleibt)."""
+    db.refresh(e)
+    assert (e.date, e.end_time, e.raw_end_time, e.net_hours, e.auto_closed) == (
+        FRI, time(16, 15), time(18, 15), Decimal("1.25"), True)
+
+
+@pytest.mark.parametrize("route", ["/api/admin/time-entries", "/api/time-entries"],
+                         ids=["admin-route", "ma-route"])
+@pytest.mark.parametrize("second_end", ["16:15", "18:15", None],
+                         ids=["formular", "rohende-eingetippt", "nur-datum"])
+def test_route_two_moves_do_not_depend_on_order(_db_session, auto_closed_entry, admin_client,
+                                                route, second_end):
+    """Montag → Freitag → nächster Montag = 18:15 / 3,25 h wie der direkte Weg.
+    Bis zum Fix kappte der zweite Schritt mit dem schon gekürzten 16:15 —
+    2 h fielen still weg (keine Kappungswarnung, am Montag ist 16:15 konform).
+    Auch ein ausdrücklich eingetipptes 18:15 landete bei 16:15."""
+    url = f"{route}/{auto_closed_entry.id}"
+    first = {"date": FRI.isoformat()}
+    if second_end is not None:
+        first.update({"start_time": "15:00", "end_time": "18:15", "break_minutes": 0})
+    resp = admin_client.put(url, json=first)
+    assert resp.status_code == 200, resp.text
+    _assert_on_friday(_db_session, auto_closed_entry)
+
+    second = {"date": MON2.isoformat()}
+    if second_end is not None:
+        second.update({"start_time": "15:00", "end_time": second_end, "break_minutes": 0})
+    resp = admin_client.put(url, json=second)
+    assert resp.status_code == 200, resp.text
+    _assert_moved(_db_session, auto_closed_entry, MON2, (time(18, 15), None), 0)
+
+
+@pytest.mark.parametrize("second_end", [time(16, 15), time(18, 15)],
+                         ids=["formular", "rohende-eingetippt"])
+def test_cr_approval_two_moves_do_not_depend_on_order(_db_session, employee_user, auto_closed_entry,
+                                                      admin_client, second_end):
+    for target, end in ((FRI, time(18, 15)), (MON2, second_end)):
+        cr = ChangeRequest(user_id=employee_user.id, tenant_id=DEFAULT_TENANT_ID,
+                           entry_kind="time_entry", request_type=ChangeRequestType.UPDATE,
+                           status=ChangeRequestStatus.PENDING, time_entry_id=auto_closed_entry.id,
+                           proposed_date=target, proposed_start_time=time(15, 0),
+                           proposed_end_time=end, proposed_break_minutes=0,
+                           reason="Falscher Tag erfasst")
+        _db_session.add(cr)
+        _db_session.commit()
+        resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                 json={"action": "approve"})
+        assert resp.status_code == 200, resp.text
+        if target == FRI:
+            _assert_on_friday(_db_session, auto_closed_entry)
+    _assert_moved(_db_session, auto_closed_entry, MON2, (time(18, 15), None), 0)
+
+
 # ── Helfer ──────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("incoming, eff, raw, auto_closed, prev, target, expected", [
@@ -197,6 +264,12 @@ def test_employee_route_date_move_keeps_effective_end(_db_session, auto_closed_e
     (time(18, 15), time(18, 15), time(19, 0), False, MON, SAT, time(19, 0)),
     # ohne Blöcke geschlossen: 23:59 ist das wirksame Ende
     (time(23, 59), time(23, 59), None, True, SAT, MON, time(23, 59)),
+    # zweiter Datumswechsel: das Rohende trägt das übernommene wirksame Ende
+    # (kein 23:59) → es ist die Eingabe, nicht das schon gekürzte wirksame Ende
+    (time(16, 15), time(16, 15), time(18, 15), True, FRI, MON2, time(18, 15)),
+    (time(18, 15), time(16, 15), time(18, 15), True, FRI, MON2, time(18, 15)),
+    # dasselbe am gleichen Tag → unclamp_input (unverändert)
+    (time(16, 15), time(16, 15), time(18, 15), True, FRI, FRI, time(18, 15)),
     # Ende entfernt
     (None, time(18, 15), time(23, 59), True, MON, SAT, None),
 ])
