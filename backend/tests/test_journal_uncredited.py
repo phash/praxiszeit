@@ -10,6 +10,7 @@ from tests.test_endpoints import (  # noqa: F401 — Fixtures
 from tests.work_blocks_fixtures import MON
 
 TUE = MON + timedelta(days=1)
+WED = MON + timedelta(days=2)
 
 
 def _seed(db, user):
@@ -22,6 +23,12 @@ def _seed(db, user):
     db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=TUE,
                      start_time=time(8), end_time=time(18, 15), raw_end_time=time(23, 59),
                      break_minutes=0, uncredited_minutes=150, auto_closed=True))
+    # Anerkannt (Spec 10.1): Rohzeit = wirksame Zeit, keine Lücke — trägt nichts
+    # zur Monatssumme bei; ``credit_override`` speist Kennzeichen + Knopf (Task 15)
+    db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=WED,
+                     start_time=time(7), end_time=time(19), raw_start_time=time(7),
+                     raw_end_time=time(19), break_minutes=0, uncredited_minutes=0,
+                     credit_override=True))
     db.commit()
 
 
@@ -35,6 +42,8 @@ def _check(body):
             k7["credit_override"], k7["auto_closed"]) == (150, 240, False, False)
     k15 = _day(body, TUE)["time_entries"][0]
     assert (k15["not_credited_minutes"], k15["auto_closed"]) == (150, True)
+    anerkannt = _day(body, WED)["time_entries"][0]
+    assert (anerkannt["credit_override"], anerkannt["not_credited_minutes"]) == (True, 0)
     assert body["monthly_summary"]["not_credited_minutes_total"] == 390
 
 
