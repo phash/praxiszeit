@@ -237,9 +237,17 @@ else
         fail "Frontend image rebuild failed"
     fi
 
+    # -------------------------------------------------------------------
+    # 8c. TZ=Europe/Berlin: the specs compute "today" in the Playwright
+    # container (UTC by default), the app computes it in Europe/Berlin. In the
+    # window after Berlin midnight (~22-24 h UTC) both disagree by one day and
+    # time-tracking.spec.ts failed 4 tests for reasons that have nothing to do
+    # with the code under test. Same fix as the backend suite (-e TZ=...).
+    # -------------------------------------------------------------------
     step "E2E tests (playwright)"
     if docker run --rm \
            -v "$(pwd)/e2e":/app -w /app \
+           -e TZ=Europe/Berlin \
            --network host \
            mcr.microsoft.com/playwright:v1.58.2-jammy \
            sh -c "npm install --silent && npx playwright test --reporter=line" 2>&1 | tail -15; then
