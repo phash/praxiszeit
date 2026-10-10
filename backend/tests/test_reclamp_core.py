@@ -265,6 +265,20 @@ def test_auto_closed_entry_shrinks_and_comes_back_byte_identical(db, test_user):
     assert back.new_net == Decimal("10.25")
 
 
+def test_collapsed_auto_closed_entry_keeps_its_synthetic_raw_end(db, test_user):
+    """P18 / 17.5: eingestempelt 19:00 hinter der Hülle 18:15 — der Auto-Close
+    kollabiert auf 19:00–19:00, Rohbeginn 19:00, Rohende 23:59. Bringt die
+    Änderung nur eine Lücke und lässt die Hülle gleich, ändert sich nichts: keine
+    Scheinänderung (0,00 → 0,00 h samt Protokollzeile), und das Rohende bleibt
+    der Protokollwert 23:59 — sonst läse es sich als echter Stempel 19:00 (auch
+    für §5) und eine Rücknahme stellte den Zustand nicht byte-gleich wieder her."""
+    prev = _setup(db, test_user)
+    e = entry(db, test_user, MON, t(19), t(19), raw_start=t(19), raw_end=t(23, 59), auto_closed=True)
+    result = _run(db, test_user, prev)
+    assert (result.changed, result.skipped, result.flagged) == ([], [], [])
+    assert _stored(e) == (t(19), t(19), t(19), t(23, 59), 0, True)
+
+
 def test_auto_closed_entry_keeps_its_marker_without_blocks(db, test_user):
     """Fallen die Blöcke des Wochentags weg, bleibt der Eintrag unverändert:
     angerechnet bis zum wirksamen Ende, Rohende 23:59 als Protokoll — keine

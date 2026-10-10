@@ -679,8 +679,11 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
         if r.grace_minutes is not None:
             e.clamp_grace_minutes = r.grace_minutes
         new_raw_end = r.raw_end
-        if e.auto_closed and new_raw_end is None and e.raw_end_time is not None:
-            new_raw_end = AUTO_CLOSE_RAW_END                               # P18: Protokollwert bleibt
+        # P18: Protokollwert bleibt, solange das Ende nicht gekappt wurde — auch
+        # beim schon kollabierten Eintrag (19:00–19:00), für den ``clamp`` die
+        # Eingabe als Rohende zurückgibt (Review Task 7).
+        if e.auto_closed and e.raw_end_time is not None and r.eff_end == src_end:
+            new_raw_end = AUTO_CLOSE_RAW_END
         old_vals = (e.start_time, e.end_time, e.raw_start_time, e.raw_end_time, int(e.uncredited_minutes or 0))
         new_vals = (r.eff_start, r.eff_end, r.raw_start, new_raw_end, int(r.uncredited_minutes))
         old_net = Decimal(str(e.net_hours))
