@@ -951,8 +951,12 @@ folgt (Nr. 4, 6), wird er vorab ohne Sperre gelesen; Nr. 4 bricht für Nicht-Adm
 **fremden** Eintrag schon dort mit 404 „Zeiteintrag nicht gefunden" ab — vor Anker- und
 Zeilensperre. Sonst sperrte ein `PUT` auf die ID eines Kollegen dessen Benutzerzeile (und
 blockierte dessen Schreibpfade), und die Wartezeit verriete als Timing-Orakel, dass die ID
-existiert (#120 verbirgt das nur im Statuscode). Die Eigentümerprüfung nach dem gesperrten Laden
-bleibt als Rückversicherung. Ein Pfad außer dem Auto-Close, der ein **tatsächlich neues** Ende schreibt, setzt
+existiert (#120 verbirgt das nur in Statuscode und Antworttext). **Entschieden 2026-10-10
+(Review N3):** GET, PUT und DELETE auf `/api/time-entries/{id}` antworten für eine unbekannte ID
+und für einen fremden Eintrag mit demselben 404-Text „Zeiteintrag nicht gefunden"
+(`ENTRY_NOT_FOUND`) — vorher sagte der unbekannte Fall „Eintrag nicht gefunden", der Text verriet
+also die Existenz, und das Glätten des Zeitverhaltens liefe ins Leere. Die Eigentümerprüfung nach
+dem gesperrten Laden bleibt als Rückversicherung. Ein Pfad außer dem Auto-Close, der ein **tatsächlich neues** Ende schreibt, setzt
 `auto_closed = false` (P18): Ausstempeln (Nr. 2) und XLS-Überschreiben (Nr. 12) immer, die
 Bearbeitungen (Nr. 4, 6) und der CR-UPDATE-Zweig (Nr. 9) nur, wenn
 `work_window_service.end_is_correction(eingehend, wirksames Ende, Rohende, auto_closed)`
@@ -2455,7 +2459,13 @@ Pflichtinhalte:
 8. **Ankersperre zuerst:** Jeder Schreibpfad für Zeiteinträge nimmt `lock_user_row` als
    erste Anweisung, vor Snapshot-Auflösung und `clamp`, und **immer vor** einer Zeilensperre
    auf `time_entries` — sonst kappt ein paralleler Schreiber unter dem alten Snapshot
-   (READ COMMITTED) bzw. verklemmen sich Anerkennen und Neukappung (40P01 → 500).
+   (READ COMMITTED) bzw. verklemmen sich Anerkennen und Neukappung (40P01 → 500). Wo der
+   Eigentümer erst aus dem Eintrag folgt, wird er vorab **ohne Sperre** gelesen; MA-Routen
+   brechen bei einem fremden Eintrag dort mit 404 ab, ohne fremde Zeilen zu sperren (sonst
+   blockiert ein MA die Schreibpfade eines Kollegen, und die Wartezeit verrät die ID) — die
+   Sperre also **nicht** vor die Eigentümerprüfung ziehen. Unbekannte und fremde ID antworten
+   mit demselben Text (`ENTRY_NOT_FOUND`). Entschieden 2026-10-10, 7.1; Test
+   `test_write_path_locks.py::test_update_foreign_entry_takes_no_lock`.
 9. **`auto_closed`:** `raw_end_time = 23:59` eines automatisch geschlossenen Eintrags ist
    kein Stempel — nie anerkennen, nie als Anwesenheit oder „nicht angerechnet" zählen, und
    beim Verschieben auf einen anderen Tag nie wieder als Kappungseingabe herstellen
@@ -2627,7 +2637,8 @@ alles zusammen über `bash scripts/local-ci.sh`.
   nicht angerechnete Zeit → 400; Bulk-Genehmigung übernimmt den Antragswert.
 - `test_write_path_locks.py`: jeder Pfad aus P5 ruft `lock_user_row` vor `clamp` (Spy auf
   der Reihenfolge); Anerkennen sperrt Anker vor Eintrag; MA-`PUT`/`DELETE` auf einen fremden
-  Eintrag → 404 ohne `lock_user_row` und ohne Zeilensperre (Entschieden 2026-10-10).
+  Eintrag → 404 ohne `lock_user_row` und ohne Zeilensperre (Entschieden 2026-10-10); GET/PUT/
+  DELETE liefern für fremde und unbekannte ID dieselbe Antwort (Review N3, 7.1).
 
 ### 17.4 ArbZG
 
