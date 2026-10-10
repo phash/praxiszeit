@@ -14,6 +14,15 @@ def _days(*days):
 EMPTY = {"blocks": [], "pause_minutes": 0}
 MON_8_12 = {"blocks": [{"start": "08:00", "end": "12:00"}], "pause_minutes": 0}
 
+# Genau 60:00 h Blockzeit, aber die je Tag auf 0,01 gerundeten Tagessolls
+# (Spec 4.1) ergeben 11,42 + 11,42 + 12,17 + 12,50 + 12,50 = 60,01 h — das ist
+# der Wert, den ``derive_targets`` speichern würde und den ``le=60`` danach
+# mit einem anderen Text ablehnte. Die 60-h-Regel aus 3.4 gilt der Σ Tagessoll.
+ROUNDED_OVER_60 = block_week(
+    mon=[("00:00", "11:25")], tue=[("00:00", "11:25")], wed=[("00:00", "12:10")],
+    thu=[("00:00", "12:30")], fri=[("00:00", "12:30")],
+)
+
 
 @pytest.mark.parametrize("week, message", [
     (block_week()[:4], "Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet."),
@@ -38,6 +47,7 @@ MON_8_12 = {"blocks": [{"start": "08:00", "end": "12:00"}], "pause_minutes": 0}
     (block_week(mon=[("00:00", "12:05")], tue=[("00:00", "12:05")], wed=[("00:00", "12:05")],
                 thu=[("00:00", "12:05")], fri=[("00:00", "12:05")]),
      "Die Wochensumme darf 60 Stunden nicht überschreiten."),
+    (ROUNDED_OVER_60, "Die Wochensumme darf 60 Stunden nicht überschreiten."),
 ])
 def test_each_rule_has_its_german_message(week, message):
     with pytest.raises(ValueError) as exc:
@@ -55,6 +65,19 @@ def test_each_rule_has_its_german_message(week, message):
 ])
 def test_boundaries_are_valid(week):
     assert validate_week_blocks(week) == week
+
+
+def test_week_limit_checks_the_stored_rounded_sum():
+    """Die Grenze prüft denselben Wert, der gespeichert wird: Blockzeit genau
+    60:00 h, gerundete Σ 60,01 h → abgelehnt; genau 60,00 h → gültig."""
+    from decimal import Decimal
+
+    from app.services.work_blocks_service import derive_targets
+
+    assert derive_targets(ROUNDED_OVER_60)["weekly_hours"] == Decimal("60.01")
+    exact = block_week(mon=[("00:00", "12:00")], tue=[("00:00", "12:00")], wed=[("00:00", "12:00")],
+                       thu=[("00:00", "12:00")], fri=[("00:00", "12:00")])
+    assert derive_targets(validate_week_blocks(exact))["weekly_hours"] == Decimal("60.00")
 
 
 def test_returns_the_canonical_week_and_accepts_models():

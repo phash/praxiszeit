@@ -6,9 +6,10 @@ absence_type-Set). Die Schemas behalten ihre dünnen ``@field_validator``/
 ``@model_validator``-Wrapper und rufen nur noch die gemeinsame Logik auf — so bleibt
 das Verhalten exakt gleich, aber es gibt nur noch EINE Quelle der Wahrheit.
 """
+from decimal import Decimal
 from typing import Any
 
-from app.services.work_blocks_service import WEEKDAY_LABELS, hhmm_to_minutes
+from app.services.work_blocks_service import WEEKDAY_LABELS, derive_targets, hhmm_to_minutes
 
 # Erlaubte absence_type-Werte für Urlaubs-/Abwesenheitsanträge.
 VACATION_REQUEST_ABSENCE_TYPES = {"vacation", "training", "overtime", "other"}
@@ -71,8 +72,10 @@ def strip_legacy_window_fields(data: Any) -> Any:
     return data
 
 
-# Spec 3.4: Obergrenze der Wochensumme (bestehende Grenze der Wochenstunden).
-WEEK_LIMIT_MINUTES = 60 * 60
+# Spec 3.4: Obergrenze der Wochensumme (bestehende Grenze der Wochenstunden,
+# ``le=60`` in UserBase/WorkingHoursChangeBase). Geprüft wird die Σ der je Tag
+# gerundeten Tagessolls (4.1) — exakt der Wert, den ``derive_targets`` speichert.
+WEEK_LIMIT_HOURS = Decimal(60)
 
 
 def _as_dict(value: Any) -> Any:
@@ -90,7 +93,6 @@ def validate_week_blocks(value: Any) -> list:
     if not isinstance(value, list) or len(value) != 5:
         raise ValueError("Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet.")
     week = []
-    total_net = 0
     for idx, raw_day in enumerate(value):
         day = _as_dict(raw_day)
         if not isinstance(day, dict):
@@ -133,13 +135,15 @@ def validate_week_blocks(value: Any) -> list:
         gross = sum(e - s for s, e in spans)
         if spans and pause >= gross:
             raise ValueError(f"{label}: Pause muss kürzer sein als die Gesamtzeit der Blöcke.")
-        total_net += gross - pause if spans else 0
         week.append({
             "blocks": [{"start": b["start"], "end": b["end"]} for b in blocks],
             "pause_minutes": pause,
         })
     if not any(d["blocks"] for d in week):
         raise ValueError("Mindestens ein Wochentag braucht einen Block.")
-    if total_net > WEEK_LIMIT_MINUTES:
+    # Nicht die ungerundeten Netto-Minuten: eine Woche mit genau 60:00 h, in der
+    # mehrere Tage aufgerundet werden, ergäbe gespeichert 60,01 h — die lehnte
+    # danach ``le=60`` mit einem fremden Text ab (Review Task 1).
+    if derive_targets(week)["weekly_hours"] > WEEK_LIMIT_HOURS:
         raise ValueError("Die Wochensumme darf 60 Stunden nicht überschreiten.")
     return week

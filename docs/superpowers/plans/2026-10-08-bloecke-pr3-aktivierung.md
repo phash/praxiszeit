@@ -186,6 +186,15 @@ def _days(*days):
 EMPTY = {"blocks": [], "pause_minutes": 0}
 MON_8_12 = {"blocks": [{"start": "08:00", "end": "12:00"}], "pause_minutes": 0}
 
+# Genau 60:00 h Blockzeit, aber die je Tag auf 0,01 gerundeten Tagessolls
+# (Spec 4.1) ergeben 11,42 + 11,42 + 12,17 + 12,50 + 12,50 = 60,01 h — das ist
+# der Wert, den ``derive_targets`` speichern würde und den ``le=60`` danach
+# mit einem anderen Text ablehnte. Die 60-h-Regel aus 3.4 gilt der Σ Tagessoll.
+ROUNDED_OVER_60 = block_week(
+    mon=[("00:00", "11:25")], tue=[("00:00", "11:25")], wed=[("00:00", "12:10")],
+    thu=[("00:00", "12:30")], fri=[("00:00", "12:30")],
+)
+
 
 @pytest.mark.parametrize("week, message", [
     (block_week()[:4], "Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet."),
@@ -210,6 +219,7 @@ MON_8_12 = {"blocks": [{"start": "08:00", "end": "12:00"}], "pause_minutes": 0}
     (block_week(mon=[("00:00", "12:05")], tue=[("00:00", "12:05")], wed=[("00:00", "12:05")],
                 thu=[("00:00", "12:05")], fri=[("00:00", "12:05")]),
      "Die Wochensumme darf 60 Stunden nicht überschreiten."),
+    (ROUNDED_OVER_60, "Die Wochensumme darf 60 Stunden nicht überschreiten."),
 ])
 def test_each_rule_has_its_german_message(week, message):
     with pytest.raises(ValueError) as exc:
@@ -227,6 +237,19 @@ def test_each_rule_has_its_german_message(week, message):
 ])
 def test_boundaries_are_valid(week):
     assert validate_week_blocks(week) == week
+
+
+def test_week_limit_checks_the_stored_rounded_sum():
+    """Die Grenze prüft denselben Wert, der gespeichert wird: Blockzeit genau
+    60:00 h, gerundete Σ 60,01 h → abgelehnt; genau 60,00 h → gültig."""
+    from decimal import Decimal
+
+    from app.services.work_blocks_service import derive_targets
+
+    assert derive_targets(ROUNDED_OVER_60)["weekly_hours"] == Decimal("60.01")
+    exact = block_week(mon=[("00:00", "12:00")], tue=[("00:00", "12:00")], wed=[("00:00", "12:00")],
+                       thu=[("00:00", "12:00")], fri=[("00:00", "12:00")])
+    assert derive_targets(validate_week_blocks(exact))["weekly_hours"] == Decimal("60.00")
 
 
 def test_returns_the_canonical_week_and_accepts_models():
@@ -348,14 +371,18 @@ def blocks_text(blocks: tuple, pauses: Optional[tuple], *, compact: bool) -> str
 Import nach `from typing import Any`:
 
 ```python
-from app.services.work_blocks_service import WEEKDAY_LABELS, hhmm_to_minutes
+from decimal import Decimal
+
+from app.services.work_blocks_service import WEEKDAY_LABELS, derive_targets, hhmm_to_minutes
 ```
 
 Am Dateiende anhängen:
 
 ```python
-# Spec 3.4: Obergrenze der Wochensumme (bestehende Grenze der Wochenstunden).
-WEEK_LIMIT_MINUTES = 60 * 60
+# Spec 3.4: Obergrenze der Wochensumme (bestehende Grenze der Wochenstunden,
+# ``le=60`` in UserBase/WorkingHoursChangeBase). Geprüft wird die Σ der je Tag
+# gerundeten Tagessolls (4.1) — exakt der Wert, den ``derive_targets`` speichert.
+WEEK_LIMIT_HOURS = Decimal(60)
 
 
 def _as_dict(value: Any) -> Any:
@@ -373,7 +400,6 @@ def validate_week_blocks(value: Any) -> list:
     if not isinstance(value, list) or len(value) != 5:
         raise ValueError("Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet.")
     week = []
-    total_net = 0
     for idx, raw_day in enumerate(value):
         day = _as_dict(raw_day)
         if not isinstance(day, dict):
@@ -410,14 +436,16 @@ def validate_week_blocks(value: Any) -> list:
         gross = sum(e - s for s, e in spans)
         if spans and pause >= gross:
             raise ValueError(f"{label}: Pause muss kürzer sein als die Gesamtzeit der Blöcke.")
-        total_net += gross - pause if spans else 0
         week.append({
             "blocks": [{"start": b["start"], "end": b["end"]} for b in blocks],
             "pause_minutes": pause,
         })
     if not any(d["blocks"] for d in week):
         raise ValueError("Mindestens ein Wochentag braucht einen Block.")
-    if total_net > WEEK_LIMIT_MINUTES:
+    # Nicht die ungerundeten Netto-Minuten: eine Woche mit genau 60:00 h, in der
+    # mehrere Tage aufgerundet werden, ergäbe gespeichert 60,01 h — die lehnte
+    # danach ``le=60`` mit einem fremden Text ab (Review Task 1).
+    if derive_targets(week)["weekly_hours"] > WEEK_LIMIT_HOURS:
         raise ValueError("Die Wochensumme darf 60 Stunden nicht überschreiten.")
     return week
 ```
@@ -6254,6 +6282,10 @@ describe('validateWeekBlocks (Spec 3.4, wortgleiche Texte zu test_work_blocks_va
     [[day([['08:00', '12:00']]), E, { blocks: [], pause_minutes: 15 }, E, E], 'Mi: Pause nur an Tagen mit Blöcken.'],
     [[E, E, E, E, E], 'Mindestens ein Wochentag braucht einen Block.'],
     [Array(5).fill(day([['00:00', '12:05']])), 'Die Wochensumme darf 60 Stunden nicht überschreiten.'],
+    // Wortgleich zu ROUNDED_OVER_60 (test_work_blocks_validation.py): 60:00 h
+    // Blockzeit, gerundete Σ Tagessoll 11,42 + 11,42 + 12,17 + 12,50 + 12,50 = 60,01 h.
+    [[day([['00:00', '11:25']]), day([['00:00', '11:25']]), day([['00:00', '12:10']]),
+      day([['00:00', '12:30']]), day([['00:00', '12:30']])], 'Die Wochensumme darf 60 Stunden nicht überschreiten.'],
     [[E, E, E, E], 'Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet.'],
   ] as [WeekBlocks, string][])('%#: %s', (week, message) => {
     expect(validateWeekBlocks(week)).toBe(message);
@@ -6352,7 +6384,10 @@ Expected: FAIL — „deriveTargets is not a function", „Failed to resolve imp
 Den Typ-Import (nach PR2: `import type { TimeBlock, WeekBlocks } from '../types/workBlocks';`) auf `import type { DayBlocks, TimeBlock, WeekBlocks } from '../types/workBlocks';` erweitern — PR2s lockeres `hhmmToMinutes` bleibt unverändert, der strenge Parser heißt deshalb `parseHhmm` — und anhängen:
 
 ```ts
-const WEEK_LIMIT_MINUTES = 60 * 60;
+/** Spec 3.4: Grenze der Σ Tagessoll (gerundete Hundertstel wie 4.1, nicht
+ * Netto-Minuten — sonst gäbe die Oberfläche eine Woche mit 60:00 h frei, die
+ * gespeichert 60,01 h ergäbe und vom Server abgelehnt würde). */
+const WEEK_LIMIT_HOURS = 60;
 
 /** Fünf Tage ohne Blöcke, Pause 0 — Ausgangszustand des Editors. */
 export function emptyWeek(): WeekBlocks {
@@ -6414,7 +6449,6 @@ export function deriveTargets(week: WeekBlocks): { hours: number[]; weeklyHours:
  * (Spec 3.4), Text der ERSTEN verletzten Regel oder `null`. */
 export function validateWeekBlocks(week: WeekBlocks | null | undefined): string | null {
   if (!Array.isArray(week) || week.length !== 5) return 'Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet.';
-  let totalNet = 0;
   for (let i = 0; i < 5; i++) {
     const label = WEEKDAY_LABELS[i];
     const blocks = week[i]?.blocks ?? [];
@@ -6439,10 +6473,9 @@ export function validateWeekBlocks(week: WeekBlocks | null | undefined): string 
     if (!spans.length && pause !== 0) return `${label}: Pause nur an Tagen mit Blöcken.`;
     const gross = spans.reduce((sum, [s, e]) => sum + e - s, 0);
     if (spans.length && pause >= gross) return `${label}: Pause muss kürzer sein als die Gesamtzeit der Blöcke.`;
-    if (spans.length) totalNet += gross - pause;
   }
   if (!week.some((d) => (d?.blocks ?? []).length > 0)) return 'Mindestens ein Wochentag braucht einen Block.';
-  if (totalNet > WEEK_LIMIT_MINUTES) return 'Die Wochensumme darf 60 Stunden nicht überschreiten.';
+  if (deriveTargets(week).weeklyHours > WEEK_LIMIT_HOURS) return 'Die Wochensumme darf 60 Stunden nicht überschreiten.';
   return null;
 }
 ```
