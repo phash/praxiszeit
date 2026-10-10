@@ -479,6 +479,38 @@ def test_response_carries_entry_state_and_snapshot(_db_session, employee_user, a
             body["entry_auto_closed"]) == (False, 240, False)
 
 
+def test_employee_list_loads_target_entries_in_one_query(_db_session, employee_user,
+                                                        employee_client):
+    """Review Task 6: die MA-Liste (``GET /api/change-requests/``, bis 500
+    Anträge) reichert über den Batch-Enricher an — EIN Query für alle
+    Zieleinträge wie in der Admin-Liste, nicht einer je Antrag."""
+    from datetime import timedelta
+    from sqlalchemy import event
+    from tests.conftest import engine
+
+    employee_user.work_blocks = K_BLOCKS
+    for i in range(5):
+        e = _entry(_db_session, employee_user, time(7, 45), time(18, 15), day=MON + timedelta(days=i),
+                   raw_start_time=time(7), raw_end_time=time(19), uncredited_minutes=150)
+        _cr(_db_session, employee_user, e, request_credit_override=True)
+
+    count = {"n": 0}
+
+    def _listener(conn, cursor, statement, parameters, context, executemany):
+        if "from time_entries" in statement.lower():
+            count["n"] += 1
+
+    event.listen(engine, "before_cursor_execute", _listener)
+    try:
+        r = employee_client.get("/api/change-requests/")
+    finally:
+        event.remove(engine, "before_cursor_execute", _listener)
+
+    assert r.status_code == 200, r.text
+    assert [x["entry_not_credited_minutes"] for x in r.json()] == [240] * 5
+    assert count["n"] == 1, f"erwartet 1 Eintragsabfrage, gemessen {count['n']}"
+
+
 def test_approval_reports_presence_warnings(_db_session, employee_user, admin_client):
     employee_user.work_blocks = K_BLOCKS
     e = _entry(_db_session, employee_user, time(8), time(12))

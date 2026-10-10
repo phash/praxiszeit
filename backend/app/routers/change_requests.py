@@ -19,7 +19,9 @@ from app.services.arbzg_utils import is_night_work
 from app.services import credit_override_service, work_window_service
 # #219: single shared CR-enricher (was duplicated per-item here vs the batch in
 # admin_helpers). _enrich_cr_response wraps the batch _enrich_cr_responses([cr]).
-from app.routers.admin_helpers import _enrich_cr_response as _enrich_response
+from app.routers.admin_helpers import (
+    _enrich_cr_response as _enrich_response, _enrich_cr_responses,
+)
 
 router = APIRouter(prefix="/api/change-requests", tags=["change-requests"])
 
@@ -453,7 +455,9 @@ def list_change_requests(
             )
 
     requests = query.order_by(ChangeRequest.created_at.desc()).offset(skip).limit(limit).all()
-    return [_enrich_response(cr, db) for cr in requests]
+    # Batch wie admin_change_requests.list_all_change_requests: EIN User- und EIN
+    # Eintrags-Query für die ganze Liste (bis 500 Anträge), nicht je Antrag.
+    return _enrich_cr_responses(requests, db)
 
 
 @router.get("/{request_id}", response_model=ChangeRequestResponse)
