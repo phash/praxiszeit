@@ -105,6 +105,28 @@ def test_ods_monthly_sum_row(db, month):
     assert row[1][1] == "390"
 
 
+def test_ods_yearly_sum_rows(db, month):
+    """Gesamtreview PR2 (Fund 12): das ODS-Jahresblatt endete ohne Summen —
+    das XLSX-Jahresblatt desselben Berichts trägt „Nicht angerechnet (Min)
+    Jahr:" und „Nachtarbeitstage (§6 ArbZG):" (Spec 15.1/17.6 Parität)."""
+    # Ein Nachtdienst im März (00:00–03:00 = 3 h Nachtzeit, §2 Abs. 4 ArbZG).
+    db.add(TimeEntry(user_id=month.id, tenant_id=DEFAULT_TENANT_ID, date=date(YEAR, 3, 3),
+                     start_time=time(0), end_time=time(3), break_minutes=0))
+    db.commit()
+    table = _ods_table(ods_export_service.generate_yearly_report(
+        db, YEAR, tenant_id=DEFAULT_TENANT_ID), f"{month.last_name} {month.first_name}"[:31])
+    rows = _ods_rows(table)
+    year_row = next(r for r in rows if r and r[0][0] == "Nicht angerechnet (Min) Jahr:")
+    assert year_row[1][1] == "390"
+    night_row = next(r for r in rows if r and r[0][0] == "Nachtarbeitstage (§6 ArbZG):")
+    assert night_row[1][1] == "1"
+    # Parität zum XLSX-Jahresblatt desselben Berichts.
+    sheet = _xlsx_employee_sheet(export_service.generate_yearly_report(
+        db, YEAR, tenant_id=DEFAULT_TENANT_ID), month, yearly=True)
+    assert _label_value(sheet, "Nicht angerechnet (Min) Jahr:") == 390
+    assert _label_value(sheet, "Nachtarbeitstage (§6 ArbZG):") == 1
+
+
 def test_pdf_last_column(db, month, monkeypatch):
     header, rows = _pdf_main_table(db, monkeypatch)
     assert len(header) == 12

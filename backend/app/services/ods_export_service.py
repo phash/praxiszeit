@@ -659,6 +659,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
     current_date = date(year, 1, 1)
     end_date = date(year, 12, 31)
     night_work_count = 0
+    year_not_credited = 0  # Spec 15.1: Summenzeile (Parität XLSX, Gesamtreview PR2 Fund 12)
 
     while current_date <= end_date:
         weekday = current_date.weekday()
@@ -788,9 +789,25 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         # Spec 15.1: Spalte 13 (s. Monatsblatt).
         _credit = day_credit_minutes(day_entries)
         tr.addElement(_int_cell(_credit.not_credited) if _credit.not_credited is not None else _empty_cell())
+        year_not_credited += _credit.not_credited or 0
 
         table.addElement(tr)
         current_date += timedelta(days=1)
+
+    # Gesamtreview PR2 (Fund 12): Summenzeilen wie im XLSX-Jahresblatt
+    # desselben Berichts — zwei Dateien eines §16-Belegs dürfen sich nicht
+    # unterscheiden (Spec 15.1/17.6). ``night_work_count`` wurde schon immer
+    # gezählt, aber nie ausgegeben.
+    table.addElement(TableRow())  # blank
+
+    def summary_int_row(label: str, value: int) -> TableRow:
+        tr = TableRow()
+        tr.addElement(_str_cell(label, style=bold))
+        tr.addElement(_int_cell(value))
+        return tr
+
+    table.addElement(summary_int_row("Nachtarbeitstage (§6 ArbZG):", night_work_count))
+    table.addElement(summary_int_row("Nicht angerechnet (Min) Jahr:", year_not_credited))
 
 
 # ---------------------------------------------------------------------------
