@@ -59,4 +59,30 @@ describe('<Reports /> 24-Wochen-Durchschnitt (Spec 8.1, P22)', () => {
     const table = await screen.findByRole('table', { name: '24-Wochen-Durchschnitt' });
     expect(within(table).getByText('1 (2026-W23: 50:00 h)')).toBeInTheDocument();
   });
+
+  it('urteilt ohne Soll-Arbeitstage nicht (z. B. track_hours=False)', async () => {
+    // Ohne Soll-Arbeitstag gibt es keinen Nenner: das Backend liefert dann
+    // Ø 0 und compliant=true — ein Urteil ohne Grundlage.
+    getMock.mockResolvedValue({
+      data: {
+        window_start: '2025-12-19', window_end: '2026-06-05', non_compliant_count: 0,
+        employees: [{
+          user_id: 'u3', first_name: 'Cem', last_name: 'Leitend', total_hours: 100,
+          scheduled_work_days: 0, average_daily_hours: 0, days_over_8h: 10, compliant: true,
+          presence_hours: 100, presence_average: 0,
+          presence_weeks: [{ iso_week: '2026-W23', presence_hours: 50 }, { iso_week: '2026-W24', presence_hours: 50 }],
+        }],
+      },
+    });
+    render(<Reports />);
+    fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
+    const table = await screen.findByRole('table', { name: '24-Wochen-Durchschnitt' });
+    expect(within(table).getByText('keine Soll-Arbeitstage')).toBeInTheDocument();
+    expect(within(table).queryByText('✓ Konform')).not.toBeInTheDocument();
+    expect(within(table).queryByText('0:00')).not.toBeInTheDocument();
+    expect(within(table).getAllByText('–')).toHaveLength(2);
+    // Gesamtwerte und Wochen > 48 h bleiben stehen
+    expect(within(table).getAllByText('100:00')).toHaveLength(2);
+    expect(within(table).getByText('2 (2026-W23: 50:00 h, 2026-W24: 50:00 h)')).toBeInTheDocument();
+  });
 });

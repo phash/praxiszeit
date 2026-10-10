@@ -899,24 +899,32 @@ export default function Reports() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {avgReport.employees.map((emp) => (
-                <tr key={emp.user_id} className={`hover:bg-gray-50 ${!emp.compliant ? 'bg-red-50' : ''}`}>
-                  <td className="px-4 py-2 font-medium text-gray-900">{emp.first_name} {emp.last_name}</td>
-                  <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.average_daily_hours)}</td>
-                  <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.presence_average)}</td>
-                  <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.total_hours)}</td>
-                  <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.presence_hours)}</td>
-                  <td className={`px-4 py-2 text-right ${weeksOver48Text(emp.presence_weeks) === '–' ? 'text-gray-700' : 'text-red-700 font-medium'}`}>
-                    {weeksOver48Text(emp.presence_weeks)}
-                  </td>
-                  <td className="px-4 py-2 text-right text-gray-700">{emp.days_over_8h}</td>
-                  <td className="px-4 py-2 text-center">
-                    {emp.compliant
-                      ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
-                      : <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>}
-                  </td>
-                </tr>
-              ))}
+              {avgReport.employees.map((emp) => {
+                // Ohne Soll-Arbeitstag (z. B. track_hours=False, ganzes Fenster
+                // außerhalb der Beschäftigung) fehlt der Nenner: das Backend liefert
+                // dann Ø 0 und compliant=true — kein Urteil, keine Ø-Werte zeigen.
+                const noScheduledDays = emp.scheduled_work_days === 0;
+                return (
+                  <tr key={emp.user_id} className={`hover:bg-gray-50 ${!noScheduledDays && !emp.compliant ? 'bg-red-50' : ''}`}>
+                    <td className="px-4 py-2 font-medium text-gray-900">{emp.first_name} {emp.last_name}</td>
+                    <td className="px-4 py-2 text-right text-gray-700">{noScheduledDays ? '–' : formatHoursHM(emp.average_daily_hours)}</td>
+                    <td className="px-4 py-2 text-right text-gray-700">{noScheduledDays ? '–' : formatHoursHM(emp.presence_average)}</td>
+                    <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.total_hours)}</td>
+                    <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.presence_hours)}</td>
+                    <td className={`px-4 py-2 text-right ${weeksOver48Text(emp.presence_weeks) === '–' ? 'text-gray-700' : 'text-red-700 font-medium'}`}>
+                      {weeksOver48Text(emp.presence_weeks)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-gray-700">{emp.days_over_8h}</td>
+                    <td className="px-4 py-2 text-center">
+                      {noScheduledDays
+                        ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-gray-100 text-gray-700">keine Soll-Arbeitstage</span>
+                        : emp.compliant
+                          ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
+                          : <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
