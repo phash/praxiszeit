@@ -540,7 +540,11 @@ export default function AdminChangeRequests() {
                   )}
                 </div>
 
-                {cr.entry_kind !== 'absence' && cr.request_type === 'update' && cr.entry_credit_override && (
+                {/* P3: Hinweis für die Antragsprüfung. Er hängt am AKTUELLEN Zustand des
+                    Eintrags — an erledigten Anträgen wäre er eine Zusage für Zeiten, die
+                    längst übernommen bzw. nie übernommen wurden. */}
+                {cr.status === 'pending' && cr.entry_kind !== 'absence' && cr.request_type === 'update'
+                  && cr.entry_credit_override && (
                   <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
                     Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.
                   </div>

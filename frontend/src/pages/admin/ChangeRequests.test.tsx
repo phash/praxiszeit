@@ -169,4 +169,14 @@ describe('<AdminChangeRequests /> Anrechnung beantragen (Spec P21, P3)', () => {
     expect(await screen.findByText('Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Genehmigen und anerkennen' })).not.toBeInTheDocument();
   });
+
+  // P3 meint die Antragsprüfung: der Hinweis hängt am AKTUELLEN Zustand des
+  // Eintrags (entry_credit_override) und wäre an erledigten Anträgen eine
+  // Zusage für Zeiten, die längst übernommen bzw. nie übernommen wurden.
+  it.each(['approved', 'rejected'])('zeigt den Hinweis aus P3 nicht an erledigten Anträgen (%s)', async (status) => {
+    mockApi([{ ...creditCr, status, entry_credit_override: true, entry_not_credited_minutes: 0 }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByText('Anrechnung beantragt')).toBeInTheDocument();
+    expect(screen.queryByText('Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.')).not.toBeInTheDocument();
+  });
 });
