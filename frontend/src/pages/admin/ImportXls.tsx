@@ -351,22 +351,30 @@ export default function ImportXls() {
                     </td>
                     <td className="px-3 py-2 text-gray-500">{e.note || '–'}</td>
                     <td className="px-3 py-2">
-                      {e.has_conflict ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
-                          <XCircle size={11} /> Konflikt
-                        </span>
-                      ) : hasWarning ? (
-                        <span
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 cursor-help"
-                          title={e.arbzg_warnings.join('\n')}
-                        >
-                          <AlertTriangle size={11} /> Hinweis
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
-                          <CheckCircle size={11} /> Neu
-                        </span>
-                      )}
+                      {/* Review Task 12: „Konflikt" und „Hinweis" schließen sich nicht aus.
+                          Eine Konfliktzeile (Überschreib-Import) trägt dieselben Hinweise wie
+                          eine neue Zeile — und der Hinweis aus P3 („Eintrag ist anerkannt …")
+                          entsteht überhaupt nur dort. */}
+                      <div className="flex flex-wrap gap-1">
+                        {e.has_conflict && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
+                            <XCircle size={11} /> Konflikt
+                          </span>
+                        )}
+                        {hasWarning && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 cursor-help"
+                            title={e.arbzg_warnings.join('\n')}
+                          >
+                            <AlertTriangle size={11} /> Hinweis
+                          </span>
+                        )}
+                        {!e.has_conflict && !hasWarning && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+                            <CheckCircle size={11} /> Neu
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
