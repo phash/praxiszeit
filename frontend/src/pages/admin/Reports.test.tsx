@@ -85,4 +85,12 @@ describe('<Reports /> 24-Wochen-Durchschnitt (Spec 8.1, P22)', () => {
     expect(within(table).getAllByText('100:00')).toHaveLength(2);
     expect(within(table).getByText('2 (2026-W23: 50:00 h, 2026-W24: 50:00 h)')).toBeInTheDocument();
   });
+
+  it('bindet die gesetzliche Grenze an die tatsächliche Arbeitszeit (Spec 8.3/19)', () => {
+    render(<Reports />);
+    // Eine Neukappung senkt die angerechnete Zeit — der Hinweis darf nicht nahelegen,
+    // dass ein Verstoß damit erledigt ist.
+    expect(screen.queryByText(/angerechnete Arbeitszeit im Durchschnitt/)).not.toBeInTheDocument();
+    expect(screen.getByText(/die Grenze gilt für die tatsächliche Arbeitszeit/)).toBeInTheDocument();
+  });
 });

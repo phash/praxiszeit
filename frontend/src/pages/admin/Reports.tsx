@@ -858,9 +858,10 @@ export default function Reports() {
           <h2 className="text-xl font-semibold">24-Wochen-Durchschnitt §3 ArbZG</h2>
         </div>
         <p className="text-sm text-gray-600 mb-4">
-          Über 24 Wochen darf die angerechnete Arbeitszeit im Durchschnitt <strong>8 Stunden je Arbeitstag</strong> nicht
-          überschreiten. Daneben steht die <strong>Anwesenheit laut Stempel</strong> (abzüglich erfasster Pausen) — sie
-          ändert sich nicht, wenn die Anrechnung später neu berechnet wird.
+          Über 24 Wochen darf die Arbeitszeit im Durchschnitt <strong>8 Stunden je Arbeitstag</strong> nicht
+          überschreiten. „Ø angerechnet“ und der Status rechnen mit der angerechneten Zeit. Daneben steht die{' '}
+          <strong>Anwesenheit laut Stempel</strong> (abzüglich erfasster Pausen): Sie ändert sich nicht, wenn die
+          Anrechnung später neu berechnet wird, und die Grenze gilt für die tatsächliche Arbeitszeit.
         </p>
         <div className="flex flex-wrap items-end gap-4 mb-4">
           <div>
