@@ -1081,6 +1081,15 @@ def update_time_entry(
         TimeEntry.id == entry_id,
         TimeEntry.tenant_id == current_user.tenant_id,  # F-026
     ).scalar()
+    # Härtung (Nachzug PR1/P5, 2026-10-10): ein fremder Eintrag bricht für
+    # Mitarbeitende SOFORT ab — vor Anker- und Zeilensperre. Sonst sperrte ein
+    # PUT auf die ID eines Kollegen dessen Benutzerzeile (und blockierte dessen
+    # Schreibpfade), und die Wartezeit verriete als Timing-Orakel, dass die ID
+    # existiert (#120 verbirgt das nur im Statuscode). Die Prüfung nach dem
+    # gesperrten Laden unten bleibt als Rückversicherung stehen.
+    if (_owner_id is not None and _owner_id != current_user.id
+            and current_user.role != UserRole.ADMIN):
+        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
     if _owner_id is not None:
         lock_user_row(db, current_user.tenant_id, _owner_id)
     entry = db.query(TimeEntry).filter(

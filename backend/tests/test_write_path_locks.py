@@ -216,3 +216,52 @@ def test_xls_import(_db_session, employee_user, admin_user, calls):
                             changed_by_id=admin_user.id, filename="t.xls", tenant_id=DEFAULT_TENANT_ID)
     assert result.imported == 1
     assert_lock_first(calls, employee_user.id)
+
+
+def _other_employee(db):
+    from app.models import User
+    from app.models.user import UserRole
+    from app.services import auth_service
+
+    other = User(username="kollegin", email="kollegin@test.de",
+                 password_hash=auth_service.hash_password("Kollegin2025!"),
+                 first_name="Erika", last_name="Musterfrau", role=UserRole.EMPLOYEE,
+                 weekly_hours=40.0, vacation_days=30, work_days_per_week=5,
+                 is_active=True, tenant_id=DEFAULT_TENANT_ID)
+    db.add(other)
+    db.commit()
+    db.refresh(other)
+    return other
+
+
+def test_update_foreign_entry_takes_no_lock(_db_session, employee_user, employee_client, calls, monkeypatch):
+    """Härtung nach P5: der Eigentümer wird ungesperrt gelesen, damit die
+    Ankersperre VOR jeder Zeilensperre liegt. Ein Mitarbeiter, der die ID eines
+    FREMDEN Eintrags schickt, darf dabei weder die Benutzerzeile der Kollegin
+    noch deren Eintragszeile sperren — sonst könnte er fremde Schreibpfade
+    blockieren und an der Wartezeit ablesen, dass die ID existiert
+    (Timing-Orakel neben dem #120-404)."""
+    other = _other_employee(_db_session)
+    e = _entry(_db_session, other, time(8), time(11))
+    _clock(monkeypatch, MON, 13)
+    resp = employee_client.put(f"/api/time-entries/{e.id}", json={"end_time": "12:00"})
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Zeiteintrag nicht gefunden"
+    assert not [c for c in calls if c[0] == "lock"], calls
+    assert ("row_lock",) not in calls, calls
+    _db_session.expire_all()
+    assert _db_session.get(TimeEntry, e.id).end_time == time(11)
+
+
+def test_delete_foreign_entry_takes_no_lock(_db_session, employee_user, employee_client, calls, monkeypatch):
+    """Gegenstück zum Bearbeiten: auch der Löschpfad sperrt für einen fremden
+    Eintrag nichts, bevor die Eigentümerprüfung mit 404 abbricht."""
+    other = _other_employee(_db_session)
+    e = _entry(_db_session, other, time(8), time(11))
+    _clock(monkeypatch, MON, 13)
+    resp = employee_client.delete(f"/api/time-entries/{e.id}")
+    assert resp.status_code == 404, resp.text
+    assert not [c for c in calls if c[0] == "lock"], calls
+    assert ("row_lock",) not in calls, calls
+    _db_session.expire_all()
+    assert _db_session.get(TimeEntry, e.id) is not None
