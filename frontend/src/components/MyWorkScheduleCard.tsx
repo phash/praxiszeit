@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Clock } from 'lucide-react';
 import apiClient from '../api/client';
-import { formatHoursHM } from '../utils/formatters';
+import { deHoursExact, formatHoursHM } from '../utils/formatters';
 import { WEEKDAY_LABELS, formatWeekBlocks, isLegacyWeek } from '../utils/workBlocks';
 import type { WeekBlocks } from '../types/workBlocks';
 
@@ -85,7 +85,10 @@ export default function MyWorkScheduleCard() {
           </p>
         </>
       ) : (
-        <p className="text-sm text-gray-500 mt-2">{`Wochenstunden: ${formatHoursHM(today.weekly_hours)} h`}</p>
+        // Gesamtreview PR2 (Fund 7): Wochenstunden mit Dezimalkomma wie überall
+        // (#415-Text „20,0 Std/Woche", WorkingHoursModal, Dashboard-Hinweis, der
+        // hierher verlinkt); die Tageswerte bleiben H:MM.
+        <p className="text-sm text-gray-500 mt-2">{`Wochenstunden: ${deHoursExact(today.weekly_hours)}`}</p>
       )}
       {untracked ? (
         <p className="text-xs text-gray-500 mt-1">
@@ -106,7 +109,7 @@ export default function MyWorkScheduleCard() {
             {data.history.map((h) => (
               <li key={h.effective_from}>
                 {`ab ${deDate(h.effective_from)}${h.effective_until ? ` bis ${deDate(h.effective_until)}` : ''}: `
-                  + `${formatWeekBlocks(h.blocks) ?? 'keine Arbeitszeit-Blöcke'} · ${formatHoursHM(h.weekly_hours)} h/Woche`}
+                  + `${formatWeekBlocks(h.blocks) ?? 'keine Arbeitszeit-Blöcke'} · ${deHoursExact(h.weekly_hours)} Std/Woche`}
               </li>
             ))}
           </ul>

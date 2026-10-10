@@ -37,11 +37,13 @@ describe('<MyWorkScheduleCard />', () => {
     const today = await screen.findByRole('list', { name: 'Arbeitszeit heute' });
     expect(within(today).getByText('Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) · Tagessoll 6:30 h')).toBeInTheDocument();
     expect(within(today).getByText('Mi – · Tagessoll 0:00 h')).toBeInTheDocument();
-    expect(screen.getByText('Wochenstunden: 15:30 h')).toBeInTheDocument();
+    // Gesamtreview PR2 (Fund 7): Wochenstunden mit Dezimalkomma wie der #415-Text
+    // („20,0 Std/Woche") und der Dashboard-Hinweis, der hierher verlinkt.
+    expect(screen.getByText('Wochenstunden: 15,5')).toBeInTheDocument();
     const history = screen.getByRole('list', { name: 'Verlauf der Arbeitszeit' });
-    expect(within(history).getByText('ab 01.01.2026 bis 31.08.2026: keine Arbeitszeit-Blöcke · 40:00 h/Woche')).toBeInTheDocument();
+    expect(within(history).getByText('ab 01.01.2026 bis 31.08.2026: keine Arbeitszeit-Blöcke · 40,0 Std/Woche')).toBeInTheDocument();
     expect(within(history).getByText(
-      'ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) · Di 08:00–13:00 · Do 08:00–12:00 · 15:30 h/Woche',
+      'ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) · Di 08:00–13:00 · Do 08:00–12:00 · 15,5 Std/Woche',
     )).toBeInTheDocument();
     expect(getMock).toHaveBeenCalledWith('/auth/me/work-schedule');
   });
