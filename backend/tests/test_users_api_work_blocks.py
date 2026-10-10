@@ -247,9 +247,42 @@ def test_post_with_invalid_work_blocks_is_422(admin_client):
 
 
 def test_post_with_work_blocks_and_track_hours_off_is_accepted(admin_client):
-    """Spec 11.2: angenommen, ohne Wirkung, solange keine Stunden gezählt werden."""
+    """Spec 11.2/17.2: angenommen, ohne Wirkung, solange keine Stunden gezählt
+    werden — aber die Zeile trägt die Blöcke UND die abgeleiteten ``hours_*``
+    (K_BLOCKS: Mo 08–12 + 15–18, Pause 0). Eine Ableitung, die bei
+    ``track_hours=False`` übersprungen würde, fiele hier auf."""
     resp = admin_client.post("/api/admin/users",
                              json={**BLOCK_USER, "username": "blockleitend", "track_hours": False,
                                    "work_blocks": K_BLOCKS})
     assert resp.status_code == 201, resp.text
-    assert resp.json()["user"]["work_blocks"] == K_BLOCKS
+    body = resp.json()["user"]
+    assert body["work_blocks"] == K_BLOCKS
+    assert body["use_daily_schedule"] is True
+    assert body["hours_monday"] == 7.0
+    assert (body["weekly_hours"], body["work_days_per_week"]) == (7.0, 1)
+
+
+_NO_DAY_VALUES = {f: None for f in ("hours_monday", "hours_tuesday", "hours_wednesday",
+                                    "hours_thursday", "hours_friday")}
+_DAY_VALUES_OVER_60 = {**_NO_DAY_VALUES, "hours_monday": 24.0, "hours_tuesday": 24.0,
+                       "hours_wednesday": 24.0}
+
+
+@pytest.mark.parametrize("day_values", [_NO_DAY_VALUES, _DAY_VALUES_OVER_60],
+                         ids=["ohne-tageswerte", "tageswerte-ueber-60"])
+def test_post_with_work_blocks_derives_before_the_daily_schedule_check(admin_client, day_values):
+    """Spec 4.2: ``derive_from_work_blocks`` läuft VOR
+    ``check_daily_schedule_matches_weekly_hours``. Genau diese Form schickt das
+    Anlegeformular (``use_daily_schedule: true`` neben ``work_blocks``). In
+    umgekehrter Reihenfolge prüfte die Quervalidierung die mitgeschickten
+    Tageswerte — ohne Werte 422 „Im Tagesplan-Modus …", mit 24/24/24 422
+    „Die Summe der Tagesstunden …" — statt sie zu überschreiben."""
+    resp = admin_client.post("/api/admin/users", json={
+        **BLOCK_USER, "username": "blocktagesplan", "use_daily_schedule": True,
+        **day_values, "work_blocks": ANNA,
+    })
+    assert resp.status_code == 201, resp.text
+    body = resp.json()["user"]
+    assert body["use_daily_schedule"] is True
+    assert (body["hours_monday"], body["hours_tuesday"], body["hours_wednesday"]) == (7.0, 4.0, 0.0)
+    assert (body["weekly_hours"], body["work_days_per_week"]) == (15.0, 3)
