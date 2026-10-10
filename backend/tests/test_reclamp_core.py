@@ -136,6 +136,32 @@ def test_not_extendable_at_the_old_edge(db, test_user):
     assert (kept.end_time, kept.raw_end_time) == (t(18, 30), None)
 
 
+def test_not_extendable_when_the_weekday_loses_its_blocks(db, test_user):
+    """E50 / 9.2 Schritt 12 (Review Task 7): fallen die Blöcke des Wochentags
+    weg, gilt dort keine Hülle mehr — die weiteste mögliche, also „auf dieser
+    Seite weiter". Hauptfall: ein Altfenster aus #201 wird entfernt, die
+    Rohstempel gingen vor 1.19.1 verloren. Ohne Hinweis bliebe der Eintrag still
+    gekappt. Am Feiertag kappte auch der alte Snapshot nicht (#484) — ein Treffer
+    auf der Kante wäre dort Zufall, kein verlorener Stempel."""
+    old = block_week(mon=[("15:00", "18:00")], tue=[("08:00", "12:00")])
+    prev = _setup(db, test_user, old=old, new=block_week(tue=[("08:00", "12:00")]))
+    db.add(PublicHoliday(date=date(2026, 6, 8), name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    invalidate_holiday_cache()
+    lost_end = entry(db, test_user, MON, t(15), t(18, 15))
+    holiday = entry(db, test_user, date(2026, 6, 8), t(15), t(18, 15))
+    lost_start = entry(db, test_user, date(2026, 6, 15), t(14, 45), t(17))
+    stamped = entry(db, test_user, date(2026, 6, 22), t(15), t(18, 15), raw_end=t(18, 40))
+    result = _run(db, test_user, prev)
+    invalidate_holiday_cache()
+    assert [(c.entry_id, c.not_extendable) for c in result.flagged] == [
+        (lost_end.id, "end"), (lost_start.id, "start")]
+    assert [c.entry_id for c in result.changed] == [stamped.id]
+    assert (stamped.end_time, stamped.raw_end_time) == (t(18, 40), None)
+    assert (lost_end.end_time, holiday.end_time, lost_start.start_time) == (t(18, 15), t(18, 15), t(14, 45))
+    assert result.skipped == []
+
+
 def test_rest_time_after_reclamp_counts_from_the_raw_stamp(db, test_user):
     """Spec 17.4 / UC-Review R3: nach der Neukappung misst §5 weiter die tatsächliche
     Anwesenheit — Rohstempel 19:00, nicht das gekappte Ende 18:15. Ab 19:00 bis zum
@@ -181,21 +207,41 @@ def test_auto_closed_entry_reclamps_from_its_effective_end(db, test_user):
     das Kennzeichen und das Protokoll-Rohende 23:59 bleiben (P18)."""
     prev = _setup(db, test_user)
     e = entry(db, test_user, MON, t(8), t(18, 15), raw_end=t(23, 59), auto_closed=True)
-    [c] = _run(db, test_user, prev).changed
+    result = _run(db, test_user, prev)
+    [c] = result.changed
     assert (e.end_time, e.raw_end_time, e.uncredited_minutes, e.auto_closed) == (t(18, 15), t(23, 59), 150, True)
     assert c.new_net == Decimal("7.75")
+    # gleiche Hülle, nur eine neue Lücke: nichts zu erweitern, also kein Hinweis
+    assert (c.not_extendable, result.flagged) == (None, [])
 
 
 def test_auto_closed_entry_is_never_extended_to_the_synthetic_end(db, test_user):
     """P18 (PR1-Review F1/N2): eine spätere Hülle verlängert einen automatisch
     geschlossenen Eintrag nicht — mit 23:59 als Eingabe würde bis 20:15 angerechnet
-    (9,75 h statt 7,75 h), ohne dass je jemand ausgestempelt hat."""
+    (9,75 h statt 7,75 h), ohne dass je jemand ausgestempelt hat. Das Rohende
+    23:59 ist kein Stempel: das Ende gilt als „ohne Rohstempel – nicht
+    erweiterbar" (E50, Review Task 7), sonst erführe niemand, warum der Eintrag
+    bei 18:15 bleibt."""
     prev = _setup(db, test_user, new=block_week(mon=[("08:00", "12:00"), ("15:00", "20:00")],
                                                 tue=[("08:00", "12:00")]))
     e = entry(db, test_user, MON, t(8), t(18, 15), raw_end=t(23, 59), auto_closed=True)
-    [c] = _run(db, test_user, prev).changed
+    result = _run(db, test_user, prev)
+    [c] = result.changed
     assert _stored(e) == (t(8), t(18, 15), None, t(23, 59), 150, True)
-    assert (c.old_net, c.new_net, c.not_extendable) == (Decimal("10.25"), Decimal("7.75"), None)
+    assert (c.old_net, c.new_net, c.not_extendable) == (Decimal("10.25"), Decimal("7.75"), "end")
+    assert [(f.entry_id, f.not_extendable) for f in result.flagged] == [(e.id, "end")]
+
+
+def test_auto_closed_entry_with_a_carried_raw_end_is_extended_not_flagged(db, test_user):
+    """Gegenstück: nach einem Verschieben trägt das Rohende das übernommene
+    wirksame Ende (``end_input_for``) — das ist die Anrechnungsgrenze, bis zu der
+    eine spätere Hülle den Eintrag wieder erweitern darf; kein Hinweis."""
+    prev = _setup(db, test_user, old=block_week(mon=[("08:00", "16:00")], tue=[("08:00", "12:00")]),
+                  new=block_week(mon=[("08:00", "18:00")], tue=[("08:00", "12:00")]))
+    e = entry(db, test_user, MON, t(8), t(16, 15), raw_end=t(18, 15), auto_closed=True)
+    result = _run(db, test_user, prev)
+    [c] = result.changed
+    assert (e.end_time, c.not_extendable, result.flagged) == (t(18, 15), None, [])
 
 
 def test_auto_closed_entry_shrinks_and_comes_back_byte_identical(db, test_user):
@@ -222,10 +268,15 @@ def test_auto_closed_entry_shrinks_and_comes_back_byte_identical(db, test_user):
 def test_auto_closed_entry_keeps_its_marker_without_blocks(db, test_user):
     """Fallen die Blöcke des Wochentags weg, bleibt der Eintrag unverändert:
     angerechnet bis zum wirksamen Ende, Rohende 23:59 als Protokoll — keine
-    Scheinänderung, keine Anrechnung bis 23:59."""
+    Scheinänderung, keine Anrechnung bis 23:59. Ohne Hülle wäre das Ende
+    erweiterbar, ein echter Stempel fehlt aber: Hinweis „nicht erweiterbar"
+    (E50, Review Task 7)."""
     prev = _setup(db, test_user, new=block_week(tue=[("08:00", "12:00")]))
     e = entry(db, test_user, MON, t(8), t(18, 15), raw_end=t(23, 59), auto_closed=True)
-    assert _run(db, test_user, prev) == wws.ReclampResult([], [], [])
+    result = _run(db, test_user, prev)
+    assert (result.changed, result.skipped) == ([], [])
+    assert [(f.entry_id, f.not_extendable, f.old_end, f.new_end) for f in result.flagged] == [
+        (e.id, "end", t(18, 15), t(18, 15))]
     assert _stored(e) == (t(8), t(18, 15), None, t(23, 59), 0, True)
 
 

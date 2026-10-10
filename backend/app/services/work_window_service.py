@@ -567,18 +567,30 @@ def _not_extendable(entry, old_day: list, new_day: list, grace: int,
     """E50: Seite ohne Rohstempel, gespeicherte Zeit exakt auf der ALTEN
     Hüllenkante (mit dem gespeicherten Puffer, sonst dem aktuellen) und die neue
     Hülle ist auf dieser Seite weiter → der Eintrag kann nicht erweitert werden,
-    weil der echte Stempel vor 1.19.1 verloren ging."""
-    if not old_day or not new_day:
+    weil der echte Stempel vor 1.19.1 verloren ging.
+
+    Review Task 7: ein Tag OHNE neue Blöcke hat keine Hülle — die weiteste
+    mögliche, also auf beiden Seiten „weiter" (Hauptfall: ein Altfenster aus
+    #201 wird entfernt). Und das Rohende 23:59 eines automatisch geschlossenen
+    Eintrags ist kein Stempel (P18): sein Ende ist „ohne Rohstempel", die
+    Neukappung verlängert es nie. Ein übernommenes echtes Rohende nach einem
+    Verschieben (``end_input_for``) bleibt die Grenze, bis zu der erweitert
+    wird — kein Hinweis."""
+    if not old_day:
         return None
     g_old = old_grace if old_grace is not None else grace
     sides = []
     if entry.raw_start_time is None and entry.start_time is not None and entry.start_time.second == 0:
         old_floor = _shift_min(old_day[0][0], -g_old)
-        if _min(entry.start_time) == old_floor and _shift_min(new_day[0][0], -grace) < old_floor:
+        if _min(entry.start_time) == old_floor and (
+                not new_day or _shift_min(new_day[0][0], -grace) < old_floor):
             sides.append("start")
-    if entry.raw_end_time is None and entry.end_time is not None and entry.end_time.second == 0:
+    end_unstamped = entry.raw_end_time is None or (
+        entry.auto_closed and same_minute(entry.raw_end_time, AUTO_CLOSE_RAW_END))
+    if end_unstamped and entry.end_time is not None and entry.end_time.second == 0:
         old_ceil = _shift_min(old_day[-1][1], g_old)
-        if _min(entry.end_time) == old_ceil and _shift_min(new_day[-1][1], grace) > old_ceil:
+        if _min(entry.end_time) == old_ceil and (
+                not new_day or _shift_min(new_day[-1][1], grace) > old_ceil):
             sides.append("end")
     if not sides:
         return None
@@ -657,7 +669,11 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
             skipped.append(ReclampSkip(e.id, e.date, "unique_collision"))
             continue
         old_grace = e.clamp_grace_minutes                                  # Schritt 9
-        old_day = list(prev_blocks_by_weekday[wd]) if prev_blocks_by_weekday else []
+        # Am Feiertag/freien Sondertag kappte auch der alte Snapshot nicht (#484):
+        # eine Zeit auf seiner Wochentagskante wäre dort Zufall, kein verlorener
+        # Stempel (Schritt 12, Review Task 7).
+        old_day = (list(prev_blocks_by_weekday[wd])
+                   if prev_blocks_by_weekday and e.date not in soll_free else [])
         new_day = get_scheduled_blocks(db, user, e.date, wh_changes=wh_changes, soll_free_dates=soll_free)
         flag = _not_extendable(e, old_day, new_day, grace, old_grace)    # Schritt 12 (vor dem Setzen)
         if r.grace_minutes is not None:
