@@ -409,7 +409,7 @@ describe('Dashboard Übersicht Monat/Woche (#500)', () => {
 describe('Dashboard Stempelkarte in der Lücke zwischen den Arbeitsblöcken (Spec 14, E69)', () => {
   const BLOCKS = [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }];
 
-  function at(iso: string) {
+  function at(iso: string, todayTargetHours = 7) {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(iso));
     const base = getMock.getMockImplementation()!;
@@ -417,7 +417,7 @@ describe('Dashboard Stempelkarte in der Lücke zwischen den Arbeitsblöcken (Spe
       url === '/time-entries/clock-status'
         ? Promise.resolve({ data: {
           is_clocked_in: false, elapsed_minutes: null, today_net_minutes: 0,
-          today_target_hours: 7, blocks_today: BLOCKS, grace_minutes: 15,
+          today_target_hours: todayTargetHours, blocks_today: BLOCKS, grace_minutes: 15,
         } })
         : base(url));
   }
@@ -445,4 +445,18 @@ describe('Dashboard Stempelkarte in der Lücke zwischen den Arbeitsblöcken (Spe
       await waitFor(() => expect(within(card).getByText('Noch nicht eingestempelt')).toBeInTheDocument());
     },
   );
+
+  // Review Task 17: `blocks_today` kommt aus `get_scheduled_blocks` und ist
+  // auch an Tagen ohne Tagessoll gefüllt (ganztägig Urlaub/Krank/Fortbildung,
+  // außerhalb des Beschäftigungsfensters) — der StampWidget braucht sie dort
+  // zum Kappen. Die Karte darf daraus aber keine „Pause" machen: wer krank
+  // ist, ist nicht zwischen zwei Arbeitsblöcken.
+  it('zeigt an einem Tag ohne Tagessoll in der Lücke keine Pause', async () => {
+    at('2026-06-01T12:30:00', 0);
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    const card = await screen.findByRole('button', { name: 'Stempeluhr öffnen' });
+    await waitFor(() => expect(within(card).getByText('Nicht eingestempelt')).toBeInTheDocument());
+    expect(within(card).queryByText('Pause zwischen den Arbeitsblöcken')).not.toBeInTheDocument();
+    expect(card.className).not.toMatch(/bg-danger/);
+  });
 });

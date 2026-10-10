@@ -488,9 +488,13 @@ export default function Dashboard() {
         // nicht „noch nicht eingestempelt" — kein roter Hinweis.
         const workedToday = todayActual > 0;
         // Spec 14 / E69: in einer UNGESCHRUMPFTEN Lücke (Blockende bis nächster
-        // Blockbeginn) ist eine Pause geplant — neutral statt rot.
+        // Blockbeginn) ist eine Pause geplant — neutral statt rot. Nur an einem
+        // Tag mit Soll: `blocks_today` ist auch bei ganztägiger Abwesenheit und
+        // außerhalb des Beschäftigungsfensters gefüllt (der StampWidget kappt
+        // damit), dort gibt es aber keine Arbeitsblöcke, zwischen denen man
+        // pausieren könnte.
         const nowDate = new Date();
-        const inGap = !isClockedIn
+        const inGap = isWorkday && !isClockedIn
           && isInBlockGap(clockStatus?.blocks_today, nowDate.getHours() * 60 + nowDate.getMinutes());
         const shouldBeClockedIn = isWorkday && !isClockedIn && !workedToday && !inGap;
         const cardBg = isClockedIn
