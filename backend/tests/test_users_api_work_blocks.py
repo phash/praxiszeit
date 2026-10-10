@@ -286,3 +286,48 @@ def test_post_with_work_blocks_derives_before_the_daily_schedule_check(admin_cli
     assert body["use_daily_schedule"] is True
     assert (body["hours_monday"], body["hours_tuesday"], body["hours_wednesday"]) == (7.0, 4.0, 0.0)
     assert (body["weekly_hours"], body["work_days_per_week"]) == (15.0, 3)
+
+
+# --- Review Task 4, Fund 2 (Spec 3.4/11.4): Blockfehler beim Anlegen als deutscher Klartext ---
+# Spec 3.4 gilt für BEIDE Schreibschemas: „422, deutsch, über _schedule_input_error
+# mit Feld-Label". Ohne eigene Prüfung käme FastAPIs Standard-422 zurück — Regeltext
+# mit Präfix „Value error, ", Typfehler englisch („Input should be a valid string").
+
+
+def test_post_block_rule_violation_is_a_plain_german_detail(admin_client):
+    resp = admin_client.post("/api/admin/users",
+                             json={**BLOCK_USER, "work_blocks": block_week(mon=[("08:07", "12:00")])})
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == "Mo, Block 1: Uhrzeiten im 5-Minuten-Raster (z. B. 08:05)."
+
+
+def test_post_block_type_error_names_weekday_block_and_field(admin_client):
+    week = block_week(tue=[("08:00", "12:00"), ("13:00", "16:00")])
+    week[1]["blocks"][1]["end"] = 1600
+    resp = admin_client.post("/api/admin/users", json={**BLOCK_USER, "work_blocks": week})
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == "Di, Block 2, Ende: ungültiger Wert."
+
+
+def test_post_labelled_field_and_other_rule_texts_are_german_too(admin_client):
+    """Dieselbe Übersetzung greift für die Feld-Labels aus ``_schedule_input_error``
+    und für die übrigen ``UserCreate``-Regeltexte (ohne „Value error, ")."""
+    resp = admin_client.post("/api/admin/users", json={**NEW_USER, "username": "zuviel", "weekly_hours": 70})
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == "Die Wochenstunden dürfen höchstens 60 betragen."
+    resp = admin_client.post("/api/admin/users",
+                             json={**NEW_USER, "username": "schwach", "password": "nurkleinbuchstaben1"})
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == "Passwort muss mindestens einen Grossbuchstaben enthalten"
+
+
+def test_post_error_without_german_text_keeps_the_standard_422(admin_client):
+    """Ohne deutschen Text (kein Regeltext, kein Feld-Label) bleibt es bei der
+    Standard-422 mit ``loc`` — ein pauschales „Ungültige Eingabe." verlöre die
+    Angabe, welches Feld fehlt."""
+    body = {k: v for k, v in NEW_USER.items() if k != "first_name"}
+    resp = admin_client.post("/api/admin/users", json={**body, "username": "ohnevorname"})
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert isinstance(detail, list)
+    assert (detail[0]["type"], detail[0]["loc"]) == ("missing", ["body", "first_name"])

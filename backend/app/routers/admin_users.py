@@ -3,11 +3,12 @@
 import copy
 import logging
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, status, Query
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
-from typing import List, NamedTuple, Optional
+from typing import Annotated, Any, List, NamedTuple, Optional
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 from pydantic import ValidationError
@@ -1105,9 +1106,44 @@ def get_user(user_id: str, db: Session = Depends(get_db), current_user: User = D
     return user
 
 
+def _parse_user_create_body(raw) -> UserCreate:
+    """Spec 3.4/11.4: Verstöße gegen die Blockregeln beim Anlegen als 422 mit
+    deutschem ``detail`` — derselbe Text wie im Verlaufs-Endpunkt
+    (``_labelled_input_error``: Regeltexte ohne Pydantics „Value error, ",
+    Typfehler in den Blöcken als „Mo, Block 1, Beginn: ungültiger Wert.",
+    Feld-Labels wie „Die Wochenstunden …"). Das gilt zugleich für die übrigen
+    ``UserCreate``-Regeltexte (Passwort, fester Monats-Soll, Tagesplan).
+
+    Gibt es keinen deutschen Text (z. B. fehlender Vorname), bleibt es bei
+    FastAPIs Standard-422 mit ``loc`` — ein pauschales „Ungültige Eingabe."
+    verlöre die Angabe, welches Feld fehlt. Ein bereits gebautes Schema
+    (Direktaufruf in Tests) geht unverändert durch."""
+    if isinstance(raw, UserCreate):
+        return raw
+    try:
+        return UserCreate.model_validate(raw)
+    except ValidationError as exc:
+        detail = _labelled_input_error(exc)
+        if not detail:
+            # Form wie FastAPIs eigene Body-Prüfung: ``loc`` beginnt mit "body".
+            raise RequestValidationError([
+                {**err, "loc": ("body", *err["loc"])} for err in exc.errors(include_url=False)
+            ]) from None
+        raise HTTPException(status_code=422, detail=detail) from None
+
+
 @router.post("/users", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
-def create_user(user_data: UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
-    """Create a new user (admin only)."""
+def create_user(
+    user_data: Annotated[Any, Body()],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Create a new user (admin only).
+
+    Der Body kommt roh herein und wird in ``_parse_user_create_body`` gegen
+    ``UserCreate`` geprüft (Spec 3.4/11.4: deutsche 422 statt FastAPIs
+    Standardmeldung) — dasselbe Muster wie der Verlaufs-Endpunkt."""
+    user_data = _parse_user_create_body(user_data)
     if user_data.legacy_window_fields_sent:
         raise HTTPException(status_code=400, detail=LEGACY_WINDOW_FIELDS_DETAIL)
     # F-026: usernames are unique per (tenant_id, username) — scope the
@@ -1793,11 +1829,17 @@ _SCHEDULE_FIELD_LABELS = {
 _BLOCK_FIELD_LABELS = {"start": "Beginn", "end": "Ende"}
 
 
+# Spec 3.4: Wurzel der Wochen-Liste in ``WorkingHoursChangeCreate`` (``blocks``)
+# und ``UserCreate`` (``work_blocks``) — darunter dieselbe Form ``DayBlocksIn``.
+_BLOCK_ROOTS = frozenset({"blocks", "work_blocks"})
+
+
 def _nested_block_label(loc: tuple) -> Optional[str]:
     """Spec 3.4: ``("blocks", 0, "blocks", 1, "start")`` → „Mo, Block 2, Beginn",
-    ``("blocks", 0, "pause_minutes")`` → „Mo, Pause". Unerwartete Form → ``None``
+    ``("blocks", 0, "pause_minutes")`` → „Mo, Pause"; dieselben Pfade unter
+    ``work_blocks`` (Anlegen, ``UserCreate``). Unerwartete Form → ``None``
     (der Aufrufer fällt auf den generischen Text zurück — nie IndexError/500)."""
-    if len(loc) < 2 or loc[0] != "blocks" or not isinstance(loc[1], int) or not 0 <= loc[1] < 5:
+    if len(loc) < 2 or loc[0] not in _BLOCK_ROOTS or not isinstance(loc[1], int) or not 0 <= loc[1] < 5:
         return None
     label = work_blocks_service.WEEKDAY_LABELS[loc[1]]
     rest = loc[2:]
@@ -1835,10 +1877,22 @@ def _schedule_input_error(exc: ValidationError) -> str:
     Der Leer-Fallback ist kein toter Code-Schmuck: dieser Endpoint läuft bei
     JEDER Eingabe im Dialog (debounced), ein IndexError hier wäre ein HTTP 500
     mitten im Tippen.
+
+    Den Kern (``_labelled_input_error``) teilt sich das Anlegen
+    (``_parse_user_create_body``, Spec 3.4 gilt für beide Schreibschemas).
     """
+    return _labelled_input_error(exc) or "Ungültige Eingabe."
+
+
+def _labelled_input_error(exc: ValidationError) -> Optional[str]:
+    """Kern von ``_schedule_input_error``: der deutsche Text zum ERSTEN Verstoß,
+    oder ``None``, wenn es keinen gibt (kein Regeltext, kein Feld-Label).
+
+    ``None`` statt „Ungültige Eingabe.", damit ``_parse_user_create_body`` dann
+    bei FastAPIs Standard-422 bleiben kann — die nennt wenigstens das Feld."""
     errors = exc.errors()
     if not errors:
-        return "Ungültige Eingabe."
+        return None
     err = errors[0]
     if err.get("type") == "value_error":
         return str(err.get("msg", "Ungültige Eingabe.")).removeprefix("Value error, ")
@@ -1854,7 +1908,7 @@ def _schedule_input_error(exc: ValidationError) -> str:
         None,
     )
     if label is None:
-        return "Ungültige Eingabe."
+        return None
     ctx = err.get("ctx") or {}
     # P15: Länge der Begründung (10–400 Zeichen).
     if "min_length" in ctx:
@@ -1867,10 +1921,19 @@ def _schedule_input_error(exc: ValidationError) -> str:
     if "retroactive_reason_text" in (err.get("loc") or ()):
         return "Die Begründung muss ein Text sein."
     if "le" in ctx:
-        return f"{label} dürfen höchstens {ctx['le']} betragen."
+        return f"{label} dürfen höchstens {_limit_de(ctx['le'])} betragen."
     if "ge" in ctx:
-        return f"{label} dürfen nicht kleiner als {ctx['ge']} sein."
+        return f"{label} dürfen nicht kleiner als {_limit_de(ctx['ge'])} sein."
     return f"{label} sind kein gültiger Wert."
+
+
+def _limit_de(value) -> str:
+    """Feldgrenze im deutschen Zahlenformat: Pydantic liefert sie bei
+    ``float``-Feldern als ``60.0`` — „höchstens 60.0" wäre im deutschen Satz
+    falsch. ``60.0`` → „60", ``7.5`` → „7,5"; Nicht-Zahlen unverändert."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return f"{value:g}".replace(".", ",")
+    return str(value)
 
 
 @router.get("/users/{user_id}/working-hours-changes/preview", response_model=WorkingHoursChangePreview)

@@ -90,6 +90,10 @@ def test_pause_must_be_a_real_integer(pause):
 
 @pytest.mark.parametrize("loc, expected", [
     (("blocks", 0, "blocks", 1, "start"), "Mo, Block 2, Beginn"),
+    # Review Task 4, Fund 2: dieselben Labels unter der Wurzel von UserCreate.
+    (("work_blocks", 0, "blocks", 1, "start"), "Mo, Block 2, Beginn"),
+    (("work_blocks", 2, "pause_minutes"), "Mi, Pause"),
+    (("work_blocks",), None),
     (("blocks", 4, "blocks", 0, "end"), "Fr, Block 1, Ende"),
     (("blocks", 1, "blocks", 0), "Di, Block 1"),
     (("blocks", 0, "blocks"), "Mo"),
@@ -105,6 +109,20 @@ def test_pause_must_be_a_real_integer(pause):
 ])
 def test_nested_label(loc, expected):
     assert _nested_block_label(loc) == expected
+
+
+def test_field_limits_are_written_in_german_number_format():
+    """Review Task 4: Pydantic liefert die Grenze eines ``float``-Felds als
+    ``60.0`` — im deutschen Satz „höchstens 60.0" (Punkt, Nachkommastelle). Der
+    Text erscheint als ``blocked_reason`` UND seit dem Fund als 422 beim Anlegen."""
+    assert _error({"effective_from": EFF, "weekly_hours": 61}) == (
+        "Die Wochenstunden dürfen höchstens 60 betragen.")
+    assert _error({"effective_from": EFF, "use_daily_schedule": True, "hours_monday": 24.5}) == (
+        "Die Stunden für Montag dürfen höchstens 24 betragen.")
+    assert _error({"effective_from": EFF, "weekly_hours": -1}) == (
+        "Die Wochenstunden dürfen nicht kleiner als 0 sein.")
+    assert _error({"effective_from": EFF, "weekly_hours": 30, "work_days_per_week": 0}) == (
+        "Die Arbeitstage pro Woche dürfen nicht kleiner als 1 sein.")
 
 
 def test_reason_text_length_and_note_total():
