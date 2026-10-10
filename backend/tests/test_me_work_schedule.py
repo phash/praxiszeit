@@ -68,3 +68,44 @@ def test_rows_of_another_tenant_are_ignored(_db_session, employee_user, employee
     _db_session.commit()
     _row(_db_session, employee_user, date(2026, 9, 1), K_BLOCKS, tenant_id=other.id)
     assert _get(employee_client, monkeypatch).json()["history"] == []
+
+
+# Review Task 10: die Karte braucht den Modus, sonst nennt sie Werte „Tagessoll", die
+# keins sind — #377-Fix-Modus (Tageswerte = geplante Anwesenheit) bzw. #191 ohne
+# Stundenzählung (kein Soll, keine Kappung, E35/E63).
+
+def test_regular_mode_counts_hours_without_fixed_target(_db_session, employee_user, employee_client, monkeypatch):
+    body = _get(employee_client, monkeypatch).json()
+    assert body["track_hours"] is True
+    assert body["fixed_monthly_hours"] is None
+
+
+def test_fixed_mode_names_the_flat_monthly_hours(_db_session, employee_user, employee_client, monkeypatch):
+    employee_user.weekly_hours = 10.0
+    employee_user.milog_working_time_account = True
+    employee_user.agreed_monthly_hours = 43.0
+    employee_user.use_fixed_monthly_target = True
+    _db_session.commit()
+    body = _get(employee_client, monkeypatch).json()
+    assert body["fixed_monthly_hours"] == 43.0
+    # Die Tageswerte bleiben die geplante Anwesenheit (wie journal_service, Finding 3 #377).
+    assert body["today"]["day_targets"] == [2.0, 2.0, 2.0, 2.0, 2.0]
+    assert body["track_hours"] is True
+
+
+def test_fixed_flag_without_agreed_hours_is_no_fixed_mode(_db_session, employee_user, employee_client, monkeypatch):
+    # #463: dieselbe Bedingung wie journal_service.fixed_mode — das Flag allein genügt nicht.
+    employee_user.use_fixed_monthly_target = True
+    employee_user.agreed_monthly_hours = None
+    _db_session.commit()
+    assert _get(employee_client, monkeypatch).json()["fixed_monthly_hours"] is None
+
+
+def test_without_hour_tracking(_db_session, employee_user, employee_client, monkeypatch):
+    employee_user.track_hours = False
+    employee_user.work_blocks = LEGACY
+    _db_session.commit()
+    body = _get(employee_client, monkeypatch).json()
+    assert body["track_hours"] is False
+    assert body["today"]["day_targets"] == [0.0, 0.0, 0.0, 0.0, 0.0]
+    assert body["today"]["blocks"] == LEGACY

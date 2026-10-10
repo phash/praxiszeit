@@ -60,6 +60,48 @@ describe('<MyWorkScheduleCard />', () => {
     expect(screen.queryByRole('list', { name: 'Verlauf der Arbeitszeit' })).not.toBeInTheDocument();
   });
 
+  // Review Task 10 / #377 Baustein 2b: im Fix-Modus sind die Tageswerte nur geplante
+  // Anwesenheit (wie die Spalte „Geplant" im Monatsjournal, #463), das Soll ist die
+  // feste Monatsarbeitszeit.
+  it('nennt im Fix-Modus die Tageswerte „geplant" und die feste Monatsarbeitszeit', async () => {
+    getMock.mockResolvedValue({
+      data: {
+        today: { date: '2026-10-08', blocks: null, day_targets: [2, 2, 2, 2, 2], weekly_hours: 10 },
+        history: [], track_hours: true, fixed_monthly_hours: 43,
+      },
+    });
+    render(<MyWorkScheduleCard />);
+    const today = await screen.findByRole('list', { name: 'Arbeitszeit heute' });
+    expect(within(today).getByText('Mo – · geplant 2:00 h')).toBeInTheDocument();
+    expect(screen.queryByText(/· Tagessoll/)).not.toBeInTheDocument();
+    expect(screen.getByText('Feste Monatsarbeitszeit: 43:00 h')).toBeInTheDocument();
+    expect(screen.queryByText(/^Wochenstunden:/)).not.toBeInTheDocument();
+  });
+
+  // Review Task 10 / #191: ohne Stundenzählung gibt es weder Tagessoll noch Kappung
+  // (E35/E63) — der Altfenster-Hinweis („begrenzen nur die Anrechnung") wäre falsch.
+  it('ohne Stundenzählung: kein Tagessoll und kein Altfenster-Hinweis', async () => {
+    const legacy = [
+      { blocks: [{ start: '07:30', end: '16:30' }], pause_minutes: null },
+      { blocks: [], pause_minutes: null }, { blocks: [], pause_minutes: null },
+      { blocks: [], pause_minutes: null }, { blocks: [], pause_minutes: null },
+    ];
+    getMock.mockResolvedValue({
+      data: {
+        today: { date: '2026-10-08', blocks: legacy, day_targets: [0, 0, 0, 0, 0], weekly_hours: 40 },
+        history: [], track_hours: false, fixed_monthly_hours: null,
+      },
+    });
+    render(<MyWorkScheduleCard />);
+    expect(await screen.findByText(
+      'Ohne Stundenzählung: kein Tagessoll; die Arbeitszeit-Blöcke begrenzen die Anrechnung nicht.',
+    )).toBeInTheDocument();
+    const today = screen.getByRole('list', { name: 'Arbeitszeit heute' });
+    expect(within(today).getByText('Mo 07:30–16:30')).toBeInTheDocument();
+    expect(screen.queryByText(/· Tagessoll/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/begrenzen nur die Anrechnung/)).not.toBeInTheDocument();
+  });
+
   it('rendert nichts, wenn der Abruf scheitert', async () => {
     getMock.mockRejectedValue(new Error('offline'));
     const { container } = render(<MyWorkScheduleCard />);

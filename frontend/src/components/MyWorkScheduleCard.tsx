@@ -10,6 +10,11 @@ import type { WeekBlocks } from '../types/workBlocks';
  * Arbeitszeit-Blöcke je Wochentag mit Tagessoll und der Verlauf mit
  * Wirkungsdaten. Datumsaufgelöst vom Server (`GET /auth/me/work-schedule`);
  * der Verwaltungsfreitext steht bewusst nicht hier (P12, Art.-15-Export).
+ *
+ * Modus (Review Task 10): Im #377-Fix-Modus sind die Tageswerte nur geplante
+ * Anwesenheit — „geplant" statt „Tagessoll", das Soll ist die feste
+ * Monatsarbeitszeit (wie die Spalte „Geplant" im Monatsjournal, #463). Ohne
+ * Stundenzählung (#191) gibt es weder Tagessoll noch Kappung (E35/E63).
  */
 interface Snapshot {
   blocks: WeekBlocks | null;
@@ -20,6 +25,8 @@ interface Snapshot {
 interface WorkSchedule {
   today: Snapshot & { date: string };
   history: (Snapshot & { effective_from: string; effective_until: string | null })[];
+  track_hours: boolean;
+  fixed_monthly_hours: number | null;
 }
 
 function deDate(iso: string): string {
@@ -45,6 +52,9 @@ export default function MyWorkScheduleCard() {
 
   if (!data) return null;
   const today = data.today;
+  const untracked = data.track_hours === false;
+  const fixedMonthlyHours = untracked ? null : (data.fixed_monthly_hours ?? null);
+  const dayLabel = fixedMonthlyHours != null ? 'geplant' : 'Tagessoll';
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
@@ -59,15 +69,30 @@ export default function MyWorkScheduleCard() {
             ? day.blocks.map((b) => `${b.start}–${b.end}`).join(' + ')
             : '–';
           const pause = day?.pause_minutes ? ` (Pause ${day.pause_minutes} Min)` : '';
+          const target = untracked ? '' : ` · ${dayLabel} ${formatHoursHM(today.day_targets[i] ?? 0)} h`;
           return (
             <li key={label}>
-              {`${label} ${spans}${pause} · Tagessoll ${formatHoursHM(today.day_targets[i] ?? 0)} h`}
+              {`${label} ${spans}${pause}${target}`}
             </li>
           );
         })}
       </ul>
-      <p className="text-sm text-gray-500 mt-2">{`Wochenstunden: ${formatHoursHM(today.weekly_hours)} h`}</p>
-      {isLegacyWeek(today.blocks) && (
+      {fixedMonthlyHours != null ? (
+        <>
+          <p className="text-sm text-gray-500 mt-2">{`Feste Monatsarbeitszeit: ${formatHoursHM(fixedMonthlyHours)} h`}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Die Tageswerte sind geplante Anwesenheit, kein Tagessoll; Ihr Soll ist die feste Monatsarbeitszeit.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-gray-500 mt-2">{`Wochenstunden: ${formatHoursHM(today.weekly_hours)} h`}</p>
+      )}
+      {untracked ? (
+        <p className="text-xs text-gray-500 mt-1">
+          {/* E35/E63: ohne Stundenzählung weder Soll noch Kappung — auch nicht durch Blöcke. */}
+          Ohne Stundenzählung: kein Tagessoll; die Arbeitszeit-Blöcke begrenzen die Anrechnung nicht.
+        </p>
+      ) : isLegacyWeek(today.blocks) && (
         <p className="text-xs text-gray-500 mt-1">
           {/* E10/E18: ein Altfenster kappt nur; das Tagessoll kommt — je nach Modus —
               aus den Wochenstunden oder den Tageswerten, nie aus diesen Zeiten. */}

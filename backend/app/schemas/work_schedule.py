@@ -24,3 +24,10 @@ class WorkScheduleHistoryRow(WorkScheduleSnapshot):
 class MyWorkScheduleResponse(BaseModel):
     today: WorkScheduleToday
     history: List[WorkScheduleHistoryRow]
+    # Review Task 10: der Modus der Person, damit die Karte nichts „Tagessoll" nennt,
+    # was keins ist. ``track_hours=False`` (#191): kein Soll, keine Kappung (E35/E63).
+    # ``fixed_monthly_hours`` (#377 Baustein 2b): das feste Monats-Soll; die Tageswerte
+    # sind dann nur geplante Anwesenheit (wie im Monatsjournal, #463). Beide Felder
+    # sind heutige Werte der User-Zeile — sie sind nicht historisiert.
+    track_hours: bool = True
+    fixed_monthly_hours: Optional[float] = None

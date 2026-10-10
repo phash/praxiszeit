@@ -41,4 +41,16 @@ def build_my_work_schedule(db: Session, user: User, on_date: date) -> dict:
             "effective_until": following - timedelta(days=1) if following else None,
             **_snapshot(db, user, row.effective_from, rows),
         })
-    return {"today": {"date": on_date, **_snapshot(db, user, on_date, rows)}, "history": history}
+    # #463: dieselbe Bedingung wie ``journal_service.fixed_mode`` und
+    # ``get_range_target`` — das Flag allein genügt nicht, ohne
+    # ``agreed_monthly_hours`` gibt es kein festes Soll.
+    fixed_mode = bool(
+        getattr(user, "use_fixed_monthly_target", False)
+        and getattr(user, "agreed_monthly_hours", None)
+    )
+    return {
+        "today": {"date": on_date, **_snapshot(db, user, on_date, rows)},
+        "history": history,
+        "track_hours": bool(getattr(user, "track_hours", True)),
+        "fixed_monthly_hours": float(user.agreed_monthly_hours) if fixed_mode else None,
+    }
