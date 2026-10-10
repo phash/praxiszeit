@@ -104,3 +104,21 @@ describe('computeBreakError', () => {
     expect(error).toMatch(/45 Min/);
   });
 });
+
+describe('computeBreakError mit Lückensegmenten (Spec 8.2/8.4)', () => {
+  it('eine Lücke ≥ 15 Min zählt als Pause (K1: 08–18 ohne Pause)', () => {
+    expect(computeBreakError([], '08:00', '18:00', 0, false, [150])).toBeNull();
+    expect(computeBreakError([], '08:00', '18:00', 0, false)).toMatch(/45 Min/);
+  });
+
+  it('ein Segment < 15 Min wird abgezogen, zählt aber nicht als Pause', () => {
+    expect(computeBreakError([], '08:00', '17:00', 0, false, [10])).toMatch(/30 Min/);
+  });
+
+  it('Abzug und Pausenabschnitte bestehender Einträge zählen mit', () => {
+    const existing = [{ start: 8 * 60, end: 18 * 60, brk: 0, deduct: 150, pauseSegments: [150] }];
+    expect(computeBreakError(existing, '18:00', '18:30', 0, false)).toBeNull();
+    const strict = [{ start: 8 * 60, end: 18 * 60, brk: 0, deduct: 100, pauseSegments: [] }];
+    expect(computeBreakError(strict, '18:00', '18:30', 0, false)).toMatch(/30 Min/);
+  });
+});

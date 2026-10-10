@@ -17,6 +17,10 @@ export interface BreakBlock {
   end: number;
   /** Declared break minutes for this block. */
   brk: number;
+  /** Spec 2026-10-08, 8.2: nicht angerechnete Lückenminuten — Abzug von der Bruttozeit. */
+  deduct?: number;
+  /** Spec 8.2: Lückensegmente; nur Segmente ≥ 15 Min zählen als Pausenabschnitt. */
+  pauseSegments?: number[];
 }
 
 /** "HH:MM" → minutes since midnight. */
@@ -35,13 +39,15 @@ function toMinutes(hhmm: string): number {
  * @param endTime      proposed entry end, "HH:MM"
  * @param breakMinutes declared break minutes of the proposed entry
  * @param exempt       §18 ArbZG exemption — when true, no check is performed
+ * @param uncreditedSegments  gapSegments(...) des vorgeschlagenen Eintrags (Spec 8.4)
  */
 export function computeBreakError(
   existingBlocks: BreakBlock[],
   startTime: string,
   endTime: string,
   breakMinutes: number,
-  exempt: boolean
+  exempt: boolean,
+  uncreditedSegments: number[] = [],
 ): string | null {
   // §18 ArbZG: leitende Angestellte are exempt from break checks.
   if (exempt) return null;
@@ -59,22 +65,30 @@ export function computeBreakError(
   // (NF-2: a single <6h entry can still push an already-worked day over 6h.)
   const allBlocks: BreakBlock[] = [
     ...existingBlocks,
-    { start, end, brk: breakMinutes },
+    {
+      start, end, brk: breakMinutes,
+      deduct: uncreditedSegments.reduce((s, x) => s + x, 0),
+      pauseSegments: uncreditedSegments,
+    },
   ];
   allBlocks.sort((a, b) => a.start - b.start);
 
   // §4 Satz 2: only break SEGMENTS of at least 15 min count toward the
-  // mandatory break — applies to declared breaks (NF-1, mirrors backend A-M2)
-  // and to gaps between entries alike.
+  // mandatory break — declared breaks, gaps between entries and (Spec 8.2)
+  // gap segments between work blocks alike.
   const totalDeclared = allBlocks.reduce((s, b) => s + (b.brk >= 15 ? b.brk : 0), 0);
   let totalGap = 0;
   for (let i = 1; i < allBlocks.length; i++) {
     const gap = allBlocks[i].start - allBlocks[i - 1].end;
     if (gap >= 15) totalGap += gap;
   }
-  const totalGross = allBlocks.reduce((s, b) => s + (b.end - b.start), 0);
+  const totalSegments = allBlocks.reduce(
+    (s, b) => s + (b.pauseSegments ?? []).filter((x) => x >= 15).reduce((a, x) => a + x, 0), 0,
+  );
+  // Nicht angerechnete Lückenminuten sind keine Arbeitszeit (Spec 8.2).
+  const totalGross = allBlocks.reduce((s, b) => s + (b.end - b.start) - (b.deduct ?? 0), 0);
   const totalNet = totalGross - totalDeclared;
-  const totalEffBreak = totalDeclared + totalGap;
+  const totalEffBreak = totalDeclared + totalGap + totalSegments;
 
   if (totalNet > 540 && totalEffBreak < 45) {
     return 'Bei >9h Arbeitszeit sind mind. 45 Min. Pause erforderlich (ArbZG §4)';

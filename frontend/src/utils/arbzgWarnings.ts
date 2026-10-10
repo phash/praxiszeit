@@ -82,9 +82,9 @@ export function showArbzgWarnings(
         );
         break;
       case 'BREAK_WARNING':
-        // Altmeldung: wird seit #499 vom Backend nicht mehr erzeugt (§4 ist an
-        // allen Schreibwegen eine Sperre, auch beim Ausstempeln; mit Begründung
-        // kommt BREAK_WAIVER). Bleibt nur als harmloser Rückfall stehen.
+        // Seit #499 an allen Schreibwegen eine Sperre (mit Begründung kommt
+        // BREAK_WAIVER). Einzige Quelle seither: „Anerkennen" (Spec 13.3, P4) —
+        // dort ist §4 bewusst nur eine weiche Warnung.
         toast.warning(detail ?? 'Pausenregel verletzt (§4 ArbZG).');
         break;
       case 'BREAK_WAIVER':
@@ -154,6 +154,20 @@ export function showArbzgWarnings(
       case 'MILOG_MONTHLY_EXCEEDED':
         // #377 Baustein 2b §2 Abs.2 MiLoG: Monatsarbeitszeit überschritten (weich, nicht blockierend).
         toast.warning(detail ?? 'Arbeitszeitkonto: vereinbarte Monatsarbeitszeit überschritten (§ 2 Abs. 2 MiLoG).');
+        break;
+      case 'PRESENCE_DAILY_HOURS':
+        // Spec 2026-10-08, 8.3: weiche Warnung auf der Anwesenheit laut Stempel.
+        toast.warning(detail ?? 'Laut Stempel mehr als 10 Stunden anwesend (§3 ArbZG) – angerechnet wird weniger.');
+        break;
+      case 'PRESENCE_BREAK':
+        toast.warning(detail ?? 'Laut Stempel ohne ausreichende erfasste Ruhepause anwesend (§4 ArbZG).');
+        break;
+      case 'PRESENCE_WEEKLY_HOURS':
+        toast.warning(detail ?? 'Laut Stempel mehr als 48 Stunden in dieser Woche anwesend (§3 ArbZG).');
+        break;
+      case 'BREAK_IN_GAP':
+        // Spec 8.4: Pause und nicht angerechnete Lücke am selben Eintrag.
+        toast.warning(detail ?? 'Pause in der Lücke wird zusätzlich abgezogen – lag die Pause in der Lücke, bitte die Pause auf 0 setzen.');
         break;
       default:
         toast.warning(raw);

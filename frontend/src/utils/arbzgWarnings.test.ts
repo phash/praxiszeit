@@ -153,3 +153,26 @@ describe('U3 showResponseWarning (Audit 2026-07-31)', () => {
     expect(toast.warning).not.toHaveBeenCalled();
   });
 });
+
+describe('Spec 2026-10-08, 8.3/8.4: weiche Anwesenheits-Codes', () => {
+  it.each([
+    'PRESENCE_DAILY_HOURS: §3 ArbZG: Laut Stempel 12:00 h anwesend (abzüglich erfasster Pausen) – mehr als 10 Stunden.',
+    'PRESENCE_BREAK: §4 ArbZG: Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst (10:00 h Anwesenheit).',
+    'PRESENCE_WEEKLY_HOURS: §3 ArbZG: Laut Stempel 50:00 h in dieser Woche anwesend (abzüglich erfasster Pausen) – mehr als 48 Stunden.',
+    'BREAK_IN_GAP: Pause in der Lücke wird zusätzlich abgezogen: 30 Min Pause und 2:30 h nicht angerechnet zwischen den Arbeitsblöcken.',
+  ])('reicht den Servertext durch: %s', (raw) => {
+    const toast = mockToast();
+    showArbzgWarnings(toast, [raw]);
+    expect(toast.warning).toHaveBeenCalledWith(raw.slice(raw.indexOf(':') + 1).trim());
+  });
+
+  it.each(['PRESENCE_DAILY_HOURS', 'PRESENCE_BREAK', 'PRESENCE_WEEKLY_HOURS', 'BREAK_IN_GAP'])(
+    'hat einen Rückfalltext ohne Servertext: %s', (code) => {
+      const toast = mockToast();
+      showArbzgWarnings(toast, [code]);
+      const text = (toast.warning as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(text).not.toBe(code);
+      expect(text.length).toBeGreaterThan(20);
+    },
+  );
+});
