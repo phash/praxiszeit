@@ -478,6 +478,34 @@ class AbsenceRetarget(NamedTuple):
     credit_reduction: bool
 
 
+def f1_clamp_hours(hours: float, full_target: float, kept_net: float, w: float) -> float:
+    """Spec 9.6 / F1 (1.18.0): DIE eine Klemmregel für Abwesenheits-``hours`` an
+    einem Tag, an dem GESCHLOSSENE Zeiteinträge stehen bleiben (Misch-Tag) —
+    ``absences.create_absence`` (Direktbuchung mit ``keep_time_entries``) und
+    :func:`retarget_absence_hours` rufen beide hier hinein. Nicht nachbauen.
+
+    Gerechnet wird in GUTSCHRIFTS-Einheiten: die Gutschrift ist ``hours × w``
+    (:func:`credit_day_weight` — Halbtags-Sondertag 0,5, frei/Feiertag 0, sonst
+    1,0), das wirksame Tagessoll trägt denselben Faktor. Übrig bleibt der nicht
+    gearbeitete Rest ``max(0, full_target × w − kept_net)``, zurückgerechnet in
+    Stunden (÷ w). ``full_target`` ist das UNGEWICHTETE Tagessoll (Fund A: der
+    Faktor gehört nicht in den gespeicherten Wert).
+
+    Review Task 6: die Direktbuchung klemmte bis dahin OHNE Gewicht
+    (``full_target − kept_net``) — am halben 24.12. buchte sie bei 3 h Arbeit
+    5 h statt 2 h (Ist 3 + 5 × 0,5 gegen Soll 4 ⇒ +1,5 h Phantom-Saldo), und die
+    Rückrechnung meldete danach bei UNVERÄNDERTEM Vertrag eine Senkung (9.5 (c)).
+
+    Für ``w = 1`` byte-gleich zur bisherigen Regel ``round(max(0, min(hours,
+    full_target − kept_net)), 2)``. Ohne Gewicht (``w <= 0``) gibt es keine
+    Gutschrift, die die Arbeit verdrängen könnte — ``hours`` bleibt unverändert.
+    """
+    if w <= 0:
+        return hours
+    cap_credit = max(0.0, full_target * w - kept_net)
+    return round(max(0.0, min(hours, cap_credit / w)), 2)
+
+
 def retarget_absence_hours(
     db: Session,
     user: User,
@@ -531,10 +559,11 @@ def retarget_absence_hours(
     setzt beide. Siehe den Kommentar an ``Absence.raw_hours``.
 
     Spec 9.6 (E51): F1-Klemmung — bleiben am Tag GESCHLOSSENE Zeiteinträge
-    stehen, wird ``hours`` auf den nicht gearbeiteten Rest geklemmt (gleiche Regel
-    wie ``absences.create_absence``), in Gutschrifts-Einheiten über
-    :func:`credit_day_weight`. ``kept_net_by_date`` wird hier geladen — nach dem
-    flush der Neukappung, also mit den neuen Netto-Werten. ``credit_reduction``
+    stehen, wird ``hours`` auf den nicht gearbeiteten Rest geklemmt — über
+    :func:`f1_clamp_hours`, dieselbe Regel wie ``absences.create_absence``, in
+    Gutschrifts-Einheiten über :func:`credit_day_weight`. ``kept_net_by_date``
+    wird hier geladen — nach dem flush der Neukappung, also mit den neuen
+    Netto-Werten. ``credit_reduction``
     markiert eine Senkung STÄRKER als das Tagessoll (9.5 (c)); dafür braucht es
     das volle Tagessoll VOR der Änderung (``old_full_target_by_date``, Pflicht,
     :func:`absence_full_targets`). Gesetzt wird es nur für SICK/TRAINING — nur
@@ -646,12 +675,13 @@ def retarget_absence_hours(
         if kept_net > 0:
             # Spec 9.6: Vergleich in GUTSCHRIFTS-Einheiten — die Gutschrift ist
             # new_hours × w (Halbtags-Sondertag 0,5, frei 0, sonst 1,0); das
-            # wirksame Tagessoll trägt denselben Faktor.
+            # wirksame Tagessoll trägt denselben Faktor. Die Klemmregel selbst
+            # teilt sich dieser Pfad mit ``absences.create_absence``
+            # (:func:`f1_clamp_hours`).
             w = float(credit_day_weight(d, holidays, special_cfgs.get(d.year)))
             if w > 0:
                 full_target = float(target)
-                cap_credit = max(0.0, full_target * w - kept_net)
-                clamped = round(max(0.0, min(new_hours_f, cap_credit / w)), 2)
+                clamped = f1_clamp_hours(new_hours_f, full_target, kept_net, w)
                 f1_clamped = clamped < new_hours_f
                 new_hours_f = clamped
                 if (f1_clamped and new_hours_f < old_hours_f

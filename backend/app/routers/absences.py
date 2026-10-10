@@ -661,6 +661,14 @@ def create_absence(
             kept_net_by_date[entry.date] = (
                 kept_net_by_date.get(entry.date, 0.0) + float(entry.net_hours)
             )
+    # Spec 9.6 (Review Task 6): die Klemmung rechnet in GUTSCHRIFTS-Einheiten
+    # (``credit_day_weight``) — am halben 24./31.12. trägt der Tag nur das halbe
+    # Tagessoll. Die Sondertags-Konfiguration braucht es nur für Misch-Tage, die
+    # auf einen dieser beiden Tage fallen.
+    kept_special_cfgs = {
+        yr: special_days_service.get_special_day_config(db, target_user.tenant_id, yr)
+        for yr in {d.year for d in kept_net_by_date if (d.month, d.day) in ((12, 24), (12, 31))}
+    }
 
     # Create absences for all dates
     created_absences = []
@@ -694,12 +702,19 @@ def create_absence(
             # ein Zeiteintrag stehen bleibt. Der gewollte Halbtagsfall (½ Urlaub
             # vormittags, nachmittags gearbeitet) bleibt unberuehrt — dort ist
             # bereits 0,5 × Tagessoll ≤ Rest. Nur der Ganztags-Fall wird gekappt.
+            # Spec 9.6: DIESELBE Regel wie die Rueckrechnung
+            # (``calculation_service.f1_clamp_hours``, Gutschrifts-Einheiten) —
+            # sonst meldete ``retarget_absence_hours`` bei unveraendertem Vertrag
+            # eine Senkung (9.5 (c)) fuer eine Zeile, die hier gebucht wurde.
             kept_net = kept_net_by_date.get(date, 0.0)
             if kept_net > 0:
                 full_target = float(
                     calculation_service.get_daily_target_for_date(target_user, date, schedule)
                 )
-                hours_for_day = round(max(0.0, min(hours_for_day, full_target - kept_net)), 2)
+                w = float(calculation_service.credit_day_weight(
+                    date, holidays, kept_special_cfgs.get(date.year)))
+                hours_for_day = calculation_service.f1_clamp_hours(
+                    hours_for_day, full_target, kept_net, w)
         else:
             hours_for_day = absence_data.hours
 

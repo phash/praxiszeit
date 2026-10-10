@@ -163,3 +163,17 @@ def test_retarget_window_knows_time_entries(db, test_user, monkeypatch):
     add_row(db, test_user, date(2026, 10, 12), weekly_hours=30)
     w = cs.retarget_window(db, test_user, date(2026, 9, 1))
     assert (w.last_time_entry, w.has_time_entries, w.end) == (None, False, date(2026, 10, 11))
+
+
+@pytest.mark.parametrize("hours, full_target, kept_net, w, expected", [
+    (8.0, 8.0, 4.0, 1.0, 4.0),     # regulärer Misch-Tag: Rest 4 h
+    (4.0, 8.0, 3.0, 1.0, 4.0),     # Halbtag passt in den Rest — keine Klemmung
+    (8.0, 8.0, 10.0, 1.0, 0.0),    # mehr gearbeitet als Tagessoll → 0, nie negativ
+    (8.0, 8.0, 3.0, 0.5, 2.0),     # halber 24.12.: (8 × 0,5 − 3) / 0,5
+    (8.0, 8.0, 5.0, 0.5, 0.0),     # halber 24.12., Arbeit über dem wirksamen Soll
+    (8.0, 8.0, 3.0, 0.0, 8.0),     # kein Gewicht (frei/Feiertag): nichts zu klemmen
+])
+def test_f1_clamp_hours_is_the_one_rule(hours, full_target, kept_net, w, expected):
+    """Spec 9.6: DIE eine Klemmregel für ``absences.create_absence`` und
+    ``retarget_absence_hours`` (Review Task 6) — in Gutschrifts-Einheiten."""
+    assert cs.f1_clamp_hours(hours, full_target, kept_net, w) == expected

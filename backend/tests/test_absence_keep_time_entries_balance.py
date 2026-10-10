@@ -268,3 +268,41 @@ def test_control_default_delete_path_unchanged(db, employee, admin_client):
     target, actual = _balance(db, employee)
     assert target == Decimal('8.00')
     assert actual == Decimal('8.00')
+
+
+# ---------------------------------------------------------------------------
+# Halber Sondertag (24./31.12., special_day_dec24_mode=half_day) — Review Task 6
+# ---------------------------------------------------------------------------
+
+XMAS = date(2026, 12, 24)  # Donnerstag
+
+
+@pytest.mark.parametrize("atype", ["sick", "training", "vacation"])
+def test_half_special_day_kept_entry_clamps_in_credit_units(
+        db, employee, admin_client, atype):
+    """Spec 9.6: die F1-Klemmung rechnet in GUTSCHRIFTS-Einheiten
+    (``credit_day_weight``) — gleiche Regel wie ``retarget_absence_hours``.
+
+    24.12. als halber Sondertag, Tagessoll 8, 08–11 gearbeitet (3 h), Ganztags-
+    Buchung mit keep_time_entries: wirksames Tagessoll 4 h, Rest 1 h Gutschrift
+    = 2 h × Gewicht 0,5. Ohne Gewicht buchte die Direktbuchung 8 − 3 = 5 h ⇒
+    Ist 3 + 5 × 0,5 = 5,5 gegen Soll 4 ⇒ +1,5 h Phantom-Saldo — und die
+    Rückrechnung meldete danach bei UNVERÄNDERTEM Vertrag eine Senkung (5 → 2,
+    9.5 (c)), die jede spätere Arbeitszeit-Änderung zur Verkürzung machte."""
+    from app.models.system_setting import SystemSetting
+
+    db.add(SystemSetting(key="special_day_dec24_mode", value="half_day",
+                         tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    _entry(db, employee, XMAS, 8, 11)  # 3 h
+    body = _post_absence(admin_client, employee, XMAS, atype)
+
+    assert float(body["hours"]) == 2.0, body["hours"]
+    target, actual = _balance(db, employee, XMAS)
+    assert actual - target == Decimal('0.00'), (target, actual)
+
+    # Unveränderter Vertrag ⇒ die Rückrechnung findet nichts anzugleichen.
+    start, end = date(2026, 12, 1), date(2026, 12, 31)
+    old = calculation_service.absence_full_targets(db, employee, start, end)
+    assert calculation_service.retarget_absence_hours(
+        db, employee, start, end, old_full_target_by_date=old, dry_run=True) == []
