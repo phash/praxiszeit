@@ -14,7 +14,7 @@ from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
 from app.models.public_holiday import PublicHoliday
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences, WeeklyHoursChangeInPeriod
-from app.services import calculation_service, export_service, ods_export_service, rest_time_service
+from app.services import calculation_service, export_service, ods_export_service, rest_time_service, work_window_service
 from app.services.timezone_service import now_local, today_local
 from app.services.arbzg_utils import is_night_work
 import calendar
@@ -1010,6 +1010,7 @@ def get_24_week_averaging_period(
             db.query(TimeEntry)
             .filter(
                 TimeEntry.user_id == user.id,
+                TimeEntry.tenant_id == current_user.tenant_id,  # F-026 (E74)
                 TimeEntry.date >= start_date,
                 TimeEntry.date <= end_date,
                 TimeEntry.end_time.isnot(None),
@@ -1017,6 +1018,22 @@ def get_24_week_averaging_period(
             .all()
         )
         total_hours = sum(float(e.net_hours or 0) for e in entries)
+        # Spec 8.1 / P22: zweiter, eigens gekennzeichneter Wert — Anwesenheit laut
+        # Stempel (Rohstempel abzüglich erfasster Pausen, bei Auto-Close bis zum
+        # wirksamen Ende). Eine Neukappung senkt total_hours, nie diesen Wert.
+        presence_hours = sum(work_window_service.presence_minutes(e) for e in entries) / 60.0
+        # Spec 8.1/11.1 „je Woche": dieselbe Größe je ISO-Kalenderwoche (Mo–So) —
+        # eine Woche > 48 h laut Stempel darf nicht im Fensterdurchschnitt verschwinden.
+        # Randwochen zählen nur ihre Tage im Fenster (die Abfrage oben begrenzt).
+        presence_by_week: dict[str, int] = {}
+        for e in entries:
+            iso_year, iso_week, _ = e.date.isocalendar()
+            key = f"{iso_year}-W{iso_week:02d}"
+            presence_by_week[key] = presence_by_week.get(key, 0) + work_window_service.presence_minutes(e)
+        presence_weeks = [
+            {"iso_week": key, "presence_hours": round(minutes / 60.0, 2)}
+            for key, minutes in sorted(presence_by_week.items())
+        ]
 
         # Absences that mean the employee was NOT scheduled to work that day.
         # Mirror get_monthly_target: TRAINING/SICK/OVERTIME keep the day
@@ -1048,6 +1065,7 @@ def get_24_week_averaging_period(
 
         max_budget = 8.0 * scheduled_days
         average = (total_hours / scheduled_days) if scheduled_days else 0.0
+        presence_average = (presence_hours / scheduled_days) if scheduled_days else 0.0
 
         # Count days where the employee exceeded 8h — these are the days
         # that actually consume the averaging budget.
@@ -1072,6 +1090,9 @@ def get_24_week_averaging_period(
             "average_daily_hours": round(average, 2),
             "days_over_8h": over_8h_count,
             "compliant": average <= 8.0,
+            "presence_hours": round(presence_hours, 2),
+            "presence_average": round(presence_average, 2),
+            "presence_weeks": presence_weeks,
         })
 
     return {
