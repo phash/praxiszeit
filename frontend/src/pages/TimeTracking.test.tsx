@@ -415,3 +415,37 @@ describe('<TimeTracking /> Anrechnung beantragen und anerkannte Einträge (Spec 
     expect(await screen.findByLabelText(/bearbeiten/i)).toBeInTheDocument();
   });
 });
+
+describe('<TimeTracking /> Blöcke von heute (Spec 8.4, 14)', () => {
+  const BLOCKS = [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }];
+
+  function mockWithBlocks(entries: unknown[]) {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') {
+        return Promise.resolve({ data: { is_clocked_in: false, blocks_today: BLOCKS, grace_minutes: 15 } });
+      }
+      if (url.includes('/settings')) return Promise.resolve({ data: {} });
+      if (url.includes('/time-entries')) return Promise.resolve({ data: entries });
+      return Promise.resolve({ data: [] });
+    });
+  }
+
+  it('belegt Von/Bis neuer Einträge aus den heutigen Blöcken vor', async () => {
+    mockWithBlocks([]);
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Von') as HTMLInputElement).value).toBe('08:00'));
+    expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('18:00');
+  });
+
+  it('verlangt keine Pause und setzt keine automatische Pause, wenn die Lücke §4 deckt (E45)', async () => {
+    mockWithBlocks([]);
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('18:00'));
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '08:00', end_time: '18:00', break_minutes: 0 });
+  });
+});

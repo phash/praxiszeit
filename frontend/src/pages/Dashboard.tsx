@@ -16,6 +16,8 @@ import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 import { ABSENCE_TYPE_LABELS } from '../constants/absenceTypes';
 import { useTypeColorsStore, pickTextColor } from '../stores/typeColorsStore';
+import { isInBlockGap } from '../utils/workBlocks';
+import type { TimeBlock } from '../types/workBlocks';
 
 interface DashboardData {
   year: number;
@@ -201,6 +203,7 @@ export default function Dashboard() {
     current_entry?: { start_time: string };
     today_net_minutes?: number; // #494: Tages-Ist inkl. abgeschlossener Blöcke
     today_target_hours?: number; // #494/#431: Tagessoll laut Snapshot
+    blocks_today?: TimeBlock[]; // Spec 2026-10-08 (14, E69)
   } | null>(null);
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
@@ -484,7 +487,12 @@ export default function Dashboard() {
         // Wer heute schon gestempelt hat (z. B. Mittagspause, Feierabend), ist
         // nicht „noch nicht eingestempelt" — kein roter Hinweis.
         const workedToday = todayActual > 0;
-        const shouldBeClockedIn = isWorkday && !isClockedIn && !workedToday;
+        // Spec 14 / E69: in einer UNGESCHRUMPFTEN Lücke (Blockende bis nächster
+        // Blockbeginn) ist eine Pause geplant — neutral statt rot.
+        const nowDate = new Date();
+        const inGap = !isClockedIn
+          && isInBlockGap(clockStatus?.blocks_today, nowDate.getHours() * 60 + nowDate.getMinutes());
+        const shouldBeClockedIn = isWorkday && !isClockedIn && !workedToday && !inGap;
         const cardBg = isClockedIn
           ? 'bg-success/8 border border-success/25'
           : shouldBeClockedIn
@@ -511,6 +519,8 @@ export default function Dashboard() {
               <span className="text-sm font-medium text-text-primary">
                 {isClockedIn && startDisplay
                   ? `Eingestempelt seit ${startDisplay}`
+                  : inGap
+                  ? 'Pause zwischen den Arbeitsblöcken'
                   : shouldBeClockedIn
                   ? 'Noch nicht eingestempelt'
                   : !isClockedIn && workedToday

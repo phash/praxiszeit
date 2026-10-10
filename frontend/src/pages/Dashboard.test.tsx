@@ -403,3 +403,46 @@ describe('Dashboard Übersicht Monat/Woche (#500)', () => {
     expect(await screen.findByRole('heading', { name: 'Monatsübersicht' })).toBeInTheDocument();
   });
 });
+
+// Spec 2026-10-08, 14 / E69: eine geplante Pause zwischen zwei Arbeitsblöcken
+// ist kein Fehlverhalten — die Stempelkarte wird dort nicht rot.
+describe('Dashboard Stempelkarte in der Lücke zwischen den Arbeitsblöcken (Spec 14, E69)', () => {
+  const BLOCKS = [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }];
+
+  function at(iso: string) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(iso));
+    const base = getMock.getMockImplementation()!;
+    getMock.mockImplementation((url: string) =>
+      url === '/time-entries/clock-status'
+        ? Promise.resolve({ data: {
+          is_clocked_in: false, elapsed_minutes: null, today_net_minutes: 0,
+          today_target_hours: 7, blocks_today: BLOCKS, grace_minutes: 15,
+        } })
+        : base(url));
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each(['2026-06-01T12:00:00', '2026-06-01T12:05:00', '2026-06-01T13:00:00'])(
+    'zeigt um %s neutral „Pause zwischen den Arbeitsblöcken"', async (iso) => {
+      at(iso);
+      render(<MemoryRouter><Dashboard /></MemoryRouter>);
+      const card = await screen.findByRole('button', { name: 'Stempeluhr öffnen' });
+      await waitFor(() => expect(within(card).getByText('Pause zwischen den Arbeitsblöcken')).toBeInTheDocument());
+      expect(within(card).queryByText('Noch nicht eingestempelt')).not.toBeInTheDocument();
+      expect(card.className).not.toMatch(/bg-danger/);
+    },
+  );
+
+  it.each(['2026-06-01T15:00:00', '2026-06-01T07:30:00'])(
+    'um %s (Blockbeginn bzw. vor dem ersten Block) bleibt das bisherige Verhalten', async (iso) => {
+      at(iso);
+      render(<MemoryRouter><Dashboard /></MemoryRouter>);
+      const card = await screen.findByRole('button', { name: 'Stempeluhr öffnen' });
+      await waitFor(() => expect(within(card).getByText('Noch nicht eingestempelt')).toBeInTheDocument());
+    },
+  );
+});

@@ -24,7 +24,8 @@ import { BREAK_EXCEPTION_DISABLED_HINT } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
 import { useUIStore } from '../stores/uiStore';
 import { RawStampNote } from '../components/RawStampNote';
-import { stampNoteProps, type StampEntry } from '../utils/workBlocks';
+import { blocksSpan, gapSegments, hhmmToMinutes, stampNoteProps, type StampEntry } from '../utils/workBlocks';
+import type { TimeBlock } from '../types/workBlocks';
 
 interface TimeEntry extends StampEntry {
   id: string;
@@ -222,6 +223,40 @@ export default function TimeTracking() {
   // der §4-Hinweis bleibt eine harte Sperre (der Server lehnt sonst mit 400 ab).
   const breakExceptionAllowed = useSystemStore((s) => s.isBreakExceptionAllowed());
 
+  // Spec 2026-10-08 (8.4, 14): Blöcke von heute und Puffer aus /clock-status —
+  // für die §4-Vorprüfung (Lückensegmente) und die Vorbelegung neuer Einträge.
+  // Ohne Antwort (oder fremde Form) bleibt alles wie bisher; der Server prüft ohnehin.
+  const [clockInfo, setClockInfo] = useState<{ blocks: TimeBlock[]; grace: number }>({ blocks: [], grace: 15 });
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get('/time-entries/clock-status')
+      .then((res) => {
+        if (cancelled) return;
+        const d = res.data;
+        setClockInfo({
+          blocks: Array.isArray(d?.blocks_today) ? d.blocks_today : [],
+          grace: typeof d?.grace_minutes === 'number' ? d.grace_minutes : 15,
+        });
+      })
+      .catch(() => { /* Vorprüfung ohne Blöcke */ });
+    return () => { cancelled = true; };
+  }, [stampVersion]);
+
+  // Spec 14: Von/Bis neuer Einträge aus den heutigen Blöcken vorbelegen.
+  // Abhängig vom INHALT der Blöcke, nicht von der Array-Referenz: ein
+  // Neuladen nach dem Stempeln (stampVersion) mit denselben Blöcken darf
+  // schon getippte Zeiten eines offenen Formulars nicht überschreiben.
+  const blocksKey = JSON.stringify(clockInfo.blocks);
+  useEffect(() => {
+    const span = blocksSpan(clockInfo.blocks);
+    if (!span || editingId) return;
+    setFormData((f) => (f.date === format(new Date(), 'yyyy-MM-dd')
+      ? { ...f, start_time: span.start, end_time: span.end }
+      : f));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocksKey]);
+
   // #491 F4: §10-Ausnahmegrund an Sonn- UND Feiertagen (vorher nur Sonntag) —
   // dieselbe Regel wie im Antragsformular. Feiertage erst laden, wenn das
   // Formular offen ist.
@@ -334,17 +369,36 @@ export default function TimeTracking() {
     // every write path, so the client must mirror that.
     // Also count gaps between other entries on same day (skip open entries)
     // §4 Satz 2: only gaps >= 15 min count as valid break segments.
-    const existingBlocks = sameDay.map((e) => ({
-      start: parseInt(e.start_time.substring(0, 2)) * 60 + parseInt(e.start_time.substring(3, 5)),
-      end: parseInt(e.end_time!.substring(0, 2)) * 60 + parseInt(e.end_time!.substring(3, 5)),
-      brk: e.break_minutes,
-    }));
+    // Spec 8.2/8.4: an heutigen Einträgen zählen Lückensegmente ≥ 15 Min als Pause
+    // und nicht angerechnete Minuten nicht als Arbeitszeit — wie der Server.
+    // Bestehende Einträge mit IHREM Puffer (E80); weicht Σ Segmente vom
+    // gespeicherten Wert ab, zählt der gespeicherte als Abzug, nicht als Pause.
+    const dayBlocks = formData.date === format(new Date(), 'yyyy-MM-dd') ? clockInfo.blocks : [];
+    const existingBlocks = sameDay.map((e) => {
+      const stored = e.uncredited_minutes ?? 0;
+      const segs = e.credit_override
+        ? []
+        : gapSegments(dayBlocks, e.clamp_grace_minutes ?? clockInfo.grace, e.start_time, e.end_time!);
+      const matches = segs.reduce((a, b) => a + b, 0) === stored;
+      return {
+        start: hhmmToMinutes(e.start_time),
+        end: hhmmToMinutes(e.end_time!),
+        brk: e.break_minutes,
+        deduct: stored,
+        pauseSegments: matches ? segs : [],
+      };
+    });
+    const editing = editingId ? entries.find((x) => x.id === editingId) : undefined;
+    const newSegs = editing?.credit_override
+      ? []
+      : gapSegments(dayBlocks, editing?.clamp_grace_minutes ?? clockInfo.grace, formData.start_time, formData.end_time);
     const breakError = computeBreakError(
       existingBlocks,
       formData.start_time,
       formData.end_time,
       formData.break_minutes,
-      !!user?.exempt_from_arbzg
+      !!user?.exempt_from_arbzg,
+      newSegs,
     );
     if (breakError) {
       if (!breakExceptionAllowed) {
@@ -377,13 +431,18 @@ export default function TimeTracking() {
     if (submitting) return;
     setSubmitting(true);
 
-    // Smart break default: auto-set 30 min when creating entry >6h with no break
+    // Smart break default: auto-set 30 min when creating entry >6h with no break —
+    // Spec 8.4 (E45): nicht, wenn eine Lücke zwischen den Arbeitsblöcken §4 schon
+    // deckt (sonst würde die Pause zusätzlich zur Lücke abgezogen).
     let submitData: typeof formData & { break_waiver_reason?: string } = { ...formData };
     if (!editingId && submitData.break_minutes === 0) {
-      const [sh, sm] = submitData.start_time.split(':').map(Number);
-      const [eh, em] = submitData.end_time.split(':').map(Number);
-      const grossMinutes = (eh * 60 + em) - (sh * 60 + sm);
-      if (grossMinutes > 360) {
+      const gross = hhmmToMinutes(submitData.end_time) - hhmmToMinutes(submitData.start_time);
+      const segs = submitData.date === format(new Date(), 'yyyy-MM-dd')
+        ? gapSegments(clockInfo.blocks, clockInfo.grace, submitData.start_time, submitData.end_time)
+        : [];
+      const credited = gross - segs.reduce((a, b) => a + b, 0);
+      const covered = segs.filter((s) => s >= 15).reduce((a, b) => a + b, 0);
+      if (credited > 360 && covered < 30) {
         submitData = { ...submitData, break_minutes: 30 };
       }
     }
@@ -499,10 +558,11 @@ export default function TimeTracking() {
     const today = format(new Date(), 'yyyy-MM-dd');
     const targetHours = getDailyTargetHours(user, today);
     const defaultEnd = targetHours > 0 ? addHoursToTime('08:00', targetHours) : '17:00';
+    const span = blocksSpan(clockInfo.blocks);  // Spec 14
     setFormData({
       date: today,
-      start_time: '08:00',
-      end_time: defaultEnd,
+      start_time: span?.start ?? '08:00',
+      end_time: span?.end ?? defaultEnd,
       break_minutes: 0,
       note: '',
       sunday_exception_reason: '',

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import StampWidget from './StampWidget';
 import { useSystemStore } from '../stores/systemStore';
@@ -156,5 +156,44 @@ describe('<StampWidget /> Ausnahme abgeschaltet (#499)', () => {
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(toast.error.mock.calls[0][0]).toMatch(/NICHT ausgestempelt/);
     expect(toast.error.mock.calls[0][0]).not.toMatch(/begründen/);
+  });
+});
+
+describe('<StampWidget /> §4-Vorprüfung mit Lückensegmenten (Spec 8.4)', () => {
+  const BLOCKS = [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }];
+
+  function clockedInWithBlocks(blocks: unknown[]) {
+    getMock.mockImplementation((url: string) =>
+      url === '/time-entries/clock-status'
+        ? Promise.resolve({ data: {
+          is_clocked_in: true, current_entry: { id: 'te-open', start_time: '08:00:00' },
+          elapsed_minutes: 600, blocks_today: blocks, grace_minutes: 15,
+        } })
+        : Promise.resolve({ data: {} }));
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('verlangt keine Pause, wenn die Lücke zwischen den Blöcken §4 deckt', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-01T18:00:00'));
+    clockedInWithBlocks(BLOCKS);
+    postMock.mockResolvedValueOnce({ data: { warnings: [] } });
+    await openBreakDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
+      '/time-entries/clock-out', expect.objectContaining({ break_minutes: 0 })));
+  });
+
+  it('Kontrolle: ohne Blöcke greift die Vorprüfung wie bisher (10 h ohne Pause)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-01T18:00:00'));
+    clockedInWithBlocks([]);
+    await openBreakDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
+    expect(await screen.findByText('Bei >9h Arbeitszeit sind mind. 45 Min. Pause erforderlich (ArbZG §4)')).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
   });
 });

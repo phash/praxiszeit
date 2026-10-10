@@ -8,6 +8,8 @@ import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { computeBreakError } from '../utils/breakValidation';
 import { isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
+import { gapSegments } from '../utils/workBlocks';
+import type { TimeBlock } from '../types/workBlocks';
 
 interface ClockStatus {
   is_clocked_in: boolean;
@@ -17,6 +19,9 @@ interface ClockStatus {
     note?: string;
   } | null;
   elapsed_minutes?: number | null;
+  // Spec 2026-10-08 (8.4): Blöcke von heute und der Puffer des Ausstempelns (E80).
+  blocks_today?: TimeBlock[];
+  grace_minutes?: number;
 }
 
 interface StampWidgetProps {
@@ -130,7 +135,10 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
       const startHHMM = st.includes('T') ? st.split('T')[1].substring(0, 5) : st.substring(0, 5);
       const now = new Date();
       const endHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const breakErr = computeBreakError([], startHHMM, endHHMM, breakMinutes, false);
+      // Spec 8.4: eine Lücke zwischen den Arbeitsblöcken (Segment ≥ 15 Min) deckt
+      // §4 — dann keine Pausenabfrage; der Server rechnet genauso (E43).
+      const segs = gapSegments(status?.blocks_today ?? [], status?.grace_minutes ?? 15, startHHMM, endHHMM);
+      const breakErr = computeBreakError([], startHHMM, endHHMM, breakMinutes, false, segs);
       if (breakErr && !waiver) {
         setBreakWarn(breakErr);
         notifyStillClockedIn(breakErr);
