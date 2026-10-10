@@ -214,6 +214,22 @@ class TestToday:
         assert (impact.saldo_delta, impact.shortening_reasons, impact.earliest_lossless_date) == (
             Decimal("-1"), ["saldo"], TOMORROW)
 
+    def test_closed_entry_losing_today_moves_the_default_to_tomorrow(self, db, test_user, test_admin, monkeypatch):
+        """Spec 17.5: geschlossener verlierender Eintrag heute → morgen (A + 1), auch
+        wenn das Soll von heute mitsinkt und der Tagessaldo nicht fällt (H entfällt)."""
+        freeze(monkeypatch, at=time(13, 0))
+        add_row(db, test_user, date(2026, 3, 1), week=ANNA_WEEK)
+        entry(db, test_user, TODAY, t(8), t(12, 15), raw_end=t(12, 30))
+        week = block_week(mon=[("08:00", "12:00"), ("15:00", "18:00")], tue=[("08:00", "12:00")],
+                          thu=[("08:00", "11:00")])
+        impact = _run(db, test_user, test_admin, eff=TODAY, week=week)
+        assert [(c.date, c.old_net, c.new_net) for c in impact.reclamp.changed] == [
+            (TODAY, Decimal("4.25"), Decimal("3.25"))]
+        assert (impact.saldo_delta, impact.shortening_reasons, impact.earliest_lossless_date) == (
+            Decimal("0"), ["entries"], TOMORROW)
+        db.rollback()
+        assert _run(db, test_user, test_admin, eff=TOMORROW, week=week).shortening_reasons == []
+
     def test_without_any_entry_today_the_default_is_today(self, db, test_user, test_admin, monkeypatch):
         freeze(monkeypatch)
         add_row(db, test_user, date(2026, 3, 1), week=ANNA_WEEK)
