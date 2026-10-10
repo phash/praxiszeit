@@ -3,6 +3,8 @@ mit Zeiteinträgen (9.1). Tabelle 9.6: Tagessoll vorher 8 h, 4 h Arbeit am Krank
 from datetime import date, timedelta
 from decimal import Decimal
 
+import pytest
+
 from app.models import AbsenceType
 from app.models.system_setting import SystemSetting
 from app.services import calculation_service as cs
@@ -16,6 +18,10 @@ OLD = {MON: Decimal("8")}
 
 def _run(db, user, old=OLD):
     return cs.retarget_absence_hours(db, user, *WINDOW, old_full_target_by_date=old)
+
+
+def _day_saldo(db, user, d):
+    return cs.get_range_actual(db, user, d, d) - cs.get_range_target(db, user, d, d)
 
 
 def test_regular_clamped_mixed_day_with_target_drop_is_not_a_reduction(db, test_user):
@@ -66,6 +72,29 @@ def test_rounding_to_0_01_hours(db, test_user):
     add_row(db, test_user, date(2026, 9, 1), day_hours=(6, 8, 8, 8, 8))
     [rec] = _run(db, test_user, {MON: Decimal("7.92")})
     assert (rec.new_hours, rec.f1_clamped, rec.credit_reduction) == (Decimal("2.00"), True, False)
+
+
+@pytest.mark.parametrize("typ, reduction", [
+    (AbsenceType.SICK, True),
+    (AbsenceType.TRAINING, True),
+    (AbsenceType.VACATION, False),
+    (AbsenceType.PAID_LEAVE, False),
+    (AbsenceType.OTHER, False),
+])
+def test_only_actual_credits_can_be_reduced(db, test_user, typ, reduction):
+    """9.5 (c) meint die IST-Gutschrift (P27: „nehmen gutgeschriebene Zeit
+    zurück") — die tragen nur SICK/TRAINING (``credited_absence_hours``). Bei
+    VACATION/PAID_LEAVE/OTHER fällt das Soll auf ``min(Tagessoll, gearbeitet)``,
+    unabhängig von ``hours`` (#377-Fix-Modus: geplante Stunden): die F1-
+    Angleichung an den nicht gearbeiteten Rest bleibt (wie ``create_absence``),
+    kostet aber kein Saldo und ist deshalb keine Verkürzung (Review Task 6)."""
+    absence(db, test_user, MON, typ, 8.0)
+    entry(db, test_user, MON, t(8), t(10), grace=None)
+    saldo_before = _day_saldo(db, test_user, MON)
+    [rec] = _run(db, test_user)
+    assert (rec.old_hours, rec.new_hours, rec.f1_clamped, rec.credit_reduction) == (
+        Decimal("8.00"), Decimal("6.00"), True, reduction)
+    assert (_day_saldo(db, test_user, MON) < saldo_before) is reduction
 
 
 def test_sick_day_without_work_follows_the_target(db, test_user):

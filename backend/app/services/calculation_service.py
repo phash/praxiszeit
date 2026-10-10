@@ -437,6 +437,16 @@ def retarget_window(db: Session, user: User, effective_from: date) -> RetargetWi
                           last_time_entry=last_time_entry)
 
 
+# Die Abwesenheitstypen, deren ``hours`` dem IST gutgeschrieben werden (§ 3
+# EntgFG / Fortbildung außer Haus) — dieselbe Menge wie die ``credited_absences``
+# in ``get_range_actual``/``get_overtime_account``/``get_ytd_summary`` und
+# :func:`credited_absence_hours`. Bei VACATION/PAID_LEAVE/OTHER hängt nichts
+# Saldo-wirksames an ``hours``: das Soll rechnet :func:`_day_soll_contribution`
+# aus Tagessoll, ``half_day`` und gearbeiteter Zeit (ganztägig
+# ``min(Tagessoll, gearbeitet)``), der #377-Fix-Modus mit den geplanten Stunden.
+_IST_CREDITED_ABSENCE_TYPES = frozenset({AbsenceType.SICK, AbsenceType.TRAINING})
+
+
 class AbsenceRetarget(NamedTuple):
     """Task 15: EINE tatsaechlich nachgezogene Abwesenheit.
 
@@ -458,6 +468,8 @@ class AbsenceRetarget(NamedTuple):
     absence_type: AbsenceType
     # Spec 9.6 (P6: ohne Vorgabewert): hat die F1-Klemmung gegriffen, und senkt
     # sie die Gutschrift STÄRKER als das Tagessoll des Tages (9.5 (c))?
+    # ``credit_reduction`` nur für Ist-gutgeschriebene Typen (SICK/TRAINING) —
+    # siehe ``_IST_CREDITED_ABSENCE_TYPES``.
     f1_clamped: bool
     credit_reduction: bool
 
@@ -521,7 +533,9 @@ def retarget_absence_hours(
     flush der Neukappung, also mit den neuen Netto-Werten. ``credit_reduction``
     markiert eine Senkung STÄRKER als das Tagessoll (9.5 (c)); dafür braucht es
     das volle Tagessoll VOR der Änderung (``old_full_target_by_date``, Pflicht,
-    :func:`absence_full_targets`).
+    :func:`absence_full_targets`). Gesetzt wird es nur für SICK/TRAINING — nur
+    dort ist ``hours`` eine Ist-Gutschrift (P27: „nehmen gutgeschriebene Zeit
+    zurück"); geklemmt (``f1_clamped``) wird wie in ``create_absence`` jeder Typ.
 
     ``dry_run=True`` ermittelt nur (fuer die Vorschau vor dem Speichern).
 
@@ -631,11 +645,16 @@ def retarget_absence_hours(
                 clamped = round(max(0.0, min(new_hours_f, cap_credit / w)), 2)
                 f1_clamped = clamped < new_hours_f
                 new_hours_f = clamped
-                if f1_clamped and new_hours_f < old_hours_f:
+                if (f1_clamped and new_hours_f < old_hours_f
+                        and a.type in _IST_CREDITED_ABSENCE_TYPES):
                     # 9.5 (c) nur, wenn die Gutschrift STÄRKER sinkt als das
                     # Tagessoll des Tages; sinkt sie nur mit dem Soll (regulär
                     # geklemmter Misch-Tag bei einer Soll-Senkung), bleibt der
-                    # Tag saldo-neutral.
+                    # Tag saldo-neutral. Und nur für die Typen, deren ``hours``
+                    # überhaupt Ist-Gutschrift SIND (SICK/TRAINING): bei
+                    # VACATION/PAID_LEAVE/OTHER hängt das Soll nicht an ``hours``
+                    # (``_IST_CREDITED_ABSENCE_TYPES``) — ihre Angleichung an den
+                    # nicht gearbeiteten Rest kostet kein Saldo.
                     old_full = float(old_full_target_by_date[d])
                     credit_reduction = (round((new_hours_f - old_hours_f) * w, 2)
                                         < round((full_target - old_full) * w, 2))
@@ -1126,7 +1145,7 @@ def credited_absence_hours(day_absences, d: date, holiday_dates: set,
     """
     hours = sum(
         (Decimal(str(a.hours)) for a in day_absences
-         if a.type in (AbsenceType.TRAINING, AbsenceType.SICK)),
+         if a.type in _IST_CREDITED_ABSENCE_TYPES),
         Decimal('0'),
     )
     if not hours:
