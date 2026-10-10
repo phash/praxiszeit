@@ -111,8 +111,17 @@ describe('computeBreakError mit Lückensegmenten (Spec 8.2/8.4)', () => {
     expect(computeBreakError([], '08:00', '18:00', 0, false)).toMatch(/45 Min/);
   });
 
-  it('ein Segment < 15 Min wird abgezogen, zählt aber nicht als Pause', () => {
-    expect(computeBreakError([], '08:00', '17:00', 0, false, [10])).toMatch(/30 Min/);
+  // Die beiden Eigenschaften eines Segments < 15 Min getrennt prüfen — ein
+  // gemeinsamer Fall (08:00–17:00 mit [10]) ergab mit und ohne Abzug, mit und
+  // ohne Pausen-Anrechnung dasselbe „30 Min" und sicherte damit nichts ab.
+  it('ein Segment < 15 Min wird von der Bruttozeit abgezogen', () => {
+    // 08:00–17:05 = 545 Min; mit Abzug 535 → nur 30 Min nötig (ohne Abzug: >9 h → 45 Min)
+    expect(computeBreakError([], '08:00', '17:05', 0, false, [10])).toMatch(/30 Min/);
+  });
+
+  it('ein Segment < 15 Min zählt nicht als Pausenabschnitt', () => {
+    // 20 Min erfasst + 10 Min Segment wären 30 — das Segment zählt aber nicht
+    expect(computeBreakError([], '08:00', '15:30', 20, false, [10])).toMatch(/30 Min/);
   });
 
   it('Abzug und Pausenabschnitte bestehender Einträge zählen mit', () => {
