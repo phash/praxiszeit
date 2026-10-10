@@ -1,7 +1,7 @@
 """Spec 2026-10-08, 15.3 / E72 (PR2): Auskunfts- und §16-Notfallexporte führen
 Blöcke, Verlauf und die neuen Eintrags-/Antragsfelder — nur str/int/bool/None."""
 import json
-from datetime import date, time
+from datetime import date, time, timedelta
 
 from app.models import ChangeRequest, TimeEntry, WorkingHoursChange
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
@@ -14,21 +14,51 @@ from tests.test_endpoints import (  # noqa: F401 — Fixtures
 from tests.work_blocks_fixtures import K_BLOCKS, MON, legacy_week
 
 LEGACY = legacy_week(mon=("07:37", None))   # Altwert + Platzhalter 23:59
-ENTRY_FIELDS = {"uncredited_minutes": 150, "credit_override": False, "auto_closed": False,
-                "clamp_grace_minutes": 15}
+TUE, WED = MON + timedelta(days=1), MON + timedelta(days=2)
+# Je Eintrag (nach Datum) die vier Felder. Die Fälle unterscheiden sich so, dass
+# ein fest verdrahteter Wert, vertauschte Felder oder ein Ersatzwert für
+# clamp_grace_minutes in jedem der drei Exporte auffallen:
+# - MON: Lückenanteil nicht angerechnet (Regelfall der Blöcke);
+# - TUE: automatisch geschlossen — P18: ohne auto_closed läse sich raw_end 23:59
+#   als echter Stempel; nie gegen Blöcke gekappt → clamp_grace_minutes null
+#   (E79; Spec 17.6 „int bzw. null");
+# - WED: von der Verwaltung anerkannt.
+ENTRY_FIELDS = {
+    MON.isoformat(): {"uncredited_minutes": 150, "credit_override": False,
+                      "auto_closed": False, "clamp_grace_minutes": 15},
+    TUE.isoformat(): {"uncredited_minutes": 0, "credit_override": False,
+                      "auto_closed": True, "clamp_grace_minutes": None},
+    WED.isoformat(): {"uncredited_minutes": 0, "credit_override": True,
+                      "auto_closed": False, "clamp_grace_minutes": 15},
+}
+# Verlauf: frühere Zeile ohne Blöcke (NULL), spätere mit K_BLOCKS. NULL bleibt
+# NULL — nie Rückfall auf users.work_blocks (LEGACY) und nie [].
+EARLY_FROM, LATE_FROM = date(2026, 3, 1), date(2026, 9, 1)
+HISTORY_BLOCKS = {EARLY_FROM.isoformat(): None, LATE_FROM.isoformat(): K_BLOCKS}
 
 
 def _seed(db, user):
     user.work_blocks = LEGACY
     db.add(WorkingHoursChange(user_id=user.id, tenant_id=DEFAULT_TENANT_ID,
-                              effective_from=date(2026, 9, 1), weekly_hours=40.0,
+                              effective_from=LATE_FROM, weekly_hours=40.0,
                               use_daily_schedule=False, work_days_per_week=5, blocks=K_BLOCKS,
                               note="Grund"))
+    db.add(WorkingHoursChange(user_id=user.id, tenant_id=DEFAULT_TENANT_ID,
+                              effective_from=EARLY_FROM, weekly_hours=40.0,
+                              use_daily_schedule=False, work_days_per_week=5, blocks=None))
     te = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=MON,
                    start_time=time(7, 45), end_time=time(18, 15), raw_start_time=time(7),
                    raw_end_time=time(19), break_minutes=0, uncredited_minutes=150,
                    clamp_grace_minutes=15)
     db.add(te)
+    db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=TUE,
+                     start_time=time(8), end_time=time(23, 59), raw_start_time=time(8),
+                     raw_end_time=time(23, 59), break_minutes=0, uncredited_minutes=0,
+                     credit_override=False, auto_closed=True, clamp_grace_minutes=None))
+    db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=WED,
+                     start_time=time(7), end_time=time(19), raw_start_time=time(7),
+                     raw_end_time=time(19), break_minutes=0, uncredited_minutes=0,
+                     credit_override=True, auto_closed=False, clamp_grace_minutes=15))
     db.commit()
     db.add(ChangeRequest(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, entry_kind="time_entry",
                          request_type=ChangeRequestType.UPDATE, status=ChangeRequestStatus.PENDING,
@@ -40,8 +70,14 @@ def _seed(db, user):
     return te
 
 
-def _pick(d):
-    return {k: d[k] for k in ENTRY_FIELDS}
+def _by_date(entries):
+    """Die vier Felder je Eintrag, nach Datum — nicht nach Position."""
+    fields = next(iter(ENTRY_FIELDS.values()))
+    return {e["date"]: {k: e[k] for k in fields} for e in entries}
+
+
+def _blocks_by_from(history):
+    return {h["effective_from"]: h["blocks"] for h in history}
 
 
 def test_art15_self_export(_db_session, employee_user):
@@ -49,8 +85,8 @@ def test_art15_self_export(_db_session, employee_user):
     payload = lifecycle_service.build_self_export_payload(_db_session, employee_user)
     json.dumps(payload)   # #383/#408: nur JSON-fähige Werte
     assert payload["subject"]["work_blocks"] == LEGACY
-    assert payload["subject"]["working_hours_changes"][0]["blocks"] == K_BLOCKS
-    assert _pick(payload["time_entries"][0]) == ENTRY_FIELDS
+    assert _blocks_by_from(payload["subject"]["working_hours_changes"]) == HISTORY_BLOCKS
+    assert _by_date(payload["time_entries"]) == ENTRY_FIELDS
     cr = payload["change_requests"][0]
     assert (cr["request_credit_override"], cr["original_uncredited_minutes"]) == (True, 150)
 
@@ -68,18 +104,22 @@ def test_art20_me_export(_db_session, employee_user, employee_client):
     assert r.status_code == 200, r.text
     data = json.loads(r.content)
     assert data["stammdaten"]["work_blocks"] == LEGACY
-    assert data["stundenhistorie"][0]["blocks"] == K_BLOCKS
-    assert _pick(data["zeiteintraege"][0]) == ENTRY_FIELDS
+    assert _blocks_by_from(data["stundenhistorie"]) == HISTORY_BLOCKS
+    assert _by_date(data["zeiteintraege"]) == ENTRY_FIELDS
 
 
 def test_superadmin_emergency_export_dicts(_db_session, employee_user):
-    te = _seed(_db_session, employee_user)
+    _seed(_db_session, employee_user)
+    # Wie export_tenant_data: Verlauf nach effective_from sortiert.
     history = _db_session.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == employee_user.id).all()
+        WorkingHoursChange.user_id == employee_user.id).order_by(
+        WorkingHoursChange.effective_from).all()
+    entries = _db_session.query(TimeEntry).filter(
+        TimeEntry.user_id == employee_user.id).all()
     user = superadmin._user_dict(employee_user, history)
-    entry = superadmin._time_entry_dict(te)
+    entry_dicts = [superadmin._time_entry_dict(te) for te in entries]
     json.dumps(user)
-    json.dumps(entry)
+    json.dumps(entry_dicts)
     assert user["work_blocks"] == LEGACY
-    assert user["working_hours_changes"][0]["blocks"] == K_BLOCKS
-    assert _pick(entry) == ENTRY_FIELDS
+    assert _blocks_by_from(user["working_hours_changes"]) == HISTORY_BLOCKS
+    assert _by_date(entry_dicts) == ENTRY_FIELDS
