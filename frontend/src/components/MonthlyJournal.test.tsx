@@ -658,3 +658,37 @@ describe('<MonthlyJournal /> nicht angerechnete Zeit (Spec 13.1, PR2)', () => {
     )).toBeInTheDocument();
   });
 });
+
+describe('<MonthlyJournal /> Anerkennen und Monatssumme (Spec 13.2/13.3)', () => {
+  const withTotal = (total: number) => ({
+    ...creditJournal,
+    monthly_summary: { ...creditJournal.monthly_summary, not_credited_minutes_total: total },
+  });
+
+  it('Admin-Ansicht: „Anerkennen" am Eintrag und die Summenzeile', async () => {
+    getMock.mockResolvedValue({ data: withTotal(450) });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    expect(await screen.findByRole('button', { name: 'Anerkennen' })).toBeInTheDocument();
+    expect(screen.getByText('Anwesenheit nicht angerechnet: 7:30 h')).toBeInTheDocument();
+  });
+
+  it('Admin-Ansicht: nach dem Anerkennen lädt das Journal neu', async () => {
+    getMock.mockResolvedValue({ data: withTotal(450) });
+    postMock.mockResolvedValue({ data: { warnings: [] } });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Anerkennen' }));
+    const journalCalls = () => getMock.mock.calls.filter(c => String(c[0]).includes('/journal')).length;
+    const before = journalCalls();
+    fireEvent.click(screen.getByRole('button', { name: 'Zeit anerkennen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/admin/time-entries/te1/credit-override'));
+    await waitFor(() => expect(journalCalls()).toBeGreaterThan(before));
+  });
+
+  it('Mitarbeiter-Ansicht: kein „Anerkennen"; ohne nicht angerechnete Zeit keine Summenzeile', async () => {
+    getMock.mockResolvedValue({ data: withTotal(0) });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    await screen.findByText(/gestempelt 07:00–19:00/);
+    expect(screen.queryByRole('button', { name: 'Anerkennen' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Anwesenheit nicht angerechnet/)).not.toBeInTheDocument();
+  });
+});

@@ -22,3 +22,13 @@ describe('<EmployeeTimeEntryTable /> (Spec 12.3: Netto-Spalte und RawStampNote)'
     expect(within(row).getByText(/4:00 h nicht angerechnet, davon 2:30 h zwischen den Blöcken/)).toBeInTheDocument();
   });
 });
+
+describe('<EmployeeTimeEntryTable /> Anerkennen', () => {
+  it('zeigt „Anerkennen" nur mit onCredited', () => {
+    const { unmount } = render(<EmployeeTimeEntryTable entries={[K7_ENTRY]} onEdit={vi.fn()} onDelete={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Anerkennen' })).not.toBeInTheDocument();
+    unmount();
+    render(<EmployeeTimeEntryTable entries={[K7_ENTRY]} onEdit={vi.fn()} onDelete={vi.fn()} onCredited={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Anerkennen' })).toBeInTheDocument();
+  });
+});

@@ -411,6 +411,21 @@ export default function AdminDashboard() {
     }
   };
 
+  // Spec 13.3: nach „Anerkennen" Einträge, Protokoll und Monatsbericht neu laden.
+  const reloadEmployeeEntries = async () => {
+    if (!selectedEmployee) return;
+    try {
+      const entriesResponse = await apiClient.get('/time-entries', {
+        params: { user_id: selectedEmployee.user_id, month: currentMonth },
+      });
+      setEmployeeTimeEntries(Array.isArray(entriesResponse.data) ? entriesResponse.data : []); // #382
+      fetchAuditForUser(selectedEmployee.user_id);
+      fetchReport();
+    } catch {
+      toast.error('Fehler beim Laden der Mitarbeiterdaten');
+    }
+  };
+
   const handleAdminDeleteEntry = (entryId: string) => {
     confirm({
       title: 'Eintrag löschen',
@@ -1480,6 +1495,7 @@ export default function AdminDashboard() {
                           entries={employeeTimeEntries}
                           onEdit={handleAdminEditEntry}
                           onDelete={handleAdminDeleteEntry}
+                          onCredited={() => { void reloadEmployeeEntries(); }}
                         />
                       )}
                     </div>

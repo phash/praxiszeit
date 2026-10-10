@@ -4,7 +4,7 @@ import { de } from 'date-fns/locale';
 import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
-import { formatHoursHMText, parseHours } from '../utils/formatters';
+import { formatHoursHM, formatHoursHMText, parseHours } from '../utils/formatters';
 import { submitWithBreakWaiver } from '../utils/breakWaiverRetry';
 import { showArbzgWarnings, collectAbsenceWarnings } from '../utils/arbzgWarnings';
 import { useToast } from '../contexts/ToastContext';
@@ -13,6 +13,7 @@ import ConfirmDialog from './ConfirmDialog';
 import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
 import { RawStampNote } from './RawStampNote';
+import CreditOverrideButton from './CreditOverrideButton';
 import { stampNoteProps } from '../utils/workBlocks';
 import { myReasons } from '../api/absenceReasons';
 import type { AbsenceReason } from '../api/absenceReasons';
@@ -61,7 +62,9 @@ interface JournalData {
   year: number;
   month: number;
   days: JournalDay[];
-  monthly_summary: { actual_hours: number; target_hours: number; balance: number };
+  // Spec 2026-10-08 (13.2): Σ not_credited_minutes des Monats (Lücke UND Hülle,
+  // P19). Optional, weil ältere Antworten das Feld nicht führen.
+  monthly_summary: { actual_hours: number; target_hours: number; balance: number; not_credited_minutes_total?: number };
   yearly_overtime: number;
   // #463: Im festen Monats-Soll (#377 Baustein 2b) gibt es kein Tages-Soll.
   // `target_hours` der Tageszeilen trägt dort die GEPLANTE Anwesenheit, und ein
@@ -804,6 +807,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                 <div key={`w${i}`}>
                                   {e.start_time && e.end_time ? `${e.start_time.substring(0, 5)}–${e.end_time.substring(0, 5)}` : '–'}
                                   <RawStampNote {...stampNoteProps(e)} className="text-xs text-gray-500" />
+                                  {isAdminView && (
+                                    <CreditOverrideButton entry={e} onDone={() => setReloadKey((k) => k + 1)} />
+                                  )}
                                   {e.sunday_exception_reason && (
                                     <div className="text-xs text-amber-700">§10: {e.sunday_exception_reason}</div>
                                   )}
@@ -1075,6 +1081,12 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
               </p>
             </div>
           </div>
+          {/* Spec 13.2: gestempelte, aber nicht angerechnete Zeit des Monats — nur wenn > 0. */}
+          {(data.monthly_summary.not_credited_minutes_total ?? 0) > 0 && (
+            <p className="text-sm text-gray-600 mt-3">
+              {`Anwesenheit nicht angerechnet: ${formatHoursHM((data.monthly_summary.not_credited_minutes_total ?? 0) / 60)} h`}
+            </p>
+          )}
         </>
       )}
     </div>

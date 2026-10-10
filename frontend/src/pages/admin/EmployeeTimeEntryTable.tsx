@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { Edit2, Trash2 } from 'lucide-react';
 import { RawStampNote } from '../../components/RawStampNote';
+import CreditOverrideButton from '../../components/CreditOverrideButton';
 import { formatClockTime, formatHoursHM } from '../../utils/formatters';
 import { stampNoteProps, type StampEntry } from '../../utils/workBlocks';
 
@@ -23,9 +24,11 @@ interface EmployeeTimeEntryTableProps {
   entries: EmployeeTimeEntry[];
   onEdit: (entry: EmployeeTimeEntry) => void;
   onDelete: (entryId: string) => void;
+  /** Spec 13.3: „Anerkennen" — nach Erfolg lädt der Aufrufer neu. */
+  onCredited?: () => void;
 }
 
-export default function EmployeeTimeEntryTable({ entries, onEdit, onDelete }: EmployeeTimeEntryTableProps) {
+export default function EmployeeTimeEntryTable({ entries, onEdit, onDelete, onCredited }: EmployeeTimeEntryTableProps) {
   return (
     <table className="w-full">
       <thead className="bg-gray-50 sticky top-0">
@@ -52,6 +55,7 @@ export default function EmployeeTimeEntryTable({ entries, onEdit, onDelete }: Em
             <td className="px-4 py-2 text-sm">{formatHoursHM(entry.net_hours)} h</td>
             <td className="px-4 py-2 text-sm text-gray-500">{entry.note || '-'}</td>
             <td className="px-4 py-2 text-right text-sm space-x-1">
+              {onCredited && <CreditOverrideButton entry={entry} onDone={onCredited} />}
               <button
                 onClick={() => onEdit(entry)}
                 className="text-primary hover:text-primary-dark p-1 rounded-sm"
