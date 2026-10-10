@@ -33,6 +33,7 @@ from app.schemas.working_hours_change import WorkingHoursChangeCreate
 from app.services.timezone_service import today_local
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import test_app
+from tests.wh_change_helpers import RETRO_REASON
 
 
 # Task 7 (#431): die neuen PUT-Sperre-Tests fahren bewusst ueber HTTP
@@ -1031,7 +1032,7 @@ class TestLegacyHalfDayAbsencesSurvive:
 
         result = create_working_hours_change(
             user_id=str(emp.id),
-            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=40.0),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=40.0, **RETRO_REASON),
             db=db, current_user=admin,
         )
 
@@ -1046,7 +1047,7 @@ class TestLegacyHalfDayAbsencesSurvive:
 
         create_working_hours_change(
             user_id=str(emp.id),
-            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=40.0),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=40.0, **RETRO_REASON),
             db=db, current_user=admin,
         )
         change = db.query(WorkingHoursChange).filter(
@@ -1071,7 +1072,7 @@ class TestLegacyHalfDayAbsencesSurvive:
 
         create_working_hours_change(
             user_id=str(emp.id),
-            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=40.0),
+            change_data=WorkingHoursChangeCreate(effective_from=mon, weekly_hours=40.0, **RETRO_REASON),
             db=db, current_user=admin,
         )
         change = db.query(WorkingHoursChange).filter(

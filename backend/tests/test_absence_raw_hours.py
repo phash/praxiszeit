@@ -282,7 +282,7 @@ class TestPerAbsenceAuditRows:
         assert sick.time_entry_id is None
         assert sick.old_date == mon
         assert sick.old_note == "Krank 8,0 h"
-        assert sick.new_note.startswith("Krank 4,0 h — Wochenstunden-Änderung ab ")
+        assert sick.new_note.startswith("Krank 4,0 h — Arbeitszeit-Änderung ab ")
         assert mon.strftime("%d.%m.%Y") in sick.new_note
 
     def test_delete_writes_per_absence_rows_too(self, db, default_tenant):
