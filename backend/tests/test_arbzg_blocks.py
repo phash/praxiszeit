@@ -78,7 +78,11 @@ def test_auto_closed_presence_ends_at_the_effective_end():
     later = _e(time(19), time(20))
     day = ps.day_presence([auto, later])
     assert day.presence_minutes == 495 + 60
-    assert "PRESENCE_DAILY_HOURS" not in _codes(ps.daily_presence_warnings(day, break_check_passed=True))
+    # Review Task 3: auch der ABSTAND zwischen den Einträgen endet am wirksamen
+    # Ende — mit 23:59 schluckte die Vereinigung den Abstand 18:15→19:00, und
+    # 9:15 h Anwesenheit ergäben ein falsches PRESENCE_BREAK (0 statt 45 Min).
+    assert day.recorded_break_minutes == 45
+    assert ps.daily_presence_warnings(day, break_check_passed=True) == []
 
 
 # Review Focus 1: ohne Kappung ist Anwesenheit = Anrechnung — keine Zusatzwarnung.
