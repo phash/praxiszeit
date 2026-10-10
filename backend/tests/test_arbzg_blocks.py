@@ -387,3 +387,81 @@ def test_admin_create_and_update_report_presence(_db_session, employee_user, adm
     r = admin_client.put(f"/api/admin/time-entries/{other.id}", json={"end_time": "18:00"})
     assert r.status_code == 200, r.text
     assert "PRESENCE_BREAK" in _resp_codes(r)
+
+
+# ── Review Task 4: akzeptierte §4-Ausnahme → kein PRESENCE_BREAK (P14, Spec 8.3) ──
+# „PRESENCE_BREAK nur, wenn die §4-Prüfung auf angerechneter Zeit bestanden hat –
+# weder 400 noch BREAK_WAIVER/202" (Doppelmeldung vermeiden). Person ohne Blöcke,
+# 08:00–16:00 ohne Pause mit Begründung: die harte §4-Prüfung greift, die Ausnahme
+# wird angenommen. Übergäbe ein Pfad ``break_check_passed=True`` fest oder hinge
+# die Bedingung an der falschen Variable, sähe die Person BREAK_WAIVER UND
+# PRESENCE_BREAK (Anwesenheit 8:00 h ohne erfasste Pause).
+WAIVER_REASON = "Notfall in der Praxis"
+
+
+def _entry_from_8(db, user, end):
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=MON,
+                  start_time=time(8), end_time=end, break_minutes=0)
+    db.add(e)
+    db.commit()
+    return e
+
+
+def _waiver_create(db, user, client, monkeypatch):
+    _today(monkeypatch, MON)
+    return client.post("/api/time-entries/", json={
+        "date": MON.isoformat(), "start_time": "08:00", "end_time": "16:00",
+        "break_minutes": 0, "break_waiver_reason": WAIVER_REASON,
+    })
+
+
+def _waiver_update(db, user, client, monkeypatch):
+    e = _entry_from_8(db, user, time(12))
+    _today(monkeypatch, MON, 19)
+    return client.put(f"/api/time-entries/{e.id}",
+                      json={"end_time": "16:00", "break_waiver_reason": WAIVER_REASON})
+
+
+def _waiver_clock_out(db, user, client, monkeypatch):
+    _entry_from_8(db, user, None)
+    _today(monkeypatch, MON, 16)
+    return client.post("/api/time-entries/clock-out",
+                       json={"break_minutes": 0, "break_waiver_reason": WAIVER_REASON})
+
+
+def _waiver_admin_create(db, user, client, monkeypatch):
+    _today(monkeypatch, MON)
+    return client.post(f"/api/admin/users/{user.id}/time-entries", json={
+        "date": MON.isoformat(), "start_time": "08:00", "end_time": "16:00",
+        "break_minutes": 0, "break_waiver_reason": WAIVER_REASON,
+    })
+
+
+def _waiver_admin_update(db, user, client, monkeypatch):
+    e = _entry_from_8(db, user, time(12))
+    _today(monkeypatch, MON, 19)
+    return client.put(f"/api/admin/time-entries/{e.id}",
+                      json={"end_time": "16:00", "break_waiver_reason": WAIVER_REASON})
+
+
+WAIVER_PATHS = {
+    "create": ("employee_client", _waiver_create, 201),
+    "update": ("employee_client", _waiver_update, 200),
+    "clock_out": ("employee_client", _waiver_clock_out, 200),
+    "admin_create": ("admin_client", _waiver_admin_create, 201),
+    "admin_update": ("admin_client", _waiver_admin_update, 200),
+}
+
+
+@pytest.mark.parametrize("path", list(WAIVER_PATHS))
+def test_accepted_break_waiver_reports_no_presence_break(request, _db_session, employee_user,
+                                                         monkeypatch, path):
+    client_fixture, call, expected_status = WAIVER_PATHS[path]
+    # Beide Client-Fixtures teilen sich die Dependency-Overrides derselben App —
+    # deshalb je Pfad genau EINEN Client anfordern.
+    client = request.getfixturevalue(client_fixture)
+    r = call(_db_session, employee_user, client, monkeypatch)
+    assert r.status_code == expected_status, r.text
+    codes = _resp_codes(r)
+    assert "BREAK_WAIVER" in codes, codes
+    assert "PRESENCE_BREAK" not in codes, codes
