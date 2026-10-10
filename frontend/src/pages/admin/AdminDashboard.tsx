@@ -19,6 +19,7 @@ import UpdateBanner from '../../components/UpdateBanner';
 // Geteilt mit dem Änderungsprotokoll (`admin/AuditLog.tsx`) — dieselben
 // Audit-Zeilen, dieselbe Darstellung.
 import AuditValues from '../../components/AuditValues';
+import { AUDIT_SOURCE_LABELS } from '../../constants/auditSources';
 import EmployeeTimeEntryTable, { type EmployeeTimeEntry } from './EmployeeTimeEntryTable';
 
 interface EmployeeReport {
@@ -1626,7 +1627,11 @@ export default function AdminDashboard() {
                                 </span>
                                 <span className="text-gray-500">
                                   {format(new Date(log.created_at), 'dd.MM. HH:mm')} | {log.changed_by_first_name} {log.changed_by_last_name}
-                                  {log.source === 'change_request' && ' (Antrag)'}
+                                  {/* Gesamtreview PR2 (Fund 6): dieselben Quellen-Labels wie
+                                      `admin/AuditLog.tsx`; „manual" (die Verwaltung selbst)
+                                      bleibt ohne Zusatz, unbekannte Quellen ebenso. */}
+                                  {log.source && log.source !== 'manual' && AUDIT_SOURCE_LABELS[log.source]
+                                    && ` (${AUDIT_SOURCE_LABELS[log.source]})`}
                                 </span>
                               </div>
                               {/* Dieselbe Darstellung wie im Änderungsprotokoll

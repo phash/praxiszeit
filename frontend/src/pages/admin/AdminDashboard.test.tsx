@@ -250,3 +250,53 @@ describe('AdminDashboard Anerkennen im Detail-Modal (Spec 13.3)', () => {
     expect(card(dialog, 'Saldo')).toBe('-8:00');
   });
 });
+
+// Gesamtreview PR2 (Fund 6): das Änderungsprotokoll im Detail-Modal zeigt
+// dieselben Zeilen wie admin/AuditLog.tsx — mit denselben Quellen-Labels
+// (constants/auditSources.ts), nicht nur „(Antrag)".
+describe('AdminDashboard Änderungsprotokoll im Detail-Modal: Quellen-Labels', () => {
+  function log(id: string, source: string) {
+    return {
+      id, action: 'update', source, created_at: '2026-10-05T10:00:00',
+      changed_by_first_name: 'Ada', changed_by_last_name: 'Admin',
+      old_date: '2026-10-05', new_date: '2026-10-05',
+      old_start_time: '07:45:00', old_end_time: '18:15:00',
+      new_start_time: '07:00:00', new_end_time: '19:00:00',
+      old_break_minutes: 0, new_break_minutes: 0, old_note: null, new_note: null,
+    };
+  }
+
+  it('nennt „Anrechnung anerkannt", „Antrag" und lässt „manual" ohne Zusatz', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith('/admin/reports/yearly-absences')) {
+        return Promise.resolve({ data: [yearlyRow('u1', 'Anna', 'Kern', 5, false)] });
+      }
+      if (url.startsWith('/admin/reports/monthly')) {
+        return Promise.resolve({ data: [{
+          user_id: 'u1', first_name: 'Anna', last_name: 'Kern', weekly_hours: 40,
+          target_hours: 160, actual_hours: 160, balance: 0, overtime_cumulative: 0,
+          vacation_used_hours: 0, vacation_used_days: 0, sick_hours: 0, sick_days: 0,
+        }] });
+      }
+      if (url.startsWith('/admin/audit-log')) {
+        return Promise.resolve({ data: [
+          log('l1', 'credit_override'), log('l2', 'change_request'), log('l3', 'manual'),
+        ] });
+      }
+      if (url.startsWith('/admin/users/')) {
+        return Promise.resolve({ data: { id: 'u1', username: 'akern', role: 'employee', vacation_days: 30, track_hours: true } });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Details für Kern, Anna anzeigen' }))[0]);
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('Änderungsprotokoll (3)');
+    const lines = within(dialog).getAllByText(/\| Ada Admin/).map((el) => el.textContent);
+    expect(lines).toEqual([
+      '05.10. 10:00 | Ada Admin (Anrechnung anerkannt)',
+      '05.10. 10:00 | Ada Admin (Antrag)',
+      '05.10. 10:00 | Ada Admin',
+    ]);
+  });
+});
