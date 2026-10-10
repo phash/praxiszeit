@@ -1,6 +1,7 @@
 """Spec P5: jeder Schreibpfad für Zeiteinträge nimmt ZUERST die Ankersperre der
 Eigentümer-Zeile — vor Puffer, Snapshot-Auflösung, clamp und Zeilensperren."""
 import datetime as dt
+import uuid
 from datetime import date, time
 
 import pytest
@@ -265,3 +266,24 @@ def test_delete_foreign_entry_takes_no_lock(_db_session, employee_user, employee
     assert ("row_lock",) not in calls, calls
     _db_session.expire_all()
     assert _db_session.get(TimeEntry, e.id) is not None
+
+
+@pytest.mark.parametrize("method", ["get", "put", "delete"])
+def test_foreign_and_unknown_entry_answer_identically(_db_session, employee_user, employee_client,
+                                                      monkeypatch, method):
+    """#120 zu Ende gedacht (Review N3, 2026-10-10): ein fremder Eintrag muss für
+    Mitarbeitende aussehen wie ein unbekannter — im Statuscode UND im
+    Antworttext. Bis dahin antwortete eine unbekannte ID mit „Eintrag nicht
+    gefunden", ein fremder Eintrag mit „Zeiteintrag nicht gefunden"; der Text
+    verriet also, dass die ID existiert, und die Härtung gegen das
+    Timing-Orakel oben liefe ins Leere."""
+    other = _other_employee(_db_session)
+    e = _entry(_db_session, other, time(8), time(11))
+    _clock(monkeypatch, MON, 13)
+    kwargs = {"json": {"end_time": "12:00"}} if method == "put" else {}
+    send = getattr(employee_client, method)
+    foreign = send(f"/api/time-entries/{e.id}", **kwargs)
+    unknown = send(f"/api/time-entries/{uuid.uuid4()}", **kwargs)
+    assert foreign.status_code == unknown.status_code == 404, (foreign.text, unknown.text)
+    assert foreign.json() == unknown.json()
+    assert unknown.json()["detail"] == "Zeiteintrag nicht gefunden"

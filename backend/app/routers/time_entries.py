@@ -29,6 +29,13 @@ router = APIRouter(prefix="/api/time-entries", tags=["time-entries"])
 # Must stay < 40 chars (time_entry_audit_logs.source is varchar(40)).
 BREAK_WAIVER_SOURCE = "break_waiver"  # 12 chars
 
+# #120 (Review N3, 2026-10-10): EIN Text für „unbekannte ID" und „fremder Eintrag".
+# Ein Mitarbeiter darf weder am Statuscode noch am Antworttext erkennen, dass die ID
+# eines Kollegen existiert — bis dahin sagte der Text es („Eintrag nicht gefunden"
+# gegen „Zeiteintrag nicht gefunden"). Beide Zweige in GET/PUT/DELETE nutzen diese
+# Konstante, damit sie nicht wieder auseinanderlaufen.
+ENTRY_NOT_FOUND = "Zeiteintrag nicht gefunden"
+
 
 def _break_exception_requires_approval(db: Session, tenant_id) -> bool:
     """Read the per-practice toggle whether break-waivers need admin approval."""
@@ -789,13 +796,14 @@ def get_time_entry(
     ).first()
 
     if not entry:
-        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+        raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
 
     # Check permissions
     if entry.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         # #120 (Review 2026-06-23): 404 statt 403 — ein fremder Same-Tenant-Eintrag
-        # wird wie ein unbekannter behandelt (kein Existenz-Leak via Response-Code).
-        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
+        # wird wie ein unbekannter behandelt (kein Existenz-Leak über Statuscode
+        # oder Antworttext — ENTRY_NOT_FOUND, Review N3 2026-10-10).
+        raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
 
     response = TimeEntryResponse.model_validate(entry)
     _enrich_response(response, entry, current_user, db)
@@ -1085,11 +1093,12 @@ def update_time_entry(
     # Mitarbeitende SOFORT ab — vor Anker- und Zeilensperre. Sonst sperrte ein
     # PUT auf die ID eines Kollegen dessen Benutzerzeile (und blockierte dessen
     # Schreibpfade), und die Wartezeit verriete als Timing-Orakel, dass die ID
-    # existiert (#120 verbirgt das nur im Statuscode). Die Prüfung nach dem
-    # gesperrten Laden unten bleibt als Rückversicherung stehen.
+    # existiert — #120 verbirgt das nur in Statuscode und Antworttext
+    # (ENTRY_NOT_FOUND, derselbe Text wie für eine unbekannte ID). Die Prüfung
+    # nach dem gesperrten Laden unten bleibt als Rückversicherung stehen.
     if (_owner_id is not None and _owner_id != current_user.id
             and current_user.role != UserRole.ADMIN):
-        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
+        raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
     if _owner_id is not None:
         lock_user_row(db, current_user.tenant_id, _owner_id)
     entry = db.query(TimeEntry).filter(
@@ -1098,13 +1107,14 @@ def update_time_entry(
     ).with_for_update().first()
 
     if not entry:
-        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+        raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
 
     # Check permissions
     if entry.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         # #120 (Review 2026-06-23): 404 statt 403 — ein fremder Same-Tenant-Eintrag
-        # wird wie ein unbekannter behandelt (kein Existenz-Leak via Response-Code).
-        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
+        # wird wie ein unbekannter behandelt (kein Existenz-Leak über Statuscode
+        # oder Antworttext — ENTRY_NOT_FOUND, Review N3 2026-10-10).
+        raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
 
     # Edit protection: employees can only edit today's entries
     if current_user.role != UserRole.ADMIN and entry.date != _today_local():
@@ -1562,13 +1572,14 @@ def delete_time_entry(
     ).first()
 
     if not entry:
-        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+        raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
 
     # Check permissions
     if entry.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         # #120 (Review 2026-06-23): 404 statt 403 — ein fremder Same-Tenant-Eintrag
-        # wird wie ein unbekannter behandelt (kein Existenz-Leak via Response-Code).
-        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
+        # wird wie ein unbekannter behandelt (kein Existenz-Leak über Statuscode
+        # oder Antworttext — ENTRY_NOT_FOUND, Review N3 2026-10-10).
+        raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
 
     # Edit protection: employees can only delete today's entries
     if current_user.role != UserRole.ADMIN and entry.date != _today_local():
