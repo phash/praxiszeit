@@ -98,3 +98,32 @@ def test_auto_closed_presence_ends_at_effective_end(_db_session, employee_user, 
     row = _row(admin_client, employee_user)
     assert row["presence_hours"] == 10.25
     assert row["presence_weeks"] == [{"iso_week": "2026-W23", "presence_hours": 10.25}]
+
+
+def test_scheduled_days_respect_employment_window(_db_session, employee_user, admin_client):
+    """#193: Tage vor ``first_work_day`` sind keine Soll-Arbeitstage. Eine
+    Neueinstellung ab 25.05.2026 mit 10 × 10 h darf nicht über die 24 Wochen davor
+    auf einen konformen Ø von unter einer Stunde verdünnt werden."""
+    from datetime import date
+    employee_user.first_work_day = date(2026, 5, 25)
+    _db_session.commit()
+    d = date(2026, 5, 25)
+    while d <= date(2026, 6, 5):
+        if d.weekday() < 5:
+            _add(_db_session, employee_user, d, time(7), time(17))
+        d += timedelta(days=1)
+    row = _row(admin_client, employee_user)
+    assert row["scheduled_work_days"] == 10
+    assert row["average_daily_hours"] == 10.0
+    assert row["presence_average"] == 10.0
+    assert row["compliant"] is False
+
+
+def test_scheduled_days_end_at_last_work_day(_db_session, employee_user, admin_client):
+    """#193: Tage nach ``last_work_day`` zählen ebenfalls nicht als Soll-Arbeitstage."""
+    from datetime import date
+    employee_user.first_work_day = date(2026, 5, 25)
+    employee_user.last_work_day = date(2026, 5, 29)
+    _db_session.commit()
+    row = _row(admin_client, employee_user)
+    assert row["scheduled_work_days"] == 5

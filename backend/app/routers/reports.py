@@ -1054,10 +1054,18 @@ def get_24_week_averaging_period(
 
         # Count actually-scheduled working days in the window (weekday schedule
         # + contract history via get_*_for_date, minus holidays/absences).
+        # #193: get_daily_target_for_date kennt das Beschäftigungsfenster bewusst
+        # nicht — Tage vor Eintritt / nach Austritt sind keine Soll-Arbeitstage und
+        # dürfen den Durchschnitt einer Neueinstellung nicht verdünnen.
         scheduled_days = 0
         d = start_date
         while d <= end_date:
-            if d.weekday() < 5 and d not in holiday_dates and d not in absence_dates:
+            if (
+                d.weekday() < 5
+                and d not in holiday_dates
+                and d not in absence_dates
+                and calculation_service._within_employment_window(user, d)
+            ):
                 schedule = calculation_service.get_schedule_for_date(db, user, d)
                 if calculation_service.get_daily_target_for_date(user, d, schedule) > 0:
                     scheduled_days += 1
