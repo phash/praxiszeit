@@ -575,21 +575,26 @@ def _not_extendable(entry, old_day: list, new_day: list, grace: int,
     Eintrags ist kein Stempel (P18): sein Ende ist „ohne Rohstempel", die
     Neukappung verlängert es nie. Ein übernommenes echtes Rohende nach einem
     Verschieben (``end_input_for``) bleibt die Grenze, bis zu der erweitert
-    wird — kein Hinweis."""
+    wird — kein Hinweis.
+
+    Nur eine Kante, an der ``_clamp_core`` tatsächlich gekappt hat, zählt: die
+    offene Seite eines halboffenen #201-Fensters (Platzhalter-Ende 23:59 = kein
+    Ende, Spec 5.3; Beginn-Untergrenze 00:00, vor der nichts liegt) hat nie
+    gekappt — eine Zeit dort ist kein verlorener Stempel."""
     if not old_day:
         return None
     g_old = old_grace if old_grace is not None else grace
     sides = []
     if entry.raw_start_time is None and entry.start_time is not None and entry.start_time.second == 0:
         old_floor = _shift_min(old_day[0][0], -g_old)
-        if _min(entry.start_time) == old_floor and (
+        if old_floor > 0 and _min(entry.start_time) == old_floor and (
                 not new_day or _shift_min(new_day[0][0], -grace) < old_floor):
             sides.append("start")
     end_unstamped = entry.raw_end_time is None or (
         entry.auto_closed and same_minute(entry.raw_end_time, AUTO_CLOSE_RAW_END))
     if end_unstamped and entry.end_time is not None and entry.end_time.second == 0:
         old_ceil = _shift_min(old_day[-1][1], g_old)
-        if _min(entry.end_time) == old_ceil and (
+        if old_day[-1][1] < _LAST_MINUTE and _min(entry.end_time) == old_ceil and (
                 not new_day or _shift_min(new_day[-1][1], grace) > old_ceil):
             sides.append("end")
     if not sides:

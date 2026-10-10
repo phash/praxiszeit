@@ -8,7 +8,7 @@ from app.services import rest_time_service, work_blocks_service, work_window_ser
 from app.services.holiday_service import invalidate_holiday_cache
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.wh_change_helpers import add_row, entry, t
-from tests.work_blocks_fixtures import block_week
+from tests.work_blocks_fixtures import block_week, legacy_week
 
 MON = date(2026, 6, 1)
 JUNE = (date(2026, 6, 1), date(2026, 6, 30))
@@ -160,6 +160,34 @@ def test_not_extendable_when_the_weekday_loses_its_blocks(db, test_user):
     assert (stamped.end_time, stamped.raw_end_time) == (t(18, 40), None)
     assert (lost_end.end_time, holiday.end_time, lost_start.start_time) == (t(18, 15), t(18, 15), t(14, 45))
     assert result.skipped == []
+
+
+def test_placeholder_edges_of_half_open_legacy_windows_are_not_flagged(db, test_user):
+    """E50 / Spec 5.3 (Review Task 7): ein halboffenes #201-Fenster hat auf der
+    offenen Seite nie gekappt — der Platzhalter 23:59 ist „kein Ende", und vor
+    00:00 liegt nichts. Eine gespeicherte Zeit auf dieser Kante ist kein
+    verlorener Stempel; nur die echte Kante der anderen Seite zählt."""
+    old_end_open = legacy_week(mon=("08:00", None))
+    add_row(db, test_user, date(2026, 1, 1), weekly_hours=40, blocks=old_end_open)
+    add_row(db, test_user, MON, weekly_hours=40)
+    prev = work_blocks_service.parse_week_blocks(old_end_open).blocks
+    closed = entry(db, test_user, MON, t(8), t(23, 59), auto_closed=True)
+    early = entry(db, test_user, date(2026, 6, 8), t(7, 45), t(23, 59), auto_closed=True)
+    result = _run(db, test_user, prev)
+    assert [(f.entry_id, f.not_extendable) for f in result.flagged] == [(early.id, "start")]
+    assert result.changed == [] and _stored(closed) == (t(8), t(23, 59), None, None, 0, True)
+
+
+def test_placeholder_start_of_a_half_open_legacy_window_is_not_flagged(db, test_user):
+    old_start_open = legacy_week(mon=(None, "17:00"))
+    add_row(db, test_user, date(2026, 1, 1), weekly_hours=40, blocks=old_start_open)
+    add_row(db, test_user, MON, weekly_hours=40)
+    prev = work_blocks_service.parse_week_blocks(old_start_open).blocks
+    entry(db, test_user, MON, t(0), t(6))
+    late = entry(db, test_user, date(2026, 6, 8), t(0), t(17, 15))
+    result = _run(db, test_user, prev)
+    assert [(f.entry_id, f.not_extendable) for f in result.flagged] == [(late.id, "end")]
+    assert result.changed == []
 
 
 def test_rest_time_after_reclamp_counts_from_the_raw_stamp(db, test_user):
