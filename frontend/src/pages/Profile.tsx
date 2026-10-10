@@ -362,15 +362,15 @@ export default function Profile() {
           </form>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Keine „Wochenstunden" hier (Review Task 10): `user.weekly_hours` ist die
+                User-Zeile, die eine zukunftsdatierte Änderung erst beim nächsten
+                Schreibvorgang nachzieht (kein Scheduler, Spec 9.8). Den heute gültigen
+                Wert zeigt datumsaufgelöst die Karte „Meine Arbeitszeit". */}
             <div>
               <label className="text-sm font-medium text-gray-500">Rolle</label>
               <p className="text-gray-900 mt-1">
                 {user?.role === 'admin' ? 'Administrator' : 'Mitarbeiter:in'}
               </p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">Wochenstunden</label>
-              <p className="text-gray-900 mt-1">{user?.weekly_hours} Stunden</p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-500">Urlaubstage</label>
