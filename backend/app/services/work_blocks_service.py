@@ -188,8 +188,8 @@ def block_break_notices(week: Optional[list], grace: int, *, exempt: bool) -> li
     """Spec P9 — nicht blockierende Plan-Hinweise aus dem GANZEN Tagesplan.
 
     (a) § 4: geplante Arbeit = Σ Blöcke − Pause, Bedarf 30 bzw. 45 Min; geplante
-        Pausen = Pause + Σ ROHE Lücken ≥ 15 Min; bei Pause 0 zusätzlich eine
-        Strecke ohne Lücke ≥ 15 Min über 6 h.
+        Pausen = Pause (nur ab 15 Min, § 4 Satz 2) + Σ ROHE Lücken ≥ 15 Min; bei
+        Pause unter 15 Min zusätzlich eine Strecke ohne Lücke ≥ 15 Min über 6 h.
     (b) Eine Lücke ≤ 2 × aktueller Puffer verschwindet in der Anrechnung.
     (c) § 3: Tagessoll > 10 h (geplanter Verstoß), > 8 h (24-Wochen-Schnitt),
         Wochensoll > 48 h.
@@ -214,13 +214,18 @@ def block_break_notices(week: Optional[list], grace: int, *, exempt: bool) -> li
         gaps = [(spans[i][1], spans[i + 1][0]) for i in range(len(spans) - 1)]
         if not exempt:
             need = 45 if net > 9 * 60 else 30 if net > 6 * 60 else 0
-            planned = pause + sum(ge - gs for gs, ge in gaps if ge - gs >= 15)
+            # § 4 Satz 2 / A-M2, wie ``break_validation_service.daily_break_figures``:
+            # eine Pause unter 15 Minuten ist kein Pausenabschnitt — die harte Prüfung
+            # beim Erfassen zählt sie nicht (bzw. lehnt sie ab). Das Tagessoll ``net``
+            # bleibt Σ Blöcke − Pause (4.1); nur der § 4-Vergleich lässt sie weg.
+            counted_pause = pause if pause >= 15 else 0
+            planned = counted_pause + sum(ge - gs for gs, ge in gaps if ge - gs >= 15)
             if need and planned < need:
                 notices.append(
                     f"{label}: geplant {_hm(net)} h Arbeit, eingeplante Pausen {planned} Min – "
                     f"nach § 4 ArbZG sind mindestens {need} Minuten nötig."
                 )
-            elif pause == 0:
+            elif counted_pause == 0:
                 for start, end in _stretches(spans):
                     if end - start > 6 * 60:
                         notices.append(

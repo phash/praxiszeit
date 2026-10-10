@@ -31,6 +31,23 @@ def test_long_stretch_without_gap_when_pause_is_zero():
             "nach § 4 ArbZG ist spätestens nach 6 Stunden eine Pause nötig.") in notices
 
 
+def test_pause_under_15_minutes_is_no_break_section():
+    """Review Task 5 (Spec P9 (a), Entschieden 2026-10-10): eine Pause unter 15 Minuten
+    ist kein Pausenabschnitt (§ 4 Satz 2, A-M2 in ``daily_break_figures``) — die harte
+    Prüfung beim Erfassen zählt sie nicht bzw. lehnt sie ab. 10 + 35 Min Lücke sehen nach
+    45 aus, wirksam sind nur die 35."""
+    week = block_week(pause=10, mon=[("07:00", "12:00"), ("12:35", "17:45")])
+    notices = block_break_notices(week, 15, exempt=False)
+    assert "Mo: geplant 10:00 h Arbeit, eingeplante Pausen 35 Min – nach § 4 ArbZG sind mindestens 45 Minuten nötig." in notices
+
+
+def test_long_stretch_is_checked_when_pause_is_under_15_minutes():
+    """Pause 10 zählt nicht als Abschnitt → die 6-h-Streckenprüfung greift wie bei Pause 0."""
+    notices = block_break_notices(block_week(pause=10, mon=[("07:00", "13:30"), ("14:00", "16:00")]), 0, exempt=False)
+    assert ("Mo: geplant mehr als 6 Stunden am Stück ohne Lücke von mindestens 15 Minuten (07:00–13:30) – "
+            "nach § 4 ArbZG ist spätestens nach 6 Stunden eine Pause nötig.") in notices
+
+
 def test_pause_inside_the_blocks_counts_for_section_4():
     assert block_break_notices(block_week(pause=45, mon=[("07:00", "17:00")]), 15, exempt=False) == [
         "Mo: Tagessoll 9:15 h – mehr als 8 Stunden sind nur zulässig, wenn im Durchschnitt von 24 Wochen "
