@@ -39,9 +39,16 @@ def test_pause_inside_the_blocks_counts_for_section_4():
 
 
 def test_week_over_48_hours():
+    """Wochensoll = Σ (Blöcke − Pause) (Spec P9 (c)): 5 × 10 h brutto mit Pause 45
+    sind 46:15 h und damit KEIN Wochenhinweis — wer die Bruttozeit summiert, käme
+    auf 50:00 h. Mit Pause 15 bleiben 48:45 h, also genau ein Hinweis mit Nettowert."""
     day = [("07:00", "17:00")]
     notices = block_break_notices(block_week(pause=45, mon=day, tue=day, wed=day, thu=day, fri=day), 15, exempt=False)
-    assert "Wochensoll 46:15 h – mehr als 48 Stunden je Woche (§ 3 ArbZG)." not in notices
+    assert not any(n.startswith("Wochensoll") for n in notices)
+    notices = block_break_notices(block_week(pause=15, mon=day, tue=day, wed=day, thu=day, fri=day), 15, exempt=False)
+    assert [n for n in notices if n.startswith("Wochensoll")] == [
+        "Wochensoll 48:45 h – mehr als 48 Stunden je Woche (§ 3 ArbZG)."
+    ]
     week = block_week(mon=day, tue=day, wed=day, thu=day, fri=day)
     assert "Wochensoll 50:00 h – mehr als 48 Stunden je Woche (§ 3 ArbZG)." in block_break_notices(week, 15, exempt=False)
 
