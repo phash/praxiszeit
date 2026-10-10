@@ -589,6 +589,7 @@ def export_my_data(
             "role": current_user.role.value,
             "weekly_hours": float(current_user.weekly_hours),
             "vacation_days": float(current_user.vacation_days),  # #408: Numeric(4,1)→Decimal; JSONResponse/json.dumps kann Decimal nicht serialisieren
+            "work_blocks": current_user.work_blocks,  # Spec 15.3 / E72: wie gespeichert
             "is_active": current_user.is_active,
             "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
         },
@@ -604,6 +605,11 @@ def export_my_data(
                 "raw_end_time": str(e.raw_end_time) if e.raw_end_time else None,
                 "break_minutes": e.break_minutes,
                 "note": e.note,
+                # Spec 2026-10-08 (15.3): nur int/bool/None — rohes JSONResponse.
+                "uncredited_minutes": int(e.uncredited_minutes or 0),
+                "credit_override": bool(e.credit_override),
+                "auto_closed": bool(e.auto_closed),
+                "clamp_grace_minutes": e.clamp_grace_minutes,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
             }
             for e in time_entries
@@ -633,6 +639,7 @@ def export_my_data(
                 "hours_thursday": float(h.hours_thursday) if h.hours_thursday is not None else None,
                 "hours_friday": float(h.hours_friday) if h.hours_friday is not None else None,
                 "work_days_per_week": h.work_days_per_week,
+                "blocks": h.blocks,  # Spec 15.3: wie gespeichert, NULL = keine Blöcke
                 "note": h.note,
                 "created_at": h.created_at.isoformat() if h.created_at else None,
             }

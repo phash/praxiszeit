@@ -85,6 +85,10 @@ def _user_dict(u: User, history: List["WorkingHoursChange"] = ()) -> dict:
         "hours_wednesday": _num(u.hours_wednesday),
         "hours_thursday": _num(u.hours_thursday),
         "hours_friday": _num(u.hours_friday),
+        # Spec 2026-10-08 (über 15.3 hinaus, Begründung wie #431 oben): ohne den
+        # Rückfallwert der Arbeitszeit-Blöcke ist die Kappung vor der ersten
+        # Verlaufszeile im §16-Dokument nicht herleitbar.
+        "work_blocks": u.work_blocks,
         # #431: die Vertragssnapshots ueber die Zeit. Seit #431 sind sie die
         # autoritative Quelle des Tagessolls — ohne sie laesst sich das Soll
         # vergangener Monate aus dem Dokument nicht mehr herleiten. Bei einem
@@ -104,6 +108,9 @@ def _user_dict(u: User, history: List["WorkingHoursChange"] = ()) -> dict:
                 "hours_thursday": _num(h.hours_thursday),
                 "hours_friday": _num(h.hours_friday),
                 "work_days_per_week": h.work_days_per_week,
+                # Spec 2026-10-08: Blöcke ab effective_from (NULL = keine Blöcke) —
+                # die autoritative Quelle der Kappung je Datum.
+                "blocks": h.blocks,
                 "note": h.note,
                 "created_at": _iso(h.created_at),
             }
@@ -127,6 +134,12 @@ def _time_entry_dict(te: TimeEntry) -> dict:
         "break_minutes": te.break_minutes,
         "note": te.note,
         "sunday_exception_reason": te.sunday_exception_reason,
+        # Spec 2026-10-08 (15.3): ohne auto_closed läse sich raw_end_time 23:59 als
+        # echter Stempel (P18). Nur int/bool/None — rohes json.dumps.
+        "uncredited_minutes": int(te.uncredited_minutes or 0),
+        "credit_override": bool(te.credit_override),
+        "auto_closed": bool(te.auto_closed),
+        "clamp_grace_minutes": te.clamp_grace_minutes,
     }
 
 

@@ -5,7 +5,8 @@ eine Berechnung läse, hebelte zukunftsdatierte Änderungen aus (kein Scheduler)
 Der Guard prüft per ``ast`` jeden Attributzugriff ``.work_blocks`` und jedes
 ``getattr/setattr/hasattr(…, "work_blocks", …)`` in ``app/`` und vergleicht die
 Fundstellen (Datei, umschließende Funktion) mit der Erlaubnisliste. PR2 ergänzt
-den Art.-15/20-Export (``lifecycle_service._user_dict``, ``auth`` ``/me/export``).
+den Art.-15/20-Export (``lifecycle_service._user_dict``, ``auth`` ``/me/export``)
+und den §16-Notfallexport (``superadmin._user_dict``).
 ``work_blocks_today`` ist ein anderer Name und entsteht über den Resolver.
 """
 import ast
@@ -15,6 +16,11 @@ BACKEND = Path(__file__).resolve().parents[1]
 ALLOWED = {
     ("app/services/calculation_service.py", "get_schedule_for_date"),
     ("app/routers/admin_users.py", "_sync_user_from_change"),
+    # PR2 (Spec 15.3 / E72): Auskunfts- und §16-Notfallexporte geben den
+    # gespeicherten Rückfallwert unverändert aus — keine Berechnung.
+    ("app/services/lifecycle_service.py", "_user_dict"),
+    ("app/routers/auth.py", "export_my_data"),
+    ("app/routers/superadmin.py", "_user_dict"),
 }
 
 
