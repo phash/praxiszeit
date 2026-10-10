@@ -119,6 +119,31 @@ def test_reason_text_length_and_note_total():
     assert WorkingHoursChangeCreate.model_validate(fits).note == "n" * 60
 
 
+def test_note_total_boundary_is_exactly_500():
+    """Spec 9.5: „> 500 → 422" — genau 500 Zeichen gehen durch, 501 nicht.
+    Präfix „[Erfassungsfehler korrigiert]" (29) + Leerzeichen + 400 Zeichen
+    Begründung + „ · " (3) + Notiz: bei 67 Zeichen Notiz exakt 500."""
+    from app.services.reclamp_audit import compose_change_note
+    base = {"effective_from": EFF, "weekly_hours": 30, "retroactive_reason_type": "erfassungsfehler",
+            "retroactive_reason_text": "x" * 400}
+    assert len(compose_change_note("n" * 67, "erfassungsfehler", "x" * 400)) == 500
+    assert WorkingHoursChangeCreate.model_validate(dict(base, note="n" * 67)).note == "n" * 67
+    assert _error(dict(base, note="n" * 68)) == "Notiz und Begründung zusammen höchstens 500 Zeichen."
+
+
+def test_reason_text_of_the_wrong_type_gets_a_singular_sentence():
+    """Review Task 3: „Die Begründung" ist das einzige Label im Singular — der
+    Plural-Ausweichtext („… sind kein gültiger Wert.") passt dort nicht. Ab der
+    POST-Vorschau mit untypisiertem Body ist der Fall über echte Endpunkte
+    erreichbar."""
+    body = {"effective_from": EFF, "weekly_hours": 30, "retroactive_reason_type": "erfassungsfehler",
+            "retroactive_reason_text": 12345678901}
+    assert _error(body) == "Die Begründung muss ein Text sein."
+    with pytest.raises(ValidationError) as exc:
+        WorkingHoursChangeDelete.model_validate({"retroactive_reason_text": ["Liste"]})
+    assert _schedule_input_error(exc.value) == "Die Begründung muss ein Text sein."
+
+
 def test_reason_text_counts_without_surrounding_whitespace():
     """P15: „mindestens 10 Zeichen" meint Text, nicht Leerzeichen — gespeichert wird
     die Begründung ohnehin getrimmt (``compose_change_note``)."""

@@ -1854,6 +1854,11 @@ def _schedule_input_error(exc: ValidationError) -> str:
         return f"{label} muss mindestens {ctx['min_length']} Zeichen lang sein."
     if "max_length" in ctx:
         return f"{label} darf höchstens {ctx['max_length']} Zeichen lang sein."
+    # Die Begründung ist das einzige Label im Singular (und das einzige Textfeld):
+    # der Plural-Ausweichtext unten ergäbe „Die Begründung sind kein gültiger Wert."
+    # Erreichbar über einen selbst gebauten Body (POST-Vorschau, 422 beim Anlegen).
+    if "retroactive_reason_text" in (err.get("loc") or ()):
+        return "Die Begründung muss ein Text sein."
     if "le" in ctx:
         return f"{label} dürfen höchstens {ctx['le']} betragen."
     if "ge" in ctx:
