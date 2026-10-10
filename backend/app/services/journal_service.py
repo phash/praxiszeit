@@ -6,7 +6,7 @@ from typing import Dict, List, Any
 from sqlalchemy.orm import Session
 
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange
-from app.services import calculation_service, special_days_service
+from app.services import calculation_service, special_days_service, work_window_service
 from app.services.date_filters import date_in_month
 
 
@@ -174,6 +174,8 @@ def get_journal(
             worked_map={d: worked},
         )
 
+    # Spec 13.2 (P19): Monatssumme der nicht angerechneten Anwesenheit.
+    not_credited_total = 0
     days = []
     for day_num in range(1, last_day + 1):
         d = date(year, month, day_num)
@@ -203,6 +205,7 @@ def get_journal(
             day_type = "empty"
 
         time_hours = Decimal(str(sum(e.net_hours for e in day_entries)))
+        not_credited_total += sum(work_window_service.not_credited_minutes(e) for e in day_entries)
 
         # Credited absence hours (TRAINING, SICK count as worked)
         # Audit 2026-07-31 (Fund K): mit demselben Tages-Gewicht wie im
@@ -313,6 +316,10 @@ def get_journal(
                     "raw_start_time": e.raw_start_time.strftime("%H:%M") if e.raw_start_time else None,
                     "raw_end_time": e.raw_end_time.strftime("%H:%M") if e.raw_end_time else None,
                     "sunday_exception_reason": e.sunday_exception_reason,
+                    "uncredited_minutes": int(e.uncredited_minutes or 0),
+                    "not_credited_minutes": work_window_service.not_credited_minutes(e),
+                    "credit_override": bool(e.credit_override),
+                    "auto_closed": bool(e.auto_closed),
                 }
                 for e in day_entries
             ],
@@ -350,6 +357,7 @@ def get_journal(
             "actual_hours": float(monthly_actual.quantize(Decimal("0.01"))),
             "target_hours": float(monthly_target.quantize(Decimal("0.01"))),
             "balance": float(monthly_balance.quantize(Decimal("0.01"))),
+            "not_credited_minutes_total": not_credited_total,
         },
         "yearly_overtime": float(yearly_overtime.quantize(Decimal("0.01"))),
         # #463: siehe JournalResponse — die Oberflaeche muss den Modus kennen,

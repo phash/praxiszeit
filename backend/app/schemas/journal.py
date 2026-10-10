@@ -15,6 +15,12 @@ class JournalTimeEntry(BaseModel):
     raw_start_time: Optional[str] = None
     raw_end_time: Optional[str] = None
     sunday_exception_reason: Optional[str] = None
+    # Spec 2026-10-08 (13.2, P18, P19): ohne diese Felder filterte das
+    # response_model sie still weg (CLAUDE.md #485).
+    uncredited_minutes: int = 0
+    not_credited_minutes: int = 0
+    credit_override: bool = False
+    auto_closed: bool = False
 
 
 class JournalAbsence(BaseModel):
@@ -40,6 +46,9 @@ class JournalMonthlySummary(BaseModel):
     actual_hours: float
     target_hours: float
     balance: float
+    # Spec 13.2: Σ not_credited_minutes (Lücke + Hülle) — Zeile
+    # „Anwesenheit nicht angerechnet" im Journal.
+    not_credited_minutes_total: int = 0
 
 
 class JournalUser(BaseModel):
