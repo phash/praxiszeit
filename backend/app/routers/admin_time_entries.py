@@ -331,8 +331,12 @@ def admin_update_time_entry(
     update_start_time = work_window_service.unclamp_input(
         update_start_time, entry.start_time, entry.raw_start_time,
     )
-    update_end_time = work_window_service.unclamp_input(
+    # PR1-Review F1 (P18): auch der Rückfall eines reinen Datums-PUT (Rohende 23:59 oben)
+    # läuft hier durch — beim Verschieben eines automatisch geschlossenen
+    # Eintrags gilt das wirksame Ende.
+    update_end_time = work_window_service.end_input_for(
         update_end_time, entry.end_time, entry.raw_end_time,
+        auto_closed=entry.auto_closed, prev_date=entry.date, target_date=update_date,
     )
 
     # #201: Clamp start/end to the affected employee's soll window.

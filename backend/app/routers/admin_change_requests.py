@@ -309,7 +309,8 @@ def review_change_request(
     # Approve: validate preconditions BEFORE changing status
     entry = None
     # Release-Review 1.19.3 (F1): Eingabezeiten fuer clamp. Bei UPDATE unten durch
-    # unclamp_input ersetzt; hier der Antragswert, damit jeder Pfad sie kennt.
+    # unclamp_input bzw. end_input_for ersetzt; hier der Antragswert, damit jeder
+    # Pfad sie kennt.
     _in_start, _in_end = cr.proposed_start_time, cr.proposed_end_time
     if cr.entry_kind != "absence":
         if cr.request_type == ChangeRequestType.CREATE:
@@ -372,8 +373,14 @@ def review_change_request(
         if cr.request_type == ChangeRequestType.UPDATE and entry is not None:
             _in_start = work_window_service.unclamp_input(
                 cr.proposed_start_time, entry.start_time, entry.raw_start_time)
-            _in_end = work_window_service.unclamp_input(
-                cr.proposed_end_time, entry.end_time, entry.raw_end_time)
+            # PR1-Review F1 (P18): Vorprüfung und Schreiben teilen sich diese Eingabe — ein
+            # automatisch geschlossener Eintrag, der nur auf einen anderen Tag
+            # wandert, rechnet mit dem wirksamen Ende statt dem Rohende 23:59.
+            _in_end = work_window_service.end_input_for(
+                cr.proposed_end_time, entry.end_time, entry.raw_end_time,
+                auto_closed=entry.auto_closed, prev_date=entry.date,
+                target_date=cr.proposed_date,
+            )
 
         # C-1: Re-validate §3 (daily hard cap) and §4 (breaks) against the
         # CURRENT DB state before materialising a CREATE/UPDATE. The CR was
@@ -609,7 +616,8 @@ def review_change_request(
             # Pause oder Notiz ändert, schickt das wirksame Ende unverändert mit.
             # Das Rohende 23:59 eines automatisch geschlossenen Eintrags ist kein
             # Stempel und damit ebenfalls keine Korrektur (Review Task 8) —
-            # ``unclamp_input`` rechnet es oben unverändert mit.
+            # ``end_input_for`` rechnet es oben am selben Tag unverändert mit, bei
+            # einem Datumswechsel gilt das wirksame Ende (PR1-Review F1).
             _end_corrected = cr.proposed_end_time is not None and work_window_service.end_is_correction(
                 cr.proposed_end_time, entry.end_time, entry.raw_end_time, entry.auto_closed,
             )

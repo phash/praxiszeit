@@ -349,6 +349,32 @@ def end_is_correction(
     return True
 
 
+def end_input_for(
+    incoming: Optional[time], prev_eff: Optional[time], prev_raw: Optional[time],
+    *, auto_closed: bool, prev_date: date, target_date: date,
+) -> Optional[time]:
+    """Kappungseingabe für das Ende eines GESPEICHERTEN Eintrags — DIE eine
+    Stelle für alle Pfade, die ein bestehendes Ende neu kappen und dabei das
+    Datum wechseln können (MA-Antrag E40, Antragsgenehmigung UPDATE samt
+    Vorprüfung, Admin-Bearbeitung, Bearbeiten-Route der Beschäftigten).
+
+    Grundsätzlich ``unclamp_input``. Ausnahme (PR1-Review, Sicherheitsfund F1;
+    P18): ein automatisch geschlossener Eintrag wird auf einen ANDEREN Tag
+    verschoben und das eingereichte Ende ist keine Korrektur
+    (``end_is_correction``: das wirksame Ende oder das Rohende 23:59 kommt
+    zurück, auch als Rückfall eines Teil-Updates ohne Ende). Dann ist das
+    gespeicherte WIRKSAME Ende die Eingabe — 23:59 ist kein Stempel. Bis zum
+    Fix stellte ``unclamp_input`` das synthetische 23:59 wieder her, und am
+    Zieltag ohne Blöcke (Samstag, Feiertag, freier Tag) blieb es ungekappt:
+    15:00–23:59 ≈ 9 h statt 3,25 h; an einem Tag mit späterer Hülle wurde bis
+    zu ihr angerechnet. Bei gleichem Datum bleibt alles wie in P18 (das Rohende
+    wird gegen dieselben Blöcke wieder auf dieselbe Hülle gekappt)."""
+    if (auto_closed and target_date != prev_date
+            and not end_is_correction(incoming, prev_eff, prev_raw, auto_closed)):
+        return prev_eff
+    return unclamp_input(incoming, prev_eff, prev_raw)
+
+
 def not_credited_minutes(entry) -> int:
     """P19: nicht angerechnete Anwesenheit eines Eintrags = ``uncredited_minutes``
     + von der Hülle gekappte Minuten (``eff_start − raw_start``,

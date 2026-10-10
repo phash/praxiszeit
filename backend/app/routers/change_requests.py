@@ -218,7 +218,13 @@ def create_change_request(
             # (Release-Review 1.19.3 F1) — derselbe Rohwert-Rückgriff wie bei der
             # Genehmigung, sonst zählte eine reine Pausen-Korrektur gekappt.
             _in_start = work_window_service.unclamp_input(_in_start, entry.start_time, entry.raw_start_time)
-            _in_end = work_window_service.unclamp_input(_in_end, entry.end_time, entry.raw_end_time)
+            # PR1-Review F1 (P18): ein automatisch geschlossener Eintrag, der nur auf einen
+            # anderen Tag wandert, rechnet mit dem wirksamen Ende statt 23:59.
+            _in_end = work_window_service.end_input_for(
+                _in_end, entry.end_time, entry.raw_end_time,
+                auto_closed=entry.auto_closed, prev_date=entry.date,
+                target_date=data.proposed_date,
+            )
             # E80: UPDATE-Prüfung mit dem gespeicherten Puffer des Eintrags,
             # CREATE-Prüfung mit dem aktuellen Mandanten-Puffer — dieselbe
             # Herkunft wie der Schreibzweig der Genehmigung.

@@ -1224,7 +1224,8 @@ def update_time_entry(
     # P18 (Review Task 8): beim automatisch geschlossenen Eintrag ist das
     # Rohende 23:59 kein Stempel — der Antrag trägt dann das wirksame Ende und
     # behauptet kein Ende, das niemand eingetragen hat. Die Genehmigung stellt
-    # über ``unclamp_input`` das Rohende 23:59 trotzdem wieder her.
+    # am selben Tag über ``end_input_for`` das Rohende 23:59 trotzdem wieder her
+    # (bei einem Datumswechsel bleibt es beim wirksamen Ende, PR1-Review F1).
     _intended_end = (
         entry.end_time if "end_time" in update_data
         else orig_snapshot["end_time"] if orig_snapshot["auto_closed"]
@@ -1248,8 +1249,13 @@ def update_time_entry(
     _clamp_start = work_window_service.unclamp_input(
         entry.start_time, orig_snapshot["start_time"], orig_snapshot["raw_start_time"],
     )
-    _clamp_end = work_window_service.unclamp_input(
+    # PR1-Review F1 (P18): wird ein automatisch geschlossener Eintrag (nur Admins, MA
+    # verschieben nicht, #502) auf einen anderen Tag gelegt, gilt das wirksame
+    # Ende statt des Rohendes 23:59.
+    _clamp_end = work_window_service.end_input_for(
         entry.end_time, orig_snapshot["end_time"], orig_snapshot["raw_end_time"],
+        auto_closed=orig_snapshot["auto_closed"], prev_date=orig_snapshot["date"],
+        target_date=entry.date,
     )
     _r = work_window_service.clamp(
         db, _entry_owner, entry.date, _clamp_start, _clamp_end, _grace,
@@ -1289,8 +1295,8 @@ def update_time_entry(
             entry.clamp_grace_minutes = _r.grace_minutes
     # P18: nur ein ANDERES Ende als das gespeicherte wirksame ist eine echte
     # Korrektur; das Formular schickt das wirksame Ende sonst unverändert mit
-    # (``unclamp_input`` rechnet dann mit dem synthetischen 23:59 weiter, das
-    # Kennzeichen bleibt). Ebenso wenig das zurückgeschickte Rohende 23:59
+    # (``end_input_for`` rechnet am selben Tag dann mit dem synthetischen 23:59
+    # weiter, das Kennzeichen bleibt). Ebenso wenig das zurückgeschickte Rohende 23:59
     # eines automatisch geschlossenen Eintrags (Review Task 8). Nie über die
     # generische ``setattr``-Schleife oben — ``auto_closed`` ist kein
     # Schemafeld (E11).
