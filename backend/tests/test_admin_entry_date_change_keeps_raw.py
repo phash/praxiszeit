@@ -25,12 +25,12 @@ from tests.conftest import DEFAULT_TENANT_ID
 from tests.work_blocks_fixtures import legacy_week
 
 
-def _next_weekday(target_weekday: int) -> date:
-    """Ein Datum in der Zukunft mit dem gewünschten Wochentag (0 = Montag)."""
-    d = date.today() + timedelta(days=7)
-    while d.weekday() != target_weekday:
-        d += timedelta(days=1)
-    return d
+def _past_weekday(target_weekday: int) -> date:
+    """Ein Datum in einer festen, VERGANGENEN Woche ohne Feiertag mit dem
+    gewünschten Wochentag (0 = Montag). #502: ``TimeEntryUpdate.date`` lehnt ein
+    Datum in der Zukunft ab — bis dahin rechneten diese Tests in der Zukunft."""
+    d = date(2026, 6, 8)  # Montag
+    return d + timedelta(days=target_weekday)
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ def employee(db, default_tenant):
 
 
 def test_date_only_change_keeps_the_raw_stamp(db, default_tenant, admin, employee):
-    monday, tuesday = _next_weekday(0), _next_weekday(1)
+    monday, tuesday = _past_weekday(0), _past_weekday(1)
     # Mitarbeiter war ab 06:00 da; das Montags-Fenster (08:00, Puffer 15 min)
     # kappte die Anrechnung auf 07:45, der Rohstempel hielt die 06:00 fest.
     entry = TimeEntry(
@@ -96,7 +96,7 @@ def test_date_only_change_keeps_the_raw_stamp(db, default_tenant, admin, employe
 def test_repeated_date_changes_do_not_walk_the_time_inward(db, default_tenant, admin, employee):
     # Doppelkappung war kumulativ: jede weitere Datumsänderung schob die
     # angerechnete Zeit ein Stück weiter ins Fenster und fror sie als „Rohwert" ein.
-    monday, tuesday = _next_weekday(0), _next_weekday(1)
+    monday, tuesday = _past_weekday(0), _past_weekday(1)
     entry = TimeEntry(
         user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, date=monday,
         start_time=time(7, 45), end_time=time(16, 15),
@@ -122,7 +122,7 @@ def test_repeated_date_changes_do_not_walk_the_time_inward(db, default_tenant, a
 def test_explicit_time_change_still_sets_the_new_raw_stamp(db, default_tenant, admin, employee):
     # Gegenprobe: schickt der Admin eine neue Zeit mit, ist SIE der neue
     # Rohstempel — der alte darf nicht konserviert werden.
-    monday = _next_weekday(0)
+    monday = _past_weekday(0)
     entry = TimeEntry(
         user_id=employee.id, tenant_id=DEFAULT_TENANT_ID, date=monday,
         start_time=time(7, 45), end_time=time(16, 15),

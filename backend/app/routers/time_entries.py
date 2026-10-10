@@ -171,6 +171,16 @@ def _compute_is_editable(entry: TimeEntry, current_user: User) -> bool:
     return entry.date == _today_local()
 
 
+def _assert_within_employment_window(user: User, d: date) -> None:
+    """400, wenn ``d`` vor ``first_work_day`` oder nach ``last_work_day`` der
+    Person liegt. Eine Quelle für Einstempeln, Anlegen und den Datumswechsel
+    beim Bearbeiten (#502) — gleicher Wortlaut an allen drei Stellen."""
+    if user.first_work_day and d < user.first_work_day:
+        raise HTTPException(status_code=400, detail="Datum liegt vor dem ersten Arbeitstag")
+    if user.last_work_day and d > user.last_work_day:
+        raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
+
+
 def _get_open_entry(db: Session, user_id, with_lock: bool = False, tenant_id=None) -> Optional[TimeEntry]:
     """Find an open (clocked-in, no end_time) entry for the user."""
     query = db.query(TimeEntry).filter(
@@ -401,10 +411,7 @@ def clock_in(
     now = _now_local()
 
     # Check first/last work day
-    if current_user.first_work_day and now.date() < current_user.first_work_day:
-        raise HTTPException(status_code=400, detail="Datum liegt vor dem ersten Arbeitstag")
-    if current_user.last_work_day and now.date() > current_user.last_work_day:
-        raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
+    _assert_within_employment_window(current_user, now.date())
 
     # #201: clamp early start to [soll_start − grace]; preserve raw stamp.
     from app.services import work_window_service
@@ -816,10 +823,7 @@ def create_time_entry(
         )
 
     # Check first/last work day
-    if current_user.first_work_day and entry_data.date < current_user.first_work_day:
-        raise HTTPException(status_code=400, detail="Datum liegt vor dem ersten Arbeitstag")
-    if current_user.last_work_day and entry_data.date > current_user.last_work_day:
-        raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
+    _assert_within_employment_window(current_user, entry_data.date)
 
     exempt = current_user.exempt_from_arbzg
 
@@ -1099,6 +1103,19 @@ def update_time_entry(
             status_code=403,
             detail="Einträge vergangener Tage können nur per Änderungsantrag geändert werden"
         )
+    # #502: die Sperre oben prüft nur das GESPEICHERTE Datum. Ohne diese zweite
+    # Hälfte verschob ein ``{"date": "<vergangener Sonntag>"}`` den heutigen,
+    # noch offenen Eintrag in die Vergangenheit — ohne Ende liefen §3/§4 nicht,
+    # und der Auto-Close schloss ihn danach um 23:59 (bis rund 16 h an einem
+    # vergangenen Tag, ohne Antrag). Für Mitarbeitende bleibt nur heute → heute
+    # (das Formular schickt das Datum immer mit). Vor dem Übernehmen der Felder.
+    if (current_user.role != UserRole.ADMIN
+            and "date" in entry_data.model_fields_set
+            and entry_data.date != _today_local()):
+        raise HTTPException(
+            status_code=403,
+            detail="Einträge vergangener Tage können nur per Änderungsantrag geändert werden"
+        )
 
     # P3: ein anerkannter Eintrag wird nicht still per MA-PUT neu gekappt —
     # die Änderung läuft über einen Antrag (die Verwaltung bestätigt dort).
@@ -1128,6 +1145,37 @@ def update_time_entry(
         # Snapshot eines Waiver-Antrags.
         "uncredited_minutes": entry.uncredited_minutes,
     }
+
+    # Release-Review 1.16.0: gegen den EIGENTÜMER des Eintrags kappen und prüfen,
+    # nicht gegen den Aufrufer. Diese Route lässt Admins fremde Einträge bearbeiten
+    # (Ownership-Check weiter oben) — mit `current_user` las der Code dann das
+    # Arbeitszeitfenster, `exempt_from_arbzg` und `is_night_worker` des ADMINS.
+    # Ein §18-befreiter Praxisinhaber konnte so für eine nicht befreite MFA einen
+    # 12-Stunden-Tag ohne Pause speichern, weil die §3-Hartgrenze übersprungen
+    # wurde. `admin_time_entries.admin_update_time_entry` macht es bereits richtig.
+    _entry_owner = (
+        current_user if entry.user_id == current_user.id
+        else db.query(User).filter(
+            User.id == entry.user_id,
+            User.tenant_id == current_user.tenant_id,  # F-026
+        ).first()
+    )
+    # Spec 8.2: §4 rechnet mit den Einträgen der Person des Eintrags, §3 mit
+    # ``entry.user_id`` — beides muss dieselbe Person sein. Kein Rückfall auf den
+    # Aufrufer (falsch zugeordnete Zeile, F-026): dann prüfte §4 die Einträge der
+    # bearbeitenden Admin. 404 wie in ``admin_update_time_entry``.
+    if _entry_owner is None:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    # #502: ein Datumswechsel landet nur im Beschäftigungsfenster der Person des
+    # Eintrags — wie beim Anlegen (``create_time_entry``), auch für Admins. Nur
+    # ein tatsächlicher WECHSEL: das Formular schickt das gespeicherte Datum
+    # immer mit, und ein Alteintrag außerhalb eines später gesetzten Fensters
+    # muss per Zeit-/Notizkorrektur reparierbar bleiben.
+    if (entry_data.date is not None
+            and "date" in entry_data.model_fields_set
+            and entry_data.date != entry.date):
+        _assert_within_employment_window(_entry_owner, entry_data.date)
 
     # Update fields
     update_data = entry_data.model_dump(exclude_unset=True)
@@ -1186,26 +1234,6 @@ def update_time_entry(
     # #201: clamp start/end to [soll − grace, soll + grace] BEFORE all §4/§3
     # checks so compliance is assessed on credited time.
     from app.services import work_window_service
-    # Release-Review 1.16.0: gegen den EIGENTÜMER des Eintrags kappen und prüfen,
-    # nicht gegen den Aufrufer. Diese Route lässt Admins fremde Einträge bearbeiten
-    # (Ownership-Check weiter oben) — mit `current_user` las der Code dann das
-    # Arbeitszeitfenster, `exempt_from_arbzg` und `is_night_worker` des ADMINS.
-    # Ein §18-befreiter Praxisinhaber konnte so für eine nicht befreite MFA einen
-    # 12-Stunden-Tag ohne Pause speichern, weil die §3-Hartgrenze übersprungen
-    # wurde. `admin_time_entries.admin_update_time_entry` macht es bereits richtig.
-    _entry_owner = (
-        current_user if entry.user_id == current_user.id
-        else db.query(User).filter(
-            User.id == entry.user_id,
-            User.tenant_id == current_user.tenant_id,  # F-026
-        ).first()
-    )
-    # Spec 8.2: §4 rechnet mit den Einträgen der Person des Eintrags, §3 mit
-    # ``entry.user_id`` — beides muss dieselbe Person sein. Kein Rückfall auf den
-    # Aufrufer (falsch zugeordnete Zeile, F-026): dann prüfte §4 die Einträge der
-    # bearbeitenden Admin. 404 wie in ``admin_update_time_entry``.
-    if _entry_owner is None:
-        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
     # E80: Einzel-Neukappung eines gespeicherten Eintrags mit SEINEM Puffer
     # (NULL → aktueller Mandanten-Puffer); eine spätere Puffer-Senkung kürzt
     # die angerechnete Zeit damit nicht nebenbei.

@@ -25,29 +25,49 @@ def _entry(db, user, d, start, end, brk=0, **kw):
     return e
 
 
-def test_e39_employee_date_change_reclamps_and_warns(_db_session, employee_user, employee_client, monkeypatch):
+def test_e39_date_change_reclamps_and_warns(_db_session, employee_user, admin_client, monkeypatch):
+    """E39 über ``update_time_entry`` (``PUT /api/time-entries/{id}``): seit
+    #502 wechselt dort nur noch die Verwaltung das Datum eines Eintrags —
+    Mitarbeitende bleiben auf heute → heute (Test darunter). Die Neukappung
+    gegen die Blöcke des neuen Tages und die Warnung gelten unverändert."""
     employee_user.work_blocks = legacy_week(fri=("08:00", "17:00"))
     _db_session.commit()
     e = _entry(_db_session, employee_user, MON, time(7, 0), time(16, 0), 30)
     monkeypatch.setattr(te, "_today_local", lambda: MON)
     monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 17, 0))
-    resp = employee_client.put(f"/api/time-entries/{e.id}", json={"date": FRI_BEFORE.isoformat()})
+    resp = admin_client.put(f"/api/time-entries/{e.id}", json={"date": FRI_BEFORE.isoformat()})
     assert resp.status_code == 200, resp.text
     assert any(w.startswith("WORK_WINDOW_CLAMPED") for w in resp.json()["warnings"])
     _db_session.refresh(e)
     assert (e.date, e.start_time, e.raw_start_time, e.clamp_grace_minutes) == (FRI_BEFORE, time(7, 45), time(7, 0), 15)
 
 
-def test_e39_date_change_reclamps_end_too(_db_session, employee_user, employee_client, monkeypatch):
+def test_e39_employee_date_change_rejected(_db_session, employee_user, employee_client, monkeypatch):
+    """#502 (Entschieden 2026-10-10): der MA-Datumswechsel weg von heute ist
+    gesperrt — Einträge vergangener Tage nur per Änderungsantrag. Vorher
+    verschob genau dieser PUT den heutigen Eintrag in die Vergangenheit."""
+    employee_user.work_blocks = legacy_week(fri=("08:00", "17:00"))
+    _db_session.commit()
+    e = _entry(_db_session, employee_user, MON, time(7, 0), time(16, 0), 30)
+    monkeypatch.setattr(te, "_today_local", lambda: MON)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 17, 0))
+    resp = employee_client.put(f"/api/time-entries/{e.id}", json={"date": FRI_BEFORE.isoformat()})
+    assert resp.status_code == 403, resp.text
+    _db_session.refresh(e)
+    assert (e.date, e.start_time, e.raw_start_time) == (MON, time(7, 0), None)
+
+
+def test_e39_date_change_reclamps_end_too(_db_session, employee_user, admin_client, monkeypatch):
     """Review Task 9: auch das Ende gehört zum alten Tag. Am Montag (ohne
     Blöcke) ungekappt 07:00–17:30, am Freitag (Hülle 07:45–17:15) gekappt —
-    ohne ``date`` im Ende-Gate bliebe 17:30 als angerechnete Zeit stehen."""
+    ohne ``date`` im Ende-Gate bliebe 17:30 als angerechnete Zeit stehen.
+    Seit #502 über die Verwaltung (siehe oben)."""
     employee_user.work_blocks = legacy_week(fri=("08:00", "17:00"))
     _db_session.commit()
     e = _entry(_db_session, employee_user, MON, time(7, 0), time(17, 30), 45)
     monkeypatch.setattr(te, "_today_local", lambda: MON)
     monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 18, 0))
-    resp = employee_client.put(f"/api/time-entries/{e.id}", json={"date": FRI_BEFORE.isoformat()})
+    resp = admin_client.put(f"/api/time-entries/{e.id}", json={"date": FRI_BEFORE.isoformat()})
     assert resp.status_code == 200, resp.text
     _db_session.refresh(e)
     assert (e.start_time, e.raw_start_time, e.end_time, e.raw_end_time) == (

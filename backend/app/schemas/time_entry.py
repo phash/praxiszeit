@@ -66,6 +66,17 @@ class TimeEntryUpdate(BaseModel):
     sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # §10 ArbZG (#485: begrenzt)
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG (SEC-D: bounded)
 
+    # #502: dieselbe Grenze wie beim Anlegen (``TimeEntryBase.validate_not_future``).
+    # Ohne sie liess sich ein Eintrag per PUT in die Zukunft verschieben — fuer
+    # §16 eine erfundene Zeit. Gilt fuer beide Routen, die dieses Schema nutzen
+    # (MA-Route und ``admin_update_time_entry``).
+    @field_validator('date')
+    @classmethod
+    def validate_not_future(cls, v):
+        if v is not None and v > today_local():
+            raise ValueError('Datum darf nicht in der Zukunft liegen')
+        return v
+
     @field_validator('end_time')
     @classmethod
     def validate_end_after_start(cls, v, info):
