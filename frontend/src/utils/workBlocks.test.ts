@@ -72,6 +72,16 @@ describe('gapSegments — Zwilling von gap_segments (Σ = uncredited_minutes)', 
     const k1 = K_CASES_FE.find((k) => k.id === 'K1')!;
     expect(gapSegments(k1.dayBlocks, 15, '08:00:00', '18:00:00')).toEqual([150]);
   });
+
+  // E80: der Puffer ist die variable Eingabe (gespeicherter Puffer des offenen
+  // Eintrags bzw. Mandanten-Puffer, clamp_grace_minutes je Eintrag) — Werte wie
+  // work_window_service.credit_gaps (test_clamp_grace.py: Puffer 0/10/120).
+  it('rechnet mit dem übergebenen Puffer (E80), nicht mit festen 15', () => {
+    const B = K_CASES_FE.find((k) => k.id === 'K1')!.dayBlocks;
+    expect(gapSegments(B, 0, '08:00', '18:00')).toEqual([180]);
+    expect(gapSegments(B, 30, '08:00', '18:00')).toEqual([120]);
+    expect(gapSegments(B, 90, '08:00', '18:00')).toEqual([]); // Lücke 180 ≤ 2 × 90
+  });
 });
 
 describe('isInBlockGap — ungeschrumpfte Lücke (Spec 14, E69)', () => {
