@@ -333,14 +333,10 @@ class TestPreviewWritesNoAuditRow:
     Dialog eine Aenderung, die nie stattfand."""
 
     def _run_preview(self, db, admin, emp, mon):
-        # Direktaufruf: die ``Query(...)``-Defaults der Signatur sind ausserhalb
-        # von FastAPI keine Werte, sondern Query-Objekte — alle Parameter
-        # explizit setzen.
+        # Direktaufruf: Spec 11.1 — die Vorschau nimmt den Body wie das
+        # Speichern als untypisiertes JSON-Objekt entgegen.
         return preview_working_hours_change(
-            user_id=str(emp.id), effective_from=mon, weekly_hours=20.0,
-            use_daily_schedule=False, hours_monday=None, hours_tuesday=None,
-            hours_wednesday=None, hours_thursday=None, hours_friday=None,
-            work_days_per_week=None,
+            user_id=str(emp.id), body={"effective_from": mon.isoformat(), "weekly_hours": 20.0},
             db=db, current_user=admin,
         )
 
