@@ -371,7 +371,8 @@ von `UserCreate` und `WorkingHoursChangeCreate`, **nicht** von `UserBase`,
 | 5-Minuten-Raster | „Mo, Block 1: Uhrzeiten im 5-Minuten-Raster (z. B. 08:05)." |
 | Beginn < Ende | „Mo, Block 2: Beginn muss vor dem Ende liegen." |
 | sortiert, überlappungsfrei, nicht aneinanderstoßend (Ende_i < Beginn_i+1, P16) | „Mo: Block 2 muss nach dem Ende von Block 1 beginnen; aneinandergrenzende Blöcke bitte als einen Block erfassen." |
-| `pause_minutes` int, Raster 5, 0 ≤ Pause < Σ Blockdauer | „Mo: Pause muss kürzer sein als die Gesamtzeit der Blöcke." |
+| `pause_minutes` ganzzahlig (kein `bool`, keine Zeichenkette, keine Kommazahl), ≥ 0, Raster 5 | „Mo: Pause in Minuten im 5-Minuten-Raster angeben." — **Entschieden 2026-10-10 (PR3-Review Task 1):** eigene Zeile statt der früheren Sammelzeile „int, Raster 5, 0 ≤ Pause < Σ Blockdauer"; bei Pause 7 und 4 h Blöcken wäre „Pause muss kürzer sein …" irreführend. Backend und Frontend-Zwilling (PR3 Task 16) wortgleich. |
+| Pause < Σ Blockdauer (an Tagen mit Blöcken) | „Mo: Pause muss kürzer sein als die Gesamtzeit der Blöcke." |
 | Tag ohne Blöcke → `pause_minutes` = 0 | „Mi: Pause nur an Tagen mit Blöcken." |
 | `pause_minutes` NULL im Schreibschema | „Mo: Pause angeben (0, wenn keine)." |
 | mindestens ein Tag mit Blöcken | „Mindestens ein Wochentag braucht einen Block." |

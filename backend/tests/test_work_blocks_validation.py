@@ -43,6 +43,10 @@ ROUNDED_OVER_60 = block_week(
      "Mo: Pause angeben (0, wenn keine)."),
     (block_week(pause=7, mon=[("08:00", "12:00")]), "Mo: Pause in Minuten im 5-Minuten-Raster angeben."),
     (block_week(pause=-5, mon=[("08:00", "12:00")]), "Mo: Pause in Minuten im 5-Minuten-Raster angeben."),
+    # Spec 3.4 „ganzzahlig": keine Zeichenkette, keine Kommazahl, kein bool (Review Task 1)
+    (block_week(pause="30", mon=[("08:00", "12:00")]), "Mo: Pause in Minuten im 5-Minuten-Raster angeben."),
+    (block_week(pause=30.0, mon=[("08:00", "12:00")]), "Mo: Pause in Minuten im 5-Minuten-Raster angeben."),
+    (block_week(pause=True, mon=[("08:00", "12:00")]), "Mo: Pause in Minuten im 5-Minuten-Raster angeben."),
     (block_week(), "Mindestens ein Wochentag braucht einen Block."),
     (block_week(mon=[("00:00", "12:05")], tue=[("00:00", "12:05")], wed=[("00:00", "12:05")],
                 thu=[("00:00", "12:05")], fri=[("00:00", "12:05")]),

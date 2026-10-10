@@ -215,6 +215,10 @@ ROUNDED_OVER_60 = block_week(
      "Mo: Pause angeben (0, wenn keine)."),
     (block_week(pause=7, mon=[("08:00", "12:00")]), "Mo: Pause in Minuten im 5-Minuten-Raster angeben."),
     (block_week(pause=-5, mon=[("08:00", "12:00")]), "Mo: Pause in Minuten im 5-Minuten-Raster angeben."),
+    # Spec 3.4 „ganzzahlig": keine Zeichenkette, keine Kommazahl, kein bool (Review Task 1)
+    (block_week(pause="30", mon=[("08:00", "12:00")]), "Mo: Pause in Minuten im 5-Minuten-Raster angeben."),
+    (block_week(pause=30.0, mon=[("08:00", "12:00")]), "Mo: Pause in Minuten im 5-Minuten-Raster angeben."),
+    (block_week(pause=True, mon=[("08:00", "12:00")]), "Mo: Pause in Minuten im 5-Minuten-Raster angeben."),
     (block_week(), "Mindestens ein Wochentag braucht einen Block."),
     (block_week(mon=[("00:00", "12:05")], tue=[("00:00", "12:05")], wed=[("00:00", "12:05")],
                 thu=[("00:00", "12:05")], fri=[("00:00", "12:05")]),
@@ -450,7 +454,7 @@ def validate_week_blocks(value: Any) -> list:
     return week
 ```
 
-Hinweis zu „Pause im 5-Minuten-Raster": 3.4 nennt für Raster/Vorzeichen der Pause keinen eigenen Wortlaut; der Text „Pause in Minuten im 5-Minuten-Raster angeben." ist hier festgelegt und im Frontend-Zwilling wortgleich (Task 16).
+Hinweis zu „Pause im 5-Minuten-Raster": 3.4 fasste Typ, Raster und Vorzeichen der Pause ursprünglich mit „Pause < Σ Blockdauer" in einer Zeile unter dem einen Text „Mo: Pause muss kürzer sein als die Gesamtzeit der Blöcke." zusammen — für Pause 7 bei 4 h Blöcken wäre der irreführend. Der Plan weicht hier bewusst ab: ganzzahlig/≥ 0/Raster 5 bekommt den eigenen Text „Pause in Minuten im 5-Minuten-Raster angeben."; Spec 3.4 ist entsprechend angeglichen (eigene Zeile, entschieden 2026-10-10, PR3-Review Task 1). Im Frontend-Zwilling wortgleich (Task 16).
 
 - [ ] **Step 5: Tests laufen lassen — müssen grün sein**
 
