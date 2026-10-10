@@ -92,6 +92,12 @@ class ChangeRequestResponse(BaseModel):
     entry_credit_override: bool = False
     entry_not_credited_minutes: int = 0
     entry_auto_closed: bool = False
+    # Gesamtreview PR2 (Fund 2): die STEMPEL des Zieleintrags (``raw_* or
+    # start/end``) — dagegen prüft die Verwaltung die vorgeschlagenen Zeiten,
+    # bevor „genehmigen und anerkennen" sie dauerhaft anrechnet (P11). Das Ende
+    # eines automatisch geschlossenen Eintrags ist kein Stempel (P18) → None.
+    entry_raw_start_time: Optional[time] = None
+    entry_raw_end_time: Optional[time] = None
 
     reason: str
     break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG

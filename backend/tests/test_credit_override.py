@@ -618,6 +618,28 @@ def test_response_carries_entry_state_and_snapshot(_db_session, employee_user, a
     assert body["original_uncredited_minutes"] == 150
     assert (body["entry_credit_override"], body["entry_not_credited_minutes"],
             body["entry_auto_closed"]) == (False, 240, False)
+    # Gesamtreview PR2 (Fund 2): die Stempel des Eintrags, gegen die die
+    # Verwaltung die vorgeschlagenen Zeiten prüft (raw_* or start/end).
+    assert (body["entry_raw_start_time"], body["entry_raw_end_time"]) == ("07:00:00", "19:00:00")
+
+
+def test_response_stamped_span_falls_back_and_hides_the_synthetic_end(_db_session, employee_user,
+                                                                      admin_client):
+    """Ohne Kappung sind die Stempel die gespeicherten Zeiten; das Rohende
+    23:59 eines automatisch geschlossenen Eintrags ist kein Stempel (P18) —
+    `None`, die Oberfläche nennt dann „nicht ausgestempelt"."""
+    plain = _entry(_db_session, employee_user, time(8), time(16, 30), break_minutes=30)
+    cr_plain = _cr(_db_session, employee_user, plain, start=time(8), end=time(16, 30))
+    employee_user.work_blocks = K_BLOCKS
+    closed = _entry(_db_session, employee_user, time(8), time(18, 15), raw_end_time=time(23, 59),
+                    uncredited_minutes=150, auto_closed=True, clamp_grace_minutes=15,
+                    day=MON.replace(day=MON.day + 7))
+    cr_closed = _cr(_db_session, employee_user, closed, request_credit_override=True,
+                    start=time(8), end=time(17, 30))
+    b_plain = admin_client.get(f"/api/admin/change-requests/{cr_plain.id}").json()
+    b_closed = admin_client.get(f"/api/admin/change-requests/{cr_closed.id}").json()
+    assert (b_plain["entry_raw_start_time"], b_plain["entry_raw_end_time"]) == ("08:00:00", "16:30:00")
+    assert (b_closed["entry_raw_start_time"], b_closed["entry_raw_end_time"]) == ("08:00:00", None)
 
 
 def test_employee_list_loads_target_entries_in_one_query(_db_session, employee_user,

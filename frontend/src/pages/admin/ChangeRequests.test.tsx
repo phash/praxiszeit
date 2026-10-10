@@ -163,6 +163,57 @@ describe('<AdminChangeRequests /> Anrechnung beantragen (Spec P21, P3)', () => {
     expect(await screen.findByRole('button', { name: 'Genehmigen und anerkennen' })).toBeInTheDocument();
   });
 
+  // Gesamtreview PR2 (Fund 2): „Genehmigen und anerkennen" rechnet die
+  // vorgeschlagenen Zeiten dauerhaft an (P11) — die Prüfung zeigt deshalb die
+  // Stempel des Eintrags und hebt Abweichungen hervor.
+  describe('Stempel des Eintrags (Fund 2)', () => {
+    const stamped = { ...creditCr, entry_raw_start_time: '07:00:00', entry_raw_end_time: '19:00:00' };
+
+    it('nennt gestempelte Spanne und die aktuell nicht angerechnete Zeit', async () => {
+      mockApi([stamped]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('gestempelt 07:00–19:00 · nicht angerechnet aktuell 4:00 h')).toBeInTheDocument();
+      expect(screen.queryByText(/weicht von den Stempeln ab/)).not.toBeInTheDocument();
+    });
+
+    it('hebt vorgeschlagene Zeiten hervor, die nicht den Stempeln entsprechen', async () => {
+      mockApi([{ ...stamped, proposed_start_time: '06:00:00', proposed_end_time: '20:00:00' }]);
+      render(<AdminChangeRequests />);
+      const hint = await screen.findByText('Zeiten weichen von den Stempeln ab (gestempelt 07:00–19:00)');
+      expect(hint.className).toMatch(/text-red-700/);
+    });
+
+    it('nennt die nicht angerechnete Zeit auch, wenn nur die Hülle kappt (Lücke 0)', async () => {
+      mockApi([{
+        ...stamped, original_uncredited_minutes: 0, entry_not_credited_minutes: 45,
+        original_start_time: '07:45:00', original_end_time: '16:00:00',
+        entry_raw_end_time: '16:00:00', proposed_end_time: '16:00:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('gestempelt 07:00–16:00 · nicht angerechnet aktuell 0:45 h')).toBeInTheDocument();
+      expect(screen.queryByText(/Nicht angerechnet \(Lücke\)/)).not.toBeInTheDocument();
+    });
+
+    it('automatisch geschlossen: kein Stempel-Ende, verglichen wird nur der Beginn (P18)', async () => {
+      mockApi([{
+        ...stamped, entry_auto_closed: true, entry_raw_start_time: '08:00:00', entry_raw_end_time: null,
+        entry_not_credited_minutes: 150, proposed_start_time: '08:00:00', proposed_end_time: '17:30:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText(
+        'gestempelt ab 08:00, nicht ausgestempelt (automatisch geschlossen) · nicht angerechnet aktuell 2:30 h',
+      )).toBeInTheDocument();
+      expect(screen.queryByText(/weicht|weichen/)).not.toBeInTheDocument();
+    });
+
+    it('nicht an erledigten Anträgen (der Eintrag hat sich seither geändert)', async () => {
+      mockApi([{ ...stamped, status: 'approved' }]);
+      render(<AdminChangeRequests />);
+      await screen.findByText('Anrechnung beantragt');
+      expect(screen.queryByText(/^gestempelt /)).not.toBeInTheDocument();
+    });
+  });
+
   it('zeigt bei einem anerkannten Zieleintrag den Hinweis aus P3', async () => {
     mockApi([{ ...creditCr, request_credit_override: false, entry_credit_override: true, entry_not_credited_minutes: 0 }]);
     render(<AdminChangeRequests />);

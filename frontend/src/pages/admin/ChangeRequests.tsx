@@ -39,6 +39,10 @@ interface ChangeRequest {
   entry_credit_override?: boolean;
   entry_not_credited_minutes?: number;
   entry_auto_closed?: boolean;
+  // Gesamtreview PR2 (Fund 2): Stempel des Zieleintrags (raw_* or start/end);
+  // Ende `null` bei einem automatisch geschlossenen Eintrag (P18).
+  entry_raw_start_time?: string | null;
+  entry_raw_end_time?: string | null;
   reason: string;
   rejection_reason?: string;
   reviewer_first_name?: string;
@@ -94,6 +98,46 @@ function bringsActualEnd(cr: ChangeRequest): boolean {
   if (!cr.entry_auto_closed) return true;
   const end = cr.proposed_end_time?.substring(0, 5);
   return !!end && end !== '23:59' && end !== cr.original_end_time?.substring(0, 5);
+}
+
+const hhmm = (t?: string | null) => (t ? t.substring(0, 5) : '');
+
+/**
+ * Gesamtreview PR2 (Fund 2): „Genehmigen und anerkennen" rechnet die
+ * vorgeschlagenen Zeiten dauerhaft und ungekappt an (P11) — die Prüfung zeigt
+ * deshalb die Stempel des Eintrags daneben. Nur an offenen Änderungsanträgen
+ * zu Einträgen mit nicht angerechneter Zeit (bzw. mit Anrechnungsantrag): die
+ * Werte sind der AKTUELLE Zustand des Eintrags, an erledigten Anträgen wären
+ * sie nicht mehr die, über die entschieden wurde.
+ */
+function stampedLine(cr: ChangeRequest): string | null {
+  if (cr.status !== 'pending' || cr.entry_kind === 'absence' || cr.request_type !== 'update') return null;
+  const notCredited = cr.entry_not_credited_minutes ?? 0;
+  if (!cr.request_credit_override && notCredited <= 0) return null;
+  const start = hhmm(cr.entry_raw_start_time);
+  if (!start) return null;
+  const span = cr.entry_auto_closed
+    ? `ab ${start}, nicht ausgestempelt (automatisch geschlossen)`
+    : cr.entry_raw_end_time ? `${start}–${hhmm(cr.entry_raw_end_time)}` : null;
+  if (!span) return null;
+  return `gestempelt ${span} · nicht angerechnet aktuell ${formatHoursHM(notCredited / 60)} h`;
+}
+
+/** Fund 2: weichen die vorgeschlagenen Zeiten von den Stempeln ab? Beim
+ * automatisch geschlossenen Eintrag gibt es kein Stempel-Ende (P18) — dort
+ * zählt nur der Beginn. */
+function stampDeviation(cr: ChangeRequest): string | null {
+  if (!stampedLine(cr)) return null;
+  const start = hhmm(cr.entry_raw_start_time);
+  if (cr.entry_auto_closed) {
+    return hhmm(cr.proposed_start_time) !== start
+      ? `Beginn weicht vom Stempel ab (gestempelt ab ${start})`
+      : null;
+  }
+  const end = hhmm(cr.entry_raw_end_time);
+  return hhmm(cr.proposed_start_time) !== start || hhmm(cr.proposed_end_time) !== end
+    ? `Zeiten weichen von den Stempeln ab (gestempelt ${start}–${end})`
+    : null;
 }
 
 function formatDateDE(dateStr: string): string {
@@ -518,6 +562,7 @@ export default function AdminChangeRequests() {
                             {(cr.original_uncredited_minutes ?? 0) > 0 && (
                               <p>{`Nicht angerechnet (Lücke): ${formatHoursHM((cr.original_uncredited_minutes ?? 0) / 60)} h`}</p>
                             )}
+                            {stampedLine(cr) && <p className="text-gray-600">{stampedLine(cr)}</p>}
                             {cr.original_note && <p>Notiz: {cr.original_note}</p>}
                           </div>
                         </div>
@@ -533,6 +578,7 @@ export default function AdminChangeRequests() {
                             <p>Pause: <span className="font-medium">{cr.proposed_break_minutes} min</span></p>
                             {cr.proposed_note && <p>Notiz: {cr.proposed_note}</p>}
                             {cr.proposed_sunday_exception_reason && <p>§10-Ausnahmegrund: {cr.proposed_sunday_exception_reason}</p>}
+                            {stampDeviation(cr) && <p className="text-red-700 font-medium">{stampDeviation(cr)}</p>}
                           </div>
                         </div>
                       )}

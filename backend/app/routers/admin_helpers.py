@@ -259,6 +259,12 @@ def _enrich_cr_responses(crs: list, db: Session) -> list[ChangeRequestResponse]:
             response.entry_credit_override = bool(target.credit_override)
             response.entry_auto_closed = bool(target.auto_closed)
             response.entry_not_credited_minutes = work_window_service.not_credited_minutes(target)
+            # Gesamtreview PR2 (Fund 2): gestempelte Spanne wie beim Anerkennen
+            # (13.3 Schritt 3); 23:59 des Auto-Close ist kein Stempel (P18).
+            response.entry_raw_start_time = target.raw_start_time or target.start_time
+            response.entry_raw_end_time = (
+                None if target.auto_closed else (target.raw_end_time or target.end_time)
+            )
         user = user_map.get(cr.user_id)
         if user:
             response.user_first_name = user.first_name
