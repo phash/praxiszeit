@@ -37,15 +37,21 @@ _BREAK_RULES = ((9 * 60, 45), (6 * 60, 30))
 
 class DayPresence(NamedTuple):
     presence_minutes: int        # Σ presence_minutes der geschlossenen Einträge
-    credited_minutes: int        # Σ net_hours (angerechnet), in Minuten
+    credited_minutes: int        # Σ net_hours (angerechnet), je Eintrag in Minuten
     recorded_break_minutes: int  # erfasste Pausen ≥ 15 + Abstände zwischen Einträgen ≥ 15
     has_gap: bool                # mindestens ein Eintrag mit uncredited_minutes > 0
 
 
 def credited_minutes(entries: Sequence) -> int:
-    """Σ angerechnete Zeit (``net_hours``) der geschlossenen Einträge in Minuten."""
-    total = sum(float(e.net_hours or 0) for e in entries if e.end_time is not None)
-    return int(round(total * 60))
+    """Σ angerechnete Zeit (``net_hours``) der geschlossenen Einträge in Minuten —
+    JE EINTRAG auf Minuten gerundet, dann summiert (wie ``credit_summary_text``).
+    ``net_hours`` trägt nur 2 Nachkommastellen (±0,2 Min je Eintrag); erst summiert
+    und dann umgerechnet wich das Ergebnis ab etwa drei Einträgen um eine Minute
+    von ``_net_hours`` ab, auf dem die harten Prüfungen rechnen — die Bedingungen
+    „harte §3-Prüfung / ``WEEKLY_HOURS_WARNING`` kam nicht" (P14/P22) kippten an
+    der Grenze in beide Richtungen (Doppelmeldung ohne Kappung bzw. ein echter
+    Verstoß verschwand aus den Warnungen)."""
+    return sum(int(round(float(e.net_hours or 0) * 60)) for e in entries if e.end_time is not None)
 
 
 def closed_entries(db: Session, user, start: date, end: date) -> list:

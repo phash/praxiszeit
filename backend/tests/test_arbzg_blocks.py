@@ -109,6 +109,65 @@ def test_weekly_presence():
     assert ps.weekly_presence_warning([_e(time(8), time(18)) for _ in range(5)]) is None
 
 
+# Review Task 3 (Rundung): ``net_hours`` trägt nur 2 Nachkommastellen (±0,2 Min je
+# Eintrag). Erst summiert und dann in Minuten umgerechnet, wich „angerechnet" an
+# der Grenze von den harten Prüfungen (``_net_hours``, exakte Minuten) ab.
+def test_weekly_presence_rounding_without_clamp_adds_nothing():
+    # 4 × 578 + 569 = 2881 Min = 48:01 h → WEEKLY_HOURS_WARNING kam (exakt > 48 h);
+    # Σ net_hours = 9,63 × 4 + 9,48 = 48,00 h hätte zusätzlich PRESENCE_WEEKLY erzeugt.
+    week = [_e(time(8), time(17, 38)) for _ in range(4)] + [_e(time(8), time(17, 29))]
+    assert ps.credited_minutes(week) == 2881
+    assert ps.weekly_presence_warning(week) is None   # Review Focus 1, Woche
+
+
+def test_weekly_presence_rounding_keeps_the_clamped_violation():
+    # angerechnet exakt 4 × 574 + 584 = 2880 Min = 48:00 h → keine WEEKLY_HOURS_WARNING,
+    # Anwesenheit 50 h; Σ net_hours = 48,02 h hätte die Warnung unterdrückt (Pflicht 4).
+    week = [_e(time(8), time(18), unc=u) for u in (26, 26, 26, 26, 16)]
+    assert ps.credited_minutes(week) == 2880
+    assert ps.weekly_presence_warning(week) == (
+        "PRESENCE_WEEKLY_HOURS: §3 ArbZG: Laut Stempel 50:00 h in dieser Woche anwesend "
+        "(abzüglich erfasster Pausen) – mehr als 48 Stunden. Angerechnet werden 48:00 h; "
+        "die Grenze gilt für die tatsächliche Arbeitszeit."
+    )
+
+
+def test_daily_presence_rounding_keeps_the_clamped_violation():
+    # drei Blöcke, angerechnet exakt 199 + 199 + 202 = 600 Min = 10:00 h (harte §3
+    # griff nicht), Anwesenheit 10:30 h; Σ net_hours = 10,01 h hätte unterdrückt.
+    day = ps.day_presence([
+        _e(time(6), time(9, 30), unc=11),
+        _e(time(10), time(13, 30), unc=11),
+        _e(time(14), time(17, 30), unc=8),
+    ])
+    assert (day.presence_minutes, day.credited_minutes, day.recorded_break_minutes) == (630, 600, 60)
+    assert ps.daily_presence_warnings(day, break_check_passed=True) == [
+        "PRESENCE_DAILY_HOURS: §3 ArbZG: Laut Stempel 10:30 h anwesend (abzüglich erfasster "
+        "Pausen) – mehr als 10 Stunden. Angerechnet werden 10:00 h; die Höchstgrenze gilt "
+        "für die tatsächliche Arbeitszeit."
+    ]
+
+
+def test_credited_minutes_matches_the_hard_checks_exactly():
+    """Parität zu ``_net_hours`` (Grundlage von ``_calculate_daily/weekly_net_hours``)
+    über viele Wochen: dieselbe Minutenzahl, nicht nur ungefähr."""
+    import random
+    from app.routers.time_entries import _net_hours
+
+    rng = random.Random(20261008)
+    for _ in range(300):
+        entries = []
+        for _ in range(rng.randint(1, 12)):
+            start = rng.randint(0, 20 * 60)
+            end = rng.randint(start + 1, 23 * 60 + 59)
+            brk = rng.choice((0, 0, 15, 30, 45, rng.randint(0, 60)))
+            unc = rng.choice((0, 0, rng.randint(0, 180)))
+            entries.append(_e(time(start // 60, start % 60), time(end // 60, end % 60), brk=brk, unc=unc))
+        exact = sum(_net_hours(e.start_time, e.end_time, e.break_minutes, e.uncredited_minutes)
+                    for e in entries)
+        assert ps.credited_minutes(entries) == round(exact * 60), entries
+
+
 def test_break_in_gap():
     assert ps.break_in_gap_warning(_e(time(8), time(18), brk=30, unc=150)) == (
         "BREAK_IN_GAP: Pause in der Lücke wird zusätzlich abgezogen: 30 Min Pause und 2:30 h "
