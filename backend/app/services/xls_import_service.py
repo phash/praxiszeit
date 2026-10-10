@@ -411,9 +411,14 @@ def parse_xls(
         if override:
             arbzg_warnings = arbzg_warnings + [CREDIT_OVERRIDE_IMPORT_NOTE]
 
-        # Spec 8.3/8.4: weiche Anwesenheits-Hinweise (Tag, Woche, Pause in der
-        # Lücke) als Klartext ohne Code — dieselben Regeln wie in den
-        # Schreibpfaden (presence_service.presence_hints). §18 → keine.
+        # Spec 8.3: weiche Anwesenheits-Hinweise (Tag, Woche) als Klartext ohne
+        # Code — dieselben Regeln wie in den Schreibpfaden
+        # (presence_service.presence_hints). §18 → keine.
+        # KEIN ``BREAK_IN_GAP`` (Eintrag ``None``): die Auto-Pause der Vorschau
+        # ist nach E45 / 8.4 Zeile 1 schon die Maßnahme gegen den Doppelabzug —
+        # sie trägt nur den §4-Rest, den die Lückensegmente nicht decken (7.4).
+        # „Bitte die Pause auf 0 setzen" wäre hier falsch (§4-Verstoß) und in
+        # der Vorschau ohnehin nicht umsetzbar (/confirm rechnet die Pause neu).
         if not exempt:
             row_view = SimpleNamespace(
                 date=entry_date, start_time=start_t, end_time=end_t,
@@ -431,7 +436,7 @@ def parse_xls(
                 + [row_view]
             )
             hints = presence_service.presence_hints(
-                row_view, [e for e in week_rows if e.date == entry_date], week_rows,
+                None, [e for e in week_rows if e.date == entry_date], week_rows,
                 break_check_passed=break_passed,
             )
             arbzg_warnings = arbzg_warnings + [presence_service.plain_text(h) for h in hints]

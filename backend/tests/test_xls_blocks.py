@@ -339,19 +339,31 @@ def test_preview_week_presence_hint(db, test_user):
     assert not any("in dieser Woche" in w for p in preview[:4] for w in p.arbzg_warnings)
 
 
-def test_preview_break_in_gap_hint_as_plain_text(db, test_user):
-    """8.4: Pause > 0 und Lücke am selben Eintrag. Blöcke 08–12 + 12:50–17:00,
-    Puffer 15 → Lückensegment 12:15–12:35 (20 Min) deckt §4 nur zu 20 von 30 Min;
-    die Auto-Pause trägt den Rest (10 → 15, §4 Satz 2). Beide Abzüge stehen in
-    der Vorschau als Klartext ohne Code."""
+def test_preview_auto_pause_rest_gets_no_break_in_gap_hint(db, test_user):
+    """E45 / 8.4 Zeile 1: die Auto-Pause der Vorschau IST bereits die Maßnahme
+    gegen den Doppelabzug — sie trägt nur den §4-Rest, den die Lückensegmente
+    nicht decken. Blöcke 08–12 + 12:50–17:00, Puffer 15 → Lückensegment
+    12:15–12:35 (20 Min) deckt §4 zu 20 von 30 Min; Auto-Pause 10 → 15 (§4 Satz 2).
+    ``BREAK_IN_GAP`` („bitte die Pause auf 0 setzen") wäre hier falsch: mit
+    Pause 0 meldete ``validate_daily_break`` einen §4-Verstoß (Gesamtpause 20).
+    Der Anwesenheits-Hinweis bleibt."""
     test_user.work_blocks = block_week(mon=[("08:00", "12:00"), ("12:50", "17:00")])
     db.commit()
     [e] = parse_xls(_xls((datetime(2026, 6, 1, 8, 0), datetime(2026, 6, 1, 17, 0))), test_user.id, db)
     assert (e.uncredited_minutes, e.break_minutes, e.net_hours) == (20, 15, 8.42)
-    assert ("Pause in der Lücke wird zusätzlich abgezogen: 15 Min Pause und 0:20 h nicht angerechnet "
-            "zwischen den Arbeitsblöcken. Lag die Pause in der Lücke, bitte die Pause auf 0 setzen."
-            ) in e.arbzg_warnings, e.arbzg_warnings
+    assert not any(w.startswith("Pause in der Lücke") for w in e.arbzg_warnings), e.arbzg_warnings
     assert any(w.startswith("§4 ArbZG: Durchgehend über die Lücke") for w in e.arbzg_warnings)
+
+
+def test_preview_short_gap_segment_gets_no_break_in_gap_hint(db, test_user):
+    """Lückensegment < 15 Min (Blöcke 08–12 + 12:40–17:00 → 12:15–12:25) deckt
+    nichts; die Auto-Pause trägt den vollen §4-Bedarf (30). Auch hier kein
+    „bitte die Pause auf 0 setzen" — es bliebe gar keine Pause."""
+    test_user.work_blocks = block_week(mon=[("08:00", "12:00"), ("12:40", "17:00")])
+    db.commit()
+    [e] = parse_xls(_xls((datetime(2026, 6, 1, 8, 0), datetime(2026, 6, 1, 17, 0))), test_user.id, db)
+    assert (e.uncredited_minutes, e.break_minutes) == (10, 30)
+    assert not any(w.startswith("Pause in der Lücke") for w in e.arbzg_warnings), e.arbzg_warnings
 
 
 def test_confirm_schema_has_no_net_or_not_credited_input():

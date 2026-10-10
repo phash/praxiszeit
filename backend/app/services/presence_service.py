@@ -174,6 +174,8 @@ def presence_hints(entry, day_entries: Sequence, week_entries: Sequence, *,
     Reihenfolge ``BREAK_IN_GAP``, Tag, Woche. EINE Quelle für die Schreibpfade
     (``presence_warnings``, Einträge aus der DB) und die XLS-Vorschau (Bestand
     plus Zeilen der Datei, ohne die von einer Zeile überschriebenen Einträge).
+    ``entry`` = ``None`` → kein ``BREAK_IN_GAP`` (XLS-Vorschau: deren Auto-Pause
+    ist nur der von den Lückensegmenten ungedeckte §4-Rest, E45).
     Prüft §18 NICHT — das tut der Aufrufer."""
     out = []
     if entry is not None:
