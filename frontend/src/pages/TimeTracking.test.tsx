@@ -247,6 +247,13 @@ describe('<TimeTracking /> Pflicht-Pause-Ausnahme (#499)', () => {
 // Bearbeiten deshalb gesperrt und sagt, warum; Admins behalten es.
 // ---------------------------------------------------------------------------
 describe('<TimeTracking /> Datum beim Bearbeiten (#502)', () => {
+  // #502-Review: der Hinweis muss einen Weg nennen, den es fuer DIESEN Eintrag
+  // gibt. Gesperrt ist das Feld nur bei heutigen (bearbeitbaren) Eintraegen —
+  // deren Zeile bietet nur Bearbeiten/Loeschen, der Zeilen-Knopf
+  // „Änderungsantrag" erscheint erst auf gesperrten Zeilen. Der tatsaechliche
+  // Weg: Eintrag loeschen + oben ueber „Antrag" den vergangenen Tag beantragen.
+  const HINT = /Eintrag löschen und oben über „Antrag“/;
+
   it('sperrt das Datumsfeld beim Bearbeiten fuer Mitarbeitende und nennt den Weg', async () => {
     mockEntries([closedEntry]);
     renderPage();
@@ -255,8 +262,13 @@ describe('<TimeTracking /> Datum beim Bearbeiten (#502)', () => {
     const dateInput = screen.getByLabelText('Datum') as HTMLInputElement;
     expect(dateInput.disabled).toBe(true);
     expect(dateInput.value).toBe(today);
-    const hint = screen.getByText(/nur per Änderungsantrag/);
+    const hint = screen.getByText(HINT);
     expect(dateInput.getAttribute('aria-describedby')).toBe(hint.id);
+    // Der genannte Weg existiert: Knopf „Antrag" oben, Loeschen in der Zeile —
+    // und KEIN Zeilen-Änderungsantrag, auf den ein anderer Wortlaut verwiese.
+    expect(screen.getByTitle('Antrag für vergangenen Tag stellen')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Eintrag vom .* löschen/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Änderungsantrag für/)).not.toBeInTheDocument();
   });
 
   it('schickt beim Speichern weiterhin das heutige Datum mit', async () => {
@@ -273,7 +285,7 @@ describe('<TimeTracking /> Datum beim Bearbeiten (#502)', () => {
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
     expect((screen.getByLabelText('Datum') as HTMLInputElement).disabled).toBe(false);
-    expect(screen.queryByText(/nur per Änderungsantrag/)).not.toBeInTheDocument();
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
   });
 
   it('laesst Admins das Datum beim Bearbeiten aendern', async () => {
@@ -282,6 +294,6 @@ describe('<TimeTracking /> Datum beim Bearbeiten (#502)', () => {
     renderPage();
     fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
     expect((screen.getByLabelText('Datum') as HTMLInputElement).disabled).toBe(false);
-    expect(screen.queryByText(/nur per Änderungsantrag/)).not.toBeInTheDocument();
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
   });
 });

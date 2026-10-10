@@ -718,8 +718,12 @@ export default function TimeTracking() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
               />
               {dateLocked && (
+                // #502-Review: gesperrt ist das Feld nur bei heutigen Einträgen,
+                // deren Zeile keinen „Änderungsantrag"-Knopf hat — der Hinweis
+                // nennt deshalb den Weg, den es für diesen Eintrag gibt.
                 <p id="tt-date-locked-hint" className="text-sm text-gray-500 mt-1">
-                  Das Datum lässt sich nur per Änderungsantrag ändern.
+                  Das Datum bleibt beim Bearbeiten fest. Gehört die Zeit zu einem anderen Tag:
+                  Eintrag löschen und oben über „Antrag“ einen Änderungsantrag für diesen Tag stellen.
                 </p>
               )}
             </div>
