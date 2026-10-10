@@ -446,3 +446,32 @@ def presence_minutes(entry) -> int:
     start = entry.raw_start_time or entry.start_time
     end = entry.end_time if getattr(entry, "auto_closed", False) else (entry.raw_end_time or entry.end_time)
     return max(0, _min(end) - _min(start) - int(entry.break_minutes or 0))
+
+
+def credit_summary_text(entry) -> str:
+    """Spec 10.1 / 13.3: Klartext für Protokollnotizen — EINE Quelle
+    („Anerkennen" in PR2, Neukappung in PR3).
+
+    „angerechnet" = ``net_hours`` (nach Pause und Lücke), „nicht angerechnet" =
+    ``not_credited_minutes`` (Lücke + Hülle, P19), „davon … zwischen den
+    Blöcken" = ``uncredited_minutes`` (entfällt bei 0), bei Pause > 0 folgt
+    „, Pause H:MM h". Bewusst ohne Typlabels („Krank " …) — sonst schlüge
+    ``admin_time_entries._audit_note_is_health_sensitive`` an (Spec 10.1).
+
+    Auslegung (Spec 10.1 widerspricht sich): die Kurzregel lässt „davon …"
+    auch entfallen, wenn es gleich der Gesamtzahl ist; die wörtlichen
+    Beispiele (10.1 ``old_note``, 13.3 Schritt 5) zeigen es für K1 (nur
+    Lücke) aber — der Zusatz nennt die Ursache. Es gelten die Beispiele."""
+    credited = int(round(float(entry.net_hours or 0) * 60))
+    parts = [f"angerechnet {_hm(credited)} h"]
+    total = not_credited_minutes(entry)
+    gap = int(getattr(entry, "uncredited_minutes", 0) or 0)
+    if total > 0:
+        text = f"nicht angerechnet {_hm(total)} h"
+        if gap > 0:
+            text += f", davon {_hm(gap)} h zwischen den Blöcken"
+        parts.append(text)
+    brk = int(entry.break_minutes or 0)
+    if brk > 0:
+        parts.append(f"Pause {_hm(brk)} h")
+    return ", ".join(parts)

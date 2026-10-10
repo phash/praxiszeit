@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, field_serializer
 from typing import Optional, List
 # #225: alias `date` so the field literally named `date` does not shadow the type.
 # With `from datetime import date`, a field `date: Optional[date] = None` makes
@@ -109,7 +109,22 @@ class TimeEntryResponse(BaseModel):
     break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG
     raw_start_time: Optional[time] = None  # #201: unklammerter Stempelzeitpunkt
     raw_end_time: Optional[time] = None    # #201: unklammerter Stempelzeitpunkt
+    # Spec 2026-10-08 (7.1, E79, P18): nur lesend — kein Eingabeschema kennt
+    # diese Felder (E11), der Server leitet sie ab.
+    uncredited_minutes: int = 0
+    credit_override: bool = False
+    auto_closed: bool = False
+    clamp_grace_minutes: Optional[int] = None
     created_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def not_credited_minutes(self) -> int:
+        """P19: Lücke + von der Hülle gekappte Anwesenheit — DIE eine Quelle
+        ``work_window_service.not_credited_minutes`` (lokal importiert: ein
+        Schema zieht beim Modulimport keine Services)."""
+        from app.services.work_window_service import not_credited_minutes
+        return not_credited_minutes(self)
 
     @field_serializer('id', 'user_id')
     def serialize_uuid(self, value: UUID) -> str:
