@@ -64,14 +64,23 @@ def test_already_clamped_and_unchanged_is_not_returned(db, test_user):
     assert _run(db, test_user) == []
 
 
-def test_rounding_to_0_01_hours(db, test_user):
-    """Tagessoll 7,92 h: (2 − 3,92) gegen (6 − 7,92) — beide −1,92."""
-    add_row(db, test_user, date(2026, 1, 1), day_hours=(7.92, 8, 8, 8, 8))
-    absence(db, test_user, MON, AbsenceType.SICK, 3.92)
-    entry(db, test_user, MON, t(8), t(12), grace=None)
-    add_row(db, test_user, date(2026, 9, 1), day_hours=(6, 8, 8, 8, 8))
-    [rec] = _run(db, test_user, {MON: Decimal("7.92")})
-    assert (rec.new_hours, rec.f1_clamped, rec.credit_reduction) == (Decimal("2.00"), True, False)
+@pytest.mark.parametrize("before, after, sick, work_end, new", [
+    # Spec-Beispiel: (2 − 3,92) gegen (6 − 7,92), beide −1,92.
+    (7.92, 6, 3.92, t(12), Decimal("2.00")),
+    # Der eigentliche Prüfstein (Review Task 6): ungerundet ist
+    # (2,07 − 4,00) = −1,9300000000000002 < (4,07 − 6,00) = −1,9299999999999997 —
+    # ohne die Rundung entstünde eine Schein-Verkürzung. Im ersten Fall ergeben
+    # beide Differenzen zufällig denselben Float, er fiele ohne Rundung nicht auf.
+    (6, 4.07, 4.0, t(10), Decimal("2.07")),
+])
+def test_rounding_to_0_01_hours(db, test_user, before, after, sick, work_end, new):
+    """Spec 9.6: der Vergleich 9.5 (c) wird auf 0,01 h gerundet (Float-Rauschen)."""
+    add_row(db, test_user, date(2026, 1, 1), day_hours=(before, 8, 8, 8, 8))
+    absence(db, test_user, MON, AbsenceType.SICK, sick)
+    entry(db, test_user, MON, t(8), work_end, grace=None)
+    add_row(db, test_user, date(2026, 9, 1), day_hours=(after, 8, 8, 8, 8))
+    [rec] = _run(db, test_user, {MON: Decimal(str(before))})
+    assert (rec.new_hours, rec.f1_clamped, rec.credit_reduction) == (new, True, False)
 
 
 @pytest.mark.parametrize("typ, reduction", [
