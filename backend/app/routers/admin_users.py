@@ -1780,7 +1780,32 @@ _SCHEDULE_FIELD_LABELS = {
     "hours_thursday": "Die Stunden für Donnerstag",
     "hours_friday": "Die Stunden für Freitag",
     "work_days_per_week": "Die Arbeitstage pro Woche",
+    "retroactive_reason_text": "Die Begründung",
 }
+
+_BLOCK_FIELD_LABELS = {"start": "Beginn", "end": "Ende"}
+
+
+def _nested_block_label(loc: tuple) -> Optional[str]:
+    """Spec 3.4: ``("blocks", 0, "blocks", 1, "start")`` → „Mo, Block 2, Beginn",
+    ``("blocks", 0, "pause_minutes")`` → „Mo, Pause". Unerwartete Form → ``None``
+    (der Aufrufer fällt auf den generischen Text zurück — nie IndexError/500)."""
+    if len(loc) < 2 or loc[0] != "blocks" or not isinstance(loc[1], int) or not 0 <= loc[1] < 5:
+        return None
+    label = work_blocks_service.WEEKDAY_LABELS[loc[1]]
+    rest = loc[2:]
+    if not rest:
+        return label
+    if rest[0] == "pause_minutes":
+        return f"{label}, Pause"
+    if rest[0] == "blocks" and len(rest) >= 2 and isinstance(rest[1], int):
+        text = f"{label}, Block {rest[1] + 1}"
+        if len(rest) >= 3 and rest[2] in _BLOCK_FIELD_LABELS:
+            text += f", {_BLOCK_FIELD_LABELS[rest[2]]}"
+        return text
+    if rest[0] == "blocks":
+        return label
+    return None
 
 
 def _schedule_input_error(exc: ValidationError) -> str:
@@ -1810,6 +1835,12 @@ def _schedule_input_error(exc: ValidationError) -> str:
     err = errors[0]
     if err.get("type") == "value_error":
         return str(err.get("msg", "Ungültige Eingabe.")).removeprefix("Value error, ")
+    # Spec 3.4: Typfehler in den verschachtelten Blöcken (z. B. Beginn als Zahl)
+    # bekommen „Mo, Block 2, Beginn" als Label; die Regeltexte selbst kommen als
+    # value_error aus ``validate_week_blocks`` (Zweig darüber).
+    nested = _nested_block_label(tuple(err.get("loc") or ()))
+    if nested is not None:
+        return f"{nested}: ungültiger Wert."
     label = next(
         (_SCHEDULE_FIELD_LABELS[p] for p in (err.get("loc") or ())
          if p in _SCHEDULE_FIELD_LABELS),
@@ -1818,6 +1849,11 @@ def _schedule_input_error(exc: ValidationError) -> str:
     if label is None:
         return "Ungültige Eingabe."
     ctx = err.get("ctx") or {}
+    # P15: Länge der Begründung (10–400 Zeichen).
+    if "min_length" in ctx:
+        return f"{label} muss mindestens {ctx['min_length']} Zeichen lang sein."
+    if "max_length" in ctx:
+        return f"{label} darf höchstens {ctx['max_length']} Zeichen lang sein."
     if "le" in ctx:
         return f"{label} dürfen höchstens {ctx['le']} betragen."
     if "ge" in ctx:
