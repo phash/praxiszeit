@@ -162,6 +162,20 @@ def test_not_extendable_when_the_weekday_loses_its_blocks(db, test_user):
     assert result.skipped == []
 
 
+def test_not_extendable_measures_the_old_edge_with_the_stored_grace(db, test_user):
+    """9.2 Schritt 12: die ALTE Kante mit dem gespeicherten Puffer des Eintrags
+    (``old_grace`` aus Schritt 9), nicht mit dem aktuellen — und das Kennzeichen
+    entsteht, bevor der Lauf ``clamp_grace_minutes`` überschreibt. Gekappt wurde
+    damals bei 18:00 + 20 = 18:20; mit dem heutigen Puffer 15 läge die Kante bei
+    18:15, und der verlorene Stempel bliebe unerkannt."""
+    prev = _setup(db, test_user, old=block_week(mon=[("15:00", "18:00")]),
+                  new=block_week(mon=[("15:00", "19:00")]))
+    e = entry(db, test_user, MON, t(15), t(18, 20), grace=20)
+    result = _run(db, test_user, prev, grace=15)
+    assert [(f.entry_id, f.not_extendable, f.old_grace) for f in result.flagged] == [(e.id, "end", 20)]
+    assert result.changed == [] and e.clamp_grace_minutes == 15
+
+
 def test_placeholder_edges_of_half_open_legacy_windows_are_not_flagged(db, test_user):
     """E50 / Spec 5.3 (Review Task 7): ein halboffenes #201-Fenster hat auf der
     offenen Seite nie gekappt — der Platzhalter 23:59 ist „kein Ende", und vor
