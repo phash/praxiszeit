@@ -1795,8 +1795,9 @@ reine Blockänderung ist damit eine Änderung (Basis-Zeile, Segment, Neukappung)
 | 400 | Anerkennen eines offenen Eintrags | „Ein offener Eintrag kann erst nach dem Ausstempeln anerkannt werden." |
 | 400 | Anerkennen eines automatisch geschlossenen Eintrags (`auto_closed`, P18) | „Automatisch geschlossener Eintrag: Bitte zuerst das tatsächliche Ende eintragen." |
 | 409 | Anerkennen: anderer Eintrag beginnt bereits zur Rohzeit | „Ein anderer Eintrag an diesem Tag beginnt bereits um {HH:MM}." |
-| 409 | MA-`PUT` auf einen anerkannten Eintrag (P3) | „Anerkannter Eintrag – Änderung bitte per Änderungsantrag." |
-| 400 | `request_credit_override` an einem Eintrag ohne nicht angerechnete Zeit, offen, anerkannt oder fremd; mit einem anderen `proposed_date` als dem Datum des Eintrags (Gesamtreview PR2, Fund 3) | „Für diesen Eintrag kann keine Anrechnung beantragt werden." |
+| 409 | MA-`PUT` und MA-`DELETE` auf einen anerkannten Eintrag (P3; `DELETE` entschieden 2026-10-10, Sicherheitsprüfung SEC-PR1-ROLE-03 — sonst löschte die Person ihn und legte ihn gekappt neu an) | „Anerkannter Eintrag – Änderung bitte per Änderungsantrag." |
+| 400 | `request_credit_override` an einem Eintrag ohne nicht angerechnete Zeit, offen oder anerkannt; mit einem anderen `proposed_date` als dem Datum des Eintrags (Gesamtreview PR2, Fund 3) | „Für diesen Eintrag kann keine Anrechnung beantragt werden." |
+| 404 | `request_credit_override` an einem fremden oder unbekannten Eintrag | „Zeiteintrag nicht gefunden" — wie jeder Antrag auf einen fremden Eintrag (#120, kein Existenz-Leak über Statuscode oder Text). **Entschieden 2026-10-10 (PR2-Review):** ersetzt „fremd" in der 400-Zeile darüber; Test `test_request_on_a_foreign_entry_is_404_like_an_unknown_id`. |
 | 400 | `request_credit_override` am heutigen Eintrag mit einem Ende in der Zukunft (Gesamtreview PR2, Fund 1) | „Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden." |
 
 Altfelder werden **ohne** ihre wörtlichen Namen erkannt (sonst bräche der Guard-Test 17.6):
