@@ -42,6 +42,24 @@ describe('<CreditOverrideButton /> (Spec 13.3)', () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 
+  // Review Task 15: der Knopf sitzt in Tabellenzellen (Aktionen-Spalte mit
+  // text-right/space-x-1, Journal-Zeitspalte mit whitespace-nowrap). Im Zellbaum
+  // erbte der Dialog diese Stile — rechtsbündiger Pflichttext aus 13.3, ein
+  // 4-px-Streifen ohne Abdunklung, kein Umbruch im Titel.
+  it('rendert den Bestätigungsdialog außerhalb der Tabellenzelle (keine Zell-Stile)', () => {
+    render(
+      <table><tbody><tr>
+        <td data-testid="zelle" className="text-right text-sm space-x-1 whitespace-nowrap">
+          <CreditOverrideButton entry={K7} onDone={vi.fn()} />
+        </td>
+      </tr></tbody></table>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Anerkennen' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(screen.getByTestId('zelle')).not.toContainElement(dialog);
+    expect(dialog.closest('td')).toBeNull();
+  });
+
   it('ist bei automatisch geschlossenen Einträgen deaktiviert und nennt den Grund (P18)', () => {
     render(<CreditOverrideButton entry={{ ...K7, auto_closed: true }} onDone={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Anerkennen' })).toBeDisabled();

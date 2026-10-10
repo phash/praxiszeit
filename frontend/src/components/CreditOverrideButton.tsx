@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import apiClient from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
@@ -67,15 +68,27 @@ export default function CreditOverrideButton({ entry, onDone, className }: Credi
 
   return (
     <>
-      <ConfirmDialog
-        isOpen={confirmState.isOpen}
-        title={confirmState.title}
-        message={confirmState.message}
-        confirmLabel={confirmState.confirmLabel}
-        variant={confirmState.variant}
-        onConfirm={handleConfirm}
-        onCancel={handleCancel}
-      />
+      {/* Review Task 15: per Portal an <body>, nicht in den Zellbaum — der Knopf
+          sitzt in Tabellenzellen (text-right/space-x-1 in der Aktionen-Spalte,
+          whitespace-nowrap in der Journal-Zeitspalte), und ConfirmDialog setzt
+          weder Textausrichtung noch Umbruch selbst. Ein Dialog außerhalb des
+          Modal-DOM ist im Admin-Dashboard schon üblich (die seitenweite
+          Lösch-Bestätigung liegt ebenso außerhalb der FocusTrap des
+          Detail-Modals). React-Ereignisse aus dem Portal laufen über den
+          Komponentenbaum weiter und enden am stopPropagation des Detail-Modals —
+          ein Klick in den Dialog schließt das Modal also nicht. */}
+      {confirmState.isOpen && createPortal(
+        <ConfirmDialog
+          isOpen={confirmState.isOpen}
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmLabel={confirmState.confirmLabel}
+          variant={confirmState.variant}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
+        />,
+        document.body,
+      )}
       <button
         type="button"
         // P18: ein automatisch geschlossener Eintrag trägt kein echtes Ende —

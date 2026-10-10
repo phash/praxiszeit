@@ -204,6 +204,9 @@ describe('AdminDashboard Anerkennen im Detail-Modal (Spec 13.3)', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Anerkennen' }));
     fireEvent.click(screen.getByRole('button', { name: 'Zeit anerkennen' }));
     await waitFor(() => expect(postMock).toHaveBeenCalledWith('/admin/time-entries/e1/credit-override'));
+    // Der Bestätigungsdialog liegt im Portal; der Klick darf das Detail-Modal
+    // nicht über dessen Overlay (onClick=closeDetail) schließen.
+    expect(dialog).toBeInTheDocument();
   }
 
   const card = (dialog: HTMLElement, label: string) =>
