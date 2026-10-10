@@ -4,12 +4,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import AdminDashboard from './AdminDashboard';
 
 const getMock = vi.fn();
+const postMock = vi.fn();
+const deleteMock = vi.fn();
 vi.mock('../../api/client', () => ({
   default: {
     get: (...args: unknown[]) => getMock(...args),
-    post: vi.fn(() => Promise.resolve({ data: {} })),
+    post: (...args: unknown[]) => postMock(...args),
     put: vi.fn(),
-    delete: vi.fn(),
+    delete: (...args: unknown[]) => deleteMock(...args),
   },
   // authStore.ts pulls these named exports in transitively (pattern from Users.test.tsx).
   setAccessToken: vi.fn(),
@@ -42,6 +44,10 @@ function mockEndpoints(yearly: unknown[]) {
 
 beforeEach(() => {
   getMock.mockReset();
+  postMock.mockReset();
+  postMock.mockResolvedValue({ data: {} });
+  deleteMock.mockReset();
+  deleteMock.mockResolvedValue({ data: {} });
   // Nur Date faken (Q4 des laufenden Jahres) — echte Timer für findBy/waitFor.
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-15T10:00:00'));
@@ -128,5 +134,116 @@ describe('AdminDashboard Jahresend-Warnung beim Jahreswechsel (#501, Review F3)'
       expect(getMock).toHaveBeenCalledWith(expect.stringMatching(/yearly-absences\?year=202$/)),
     );
     await waitFor(() => expect(screen.queryByText(/Jahresend-Warnung/)).not.toBeInTheDocument());
+  });
+});
+
+// Spec 13.3 / Review Task 15: „Anerkennen" ändert Ist und Saldo des Monats und über
+// get_ytd_summary auch „Überstunden Jahr" der Jahresübersicht. Nach dem Anerkennen
+// müssen deshalb dieselben Flächen nachladen wie nach Speichern/Löschen (C-2) —
+// und die Kacheln im Detail-Modal, die sonst auf der angeklickten Zeile stehen
+// bleiben (detailSummary), dürfen nicht den Wert von vor dem Anerkennen zeigen.
+describe('AdminDashboard Anerkennen im Detail-Modal (Spec 13.3)', () => {
+  const K7 = {
+    id: 'e1', date: '2026-10-05', start_time: '07:45:00', end_time: '18:15:00',
+    raw_start_time: '07:00:00', raw_end_time: '19:00:00', break_minutes: 0, note: '',
+    uncredited_minutes: 150, not_credited_minutes: 240, auto_closed: false,
+  };
+
+  function monthlyRow(actual: number) {
+    return {
+      user_id: 'u1', first_name: 'Anna', last_name: 'Kern', weekly_hours: 40,
+      target_hours: 160, actual_hours: actual, balance: actual - 160, overtime_cumulative: actual - 160,
+      vacation_used_hours: 0, vacation_used_days: 0, sick_hours: 0, sick_days: 0,
+    };
+  }
+
+  function mockCreditFlow() {
+    let state: 'offen' | 'anerkannt' | 'geloescht' = 'offen';
+    postMock.mockImplementation((url: string) => {
+      if (url === '/admin/time-entries/e1/credit-override') state = 'anerkannt';
+      return Promise.resolve({ data: { warnings: [] } });
+    });
+    deleteMock.mockImplementation((url: string) => {
+      if (url === '/admin/time-entries/e1') state = 'geloescht';
+      return Promise.resolve({ data: {} });
+    });
+    const monthActual = () => ({ offen: 160, anerkannt: 164, geloescht: 152 })[state];
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith('/admin/reports/yearly-absences')) {
+        return Promise.resolve({ data: [{ ...yearlyRow('u1', 'Anna', 'Kern', 5, false), overtime_year: monthActual() - 160 }] });
+      }
+      if (url.startsWith('/admin/reports/monthly')) {
+        return Promise.resolve({ data: [monthlyRow(monthActual())] });
+      }
+      if (url.startsWith('/admin/reports/weekly')) {
+        // Wochenzahlen — das Modal zeigt trotzdem die Monatszeile (#329).
+        const actual = monthActual() - 120;
+        return Promise.resolve({ data: [{ ...monthlyRow(actual), target_hours: 40, balance: actual - 40 }] });
+      }
+      if (url.startsWith('/admin/users/')) {
+        return Promise.resolve({ data: { id: 'u1', username: 'akern', email: null, role: 'employee', vacation_days: 30, track_hours: true } });
+      }
+      if (url === '/time-entries') {
+        if (state === 'geloescht') return Promise.resolve({ data: [] });
+        return Promise.resolve({ data: [{ ...K7, net_hours: state === 'anerkannt' ? 12 : 8, credit_override: state === 'anerkannt' }] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+  }
+
+  async function openDetail() {
+    mockCreditFlow();
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Details für Kern, Anna anzeigen' }))[0]);
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByRole('button', { name: 'Anerkennen' });
+    return dialog;
+  }
+
+  async function credit(dialog: HTMLElement) {
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Anerkennen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Zeit anerkennen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/admin/time-entries/e1/credit-override'));
+  }
+
+  const card = (dialog: HTMLElement, label: string) =>
+    within(dialog).getByText(label, { selector: 'p' }).nextElementSibling?.textContent;
+
+  afterEach(() => {
+    try { localStorage.removeItem('adminDashboardViewMode'); } catch { /* jsdom */ }
+  });
+
+  it('lädt die Jahresübersicht nach („Überstunden Jahr")', async () => {
+    const yearlyCalls = () => getMock.mock.calls.filter((c) => String(c[0]).includes('yearly-absences')).length;
+    const dialog = await openDetail();
+    const before = yearlyCalls();
+    await credit(dialog);
+    await waitFor(() => expect(yearlyCalls()).toBeGreaterThan(before));
+  });
+
+  it('zeigt Ist und Saldo der Detail-Kacheln nach dem Anerkennen neu (Monatsansicht)', async () => {
+    const dialog = await openDetail();
+    expect(card(dialog, 'Ist')).toBe('160:00');
+    await credit(dialog);
+    await waitFor(() => expect(card(dialog, 'Ist')).toBe('164:00'));
+    expect(card(dialog, 'Saldo')).toBe('+4:00');
+  });
+
+  it('zeigt Ist und Saldo der Detail-Kacheln nach dem Anerkennen neu (Wochenansicht)', async () => {
+    localStorage.setItem('adminDashboardViewMode', 'week');
+    const dialog = await openDetail();
+    await waitFor(() => expect(card(dialog, 'Ist')).toBe('160:00'));
+    await credit(dialog);
+    await waitFor(() => expect(card(dialog, 'Ist')).toBe('164:00'));
+    expect(card(dialog, 'Saldo')).toBe('+4:00');
+  });
+
+  it('Löschen aktualisiert die Detail-Kacheln ebenfalls (gleicher Pfad wie Anerkennen)', async () => {
+    const dialog = await openDetail();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Eintrag vom 05.10.2026 löschen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
+    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith('/admin/time-entries/e1'));
+    await waitFor(() => expect(card(dialog, 'Ist')).toBe('152:00'));
+    expect(card(dialog, 'Saldo')).toBe('-8:00');
   });
 });

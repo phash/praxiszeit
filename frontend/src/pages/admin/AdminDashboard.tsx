@@ -176,7 +176,9 @@ export default function AdminDashboard() {
 
   // C-2: Out-of-order-Schutz bei schnellem Monatswechsel (Last-Write-Wins).
   const reportSeq = useRef(0);
-  const fetchReport = async () => {
+  // Liefert die gesetzten Zeilen zurück (null, wenn überholt oder gescheitert) —
+  // refreshReportAndDetailSummary liest daraus im Monatsmodus die Modal-Kacheln.
+  const fetchReport = async (): Promise<EmployeeReport[] | null> => {
     const seq = ++reportSeq.current;
     try {
       const hp = showHealthData ? '&include_health_data=true' : '';
@@ -184,12 +186,15 @@ export default function AdminDashboard() {
         ? `/admin/reports/weekly?week_start=${currentWeek}${hp}&soll_basis=${sollBasis}`
         : `/admin/reports/monthly?month=${currentMonth}${hp}&soll_basis=${sollBasis}`;
       const response = await apiClient.get(url);
-      if (seq !== reportSeq.current) return;
+      if (seq !== reportSeq.current) return null;
       // #382: guard against a non-array 200 body (auth/proxy edge) — the render
       // calls report.filter/.map unconditionally and would white-screen.
-      setReport(Array.isArray(response.data) ? response.data : []);
+      const rows: EmployeeReport[] = Array.isArray(response.data) ? response.data : [];
+      setReport(rows);
+      return rows;
     } catch (error) {
       if (seq === reportSeq.current) toast.error('Fehler beim Laden des Berichts');
+      return null;
     } finally {
       if (seq === reportSeq.current) setLoading(false);
     }
@@ -312,6 +317,39 @@ export default function AdminDashboard() {
     }
   };
 
+  // Review Task 15: nach einer Änderung an den Einträgen (Speichern, Löschen,
+  // Anerkennen) den Bericht UND die Kacheln Soll/Ist/Saldo/Überstunden kum. des
+  // Detail-Modals neu laden. Die Kacheln lesen detailSummary — im Monatsmodus die
+  // beim Öffnen angeklickte Zeile, im Wochenmodus die nachgeladene Monatszeile
+  // (#329). fetchReport() ersetzt nur `report`; ohne diesen Schritt stünden Ist
+  // und Saldo im Modal auf dem alten Wert, direkt über der schon geänderten
+  // Eintragszeile. Im Monatsmodus ist der Bericht bereits die Monatszeile — kein
+  // zweiter Abruf.
+  const refreshReportAndDetailSummary = async () => {
+    const employee = selectedEmployee;
+    const seq = detailSeq.current;
+    const reportRows = fetchReport();
+    if (!employee) return;
+    let monthlyRows: EmployeeReport[] | null = null;
+    if (viewMode === 'week') {
+      try {
+        const hp = showHealthData ? '&include_health_data=true' : '';
+        const monthly = await apiClient.get(
+          `/admin/reports/monthly?month=${currentMonth}${hp}&soll_basis=${sollBasis}`,
+        );
+        monthlyRows = Array.isArray(monthly.data) ? monthly.data : null; // #382
+      } catch {
+        return; // Kacheln bleiben stehen; der Wochenbericht meldet Ladefehler selbst.
+      }
+    } else {
+      monthlyRows = await reportRows;
+    }
+    // C-2: inzwischen ein anderer Mitarbeiter/Monat geöffnet → nichts überschreiben.
+    if (seq !== detailSeq.current || !monthlyRows) return;
+    const row = monthlyRows.find((r) => r.user_id === employee.user_id);
+    if (row) setDetailSummary(row);
+  };
+
   const closeDetail = () => {
     setSelectedEmployee(null);
     setDetailSummary(null);
@@ -402,16 +440,18 @@ export default function AdminDashboard() {
       });
       setEmployeeAbsences(Array.isArray(absencesResponse.data) ? absencesResponse.data : []); // #382
       fetchAuditForUser(selectedEmployee.user_id);
-      // C-2: Monatsbericht (Ist, Saldo, Urlaub/Krank) + Jahresübersicht aktualisieren,
-      // damit die Zusammenfassung sofort die Mutation widerspiegelt.
-      fetchReport();
+      // C-2: Monatsbericht (Ist, Saldo, Urlaub/Krank), Modal-Kacheln + Jahresübersicht
+      // aktualisieren, damit die Zusammenfassung sofort die Mutation widerspiegelt.
+      void refreshReportAndDetailSummary();
       fetchYearlyAbsences();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     }
   };
 
-  // Spec 13.3: nach „Anerkennen" Einträge, Protokoll und Monatsbericht neu laden.
+  // Spec 13.3: nach „Anerkennen" Einträge, Protokoll, Monatsbericht (samt
+  // Modal-Kacheln) und Jahresübersicht neu laden — wie nach Speichern/Löschen
+  // (C-2): Anerkennen erhöht das Ist und damit „Überstunden Jahr" (get_ytd_summary).
   const reloadEmployeeEntries = async () => {
     if (!selectedEmployee) return;
     try {
@@ -420,7 +460,8 @@ export default function AdminDashboard() {
       });
       setEmployeeTimeEntries(Array.isArray(entriesResponse.data) ? entriesResponse.data : []); // #382
       fetchAuditForUser(selectedEmployee.user_id);
-      fetchReport();
+      void refreshReportAndDetailSummary();
+      fetchYearlyAbsences();
     } catch {
       toast.error('Fehler beim Laden der Mitarbeiterdaten');
     }
@@ -443,8 +484,8 @@ export default function AdminDashboard() {
             setEmployeeTimeEntries(Array.isArray(entriesResponse.data) ? entriesResponse.data : []); // #382
             fetchAuditForUser(selectedEmployee.user_id);
           }
-          // C-2: Monatsbericht + Jahresübersicht aktualisieren.
-          fetchReport();
+          // C-2: Monatsbericht (samt Modal-Kacheln) + Jahresübersicht aktualisieren.
+          void refreshReportAndDetailSummary();
           fetchYearlyAbsences();
         } catch (error) {
           toast.error('Fehler beim Löschen');
