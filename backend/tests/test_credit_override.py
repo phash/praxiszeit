@@ -4,7 +4,7 @@ import uuid
 from datetime import time
 
 import app.routers.time_entries as te
-from app.models import Absence, TimeEntry, TimeEntryAuditLog
+from app.models import Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
 from app.models.tenant import Tenant
 from app.services import credit_override_service as cos
 from tests.conftest import DEFAULT_TENANT_ID
@@ -340,6 +340,30 @@ def test_request_on_a_foreign_entry_is_404_like_an_unknown_id(_db_session, emplo
     assert _db_session.query(ChangeRequest).count() == 0
 
 
+def test_request_rejected_for_open_entry(_db_session, employee_user, employee_client):
+    """Spec 11.4 „offen" (Review Task 6): ein offener K20-Eintrag hat schon
+    gekappte Minuten am Anfang (``not_credited_minutes`` 45 > 0) — allein die
+    Bedingung ``end_time is None`` hält ihn auf. Ohne sie liefe ein Antrag
+    07:00–19:00 mit Kennzeichen durch und würde angelegt."""
+    employee_user.work_blocks = K_BLOCKS
+    e = _entry(_db_session, employee_user, time(7, 45), None, raw_start_time=time(7),
+               clamp_grace_minutes=15)
+    from app.services import work_window_service
+    assert work_window_service.not_credited_minutes(e) == 45
+    r = _request(employee_client, e)
+    assert (r.status_code, r.json()["detail"]) == (400, CREDIT_REQUEST_REJECTED_DETAIL)
+    assert _db_session.query(ChangeRequest).count() == 0
+
+
+def test_request_rejected_for_delete(_db_session, employee_user, employee_client):
+    """P21: Anrechnung beantragen gibt es nur als Änderung — ein Löschantrag
+    mit Kennzeichen (K7, nicht angerechnete Zeit vorhanden) wird abgelehnt."""
+    e = _k7(_db_session, employee_user)
+    r = _request(employee_client, e, request_type="delete")
+    assert (r.status_code, r.json()["detail"]) == (400, CREDIT_REQUEST_REJECTED_DETAIL)
+    assert _db_session.query(ChangeRequest).count() == 0
+
+
 # Review Focus 3: 18:15 (gekapptes Ende) und 23:59 liefen über unclamp_input wieder auf 23:59.
 @pytest.mark.parametrize("end, status", [("18:15", 400), ("23:59", 400), ("17:30", 201)])
 def test_auto_closed_needs_the_actual_end(_db_session, employee_user, employee_client, end, status):
@@ -413,6 +437,35 @@ def test_grant_only_for_updates_and_cr_stays_pending(_db_session, employee_user,
     assert (r.status_code, r.json()["detail"]) == (400, GRANT_ONLY_UPDATE_DETAIL)
     _db_session.refresh(cr)
     assert cr.status == ChangeRequestStatus.PENDING
+
+
+@pytest.mark.parametrize("request_type", [ChangeRequestType.CREATE, ChangeRequestType.UPDATE])
+def test_grant_rejected_for_absence_request(_db_session, employee_user, admin_client,
+                                            request_type):
+    """„genehmigen und anerkennen" nur an Zeiteinträgen (Review Task 6): auch
+    ein Abwesenheits-UPDATE fällt unter ``entry_kind == "absence"``, nicht erst
+    unter ``request_type``. Der Antrag bleibt offen, nichts wird gebucht."""
+    absence = None
+    if request_type == ChangeRequestType.UPDATE:
+        absence = Absence(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, date=MON,
+                          type=AbsenceType.VACATION, hours=8)
+        _db_session.add(absence)
+        _db_session.commit()
+    cr = ChangeRequest(
+        tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, entry_kind="absence",
+        request_type=request_type, status=ChangeRequestStatus.PENDING,
+        absence_id=absence.id if absence is not None else None,
+        proposed_date=MON, proposed_absence_type="sick", proposed_absence_hours=8,
+        reason="krank")
+    _db_session.add(cr)
+    _db_session.commit()
+    r = _review(admin_client, cr, grant_credit_override=True)
+    assert (r.status_code, r.json()["detail"]) == (400, GRANT_ONLY_UPDATE_DETAIL)
+    _db_session.expire_all()
+    assert _db_session.get(ChangeRequest, cr.id).status == ChangeRequestStatus.PENDING
+    assert [(a.type.value, float(a.hours)) for a in _db_session.query(Absence).all()] == (
+        [("vacation", 8.0)] if absence is not None else [])
+    assert _override_logs(_db_session) == []
 
 
 @pytest.mark.parametrize("raw_end, end", [
