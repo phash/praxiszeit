@@ -17,6 +17,7 @@ from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarE
 from app.services import calculation_service, settings_service, special_days_service
 from app.services.closure_split_service import resplit_year_closures
 from app.routers.admin_helpers import _create_audit_log, lock_user_row
+from app.routers.time_entries import CREDIT_OVERRIDE_EMPLOYEE_DETAIL
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
 
@@ -520,6 +521,28 @@ def create_absence(
             status_code=400,
             detail="Alle Tage im Zeitraum haben bereits eine Abwesenheit dieses Typs"
         )
+
+    # P3 (Spec 2026-10-08, Review PR2 Task 5): ohne ``keep_time_entries`` löscht
+    # diese Buchung unten alle Zeiteinträge der Zieltage — auch einen anerkannten
+    # (``credit_override``). Für Mitarbeitende ist das derselbe Weg wie das
+    # gesperrte DELETE (SEC-PR1-ROLE-03), nur ohne dessen Sperre auf heute:
+    # Abwesenheit buchen, wieder löschen, Eintrag neu anlegen — die neue Zeile
+    # wäre wieder gekappt (stille Rücknahme ohne Antrag, P11). Deshalb derselbe
+    # 409 mit demselben Text wie PUT/DELETE, VOR der ersten Schreiboperation
+    # (Urlaubsrückgabe, Löschschleife). Die Verwaltung bucht weiter darüber (P3),
+    # mit ``keep_time_entries`` bleibt der Eintrag ohnehin stehen.
+    if current_user.role != UserRole.ADMIN and not absence_data.keep_time_entries:
+        recognized = db.query(TimeEntry.id).filter(
+            TimeEntry.user_id == target_user.id,
+            TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+            TimeEntry.date.in_(dates_to_create),
+            TimeEntry.credit_override.is_(True),
+        ).first()
+        if recognized:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=CREDIT_OVERRIDE_EMPLOYEE_DETAIL,
+            )
 
     # For vacation, check remaining vacation days (per year for cross-year ranges).
     # Die User-Zeile ist oben bereits per with_for_update gesperrt (BUG-3 +

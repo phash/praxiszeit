@@ -38,7 +38,8 @@ ENTRY_NOT_FOUND = "Zeiteintrag nicht gefunden"
 
 # P3 (Spec 2026-10-08): ein anerkannter Eintrag (``credit_override``) ändert sich
 # für Mitarbeitende nur per Änderungsantrag — Bearbeiten UND Löschen (PUT/DELETE
-# teilen den Text, damit sie nicht auseinanderlaufen).
+# und die löschende Abwesenheitsbuchung ``absences.create_absence`` teilen den
+# Text, damit sie nicht auseinanderlaufen).
 CREDIT_OVERRIDE_EMPLOYEE_DETAIL = "Anerkannter Eintrag – Änderung bitte per Änderungsantrag."
 
 

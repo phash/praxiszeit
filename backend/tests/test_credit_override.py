@@ -4,7 +4,7 @@ import uuid
 from datetime import time
 
 import app.routers.time_entries as te
-from app.models import TimeEntry, TimeEntryAuditLog
+from app.models import Absence, TimeEntry, TimeEntryAuditLog
 from app.models.tenant import Tenant
 from app.services import credit_override_service as cos
 from tests.conftest import DEFAULT_TENANT_ID
@@ -217,3 +217,53 @@ def test_admin_delete_of_recognized_entry_stays_allowed(_db_session, employee_us
     assert admin_client.delete(f"/api/time-entries/{e2.id}").status_code == 204
     _db_session.expire_all()
     assert _db_session.get(TimeEntry, e2.id) is None
+
+
+def _recognized(db, user):
+    user.work_blocks = K_BLOCKS
+    return _entry(db, user, time(7), time(19), uncredited_minutes=0, credit_override=True)
+
+
+def _sick(**kw):
+    return {"date": MON.isoformat(), "type": "sick", "hours": 8, **kw}
+
+
+def test_employee_absence_over_recognized_entry_is_409(_db_session, employee_user,
+                                                       employee_client):
+    """Parallelpfad zu DELETE (Review Task 5): ``create_absence`` löscht ohne
+    ``keep_time_entries`` alle Einträge der gebuchten Tage — auch den
+    anerkannten. Abwesenheit buchen, wieder löschen, Eintrag neu anlegen wäre
+    sonst dieselbe stille Rücknahme ohne Antrag (P3/P11), und anders als das
+    DELETE ohne Sperre auf heute."""
+    e = _recognized(_db_session, employee_user)
+    r = employee_client.post("/api/absences/", json=_sick())
+    assert (r.status_code, r.json()["detail"]) == (
+        409, "Anerkannter Eintrag – Änderung bitte per Änderungsantrag.")
+    _db_session.expire_all()
+    assert _db_session.get(TimeEntry, e.id) is not None
+    assert _delete_logs(_db_session, e) == []
+    assert _db_session.query(Absence).count() == 0
+
+
+def test_employee_absence_keeping_entries_stays_allowed(_db_session, employee_user,
+                                                        employee_client):
+    """Mit ``keep_time_entries`` (Monatsjournal „+") bleibt der anerkannte
+    Eintrag stehen — dort gibt es nichts zu sperren."""
+    e = _recognized(_db_session, employee_user)
+    r = employee_client.post("/api/absences/", json=_sick(keep_time_entries=True))
+    assert r.status_code == 201, r.text
+    _db_session.expire_all()
+    assert _db_session.get(TimeEntry, e.id).credit_override is True
+
+
+def test_admin_absence_over_recognized_entry_stays_allowed(_db_session, employee_user,
+                                                           admin_client):
+    """Die Verwaltung bleibt zuständig (P3): sie bucht und löscht dabei mit
+    Protokoll wie bisher."""
+    e = _recognized(_db_session, employee_user)
+    r = admin_client.post("/api/absences/", json=_sick(user_id=str(employee_user.id)))
+    assert r.status_code == 201, r.text
+    _db_session.expire_all()
+    assert _db_session.get(TimeEntry, e.id) is None
+    [log] = _delete_logs(_db_session, e)
+    assert log.source == "absence_creation"
