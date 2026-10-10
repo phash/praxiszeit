@@ -31,6 +31,14 @@ ENTRY_FIELDS = {
     WED.isoformat(): {"uncredited_minutes": 0, "credit_override": True,
                       "auto_closed": False, "clamp_grace_minutes": 15},
 }
+# Je Antrag (nach vorgeschlagenem Datum) Anrechnungswunsch und Vorher-Snapshot.
+# Zwei unterscheidbare Fälle, damit ein fest verdrahteter Wert auffällt:
+# - MON: „Anrechnung beantragen" mit Snapshot der nicht angerechneten Minuten;
+# - TUE: gewöhnlicher Änderungsantrag — kein Wunsch, kein Snapshot (False/null).
+CR_FIELDS = {
+    MON.isoformat(): (True, 150),
+    TUE.isoformat(): (False, None),
+}
 # Verlauf: frühere Zeile ohne Blöcke (NULL), spätere mit K_BLOCKS. NULL bleibt
 # NULL — nie Rückfall auf users.work_blocks (LEGACY) und nie [].
 EARLY_FROM, LATE_FROM = date(2026, 3, 1), date(2026, 9, 1)
@@ -51,10 +59,11 @@ def _seed(db, user):
                    raw_end_time=time(19), break_minutes=0, uncredited_minutes=150,
                    clamp_grace_minutes=15)
     db.add(te)
-    db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=TUE,
-                     start_time=time(8), end_time=time(23, 59), raw_start_time=time(8),
-                     raw_end_time=time(23, 59), break_minutes=0, uncredited_minutes=0,
-                     credit_override=False, auto_closed=True, clamp_grace_minutes=None))
+    te_tue = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=TUE,
+                       start_time=time(8), end_time=time(23, 59), raw_start_time=time(8),
+                       raw_end_time=time(23, 59), break_minutes=0, uncredited_minutes=0,
+                       credit_override=False, auto_closed=True, clamp_grace_minutes=None)
+    db.add(te_tue)
     db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=WED,
                      start_time=time(7), end_time=time(19), raw_start_time=time(7),
                      raw_end_time=time(19), break_minutes=0, uncredited_minutes=0,
@@ -66,6 +75,12 @@ def _seed(db, user):
                          proposed_end_time=time(19), proposed_break_minutes=0,
                          reason="Durchgearbeitet", request_credit_override=True,
                          original_uncredited_minutes=150))
+    db.add(ChangeRequest(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, entry_kind="time_entry",
+                         request_type=ChangeRequestType.UPDATE, status=ChangeRequestStatus.PENDING,
+                         time_entry_id=te_tue.id, proposed_date=TUE, proposed_start_time=time(8),
+                         proposed_end_time=time(17, 30), proposed_break_minutes=0,
+                         reason="Ende nachgetragen", request_credit_override=False,
+                         original_uncredited_minutes=None))
     db.commit()
     return te
 
@@ -87,8 +102,8 @@ def test_art15_self_export(_db_session, employee_user):
     assert payload["subject"]["work_blocks"] == LEGACY
     assert _blocks_by_from(payload["subject"]["working_hours_changes"]) == HISTORY_BLOCKS
     assert _by_date(payload["time_entries"]) == ENTRY_FIELDS
-    cr = payload["change_requests"][0]
-    assert (cr["request_credit_override"], cr["original_uncredited_minutes"]) == (True, 150)
+    assert {c["proposed_date"]: (c["request_credit_override"], c["original_uncredited_minutes"])
+            for c in payload["change_requests"]} == CR_FIELDS
 
 
 def test_art15_categories_and_logic():
