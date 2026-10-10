@@ -50,6 +50,13 @@ MAX_WEEKLY_HOURS_WARN = 48.0        # §3 ArbZG: 6 Werktage × 8h Durchschnitt =
 MAX_NIGHT_WORKER_DAILY_WARN = 8.0   # §6 Abs. 2 ArbZG: Tageslimit für Nachtarbeitnehmer
 
 
+def _net_minutes(st: time, et: time, brk: int, uncredited: int) -> int:
+    """Netto-Arbeitszeit eines Eintrags in GANZEN Minuten (Grundlage von
+    ``_net_hours`` und der Tages-/Wochensummen, Invarianten siehe dort)."""
+    mins = (et.hour * 60 + et.minute) - (st.hour * 60 + st.minute)
+    return max(0, mins - brk - uncredited)
+
+
 def _net_hours(st: time, et: time, brk: int, uncredited: int) -> float:
     """Calculate net working hours from start/end time, break minutes and the
     uncredited minutes between work blocks (Spec 2026-10-08, E13).
@@ -65,8 +72,7 @@ def _net_hours(st: time, et: time, brk: int, uncredited: int) -> float:
     gekappt auf 18:15" bei einer Lücke von 2:30 h 10,25 h und HTTP 422, obwohl
     nur 7,75 h angerechnet sind (Spec 7.1).
     """
-    mins = (et.hour * 60 + et.minute) - (st.hour * 60 + st.minute)
-    return max(0.0, (mins - brk - uncredited) / 60.0)
+    return _net_minutes(st, et, brk, uncredited) / 60.0
 
 
 def _calculate_daily_net_hours(
@@ -86,6 +92,12 @@ def _calculate_daily_net_hours(
     Bestehende Einträge tragen ihr gespeichertes ``uncredited_minutes`` bei;
     ``uncredited_minutes`` des neuen/geänderten Eintrags ist Pflicht (Spec 7.1),
     damit keine Aufrufstelle die Lücke still mitzählt.
+
+    Summiert GANZE Minuten und teilt erst die Summe durch 60: die Summe der
+    Gleitkommastunden je Eintrag lag genau auf der Grenze knapp darüber
+    (2:00 + 6:10 + 1:50 h = 10.000000000000002 > ``MAX_DAILY_HOURS_HARD`` →
+    HTTP 422 bei genau 10:00 h). So gilt ``> 10.0`` genau bei > 600 Minuten —
+    deckungsgleich mit ``presence_service`` („angerechnet ≤ 10 h", P14).
     """
     query = db.query(TimeEntry).filter(
         TimeEntry.user_id == user_id,
@@ -99,12 +111,12 @@ def _calculate_daily_net_hours(
         query = query.filter(TimeEntry.id != exclude_entry_id)
     existing = query.all()
 
-    total = sum(
-        _net_hours(e.start_time, e.end_time, e.break_minutes, e.uncredited_minutes or 0)
+    total_min = sum(
+        _net_minutes(e.start_time, e.end_time, e.break_minutes, e.uncredited_minutes or 0)
         for e in existing
     )
-    total += _net_hours(start_time, end_time, break_minutes, uncredited_minutes)
-    return total
+    total_min += _net_minutes(start_time, end_time, break_minutes, uncredited_minutes)
+    return total_min / 60.0
 
 
 def _calculate_weekly_net_hours(
@@ -122,7 +134,9 @@ def _calculate_weekly_net_hours(
     """Sum all net hours for the ISO calendar week containing entry_date, including the new/updated entry.
 
     ``uncredited_minutes`` wie im Tageshelfer (Pflicht; bestehende Einträge
-    mit ihrem gespeicherten Wert).
+    mit ihrem gespeicherten Wert). Summe in ganzen Minuten wie dort — sonst
+    ergaben genau 48:00 h 48.00000000000001 und eine ``WEEKLY_HOURS_WARNING``
+    neben ``PRESENCE_WEEKLY_HOURS`` (P22).
     """
     from datetime import timedelta
     # Monday of that ISO week
@@ -142,12 +156,12 @@ def _calculate_weekly_net_hours(
         query = query.filter(TimeEntry.id != exclude_entry_id)
     existing = query.all()
 
-    total = sum(
-        _net_hours(e.start_time, e.end_time, e.break_minutes, e.uncredited_minutes or 0)
+    total_min = sum(
+        _net_minutes(e.start_time, e.end_time, e.break_minutes, e.uncredited_minutes or 0)
         for e in existing
     )
-    total += _net_hours(start_time, end_time, break_minutes, uncredited_minutes)
-    return total
+    total_min += _net_minutes(start_time, end_time, break_minutes, uncredited_minutes)
+    return total_min / 60.0
 
 
 

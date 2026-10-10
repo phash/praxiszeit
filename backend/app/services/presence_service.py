@@ -47,10 +47,13 @@ def credited_minutes(entries: Sequence) -> int:
     JE EINTRAG auf Minuten gerundet, dann summiert (wie ``credit_summary_text``).
     ``net_hours`` trägt nur 2 Nachkommastellen (±0,2 Min je Eintrag); erst summiert
     und dann umgerechnet wich das Ergebnis ab etwa drei Einträgen um eine Minute
-    von ``_net_hours`` ab, auf dem die harten Prüfungen rechnen — die Bedingungen
-    „harte §3-Prüfung / ``WEEKLY_HOURS_WARNING`` kam nicht" (P14/P22) kippten an
-    der Grenze in beide Richtungen (Doppelmeldung ohne Kappung bzw. ein echter
-    Verstoß verschwand aus den Warnungen)."""
+    von ``_net_minutes`` ab, dessen Summe die harten Prüfungen bilden — die
+    Bedingungen „harte §3-Prüfung / ``WEEKLY_HOURS_WARNING`` kam nicht" (P14/P22)
+    kippten an der Grenze in beide Richtungen (Doppelmeldung ohne Kappung bzw. ein
+    echter Verstoß verschwand aus den Warnungen). Die harten Prüfungen summieren
+    ebenfalls ganze Minuten (``_calculate_daily/weekly_net_hours``), daher gilt
+    ``≤ 600``/``≤ 2880`` hier genau dann, wenn dort ``> 10.0``/``> 48.0`` nicht
+    anschlug."""
     return sum(int(round(float(e.net_hours or 0) * 60)) for e in entries if e.end_time is not None)
 
 

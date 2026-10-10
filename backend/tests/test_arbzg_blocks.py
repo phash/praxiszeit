@@ -152,24 +152,68 @@ def test_daily_presence_rounding_keeps_the_clamped_violation():
     ]
 
 
-def test_credited_minutes_matches_the_hard_checks_exactly():
-    """Parität zu ``_net_hours`` (Grundlage von ``_calculate_daily/weekly_net_hours``)
-    über viele Wochen: dieselbe Minutenzahl, nicht nur ungefähr."""
+def test_credited_minutes_matches_the_hard_checks_decision(db, test_user):
+    """Parität zur ENTSCHEIDUNG der harten Prüfungen (Review Task 3): „angerechnet
+    ≤ 10 h / ≤ 48 h" in presence_service gilt genau dann, wenn
+    ``_calculate_daily/weekly_net_hours`` NICHT über ``MAX_DAILY_HOURS_HARD`` bzw.
+    ``MAX_WEEKLY_HOURS_WARN`` liegt — gerade genau AUF der Grenze (± 1 Min), wo
+    eine Gleitkommasumme je Eintrag knapp darüber landete (2:00 + 6:10 + 1:50 h
+    = 10.000000000000002). Ein Vergleich mit ``round(exact * 60)`` sah das nicht."""
     import random
-    from app.routers.time_entries import _net_hours
+    from app.routers.time_entries import (
+        MAX_DAILY_HOURS_HARD, MAX_WEEKLY_HOURS_WARN,
+        _calculate_daily_net_hours, _calculate_weekly_net_hours,
+    )
 
-    rng = random.Random(20261008)
-    for _ in range(300):
-        entries = []
-        for _ in range(rng.randint(1, 12)):
-            start = rng.randint(0, 20 * 60)
-            end = rng.randint(start + 1, 23 * 60 + 59)
-            brk = rng.choice((0, 0, 15, 30, 45, rng.randint(0, 60)))
-            unc = rng.choice((0, 0, rng.randint(0, 180)))
-            entries.append(_e(time(start // 60, start % 60), time(end // 60, end % 60), brk=brk, unc=unc))
-        exact = sum(_net_hours(e.start_time, e.end_time, e.break_minutes, e.uncredited_minutes)
-                    for e in entries)
-        assert ps.credited_minutes(entries) == round(exact * 60), entries
+    rng = random.Random(20261010)
+
+    def split(total, parts):
+        cuts = sorted(rng.sample(range(1, total), parts - 1))
+        return [b - a for a, b in zip([0] + cuts, cuts + [total])]
+
+    def day_entries(day, credited_parts):
+        out, at = [], rng.randint(0, 60)
+        for credited in credited_parts:
+            brk = rng.choice((0, 0, 15, 30))
+            unc = rng.choice((0, 0, rng.randint(1, 40)))
+            end = at + credited + brk + unc
+            out.append(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=test_user.id, date=day,
+                                 start_time=time(at // 60, at % 60), end_time=time(end // 60, end % 60),
+                                 break_minutes=brk, uncredited_minutes=unc))
+            at = end + rng.randint(0, 30)
+        return out
+
+    def hard_check_fires(helper, limit, entries):
+        *existing, new = entries
+        db.add_all(existing)
+        db.flush()
+        hours = helper(db=db, user_id=test_user.id, entry_date=new.date, start_time=new.start_time,
+                       end_time=new.end_time, break_minutes=new.break_minutes,
+                       uncredited_minutes=new.uncredited_minutes, tenant_id=DEFAULT_TENANT_ID)
+        for e in existing:
+            db.delete(e)
+        db.flush()
+        return hours > limit
+
+    for target in (599, 600, 601) * 100:
+        entries = day_entries(MON, split(target, rng.randint(2, 5)))
+        credited = ps.credited_minutes(entries)
+        assert credited == target
+        fires = hard_check_fires(_calculate_daily_net_hours, MAX_DAILY_HOURS_HARD, entries)
+        assert (credited <= ps.DAILY_LIMIT_MINUTES) == (not fires), entries
+
+    for target in (2879, 2880, 2881) * 100:
+        days = [target // 5 + (1 if i < target % 5 else 0) for i in range(5)]
+        for _ in range(10):
+            i, j, d = rng.randrange(5), rng.randrange(5), rng.randint(0, 90)
+            if i != j and days[i] - d >= 120 and days[j] + d <= 800:
+                days[i], days[j] = days[i] - d, days[j] + d
+        entries = [e for i, minutes in enumerate(days)
+                   for e in day_entries(MON + timedelta(days=i), split(minutes, rng.randint(1, 3)))]
+        credited = ps.credited_minutes(entries)
+        assert credited == target
+        fires = hard_check_fires(_calculate_weekly_net_hours, MAX_WEEKLY_HOURS_WARN, entries)
+        assert (credited <= ps.WEEKLY_LIMIT_MINUTES) == (not fires), entries
 
 
 def test_break_in_gap():

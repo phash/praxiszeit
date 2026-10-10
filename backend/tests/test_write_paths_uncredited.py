@@ -8,6 +8,7 @@ import pytest
 from app.models import ChangeRequest, TimeEntry
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
 from app.services import work_window_service as wws
+from app.services.presence_service import credited_minutes
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import (  # noqa: F401 — Fixtures
     _db_session, admin_client, admin_user, employee_client, employee_user, tenant,
@@ -277,3 +278,69 @@ def test_weekly_and_post_commit_daily_warnings_use_credited_time(_db_session, em
     _db_session.expire_all()
     fri = _db_session.query(TimeEntry).filter(TimeEntry.date == FRI).one()
     assert (fri.uncredited_minutes, fri.net_hours) == (150, Decimal("6.75"))
+
+
+# Review Task 3 (PR2): genau AUF der Grenze greift die harte Prüfung nicht.
+# Die Helfer summierten Gleitkommastunden je Eintrag (``m / 60.0``); 2:00 +
+# 6:10 + 1:50 h ergab 10.000000000000002 > 10.0 → HTTP 400 bzw.
+# DAILY_HOURS_HARD bei genau 10:00 h, und 9:35 + 9:50 + 10:00 + 9:00 + 9:35 h
+# ergab 48.00000000000001 > 48.0 → WEEKLY_HOURS_WARNING bei genau 48:00 h.
+# presence_service rechnet in ganzen Minuten („angerechnet ≤ 10 h / ≤ 48 h");
+# an der Grenze meldeten beide Seiten gleichzeitig (P14/P22).
+# Pausen: Abstände 30 + 20 Min ≥ 45 (§4 bei > 9 h) — kein 400 aus der Pausenprüfung.
+def _exact_10h_ma_create(db, user, request):
+    _entry(db, user, time(6, 0), time(8, 0))
+    _entry(db, user, time(8, 30), time(14, 40))
+    return request.getfixturevalue("employee_client").post(
+        "/api/time-entries/", json={"date": MON.isoformat(), "start_time": "15:00",
+                                    "end_time": "16:50", "break_minutes": 0})
+
+
+def _exact_10h_admin_create(db, user, request):
+    _entry(db, user, time(6, 0), time(8, 0))
+    _entry(db, user, time(8, 30), time(14, 40))
+    return request.getfixturevalue("admin_client").post(
+        f"/api/admin/users/{user.id}/time-entries",
+        json={"date": MON.isoformat(), "start_time": "15:00", "end_time": "16:50", "break_minutes": 0})
+
+
+def _exact_10h_clock_out(db, user, request):
+    _entry(db, user, time(6, 0), time(8, 0))
+    _entry(db, user, time(8, 30), time(14, 40))
+    _entry(db, user, time(15, 0), None)
+    return request.getfixturevalue("employee_client").post(
+        "/api/time-entries/clock-out", json={"break_minutes": 0})
+
+
+@pytest.mark.parametrize("path", [_exact_10h_ma_create, _exact_10h_admin_create, _exact_10h_clock_out],
+                         ids=["ma_create", "admin_create", "clock_out"])
+def test_exactly_10h_credited_is_not_over_the_hard_cap(_db_session, employee_user, request,
+                                                       monkeypatch, path):
+    _today(monkeypatch, 16, 50)
+    resp = path(_db_session, employee_user, request)
+    assert resp.status_code in (200, 201), resp.text
+    warnings = resp.json()["warnings"]
+    assert not any(w.startswith("DAILY_HOURS_HARD") for w in warnings), warnings
+    _db_session.expire_all()
+    assert credited_minutes(_db_session.query(TimeEntry).all()) == 600
+
+
+@pytest.mark.parametrize("client_fixture, url", [
+    ("employee_client", "/api/time-entries/"),
+    ("admin_client", "/api/admin/users/{uid}/time-entries"),
+], ids=["ma_create", "admin_create"])
+def test_exactly_48h_credited_gives_no_weekly_warning(_db_session, employee_user, request,
+                                                      monkeypatch, client_fixture, url):
+    # Mo–Do 9:35 / 9:50 / 10:00 / 9:00 h (je mit 45 Min Pause), Fr 9:35 h → genau 48:00 h.
+    for d, end in ((1, time(17, 20)), (2, time(17, 35)), (3, time(17, 45)), (4, time(16, 45))):
+        _entry(_db_session, employee_user, time(7, 0), end, brk=45, day=date(2026, 6, d))
+    monkeypatch.setattr(te, "_today_local", lambda: FRI)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 5, 18, 0))
+    resp = request.getfixturevalue(client_fixture).post(
+        url.format(uid=employee_user.id),
+        json={"date": FRI.isoformat(), "start_time": "07:00", "end_time": "17:20", "break_minutes": 45})
+    assert resp.status_code == 201, resp.text
+    warnings = resp.json()["warnings"]
+    assert not any(w.startswith("WEEKLY_HOURS_WARNING") for w in warnings), warnings
+    _db_session.expire_all()
+    assert credited_minutes(_db_session.query(TimeEntry).all()) == 2880
