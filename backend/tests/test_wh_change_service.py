@@ -293,6 +293,52 @@ def test_arbzg_findings_before_after_and_presence(db, test_user, test_admin, mon
     }
 
 
+class TestArbzgFindingsEdgeWeeks:
+    """P22: eine Kalenderwoche, die der Wirkungsbereich nur anschneidet, zählt
+    über volle Mo–So wie ``presence_service`` — die Tage außerhalb ändert die
+    Änderung nicht, sie gehen unverändert in „vorher" und „nachher" ein. Tage
+    > 10 h zählen weiter nur im Wirkungsbereich."""
+    TWELVE = [("06:00", "18:00")]
+    EIGHT = [("06:00", "14:00")]
+
+    def _setup(self, db, user):
+        set_grace(db, 0)
+        add_row(db, user, date(2026, 3, 1), week=block_week(
+            mon=self.TWELVE, tue=self.TWELVE, wed=self.TWELVE, thu=self.TWELVE, fri=self.TWELVE))
+        week_mon = date(2026, 9, 14)
+        for offset in range(2):
+            entry(db, user, week_mon + timedelta(days=offset), t(6), t(18), grace=0)
+        for offset in range(2, 5):
+            entry(db, user, week_mon + timedelta(days=offset), t(6), t(16), grace=0)
+
+    def test_effective_date_mid_week(self, db, test_user, test_admin, monkeypatch):
+        """Mo/Di 12 h liegen VOR dem Wirkungsdatum Mi 16.09.; Mi–Fr 10 h → 8 h:
+        die Woche fällt von 54 h auf 48 h angerechnet, laut Stempel bleibt sie."""
+        freeze(monkeypatch)
+        self._setup(db, test_user)
+        impact = _run(db, test_user, test_admin, eff=date(2026, 9, 16), week=block_week(
+            mon=self.TWELVE, tue=self.TWELVE, wed=self.EIGHT, thu=self.EIGHT, fri=self.EIGHT))
+        assert impact.arbzg == {
+            "days_over_10_credited_before": 0, "days_over_10_credited_after": 0, "days_over_10_presence": 0,
+            "weeks_over_48_credited_before": 1, "weeks_over_48_credited_after": 0, "weeks_over_48_presence": 1,
+        }
+
+    def test_next_change_mid_week(self, db, test_user, test_admin, monkeypatch):
+        """Die nächste Änderung beginnt Mi 16.09.: Mo/Di 12 h → 8 h im
+        Wirkungsbereich, Mi–Fr 10 h gehören schon der nächsten Zeile."""
+        freeze(monkeypatch)
+        self._setup(db, test_user)
+        add_row(db, test_user, date(2026, 9, 16), week=block_week(
+            mon=self.TWELVE, tue=self.TWELVE, wed=self.TWELVE, thu=self.TWELVE, fri=self.TWELVE))
+        impact = _run(db, test_user, test_admin, eff=date(2026, 9, 8), week=block_week(
+            mon=self.EIGHT, tue=self.EIGHT, wed=self.TWELVE, thu=self.TWELVE, fri=self.TWELVE))
+        assert impact.window.end == date(2026, 9, 15)
+        assert impact.arbzg == {
+            "days_over_10_credited_before": 2, "days_over_10_credited_after": 0, "days_over_10_presence": 2,
+            "weeks_over_48_credited_before": 1, "weeks_over_48_credited_after": 0, "weeks_over_48_presence": 1,
+        }
+
+
 class TestTexts:
     def _impact(self, **overrides):
         base = dict(

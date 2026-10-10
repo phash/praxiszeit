@@ -114,18 +114,41 @@ def _snapshot(e: TimeEntry) -> TimeEntry:
                      auto_closed=e.auto_closed)
 
 
-def _arbzg_counts(entries, minutes_of: Callable) -> tuple:
+def _arbzg_counts(entries, edge_entries, minutes_of: Callable) -> tuple:
     """(Tage > 10 h, Kalenderwochen > 48 h) — Grenzen und Minutenrechnung wie die
     weichen Anwesenheits-Warnungen (``presence_service``, P22), damit Vorschau
-    und Warnung an der Grenze nicht auseinanderlaufen."""
+    und Warnung an der Grenze nicht auseinanderlaufen.
+
+    ``entries`` = Einträge im Wirkungsbereich; nur sie zählen als Tage.
+    ``edge_entries`` = Einträge der angeschnittenen Randwochen AUSSERHALB davon
+    (:func:`_edge_week_entries`): die Wochen summieren über volle Mo–So wie
+    ``presence_service`` — sonst verschwände an einem Wirkungsdatum bzw. einer
+    nächsten Änderung mitten in der Woche ein §3-Verstoß aus der Vorschau."""
     per_day: Dict = defaultdict(int)
     per_week: Dict = defaultdict(int)
     for e in entries:
         minutes = minutes_of(e)
         per_day[e.date] += minutes
         per_week[e.date.isocalendar()[:2]] += minutes
+    for e in edge_entries:
+        per_week[e.date.isocalendar()[:2]] += minutes_of(e)
     return (sum(1 for v in per_day.values() if v > presence_service.DAILY_LIMIT_MINUTES),
             sum(1 for v in per_week.values() if v > presence_service.WEEKLY_LIMIT_MINUTES))
+
+
+def _edge_week_entries(db: Session, user: User, window) -> list:
+    """Geschlossene Einträge der Kalenderwochen, in die Wirkungsdatum und Ende des
+    Wirkungsbereichs fallen, soweit sie AUSSERHALB des Bereichs liegen. Die
+    Änderung fasst sie nicht an — sie gehen unverändert in „vorher" und
+    „nachher" ein."""
+    week_lo = window.start - timedelta(days=window.start.weekday())
+    week_hi = window.end + timedelta(days=6 - window.end.weekday())
+    out = []
+    if week_lo < window.start:
+        out += presence_service.closed_entries(db, user, week_lo, window.start - timedelta(days=1))
+    if window.end < week_hi:
+        out += presence_service.closed_entries(db, user, window.end + timedelta(days=1), week_hi)
+    return out
 
 
 def _credited_minutes(e) -> int:
@@ -269,9 +292,10 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
         bucket[1] += c.old_net
         bucket[2] += c.new_net
     after = presence_service.closed_entries(db, user, window.start, window.end)
-    credited_before = _arbzg_counts(before.values(), _credited_minutes)
-    credited_after = _arbzg_counts(after, _credited_minutes)
-    presence = _arbzg_counts(after, work_window_service.presence_minutes)
+    edge = _edge_week_entries(db, user, window)
+    credited_before = _arbzg_counts(before.values(), edge, _credited_minutes)
+    credited_after = _arbzg_counts(after, edge, _credited_minutes)
+    presence = _arbzg_counts(after, edge, work_window_service.presence_minutes)
 
     return ChangeImpact(
         window=window, grace=grace, old_schedule=old_schedule, new_schedule=new_schedule,
