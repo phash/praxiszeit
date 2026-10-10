@@ -183,7 +183,7 @@ knapp zusammen.
 
 | Nr | Entscheidung | Begründung |
 |---|---|---|
-| E39 | MA-`PUT`: `date` kommt ins Neukappungs-Gate. | Ein reiner Datumswechsel auf einen anderen Wochentag kappt heute nicht neu. |
+| E39 | MA-`PUT`: `date` kommt ins Neukappungs-Gate. **Entschieden 2026-10-10 (#502):** Mitarbeitende wechseln über `PUT /api/time-entries/{id}` das Datum nicht mehr — nur noch heute → heute, sonst **403** (vor dem Übernehmen der Felder). Den Datumswechsel auf dieser Route nimmt nur die Verwaltung vor (Admins bearbeiten dort auch fremde Einträge); das Gate gilt dafür und für `admin_update_time_entry` unverändert. | Ein reiner Datumswechsel auf einen anderen Wochentag kappt heute nicht neu. #502: der ungeprüfte MA-Datumswechsel verschob den heutigen, offenen Eintrag in die Vergangenheit; der Auto-Close schloss ihn dort um 23:59 — bis rund 16 h an einem vergangenen Tag ohne Antrag und ohne §3-Prüfung. |
 | E40 | MA-Antrag (`change_requests.py`) validiert mit `clamp` + `uncredited`, speichert weiter roh. | Heute prüft der Antrag roh, die Genehmigung gekappt → gültige Teilschicht-Anträge („08–18, Pause 0") sind nicht stellbar. |
 | E41 | CR-Nachprüfung nach dem Commit: `exclude_entry_id=cr.time_entry_id`. | Der Eintrag zählt heute doppelt (§6/48-h-Warnungen zu hoch). |
 | E42 | Auto-Close über `clamp` (siehe E36). | — |
@@ -968,7 +968,7 @@ aktueller Puffer, neu geschrieben, nur in Nr. 15. Jede schreibende Zeile überni
 | 1 | `routers/time_entries.py:300` | `clock_in` | Sperre besteht (`:267`). `ClampResult` entpacken, `credit_override=False`; Insert (`:304-313`) mit `uncredited_minutes=0`; Einstempeln in der Lücke → `WORK_WINDOW_CLAMPED` (Text „Einstempeln in der Lücke"); vor der Hülle wie heute (P17, K20): `EARLY_START` (`:319-326`) unverändert nur bei `raw_start` (vor dem ersten Block). |
 | 2 | `routers/time_entries.py:403` | `clock_out` | Neu `lock_user_row` vor dem Lesen des offenen Eintrags (P5); `credit_override=open_entry.credit_override`; `end_time`, `raw_end_time`, `uncredited_minutes` schreiben (`:429-432`); §3 daily (`:408-417`), §4 (`:461-489`), weekly (`:505-514`) und Nacht (`:518-526`) mit `uncredited`/Lückensegmenten; Warnung (`:457-459`) über `clamp_warning(…, for_employee=True)`; Anwesenheits-Warnungen (Abschnitt 8). |
 | 3 | `routers/time_entries.py:655` | `create_time_entry` | Neu `lock_user_row` (P5). `uncredited` in Insert (`:814-826`), §3 (`:685-698`), §4/202 (`:705-760`), Waiver (`:772-782`), weekly (`:785-794`); Warnung (`:768-770`, `for_employee=True`). Der 202-Antrag speichert weiter die **rohen** Zeiten. |
-| 4 | `routers/time_entries.py:990` | `update_time_entry` (MA) | Neu `lock_user_row` (P5). Anerkannter Eintrag (`credit_override`) → **409** „Anerkannter Eintrag – Änderung bitte per Änderungsantrag." (P3), vor jeder Änderung. Neukappungs-Gate (`:998-1004`) um `"date"` erweitern (E39); `uncredited` neu, sobald `start_time`, `end_time` oder `date` geschrieben wird. **Warn-Gate** (`:1121-1129`, heute nur bei `start_time`/`end_time` im Payload und nicht `_resubmitted_unchanged`) ebenfalls um `date` erweitern, analog `_times_written` im Admin-Pfad — sonst kappt ein reiner Datumswechsel still (#462-Klasse). `uncredited_minutes`/`credit_override`/`auto_closed` nie über die generische `setattr`-Schleife (`:911-913`). |
+| 4 | `routers/time_entries.py:990` | `update_time_entry` (MA) | Neu `lock_user_row` (P5). Anerkannter Eintrag (`credit_override`) → **409** „Anerkannter Eintrag – Änderung bitte per Änderungsantrag." (P3), vor jeder Änderung. Neukappungs-Gate (`:998-1004`) um `"date"` erweitern (E39); `uncredited` neu, sobald `start_time`, `end_time` oder `date` geschrieben wird. **Warn-Gate** (`:1121-1129`, heute nur bei `start_time`/`end_time` im Payload und nicht `_resubmitted_unchanged`) ebenfalls um `date` erweitern, analog `_times_written` im Admin-Pfad — sonst kappt ein reiner Datumswechsel still (#462-Klasse). `uncredited_minutes`/`credit_override`/`auto_closed` nie über die generische `setattr`-Schleife (`:911-913`). **#502 (Entschieden 2026-10-10):** Nicht-Admins mit `date` ≠ heute im Payload → **403** mit dem Text der bestehenden Sperre („Einträge vergangener Tage können nur per Änderungsantrag geändert werden"), vor dem Übernehmen der Felder; ein Datums**wechsel** prüft das Beschäftigungsfenster der **Person des Eintrags** (400, Wortlaut wie `create_time_entry`, auch für Admins; das unverändert mitgeschickte Datum nicht); `TimeEntryUpdate.date` lehnt ein Datum in der Zukunft ab (422, wirkt auch auf Nr. 6). |
 | 5 | `routers/admin_time_entries.py:88` | `admin_create_time_entry` | Neu `lock_user_row` (P5). `uncredited` setzen und an §4 (`:122-136`), §3 (`:139-150`), weekly (`:156-164`), Nacht (`:167-174`) durchreichen; Insert (`:176-190`). |
 | 6 | `routers/admin_time_entries.py:293` | `admin_update_time_entry` | Neu `lock_user_row` (P5; `user_id` des Eintrags vorab ohne Sperre lesen, dann sperren, dann Eintrag laden). `uncredited` aus dem endgültig gespeicherten Paar, wenn `start`, `end` oder `_times_affected`; `credit_override=entry.credit_override` (bleibt gesetzt, P3); §4/§3/weekly (`:339-385`). |
 | 7 | `routers/admin_change_requests.py:387` | `review_change_request`, Vorprüfung | Sperre besteht (`:235`, auch Bulk). `uncredited` an §3 (`:391-404`) und §4 (`:406-419`); sonst scheitert die Genehmigung regulärer Teilschicht-Anträge (auch in `bulk_review_change_requests`). Schreibt selbst keinen Eintrag. |
@@ -1004,7 +1004,8 @@ Schemas (`schemas/time_entry.py:23-75`, `ClockOutRequest`, `ChangeRequestCreate`
 
 | Fehler | Fundstelle | Behebung |
 |---|---|---|
-| Reiner Datumswechsel (MA) kappt nicht neu | `time_entries.py:998-1004` | `"date"` ins Gate (E39) |
+| Reiner Datumswechsel (MA) kappt nicht neu | `time_entries.py:998-1004` | `"date"` ins Gate (E39); seit #502 auf dieser Route nur noch über die Verwaltung erreichbar |
+| MA-`PUT` verschiebt einen Eintrag auf ein beliebiges Datum (#502, Entschieden 2026-10-10) | `time_entries.py` `update_time_entry`, `schemas/time_entry.py` `TimeEntryUpdate` | Nicht-Admins nur heute → heute (403); Beschäftigungsfenster beim Datumswechsel (400); Validator „nicht in der Zukunft" (422); Datumsfeld im Bearbeiten-Formular für Mitarbeitende gesperrt (`TimeTracking.tsx`) |
 | MA-Antrag prüft roh, Genehmigung gekappt | `change_requests.py:194-331` | Antrag validiert mit `clamp` + `uncredited` (E40) |
 | CR-Nachprüfung zählt den Eintrag doppelt | `admin_change_requests.py:1022/1044` | `exclude_entry_id=cr.time_entry_id` (E41) |
 | Auto-Close rechnet den Abend voll an | `time_entries.py:165-205` | über `clamp` (E36/E42); Hinweis in den Release-Notes |
@@ -2541,10 +2542,12 @@ alles zusammen über `bash scripts/local-ci.sh`.
   422 und ohne Doppelzählung); eigener Test für 11 (`ImportedEntry.uncredited_minutes`
   gesetzt, Kappungsnotiz auch bei reinem Lückenfall K1 ohne `raw_*`); Formular-Re-Save
   (`unclamp_input`) behält `raw_*` und `uncredited`; Datumswechsel auf anderen Wochentag
-  (MA- und Admin-Pfad) kappt neu **und** liefert die Warnung (Warn-Gate mit `date`, 7.1
-  Nr. 4).
+  (beide Routen, `update_time_entry` und `admin_update_time_entry`; auf `update_time_entry`
+  seit #502 über die Verwaltung) kappt neu **und** liefert die Warnung (Warn-Gate mit
+  `date`, 7.1 Nr. 4).
 - `test_clamp_grace.py` (E79/E80, 19.1 Nr. 8): Eintrag mit Puffer 15 erfasst, Puffer auf 0
-  gesenkt → Admin-Edit, MA-Edit, Datumswechsel (MA und Admin), CR-Genehmigung (UPDATE),
+  gesenkt → Admin-Edit, MA-Edit, Datumswechsel (beide Routen; seit #502 über die
+  Verwaltung), CR-Genehmigung (UPDATE),
   XLS-Überschreiben, Ausstempeln eines offenen Eintrags und Auto-Close kappen weiter mit 15
   (angerechnete Zeit unverändert, `clamp_grace_minutes` bleibt 15, Warntext nennt 15);
   Bestand mit NULL → aktueller Puffer, danach gespeichert; Neuanlagen (`clock_in`,
@@ -2557,8 +2560,14 @@ alles zusammen über `bash scripts/local-ci.sh`.
   (`auto_closed = true`); eine spätere Admin-Korrektur des Endes setzt `auto_closed =
   false`; Anwesenheit des Tages endet am wirksamen Ende (kein falsches
   `PRESENCE_DAILY_HOURS` bei einem weiteren Eintrag desselben Tages).
-- `test_legacy_fixes_blocks.py`: E39 (Datumswechsel), E40 (Antrag „08–18, Pause 0" wird
-  angenommen, gespeichert roh), E41 (keine Doppelzählung in der 48-h-Warnung).
+- `test_legacy_fixes_blocks.py`: E39 (Datumswechsel über die Verwaltung; MA-Datumswechsel
+  → 403, #502), E40 (Antrag „08–18, Pause 0" wird angenommen, gespeichert roh), E41 (keine
+  Doppelzählung in der 48-h-Warnung).
+- `test_issue_502_entry_date_change.py` (#502): MA-Datumswechsel weg von heute → 403 (offener
+  und geschlossener Eintrag, nichts übernommen), heute → heute bleibt erlaubt; Datum in der
+  Zukunft → 422 auf beiden Routen; Beschäftigungsfenster der Person des Eintrags beim
+  Wechsel (nicht der Admin), unverändert mitgeschicktes Datum außerhalb des Fensters
+  blockiert keine Korrektur.
 - `test_xls_blocks.py`: `clamp_applies`; Tag ohne Blöcke behält mitgelieferte `raw_*`;
   `track_hours=false` + Blöcke behält mitgeliefertes `raw_*` (F27); Auto-Pause-Rest inkl.
   Aufrunden auf 15; `/confirm` ignoriert Client-`uncredited`; F-026-Filter; §5 auf
@@ -2832,7 +2841,7 @@ bzw. 13:00 bei Blöcken 08–12 + 15–18 → neutral; Hinweisliste mit allen Va
 | Warnschwelle für wiederholt nicht angerechnete Zeit | Rechtsbewertung Pflicht 8, separat. |
 | Rücknahme einer Anerkennung | P11. |
 | Live-Timer mit angerechneter Zeit im Dashboard | D34, später. |
-| MA-`PUT` in die Vergangenheit (Datums-Validator in `TimeEntryUpdate`) | D16-Nebenbefund, eigenes Ticket. |
+| ~~MA-`PUT` in die Vergangenheit (Datums-Validator in `TimeEntryUpdate`)~~ | **Umgesetzt** (#502, Entschieden 2026-10-10): D16-Nebenbefund nachgezogen — Mitarbeitende wechseln das Datum nur noch heute → heute, siehe E39, 7.1 Nr. 4 und 7.2. |
 | Bearbeiten-Formular für Kollaps-Einträge | `admin_time_entries.py:262-274`; Bestandsproblem, unabhängig. |
 
 ---
