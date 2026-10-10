@@ -1698,6 +1698,12 @@ def create_working_hours_change(
             note="Automatisch erfasster Ausgangswert vor der ersten Stundenänderung",
         ))
 
+    # Spec 9.3 Schritt 3 (9.5 (c), 9.6): das volle Tagessoll VOR der Änderung je
+    # Abwesenheitsdatum des Fensters — Übergangsstand bis zum Rechenpfad
+    # wh_change_service (PR3 Task 8/9).
+    _window_before = calculation_service.retarget_window(db, user, change_data.effective_from)
+    _old_full = calculation_service.absence_full_targets(db, user, _window_before.start, _window_before.end)
+
     change = WorkingHoursChange(
         user_id=user_id,
         tenant_id=current_user.tenant_id,
@@ -1771,7 +1777,7 @@ def create_working_hours_change(
     adjusted = []
     if window.has_absences:
         adjusted = calculation_service.retarget_absence_hours(
-            db, user, window.start, window.end
+            db, user, window.start, window.end, old_full_target_by_date=_old_full,
         )
         _log_wh_change_retarget(
             db, user=user, admin=current_user, tenant_id=current_user.tenant_id,
@@ -2170,6 +2176,8 @@ def preview_working_hours_change(
         # oben und dem Insert), hinterlässt zwar auch dann nichts Persistentes —
         # aber der Ausstiegspfad umginge die Rollback-Garantie, die der
         # Docstring dieses Endpoints gibt. Es gibt keinen Pfad an ihr vorbei.
+        # Spec 9.3 Schritt 3: volles Tagessoll VOR der hypothetischen Zeile.
+        _old_full = calculation_service.absence_full_targets(db, user, period_start, period_end)
         try:
             temp_change = WorkingHoursChange(
                 user_id=user.id,
@@ -2209,7 +2217,7 @@ def preview_working_hours_change(
                 # ein Protokolleintrag hier hieße, dass jeder Tastendruck im
                 # Dialog eine Änderung festschreibt, die nie stattfand.
                 affected_absences = len(calculation_service.retarget_absence_hours(
-                    db, user, period_start, period_end
+                    db, user, period_start, period_end, old_full_target_by_date=_old_full,
                 ))
             # Kein wh_changes-Preload durchreichen — die Funktionen müssen die
             # eben geflushte Zeile selbst nachladen.
@@ -2310,6 +2318,9 @@ def delete_working_hours_change(
     # flush below, and any attribute access on a deleted, expired row would
     # try to re-SELECT it and fail.
     deleted_effective_from = change.effective_from
+    # Spec 9.7/9.3 Schritt 3: „vorher" = MIT der zu löschenden Zeile.
+    _window_before = calculation_service.retarget_window(db, user, change.effective_from)
+    _old_full = calculation_service.absence_full_targets(db, user, _window_before.start, _window_before.end)
     db.delete(change)
     # Task 4: flush (not commit) so the following re-queries within THIS
     # transaction already see the row as gone — retarget_absence_hours below
@@ -2369,7 +2380,7 @@ def delete_working_hours_change(
     warning = None
     if window.has_absences:
         adjusted = calculation_service.retarget_absence_hours(
-            db, user, window.start, window.end
+            db, user, window.start, window.end, old_full_target_by_date=_old_full,
         )
         _log_wh_change_retarget(
             db, user=user, admin=current_user, tenant_id=current_user.tenant_id,

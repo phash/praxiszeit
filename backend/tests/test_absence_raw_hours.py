@@ -147,7 +147,7 @@ class TestRetargetNeverTouchesRawHours:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
         _wh_change(db, test_user, date(2026, 3, 1), 20.0)
 
-        calculation_service.retarget_absence_hours(db, test_user, *WINDOW)
+        calculation_service.retarget_absence_hours(db, test_user, *WINDOW, old_full_target_by_date={})
         db.commit()
 
         db.expire_all()
@@ -162,10 +162,10 @@ class TestRetargetNeverTouchesRawHours:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
 
         _wh_change(db, test_user, date(2026, 3, 1), 20.0)
-        calculation_service.retarget_absence_hours(db, test_user, *WINDOW)
+        calculation_service.retarget_absence_hours(db, test_user, *WINDOW, old_full_target_by_date={})
         db.commit()
         _wh_change(db, test_user, date(2026, 3, 2), 10.0)
-        calculation_service.retarget_absence_hours(db, test_user, *WINDOW)
+        calculation_service.retarget_absence_hours(db, test_user, *WINDOW, old_full_target_by_date={})
         db.commit()
 
         db.expire_all()
@@ -177,7 +177,7 @@ class TestRetargetNeverTouchesRawHours:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
         _wh_change(db, test_user, date(2026, 3, 1), 20.0)
 
-        calculation_service.retarget_absence_hours(db, test_user, *WINDOW, dry_run=True)
+        calculation_service.retarget_absence_hours(db, test_user, *WINDOW, dry_run=True, old_full_target_by_date={})
 
         db.expire_all()
         row = db.query(Absence).filter(Absence.id == a.id).one()
@@ -192,7 +192,7 @@ class TestRetargetReturnsRecords:
         a = _absence(db, test_user, MON, AbsenceType.SICK, 8.0)
         _wh_change(db, test_user, date(2026, 3, 1), 20.0)
 
-        changed = calculation_service.retarget_absence_hours(db, test_user, *WINDOW)
+        changed = calculation_service.retarget_absence_hours(db, test_user, *WINDOW, old_full_target_by_date={})
 
         assert len(changed) == 1
         rec = changed[0]
@@ -204,8 +204,7 @@ class TestRetargetReturnsRecords:
 
     def test_empty_window_returns_empty_list(self, db, test_user):
         assert calculation_service.retarget_absence_hours(
-            db, test_user, date(2026, 3, 31), date(2026, 3, 1)
-        ) == []
+            db, test_user, date(2026, 3, 31), date(2026, 3, 1), old_full_target_by_date={}) == []
 
 
 class TestHumanCorrectionSetsBoth:

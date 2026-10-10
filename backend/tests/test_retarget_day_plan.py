@@ -33,7 +33,7 @@ def test_only_changed_weekday_is_retargeted(db, test_user):
         hours_wednesday=Decimal("6.0"), work_days_per_week=2))
     db.commit()
 
-    changed = cs.retarget_absence_hours(db, test_user, date(2026, 3, 1), date(2026, 3, 31))
+    changed = cs.retarget_absence_hours(db, test_user, date(2026, 3, 1), date(2026, 3, 31), old_full_target_by_date={})
     db.commit()
 
     rows = {a.date: Decimal(str(a.hours)) for a in db.query(Absence).filter(
@@ -54,7 +54,7 @@ def test_free_weekday_is_skipped_not_zeroed(db, test_user):
     db.add(_absence(test_user, fri, 3.0))
     db.commit()
 
-    changed = cs.retarget_absence_hours(db, test_user, date(2026, 3, 1), date(2026, 3, 31))
+    changed = cs.retarget_absence_hours(db, test_user, date(2026, 3, 1), date(2026, 3, 31), old_full_target_by_date={})
     row = db.query(Absence).filter(Absence.date == fri).first()
 
     assert len(changed) == 0

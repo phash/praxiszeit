@@ -350,6 +350,13 @@ class RetargetWindow(NamedTuple):
     last_absence: Optional[date]
     """Spaetestes Abwesenheitsdatum im Bereich; ``None`` = keine vorhanden."""
 
+    last_time_entry: Optional[date]
+    """Spec 9.1: spätestes Zeiteintragsdatum im Bereich; ``None`` = keiner."""
+
+    @property
+    def has_time_entries(self) -> bool:
+        return self.last_time_entry is not None
+
     @property
     def has_absences(self) -> bool:
         """Der AUSLOESER fuer das Nachziehen: gibt es ueberhaupt eine bereits
@@ -405,6 +412,17 @@ def retarget_window(db: Session, user: User, effective_from: date) -> RetargetWi
         absence_q = absence_q.filter(Absence.date <= hard_end)
     last_absence = absence_q.scalar()
 
+    # Spec 9.1: auch Zeiteinträge bestimmen das offene Ende — die Neukappung
+    # muss jeden bereits erfassten Eintrag im Wirkungsbereich erreichen.
+    entry_q = db.query(func.max(TimeEntry.date)).filter(
+        TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
+        TimeEntry.date >= effective_from,
+    )
+    if hard_end is not None:
+        entry_q = entry_q.filter(TimeEntry.date <= hard_end)
+    last_time_entry = entry_q.scalar()
+
     if hard_end is not None:
         end = hard_end
     else:
@@ -412,9 +430,11 @@ def retarget_window(db: Session, user: User, effective_from: date) -> RetargetWi
         # weiter zu laufen brauechte niemand. Mindestens bis heute (bzw. bis zum
         # Wirkungsdatum, wenn das in der Zukunft liegt), damit das Fenster auch
         # ohne Abwesenheiten einen sinnvollen Anzeigewert hat.
-        end = max(d for d in (effective_from, today_local(), last_absence) if d is not None)
+        end = max(d for d in (effective_from, today_local(), last_absence, last_time_entry)
+                  if d is not None)
 
-    return RetargetWindow(start=effective_from, end=end, last_absence=last_absence)
+    return RetargetWindow(start=effective_from, end=end, last_absence=last_absence,
+                          last_time_entry=last_time_entry)
 
 
 class AbsenceRetarget(NamedTuple):
@@ -436,6 +456,10 @@ class AbsenceRetarget(NamedTuple):
     old_hours: Decimal
     new_hours: Decimal
     absence_type: AbsenceType
+    # Spec 9.6 (P6: ohne Vorgabewert): hat die F1-Klemmung gegriffen, und senkt
+    # sie die Gutschrift STÄRKER als das Tagessoll des Tages (9.5 (c))?
+    f1_clamped: bool
+    credit_reduction: bool
 
 
 def retarget_absence_hours(
@@ -444,6 +468,7 @@ def retarget_absence_hours(
     start: date,
     end: date,
     *,
+    old_full_target_by_date: Dict[date, Decimal],
     dry_run: bool = False,
 ) -> List[AbsenceRetarget]:
     """Setzt ``Absence.hours`` im Fenster ``[start, end]`` auf das Tagessoll des
@@ -489,6 +514,15 @@ def retarget_absence_hours(
     ``hours``-Schreiber, der ihn nicht mitzieht — jeder menschliche Schreiber
     setzt beide. Siehe den Kommentar an ``Absence.raw_hours``.
 
+    Spec 9.6 (E51): F1-Klemmung — bleiben am Tag GESCHLOSSENE Zeiteinträge
+    stehen, wird ``hours`` auf den nicht gearbeiteten Rest geklemmt (gleiche Regel
+    wie ``absences.create_absence``), in Gutschrifts-Einheiten über
+    :func:`credit_day_weight`. ``kept_net_by_date`` wird hier geladen — nach dem
+    flush der Neukappung, also mit den neuen Netto-Werten. ``credit_reduction``
+    markiert eine Senkung STÄRKER als das Tagessoll (9.5 (c)); dafür braucht es
+    das volle Tagessoll VOR der Änderung (``old_full_target_by_date``, Pflicht,
+    :func:`absence_full_targets`).
+
     ``dry_run=True`` ermittelt nur (fuer die Vorschau vor dem Speichern).
 
     DIE eine Stelle, die Abwesenheits-Stunden nachzieht — Anlegen, Loeschen und
@@ -504,9 +538,10 @@ def retarget_absence_hours(
             PublicHoliday.date <= end,
         ).all()
     }
-    # Die Sondertags-Konfiguration wird hier NICHT geladen — siehe die
+    # Die Sondertags-Konfiguration fliesst NICHT ins Tagessoll — siehe die
     # Begruendung an ``target`` in der Schleife (Fund A): der Faktor gehoert auf
-    # die Leseseite, nicht in den gespeicherten Wert.
+    # die Leseseite, nicht in den gespeicherten Wert. Geladen wird sie unten nur
+    # fuer das Gewicht der F1-Klemmung (Spec 9.6, Gutschrifts-Einheiten).
     wh_changes = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
         WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
@@ -519,6 +554,22 @@ def retarget_absence_hours(
         Absence.date <= end,
         Absence.type != AbsenceType.OVERTIME,
     ).all()
+
+    # Spec 9.6: Σ Netto der GESCHLOSSENEN Einträge je Tag (ein offener Eintrag
+    # hat noch keine Arbeitszeit, die die Gutschrift verdrängen könnte).
+    kept_net_by_date: Dict[date, float] = {}
+    for kept in db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
+        TimeEntry.date >= start,
+        TimeEntry.date <= end,
+        TimeEntry.end_time.isnot(None),
+    ).all():
+        kept_net_by_date[kept.date] = kept_net_by_date.get(kept.date, 0.0) + float(kept.net_hours)
+    special_cfgs = {
+        yr: special_days_service.get_special_day_config(db, user.tenant_id, yr)
+        for yr in {a.date.year for a in absences if (a.date.month, a.date.day) in ((12, 24), (12, 31))}
+    }
 
     changed: List[AbsenceRetarget] = []
     for a in absences:
@@ -564,8 +615,31 @@ def retarget_absence_hours(
         if target <= 0:
             continue
 
-        new_hours = (target / 2) if a.half_day else target
-        new_hours = Decimal(str(new_hours)).quantize(Decimal('0.01'))
+        new_hours_f = float((target / 2) if a.half_day else target)
+        old_hours_f = float(a.hours)
+        f1_clamped = False
+        credit_reduction = False
+        kept_net = kept_net_by_date.get(d, 0.0)
+        if kept_net > 0:
+            # Spec 9.6: Vergleich in GUTSCHRIFTS-Einheiten — die Gutschrift ist
+            # new_hours × w (Halbtags-Sondertag 0,5, frei 0, sonst 1,0); das
+            # wirksame Tagessoll trägt denselben Faktor.
+            w = float(credit_day_weight(d, holidays, special_cfgs.get(d.year)))
+            if w > 0:
+                full_target = float(target)
+                cap_credit = max(0.0, full_target * w - kept_net)
+                clamped = round(max(0.0, min(new_hours_f, cap_credit / w)), 2)
+                f1_clamped = clamped < new_hours_f
+                new_hours_f = clamped
+                if f1_clamped and new_hours_f < old_hours_f:
+                    # 9.5 (c) nur, wenn die Gutschrift STÄRKER sinkt als das
+                    # Tagessoll des Tages; sinkt sie nur mit dem Soll (regulär
+                    # geklemmter Misch-Tag bei einer Soll-Senkung), bleibt der
+                    # Tag saldo-neutral.
+                    old_full = float(old_full_target_by_date[d])
+                    credit_reduction = (round((new_hours_f - old_hours_f) * w, 2)
+                                        < round((full_target - old_full) * w, 2))
+        new_hours = Decimal(str(new_hours_f)).quantize(Decimal('0.01'))
         old_hours = Decimal(str(a.hours)).quantize(Decimal('0.01'))
         if old_hours == new_hours:
             continue
@@ -576,6 +650,7 @@ def retarget_absence_hours(
         changed.append(AbsenceRetarget(
             absence_id=a.id, date=d, old_hours=old_hours,
             new_hours=new_hours, absence_type=a.type,
+            f1_clamped=f1_clamped, credit_reduction=credit_reduction,
         ))
         if not dry_run:
             # NUR ``hours``. ``raw_hours`` bleibt stehen — siehe Docstring.
@@ -584,6 +659,32 @@ def retarget_absence_hours(
     if changed and not dry_run:
         db.flush()
     return changed
+
+
+def absence_full_targets(db: Session, user: User, start: date, end: date) -> Dict[date, Decimal]:
+    """Spec 9.3 Schritt 3: das VOLLE Tagessoll je Abwesenheitsdatum (ohne
+    OVERTIME) im Fenster, mit dem zum Aufrufzeitpunkt gültigen Snapshot. Der
+    Aufrufer ruft das VOR dem Anwenden der Änderung — es ist das „vorher" für
+    das Kriterium 9.5 (c)."""
+    if start > end:
+        return {}
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+    ).all()
+    dates = {
+        row[0] for row in db.query(Absence.date).filter(
+            Absence.user_id == user.id,
+            Absence.tenant_id == user.tenant_id,  # F-026
+            Absence.date >= start,
+            Absence.date <= end,
+            Absence.type != AbsenceType.OVERTIME,
+        ).all()
+    }
+    return {
+        d: get_daily_target_for_date(user, d, get_schedule_for_date(db, user, d, wh_changes))
+        for d in dates
+    }
 
 
 def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
