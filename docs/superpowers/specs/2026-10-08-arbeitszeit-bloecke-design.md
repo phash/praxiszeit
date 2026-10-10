@@ -955,8 +955,13 @@ existiert (#120 verbirgt das nur in Statuscode und Antworttext). **Entschieden 2
 (Review N3):** GET, PUT und DELETE auf `/api/time-entries/{id}` antworten für eine unbekannte ID
 und für einen fremden Eintrag mit demselben 404-Text „Zeiteintrag nicht gefunden"
 (`ENTRY_NOT_FOUND`) — vorher sagte der unbekannte Fall „Eintrag nicht gefunden", der Text verriet
-also die Existenz, und das Glätten des Zeitverhaltens liefe ins Leere. Die Eigentümerprüfung nach
-dem gesperrten Laden bleibt als Rückversicherung. Ein Pfad außer dem Auto-Close, der ein **tatsächlich neues** Ende schreibt, setzt
+also die Existenz, und das Glätten des Zeitverhaltens liefe ins Leere. **Entschieden 2026-10-10
+(Review N3, Nachzug):** Auch eine **unbekannte** ID bricht in Nr. 4 schon nach dem ungesperrten
+Eigentümer-Lesen mit 404 ab, ohne Anker- und Zeilensperre. Vorher übersprang sie nur die
+Ankersperre und lud danach noch einmal mit `with_for_update` — sie kostete damit einen
+Datenbankzugriff mehr als ein fremder Eintrag, das Timing-Orakel lief nur andersherum. Die
+Eigentümerprüfung und der 404 nach dem gesperrten Laden bleiben als Rückversicherung (Eintrag
+zwischen Eigentümer-Lesen und Sperre gelöscht). Ein Pfad außer dem Auto-Close, der ein **tatsächlich neues** Ende schreibt, setzt
 `auto_closed = false` (P18): Ausstempeln (Nr. 2) und XLS-Überschreiben (Nr. 12) immer, die
 Bearbeitungen (Nr. 4, 6) und der CR-UPDATE-Zweig (Nr. 9) nur, wenn
 `work_window_service.end_is_correction(eingehend, wirksames Ende, Rohende, auto_closed)`
@@ -2463,9 +2468,12 @@ Pflichtinhalte:
    Eigentümer erst aus dem Eintrag folgt, wird er vorab **ohne Sperre** gelesen; MA-Routen
    brechen bei einem fremden Eintrag dort mit 404 ab, ohne fremde Zeilen zu sperren (sonst
    blockiert ein MA die Schreibpfade eines Kollegen, und die Wartezeit verrät die ID) — die
-   Sperre also **nicht** vor die Eigentümerprüfung ziehen. Unbekannte und fremde ID antworten
-   mit demselben Text (`ENTRY_NOT_FOUND`). Entschieden 2026-10-10, 7.1; Test
-   `test_write_path_locks.py::test_update_foreign_entry_takes_no_lock`.
+   Sperre also **nicht** vor die Eigentümerprüfung ziehen. Eine **unbekannte** ID bricht an
+   derselben Stelle mit 404 ab, ebenfalls ohne Sperre (sonst kostet sie einen gesperrten
+   Ladezugriff mehr als eine fremde — Orakel andersherum). Unbekannte und fremde ID antworten
+   mit demselben Text (`ENTRY_NOT_FOUND`). Entschieden 2026-10-10, 7.1; Tests
+   `test_write_path_locks.py::test_update_foreign_entry_takes_no_lock` und
+   `::test_update_unknown_entry_takes_no_lock`.
 9. **`auto_closed`:** `raw_end_time = 23:59` eines automatisch geschlossenen Eintrags ist
    kein Stempel — nie anerkennen, nie als Anwesenheit oder „nicht angerechnet" zählen, und
    beim Verschieben auf einen anderen Tag nie wieder als Kappungseingabe herstellen
@@ -2637,8 +2645,9 @@ alles zusammen über `bash scripts/local-ci.sh`.
   nicht angerechnete Zeit → 400; Bulk-Genehmigung übernimmt den Antragswert.
 - `test_write_path_locks.py`: jeder Pfad aus P5 ruft `lock_user_row` vor `clamp` (Spy auf
   der Reihenfolge); Anerkennen sperrt Anker vor Eintrag; MA-`PUT`/`DELETE` auf einen fremden
-  Eintrag → 404 ohne `lock_user_row` und ohne Zeilensperre (Entschieden 2026-10-10); GET/PUT/
-  DELETE liefern für fremde und unbekannte ID dieselbe Antwort (Review N3, 7.1).
+  Eintrag → 404 ohne `lock_user_row` und ohne Zeilensperre (Entschieden 2026-10-10); MA-`PUT`
+  auf eine unbekannte ID ebenso (Review N3, Nachzug 2026-10-10); GET/PUT/DELETE liefern für
+  fremde und unbekannte ID dieselbe Antwort (Review N3, 7.1).
 
 ### 17.4 ArbZG
 
