@@ -479,7 +479,7 @@ Klicken Sie in der Navigation auf **Profil**.
 Hier sehen Sie Ihre **persönlichen Daten** (vom Administrator hinterlegt):
 
 - Vor- und Nachname, Benutzername, E-Mail-Adresse
-- Rolle, Wochenstunden, Urlaubstage, Status
+- Rolle, Urlaubstage, Status
 
 ### Passwort ändern
 

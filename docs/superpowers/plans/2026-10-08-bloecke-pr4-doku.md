@@ -1044,11 +1044,11 @@ Angerechnet wird Ihre gestempelte Zeit **innerhalb** der Blöcke – mit einem k
 
 2. §5 „Ihr Tagessoll": an den Absatz, der mit `Beispiele: 40 h auf 5 Tage = **8 h/Tag**` beginnt, anfügen: ` Hat Ihre Praxis **Arbeitszeit-Blöcke** für Sie hinterlegt, ist Ihr Tagessoll die Summe der Blöcke minus der geplanten Pause innerhalb der Blöcke – z. B. 08:00–12:00 und 15:00–18:00 mit 30 Minuten Pause = **6:30 h**.`
 3. §5 „Ihre Ist-Stunden": `Ihr **Ist** ist Ihre tatsächlich erfasste Arbeitszeit: **(Ende − Beginn) − Pause** je Eintrag.` → `Ihr **Ist** ist Ihre tatsächlich erfasste Arbeitszeit: **(Ende − Beginn) − Pause** je Eintrag – abzüglich nicht angerechneter Zeit vor, nach oder zwischen Ihren Arbeitszeit-Blöcken (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)).`
-4. §7: nach der Liste, die mit `- Rolle, Wochenstunden, Urlaubstage, Status` endet, einfügen:
+4. §7: nach der Liste, die mit `- Rolle, Urlaubstage, Status` endet, einfügen (PR2-Gesamtreview Fund 10: die Wochenstunden stehen seit PR2 nicht mehr in den persönlichen Daten, sondern datumsaufgelöst in der Karte „Meine Arbeitszeit"; die Liste ist in PR2 schon angepasst):
 
 ```markdown
 
-**Meine Arbeitszeit:** Die Karte zeigt Ihre heute gültigen Arbeitszeit-Blöcke je Wochentag mit Tagessoll und den Verlauf mit Wirkungsdaten (z. B. „ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) …"). Sind keine Blöcke hinterlegt, sehen Sie Tagessoll und Wochenstunden. Ändern kann Ihre Arbeitszeit nur die Verwaltung; jede Änderung kündigt Ihr Dashboard 30 Tage lang an.
+**Meine Arbeitszeit:** Die Karte zeigt Ihre heute gültigen Arbeitszeit-Blöcke je Wochentag mit Tagessoll, Ihre Wochenstunden und den Verlauf mit Wirkungsdaten (z. B. „ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) … · 15,5 Std/Woche"). Sind keine Blöcke hinterlegt, sehen Sie Tagessoll und Wochenstunden. Ändern kann Ihre Arbeitszeit nur die Verwaltung; jede Änderung kündigt Ihr Dashboard 30 Tage lang an.
 ```
 
 5. FAQ: Die Antwort unter `**F: Warum steht bei meinem Eintrag „gestempelt 07:30 · angerechnet ab 07:45"?**` ersetzen durch:
@@ -1979,6 +1979,7 @@ Spec 16.1 „Screenshots": `docs/handbuch/screenshots/16-*.png`, `17-*.png` neu,
 - Modify: `tools/handbook/handbuch-screenshots.js` (Screenshots 16 und 17, bei `3d46c2f` Zeilen 174–196)
 - Modify: `docs/handbuch/HANDBUCH-ERSTELLEN.md` (Tabellenzeilen 16 und 17, bei `3d46c2f` Zeilen 78–79)
 - Modify: `docs/handbuch/screenshots/16-admin-benutzer-formular.png`, `docs/handbuch/screenshots/17-admin-benutzer-bearbeiten.png`
+- Modify: `docs/handbuch/screenshots/10-ma-profil.png` (PR2-Gesamtreview Fund 10: seit PR2 ohne „Wochenstunden" in den persönlichen Daten, dafür mit der Karte „Meine Arbeitszeit"; das Aufnahmeskript nimmt das Bild ohnehin neu auf — nur behalten statt verwerfen)
 
 **Interfaces:**
 - Consumes: `app.services.work_blocks_service.derive_targets(week_blocks: list[dict]) -> dict` (Schlüssel `hours_monday` … `hours_friday`, `weekly_hours`, `work_days_per_week`, `use_daily_schedule`; PR3); `app.services.work_window_service.get_grace_minutes(db, tenant_id) -> int` und `clamp(db, user, d, start, end, grace, *, credit_override: bool) -> ClampResult` (PR1); Spalten `users.work_blocks`, `time_entries.uncredited_minutes`, `time_entries.clamp_grace_minutes` (PR1).
@@ -2154,35 +2155,37 @@ cd e2e && npx --yes tsx capture-handbook-screenshots.ts; cd ..
 git status --short docs/handbuch/screenshots
 ```
 
-Expected: `✓ 16-admin-benutzer-formular.png` und `✓ 17-admin-benutzer-bearbeiten.png` in der Ausgabe; `git status` zeigt geänderte PNGs.
+Expected: `✓ 10-ma-profil.png`, `✓ 16-admin-benutzer-formular.png` und `✓ 17-admin-benutzer-bearbeiten.png` in der Ausgabe; `git status` zeigt geänderte PNGs.
 
-Beide Bilder mit dem Read-Werkzeug ansehen:
+Alle drei Bilder mit dem Read-Werkzeug ansehen:
+- `docs/handbuch/screenshots/10-ma-profil.png` zeigt das Profil mit den persönlichen Daten ohne „Wochenstunden" (Rolle, Urlaubstage, Status) und darunter die Karte „Meine Arbeitszeit" (Wochenstunden mit Dezimalkomma, z. B. „Wochenstunden: 38,5").
 - `docs/handbuch/screenshots/16-admin-benutzer-formular.png` zeigt das Anlegeformular mit den Modi „Gleichmäßig / Nach Tagen / Nach Arbeitsblöcken" und dem Block-Editor („von–bis", „+ Block", „Pause innerhalb der Blöcke").
 - `docs/handbuch/screenshots/17-admin-benutzer-bearbeiten.png` zeigt das Bearbeiten-Formular von Sarah Klein mit „Arbeitszeit heute: Mo 08:00–12:00 + 15:00–16:00 …" und dem Knopf „Arbeitszeit anpassen…".
 
 Zeigt eines der Bilder etwas anderes (z. B. andere Modusbeschriftung im Anlegeformular): Selektor in Step 3 an die echte Beschriftung anpassen und Step 4 wiederholen; weicht die Beschriftung von „Nach Arbeitsblöcken" ab, gilt das Abweichungsverfahren aus Task 0 Step 3.
 
-Nur 16 und 17 gehören in diesen PR; die übrigen neu aufgenommenen Bilder verwerfen:
+Nur 10, 16 und 17 gehören in diesen PR; die übrigen neu aufgenommenen Bilder verwerfen:
 
 ```bash
-git add docs/handbuch/screenshots/16-admin-benutzer-formular.png docs/handbuch/screenshots/17-admin-benutzer-bearbeiten.png
+git add docs/handbuch/screenshots/10-ma-profil.png docs/handbuch/screenshots/16-admin-benutzer-formular.png docs/handbuch/screenshots/17-admin-benutzer-bearbeiten.png
 git restore docs/handbuch/screenshots/
 git status --short docs/handbuch/screenshots
 ```
 
-Expected: nur die beiden gestagten PNGs (`M  …16-…`, `M  …17-…`).
+Expected: nur die drei gestagten PNGs (`M  …10-…`, `M  …16-…`, `M  …17-…`).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add backend/create_handbuch_testdata.py e2e/capture-handbook-screenshots.ts tools/handbook/handbuch-screenshots.js docs/handbuch/HANDBUCH-ERSTELLEN.md
 git commit -F - <<'EOF'
-docs(screenshots): Demo-Person mit Arbeitszeit-Blöcken, Handbuch-Bilder 16/17 neu
+docs(screenshots): Demo-Person mit Arbeitszeit-Blöcken, Handbuch-Bilder 10/16/17 neu
 
 Seed: Sarah Klein bekommt Blöcke 08–12 + 15–16 (Soll unverändert 25 h)
 und zwei über die Mittagslücke durchgestempelte Montage, gekappt über den
 echten clamp. Aufnahmeskripte öffnen den Block-Editor beim Anlegen und das
-Bearbeiten-Formular der Demo-Person.
+Bearbeiten-Formular der Demo-Person. Bild 10 (Profil) zeigt die Karte
+„Meine Arbeitszeit" statt der Wochenstunden in den persönlichen Daten.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 EOF
@@ -3008,7 +3011,7 @@ Expected: FAIL in den drei neuen/geänderten Tests (z. B. `Unable to find an ele
         </p>
 ```
 
-3. §8: `hinterlegten Stammdaten (Name, Rolle, Wochenstunden, Urlaubstage).` → `hinterlegten Stammdaten (Name, Rolle, Wochenstunden, Urlaubstage). Die Karte <strong>„Meine Arbeitszeit"</strong> zeigt Ihre heute gültigen Arbeitszeit-Blöcke mit Tagessoll und den Verlauf mit Wirkungsdaten.`
+3. §8: `hinterlegten Stammdaten (Name, Rolle, Wochenstunden, Urlaubstage).` → `hinterlegten Stammdaten (Name, Rolle, Urlaubstage). Die Karte <strong>„Meine Arbeitszeit"</strong> zeigt Ihre heute gültigen Arbeitszeit-Blöcke mit Tagessoll, Ihre Wochenstunden und den Verlauf mit Wirkungsdaten.` (PR2-Gesamtreview Fund 10: die Wochenstunden stehen seit PR2 nicht mehr in den Stammdaten des Profils, sondern in der Karte.)
 
 - [ ] **Step 5: AnleitungBerechnungen.tsx**
 
