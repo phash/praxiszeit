@@ -36,6 +36,11 @@ BREAK_WAIVER_SOURCE = "break_waiver"  # 12 chars
 # Konstante, damit sie nicht wieder auseinanderlaufen.
 ENTRY_NOT_FOUND = "Zeiteintrag nicht gefunden"
 
+# P3 (Spec 2026-10-08): ein anerkannter Eintrag (``credit_override``) ändert sich
+# für Mitarbeitende nur per Änderungsantrag — Bearbeiten UND Löschen (PUT/DELETE
+# teilen den Text, damit sie nicht auseinanderlaufen).
+CREDIT_OVERRIDE_EMPLOYEE_DETAIL = "Anerkannter Eintrag – Änderung bitte per Änderungsantrag."
+
 
 def _break_exception_requires_approval(db: Session, tenant_id) -> bool:
     """Read the per-practice toggle whether break-waivers need admin approval."""
@@ -1208,10 +1213,7 @@ def update_time_entry(
     # die Änderung läuft über einen Antrag (die Verwaltung bestätigt dort).
     # Admins auf dieser Route SIND die Verwaltung: Flag bleibt, keine Kappung.
     if entry.credit_override and current_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=409,
-            detail="Anerkannter Eintrag – Änderung bitte per Änderungsantrag.",
-        )
+        raise HTTPException(status_code=409, detail=CREDIT_OVERRIDE_EMPLOYEE_DETAIL)
 
     # #144: snapshot the persisted values BEFORE mutating in-memory, so an
     # approval-required waiver can file an UPDATE ChangeRequest against the
@@ -1664,6 +1666,13 @@ def delete_time_entry(
             status_code=403,
             detail="Einträge vergangener Tage können nur per Änderungsantrag gelöscht werden"
         )
+
+    # P3 / Sicherheitsprüfung SEC-PR1-ROLE-03: wie beim Bearbeiten — sonst
+    # löschte die Person den anerkannten Eintrag und legte ihn neu an; die neue
+    # Zeile wäre wieder gekappt (stille Rücknahme ohne Antrag, P11). Die
+    # Verwaltung (Admin, auch auf dieser Route) darf weiter löschen.
+    if entry.credit_override and current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=409, detail=CREDIT_OVERRIDE_EMPLOYEE_DETAIL)
 
     # §16 ArbZG / EuGH C-55/18: every deletion must leave an audit trail,
     # even when the user deletes their own same-day entry. The admin delete

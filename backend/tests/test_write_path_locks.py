@@ -301,3 +301,54 @@ def test_foreign_and_unknown_entry_answer_identically(_db_session, employee_user
     assert foreign.status_code == unknown.status_code == 404, (foreign.text, unknown.text)
     assert foreign.json() == unknown.json()
     assert unknown.json()["detail"] == "Zeiteintrag nicht gefunden"
+
+
+def test_credit_override_locks_anchor_before_entry(_db_session, employee_user, admin_client, monkeypatch):
+    """Spec 13.3 Schritt 1 / P5: Anker VOR der Eintragszeile — umgekehrt verklemmen
+    sich Anerkennen und eine parallele Neukappung (40P01 → 500)."""
+    from app.services import credit_override_service as cos
+
+    _setup(_db_session, employee_user)
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, date=MON,
+                  start_time=time(7, 45), end_time=time(18, 15), raw_start_time=time(7),
+                  raw_end_time=time(19), break_minutes=0, uncredited_minutes=150)
+    _db_session.add(e)
+    _db_session.commit()
+    log = []
+    real_lock, real_load = ate.lock_user_row, cos.load_entry_locked
+
+    def spy_lock(db, tenant_id, user_id):
+        log.append(("lock", str(user_id)))
+        return real_lock(db, tenant_id, user_id)
+
+    def spy_load(*a, **kw):
+        log.append(("entry",))
+        return real_load(*a, **kw)
+
+    monkeypatch.setattr(ate, "lock_user_row", spy_lock)
+    monkeypatch.setattr(cos, "load_entry_locked", spy_load)
+    assert admin_client.post(f"/api/admin/time-entries/{e.id}/credit-override").status_code == 200
+    assert log == [("lock", str(employee_user.id)), ("entry",)]
+
+
+def test_credit_override_row_lock_follows_anchor(_db_session, employee_user, admin_client, calls):
+    """Zweite Hälfte von P5 über den ``do_orm_execute``-Spion: die Zeilensperre
+    auf ``time_entries`` liegt hinter der Ankersperre."""
+    _setup(_db_session, employee_user)
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, date=MON,
+                  start_time=time(7, 45), end_time=time(18, 15), raw_start_time=time(7),
+                  raw_end_time=time(19), break_minutes=0, uncredited_minutes=150)
+    _db_session.add(e)
+    _db_session.commit()
+    assert admin_client.post(f"/api/admin/time-entries/{e.id}/credit-override").status_code == 200
+    assert_lock_first(calls, employee_user.id)
+    assert_row_lock_seen(calls)
+
+
+def test_credit_override_unknown_entry_takes_no_lock(_db_session, employee_user, admin_client, calls):
+    """Spec 16.2 Nr. 8 / 13.3 Schritt 1: eine unbekannte bzw. fremde ID bricht
+    mit 404 ab, bevor irgendeine Sperre genommen wird."""
+    resp = admin_client.post(f"/api/admin/time-entries/{uuid.uuid4()}/credit-override")
+    assert resp.status_code == 404, resp.text
+    assert not [c for c in calls if c[0] == "lock"], calls
+    assert ("row_lock",) not in calls, calls

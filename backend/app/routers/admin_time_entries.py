@@ -18,7 +18,7 @@ from app.routers.time_entries import (
     BREAK_WAIVER_SOURCE, _assert_within_employment_window,
 )
 from app.services.arbzg_utils import is_night_work
-from app.services import presence_service, work_window_service
+from app.services import credit_override_service, presence_service, work_window_service
 from app.routers.absences import _MASKED_ABSENCE_TYPES
 from app.services.export_service import ABSENCE_TYPE_LABELS_DE
 
@@ -554,6 +554,42 @@ def admin_update_time_entry(
 
     response = TimeEntryResponse.model_validate(entry)
     response.warnings = admin_update_warnings
+    return response
+
+
+@router.post("/time-entries/{entry_id}/credit-override", response_model=TimeEntryResponse)
+def admin_credit_override(
+    entry_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Spec 2026-10-08, 13.3 „Anerkennen": die gesamte gestempelte Zeit des
+    Eintrags wird angerechnet — dauerhaft, auch über spätere Neukappungen.
+    §3/§4/48 h und Anwesenheit nur als weiche Warnung (P4)."""
+    # 13.3 Schritt 1: Eigentümer ungesperrt lesen; unbekannt oder fremder
+    # Mandant → 404 VOR jeder Sperre (Spec 16.2 Nr. 8).
+    owner_id = db.query(TimeEntry.user_id).filter(
+        TimeEntry.id == entry_id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+    ).scalar()
+    if owner_id is None:
+        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
+    # P5: Anker VOR der Eintragszeile — dieselbe Reihenfolge wie jede Neukappung.
+    owner = lock_user_row(db, current_user.tenant_id, owner_id)
+    entry = credit_override_service.load_entry_locked(db, current_user.tenant_id, entry_id)
+    # Rückversicherung: zwischen Eigentümer-Lesen und Sperre gelöscht.
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
+    changed = credit_override_service.apply_credit_override(
+        db, entry, changed_by_id=current_user.id, on_request=False,
+    )
+    db.commit()
+    db.refresh(entry)
+    response = TimeEntryResponse.model_validate(entry)
+    # Idempotent (Schritt 2): ohne Änderung keine erneuten Warnungen.
+    response.warnings = (
+        credit_override_service.override_warnings(db, owner, entry) if changed else []
+    )
     return response
 
 
