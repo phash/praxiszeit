@@ -47,6 +47,22 @@ need_code() {
   echo "NICHT IM CODE: $1"; FAIL=1
 }
 
+# need_code_label DATEI TEXT — TEXT ist in DATEI eine eigene Beschriftung: ein
+# JSX-Textknoten, der allein auf seiner Zeile steht, direkt vor einem Tag
+# (TEXT<span…) oder zwischen zwei Tags (>TEXT<). Für kurze Knopf- und
+# Feldtexte („Zurücksetzen", „Einzelheiten"): als bloßes Wort finden sie sich
+# auch in Kommentaren, Fehlermeldungen und fremden Komponenten, und need_code
+# bliebe grün, obwohl der zitierte Knopf längst anders heißt.
+need_code_label() {
+  if [[ -f "$1" ]] && awk -v t="$2" '
+      { s = $0; sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s)
+        if (s == t || index(s, t "<") == 1 || index($0, ">" t "<")) { f = 1; exit } }
+      END { exit !f }' "$1"; then
+    return 0
+  fi
+  echo "NICHT IM CODE: $2 ($1)"; FAIL=1
+}
+
 # Gate: Wortlaute, die die Doku dieses PRs zitiert (Spec 6.2, 8.3, 8.4, 11.4,
 # 12.1, 12.3, 13.1, 13.3, 14). Weicht der Code ab, entscheidet Task 0 Step 3.
 group_code() {
@@ -153,7 +169,11 @@ group_code() {
   # Auswirkungs-Box (WhImpactBox), Verkürzungs-Kasten (ShorteningChoice),
   # Lösch-Bereich (WhDeletePanel), Plan-Hinweise, Verlauf, Dashboard-Hinweis.
   # Teile aus Template-Strings nur als zusammenhängende Stücke.
-  need_code "Arbeitszeit heute"
+  # Kurze Beschriftungen an ihre Komponente gebunden: „Arbeitszeit heute" steht
+  # auch über dem Stempel-Timer, „Einzelheiten" in einem Python-Kommentar,
+  # „Zurücksetzen" in einem Kommentar von ImportXls und in der Fehlermeldung
+  # „Fehler beim Zurücksetzen", „Stundenänderung" in rund zehn Dateien.
+  need_code_label frontend/src/pages/admin/users/UserForm.tsx "Arbeitszeit heute"
   need_code "Noch nichts zu speichern — die Eingabe entspricht dem Stand, der"
   need_code "geplanter Verstoß gegen § 3 ArbZG; ein Eintrag "
   need_code "nach diesem Plan wird beim Erfassen abgelehnt und beim Ausstempeln als Verstoß gemeldet."
@@ -170,7 +190,7 @@ group_code() {
   need_code "1 Abwesenheit an einem Misch-Tag angeglichen "
   need_code "(Arbeit und Gutschrift am selben Tag)"
   need_code "Tage > 10 h: angerechnet bisher "
-  need_code "Einzelheiten"
+  need_code_label frontend/src/pages/admin/users/WhImpactBox.tsx "Einzelheiten"
   need_code "Das Überstundenkonto sinkt im Wirkungsbereich um "
   need_code " (höheres Soll), obwohl kein Eintrag angerechnete Zeit verliert"
   need_code "während die Person eingestempelt ist – das Überstundenkonto sinkt beim Ausstempeln."
@@ -182,14 +202,16 @@ group_code() {
   need_code " gilt wieder der vorherige Stand."
   need_code "Auswirkung des Löschens"
   need_code "Auswirkung der Rücksetzung"
-  need_code "Zurücksetzen"
+  need_code_label frontend/src/pages/admin/users/WhDeletePanel.tsx "Zurücksetzen"
   need_code "Hinweis zu Ihrer Arbeitszeit"
   need_code "Arbeitszeit im Profil ansehen"
   need_code " neu berechnet, angerechnete Zeit "
   need_code " Überstundenkonto im Zeitraum "
   need_code " Rückwirkende Verkürzung – Grund: "
   need_code "wurde zurückgenommen."
-  need_code "Stundenänderung"
+  need_code "wh_change: 'Stundenänderung'"
+  # Spaltenkopf der Jahresübersicht (XLSX/ODS), den „Berichte" nennt.
+  need_code '"Stundenänderungen",'
   need_code "Arbeitszeit-Änderung ab "
 }
 
