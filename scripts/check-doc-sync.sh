@@ -207,6 +207,16 @@ group_admin_bloecke() {
   need "$f" 'Nichtanrechnung ersetzt keine Vergütungsentscheidung.'
   need "$f" 'Schichtzeit inklusive Lücke höchstens 10 h); PraxisZeit prüft diese nicht.'
   need "$f" '**Bekannte Grenze:**'
+  # Review Task 2: der Antragssatz hängt nur an Lückentexten geschlossener
+  # Einträge (Spec 6.2), nie am Einstempeln.
+  need "$f" 'Mitarbeitende lesen an den Lückenhinweisen zu geschlossenen Einträgen (nicht beim Einstempeln) zusätzlich'
+  forbid "$f" 'Mitarbeitende lesen an den Lückenhinweisen zusätzlich'
+  # Review Task 2: Reparaturweg für Feiertagseinträge aus ≤ 1.19.2 (#484) bleibt.
+  need "$f" 'Bis Version 1.19.2 wurde ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt.'
+  need "$f" 'speichern ihn unverändert, wird er mit der tatsächlich gestempelten Zeit neu berechnet.'
+  # Review Task 2: Formular kennt den Modus „Nach Tagen", keinen Haken mehr.
+  need "$f" 'Im Modus **„Nach Tagen"** (ebenfalls Viertelstunden je Wochentag)'
+  forbid "$f" 'Bei individuellen Tagesstunden (ebenfalls Viertelstunden je Wochentag)'
   forbid "$f" 'Soll-Arbeitszeiten je Wochentag'
   forbid "$f" 'Soll-Arbeitszeit-Fenster, #201'
   forbid "$f" '#soll-arbeitszeiten-soll-arbeitszeit-fenster-201'
