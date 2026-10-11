@@ -35,7 +35,7 @@
 | Begriff | Bedeutung |
 |---------|-----------|
 | **Soll** | Stunden, die der MA an einem Tag/Monat arbeiten *müsste* (vertraglich) |
-| **Ist** | Tatsächlich erfasste Arbeitszeit (`net_hours`) + gutgeschriebene Abwesenheiten |
+| **Ist** | Angerechnete Arbeitszeit (`net_hours`, nach Pause und Lücke zwischen Arbeitszeit-Blöcken, §4) + gutgeschriebene Abwesenheiten |
 | **Saldo / Überstunden** | `Ist − Soll` (positiv = Mehrarbeit, negativ = Minusstunden) |
 | **Tagessoll** | Soll-Stunden für einen einzelnen Arbeitstag |
 | **Tagesprinzip** | Urlaub wird in **Tagen** gezählt (§3 BUrlG): 1 freier Arbeitstag = 1 Urlaubstag |
@@ -200,8 +200,10 @@ raw_end, uncredited_minutes, grace_minutes)`:
 4. **Puffer je Eintrag:** Der angewandte Puffer steht in `clamp_grace_minutes`. Neuanlagen nehmen
    den aktuellen Mandanten-Puffer; jede Einzel-Neukappung eines gespeicherten Eintrags (Ausstempeln,
    Bearbeiten, Datumswechsel, Antragsgenehmigung, XLS-Überschreiben, Auto-Close) nimmt dessen
-   gespeicherten Puffer (`grace_for_entry`; NULL bei Bestand vor 1.20.0 → aktueller Puffer). Nur die
-   Massen-Neukappung einer Arbeitszeit-Änderung (TZ-G) nimmt den aktuellen Puffer und schreibt ihn neu.
+   gespeicherten Puffer (`grace_for_entry`; NULL – Bestand vor 1.20.0 oder nie gegen Blöcke gekappt,
+   z. B. an einem Tag ohne Blöcke angelegt – → aktueller Puffer). Ein Speichern ohne Kappung (etwa
+   Tag ohne Blöcke, anerkannt) lässt einen gespeicherten Puffer stehen. Nur die Massen-Neukappung einer
+   Arbeitszeit-Änderung (TZ-G) nimmt den aktuellen Puffer und schreibt ihn neu.
    Schickt ein Formular die gekappte Zeit unverändert zurück, rechnet die Neukappung mit dem
    Rohstempel weiter (`unclamp_input`); die Massen-Neukappung geht immer vom Rohstempel aus, ohne
    Rohstempel von der gespeicherten Zeit.
@@ -1424,11 +1426,13 @@ Begründung und Bestätigung. Ohne Grund antwortet der Server mit 400: „Rückw
 (3 Einträge verlieren angerechnete Zeit): Bitte Grund, Begründung und die Bestätigung zum
 Vergütungsrisiko angeben – oder die Änderung ab dem 08.10.2026 wirksam werden lassen."
 
-**Fall 2 — Verlängerung:** Mo 15:00–18:00 → 15:00–19:00 **und** Pause Mo 0 → 60 Min (Tagessoll
-bleibt 7:00 h). Am 21.09. bis 18:30 gestempelt (bisher gekappt auf 18:15, Rohstempel 18:30):
-18:15 → 18:30, +0:15 h. Trägt ein Eintrag sein Ende 18:15 ohne Rohstempel (z. B. vor 1.19.1
-bearbeitet, hier der 14.09.), ist er „nicht erweiterbar" und bleibt bei 18:15. Soll ±0, angerechnet
-+0:15 h, Überstunden +0:15 h → keine Verkürzung, der Bestätigungshaken genügt.
+**Fall 2 — Verlängerung:** Abwandlung der Ausgangslage: angenommen, am 21.09. wurde bis 18:30
+gestempelt (gespeichert 18:15, Rohstempel 18:30) und der Nachmittag vom 14.09. trägt das Ende 18:15
+ohne Rohstempel (etwa auf einer Installation vor 1.19.1 bearbeitet). Mo 15:00–18:00 → 15:00–19:00
+**und** Pause Mo 0 → 60 Min (Tagessoll bleibt 7:00 h). Der 21.09. wird 18:15 → 18:30, +0:15 h;
+der 14.09. ist „nicht erweiterbar" und bleibt bei 18:15 (Vorschau: „1 Eintrag ohne Rohstempel –
+nicht erweiterbar (14.09.2026, Ende 18:15)"). Soll ±0, angerechnet +0:15 h, Überstunden +0:15 h →
+keine Verkürzung, der Bestätigungshaken genügt.
 
 **Fall 3 — rückwirkende Soll-Erhöhung:** wie Fall 2, aber Pause bleibt 0 (Tagessoll Mo 7:00 → 8:00 h):
 angerechnet +0:15 h, Soll +4:00 h, Überstunden −3:45 h. Kein Eintrag verliert, aber das
