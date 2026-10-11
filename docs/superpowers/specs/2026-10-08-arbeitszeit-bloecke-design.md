@@ -1132,7 +1132,7 @@ clientseitig zu rechnen.
 | §3 48 h/Woche (`WEEKLY_HOURS_WARNING`) | angerechnet | weich | dito |
 | §4 Pausen (400, `BREAK_WAIVER`, 202-Waiver; seit #499 kein `BREAK_WARNING` mehr) | angerechnet; Lückensegmente ≥ 15 Min zählen als Pausenabschnitt | hart wie heute | `validate_daily_break` kennt Lückensegmente |
 | §6 Abs. 2 Nachtarbeitnehmer 8 h | angerechnet; Erkennung auf gespeicherten Zeiten | weich | nur `uncredited` |
-| §5 Ruhezeit (`REST_TIME_WARNING`) | Rohstempel (`raw_* or start/end`) | weich | **keine**; Neukappung setzt `raw_*` nie aus gekappten Werten |
+| §5 Ruhezeit (`REST_TIME_WARNING`) | Rohstempel (`raw_* or start/end`); Ende über `work_window_service.presence_end` — bei `auto_closed` das wirksame Ende (P18, Gesamtreview 1.20 B1) | weich | **keine**; Neukappung setzt `raw_*` nie aus gekappten Werten |
 | 24-Wochen-Durchschnitt (`reports.py:957-1080`) | `net_hours` **und** zusätzlich Anwesenheit laut Stempel | Bericht | bestehender Wert folgt dem Hybrid (Neukappung ändert ihn rückwirkend); **neu** ein zweiter, eigens gekennzeichneter Wert „Anwesenheit laut Stempel" (Σ `presence_minutes`) je Woche und im Durchschnitt, angehängt an die Antwort (`presence_hours`, `presence_average`) und als eigene Spalte in `admin/Reports.tsx` — den ändert keine Neukappung (P22). Exportdateien unverändert (Rohstempel in Dateien: Folgeticket) |
 | **neu** `PRESENCE_DAILY_HOURS` | Rohstempel | weich | 8.3 |
 | **neu** `PRESENCE_BREAK` | Rohstempel | weich | 8.3 |
@@ -1214,6 +1214,12 @@ als feste Infozeile im Dialog und im Handbuch (12.1, 16.1) und bleibt Folgeticke
 
 - §5 bleibt auf Rohstempeln (`rest_time_service.py:66-81`, `time_entries.py:340-357`).
   Die Neukappung liest `raw_*` nur, sie setzt sie nie aus gekappten Werten.
+  **Gesamtreview 1.20 (B1):** Das Ende liefert an allen drei §5-Stellen (`clock_in`,
+  `rest_time_service`, XLS-Vorschau) `work_window_service.presence_end` — dieselbe Regel
+  wie die Anwesenheit (8.3): beim automatisch geschlossenen Eintrag das wirksame Ende, denn
+  sein Rohende 23:59 ist kein Stempel (P18). Sonst meldete das Einstempeln am Folgetag eine
+  Ruhezeit ab 23:59. Ein eingetragenes Ende (auch 23:59, das Kennzeichen fällt) bleibt
+  maßgeblich; ohne Blöcke ist das wirksame Ende selbst 23:59 (Grenzfall P18).
 - §6-Nachterkennung (`is_night_work`, 16 Stellen) bleibt auf den gespeicherten Zeiten;
   die Umstellung auf Rohstempel ist ein eigenes Ticket. Blöcke enden spätestens 23:55,
   die Hülle verschiebt höchstens um den Puffer — die Nachterkennung ändert sich durch

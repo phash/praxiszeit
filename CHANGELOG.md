@@ -76,7 +76,8 @@ dieses Backup verlustfrei (`UPDATE.md`).
 - **Vergessenes Ausstempeln:** Ein automatisch um 23:59 geschlossener Eintrag
   wird jetzt gegen die Arbeitszeit gekappt – der Abend wird nicht mehr voll
   angerechnet. Das automatisch gesetzte 23:59 bleibt gespeichert, gilt aber
-  nicht als Stempel. Ein tatsächliches Ende um 23:59 (z. B. nach einem Spät-
+  nicht als Stempel – auch die Ruhezeitprüfung (§ 5) rechnet ab dem
+  angerechneten Ende. Ein tatsächliches Ende um 23:59 (z. B. nach einem Spät-
   oder Notdienst) lässt sich weiterhin eintragen und gilt dann als echter
   Stempel.
 - **Rückwirkende Erhöhung der Wochenstunden oder des Tagesplans** braucht jetzt

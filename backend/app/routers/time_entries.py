@@ -544,8 +544,11 @@ def clock_in(
             # §5 misst die TATSÄCHLICHE Anwesenheit → Rohstempel (#201), nicht die
             # work-window-gekappten Zeiten (sonst wird die Lücke zu groß gerechnet
             # und ein echter Verstoß bleibt unentdeckt). Fallback auf die gekappten.
+            # Gesamtreview 1.20 (B1): beim automatisch geschlossenen Eintrag
+            # (auch dem eben im selben Request geschlossenen) ist 23:59 kein
+            # Stempel — ``presence_end`` nimmt dort das wirksame Ende (P18).
             last_end = datetime.combine(
-                last_entry.date, last_entry.raw_end_time or last_entry.end_time, tzinfo=LOCAL_TZ
+                last_entry.date, work_window_service.presence_end(last_entry), tzinfo=LOCAL_TZ
             )
             current_start = datetime.combine(
                 now.date(), entry.raw_start_time or entry.start_time, tzinfo=LOCAL_TZ

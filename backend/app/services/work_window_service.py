@@ -530,15 +530,31 @@ def not_credited_minutes(entry) -> int:
     return total
 
 
+def presence_end(entry) -> Optional[time]:
+    """Ende der tatsächlichen Anwesenheit eines Eintrags — DIE eine Regel für die
+    Anwesenheit laut Stempel (Spec 8.3) und die §5-Ruhezeit (``clock_in``,
+    ``rest_time_service``, XLS-Vorschau): der Rohstempel, sonst das wirksame
+    Ende; beim automatisch geschlossenen Eintrag (P18) das wirksame Ende. Dessen
+    Rohende ist nie ein Stempel — das synthetische 23:59 bzw. nach einem
+    Verschieben das zuvor angerechnete Ende (``_auto_closed_end_input``).
+
+    Gesamtreview 1.20 (B1): §5 las ``raw_end_time or end_time`` und meldete am
+    Morgen nach einem Auto-Close eine Ruhezeit ab 23:59 („Nur 7.5h") — für
+    eine Zeit, in der niemand gestempelt hat. Ein eingetragenes Ende (auch
+    23:59, das Kennzeichen fällt dann) bleibt maßgeblich. ``None`` = offen."""
+    if getattr(entry, "auto_closed", False):
+        return entry.end_time
+    return entry.raw_end_time or entry.end_time
+
+
 def presence_minutes(entry) -> int:
     """Spec 8.3: Anwesenheit laut Stempel = (raw_end oder end) − (raw_start oder
-    start) − erfasste Pause; bei ``auto_closed`` bis zum wirksamen Ende; offene
-    Einträge zählen nicht."""
+    start) − erfasste Pause; bei ``auto_closed`` bis zum wirksamen Ende
+    (``presence_end``); offene Einträge zählen nicht."""
     if entry.end_time is None:
         return 0
     start = entry.raw_start_time or entry.start_time
-    end = entry.end_time if getattr(entry, "auto_closed", False) else (entry.raw_end_time or entry.end_time)
-    return max(0, _min(end) - _min(start) - int(entry.break_minutes or 0))
+    return max(0, _min(presence_end(entry)) - _min(start) - int(entry.break_minutes or 0))
 
 
 def credit_summary_text(entry) -> str:

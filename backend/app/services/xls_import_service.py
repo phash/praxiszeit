@@ -359,8 +359,10 @@ def parse_xls(
                 .first()
             )
             if last_db_entry and last_db_entry.end_time:
+                # Gesamtreview 1.20 (B1): ``presence_end`` — beim automatisch
+                # geschlossenen Eintrag ist das Rohende 23:59 kein Stempel (P18).
                 check_prev = datetime.combine(
-                    last_db_entry.date, last_db_entry.raw_end_time or last_db_entry.end_time,
+                    last_db_entry.date, work_window_service.presence_end(last_db_entry),
                 )
 
         # §3/§4 Tagesaggregation: bestehende DB-Einträge für diesen Tag einmalig laden

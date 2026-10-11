@@ -74,11 +74,8 @@ def closed_entries(db: Session, user, start: date, end: date) -> list:
 
 def _presence_span(entry) -> tuple:
     start = entry.raw_start_time or entry.start_time
-    if getattr(entry, "auto_closed", False):
-        end = entry.end_time            # P18: 23:59 ist kein Stempel
-    else:
-        end = entry.raw_end_time or entry.end_time
-    return _min(start), _min(end)
+    # P18: beim automatisch geschlossenen Eintrag ist 23:59 kein Stempel.
+    return _min(start), _min(work_window_service.presence_end(entry))
 
 
 def day_presence(entries: Sequence) -> DayPresence:
