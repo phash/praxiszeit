@@ -1580,7 +1580,15 @@ def _parse_change_body(raw) -> WorkingHoursChangeCreate:
 
 def _reset_target(db: Session, user: User, current_user: User, change_data: WorkingHoursChangeCreate):
     """P13: (zurückgesetzte Zeile, ihr Vorgänger-Snapshot) — 404, wenn die Zeile
-    nicht im Mandanten bzw. nicht bei dieser Person existiert."""
+    nicht im Mandanten bzw. nicht bei dieser Person existiert.
+
+    409 (Gesamtreview PR3, P13/P25 serverseitig): die Rücksetzung muss NACH der
+    zurückgesetzten Zeile wirken, und dazwischen darf keine weitere Zeile liegen.
+    Die ``delete-preview`` bietet sie nur so an; ein veralteter ``reset_body``
+    (zweiter Tab, zweite Admin) entspräche aber weiter dem Vorgänger-Snapshot und
+    höbe ab seinem Datum still die inzwischen angelegte Änderung auf — Sammelzeile
+    und Dashboard-Hinweis nennten dabei die falsche Zeile. Im Anlege-Endpunkt
+    läuft das nach der Ankersperre, sieht also jede committete Gegenseite."""
     if change_data.reset_of_change_id is None:
         return None
     row = db.query(WorkingHoursChange).filter(
@@ -1590,6 +1598,13 @@ def _reset_target(db: Session, user: User, current_user: User, change_data: Work
     ).first()
     if row is None:
         raise HTTPException(status_code=404, detail=_CHANGE_NOT_FOUND)
+    if not row.effective_from < change_data.effective_from or db.query(WorkingHoursChange.id).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
+        WorkingHoursChange.effective_from > row.effective_from,
+        WorkingHoursChange.effective_from <= change_data.effective_from,
+    ).first() is not None:
+        raise HTTPException(status_code=409, detail=RESET_CONFLICT_DETAIL)
     return row, calculation_service.get_schedule_for_date(db, user, row.effective_from - timedelta(days=1))
 
 

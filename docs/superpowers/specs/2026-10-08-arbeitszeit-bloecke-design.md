@@ -1537,7 +1537,8 @@ nachher); protokolliert wird wie jede Abwesenheits-Rückrechnung (`source="wh_ch
     Pausen bzw. Altfenster, `effective_from = earliest_lossless_date`,
     `reset_of_change_id` = die Zeile, die zurückgesetzt wird); der Client baut den
     Snapshot nicht selbst nach. Der Server prüft beim Anlegen, dass der Snapshot noch dem
-    Vorgänger dieser Zeile entspricht (`_comparable_snapshot`, sonst 409, 11.4), und
+    Vorgänger dieser Zeile entspricht (`_comparable_snapshot`) und zwischen der Zeile und dem
+    Rücksetzungsdatum keine weitere Zeile liegt (sonst 409, 11.2/11.4), und
     bewertet die neue Zeile wie jede andere nach (a)–(c) — ab diesem Datum verliert
     nichts, also keine Neukappung der Vergangenheit; die zurückgesetzte Zeile bleibt bis
     zum Vortag wirksam und im Verlauf stehen. Die Sammelzeile trägt „Rücksetzung der
@@ -1723,7 +1724,14 @@ class WorkingHoursChangeCreate(WorkingHoursChangeBase):
 - `reset_of_change_id` gesetzt → Zeile muss im Mandanten und bei derselben Person
   existieren (sonst 404); der übrige Body muss dem Vorgänger-Snapshot dieser Zeile
   entsprechen (`_comparable_snapshot`, sonst 409). Der Client sendet dafür unverändert den
-  `reset_body` aus der `delete-preview`.
+  `reset_body` aus der `delete-preview`. Zusätzlich (Gesamtreview PR3, P13/P25
+  serverseitig durchgesetzt): das `effective_from` des Bodys liegt **nach** dem
+  `effective_from` der zurückgesetzten Zeile, und keine weitere Zeile derselben Person
+  liegt in `(Zeile.effective_from, Body.effective_from]` — sonst 409 (dieselbe Meldung;
+  die Vorschau meldet sie als `blocked_reason`). Ohne diese Prüfung höbe ein veralteter
+  `reset_body` (zweiter Tab, zweite Admin) still eine inzwischen angelegte Änderung auf.
+  Im Anlege-Endpunkt läuft die Prüfung nach der Ankersperre; am selben Datum greift dort
+  zuerst die bestehende Regel „Datum doppelt" (400).
 - `blocks` gesetzt → `validate_week_blocks` + `derive_targets`; `weekly_hours`/`hours_*`
   im selben Body → 422. `use_daily_schedule` wird `True`.
 - `blocks` bei einer Person mit `track_hours=false` wird **angenommen** (kein 422), ebenso
@@ -1794,7 +1802,7 @@ reine Blockänderung ist damit eine Änderung (Basis-Zeile, Segment, Neukappung)
 | 400 | `retroactive_reason_type = "sonstiges"` ohne `other_reason_risk_confirmed` | „Bei „Sonstiges" bitte bestätigen, dass eine einseitige rückwirkende Kürzung vom Direktionsrecht nicht gedeckt ist." |
 | 400 | Verkürzung in abgeschlossenes Jahr (Anlegen oder Löschen) | „Rückwirkende Verkürzung in das abgeschlossene Jahr {Y} ist gesperrt. Bitte die Änderung frühestens ab 01.01.{Y+1} wirksam werden lassen." — Y = das **größte** Jahr aus `shortening_closed_years` (verlierender Eintrag, negativer Saldo-Anteil oder gesenkte Gutschrift; sonst scheiterte auch das vorgeschlagene Datum) |
 | 404 | `reset_of_change_id` nicht im Mandanten oder nicht bei dieser Person | unverändert („nicht gefunden") |
-| 409 | `reset_of_change_id`: Body entspricht nicht mehr dem Vorgänger-Snapshot (Verlauf inzwischen geändert) | „Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden." |
+| 409 | `reset_of_change_id`: Body entspricht nicht mehr dem Vorgänger-Snapshot, zwischen der zurückgesetzten Zeile und dem Rücksetzungsdatum liegt inzwischen eine weitere Zeile, oder das Rücksetzungsdatum liegt nicht nach der Zeile (Verlauf inzwischen geändert, 11.2) | „Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden." |
 | 400 | bestehende Regeln (Datum doppelt, früheste Zeile löschen) | unverändert |
 | 404 | Person/Zeile/Eintrag nicht im Mandanten | unverändert |
 | 400 | Anerkennen eines offenen Eintrags | „Ein offener Eintrag kann erst nach dem Ausstempeln anerkannt werden." |

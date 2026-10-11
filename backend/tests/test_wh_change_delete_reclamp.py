@@ -20,6 +20,8 @@ from tests.wh_change_helpers import (
 )
 from tests.work_blocks_fixtures import block_week
 
+RESET_CONFLICT = "Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden."
+
 LONGER_PAUSED = with_pauses(block_week(mon=[("08:00", "12:00"), ("15:00", "19:00")], tue=[("08:00", "12:00")],
                                        thu=[("08:00", "12:00")]), mon=60)
 
@@ -110,6 +112,47 @@ class TestReset:
         resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes", json={**reset, "weekly_hours": 39})
         assert resp.status_code == 409, resp.text
         assert resp.json()["detail"] == "Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden."
+
+    def test_reset_body_after_a_newer_change_in_between_is_409(self, client, db, test_user):
+        """Gesamtreview PR3: zwischen ``delete-preview`` und Rücksetzung speichert ein
+        zweiter Tab (oder eine zweite Admin) eine Änderung ab 01.10. Der alte
+        ``reset_body`` entspricht weiter dem Vorgänger der Zeile ab 01.09. — er höbe
+        aber ab dem 08.10. still die Änderung ab 01.10. auf, und Sammelzeile wie
+        Dashboard-Hinweis nennten die falsche Änderung. → 409, nichts geschrieben;
+        die Vorschau desselben Bodys meldet es als ``blocked_reason``."""
+        change = _create(client, test_user, {"effective_from": "2026-09-01", "weekly_hours": 30})
+        reset = _delete_preview(client, test_user, change["id"])["reset_body"]
+        assert reset["effective_from"] == "2026-10-08"
+        _create(client, test_user, {"effective_from": "2026-10-01", "weekly_hours": 20})
+        rows_before = _rows(db, test_user)
+        logs_before = db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.user_id == test_user.id, TimeEntryAuditLog.tenant_id == DEFAULT_TENANT_ID).count()
+
+        preview = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes/preview", json=reset)
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["blocked_reason"] == RESET_CONFLICT
+        resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes", json=reset)
+        assert (resp.status_code, resp.json()["detail"]) == (409, RESET_CONFLICT), resp.text
+        assert _rows(db, test_user) == rows_before == [
+            (date(2026, 8, 31), 40.0), (date(2026, 9, 1), 30.0), (date(2026, 10, 1), 20.0)]
+        assert db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.user_id == test_user.id, TimeEntryAuditLog.tenant_id == DEFAULT_TENANT_ID,
+        ).count() == logs_before
+
+    @pytest.mark.parametrize("effective_from", ["2026-08-20", "2026-09-01"])
+    def test_reset_date_not_after_the_reset_row_is_409(self, client, db, test_user, effective_from):
+        """Gesamtreview PR3 / P13: eine Rücksetzung gilt nur NACH dem Wirkungsdatum
+        der zurückgesetzten Zeile — davor (oder am selben Tag) wäre sie keine
+        Rücksetzung dieser Zeile. Am selben Tag greift beim Anlegen schon die
+        bestehende Regel „Datum doppelt" (400); die Vorschau meldet beides."""
+        change = _create(client, test_user, {"effective_from": "2026-09-01", "weekly_hours": 30})
+        reset = {**_delete_preview(client, test_user, change["id"])["reset_body"], "effective_from": effective_from}
+        rows_before = _rows(db, test_user)
+        preview = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes/preview", json=reset)
+        assert preview.json()["blocked_reason"] == RESET_CONFLICT
+        resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes", json=reset)
+        assert resp.status_code == (409 if effective_from == "2026-08-20" else 400), resp.text
+        assert _rows(db, test_user) == rows_before
 
     def test_reset_body_with_blocks_is_accepted_after_track_hours_went_off(self, client, db, test_user):
         """Spec 17.2 / P24: die Rücksetzung trägt die Blöcke der Vorgängerzeile. Wurde
