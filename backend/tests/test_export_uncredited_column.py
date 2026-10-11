@@ -62,7 +62,7 @@ def test_xlsx_column_13_values_and_sum(db, month, yearly):
     sheet = _xlsx_employee_sheet(bio, month, yearly=yearly)
     headers = [sheet.cell(row=header_row, column=c).value for c in range(1, 14)]
     assert headers[:10] == XLSX_HEADERS_1_TO_10, "Spalten 1–10 bleiben, wo sie sind"
-    assert headers[10:] == ["Unterbrechung (Min)", "Arbeitsblöcke", HEADER]
+    assert headers[10:] == ["Unterbrechung (Min)", "Zeiteinträge", HEADER]
     rows = _xlsx_rows(sheet)
     assert rows[K7_DAY][12] == 240      # K7: Lücke 150 + Hülle 90
     assert rows[K15_DAY][12] == 150     # K15: Endseite 23:59 zählt nicht (P18)
@@ -91,7 +91,7 @@ def test_ods_column_13(db, month, yearly):
     table = _ods_table(bio, f"{month.last_name} {month.first_name}"[:31])
     header = _ods_header(table)
     assert header[:10] == XLSX_HEADERS_1_TO_10
-    assert header[10:13] == ["Unterbrechung (Min)", "Arbeitsblöcke", HEADER]
+    assert header[10:13] == ["Unterbrechung (Min)", "Zeiteinträge", HEADER]
     rows = _ods_day_rows(table)
     assert rows[K7_DAY][12][1] == "240"
     assert rows[K15_DAY][12][1] == "150"

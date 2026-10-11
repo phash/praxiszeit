@@ -225,7 +225,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         "Datum", "Wochentag", "Von", "Bis", "Pause (Min)",
         "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
         # #498: angehängt, nie eingeschoben (Parität zu XLSX).
-        "Unterbrechung (Min)", "Arbeitsblöcke",
+        "Unterbrechung (Min)", "Zeiteinträge",
         NOT_CREDITED_HEADER,  # Spec 2026-10-08, 15.1: Spalte 13
     ]
     table.addElement(_header_row(headers, bold))
@@ -627,7 +627,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         "Datum", "Wochentag", "Von", "Bis", "Pause (Min)",
         "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
         # #498: angehängt, nie eingeschoben (Parität zu XLSX).
-        "Unterbrechung (Min)", "Arbeitsblöcke",
+        "Unterbrechung (Min)", "Zeiteinträge",
         NOT_CREDITED_HEADER,  # Spec 2026-10-08, 15.1: Spalte 13
     ]
     table.addElement(_header_row(headers, bold))

@@ -19,7 +19,7 @@ Mehrere Zeiteinträge an einem Tag wurden zu „erster Beginn – letztes Ende,
 Pause Σ" zusammengezogen: 07:42–12:02 + 14:15–16:30 stand als 07:42–16:30,
 Pause 0, Netto 6,58 — rechnerisch nicht nachvollziehbar und optisch ein
 §4-ArbZG-Verstoß. Die Tabellen-Exporte hängen deshalb zwei Spalten AN
-(„Unterbrechung (Min)", „Arbeitsblöcke"; Spalten 1–10 bleiben unverändert,
+(„Unterbrechung (Min)", „Zeiteinträge"; Spalten 1–10 bleiben unverändert,
 Kundenauswertungen lesen sie positionsweise), das PDF listet die Blöcke in
 „Von"/„Bis" untereinander und weist die Unterbrechung in eigener Spalte aus.
 """
@@ -432,7 +432,7 @@ class TestIssue498Xlsx:
         sheet = _xlsx_employee_sheet(bio, month, yearly=yearly)
         headers = [sheet.cell(row=header_row, column=c).value for c in range(1, 13)]
         assert headers[:10] == XLSX_HEADERS_1_TO_10, "Spalten 1–10 bleiben, wo sie sind"
-        assert headers[10:] == ["Unterbrechung (Min)", "Arbeitsblöcke"]
+        assert headers[10:] == ["Unterbrechung (Min)", "Zeiteinträge"]
 
     @pytest.mark.parametrize("yearly", [False, True])
     def test_split_shift_row(self, db, month, yearly):
@@ -464,7 +464,7 @@ class TestIssue498Ods:
         table = _ods_table(bio, f"{month.last_name} {month.first_name}"[:31])
         header = _ods_header(table)
         assert header[:10] == XLSX_HEADERS_1_TO_10
-        assert header[10:12] == ["Unterbrechung (Min)", "Arbeitsblöcke"]
+        assert header[10:12] == ["Unterbrechung (Min)", "Zeiteinträge"]
         rows = _ods_day_rows(table)
         r = rows[SPLIT_DAY]
         assert (r[2][0], r[3][0], r[4][0]) == ("07:42", "16:30", "0")

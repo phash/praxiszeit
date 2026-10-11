@@ -581,7 +581,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     - Abwesenheit
     - Bemerkung
     - Unterbrechung (Min)   (#498, angehängt)
-    - Arbeitsblöcke         (#498, angehängt)
+    - Zeiteinträge          (#498, angehängt)
     - Nicht angerechnet (Min) (Spec 2026-10-08, angehängt)
     """
     sheet = wb.create_sheet(title=f"{user.last_name} {user.first_name}"[:31])  # Excel sheet name max 31 chars
@@ -631,7 +631,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # #498: Spalten 11/12 ANGEHÄNGT, nie eingeschoben — Kundenauswertungen lesen
     # die Spalten 1–10 positionsweise. Spec 2026-10-08, 15.1: Spalte 13 ebenso.
     headers = ["Datum", "Wochentag", "Von", "Bis", "Pause (Min)", "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
-               "Unterbrechung (Min)", "Arbeitsblöcke", NOT_CREDITED_HEADER]
+               "Unterbrechung (Min)", "Zeiteinträge", NOT_CREDITED_HEADER]
     for col_num, header in enumerate(headers, 1):
         cell = sheet.cell(row=4, column=col_num)
         cell.value = header
@@ -1261,7 +1261,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     # #498: Spalten 11/12 ANGEHÄNGT, nie eingeschoben — Kundenauswertungen lesen
     # die Spalten 1–10 positionsweise. Spec 2026-10-08, 15.1: Spalte 13 ebenso.
     headers = ["Datum", "Wochentag", "Von", "Bis", "Pause (Min)", "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
-               "Unterbrechung (Min)", "Arbeitsblöcke", NOT_CREDITED_HEADER]
+               "Unterbrechung (Min)", "Zeiteinträge", NOT_CREDITED_HEADER]
     for col_num, header in enumerate(headers, 1):
         cell = sheet.cell(row=3, column=col_num)
         cell.value = header
