@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import WhImpactBox from './WhImpactBox';
 import type { WorkingHoursChangePreview } from './workingHoursTypes';
@@ -66,17 +66,16 @@ describe('WhImpactBox (Spec 12.1)', () => {
   });
 
   it('Urlaub in Tagen wie im Rest der App (formatDayCount), mit Jahr des Wirkungszeitraums', () => {
+    // Zellen einzeln vergleichen: `toHaveTextContent` prüft nur Teilstrings —
+    // „0 Tage" stünde schon in „10 Tage", eine doppelte Einheit („−0,5 Tage
+    // Tage", `signedDays` liefert die Einheit bereits mit) fiele nicht auf.
+    const cells = (row: HTMLElement) => within(row).getAllByRole('cell').map((c) => c.textContent);
     const { unmount } = render(<WhImpactBox preview={FIRST_STATE} />);
-    const unchanged = screen.getByRole('row', { name: /Urlaub 2026/ });
-    expect(unchanged).toHaveTextContent('10 Tage');
-    expect(unchanged).toHaveTextContent('0 Tage');
-    expect(unchanged).not.toHaveTextContent(/10,0/);
+    expect(cells(screen.getByRole('row', { name: /Urlaub 2026/ }))).toEqual(['10 Tage', '10 Tage', '0 Tage']);
     unmount();
 
     render(<WhImpactBox preview={{ ...FIRST_STATE, vacation_days_before: 10, vacation_days_after: 9.5 }} />);
-    const less = screen.getByRole('row', { name: /Urlaub 2026/ });
-    expect(less).toHaveTextContent('9,5 Tage');
-    expect(less).toHaveTextContent('−0,5 Tage');
+    expect(cells(screen.getByRole('row', { name: /Urlaub 2026/ }))).toEqual(['10 Tage', '9,5 Tage', '−0,5 Tage']);
   });
 
   it('breite Tabelle scrollt auf dem Handy quer statt abgeschnitten zu werden', () => {
