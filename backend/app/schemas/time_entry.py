@@ -66,6 +66,21 @@ class TimeEntryUpdate(BaseModel):
     sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # §10 ArbZG (#485: begrenzt)
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG (SEC-D: bounded)
 
+    # Gesamtreview 1.20 (B1): ``Optional`` heißt hier „darf fehlen", nicht „darf
+    # null sein" — die Spalten sind NOT NULL. Die MA-Route übernahm ein
+    # mitgeschicktes ``null`` per ``setattr`` (500 in Kappung bzw. §3/§4, für
+    # Mitarbeitende ein irreführender 403 „vergangene Tage"), die Admin-Route
+    # deutete es still als „unverändert". Jetzt 422 für beide; ein weggelassenes
+    # Feld bleibt unverändert. Der Validator läuft nur für mitgeschickte Felder.
+    @field_validator('date', 'start_time', 'break_minutes')
+    @classmethod
+    def reject_explicit_null(cls, v, info):
+        if v is None:
+            raise ValueError(
+                f"{info.field_name} darf nicht leer sein – zum Beibehalten weglassen"
+            )
+        return v
+
     # #502: dieselbe Grenze wie beim Anlegen (``TimeEntryBase.validate_not_future``).
     # Ohne sie liess sich ein Eintrag per PUT in die Zukunft verschieben — fuer
     # §16 eine erfundene Zeit. Gilt fuer beide Routen, die dieses Schema nutzen
