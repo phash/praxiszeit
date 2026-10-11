@@ -248,7 +248,10 @@ gegriffen hat (`presence_service`); `BREAK_IN_GAP`, wenn Pause **und** Lücke am
 abgezogen werden. §5 rechnet unverändert gegen die Rohstempel. Die 24-Wochen-Auswertung (§3 ArbZG,
 Admin → Berichte) zeigt neben dem Durchschnitt der angerechneten Zeit je Arbeitstag zusätzlich die
 „Anwesenheit laut Stempel" (Σ `presence_minutes`, `presence_hours`/`presence_average` und je
-Kalenderwoche `presence_weeks`); diesen Wert ändert keine Neukappung.
+Kalenderwoche `presence_weeks`); diesen Wert ändert keine Neukappung – außer bei automatisch
+geschlossenen Einträgen: ihre Anwesenheit zählt bis zum wirksamen Ende, und das verschiebt eine
+Neukappung mit (Auto-Close 08:00–18:15, neue Hülle bis 17:15 → Ende 17:15, Rohende 18:15, 60 Min
+weniger Anwesenheit).
 
 ### 4.2 Gutgeschriebene Abwesenheiten
 
@@ -365,12 +368,12 @@ sichtbar). Die Zeilenregel steht an `export_service.day_credit_minutes`. Spalte 
 Vertrags.
 
 Seit 1.20.0 hängt jede Datei als letzte Spalte **„Nicht angerechnet (Min)"** an (XLSX/ODS Spalte 13,
-PDF 12. Spalte mit Kopf „Nicht angerechnet / (Min)"): Σ `not_credited_minutes` der Einträge des
-Tages in ganzen Minuten, Summenzeile = Σ Monat („Nicht angerechnet (Min) Monat:", im
-Jahres-Mitarbeiterblatt „… Jahr:"). In der Zeilenregel steht bewusst **nicht** „− Nicht
-angerechnet": die Spalte enthält zusätzlich die an der Hülle abgeschnittenen Minuten, die in
-Von/Bis schon fehlen. Beispiel Hülle und Lücke (§4.1): 18:15 − 07:45 = 10:30 h; − 150 Min =
-8:00 h = Netto; die Spalte zeigt 240.
+PDF 12. Spalte, Kopf zweizeilig „Nicht angerechnet (Min)"): Σ `not_credited_minutes` der Einträge
+des Tages in ganzen Minuten, Summenzeile = Σ Monat (XLSX/ODS „Nicht angerechnet (Min) Monat:", im
+Jahres-Mitarbeiterblatt „… Jahr:"; PDF „Nicht angerechnet (Min):"). In der Zeilenregel steht
+bewusst **nicht** „− Nicht angerechnet": die Spalte enthält zusätzlich die an der Hülle
+abgeschnittenen Minuten, die in Von/Bis schon fehlen. Beispiel Hülle und Lücke (§4.1):
+18:15 − 07:45 = 10:30 h; − 150 Min = 8:00 h = Netto; die Spalte zeigt 240.
 
 ---
 
@@ -1451,10 +1454,11 @@ Grund gesperrt (400 „Rückwirkende Verkürzung in das abgeschlossene Jahr … 
 Dieselben Kriterien gelten beim **Löschen** einer Verlaufszeile (in der Oberfläche nur die jüngste);
 es rechnet Einträge und Abwesenheiten symmetrisch zurück. Verkürzt es, ist neben „Rückwirkend
 löschen mit Neuberechnung" (Schutzpaket) die verlustfreie Variante „Ab ‹Datum› auf den vorherigen
-Stand zurücksetzen": eine neue Zeile mit dem Vertrag vor der gelöschten Änderung (Sammelzeile
-„… · Rücksetzung der Änderung ab 01.09.2026 · …"). Liegt inzwischen eine weitere Zeile dazwischen,
-lehnt der Server die Rücksetzung mit 409 ab („Der vorherige Stand hat sich inzwischen geändert –
-bitte die Vorschau neu laden.").
+Stand zurücksetzen": statt des Löschens eine neue Zeile ab ‹Datum› mit dem Vertrag vor dieser
+Änderung; die Änderung selbst bleibt im Verlauf stehen (Sammelzeile „… · Rücksetzung der
+Änderung ab 01.09.2026 · …"). Liegt inzwischen eine weitere Zeile dazwischen, lehnt der Server die
+Rücksetzung mit 409 ab („Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu
+laden.").
 
 **Protokoll** (`reclamp_audit.summary_note`, Fall 1 rückwirkend gespeichert):
 
