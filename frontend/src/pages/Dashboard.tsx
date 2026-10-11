@@ -11,6 +11,7 @@ import { formatHoursHM } from '../utils/errorMessage';
 import { deHoursExact } from '../utils/formatters';
 import StampWidget from '../components/StampWidget';
 import ShiftTodayCard from '../components/ShiftTodayCard';
+import ScheduleChangeNotices, { type ScheduleChangeNotice } from '../components/ScheduleChangeNotices';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
@@ -25,6 +26,7 @@ interface DashboardData {
   target_hours: number;
   actual_hours: number;
   balance: number;
+  schedule_change_notices?: ScheduleChangeNotice[];  // Spec 14/P20
 }
 
 interface VacationAccount {
@@ -423,6 +425,9 @@ export default function Dashboard() {
 
       {/* Greeting - Desktop */}
       <h1 className="hidden md:block text-3xl font-bold text-text-primary mb-8">Dashboard</h1>
+
+      {/* Spec 14/P20: Hinweise zu Arbeitszeit-Änderungen der letzten 30 Tage */}
+      <ScheduleChangeNotices notices={dashboardData?.schedule_change_notices} />
 
       {/* Missing Bookings Warning - Own */}
       {missingBookings.length > 0 && (

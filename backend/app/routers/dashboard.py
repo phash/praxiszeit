@@ -8,7 +8,7 @@ from app.models import User, TimeEntry, UserRole
 from app.models.absence import Absence
 from app.middleware.auth import get_current_user
 from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry, WeeklyOverviewRow
-from app.services import calculation_service, milog_service
+from app.services import calculation_service, milog_service, reclamp_audit
 from app.services.calculation_service import get_schedule_for_date, get_daily_target_for_date
 from app.services.holiday_service import is_holiday
 from app.services.timezone_service import today_local, now_local
@@ -131,7 +131,9 @@ def get_dashboard(
         month=month,
         target_hours=target,
         actual_hours=actual,
-        balance=balance
+        balance=balance,
+        # Spec 14/P20: nur eigene Sammelzeilen (current_user), auch unter Impersonation.
+        schedule_change_notices=reclamp_audit.schedule_change_notices(db, current_user),
     )
 
 

@@ -14,10 +14,10 @@ nicht anschlägt (10.1). Das Präfix „[Sonstiges]" entgeht dem Token „Sonsti
 nur durch die schließende Klammer — Test in ``test_reclamp_audit.py``.
 """
 import re
-from datetime import date, datetime
-from typing import NamedTuple, Optional
+from datetime import date, datetime, timedelta, timezone
+from typing import List, NamedTuple, Optional
 
-from app.services import work_blocks_service
+from app.services import calculation_service, timezone_service, work_blocks_service
 from app.services.export_service import format_day_plan, format_hours_de
 
 AUDIT_SOURCE = "wh_reclamp"  # 10 Zeichen, varchar(40)
@@ -216,3 +216,77 @@ def entry_new_note(after_text: str, *, effective_from: date, deleted: bool, old_
     if shortening and reason_type:
         text += f" · Grund: {reason_text(reason_type, reason_text_value)}"
     return text
+
+
+NOTICE_DAYS = 30
+
+
+def _signed_hm(minutes: int) -> str:
+    """Anzeige-Vorzeichen des Dashboard-Hinweises: U+2212 „−" bzw. „+" vor ``H:MM``
+    (die Sammelzeile selbst trägt ASCII, 10.2)."""
+    sign = "−" if minutes < 0 else "+"
+    m = abs(int(minutes))
+    return f"{sign}{m // 60}:{m % 60:02d}"
+
+
+def notice_text(db, user, parsed: SummaryNote, today: date) -> str:
+    """Spec 14 — Text je Sammelzeile. „neu: …" ist der Kurztext des HEUTE für
+    ``effective_from`` aufgelösten Snapshots (``get_schedule_for_date``), nie
+    ``users.work_blocks``; der Grund erscheint nur als Beschriftung des
+    Grundtyps (P12, 19.1 Nr. 7)."""
+    eff = parsed.effective_from.strftime("%d.%m.%Y")
+    if parsed.deleted:
+        text = f"Die Arbeitszeit-Änderung ab {eff} wurde zurückgenommen."
+    else:
+        neu = contract_text(calculation_service.get_schedule_for_date(db, user, parsed.effective_from),
+                            compact=False)
+        if parsed.reset_of is not None:
+            verb = "wurde" if parsed.effective_from <= today else "wird"
+            text = (f"Die Arbeitszeit-Änderung ab {parsed.reset_of:%d.%m.%Y} {verb} ab {eff} "
+                    f"auf den vorherigen Stand zurückgesetzt (neu: {neu}).")
+        elif parsed.effective_from <= today:
+            text = f"Ihre Arbeitszeit wurde ab {eff} geändert (neu: {neu})."
+        else:
+            text = f"Ihre Arbeitszeit ändert sich ab {eff} (neu: {neu})."
+    if parsed.count > 0:
+        noun = "Eintrag" if parsed.count == 1 else "Einträge"
+        text += f" {parsed.count} {noun} neu berechnet, angerechnete Zeit {_signed_hm(parsed.delta_minutes)} h."
+    if parsed.saldo_delta_minutes != 0:
+        text += f" Überstundenkonto im Zeitraum {_signed_hm(parsed.saldo_delta_minutes)} h."
+    if parsed.shortening:
+        label = REASON_TYPES[parsed.reason_type].label if parsed.reason_type else None
+        text += f" Rückwirkende Verkürzung – Grund: {label}." if label else " Rückwirkende Verkürzung."
+    return text
+
+
+def schedule_change_notices(db, user, *, now: Optional[datetime] = None) -> List[dict]:
+    """Spec 14/P20 — alle Sammelzeilen der Person der letzten 30 Tage, jüngste
+    zuerst, nur die, die ``parse_summary_note`` liest (eine Einzelzeile, deren
+    Eintrag gelöscht wurde, verdrängt so keinen Hinweis). Keine
+    Bestätigungstabelle. Die 30-Tage-Grenze wird in Python geprüft: SQLite
+    liefert ``created_at`` ohne Zeitzone (dort UTC)."""
+    from app.models import TimeEntryAuditLog
+
+    now = now or timezone_service.now_local()
+    since = now - timedelta(days=NOTICE_DAYS)
+    rows = db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.user_id == user.id,
+        TimeEntryAuditLog.tenant_id == user.tenant_id,  # F-026
+        TimeEntryAuditLog.source == AUDIT_SOURCE,
+        TimeEntryAuditLog.time_entry_id.is_(None),
+        TimeEntryAuditLog.old_date.is_(None),
+        TimeEntryAuditLog.new_date.is_(None),
+    ).order_by(TimeEntryAuditLog.created_at.desc()).all()
+    today = timezone_service.today_local()
+    notices = []
+    for row in rows:
+        created = row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=timezone.utc)
+        if created < since:
+            continue
+        parsed = parse_summary_note(row.new_note)
+        if parsed is None:
+            continue
+        kind = "delete" if parsed.deleted else ("reset" if parsed.reset_of is not None else "change")
+        notices.append({"created_at": created, "effective_from": parsed.effective_from, "kind": kind,
+                        "text": notice_text(db, user, parsed, today)})
+    return notices

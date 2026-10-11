@@ -1,7 +1,17 @@
 from pydantic import BaseModel, ConfigDict, Field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
+
+
+class ScheduleChangeNotice(BaseModel):
+    """Spec 14/P20: ein Hinweis zu einer Arbeitszeit-Änderung (letzte 30 Tage).
+    Der Text kommt fertig aus ``reclamp_audit.notice_text`` — eine Quelle für
+    Wortlaut, Grundtyp-Beschriftung und „neu: …"."""
+    created_at: datetime
+    effective_from: date
+    kind: Literal["change", "reset", "delete"]
+    text: str
 
 
 class MonthlyDashboard(BaseModel):
@@ -11,6 +21,8 @@ class MonthlyDashboard(BaseModel):
     target_hours: float
     actual_hours: float
     balance: float
+    # Spec 14: Hinweise zu Arbeitszeit-Änderungen der letzten 30 Tage, jüngste zuerst.
+    schedule_change_notices: List[ScheduleChangeNotice] = []
 
 
 class OvertimeHistory(BaseModel):

@@ -11,7 +11,7 @@ from app.models import (
 )
 from app.models.tenant import Tenant
 from app.routers.admin_users import _sync_user_from_change
-from app.services import calculation_service, wh_change_service
+from app.services import calculation_service, reclamp_audit, wh_change_service
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import test_app
 from tests.wh_change_helpers import (
@@ -72,6 +72,12 @@ class TestReset:
         assert _rows(db, test_user) == [(date(2026, 8, 31), 40.0), (date(2026, 9, 1), 30.0), (date(2026, 10, 8), 40.0)]
         notes = [s.new_note for s in reclamp_logs(db, test_user, summary=True)]
         assert any(" · Rücksetzung der Änderung ab 01.09.2026 · " in n for n in notes)
+        # Spec 17.5: Dashboard-Hinweis mit Rücksetzungstext. Nach Art statt nach
+        # Position — SQLite stempelt beide Sammelzeilen in derselben Sekunde.
+        [notice] = [n for n in reclamp_audit.schedule_change_notices(db, test_user) if n["kind"] == "reset"]
+        assert notice["text"] == (
+            "Die Arbeitszeit-Änderung ab 01.09.2026 wurde ab 08.10.2026 auf den vorherigen Stand "
+            "zurückgesetzt (neu: 40,0 h/Woche (gleichmäßig, 5 Tage)).")
 
     def test_reset_body_does_not_reclamp_the_past(self, client, db, test_user):
         """Spec 17.5/P13: die Rücksetzung kappt die Vergangenheit NICHT neu. Der

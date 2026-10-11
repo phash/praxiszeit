@@ -460,3 +460,25 @@ describe('Dashboard Stempelkarte in der Lücke zwischen den Arbeitsblöcken (Spe
     expect(card.className).not.toMatch(/bg-danger/);
   });
 });
+
+describe('Spec 14: Dashboard-Hinweise zur Arbeitszeit', () => {
+  it('zeigt die Hinweise aus GET /dashboard', async () => {
+    mockDashboardEndpoints();
+    const base = getMock.getMockImplementation()!;
+    getMock.mockImplementation((url: string) => {
+      if (url === '/dashboard') {
+        return Promise.resolve({ data: {
+          year: 2026, month: 10, target_hours: 0, actual_hours: 0, balance: 0,
+          schedule_change_notices: [{
+            created_at: '2026-10-08T08:00:00Z', effective_from: '2026-11-02', kind: 'change',
+            text: 'Ihre Arbeitszeit ändert sich ab 02.11.2026 (neu: 25,0 h/Woche (gleichmäßig, 5 Tage)).',
+          }],
+        } });
+      }
+      return base(url);
+    });
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    expect(await screen.findByText('Ihre Arbeitszeit ändert sich ab 02.11.2026 (neu: 25,0 h/Woche (gleichmäßig, 5 Tage)).'))
+      .toBeInTheDocument();
+  });
+});
