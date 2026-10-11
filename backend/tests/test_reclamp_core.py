@@ -1,8 +1,11 @@
 """Spec 9.2 (E47–E50) und P1: Massen-Neukappung und Knickstellen-Prüfung."""
+import uuid
 from datetime import date, time
 from decimal import Decimal
 
-from app.models import User, UserRole
+import pytest
+
+from app.models import TimeEntry, User, UserRole
 from app.models.public_holiday import PublicHoliday
 from app.services import rest_time_service, work_blocks_service, work_window_service as wws
 from app.services.holiday_service import invalidate_holiday_cache
@@ -121,6 +124,31 @@ def test_unique_collision_keeps_the_entry(db, test_user):
     result = _run(db, test_user, prev)
     assert [(s.entry_id, s.reason) for s in result.skipped] == [(a.id, "unique_collision")]
     assert (a.start_time, a.raw_start_time) == (t(7, 45), t(7, 30))
+
+
+@pytest.mark.parametrize("a_first", [True, False], ids=["a-zuerst", "b-zuerst"])
+def test_start_vacated_in_the_same_run_reaches_the_db_in_loop_order(db, test_user, a_first):
+    """Gesamtreview PR3 (9.2 Schritt 8): b (gestempelt 07:10, gespeichert 07:30 —
+    mit einem früheren, größeren Puffer gekappt) rückt unter der neuen Hülle (ab
+    07:20) auf 07:20 vor, a (gestempelt 07:30, gekappt 07:45) übernimmt b's alten
+    Beginn. Die Python-Prüfung lässt das zu; der Unique-Index prüft aber je UPDATE,
+    und SQLAlchemy ordnet die UPDATEs nach Primärschlüssel. Ohne Flush in der
+    Schleifen-Reihenfolge scheiterte der Flush je nach ID am Index."""
+    prev = _setup(db, test_user, old=block_week(mon=[("08:00", "18:00")]),
+                  new=block_week(mon=[("07:35", "18:00")]))
+    low, high = uuid.UUID(int=1), uuid.UUID(int=2)
+    a_id, b_id = (low, high) if a_first else (high, low)
+    a = TimeEntry(id=a_id, tenant_id=DEFAULT_TENANT_ID, user_id=test_user.id, date=MON, start_time=t(7, 45),
+                  raw_start_time=t(7, 30), end_time=t(12), break_minutes=0, clamp_grace_minutes=15)
+    b = TimeEntry(id=b_id, tenant_id=DEFAULT_TENANT_ID, user_id=test_user.id, date=MON, start_time=t(7, 30),
+                  raw_start_time=t(7, 10), end_time=t(7, 40), break_minutes=0, clamp_grace_minutes=30)
+    db.add_all([a, b])
+    db.commit()
+    result = _run(db, test_user, prev)
+    db.flush()
+    assert sorted(c.entry_id for c in result.changed) == sorted([a_id, b_id]) and result.skipped == []
+    assert ((a.start_time, a.raw_start_time), (b.start_time, b.raw_start_time)) == (
+        (t(7, 30), None), (t(7, 20), t(7, 10)))
 
 
 def test_not_extendable_at_the_old_edge(db, test_user):

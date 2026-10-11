@@ -609,8 +609,9 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
     geflusht). Quelle ist der Rohstempel, sonst die gespeicherte Zeit (E48).
     Aktueller Mandanten-Puffer ``grace`` (E47), geschrieben in jeden geprüften
     Eintrag (E79, auch ohne Zeitänderung, ohne Eintrag in ``changed``).
-    Setzt ORM-Attribute (kein ``query.update``), kein commit, kein Protokoll —
-    beides gehört dem Router; die Vorschau rollt zurück. Idempotent.
+    Setzt ORM-Attribute (kein ``query.update``) und flusht jeden neuen Beginn
+    sofort (Schritt 11, Unique-Index); kein commit, kein Protokoll — beides
+    gehört dem Router; die Vorschau rollt zurück. Idempotent.
 
     Automatisch geschlossene Einträge (P18): Eingabe für das Ende ist nie das
     synthetische 23:59, sondern ``_auto_closed_end_input`` (wie beim
@@ -698,6 +699,15 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
                                              e.start_time, e.end_time, old_vals[4], old_net, flag, old_grace))
             continue
         (e.start_time, e.end_time, e.raw_start_time, e.raw_end_time, e.uncredited_minutes) = new_vals  # Schritt 11
+        if r.eff_start != old_vals[0]:
+            # Gesamtreview PR3: ein neuer Beginn sofort in die Datenbank, damit sie
+            # nach jedem Schritt ``planned_start`` entspricht. Schritt 8 erlaubt,
+            # dass ein später bearbeiteter Eintrag den in DIESEM Lauf frei
+            # gewordenen Beginn eines anderen übernimmt; ein gemeinsamer Flush am
+            # Ende ordnete die UPDATEs aber nach Primärschlüssel, und der nicht
+            # verzögerbare Index ``uq_tenant_user_date_start`` (PG wie SQLite, je
+            # Anweisung geprüft) scheiterte dann je nach ID (IntegrityError → 500).
+            db.flush()
         planned_start[e.id] = r.eff_start
         change = ReclampChange(e.id, e.date, old_vals[0], old_vals[1], old_vals[4], old_net,
                                r.eff_start, r.eff_end, new_vals[4], Decimal(str(e.net_hours)), flag, old_grace)

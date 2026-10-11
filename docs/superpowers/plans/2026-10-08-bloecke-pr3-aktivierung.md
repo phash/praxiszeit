@@ -10564,7 +10564,7 @@ Expected: keine neuen Fehlschläge gegenüber den Ausgangszahlen vor Task 1.
 - [ ] **Step 2: Postgres-Suiten und Gesamt-CI**
 
 Run: `bash scripts/local-ci.sh`
-Expected: alle Stufen grün — Backend SQLite und PostgreSQL mit **allen** PG-Dateien (`test_tenant_rls.py`, `test_purge_user_postgres.py`, `test_concurrency.py`, `test_invalid_uuid_postgres.py`, `test_073_migration_pg.py`, `test_net_hours_parity_pg.py`, `test_reclamp_concurrency.py` mit zehn Tests, keiner `skipped`), Vitest, `tsc`, ESLint, Vite-Build. Läuft die E2E-Stufe mit, vorher die Auth-Rate-Limits anheben (Step 4); hängt Vitest mit dem Fork-Pool, die Stufe mit `--pool=threads` fahren. Die Zahl der PG-Tests entspricht dem Zählkommentar aus Task 13 Step 4.
+Expected: alle Stufen grün — Backend SQLite und PostgreSQL mit **allen** PG-Dateien (`test_tenant_rls.py`, `test_purge_user_postgres.py`, `test_concurrency.py`, `test_invalid_uuid_postgres.py`, `test_073_migration_pg.py`, `test_net_hours_parity_pg.py`, `test_reclamp_concurrency.py` mit zehn Tests — nach dem Gesamtreview PR3 vierzehn (+ 4 Beginn-Kollisionen gegen den Unique-Index), PG gesamt 71 —, keiner `skipped`), Vitest, `tsc`, ESLint, Vite-Build. Läuft die E2E-Stufe mit, vorher die Auth-Rate-Limits anheben (Step 4); hängt Vitest mit dem Fork-Pool, die Stufe mit `--pool=threads` fahren. Die Zahl der PG-Tests entspricht dem Zählkommentar aus Task 13 Step 4.
 
 - [ ] **Step 3: Frontend separat (falls `local-ci.sh` die Stufe übersprungen hat)**
 

@@ -8,7 +8,10 @@ admin_update_time_entry, CR-Genehmigung (UPDATE) und der Auto-Close in
 GET /clock-status. Anerkennen, Admin-Update und CR-Genehmigung parallel zu einer
 Neukappung desselben Eintrags enden ohne Deadlock (Anker vor Zeile, P5/13.3).
 Dazu zwei Lösch-Wettläufe (9.7, Review Task 11): paralleles DELETE derselben
-Zeile → 404, DELETE parallel zu clock_out → Blöcke des Vorgängers. Muster:
+Zeile → 404, DELETE parallel zu clock_out → Blöcke des Vorgängers. Dazu die
+Kollision aus 17.5/9.2 Schritt 8 gegen den echten Unique-Index (Gesamtreview
+PR3): übersprungen statt IntegrityError, und ein im selben Lauf frei gewordener
+Beginn scheitert nicht an der Primärschlüssel-Reihenfolge der UPDATEs. Muster:
 test_concurrency.py (echte Endpunkt-Funktionen, SessionLocal +
 set_tenant_context).
 
@@ -458,3 +461,84 @@ def test_clock_out_during_a_delete_waits_and_clamps_with_the_predecessor_blocks(
     assert done["writer"] >= done["change"]
     e = _the_entry()
     assert (e.end_time, e.uncredited_minutes) == (time(18, 0), 0)
+
+
+# ── Kollision (Spec 17.5 „Überspringen je Grund … Kollision auf PG", 9.2 Schritt 8) ──
+# Auf ``time_entries`` liegt der NICHT verzögerbare Unique-Index
+# ``uq_tenant_user_date_start (tenant_id, user_id, date, start_time)``. Die Session
+# flusht nicht automatisch (``autoflush=False``); ``run_change`` flusht die
+# Neukappung erst als Ganzes, und SQLAlchemy ordnet die UPDATEs einer Tabelle nach
+# Primärschlüssel — nicht nach der Reihenfolge, in der die Schleife die Einträge
+# bearbeitet. Gesamtreview PR3.
+
+COLLISION_NEW = [{"blocks": [{"start": "07:35", "end": "18:00"}], "pause_minutes": 0}] + [EMPTY] * 4
+LOW_ID = uuid.UUID("ccccccc3-0000-4000-8000-000000000301")
+HIGH_ID = uuid.UUID("ccccccc3-0000-4000-8000-000000000302")
+
+
+def _save_change(blocks):
+    """Legt die Änderung ab ``DAY`` über den Anlege-Endpunkt an (Schutzpaket
+    dabei, falls die Änderung als Verkürzung gilt) und gibt die Zählwerte der
+    Antwort zurück: (``adjusted_time_entries``, ``skipped_time_entries``)."""
+    def run(session):
+        admin = session.query(User).filter(User.id == ADMIN_ID).first()
+        change = admin_users.create_working_hours_change(
+            user_id=str(USER_ID),
+            change_data=WorkingHoursChangeCreate(
+                effective_from=DAY, blocks=blocks, retroactive_reason_type="erfassungsfehler",
+                retroactive_reason_text="Kollisions-Test: Arbeitszeit war falsch hinterlegt",
+                wage_risk_confirmed=True),
+            db=session, current_user=admin)
+        return change.adjusted_time_entries, change.skipped_time_entries
+    return _with_session(run)
+
+
+def _day_entries():
+    return _with_session(lambda s: sorted(
+        (e.id, e.start_time, e.raw_start_time, e.end_time)
+        for e in s.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID, TimeEntry.user_id == USER_ID,
+                                           TimeEntry.date == DAY)))
+
+
+def _summary_note():
+    return _with_session(lambda s: s.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.tenant_id == TENANT_ID, TimeEntryAuditLog.user_id == USER_ID,
+        TimeEntryAuditLog.source == "wh_reclamp", TimeEntryAuditLog.time_entry_id.is_(None)).one().new_note)
+
+
+@pytest.mark.parametrize("ids", [(LOW_ID, HIGH_ID), (HIGH_ID, LOW_ID)], ids=["a-zuerst", "b-zuerst"])
+def test_unique_collision_is_skipped_on_postgres(fresh, ids):
+    """Neue Blöcke Mo 08:05–18:00 (Hülle ab 07:50): Eintrag a (gestempelt 07:30,
+    gekappt 07:45) bekäme den Beginn 07:50 — dort beginnt schon Eintrag b. Die
+    Prüfung aus 9.2 Schritt 8 überspringt a, ein IntegrityError entsteht nicht;
+    a bleibt unverändert, die Sammelzeile nennt die Überschneidung. Beide
+    Primärschlüssel-Reihenfolgen, weil sie die Reihenfolge der UPDATEs bestimmen."""
+    a_id, b_id = ids
+    _add(TimeEntry(id=a_id, tenant_id=TENANT_ID, user_id=USER_ID, date=DAY, start_time=time(7, 45),
+                   raw_start_time=time(7, 30), end_time=time(9), break_minutes=0, clamp_grace_minutes=15))
+    _add(TimeEntry(id=b_id, tenant_id=TENANT_ID, user_id=USER_ID, date=DAY, start_time=time(7, 50),
+                   end_time=time(7, 55), break_minutes=0, clamp_grace_minutes=15))
+    before = _day_entries()
+    blocks = [{"blocks": [{"start": "08:05", "end": "18:00"}], "pause_minutes": 0}] + [EMPTY] * 4
+    assert _save_change(blocks) == (0, 1)
+    assert _day_entries() == before
+    assert ", 1 übersprungen (1 Überschneidung) · " in _summary_note()
+
+
+@pytest.mark.parametrize("ids", [(LOW_ID, HIGH_ID), (HIGH_ID, LOW_ID)], ids=["a-zuerst", "b-zuerst"])
+def test_start_vacated_in_the_same_run_does_not_collide_on_postgres(fresh, ids):
+    """Eintrag b (gestempelt 07:10, gespeichert 07:30 — gekappt mit einem früheren,
+    größeren Puffer) rückt unter der neuen Hülle (ab 07:20) auf 07:20 vor; Eintrag
+    a (gestempelt 07:30, gekappt 07:45) übernimmt dabei b's alten Beginn 07:30.
+    Die Python-Prüfung lässt das zu (b ist zuerst dran, sein neuer Beginn ist
+    eingeplant). Postgres prüft den Index aber je UPDATE: liefe a's UPDATE vor
+    b's, scheiterte das Speichern mit einem IntegrityError (500) — je nach
+    Primärschlüssel. Erwartet: beide Einträge neu gekappt, kein Fehler."""
+    a_id, b_id = ids
+    _add(TimeEntry(id=a_id, tenant_id=TENANT_ID, user_id=USER_ID, date=DAY, start_time=time(7, 45),
+                   raw_start_time=time(7, 30), end_time=time(12), break_minutes=0, clamp_grace_minutes=15))
+    _add(TimeEntry(id=b_id, tenant_id=TENANT_ID, user_id=USER_ID, date=DAY, start_time=time(7, 30),
+                   raw_start_time=time(7, 10), end_time=time(7, 40), break_minutes=0, clamp_grace_minutes=30))
+    assert _save_change(COLLISION_NEW) == (2, 0)
+    starts = {e[0]: (e[1], e[2]) for e in _day_entries()}
+    assert starts == {a_id: (time(7, 30), None), b_id: (time(7, 20), time(7, 10))}

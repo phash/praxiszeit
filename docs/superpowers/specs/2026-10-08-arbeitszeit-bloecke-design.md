@@ -1264,7 +1264,12 @@ Vorlade-Parameter durchgereicht, 6.1):
 10. Alle fünf Werte (`start_time`, `end_time`, `raw_start_time`, `raw_end_time`,
     `uncredited_minutes`) unverändert → kein Eintrag in `changed`.
 11. Sonst die fünf Werte aus Schritt 10 als ORM-Attribute setzen und den Eintrag in
-    `changed` aufnehmen — kein `query.update`.
+    `changed` aufnehmen — kein `query.update`. Ändert sich der Beginn, sofort `flush`
+    (Gesamtreview PR3): Schritt 8 lässt einen später bearbeiteten Eintrag den in diesem
+    Lauf frei gewordenen Beginn eines anderen übernehmen; ein gemeinsamer Flush am Ende
+    ordnete die UPDATEs nach Primärschlüssel, und der nicht verzögerbare Unique-Index
+    scheiterte je nach ID. So entspricht die Datenbank nach jedem Schritt den in
+    Schritt 8 verglichenen Beginnzeiten.
 12. „Nicht erweiterbar" (E50): Seite ohne Rohstempel und gespeicherte Zeit = alte
     Hüllenkante (`alter erster Beginn − g` bzw. `altes letztes Ende + g`, mit
     g = `old_grace` aus Schritt 9, sonst aktueller Puffer) **und** die neue Hülle
