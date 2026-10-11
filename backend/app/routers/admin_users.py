@@ -2472,7 +2472,9 @@ def delete_working_hours_change(
     # committeten Gegenseite).
     _lock_and_reload(db, current_user, user)
     # Nach der Sperre erneut: ein paralleles Löschen derselben Zeile hat sie
-    # inzwischen vielleicht entfernt (sonst scheiterte der flush mit 500).
+    # inzwischen vielleicht entfernt → 404. Ohne das Neulesen meldete auch das
+    # zweite Löschen Erfolg (SQLAlchemy warnt bei 0 gelöschten Zeilen nur) und
+    # schriebe eine zweite Sammelzeile „… gelöscht" — auf PostgreSQL nachgewiesen.
     change = _change_in_tenant(db, user_id, change_id, current_user)
     lock_detail = _earliest_row_lock_detail(db, user, current_user, change)
     if lock_detail:

@@ -5118,13 +5118,15 @@ Expected: die erste Suche ohne Treffer (kein Code-Pfad und keine Zusicherung meh
 
 **⚠ Nach Issue-Merge Zeilen/Signaturen abgleichen** (#499: `clock_out` verlangt bei fehlender Pause eine Begründung — der Test schickt 45 Min Pause; `create_time_entry`-Signatur vor Step 1 mit `grep -n "^def create_time_entry" -A4 backend/app/routers/time_entries.py` prüfen.)
 
+**⚠ Nachtrag Review Task 11 (2026-10-11):** Der Lösch-Endpunkt nimmt dieselbe Ankersperre und liest die Zeile nach der Sperre neu (Task 11, Abweichung 3) — beides sieht SQLite nicht. Die Datei bekommt deshalb zwei Lösch-Wettläufe (am Ende des Code-Blocks; `_race` nimmt dafür ein optionales `change`): zwei parallele DELETEs derselben Zeile und DELETE parallel zu `clock_out`. Beide wurden am 2026-10-11 gegen eine Wegwerf-PG18 mit dem Stand nach Task 11 grün gefahren; Gegenprobe ohne das Neulesen: das zweite DELETE meldet ebenfalls Erfolg (SQLAlchemy warnt bei 0 gelöschten Zeilen nur, `SAWarning`) und schreibt eine zweite Sammelzeile „… gelöscht" — kein 500. Derselbe Probelauf zeigte zwei Anpassungen an den übrigen Fällen dieses Blocks, die Step 1 übernehmen muss: (1) `_change_thread` braucht das Schutzpaket (`retroactive_reason_type="erfassungsfehler"`, `retroactive_reason_text=…` ≥ 10 Zeichen, `wage_risk_confirmed=True` in `WorkingHoursChangeCreate`) — seit Task 9 ist die Änderung bei einem geschlossenen Eintrag am `DAY`, der verliert, eine Verkürzung (a) und scheitert sonst mit 400 (betrifft `admin_update` und CR-Genehmigung); (2) der Anerkennen-Endpunkt ist über `app.routes` nicht auffindbar (FastAPI ≥ 0.137 legt eingebundene Router als `_IncludedRouter` ohne `.path` ab) — direkt `admin_time_entries.admin_credit_override` nehmen. Mit beiden Anpassungen liefen alle acht Fälle grün.
+
 **Files:**
 - Create: `backend/tests/test_reclamp_concurrency.py`
 - Modify: `.github/workflows/cross-tenant-ci.yml`, `scripts/local-ci.sh`
 
 **Interfaces:**
-- Consumes: `admin_users.create_working_hours_change` (Task 9), `wh_change_service.run_change` (Task 8), `time_entries.clock_out`, `time_entries.create_time_entry`, `time_entries.get_clock_status` (Auto-Close über `_close_stale_entry`, PR1 Task 8), `admin_time_entries.admin_update_time_entry`, `admin_change_requests.review_change_request` (UPDATE-Zweig), `time_entries._now_local`/`_today_local`, `app.schemas.time_entry.today_local` (Bestand; Ankersperre aller fünf Pfade aus PR1 Task 7), Schemas `ClockOutRequest`, `TimeEntryCreate`, `TimeEntryUpdate`, `ChangeRequestReview`, Modell `ChangeRequest` (Bestand), Anerkennen-Endpunkt `POST /api/admin/time-entries/{entry_id}/credit-override` (PR2 Task 5 — Voraussetzung; fehlt er in der Routentabelle, scheitert der Test hart)
-- Produces: PG-only-Datei mit modulweitem Skip ohne PostgreSQL-URL — je ein Wettlauf für `clock_out`, `create_time_entry`, `admin_update_time_entry`, die CR-Genehmigung (UPDATE), den Auto-Close in `GET /clock-status` und das Anerkennen (Spec 17.5); eingehängt in Actions und `local-ci.sh`
+- Consumes: `admin_users.create_working_hours_change` (Task 9), `admin_users.delete_working_hours_change` (Task 11), `wh_change_service.run_change` (Task 8), `time_entries.clock_out`, `time_entries.create_time_entry`, `time_entries.get_clock_status` (Auto-Close über `_close_stale_entry`, PR1 Task 8), `admin_time_entries.admin_update_time_entry`, `admin_change_requests.review_change_request` (UPDATE-Zweig), `time_entries._now_local`/`_today_local`, `app.schemas.time_entry.today_local` (Bestand; Ankersperre aller fünf Pfade aus PR1 Task 7), Schemas `ClockOutRequest`, `TimeEntryCreate`, `TimeEntryUpdate`, `ChangeRequestReview`, Modell `ChangeRequest` (Bestand), Anerkennen-Endpunkt `POST /api/admin/time-entries/{entry_id}/credit-override` (PR2 Task 5 — Voraussetzung; fehlt er in der Routentabelle, scheitert der Test hart)
+- Produces: PG-only-Datei mit modulweitem Skip ohne PostgreSQL-URL — je ein Wettlauf für `clock_out`, `create_time_entry`, `admin_update_time_entry`, die CR-Genehmigung (UPDATE), den Auto-Close in `GET /clock-status` und das Anerkennen (Spec 17.5), dazu zwei für das Löschen (Review Task 11: paralleles DELETE derselben Zeile → 404 und genau eine Sammelzeile; DELETE parallel zu `clock_out` → kappt nach der Sperre mit den Blöcken des Vorgängers); eingehängt in Actions und `local-ci.sh`
 
 - [ ] **Step 1: Test schreiben**
 
@@ -5160,7 +5162,9 @@ if not APP_DB_URL or not ADMIN_DB_URL or not ADMIN_DB_URL.startswith("postgresql
 
 import app.schemas.time_entry as time_entry_schemas  # noqa: E402
 from app.database import SessionLocal, set_tenant_context  # noqa: E402
-from app.models import ChangeRequest, TimeEntry, User, WorkingHoursChange  # noqa: E402
+from fastapi import HTTPException  # noqa: E402
+
+from app.models import ChangeRequest, TimeEntry, TimeEntryAuditLog, User, WorkingHoursChange  # noqa: E402
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType  # noqa: E402
 from app.routers import admin_change_requests, admin_time_entries, admin_users, time_entries  # noqa: E402
 from app.schemas.change_request import ChangeRequestReview  # noqa: E402
@@ -5256,8 +5260,9 @@ def _change_thread(results: list):
     _with_session(run)
 
 
-def _race(monkeypatch, writer, *, today=DAY, now=time(18, 0)):
-    """Thread A legt die Änderung an und hält die Ankersperre 0,8 s (verzögerter
+def _race(monkeypatch, writer, *, today=DAY, now=time(18, 0), change=None):
+    """Thread A legt die Änderung an (bzw. ``change``, z. B. ``_delete_thread``)
+    und hält die Ankersperre 0,8 s (verzögerter
     Rechenpfad); Thread B startet erst, wenn A die Sperre hat. ``today``/``now``
     gelten nur für Schreiber B (``time_entries`` und die Datumsprüfung der
     Eintrags-Schemas) — A rechnet mit dem echten „heute", für A ist die Änderung
@@ -5277,7 +5282,7 @@ def _race(monkeypatch, writer, *, today=DAY, now=time(18, 0)):
     # diesen Patch lehnt das Schema DAY (2099) als Zukunftsdatum ab.
     monkeypatch.setattr(time_entry_schemas, "today_local", lambda: today)
     results: list = []
-    a = threading.Thread(target=_change_thread, args=(results,))
+    a = threading.Thread(target=change or _change_thread, args=(results,))
 
     def b_target():
         has_lock.wait(timeout=5)
@@ -5409,6 +5414,88 @@ def test_credit_override_parallel_to_a_reclamp_does_not_deadlock(fresh, monkeypa
     assert "change" in done and "writer" in done, done   # kein 40P01 auf einer der beiden Seiten
     e = _the_entry()
     assert (e.credit_override, e.uncredited_minutes, e.start_time, e.end_time) == (True, 0, time(8), time(18))
+
+
+# ── Löschen (Review Task 11): dieselbe Ankersperre wie das Anlegen ──────────
+
+
+def _later_row():
+    """Zweite Verlaufszeile ab ``DAY`` mit den NEUEN Blöcken — die früheste Zeile
+    ist gesperrt, solange spätere existieren; gelöscht wird also diese."""
+    return _add(WorkingHoursChange(
+        user_id=USER_ID, tenant_id=TENANT_ID, effective_from=DAY, weekly_hours=5, use_daily_schedule=True,
+        hours_monday=5, hours_tuesday=0, hours_wednesday=0, hours_thursday=0, hours_friday=0,
+        work_days_per_week=1, blocks=NEW))
+
+
+def _delete_thread(change_id):
+    """Thread A als Löschen der Zeile ``change_id`` (statt Anlegen); ``_race``
+    verzögert auch hier ``run_change`` hinter der Ankersperre."""
+    def thread(results: list):
+        def run(session):
+            admin = session.query(User).filter(User.id == ADMIN_ID).first()
+            try:
+                admin_users.delete_working_hours_change(
+                    user_id=str(USER_ID), change_id=str(change_id), db=session, current_user=admin, body=None)
+                results.append(("change", time_module.monotonic()))
+            except Exception as exc:  # pragma: no cover — Fehler sichtbar machen
+                session.rollback()
+                results.append(("change-error", repr(exc)))
+        _with_session(run)
+    return thread
+
+
+def test_parallel_delete_of_the_same_row_is_404(fresh, monkeypatch):
+    """Zwei gleichzeitige DELETEs derselben Zeile: der zweite wartet auf die
+    Ankersperre, liest die Zeile danach neu (Task 11, Abweichung 3) und antwortet
+    404. Ohne das Neulesen meldete auch er Erfolg — SQLAlchemy warnt bei 0
+    gelöschten Zeilen nur — und schriebe eine zweite Sammelzeile „… gelöscht"."""
+    row_id = _later_row()
+    statuses: list = []
+
+    def writer(session):
+        admin = session.query(User).filter(User.id == ADMIN_ID).first()
+        try:
+            admin_users.delete_working_hours_change(
+                user_id=str(USER_ID), change_id=str(row_id), db=session, current_user=admin, body=None)
+            statuses.append("deleted")
+        except HTTPException as exc:
+            session.rollback()
+            statuses.append((exc.status_code, exc.detail))
+
+    done = _race(monkeypatch, writer, change=_delete_thread(row_id))
+    assert "change" in done and "writer" in done, done
+    assert statuses == [(404, "Stundenänderung nicht gefunden")]
+
+    def state(s):
+        rows = s.query(WorkingHoursChange).filter(WorkingHoursChange.id == row_id).count()
+        summaries = s.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.tenant_id == TENANT_ID, TimeEntryAuditLog.user_id == USER_ID,
+            TimeEntryAuditLog.source == "wh_reclamp", TimeEntryAuditLog.time_entry_id.is_(None),
+            TimeEntryAuditLog.new_note.like("Arbeitszeit-Änderung ab 01.06.2099 gelöscht: %")).count()
+        return rows, summaries
+
+    assert _with_session(state) == (0, 1)
+
+
+def test_clock_out_during_a_delete_waits_and_clamps_with_the_predecessor_blocks(fresh, monkeypatch):
+    """Löschen der Zeile ab ``DAY`` (NEUE Blöcke) parallel zum Ausstempeln:
+    ``clock_out`` wartet auf die Ankersperre und kappt danach mit den Blöcken des
+    Vorgängers (08–18, Hülle bis 18:15) — mit dem vor der Sperre gelesenen Stand
+    hätte es auf 16:15 gekappt (150 Min nicht angerechnet)."""
+    row_id = _later_row()
+    _add(TimeEntry(tenant_id=TENANT_ID, user_id=USER_ID, date=DAY, start_time=time(8),
+                   end_time=None, break_minutes=0, clamp_grace_minutes=15))
+
+    def writer(session):
+        user = session.query(User).filter(User.id == USER_ID).first()
+        time_entries.clock_out(body=ClockOutRequest(break_minutes=45), db=session, current_user=user)
+
+    done = _race(monkeypatch, writer, change=_delete_thread(row_id))
+    assert "change" in done and "writer" in done, done
+    assert done["writer"] >= done["change"]
+    e = _the_entry()
+    assert (e.end_time, e.uncredited_minutes) == (time(18, 0), 0)
 ```
 
 - [ ] **Step 2: Ohne PostgreSQL wird übersprungen**
@@ -5446,7 +5533,7 @@ docker run --rm --network pz073 -v "$PWD/backend":/app:ro -w /app --user "$(id -
 BASHEOF
 ```
 
-Expected: alle Tests der drei Dateien `passed`, davon sechs in `test_reclamp_concurrency.py` (clock_out, create_time_entry, admin_update_time_entry, CR-Genehmigung, Auto-Close in clock-status, Anerkennen); **kein** `skipped`. Fehlt der Anerkennen-Endpunkt, ist PR2 nicht gemergt — Task stoppen, nicht überspringen. Scheitert ein Wettlauf mit „deadlock", ist die Ankersperre in einem Schreibpfad nicht die erste Sperre (PR1 Task 7) — den Test nicht lockern. Steht nach einem der drei neuen Wettläufe das alte Ende bzw. `uncredited_minutes == 0`, hat der Pfad den Snapshot vor der Ankersperre gelesen (P5) — den Pfad korrigieren, nicht die Erwartung.
+Expected: alle Tests der drei Dateien `passed`, davon acht in `test_reclamp_concurrency.py` (clock_out, create_time_entry, admin_update_time_entry, CR-Genehmigung, Auto-Close in clock-status, Anerkennen, paralleles DELETE derselben Zeile, DELETE parallel zu clock_out); **kein** `skipped`. Fehlt der Anerkennen-Endpunkt, ist PR2 nicht gemergt — Task stoppen, nicht überspringen. Scheitert ein Wettlauf mit „deadlock", ist die Ankersperre in einem Schreibpfad nicht die erste Sperre (PR1 Task 7) — den Test nicht lockern. Steht nach einem der drei neuen Wettläufe das alte Ende bzw. `uncredited_minutes == 0`, hat der Pfad den Snapshot vor der Ankersperre gelesen (P5) — den Pfad korrigieren, nicht die Erwartung.
 
 - [ ] **Step 4: In Actions und `local-ci.sh` einhängen**
 
@@ -5472,7 +5559,7 @@ PostgreSQL-Schritt — die Dateiliste wird:
        --ignore=tests/test_reclamp_concurrency.py \
 ```
 
-Schritt 2 — `tests/test_reclamp_concurrency.py` an die Dateiliste anhängen und den Zählkommentar um 6 erhöhen (Stand nach PR1: 52 → 58, „+ 6 reclamp concurrency" in der Aufzählung; hat PR2 den Kommentar schon verändert, dessen Stand + 6).
+Schritt 2 — `tests/test_reclamp_concurrency.py` an die Dateiliste anhängen und den Zählkommentar um 8 erhöhen (Stand nach PR1: 52 → 60, „+ 8 reclamp concurrency" in der Aufzählung; hat PR2 den Kommentar schon verändert, dessen Stand + 8 — nach PR2 steht dort 57, also 65).
 
 Kontrolle: `bash -n scripts/local-ci.sh` ohne Ausgabe.
 
