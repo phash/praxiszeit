@@ -1,7 +1,7 @@
 // Spec 2026-10-08: Anzeige-Helfer für Arbeitszeit-Blöcke. PR2/PR3 ergänzen hier
 // die Zwillinge der Backend-Rechenhelfer (notCreditedMinutes, gapSegments,
 // deriveTargets) — jeweils mit wortgleichen Testfällen.
-import type { TimeBlock, WeekBlocks } from '../types/workBlocks';
+import type { DayBlocks, TimeBlock, WeekBlocks } from '../types/workBlocks';
 
 export const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr'] as const;
 
@@ -212,4 +212,124 @@ export function formatBlocksText(
     return [`${WEEKDAY_LABELS[index]} ${text}`];
   });
   return parts.length > 0 ? parts.join(' / ') : null;
+}
+
+/** Spec 3.4: Grenze der Σ Tagessoll (gerundete Hundertstel wie 4.1, nicht
+ * Netto-Minuten — sonst gäbe die Oberfläche eine Woche mit 60:00 h frei, die
+ * gespeichert 60,01 h ergäbe und vom Server abgelehnt würde). */
+const WEEK_LIMIT_HOURS = 60;
+
+/** Wortgleich zu `work_blocks_service.WEEK_SHAPE_TEXT`. */
+const WEEK_SHAPE_TEXT = 'Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet.';
+
+/** Fünf Tage ohne Blöcke, Pause 0 — Ausgangszustand des Editors. */
+export function emptyWeek(): WeekBlocks {
+  return WEEKDAY_LABELS.map(() => ({ blocks: [], pause_minutes: 0 }));
+}
+
+/** Strenger Zwilling von `work_blocks_service.hhmm_to_minutes`: genau "HH:MM"
+ * mit ASCII-Ziffern, 00:00–23:59 → Minuten seit Mitternacht, sonst `null`.
+ * Das lockere `hhmmToMinutes` (Anzeige gespeicherter Werte, auch "HH:MM:SS")
+ * bleibt unverändert. */
+export function parseHhmm(value: string | null | undefined): number | null {
+  if (typeof value !== 'string' || !/^[0-9]{2}:[0-9]{2}$/.test(value)) return null;
+  const hours = Number(value.slice(0, 2));
+  const minutes = Number(value.slice(3));
+  return hours > 23 || minutes > 59 ? null : hours * 60 + minutes;
+}
+
+/** Minuten → "H:MM" (Anzeige des Editors, Review Focus 5: Minuten-genau, ohne
+ * den Umweg über gerundete Stunden). */
+export function minutesToHm(minutes: number): string {
+  const abs = Math.abs(Math.round(minutes));
+  return `${minutes < 0 ? '−' : ''}${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, '0')}`;
+}
+
+export interface DayTotals {
+  grossMinutes: number;
+  pauseMinutes: number;
+  netMinutes: number;
+}
+
+/** Live-Summen eines Tages; unvollständige Blöcke zählen nicht, eine leere Pause 0. */
+export function sumBlocks(day: DayBlocks): DayTotals {
+  const blocks = Array.isArray(day?.blocks) ? day.blocks : [];
+  const gross = blocks.reduce((sum, b) => {
+    const s = parseHhmm(b?.start);
+    const e = parseHhmm(b?.end);
+    return s !== null && e !== null && e > s ? sum + (e - s) : sum;
+  }, 0);
+  const pause = blocks.length && typeof day.pause_minutes === 'number' ? day.pause_minutes : 0;
+  return { grossMinutes: gross, pauseMinutes: pause, netMinutes: Math.max(0, gross - pause) };
+}
+
+/** Spec 4.1: Netto-Minuten → Tagessoll in Stunden, 0,01 HALF_EVEN — exakt ohne
+ * Fließkomma: Hundertstel = 5n/3, der Rest 5n mod 3 ist nie genau 1,5, ein
+ * Gleichstand zum Abrunden auf die gerade Ziffer kommt also nie vor. */
+export function minutesToTargetHours(net: number): number {
+  const five = 5 * net;
+  return (Math.floor(five / 3) + (five % 3 === 2 ? 1 : 0)) / 100;
+}
+
+/** Zwilling von `work_blocks_service.derive_targets` (nur Anzeige/Vergleich —
+ * gespeichert wird, was der Server ableitet). */
+export function deriveTargets(week: WeekBlocks): { hours: number[]; weeklyHours: number; workDays: number } {
+  const hours = WEEKDAY_LABELS.map((_, i) => {
+    const d = week[i];
+    return d && d.blocks.length ? minutesToTargetHours(sumBlocks(d).netMinutes) : 0;
+  });
+  return {
+    hours,
+    // Σ der Hundertstel als Ganzzahl, damit 11,42 + 11,42 + … nicht als
+    // 60,010000000000005 an der 60-h-Grenze vorbeirutscht.
+    weeklyHours: hours.reduce((a, b) => a + Math.round(b * 100), 0) / 100,
+    workDays: week.filter((d) => d && d.blocks.length > 0).length,
+  };
+}
+
+function isDayObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Zwilling von `schemas/validators.validate_week_blocks` — wortgleiche Texte
+ * (Spec 3.4), Text der ERSTEN verletzten Regel oder `null`. Auch kaputte Formen
+ * (kein Tag-Objekt, `blocks` keine Liste) enden in derselben Meldung wie im
+ * Backend, nie in einem TypeError beim Tippen. */
+export function validateWeekBlocks(week: WeekBlocks | null | undefined): string | null {
+  if (!Array.isArray(week) || week.length !== 5) return WEEK_SHAPE_TEXT;
+  for (let i = 0; i < 5; i++) {
+    const label = WEEKDAY_LABELS[i];
+    const rawDay: unknown = week[i];
+    if (!isDayObject(rawDay)) return WEEK_SHAPE_TEXT;
+    // Wie `day.get("blocks") or []`: ein leerer/fehlender Wert ist „keine Blöcke".
+    const rawBlocks = rawDay.blocks || [];
+    if (!Array.isArray(rawBlocks)) return `${label}: Tag nicht in der Form {blocks, pause_minutes}.`;
+    const blocks = rawBlocks as (Partial<TimeBlock> | null | undefined)[];
+    if (blocks.length > 3) return `${label}: höchstens drei Blöcke je Tag.`;
+    const spans: [number, number][] = [];
+    for (let n = 0; n < blocks.length; n++) {
+      const s = parseHhmm(blocks[n]?.start);
+      const e = parseHhmm(blocks[n]?.end);
+      if (s === null || e === null) return `${label}, Block ${n + 1}: Uhrzeit im Format HH:MM angeben.`;
+      if (s % 5 || e % 5) return `${label}, Block ${n + 1}: Uhrzeiten im 5-Minuten-Raster (z. B. 08:05).`;
+      if (s >= e) return `${label}, Block ${n + 1}: Beginn muss vor dem Ende liegen.`;
+      spans.push([s, e]);
+    }
+    for (let n = 1; n < spans.length; n++) {
+      if (spans[n][0] <= spans[n - 1][1]) {
+        return `${label}: Block ${n + 1} muss nach dem Ende von Block ${n} beginnen; aneinandergrenzende Blöcke bitte als einen Block erfassen.`;
+      }
+    }
+    const pause = rawDay.pause_minutes;
+    if (pause === null || pause === undefined) return `${label}: Pause angeben (0, wenn keine).`;
+    if (typeof pause !== 'number' || !Number.isInteger(pause) || pause < 0 || pause % 5) {
+      return `${label}: Pause in Minuten im 5-Minuten-Raster angeben.`;
+    }
+    if (!spans.length && pause !== 0) return `${label}: Pause nur an Tagen mit Blöcken.`;
+    const gross = spans.reduce((sum, [s, e]) => sum + e - s, 0);
+    if (spans.length && pause >= gross) return `${label}: Pause muss kürzer sein als die Gesamtzeit der Blöcke.`;
+  }
+  if (!week.some((d) => d.blocks && d.blocks.length > 0)) return 'Mindestens ein Wochentag braucht einen Block.';
+  if (deriveTargets(week).weeklyHours > WEEK_LIMIT_HOURS) return 'Die Wochensumme darf 60 Stunden nicht überschreiten.';
+  return null;
 }

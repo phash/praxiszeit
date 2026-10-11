@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  blocksSpan, formatBlocksText, formatWeekBlocks, gapSegments, hhmmToMinutes, hullClamp, isInBlockGap, isLegacyWeek,
-  notCreditedMinutes, stampNoteProps,
+  blocksSpan, deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, gapSegments, hhmmToMinutes, hullClamp,
+  isInBlockGap, isLegacyWeek, minutesToHm, notCreditedMinutes, parseHhmm, stampNoteProps, sumBlocks, validateWeekBlocks,
 } from './workBlocks';
 import { K_CASES_FE } from './workBlocksCases';
 import type { WeekBlocks } from '../types/workBlocks';
@@ -173,5 +173,113 @@ describe('formatBlocksText (Spec 15.2, Zwilling von work_blocks_service.blocks_t
   it('Altwerte ohne Pausenangabe, null ohne Blöcke', () => {
     expect(formatBlocksText(LEGACY_WEEK)).toBe('Mo 07:37–16:30 / Fr 07:30–23:59');
     expect(formatBlocksText(null)).toBeNull();
+  });
+});
+
+const day = (blocks: [string, string][], pause: number | null = 0) => ({
+  blocks: blocks.map(([start, end]) => ({ start, end })), pause_minutes: pause,
+});
+const E = { blocks: [], pause_minutes: 0 };
+const W = (mon: ReturnType<typeof day>, tue: ReturnType<typeof day> | typeof E = E): WeekBlocks => [mon, tue, E, E, E];
+
+describe('deriveTargets (Spec 4.1, wortgleiche Fälle zu test_derive_targets.py)', () => {
+  it.each([
+    [[['08:00', '12:00'], ['15:00', '18:00']], 30, 6.5],
+    [[['08:00', '12:05']], 0, 4.08],
+    [[['07:30', '12:00'], ['13:00', '16:25']], 0, 7.92],
+  ] as [[string, string][], number, number][])('%j, Pause %i → %f h', (blocks, pause, expected) => {
+    const d = deriveTargets(W(day(blocks, pause)));
+    expect(d.hours).toEqual([expected, 0, 0, 0, 0]);
+    expect([d.weeklyHours, d.workDays]).toEqual([expected, 1]);
+  });
+
+  it('drei Blöcke zu 55 Minuten', () => {
+    expect(deriveTargets(W(day([['08:00', '08:55'], ['09:00', '09:55'], ['10:00', '10:55']]))).hours[0]).toBe(2.75);
+  });
+
+  it('Wochensumme und Arbeitstage (test_week_sum_and_work_days)', () => {
+    const d = deriveTargets([day([['08:00', '12:00']]), day([['08:00', '13:00']]), E, day([['08:00', '12:00']]), E]);
+    expect([d.weeklyHours, d.workDays, d.hours[2]]).toEqual([13, 3, 0]);
+  });
+});
+
+describe('validateWeekBlocks (Spec 3.4, wortgleiche Texte zu test_work_blocks_validation.py)', () => {
+  const ADJ = 'Mo: Block 2 muss nach dem Ende von Block 1 beginnen; aneinandergrenzende Blöcke bitte als einen Block erfassen.';
+  const RASTER = 'Mo: Pause in Minuten im 5-Minuten-Raster angeben.';
+  const SHAPE = 'Arbeitszeit-Blöcke: genau fünf Wochentage (Mo–Fr) erwartet.';
+  const withPause = (pause: unknown) => W({ ...day([['08:00', '12:00']]), pause_minutes: pause as number });
+  it.each([
+    [W(day([['06:00', '07:00'], ['08:00', '09:00'], ['10:00', '11:00'], ['12:00', '13:00']])), 'Mo: höchstens drei Blöcke je Tag.'],
+    [W(day([['8:00', '12:00']])), 'Mo, Block 1: Uhrzeit im Format HH:MM angeben.'],
+    [W(day([['', '12:00']])), 'Mo, Block 1: Uhrzeit im Format HH:MM angeben.'],
+    [W(day([['08:07', '12:00']])), 'Mo, Block 1: Uhrzeiten im 5-Minuten-Raster (z. B. 08:05).'],
+    [W(day([['08:00', '23:59']])), 'Mo, Block 1: Uhrzeiten im 5-Minuten-Raster (z. B. 08:05).'],
+    [W(E, day([['08:00', '12:00'], ['13:00', '12:30']])), 'Di, Block 2: Beginn muss vor dem Ende liegen.'],
+    [W(day([['08:00', '12:00'], ['12:00', '13:00']])), ADJ],
+    [W(day([['13:00', '14:00'], ['08:00', '12:00']])), ADJ],
+    [W(day([['08:00', '12:00'], ['11:00', '14:00']])), ADJ],
+    [W(day([['08:00', '12:00']], 240)), 'Mo: Pause muss kürzer sein als die Gesamtzeit der Blöcke.'],
+    [W(day([['08:00', '12:00']], null)), 'Mo: Pause angeben (0, wenn keine).'],
+    [W(day([['08:00', '12:00']], 7)), RASTER],
+    [W(day([['08:00', '12:00']], -5)), RASTER],
+    // Spec 3.4 „ganzzahlig": keine Zeichenkette, kein bool (wie das Backend)
+    [withPause('30'), RASTER],
+    [withPause(true), RASTER],
+    [[day([['08:00', '12:00']]), E, { blocks: [], pause_minutes: 15 }, E, E], 'Mi: Pause nur an Tagen mit Blöcken.'],
+    [[E, E, E, E, E], 'Mindestens ein Wochentag braucht einen Block.'],
+    [Array(5).fill(day([['00:00', '12:05']])), 'Die Wochensumme darf 60 Stunden nicht überschreiten.'],
+    // Wortgleich zu ROUNDED_OVER_60 (test_work_blocks_validation.py): 60:00 h
+    // Blockzeit, gerundete Σ Tagessoll 11,42 + 11,42 + 12,17 + 12,50 + 12,50 = 60,01 h.
+    [[day([['00:00', '11:25']]), day([['00:00', '11:25']]), day([['00:00', '12:10']]),
+      day([['00:00', '12:30']]), day([['00:00', '12:30']])], 'Die Wochensumme darf 60 Stunden nicht überschreiten.'],
+    [[E, E, E, E], SHAPE],
+  ] as [WeekBlocks, string][])('%#: %s', (week, message) => {
+    expect(validateWeekBlocks(week)).toBe(message);
+  });
+
+  it('kaputte Formen enden in einer Meldung wie im Backend, nie in einem TypeError', () => {
+    expect(validateWeekBlocks(null)).toBe(SHAPE);
+    expect(validateWeekBlocks('kaputt' as unknown as WeekBlocks)).toBe(SHAPE);
+    expect(validateWeekBlocks([null, E, E, E, E] as unknown as WeekBlocks)).toBe(SHAPE);
+    for (const blocks of [5, { start: '08:00', end: '12:00' }, '08:00-12:00']) {
+      expect(validateWeekBlocks([{ blocks, pause_minutes: 0 }, E, E, E, E] as unknown as WeekBlocks))
+        .toBe('Mo: Tag nicht in der Form {blocks, pause_minutes}.');
+    }
+    expect(validateWeekBlocks([{ blocks: [null], pause_minutes: 0 }, E, E, E, E] as unknown as WeekBlocks))
+      .toBe('Mo, Block 1: Uhrzeit im Format HH:MM angeben.');
+  });
+
+  it('Grenzwerte sind gültig', () => {
+    expect(validateWeekBlocks(W(day([['06:00', '07:00'], ['08:00', '09:00'], ['10:00', '11:00']])))).toBeNull();
+    // Wie test_boundaries_are_valid: Raster 08:05 und Pause = Σ − 5 als zwei getrennte Fälle.
+    expect(validateWeekBlocks(W(day([['08:05', '12:00']])))).toBeNull();
+    expect(validateWeekBlocks(W(day([['08:00', '12:00']], 235)))).toBeNull();
+    expect(validateWeekBlocks(Array(5).fill(day([['00:00', '12:00']])))).toBeNull();
+    expect(validateWeekBlocks(W(day([['08:00', '23:55']])))).toBeNull();
+  });
+});
+
+describe('parseHhmm (streng, Zwilling von work_blocks_service.hhmm_to_minutes)', () => {
+  it('nur HH:MM mit ASCII-Ziffern im Bereich 00:00–23:59', () => {
+    expect([parseHhmm('00:00'), parseHhmm('08:05'), parseHhmm('23:59')]).toEqual([0, 485, 1439]);
+    for (const bad of ['8:00', '08:00:00', '24:00', '12:60', '', '０８:００', null, undefined]) {
+      expect(parseHhmm(bad)).toBeNull();
+    }
+  });
+});
+
+describe('sumBlocks / minutesToHm / emptyWeek', () => {
+  it('7:55 h bleibt Minuten-genau (Review Focus 5)', () => {
+    const totals = sumBlocks(day([['07:30', '12:00'], ['13:00', '16:25']]));
+    expect([totals.grossMinutes, totals.pauseMinutes, totals.netMinutes]).toEqual([475, 0, 475]);
+    expect(minutesToHm(475)).toBe('7:55');
+  });
+
+  it('unvollständige Blöcke zählen nicht, eine leere Pause zählt 0', () => {
+    expect(sumBlocks(day([['08:00', '']], null))).toEqual({ grossMinutes: 0, pauseMinutes: 0, netMinutes: 0 });
+  });
+
+  it('leere Woche hat fünf Tage ohne Blöcke mit Pause 0', () => {
+    expect(emptyWeek()).toEqual([E, E, E, E, E]);
   });
 });
