@@ -60,6 +60,21 @@ describe('WorkBlocksEditor (Spec 12.1)', () => {
     expect(screen.queryByRole('alert')).toHaveTextContent('Mindestens ein Wochentag braucht einen Block.');
   });
 
+  it('Entfernen trifft genau die Zeile, nicht den letzten Block (Review Task 17)', () => {
+    const week: WeekBlocks = [{
+      blocks: [{ start: '08:00', end: '09:00' }, { start: '10:00', end: '11:00' }, { start: '12:00', end: '13:00' }],
+      pause_minutes: 0,
+    }, E, E, E, E];
+    render(<Harness initial={week} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Mo Block 2 entfernen' }));
+    expect(screen.getByLabelText('Mo Block 1 von')).toHaveValue('08:00');
+    expect(screen.getByLabelText('Mo Block 1 bis')).toHaveValue('09:00');
+    expect(screen.getByLabelText('Mo Block 2 von')).toHaveValue('12:00');
+    expect(screen.getByLabelText('Mo Block 2 bis')).toHaveValue('13:00');
+    expect(screen.queryByLabelText('Mo Block 3 von')).not.toBeInTheDocument();
+    expect(screen.getByTestId('t-day-0')).toHaveTextContent('Tagessoll 2:00 h');
+  });
+
   it('leere Pause verlangt eine Angabe, Altwerte melden das Raster (Review Focus 4)', () => {
     const legacy: WeekBlocks = [{ blocks: [{ start: '07:37', end: '23:59' }], pause_minutes: null }, E, E, E, E];
     render(<Harness initial={legacy} />);
