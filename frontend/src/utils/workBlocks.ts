@@ -251,9 +251,17 @@ export interface DayTotals {
   netMinutes: number;
 }
 
+/** Blöcke eines Tages, ein fehlender/leerer Wert als „keine Blöcke" (wie
+ * `day.get("blocks") or []`) — `validateWeekBlocks` reicht die Woche roh durch.
+ * DIE eine Regel für Rechnung (`sumBlocks`, `deriveTargets`, `validateWeekBlocks`)
+ * UND den `WorkBlocksEditor` — keine eigene Kopie im Aufrufer (Review Task 17). */
+export function blocksOf(day: DayBlocks | null | undefined): TimeBlock[] {
+  return Array.isArray(day?.blocks) ? day.blocks : [];
+}
+
 /** Live-Summen eines Tages; unvollständige Blöcke zählen nicht, eine leere Pause 0. */
 export function sumBlocks(day: DayBlocks): DayTotals {
-  const blocks = Array.isArray(day?.blocks) ? day.blocks : [];
+  const blocks = blocksOf(day);
   const gross = blocks.reduce((sum, b) => {
     const s = parseHhmm(b?.start);
     const e = parseHhmm(b?.end);
@@ -269,12 +277,6 @@ export function sumBlocks(day: DayBlocks): DayTotals {
 export function minutesToTargetHours(net: number): number {
   const five = 5 * net;
   return (Math.floor(five / 3) + (five % 3 === 2 ? 1 : 0)) / 100;
-}
-
-/** Blöcke eines Tages, ein fehlender/leerer Wert als „keine Blöcke" (wie
- * `day.get("blocks") or []`) — `validateWeekBlocks` reicht die Woche roh durch. */
-function blocksOf(day: DayBlocks | null | undefined): TimeBlock[] {
-  return Array.isArray(day?.blocks) ? day.blocks : [];
 }
 
 /** Zwilling von `work_blocks_service.derive_targets` (nur Anzeige/Vergleich —

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  blocksSpan, deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, gapSegments, hhmmToMinutes, hullClamp,
+  blocksOf, blocksSpan, deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, gapSegments, hhmmToMinutes, hullClamp,
   isInBlockGap, isLegacyWeek, minutesToHm, notCreditedMinutes, parseHhmm, stampNoteProps, sumBlocks, validateWeekBlocks,
 } from './workBlocks';
 import { K_CASES_FE } from './workBlocksCases';
@@ -266,6 +266,19 @@ describe('validateWeekBlocks (Spec 3.4, wortgleiche Texte zu test_work_blocks_va
     expect(validateWeekBlocks(W(day([['08:00', '12:00']], 235)))).toBeNull();
     expect(validateWeekBlocks(Array(5).fill(day([['00:00', '12:00']])))).toBeNull();
     expect(validateWeekBlocks(W(day([['08:00', '23:55']])))).toBeNull();
+  });
+});
+
+describe('blocksOf — „keine Blöcke" wie `day.get("blocks") or []` (eine Quelle für Editor und Rechnung)', () => {
+  it('eine Blockliste kommt unverändert zurück', () => {
+    const mo = day([['08:00', '12:00']]);
+    expect(blocksOf(mo)).toBe(mo.blocks);
+  });
+
+  it('fehlender Tag, fehlende/leere Blöcke und ein leeres Objekt sind „keine Blöcke"', () => {
+    for (const d of [null, undefined, { pause_minutes: 0 }, { blocks: null, pause_minutes: 0 }, { blocks: {}, pause_minutes: 0 }]) {
+      expect(blocksOf(d as unknown as WeekBlocks[number])).toEqual([]);
+    }
   });
 });
 

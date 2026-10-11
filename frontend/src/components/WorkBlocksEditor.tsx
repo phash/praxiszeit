@@ -1,6 +1,8 @@
 import { Plus, X } from 'lucide-react';
 import type { DayBlocks, TimeBlock, WeekBlocks } from '../types/workBlocks';
-import { WEEKDAY_LABELS, minutesToHm, sumBlocks, validateWeekBlocks } from '../utils/workBlocks';
+import {
+  WEEKDAY_LABELS, blocksOf, deriveTargets, minutesToHm, sumBlocks, validateWeekBlocks,
+} from '../utils/workBlocks';
 
 interface WorkBlocksEditorProps {
   value: WeekBlocks;
@@ -9,10 +11,6 @@ interface WorkBlocksEditorProps {
 }
 
 const MAX_BLOCKS_PER_DAY = 3;
-
-function blocksOf(day: DayBlocks | null | undefined): TimeBlock[] {
-  return Array.isArray(day?.blocks) ? day.blocks : [];
-}
 
 /**
  * Spec 2026-10-08, 12.1 / E59: je Wochentag bis zu drei Blöcke „von–bis" im
@@ -40,7 +38,8 @@ export default function WorkBlocksEditor({ value, onChange, idPrefix = 'wb' }: W
     },
     { gross: 0, pause: 0, net: 0 },
   );
-  const workDays = WEEKDAY_LABELS.filter((_, i) => blocksOf(value[i]).length > 0).length;
+  // Arbeitstage wie der Server sie ableitet (derive_targets.work_days_per_week).
+  const { workDays } = deriveTargets(value);
 
   return (
     <div className="space-y-2">
