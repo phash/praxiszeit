@@ -5,7 +5,8 @@
 #
 # Prüft die Nutzer- und Technik-Doku gegen den Code und gegeneinander:
 #   code     – jeder Wortlaut, den die Doku zitiert, steht im App-Code (Gate)
-#   mirror   – frontend/public/help/*.md ist byte-identisch zu docs/handbuch/*.md
+#   mirror   – die fünf Nutzerdateien in frontend/public/help/ sind byte-identisch
+#              zu docs/handbuch/ (HANDBUCH-ERSTELLEN.md ist intern, nie spiegeln)
 #   links    – jeder In-Page-Link (#anker) der Handbücher hat ein Ziel
 #   weitere  – je Doku-Fläche Pflicht- und Verbotsbegriffe (eine Gruppe je Fläche)
 #
@@ -841,6 +842,16 @@ group_claude() {
   # #394: die Direktbuchung trägt das ungewichtete Tagessoll (PR3 Task 6)
   need "$f" '`calculation_service.f1_clamp_hours`'
   forbid "$f" 'sind an Halbtags-Sondertagen noch nicht faktoriert'
+  # Begriffsregel auch in CLAUDE.md selbst: gestempelte Einträge sind keine
+  # „Blöcke" (clock-status liefert seit 1.20.0 auch ``blocks_today`` = Vertrag)
+  forbid "$f" 'den laufenden Block'
+  forbid "$f" 'laufender Block netto'
+  forbid "$f" 'Timer des offenen Blocks'
+  # Spiegel nur für die fünf Nutzerdateien — HANDBUCH-ERSTELLEN.md ist intern
+  # (Seed-Passwörter) und darf nie nach frontend/public/help/
+  need "$f" 'HANDBUCH-ERSTELLEN.md (intern)'
+  need "$f" '`bash scripts/check-doc-sync.sh mirror`'
+  forbid "$f" 'MUSS byte-identisch zu `docs/handbuch/*.md` sein'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
