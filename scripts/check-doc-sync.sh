@@ -570,6 +570,65 @@ group_mitarbeiter() {
   forbid "$f" 'einen vergangenen Tag nachtragen möchten'
 }
 
+group_kurz() {
+  local a=docs/handbuch/CHEATSHEET-ADMIN.md
+  local m=docs/handbuch/CHEATSHEET-MITARBEITER.md
+  local s=docs/handbuch/SCHNELLSTART.md
+  need "$a" '### Arbeitszeit-Blöcke (ab 1.20.0)'
+  need "$a" '### Arbeitszeit ändern (Wochenstunden, Tagesplan, Blöcke)'
+  need "$a" 'Arbeitszeit anpassen…'
+  need "$a" 'Nach Arbeitsblöcken'
+  need "$a" 'Nicht angerechnet (Min)'
+  need "$a" 'Genehmigen und anerkennen'
+  need "$a" 'Ohne Anerkennen genehmigen'
+  need "$a" 'auf den vorherigen Stand zurücksetzen'
+  need "$a" '[Erfassungsfehler korrigiert]'
+  need "$a" 'Nichtanrechnung ersetzt keine Vergütungsentscheidung'
+  forbid "$a" 'Wochenstunden anpassen…'
+  forbid "$a" 'Wochenstunden & Tagesplan'
+  forbid "$a" '### Soll-Arbeitszeit-Fenster (#201)'
+  # Über den Plan hinaus (Code maßgeblich, Gate Task 0): der alte
+  # Formularbereich beim Anlegen (#201) und die Tagesstunden-Felder bei
+  # ausgeschalteter Stundenzählung (UserForm blendet die ganze Auswahl
+  # „Arbeitszeit" aus); Löschen nur an der jüngsten Verlaufszeile, Rücksetzung
+  # mit 409 bei Zwischenzeile, Notizfeld begrenzt (Gesamtreview PR3);
+  # echtes Ende 23:59 eintragbar (V1, Spec P18); Dashboard-Kasten (14).
+  forbid "$a" 'Soll-Arbeitszeiten je Wochentag'
+  forbid "$a" 'Felder Anfangssaldo / individuelle Tagesstunden entfallen'
+  need "$a" 'Papierkorb nur an der **jüngsten** Zeile'
+  need "$a" 'Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden.'
+  need "$a" 'Notiz und Begründung zusammen höchstens 500 Zeichen.'
+  need "$a" 'auch ein echtes Ende 23:59'
+  need "$a" 'Hinweis zu Ihrer Arbeitszeit'
+  need "$m" '### Arbeitszeit-Blöcke'
+  need "$m" 'zwischen den Blöcken nicht angerechnet'
+  need "$m" 'Anrechnung beantragen'
+  need "$m" 'Meine Arbeitszeit'
+  forbid "$m" 'aller Blöcke des Tages'
+  forbid "$m" 'Fehlende Blöcke'
+  forbid "$m" 'für Sie Soll-Zeiten hinterlegt'
+  forbid "$m" 'Änderung beantragen'
+  # Über den Plan hinaus: Häufige-Probleme-Zeile des #201-Fensters, Neuanlage
+  # nur für heute (create_time_entry, 403), Datum beim Bearbeiten gesperrt
+  # (#502), echtes Ende 23:59 (V1), Dashboard-Kasten laut Code (14).
+  forbid "$m" 'Soll-Zeit-Fenster'
+  forbid "$m" '### Soll-Arbeitszeit-Fenster'
+  need "$m" 'Einträge für vergangene Tage können nur per Änderungsantrag erstellt werden'
+  need "$m" 'Das Datum bleibt beim Bearbeiten fest.'
+  need "$m" 'auch ein echtes Ende 23:59'
+  need "$m" 'Hinweis zu Ihrer Arbeitszeit'
+  need "$m" 'Ihre Arbeitszeit ändert sich ab'
+  need "$s" 'Arbeitszeit anpassen…'
+  need "$s" 'Nach Arbeitsblöcken'
+  forbid "$s" 'Wochenstunden anpassen…'
+  forbid "$s" 'Soll-Beginn/-Ende je Wochentag'
+  # Über den Plan hinaus: die Checkbox heißt „Stundenzählung aktiv (…)"
+  # (UserForm); „Keine Stundenzählung" gibt es nicht, und „leitende
+  # Angestellte" ist § 18, nicht die Stundenzählung (CLAUDE.md #191).
+  need "$s" 'Stundenzählung aktiv (Soll-Stunden werden berechnet)'
+  forbid "$s" 'Keine Stundenzählung'
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {

@@ -34,7 +34,7 @@ Beim **Ausstempeln** Feld **Pause (Min.)** ausfüllen → **Jetzt ausstempeln**.
 - Kein Begründungsfeld? Dann hat die Praxis die Ausnahme abgeschaltet → Pause eintragen.
 
 ### Neuen Zeiteintrag erstellen
-**Zeiterfassung** → Tab **Einträge** → **+ Neuer Eintrag**
+**Zeiterfassung** → Tab **Einträge** → **+ Neuer Eintrag** (nur für **heute**)
 - Datum, Startzeit (Von), Endzeit (Bis)
 - Pause in Minuten *(Pflicht!)*
 - Optional: Notiz
@@ -43,10 +43,13 @@ Beim **Ausstempeln** Feld **Pause (Min.)** ausfüllen → **Jetzt ausstempeln**.
 
 Mobil: **+**-Button oben rechts auf der Zeiterfassungsseite
 
+**Vergangener Tag** (z. B. Stempeln vergessen): Button **Antrag** (links neben **+ Neuer Eintrag**) oder im Journal **+** in der Zeile des Tages → Änderungsantrag mit Begründung. Ein anderes Datum unter **+ Neuer Eintrag** lehnt PraxisZeit ab: *„Einträge für vergangene Tage können nur per Änderungsantrag erstellt werden"*.
+
 ### Eintrag bearbeiten / löschen
 Aktionsspalte in der Einträge-Tabelle:
-- **Bearbeiten** – bei entsperrten Einträgen
-- **Löschen** – bei nicht gesperrten Einträgen
+- **Bearbeiten** – nur heutige Einträge (ältere → **Änderungsantrag**, s. u.)
+- **Löschen** – nur heutige Einträge (ältere → **Löschantrag**)
+- **Datum** ist beim Bearbeiten gesperrt: *„Das Datum bleibt beim Bearbeiten fest. Gehört die Zeit zu einem anderen Tag: Eintrag löschen und oben über „Antrag“ einen Änderungsantrag für diesen Tag stellen."*
 
 ### Pflicht-Pausen (§4 ArbZG)
 | Arbeitszeit | Mindestpause |
@@ -60,11 +63,16 @@ Gilt für den **ganzen Tag** (alle Einträge zusammen); Lücken unter 15 Min. z�
 - Warnung ab **8 Stunden** Nettoarbeitszeit
 - Ab **10 Stunden** netto: manuelle Eingabe gesperrt; Live-Ausstempeln nur Warnung (Zeit ist bereits geleistet)
 
-### Soll-Arbeitszeit-Fenster
-*Nur aktiv, wenn die Praxis für Sie Soll-Zeiten hinterlegt hat – sonst zählt alles wie gewohnt.*
-- Zu früh ein- / zu spät ausgestempelt → angerechnet wird nur bis zum **Puffer** (Std. 15 Min.).
-- Hinweis z. B. *„gestempelt 07:30 · angerechnet ab 07:45"*.
-- Ihre **echte Stempelzeit bleibt gespeichert** (§16 ArbZG); fürs Stundenkonto zählt nur die angerechnete Zeit.
+### Arbeitszeit-Blöcke
+*Nur aktiv, wenn die Praxis für Sie Arbeitszeit-Blöcke hinterlegt hat (Profil → „Meine Arbeitszeit") – sonst zählt alles wie gewohnt. Ein aus früheren Versionen übernommenes Arbeitszeit-Fenster wirkt genauso, ändert aber Ihr Tagessoll nicht.*
+- Angerechnet wird innerhalb der Blöcke, mit **Puffer** (Std. 15 Min.) an jedem Blockrand. Wochenende und Feiertage haben keine Blöcke → alles zählt.
+- Zu früh / zu spät → *„gestempelt 07:30 · angerechnet ab 07:45"*.
+- Über die Pause zwischen zwei Blöcken durchgestempelt → *„gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet"*.
+- In der Pause zwischen den Blöcken zeigt das Dashboard neutral „Pause zwischen den Arbeitsblöcken".
+- Vor, nach oder zwischen den Blöcken gearbeitet? Am Eintrag **„Anrechnung beantragen"** (mit Begründung; für heute erst nach Arbeitsende). Tab „Anträge": Kennzeichen „Anrechnung beantragt", nach der Genehmigung zusätzlich „anerkannt" bzw. „ohne Anerkennen genehmigt".
+- Heute anerkannter Eintrag: Schloss, kein Bearbeiten/Löschen; ab morgen per **Änderungsantrag**/**Löschantrag** oder über die Verwaltung.
+- Vergessen auszustempeln? Der Eintrag wird um 23:59 automatisch geschlossen und nur bis Blockende + Puffer angerechnet → tatsächliches Ende per **Änderungsantrag** nachtragen (auch ein echtes Ende 23:59, z. B. nach einem Notdienst).
+- Ihre **echte Stempelzeit bleibt gespeichert** (§16 ArbZG); fürs Stundenkonto zählt die angerechnete Zeit. Nicht angerechnet heißt nicht unbezahlt.
 
 ---
 
@@ -131,7 +139,7 @@ Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, si
 
 | Karte | Bedeutung |
 |-------|----------|
-| **Tagessaldo** | Heute: Ist-Zeit aller Blöcke des Tages (z. B. Vormittag + Nachmittag) vs. Tagessoll (grün = eingestempelt) |
+| **Tagessaldo** | Heute: Ist-Zeit aller Einträge des Tages (z. B. Vormittag + Nachmittag) vs. Tagessoll (grün = eingestempelt) |
 | **Monatssaldo** | Über-/Unterstunden diesen Monat (H:MM) |
 | **Überstunden** | Kumulierter Jahressaldo |
 | **Urlaub** | Verbleibende Urlaubstage |
@@ -140,7 +148,7 @@ Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, si
 
 *Monatssaldo und Überstunden zählen nur bis zum letzten abgeschlossenen Arbeitstag (kein Monatsanfangs-Minus am 1.).*
 
-**Monat ↔ Woche:** Umschalter über der Übersichtstabelle → letzte 8 Kalenderwochen mit Soll/Ist/Saldo/Konto (laufende Woche bis heute). Fehlende Blöcke fallen pro Woche sofort auf.
+**Monat ↔ Woche:** Umschalter über der Übersichtstabelle → letzte 8 Kalenderwochen mit Soll/Ist/Saldo/Konto (laufende Woche bis heute). Fehlende Einträge fallen pro Woche sofort auf.
 
 ---
 
@@ -180,7 +188,11 @@ Zusätzlicher Schutz per Einmal-Code aus einer Authenticator-App (z. B. Google A
 | Pause zu kurz beim Ausstempeln | Pause nachtragen **oder** kurz begründen (dokumentierte Ausnahme, falls die Praxis sie erlaubt) |
 | Zeiteintrag zu lang | Max. 10h netto (§3 ArbZG) |
 | Eintrag lässt sich nicht bearbeiten | Zu alt → Änderungsantrag stellen |
-| „angerechnet ab HH:MM" beim Eintrag | Soll-Zeit-Fenster: nur bis Puffer angerechnet (echte Zeit bleibt) |
+| „angerechnet ab HH:MM" beim Eintrag | Arbeitszeit-Blöcke: nur bis Puffer angerechnet (echte Zeit bleibt) |
+| „… zwischen den Blöcken nicht angerechnet" | Über die Pause zwischen zwei Blöcken gestempelt; gearbeitet? → **„Anrechnung beantragen"** |
+| Schloss mit „Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung" | Eintrag wurde heute anerkannt → ab morgen **Änderungsantrag**/**Löschantrag** oder die Verwaltung fragen |
+| „Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden." | Anrechnung für heute erst nach dem Ausstempeln beantragen |
+| Kasten „Hinweis zu Ihrer Arbeitszeit" („Ihre Arbeitszeit wurde ab … geändert" bzw. „Ihre Arbeitszeit ändert sich ab …") | Verwaltung hat Ihre Arbeitszeit geändert (Hinweis bleibt 30 Tage) → Link „Arbeitszeit im Profil ansehen" bzw. Profil → „Meine Arbeitszeit" |
 | Stunden-/Überstundenkacheln fehlen | Kein Fehler – bei Ihnen ohne Stundenzählung |
 | Gelber Hinweis unter „Überstundenkonto" | Minijob-Arbeitszeitkonto (§ 2 Abs. 2 MiLoG): Konto zu weit im Plus oder Ausgleichsfrist läuft bald ab – kein Fehler, im Zweifel mit Admin klären |
 | Passwort vergessen | Administrator kontaktieren |
