@@ -258,9 +258,11 @@ group_code() {
   need_code "Ohne Stundenzählung: kein Tagessoll; die Arbeitszeit-Blöcke begrenzen die Anrechnung nicht."
   need_code "Anwesenheit nicht angerechnet: "
   # Review Task 5: übernommenes Arbeitszeit-Fenster (Spec 4.4) — Kartenhinweis
-  # (MyWorkScheduleCard) und Zusatz im Dashboard-Hinweis (reclamp_audit.contract_text).
+  # (MyWorkScheduleCard) und Zusatz im Dashboard-Hinweis (reclamp_audit.contract_text);
+  # Knopf „Antrag" der Zeiterfassung, auf den der Datums-Hinweis (#502) verweist.
   need_code "Diese Zeiten begrenzen nur die Anrechnung der erfassten Zeit; das Tagessoll wird nicht aus ihnen berechnet."
   need_code '{base} · {window} (nur Kappung)'
+  need_code_label frontend/src/pages/TimeTracking.tsx "Antrag"
 }
 
 group_mirror() {
@@ -548,6 +550,10 @@ group_mitarbeiter() {
   need "$f" 'Diese Zeiten begrenzen nur die Anrechnung der erfassten Zeit; das Tagessoll wird nicht aus ihnen berechnet.'
   need "$f" '(neu: 40,0 h/Woche · Mo 07:30–16:30 / Fr 07:30–23:59 (nur Kappung)).'
   need "$f" 'außer bei einem aus früheren Versionen übernommenen Arbeitszeit-Fenster'
+  # Review Task 5: Datum gesperrt nur bei heutigen Einträgen; für die gibt es
+  # keinen Änderungsantrag, der Weg ist Löschen + Knopf „Antrag".
+  need "$f" 'Bei älteren Einträgen ändern Sie das Datum direkt im Änderungsantrag'
+  forbid "$f" 'Ein anderes Datum gibt es nur per Antrag (→ [Abschnitt 3.5]'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
