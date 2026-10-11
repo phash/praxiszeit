@@ -83,7 +83,10 @@ describe('workingHoursTexts', () => {
     expect([hm(2.25), signedHm(-3.75), signedHm(1.75), signedHm(0)]).toEqual(['2:15', '−3:45', '+1:45', '0:00']);
     // Unter einer halben Minute bleibt es „0:00" ohne Vorzeichen; 59,6 Min rollen auf die volle Stunde.
     expect([signedHm(-0.001), signedHm(0.9933), hm(Number.NaN)]).toEqual(['0:00', '+1:00', '0:00']);
-    expect([signedDays(1), signedDays(-1.5), signedDays(0)]).toEqual(['+1,0', '−1,5', '0,0']);
+    // Urlaubstage wie im Rest der App über `formatDayCount` (#496): Einheit und
+    // Singular inklusive; was als „0 Tage" erscheint, bekommt kein Vorzeichen.
+    expect([signedDays(1), signedDays(-1.5), signedDays(0), signedDays(-0.004)])
+      .toEqual(['+1 Tag', '−1,5 Tage', '0 Tage', '0 Tage']);
   });
 
   it('Datumsformate dd.MM.yyyy, Kurzform und Monat', () => {

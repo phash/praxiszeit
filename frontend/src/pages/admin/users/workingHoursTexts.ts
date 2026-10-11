@@ -2,7 +2,7 @@
 // Wochenstunden" — an EINER Stelle, damit Dialog, Verkürzungs-Kasten und
 // Lösch-Dialog wortgleich bleiben. Die Grundtyp-SCHLÜSSEL sind eingefroren
 // (Backend `reclamp_audit.REASON_TYPES`), die Oberfläche zeigt nur die Beschriftungen.
-import { deHoursExact, formatHoursHM } from '../../../utils/formatters';
+import { formatDayCount, formatHoursHM } from '../../../utils/formatters';
 
 export const LEGAL_HINT =
   'Ändert sich der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine Vertragsänderung und braucht das '
@@ -121,11 +121,13 @@ export function signedHm(hours: number): string {
   return `${hours > 0 ? '+' : '−'}${text}`;
 }
 
-/** „+1,0" / „−1,5" / „0,0" — Urlaubstage-Δ in derselben Schreibweise wie die
- * Spalten „bisher"/„neu" daneben (`deHoursExact`, #431). */
+/** „+1 Tag" / „−1,5 Tage" / „0 Tage" — Urlaubstage-Δ in derselben
+ * Schreibweise wie die Spalten „bisher"/„neu" daneben und wie im Rest der App
+ * (`formatDayCount`, #496; Einheit inklusive). Was als „0 Tage" erscheint,
+ * bekommt kein Vorzeichen. */
 export function signedDays(value: number): string {
   const v = Math.round(value * 100) / 100;
-  const text = deHoursExact(Math.abs(v));
+  const text = formatDayCount(Math.abs(v));
   return v > 0 ? `+${text}` : v < 0 ? `−${text}` : text;
 }
 
