@@ -792,6 +792,57 @@ group_technik() {
   forbid "$f" 'Der Block'
 }
 
+# CLAUDE.md (Spec 16.2, zwölf Regeln, plus Doku-Regeln dieses PRs). Über den
+# Plan hinaus: die Entscheidungen nach Planstand — eingetragenes 23:59 ist ein
+# echtes Ende (P18, 2026-10-11), 404 vor jeder Sperre (16.2 Nr. 8), sofortiger
+# Flush in der Neukappung, 409 bei der Rücksetzung, Notizlänge — sowie die
+# E2E-/Vitest-Hinweise aus PR3 und die überholte #394-Restschuld.
+group_claude() {
+  local f=CLAUDE.md
+  need "$f" '**Arbeitszeit-Blöcke (1.20.0, ersetzt das #201-Fenster):**'
+  need "$f" '**`clamp` liefert `ClampResult(eff_start, eff_end, raw_start, raw_end, uncredited_minutes, grace_minutes)`'
+  need "$f" '**`net_hours` = Ende − Beginn − Pause − `uncredited_minutes`**'
+  need "$f" '**Puffer je Eintrag (`clamp_grace_minutes`'
+  need "$f" '**Ankersperre zuerst (P5):**'
+  need "$f" '**`auto_closed`:**'
+  need "$f" '= Lücke + Hülle**'
+  need "$f" '**Neukappung (`work_window_service.reclamp_time_entries`):**'
+  need "$f" '**`credit_override` (Anerkennen)**'
+  need "$f" '**Sammelzeile und Grundtypen'
+  need "$f" 'Das gilt auch für Kappungsregeln'
+  need "$f" '`wh_reclamp` (Neukappung + Sammelzeile, 1.20.0)'
+  need "$f" 'Krank 4,0 h — Arbeitszeit-Änderung ab 15.03.2026'
+  need "$f" 'bash scripts/check-doc-sync.sh all'
+  need "$f" 'Kontexthilfe `frontend/src/constants/helpContent.tsx`'
+  need "$f" '**Release-Gate 1.20.0 (Migration 073, Spec 17.8, Risiko 6):**'
+  need "$f" 'GET /api/admin/users` mit einer Altfenster-Person (07:37/23:59)'
+  forbid "$f" 'Pro MA je Wochentag optionale `scheduled_start_<wd>`'
+  forbid "$f" '`get_scheduled_window(db, user, d)` liefert'
+  # Entscheidungen nach Planstand (Spec 16.2 Nr. 8/9, 9.2 Schritt 11, 9.7, 11.4)
+  need "$f" '**Ein eingetragenes 23:59 ist ein echtes Ende**'
+  need "$f" 'kein Pfad füllt ein fehlendes Ende mit dem Rohende auf'
+  need "$f" '`request_end_for_approval`'
+  forbid "$f" 'das zurückgeschickte Rohende 23:59'
+  need "$f" 'Fremde oder unbekannte Eintrags-ID → 404 VOR jeder Sperre'
+  need "$f" 'test_update_unknown_entry_takes_no_lock'
+  need "$f" 'flusht jeden neuen Beginn sofort'
+  need "$f" '`wh_change_service.run_change`'
+  need "$f" '409 `RESET_CONFLICT_DETAIL`'
+  need "$f" 'zusammen höchstens 500 Zeichen'
+  # #498-Spalte und Spalte 13
+  need "$f" '12 „Zeiteinträge“'
+  need "$f" 'Spalte 13 „Nicht angerechnet (Min)“ ist die letzte'
+  forbid "$f" '12 „Arbeitsblöcke“'
+  forbid "$f" 'Füllungen/Zellverbindungen reichen bis Spalte L'
+  forbid "$f" 'Krank 4,0 h — Wochenstunden-Änderung ab 15.03.2026'
+  # E2E-/Vitest-Hinweise (PR3 Review Task 22, Speicher)
+  need "$f" 'Projekt `grace-setting`'
+  need "$f" '--maxWorkers=2'
+  # #394: die Direktbuchung trägt das ungewichtete Tagessoll (PR3 Task 6)
+  need "$f" '`calculation_service.f1_clamp_hours`'
+  forbid "$f" 'sind an Halbtags-Sondertagen noch nicht faktoriert'
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {
