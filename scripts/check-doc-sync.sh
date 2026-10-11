@@ -852,6 +852,16 @@ group_claude() {
   need "$f" 'HANDBUCH-ERSTELLEN.md (intern)'
   need "$f" '`bash scripts/check-doc-sync.sh mirror`'
   forbid "$f" 'MUSS byte-identisch zu `docs/handbuch/*.md` sein'
+  # Review Task 11 (2. Runde): dritter MA-Pfad mit derselben 409-Sperre,
+  # Schema-Zuordnung der Leseflächen, Vorschau ohne Ankersperre
+  need "$f" 'MA-`POST /absences` ohne `keep_time_entries`'
+  need "$f" '„Genehmigen und anerkennen"'
+  forbid "$f" '„genehmigen und anerkennen"'
+  need "$f" '`UserListResponse` — Login, Impersonation, `GET /admin/users`'
+  forbid "$f" '`UserResponse` — auch Login'
+  need "$f" 'Anlegen und Löschen einer Arbeitszeit-Änderung sperren über `admin_users._lock_and_reload`'
+  forbid "$f" 'Die Endpunkte der Arbeitszeit-Änderungen sperren'
+  need "$f" 'die Vorschauen nehmen bewusst KEINE Ankersperre'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
