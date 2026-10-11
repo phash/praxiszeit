@@ -51,6 +51,16 @@ Screenshots werden mit **Playwright** automatisiert aufgenommen. Die App muss lo
 docker-compose up -d
 ```
 
+Demo-Daten und Aufnahme (Musterpraxis, Januar/Februar 2026; Sarah Klein ist die Demo-Person mit Arbeitszeit-Blöcken 08:00–12:00 + 15:00–16:00 und zwei über die Mittagslücke durchgestempelten Montagen):
+
+```bash
+docker compose cp backend/create_handbuch_testdata.py backend:/app/create_handbuch_testdata.py
+docker compose exec -T backend python create_handbuch_testdata.py </dev/null
+cd e2e && npx --yes tsx capture-handbook-screenshots.ts
+```
+
+Das Seed-Skript läuft nur gegen PostgreSQL und setzt das Admin-Passwort auf `Admin2026!` (Mitarbeitende: `Mitarbeiter2026!`). Die E2E-Tests erwarten `Admin2025!` – danach zurücksetzen. Das Aufnahmeskript nimmt alle Bilder neu auf; nur die tatsächlich geänderten committen (`git restore docs/handbuch/screenshots/` für den Rest).
+
 #### Mitarbeiter-Screenshots (als Employee einloggen oder als Admin mit Employee-Sicht)
 
 | Datei | URL | Beschreibung |
@@ -64,7 +74,7 @@ docker-compose up -d
 | `07-ma-abwesenheit-formular.png` | `/absences` | Formular „+ Abwesenheit eintragen" |
 | `08-ma-korrekturantraege.png` | `/time-tracking` (Tab: Anträge) | Änderungsanträge-Tab leer |
 | `09-ma-korrekturantrag-modal.png` | `/time-tracking` | Modal nach Klick auf „Änderungsantrag" bei gesperrtem Eintrag |
-| `10-ma-profil.png` | `/profile` | Profilseite |
+| `10-ma-profil.png` | `/profile` | Profilseite (persönliche Daten, Karte „Meine Arbeitszeit") |
 | `11-ma-mobile-dashboard.png` | `/` | Mobil (390px) – Dashboard |
 | `12-ma-mobile-zeiterfassung.png` | `/time-tracking` | Mobil (390px) – Zeiterfassung |
 | `13-ma-mobile-menu.png` | beliebig | Mobil (390px) – Hamburger-Menü offen |
@@ -75,8 +85,8 @@ docker-compose up -d
 |-------|-----|-------------|
 | `14-admin-dashboard.png` | `/admin` | Admin-Dashboard mit Teamübersicht |
 | `15-admin-benutzer.png` | `/admin/users` | Benutzerliste |
-| `16-admin-benutzer-formular.png` | `/admin/users` | Formular „Neue:r Mitarbeiter:in" |
-| `17-admin-benutzer-bearbeiten.png` | `/admin/users` | Bearbeiten-Formular eines Benutzers |
+| `16-admin-benutzer-formular.png` | `/admin/users` | Formular „Neue:r Mitarbeiter:in", Modus „Nach Arbeitsblöcken" (Block-Editor mit Beispielwoche) |
+| `17-admin-benutzer-bearbeiten.png` | `/admin/users` | Bearbeiten-Formular der Demo-Person mit Arbeitszeit-Blöcken (Sarah Klein, „Arbeitszeit heute: …") |
 | `18-admin-abwesenheitskalender.png` | `/admin/absences` | Abwesenheitskalender Admin |
 | `19-admin-berichte.png` | `/admin/reports` | Berichte & Export |
 | `20-admin-korrekturantraege.png` | `/admin/change-requests` | Korrekturanträge-Liste |

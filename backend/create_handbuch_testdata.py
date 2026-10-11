@@ -18,6 +18,8 @@ from app.models import (
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
 from app.models.user import UserRole
 from app.services import auth_service
+from app.services import work_window_service
+from app.services.work_blocks_service import derive_targets
 
 random.seed(42)  # Reproduzierbar
 
@@ -64,6 +66,13 @@ EMPLOYEES = [
         "track_hours": True,
         "is_night_worker": False,
         "exempt_from_arbzg": False,
+        # 1.20.0: Demo für Handbuch-Screenshots 16/17 — Vormittag + Nachmittag mit
+        # Mittagslücke; Tagessoll 4 h + 1 h = 5 h, also unverändert 25 h/Woche.
+        "work_blocks": [
+            {"blocks": [{"start": "08:00", "end": "12:00"}, {"start": "15:00", "end": "16:00"}],
+             "pause_minutes": 0}
+            for _ in range(5)
+        ],
     },
     {
         "username": "petra.schulz",
@@ -97,6 +106,10 @@ EMPLOYEES = [
 START_DATE = date(2026, 1, 5)   # Erster Arbeitstag (Mo nach Neujahr)
 END_DATE   = date(2026, 2, 27)  # Gestern (Fr)
 
+# Tage, an denen die Demo-Person über die Mittagslücke durchstempelt — erzeugt die
+# Zusatzzeile „… zwischen den Blöcken nicht angerechnet" im Handbuch.
+BLOCK_DEMO_THROUGH_DAYS = {date(2026, 2, 9), date(2026, 2, 23)}
+
 
 def get_holiday_dates(db) -> set:
     holidays = db.query(PublicHoliday).filter(
@@ -106,12 +119,67 @@ def get_holiday_dates(db) -> set:
     return {h.date for h in holidays}
 
 
+def _apply_work_blocks(db, user: User, emp: dict) -> None:
+    """Setzt Arbeitszeit-Blöcke samt abgeleitetem Soll (Spec 4.1, E9).
+
+    ``users.work_blocks`` ist der Rückfall vor der ersten Verlaufszeile — die
+    Demo-Person hat keine Verlaufszeile, also gelten diese Blöcke für den ganzen
+    Demo-Zeitraum. Soll-Felder über ``derive_targets`` wie im Anlege-Pfad, damit
+    Blöcke und Tagessoll zusammenpassen."""
+    blocks = emp.get("work_blocks")
+    if not blocks:
+        return
+    user.work_blocks = blocks
+    for field, value in derive_targets(blocks).items():
+        setattr(user, field, value)
+    db.commit()
+
+
+def _minutes_to_time(minutes: int) -> dt_time:
+    return dt_time(minutes // 60, minutes % 60)
+
+
+def create_block_entries_for_user(db, user: User, work_days: list) -> int:
+    """Je Arbeitstag ein Eintrag je Block; an BLOCK_DEMO_THROUGH_DAYS ein Eintrag
+    vom ersten Blockbeginn bis zum letzten Blockende. Die Blöcke kommen über den
+    Resolver (``work_window_service.get_scheduled_blocks``), gekappt wird über
+    den echten ``clamp`` (Puffer aus den Einstellungen), wie jeder Schreibpfad
+    es tut."""
+    grace = work_window_service.get_grace_minutes(db, TENANT_ID)
+    count = 0
+    for d in work_days:
+        day_blocks = work_window_service.get_scheduled_blocks(db, user, d)
+        if not day_blocks:
+            continue
+        if d in BLOCK_DEMO_THROUGH_DAYS:
+            spans = [(day_blocks[0][0], day_blocks[-1][1])]
+        else:
+            spans = list(day_blocks)
+        for start_min, end_min in spans:
+            r = work_window_service.clamp(
+                db, user, d, _minutes_to_time(start_min), _minutes_to_time(end_min),
+                grace, credit_override=False,
+            )
+            db.add(TimeEntry(
+                tenant_id=TENANT_ID, user_id=user.id, date=d,
+                start_time=r.eff_start, end_time=r.eff_end,
+                raw_start_time=r.raw_start, raw_end_time=r.raw_end,
+                uncredited_minutes=r.uncredited_minutes,
+                clamp_grace_minutes=r.grace_minutes,
+                break_minutes=0, note="",
+            ))
+            count += 1
+    db.commit()
+    return count
+
+
 def create_employees(db) -> list:
     created = []
     for emp in EMPLOYEES:
         existing = db.query(User).filter(User.username == emp["username"]).first()
         if existing:
             print(f"  ~ {emp['first_name']} {emp['last_name']} existiert bereits (übersprungen)")
+            _apply_work_blocks(db, existing, emp)
             created.append(existing)
             continue
 
@@ -136,6 +204,7 @@ def create_employees(db) -> list:
         db.add(u)
         db.commit()
         db.refresh(u)
+        _apply_work_blocks(db, u, emp)
         created.append(u)
         print(f"  ✓ {emp['first_name']} {emp['last_name']} ({emp['weekly_hours']}h/Woche) angelegt")
     return created
@@ -199,6 +268,11 @@ def create_time_entries_for_user(db, user: User, holiday_dates: set):
 
     work_days = working_days_in_range(START_DATE, END_DATE, holiday_dates,
                                       user.work_days_per_week)
+    if getattr(user, "work_blocks", None):
+        count = create_block_entries_for_user(
+            db, user, [d for d in work_days if d not in absence_dates])
+        print(f"    ✓ {count} Zeiteinträge nach Arbeitszeit-Blöcken erstellt")
+        return
 
     count = 0
     for d in work_days:

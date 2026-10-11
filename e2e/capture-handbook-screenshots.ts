@@ -9,7 +9,7 @@
  * Usage:
  *   cd e2e && npx tsx capture-handbook-screenshots.ts
  */
-import { chromium, Browser, Page } from '@playwright/test';
+import { chromium, Browser, Locator, Page } from '@playwright/test';
 import { mkdirSync } from 'fs';
 import { resolve } from 'path';
 
@@ -29,12 +29,63 @@ async function login(page: Page, username: string, password: string) {
   await page.getByRole('button', { name: /anmelden/i }).click();
   await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 10_000 });
   await page.waitForLoadState('networkidle');
+  // #132: frisch angelegte Demo-Personen sehen beim ersten Login das
+  // Willkommens-Fenster (ganzseitige Überlagerung) — es verdeckte alle Bilder
+  // und schluckte die Klicks auf „Neuer Eintrag" usw. „Los geht's" schließt es
+  // dauerhaft (POST /auth/onboarding/complete), wie die E2E-Fixtures.
+  const welcome = page.getByRole('button', { name: "Los geht's" });
+  if (await welcome.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false)) {
+    // Auf die Antwort warten: das nächste page.goto() bräche den POST sonst ab,
+    // und das Fenster stünde nach dem Neuladen wieder da.
+    await Promise.all([
+      page.waitForResponse((r) => r.url().includes('/auth/onboarding/complete'), { timeout: 5000 }),
+      welcome.click(),
+    ]).catch(() => console.log(`  ! Willkommens-Fenster für ${username} nicht geschlossen`));
+  }
 }
 
 async function shot(page: Page, name: string, opts: { fullPage?: boolean } = {}) {
   const path = resolve(SHOTS_DIR, `${name}.png`);
   await page.screenshot({ path, fullPage: opts.fullPage ?? true, type: 'png' });
   console.log(`  ✓ ${name}.png`);
+}
+
+/**
+ * Die App scrollt in ihrem Inhaltsbereich (`<main>`), nicht im Dokument —
+ * `fullPage` nimmt deshalb nur das Fenster auf, und ein langes Formular wäre
+ * abgeschnitten. Das Fenster wird für die Aufnahme bis zur Unterkante von
+ * `until` gestreckt und danach zurückgesetzt. Die Fokus-Markierung (Autofokus,
+ * zuletzt befülltes Feld) wird vorher entfernt.
+ */
+async function shotUntil(page: Page, name: string, until: Locator) {
+  const viewport = page.viewportSize() ?? DESKTOP;
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await until.evaluate((el) => {
+    for (let p = el.parentElement; p; p = p.parentElement) p.scrollTop = 0;
+  });
+  const box = await until.boundingBox();
+  if (box) {
+    await page.setViewportSize({ width: viewport.width, height: Math.ceil(box.y + box.height + 24) });
+    await page.waitForTimeout(300);
+  }
+  await shot(page, name, { fullPage: false });
+  await page.setViewportSize(viewport);
+}
+
+/** Beispielwoche aus dem Handbuch: Mo–Do 08:00–12:00 + 15:00–18:00 mit 30 Min
+ *  Pause (Tagessoll 6:30 h), Fr 08:00–13:00. */
+async function fillExampleBlocks(page: Page) {
+  for (const day of ['Mo', 'Di', 'Mi', 'Do', 'Fr']) {
+    const spans = day === 'Fr' ? [['08:00', '13:00']] : [['08:00', '12:00'], ['15:00', '18:00']];
+    for (const [n, [von, bis]] of spans.entries()) {
+      await page.getByRole('button', { name: `${day}: Block hinzufügen` }).click();
+      await page.getByLabel(`${day} Block ${n + 1} von`).fill(von);
+      await page.getByLabel(`${day} Block ${n + 1} bis`).fill(bis);
+    }
+    if (spans.length > 1) {
+      await page.getByLabel(`${day} Pause innerhalb der Blöcke (Min)`).fill('30');
+    }
+  }
 }
 
 async function captureEmployeeShots(browser: Browser) {
@@ -165,20 +216,33 @@ async function captureAdminShots(browser: Browser) {
     const newBtn = page.getByRole('button', { name: /neue:?r? ?mitarbeiter|neuer mitarbeiter|\+ mitarbeiter/i }).first();
     await newBtn.click({ timeout: 2000 });
     await page.waitForTimeout(500);
-    await shot(page, '16-admin-benutzer-formular');
+    // 1.20.0: Block-Editor zeigen (Modus „Nach Arbeitsblöcken") — mit der
+    // Beispielwoche, sonst stünden nur „kein Arbeitstag" und eine Fehlermeldung da.
+    const blockMode = page.getByText('Nach Arbeitsblöcken', { exact: true }).first();
+    if (await blockMode.isVisible().catch(() => false)) {
+      await blockMode.click();
+      await page.waitForTimeout(300);
+      await fillExampleBlocks(page).catch(() =>
+        console.log('  ! 16-admin-benutzer-formular: Block-Editor nicht befüllbar'));
+    }
+    await shotUntil(page, '16-admin-benutzer-formular', page.locator('form').first());
     const cancel = page.getByRole('button', { name: /abbrechen|schließen/i }).first();
     if (await cancel.isVisible().catch(() => false)) await cancel.click();
   } catch {
     console.log('  ! 16-admin-benutzer-formular: Button nicht gefunden');
   }
 
-  // 17 Benutzer bearbeiten (click erster User-Row)
+  // 17 Benutzer bearbeiten — Demo-Person mit Arbeitszeit-Blöcken (Sarah Klein)
   try {
     await page.waitForTimeout(500);
-    const editBtn = page.getByRole('button', { name: /bearbeiten/i }).first();
+    const kleinRow = page.getByRole('row', { name: /Klein/ }).first();
+    const editBtn = (await kleinRow.isVisible().catch(() => false))
+      ? kleinRow.getByRole('button', { name: /bearbeiten/i }).first()
+      : page.getByRole('button', { name: /bearbeiten/i }).first();
     await editBtn.click({ timeout: 2000 });
     await page.waitForTimeout(500);
-    await shot(page, '17-admin-benutzer-bearbeiten');
+    // Ganzes Formular: oben „Arbeitszeit anpassen…", unten „Arbeitszeit heute".
+    await shotUntil(page, '17-admin-benutzer-bearbeiten', page.locator('form').first());
     const cancel = page.getByRole('button', { name: /abbrechen|schließen/i }).first();
     if (await cancel.isVisible().catch(() => false)) await cancel.click();
   } catch {
