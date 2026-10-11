@@ -5535,7 +5535,7 @@ docker run --rm --network pz073 -v "$PWD/backend":/app:ro -w /app --user "$(id -
 BASHEOF
 ```
 
-Expected: alle Tests der drei Dateien `passed`, davon zehn in `test_reclamp_concurrency.py` (clock_out, create_time_entry, admin_update_time_entry und CR-Genehmigung je als Verschiebe- und als Reihenfolge-Fall, Auto-Close in clock-status, Anerkennen, paralleles DELETE derselben Zeile, DELETE parallel zu clock_out — siehe Nachtrag Review Task 13); **kein** `skipped`. Fehlt der Anerkennen-Endpunkt, ist PR2 nicht gemergt — Task stoppen, nicht überspringen. Scheitert ein Wettlauf mit „deadlock", ist die Ankersperre in einem Schreibpfad nicht die erste Sperre (PR1 Task 7) — den Test nicht lockern. Steht nach einem der drei neuen Wettläufe das alte Ende bzw. `uncredited_minutes == 0`, hat der Pfad den Snapshot vor der Ankersperre gelesen (P5) — den Pfad korrigieren, nicht die Erwartung.
+Expected: alle Tests der drei Dateien `passed`, davon zehn in `test_reclamp_concurrency.py` (clock_out, create_time_entry, admin_update_time_entry und CR-Genehmigung — die letzten beiden je als Verschiebe- und als Reihenfolge-Fall —, Auto-Close in clock-status, Anerkennen, paralleles DELETE derselben Zeile, DELETE parallel zu clock_out — siehe Nachtrag Review Task 13); **kein** `skipped`. Fehlt der Anerkennen-Endpunkt, ist PR2 nicht gemergt — Task stoppen, nicht überspringen. Scheitert ein Wettlauf mit „deadlock", ist die Ankersperre in einem Schreibpfad nicht die erste Sperre (PR1 Task 7) — den Test nicht lockern. Steht nach einem der drei neuen Wettläufe das alte Ende bzw. `uncredited_minutes == 0`, hat der Pfad den Snapshot vor der Ankersperre gelesen (P5) — den Pfad korrigieren, nicht die Erwartung.
 
 - [ ] **Step 4: In Actions und `local-ci.sh` einhängen**
 
@@ -5561,7 +5561,7 @@ PostgreSQL-Schritt — die Dateiliste wird:
        --ignore=tests/test_reclamp_concurrency.py \
 ```
 
-Schritt 2 — `tests/test_reclamp_concurrency.py` an die Dateiliste anhängen und den Zählkommentar um 8 erhöhen (Stand nach PR1: 52 → 60, „+ 8 reclamp concurrency" in der Aufzählung; hat PR2 den Kommentar schon verändert, dessen Stand + 8 — nach PR2 steht dort 57, also 65).
+Schritt 2 — `tests/test_reclamp_concurrency.py` an die Dateiliste anhängen und den Zählkommentar um 10 erhöhen (siehe Nachtrag Review Task 13 — die Datei hat zehn Tests; Stand nach PR1: 52 → 62, „+ 10 reclamp concurrency" in der Aufzählung; hat PR2 den Kommentar schon verändert, dessen Stand + 10 — nach PR2 steht dort 57, also 67).
 
 Kontrolle: `bash -n scripts/local-ci.sh` ohne Ausgabe.
 
