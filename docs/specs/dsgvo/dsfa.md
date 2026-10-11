@@ -2,7 +2,7 @@
 
 **System:** PraxisZeit – Elektronisches Zeiterfassungssystem
 **Verantwortlicher:** [Name der Praxis / des Unternehmens]
-**Stand:** 2026-06-06 (aktualisiert: ODS-Jahresexport-Masking, Anonymisierungs-Gap, Fehlermeldungs-Retention)
+**Stand:** 2026-10 (PraxisZeit 1.20.0; aktualisiert: automatisierte Anrechnung gegen Arbeitszeit-Blöcke, Rechtsgrundlage nach EuGH C-34/21)
 **Status:** Technisch abgeschlossen – durch Verantwortlichen zu prüfen und zu unterzeichnen
 
 ---
@@ -18,6 +18,7 @@ PraxisZeit erfasst systematisch das Arbeitsverhalten von Mitarbeitenden:
 | Zeitstempelung | Tägliche Start-/Endzeiten, Pausenzeiten |
 | Abwesenheitserfassung | Urlaub, Krankheit (Art. 9), Fortbildung |
 | Überstunden-Tracking | Kumulierte Soll/Ist-Differenzen |
+| Anrechnung gegen Arbeitszeit-Blöcke | Automatische Kappung beim Stempeln: Zeit vor, nach und zwischen den hinterlegten Blöcken wird bis auf den Puffer nicht angerechnet (`uncredited_minutes`) und wirkt auf das Überstundenkonto; die Stempelzeiten bleiben gespeichert (ab 1.20.0) |
 | ArbZG-Compliance-Prüfung | Automatisierte Reports zu Ruhezeitverstößen, Nachtarbeit, Sonntagsarbeit |
 | Admin-Auswertung | Zugriff auf alle Mitarbeiterdaten durch Admins |
 | Excel-Exporte | Weitergabe an Lohnbuchhaltung |
@@ -25,7 +26,7 @@ PraxisZeit erfasst systematisch das Arbeitsverhalten von Mitarbeitenden:
 ### 1.2 Zweck der Verarbeitung
 
 - Erfüllung gesetzlicher Pflichten (§16 ArbZG: Aufzeichnungspflicht)
-- Verwaltung des Arbeitsverhältnisses (Urlaub, Überstunden, Abrechnung)
+- Verwaltung des Arbeitsverhältnisses (Urlaub, Überstunden, Anrechnung der Arbeitszeit, Abrechnung)
 - ArbZG-Compliance-Nachweis (§§ 3, 4, 5, 6, 9, 11 ArbZG)
 
 ### 1.3 Betroffene Personen
@@ -34,7 +35,8 @@ Alle Mitarbeitenden der Praxis/des Unternehmens (typisch: 2–50 Personen).
 
 ### 1.4 Datenkategorien
 
-- **Reguläre Daten:** Name, Kontaktdaten, Arbeitszeiten, Vertragsdaten
+- **Reguläre Daten:** Name, Kontaktdaten, Arbeitszeiten, Vertragsdaten (inkl. Arbeitszeit-Blöcke je Wochentag und deren Verlauf mit Begründung rückwirkender Änderungen)
+- **Anrechnungsdaten:** nicht angerechnete Minuten (`uncredited_minutes`), Anerkennung (`credit_override`), automatisch geschlossen (`auto_closed`), angewandter Puffer (`clamp_grace_minutes`), Rohstempel (`raw_start_time`/`raw_end_time`)
 - **Besondere Kategorien (Art. 9):** Krankmeldungen (`type=sick`), Nachtarbeitnehmer-Status (`is_night_worker`-Flag gemäß §6 ArbZG)
 - **Optionale Freitextdaten:** Notizfeld auf Zeiteinträgen (freiwillig, nur bei Bedarf befüllen)
 
@@ -47,7 +49,7 @@ Alle Mitarbeitenden der Praxis/des Unternehmens (typisch: 2–50 Personen).
 | Kriterium | Trifft zu? | Begründung |
 |-----------|-----------|------------|
 | Bewertung oder Scoring | ✓ Ja | Überstunden-Score, ArbZG-Compliance-Score |
-| Automatisierte Entscheidung | Nein | Keine automatisierten Entscheidungen mit Rechtswirkung |
+| Automatisierte Entscheidung | Teilweise | Die Kappung gegen die Arbeitszeit-Blöcke rechnet beim Stempeln automatisch an und wirkt auf das Überstundenkonto (Art. 22, Art. 13 Abs. 2 lit. f DSGVO; Risiko gering bis mittel); Schutzmaßnahmen siehe 4.1 |
 | Systematische Überwachung | ✓ Ja | Lückenlose tägliche Zeiterfassung aller MA |
 | Sensible Daten (Art. 9) | ✓ Ja | Krankheitsdaten, Nachtarbeitnehmer-Status |
 | Große Datenmenge | Nein | Kleine Praxis (<50 MA) |
@@ -56,7 +58,7 @@ Alle Mitarbeitenden der Praxis/des Unternehmens (typisch: 2–50 Personen).
 | Datenübermittlung in Drittländer | Nein | Alle Daten bleiben in EU/lokal |
 | Verhinderung Ausübung v. Rechten | Nein | Betroffenenrechte implementiert |
 
-**Ergebnis:** 3 von 9 Kriterien erfüllt. Ab 2 Kriterien empfehlen Aufsichtsbehörden eine DSFA.
+**Ergebnis:** 3 von 9 Kriterien erfüllt, eines teilweise. Ab 2 Kriterien empfehlen Aufsichtsbehörden eine DSFA.
 **Fazit: Eine DSFA ist durchzuführen.**
 
 ### 2.2 Rechtliche Einordnung
@@ -71,8 +73,8 @@ Art. 35 Abs. 3 lit. b DSGVO: Systeme zur „systematischen umfangreichen Überwa
 
 | Zweck | Rechtsgrundlage | Verhältnismäßig? |
 |-------|-----------------|-----------------|
-| Zeiterfassung (Pflicht) | Art. 6 Abs. 1 lit. c + §16 ArbZG | ✓ Ja – gesetzliche Pflicht |
-| Urlaubs-/Überstundenverwaltung | Art. 6 Abs. 1 lit. b + §26 BDSG | ✓ Ja – Beschäftigungsverhältnis |
+| Zeiterfassung (Pflicht) | Art. 6 Abs. 1 lit. c DSGVO (§ 16 Abs. 2 ArbZG, § 3 Abs. 2 Nr. 1 ArbSchG i. V. m. BAG 1 ABR 22/21, § 17 MiLoG) | ✓ Ja – gesetzliche Pflicht |
+| Urlaubs-/Überstundenverwaltung | Art. 6 Abs. 1 lit. b DSGVO (u. a. Anrechnung der Arbeitszeit); § 26 BDSG nach EuGH C-34/21 nur ergänzend | ✓ Ja – Beschäftigungsverhältnis |
 | Krankheitsdaten | Art. 9 Abs. 2 lit. b + §26 Abs. 3 BDSG | ✓ Ja – gesetzlich erforderlich |
 | ArbZG-Compliance-Reports | Art. 6 Abs. 1 lit. c + ArbZG | ✓ Ja – gesetzliche Pflicht |
 | Admin-Vollzugriff | Art. 6 Abs. 1 lit. b | ⚠ Teilweise – Zugriffsprotokoll empfohlen |
@@ -100,6 +102,7 @@ Art. 35 Abs. 3 lit. b DSGVO: Systeme zur „systematischen umfangreichen Überwa
 | Übergang Gesundheitsdaten in Exporte | Niedrig | Hoch | **Mittel** | Privacy by Default – Checkbox mit Audit-Log |
 | Identitätsdiebstahl (Token-Klau via XSS) | Niedrig | Mittel | **Mittel** | CSP-Header, HttpOnly-Cookie implementiert (Refresh-Token) |
 | Überwachungsgefühl / Verhaltensanpassung MA | Mittel | Mittel | **Mittel** | Transparenz durch Datenschutzhinweis, DSFA |
+| Anrechnung gegen Arbeitszeit-Blöcke: tatsächlich geleistete Arbeit wird nicht angerechnet und fehlt im Überstundenkonto (Art. 22) | Mittel | Niedrig | **Niedrig bis mittel** | Jede nicht angerechnete Zeit sichtbar (Eintrag, Monatsjournal, Exportspalte „Nicht angerechnet (Min)"), Stempelzeiten bleiben gespeichert; die Verwaltung kann sie anerkennen, Beschäftigte können mit Begründung „Anrechnung beantragen"; Arbeitszeit-Änderungen mit Vorschau, Bestätigung, Protokoll und Dashboard-Hinweis an die Betroffenen; Logik auf der Datenschutzseite beschrieben |
 | Fehler in ArbZG-Berechnungen | Niedrig | Niedrig | **Niedrig** | Tests vorhanden |
 | Weitergabe an Dritte (Lohnbuchhaltung) | Niedrig | Mittel | **Niedrig** | AVV mit Steuerberater abschließen |
 
@@ -134,6 +137,7 @@ Die verbleibenden Risiken nach Implementierung der Maßnahmen werden als **akzep
 | Token (Refresh) als HttpOnly Cookie | ✓ | XSS-Schutz für Refresh-Token (F-010) |
 | 2FA für Admins/alle Nutzer | ✓ | Optionale TOTP-2FA für alle Nutzer (QR-Code-Setup im Profil, F-019) |
 | Audit-Log (Lesezugriffe Gesundheitsdaten) | ✓ | health_data_read-Aktion in time_entry_audit_logs (F-020) |
+| Schutz bei automatischer Anrechnung (Art. 22) | ✓ | Sichtbarkeit nicht angerechneter Zeit, Anerkennen durch die Verwaltung, „Anrechnung beantragen" per Änderungsantrag, Protokoll je neu gekapptem Eintrag (`wh_reclamp`) plus Sammelzeile (ab 1.20.0) |
 
 ---
 

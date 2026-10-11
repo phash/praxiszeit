@@ -743,6 +743,11 @@ group_technik() {
   need "$f" 'reset_of_change_id'
   need "$f" 'RESET_CONFLICT_DETAIL'
   need "$f" 'request_end_for_approval'
+  # Endpunkte mit Präfix wie in den Routern (APIRouter(prefix="/api/admin")) —
+  # ohne /api landet die Anfrage im SPA-Fallback (200 + HTML).
+  need "$f" '`POST /api/admin/users/{id}/working-hours-changes`'
+  need "$f" '`POST /api/admin/time-entries/{id}/credit-override`'
+  for m in GET POST PUT PATCH DELETE; do forbid "$f" "\`$m /admin/"; done
   forbid "$f" '### Arbeitszeit-Fenster (#201, work_window_service.py)'
   forbid "$f" 'jeder Pfad, der Einträge schreibt, nimmt'
   forbid "$f" 'scheduled_start_<wd>'
@@ -767,6 +772,16 @@ group_technik() {
   need "$f" 'uncredited_minutes'
   need "$f" 'EuGH C-34/21'
   need "$f" 'Art. 13 Abs. 2 lit. f'
+  forbid "$f" '**Stand:** 2026-06-06'
+  # Die DSFA muss dieselbe Aussage zu Art. 22 und zur Rechtsgrundlage machen wie
+  # das Verarbeitungsverzeichnis (docs/specs/dsgvo/HOWTO.md: beide synchron).
+  f=docs/specs/dsgvo/dsfa.md
+  need "$f" 'Anrechnung gegen Arbeitszeit-Blöcke'
+  need "$f" 'EuGH C-34/21'
+  need "$f" 'Art. 13 Abs. 2 lit. f'
+  need "$f" 'Anrechnung beantragen'
+  forbid "$f" 'Keine automatisierten Entscheidungen mit Rechtswirkung'
+  forbid "$f" '| Art. 6 Abs. 1 lit. b + §26 BDSG |'
   forbid "$f" '**Stand:** 2026-06-06'
   f=docs/UPDATE.md
   need "$f" '### ⚠️ Update auf 1.20.0'
