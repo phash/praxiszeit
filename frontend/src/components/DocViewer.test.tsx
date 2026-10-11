@@ -49,6 +49,11 @@ const VERALTET = [
   'Arbeitszeit heute: …',
   'Neuer Benutzer',
   'prüft PraxisZeit nichts davon',
+  // Review Task 8: gestempelte Einträge heißen nie „Block" (Begriffsregel des
+  // Plans), und „Nicht angerechnet (Min)" führen nur die Tageszeilen von
+  // Monatsreport und Jahresreport Detailliert – der Jahresreport Classic nicht.
+  'durchgehender Block',
+  'Spalte aller Formate',
 ];
 
 function expectNoStaleTerms(text: string) {
@@ -95,6 +100,9 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       'beendet die Blöcke ab dem Wirkungsdatum',
       'Unterbrechung (Min) und Zeiteinträge',
       'Anwesenheit laut Stempel',
+      // Puffer-Wortlaut wie Settings.tsx (Spec 16.1/12.3): Bestand ohne
+      // gespeicherten Puffer nimmt beim Bearbeiten den aktuellen (grace_for_entry).
+      'Einträge aus der Zeit vor Version 1.20.0 tragen keinen gespeicherten Puffer und werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt.',
     ]) {
       expect(text).toContain(expected);
     }
@@ -166,6 +174,9 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
     expect(textOf(helpContent['/profile'].content)).toContain('Meine Arbeitszeit');
     expect(textOf(helpContent['/admin/change-requests'].content)).toContain('Genehmigen und anerkennen');
     expect(textOf(helpContent['/admin/change-requests'].content)).toContain('Ohne Anerkennen genehmigen');
-    expect(textOf(helpContent['/admin/reports'].content)).toContain('Nicht angerechnet (Min)');
+    const reports = textOf(helpContent['/admin/reports'].content);
+    expect(reports).toContain('Nicht angerechnet (Min)');
+    expect(reports).toContain('Monatsreport und Jahresreport Detailliert');
+    expectNoStaleTerms(reports);
   });
 });

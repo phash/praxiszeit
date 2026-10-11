@@ -246,7 +246,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li><span className="font-medium text-gray-700">Jahresreport Classic:</span> 12 Monate kompakt, schnell (~2 Sek.).</li>
             <li><span className="font-medium text-gray-700">Jahresreport Detailliert:</span> 365 Tage pro MA, für Steuerberater (~5 Sek.).</li>
           </ul>
-          <p className="mt-2 text-sm text-gray-600">Letzte Spalte aller Formate: „Nicht angerechnet (Min)" – gestempelte, nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken. „Netto" ist die angerechnete Zeit.</p>
+          <p className="mt-2 text-sm text-gray-600">Monatsreport und Jahresreport Detailliert: letzte Spalte der Tageszeilen „Nicht angerechnet (Min)" – gestempelte, nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken. „Netto" ist die angerechnete Zeit. Der Jahresreport Classic (eine Zeile je Monat) hat diese Spalte nicht.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">ArbZG-Berichte</h3>

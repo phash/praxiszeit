@@ -108,7 +108,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 **Exportieren:** Berichte → Typ & Zeitraum wählen → Format klicken (**PDF nur beim Monatsreport**)
 **Krankheitsdaten:** Checkbox „Krankheitsdaten einschließen" (Art. 9 DSGVO) → nimmt Krank-Daten auf, jeder solche Export wird protokolliert
 **Aufbewahrungspflicht: 2 Jahre** (§16 ArbZG)
-**Spalten (Excel/ODS):** hinten angehängt „Unterbrechung (Min)", „Zeiteinträge" und – auch im PDF – als letzte Spalte „Nicht angerechnet (Min)" (Lücke + vor/nach den Blöcken abgeschnittene Zeit); „Netto (Std)" ist die angerechnete Zeit
+**Tagesspalten (Monatsreport und Jahresreport Detailliert, Excel/ODS):** hinten angehängt „Unterbrechung (Min)", „Zeiteinträge" und – auch im PDF – als letzte Spalte „Nicht angerechnet (Min)" (Lücke + vor/nach den Blöcken abgeschnittene Zeit); „Netto (Std)" ist die angerechnete Zeit; der Jahresreport Classic (eine Zeile je Monat) hat diese Spalten nicht
 
 ---
 

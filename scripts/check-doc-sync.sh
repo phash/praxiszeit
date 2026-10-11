@@ -674,6 +674,13 @@ group_begriffe() {
     forbid "$f" 'ohne Stundenzählung (leitende Angestellte)'
     forbid "$f" 'leitende Angestellte ohne Stundenpflicht'
     forbid "$f" '„Keine Stundenzählung'
+    # Review Task 8: gestempelte Einträge heißen nie „Block" (§4-Absatz des
+    # DocViewer), und die Spalte „Nicht angerechnet (Min)" steht nur in den
+    # Tageszeilen von Monatsreport und Jahresreport Detailliert, nicht im
+    # Jahresreport Classic (export_service._create_employee_classic_sheet,
+    # ods_export_service._classic_sheet).
+    forbid "$f" 'durchgehender Block'
+    forbid "$f" 'Spalte aller Formate'
   done
 }
 
