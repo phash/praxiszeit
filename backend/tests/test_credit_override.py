@@ -189,6 +189,22 @@ def _delete_logs(db, entry):
         TimeEntryAuditLog.time_entry_id == entry.id, TimeEntryAuditLog.action == "delete").all()
 
 
+def test_employee_absence_range_names_the_recognized_day(_db_session, employee_user,
+                                                        employee_client):
+    """Gesamtreview 1.20 (B1): bei einem Zeitraum nennt der Text den Tag mit dem
+    anerkannten Eintrag — die übrigen Tage lassen sich getrennt buchen."""
+    from datetime import timedelta
+    tue = MON + timedelta(days=1)
+    employee_user.work_blocks = K_BLOCKS
+    _entry(_db_session, employee_user, time(7), time(19), day=tue, uncredited_minutes=0,
+           credit_override=True)
+    r = employee_client.post("/api/absences/", json=_sick(
+        end_date=(MON + timedelta(days=2)).isoformat()))
+    assert (r.status_code, r.json()["detail"]) == (
+        409, "Am 02.06.2026 gibt es einen anerkannten Zeiteintrag – "
+             "bitte an die Verwaltung wenden.")
+
+
 def test_employee_delete_of_recognized_entry_is_409(_db_session, employee_user, employee_client,
                                                     monkeypatch):
     """P3 zu Ende gedacht (Sicherheitsprüfung SEC-PR1-ROLE-03): das MA-PUT auf
@@ -234,11 +250,17 @@ def test_employee_absence_over_recognized_entry_is_409(_db_session, employee_use
     ``keep_time_entries`` alle Einträge der gebuchten Tage — auch den
     anerkannten. Abwesenheit buchen, wieder löschen, Eintrag neu anlegen wäre
     sonst dieselbe stille Rücknahme ohne Antrag (P3/P11), und anders als das
-    DELETE ohne Sperre auf heute."""
+    DELETE ohne Sperre auf heute.
+
+    Gesamtreview 1.20 (B1): eigener Text statt „… bitte per Änderungsantrag" —
+    eine Abwesenheit lässt sich nicht per Änderungsantrag auf einen Tag mit
+    Zeiteintrag legen (für heute gibt es gar keinen Antrag); die Verwaltung
+    bucht sie. Das Datum nennt den Tag, an dem der Zeitraum scheitert."""
     e = _recognized(_db_session, employee_user)
     r = employee_client.post("/api/absences/", json=_sick())
     assert (r.status_code, r.json()["detail"]) == (
-        409, "Anerkannter Eintrag – Änderung bitte per Änderungsantrag.")
+        409, "Am 01.06.2026 gibt es einen anerkannten Zeiteintrag – "
+             "bitte an die Verwaltung wenden.")
     _db_session.expire_all()
     assert _db_session.get(TimeEntry, e.id) is not None
     assert _delete_logs(_db_session, e) == []

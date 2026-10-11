@@ -119,6 +119,9 @@ group_code() {
   need_code "Die gesamte gestempelte Zeit"
   need_code "Automatisch geschlossener Eintrag: Bitte zuerst das tatsächliche Ende eintragen."
   need_code "Anerkannter Eintrag – Änderung bitte per Änderungsantrag." "Anerkannter Eintrag — Änderung bitte per Änderungsantrag."
+  # Abwesenheit buchen an einem Tag mit anerkanntem Eintrag (absences.create_absence,
+  # eigener Text seit Gesamtreview 1.20 B1; HANDBUCH-MITARBEITER 4.1).
+  need_code "gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."
   need_code "Genehmigen und anerkennen"
   need_code "Eintrag ist anerkannt"
   need_code "Anwesenheit nicht angerechnet"
@@ -541,8 +544,12 @@ group_mitarbeiter() {
   need "$f" 'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)'
   need "$f" 'Dieselbe Meldung erscheint, wenn Sie genau das angerechnete Ende eintragen'
   # Gesamtreview PR4/V1: Abwesenheit an einem Tag mit anerkanntem Eintrag →
-  # 409 (absences.create_absence, PR2 Review Task 5), Abschnitt 4.1.
-  need "$f" 'lehnt PraxisZeit die Buchung ab: *„Anerkannter Eintrag – Änderung bitte per Änderungsantrag."*'
+  # 409 (absences.create_absence, PR2 Review Task 5), Abschnitt 4.1. Eigener
+  # Text seit Gesamtreview 1.20 B1 — „bitte per Änderungsantrag" passte nicht
+  # (kein Antrag bucht dort eine Abwesenheit, für heute gar keiner).
+  need "$f" 'lehnt PraxisZeit die Buchung ab und nennt den Tag, z. B. *„Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."*'
+  forbid "$f" 'lehnt PraxisZeit die Buchung ab: *„Anerkannter Eintrag'
+  forbid frontend/src/components/DocViewer.tsx 'lehnt PraxisZeit die Buchung ab: „Anerkannter Eintrag'
   # #502: Datum beim Bearbeiten gesperrt, ein anderes Datum nur per Antrag
   # (TimeTracking, im JSX über zwei Zeilen umbrochen).
   need "$f" 'Das Datum bleibt beim Bearbeiten fest. Gehört die Zeit zu einem anderen Tag: Eintrag löschen und oben über „Antrag“ einen Änderungsantrag für diesen Tag stellen.'

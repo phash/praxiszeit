@@ -136,10 +136,11 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       // Gesamtreview PR4/V1: beide Grenzfälle P18 (wirksames Ende 23:59 bzw.
       // genau das angerechnete Ende) wie HANDBUCH-MITARBEITER.md Abschnitt 3.3,
       // und der 409 der Abwesenheitsbuchung an einem anerkannten Tag
-      // (absences.create_absence, CREDIT_OVERRIDE_EMPLOYEE_DETAIL).
+      // (absences.create_absence, CREDIT_OVERRIDE_ABSENCE_DETAIL — eigener Text
+      // seit Gesamtreview 1.20 B1).
       'Ist das angerechnete Ende bereits 23:59 – etwa an einem Tag ohne Arbeitszeit-Blöcke –, bleibt die Kennzeichnung „automatisch geschlossen" stehen; angerechnet wird dann ohnehin bis 23:59.',
       'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)',
-      'Anerkannter Eintrag – Änderung bitte per Änderungsantrag.',
+      'gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden.',
     ]) {
       expect(text).toContain(expected);
     }

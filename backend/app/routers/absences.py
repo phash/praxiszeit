@@ -17,9 +17,15 @@ from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarE
 from app.services import calculation_service, settings_service, special_days_service
 from app.services.closure_split_service import resplit_year_closures
 from app.routers.admin_helpers import _create_audit_log, lock_user_row
-from app.routers.time_entries import CREDIT_OVERRIDE_EMPLOYEE_DETAIL
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
+
+# P3 / Gesamtreview 1.20 (B1): Abwesenheit buchen (Mitarbeitende) an einem Tag
+# mit anerkanntem Zeiteintrag — 409 in ``create_absence``. Wortlaut in
+# HANDBUCH-MITARBEITER 4.1, DocViewer und pzweb (Doku-Gate check-doc-sync.sh).
+CREDIT_OVERRIDE_ABSENCE_DETAIL = (
+    "Am {day} gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."
+)
 
 # DSGVO Art. 9: in the colleague-facing feeds (team calendar / upcoming), the
 # masked bucket must NOT be a 1:1 tell for sick-leave. If only SICK were
@@ -527,21 +533,25 @@ def create_absence(
     # (``credit_override``). Für Mitarbeitende ist das derselbe Weg wie das
     # gesperrte DELETE (SEC-PR1-ROLE-03), nur ohne dessen Sperre auf heute:
     # Abwesenheit buchen, wieder löschen, Eintrag neu anlegen — die neue Zeile
-    # wäre wieder gekappt (stille Rücknahme ohne Antrag, P11). Deshalb derselbe
-    # 409 mit demselben Text wie PUT/DELETE, VOR der ersten Schreiboperation
-    # (Urlaubsrückgabe, Löschschleife). Die Verwaltung bucht weiter darüber (P3),
-    # mit ``keep_time_entries`` bleibt der Eintrag ohnehin stehen.
+    # wäre wieder gekappt (stille Rücknahme ohne Antrag, P11). Deshalb 409, VOR
+    # der ersten Schreiboperation (Urlaubsrückgabe, Löschschleife). Die
+    # Verwaltung bucht weiter darüber (P3), mit ``keep_time_entries`` bleibt der
+    # Eintrag ohnehin stehen. Gesamtreview 1.20 (B1): eigener Text — „bitte per
+    # Änderungsantrag" (PUT/DELETE) führte hier ins Leere: einen Antrag, der die
+    # Abwesenheit bucht und den Eintrag löscht, gibt es nicht (für heute gar
+    # keinen Antrag); die Verwaltung trägt den Tag ein. Das Datum nennt den Tag.
     if current_user.role != UserRole.ADMIN and not absence_data.keep_time_entries:
-        recognized = db.query(TimeEntry.id).filter(
+        recognized_day = db.query(TimeEntry.date).filter(
             TimeEntry.user_id == target_user.id,
             TimeEntry.tenant_id == current_user.tenant_id,  # F-026
             TimeEntry.date.in_(dates_to_create),
             TimeEntry.credit_override.is_(True),
-        ).first()
-        if recognized:
+        ).order_by(TimeEntry.date).first()
+        if recognized_day:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=CREDIT_OVERRIDE_EMPLOYEE_DETAIL,
+                detail=CREDIT_OVERRIDE_ABSENCE_DETAIL.format(
+                    day=recognized_day[0].strftime('%d.%m.%Y')),
             )
 
     # For vacation, check remaining vacation days (per year for cross-year ranges).

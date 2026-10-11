@@ -362,7 +362,7 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 > **Hinweis zu Urlaubstagen:**
 > Das System berechnet automatisch, wie viele Urlaubstage eingetragen werden und zieht diese von Ihrem Budget ab.
 
-> **Tag mit anerkanntem Zeiteintrag:** Liegt an einem der gewählten Tage ein Zeiteintrag, den die Verwaltung anerkannt hat (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)), lehnt PraxisZeit die Buchung ab: *„Anerkannter Eintrag – Änderung bitte per Änderungsantrag."* Wenden Sie sich in diesem Fall an die Verwaltung: Sie trägt die Abwesenheit für diesen Tag ein. Die übrigen Tage können Sie getrennt buchen.
+> **Tag mit anerkanntem Zeiteintrag:** Liegt an einem der gewählten Tage ein Zeiteintrag, den die Verwaltung anerkannt hat (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)), lehnt PraxisZeit die Buchung ab und nennt den Tag, z. B. *„Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."* Die Verwaltung trägt die Abwesenheit für diesen Tag ein. Die übrigen Tage können Sie getrennt buchen.
 
 **Abwesenheitstypen:**
 
