@@ -2,6 +2,188 @@
 
 ## [Unreleased]
 
+Geplant als **1.20.0** (Minor-Release). Update aus jeder 1.19.x ohne
+Zwischenschritte. **Enthält eine Datenbank-Migration** (`073_work_blocks`): Sie
+übernimmt jedes hinterlegte Arbeitszeit-Fenster (Soll-Beginn/Soll-Ende je
+Wochentag) als einen Block je Tag und entfernt die alten Fenster-Spalten.
+Tagessoll, angerechnete Zeit und Überstundensaldo aller bestehenden Einträge
+bleiben dabei unverändert. Die Ausgabe der Migration nennt die Zahl der
+übernommenen Konten und Personen mit Besonderheiten (`UPDATE.md`). **Vor dem
+Update ein Backup ziehen** – der Rückweg auf 1.19.x ist nur über dieses Backup
+verlustfrei (`UPDATE.md`).
+
+### ✨ Arbeitszeit als Blöcke je Tag
+- **Bis zu drei Arbeitszeit-Blöcke je Wochentag** mit „Pause innerhalb der
+  Blöcke", z. B. Mo 08:00–12:00 und 15:00–18:00. Daraus folgt das Tagessoll
+  (Summe der Blöcke minus Pause); Wochenstunden und Arbeitstage werden
+  abgeleitet – eine zweite Pflegestelle entfällt. Gepflegt mit Wirkungsdatum im
+  Dialog „Arbeitszeit & Wochenstunden" (Knopf „Arbeitszeit anpassen…", Modus
+  „Nach Arbeitsblöcken"), beim Anlegen direkt im Formular; für Mitarbeitende
+  mit Stundenzählung.
+- **Zeit zwischen den Blöcken wird nicht angerechnet** – mit Puffer an jedem
+  Blockrand. Wer bei obigen Blöcken und 15 Minuten Puffer 08:00–18:00
+  durchstempelt, bekommt 7:30 h angerechnet; die gestempelten Zeiten bleiben
+  gespeichert (§ 16 ArbZG). Bleiben von der Lücke nach Abzug des Puffers
+  mindestens 15 Minuten, zählt sie für die Pausenpflicht (§ 4 ArbZG) als Pause.
+- **Nicht angerechnete Zeit ist überall sichtbar:** unter jedem Eintrag
+  (Admin-Dashboard, Monatsjournal, Zeiterfassung), als Monatssumme
+  „Anwesenheit nicht angerechnet" im Journal und als neue letzte Spalte „Nicht
+  angerechnet (Min)" in Excel, ODS und PDF.
+- **Anerkennen und „Anrechnung beantragen":** Die Verwaltung kann nicht
+  angerechnete Zeit je Eintrag anerkennen (dauerhaft, protokolliert);
+  Mitarbeitende können die Anrechnung per Änderungsantrag beantragen, die
+  Prüfung bietet „Genehmigen und anerkennen" und zeigt die gestempelten Zeiten.
+  „Meine Anträge" kennzeichnet solche Anträge. Einen anerkannten Eintrag ändern
+  Mitarbeitende nur noch per Änderungsantrag.
+- **Rückwirkende Änderungen rechnen neu** – mit Vorschau (Einträge je Monat
+  alt → neu, Differenz von Soll, angerechneter Zeit und Überstundenkonto,
+  übersprungene Einträge mit Grund), Protokoll je Eintrag und einer Sammelzeile
+  je Änderung. Offene Einträge vergangener Tage werden vorher automatisch
+  geschlossen.
+- **Schutz gegen rückwirkende Verkürzung:** Verliert ein Eintrag angerechnete
+  Zeit, sinkt das Überstundenkonto oder sinkt eine Abwesenheits-Gutschrift
+  stärker als das Tagessoll, gilt die Änderung standardmäßig erst ab dem
+  frühesten Tag, an dem nichts verloren geht (meist heute). Rückwirkend nur mit
+  Grund („Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)", „Mit der
+  beschäftigten Person vereinbart", „Sonstiges"), Begründung und Bestätigung; in
+  abgeschlossene Jahre gesperrt. Notiz, Grund und Begründung zusammen höchstens
+  500 Zeichen.
+- **Hinweise schon beim Planen:** Der Dialog meldet geplante Pausen, die für
+  § 4 ArbZG nicht reichen, Lücken, die im Puffer verschwinden, und ein Tagessoll
+  über 10 bzw. 8 Stunden oder ein Wochensoll über 48 Stunden; dazu Kurzhinweise
+  zu Arbeitsrecht/Mitbestimmung und zu Jugendlichen.
+- **Mitarbeitende werden informiert:** 30 Tage lang der Kasten „Hinweis zu Ihrer
+  Arbeitszeit" auf dem Dashboard nach jeder Änderung ihrer Arbeitszeit, im
+  Profil die Karte „Meine Arbeitszeit" mit Blöcken und Verlauf; in der geplanten
+  Pause zwischen zwei Blöcken zeigt das Dashboard neutral „Pause zwischen den
+  Arbeitsblöcken" statt rot.
+- **ArbZG auch auf der tatsächlichen Anwesenheit:** Zusätzlich zu den
+  Prüfungen auf der angerechneten Zeit weisen Hinweise auf eine Anwesenheit laut
+  Stempel über 10 Stunden am Tag, auf eine fehlende Ruhepause laut Stempel und
+  auf über 48 Stunden je Woche hin; die 24-Wochen-Auswertung zeigt einen zweiten
+  Wert „Anwesenheit laut Stempel". Ein Hinweis meldet, wenn eine Pause
+  zusätzlich zur Lücke abgezogen wird.
+- **Datenschutz:** Die Datenschutzseite beschreibt die Nichtanrechnung. Die
+  Datenexporte nach Art. 15 und 20 DSGVO, der Mandanten-Export und der
+  §16-Notfallexport enthalten die Arbeitszeit-Blöcke samt Verlauf und je Eintrag
+  die nicht angerechnete Zeit, das Anerkennen, die Kennzeichnung „automatisch
+  geschlossen" und den Puffer.
+
+### ⚠️ Geändertes Verhalten
+- **Vergessenes Ausstempeln:** Ein automatisch um 23:59 geschlossener Eintrag
+  wird jetzt gegen die Arbeitszeit gekappt – der Abend wird nicht mehr voll
+  angerechnet. Das automatisch gesetzte 23:59 bleibt gespeichert, gilt aber
+  nicht als Stempel. Ein tatsächliches Ende um 23:59 (z. B. nach einem Spät-
+  oder Notdienst) lässt sich weiterhin eintragen und gilt dann als echter
+  Stempel.
+- **Rückwirkende Erhöhung der Wochenstunden oder des Tagesplans** braucht jetzt
+  Grund und Bestätigung, wenn das Überstundenkonto dadurch sinkt (bisher genügte
+  der Bestätigungshaken). „Ab heute" bleibt ohne Grund möglich.
+- **Arbeitszeit-Änderung löschen** geht nur noch an der jüngsten Zeile des
+  Verlaufs. Verkürzt das Löschen, setzt es standardmäßig ab dem frühesten Tag
+  ohne Verlust (meist heute) auf den vorherigen Stand zurück; rückwirkendes
+  Löschen nur mit Grund, Begründung und Bestätigung. Wurde inzwischen eine
+  weitere Änderung angelegt, lehnt PraxisZeit die Rücksetzung ab
+  („Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu
+  laden.").
+- **Der Puffer wird je Eintrag gespeichert.** Eine Änderung des Puffers in den
+  Einstellungen wirkt nur auf neue Einträge; Einträge aus der Zeit vor 1.20.0
+  werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt.
+- **Ausstempeln ohne ausreichende Pause wird abgelehnt** (#499): Die
+  Pausenpflicht (§ 4 ArbZG) gilt beim Ausstempeln für den ganzen Tag – auch zwei
+  aneinandergereihte Einträge zählen zusammen, Lücken unter 15 Minuten sind
+  keine Pause. Ohne ausreichende Pause oder Begründung bleibt der Eintrag offen
+  (bisher nur eine Warnung). Der neue Schalter „Ausnahme ‚Pflicht-Pause war
+  nicht möglich' erlauben" in den Einstellungen (Standard an) schaltet die
+  Ausnahme ab.
+- **Datum beim Bearbeiten** (#502): Mitarbeitende können das Datum eines
+  Eintrags nicht mehr ändern – das Feld ist gesperrt. Gehört die Zeit zu einem
+  anderen Tag, den Eintrag löschen und über „Antrag" einen Änderungsantrag für
+  diesen Tag stellen (bisher ließ sich ein Eintrag ohne Antrag auf einen
+  vergangenen Tag verschieben). Die Verwaltung kann einen Eintrag nicht mehr vor
+  den Eintritt oder nach den Austritt einer Person verschieben oder dort
+  anlegen; ein Datum in der Zukunft wird auch beim Bearbeiten abgelehnt.
+- **Bisherige Arbeitszeit-Fenster** wirken als „Arbeitszeit-Fenster
+  (Altbestand, nur Kappung)" weiter wie bisher – neu kappen sie auch
+  automatisch geschlossene Einträge (siehe oben) – und lassen sich im Dialog
+  in Blöcke umwandeln oder entfernen.
+- **Nach dem Update die Seite neu laden:** Ein noch geöffnetes altes
+  Benutzerformular meldet beim Speichern „Bitte Seite neu laden: Die
+  Arbeitszeit-Fenster (Soll-Beginn/Soll-Ende) wurden durch Arbeitszeit-Blöcke
+  ersetzt."
+- **Downgrade auf 1.19.x:** Ein Schema-Downgrade stellt je Tag die Hülle der
+  Blöcke (Beginn des ersten bis Ende des letzten Blocks) als Fenster her; Zeit
+  zwischen den Blöcken würde dann wieder angerechnet. Empfohlen ist der Rückweg
+  über das Backup.
+
+### 🐞 Korrekturen (mit den Blöcken behoben)
+- **Datumswechsel durch die Verwaltung:** Ein in der Zeiterfassung auf einen
+  anderen Wochentag verschobener Eintrag wird jetzt gegen die Arbeitszeit des
+  neuen Tags gekappt.
+- **Änderungsanträge mit geteiltem Dienst** (z. B. „08–18, Pause 0" bei einer
+  Mittagslücke) ließen sich nicht stellen, weil der Antrag die gestempelte Zeit
+  prüfte, die Genehmigung aber die angerechnete; beide prüfen jetzt dasselbe.
+- **Nachprüfung nach einer Antrags-Genehmigung** zählte den geänderten Eintrag
+  doppelt (zu hohe Wochen- und Nachtarbeits-Hinweise).
+- **XLS-Import:** zieht keine automatische Pause mehr doppelt ab, wenn die
+  Lücke zwischen den Blöcken die Pausenpflicht deckt; die Ruhezeitprüfung nutzt
+  die tatsächlich gestempelte Endzeit.
+- **ODS-Jahresbericht:** Das Mitarbeiterblatt nennt wie die Excel-Datei die
+  Summe der Nachtarbeitstage (sie wurde gezählt, aber nie ausgegeben).
+
+### ✨ Weitere Verbesserungen
+- **Mitarbeiter-Dashboard: Umschalter Monat/Woche** (#500) – die letzten
+  8 Kalenderwochen mit Soll, Ist, Saldo und Überstundenkonto; vergessene
+  Einträge fallen pro Woche sofort auf.
+- **Stempelkarte „x von y h heute"** (#494) auf dem Smartphone zählt alle
+  Einträge des Tages (bei geteiltem Dienst Vormittag und Nachmittag, auch nach
+  dem Ausstempeln – dann neutral „Ausgestempelt"); das Tagessoll folgt
+  Feiertag, ganztägiger Abwesenheit und Sondertag – kein rotes „Noch nicht
+  eingestempelt" mehr an freien Tagen.
+- **„Arbeitstage" am Abwesenheitsantrag** (#496) zählt nach derselben Regel wie
+  die Buchung (Tagesplan, Halbtage, freie Sondertage).
+- **Exporte: Tages-Differenz mit Gutschrift, geteilte Dienste sichtbar**
+  (#497, #498) – ein Krank- oder Fortbildungstag steht bei ±0, die Summe der
+  Spalte ergibt den „Saldo Monat"; neue Spalten „Unterbrechung (Min)" und
+  „Zeiteinträge".
+- **Jahresend-Warnung zu offenem Urlaub** (#501) erst ab einem ganzen offenen Tag.
+- **§10-Ausnahmegrund** auch im Antragsformular der Zeiterfassung und bei der
+  Direkteingabe an Feiertagen (#491).
+
+### 🐞 Weitere Korrekturen
+- **„Letzte Einträge"** auf dem Smartphone zeigt die neuesten statt der ältesten
+  Einträge (#493).
+- **Schichtplan-Aushang und AVV-Entwurf** zeigen on-prem den Praxisnamen statt
+  „Default" (#495).
+- **Konto deaktivieren/reaktivieren oder Rolle wechseln** gleichzeitig durch
+  zwei Admins führte zu doppelten oder fehlenden Protokollzeilen; das Konto
+  konnte im Zustand der ersten Anfrage stehen bleiben, obwohl die zweite Erfolg
+  meldete (#491).
+
+### 🔧 Technik
+- `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images
+  beim Bauen neu (Debian/Alpine-Sicherheitsupdates); der Rollback startet die
+  vorherigen Images, statt neu zu bauen (#491).
+- Prometheus 3.12.0 → 3.13.4 (LTS) (#491).
+- macOS-Build prüft die Mach-O-Abhängigkeiten aller ausgelieferten Bibliotheken
+  (#482).
+- Ungültige Kennungen in Anfragen werden zusätzlich als Warnung protokolliert
+  (#491).
+- Ein unbekannter und ein fremder Zeiteintrag antworten mit demselben Text
+  („Zeiteintrag nicht gefunden"); die Antwort verrät nicht mehr, ob es den
+  Eintrag gibt.
+
+### 📖 Dokumentation
+- Handbücher, Kurzanleitungen, In-App-Hilfe, Schnellstart, Berechnungs-Doku und
+  Glossar beschreiben Arbeitszeit-Blöcke, Kappung, Rückwirkung, Schutzpaket,
+  Anerkennen und „Anrechnung beantragen" – mit Hinweisen zur Vergütung
+  (§ 611a, § 612 BGB; MiLoG) und zur Mitbestimmung (§ 87 BetrVG).
+- Installations-, Update- und Backup-Anleitungen trennen Linux und macOS
+  (Dienstkonto `_praxiszeit`); der Passwort-Reset unter Windows steht nach dem
+  ersten Login (#491).
+- Neues Prüfskript `scripts/check-doc-sync.sh` hält die fünf Doku-Flächen
+  zusammen (Teil von `scripts/local-ci.sh`).
+
 ## [1.19.3] - 2026-10-06
 
 Patch-Release. Update aus jeder 1.19.x ohne Zwischenschritte. **Enthält eine

@@ -864,6 +864,40 @@ group_claude() {
   need "$f" 'die Vorschauen nehmen bewusst KEINE Ankersperre'
 }
 
+group_changelog() {
+  local f=CHANGELOG.md
+  need "$f" 'Geplant als **1.20.0**'
+  need "$f" '`073_work_blocks`'
+  need "$f" '### ✨ Arbeitszeit als Blöcke je Tag'
+  need "$f" '### ⚠️ Geändertes Verhalten'
+  need "$f" '**Vergessenes Ausstempeln:**'
+  need "$f" 'Bitte Seite neu laden'
+  need "$f" '**Downgrade auf 1.19.x:**'
+  local n
+  for n in '(#482)' '(#491)' '(#493)' '(#494)' '(#495)' '(#496)' '(#497, #498)' '(#499)' '(#500)' '(#501)'; do
+    need "$f" "$n"
+  done
+  # Über den Plan hinaus — Stand nach PR1–PR3 samt Reviews: #502 (Datum beim
+  # Bearbeiten), V1 (echtes Ende 23:59), Löschen nur an der jüngsten Zeile mit
+  # 409 bei Zwischenzeile, verlustfreier Standard „meist heute" statt „ab heute"
+  need "$f" '**Datum beim Bearbeiten** (#502)'
+  need "$f" 'Ein tatsächliches Ende um 23:59 (z. B. nach einem Spät-'
+  need "$f" '**Arbeitszeit-Änderung löschen** geht nur noch an der jüngsten Zeile des'
+  need "$f" '(„Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu'
+  need "$f" '**Ausstempeln ohne ausreichende Pause wird abgelehnt** (#499)'
+  forbid "$f" 'gilt die Änderung standardmäßig erst ab heute'
+  forbid "$f" '**Pausenpflicht beim Ausstempeln über den ganzen Tag** (#499)'
+  # Begriffsregel: gestempelte Einträge heißen nie „Blöcke"
+  forbid "$f" 'erfassten Blöcke'
+  forbid "$f" 'Nachmittagsblock'
+  # Wortlaute, die nur der CHANGELOG zitiert (die übrigen deckt die Gruppe code)
+  need_code "Zeiteintrag nicht gefunden"
+  need_code "'Ausgestempelt'"
+  need_code "'Noch nicht eingestempelt'"
+  need_code "Pflicht-Pause war nicht möglich"
+  need_code '"Saldo Monat:"'
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {
