@@ -86,10 +86,10 @@ fi
 # CLAUDE.md. It is SQLite-backed (it exercises the explicit F-026
 # `tenant_id == current_user.tenant_id` filters, not RLS) and therefore already
 # runs inside step 1 — it is listed here only so the trio stays visible.
-# Reference counts: step 2 runs 65 tests against real Postgres
+# Reference counts: step 2 runs 67 tests against real Postgres
 # (20 RLS + 19 concurrency + 12 Art.-17 purge + 3 invalid-UUID #483 + 2 migration-073
 # — round trip, backfill as non-superuser owner under FORCE RLS — + 1 net_hours
-# parity + 8 reclamp concurrency — Arbeitszeit-Änderung gegen die Schreibpfade,
+# parity + 10 reclamp concurrency — Arbeitszeit-Änderung gegen die Schreibpfade,
 # Anerkennen und Löschen, Spec 17.5/P5); the 18 cross-tenant tests run
 # inside step 1. Same seven files as the Actions step "Cross-tenant RLS +
 # Art.17 purge + Race-Tests (real Postgres)".

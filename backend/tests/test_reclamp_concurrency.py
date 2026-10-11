@@ -5,17 +5,20 @@ Ein Schreiber, der während einer laufenden Änderung auf die Ankersperre trifft
 er sonst noch den alten Snapshot und bliebe von der Neukappung unerfasst.
 Parametrisiert über alle Pfade aus 17.5: clock_out, create_time_entry,
 admin_update_time_entry, CR-Genehmigung (UPDATE) und der Auto-Close in
-GET /clock-status. Anerkennen parallel zu einer Neukappung desselben Eintrags
-endet ohne Deadlock (Anker vor Zeile, 13.3). Dazu zwei Lösch-Wettläufe (9.7,
-Review Task 11): paralleles DELETE derselben Zeile → 404, DELETE parallel zu
-clock_out → Blöcke des Vorgängers. Muster: test_concurrency.py (echte
-Endpunkt-Funktionen, SessionLocal + set_tenant_context).
+GET /clock-status. Anerkennen, Admin-Update und CR-Genehmigung parallel zu einer
+Neukappung desselben Eintrags enden ohne Deadlock (Anker vor Zeile, P5/13.3).
+Dazu zwei Lösch-Wettläufe (9.7, Review Task 11): paralleles DELETE derselben
+Zeile → 404, DELETE parallel zu clock_out → Blöcke des Vorgängers. Muster:
+test_concurrency.py (echte Endpunkt-Funktionen, SessionLocal +
+set_tenant_context).
 
 Gegenprobe (2026-10-11, Wegwerf-PG18): ohne die Ankersperre des jeweiligen
-Schreibpfads, ohne das Neulesen der Zeile beim Löschen bzw. mit Zeile-vor-Anker
-beim Anerkennen scheitert jeder der acht Fälle — die sieben Schreiber-Fälle am
-gespeicherten Ergebnis (Eintrag unter den falschen Blöcken, zweites „gelöscht"),
-nicht nur an der Reihenfolge; das Anerkennen mit 40P01."""
+Schreibpfads bzw. ohne das Neulesen der Zeile beim Löschen scheitern die sieben
+Schreiber-Fälle am gespeicherten Ergebnis (Eintrag unter den falschen Blöcken,
+zweites „gelöscht"), nicht nur an der Reihenfolge; mit Zeile-vor-Anker beim
+Anerkennen, im Admin-Update bzw. im UPDATE-Zweig der CR-Genehmigung scheitern
+die drei Reihenfolge-Fälle mit 40P01 — die Verschiebe-Fälle desselben Pfads
+bleiben dabei grün (Review Task 13)."""
 from __future__ import annotations
 
 import os
@@ -121,11 +124,16 @@ def _with_session(fn):
 
 
 def _change_thread(results: list):
-    """Thread A legt die Änderung ab ``DAY`` an. Mit Schutzpaket: verliert ein
-    bereits geschlossener Eintrag an ``DAY`` angerechnete Zeit (Admin-Update,
-    CR-Genehmigung, Anerkennen), ist die Änderung eine Verkürzung (a) und
+    """Thread A legt die Änderung ab ``DAY`` an. Mit Schutzpaket: liegt beim
+    Rechenpfad schon ein geschlossener Eintrag an ``DAY``, der unter den neuen
+    Blöcken angerechnete Zeit verliert, ist die Änderung eine Verkürzung (a) und
     scheiterte ohne Grund/Haken mit 400 (9.5) — der Wettlauf fände nie statt.
-    Verkürzt sie nicht, bleibt das Schutzpaket wirkungslos."""
+    Das betrifft nur das Anerkennen (08–18 verliert die Lücke, 150 Min) und die
+    beiden Reihenfolge-Fälle (``_entry_on_day``, 08–17). Bei den
+    Verschiebe-Fällen liegt der Eintrag dann noch vor ``DAY``
+    (``_entry_to_move``), bei den übrigen gibt es noch keinen geschlossenen —
+    dort bleibt das Schutzpaket wirkungslos (Gegenprobe ohne: nur diese drei
+    Fälle scheitern mit 400)."""
     def run(session):
         admin = session.query(User).filter(User.id == ADMIN_ID).first()
         try:
@@ -156,9 +164,9 @@ def _race(monkeypatch, writer, *, today=DAY, now=time(18, 0), change=None, early
 
     ``early=True`` startet B dagegen, sobald A die Ankersperre hält, noch VOR dem
     Rechenpfad (A hat noch keine Eintragszeile gesperrt): der Fall für die
-    Sperr-REIHENFOLGE (13.3) — ein Schreiber, der die Zeile vor dem Anker nähme,
-    hielte sie, wenn A's Neukappung sie braucht, und wartete selbst auf den
-    Anker → Deadlock (40P01).
+    Sperr-REIHENFOLGE (P5, 13.3; Anerkennen, Admin-Update, CR-Genehmigung) —
+    ein Schreiber, der die Zeile vor dem Anker nähme, hielte sie, wenn A's
+    Neukappung sie braucht, und wartete selbst auf den Anker → Deadlock (40P01).
 
     ``today``/``now`` gelten nur für Schreiber B (``time_entries`` und die
     Datumsprüfung der Eintrags-Schemas) — A rechnet mit dem echten „heute", für A
@@ -215,8 +223,19 @@ def _entry_to_move():
     Schreiber B verschiebt ihn auf ``DAY``: dann schützt ALLEIN die Ankersperre
     vor dem alten Snapshot. Läge er schon an ``DAY``, hielte A ihn nach der
     Neukappung zeilengesperrt, B läse erst nach A's Commit — der Test bliebe
-    grün, auch wenn der Pfad die Ankersperre gar nicht nähme (Gegenprobe)."""
+    grün, auch wenn der Pfad die Ankersperre gar nicht nähme (Gegenprobe). Die
+    Sperr-Reihenfolge prüft dafür ``_entry_on_day`` mit ``early=True``."""
     return _add(TimeEntry(tenant_id=TENANT_ID, user_id=USER_ID, date=PREV_TUESDAY, start_time=time(8),
+                          end_time=time(17), break_minutes=45, clamp_grace_minutes=15))
+
+
+def _entry_on_day():
+    """Geschlossener Eintrag 08:00–17:00 direkt an ``DAY`` — unter den ALTEN
+    Blöcken (08–18, Hülle 07:45–18:15) ungekappt, unter den neuen verliert er
+    Zeit. Gegenstück zu ``_entry_to_move`` für die Sperr-REIHENFOLGE: A's
+    Neukappung braucht genau diese Zeile; mit ``early=True`` steht B schon am
+    Anker, bevor A sie sperrt (P5, Anker vor Zeile)."""
+    return _add(TimeEntry(tenant_id=TENANT_ID, user_id=USER_ID, date=DAY, start_time=time(8),
                           end_time=time(17), break_minutes=45, clamp_grace_minutes=15))
 
 
@@ -264,6 +283,24 @@ def test_admin_update_waits_and_clamps_with_the_new_blocks(fresh, monkeypatch):
     _assert_waited_and_clamped(_race(monkeypatch, writer))
 
 
+def test_admin_update_takes_the_anchor_before_the_row(fresh, monkeypatch):
+    """Sperr-Reihenfolge (P5, 13.3) beim Admin-Update: der Eintrag liegt schon
+    an ``DAY`` und B startet, solange A nur den Anker hält. Nähme der Pfad die
+    Eintragszeile vor dem Anker, hielte B sie, wenn A's Neukappung sie braucht,
+    und wartete selbst auf den Anker → 40P01 (im Betrieb ein 500 beim
+    Bearbeiten eines Eintrags, der gerade neu gekappt wird). Der Verschiebe-Fall
+    oben sieht das nicht — dort sperrt A die Zeile nie (Gegenprobe)."""
+    entry_id = _entry_on_day()
+
+    def writer(session):
+        admin = session.query(User).filter(User.id == ADMIN_ID).first()
+        admin_time_entries.admin_update_time_entry(
+            entry_id=str(entry_id), entry_data=TimeEntryUpdate(end_time=time(18), break_minutes=45),
+            db=session, current_user=admin)
+
+    _assert_waited_and_clamped(_race(monkeypatch, writer, early=True))
+
+
 def test_change_request_approval_waits_and_clamps_with_the_new_blocks(fresh, monkeypatch):
     """POST /api/admin/change-requests/{id}/review, UPDATE-Zweig: der Antrag
     verschiebt den Eintrag auf ``DAY`` mit Ende 18:00 (wie beim Admin-Update)."""
@@ -281,6 +318,26 @@ def test_change_request_approval_waits_and_clamps_with_the_new_blocks(fresh, mon
             request_id=str(cr_id), review=ChangeRequestReview(action="approve"), db=session, current_user=admin)
 
     _assert_waited_and_clamped(_race(monkeypatch, writer))
+
+
+def test_change_request_approval_takes_the_anchor_before_the_row(fresh, monkeypatch):
+    """Sperr-Reihenfolge (P5, 13.3) im UPDATE-Zweig der CR-Genehmigung: der
+    Antrag verlängert einen Eintrag, der schon an ``DAY`` liegt, auf 18:00; B
+    startet, solange A nur den Anker hält (wie beim Admin-Update oben)."""
+    entry_id = _entry_on_day()
+    cr_id = _add(ChangeRequest(
+        tenant_id=TENANT_ID, user_id=USER_ID, entry_kind="time_entry", request_type=ChangeRequestType.UPDATE,
+        status=ChangeRequestStatus.PENDING, time_entry_id=entry_id, proposed_date=DAY,
+        proposed_start_time=time(8), proposed_end_time=time(18), proposed_break_minutes=45,
+        original_date=DAY, original_start_time=time(8), original_end_time=time(17),
+        original_break_minutes=45, reason="Wettlauf-Test: tatsächliches Ende nachgetragen"))
+
+    def writer(session):
+        admin = session.query(User).filter(User.id == ADMIN_ID).first()
+        admin_change_requests.review_change_request(
+            request_id=str(cr_id), review=ChangeRequestReview(action="approve"), db=session, current_user=admin)
+
+    _assert_waited_and_clamped(_race(monkeypatch, writer, early=True))
 
 
 def test_clock_status_auto_close_waits_and_clamps_with_the_new_blocks(fresh, monkeypatch):
