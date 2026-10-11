@@ -6,7 +6,10 @@ from decimal import Decimal
 
 import pytest
 
-from app.models import AbsenceType, TimeEntry, TimeEntryAuditLog, User, WorkingHoursChange, YearCarryover
+from app.models import (
+    AbsenceType, TimeEntry, TimeEntryAuditLog, User, UserRole, WorkingHoursChange, YearCarryover,
+)
+from app.models.tenant import Tenant
 from app.routers.admin_users import _sync_user_from_change
 from app.services import calculation_service, wh_change_service
 from tests.conftest import DEFAULT_TENANT_ID
@@ -185,6 +188,22 @@ class TestRetroactiveDelete:
         assert _delete(client, test_user, baseline.id).status_code == 400
 
 
+class TestFutureDelete:
+    def test_future_row_without_entries_writes_exactly_one_summary(self, client, db, test_user, test_admin):
+        """Spec 17.5/P20 (Review Task 11): auch das Löschen einer zukunftsdatierten
+        Zeile ohne Einträge und Abwesenheiten schreibt genau eine Sammelzeile mit
+        ``changed_by`` — wie das Anlegen (``test_reclamp.py``). Das Protokoll hängt
+        nicht am Wirkungsdatum (anders als der Spiegel)."""
+        change = _create(client, test_user, {"effective_from": "2026-11-02", "weekly_hours": 25})
+        assert _delete(client, test_user, change["id"]).status_code == 204
+        [summary] = [s for s in reclamp_logs(db, test_user, summary=True) if " gelöscht: " in s.new_note]
+        assert summary.changed_by == test_admin.id
+        assert summary.new_note == (
+            "Arbeitszeit-Änderung ab 02.11.2026 gelöscht: 0 Einträge neu berechnet, Δ +0 Min, Saldo Δ +0 Min "
+            "· Puffer 15 Min · Vertrag: 25,0 h/Woche (gleichmäßig, 5 Tage) → 40,0 h/Woche (gleichmäßig, 5 Tage)")
+        assert reclamp_logs(db, test_user, summary=False) == []
+
+
 class TestDeletePreviewCriteria:
     """Spec 17.5: ``delete-preview`` inkl. Kriterien (a)–(c), bezogen auf den
     Wechsel zum Vorgänger-Snapshot; die DELETE-400 nennt dieselben Kriterien
@@ -308,16 +327,49 @@ class TestDeletePreviewWritesNothing:
         db.refresh(sick)
         assert float(sick.hours) == 7.0
 
+    @staticmethod
+    def _foreign_rows(db, user) -> dict:
+        """Zeile einer Kollegin im selben Mandanten und Zeile eines fremden
+        Mandanten — beide unter dem Pfad-User nicht auffindbar."""
+        colleague = User(username="kollegin", email="kollegin@example.com", password_hash="x",
+                         first_name="K", last_name="T", role=UserRole.EMPLOYEE, weekly_hours=40.0,
+                         vacation_days=30, work_days_per_week=5, is_active=True, tenant_id=user.tenant_id)
+        other_tenant_id = uuid.UUID("00000000-0000-0000-0000-0000000000fe")
+        db.add(Tenant(id=other_tenant_id, name="Fremd", slug="fremd", is_active=True, mode="single"))
+        stranger = User(username="fremd", email="fremd@example.com", password_hash="x",
+                        first_name="F", last_name="T", role=UserRole.EMPLOYEE, weekly_hours=40.0,
+                        vacation_days=30, work_days_per_week=5, is_active=True, tenant_id=other_tenant_id)
+        db.add_all([colleague, stranger])
+        db.commit()
+        colleague_row = add_row(db, colleague, date(2026, 9, 1), weekly_hours=30)
+        stranger_row = WorkingHoursChange(user_id=stranger.id, tenant_id=other_tenant_id,
+                                          effective_from=date(2026, 9, 1), weekly_hours=30,
+                                          use_daily_schedule=False, work_days_per_week=5)
+        db.add(stranger_row)
+        db.commit()
+        db.refresh(stranger_row)
+        return {"kollegin": colleague_row.id, "fremder-mandant": stranger_row.id}
+
+    @pytest.mark.parametrize("target", ["kollegin", "fremder-mandant", "unbekannt"])
     @pytest.mark.parametrize("method", ["preview", "delete"])
-    def test_unknown_change_is_404(self, client, db, test_user, method):
-        unknown = uuid.uuid4()
+    def test_foreign_or_unknown_change_is_404(self, client, db, test_user, method, target):
+        """F-026 (Review Task 11): ``_change_in_tenant`` filtert Person UND
+        Mandant. Ohne den Personenfilter löschte DELETE unter dem Pfad-User die
+        Zeile einer Kollegin und kappte gegen den falschen Snapshot neu."""
+        add_row(db, test_user, date(2026, 1, 1), weekly_hours=40)
+        foreign = self._foreign_rows(db, test_user)
+        change_id = foreign.get(target, uuid.uuid4())
         if method == "preview":
             resp = client.post(
-                f"/api/admin/users/{test_user.id}/working-hours-changes/{unknown}/delete-preview", json={})
+                f"/api/admin/users/{test_user.id}/working-hours-changes/{change_id}/delete-preview", json={})
         else:
-            resp = _delete(client, test_user, unknown, RETRO_REASON)
+            resp = _delete(client, test_user, change_id, RETRO_REASON)
         assert resp.status_code == 404, resp.text
         assert resp.json()["detail"] == "Stundenänderung nicht gefunden"
+        db.expire_all()
+        assert db.query(WorkingHoursChange).filter(WorkingHoursChange.id.in_(list(foreign.values()))).count() == 2
+        assert _rows(db, test_user) == [(date(2026, 1, 1), 40.0)]
+        assert db.query(TimeEntryAuditLog).count() == 0
 
 
 def test_create_then_delete_restores_every_entry(client, db, test_user):
