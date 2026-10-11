@@ -1,6 +1,6 @@
 # Stunden- und Urlaubsberechnung – PraxisZeit
 
-> **Stand: Oktober 2026 · App-Version 1.19.3**
+> **Stand: Oktober 2026 · App-Version 1.20.0**
 > Diese Doku beschreibt **exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und
 > Urlaubswerte berechnet. Alle Formeln sind aus
 > [`backend/app/services/calculation_service.py`](../backend/app/services/calculation_service.py)
@@ -59,9 +59,9 @@ Diese Felder am `User` steuern die gesamte Berechnung:
 | `use_daily_schedule` | individueller Tagesplan statt gleichmäßiger Verteilung (historisiert, s. u.) | `false` | `true` |
 | `hours_monday … hours_friday` | Stunden je Wochentag (nur bei `use_daily_schedule`; historisiert, s. u.) | – | `8/8/8/0/0` |
 | `vacation_days` | Jahres-Urlaubsanspruch in **Tagen** | `30` | `18` |
-| `track_hours` | Soll/Ist-Zählung aktiv? (`false` = leitende Angestellte) | `true` | `true` |
+| `track_hours` | Soll/Ist-Zählung aktiv? (`false` = ohne Stundenzählung, §12.1; nicht dasselbe wie § 18 ArbZG) | `true` | `true` |
 | `first_work_day` / `last_work_day` | Eintritt/Austritt (Soll/Urlaub anteilig) | optional | optional |
-| `scheduled_start_<wd>` / `scheduled_end_<wd>` | Arbeitszeit-Fenster je Wochentag (#201) | optional | optional |
+| `work_blocks` | Arbeitszeit-Blöcke Mo–Fr: je Tag bis zu 3 Blöcke `"HH:MM"` + `pause_minutes` (historisiert, s. u.; Rückfall nur vor der ersten Verlaufszeile, §3.3/§4.1) | – | `Mo 08:00–12:00 + 15:00–18:00, Pause 30` |
 | `receives_company_closures` | Nimmt an Betriebsferien teil? (§9, Default `true`, unabhängig von der Rolle) | `true` | `true` |
 | `milog_working_time_account` | Minijob-Arbeitszeitkonto § 2 Abs. 2 MiLoG aktiv (§10, Default `false`) | `false` | `false` |
 | `agreed_monthly_hours` | Vereinbarte Monatszeit für die Minijob-Prüfung (§10.4, optional) | – | – |
@@ -77,6 +77,9 @@ Diese Felder am `User` steuern die gesamte Berechnung:
 > Snapshot — `get_weekly_hours_for_date` ist seither ein dünner Wrapper darüber. Alte
 > Monate bleiben korrekt, neue rechnen mit dem neuen Vertragszustand — gleichermaßen für
 > gleichmäßige Verteilung **und** individuellen Tagesplan.
+> Seit 1.20.0 trägt dieselbe Zeile auch die **Arbeitszeit-Blöcke**
+> (`working_hours_changes.blocks`); NULL heißt dort „keine Blöcke", **nie** Rückfall auf
+> `users.work_blocks`.
 
 ---
 
@@ -111,10 +114,46 @@ gültigen Tagesplan, nicht den heute hinterlegten. Beispiel `8/8/8/0/0`:
 | Tagessoll | 8 | 8 | 8 | 0 | 0 | 0 |
 
 > Wie die gleichmäßige Verteilung (§3.1) lässt sich auch dieser Tagesplan über
-> „Wochenstunden anpassen…" mit Wirkungsdatum historisch ändern — inkl. Rückrechnung
+> „Arbeitszeit anpassen…" mit Wirkungsdatum historisch ändern — inkl. Rückrechnung
 > bereits gebuchter Abwesenheiten. Siehe TZ-F in §14.
 
-### 3.3 Allgemeine Regeln
+### 3.3 Tagesplan aus Arbeitszeit-Blöcken (ab 1.20.0)
+
+Im Modus „Nach Arbeitsblöcken" pflegt die Verwaltung je Wochentag bis zu drei Blöcke und eine
+„Pause innerhalb der Blöcke". Beim Speichern leitet `work_blocks_service.derive_targets` daraus den
+Tagesplan ab und schreibt ihn in die Verlaufszeile (materialisiert):
+
+```
+hours_<tag>        = (Σ Blockdauer − pause_minutes) / 60   → quantize(0,01, ROUND_HALF_EVEN)
+weekly_hours       = Σ hours_<tag>
+work_days_per_week = Anzahl Tage mit Blöcken
+use_daily_schedule = true
+```
+
+Danach rechnet alles wie §3.2 — `calculation_service` liest für das Soll **nie** Blöcke. Beispiele:
+
+| Blöcke | Pause | Σ | Tagessoll |
+|---|---|---|---|
+| 08:00–12:00 + 15:00–18:00 | 30 | 7:00 h | **6,50 h** |
+| 08:00–12:05 | 0 | 4:05 h | **4,08 h** (4,0833…) |
+| 07:30–12:00 + 13:00–16:25 | 0 | 7:55 h | **7,92 h** (7,9166…) |
+| — | 0 | 0 | **0,00 h** |
+
+Rundung: höchstens 0,005 h (18 s) je Tag zwischen Blocksumme und gespeichertem Tagessoll; dazu
+rundet `net_hours` je Eintrag auf 2 Stellen. Ein exakt nach Blöcken gestempelter Tag ergibt Saldo 0
+bis auf höchstens 0,005 h × (Anzahl Einträge + 1) — drei Blöcke zu 55 Min mit je einem Eintrag:
+3 × 0,92 h = 2,76 h gegen 2,75 h Soll.
+
+Ein mitgeschickter `weekly_hours`/`hours_*`-Wert neben `blocks` wird beim Stundenverlauf mit 422
+abgelehnt („Tagesstunden werden aus den Arbeitszeit-Blöcken abgeleitet."); `use_daily_schedule`
+und `work_days_per_week` werden still überschrieben. Beim Anlegen einer Person
+(`POST /admin/users`) überschreibt die Ableitung die mitgeschickten Werte, statt abzulehnen.
+
+**Altfenster** aus Migration 073 (`pause_minutes` = NULL; ein Block je Tag aus dem früheren
+Soll-Fenster #201) kappen nur; ihr Soll kommt weiter aus `weekly_hours`/`hours_*` der Zeile.
+Eine Liste mit fünf leeren Tagen gilt wie NULL (keine Blöcke).
+
+### 3.4 Allgemeine Regeln
 
 - **Wochenende** (Sa/So): Tagessoll immer `0`.
 - **`track_hours = false`**: Tagessoll immer `0` (keine Stundenzählung).
@@ -127,31 +166,89 @@ gültigen Tagesplan, nicht den heute hinterlegten. Beispiel `8/8/8/0/0`:
 Pro Zeiteintrag (`TimeEntry`):
 
 ```
-net_hours = max( 0 , (end_time − start_time) − break_minutes )
+net_hours = max( 0 , (end_time − start_time) − break_minutes − uncredited_minutes )
 ```
 
 - Auf **2 Nachkommastellen** gerundet.
 - **Floor bei 0**: kann nie negativ werden (offene Einträge ohne `end_time` → 0).
 - **Pause** wird in Minuten geführt und abgezogen.
+- **`uncredited_minutes`** = gestempelte Minuten in der Lücke zwischen zwei Arbeitszeit-Blöcken
+  (§4.1); immer serverseitig berechnet, nie Eingabe. Ohne Blöcke 0.
+- Der SQL-Ausdruck (Summen in der Datenbank) rechnet dasselbe, rundet aber nicht je Zeile;
+  Python- und SQL-Summe liegen höchstens n × 0,005 h auseinander.
 
-### 4.1 Arbeitszeit-Fenster (#201)
+### 4.1 Arbeitszeit-Blöcke und Kappung
 
-Ist ein Soll-Fenster gesetzt (`scheduled_start_<wd>` / `scheduled_end_<wd>`), kappt
-`work_window_service.clamp()` die Stempelzeit auf `[Soll-Beginn − Puffer, Soll-Ende + Puffer]`
-(`work_window_grace_minutes`, Default 15). Die **Rohstempel** bleiben in `raw_start_time` /
-`raw_end_time` erhalten (§16 ArbZG); `net_hours` und alle Salden rechnen mit der **gekappten** Zeit.
+Sind für den Tag Blöcke hinterlegt (`work_window_service.get_scheduled_blocks`, datumsaufgelöst über
+`get_schedule_for_date`), kappt `work_window_service.clamp()` mit dem Puffer `g`
+(`work_window_grace_minutes`, Default 15) und liefert `ClampResult(eff_start, eff_end, raw_start,
+raw_end, uncredited_minutes, grace_minutes)`:
 
-Kein Fenster gibt es an Tagen ohne Soll: Wochenende, Feiertag des Mandanten und Sondertag im Modus
-`free` (#484, `work_window_service.get_scheduled_window`). Ein `half_day`-Sondertag behält das Fenster.
+1. **Hülle:** Beginn vor `erster Block − g` wird auf diese Grenze verschoben, Ende nach
+   `letzter Block + g` ebenso; die Rohstempel stehen in `raw_start_time`/`raw_end_time` (§16 ArbZG).
+   Liegt der Eintrag ganz außerhalb der Hülle, wird er auf 0 h zusammengezogen (Beginn = Ende), die
+   Rohstempel bleiben. Ein Altfenster mit dem Platzhalter-Ende 23:59 (vor 1.20.0 nur ein Soll-Beginn
+   hinterlegt) kappt kein Ende.
+2. **Lücken:** Jede Lücke zwischen zwei Blöcken schrumpft um `g` an beiden Rändern (`credit_gaps`);
+   eine Lücke ≤ 2 × g verschwindet. Die Überlappung des (an der Hülle gekappten) Eintrags mit den
+   geschrumpften Lücken ist `uncredited_minutes` (je Lücke einzeln: `gap_segments`). Ein Beginn in
+   der Lücke wird **nicht** verschoben (UNIQUE auf Beginn je Tag).
+3. **Keine Kappung** (`uncredited_minutes` = 0, keine Rohstempel): Tag ohne Blöcke, Wochenende,
+   Feiertag des Mandanten, Sondertag `free` (#484), `track_hours = false`, `credit_override`
+   (anerkannt). Ein `half_day`-Sondertag hat ein Soll und behält seine Blöcke. Ein offener Eintrag
+   (`end = None`) wird nur an der Hülle gekappt.
+4. **Puffer je Eintrag:** Der angewandte Puffer steht in `clamp_grace_minutes`. Neuanlagen nehmen
+   den aktuellen Mandanten-Puffer; jede Einzel-Neukappung eines gespeicherten Eintrags (Ausstempeln,
+   Bearbeiten, Datumswechsel, Antragsgenehmigung, XLS-Überschreiben, Auto-Close) nimmt dessen
+   gespeicherten Puffer (`grace_for_entry`; NULL bei Bestand vor 1.20.0 → aktueller Puffer). Nur die
+   Massen-Neukappung einer Arbeitszeit-Änderung (TZ-G) nimmt den aktuellen Puffer und schreibt ihn neu.
+   Schickt ein Formular die gekappte Zeit unverändert zurück, rechnet die Neukappung mit dem
+   Rohstempel weiter (`unclamp_input`); die Massen-Neukappung geht immer vom Rohstempel aus, ohne
+   Rohstempel von der gespeicherten Zeit.
+5. **Auto-Close:** Ein offener Eintrag eines vergangenen Tages wird mit Ende 23:59 über `clamp`
+   geschlossen (`auto_closed = true`); angerechnet wird bis `letzter Block + g`, 23:59 bleibt als
+   `raw_end_time` stehen, gilt aber nicht als Stempel (keine Anwesenheit, kein „nicht angerechnet",
+   Anerkennen → 400). Wird ein tatsächliches Ende eingetragen – auch ein echtes 23:59 nach einem
+   Spät- oder Notdienst –, ist das eine Korrektur (`end_is_correction`): `auto_closed = false`, das
+   Ende wird gegen die Hülle gekappt wie jedes andere. Kappt der Auto-Close nicht (Tag ohne Blöcke,
+   `track_hours = false`, halboffenes Altfenster, Hülle bis 23:59), ist das wirksame Ende selbst
+   23:59; ein zurückgeschicktes 23:59 bleibt dort Echo, das Kennzeichen bleibt.
 
-**Beispiel:** Soll-Fenster Mo 08:00–16:00, Puffer 15 min, MA stempelt 07:30–17:10:
+**Beispiele** (Blöcke Mo 08:00–12:00 + 15:00–18:00, Pause im Plan 0, g = 15 → Hülle 07:45–18:15,
+Lücke 12:15–14:45):
 
-| | Roh | gekappt (effektiv) |
-|---|---|---|
-| Start | 07:30 | 07:45 |
-| Ende | 17:10 | 16:15 |
-| Pause | 30 min | 30 min |
-| **net_hours** | (informativ) | (16:15 − 07:45) − 0:30 = **8,00 h** |
+| Fall | gestempelt | gespeichert | Rohstempel | `uncredited` | `net_hours` | nicht angerechnet |
+|---|---|---|---|---|---|---|
+| durchgestempelt | 08:00–18:00 | 08:00–18:00 | – | 150 | **7,50 h** | 150 |
+| Ausstempeln 12:05 | 08:00–12:05 | 08:00–12:05 | – | 0 | 4,08 h | 0 |
+| ganz in der Lücke | 12:30–14:30 | 12:30–14:30 | – | 120 | 0,00 h | 120 |
+| Hülle und Lücke | 07:00–19:00 | 07:45–18:15 | 07:00 / 19:00 | 150 | 8,00 h | 240 |
+| ganz vor der Hülle | 05:00–07:00 | 05:00–05:00 | 05:00 / 07:00 | 0 | 0,00 h | 120 |
+| Pause 30 und Lücke | 08:00–18:00 | 08:00–18:00 | – | 150 | 7,00 h | 150 |
+| vergessen auszustempeln (Auto-Close) | 08:00–offen | 08:00–18:15 | – / 23:59 | 150 | 7,75 h | 150 |
+| anerkannt, Pause 45 | 08:00–18:00 | 08:00–18:00 | – | 0 | 9,25 h | 0 |
+
+**„Nicht angerechnet"** (`work_window_service.not_credited_minutes`, Frontend-Zwilling
+`utils/workBlocks.ts::notCreditedMinutes`) = `uncredited_minutes` + die an der Hülle abgeschnittenen
+Minuten (`eff_start − raw_start`, `raw_end − eff_end`); beim Auto-Close zählt die Endseite nicht.
+Diese Zahl steht unter dem Eintrag, im Monatsjournal („Anwesenheit nicht angerechnet") und in der
+letzten Exportspalte „Nicht angerechnet (Min)".
+
+**Anerkennen** (`credit_override = true`, `POST /admin/time-entries/{id}/credit-override`): Der
+Eintrag bekommt seine Rohstempel als wirksame Zeiten, `uncredited_minutes` = 0, und wird von keiner
+späteren Kappung mehr erfasst.
+
+**ArbZG:** §3 und §4 rechnen hart auf der angerechneten Zeit; ein Lückensegment ≥ 15 Min zählt für
+§4 als Pausenabschnitt (`validate_daily_break(…, uncredited_segments=…)`). Zusätzlich weiche
+Hinweise auf der Anwesenheit laut Stempel (`presence_minutes` = `(raw_end or end) −
+(raw_start or start) − Pause`, beim Auto-Close bis zum wirksamen Ende): `PRESENCE_DAILY_HOURS`
+(> 10 h), `PRESENCE_BREAK` (> 6 h ohne ausreichende erfasste Pause), `PRESENCE_WEEKLY_HOURS`
+(> 48 h je Kalenderwoche) – jeweils nur, wenn die harte Prüfung auf angerechneter Zeit nicht schon
+gegriffen hat (`presence_service`); `BREAK_IN_GAP`, wenn Pause **und** Lücke am selben Eintrag
+abgezogen werden. §5 rechnet unverändert gegen die Rohstempel. Die 24-Wochen-Auswertung (§3 ArbZG,
+Admin → Berichte) zeigt neben dem Durchschnitt der angerechneten Zeit je Arbeitstag zusätzlich die
+„Anwesenheit laut Stempel" (Σ `presence_minutes`, `presence_hours`/`presence_average` und je
+Kalenderwoche `presence_weeks`); diesen Wert ändert keine Neukappung.
 
 ### 4.2 Gutgeschriebene Abwesenheiten
 
@@ -239,10 +336,10 @@ Summenzeilen der Datei-Exporte ziehen ihre Ist-Zahl seit 1.18.0 direkt aus
 können nicht mehr auseinanderlaufen); die **Per-Tag-Spalte „Netto (Std)"** dieser Dateien
 zeigt bewusst nur die **angerechnete Arbeitszeit der Zeiteinträge** (Σ `net_hours`, ohne
 Gutschrift; außerhalb des Beschäftigungsfensters 0), die Abwesenheit steht in der Spalte
-daneben. „Angerechnet" heißt: bei Soll-Arbeitszeit-Fenster (#201) die **gekappte** Zeit —
-Von/Bis/Netto kommen aus `start_time`/`end_time`, die Rohstempel `raw_*` stehen bis heute
-in keiner Datei. „Stempelzeit" oder „tatsächlich erfasst" wäre deshalb die falsche
-Beschreibung.
+daneben. „Angerechnet" heißt: bei Arbeitszeit-Blöcken (§4.1) die gekappte Zeit nach Abzug
+der Lücke — Von/Bis kommen aus `start_time`/`end_time`, Netto aus `net_hours` (mit
+`uncredited_minutes`), die Rohstempel `raw_*` stehen in keiner Datei. „Stempelzeit" oder
+„tatsächlich erfasst" wäre deshalb die falsche Beschreibung.
 
 Die **Per-Tag-Spalte „Differenz"/„Diff."** ist dagegen eine Saldo-Aussage und rechnet seit
 #497 `Netto + Gutschrift − Soll`, mit der Gutschrift aus
@@ -256,14 +353,24 @@ die Tageszeilen der Dateien summieren sich weiterhin nicht darauf — verbindlic
 Summenzeile.
 
 Geteilte Dienste (#498): Von/Bis bleiben der Rahmen des Tages (erster Beginn, spätestes
-Ende); XLSX/ODS hängen „Unterbrechung (Min)" (Lücke zwischen den Einträgen, Vereinigung der
-Intervalle über `export_service.day_work_blocks`) und „Arbeitsblöcke" als Spalten 11/12 an,
-das PDF zeigt „Unterbr. (Min)" als Spalte 6 neben der Pause. Damit gilt je Zeile
-`Bis − Von − Pause − Unterbrechung = Netto` — **außer** bei überlappenden Einträgen (eine
-Überschneidungsprüfung gibt es nicht; Netto summiert `net_hours` und zählt die Überlappung
-doppelt), bei einem noch laufenden Eintrag (er zählt mit 0 h, „Bis" = spätestes Ende der
-geschlossenen Einträge) und außerhalb des Beschäftigungsfensters (Netto 0, Stempel
-sichtbar).
+Ende); XLSX/ODS hängen „Unterbrechung (Min)" (Zeit ohne Eintrag zwischen den Einträgen,
+Vereinigung der Intervalle über `export_service.day_work_blocks`) und „Zeiteinträge" als
+Spalten 11/12 an, das PDF zeigt „Unterbr. (Min)" als Spalte 6 neben der Pause. Damit gilt je Zeile
+`Bis − Von − Pause − Unterbrechung − Σ uncredited_minutes = Netto` — **außer** bei überlappenden
+Einträgen (eine Überschneidungsprüfung gibt es nicht; Netto summiert `net_hours` und zählt die
+Überlappung doppelt), bei einem noch laufenden Eintrag (er zählt mit 0 h, „Bis" = spätestes Ende
+der geschlossenen Einträge) und außerhalb des Beschäftigungsfensters (Netto 0, Stempel
+sichtbar). Die Zeilenregel steht an `export_service.day_credit_minutes`. Spalte 12 listet die
+**Zeiteinträge** des Tages („07:42–12:02, 14:15–16:30"), nicht die Arbeitszeit-Blöcke des
+Vertrags.
+
+Seit 1.20.0 hängt jede Datei als letzte Spalte **„Nicht angerechnet (Min)"** an (XLSX/ODS Spalte 13,
+PDF 12. Spalte mit Kopf „Nicht angerechnet / (Min)"): Σ `not_credited_minutes` der Einträge des
+Tages in ganzen Minuten, Summenzeile = Σ Monat („Nicht angerechnet (Min) Monat:", im
+Jahres-Mitarbeiterblatt „… Jahr:"). In der Zeilenregel steht bewusst **nicht** „− Nicht
+angerechnet": die Spalte enthält zusätzlich die an der Hülle abgeschnittenen Minuten, die in
+Von/Bis schon fehlen. Beispiel Hülle und Lücke (§4.1): 18:15 − 07:45 = 10:30 h; − 150 Min =
+8:00 h = Netto; die Spalte zeigt 240.
 
 ---
 
@@ -554,7 +661,7 @@ konfigurierte Sondertage (24./31.12., AC-11), an denen die Person laut dem **zum
 aufgelösten** Vertrags-Snapshot (#431) ein Tagessoll > 0 hat. Wochenenden, Feiertage, `free`-
 Sondertage und Null-Soll-Tage zählen nicht — auch nicht ein Zeitraum, in dem die Wochenstunden
 auf 0 gesetzt sind (z. B. Elternzeit). Ausnahme: ohne Stundenzählung (`track_hours=False`,
-leitende Angestellte, #191) zählt jeder dieser Werktage. Ein 3-Tage-Teilzeit-MA, der „eine
+#191) zählt jeder dieser Werktage. Ein 3-Tage-Teilzeit-MA, der „eine
 ganze Woche" Urlaub nimmt, verbraucht so nur **3** Urlaubstage. Der Faktor
 `half_special_day_weight(d)` ist **derselbe zentrale Helper** wie in §8.2/§12.2: ein Antragstag,
 der auf einen als „Halbtag" konfigurierten 24./31.12. fällt, trägt nur **0,5** statt 1,0 zum
@@ -837,7 +944,7 @@ carryover.vacation_days  = get_vacation_account(user, jahr).remaining_days   # R
 ```
 
 Diese Werte gehen als Startwerte ins Folgejahr ein (Überstundenkonto-Start bzw. zusätzliche
-Budget-Tage). ⚠️ Offen (#191): Carryover für `track_hours = false` (leitende Angestellte).
+Budget-Tage). ⚠️ Offen (#191): Carryover für `track_hours = false` (ohne Stundenzählung).
 
 > **Rückwirkende Änderungen an einem bereits abgeschlossenen Jahr** (z. B. Storno eines
 > genehmigten Urlaubs, Löschen einer Betriebsferien-Schließung) machen dessen Carryover
@@ -849,13 +956,19 @@ Budget-Tage). ⚠️ Offen (#191): Carryover für `track_hours = false` (leitend
 
 ## 12. Sonderfälle
 
-### 12.1 Leitende Angestellte (`track_hours = false`)
+### 12.1 Ohne Stundenzählung (`track_hours = false`)
+
+Checkbox „Stundenzählung aktiv (Soll-Stunden werden berechnet)" aus. Nicht zu verwechseln mit
+§ 18 ArbZG: dafür gibt es die eigene Checkbox „ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende
+Angestellte)" (`exempt_from_arbzg`), die an der Stundenzählung nichts ändert.
 
 - **Kein Soll/Ist**: Tagessoll = 0, keine Überstundenrechnung.
 - **Urlaub trotzdem tagebasiert**: jeder VACATION-Tag = **1 Tag** (Halbtage `half_day=True`
   zählen 0,5, ein Halbtags-Sondertag zusätzlich × 0,5, siehe §8.2/§9.3), jeder
   `free`+`counts_as_vacation`-Sondertag = 1 Tag. Alle Stundenwerte bleiben 0; Budget folgt
   normaler Pro-rata- + Carryover-Logik.
+- **Keine Kappung**: hinterlegte Arbeitszeit-Blöcke wirken nicht (§4.1); der Dialog bietet den
+  Modus „Nach Arbeitsblöcken" nicht an.
 - Response trägt `track_hours: false` (UI blendet Stundenspalten aus).
 
 ### 12.2 Sondertage 24.12. / 31.12. (#146)
@@ -1070,6 +1183,22 @@ Jahresübersicht als angehängte Spalte „Stundenänderungen"). Eine Änderung 
 Zeitraum steckt bereits im Startwert, eine Änderung auf denselben Wert wird nicht
 ausgewiesen.
 
+Seit 1.20.0 nennt der Text bei Arbeitszeit-Blöcken die Blöcke, sobald sie sich geändert haben
+(`calculation_service.blocks_changed` neben `work_days_changed`, Frontend-Zwilling
+`formatWeeklyHoursChanges` wortgleich). Neue Blöcke ersetzen den Satz (nur Tage mit Blöcken;
+„(Pause … Min)" nur bei Pause > 0):
+
+```
+ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–13:00 = 11,5 h/Woche
+ab 01.09.2026: Mo 08:00–12:00+15:00–18:00 P30 / Di 08:00–13:00 = 11,5 h/Woche     (PDF-Kurzform)
+ab 01.09.2026: 40,0 Std/Woche · Mo 07:30–16:30 / … / Fr 07:30–23:59 (nur Kappung)  (Altfenster)
+ab 01.10.2026: Mo 6,5 / Di 5,0 = 11,5 h/Woche · ohne Arbeitszeit-Blöcke           (entfernt)
+```
+
+Ein Altfenster und das Entfernen von Blöcken werden an den bisherigen Wortlaut angehängt. Ohne
+Blockänderung bleibt der Text byte-identisch — auch dann, wenn nach Migration 073 jede
+Verlaufszeile dasselbe Altfenster trägt.
+
 > ⚠️ **Fallstrick — die Wochenstundenzahl bleibt bei einer reinen Arbeitstage-Änderung
 > gleich, das Tagessoll nicht.** Seit #431 lässt sich im Dialog bei gleichmäßiger
 > Verteilung auch **„Arbeitstage pro Woche"** mit Wirkungsdatum ändern, unabhängig von den
@@ -1083,8 +1212,8 @@ ausgewiesen.
 > **Tagessoll** dabei trotzdem still verschiebt (8 h/Tag → 10 h/Tag), weil
 > `Tagessoll = weekly_hours ÷ work_days_per_week` (§3.1). Verlassen Sie sich beim Prüfen
 > einer Änderung deshalb **nicht** auf die Wochenstundenzahl allein, sondern lesen Sie den
-> vollständigen Änderungstext bzw. die Tagessoll-Vorschau im Dialog (§ „Wochenstunden
-> anpassen…", zeigt Mo–Fr alt→neu).
+> vollständigen Änderungstext bzw. die Tagessoll-Vorschau im Dialog („Arbeitszeit
+> anpassen…", Zeile „Tagessoll je Wochentag", Mo–Fr alt → neu).
 
 **Rückrechnung bereits gebuchter Abwesenheiten.** `calculation_service.retarget_absence_hours(db, user, start, end)`
 zieht die **gespeicherten `hours`** bereits gebuchter `Absence`-Zeilen im Wirkungsbereich
@@ -1149,6 +1278,22 @@ Tagessoll; der Faktor lebt auf der **Leseseite**: `_day_soll_contribution` fürs
 > **immer** vom neu berechneten ab, sodass die Gleichheitsprüfung bei **jedem** Lauf ansprang
 > — die Rückrechnung war an diesen Tagen nicht idempotent.
 
+**Misch-Tage (F1-Klemmung, seit 1.20.0).** Bleiben an einem Abwesenheitstag geschlossene
+Zeiteinträge stehen, setzt die Rückrechnung `hours` nicht auf das volle Tagessoll, sondern auf den
+nicht gearbeiteten Rest — dieselbe Regel wie beim Buchen (`calculation_service.f1_clamp_hours`, auch
+von `absences.create_absence` genutzt), in Gutschrifts-Einheiten über `credit_day_weight` (w):
+
+```
+hours = max( 0 , min( Tagessoll (bzw. ½ bei half_day) , (Tagessoll × w − Σ net_hours des Tages) ÷ w ) )
+```
+
+Bei w = 0 (freier Sondertag) bleibt `hours` ungeklemmt. Σ `net_hours` ist der Stand **nach** der
+Neukappung (TZ-G). Das gilt auch an unveränderten Wochentagen und bei reinen
+Wochenstunden-Änderungen; Zeilen, die vor 1.18.0 ungeklemmt gebucht wurden, werden dabei mit
+angeglichen (Tagessoll 8 h, Krank + 4 h Arbeit, gebucht mit 8 h → 4 h).
+Senkt das eine Gutschrift (SICK/TRAINING) stärker als das Tagessoll des Tages, ist die Änderung
+eine Verkürzung (TZ-G, Kriterium c); sinkt sie nur mit dem Soll, bleibt der Tag saldo-neutral.
+
 **Die Abwesenheits-TAGE ändern sich durch die Rückrechnung nie** —
 Urlaub (und jede tagebasierte Zählung) hängt an `absence_days`/`get_vacation_account`,
 nicht an `hours` (§3 BUrlG, Tagesprinzip, s. o.).
@@ -1188,7 +1333,11 @@ ihnen direkt editierbar, weil es keinen anderen Schreibweg gab. Seit #431 nimmt 
 Stundenverlauf-Endpoint auch ihre Änderungen an (vollständiger Vertrags-Snapshot statt
 Einzelfeld), also entfällt die Ausnahme ersatzlos — Tagesplan-Mitarbeitende ändern ihren
 Modus, ihre Tageswerte, ihre Arbeitstage und ihre Wochenstunden jetzt genauso über
-„Wochenstunden anpassen…" mit Wirkungsdatum wie alle anderen.
+„Arbeitszeit anpassen…" mit Wirkungsdatum wie alle anderen. Seit 1.20.0 läuft vor dieser
+Abwesenheits-Rückrechnung die Neukappung der Zeiteinträge (TZ-G), und eine rückwirkende Änderung,
+die das Überstundenkonto senkt, braucht Grund und Bestätigung. Als neuntes Feld lehnt
+`PUT /admin/users/{id}` seit 1.20.0 auch `work_blocks` ab; die zehn früheren Fenster-Felder
+`scheduled_start_<tag>`/`scheduled_end_<tag>` gibt es nicht mehr (400 „Bitte Seite neu laden: …").
 
 Die automatische **Basis-Zeile** vor der allerersten Änderung (sie friert den bis dahin
 gültigen Wert ein) datiert auf das Früheste aus `first_work_day`, der ältesten vorhandenen
@@ -1246,6 +1395,82 @@ ein eigener Wochentagsfilter ist dafür nicht nötig, die bestehende Gleichheits
 > überspringt Tage mit neuem Tagessoll 0, statt sie auf 0 zu setzen) — nur der
 > **Urlaubsverbrauch** ändert sich, nicht die Stundenzahl. Genau das zeigt die
 > „Urlaub {Jahr}: bisher/neu"-Zeile der Vorschau vor dem Speichern.
+
+### TZ-G: Rückwirkende Änderung der Arbeitszeit-Blöcke (ab 1.20.0)
+
+Heute ist Do 08.10.2026. Anna arbeitet seit 01.03.2026 mit Blöcken Mo 08:00–12:00 + 15:00–18:00,
+Di 08:00–12:00, Do 08:00–12:00 (Pausen 0, Wochensoll 15,0 h); Puffer 15 Min. Im Wirkungsbereich ab
+01.09. liegen fünf Montage: 07.09. (Urlaub), 14.09., 21.09., 28.09. (Nachmittag anerkannt), 05.10.;
+gestempelt jeweils 08:00–12:00 und 15:00–18:00.
+
+**Fall 1 — Verkürzung:** Mo 15:00–18:00 wird rückwirkend ab 01.09. auf 15:00–17:00 gekürzt
+(Tagessoll Mo 7:00 → 6:00 h).
+
+```
+Nachmittag je Montag: 15:00–18:00 gegen Hülle bis 17:15 → 15:00–17:15, −0:45 h
+3 Montage (14.09., 21.09., 05.10.)  → angerechnet −2:15 h   (28.09. anerkannt → übersprungen)
+4 Montage × Tagessoll −1:00 h       → Soll −4:00 h          (07.09.: Urlaub zieht mit, saldo-neutral)
+Überstunden +12:30 h → +14:15 h     → Δ +1:45 h
+```
+
+Drei Einträge verlieren angerechnete Zeit → **Verkürzung** (Kriterium a), obwohl der Saldo steigt.
+`earliest_lossless_date` ist heute (letzter verlierender Eintrag 05.10., der heutige Donnerstag ist
+kein geänderter Wochentag); Standard ist also „Ab heute (08.10.2026) wirksam – vergangene Einträge
+bleiben unverändert", rückwirkend („Rückwirkend ab 01.09.2026 mit Neuberechnung") nur mit Grund,
+Begründung und Bestätigung. Ohne Grund antwortet der Server mit 400: „Rückwirkende Verkürzung
+(3 Einträge verlieren angerechnete Zeit): Bitte Grund, Begründung und die Bestätigung zum
+Vergütungsrisiko angeben – oder die Änderung ab dem 08.10.2026 wirksam werden lassen."
+
+**Fall 2 — Verlängerung:** Mo 15:00–18:00 → 15:00–19:00 **und** Pause Mo 0 → 60 Min (Tagessoll
+bleibt 7:00 h). Am 21.09. bis 18:30 gestempelt (bisher gekappt auf 18:15, Rohstempel 18:30):
+18:15 → 18:30, +0:15 h. Trägt ein Eintrag sein Ende 18:15 ohne Rohstempel (z. B. vor 1.19.1
+bearbeitet, hier der 14.09.), ist er „nicht erweiterbar" und bleibt bei 18:15. Soll ±0, angerechnet
++0:15 h, Überstunden +0:15 h → keine Verkürzung, der Bestätigungshaken genügt.
+
+**Fall 3 — rückwirkende Soll-Erhöhung:** wie Fall 2, aber Pause bleibt 0 (Tagessoll Mo 7:00 → 8:00 h):
+angerechnet +0:15 h, Soll +4:00 h, Überstunden −3:45 h. Kein Eintrag verliert, aber das
+Überstundenkonto sinkt → **Verkürzung** (Kriterium b); ohne Grund lehnt der Server die rückwirkende
+Variante mit 400 ab („Rückwirkende Verkürzung (Überstundenkonto −3:45 h): …"). Ab heute gespeichert
+ist dieselbe Änderung verlustfrei.
+
+**Klassifikation** (`wh_change_service.run_change`, nach Neukappung **und** `retarget_absence_hours`):
+- (a) ein Eintrag verliert angerechnete Zeit (beim heute offenen Eintrag: für irgendein mögliches Ende);
+- (b) `saldo_delta_hours` < 0 — Σ (Ist − Soll) nachher minus vorher über die Monate des
+  Wirkungsbereichs bis zum Saldo-Stichtag (#313, §7.4), ohne Jahresüberträge, über
+  `get_monthly_target`/`get_monthly_actual`; zusätzlich `open_day_saldo_delta_hours` < 0 für den
+  heute offenen Tag (z. B. das Tagessoll von heute steigt, während die Person eingestempelt ist);
+- (c) die F1-Klemmung in `retarget_absence_hours` senkt eine Abwesenheits-Gutschrift stärker als
+  das Tagessoll des Tages.
+
+`earliest_lossless_date = max(heute, letzter verlierender Eintrag + 1, letzte gesenkte Gutschrift + 1, H)`
+mit H = morgen, wenn der heutige Tag schon Saldo verliert; liegt es am oder nach der nächsten Änderung,
+gibt es keinen verlustfreien Standard („… nur rückwirkend mit Begründung oder abbrechen."). Eine
+rückwirkende Verkürzung in ein abgeschlossenes Jahr (`YearCarryover` für das Folgejahr) ist auch mit
+Grund gesperrt (400 „Rückwirkende Verkürzung in das abgeschlossene Jahr … ist gesperrt.").
+
+Dieselben Kriterien gelten beim **Löschen** einer Verlaufszeile (in der Oberfläche nur die jüngste);
+es rechnet Einträge und Abwesenheiten symmetrisch zurück. Verkürzt es, ist neben „Rückwirkend
+löschen mit Neuberechnung" (Schutzpaket) die verlustfreie Variante „Ab ‹Datum› auf den vorherigen
+Stand zurücksetzen": eine neue Zeile mit dem Vertrag vor der gelöschten Änderung (Sammelzeile
+„… · Rücksetzung der Änderung ab 01.09.2026 · …"). Liegt inzwischen eine weitere Zeile dazwischen,
+lehnt der Server die Rücksetzung mit 409 ab („Der vorherige Stand hat sich inzwischen geändert –
+bitte die Vorschau neu laden.").
+
+**Protokoll** (`reclamp_audit.summary_note`, Fall 1 rückwirkend gespeichert):
+
+```
+Arbeitszeit-Änderung ab 01.09.2026: 3 Einträge neu berechnet, Δ -135 Min, Saldo Δ +105 Min, 1 übersprungen (1 anerkannt) · Puffer 15 Min · Verkürzung · Grund: [Erfassungsfehler korrigiert] Mo-Nachmittagsblock war seit 01.09. mit 18:00 statt 17:00 hinterlegt · Vertrag: Mo 08:00–12:00+15:00–18:00 / Di 08:00–12:00 / Do 08:00–12:00 → Mo 08:00–12:00+15:00–17:00 / Di 08:00–12:00 / Do 08:00–12:00
+```
+
+Dazu je neu gekapptem Eintrag eine Zeile `source = "wh_reclamp"` mit alten und neuen Zeiten
+(`old_note` „angerechnet 3:00 h", `new_note` „angerechnet 2:15 h, nicht angerechnet 0:45 h —
+Arbeitszeit-Änderung ab 01.09.2026 · Grund: …", Text aus `work_window_service.credit_summary_text`)
+und für die nachgezogene Urlaubszeile vom 07.09. die `wh_change`-Zeilen: eine Sammelzeile ohne
+Datum („Arbeitszeit-Änderung zum 2026-09-01: 1 Abwesenheit(en) im Zeitraum … auf neues Tagessoll
+nachgezogen") und eine Zeile je Abwesenheit („Urlaub 7,0 h" → „Urlaub 6,0 h — Arbeitszeit-Änderung
+ab 01.09.2026"). Das Grund-Präfix im Protokoll ist das Kürzel `[Erfassungsfehler korrigiert]`
+bzw. `[Einvernehmlich vereinbart]`/`[Sonstiges]`; Oberfläche und Dashboard-Hinweis zeigen die
+Beschriftung aus `reclamp_audit.REASON_TYPES`.
 
 ---
 
@@ -1311,7 +1536,13 @@ Lohndaten in PraxisZeit).
 | `create_year_closing`, `stale_year_closing_warning` | `services/calculation_service.py` |
 | `TimeEntry.net_hours` | `models/time_entry.py` |
 | Sondertag-Faktoren (`special_day_target_factor`, `vacation_deduction_dates_for_year`) | `services/special_days_service.py` |
-| Arbeitszeit-Fenster | `services/work_window_service.py` |
+| Arbeitszeit-Blöcke: `clamp`/`ClampResult`, `clamp_applies`, `grace_for_entry`, `get_scheduled_blocks`, `credit_gaps`, `gap_segments`, `not_credited_minutes`, `presence_minutes`, `credit_summary_text`, Neukappung `reclamp_time_entries` | `services/work_window_service.py` |
+| JSON-Form der Blöcke, `derive_targets`, `blocks_text` | `services/work_blocks_service.py` |
+| Sammelzeile `summary_note`/`parse_summary_note`, Grundtypen `REASON_TYPES` | `services/reclamp_audit.py` |
+| Arbeitszeit-Änderung: Ablauf, Klassifikation Verkürzung, `earliest_lossless_date`, Schutzpaket (`run_change`, `protection_error`) | `services/wh_change_service.py` |
+| Anwesenheits-Hinweise `PRESENCE_*`, `BREAK_IN_GAP` | `services/presence_service.py` |
+| Berichtstext der Vertragsänderungen: `weekly_hours_segments`, `work_days_changed`, `blocks_changed` | `services/calculation_service.py` |
+| Exportspalte „Nicht angerechnet (Min)", Zeilenregel `day_credit_minutes`, `format_weekly_hours_history` | `services/export_service.py` |
 | `hours`-Buchung (Tagessoll/Halbtag/OVERTIME) | `routers/absences.py`, `routers/admin_vacations.py` |
 | Betriebsferien-CRUD + Buchung (`_create_closure_absences`) | `routers/company_closures.py` |
 | Betriebsferien-Split VACATION↔OVERTIME (#314) | `services/closure_split_service.py` |

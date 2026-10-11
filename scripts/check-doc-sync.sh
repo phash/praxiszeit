@@ -664,8 +664,8 @@ group_beschriftung() {
 # Begriffe, die mehrere Flächen teilen (Review Task 6, 2. Runde): „ohne
 # Stundenzählung" (Checkbox „Stundenzählung aktiv (…)", UserForm) ist NICHT
 # „leitende Angestellte" – das ist § 18 (eigene Checkbox „ArbZG-Prüfungen
-# aussetzen (§18 ArbZG – leitende Angestellte)"). Offen für die zuständigen
-# Tasks: BERECHNUNGEN.md (Task 7), ARC42.md (Task 10), pzweb (Task 14/15).
+# aussetzen (§18 ArbZG – leitende Angestellte)"). BERECHNUNGEN.md prüft die
+# Gruppe „berechnungen" (Task 7); offen: ARC42.md (Task 10), pzweb (Task 14/15).
 group_begriffe() {
   local f
   need_code "Stundenzählung aktiv (Soll-Stunden werden berechnet)"
@@ -675,6 +675,44 @@ group_begriffe() {
     forbid "$f" 'leitende Angestellte ohne Stundenpflicht'
     forbid "$f" '„Keine Stundenzählung'
   done
+}
+
+# Rechenregeln und Begriffe (Task 7): BERECHNUNGEN.md und GLOSSAR.md werden
+# nicht gespiegelt und sind hart umbrochen. Über den Plan hinaus: das Muster
+# '„Wochenstunden' fängt auch den über einen Zeilenumbruch laufenden alten
+# Knopfnamen, get_scheduled_window gibt es seit PR1 nicht mehr, und „ohne
+# Stundenzählung" ist nicht „leitende Angestellte" (siehe group_begriffe).
+group_berechnungen() {
+  local b=docs/BERECHNUNGEN.md
+  local g=docs/GLOSSAR.md
+  need "$b" 'App-Version 1.20.0'
+  need "$b" '| `work_blocks` |'
+  need "$b" '### 3.3 Tagesplan aus Arbeitszeit-Blöcken (ab 1.20.0)'
+  need "$b" '### 3.4 Allgemeine Regeln'
+  need "$b" 'net_hours = max( 0 , (end_time − start_time) − break_minutes − uncredited_minutes )'
+  need "$b" '### 4.1 Arbeitszeit-Blöcke und Kappung'
+  need "$b" 'grace_for_entry'
+  need "$b" 'not_credited_minutes'
+  need "$b" 'Bis − Von − Pause − Unterbrechung − Σ uncredited_minutes = Netto'
+  need "$b" '### TZ-G: Rückwirkende Änderung der Arbeitszeit-Blöcke (ab 1.20.0)'
+  need "$b" 'Arbeitszeit-Änderung ab 01.09.2026: 3 Einträge neu berechnet, Δ -135 Min, Saldo Δ +105 Min'
+  need "$b" 'services/reclamp_audit.py'
+  need "$b" '### 12.1 Ohne Stundenzählung (`track_hours = false`)'
+  forbid "$b" 'scheduled_start_<wd>'
+  forbid "$b" 'Wochenstunden anpassen…'
+  forbid "$b" '„Wochenstunden'
+  forbid "$b" '### 4.1 Arbeitszeit-Fenster (#201)'
+  forbid "$b" 'Arbeitsblöcke" als Spalten 11/12'
+  forbid "$b" 'get_scheduled_window'
+  forbid "$b" '`false` = leitende Angestellte'
+  forbid "$b" '### 12.1 Leitende Angestellte'
+  need "$g" '## 7. Arbeitszeit-Blöcke und Anrechnung (ab 1.20.0)'
+  need "$g" '| **Arbeitszeit-Block** |'
+  need "$g" '| **Lücke** |'
+  need "$g" '| **nicht angerechnet** |'
+  need "$g" '| **Anerkennen** |'
+  need "$g" '| **Neukappung** |'
+  need "$g" '(Ende − Beginn) − Pause − `uncredited_minutes`'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
