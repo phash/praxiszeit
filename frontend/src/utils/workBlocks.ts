@@ -306,8 +306,10 @@ export function validateWeekBlocks(week: WeekBlocks | null | undefined): string 
     const label = WEEKDAY_LABELS[i];
     const rawDay: unknown = week[i];
     if (!isDayObject(rawDay)) return WEEK_SHAPE_TEXT;
-    // Wie `day.get("blocks") or []`: ein leerer/fehlender Wert ist „keine Blöcke".
-    const rawBlocks = rawDay.blocks || [];
+    // Wie `day.get("blocks") or []`: ein leerer/fehlender Wert ist „keine Blöcke" —
+    // auch ein leeres Objekt, das in Python falsy ist, in JS aber truthy.
+    const b = rawDay.blocks;
+    const rawBlocks = !b || (isDayObject(b) && Object.keys(b).length === 0) ? [] : b;
     if (!Array.isArray(rawBlocks)) return `${label}: Tag nicht in der Form {blocks, pause_minutes}.`;
     const blocks = rawBlocks as (Partial<TimeBlock> | null | undefined)[];
     if (blocks.length > 3) return `${label}: höchstens drei Blöcke je Tag.`;

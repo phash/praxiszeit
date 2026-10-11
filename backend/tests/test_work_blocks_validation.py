@@ -102,3 +102,13 @@ def test_blocks_that_are_not_a_list_raise_value_error_not_type_error(blocks):
     with pytest.raises(ValueError) as exc:
         validate_week_blocks(week)
     assert str(exc.value) == "Mo: Tag nicht in der Form {blocks, pause_minutes}."
+
+
+def test_empty_object_as_blocks_reads_as_no_blocks():
+    """``{} or []`` → ``[]``: ein leeres Objekt ist „keine Blöcke", keine kaputte
+    Form. Der Frontend-Zwilling muss das eigens nachbilden (in JS ist ``{}``
+    truthy) — gleiche Fälle in ``workBlocks.test.ts`` („kaputte Formen …")."""
+    with pytest.raises(ValueError) as exc:
+        validate_week_blocks(_days({"blocks": {}, "pause_minutes": 15}, MON_8_12, EMPTY, EMPTY, EMPTY))
+    assert str(exc.value) == "Mo: Pause nur an Tagen mit Blöcken."
+    validate_week_blocks(_days(MON_8_12, EMPTY, EMPTY, EMPTY, {"blocks": {}, "pause_minutes": 0}))

@@ -252,6 +252,11 @@ describe('validateWeekBlocks (Spec 3.4, wortgleiche Texte zu test_work_blocks_va
     const mo = day([['08:00', '12:00']]);
     expect(validateWeekBlocks([mo, { blocks: null, pause_minutes: 0 }, E, E, E] as unknown as WeekBlocks)).toBeNull();
     expect(validateWeekBlocks([mo, { pause_minutes: 0 }, E, E, E] as unknown as WeekBlocks)).toBeNull();
+    // Ein leeres Objekt ist in Python falsy (`{} or []` → []), in JS truthy —
+    // das Backend liest es als „keine Blöcke", nicht als kaputte Form.
+    expect(validateWeekBlocks([{ blocks: {}, pause_minutes: 15 }, mo, E, E, E] as unknown as WeekBlocks))
+      .toBe('Mo: Pause nur an Tagen mit Blöcken.');
+    expect(validateWeekBlocks([mo, E, E, E, { blocks: {}, pause_minutes: 0 }] as unknown as WeekBlocks)).toBeNull();
   });
 
   it('Grenzwerte sind gültig', () => {
