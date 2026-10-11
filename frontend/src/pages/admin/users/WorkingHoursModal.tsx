@@ -148,9 +148,17 @@ function scheduleAt(
 /**
  * #431: Der Snapshot als Klartext — für die Kopfzeile und jede Verlaufszeile,
  * formuliert wie der Datei-Export (`export_service.format_weekly_hours_history`
- * / `utils/formatters.ts::formatWeeklyHoursChanges`).
+ * / `utils/formatters.ts::formatWeeklyHoursChanges`). Eine Zeile mit neuen
+ * Blöcken (mit Stundenzählung) trägt den Berichtssatz aus Spec 15.2/12.1
+ * („Mo 08:00–12:00 + 15:00–18:00 / Di 08:00–12:00 = 11,0 h/Woche") statt des
+ * dezimalen Tagesplans — die Tagesstunden sind daraus abgeleitet (4.1), und der
+ * Editor zeigt dieselben Tage minutengenau (Gesamtreview PR3).
  */
-function describeSchedule(s: ScheduleSnapshot): string {
+function describeSchedule(s: ScheduleSnapshot, trackHours: boolean): string {
+  if (trackHours && hasNewBlocks(s.blocks)) {
+    const spans = formatBlocksText(s.blocks);
+    if (spans) return `${spans} = ${deHoursExact(s.weekly_hours)} h/Woche`;
+  }
   const days = `${s.work_days_per_week} Tage/Woche`;
   if (s.use_daily_schedule) {
     const plan = formatDayPlan(s.day_hours);
@@ -160,7 +168,9 @@ function describeSchedule(s: ScheduleSnapshot): string {
   return `${deHoursExact(s.weekly_hours)} Std/Woche · ${days}`;
 }
 
-/** Blockzeile für Kopf und Verlauf (Spec 12.1/4.4). */
+/** Zusatzzeile für Kopf und Verlauf (Spec 12.1/4.4): Altfenster und Blöcke
+ * ohne Stundenzählung. Neue Blöcke mit Stundenzählung stehen schon im Satz von
+ * ``describeSchedule`` — keine zweite Zeile. */
 function blocksLine(week: WeekBlocks | null, trackHours: boolean): string | null {
   const text = formatBlocksText(week);
   if (!text) return null;
@@ -168,7 +178,7 @@ function blocksLine(week: WeekBlocks | null, trackHours: boolean): string | null
   // (Spec 4.4) — sonst trüge derselbe Datensatz im Dialog zwei Namen.
   const legacy = hasLegacyBlocks(week);
   if (!trackHours) return `${legacy ? LEGACY_WITHOUT_EFFECT : BLOCKS_WITHOUT_EFFECT}: ${text}`;
-  return legacy ? `${LEGACY_BOX_TITLE}: ${text}` : `Arbeitszeit-Blöcke: ${text}`;
+  return legacy ? `${LEGACY_BOX_TITLE}: ${text}` : null;
 }
 
 /** Kanonische Vergleichsform der Blöcke (Schlüsselreihenfolge egal). */
@@ -667,7 +677,7 @@ export default function WorkingHoursModal({
                   Arbeitszeit &amp; Wochenstunden
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  {userName} • Aktuell: {describeSchedule(displaySchedule)}
+                  {userName} • Aktuell: {describeSchedule(displaySchedule, trackHours)}
                 </p>
                 {displayBlocksLine && <p className="text-sm text-gray-600">{displayBlocksLine}</p>}
               </div>
@@ -1032,7 +1042,7 @@ export default function WorkingHoursModal({
                           <div className="min-w-0 break-words">
                             <p className="font-medium text-gray-900">
                               Ab {formatDate(change.effective_from)} bis {end ? formatDate(end) : 'heute'}:{' '}
-                              {describeSchedule(scheduleFromChange(change, propsSchedule.work_days_per_week))}
+                              {describeSchedule(scheduleFromChange(change, propsSchedule.work_days_per_week), trackHours)}
                             </p>
                             {rowBlocks && <p className="text-sm text-gray-700 mt-1">{rowBlocks}</p>}
                             {change.note && <p className="text-sm text-gray-600 mt-1">{change.note}</p>}

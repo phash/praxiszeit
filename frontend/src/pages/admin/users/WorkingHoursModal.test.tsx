@@ -1150,12 +1150,20 @@ describe('Spec 2026-10-08 (PR3): Block-Modus und POST-Vorschau', () => {
     await waitFor(() => expect(submit).not.toBeDisabled());
   });
 
-  it('Verlauf zeigt die Blöcke jeder Zeile, Altzeilen als Altbestand', async () => {
+  it('Verlauf zeigt die Blöcke jeder Zeile im Berichtstext (15.2), Altzeilen als Altbestand', async () => {
     mockHistory([LEGACY_ROW, ANNA_ROW], QUIET);
     renderModal(ANNA_PROPS);
     expect(await screen.findByText(`${LEGACY_BOX_TITLE}: Mo 07:37–16:30 / Fr 07:30–23:59`)).toBeInTheDocument();
-    expect(screen.getAllByText('Arbeitszeit-Blöcke: Mo 08:00–12:00 + 15:00–18:00 / Di 08:00–12:00 / Do 08:00–12:00'))
-      .toHaveLength(2); // Kopfzeile + Verlaufszeile
+    // Gesamtreview PR3: Kopf- und Verlaufszeile nennen eine Block-Zeile wie Spec
+    // 12.1 und der Bericht (formatWeeklyHoursChanges) — nicht den dezimalen
+    // Tagesplan „Mo 7,0 / Di 4,0 …" plus eine zweite Zeile mit den Blöcken.
+    const sentence = 'Mo 08:00–12:00 + 15:00–18:00 / Di 08:00–12:00 / Do 08:00–12:00 = 15,0 h/Woche';
+    const paragraph = (text: (t: string) => boolean) =>
+      screen.getByText((_, el) => el?.tagName === 'P' && text(el.textContent ?? ''));
+    expect(paragraph((t) => t.endsWith(`Aktuell: ${sentence}`))).toBeInTheDocument();
+    expect(paragraph((t) => t === `Ab 01.03.2026 bis heute: ${sentence}`)).toBeInTheDocument();
+    expect(screen.queryByText(/^Arbeitszeit-Blöcke: /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Mo 7,0 \/ Di 4,0/)).not.toBeInTheDocument();
   });
 
   it('Toast nach dem Speichern nennt Einträge, Übersprungene und Abwesenheiten (12.1)', async () => {
