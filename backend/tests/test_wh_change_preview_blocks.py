@@ -6,10 +6,10 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from app.models import Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
+from app.models import Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, User, WorkingHoursChange
 from app.routers.admin_users import PREVIEW_DATE_MISSING, RESET_CONFLICT_DETAIL
 from app.schemas.working_hours_change import EFFECTIVE_FROM_RANGE_DETAIL, WorkingHoursChangeCreate
-from app.services import wh_change_service
+from app.services import calculation_service, wh_change_service
 from tests.test_endpoints import test_app
 from tests.wh_change_helpers import (
     ANNA_WEEK, MONDAYS, absence, add_row, admin_client, entry, freeze, t, with_pauses,
@@ -215,3 +215,50 @@ class TestImpactFields:
         body = _preview(client, test_user, {"effective_from": "2026-08-01", "blocks": SHORT})
         assert (body["period_start"], body["affected_time_entries"], body["earliest_lossless_date"]) == (
             "2026-08-01", 3, "2026-10-08")
+
+
+class TestPreviewSaveParity:
+    """Review Task 10 / Spec 9.3 Schritt 10: Vorschau und Speichern rechnen
+    denselben Zustand — der Spiegel der User-Zeile kommt erst NACH der
+    Klassifikation. Und der Commit verschiebt das Soll buchungsfreier Tage vor
+    der Basis-Zeile nicht ungeschützt: Tage, die das Überstundenkonto schon
+    zählt (ab dem Monatsersten des ältesten Eintrags), aber keine Verlaufszeile
+    deckt, fielen nach dem Spiegel auf den NEUEN Vertrag zurück."""
+
+    # Gleiche Wochensumme, anders verteilt: im Wirkungsbereich (15.09.–07.10.)
+    # gleichen sich drei Montage (−2 h) und drei Freitage (+2 h) aus.
+    BODY = {"effective_from": "2026-09-15", "use_daily_schedule": True, "hours_monday": 6,
+            "hours_tuesday": 8, "hours_wednesday": 8, "hours_thursday": 8, "hours_friday": 10}
+
+    @staticmethod
+    def _overtime(db, user):
+        db.expire_all()
+        user = db.query(User).filter(User.id == user.id).one()
+        cutoff = calculation_service.get_soll_cutoff_date(db, user)
+        return float(calculation_service.get_overtime_account(db, user, 2026, 10, cutoff_date=cutoff))
+
+    @pytest.mark.parametrize("oldest", [date(2026, 9, 21), date(2026, 8, 21)])
+    def test_preview_and_save_agree_and_the_commit_matches_the_preview(self, client, db, test_user, oldest):
+        entry(db, test_user, oldest, t(8), t(16))
+        before = self._overtime(db, test_user)
+        preview = _preview(client, test_user, self.BODY)
+        resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes", json=self.BODY)
+        assert preview["is_shortening"] == (resp.status_code == 400)
+        assert resp.status_code == 201, resp.text
+        assert self._overtime(db, test_user) == pytest.approx(before + preview["saldo_delta_hours"])
+
+    def test_existing_history_classifies_like_the_preview(self, client, db, test_user):
+        """Mit Verlauf entsteht keine Basis-Zeile; die Tage vor der ältesten Zeile
+        (hier 01.–13.09.) lösen weiter auf die User-Zeile auf. Spiegelte das
+        Speichern sie schon in Schritt 4, sah seine Klassifikation dort den neuen
+        Vertrag (400 „Rückwirkende Verkürzung …"), die Vorschau nicht — der Dialog
+        bot das Schutzpaket nie an, das Speichern verlangte es."""
+        add_row(db, test_user, date(2026, 9, 14), weekly_hours=40)
+        entry(db, test_user, date(2026, 9, 21), t(8), t(16))
+        preview = _preview(client, test_user, self.BODY)
+        resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes", json=self.BODY)
+        assert preview["is_shortening"] == (resp.status_code == 400)
+        assert resp.status_code == 201, resp.text
+        db.expire_all()
+        user = db.query(User).filter(User.id == test_user.id).one()
+        assert (user.use_daily_schedule, float(user.hours_monday)) == (True, 6.0)  # Schritt 10 spiegelt weiter

@@ -1194,7 +1194,13 @@ Die automatische **Basis-Zeile** vor der allerersten Änderung (sie friert den b
 gültigen Wert ein) datiert auf das Früheste aus `first_work_day`, der ältesten vorhandenen
 Buchung (`TimeEntry`/`Absence`) und dem Vortag der Änderung. `first_work_day` allein
 genügt nicht — es ist nullable, und ohne die anderen Kandidaten deckte die Basis-Zeile nur
-einen einzigen Tag ab.
+einen einzigen Tag ab. Ohne `first_work_day` reicht sie zusätzlich bis zum Monatsersten
+des Wirkungsdatums und des ältesten Zeiteintrags: Dort beginnen der erste Monat der
+Saldo-Prüfung einer Änderung und das Überstundenkonto (ohne Jahresübertrag). Tage davor
+ohne Verlaufszeile fielen sonst nach dem Speichern auf den neuen Vertrag zurück — ihr Soll
+verschob sich, ohne dass Vorschau oder Schutzpaket es sahen. Die User-Zeile spiegelt die
+gültige Verlaufszeile erst nach Prüfung und Protokoll (Spec 9.3 Schritt 10), damit
+Vorschau und Speichern denselben Zustand bewerten.
 
 ### TZ-F: Rückwirkende Tagesplan-Änderung (#431)
 

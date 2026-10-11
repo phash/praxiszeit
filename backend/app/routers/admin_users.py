@@ -1631,10 +1631,14 @@ def _reset_matches(change_data: WorkingHoursChangeCreate, norm, reset_schedule) 
 
 
 def _insert_change_rows(db: Session, user: User, current_user: User, change_data: WorkingHoursChangeCreate,
-                        norm, new_blocks, new_pauses, *, sync: bool) -> WorkingHoursChange:
-    """Spec 9.3 Schritt 4 — Basis-Zeile (nur ohne Historie), neue Zeile, flush und
-    — im Schreibpfad — Spiegel der User-Zeile (E9). Die Logik ist die bisherige
-    von ``create_working_hours_change``; neu sind nur die Blöcke.
+                        norm, new_blocks, new_pauses) -> WorkingHoursChange:
+    """Spec 9.3 Schritt 4 — Basis-Zeile (nur ohne Historie), neue Zeile, flush. Die
+    Logik ist die bisherige von ``create_working_hours_change``; neu sind nur die
+    Blöcke. Den Spiegel der User-Zeile (E9) macht der Schreibpfad erst in Schritt
+    10 (``_sync_user_to_current_change``) — Review Task 10: hier, VOR der
+    Klassifikation, rechnete das Speichern Tage vor der Basis-Zeile schon gegen
+    den NEUEN Vertrag, die Vorschau aber nicht; beide klassifizierten dieselbe
+    Eingabe verschieden.
 
     Basis-Zeile (Release-Review 1.16.0, #415-Folgefund): ``get_schedule_for_date``
     fällt für jeden Tag VOR der ersten Verlaufszeile auf die User-Zeile zurück —
@@ -1646,7 +1650,15 @@ def _insert_change_rows(db: Session, user: User, current_user: User, change_data
     (Eintrag/Abwesenheit) und dem Vortag der Änderung (I5, Abschluss-Review:
     ``first_work_day`` ist oft leer — dann deckte die Zeile sonst nur einen Tag
     ab). Sie schreibt den bisher aufgelösten Snapshot UNVERÄNDERT fort, damit die
-    Vergangenheit byte-identisch eingefroren bleibt."""
+    Vergangenheit byte-identisch eingefroren bleibt.
+
+    Ohne ``first_work_day`` reicht sie zusätzlich bis zum Monatsersten des
+    Wirkungsdatums und des ältesten Eintrags (Review Task 10): dort beginnen der
+    erste Monat der Saldo-Klassifikation (``wh_change_service._saldo_by_year``) und
+    das Überstundenkonto ohne Jahresübertrag (``get_overtime_account``). Tage
+    davor ohne Verlaufszeile fielen nach dem Spiegel auf den NEUEN Vertrag zurück
+    — der Commit verschob ihr Soll, ohne dass Vorschau oder Schutzpaket es sahen.
+    Mit ``first_work_day`` zählt vor ihm ohnehin kein Soll."""
     has_history = db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
         WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
@@ -1671,6 +1683,8 @@ def _insert_change_rows(db: Session, user: User, current_user: User, change_data
                 Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id,  # F-026
             ).scalar()
             candidates += [d for d in (oldest_entry, oldest_absence) if d]
+            if not user.first_work_day:
+                candidates += [date(d.year, d.month, 1) for d in (change_data.effective_from, oldest_entry) if d]
             db.add(WorkingHoursChange(
                 user_id=user.id, tenant_id=current_user.tenant_id, effective_from=min(candidates),
                 weekly_hours=current.weekly_hours, use_daily_schedule=current.use_daily_schedule,
@@ -1695,19 +1709,26 @@ def _insert_change_rows(db: Session, user: User, current_user: User, change_data
     )
     db.add(change)
     # Finding 4 (Review 2026-07-14): autoflush=False — ohne flush sähen die
-    # folgenden Abfragen (Sync, Rechenpfad) die neue Zeile nicht.
+    # folgenden Abfragen (Rechenpfad) die neue Zeile nicht.
     db.flush()
-    if sync and change_data.effective_from <= today_local():
-        most_recent = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == user.id,
-            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-            WorkingHoursChange.effective_from <= today_local(),
-        ).order_by(WorkingHoursChange.effective_from.desc()).first()
-        if most_recent:
-            # #431: der VOLLSTÄNDIGE Snapshot wandert zurück auf die User-Zeile —
-            # _sync_user_from_change ist DIE eine Stelle dafür (create und delete).
-            _sync_user_from_change(user, most_recent)
     return change
+
+
+def _sync_user_to_current_change(db: Session, user: User, tenant_id) -> None:
+    """Spec 9.3 Schritt 10 (E9): die User-Zeile spiegelt die jüngste Zeile mit
+    Datum ≤ heute. Erst NACH Klassifikation, Schutzpaket und Protokoll — sonst
+    rechnet das Speichern einen anderen Zustand als die Vorschau (Review Task 10).
+    Die Abfrage statt der gerade angelegten Zeile: eine spätere, bereits gültige
+    Zeile gewinnt."""
+    most_recent = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == tenant_id,  # F-026
+        WorkingHoursChange.effective_from <= today_local(),
+    ).order_by(WorkingHoursChange.effective_from.desc()).first()
+    if most_recent:
+        # #431: der VOLLSTÄNDIGE Snapshot wandert zurück auf die User-Zeile —
+        # _sync_user_from_change ist DIE eine Stelle dafür (create und delete).
+        _sync_user_from_change(user, most_recent)
 
 
 def _log_reclamp(db: Session, *, user: User, admin: User, impact, effective_from: date, deleted: bool,
@@ -1807,8 +1828,7 @@ def create_working_hours_change(
     created = {}
 
     def _apply():
-        created["row"] = _insert_change_rows(db, user, current_user, change_data, norm,
-                                             new_blocks, new_pauses, sync=True)
+        created["row"] = _insert_change_rows(db, user, current_user, change_data, norm, new_blocks, new_pauses)
 
     impact = wh_change_service.run_change(
         db, user, admin_id=current_user.id, effective_from=change_data.effective_from, apply=_apply)
@@ -1835,6 +1855,8 @@ def create_working_hours_change(
     # Wirkungsbereich, nicht nur das der Abwesenheitstage.
     warning = calculation_service.stale_year_closing_warning(
         db, current_user.tenant_id, range(impact.window.start.year, impact.window.end.year + 1))
+    if change_data.effective_from <= today_local():
+        _sync_user_to_current_change(db, user, current_user.tenant_id)  # Schritt 10
     db.commit()
     db.refresh(change)
     # Die API-Zusage bleibt je eine ZAHL — die Einzelheiten stehen im Protokoll.
@@ -2158,7 +2180,7 @@ def preview_working_hours_change(
             impact = wh_change_service.run_change(
                 db, user, admin_id=current_user.id, effective_from=effective_from,
                 apply=lambda: _insert_change_rows(db, user, current_user, change_data, norm,
-                                                  new_blocks, new_pauses, sync=False),
+                                                  new_blocks, new_pauses),
             )
             overtime_after = float(calculation_service.get_overtime_account(
                 db, user, today.year, today.month, cutoff_date=cutoff))
