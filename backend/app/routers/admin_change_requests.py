@@ -333,6 +333,9 @@ def review_change_request(
     # unclamp_input bzw. end_input_for ersetzt; hier der Antragswert, damit jeder
     # Pfad sie kennt.
     _in_start, _in_end = cr.proposed_start_time, cr.proposed_end_time
+    # P18 (Review V1, Folgefund): das beantragte Ende, wie die Genehmigung es
+    # liest — bei UPDATE unten über ``request_end_for_approval`` bestimmt.
+    _proposed_end = cr.proposed_end_time
     if cr.entry_kind != "absence":
         if cr.request_type == ChangeRequestType.CREATE:
             duplicate = db.query(TimeEntry).filter(
@@ -356,14 +359,25 @@ def review_change_request(
             ).with_for_update().first()
             if not entry:
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
+            # P18 (Review V1, Folgefund): ein offener Antrag trägt das
+            # Formular-Echo des wirksamen Endes ZUM ZEITPUNKT DES ANTRAGS
+            # (``original_end_time``). Hat eine Neukappung (9.2) das wirksame
+            # Ende seither geändert, bleibt dieses Echo trotzdem Echo — sonst
+            # würde das Protokoll-23:59 bzw. das frühere wirksame Ende hier zum
+            # Stempel. Vorprüfung, ``end_input_for`` und ``end_is_correction``
+            # lesen deshalb alle drei ``_proposed_end``.
+            _proposed_end = work_window_service.request_end_for_approval(
+                entry, cr.proposed_end_time, cr.original_end_time,
+            )
             # P18/P21: Anerkennen setzt ein tatsächliches Ende voraus. Ohne es
             # bliebe der Eintrag nach dem UPDATE-Zweig ``auto_closed`` und
             # ``apply_credit_override`` lehnte erst NACH der Statusänderung ab.
             # Dieselbe Regel wie beim Stellen des Antrags und wie
             # ``end_is_correction`` (ein beantragtes 23:59 ist seit 2026-10-11 ein
-            # tatsächliches Ende) — sie greift auch für ältere Anträge.
+            # tatsächliches Ende, sofern es kein Echo ist) — sie greift auch für
+            # ältere Anträge.
             if grant_override and credit_override_service.lacks_actual_end(
-                entry, cr.proposed_end_time,
+                entry, _proposed_end,
             ):
                 raise HTTPException(
                     status_code=400, detail=credit_override_service.AUTO_CLOSED_DETAIL,
@@ -410,7 +424,7 @@ def review_change_request(
             # automatisch geschlossener Eintrag, der nur auf einen anderen Tag
             # wandert, rechnet mit dem wirksamen Ende statt dem Rohende 23:59.
             _in_end = work_window_service.end_input_for(
-                cr.proposed_end_time, entry.end_time, entry.raw_end_time,
+                _proposed_end, entry.end_time, entry.raw_end_time,
                 auto_closed=entry.auto_closed, prev_date=entry.date,
                 target_date=cr.proposed_date,
             )
@@ -659,11 +673,13 @@ def review_change_request(
             # (``end_input_for`` rechnet oben am selben Tag mit dem Rohende 23:59
             # weiter, bei einem Datumswechsel gilt das wirksame Ende, PR1-Review
             # F1). Entschieden 2026-10-11: ein beantragtes 23:59 ist eine
-            # Korrektur — echter Stempel, gekappt wie jedes andere Ende.
+            # Korrektur — echter Stempel, gekappt wie jedes andere Ende. Das
+            # Echo des damals wirksamen Endes hat ``request_end_for_approval``
+            # oben schon auf das aktuelle wirksame Ende abgebildet (Review V1).
             _end_corrected = (
                 entry.auto_closed
-                and cr.proposed_end_time is not None
-                and work_window_service.end_is_correction(cr.proposed_end_time, entry.end_time)
+                and _proposed_end is not None
+                and work_window_service.end_is_correction(_proposed_end, entry.end_time)
             )
             entry.date = cr.proposed_date
             entry.start_time = eff_start

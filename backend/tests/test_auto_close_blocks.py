@@ -8,7 +8,7 @@ import pytest
 from app.models import ChangeRequest, PublicHoliday, TimeEntry, TimeEntryAuditLog
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
 from app.models.system_setting import SystemSetting
-from app.services import work_window_service
+from app.services import credit_override_service, work_window_service
 from app.services.holiday_service import invalidate_holiday_cache
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import (  # noqa: F401 — Fixtures
@@ -366,6 +366,145 @@ def test_employee_request_effective_end_keeps_flag(_db_session, employee_user, a
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
 
 
+# Review V1 (Folgefund, Entschieden 2026-10-11): ein OFFENER Antrag trägt im Ende
+# das Formular-Echo des wirksamen Endes ZUM ZEITPUNKT DES ANTRAGS — beide
+# Antragswege halten es als ``original_end_time`` fest. Ändert eine Neukappung
+# (Spec 9.2: Blöcke rückwirkend hinterlegt oder geändert) das wirksame Ende vor
+# der Genehmigung, ist das Echo nicht mehr minutengleich mit ``entry.end_time``.
+# Die Genehmigung hielt es dann für ein eingetragenes Ende: das Protokoll-23:59
+# bzw. das frühere wirksame Ende wurde zum Stempel, das Kennzeichen fiel, und
+# „genehmigen und anerkennen" rechnete bis dorthin an (Schlupfloch E36/E42).
+# Echo ist deshalb auch das damals wirksame Ende
+# (``work_window_service.request_end_for_approval``).
+
+# Mo 08–12 + 15–17 → Hülle bis 17:15; die Lücke 12:15–14:45 wie bei K_BLOCKS.
+SHORTER_BLOCKS = block_week(mon=[("08:00", "12:00"), ("15:00", "17:00")])
+
+
+def _reclamp_monday(db, user, blocks):
+    """Die Verwaltung hinterlegt bzw. ändert rückwirkend die Blöcke des Montags
+    → Massen-Neukappung (Spec 9.2) mit dem Mandanten-Puffer 15."""
+    user.work_blocks = blocks
+    db.flush()
+    work_window_service.reclamp_time_entries(db, user, MON, MON, {0}, None, 15)
+    db.commit()
+
+
+def _echo_2359_without_blocks(db, user):
+    """Grenzfall P18: Auto-Close ohne Blöcke, wirksames Ende selbst 23:59 — das
+    Formular belegt 23:59 vor. Danach Blöcke K_BLOCKS → 18:15, Protokoll 23:59."""
+    return "23:59", K_BLOCKS, (time(18, 15), time(23, 59))
+
+
+def _echo_1815_with_blocks(db, user):
+    """Allgemeine Variante (gab es schon vor V1): wirksames Ende 18:15 vorbelegt,
+    die Neukappung kürzt auf 17:15 (Rohende = übernommenes Ende 18:15)."""
+    user.work_blocks = K_BLOCKS
+    db.commit()
+    return "18:15", SHORTER_BLOCKS, (time(17, 15), time(18, 15))
+
+
+def _open_request_then_reclamp(db, user, client, setup, proposed_date=MON):
+    """Auto-Close 15:00 → gewöhnlicher Antrag „Pause nachgetragen" mit dem
+    vorbelegten Ende (echter MA-Weg, E40) → Neukappung. Liefert Eintrag, Antrag
+    und die Werte (wirksames Ende, Rohende) nach der Neukappung."""
+    echo, new_blocks, after = setup(db, user)
+    e = _open(db, user, start=time(15, 0))
+    _auto_close_directly(db, e)
+    resp = client.post("/api/change-requests/", json={
+        "request_type": "update", "time_entry_id": str(e.id),
+        "proposed_date": proposed_date.isoformat(), "proposed_start_time": "15:00",
+        "proposed_end_time": echo, "proposed_break_minutes": 30,
+        "reason": "Pause nachgetragen"})
+    assert resp.status_code == 201, resp.text
+    cr = db.query(ChangeRequest).one()
+    assert cr.original_end_time == time.fromisoformat(echo)
+    _reclamp_monday(db, user, new_blocks)
+    db.refresh(e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (*after, True)
+    return e, cr, after
+
+
+@pytest.mark.parametrize("setup", [_echo_2359_without_blocks, _echo_1815_with_blocks],
+                         ids=["echo_2359_ohne_bloecke", "echo_1815_kuerzere_huelle"])
+def test_open_request_echo_after_reclamp_keeps_flag(_db_session, employee_user, admin_user,
+                                                    employee_client, setup):
+    """Das unverändert zurückgeschickte Ende bleibt Echo, auch wenn sich das
+    wirksame Ende seit dem Antrag geändert hat: Kennzeichen bleibt, Protokoll
+    bleibt, die Pause aus dem Antrag wird übernommen, nichts „nicht angerechnet"."""
+    e, cr, after = _open_request_then_reclamp(_db_session, employee_user, employee_client, setup)
+    _as_admin(admin_user)
+    resp = employee_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                json={"action": "approve"})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed, e.break_minutes) == (*after, True, 30)
+    assert work_window_service.not_credited_minutes(e) == 0
+
+
+@pytest.mark.parametrize("setup", [_echo_2359_without_blocks, _echo_1815_with_blocks],
+                         ids=["echo_2359_ohne_bloecke", "echo_1815_kuerzere_huelle"])
+def test_open_request_echo_after_reclamp_cannot_be_granted(_db_session, employee_user, admin_user,
+                                                           employee_client, setup):
+    """„Genehmigen und anerkennen" über die API: das Echo ist kein tatsächliches
+    Ende → 400 vor jeder Statusänderung (wie beim Anerkennen), Eintrag unverändert."""
+    e, cr, after = _open_request_then_reclamp(_db_session, employee_user, employee_client, setup)
+    _as_admin(admin_user)
+    resp = employee_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                json={"action": "approve", "grant_credit_override": True})
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"] == credit_override_service.AUTO_CLOSED_DETAIL
+    _db_session.refresh(cr)
+    _db_session.refresh(e)
+    assert cr.status == ChangeRequestStatus.PENDING
+    assert (e.end_time, e.raw_end_time, e.auto_closed, e.credit_override) == (*after, True, False)
+
+
+def test_open_request_echo_moved_after_reclamp_keeps_flag(_db_session, employee_user, admin_user,
+                                                          employee_client):
+    """PR1-Review F1 mit Neukappung dazwischen: Antrag auf Dienstag mit dem Echo
+    18:15, danach kürzt die Neukappung den Montag auf 17:15. Das Echo ist keine
+    Korrektur — die Kappungseingabe des Zieltags ist das übernommene Ende 18:15
+    (``end_input_for``), Dienstag ohne Blöcke → 15:00–18:15, Kennzeichen bleibt."""
+    e, cr, _ = _open_request_then_reclamp(_db_session, employee_user, employee_client,
+                                          _echo_1815_with_blocks, proposed_date=TUE)
+    _as_admin(admin_user)
+    resp = employee_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                json={"action": "approve"})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    assert (e.date, e.end_time, e.raw_end_time, e.auto_closed) == (TUE, time(18, 15), None, True)
+
+
+def test_open_request_typed_2359_after_reclamp_is_a_correction(_db_session, employee_user,
+                                                               admin_user, employee_client):
+    """Gegenprobe: im Antrag eingetipptes 23:59 bei damals wirksamem 18:15
+    (``original_end_time``) bleibt auch nach einer Neukappung eine Korrektur —
+    Kennzeichen fällt, 23:59 ist Stempel, gekappt auf die neue Hülle 17:15."""
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    e = _open(_db_session, employee_user, start=time(15, 0))
+    _auto_close_directly(_db_session, e)
+    resp = employee_client.post("/api/change-requests/", json={
+        "request_type": "update", "time_entry_id": str(e.id),
+        "proposed_date": MON.isoformat(), "proposed_start_time": "15:00",
+        "proposed_end_time": "23:59", "proposed_break_minutes": 0,
+        "reason": "Ende nachgetragen"})
+    assert resp.status_code == 201, resp.text
+    cr = _db_session.query(ChangeRequest).one()
+    assert cr.original_end_time == time(18, 15)
+    _reclamp_monday(_db_session, employee_user, SHORTER_BLOCKS)
+    _db_session.refresh(e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(17, 15), time(18, 15), True)
+    _as_admin(admin_user)
+    resp = employee_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                json={"action": "approve"})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(17, 15), time(23, 59), False)
+    assert work_window_service.not_credited_minutes(e) == 23 * 60 + 59 - (17 * 60 + 15)
+
+
 def test_cr_create_with_2359_is_a_stamp(_db_session, employee_user, admin_client):
     """CREATE-Genehmigung: ein neuer Eintrag 08:00–23:59 trägt nie ein
     Kennzeichen — 23:59 ist der Stempel, gekappt auf die Hülle."""
@@ -499,3 +638,20 @@ def test_raw_end_of_regular_entry_is_still_a_correction(_db_session, employee_us
 def test_end_is_correction(incoming, eff, expected):
     from app.services.work_window_service import end_is_correction
     assert end_is_correction(incoming, eff) is expected
+
+
+# Review V1 (Folgefund): Echo eines offenen Antrags = wirksames Ende zum Zeitpunkt
+# des Antrags (``original_end_time``) → aktuelles wirksames Ende; sonst unverändert.
+@pytest.mark.parametrize("auto_closed, proposed, original, expected", [
+    (True, time(23, 59), time(23, 59), time(17, 15)),       # Echo 23:59, seither neu gekappt
+    (True, time(23, 59, 30), time(23, 59), time(17, 15)),   # minutengenau
+    (True, time(18, 15), time(18, 15), time(17, 15)),       # Echo 18:15, Hülle seither kürzer
+    (True, time(23, 59), time(18, 15), time(23, 59)),       # eingetipptes 23:59 bleibt Eingabe
+    (True, time(17, 15), time(18, 15), time(17, 15)),       # = aktuelles wirksames Ende (end_is_correction)
+    (True, time(23, 59), None, time(23, 59)),               # Antrag zu einem damals offenen Eintrag
+    (True, None, time(18, 15), None),                       # kein Ende beantragt
+    (False, time(18, 15), time(18, 15), time(18, 15)),      # ohne Kennzeichen unverändert
+])
+def test_request_end_for_approval(auto_closed, proposed, original, expected):
+    entry = TimeEntry(end_time=time(17, 15), raw_end_time=time(18, 15), auto_closed=auto_closed)
+    assert work_window_service.request_end_for_approval(entry, proposed, original) == expected

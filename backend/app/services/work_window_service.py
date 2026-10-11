@@ -374,8 +374,45 @@ def end_is_correction(incoming: Optional[time], prev_eff: Optional[time]) -> boo
     Regel gilt in allen drei Schreibpfaden (MA-Route, Admin-Bearbeitung,
     Antragsgenehmigung) und für ``credit_override_service.lacks_actual_end``.
     Verglichen wird minutengenau (``same_minute``, Review Task 6): ein
-    18:15:30 ist das wirksame Ende 18:15."""
+    18:15:30 ist das wirksame Ende 18:15.
+
+    Für die Genehmigung eines Antrags liefert ``request_end_for_approval`` die
+    Eingabe: Echo ist dort auch das wirksame Ende ZUM ZEITPUNKT DES ANTRAGS."""
     return not same_minute(incoming, prev_eff)
+
+
+def request_end_for_approval(
+    entry, proposed_end: Optional[time], original_end: Optional[time],
+) -> Optional[time]:
+    """P18 (Review V1, Folgefund): das beantragte Ende eines UPDATE-Antrags, wie
+    die Genehmigung es liest — Eingabe für ``lacks_actual_end`` (Vorprüfung
+    „genehmigen und anerkennen"), ``end_input_for`` und ``end_is_correction``.
+
+    Ein offener Antrag trägt das Formular-Echo des wirksamen Endes ZUM
+    ZEITPUNKT DES ANTRAGS; beide Antragswege halten es als
+    ``original_end_time`` fest (``change_requests.create_change_request`` und
+    die §4-Rückfrage in ``time_entries.update_time_entry``). Ändert eine
+    Neukappung (9.2) das wirksame Ende vor der Genehmigung, ist das Echo nicht
+    mehr minutengleich mit ``entry.end_time`` — die Genehmigung hielt es für ein
+    eingetragenes Ende: das Protokoll-23:59 (Grenzfall ohne Blöcke → danach
+    Blöcke) bzw. das frühere wirksame Ende wurde zum Stempel, das Kennzeichen
+    fiel und „genehmigen und anerkennen" rechnete bis dorthin an (Schlupfloch
+    E36/E42). Deshalb gilt beim automatisch geschlossenen Eintrag ein Ende
+    minutengleich mit ``original_end`` als Echo und wird durch das AKTUELLE
+    wirksame Ende ersetzt; jedes andere Ende bleibt, wie es beantragt wurde.
+    Echo = wirksames Ende zum Zeitpunkt des Antrags ODER aktuelles wirksames
+    Ende (das prüft ``end_is_correction``).
+
+    Ohne Kennzeichen, ohne beantragtes Ende oder ohne Vorher-Wert (Antrag zu
+    einem damals offenen Eintrag) unverändert."""
+    if (
+        getattr(entry, "auto_closed", False)
+        and proposed_end is not None
+        and original_end is not None
+        and same_minute(proposed_end, original_end)
+    ):
+        return entry.end_time
+    return proposed_end
 
 
 def end_input_for(

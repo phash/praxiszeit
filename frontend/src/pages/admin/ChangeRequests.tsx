@@ -97,8 +97,12 @@ function getDateRange(range: TimeRange): { from: string; to: string } {
  * 2026-10-11 (Produktinhaber): ein beantragtes 23:59 ist ein tatsächliches
  * Ende (außer wo das wirksame Ende selbst 23:59 ist, weil der Auto-Close nicht
  * gekappt hat — Tag ohne Blöcke, ohne Stundenzählung, halboffenes Altfenster,
- * Hülle bis 23:59). Hat sich der Eintrag seit dem Antrag geändert, fängt den
- * Rest der Server ab.
+ * Hülle bis 23:59). Echo ist das wirksame Ende zum Zeitpunkt des Antrags
+ * (`original_end_time`) — genau so liest es auch der Server
+ * (`work_window_service.request_end_for_approval`, Review V1), auch wenn eine
+ * Neukappung das wirksame Ende seither geändert hat. Zusätzlich gilt dort das
+ * AKTUELLE wirksame Ende als Echo, das diese Liste nicht kennt: fällt ein
+ * beantragtes Ende genau darauf, lehnt der Server das Anerkennen mit 400 ab.
  */
 function bringsActualEnd(cr: ChangeRequest): boolean {
   if (!cr.entry_auto_closed) return true;
