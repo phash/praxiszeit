@@ -108,9 +108,11 @@ def daily_presence_warnings(day: DayPresence, *, break_check_passed: bool) -> li
     """``PRESENCE_DAILY_HOURS`` nur, wenn die harte §3-Prüfung auf angerechneter
     Zeit nicht gegriffen hat (angerechnet ≤ 10 h). ``PRESENCE_BREAK`` nur, wenn
     die §4-Prüfung auf angerechneter Zeit BESTANDEN hat — weder 400 noch
-    Ausnahme (``BREAK_WAIVER``/202); seit #499 gibt es kein ``BREAK_WARNING``
-    mehr, deshalb entscheidet der Aufrufer am Ergebnis von
-    ``validate_daily_break`` (P14). Keine Bedingung „nur dank Lückensegmenten"."""
+    Ausnahme (``BREAK_WAIVER``/202); seit #499 erzeugt kein Schreibweg mehr
+    ``BREAK_WARNING`` (einzige Quelle: „Anerkennen",
+    ``credit_override_service.override_warnings``, P4), deshalb entscheidet der
+    Aufrufer am Ergebnis von ``validate_daily_break`` (P14). Keine Bedingung
+    „nur dank Lückensegmenten"."""
     out = []
     if day.presence_minutes > DAILY_LIMIT_MINUTES and day.credited_minutes <= DAILY_LIMIT_MINUTES:
         out.append(

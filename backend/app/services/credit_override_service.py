@@ -136,7 +136,11 @@ def override_warnings(db: Session, user, entry: TimeEntry, *, include_weekly: bo
     §4 kommt hier als ``BREAK_WARNING`` — seit #499 ist §4 an allen
     Schreibwegen sonst eine Sperre bzw. eine dokumentierte Ausnahme
     (``BREAK_WAIVER``); Anerkennen ändert aber nur die Anrechnung, nicht den
-    Nachweis, und darf geleistete Arbeit nicht verstecken (P4)."""
+    Nachweis, und darf geleistete Arbeit nicht verstecken (P4). Damit ist dies
+    die EINZIGE Quelle von ``BREAK_WARNING`` (Gesamtreview 1.20 B1 geprüft):
+    ``BREAK_WAIVER`` behauptete eine dokumentierte Ausnahme, die es nicht gibt,
+    ``PRESENCE_BREAK`` meint die Anwesenheit laut Stempel. Das Frontend
+    (``utils/arbzgWarnings.ts``) zeigt den §4-Text ohne Code."""
     # Lokal: die Grenzwerte leben im Router-Modul; ein Modulimport hier zöge
     # den Router beim Laden des Dienstes mit.
     from app.routers.time_entries import (

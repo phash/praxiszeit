@@ -176,3 +176,22 @@ describe('Spec 2026-10-08, 8.3/8.4: weiche Anwesenheits-Codes', () => {
     },
   );
 });
+
+describe('Gesamtreview 1.20 (B1): §4 nach „Anerkennen" (Spec 13.3 Schritt 6, P4)', () => {
+  // An allen Schreibwegen ist §4 eine Sperre (#499) bzw. eine dokumentierte
+  // Ausnahme (BREAK_WAIVER). Einzige Quelle der WEICHEN §4-Warnung ist
+  // `credit_override_service.override_warnings` — Code BREAK_WARNING.
+  it('zeigt den §4-Text des Servers ohne Code', () => {
+    const toast = mockToast();
+    const detail = 'Bei mehr als 9 Stunden Arbeitszeit ist eine Pause von mindestens 45 Minuten erforderlich (ArbZG §4). Aktuelle Netto-Arbeitszeit: 12h 0min, Gesamtpause: 0 Minuten.';
+    showArbzgWarnings(toast, [`BREAK_WARNING: ${detail}`]);
+    expect(toast.warning).toHaveBeenCalledWith(detail);
+  });
+
+  it('hat einen §4-Rückfalltext ohne Servertext', () => {
+    const toast = mockToast();
+    showArbzgWarnings(toast, ['BREAK_WARNING']);
+    expect(toast.warning.mock.calls[0][0]).toMatch(/§4/);
+    expect(toast.warning.mock.calls[0][0]).not.toBe('BREAK_WARNING');
+  });
+});
