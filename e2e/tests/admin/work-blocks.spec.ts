@@ -33,6 +33,18 @@ async function expectGrace15(adminApi: { get: (path: string) => Promise<any> }) 
   expect(String(grace?.value ?? '15'), 'Vorbedingung: Puffer work_window_grace_minutes = 15').toBe('15');
 }
 
+// Aufräumen über den eindeutigen Benutzernamen (Muster `cleanup` in
+// prod-release-features.spec.ts): greift auch, wenn der Test zwischen
+// „Speichern" und dem Nachschlagen der neuen Person scheitert. Best effort wie
+// `purgeUser` — ein fehlgeschlagenes Teardown färbt keinen Test rot.
+async function purgeByUsername(adminApi: ApiHelper, username: string) {
+  try {
+    const users = await adminApi.get('/admin/users?include_inactive=true&include_hidden=true&limit=500');
+    const user = users.find((u: any) => u.username === username);
+    if (user) await purgeUser(adminApi, user.id);
+  } catch { /* schlimmstenfalls eine Karteileiche mehr */ }
+}
+
 async function employeeWithBlocks(createUser: (d: Record<string, unknown>) => Promise<any>, blocks: Day[], tag: string) {
   // Nur Ziffern im eindeutigen Teil: der Nachname landet in einer Regex
   // (`openDialog`) und in einem CSS-Attribut-Selektor (Admin-Dashboard).
@@ -87,10 +99,11 @@ async function openDialog(page: Page, lastName: string) {
 test.describe('Arbeitszeit-Blöcke (Spec 2026-10-08)', () => {
   test('1: Anlegen mit Blöcken → Tagessoll in der Benutzerliste', async ({ adminPage, adminApi }) => {
     const unique = `${Date.now()}`;
+    const username = `e2e_blocks_new_${unique}`;
     const lastName = `Anlage${unique}`;
     await adminPage.goto('/admin/users');
     await adminPage.getByRole('button', { name: 'Neue:r Mitarbeiter:in' }).click();
-    await adminPage.locator('#f-username').fill(`e2e_blocks_new_${unique}`);
+    await adminPage.locator('#f-username').fill(username);
     await adminPage.locator('#f-firstname').fill('Block');
     await adminPage.locator('#f-lastname').fill(lastName);
     await adminPage.locator('#f-password').fill('TestPass123!');
@@ -103,18 +116,20 @@ test.describe('Arbeitszeit-Blöcke (Spec 2026-10-08)', () => {
     await adminPage.getByLabel('Mo Block 2 bis').fill('18:00');
     await adminPage.getByLabel('Mo Pause innerhalb der Blöcke (Min)').fill('30');
     await expect(adminPage.getByTestId('f-blocks-day-0')).toContainText('Tagessoll 6:30 h');
-    await adminPage.getByRole('button', { name: 'Speichern' }).click();
-    await expect(adminPage.locator('[role="alert"]').filter({ hasText: 'erstellt' })).toBeVisible({ timeout: 10000 });
-
-    const users = await adminApi.get('/admin/users?include_inactive=true&include_hidden=true&limit=500');
-    const created = users.find((u: any) => u.last_name === lastName);
+    // Ab dem Klick auf „Speichern" existiert das Konto — das `try` beginnt davor,
+    // damit auch eine danach scheiternde Zusicherung (z. B. der Toast) aufräumt.
     try {
+      await adminPage.getByRole('button', { name: 'Speichern' }).click();
+      await expect(adminPage.locator('[role="alert"]').filter({ hasText: 'erstellt' })).toBeVisible({ timeout: 10000 });
+
+      const users = await adminApi.get('/admin/users?include_inactive=true&include_hidden=true&limit=500');
+      const created = users.find((u: any) => u.username === username);
       expect(created).toBeTruthy();
       expect([created.hours_monday, created.weekly_hours, created.work_days_per_week]).toEqual([6.5, 6.5, 1]);
       await adminPage.getByPlaceholder('Suche nach Name oder Benutzername...').fill(lastName);
       await expect(adminPage.locator('tr', { hasText: lastName }).first()).toContainText('6.5');
     } finally {
-      if (created) await purgeUser(adminApi, created.id);
+      await purgeByUsername(adminApi, username);
     }
   });
 
