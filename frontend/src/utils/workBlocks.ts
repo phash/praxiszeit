@@ -271,19 +271,24 @@ export function minutesToTargetHours(net: number): number {
   return (Math.floor(five / 3) + (five % 3 === 2 ? 1 : 0)) / 100;
 }
 
+/** Blöcke eines Tages, ein fehlender/leerer Wert als „keine Blöcke" (wie
+ * `day.get("blocks") or []`) — `validateWeekBlocks` reicht die Woche roh durch. */
+function blocksOf(day: DayBlocks | null | undefined): TimeBlock[] {
+  return Array.isArray(day?.blocks) ? day.blocks : [];
+}
+
 /** Zwilling von `work_blocks_service.derive_targets` (nur Anzeige/Vergleich —
  * gespeichert wird, was der Server ableitet). */
 export function deriveTargets(week: WeekBlocks): { hours: number[]; weeklyHours: number; workDays: number } {
-  const hours = WEEKDAY_LABELS.map((_, i) => {
-    const d = week[i];
-    return d && d.blocks.length ? minutesToTargetHours(sumBlocks(d).netMinutes) : 0;
-  });
+  const hours = WEEKDAY_LABELS.map((_, i) => (
+    blocksOf(week[i]).length ? minutesToTargetHours(sumBlocks(week[i]).netMinutes) : 0
+  ));
   return {
     hours,
     // Σ der Hundertstel als Ganzzahl, damit 11,42 + 11,42 + … nicht als
     // 60,010000000000005 an der 60-h-Grenze vorbeirutscht.
     weeklyHours: hours.reduce((a, b) => a + Math.round(b * 100), 0) / 100,
-    workDays: week.filter((d) => d && d.blocks.length > 0).length,
+    workDays: week.filter((d) => blocksOf(d).length > 0).length,
   };
 }
 
@@ -329,7 +334,7 @@ export function validateWeekBlocks(week: WeekBlocks | null | undefined): string 
     const gross = spans.reduce((sum, [s, e]) => sum + e - s, 0);
     if (spans.length && pause >= gross) return `${label}: Pause muss kürzer sein als die Gesamtzeit der Blöcke.`;
   }
-  if (!week.some((d) => d.blocks && d.blocks.length > 0)) return 'Mindestens ein Wochentag braucht einen Block.';
+  if (!week.some((d) => blocksOf(d).length > 0)) return 'Mindestens ein Wochentag braucht einen Block.';
   if (deriveTargets(week).weeklyHours > WEEK_LIMIT_HOURS) return 'Die Wochensumme darf 60 Stunden nicht überschreiten.';
   return null;
 }

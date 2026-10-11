@@ -247,6 +247,11 @@ describe('validateWeekBlocks (Spec 3.4, wortgleiche Texte zu test_work_blocks_va
     }
     expect(validateWeekBlocks([{ blocks: [null], pause_minutes: 0 }, E, E, E, E] as unknown as WeekBlocks))
       .toBe('Mo, Block 1: Uhrzeit im Format HH:MM angeben.');
+    // Wie `day.get("blocks") or []` auch dann, wenn ein ANDERER Tag Blöcke hat —
+    // die Wochensumme (deriveTargets) liest dann ebenfalls „keine Blöcke".
+    const mo = day([['08:00', '12:00']]);
+    expect(validateWeekBlocks([mo, { blocks: null, pause_minutes: 0 }, E, E, E] as unknown as WeekBlocks)).toBeNull();
+    expect(validateWeekBlocks([mo, { pause_minutes: 0 }, E, E, E] as unknown as WeekBlocks)).toBeNull();
   });
 
   it('Grenzwerte sind gültig', () => {
