@@ -432,6 +432,24 @@ def admin_update_time_entry(
             admin_update_warnings.append(_clamp_warn)
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
     break_waiver_active = False
+    # Gesamtreview 1.20 (B1): ändert die Bearbeitung nichts, was §3/§4 rechnen
+    # (Datum, angerechneter Beginn/Ende, Pause, nicht angerechnete Minuten),
+    # bleiben die HARTEN Prüfungen aus — ihr Ergebnis wäre das des gespeicherten
+    # Stands. Sonst scheiterte an einem anerkannten Eintrag über 10 h bzw. ohne
+    # §4-Pause (13.3, P4: dort nur weich) schon eine reine Notiz oder das
+    # unverändert gespeicherte Formular (400/422). Weiche Warnungen bleiben; ein
+    # unverändert bestehender §4-Befund wird nicht erneut gemeldet und
+    # unterdrückt wie sonst ``PRESENCE_BREAK`` (P14, ``break_check_passed``).
+    # Kommt eine Begründung mit, läuft §4 wie bisher (die Ausnahme zu
+    # dokumentieren ist eine §4-Änderung, Schalter #499 inklusive).
+    _time_relevant_change = (
+        update_date != entry.date
+        or eff_start != entry.start_time
+        or eff_end != entry.end_time
+        or update_break_minutes != entry.break_minutes
+        or _r.uncredited_minutes != int(entry.uncredited_minutes or 0)
+    )
+    break_error = None
     if not affected_user.exempt_from_arbzg:
         # Break validation (§4 ArbZG) — use clamped times
         break_error = validate_daily_break(
@@ -441,7 +459,7 @@ def admin_update_time_entry(
             uncredited_segments=_segs, exclude_entry_id=entry.id,
             tenant_id=current_user.tenant_id,
         )
-        if break_error:
+        if break_error and (_time_relevant_change or waiver_reason):
             # M-ARB3: parity with the employee path (#144) — documented waiver
             # records the §4 deviation instead of a hard 400. §3 (below) stays
             # a hard cap. #499: Mandanten-Schalter beachten.
@@ -462,7 +480,7 @@ def admin_update_time_entry(
             exclude_entry_id=entry.id,
             tenant_id=current_user.tenant_id,
         )
-        if daily_hours > MAX_DAILY_HOURS_HARD:
+        if daily_hours > MAX_DAILY_HOURS_HARD and _time_relevant_change:
             raise HTTPException(
                 status_code=422,
                 detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
@@ -561,7 +579,7 @@ def admin_update_time_entry(
     if entry.end_time is not None:
         admin_update_warnings.extend(presence_service.presence_warnings(
             db, affected_user, entry.date,
-            break_check_passed=not break_waiver_active, entry=entry,
+            break_check_passed=break_error is None, entry=entry,
         ))
 
     response = TimeEntryResponse.model_validate(entry)

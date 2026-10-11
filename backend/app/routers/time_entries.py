@@ -1417,12 +1417,26 @@ def update_time_entry(
 
     exempt = _entry_owner.exempt_from_arbzg
 
+    # Gesamtreview 1.20 (B1): wie ``admin_update_time_entry`` — ändert die
+    # Bearbeitung nichts, was §3/§4 rechnen (Datum, angerechneter Beginn/Ende,
+    # Pause, nicht angerechnete Minuten), bleiben die HARTEN Prüfungen aus (ihr
+    # Ergebnis wäre das des gespeicherten Stands). Sonst ließ sich ein
+    # anerkannter Eintrag über 10 h bzw. ohne §4-Pause (13.3, P4) nicht einmal
+    # mit einer Notiz versehen. Weiche Warnungen bleiben.
+    _time_relevant_change = (
+        entry.date != orig_snapshot["date"]
+        or entry.start_time != orig_snapshot["start_time"]
+        or entry.end_time != orig_snapshot["end_time"]
+        or entry.break_minutes != orig_snapshot["break_minutes"]
+        or int(entry.uncredited_minutes or 0) != int(orig_snapshot["uncredited_minutes"] or 0)
+    )
+
     # §3 ArbZG: daily hours hard cap – skipped for exempt users.
     # MUST run BEFORE the §4 break-waiver / approval branch below: a >10h day is
     # an absolute legal ceiling that no break waiver (and no approval workflow)
     # can lift. Computing + raising here ensures the edit is rejected regardless
     # of whether the practice requires approval for break exceptions (#144 fix).
-    if not exempt and entry.end_time is not None:
+    if not exempt and entry.end_time is not None and _time_relevant_change:
         daily_hours = _calculate_daily_net_hours(
             db=db,
             user_id=entry.user_id,
@@ -1443,6 +1457,7 @@ def update_time_entry(
     # #144 §4 ArbZG: documented break-exception (only non-exempt users).
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
     break_waiver_active = False
+    break_error = None
 
     # Break validation (ArbZG §4) – skipped for exempt users
     if not exempt and entry.end_time is not None:
@@ -1457,7 +1472,11 @@ def update_time_entry(
             exclude_entry_id=entry.id,
             tenant_id=entry.tenant_id,
         )
-        if break_error:
+        # Unverändert bestehender §4-Befund (B1, siehe oben): keine Sperre — außer
+        # es kommt eine Begründung mit; die Ausnahme zu dokumentieren (samt
+        # Genehmigungspflicht #144 und Schalter #499) bleibt eine §4-Änderung.
+        # Sonst hält ``break_error`` nur ``PRESENCE_BREAK`` zurück (P14).
+        if break_error and (_time_relevant_change or waiver_reason):
             # #499: einheitliche Entscheidung (Begründung fehlt / Ausnahme
             # im Mandanten abgeschaltet → 400).
             rejection = break_waiver_rejection(
@@ -1632,7 +1651,7 @@ def update_time_entry(
     if entry.end_time is not None:
         update_warnings.extend(presence_service.presence_warnings(
             db, _entry_owner, entry.date,
-            break_check_passed=not break_waiver_active, entry=entry,
+            break_check_passed=break_error is None, entry=entry,
         ))
 
     # #377 § 2 Abs. 2 MiLoG: auch beim Bearbeiten (verändert die Monatssumme).
