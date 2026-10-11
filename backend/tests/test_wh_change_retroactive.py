@@ -29,7 +29,7 @@ from app.routers.admin_users import (
     create_user, create_working_hours_change, delete_working_hours_change, update_user,
 )
 from app.schemas.user import UserCreate, UserUpdate
-from app.schemas.working_hours_change import WorkingHoursChangeCreate
+from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeDelete
 from app.services.timezone_service import today_local
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import test_app
@@ -108,6 +108,15 @@ def _next_monday(after_days=14):
     while d.weekday() != 0:
         d += timedelta(days=1)
     return d
+
+
+def _delete(**kwargs):
+    """Spec 2026-10-08 (19.1 Nr. 1): ein Löschen, das das Soll rückwirkend wieder
+    anhebt, ist eine Verkürzung (9.5 (b)) und braucht Grund und Haken. Diese Suite
+    prüft die Rückrechnung, nicht das Schutzpaket — sie schickt den Grund immer
+    mit (ohne Wirkung, wo nichts verkürzt). Das Schutzpaket selbst prüft
+    test_wh_change_delete_reclamp.py."""
+    return delete_working_hours_change(**kwargs, body=WorkingHoursChangeDelete(**RETRO_REASON))
 
 
 class TestRetroactiveAdjustsAbsences:
@@ -482,43 +491,31 @@ class TestClosedYearWarning:
         assert result.warning is None
 
     def test_delete_of_closed_year_returns_200_with_warning(self, db, default_tenant):
-        """I3 (Abschluss-Review): Das Löschen rechnet dasselbe Fenster zurück
-        wie das Anlegen und kann denselben eingefrorenen Carryover entwerten —
-        es muss den Hinweis genauso melden. Muster von ``delete_closure`` /
-        ``cancel_vacation_request_as_admin``: 200 + ``{"warning": …}``."""
+        """I3 (Abschluss-Review) + Spec 2026-10-08 (9.5 (b)): das Löschen rechnet
+        dasselbe Fenster zurück wie das Anlegen und muss den Jahresabschluss genauso
+        melden (200 + ``{"warning": …}``). Gelöscht wird eine Änderung, die das Soll
+        im abgeschlossenen Jahr ERHÖHT hatte — das Löschen senkt es dort wieder,
+        ist also keine Verkürzung. Das Löschen einer Senkung wäre dort gesperrt
+        (400, test_wh_change_delete_reclamp.py)."""
         admin = _admin(db, "wh_delwarn_admin")
         last_year = today_local().year - 1
-        emp = _make_user(
-            db, "wh_delwarn_emp", weekly_hours=40.0,
-            first_work_day=date(last_year, 1, 1),
-        )
+        emp = _make_user(db, "wh_delwarn_emp", weekly_hours=40.0, first_work_day=date(last_year, 1, 1))
         db.add(YearCarryover(
-            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
-            year=last_year + 1, overtime_hours=Decimal("0"),
-            vacation_days=Decimal("0"), source="year_closing",
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, year=last_year + 1,
+            overtime_hours=Decimal("0"), vacation_days=Decimal("0"), source="year_closing",
         ))
+        db.add(WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, effective_from=date(last_year, 1, 1),
+            weekly_hours=Decimal("40.0"), use_daily_schedule=False, work_days_per_week=5,
+        ))
+        raised = WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, effective_from=date(last_year, 6, 1),
+            weekly_hours=Decimal("45.0"), use_daily_schedule=False, work_days_per_week=5,
+        )
+        db.add(raised)
         db.commit()
-        # Eine Abwesenheit im abgeschlossenen Jahr, damit die Rückrechnung
-        # tatsächlich etwas anfasst (2026-06-01 ist ein Montag).
-        _absence(db, emp, date(last_year, 6, 1), AbsenceType.VACATION, 8.0)
 
-        create_working_hours_change(
-            user_id=str(emp.id),
-            change_data=WorkingHoursChangeCreate(
-                effective_from=date(last_year, 6, 1), weekly_hours=20.0,
-            ),
-            db=db, current_user=admin,
-        )
-        change = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == emp.id,
-            WorkingHoursChange.effective_from == date(last_year, 6, 1),
-        ).first()
-        assert change is not None
-
-        response = delete_working_hours_change(
-            user_id=str(emp.id), change_id=str(change.id),
-            db=db, current_user=admin,
-        )
+        response = _delete(user_id=str(emp.id), change_id=str(raised.id), db=db, current_user=admin)
 
         assert response is not None, "mit Warnung: 200 + Body statt 204"
         assert response.status_code == 200
@@ -529,7 +526,8 @@ class TestClosedYearWarning:
         admin = _admin(db, "wh_delnowarn_admin")
         emp = _make_user(db, "wh_delnowarn_emp", weekly_hours=40.0)
         mon = _last_monday()
-        _absence(db, emp, mon, AbsenceType.VACATION, 8.0)
+        # Spec 9.7: 200 mit Zusammenfassung, sobald etwas angepasst oder gewarnt
+        # wurde — hier gibt es weder Abwesenheiten noch Einträge im Fenster.
 
         create_working_hours_change(
             user_id=str(emp.id),
@@ -541,7 +539,7 @@ class TestClosedYearWarning:
             WorkingHoursChange.effective_from == mon,
         ).first()
 
-        response = delete_working_hours_change(
+        response = _delete(
             user_id=str(emp.id), change_id=str(change.id),
             db=db, current_user=admin,
         )
@@ -634,7 +632,7 @@ class TestDailyScheduleNoLongerRejected:
         db.commit()
         db.refresh(change)
 
-        delete_working_hours_change(
+        _delete(
             user_id=str(emp.id), change_id=str(change.id),
             db=db, current_user=admin,
         )
@@ -706,7 +704,7 @@ class TestDeleteRestoresAbsenceHours:
         ).first()
         assert change is not None
 
-        delete_working_hours_change(
+        _delete(
             user_id=str(emp.id), change_id=str(change.id),
             db=db, current_user=admin,
         )
@@ -748,7 +746,7 @@ class TestDeleteRestoresAbsenceHours:
         ).first()
         assert change is not None
 
-        delete_working_hours_change(
+        _delete(
             user_id=str(emp.id), change_id=str(change.id),
             db=db, current_user=admin,
         )
@@ -789,7 +787,7 @@ class TestDeleteRestoresAbsenceHours:
         # Hinter der nächsten Änderung — gehört ihr, nicht der gelöschten.
         outside = _absence(db, emp, second + timedelta(days=1), AbsenceType.TRAINING, 8.0)
 
-        delete_working_hours_change(
+        _delete(
             user_id=str(emp.id), change_id=str(first_row.id),
             db=db, current_user=admin,
         )
@@ -817,7 +815,7 @@ class TestDeleteAuditLog:
             WorkingHoursChange.effective_from == mon,
         ).first()
 
-        delete_working_hours_change(
+        _delete(
             user_id=str(emp.id), change_id=str(change.id),
             db=db, current_user=admin,
         )
@@ -855,7 +853,7 @@ class TestDeleteAuditLog:
             WorkingHoursChange.effective_from == mon,
         ).first()
 
-        delete_working_hours_change(
+        _delete(
             user_id=str(emp.id), change_id=str(change.id),
             db=db, current_user=admin,
         )
@@ -918,7 +916,7 @@ class TestDeleteEarliestRowRejected:
         )
 
         with pytest.raises(HTTPException) as exc:
-            delete_working_hours_change(
+            _delete(
                 user_id=str(emp.id), change_id=str(earliest.id),
                 db=db, current_user=admin,
             )
@@ -954,7 +952,7 @@ class TestDeleteEarliestRowRejected:
             WorkingHoursChange.user_id == emp.id
         ).count() == 1
 
-        delete_working_hours_change(
+        _delete(
             user_id=str(emp.id), change_id=str(change.id),
             db=db, current_user=admin,
         )
@@ -990,7 +988,7 @@ class TestDeleteEarliestRowRejected:
         # gueltigen 20h/Woche-Tagessoll (4h) gebucht.
         a = _absence(db, emp, later, AbsenceType.VACATION, 4.0)
 
-        delete_working_hours_change(
+        _delete(
             user_id=str(emp.id), change_id=str(later_row.id),
             db=db, current_user=admin,
         )
@@ -1056,7 +1054,7 @@ class TestLegacyHalfDayAbsencesSurvive:
         ).first()
         assert change is not None
 
-        delete_working_hours_change(
+        _delete(
             user_id=str(emp.id), change_id=str(change.id),
             db=db, current_user=admin,
         )
@@ -1079,7 +1077,7 @@ class TestLegacyHalfDayAbsencesSurvive:
             WorkingHoursChange.user_id == emp.id,
             WorkingHoursChange.effective_from == mon,
         ).first()
-        delete_working_hours_change(
+        _delete(
             user_id=str(emp.id), change_id=str(change.id),
             db=db, current_user=admin,
         )

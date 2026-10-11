@@ -33,10 +33,11 @@ from app.routers.admin_users import (
     create_working_hours_change, delete_working_hours_change,
     preview_working_hours_change,
 )
-from app.schemas.working_hours_change import WorkingHoursChangeCreate
+from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeDelete
 from app.services import calculation_service
 from app.services.timezone_service import today_local
 from tests.conftest import DEFAULT_TENANT_ID
+from tests.wh_change_helpers import RETRO_REASON
 
 
 def _make_user(db, username, **kwargs):
@@ -303,15 +304,15 @@ class TestPerAbsenceAuditRows:
 
         delete_working_hours_change(
             user_id=str(emp.id), change_id=str(change.id),
-            db=db, current_user=admin,
+            db=db, current_user=admin, body=WorkingHoursChangeDelete(**RETRO_REASON),
         )
 
         # Die Einzelzeile beginnt mit dem Typ-Label, der Auslöser steht dahinter.
-        rows = [x for x in _wh_logs(db, "%Löschung der Wochenstunden-Änderung%")
+        rows = [x for x in _wh_logs(db, "%Löschung der Arbeitszeit-Änderung%")
                 if x.new_date is not None]
         assert len(rows) == 1
         assert rows[0].old_note == "Urlaub 4,0 h"
-        assert rows[0].new_note.startswith("Urlaub 8,0 h — Löschung der Wochenstunden-Änderung ab ")
+        assert rows[0].new_note.startswith("Urlaub 8,0 h — Löschung der Arbeitszeit-Änderung ab ")
 
     def test_no_rows_when_nothing_changed(self, db, default_tenant):
         admin = _admin(db, "raw_noop_admin")

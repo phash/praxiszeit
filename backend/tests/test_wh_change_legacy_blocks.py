@@ -17,6 +17,7 @@ from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import (  # noqa: F401 — Fixtures
     _db_session, admin_client, admin_user, employee_user, tenant,
 )
+from tests.wh_change_helpers import RETRO_REASON
 from tests.work_blocks_fixtures import K_BLOCKS, legacy_week
 
 LEGACY = legacy_week(mon=("08:00", "17:00"))
@@ -116,7 +117,10 @@ def test_delete_resyncs_the_user_mirror(_db_session, employee_user, admin_client
     later = _row(_db_session, employee_user, date(2026, 6, 1), LEGACY_LATER, weekly_hours=30)
     employee_user.work_blocks = LEGACY_LATER
     _db_session.commit()
-    resp = admin_client.delete(f"/api/admin/users/{employee_user.id}/working-hours-changes/{later.id}")
+    # Das Löschen der 30-h-Zeile hebt das Soll ab 01.06. auf 40 h — Verkürzung
+    # (Spec 9.5 (b)), also mit Grund und Haken.
+    resp = admin_client.request(
+        "DELETE", f"/api/admin/users/{employee_user.id}/working-hours-changes/{later.id}", json=RETRO_REASON)
     assert resp.status_code in (200, 204), resp.text
     _db_session.refresh(employee_user)
     assert employee_user.work_blocks == LEGACY
