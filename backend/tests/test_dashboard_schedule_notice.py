@@ -57,6 +57,33 @@ def test_past_change_with_counts_saldo_and_reason_label(db, anna, test_admin):
     assert "[Erfassungsfehler korrigiert]" not in notice["text"] and "Reha" not in notice["text"]
 
 
+def test_saldo_addition_without_reclamped_entries(db, anna, test_admin):
+    """Spec 14: Neukappungs-Zusatz nur bei n > 0, Saldo-Zusatz nur bei Saldo Δ ≠ 0 —
+    beide Bedingungen sind unabhängig. Nach PR3 häufigster Verkürzungsfall: eine
+    rückwirkende reine Soll-Änderung ohne neu gekappten Eintrag (10.2, Beispielzeile 5)."""
+    _summary_row(db, anna, test_admin, _note(count=0, saldo_delta_minutes=-240, credit_reductions=1,
+                                             shortening=True, reason_type="sonstiges",
+                                             reason_text_value="Freitext"),
+                 created=NOW - timedelta(days=1))
+    [notice] = ra.schedule_change_notices(db, anna, now=NOW)
+    assert notice["text"] == (
+        f"Ihre Arbeitszeit wurde ab 01.09.2026 geändert (neu: {SHORT_TEXT}). Überstundenkonto im Zeitraum "
+        "−4:00 h. Rückwirkende Verkürzung – Grund: Sonstiges.")
+    assert "neu berechnet" not in notice["text"] and "Freitext" not in notice["text"]
+
+
+def test_reclamp_addition_without_saldo_change(db, anna, test_admin):
+    """Gegenstück: n > 0 bei Saldo Δ = 0 → Neukappungs-Zusatz (auch „+0:00 h"),
+    kein Satz zum Überstundenkonto."""
+    _summary_row(db, anna, test_admin, _note(count=2, delta_minutes=0, saldo_delta_minutes=0),
+                 created=NOW - timedelta(days=1))
+    [notice] = ra.schedule_change_notices(db, anna, now=NOW)
+    assert notice["text"] == (
+        f"Ihre Arbeitszeit wurde ab 01.09.2026 geändert (neu: {SHORT_TEXT}). 2 Einträge neu berechnet, "
+        "angerechnete Zeit +0:00 h.")
+    assert "Überstundenkonto" not in notice["text"]
+
+
 def test_future_reset_and_delete_texts(db, anna, test_admin):
     add_row(db, anna, date(2026, 11, 2), weekly_hours=25)
     _summary_row(db, anna, test_admin, _note(effective_from=date(2026, 11, 2)), created=NOW - timedelta(days=3))
