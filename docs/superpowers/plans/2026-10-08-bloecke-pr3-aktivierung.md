@@ -4879,6 +4879,8 @@ def delete_preview_working_hours_change(
 
 - [ ] **Step 4: `delete_working_hours_change` ersetzen**
 
+> **⚠ Nachtrag Review Task 10 (Lückenzeile):** Tage vor der ältesten Verlaufszeile lösen über die User-Zeile auf, und der Spiegel nach dem Löschen verschiebt ihr Soll ungeprüft (Konto, Jahressaldo, Urlaubsverbrauch — beim Anlegen nachgewiesen, Realfall MMK der Prod-Kopie: +2:00 h am Konto vorbei). Das Anlegen friert die Lücke seit dem Fix in `_insert_change_rows` ein. Im `_apply` unten deshalb **vor** `db.delete(change)` dieselbe Lückenzeile anlegen: `_freeze_gap_before(db, user, current_user.tenant_id, <effective_from der ältesten Zeile>, _soll_coverage_start(db, user, current_user.tenant_id))`. Entfällt nur, wenn die gelöschte Zeile die einzige ist (dann gibt es keine älteste verbleibende Zeile; Bestandsverhalten). Test analog `TestUncoveredPastIsFrozen` in `test_wh_change_preview_blocks.py`: Konto/Jahressaldo nach dem Löschen = vorher + `saldo_delta_hours` der delete-preview.
+
 Die komplette Funktion ersetzen durch:
 
 ```python

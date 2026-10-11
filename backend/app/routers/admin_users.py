@@ -15,7 +15,7 @@ from decimal import Decimal
 from pydantic import ValidationError
 from app.services.timezone_service import today_local
 from app.database import get_db
-from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, VacationRequest, TimeEntryAuditLog, UserRole, PublicHoliday
+from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, VacationRequest, TimeEntryAuditLog, UserRole, PublicHoliday, YearCarryover
 from app.models.security_event import (
     EVENT_ADMIN_SET_PASSWORD,
     EVENT_USER_DEACTIVATED,
@@ -1630,40 +1630,105 @@ def _reset_matches(change_data: WorkingHoursChangeCreate, norm, reset_schedule) 
     )
 
 
+BASELINE_ROW_NOTE = "Automatisch erfasster Ausgangswert vor der ersten Stundenänderung"
+
+
+def _soll_coverage_start(db: Session, user: User, tenant_id) -> Optional[date]:
+    """Frühester Tag, dessen Soll in einem Saldo zählt (2. Review Task 10);
+    ``None`` = es gibt keinen (weder Buchung noch Jahresübertrag).
+
+    Mit ``first_work_day`` zählt davor kein Soll (Beschäftigungsfenster, #193) —
+    dazu, wie bisher bei der Basis-Zeile, die älteste Buchung. Ohne
+    ``first_work_day`` der 01.01. des frühesten Jahrs aus ältestem Eintrag,
+    ältester Abwesenheit und frühestem Jahresübertrag: das Überstundenkonto zählt
+    ab dem 01.01. des Übertragsjahrs bzw. dem Monatsersten des ältesten Eintrags,
+    der Jahressaldo (``get_ytd_summary``, Dashboard) ab dem 01.01., der
+    Urlaubsverbrauch je Abwesenheitstag — der 01.01. deckt alle zugleich."""
+    oldest_entry = db.query(func.min(TimeEntry.date)).filter(
+        TimeEntry.user_id == user.id, TimeEntry.tenant_id == tenant_id,  # F-026
+    ).scalar()
+    oldest_absence = db.query(func.min(Absence.date)).filter(
+        Absence.user_id == user.id, Absence.tenant_id == tenant_id,  # F-026
+    ).scalar()
+    candidates = [d for d in (oldest_entry, oldest_absence) if d]
+    if user.first_work_day:
+        candidates.append(user.first_work_day)
+    else:
+        years = [d.year for d in candidates]
+        oldest_carryover = db.query(func.min(YearCarryover.year)).filter(
+            YearCarryover.user_id == user.id, YearCarryover.tenant_id == tenant_id,  # F-026
+        ).scalar()
+        if oldest_carryover:
+            years.append(oldest_carryover)
+        if years:
+            candidates.append(date(min(years), 1, 1))
+    return min(candidates) if candidates else None
+
+
+def _frozen_row(user: User, tenant_id, effective_from: date, schedule) -> WorkingHoursChange:
+    """Verlaufszeile, die den bisher aufgelösten Snapshot UNVERÄNDERT fortschreibt
+    — die Rechnung der gedeckten Tage bleibt byte-identisch."""
+    return WorkingHoursChange(
+        user_id=user.id, tenant_id=tenant_id, effective_from=effective_from,
+        weekly_hours=schedule.weekly_hours, use_daily_schedule=schedule.use_daily_schedule,
+        hours_monday=schedule.day_hours[0], hours_tuesday=schedule.day_hours[1],
+        hours_wednesday=schedule.day_hours[2], hours_thursday=schedule.day_hours[3],
+        hours_friday=schedule.day_hours[4], work_days_per_week=schedule.work_days_per_week,
+        # E8: die Zeile friert auch die Blöcke der Vergangenheit ein.
+        blocks=work_blocks_service.week_blocks_to_json(schedule.blocks, schedule.block_pauses),
+        note=BASELINE_ROW_NOTE,
+    )
+
+
+def _freeze_gap_before(db: Session, user: User, tenant_id, first_row: date, coverage: Optional[date]) -> None:
+    """Lückenzeile (2. Review Task 10): beginnt die früheste Verlaufszeile
+    (``first_row``) nach ``_soll_coverage_start``, deckt eine Zeile ab dort die
+    Lücke mit dem bisher aufgelösten Vertrag — vor der frühesten Zeile gibt es
+    keine, aufgelöst wird die User-Zeile. Jeder Schreibweg, der die User-Zeile
+    danach spiegelt, ruft das VOR dem Spiegel (Anlegen; das Löschen ab Task 11)."""
+    if coverage and coverage < first_row:
+        current = calculation_service.get_schedule_for_date(db, user, first_row - timedelta(days=1))
+        db.add(_frozen_row(user, tenant_id, coverage, current))
+
+
 def _insert_change_rows(db: Session, user: User, current_user: User, change_data: WorkingHoursChangeCreate,
                         norm, new_blocks, new_pauses) -> WorkingHoursChange:
-    """Spec 9.3 Schritt 4 — Basis-Zeile (nur ohne Historie), neue Zeile, flush. Die
-    Logik ist die bisherige von ``create_working_hours_change``; neu sind nur die
-    Blöcke. Den Spiegel der User-Zeile (E9) macht der Schreibpfad erst in Schritt
-    10 (``_sync_user_to_current_change``) — Review Task 10: hier, VOR der
-    Klassifikation, rechnete das Speichern Tage vor der Basis-Zeile schon gegen
-    den NEUEN Vertrag, die Vorschau aber nicht; beide klassifizierten dieselbe
-    Eingabe verschieden.
+    """Spec 9.3 Schritt 4 — Basis-Zeile bzw. Lückenzeile, neue Zeile, flush. Die
+    Logik ist die bisherige von ``create_working_hours_change``; neu sind die
+    Blöcke und die Lückenzeile. Den Spiegel der User-Zeile (E9) macht der
+    Schreibpfad erst in Schritt 10 (``_sync_user_to_current_change``) — Review
+    Task 10: hier, VOR der Klassifikation, rechnete das Speichern Tage vor der
+    Basis-Zeile schon gegen den NEUEN Vertrag, die Vorschau aber nicht; beide
+    klassifizierten dieselbe Eingabe verschieden.
 
-    Basis-Zeile (Release-Review 1.16.0, #415-Folgefund): ``get_schedule_for_date``
+    Hintergrund (Release-Review 1.16.0, #415-Folgefund): ``get_schedule_for_date``
     fällt für jeden Tag VOR der ersten Verlaufszeile auf die User-Zeile zurück —
-    und genau die wird beim Sync überschrieben. Ohne Basis-Zeile gälte der NEUE
-    Vertrag rückwirkend für die gesamte Vergangenheit. Sie entsteht nur, wenn
-    sich der Snapshot tatsächlich ändert (#431: der VOLLSTÄNDIGE Snapshot samt
-    Tagesverteilung, Modus und — Spec E8 — Blöcken; eine reine Blockänderung
-    zählt also). Datum = das FRÜHESTE aus ``first_work_day``, ältester Buchung
-    (Eintrag/Abwesenheit) und dem Vortag der Änderung (I5, Abschluss-Review:
-    ``first_work_day`` ist oft leer — dann deckte die Zeile sonst nur einen Tag
-    ab). Sie schreibt den bisher aufgelösten Snapshot UNVERÄNDERT fort, damit die
-    Vergangenheit byte-identisch eingefroren bleibt.
+    und genau die überschreibt der Spiegel. Was dort zählt, muss deshalb VORHER
+    eine Verlaufszeile decken, die den bisher aufgelösten Snapshot UNVERÄNDERT
+    fortschreibt (byte-identisch eingefroren). „Was zählt" beginnt bei
+    ``_soll_coverage_start``.
 
-    Ohne ``first_work_day`` reicht sie zusätzlich bis zum Monatsersten des
-    Wirkungsdatums und des ältesten Eintrags (Review Task 10): dort beginnen der
-    erste Monat der Saldo-Klassifikation (``wh_change_service._saldo_by_year``) und
-    das Überstundenkonto ohne Jahresübertrag (``get_overtime_account``). Tage
-    davor ohne Verlaufszeile fielen nach dem Spiegel auf den NEUEN Vertrag zurück
-    — der Commit verschob ihr Soll, ohne dass Vorschau oder Schutzpaket es sahen.
-    Mit ``first_work_day`` zählt vor ihm ohnehin kein Soll."""
-    has_history = db.query(WorkingHoursChange).filter(
+    - Ohne Verlauf (Basis-Zeile): nur, wenn sich der Snapshot tatsächlich ändert
+      (#431: der VOLLSTÄNDIGE Snapshot samt Tagesverteilung, Modus und — Spec E8
+      — Blöcken; eine reine Blockänderung zählt also). Sie deckt mindestens den
+      Vortag der Änderung (I5, Abschluss-Review: ``first_work_day`` ist oft leer)
+      und ohne ``first_work_day`` auch dessen Monatsersten (Review Task 10).
+    - Mit Verlauf (Lückenzeile, 2. Review Task 10): liegt die älteste Zeile — bzw.
+      die neue, wenn sie früher liegt — nach dem Beginn, deckt eine Zeile die
+      Lücke davor. Ohne sie verschob der Commit das Soll dieser Tage (Konto,
+      Jahressaldo, Urlaubsverbrauch), ohne dass Vorschau, Schutzpaket oder
+      Protokoll es sahen (nachgewiesen: Konto −2:00 h bei Vorschau-Saldo 0;
+      Realfall der Prod-Kopie: älteste Zeile 12.01., Übertrag 2026, die Tage
+      01.–11.01. hingen an der User-Zeile). Bedingungslos: welche Zeile der
+      Spiegel wählt, steht erst nach Schritt 10 fest, und eine Zeile mit dem
+      bereits gültigen Snapshot ändert keine Rechnung."""
+    tenant_id = current_user.tenant_id
+    oldest_row = db.query(func.min(WorkingHoursChange.effective_from)).filter(
         WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-    ).first() is not None
-    if not has_history:
+        WorkingHoursChange.tenant_id == tenant_id,  # F-026
+    ).scalar()
+    coverage = _soll_coverage_start(db, user, tenant_id)
+    if oldest_row is None:
         current = calculation_service.get_schedule_for_date(
             db, user, change_data.effective_from - timedelta(days=1))
         if _comparable_snapshot(
@@ -1674,29 +1739,15 @@ def _insert_change_rows(db: Session, user: User, current_user: User, change_data
             norm.work_days_per_week, new_blocks, new_pauses,
         ):
             candidates = [change_data.effective_from - timedelta(days=1)]
-            if user.first_work_day:
-                candidates.append(user.first_work_day)
-            oldest_entry = db.query(func.min(TimeEntry.date)).filter(
-                TimeEntry.user_id == user.id, TimeEntry.tenant_id == current_user.tenant_id,  # F-026
-            ).scalar()
-            oldest_absence = db.query(func.min(Absence.date)).filter(
-                Absence.user_id == user.id, Absence.tenant_id == current_user.tenant_id,  # F-026
-            ).scalar()
-            candidates += [d for d in (oldest_entry, oldest_absence) if d]
+            if coverage:
+                candidates.append(coverage)
             if not user.first_work_day:
-                candidates += [date(d.year, d.month, 1) for d in (change_data.effective_from, oldest_entry) if d]
-            db.add(WorkingHoursChange(
-                user_id=user.id, tenant_id=current_user.tenant_id, effective_from=min(candidates),
-                weekly_hours=current.weekly_hours, use_daily_schedule=current.use_daily_schedule,
-                hours_monday=current.day_hours[0], hours_tuesday=current.day_hours[1],
-                hours_wednesday=current.day_hours[2], hours_thursday=current.day_hours[3],
-                hours_friday=current.day_hours[4], work_days_per_week=current.work_days_per_week,
-                # E8: die Basis-Zeile friert auch die Blöcke der Vergangenheit ein.
-                blocks=work_blocks_service.week_blocks_to_json(current.blocks, current.block_pauses),
-                note="Automatisch erfasster Ausgangswert vor der ersten Stundenänderung",
-            ))
+                candidates.append(change_data.effective_from.replace(day=1))  # erster Monat der Saldo-Prüfung
+            db.add(_frozen_row(user, tenant_id, min(candidates), current))
+    else:
+        _freeze_gap_before(db, user, tenant_id, min(oldest_row, change_data.effective_from), coverage)
     change = WorkingHoursChange(
-        user_id=user.id, tenant_id=current_user.tenant_id, effective_from=change_data.effective_from,
+        user_id=user.id, tenant_id=tenant_id, effective_from=change_data.effective_from,
         weekly_hours=norm.weekly_hours, use_daily_schedule=norm.use_daily_schedule,
         hours_monday=norm.day_hours[0], hours_tuesday=norm.day_hours[1],
         hours_wednesday=norm.day_hours[2], hours_thursday=norm.day_hours[3],

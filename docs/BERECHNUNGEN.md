@@ -1194,13 +1194,21 @@ Die automatische **Basis-Zeile** vor der allerersten Änderung (sie friert den b
 gültigen Wert ein) datiert auf das Früheste aus `first_work_day`, der ältesten vorhandenen
 Buchung (`TimeEntry`/`Absence`) und dem Vortag der Änderung. `first_work_day` allein
 genügt nicht — es ist nullable, und ohne die anderen Kandidaten deckte die Basis-Zeile nur
-einen einzigen Tag ab. Ohne `first_work_day` reicht sie zusätzlich bis zum Monatsersten
-des Wirkungsdatums und des ältesten Zeiteintrags: Dort beginnen der erste Monat der
-Saldo-Prüfung einer Änderung und das Überstundenkonto (ohne Jahresübertrag). Tage davor
-ohne Verlaufszeile fielen sonst nach dem Speichern auf den neuen Vertrag zurück — ihr Soll
-verschob sich, ohne dass Vorschau oder Schutzpaket es sahen. Die User-Zeile spiegelt die
-gültige Verlaufszeile erst nach Prüfung und Protokoll (Spec 9.3 Schritt 10), damit
-Vorschau und Speichern denselben Zustand bewerten.
+einen einzigen Tag ab. Ohne `first_work_day` reicht sie zusätzlich bis zum 01.01. des
+frühesten Jahrs aus ältestem Eintrag, ältester Abwesenheit und frühestem Jahresübertrag
+sowie bis zum Monatsersten des Wirkungsdatums: Dort beginnen das Überstundenkonto (01.01.
+des Übertragsjahrs bzw. Monatserster des ältesten Eintrags), der Jahressaldo (01.01.) und
+der erste Monat der Saldo-Prüfung einer Änderung.
+
+Dieselbe Regel gilt, wenn schon Verlaufszeilen existieren: Liegt die älteste Zeile (bzw.
+die neue, wenn sie früher liegt) nach diesem Beginn, legt das Speichern eine **Lückenzeile**
+mit dem bisher aufgelösten Vertrag davor (gleicher Hinweistext wie die Basis-Zeile). Tage
+ohne Verlaufszeile lösen über die User-Zeile auf; die spiegelt nach dem Speichern die
+gültige Verlaufszeile — ohne Basis- bzw. Lückenzeile verschob sich ihr Soll (Konto,
+Jahressaldo, Urlaubsverbrauch), ohne dass Vorschau, Schutzpaket oder Protokoll es sahen.
+Basis- und Lückenzeile ändern keine Rechnung, sie halten sie nur fest. Die User-Zeile
+spiegelt die gültige Verlaufszeile erst nach Prüfung und Protokoll (Spec 9.3 Schritt 10),
+damit Vorschau und Speichern denselben Zustand bewerten.
 
 ### TZ-F: Rückwirkende Tagesplan-Änderung (#431)
 

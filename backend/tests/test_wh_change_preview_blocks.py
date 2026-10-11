@@ -7,15 +7,18 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from app.models import Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, User, UserRole, WorkingHoursChange
+from app.models import (
+    Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, User, UserRole, WorkingHoursChange, YearCarryover,
+)
 from app.models.tenant import Tenant
-from app.routers.admin_users import PREVIEW_DATE_MISSING, RESET_CONFLICT_DETAIL
+from app.routers.admin_users import PREVIEW_DATE_MISSING, RESET_CONFLICT_DETAIL, _sync_user_from_change
 from app.schemas.working_hours_change import EFFECTIVE_FROM_RANGE_DETAIL, WorkingHoursChangeCreate
 from app.services import calculation_service, wh_change_service
 from tests.test_endpoints import test_app
 from tests.wh_change_helpers import (
-    ANNA_WEEK, MONDAYS, absence, add_row, admin_client, entry, freeze, t, with_pauses,
+    ANNA_WEEK, MONDAYS, RETRO_REASON, absence, add_row, admin_client, entry, freeze, t, with_pauses,
 )
+from tests.conftest import DEFAULT_TENANT_ID
 from tests.work_blocks_fixtures import block_week
 
 TUE_THU = dict(tue=[("08:00", "12:00")], thu=[("08:00", "12:00")])
@@ -287,17 +290,143 @@ class TestPreviewSaveParity:
         assert self._overtime(db, test_user) == pytest.approx(before + preview["saldo_delta_hours"])
 
     def test_existing_history_classifies_like_the_preview(self, client, db, test_user):
-        """Mit Verlauf entsteht keine Basis-Zeile; die Tage vor der ältesten Zeile
-        (hier 01.–13.09.) lösen weiter auf die User-Zeile auf. Spiegelte das
-        Speichern sie schon in Schritt 4, sah seine Klassifikation dort den neuen
-        Vertrag (400 „Rückwirkende Verkürzung …"), die Vorschau nicht — der Dialog
-        bot das Schutzpaket nie an, das Speichern verlangte es."""
+        """Mit Verlauf: die Tage vor der ältesten Zeile (hier 01.–13.09.) lösten
+        über die User-Zeile auf, und die zählt das Überstundenkonto schon (ab dem
+        Monatsersten des ältesten Eintrags). Spiegelte das Speichern sie schon in
+        Schritt 4, sah seine Klassifikation dort den neuen Vertrag (400
+        „Rückwirkende Verkürzung …"), die Vorschau nicht. Seit dem Spiegel in
+        Schritt 10 stimmten beide überein — aber der Commit verschob das Soll
+        dieser Tage danach ungeprüft (2. Review Task 10: Konto −2:00 h bei
+        Vorschau-Saldo 0, Sammelzeile „Saldo Δ +0 Min"). Schritt 4 friert die
+        Lücke deshalb mit dem bisher aufgelösten Snapshot ein."""
         add_row(db, test_user, date(2026, 9, 14), weekly_hours=40)
+        entry(db, test_user, date(2026, 9, 1), t(8), t(16))
         entry(db, test_user, date(2026, 9, 21), t(8), t(16))
+        before = self._overtime(db, test_user)
         preview = _preview(client, test_user, self.BODY)
         resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes", json=self.BODY)
         assert preview["is_shortening"] == (resp.status_code == 400)
         assert resp.status_code == 201, resp.text
+        assert self._overtime(db, test_user) == pytest.approx(before + preview["saldo_delta_hours"])
         db.expire_all()
         user = db.query(User).filter(User.id == test_user.id).one()
         assert (user.use_daily_schedule, float(user.hours_monday)) == (True, 6.0)  # Schritt 10 spiegelt weiter
+        rows = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == test_user.id).order_by(WorkingHoursChange.effective_from).all()
+        assert [r.effective_from for r in rows] == [date(2026, 1, 1), date(2026, 9, 14), date(2026, 9, 15)]
+        assert (float(rows[0].weekly_hours), rows[0].use_daily_schedule) == (40.0, False)
+        assert "Ausgangswert" in rows[0].note
+
+
+def _carryover(db, user, year):
+    db.add(YearCarryover(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, year=year, overtime_hours=0,
+                         vacation_days=0, source="manual"))
+    db.commit()
+
+
+def _history_mirrored_to_july(db, user):
+    """Realfall MMK (Prod-Kopie): älteste Zeile 12.01., kein ``first_work_day``,
+    Übertrag 2026 — das Konto beginnt am 01.01.; die User-Zeile spiegelt die
+    Zeile vom 01.07. (7/0/7/0/6), an ihr hängen die Tage 01.–11.01."""
+    _carryover(db, user, 2026)
+    add_row(db, user, date(2026, 1, 12), weekly_hours=40)
+    july = add_row(db, user, date(2026, 7, 1), day_hours=(7, 0, 7, 0, 6))
+    _sync_user_from_change(user, july)
+    db.commit()
+
+
+def _history_from_september(db, user):
+    add_row(db, user, date(2026, 9, 14), weekly_hours=40)
+
+
+def _first_change_with_older_carryover(db, user):
+    """Ohne Verlauf (Basis-Zeile): Übertrag 2025 — das Konto beginnt am
+    01.01.2025, lange vor dem ältesten Eintrag (21.09.2026)."""
+    _carryover(db, user, 2025)
+
+
+def _history_and_old_vacation(db, user):
+    """Ein Urlaubstag am Freitag, 22.08.2025, vor jeder Verlaufszeile: fällt der
+    Freitag aus dem Plan, zählte er nach dem Spiegel nicht mehr als Verbrauch."""
+    add_row(db, user, date(2026, 9, 14), weekly_hours=40)
+    absence(db, user, date(2025, 8, 22), AbsenceType.VACATION, 8.0)
+
+
+class TestUncoveredPastIsFrozen:
+    """2. Review Task 10 / Spec 20 („rückwirkende Soll-Erhöhungen nur noch mit
+    Schutzpaket"): Tage, deren Soll irgendwo zählt — Überstundenkonto (ab dem
+    01.01. des Übertragsjahrs bzw. dem Monatsersten des ältesten Eintrags),
+    Jahressaldo (ab dem 01.01.), Urlaubsverbrauch (je Abwesenheitstag) —, die
+    aber keine Verlaufszeile deckt, lösen über die User-Zeile auf. Die spiegelt
+    das Speichern in Schritt 10, nach der Klassifikation; Schritt 4 friert sie
+    deshalb mit dem bisher aufgelösten Snapshot ein. Danach bewegt der Commit
+    Konto und Jahressaldo genau um den Vorschau-Saldo und den Urlaubsverbrauch
+    außerhalb des Wirkungsbereichs gar nicht."""
+
+    DAY_PLAN = TestPreviewSaveParity.BODY
+    WEEKLY_30 = {"effective_from": "2026-09-15", "weekly_hours": 30}
+    NO_FRIDAY = {"effective_from": "2026-09-15", "use_daily_schedule": True, "hours_monday": 10,
+                 "hours_tuesday": 10, "hours_wednesday": 10, "hours_thursday": 10, "hours_friday": 0}
+
+    @staticmethod
+    def _measures(db, user):
+        db.expire_all()
+        user = db.query(User).filter(User.id == user.id).one()
+        cutoff = calculation_service.get_soll_cutoff_date(db, user)
+        return (
+            float(calculation_service.get_overtime_account(db, user, 2026, 10, cutoff_date=cutoff)),
+            float(calculation_service.get_ytd_summary(db, user, 2026, cutoff_date=cutoff)["overtime"]),
+            float(calculation_service.get_vacation_account(db, user, 2025)["used_days"]),
+            float(calculation_service.get_vacation_account(db, user, 2026)["used_days"]),
+        )
+
+    @pytest.mark.parametrize("setup, body", [
+        (_history_mirrored_to_july, DAY_PLAN),
+        (_history_from_september, WEEKLY_30),
+        (_first_change_with_older_carryover, WEEKLY_30),
+        (_history_and_old_vacation, NO_FRIDAY),
+    ], ids=["realfall-mmk-uebertrag", "jahressaldo-ab-0101", "basiszeile-uebertragsjahr", "urlaub-vor-dem-verlauf"])
+    def test_commit_moves_only_what_the_preview_shows(self, client, db, test_user, setup, body):
+        setup(db, test_user)
+        entry(db, test_user, date(2026, 9, 21), t(8), t(16))
+        before = self._measures(db, test_user)
+        preview = _preview(client, test_user, body)
+        payload = {**body, **RETRO_REASON} if preview["is_shortening"] else body
+        resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes", json=payload)
+        assert resp.status_code == 201, resp.text
+        delta = preview["saldo_delta_hours"]
+        assert self._measures(db, test_user) == pytest.approx(
+            (before[0] + delta, before[1] + delta, before[2], before[3]))
+
+    def test_preview_and_save_insert_the_same_rows(self, client, db, test_user):
+        """Die Vorschau rollt zurück, rechnet aber mit derselben eingefrorenen
+        Zeile wie das Speichern — sonst klassifizierten beide verschieden."""
+        _history_mirrored_to_july(db, test_user)
+        entry(db, test_user, date(2026, 9, 21), t(8), t(16))
+        _preview(client, test_user, self.DAY_PLAN)
+        assert db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == test_user.id).count() == 2
+        resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes",
+                           json={**self.DAY_PLAN, **RETRO_REASON})
+        assert resp.status_code == 201, resp.text
+        rows = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == test_user.id).order_by(WorkingHoursChange.effective_from).all()
+        assert [r.effective_from for r in rows] == [
+            date(2026, 1, 1), date(2026, 1, 12), date(2026, 7, 1), date(2026, 9, 15)]
+        frozen = rows[0]
+        assert (float(frozen.weekly_hours), frozen.use_daily_schedule,
+                [None if v is None else float(v) for v in (frozen.hours_monday, frozen.hours_tuesday,
+                                                           frozen.hours_wednesday, frozen.hours_thursday,
+                                                           frozen.hours_friday)]) == (
+            20.0, True, [7.0, None, 7.0, None, 6.0])
+
+    def test_first_work_day_needs_no_freeze_before_it(self, client, db, test_user):
+        """Mit ``first_work_day`` zählt davor kein Soll — die Lücke beginnt dort."""
+        test_user.first_work_day = date(2026, 9, 1)
+        db.commit()
+        add_row(db, test_user, date(2026, 9, 14), weekly_hours=40)
+        entry(db, test_user, date(2026, 9, 21), t(8), t(16))
+        resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes", json=self.WEEKLY_30)
+        assert resp.status_code == 201, resp.text
+        rows = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == test_user.id).order_by(WorkingHoursChange.effective_from).all()
+        assert [r.effective_from for r in rows] == [date(2026, 9, 1), date(2026, 9, 14), date(2026, 9, 15)]
