@@ -32,6 +32,7 @@ from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import (
     WorkingHoursChangeCreate, WorkingHoursChangeDelete, WorkingHoursChangePreview, WorkingHoursChangeResponse,
+    effective_from_plausible,
 )
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
 from app.services import (
@@ -2050,6 +2051,11 @@ def preview_working_hours_change(
     try:
         effective_from = date.fromisoformat(value) if isinstance(value, str) else None
     except ValueError:
+        effective_from = None
+    if effective_from is not None and not effective_from_plausible(effective_from):
+        # Review Task 10: Zwischenwerte beim Tippen der Jahreszahl (``0202-09-01``)
+        # liest ``fromisoformat`` als echtes Datum — gerechnet würde über
+        # Jahrhunderte. Wie ein fehlendes Datum: weder Fenster noch Rechenpfad.
         effective_from = None
     if effective_from is None:
         # Ohne Datum gibt es keinen Wirkungsbereich — gerechnet wird nichts,

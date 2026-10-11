@@ -15,6 +15,21 @@ _HOURS_INPUT_FIELDS = frozenset({"weekly_hours", *work_blocks_service.HOURS_FIEL
 # reclamp_audit.REASON_TYPES.
 RetroReasonType = Literal["erfassungsfehler", "einvernehmlich", "sonstiges"]
 
+# Plausibilitätsgrenze des Wirkungsdatums (Review Task 10) — dieselben Jahre wie
+# ``admin_carryovers`` (2000–2100). Chrome/Edge melden beim Tippen der Jahreszahl
+# Zwischenwerte (``0002-…``, ``0020-…``, ``0202-…``) als vollständiges Datum; ohne
+# Grenze rechnete der Rechenpfad über Jahrhunderte (73 s je Vorschau, beim Jahr 1
+# ``OverflowError`` → 500). Speichern → deutsche 422, Vorschau → wie ein
+# fehlendes Datum (``effective_from_plausible`` im Router, vor jeder Rechnung).
+EFFECTIVE_FROM_MIN = date(2000, 1, 1)
+EFFECTIVE_FROM_MAX = date(2100, 12, 31)
+EFFECTIVE_FROM_RANGE_DETAIL = "Das Wirkungsdatum muss zwischen dem 01.01.2000 und dem 31.12.2100 liegen."
+
+
+def effective_from_plausible(value: date) -> bool:
+    """DIE eine Grenze für Anlegen (Validator) und Vorschau (Router)."""
+    return EFFECTIVE_FROM_MIN <= value <= EFFECTIVE_FROM_MAX
+
 
 class TimeBlockIn(BaseModel):
     """Ein Block „von–bis" als ``"HH:MM"`` (Raster und Reihenfolge prüft
@@ -84,6 +99,15 @@ class WorkingHoursChangeCreate(WorkingHoursChangeBase, RetroReasonFields):
     def blocks_json(self) -> Optional[list]:
         """Kanonische JSON-Woche (Spec 3.1) oder ``None``."""
         return None if self.blocks is None else [d.model_dump() for d in self.blocks]
+
+    @field_validator('effective_from')
+    @classmethod
+    def check_effective_from_range(cls, value: date) -> date:
+        """Review Task 10: nur am Create-Schema — beim LESEN (``Response``) soll
+        eine Bestandszeile nie an einer Eingabegrenze scheitern."""
+        if not effective_from_plausible(value):
+            raise ValueError(EFFECTIVE_FROM_RANGE_DETAIL)
+        return value
 
     # Reihenfolge zählt: Pydantic führt die ``after``-Validatoren einer Klasse in
     # Definitionsreihenfolge aus — ``derive_from_blocks`` muss das Soll setzen,

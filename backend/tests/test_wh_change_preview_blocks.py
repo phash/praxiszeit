@@ -1,11 +1,14 @@
 """Spec 11.1/11.3: Vorschau per POST — untypisiert, nie 422 beim Tippen, rollt
 immer zurück, protokolliert nie."""
+import re
 from datetime import date
 
 import pytest
+from pydantic import ValidationError
 
 from app.models import Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
 from app.routers.admin_users import PREVIEW_DATE_MISSING, RESET_CONFLICT_DETAIL
+from app.schemas.working_hours_change import EFFECTIVE_FROM_RANGE_DETAIL, WorkingHoursChangeCreate
 from app.services import wh_change_service
 from tests.test_endpoints import test_app
 from tests.wh_change_helpers import (
@@ -83,6 +86,35 @@ class TestUnfinishedInput:
         resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes/preview")
         assert resp.status_code == 200, resp.text
         assert resp.json()["blocked_reason"] == PREVIEW_DATE_MISSING
+
+    # Review Task 10: Chrome/Edge melden beim Tippen der Jahreszahl Zwischenwerte
+    # (0002-…, 0020-…, 0202-…) als vollständiges Datum. ``date.fromisoformat``
+    # nimmt sie an — ohne Grenze lief ``run_change`` über ~22.000 Monate (73 s)
+    # bzw. endete in ``OverflowError`` (500).
+    @pytest.mark.parametrize("value", ["0202-09-01", "0001-01-01", "0020-09-01", "1999-12-31", "2101-01-01"])
+    def test_implausible_year_is_a_missing_date(self, client, test_user, monkeypatch, value):
+        def _never(*args, **kwargs):
+            raise AssertionError("run_change darf bei einem unplausiblen Datum nicht laufen")
+
+        monkeypatch.setattr(wh_change_service, "run_change", _never)
+        body = _preview(client, test_user, {"effective_from": value, "weekly_hours": 30})
+        assert body["blocked_reason"] == PREVIEW_DATE_MISSING
+        assert (body["affected_time_entries"], body["is_retroactive"]) == (0, False)
+
+    @pytest.mark.parametrize("value", ["0202-09-01", "0001-01-01", "1999-12-31", "2101-01-01"])
+    def test_saving_an_implausible_year_is_a_german_422(self, client, db, test_user, value):
+        resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes",
+                           json={"effective_from": value, "weekly_hours": 30})
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["detail"] == EFFECTIVE_FROM_RANGE_DETAIL
+        assert db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == test_user.id).count() == 0
+
+    def test_range_bounds_are_inclusive(self):
+        for d in (date(2000, 1, 1), date(2100, 12, 31)):
+            assert WorkingHoursChangeCreate(effective_from=d, weekly_hours=30).effective_from == d
+        for d in (date(1999, 12, 31), date(2101, 1, 1)):
+            with pytest.raises(ValidationError, match=re.escape(EFFECTIVE_FROM_RANGE_DETAIL)):
+                WorkingHoursChangeCreate(effective_from=d, weekly_hours=30)
 
     def test_old_get_preview_is_gone(self, client, test_user):
         resp = client.get(f"/api/admin/users/{test_user.id}/working-hours-changes/preview"
