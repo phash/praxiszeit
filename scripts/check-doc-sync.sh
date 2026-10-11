@@ -768,6 +768,8 @@ group_technik() {
   forbid "$f" 'Arbeitszeit-Fenster pro Wochentag setzen'
   forbid "$f" '`…/api/admin/users/{id}/working-hours` |'
   forbid "$f" 'Sonntag, Arbeitszeit-Fenster)'
+  # local-ci Schritt 0 (Review Task 13): auch der Doku-Abgleich läuft nur lokal
+  need "$f" '**E2E**, der **Doku-Abgleich** (`scripts/check-doc-sync.sh`)'
   f=README.md
   need "$f" '- `066` -'
   need "$f" '- `073` - Arbeitszeit-Blöcke'
@@ -866,6 +868,10 @@ group_claude() {
   need "$f" 'Anlegen und Löschen einer Arbeitszeit-Änderung sperren über `admin_users._lock_and_reload`'
   forbid "$f" 'Die Endpunkte der Arbeitszeit-Änderungen sperren'
   need "$f" 'die Vorschauen nehmen bewusst KEINE Ankersperre'
+  # Review Task 13: local-ci fährt den Doku-Abgleich als Schritt 0, die
+  # GitHub-Actions-Pipeline nicht — beide Aufzählungen müssen ihn nennen
+  need "$f" 'All-in-one: `bash scripts/local-ci.sh` (Doku-Abgleich `scripts/check-doc-sync.sh all`,'
+  need "$f" 'Frontend, E2E, den Doku-Abgleich und die nativen Tests fährt der Workflow NICHT'
 }
 
 group_changelog() {

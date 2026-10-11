@@ -14,8 +14,10 @@
 #   * steps 4-7  frontend: tsc, vitest, eslint, vite build
 #   * step 8  E2E against a live docker compose stack
 #
-# So: a backend-only change is already gated by Actions; anything touching the
-# frontend, the installer or the E2E surface needs this script.
+# So: a backend-only change is already gated by Actions (unless it rewords a
+# message the docs quote: step 0 also checks backend/app); anything touching
+# the frontend, the installer, the docs (handbooks, help mirror, CLAUDE.md,
+# CHANGELOG, architecture docs) or the E2E surface needs this script.
 #
 # Steps:
 #   0. Doku-Abgleich              (scripts/check-doc-sync.sh all — Spiegel,
