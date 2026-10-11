@@ -147,7 +147,12 @@ test.describe('Arbeitszeit-Blöcke (Spec 2026-10-08)', () => {
     if (workday.slice(0, 7) !== currentMonth()) {
       await adminPage.getByRole('button', { name: 'Vorheriger Monat' }).click();
     }
-    await expect(adminPage.getByText(/1:30 h zwischen den Blöcken nicht angerechnet/).first()).toBeVisible({ timeout: 10000 });
+    // Neuer Netto-Wert UND neue Lücke in EINER Zeile (RawStampNote): 2:30 → 3:30 h
+    // angerechnet, 2:30 → 1:30 h Lücke — eine Neukappung, die nur eins der beiden
+    // Felder nachzieht, fällt hier auf.
+    await expect(adminPage.locator('main')
+      .getByText(/angerechnet 3:30 h · 1:30 h zwischen den Blöcken nicht angerechnet/).first())
+      .toBeVisible({ timeout: 10000 });
   });
 
   test('3: Verkürzung — Standard „Ab heute", danach rückwirkend mit Grund und Haken', async ({
