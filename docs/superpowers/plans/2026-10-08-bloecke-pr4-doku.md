@@ -521,7 +521,7 @@ Nicht angerechnete Zeit ist nie still. Unter der Uhrzeit eines Eintrags steht im
 
 **Anerkennen:** Wurde vor, nach oder zwischen den Blöcken tatsächlich gearbeitet, klicken Sie am Eintrag (Admin-Dashboard, Detailansicht, oder Monatsjournal) auf **„Anerkennen"**. Die Bestätigung lautet: *„Die gesamte gestempelte Zeit (08:00–18:00) wird angerechnet. Sie bleibt angerechnet — auch bei späteren Neuberechnungen und wenn die Verwaltung die Zeiten ändert; Mitarbeitende können den Eintrag danach nur noch per Änderungsantrag ändern. Wurde nur ein Teil der Zeit gearbeitet, den Eintrag besser aufteilen oder korrigieren. Der Vorgang wird protokolliert."* Ein anerkannter Eintrag wird nie wieder gekappt, auch nicht bei späteren Arbeitszeit-Änderungen; ändern Sie seine Zeiten (Bearbeiten, Antrag, XLS-Import), werden auch die neuen Zeiten ungekappt angerechnet. Eine Rücknahme der Anerkennung gibt es nicht. Ein offener Eintrag lässt sich erst nach dem Ausstempeln anerkennen, ein **automatisch geschlossener** erst, wenn das tatsächliche Ende eingetragen ist (*„Automatisch geschlossener Eintrag: Bitte zuerst das tatsächliche Ende eintragen."*). Anerkennen blockiert nie an § 3 oder § 4 ArbZG; Verstöße erscheinen als Hinweis. Im Änderungsprotokoll steht der Vorgang als **„Anrechnung anerkannt"**.
 
-**Anrechnung beantragen:** Mitarbeitende können an einem eigenen Eintrag mit nicht angerechneter Zeit über **„Anrechnung beantragen"** einen Änderungsantrag mit Begründung stellen. In der Antragsprüfung (→ [Abschnitt 8](#8-korrekturanträge-prüfen)) bedeutet „Genehmigen" dann „Anerkennen".
+**Anrechnung beantragen:** Mitarbeitende können an einem eigenen Eintrag mit nicht angerechneter Zeit über **„Anrechnung beantragen"** einen Änderungsantrag mit Begründung stellen. Die Antragsprüfung (→ [Abschnitt 8](#8-korrekturanträge-prüfen)) bietet dafür **„Genehmigen und anerkennen"** und **„Ohne Anerkennen genehmigen"** an.
 
 > **Vergütung:** Nichtanrechnung ersetzt keine Vergütungsentscheidung. Tatsächlich geleistete Arbeit, die angeordnet, gebilligt oder geduldet wurde oder zur Erledigung der Arbeit notwendig war, ist zu vergüten (§ 611a Abs. 2, § 612 Abs. 1 BGB; MiLoG). Wurde vor, nach oder zwischen den Blöcken gearbeitet, nutzen Sie „Anerkennen"; wurde nur ein Teil gearbeitet, den Eintrag aufteilen oder korrigieren statt die ganze Zeit anzuerkennen.
 
@@ -775,7 +775,9 @@ group_admin_rest() {
   need "$f" 'Nicht angerechnet (Min)** (letzte Spalte, ab 1.20.0)'
   need "$f" 'Von 07:45, Bis 18:15, Netto 8,00, Nicht angerechnet 240'
   need "$f" 'inkl. Unterbrechung, Zeiteinträge und Nicht angerechnet'
-  need "$f" 'genehmigen und anerkennen'
+  need "$f" 'Genehmigen und anerkennen'
+  need "$f" 'Ohne Anerkennen genehmigen'
+  need "$f" 'Alle genehmigen'
   need "$f" 'Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.'
   need "$f" '| **Anerkennungen** |'
   need "$f" 'Neukappung (Arbeitszeit-Änderung)'
@@ -844,7 +846,7 @@ Hat die Person [Arbeitszeit-Blöcke](#arbeitszeit-bloecke), ist das die Zeit nac
 1. §8: `(Kappung auf das Arbeitszeit-Fenster, Wochen- oder Nachtarbeitszeit, Kind-krank-Kontingent)` → `(Kappung durch die Arbeitszeit-Blöcke, Wochen- oder Nachtarbeitszeit, Kind-krank-Kontingent)`. Danach, vor dem Kasten `> **Empfehlung:** Prüfen Sie Korrekturanträge zeitnah …`, einfügen:
 
 ```markdown
-**Anrechnung beantragt (ab 1.20.0):** Stellt eine Mitarbeiterin bzw. ein Mitarbeiter einen Antrag über **„Anrechnung beantragen"**, bedeutet **„Genehmigen"** hier **„Anerkennen"**: Die gesamte gestempelte Zeit des Eintrags wird angerechnet und bleibt es (→ [Anerkennen](#nicht-angerechnet-anerkennen)). Bei einem automatisch geschlossenen Eintrag enthält der Antrag das tatsächliche Ende. Bei jedem anderen Änderungsantrag zu einem Eintrag mit nicht angerechneter Zeit bietet die Prüfung zusätzlich **„genehmigen und anerkennen"** an. Ist der Eintrag bereits anerkannt, steht in der Prüfung *„Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet."*
+**Anrechnung beantragt (ab 1.20.0):** Stellt eine Mitarbeiterin bzw. ein Mitarbeiter einen Antrag über **„Anrechnung beantragen"**, trägt er in der Prüfung das Kennzeichen **„Anrechnung beantragt"** und hat zwei Knöpfe: **„Genehmigen und anerkennen"** übernimmt den Antrag und rechnet die gesamte gestempelte Zeit des Eintrags an – dauerhaft (→ [Anerkennen](#nicht-angerechnet-anerkennen)); **„Ohne Anerkennen genehmigen"** übernimmt nur die beantragten Zeiten, die Zeit vor, nach oder zwischen den Blöcken bleibt dann nicht angerechnet. Bei einem automatisch geschlossenen Eintrag enthält der Antrag das tatsächliche Ende. Bei jedem anderen Änderungsantrag zu einem Eintrag mit nicht angerechneter Zeit bietet die Prüfung neben **„Genehmigen"** zusätzlich **„Genehmigen und anerkennen"** an (bei einem automatisch geschlossenen Eintrag nur, wenn der Antrag ein tatsächliches Ende enthält). **Sammel-Genehmigung:** Sind unter den ausgewählten Anträgen Anrechnungsanträge, nennt der Knopf ihre Zahl (z. B. „3 genehmigen, davon 1 mit Anerkennen") und fragt vor dem Absenden nach (*„Genehmigen mit Anerkennen"* → **„Alle genehmigen"**); alle ausgewählten Anrechnungsanträge werden dann anerkannt. Einen davon ohne Anerkennen zu genehmigen geht nur einzeln. Ist der Eintrag bereits anerkannt, steht in der Prüfung *„Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet."*
 
 ```
 
@@ -923,7 +925,7 @@ git commit -F - <<'EOF'
 docs(handbuch): Admin-Handbuch – Exporte, Anträge, Protokoll, Puffer, ArbZG auf 1.20.0
 
 Export-Spalten „Zeiteinträge" und „Nicht angerechnet (Min)" mit Zeilenregel,
-„Anrechnung beantragt" / „genehmigen und anerkennen", Protokollzeilen
+„Anrechnung beantragt" / „Genehmigen und anerkennen", Protokollzeilen
 Neukappung und Anerkennung, XLS-Import, Puffertext (Spec 12.3),
 Anwesenheits-Hinweise und 24-Wochen-Wert, weitere Rechtsgrundlagen,
 Berechnungsanhang. Behebt den toten Link #6-benutzer-verwalten.
@@ -961,7 +963,9 @@ group_mitarbeiter() {
   need "$f" 'Pause in der Lücke wird zusätzlich abgezogen'
   need "$f" 'nicht ausgestempelt – automatisch geschlossen'
   need "$f" 'Anrechnung beantragen'
-  need "$f" 'Anerkannter Eintrag – Änderung bitte per Änderungsantrag.'
+  need "$f" 'Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung'
+  need "$f" 'Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden.'
+  need "$f" 'ohne Anerkennen genehmigt'
   need "$f" 'Pause zwischen den Arbeitsblöcken'
   need "$f" 'Meine Arbeitszeit'
   need "$f" 'Ihre Arbeitszeit wurde ab 01.09.2026 geändert'
@@ -971,6 +975,7 @@ group_mitarbeiter() {
   forbid "$f" '#33-soll-arbeitszeiten-und-anrechnung'
   forbid "$f" 'Soll-Arbeitszeit hinterlegt'
   forbid "$f" 'Soll-Zeiten für Sie hinterlegt'
+  forbid "$f" 'Änderung beantragen'
 }
 
 ```
@@ -1023,7 +1028,7 @@ Angerechnet wird Ihre gestempelte Zeit **innerhalb** der Blöcke – mit einem k
 - **Pause und Lücke:** Die Zeit zwischen zwei Blöcken zählt für die Pausenpflicht mit, sobald nach Abzug des Puffers an beiden Rändern mindestens 15 Minuten übrig bleiben – dann verlangt das Ausstempeln dafür keine zusätzliche Pause. Tragen Sie trotzdem eine Pause ein, obwohl Sie über die Lücke durchgestempelt haben, wird beides abgezogen; Sie sehen dann *„Pause in der Lücke wird zusätzlich abgezogen: 30 Min Pause und 2:30 h nicht angerechnet zwischen den Arbeitsblöcken. Lag die Pause in der Lücke, bitte die Pause auf 0 setzen."*
 - **Vergessen auszustempeln?** Ein offener Eintrag wird über Nacht automatisch geschlossen und nur bis zum Ende Ihres letzten Blocks (plus Puffer) angerechnet: *„eingestempelt 08:00, nicht ausgestempelt – automatisch geschlossen · angerechnet 7:45 h (08:00–18:15)"*. Tragen Sie das tatsächliche Ende per Änderungsantrag nach.
 
-**Haben Sie außerhalb oder zwischen den Blöcken gearbeitet?** Dann beantragen Sie die Anrechnung: In der Zeiterfassung oder im Journal am Eintrag **„Anrechnung beantragen"** wählen, kurz begründen (z. B. „Patientin nach Sprechstundenende versorgt") und absenden. Bei einem automatisch geschlossenen Eintrag geben Sie im selben Antrag das tatsächliche Ende an. Genehmigt die Verwaltung den Antrag, wird die ganze gestempelte Zeit angerechnet und der Eintrag ist **„anerkannt"**. Anerkannte Einträge können Sie nicht mehr direkt bearbeiten (*„Anerkannter Eintrag – Änderung bitte per Änderungsantrag."*) – nutzen Sie **„Änderung beantragen"**.
+**Haben Sie außerhalb oder zwischen den Blöcken gearbeitet?** Dann beantragen Sie die Anrechnung: In der Zeiterfassung oder im Journal am Eintrag **„Anrechnung beantragen"** wählen, kurz begründen (z. B. „Patientin nach Sprechstundenende versorgt") und absenden. Bei einem automatisch geschlossenen Eintrag geben Sie im selben Antrag das tatsächliche Ende an. Das geht auch für den heutigen Eintrag, aber erst nach Arbeitsende – liegt das Ende noch in der Zukunft, erscheint *„Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden."*. Nach dem Absenden sehen Sie *„Antrag auf Anrechnung eingereicht"*; unter **Zeiterfassung → Tab „Anträge"** trägt der Antrag das Kennzeichen **„Anrechnung beantragt"**. Genehmigt die Verwaltung ihn mit Anerkennen, wird die ganze gestempelte Zeit angerechnet, und dort steht **„anerkannt"**. Steht dort **„ohne Anerkennen genehmigt"**, wurden nur die beantragten Zeiten übernommen; die Zeit vor, nach oder zwischen den Blöcken bleibt nicht angerechnet. Einen anerkannten Eintrag können Sie nicht mehr selbst bearbeiten oder löschen: Am selben Tag zeigt die Zeiterfassung statt der Knöpfe ein Schloss mit dem Hinweis *„Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung"*; ab dem nächsten Tag stellen Sie wie bei jedem älteren Eintrag einen **Änderungsantrag** bzw. **Löschantrag** (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)) oder wenden sich an die Verwaltung.
 
 > **Ihre echte Stempelzeit geht nicht verloren:** Der Zeitpunkt, zu dem Sie tatsächlich gestempelt haben, bleibt immer gespeichert (gesetzlich vorgeschrieben, § 16 ArbZG). Für Ihr Stundenkonto wird nur die **angerechnete** Zeit verwendet.
 
@@ -1039,7 +1044,7 @@ Angerechnet wird Ihre gestempelte Zeit **innerhalb** der Blöcke – mit einem k
 
 ```markdown
 | **Anrechnung beantragen** | Bei eigenen Einträgen mit nicht angerechneter Zeit: Antrag, die ganze gestempelte Zeit anzurechnen (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)) |
-| **Änderung beantragen** | Bei **anerkannten** Einträgen anstelle von „Bearbeiten" – anerkannte Einträge ändern Sie nur per Antrag |
+| **Schloss** (heute anerkannter Eintrag) | Kein Bearbeiten oder Löschen; Hinweis „Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung". Ab dem nächsten Tag wie jeder ältere Eintrag über **Änderungsantrag** bzw. **Löschantrag** |
 ```
 
 2. §5 „Ihr Tagessoll": an den Absatz, der mit `Beispiele: 40 h auf 5 Tage = **8 h/Tag**` beginnt, anfügen: ` Hat Ihre Praxis **Arbeitszeit-Blöcke** für Sie hinterlegt, ist Ihr Tagessoll die Summe der Blöcke minus der geplanten Pause innerhalb der Blöcke – z. B. 08:00–12:00 und 15:00–18:00 mit 30 Minuten Pause = **6:30 h**.`
@@ -1059,8 +1064,8 @@ A: Ihre Praxis hat für diesen Wochentag Arbeitszeit-Blöcke hinterlegt. Wenn Si
 **F: Warum steht bei meinem Eintrag „2:30 h zwischen den Blöcken nicht angerechnet"?**
 A: Sie haben über die geplante Pause zwischen zwei Arbeitszeit-Blöcken durchgestempelt. Diese Zeit (abzüglich Puffer) wird nicht angerechnet; Ihre Stempelzeit bleibt gespeichert. Haben Sie in dieser Zeit gearbeitet, beantragen Sie am Eintrag die Anrechnung über **„Anrechnung beantragen"** (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)).
 
-**F: Ich kann einen Eintrag nicht mehr bearbeiten – „Anerkannter Eintrag – Änderung bitte per Änderungsantrag."**
-A: Die Verwaltung hat für diesen Eintrag die ganze gestempelte Zeit anerkannt. Solche Einträge ändern Sie nur noch per Antrag (**„Änderung beantragen"**).
+**F: Bei meinem heutigen Eintrag steht statt der Knöpfe ein Schloss – „Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung".**
+A: Die Verwaltung hat für diesen Eintrag die ganze gestempelte Zeit anerkannt. Selbst bearbeiten oder löschen können Sie ihn nicht mehr. Ab morgen stellen Sie dafür einen **Änderungsantrag** bzw. **Löschantrag** (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)); heute hilft nur die Verwaltung.
 
 **F: Auf meinem Dashboard steht „Ihre Arbeitszeit wurde ab … geändert". Was bedeutet das?**
 A: Ihre Verwaltung hat Ihre Arbeitszeit geändert – Wochenstunden, Tagesplan oder Arbeitszeit-Blöcke. Der Hinweis nennt das Datum, die neue Arbeitszeit und, falls bereits erfasste Einträge neu berechnet wurden, deren Anzahl und die Änderung der angerechneten Zeit. Er verschwindet nach 30 Tagen; die Einzelheiten stehen unter Profil → „Meine Arbeitszeit". Bei Fragen wenden Sie sich an Ihre Verwaltung.
@@ -1127,7 +1132,8 @@ group_kurz() {
   need "$a" 'Arbeitszeit anpassen…'
   need "$a" 'Nach Arbeitsblöcken'
   need "$a" 'Nicht angerechnet (Min)'
-  need "$a" 'genehmigen und anerkennen'
+  need "$a" 'Genehmigen und anerkennen'
+  need "$a" 'Ohne Anerkennen genehmigen'
   need "$a" 'auf den vorherigen Stand zurücksetzen'
   need "$a" '[Erfassungsfehler korrigiert]'
   need "$a" 'Nichtanrechnung ersetzt keine Vergütungsentscheidung'
@@ -1141,6 +1147,7 @@ group_kurz() {
   forbid "$m" 'aller Blöcke des Tages'
   forbid "$m" 'Fehlende Blöcke'
   forbid "$m" 'für Sie Soll-Zeiten hinterlegt'
+  forbid "$m" 'Änderung beantragen'
   need "$s" 'Arbeitszeit anpassen…'
   need "$s" 'Nach Arbeitsblöcken'
   forbid "$s" 'Wochenstunden anpassen…'
@@ -1189,7 +1196,7 @@ Je MA und Wochentag (Mo–Fr) bis zu **3 Blöcke** „von–bis" + **„Pause in
 2. Unter `## Korrekturanträge prüfen` nach der Zeile `- **Ablehnen** → optional Ablehnungsgrund eintragen` anfügen:
 
 ```markdown
-- **„Anrechnung beantragen"** (MA): Genehmigen = **Anerkennen** (ganze gestempelte Zeit zählt); bei anderen Anträgen zu Einträgen mit nicht angerechneter Zeit zusätzlich **„genehmigen und anerkennen"**
+- **„Anrechnung beantragt"** (MA): **„Genehmigen und anerkennen"** (ganze gestempelte Zeit zählt, dauerhaft) oder **„Ohne Anerkennen genehmigen"** (nur die beantragten Zeiten); bei anderen Anträgen zu Einträgen mit nicht angerechneter Zeit neben „Genehmigen" zusätzlich **„Genehmigen und anerkennen"**; Sammel-Genehmigung mit Anrechnungsanträgen fragt nach (**„Alle genehmigen"**)
 ```
 
 3. Einstellungen-Tabelle: `| **Soll-Arbeitszeit-Fenster** | Puffer (Min.) für Soll-Zeiten, Default 15 (s. o.) |` → `| **Soll-Arbeitszeit-Fenster** | Puffer (Min.) an jedem Rand der Arbeitszeit-Blöcke, Default 15; wirkt auf neue Einträge, jeder Eintrag behält seinen Puffer (s. o.) |`
@@ -1207,7 +1214,8 @@ Je MA und Wochentag (Mo–Fr) bis zu **3 Blöcke** „von–bis" + **„Pause in
 - Zu früh / zu spät → *„gestempelt 07:30 · angerechnet ab 07:45"*.
 - Über die Pause zwischen zwei Blöcken durchgestempelt → *„gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet"*.
 - In der Pause zwischen den Blöcken zeigt das Dashboard neutral „Pause zwischen den Arbeitsblöcken".
-- Dort gearbeitet? Am Eintrag **„Anrechnung beantragen"** (mit Begründung). Anerkannte Einträge nur noch per **„Änderung beantragen"**.
+- Dort gearbeitet? Am Eintrag **„Anrechnung beantragen"** (mit Begründung; für heute erst nach Arbeitsende). Tab „Anträge": „Anrechnung beantragt" → „anerkannt" bzw. „ohne Anerkennen genehmigt".
+- Heute anerkannter Eintrag: Schloss, kein Bearbeiten/Löschen; ab morgen per **Änderungsantrag**/**Löschantrag** oder über die Verwaltung.
 - Ihre **echte Stempelzeit bleibt gespeichert** (§16 ArbZG); fürs Stundenkonto zählt die angerechnete Zeit. Nicht angerechnet heißt nicht unbezahlt.
 
 ````
@@ -1219,7 +1227,8 @@ Je MA und Wochentag (Mo–Fr) bis zu **3 Blöcke** „von–bis" + **„Pause in
 ```markdown
 | „angerechnet ab HH:MM" beim Eintrag | Arbeitszeit-Blöcke: nur bis Puffer angerechnet (echte Zeit bleibt) |
 | „… zwischen den Blöcken nicht angerechnet" | Über die Pause zwischen zwei Blöcken gestempelt; gearbeitet? → **„Anrechnung beantragen"** |
-| „Anerkannter Eintrag – Änderung bitte per Änderungsantrag." | Eintrag wurde anerkannt → **„Änderung beantragen"** |
+| Schloss mit „Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung" | Eintrag wurde heute anerkannt → ab morgen **Änderungsantrag**/**Löschantrag** oder die Verwaltung fragen |
+| „Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden." | Anrechnung für heute erst nach dem Ausstempeln beantragen |
 | Hinweis „Ihre Arbeitszeit wurde ab … geändert" | Verwaltung hat Ihre Arbeitszeit geändert → Profil → „Meine Arbeitszeit" |
 ```
 
@@ -1682,6 +1691,7 @@ const VERALTET = [
   'vergessener Nachmittagsblock',
   'Fehlende Blöcke',
   'Spalte „Arbeitsblöcke"',
+  'Änderung beantragen',
 ];
 
 function expectNoStaleTerms(text: string) {
@@ -1704,7 +1714,8 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       'Anrechnung anerkannt',
       'Neukappung (Arbeitszeit-Änderung)',
       'Nicht angerechnet (Min)',
-      'genehmigen und anerkennen',
+      'Genehmigen und anerkennen',
+      'Ohne Anerkennen genehmigen',
       'Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit.',
       'Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)',
       'Mit der beschäftigten Person vereinbart',
@@ -1728,7 +1739,8 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       '5. Arbeitszeit-Blöcke & Anrechnung',
       '2:30 h zwischen den Blöcken nicht angerechnet',
       'Anrechnung beantragen',
-      'Anerkannter Eintrag – Änderung bitte per Änderungsantrag.',
+      'Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung',
+      'erst nach Arbeitsende',
       'Pause zwischen den Arbeitsblöcken',
       'Meine Arbeitszeit',
       'Ihre Arbeitszeit wurde ab 01.09.2026 geändert',
@@ -1764,7 +1776,8 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
     expectNoStaleTerms(users);
     expect(textOf(helpContent['/time-tracking'].content)).toContain('Anrechnung beantragen');
     expect(textOf(helpContent['/profile'].content)).toContain('Meine Arbeitszeit');
-    expect(textOf(helpContent['/admin/change-requests'].content)).toContain('genehmigen und anerkennen');
+    expect(textOf(helpContent['/admin/change-requests'].content)).toContain('Genehmigen und anerkennen');
+    expect(textOf(helpContent['/admin/change-requests'].content)).toContain('Ohne Anerkennen genehmigen');
   });
 });
 ```
@@ -1793,7 +1806,7 @@ Expected: 4 failed, u. a. `expected '…' to contain '3. Arbeitszeit-Blöcke, R�
         <p>Ihre Praxis kann Ihre Arbeitszeit je Wochentag als <strong>Arbeitszeit-Blöcke</strong> hinterlegen (z. B. Mo 08:00–12:00 und 15:00–18:00). Ihr Tagessoll ergibt sich dann aus den Blöcken; Ihre Blöcke und deren Verlauf zeigt <strong>Profil → „Meine Arbeitszeit"</strong>.</p>
         <p>Angerechnet wird Ihre gestempelte Zeit <strong>innerhalb</strong> der Blöcke, mit einem Puffer (Standard 15 Min.) an jedem Blockrand. Zu früh eingestempelt? Hinweis <em>„Du hast vor deinem Soll-Beginn eingestempelt – die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt."</em>, in der Eintragsliste <em>„gestempelt 07:30 · angerechnet ab 07:45"</em>. Über die Pause zwischen zwei Blöcken durchgestempelt (08:00–18:00 bei 08–12 und 15–18)? Dann steht dort <em>„gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet"</em>. In der Pause zwischen den Blöcken zeigt das Dashboard neutral „Pause zwischen den Arbeitsblöcken". An Wochenenden und Feiertagen gelten keine Blöcke – Arbeit dort (z. B. Notdienst) wird voll angerechnet.</p>
         <p>Beim <strong>Ausstempeln</strong> und beim Speichern eines eigenen Eintrags erscheint ein Hinweis, sobald etwas nicht angerechnet wird, z. B. <em>„Zwischen den Arbeitsblöcken (12:15–14:45, Puffer 15 Minuten eingerechnet) werden 2:30 h nicht angerechnet. Die gestempelte Zeit bleibt unverändert gespeichert."</em> Der Eintrag wird trotzdem gespeichert. Tragen Sie eine Pause ein, obwohl Sie über die Lücke durchgestempelt haben, wird beides abgezogen („Pause in der Lücke wird zusätzlich abgezogen …"). Ein vergessenes Ausstempeln wird über Nacht geschlossen und nur bis zum letzten Block plus Puffer angerechnet.</p>
-        <p><strong>Dort gearbeitet?</strong> Am Eintrag <strong>„Anrechnung beantragen"</strong> wählen und kurz begründen. Genehmigt die Verwaltung, zählt die ganze gestempelte Zeit und der Eintrag ist „anerkannt". Anerkannte Einträge ändern Sie nur noch per Antrag („Anerkannter Eintrag – Änderung bitte per Änderungsantrag.").</p>
+        <p><strong>Dort gearbeitet?</strong> Am Eintrag <strong>„Anrechnung beantragen"</strong> wählen und kurz begründen. Für heute geht das erst nach Arbeitsende. Genehmigt die Verwaltung mit Anerkennen, zählt die ganze gestempelte Zeit und der Eintrag ist „anerkannt". Selbst bearbeiten oder löschen können Sie ihn dann nicht mehr: Am selben Tag steht dort ein Schloss („Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung"), ab dem nächsten Tag geht es per Änderungs- bzw. Löschantrag.</p>
         <p className="text-gray-700">Ihre <strong>echte Stempelzeit geht nicht verloren</strong> (§16 ArbZG) – fürs Stundenkonto zählt die angerechnete Zeit. <strong>Nicht angerechnet heißt nicht unbezahlt:</strong> Arbeit, die angeordnet, gebilligt oder geduldet wurde, ist zu vergüten (§ 611a, § 612 BGB; Mindestlohngesetz).</p>
       </div>
     ),
@@ -1803,7 +1816,7 @@ Expected: 4 failed, u. a. `expected '…' to contain '3. Arbeitszeit-Blöcke, R�
 4. Abschnitt „6. Korrekturanträge stellen & verwalten": nach der Zeile, die mit `<p>Den Status aller Anträge sehen Sie unter` beginnt, einfügen:
 
 ```tsx
-        <p><strong>Anrechnung beantragen:</strong> Bei einem eigenen Eintrag mit nicht angerechneter Zeit (z. B. „2:30 h zwischen den Blöcken nicht angerechnet") stellen Sie über <strong>„Anrechnung beantragen"</strong> einen Antrag mit Begründung; bei einem automatisch geschlossenen Eintrag geben Sie dabei das tatsächliche Ende an. Für <strong>anerkannte</strong> Einträge gibt es statt „Bearbeiten" nur noch <strong>„Änderung beantragen"</strong>.</p>
+        <p><strong>Anrechnung beantragen:</strong> Bei einem eigenen Eintrag mit nicht angerechneter Zeit (z. B. „2:30 h zwischen den Blöcken nicht angerechnet") stellen Sie über <strong>„Anrechnung beantragen"</strong> einen Antrag mit Begründung; bei einem automatisch geschlossenen Eintrag geben Sie dabei das tatsächliche Ende an. Für heute geht das erst nach Arbeitsende. In der Antragsliste trägt der Antrag das Kennzeichen „Anrechnung beantragt", nach der Genehmigung „anerkannt" bzw. „ohne Anerkennen genehmigt". Einen <strong>anerkannten</strong> Eintrag können Sie nicht mehr selbst bearbeiten oder löschen – ab dem nächsten Tag nur per Änderungs- bzw. Löschantrag, am selben Tag nur über die Verwaltung.</p>
 ```
 
 5. Abschnitt „8. So werden Ihre Stunden & Ihr Urlaub berechnet": in der Zeile `<p><strong>Tagessoll</strong> = Wochenstunden ÷ Arbeitstage pro Woche …` vor `</p>` einfügen: ` Bei Arbeitszeit-Blöcken: Summe der Blöcke minus Pause innerhalb der Blöcke.`; in der Zeile `<p><strong>Ist</strong> = (Ende − Beginn) − Pause je Eintrag.` → `<p><strong>Ist</strong> = (Ende − Beginn) − Pause je Eintrag, abzüglich nicht angerechneter Zeit vor, nach oder zwischen Ihren Arbeitszeit-Blöcken.` (Rest der Zeile unverändert).
@@ -1837,7 +1850,7 @@ Expected: 4 failed, u. a. `expected '…' to contain '3. Arbeitszeit-Blöcke, R�
       <div className="space-y-2">
         <p><strong>Arbeitszeit-Blöcke (ab 1.20.0):</strong> Je Mitarbeiter:in und Wochentag (Mo–Fr) bis zu drei Blöcke „von–bis" (5-Minuten-Raster, nicht überlappend, nicht aneinanderstoßend) plus <strong>„Pause innerhalb der Blöcke"</strong>. <strong>Tagessoll = Summe der Blockdauern − Pause innerhalb der Blöcke</strong> (08:00–12:00 + 15:00–18:00 mit 30 Min. Pause = 6:30 h); Wochenstunden, Tagesstunden und Arbeitstage werden abgeleitet. Gepflegt nur mit Wirkungsdatum über <strong>„Arbeitszeit anpassen…"</strong> (Dialog <strong>„Arbeitszeit &amp; Wochenstunden"</strong>, Modus <strong>„Nach Arbeitsblöcken"</strong>); beim Anlegen steht derselbe Modus im Formular.</p>
         <p><strong>Anrechnung:</strong> Gestempelte Zeit vor dem ersten, nach dem letzten und zwischen den Blöcken wird nicht angerechnet – mit dem Puffer (Standard 15 Min.) an <strong>jedem</strong> Blockrand. Beispiel: Blöcke 08:00–12:00 + 15:00–18:00, durchgestempelt 08:00–18:00 → angerechnet <strong>08:00–12:15 und 14:45–18:00 = 7:30 h</strong>, die Lücke 12:15–14:45 (2:30 h) nicht; die Stempel bleiben gespeichert (§16 ArbZG). Eine Lücke bis zum doppelten Puffer wird voll angerechnet. Keine Kappung an Tagen ohne Block, an Wochenenden, Feiertagen, „freien" Sondertagen, bei Mitarbeitenden ohne Stundenzählung und bei anerkannten Einträgen; §18-befreite werden trotzdem gekappt. Ein vergessenes Ausstempeln (automatisch um 23:59 geschlossen) wird nur bis zum letzten Block plus Puffer angerechnet. Hinweis beim Speichern z. B. <em>„Zwischen den Arbeitsblöcken (12:15–14:45, Puffer 15 Minuten eingerechnet) werden 2:30 h nicht angerechnet. Die gestempelte Zeit bleibt unverändert gespeichert."</em> Frühere Soll-Fenster laufen als „Arbeitszeit-Fenster (Altbestand, nur Kappung)" weiter und lassen sich im Dialog umwandeln oder entfernen.</p>
-        <p><strong>Sichtbar und anerkennbar:</strong> Unter jedem gekappten Eintrag (Admin-Dashboard, Monatsjournal, Zeiterfassung) steht z. B. <em>„gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet"</em>; das Journal summiert „Anwesenheit nicht angerechnet", die Exporte haben die letzte Spalte <strong>„Nicht angerechnet (Min)"</strong>. Mit <strong>„Anerkennen"</strong> (Admin-Dashboard-Detail, Monatsjournal) zählt die ganze gestempelte Zeit – dauerhaft, auch nach späteren Neuberechnungen, protokolliert als „Anrechnung anerkannt". Mitarbeitende beantragen das über „Anrechnung beantragen"; in der Antragsprüfung heißt Genehmigen dann Anerkennen, bei anderen Anträgen gibt es „genehmigen und anerkennen".</p>
+        <p><strong>Sichtbar und anerkennbar:</strong> Unter jedem gekappten Eintrag (Admin-Dashboard, Monatsjournal, Zeiterfassung) steht z. B. <em>„gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet"</em>; das Journal summiert „Anwesenheit nicht angerechnet", die Exporte haben die letzte Spalte <strong>„Nicht angerechnet (Min)"</strong>. Mit <strong>„Anerkennen"</strong> (Admin-Dashboard-Detail, Monatsjournal) zählt die ganze gestempelte Zeit – dauerhaft, auch nach späteren Neuberechnungen, protokolliert als „Anrechnung anerkannt". Mitarbeitende beantragen das über „Anrechnung beantragen"; die Antragsprüfung bietet dann „Genehmigen und anerkennen" oder „Ohne Anerkennen genehmigen", bei anderen Anträgen zu Einträgen mit nicht angerechneter Zeit zusätzlich „Genehmigen und anerkennen".</p>
         <p><strong>Rückwirkend ändern:</strong> Die Auswirkung zeigt vorab die neu berechneten Einträge je Monat (alt → neu), übersprungene Einträge mit Grund, angepasste Abwesenheiten und getrennt Δ Soll, Δ angerechnete Zeit und Δ Überstunden; der Haken „Ich habe die Auswirkungen geprüft und möchte speichern" ist Pflicht, sobald etwas betroffen ist. Neu gekappt wird ab dem Rohstempel, nur an geänderten Wochentagen und mit dem aktuellen Puffer; je Eintrag entsteht eine Protokollzeile „Neukappung (Arbeitszeit-Änderung)", je Änderung eine Sammelzeile. Mitarbeitende sehen 30 Tage lang einen Hinweis auf ihrem Dashboard.</p>
         <p className="text-amber-700"><strong>Verkürzung</strong> = ein Eintrag verliert angerechnete Zeit, <strong>oder</strong> das Überstundenkonto sinkt (auch durch ein rückwirkend höheres Soll), <strong>oder</strong> eine Misch-Tag-Gutschrift sinkt stärker als das Tagessoll. Standard ist dann „Ab heute (…) wirksam – vergangene Einträge bleiben unverändert". Rückwirkend nur mit Grund („Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)" / „Mit der beschäftigten Person vereinbart" / „Sonstiges"), Begründung und Bestätigung; im Protokoll als [Erfassungsfehler korrigiert] / [Einvernehmlich vereinbart] / [Sonstiges]. Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit. In abgeschlossene Jahre gesperrt. Seit 1.20.0 gilt das auch für eine rückwirkende Erhöhung der Wochenstunden, die das Konto senkt. Löschen einer verkürzenden Änderung: Standard „Ab … auf den vorherigen Stand zurücksetzen".</p>
         <p><strong>Puffer:</strong> Eine Änderung des Puffers wirkt auf neue Einträge. Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn, auch wenn er später bearbeitet wird; nur eine Arbeitszeit-Änderung mit Neuberechnung nimmt den dann gültigen Puffer.</p>
@@ -1858,7 +1871,7 @@ Expected: 4 failed, u. a. `expected '…' to contain '3. Arbeitszeit-Blöcke, R�
 6. Abschnitt „5. Korrekturanträge genehmigen": nach der Zeile, die mit `<p><strong>Mehrere Anträge auf einmal:</strong>` beginnt, einfügen:
 
 ```tsx
-        <p><strong>Anrechnung beantragt (ab 1.20.0):</strong> Bei einem Antrag „Anrechnung beantragen" bedeutet Genehmigen <strong>Anerkennen</strong> – die ganze gestempelte Zeit des Eintrags zählt, dauerhaft. Bei anderen Anträgen zu Einträgen mit nicht angerechneter Zeit gibt es zusätzlich <strong>„genehmigen und anerkennen"</strong>. Ist der Eintrag schon anerkannt, zeigt die Prüfung „Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet."</p>
+        <p><strong>Anrechnung beantragt (ab 1.20.0):</strong> Ein Antrag über „Anrechnung beantragen" trägt das Kennzeichen „Anrechnung beantragt" und hat zwei Knöpfe: <strong>„Genehmigen und anerkennen"</strong> – die ganze gestempelte Zeit des Eintrags zählt, dauerhaft – oder <strong>„Ohne Anerkennen genehmigen"</strong> – nur die beantragten Zeiten werden übernommen. Bei anderen Anträgen zu Einträgen mit nicht angerechneter Zeit gibt es neben „Genehmigen" zusätzlich <strong>„Genehmigen und anerkennen"</strong>. Die Sammel-Genehmigung nennt die Zahl der Anrechnungsanträge und fragt vor dem Absenden nach („Alle genehmigen"). Ist der Eintrag schon anerkannt, zeigt die Prüfung „Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet."</p>
 ```
 
 7. Abschnitt „10. ArbZG-Berichte & Compliance": nach der Zeile, die mit `<p className="text-amber-700"><strong>§3 Tageshöchstgrenze (10h):</strong>` beginnt, einfügen:
@@ -1881,7 +1894,7 @@ Expected: 4 failed, u. a. `expected '…' to contain '3. Arbeitszeit-Blöcke, R�
               <li>Nur wenn die Praxis Blöcke hinterlegt hat (Profil → „Meine Arbeitszeit").</li>
               <li>Angerechnet wird innerhalb der Blöcke, mit Puffer (Std. 15 Min.) an jedem Blockrand.</li>
               <li>Über die Pause zwischen zwei Blöcken gestempelt → „gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet".</li>
-              <li>Dort gearbeitet? Am Eintrag <strong>„Anrechnung beantragen"</strong>. Anerkannte Einträge nur per „Änderung beantragen".</li>
+              <li>Dort gearbeitet? Am Eintrag <strong>„Anrechnung beantragen"</strong> (für heute erst nach Arbeitsende). Anerkannte Einträge: am selben Tag gesperrt, danach per Änderungs- bzw. Löschantrag.</li>
             </ul>
           </div>
 ```
@@ -1902,7 +1915,7 @@ Expected: 4 failed, u. a. `expected '…' to contain '3. Arbeitszeit-Blöcke, R�
           </div>
 ```
 
-4. `CheatsheetAdmin`, Abschnitt „✅ Korrekturanträge prüfen": nach `<li>Genehmigen oder Ablehnen (mit optionalem Grund)</li>` einfügen: `<li>„Anrechnung beantragen": Genehmigen = Anerkennen; sonst ggf. „genehmigen und anerkennen"</li>`
+4. `CheatsheetAdmin`, Abschnitt „✅ Korrekturanträge prüfen": nach `<li>Genehmigen oder Ablehnen (mit optionalem Grund)</li>` einfügen: `<li>„Anrechnung beantragt": „Genehmigen und anerkennen" oder „Ohne Anerkennen genehmigen"; sonst ggf. zusätzlich „Genehmigen und anerkennen"</li>`
 5. `CheatsheetAdmin`, Abschnitt „📊 Berichte & Exporte": vor `<p className="text-sm text-gray-500 mt-2">Aufbewahrungspflicht: 2 Jahre (§16 ArbZG)</p>` einfügen: `<p className="text-sm text-gray-500 mt-2">Letzte Spalte aller Formate: „Nicht angerechnet (Min)" (Lücke + vor/nach den Blöcken abgeschnittene Zeit).</p>`
 6. `SchnellstartAdmin`, Abschnitt „2. Mitarbeiter anlegen": `<li>Optional: Soll-Arbeitszeit-Fenster (Soll-Beginn/-Ende je Wochentag).</li>` → `<li>Optional: Arbeitszeit-Blöcke – Modus „Nach Arbeitsblöcken" (je Wochentag bis zu drei Blöcke + Pause innerhalb der Blöcke; daraus Tagessoll und Anrechnung).</li>`; `<li>Spätere Änderungen an Wochenstunden, Tagesplan, Modus oder Arbeitstagen: nur noch über „Wochenstunden anpassen…" mit Wirkungsdatum.</li>` → `<li>Spätere Änderungen an Wochenstunden, Tagesplan, Blöcken, Modus oder Arbeitstagen: nur noch über „Arbeitszeit anpassen…" mit Wirkungsdatum.</li>`
 7. `SchnellstartAdmin`, Abschnitt „3. Betrieb": vor `</p>` der Zeile `Mitarbeiter stempeln/erfassen; …` einfügen: ` Nicht angerechnete Zeit (vor, nach oder zwischen den Arbeitszeit-Blöcken) steht am Eintrag; geleistete Arbeit dort „Anerkennen".`
@@ -1937,7 +1950,7 @@ Expected: keine Ausgabe.
 ```tsx
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Anrechnung beantragt</h3>
-          <p className="text-sm text-gray-600">Bei „Anrechnung beantragen" heißt Genehmigen Anerkennen (die ganze gestempelte Zeit zählt). Für andere Anträge zu Einträgen mit nicht angerechneter Zeit gibt es zusätzlich „genehmigen und anerkennen".</p>
+          <p className="text-sm text-gray-600">Anträge mit dem Kennzeichen „Anrechnung beantragt": „Genehmigen und anerkennen" (die ganze gestempelte Zeit zählt, dauerhaft) oder „Ohne Anerkennen genehmigen" (nur die beantragten Zeiten). Für andere Anträge zu Einträgen mit nicht angerechneter Zeit gibt es neben „Genehmigen" zusätzlich „Genehmigen und anerkennen". Die Sammel-Genehmigung fragt bei Anrechnungsanträgen nach („Alle genehmigen").</p>
         </section>
 ```
 
@@ -2276,7 +2289,7 @@ Den Abschnitt von `### Arbeitszeit-Fenster (#201, work_window_service.py)` bis *
 | `create_time_entry` / `update_time_entry` | MA-CRUD; `update` kappt auch bei Datumswechsel neu, anerkannter Eintrag → 409 |
 | `admin_time_entries` create + update | Admin-CRUD; `credit_override` bleibt |
 | `xls_import_service` | Vorschau + Ausführung (`clamp_applies`; Auto-Pause nur für den von Lücken ungedeckten §4-Rest) |
-| `admin_change_requests.review_change_request` | CR-Genehmigung (CREATE/UPDATE, auch Bulk), „genehmigen und anerkennen" |
+| `admin_change_requests.review_change_request` | CR-Genehmigung (CREATE/UPDATE, auch Bulk), „Genehmigen und anerkennen" |
 | `change_requests.create_change_request` | prüft mit `clamp`, speichert roh; `request_credit_override` |
 | `work_window_service.reclamp_time_entries` | Massen-Neukappung einer Arbeitszeit-Änderung (Router `admin_users`) |
 | `POST /admin/time-entries/{id}/credit-override` | Anerkennen: Rohzeiten werden wirksam, keine Kappung mehr |
@@ -2977,7 +2990,7 @@ Expected: FAIL in den drei neuen/geänderten Tests (z. B. `Unable to find an ele
 
 ```tsx
         <p>
-          <strong>Anrechnung beantragt (ab 1.20.0):</strong> Bei einem Antrag „Anrechnung beantragen" bedeutet Genehmigen <strong>Anerkennen</strong> – die ganze gestempelte Zeit des Eintrags zählt, dauerhaft. Bei anderen Anträgen zu Einträgen mit nicht angerechneter Zeit gibt es zusätzlich „genehmigen und anerkennen".
+          <strong>Anrechnung beantragt (ab 1.20.0):</strong> Ein Antrag über „Anrechnung beantragen" hat in der Prüfung zwei Knöpfe: <strong>„Genehmigen und anerkennen"</strong> – die ganze gestempelte Zeit des Eintrags zählt, dauerhaft – oder „Ohne Anerkennen genehmigen" – nur die beantragten Zeiten werden übernommen. Bei anderen Anträgen zu Einträgen mit nicht angerechneter Zeit gibt es neben „Genehmigen" zusätzlich „Genehmigen und anerkennen". Die Sammel-Genehmigung fragt bei Anrechnungsanträgen nach („Alle genehmigen").
         </p>
 ```
 
@@ -3007,7 +3020,7 @@ Expected: FAIL in den drei neuen/geänderten Tests (z. B. `Unable to find an ele
           Hat Ihre Praxis Ihre Arbeitszeit als <strong>Arbeitszeit-Blöcke</strong> hinterlegt (z. B. Montag 08:00–12:00 und 15:00–18:00), ergibt sich Ihr Tagessoll aus den Blöcken. Angerechnet wird Ihre gestempelte Zeit innerhalb der Blöcke, mit einem Puffer (Standard 15 Minuten) an jedem Blockrand. Zu früh oder zu spät gestempelte Zeit zählt nicht – Sie sehen dann z. B. „gestempelt 07:30 · angerechnet ab 07:45". Stempeln Sie über die Pause zwischen zwei Blöcken durch, wird diese Lücke nicht angerechnet: „gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet". In der Pause zwischen den Blöcken zeigt Ihr Dashboard neutral „Pause zwischen den Arbeitsblöcken". An Wochenenden und Feiertagen gelten keine Blöcke – Arbeit dort (z. B. Notdienst) wird voll angerechnet.
         </p>
         <p>
-          Beim <strong>Ausstempeln</strong> und beim Speichern eines eigenen Eintrags erscheint ein Hinweis, sobald etwas nicht angerechnet wird; Ihr Eintrag wird trotzdem gespeichert. Ihre tatsächliche Stempelzeit bleibt immer erhalten (§ 16 ArbZG). Haben Sie außerhalb oder zwischen den Blöcken gearbeitet, wählen Sie am Eintrag <strong>„Anrechnung beantragen"</strong> und begründen kurz; genehmigt die Verwaltung, zählt die ganze gestempelte Zeit, und der Eintrag ist „anerkannt" – ändern lässt er sich danach nur noch per Antrag. Nicht angerechnet heißt nicht unbezahlt: Arbeit, die angeordnet, gebilligt oder geduldet wurde, ist zu vergüten (§ 611a, § 612 BGB; Mindestlohngesetz).
+          Beim <strong>Ausstempeln</strong> und beim Speichern eines eigenen Eintrags erscheint ein Hinweis, sobald etwas nicht angerechnet wird; Ihr Eintrag wird trotzdem gespeichert. Ihre tatsächliche Stempelzeit bleibt immer erhalten (§ 16 ArbZG). Haben Sie außerhalb oder zwischen den Blöcken gearbeitet, wählen Sie am Eintrag <strong>„Anrechnung beantragen"</strong> und begründen kurz (für heute erst nach Arbeitsende); genehmigt die Verwaltung mit Anerkennen, zählt die ganze gestempelte Zeit, und der Eintrag ist „anerkannt" – selbst ändern lässt er sich danach nicht mehr, ab dem nächsten Tag nur per Änderungs- bzw. Löschantrag oder über die Verwaltung. Nicht angerechnet heißt nicht unbezahlt: Arbeit, die angeordnet, gebilligt oder geduldet wurde, ist zu vergüten (§ 611a, § 612 BGB; Mindestlohngesetz).
         </p>
 ```
 

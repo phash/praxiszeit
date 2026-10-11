@@ -2298,7 +2298,12 @@ eigene Rücknahme gibt es nicht (P11).
   bleiben auf vergangene Tage beschränkt. Das Datum ist das des Eintrags (Formularfeld
   gesperrt; ein anderes `proposed_date` → 400 wie unten): Nicht-Anrechnung und Begründung
   gehören zum Ursprungstag, die Genehmigung kappte sonst gegen die Blöcke des Zieltags. Bei anerkannten Einträgen ist das direkte
-  Bearbeiten gesperrt (409, P3); die Oberfläche bietet stattdessen „Änderung beantragen".
+  Bearbeiten gesperrt (409, P3). **Umgesetzt (PR2 Task 16, Review; Gate PR4 Task 0):** einen
+  Knopf „Änderung beantragen" gibt es nicht. Am heutigen anerkannten Eintrag zeigt die
+  Zeiterfassung statt der Knöpfe ein Schloss mit „Anerkannter Eintrag – Änderung ab morgen per
+  Änderungsantrag oder über die Verwaltung" (gewöhnliche Anträge gibt es nur für vergangene
+  Tage); ab dem Folgetag gelten die üblichen Knöpfe „Änderungsantrag stellen"/„Löschantrag
+  stellen" (mobil „Ändern"/„Löschen").
 - **Warnungen** beim Stempeln/Erfassen über `showArbzgWarnings` (Abschnitt 6.2/8); die
   Lückentexte enthalten den Hinweis auf „Anrechnung beantragen" (6.2).
 - **Datenschutzseite** (`pages/Privacy.tsx:84`): Kategorie „Soll-Arbeitszeiten
@@ -2971,7 +2976,7 @@ mit Präfix `scheduled_`, `PUT` ohne `work_blocks`, Anlegen mit Blöcken), `User
 „anerkannt"; „Anrechnung beantragen" nur in der Mitarbeiter-Ansicht),
 `MonthlyJournal.test.tsx` (Summenzeile aus `not_credited_minutes_total`, Anerkennen,
 deaktiviert bei `auto_closed`), `TimeTracking.test.tsx` (Mobilkarte nutzt Komponente;
-Bearbeiten eines anerkannten Eintrags bietet „Änderung beantragen"),
+anerkannter Eintrag: heute nur Schloss mit Hinweis, an vergangenen Tagen Änderungs-/Löschantrag),
 `arbzgWarnings.test.ts` (vier neue Codes inkl. `PRESENCE_WEEKLY_HOURS`),
 `formatters.test.ts` (Blocktexte wortgleich zum Backend), `StampWidget`/`breakValidation`
 (keine Pausenabfrage, wenn die Lücke §4 deckt), `Dashboard` (nicht eingestempelt um 12:05
