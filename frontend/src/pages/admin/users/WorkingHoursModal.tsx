@@ -180,7 +180,8 @@ function blocksKey(week: WeekBlocks | null): string | null {
  * dort nicht) und werden ausgeblendet, sonst täuschte ein Rest aus einer
  * früheren Tagesplan-Phase eine Änderung vor. Ohne Stundenzählung zählen die
  * Blöcke nicht (sie wirken nicht; beendet werden sie von jeder echten
- * Änderung, P24).
+ * Änderung, P24) — außer beim ausdrücklichen Entfernen eines Altfensters
+ * (`compareBlocks` im Aufrufer).
  *
  * Review Focus 5: verglichen wird über die auf 0,01 h gerundeten Tageswerte —
  * 7:55 h im Editor ist gespeichert 7,92 h, beides ist derselbe Stand.
@@ -462,8 +463,12 @@ export default function WorkingHoursModal({
         : formData.work_days_per_week,
       blocks: carriedBlocks,
     };
+  // Ohne Stundenzählung bleiben die Blöcke aus dem Vergleich (P24) — außer das
+  // Altfenster wird ausdrücklich entfernt: das IST die Änderung (der Server
+  // vergleicht Blöcke immer), sonst bliebe „Fenster entfernen" unspeicherbar.
+  const compareBlocks = trackHours || removeLegacy;
   const snapshotUnchanged =
-    comparableSnapshot(inputSchedule, trackHours) === comparableSnapshot(baselineSchedule, trackHours);
+    comparableSnapshot(inputSchedule, compareBlocks) === comparableSnapshot(baselineSchedule, compareBlocks);
 
   // Rückwirkend: Vorschau muss da und bestätigt sein. Ab heute sperrt nur ein
   // positiver Befund — fällt die Vorschau aus (Netzwerk, 5xx), bleibt das
@@ -736,10 +741,17 @@ export default function WorkingHoursModal({
                     >
                       <p id="wh-legacy-title" className="font-medium text-gray-800">{LEGACY_BOX_TITLE}</p>
                       <p className="text-gray-700 mt-1">{formatBlocksText(baselineSchedule.blocks)}</p>
+                      {/* Ohne Stundenzählung kappt das Fenster nichts
+                          (`work_window_service`: track_hours_off) — wie die
+                          Kopfzeile „ohne Wirkung", nie „kappt". */}
                       <p className="text-gray-600 mt-1">
                         {formData.remove_legacy_window
-                          ? `Das Fenster wird ab ${formatDate(formData.effective_from)} entfernt; danach wird nicht mehr gekappt.`
-                          : 'Bleibt mit dieser Änderung bestehen: kappt die erfasste Zeit, ändert das Tagessoll nicht.'}
+                          ? trackHours
+                            ? `Das Fenster wird ab ${formatDate(formData.effective_from)} entfernt; danach wird nicht mehr gekappt.`
+                            : `Das Fenster wird ab ${formatDate(formData.effective_from)} entfernt.`
+                          : trackHours
+                            ? 'Bleibt mit dieser Änderung bestehen: kappt die erfasste Zeit, ändert das Tagessoll nicht.'
+                            : 'Bleibt mit dieser Änderung bestehen, ohne Wirkung (keine Stundenzählung): kappt nichts, ändert das Tagessoll nicht.'}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {trackHours && (

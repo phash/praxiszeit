@@ -1261,3 +1261,51 @@ describe('Spec 2026-10-08 (PR3): Block-Modus und POST-Vorschau', () => {
       .toBeInTheDocument();
   });
 });
+
+describe('Review Task 18b', () => {
+  it('track_hours=false: „Fenster entfernen" lässt sich speichern und sendet remove_legacy_window', async () => {
+    // Ohne Stundenzählung blendet der Vergleich Blöcke aus (P24) — das
+    // ausdrücklich entfernte Altfenster IST aber eine Änderung (der Server
+    // vergleicht Blöcke immer, `admin_users._comparable_snapshot`).
+    mockHistory([LEGACY_ROW], QUIET);
+    renderModal({ currentBlocks: LEGACY_BLOCKS, trackHours: false });
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    const box = screen.getByRole('group', { name: LEGACY_BOX_TITLE });
+    expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
+
+    fireEvent.click(within(box).getByRole('button', { name: 'Fenster entfernen' }));
+    expect(screen.queryByText(/Noch nichts zu speichern/)).not.toBeInTheDocument();
+    await flushDebounce();
+    const submit = screen.getByRole('button', { name: /Speichern/ });
+    await waitFor(() => expect(submit).not.toBeDisabled());
+    expect(previewPosts().at(-1)?.body).toMatchObject({ remove_legacy_window: true });
+
+    fireEvent.click(submit);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls.at(-1)![1]).toMatchObject({ remove_legacy_window: true });
+  });
+
+  it('track_hours=false: der Altfenster-Kasten behauptet keine Kappung', async () => {
+    // `work_window_service`: ohne Stundenzählung kappt nichts (track_hours_off).
+    mockHistory([LEGACY_ROW], QUIET);
+    renderModal({ currentBlocks: LEGACY_BLOCKS, trackHours: false });
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    const box = screen.getByRole('group', { name: LEGACY_BOX_TITLE });
+    expect(box).not.toHaveTextContent(/kappt die erfasste Zeit/);
+    expect(box).toHaveTextContent('ohne Wirkung (keine Stundenzählung)');
+
+    fireEvent.click(within(box).getByRole('button', { name: 'Fenster entfernen' }));
+    expect(box).toHaveTextContent('Das Fenster wird ab 26.07.2026 entfernt.');
+    expect(box).not.toHaveTextContent(/nicht mehr gekappt/);
+  });
+
+  it('mit Stundenzählung bleiben die Kappungs-Texte des Altfensters', async () => {
+    mockHistory([LEGACY_ROW], QUIET);
+    renderModal({ currentBlocks: LEGACY_BLOCKS });
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    const box = screen.getByRole('group', { name: LEGACY_BOX_TITLE });
+    expect(box).toHaveTextContent('Bleibt mit dieser Änderung bestehen: kappt die erfasste Zeit, ändert das Tagessoll nicht.');
+    fireEvent.click(within(box).getByRole('button', { name: 'Fenster entfernen' }));
+    expect(box).toHaveTextContent('Das Fenster wird ab 26.07.2026 entfernt; danach wird nicht mehr gekappt.');
+  });
+});
