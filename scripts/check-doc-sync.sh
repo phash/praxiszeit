@@ -243,6 +243,20 @@ group_code() {
   need_code "Abwesenheit(en) im Zeitraum "
   need_code "auf neues Tagessoll nachgezogen"
   need_code "auf den davor gültigen Wert zurückgerechnet"
+  # Task 5 (Mitarbeiter-Handbuch): Frühstart-Meldung, wie sie der Server schickt
+  # (clock_in, Geviertstrich; der Rückfalltext in arbzgWarnings erscheint nie),
+  # Zusatzzeile „angerechnet bis", Antragsformular „Anrechnung beantragen",
+  # Profilkarte „Meine Arbeitszeit".
+  need_code "Du hast vor deinem Soll-Beginn eingestempelt — angerechnet ab "
+  need_code 'gestempelt ${rawEnd} · angerechnet bis ${effEnd}'
+  need_code 'nach ${hm(breakMinutes)} h Pause'
+  need_code "Die gesamte gestempelte Zeit soll angerechnet werden. Bitte begründen Sie, warum Sie in dieser Zeit gearbeitet haben."
+  need_code "Der Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende angeben."
+  need_code 'Wochenstunden: ${deHoursExact(today.weekly_hours)}'
+  need_code ' Std/Woche`}'
+  need_code "Feste Monatsarbeitszeit: "
+  need_code "Ohne Stundenzählung: kein Tagessoll; die Arbeitszeit-Blöcke begrenzen die Anrechnung nicht."
+  need_code "Anwesenheit nicht angerechnet: "
 }
 
 group_mirror() {
@@ -455,6 +469,74 @@ group_arbzg_48h() {
   forbid docs/handbuch/CHEATSHEET-ADMIN.md '| Wochenstunden | > 48h | Warnung | §14 |'
   forbid frontend/src/components/DocViewer.tsx '§14 (48h-Wochenwarnung)'
   forbid frontend/src/components/DocViewer.tsx '>§14</td><td className="px-3 py-2 border border-gray-200 text-gray-600">48h-Wochenwarnung'
+}
+
+group_mitarbeiter() {
+  local f=docs/handbuch/HANDBUCH-MITARBEITER.md
+  need "$f" '**Version:** 2.9 · **Stand:** Oktober 2026 (PraxisZeit 1.20.0)'
+  need "$f" '### 3.3 Arbeitszeit-Blöcke und Anrechnung'
+  need "$f" '(#33-arbeitszeit-blöcke-und-anrechnung)'
+  need "$f" 'gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet'
+  need "$f" 'Eingestempelt zwischen zwei Arbeitsblöcken (Lücke 12:15–14:45, Puffer 15 Minuten) — angerechnet wird erst ab 14:45.'
+  need "$f" 'Pause in der Lücke wird zusätzlich abgezogen'
+  need "$f" 'nicht ausgestempelt – automatisch geschlossen'
+  need "$f" 'Anrechnung beantragen'
+  need "$f" 'Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung'
+  need "$f" 'Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden.'
+  need "$f" 'ohne Anerkennen genehmigt'
+  need "$f" 'Pause zwischen den Arbeitsblöcken'
+  need "$f" 'Meine Arbeitszeit'
+  need "$f" 'Ihre Arbeitszeit wurde ab 01.09.2026 geändert'
+  need "$f" 'Nicht angerechnet heißt nicht unbezahlt'
+  forbid "$f" 'erfassten Blöcke'
+  forbid "$f" 'vergessener Nachmittagsblock'
+  forbid "$f" '#33-soll-arbeitszeiten-und-anrechnung'
+  forbid "$f" 'Soll-Arbeitszeit hinterlegt'
+  forbid "$f" 'Soll-Zeiten für Sie hinterlegt'
+  forbid "$f" 'Änderung beantragen'
+  # Über den Plan hinaus (Code maßgeblich, Gate Task 0):
+  # Fußzeile wie der Kopf auf 1.20.0.
+  need "$f" '*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.9 | Oktober 2026 (PraxisZeit 1.20.0)*'
+  forbid "$f" 'Mitarbeiter-Handbuch v2.8'
+  # Frühstart-Meldung so, wie der Server sie schickt (clock_in): Geviertstrich
+  # und konkrete Uhrzeit; den Rückfalltext mit Halbgeviertstrich gibt es nicht.
+  need "$f" 'Du hast vor deinem Soll-Beginn eingestempelt — angerechnet ab 07:45.'
+  forbid "$f" 'eingestempelt – die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt'
+  # Alle Zusatzzeilen aus Spec 13.1, auch Ende gekürzt, Hülle + Lücke, Pause,
+  # dazu die Monatssumme im Journal (13.2).
+  need "$f" 'gestempelt 19:00 · angerechnet bis 18:15'
+  need "$f" 'gestempelt 07:00–19:00 · angerechnet 8:00 h (07:45–18:15) · 4:00 h nicht angerechnet, davon 2:30 h zwischen den Blöcken'
+  need "$f" 'nach 0:30 h Pause'
+  need "$f" 'Anwesenheit nicht angerechnet: 7:30 h'
+  need "$f" 'eingestempelt 08:00, nicht ausgestempelt – automatisch geschlossen · angerechnet 7:45 h (08:00–18:15) · 2:30 h zwischen den Blöcken nicht angerechnet'
+  # Anwesenheits-Hinweis bei durchgestempelter Lücke (presence_service, 8.3).
+  need "$f" 'Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst'
+  # Antragsformular „Anrechnung beantragen" (ChangeRequestForm): Hinweis, festes
+  # Datum, tatsächliches Ende beim automatisch geschlossenen Eintrag.
+  need "$f" 'Die gesamte gestempelte Zeit soll angerechnet werden. Bitte begründen Sie, warum Sie in dieser Zeit gearbeitet haben.'
+  need "$f" 'Der Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende angeben.'
+  # V1 (Spec P18, Entschieden 2026-10-11): ein echtes Ende 23:59 ist eintragbar.
+  need "$f" 'Auch ein tatsächliches Ende um **23:59**'
+  # #502: Datum beim Bearbeiten gesperrt, ein anderes Datum nur per Antrag
+  # (TimeTracking, im JSX über zwei Zeilen umbrochen).
+  need "$f" 'Das Datum bleibt beim Bearbeiten fest. Gehört die Zeit zu einem anderen Tag: Eintrag löschen und oben über „Antrag“ einen Änderungsantrag für diesen Tag stellen.'
+  # Dashboard-Hinweis laut Code (reclamp_audit.notice_text): ohne verschachtelte
+  # Klammern, Arbeitstage nur bei Änderung, Rücksetzung und Rücknahme.
+  need "$f" 'Hinweis zu Ihrer Arbeitszeit'
+  need "$f" 'Arbeitszeit im Profil ansehen'
+  need "$f" 'Ihre Arbeitszeit ändert sich ab 01.11.2026 (neu: 25,0 h/Woche).'
+  need "$f" '(neu: 40,0 h/Woche auf 4 Arbeitstage)'
+  need "$f" 'auf den vorherigen Stand zurückgesetzt (neu: '
+  need "$f" 'Die Arbeitszeit-Änderung ab 01.09.2026 wurde zurückgenommen.'
+  need "$f" 'Überstundenkonto im Zeitraum +1:45 h.'
+  forbid "$f" '(gleichmäßig, 5 Tage))'
+  # Profilkarte (MyWorkScheduleCard): Tage mit „ · ", Wochenstunden mit Komma.
+  need "$f" 'ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) · Di 08:00–13:00 · Do 08:00–12:00 · 15,5 Std/Woche'
+  need "$f" 'Wochenstunden: 15,5'
+  # „Ist" ist die angerechnete Zeit (net_hours), Begriffsregel des Plans wie
+  # im Admin-Handbuch (Review Task 4).
+  need "$f" 'Ihr **Ist** ist Ihre angerechnete Arbeitszeit'
+  forbid "$f" 'Ihr **Ist** ist Ihre tatsächlich erfasste Arbeitszeit'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---

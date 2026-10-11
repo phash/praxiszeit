@@ -1,6 +1,6 @@
 # PraxisZeit – Mitarbeiter-Handbuch
 
-**Version:** 2.8 · **Stand:** Oktober 2026 (PraxisZeit 1.19.3)
+**Version:** 2.9 · **Stand:** Oktober 2026 (PraxisZeit 1.20.0)
 **System:** PraxisZeit Zeiterfassungssystem
 **Zugangsdaten:** Benutzername und Passwort vom Administrator
 
@@ -13,7 +13,7 @@
 3. [Zeiterfassung](#3-zeiterfassung)
    - 3.1 [Ein- und Ausstempeln (Stoppuhr)](#31-ein--und-ausstempeln-stoppuhr)
    - 3.2 [Arbeitszeit von Hand eintragen](#32-arbeitszeit-von-hand-eintragen)
-   - 3.3 [Soll-Arbeitszeiten und Anrechnung](#33-soll-arbeitszeiten-und-anrechnung)
+   - 3.3 [Arbeitszeit-Blöcke und Anrechnung](#33-arbeitszeit-blöcke-und-anrechnung)
    - 3.4 [Eintrag bearbeiten oder löschen](#34-eintrag-bearbeiten-oder-löschen)
    - 3.5 [Korrekturantrag stellen](#35-korrekturantrag-stellen)
    - 3.6 [Anträge verwalten (Anträge-Tab)](#36-anträge-verwalten-anträge-tab)
@@ -60,7 +60,7 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 
 | Kachel | Was wird angezeigt |
 |--------|-------------------|
-| **Tagessaldo** | Heutige Ist-Zeit vs. Tagessoll. Gezählt werden **alle** heute erfassten Blöcke – bei geteiltem Dienst also Vormittag **und** Nachmittag, auch nach dem Ausstempeln (grün = eingestempelt, rot = an einem Arbeitstag heute noch gar nicht eingestempelt, neutral „Ausgestempelt" = heute schon gearbeitet, gerade nicht eingestempelt). An Feiertagen, bei ganztägiger Abwesenheit (Urlaub, Krankheit, Fortbildung, Überstundenausgleich …), vor dem Eintritt und an einem freien 24./31.12. gibt es heute kein Tagessoll – dann erscheint weder Rot noch „x von y". Ein halber Urlaubstag oder ein halber 24./31.12. halbiert das Tagessoll |
+| **Tagessaldo** | Heutige Ist-Zeit vs. Tagessoll. Gezählt werden **alle** heute erfassten Einträge – bei geteiltem Dienst also Vormittag **und** Nachmittag, auch nach dem Ausstempeln (grün = eingestempelt, rot = an einem Arbeitstag heute noch gar nicht eingestempelt, neutral „Ausgestempelt" = heute schon gearbeitet, gerade nicht eingestempelt). An Feiertagen, bei ganztägiger Abwesenheit (Urlaub, Krankheit, Fortbildung, Überstundenausgleich …), vor dem Eintritt und an einem freien 24./31.12. gibt es heute kein Tagessoll – dann erscheint weder Rot noch „x von y". Ein halber Urlaubstag oder ein halber 24./31.12. halbiert das Tagessoll. Sind Arbeitszeit-Blöcke für Sie hinterlegt und Sie sind in der geplanten Pause zwischen zwei Blöcken nicht eingestempelt, zeigt die Karte neutral „Pause zwischen den Arbeitsblöcken" statt Rot |
 | **Monatssaldo** | Soll- vs. Ist-Stunden des aktuellen Monats (H:MM) |
 | **Überstundenkonto** | Kumulierter Jahressaldo aller Monate |
 | **Urlaubskonto** | Budget, verbrauchte und verbleibende Urlaubstage |
@@ -80,11 +80,19 @@ Das Dashboard zeigt Ihnen auf einen Blick:
 
 > **Minijob mit festem Monats-Soll:** Führt Ihre Praxis Sie als Minijob-Kraft mit einer **festen vereinbarten Monatsarbeitszeit** (statt eines aus Wochenstunden berechneten Solls), zeigt Ihr **Monatssaldo** jeden Monat dasselbe feste Soll (bei unterjährigem Ein-/Austritt anteilig gekürzt). Feiertage sowie Urlaub oder bezahlte Freistellung an einem für Sie geplanten Arbeitstag werden Ihnen dabei automatisch mit den geplanten Stunden gutgeschrieben; unbezahlt freie Tage mindern das Monatssoll entsprechend. Unter dem **Überstundenkonto** kann in diesem Fall ein gelber Hinweis erscheinen, wenn die vereinbarte Zeit deutlich überschritten wird oder ein Zeitguthaben zu lange nicht ausgeglichen wurde (§ 2 Abs. 2 MiLoG) – das ist eine reine Information und blockiert nichts. Ob dieses Modell für Sie gilt, legt Ihre Praxisleitung fest.
 
+> **Hinweis bei Änderungen Ihrer Arbeitszeit:** Ändert die Verwaltung Ihre Arbeitszeit (Wochenstunden, Tagesplan oder Arbeitszeit-Blöcke), sehen Sie 30 Tage lang auf dem Dashboard den Kasten **„Hinweis zu Ihrer Arbeitszeit"** – auch wenn die Änderung erst in der Zukunft gilt, zurückgesetzt oder wieder gelöscht wurde. Je nach Fall lautet er z. B.:
+>
+> - *„Ihre Arbeitszeit wurde ab 01.09.2026 geändert (neu: Mo 08:00–12:00 + 15:00–17:00 / Di 08:00–12:00 / Do 08:00–12:00). 3 Einträge neu berechnet, angerechnete Zeit −2:15 h. Überstundenkonto im Zeitraum +1:45 h. Rückwirkende Verkürzung – Grund: Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)."*
+> - *„Ihre Arbeitszeit ändert sich ab 01.11.2026 (neu: 25,0 h/Woche)."* – ändern sich dabei Ihre Arbeitstage pro Woche, steht das mit dabei, z. B. „(neu: 40,0 h/Woche auf 4 Arbeitstage)".
+> - *„Die Arbeitszeit-Änderung ab 01.09.2026 wurde ab 09.10.2026 auf den vorherigen Stand zurückgesetzt (neu: …)."* bzw. nach dem Löschen *„Die Arbeitszeit-Änderung ab 01.09.2026 wurde zurückgenommen."*
+>
+> „Neu berechnet" heißt: Ihre bereits erfassten Einträge im betroffenen Zeitraum wurden mit der neuen Arbeitszeit neu angerechnet – Ihre Stempelzeiten bleiben dabei unverändert gespeichert. Anzahl, angerechnete Zeit und Überstundenkonto stehen nur dabei, wenn sich etwas geändert hat; bei einer rückwirkenden Verkürzung nennt der Hinweis die Art des Grundes. Über den Link **„Arbeitszeit im Profil ansehen"** gelangen Sie zu Profil → „Meine Arbeitszeit" (→ [Abschnitt 7](#7-profil--passwort)).
+
 ### Monats-/Wochenübersicht (Tabelle)
 
 Zeigt die vergangenen Monate mit Soll, Ist, Saldo und kumuliertem Überstundenkonto – die neueste Zeile steht oben.
 
-Über den Umschalter **„Monat / Woche"** rechts über der Tabelle wechseln Sie zur **Wochenübersicht**: die letzten **8 Kalenderwochen** (z. B. „KW 41 · 05.–11.10."), je Woche Soll, Ist, Saldo und der Stand Ihres Überstundenkontos am Wochenende. Pro Woche fällt sofort auf, wenn etwas fehlt – etwa ein vergessener Nachmittagsblock oder ein Eintrag, der nicht beendet wurde und automatisch um 23:59 geschlossen wurde. Die **laufende Woche** zählt wie der Monatssaldo nur **bis heute** (bis zum letzten abgeschlossenen Arbeitstag; heute zählt mit, sobald Sie ausgestempelt haben). Ihre Auswahl bleibt auf diesem Gerät/Browser gespeichert.
+Über den Umschalter **„Monat / Woche"** rechts über der Tabelle wechseln Sie zur **Wochenübersicht**: die letzten **8 Kalenderwochen** (z. B. „KW 41 · 05.–11.10."), je Woche Soll, Ist, Saldo und der Stand Ihres Überstundenkontos am Wochenende. Pro Woche fällt sofort auf, wenn etwas fehlt – etwa ein vergessener Nachmittags-Eintrag oder ein Eintrag, der nicht beendet wurde und automatisch um 23:59 geschlossen wurde. Die **laufende Woche** zählt wie der Monatssaldo nur **bis heute** (bis zum letzten abgeschlossenen Arbeitstag; heute zählt mit, sobald Sie ausgestempelt haben). Ihre Auswahl bleibt auf diesem Gerät/Browser gespeichert.
 
 - **Grün** = Plusstunden
 - **Rot** = Minusstunden
@@ -185,6 +193,8 @@ Das Eingabeformular erscheint direkt oberhalb der Eintrags-Tabelle.
 
 Klicken Sie auf **Speichern**. Mit **Abbrechen** (oben rechts) verwerfen Sie das Formular.
 
+> **Vorbelegung:** Sind Arbeitszeit-Blöcke für Sie hinterlegt, sind **Von** und **Bis** mit dem Beginn des ersten und dem Ende des letzten Blocks von heute vorbelegt.
+
 > **Warnung bei langen Arbeitszeiten:**
 > PraxisZeit prüft Eingaben automatisch auf ArbZG-Einhaltung:
 >
@@ -194,19 +204,44 @@ Klicken Sie auf **Speichern**. Mit **Abbrechen** (oben rechts) verwerfen Sie das
 
 ---
 
-### 3.3 Soll-Arbeitszeiten und Anrechnung
+### 3.3 Arbeitszeit-Blöcke und Anrechnung
 
-Manche Praxen hinterlegen für einzelne Wochentage **feste Soll-Arbeitszeiten** (z. B. „Montag 8:00–17:00"). Ist das bei Ihnen eingestellt, gilt:
+Ihre Praxis kann Ihre Arbeitszeit je Wochentag (Mo–Fr) als **Arbeitszeit-Blöcke** hinterlegen, z. B. „Montag 08:00–12:00 und 15:00–18:00". Ihr Tagessoll ergibt sich dann aus den Blöcken (→ [Abschnitt 5](#ihr-tagessoll)). Ihre heute gültigen Blöcke und alle Änderungen sehen Sie unter **Profil → „Meine Arbeitszeit"** (→ [Abschnitt 7](#7-profil--passwort)).
 
-- **Zu früh eingestempelt:** Stempeln Sie deutlich **vor Ihrem Soll-Beginn** ein, wird die Zeit davor nicht als Arbeitszeit angerechnet. Ein kleiner **Puffer** (Standard 15 Minuten) ist erlaubt. Sie sehen dann den Hinweis: *„Du hast vor deinem Soll-Beginn eingestempelt – die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt."*
-- **Zu spät ausgestempelt:** Bleiben Sie nach Ihrem **Soll-Ende** noch deutlich länger (über den Puffer hinaus), wird die Zeit danach ebenfalls nicht mitgezählt.
-- **Wochenende und Feiertage:** Dort gilt keine Soll-Arbeitszeit. Arbeiten Sie an einem Samstag, Sonntag oder Feiertag (z. B. Notdienst), wird die ganze Zeit angerechnet.
-- In der Eintragsliste erkennen Sie das an einer kleinen Zusatzzeile unter der Uhrzeit, z. B. *„gestempelt 07:30 · angerechnet ab 07:45"*.
-- **Beim Ausstempeln und beim Speichern eines eigenen Eintrags** erscheint ein Hinweis mit den konkreten Zeiten, sobald gekappt wurde (z. B. *„… gekappt (Beginn 07:00 → 07:45; Puffer 15 Minuten)"*). Der Eintrag wird dabei **trotzdem gespeichert** — der Hinweis blockiert nichts.
+Angerechnet wird Ihre gestempelte Zeit **innerhalb** der Blöcke – mit einem kleinen **Puffer** (Standard 15 Minuten) an jedem Blockrand:
+
+- **Zu früh eingestempelt:** Stempeln Sie deutlich **vor Ihrem ersten Block** ein, wird die Zeit davor nicht angerechnet. Beim Einstempeln sehen Sie dann z. B. den Hinweis *„Du hast vor deinem Soll-Beginn eingestempelt — angerechnet ab 07:45."*
+- **Zu spät ausgestempelt:** Zeit deutlich **nach dem letzten Block** (über den Puffer hinaus) wird ebenfalls nicht angerechnet.
+- **Durchgestempelt über die Pause zwischen zwei Blöcken:** Die Zeit zwischen den Blöcken wird nicht angerechnet – abzüglich des Puffers an beiden Rändern. Beispiel: Blöcke 08:00–12:00 und 15:00–18:00, gestempelt 08:00–18:00 → angerechnet werden **7:30 h**, die 2:30 h von 12:15 bis 14:45 nicht. Wer um 12:05 ausstempelt, verliert keine Minute. Liegen zwei Blöcke höchstens den doppelten Puffer auseinander (Standard 30 Minuten), wird die Zeit dazwischen ganz angerechnet.
+- **Einstempeln in der Pause zwischen zwei Blöcken:** Sie sehen *„Eingestempelt zwischen zwei Arbeitsblöcken (Lücke 12:15–14:45, Puffer 15 Minuten) — angerechnet wird erst ab 14:45."*
+- **Ausgestempelt in der Pause:** Sind Sie in der geplanten Pause zwischen zwei Blöcken nicht eingestempelt, zeigt die Stempelkarte auf dem Dashboard neutral „Pause zwischen den Arbeitsblöcken" statt Rot.
+- **Wochenende und Feiertage:** Dort gelten keine Blöcke. Arbeiten Sie an einem Samstag, Sonntag oder Feiertag (z. B. Notdienst), wird die ganze Zeit angerechnet.
+- **Beim Ausstempeln und beim Speichern eines eigenen Eintrags** erscheint ein Hinweis, sobald etwas nicht angerechnet wird, z. B. *„Zwischen den Arbeitsblöcken (12:15–14:45, Puffer 15 Minuten eingerechnet) werden 2:30 h nicht angerechnet. Die gestempelte Zeit bleibt unverändert gespeichert. Haben Sie in dieser Zeit gearbeitet, beantragen Sie die Anrechnung (Zeiterfassung → Eintrag → „Anrechnung beantragen“)."* Bei zu frühem Beginn oder zu spätem Ende lautet er z. B. *„Die eingetragene Zeit wurde auf das hinterlegte Arbeitszeit-Fenster gekappt (Beginn 07:00 → 07:45; Puffer 15 Minuten)."* Liegt ein Eintrag ganz in der Lücke, heißt es z. B. *„Die eingetragene Zeit (13:00–14:00) liegt vollständig zwischen zwei Arbeitsblöcken (Lücke 12:15–14:45, Puffer 15 Minuten) — angerechnet werden 0 Stunden. Die gestempelte Zeit bleibt gespeichert."* Der Eintrag wird **trotzdem gespeichert** — der Hinweis blockiert nichts.
+- **Pause und Lücke:** Die Zeit zwischen zwei Blöcken zählt für die Pausenpflicht (§ 4 ArbZG) als Pause, sobald nach Abzug des Puffers an beiden Rändern mindestens 15 Minuten übrig bleiben – dann verlangt das Ausstempeln dafür keine zusätzliche Pause. Das gilt aber nur, wenn die Lücke tatsächlich frei war; haben Sie ohne eingetragene Pause durchgestempelt, erinnert Sie daran ein Hinweis, z. B. *„§4 ArbZG: Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst (10:00 h Anwesenheit). Die Lücke gilt nur dann als Pause, wenn sie tatsächlich frei war."* Tragen Sie dagegen eine Pause ein, obwohl Sie über die Lücke durchgestempelt haben, wird beides abgezogen; Sie sehen dann *„Pause in der Lücke wird zusätzlich abgezogen: 30 Min Pause und 2:30 h nicht angerechnet zwischen den Arbeitsblöcken. Lag die Pause in der Lücke, bitte die Pause auf 0 setzen."*
+- **Vergessen auszustempeln?** Ein offener Eintrag eines vergangenen Tages wird automatisch geschlossen (um 23:59) und nur bis zum Ende Ihres letzten Blocks plus Puffer angerechnet. Tragen Sie das tatsächliche Ende per **Änderungsantrag** nach (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)): Im Antrag steht zunächst das angerechnete Ende (z. B. 18:15) – ersetzen Sie es durch Ihr tatsächliches Ende. Auch ein tatsächliches Ende um **23:59** (z. B. nach einem Spät- oder Notdienst) können Sie eintragen; es gilt dann als echter Stempel und wird wie jedes andere Ende an Ihren Blöcken gekürzt – angerechnet bis 23:59 wird es, wenn die Verwaltung den Eintrag anerkennt. (Ist das angerechnete Ende bereits 23:59 – etwa an einem Tag ohne Arbeitszeit-Blöcke –, bleibt die Kennzeichnung „automatisch geschlossen" stehen; angerechnet wird dann ohnehin bis 23:59.)
+
+**So erkennen Sie nicht angerechnete Zeit:** In der Zeiterfassung und im Journal steht unter der Uhrzeit eines Eintrags eine Zusatzzeile:
+
+| Lage | Zusatzzeile |
+|------|-------------|
+| Beginn oder Ende gekürzt | *„gestempelt 07:30 · angerechnet ab 07:45"* bzw. *„gestempelt 19:00 · angerechnet bis 18:15"* |
+| durchgestempelt über die Lücke | *„gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet"* |
+| zusätzlich Beginn/Ende gekürzt | *„gestempelt 07:00–19:00 · angerechnet 8:00 h (07:45–18:15) · 4:00 h nicht angerechnet, davon 2:30 h zwischen den Blöcken"* |
+| mit eingetragener Pause | „angerechnet 7:00 h" erhält den Zusatz *„nach 0:30 h Pause"* |
+| automatisch geschlossen | *„eingestempelt 08:00, nicht ausgestempelt – automatisch geschlossen · angerechnet 7:45 h (08:00–18:15) · 2:30 h zwischen den Blöcken nicht angerechnet"*; ohne Kürzung *„… automatisch geschlossen um 23:59"* |
+| anerkannt | Kennzeichen *„anerkannt"*, keine Zusatzzeile |
+
+„Angerechnet" ist die Zeit, die in Ihr Ist und Ihren Saldo eingeht (nach Pause und Lücke). „Nicht angerechnet" ist die Zeit zwischen den Blöcken **plus** die vor dem ersten bzw. nach dem letzten Block abgeschnittene Zeit. Das **Journal** nennt die Summe des Monats als Zeile *„Anwesenheit nicht angerechnet: 7:30 h"* (nur wenn etwas anfällt).
+
+**Haben Sie außerhalb oder zwischen den Blöcken gearbeitet?** Dann beantragen Sie die Anrechnung: Unter einer solchen Zusatzzeile steht in der Zeiterfassung und im Journal der Link **„Anrechnung beantragen"**. Er öffnet einen Änderungsantrag mit Ihren gestempelten Zeiten und dem Hinweis *„Die gesamte gestempelte Zeit soll angerechnet werden. Bitte begründen Sie, warum Sie in dieser Zeit gearbeitet haben."* Das Datum ist dabei fest – die Anrechnung gilt dem Tag des Eintrags. Begründen Sie kurz (z. B. „Patientin nach Sprechstundenende versorgt") und senden Sie den Antrag ab. Bei einem automatisch geschlossenen Eintrag ist das Feld **Bis** leer: Tragen Sie im selben Antrag Ihr tatsächliches Ende ein, sonst erscheint *„Der Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende angeben."* Das geht auch für den heutigen Eintrag, aber erst nach Arbeitsende – liegt das Ende noch in der Zukunft, erscheint *„Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden."* Nach dem Absenden sehen Sie *„Antrag auf Anrechnung eingereicht"*; unter **Zeiterfassung → Tab „Anträge"** trägt der Antrag das Kennzeichen **„Anrechnung beantragt"**. Genehmigt die Verwaltung ihn mit Anerkennen, werden die beantragten Zeiten vollständig angerechnet – ohne Kürzung durch die Blöcke –, und dort steht **„anerkannt"**. Steht dort **„ohne Anerkennen genehmigt"**, wurden die beantragten Zeiten übernommen, aber wie bei jedem Eintrag an Ihren Blöcken gekürzt; die Zeit vor, nach oder zwischen den Blöcken bleibt nicht angerechnet. Die Verwaltung kann nicht angerechnete Zeit auch von sich aus anerkennen.
+
+Einen anerkannten Eintrag können Sie nicht mehr selbst bearbeiten oder löschen: Am selben Tag zeigt die Zeiterfassung statt der Knöpfe ein Schloss mit dem Hinweis *„Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung"*; ab dem nächsten Tag stellen Sie wie bei jedem älteren Eintrag einen **Änderungsantrag** bzw. **Löschantrag** (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)) oder wenden sich an die Verwaltung.
 
 > **Ihre echte Stempelzeit geht nicht verloren:** Der Zeitpunkt, zu dem Sie tatsächlich gestempelt haben, bleibt immer gespeichert (gesetzlich vorgeschrieben, § 16 ArbZG). Für Ihr Stundenkonto wird nur die **angerechnete** Zeit verwendet.
 
-> **Hinweis:** Diese Begrenzung ist **nur aktiv, wenn Ihre Praxis Soll-Zeiten für Sie hinterlegt hat**. Ist nichts hinterlegt, ändert sich für Sie nichts – dann zählt Ihre gestempelte Zeit ganz normal. Bei Fragen zu Ihren Soll-Zeiten wenden Sie sich an Ihren Administrator.
+> **Nicht angerechnet heißt nicht unbezahlt:** Ob gearbeitete Zeit vergütet wird, entscheidet nicht diese Anrechnung. Arbeit, die angeordnet, gebilligt oder geduldet wurde, ist zu vergüten (§ 611a, § 612 BGB; Mindestlohngesetz). Sprechen Sie Ihre Verwaltung an oder beantragen Sie die Anrechnung.
+
+> **Hinweis:** Diese Begrenzung ist **nur aktiv, wenn Ihre Praxis Arbeitszeit-Blöcke für Sie hinterlegt hat**. Ist nichts hinterlegt, zählt Ihre gestempelte Zeit ganz normal. Ändert die Praxis Ihre Arbeitszeit, sehen Sie 30 Tage lang einen Hinweis auf Ihrem Dashboard (→ [Abschnitt 2](#2-dashboard--die-übersicht)).
 
 ---
 
@@ -220,6 +255,10 @@ In der Spalte **Aktionen** finden Sie Buttons je nach Zustand des Eintrags:
 | **Löschen** | Entfernt den Eintrag dauerhaft (nur wenn nicht gesperrt) |
 | **Änderungsantrag** | Korrekturantrag stellen (für gesperrte oder ältere Einträge) |
 | **Löschantrag** | Antrag auf Löschung eines gesperrten Eintrags stellen |
+| **Anrechnung beantragen** (Link unter der Uhrzeit) | Bei eigenen Einträgen mit nicht angerechneter Zeit: Antrag, die ganze gestempelte Zeit anzurechnen (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)) |
+| **Schloss** (heute anerkannter Eintrag) | Kein Bearbeiten oder Löschen; Hinweis „Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung". Ab dem nächsten Tag wie jeder ältere Eintrag über **Änderungsantrag** bzw. **Löschantrag** |
+
+> **Datum beim Bearbeiten:** Das Datum eines Eintrags können Sie beim Bearbeiten nicht ändern – das Feld ist gesperrt, darunter steht *„Das Datum bleibt beim Bearbeiten fest. Gehört die Zeit zu einem anderen Tag: Eintrag löschen und oben über „Antrag“ einen Änderungsantrag für diesen Tag stellen."* Ein anderes Datum gibt es nur per Antrag (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)).
 
 > **Warum können ältere Einträge nicht direkt geändert werden?**
 > Nach einer Sperrfrist gelten Einträge als bestätigt. Korrekturen erfordern dann einen formellen Antrag (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)).
@@ -233,7 +272,7 @@ Wenn ein Eintrag gesperrt ist oder Sie nachträglich eine Korrektur beantragen m
 
 Ein Dialog öffnet sich mit dem Vergleich von aktuellem und gewünschtem Eintrag:
 
-1. Passen Sie die **Von**, **Bis** und **Pause**-Felder auf die korrekten Werte an
+1. Passen Sie die Felder **Datum**, **Von**, **Bis** und **Pause** auf die korrekten Werte an (beim Antrag „Anrechnung beantragen" bleibt das Datum fest, → [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung))
 2. Tragen Sie eine **Begründung** ein (Pflichtfeld)
 3. Klicken Sie auf **Antrag stellen**
 
@@ -413,11 +452,11 @@ Ihr **Tagessoll** ist die Stundenzahl, die Sie an einem Arbeitstag leisten solle
 
 > **Tagessoll = Wochenstunden ÷ Arbeitstage pro Woche**
 
-Beispiele: 40 h auf 5 Tage = **8 h/Tag**; 20 h auf 5 Tage = **4 h/Tag**; 24 h auf 3 Tage = **8 h/Tag**. Hat Ihre Praxis für Sie individuelle Tagesstunden hinterlegt (z. B. Mo/Di je 10 h, Mi 4 h), gilt der jeweils eingetragene Wert. An Wochenenden und Feiertagen ist das Tagessoll 0.
+Beispiele: 40 h auf 5 Tage = **8 h/Tag**; 20 h auf 5 Tage = **4 h/Tag**; 24 h auf 3 Tage = **8 h/Tag**. Hat Ihre Praxis für Sie individuelle Tagesstunden hinterlegt (z. B. Mo/Di je 10 h, Mi 4 h), gilt der jeweils eingetragene Wert. An Wochenenden und Feiertagen ist das Tagessoll 0. Hat Ihre Praxis **Arbeitszeit-Blöcke** für Sie hinterlegt, ist Ihr Tagessoll die Summe der Blöcke minus der geplanten Pause innerhalb der Blöcke – z. B. 08:00–12:00 und 15:00–18:00 mit 30 Minuten Pause = **6:30 h**.
 
 ### Ihre Ist-Stunden
 
-Ihr **Ist** ist Ihre tatsächlich erfasste Arbeitszeit: **(Ende − Beginn) − Pause** je Eintrag. Zusätzlich werden **Krankheit** und **Fortbildung** so angerechnet, als hätten Sie an diesen Tagen normal gearbeitet – sie zählen also zu Ihrem Ist.
+Ihr **Ist** ist Ihre angerechnete Arbeitszeit: **(Ende − Beginn) − Pause** je Eintrag – abzüglich nicht angerechneter Zeit vor, nach oder zwischen Ihren Arbeitszeit-Blöcken (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)). Zusätzlich werden **Krankheit** und **Fortbildung** so angerechnet, als hätten Sie an diesen Tagen normal gearbeitet – sie zählen also zu Ihrem Ist.
 
 > **Angerechnet wird nur, soweit Sie an diesem Tag auch hätten arbeiten müssen.** Krankheit und Fortbildung sollen Ihren Saldo weder heben noch senken: Ihr Soll bleibt stehen, die Gutschrift gleicht es genau aus. Deshalb gilt:
 >
@@ -480,6 +519,8 @@ Hier sehen Sie Ihre **persönlichen Daten** (vom Administrator hinterlegt):
 
 - Vor- und Nachname, Benutzername, E-Mail-Adresse
 - Rolle, Urlaubstage, Status
+
+**Meine Arbeitszeit:** Die Karte zeigt je Wochentag Ihre heute gültigen Arbeitszeit-Blöcke mit Tagessoll (z. B. „Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) · Tagessoll 6:30 h"), darunter Ihre Wochenstunden (z. B. „Wochenstunden: 15,5") und im **Verlauf** jede Änderung mit Wirkungsdatum, z. B. „ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) · Di 08:00–13:00 · Do 08:00–12:00 · 15,5 Std/Woche". Sind keine Blöcke hinterlegt, steht „–" statt der Zeiten; Tagessoll und Wochenstunden sehen Sie trotzdem. Bei einer festen Monatsarbeitszeit (Minijob) heißen die Tageswerte „geplant" und darunter steht die feste Monatsarbeitszeit; ohne Stundenzählung entfällt das Tagessoll (*„Ohne Stundenzählung: kein Tagessoll; die Arbeitszeit-Blöcke begrenzen die Anrechnung nicht."*). Ändern kann Ihre Arbeitszeit nur die Verwaltung; jede Änderung kündigt Ihr Dashboard 30 Tage lang an (→ [Abschnitt 2](#2-dashboard--die-übersicht)).
 
 ### Passwort ändern
 
@@ -583,7 +624,19 @@ A: PraxisZeit prüft die gesetzlichen Grenzen:
 A: Tragen Sie im Feld **Pause (Min.)** ein, wie viele Minuten Sie heute Pause gemacht haben. Bei mehr als 6 Stunden Arbeit am Tag – alle Einträge des Tages zusammengerechnet – verlangt das Gesetz eine Pause (§ 4 ArbZG). Reicht Ihre Eingabe nicht aus, können Sie entweder die Pausenminuten korrigieren **oder** im erscheinenden Textfeld kurz begründen, warum keine Pause möglich war (das Textfeld fehlt, wenn Ihre Praxis diese Ausnahme abgeschaltet hat). Erst danach ist das Ausstempeln abgeschlossen.
 
 **F: Warum steht bei meinem Eintrag „gestempelt 07:30 · angerechnet ab 07:45"?**
-A: Ihre Praxis hat für diesen Wochentag eine Soll-Arbeitszeit hinterlegt. Wenn Sie deutlich vor dem Soll-Beginn ein- oder nach dem Soll-Ende ausstempeln, wird nur bis zu einem kleinen Puffer (Standard 15 Min.) angerechnet. Ihre tatsächliche Stempelzeit bleibt aber gespeichert. Siehe [Abschnitt 3.3](#33-soll-arbeitszeiten-und-anrechnung).
+A: Ihre Praxis hat für diesen Wochentag Arbeitszeit-Blöcke hinterlegt. Wenn Sie deutlich vor dem ersten Block ein- oder nach dem letzten Block ausstempeln, wird nur bis zu einem kleinen Puffer (Standard 15 Min.) angerechnet. Ihre tatsächliche Stempelzeit bleibt gespeichert. Siehe [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung).
+
+**F: Warum steht bei meinem Eintrag „2:30 h zwischen den Blöcken nicht angerechnet"?**
+A: Sie haben über die geplante Pause zwischen zwei Arbeitszeit-Blöcken durchgestempelt. Diese Zeit (abzüglich Puffer) wird nicht angerechnet; Ihre Stempelzeit bleibt gespeichert. Haben Sie in dieser Zeit gearbeitet, beantragen Sie am Eintrag die Anrechnung über **„Anrechnung beantragen"** (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)).
+
+**F: Bei meinem heutigen Eintrag steht statt der Knöpfe ein Schloss – „Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung".**
+A: Die Verwaltung hat für diesen Eintrag die ganze gestempelte Zeit anerkannt. Selbst bearbeiten oder löschen können Sie ihn nicht mehr. Ab morgen stellen Sie dafür einen **Änderungsantrag** bzw. **Löschantrag** (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)); heute hilft nur die Verwaltung.
+
+**F: Ich möchte das Datum eines Eintrags ändern, aber das Feld ist grau.**
+A: Beim Bearbeiten bleibt das Datum fest. Gehört die Zeit zu einem anderen Tag, löschen Sie den Eintrag und stellen über den Button **Antrag** einen Änderungsantrag für den richtigen Tag (→ [Abschnitt 3.4](#34-eintrag-bearbeiten-oder-löschen)).
+
+**F: Auf meinem Dashboard steht „Ihre Arbeitszeit wurde ab … geändert". Was bedeutet das?**
+A: Ihre Verwaltung hat Ihre Arbeitszeit geändert – Wochenstunden, Tagesplan oder Arbeitszeit-Blöcke. Der Hinweis nennt das Datum, die neue Arbeitszeit und, falls bereits erfasste Einträge neu berechnet wurden, deren Anzahl und die Änderung der angerechneten Zeit. Er verschwindet nach 30 Tagen; die Einzelheiten stehen unter Profil → „Meine Arbeitszeit". Bei Fragen wenden Sie sich an Ihre Verwaltung.
 
 **F: Wie berechnet sich mein Urlaubsanspruch?**
 A: Ihr Urlaubsbudget richtet sich nach Ihrer vertraglichen Wochenstundenzahl. Bei Teilzeit wird es anteilig berechnet. Verbraucht wird **tagebasiert**: 1 freier Arbeitstag = 1 Urlaubstag, ein halber Tag = 0,5 Urlaubstage (siehe [Abschnitt 4.4](#44-so-wird-ihr-urlaub-berechnet)).
@@ -634,6 +687,8 @@ Vollständiger Gesetzestext: [https://www.gesetze-im-internet.de/arbzg/](https:/
 
 > **Minijob-Arbeitszeitkonto:** Für Mitarbeitende mit einem Minijob-Arbeitszeitkonto unterstützt PraxisZeit zusätzlich die Vorgaben aus **§ 2 Abs. 2 MiLoG** (Mindestlohngesetz) mit weichen Hinweisen am Überstundenkonto – siehe [Abschnitt 2](#2-dashboard--die-übersicht).
 
+> **Arbeitszeit-Blöcke und Vergütung:** Nicht angerechnet heißt nicht unbezahlt – Arbeit, die angeordnet, gebilligt oder geduldet wurde, ist zu vergüten (§ 611a, § 612 BGB; Mindestlohngesetz). Haben Sie außerhalb oder zwischen Ihren Arbeitszeit-Blöcken gearbeitet, beantragen Sie die Anrechnung (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)).
+
 ---
 
 ## Schichtplan (falls Ihre Praxis ihn nutzt)
@@ -670,4 +725,4 @@ legt Ihr Administrator fest.
 
 ---
 
-*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.8 | Oktober 2026 (PraxisZeit 1.19.3)*
+*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.9 | Oktober 2026 (PraxisZeit 1.20.0)*
