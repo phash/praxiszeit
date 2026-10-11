@@ -470,16 +470,19 @@ export default function WorkingHoursModal({
   const snapshotUnchanged =
     comparableSnapshot(inputSchedule, compareBlocks) === comparableSnapshot(baselineSchedule, compareBlocks);
 
-  // Rückwirkend: Vorschau muss da und bestätigt sein. Ab heute sperrt nur ein
-  // positiver Befund — fällt die Vorschau aus (Netzwerk, 5xx), bleibt das
-  // Anlegen einer normalen zukunftsdatierten Änderung möglich.
+  // Rückwirkend: Vorschau muss da und bestätigt sein. Ab heute sperrt ein
+  // positiver Befund — und das Laden: bis die Vorschau zur NEUEN Eingabe da
+  // ist, gilt noch die alte, und ein Enter direkt nach der Eingabe umginge
+  // sonst den Pflicht-Haken (9.4/12.1, der Server prüft ihn nicht). Fällt die
+  // Vorschau aus (Netzwerk, 5xx), endet das Laden und das Anlegen einer
+  // normalen zukunftsdatierten Änderung bleibt möglich.
   const saveDisabled =
     submitting ||
     !!blockedReason ||
     !!blocksError ||
     snapshotUnchanged ||
     (isRetroactive && (shownLoading || !shown || !confirmedRetroactive)) ||
-    (!isRetroactive && needsConfirmation && !confirmedRetroactive);
+    (!isRetroactive && (shownLoading || (needsConfirmation && !confirmedRetroactive)));
 
   const setDayHours = (key: DayFieldKey, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: parseHours(value) }));

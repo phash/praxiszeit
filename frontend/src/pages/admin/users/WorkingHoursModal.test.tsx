@@ -606,8 +606,12 @@ describe('Fund 3 (Release-Review 1.17.0): Kopfzeile + Formular ziehen nach dem S
   // frisch geladenen Verlauf abgeleitet werden, nicht aus der Prop.
   it('zeigt nach dem Speichern das NEUE Wochenstunden im Kopf und im Eingabefeld, nicht die stale Prop', async () => {
     let historyRows: Array<{ id: string; effective_from: string; weekly_hours: number }> = [];
+    // Ab heute ohne Befund — kein Haken nötig, der Test bleibt beim Nachziehen
+    // nach dem Speichern.
     getMock.mockImplementation((url: string) => {
-      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      if (String(url).includes('/preview')) {
+        return Promise.resolve(previewResponse({ is_retroactive: false, affected_absences: 0 }));
+      }
       return Promise.resolve(historyResponse(historyRows));
     });
     postMock.mockImplementation(async () => {
@@ -620,9 +624,11 @@ describe('Fund 3 (Release-Review 1.17.0): Kopfzeile + Formular ziehen nach dem S
     await screen.findByText('Keine Änderungen vorhanden');
     expect(screen.getByText(/Aktuell: 40,0 Std\/Woche/)).toBeInTheDocument();
 
-    // Today's date (not retroactive) — no preview/confirmation needed, keeps
-    // this test focused on the post-save refresh.
+    // Today's date (not retroactive) and a preview without findings — no
+    // confirmation needed, keeps this test focused on the post-save refresh.
+    // Review Task 18b: Speichern wartet auf die Vorschau zur neuen Eingabe.
     fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
     fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
 
     await waitFor(() => expect(postMock).toHaveBeenCalled());
@@ -718,6 +724,7 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
     mockPreview({ affected_absences: 0 });
     renderModal({ currentUseDailySchedule: true });
     fireEvent.change(await screen.findByLabelText('Montag'), { target: { value: '8' } });
+    await flushDebounce(); // Review Task 18b: Speichern wartet auf die Vorschau
     fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
     await waitFor(() => {
       const call = postMock.mock.calls.at(-1);
@@ -736,6 +743,7 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
     renderModal();
     await screen.findByText('Keine Änderungen vorhanden');
     fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce(); // Review Task 18b: Speichern wartet auf die Vorschau
     fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
     await waitFor(() => {
       const call = postMock.mock.calls.at(-1);
@@ -811,6 +819,7 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
   });
 
   it('sperrt Speichern, solange der eingegebene Stand dem gültigen entspricht', async () => {
+    mockPreview({ is_retroactive: false, affected_absences: 0 });
     renderModal();
     await screen.findByText('Keine Änderungen vorhanden');
     const submit = screen.getByRole('button', { name: /Speichern/i });
@@ -819,8 +828,10 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
     expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
-    expect(submit).not.toBeDisabled();
     expect(screen.queryByText(/Noch nichts zu speichern/)).not.toBeInTheDocument();
+    // Review Task 18b: frei erst, wenn die Vorschau zur neuen Eingabe da ist.
+    await flushDebounce();
+    await waitFor(() => expect(submit).not.toBeDisabled());
   });
 
   it('vergleicht gegen den Stand AM Wirkungsdatum, nicht gegen den von heute', async () => {
@@ -1330,5 +1341,45 @@ describe('Review Task 18b', () => {
 
     await screen.findByText('Eine Stundenänderung für den 26.07.2026 existiert bereits');
     expect(screen.queryByText(/Abwesenheiten werden trotzdem umgeschrieben/)).not.toBeInTheDocument();
+  });
+
+  it('Speichern ist gesperrt, solange die Vorschau zur neuen Eingabe noch lädt (Enter direkt nach der Eingabe)', async () => {
+    // Spec 9.4/12.1: der Haken ist Pflicht, sobald `affected_time_entries > 0`
+    // — auch bei Wirkungsdatum heute. Die alte Vorschau (ohne Befund) darf ihn
+    // nicht umgehen, solange die neue noch unterwegs ist.
+    getMock.mockImplementation((url: string, cfg?: { params?: Record<string, unknown> }) => {
+      if (String(url).includes('/preview')) {
+        const changed = cfg?.params?.weekly_hours === 20;
+        return Promise.resolve(previewResponse({ ...QUIET, ...(changed ? { affected_time_entries: 2 } : {}) }));
+      }
+      return Promise.resolve(historyResponse([]));
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    await flushDebounce();
+
+    const input = screen.getByLabelText('Wochenstunden');
+    fireEvent.change(input, { target: { value: '20' } });
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+    fireEvent.submit(input.closest('form')!);
+    await flushDebounce(50);
+    expect(postMock).not.toHaveBeenCalled();
+
+    await flushDebounce();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /Auswirkungen geprüft/ }));
+    fireEvent.submit(input.closest('form')!);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+  });
+
+  it('fällt die Vorschau aus, bleibt ein Speichern ab heute möglich', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.reject({ response: { data: { detail: 'Netzwerkfehler' } } });
+      return Promise.resolve(historyResponse([]));
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Speichern/ })).not.toBeDisabled());
   });
 });
