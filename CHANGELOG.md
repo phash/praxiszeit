@@ -92,8 +92,14 @@ dieses Backup verlustfrei (`UPDATE.md`).
   („Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu
   laden.").
 - **Der Puffer wird je Eintrag gespeichert.** Eine Änderung des Puffers in den
-  Einstellungen wirkt nur auf neue Einträge; Einträge aus der Zeit vor 1.20.0
-  werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt.
+  Einstellungen wirkt auf neue Einträge; jeder gekappte Eintrag behält seinen
+  Puffer, auch wenn er später bearbeitet wird. Das Speichern der Einstellung
+  allein ändert keinen gespeicherten Eintrag.
+  Nur eine Arbeitszeit-Änderung mit Neuberechnung kappt die betroffenen
+  Einträge mit dem dann gültigen Puffer neu; die Vorschau nennt ihn, und
+  verliert dabei ein Eintrag angerechnete Zeit, gilt der Schutz gegen
+  rückwirkende Verkürzung. Einträge aus der Zeit vor 1.20.0 werden bei einer
+  Bearbeitung mit dem aktuellen Puffer gekappt.
 - **Ausstempeln ohne ausreichende Pause wird abgelehnt** (#499): Die
   Pausenpflicht (§ 4 ArbZG) gilt beim Ausstempeln für den ganzen Tag – auch zwei
   aneinandergereihte Einträge zählen zusammen, Lücken unter 15 Minuten sind

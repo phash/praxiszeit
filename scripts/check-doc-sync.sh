@@ -912,6 +912,13 @@ group_changelog() {
   need "$f" 'übernommenen Konten und Verlaufszeilen'
   need backend/alembic/versions/2026_10_08_1200-073_work_blocks.py "_n(history_rows, 'Verlaufszeile', 'Verlaufszeilen')"
   need backend/alembic/versions/2026_10_08_1200-073_work_blocks.py 'Besonderheiten (bitte im Dialog „Arbeitszeit anpassen…“ prüfen):'
+  # Review Task 12: eine Arbeitszeit-Änderung mit Neuberechnung kappt mit dem
+  # aktuellen Mandanten-Puffer neu (wh_change_service.run_change →
+  # reclamp_time_entries, E47) — eine Puffer-Änderung wirkt also nicht „nur auf
+  # neue Einträge" (Wortlaut wie Settings.tsx/Handbuch/DocViewer, Spec 16.1).
+  forbid "$f" 'wirkt nur auf neue Einträge'
+  need "$f" 'Nur eine Arbeitszeit-Änderung mit Neuberechnung'
+  need backend/app/services/wh_change_service.py 'grace = work_window_service.get_grace_minutes('
   # Wortlaute, die nur der CHANGELOG zitiert (die übrigen deckt die Gruppe code)
   need_code "Zeiteintrag nicht gefunden"
   need_code "'Ausgestempelt'"
