@@ -51,6 +51,10 @@ describe('WorkBlocksEditor (Spec 12.1)', () => {
     fireEvent.click(add);
     fireEvent.click(add);
     expect(add).toBeDisabled();
+    // „+ Block“ setzt die Pause eines leeren Tages schon auf 0 — erst eine Pause ≠ 0 zeigt,
+    // dass das Entfernen des letzten Blocks sie zurücksetzt. Sonst stünde „Di: Pause nur an
+    // Tagen mit Blöcken.“ da, ohne dass es für Di noch ein Pausenfeld gibt.
+    fireEvent.change(screen.getByLabelText('Di Pause innerhalb der Blöcke (Min)'), { target: { value: '30' } });
     for (const n of [3, 2, 1]) fireEvent.click(screen.getByRole('button', { name: `Di Block ${n} entfernen` }));
     expect(screen.getAllByText('kein Arbeitstag')).toHaveLength(5);
     expect(screen.queryByRole('alert')).toHaveTextContent('Mindestens ein Wochentag braucht einen Block.');
