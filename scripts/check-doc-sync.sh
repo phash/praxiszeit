@@ -191,6 +191,27 @@ sys.exit(bad)
 PY
 }
 
+group_admin_bloecke() {
+  local f=docs/handbuch/HANDBUCH-ADMIN.md
+  need "$f" '<a id="arbeitszeit-bloecke"></a>'
+  need "$f" '### Arbeitszeit-Blöcke (Soll-Arbeitszeit je Wochentag)'
+  need "$f" 'Tagessoll = Summe der Blockdauern − Pause innerhalb der Blöcke'
+  need "$f" '08:00–12:15 und 14:45–18:00 = 7:30 h'
+  need "$f" 'Zwischen den Arbeitsblöcken (12:15–14:45, Puffer 15 Minuten eingerechnet) werden 2:30 h nicht angerechnet. Die gestempelte Zeit bleibt unverändert gespeichert.'
+  need "$f" 'liegt vollständig zwischen zwei Arbeitsblöcken (Lücke 12:15–14:45, Puffer 15 Minuten) — angerechnet werden 0 Stunden.'
+  need "$f" 'gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet'
+  need "$f" 'gestempelt 07:00–19:00 · angerechnet 8:00 h (07:45–18:15) · 4:00 h nicht angerechnet, davon 2:30 h zwischen den Blöcken'
+  need "$f" 'Arbeitszeit-Fenster (Altbestand, nur Kappung)'
+  need "$f" '<a id="nicht-angerechnet-anerkennen"></a>'
+  need "$f" 'Die gesamte gestempelte Zeit (08:00–18:00) wird angerechnet.'
+  need "$f" 'Nichtanrechnung ersetzt keine Vergütungsentscheidung.'
+  need "$f" 'Schichtzeit inklusive Lücke höchstens 10 h); PraxisZeit prüft diese nicht.'
+  need "$f" '**Bekannte Grenze:**'
+  forbid "$f" 'Soll-Arbeitszeiten je Wochentag'
+  forbid "$f" 'Soll-Arbeitszeit-Fenster, #201'
+  forbid "$f" '#soll-arbeitszeiten-soll-arbeitszeit-fenster-201'
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {
