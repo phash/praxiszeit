@@ -1842,10 +1842,12 @@ describe('Löschen einer Arbeitszeit-Änderung (Spec 9.7/P13)', () => {
 
     const reset = within(dialog).getByRole('button', { name: 'Zurücksetzen' });
     await waitFor(() => expect(reset).not.toBeDisabled());
+    reset.focus();
     fireEvent.click(reset);
     await waitFor(() => expect(postMock).toHaveBeenCalledWith('/admin/users/u1/working-hours-changes', RESET_BODY));
     expect(deleteMock).not.toHaveBeenCalled();
     expect(await screen.findByText('Gespeichert.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Verlauf' })).toHaveFocus();
   });
 
   it('409 bei der Rücksetzung lädt die delete-preview neu', async () => {
@@ -1900,11 +1902,81 @@ describe('Löschen einer Arbeitszeit-Änderung (Spec 9.7/P13)', () => {
     expect(within(region).getByText(/abgeschlossene Jahr 2025 ist gesperrt/)).toBeInTheDocument();
   });
 
-  it('„Abbrechen" schließt das Panel ohne Anfrage', async () => {
+  // Review Task 20 (Tastatur): der ConfirmDialog brachte den Fokus selbst an
+  // den Papierkorb zurück (returnFocusOnDeactivate). Das Inline-Panel muss das
+  // selbst tun — sonst fällt der Fokus beim Abbau des Panels aus dem Verlauf.
+  it('„Abbrechen" schließt das Panel ohne Anfrage und gibt den Fokus an den Papierkorb zurück', async () => {
     const dialog = await openDelete();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+    const cancel = within(dialog).getByRole('button', { name: 'Abbrechen' });
+    cancel.focus();
+    fireEvent.click(cancel);
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(deleteMock).not.toHaveBeenCalled();
+    expect(within(historyRow(/^Ab 01\.06\.2026 bis heute/)).getByRole('button', { name: 'Löschen' })).toHaveFocus();
+  });
+
+  // Review Task 20 (Tastatur): Escape im Panel bricht nur das Panel ab. Der
+  // äußere Dialog schließt bei Escape über focus-trap, und focus-trap 8 hört
+  // dafür mit einem `keydown`-Listener am `document` (Bubble-Phase) — ohne
+  // eigene Fokusfalle des Panels gingen sonst Formular und Grund verloren. Im
+  // Test ist focus-trap-react weggemockt (src/test/setup.ts); der Listener am
+  // `document` steht hier für die Falle.
+  it('Escape im Panel schließt nur das Panel, nicht den Dialog; der Fokus geht an den Papierkorb', async () => {
+    const onClose = vi.fn();
+    const trapEscape = vi.fn((e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    });
+    document.addEventListener('keydown', trapEscape);
+    try {
+      mockHistory(TWO_ROWS, QUIET);
+      renderModal({ currentWeeklyHours: 30, onClose });
+      await screen.findByText(/Ab 01\.06\.2026 bis heute/);
+      fireEvent.change(screen.getByLabelText('Notiz (optional)'), { target: { value: 'halb ausgefüllt' } });
+      const trash = within(historyRow(/^Ab 01\.06\.2026 bis heute/)).getByRole('button', { name: 'Löschen' });
+      fireEvent.click(trash);
+      const dialog = await screen.findByRole('alertdialog', { name: 'Arbeitszeit-Änderung ab 01.06.2026 löschen' });
+      expect(dialog).toHaveFocus();
+
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(trapEscape).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog', { name: 'Arbeitszeit & Wochenstunden' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Notiz (optional)')).toHaveValue('halb ausgefüllt');
+      expect(trash).toHaveFocus();
+      expect(deleteMock).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('keydown', trapEscape);
+    }
+  });
+
+  // Gegenprobe: außerhalb des Panels bleibt Escape das Schließen des Dialogs.
+  it('Escape außerhalb des Panels erreicht weiterhin die Fokusfalle des Dialogs', async () => {
+    const trapEscape = vi.fn();
+    document.addEventListener('keydown', trapEscape);
+    try {
+      await openDelete();
+      fireEvent.keyDown(screen.getByLabelText('Notiz (optional)'), { key: 'Escape' });
+      expect(trapEscape).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener('keydown', trapEscape);
+    }
+  });
+
+  // Nach dem Löschen ist die Zeile weg (bzw. nach der Rücksetzung nicht mehr
+  // die jüngste) — der Fokus geht an die Überschrift „Verlauf", die immer
+  // steht, statt mit dem Panel aus dem Dokument zu fallen.
+  it('nach dem Löschen steht der Fokus auf der Überschrift „Verlauf"', async () => {
+    deleteMock.mockResolvedValue({ status: 204, data: '' });
+    const dialog = await openDelete();
+    const del = within(dialog).getByRole('button', { name: 'Löschen' });
+    await waitFor(() => expect(del).not.toBeDisabled());
+    del.focus();
+    fireEvent.click(del);
+    expect(await screen.findByText('Gelöscht.')).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Verlauf' })).toHaveFocus();
   });
 
   // Review Task 19 (Fund 4, Release-Review 1.17.0) gilt auch hier: ein

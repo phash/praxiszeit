@@ -162,12 +162,24 @@ export default function WhDeletePanel({ userId, change, onCancel, onDone }: WhDe
     }
   };
 
+  // Review Task 20: Escape bricht nur das Panel ab. Der äußere Dialog schließt
+  // bei Escape über focus-trap, das dafür am `document` lauscht (Bubble-Phase);
+  // Reacts stopPropagation hält das Ereignis schon am Wurzelcontainer an. Ohne
+  // das gingen mit dem ganzen Dialog auch Formular und Grund verloren — der
+  // frühere ConfirmDialog hatte dafür eine eigene Fokusfalle.
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    onCancel();
+  };
+
   return (
     <section
       ref={panelRef}
       tabIndex={-1}
       role="alertdialog"
       aria-labelledby="wh-delete-title"
+      onKeyDown={handleKeyDown}
       className="mb-4 rounded-lg border border-red-300 bg-white p-3 sm:p-4 text-sm space-y-2 min-w-0 break-words focus:outline-none focus:ring-2 focus:ring-red-300"
     >
       <h4 id="wh-delete-title" className="font-semibold text-gray-900">

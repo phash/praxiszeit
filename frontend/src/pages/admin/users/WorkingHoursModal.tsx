@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../../api/client';
 import { Save, X, Trash2, Info } from 'lucide-react';
@@ -257,6 +257,10 @@ export default function WorkingHoursModal({
   const toast = useToast();
   // Spec 12.1/9.7: Lösch-Panel der jüngsten Zeile.
   const [deleting, setDeleting] = useState<WorkingHoursChange | null>(null);
+  // Review Task 20: Fokusziele beim Schließen des Panels — der frühere
+  // ConfirmDialog gab den Fokus selbst zurück (returnFocusOnDeactivate).
+  const trashRef = useRef<HTMLButtonElement>(null);
+  const historyHeadingRef = useRef<HTMLHeadingElement>(null);
   const [hoursChanges, setHoursChanges] = useState<WorkingHoursChange[]>([]);
   // Schützt vor doppeltem Absenden (schneller Doppelklick legte zwei Zeilen an).
   const [submitting, setSubmitting] = useState(false);
@@ -604,12 +608,26 @@ export default function WorkingHoursModal({
   // geladenen Stand nach — sonst stünde der gelöschte (bzw. zurückgesetzte)
   // Wert als neue Änderung gegen den wieder gültigen Stand im Formular. Die
   // Vorschau wird neu geholt: der Server-Stand hinter ihr hat sich geändert.
+  //
+  // Review Task 20: der Fokus geht an die Überschrift „Verlauf" — die Zeile ist
+  // weg bzw. nicht mehr die jüngste, die Überschrift steht immer. Gesetzt wird
+  // er VOR dem Abbau des Panels: fiele der fokussierte Knopf mit dem Panel aus
+  // dem Dokument, landete der Fokus auf `body` (bzw. holte focus-trap ihn an
+  // den Anfang des Dialogs).
   const finishDelete = async () => {
+    historyHeadingRef.current?.focus();
     setDeleting(null);
     const freshChanges = await fetchHoursChanges();
     onChanged();
     resetFormTo(freshChanges);
     setPreviewRetryToken((t) => t + 1);
+  };
+
+  // Abbrechen (Knopf oder Escape): zurück an den Papierkorb, der das Panel
+  // geöffnet hat — ebenfalls vor dem Abbau des Panels.
+  const cancelDelete = () => {
+    trashRef.current?.focus();
+    setDeleting(null);
   };
 
   // Ein zukunftsdatierter Wechsel liefert oft „12:30 → 12:30" — korrekt (der
@@ -982,14 +1000,20 @@ export default function WorkingHoursModal({
               </div>
 
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">Verlauf</h3>
+                <h3
+                  ref={historyHeadingRef}
+                  tabIndex={-1}
+                  className="font-semibold text-gray-900 mb-3 focus:outline-none"
+                >
+                  Verlauf
+                </h3>
                 {/* Spec 12.1: das Panel gehört immer zur jüngsten Zeile. */}
                 {deleting && deleting.id === youngestId && (
                   <WhDeletePanel
                     key={deleting.id}
                     userId={userId}
                     change={deleting}
-                    onCancel={() => setDeleting(null)}
+                    onCancel={cancelDelete}
                     onDone={finishDelete}
                   />
                 )}
@@ -1024,6 +1048,7 @@ export default function WorkingHoursModal({
                           </div>
                           {change.id === youngestId && (
                             <button
+                              ref={trashRef}
                               type="button"
                               onClick={() => setDeleting(change)}
                               className="shrink-0 text-red-600 hover:text-red-800"
