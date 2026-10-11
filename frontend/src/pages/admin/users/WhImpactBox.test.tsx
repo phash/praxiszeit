@@ -103,15 +103,18 @@ describe('WhImpactBox (Spec 12.1)', () => {
     }} />);
     expect(screen.getByText('2 offene Einträge vergangener Tage werden vorher automatisch geschlossen.')).toBeInTheDocument();
     expect(screen.getByText('2 Abwesenheit(en) betroffen.')).toBeInTheDocument();
-    // Spec P27: „n Abwesenheiten an Misch-Tagen angeglichen".
-    expect(screen.getByText('2 Abwesenheiten an Misch-Tagen angeglichen')).toBeInTheDocument();
+    // Spec 9.6 (Wortlaut der Zeile aus P27 mit Erklärung): „Misch-Tag" ist sonst
+    // nirgends in der Oberfläche erklärt.
+    expect(screen.getByText('2 Abwesenheiten an Misch-Tagen angeglichen (Arbeit und Gutschrift am selben Tag)'))
+      .toBeInTheDocument();
     expect(screen.getByText('Wochen > 48 h: angerechnet bisher 3, neu 0 · laut Stempel 3')).toBeInTheDocument();
     expect(screen.queryByText(/Tage > 10 h/)).not.toBeInTheDocument();
     unmount();
 
     render(<WhImpactBox preview={{ ...FIRST_STATE, stale_entries_closed: 1, absence_f1_adjustments: 1 }} />);
     expect(screen.getByText('1 offener Eintrag eines vergangenen Tages wird vorher automatisch geschlossen.')).toBeInTheDocument();
-    expect(screen.getByText('1 Abwesenheit an einem Misch-Tag angeglichen')).toBeInTheDocument();
+    expect(screen.getByText('1 Abwesenheit an einem Misch-Tag angeglichen (Arbeit und Gutschrift am selben Tag)'))
+      .toBeInTheDocument();
   });
 
   it('ohne F1-Angleichung keine Misch-Tag-Zeile', () => {

@@ -22,9 +22,16 @@ function skippedSummary(reasons: string[]): string {
   return [...counts].map(([r, n]) => `${n} ${SKIP_LABELS[r] ?? r}`).join(', ');
 }
 
-/** Spec P27: „n Abwesenheiten an Misch-Tagen angeglichen" (F1-Klemmung, 9.6). */
+/**
+ * Spec 9.6 (Zeile aus P27, F1-Klemmung): „n Abwesenheiten an Misch-Tagen
+ * angeglichen (Arbeit und Gutschrift am selben Tag)". Der Zusatz gehört dazu —
+ * „Misch-Tag" ist sonst nirgends in Oberfläche oder Handbuch erklärt.
+ */
+const F1_HINT = '(Arbeit und Gutschrift am selben Tag)';
 function f1Text(n: number): string {
-  return n === 1 ? '1 Abwesenheit an einem Misch-Tag angeglichen' : `${n} Abwesenheiten an Misch-Tagen angeglichen`;
+  return n === 1
+    ? `1 Abwesenheit an einem Misch-Tag angeglichen ${F1_HINT}`
+    : `${n} Abwesenheiten an Misch-Tagen angeglichen ${F1_HINT}`;
 }
 
 /**
