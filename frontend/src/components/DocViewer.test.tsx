@@ -103,6 +103,9 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       // Puffer-Wortlaut wie Settings.tsx (Spec 16.1/12.3): Bestand ohne
       // gespeicherten Puffer nimmt beim Bearbeiten den aktuellen (grace_for_entry).
       'Einträge aus der Zeit vor Version 1.20.0 tragen keinen gespeicherten Puffer und werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt.',
+      // Review Task 8: der XLS-Import zeigt die Kappung schon in der Vorschau
+      // (HANDBUCH-ADMIN.md Abschnitt 3/12, ImportXls.tsx).
+      'XLS-Import – dort schon in der Vorschau sichtbar',
     ]) {
       expect(text).toContain(expected);
     }
@@ -170,7 +173,15 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
     expect(users).toContain('Arbeitszeit anpassen…');
     expect(users).toContain('Neue:r Mitarbeiter:in');
     expectNoStaleTerms(users);
-    expect(textOf(helpContent['/time-tracking'].content)).toContain('Anrechnung beantragen');
+    // Review Task 8: HelpPanel zeigt die Kontexthilfe allen Rollen — „nur für
+    // heute", „Antrag" und das gesperrte Datum gelten nur für Mitarbeitende
+    // (TimeTracking.tsx: Knopf „Antrag" nur !isAdmin, dateLocked nur !isAdmin).
+    const tracking = textOf(helpContent['/time-tracking'].content);
+    expect(tracking).toContain('Anrechnung beantragen');
+    expect(tracking).toContain('(Mitarbeitende: nur für heute;');
+    expect(tracking).toContain('Für Mitarbeitende ist beim Bearbeiten das Datum gesperrt.');
+    expect(tracking).toContain('Admins ändern das Datum direkt.');
+    expect(tracking).not.toContain('Beim Bearbeiten ist das Datum gesperrt.');
     expect(textOf(helpContent['/profile'].content)).toContain('Meine Arbeitszeit');
     expect(textOf(helpContent['/admin/change-requests'].content)).toContain('Genehmigen und anerkennen');
     expect(textOf(helpContent['/admin/change-requests'].content)).toContain('Ohne Anerkennen genehmigen');

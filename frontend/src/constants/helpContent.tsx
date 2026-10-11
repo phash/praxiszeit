@@ -45,7 +45,7 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Eintrag erstellen</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
-            <li>Klicken Sie auf <span className="font-medium">„+ Neuer Eintrag"</span> (nur für heute; einen vergangenen Tag beantragen Sie über <span className="font-medium">„Antrag"</span>)</li>
+            <li>Klicken Sie auf <span className="font-medium">„+ Neuer Eintrag"</span> (Mitarbeitende: nur für heute; einen vergangenen Tag beantragen Sie über <span className="font-medium">„Antrag"</span>)</li>
             <li>Start- und Endzeit eintragen</li>
             <li>Pause in Minuten eingeben (Pflicht!)</li>
             <li>Optional: Notiz hinzufügen</li>
@@ -72,7 +72,7 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Datum ändern</h3>
-          <p className="text-sm text-gray-600">Beim Bearbeiten ist das Datum gesperrt. Gehört die Zeit zu einem anderen Tag: Eintrag löschen und über <span className="font-medium">„Antrag"</span> einen Änderungsantrag für diesen Tag stellen.</p>
+          <p className="text-sm text-gray-600">Für Mitarbeitende ist beim Bearbeiten das Datum gesperrt. Gehört die Zeit zu einem anderen Tag: Eintrag löschen und über <span className="font-medium">„Antrag"</span> einen Änderungsantrag für diesen Tag stellen. Admins ändern das Datum direkt.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Wochenansicht</h3>
