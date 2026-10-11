@@ -1761,6 +1761,7 @@ Bestehende Felder bleiben (`is_retroactive`, `period_start`, `period_end`,
 | `shortening_closed_years` | List[int] | abgeschlossene Jahre mit Verlust nach (a), (b) oder (c) — nicht leer ⇒ rückwirkende Variante gesperrt (400) |
 | `earliest_lossless_date` | Optional[date] | 9.5 / P1; `null`, wenn es die nächste Änderung erreicht (P25) |
 | `earliest_lossless_note` | Optional[str] | Text aus P25, wenn `earliest_lossless_date` null ist |
+| `open_entry_loses` | bool | der heute offene Eintrag verliert nach P1 angerechnete Zeit (9.5 (a)); steht nicht in `time_entry_changes` (`skipped_time_entries` nennt ihn als `open` auch ohne Verlust), zählt aber zu „n Einträge verlieren" im Kasten (12.1) wie in der 400-Meldung (11.4) — ergänzt im Review zu PR3 Task 19 |
 | `lost_credited_hours` | float | Σ Verlust der verlierenden Einträge (Anzeige im Verkürzungs-Kasten) |
 | `target_delta_hours` / `credited_delta_hours` | float | Δ Soll (nach Soll-Entlastung durch Abwesenheiten) und Δ Ist (angerechnete Zeit der Einträge plus Abwesenheits-Gutschrift) im Wirkungsbereich bis zum Saldo-Stichtag, ohne Jahresüberträge (9.4, 9.5 (b)) |
 | `saldo_delta_hours` | float | `credited_delta_hours − target_delta_hours`; < 0 ⇒ Kriterium (b) |

@@ -86,6 +86,8 @@ export interface WorkingHoursChangePreview {
   shortening_closed_years?: number[];
   earliest_lossless_date?: string | null;
   earliest_lossless_note?: string | null;
+  /** Der heute offene Eintrag verliert nach P1 — zählt zu (a), steht aber nicht in `time_entry_changes`. */
+  open_entry_loses?: boolean;
   lost_credited_hours?: number;
   target_delta_hours?: number;
   credited_delta_hours?: number;

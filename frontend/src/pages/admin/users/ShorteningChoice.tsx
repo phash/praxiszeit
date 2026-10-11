@@ -10,11 +10,13 @@ export function shorteningHeadlines(p: WorkingHoursChangePreview): string[] {
   const reasons = p.shortening_reasons ?? [];
   const out: string[] = [];
   if (reasons.includes('entries')) {
-    // Der heute offene Eintrag (P1) steht nicht in `time_entry_changes` — fehlt
-    // jede geschlossene Zeile, ist er der eine verlierende Eintrag. Sein Verlust
-    // ist nicht bezifferbar (das Ende ist unbekannt), die Summe nennt nur die
-    // geschlossenen Einträge.
-    const n = (p.time_entry_changes ?? []).filter((c) => c.new_net < c.old_net).length || 1;
+    // Der heute offene Eintrag (P1) steht nicht in `time_entry_changes`; ob er
+    // verliert, sagt `open_entry_loses` — gezählt wie `criteria_text` in der
+    // 400-Meldung (9.5 (a)). Sein Verlust ist nicht bezifferbar (das Ende ist
+    // unbekannt), die Summe nennt nur die geschlossenen Einträge. `|| 1`: das
+    // Kriterium ist erfüllt, also verliert mindestens einer.
+    const closedLosing = (p.time_entry_changes ?? []).filter((c) => c.new_net < c.old_net).length;
+    const n = closedLosing + (p.open_entry_loses ? 1 : 0) || 1;
     const lost = p.lost_credited_hours ?? 0;
     out.push(`${n === 1 ? '1 Eintrag verliert' : `${n} Einträge verlieren`} angerechnete Zeit`
       + (lost > 0 ? ` (zusammen ${hm(lost)} h)` : ''));

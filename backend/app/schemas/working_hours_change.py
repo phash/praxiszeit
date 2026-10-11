@@ -346,7 +346,11 @@ class WorkingHoursChangePreview(BaseModel):
     # Spec 11.3 (PR3): Neukappung, Verkürzung/Schutzpaket, ArbZG, Plan-Hinweise.
     # Alle mit Vorgabewert — die Vorschau befüllt sie schrittweise (Task 8–11).
     # ``not_extendable_entries`` trägt zusätzlich Datum und Kante für die Anzeige
-    # „14.09., Ende 18:15", die ``not_extendable_count`` allein nicht liefert.
+    # „14.09., Ende 18:15", die ``not_extendable_count`` allein nicht liefert;
+    # ``open_entry_loses`` (Review Task 19), ob der heute offene Eintrag nach P1
+    # verliert — er zählt zu „n Einträge verlieren" (9.5 (a), 12.1), steht aber
+    # nicht in ``time_entry_changes`` (``skipped_time_entries`` nennt ihn als
+    # „open" auch ohne Verlust).
     grace_minutes: int = 0
     blocks_current: Optional[Any] = None
     blocks_new: Optional[Any] = None
@@ -362,6 +366,7 @@ class WorkingHoursChangePreview(BaseModel):
     shortening_closed_years: List[int] = Field(default_factory=list)
     earliest_lossless_date: Optional[date] = None
     earliest_lossless_note: Optional[str] = None
+    open_entry_loses: bool = False
     lost_credited_hours: float = 0.0
     target_delta_hours: float = 0.0
     credited_delta_hours: float = 0.0

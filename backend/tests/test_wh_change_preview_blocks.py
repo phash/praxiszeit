@@ -150,6 +150,27 @@ class TestImpactFields:
         assert body["time_entry_changes"][0]["new_end"] == "17:15:00"
         assert body["overtime_after"] - body["overtime_before"] == pytest.approx(1.75)
         assert body["milog_warning"] == [wh_change_service.MILOG_GENERAL_WARNING]
+        assert body["open_entry_loses"] is False
+
+    def test_open_entry_loss_counts_like_the_400_text(self, client, db, test_user):
+        """Spec 9.5 (a)/12.1 (Review Task 19): der heute offene Eintrag zählt zu den
+        verlierenden Einträgen. Er steht nicht in ``time_entry_changes`` — ohne
+        ``open_entry_loses`` nennte der Kasten „2 Einträge", die 400-Meldung „3"."""
+        add_row(db, test_user, date(2026, 3, 1), week=ANNA_WEEK)
+        for d in (date(2026, 9, 24), date(2026, 10, 1)):
+            entry(db, test_user, d, t(8), t(12))
+        entry(db, test_user, date(2026, 10, 8), t(8), None)
+        week = block_week(mon=[("08:00", "12:00"), ("15:00", "18:00")], tue=[("08:00", "12:00")],
+                          thu=[("08:00", "11:00")])
+        body = _preview(client, test_user, {"effective_from": "2026-09-24", "blocks": week})
+        assert [(c["date"], c["old_net"], c["new_net"]) for c in body["time_entry_changes"]] == [
+            ("2026-09-24", 4.0, 3.25), ("2026-10-01", 4.0, 3.25)]
+        assert (body["open_entry_loses"], body["shortening_reasons"]) == (True, ["entries"])
+        assert [s["reason"] for s in body["skipped_time_entries"]] == ["open"]
+        resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes",
+                           json={"effective_from": "2026-09-24", "blocks": week})
+        assert resp.status_code == 400
+        assert "(3 Einträge verlieren angerechnete Zeit)" in resp.json()["detail"]
 
     def test_preview_writes_and_logs_nothing(self, client, db, test_user):
         _anna(db, test_user)

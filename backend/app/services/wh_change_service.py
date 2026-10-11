@@ -358,6 +358,10 @@ def preview_fields(impact: ChangeImpact, user) -> dict:
         "shortening_closed_years": impact.shortening_closed_years,
         "earliest_lossless_date": impact.earliest_lossless_date,
         "earliest_lossless_note": impact.earliest_lossless_note,
+        # Spec 9.5 (a)/12.1: der heute offene Eintrag (P1) zählt zu den verlierenden
+        # Einträgen, steht aber nicht in ``time_entry_changes`` — ohne das Feld
+        # nennte der Kasten eine kleinere Zahl als ``criteria_text`` in der 400.
+        "open_entry_loses": impact.open_entry_loses,
         "lost_credited_hours": float(sum((c.old_net - c.new_net for c in changed if c.new_net < c.old_net), _ZERO)),
         "target_delta_hours": float(impact.target_delta),
         "credited_delta_hours": float(impact.credited_delta),

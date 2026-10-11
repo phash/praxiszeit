@@ -30,6 +30,22 @@ describe('shorteningHeadlines (Spec 12.1)', () => {
     // nicht bezifferbar (das Ende ist unbekannt).
     expect(shorteningHeadlines(P({ shortening_reasons: ['entries'], lost_credited_hours: 0, time_entry_changes: [] })))
       .toEqual(['1 Eintrag verliert angerechnete Zeit']);
+    expect(shorteningHeadlines(P({
+      shortening_reasons: ['entries'], lost_credited_hours: 0, time_entry_changes: [], open_entry_loses: true,
+    }))).toEqual(['1 Eintrag verliert angerechnete Zeit']);
+  });
+
+  it('(a) offener Eintrag UND geschlossene verlieren: Anzahl wie die 400-Meldung, Summe nur der geschlossenen', () => {
+    // Review Task 19: `criteria_text` zählt den offenen Eintrag mit (9.5 (a)) —
+    // der Kasten darf keine kleinere Zahl nennen als die Meldung des Servers.
+    expect(shorteningHeadlines(P({
+      shortening_reasons: ['entries'], lost_credited_hours: 1.5, time_entry_changes: [losing('a'), losing('b')],
+      open_entry_loses: true,
+    }))).toEqual(['3 Einträge verlieren angerechnete Zeit (zusammen 1:30 h)']);
+    expect(shorteningHeadlines(P({
+      shortening_reasons: ['entries'], lost_credited_hours: 0.75, time_entry_changes: [losing('a')],
+      open_entry_loses: false,
+    }))).toEqual(['1 Eintrag verliert angerechnete Zeit (zusammen 0:45 h)']);
   });
 
   it('(a) gewinnende Einträge zählen nicht mit', () => {
