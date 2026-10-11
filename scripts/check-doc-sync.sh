@@ -343,6 +343,9 @@ group_admin_bloecke() {
   # Review Task 2: hh:45 gilt nur beim Standardpuffer, der Puffer ist einstellbar (§ 13).
   need "$f" 'Bei einem Blockbeginn zur vollen Stunde und dem Standardpuffer von 15 Minuten landet'
   forbid "$f" 'Bei einem Blockbeginn zur vollen Stunde landet'
+  # Gesamtreview PR4/V1: zweiter Grenzfall P18 — ein eingetragenes Ende genau
+  # auf dem wirksamen Ende bleibt Echo (end_is_correction), Anerkennen → 400.
+  need "$f" 'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)'
   forbid "$f" 'Soll-Arbeitszeiten je Wochentag'
   forbid "$f" 'Soll-Arbeitszeit-Fenster, #201'
   forbid "$f" '#soll-arbeitszeiten-soll-arbeitszeit-fenster-201'
@@ -532,6 +535,14 @@ group_mitarbeiter() {
   need "$f" 'Der Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende angeben.'
   # V1 (Spec P18, Entschieden 2026-10-11): ein echtes Ende 23:59 ist eintragbar.
   need "$f" 'Auch ein tatsächliches Ende um **23:59**'
+  # Gesamtreview PR4/V1: zweiter Grenzfall P18 — ein eingetragenes Ende genau
+  # auf dem wirksamen Ende bleibt Echo, auch im Antrag „Anrechnung beantragen"
+  # (ChangeRequestForm.lacksActualEnd / credit_override_service.lacks_actual_end).
+  need "$f" 'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)'
+  need "$f" 'Dieselbe Meldung erscheint, wenn Sie genau das angerechnete Ende eintragen'
+  # Gesamtreview PR4/V1: Abwesenheit an einem Tag mit anerkanntem Eintrag →
+  # 409 (absences.create_absence, PR2 Review Task 5), Abschnitt 4.1.
+  need "$f" 'lehnt PraxisZeit die Buchung ab: *„Anerkannter Eintrag – Änderung bitte per Änderungsantrag."*'
   # #502: Datum beim Bearbeiten gesperrt, ein anderes Datum nur per Antrag
   # (TimeTracking, im JSX über zwei Zeilen umbrochen).
   need "$f" 'Das Datum bleibt beim Bearbeiten fest. Gehört die Zeit zu einem anderen Tag: Eintrag löschen und oben über „Antrag“ einen Änderungsantrag für diesen Tag stellen.'
@@ -723,6 +734,8 @@ group_berechnungen() {
   need "$b" 'Abwandlung der Ausgangslage:'
   forbid "$b" '(`grace_for_entry`; NULL bei Bestand vor 1.20.0 → aktueller Puffer)'
   need "$b" 'nie gegen Blöcke gekappt'
+  # Gesamtreview PR4/V1: zweiter Grenzfall P18 (Ende = wirksames Ende bleibt Echo).
+  need "$b" 'eingetragenes Ende minutengleich mit dem wirksamen Ende (z. B. 18:15) Echo'
   need "$g" '## 7. Arbeitszeit-Blöcke und Anrechnung (ab 1.20.0)'
   need "$g" '| **Arbeitszeit-Block** |'
   need "$g" '| **Lücke** |'

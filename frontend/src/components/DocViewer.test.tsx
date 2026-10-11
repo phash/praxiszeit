@@ -106,6 +106,9 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       // Review Task 8: der XLS-Import zeigt die Kappung schon in der Vorschau
       // (HANDBUCH-ADMIN.md Abschnitt 3/12, ImportXls.tsx).
       'XLS-Import – dort schon in der Vorschau sichtbar',
+      // Gesamtreview PR4/V1: Grenzfall P18 – ein eingetragenes Ende genau auf
+      // dem wirksamen Ende bleibt Echo (end_is_correction, lacks_actual_end).
+      'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)',
     ]) {
       expect(text).toContain(expected);
     }
@@ -130,6 +133,13 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       '(neu: 40,0 h/Woche auf 4 Arbeitstage)',
       'Das Datum bleibt beim Bearbeiten fest.',
       'Auch ein tatsächliches Ende um 23:59',
+      // Gesamtreview PR4/V1: beide Grenzfälle P18 (wirksames Ende 23:59 bzw.
+      // genau das angerechnete Ende) wie HANDBUCH-MITARBEITER.md Abschnitt 3.3,
+      // und der 409 der Abwesenheitsbuchung an einem anerkannten Tag
+      // (absences.create_absence, CREDIT_OVERRIDE_EMPLOYEE_DETAIL).
+      'Ist das angerechnete Ende bereits 23:59 – etwa an einem Tag ohne Arbeitszeit-Blöcke –, bleibt die Kennzeichnung „automatisch geschlossen" stehen; angerechnet wird dann ohnehin bis 23:59.',
+      'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)',
+      'Anerkannter Eintrag – Änderung bitte per Änderungsantrag.',
     ]) {
       expect(text).toContain(expected);
     }
@@ -145,6 +155,9 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       'Nicht angerechnet (Min)',
       'Neue:r Mitarbeiter:in',
       'nur an der jüngsten Zeile',
+      // Gesamtreview PR4/V1: Auto-Close wie CHEATSHEET-ADMIN.md (Arbeitszeit-Blöcke).
+      'rechnet nur bis zum letzten Block + Puffer an',
+      'auch ein echtes Ende 23:59 ist eintragbar',
     ]) {
       expect(admin).toContain(expected);
     }

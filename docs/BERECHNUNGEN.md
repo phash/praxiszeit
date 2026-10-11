@@ -214,7 +214,9 @@ raw_end, uncredited_minutes, grace_minutes)`:
    Spät- oder Notdienst –, ist das eine Korrektur (`end_is_correction`): `auto_closed = false`, das
    Ende wird gegen die Hülle gekappt wie jedes andere. Kappt der Auto-Close nicht (Tag ohne Blöcke,
    `track_hours = false`, halboffenes Altfenster, Hülle bis 23:59), ist das wirksame Ende selbst
-   23:59; ein zurückgeschicktes 23:59 bleibt dort Echo, das Kennzeichen bleibt.
+   23:59; ein zurückgeschicktes 23:59 bleibt dort Echo, das Kennzeichen bleibt. Ebenso bleibt ein
+   eingetragenes Ende minutengleich mit dem wirksamen Ende (z. B. 18:15) Echo: Anerkennen → 400,
+   „Anrechnung beantragen" verlangt ein anderes Ende (`credit_override_service.lacks_actual_end`).
 
 **Beispiele** (Blöcke Mo 08:00–12:00 + 15:00–18:00, Pause im Plan 0, g = 15 → Hülle 07:45–18:15,
 Lücke 12:15–14:45):
