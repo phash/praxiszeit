@@ -115,44 +115,64 @@ Wenn an einem Tag sowohl TimeEntries als auch Absences existieren:
 - Konvertierung Tage ↔ Stunden via aktuellem `daily_target`
 - **`track_hours=False` (Mitarbeitende ohne Stundenzählung, #191):** `daily_target == 0`, daher **reine Tageszählung** — jede VACATION-Absence = 1 Tag, jeder `free`+`counts_as_vacation`-Sondertag = 1 Tag; alle Stunden-Felder bleiben 0, `budget_days` behält Pro-Rata + Carryover. Ersetzt die alte F-046-„nicht anwendbar"-Rückgabe (0 verbraucht / voller Rest), die den tagebasierten Budget-Check aushebelte. Halbtage sind ohne Stundenzählung nicht erkennbar → zählen als voller Tag. Edit-Pfad-Budget-Check tagebasiert (#196 behoben). Offen: Jahresabschluss-Carryover für untracked (#191).
 
-### Arbeitszeit-Fenster (#201, work_window_service.py)
+### Arbeitszeit-Blöcke und Kappung (work_window_service.py, ab 1.20.0)
 
-**Datenmodell:** Pro `User` je Wochentag (Mo–Fr) optionale Spalten `scheduled_start_<wd>` / `scheduled_end_<wd>` (Python `time | None`). Tenant-Setting `work_window_grace_minutes` (Integer, Default 15) in `system_settings`.
+**Datenmodell (Migration 073, ersetzt #201):** Blöcke sind Teil des datierten Vertrags-Snapshots: `working_hours_changes.blocks` (JSON/JSONB, nullable) und `users.work_blocks` (Rückfall nur vor der ersten Verlaufszeile, sonst Spiegel der jüngsten Zeile ≤ heute). Form: Liste aus genau 5 Tagen (Mo–Fr), je `{"blocks": [{"start": "HH:MM", "end": "HH:MM"}, …], "pause_minutes": int|null}`, höchstens 3 Blöcke, Raster 5 Min. NULL in einer Verlaufszeile = keine Blöcke (nie Rückfall); fünf leere Tage ≡ NULL; `pause_minutes` NULL = Altfenster aus 073 (nur Kappung, „Arbeitszeit-Fenster (Altbestand, nur Kappung)"; ein Ende 23:59 ist dort der Platzhalter eines halboffenen Fensters und kappt nicht). `time_entries` trägt `uncredited_minutes` (INT, Default 0), `credit_override` (BOOL), `auto_closed` (BOOL) und `clamp_grace_minutes` (INT NULL); `change_requests` trägt `request_credit_override` und `original_uncredited_minutes`. Die Spalten `users.scheduled_*` sind entfallen (Guard-Test `test_no_scheduled_columns.py`). Tenant-Setting `work_window_grace_minutes` (Default 15) in `system_settings` bleibt der Puffer.
 
-**Clamp-Logik (`work_window_service.clamp`):**
-1. Liest Soll-Zeiten für den Wochentag des Eintrags. Fehlen beide → kein Eingriff (Opt-in).
-2. Berechnet Fenster: `[soll_start − puffer, soll_ende + puffer]`.
-3. Kürzt `start_time` auf max(original, fenster_start) und `end_time` auf min(original, fenster_ende).
-4. Schreibt die Originalwerte in `raw_start_time` / `raw_end_time` (§16-Dokumentation, unveränderlich).
-5. `net_hours` und alle Salden rechnen mit der **gekappten** Zeit.
+**Soll:** Neue Blöcke materialisieren beim Speichern `hours_*`, `weekly_hours`, `work_days_per_week`, `use_daily_schedule=True` (`work_blocks_service.derive_targets`); `calculation_service` liest für das Soll nie Blöcke. Blöcke liest ausschließlich `calculation_service.get_schedule_for_date` (`Schedule.blocks`, `Schedule.block_pauses`) → `work_window_service.get_scheduled_blocks(db, user, d)` (`[]` an Wochenende, Feiertag, `free`-Sondertag; Guard-Test `test_no_live_work_blocks_read.py`).
 
-**Schreibpfade (vollständig):**
+**Clamp (`clamp(db, user, d, start, end, grace, *, credit_override, wh_changes=None, soll_free_dates=None)` → `ClampResult(eff_start, eff_end, raw_start, raw_end, uncredited_minutes, grace_minutes)`):**
+1. Keine Blöcke, `track_hours=False` oder `credit_override` → unverändert, `uncredited_minutes` 0, `grace_minutes` None.
+2. Hülle `[erster Block − g, letzter Block + g]`: Beginn/Ende außerhalb werden verschoben, die Rohwerte stehen in `raw_start_time`/`raw_end_time` (§16); ganz außerhalb → Kollaps auf 0 h.
+3. Lücken zwischen den Blöcken, um g an beiden Rändern geschrumpft (`credit_gaps`); ihre Überlappung mit dem Eintrag ist `uncredited_minutes` (je Lücke: `gap_segments`). Ein Beginn in der Lücke wird nie verschoben. Offene Einträge tragen 0 (Lücken zählen erst mit dem Ende).
+4. `net_hours` = max(0, Ende − Beginn − Pause − `uncredited_minutes`) (Hybrid-Property, Python und SQL).
+
+`clamp_applies` (XLS-Gate) fragt, ob `clamp` an einem Tag überhaupt kappt; `not_credited_minutes`/`presence_minutes` liefern „nicht angerechnet" (Lücke **plus** an der Hülle abgeschnittene Zeit) und die Anwesenheit laut Stempel. Ein automatisch geschlossener Eintrag (`auto_closed`) trägt das synthetische Rohende 23:59 (`AUTO_CLOSE_RAW_END`): Anwesenheit zählt nur bis zum wirksamen Ende, die Endseite zählt nicht als „nicht angerechnet", und anerkennen lässt er sich erst, wenn ein tatsächliches Ende eingetragen ist. Jedes eingetragene Ende, das vom wirksamen Ende abweicht – auch 23:59 –, ist ein tatsächliches Ende und hebt das Kennzeichen auf (`end_is_correction`); nur wo das wirksame Ende selbst 23:59 ist (nicht gekappt), bleibt ein zurückgeschicktes 23:59 ein Echo.
+
+**Puffer-Herkunft:** Neuanlage → `get_grace_minutes(db, tenant_id)`; Einzel-Neukappung eines gespeicherten Eintrags → `grace_for_entry(db, entry)` (gespeicherter `clamp_grace_minutes`, sonst aktueller Puffer); Massen-Neukappung → aktueller Puffer, neu geschrieben. Jede schreibende Stelle setzt `clamp_grace_minutes = r.grace_minutes`, wenn nicht None.
+
+**Schreibpfade (vollständig; jeder Pfad, der Einträge schreibt, nimmt `lock_user_row` als erste Sperre):**
 
 | Pfad | Wo gekappt |
 |------|-----------|
-| `clock_in` | Start beim Einstempeln |
-| `clock_out` | Ende beim Ausstempeln |
-| `create_time_entry` / `update_time_entry` | MA-eigener CRUD |
-| `admin_time_entries` create + update | Admin-CRUD |
-| `xls_import_service` | Bulk-Import |
-| `admin_change_requests.review_change_request` | CR-Genehmigung |
+| `clock_in` | Beginn (Hülle); Hinweis bei Einstempeln in der Lücke |
+| `clock_out` | Ende, `uncredited_minutes`, Puffer des offenen Eintrags (`grace_for_entry`) |
+| `_close_stale_entry` (Auto-Close) | Ende 23:59 über `clamp`, `auto_closed=True`; der Aufrufer hält die Sperre |
+| `create_time_entry` / `update_time_entry` | MA-CRUD; `update` kappt auch bei Datumswechsel neu (Datum ändern nur die Verwaltung, #502); anerkannter Eintrag → 409 für Mitarbeitende; fremde/unbekannte ID → 404 vor jeder Sperre |
+| `admin_time_entries` create + update | Admin-CRUD; `credit_override` bleibt |
+| `xls_import_service` | Vorschau + Ausführung (`clamp_applies`; Auto-Pause nur für den von Lücken ungedeckten §4-Rest) |
+| `admin_change_requests.review_change_request` | CR-Genehmigung (CREATE/UPDATE, auch Bulk), „Genehmigen und anerkennen" (`grant_credit_override`) |
+| `change_requests.create_change_request` | prüft mit `clamp` (Puffer des Eintrags bzw. aktueller Puffer), speichert den Vorschlag roh und schreibt keinen Eintrag; `request_credit_override`, `original_uncredited_minutes` |
+| `work_window_service.reclamp_time_entries` | Massen-Neukappung einer Arbeitszeit-Änderung (über `wh_change_service.run_change`, Router `admin_users`); flusht jeden neuen Beginn sofort (Unique-Index `uq_tenant_user_date_start` ist nicht verzögerbar) |
+| `POST /admin/time-entries/{id}/credit-override` | Anerkennen (`credit_override_service.apply_credit_override`): Rohzeiten werden wirksam, keine Kappung mehr; offen oder `auto_closed` → 400, Beginn schon belegt → 409 |
 
-**Ausnahmen:**
-- `track_hours=False` → kein Clamp (keine Stundenzählung, kein Fenster sinnvoll).
-- `exempt_from_arbzg` (§18) → Clamp greift **trotzdem** (Anwesenheits-Policy, unabhängig von ArbZG-Checks).
+**Ausnahmen:** `track_hours=False` → kein Clamp; `exempt_from_arbzg` (§18) → Clamp greift trotzdem; `credit_override` → nie gekappt, überlebt jede Neuberechnung.
 
-**Verhältnis zu §4/§3-Prüfungen:** ArbZG-Checks laufen auf der bereits gekappten Zeit (kein Doppeleingriff).
+**ArbZG:** §3/§4 hart auf angerechneter Zeit (`validate_daily_break(…, uncredited_segments=…, tenant_id=…)`, Lückensegmente ≥ 15 Min zählen als Pausenabschnitt); weiche `PRESENCE_DAILY_HOURS`/`PRESENCE_BREAK`/`PRESENCE_WEEKLY_HOURS` auf `presence_minutes`, dazu `BREAK_IN_GAP` (`presence_service.py`); §5 auf den Rohstempeln.
 
-**Services-Eintrag:**
+**Rückwirkung:** `POST /admin/users/{id}/working-hours-changes` (dazu `…/preview`, `…/{change_id}/delete-preview`, `DELETE …/{change_id}`) läuft in einer Transaktion unter `lock_user_row` (`wh_change_service.run_change`, ein Rechenpfad für Anlegen, Löschen und beide Vorschauen): offene Alteinträge schließen, `reclamp_time_entries` (nur geänderte Wochentage, ab Rohstempel), `retarget_absence_hours` (mit F1-Klemmung), Klassifikation Verlängerung/Verkürzung (Eintrag, Saldo, Gutschrift), Schutzpaket (`retroactive_reason_type`, `retroactive_reason_text`, `wage_risk_confirmed`, bei „sonstiges" zusätzlich `other_reason_risk_confirmed`; in abgeschlossene Jahre gesperrt), Protokoll `wh_reclamp` je Eintrag plus Sammelzeile (`reclamp_audit.summary_note`/`parse_summary_note`). Die Vorschau rollt zurück und protokolliert nie. Notiz und Begründung landen zusammen in `working_hours_changes.note` (höchstens 500 Zeichen, `reclamp_audit.NOTE_MAX_LENGTH`; bei der Anonymisierung geleert).
+
+**Löschen und Zurücksetzen:** Die Oberfläche bietet das Löschen nur an der jüngsten Verlaufszeile an; serverseitig ist die früheste Zeile gesperrt, solange spätere existieren (`_earliest_row_lock_detail`). Verkürzt das Löschen, nennt die `delete-preview` einen `reset_body` („ab ‹Datum› auf den vorherigen Stand zurücksetzen", angelegt als neue Zeile mit `reset_of_change_id`) oder verlangt das Schutzpaket im Body des DELETE (rückwirkendes Löschen). Liegt inzwischen eine Zeile zwischen der zurückgesetzten Zeile und dem Rücksetzungsdatum oder passt der Body nicht mehr zum Vorgänger-Snapshot, antwortet das Anlegen mit 409 `RESET_CONFLICT_DETAIL` („Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden.").
+
+**Mitarbeitende:** `GET /api/auth/me/work-schedule` (`work_schedule_service`) zeigt die heute gültigen Blöcke und den Verlauf; das Dashboard trägt `schedule_change_notices` (`reclamp_audit.schedule_change_notices`: jede Sammelzeile der letzten 30 Tage, ohne Bestätigungstabelle) — ein Hinweis zu jeder Arbeitszeit-Änderung.
+
+**Services-Einträge:**
 
 | Service | Datei | Zweck |
 |---------|-------|-------|
-| `work_window_service.py` | Arbeitszeit-Fenster | clamp(), raw_*-Persistenz, Fenster-Berechnung |
+| `work_window_service.py` | Arbeitszeit-Blöcke | `clamp()`, Lücken, Puffer je Eintrag, „nicht angerechnet", Anwesenheit, Neukappung |
+| `work_blocks_service.py` | Arbeitszeit-Blöcke | JSON-Form parsen/serialisieren, `derive_targets` |
+| `wh_change_service.py` | Rückwirkung | `run_change`: Schritte 2–7 für Anlegen, Löschen und Vorschauen; Klassifikation, Schutzpaket-Prüfung |
+| `credit_override_service.py` | Anerkennen | `apply_credit_override` für die Admin-Aktion und „Genehmigen und anerkennen"; weiche Warnungen danach |
+| `presence_service.py` | ArbZG | weiche Anwesenheits-Warnungen `PRESENCE_*`, `BREAK_IN_GAP` |
+| `reclamp_audit.py` | Protokoll | Sammelzeile schreiben/lesen, Grundtypen `REASON_TYPES`, Dashboard-Hinweise |
+| `work_schedule_service.py` | Profil | eigene Arbeitszeit (heute + Verlauf) für Mitarbeitende |
 
 ## Wichtige Patterns
 
 - **`get_weekly_hours_for_date(db, user, date)`** — Immer pro Tag aufrufen, nie `user.weekly_hours` direkt (historische Änderungen!)
-- **`get_schedule_for_date(db, user, date)`** (#431) — DIE Auflösung des vollständigen Vertrags-Snapshots (Wochenstunden, Modus, Tageswerte, Arbeitstage) für ein Datum; `get_weekly_hours_for_date` ist nur noch ein dünner Wrapper darüber. `get_daily_target_for_date(user, date, schedule)` verlangt diesen Snapshot als Pflichtparameter — nie `user.use_daily_schedule`/`user.hours_monday…friday` live lesen. **Benannte Ausnahme (Fix-Welle 4 #6):** die „tägl. Std:"-Ecke des KLASSISCHEN Jahresberichts (`export_service._create_employee_classic_sheet`, ausdrücklich als Legacy-Format geführt) liest dort bewusst live — eine informative Ecke, kein Soll/Ist-Wert; bei Moduswechsel im Berichtsjahr zeigt sie den heutigen statt den historischen Tagesplan (akzeptiert, kommentiert im Code). Keine weiteren Ausnahmen.
+- **`get_schedule_for_date(db, user, date)`** (#431) — DIE Auflösung des vollständigen Vertrags-Snapshots (Wochenstunden, Modus, Tageswerte, Arbeitstage, ab 1.20.0 auch Blöcke und Pause innerhalb der Blöcke) für ein Datum; `get_weekly_hours_for_date` ist nur noch ein dünner Wrapper darüber. `get_daily_target_for_date(user, date, schedule)` verlangt diesen Snapshot als Pflichtparameter — nie `user.use_daily_schedule`/`user.hours_monday…friday` live lesen. **Benannte Ausnahme (Fix-Welle 4 #6):** die „tägl. Std:"-Ecke des KLASSISCHEN Jahresberichts (`export_service._create_employee_classic_sheet`, ausdrücklich als Legacy-Format geführt) liest dort bewusst live — eine informative Ecke, kein Soll/Ist-Wert; bei Moduswechsel im Berichtsjahr zeigt sie den heutigen statt den historischen Tagesplan (akzeptiert, kommentiert im Code). Keine weiteren Ausnahmen.
+- **Zeiteintrag schreiben (ab 1.20.0):** `lock_user_row` zuerst, dann `clamp(…, credit_override=…)` mit dem richtigen Puffer (`get_grace_minutes` bei Neuanlage, `grace_for_entry` bei gespeicherten Einträgen), `uncredited_minutes`/`clamp_grace_minutes` übernehmen, Netto-Helfer (`_calculate_daily/weekly_net_hours`) und `validate_daily_break` mit den Lückenwerten. Nie `users.work_blocks` oder Altfelder `scheduled_*` lesen.
 - **Pydantic Response-Schemas:** `float` statt `Decimal` (JSON-Serialisierung)
 - **RLS-Kontext:** Bei neuen Endpoints immer `set_tenant_context(db, tid)` aufrufen
 - **Bulk-Deletes:** `synchronize_session=False` + expliziter `tenant_id`-Filter

@@ -123,7 +123,7 @@ flowchart LR
     USR --> U1(["MA anlegen / bearbeiten / deaktivieren"])
     USR --> U2(["Passwort für MA setzen"])
     USR --> U3(["Arbeitszeit-Änderung (historisch) pflegen"])
-    USR --> U4(["Arbeitszeit-Fenster pro Wochentag setzen"])
+    USR --> U4(["Arbeitszeit-Blöcke je Wochentag pflegen (mit Rückwirkung)"])
     USR --> U5(["Benutzerübersicht (Urlaub + Überstunden)"])
     USR --> U6(["Löschkandidaten anonymisieren (Art. 17)"])
 
@@ -190,6 +190,8 @@ Verdichteter Katalog (UC-Granularität, nicht jeder der 140 Endpoints einzeln). 
 | Zeit | Ein-/Ausstempeln + Status | 🟢 | `POST /api/time-entries/clock-in`,`/clock-out`, `GET /clock-status` |
 | Zeit | Zeiteintrag CRUD (MA: nur heute) | 🟢 | `POST/PUT/DELETE/GET /api/time-entries/...` |
 | Zeit | Zeiteintrag für MA CRUD (beliebiger Tag) | 🔵 | `…/api/admin/users/{id}/time-entries/...` (+ Audit-Log) |
+| Zeit | Nicht angerechnete Zeit anerkennen | 🔵 | `POST …/api/admin/time-entries/{id}/credit-override` |
+| Zeit | Eigene Arbeitszeit (Blöcke + Verlauf) | 🟢 | `GET /api/auth/me/work-schedule` |
 | Abwesenheit | Abwesenheit buchen/löschen | 🟢 | `POST/DELETE /api/absences/...` |
 | Abwesenheit | Kalender / Team / Tagessoll / nächster Urlaub | 🟢 | `GET /api/absences/calendar`,`/team/upcoming`,`/daily-target`,`/next-vacation` |
 | Anträge | Änderungsantrag stellen/zurückziehen/verfolgen | 🟢 | `POST/GET/DELETE /api/change-requests/...` |
@@ -200,7 +202,7 @@ Verdichteter Katalog (UC-Granularität, nicht jeder der 140 Endpoints einzeln). 
 | Auswertung | Monatsjournal | 🟢/🔵 | `GET /api/journal/me`, `…/api/admin/users/{id}/journal` |
 | Auswertung | Fehlende Buchungen (eigen / Team) | 🟢/🔵 | `GET /api/dashboard/missing-bookings`, `…/team` |
 | Benutzer | MA CRUD + Passwort + Übersicht + Löschkandidaten | 🔵 | `…/api/admin/users`, `/users-overview`, `/deletion-candidates`, `/set-password` |
-| Benutzer | Arbeitszeit-Änderung (historisch) | 🔵 | `…/api/admin/users/{id}/working-hours` |
+| Benutzer | Arbeitszeit-Änderung (historisch, Arbeitszeit-Blöcke, mit Vorschau/Löschen) | 🔵 | `…/api/admin/users/{id}/working-hours-changes`, `/preview`, `/{change_id}/delete-preview`, `DELETE …/{change_id}` |
 | Organisation | Betriebsferien CRUD | 🔵 | `POST/PUT/DELETE /api/company-closures/...` (Ansicht 🟢) |
 | Organisation | Feiertage (custom) + Bundesländer | 🔵/🟢 | `POST/PUT/DELETE /api/holidays/...`, `GET /api/holidays/states` |
 | Organisation | Settings, Typ-Farben, Sondertage | 🔵 | `…/api/admin/settings`, `/settings/special-days`, `/settings/type-colors` |
@@ -341,9 +343,14 @@ routers/  (27 Module, 140 Endpoints)
                         · admin_carryovers · admin_settings · admin_updates
   error_logs · superadmin · billing · tenant_billing · public_signup
 
-services/  (26 Domain-Services)
+services/  (40 Domain-Services)
   calculation_service       # Soll/Ist/Überstunden/Urlaubskonto — zentrale Autorität (get_weekly_hours_for_date)
-  work_window_service       # #201 Arbeitszeit-Fenster-Kappung mit Rohstempel-Erhalt
+  work_window_service       # Arbeitszeit-Blöcke: Kappung (Hülle + Lücken), Neukappung, Rohstempel-Erhalt
+  work_blocks_service       # JSON-Form der Blöcke, derive_targets (Tagessoll aus Blöcken)
+  reclamp_audit             # Sammelzeile der Arbeitszeit-Änderung, Grundtypen
+  wh_change_service         # Rückwirkung einer Arbeitszeit-Änderung (Neukappung, Klassifikation, Schutzpaket)
+  credit_override_service   # „Anerkennen" nicht angerechneter Zeit · presence_service # weiche Anwesenheits-Warnungen
+  work_schedule_service     # eigene Arbeitszeit (Blöcke + Verlauf) für Mitarbeitende
   rest_time_service         # §5 Ruhezeit (11h) · break_validation_service # §4 Pausen · arbzg_utils # §6 Nachtarbeit
   export_service / ods_export_service / avv_generator   # XLSX/ODS/PDF
   holiday_service · special_days_service · type_colors_service · journal_service · timezone_service
@@ -392,8 +399,10 @@ Browser → GET /api/dashboard (Bearer access)
 
 ```
 POST /api/time-entries/clock-out
+  lock_user_row()                    # Ankersperre auf die Person, vor jeder Zeilensperre
   _get_open_entry(with_for_update)   # Lock gegen Doppelklick-Race
-  work_window_service.clamp()        # Rohstempel erhalten, net_hours aus gekappter Zeit
+  work_window_service.clamp()        # Puffer des Eintrags (grace_for_entry); Hülle + Lücken → uncredited_minutes,
+                                     # Rohstempel erhalten, net_hours aus angerechneter Zeit
   rest_time_service / break_validation  # §5/§4-Warnungen in response.warnings
   → 200 + Warnungen  → Frontend: showArbzgWarnings(toast, warnings)
 ```
@@ -479,12 +488,12 @@ LicenseReadOnlyMiddleware: blockt POST/PUT/PATCH/DELETE (Login + Export bleiben 
 - `BETA_MODE=True` (Default) gated den kompletten Lizenz-Block; Frontend zeigt BETA-Badge. Fehler → Read-Only, nie Crash.
 
 ### 8.4 Datenbankmigrationen
-- **Alembic**, aktuell **48 Migrationen** (`001`…`048`, `version_num varchar(32)`-Limit beachten).
-- Wichtig: `…027` RLS-Umbau · `044` Audit-Logs · `042` paid_leave/Betriebsferien · `046` Halbtage · `047` receives_closures · `048` Arbeitszeit-Fenster.
+- **Alembic**, aktuell **73 Migrationen** (`001`…`073`, `version_num varchar(32)`-Limit beachten).
+- Wichtig: `…027` RLS-Umbau · `044` Audit-Logs · `042` paid_leave/Betriebsferien · `046` Halbtage · `047` receives_closures · `048` Arbeitszeit-Fenster · `067` Vertrags-Snapshot (#431) · `073` Arbeitszeit-Blöcke (Fenster-Spalten entfallen).
 - Migrationen auf Host erstellen + committen **vor** Container-Rebuild; gegen Prod-DB-Kopie testen.
 
 ### 8.5 ArbZG-Compliance
-- **§5 Ruhezeit** (11h, Echtzeit-Warnung beim Einstempeln), **§4 Pausen** (>6h → ≥30 min), **§6 Nachtarbeit**, **§9 Sonntag** (`sunday_exception_reason`), **#201 Arbeitszeit-Fenster** (Rohstempel `raw_start/end_time` erhalten).
+- **§5 Ruhezeit** (11h, Echtzeit-Warnung beim Einstempeln), **§4 Pausen** (>6h → ≥30 min), **§6 Nachtarbeit**, **§9 Sonntag** (`sunday_exception_reason`), **Arbeitszeit-Blöcke** (Kappung vor, nach und zwischen den Blöcken; Rohstempel `raw_start/end_time` erhalten; weiche Anwesenheits-Hinweise `PRESENCE_*`).
 - Dedizierte Admin-Reports: Ruhezeit-Verstöße, Sonntags-Summary, Nachtarbeit, Ausgleichsruhe, 24-Wochen-Durchschnitt.
 - **§16 Aufbewahrung**: revisionssichere `time_entry_audit_logs` (`source`/`action` je `varchar(40)`).
 
@@ -526,6 +535,7 @@ LicenseReadOnlyMiddleware: blockt POST/PUT/PATCH/DELETE (Login + Export bleiben 
 | 010 | **Native Installer mit gebündeltem PostgreSQL** (theseus/EDB) | Kundeninstallation ohne Docker/Internet-Zwang |
 | 011 | **Tagebasierter Urlaub** (Tagesprinzip §3 BUrlG) | Rechtskonform; 1 Arbeitstag = 1 Urlaubstag, Halbtag = 0,5 |
 | 012 | **Arbeitszeit-Fenster mit Rohstempel-Erhalt** (#201) | Salden mit gekappter Zeit, §16-konforme Rohdaten bleiben erhalten |
+| 013 | **Arbeitszeit-Blöcke im Vertrags-Snapshot**, Soll beim Schreiben materialisiert, Neukappung mit Schutzpaket (1.20.0) | Eine Pflegestelle für Soll und Kappung; `calculation_service` bleibt unverändert; rückwirkende Verkürzung nur mit Grund (§ 106 GewO), nicht angerechnete Zeit sichtbar und anerkennbar |
 
 ---
 
@@ -583,7 +593,8 @@ LicenseReadOnlyMiddleware: blockt POST/PUT/PATCH/DELETE (Login + Export bleiben 
 | **Urlaubskonto** | Anspruch (anteilig `30 × Arbeitstage/5`) minus genutzter Urlaub, tagebasiert |
 | **Carryover** | Jahresübertrag (Überstunden + Resturlaub) |
 | **Betriebsferien** | Admin-definierte Schließzeit; bucht Urlaub/bezahlte Freistellung für teilnehmende MA |
-| **Arbeitszeit-Fenster** | Soll-Start/-Ende je Wochentag; kappt Stempel auf `[Soll−Puffer, Soll+Puffer]` (#201) |
+| **Arbeitszeit-Fenster** | Soll-Start/-Ende je Wochentag; kappt Stempel auf `[Soll−Puffer, Soll+Puffer]` (#201, bis 1.19.x; ab 1.20.0 als Einblock-Altbestand „Arbeitszeit-Fenster (Altbestand, nur Kappung)") |
+| **Arbeitszeit-Block** | Vertraglicher Zeitraum „von–bis" je Wochentag (bis zu 3, ab 1.20.0); Tagessoll = Σ Blöcke − Pause; Zeit vor, nach und zwischen den Blöcken wird bis auf den Puffer nicht angerechnet (Hülle: Rohstempel in `raw_*`, Lücke: `uncredited_minutes`) |
 | **Ruhezeit** | §5 ArbZG: 11h zwischen zwei Schichten |
 | **RLS** | Row-Level-Security (PostgreSQL): mandantengebundene Zeilenfilterung |
 | **Tenant / Mandant** | Isolierter Kunde; `tenant_id` an allen mandantengebundenen Tabellen |

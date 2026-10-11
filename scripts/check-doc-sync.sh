@@ -727,6 +727,50 @@ group_berechnungen() {
   need "$g" '(Ende − Beginn) − Pause − `uncredited_minutes`'
 }
 
+# Technik-Doku (Spec 16.1 „Technik-Doku", 19 Nr. 6, E24). Über den Plan hinaus:
+# die Services, die PR2/PR3 zusätzlich angelegt haben, die Regeln zum Löschen
+# und Zurücksetzen einer Verlaufszeile (409) und die Endpunkte im UC-Katalog.
+group_technik() {
+  local f
+  f=docs/BACKEND-ARCHITEKTUR.md
+  need "$f" '### Arbeitszeit-Blöcke und Kappung (work_window_service.py, ab 1.20.0)'
+  need "$f" 'reclamp_time_entries'
+  need "$f" 'clamp_grace_minutes'
+  need "$f" 'lock_user_row'
+  need "$f" 'wh_change_service.py'
+  need "$f" 'credit_override_service.py'
+  need "$f" 'presence_service.py'
+  need "$f" 'reset_of_change_id'
+  need "$f" 'RESET_CONFLICT_DETAIL'
+  forbid "$f" '### Arbeitszeit-Fenster (#201, work_window_service.py)'
+  forbid "$f" 'scheduled_start_<wd>'
+  f=docs/ARC42.md
+  need "$f" '| 013 |'
+  need "$f" '**Arbeitszeit-Block**'
+  need "$f" 'work_blocks_service'
+  need "$f" 'working-hours-changes'
+  need "$f" '/credit-override'
+  forbid "$f" '# #201 Arbeitszeit-Fenster-Kappung mit Rohstempel-Erhalt'
+  forbid "$f" 'aktuell **48 Migrationen**'
+  forbid "$f" '(26 Domain-Services)'
+  forbid "$f" 'Arbeitszeit-Fenster pro Wochentag setzen'
+  forbid "$f" '`…/api/admin/users/{id}/working-hours` |'
+  f=README.md
+  need "$f" '- `066` -'
+  need "$f" '- `073` - Arbeitszeit-Blöcke'
+  f=docs/specs/dsgvo/verarbeitungsverzeichnis.md
+  need "$f" 'Arbeitszeit-Blöcke'
+  need "$f" 'uncredited_minutes'
+  need "$f" 'EuGH C-34/21'
+  need "$f" 'Art. 13 Abs. 2 lit. f'
+  forbid "$f" '**Stand:** 2026-06-06'
+  f=docs/UPDATE.md
+  need "$f" '### ⚠️ Update auf 1.20.0'
+  need "$f" '`073_work_blocks`'
+  need "$f" 'Hülle der Blöcke'
+  need "$f" '*** HINWEIS (Migration 073) ***'
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {

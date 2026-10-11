@@ -242,6 +242,14 @@ docker compose exec backend alembic revision --autogenerate -m "description"
 - `063` - agreed_monthly_hours (vereinbarte Monatsarbeitszeit, #377 Baustein 2a)
 - `064` - year_carryovers.vacation_days Numeric(4,1) → Numeric(5,2) (#383)
 - `065` - use_fixed_monthly_target (fester Monats-Soll für Minijobs, #377 Baustein 2b)
+- `066` - users.vacation_days dezimal (Numeric(4,1), #408)
+- `067` - working_hours_changes als vollständiger Vertrags-Snapshot (#431)
+- `068` - absences.raw_hours (beim Buchen festgeschriebener Stundenwert)
+- `069` - users.weekly_hours Numeric(4,2) (#431)
+- `070` - Schichtplan-Freigabe für Mitarbeitende + Hinweis je Einteilung (#443)
+- `071` - security_events (Konto-Vorgänge, #425)
+- `072` - change_requests.proposed_sunday_exception_reason (§10-Grund im Antrag, #485)
+- `073` - Arbeitszeit-Blöcke: users.work_blocks + working_hours_changes.blocks, time_entries.uncredited_minutes/credit_override/auto_closed/clamp_grace_minutes, change_requests.request_credit_override/original_uncredited_minutes; users.scheduled_start/end_<wochentag> entfallen
 
 ## Entwicklung
 

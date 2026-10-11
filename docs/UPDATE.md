@@ -11,6 +11,25 @@ Datenverlust. Datenbank-Migrationen laufen bei jedem Start automatisch.
 > oder einmal im Inkognito-Fenster öffnen — sonst lädt der Browser das alte
 > Frontend aus dem Cache (Service-Worker/PWA).
 
+> ### ⚠️ Update auf 1.20.0 = Arbeitszeit-Fenster werden zu Arbeitszeit-Blöcken
+>
+> Die Migration `073_work_blocks` läuft beim ersten Start automatisch. Sie übernimmt
+> jedes hinterlegte Soll-Arbeitszeit-Fenster als einen Block je Tag
+> („Arbeitszeit-Fenster (Altbestand, nur Kappung)") und **entfernt die alten
+> Fenster-Spalten**. Tagessoll, angerechnete Zeit und Überstundensaldo bestehender
+> Einträge bleiben unverändert. Danach:
+> - Seite neu laden (siehe oben) – ein noch geöffnetes altes Benutzerformular meldet
+>   beim Speichern „Bitte Seite neu laden: Die Arbeitszeit-Fenster (Soll-Beginn/Soll-Ende)
+>   wurden durch Arbeitszeit-Blöcke ersetzt."
+> - Ausgabe der Migration lesen (Docker: `docker compose logs backend`; nativ:
+>   `logs/praxiszeit.log`, Zeilen mit `alembic:`). Der Block
+>   `*** HINWEIS (Migration 073) ***` nennt die Zahl der übernommenen Konten und
+>   Verlaufszeilen; steht dort „Besonderheiten", die genannten Personen im Dialog
+>   „Arbeitszeit anpassen…" prüfen.
+> - **Zurück auf 1.19.x nur über das Backup** von vor dem Update. Ein Schema-Downgrade
+>   stellt je Tag nur die Hülle der Blöcke (Beginn des ersten bis Ende des letzten
+>   Blocks) als Fenster her – Zeit zwischen den Blöcken würde dann wieder angerechnet.
+
 ---
 
 ## Docker
@@ -229,4 +248,4 @@ docker compose up -d backend
 
 Nativ: `pg_dump`/`psql` aus `bin/postgresql/bin` (siehe INSTALL-Dokumente).
 Migrationen sind in der Regel vorwärtskompatibel; ein Downgrade des Schemas wird
-**nicht** unterstützt — daher das Backup.
+**nicht** unterstützt — daher das Backup. Ab 1.20.0 gilt das besonders: Migration `073` entfernt die Spalten der alten Arbeitszeit-Fenster (siehe Kasten oben).
