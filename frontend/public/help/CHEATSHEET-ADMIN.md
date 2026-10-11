@@ -200,7 +200,7 @@ Erscheinen beim Buchen unter „Eigene Gründe". Im Team-Kalender für Kolleg:in
 | Pausenpflicht | > 6h → 30 Min. / > 9h → 45 Min. über **alle Einträge des Tages**; Lücken < 15 Min. sind keine Pause | **Sperre** an allen Schreibwegen – auch beim Ausstempeln (#499); dokumentierte Ausnahme mit Begründung möglich, sofern erlaubt (s. u.) | §4 |
 | Nachtarbeitnehmer | > 8h täglich | Warnung | §6 |
 | Sonntagsarbeit | Eintrag an So/Feiertag | Warnung + Ausnahmegrund-Pflicht | §9/§10 |
-| Wochenstunden | > 48h | Warnung | §14 |
+| Wochenstunden | > 48h | Warnung | §3 |
 | Ruhezeitwarnung | < 11h seit letztem Arbeitsende (beim Einstempeln) | Warnung | §5 |
 
 > **§3-10h (R2):** Live-Ausstempeln über 10h wird **nicht geblockt** (Zeit ist geleistet → §16-Doku-Pflicht), nur deutlich gewarnt. Manuelle Eingaben und Anträge bleiben über 10h **gesperrt**.

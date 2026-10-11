@@ -254,12 +254,11 @@ export function CheatsheetAdmin() {
             </tr>
           </thead>
           <tbody>
-            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§3</td><td className="px-3 py-2 border border-gray-200 text-gray-600">8h-Warnung; &gt;10h: Warnung beim Live-Ausstempeln, harte Sperre bei manueller Eingabe/Antrag</td></tr>
+            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§3</td><td className="px-3 py-2 border border-gray-200 text-gray-600">8h-Warnung; &gt;10h: Warnung beim Live-Ausstempeln, harte Sperre bei manueller Eingabe/Antrag; 48h-Wochenwarnung</td></tr>
             <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§4</td><td className="px-3 py-2 border border-gray-200 text-gray-600">30/45 Min. Pausenpflicht – ganzer Tag, Lücken unter 15 Min. zählen nicht; Sperre auch beim Ausstempeln (Ausnahme mit Begründung abschaltbar)</td></tr>
             <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§5</td><td className="px-3 py-2 border border-gray-200 text-gray-600">11h Mindestruhezeit</td></tr>
             <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§11</td><td className="px-3 py-2 border border-gray-200 text-gray-600">15 freie Sonntage/Jahr</td></tr>
-            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§14</td><td className="px-3 py-2 border border-gray-200 text-gray-600">48h-Wochenwarnung</td></tr>
-            <tr className="bg-gray-50"><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§18</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Ausnahme für leitende Angestellte</td></tr>
+            <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">§18</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Ausnahme für leitende Angestellte</td></tr>
           </tbody>
         </table>
       </section>
@@ -516,7 +515,7 @@ export const handbuchAdminSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p>Unter <strong>Berichte</strong> (nach unten scrollen) finden Sie: <strong>§5 Ruhezeitverstöße</strong> (&lt;11h zwischen Arbeitstagen), <strong>§6 Nachtarbeit</strong> (≥48 Nachtarbeitstage/Jahr), <strong>§11 Sonntagsarbeit</strong> (max. 37/Jahr) und <strong>§11 Ersatzruhetag</strong> (Fristen überwachen). Erfasste Pflicht-Pause-Ausnahmen samt Begründung sind ebenfalls einsehbar.</p>
-        <p>Das System prüft bei jeder Eingabe automatisch §3, §4 (Pausenpflicht), §6 (8h für Nachtarbeitnehmer), §9/10 (Sonntagsarbeit), §14 (48h-Wochenwarnung).</p>
+        <p>Das System prüft bei jeder Eingabe automatisch §3 (8h/10h am Tag, 48h-Wochenwarnung), §4 (Pausenpflicht), §6 (8h für Nachtarbeitnehmer), §9/10 (Sonntagsarbeit).</p>
         <p className="text-amber-700"><strong>§3 Tageshöchstgrenze (10h):</strong> Beim <strong>Live-Ausstempeln</strong> wird ein Tag über 10h nicht blockiert (die Zeit ist bereits geleistet und §16-pflichtig zu dokumentieren) – es erscheint eine deutliche Warnung. Bei <strong>manueller Eingabe oder Antrag</strong> bleibt die 10h-Grenze eine <strong>harte Sperre</strong>.</p>
       </div>
     ),

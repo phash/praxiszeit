@@ -238,6 +238,11 @@ group_code() {
   need_code "laut Stempel Ø &gt; 8 h"
   need_code "keine Soll-Arbeitstage"
   need_code "Anrechnung später neu berechnet wird, und die Grenze gilt für die tatsächliche Arbeitszeit."
+  # Sammelzeile der Abwesenheits-Rückrechnung (admin_users._log_wh_change_retarget,
+  # Review Task 4): Quelle „wh_change", Anlegen und Löschen.
+  need_code "Abwesenheit(en) im Zeitraum "
+  need_code "auf neues Tagessoll nachgezogen"
+  need_code "auf den davor gültigen Wert zurückgerechnet"
 }
 
 group_mirror() {
@@ -367,6 +372,8 @@ group_admin_aendern() {
   # ohne Rücksetzung tritt in der Oberfläche praktisch nicht auf.
   forbid "$f" 'Ist keine Rücksetzung möglich'
   need "$f" 'Eine Änderung, die erst nach heute beginnt, verkürzt beim Löschen nichts'
+  # Review Task 4: die wh_change-Sammelzeile (nur wenn Abwesenheiten nachgezogen werden).
+  need "$f" 'sind Abwesenheiten betroffen, zusätzlich eine Sammelzeile **„Stundenänderung"** ohne Datum'
 }
 
 group_admin_rest() {
@@ -418,6 +425,26 @@ group_admin_rest() {
   need "$f" '„laut Stempel Ø > 8 h"'
   need "$f" '„keine Soll-Arbeitstage"'
   need "$f" 'die Grenze gilt für die tatsächliche Arbeitszeit'
+  # Review Task 4: §9 erklärt auch die wh_change-Sammelzeile (Code:
+  # admin_users._log_wh_change_retarget, Spec 10.3).
+  need "$f" 'sind Abwesenheiten betroffen, zusätzlich eine Sammelzeile ohne Datum (z. B. „Arbeitszeit-Änderung zum'
+  need "$f" '(beide Quelle „wh_change", Anzeige „Stundenänderung")'
+  need "$f" 'Abwesenheit(en) im Zeitraum 2026-09-01–2026-10-09 auf neues Tagessoll nachgezogen'
+}
+
+# Review Task 4: Die 48-h-Wochengrenze nennt der Code als § 3 ArbZG
+# (WEEKLY_HOURS_WARNING, PRESENCE_WEEKLY_HOURS); § 14 regelt außergewöhnliche
+# Fälle. Alle Flächen, die die Wochenwarnung einem Paragraphen zuordnen.
+group_arbzg_48h() {
+  local f=docs/handbuch/HANDBUCH-ADMIN.md
+  need "$f" '| **Wochenhöchstgrenze** | > 48h/Woche | Warnung | § 3 ArbZG |'
+  need "$f" 'Wochenwarnung > 48h |'
+  forbid "$f" 'Warnung | § 14 ArbZG'
+  forbid "$f" 'Außergewöhnliche Fälle: 48h/Woche Warnschwelle'
+  need docs/handbuch/CHEATSHEET-ADMIN.md '| Wochenstunden | > 48h | Warnung | §3 |'
+  forbid docs/handbuch/CHEATSHEET-ADMIN.md '| Wochenstunden | > 48h | Warnung | §14 |'
+  forbid frontend/src/components/DocViewer.tsx '§14 (48h-Wochenwarnung)'
+  forbid frontend/src/components/DocViewer.tsx '>§14</td><td className="px-3 py-2 border border-gray-200 text-gray-600">48h-Wochenwarnung'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
