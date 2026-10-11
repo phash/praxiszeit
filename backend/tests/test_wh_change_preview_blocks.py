@@ -92,15 +92,19 @@ class TestUnfinishedInput:
     # Review Task 10: Chrome/Edge melden beim Tippen der Jahreszahl Zwischenwerte
     # (0002-…, 0020-…, 0202-…) als vollständiges Datum. ``date.fromisoformat``
     # nimmt sie an — ohne Grenze lief ``run_change`` über ~22.000 Monate (73 s)
-    # bzw. endete in ``OverflowError`` (500).
+    # bzw. endete in ``OverflowError`` (500). Die Vorschau nennt dieselbe Grenze
+    # wie das Speichern (2. Review Task 10): der Dialog sperrt Speichern, solange
+    # ``blocked_reason`` gesetzt ist — mit dem vagen „gültiges Wirkungsdatum"
+    # erführe die Admin die Grenze nie. Auch für die Tipp-Zwischenwerte trifft
+    # der Grenztext zu.
     @pytest.mark.parametrize("value", ["0202-09-01", "0001-01-01", "0020-09-01", "1999-12-31", "2101-01-01"])
-    def test_implausible_year_is_a_missing_date(self, client, test_user, monkeypatch, value):
+    def test_implausible_year_names_the_range_like_saving(self, client, test_user, monkeypatch, value):
         def _never(*args, **kwargs):
             raise AssertionError("run_change darf bei einem unplausiblen Datum nicht laufen")
 
         monkeypatch.setattr(wh_change_service, "run_change", _never)
         body = _preview(client, test_user, {"effective_from": value, "weekly_hours": 30})
-        assert body["blocked_reason"] == PREVIEW_DATE_MISSING
+        assert body["blocked_reason"] == EFFECTIVE_FROM_RANGE_DETAIL
         assert (body["affected_time_entries"], body["is_retroactive"]) == (0, False)
 
     @pytest.mark.parametrize("value", ["0202-09-01", "0001-01-01", "1999-12-31", "2101-01-01"])

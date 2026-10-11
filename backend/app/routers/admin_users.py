@@ -31,8 +31,8 @@ from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
 from app.schemas.working_hours_change import (
-    WorkingHoursChangeCreate, WorkingHoursChangeDelete, WorkingHoursChangePreview, WorkingHoursChangeResponse,
-    effective_from_plausible,
+    EFFECTIVE_FROM_RANGE_DETAIL, WorkingHoursChangeCreate, WorkingHoursChangeDelete, WorkingHoursChangePreview,
+    WorkingHoursChangeResponse, effective_from_plausible,
 )
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
 from app.services import (
@@ -2074,18 +2074,21 @@ def preview_working_hours_change(
         effective_from = date.fromisoformat(value) if isinstance(value, str) else None
     except ValueError:
         effective_from = None
-    if effective_from is not None and not effective_from_plausible(effective_from):
+    date_error = None
+    if effective_from is None:
+        date_error = PREVIEW_DATE_MISSING
+    elif not effective_from_plausible(effective_from):
         # Review Task 10: Zwischenwerte beim Tippen der Jahreszahl (``0202-09-01``)
         # liest ``fromisoformat`` als echtes Datum — gerechnet würde über
-        # Jahrhunderte. Wie ein fehlendes Datum: weder Fenster noch Rechenpfad.
-        effective_from = None
-    if effective_from is None:
-        # Ohne Datum gibt es keinen Wirkungsbereich — gerechnet wird nichts,
-        # die Kopfwerte beziehen sich auf heute.
+        # Jahrhunderte. Weder Fenster noch Rechenpfad; der Text ist derselbe wie
+        # beim Speichern (2. Review Task 10) — der Dialog sperrt Speichern,
+        # solange ``blocked_reason`` steht, die Admin muss die Grenze also hier
+        # erfahren.
+        date_error = EFFECTIVE_FROM_RANGE_DETAIL
+    if date_error is not None:
+        # Ohne (plausibles) Datum gibt es keinen Wirkungsbereich — gerechnet wird
+        # nichts, die Kopfwerte beziehen sich auf heute.
         effective_from, raw = today, {}
-        date_error = PREVIEW_DATE_MISSING
-    else:
-        date_error = None
 
     # Bedeutung von ``is_retroactive`` unverändert: „das Wirkungsdatum liegt VOR
     # heute". Der Zeitraum (period_start/period_end) ist dagegen der echte

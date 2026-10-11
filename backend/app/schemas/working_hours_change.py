@@ -19,8 +19,8 @@ RetroReasonType = Literal["erfassungsfehler", "einvernehmlich", "sonstiges"]
 # ``admin_carryovers`` (2000–2100). Chrome/Edge melden beim Tippen der Jahreszahl
 # Zwischenwerte (``0002-…``, ``0020-…``, ``0202-…``) als vollständiges Datum; ohne
 # Grenze rechnete der Rechenpfad über Jahrhunderte (73 s je Vorschau, beim Jahr 1
-# ``OverflowError`` → 500). Speichern → deutsche 422, Vorschau → wie ein
-# fehlendes Datum (``effective_from_plausible`` im Router, vor jeder Rechnung).
+# ``OverflowError`` → 500). Speichern → deutsche 422, Vorschau → derselbe Text als
+# ``blocked_reason`` (``effective_from_plausible`` im Router, vor jeder Rechnung).
 EFFECTIVE_FROM_MIN = date(2000, 1, 1)
 EFFECTIVE_FROM_MAX = date(2100, 12, 31)
 EFFECTIVE_FROM_RANGE_DETAIL = "Das Wirkungsdatum muss zwischen dem 01.01.2000 und dem 31.12.2100 liegen."
