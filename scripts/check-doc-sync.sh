@@ -127,6 +127,24 @@ group_code() {
   need_code "Notiz und Begründung zusammen höchstens 500 Zeichen."
   need_code "Ihre Arbeitszeit ändert sich ab"
   need_code "auf den vorherigen Stand zurückgesetzt (neu: "
+  # Heute anerkannter Eintrag: kein Bearbeiten/Löschen, nur Schloss mit Hinweis
+  # (TimeTracking CREDITED_TODAY_HINT, PR2 T16). Einen Knopf „Änderung beantragen"
+  # gibt es nicht; ab morgen gelten „Änderungsantrag stellen"/„Löschantrag stellen".
+  # Die 409-Meldung oben erreicht die Oberfläche praktisch nicht mehr.
+  need_code "Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung"
+  need_code "Änderungsantrag stellen"
+  need_code "Löschantrag stellen"
+  # Anrechnungsanträge (Gesamtreview PR2, Fund 1/4/5): zwei Knöpfe statt
+  # „Genehmigen = Anerkennen", Nachfrage der Sammel-Genehmigung, Kennzeichen
+  # unter Zeiterfassung → „Anträge", Anrechnung heute erst nach Arbeitsende.
+  need_code "Ohne Anerkennen genehmigen"
+  need_code "ohne Anerkennen genehmigt"
+  need_code "Anrechnung beantragt"
+  need_code "Genehmigen mit Anerkennen"
+  need_code "Alle genehmigen"
+  need_code " genehmigen, davon "
+  need_code "Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden."
+  need_code "Antrag auf Anrechnung eingereicht"
   # Meldung für noch geöffnete alte Browser-Tabs (Release-Notes, Spec 11.4)
   # Im Code als zwei Python-Stringstücke umbrochen (admin_users.LEGACY_WINDOW_FIELDS_DETAIL).
   need_code "Bitte Seite neu laden: Die Arbeitszeit-Fenster (Soll-Beginn/Soll-Ende)"
