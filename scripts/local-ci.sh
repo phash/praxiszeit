@@ -8,6 +8,7 @@
 # (steps 1+2 below). This script exists because that workflow deliberately stops
 # at the backend — everything else is only ever checked here:
 #
+#   * step 0  Doku-Abgleich (Handbücher, Hilfe-Spiegel, zitierte Wortlaute)
 #   * step 3  native PostgreSQL lifecycle (praxiszeit-server.py, needs the repo
 #             mounted — impossible in the backend-only workflow)
 #   * steps 4-7  frontend: tsc, vitest, eslint, vite build
@@ -17,6 +18,9 @@
 # frontend, the installer or the E2E surface needs this script.
 #
 # Steps:
+#   0. Doku-Abgleich              (scripts/check-doc-sync.sh all — Spiegel,
+#                                  Anker, Pflichtbegriffe, zitierte Wortlaute;
+#                                  braucht kein Docker, nur bash + python3)
 #   1. Backend pytest             (unit + integration, SQLite-backed)
 #   2. Backend RLS integration    (test_tenant_rls.py against real Postgres)
 #   3. Native PG lifecycle        (praxiszeit-server.py, needs the repo mounted)
@@ -49,6 +53,16 @@ ok()   { echo -e "${GREEN}✓${NC} $*"; }
 fail() { echo -e "${RED}✗${NC} $*"; exit 1; }
 warn() { echo -e "${YELLOW}⚠${NC} $*"; }
 step() { echo -e "\n${YELLOW}==>${NC} $*"; }
+
+# -----------------------------------------------------------------------
+# 0. Doku-Abgleich (fünf Sync-Flächen, Spiegel, Anker, zitierte Wortlaute)
+# -----------------------------------------------------------------------
+step "Doku-Abgleich (scripts/check-doc-sync.sh all)"
+if bash scripts/check-doc-sync.sh all; then
+    ok "Doku-Abgleich OK"
+else
+    fail "Doku-Abgleich: Abweichungen siehe oben"
+fi
 
 # -----------------------------------------------------------------------
 # 1. Backend pytest (SQLite-backed unit + integration tests)
