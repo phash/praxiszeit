@@ -10,7 +10,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 import WeekSelector, { isoWeekMonday, weekLabel } from '../../components/WeekSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges } from '../../utils/formatters';
+import { deHoursExact, formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges } from '../../utils/formatters';
 import type { WeeklyHoursChangeInPeriod } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import { showArbzgWarnings } from '../../utils/arbzgWarnings';
@@ -838,7 +838,7 @@ export default function AdminDashboard() {
                       {emp.last_name}, {emp.first_name}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      {emp.weekly_hours}
+                      {deHoursExact(emp.weekly_hours)}
                       {formatWeeklyHoursChanges(emp.weekly_hours_changes) && (
                         <span
                           className="block text-xs text-amber-700"
@@ -921,7 +921,7 @@ export default function AdminDashboard() {
                       <p className="font-semibold text-gray-900">
                         {emp.last_name}, {emp.first_name}
                       </p>
-                      <p className="text-sm text-gray-500">{emp.weekly_hours} Std./Woche</p>
+                      <p className="text-sm text-gray-500">{deHoursExact(emp.weekly_hours)} Std./Woche</p>
                       {formatWeeklyHoursChanges(emp.weekly_hours_changes) && (
                         <p className="text-xs text-amber-700">
                           {formatWeeklyHoursChanges(emp.weekly_hours_changes)}
@@ -1349,7 +1349,7 @@ export default function AdminDashboard() {
                         </div>
                         <div>
                           <p className="text-gray-500 mb-1">Wochenstunden</p>
-                          <p className="text-gray-900">{selectedEmployee.weekly_hours} Std.</p>
+                          <p className="text-gray-900">{deHoursExact(selectedEmployee.weekly_hours)} Std.</p>
                           {formatWeeklyHoursChanges(selectedEmployee.weekly_hours_changes) && (
                             <p className="text-xs text-amber-700 mt-0.5">
                               {formatWeeklyHoursChanges(selectedEmployee.weekly_hours_changes)}

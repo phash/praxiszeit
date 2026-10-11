@@ -127,7 +127,9 @@ test.describe('Arbeitszeit-Blöcke (Spec 2026-10-08)', () => {
       expect(created).toBeTruthy();
       expect([created.hours_monday, created.weekly_hours, created.work_days_per_week]).toEqual([6.5, 6.5, 1]);
       await adminPage.getByPlaceholder('Suche nach Name oder Benutzername...').fill(lastName);
-      await expect(adminPage.locator('tr', { hasText: lastName }).first()).toContainText('6.5');
+      // Die Spalte zeigt die Wochenstunden (hier = Tagessoll, ein einziger
+      // Arbeitstag), im deutschen Format wie Formular und Dialog.
+      await expect(adminPage.locator('tr', { hasText: lastName }).first()).toContainText('6,5');
     } finally {
       await purgeByUsername(adminApi, username);
     }

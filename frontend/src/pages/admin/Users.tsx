@@ -10,7 +10,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import Badge from '../../components/Badge';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { formatHoursHM } from '../../utils/formatters';
+import { deHoursExact, formatHoursHM } from '../../utils/formatters';
 import SetPasswordModal from './users/SetPasswordModal';
 import CarryoverModal from './users/CarryoverModal';
 import WorkingHoursModal from './users/WorkingHoursModal';
@@ -524,7 +524,7 @@ export default function Users() {
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {user.role === 'admin' ? 'Admin' : 'Mitarbeiter:in'}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{user.weekly_hours}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{deHoursExact(user.weekly_hours)}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">{user.work_days_per_week} Tage/Wo</td>
                     <td className="px-6 py-4 text-sm">
                       {vacationInfo[user.id] ? (
@@ -791,7 +791,7 @@ export default function Users() {
                   <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                     <div>
                       <span className="text-gray-500 block">Wochenstunden</span>
-                      <p className="font-medium">{user.weekly_hours}</p>
+                      <p className="font-medium">{deHoursExact(user.weekly_hours)}</p>
                     </div>
                     <div>
                       <span className="text-gray-500 block">Arbeitstage</span>

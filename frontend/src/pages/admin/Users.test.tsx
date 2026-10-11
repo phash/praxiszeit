@@ -352,3 +352,19 @@ describe('Spec 2026-10-08 (12.1): Dialog bekommt heute gültige Blöcke und Stun
     expect(screen.getByTestId('modal-blocks')).toHaveTextContent('08:00');
   });
 });
+
+describe('Gesamtreview PR3: Wochenstunden der Liste im deutschen Zahlenformat', () => {
+  it('Tabelle und Mobilkarte zeigen 39,58 statt der rohen JS-Zahl 39.58', async () => {
+    // Blöcke leiten Wochenstunden mit zwei Nachkommastellen ab (Spec 4.1) —
+    // Formular, Dialog und Exporte schreiben sie mit Komma (deHoursExact).
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') return Promise.resolve({ data: [makeUser({ weekly_hours: 39.58 })] });
+      return Promise.resolve({ data: [] });
+    });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    expect(screen.getAllByText('39,58')).toHaveLength(2); // Tabelle + Mobilkarte
+    expect(screen.queryByText('39.58')).not.toBeInTheDocument();
+  });
+});

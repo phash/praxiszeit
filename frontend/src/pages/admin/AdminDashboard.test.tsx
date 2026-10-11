@@ -300,3 +300,32 @@ describe('AdminDashboard Änderungsprotokoll im Detail-Modal: Quellen-Labels', (
     ]);
   });
 });
+
+describe('Gesamtreview PR3: Wochenstunden im deutschen Zahlenformat', () => {
+  it('Tabelle, Mobilkarte und Detail-Modal zeigen 39,58 statt der rohen JS-Zahl 39.58', async () => {
+    // Blöcke leiten Wochenstunden mit zwei Nachkommastellen ab (Spec 4.1) —
+    // Benutzerliste, Formular, Dialog und Exporte schreiben sie mit Komma.
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith('/admin/reports/monthly')) {
+        return Promise.resolve({ data: [{
+          user_id: 'u1', first_name: 'Anna', last_name: 'Kern', weekly_hours: 39.58,
+          target_hours: 160, actual_hours: 160, balance: 0, overtime_cumulative: 0,
+          vacation_used_hours: 0, vacation_used_days: 0, sick_hours: 0, sick_days: 0,
+        }] });
+      }
+      if (url.startsWith('/admin/reports/')) return Promise.resolve({ data: [] });
+      if (url.startsWith('/admin/users/')) {
+        return Promise.resolve({ data: { id: 'u1', username: 'akern', email: null, role: 'employee', vacation_days: 30, track_hours: true } });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    const rows = await screen.findAllByRole('button', { name: 'Details für Kern, Anna anzeigen' });
+    expect(screen.getByText('39,58')).toBeInTheDocument(); // Tabelle
+    expect(screen.getByText('39,58 Std./Woche')).toBeInTheDocument(); // Mobilkarte
+    fireEvent.click(rows[0]);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('39,58 Std.')).toBeInTheDocument();
+    expect(screen.queryByText(/39\.58/)).not.toBeInTheDocument();
+  });
+});
