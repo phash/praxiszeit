@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 from datetime import date
 from decimal import Decimal
-from typing import List, Optional
+from typing import Any, List, Optional
 
 
 class MonthlyDashboard(BaseModel):
@@ -124,6 +124,11 @@ class WeeklyHoursChangeInPeriod(BaseModel):
     # ein serverseitig berechnetes Ja/Nein kann zwischen Datei und Bildschirm
     # nicht auseinanderlaufen. Default `False` = nichts behaupten.
     work_days_changed: bool = False
+    # Spec 15.2: Blöcke des Segments (kanonische JSON-Woche, locker) und ob sie
+    # sich gegenüber dem vorhergehenden Segment ändern — vom Server, aus
+    # derselben Regel wie der Datei-Export (`calculation_service.blocks_changed`).
+    blocks: Optional[Any] = None
+    blocks_changed: bool = False
 
     @classmethod
     def from_segment(cls, segment, previous=None) -> "WeeklyHoursChangeInPeriod":
@@ -140,7 +145,8 @@ class WeeklyHoursChangeInPeriod(BaseModel):
         # Lokaler Import: die Schema-Schicht soll den Service nicht schon beim
         # Modul-Laden ziehen (die Router importieren beide, aber in eigener
         # Reihenfolge) — die Regel selbst darf trotzdem nur EINMAL existieren.
-        from app.services.calculation_service import work_days_changed
+        from app.services.calculation_service import blocks_changed, work_days_changed
+        from app.services.work_blocks_service import week_blocks_to_json
         return cls(
             effective_from=segment.start,
             weekly_hours=float(segment.weekly_hours),
@@ -148,6 +154,8 @@ class WeeklyHoursChangeInPeriod(BaseModel):
             day_hours=[None if h is None else float(h) for h in segment.day_hours],
             work_days_per_week=segment.work_days_per_week,
             work_days_changed=work_days_changed(previous, segment),
+            blocks=week_blocks_to_json(getattr(segment, "blocks", None), getattr(segment, "block_pauses", None)),
+            blocks_changed=blocks_changed(previous, segment),
         )
 
 

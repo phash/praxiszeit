@@ -1,3 +1,6 @@
+import type { WeekBlocks } from '../types/workBlocks';
+import { formatBlocksText, isLegacyWeek } from './workBlocks';
+
 /**
  * Format decimal hours as H:MM (e.g. 6.5 → "6:30", 0.1 → "0:06", -1.5 → "-1:30").
  *
@@ -74,6 +77,10 @@ export interface WeeklyHoursChangeInPeriod {
    * beantworten. Fehlt das Feld (Altbestand), wird nichts behauptet.
    */
   work_days_changed?: boolean;
+  /** Spec 15.2: Blöcke des Segments und ob sie sich gegenüber dem vorhergehenden
+   * ändern (vom Server, `calculation_service.blocks_changed`). */
+  blocks?: WeekBlocks | null;
+  blocks_changed?: boolean;
 }
 
 const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
@@ -186,21 +193,31 @@ export function formatWeeklyHoursChanges(
     .map((c) => {
       const [y, m, d] = c.effective_from.split('-');
       const prefix = `ab ${d}.${m}.${y}: `;
+      let base: string | null = null;
       let suffix = '';
       if (c.use_daily_schedule) {
         const plan = formatDayPlan(c.day_hours);
-        if (plan) return `${prefix}${plan} = ${deHoursExact(c.weekly_hours)} h/Woche`;
+        if (plan) base = `${prefix}${plan} = ${deHoursExact(c.weekly_hours)} h/Woche`;
         // Kein einziger Tageswert → gleichmäßige Formulierung statt leerem
         // Satz, und ohne Arbeitstage-Zusatz: die Arbeitstage einer Zeile ohne
         // einen einzigen Tageswert sagen nichts (Zwilling:
-        // `export_service._format_segment_change`).
+        // `export_service._format_segment_change_base`).
       } else {
         suffix = workDaysSuffix(c);
       }
       // Auch hier verlustfrei (nicht `toFixed(1)`): für jeden vor #431
       // speicherbaren Wert zeichengleich zu #415, und nur so sagt der
       // Bildschirm bei 38,25 h dasselbe wie der Datei-Export.
-      return `${prefix}${deHoursExact(c.weekly_hours)} Std/Woche${suffix}`;
+      if (base === null) base = `${prefix}${deHoursExact(c.weekly_hours)} Std/Woche${suffix}`;
+      // Spec 15.2: Blöcke nur, wenn sie sich geändert haben (Befund vom
+      // Server) — Zwilling von export_service._format_segment_change. Neue
+      // Blöcke ersetzen den Satz, ein Altfenster und das Entfernen von Blöcken
+      // werden angehängt; ohne Blockänderung bleibt der Satz byte-identisch.
+      if (!c.blocks_changed) return base;
+      const spans = formatBlocksText(c.blocks);
+      if (!spans) return `${base} · ohne Arbeitszeit-Blöcke`;
+      if (isLegacyWeek(c.blocks)) return `${base} · ${spans} (nur Kappung)`;
+      return `${prefix}${spans} = ${deHoursExact(c.weekly_hours)} h/Woche`;
     })
     .join('; ');
 }

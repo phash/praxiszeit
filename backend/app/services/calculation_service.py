@@ -230,6 +230,13 @@ class ScheduleSegment(NamedTuple):
     use_daily_schedule: bool
     day_hours: tuple          # (Mo, Di, Mi, Do, Fr), je Optional[Decimal]
     work_days_per_week: int
+    # Spec 15.2: Blöcke und Pausen des Segments (Schedule-Format). Mit
+    # Vorgabewert: eine übersehene Konstruktion meint „keine Blöcke" und schreibt
+    # den bisherigen Wortlaut byte-identisch. Teil des Snapshot-Vergleichs in
+    # ``weekly_hours_segments`` (``[2:]``) — eine reine Blockänderung (auch nur
+    # der Pause) ist eine sichtbare Vertragsänderung.
+    blocks: Optional[tuple] = None
+    block_pauses: Optional[tuple] = None
 
 
 def weekly_hours_segments(
@@ -296,6 +303,8 @@ def weekly_hours_segments(
             use_daily_schedule=schedule.use_daily_schedule,
             day_hours=schedule.day_hours if schedule.use_daily_schedule else (None,) * 5,
             work_days_per_week=schedule.work_days_per_week,
+            blocks=schedule.blocks,
+            block_pauses=schedule.block_pauses if schedule.blocks is not None else None,
         )
         # Ab Feld 2 stehen genau die Snapshot-Werte — der Vergleich deckt damit
         # automatisch jedes kuenftige Feld mit ab.
@@ -335,6 +344,26 @@ def work_days_changed(previous, segment) -> bool:
     if before is None or after is None:
         return False
     return int(before) != int(after)
+
+
+def blocks_changed(previous, segment) -> bool:
+    """Spec 15.2: Ändert dieses Segment die Arbeitszeit-Blöcke (inkl. Pausen)
+    gegenüber dem vorhergehenden? DIE eine Quelle für Datei-Export
+    (``export_service._format_segment_change``) und API-Feld
+    (``WeeklyHoursChangeInPeriod.blocks_changed``) — Zwilling von
+    :func:`work_days_changed`. ``previous is None`` → False.
+
+    Nach Migration 073 trägt jede Verlaufszeile einer Person dasselbe
+    Altfenster (E20) — dort ist die Antwort immer ``False`` und der
+    eingefrorene #415/#431-Wortlaut bleibt byte-identisch."""
+    if previous is None:
+        return False
+
+    def key(seg):
+        blocks = getattr(seg, "blocks", None)
+        return blocks, (getattr(seg, "block_pauses", None) if blocks is not None else None)
+
+    return key(previous) != key(segment)
 
 
 class RetargetWindow(NamedTuple):

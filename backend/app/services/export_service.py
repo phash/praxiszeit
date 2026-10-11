@@ -10,7 +10,9 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.comments import Comment
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, AbsenceReason, WorkingHoursChange, Tenant
-from app.services import calculation_service, practice_name_service, special_days_service, work_window_service
+from app.services import (
+    calculation_service, practice_name_service, special_days_service, work_blocks_service, work_window_service,
+)
 from app.services.arbzg_utils import is_night_work
 from app.services.date_filters import date_in_year, date_in_month, date_in_year_up_to_month
 from app.config import settings
@@ -420,10 +422,11 @@ def _work_days_suffix(segment, previous, compact: bool = False) -> str:
     return f" auf {days} {'Arbeitstag' if days == 1 else 'Arbeitstage'}"
 
 
-def _format_segment_change(segment, previous=None, compact: bool = False) -> str:
+def _format_segment_change_base(segment, previous=None, compact: bool = False) -> str:
     """Ein Segment als „ab <Datum>: <Zustand>". ``previous`` ist das unmittelbar
     davor gueltige Segment (``None`` = keins) und entscheidet allein darueber, ob
-    die Arbeitstage genannt werden."""
+    die Arbeitstage genannt werden. Ohne Arbeitszeit-Blöcke — die haengt
+    :func:`_format_segment_change` an (Spec 15.2)."""
     prefix = f"ab {segment.start.strftime('%d.%m.%Y')}: "
     suffix = ""
     if segment.use_daily_schedule:
@@ -444,6 +447,25 @@ def _format_segment_change(segment, previous=None, compact: bool = False) -> str
     # bleibt in der PDF-Meta woertlich (`_de_hours_exact`, nicht
     # `_de_hours_compact`).
     return f"{prefix}{_de_hours_exact(segment.weekly_hours)} Std/Woche{suffix}"
+
+
+def _format_segment_change(segment, previous=None, compact: bool = False) -> str:
+    """Spec 15.2: wie bisher (:func:`_format_segment_change_base`) — Blöcke nur,
+    wenn sie sich gegenüber ``previous`` geändert haben
+    (``calculation_service.blocks_changed``): neue Blöcke ersetzen den Satz, ein
+    Altfenster und das Entfernen von Blöcken werden angehängt. Frontend-Zwilling
+    ``utils/formatters.ts::formatWeeklyHoursChanges`` (wortgleich); ``compact``
+    ist die PDF-Kurzform („Mo 08:00–12:00+15:00–18:00 P30")."""
+    base = _format_segment_change_base(segment, previous, compact=compact)
+    if not calculation_service.blocks_changed(previous, segment):
+        return base
+    if segment.blocks is None:
+        return f"{base} · ohne Arbeitszeit-Blöcke"
+    spans = work_blocks_service.blocks_text(segment.blocks, segment.block_pauses, compact=compact)
+    if work_blocks_service.is_legacy_week(work_blocks_service.ParsedWeek(segment.blocks, segment.block_pauses)):
+        return f"{base} · {spans} (nur Kappung)"
+    total = _de_hours_compact if compact else _de_hours_exact
+    return f"ab {segment.start.strftime('%d.%m.%Y')}: {spans} = {total(segment.weekly_hours)} h/Woche"
 
 
 def escape_pdf_text(value):

@@ -189,3 +189,27 @@ export function stampNoteProps(e: StampEntry): StampNoteData {
     creditOverride: !!e.credit_override,
   };
 }
+
+/** Spec 15.2 — Zwilling von `work_blocks_service.blocks_text` (wortgleich):
+ * lang „Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–13:00",
+ * kurz „Mo 08:00–12:00+15:00–18:00 P30 / Di 08:00–13:00". Nur Tage mit Blöcken,
+ * „Pause" nur bei Pause > 0 (Altwerte ohne Pausenangabe); `null` ohne Blöcke.
+ * Anders als `formatWeekBlocks` (Spec 12.2, Trenner „·") trennt der Berichtstext
+ * die Tage mit „ / " wie der Tagesplan der Vertragshistorie. */
+export function formatBlocksText(
+  week: WeekBlocks | null | undefined,
+  { compact = false }: { compact?: boolean } = {},
+): string | null {
+  if (!Array.isArray(week)) return null;
+  const parts = week.flatMap((day, index) => {
+    const blocks = day?.blocks ?? [];
+    if (blocks.length === 0 || index >= WEEKDAY_LABELS.length) return [];
+    const spans = blocks.map((b) => `${b.start}–${b.end}`);
+    const pause = day.pause_minutes;
+    const text = compact
+      ? spans.join('+') + (pause ? ` P${pause}` : '')
+      : spans.join(' + ') + (pause ? ` (Pause ${pause} Min)` : '');
+    return [`${WEEKDAY_LABELS[index]} ${text}`];
+  });
+  return parts.length > 0 ? parts.join(' / ') : null;
+}

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  blocksSpan, formatWeekBlocks, gapSegments, hhmmToMinutes, hullClamp, isInBlockGap, isLegacyWeek,
+  blocksSpan, formatBlocksText, formatWeekBlocks, gapSegments, hhmmToMinutes, hullClamp, isInBlockGap, isLegacyWeek,
   notCreditedMinutes, stampNoteProps,
 } from './workBlocks';
 import { K_CASES_FE } from './workBlocksCases';
@@ -155,5 +155,23 @@ describe('stampNoteProps', () => {
       notCreditedMinutes: 240, creditedHours: 8, breakMinutes: 0, autoClosed: false, creditOverride: false,
     });
     expect(stampNoteProps({ ...k7.stored, not_credited_minutes: 241 }).notCreditedMinutes).toBe(241);
+  });
+});
+
+describe('formatBlocksText (Spec 15.2, Zwilling von work_blocks_service.blocks_text)', () => {
+  const week: WeekBlocks = [
+    { blocks: [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }], pause_minutes: 30 },
+    { blocks: [{ start: '08:00', end: '13:00' }], pause_minutes: 0 },
+    EMPTY_NEW, EMPTY_NEW, EMPTY_NEW,
+  ];
+
+  it('lang und kurz wie das Backend', () => {
+    expect(formatBlocksText(week)).toBe('Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–13:00');
+    expect(formatBlocksText(week, { compact: true })).toBe('Mo 08:00–12:00+15:00–18:00 P30 / Di 08:00–13:00');
+  });
+
+  it('Altwerte ohne Pausenangabe, null ohne Blöcke', () => {
+    expect(formatBlocksText(LEGACY_WEEK)).toBe('Mo 07:37–16:30 / Fr 07:30–23:59');
+    expect(formatBlocksText(null)).toBeNull();
   });
 });
