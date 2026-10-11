@@ -303,7 +303,11 @@ test.describe('Arbeitszeit-Blöcke (Spec 2026-10-08)', () => {
   }) => {
     await expectGrace15(adminApi);
     const user = await employeeWithBlocks(createUser, SPLIT, 'Antrag');
-    const workday = weekdayFromNow(-7);  // Anträge gibt es nur für vergangene Tage
+    // Vergangener Werktag: heute läge das Ende 18:00 vor Feierabend noch in der
+    // Zukunft (Spec 14, 400 „Das Ende liegt in der Zukunft …") — die Aktion selbst
+    // gibt es auch am heutigen geschlossenen Eintrag. An Wochenend-/Feiertagen gäbe
+    // es keine Blöcke und damit keine nicht angerechnete Zeit.
+    const workday = weekdayFromNow(-7);
     const entry = await createTimeEntry(user.id, { date: workday, start_time: '08:00', end_time: '18:00', break_minutes: 0 });
     const reason = `E2E Anrechnung ${Date.now()}-${Math.random().toString(36).slice(2, 8)}: Patienten in der Pause versorgt`;
 
