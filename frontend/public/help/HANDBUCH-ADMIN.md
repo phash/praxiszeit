@@ -1,6 +1,6 @@
 # PraxisZeit – Handbuch für Administratoren
 
-**Version 2.8 | Stand: Oktober 2026 (für PraxisZeit 1.19.3)**
+**Version 2.9 | Stand: Oktober 2026 (für PraxisZeit 1.20.0)**
 
 ---
 
@@ -99,7 +99,7 @@ Für **abgeschlossene** Monate sind beide identisch. (Technisch: der Bericht `/a
 
 **Suche:** Nutzen Sie das Suchfeld, um nach einem bestimmten Mitarbeiter zu filtern.
 
-**Detailansicht:** Klicken Sie auf den Pfeil am Ende einer Zeile, um die Detailansicht des Mitarbeiters zu öffnen.
+**Detailansicht:** Klicken Sie auf den Pfeil am Ende einer Zeile, um die Detailansicht des Mitarbeiters zu öffnen. Sie listet die Einträge mit Netto-Spalte; unter der Uhrzeit steht bei gekappten Einträgen die Zusatzzeile zur nicht angerechneten Zeit, in der Spalte „Aktionen" der Knopf **„Anerkennen"** (→ [Nicht angerechnete Zeit erkennen und anerkennen](#nicht-angerechnet-anerkennen)).
 
 > **Tipp:** Der Ampelindikator beim Urlaub zeigt auf einen Blick, wer dringend Urlaub nehmen sollte.
 
@@ -440,14 +440,15 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 
 - **Inhalt:** Tägliche Zeiteinträge aller Mitarbeiter im gewählten Monat
 - **Format:** Excel (.xlsx), ODS (.ods) oder PDF (.pdf)
-- **Spalten je Tag:** Datum, Wochentag, Von, Bis, Pause (Min), Netto (Std), Soll (Std), Differenz, Abwesenheit, Bemerkung – in Excel und ODS zusätzlich **Unterbrechung (Min)** und **Arbeitsblöcke** (hinten angehängt; alle übrigen Spalten stehen unverändert an ihrem Platz, damit bestehende Auswertungen weiter funktionieren)
+- **Spalten je Tag:** Datum, Wochentag, Von, Bis, Pause (Min), Netto (Std), Soll (Std), Differenz, Abwesenheit, Bemerkung – in Excel und ODS zusätzlich **Unterbrechung (Min)** und **Zeiteinträge**, als letzte Spalte in Excel, ODS und PDF **Nicht angerechnet (Min)** (alle hinten angehängt; die übrigen Spalten stehen unverändert an ihrem Platz, damit bestehende Auswertungen weiter funktionieren)
 - **Zusammenfassung pro Mitarbeiter:** Soll-/Ist-Stunden, Saldo Monat, Überstunden kumuliert, Urlaub, Nachtarbeitstage
 
 **So lesen Sie eine Tageszeile:**
 
-- **Netto (Std)** ist die **angerechnete Arbeitszeit** der Zeiteinträge des Tages. Ist für die Person ein [Soll-Arbeitszeit-Fenster](#arbeitszeit-bloecke) hinterlegt, ist das die auf das Fenster gekappte Zeit – auch „Von"/„Bis" zeigen dann die gekappten Zeiten; der ursprüngliche Stempel bleibt in PraxisZeit gespeichert (Monatsjournal, Admin-Dashboard), steht aber nicht in der Datei. An einem Krank- oder Fortbildungstag ohne Zeiteintrag steht hier 0, außerhalb des Beschäftigungszeitraums ebenfalls (die Stempel bleiben dort sichtbar).
+- **Netto (Std)** ist die **angerechnete Arbeitszeit** der Zeiteinträge des Tages. Hat die Person [Arbeitszeit-Blöcke](#arbeitszeit-bloecke), ist das die Zeit nach der Kappung: „Von"/„Bis" zeigen die vor dem ersten bzw. nach dem letzten Block gekürzten Zeiten, und Zeit zwischen den Blöcken ist von Netto abgezogen; der ursprüngliche Stempel bleibt in PraxisZeit gespeichert (Monatsjournal, Admin-Dashboard), steht aber nicht in der Datei. An einem Krank- oder Fortbildungstag ohne Zeiteintrag steht hier 0, außerhalb des Beschäftigungszeitraums ebenfalls (die Stempel bleiben dort sichtbar).
 - **Differenz** ist der Saldo des Tages: Netto **plus Gutschrift für Krankheit/Fortbildung** minus Soll. Ein Krank- oder Fortbildungstag ist damit **±0** – das Soll bleibt stehen, die Stunden aus der Spalte „Abwesenheit" werden gutgeschrieben. Die Summe der Spalte entspricht dem „Saldo Monat" der Zusammenfassung. **Ausnahme:** Mitarbeitende mit fester Monatsarbeitszeit (Minijob-Modus, → [Abschnitt 13](#13-einstellungen)) – dort ist das Monats-Soll fest und nicht die Summe der Tage; verbindlich ist dann nur die Zusammenfassung.
-- **Geteilte Dienste** (mehrere Zeiteinträge an einem Tag, z. B. 07:45–12:00 und 14:15–17:00): In Excel/ODS zeigen „Von"/„Bis" den Rahmen des Tages (erster Beginn, letztes Ende), **Unterbrechung (Min)** die Zeit zwischen den Blöcken und **Arbeitsblöcke** die einzelnen Blöcke („07:45–12:00, 14:15–17:00"). Damit geht die Zeile auf: Bis − Von − Pause − Unterbrechung = Netto. **Ausnahmen:** Überschneiden sich zwei Einträge, zählt Netto die Überschneidung doppelt – die Spalte „Arbeitsblöcke" zeigt sie; läuft ein Eintrag des Tages noch (nicht ausgestempelt), fehlt seine Zeit in Netto und in „Bis"; außerhalb des Beschäftigungszeitraums ist Netto 0. Im **PDF** stehen die Blöcke in „Von"/„Bis" untereinander, die Unterbrechung in einer eigenen Spalte direkt neben der Pause.
+- **Geteilte Dienste** (mehrere Zeiteinträge an einem Tag, z. B. 07:45–12:00 und 14:15–17:00): In Excel/ODS zeigen „Von"/„Bis" den Rahmen des Tages (erster Beginn, letztes Ende), **Unterbrechung (Min)** die Zeit zwischen den Einträgen und **Zeiteinträge** die einzelnen Einträge („07:45–12:00, 14:15–17:00"). Damit geht die Zeile auf: Bis − Von − Pause − Unterbrechung = Netto – solange nichts zwischen zwei Arbeitszeit-Blöcken gestempelt wurde; sonst ist Netto zusätzlich um diese nicht angerechnete Lückenzeit kleiner. **Ausnahmen:** Überschneiden sich zwei Einträge, zählt Netto die Überschneidung doppelt – die Spalte „Zeiteinträge" zeigt sie; läuft ein Eintrag des Tages noch (nicht ausgestempelt), fehlt seine Zeit in Netto und in „Bis"; außerhalb des Beschäftigungszeitraums ist Netto 0. Im **PDF** stehen die Einträge in „Von"/„Bis" untereinander, die Unterbrechung in einer eigenen Spalte direkt neben der Pause.
+- **Nicht angerechnet (Min)** (letzte Spalte, ab 1.20.0) nennt je Tag die gestempelte, aber nicht angerechnete Zeit in Minuten: die Zeit zwischen den Arbeitszeit-Blöcken **und** die vor dem ersten bzw. nach dem letzten Block abgeschnittene Zeit, die in „Von"/„Bis" schon fehlt. Beispiel: gestempelt 07:00–19:00 bei Blöcken 08:00–12:00 + 15:00–18:00 und 15 Minuten Puffer → Von 07:45, Bis 18:15, Netto 8,00, Nicht angerechnet 240 (davon 150 zwischen den Blöcken). Die Abendzeit eines automatisch auf 23:59 geschlossenen Eintrags zählt nicht mit (23:59 ist kein echter Stempel); ein anerkannter Eintrag hat hier 0. Die Zusammenfassung nennt die Summe des Monats, der Jahresreport Detailliert je Mitarbeiter die Summe des Jahres.
 
 **Verwendung:** Gehaltsabrechnung, monatliche Kontrolle, Dokumentation
 
@@ -462,7 +463,7 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 ### Jahresreport Detailliert
 
 - **Format:** Excel (.xlsx) oder ODS (.ods)
-- **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter – mit denselben Tagesspalten wie der Monatsreport (inkl. Unterbrechung und Arbeitsblöcke; die Differenz enthält die Gutschrift für Krankheit/Fortbildung)
+- **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter – mit denselben Tagesspalten wie der Monatsreport (inkl. Unterbrechung, Zeiteinträge und Nicht angerechnet; die Differenz enthält die Gutschrift für Krankheit/Fortbildung)
 - **Hinweis:** Generierungszeit 3–5 Sekunden
 
 **Verwendung:** Detaillierte Jahresauswertung, Steuerberater, Betriebsprüfung
@@ -504,7 +505,7 @@ Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspfl
 
 **„Arbeitstage" auf der Antragskarte** zeigt, wie viele Tage der Antrag nach der Genehmigung tatsächlich kostet – nach genau denselben Regeln wie die Buchung und das Urlaubskonto:
 
-- Es zählen nur Tage, an denen die Person laut ihrem **zum jeweiligen Datum gültigen** Arbeitsplan arbeitet. Bei einer 4-Tage-Woche mit freiem Mittwoch kostet eine Woche Montag bis Freitag **4** Tage, nicht 5. Liegt im Zeitraum eine Stundenänderung, gilt für jeden Tag der Plan, der an diesem Tag gültig ist.
+- Es zählen nur Tage, an denen die Person laut ihrem **zum jeweiligen Datum gültigen** Arbeitsplan arbeitet. Bei einer 4-Tage-Woche mit freiem Mittwoch kostet eine Woche Montag bis Freitag **4** Tage, nicht 5. Liegt im Zeitraum eine Arbeitszeit-Änderung, gilt für jeden Tag der Plan, der an diesem Tag gültig ist.
 - Wochenenden, Feiertage und als „frei" eingestellte Sondertage (24./31.12.) zählen nicht.
 - Ein **halber Tag** zählt **0,5**; ein als **„halber Feiertag"** eingestellter 24./31.12. ebenfalls **0,5**.
 - Tage nach einem inzwischen eingetragenen **letzten Arbeitstag** zählen nicht mit – ein solcher Antrag lässt sich so aber nicht mehr genehmigen (Fehlermeldung „Datum liegt nach dem letzten Arbeitstag"). Kürzen Sie ihn vorher über **„Bearbeiten"** auf den Beschäftigungszeitraum.
@@ -549,7 +550,9 @@ Mitarbeiter können Korrekturanträge stellen, wenn Zeiteinträge nachträglich 
 
 **Filter-Tabs:** Alle / Offen / Genehmigt / Abgelehnt
 
-**Mehrere Anträge auf einmal:** Markieren Sie offene Anträge über die Kästchen links (oder alle über das Kästchen oben) und klicken Sie auf **„… genehmigen"** bzw. **„… ablehnen"**. Hinweise, die bei einer einzelnen Genehmigung erscheinen (Kappung auf das Arbeitszeit-Fenster, Wochen- oder Nachtarbeitszeit, Kind-krank-Kontingent), erscheinen auch hier, jeweils mit dem Namen der Person davor. Bis Version 1.19.2 zeigte die Sammel-Genehmigung keine dieser Hinweise.
+**Mehrere Anträge auf einmal:** Markieren Sie offene Anträge über die Kästchen links (oder alle über das Kästchen oben) und klicken Sie auf **„… genehmigen"** bzw. **„… ablehnen"**. Hinweise, die bei einer einzelnen Genehmigung erscheinen (Kappung durch die Arbeitszeit-Blöcke, Wochen- oder Nachtarbeitszeit, Kind-krank-Kontingent), erscheinen auch hier, jeweils mit dem Namen der Person davor. Bis Version 1.19.2 zeigte die Sammel-Genehmigung keine dieser Hinweise.
+
+**Anrechnung beantragt (ab 1.20.0):** Stellt eine Mitarbeiterin bzw. ein Mitarbeiter einen Antrag über **„Anrechnung beantragen"**, trägt er in der Prüfung das Kennzeichen **„Anrechnung beantragt"** und hat zwei Knöpfe: **„Genehmigen und anerkennen"** übernimmt den Antrag und rechnet die beantragten Zeiten – vorbelegt sind die gestempelten – ungekappt an, dauerhaft (→ [Anerkennen](#nicht-angerechnet-anerkennen)); **„Ohne Anerkennen genehmigen"** übernimmt nur die beantragten Zeiten, die Zeit vor, nach oder zwischen den Blöcken bleibt dann nicht angerechnet. Bei einem automatisch geschlossenen Eintrag enthält der Antrag das tatsächliche Ende. Damit Sie sehen, was Sie anerkennen, nennt die Prüfung unter **„Aktuell"** die nicht angerechnete Lücke (*„Nicht angerechnet (Lücke): 2:30 h"*) und die Stempel des Eintrags (*„gestempelt 08:00–18:00 · nicht angerechnet aktuell 2:30 h"*); weichen die beantragten Zeiten davon ab, steht unter **„Gewünscht"** rot *„Zeiten weichen von den Stempeln ab (gestempelt 08:00–18:00)"*. Bei jedem anderen Änderungsantrag zu einem Eintrag mit nicht angerechneter Zeit bietet die Prüfung neben **„Genehmigen"** zusätzlich **„Genehmigen und anerkennen"** an (bei einem automatisch geschlossenen Eintrag nur, wenn der Antrag ein tatsächliches Ende enthält). **Sammel-Genehmigung:** Sind unter den ausgewählten Anträgen Anrechnungsanträge, nennt der Knopf ihre Zahl (z. B. „3 genehmigen, davon 1 mit Anerkennen") und fragt vor dem Absenden nach (*„Genehmigen mit Anerkennen"* → **„Alle genehmigen"**); alle ausgewählten Anrechnungsanträge werden dann anerkannt. Einen davon ohne Anerkennen zu genehmigen geht nur einzeln. Ist der Eintrag bereits anerkannt, steht in der Prüfung *„Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet."*
 
 > **Empfehlung:** Prüfen Sie Korrekturanträge zeitnah, damit der Monatssaldo der Mitarbeiter aktuell bleibt.
 
@@ -570,7 +573,8 @@ Das Audit-Log protokolliert alle Aktionen im System vollständig und unveränder
 | **Konto-Vorgänge** | Deaktivieren, Reaktivieren, Rollenwechsel, durch die Verwaltung gesetzte Passwörter, Notfall-Vorgänge über die Kommandozeile – eigene Liste unten auf der Seite (siehe unten) |
 | **Korrekturanträge** | Stellen, Genehmigen, Ablehnen |
 | **Betriebsferien** | Anlegen und Löschen |
-| **Stundenänderungen** | Sammelzeile je Änderung/Löschung, plus je nachgezogener Abwesenheit eine Einzelzeile mit altem/neuem Stundenwert (Quelle „wh_change", Anzeige „Stundenänderung") |
+| **Arbeitszeit-Änderungen** | Je Änderung und je Löschung eine Sammelzeile (Wirkungsdatum, neu berechnete Einträge, Differenz der angerechneten Zeit, Saldo-Differenz, Puffer, Grund, Vertrag alt → neu) und je neu berechnetem Eintrag eine Zeile mit alten und neuen Zeiten (Quelle „wh_reclamp", Anzeige „Neukappung (Arbeitszeit-Änderung)"); je nachgezogener Abwesenheit eine Zeile mit altem/neuem Stundenwert (Quelle „wh_change", Anzeige „Stundenänderung"). Alle Zeilen stehen im Monat, in dem die Änderung gespeichert wurde. |
+| **Anerkennungen** | Anerkannte Einträge mit vorher und nachher angerechneter Zeit (Quelle „credit_override", Anzeige „Anrechnung anerkannt") |
 | **Pflicht-Pause-Ausnahmen** | Erfasste § 4-Ausnahmen samt Begründung (Quelle „break_waiver") |
 
 ### Konto-Vorgänge
@@ -687,8 +691,8 @@ Unter **Import** übernehmen Sie historische **Zeiteinträge** aus einer **TimeR
 **Vorgehensweise (Assistent in drei Schritten):**
 
 1. **Hochladen:** Wählen Sie den/die **Mitarbeiter:in** aus, dem/der die Einträge zugeordnet werden, und laden Sie die `.xls`-Datei hoch (Drag & Drop oder Klick). Klicken Sie auf **„Datei analysieren"**.
-2. **Vorschau:** Das System zeigt alle gefundenen Einträge in einer Tabelle mit Datum, Von/Bis, Pause und Netto-Stunden. **Konflikte** (bereits vorhandene Einträge am selben Tag) werden rot, **Hinweise** gelb markiert — das sind ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit) und, wenn ein Arbeitszeit-Fenster hinterlegt ist, die Kappung der importierten Zeit auf dieses Fenster. Den genauen Text zeigt das Zeilen-Symbol als Kurzinfo. Über die Option **„Konflikte überschreiben"** entscheiden Sie, ob vorhandene Einträge ersetzt werden – andernfalls werden sie übersprungen. Klicken Sie auf **„Import bestätigen"**.
-3. **Ergebnis:** Sie sehen, wie viele Einträge importiert, überschrieben oder übersprungen wurden sowie die ArbZG-Warnungen. Der Import wird im **Änderungsprotokoll** dokumentiert.
+2. **Vorschau:** Das System zeigt alle gefundenen Einträge in einer Tabelle mit Datum, Von/Bis, Pause und Netto-Stunden. **Konflikte** (bereits vorhandene Einträge am selben Tag) werden rot, **Hinweise** gelb markiert — das sind ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit) und, wenn Arbeitszeit-Blöcke hinterlegt sind, die Kappung der importierten Zeit (auch die nicht angerechnete Zeit zwischen den Blöcken) sowie die Hinweise zur Anwesenheit laut Stempel (→ [Abschnitt 14](#automatische-warnungen-im-alltag)). Den genauen Text zeigt das Kennzeichen **„Hinweis"** als Kurzinfo. Eine Konfliktzeile kann beide Kennzeichen tragen – überschreibt der Import dort einen anerkannten Eintrag, steht in der Kurzinfo *„Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet."* Über die Option **„Konflikte überschreiben"** entscheiden Sie, ob vorhandene Einträge ersetzt werden – andernfalls werden sie übersprungen. Klicken Sie auf **„Import bestätigen"**. Die Netto-Stunden der Vorschau rechnet der Server so, wie er sie anschließend speichert; unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit (z. B. „2:30 h nicht angerechnet"). Eine automatische Pause zieht der Import nur ab, soweit die Lücke zwischen den Blöcken die Pausenpflicht nicht schon abdeckt.
+3. **Ergebnis:** Sie sehen, wie viele Einträge importiert, überschrieben oder übersprungen wurden sowie die ArbZG-Warnungen (einschließlich der Hinweise zur Anwesenheit laut Stempel). Der Import wird im **Änderungsprotokoll** dokumentiert.
 
 ---
 
@@ -769,7 +773,9 @@ Ist die Ausnahme erlaubt, steuert der Schalter **„Genehmigung erforderlich"**,
 <a id="soll-arbeitszeit-fenster-puffer"></a>
 ### Soll-Arbeitszeit-Fenster (Puffer)
 
-Im Bereich **„Soll-Arbeitszeit-Fenster"** legen Sie im Feld **„Puffer für Soll-Arbeitszeit-Fenster (Min.)"** den systemweiten Toleranzbereich für die in der Benutzerverwaltung hinterlegten Soll-Arbeitszeiten fest (Standard: **15** Minuten). Anwesenheit vor oder nach dem Soll-Fenster zählt nur bis zu diesem Puffer zur Arbeitszeit; Stempel außerhalb des Puffers werden auf die Fenstergrenze gekürzt. Details und rechtlicher Hinweis: [Abschnitt 4 → „Soll-Arbeitszeiten"](#arbeitszeit-bloecke).
+Im Bereich **„Soll-Arbeitszeit-Fenster"** legen Sie im Feld **„Puffer für Soll-Arbeitszeit-Fenster (Min.)"** den systemweiten Puffer für die Arbeitszeit-Blöcke fest (Standard: **15** Minuten). Er gilt an jedem Blockrand, auch zwischen zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet. Gestempelte Zeit weiter außerhalb wird nicht angerechnet – Details und Beispiel: [Abschnitt 4 → „Arbeitszeit-Blöcke"](#arbeitszeit-bloecke).
+
+Eine Änderung des Puffers wirkt auf neue Einträge. Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn, auch wenn er später bearbeitet wird. Nur eine Arbeitszeit-Änderung mit Neuberechnung kappt die betroffenen Einträge mit dem dann gültigen Puffer neu; die Vorschau nennt ihn, und verliert dabei ein Eintrag angerechnete Zeit, gilt der Verkürzungsschutz. Einträge aus der Zeit vor Version 1.20.0 tragen keinen gespeicherten Puffer und werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt. Bereits gespeicherte Einträge ändern sich durch das Speichern dieser Einstellung allein nicht.
 
 <a id="farben"></a>
 ### Farben
@@ -911,6 +917,17 @@ Eine **8-Stunden-Warnung** weist bereits ab Überschreiten der Regelgrenze auf d
 
 ---
 
+<a id="24-wochen-durchschnitt"></a>
+### §3 ArbZG – 24-Wochen-Durchschnitt
+
+Über 24 Wochen darf die Arbeitszeit im Durchschnitt 8 Stunden je Arbeitstag nicht überschreiten. Die Auswertung **„24-Wochen-Durchschnitt §3 ArbZG"** auf der Berichte-Seite prüft das für die 24 Wochen bis zum gewählten **Stichtag** (Standard: heute) – je Mitarbeiter:in mit den Spalten „Ø angerechnet / Tag", „Anwesenheit laut Stempel (Ø / Tag)", „Angerechnet gesamt", „Anwesenheit laut Stempel gesamt", „Wochen > 48 h laut Stempel", „Tage > 8 h" und „Status".
+
+- **„Ø angerechnet / Tag"** und der **Status** („✓ Konform" / „✗ Verstoß") rechnen mit der angerechneten Zeit, geteilt durch die Soll-Arbeitstage des Zeitraums (ohne Feiertage, Urlaub und andere soll-freie Abwesenheiten, nur im Beschäftigungszeitraum). „Tage > 8 h" zählt Tage mit mehr als 8 Stunden angerechneter Zeit.
+- **„Anwesenheit laut Stempel"** (ab 1.20.0) ist die gestempelte Zeit abzüglich erfasster Pausen. Sie ändert sich nicht, wenn die Anrechnung später neu berechnet wird, und die Grenze gilt für die tatsächliche Arbeitszeit. Liegt ihr Durchschnitt über 8 Stunden, ist der Wert rot hervorgehoben; steht als Status trotzdem „✓ Konform", erscheint darunter zusätzlich „laut Stempel Ø > 8 h". „Wochen > 48 h laut Stempel" nennt die Zahl solcher Kalenderwochen mit Woche und Wert, z. B. „1 (KW 14/2026: 50:00 h)".
+- Hat eine Person im Zeitraum **keine Soll-Arbeitstage** (z. B. ohne Stundenzählung), steht als Status „keine Soll-Arbeitstage" – ohne Durchschnitt und ohne Urteil. § 18-befreite Mitarbeitende erscheinen nicht.
+
+---
+
 <a id="pflicht-pause-ausnahme-§4-arbzg"></a>
 ### §4 ArbZG – Pausenpflicht und Pflicht-Pause-Ausnahme
 
@@ -937,6 +954,12 @@ Ob es solche Ausnahmen in Ihrer Praxis gibt und ob sie sofort wirksam werden ode
 | **Wochenhöchstgrenze** | > 48h/Woche | Warnung | § 14 ArbZG |
 | **8h-Warnung Nachtarbeit** | Nachtarbeitnehmer > 8h täglich | Warnung | § 6 ArbZG |
 | **Ruhezeitwarnung** | < 11h seit letztem Arbeitsende beim Einstempeln | Warnung | § 5 ArbZG |
+| **Anwesenheit über 10 h (laut Stempel)** | gestempelte Anwesenheit des Tages abzüglich erfasster Pausen > 10 h, angerechnet ≤ 10 h | Hinweis | § 3 ArbZG |
+| **Durchgestempelt ohne Pause (laut Stempel)** | > 6 h Anwesenheit ohne ausreichende erfasste Pause, obwohl die Pausenprüfung auf der angerechneten Zeit bestanden hat | Hinweis | § 4 ArbZG |
+| **Anwesenheit über 48 h/Woche (laut Stempel)** | gestempelte Anwesenheit der Kalenderwoche > 48 h, angerechnet ≤ 48 h | Hinweis | § 3 ArbZG |
+| **Pause in der Lücke** | Pause eingetragen **und** über die Lücke zwischen zwei Arbeitszeit-Blöcken durchgestempelt (beides wird abgezogen) | Hinweis | – |
+
+**Angerechnete Zeit und tatsächliche Anwesenheit (ab 1.20.0):** Die Sperren nach § 3 (10 Stunden) und § 4 (Pausen) rechnen mit der **angerechneten** Zeit; ein Lückenabschnitt ab 15 Minuten zwischen zwei Arbeitszeit-Blöcken zählt dabei als Pause. Damit eine Kappung keinen Verstoß verdeckt, prüft PraxisZeit zusätzlich die **Anwesenheit laut Stempel** und meldet sie als Hinweis (nie blockierend), z. B. *„§4 ArbZG: Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst (‹x› h Anwesenheit). Die Lücke gilt nur dann als Pause, wenn sie tatsächlich frei war."* oder *„§3 ArbZG: Laut Stempel ‹x› h anwesend (abzüglich erfasster Pausen) – mehr als 10 Stunden. Angerechnet werden ‹y› h; die Höchstgrenze gilt für die tatsächliche Arbeitszeit."* Die [24-Wochen-Auswertung](#24-wochen-durchschnitt) (§ 3 ArbZG) zeigt neben dem Durchschnitt der angerechneten Zeit einen zweiten Wert **„Anwesenheit laut Stempel"**, den keine Neuberechnung verändert. Für Jugendliche (JArbSchG) prüft PraxisZeit keine dieser Grenzen.
 
 ---
 
@@ -998,14 +1021,17 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 | [§16](https://www.gesetze-im-internet.de/arbzg/__16.html) | Aufzeichnungspflicht: 2 Jahre Aufbewahrung | Excel-Exporte; Audit-Log |
 | [§18](https://www.gesetze-im-internet.de/arbzg/__18.html) | Ausnahmen für leitende Angestellte | `ArbZG-Prüfungen aussetzen`-Flag |
 
+**Arbeitszeit-Blöcke – weitere Rechtsgrundlagen:** Vergütung tatsächlich geleisteter, nicht angerechneter Arbeit (§ 611a Abs. 2, § 612 Abs. 1 BGB; §§ 1, 3, 17 MiLoG), Lage und Umfang der Arbeitszeit (§ 106 GewO; § 2 KSchG; §§ 8, 9, 12 Abs. 3 TzBfG; § 2 Abs. 1 Satz 2 Nr. 7 und § 3 NachwG), Mitbestimmung (§ 87 Abs. 1 Nr. 2, 3 und 6 BetrVG) und Jugendliche (§§ 11, 12 JArbSchG). Die Hinweise dazu stehen unter [„Arbeitszeit-Blöcke"](#arbeitszeit-bloecke) und [„Mitarbeiter bearbeiten"](#mitarbeiter-bearbeiten); PraxisZeit prüft diese Punkte nicht.
+
 ### Admin-Pflichten im Überblick
 
 1. **Regelmäßige Datenexporte** (mindestens monatlich) und sichere Aufbewahrung für 2 Jahre
 2. **Zeitnahe Prüfung** von Korrekturanträgen
 3. **Überwachung der ArbZG-Berichte** – besonders §5 (Ruhezeit) und §11 (Sonntage)
 4. **Dokumentation von Ausnahmen** (Sonntagsarbeit, verlängerte Arbeitszeiten, Pflicht-Pause-Ausnahmen)
-5. **Aktuelle Benutzerdaten** – bei Stundenänderungen immer Wirkungsdatum eintragen
+5. **Aktuelle Benutzerdaten** – bei Arbeitszeit-Änderungen immer Wirkungsdatum eintragen; rückwirkende Verkürzungen nur mit Grund (Fehlerkorrektur oder Vereinbarung)
 6. **Abgleich Urlaubskonten** mit tatsächlichem Urlaubsanspruch
+7. **Nicht angerechnete Zeit prüfen** – Monatsjournal („Anwesenheit nicht angerechnet") bzw. Export-Spalte „Nicht angerechnet (Min)"; tatsächlich geleistete, geduldete Arbeit anerkennen
 
 > **Haftungshinweis:** PraxisZeit unterstützt Sie bei der Einhaltung des ArbZG, ersetzt aber keine Rechtsberatung. Bei arbeitsrechtlichen Fragen wenden Sie sich an einen Fachanwalt für Arbeitsrecht.
 
@@ -1013,7 +1039,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 
 ## 18. Berechnungsgrundlagen (Anhang)
 
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.19.3). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.20.0). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
 
 ### 18.1 Grundbegriffe
 
@@ -1043,11 +1069,13 @@ Bei gleichmäßiger Verteilung gilt:
 
 Bei **individuellen Tagesstunden** (z. B. Mo 10 h / Di 10 h / Mi 4 h) zählt der konkrete Wert des jeweiligen Wochentags. Wochenenden, Tage vor Eintritt / nach Austritt sowie Mitarbeiter ohne Stundenzählung haben Tagessoll 0.
 
+Bei **Arbeitszeit-Blöcken** ist das Tagessoll die Summe der Blockdauern minus „Pause innerhalb der Blöcke", auf zwei Nachkommastellen gerundet (08:00–12:00 + 15:00–18:00, Pause 30 Min. → 6,50 h; 08:00–12:05 ohne Pause → 4,08 h).
+
 ### 18.3 Ist-Stunden
 
-Pro Zeiteintrag: **Ist = (Ende − Beginn) − Pause**, auf 2 Nachkommastellen gerundet und **nie negativ**.
+Pro Zeiteintrag: **Ist = (Ende − Beginn) − Pause − nicht angerechnete Zeit zwischen den Arbeitszeit-Blöcken**, auf 2 Nachkommastellen gerundet und **nie negativ**.
 
-Ist ein **Soll-Arbeitszeit-Fenster** hinterlegt (→ [Abschnitt 4, Soll-Arbeitszeiten](#4-benutzerverwaltung)), wird die angerechnete Zeit auf das Fenster (± Puffer) gekürzt; der Rohstempel bleibt erhalten (§ 16 ArbZG). Zusätzlich zählen **Krankheit** und **Fortbildung** mit ihren gebuchten Stunden als Ist (siehe Matrix).
+Sind **Arbeitszeit-Blöcke** hinterlegt (→ [Abschnitt 4, Arbeitszeit-Blöcke](#arbeitszeit-bloecke)), werden Beginn und Ende auf den ersten Block minus Puffer bzw. den letzten Block plus Puffer gekürzt und die Zeit zwischen den Blöcken (abzüglich Puffer) nicht angerechnet; der Rohstempel bleibt erhalten (§ 16 ArbZG), anerkannte Einträge zählen voll. Zusätzlich zählen **Krankheit** und **Fortbildung** mit ihren gebuchten Stunden als Ist (siehe Matrix).
 
 > **Die Gutschrift folgt dem Soll des Tages.** Krankheit und Fortbildung sollen den Saldo **nicht bewegen**: das Soll des Tages bleibt stehen, die Gutschrift gleicht es aus. Deshalb wird nur gutgeschrieben, soweit an diesem Tag überhaupt ein Soll steht:
 >
@@ -1119,7 +1147,7 @@ Urlaub wird grundsätzlich **in Tagen** geführt, nicht in Stunden (Tagesprinzip
 - **Mitarbeiter ohne Stundenzählung (leitende Angestellte):** kein Soll/Ist/Überstunden; Urlaub trotzdem tagebasiert (voller Urlaubstag / „Frei"-Sondertag = 1 Tag, „halber Feiertag" 24./31.12. = 0,5 Tag seit #394).
 - **Sondertage 24./31.12.:** je Tag Arbeitstag / Halbtag (Faktor 0,5) / Frei (Faktor 0). „Frei + zählt als Urlaub" zieht 1 Urlaubstag.
 - **Eintritt/Austritt:** vor dem ersten / nach dem letzten Arbeitstag entstehen weder Soll noch Ist; der Urlaubsanspruch wird anteilig berechnet.
-- **Stundenänderung (rückwirkend oder zukunftsdatiert):** alte Monate rechnen mit dem damals gültigen Wochensoll (Stundenhistorie / Gültig-ab-Datum). Zusätzlich werden die Stunden bereits gebuchter Abwesenheiten im Wirkungszeitraum auf das neue Tagessoll umgestellt – auch bei einem Datum in der Zukunft (Ausnahme: Überstundenausgleich, MA ohne Stundenzählung); Urlaubs**tage** bleiben unberührt. Details in [Abschnitt 6 → „Stundenänderungen"](#6-benutzer-verwalten).
+- **Arbeitszeit-Änderung (rückwirkend oder zukunftsdatiert):** alte Monate rechnen mit der damals gültigen Arbeitszeit (Verlauf / Gültig-ab-Datum). Rückwirkend werden erfasste Zeiteinträge an geänderten Wochentagen neu gekappt und danach die Stunden bereits gebuchter Abwesenheiten auf das neue Tagessoll umgestellt – Abwesenheiten auch bei einem Datum in der Zukunft (Ausnahme: Überstundenausgleich, MA ohne Stundenzählung); Urlaubs**tage** bleiben unberührt. Senkt eine rückwirkende Änderung angerechnete Zeit oder das Überstundenkonto, gilt der Verkürzungsschutz. Details in [Abschnitt 4 → „Mitarbeiter bearbeiten"](#mitarbeiter-bearbeiten).
 - **Betriebsferien:** je nach Verrechnung Urlaubsabzug oder bezahlte Freistellung; bei aktivem Schalter „Überzählige Betriebsferien als Überstundenabbau" zuerst Urlaub, dann Überstundenausgleich (kein Minus-Urlaub) – Details in [Abschnitt 11](#11-betriebsferien-verwalten).
 - **Feste Monatsarbeitszeit (Minijob-Modus, #377 Baustein 2b):** für MA mit aktiviertem Modus gilt statt 18.4/18.5 ein **festes** Monats-Soll (= vereinbarte Monatsarbeitszeit, kalendertag-pro-rata bei Ein-/Austritt); Feiertag/Urlaub/bezahlte Freistellung auf einem geplanten Tag schreiben die geplanten Stunden dem Ist gut, unbezahlte Fehltage mindern stattdessen das feste Soll. Details, Voraussetzungen und die bekannte Fehlmonat-Grenze in [Abschnitt 13 → „Feste Monatsarbeitszeit"](#13-einstellungen).
 

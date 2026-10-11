@@ -213,6 +213,31 @@ group_code() {
   # Spaltenkopf der Jahresübersicht (XLSX/ODS), den „Berichte" nennt.
   need_code '"Stundenänderungen",'
   need_code "Arbeitszeit-Änderung ab "
+  # Task 4 (Admin-Handbuch übrige Abschnitte): Exportspalten (#498 → „Zeiteinträge"),
+  # Antragsprüfung (Stempelzeile, Abweichung, Aktuell-Kasten), Quellen des
+  # Protokolls, Puffertext (Settings), Anwesenheits-Hinweise (presence_service,
+  # f-Strings nur als zusammenhängende Stücke), 24-Wochen-Auswertung (Reports).
+  need_code '"Unterbrechung (Min)", "Zeiteinträge"'
+  need_code "Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet."
+  need_code "Zeiten weichen von den Stempeln ab (gestempelt "
+  need_code " · nicht angerechnet aktuell "
+  need_code "Nicht angerechnet (Lücke): "
+  need_code 'AUDIT_SOURCE = "wh_reclamp"'
+  need_code 'CREDIT_OVERRIDE_SOURCE = "credit_override"'
+  need_code "zwischen zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet."
+  need_code "Einträge ändern sich durch das Speichern dieser Einstellung allein nicht."
+  need_code "eine Ruhepause ist nicht erfasst ("
+  need_code "Die Lücke gilt nur dann als Pause, wenn sie tatsächlich frei war."
+  need_code "(abzüglich erfasster Pausen) – mehr als 10 Stunden. Angerechnet werden "
+  need_code " h; die Höchstgrenze gilt für die tatsächliche Arbeitszeit."
+  need_code "24-Wochen-Durchschnitt §3 ArbZG"
+  need_code "Ø angerechnet / Tag"
+  need_code "Anwesenheit laut Stempel (Ø / Tag)"
+  need_code "Anwesenheit laut Stempel gesamt"
+  need_code "Wochen &gt; 48 h laut Stempel"
+  need_code "laut Stempel Ø &gt; 8 h"
+  need_code "keine Soll-Arbeitstage"
+  need_code "Anrechnung später neu berechnet wird, und die Grenze gilt für die tatsächliche Arbeitszeit."
 }
 
 group_mirror() {
@@ -342,6 +367,57 @@ group_admin_aendern() {
   # ohne Rücksetzung tritt in der Oberfläche praktisch nicht auf.
   forbid "$f" 'Ist keine Rücksetzung möglich'
   need "$f" 'Eine Änderung, die erst nach heute beginnt, verkürzt beim Löschen nichts'
+}
+
+group_admin_rest() {
+  local f=docs/handbuch/HANDBUCH-ADMIN.md
+  need "$f" '**Version 2.9 | Stand: Oktober 2026 (für PraxisZeit 1.20.0)**'
+  need "$f" 'Rechenstand der Software (Version 1.20.0)'
+  need "$f" 'Netto-Spalte; unter der Uhrzeit steht bei gekappten Einträgen'
+  need "$f" 'Unterbrechung (Min)** und **Zeiteinträge**'
+  need "$f" 'Nicht angerechnet (Min)** (letzte Spalte, ab 1.20.0)'
+  need "$f" 'Von 07:45, Bis 18:15, Netto 8,00, Nicht angerechnet 240'
+  need "$f" 'inkl. Unterbrechung, Zeiteinträge und Nicht angerechnet'
+  need "$f" 'Genehmigen und anerkennen'
+  need "$f" 'Ohne Anerkennen genehmigen'
+  need "$f" 'Alle genehmigen'
+  need "$f" 'Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.'
+  need "$f" '| **Anerkennungen** |'
+  need "$f" 'Neukappung (Arbeitszeit-Änderung)'
+  need "$f" 'Eine Änderung des Puffers wirkt auf neue Einträge. Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn, auch wenn er später bearbeitet wird.'
+  need "$f" 'Bereits gespeicherte Einträge ändern sich durch das Speichern dieser Einstellung allein nicht.'
+  need "$f" 'Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt'
+  need "$f" 'Anwesenheit laut Stempel'
+  need "$f" '| **Pause in der Lücke** |'
+  need "$f" '**Arbeitszeit-Blöcke – weitere Rechtsgrundlagen:**'
+  need "$f" '**Nicht angerechnete Zeit prüfen**'
+  need "$f" 'Ist = (Ende − Beginn) − Pause − nicht angerechnete Zeit zwischen den Arbeitszeit-Blöcken'
+  need "$f" 'Pause 30 Min. → 6,50 h'
+  forbid "$f" '#6-benutzer-verwalten'
+  forbid "$f" 'Version 2.8 | Stand'
+  forbid "$f" 'Ist ein **Soll-Arbeitszeit-Fenster** hinterlegt'
+  forbid "$f" 'auf das Fenster gekappte Zeit'
+  forbid "$f" 'Kappung auf das Arbeitszeit-Fenster'
+  forbid "$f" '**Arbeitsblöcke** die einzelnen Blöcke'
+  forbid "$f" 'inkl. Unterbrechung und Arbeitsblöcke'
+  # Über den Plan hinaus (Review Focus 3, Code maßgeblich): auch die PDF-Zeile
+  # nennt gestempelte Einträge nicht „Blöcke"; Spalte „Arbeitsblöcke" gibt es nicht mehr.
+  need "$f" 'Im **PDF** stehen die Einträge in „Von"/„Bis" untereinander'
+  forbid "$f" 'Im **PDF** stehen die Blöcke'
+  forbid "$f" 'die Spalte „Arbeitsblöcke"'
+  forbid "$f" 'wenn ein Arbeitszeit-Fenster hinterlegt ist'
+  # Antragsprüfung (Gesamtreview PR2, Fund 2): „Genehmigen und anerkennen"
+  # rechnet die BEANTRAGTEN Zeiten ungekappt an; die Prüfung zeigt die Stempel.
+  need "$f" 'Zeiten weichen von den Stempeln ab (gestempelt 08:00–18:00)'
+  need "$f" 'nicht angerechnet aktuell 2:30 h'
+  # XLS-Vorschau (PR2 Task 12 + Review): Netto vom Server, Anwesenheitshinweise,
+  # Konfliktzeile kann beide Kennzeichen tragen.
+  need "$f" 'Eine Konfliktzeile kann beide Kennzeichen tragen'
+  # 24-Wochen-Auswertung (PR2 Task 9 + Reviews): bis 1.19.3 nicht dokumentiert.
+  need "$f" '### §3 ArbZG – 24-Wochen-Durchschnitt'
+  need "$f" '„laut Stempel Ø > 8 h"'
+  need "$f" '„keine Soll-Arbeitstage"'
+  need "$f" 'die Grenze gilt für die tatsächliche Arbeitszeit'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
