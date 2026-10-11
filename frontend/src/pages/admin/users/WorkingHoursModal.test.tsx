@@ -1698,4 +1698,55 @@ describe('Spec 2026-10-08 (PR3): Verkürzungs-Kasten', () => {
     await screen.findByRole('status');
     expect(screen.queryByRole('region', { name: 'Verkürzung' })).not.toBeInTheDocument();
   });
+
+  // Review Task 19 (Fund 4, Release-Review 1.17.0): Option 1 sperrt „Speichern",
+  // bis IHRE Vorschau da ist. Ihr Datum ist mindestens heute — die Box darf
+  // deshalb nicht an `isRetroactive` hängen, sonst steht der gesperrte Knopf
+  // ohne Begründung da.
+  it('Option 1: lädt ihre Vorschau, steht „Prüfe Auswirkungen…" in der Box', async () => {
+    let releaseLossless: (value: unknown) => void = () => {};
+    getMock.mockImplementation((url: string, config?: { params?: { effective_from?: string } }) => {
+      if (String(url).includes('/preview')) {
+        if (config?.params?.effective_from === '2026-06-01') return Promise.resolve(previewResponse(SHORTENING));
+        return new Promise((resolve) => { releaseLossless = resolve; });
+      }
+      return Promise.resolve(historyResponse([]));
+    });
+    const region = await enterShortening();
+    expect(within(region).getByRole('radio', { name: /^Ab heute \(26\.07\.2026\)/ })).toBeChecked();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Prüfe Auswirkungen…'));
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+    releaseLossless(previewResponse({ ...QUIET, is_shortening: false, shortening_reasons: [] }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Speichern/ })).not.toBeDisabled());
+  });
+
+  it('Option 1: scheitert ihre Vorschau, erklären Fehler und „Erneut prüfen" die Sperre', async () => {
+    let failLossless = true;
+    getMock.mockImplementation((url: string, config?: { params?: { effective_from?: string } }) => {
+      if (String(url).includes('/preview')) {
+        const date = config?.params?.effective_from;
+        if (date === '2026-06-01') return Promise.resolve(previewResponse(SHORTENING));
+        if (date === '2026-07-26' && failLossless) {
+          return Promise.reject({ response: { status: 500, data: { detail: 'Vorschau nicht erreichbar' } } });
+        }
+        return Promise.resolve(previewResponse({ ...QUIET, is_shortening: false, shortening_reasons: [] }));
+      }
+      return Promise.resolve(historyResponse([]));
+    });
+    const region = await enterShortening();
+    expect(within(region).getByRole('radio', { name: /^Ab heute \(26\.07\.2026\)/ })).toBeChecked();
+    const submit = screen.getByRole('button', { name: /Speichern/ });
+    const status = await screen.findByRole('status');
+    await waitFor(() => expect(status).toHaveTextContent('Vorschau nicht erreichbar'));
+    expect(submit).toBeDisabled();
+
+    failLossless = false;
+    fireEvent.click(within(status).getByRole('button', { name: 'Erneut prüfen' }));
+    await flushDebounce();
+    await waitFor(() => expect(submit).not.toBeDisabled());
+    expect(screen.queryByText('Vorschau nicht erreichbar')).not.toBeInTheDocument();
+    fireEvent.click(submit);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls.at(-1)![1]).toMatchObject({ effective_from: '2026-07-26', weekly_hours: 20 });
+  });
 });

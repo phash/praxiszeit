@@ -511,7 +511,12 @@ export default function WorkingHoursModal({
   const affectsBalance = !!shown && !blockedReason && (overtimeDelta !== 0 || vacationDelta !== 0);
   // 9.4 ERGÄNZT die Auslöser aus 1.17.0/#431, nimmt keinen weg.
   const needsConfirmation = affectsEntries || affectsBookedAbsences || affectsBalance;
-  const showImpactBox = isRetroactive || needsConfirmation || !!blockedReason;
+  // Review Task 19 (Fund 4): Option 1 sperrt „Speichern", bis ihre eigene
+  // Vorschau da ist (`saveDisabled`). Ihr Datum ist mindestens heute, also hängt
+  // die Box hier nicht an `isRetroactive` — ohne den letzten Ausdruck stünde der
+  // gesperrte Knopf ohne „Prüfe Auswirkungen…" bzw. Fehler und „Erneut prüfen" da.
+  const showImpactBox = isRetroactive || needsConfirmation || !!blockedReason
+    || (useLossless && (shownLoading || !!shownError));
 
   // #431: Was der Admin eingegeben hat — als Snapshot. Im Block-Modus über
   // dieselbe Ableitung wie der Server (`deriveTargets`, 4.1).
