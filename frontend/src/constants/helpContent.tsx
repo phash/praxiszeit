@@ -45,8 +45,8 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Eintrag erstellen</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
-            <li>Klicken Sie auf <span className="font-medium">„Hinzufügen"</span></li>
-            <li>Datum, Start- und Endzeit eintragen</li>
+            <li>Klicken Sie auf <span className="font-medium">„+ Neuer Eintrag"</span> (nur für heute; einen vergangenen Tag beantragen Sie über <span className="font-medium">„Antrag"</span>)</li>
+            <li>Start- und Endzeit eintragen</li>
             <li>Pause in Minuten eingeben (Pflicht!)</li>
             <li>Optional: Notiz hinzufügen</li>
             <li>Auf <span className="font-medium">„Speichern"</span> klicken</li>
@@ -65,6 +65,14 @@ export const helpContent: Record<string, HelpEntry> = {
             <p className="text-gray-600">🟡 <span className="font-medium">Warnung</span> ab 8 Std. Nettoarbeitszeit</p>
             <p className="text-gray-600">🔴 <span className="font-medium">Gesperrt</span> ab 10 Std. Nettoarbeitszeit</p>
           </div>
+        </section>
+        <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Nicht angerechnete Zeit</h3>
+          <p className="text-sm text-gray-600">Zeit vor, nach oder zwischen Ihren Arbeitszeit-Blöcken steht unter dem Eintrag als „nicht angerechnet". Haben Sie dort gearbeitet: am Eintrag <span className="font-medium">„Anrechnung beantragen"</span> (für heute erst nach Arbeitsende).</p>
+        </section>
+        <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Datum ändern</h3>
+          <p className="text-sm text-gray-600">Beim Bearbeiten ist das Datum gesperrt. Gehört die Zeit zu einem anderen Tag: Eintrag löschen und über <span className="font-medium">„Antrag"</span> einen Änderungsantrag für diesen Tag stellen.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Wochenansicht</h3>
@@ -162,7 +170,7 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Persönliche Daten</h3>
-          <p className="text-sm text-gray-600">Persönliche Daten (Name, Wochenstunden) können nur vom Admin geändert werden.</p>
+          <p className="text-sm text-gray-600">Persönliche Daten (Name, Wochenstunden) können nur vom Admin geändert werden. Ihre Arbeitszeit-Blöcke und deren Verlauf zeigt die Karte „Meine Arbeitszeit".</p>
         </section>
       </div>
     ),
@@ -202,16 +210,16 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Neuen Mitarbeiter anlegen</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
-            <li>Auf <span className="font-medium">„Neuer Benutzer"</span> klicken</li>
+            <li>Auf <span className="font-medium">„Neue:r Mitarbeiter:in"</span> klicken</li>
             <li>Benutzername, Name, Passwort eingeben</li>
-            <li>Wochenstunden, Arbeitstage, Urlaubstage festlegen</li>
+            <li>Wochenstunden/Arbeitstage, Tagesplan oder Arbeitszeit-Blöcke sowie Urlaubstage festlegen</li>
             <li>Rolle: Mitarbeiter oder Admin</li>
             <li>Speichern</li>
           </ol>
         </section>
         <section>
-          <h3 className="font-semibold text-gray-800 mb-2">Stundenänderung (Teilzeit)</h3>
-          <p className="text-sm text-gray-600">Benutzer bearbeiten → Neue Wochenstunden + Wirkungsdatum eintragen. Historische Salden bleiben korrekt erhalten.</p>
+          <h3 className="font-semibold text-gray-800 mb-2">Arbeitszeit ändern</h3>
+          <p className="text-sm text-gray-600">Benutzer bearbeiten → <span className="font-medium">„Arbeitszeit anpassen…"</span> → Gültig ab + Modus (Gleichmäßig / Nach Tagen / Nach Arbeitsblöcken) → Auswirkung prüfen → Speichern. Rückwirkende Verkürzungen nur mit Grund und Bestätigung; historische Salden bleiben korrekt. Löschen nur an der jüngsten Zeile des Verlaufs.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Mitarbeiter deaktivieren</h3>
@@ -221,7 +229,7 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">ArbZG-Ausnahme (§18)</h3>
-          <p className="text-sm text-gray-600">Für leitende Angestellte kann die Checkbox „ArbZG-Ausnahme" aktiviert werden – alle Tages- und Wochengrenzwarnungen werden dann deaktiviert.</p>
+          <p className="text-sm text-gray-600">Für leitende Angestellte kann die Checkbox „ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende Angestellte)" aktiviert werden – alle Tages- und Wochengrenzwarnungen werden dann deaktiviert. Das ist unabhängig von „Stundenzählung aktiv".</p>
         </section>
       </div>
     ),
@@ -238,6 +246,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li><span className="font-medium text-gray-700">Jahresreport Classic:</span> 12 Monate kompakt, schnell (~2 Sek.).</li>
             <li><span className="font-medium text-gray-700">Jahresreport Detailliert:</span> 365 Tage pro MA, für Steuerberater (~5 Sek.).</li>
           </ul>
+          <p className="mt-2 text-sm text-gray-600">Letzte Spalte aller Formate: „Nicht angerechnet (Min)" – gestempelte, nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken. „Netto" ist die angerechnete Zeit.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">ArbZG-Berichte</h3>
@@ -245,6 +254,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>📋 <span className="font-medium">Ruhezeitverstöße (§5):</span> MA unter 11h Ruhezeit</li>
             <li>📋 <span className="font-medium">Sonntagsarbeit (§11):</span> Freie Sonntage + Ersatzruhetage</li>
             <li>📋 <span className="font-medium">Nachtarbeit (§6):</span> Nachtarbeitnehmer-Tracking</li>
+            <li>📋 <span className="font-medium">24-Wochen-Durchschnitt (§3):</span> Ø angerechnet / Tag und Anwesenheit laut Stempel</li>
           </ul>
         </section>
         <section>
@@ -273,6 +283,10 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Nach Genehmigung</h3>
           <p className="text-sm text-gray-600">Der Zeiteintrag wird sofort aktualisiert. Der MA sieht den neuen Status in seinem Bereich „Korrekturanträge".</p>
+        </section>
+        <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Anrechnung beantragt</h3>
+          <p className="text-sm text-gray-600">Anträge mit dem Kennzeichen „Anrechnung beantragt": „Genehmigen und anerkennen" (die beantragten Zeiten – vorbelegt die Stempel – zählen ungekappt, dauerhaft) oder „Ohne Anerkennen genehmigen" (nur die beantragten Zeiten, an den Arbeitszeit-Blöcken gekappt). Für andere Anträge zu Einträgen mit nicht angerechneter Zeit gibt es neben „Genehmigen" zusätzlich „Genehmigen und anerkennen". Die Sammel-Genehmigung fragt bei Anrechnungsanträgen nach („Alle genehmigen").</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Bei Ablehnung</h3>

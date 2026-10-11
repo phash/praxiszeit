@@ -416,6 +416,7 @@ export default function Reports() {
             <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
               <li>Ein Sheet pro Mitarbeiter:in</li>
               <li>Tägliche Zeiteinträge (Datum, Von, Bis, Pause, Netto)</li>
+              <li>Letzte Spalte „Nicht angerechnet (Min)": gestempelte, nicht angerechnete Zeit (vor, nach und zwischen den Arbeitszeit-Blöcken)</li>
               <li>Soll-Stunden pro Tag</li>
               <li>Markierung von Wochenenden, Feiertagen und Abwesenheiten</li>
               <li>Monatszusammenfassung (Soll, Ist, Saldo, Überstunden kumuliert, Urlaub)</li>
