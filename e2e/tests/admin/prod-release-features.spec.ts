@@ -8,6 +8,11 @@ import { purgeUser } from '../../fixtures/test-data.fixture';
  *
  * Each test drives the real admin UI and verifies persistence through the API,
  * then cleans up after itself.
+ *
+ * Der Test zum mandantenweiten Puffer `work_window_grace_minutes` (#201) lebt in
+ * grace-setting.spec.ts mit eigenem Playwright-Projekt: er schaltet den Wert
+ * kurzzeitig um, und work-blocks.spec.ts rechnet mit dem Puffer 15 (Review
+ * Task 22, Muster #451).
  */
 test.describe('Prod-Release-Features (Admin UI)', () => {
   async function openNewUserForm(adminPage: any) {
@@ -105,45 +110,6 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
       await expect(row.getByTitle('Keine Stundenzählung')).toBeVisible();
     } finally {
       await cleanup(adminApi, username);
-    }
-  });
-
-  test('#201: Soll-Fenster-Puffer lässt sich in den Einstellungen speichern', async ({ adminPage, adminApi }) => {
-    // Originalwert merken, um ihn am Ende wiederherzustellen
-    let original = '15';
-    try {
-      const settings = await adminApi.get('/admin/settings');
-      const grace = settings.find((s: any) => s.key === 'work_window_grace_minutes');
-      if (grace?.value) original = String(grace.value);
-    } catch { /* default 15 */ }
-
-    const newValue = original === '20' ? '25' : '20';
-    try {
-      await adminPage.goto('/admin/settings');
-      await expect(adminPage.getByRole('heading', { name: 'Einstellungen' })).toBeVisible();
-
-      const input = adminPage.locator('#grace-minutes');
-      await expect(input).toBeVisible();
-      await input.fill(newValue);
-      // Scope to the "Soll-Arbeitszeit-Fenster" section — every settings card
-      // has its own "Speichern" button.
-      const graceSection = adminPage.locator('div.bg-white', {
-        has: adminPage.getByRole('heading', { name: 'Soll-Arbeitszeit-Fenster' }),
-      });
-      await graceSection.getByRole('button', { name: 'Speichern' }).click();
-
-      await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: 'Puffer gespeichert' })
-      ).toBeVisible({ timeout: 10000 });
-
-      const after = await adminApi.get('/admin/settings');
-      const grace = after.find((s: any) => s.key === 'work_window_grace_minutes');
-      expect(String(grace.value)).toBe(newValue);
-    } finally {
-      // Originalwert zurückschreiben
-      try {
-        await adminApi.put('/admin/settings/work_window_grace_minutes', { value: original });
-      } catch { /* best effort */ }
     }
   });
 });

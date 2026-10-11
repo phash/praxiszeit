@@ -9,6 +9,14 @@ import type { Browser, Page } from '@playwright/test';
 // Je Test EIGENE Mitarbeitende (`workers: 2`): eine Neuberechnung kappt alle
 // Einträge der Person im Wirkungsbereich — eine geteilte Testperson ließe einen
 // parallel laufenden Test fremde Einträge umschreiben.
+//
+// Die erwarteten Werte der Tests 2 und 7 („1:30 h zwischen den Blöcken nicht
+// angerechnet", „Nicht angerechnet (Lücke): 2:30 h") setzen den mandantenweiten
+// Puffer `work_window_grace_minutes` = 15 voraus: Anlegen und Neukappung lesen
+// den AKTUELLEN Wert. Der einzige Test, der ihn umschaltet (grace-setting.spec.ts),
+// läuft deshalb in einem eigenen Playwright-Projekt erst nach "chromium"
+// (playwright.config.ts). `expectGrace15` macht einen von einem abgebrochenen
+// Lauf zurückgelassenen anderen Wert als Vorbedingung sichtbar.
 type Day = { blocks: { start: string; end: string }[]; pause_minutes: number };
 const day = (spans: [string, string][], pause = 0): Day => ({
   blocks: spans.map(([start, end]) => ({ start, end })), pause_minutes: pause,
@@ -18,6 +26,12 @@ const SPLIT = week(day([['08:00', '12:00'], ['15:00', '18:00']]));      // Tages
 const MORNING = week(day([['08:00', '12:00']]));                         // Tagessoll 4:00
 
 const deDate = (iso: string) => iso.split('-').reverse().join('.');
+
+async function expectGrace15(adminApi: { get: (path: string) => Promise<any> }) {
+  const settings = await adminApi.get('/admin/settings');
+  const grace = settings.find((s: any) => s.key === 'work_window_grace_minutes');
+  expect(String(grace?.value ?? '15'), 'Vorbedingung: Puffer work_window_grace_minutes = 15').toBe('15');
+}
 
 async function employeeWithBlocks(createUser: (d: Record<string, unknown>) => Promise<any>, blocks: Day[], tag: string) {
   // Nur Ziffern im eindeutigen Teil: der Nachname landet in einer Regex
@@ -105,8 +119,9 @@ test.describe('Arbeitszeit-Blöcke (Spec 2026-10-08)', () => {
   });
 
   test('2: rückwirkende Verlängerung — Vorschau nennt den Eintrag, Journal zeigt neuen Wert und Lückenzeile', async ({
-    adminPage, createUser, createTimeEntry,
+    adminPage, adminApi, createUser, createTimeEntry,
   }) => {
+    await expectGrace15(adminApi);
     const user = await employeeWithBlocks(createUser, SPLIT, 'Verl');
     const workday = weekdayFromNow(-14);
     // 11:00–16:00 liegt über der Lücke (12:15–14:45 nach Puffer) → 2:30 h angerechnet.
@@ -266,6 +281,7 @@ test.describe('Arbeitszeit-Blöcke (Spec 2026-10-08)', () => {
   test('7: Mitarbeiterin beantragt die Anrechnung, Verwaltung genehmigt und erkennt an (P21)', async ({
     browser, adminPage, adminApi, createUser, createTimeEntry,
   }) => {
+    await expectGrace15(adminApi);
     const user = await employeeWithBlocks(createUser, SPLIT, 'Antrag');
     const workday = weekdayFromNow(-7);  // Anträge gibt es nur für vergangene Tage
     const entry = await createTimeEntry(user.id, { date: workday, start_time: '08:00', end_time: '18:00', break_minutes: 0 });

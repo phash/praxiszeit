@@ -39,6 +39,16 @@ const SHIFT_PLANNING_FLAG_OFF_SPEC = /admin[\\/]shift-planning-flag-off\.spec\.t
 const SHIFT_PLANNING_SPECS = /admin[\\/]shift-planning(?!-flag-off)[^\\/]*\.spec\.ts$/;
 const ALL_SHIFT_PLANNING_SPECS = /admin[\\/]shift-planning[^\\/]*\.spec\.ts$/;
 
+// Review Task 22 (Arbeitszeit-Blöcke), dasselbe Muster für den mandantenweiten
+// Puffer `work_window_grace_minutes`: grace-setting.spec.ts schaltet ihn für
+// einige Sekunden um, work-blocks.spec.ts rechnet seine erwarteten Werte mit
+// dem Puffer 15 (Anlegen und Neukappung lesen den AKTUELLEN Mandantenwert).
+// Im selben Projekt liefen beide Dateien bei `workers: 2` gleichzeitig — die
+// Puffer-Spec startet deshalb erst, wenn das ganze Projekt "chromium" fertig
+// ist. Eine künftige Spec, die einen mandantenweiten Wert schaltet, von dem
+// andere Specs abhängen, gehört ebenfalls in ein solches Folgeprojekt.
+const GRACE_SETTING_SPEC = /admin[\\/]grace-setting\.spec\.ts$/;
+
 export default defineConfig({
   testDir: './tests',
   timeout: 60_000,
@@ -65,7 +75,7 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { browserName: 'chromium' },
-      testIgnore: ALL_SHIFT_PLANNING_SPECS,
+      testIgnore: [ALL_SHIFT_PLANNING_SPECS, GRACE_SETTING_SPEC],
     },
     {
       name: 'shift-planning',
@@ -80,6 +90,16 @@ export default defineConfig({
       // Specs (Projekt "shift-planning") vollständig durchgelaufen sind —
       // siehe die Abwägung oben.
       dependencies: ['shift-planning'],
+    },
+    {
+      name: 'grace-setting',
+      use: { browserName: 'chromium' },
+      testMatch: GRACE_SETTING_SPEC,
+      // Startet garantiert erst, nachdem work-blocks.spec.ts (und der Rest des
+      // Projekts "chromium") durchgelaufen ist — siehe GRACE_SETTING_SPEC oben.
+      // Nebenwirkung wie beim Flag-Aus-Test: ein Fehlschlag in "chromium"
+      // lässt diesen Test als "did not run" stehen.
+      dependencies: ['chromium'],
     },
   ],
 });
