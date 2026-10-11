@@ -1308,4 +1308,27 @@ describe('Review Task 18b', () => {
     fireEvent.click(within(box).getByRole('button', { name: 'Fenster entfernen' }));
     expect(box).toHaveTextContent('Das Fenster wird ab 26.07.2026 entfernt; danach wird nicht mehr gekappt.');
   });
+
+  it('Wirkungsdatum heute, nur Zeiteinträge betroffen: kein Satz über umgeschriebene Abwesenheiten', async () => {
+    mockPreview({ ...QUIET, affected_time_entries: 2, affected_absences: 0 });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
+
+    const box = await screen.findByRole('status');
+    expect(within(box).getByText(/Betrifft bereits erfasste Zeiteinträge/)).toBeInTheDocument();
+    expect(screen.queryByText(/Abwesenheiten werden trotzdem umgeschrieben/)).not.toBeInTheDocument();
+  });
+
+  it('blocked_reason ab heute: kein Satz über umgeschriebene Abwesenheiten', async () => {
+    mockPreview({ ...QUIET, blocked_reason: 'Eine Stundenänderung für den 26.07.2026 existiert bereits' });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
+
+    await screen.findByText('Eine Stundenänderung für den 26.07.2026 existiert bereits');
+    expect(screen.queryByText(/Abwesenheiten werden trotzdem umgeschrieben/)).not.toBeInTheDocument();
+  });
 });

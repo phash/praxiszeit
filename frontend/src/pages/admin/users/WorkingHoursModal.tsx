@@ -546,8 +546,11 @@ export default function WorkingHoursModal({
   // Ein zukunftsdatierter Wechsel liefert oft „12:30 → 12:30" — korrekt (der
   // Saldo-Stichtag #313 liegt vor dem Wirkungsfenster), darf aber nicht als
   // „keine Auswirkung" gelesen werden, während Abwesenheiten umgeschrieben werden.
+  // Nur dann: seit 9.4 öffnen auch neu gekappte Einträge (oder ein
+  // `blocked_reason`) den Kasten — ohne umgeschriebene Abwesenheit widerspräche
+  // der Satz der Zeile „0 Abwesenheit(en) betroffen." direkt darüber.
   const balanceUnchangedAhead =
-    !!shown && !isRetroactive && overtimeDelta === 0 && vacationDelta === 0;
+    !!shown && !isRetroactive && affectsBookedAbsences && overtimeDelta === 0 && vacationDelta === 0;
   const displayBlocksLine = blocksLine(displaySchedule.blocks, trackHours);
   const planNotices = preview?.block_break_notices ?? [];
 
