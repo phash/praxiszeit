@@ -15,6 +15,8 @@ export const JARBSCHG_HINT =
   'Für Jugendliche gelten strengere Pausen- und Schichtzeitregeln (§§ 11, 12 JArbSchG); PraxisZeit prüft diese nicht.';
 export const LEGACY_BOX_TITLE = 'Arbeitszeit-Fenster (Altbestand, nur Kappung)';
 export const BLOCKS_WITHOUT_EFFECT = 'Arbeitszeit-Blöcke gespeichert, ohne Wirkung (keine Stundenzählung)';
+/** Spec 4.4: ein Altfenster heißt auch ohne Stundenzählung nie „Blöcke" (Dialog + UserForm). */
+export const LEGACY_WITHOUT_EFFECT = 'Arbeitszeit-Fenster aus dem Altbestand gespeichert, ohne Wirkung (keine Stundenzählung)';
 /** P24: Moduswechsel weg von Blöcken; `date` bereits als TT.MM.JJJJ (`formatDate`). */
 export const modeSwitchHint = (date: string) =>
   `Die Arbeitszeit-Blöcke enden mit dieser Änderung; ab ${date} wird nicht mehr gekappt.`;

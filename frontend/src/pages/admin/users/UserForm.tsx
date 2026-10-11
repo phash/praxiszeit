@@ -9,6 +9,7 @@ import { getErrorMessage } from '../../../utils/errorMessage';
 import { parseHours, deHoursExact, formatDayPlan } from '../../../utils/formatters';
 import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../../../utils/calendarColors';
 import { formatWeekBlocks, isLegacyWeek } from '../../../utils/workBlocks';
+import { BLOCKS_WITHOUT_EFFECT, LEGACY_WITHOUT_EFFECT } from './workingHoursTexts';
 
 import type { User } from '../../../types/user';
 import type { WeekBlocks } from '../../../types/workBlocks';
@@ -936,12 +937,10 @@ export default function UserForm({
               {/* E63: ohne Stundenzählung wirken weder Soll noch Kappung — das
                   Backend kappt dann nie (`clamp_applies`/`_clamp_core`), 073
                   übernimmt Altfenster aber unabhängig von track_hours (P2).
-                  Wortlaut wie im Dialog (Spec 12.1). */}
+                  Wortlaut aus workingHoursTexts, wie im Dialog (Spec 12.1/4.4). */}
               {workBlocksText && !formData.track_hours && (
                 <p className="text-xs text-gray-500 mt-1">
-                  {isLegacyWeek(shownBlocks)
-                    ? 'Arbeitszeit-Fenster aus dem Altbestand gespeichert, ohne Wirkung (keine Stundenzählung).'
-                    : 'Arbeitszeit-Blöcke gespeichert, ohne Wirkung (keine Stundenzählung).'}
+                  {`${isLegacyWeek(shownBlocks) ? LEGACY_WITHOUT_EFFECT : BLOCKS_WITHOUT_EFFECT}.`}
                 </p>
               )}
               {workBlocksText && formData.track_hours && isLegacyWeek(shownBlocks) && (

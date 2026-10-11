@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGAL_HINT, OTHER_CONFIRM, OTHER_WARNING,
+  BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT, OTHER_CONFIRM,
+  OTHER_WARNING,
   REASON_HELP, REASON_OPTIONS, SKIP_LABELS, closedYearMessage, formatDate, hm, modeSwitchHint, monthLabel,
   reasonComplete, reasonPayload, savedMessage, shortDate, signedDays, signedHm,
 } from './workingHoursTexts';
@@ -51,6 +52,9 @@ describe('workingHoursTexts', () => {
     );
     expect(LEGACY_BOX_TITLE).toBe('Arbeitszeit-Fenster (Altbestand, nur Kappung)');
     expect(BLOCKS_WITHOUT_EFFECT).toBe('Arbeitszeit-Blöcke gespeichert, ohne Wirkung (keine Stundenzählung)');
+    expect(LEGACY_WITHOUT_EFFECT).toBe(
+      'Arbeitszeit-Fenster aus dem Altbestand gespeichert, ohne Wirkung (keine Stundenzählung)',
+    );
     expect(modeSwitchHint('01.11.2026')).toBe(
       'Die Arbeitszeit-Blöcke enden mit dieser Änderung; ab 01.11.2026 wird nicht mehr gekappt.',
     );

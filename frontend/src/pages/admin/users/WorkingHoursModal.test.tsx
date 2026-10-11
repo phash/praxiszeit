@@ -1310,6 +1310,19 @@ describe('Review Task 18b', () => {
     expect(box).not.toHaveTextContent(/nicht mehr gekappt/);
   });
 
+  it('track_hours=false: Kopf- und Verlaufszeile nennen das Altfenster nicht „Blöcke" (Spec 4.4)', async () => {
+    // Derselbe Datensatz heißt im Kasten „Arbeitszeit-Fenster (Altbestand …)" —
+    // Kopf und Verlauf dürfen ihn nicht zu „Arbeitszeit-Blöcken" machen
+    // (Wortlaut wie UserForm, E63).
+    mockHistory([LEGACY_ROW], QUIET);
+    renderModal({ currentBlocks: LEGACY_BLOCKS, trackHours: false });
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    expect(screen.getAllByText(
+      /^Arbeitszeit-Fenster aus dem Altbestand gespeichert, ohne Wirkung \(keine Stundenzählung\): Mo 07:37/,
+    )).toHaveLength(2); // Kopfzeile + Verlaufszeile
+    expect(screen.queryByText(/^Arbeitszeit-Blöcke gespeichert/)).not.toBeInTheDocument();
+  });
+
   it('mit Stundenzählung bleiben die Kappungs-Texte des Altfensters', async () => {
     mockHistory([LEGACY_ROW], QUIET);
     renderModal({ currentBlocks: LEGACY_BLOCKS });

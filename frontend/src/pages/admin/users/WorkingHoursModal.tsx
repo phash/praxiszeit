@@ -16,7 +16,8 @@ import type { WeekBlocks } from '../../../types/workBlocks';
 import type { WorkingHoursChange, WorkingHoursChangePreview } from './workingHoursTypes';
 import WhImpactBox from './WhImpactBox';
 import {
-  BLOCKS_WITHOUT_EFFECT, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGAL_HINT, formatDate, modeSwitchHint, savedMessage,
+  BLOCKS_WITHOUT_EFFECT, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT, formatDate,
+  modeSwitchHint, savedMessage,
 } from './workingHoursTexts';
 
 interface WorkingHoursModalProps {
@@ -162,8 +163,11 @@ function describeSchedule(s: ScheduleSnapshot): string {
 function blocksLine(week: WeekBlocks | null, trackHours: boolean): string | null {
   const text = formatBlocksText(week);
   if (!text) return null;
-  if (!trackHours) return `${BLOCKS_WITHOUT_EFFECT}: ${text}`;
-  return hasLegacyBlocks(week) ? `${LEGACY_BOX_TITLE}: ${text}` : `Arbeitszeit-Blöcke: ${text}`;
+  // Ein Altfenster bleibt auch ohne Stundenzählung ein Fenster, nie „Blöcke"
+  // (Spec 4.4) — sonst trüge derselbe Datensatz im Dialog zwei Namen.
+  const legacy = hasLegacyBlocks(week);
+  if (!trackHours) return `${legacy ? LEGACY_WITHOUT_EFFECT : BLOCKS_WITHOUT_EFFECT}: ${text}`;
+  return legacy ? `${LEGACY_BOX_TITLE}: ${text}` : `Arbeitszeit-Blöcke: ${text}`;
 }
 
 /** Kanonische Vergleichsform der Blöcke (Schlüsselreihenfolge egal). */
