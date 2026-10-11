@@ -1656,6 +1656,14 @@ describe('Löschen einer Arbeitszeit-Änderung (Spec 9.7/P13)', () => {
     { id: 'c2', effective_from: '2026-06-01', weekly_hours: 30 },
     { id: 'c1', effective_from: '2026-01-01', weekly_hours: 40 },
   ];
+  // Drei Zeilen: erst hier unterscheidet sich „die jüngste Zeile" von „alle
+  // außer der frühesten" (bei zwei Zeilen ist es dieselbe Menge).
+  const THREE_ROWS = [
+    { id: 'c3', effective_from: '2026-07-01', weekly_hours: 35 },
+    ...TWO_ROWS,
+  ];
+  // Die Verlaufszeile um einen ihrer Texte: Text → Inhaltsspalte → Zeile.
+  const historyRow = (text: RegExp) => screen.getByText(text).parentElement!.parentElement!;
   const RESET_BODY = {
     effective_from: '2026-07-27', reset_of_change_id: 'c2', use_daily_schedule: false, weekly_hours: 40,
     work_days_per_week: 5,
@@ -1668,6 +1676,12 @@ describe('Löschen einer Arbeitszeit-Änderung (Spec 9.7/P13)', () => {
 
   async function openDelete(rows: Array<HistoryRow> = TWO_ROWS) {
     mockHistory(rows, QUIET);
+    return openDeleteKeepingMocks();
+  }
+
+  // Wie `openDelete`, aber mit dem `getMock` des Tests (z. B. ein Verlauf, der
+  // sich nach dem Speichern ändert).
+  async function openDeleteKeepingMocks() {
     renderModal({ currentWeeklyHours: 30 });
     await screen.findByText(/Ab 01\.06\.2026 bis heute/);
     fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
@@ -1675,11 +1689,92 @@ describe('Löschen einer Arbeitszeit-Änderung (Spec 9.7/P13)', () => {
   }
 
   it('[Löschen] steht nur an der jüngsten Zeile', async () => {
-    mockHistory(TWO_ROWS, QUIET);
-    renderModal({ currentWeeklyHours: 30 });
+    mockHistory(THREE_ROWS, QUIET);
+    renderModal({ currentWeeklyHours: 35 });
     await screen.findByText(/Ab 01\.01\.2026 bis 31\.05\.2026/);
-    expect(screen.getAllByRole('button', { name: 'Löschen' })).toHaveLength(1);
+    const trash = screen.getAllByRole('button', { name: 'Löschen' });
+    expect(trash).toHaveLength(1);
+    expect(within(historyRow(/^Ab 01\.07\.2026 bis heute/)).getByRole('button', { name: 'Löschen' })).toBe(trash[0]);
+    expect(within(historyRow(/^Ab 01\.06\.2026 bis 30\.06\.2026/)).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(historyRow(/^Ab 01\.01\.2026 bis 31\.05\.2026/)).queryByRole('button')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Löschen nicht möglich/ })).not.toBeInTheDocument();
+  });
+
+  // I4/Spec 9.7: die einzige Zeile ist zugleich die jüngste und bleibt löschbar.
+  it('bietet das Löschen der EINZIGEN Zeile weiterhin an', async () => {
+    mockHistory([{ id: 'c1', effective_from: '2026-01-01', weekly_hours: 30 }], QUIET);
+    renderModal({ currentWeeklyHours: 30 });
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    const trash = screen.getByRole('button', { name: 'Löschen' });
+    expect(trash).toBeEnabled();
+    fireEvent.click(trash);
+    expect(await screen.findByRole('alertdialog', { name: 'Arbeitszeit-Änderung ab 01.01.2026 löschen' })).toBeInTheDocument();
+    expect(deletePreviewMock).toHaveBeenCalledWith('/admin/users/u1/working-hours-changes/c1/delete-preview', {});
+  });
+
+  // Review Task 20: nach dem Speichern einer neuen Änderung sind delete-preview
+  // und reset_body eines offenen Panels veraltet. Bliebe es stehen, löschte
+  // „Löschen" eine Zeile, die nicht mehr die jüngste ist (12.1), und
+  // „Zurücksetzen" legte den alten Stand ab 27.07. HINTER die gerade
+  // gespeicherte Änderung — deren Vertrag wäre ohne Hinweis überschrieben (F07,
+  // P25; der Server prüft dabei nur den Vorgänger der zurückgesetzten Zeile).
+  it('Speichern einer neuen Änderung schließt das offene Panel; der Papierkorb wandert zur neuen jüngsten Zeile', async () => {
+    let rows: Array<HistoryRow> = TWO_ROWS;
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse(QUIET));
+      return Promise.resolve(historyResponse(rows));
+    });
+    postMock.mockImplementation(async () => {
+      rows = [{ id: 'c3', effective_from: '2026-07-26', weekly_hours: 35 }, ...TWO_ROWS];
+      return { data: { id: 'c3', adjusted_absences: 0, warning: null } };
+    });
+    deletePreviewMock.mockResolvedValue(previewResponse(SHORT_DELETE));
+    const dialog = await openDeleteKeepingMocks();
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Zurücksetzen' })).not.toBeDisabled());
+
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '35' } });
+    const save = screen.getByRole('button', { name: /Speichern/ });
+    await waitFor(() => expect(save).not.toBeDisabled(), { timeout: 3000 });
+    fireEvent.click(save);
+    await screen.findByText(/Ab 26\.07\.2026 bis heute/);
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(postMock).toHaveBeenCalledTimes(1);
+    expect(deleteMock).not.toHaveBeenCalled();
+    fireEvent.click(within(historyRow(/^Ab 26\.07\.2026 bis heute/)).getByRole('button', { name: 'Löschen' }));
+    expect(await screen.findByRole('alertdialog', { name: 'Arbeitszeit-Änderung ab 26.07.2026 löschen' })).toBeInTheDocument();
+    expect(deletePreviewMock).toHaveBeenLastCalledWith('/admin/users/u1/working-hours-changes/c3/delete-preview', {});
+  });
+
+  // Bleibt die Zeile die jüngste (neue Änderung rückwirkend davor), ist ihre
+  // delete-preview trotzdem veraltet: ihr Vorgänger ist jetzt ein anderer.
+  it('auch eine Änderung VOR der jüngsten Zeile schließt das Panel; neu geöffnet lädt es eine frische delete-preview', async () => {
+    let rows: Array<HistoryRow> = TWO_ROWS;
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse(rows));
+    });
+    postMock.mockImplementation(async () => {
+      rows = [TWO_ROWS[0], { id: 'c3', effective_from: '2026-03-01', weekly_hours: 35 }, TWO_ROWS[1]];
+      return { data: { id: 'c3', adjusted_absences: 2, warning: null } };
+    });
+    await openDeleteKeepingMocks();
+
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-03-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '35' } });
+    await flushDebounce();
+    await screen.findByText(/2 Abwesenheit\(en\) betroffen/);
+    fireEvent.click(screen.getByRole('checkbox', { name: /Ich habe die Auswirkungen geprüft/ }));
+    const save = screen.getByRole('button', { name: /Speichern/ });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+    await screen.findByText(/Ab 01\.03\.2026 bis 31\.05\.2026/);
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(deleteMock).not.toHaveBeenCalled();
+    fireEvent.click(within(historyRow(/^Ab 01\.06\.2026 bis heute/)).getByRole('button', { name: 'Löschen' }));
+    await screen.findByRole('alertdialog', { name: 'Arbeitszeit-Änderung ab 01.06.2026 löschen' });
+    expect(deletePreviewMock).toHaveBeenCalledTimes(2);
   });
 
   it('ohne Verkürzung: einfache Bestätigung mit Vorschau, Toast und Jahreswarnung aus der 200-Antwort', async () => {

@@ -578,6 +578,12 @@ export default function WorkingHoursModal({
         ...scheduleBody,
         ...(needsReason ? reasonPayload(reason) : {}),
       });
+      // Review Task 20: ein offenes Lösch-Panel ist ab jetzt veraltet — seine
+      // Zeile ist evtl. nicht mehr die jüngste (12.1), und sein `reset_body`
+      // läge womöglich hinter der gerade gespeicherten Änderung und
+      // überschriebe deren Vertrag (F07, P25). Neu öffnen lädt eine frische
+      // `delete-preview`.
+      setDeleting(null);
       const freshChanges = await fetchHoursChanges();
       onChanged();
       resetFormTo(freshChanges);
@@ -977,7 +983,8 @@ export default function WorkingHoursModal({
 
               <div>
                 <h3 className="font-semibold text-gray-900 mb-3">Verlauf</h3>
-                {deleting && (
+                {/* Spec 12.1: das Panel gehört immer zur jüngsten Zeile. */}
+                {deleting && deleting.id === youngestId && (
                   <WhDeletePanel
                     key={deleting.id}
                     userId={userId}
