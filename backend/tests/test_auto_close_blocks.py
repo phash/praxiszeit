@@ -5,15 +5,16 @@ from decimal import Decimal
 
 import pytest
 
-from app.models import ChangeRequest, TimeEntry, TimeEntryAuditLog
+from app.models import ChangeRequest, PublicHoliday, TimeEntry, TimeEntryAuditLog
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
 from app.models.system_setting import SystemSetting
 from app.services import work_window_service
+from app.services.holiday_service import invalidate_holiday_cache
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import (  # noqa: F401 — Fixtures
     _db_session, admin_client, admin_user, employee_client, employee_user, tenant,
 )
-from tests.work_blocks_fixtures import K_BLOCKS, MON, legacy_week
+from tests.work_blocks_fixtures import K_BLOCKS, MON, block_week, legacy_week
 
 import app.routers.time_entries as te
 
@@ -401,6 +402,69 @@ def test_without_blocks_typed_2359_stays_echo(_db_session, employee_user, admin_
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(23, 59), None, True)
 
 
+# Je Fall: Aufbau, Rückgabe = erwarteter gespeicherter Puffer nach dem Auto-Close.
+# 15 belegt, dass gegen die Blöcke gekappt wurde (nur eben nicht unter 23:59) —
+# sonst bestünde der Test auch, wenn die Blöcke gar nicht griffen.
+def _ungekappt_track_hours_off(db, user):
+    user.work_blocks = K_BLOCKS
+    user.track_hours = False
+    return None
+
+
+def _ungekappt_feiertag(db, user):
+    user.work_blocks = K_BLOCKS
+    db.add(PublicHoliday(date=MON, name="Testfeiertag", year=MON.year, tenant_id=DEFAULT_TENANT_ID))
+    invalidate_holiday_cache()  # F-034: Feiertage sind prozessweit gecacht
+    return None
+
+
+def _ungekappt_halboffen(db, user):
+    user.work_blocks = legacy_week(mon=("08:00", None))
+    return 15
+
+
+def _ungekappt_huelle_bis_2359(db, user):
+    # 23:50 + Puffer 15 → Hülle auf 23:59 begrenzt (``_shift_min``).
+    user.work_blocks = block_week(mon=[("16:00", "23:50")])
+    return 15
+
+
+@pytest.fixture
+def _fresh_holiday_cache():
+    """Der Feiertag dieses Tests darf nicht im Prozess-Cache (F-034) hängen
+    bleiben — die DB ist je Test frisch, der Cache nicht."""
+    invalidate_holiday_cache()
+    yield
+    invalidate_holiday_cache()
+
+
+@pytest.mark.parametrize("setup", [
+    _ungekappt_track_hours_off, _ungekappt_feiertag, _ungekappt_halboffen, _ungekappt_huelle_bis_2359,
+], ids=["track_hours_off", "feiertag", "halboffenes_altfenster", "huelle_bis_2359"])
+def test_unclamped_end_2359_stays_echo_beyond_no_blocks(_db_session, employee_user, admin_client, setup,
+                                                         _fresh_holiday_cache):
+    """Review V1 (Grenzfall P18): der Grenzfall hängt nicht an „ohne Blöcke", sondern daran,
+    dass der Auto-Close das 23:59 NICHT kappt — das wirksame Ende ist dann selbst
+    23:59, ein eingetragenes 23:59 bleibt Echo. Auch MIT hinterlegten Blöcken:
+    ohne Stundenzählung (#191), am Feiertag (#484), bei halboffenem Altfenster
+    (Spec 5.3) und wenn die Hülle über den Puffer bis 23:59 reicht. Belegt den
+    Spec-Wortlaut (P18, 7.1, Pflichtinhalt 9) — keine Codeänderung."""
+    grace = setup(_db_session, employee_user)
+    _db_session.commit()
+    e = _open(_db_session, employee_user, start=time(18, 0))
+    _auto_close_directly(_db_session, e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(23, 59), None, True)
+    assert e.clamp_grace_minutes == grace
+    for route in ("/api/admin/time-entries", "/api/time-entries"):
+        resp = admin_client.put(f"{route}/{e.id}", json={"end_time": "23:59"})
+        assert resp.status_code == 200, resp.text
+        _db_session.refresh(e)
+        assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(23, 59), None, True)
+    _approve_update_cr(_db_session, admin_client, employee_user, e, time(23, 59), start=time(18, 0))
+    _db_session.refresh(e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(23, 59), None, True)
+
+
 def test_raw_end_of_regular_entry_is_still_a_correction(_db_session, employee_user, admin_client):
     """Gegenprobe: ohne ``auto_closed`` ist der Rohwert ein echter Stempel — ihn
     erneut einzutragen bleibt eine gewöhnliche Eingabe (kein Kennzeichen)."""
@@ -428,7 +492,7 @@ def test_raw_end_of_regular_entry_is_still_a_correction(_db_session, employee_us
     (time(23, 59), time(18, 15), True),        # 23:59 eingetragen (bis 2026-10-11: Echo)
     (time(23, 59, 30), time(18, 15), True),
     (time(18, 15), time(16, 15), True),        # nach Verschieben: Rohende 18:15 eingetragen
-    (time(23, 59), time(23, 59), False),       # ohne Blöcke: 23:59 = wirksam (Grenzfall)
+    (time(23, 59), time(23, 59), False),       # ungekappt (z. B. ohne Blöcke): 23:59 = wirksam (Grenzfall)
     (time(23, 59, 30), time(23, 59), False),
     (None, time(23, 59), True),                # Ende entfernt: Aufrufer entscheidet
 ])

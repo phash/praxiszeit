@@ -194,8 +194,9 @@ describe('ChangeRequestForm — Anrechnung beantragen (Spec P21)', () => {
     }));
   });
 
-  // Grenzfall: ohne Blöcke ist das wirksame Ende selbst 23:59 — vom
-  // unveränderten Ende nicht zu unterscheiden, also kein tatsächliches Ende.
+  // Grenzfall: ungekapptes Auto-Close-Ende (z. B. ohne Blöcke, ohne
+  // Stundenzählung) — das wirksame Ende ist selbst 23:59, vom unveränderten Ende
+  // nicht zu unterscheiden, also kein tatsächliches Ende.
   it('ohne Blöcke (wirksames Ende 23:59) bleibt ein 23:59 kein tatsächliches Ende', async () => {
     render(<ChangeRequestForm
       entry={{ ...autoClosedK15, end_time: '23:59:00', raw_end_time: null }}

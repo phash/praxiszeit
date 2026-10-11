@@ -44,9 +44,11 @@ def lacks_actual_end(entry: TimeEntry, proposed_end: Optional[time]) -> bool:
     **Entschieden 2026-10-11 (Produktinhaber, P18):** ein eingetragenes 23:59
     ist ein tatsächliches Ende (bis dahin zählten Rohende und 23:59 hier nicht)
     — die Formulare schicken das wirksame Ende, ein 23:59 kommt nur aus echter
-    Eingabe. Ohne Blöcke ist das wirksame Ende selbst 23:59: dort bleibt ein
-    23:59 vom Echo nicht zu unterscheiden und zählt nicht. Minutengenau
-    (``work_window_service.same_minute``, Review Task 6)."""
+    Eingabe. Kappt der Auto-Close das 23:59 nicht (Tag ohne Blöcke,
+    ``track_hours=False`` auch mit Blöcken, halboffenes Altfenster, Hülle bis
+    23:59), ist das wirksame Ende selbst 23:59: dort bleibt ein 23:59 vom Echo
+    nicht zu unterscheiden und zählt nicht (Grenzfall von ``end_is_correction``).
+    Minutengenau (``work_window_service.same_minute``, Review Task 6)."""
     return bool(entry.auto_closed) and (
         proposed_end is None
         or not work_window_service.end_is_correction(proposed_end, entry.end_time)

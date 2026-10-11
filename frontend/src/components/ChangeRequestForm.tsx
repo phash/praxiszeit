@@ -43,8 +43,10 @@ interface Props {
  *
  * Entschieden 2026-10-11 (Produktinhaber): ein eingetragenes 23:59 ist ein
  * tatsächliches Ende — das Formular belegt nie das Rohende vor, 23:59 kommt
- * nur aus echter Eingabe. Ohne Blöcke ist das gespeicherte Ende selbst 23:59
- * und bleibt dann vom unveränderten Ende nicht zu unterscheiden.
+ * nur aus echter Eingabe. Hat der Auto-Close nicht gekappt (Tag ohne Blöcke,
+ * ohne Stundenzählung, halboffenes Altfenster, Hülle bis 23:59), ist das
+ * gespeicherte Ende selbst 23:59 und bleibt vom unveränderten Ende nicht zu
+ * unterscheiden.
  */
 function lacksActualEnd(entry: TimeEntry, proposedEnd: string): boolean {
   if (!entry.auto_closed) return false;

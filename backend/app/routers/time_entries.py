@@ -237,7 +237,9 @@ def _close_stale_entry(
     aus ``clock_in`` (E80, ``grace_for_entry``). P18: ``auto_closed`` = True —
     23:59 ist dann ein synthetischer Wert, kein Stempel (nie anerkennen, nie als
     Anwesenheit oder „nicht angerechnet" zählen). Ohne Blöcke bleibt 23:59
-    ungekappt (wie bisher), gekennzeichnet wird trotzdem.
+    ungekappt (wie bisher) — ebenso bei ``track_hours=False``, halboffenem
+    Altfenster und Hülle bis 23:59 —, gekennzeichnet wird trotzdem
+    (Grenzfall von ``work_window_service.end_is_correction``).
 
     F-043: Does NOT commit — the caller's transaction owns the commit (und hält
     die Ankersperre, P5). Writes a TimeEntryAuditLog row with action=update /

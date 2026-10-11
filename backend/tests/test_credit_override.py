@@ -625,8 +625,9 @@ def test_seconds_typed_end_is_a_stamp(_db_session, employee_user, admin_client):
     (time(18, 15), time(23, 59), time(23, 59), False),     # 23:59 eingetragen (seit 2026-10-11)
     (time(16, 15), time(18, 15), time(18, 15), False),     # nach Verschieben: 18:15 eingetragen
     (time(18, 15), time(23, 59), time(17, 30), False),
-    # Grenzfall ohne Blöcke: das wirksame Ende ist selbst 23:59 — ein 23:59 ist
-    # vom Echo nicht zu unterscheiden und bleibt kein tatsächliches Ende.
+    # Grenzfall ungekapptes Auto-Close-Ende (z. B. ohne Blöcke, track_hours=False):
+    # das wirksame Ende ist selbst 23:59 — ein 23:59 ist vom Echo nicht zu
+    # unterscheiden und bleibt kein tatsächliches Ende.
     (time(23, 59), None, time(23, 59), True),
 ])
 def test_lacks_actual_end(end_time, raw_end, proposed, expected):

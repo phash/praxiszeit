@@ -57,7 +57,8 @@ export function RawStampNote({
     // das System hätte um 18:15 geschlossen.
     const base = `eingestempelt ${rawStart}, nicht ausgestempelt – automatisch geschlossen`;
     if (effEnd === AUTO_CLOSE_END) {
-      // ungekappt: ohne Blöcke bzw. Ende-Platzhalter eines halboffenen Altfensters
+      // ungekappt: ohne Blöcke, ohne Stundenzählung, Ende-Platzhalter eines
+      // halboffenen Altfensters bzw. Hülle bis 23:59
       lines.push(`${base} um ${effEnd}${gapTail}`);
       if (startLine) lines.push(startLine);
     } else {

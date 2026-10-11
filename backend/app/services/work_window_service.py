@@ -361,9 +361,14 @@ def end_is_correction(incoming: Optional[time], prev_eff: Optional[time]) -> boo
     wie jedes andere Ende. Bis dahin galt ein eingereichtes Rohende pauschal als
     Echo (Review Task 8), ein echtes Ende um 23:59 ließ sich nicht eintragen.
 
-    Grenzfall: ohne Blöcke ist das wirksame Ende selbst 23:59 (ungekappt) — ein
-    zurückgeschicktes 23:59 ist vom Echo nicht zu unterscheiden und bleibt Echo;
-    ebenso ein eingetragenes Ende genau auf dem wirksamen Ende (z. B. 18:15).
+    Grenzfall: kappt der Auto-Close das 23:59 nicht, ist das wirksame Ende
+    selbst 23:59 — Tag ohne Blöcke (auch Wochenende, Feiertag, freier
+    Sondertag), ``track_hours=False`` (auch mit Blöcken), halboffenes
+    Altfenster (Ende-Platzhalter 23:59) oder Hülle bis 23:59 (letzter Block +
+    Puffer, ``_shift_min``). Dort ist ein zurückgeschicktes 23:59 vom Echo nicht
+    zu unterscheiden und bleibt Echo; ebenso ein eingetragenes Ende genau auf
+    dem wirksamen Ende (z. B. 18:15). Maßgeblich ist allein „wirksames Ende
+    minutengleich 23:59", nicht die Ursache (Review V1).
     Ein ``None``-Ende gilt hier als Änderung; ob ein fehlendes bzw.
     ``None``-Ende überhaupt geprüft wird, entscheidet der Aufrufer. Dieselbe
     Regel gilt in allen drei Schreibpfaden (MA-Route, Admin-Bearbeitung,

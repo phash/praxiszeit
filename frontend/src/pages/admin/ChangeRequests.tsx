@@ -95,8 +95,10 @@ function getDateRange(range: TimeRange): { from: string; to: string } {
  * (`credit_override_service.lacks_actual_end`) — das gespeicherte (wirksame)
  * Ende zählt nicht; der Antrag kennt es als `original_end_time`. Entschieden
  * 2026-10-11 (Produktinhaber): ein beantragtes 23:59 ist ein tatsächliches
- * Ende (außer ohne Blöcke, wo das wirksame Ende selbst 23:59 ist). Hat sich
- * der Eintrag seit dem Antrag geändert, fängt den Rest der Server ab.
+ * Ende (außer wo das wirksame Ende selbst 23:59 ist, weil der Auto-Close nicht
+ * gekappt hat — Tag ohne Blöcke, ohne Stundenzählung, halboffenes Altfenster,
+ * Hülle bis 23:59). Hat sich der Eintrag seit dem Antrag geändert, fängt den
+ * Rest der Server ab.
  */
 function bringsActualEnd(cr: ChangeRequest): boolean {
   if (!cr.entry_auto_closed) return true;
