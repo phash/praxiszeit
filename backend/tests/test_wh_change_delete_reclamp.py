@@ -12,8 +12,8 @@ from app.services import calculation_service, wh_change_service
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import test_app
 from tests.wh_change_helpers import (
-    ANNA_WEEK, MONDAYS, RETRO_REASON, absence, add_row, admin_client, entry, freeze, reclamp_logs, t,
-    with_pauses,
+    ANNA_WEEK, MONDAYS, RETRO_REASON, TODAY, absence, add_row, admin_client, entry, freeze, reclamp_logs,
+    set_grace, t, with_pauses,
 )
 from tests.work_blocks_fixtures import block_week
 
@@ -69,6 +69,31 @@ class TestReset:
         assert _rows(db, test_user) == [(date(2026, 8, 31), 40.0), (date(2026, 9, 1), 30.0), (date(2026, 10, 8), 40.0)]
         notes = [s.new_note for s in reclamp_logs(db, test_user, summary=True)]
         assert any(" · Rücksetzung der Änderung ab 01.09.2026 · " in n for n in notes)
+
+    def test_reset_body_does_not_reclamp_the_past(self, client, db, test_user):
+        """Spec 17.5/P13: die Rücksetzung kappt die Vergangenheit NICHT neu. Der
+        Eintrag hat durch die Änderung 15 Min gewonnen (18:15 → 18:30); ein echtes
+        Löschen nähme sie ihm wieder, die Rücksetzung ab heute lässt ihn stehen."""
+        add_row(db, test_user, date(2026, 3, 1), week=ANNA_WEEK)
+        past = entry(db, test_user, MONDAYS[2], t(15), t(18, 15), raw_end=t(18, 30))
+        change = _create(client, test_user, {"effective_from": "2026-09-01", "blocks": LONGER_PAUSED})
+
+        def state():
+            db.expire_all()
+            e = db.query(TimeEntry).filter(TimeEntry.id == past.id).one()
+            return (e.date, e.start_time, e.end_time, e.raw_start_time, e.raw_end_time, e.uncredited_minutes,
+                    e.clamp_grace_minutes)
+
+        before = state()
+        assert before[2] == t(18, 30), "Vorbedingung: die Änderung hat den Eintrag verlängert"
+        rows_before = [r[0] for r in _rows(db, test_user)]
+        reset = _delete_preview(client, test_user, change["id"])["reset_body"]
+        assert reset == {"effective_from": "2026-10-08", "reset_of_change_id": change["id"], "blocks": ANNA_WEEK}
+        created = _create(client, test_user, reset)
+        assert created["adjusted_time_entries"] == 0
+        assert state() == before
+        assert [r[0] for r in _rows(db, test_user)] == rows_before + [date(2026, 10, 8)], \
+            "die zurückgesetzte Zeile ab 01.09. bleibt bestehen"
 
     def test_changed_reset_body_is_409(self, client, db, test_user):
         change = _create(client, test_user, {"effective_from": "2026-09-01", "weekly_hours": 30})
@@ -158,6 +183,105 @@ class TestRetroactiveDelete:
         body = _delete_preview(client, test_user, baseline.id)
         assert body["blocked_reason"].startswith("Dies ist die früheste erfasste Stundenänderung")
         assert _delete(client, test_user, baseline.id).status_code == 400
+
+
+class TestDeletePreviewCriteria:
+    """Spec 17.5: ``delete-preview`` inkl. Kriterien (a)–(c), bezogen auf den
+    Wechsel zum Vorgänger-Snapshot; die DELETE-400 nennt dieselben Kriterien
+    (11.4). Ein vertauschter alter/neuer Snapshot im Lösch-Pfad fiele hier auf."""
+
+    def test_entry_losing_credit_is_criterion_a(self, client, db, test_user):
+        """Die Änderung verlängert Montag 18:00 → 19:00 (Pause hält das Tagessoll);
+        der Eintrag hat dadurch 15 Min gewonnen. Das Löschen nimmt sie ihm wieder:
+        (a) und — ohne Soll-Ausgleich — (b)."""
+        add_row(db, test_user, date(2026, 3, 1), week=ANNA_WEEK)
+        e = entry(db, test_user, MONDAYS[2], t(15), t(18, 15), raw_end=t(18, 30))
+        change = _create(client, test_user, {"effective_from": "2026-09-01", "blocks": LONGER_PAUSED})
+        rows_before = _rows(db, test_user)
+        body = _delete_preview(client, test_user, change["id"])
+        assert (body["is_shortening"], body["shortening_reasons"], body["lost_credited_hours"],
+                body["saldo_delta_hours"], body["earliest_lossless_date"]) == (
+            True, ["entries", "saldo"], 0.25, -0.25, "2026-10-08")
+        assert [(c["old_end"], c["new_end"]) for c in body["time_entry_changes"]] == [("18:30:00", "18:15:00")]
+        resp = _delete(client, test_user, change["id"])
+        assert resp.status_code == 400, resp.text
+        detail = resp.json()["detail"]
+        assert detail.startswith("Das Löschen verkürzt rückwirkend (1 Eintrag verliert angerechnete Zeit; "
+                                 "Überstundenkonto −0:15 h): ")
+        assert detail.endswith("– oder ab dem 08.10.2026 auf den vorherigen Stand zurücksetzen.")
+        db.expire_all()
+        assert (_rows(db, test_user), db.get(TimeEntry, e.id).end_time) == (rows_before, t(18, 30)), \
+            "die 400 rollt Löschen und Neukappung zurück"
+
+    def test_absence_credit_dropping_is_criterion_c(self, client, db, test_user):
+        """Misch-Tag Krank + Arbeit 08–13 bei Tagessoll 8 h (Puffer 0). Die Änderung
+        (Montag 08–12 + 14–18, Soll gleich) kappt die Arbeit auf 4 h, F1 hebt die
+        Gutschrift 3 → 4 h. Das Löschen gibt der Arbeit die Stunde zurück und senkt
+        die Gutschrift 4 → 3 h bei unverändertem Tagessoll: nur (c), Saldo 0."""
+        set_grace(db, 0)
+        add_row(db, test_user, date(2026, 3, 1), week=block_week(mon=[("08:00", "13:00"), ("15:00", "18:00")]))
+        sick = absence(db, test_user, MONDAYS[1], AbsenceType.SICK, 3.0)
+        entry(db, test_user, MONDAYS[1], t(8), t(13), grace=0)
+        change = _create(client, test_user, {
+            "effective_from": "2026-09-01",
+            "blocks": block_week(mon=[("08:00", "12:00"), ("14:00", "18:00")]), **RETRO_REASON})
+        db.refresh(sick)
+        assert float(sick.hours) == 4.0, "Vorbedingung: F1 hat die Gutschrift beim Anlegen angehoben"
+        body = _delete_preview(client, test_user, change["id"])
+        assert (body["is_shortening"], body["shortening_reasons"], body["saldo_delta_hours"]) == (
+            True, ["absence_credit"], 0.0)
+        assert [(r["date"], r["old_hours"], r["new_hours"]) for r in body["absence_credit_reductions"]] == [
+            (MONDAYS[1].isoformat(), 4.0, 3.0)]
+        resp = _delete(client, test_user, change["id"])
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"].startswith("Das Löschen verkürzt rückwirkend (1 Abwesenheits-Gutschrift sinkt): ")
+        db.refresh(sick)
+        assert float(sick.hours) == 4.0, "die 400 rollt die Rückrechnung zurück"
+
+    def test_open_entry_today_moves_the_reset_to_tomorrow(self, client, db, test_user):
+        """P1: die Änderung verlängert Donnerstag (heute) auf 08–16; die Person ist
+        seit 08:00 eingestempelt. Das Löschen kürzte ihre Hülle für jedes Ende nach
+        12:15 → (a) über den offenen Eintrag, verlustfrei erst ab morgen — auch die
+        Rücksetzung."""
+        add_row(db, test_user, date(2026, 3, 1), week=ANNA_WEEK)
+        longer_thu = block_week(mon=[("08:00", "12:00"), ("15:00", "18:00")], tue=[("08:00", "12:00")],
+                                thu=[("08:00", "16:00")])
+        change = _create(client, test_user, {"effective_from": "2026-09-01", "blocks": longer_thu, **RETRO_REASON})
+        open_today = entry(db, test_user, TODAY, t(8), None)
+        body = _delete_preview(client, test_user, change["id"])
+        assert (body["is_shortening"], body["shortening_reasons"], body["earliest_lossless_date"]) == (
+            True, ["entries"], "2026-10-09")
+        assert body["reset_body"] == {"effective_from": "2026-10-09", "reset_of_change_id": change["id"],
+                                      "blocks": ANNA_WEEK}
+        resp = _delete(client, test_user, change["id"])
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"].startswith("Das Löschen verkürzt rückwirkend (1 Eintrag verliert angerechnete Zeit): ")
+        assert resp.json()["detail"].endswith("– oder ab dem 09.10.2026 auf den vorherigen Stand zurücksetzen.")
+        # Die Rücksetzung ab morgen verkürzt nichts mehr — ohne Grund speicherbar,
+        # der offene Eintrag bleibt offen.
+        created = _create(client, test_user, body["reset_body"])
+        assert created["adjusted_time_entries"] == 0
+        db.expire_all()
+        assert db.get(TimeEntry, open_today.id).end_time is None
+
+
+class TestDeleteBodyValidation:
+    """Abweichung 4 (Task 11): der DELETE-Body wird untypisiert angenommen und mit
+    derselben Regel und demselben deutschen Text geprüft wie der Anlege-Body —
+    ein typisierter Parameter brächte FastAPIs englische Listen-422 zurück."""
+
+    def test_short_reason_text_is_a_german_422(self, client, db, test_user):
+        change = _create(client, test_user, {"effective_from": "2026-09-01", "weekly_hours": 30})
+        resp = _delete(client, test_user, change["id"], {**RETRO_REASON, "retroactive_reason_text": "kurz"})
+        assert (resp.status_code, resp.json()["detail"]) == (422, "Die Begründung muss mindestens 10 Zeichen lang sein.")
+        assert len(_rows(db, test_user)) == 2
+
+    def test_non_object_body_is_a_422_with_a_text(self, client, db, test_user):
+        change = _create(client, test_user, {"effective_from": "2026-09-01", "weekly_hours": 30})
+        resp = _delete(client, test_user, change["id"], "x")
+        assert resp.status_code == 422, resp.text
+        assert isinstance(resp.json()["detail"], str) and resp.json()["detail"]
+        assert len(_rows(db, test_user)) == 2
 
 
 class TestDeletePreviewWritesNothing:
