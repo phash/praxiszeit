@@ -217,6 +217,13 @@ group_admin_bloecke() {
   # Review Task 2: Formular kennt den Modus „Nach Tagen", keinen Haken mehr.
   need "$f" 'Im Modus **„Nach Tagen"** (ebenfalls Viertelstunden je Wochentag)'
   forbid "$f" 'Bei individuellen Tagesstunden (ebenfalls Viertelstunden je Wochentag)'
+  # Review Task 2: Altfenster kappen seit 1.20 auch den Auto-Close (bis 1.19.3
+  # blieb 23:59 ungekappt, Spec E36/E42) — „genau wie vorher" verschwieg das.
+  need "$f" 'neu auch automatisch geschlossene Einträge'
+  forbid "$f" 'Diese Fenster kappen weiter genau wie vorher'
+  # Review Task 2: hh:45 gilt nur beim Standardpuffer, der Puffer ist einstellbar (§ 13).
+  need "$f" 'Bei einem Blockbeginn zur vollen Stunde und dem Standardpuffer von 15 Minuten landet'
+  forbid "$f" 'Bei einem Blockbeginn zur vollen Stunde landet'
   forbid "$f" 'Soll-Arbeitszeiten je Wochentag'
   forbid "$f" 'Soll-Arbeitszeit-Fenster, #201'
   forbid "$f" '#soll-arbeitszeiten-soll-arbeitszeit-fenster-201'

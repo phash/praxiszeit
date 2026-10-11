@@ -2620,8 +2620,9 @@ Backup verlustfrei (`UPDATE.md`).
   Einstellungen wirkt nur auf neue Einträge; Einträge aus der Zeit vor 1.20.0
   werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt.
 - **Bisherige Arbeitszeit-Fenster** wirken als „Arbeitszeit-Fenster
-  (Altbestand, nur Kappung)" unverändert weiter und lassen sich im Dialog in
-  Blöcke umwandeln oder entfernen.
+  (Altbestand, nur Kappung)" weiter wie bisher – neu kappen sie auch
+  automatisch geschlossene Einträge (siehe oben) – und lassen sich im Dialog
+  in Blöcke umwandeln oder entfernen.
 - **Nach dem Update die Seite neu laden:** Ein noch geöffnetes altes
   Benutzerformular meldet beim Speichern „Bitte Seite neu laden: Die
   Arbeitszeit-Fenster (Soll-Beginn/Soll-Ende) wurden durch Arbeitszeit-Blöcke
@@ -2958,7 +2959,7 @@ Expected: FAIL in den drei neuen/geänderten Tests (z. B. `Unable to find an ele
           Beim Speichern meldet PraxisZeit, was nicht angerechnet wird – etwa „Zwischen den Arbeitsblöcken (12:15–14:45, Puffer 15 Minuten eingerechnet) werden 2:30 h nicht angerechnet. Die gestempelte Zeit bleibt unverändert gespeichert." Der Eintrag wird trotzdem gespeichert. Ein Lückenabschnitt ab 15 Minuten zählt für die Pausenpflicht als Pause; wer zusätzlich eine Pause einträgt, bekommt den Hinweis „Pause in der Lücke wird zusätzlich abgezogen".
         </p>
         <p>
-          <strong>Bisherige Arbeitszeit-Fenster:</strong> Das Update übernimmt jedes frühere Soll-Fenster als einen Block je Tag. Es kappt weiter wie vorher, ändert aber das Soll nicht („Arbeitszeit-Fenster (Altbestand, nur Kappung)") und lässt sich im Dialog in Blöcke umwandeln oder entfernen.
+          <strong>Bisherige Arbeitszeit-Fenster:</strong> Das Update übernimmt jedes frühere Soll-Fenster als einen Block je Tag. Es kappt weiter wie vorher – neu auch automatisch geschlossene Einträge –, ändert aber das Soll nicht („Arbeitszeit-Fenster (Altbestand, nur Kappung)") und lässt sich im Dialog in Blöcke umwandeln oder entfernen.
         </p>
 
         <SubHeading>Nicht angerechnete Zeit: sichtbar und anerkennbar</SubHeading>
