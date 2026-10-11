@@ -430,6 +430,16 @@ group_admin_rest() {
   need "$f" 'sind Abwesenheiten betroffen, zusätzlich eine Sammelzeile ohne Datum (z. B. „Arbeitszeit-Änderung zum'
   need "$f" '(beide Quelle „wh_change", Anzeige „Stundenänderung")'
   need "$f" 'Abwesenheit(en) im Zeitraum 2026-09-01–2026-10-09 auf neues Tagessoll nachgezogen'
+  # Review Task 4 (2. Runde): Die Anwesenheitsprüfungen gelten für alle
+  # (Erwachsenenschwellen, kein Kennzeichen „jugendlich" im Code); nur die
+  # strengeren JArbSchG-Regeln prüft PraxisZeit nicht (Spec 8.3).
+  need "$f" 'Es gelten die Grenzen für Erwachsene; die strengeren Regeln für Jugendliche (§§ 11, 12 JArbSchG) prüft PraxisZeit nicht'
+  forbid "$f" 'prüft PraxisZeit keine dieser Grenzen'
+  # „Ist" ist die angerechnete Zeit (net_hours, nach der Kappung, 18.3),
+  # nicht die tatsächlich erfasste bzw. geleistete (Begriffsregel des Plans).
+  need "$f" '| **Ist** | Angerechnete Arbeitszeit der Zeiteinträge (bei Arbeitszeit-Blöcken nach der Kappung, → 18.3) + gutgeschriebene Abwesenheiten (Krank/Fortbildung) |'
+  forbid "$f" '| **Ist** | Tatsächlich erfasste Arbeitszeit'
+  forbid "$f" '| **Ist** | Tatsächlich geleistete Stunden'
 }
 
 # Review Task 4: Die 48-h-Wochengrenze nennt der Code als § 3 ArbZG

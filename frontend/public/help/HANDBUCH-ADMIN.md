@@ -76,7 +76,7 @@ Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdat
 | **Name** | Vor- und Nachname des Mitarbeiters |
 | **Wochenstd.** | Aktuell gültige Wochenstunden |
 | **Soll** | Zu leistende Stunden im aktuellen Monat |
-| **Ist** | Tatsächlich geleistete Stunden |
+| **Ist** | Angerechnete Stunden im aktuellen Monat (bei Arbeitszeit-Blöcken nach der Kappung) inkl. Gutschrift für Krankheit/Fortbildung |
 | **Saldo** | Differenz Ist – Soll (H:MM, + = Überstunden, – = Fehlstunden) |
 | **Übersto. Kum.** | Kumulierter Jahressaldo |
 | **Urlaub** | Verbleibende Urlaubstage (Ampelfarbe) |
@@ -959,7 +959,7 @@ Ob es solche Ausnahmen in Ihrer Praxis gibt und ob sie sofort wirksam werden ode
 | **Anwesenheit über 48 h/Woche (laut Stempel)** | gestempelte Anwesenheit der Kalenderwoche > 48 h, angerechnet ≤ 48 h | Hinweis | § 3 ArbZG |
 | **Pause in der Lücke** | Pause eingetragen **und** über die Lücke zwischen zwei Arbeitszeit-Blöcken durchgestempelt (beides wird abgezogen) | Hinweis | – |
 
-**Angerechnete Zeit und tatsächliche Anwesenheit (ab 1.20.0):** Die Sperren nach § 3 (10 Stunden) und § 4 (Pausen) rechnen mit der **angerechneten** Zeit; ein Lückenabschnitt ab 15 Minuten zwischen zwei Arbeitszeit-Blöcken zählt dabei als Pause. Damit eine Kappung keinen Verstoß verdeckt, prüft PraxisZeit zusätzlich die **Anwesenheit laut Stempel** und meldet sie als Hinweis (nie blockierend), z. B. *„§4 ArbZG: Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst (‹x› h Anwesenheit). Die Lücke gilt nur dann als Pause, wenn sie tatsächlich frei war."* oder *„§3 ArbZG: Laut Stempel ‹x› h anwesend (abzüglich erfasster Pausen) – mehr als 10 Stunden. Angerechnet werden ‹y› h; die Höchstgrenze gilt für die tatsächliche Arbeitszeit."* Die [24-Wochen-Auswertung](#24-wochen-durchschnitt) (§ 3 ArbZG) zeigt neben dem Durchschnitt der angerechneten Zeit einen zweiten Wert **„Anwesenheit laut Stempel"**, den keine Neuberechnung verändert. Für Jugendliche (JArbSchG) prüft PraxisZeit keine dieser Grenzen.
+**Angerechnete Zeit und tatsächliche Anwesenheit (ab 1.20.0):** Die Sperren nach § 3 (10 Stunden) und § 4 (Pausen) rechnen mit der **angerechneten** Zeit; ein Lückenabschnitt ab 15 Minuten zwischen zwei Arbeitszeit-Blöcken zählt dabei als Pause. Damit eine Kappung keinen Verstoß verdeckt, prüft PraxisZeit zusätzlich die **Anwesenheit laut Stempel** und meldet sie als Hinweis (nie blockierend), z. B. *„§4 ArbZG: Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst (‹x› h Anwesenheit). Die Lücke gilt nur dann als Pause, wenn sie tatsächlich frei war."* oder *„§3 ArbZG: Laut Stempel ‹x› h anwesend (abzüglich erfasster Pausen) – mehr als 10 Stunden. Angerechnet werden ‹y› h; die Höchstgrenze gilt für die tatsächliche Arbeitszeit."* Die [24-Wochen-Auswertung](#24-wochen-durchschnitt) (§ 3 ArbZG) zeigt neben dem Durchschnitt der angerechneten Zeit einen zweiten Wert **„Anwesenheit laut Stempel"**, den keine Neuberechnung verändert. Es gelten die Grenzen für Erwachsene; die strengeren Regeln für Jugendliche (§§ 11, 12 JArbSchG) prüft PraxisZeit nicht (→ [Arbeitszeit-Blöcke](#arbeitszeit-bloecke)).
 
 ---
 
@@ -1046,7 +1046,7 @@ Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenh
 | Begriff | Bedeutung |
 |---------|-----------|
 | **Soll** | Stunden, die ein Mitarbeiter an einem Tag/Monat vertraglich arbeiten müsste |
-| **Ist** | Tatsächlich erfasste Arbeitszeit + gutgeschriebene Abwesenheiten (Krank/Fortbildung) |
+| **Ist** | Angerechnete Arbeitszeit der Zeiteinträge (bei Arbeitszeit-Blöcken nach der Kappung, → 18.3) + gutgeschriebene Abwesenheiten (Krank/Fortbildung) |
 | **Saldo / Überstunden** | Ist − Soll (positiv = Mehrarbeit, negativ = Minusstunden) |
 | **Tagessoll** | Soll-Stunden für einen einzelnen Arbeitstag |
 | **Tagesprinzip** | Urlaub wird in **Tagen** gezählt (§ 3 BUrlG): 1 freier Arbeitstag = 1 Urlaubstag |
