@@ -346,7 +346,7 @@ In der Oberfläche vervollständigen:
 
 ## 9. Erste Mitarbeiter:innen anlegen
 
-Navigation: **Mitarbeiter → „Neuer Mitarbeiter:in"**
+Navigation: **Benutzerverwaltung → „Neue:r Mitarbeiter:in"**
 
 ### Pflichtfelder (vom Backend erzwungen)
 

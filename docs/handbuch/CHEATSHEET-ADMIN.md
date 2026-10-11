@@ -16,7 +16,7 @@
 ## Benutzerverwaltung
 
 ### Neuen Mitarbeiter anlegen
-**Benutzerverwaltung** → **Neuer Mitarbeiter:in**
+**Benutzerverwaltung** → **„Neue:r Mitarbeiter:in"**
 - Benutzername (Login-Name), Passwort (mind. 10 Zeichen)
 - Vorname / Nachname, E-Mail (optional)
 - Wochenstunden, Arbeitstage/Woche, Urlaubstage
@@ -48,7 +48,7 @@ Je MA und Wochentag (Mo–Fr) bis zu **3 Blöcke** „von–bis" + **„Pause in
 - **Kappung:** vor dem ersten, nach dem letzten und **zwischen** den Blöcken nicht angerechnet; **Puffer an jedem Blockrand** (Einstellungen → „Soll-Arbeitszeit-Fenster", Default **15**). Lücke ≤ 2 × Puffer wird voll angerechnet → geplante Pause als „Pause innerhalb der Blöcke" erfassen, nicht als kurze Lücke.
 - Beispiel: Blöcke 08–12 + 15–18, Puffer 15, gestempelt 08:00–18:00 ohne Pause → **7:30 h** angerechnet (08:00–12:15 + 14:45–18:00), 2:30 h nicht; die Stempel bleiben gespeichert (§16).
 - **Kein Block → keine Kappung:** blockfreie Wochentage, Wochenende, Feiertage, „freie" Sondertage („halber Feiertag" behält die Blöcke); MA ohne Stundenzählung; **anerkannte** Einträge. §18-MA werden trotzdem gekappt. Greift an allen Schreibwegen (Stempeln, manuell, Admin-Korrektur, Antrag, XLS-Import).
-- **Auto-Close** (vergessenes Ausstempeln, 23:59) rechnet nur bis zum letzten Block + Puffer an („automatisch geschlossen"); tatsächliches Ende nachtragen (MA per Änderungsantrag) – auch ein echtes Ende 23:59 ist eintragbar.
+- **Auto-Close** (vergessenes Ausstempeln, 23:59) rechnet nur bis zum letzten Block + Puffer an („automatisch geschlossen"); tatsächliches Ende nachtragen (MA per Änderungsantrag) – auch ein echtes Ende 23:59 ist eintragbar (wird gekappt wie jedes Ende, bis 23:59 angerechnet erst nach „Anerkennen").
 - **Pausen:** Lücke ab 15 Min. (nach Abzug des Puffers) zählt für §4 als Pause; Pause eingetragen **und** über die Lücke durchgestempelt → beides abgezogen (Hinweis „Pause in der Lücke wird zusätzlich abgezogen: …").
 - **Sichtbar:** Zusatzzeile am Eintrag („… 2:30 h zwischen den Blöcken nicht angerechnet"), Journal-Summe „Anwesenheit nicht angerechnet", Export-Spalte „Nicht angerechnet (Min)" (letzte Spalte).
 - **Anerkennen** (Admin-Dashboard-Detail, Monatsjournal): ganze gestempelte Zeit zählt, dauerhaft (keine Rücknahme), protokolliert („Anrechnung anerkannt"); offener Eintrag erst nach dem Ausstempeln, automatisch geschlossener erst mit tatsächlichem Ende. MA beantragen das per **„Anrechnung beantragen"**.
@@ -57,7 +57,7 @@ Je MA und Wochentag (Mo–Fr) bis zu **3 Blöcke** „von–bis" + **„Pause in
 
 ### Arbeitszeit ändern (Wochenstunden, Tagesplan, Blöcke)
 **Benutzer öffnen** → Button **„Arbeitszeit anpassen…"** (oder Uhr-Symbol in der Benutzerliste) → Dialog **„Arbeitszeit & Wochenstunden"** → **„Gültig ab"** → Modus **„Gleichmäßig"** / **„Nach Tagen"** / **„Nach Arbeitsblöcken"** (live je Tag „Gesamtzeit · Pause · Tagessoll" + Wochensumme; Blöcke nur bei Stundenzählung) → optional Notiz → Auswirkung prüfen → Speichern
-→ Gilt für **alle** MA: Wochenstunden, Tagesstunden, Modus, Arbeitstage und Blöcke sind im Bearbeiten-Formular nur Anzeige („Arbeitszeit heute: …"); beim **Anlegen** normale Felder bzw. Block-Editor
+→ Gilt für **alle** MA: Wochenstunden, Tagesstunden, Modus, Arbeitstage und Blöcke sind im Bearbeiten-Formular nur Anzeige (Bereich „Arbeitszeit heute"); beim **Anlegen** normale Felder bzw. Block-Editor
 → **Auswirkung** vor dem Speichern: Tagessoll je Wochentag alt → neu, Einträge je Monat alt → neu, übersprungene (mit Grund), Abwesenheiten, Δ Soll / Δ angerechnet / Überstundenkonto / Urlaubsverbrauch; Haken „Ich habe die Auswirkungen geprüft und möchte speichern" Pflicht, sobald Einträge, Abwesenheiten, Überstundenkonto oder Urlaubsverbrauch betroffen sind (rückwirkend immer)
 → **Rückwirkend:** Einträge an geänderten Wochentagen werden ab Rohstempel mit dem aktuellen Puffer **neu gekappt** (ohne Rohstempel „nicht erweiterbar"), danach Abwesenheits-Stunden aufs neue Tagessoll – auch bei Zukunftsdatum (Urlaubs**tage** bleiben); offene Einträge vergangener Tage werden vorher geschlossen; abgeschlossenes Jahr wird nur gemeldet
 → **Verkürzung** (Eintrag verliert Zeit **oder** Überstundenkonto sinkt – auch durch höheres Soll – **oder** Misch-Tag-Gutschrift sinkt stärker als das Tagessoll): Standard **„Ab heute (…) wirksam – vergangene Einträge bleiben unverändert"** (sonst ab morgen); **rückwirkend** nur mit Grund („Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)" / „Mit der beschäftigten Person vereinbart" / „Sonstiges"), Begründung (10–400 Zeichen) + Haken; Protokoll-Kürzel „[Erfassungsfehler korrigiert]" / „[Einvernehmlich vereinbart]" / „[Sonstiges]". Grund, Begründung und Notiz teilen sich das Notizfeld („Notiz und Begründung zusammen höchstens 500 Zeichen."). Falsche **Stempel** am Zeiteintrag korrigieren, nicht über die Arbeitszeit. In **abgeschlossene Jahre** gesperrt

@@ -600,6 +600,12 @@ group_kurz() {
   need "$a" 'Notiz und Begründung zusammen höchstens 500 Zeichen.'
   need "$a" 'auch ein echtes Ende 23:59'
   need "$a" 'Hinweis zu Ihrer Arbeitszeit'
+  # Review Task 6: das eingetragene 23:59 wird gekappt wie jedes Ende und erst
+  # nach „Anerkennen" bis 23:59 angerechnet (Spec P18); „Arbeitszeit heute" ist
+  # im UserForm eine Überschrift ohne Doppelpunkt, der Text steht darunter.
+  need "$a" 'wird gekappt wie jedes Ende, bis 23:59 angerechnet erst nach „Anerkennen"'
+  need "$a" '(Bereich „Arbeitszeit heute")'
+  forbid "$a" '„Arbeitszeit heute: …"'
   need "$m" '### Arbeitszeit-Blöcke'
   need "$m" 'zwischen den Blöcken nicht angerechnet'
   need "$m" 'Anrechnung beantragen'
@@ -616,6 +622,7 @@ group_kurz() {
   need "$m" 'Einträge für vergangene Tage können nur per Änderungsantrag erstellt werden'
   need "$m" 'Das Datum bleibt beim Bearbeiten fest.'
   need "$m" 'auch ein echtes Ende 23:59'
+  need "$m" 'auch dieses Ende wird an den Blöcken gekürzt; die Zeit danach zählt erst, wenn die Verwaltung den Eintrag anerkennt'
   need "$m" 'Hinweis zu Ihrer Arbeitszeit'
   need "$m" 'Ihre Arbeitszeit ändert sich ab'
   need "$s" 'Arbeitszeit anpassen…'
@@ -624,9 +631,24 @@ group_kurz() {
   forbid "$s" 'Soll-Beginn/-Ende je Wochentag'
   # Über den Plan hinaus: die Checkbox heißt „Stundenzählung aktiv (…)"
   # (UserForm); „Keine Stundenzählung" gibt es nicht, und „leitende
-  # Angestellte" ist § 18, nicht die Stundenzählung (CLAUDE.md #191).
+  # Angestellte" ist § 18, nicht die Stundenzählung (UserForm.tsx: Checkbox
+  # „ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende Angestellte)";
+  # CHEATSHEET-ADMIN „NIE „leitende Angestellte" nennen").
   need "$s" 'Stundenzählung aktiv (Soll-Stunden werden berechnet)'
   forbid "$s" 'Keine Stundenzählung'
+}
+
+# Knopfbeschriftungen, die mehrere Flächen zitieren (Review Task 6): der
+# Anlegen-Knopf der Benutzerverwaltung heißt „Neue:r Mitarbeiter:in"
+# (pages/admin/Users.tsx); „Neuer Mitarbeiter:in" stand in Kurzanleitung,
+# Admin-Handbuch, DocViewer, HANDBUCH-ERSTELLEN und Windows-Setup.
+group_beschriftung() {
+  local f
+  need_code "Neue:r Mitarbeiter:in"
+  for f in docs/handbuch/*.md docs/setup-windows.md \
+           frontend/src/components/DocViewer.tsx frontend/src/constants/helpContent.tsx; do
+    forbid "$f" 'Neuer Mitarbeiter:in'
+  done
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---

@@ -161,7 +161,7 @@ Die Liste zeigt alle aktiven Mitarbeiter mit:
 
 ![Neuen Benutzer anlegen](screenshots/16-admin-benutzer-formular.png)
 
-Klicken Sie auf **„Neuer Mitarbeiter:in"** und füllen Sie das Formular aus:
+Klicken Sie auf **„Neue:r Mitarbeiter:in"** und füllen Sie das Formular aus:
 
 **Pflichtfelder:**
 | Feld | Beschreibung |

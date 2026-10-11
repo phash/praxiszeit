@@ -71,7 +71,7 @@ Gilt für den **ganzen Tag** (alle Einträge zusammen); Lücken unter 15 Min. z�
 - In der Pause zwischen den Blöcken zeigt das Dashboard neutral „Pause zwischen den Arbeitsblöcken".
 - Vor, nach oder zwischen den Blöcken gearbeitet? Am Eintrag **„Anrechnung beantragen"** (mit Begründung; für heute erst nach Arbeitsende). Tab „Anträge": Kennzeichen „Anrechnung beantragt", nach der Genehmigung zusätzlich „anerkannt" bzw. „ohne Anerkennen genehmigt".
 - Heute anerkannter Eintrag: Schloss, kein Bearbeiten/Löschen; ab morgen per **Änderungsantrag**/**Löschantrag** oder über die Verwaltung.
-- Vergessen auszustempeln? Der Eintrag wird um 23:59 automatisch geschlossen und nur bis Blockende + Puffer angerechnet → tatsächliches Ende per **Änderungsantrag** nachtragen (auch ein echtes Ende 23:59, z. B. nach einem Notdienst).
+- Vergessen auszustempeln? Der Eintrag wird um 23:59 automatisch geschlossen und nur bis Blockende + Puffer angerechnet → tatsächliches Ende per **Änderungsantrag** nachtragen (auch ein echtes Ende 23:59, z. B. nach einem Notdienst) – auch dieses Ende wird an den Blöcken gekürzt; die Zeit danach zählt erst, wenn die Verwaltung den Eintrag anerkennt (→ **„Anrechnung beantragen"**).
 - Ihre **echte Stempelzeit bleibt gespeichert** (§16 ArbZG); fürs Stundenkonto zählt die angerechnete Zeit. Nicht angerechnet heißt nicht unbezahlt.
 
 ---

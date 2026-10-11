@@ -75,7 +75,7 @@ docker-compose up -d
 |-------|-----|-------------|
 | `14-admin-dashboard.png` | `/admin` | Admin-Dashboard mit Teamübersicht |
 | `15-admin-benutzer.png` | `/admin/users` | Benutzerliste |
-| `16-admin-benutzer-formular.png` | `/admin/users` | Formular „Neuer Mitarbeiter:in" |
+| `16-admin-benutzer-formular.png` | `/admin/users` | Formular „Neue:r Mitarbeiter:in" |
 | `17-admin-benutzer-bearbeiten.png` | `/admin/users` | Bearbeiten-Formular eines Benutzers |
 | `18-admin-abwesenheitskalender.png` | `/admin/absences` | Abwesenheitskalender Admin |
 | `19-admin-berichte.png` | `/admin/reports` | Berichte & Export |
