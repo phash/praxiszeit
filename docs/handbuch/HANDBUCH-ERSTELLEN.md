@@ -59,7 +59,7 @@ docker compose exec -T backend python create_handbuch_testdata.py </dev/null
 cd e2e && npx --yes tsx capture-handbook-screenshots.ts
 ```
 
-Das Seed-Skript läuft nur gegen PostgreSQL und setzt das Admin-Passwort auf `Admin2026!` (Mitarbeitende: `Mitarbeiter2026!`). Die E2E-Tests erwarten `Admin2025!` – danach zurücksetzen. Das Aufnahmeskript nimmt alle Bilder neu auf; nur die tatsächlich geänderten committen (`git restore docs/handbuch/screenshots/` für den Rest).
+Das Seed-Skript läuft nur gegen PostgreSQL und setzt das Admin-Passwort auf `Admin2026!` (Mitarbeitende: `Mitarbeiter2026!`). Die E2E-Tests erwarten `Admin2025!` – danach zurücksetzen: `docker compose exec backend python -m app.cli.reset_admin_password` (Vorgabe-Konto `admin`; fragt das neue Passwort zweimal verdeckt ab und braucht dafür ein Terminal, deshalb ohne `-T`; der Vorgang wird in `security_events` protokolliert). Außerdem benennt das Seed-Skript den Admin in „Andreas Werner“ (`admin@musterpraxis.de`) um; das bleibt nach dem Zurücksetzen so und spielt für die E2E-Tests keine Rolle. Das Aufnahmeskript nimmt alle Bilder neu auf; nur die tatsächlich geänderten committen (`git restore docs/handbuch/screenshots/` für den Rest).
 
 #### Mitarbeiter-Screenshots (als Employee einloggen oder als Admin mit Employee-Sicht)
 
