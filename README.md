@@ -185,7 +185,7 @@ Neue Migration erstellen:
 docker compose exec backend alembic revision --autogenerate -m "description"
 ```
 
-**Aktuelle Migrationen (001–059):**
+**Aktuelle Migrationen (001–073):**
 - `001` - Initial Schema (User, TimeEntry, Absence, PublicHoliday)
 - `002` - Add track_hours field
 - `003` - Add end_date to absences (Zeiträume)

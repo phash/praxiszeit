@@ -293,7 +293,7 @@ flowchart TB
 4. **Echte Mandantentrennung per RLS**: Jede mandantengebundene Tabelle hat eine PostgreSQL-Policy gegen `app.tenant_id`; zusätzlich „belt-and-suspenders" Tenant-Filter in der App (F-026).
 5. **Historische Berechnungen**: Stundenänderungen tagesgenau über `working_hours_changes`; Soll/Ist respektiert Eintritt/Austritt-Fenster.
 6. **Tagebasierter Urlaub** (Tagesprinzip §3 BUrlG): 1 freier Arbeitstag = 1 Urlaubstag.
-7. **ArbZG eingebaut**: Echtzeit-Prüfung an allen Schreibpfaden (Ruhezeit, Pause, Nachtarbeit, Sonntag, Arbeitszeit-Fenster) + dedizierte Compliance-Reports.
+7. **ArbZG eingebaut**: Echtzeit-Prüfung an allen Schreibpfaden (Ruhezeit, Pause, Nachtarbeit, Sonntag, Arbeitszeit-Blöcke mit Kappung vor, nach und zwischen den Blöcken) + dedizierte Compliance-Reports.
 8. **Robuste Lizenz/Update-Kette**: Ed25519-signiert, mehrere akzeptierte Public-Keys (keine harte Rotation); Fehler → Read-Only statt Crash.
 9. **Autonomer Scheduler**: APScheduler für tägliche Lifecycle-Jobs (kein externes Cron nötig).
 10. **PWA**: Offline-fähige, installierbare Web-App.

@@ -22,10 +22,10 @@ Datenverlust. Datenbank-Migrationen laufen bei jedem Start automatisch.
 >   beim Speichern „Bitte Seite neu laden: Die Arbeitszeit-Fenster (Soll-Beginn/Soll-Ende)
 >   wurden durch Arbeitszeit-Blöcke ersetzt."
 > - Ausgabe der Migration lesen (Docker: `docker compose logs backend`; nativ:
->   `logs/praxiszeit.log`, Zeilen mit `alembic:`). Der Block
->   `*** HINWEIS (Migration 073) ***` nennt die Zahl der übernommenen Konten und
->   Verlaufszeilen; steht dort „Besonderheiten", die genannten Personen im Dialog
->   „Arbeitszeit anpassen…" prüfen.
+>   `logs/praxiszeit.log`, Zeilen mit `alembic:`). Der Abschnitt zwischen
+>   `*** HINWEIS (Migration 073) ***` und `*** ENDE HINWEIS ***` nennt die Zahl
+>   der übernommenen Konten und Verlaufszeilen; steht dort „Besonderheiten", die
+>   genannten Personen im Dialog „Arbeitszeit anpassen…" prüfen.
 > - **Zurück auf 1.19.x nur über das Backup** von vor dem Update. Ein Schema-Downgrade
 >   stellt je Tag nur die Hülle der Blöcke (Beginn des ersten bis Ende des letzten
 >   Blocks) als Fenster her – Zeit zwischen den Blöcken würde dann wieder angerechnet.

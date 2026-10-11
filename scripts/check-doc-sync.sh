@@ -742,7 +742,9 @@ group_technik() {
   need "$f" 'presence_service.py'
   need "$f" 'reset_of_change_id'
   need "$f" 'RESET_CONFLICT_DETAIL'
+  need "$f" 'request_end_for_approval'
   forbid "$f" '### Arbeitszeit-Fenster (#201, work_window_service.py)'
+  forbid "$f" 'jeder Pfad, der Einträge schreibt, nimmt'
   forbid "$f" 'scheduled_start_<wd>'
   f=docs/ARC42.md
   need "$f" '| 013 |'
@@ -755,9 +757,11 @@ group_technik() {
   forbid "$f" '(26 Domain-Services)'
   forbid "$f" 'Arbeitszeit-Fenster pro Wochentag setzen'
   forbid "$f" '`…/api/admin/users/{id}/working-hours` |'
+  forbid "$f" 'Sonntag, Arbeitszeit-Fenster)'
   f=README.md
   need "$f" '- `066` -'
   need "$f" '- `073` - Arbeitszeit-Blöcke'
+  need "$f" 'Aktuelle Migrationen (001–073)'
   f=docs/specs/dsgvo/verarbeitungsverzeichnis.md
   need "$f" 'Arbeitszeit-Blöcke'
   need "$f" 'uncredited_minutes'
@@ -769,6 +773,8 @@ group_technik() {
   need "$f" '`073_work_blocks`'
   need "$f" 'Hülle der Blöcke'
   need "$f" '*** HINWEIS (Migration 073) ***'
+  need "$f" '*** ENDE HINWEIS ***'
+  forbid "$f" 'Der Block'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
