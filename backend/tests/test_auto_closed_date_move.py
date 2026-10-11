@@ -21,6 +21,14 @@ Zwei Schritte (PR1-Review N2): Montag → Freitag (frühere Hülle bis 16:15) �
 nächster Montag muss dasselbe ergeben wie der direkte Weg (18:15, 3,25 h).
 Nach dem ersten Schritt trägt das Rohende das übernommene wirksame Ende 18:15 —
 es ist die Kappungseingabe des zweiten Schritts, nicht das schon gekürzte 16:15.
+
+Entschieden 2026-10-11 (Produktinhaber, P18): ein eingetragenes Ende, das nicht
+das gespeicherte wirksame ist, ist eine Korrektur — auch 23:59 und das
+übernommene Rohende 18:15. Die Formulare schicken das wirksame Ende, und kein
+Pfad füllt ein fehlendes Ende mehr mit dem Rohende auf; das Verschieben ohne
+Korrektur (Formular bzw. reiner Datums-PUT) bleibt deshalb unverändert beim
+wirksamen Ende. Ein beim Verschieben eingetipptes 23:59 gilt dagegen wie
+eingetragen.
 """
 from datetime import date, time
 from decimal import Decimal
@@ -82,13 +90,14 @@ _MOVED = [
 ]
 
 
-def _assert_moved(db, e, target, ends, break_minutes):
+def _assert_moved(db, e, target, ends, break_minutes, auto_closed=True):
     db.refresh(e)
     hours = Decimal("3.25") - Decimal(break_minutes) / 60
     assert (e.date, e.start_time, e.end_time, e.raw_end_time) == (target, time(15, 0), *ends)
     assert e.net_hours == hours.quantize(Decimal("0.01"))
-    # Verschieben ist keine Korrektur des Endes: das Kennzeichen bleibt (P18).
-    assert e.auto_closed is True
+    # Verschieben ist keine Korrektur des Endes: das Kennzeichen bleibt (P18) —
+    # außer es wurde ein anderes Ende eingetragen (Entschieden 2026-10-11).
+    assert e.auto_closed is auto_closed
 
 
 # ── MA-Antrag (E40): §4 prüft die angerechnete Zeit ─────────────────────────
@@ -211,7 +220,9 @@ def test_route_two_moves_do_not_depend_on_order(_db_session, auto_closed_entry, 
     """Montag → Freitag → nächster Montag = 18:15 / 3,25 h wie der direkte Weg.
     Bis zum Fix kappte der zweite Schritt mit dem schon gekürzten 16:15 —
     2 h fielen still weg (keine Kappungswarnung, am Montag ist 16:15 konform).
-    Auch ein ausdrücklich eingetipptes 18:15 landete bei 16:15."""
+    Auch ein ausdrücklich eingetipptes 18:15 landete bei 16:15. Seit 2026-10-11
+    ist das eingetippte 18:15 (≠ wirksames Ende 16:15) eine Korrektur: dasselbe
+    Ergebnis, aber das Kennzeichen fällt."""
     url = f"{route}/{auto_closed_entry.id}"
     first = {"date": FRI.isoformat()}
     if second_end is not None:
@@ -225,7 +236,8 @@ def test_route_two_moves_do_not_depend_on_order(_db_session, auto_closed_entry, 
         second.update({"start_time": "15:00", "end_time": second_end, "break_minutes": 0})
     resp = admin_client.put(url, json=second)
     assert resp.status_code == 200, resp.text
-    _assert_moved(_db_session, auto_closed_entry, MON2, (time(18, 15), None), 0)
+    _assert_moved(_db_session, auto_closed_entry, MON2, (time(18, 15), None), 0,
+                  auto_closed=second_end != "18:15")
 
 
 @pytest.mark.parametrize("second_end", [time(16, 15), time(18, 15)],
@@ -246,7 +258,8 @@ def test_cr_approval_two_moves_do_not_depend_on_order(_db_session, employee_user
         assert resp.status_code == 200, resp.text
         if target == FRI:
             _assert_on_friday(_db_session, auto_closed_entry)
-    _assert_moved(_db_session, auto_closed_entry, MON2, (time(18, 15), None), 0)
+    _assert_moved(_db_session, auto_closed_entry, MON2, (time(18, 15), None), 0,
+                  auto_closed=second_end != time(18, 15))
 
 
 # ── Helfer ──────────────────────────────────────────────────────────────────
@@ -254,8 +267,11 @@ def test_cr_approval_two_moves_do_not_depend_on_order(_db_session, employee_user
 @pytest.mark.parametrize("incoming, eff, raw, auto_closed, prev, target, expected", [
     # Datumswechsel, Formular schickt wirksames Ende → wirksames Ende
     (time(18, 15), time(18, 15), time(23, 59), True, MON, SAT, time(18, 15)),
-    # Datumswechsel, Rohende 23:59 zurück (Rückfall eines Teil-Updates) → wirksames Ende
-    (time(23, 59), time(18, 15), time(23, 59), True, MON, SAT, time(18, 15)),
+    # Entschieden 2026-10-11: ein echtes 23:59 beim Verschieben ist eine
+    # Korrektur → normale Eingabe (bis dahin: Echo → wirksames Ende; der Rückfall
+    # eines Teil-Updates auf das Rohende existiert nicht mehr)
+    (time(23, 59), time(18, 15), time(23, 59), True, MON, SAT, time(23, 59)),
+    (time(23, 59), time(18, 15), time(23, 59), True, MON, MON, time(23, 59)),
     # Datumswechsel mit echter Korrektur → Eingabe gilt
     (time(17, 0), time(18, 15), time(23, 59), True, MON, SAT, time(17, 0)),
     # gleiches Datum → unverändert P18 (Rohende als Kappungseingabe)
@@ -267,17 +283,20 @@ def test_cr_approval_two_moves_do_not_depend_on_order(_db_session, employee_user
     # zweiter Datumswechsel: das Rohende trägt das übernommene wirksame Ende
     # (kein 23:59) → es ist die Eingabe, nicht das schon gekürzte wirksame Ende
     (time(16, 15), time(16, 15), time(18, 15), True, FRI, MON2, time(18, 15)),
+    # dasselbe 18:15 eingetippt: seit 2026-10-11 eine Korrektur, gleiches Ergebnis
     (time(18, 15), time(16, 15), time(18, 15), True, FRI, MON2, time(18, 15)),
     # dasselbe am gleichen Tag → unclamp_input (unverändert)
     (time(16, 15), time(16, 15), time(18, 15), True, FRI, FRI, time(18, 15)),
     # Ende entfernt
     (None, time(18, 15), time(23, 59), True, MON, SAT, None),
-    # Review Task 6 (PR2): minutengenau — 23:59:30 ist das synthetische 23:59,
-    # am selben Tag bleibt das gespeicherte Rohende (keine Sekunden), beim
-    # Verschieben gilt das wirksame Ende
-    (time(23, 59, 30), time(18, 15), time(23, 59), True, MON, MON, time(23, 59)),
-    (time(23, 59, 30), time(18, 15), time(23, 59), True, MON, SAT, time(18, 15)),
+    # Review Task 6 (PR2): minutengenau — 18:15:30 ist das wirksame Ende, am
+    # selben Tag bleibt das gespeicherte Rohende (keine Sekunden); ein
+    # eingetragenes 23:59:30 ist seit 2026-10-11 eine Korrektur und gilt wie
+    # eingetragen
     (time(18, 15, 30), time(18, 15), time(23, 59), True, MON, MON, time(23, 59)),
+    (time(18, 15, 30), time(18, 15), time(23, 59), True, MON, SAT, time(18, 15)),
+    (time(23, 59, 30), time(18, 15), time(23, 59), True, MON, MON, time(23, 59, 30)),
+    (time(23, 59, 30), time(18, 15), time(23, 59), True, MON, SAT, time(23, 59, 30)),
     # ein gespeichertes Rohende 23:59:xx gilt ebenfalls als synthetisch
     (time(18, 15), time(18, 15), time(23, 59, 30), True, MON, SAT, time(18, 15)),
 ])
@@ -295,6 +314,12 @@ def test_end_input_for(incoming, eff, raw, auto_closed, prev, target, expected):
 # späteren Beginn landete der Eintrag als 20:00–18:15, net 0, ohne Warnung —
 # genau der Zustand, den der Release-Review 1.16.0 ausschließen wollte (der Tag
 # verschwindet still aus Saldo und §16-Beleg). Jetzt 400, Eintrag unverändert.
+#
+# Entschieden 2026-10-11 (Produktinhaber, P18): ein eingetipptes 23:59 ist eine
+# Korrektur und gilt wie eingetragen — es landet nicht mehr beim wirksamen Ende,
+# die Reihenfolge stimmt also (Tests unten). Die Fälle „Ende 23:59 eingetippt"
+# dieser Prüfung sind deshalb umgezogen; sie greift weiter, wenn kein Ende
+# mitkommt oder das vorbelegte wirksame Ende zurückkommt.
 
 def _assert_unchanged(db, e):
     # Produktiv schließt ``get_db`` die Sitzung (= Rollback); im Test teilen sich
@@ -319,14 +344,14 @@ def _assert_order_rejected(resp):
     pytest.param(SAT, "20:00", id="samstag"),
     pytest.param(MON2, "19:00", id="naechster-montag"),
 ])
-@pytest.mark.parametrize("end", ["23:59", None], ids=["ende-2359-eingetippt", "ohne-ende"])
 def test_route_start_after_effective_end_rejected(_db_session, auto_closed_entry, admin_client,
-                                                  route, target, start, end):
+                                                  route, target, start):
+    """Ohne Ende im Payload. Die Verwaltungsroute nimmt dafür das gespeicherte
+    WIRKSAME Ende (seit 2026-10-11, vorher das Rohende 23:59) — beim Verschieben
+    liefert ``end_input_for`` dasselbe 18:15, und die zweite Prüfung lehnt ab."""
     payload = {"date": target.isoformat(), "start_time": start}
-    if end is not None:
-        payload.update({"end_time": end, "break_minutes": 0})
     resp = admin_client.put(f"{route}/{auto_closed_entry.id}", json=payload)
-    if route == "/api/time-entries" and end is None:
+    if route == "/api/time-entries":
         # Die MA-Route füllt das Ende mit dem gespeicherten wirksamen Ende auf —
         # die bestehende Prüfung greift schon (ohne Hinweis).
         assert resp.status_code == 400, resp.text
@@ -336,20 +361,71 @@ def test_route_start_after_effective_end_rejected(_db_session, auto_closed_entry
     _assert_unchanged(_db_session, auto_closed_entry)
 
 
+# Zieltag, Beginn → (Beginn, wirksames Ende, Rohende, net_hours) mit eingetipptem 23:59.
+_TYPED_2359 = [
+    # ohne Blöcke: ungekappt angerechnet (das Ende ist ein echter Stempel)
+    pytest.param(SAT, time(20, 0), (time(20, 0), time(23, 59), None, Decimal("3.98")), id="samstag"),
+    # Hülle bis 18:15, Beginn danach: Kollaps auf 0 h, Rohstempel bleibt (#201)
+    pytest.param(MON2, time(19, 0), (time(19, 0), time(19, 0), time(23, 59), Decimal("0.00")),
+                 id="naechster-montag"),
+]
+
+
+def _assert_typed_2359_moved(db, e, target, expected):
+    db.refresh(e)
+    start, end, raw_end, net = expected
+    assert (e.date, e.start_time, e.end_time, e.raw_end_time, e.net_hours, e.auto_closed) == (
+        target, start, end, raw_end, net, False)
+
+
+@pytest.mark.parametrize("route", ["/api/admin/time-entries", "/api/time-entries"],
+                         ids=["admin-route", "ma-route"])
+@pytest.mark.parametrize("target, start, expected", _TYPED_2359)
+def test_route_typed_2359_on_move_is_a_correction(_db_session, auto_closed_entry, admin_client,
+                                                  route, target, start, expected):
+    """Entschieden 2026-10-11: beim Verschieben eingetipptes 23:59 = echtes Ende —
+    gekappt gegen die Blöcke des Zieltags wie jedes andere Ende, Kennzeichen fällt."""
+    resp = admin_client.put(f"{route}/{auto_closed_entry.id}", json={
+        "date": target.isoformat(), "start_time": start.strftime("%H:%M"),
+        "end_time": "23:59", "break_minutes": 0})
+    assert resp.status_code == 200, resp.text
+    _assert_typed_2359_moved(_db_session, auto_closed_entry, target, expected)
+
+
 @pytest.mark.parametrize("target, start", [
     pytest.param(SAT, "20:00", id="samstag"),
     pytest.param(MON2, "19:00", id="naechster-montag"),
 ])
 def test_change_request_start_after_effective_end_rejected(_db_session, auto_closed_entry,
                                                            employee_client, target, start):
+    """Antrag mit dem vorbelegten wirksamen Ende 18:15 und späterem Beginn: die
+    Prüfung der rohen Eingabe lehnt ab, kein Antrag. (``end_input_for`` legt das
+    Ende beim Antrag nie mehr vor die Eingabe — die zweite Prüfung bleibt dort
+    Absicherung.)"""
     resp = employee_client.post("/api/change-requests/", json={
         "request_type": "update", "time_entry_id": str(auto_closed_entry.id),
         "proposed_date": target.isoformat(), "proposed_start_time": start,
-        "proposed_end_time": "23:59", "proposed_break_minutes": 0,
+        "proposed_end_time": "18:15", "proposed_break_minutes": 0,
         "reason": "Falscher Tag erfasst"})
-    _assert_order_rejected(resp)
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"].startswith("Endzeit muss nach Startzeit liegen")
     assert _db_session.query(ChangeRequest).count() == 0
     _assert_unchanged(_db_session, auto_closed_entry)
+
+
+def test_change_request_typed_2359_on_move_is_accepted(_db_session, auto_closed_entry, employee_client):
+    """Entschieden 2026-10-11: das eingetippte 23:59 ist das Ende des Antrags —
+    geprüft wird 20:00–23:59 am Samstag (ohne Blöcke, 3:59 h, keine Pause nötig),
+    gespeichert roh (E40)."""
+    resp = employee_client.post("/api/change-requests/", json={
+        "request_type": "update", "time_entry_id": str(auto_closed_entry.id),
+        "proposed_date": SAT.isoformat(), "proposed_start_time": "20:00",
+        "proposed_end_time": "23:59", "proposed_break_minutes": 0,
+        "reason": "Falscher Tag erfasst"})
+    assert resp.status_code == 201, resp.text
+    cr = _db_session.query(ChangeRequest).one()
+    assert (cr.proposed_date, cr.proposed_start_time, cr.proposed_end_time) == (
+        SAT, time(20, 0), time(23, 59))
 
 
 @pytest.mark.parametrize("target, start", [
@@ -358,12 +434,13 @@ def test_change_request_start_after_effective_end_rejected(_db_session, auto_clo
 ])
 def test_cr_approval_start_after_effective_end_rejected(_db_session, employee_user, auto_closed_entry,
                                                         admin_client, target, start):
-    """Auch ein älterer Antrag (vor dieser Prüfung gestellt) wird nicht genehmigt —
-    vor der Vorprüfung und vor jeder Statusänderung."""
+    """Auch ein älterer Antrag (vor dieser Prüfung gestellt, mit dem vorbelegten
+    wirksamen Ende 18:15) wird nicht genehmigt — vor der Vorprüfung und vor
+    jeder Statusänderung."""
     cr = ChangeRequest(user_id=employee_user.id, tenant_id=DEFAULT_TENANT_ID, entry_kind="time_entry",
                        request_type=ChangeRequestType.UPDATE, status=ChangeRequestStatus.PENDING,
                        time_entry_id=auto_closed_entry.id, proposed_date=target,
-                       proposed_start_time=start, proposed_end_time=time(23, 59),
+                       proposed_start_time=start, proposed_end_time=time(18, 15),
                        proposed_break_minutes=0, reason="Falscher Tag erfasst")
     _db_session.add(cr)
     _db_session.commit()
@@ -372,6 +449,23 @@ def test_cr_approval_start_after_effective_end_rejected(_db_session, employee_us
     _assert_unchanged(_db_session, auto_closed_entry)
     _db_session.refresh(cr)
     assert cr.status == ChangeRequestStatus.PENDING
+
+
+@pytest.mark.parametrize("target, start, expected", _TYPED_2359)
+def test_cr_approval_typed_2359_on_move_is_a_correction(_db_session, employee_user, auto_closed_entry,
+                                                        admin_client, target, start, expected):
+    """Entschieden 2026-10-11: die Genehmigung übernimmt das beantragte 23:59 als
+    echtes Ende (bis dahin: Echo → wirksames Ende bzw. 400)."""
+    cr = ChangeRequest(user_id=employee_user.id, tenant_id=DEFAULT_TENANT_ID, entry_kind="time_entry",
+                       request_type=ChangeRequestType.UPDATE, status=ChangeRequestStatus.PENDING,
+                       time_entry_id=auto_closed_entry.id, proposed_date=target,
+                       proposed_start_time=start, proposed_end_time=time(23, 59),
+                       proposed_break_minutes=0, reason="Falscher Tag erfasst")
+    _db_session.add(cr)
+    _db_session.commit()
+    resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
+    assert resp.status_code == 200, resp.text
+    _assert_typed_2359_moved(_db_session, auto_closed_entry, target, expected)
 
 
 @pytest.mark.parametrize("start, end, auto_closed, expected", [

@@ -304,9 +304,16 @@ def admin_update_time_entry(
         entry_data.start_time if entry_data.start_time is not None
         else (entry.raw_start_time or entry.start_time)
     )
+    # Entschieden 2026-10-11 (P18): der Rückfall für das ENDE ist das gespeicherte
+    # WIRKSAME Ende, nie das Rohende. ``end_input_for`` unten stellt daraus den
+    # Rohstempel wieder her (``unclamp_input`` — dasselbe Ergebnis wie der frühere
+    # Rückfall ``raw_end_time or end_time``, 1.18.2 bleibt gewahrt), beim
+    # automatisch geschlossenen Eintrag am selben Tag das Protokoll-23:59 und beim
+    # Verschieben das wirksame Ende. Das eingesetzte Rohende 23:59 hielt
+    # ``end_is_correction`` seit der Entscheidung für ein eingetragenes Ende —
+    # ein reiner Datums-PUT rechnete am Samstag wieder 15:00–23:59 an (F1).
     update_end_time = (
-        entry_data.end_time if entry_data.end_time is not None
-        else (entry.raw_end_time or entry.end_time)
+        entry_data.end_time if entry_data.end_time is not None else entry.end_time
     )
     update_break_minutes = entry_data.break_minutes if entry_data.break_minutes is not None else entry.break_minutes
 
@@ -314,10 +321,13 @@ def admin_update_time_entry(
     # `TimeEntryUpdate.validate_end_after_start` sieht nur den Payload — ein PUT mit
     # ausschliesslich `end_time` kommt daran vorbei, und der Router schrieb bisher
     # end < start durch; `net_hours` fiel dann still über den max(0,…)-Floor auf 0
-    # und der Tag verschwand aus Saldo und §16-Beleg.
+    # und der Tag verschwand aus Saldo und §16-Beleg. Ohne Ende im Payload prüft
+    # erst ``input_order_error`` unten die tatsächliche Kappungseingabe: das
+    # gespeicherte wirksame Ende eines gekappten Eintrags (Kollaps 19:00–19:00)
+    # ist kein Ende, gegen das eine Notiz-Korrektur scheitern darf.
     if (
         update_start_time is not None
-        and update_end_time is not None
+        and entry_data.end_time is not None
         and update_end_time <= update_start_time
     ):
         raise HTTPException(
@@ -335,9 +345,10 @@ def admin_update_time_entry(
     update_start_time = work_window_service.unclamp_input(
         update_start_time, entry.start_time, entry.raw_start_time,
     )
-    # PR1-Review F1 (P18): auch der Rückfall eines reinen Datums-PUT (Rohende 23:59 oben)
-    # läuft hier durch — beim Verschieben eines automatisch geschlossenen
-    # Eintrags gilt das wirksame Ende.
+    # PR1-Review F1 (P18): auch der Rückfall eines reinen Datums-PUT (wirksames
+    # Ende oben) läuft hier durch — beim Verschieben eines automatisch
+    # geschlossenen Eintrags gilt das wirksame Ende, ein eingetragenes 23:59 ist
+    # eine Korrektur (Entschieden 2026-10-11).
     update_end_time = work_window_service.end_input_for(
         update_end_time, entry.end_time, entry.raw_end_time,
         auto_closed=entry.auto_closed, prev_date=entry.date, target_date=update_date,
@@ -384,6 +395,14 @@ def admin_update_time_entry(
             detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum",
         )
 
+    # P18: VOR dem Überschreiben festhalten — ``entry.end_time`` trägt hier noch
+    # das gespeicherte wirksame Ende. Nur ein ANDERES Ende ist eine echte
+    # Korrektur; das Formular schickt das wirksame Ende sonst unverändert mit.
+    # Entschieden 2026-10-11: auch ein eingetragenes 23:59 (gleiche Regel wie
+    # MA-Route und Antragsgenehmigung).
+    _end_corrected = entry.auto_closed and entry_data.end_time is not None \
+        and work_window_service.end_is_correction(entry_data.end_time, entry.end_time)
+
     admin_update_warnings: list[str] = []
     # #462: wie im Anlege-Pfad — eine stille Aenderung fremder Arbeitszeit ist
     # das eigentliche Problem, nicht die Kappung selbst. Nur melden, wenn die
@@ -396,12 +415,15 @@ def admin_update_time_entry(
     # diesen Vergleich meldete jede Notiz- oder Pausenkorrektur erneut eine
     # Kappung, die laengst passiert ist — derselbe Laerm, den der Notiz-Gate
     # vermeiden sollte. ``entry.*`` traegt an dieser Stelle noch den gespeicherten
-    # Stand (geschrieben wird weiter unten).
+    # Stand (geschrieben wird weiter unten). Ein eingetragenes 23:59 trifft beim
+    # automatisch geschlossenen Eintrag dasselbe Rohende wie vorher — es ist aber
+    # jetzt ein Stempel statt einer Protokollzeile, die Kappung damit neu.
     _times_written = (
         entry_data.date is not None
         and entry_data.date != entry.date
     ) or update_start_time != (entry.raw_start_time or entry.start_time) \
-      or update_end_time != (entry.raw_end_time or entry.end_time)
+      or update_end_time != (entry.raw_end_time or entry.end_time) \
+      or _end_corrected
     if _times_written:
         _clamp_warn = work_window_service.clamp_warning(
             db, affected_user, update_date, _r, for_employee=False,
@@ -487,16 +509,6 @@ def admin_update_time_entry(
         },
         source=BREAK_WAIVER_SOURCE if break_waiver_active else "manual",
         tenant_id=current_user.tenant_id,
-    )
-
-    # P18: VOR dem Überschreiben festhalten — ``entry.end_time`` trägt hier noch
-    # das gespeicherte wirksame Ende. Nur ein ANDERES Ende ist eine echte
-    # Korrektur; das Formular schickt das wirksame Ende sonst unverändert mit.
-    # Das Rohende 23:59 eines automatisch geschlossenen Eintrags ist kein Stempel
-    # und ebenfalls keine Korrektur (Review Task 8, gleiche Regel wie MA-Route
-    # und Antragsgenehmigung).
-    _end_corrected = entry_data.end_time is not None and work_window_service.end_is_correction(
-        entry_data.end_time, entry.end_time, entry.raw_end_time, entry.auto_closed,
     )
 
     # Apply only provided updates (always write clamped effective times).

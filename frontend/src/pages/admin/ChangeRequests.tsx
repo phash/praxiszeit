@@ -92,14 +92,16 @@ function getDateRange(range: TimeRange): { from: string; to: string } {
 /**
  * P18: Bringt ein Antrag zu einem automatisch geschlossenen Eintrag ein
  * tatsächliches Ende mit? Sonst lehnt der Server das Anerkennen mit 400 ab
- * (`credit_override_service.lacks_actual_end`) — das gespeicherte Ende und das
- * synthetische 23:59 zählen nicht. Das Rohende kennt der Antrag nicht; diesen
- * Rest fängt der Server ab.
+ * (`credit_override_service.lacks_actual_end`) — das gespeicherte (wirksame)
+ * Ende zählt nicht; der Antrag kennt es als `original_end_time`. Entschieden
+ * 2026-10-11 (Produktinhaber): ein beantragtes 23:59 ist ein tatsächliches
+ * Ende (außer ohne Blöcke, wo das wirksame Ende selbst 23:59 ist). Hat sich
+ * der Eintrag seit dem Antrag geändert, fängt den Rest der Server ab.
  */
 function bringsActualEnd(cr: ChangeRequest): boolean {
   if (!cr.entry_auto_closed) return true;
   const end = cr.proposed_end_time?.substring(0, 5);
-  return !!end && end !== '23:59' && end !== cr.original_end_time?.substring(0, 5);
+  return !!end && end !== cr.original_end_time?.substring(0, 5);
 }
 
 const hhmm = (t?: string | null) => (t ? t.substring(0, 5) : '');

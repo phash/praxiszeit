@@ -364,11 +364,13 @@ def test_request_rejected_for_delete(_db_session, employee_user, employee_client
     assert _db_session.query(ChangeRequest).count() == 0
 
 
-# Review Focus 3: 18:15 (gekapptes Ende) und 23:59 liefen über unclamp_input wieder auf 23:59.
-# Review Task 6 (PR2): minutengenau — die Schemata lassen Sekunden zu, ein
-# exakter Vergleich ließ „23:59:30" (angezeigt „23:59") an der Sperre vorbei.
+# Review Focus 3: 18:15 (gekapptes Ende) lief über unclamp_input wieder auf 23:59.
+# Review Task 6 (PR2): minutengenau — die Schemata lassen Sekunden zu.
+# Entschieden 2026-10-11 (Produktinhaber, P18): ein eingetragenes 23:59 ist ein
+# tatsächliches Ende (bis dahin 400 wie das gekappte Ende) — die Formulare
+# schicken das wirksame Ende, ein 23:59 kommt nur aus echter Eingabe.
 @pytest.mark.parametrize("end, status", [
-    ("18:15", 400), ("23:59", 400), ("23:59:30", 400), ("18:15:30", 400), ("17:30", 201),
+    ("18:15", 400), ("18:15:30", 400), ("23:59", 201), ("23:59:30", 201), ("17:30", 201),
 ])
 def test_auto_closed_needs_the_actual_end(_db_session, employee_user, employee_client, end, status):
     employee_user.work_blocks = K_BLOCKS
@@ -533,14 +535,15 @@ def test_grant_rejected_for_absence_request(_db_session, employee_user, admin_cl
 
 @pytest.mark.parametrize("raw_end, end", [
     (time(23, 59), time(18, 15)),
-    (time(23, 59), time(23, 59)),
-    # Nach einem Verschieben trägt der Eintrag kein Rohende 23:59 mehr —
-    # ``end_is_correction`` hielte ein eingereichtes 23:59 dann für ein echtes
-    # Ende, und Anerkennen rechnete 08:00–23:59 an.
-    (None, time(23, 59)),
-    # Review Task 6 (PR2): Sekunden ändern nichts — 23:59:30 ist dieselbe Minute.
-    (time(23, 59), time(23, 59, 30)),
-    (None, time(23, 59, 30)),
+    # Nach einem Verschieben trägt der Eintrag kein Rohende 23:59 mehr — das
+    # wirksame Ende bleibt trotzdem kein tatsächliches Ende.
+    (None, time(18, 15)),
+    # Review Task 6 (PR2): Sekunden ändern nichts — 18:15:30 ist dieselbe Minute.
+    (time(23, 59), time(18, 15, 30)),
+    # Ein Antrag ohne Ende bringt keins mit.
+    (time(23, 59), None),
+    # Entschieden 2026-10-11: 23:59 (auch nach einem Verschieben) ist dagegen ein
+    # tatsächliches Ende — ``test_grant_on_auto_closed_entry_with_a_typed_2359``.
 ])
 def test_grant_on_auto_closed_entry_needs_the_actual_end(_db_session, employee_user,
                                                          admin_client, raw_end, end):
@@ -577,26 +580,61 @@ def test_grant_on_auto_closed_entry_with_the_actual_end(_db_session, employee_us
     assert float(e.net_hours) == 9.5
 
 
-def test_seconds_do_not_turn_the_synthetic_end_into_a_stamp(_db_session, employee_user,
-                                                            admin_client):
-    """Review Task 6 (PR2): ein gewöhnlicher Antrag mit „23:59:30" (in der
-    Oberfläche „23:59") hob ``auto_closed`` auf — ``end_is_correction``
-    verglich sekundengenau. Danach rechnete ein Anerkennen der Verwaltung bis
-    23:59:30 an. Minutengenau ist es das synthetische 23:59: das Kennzeichen
-    bleibt, das gespeicherte Paar unverändert, Anerkennen verlangt weiter das
-    tatsächliche Ende."""
+@pytest.mark.parametrize("raw_end", [time(23, 59), None], ids=["rohende-2359", "verschoben"])
+def test_grant_on_auto_closed_entry_with_a_typed_2359(_db_session, employee_user, admin_client,
+                                                      raw_end):
+    """Entschieden 2026-10-11 (Produktinhaber, P18): ein beantragtes 23:59 ist
+    ein tatsächliches Ende. Der UPDATE-Zweig hebt ``auto_closed`` auf, danach
+    wird bis 23:59 anerkannt (08:00–23:59 = 15:59 h, §3 nur weich, P4). Bis
+    dahin lehnte die Precondition das als synthetisches 23:59 ab."""
+    employee_user.work_blocks = K_BLOCKS
+    e = _entry(_db_session, employee_user, time(8), time(18, 15), raw_end_time=raw_end,
+               uncredited_minutes=150, auto_closed=True, clamp_grace_minutes=15)
+    cr = _cr(_db_session, employee_user, e, start=time(8), end=time(23, 59))
+    r = _review(admin_client, cr, grant_credit_override=True)
+    assert r.status_code == 200, r.text
+    _db_session.refresh(e)
+    assert (e.credit_override, e.auto_closed, e.start_time, e.end_time, e.raw_end_time) == (
+        True, False, time(8), time(23, 59), None)
+    assert float(e.net_hours) == 15.98
+    assert "DAILY_HOURS_HARD" in _codes(r)
+
+
+def test_seconds_typed_end_is_a_stamp(_db_session, employee_user, admin_client):
+    """Review Task 6 (PR2) hielt „23:59:30" (in der Oberfläche „23:59") für das
+    synthetische 23:59. Seit 2026-10-11 ist ein eingetragenes 23:59 ein echtes
+    Ende — mit Sekunden dieselbe echte Eingabe: das Kennzeichen fällt, das Ende
+    steht als Rohstempel, Anerkennen ist danach möglich."""
     employee_user.work_blocks = K_BLOCKS
     e = _entry(_db_session, employee_user, time(8), time(18, 15), raw_end_time=time(23, 59),
                uncredited_minutes=150, auto_closed=True, clamp_grace_minutes=15)
     cr = _cr(_db_session, employee_user, e, start=time(8), end=time(23, 59, 30))
     assert _review(admin_client, cr).status_code == 200
     _db_session.refresh(e)
-    assert (e.auto_closed, e.end_time, e.raw_end_time) == (True, time(18, 15), time(23, 59))
+    assert (e.auto_closed, e.end_time, e.raw_end_time) == (False, time(18, 15), time(23, 59, 30))
     r = _post(admin_client, e)
-    assert (r.status_code, r.json()["detail"]) == (400, cos.AUTO_CLOSED_DETAIL)
+    assert r.status_code == 200, r.text
     _db_session.refresh(e)
-    assert e.credit_override is False
-    assert _override_logs(_db_session) == []
+    assert (e.credit_override, e.end_time) == (True, time(23, 59, 30))
+
+
+@pytest.mark.parametrize("end_time, raw_end, proposed, expected", [
+    (time(18, 15), time(23, 59), time(18, 15), True),      # wirksames Ende zurück
+    (time(18, 15), time(23, 59), time(18, 15, 30), True),  # minutengenau
+    (time(18, 15), time(23, 59), None, True),              # kein Ende im Antrag
+    (time(18, 15), time(23, 59), time(23, 59), False),     # 23:59 eingetragen (seit 2026-10-11)
+    (time(16, 15), time(18, 15), time(18, 15), False),     # nach Verschieben: 18:15 eingetragen
+    (time(18, 15), time(23, 59), time(17, 30), False),
+    # Grenzfall ohne Blöcke: das wirksame Ende ist selbst 23:59 — ein 23:59 ist
+    # vom Echo nicht zu unterscheiden und bleibt kein tatsächliches Ende.
+    (time(23, 59), None, time(23, 59), True),
+])
+def test_lacks_actual_end(end_time, raw_end, proposed, expected):
+    e = TimeEntry(start_time=time(8), end_time=end_time, raw_end_time=raw_end, auto_closed=True)
+    assert cos.lacks_actual_end(e, proposed) is expected
+    # Ohne Kennzeichen fehlt nie etwas.
+    e.auto_closed = False
+    assert cos.lacks_actual_end(e, proposed) is False
 
 
 def test_bulk_approval_takes_the_request_value(_db_session, employee_user, admin_client):

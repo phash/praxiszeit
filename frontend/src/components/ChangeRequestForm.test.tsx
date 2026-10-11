@@ -178,6 +178,46 @@ describe('ChangeRequestForm — Anrechnung beantragen (Spec P21)', () => {
     }));
   });
 
+  // Entschieden 2026-10-11 (Produktinhaber, P18): ein echtes Ende 23:59 ist
+  // eintragbar. Bis dahin lehnte das Formular 23:59 wie das gekappte Ende ab.
+  it('nimmt ein eingetragenes 23:59 als tatsächliches Ende (Entschieden 2026-10-11)', async () => {
+    const onSuccess = vi.fn();
+    render(<ChangeRequestForm
+      entry={autoClosedK15}
+      requestType="update" requestCredit onClose={vi.fn()} onSuccess={onSuccess} />);
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '23:59' } });
+    submitWithReason();
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(screen.queryByText(AUTO_CLOSED_MSG)).not.toBeInTheDocument();
+    expect(post).toHaveBeenCalledWith('/change-requests', expect.objectContaining({
+      proposed_start_time: '08:00', proposed_end_time: '23:59', request_credit_override: true,
+    }));
+  });
+
+  // Grenzfall: ohne Blöcke ist das wirksame Ende selbst 23:59 — vom
+  // unveränderten Ende nicht zu unterscheiden, also kein tatsächliches Ende.
+  it('ohne Blöcke (wirksames Ende 23:59) bleibt ein 23:59 kein tatsächliches Ende', async () => {
+    render(<ChangeRequestForm
+      entry={{ ...autoClosedK15, end_time: '23:59:00', raw_end_time: null }}
+      requestType="update" requestCredit onClose={vi.fn()} onSuccess={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '23:59' } });
+    submitWithReason();
+    expect(await screen.findByText(AUTO_CLOSED_MSG)).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  // Der gewöhnliche Antrag belegt das WIRKSAME Ende vor, nie das Rohende 23:59 —
+  // sonst hielte die Genehmigung das unveränderte Formular für ein eingetragenes
+  // 23:59 (Entschieden 2026-10-11).
+  it('gewöhnlicher Antrag zu einem automatisch geschlossenen Eintrag: wirksames Ende vorbelegt und gesendet', async () => {
+    const onSuccess = vi.fn();
+    render(<ChangeRequestForm entry={autoClosedK15} requestType="update" onClose={vi.fn()} onSuccess={onSuccess} />);
+    expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('18:15');
+    submitWithReason();
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(post.mock.calls[0][1]).toMatchObject({ proposed_end_time: '18:15' });
+  });
+
   it('ein gewöhnlicher Änderungsantrag sendet kein Kennzeichen', async () => {
     const onSuccess = vi.fn();
     render(<ChangeRequestForm entry={K7} requestType="update" onClose={vi.fn()} onSuccess={onSuccess} />);

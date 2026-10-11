@@ -272,7 +272,9 @@ def create_change_request(
             # Genehmigung, sonst zählte eine reine Pausen-Korrektur gekappt.
             _in_start = work_window_service.unclamp_input(_in_start, entry.start_time, entry.raw_start_time)
             # PR1-Review F1 (P18): ein automatisch geschlossener Eintrag, der nur auf einen
-            # anderen Tag wandert, rechnet mit dem wirksamen Ende statt 23:59.
+            # anderen Tag wandert, rechnet mit dem wirksamen Ende statt 23:59. Ein
+            # eingetragenes 23:59 ist seit 2026-10-11 eine Korrektur und gilt wie
+            # eingetragen (Entscheidung des Produktinhabers).
             _in_end = work_window_service.end_input_for(
                 _in_end, entry.end_time, entry.raw_end_time,
                 auto_closed=entry.auto_closed, prev_date=entry.date,

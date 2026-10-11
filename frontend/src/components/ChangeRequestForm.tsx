@@ -34,28 +34,31 @@ interface Props {
   onSuccess: () => void;
 }
 
-/** Auto-Close-Ende (P18): ein synthetischer Wert, nie ein echter Stempel. */
-const AUTO_CLOSE_END = '23:59';
-
 /**
  * P18/P21: Bringt ein Antrag zu einem automatisch geschlossenen Eintrag KEIN
  * tatsächliches Ende mit? Dieselbe Regel wie der Server
- * (`credit_override_service.lacks_actual_end`): leer, das synthetische 23:59,
- * das gespeicherte (gekappte) Ende oder das Rohende zählen nicht — die
- * Genehmigung machte daraus wieder 23:59 (bis zu 16 h angerechnet). Minutengenau.
+ * (`credit_override_service.lacks_actual_end`): leer oder das gespeicherte
+ * (gekappte) Ende zählen nicht — die Genehmigung machte daraus wieder 23:59
+ * (bis zu 16 h angerechnet). Minutengenau.
+ *
+ * Entschieden 2026-10-11 (Produktinhaber): ein eingetragenes 23:59 ist ein
+ * tatsächliches Ende — das Formular belegt nie das Rohende vor, 23:59 kommt
+ * nur aus echter Eingabe. Ohne Blöcke ist das gespeicherte Ende selbst 23:59
+ * und bleibt dann vom unveränderten Ende nicht zu unterscheiden.
  */
 function lacksActualEnd(entry: TimeEntry, proposedEnd: string): boolean {
   if (!entry.auto_closed) return false;
   const end = proposedEnd.substring(0, 5);
-  return !end || [entry.end_time, entry.raw_end_time, AUTO_CLOSE_END]
-    .some((t) => !!t && t.substring(0, 5) === end);
+  return !end || (!!entry.end_time && entry.end_time.substring(0, 5) === end);
 }
 
 export default function ChangeRequestForm({ entry, requestType, requestCredit = false, onClose, onSuccess }: Props) {
   // P21: die gestempelten (Roh-)Zeiten vorbelegen. Ein automatisch geschlossener
   // Eintrag hat kein echtes Ende (P18) — das Feld bleibt leer und ist Pflicht.
   // Erkannt über `auto_closed`, nie über „Rohende leer": ein verschobener
-  // Auto-Close-Eintrag trägt kein bzw. ein übernommenes Rohende.
+  // Auto-Close-Eintrag trägt kein bzw. ein übernommenes Rohende. Nie das Rohende
+  // (23:59) vorbelegen: ein 23:59 im Antrag gilt als eingetragenes Ende
+  // (Entschieden 2026-10-11). Der gewöhnliche Antrag belegt das WIRKSAME Ende vor.
   const creditStart = entry?.raw_start_time ?? entry?.start_time ?? null;
   const creditEnd = entry?.auto_closed ? '' : (entry?.raw_end_time ?? entry?.end_time ?? '');
   const needsActualEnd = requestCredit && !!entry?.auto_closed;

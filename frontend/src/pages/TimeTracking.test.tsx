@@ -427,6 +427,47 @@ describe('<TimeTracking /> Anrechnung beantragen und anerkannte Einträge (Spec 
   });
 });
 
+// ---------------------------------------------------------------------------
+// P18, Entschieden 2026-10-11 (Produktinhaber): ein echtes Ende 23:59 ist bei
+// einem automatisch geschlossenen Eintrag eintragbar — der Server wertet jedes
+// Ende außer dem gespeicherten wirksamen als Korrektur. Voraussetzung: kein
+// Formular legt das Rohende 23:59 ins Feld, beide zeigen und schicken das
+// WIRKSAME Ende (hier 18:15).
+// ---------------------------------------------------------------------------
+describe('<TimeTracking /> automatisch geschlossene Einträge (P18)', () => {
+  const autoClosed = {
+    ...closedEntry, id: 'te-auto', start_time: '08:00:00', end_time: '18:15:00',
+    raw_start_time: null, raw_end_time: '23:59:00', break_minutes: 45, net_hours: 9.5,
+    uncredited_minutes: 0, not_credited_minutes: 0, credit_override: false, auto_closed: true,
+  };
+
+  it('Änderungsantrag (vergangener Tag): „Bis" = wirksames Ende, gesendet wird 18:15', async () => {
+    postMock.mockResolvedValue({ data: {} });
+    mockEntries([{ ...autoClosed, date: '2026-06-01', is_editable: false }]);
+    renderPage();
+    fireEvent.click((await screen.findAllByLabelText(/Änderungsantrag für/))[0]);
+    await screen.findByRole('heading', { name: /Änderungsantrag/ });
+    expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('18:15');
+    fireEvent.change(screen.getByPlaceholderText('Warum ist diese Änderung notwendig?'), {
+      target: { value: 'Pause nachgetragen' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Antrag stellen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ proposed_end_time: '18:15' });
+  });
+
+  it('Bearbeiten: „Bis" = wirksames Ende, der PUT schickt 18:15 (nie das Rohende 23:59)', async () => {
+    mockRole = 'admin';
+    mockEntries([autoClosed]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('18:15');
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).toMatchObject({ start_time: '08:00', end_time: '18:15' });
+  });
+});
+
 describe('<TimeTracking /> Blöcke von heute (Spec 8.4, 14)', () => {
   const BLOCKS = [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }];
 

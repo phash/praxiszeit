@@ -344,31 +344,33 @@ def unclamp_input(
     return incoming
 
 
-def end_is_correction(
-    incoming: Optional[time], prev_eff: Optional[time], prev_raw: Optional[time],
-    auto_closed: bool,
-) -> bool:
+def end_is_correction(incoming: Optional[time], prev_eff: Optional[time]) -> bool:
     """P18: Liefert eine Eingabe ein tatsächliches Ende, das das Kennzeichen
-    ``auto_closed`` aufhebt?
+    ``auto_closed`` aufhebt? Ja, außer sie schickt das gespeicherte WIRKSAME Ende
+    unverändert zurück (Formular, siehe ``unclamp_input``) — sonst höbe schon
+    das Speichern einer Pause das Kennzeichen auf.
 
-    Nein, wenn sie das gespeicherte wirksame Ende unverändert zurückschickt
-    (Formular, siehe ``unclamp_input``) — und nein, wenn sie bei einem
-    automatisch geschlossenen Eintrag dessen Rohende zurückschickt: 23:59 ist
-    dort kein Stempel. Review Task 8: die Waiver-Rückfrage der MA-Route füllt
-    ein fehlendes Ende mit dem Rohwert auf, die Genehmigung hielt das für ein
-    eingetragenes Ende und machte aus dem synthetischen 23:59 einen echten
-    Stempel (Hülle bis 23:59 „nicht angerechnet", Anerkennen 08:00–23:59).
-    Ein Eintrag ohne Blöcke (``raw`` None, Ende 23:59) fällt schon unter den
-    ersten Vergleich. Ein ``None``-Ende gilt hier als Änderung; ob ein
-    fehlendes bzw. ``None``-Ende überhaupt geprüft wird, entscheidet der
-    Aufrufer. Dieselbe Regel gilt in allen drei Schreibpfaden (MA-Route,
-    Admin-Bearbeitung, Antragsgenehmigung). Verglichen wird minutengenau
-    (``same_minute``, Review Task 6): ein 23:59:30 ist kein tatsächliches Ende."""
-    if same_minute(incoming, prev_eff):
-        return False
-    if auto_closed and prev_raw is not None and same_minute(incoming, prev_raw):
-        return False
-    return True
+    **Entschieden 2026-10-11 (Produktinhaber):** Ein echtes Ende 23:59 muss
+    eintragbar sein. Die Formulare zeigen und schicken bei ``auto_closed`` das
+    wirksame Ende (z. B. 18:15), und kein Pfad füllt ein fehlendes Ende mit dem
+    Rohende auf (MA-Route: Waiver-Antrag mit dem wirksamen Ende, Review Task 8;
+    Verwaltungsroute: Rückfall auf das wirksame Ende). Ein 23:59 — wie jedes
+    andere Ende, auch das übernommene Rohende nach einem Verschieben — kommt
+    also nur aus echter Eingabe und ist eine Korrektur: das Kennzeichen fällt,
+    23:59 wird ein echter Stempel (``raw_end_time``) und gegen die Hülle gekappt
+    wie jedes andere Ende. Bis dahin galt ein eingereichtes Rohende pauschal als
+    Echo (Review Task 8), ein echtes Ende um 23:59 ließ sich nicht eintragen.
+
+    Grenzfall: ohne Blöcke ist das wirksame Ende selbst 23:59 (ungekappt) — ein
+    zurückgeschicktes 23:59 ist vom Echo nicht zu unterscheiden und bleibt Echo;
+    ebenso ein eingetragenes Ende genau auf dem wirksamen Ende (z. B. 18:15).
+    Ein ``None``-Ende gilt hier als Änderung; ob ein fehlendes bzw.
+    ``None``-Ende überhaupt geprüft wird, entscheidet der Aufrufer. Dieselbe
+    Regel gilt in allen drei Schreibpfaden (MA-Route, Admin-Bearbeitung,
+    Antragsgenehmigung) und für ``credit_override_service.lacks_actual_end``.
+    Verglichen wird minutengenau (``same_minute``, Review Task 6): ein
+    18:15:30 ist das wirksame Ende 18:15."""
+    return not same_minute(incoming, prev_eff)
 
 
 def end_input_for(
@@ -383,8 +385,9 @@ def end_input_for(
     Grundsätzlich ``unclamp_input``. Ausnahme (PR1-Review, Sicherheitsfund F1;
     P18): ein automatisch geschlossener Eintrag wird auf einen ANDEREN Tag
     verschoben und das eingereichte Ende ist keine Korrektur
-    (``end_is_correction``: das wirksame Ende oder das Rohende 23:59 kommt
-    zurück, auch als Rückfall eines Teil-Updates ohne Ende). Dann ist das
+    (``end_is_correction``: das wirksame Ende kommt zurück — vom Formular oder
+    als Rückfall eines Teil-Updates ohne Ende, der seit 2026-10-11 an jedem Pfad
+    das wirksame Ende einsetzt). Dann ist das
     gespeicherte Rohende die Eingabe, sofern es nicht das synthetische 23:59
     ist, sonst das gespeicherte WIRKSAME Ende — 23:59 ist kein Stempel. Bis zum
     Fix stellte ``unclamp_input`` das synthetische 23:59 wieder her, und am
@@ -401,13 +404,18 @@ def end_input_for(
     Reihenfolge der Verschiebungen abhängig — Montag (Hülle 18:15) → Freitag
     (Hülle 16:15) → nächster Montag landete still bei 16:15 statt 18:15.
 
+    **Entschieden 2026-10-11 (Produktinhaber):** ein eingetragenes 23:59 (oder
+    das eingetippte übernommene Rohende) ist eine Korrektur und damit eine
+    normale Eingabe — auch beim Verschieben (``unclamp_input`` reicht es durch,
+    die Kappung des Zieltags entscheidet).
+
     Review Task 6 (PR2): ``end_is_correction`` vergleicht minutengenau. Ist die
     Eingabe keine Korrektur, rechnet auch der gleiche Tag mit dem GESPEICHERTEN
     Paar weiter (``unclamp_input`` mit dem wirksamen Ende als Eingabe) statt mit
-    der Eingabe — sonst landete ein 23:59:30 als Rohende. Für sekundenfreie
-    Eingaben ist das dasselbe Ergebnis wie bisher. Ebenso gilt ein Rohende
-    23:59:xx beim Verschieben als synthetisch."""
-    if auto_closed and not end_is_correction(incoming, prev_eff, prev_raw, auto_closed):
+    der Eingabe — sonst landete ein 18:15:30 als Eingabe statt des Rohendes. Für
+    sekundenfreie Eingaben ist das dasselbe Ergebnis. Ebenso gilt ein
+    gespeichertes Rohende 23:59:xx beim Verschieben als synthetisch."""
+    if auto_closed and not end_is_correction(incoming, prev_eff):
         if target_date == prev_date:
             return unclamp_input(prev_eff, prev_eff, prev_raw)
         return _auto_closed_end_input(prev_eff, prev_raw)
@@ -438,17 +446,22 @@ def input_order_error(
     ``end_input_for``, direkt vor ``clamp``. ``None`` = in Ordnung.
 
     PR1-Review (Nachzug N2): Die Prüfung „Endzeit muss nach Startzeit liegen"
-    läuft in allen Pfaden auf der rohen Eingabe (das eingetippte oder als
-    Rückfall eingesetzte Rohende 23:59). ``end_input_for`` ersetzt 23:59 beim
-    Verschieben eines automatisch geschlossenen Eintrags durch dessen
-    wirksames Ende — mit einem späteren Beginn lag das Ende dann VOR dem
-    Beginn (Samstag 20:00–18:15, ``net_hours`` 0 über den Floor, ohne Warnung):
+    läuft in allen Pfaden auf der rohen Eingabe. ``end_input_for`` ersetzt das
+    Rohende 23:59 beim Verschieben eines automatisch geschlossenen Eintrags
+    ohne Korrektur durch dessen wirksames Ende — mit einem späteren Beginn lag
+    das Ende dann VOR dem Beginn (Samstag 20:00–18:15, ``net_hours`` 0 über den
+    Floor, ohne Warnung):
     genau der Zustand, den der Release-Review 1.16.0 ausschließt. Deshalb jeder
     Pfad ein zweites Mal hier. ``unclamp_input`` allein dreht die Reihenfolge
     nie um (``clamp`` legt den Rohbeginn nie nach den wirksamen, das Rohende nie
     vor das wirksame — auch beim Kollaps nicht): ist sie beim automatisch
     geschlossenen Eintrag verkehrt, war es ``end_input_for``, und der Hinweis
-    nennt diese Ursache. Ohne Kennzeichen bleibt die Prüfung reine Absicherung."""
+    nennt diese Ursache. Ohne Kennzeichen bleibt die Prüfung reine Absicherung.
+    Seit 2026-10-11 ist ein eingetipptes 23:59 eine Korrektur und kommt hier
+    unverändert an; greifen kann die Prüfung nur noch, wenn kein Ende mitkam
+    oder das wirksame Ende zurückkam. Beim Antrag hat die Prüfung der rohen
+    Eingabe diesen Fall schon abgelehnt (hier bleibt es Absicherung); die
+    Genehmigung prüft die rohe Eingabe nicht und fängt so ältere Anträge."""
     if start is None or end is None or end > start:
         return None
     if not auto_closed:

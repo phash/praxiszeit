@@ -5,12 +5,13 @@ import AdminDashboard from './AdminDashboard';
 
 const getMock = vi.fn();
 const postMock = vi.fn();
+const putMock = vi.fn();
 const deleteMock = vi.fn();
 vi.mock('../../api/client', () => ({
   default: {
     get: (...args: unknown[]) => getMock(...args),
     post: (...args: unknown[]) => postMock(...args),
-    put: vi.fn(),
+    put: (...args: unknown[]) => putMock(...args),
     delete: (...args: unknown[]) => deleteMock(...args),
   },
   // authStore.ts pulls these named exports in transitively (pattern from Users.test.tsx).
@@ -46,6 +47,8 @@ beforeEach(() => {
   getMock.mockReset();
   postMock.mockReset();
   postMock.mockResolvedValue({ data: {} });
+  putMock.mockReset();
+  putMock.mockResolvedValue({ data: { warnings: [] } });
   deleteMock.mockReset();
   deleteMock.mockResolvedValue({ data: {} });
   // Nur Date faken (Q4 des laufenden Jahres) — echte Timer für findBy/waitFor.
@@ -239,6 +242,32 @@ describe('AdminDashboard Anerkennen im Detail-Modal (Spec 13.3)', () => {
     await credit(dialog);
     await waitFor(() => expect(card(dialog, 'Ist')).toBe('164:00'));
     expect(card(dialog, 'Saldo')).toBe('+4:00');
+  });
+
+  // P18, Entschieden 2026-10-11 (Produktinhaber): ein echtes Ende 23:59 ist bei
+  // einem automatisch geschlossenen Eintrag eintragbar — der Server wertet jedes
+  // Ende außer dem gespeicherten wirksamen als Korrektur. Voraussetzung: das
+  // Bearbeiten-Formular legt das WIRKSAME Ende ins Feld, nie das Rohende 23:59
+  // (auch über die §4-Rückfrage submitWithBreakWaiver geht derselbe Wert).
+  it('Bearbeiten eines automatisch geschlossenen Eintrags: „Bis" = wirksames Ende, PUT schickt 18:15', async () => {
+    mockCreditFlow();
+    const autoClosed = {
+      ...K7, start_time: '08:00:00', raw_start_time: null, raw_end_time: '23:59:00',
+      not_credited_minutes: 150, auto_closed: true, net_hours: 7.75, credit_override: false,
+    };
+    const base = getMock.getMockImplementation()!;
+    getMock.mockImplementation((url: string) => (
+      url === '/time-entries' ? Promise.resolve({ data: [autoClosed] }) : base(url)
+    ));
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Details für Kern, Anna anzeigen' }))[0]);
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Eintrag vom 05.10.2026 bearbeiten' }));
+    expect((within(dialog).getByLabelText('Bis (Uhrzeit)') as HTMLInputElement).value).toBe('18:15');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(putMock).toHaveBeenCalledWith(
+      '/admin/time-entries/e1', expect.objectContaining({ start_time: '08:00', end_time: '18:15' }),
+    ));
   });
 
   it('Löschen aktualisiert die Detail-Kacheln ebenfalls (gleicher Pfad wie Anerkennen)', async () => {

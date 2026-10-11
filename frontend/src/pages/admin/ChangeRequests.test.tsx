@@ -193,6 +193,28 @@ describe('<AdminChangeRequests /> Anrechnung beantragen (Spec P21, P3)', () => {
     expect(await screen.findByRole('button', { name: 'Genehmigen und anerkennen' })).toBeInTheDocument();
   });
 
+  // Entschieden 2026-10-11 (Produktinhaber, P18): ein beantragtes 23:59 ist ein
+  // tatsächliches Ende — bis dahin blendete die Prüfung den Knopf dafür aus.
+  it('automatisch geschlossener Zieleintrag mit beantragtem 23:59: „Genehmigen und anerkennen" bleibt', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_auto_closed: true,
+      original_start_time: '08:00:00', proposed_start_time: '08:00:00', proposed_end_time: '23:59:00',
+    }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByRole('button', { name: 'Genehmigen und anerkennen' })).toBeInTheDocument();
+  });
+
+  it('ohne Blöcke (wirksames Ende 23:59): ein beantragtes 23:59 bringt kein tatsächliches Ende', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_auto_closed: true,
+      original_start_time: '18:00:00', original_end_time: '23:59:00',
+      proposed_start_time: '18:00:00', proposed_end_time: '23:59:00',
+    }]);
+    render(<AdminChangeRequests />);
+    await screen.findByRole('button', { name: 'Genehmigen' });
+    expect(screen.queryByRole('button', { name: 'Genehmigen und anerkennen' })).not.toBeInTheDocument();
+  });
+
   // Gesamtreview PR2 (Fund 2): „Genehmigen und anerkennen" rechnet die
   // vorgeschlagenen Zeiten dauerhaft an (P11) — die Prüfung zeigt deshalb die
   // Stempel des Eintrags und hebt Abweichungen hervor.

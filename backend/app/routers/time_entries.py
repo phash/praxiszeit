@@ -1316,6 +1316,8 @@ def update_time_entry(
     # behauptet kein Ende, das niemand eingetragen hat. Die Genehmigung stellt
     # am selben Tag über ``end_input_for`` das Rohende 23:59 trotzdem wieder her
     # (bei einem Datumswechsel bleibt es beim wirksamen Ende, PR1-Review F1).
+    # Entschieden 2026-10-11: Voraussetzung dafür, dass ein beantragtes 23:59
+    # als echtes Ende gilt (``end_is_correction``) — nie das Rohende auffüllen.
     _intended_end = (
         entry.end_time if "end_time" in update_data
         else orig_snapshot["end_time"] if orig_snapshot["auto_closed"]
@@ -1394,14 +1396,18 @@ def update_time_entry(
     # P18: nur ein ANDERES Ende als das gespeicherte wirksame ist eine echte
     # Korrektur; das Formular schickt das wirksame Ende sonst unverändert mit
     # (``end_input_for`` rechnet am selben Tag dann mit dem synthetischen 23:59
-    # weiter, das Kennzeichen bleibt). Ebenso wenig das zurückgeschickte Rohende 23:59
-    # eines automatisch geschlossenen Eintrags (Review Task 8). Nie über die
-    # generische ``setattr``-Schleife oben — ``auto_closed`` ist kein
-    # Schemafeld (E11).
-    if "end_time" in update_data and work_window_service.end_is_correction(
-        update_data["end_time"], orig_snapshot["end_time"],
-        orig_snapshot["raw_end_time"], orig_snapshot["auto_closed"],
-    ):
+    # weiter, das Kennzeichen bleibt). Entschieden 2026-10-11: auch ein
+    # eingetragenes 23:59 ist eine Korrektur — echter Stempel, gekappt wie jedes
+    # andere Ende. Nie über die generische ``setattr``-Schleife oben —
+    # ``auto_closed`` ist kein Schemafeld (E11).
+    _auto_close_corrected = (
+        orig_snapshot["auto_closed"]
+        and "end_time" in update_data
+        and work_window_service.end_is_correction(
+            update_data["end_time"], orig_snapshot["end_time"],
+        )
+    )
+    if _auto_close_corrected:
         entry.auto_closed = False
 
     exempt = _entry_owner.exempt_from_arbzg
@@ -1530,10 +1536,14 @@ def update_time_entry(
     # immer mit, und eine erneute Meldung derselben alten Kappung ist Laerm.
     # E39: ein Datumswechsel ist nie „unveraendert" — dieselbe Rohzeit an einem
     # anderen Wochentag kappt anders und muss gemeldet werden (#462-Klasse).
+    # Entschieden 2026-10-11 (P18): ein eingetragenes 23:59 trifft beim
+    # automatisch geschlossenen Eintrag dasselbe Rohende wie vorher — es ist aber
+    # jetzt ein Stempel statt einer Protokollzeile, die Kappung bis 18:15 neu.
     _resubmitted_unchanged = (
         entry.date == orig_snapshot["date"]
         and _clamp_start == (orig_snapshot["raw_start_time"] or orig_snapshot["start_time"])
         and _clamp_end == (orig_snapshot["raw_end_time"] or orig_snapshot["end_time"])
+        and not _auto_close_corrected
     )
     if _times_written and not _resubmitted_unchanged:
         # Spec 6.2: der Hinweis „Anrechnung beantragen" gilt der Person des

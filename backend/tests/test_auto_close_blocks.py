@@ -8,6 +8,7 @@ import pytest
 from app.models import ChangeRequest, TimeEntry, TimeEntryAuditLog
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
 from app.models.system_setting import SystemSetting
+from app.services import work_window_service
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import (  # noqa: F401 — Fixtures
     _db_session, admin_client, admin_user, employee_client, employee_user, tenant,
@@ -175,16 +176,17 @@ def test_employee_route_form_resave_keeps_flag(_db_session, employee_user, admin
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
 
 
-def _approve_update_cr(db, client, user, entry, end):
+def _approve_update_cr(db, client, user, entry, end, start=time(8, 0)):
     cr = ChangeRequest(user_id=user.id, tenant_id=DEFAULT_TENANT_ID, entry_kind="time_entry",
                        request_type=ChangeRequestType.UPDATE, status=ChangeRequestStatus.PENDING,
-                       time_entry_id=entry.id, proposed_date=MON, proposed_start_time=time(8, 0),
+                       time_entry_id=entry.id, proposed_date=MON, proposed_start_time=start,
                        proposed_end_time=end, proposed_break_minutes=0,
                        reason="Ende nachgetragen")
     db.add(cr)
     db.commit()
     resp = client.post(f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
     assert resp.status_code == 200, resp.text
+    return resp
 
 
 def test_cr_update_end_correction_resets_flag(_db_session, employee_user, admin_client):
@@ -207,12 +209,13 @@ def test_cr_update_unchanged_end_keeps_flag(_db_session, employee_user, admin_cl
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
 
 
-# Review Task 8 (P18): das Rohende 23:59 eines automatisch geschlossenen Eintrags
-# ist kein Stempel — wer es zurückschickt, korrigiert nichts. Sonst wüsche jeder
-# Pfad, der den Rohwert mitführt, das synthetische 23:59 zu einem echten Stempel
-# (``not_credited_minutes`` zählte die Hülle bis 23:59, Anerkennen rechnete
-# 08:00–23:59 an). Die Waiver-Rückfrage der MA-Route füllt ein fehlendes Ende
-# selbst auf — dort entstand der Antrag ganz ohne Eingabe.
+# Review Task 8 (P18): die Waiver-Rückfrage der MA-Route füllt ein fehlendes Ende
+# selbst auf — dort entstand der Antrag ganz ohne Eingabe. Beim automatisch
+# geschlossenen Eintrag nimmt sie das WIRKSAME Ende, nie das Rohende 23:59: der
+# Antrag behauptet kein Ende, das niemand eingetragen hat, und die Genehmigung
+# erkennt darin das unveränderte Ende (Kennzeichen bleibt). Seit der Entscheidung
+# vom 2026-10-11 (unten) ist das die Voraussetzung dafür, dass ein 23:59 nur noch
+# aus echter Eingabe kommen kann.
 
 def test_waiver_cr_without_end_keeps_flag(_db_session, employee_user, admin_client):
     employee_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
@@ -236,40 +239,166 @@ def test_waiver_cr_without_end_keeps_flag(_db_session, employee_user, admin_clie
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(17, 15), time(23, 59), True)
 
 
-# Review Task 6 (PR2): auch mit Sekunden (angezeigt „23:59") bleibt es das synthetische 23:59.
+@pytest.mark.parametrize("route", ["/api/admin/time-entries", "/api/time-entries"],
+                         ids=["admin-route", "ma-route"])
+def test_partial_put_without_end_keeps_flag(_db_session, employee_user, admin_client, route):
+    """Ein PUT ohne Ende (nur Pause/Notiz) ist keine Korrektur. Die Verwaltungsroute
+    setzte für das fehlende Ende bis 2026-10-11 das ROHENDE ein — seit 23:59 als
+    Korrektur gilt, nimmt sie das wirksame Ende (``end_input_for`` stellt daraus
+    am selben Tag das Protokoll-23:59 wieder her)."""
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    e = _open(_db_session, employee_user)
+    _auto_close_directly(_db_session, e)
+    resp = admin_client.put(f"{route}/{e.id}", json={"note": "geprüft"})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed, e.note) == (
+        time(18, 15), time(23, 59), True, "geprüft")
+
+
+# Entschieden 2026-10-11 (Produktinhaber, P18): ein echtes Ende 23:59 ist
+# eintragbar. Die Formulare zeigen und schicken bei ``auto_closed`` das wirksame
+# Ende (18:15), und kein Pfad füllt ein fehlendes Ende mit dem Rohende auf — ein
+# 23:59 kommt also nur aus echter Eingabe und ist eine Korrektur: das Kennzeichen
+# fällt, 23:59 steht als echter Stempel in ``raw_end_time`` und wird gegen die
+# Hülle gekappt wie jedes andere Ende. Bis dahin hielten alle drei Schreibpfade
+# ein eingereichtes 23:59 pauschal für das Echo des synthetischen Rohendes
+# (Review Task 8); die Tests ``test_*_raw_end_keeps_flag`` hielten diese alte
+# Regel fest und sind deshalb umgedreht. Mit Sekunden („23:59:30") ist es
+# dieselbe echte Eingabe.
+
+def _assert_typed_2359(e, end):
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), end, False)
+    assert (e.uncredited_minutes, e.net_hours) == (150, Decimal("7.75"))
+    # P19: die Hüllenminuten am Ende (18:15–23:59) zählen jetzt als „nicht
+    # angerechnet" — 23:59 ist ein Stempel.
+    assert work_window_service.not_credited_minutes(e) == 150 + 344
+
+
+def _has_end_clamp_warning(resp):
+    return any(w.startswith("WORK_WINDOW_CLAMPED") and "Ende 23:59 → 18:15" in w
+               for w in resp.json()["warnings"])
+
+
 @pytest.mark.parametrize("end", [time(23, 59), time(23, 59, 30)])
-def test_cr_update_raw_end_keeps_flag(_db_session, employee_user, admin_client, end):
+def test_cr_update_typed_2359_is_a_correction(_db_session, employee_user, admin_client, end):
     employee_user.work_blocks = K_BLOCKS
     _db_session.commit()
     e = _open(_db_session, employee_user)
     _auto_close_directly(_db_session, e)
-    _approve_update_cr(_db_session, admin_client, employee_user, e, end)
+    resp = _approve_update_cr(_db_session, admin_client, employee_user, e, end)
     _db_session.refresh(e)
-    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
+    _assert_typed_2359(e, end)
+    assert _has_end_clamp_warning(resp)
 
 
+@pytest.mark.parametrize("route", ["/api/admin/time-entries", "/api/time-entries"],
+                         ids=["admin-route", "ma-route"])
 @pytest.mark.parametrize("end", ["23:59", "23:59:30"])
-def test_employee_route_raw_end_keeps_flag(_db_session, employee_user, admin_client, end):
+def test_route_typed_2359_is_a_correction(_db_session, employee_user, admin_client, route, end):
     employee_user.work_blocks = K_BLOCKS
     _db_session.commit()
     e = _open(_db_session, employee_user)
     _auto_close_directly(_db_session, e)
-    resp = admin_client.put(f"/api/time-entries/{e.id}", json={"end_time": end})
+    resp = admin_client.put(f"{route}/{e.id}", json={"end_time": end})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    _assert_typed_2359(e, time.fromisoformat(end))
+    # Gekappt wie jedes andere Ende — und gemeldet (#462): die Rohzeiten sind
+    # dieselben wie vorher, aber 23:59 ist jetzt ein Stempel, keine Protokollzeile.
+    assert _has_end_clamp_warning(resp)
+
+
+def _as_admin(admin_user):
+    """Nach einem Schritt als Beschäftigte die Verwaltung handeln lassen —
+    dieselben Überschreibungen wie ``admin_client``, im selben Client."""
+    from tests.test_endpoints import endpoints_app, get_current_user, require_admin
+    endpoints_app.dependency_overrides[get_current_user] = lambda: admin_user
+    endpoints_app.dependency_overrides[require_admin] = lambda: admin_user
+
+
+def _employee_request(client, entry, end):
+    return client.post("/api/change-requests/", json={
+        "request_type": "update", "time_entry_id": str(entry.id),
+        "proposed_date": MON.isoformat(), "proposed_start_time": "08:00",
+        "proposed_end_time": end, "proposed_break_minutes": 0,
+        "reason": "Ende nachgetragen"})
+
+
+def test_employee_request_typed_2359_is_a_correction(_db_session, employee_user, admin_user,
+                                                    employee_client):
+    """MA-Antrag samt Genehmigung: das eingetragene 23:59 wird angenommen und
+    gespeichert (roh, E40), die Genehmigung hebt das Kennzeichen auf."""
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    e = _open(_db_session, employee_user)
+    _auto_close_directly(_db_session, e)
+    resp = _employee_request(employee_client, e, "23:59")
+    assert resp.status_code == 201, resp.text
+    cr = _db_session.query(ChangeRequest).one()
+    assert cr.proposed_end_time == time(23, 59)
+    _as_admin(admin_user)
+    resp = employee_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                json={"action": "approve"})
+    assert resp.status_code == 200, resp.text
+    _db_session.refresh(e)
+    _assert_typed_2359(e, time(23, 59))
+
+
+def test_employee_request_effective_end_keeps_flag(_db_session, employee_user, admin_user,
+                                                   employee_client):
+    """Gegenprobe: der Antrag schickt das vorbelegte wirksame Ende 18:15 zurück
+    (nur Begründung/Pause geändert) — keine Korrektur, das Kennzeichen bleibt."""
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    e = _open(_db_session, employee_user)
+    _auto_close_directly(_db_session, e)
+    resp = _employee_request(employee_client, e, "18:15")
+    assert resp.status_code == 201, resp.text
+    cr = _db_session.query(ChangeRequest).one()
+    _as_admin(admin_user)
+    resp = employee_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                json={"action": "approve"})
     assert resp.status_code == 200, resp.text
     _db_session.refresh(e)
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
 
 
-@pytest.mark.parametrize("end", ["23:59", "23:59:30"])
-def test_admin_route_raw_end_keeps_flag(_db_session, employee_user, admin_client, end):
+def test_cr_create_with_2359_is_a_stamp(_db_session, employee_user, admin_client):
+    """CREATE-Genehmigung: ein neuer Eintrag 08:00–23:59 trägt nie ein
+    Kennzeichen — 23:59 ist der Stempel, gekappt auf die Hülle."""
     employee_user.work_blocks = K_BLOCKS
     _db_session.commit()
-    e = _open(_db_session, employee_user)
-    _auto_close_directly(_db_session, e)
-    resp = admin_client.put(f"/api/admin/time-entries/{e.id}", json={"end_time": end})
+    cr = ChangeRequest(user_id=employee_user.id, tenant_id=DEFAULT_TENANT_ID, entry_kind="time_entry",
+                       request_type=ChangeRequestType.CREATE, status=ChangeRequestStatus.PENDING,
+                       proposed_date=MON, proposed_start_time=time(8, 0),
+                       proposed_end_time=time(23, 59), proposed_break_minutes=0,
+                       reason="Stempeln vergessen")
+    _db_session.add(cr)
+    _db_session.commit()
+    resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review", json={"action": "approve"})
     assert resp.status_code == 200, resp.text
+    e = _db_session.query(TimeEntry).one()
+    _assert_typed_2359(e, time(23, 59))
+
+
+def test_without_blocks_typed_2359_stays_echo(_db_session, employee_user, admin_client):
+    """Grenzfall (Entschieden 2026-10-11): ohne Blöcke wird nicht gekappt, das
+    wirksame Ende ist selbst 23:59 — ein zurückgeschicktes 23:59 ist vom Echo des
+    Formulars nicht zu unterscheiden und bleibt Echo (Kennzeichen bleibt), an
+    allen drei Schreibpfaden. Beginn 18:00, damit §3/§4 nicht anschlagen."""
+    e = _open(_db_session, employee_user, start=time(18, 0))
+    _auto_close_directly(_db_session, e)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(23, 59), None, True)
+    for route in ("/api/admin/time-entries", "/api/time-entries"):
+        resp = admin_client.put(f"{route}/{e.id}", json={"end_time": "23:59"})
+        assert resp.status_code == 200, resp.text
+        _db_session.refresh(e)
+        assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(23, 59), None, True)
+    _approve_update_cr(_db_session, admin_client, employee_user, e, time(23, 59), start=time(18, 0))
     _db_session.refresh(e)
-    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(23, 59), True)
+    assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(23, 59), None, True)
 
 
 def test_raw_end_of_regular_entry_is_still_a_correction(_db_session, employee_user, admin_client):
@@ -287,19 +416,22 @@ def test_raw_end_of_regular_entry_is_still_a_correction(_db_session, employee_us
     assert (e.end_time, e.raw_end_time, e.auto_closed) == (time(18, 15), time(19, 0), False)
 
 
-@pytest.mark.parametrize("incoming, eff, raw, auto_closed, expected", [
-    (time(18, 15), time(18, 15), time(23, 59), True, False),   # Formular schickt wirksames Ende
-    (time(23, 59), time(18, 15), time(23, 59), True, False),   # Rohende 23:59 zurück (P18)
-    (time(17, 0), time(18, 15), time(23, 59), True, True),     # echtes Ende eingetragen
-    (time(23, 59), time(23, 59), None, True, False),           # ohne Blöcke: 23:59 = wirksam
-    (None, time(23, 59), None, True, True),                    # Ende entfernt: Aufrufer entscheidet
-    (time(19, 0), time(18, 15), time(19, 0), False, True),     # Rohwert eines echten Stempels
-    # Review Task 6 (PR2): minutengenau — Sekunden machen keine Korrektur.
-    (time(23, 59, 30), time(18, 15), time(23, 59), True, False),
-    (time(18, 15, 30), time(18, 15), time(23, 59), True, False),
-    (time(23, 59, 30), time(23, 59), None, True, False),
-    (time(17, 0, 30), time(18, 15), time(23, 59), True, True),
+# Entschieden 2026-10-11: Korrektur ist jedes Ende außer dem gespeicherten
+# wirksamen (minutengenau, Review Task 6). Rohende und Kennzeichen spielen keine
+# Rolle mehr — die Formulare schicken das wirksame Ende, ein anderes Ende kommt
+# nur aus echter Eingabe.
+@pytest.mark.parametrize("incoming, eff, expected", [
+    (time(18, 15), time(18, 15), False),       # Formular schickt wirksames Ende
+    (time(18, 15, 30), time(18, 15), False),   # minutengenau: Sekunden machen keine Korrektur
+    (time(17, 0), time(18, 15), True),         # echtes Ende eingetragen
+    (time(17, 0, 30), time(18, 15), True),
+    (time(23, 59), time(18, 15), True),        # 23:59 eingetragen (bis 2026-10-11: Echo)
+    (time(23, 59, 30), time(18, 15), True),
+    (time(18, 15), time(16, 15), True),        # nach Verschieben: Rohende 18:15 eingetragen
+    (time(23, 59), time(23, 59), False),       # ohne Blöcke: 23:59 = wirksam (Grenzfall)
+    (time(23, 59, 30), time(23, 59), False),
+    (None, time(23, 59), True),                # Ende entfernt: Aufrufer entscheidet
 ])
-def test_end_is_correction(incoming, eff, raw, auto_closed, expected):
+def test_end_is_correction(incoming, eff, expected):
     from app.services.work_window_service import end_is_correction
-    assert end_is_correction(incoming, eff, raw, auto_closed) is expected
+    assert end_is_correction(incoming, eff) is expected

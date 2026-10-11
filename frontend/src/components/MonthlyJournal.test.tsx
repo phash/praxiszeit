@@ -485,6 +485,54 @@ describe('<MonthlyJournal /> Misch-Tag bearbeiten', () => {
   });
 });
 
+// P18, Entschieden 2026-10-11 (Produktinhaber): ein echtes Ende 23:59 ist bei
+// einem automatisch geschlossenen Eintrag eintragbar — der Server wertet jedes
+// Ende außer dem gespeicherten wirksamen als Korrektur. Voraussetzung: das
+// Journal legt nie das Rohende 23:59 ins Feld, sondern das WIRKSAME Ende — in
+// der Verwaltungsansicht (PUT, auch über die §4-Rückfrage submitWithBreakWaiver)
+// wie im Antrag der Mitarbeitenden.
+describe('<MonthlyJournal /> automatisch geschlossener Eintrag (P18)', () => {
+  const autoClosedDay = {
+    ...validDay,
+    date: '2026-06-01',
+    time_entries: [{
+      id: 'te-auto', start_time: '08:00', end_time: '18:15', raw_start_time: null,
+      raw_end_time: '23:59', break_minutes: 0, net_hours: 7.75,
+      uncredited_minutes: 150, not_credited_minutes: 150, auto_closed: true,
+    }],
+  };
+
+  it('Verwaltung: „Bis" = wirksames Ende, der PUT schickt 18:15', async () => {
+    mockJournal([autoClosedDay]);
+    putMock.mockResolvedValue({ data: {} });
+    const { container } = render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('08:00–18:15 bearbeiten'));
+    const [, bis] = Array.from(container.querySelectorAll('input[type="time"]')) as HTMLInputElement[];
+    expect(bis.value).toBe('18:15');
+    fireEvent.click(screen.getByTitle('Speichern'));
+    await waitFor(() => expect(putMock).toHaveBeenCalledWith(
+      '/admin/time-entries/te-auto', expect.objectContaining({ end_time: '18:15' }),
+    ));
+  });
+
+  it('Mitarbeitende: der Antrag schickt das wirksame Ende 18:15', async () => {
+    mockJournal([autoClosedDay]);
+    postMock.mockResolvedValue({ data: {} });
+    const { container } = render(<MonthlyJournal />);
+    fireEvent.click(await screen.findByTitle('08:00–18:15 bearbeiten'));
+    const [, bis] = Array.from(container.querySelectorAll('input[type="time"]')) as HTMLInputElement[];
+    expect(bis.value).toBe('18:15');
+    fireEvent.click(screen.getByTitle('Speichern'));
+    fireEvent.change(screen.getByPlaceholderText('Begründung eingeben (Pflicht)'), {
+      target: { value: 'Pause nachgetragen' },
+    });
+    fireEvent.click(screen.getByText('Absenden'));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests/', expect.objectContaining({
+      request_type: 'update', time_entry_id: 'te-auto', proposed_end_time: '18:15',
+    })));
+  });
+});
+
 describe('<MonthlyJournal /> feste Monatsarbeitszeit (#463)', () => {
   const fixedJournal = { ...validJournal, use_fixed_monthly_target: true };
 

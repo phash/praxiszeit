@@ -358,10 +358,10 @@ def review_change_request(
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
             # P18/P21: Anerkennen setzt ein tatsächliches Ende voraus. Ohne es
             # bliebe der Eintrag nach dem UPDATE-Zweig ``auto_closed`` und
-            # ``apply_credit_override`` lehnte erst NACH der Statusänderung ab;
-            # ein 23:59 nach einem Verschieben (Rohende 18:15) hielte
-            # ``end_is_correction`` sogar für ein echtes Ende. Dieselbe Regel wie
-            # beim Stellen des Antrags — sie greift auch für ältere Anträge.
+            # ``apply_credit_override`` lehnte erst NACH der Statusänderung ab.
+            # Dieselbe Regel wie beim Stellen des Antrags und wie
+            # ``end_is_correction`` (ein beantragtes 23:59 ist seit 2026-10-11 ein
+            # tatsächliches Ende) — sie greift auch für ältere Anträge.
             if grant_override and credit_override_service.lacks_actual_end(
                 entry, cr.proposed_end_time,
             ):
@@ -655,13 +655,15 @@ def review_change_request(
             )
             # P18: VOR dem Überschreiben festhalten — nur ein ANDERES Ende als das
             # gespeicherte wirksame ist eine echte Korrektur; ein Antrag, der nur
-            # Pause oder Notiz ändert, schickt das wirksame Ende unverändert mit.
-            # Das Rohende 23:59 eines automatisch geschlossenen Eintrags ist kein
-            # Stempel und damit ebenfalls keine Korrektur (Review Task 8) —
-            # ``end_input_for`` rechnet es oben am selben Tag unverändert mit, bei
-            # einem Datumswechsel gilt das wirksame Ende (PR1-Review F1).
-            _end_corrected = cr.proposed_end_time is not None and work_window_service.end_is_correction(
-                cr.proposed_end_time, entry.end_time, entry.raw_end_time, entry.auto_closed,
+            # Pause oder Notiz ändert, schickt das wirksame Ende unverändert mit
+            # (``end_input_for`` rechnet oben am selben Tag mit dem Rohende 23:59
+            # weiter, bei einem Datumswechsel gilt das wirksame Ende, PR1-Review
+            # F1). Entschieden 2026-10-11: ein beantragtes 23:59 ist eine
+            # Korrektur — echter Stempel, gekappt wie jedes andere Ende.
+            _end_corrected = (
+                entry.auto_closed
+                and cr.proposed_end_time is not None
+                and work_window_service.end_is_correction(cr.proposed_end_time, entry.end_time)
             )
             entry.date = cr.proposed_date
             entry.start_time = eff_start

@@ -264,7 +264,7 @@ Rücksetzung erweitert.
 | P15 | `retroactive_reason_text` mindestens 10, höchstens 400 Zeichen. | Ein Ein-Wort-Grund ist kein Grund; Gesamtlänge der `note` ≤ 500 (9.5). |
 | P16 | Aneinanderstoßende Blöcke (Ende_i = Beginn_i+1) sind unzulässig (3.4). | Sie wären ein Block mit einer Lücke von 0 Min; zwei Darstellungen derselben Arbeitszeit. |
 | P17 | Für `end=None` gilt E35 („kein Fenster") nur für die **Lücke**: die Hülle verschiebt den Beginn weiter wie seit #201 (`raw_start`, `EARLY_START`), `uncredited` = 0. Fall K20. | Wörtlich gelesen schaltete E35 die #201-Kappung beim Einstempeln ab; E32 („Äußere Hülle wie heute") verlangt sie. |
-| P18 | Neue Spalte `time_entries.auto_closed` (BOOL, Default false): vom Auto-Close gesetzt, von einem Schreibpfad zurückgesetzt, der ein **tatsächlich neues** Ende schreibt (Ausstempeln, XLS-Überschreiben; bei MA-Bearbeitung, Admin-Bearbeitung und Antragsgenehmigung entscheidet `work_window_service.end_is_correction`). Ein unverändert zurückgeschicktes wirksames Ende, das zurückgeschickte Rohende 23:59 eines automatisch geschlossenen Eintrags und die Neukappung (9) lassen es stehen — sonst hebt schon das Formular-Speichern (Pause ergänzt, Ende unverändert) das Kennzeichen auf. `raw_end_time = 23:59` bleibt (Protokoll), wird aber nie als echter Stempel gelesen: Anerkennen → 400, `RawStampNote` „nicht ausgestempelt – automatisch geschlossen, angerechnet bis 18:15", Anwesenheit (8.3) bis zum wirksamen Ende, Hüllenminuten am Ende zählen nicht als „nicht angerechnet" (P19). Erkennung über die Spalte, nicht über die editierbare Notiz. **Entschieden 2026-10-10 (PR1-Review F1):** Wird ein automatisch geschlossener Eintrag auf einen **anderen** Tag verschoben und ist das eingereichte Ende keine Korrektur (`end_is_correction` = nein: wirksames Ende oder gespeichertes Rohende zurückgeschickt, auch der Rückfall eines reinen Datums-`PUT` auf das gespeicherte Rohende), ist die Kappungseingabe das gespeicherte Rohende, sofern es nicht das synthetische 23:59 ist (nach einem früheren Verschieben trägt es das übernommene wirksame Ende), sonst das **wirksame** Ende — nie das synthetische Rohende 23:59 (**Entschieden 2026-10-10, PR1-Review N2**) — eine Quelle `work_window_service.end_input_for`, an jedem Pfad, der das Ende eines bestehenden Eintrags mit möglichem Datumswechsel neu kappt (7.1). Bei gleichem Datum unverändert; das Kennzeichen bleibt, `raw_end_time` folgt der Kappung dieser Eingabe (am Zieltag ohne Blöcke `NULL`). Liegt diese Eingabe nicht nach dem Beginn (späterer Beginn als das übernommene Ende), lehnt jeder dieser Pfade mit 400 „Endzeit muss nach Startzeit liegen" ab, mit Hinweis auf den automatischen Abschluss — `work_window_service.input_order_error` (**Entschieden 2026-10-10, PR1-Review N2-Nachzug**). | 23:59 ist ein synthetischer Wert in einer Spalte, die sonst §16-Nachweis ist; ohne Kennzeichen öffnete Anerkennen das Schlupfloch wieder (16 h angerechnet), das E36/E42 schließen. F1: `unclamp_input` stellte beim Verschieben das Rohende 23:59 wieder her — am Zieltag ohne Blöcke (Samstag, Feiertag, freier Tag) blieb es ungekappt (15:00–23:59 ≈ 9 h statt 3,25 h angerechnet), an einem Tag mit späterer Hülle wurde bis zu ihr angerechnet. N2: das Ergebnis darf nicht von der Reihenfolge der Verschiebungen abhängen — mit dem wirksamen Ende allein landete Montag (Hülle 18:15) → Freitag (Hülle 16:15) → nächster Montag still bei 16:15 / 1,25 h statt 18:15 / 3,25 h wie der direkte Weg (keine Kappungswarnung, auch ein eingetipptes 18:15 half nicht). N2-Nachzug: die Reihenfolge-Prüfung lief nur auf der rohen Eingabe (23:59) — ein Verschieben mit Beginn nach dem übernommenen Ende speicherte still 20:00–18:15 mit `net_hours` 0, genau den Zustand, den der Release-Review 1.16.0 ausschließt. |
+| P18 | Neue Spalte `time_entries.auto_closed` (BOOL, Default false): vom Auto-Close gesetzt, von einem Schreibpfad zurückgesetzt, der ein **tatsächlich neues** Ende schreibt (Ausstempeln, XLS-Überschreiben; bei MA-Bearbeitung, Admin-Bearbeitung und Antragsgenehmigung entscheidet `work_window_service.end_is_correction`). Ein unverändert zurückgeschicktes wirksames Ende und die Neukappung (9) lassen es stehen — sonst hebt schon das Formular-Speichern (Pause ergänzt, Ende unverändert) das Kennzeichen auf. **Entschieden 2026-10-11 (Produktinhaber):** Ein echtes Ende 23:59 muss eintragbar sein. Die Formulare zeigen und schicken bei `auto_closed` das **wirksame** Ende (z. B. 18:15), und kein Pfad füllt ein fehlendes Ende mit dem Rohende auf (MA-Route: Waiver-Antrag mit dem wirksamen Ende; Verwaltungsroute: Rückfall auf das wirksame Ende, `end_input_for` stellt daraus den Rohwert wieder her). Ein 23:59 — wie jedes andere Ende außer dem gespeicherten wirksamen, auch das übernommene Rohende nach einem Verschieben — kommt also nur aus echter Eingabe und ist eine **Korrektur**: `auto_closed = false`, 23:59 steht als echter Stempel in `raw_end_time` und wird gegen die Hülle gekappt wie jedes andere Ende (mit Kappungswarnung), an allen vier Pfaden (MA-Antrag samt Genehmigung CREATE/UPDATE inkl. Vorprüfung, Admin-Bearbeitung, MA-`PUT`); Anerkennen rechnet danach bis 23:59 an. `end_is_correction(eingehend, wirksames Ende)` = „nicht minutengleich mit dem wirksamen Ende", `credit_override_service.lacks_actual_end` folgt derselben Regel (Antrag ohne Ende oder mit dem wirksamen Ende = kein tatsächliches Ende). Bis dahin galt ein eingereichtes Rohende 23:59 pauschal als Echo (PR1-Review Task 8), ein echtes Ende um 23:59 ließ sich nicht eintragen. **Grenzfall:** Ohne Blöcke ist das wirksame Ende selbst 23:59 (ungekappt) — ein zurückgeschicktes 23:59 ist vom Echo nicht unterscheidbar und bleibt Echo (Kennzeichen bleibt); ebenso ein eingetragenes Ende genau auf dem wirksamen Ende (z. B. 18:15 auf der Hüllenkante). Auflösbar wäre das nur über ein neues Feld („Ende bestätigt"), das bewusst nicht eingeführt wird. Das Protokoll-23:59 des Auto-Close (`raw_end_time = 23:59` bei gesetztem Kennzeichen) bleibt, wird aber nie als echter Stempel gelesen: Anerkennen → 400, `RawStampNote` „nicht ausgestempelt – automatisch geschlossen, angerechnet bis 18:15", Anwesenheit (8.3) bis zum wirksamen Ende, Hüllenminuten am Ende zählen nicht als „nicht angerechnet" (P19). Erkennung über die Spalte, nicht über die editierbare Notiz. **Entschieden 2026-10-10 (PR1-Review F1):** Wird ein automatisch geschlossener Eintrag auf einen **anderen** Tag verschoben und ist das eingereichte Ende keine Korrektur (`end_is_correction` = nein: das wirksame Ende kam zurück, vom Formular oder als Rückfall eines reinen Datums-`PUT` — bis 2026-10-11 auch das gespeicherte Rohende, auf das die Verwaltungsroute damals zurückfiel), ist die Kappungseingabe das gespeicherte Rohende, sofern es nicht das synthetische 23:59 ist (nach einem früheren Verschieben trägt es das übernommene wirksame Ende), sonst das **wirksame** Ende — nie das synthetische Rohende 23:59 (**Entschieden 2026-10-10, PR1-Review N2**) — eine Quelle `work_window_service.end_input_for`, an jedem Pfad, der das Ende eines bestehenden Eintrags mit möglichem Datumswechsel neu kappt (7.1). Bei gleichem Datum unverändert; das Kennzeichen bleibt, `raw_end_time` folgt der Kappung dieser Eingabe (am Zieltag ohne Blöcke `NULL`). Liegt diese Eingabe nicht nach dem Beginn (späterer Beginn als das übernommene Ende), lehnt jeder dieser Pfade mit 400 „Endzeit muss nach Startzeit liegen" ab, mit Hinweis auf den automatischen Abschluss — `work_window_service.input_order_error` (**Entschieden 2026-10-10, PR1-Review N2-Nachzug**). | 23:59 ist ein synthetischer Wert in einer Spalte, die sonst §16-Nachweis ist; ohne Kennzeichen öffnete Anerkennen das Schlupfloch wieder (16 h angerechnet), das E36/E42 schließen. F1: `unclamp_input` stellte beim Verschieben das Rohende 23:59 wieder her — am Zieltag ohne Blöcke (Samstag, Feiertag, freier Tag) blieb es ungekappt (15:00–23:59 ≈ 9 h statt 3,25 h angerechnet), an einem Tag mit späterer Hülle wurde bis zu ihr angerechnet. N2: das Ergebnis darf nicht von der Reihenfolge der Verschiebungen abhängen — mit dem wirksamen Ende allein landete Montag (Hülle 18:15) → Freitag (Hülle 16:15) → nächster Montag still bei 16:15 / 1,25 h statt 18:15 / 3,25 h wie der direkte Weg (keine Kappungswarnung, auch ein eingetipptes 18:15 half nicht). N2-Nachzug: die Reihenfolge-Prüfung lief nur auf der rohen Eingabe (23:59) — ein Verschieben mit Beginn nach dem übernommenen Ende speicherte still 20:00–18:15 mit `net_hours` 0, genau den Zustand, den der Release-Review 1.16.0 ausschließt. 2026-10-11: wer tatsächlich bis 23:59 gearbeitet hat (Spät-, Not- oder Bereitschaftsdienst), muss das als echtes Ende eintragen können; das Echo, gegen das die frühere Sperre schützte, kann nicht mehr entstehen, weil weder ein Formular noch ein Schreibpfad das Rohende 23:59 einsetzt. |
 | P19 | „angerechnet" = `net_hours` (nach Pause und `uncredited`). „Nicht angerechnet" eines Eintrags = `uncredited_minutes` + Hüllenminuten (`eff_start − raw_start`, `raw_end − eff_end`; 0 ohne `raw_*`; Endseite bei `auto_closed` ausgenommen). Eine Quelle: `work_window_service.not_credited_minutes(entry)` + Frontend-Zwilling `utils/workBlocks.ts::notCreditedMinutes` (wortgleiche Testfälle). Genutzt von `RawStampNote`, Journal-Summe und Export-Spalte. | Sonst bliebe gekappte Anwesenheit außerhalb der Hülle im §16-Beleg unerklärt (K7: 1:30 h, K15: 5:44 h) — Pflicht 8 nur halb erfüllt (R6, F11). |
 | P20 | Sammelzeile bei **jedem** Anlegen und Löschen einer Arbeitszeit-Änderung (auch 0 betroffene Einträge, auch reine Wochenstunden-Änderung); der Dashboard-Hinweis wird aus diesen Sammelzeilen der letzten 30 Tage abgeleitet und erscheint für jede Änderung (auch „ab heute"/zukunftsdatiert, Löschung), mit Neukappungs-Zusatz nur bei n > 0. | Das Protokoll verlangt „a summary row per change"; eine Weisung muss Mitarbeitende erreichen (§ 106 GewO, Art. 5 Abs. 1 lit. a, Art. 13 DSGVO) (F2, R8). |
 | P21 | **Anrechnung beantragen:** Mitarbeitende können an einem eigenen geschlossenen Eintrag mit nicht angerechneter Zeit einen Änderungsantrag mit Kennzeichen `request_credit_override` stellen (Begründung Pflicht wie jeder Antrag). Die Antragsprüfung bietet „Genehmigen = Anerkennen" (Pfad 13.3) und zeigt für jeden UPDATE-Antrag auf einen Eintrag mit nicht angerechneter Zeit zusätzlich die Option „genehmigen und anerkennen". | Art. 22 Abs. 3 DSGVO: Eingreifen einer Person, eigener Standpunkt, Anfechtung; ein gleichlautender Antrag würde sonst bei Genehmigung wieder gekappt (R9). |
@@ -322,7 +322,7 @@ Altzeile aus Migration 073 (Fenster Mo–Do 07:30–16:30, Fr halboffen ab 07:30
 | `users` | `work_blocks` | `JSON` / `JSONB` | ja | — | Rückfall nur vor der ersten Verlaufszeile; Spiegel der jüngsten Zeile ≤ heute (Sync). |
 | `time_entries` | `uncredited_minutes` | `INTEGER` | nein | `0` (server_default `'0'`) | In der Lücke liegende, nicht angerechnete Minuten. Nur serverseitig. |
 | `time_entries` | `credit_override` | `BOOLEAN` | nein | `false` (server_default `'false'`) | Eintrag wird nie gekappt („Anerkennen"). |
-| `time_entries` | `auto_closed` | `BOOLEAN` | nein | `false` (server_default `'false'`) | Vom Auto-Close geschlossen; `raw_end_time` 23:59 ist dann kein echter Stempel (P18). Ein Pfad, der ein tatsächlich neues Ende schreibt (`end_is_correction`), setzt es auf `false`; ein unverändert zurückgeschicktes wirksames Ende, das Rohende 23:59 eines automatisch geschlossenen Eintrags und die Neukappung lassen es stehen. |
+| `time_entries` | `auto_closed` | `BOOLEAN` | nein | `false` (server_default `'false'`) | Vom Auto-Close geschlossen; `raw_end_time` 23:59 ist dann kein echter Stempel (P18). Ein Pfad, der ein tatsächlich neues Ende schreibt (`end_is_correction`), setzt es auf `false`; ein unverändert zurückgeschicktes wirksames Ende und die Neukappung lassen es stehen. **Entschieden 2026-10-11 (Produktinhaber):** ein eingetragenes 23:59 ist ein tatsächlich neues Ende (Formulare schicken das wirksame Ende) — `false`, 23:59 wird echter Stempel; ohne Blöcke (wirksames Ende = 23:59) bleibt ein 23:59 Echo. |
 | `time_entries` | `clamp_grace_minutes` | `INTEGER` | ja | — | Puffer der letzten Kappung gegen Blöcke (E79). NULL = nie gegen Blöcke gekappt bzw. Bestand vor 073 („unbekannt → aktueller Puffer"). Einzel-Neukappungen lesen ihn, die Massen-Neukappung überschreibt ihn (E80). Nur serverseitig. |
 | `change_requests` | `request_credit_override` | `BOOLEAN` | nein | `false` (server_default `'false'`) | Antrag „Anrechnung beantragen" (P21). |
 | `change_requests` | `original_uncredited_minutes` | `INTEGER` | ja | — | Vorher-Snapshot der nicht angerechneten Lückenminuten (P28). |
@@ -965,31 +965,52 @@ Eigentümerprüfung und der 404 nach dem gesperrten Laden bleiben als Rückversi
 zwischen Eigentümer-Lesen und Sperre gelöscht). Ein Pfad außer dem Auto-Close, der ein **tatsächlich neues** Ende schreibt, setzt
 `auto_closed = false` (P18): Ausstempeln (Nr. 2) und XLS-Überschreiben (Nr. 12) immer, die
 Bearbeitungen (Nr. 4, 6) und der CR-UPDATE-Zweig (Nr. 9) nur, wenn
-`work_window_service.end_is_correction(eingehend, wirksames Ende, Rohende, auto_closed)`
-zutrifft. Ein unverändert zurückgeschicktes wirksames Ende (Formular, `unclamp_input`), das
-zurückgeschickte Rohende 23:59 eines automatisch geschlossenen Eintrags und die
-Neukappung (Nr. 15) lassen es stehen — sonst läsen Anerkennen und P19 nach jedem
-Formular-Speichern die synthetischen 23:59 wieder als echten Stempel.
+`work_window_service.end_is_correction(eingehend, wirksames Ende)` zutrifft. Ein unverändert
+zurückgeschicktes wirksames Ende (Formular, `unclamp_input`) und die Neukappung (Nr. 15)
+lassen es stehen — sonst läsen Anerkennen und P19 nach jedem Formular-Speichern die
+synthetischen 23:59 wieder als echten Stempel.
+**Entschieden 2026-10-11 (Produktinhaber):** Ein echtes Ende 23:59 ist eintragbar. Die
+Formulare (Zeiterfassung, Monatsjournal, Admin-Dashboard, Antragsformular, die
+§4-Rückfrage `submitWithBreakWaiver`) zeigen und schicken bei `auto_closed` das **wirksame**
+Ende, und kein Schreibpfad füllt ein fehlendes Ende mit dem Rohende auf: die
+Waiver-Rückfrage der MA-Route (Nr. 4) legt den Antrag mit dem wirksamen Ende an, die
+Verwaltungsroute (Nr. 6) setzt für ein fehlendes Ende das wirksame Ende ein (vorher
+`raw_end_time or end_time`; `end_input_for` → `unclamp_input` stellt daraus denselben Rohwert
+her). Ein eingereichtes 23:59 kommt damit nur aus echter Eingabe und ist eine Korrektur —
+`auto_closed = false`, 23:59 wird echter Stempel (`raw_end_time`) und gegen die Hülle gekappt
+wie jedes andere Ende; die Kappungswarnung (#462) erscheint auch dann, wenn das gespeicherte
+Rohende schon 23:59 war (Nr. 4 und 6: „unverändert" gilt nicht, sobald das Kennzeichen
+fällt). Bis dahin hielt `end_is_correction` ein eingereichtes Rohende eines automatisch
+geschlossenen Eintrags pauschal für das Echo (PR1-Review Task 8) — ein echtes Ende um 23:59
+ließ sich nicht eintragen. Grenzfall ohne Blöcke: das wirksame Ende ist selbst 23:59, ein
+zurückgeschicktes 23:59 bleibt Echo (Kennzeichen bleibt) — ohne neues Feld nicht unterscheidbar.
 **Entschieden 2026-10-10 (PR1-Review F1):** Die Kappungseingabe für das Ende eines bestehenden
 Eintrags liefert an allen Pfaden mit möglichem Datumswechsel `work_window_service.end_input_for`
 (Nr. 4 und 6, Vorprüfung 7 und Schreiben 9 der UPDATE-Genehmigung, Antragsprüfung 14): beim
 automatisch geschlossenen Eintrag, verschoben auf einen anderen Tag, ohne Korrektur des Endes
-(`end_is_correction` = nein) ist die Eingabe das gespeicherte Rohende, sofern es nicht das
+(`end_is_correction` = nein: das wirksame Ende kam zurück, auch als Rückfall eines reinen
+Datums-`PUT`) ist die Eingabe das gespeicherte Rohende, sofern es nicht das
 synthetische 23:59 ist (nach einem früheren Verschieben trägt es das übernommene wirksame Ende),
 sonst das wirksame Ende — nie das Rohende 23:59, sonst rechnete der Zieltag ohne Blöcke
-15:00–23:59 an (P18). Sonst und bei gleichem Datum `unclamp_input` wie bisher.
+15:00–23:59 an (P18). Sonst und bei gleichem Datum `unclamp_input` wie bisher — seit
+2026-10-11 auch für ein beim Verschieben eingetipptes 23:59 (Korrektur, gilt wie eingetragen
+und wird gegen die Blöcke des Zieltags gekappt).
 **Entschieden 2026-10-10 (PR1-Review N2):** das Rohende statt des schon gekürzten wirksamen Endes,
 weil das Ergebnis nicht von der Reihenfolge der Verschiebungen abhängen darf (Montag → Freitag mit
 früherer Hülle → nächster Montag = 18:15 wie der direkte Weg, nicht still 16:15).
 **Entschieden 2026-10-10 (PR1-Review N2-Nachzug):** Die Reihenfolge-Prüfung „Endzeit muss nach
-Startzeit liegen" sieht in Nr. 4, 6 und 14 nur die rohe Eingabe (eingetipptes oder als Rückfall
-eingesetztes 23:59), die Genehmigung prüft sie gar nicht — `end_input_for` kann das Ende aber vor
+Startzeit liegen" sieht in Nr. 4, 6 und 14 nur die rohe Eingabe (das eingetippte Ende; ohne Ende
+im Payload prüft Nr. 6 seit 2026-10-11 erst die tatsächliche Kappungseingabe), die Genehmigung
+prüft sie gar nicht — `end_input_for` kann das Ende aber vor
 den Beginn legen (Samstag, Beginn 20:00 → 20:00–18:15, `net_hours` 0 ohne Warnung). Deshalb
 prüft jeder dieser Pfade die tatsächlich verwendeten Kappungseingaben direkt vor `clamp` ein
 zweites Mal (`work_window_service.input_order_error`; in 7/9 vor der Vorprüfung und vor jeder
 Statusänderung, damit auch ältere Anträge nicht durchgehen) → 400 mit dem Hinweis, dass der Eintrag
 automatisch geschlossen wurde und ein tatsächliches Ende einzutragen ist; der Eintrag bleibt
 unverändert. Die Prüfung der rohen Eingabe bleibt (Formulareingabe Ende vor Beginn am selben Tag).
+Seit 2026-10-11 greift die zweite Prüfung nur noch, wenn kein Ende mitkam oder das wirksame Ende
+zurückkam — ein eingetipptes 23:59 ist eine Korrektur und kommt unverändert an; beim Antrag
+(Nr. 14) hat die Prüfung der rohen Eingabe diesen Fall schon abgelehnt (dort Absicherung).
 **Entschieden 2026-10-10 (PR2-Review Task 6):** Alle Vergleiche gegen das gespeicherte Ende, das
 Rohende und das synthetische 23:59 sind **minutengenau** (`work_window_service.same_minute`) —
 `end_is_correction`, `end_input_for` und die Antrags-/Genehmigungssperre „Anrechnung beantragen"
@@ -998,7 +1019,9 @@ bzw. „genehmigen und anerkennen" ohne tatsächliches Ende (`credit_override_se
 „23:59") kam am exakten Vergleich vorbei, hob `auto_closed` auf und wurde bis 23:59:30 anerkannt.
 Ist die Eingabe minutengenau keine Korrektur, rechnet `end_input_for` auch am gleichen Tag mit dem
 gespeicherten Paar weiter (für sekundenfreie Eingaben dasselbe Ergebnis wie bisher), damit kein
-Rohende mit Sekunden gespeichert wird.
+Rohende mit Sekunden gespeichert wird. **Entschieden 2026-10-11 (Produktinhaber):** verglichen
+wird nur noch gegen das wirksame Ende — ein eingetragenes „23:59" bzw. „23:59:30" ist eine
+echte Eingabe (Korrektur, Rohstempel wie eingegeben); ein „18:15:30" bleibt das wirksame Ende.
 
 **Puffer je Zeile (E79/E80):** aktueller Mandanten-Puffer bei Neuanlagen — Nr. 1, 3, 5, 8,
 Neuanlage-Zweig von 11/12 und die CREATE-Prüfungen in 7 und 14; `grace_for_entry(db, entry)`
@@ -2251,7 +2274,9 @@ eigene Rücknahme gibt es nicht (P11).
   `not_credited_minutes > 0`, nicht anerkannt, Aktion „Anrechnung beantragen" in
   Zeiterfassung und Monatsjournal → Änderungsantrag (UPDATE, Zeiten = Rohstempel,
   `request_credit_override=true`, Begründung Pflicht). Bei `auto_closed` muss die Person
-  das tatsächliche Ende im selben Antrag angeben. **Entschieden 2026-10-10 (Gesamtreview
+  das tatsächliche Ende im selben Antrag angeben (das Feld bleibt leer; das wirksame Ende zählt
+  nicht, ein eingetragenes 23:59 schon — **Entschieden 2026-10-11 (Produktinhaber)**, außer
+  ohne Blöcke, wo das wirksame Ende selbst 23:59 ist). **Entschieden 2026-10-10 (Gesamtreview
   PR2, Fund 1/3):** auch am **heutigen** geschlossenen Eintrag — der Lückentext an
   `clock_out`/`create_time_entry`/`update_time_entry` (6.2) gilt für Mitarbeitende immer dem
   heutigen Eintrag und verwiese sonst auf eine Aktion, die es erst ab morgen gibt; heute nur
@@ -2518,7 +2543,12 @@ Pflichtinhalte:
    kein Stempel — nie anerkennen, nie als Anwesenheit oder „nicht angerechnet" zählen, und
    beim Verschieben auf einen anderen Tag nie wieder als Kappungseingabe herstellen
    (`end_input_for`, PR1-Review F1); danach die Reihenfolge der tatsächlich verwendeten
-   Eingaben erneut prüfen (`input_order_error`, PR1-Review N2-Nachzug).
+   Eingaben erneut prüfen (`input_order_error`, PR1-Review N2-Nachzug). **Entschieden
+   2026-10-11 (Produktinhaber):** ein **eingetragenes** 23:59 ist dagegen ein echtes Ende —
+   Korrektur (`end_is_correction`: jedes Ende außer dem wirksamen), Kennzeichen fällt, gekappt
+   wie jedes andere Ende. Deshalb zeigen und schicken alle Formulare bei `auto_closed` das
+   wirksame Ende, und kein Pfad füllt ein fehlendes Ende mit dem Rohende auf — sonst würde das
+   Protokoll-23:59 still zum Stempel. Ohne Blöcke bleibt ein 23:59 Echo (wirksames Ende = 23:59).
 10. **„Nicht angerechnet" = Lücke + Hülle** (`not_credited_minutes`, eine Quelle +
     Frontend-Zwilling); „angerechnet" = `net_hours`. Neue Anzeige-/Exportflächen nutzen den
     Helfer, nie `uncredited_minutes` allein.
@@ -2646,7 +2676,12 @@ alles zusammen über `bash scripts/local-ci.sh`.
 - `test_auto_close_blocks.py`: K15 inkl. `auto_closed = true`; ohne Blöcke bleibt 23:59
   (`auto_closed = true`); eine spätere Admin-Korrektur des Endes setzt `auto_closed =
   false`; Anwesenheit des Tages endet am wirksamen Ende (kein falsches
-  `PRESENCE_DAILY_HOURS` bei einem weiteren Eintrag desselben Tages).
+  `PRESENCE_DAILY_HOURS` bei einem weiteren Eintrag desselben Tages). **Entschieden
+  2026-10-11:** je Pfad (Antragsgenehmigung UPDATE, MA-Antrag samt Genehmigung, CREATE-
+  Genehmigung, Admin-Bearbeitung, MA-`PUT`) „23:59 eingetragen → `auto_closed = false`,
+  `raw_end_time` 23:59, gekappt auf 18:15, Kappungswarnung" und „wirksames Ende
+  zurückgeschickt bzw. kein Ende → bleibt `true`"; Grenzfall ohne Blöcke: 23:59 bleibt Echo
+  (alle drei Schreibpfade); `end_is_correction` nur gegen das wirksame Ende.
 - `test_auto_closed_date_move.py` (P18, PR1-Review F1): automatisch geschlossener Eintrag
   15:00–18:15 (Rohende 23:59), nur im Datum verschoben — Samstag, Feiertag und Tag mit
   späterer Hülle rechnen bis 18:15 an (3,25 h), Kennzeichen bleibt; gleiches Datum =
@@ -2655,11 +2690,16 @@ alles zusammen über `bash scripts/local-ci.sh`.
   (Formular und reiner Datums-`PUT`); Gegenprobe: ein anderes Ende bleibt Korrektur.
   Zwei Schritte (PR1-Review N2): Montag → Freitag (Hülle bis 16:15: 16:15, Rohende 18:15,
   1,25 h) → nächster Montag = 18:15 / 3,25 h wie der direkte Weg, Kennzeichen bleibt — beide
-  Bearbeiten-Routen (Formular, eingetipptes 18:15, reiner Datums-`PUT`) und die Genehmigung.
-  Reihenfolge (PR1-Review N2-Nachzug): Beginn nach dem übernommenen Ende (Samstag 20:00,
-  nächster Montag 19:00; Ende 23:59 eingetippt oder weggelassen) → 400 mit Hinweis auf den
-  automatischen Abschluss, Eintrag unverändert — beide Bearbeiten-Routen, Antragsprüfung (kein
-  Antrag angelegt) und Genehmigung eines älteren Antrags (bleibt offen).
+  Bearbeiten-Routen (Formular, reiner Datums-`PUT`) und die Genehmigung; ein eingetipptes 18:15
+  (≠ wirksames Ende 16:15) ist seit 2026-10-11 eine Korrektur — dasselbe Ergebnis, das
+  Kennzeichen fällt. Reihenfolge (PR1-Review N2-Nachzug): Beginn nach dem übernommenen Ende
+  (Samstag 20:00, nächster Montag 19:00; Ende weggelassen bzw. im Antrag das wirksame Ende) →
+  400 mit Hinweis auf den automatischen Abschluss, Eintrag unverändert — beide
+  Bearbeiten-Routen, Antragsprüfung (400 der rohen Prüfung, kein Antrag angelegt) und
+  Genehmigung eines älteren Antrags (bleibt offen). **Entschieden 2026-10-11:** ein beim
+  Verschieben eingetipptes 23:59 ist eine Korrektur — Samstag 20:00–23:59 ungekappt
+  (3,98 h), nächster Montag 19:00–23:59 kollabiert auf 0 h (Rohstempel bleibt), Kennzeichen
+  fällt; beide Routen, Antrag (angenommen) und Genehmigung.
 - `test_legacy_fixes_blocks.py`: E39 (Datumswechsel über die Verwaltung; MA-Datumswechsel
   → 403, #502), E40 (Antrag „08–18, Pause 0" wird angenommen, gespeichert roh), E41 (keine
   Doppelzählung in der 48-h-Warnung).
@@ -2683,6 +2723,14 @@ alles zusammen über `bash scripts/local-ci.sh`.
   XLS-Überschreiben **behalten** das Flag (P3); Antrag mit `request_credit_override` →
   Genehmigung setzt das Flag, Protokollnotiz „auf Antrag"; Antrag auf einen Eintrag ohne
   nicht angerechnete Zeit → 400; Bulk-Genehmigung übernimmt den Antragswert.
+  **Entschieden 2026-10-11:** bei `auto_closed` gelten wirksames Ende (auch mit Sekunden) und
+  ein fehlendes Ende nicht als tatsächliches Ende (Antrag und „genehmigen und anerkennen" →
+  400), ein eingetragenes 23:59 bzw. „23:59:30" schon (Antrag 201, Genehmigung hebt das
+  Kennzeichen auf und erkennt bis 23:59 an); `lacks_actual_end` je Fall inklusive Grenzfall
+  ohne Blöcke (wirksames Ende 23:59 → 23:59 fehlt weiter). Frontend-Zwillinge:
+  `ChangeRequestForm.test.tsx` (23:59 geht durch, ohne Blöcke nicht; gewöhnlicher Antrag belegt
+  das wirksame Ende vor) und `admin/ChangeRequests.test.tsx` („Genehmigen und anerkennen" bei
+  beantragtem 23:59).
 - `test_write_path_locks.py`: jeder Pfad aus P5 ruft `lock_user_row` vor `clamp` (Spy auf
   der Reihenfolge); Anerkennen sperrt Anker vor Eintrag; MA-`PUT`/`DELETE` auf einen fremden
   Eintrag → 404 ohne `lock_user_row` und ohne Zeilensperre (Entschieden 2026-10-10); MA-`PUT`
@@ -2901,6 +2949,12 @@ bzw. 13:00 bei Blöcken 08–12 + 15–18 → neutral; Hinweisliste mit allen Va
 `ImportXls` (Netto vom Server), `AuditValues.test.tsx`/`AuditLog` (Labels), `Reports`
 (Spalte „Anwesenheit laut Stempel"), `Settings` (Puffer-Hinweis im Wortlaut aus 12.3),
 `Dashboard`-Hinweise (Rücksetzungstext, Saldo-Zusatz, neue Grundtyp-Beschriftung).
+**Entschieden 2026-10-11 (P18):** jede Fläche, die das Ende eines automatisch geschlossenen
+Eintrags vorbelegt oder weiterreicht, zeigt und sendet das wirksame Ende, nie das Rohende
+23:59 — `TimeTracking.test.tsx` (Bearbeiten und Änderungsantrag), `MonthlyJournal.test.tsx`
+(Verwaltung per `PUT`, Antrag der Mitarbeitenden), `AdminDashboard.test.tsx` (Bearbeiten im
+Detail-Modal), `ChangeRequestForm.test.tsx` (gewöhnlicher Antrag), `breakWaiverRetry.test.ts`
+(die §4-Rückfrage ergänzt nur die Begründung, das Ende bleibt das des Formulars).
 
 ### 17.8 E2E (Playwright)
 
