@@ -56,7 +56,9 @@ export const EMPTY_REASON: ReasonState = { type: '', text: '', wageConfirmed: fa
 
 /** P15/P26: Grundtyp, 10–400 Zeichen Begründung, Haken; bei „Sonstiges" zweiter Haken. */
 export function reasonComplete(r: ReasonState): boolean {
-  const len = r.text.trim().length;
+  // In Zeichen (Codepoints) wie Pydantic/Python `len` — `.length` zählte
+  // UTF-16-Einheiten, ein Emoji also doppelt.
+  const len = [...r.text.trim()].length;
   return !!r.type && len >= 10 && len <= 400 && r.wageConfirmed && (r.type !== 'sonstiges' || r.otherConfirmed);
 }
 

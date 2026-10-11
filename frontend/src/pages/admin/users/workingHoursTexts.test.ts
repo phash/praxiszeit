@@ -62,6 +62,11 @@ describe('workingHoursTexts', () => {
     expect(reasonComplete({ ...ok, text: 'neun Zeic' })).toBe(false);
     expect(reasonComplete({ ...ok, text: 'x'.repeat(400) })).toBe(true);
     expect(reasonComplete({ ...ok, text: 'x'.repeat(401) })).toBe(false);
+    // Gezählt wird wie im Backend (Python `len`) in Zeichen, nicht in UTF-16-Einheiten.
+    expect(reasonComplete({ ...ok, text: '😀'.repeat(5) })).toBe(false);
+    expect(reasonComplete({ ...ok, text: '😀'.repeat(10) })).toBe(true);
+    expect(reasonComplete({ ...ok, text: '😀'.repeat(400) })).toBe(true);
+    expect(reasonComplete({ ...ok, text: '😀'.repeat(401) })).toBe(false);
     expect(reasonComplete({ ...ok, wageConfirmed: false })).toBe(false);
     expect(reasonComplete({ ...ok, type: 'sonstiges' })).toBe(false);
     expect(reasonComplete({ ...ok, type: 'sonstiges', otherConfirmed: true })).toBe(true);
