@@ -337,7 +337,7 @@ def format_weekly_hours_history(segments, compact: bool = False) -> str:
     schreiben die Zelle dann gar nicht erst, sodass unveraenderte Berichte
     exakt so aussehen wie vorher.
 
-    Zwei Formulierungen, je nach Modus des Segments:
+    Der Grundsatz richtet sich nach dem Modus des Segments:
 
     * gleichmaessig — ``ab 15.03.2026: 30,0 Std/Woche`` (woertlich wie seit #415)
     * Tagesplan (#431) — ``ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche``
@@ -346,9 +346,28 @@ def format_weekly_hours_history(segments, compact: bool = False) -> str:
     genannt (``ab 16.03.2026: 40,0 Std/Woche auf 4 Arbeitstage``) — siehe
     :func:`_work_days_suffix`.
 
+    Arbeitszeit-Bloecke (Spec 15.2) kommen NUR hinzu, wenn
+    ``calculation_service.blocks_changed`` fuer das Segment gegenueber seinem
+    Vorgaenger anschlaegt (Bloecke oder Pausen geaendert); sonst bleibt der Satz
+    byte-identisch zum Grundsatz oben — auch wenn nach Migration 073 jede
+    Verlaufszeile dasselbe Altfenster traegt (E20). Drei Faelle, siehe
+    :func:`_format_segment_change`:
+
+    * neue Bloecke ERSETZEN den Grundsatz (samt Arbeitstage-Zusatz — die
+      Bloecke nennen die Tage selbst):
+      ``ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–13:00 = 11,5 h/Woche``;
+      in der PDF-Kurzform (``compact``)
+      ``ab 01.09.2026: Mo 08:00–12:00+15:00–18:00 P30 / Di 08:00–13:00 = 11,5 h/Woche``
+    * ein Altfenster (Bloecke ohne Pausenangabe wie aus Migration 073 — kappt
+      nur, treibt kein Soll) wird an den Grundsatz angehaengt:
+      ``ab 01.09.2026: 40,0 Std/Woche · Mo 07:30–16:30 (nur Kappung)``
+    * entfernte Bloecke werden an den Grundsatz angehaengt:
+      ``ab 01.10.2026: Mo 6,5 / Di 5,0 = 11,5 h/Woche · ohne Arbeitszeit-Blöcke``
+
     Der Frontend-Zwilling ``utils/formatters.ts::formatWeeklyHoursChanges`` muss
     WORTGLEICH bleiben — Bildschirm und Datei duerfen nicht verschiedene Saetze
-    sagen.
+    sagen. Der Bildschirm zeigt immer die Langform; die Kurzformen
+    (``compact``: „P30", „4 Tage") stehen nur in der PDF-Meta.
     """
     if len(segments) < 2:
         return ""

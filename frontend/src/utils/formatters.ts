@@ -169,7 +169,7 @@ function workDaysSuffix(change: WeeklyHoursChangeInPeriod): string {
  * Stundenzahl mitten im Monat, gilt diese Zahl nur für die erste Hälfte. Diese
  * Funktion rendert den Rest — Wortlaut und Format identisch zu
  * `export_service.format_weekly_hours_history`, damit Bildschirm und
- * Datei-Export dasselbe sagen:
+ * Datei-Export dasselbe sagen. Der Grundsatz richtet sich nach dem Modus:
  *
  * - gleichmäßig: `ab 15.03.2026: 20,0 Std/Woche`
  * - Tagesplan (#431): `ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche`
@@ -181,6 +181,24 @@ function workDaysSuffix(change: WeeklyHoursChangeInPeriod): string {
  * 10,00 sprang (Abschluss-Review #431, Fund 1). Nur bei tatsächlicher Änderung,
  * damit der eingefrorene #415-Wortlaut für jeden vor #431 möglichen Fall
  * zeichengleich bleibt.
+ *
+ * Arbeitszeit-Blöcke (Spec 15.2) kommen NUR hinzu, wenn der Server
+ * `blocks_changed` meldet (`calculation_service.blocks_changed`: Blöcke oder
+ * Pausen gegenüber der vorherigen Zeile geändert); sonst bleibt der Satz
+ * byte-identisch zum Grundsatz — auch wenn nach Migration 073 jede
+ * Verlaufszeile dasselbe Altfenster trägt (E20). Drei Fälle:
+ *
+ * - neue Blöcke ERSETZEN den Grundsatz (samt Arbeitstage-Zusatz — die Blöcke
+ *   nennen die Tage selbst):
+ *   `ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–13:00 = 11,5 h/Woche`
+ * - ein Altfenster (Blöcke ohne Pausenangabe wie aus Migration 073 — kappt
+ *   nur, treibt kein Soll) wird an den Grundsatz angehängt:
+ *   `ab 01.09.2026: 40,0 Std/Woche · Mo 07:30–16:30 (nur Kappung)`
+ * - entfernte Blöcke werden an den Grundsatz angehängt:
+ *   `ab 01.10.2026: Mo 6,5 / Di 5,0 = 11,5 h/Woche · ohne Arbeitszeit-Blöcke`
+ *
+ * Der Bildschirm zeigt immer die Langform; die Kurzformen des Datei-Exports
+ * („P30", „4 Tage") stehen nur in der PDF-Meta und deshalb nicht hier.
  *
  * Leerstring, wenn es im Zeitraum keine Änderung gab → die Aufrufer rendern
  * dann gar nichts und unveränderte Berichte sehen aus wie vorher.
