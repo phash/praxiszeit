@@ -337,6 +337,11 @@ group_admin_aendern() {
   need "$f" '(neu: 40,0 h/Woche auf 4 Arbeitstage)'
   forbid "$f" '(gleichmäßig, 5 Tage))'
   forbid "$f" '**Stundenänderungen:**'
+  # Review Task 3: Löschen gibt es nur an der jüngsten Zeile (kein P25). Ab heute
+  # → Rücksetzung ab morgen; nach heute → Löschen verkürzt nie. Eine Verkürzung
+  # ohne Rücksetzung tritt in der Oberfläche praktisch nicht auf.
+  forbid "$f" 'Ist keine Rücksetzung möglich'
+  need "$f" 'Eine Änderung, die erst nach heute beginnt, verkürzt beim Löschen nichts'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
