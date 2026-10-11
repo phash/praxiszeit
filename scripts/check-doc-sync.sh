@@ -257,6 +257,10 @@ group_code() {
   need_code "Feste Monatsarbeitszeit: "
   need_code "Ohne Stundenzählung: kein Tagessoll; die Arbeitszeit-Blöcke begrenzen die Anrechnung nicht."
   need_code "Anwesenheit nicht angerechnet: "
+  # Review Task 5: übernommenes Arbeitszeit-Fenster (Spec 4.4) — Kartenhinweis
+  # (MyWorkScheduleCard) und Zusatz im Dashboard-Hinweis (reclamp_audit.contract_text).
+  need_code "Diese Zeiten begrenzen nur die Anrechnung der erfassten Zeit; das Tagessoll wird nicht aus ihnen berechnet."
+  need_code '{base} · {window} (nur Kappung)'
 }
 
 group_mirror() {
@@ -537,6 +541,13 @@ group_mitarbeiter() {
   # im Admin-Handbuch (Review Task 4).
   need "$f" 'Ihr **Ist** ist Ihre angerechnete Arbeitszeit'
   forbid "$f" 'Ihr **Ist** ist Ihre tatsächlich erfasste Arbeitszeit'
+  # Review Task 5: übernommenes Arbeitszeit-Fenster (Spec 4.4) — kappt, das
+  # Soll kommt weiter aus Wochenstunden/Tageswerten; Kartenhinweis und
+  # Dashboard-Zusatz laut Code, §5 nennt die Ausnahme.
+  need "$f" 'Übernommenes Arbeitszeit-Fenster'
+  need "$f" 'Diese Zeiten begrenzen nur die Anrechnung der erfassten Zeit; das Tagessoll wird nicht aus ihnen berechnet.'
+  need "$f" '(neu: 40,0 h/Woche · Mo 07:30–16:30 / Fr 07:30–23:59 (nur Kappung)).'
+  need "$f" 'außer bei einem aus früheren Versionen übernommenen Arbeitszeit-Fenster'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
