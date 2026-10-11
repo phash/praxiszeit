@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT, OTHER_CONFIRM,
   OTHER_WARNING,
-  REASON_HELP, REASON_OPTIONS, SKIP_LABELS, closedYearMessage, formatDate, hm, modeSwitchHint, monthLabel,
+  REASON_HELP, REASON_OPTIONS, SKIP_LABELS, closedYearMessage, dayBefore, formatDate, hm, modeSwitchHint, monthLabel,
   reasonComplete, reasonPayload, savedMessage, shortDate, signedDays, signedHm,
 } from './workingHoursTexts';
 
@@ -124,5 +124,14 @@ describe('workingHoursTexts', () => {
     expect(savedMessage({ adjusted_absences: 3 })).toBe('Gespeichert. 3 Abwesenheiten angepasst.');
     expect(savedMessage({})).toBe('Gespeichert.');
     expect(savedMessage({ adjusted_time_entries: 1 }, 'Gelöscht')).toBe('Gelöscht. 1 Zeiteintrag neu berechnet.');
+  });
+
+  it('dayBefore: Vortag über Monats-, Jahres- und Schaltjahresgrenze (Lösch-Hinweis 12.1)', () => {
+    expect(dayBefore('2026-07-27')).toBe('2026-07-26');
+    expect(dayBefore('2026-03-01')).toBe('2026-02-28');
+    expect(dayBefore('2028-03-01')).toBe('2028-02-29');
+    expect(dayBefore('2027-01-01')).toBe('2026-12-31');
+    // Sommerzeitbeginn 29.03.2026 — reine Tagesarithmetik, kein Zeitzonen-Sprung.
+    expect(dayBefore('2026-03-30')).toBe('2026-03-29');
   });
 });

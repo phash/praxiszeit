@@ -453,106 +453,6 @@ describe('M1: "heute" ist das LOKALE Datum, nicht das UTC-Datum', () => {
   });
 });
 
-describe('Löschen einer Stundenänderung', () => {
-  // I3: Das Backend antwortet beim Löschen mit 200 + {warning}, wenn die
-  // Rückrechnung ein bereits abgeschlossenes Jahr berührt (sonst 204 ohne Body).
-  it('zeigt die Jahresabschluss-Warnung aus der 200-Antwort', async () => {
-    getMock.mockImplementation((url: string) => {
-      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
-      return Promise.resolve(historyResponse([
-        { id: 'c1', effective_from: '2025-06-01', weekly_hours: 30 },
-      ]));
-    });
-    deleteMock.mockResolvedValue({
-      status: 200,
-      data: { warning: 'Das Jahr 2025 ist bereits abgeschlossen — der Carryover 2026 könnte veraltet sein.' },
-    });
-    renderModal();
-    await screen.findByText(/Ab 01\.06\.2025/);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }));
-
-    await waitFor(() => expect(deleteMock).toHaveBeenCalled());
-    expect(await screen.findByText(/2025 ist bereits abgeschlossen/)).toBeInTheDocument();
-  });
-
-  it('zeigt die Backend-Begründung statt einer pauschalen Fehlermeldung', async () => {
-    // I4: Der Grund („…verankert den davor gültigen Wert…") wurde von einer
-    // hardcodierten Meldung verschluckt.
-    getMock.mockImplementation((url: string) => {
-      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
-      return Promise.resolve(historyResponse([
-        { id: 'c1', effective_from: '2026-06-01', weekly_hours: 30 },
-      ]));
-    });
-    deleteMock.mockRejectedValue({
-      response: { data: { detail: 'Dies ist die früheste erfasste Stundenänderung dieses Mitarbeiters.' } },
-    });
-    renderModal();
-    await screen.findByText(/Ab 01\.06\.2026/);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }));
-
-    expect(await screen.findByText(/früheste erfasste Stundenänderung/)).toBeInTheDocument();
-  });
-
-  it('deaktiviert den Löschen-Button der frühesten Zeile, solange spätere existieren', async () => {
-    getMock.mockImplementation((url: string) => {
-      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
-      return Promise.resolve(historyResponse([
-        { id: 'c2', effective_from: '2026-03-01', weekly_hours: 40 },
-        { id: 'c1', effective_from: '2026-01-01', weekly_hours: 30 },
-      ]));
-    });
-    renderModal();
-    await screen.findByText(/Ab 01\.01\.2026/);
-
-    const locked = screen.getByRole('button', { name: /Löschen nicht möglich/ });
-    expect(locked).toBeDisabled();
-    // Die spätere Zeile bleibt löschbar — genau ein aktiver Löschen-Button.
-    expect(screen.getAllByRole('button', { name: 'Löschen' })).toHaveLength(1);
-  });
-
-  it('bietet das Löschen der EINZIGEN Zeile weiterhin an', async () => {
-    getMock.mockImplementation((url: string) => {
-      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
-      return Promise.resolve(historyResponse([
-        { id: 'c1', effective_from: '2026-01-01', weekly_hours: 30 },
-      ]));
-    });
-    renderModal();
-    await screen.findByText(/Ab 01\.01\.2026/);
-
-    expect(screen.getByRole('button', { name: 'Löschen' })).toBeEnabled();
-    expect(screen.queryByRole('button', { name: /Löschen nicht möglich/ })).not.toBeInTheDocument();
-  });
-
-  it('zeigt keine Warnung bei der leeren 204-Antwort', async () => {
-    getMock.mockImplementation((url: string) => {
-      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
-      return Promise.resolve(historyResponse([
-        { id: 'c1', effective_from: '2026-06-01', weekly_hours: 30 },
-      ]));
-    });
-    // axios liefert bei 204 data === '' — darf nicht als Warnung durchgehen.
-    deleteMock.mockResolvedValue({ status: 204, data: '' });
-    renderModal();
-    await screen.findByText(/Ab 01\.06\.2026/);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }));
-
-    await waitFor(() => expect(deleteMock).toHaveBeenCalled());
-    expect(await screen.findByText(/erfolgreich gelöscht/)).toBeInTheDocument();
-    expect(screen.queryByText(/abgeschlossen/)).not.toBeInTheDocument();
-  });
-});
-
 describe('Fund 1 (Release-Review 1.17.0): Sequenz-Guard gegen veraltete Vorschau-Antworten', () => {
   // Vorher fehlte jeder Cancel-Mechanismus (weder `cancelled`-Flag noch
   // AbortController) — eine spät eintreffende Antwort auf ein DATUM, das der
@@ -1748,5 +1648,265 @@ describe('Spec 2026-10-08 (PR3): Verkürzungs-Kasten', () => {
     fireEvent.click(submit);
     await waitFor(() => expect(postMock).toHaveBeenCalled());
     expect(postMock.mock.calls.at(-1)![1]).toMatchObject({ effective_from: '2026-07-26', weekly_hours: 20 });
+  });
+});
+
+describe('Löschen einer Arbeitszeit-Änderung (Spec 9.7/P13)', () => {
+  const TWO_ROWS = [
+    { id: 'c2', effective_from: '2026-06-01', weekly_hours: 30 },
+    { id: 'c1', effective_from: '2026-01-01', weekly_hours: 40 },
+  ];
+  const RESET_BODY = {
+    effective_from: '2026-07-27', reset_of_change_id: 'c2', use_daily_schedule: false, weekly_hours: 40,
+    work_days_per_week: 5,
+  };
+  const SHORT_DELETE: PreviewOverrides = {
+    is_retroactive: true, period_start: '2026-06-01', period_end: '2026-07-26', affected_absences: 0,
+    is_shortening: true, shortening_reasons: ['saldo'], saldo_delta_hours: -40, target_delta_hours: 40,
+    shortening_closed_years: [], earliest_lossless_date: '2026-07-27', reset_body: RESET_BODY,
+  };
+
+  async function openDelete(rows: Array<HistoryRow> = TWO_ROWS) {
+    mockHistory(rows, QUIET);
+    renderModal({ currentWeeklyHours: 30 });
+    await screen.findByText(/Ab 01\.06\.2026 bis heute/);
+    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
+    return screen.findByRole('alertdialog', { name: 'Arbeitszeit-Änderung ab 01.06.2026 löschen' });
+  }
+
+  it('[Löschen] steht nur an der jüngsten Zeile', async () => {
+    mockHistory(TWO_ROWS, QUIET);
+    renderModal({ currentWeeklyHours: 30 });
+    await screen.findByText(/Ab 01\.01\.2026 bis 31\.05\.2026/);
+    expect(screen.getAllByRole('button', { name: 'Löschen' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /Löschen nicht möglich/ })).not.toBeInTheDocument();
+  });
+
+  it('ohne Verkürzung: einfache Bestätigung mit Vorschau, Toast und Jahreswarnung aus der 200-Antwort', async () => {
+    deleteMock.mockResolvedValue({
+      status: 200,
+      data: { adjusted_absences: 1, adjusted_time_entries: 0, skipped_time_entries: 0,
+        warning: 'Das Jahr 2025 ist bereits abgeschlossen — der Carryover 2026 könnte veraltet sein.' },
+    });
+    const dialog = await openDelete();
+    expect(deletePreviewMock).toHaveBeenCalledWith('/admin/users/u1/working-hours-changes/c2/delete-preview', {});
+    const del = within(dialog).getByRole('button', { name: 'Löschen' });
+    await waitFor(() => expect(del).not.toBeDisabled());
+    expect(within(dialog).queryByRole('region', { name: 'Verkürzung' })).not.toBeInTheDocument();
+    fireEvent.click(del);
+
+    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith('/admin/users/u1/working-hours-changes/c2'));
+    expect(await screen.findByText('Gelöscht. 1 Abwesenheit angepasst.')).toBeInTheDocument();
+    expect(await screen.findByText(/2025 ist bereits abgeschlossen/)).toBeInTheDocument();
+  });
+
+  it('leere 204-Antwort: „Gelöscht." ohne Warnung', async () => {
+    deleteMock.mockResolvedValue({ status: 204, data: '' });
+    const dialog = await openDelete();
+    const del = within(dialog).getByRole('button', { name: 'Löschen' });
+    await waitFor(() => expect(del).not.toBeDisabled());
+    fireEvent.click(del);
+    expect(await screen.findByText('Gelöscht.')).toBeInTheDocument();
+    expect(screen.queryByText(/abgeschlossen/)).not.toBeInTheDocument();
+  });
+
+  it('zeigt die Backend-Begründung statt einer pauschalen Fehlermeldung', async () => {
+    deleteMock.mockRejectedValue({
+      response: { data: { detail: 'Dies ist die früheste erfasste Stundenänderung dieses Mitarbeiters.' } },
+    });
+    const dialog = await openDelete();
+    const del = within(dialog).getByRole('button', { name: 'Löschen' });
+    await waitFor(() => expect(del).not.toBeDisabled());
+    fireEvent.click(del);
+    expect(await screen.findByText(/früheste erfasste Stundenänderung/)).toBeInTheDocument();
+  });
+
+  it('blocked_reason der delete-preview sperrt das Löschen', async () => {
+    deletePreviewMock.mockResolvedValue(previewResponse({
+      ...QUIET, blocked_reason: 'Die früheste Änderung verankert den davor gültigen Wert.',
+    }));
+    const dialog = await openDelete();
+    expect(await within(dialog).findByText('Die früheste Änderung verankert den davor gültigen Wert.')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Löschen' })).toBeDisabled();
+  });
+
+  it('Verkürzung: Standard „auf vorherigen Stand zurücksetzen" sendet reset_body unverändert, Vorschau mit demselben Body', async () => {
+    deletePreviewMock.mockResolvedValue(previewResponse(SHORT_DELETE));
+    postMock.mockResolvedValue({ data: { id: 'c3', adjusted_time_entries: 0, adjusted_absences: 0, warning: null } });
+    const dialog = await openDelete();
+    const region = await within(dialog).findByRole('region', { name: 'Verkürzung' });
+    expect(within(region).getByRole('radio', { name: 'Ab 27.07.2026 auf den vorherigen Stand zurücksetzen' })).toBeChecked();
+    expect(within(region).getByText(
+      'Die Änderung ab 01.06.2026 bleibt bis 26.07.2026 wirksam und im Verlauf stehen; ab 27.07.2026 gilt wieder der vorherige Stand.',
+    )).toBeInTheDocument();
+    // Die Vorschau des Hauptformulars kann nach dieser Anfrage noch eintreffen —
+    // deshalb „irgendeine Vorschau mit genau diesem Body", nicht „die letzte".
+    const previewBodies = () =>
+      getMock.mock.calls.filter((c) => String(c[0]).includes('/preview')).map((c) => c[1]?.params);
+    await waitFor(() => expect(previewBodies()).toContainEqual(RESET_BODY));
+
+    const reset = within(dialog).getByRole('button', { name: 'Zurücksetzen' });
+    await waitFor(() => expect(reset).not.toBeDisabled());
+    fireEvent.click(reset);
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/admin/users/u1/working-hours-changes', RESET_BODY));
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(await screen.findByText('Gespeichert.')).toBeInTheDocument();
+  });
+
+  it('409 bei der Rücksetzung lädt die delete-preview neu', async () => {
+    deletePreviewMock.mockResolvedValue(previewResponse(SHORT_DELETE));
+    postMock.mockRejectedValue({ response: { status: 409, data: {
+      detail: 'Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden.',
+    } } });
+    const dialog = await openDelete();
+    const reset = await within(dialog).findByRole('button', { name: 'Zurücksetzen' });
+    await waitFor(() => expect(reset).not.toBeDisabled());
+    fireEvent.click(reset);
+    expect(await screen.findByText(/bitte die Vorschau neu laden/)).toBeInTheDocument();
+    await waitFor(() => expect(deletePreviewMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('„Rückwirkend löschen mit Neuberechnung" sendet Grund und Haken als DELETE-Body', async () => {
+    deletePreviewMock.mockResolvedValue(previewResponse(SHORT_DELETE));
+    deleteMock.mockResolvedValue({ status: 200, data: { adjusted_absences: 0, adjusted_time_entries: 2, skipped_time_entries: 0, warning: null } });
+    const dialog = await openDelete();
+    const region = await within(dialog).findByRole('region', { name: 'Verkürzung' });
+    fireEvent.click(within(region).getByRole('radio', { name: 'Rückwirkend löschen mit Neuberechnung' }));
+    const del = within(dialog).getByRole('button', { name: 'Löschen' });
+    expect(del).toBeDisabled();
+    fireEvent.change(within(region).getByLabelText('Grund'), { target: { value: 'einvernehmlich' } });
+    fireEvent.change(within(region).getByLabelText('Begründung'), { target: { value: 'Mit Frau B. vereinbart' } });
+    fireEvent.click(within(region).getByRole('checkbox', { name: /mit der beschäftigten Person vereinbart ist/ }));
+    expect(del).not.toBeDisabled();
+    fireEvent.click(del);
+    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith('/admin/users/u1/working-hours-changes/c2', {
+      data: {
+        retroactive_reason_type: 'einvernehmlich', retroactive_reason_text: 'Mit Frau B. vereinbart',
+        wage_risk_confirmed: true, other_reason_risk_confirmed: false,
+      },
+    }));
+    expect(await screen.findByText('Gelöscht. 2 Zeiteinträge neu berechnet.')).toBeInTheDocument();
+  });
+
+  it('reset_body = null → nur „Rückwirkend löschen"', async () => {
+    deletePreviewMock.mockResolvedValue(previewResponse({ ...SHORT_DELETE, reset_body: null }));
+    const dialog = await openDelete();
+    const region = await within(dialog).findByRole('region', { name: 'Verkürzung' });
+    expect(within(region).queryByRole('radio', { name: /zurücksetzen/ })).not.toBeInTheDocument();
+    expect(within(region).getByRole('radio', { name: 'Rückwirkend löschen mit Neuberechnung' })).toBeChecked();
+    expect(within(dialog).queryByRole('button', { name: 'Zurücksetzen' })).not.toBeInTheDocument();
+  });
+
+  it('abgeschlossenes Jahr: rückwirkendes Löschen deaktiviert mit dem Text der 400-Meldung', async () => {
+    deletePreviewMock.mockResolvedValue(previewResponse({ ...SHORT_DELETE, shortening_closed_years: [2025] }));
+    const dialog = await openDelete();
+    const region = await within(dialog).findByRole('region', { name: 'Verkürzung' });
+    expect(within(region).getByRole('radio', { name: 'Rückwirkend löschen mit Neuberechnung' })).toBeDisabled();
+    expect(within(region).getByText(/abgeschlossene Jahr 2025 ist gesperrt/)).toBeInTheDocument();
+  });
+
+  it('„Abbrechen" schließt das Panel ohne Anfrage', async () => {
+    const dialog = await openDelete();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  // Review Task 19 (Fund 4, Release-Review 1.17.0) gilt auch hier: ein
+  // gesperrter Knopf braucht eine sichtbare Begründung — Laden, Fehler mit
+  // „Erneut prüfen" oder die Sperre der Vorschau selbst.
+  it('Rücksetzung: lädt ihre Vorschau, steht „Prüfe Auswirkungen…" im Panel', async () => {
+    deletePreviewMock.mockResolvedValue(previewResponse(SHORT_DELETE));
+    let releaseReset: (value: unknown) => void = () => {};
+    getMock.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (String(url).includes('/preview')) {
+        if (config?.params?.reset_of_change_id) return new Promise((resolve) => { releaseReset = resolve; });
+        return Promise.resolve(previewResponse(QUIET));
+      }
+      return Promise.resolve(historyResponse(TWO_ROWS));
+    });
+    renderModal({ currentWeeklyHours: 30 });
+    await screen.findByText(/Ab 01\.06\.2026 bis heute/);
+    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Arbeitszeit-Änderung ab 01.06.2026 löschen' });
+    const reset = await within(dialog).findByRole('button', { name: 'Zurücksetzen' });
+    await waitFor(() => expect(within(dialog).getByText('Prüfe Auswirkungen…')).toBeInTheDocument());
+    expect(reset).toBeDisabled();
+    releaseReset(previewResponse(QUIET));
+    await waitFor(() => expect(reset).not.toBeDisabled());
+    expect(within(dialog).getByText(/^Auswirkung der Rücksetzung: /)).toBeInTheDocument();
+  });
+
+  it('Rücksetzung: scheitert ihre Vorschau, erklären Fehler und „Erneut prüfen" die Sperre', async () => {
+    deletePreviewMock.mockResolvedValue(previewResponse(SHORT_DELETE));
+    let failReset = true;
+    getMock.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (String(url).includes('/preview')) {
+        if (config?.params?.reset_of_change_id && failReset) {
+          return Promise.reject({ response: { status: 500, data: { detail: 'Vorschau nicht erreichbar' } } });
+        }
+        return Promise.resolve(previewResponse(QUIET));
+      }
+      return Promise.resolve(historyResponse(TWO_ROWS));
+    });
+    renderModal({ currentWeeklyHours: 30 });
+    await screen.findByText(/Ab 01\.06\.2026 bis heute/);
+    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Arbeitszeit-Änderung ab 01.06.2026 löschen' });
+    expect(await within(dialog).findByText('Vorschau nicht erreichbar')).toBeInTheDocument();
+    const reset = within(dialog).getByRole('button', { name: 'Zurücksetzen' });
+    expect(reset).toBeDisabled();
+
+    failReset = false;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Erneut prüfen' }));
+    await waitFor(() => expect(reset).not.toBeDisabled());
+    expect(within(dialog).queryByText('Vorschau nicht erreichbar')).not.toBeInTheDocument();
+  });
+
+  it('Rücksetzung: blocked_reason ihrer Vorschau (Verlauf geändert) sperrt und bietet „Erneut prüfen"', async () => {
+    deletePreviewMock.mockResolvedValue(previewResponse(SHORT_DELETE));
+    getMock.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (String(url).includes('/preview')) {
+        return Promise.resolve(previewResponse(config?.params?.reset_of_change_id
+          ? { ...QUIET, blocked_reason: 'Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden.' }
+          : QUIET));
+      }
+      return Promise.resolve(historyResponse(TWO_ROWS));
+    });
+    renderModal({ currentWeeklyHours: 30 });
+    await screen.findByText(/Ab 01\.06\.2026 bis heute/);
+    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Arbeitszeit-Änderung ab 01.06.2026 löschen' });
+    expect(await within(dialog).findByText(/bitte die Vorschau neu laden/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Zurücksetzen' })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Erneut prüfen' }));
+    await waitFor(() => expect(deletePreviewMock).toHaveBeenCalledTimes(2));
+  });
+
+  // Fund 3 (Release-Review 1.17.0) wie nach dem Speichern: das Formular zieht
+  // auf den frisch geladenen Stand nach — sonst stünde der gelöschte Wert
+  // (30 h) als neue Änderung gegen den wieder gültigen Stand (40 h) im Formular.
+  it('nach dem Löschen zieht das Formular auf den neuen Stand nach', async () => {
+    let rows: Array<HistoryRow> = TWO_ROWS;
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse(QUIET));
+      return Promise.resolve(historyResponse(rows));
+    });
+    deleteMock.mockImplementation(async () => {
+      rows = [TWO_ROWS[1]];
+      return { status: 204, data: '' };
+    });
+    renderModal({ currentWeeklyHours: 30 });
+    await screen.findByText(/Ab 01\.06\.2026 bis heute/);
+    expect(screen.getByLabelText('Wochenstunden')).toHaveValue(30);
+    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Arbeitszeit-Änderung ab 01.06.2026 löschen' });
+    const del = within(dialog).getByRole('button', { name: 'Löschen' });
+    await waitFor(() => expect(del).not.toBeDisabled());
+    fireEvent.click(del);
+
+    expect(await screen.findByText(/Ab 01\.01\.2026 bis heute/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Wochenstunden')).toHaveValue(40));
+    expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
   });
 });

@@ -148,3 +148,11 @@ export function savedMessage(
   if (a > 0) parts.push(`${a} ${a === 1 ? 'Abwesenheit' : 'Abwesenheiten'} angepasst`);
   return parts.length ? `${verb}. ${parts.join(', ')}.` : `${verb}.`;
 }
+
+/** Kalendertag VOR dem ISO-Datum — UTC-basiert (reine Tagesarithmetik, kein
+ * Zeitzonen-/Sommerzeit-Sprung). Verlauf „bis …" und Lösch-Hinweis (12.1). */
+export function dayBefore(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().split('T')[0];
+}

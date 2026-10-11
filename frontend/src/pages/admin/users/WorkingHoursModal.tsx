@@ -3,8 +3,6 @@ import FocusTrap from 'focus-trap-react';
 import apiClient from '../../../api/client';
 import { Save, X, Trash2, Info } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
-import { useConfirm } from '../../../hooks/useConfirm';
-import ConfirmDialog from '../../../components/ConfirmDialog';
 import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
 import { getErrorMessage } from '../../../utils/errorMessage';
 import { parseHours, deHoursExact, formatDayPlan } from '../../../utils/formatters';
@@ -16,9 +14,10 @@ import type { WeekBlocks } from '../../../types/workBlocks';
 import type { WorkingHoursChange, WorkingHoursChangePreview } from './workingHoursTypes';
 import WhImpactBox from './WhImpactBox';
 import ShorteningChoice, { losslessLabel, retroLabel } from './ShorteningChoice';
+import WhDeletePanel from './WhDeletePanel';
 import {
   BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT,
-  closedYearMessage, formatDate, modeSwitchHint, reasonComplete, reasonPayload, savedMessage,
+  closedYearMessage, dayBefore, formatDate, modeSwitchHint, reasonComplete, reasonPayload, savedMessage,
   type ReasonState, type ShorteningOption,
 } from './workingHoursTexts';
 
@@ -228,14 +227,6 @@ function legacyToEditable(week: WeekBlocks): WeekBlocks {
   }));
 }
 
-// Kalendertag VOR dem ISO-Datum (YYYY-MM-DD) — UTC-basiert, um Zeitzonen-/
-// DST-Rollover bei reiner Tagesarithmetik zu vermeiden.
-function dayBefore(iso: string): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().split('T')[0];
-}
-
 // M1 (Abschluss-Review): „heute" in der LOKALEN Zeitzone des Browsers, nicht
 // `toISOString()` (UTC) — sonst hält der Dialog zwischen 00:00 und 02:00
 // Berliner Zeit das gestrige Datum für „heute" und umgeht die
@@ -264,7 +255,8 @@ export default function WorkingHoursModal({
   onChanged,
 }: WorkingHoursModalProps) {
   const toast = useToast();
-  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
+  // Spec 12.1/9.7: Lösch-Panel der jüngsten Zeile.
+  const [deleting, setDeleting] = useState<WorkingHoursChange | null>(null);
   const [hoursChanges, setHoursChanges] = useState<WorkingHoursChange[]>([]);
   // Schützt vor doppeltem Absenden (schneller Doppelklick legte zwei Zeilen an).
   const [submitting, setSubmitting] = useState(false);
@@ -430,17 +422,15 @@ export default function WorkingHoursModal({
     return map;
   }, [hoursChanges]);
 
-  // I4: die früheste Zeile ist gesperrt, solange spätere existieren — sie
-  // verankert den davor gültigen Wert. Ist es die EINZIGE, bleibt sie löschbar.
-  const lockedEarliestId = useMemo(() => {
-    if (hoursChanges.length < 2) return null;
-    const asc = [...hoursChanges].sort((a, b) => a.effective_from.localeCompare(b.effective_from));
-    return asc[0].id;
+  // Spec 12.1: [Löschen] nur an der JÜNGSTEN Zeile (die früheste bleibt damit
+  // gesperrt, solange spätere existieren — I4; der Server prüft es weiter).
+  const youngestId = useMemo(() => {
+    let latest: WorkingHoursChange | null = null;
+    for (const c of hoursChanges) {
+      if (!latest || c.effective_from > latest.effective_from) latest = c;
+    }
+    return latest?.id ?? null;
   }, [hoursChanges]);
-
-  const LOCKED_EARLIEST_HINT =
-    'Die früheste erfasste Stundenänderung verankert den davor gültigen Wert — '
-    + 'bitte zuerst die späteren Änderungen löschen.';
 
   // Spec 9.5/12.1 (F24): ob verkürzt wird und welche Optionen es gibt, steht
   // IMMER in der Vorschau des eingegebenen Datums — nie in der von Option 1,
@@ -566,6 +556,17 @@ export default function WorkingHoursModal({
     setFormData((prev) => ({ ...prev, [key]: parseHours(value) }));
   };
 
+  // Fund 3: Formular aus dem frisch geladenen Verlauf, nicht aus den Props —
+  // sonst spränge es auf den ALTEN Stand zurück, obwohl der Verlauf darunter
+  // schon den neuen zeigt. Nach dem Speichern UND nach dem Löschen.
+  const resetFormTo = (freshChanges: WorkingHoursChange[]) => {
+    setFormData(formFromSnapshot(scheduleAt(freshChanges, todayIso(), propsSchedule), todayIso(), trackHours));
+    setPreview(null);
+    setConfirmedRetroactive(false);
+    setReason(EMPTY_REASON);
+    setShorteningOption('lossless');
+  };
+
   const handleAddHoursChange = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saveDisabled) return;
@@ -579,14 +580,7 @@ export default function WorkingHoursModal({
       });
       const freshChanges = await fetchHoursChanges();
       onChanged();
-      // Fund 3: Formular aus dem frisch geladenen Verlauf, nicht aus den Props —
-      // sonst spränge es auf den ALTEN Stand zurück, obwohl der Verlauf darunter
-      // schon den neuen zeigt.
-      setFormData(formFromSnapshot(scheduleAt(freshChanges, todayIso(), propsSchedule), todayIso(), trackHours));
-      setPreview(null);
-      setConfirmedRetroactive(false);
-      setReason(EMPTY_REASON);
-      setShorteningOption('lossless');
+      resetFormTo(freshChanges);
       const created: {
         adjusted_time_entries?: number; skipped_time_entries?: number; adjusted_absences?: number;
         warning?: string | null;
@@ -600,31 +594,16 @@ export default function WorkingHoursModal({
     }
   };
 
-  const handleDeleteHoursChange = (changeId: string) => {
-    confirm({
-      title: 'Stundenänderung löschen',
-      message: 'Möchten Sie diese Stundenänderung wirklich löschen?',
-      confirmLabel: 'Löschen',
-      variant: 'danger',
-      onConfirm: async () => {
-        try {
-          const res = await apiClient.delete(`/admin/users/${userId}/working-hours-changes/${changeId}`);
-          await fetchHoursChanges();
-          onChanged();
-          toast.success('Stundenänderung erfolgreich gelöscht');
-          // I3: 200 + {warning} bei berührtem abgeschlossenem Jahr, sonst 204
-          // ohne Body (axios: data === '') — der Objekt-Check fängt das ab.
-          const body = res?.data;
-          const warning = body && typeof body === 'object' ? (body as { warning?: string }).warning : undefined;
-          if (warning) {
-            toast.warning(warning);
-          }
-        } catch (error: unknown) {
-          // I4: der Grund kommt vom Backend — nicht hinter einer pauschalen Meldung verschlucken.
-          toast.error(getErrorMessage(error, 'Fehler beim Löschen der Stundenänderung'));
-        }
-      },
-    });
+  // Fund 3 wie nach dem Speichern: das Formular zieht auf den frisch
+  // geladenen Stand nach — sonst stünde der gelöschte (bzw. zurückgesetzte)
+  // Wert als neue Änderung gegen den wieder gültigen Stand im Formular. Die
+  // Vorschau wird neu geholt: der Server-Stand hinter ihr hat sich geändert.
+  const finishDelete = async () => {
+    setDeleting(null);
+    const freshChanges = await fetchHoursChanges();
+    onChanged();
+    resetFormTo(freshChanges);
+    setPreviewRetryToken((t) => t + 1);
   };
 
   // Ein zukunftsdatierter Wechsel liefert oft „12:30 → 12:30" — korrekt (der
@@ -640,15 +619,6 @@ export default function WorkingHoursModal({
 
   return (
     <>
-      <ConfirmDialog
-        isOpen={confirmState.isOpen}
-        title={confirmState.title}
-        message={confirmState.message}
-        confirmLabel={confirmState.confirmLabel}
-        variant={confirmState.variant}
-        onConfirm={handleConfirm}
-        onCancel={handleCancel}
-      />
       <div
         className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
         onClick={onClose}
@@ -1007,6 +977,15 @@ export default function WorkingHoursModal({
 
               <div>
                 <h3 className="font-semibold text-gray-900 mb-3">Verlauf</h3>
+                {deleting && (
+                  <WhDeletePanel
+                    key={deleting.id}
+                    userId={userId}
+                    change={deleting}
+                    onCancel={() => setDeleting(null)}
+                    onDone={finishDelete}
+                  />
+                )}
                 {hoursChanges.length === 0 ? (
                   <p className="text-gray-500 text-center py-8">Keine Änderungen vorhanden</p>
                 ) : (
@@ -1036,22 +1015,10 @@ export default function WorkingHoursModal({
                               })}
                             </p>
                           </div>
-                          {change.id === lockedEarliestId ? (
-                            // Der Titel sitzt am umschließenden <span>: ein disabled
-                            // <button> feuert keine Hover-Events.
-                            <span title={LOCKED_EARLIEST_HINT} className="shrink-0">
-                              <button
-                                type="button"
-                                disabled
-                                aria-label="Löschen nicht möglich – früheste Stundenänderung"
-                                className="text-gray-300 cursor-not-allowed"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </span>
-                          ) : (
+                          {change.id === youngestId && (
                             <button
-                              onClick={() => handleDeleteHoursChange(change.id)}
+                              type="button"
+                              onClick={() => setDeleting(change)}
                               className="shrink-0 text-red-600 hover:text-red-800"
                               title="Löschen"
                             >
