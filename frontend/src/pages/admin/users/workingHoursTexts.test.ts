@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT, OTHER_CONFIRM,
   OTHER_WARNING,
-  REASON_HELP, REASON_OPTIONS, SKIP_LABELS, closedYearMessage, dayBefore, formatDate, hm, modeSwitchHint, monthLabel,
-  reasonComplete, reasonPayload, savedMessage, shortDate, signedDays, signedHm,
+  NOTE_TOO_LONG, REASON_HELP, REASON_OPTIONS, REASON_PREFIXES, SKIP_LABELS, closedYearMessage, composedNoteTooLong,
+  dayBefore, formatDate, hm, modeSwitchHint, monthLabel, reasonComplete, reasonPayload, savedMessage, shortDate,
+  signedDays, signedHm,
 } from './workingHoursTexts';
 
 const WAGE = 'Tatsächlich geleistete Arbeit, die angeordnet, gebilligt oder geduldet wurde, ist unabhängig von der '
@@ -97,6 +98,25 @@ describe('workingHoursTexts', () => {
     expect([formatDate('2026-09-07'), shortDate('2026-09-07'), monthLabel('2026-09')]).toEqual([
       '07.09.2026', '07.09.', 'Sep 2026',
     ]);
+  });
+
+  it('Notiz-Präfixe und Längenregel wie reclamp_audit.REASON_TYPES / compose_change_note (9.5)', () => {
+    expect(REASON_PREFIXES).toEqual({
+      erfassungsfehler: '[Erfassungsfehler korrigiert]',
+      einvernehmlich: '[Einvernehmlich vereinbart]',
+      sonstiges: '[Sonstiges]',
+    });
+    expect(NOTE_TOO_LONG).toBe('Notiz und Begründung zusammen höchstens 500 Zeichen.');
+    const reason = { ...EMPTY_REASON, type: 'erfassungsfehler' as const, text: 'x'.repeat(400) };
+    // „[Erfassungsfehler korrigiert]" (29) + „ " + 400 + „ · " + 67 = 500.
+    expect(composedNoteTooLong(reason, 'n'.repeat(67))).toBe(false);
+    expect(composedNoteTooLong(reason, 'n'.repeat(68))).toBe(true);
+    // Ohne Notiz kein „ · ", ohne Grundtyp oder Begründung prüft der Server die Summe nicht.
+    expect(composedNoteTooLong(reason, '   ')).toBe(false);
+    expect(composedNoteTooLong({ ...reason, type: '' }, 'n'.repeat(500))).toBe(false);
+    expect(composedNoteTooLong({ ...reason, text: '  ' }, 'n'.repeat(500))).toBe(false);
+    // Codepoints wie Python `len`, nicht UTF-16-Einheiten.
+    expect(composedNoteTooLong(reason, '😀'.repeat(67))).toBe(false);
   });
 
   it('Übersprungen-Gründe wie reclamp_audit.SKIP_LABELS', () => {

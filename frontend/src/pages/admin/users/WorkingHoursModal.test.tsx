@@ -1418,6 +1418,30 @@ describe('Spec 2026-10-08 (PR3): Verkürzungs-Kasten', () => {
     expect(screen.getByRole('button', { name: /Speichern/ })).not.toBeDisabled();
   });
 
+  it('Notiz mit Grund und Begründung über 500 Zeichen sperrt Speichern mit dem Server-Text (9.5)', async () => {
+    // Gesamtreview PR3: vorher kam erst beim Speichern die 422 als Toast.
+    mockShortening({ earliest_lossless_date: null, earliest_lossless_note: P25_NOTE });
+    const region = await enterShortening();
+    const note = screen.getByLabelText('Notiz (optional)');
+    expect(note).toHaveAttribute('maxlength', '500');
+    fireEvent.change(within(region).getByLabelText('Grund'), { target: { value: 'einvernehmlich' } });
+    fireEvent.change(within(region).getByLabelText('Begründung'), { target: { value: 'x'.repeat(400) } });
+    fireEvent.click(within(region).getByRole('checkbox', { name: /mit der beschäftigten Person vereinbart ist/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
+    const submit = screen.getByRole('button', { name: /Speichern/ });
+    const TOO_LONG = 'Notiz und Begründung zusammen höchstens 500 Zeichen.';
+    // „[Einvernehmlich vereinbart]" (27) + „ " + 400 + „ · " + 69 = genau 500.
+    fireEvent.change(note, { target: { value: 'n'.repeat(69) } });
+    expect(submit).not.toBeDisabled();
+    expect(screen.queryByText(TOO_LONG)).not.toBeInTheDocument();
+    fireEvent.change(note, { target: { value: 'n'.repeat(100) } });
+    expect(submit).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent(TOO_LONG);
+    // Leerzeichen am Rand zählen wie beim Server nicht mit (compose_change_note).
+    fireEvent.change(note, { target: { value: `  ${'n'.repeat(69)}  ` } });
+    expect(submit).not.toBeDisabled();
+  });
+
   it('Wechsel des Grundtyps setzt den Bestätigungshaken zurück (neuer Wortlaut)', async () => {
     mockShortening({ earliest_lossless_date: null, earliest_lossless_note: P25_NOTE });
     const region = await enterShortening();

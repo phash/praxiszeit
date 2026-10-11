@@ -44,6 +44,16 @@ export const REASON_OPTIONS: { value: RetroReasonKey; label: string; confirm: st
   },
   { value: 'sonstiges', label: 'Sonstiges', confirm: `Ich habe die Gründe geprüft. ${WAGE_SENTENCE}` },
 ];
+/** Notiz-Präfix je Grundtyp — wortgleich `reclamp_audit.REASON_TYPES[…].prefix` (eingefroren, 9.5). */
+export const REASON_PREFIXES: Record<RetroReasonKey, string> = {
+  erfassungsfehler: '[Erfassungsfehler korrigiert]',
+  einvernehmlich: '[Einvernehmlich vereinbart]',
+  sonstiges: '[Sonstiges]',
+};
+
+/** Spec 9.5 — wortgleich `reclamp_audit.NOTE_MAX_LENGTH` / `NOTE_TOO_LONG_DETAIL`. */
+export const NOTE_MAX_LENGTH = 500;
+export const NOTE_TOO_LONG = 'Notiz und Begründung zusammen höchstens 500 Zeichen.';
 
 export type ShorteningOption = 'lossless' | 'retro';
 
@@ -62,6 +72,21 @@ export function reasonComplete(r: ReasonState): boolean {
   // UTF-16-Einheiten, ein Emoji also doppelt.
   const len = [...r.text.trim()].length;
   return !!r.type && len >= 10 && len <= 400 && r.wageConfirmed && (r.type !== 'sonstiges' || r.otherConfirmed);
+}
+
+/**
+ * Spec 9.5 (Gesamtreview PR3): passt die gespeicherte Notiz — Grund-Präfix,
+ * Begründung und „ · Notiz" — in 500 Zeichen? Dieselbe Zusammensetzung wie
+ * `reclamp_audit.compose_change_note` und dieselbe Bedingung wie das
+ * Schreibschema (nur mit Grundtyp UND Begründung); gezählt in Codepoints wie
+ * Python `len`. Ohne diese Prüfung kam die 422 erst beim Speichern als Toast.
+ */
+export function composedNoteTooLong(r: ReasonState, note: string): boolean {
+  const text = r.text.trim();
+  if (!r.type || !text) return false;
+  const extra = note.trim();
+  const composed = `${REASON_PREFIXES[r.type]} ${text}${extra ? ` · ${extra}` : ''}`;
+  return [...composed].length > NOTE_MAX_LENGTH;
 }
 
 /** Body-Felder des Schutzpakets (Anlegen und DELETE, Spec 11.2). */

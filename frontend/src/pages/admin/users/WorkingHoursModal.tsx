@@ -17,8 +17,8 @@ import ShorteningChoice, { losslessLabel, retroLabel } from './ShorteningChoice'
 import WhDeletePanel from './WhDeletePanel';
 import {
   BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT,
-  closedYearMessage, dayBefore, formatDate, modeSwitchHint, reasonComplete, reasonPayload, savedMessage,
-  type ReasonState, type ShorteningOption,
+  NOTE_MAX_LENGTH, NOTE_TOO_LONG, closedYearMessage, composedNoteTooLong, dayBefore, formatDate, modeSwitchHint,
+  reasonComplete, reasonPayload, savedMessage, type ReasonState, type ShorteningOption,
 } from './workingHoursTexts';
 
 interface WorkingHoursModalProps {
@@ -458,6 +458,8 @@ export default function WorkingHoursModal({
   const closedText = isShortening ? closedYearMessage(preview?.shortening_closed_years) : null;
   const useLossless = losslessDate !== null && shorteningOption === 'lossless';
   const needsReason = isShortening && !useLossless;
+  // Spec 9.5: Notiz, Grund-Präfix und Begründung landen in EINER Spalte (≤ 500).
+  const noteTooLong = needsReason && composedNoteTooLong(reason, formData.note);
   const losslessKey = useLossless
     ? JSON.stringify({ ...JSON.parse(previewKey), effective_from: losslessDate })
     : null;
@@ -563,6 +565,7 @@ export default function WorkingHoursModal({
     (useLossless && (shownLoading || !shown)) ||
     // P15/P26/11.4: Option 2 nur mit allen Pflichtangaben, nie in ein abgeschlossenes Jahr.
     (needsReason && (!!closedText || !reasonComplete(reason))) ||
+    noteTooLong ||
     (isRetroactive && (shownLoading || !shown || !confirmedRetroactive)) ||
     (!isRetroactive && (shownLoading || (needsConfirmation && !confirmedRetroactive)));
 
@@ -715,6 +718,7 @@ export default function WorkingHoursModal({
                       <input
                         id="wh-note"
                         type="text"
+                        maxLength={NOTE_MAX_LENGTH}
                         value={formData.note}
                         onChange={(e) => setFormData({ ...formData, note: e.target.value })}
                         placeholder="z.B. Teilzeitänderung"
@@ -910,6 +914,9 @@ export default function WorkingHoursModal({
                       onReasonChange={setReason}
                       idPrefix="wh-short"
                     />
+                  )}
+                  {noteTooLong && (
+                    <p role="alert" className="text-sm font-medium text-red-700">{NOTE_TOO_LONG}</p>
                   )}
 
                   {/* Auswirkungs-Box: VOR dem Speichern zeigen, was die Änderung
