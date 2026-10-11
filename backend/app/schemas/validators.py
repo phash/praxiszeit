@@ -6,10 +6,31 @@ absence_type-Set). Die Schemas behalten ihre dünnen ``@field_validator``/
 ``@model_validator``-Wrapper und rufen nur noch die gemeinsame Logik auf — so bleibt
 das Verhalten exakt gleich, aber es gibt nur noch EINE Quelle der Wahrheit.
 """
+from datetime import time
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import AfterValidator
 
 from app.services.work_blocks_service import WEEK_SHAPE_TEXT, WEEKDAY_LABELS, derive_targets, hhmm_to_minutes
+
+
+def truncate_to_minute(v: time) -> time:
+    """Gesamtreview 1.20 (B1, PR1-Sicherheitsprüfung F2): Uhrzeiten eines
+    Zeiteintrags sind minutengenau — wie Stempeln (``clock_in``/``clock_out``),
+    XLS-Datei, Arbeitszeit-Blöcke und jede Rechnung über ``_min`` bzw.
+    ``work_window_service.same_minute``. Über die API kamen Sekunden an, und
+    dann zählte ``net_hours`` sie, die Lückenüberlappung nicht, und
+    ``unclamp_input`` hielt das gekappte „07:45:30" für eine neue Eingabe (der
+    Rohstempel ging verloren, §16). Abgeschnitten (nicht gerundet) wie beim
+    Stempeln."""
+    return v.replace(second=0, microsecond=0)
+
+
+# Eingangstyp für Uhrzeiten aller manuellen Schreibwege (Eintrag anlegen und
+# bearbeiten in beiden Rollen, Änderungsantrag, XLS-Bestätigung). Läuft vor den
+# ``@field_validator``-Prüfungen (z. B. „Endzeit muss nach Startzeit liegen").
+MinuteTime = Annotated[time, AfterValidator(truncate_to_minute)]
 
 # Erlaubte absence_type-Werte für Urlaubs-/Abwesenheitsanträge.
 VACATION_REQUEST_ABSENCE_TYPES = {"vacation", "training", "overtime", "other"}

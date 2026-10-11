@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, computed_field
 
 from app.models import TimeEntry, TimeEntryAuditLog, User
+from app.schemas.validators import MinuteTime
 from app.services.arbzg_utils import is_night_work
 from app.services import presence_service, work_window_service
 from app.services.break_validation_service import (
@@ -36,14 +37,16 @@ class ImportedEntryIn(BaseModel):
     Server selbst ableitet (``uncredited_minutes`` usw.), gibt es hier nicht —
     ein mitgeschickter Wert fällt beim Einlesen weg (Pydantic ``extra=ignore``)."""
     date: date
-    start_time: time
-    end_time: time
+    # Gesamtreview 1.20 (B1): ``/confirm`` nimmt die Zeilen vom Client — wie die
+    # Datei (``parse_xls`` schneidet Sekunden ab) minutengenau (``MinuteTime``).
+    start_time: MinuteTime
+    end_time: MinuteTime
     break_minutes: int
     note: Optional[str]
     has_conflict: bool
     arbzg_warnings: list[str]
-    raw_start_time: Optional[time] = None
-    raw_end_time: Optional[time] = None
+    raw_start_time: Optional[MinuteTime] = None
+    raw_end_time: Optional[MinuteTime] = None
 
 
 class ImportedEntry(ImportedEntryIn):

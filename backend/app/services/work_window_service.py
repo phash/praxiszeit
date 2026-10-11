@@ -86,13 +86,14 @@ def _min(t: time) -> int:
 def same_minute(a: Optional[time], b: Optional[time]) -> bool:
     """Minutengenauer Vergleich zweier Uhrzeiten (``None`` gleicht nur ``None``).
 
-    Alle Zeitrechnungen arbeiten minutengenau (``_min``), die Eingabeschemata
-    (``ChangeRequestCreate``, ``TimeEntryUpdate`` …) lassen Sekunden aber zu.
-    Review Task 6 (PR2): ein exakter Vergleich ließ „23:59:30" — in der
-    Oberfläche „23:59" — an jeder Sperre für das synthetische 23:59 vorbei
-    (``end_is_correction``, ``end_input_for``,
-    ``credit_override_service.lacks_actual_end``); Anerkennen rechnete danach
-    bis 23:59:30 an."""
+    Alle Zeitrechnungen arbeiten minutengenau (``_min``). Review Task 6 (PR2):
+    ein exakter Vergleich ließ „23:59:30" — in der Oberfläche „23:59" — an
+    jeder Sperre für das synthetische 23:59 vorbei (``end_is_correction``,
+    ``end_input_for``, ``credit_override_service.lacks_actual_end``);
+    Anerkennen rechnete danach bis 23:59:30 an. Seit dem Gesamtreview 1.20
+    (B1) schneiden die Eingangsschemata Sekunden ab
+    (``schemas.validators.MinuteTime``); der minutengenaue Vergleich bleibt für
+    gespeicherte Altwerte (z. B. Anträge vor 1.20)."""
     if a is None or b is None:
         return a is b
     return _min(a) == _min(b)

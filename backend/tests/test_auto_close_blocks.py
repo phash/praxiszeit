@@ -305,7 +305,9 @@ def test_route_typed_2359_is_a_correction(_db_session, employee_user, admin_clie
     resp = admin_client.put(f"{route}/{e.id}", json={"end_time": end})
     assert resp.status_code == 200, resp.text
     _db_session.refresh(e)
-    _assert_typed_2359(e, time.fromisoformat(end))
+    # Gesamtreview 1.20 (B1): Sekunden fallen beim Eingang weg (``MinuteTime``)
+    # — „23:59:30" ist dasselbe eingetragene 23:59.
+    _assert_typed_2359(e, time(23, 59))
     # Gekappt wie jedes andere Ende — und gemeldet (#462): die Rohzeiten sind
     # dieselben wie vorher, aber 23:59 ist jetzt ein Stempel, keine Protokollzeile.
     assert _has_end_clamp_warning(resp)

@@ -3,6 +3,8 @@ from typing import List, Optional
 from datetime import date, time, datetime
 from uuid import UUID
 
+from app.schemas.validators import MinuteTime
+
 
 class ChangeRequestCreate(BaseModel):
     request_type: str  # "create", "update", "delete"
@@ -10,8 +12,9 @@ class ChangeRequestCreate(BaseModel):
     entry_kind: str = "time_entry"  # 'time_entry' | 'absence'
     absence_id: Optional[str] = None
     proposed_date: Optional[date] = None
-    proposed_start_time: Optional[time] = None
-    proposed_end_time: Optional[time] = None
+    # Gesamtreview 1.20 (B1): minutengenau wie jeder Schreibweg (``MinuteTime``).
+    proposed_start_time: Optional[MinuteTime] = None
+    proposed_end_time: Optional[MinuteTime] = None
     proposed_break_minutes: Optional[int] = Field(None, ge=0)
     proposed_note: Optional[str] = None
     proposed_absence_type: Optional[str] = None

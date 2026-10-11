@@ -10,6 +10,8 @@ from app.services.timezone_service import today_local
 from decimal import Decimal
 from uuid import UUID
 
+from app.schemas.validators import MinuteTime
+
 
 def _normalize_sunday_reason(v: Optional[str]) -> Optional[str]:
     """#485: §10-Ausnahmegrund einheitlich fuer alle Schreibwege — getrimmt,
@@ -22,8 +24,9 @@ def _normalize_sunday_reason(v: Optional[str]) -> Optional[str]:
 
 class TimeEntryBase(BaseModel):
     date: date_type
-    start_time: time
-    end_time: time
+    # Gesamtreview 1.20 (B1): Sekunden fallen beim Eingang weg (``MinuteTime``).
+    start_time: MinuteTime
+    end_time: MinuteTime
     break_minutes: int = Field(default=0, ge=0)
     note: Optional[str] = None
     sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # §10 ArbZG (#485: begrenzt)
@@ -59,8 +62,8 @@ class TimeEntryCreate(TimeEntryBase):
 
 class TimeEntryUpdate(BaseModel):
     date: Optional[date_type] = None
-    start_time: Optional[time] = None
-    end_time: Optional[time] = None
+    start_time: Optional[MinuteTime] = None
+    end_time: Optional[MinuteTime] = None
     break_minutes: Optional[int] = Field(None, ge=0)
     note: Optional[str] = None
     sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # §10 ArbZG (#485: begrenzt)

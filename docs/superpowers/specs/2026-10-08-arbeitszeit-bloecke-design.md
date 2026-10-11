@@ -1035,6 +1035,12 @@ gespeicherten Paar weiter (für sekundenfreie Eingaben dasselbe Ergebnis wie bis
 Rohende mit Sekunden gespeichert wird. **Entschieden 2026-10-11 (Produktinhaber):** verglichen
 wird nur noch gegen das wirksame Ende — ein eingetragenes „23:59" bzw. „23:59:30" ist eine
 echte Eingabe (Korrektur, Rohstempel wie eingegeben); ein „18:15:30" bleibt das wirksame Ende.
+**Gesamtreview 1.20 (B1, PR1-Sicherheitsprüfung F2):** Seitdem schneiden alle manuellen
+Eingangsschemata Sekunden ab (`schemas.validators.MinuteTime`: `TimeEntryCreate`/`-Update` beider
+Rollen, `ChangeRequestCreate`, `ImportedEntryIn` der XLS-Bestätigung) — wie Stempeln und XLS-Datei.
+„23:59:30" kommt als 23:59 an. Grund: `net_hours` zählte Sekunden, Lückenüberlappung (`_min`) und
+`same_minute` nicht, und `unclamp_input` verglich exakt — ein zurückgeschicktes „07:45:30" löschte
+den Rohstempel. `same_minute` bleibt für gespeicherte Altwerte (Anträge vor 1.20) nötig.
 
 **Puffer je Zeile (E79/E80):** aktueller Mandanten-Puffer bei Neuanlagen — Nr. 1, 3, 5, 8,
 Neuanlage-Zweig von 11/12 und die CREATE-Prüfungen in 7 und 14; `grace_for_entry(db, entry)`
