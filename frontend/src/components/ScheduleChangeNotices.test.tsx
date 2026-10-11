@@ -3,9 +3,9 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect } from 'vitest';
 import ScheduleChangeNotices from './ScheduleChangeNotices';
 
-const RESET = 'Die Arbeitszeit-Änderung ab 01.09.2026 wurde ab 09.10.2026 auf den vorherigen Stand zurückgesetzt (neu: 25,0 h/Woche (gleichmäßig, 5 Tage)).';
+const RESET = 'Die Arbeitszeit-Änderung ab 01.09.2026 wurde ab 09.10.2026 auf den vorherigen Stand zurückgesetzt (neu: 25,0 h/Woche).';
 const CHANGE = 'Ihre Arbeitszeit wurde ab 01.09.2026 geändert (neu: Mo 08:00–12:00). 3 Einträge neu berechnet, angerechnete Zeit −2:15 h. Überstundenkonto im Zeitraum −3:45 h. Rückwirkende Verkürzung – Grund: Arbeitszeit war falsch hinterlegt (Fehlerkorrektur).';
-const FUTURE = 'Ihre Arbeitszeit ändert sich ab 02.11.2026 (neu: 25,0 h/Woche (gleichmäßig, 5 Tage)).';
+const FUTURE = 'Ihre Arbeitszeit ändert sich ab 02.11.2026 (neu: 25,0 h/Woche).';
 const DELETE = 'Die Arbeitszeit-Änderung ab 01.09.2026 wurde zurückgenommen. 1 Eintrag neu berechnet, angerechnete Zeit +0:15 h. Überstundenkonto im Zeitraum +0:15 h.';
 
 function renderNotices(notices: unknown) {

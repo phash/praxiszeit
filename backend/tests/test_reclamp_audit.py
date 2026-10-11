@@ -85,6 +85,24 @@ class TestContractText:
         sched = _schedule(weekly=Decimal("40"), week=legacy_week(mon=("07:30", "16:30"), fri=("07:30", None)))
         assert ra.contract_text(sched, compact=True) == (
             "40,0 h/Woche (gleichmäßig, 5 Tage) · Mo 07:30–16:30 / Fr 07:30–23:59 (nur Kappung)")
+        assert ra.contract_text(sched, compact=False) == (
+            "40,0 h/Woche · Mo 07:30–16:30 / Fr 07:30–23:59 (nur Kappung)")
+
+    def test_without_blocks_long_form_is_the_415_text(self):
+        """Gesamtreview PR3 / Spec 14: der Dashboard-Hinweis „neu: …" nennt ohne
+        Blöcke den #415-Text — ohne Klammerzusatz, sonst stünde dort
+        „(neu: 25,0 h/Woche (gleichmäßig, 5 Tage))". Die Arbeitstage nur, wenn sie
+        sich gegenüber dem Vorgänger ändern (#415 ``_work_days_suffix``); die
+        Sammelzeile (``compact``) behält ihr Format aus 10.2."""
+        new = _schedule(weekly=Decimal("25"))
+        assert ra.contract_text(new, compact=False) == "25,0 h/Woche"
+        assert ra.contract_text(new, compact=False, previous=_schedule(weekly=Decimal("20"))) == "25,0 h/Woche"
+        assert ra.contract_text(_schedule(weekly=Decimal("40"), work_days=4), compact=False,
+                                previous=_schedule(weekly=Decimal("40"))) == "40,0 h/Woche auf 4 Arbeitstage"
+        assert ra.contract_text(_schedule(weekly=Decimal("8"), work_days=1), compact=False,
+                                previous=_schedule(weekly=Decimal("40"))) == "8,0 h/Woche auf 1 Arbeitstag"
+        assert ra.contract_text(new, compact=True, previous=_schedule(weekly=Decimal("20"), work_days=4)) == (
+            "25,0 h/Woche (gleichmäßig, 5 Tage)")
 
 
 class TestSummaryNote:

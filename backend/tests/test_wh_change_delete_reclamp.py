@@ -79,7 +79,7 @@ class TestReset:
         [notice] = [n for n in reclamp_audit.schedule_change_notices(db, test_user) if n["kind"] == "reset"]
         assert notice["text"] == (
             "Die Arbeitszeit-Änderung ab 01.09.2026 wurde ab 08.10.2026 auf den vorherigen Stand "
-            "zurückgesetzt (neu: 40,0 h/Woche (gleichmäßig, 5 Tage)).")
+            "zurückgesetzt (neu: 40,0 h/Woche).")
 
     def test_reset_body_does_not_reclamp_the_past(self, client, db, test_user):
         """Spec 17.5/P13: die Rücksetzung kappt die Vergangenheit NICHT neu. Der

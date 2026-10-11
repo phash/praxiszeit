@@ -97,7 +97,9 @@ def test_future_reset_and_delete_texts(db, anna, test_admin):
         "+0:15 h. Überstundenkonto im Zeitraum +0:15 h.",
         "Die Arbeitszeit-Änderung ab 01.09.2026 wurde ab 08.10.2026 auf den vorherigen Stand zurückgesetzt "
         "(neu: Mo 08:00–12:00 + 15:00–17:00 / Di 08:00–12:00 / Do 08:00–12:00).",
-        "Ihre Arbeitszeit ändert sich ab 02.11.2026 (neu: 25,0 h/Woche (gleichmäßig, 5 Tage)).",
+        # Gesamtreview PR3 / Spec 14: #415-Text ohne Klammerzusatz; die Blöcke davor
+        # lagen auf 3 Tagen, also nennt der Satz die neuen 5 Arbeitstage.
+        "Ihre Arbeitszeit ändert sich ab 02.11.2026 (neu: 25,0 h/Woche auf 5 Arbeitstage).",
     ]
 
 

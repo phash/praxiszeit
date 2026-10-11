@@ -471,14 +471,14 @@ describe('Spec 14: Dashboard-Hinweise zur Arbeitszeit', () => {
           year: 2026, month: 10, target_hours: 0, actual_hours: 0, balance: 0,
           schedule_change_notices: [{
             created_at: '2026-10-08T08:00:00Z', effective_from: '2026-11-02', kind: 'change',
-            text: 'Ihre Arbeitszeit ändert sich ab 02.11.2026 (neu: 25,0 h/Woche (gleichmäßig, 5 Tage)).',
+            text: 'Ihre Arbeitszeit ändert sich ab 02.11.2026 (neu: 25,0 h/Woche).',
           }],
         } });
       }
       return base(url);
     });
     render(<MemoryRouter><Dashboard /></MemoryRouter>);
-    expect(await screen.findByText('Ihre Arbeitszeit ändert sich ab 02.11.2026 (neu: 25,0 h/Woche (gleichmäßig, 5 Tage)).'))
+    expect(await screen.findByText('Ihre Arbeitszeit ändert sich ab 02.11.2026 (neu: 25,0 h/Woche).'))
       .toBeInTheDocument();
   });
 });

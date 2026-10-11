@@ -101,13 +101,19 @@ def _days_text(n: int) -> str:
     return "1 Tag" if n == 1 else f"{n} Tage"
 
 
-def contract_text(schedule, *, compact: bool) -> str:
+def contract_text(schedule, *, compact: bool, previous=None) -> str:
     """Kurztext eines Vertrags-Snapshots (``calculation_service.Schedule``) —
     Sammelzeile „Vertrag:" (``compact``), Dashboard-Hinweis „neu: …" (lang).
 
     * neue Blöcke: nur die Blöcke (das Soll ist daraus abgeleitet)
     * Tagesplan: „Mo 8,0 / Di 5,0 = 13,0 h/Woche"
-    * gleichmäßig: „20,0 h/Woche (gleichmäßig, 5 Tage)"
+    * gleichmäßig, Sammelzeile (10.2): „20,0 h/Woche (gleichmäßig, 5 Tage)"
+    * gleichmäßig, Hinweis (Spec 14, Gesamtreview PR3): der #415-Text
+      „20,0 h/Woche" ohne Klammerzusatz — er steht selbst in „(neu: …)". Die
+      Arbeitstage („ auf 4 Arbeitstage") nur, wenn sie sich gegenüber
+      ``previous`` (Snapshot am Vortag) ändern — dieselbe Regel wie
+      ``export_service._work_days_suffix``; sonst sagte der Hinweis bei
+      „40 h auf 5 Tage" → „40 h auf 4 Tage" nur „neu: 40,0 h/Woche".
     * Altfenster: Soll-Text + „ · <Fenster> (nur Kappung)"."""
     parsed = None
     if schedule.blocks is not None:
@@ -115,11 +121,15 @@ def contract_text(schedule, *, compact: bool) -> str:
     if parsed is not None and not work_blocks_service.is_legacy_week(parsed):
         return work_blocks_service.blocks_text(parsed.blocks, parsed.pauses, compact=compact)
     plan = format_day_plan(schedule.day_hours) if schedule.use_daily_schedule else ""
+    days = int(schedule.work_days_per_week)
     if plan:
         base = f"{plan} = {format_hours_de(schedule.weekly_hours)} h/Woche"
+    elif compact:
+        base = f"{format_hours_de(schedule.weekly_hours)} h/Woche (gleichmäßig, {_days_text(days)})"
     else:
-        base = (f"{format_hours_de(schedule.weekly_hours)} h/Woche "
-                f"(gleichmäßig, {_days_text(int(schedule.work_days_per_week))})")
+        base = f"{format_hours_de(schedule.weekly_hours)} h/Woche"
+        if calculation_service.work_days_changed(previous, schedule):
+            base += f" auf {days} {'Arbeitstag' if days == 1 else 'Arbeitstage'}"
     if parsed is None:
         return base
     window = work_blocks_service.blocks_text(parsed.blocks, parsed.pauses, compact=compact)
@@ -238,8 +248,9 @@ def notice_text(db, user, parsed: SummaryNote, today: date) -> str:
     if parsed.deleted:
         text = f"Die Arbeitszeit-Änderung ab {eff} wurde zurückgenommen."
     else:
-        neu = contract_text(calculation_service.get_schedule_for_date(db, user, parsed.effective_from),
-                            compact=False)
+        neu = contract_text(
+            calculation_service.get_schedule_for_date(db, user, parsed.effective_from), compact=False,
+            previous=calculation_service.get_schedule_for_date(db, user, parsed.effective_from - timedelta(days=1)))
         if parsed.reset_of is not None:
             verb = "wurde" if parsed.effective_from <= today else "wird"
             text = (f"Die Arbeitszeit-Änderung ab {parsed.reset_of:%d.%m.%Y} {verb} ab {eff} "

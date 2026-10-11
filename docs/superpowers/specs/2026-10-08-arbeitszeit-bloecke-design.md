@@ -2230,7 +2230,10 @@ eigene Rücknahme gibt es nicht (P11).
     hinterlegt (Fehlerkorrektur)." — Beschriftung aus `REASON_TYPES` zum geparsten
     `reason_type` (19.1 Nr. 7), nie das Notiz-Präfix und nie der Freitext (P12)
   „neu: …" ist der Kurztext des **heute** für `effective_from` aufgelösten Snapshots
-  (`get_schedule_for_date`); ohne Blöcke der #415-Text („25,0 h/Woche"). Link auf das
+  (`get_schedule_for_date`); ohne Blöcke der #415-Text („25,0 h/Woche"), ohne den
+  Klammerzusatz der Sammelzeile (Gesamtreview PR3: sonst „(neu: 25,0 h/Woche (gleichmäßig,
+  5 Tage))"); ändern sich dabei die Arbeitstage gegenüber dem Vortag, mit „ auf 4
+  Arbeitstage" (#415-Regel `work_days_changed`). Link auf das
   Profil. Keine Bestätigungstabelle; jeder Hinweis verschwindet nach 30 Tagen. Unter
   Impersonation sichtbar wie alles andere. Test: Eintrag nach der Neukappung löschen →
   Hinweis bleibt.
