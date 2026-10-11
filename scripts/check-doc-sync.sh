@@ -606,6 +606,12 @@ group_kurz() {
   need "$a" 'wird gekappt wie jedes Ende, bis 23:59 angerechnet erst nach „Anerkennen"'
   need "$a" '(Bereich „Arbeitszeit heute")'
   forbid "$a" '„Arbeitszeit heute: …"'
+  # Review Task 6 (2. Runde): „Block" heißt jetzt Arbeitszeit-Block – die
+  # §3-Zeile sagt „keine Sperre"; die verlustfreie Option endet je nach
+  # Kriterium auf „Einträge" oder „Tage" (ShorteningChoice.losslessLabel).
+  forbid "$a" '(kein Block)'
+  forbid "$a" 'nicht geblockt'
+  need "$a" '„… – vergangene Tage bleiben unverändert"'
   need "$m" '### Arbeitszeit-Blöcke'
   need "$m" 'zwischen den Blöcken nicht angerechnet'
   need "$m" 'Anrechnung beantragen'
@@ -625,6 +631,10 @@ group_kurz() {
   need "$m" 'auch dieses Ende wird an den Blöcken gekürzt; die Zeit danach zählt erst, wenn die Verwaltung den Eintrag anerkennt'
   need "$m" 'Hinweis zu Ihrer Arbeitszeit'
   need "$m" 'Ihre Arbeitszeit ändert sich ab'
+  # Review Task 6 (2. Runde): die Lücke zählt als Pause, eine zusätzlich
+  # eingetragene Pause wird doppelt abgezogen (BREAK_IN_GAP, presence_service).
+  need "$m" 'keine zusätzliche Pause eintragen'
+  need "$m" 'Pause in der Lücke wird zusätzlich abgezogen'
   need "$s" 'Arbeitszeit anpassen…'
   need "$s" 'Nach Arbeitsblöcken'
   forbid "$s" 'Wochenstunden anpassen…'
@@ -648,6 +658,22 @@ group_beschriftung() {
   for f in docs/handbuch/*.md docs/setup-windows.md \
            frontend/src/components/DocViewer.tsx frontend/src/constants/helpContent.tsx; do
     forbid "$f" 'Neuer Mitarbeiter:in'
+  done
+}
+
+# Begriffe, die mehrere Flächen teilen (Review Task 6, 2. Runde): „ohne
+# Stundenzählung" (Checkbox „Stundenzählung aktiv (…)", UserForm) ist NICHT
+# „leitende Angestellte" – das ist § 18 (eigene Checkbox „ArbZG-Prüfungen
+# aussetzen (§18 ArbZG – leitende Angestellte)"). Offen für die zuständigen
+# Tasks: BERECHNUNGEN.md (Task 7), ARC42.md (Task 10), pzweb (Task 14/15).
+group_begriffe() {
+  local f
+  need_code "Stundenzählung aktiv (Soll-Stunden werden berechnet)"
+  for f in docs/handbuch/*.md docs/setup-windows.md \
+           frontend/src/components/DocViewer.tsx frontend/src/constants/helpContent.tsx; do
+    forbid "$f" 'ohne Stundenzählung (leitende Angestellte)'
+    forbid "$f" 'leitende Angestellte ohne Stundenpflicht'
+    forbid "$f" '„Keine Stundenzählung'
   done
 }
 

@@ -1144,7 +1144,7 @@ Urlaub wird grundsätzlich **in Tagen** geführt, nicht in Stunden (Tagesprinzip
 
 ### 18.8 Sonderfälle
 
-- **Mitarbeiter ohne Stundenzählung (leitende Angestellte):** kein Soll/Ist/Überstunden; Urlaub trotzdem tagebasiert (voller Urlaubstag / „Frei"-Sondertag = 1 Tag, „halber Feiertag" 24./31.12. = 0,5 Tag seit #394).
+- **Mitarbeiter ohne Stundenzählung:** kein Soll/Ist/Überstunden; Urlaub trotzdem tagebasiert (voller Urlaubstag / „Frei"-Sondertag = 1 Tag, „halber Feiertag" 24./31.12. = 0,5 Tag seit #394).
 - **Sondertage 24./31.12.:** je Tag Arbeitstag / Halbtag (Faktor 0,5) / Frei (Faktor 0). „Frei + zählt als Urlaub" zieht 1 Urlaubstag.
 - **Eintritt/Austritt:** vor dem ersten / nach dem letzten Arbeitstag entstehen weder Soll noch Ist; der Urlaubsanspruch wird anteilig berechnet.
 - **Arbeitszeit-Änderung (rückwirkend oder zukunftsdatiert):** alte Monate rechnen mit der damals gültigen Arbeitszeit (Verlauf / Gültig-ab-Datum). Rückwirkend werden erfasste Zeiteinträge an geänderten Wochentagen neu gekappt und danach die Stunden bereits gebuchter Abwesenheiten auf das neue Tagessoll umgestellt – Abwesenheiten auch bei einem Datum in der Zukunft (Ausnahme: Überstundenausgleich, MA ohne Stundenzählung); Urlaubs**tage** bleiben unberührt. Senkt eine rückwirkende Änderung angerechnete Zeit oder das Überstundenkonto, gilt der Verkürzungsschutz. Details in [Abschnitt 4 → „Mitarbeiter bearbeiten"](#mitarbeiter-bearbeiten).

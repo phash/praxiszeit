@@ -367,7 +367,7 @@ Navigation: **Benutzerverwaltung → „Neue:r Mitarbeiter:in"**
 - **Erster Arbeitstag** — wichtig für die korrekte Soll-Stunden-Berechnung im Eintrittsmonat. Vor diesem Datum kann sich die Person **nicht einstempeln** („Datum liegt vor dem ersten Arbeitstag").
 - **Letzter Arbeitstag** — analog für Austritt
 - **Individuelle Tagesstunden** (Mo–Fr) — wenn z. B. Freitags nur halbtags gearbeitet wird
-- **Stundenzählung aktiv** — deaktivieren für leitende Angestellte ohne Stundenpflicht; **ohne diese Option sehen Mitarbeiter:innen keine Stempeluhr** (siehe Abschnitt 11)
+- **Stundenzählung aktiv** — deaktivieren für Mitarbeiter:innen ohne Stundenzählung (hat nichts mit § 18 zu tun, s. nächster Punkt); **ohne diese Option sehen Mitarbeiter:innen keine Stempeluhr** (siehe Abschnitt 11)
 - **ArbZG-Prüfungen aussetzen** (§ 18 ArbZG) — leitende Angestellte: keine Ruhezeit-/Pausen-Warnungen
 - **Nachtarbeitnehmer** (§ 6 ArbZG) — 8h-Tageslimit statt 10h
 - **Kalenderfarbe** — für die Darstellung im Abwesenheitskalender

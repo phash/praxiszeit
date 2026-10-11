@@ -619,7 +619,7 @@ export function SchnellstartAdmin() {
         <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-2">2. Mitarbeiter anlegen</h3>
         <p className="text-sm text-gray-600 mb-1"><strong>Benutzerverwaltung → „Neue:r Mitarbeiter:in"</strong>: Benutzername + Startpasswort, Name, Wochenstunden bzw. Tagesplan, Urlaubsanspruch → Speichern.</p>
         <ul className="text-sm text-gray-500 list-disc list-inside space-y-0.5">
-          <li>Leitende Angestellte: <em>„Keine Stundenzählung"</em> – Urlaub/Krank trotzdem tagebasiert.</li>
+          <li>Ohne Stundenzählung: Häkchen <em>„Stundenzählung aktiv (Soll-Stunden werden berechnet)"</em> entfernen – Urlaub/Krank trotzdem tagebasiert; hat nichts mit § 18 ArbZG zu tun.</li>
           <li>Ein-/Austritt: <em>Erster/Letzter Arbeitstag</em> setzen.</li>
           <li>Optional: Soll-Arbeitszeit-Fenster (Soll-Beginn/-Ende je Wochentag).</li>
           <li>Spätere Änderungen an Wochenstunden, Tagesplan, Modus oder Arbeitstagen: nur noch über „Wochenstunden anpassen…" mit Wirkungsdatum.</li>

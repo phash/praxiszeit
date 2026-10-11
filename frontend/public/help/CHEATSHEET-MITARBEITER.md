@@ -32,6 +32,7 @@ Beim **Ausstempeln** Feld **Pause (Min.)** ausfüllen → **Jetzt ausstempeln**.
 - Erst danach ist das Ausstempeln fertig (flüchtiger Hinweis reicht nicht mehr).
 - Gezählt wird der **ganze Tag**: aus- und gleich wieder einstempeln ist keine Pause (erst ab **15 Min.** Unterbrechung).
 - Kein Begründungsfeld? Dann hat die Praxis die Ausnahme abgeschaltet → Pause eintragen.
+- Mit **Arbeitszeit-Blöcken**: Eine Pause, die Sie in der Lücke zwischen zwei Blöcken gemacht haben, nicht zusätzlich eintragen (→ „Arbeitszeit-Blöcke" unten).
 
 ### Neuen Zeiteintrag erstellen
 **Zeiterfassung** → Tab **Einträge** → **+ Neuer Eintrag** (nur für **heute**)
@@ -68,6 +69,7 @@ Gilt für den **ganzen Tag** (alle Einträge zusammen); Lücken unter 15 Min. z�
 - Angerechnet wird innerhalb der Blöcke, mit **Puffer** (Std. 15 Min.) an jedem Blockrand. Wochenende und Feiertage haben keine Blöcke → alles zählt.
 - Zu früh / zu spät → *„gestempelt 07:30 · angerechnet ab 07:45"*.
 - Über die Pause zwischen zwei Blöcken durchgestempelt → *„gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet"*.
+- **Pause in der Lücke gemacht und durchgestempelt?** Die Lücke zählt als Pause (§4 ArbZG; ab 15 Min. nach Abzug des Puffers) – dann **keine zusätzliche Pause eintragen**, sonst wird beides abgezogen (Hinweis *„Pause in der Lücke wird zusätzlich abgezogen: …"* → Pause im Eintrag auf 0 setzen).
 - In der Pause zwischen den Blöcken zeigt das Dashboard neutral „Pause zwischen den Arbeitsblöcken".
 - Vor, nach oder zwischen den Blöcken gearbeitet? Am Eintrag **„Anrechnung beantragen"** (mit Begründung; für heute erst nach Arbeitsende). Tab „Anträge": Kennzeichen „Anrechnung beantragt", nach der Genehmigung zusätzlich „anerkannt" bzw. „ohne Anerkennen genehmigt".
 - Heute anerkannter Eintrag: Schloss, kein Bearbeiten/Löschen; ab morgen per **Änderungsantrag**/**Löschantrag** oder über die Verwaltung.
@@ -190,6 +192,7 @@ Zusätzlicher Schutz per Einmal-Code aus einer Authenticator-App (z. B. Google A
 | Eintrag lässt sich nicht bearbeiten | Zu alt → Änderungsantrag stellen |
 | „angerechnet ab HH:MM" beim Eintrag | Arbeitszeit-Blöcke: nur bis Puffer angerechnet (echte Zeit bleibt) |
 | „… zwischen den Blöcken nicht angerechnet" | Über die Pause zwischen zwei Blöcken gestempelt; gearbeitet? → **„Anrechnung beantragen"** |
+| „Pause in der Lücke wird zusätzlich abgezogen: …" | Pause lag in der Lücke zwischen den Blöcken → im Eintrag die Pause auf 0 setzen (älterer Eintrag → Änderungsantrag); in der Lücke gearbeitet → **„Anrechnung beantragen"** |
 | Schloss mit „Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung" | Eintrag wurde heute anerkannt → ab morgen **Änderungsantrag**/**Löschantrag** oder die Verwaltung fragen |
 | „Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden." | Anrechnung für heute erst nach dem Ausstempeln beantragen |
 | Kasten „Hinweis zu Ihrer Arbeitszeit" („Ihre Arbeitszeit wurde ab … geändert" bzw. „Ihre Arbeitszeit ändert sich ab …") | Verwaltung hat Ihre Arbeitszeit geändert (Hinweis bleibt 30 Tage) → Link „Arbeitszeit im Profil ansehen" bzw. Profil → „Meine Arbeitszeit" |
