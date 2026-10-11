@@ -15,9 +15,11 @@ import {
 import type { WeekBlocks } from '../../../types/workBlocks';
 import type { WorkingHoursChange, WorkingHoursChangePreview } from './workingHoursTypes';
 import WhImpactBox from './WhImpactBox';
+import ShorteningChoice, { losslessLabel, retroLabel } from './ShorteningChoice';
 import {
-  BLOCKS_WITHOUT_EFFECT, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT, formatDate,
-  modeSwitchHint, savedMessage,
+  BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT,
+  closedYearMessage, formatDate, modeSwitchHint, reasonComplete, reasonPayload, savedMessage,
+  type ReasonState, type ShorteningOption,
 } from './workingHoursTexts';
 
 interface WorkingHoursModalProps {
@@ -279,6 +281,9 @@ export default function WorkingHoursModal({
   const [formData, setFormData] = useState<FormState>(() => formFromSnapshot(propsSchedule, todayIso(), trackHours));
 
   const [preview, setPreview] = useState<WorkingHoursChangePreview | null>(null);
+  // Der Schlüssel, zu dem `preview` gehört: zwischen einer neuen Eingabe und
+  // dem Start ihrer Vorschau steht noch die alte Antwort im Zustand.
+  const [previewFor, setPreviewFor] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   // Fund 4 (Release-Review 1.17.0): scheitert die Vorschau (Netzwerk, 5xx, ein
   // gecachtes altes Frontend gegen den entfallenen GET → 405 …), wird der
@@ -289,6 +294,14 @@ export default function WorkingHoursModal({
   // Eine Änderung mit Auswirkung darf erst nach ausdrücklicher Bestätigung der
   // Vorschau gespeichert werden (9.4/12.1).
   const [confirmedRetroactive, setConfirmedRetroactive] = useState(false);
+  // Spec 12.1 (F24): Verkürzungs-Wahl. Das eingegebene Datum und seine Vorschau
+  // bleiben stehen; Option 1 sendet `earliest_lossless_date` und zeigt dafür
+  // eine zweite Vorschau.
+  const [shorteningOption, setShorteningOption] = useState<ShorteningOption>('lossless');
+  const [reason, setReason] = useState<ReasonState>(EMPTY_REASON);
+  const [losslessPreview, setLosslessPreview] = useState<WorkingHoursChangePreview | null>(null);
+  const [losslessLoading, setLosslessLoading] = useState(false);
+  const [losslessError, setLosslessError] = useState<string | null>(null);
 
   const dayValues = DAY_FIELDS.map((f) => formData[f.key]);
   const daySum = round2(dayValues.reduce((sum, h) => sum + h, 0));
@@ -362,12 +375,19 @@ export default function WorkingHoursModal({
     setConfirmedRetroactive(false);
     setPreviewLoading(true);
     setPreviewError(null);
+    // Neue Eingabe → neue Bewertung; Standard ist wieder Option 1 (12.1). Die
+    // Bestätigungen des Schutzpakets gelten der bisherigen Änderung und fallen
+    // wie der Haken der Auswirkungs-Box; Grund und Begründung bleiben stehen.
+    setShorteningOption('lossless');
+    setReason((r) => (r.wageConfirmed || r.otherConfirmed ? { ...r, wageConfirmed: false, otherConfirmed: false } : r));
     let cancelled = false;
     const handle = setTimeout(() => {
       apiClient
         .post(`/admin/users/${userId}/working-hours-changes/preview`, JSON.parse(previewKey))
         .then((res) => {
-          if (!cancelled) setPreview(res.data);
+          if (cancelled) return;
+          setPreview(res.data);
+          setPreviewFor(previewKey);
         })
         .catch((error) => {
           if (cancelled) return;
@@ -422,12 +442,57 @@ export default function WorkingHoursModal({
     'Die früheste erfasste Stundenänderung verankert den davor gültigen Wert — '
     + 'bitte zuerst die späteren Änderungen löschen.';
 
-  // Was gesendet wird und welche Vorschau die Auswirkungs-Box zeigt. Heute
-  // dasselbe Datum; der Verkürzungs-Kasten (Task 19) trennt beides (F24).
-  const sentDate = formData.effective_from;
-  const shown: WorkingHoursChangePreview | null = preview;
-  const shownLoading = previewLoading;
-  const shownError = previewError;
+  // Spec 9.5/12.1 (F24): ob verkürzt wird und welche Optionen es gibt, steht
+  // IMMER in der Vorschau des eingegebenen Datums — nie in der von Option 1,
+  // sonst verschwände nach der Wahl von Option 1 der Rückweg zu Option 2. Nur
+  // die Vorschau DIESER Eingabe zählt: die zweite Vorschau läuft ohne Debounce,
+  // aus einer veralteten Antwort entstünde je Tastendruck eine Anfrage mit
+  // altem Datum und neuer Eingabe.
+  const isShortening = !previewLoading && previewFor === previewKey
+    && !!preview && !preview.blocked_reason && !!preview.is_shortening;
+  const losslessDate = isShortening ? (preview?.earliest_lossless_date ?? null) : null;
+  const closedText = isShortening ? closedYearMessage(preview?.shortening_closed_years) : null;
+  const useLossless = losslessDate !== null && shorteningOption === 'lossless';
+  const needsReason = isShortening && !useLossless;
+  const losslessKey = useLossless
+    ? JSON.stringify({ ...JSON.parse(previewKey), effective_from: losslessDate })
+    : null;
+
+  // Option 1: zweite Vorschau für `earliest_lossless_date` (ohne Debounce — der
+  // Schlüssel ändert sich nur mit einer neuen Antwort oder einem Klick).
+  useEffect(() => {
+    if (!losslessKey) {
+      setLosslessPreview(null);
+      return;
+    }
+    setConfirmedRetroactive(false);
+    setLosslessLoading(true);
+    setLosslessError(null);
+    let cancelled = false;
+    apiClient
+      .post(`/admin/users/${userId}/working-hours-changes/preview`, JSON.parse(losslessKey))
+      .then((res) => {
+        if (!cancelled) setLosslessPreview(res.data);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setLosslessPreview(null);
+        setLosslessError(getErrorMessage(error, 'Auswirkungen konnten nicht geprüft werden'));
+      })
+      .finally(() => {
+        if (!cancelled) setLosslessLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, losslessKey, previewRetryToken]);
+
+  // Was gesendet wird und welche Vorschau die Auswirkungs-Box zeigt: bei
+  // Option 1 das verlustfreie Datum und dessen Vorschau, sonst die Eingabe.
+  const sentDate = useLossless && losslessDate ? losslessDate : formData.effective_from;
+  const shown: WorkingHoursChangePreview | null = useLossless ? losslessPreview : preview;
+  const shownLoading = useLossless ? losslessLoading : previewLoading;
+  const shownError = useLossless ? losslessError : previewError;
   const isRetroactive = sentDate < todayIso();
 
   // Release-Review 1.17.0: `blocked_reason` gilt für jedes Datum — der POST
@@ -485,6 +550,10 @@ export default function WorkingHoursModal({
     !!blockedReason ||
     !!blocksError ||
     snapshotUnchanged ||
+    // Option 1 erst mit ihrer eigenen Vorschau (auch wenn deren Datum heute ist).
+    (useLossless && (shownLoading || !shown)) ||
+    // P15/P26/11.4: Option 2 nur mit allen Pflichtangaben, nie in ein abgeschlossenes Jahr.
+    (needsReason && (!!closedText || !reasonComplete(reason))) ||
     (isRetroactive && (shownLoading || !shown || !confirmedRetroactive)) ||
     (!isRetroactive && (shownLoading || (needsConfirmation && !confirmedRetroactive)));
 
@@ -501,6 +570,7 @@ export default function WorkingHoursModal({
         effective_from: sentDate,
         note: formData.note,
         ...scheduleBody,
+        ...(needsReason ? reasonPayload(reason) : {}),
       });
       const freshChanges = await fetchHoursChanges();
       onChanged();
@@ -510,6 +580,8 @@ export default function WorkingHoursModal({
       setFormData(formFromSnapshot(scheduleAt(freshChanges, todayIso(), propsSchedule), todayIso(), trackHours));
       setPreview(null);
       setConfirmedRetroactive(false);
+      setReason(EMPTY_REASON);
+      setShorteningOption('lossless');
       const created: {
         adjusted_time_entries?: number; skipped_time_entries?: number; adjusted_absences?: number;
         warning?: string | null;
@@ -757,8 +829,8 @@ export default function WorkingHoursModal({
                       <p className="text-gray-600 mt-1">
                         {formData.remove_legacy_window
                           ? trackHours
-                            ? `Das Fenster wird ab ${formatDate(formData.effective_from)} entfernt; danach wird nicht mehr gekappt.`
-                            : `Das Fenster wird ab ${formatDate(formData.effective_from)} entfernt.`
+                            ? `Das Fenster wird ab ${formatDate(sentDate)} entfernt; danach wird nicht mehr gekappt.`
+                            : `Das Fenster wird ab ${formatDate(sentDate)} entfernt.`
                           : trackHours
                             ? 'Bleibt mit dieser Änderung bestehen: kappt die erfasste Zeit, ändert das Tagessoll nicht.'
                             : 'Bleibt mit dieser Änderung bestehen, ohne Wirkung (keine Stundenzählung): kappt nichts, ändert das Tagessoll nicht.'}
@@ -795,7 +867,8 @@ export default function WorkingHoursModal({
                       wird dort nicht angeboten). */}
                   {baselineNewBlocks && formData.mode !== 'blocks' && !snapshotUnchanged && (
                     <p className="text-sm font-medium text-amber-800">
-                      {modeSwitchHint(formatDate(formData.effective_from))}
+                      {/* Gesendetes Datum: bei Option 1 des Verkürzungs-Kastens das verlustfreie. */}
+                      {modeSwitchHint(formatDate(sentDate))}
                     </p>
                   )}
 
@@ -810,6 +883,24 @@ export default function WorkingHoursModal({
                     <ul aria-label="Hinweise zum Plan" className="list-disc pl-5 text-sm text-blue-900 space-y-0.5 break-words">
                       {planNotices.map((n) => <li key={n}>{n}</li>)}
                     </ul>
+                  )}
+
+                  {/* Spec 12.1: vor der Box, damit der Haken das letzte Element vor „Speichern" bleibt. */}
+                  {isShortening && preview && (
+                    <ShorteningChoice
+                      preview={preview}
+                      losslessText={losslessLabel(preview, todayIso())}
+                      retroText={retroLabel(formData.effective_from)}
+                      option={useLossless ? 'lossless' : 'retro'}
+                      onOptionChange={(o) => {
+                        setShorteningOption(o);
+                        setConfirmedRetroactive(false);
+                      }}
+                      closedText={closedText}
+                      reason={reason}
+                      onReasonChange={setReason}
+                      idPrefix="wh-short"
+                    />
                   )}
 
                   {/* Auswirkungs-Box: VOR dem Speichern zeigen, was die Änderung

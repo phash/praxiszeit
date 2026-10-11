@@ -1396,3 +1396,306 @@ describe('Review Task 18b', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /Speichern/ })).not.toBeDisabled());
   });
 });
+
+const LOSING = (id: string) => ({
+  entry_id: id, date: '2026-06-08', old_start: '15:00:00', old_end: '18:00:00', old_uncredited: 0, old_net: 3,
+  new_start: '15:00:00', new_end: '17:15:00', new_uncredited: 0, new_net: 2.25, not_extendable: null,
+});
+const MILOG_GENERAL = 'Bei Minijob oder Vergütung in Mindestlohnhöhe kann die Kürzung Mindestlohnansprüche (§§ 1, 3 MiLoG) und die Aufzeichnung nach § 17 MiLoG berühren.';
+const MILOG_ACCOUNT = 'Diese Person führt ein Arbeitszeitkonto nach § 2 Abs. 2 MiLoG bzw. hat eine vereinbarte Monatsarbeitszeit. Eine rückwirkende Kürzung angerechneter Zeit verändert den Kontostand und kann Mindestlohnansprüche sowie die 12-Monats-Ausgleichsfrist berühren.';
+const P25_NOTE = 'Die Änderung liegt vollständig vor der Änderung ab 01.07.2026; nur rückwirkend mit Begründung oder abbrechen.';
+// Vorschau des EINGEGEBENEN Datums 01.06.2026: Verkürzung nach (a).
+const SHORTENING: PreviewOverrides = {
+  is_retroactive: true, period_start: '2026-06-01', period_end: '2026-07-26', affected_absences: 0,
+  affected_time_entries: 3, is_shortening: true, shortening_reasons: ['entries'], shortening_closed_years: [],
+  earliest_lossless_date: '2026-07-26', earliest_lossless_note: null, lost_credited_hours: 2.25,
+  time_entry_changes: [LOSING('a'), LOSING('b'), LOSING('c')], milog_warning: [MILOG_GENERAL],
+};
+
+// Jede andere Vorschau (Option 1, Datum heute/morgen) ist verlustfrei und still.
+function mockShortening(short: PreviewOverrides = {}) {
+  getMock.mockImplementation((url: string, config?: { params?: { effective_from?: string } }) => {
+    if (String(url).includes('/preview')) {
+      return Promise.resolve(previewResponse(config?.params?.effective_from === '2026-06-01'
+        ? { ...SHORTENING, ...short }
+        : { ...QUIET, is_shortening: false, shortening_reasons: [] }));
+    }
+    return Promise.resolve(historyResponse([]));
+  });
+}
+
+async function enterShortening() {
+  renderModal();
+  await screen.findByText('Keine Änderungen vorhanden');
+  fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-06-01' } });
+  fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+  await flushDebounce();
+  return screen.findByRole('region', { name: 'Verkürzung' });
+}
+
+const lastPreviewParams = () =>
+  getMock.mock.calls.filter((c) => String(c[0]).includes('/preview')).at(-1)?.[1]?.params as Record<string, unknown>;
+
+describe('Spec 2026-10-08 (PR3): Verkürzungs-Kasten', () => {
+  it('Standard Option 1 „Ab heute (…) wirksam": eigene Vorschau, sendet earliest_lossless_date ohne Grund', async () => {
+    mockShortening();
+    const region = await enterShortening();
+    expect(within(region).getByText('3 Einträge verlieren angerechnete Zeit (zusammen 2:15 h)')).toBeInTheDocument();
+    expect(within(region).getByRole('radio', {
+      name: 'Ab heute (26.07.2026) wirksam – vergangene Einträge bleiben unverändert',
+    })).toBeChecked();
+    expect(within(region).queryByLabelText('Grund')).not.toBeInTheDocument();
+    await waitFor(() => expect(lastPreviewParams()).toMatchObject({ effective_from: '2026-07-26', weekly_hours: 20 }));
+    // Das eingegebene Datum bleibt im Feld stehen (F24).
+    expect(screen.getByLabelText('Gültig ab')).toHaveValue('2026-06-01');
+
+    const submit = screen.getByRole('button', { name: /Speichern/ });
+    await waitFor(() => expect(submit).not.toBeDisabled());
+    fireEvent.click(submit);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    const body = postMock.mock.calls.at(-1)![1];
+    expect(body).toMatchObject({ effective_from: '2026-07-26', weekly_hours: 20 });
+    expect(body).not.toHaveProperty('retroactive_reason_type');
+  });
+
+  it('F24: Option 2 und zurück behält das eingegebene Datum; Grundtypen, Hilfetext, Haken, gesendete Schlüssel', async () => {
+    mockShortening();
+    const region = await enterShortening();
+    fireEvent.click(within(region).getByRole('radio', { name: 'Rückwirkend ab 01.06.2026 mit Neuberechnung' }));
+    expect(screen.getByLabelText('Gültig ab')).toHaveValue('2026-06-01');
+
+    const select = within(region).getByLabelText('Grund');
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Bitte wählen…', 'Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)', 'Mit der beschäftigten Person vereinbart',
+      'Sonstiges',
+    ]);
+    expect(within(region).getByText('Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit.'))
+      .toBeInTheDocument();
+    expect(within(region).getByText(MILOG_GENERAL)).toBeInTheDocument();
+    const submit = screen.getByRole('button', { name: /Speichern/ });
+    expect(submit).toBeDisabled();
+
+    fireEvent.click(within(region).getByRole('radio', { name: /^Ab heute \(26\.07\.2026\) wirksam/ }));
+    expect(screen.getByLabelText('Gültig ab')).toHaveValue('2026-06-01');
+    fireEvent.click(within(region).getByRole('radio', { name: /^Rückwirkend ab 01\.06\.2026/ }));
+
+    fireEvent.change(within(region).getByLabelText('Grund'), { target: { value: 'erfassungsfehler' } });
+    expect(within(region).getByText('Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit.'))
+      .toBeInTheDocument();
+    fireEvent.change(within(region).getByLabelText('Begründung'), { target: { value: 'Blöcke falsch erfasst' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
+    expect(submit).toBeDisabled();
+    fireEvent.click(within(region).getByRole('checkbox', {
+      name: /^Ich habe geprüft, dass die hinterlegte Arbeitszeit falsch war \(Fehlerkorrektur\)\. Tatsächlich geleistete Arbeit/,
+    }));
+    expect(submit).not.toBeDisabled();
+
+    fireEvent.click(submit);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls.at(-1)![1]).toMatchObject({
+      effective_from: '2026-06-01', weekly_hours: 20, retroactive_reason_type: 'erfassungsfehler',
+      retroactive_reason_text: 'Blöcke falsch erfasst', wage_risk_confirmed: true, other_reason_risk_confirmed: false,
+    });
+  });
+
+  it('Begründung unter 10 Zeichen hält Speichern gesperrt (P15)', async () => {
+    mockShortening({ earliest_lossless_date: null, earliest_lossless_note: P25_NOTE });
+    const region = await enterShortening();
+    fireEvent.change(within(region).getByLabelText('Grund'), { target: { value: 'einvernehmlich' } });
+    fireEvent.change(within(region).getByLabelText('Begründung'), { target: { value: 'zu kurz' } });
+    fireEvent.click(within(region).getByRole('checkbox', { name: /mit der beschäftigten Person vereinbart ist/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+    fireEvent.change(within(region).getByLabelText('Begründung'), { target: { value: 'Mit Frau B. vereinbart' } });
+    expect(screen.getByRole('button', { name: /Speichern/ })).not.toBeDisabled();
+  });
+
+  it('Wechsel des Grundtyps setzt den Bestätigungshaken zurück (neuer Wortlaut)', async () => {
+    mockShortening({ earliest_lossless_date: null, earliest_lossless_note: P25_NOTE });
+    const region = await enterShortening();
+    fireEvent.change(within(region).getByLabelText('Grund'), { target: { value: 'einvernehmlich' } });
+    fireEvent.change(within(region).getByLabelText('Begründung'), { target: { value: 'Mit Frau B. vereinbart' } });
+    fireEvent.click(within(region).getByRole('checkbox', { name: /mit der beschäftigten Person vereinbart ist/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
+    expect(screen.getByRole('button', { name: /Speichern/ })).not.toBeDisabled();
+    fireEvent.change(within(region).getByLabelText('Grund'), { target: { value: 'erfassungsfehler' } });
+    expect(within(region).getByRole('checkbox', { name: /hinterlegte Arbeitszeit falsch war/ })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+  });
+
+  it('„Ab ‹Datum› wirksam", wenn heute schon etwas verliert (P1)', async () => {
+    mockShortening({ earliest_lossless_date: '2026-07-27' });
+    const region = await enterShortening();
+    expect(within(region).getByRole('radio', { name: 'Ab 27.07.2026 wirksam – vergangene Einträge bleiben unverändert' }))
+      .toBeChecked();
+    await waitFor(() => expect(lastPreviewParams()).toMatchObject({ effective_from: '2026-07-27' }));
+  });
+
+  it('P25: earliest_lossless_date = null → nur Option 2 mit Hinweistext', async () => {
+    mockShortening({ earliest_lossless_date: null, earliest_lossless_note: P25_NOTE });
+    const region = await enterShortening();
+    expect(within(region).queryByRole('radio', { name: /^Ab / })).not.toBeInTheDocument();
+    expect(within(region).getByText(P25_NOTE)).toBeInTheDocument();
+    expect(within(region).getByRole('radio', { name: /^Rückwirkend ab 01\.06\.2026/ })).toBeChecked();
+    expect(within(region).getByLabelText('Grund')).toBeInTheDocument();
+  });
+
+  it('„Sonstiges": rote Warnung und zweiter Haken sind Pflicht (P26)', async () => {
+    mockShortening({ earliest_lossless_date: null, earliest_lossless_note: P25_NOTE });
+    const region = await enterShortening();
+    fireEvent.change(within(region).getByLabelText('Grund'), { target: { value: 'sonstiges' } });
+    fireEvent.change(within(region).getByLabelText('Begründung'), { target: { value: 'Sonstiger Grund mit Text' } });
+    fireEvent.click(within(region).getByRole('checkbox', { name: /^Ich habe die Gründe geprüft\./ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
+    expect(within(region).getByText(
+      'Eine einseitige rückwirkende Kürzung deckt das Direktionsrecht nicht (§ 106 GewO wirkt nur für die Zukunft); geleistete Arbeit bleibt zu vergüten.',
+    )).toBeInTheDocument();
+    const submit = screen.getByRole('button', { name: /Speichern/ });
+    expect(submit).toBeDisabled();
+    fireEvent.click(within(region).getByRole('checkbox', {
+      name: 'Mir ist bewusst, dass eine einseitige rückwirkende Kürzung vom Direktionsrecht nicht gedeckt ist.',
+    }));
+    expect(submit).not.toBeDisabled();
+    fireEvent.click(submit);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls.at(-1)![1]).toMatchObject({
+      retroactive_reason_type: 'sonstiges', other_reason_risk_confirmed: true, wage_risk_confirmed: true,
+    });
+  });
+
+  it('MiLoG-Konto: beide Sätze der Vorschau stehen unter der Bestätigung', async () => {
+    mockShortening({
+      earliest_lossless_date: null, earliest_lossless_note: P25_NOTE, milog_warning: [MILOG_ACCOUNT, MILOG_GENERAL],
+    });
+    const region = await enterShortening();
+    expect(within(region).getByText(MILOG_ACCOUNT)).toBeInTheDocument();
+    expect(within(region).getByText(MILOG_GENERAL)).toBeInTheDocument();
+  });
+
+  it('Soll-Erhöhung ohne verlierenden Eintrag: Saldo-Kopfzeile und „vergangene Tage" (dritter Zustand, 19.1 Nr. 1)', async () => {
+    mockShortening({
+      shortening_reasons: ['saldo'], affected_time_entries: 1, saldo_delta_hours: -3.75, target_delta_hours: 4,
+      credited_delta_hours: 0.25, lost_credited_hours: 0, time_entry_changes: [],
+    });
+    const region = await enterShortening();
+    expect(within(region).getByText(
+      'Das Überstundenkonto sinkt im Wirkungsbereich um 3:45 h (höheres Soll), obwohl kein Eintrag angerechnete Zeit verliert',
+    )).toBeInTheDocument();
+    expect(within(region).getByRole('radio', { name: 'Ab heute (26.07.2026) wirksam – vergangene Tage bleiben unverändert' }))
+      .toBeChecked();
+    fireEvent.click(within(region).getByRole('radio', { name: /^Rückwirkend ab/ }));
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+  });
+
+  it('Gutschrift-Kriterium (c): Kopfzeile, Liste unter „Einzelheiten"', async () => {
+    mockShortening({
+      shortening_reasons: ['absence_credit'], affected_time_entries: 0, time_entry_changes: [],
+      absence_credit_reductions: [{ absence_id: 'a1', date: '2026-06-15', old_hours: 8, new_hours: 4 }],
+    });
+    const region = await enterShortening();
+    expect(within(region).getByText(
+      '1 Abwesenheits-Gutschrift sinkt stärker als das Tagessoll (Arbeit und Gutschrift am selben Tag)',
+    )).toBeInTheDocument();
+    fireEvent.click(within(region).getByRole('radio', { name: /^Rückwirkend ab/ }));
+    const box = await screen.findByRole('status');
+    fireEvent.click(within(box).getByRole('button', { name: 'Einzelheiten' }));
+    expect(within(box).getByText('Gutschrift 15.06.2026: 8:00 h → 4:00 h')).toBeInTheDocument();
+  });
+
+  it('abgeschlossenes Jahr: Option 2 deaktiviert mit dem Text der 400-Meldung, Option 1 bleibt', async () => {
+    mockShortening({ shortening_closed_years: [2025] });
+    const region = await enterShortening();
+    expect(within(region).getByRole('radio', { name: /^Rückwirkend ab/ })).toBeDisabled();
+    expect(within(region).getByText(
+      'Rückwirkende Verkürzung in das abgeschlossene Jahr 2025 ist gesperrt. Bitte die Änderung frühestens ab 01.01.2026 wirksam werden lassen.',
+    )).toBeInTheDocument();
+    expect(within(region).getByRole('radio', { name: /^Ab heute/ })).toBeChecked();
+  });
+
+  it('abgeschlossenes Jahr ohne verlustfreies Datum (P25): nichts speicherbar', async () => {
+    mockShortening({ shortening_closed_years: [2025], earliest_lossless_date: null, earliest_lossless_note: P25_NOTE });
+    const region = await enterShortening();
+    expect(within(region).getByRole('radio', { name: /^Rückwirkend ab/ })).toBeDisabled();
+    expect(within(region).queryByLabelText('Grund')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+  });
+
+  it('neue Eingabe stellt den Standard Option 1 wieder her (12.1)', async () => {
+    mockShortening();
+    const region = await enterShortening();
+    fireEvent.click(within(region).getByRole('radio', { name: /^Rückwirkend ab/ }));
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '21' } });
+    await flushDebounce();
+    const again = await screen.findByRole('region', { name: 'Verkürzung' });
+    await waitFor(() => expect(within(again).getByRole('radio', { name: /^Ab heute/ })).toBeChecked());
+  });
+
+  it('neue Eingabe nimmt die Bestätigungen des Schutzpakets zurück, Grund und Begründung bleiben', async () => {
+    mockShortening();
+    const region = await enterShortening();
+    fireEvent.click(within(region).getByRole('radio', { name: /^Rückwirkend ab/ }));
+    fireEvent.change(within(region).getByLabelText('Grund'), { target: { value: 'einvernehmlich' } });
+    fireEvent.change(within(region).getByLabelText('Begründung'), { target: { value: 'Mit Frau B. vereinbart' } });
+    fireEvent.click(within(region).getByRole('checkbox', { name: /mit der beschäftigten Person vereinbart ist/ }));
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '21' } });
+    await flushDebounce();
+    const again = await screen.findByRole('region', { name: 'Verkürzung' });
+    fireEvent.click(within(again).getByRole('radio', { name: /^Rückwirkend ab/ }));
+    expect(within(again).getByLabelText('Grund')).toHaveValue('einvernehmlich');
+    expect(within(again).getByLabelText('Begründung')).toHaveValue('Mit Frau B. vereinbart');
+    expect(within(again).getByRole('checkbox', { name: /mit der beschäftigten Person vereinbart ist/ })).not.toBeChecked();
+  });
+
+  it('Option 1 nennt beim Moduswechsel weg von Blöcken das gesendete Datum (P24)', async () => {
+    getMock.mockImplementation((url: string, config?: { params?: { effective_from?: string } }) => {
+      if (String(url).includes('/preview')) {
+        return Promise.resolve(previewResponse(config?.params?.effective_from === '2026-06-01'
+          ? SHORTENING
+          : { ...QUIET, is_shortening: false, shortening_reasons: [] }));
+      }
+      return Promise.resolve(historyResponse([ANNA_ROW]));
+    });
+    renderModal(ANNA_PROPS);
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-06-01' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Gleichmäßig' }));
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
+    const region = await screen.findByRole('region', { name: 'Verkürzung' });
+    expect(screen.getByText('Die Arbeitszeit-Blöcke enden mit dieser Änderung; ab 26.07.2026 wird nicht mehr gekappt.'))
+      .toBeInTheDocument();
+    fireEvent.click(within(region).getByRole('radio', { name: /^Rückwirkend ab/ }));
+    expect(screen.getByText('Die Arbeitszeit-Blöcke enden mit dieser Änderung; ab 01.06.2026 wird nicht mehr gekappt.'))
+      .toBeInTheDocument();
+  });
+
+  it('Tippen bei angezeigtem Kasten löst keine sofortige Vorschau mit dem alten Datum aus (Anfragesturm)', async () => {
+    // Die zweite Vorschau läuft ohne Debounce — sie darf nur aus der Vorschau
+    // DER AKTUELLEN Eingabe entstehen, nie aus der vorigen.
+    mockShortening();
+    await enterShortening();
+    await waitFor(() => expect(lastPreviewParams()).toMatchObject({ effective_from: '2026-07-26', weekly_hours: 20 }));
+    const before = previewPosts().length;
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '21' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '22' } });
+    expect(previewPosts()).toHaveLength(before);
+    await flushDebounce();
+    await screen.findByRole('region', { name: 'Verkürzung' });
+    await waitFor(() => expect(lastPreviewParams()).toMatchObject({ effective_from: '2026-07-26', weekly_hours: 22 }));
+    // Genau zwei neue Anfragen: die eingegebene (01.06.) und die verlustfreie.
+    expect(previewPosts().slice(before).map((t) => (t.body as { effective_from: string }).effective_from))
+      .toEqual(['2026-06-01', '2026-07-26']);
+  });
+
+  it('Verlängerung (zweiter Zustand) zeigt keinen Kasten', async () => {
+    mockShortening({ is_shortening: false, shortening_reasons: [], affected_time_entries: 1 });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-06-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
+    await screen.findByRole('status');
+    expect(screen.queryByRole('region', { name: 'Verkürzung' })).not.toBeInTheDocument();
+  });
+});
