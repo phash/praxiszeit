@@ -230,18 +230,18 @@ describe('#383 Übertrag Urlaubstage', () => {
   });
 });
 
-describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)', () => {
-  const baseEditUser = {
-    id: 'u1', username: 'jd', first_name: 'Jane', last_name: 'Doe', role: 'employee',
-    weekly_hours: 40, vacation_days: 30, work_days_per_week: 5, track_hours: true,
-    is_active: true, use_daily_schedule: false,
-  };
+const baseEditUser = {
+  id: 'u1', username: 'jd', first_name: 'Jane', last_name: 'Doe', role: 'employee',
+  weekly_hours: 40, vacation_days: 30, work_days_per_week: 5, track_hours: true,
+  is_active: true, use_daily_schedule: false,
+};
 
+describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)', () => {
   it('zeigt beim Bearbeiten ein read-only-Feld plus Button (kein Eingabefeld)', () => {
     renderForm({ editUser: baseEditUser });
     expect(screen.getByText('40,0 h/Woche')).toBeInTheDocument();
     expect(document.getElementById('f-weekly-hours')?.tagName).not.toBe('INPUT');
-    expect(screen.getByRole('button', { name: /Wochenstunden anpassen/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Arbeitszeit anpassen/i })).toBeInTheDocument();
   });
 
   // Abschluss-Review #431, Fund B (a11y): im Bearbeiten-Zweig trägt die
@@ -278,7 +278,7 @@ describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)'
   it('zeigt beim Anlegen ein Eingabefeld (kein Button)', () => {
     renderForm();
     expect(document.getElementById('f-weekly-hours')?.tagName).toBe('INPUT');
-    expect(screen.queryByRole('button', { name: /Wochenstunden anpassen/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Arbeitszeit anpassen/i })).not.toBeInTheDocument();
   });
 
   it('sendet weekly_hours/Tagesplan-Felder beim Update NICHT mit (Backend lehnt sie sonst mit 400 ab)', async () => {
@@ -322,7 +322,7 @@ describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)'
   // auch sie den Dialog-Button — er ist der einzige verbliebene Schreibweg.
   it('zeigt den Button auch bei individuellem Tagesplan', () => {
     renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
-    expect(screen.getByRole('button', { name: /Wochenstunden anpassen/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Arbeitszeit anpassen/i })).toBeInTheDocument();
     expect(document.getElementById('f-weekly-hours')?.tagName).not.toBe('INPUT');
   });
 
@@ -462,7 +462,7 @@ describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)'
   it('öffnet den Wochenstunden-Dialog für den bearbeiteten Nutzer', () => {
     const onOpenHoursHistory = vi.fn();
     renderForm({ editUser: baseEditUser, onOpenHoursHistory });
-    fireEvent.click(screen.getByRole('button', { name: /Wochenstunden anpassen/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Arbeitszeit anpassen/i }));
     expect(onOpenHoursHistory).toHaveBeenCalledWith(baseEditUser);
   });
 
@@ -475,7 +475,7 @@ describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)'
 describe('Bug-Tracker #4: Schrittweite der geplanten Arbeitszeit', () => {
   it('nimmt Viertelstunden beim Anlegen an — wie der Bearbeiten-Dialog (Fund C, #431)', () => {
     // step="0.5" wies 20,25 h beim ANLEGEN als Schrittfehler ab, während
-    // dieselbe Zahl über "Wochenstunden anpassen…" längst gespeichert werden
+    // dieselbe Zahl über "Arbeitszeit anpassen…" längst gespeichert werden
     // konnte. Zwei Wege zum selben Feld dürfen nicht verschieden streng sein.
     renderForm({ editUser: null });
     expect(document.getElementById('f-weekly-hours')).toHaveAttribute('step', '0.25');
@@ -623,5 +623,96 @@ describe('Spec 2026-10-08 (PR1): Arbeitszeit-Blöcke statt Soll-Fenster', () => 
   it('beim Anlegen keine Blöcke-Anzeige (der Editor folgt mit PR3)', () => {
     renderForm();
     expect(screen.queryByLabelText('Arbeitszeit heute')).not.toBeInTheDocument();
+  });
+});
+
+describe('Spec 2026-10-08 (12.2): Anlegen mit Arbeitszeit-Blöcken', () => {
+  function fillBasics() {
+    fireEvent.change(screen.getByLabelText(/Benutzername/i), { target: { value: 'blockneu' } });
+    fireEvent.change(screen.getByLabelText('Passwort *'), { target: { value: 'TestPass123!' } });
+    fireEvent.change(screen.getByLabelText('Vorname'), { target: { value: 'Anna' } });
+    fireEvent.change(screen.getByLabelText('Nachname'), { target: { value: 'Beispiel' } });
+  }
+
+  function enterAnnaMonday() {
+    fireEvent.click(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mo: Block hinzufügen' }));
+    fireEvent.change(screen.getByLabelText('Mo Block 1 von'), { target: { value: '08:00' } });
+    fireEvent.change(screen.getByLabelText('Mo Block 1 bis'), { target: { value: '12:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Mo: Block hinzufügen' }));
+    fireEvent.change(screen.getByLabelText('Mo Block 2 von'), { target: { value: '15:00' } });
+    fireEvent.change(screen.getByLabelText('Mo Block 2 bis'), { target: { value: '18:00' } });
+    fireEvent.change(screen.getByLabelText('Mo Pause innerhalb der Blöcke (Min)'), { target: { value: '30' } });
+  }
+
+  it('drei Modi; „Nach Arbeitsblöcken" zeigt den Editor und leitet Wochenstunden/Arbeitstage schreibgeschützt ab', () => {
+    renderForm({ editUser: null });
+    expect(screen.getByRole('radio', { name: 'Gleichmäßig' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Nach Tagen' })).not.toBeChecked();
+    enterAnnaMonday();
+    expect(screen.getByTestId('f-blocks-day-0')).toHaveTextContent('Tagessoll 6:30 h');
+    const weekly = document.getElementById('f-weekly-hours') as HTMLInputElement;
+    expect(weekly).toHaveAttribute('readonly');
+    expect(weekly.value).toBe('6.5');
+    const workDays = document.getElementById('f-work-days') as HTMLInputElement;
+    expect(workDays).toHaveAttribute('readonly');
+    expect(workDays.value).toBe('1');
+  });
+
+  it('sendet work_blocks samt abgeleiteten Feldern (der Server leitet erneut ab, 4.2)', async () => {
+    renderForm({ editUser: null });
+    fillBasics();
+    enterAnnaMonday();
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    const body = postMock.mock.calls[0][1];
+    expect(body).toMatchObject({
+      use_daily_schedule: true, weekly_hours: 6.5, work_days_per_week: 1, hours_monday: 6.5, hours_tuesday: 0,
+    });
+    expect(body.work_blocks[0]).toEqual({
+      blocks: [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }], pause_minutes: 30,
+    });
+    expect(body.work_blocks[1]).toEqual({ blocks: [], pause_minutes: 0 });
+  });
+
+  it('sperrt Speichern bei ungültigen Blöcken mit der wortgleichen Meldung (3.4)', () => {
+    renderForm({ editUser: null });
+    fireEvent.click(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Mindestens ein Wochentag braucht einen Block.');
+    expect(screen.getByRole('button', { name: /Speichern/i })).toBeDisabled();
+  });
+
+  it('ohne Stundenzählung: Editor ausgeblendet, keine Blöcke im Payload', async () => {
+    renderForm({ editUser: null });
+    fillBasics();
+    enterAnnaMonday();
+    fireEvent.click(screen.getByLabelText('Stundenzählung aktiv (Soll-Stunden werden berechnet)'));
+    expect(screen.queryByRole('radio', { name: 'Nach Arbeitsblöcken' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).not.toHaveProperty('work_blocks');
+  });
+
+  // Das Formular darf sich nicht selbst widersprechen: zeigt das Feld
+  // „Arbeitstage pro Woche" 1 (aus den Blöcken), muss die Urlaubsempfehlung
+  // ebenfalls mit 1 rechnen — nicht mit den verdeckten Formularwerten 40 h/5 Tage.
+  it('Urlaubsempfehlung, MiLoG-Schätzung und Festmonats-Hinweis folgen den abgeleiteten Werten', () => {
+    renderForm({ editUser: null });
+    enterAnnaMonday();
+    // 30 × 1/5 = 6 Tage
+    expect(screen.getByText(/6 Tage \(basierend auf 1 Arbeitstagen\/Woche\)/)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/i));
+    // 6,5 h × 13/3 ≈ 28,2 h
+    expect(screen.getByText(/aus den Wochenstunden \(≈ 28\.2 h\)/)).toBeInTheDocument();
+    expect(document.getElementById('f-agreed-monthly')).toHaveAttribute('placeholder', 'aus Wochenstunden ≈ 28.2');
+    fireEvent.click(screen.getByLabelText(/Feste Monatsarbeitszeit/));
+    // Die Blöcke hinterlegen die geplante Anwesenheit bereits.
+    expect(screen.queryByText(/Empfehlung bei fester Monatsarbeitszeit/)).not.toBeInTheDocument();
+  });
+
+  it('Bearbeiten: Knopf heißt „Arbeitszeit anpassen…", kein Modus-Umschalter', () => {
+    renderForm({ editUser: baseEditUser });
+    expect(screen.getByRole('button', { name: 'Arbeitszeit anpassen…' })).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'Nach Arbeitsblöcken' })).not.toBeInTheDocument();
   });
 });

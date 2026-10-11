@@ -8,7 +8,8 @@ import PasswordInput from '../../../components/PasswordInput';
 import { getErrorMessage } from '../../../utils/errorMessage';
 import { parseHours, deHoursExact, formatDayPlan } from '../../../utils/formatters';
 import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../../../utils/calendarColors';
-import { formatWeekBlocks, isLegacyWeek } from '../../../utils/workBlocks';
+import { deriveTargets, emptyWeek, formatWeekBlocks, isLegacyWeek, validateWeekBlocks } from '../../../utils/workBlocks';
+import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
 import { BLOCKS_WITHOUT_EFFECT, LEGACY_WITHOUT_EFFECT } from './workingHoursTexts';
 
 import type { User } from '../../../types/user';
@@ -62,9 +63,12 @@ export default function UserForm({
 }: UserFormProps) {
   const toast = useToast();
   const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
-  const [suggestedVacation, setSuggestedVacation] = useState<number | null>(null);
   // Guards against double-submit (fast double-click would create duplicate users).
   const [submitting, setSubmitting] = useState(false);
+  // Spec 2026-10-08 (12.2/E28): Startvertrag mit Arbeitszeit-Blöcken — nur
+  // beim Anlegen; danach ändern sich Blöcke ausschließlich über den Dialog.
+  const [blocksMode, setBlocksMode] = useState(false);
+  const [createBlocks, setCreateBlocks] = useState<WeekBlocks>(() => emptyWeek());
   const minWage = useSystemStore((s) => s.getMinimumWage()); // #377
   const [formData, setFormData] = useState({
     username: '',
@@ -191,16 +195,23 @@ export default function UserForm({
     return () => { cancelled = true; };
   }, [editUser, carryoverYear]);
 
-  useEffect(() => {
-    if (formData.work_days_per_week > 0) {
-      const suggested = Math.round(30 * formData.work_days_per_week / 5);
-      setSuggestedVacation(suggested);
-    }
-  }, [formData.work_days_per_week]);
+  // Ohne Stundenzählung kein Block-Modus (12.2): der Abschnitt ist dann
+  // ausgeblendet und der Payload trägt keine Blöcke.
+  const createBlocksActive = !editUser && blocksMode && formData.track_hours;
+  const createDerived = deriveTargets(createBlocks);
+  const createBlocksError = createBlocksActive ? validateWeekBlocks(createBlocks) : null;
+  // Was beim Anlegen tatsächlich gespeichert wird: im Block-Modus die aus den
+  // Blöcken abgeleiteten Werte, sonst die Eingabe. Urlaubsempfehlung und
+  // MiLoG-Schätzung rechnen damit — sonst stünde „1 Arbeitstag" im Feld und
+  // daneben eine Empfehlung „basierend auf 5 Arbeitstagen/Woche".
+  const effectiveWeeklyHours = createBlocksActive ? createDerived.weeklyHours : formData.weekly_hours;
+  const effectiveWorkDays = createBlocksActive ? createDerived.workDays : formData.work_days_per_week;
+  const suggestedVacation = effectiveWorkDays > 0 ? Math.round(30 * effectiveWorkDays / 5) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
+    if (createBlocksError) return;
     setSubmitting(true);
     try {
       // #158/#383: overtime_carryover + vacation_carryover are NOT user fields —
@@ -282,7 +293,23 @@ export default function UserForm({
         }
         toast.success('Benutzer erfolgreich aktualisiert');
       } else {
-        const res = await apiClient.post('/admin/users', payload);
+        // Spec 4.2: der Server leitet aus `work_blocks` erneut ab und
+        // überschreibt; die mitgeschickten Werte halten den Payload in sich stimmig.
+        const createPayload = createBlocksActive
+          ? {
+            ...payload,
+            use_daily_schedule: true,
+            weekly_hours: createDerived.weeklyHours,
+            work_days_per_week: createDerived.workDays,
+            hours_monday: createDerived.hours[0],
+            hours_tuesday: createDerived.hours[1],
+            hours_wednesday: createDerived.hours[2],
+            hours_thursday: createDerived.hours[3],
+            hours_friday: createDerived.hours[4],
+            work_blocks: createBlocks,
+          }
+          : payload;
+        const res = await apiClient.post('/admin/users', createPayload);
         const newId: string | undefined = res.data?.user?.id;
         // Create: kein bestehender Row zu clobbern → live carryoverYear ist korrekt.
         if (newId && (overtime_carryover !== 0 || vacation_carryover !== 0)) {
@@ -453,7 +480,7 @@ export default function UserForm({
                   onClick={() => onOpenHoursHistory?.(editUser)}
                   className="shrink-0 px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-primary hover:bg-primary/5 transition"
                 >
-                  Wochenstunden anpassen…
+                  Arbeitszeit anpassen…
                 </button>
               </div>
             ) : (
@@ -467,12 +494,16 @@ export default function UserForm({
                 // sonst nimmt das Anlegen 20,25 h nicht an, das spätere Ändern
                 // derselben Zahl aber schon.
                 step="0.25"
-                value={formData.weekly_hours}
+                value={createBlocksActive ? createDerived.weeklyHours : formData.weekly_hours}
                 onChange={(e) => setFormData({ ...formData, weekly_hours: parseHours(e.target.value) })}
+                // Spec 12.2: im Block-Modus aus den Blöcken abgeleitet. `readOnly`
+                // nimmt das Feld zugleich aus der nativen Formularprüfung — ein
+                // abgeleitetes 7,92 h fiele sonst durch step="0.25".
+                readOnly={createBlocksActive}
                 required
                 min="0"
                 max="60"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary read-only:bg-gray-50 read-only:text-gray-700"
               />
             )}
             {formData.use_fixed_monthly_target && (
@@ -511,19 +542,20 @@ export default function UserForm({
               <input
                 id="f-work-days"
                 type="number"
-                value={formData.work_days_per_week}
+                value={createBlocksActive ? createDerived.workDays : formData.work_days_per_week}
                 onChange={(e) => setFormData({ ...formData, work_days_per_week: parseInt(e.target.value) || 5 })}
+                readOnly={createBlocksActive}
                 required
                 min="1"
                 max="7"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary read-only:bg-gray-50 read-only:text-gray-700"
               />
             )}
             <p className="text-xs text-gray-500 mt-1">
               {editUser
                 ? (displayedUseDailySchedule
-                  ? 'Wird aus der Zahl der belegten Wochentage im Tagesplan abgeleitet. Änderung über „Wochenstunden anpassen…" mit Wirkungsdatum.'
-                  : 'Änderung über „Wochenstunden anpassen…" mit Wirkungsdatum.')
+                  ? 'Wird aus der Zahl der belegten Wochentage im Tagesplan abgeleitet. Änderung über „Arbeitszeit anpassen…" mit Wirkungsdatum.'
+                  : 'Änderung über „Arbeitszeit anpassen…" mit Wirkungsdatum.')
                 : 'Anzahl der Arbeitstage pro Woche (1-7)'}
             </p>
           </div>
@@ -543,7 +575,7 @@ export default function UserForm({
             {suggestedVacation !== null && formData.vacation_days !== suggestedVacation && (
               <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-sm text-xs">
                 💡 <strong>Empfehlung:</strong> {suggestedVacation} Tage
-                (basierend auf {formData.work_days_per_week} Arbeitstagen/Woche)
+                (basierend auf {effectiveWorkDays} Arbeitstagen/Woche)
                 <button
                   type="button"
                   onClick={() => setFormData({ ...formData, vacation_days: suggestedVacation })}
@@ -691,7 +723,7 @@ export default function UserForm({
                   placeholder={
                     formData.use_fixed_monthly_target
                       ? 'Pflichtfeld – festes Monats-Soll'
-                      : `aus Wochenstunden ≈ ${(formData.weekly_hours * 13 / 3).toFixed(1)}`
+                      : `aus Wochenstunden ≈ ${(effectiveWeeklyHours * 13 / 3).toFixed(1)}`
                   }
                   value={formData.agreed_monthly_hours ?? ''}
                   onChange={(e) => setFormData({
@@ -708,13 +740,13 @@ export default function UserForm({
                 {(() => {
                   const monthly = formData.agreed_monthly_hours != null
                     ? formData.agreed_monthly_hours
-                    : formData.weekly_hours * 13 / 3;
+                    : effectiveWeeklyHours * 13 / 3;
                   return (
                     <p className="mt-1 text-xs text-amber-800">
                       {minWage && typeof minWage.current === 'number'
                         ? `Aktueller Mindestlohn: ${minWage.current.toFixed(2)} €/h (seit ${new Date(minWage.since).toLocaleDateString('de-DE')}). `
                         : ''}
-                      Leer = automatisch aus den Wochenstunden (≈ {(formData.weekly_hours * 13 / 3).toFixed(1)} h).
+                      Leer = automatisch aus den Wochenstunden (≈ {(effectiveWeeklyHours * 13 / 3).toFixed(1)} h).
                       Vereinbarte Monatszeit {formData.agreed_monthly_hours != null ? '' : '≈ '}{monthly.toFixed(1)} h
                       → max. Konto ≈ {(monthly / 2).toFixed(1)} h/Monat (50 %, § 2 Abs. 2 MiLoG). Warnung ist weich
                       (nicht blockierend), sofern zur Mindestlohnhöhe vergütet. Keine Verdienst-/603-€-Prüfung.
@@ -861,33 +893,60 @@ export default function UserForm({
                       : (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit nicht hinterlegt' : 'Einheitliche Tagesstunden (kein individueller Tagesplan)')}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    Änderung über „Wochenstunden anpassen…" mit Wirkungsdatum.
+                    Änderung über „Arbeitszeit anpassen…" mit Wirkungsdatum.
                   </p>
                 </>
               ) : (
                 <>
-                  <div className="flex items-center space-x-2 mb-3">
-                    <input
-                      type="checkbox"
-                      id="use_daily_schedule"
-                      checked={formData.use_daily_schedule}
-                      onChange={(e) => setFormData({ ...formData, use_daily_schedule: e.target.checked })}
-                      className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
-                    />
-                    <label htmlFor="use_daily_schedule" className="text-sm font-medium text-gray-700 cursor-pointer">
-                      {formData.use_fixed_monthly_target
-                        ? 'Geplante Anwesenheit (für Feiertags-/Fehltags-Gutschrift, statt einheitlich '
-                          + (formData.weekly_hours / formData.work_days_per_week).toFixed(1) + 'h/Tag)'
-                        : `Individuelle Tagesstunden (statt einheitlich ${(formData.weekly_hours / formData.work_days_per_week).toFixed(1)}h/Tag)`}
-                    </label>
-                  </div>
-                  {formData.use_fixed_monthly_target && !formData.use_daily_schedule && (
+                  <fieldset className="mb-3">
+                    <legend className="text-sm font-medium text-gray-700 mb-1">Arbeitszeit</legend>
+                    <div className="flex flex-wrap gap-4">
+                      <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="f-schedule-mode"
+                          checked={!createBlocksActive && !formData.use_daily_schedule}
+                          onChange={() => {
+                            setBlocksMode(false);
+                            setFormData({ ...formData, use_daily_schedule: false });
+                          }}
+                          className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
+                        />
+                        Gleichmäßig
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
+                        <input
+                          type="radio"
+                          id="use_daily_schedule"
+                          name="f-schedule-mode"
+                          checked={!createBlocksActive && formData.use_daily_schedule}
+                          onChange={() => {
+                            setBlocksMode(false);
+                            setFormData({ ...formData, use_daily_schedule: true });
+                          }}
+                          className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
+                        />
+                        {formData.use_fixed_monthly_target ? 'Nach Tagen (geplante Anwesenheit)' : 'Nach Tagen'}
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="f-schedule-mode"
+                          checked={createBlocksActive}
+                          onChange={() => setBlocksMode(true)}
+                          className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
+                        />
+                        Nach Arbeitsblöcken
+                      </label>
+                    </div>
+                  </fieldset>
+                  {formData.use_fixed_monthly_target && !createBlocksActive && !formData.use_daily_schedule && (
                     <p className="text-xs text-amber-600 mb-2">
                       Empfehlung bei fester Monatsarbeitszeit: hier die geplante Anwesenheit hinterlegen, damit
                       Feiertage/Fehltage korrekt gutgeschrieben werden (das Monats-Soll selbst bleibt fest).
                     </p>
                   )}
-                  {formData.use_daily_schedule && (
+                  {!createBlocksActive && formData.use_daily_schedule && (
                     <div className="grid grid-cols-5 gap-2">
                       {(['Mo', 'Di', 'Mi', 'Do', 'Fr'] as const).map((day, idx) => {
                         const keys = ['hours_monday', 'hours_tuesday', 'hours_wednesday', 'hours_thursday', 'hours_friday'] as const;
@@ -918,6 +977,14 @@ export default function UserForm({
                         )}
                       </div>
                     </div>
+                  )}
+                  {createBlocksActive && (
+                    <>
+                      <WorkBlocksEditor value={createBlocks} onChange={setCreateBlocks} idPrefix="f-blocks" />
+                      <p className="text-xs text-gray-500 mt-2">
+                        Wochenstunden, Tagessoll und Arbeitstage werden aus den Blöcken abgeleitet.
+                      </p>
+                    </>
                   )}
                 </>
               )}
@@ -954,7 +1021,7 @@ export default function UserForm({
           <div className="md:col-span-2">
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || !!createBlocksError}
               className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save size={18} />

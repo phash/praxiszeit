@@ -131,7 +131,7 @@ export default function Users() {
     setEditingUser(null);
   };
 
-  // Task 6 (#Wochenstunden-anpassen): UserForm's "Wochenstunden anpassen…"
+  // Task 6 (#Wochenstunden-anpassen): UserForm's "Arbeitszeit anpassen…"
   // button opens the SAME modal instance as the clock icon in the table below
   // — one Wochenstunden-UI, reachable from two places.
   const handleOpenHoursHistory = (user: User) => {
@@ -673,8 +673,8 @@ export default function Users() {
                       <button
                         onClick={() => setHoursModalUser(user)}
                         className="text-blue-600 hover:text-blue-800"
-                        title="Wochenstunden & Tagesplan"
-                        aria-label={`Wochenstunden & Tagesplan für ${user.first_name} ${user.last_name}`}
+                        title="Arbeitszeit & Wochenstunden"
+                        aria-label={`Arbeitszeit & Wochenstunden für ${user.first_name} ${user.last_name}`}
                       >
                         <Clock size={16} />
                       </button>
@@ -855,8 +855,8 @@ export default function Users() {
                     <button
                       onClick={() => setHoursModalUser(user)}
                       className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
-                      aria-label="Wochenstunden & Tagesplan anzeigen"
-                      title="Wochenstunden & Tagesplan"
+                      aria-label="Arbeitszeit & Wochenstunden anzeigen"
+                      title="Arbeitszeit & Wochenstunden"
                     >
                       <Clock size={16} />
                     </button>
@@ -959,6 +959,10 @@ export default function Users() {
             hoursModalUser.hours_friday,
           ]}
           currentWorkDays={hoursModalUser.work_days_per_week}
+          // Spec 2026-10-08 (12.1): heute gültige Blöcke und Stundenzählung —
+          // ohne Stundenzählung kein Block-Modus (P24).
+          currentBlocks={hoursModalUser.work_blocks_today ?? null}
+          trackHours={hoursModalUser.track_hours}
           onClose={() => setHoursModalUser(null)}
           onChanged={fetchUsers}
         />

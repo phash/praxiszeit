@@ -84,7 +84,7 @@ function FakeUserForm(props: {
         type="button"
         onClick={() => props.editUser && props.onOpenHoursHistory?.(props.editUser)}
       >
-        Wochenstunden anpassen…
+        Arbeitszeit anpassen…
       </button>
     </div>
   );
@@ -109,11 +109,15 @@ vi.mock('./users/UserForm', () => ({
 // The dialog's OWN correctness (preview, sequence guard, stale display …) is
 // covered exhaustively in WorkingHoursModal.test.tsx — faked here to a single
 // button so this test stays focused on how Users.tsx reacts to `onChanged`.
-function FakeWorkingHoursModal(props: { onChanged: () => void }) {
+function FakeWorkingHoursModal(props: { onChanged: () => void; currentBlocks?: unknown; trackHours?: boolean }) {
   return (
-    <button type="button" onClick={props.onChanged}>
-      Stundenänderung speichern (simuliert)
-    </button>
+    <div>
+      <span data-testid="modal-track-hours">{String(props.trackHours)}</span>
+      <span data-testid="modal-blocks">{JSON.stringify(props.currentBlocks ?? null)}</span>
+      <button type="button" onClick={props.onChanged}>
+        Stundenänderung speichern (simuliert)
+      </button>
+    </div>
   );
 }
 vi.mock('./users/WorkingHoursModal', () => ({
@@ -208,7 +212,7 @@ describe('Release-Review 1.17.0 Fund 2: editingUser-Sync darf offene Eingaben ni
     fireEvent.change(screen.getByLabelText('Abteilung (unsaved)'), { target: { value: 'Labor' } });
     expect(screen.getByLabelText('Abteilung (unsaved)')).toHaveValue('Labor');
 
-    fireEvent.click(screen.getByText('Wochenstunden anpassen…'));
+    fireEvent.click(screen.getByText('Arbeitszeit anpassen…'));
 
     // Simulate the dialog having saved a change — Di 8→5, server now reports
     // 37h total (20h in the pre-existing weekly_hours-only assertion below).
@@ -285,7 +289,7 @@ describe('Abschluss-Review #431 Fund 3: Arbeitstage und Modus werden mit nachgez
     expect(screen.getByTestId('display-use-daily-schedule')).toHaveTextContent('false');
 
     fireEvent.change(screen.getByLabelText('Abteilung (unsaved)'), { target: { value: 'Labor' } });
-    fireEvent.click(screen.getByText('Wochenstunden anpassen…'));
+    fireEvent.click(screen.getByText('Arbeitszeit anpassen…'));
 
     weekly = 20;
     workDays = 4;
@@ -323,10 +327,28 @@ describe('Spec 2026-10-08 (PR1): heute gültige Blöcke werden mit nachgezogen',
     await screen.findByTestId('fake-user-form');
     expect(screen.getByTestId('display-blocks')).toHaveTextContent('"start":"08:00","end":"17:00"');
 
-    fireEvent.click(screen.getByText('Wochenstunden anpassen…'));
+    fireEvent.click(screen.getByText('Arbeitszeit anpassen…'));
     today = null;
     fireEvent.click(screen.getByText('Stundenänderung speichern (simuliert)'));
 
     await waitFor(() => expect(screen.getByTestId('display-blocks')).toHaveTextContent('null'));
+  });
+});
+
+describe('Spec 2026-10-08 (12.1): Dialog bekommt heute gültige Blöcke und Stundenzählung', () => {
+  it('reicht work_blocks_today und track_hours an den Dialog weiter', async () => {
+    const blocks = [{ blocks: [{ start: '08:00', end: '12:00' }], pause_minutes: 0 }];
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({ data: [makeUser({ track_hours: false, work_blocks_today: blocks as never })] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Arbeitszeit & Wochenstunden für Jane Doe' })[0]);
+    expect(await screen.findByTestId('modal-track-hours')).toHaveTextContent('false');
+    expect(screen.getByTestId('modal-blocks')).toHaveTextContent('08:00');
   });
 });
