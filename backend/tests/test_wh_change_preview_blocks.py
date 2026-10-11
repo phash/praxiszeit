@@ -1,12 +1,14 @@
 """Spec 11.1/11.3: Vorschau per POST — untypisiert, nie 422 beim Tippen, rollt
 immer zurück, protokolliert nie."""
 import re
+import uuid
 from datetime import date
 
 import pytest
 from pydantic import ValidationError
 
-from app.models import Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, User, WorkingHoursChange
+from app.models import Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, User, UserRole, WorkingHoursChange
+from app.models.tenant import Tenant
 from app.routers.admin_users import PREVIEW_DATE_MISSING, RESET_CONFLICT_DETAIL
 from app.schemas.working_hours_change import EFFECTIVE_FROM_RANGE_DETAIL, WorkingHoursChangeCreate
 from app.services import calculation_service, wh_change_service
@@ -198,6 +200,39 @@ class TestImpactFields:
                                             "weekly_hours": 39, "work_days_per_week": 5,
                                             "reset_of_change_id": str(later.id)})
         assert body["blocked_reason"] == RESET_CONFLICT_DETAIL
+
+    def test_foreign_or_unknown_reset_is_blocked_with_one_text(self, client, db, test_user):
+        """Review Task 10 (F-026, kein Existenz-Leak): eine Rücksetzung auf die
+        Zeile einer anderen Person, eines anderen Mandanten oder eine unbekannte
+        ID ist ``blocked_reason`` (kein 404) — überall derselbe Text."""
+        add_row(db, test_user, date(2026, 1, 1), weekly_hours=40)
+        colleague = User(username="kollegin", email="kollegin@example.com", password_hash="x",
+                         first_name="K", last_name="T", role=UserRole.EMPLOYEE, weekly_hours=40.0,
+                         vacation_days=30, work_days_per_week=5, is_active=True, tenant_id=test_user.tenant_id)
+        other_tenant_id = uuid.UUID("00000000-0000-0000-0000-0000000000fe")
+        db.add(Tenant(id=other_tenant_id, name="Fremd", slug="fremd", is_active=True, mode="single"))
+        stranger = User(username="fremd", email="fremd@example.com", password_hash="x",
+                        first_name="F", last_name="T", role=UserRole.EMPLOYEE, weekly_hours=40.0,
+                        vacation_days=30, work_days_per_week=5, is_active=True, tenant_id=other_tenant_id)
+        db.add_all([colleague, stranger])
+        db.commit()
+        colleague_row = add_row(db, colleague, date(2026, 9, 1), weekly_hours=30)
+        stranger_row = WorkingHoursChange(user_id=stranger.id, tenant_id=other_tenant_id,
+                                          effective_from=date(2026, 9, 1), weekly_hours=30,
+                                          use_daily_schedule=False, work_days_per_week=5)
+        db.add(stranger_row)
+        db.commit()
+        db.refresh(stranger_row)
+        entry(db, test_user, date(2026, 9, 15), t(8), t(12))
+
+        texts = []
+        for reset_id in (colleague_row.id, stranger_row.id, uuid.uuid4()):
+            body = _preview(client, test_user, {"effective_from": "2026-09-01", "use_daily_schedule": False,
+                                                "weekly_hours": 40, "work_days_per_week": 5,
+                                                "reset_of_change_id": str(reset_id)})
+            assert body["affected_time_entries"] == 0
+            texts.append(body["blocked_reason"])
+        assert texts == ["Stundenänderung nicht gefunden"] * 3
 
     def test_pure_block_shift_is_a_change_unchanged_blocks_are_not(self, client, db, test_user):
         add_row(db, test_user, date(2026, 3, 1), week=ANNA_WEEK)
