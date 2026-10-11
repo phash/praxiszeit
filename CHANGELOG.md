@@ -8,9 +8,10 @@ Zwischenschritte. **Enthält eine Datenbank-Migration** (`073_work_blocks`): Sie
 Wochentag) als einen Block je Tag und entfernt die alten Fenster-Spalten.
 Tagessoll, angerechnete Zeit und Überstundensaldo aller bestehenden Einträge
 bleiben dabei unverändert. Die Ausgabe der Migration nennt die Zahl der
-übernommenen Konten und Personen mit Besonderheiten (`UPDATE.md`). **Vor dem
-Update ein Backup ziehen** – der Rückweg auf 1.19.x ist nur über dieses Backup
-verlustfrei (`UPDATE.md`).
+übernommenen Konten und Verlaufszeilen und listet unter „Besonderheiten" die
+Personen, die im Dialog „Arbeitszeit anpassen…" zu prüfen sind (`UPDATE.md`).
+**Vor dem Update ein Backup ziehen** – der Rückweg auf 1.19.x ist nur über
+dieses Backup verlustfrei (`UPDATE.md`).
 
 ### ✨ Arbeitszeit als Blöcke je Tag
 - **Bis zu drei Arbeitszeit-Blöcke je Wochentag** mit „Pause innerhalb der
@@ -33,8 +34,10 @@ verlustfrei (`UPDATE.md`).
   angerechnete Zeit je Eintrag anerkennen (dauerhaft, protokolliert);
   Mitarbeitende können die Anrechnung per Änderungsantrag beantragen, die
   Prüfung bietet „Genehmigen und anerkennen" und zeigt die gestempelten Zeiten.
-  „Meine Anträge" kennzeichnet solche Anträge. Einen anerkannten Eintrag ändern
-  Mitarbeitende nur noch per Änderungsantrag.
+  Im Tab „Anträge" der Zeiterfassung tragen solche Anträge das Kennzeichen
+  „Anrechnung beantragt" (nach der Genehmigung „anerkannt" bzw. „ohne
+  Anerkennen genehmigt"). Einen anerkannten Eintrag ändern Mitarbeitende nur
+  noch per Änderungsantrag.
 - **Rückwirkende Änderungen rechnen neu** – mit Vorschau (Einträge je Monat
   alt → neu, Differenz von Soll, angerechneter Zeit und Überstundenkonto,
   übersprungene Einträge mit Grund), Protokoll je Eintrag und einer Sammelzeile
@@ -78,7 +81,9 @@ verlustfrei (`UPDATE.md`).
   Stempel.
 - **Rückwirkende Erhöhung der Wochenstunden oder des Tagesplans** braucht jetzt
   Grund und Bestätigung, wenn das Überstundenkonto dadurch sinkt (bisher genügte
-  der Bestätigungshaken). „Ab heute" bleibt ohne Grund möglich.
+  der Bestätigungshaken). Ab dem frühesten Tag ohne Verlust (meist heute; morgen,
+  wenn die Person heute schon gestempelt hat oder eingestempelt ist) bleibt die
+  Änderung ohne Grund möglich.
 - **Arbeitszeit-Änderung löschen** geht nur noch an der jüngsten Zeile des
   Verlaufs. Verkürzt das Löschen, setzt es standardmäßig ab dem frühesten Tag
   ohne Verlust (meist heute) auf den vorherigen Stand zurück; rückwirkendes

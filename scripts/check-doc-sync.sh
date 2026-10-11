@@ -397,6 +397,10 @@ group_admin_aendern() {
   # ohne Rücksetzung tritt in der Oberfläche praktisch nicht auf.
   forbid "$f" 'Ist keine Rücksetzung möglich'
   need "$f" 'Eine Änderung, die erst nach heute beginnt, verkürzt beim Löschen nichts'
+  # Review Task 12: auch eine Erhöhung ab heute verkürzt, wenn die Person heute
+  # schon gestempelt hat oder eingestempelt ist (earliest_lossless_date = morgen).
+  forbid "$f" '„Ab heute" bleibt ohne Grund möglich'
+  need "$f" 'Ab dem frühesten Tag ohne Verlust (meist heute; morgen, wenn die Person heute schon gestempelt hat oder eingestempelt ist) bleibt die Änderung ohne Grund möglich.'
   # Review Task 4: die wh_change-Sammelzeile (nur wenn Abwesenheiten nachgezogen werden).
   need "$f" 'sind Abwesenheiten betroffen, zusätzlich eine Sammelzeile **„Stundenänderung"** ohne Datum'
 }
@@ -890,6 +894,24 @@ group_changelog() {
   # Begriffsregel: gestempelte Einträge heißen nie „Blöcke"
   forbid "$f" 'erfassten Blöcke'
   forbid "$f" 'Nachmittagsblock'
+  # Review Task 12: „Meine Anträge" ist der Urlaubs-Tab unter Abwesenheiten; das
+  # Kennzeichen steht im Tab „Anträge" der Zeiterfassung (pages/ChangeRequests.tsx).
+  forbid "$f" '„Meine Anträge" kennzeichnet'
+  need "$f" 'Im Tab „Anträge" der Zeiterfassung tragen solche Anträge das'
+  need_code "label: 'Anträge'"
+  need_code_label frontend/src/pages/ChangeRequests.tsx 'Anrechnung beantragt'
+  need_code_label frontend/src/pages/ChangeRequests.tsx 'anerkannt'
+  need_code_label frontend/src/pages/ChangeRequests.tsx 'ohne Anerkennen genehmigt'
+  # Review Task 12: „Ab heute" gilt nicht immer ohne Grund (earliest_lossless_date
+  # ist morgen, wenn die Person heute gestempelt hat oder eingestempelt ist).
+  forbid "$f" '„Ab heute" bleibt ohne Grund möglich'
+  need "$f" 'Ab dem frühesten Tag ohne Verlust (meist heute; morgen,'
+  # Review Task 12: die Migration nennt Konten und Verlaufszeilen als Zahl und
+  # listet die Personen unter „Besonderheiten" (upgrade_report in 073).
+  forbid "$f" 'Personen mit Besonderheiten'
+  need "$f" 'übernommenen Konten und Verlaufszeilen'
+  need backend/alembic/versions/2026_10_08_1200-073_work_blocks.py "_n(history_rows, 'Verlaufszeile', 'Verlaufszeilen')"
+  need backend/alembic/versions/2026_10_08_1200-073_work_blocks.py 'Besonderheiten (bitte im Dialog „Arbeitszeit anpassen…“ prüfen):'
   # Wortlaute, die nur der CHANGELOG zitiert (die übrigen deckt die Gruppe code)
   need_code "Zeiteintrag nicht gefunden"
   need_code "'Ausgestempelt'"

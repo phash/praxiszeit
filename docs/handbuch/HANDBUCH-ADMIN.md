@@ -348,7 +348,7 @@ Das gilt für jede Änderung in diesem Dialog – auch für eine reine Wochenstu
 - In ein **abgeschlossenes Jahr** hinein ist eine rückwirkende Verkürzung **gesperrt**; die rückwirkende Möglichkeit ist dann nicht wählbar: *„Rückwirkende Verkürzung in das abgeschlossene Jahr 2025 ist gesperrt. Bitte die Änderung frühestens ab 01.01.2026 wirksam werden lassen."*
 - Liegt die Änderung vollständig vor einer späteren Änderung, entfällt der Standard: *„Die Änderung liegt vollständig vor der Änderung ab ‹Datum›; nur rückwirkend mit Begründung oder abbrechen."*
 
-> ⚠️ **Neu in 1.20.0:** Auch eine rückwirkende **Erhöhung** der Wochenstunden oder des Tagesplans braucht jetzt Grund und Bestätigung, wenn das Überstundenkonto dadurch sinkt – bisher genügte der Bestätigungshaken. „Ab heute" bleibt ohne Grund möglich.
+> ⚠️ **Neu in 1.20.0:** Auch eine rückwirkende **Erhöhung** der Wochenstunden oder des Tagesplans braucht jetzt Grund und Bestätigung, wenn das Überstundenkonto dadurch sinkt – bisher genügte der Bestätigungshaken. Ab dem frühesten Tag ohne Verlust (meist heute; morgen, wenn die Person heute schon gestempelt hat oder eingestempelt ist) bleibt die Änderung ohne Grund möglich.
 
 ##### Änderung löschen
 
