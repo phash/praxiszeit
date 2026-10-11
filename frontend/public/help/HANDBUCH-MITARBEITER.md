@@ -130,7 +130,7 @@ Die Seite gliedert sich in **drei Tabs**:
 | **Von** | Arbeitsbeginn |
 | **Bis** | Arbeitsende |
 | **Pause** | Pausenzeit in Minuten |
-| **Netto** | Tatsächliche Nettoarbeitszeit (ohne Pause) |
+| **Netto** | Angerechnete Arbeitszeit nach Abzug der Pause – bei Arbeitszeit-Blöcken ohne die nicht angerechnete Zeit (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)) |
 | **Notiz** | Optionaler Kommentar |
 | **Aktionen** | Bearbeiten, Löschen, Korrekturantrag |
 
@@ -176,7 +176,7 @@ Am einfachsten erfassen Sie Ihre Arbeitszeit live mit der Stempeluhr. Sie finden
 
 ### 3.2 Arbeitszeit von Hand eintragen
 
-Wenn Sie nicht gestempelt haben (z. B. einen vergangenen Tag nachtragen möchten), klicken Sie oben rechts auf **+ Neuer Eintrag**.
+Wenn Sie heute nicht gestempelt haben, klicken Sie oben rechts auf **+ Neuer Eintrag**. Einen **vergangenen Tag** tragen Sie hier nicht nach, sondern beantragen ihn: über den Button **Antrag** links daneben oder im **Journal** über das **+** in der Zeile des Tages (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)).
 
 ![Zeiteintrag Formular](screenshots/04-ma-zeiteintrag-formular.png)
 
@@ -184,7 +184,7 @@ Das Eingabeformular erscheint direkt oberhalb der Eintrags-Tabelle.
 
 **Felder ausfüllen:**
 
-1. **Datum** – Wählen Sie den Arbeitstag aus (Vorbelegt: heute)
+1. **Datum** – Vorbelegt: heute. Speichern können Sie hier nur einen Eintrag für heute; bei einem anderen Datum erscheint *„Einträge für vergangene Tage können nur per Änderungsantrag erstellt werden"*.
 2. **Von** – Arbeitsbeginn (Format: `08:00`)
 3. **Bis** – Arbeitsende (Format: `17:00`)
 4. **Pause (Min.)** – Pausenzeit in Minuten (z. B. `30`)
@@ -279,6 +279,8 @@ Ein Dialog öffnet sich mit dem Vergleich von aktuellem und gewünschtem Eintrag
 3. Klicken Sie auf **Antrag stellen**
 
 Für eine vollständige Löschung eines gesperrten Eintrags klicken Sie stattdessen auf **Löschantrag**, geben eine Begründung ein und bestätigen.
+
+**Vergangener Tag ohne Eintrag** (z. B. vergessen zu stempeln): Klicken Sie oben rechts auf den Button **Antrag** (links neben **+ Neuer Eintrag**). Es öffnet sich der Dialog „Änderungsantrag: Neuer Eintrag (vergangener Tag)": **Datum**, **Von**, **Bis** und **Pause** eintragen, eine **Begründung** angeben und auf **Antrag stellen** klicken. Im **Journal** geht das auch über das **+** in der Zeile des Tages.
 
 > **Sonn- oder Feiertag (§ 10 ArbZG):** Liegt das Datum des Antrags auf einem Sonntag oder gesetzlichen Feiertag, erscheint zusätzlich das Feld **„Ausnahmegrund (§10 ArbZG)"** (z. B. „Notdienst", „Patientenversorgung"). Der Grund wird mit der Genehmigung am Eintrag gespeichert und erscheint in den Exporten. Ein bereits gespeicherter Grund ist beim Änderungsantrag vorausgefüllt.
 

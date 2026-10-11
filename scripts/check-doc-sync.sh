@@ -139,6 +139,10 @@ group_code() {
   need_code "Das Datum bleibt beim Bearbeiten fest. Gehört die Zeit zu einem anderen Tag:"
   need_code "Eintrag löschen und oben über „Antrag“ einen Änderungsantrag für diesen Tag stellen."
   need_code "Einträge vergangener Tage können nur per Änderungsantrag geändert werden"
+  # Neuanlage durch Mitarbeitende nur für heute (create_time_entry, 403) und
+  # der Antragsdialog für einen vergangenen Tag (ChangeRequestForm).
+  need_code "Einträge für vergangene Tage können nur per Änderungsantrag erstellt werden"
+  need_code "Neuer Eintrag (vergangener Tag)"
   need_code "Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden."
   need_code "Notiz und Begründung zusammen höchstens 500 Zeichen."
   need_code "Ihre Arbeitszeit ändert sich ab"
@@ -554,6 +558,16 @@ group_mitarbeiter() {
   # keinen Änderungsantrag, der Weg ist Löschen + Knopf „Antrag".
   need "$f" 'Bei älteren Einträgen ändern Sie das Datum direkt im Änderungsantrag'
   forbid "$f" 'Ein anderes Datum gibt es nur per Antrag (→ [Abschnitt 3.5]'
+  # Review Task 5 (2. Runde): die Spalte „Netto" der Eintragsliste zeigt
+  # net_hours (TimeTracking.tsx) — die angerechnete Zeit, nicht die gestempelte.
+  need "$f" '| **Netto** | Angerechnete Arbeitszeit nach Abzug der Pause'
+  forbid "$f" 'Tatsächliche Nettoarbeitszeit'
+  # Review Task 5 (2. Runde): „+ Neuer Eintrag" speichert für Mitarbeitende nur
+  # heute (create_time_entry: 403 für jedes andere Datum); ein vergangener Tag
+  # geht über den Knopf „Antrag" (ChangeRequestForm, Typ create).
+  need "$f" 'Einträge für vergangene Tage können nur per Änderungsantrag erstellt werden'
+  need "$f" 'Änderungsantrag: Neuer Eintrag (vergangener Tag)'
+  forbid "$f" 'einen vergangenen Tag nachtragen möchten'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
