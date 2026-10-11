@@ -2,16 +2,32 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ToastProvider } from '../../../contexts/ToastContext';
 import WorkingHoursModal from './WorkingHoursModal';
+import type { WorkingHoursChangePreview } from './workingHoursTypes';
+import type { WeekBlocks } from '../../../types/workBlocks';
+import { JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGAL_HINT } from './workingHoursTexts';
 
 // Same pattern as UserForm.test.tsx: mock the API client, expose the mocks so
 // each test can configure GET (list vs. preview), POST and DELETE responses.
 const getMock = vi.fn();
 const postMock = vi.fn();
 const deleteMock = vi.fn();
+const deletePreviewMock = vi.fn();
+// Spec 11.1: die Vorschau ist seit PR3 ein POST mit JSON-Body. Die Bestandstests
+// prüfen weiterhin `getMock`-Aufrufe mit `params` — der Body wird dafür als
+// `params` durchgereicht; `transport` hält fest, was WIRKLICH gesendet wurde.
+const transport: { method: string; url: string; body?: unknown }[] = [];
 vi.mock('../../../api/client', () => ({
   default: {
-    get: (...a: unknown[]) => getMock(...a),
-    post: (...a: unknown[]) => postMock(...a),
+    get: (url: string, config?: unknown) => {
+      transport.push({ method: 'get', url });
+      return getMock(url, config);
+    },
+    post: (url: string, body?: unknown) => {
+      transport.push({ method: 'post', url, body });
+      if (String(url).includes('/delete-preview')) return deletePreviewMock(url, body);
+      if (String(url).includes('/preview')) return getMock(url, { params: body });
+      return postMock(url, body);
+    },
     delete: (...a: unknown[]) => deleteMock(...a),
   },
 }));
@@ -31,6 +47,7 @@ type HistoryRow = {
   hours_thursday?: number | null;
   hours_friday?: number | null;
   work_days_per_week?: number | null;
+  blocks?: WeekBlocks | null;
 };
 
 function historyResponse(rows: Array<HistoryRow>) {
@@ -50,23 +67,7 @@ function historyResponse(rows: Array<HistoryRow>) {
   };
 }
 
-type PreviewOverrides = Partial<{
-  is_retroactive: boolean;
-  period_start: string;
-  period_end: string;
-  current_daily_target: number;
-  new_daily_target: number;
-  day_targets_current: number[];
-  day_targets_new: number[];
-  overtime_before: number;
-  overtime_after: number;
-  vacation_days_before: number;
-  vacation_days_after: number;
-  affected_absences: number;
-  blocked_reason: string | null;
-  closed_years: number[];
-  closed_year_warning: string | null;
-}>;
+type PreviewOverrides = Partial<WorkingHoursChangePreview>;
 
 function previewResponse(overrides: PreviewOverrides = {}) {
   return {
@@ -128,6 +129,10 @@ beforeEach(() => {
   });
   postMock.mockReset().mockResolvedValue({ data: { id: 'c-new', adjusted_absences: 0, warning: null } });
   deleteMock.mockReset().mockResolvedValue({});
+  transport.length = 0;
+  deletePreviewMock.mockReset().mockResolvedValue(previewResponse({
+    is_retroactive: false, affected_absences: 0, is_shortening: false, reset_body: null,
+  }));
 });
 
 afterEach(() => {
@@ -181,7 +186,7 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
     await flushDebounce();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Hinzufügen/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Speichern/i })).not.toBeDisabled();
   });
 
   it('zukünftiges Datum MIT bereits gebuchten Abwesenheiten warnt und verlangt eine Bestätigung', async () => {
@@ -210,7 +215,7 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     // Kein „Rückwirkende Änderung" — das Datum liegt in der Zukunft.
     expect(screen.queryByText(/Rückwirkende Änderung/)).not.toBeInTheDocument();
 
-    const submit = screen.getByRole('button', { name: /Hinzufügen/i });
+    const submit = screen.getByRole('button', { name: /Speichern/i });
     expect(submit).toBeDisabled();
     fireEvent.click(screen.getByRole('checkbox'));
     expect(submit).not.toBeDisabled();
@@ -231,7 +236,7 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     expect(await screen.findByText(/01\.06\.2026.*26\.07\.2026/)).toBeInTheDocument();
     // #431: statt eines Skalars („8.0h → 6.0h") das Tagessoll je Wochentag —
     // ein Wert bildet einen individuellen Tagesplan nicht ab.
-    expect(screen.getByText(/Mo 8,0 → 6,0/)).toBeInTheDocument();
+    expect(screen.getByText(/Mo 8:00 h → 6:00 h/)).toBeInTheDocument();
     expect(screen.getByText(/2 Abwesenheit\(en\) betroffen/)).toBeInTheDocument();
   });
 
@@ -260,7 +265,7 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     await flushDebounce();
     await screen.findByText(/Abwesenheit\(en\) betroffen/);
 
-    const submit = screen.getByRole('button', { name: /Hinzufügen/i });
+    const submit = screen.getByRole('button', { name: /Speichern/i });
     expect(submit).toBeDisabled();
 
     fireEvent.click(screen.getByRole('checkbox'));
@@ -287,7 +292,7 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     await flushDebounce();
     await screen.findByText(/individuellem Tagesplan/);
 
-    expect(screen.getByRole('button', { name: /Hinzufügen/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Speichern/i })).toBeDisabled();
     // No confirmation checkbox is offered for a blocked change — there is
     // nothing to confirm your way past.
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
@@ -318,7 +323,7 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     await flushDebounce();
 
     await screen.findByText(/existiert bereits eine Änderung/);
-    expect(screen.getByRole('button', { name: /Hinzufügen/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Speichern/i })).toBeDisabled();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
@@ -392,10 +397,10 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     await screen.findByText(/Abwesenheit\(en\) betroffen/);
     fireEvent.click(screen.getByRole('checkbox'));
 
-    fireEvent.click(screen.getByRole('button', { name: /Hinzufügen/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
 
     await waitFor(() => expect(postMock).toHaveBeenCalled());
-    expect(await screen.findByText(/3 Abwesenheit\(en\) auf das neue Tagessoll umgerechnet/)).toBeInTheDocument();
+    expect(await screen.findByText(/Gespeichert\. 3 Abwesenheiten angepasst\./)).toBeInTheDocument();
     expect(await screen.findByText(/Das Jahr 2026 ist bereits abgeschlossen\./)).toBeInTheDocument();
   });
 });
@@ -444,7 +449,7 @@ describe('M1: "heute" ist das LOKALE Datum, nicht das UTC-Datum', () => {
     fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
     await flushDebounce();
     await screen.findByText(/Abwesenheit\(en\) betroffen/);
-    expect(screen.getByRole('button', { name: /Hinzufügen/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Speichern/i })).toBeDisabled();
   });
 });
 
@@ -618,10 +623,10 @@ describe('Fund 3 (Release-Review 1.17.0): Kopfzeile + Formular ziehen nach dem S
     // Today's date (not retroactive) — no preview/confirmation needed, keeps
     // this test focused on the post-save refresh.
     fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
-    fireEvent.click(screen.getByRole('button', { name: /Hinzufügen/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
 
     await waitFor(() => expect(postMock).toHaveBeenCalled());
-    await screen.findByText(/erfolgreich hinzugefügt/);
+    await screen.findByText(/Gespeichert/);
 
     // Header must reflect the NEW value — not the stale `currentWeeklyHours` prop.
     await waitFor(() => expect(screen.getByText(/Aktuell: 20,0 Std\/Woche/)).toBeInTheDocument());
@@ -632,7 +637,7 @@ describe('Fund 3 (Release-Review 1.17.0): Kopfzeile + Formular ziehen nach dem S
 
 describe('Fund 4 (Release-Review 1.17.0): Vorschau-Fehler wird sichtbar gemacht', () => {
   // Vorher: `.catch(() => setPreview(null))` ohne jede Rückmeldung → ein
-  // sichtbar leerer amber Kasten neben einem gesperrten „Hinzufügen"-Button.
+  // sichtbar leerer amber Kasten neben einem gesperrten „Speichern"-Button.
   it('zeigt eine Fehlermeldung statt eines leeren Kastens und erlaubt erneutes Prüfen', async () => {
     getMock.mockImplementation((url: string) => {
       if (String(url).includes('/preview')) {
@@ -647,7 +652,7 @@ describe('Fund 4 (Release-Review 1.17.0): Vorschau-Fehler wird sichtbar gemacht'
     await flushDebounce();
 
     expect(await screen.findByText('Netzwerkfehler')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Hinzufügen/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Speichern/i })).toBeDisabled();
     // No silently empty box — an explicit retry affordance is offered instead.
     const retry = screen.getByRole('button', { name: /Erneut prüfen/i });
 
@@ -713,7 +718,7 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
     mockPreview({ affected_absences: 0 });
     renderModal({ currentUseDailySchedule: true });
     fireEvent.change(await screen.findByLabelText('Montag'), { target: { value: '8' } });
-    fireEvent.click(screen.getByRole('button', { name: /Hinzufügen/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
     await waitFor(() => {
       const call = postMock.mock.calls.at(-1);
       expect(call![1]).toMatchObject({ use_daily_schedule: true, hours_monday: 8 });
@@ -731,7 +736,7 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
     renderModal();
     await screen.findByText('Keine Änderungen vorhanden');
     fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
-    fireEvent.click(screen.getByRole('button', { name: /Hinzufügen/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
     await waitFor(() => {
       const call = postMock.mock.calls.at(-1);
       expect(call![1]).toMatchObject({ use_daily_schedule: false, weekly_hours: 20 });
@@ -769,11 +774,11 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
     });
     renderModal({ currentUseDailySchedule: true });
     expect(await screen.findByText(/Überstunden/)).toBeInTheDocument();
-    expect(screen.getByText(/−47,5/)).toBeInTheDocument();
+    expect(screen.getByText(/−47:30/)).toBeInTheDocument();
     // Tagessoll je Wochentag statt eines Skalars; Tage ohne Soll auf beiden
     // Seiten bleiben weg.
-    expect(screen.getByText(/Mo 8,0 → 6,0/)).toBeInTheDocument();
-    expect(screen.getByText(/Di 5,0 → 5,0/)).toBeInTheDocument();
+    expect(screen.getByText(/Mo 8:00 h → 6:00 h/)).toBeInTheDocument();
+    expect(screen.getByText(/Di 5:00 h → 5:00 h/)).toBeInTheDocument();
     expect(screen.queryByText(/Do /)).not.toBeInTheDocument();
   });
 
@@ -805,10 +810,10 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
     expect(await screen.findByText(/wirkt erst ab dem 01\.09\.2026/)).toBeInTheDocument();
   });
 
-  it('sperrt Hinzufügen, solange der eingegebene Stand dem gültigen entspricht', async () => {
+  it('sperrt Speichern, solange der eingegebene Stand dem gültigen entspricht', async () => {
     renderModal();
     await screen.findByText('Keine Änderungen vorhanden');
-    const submit = screen.getByRole('button', { name: /Hinzufügen/i });
+    const submit = screen.getByRole('button', { name: /Speichern/i });
     expect(submit).toBeDisabled();
     // Ein gesperrter Button ohne Begründung ist genau der Fund-4-Fehler.
     expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
@@ -910,8 +915,8 @@ describe('Abschluss-Review #431, Fund 2: Vorschau erscheint auch bei reiner Sald
 
     const box = await screen.findByRole('status');
     expect(within(box).getByText(/Urlaub 2026/)).toBeInTheDocument();
-    expect(within(box).getByText('12,0 Tage')).toBeInTheDocument();
-    expect(within(box).getByText('11,0 Tage')).toBeInTheDocument();
+    expect(within(box).getByText('12 Tage')).toBeInTheDocument();
+    expect(within(box).getByText('11 Tage')).toBeInTheDocument();
     // Nicht als „betrifft gebuchte Abwesenheiten" überschreiben — es sind null.
     expect(within(box).queryByText(/Betrifft bereits gebuchte Abwesenheiten/)).not.toBeInTheDocument();
     expect(within(box).queryByText(/Rückwirkende Änderung/)).not.toBeInTheDocument();
@@ -933,7 +938,7 @@ describe('Abschluss-Review #431, Fund 2: Vorschau erscheint auch bei reiner Sald
     await flushDebounce();
     await screen.findByRole('status');
 
-    const submit = screen.getByRole('button', { name: /Hinzufügen/i });
+    const submit = screen.getByRole('button', { name: /Speichern/i });
     expect(submit).toBeDisabled();
     fireEvent.click(screen.getByRole('checkbox'));
     expect(submit).not.toBeDisabled();
@@ -955,7 +960,7 @@ describe('Abschluss-Review #431, Fund 2: Vorschau erscheint auch bei reiner Sald
     await flushDebounce();
 
     const box = await screen.findByRole('status');
-    expect(within(box).getByText('−4,0 h')).toBeInTheDocument();
+    expect(within(box).getByText('−4:00 h')).toBeInTheDocument();
   });
 
   it('bleibt still, wenn sich Saldo und Urlaub nicht unterscheiden', async () => {
@@ -977,7 +982,7 @@ describe('Abschluss-Review #431, Fund 2: Vorschau erscheint auch bei reiner Sald
     await flushDebounce();
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Hinzufügen/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Speichern/i })).not.toBeDisabled();
   });
 
   it('bleibt still bei Rundungsrauschen unterhalb der angezeigten Genauigkeit', async () => {
@@ -997,5 +1002,262 @@ describe('Abschluss-Review #431, Fund 2: Vorschau erscheint auch bei reiner Sald
     await flushDebounce();
 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+const day = (blocks: [string, string][], pause: number | null = 0) => ({
+  blocks: blocks.map(([start, end]) => ({ start, end })), pause_minutes: pause,
+});
+const NONE = { blocks: [], pause_minutes: 0 };
+// Spec 12.1: Anna Beispiel — Mo 08–12 + 15–18, Di 08–12, Do 08–12.
+const ANNA_BLOCKS: WeekBlocks = [day([['08:00', '12:00'], ['15:00', '18:00']]), day([['08:00', '12:00']]), NONE,
+  day([['08:00', '12:00']]), NONE];
+const ANNA_ROW = {
+  id: 'c-anna', effective_from: '2026-03-01', weekly_hours: 15, use_daily_schedule: true,
+  hours_monday: 7, hours_tuesday: 4, hours_wednesday: 0, hours_thursday: 4, hours_friday: 0,
+  work_days_per_week: 3, blocks: ANNA_BLOCKS,
+};
+const ANNA_PROPS = {
+  currentWeeklyHours: 15, currentUseDailySchedule: true, currentDayHours: [7, 4, 0, 4, 0],
+  currentWorkDays: 3, currentBlocks: ANNA_BLOCKS,
+};
+// Spec 4.4: Altzeile aus Migration 073 — Pausen NULL, Altwerte unverändert.
+const LEGACY_DAY = (blocks: [string, string][]) => day(blocks, null);
+const LEGACY_BLOCKS: WeekBlocks = [LEGACY_DAY([['07:37', '16:30']]), LEGACY_DAY([]), LEGACY_DAY([]), LEGACY_DAY([]),
+  LEGACY_DAY([['07:30', '23:59']])];
+const LEGACY_ROW = { id: 'c-legacy', effective_from: '2026-01-01', weekly_hours: 40, blocks: LEGACY_BLOCKS };
+
+function mockHistory(rows: Array<HistoryRow>, overrides: PreviewOverrides = {}) {
+  getMock.mockImplementation((url: string) => {
+    if (String(url).includes('/preview')) return Promise.resolve(previewResponse(overrides));
+    return Promise.resolve(historyResponse(rows));
+  });
+}
+const QUIET: PreviewOverrides = { is_retroactive: false, affected_absences: 0, period_start: '2026-07-26', period_end: '2026-07-26' };
+const previewPosts = () => transport.filter((t) => t.method === 'post' && t.url.endsWith('/working-hours-changes/preview'));
+
+describe('Spec 2026-10-08 (PR3): Block-Modus und POST-Vorschau', () => {
+  it('öffnet mit heute gültigen Blöcken im Block-Modus und meldet „nichts zu speichern"', async () => {
+    mockHistory([ANNA_ROW], QUIET);
+    renderModal(ANNA_PROPS);
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    expect(screen.getByRole('heading', { name: 'Arbeitszeit & Wochenstunden' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' })).toBeChecked();
+    expect(screen.getByLabelText('Mo Block 2 bis')).toHaveValue('18:00');
+    expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+  });
+
+  it('Review Focus 5: 7:55 h bleibt nach dem Speichern als 7,92 h ohne Scheinunterschied', async () => {
+    const blocks: WeekBlocks = [day([['07:30', '12:00'], ['13:00', '16:25']]), NONE, NONE, NONE, NONE];
+    mockHistory([{
+      id: 'c1', effective_from: '2026-03-01', weekly_hours: 7.92, use_daily_schedule: true,
+      hours_monday: 7.92, hours_tuesday: 0, hours_wednesday: 0, hours_thursday: 0, hours_friday: 0,
+      work_days_per_week: 1, blocks,
+    }], QUIET);
+    renderModal({
+      currentWeeklyHours: 7.92, currentUseDailySchedule: true, currentDayHours: [7.92, 0, 0, 0, 0],
+      currentWorkDays: 1, currentBlocks: blocks,
+    });
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    expect(screen.getByTestId('wh-blocks-day-0')).toHaveTextContent('Tagessoll 7:55 h');
+    expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+  });
+
+  it('Vorschau und Speichern senden nur die Blöcke — per POST mit JSON-Body, nie als Query', async () => {
+    mockHistory([ANNA_ROW], QUIET);
+    renderModal(ANNA_PROPS);
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    fireEvent.change(screen.getByLabelText('Mo Block 2 bis'), { target: { value: '17:00' } });
+    await flushDebounce();
+
+    await waitFor(() => {
+      const body = previewPosts().at(-1)?.body as Record<string, unknown>;
+      expect(body.effective_from).toBe('2026-07-26');
+      expect((body.blocks as WeekBlocks)[0].blocks[1]).toEqual({ start: '15:00', end: '17:00' });
+      for (const key of ['weekly_hours', 'use_daily_schedule', 'work_days_per_week', 'hours_monday']) {
+        expect(body).not.toHaveProperty(key);
+      }
+    });
+    expect(transport.some((t) => t.method === 'get' && t.url.includes('/preview'))).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    const [url, body] = postMock.mock.calls.at(-1)!;
+    expect(url).toBe('/admin/users/u1/working-hours-changes');
+    expect(body).toMatchObject({ effective_from: '2026-07-26', note: '' });
+    expect((body as { blocks: WeekBlocks }).blocks[0].blocks[1].end).toBe('17:00');
+    expect(body).not.toHaveProperty('weekly_hours');
+  });
+
+  it('stabiler Effekt-Schlüssel: eine Vorschau je Eingabepause, Notiz und gleicher Wert lösen keine aus', async () => {
+    mockHistory([ANNA_ROW], QUIET);
+    renderModal(ANNA_PROPS);
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    await flushDebounce();
+    expect(previewPosts()).toHaveLength(1);
+
+    fireEvent.change(screen.getByLabelText('Notiz (optional)'), { target: { value: 'Umstellung' } });
+    fireEvent.change(screen.getByLabelText('Mo Block 2 bis'), { target: { value: '18:00' } });
+    await flushDebounce();
+    expect(previewPosts()).toHaveLength(1);
+
+    fireEvent.change(screen.getByLabelText('Mo Block 2 von'), { target: { value: '14:30' } });
+    fireEvent.change(screen.getByLabelText('Mo Block 2 bis'), { target: { value: '17:30' } });
+    await flushDebounce();
+    expect(previewPosts()).toHaveLength(2);
+  });
+
+  it('Review Focus 1: unfertige Eingabe → blocked_reason aus der Vorschau, Speichern gesperrt, kein Haken', async () => {
+    mockHistory([ANNA_ROW], { ...QUIET, blocked_reason: 'Mo, Block 3: Uhrzeit im Format HH:MM angeben.' });
+    renderModal(ANNA_PROPS);
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    fireEvent.click(screen.getByRole('button', { name: 'Mo: Block hinzufügen' }));
+    await flushDebounce();
+
+    const box = await screen.findByRole('status');
+    expect(within(box).getByText('Mo, Block 3: Uhrzeit im Format HH:MM angeben.')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Mo, Block 3: Uhrzeit im Format HH:MM angeben.');
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('Bestätigung Pflicht bei affected_time_entries > 0 — Wirkungsdatum heute', async () => {
+    mockPreview({ ...QUIET, affected_time_entries: 2 });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
+
+    const box = await screen.findByRole('status');
+    expect(within(box).getByText(/Betrifft bereits erfasste Zeiteinträge/)).toBeInTheDocument();
+    const submit = screen.getByRole('button', { name: /Speichern/ });
+    expect(submit).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
+    expect(submit).not.toBeDisabled();
+  });
+
+  it('Bestätigung Pflicht bei affected_time_entries > 0 — Wirkungsdatum in der Vergangenheit', async () => {
+    mockPreview({ affected_absences: 0, affected_time_entries: 3 });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-06-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '45' } });
+    await flushDebounce();
+
+    const box = await screen.findByRole('status');
+    expect(within(box).getByText(/Rückwirkende Änderung/)).toBeInTheDocument();
+    expect(within(box).getByText(/Zeiteinträge: 3 neu berechnet/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
+    expect(screen.getByRole('button', { name: /Speichern/ })).not.toBeDisabled();
+  });
+
+  it('kein Haken, wenn Einträge und Abwesenheiten 0 sind und Saldo/Urlaub gleich bleiben (Datum heute)', async () => {
+    mockPreview({ ...QUIET, affected_time_entries: 0 });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Speichern/ })).not.toBeDisabled();
+  });
+
+  it('Rechtshinweise stehen fest unter dem Editor, Plan-Hinweise kommen aus der Vorschau', async () => {
+    const notice = 'Mo: geplant 10:00 h Arbeit, eingeplante Pausen 0 Min – nach § 4 ArbZG sind mindestens 45 Minuten nötig.';
+    mockHistory([ANNA_ROW], { ...QUIET, block_break_notices: [notice] });
+    renderModal(ANNA_PROPS);
+    expect(await screen.findByText(LEGAL_HINT)).toBeInTheDocument();
+    expect(screen.getByText(JARBSCHG_HINT)).toBeInTheDocument();
+    await flushDebounce();
+    const list = await screen.findByRole('list', { name: 'Hinweise zum Plan' });
+    expect(within(list).getByText(notice)).toBeInTheDocument();
+  });
+
+  it('Moduswechsel weg von Blöcken nennt das Ende der Blöcke (P24)', async () => {
+    mockHistory([ANNA_ROW], QUIET);
+    renderModal(ANNA_PROPS);
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    expect(screen.queryByText(/Die Arbeitszeit-Blöcke enden/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: /Gleichmäßig/ }));
+    expect(screen.getByText('Die Arbeitszeit-Blöcke enden mit dieser Änderung; ab 26.07.2026 wird nicht mehr gekappt.'))
+      .toBeInTheDocument();
+  });
+
+  it('track_hours=false: kein Block-Modus, Blöcke „ohne Wirkung", jede Änderung beendet sie (P24)', async () => {
+    mockHistory([ANNA_ROW], QUIET);
+    renderModal({ ...ANNA_PROPS, trackHours: false });
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    expect(screen.queryByRole('radio', { name: 'Nach Arbeitsblöcken' })).not.toBeInTheDocument();
+    // Kopfzeile + Verlaufszeile
+    expect(screen.getAllByText(/^Arbeitszeit-Blöcke gespeichert, ohne Wirkung \(keine Stundenzählung\): Mo 08:00/))
+      .toHaveLength(2);
+    expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Montag'), { target: { value: '8' } });
+    expect(screen.getByText(/Die Arbeitszeit-Blöcke enden mit dieser Änderung/)).toBeInTheDocument();
+    await flushDebounce();
+    expect(previewPosts().at(-1)?.body).not.toHaveProperty('blocks');
+  });
+
+  it('Altfenster: Kasten mit Werten, „Fenster entfernen" sendet remove_legacy_window', async () => {
+    mockHistory([LEGACY_ROW], QUIET);
+    renderModal({ currentBlocks: LEGACY_BLOCKS });
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    const box = screen.getByRole('group', { name: LEGACY_BOX_TITLE });
+    expect(within(box).getByText('Mo 07:37–16:30 / Fr 07:30–23:59')).toBeInTheDocument();
+    expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
+
+    fireEvent.click(within(box).getByRole('button', { name: 'Fenster entfernen' }));
+    expect(within(box).getByRole('button', { name: 'Fenster behalten' })).toBeInTheDocument();
+    expect(screen.queryByText(/Noch nichts zu speichern/)).not.toBeInTheDocument();
+    await flushDebounce();
+    expect(previewPosts().at(-1)?.body).toMatchObject({ remove_legacy_window: true, use_daily_schedule: false });
+  });
+
+  it('Review Focus 4: „In Arbeitszeit-Blöcke umwandeln" zeigt Altwerte unverändert, verlangt Raster und Pause', async () => {
+    mockHistory([LEGACY_ROW], QUIET);
+    renderModal({ currentBlocks: LEGACY_BLOCKS });
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    fireEvent.click(screen.getByRole('button', { name: 'In Arbeitszeit-Blöcke umwandeln' }));
+
+    expect(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' })).toBeChecked();
+    expect(screen.getByLabelText('Mo Block 1 von')).toHaveValue('07:37');
+    expect(screen.getByLabelText('Fr Block 1 bis')).toHaveValue('23:59');
+    expect(screen.getByRole('alert')).toHaveTextContent('Mo, Block 1: Uhrzeiten im 5-Minuten-Raster (z. B. 08:05).');
+    const submit = screen.getByRole('button', { name: /Speichern/ });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Mo Block 1 von'), { target: { value: '07:35' } });
+    fireEvent.change(screen.getByLabelText('Fr Block 1 bis'), { target: { value: '16:00' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('Mo: Pause angeben (0, wenn keine).');
+    fireEvent.change(screen.getByLabelText('Mo Pause innerhalb der Blöcke (Min)'), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText('Fr Pause innerhalb der Blöcke (Min)'), { target: { value: '0' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await flushDebounce();
+    await waitFor(() => expect(submit).not.toBeDisabled());
+  });
+
+  it('Verlauf zeigt die Blöcke jeder Zeile, Altzeilen als Altbestand', async () => {
+    mockHistory([LEGACY_ROW, ANNA_ROW], QUIET);
+    renderModal(ANNA_PROPS);
+    expect(await screen.findByText(`${LEGACY_BOX_TITLE}: Mo 07:37–16:30 / Fr 07:30–23:59`)).toBeInTheDocument();
+    expect(screen.getAllByText('Arbeitszeit-Blöcke: Mo 08:00–12:00 + 15:00–18:00 / Di 08:00–12:00 / Do 08:00–12:00'))
+      .toHaveLength(2); // Kopfzeile + Verlaufszeile
+  });
+
+  it('Toast nach dem Speichern nennt Einträge, Übersprungene und Abwesenheiten (12.1)', async () => {
+    mockPreview(QUIET);
+    postMock.mockResolvedValue({ data: {
+      id: 'c-x', adjusted_time_entries: 3, skipped_time_entries: 1, adjusted_absences: 1, warning: null,
+    } });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
+    expect(await screen.findByText('Gespeichert. 3 Zeiteinträge neu berechnet, 1 übersprungen, 1 Abwesenheit angepasst.'))
+      .toBeInTheDocument();
   });
 });
