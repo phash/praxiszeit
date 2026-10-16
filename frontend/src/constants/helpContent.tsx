@@ -24,8 +24,12 @@ export const helpContent: Record<string, HelpEntry> = {
           <p className="text-sm text-gray-600">Tabelle mit Soll, Ist, Saldo und Überstunden kumuliert. Der Umschalter „Monat"/„Woche" zeigt statt der Monate die letzten 8 Kalenderwochen. „Details anzeigen" öffnet Jahresübersicht und Team-Kalender.</p>
         </section>
         <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Buchung fehlt</h3>
+          <p className="text-sm text-gray-600">Ist ein Eintrag eines Vortags noch offen oder fehlt an einem vergangenen Arbeitstag des laufenden Monats jeder Eintrag (und keine Abwesenheit ist eingetragen), steht oben auf der Seite – am Computer wie auf dem Smartphone – der rote Kasten „Buchung fehlt" mit dem Link „Zur Zeiterfassung →".</p>
+        </section>
+        <section>
           <h3 className="font-semibold text-gray-800 mb-2">Auf dem Smartphone</h3>
-          <p className="text-sm text-gray-600">Oben die Stempelkarte mit „x von y h heute" (zählt bei laufendem Eintrag minütlich mit), darunter die Karte „Letzte Einträge" mit Ihren fünf neuesten Einträgen – auch aus dem Vormonat. Fehlt eine Buchung, erscheint „Buchung fehlt" mit dem Link „Zur Zeiterfassung →".</p>
+          <p className="text-sm text-gray-600">Die Stempelkarte zeigt „x von y h heute" (zählt bei laufendem Eintrag minütlich mit); weiter unten steht die Karte „Letzte Einträge" mit Ihren fünf neuesten Einträgen – auch aus dem Vormonat.</p>
         </section>
       </div>
     ),
@@ -77,7 +81,7 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Monat wählen</h3>
-          <p className="text-sm text-gray-600">Die Liste zeigt einen Monat (am Computer unten mit der Summe der Netto-Stunden). Mit „Vorheriger Monat" bzw. „Nächster Monat" (Pfeile &larr; &rarr;) blättern, „Heute" springt zum laufenden Monat zurück. Auf dem Smartphone zeigt eine Wochenleiste Punkte für Tage mit Eintrag – ein Tipp springt zum Eintrag.</p>
+          <p className="text-sm text-gray-600">Die Liste zeigt einen Monat (unten mit der Summe der Netto-Stunden). Mit „Vorheriger Monat" bzw. „Nächster Monat" (Pfeile &larr; &rarr;) blättern, „Heute" springt zum laufenden Monat zurück. Auf dem Smartphone zeigt eine Wochenleiste Punkte für Tage mit Eintrag – ein Tipp springt zum Eintrag.</p>
         </section>
       </div>
     ),

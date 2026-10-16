@@ -240,6 +240,38 @@ describe('Kontexthilfe entspricht der Oberfläche (Gesamtreview B6)', () => {
     expect(t).not.toContain('Meine heutigen Einträge');
   });
 
+  // Gesamtreview B6 (Nachzug): der Kasten „Buchung fehlt" steht in Dashboard.tsx
+  // ohne md:hidden ÜBER der Stempelkarte — also auch am Computer, und auf dem
+  // Smartphone ist dann nicht mehr die Stempelkarte oben.
+  it('Dashboard: „Buchung fehlt" ist ein eigener Abschnitt, nicht nur Smartphone', () => {
+    const sections = (() => {
+      const { container, unmount } = render(<div>{helpContent['/'].content}</div>);
+      const byHeading = new Map<string, string>();
+      container.querySelectorAll('section').forEach((s) => {
+        const heading = s.querySelector('h3')?.textContent ?? '';
+        byHeading.set(heading, (s.textContent ?? '').replace(/\s+/g, ' '));
+      });
+      unmount();
+      return byHeading;
+    })();
+    const missing = sections.get('Buchung fehlt');
+    expect(missing).toBeDefined();
+    expect(missing).toContain('„Zur Zeiterfassung →"');
+    expect(missing).toContain('am Computer wie auf dem Smartphone');
+    const phone = sections.get('Auf dem Smartphone') ?? '';
+    expect(phone).toContain('„Letzte Einträge"');
+    expect(phone).not.toContain('Buchung fehlt');
+    expect(phone).not.toContain('Oben die Stempelkarte');
+  });
+
+  // Gesamtreview B6 (Nachzug): die Summe steht auch mobil unter den Karten
+  // (TimeTracking.tsx, md:hidden-Block „Summe").
+  it('Zeiterfassung: die Netto-Summe steht nicht nur am Computer', () => {
+    const t = help('/time-tracking');
+    expect(t).toContain('(unten mit der Summe der Netto-Stunden)');
+    expect(t).not.toContain('am Computer unten mit der Summe');
+  });
+
   it('Admin-Dashboard: Ampel nach Resturlaub-Tagen, Umschalter und Soll-Basis', () => {
     const t = help('/admin');
     expect(t).toContain('mehr als 5 Tage');
