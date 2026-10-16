@@ -262,6 +262,59 @@ def test_cr_approval_two_moves_do_not_depend_on_order(_db_session, employee_user
                   auto_closed=second_end != time(18, 15))
 
 
+# ── Bekannter Rest: Auto-Close an einem Tag ohne Hülle (Gesamtreview 1.20 B9) ─
+#
+# Schloss der Auto-Close an einem Tag OHNE Hülle (Samstag; ebenso Feiertag,
+# freier Sondertag, ``track_hours=False``, Hülle bis 23:59), ist 23:59 das
+# wirksame Ende (P18-Grenzfall). Der erste Schritt auf einen Tag mit Hülle kappt
+# es und legt 23:59 als Rohende ab. Danach ist der Eintrag von einem dort
+# automatisch geschlossenen nicht mehr zu unterscheiden — nach SAT → FRI steht
+# exakt der Zustand eines Freitags-Auto-Close (16:15, Rohende 23:59), bei dem
+# 23:59 synthetisch ist und beim Weiterschieben nie gelten darf (F1). Der zweite
+# Schritt rechnet deshalb mit dem schon gekappten wirksamen Ende weiter:
+# SAT → MON → WED = 18:15 und SAT → FRI → WED = 16:15, der direkte Weg
+# SAT → WED = 20:15 (dasselbe Muster wie N2, nur für diesen Ursprung). Die
+# Reihenfolge wirkt hier also noch — aber nur zu WENIGER Anrechnung, nie zu
+# mehr. Auflösbar nur mit einer neuen Spalte (angerechnetes Ende des Auto-Close
+# vor dem ersten Verschieben), die die Spec bewusst nicht einführt (vgl. P18
+# „Ende bestätigt"); offen als Produktentscheidung. Der Test hält den Ist-Stand
+# fest und sichert die Schranke „nie mehr als der direkte Weg".
+
+def _sat_auto_closed(db, employee_user):
+    employee_user.work_blocks = WEEK
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, date=SAT,
+                  start_time=time(15, 0), end_time=None, break_minutes=0)
+    db.add(e)
+    db.commit()
+    te._close_stale_entry(db, e)
+    db.commit()
+    assert (e.end_time, e.raw_end_time, e.auto_closed, e.net_hours) == (
+        time(23, 59), None, True, Decimal("8.98"))
+    return e
+
+
+def _move(admin_client, e, target):
+    resp = admin_client.put(f"/api/admin/time-entries/{e.id}", json={"date": target.isoformat()})
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.parametrize("via, expected", [
+    pytest.param((), (time(20, 15), time(23, 59), Decimal("5.25")), id="direkt"),
+    pytest.param((MON,), (time(18, 15), None, Decimal("3.25")), id="ueber-montag"),
+    pytest.param((FRI,), (time(16, 15), None, Decimal("1.25")), id="ueber-freitag"),
+])
+def test_two_moves_from_day_without_hull_never_credit_more(_db_session, employee_user,
+                                                          admin_client, via, expected):
+    e = _sat_auto_closed(_db_session, employee_user)
+    for step in via:
+        _move(admin_client, e, step)
+    _move(admin_client, e, WED)
+    _db_session.refresh(e)
+    assert (e.date, e.end_time, e.raw_end_time, e.net_hours, e.auto_closed) == (WED, *expected, True)
+    # Schranke: kein Umweg rechnet mehr an als der direkte Weg (5,25 h).
+    assert e.net_hours <= Decimal("5.25")
+
+
 # ── Helfer ──────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("incoming, eff, raw, auto_closed, prev, target, expected", [

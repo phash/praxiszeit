@@ -2782,7 +2782,15 @@ alles zusammen über `bash scripts/local-ci.sh`.
   Genehmigung eines älteren Antrags (bleibt offen). **Entschieden 2026-10-11:** ein beim
   Verschieben eingetipptes 23:59 ist eine Korrektur — Samstag 20:00–23:59 ungekappt
   (3,98 h), nächster Montag 19:00–23:59 kollabiert auf 0 h (Rohstempel bleibt), Kennzeichen
-  fällt; beide Routen, Antrag (angenommen) und Genehmigung.
+  fällt; beide Routen, Antrag (angenommen) und Genehmigung. **Bekannter Rest (Gesamtreview
+  1.20 B9, offen):** schloss der Auto-Close an einem Tag ohne Hülle (Samstag 15:00–23:59, P18-
+  Grenzfall), ist der Eintrag nach dem ersten Verschieben auf einen Tag mit Hülle von einem dort
+  automatisch geschlossenen nicht mehr zu unterscheiden (Rohende 23:59 = synthetisch, F1) —
+  Samstag → Montag → Mittwoch = 18:15, Samstag → Freitag → Mittwoch = 16:15, direkt 20:15. Die
+  Reihenfolge wirkt dort nur zu weniger Anrechnung, nie zu mehr; auflösbar nur mit einer neuen
+  Spalte (angerechnetes Ende vor dem ersten Verschieben), Produktentscheidung offen.
+  `test_two_moves_from_day_without_hull_never_credit_more` hält den Ist-Stand und die Schranke
+  „nie mehr als der direkte Weg" fest.
 - `test_legacy_fixes_blocks.py`: E39 (Datumswechsel über die Verwaltung; MA-Datumswechsel
   → 403, #502), E40 (Antrag „08–18, Pause 0" wird angenommen, gespeichert roh), E41 (keine
   Doppelzählung in der 48-h-Warnung).
