@@ -450,7 +450,11 @@ def admin_update_time_entry(
         or _r.uncredited_minutes != int(entry.uncredited_minutes or 0)
     )
     break_error = None
-    if not affected_user.exempt_from_arbzg:
+    # Gesamtreview 1.20 (B1, Nachzug): §4, §3 (hart und weich), 48 h und §6
+    # rechnen mit einem Ende — ein laufender Eintrag (Ende fehlt im Payload)
+    # wird wie in ``update_time_entry`` nicht geprüft. Sonst endete schon eine
+    # Notiz an einem offenen Eintrag mit 500.
+    if not affected_user.exempt_from_arbzg and eff_end is not None:
         # Break validation (§4 ArbZG) — use clamped times
         break_error = validate_daily_break(
             db=db, user=affected_user, entry_date=update_date,

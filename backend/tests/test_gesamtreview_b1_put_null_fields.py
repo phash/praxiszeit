@@ -80,6 +80,21 @@ def test_open_entry_stays_open_when_end_is_omitted(_db_session, employee_user, e
     assert (e.end_time, e.note) == (None, "neu")
 
 
+def test_admin_note_on_open_entry_keeps_it_open(_db_session, employee_user, admin_client):
+    """Nachzug: die Admin-Route rechnete §4/§3/48 h/§6 auch ohne Ende (500
+    ``'NoneType' object has no attribute 'hour'``). Seit ``{"end_time": null}``
+    gesperrt ist, ließ sich eine Notiz an einem laufenden Eintrag sonst nur
+    noch zusammen mit einem Ende setzen."""
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, date=MON,
+                  start_time=time(8), end_time=None, break_minutes=0, note="alt")
+    _db_session.add(e)
+    _db_session.commit()
+    r = admin_client.put(f"/api/admin/time-entries/{e.id}", json={"note": "neu"})
+    assert r.status_code == 200, r.text
+    _db_session.refresh(e)
+    assert (e.start_time, e.end_time, e.note) == (time(8), None, "neu")
+
+
 def test_employee_null_date_is_422_not_403(_db_session, employee_user, employee_client,
                                            monkeypatch):
     monkeypatch.setattr(te, "_today_local", lambda: MON)
