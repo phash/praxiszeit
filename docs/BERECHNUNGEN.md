@@ -683,11 +683,13 @@ anlegen und bearbeiten (`vacation_requests` ×2), Antrags-Genehmigung
 (`admin_vacations.review_vacation_request`) und Änderungsantrag (`admin_change_requests`). Die
 drei Antragspfade (Anlegen, Bearbeiten, Genehmigen) teilen sich dafür die Helper
 `request_workday_candidates` (Kandidaten-Tage — genau die Tage, die die Genehmigung danach
-bucht) und `vacation_day_cost_by_year` (Kosten je Kalenderjahr, #496). Direktbuchung und
-Änderungsantrag entscheiden den Arbeitstag über `is_vacation_billable_day`; dessen Abkürzung im
-gleichmäßigen Modus (jeder Werktag zählt) weicht nur in einem Zeitraum mit 0 Wochenstunden von
-der Regel ab — dort verlangt die Prüfung Budget für Tage, die danach nicht gebucht werden
-(bekannte Restschuld). Dieser Check ist **hart** (400 bei Überziehung) — anders als die
+bucht) und `vacation_day_cost_by_year` (Kosten je Kalenderjahr, #496); die Direktbuchung
+rechnet mit demselben `vacation_day_cost_by_year`. Ob ein Tag zählt, entscheidet dort
+`is_vacation_billable_day` — Tagessoll > 0 in **beiden** Modi, also auch nicht in einem
+Zeitraum mit 0 Wochenstunden. Der Änderungsantrag legt immer genau **eine** Zeile an (auch am
+Wochenende oder an einem Tag ohne Soll) und verlangt deshalb genau, was das Urlaubskonto für
+diese Zeile zählt (`_vacation_day_contribution`, derselbe Helfer im Anlege- und im
+Änderungszweig). Dieser Check ist **hart** (400 bei Überziehung) — anders als die
 Betriebsferien-Buchung (§9.5), die bewusst nicht cappt.
 
 Die Anzeige „Arbeitstage" am Antrag (Admin-Liste „Abwesenheitsanträge" und „Meine Anträge")
@@ -714,8 +716,11 @@ per Flag abwählen).
 
 - Wochenenden
 - gesetzlichen Feiertagen
-- individuell freien Wochentagen (Teilzeit-Tagesplan, Tagessoll an diesem Wochentag = 0 —
-  zum Datum der Schließung historisch aufgelöst, #431)
+- Tagen ohne Tagessoll: individuell freien Wochentagen (Teilzeit-Tagesplan, Tagessoll an
+  diesem Wochentag = 0) und Zeiträumen mit 0 Wochenstunden im gleichmäßigen Modus (z. B.
+  Elternzeit) — beides zum Datum der Schließung historisch aufgelöst (#431). Ohne
+  Stundenzählung (`track_hours=false`, #191) ist das Tagessoll immer 0; dort wird trotzdem
+  jeder Tag gebucht
 - als `free` konfigurierten Sondertagen (24./31.12. — ein soll-freier Tag darf keinen
   Urlaubstag kosten)
 - Tagen außerhalb `[first_work_day, last_work_day]` (#298 — künftige oder bereits

@@ -558,45 +558,31 @@ def create_absence(
     # Die User-Zeile ist oben bereits per with_for_update gesperrt (BUG-3 +
     # ABBA-Fix) -> Budget-Check + Insert sind pro MA serialisiert.
     if absence_data.type == AbsenceType.VACATION:
-        # Group dates by year for budget check
-        dates_by_year = {}
-        for d in dates_to_create:
-            dates_by_year.setdefault(d.year, []).append(d)
         # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
-        # ``is_vacation_billable_day`` (dort ruft es intern get_schedule_for_date
-        # auf) — im gleichmaessigen Modus liefen vorher NULL Queries, jetzt eine.
-        # F-026: tenant-gefiltert, wie die anderen wh_changes-Preloads.
+        # ``get_schedule_for_date`` — im gleichmaessigen Modus liefen vorher NULL
+        # Queries, jetzt eine. F-026: tenant-gefiltert, wie die anderen
+        # wh_changes-Preloads.
         wh_changes = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == target_user.id,
             WorkingHoursChange.tenant_id == target_user.tenant_id,
         ).order_by(WorkingHoursChange.effective_from).all()
-        for check_year, year_dates in dates_by_year.items():
+        # #156/T2 + #167: tagebasiert (jeder Tag = 1, Halbtag = 0,5). R1-3: Tage
+        # mit 0 h Tagessoll zaehlen nicht — die Buchungsschleife unten bucht sie
+        # nicht; #431: Modus PRO TAG aufgeloest; #394: Halbtags-Sondertag = 0,5.
+        # Alles in ``vacation_day_cost_by_year`` — derselbe Helfer wie in den
+        # Antragspfaden (#496). Gesamtreview 1.20 B5: vorher zaehlte hier eine
+        # eigene Fassung, die im gleichmaessigen Modus jeden Werktag als
+        # Urlaubstag nahm — in einem Zeitraum mit 0 Wochenstunden (Elternzeit)
+        # verlangte sie Budget fuer Tage, die danach nie gebucht werden.
+        cost_by_year = calculation_service.vacation_day_cost_by_year(
+            db, target_user, dates_to_create, bool(absence_data.half_day),
+            wh_changes=wh_changes,
+        )
+        for check_year in sorted({d.year for d in dates_to_create}):
             vacation_account = calculation_service.get_vacation_account(
                 db, target_user, check_year, wh_changes=wh_changes
             )
-            # #156/T2 — Tagesprinzip: each booked working day consumes one vacation
-            # day (0,5 for a half day, #167); compare the day COUNT against the
-            # remaining DAYS, not hours (hours-based checks mis-block uneven
-            # schedules / part-time).
-            # R1-3: skip days with 0h daily target (e.g. Mon/Wed/Fri user — Tuesday
-            # has 0h and is skipped by the creation loop too). #431: der Modus wird
-            # PRO TAG aufgeloest, nicht am Live-Flag der User-Zeile gelesen —
-            # sonst rechnet eine rueckwirkende Buchung in einen Zeitraum mit
-            # anderem Modus gegen den falschen Zweig. Details + track_hours=False-
-            # Ausnahme in ``is_vacation_billable_day``.
-            billable_days = [
-                d for d in year_dates
-                if calculation_service.is_vacation_billable_day(db, target_user, d, wh_changes=wh_changes)
-            ]
-            # #394: ein Halbtags-Sondertag (24./31.12.) kostet 0,5 — der Pre-Check
-            # muss exakt so viel verlangen wie get_vacation_account nachher zählt,
-            # sonst wird eine 0,5-passende Buchung fälschlich mit 400 abgelehnt.
-            _base = 0.5 if absence_data.half_day else 1.0
-            _cfg = special_days_service.get_special_day_config(db, target_user.tenant_id, check_year)
-            days_needed = sum(
-                _base * float(calculation_service.half_special_day_weight(d, _cfg))
-                for d in billable_days
-            )
+            days_needed = float(cost_by_year.get(check_year, 0))
             if days_needed > vacation_account["remaining_days"] + 1e-9:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,

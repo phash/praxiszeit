@@ -867,17 +867,22 @@ def is_vacation_billable_day(
     schedule: Optional['Schedule'] = None,
     wh_changes: Optional[List[WorkingHoursChange]] = None,
 ) -> bool:
-    """#431: zaehlt ``target_date`` in einer Urlaubs-VORPRUEFUNG als Urlaubstag?
+    """#431: bucht eine Urlaubs-Buchungsschleife an ``target_date`` einen Tag?
 
-    Die Antwort fuer die Budget-Vorpruefungen der Direkt-Buchung und der CR-
-    Genehmigung sowie fuer die OVERTIME-Gates. Die Antragspfade (anlegen,
-    bearbeiten, genehmigen) und die Anzeige „Arbeitstage" zaehlen seit #496
-    ueber ``vacation_day_cost_by_year`` mit der strengeren Bedingung „Tagessoll
-    > 0 in beiden Modi" (Review 496-R1, siehe Kommentar unten). Eine
-    Vorpruefung muss exakt das sagen, was die zugehoerige Buchungsschleife
-    danach tut — laufen die beiden auseinander, lehnt der Check eine Buchung
-    mit 400 ab, die nachher weniger Budget verbraucht haette (oder laesst eine
-    durch, die mehr kostet).
+    Genau die Ueberspring-Bedingung der Buchungsschleifen (Direkt-Buchung,
+    Antrags-Genehmigung, Betriebsferien): mit Stundenzaehlung und Tagessoll 0
+    laut dem zum Datum aufgeloesten Snapshot wird nichts gebucht. Die
+    Budget-Vorpruefungen zaehlen ueber :func:`vacation_day_cost_by_year`, das
+    diese Funktion je Tag fragt (Direkt-Buchung, Antrag anlegen/bearbeiten/
+    genehmigen, Anzeige „Arbeitstage" #496). Eine Vorpruefung muss exakt das
+    sagen, was die zugehoerige Buchungsschleife danach tut — laufen die beiden
+    auseinander, lehnt der Check eine Buchung mit 400 ab, die nachher weniger
+    Budget verbraucht haette (oder laesst eine durch, die mehr kostet).
+
+    Der Aenderungsantrag bucht dagegen IMMER genau eine Zeile (auch an einem
+    Tag ohne Soll, z. B. am Wochenende) und prueft deshalb gegen das, was das
+    Urlaubskonto fuer diese Zeile zaehlt
+    (``admin_change_requests._vacation_day_contribution``).
 
     Der Modus wird zum DATUM aufgeloest, nicht von der User-Zeile gelesen: seit
     #431 ist ``use_daily_schedule`` Teil des historisierten Vertrags-Snapshots,
@@ -912,15 +917,11 @@ def is_vacation_billable_day(
         return True
     if schedule is None:
         schedule = get_schedule_for_date(db, user, target_date, wh_changes=wh_changes)
-    # Im gleichmaessigen Modus traegt ein Werktag weekly_hours/work_days_per_week
-    # — das ist > 0, AUSSER bei weekly_hours = 0 (Schema ge=0, z. B. Elternzeit).
-    # Fuer diesen Fall weicht die Abkuerzung von den Buchungsschleifen ab (die
-    # ueberspringen Tage mit Tagessoll 0 in beiden Modi). Die Antragspfade (#496)
-    # zaehlen deshalb strikt ueber ``vacation_day_cost_by_year`` (Review 496-R1);
-    # ``absences.create_absence`` und ``admin_change_requests`` nutzen noch diese
-    # Abkuerzung (bekannte Restschuld, wirkt nur bei 0-h-Vertragszeitraum).
-    if not schedule.use_daily_schedule:
-        return True
+    # In BEIDEN Modi das Tagessoll fragen (Gesamtreview 1.20 B5). Die fruehere
+    # Abkuerzung „gleichmaessiger Modus → immer True" stimmte nur, solange
+    # ``weekly_hours > 0``; ``weekly_hours`` darf aber 0 sein (Schema ge=0, z. B.
+    # Elternzeit), und die Buchungsschleifen ueberspringen solche Tage — die
+    # Direkt-Buchung verlangte dadurch Budget fuer Tage, die sie nie bucht.
     return get_daily_target_for_date(user, target_date, schedule) > 0
 
 
@@ -2966,16 +2967,14 @@ def vacation_day_cost_by_year(
     - ein als „halber Feiertag" eingestellter 24./31.12. kostet nur die Haelfte
       (``half_special_day_weight``, #394).
 
-    Bewusst NICHT ueber ``is_vacation_billable_day`` (Review 496-R1): dessen
-    Abkuerzung im gleichmaessigen Modus (immer ``True``) stimmt nur, solange
-    ``weekly_hours > 0``. ``weekly_hours`` darf aber 0 sein (Schema ``ge=0``,
-    z. B. eine Aenderung auf 0 h fuer die Elternzeit) — die Buchungsschleife
-    ueberspringt solche Tage in BEIDEN Modi, die Anzeige zeigte „5 Tage", gebucht
-    wurde nichts, und die Vorpruefung verlangte Budget fuer nie verbrauchte Tage.
-    Die Bedingung hier ist woertlich die Ueberspring-Bedingung der Schleife
-    (``hours_for_day == 0 and track_hours``) fuer jeden Typ ausser OVERTIME im
-    gleichmaessigen Modus — und auch dort zaehlt ``absence_days`` einen Tag mit
-    Tagessoll 0 als 0 Tage.
+    Ob ein Tag zaehlt, entscheidet :func:`is_vacation_billable_day` — woertlich
+    die Ueberspring-Bedingung der Buchungsschleifen (``hours_for_day == 0 and
+    track_hours``) fuer jeden Typ ausser OVERTIME im gleichmaessigen Modus; auch
+    dort zaehlt ``absence_days`` einen Tag mit Tagessoll 0 als 0 Tage. Das gilt
+    ebenso in einem Zeitraum mit 0 Wochenstunden (Schema ``ge=0``, z. B.
+    Elternzeit) — dort zeigte die Anzeige frueher „5 Tage", gebucht wurde nichts,
+    und die Vorpruefung verlangte Budget fuer nie verbrauchte Tage (Review
+    496-R1, Gesamtreview 1.20 B5).
 
     Exakt die Regel von ``get_vacation_account.used_days`` fuer die danach
     gebuchten Zeilen. Jahre ohne zaehlenden Tag fehlen im Ergebnis.
@@ -2983,10 +2982,8 @@ def vacation_day_cost_by_year(
     base = Decimal('0.5') if half_day else Decimal('1')
     cost: Dict[int, Decimal] = {}
     for d in dates:
-        if user.track_hours:
-            schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
-            if get_daily_target_for_date(user, d, schedule) <= 0:
-                continue
+        if not is_vacation_billable_day(db, user, d, wh_changes=wh_changes):
+            continue
         cfg = _request_year_info(db, user.tenant_id, d.year, year_cache)["special_cfg"]
         cost[d.year] = cost.get(d.year, Decimal('0')) + base * half_special_day_weight(d, cfg)
     return cost

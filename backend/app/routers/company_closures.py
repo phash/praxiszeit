@@ -288,9 +288,15 @@ def _create_closure_absences(
             # der MA heute gleichmäßig geführt wird, zum Closure-Datum aber im
             # Tagesplan stand — und der Create-Pfad löschte unten geleistete
             # Arbeitszeit an einem Tag, an dem gar nicht zu schließen war.
-            # Deckungsgleich mit ``calculation_service.is_vacation_billable_day``.
-            if (employee.track_hours and schedule.use_daily_schedule
-                    and day_target <= 0):
+            # Gesamtreview 1.20 B5: in BEIDEN Modi — auch ein gleichmaessiger
+            # Vertrag kann 0 Wochenstunden tragen (Schema ge=0, z. B. Elternzeit).
+            # Vorher entstand dort je Schliesstag eine 0-h-„Urlaub"-Zeile; steht
+            # der Vertrag HEUTE auf 0 h, zaehlt das Urlaubskonto ohne Tagessoll
+            # jede davon als ganzen Urlaubstag (die Elternzeit verlor Urlaub an die
+            # Betriebsferien). Deckungsgleich mit
+            # ``calculation_service.is_vacation_billable_day`` (ruft ihn aus
+            # Perf-Gruenden nicht selbst auf, der Snapshot liegt schon vor).
+            if employee.track_hours and day_target <= 0:
                 continue
 
             # Skip if any absence already exists for this day (not just vacation)

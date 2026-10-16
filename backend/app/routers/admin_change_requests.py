@@ -31,7 +31,6 @@ from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
     get_schedule_for_date, get_daily_target_for_date, get_vacation_account,
     get_daily_target, child_sick_cap, child_sick_days_used, half_special_day_weight,
-    is_vacation_billable_day,
 )
 from app.services import (
     credit_override_service, presence_service, settings_service, special_days_service,
@@ -55,7 +54,9 @@ def _vacation_day_contribution(db, user, d, half_day) -> float:
     gesamt) → 0,5/1,0; sonst Tagessoll-des-Tages ≤ 0 → 0, sonst 0,5 (Halbtag)
     bzw. 1,0 (voller Tag). ``half_day=None`` (Legacy/CR-Default) zählt als voller
     Tag (ein CR bucht ganztags). Wird für den Netto-Neuverbrauch-Vergleich im
-    UPDATE-Budget-Check verwendet."""
+    UPDATE-Budget-Check verwendet und (Gesamtreview 1.20 B5) für die
+    Budget-Prüfung im CREATE-Zweig — beide Zweige legen die Zeile in jedem Fall
+    an, verlangt wird also genau, was das Konto für sie zählt."""
     # #394: an einem Halbtags-Sondertag (24./31.12.) kostet der Urlaubstag 0,5 —
     # exakt wie get_vacation_account/absence_days (zentraler Helper).
     _cfg = special_days_service.get_special_day_config(db, user.tenant_id, d.year)
@@ -859,7 +860,7 @@ def review_change_request(
             # Antrags-Pfad prüfen, dieser nicht). Tagesprinzip (#156/#167): 1 freier
             # Arbeitstag = 1 Urlaubstag. Die CR bucht genau EINEN Tag (cr.proposed_date)
             # und kennt KEIN half_day-Feld → days_needed = 1,0 für einen abrechenbaren
-            # Tag. Für use_daily_schedule+track_hours-User zählt ein 0h-Tag nicht.
+            # Tag. Ein Tag ohne Tagessoll (in beiden Modi) zählt nicht.
             if (
                 cr_user
                 and cr.proposed_absence_type == AbsenceType.VACATION.value
@@ -880,14 +881,17 @@ def review_change_request(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Kein gültiger Arbeitstag (soll-freier Sondertag) — es kann kein Urlaubstag gebucht werden.",
                     )
-                # #431: Modus pro TAG aufloesen, nicht am Live-Flag (siehe
-                # ``is_vacation_billable_day``; ``schedule`` ist oben schon
-                # aufgeloest und wird durchgereicht, kein zweiter Lookup).
-                if is_vacation_billable_day(db, cr_user, cr.proposed_date, schedule=schedule):
+                # Gesamtreview 1.20 B5: verlangt wird genau, was das Konto fuer
+                # die gleich angelegte Zeile zaehlt — derselbe Helfer wie im
+                # UPDATE-Zweig unten (Tagessoll des Tages laut Snapshot #431,
+                # Halbtags-Sondertag 0,5 #394). Dieser Zweig bucht IMMER eine
+                # Zeile, auch an einem Tag ohne Soll (Wochenende, Zeitraum mit
+                # 0 Wochenstunden) — die fruehere Abkuerzung „gleichmaessiger
+                # Modus → jeder Tag kostet 1" verlangte dort einen Urlaubstag,
+                # den das Konto nie abzog.
+                days_needed = _vacation_day_contribution(db, cr_user, cr.proposed_date, False)
+                if days_needed > 1e-9:
                     vacation_account = get_vacation_account(db, cr_user, cr.proposed_date.year)
-                    # #394: ein Halbtags-Sondertag (24./31.12.) kostet nur 0,5.
-                    _cfg = special_days_service.get_special_day_config(db, cr_user.tenant_id, cr.proposed_date.year)
-                    days_needed = float(half_special_day_weight(cr.proposed_date, _cfg))
                     if days_needed > vacation_account["remaining_days"] + 1e-9:
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,

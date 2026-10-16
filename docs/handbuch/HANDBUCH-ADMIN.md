@@ -641,7 +641,7 @@ Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie a
 
 **Es wird _kein_ Eintrag gebucht an:**
 - Wochenenden und gesetzlichen **Feiertagen**
-- **freien Wochentagen** von Teilzeitkräften mit individuellem Tagesplan (Tagessoll an diesem Wochentag = 0)
+- **freien Wochentagen** von Teilzeitkräften mit individuellem Tagesplan (Tagessoll an diesem Wochentag = 0) und Zeiträumen, in denen die Arbeitszeit auf **0 Wochenstunden** steht (z. B. Elternzeit) – dort gibt es nichts zu schließen, es wird also auch kein Urlaubstag abgezogen
 - als **„Frei" konfigurierten Sondertagen** (24./31.12.)
 - Tagen **außerhalb des Beschäftigungszeitraums**: noch nicht eingetretene (Eintrittsdatum in der Zukunft) oder bereits ausgetretene Mitarbeiter bekommen für die betreffenden Tage **keine** Betriebsferien-Einträge
 - Tagen, an denen die Mitarbeiterin bereits eine andere Abwesenheit hat (diese wird nicht überschrieben)
