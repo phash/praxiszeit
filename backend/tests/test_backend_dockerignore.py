@@ -78,7 +78,11 @@ def rules():
     return _rules()
 
 
-@pytest.mark.parametrize("path", [
+# Je Regel mindestens ein Beispiel (test_jede_regel_hat_ein_beispiel). Der
+# Docker-Bundle-Test in test_491_deploy_pull.py prueft dieselben Pfade gegen
+# die tar-Ausschluesse von tools/build-release.sh — das Bundle liefert
+# backend/ als Quelltext aus, dort duerfen die Reste ebenso wenig stehen.
+HOST_RESTE = [
     "test.db",
     "test.db-wal",
     "test.db-shm",
@@ -89,20 +93,21 @@ def rules():
     "alembic/versions/__pycache__/073_work_blocks.cpython-312.pyc",
     "tests/__pycache__/conftest.cpython-312-pytest-8.4.1.pyc",
     "app/verirrt.pyc",
+    "app/verirrt.pyo",
     ".pytest_cache/v/cache/lastfailed",
+    ".mypy_cache/3.12/app/main.data.json",
+    ".ruff_cache/0.6.9/1234567890",
     ".venv/bin/python",
     "venv/bin/python",
     ".coverage",
     "htmlcov/index.html",
     ".claude/agent-memory/notizen.md",
     ".env",
+    ".env.local",
     "backups/praxiszeit_2026-10-17.sql",
-])
-def test_host_reste_bleiben_draussen(rules, path):
-    assert _excluded(path, rules), path
+]
 
-
-@pytest.mark.parametrize("path", [
+BENOETIGT = [
     "Dockerfile",
     "requirements.txt",
     "alembic.ini",
@@ -114,11 +119,31 @@ def test_host_reste_bleiben_draussen(rules, path):
     "setup_extended_testdata.py",
     "fix_utc_times.py",
     "app/main.py",
+    "app/routers/admin_backups.py",
     "alembic/env.py",
     "tests/conftest.py",
-])
+]
+
+
+@pytest.mark.parametrize("path", HOST_RESTE)
+def test_host_reste_bleiben_draussen(rules, path):
+    assert _excluded(path, rules), path
+
+
+@pytest.mark.parametrize("path", BENOETIGT)
 def test_benoetigte_dateien_bleiben_drin(rules, path):
     assert not _excluded(path, rules), path
+
+
+def test_jede_regel_hat_ein_beispiel(rules):
+    """Eine neue Regel ohne Beispiel in HOST_RESTE wuerde weder hier noch im
+    Docker-Bundle-Test (gleiche Liste) geprueft — das Bundle liesse den Rest
+    dann unbemerkt durch (Gesamtreview B8)."""
+    for negate, rx in rules:
+        if negate:
+            continue
+        assert any(_excluded(p, [(False, rx)]) for p in HOST_RESTE), (
+            f"Regel {rx.pattern} hat kein Beispiel in HOST_RESTE")
 
 
 def test_kein_quelltext_und_keine_testdaten_werden_ausgeschlossen(rules):

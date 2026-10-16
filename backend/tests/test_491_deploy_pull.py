@@ -272,3 +272,87 @@ def test_docker_bundle_readme_update_pulls_fresh_base_images():
                  if line.startswith("docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d"))
     assert build < start < restore, section
     assert "--build" not in lines[start], lines[start]
+
+
+# --- Kunden-Bundle: Inhalt (Gesamtreview B8) ----------------------------------
+#
+# Das Docker-Bundle liefert backend/ und frontend/ als Build-Kontext aus und
+# kopiert sie mit eigenen tar-Ausschluessen (`_copy_tree` in build-release.sh).
+# Die mitgelieferte backend/.dockerignore haelt Host-Reste beim Kunden nur aus
+# dem IMAGE — in der ausgelieferten Bundle-Datei standen sie trotzdem (WAL/SHM
+# der Test-DB, Agenten-Notizen unter .claude/, Datenbanksicherungen unter
+# backups/ = personenbezogen, leere __pycache__-Verzeichnisse). Gefahren wird
+# der ECHTE Kopierblock aus build-release.sh mit dem echten tar.
+
+_NEEDS_TAR = pytest.mark.skipif(shutil.which("tar") is None, reason="tar fehlt")
+
+
+def _bundle_copy_block() -> str:
+    src = _BUILD_RELEASE.read_text(encoding="utf-8")
+    start = src.index("    _copy_tree() {")
+    end = src.index("    _copy_tree grafana\n", start) + len("    _copy_tree grafana\n")
+    return src[start:end]
+
+
+def _stage_bundle(tmp_path: Path, files: list[str]) -> set[str]:
+    repo = tmp_path / "repo"
+    rest = ["ssl/generate-cert.sh", "prometheus/prometheus.yml", "grafana/dashboard.json"]
+    for rel in files + rest:
+        target = repo / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("x", encoding="utf-8")
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    proc = subprocess.run(
+        ["bash", "-c", _bundle_copy_block()],
+        env={**os.environ, "REPO_DIR": str(repo), "DOCKER_STAGE": str(stage)},
+        capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    staged = set()
+    for dirpath, dirnames, filenames in os.walk(stage):
+        for name in dirnames + filenames:
+            staged.add((Path(dirpath) / name).relative_to(stage).as_posix())
+    return staged
+
+
+@_NEEDS_TAR
+def test_docker_bundle_laesst_was_die_dockerignore_ausschliesst_auch_weg(tmp_path):
+    """Was backend/.dockerignore aus dem Image haelt, steht auch nicht im
+    Bundle — auch kein leeres Verzeichnis davon. Die Beispielpfade kommen aus
+    test_backend_dockerignore.py (dort hat jede Regel mindestens eins)."""
+    from tests.test_backend_dockerignore import BENOETIGT, HOST_RESTE, _excluded, _rules
+
+    files = [f"backend/{p}" for p in HOST_RESTE + BENOETIGT] + ["backend/.dockerignore"]
+    staged = _stage_bundle(tmp_path, files)
+
+    rules = _rules()
+    durchgerutscht = sorted(
+        p for p in staged
+        if p.startswith("backend/") and _excluded(p[len("backend/"):], rules)
+    )
+    assert not durchgerutscht, durchgerutscht
+    # Gegenprobe: was das Image braucht, ist da (tests/ laesst das Bundle
+    # bewusst weg), und die .dockerignore selbst reist mit.
+    fehlt = sorted(
+        f"backend/{p}" for p in BENOETIGT
+        if not p.startswith("tests/") and f"backend/{p}" not in staged
+    )
+    assert not fehlt, fehlt
+    assert "backend/.dockerignore" in staged
+
+
+@_NEEDS_TAR
+def test_docker_bundle_laesst_werkzeugzustand_aus_frontend_weg(tmp_path):
+    staged = _stage_bundle(tmp_path, [
+        "frontend/.claude/agent-memory/notizen.md",
+        "frontend/node_modules/react/index.js",
+        "frontend/dist/index.html",
+        "frontend/Dockerfile",
+        "frontend/package.json",
+        "frontend/src/main.tsx",
+    ])
+    for kept in ("frontend/Dockerfile", "frontend/package.json", "frontend/src/main.tsx"):
+        assert kept in staged, kept
+    for gone in ("frontend/.claude", "frontend/node_modules", "frontend/dist"):
+        assert not any(p == gone or p.startswith(gone + "/") for p in staged), gone

@@ -1023,13 +1023,25 @@ if [ "$BUILD_DOCKER" = true ]; then
     }
     # Belt-and-suspenders: nie lokale Secrets/Keys ins Bundle, auch wenn jemand
     # mal welche unter backend/ oder frontend/ ablegt.
+    # Gesamtreview B8: backend/ deckt mindestens alles ab, was backend/.dockerignore
+    # aus dem Image haelt — die .dockerignore wirkt beim Kunden nur auf das Image,
+    # nicht auf diese Datei. Test-DB samt WAL/SHM/Journal, Bytecode-Verzeichnisse
+    # (sonst landen sie leer im Bundle), Werkzeug-Caches, Agenten-Notizen
+    # (.claude) und Datenbanksicherungen (backups/, personenbezogen).
+    # tests/test_491_deploy_pull.py faehrt diesen Block gegen die Beispielpfade
+    # aus test_backend_dockerignore.py.
     _copy_tree backend \
-        --exclude='backend/__pycache__' --exclude='*.pyc' --exclude='backend/tests' \
-        --exclude='backend/.pytest_cache' --exclude='backend/htmlcov' \
-        --exclude='backend/test.db' --exclude='backend/.venv' \
-        --exclude='*.pem' --exclude='*.key' --exclude='.env'
+        --exclude='__pycache__' --exclude='*.pyc' --exclude='*.pyo' \
+        --exclude='backend/tests' \
+        --exclude='backend/.pytest_cache' --exclude='backend/.mypy_cache' \
+        --exclude='backend/.ruff_cache' --exclude='backend/.coverage' \
+        --exclude='backend/htmlcov' \
+        --exclude='backend/test.db*' --exclude='backend/.venv' --exclude='backend/venv' \
+        --exclude='backend/.claude' --exclude='backend/backups' \
+        --exclude='*.pem' --exclude='*.key' --exclude='.env' --exclude='.env.*'
     _copy_tree frontend \
         --exclude='frontend/node_modules' --exclude='frontend/dist' \
+        --exclude='frontend/.claude' \
         --exclude='*.pem' --exclude='*.key' --exclude='.env'
     # ssl/: Skript + nginx-Config, aber NIE einen evtl. lokal erzeugten Key/Cert
     _copy_tree ssl --exclude='ssl/cert.pem' --exclude='ssl/key.pem'
