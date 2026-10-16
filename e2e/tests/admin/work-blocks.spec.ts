@@ -120,7 +120,11 @@ test.describe('Arbeitszeit-Blöcke (Spec 2026-10-08)', () => {
     // damit auch eine danach scheiternde Zusicherung (z. B. der Toast) aufräumt.
     try {
       await adminPage.getByRole('button', { name: 'Speichern' }).click();
-      await expect(adminPage.locator('[role="alert"]').filter({ hasText: 'erstellt' })).toBeVisible({ timeout: 10000 });
+      // Genau die Erfolgsmeldung des Anlegens (UserForm) — ein loses „erstellt"
+      // träfe jede Meldung, die das Wort zufällig enthält (Gesamtreview 1.20 B9).
+      await expect(
+        adminPage.getByRole('alert').getByText('Benutzer erfolgreich erstellt', { exact: true })
+      ).toBeVisible({ timeout: 10000 });
 
       const users = await adminApi.get('/admin/users?include_inactive=true&include_hidden=true&limit=500');
       const created = users.find((u: any) => u.username === username);

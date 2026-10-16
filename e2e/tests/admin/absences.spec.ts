@@ -136,10 +136,17 @@ test.describe('Admin Absences', () => {
       // Submit
       await adminPage.getByRole('button', { name: /Betriebsferien erstellen/ }).click();
 
-      // Check for success toast
+      // Genau die Erfolgsmeldung des Anlegens (AdminAbsences). Die frühere
+      // Regex /Betriebsferien|eingetragen|erstellt/ traf auch die Fehlermeldung
+      // „Fehler beim Laden der Betriebsferien" (Gesamtreview 1.20 B9).
       await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: /Betriebsferien|eingetragen|erstellt/ })
+        adminPage
+          .getByRole('alert')
+          .getByText('Betriebsferien eingetragen und Urlaub für alle Mitarbeiter erstellt', { exact: true })
       ).toBeVisible({ timeout: 10000 });
+      // … und die neue Zeile steht in der Liste — der Toast allein belegt
+      // kein Anlegen.
+      await expect(adminPage.locator('main tr').filter({ hasText: closureName })).toHaveCount(1, { timeout: 10000 });
     } finally {
       // Aufräumen: eine stehengebliebene Betriebsferien-Zeile bucht JEDEM
       // künftig angelegten Testkonto sofort Abwesenheiten ein
