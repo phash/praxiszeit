@@ -146,6 +146,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 - **Verrechnung:** *Als Urlaub werten* (**Standard**, zieht 1 Urlaubstag je Tag, an einem Halbtags-Sondertag 24./31.12. nur 0,5, #394) **oder** *Bezahlte Freistellung* (kein Urlaubsabzug, saldoneutral)
 - Nachträglich Berechtigte: Option setzen → Einträge werden **automatisch** für laufende und künftige Betriebsferien nachgetragen (Neu-Speichern nicht nötig)
 - Löschen: Einträge werden bei allen MA automatisch entfernt
+- **Abgeschlossenes Jahr:** ändert Anlegen/Speichern/Löschen dort Buchungen (z. B. Neu-Speichern entfernt 0-h-Altbestand) → Hinweis „Carryover … veraltet" → Übertrag unter *Jahresabschluss* prüfen/korrigieren (wird nicht automatisch neu berechnet)
 
 **Länger als der Jahresurlaub (#314)** – Schalter *Einstellungen → Betriebsferien & Urlaub → „Überzählige Betriebsferien als Überstundenabbau"* (global, Standard **aus**):
 - **AUS:** alles Urlaub → Überschuss = **Minus-Urlaub** (Pflichturlaub)

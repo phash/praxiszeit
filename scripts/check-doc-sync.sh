@@ -125,6 +125,9 @@ group_code() {
   # Buchung/Genehmigung ohne Tag mit geplanter Arbeitszeit (admin_helpers.
   # ZERO_HOURS_ABSENCE_DETAIL, Gesamtreview 1.20 B5; HANDBUCH-ADMIN 5 + 7, DocViewer).
   need_code "sind 0 Stunden geplant — an einem Tag ohne geplante Arbeitszeit kann keine Abwesenheit gebucht werden."
+  # Veralteter Jahresübertrag (calculation_service.closed_year_warning_text) —
+  # zitiert bei den Betriebsferien (HANDBUCH-ADMIN 11, DocViewer, Gesamtreview 1.20 B5).
+  need_code "veraltet, bitte Jahresabschluss erneut ausführen."
   need_code "Genehmigen und anerkennen"
   need_code "Eintrag ist anerkannt"
   need_code "Anwesenheit nicht angerechnet"

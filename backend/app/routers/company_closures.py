@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import date, timedelta
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
@@ -78,6 +78,43 @@ class CompanyClosureResponse(BaseModel):
     created_by: str
     counts_as_vacation: bool = True
     affected_employees: int = 0
+    # Gesamtreview 1.20 B5 (Nachzug): Anlegen/Ändern, das Buchungen in einem
+    # Jahr mit Jahresabschluss ändert, meldet den veralteten Übertrag — wie das
+    # Löschen (Fix #5, dort 200 + {"warning"}). Sonst None.
+    warning: Optional[str] = None
+
+
+def _closure_booking_state(db: Session, closure_id, tenant_id) -> set:
+    """Die Buchungen einer Schließung als vergleichbare Menge
+    ``(user_id, date, type, hours)`` — Grundlage der Jahresabschluss-Warnung von
+    ``create_closure``/``update_closure``. Bewusst ohne ``note``/``end_date``:
+    ein Umbenennen ändert keinen Saldo und kein Urlaubskonto. Die
+    #314-Neuaufteilung löscht und bucht beim Neuspeichern neu; bleibt dabei
+    alles gleich, ist die Menge identisch und es gibt nichts zu melden."""
+    return {
+        (a.user_id, a.date, a.type, float(a.hours))
+        for a in db.query(Absence).filter(
+            Absence.closure_id == closure_id,
+            Absence.tenant_id == tenant_id,  # F-026
+        ).all()
+    }
+
+
+def _closed_year_warning_for_changes(db: Session, tenant_id, before: set, after: set) -> Optional[str]:
+    """Warnung, wenn sich eine Buchung der Schließung in einem bereits
+    abgeschlossenen Jahr geändert hat (Gesamtreview 1.20 B5, Nachzug).
+
+    Der Jahresabschluss ist ein eingefrorener Übertrag (``YearCarryover`` Y+1)
+    und wird bewusst nie automatisch neu berechnet (Fix #5). Beim Löschen einer
+    Schließung meldete ``delete_closure`` das schon immer; Anlegen und Ändern
+    schwiegen — etwa beim Neuspeichern, das 0-h-Altbestand abräumt (Elternzeit
+    über den Jahreswechsel: der Resturlaub des abgeschlossenen Jahres steigt, der
+    Übertrag bleibt). Gemeldet wird nur, was sich tatsächlich geändert hat.
+    """
+    changed_years = {d.year for (_, d, _, _) in before ^ after}
+    if not changed_years:
+        return None
+    return calculation_service.stale_year_closing_warning(db, tenant_id, changed_years)
 
 
 def _get_workdays(start: date, end: date, holidays: set) -> List[date]:
@@ -533,6 +570,14 @@ def create_closure(
         for yr in range(data.start_date.year, data.end_date.year + 1):
             _resplit_year_closures(db, current_user.tenant_id, yr, current_user)
 
+    # Gesamtreview 1.20 B5 (Nachzug): eine nachgetragene Schließung in einem
+    # Jahr mit Jahresabschluss bucht dort Urlaub — Warnung wie beim Löschen.
+    db.flush()
+    warning = _closed_year_warning_for_changes(
+        db, current_user.tenant_id, set(),
+        _closure_booking_state(db, closure.id, current_user.tenant_id),
+    )
+
     db.commit()
     db.refresh(closure)
 
@@ -549,6 +594,7 @@ def create_closure(
         # would over-count. _create_closure_absences returns the distinct count
         # of employees that got ≥1 absence, matching list_closures' COUNT(DISTINCT).
         affected_employees=affected,
+        warning=warning,
     )
 
 
@@ -574,6 +620,8 @@ def update_closure(
     - On rename, the ``note`` of all still-linked absences is updated.
     - On a Urlaub<->Freistellung switch, the ``type`` of all still-linked
       absences is updated to match the new flag (#145).
+    - If the bookings change in a year whose Jahresabschluss already exists,
+      the response carries ``warning`` (stale carryover, like delete_closure).
     """
     if data.end_date < data.start_date:
         raise HTTPException(status_code=400, detail="Enddatum darf nicht vor dem Startdatum liegen")
@@ -647,6 +695,9 @@ def update_closure(
         Absence.closure_id == closure.id,
         Absence.tenant_id == current_user.tenant_id,
     ).all()
+    # Gesamtreview 1.20 B5 (Nachzug): Stand VOR dem Speichern, für die
+    # Jahresabschluss-Warnung unten (gleiche Form wie _closure_booking_state).
+    _bookings_before = {(a.user_id, a.date, a.type, float(a.hours)) for a in linked}
 
     # Remove absences for days that are no longer covered by the closure;
     # keep the rest in sync (note on rename, single-day end_date reset per #394,
@@ -805,6 +856,17 @@ def update_closure(
         for yr in range(data.start_date.year, data.end_date.year + 1):
             _resplit_year_closures(db, current_user.tenant_id, yr, current_user)
 
+    # Gesamtreview 1.20 B5 (Nachzug): hat dieses Speichern Buchungen in einem
+    # Jahr mit Jahresabschluss geändert (0-h-Altbestand abgeräumt, Zeitraum
+    # gekürzt/verlängert, Urlaub ↔ Freistellung, neue Teilnehmende), ist dessen
+    # eingefrorener Übertrag veraltet — Warnung wie beim Löschen. Ein reines
+    # Umbenennen ändert nichts und bleibt still.
+    db.flush()
+    warning = _closed_year_warning_for_changes(
+        db, current_user.tenant_id, _bookings_before,
+        _closure_booking_state(db, closure.id, current_user.tenant_id),
+    )
+
     db.commit()
     db.refresh(closure)
 
@@ -825,6 +887,7 @@ def update_closure(
         created_by=str(closure.created_by),
         counts_as_vacation=closure.counts_as_vacation,
         affected_employees=affected,
+        warning=warning,
     )
 
 

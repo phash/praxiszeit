@@ -741,8 +741,8 @@ per Flag abwählen).
   jeder Tag gebucht. Bis 1.20.0 entstand im gleichmäßigen Modus an solchen Tagen eine
   0-h-Urlaubszeile; ein erneutes Speichern der Schließung (`PUT /api/company-closures/{id}`)
   entfernt diesen Bestand der Teilnehmenden in beiden Schalterstellungen von §9.4 (Summenzeile
-  im Änderungsprotokoll „Tag ohne Tagessoll"). Zeilen nicht (mehr) teilnehmender MA bleiben
-  unverändert
+  im Änderungsprotokoll „Tag ohne Tagessoll"; in einem abgeschlossenen Jahr mit der Warnung aus
+  §11). Zeilen nicht (mehr) teilnehmender MA bleiben unverändert
 - als `free` konfigurierten Sondertagen (24./31.12. — ein soll-freier Tag darf keinen
   Urlaubstag kosten)
 - Tagen außerhalb `[first_work_day, last_work_day]` (#298 — künftige oder bereits
@@ -988,7 +988,11 @@ Budget-Tage). ⚠️ Offen (#191): Carryover für `track_hours = false` (ohne St
 > genehmigten Urlaubs, Löschen einer Betriebsferien-Schließung) machen dessen Carryover
 > stale — PraxisZeit rechnet ihn **nicht automatisch neu** (das würde manuelle
 > Carryover-Anpassungen überschreiben), sondern liefert eine Warnung
-> (`stale_year_closing_warning`), die einen erneuten Jahresabschluss empfiehlt.
+> (`stale_year_closing_warning`), die einen erneuten Jahresabschluss empfiehlt. Anlegen und
+> Ändern einer Schließung (`create_closure`/`update_closure`, Feld `warning` der Antwort)
+> warnen, sobald sich ihre Buchungen `(MA, Datum, Typ, Stunden)` in einem abgeschlossenen Jahr
+> ändern — etwa wenn das Neuspeichern 0-h-Altbestand abräumt (§9.1); ein reines Umbenennen
+> und eine wertgleiche #314-Neuaufteilung bleiben still.
 
 ---
 

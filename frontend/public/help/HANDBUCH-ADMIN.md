@@ -644,7 +644,7 @@ Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie a
 
 **Es wird _kein_ Eintrag gebucht an:**
 - Wochenenden und gesetzlichen **Feiertagen**
-- **freien Wochentagen** von Teilzeitkräften mit individuellem Tagesplan (Tagessoll an diesem Wochentag = 0) und Zeiträumen, in denen die Arbeitszeit auf **0 Wochenstunden** steht (z. B. Elternzeit) – dort gibt es nichts zu schließen, es wird also auch kein Urlaubstag abgezogen. Betriebsferien, die vor Version 1.20.0 eingetragen wurden, können an solchen Tagen noch Einträge mit 0 Stunden enthalten: die Betriebsferien einmal öffnen und **erneut speichern**, dann werden diese Einträge entfernt (im Änderungsprotokoll vermerkt)
+- **freien Wochentagen** von Teilzeitkräften mit individuellem Tagesplan (Tagessoll an diesem Wochentag = 0) und Zeiträumen, in denen die Arbeitszeit auf **0 Wochenstunden** steht (z. B. Elternzeit) – dort gibt es nichts zu schließen, es wird also auch kein Urlaubstag abgezogen. Betriebsferien, die vor Version 1.20.0 eingetragen wurden, können an solchen Tagen noch Einträge mit 0 Stunden enthalten: die Betriebsferien einmal öffnen und **erneut speichern**, dann werden diese Einträge entfernt (im Änderungsprotokoll vermerkt). Liegen sie in einem Jahr mit Jahresabschluss, prüfen Sie danach den Übertrag (→ [Betriebsferien in einem abgeschlossenen Jahr](#betriebsferien-in-einem-abgeschlossenen-jahr))
 - als **„Frei" konfigurierten Sondertagen** (24./31.12.)
 - Tagen **außerhalb des Beschäftigungszeitraums**: noch nicht eingetretene (Eintrittsdatum in der Zukunft) oder bereits ausgetretene Mitarbeiter bekommen für die betreffenden Tage **keine** Betriebsferien-Einträge
 - Tagen, an denen die Mitarbeiterin bereits eine andere Abwesenheit hat (diese wird nicht überschrieben)
@@ -677,6 +677,10 @@ Wenn der Schalter aktiv ist, gilt zusätzlich:
 ### Betriebsferien löschen
 
 Klicken Sie auf das Löschen-Symbol. Die Abwesenheitseinträge werden bei allen Mitarbeitern automatisch entfernt.
+
+### Betriebsferien in einem abgeschlossenen Jahr
+
+Ändert das Anlegen, Speichern oder Löschen von Betriebsferien Buchungen in einem Jahr, für das der Jahresabschluss bereits erstellt ist – etwa das erneute Speichern, das alte Einträge mit 0 Stunden entfernt, oder eine nachgetragene Schließung –, meldet PraxisZeit danach z. B. *„Jahresabschluss 2026 bereits erfolgt — Carryover 2027 ist nun veraltet, bitte Jahresabschluss erneut ausführen."* Der eingefrorene Übertrag ins Folgejahr ändert sich nicht von selbst. Prüfen Sie ihn unter [Jahresabschluss](#jahresabschluss) und korrigieren Sie ihn von Hand, oder erstellen Sie den Jahresabschluss für dieses Jahr erneut (dabei werden von Hand korrigierte Überträge überschrieben). Ein reines Umbenennen ändert keine Buchung und löst den Hinweis nicht aus.
 
 ---
 

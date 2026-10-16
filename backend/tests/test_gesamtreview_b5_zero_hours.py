@@ -887,3 +887,119 @@ class TestApprovalWithoutBookableDay:
         approval = _approve(db, admin, _pending_request(db, emp_b, NOV_WED, NOV_FRI))
         assert direct.status_code == approval.status_code == 400
         assert direct.json()["detail"] == approval.json()["detail"]
+
+
+# ── Betriebsferien in einem abgeschlossenen Jahr (Nachzug B5) ─────────────────
+#
+# Das Neuspeichern raeumt 0-h-Altbestand ab — auch in einem Jahr, dessen
+# Jahresabschluss schon erstellt ist. Der eingefrorene Uebertrag
+# (YearCarryover Y+1) bleibt dabei stehen; das Loeschen einer Schliessung
+# meldete das schon immer (Fix #5), Anlegen und Aendern schwiegen. Gemeldet wird
+# nur, wenn sich an den Buchungen der Schliessung tatsaechlich etwas aendert —
+# ein reines Umbenennen bleibt still.
+
+def _close_year_2026(db, user):
+    db.add(YearCarryover(
+        user_id=user.id, tenant_id=DEFAULT_TENANT_ID, year=2027,
+        vacation_days=Decimal("28"), overtime_hours=Decimal("0"),
+        source="year_closing",
+    ))
+    db.commit()
+
+
+class TestClosureWarnsForClosedYear:
+
+    def test_resave_cleanup_in_closed_year_warns(self, db, admin):
+        """Probe aus dem Review: Elternzeit, zwei Alt-Zeilen, 2026 abgeschlossen.
+        Das Neuspeichern hebt den Resturlaub 2026 von 28 auf 30 — der Uebertrag
+        2027 bleibt bei 28, die Antwort schwieg."""
+        emp = _current_parental(db, "b5_cy_cleanup", 30)
+        client = _client_as(db, admin)
+        closure = _create_closure(client)
+        _legacy_zero_rows(db, closure["id"], emp, [NOV_MON, NOV_TUE])
+        _close_year_2026(db, emp)
+
+        body = _resave(client, closure)
+
+        assert _remaining(db, emp) == pytest.approx(30)
+        assert body["warning"] and "Jahresabschluss 2026" in body["warning"]
+
+    def test_resave_with_split_in_closed_year_warns(self, db, admin):
+        _split_on(db)
+        emp = _current_parental(db, "b5_cy_cleanup_split", 30)
+        client = _client_as(db, admin)
+        closure = _create_closure(client)
+        _legacy_zero_rows(db, closure["id"], emp, [NOV_MON, NOV_TUE])
+        _close_year_2026(db, emp)
+
+        body = _resave(client, closure)
+
+        assert body["warning"] and "Jahresabschluss 2026" in body["warning"]
+
+    def test_shrinking_range_in_closed_year_warns(self, db, admin):
+        """Auch das Kuerzen des Zeitraums loescht Buchungen im
+        abgeschlossenen Jahr."""
+        client = _client_as(db, admin)
+        closure = _create_closure(client)
+        _close_year_2026(db, admin)
+
+        r = client.put(f"/api/company-closures/{closure['id']}", json={
+            "name": "BF", "start_date": NOV_MON.isoformat(),
+            "end_date": NOV_WED.isoformat(), "counts_as_vacation": True,
+        })
+
+        assert r.status_code == 200, r.text
+        assert r.json()["warning"] and "Jahresabschluss 2026" in r.json()["warning"]
+
+    def test_switching_to_paid_leave_in_closed_year_warns(self, db, admin):
+        """Urlaub → bezahlte Freistellung aendert den Urlaubsverbrauch des
+        abgeschlossenen Jahres."""
+        client = _client_as(db, admin)
+        closure = _create_closure(client)
+        _close_year_2026(db, admin)
+
+        r = client.put(f"/api/company-closures/{closure['id']}", json={
+            "name": "BF", "start_date": closure["start_date"],
+            "end_date": closure["end_date"], "counts_as_vacation": False,
+        })
+
+        assert r.status_code == 200, r.text
+        assert r.json()["warning"] and "Jahresabschluss 2026" in r.json()["warning"]
+
+    @pytest.mark.parametrize("split", [False, True])
+    def test_plain_rename_in_closed_year_stays_silent(self, db, admin, split):
+        """Kontrolle: aendert sich an den Buchungen nichts (auch nicht durch
+        die #314-Neuaufteilung), gibt es nichts zu pruefen."""
+        if split:
+            _split_on(db)
+        client = _client_as(db, admin)
+        closure = _create_closure(client)
+        _close_year_2026(db, admin)
+
+        body = _resave(client, closure)
+
+        assert body["warning"] is None
+
+    def test_cleanup_in_open_year_stays_silent(self, db, admin):
+        """Kontrolle: ohne Jahresabschluss keine Warnung."""
+        emp = _current_parental(db, "b5_cy_open", 30)
+        client = _client_as(db, admin)
+        closure = _create_closure(client)
+        _legacy_zero_rows(db, closure["id"], emp, [NOV_MON, NOV_TUE])
+
+        body = _resave(client, closure)
+
+        assert body["warning"] is None
+
+    def test_creating_closure_in_closed_year_warns(self, db, admin):
+        """Eine nachgetragene Schliessung im abgeschlossenen Jahr bucht dort
+        Urlaub — derselbe veraltete Uebertrag."""
+        _close_year_2026(db, admin)
+
+        body = _create_closure(_client_as(db, admin))
+
+        assert body["warning"] and "Jahresabschluss 2026" in body["warning"]
+
+    def test_creating_closure_in_open_year_stays_silent(self, db, admin):
+        body = _create_closure(_client_as(db, admin))
+        assert body["warning"] is None

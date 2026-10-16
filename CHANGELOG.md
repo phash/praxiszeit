@@ -198,7 +198,12 @@ dieses Backup verlustfrei (`UPDATE.md`).
   Tagen nichts mehr ein – stand die Arbeitszeit bereits auf 0 Stunden, kostete
   bisher jeder Schließtag einen Urlaubstag (#496). Für bereits eingetragene
   Betriebsferien: einmal öffnen und neu speichern – dann verschwinden die alten
-  Einträge an diesen Tagen.
+  Einträge an diesen Tagen. Liegt die Schließung in einem Jahr mit
+  Jahresabschluss, ändert das den eingefrorenen Übertrag nicht: PraxisZeit weist
+  nach dem Speichern darauf hin – den Übertrag unter „Jahresabschluss" prüfen und
+  ggf. von Hand korrigieren. Denselben Hinweis gibt es jetzt auch, wenn eine
+  Schließung in einem abgeschlossenen Jahr angelegt oder so geändert wird, dass
+  sich Buchungen ändern (bisher nur beim Löschen).
 - **Abwesenheit über einen freien Tag** (direkt eingetragen oder per Antrag
   genehmigt): Zeiteinträge wurden an allen Werktagen des Zeitraums gelöscht –
   auch an Tagen, an denen gar keine Abwesenheit entsteht (freier Wochentag laut
