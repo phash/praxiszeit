@@ -230,6 +230,9 @@ group_code() {
   # XLS-Import ohne „überschreiben": Ergebnis-Hinweis zur Tagespause
   # (xls_import_service._apply_day_breaks, Review-Nachzug B4; f-String-Stück).
   need_code "Pause an den Tag angepasst ("
+  # XLS-Vorschau: Ruhezeit bis zu einem Folgetag, den nur der Bestand trägt
+  # (xls_import_service._check_arbzg, Review-Nachzug B4; f-String-Stück).
+  need_code "nächster vorhandener Eintrag beginnt "
   need_code "Zeiten weichen von den Stempeln ab (gestempelt "
   need_code " · nicht angerechnet aktuell "
   need_code "Nicht angerechnet (Lücke): "

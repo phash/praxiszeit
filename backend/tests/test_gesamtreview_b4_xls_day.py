@@ -381,3 +381,48 @@ def test_skipped_row_carries_no_credit_override_note(db, test_user):
     _entry(db, test_user, time(6), time(12), credit_override=True)
     rows = parse_xls(_xls((_mon(6), _mon(5)), (_mon(12), _mon(13))), test_user.id, db)
     assert CREDIT_OVERRIDE_IMPORT_NOTE not in rows[0].arbzg_warnings, rows[0].arbzg_warnings
+
+
+def test_rest_time_to_a_kept_entry_on_the_next_day(db, test_user):
+    """Datei Mo 14:00–22:00 + Mi 08:00–12:00, Bestand Di 05:00–12:00 (nicht in der
+    Datei): die Ruhezeit Mo → Di beträgt 7 h. Keine Zeile prüfte sie — der Dienstag
+    hat keine Zeile, ``rest_time_service`` meldet den Verstoß nach dem Import.
+    Die Meldung steht an der letzten Zeile des Montags."""
+    _entry(db, test_user, time(5), time(12), day=date(2026, 6, 2))
+    rows = parse_xls(_xls((_mon(14), _mon(22)), (_dt(2026, 6, 3, 8, 0), _dt(2026, 6, 3, 12, 0))),
+                     test_user.id, db)
+    assert [len(_rest(r)) for r in rows] == [1, 0], [r.arbzg_warnings for r in rows]
+    assert _rest(rows[0]) == [
+        "§5 ArbZG: Ruhezeit 7.0h unterschreitet das 11h-Minimum "
+        "(nächster vorhandener Eintrag beginnt 02.06.2026 05:00)"
+    ]
+
+
+def test_rest_time_to_a_kept_entry_after_the_last_file_day(db, test_user):
+    """Dasselbe nach dem letzten Tag der Datei: Mo 08:00–09:00 + 14:00–22:00, Bestand
+    Di 06:00–12:00 (Rohstempel, angerechnet erst ab 06:30) — 8 h ab dem Rohstempel,
+    gemeldet an der letzten Zeile des Montags."""
+    _entry(db, test_user, time(6, 30), time(12), raw_start_time=time(6), day=date(2026, 6, 2))
+    rows = parse_xls(_xls((_mon(8), _mon(9)), (_mon(14), _mon(22))), test_user.id, db)
+    assert [len(_rest(r)) for r in rows] == [0, 1], [r.arbzg_warnings for r in rows]
+    assert _rest(rows[1])[0].startswith("§5 ArbZG: Ruhezeit 8.0h"), rows[1].arbzg_warnings
+    assert "beginnt 02.06.2026 06:00" in _rest(rows[1])[0]
+
+
+def test_rest_time_to_the_next_day_ignores_a_day_with_rows(db, test_user):
+    """Hat der Folgetag selbst gültige Zeilen, meldet dessen erste Zeile die
+    Ruhezeit (wie bisher) — die letzte Zeile des Vortags wiederholt sie nicht."""
+    _entry(db, test_user, time(5), time(6), day=date(2026, 6, 2))
+    rows = parse_xls(_xls((_mon(14), _mon(22)), (_dt(2026, 6, 2, 8, 0), _dt(2026, 6, 2, 12, 0))),
+                     test_user.id, db)
+    assert [len(_rest(r)) for r in rows] == [0, 1], [r.arbzg_warnings for r in rows]
+    assert _rest(rows[1])[0].startswith("§5 ArbZG: Ruhezeit 7.0h"), rows[1].arbzg_warnings
+
+
+def test_rest_time_to_the_next_day_respects_the_exemption(db, test_user):
+    """§18 ArbZG: keine Ruhezeit-Meldung, auch nicht zum Folgetag."""
+    test_user.exempt_from_arbzg = True
+    db.commit()
+    _entry(db, test_user, time(5), time(12), day=date(2026, 6, 2))
+    rows = parse_xls(_xls((_mon(14), _mon(22)),), test_user.id, db)
+    assert _rest(rows[0]) == []

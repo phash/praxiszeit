@@ -163,6 +163,7 @@ def _check_arbzg(
     uncredited_segments: Sequence[int],
     rest_start: Optional[time] = None,
     check_day: bool = True,
+    next_rest: Optional[tuple[datetime, datetime]] = None,
 ) -> list[str]:
     """ArbZG-Warnungen ermitteln (§3 Tageslimit, §4 Pause, §5 Ruhezeit, §6 Nachtarbeit).
 
@@ -178,6 +179,8 @@ def _check_arbzg(
         ``rest_time_service`` (Spec 7.3); ohne Angabe ``start``.
     check_day: False → keine §3/§4-Prüfung an dieser Zeile (die Vorschau prüft
         den Tag einmal, an seiner letzten Zeile — Gesamtreview 1.20 B4).
+    next_rest: (Arbeitsende dieses Tages, erster Beginn des nächsten Arbeitstags)
+        — §5 bis zu einem Tag, den nur der Bestand trägt (``_rest_reference``).
     """
     if exempt:
         return []
@@ -237,6 +240,15 @@ def _check_arbzg(
             warnings.append(
                 f"§5 ArbZG: Ruhezeit {rest_hours:.1f}h unterschreitet das 11h-Minimum "
                 f"(vorheriger Eintrag endete {prev_end_dt.strftime('%d.%m.%Y %H:%M')})"
+            )
+
+    if next_rest is not None:
+        day_end_dt, next_start_dt = next_rest
+        rest_hours = (next_start_dt - day_end_dt).total_seconds() / 3600.0
+        if rest_hours < MIN_REST_HOURS:
+            warnings.append(
+                f"§5 ArbZG: Ruhezeit {rest_hours:.1f}h unterschreitet das 11h-Minimum "
+                f"(nächster vorhandener Eintrag beginnt {next_start_dt.strftime('%d.%m.%Y %H:%M')})"
             )
 
     return warnings
@@ -316,21 +328,29 @@ def _row_counts(row) -> bool:
 
 
 def _rest_reference(db: Session, user_id, tenant_id, rows: list, kept_by_date: dict,
-                    rows_by_date: dict) -> tuple[dict, dict]:
+                    rows_by_date: dict) -> tuple[dict, dict, dict]:
     """§5 je Tag der Datei wie ``rest_time_service``: (Ende des letzten
-    Arbeitstags davor bzw. ``None``, erster Beginn des Tages bzw. ``None``).
+    Arbeitstags davor bzw. ``None``, erster Beginn des Tages bzw. ``None``,
+    Ruhezeit zum nächsten Arbeitstag ohne gültige Zeile).
 
     Arbeitstage = stehender Bestand plus Zeilen der Datei; vor dem ersten Tag der
-    Datei der letzte Arbeitstag des Bestands. Ende = ``presence_end``
-    (Rohstempel, beim automatisch geschlossenen Eintrag das wirksame Ende — P18),
-    Beginn = Rohstempel, sonst der wirksame Wert (Spec 7.3). Nur Zeilen, die
-    zählen (``_row_counts``) — eine übersprungene Zeile setzt weder Beginn noch
-    Ende.
+    Datei der letzte Arbeitstag des Bestands, nach dem letzten der erste. Ende =
+    ``presence_end`` (Rohstempel, beim automatisch geschlossenen Eintrag das
+    wirksame Ende — P18), Beginn = Rohstempel, sonst der wirksame Wert (Spec
+    7.3). Nur Zeilen, die zählen (``_row_counts``) — eine übersprungene Zeile
+    setzt weder Beginn noch Ende.
 
     Gesamtreview 1.20 (B4): bis hierher verglich die Vorschau jede Zeile mit der
     Vorzeile — beim geteilten Dienst also die Pause mit der Ruhezeit („§5 …
     2.0h"), und ein Bestandseintrag am Abend davor, der nicht in der Datei stand,
-    zählte nicht."""
+    zählte nicht.
+
+    Review-Nachzug B4: ein Arbeitstag, den nur der Bestand trägt (keine gültige
+    Zeile — im Zeitraum der Datei oder der erste danach), prüft keine Zeile. Folgt
+    er auf einen Tag mit gültigen Zeilen, meldet dieser die Ruhezeit bis zu seinem
+    ersten Beginn (dritter Rückgabewert: Tag → (Arbeitsende, nächster Beginn)) —
+    sonst übersähe die Vorschau einen Verstoß, den erst der Import erzeugt und den
+    ``rest_time_service`` danach meldet."""
     day_end: dict[date, time] = {}
     day_start: dict[date, time] = {}
 
@@ -351,12 +371,19 @@ def _rest_reference(db: Session, user_id, tenant_id, rows: list, kept_by_date: d
     if before is not None:
         for e in closed.filter(TimeEntry.date == before.date).all():
             _end(e.date, work_window_service.presence_end(e))
+    after = closed.filter(TimeEntry.date > max(rows_by_date)).order_by(TimeEntry.date).first()
+    if after is not None:
+        for e in closed.filter(TimeEntry.date == after.date).all():
+            _end(e.date, work_window_service.presence_end(e))
+            _start(e.date, e.raw_start_time or e.start_time)
     for d, kept in kept_by_date.items():
         for e in kept:
             _end(d, work_window_service.presence_end(e))
             _start(d, e.raw_start_time or e.start_time)
+    counted: set[date] = set()
     for row in rows:
         if _row_counts(row):
+            counted.add(row.date)
             _end(row.date, row.r.raw_end or row.r.eff_end)
             _start(row.date, row.r.raw_start or row.r.eff_start)
 
@@ -365,7 +392,13 @@ def _rest_reference(db: Session, user_id, tenant_id, rows: list, kept_by_date: d
     for d in rows_by_date:
         k = bisect_left(worked, d)
         reference[d] = datetime.combine(worked[k - 1], day_end[worked[k - 1]]) if k else None
-    return reference, {d: day_start.get(d) for d in rows_by_date}
+    following: dict[date, tuple[datetime, datetime]] = {}
+    for prev, nxt in zip(worked, worked[1:]):
+        if prev in counted and nxt not in counted and nxt in day_start:
+            following[prev] = (
+                datetime.combine(prev, day_end[prev]), datetime.combine(nxt, day_start[nxt]),
+            )
+    return reference, {d: day_start.get(d) for d in rows_by_date}, following
 
 
 def parse_xls(
@@ -458,7 +491,7 @@ def parse_xls(
         )
         for i, b in zip(valid, day_breaks):
             rows[i].break_min = b
-    rest_ref, day_first_start = _rest_reference(
+    rest_ref, day_first_start, rest_next = _rest_reference(
         db, user_id, user_tenant, rows, kept_by_date, rows_by_date,
     )
     # Ansicht jeder Zeile mit ihrer Tages-Pause für die Anwesenheits-Hinweise —
@@ -490,7 +523,9 @@ def parse_xls(
         # des Tages mit ihrer Tages-Pause plus der stehende Bestand. §5 einmal je
         # Tag, an seiner ersten gültigen Zeile: Ende des letzten Arbeitstags davor
         # gegen den ersten Beginn des Tages (Rohstempel, Spec 7.3) — nie gegen die
-        # Vorzeile desselben Tages (geteilter Dienst = Pause, keine Ruhezeit).
+        # Vorzeile desselben Tages (geteilter Dienst = Pause, keine Ruhezeit). Die
+        # Ruhezeit bis zu einem Folgetag, den nur der Bestand trägt, an der
+        # letzten gültigen Zeile (Review-Nachzug B4).
         valid = valid_by_date[entry_date]
         day_check = bool(valid) and i == valid[-1]
         other_blocks = []
@@ -510,6 +545,7 @@ def parse_xls(
             uncredited_segments=segs,
             rest_start=day_first_start[entry_date],
             check_day=day_check,
+            next_rest=rest_next.get(entry_date) if day_check else None,
         )
         # P14: §4 auf angerechneter Zeit „bestanden" = keine §4-Meldung der Vorschau.
         break_passed = not any(w.startswith("§4 ArbZG") for w in arbzg_warnings)

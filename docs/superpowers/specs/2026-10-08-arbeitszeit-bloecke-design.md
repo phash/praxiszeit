@@ -1148,8 +1148,14 @@ nicht tragen, bucht der Import nicht — die Tagesprüfung der Vorschau meldet �
 „Pause 45 Min" an einer 20-Minuten-Zeile neben langem Bestand). Die weichen Tages-Hinweise
 (8.3) meldet die Vorschau wie §3/§4 einmal je Tag an dessen letzter gültiger Zeile, über den
 stehenden Bestand plus alle gültigen Zeilen mit ihrer Tages-Pause; der Wochenhinweis bleibt
-schrittweise. Zeilen mit Ende ≤ Beginn (von `/confirm` übersprungen) zählen auch für §5 nicht;
-§5 steht an der ersten gültigen Zeile. Die Vorschau rechnet jeden Konflikt als überschrieben;
+schrittweise. Zeilen mit Ende ≤ Beginn (von `/confirm` übersprungen) zählen auch für §5 nicht
+und ersetzen keinen Bestandseintrag (`replaced_ids` nur über `_row_counts` — `/confirm`
+überspringt sie, bevor es einen Eintrag sucht); §5 steht an der ersten gültigen Zeile. Ein
+Arbeitstag, den nur der Bestand trägt (im Zeitraum der Datei oder der erste danach) und der auf
+einen Tag mit gültigen Zeilen folgt, prüft keine eigene Zeile — die Ruhezeit bis zu seinem
+ersten Beginn meldet die letzte gültige Zeile des Vortags („§5 ArbZG: Ruhezeit 7.0h
+unterschreitet das 11h-Minimum (nächster vorhandener Eintrag beginnt 02.06.2026 05:00)"), so
+wie `rest_time_service` den Verstoß nach dem Import meldet. Die Vorschau rechnet jeden Konflikt als überschrieben;
 ohne „überschreiben" zählt `/confirm` den stehenden Bestand mit — weicht die gespeicherte
 Pause von der vom Client geschickten ab, nennt das Ergebnis die Anpassung („Pause an den Tag
 angepasst (X → Y Min) – …").

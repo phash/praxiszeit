@@ -145,6 +145,10 @@ dieses Backup verlustfrei (`UPDATE.md`).
   meldet die Vorschau einmal je Tag, die Ruhezeit gemessen ab dem vorigen
   Arbeitstag statt ab der vorigen Zeile. Weicht die gespeicherte Pause von der
   Vorschau ab (Konflikte nicht überschrieben), nennt das Ergebnis die Anpassung.
+  Eine Zeile, deren Ende nicht nach dem Beginn liegt, ersetzt auch in der
+  Vorschau keinen vorhandenen Eintrag mehr; eine zu kurze Ruhezeit bis zu
+  einem vorhandenen Eintrag am Folgetag, der nicht in der Datei steht, meldet
+  die Vorschau jetzt ebenfalls.
 - **ODS-Jahresbericht:** Das Mitarbeiterblatt nennt wie die Excel-Datei die
   Summe der Nachtarbeitstage (sie wurde gezählt, aber nie ausgegeben).
 
