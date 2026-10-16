@@ -25,7 +25,7 @@ from app.models.security_event import (
 )
 from app.schemas.security_event import SecurityEventResponse
 from app.routers.admin_helpers import (
-    lock_active_admin_ids, lock_active_admins_and_user, lock_user_row,
+    lock_active_admins_and_user, lock_user_row,
 )
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
@@ -455,18 +455,32 @@ LAST_ADMIN_DETAIL = (
 )
 
 
-def _is_last_active_admin(db: Session, user: User) -> bool:
-    """Ist ``user`` das einzige aktive Admin-Konto seines Mandanten?
+def _lock_admins_and_reload(db: Session, current_user: User, user: User) -> bool:
+    """#489 + #491 API-2: Admin-Menge UND Zielzeile in EINER sortierten Sperre,
+    danach den Stand der Zielzeile neu lesen. Gibt zurueck, ob ``user`` NACH der
+    Sperre das letzte aktive Admin-Konto seines Mandanten ist.
 
-    Sperrt alle aktiven Admin-Zeilen ueber ``lock_active_admin_ids`` (sortiert,
-    ``FOR NO KEY UPDATE`` — die Projektregel fuer Anker-Sperren auf ``users``):
-    deaktivieren sich zwei Admins gleichzeitig gegenseitig, wartet die zweite
-    Transaktion und sieht danach die erste Deaktivierung. Ohne die Sperre
-    stuenden am Ende beide Konten deaktiviert da.
+    Gesamtreview B3: bis dahin entschied ``_is_last_active_admin`` am
+    UNGESPERRTEN Stand von ``_get_user_in_tenant`` — las es „Mitarbeiterin",
+    weil eine parallele Befoerderung noch nicht committet war, sperrte es gar
+    nichts und antwortete „nein"; erst ``_lock_and_reload`` wartete danach und
+    lud „aktive Admin". War die handelnde Admin inzwischen selbst deaktiviert,
+    traf die Deaktivierung das letzte aktive Admin-Konto
+    (``test_concurrency.py::test_deactivate_checks_last_admin_against_the_locked_state``).
+    Wie der Rollenwechsel in ``update_user``: IMMER beide sperren (die
+    veraltete Rolle ist genau das Problem), in EINER nach ID sortierten
+    Anweisung — zwei Anweisungen nacheinander verklemmten sich mit der
+    sortierten Mehrzeilen-Sperre der Betriebsferien-Buchung. Deaktivieren sich
+    zwei Admins gleichzeitig gegenseitig, wartet die zweite Transaktion und
+    sieht danach die erste Deaktivierung (READ COMMITTED prueft die Bedingung
+    an der neuesten Zeilenversion neu).
+    Konservativ wie dort: auch eine leere Liste (kein anderer aktiver Admin
+    gesperrt) gilt fuer einen aktiven Admin als „letzter".
     """
-    if user.role != UserRole.ADMIN or not user.is_active:
-        return False
-    return lock_active_admin_ids(db, user.tenant_id) == [user.id]
+    admin_ids = lock_active_admins_and_user(db, current_user.tenant_id, user.id)
+    db.refresh(user)
+    return (user.role == UserRole.ADMIN and bool(user.is_active)
+            and not any(aid != user.id for aid in admin_ids))
 
 
 def _lock_and_reload(db: Session, current_user: User, user: User) -> None:
@@ -483,9 +497,8 @@ def _lock_and_reload(db: Session, current_user: User, user: User) -> None:
     Die Sperre wartet auf die Gegenseite; ``refresh`` holt danach deren Stand.
     Dieselbe Falle hat jede Arbeitszeit-Änderung (E52/P5) — auch sie sperrt
     über diesen Helfer, nie über ein nacktes ``lock_user_row``.
-    Reihenfolge: NACH ``_is_last_active_admin`` (das ggf. alle aktiven
-    Admin-Zeilen sortiert sperrt) — erst die Admin-Menge, dann die Zielzeile,
-    sonst verklemmen sich zwei gleichzeitige Admin-Deaktivierungen ueber Kreuz.
+    Das Deaktivieren braucht zusätzlich die Admin-Menge und sperrt deshalb über
+    ``_lock_admins_and_reload`` (beides in EINER Anweisung), nicht hierüber.
     """
     lock_user_row(db, current_user.tenant_id, user.id)
     db.refresh(user)
@@ -1443,11 +1456,11 @@ def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
 
-    # #489: sonst kommt niemand mehr in die Verwaltung.
-    if _is_last_active_admin(db, user):
+    # #489: sonst kommt niemand mehr in die Verwaltung. Rolle und is_active
+    # erst NACH der Sperre lesen (#491 API-2, Gesamtreview B3).
+    if _lock_admins_and_reload(db, current_user, user):
         raise HTTPException(status_code=400, detail=LAST_ADMIN_DETAIL)
 
-    _lock_and_reload(db, current_user, user)  # #491 API-2
     was_active = user.is_active
     user.is_active = False
     user.deactivated_at = datetime.now(timezone.utc)

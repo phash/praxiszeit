@@ -110,38 +110,14 @@ def lock_user_row(db: Session, tenant_id, user_id):
     return rows[0] if rows else None
 
 
-def lock_active_admin_ids(db: Session, tenant_id) -> list:
-    """#489: Anker-Sperre auf ALLEN aktiven Admin-Zeilen eines Mandanten.
-
-    Grundlage der Regel „der letzte aktive Admin bleibt aktiv"
-    (``admin_users._is_last_active_admin``). Sortiert und ``FOR NO KEY UPDATE``
-    wie ``lock_user_rows`` (Begruendung oben): schliesst sich weiterhin gegen
-    sich selbst aus — deaktivieren sich zwei Admins gleichzeitig gegenseitig,
-    wartet die zweite Transaktion, prueft die gesperrten Zeilen danach gegen die
-    Bedingung neu (READ COMMITTED) und sieht die erste Deaktivierung —, laesst
-    aber die impliziten ``FOR KEY SHARE`` der Fremdschluessel-INSERTs durch.
-    Gibt die gesperrten IDs in Sortierreihenfolge zurueck.
-    """
-    rows = (
-        db.query(User.id)
-        .filter(
-            User.tenant_id == tenant_id,  # F-026
-            User.role == UserRole.ADMIN,
-            User.is_active == True,  # noqa: E712
-        )
-        .order_by(User.id)
-        .with_for_update(key_share=True)
-        .all()
-    )
-    return [r.id for r in rows]
-
-
 def lock_active_admins_and_user(db: Session, tenant_id, user_id) -> list:
     """#491 API-2 (Nachzug): Admin-Menge UND Zielzeile in EINER sortierten Sperre.
 
-    Fuer den Rollenwechsel (``admin_users.update_user``): er braucht die
-    Admin-Menge (Letzter-Admin-Regel) und die Zielzeile (Stand nach der Sperre
-    lesen). Zwei Anweisungen nacheinander — erst die Admin-Menge, dann die
+    Grundlage der Regel „der letzte aktive Admin bleibt aktiv" (#489) fuer den
+    Rollenwechsel (``admin_users.update_user``) und das Deaktivieren
+    (``admin_users._lock_admins_and_reload``, Gesamtreview B3): beide brauchen
+    die Admin-Menge (Letzter-Admin-Regel) und die Zielzeile (Stand nach der
+    Sperre lesen). Zwei Anweisungen nacheinander — erst die Admin-Menge, dann die
     Zielzeile — verklemmen sich mit jeder sortierten Mehrzeilen-Sperre
     (``lock_user_rows``, z. B. Betriebsferien-Buchung), sobald die Ziel-ID vor
     einer Admin-ID liegt: jene haelt das Ziel und wartet auf den Admin, diese

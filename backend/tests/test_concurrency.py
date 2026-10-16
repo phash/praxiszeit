@@ -1685,3 +1685,103 @@ def test_role_change_and_sorted_multi_row_lock_do_not_deadlock(
             text("SELECT role FROM users WHERE id = :u"), {"u": str(USER_ID)},
         ).scalar()
     assert role == "ADMIN"
+
+
+# ---------------------------------------------------------------------------
+# Gesamtreview B3 (#491-Nachzug): auch ``deactivate_user`` entscheidet die
+# Letzter-Admin-Regel am Stand NACH der Sperre — vorher las es Rolle und
+# ``is_active`` der Zielzeile ungesperrt und sperrte die Admin-Menge nur, wenn
+# dieser veraltete Stand „aktiver Admin" lautete.
+# ---------------------------------------------------------------------------
+
+def test_deactivate_checks_last_admin_against_the_locked_state(
+    concurrency_seed, account_event_state, admin_engine,
+):
+    """Sitzung A hat die Mitarbeiterin bereits zur Admin befördert und die
+    handelnde Admin deaktiviert (im Betrieb zwei Vorgänge — Beförderung, danach
+    deaktiviert die neue Admin die alte —, hier in EINER Transaktion
+    zusammengezogen), aber noch nicht committet. Die Deaktivierung der
+    Mitarbeiterin läuft parallel.
+
+    Vorher: ``_get_user_in_tenant`` las ungesperrt „Mitarbeiterin" →
+    ``_is_last_active_admin`` antwortete sofort „nein", ohne irgendetwas zu
+    sperren; erst ``_lock_and_reload`` wartete und lud danach den neuen Stand
+    „aktive Admin" — und deaktivierte das LETZTE aktive Admin-Konto der Praxis.
+    Genau den Zustand soll #489 ausschließen: niemand kommt mehr in die
+    Verwaltung. Jetzt: Admin-Menge UND Zielzeile in EINER Sperre, die Prüfung
+    danach → 400 ``LAST_ADMIN_DETAIL``.
+    """
+    holder = SessionLocal()
+    set_tenant_context(holder, TENANT_ID)
+    holder.execute(
+        text("UPDATE users SET role = 'ADMIN' WHERE id = :u AND tenant_id = :t"),
+        {"u": str(USER_ID), "t": str(TENANT_ID)},
+    )
+    holder.execute(
+        text("UPDATE users SET is_active = false WHERE id = :u AND tenant_id = :t"),
+        {"u": str(ACCOUNT_ACTOR_ID), "t": str(TENANT_ID)},
+    )
+
+    results: list = []
+    t = threading.Thread(target=_run_account_call, args=(results, "deactivate_user"))
+    t.start()
+    time_module.sleep(1.5)  # der Endpunkt steht jetzt in seiner Sperre
+    holder.commit()
+    holder.close()
+    t.join(timeout=20)
+    assert not t.is_alive(), "Endpunkt haengt nach dem Commit der Gegenseite"
+
+    with admin_engine.connect() as conn:
+        active_admins = conn.execute(text(
+            "SELECT count(*) FROM users WHERE tenant_id = :t AND role = 'ADMIN' AND is_active"
+        ), {"t": str(TENANT_ID)}).scalar()
+        events = [r[0] for r in conn.execute(text(
+            "SELECT event FROM security_events WHERE tenant_id = :t AND subject_user_id = :u"
+        ), {"t": str(TENANT_ID), "u": str(USER_ID)})]
+    assert results == [("rejected", 400)], (
+        f"{results}: die Deaktivierung hat das letzte aktive Admin-Konto getroffen "
+        f"(aktive Admins danach: {active_admins})."
+    )
+    assert active_admins == 1
+    assert events == []
+
+
+def test_deactivate_and_sorted_multi_row_lock_do_not_deadlock(
+    concurrency_seed, account_event_state, admin_engine,
+):
+    """Gegenstück zu ``test_role_change_and_sorted_multi_row_lock_do_not_deadlock``:
+    die Deaktivierung sperrt jetzt Admin-Menge UND Zielzeile — in EINER nach ID
+    sortierten Anweisung, damit sie sich nicht mit der sortierten Mehrzeilen-
+    Sperre der Betriebsferien-Buchung verklemmt (USER_ID < ACCOUNT_ACTOR_ID)."""
+    from app.routers.admin_helpers import lock_user_row
+
+    assert str(USER_ID) < str(ACCOUNT_ACTOR_ID)  # Voraussetzung des Szenarios
+    holder = SessionLocal()
+    set_tenant_context(holder, TENANT_ID)
+    lock_user_row(holder, TENANT_ID, USER_ID)  # Schritt 1 der sortierten Sperre
+
+    results: list = []
+    t = threading.Thread(target=_run_account_call, args=(results, "deactivate_user"))
+    t.start()
+    time_module.sleep(1.5)  # deactivate_user steht jetzt in seiner Sperre
+    try:
+        lock_user_row(holder, TENANT_ID, ACCOUNT_ACTOR_ID)  # Schritt 2
+        holder.commit()
+        holder_result = "ok"
+    except OperationalError as e:
+        holder.rollback()
+        holder_result = f"error: {type(e.orig).__name__}"
+    finally:
+        holder.close()
+    t.join(timeout=20)
+    assert not t.is_alive(), "Deaktivierung haengt"
+    assert holder_result == "ok", (
+        f"Sortierte Mehrzeilen-Sperre abgebrochen ({holder_result}) — Deaktivierung "
+        "und Betriebsferien-Buchung haben sich ueber Kreuz verklemmt."
+    )
+    assert results == [("ok",)], results
+    with admin_engine.connect() as conn:
+        active = conn.execute(
+            text("SELECT is_active FROM users WHERE id = :u"), {"u": str(USER_ID)},
+        ).scalar()
+    assert active is False
