@@ -204,6 +204,40 @@ describe('<AdminChangeRequests /> Anrechnung beantragen (Spec P21, P3)', () => {
     expect(await screen.findByRole('button', { name: 'Genehmigen und anerkennen' })).toBeInTheDocument();
   });
 
+  // Gesamtreview 1.20 (B2): der Server wertet auch das AKTUELLE wirksame Ende
+  // als Echo (end_is_correction). Nach einer Neukappung weicht es vom damaligen
+  // (original_end_time) ab — fällt das beantragte Ende genau darauf, lehnt der
+  // Server das Anerkennen mit 400 ab; die Prüfung bietet es dann nicht an.
+  it('automatisch geschlossen, beantragtes Ende = aktuelles wirksames Ende: kein „Genehmigen und anerkennen"', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_auto_closed: true,
+      original_start_time: '08:00:00', original_end_time: '18:15:00', entry_end_time: '17:15:00',
+      proposed_start_time: '08:00:00', proposed_end_time: '17:15:00',
+    }]);
+    render(<AdminChangeRequests />);
+    await screen.findByRole('button', { name: 'Genehmigen' });
+    expect(screen.queryByRole('button', { name: 'Genehmigen und anerkennen' })).not.toBeInTheDocument();
+  });
+
+  it('Kontrolltest: automatisch geschlossen, beantragtes Ende weder damals noch aktuell wirksam: Knopf bleibt', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_auto_closed: true,
+      original_start_time: '08:00:00', original_end_time: '18:15:00', entry_end_time: '17:15:00',
+      proposed_start_time: '08:00:00', proposed_end_time: '17:30:00',
+    }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByRole('button', { name: 'Genehmigen und anerkennen' })).toBeInTheDocument();
+  });
+
+  it('Kontrolltest: ohne Kennzeichen zählt das aktuelle wirksame Ende nicht', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_end_time: '19:00:00',
+      proposed_end_time: '19:00:00',
+    }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByRole('button', { name: 'Genehmigen und anerkennen' })).toBeInTheDocument();
+  });
+
   it('ohne Blöcke (wirksames Ende 23:59): ein beantragtes 23:59 bringt kein tatsächliches Ende', async () => {
     mockApi([{
       ...creditCr, request_credit_override: false, entry_auto_closed: true,

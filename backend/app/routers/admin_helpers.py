@@ -265,6 +265,9 @@ def _enrich_cr_responses(crs: list, db: Session) -> list[ChangeRequestResponse]:
             response.entry_raw_end_time = (
                 None if target.auto_closed else (target.raw_end_time or target.end_time)
             )
+            # Gesamtreview 1.20 (B2): aktuelles wirksames Ende — Echo-Regel der
+            # Genehmigung (``request_end_for_approval``/``end_is_correction``).
+            response.entry_end_time = target.end_time
         user = user_map.get(cr.user_id)
         if user:
             response.user_first_name = user.first_name

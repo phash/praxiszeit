@@ -101,6 +101,12 @@ class ChangeRequestResponse(BaseModel):
     # eines automatisch geschlossenen Eintrags ist kein Stempel (P18) → None.
     entry_raw_start_time: Optional[time] = None
     entry_raw_end_time: Optional[time] = None
+    # Gesamtreview 1.20 (B2): das AKTUELLE wirksame Ende des Zieleintrags. Die
+    # Genehmigung wertet ein beantragtes Ende auch dann als Echo, wenn es genau
+    # darauf fällt (``end_is_correction``) — beim automatisch geschlossenen
+    # Eintrag gibt es dann kein „genehmigen und anerkennen" (400, P18). Nach
+    # einer Neukappung weicht es von ``original_end_time`` ab.
+    entry_end_time: Optional[time] = None
 
     reason: str
     break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG

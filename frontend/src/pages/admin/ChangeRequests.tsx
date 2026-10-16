@@ -45,6 +45,8 @@ interface ChangeRequest {
   // Ende `null` bei einem automatisch geschlossenen Eintrag (P18).
   entry_raw_start_time?: string | null;
   entry_raw_end_time?: string | null;
+  // Gesamtreview 1.20 (B2): AKTUELLES wirksames Ende des Zieleintrags.
+  entry_end_time?: string | null;
   reason: string;
   rejection_reason?: string;
   reviewer_first_name?: string;
@@ -100,14 +102,17 @@ function getDateRange(range: TimeRange): { from: string; to: string } {
  * Hülle bis 23:59). Echo ist das wirksame Ende zum Zeitpunkt des Antrags
  * (`original_end_time`) — genau so liest es auch der Server
  * (`work_window_service.request_end_for_approval`, Review V1), auch wenn eine
- * Neukappung das wirksame Ende seither geändert hat. Zusätzlich gilt dort das
- * AKTUELLE wirksame Ende als Echo, das diese Liste nicht kennt: fällt ein
- * beantragtes Ende genau darauf, lehnt der Server das Anerkennen mit 400 ab.
+ * Neukappung das wirksame Ende seither geändert hat — und ebenso das AKTUELLE
+ * wirksame Ende (`entry_end_time`, `end_is_correction`; Gesamtreview 1.20 B2):
+ * fällt ein beantragtes Ende genau darauf, lehnt der Server das Anerkennen mit
+ * 400 ab.
  */
 function bringsActualEnd(cr: ChangeRequest): boolean {
   if (!cr.entry_auto_closed) return true;
   const end = cr.proposed_end_time?.substring(0, 5);
-  return !!end && end !== cr.original_end_time?.substring(0, 5);
+  return !!end
+    && end !== cr.original_end_time?.substring(0, 5)
+    && end !== cr.entry_end_time?.substring(0, 5);
 }
 
 const hhmm = (t?: string | null) => (t ? t.substring(0, 5) : '');
