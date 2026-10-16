@@ -1785,3 +1785,60 @@ def test_deactivate_and_sorted_multi_row_lock_do_not_deadlock(
             text("SELECT is_active FROM users WHERE id = :u"), {"u": str(USER_ID)},
         ).scalar()
     assert active is False
+
+
+# ---------------------------------------------------------------------------
+# Gesamtreview B3 (Nachzug): die Sperre gegen Selbst-Deaktivierung haengt an
+# der ZEILE, nicht an der Schreibweise der ID im Pfad. PostgreSQL nimmt in
+# ``User.id == :pfadwert`` jede gueltige UUID-Schreibweise an — der fruehere
+# Vergleich ``str(current_user.id) == user_id`` am ROHEN Pfadwert nicht.
+# SQLite findet die Zeile bei abweichender Schreibweise gar nicht (404), der
+# Fall existiert also nur hier; ``test_489_admin_lockout.py`` bildet ihn mit
+# einer PG-artigen Suche nach.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("spelling", [
+    pytest.param(lambda u: str(u).upper(), id="grossbuchstaben"),
+    pytest.param(lambda u: u.hex, id="ohne-bindestriche"),
+    pytest.param(lambda u: "{" + str(u) + "}", id="geschweifte-klammern"),
+])
+def test_self_deactivation_is_rejected_in_every_uuid_spelling(
+    concurrency_seed, account_event_state, admin_engine, spelling,
+):
+    """Mit einem zweiten aktiven Admin greift die Letzter-Admin-Regel nicht —
+    vorher lief ``deactivate_user`` mit der eigenen ID in Grossbuchstaben
+    durch: eigenes Konto deaktiviert, Sitzung entwertet, Protokollzeile
+    „deaktiviert" gegen sich selbst. Jetzt: 400, Konto unveraendert."""
+    from app.routers import admin_users as admin_users_router
+
+    with admin_engine.connect() as conn:  # zweiter aktiver Admin
+        conn.execute(text("UPDATE users SET role = 'ADMIN' WHERE id = :u"), {"u": str(USER_ID)})
+        token_version = conn.execute(
+            text("SELECT token_version FROM users WHERE id = :u"), {"u": str(ACCOUNT_ACTOR_ID)},
+        ).scalar()
+
+    session = SessionLocal()
+    try:
+        set_tenant_context(session, TENANT_ID)
+        actor = session.query(User).filter(User.id == ACCOUNT_ACTOR_ID).first()
+        with pytest.raises(HTTPException) as info:
+            admin_users_router.deactivate_user(
+                user_id=spelling(ACCOUNT_ACTOR_ID), db=session, current_user=actor,
+            )
+        session.rollback()
+    finally:
+        session.close()
+
+    assert info.value.status_code == 400
+    assert info.value.detail == "Sie können sich nicht selbst deaktivieren"
+    with admin_engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT is_active, token_version FROM users WHERE id = :u"),
+            {"u": str(ACCOUNT_ACTOR_ID)},
+        ).one()
+        events = conn.execute(text(
+            "SELECT count(*) FROM security_events WHERE tenant_id = :t"
+        ), {"t": str(TENANT_ID)}).scalar()
+    assert row.is_active is True
+    assert row.token_version == token_version
+    assert events == 0

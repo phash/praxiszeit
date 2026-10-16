@@ -124,6 +124,49 @@ class TestLetzterAdmin:
         assert r.status_code == 204
 
 
+class TestSelbstDeaktivieren:
+    """Die Sperre gegen Selbst-Deaktivierung haengt an der Zeile, nicht an der
+    Schreibweise der ID im Pfad (Gesamtreview B3). Vorher verglich der Router
+    den ROHEN Pfadwert mit ``str(current_user.id)`` — die Suche danach nimmt
+    aber jede gueltige UUID-Schreibweise an (Grossbuchstaben, ohne Bindestriche,
+    in geschweiften Klammern). Mit einem zweiten aktiven Admin (die
+    Letzter-Admin-Regel greift dann nicht) deaktivierte sich die Person so
+    selbst: Sitzung entwertet, Protokollzeile „deaktiviert" gegen sich selbst.
+
+    SQLite vergleicht die ID als Zeichenkette und findet die Zeile bei
+    abweichender Schreibweise gar nicht (404) — die Suche wird hier deshalb wie
+    in PostgreSQL ueber ``uuid.UUID`` aufgeloest. Der Beleg gegen echtes
+    PostgreSQL steht in ``test_concurrency.py::
+    test_self_deactivation_is_rejected_in_every_uuid_spelling``."""
+
+    @pytest.mark.parametrize("spelling", [
+        pytest.param(str, id="kanonisch"),
+        pytest.param(lambda u: str(u).upper(), id="grossbuchstaben"),
+        pytest.param(lambda u: u.hex, id="ohne-bindestriche"),
+        pytest.param(lambda u: "{" + str(u) + "}", id="geschweifte-klammern"),
+    ])
+    def test_eigenes_konto_in_jeder_schreibweise_abgelehnt(
+        self, db, test_admin, client_as, spelling, monkeypatch,
+    ):
+        from app.routers import admin_users as admin_users_router
+
+        real_lookup = admin_users_router._get_user_in_tenant
+        monkeypatch.setattr(  # Suche wie PostgreSQL: jede gueltige Schreibweise
+            admin_users_router, "_get_user_in_tenant",
+            lambda db_, user_id, current_user: real_lookup(
+                db_, str(uuid.UUID(user_id)), current_user),
+        )
+        _make_user(db, "zweitadmin", role=UserRole.ADMIN)  # Letzter-Admin-Regel greift nicht
+        token_version = test_admin.token_version
+        r = client_as(test_admin).delete(f"/api/admin/users/{spelling(test_admin.id)}")
+        assert r.status_code == 400, r.text
+        assert r.json()["detail"] == "Sie können sich nicht selbst deaktivieren"
+        db.refresh(test_admin)
+        assert test_admin.is_active is True
+        assert test_admin.token_version == token_version
+        assert _events(db, EVENT_USER_DEACTIVATED) == []
+
+
 class TestKeinDeaktivierenPerPut:
     def test_is_active_per_put_bleibt_wirkungslos(self, db, test_admin, client_as):
         # Ausgerechnet der letzte Admin: der PUT-Weg darf ihn nicht still abschalten.

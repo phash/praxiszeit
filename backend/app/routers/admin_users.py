@@ -1450,11 +1450,15 @@ def set_password(
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_user(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Deactivate a user (soft delete, admin only)."""
-    if str(current_user.id) == user_id:
-        raise HTTPException(status_code=400, detail="Sie können sich nicht selbst deaktivieren")
-
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
+
+    # Gesamtreview B3: an der gefundenen ZEILE vergleichen, nicht am rohen
+    # Pfadwert — PostgreSQL findet die Zeile auch ueber die ID in
+    # Grossbuchstaben, ohne Bindestriche oder in geschweiften Klammern, der
+    # fruehere Zeichenkettenvergleich ``str(current_user.id) == user_id`` nicht.
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Sie können sich nicht selbst deaktivieren")
 
     # #489: sonst kommt niemand mehr in die Verwaltung. Rolle und is_active
     # erst NACH der Sperre lesen (#491 API-2, Gesamtreview B3).
