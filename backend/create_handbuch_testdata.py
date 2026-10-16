@@ -112,7 +112,11 @@ BLOCK_DEMO_THROUGH_DAYS = {date(2026, 2, 9), date(2026, 2, 23)}
 
 
 def get_holiday_dates(db) -> set:
+    # Superadmin-Kontext: RLS greift nicht, der Mandantenfilter ist Pflicht
+    # (Gesamtreview 1.20 B9) — sonst strichen Feiertage fremder Mandanten
+    # Arbeitstage aus dem Demo-Zeitraum.
     holidays = db.query(PublicHoliday).filter(
+        PublicHoliday.tenant_id == TENANT_ID,
         PublicHoliday.date >= START_DATE,
         PublicHoliday.date <= END_DATE
     ).all()
@@ -176,7 +180,10 @@ def create_block_entries_for_user(db, user: User, work_days: list) -> int:
 def create_employees(db) -> list:
     created = []
     for emp in EMPLOYEES:
-        existing = db.query(User).filter(User.username == emp["username"]).first()
+        existing = db.query(User).filter(
+            User.username == emp["username"],
+            User.tenant_id == TENANT_ID,  # Superadmin-Kontext, nie fremde Konten übernehmen
+        ).first()
         if existing:
             print(f"  ~ {emp['first_name']} {emp['last_name']} existiert bereits (übersprungen)")
             _apply_work_blocks(db, existing, emp)
@@ -425,7 +432,10 @@ def create_change_requests(db, users: list, reviewer=None):
 
 def update_admin_password(db):
     """Setzt Admin-Passwort auf einen sicheren Wert."""
-    admin = db.query(User).filter(User.username == "admin").first()
+    admin = db.query(User).filter(
+        User.username == "admin",
+        User.tenant_id == TENANT_ID,  # Superadmin-Kontext: nie das Admin-Konto eines fremden Mandanten
+    ).first()
     if admin:
         admin.first_name = "Andreas"
         admin.last_name = "Werner"
@@ -465,9 +475,15 @@ def main():
         # 4. Bestehende Einträge dieser User löschen
         print("\n4. Alte Einträge bereinigen...")
         for u in users:
-            deleted_te = db.query(TimeEntry).filter(TimeEntry.user_id == u.id).delete()
-            deleted_ab = db.query(Absence).filter(Absence.user_id == u.id).delete()
-            deleted_cr = db.query(ChangeRequest).filter(ChangeRequest.user_id == u.id).delete()
+            deleted_te = db.query(TimeEntry).filter(
+                TimeEntry.user_id == u.id, TimeEntry.tenant_id == TENANT_ID,
+            ).delete(synchronize_session=False)
+            deleted_ab = db.query(Absence).filter(
+                Absence.user_id == u.id, Absence.tenant_id == TENANT_ID,
+            ).delete(synchronize_session=False)
+            deleted_cr = db.query(ChangeRequest).filter(
+                ChangeRequest.user_id == u.id, ChangeRequest.tenant_id == TENANT_ID,
+            ).delete(synchronize_session=False)
             db.commit()
             if deleted_te or deleted_ab:
                 print(f"  ~ {u.first_name}: {deleted_te} Zeiteinträge + {deleted_ab} Abwesenheiten gelöscht")

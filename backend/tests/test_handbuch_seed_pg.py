@@ -52,6 +52,10 @@ THOMAS_ID = uuid.UUID("b9b90000-0000-4000-8000-000000000102")
 ADMIN_ID = uuid.UUID("b9b90000-0000-4000-8000-000000000103")
 MARIA_ENTRY_ID = uuid.UUID("b9b90000-0000-4000-8000-000000000201")
 THOMAS_ENTRY_ID = uuid.UUID("b9b90000-0000-4000-8000-000000000202")
+# Fremder Mandant für die Gegenprobe der Mandantenfilter (Superadmin-Kontext).
+FOREIGN_TENANT_ID = uuid.UUID("b9b90000-0000-4000-8000-000000000002")
+FOREIGN_ADMIN_ID = uuid.UUID("b9b90000-0000-4000-8000-000000000301")
+FOREIGN_MARIA_ID = uuid.UUID("b9b90000-0000-4000-8000-000000000302")
 
 SEED_PATH = Path(__file__).resolve().parent.parent / "create_handbuch_testdata.py"
 
@@ -64,11 +68,13 @@ def _load_seed():
 
 
 def _cleanup(conn):
-    tid = {"tid": str(TENANT_ID)}
-    conn.execute(text("DELETE FROM change_requests WHERE tenant_id = :tid"), tid)
-    conn.execute(text("DELETE FROM time_entries WHERE tenant_id = :tid"), tid)
-    conn.execute(text("DELETE FROM users WHERE tenant_id = :tid"), tid)
-    conn.execute(text("DELETE FROM tenants WHERE id = :tid"), tid)
+    for t in (TENANT_ID, FOREIGN_TENANT_ID):
+        tid = {"tid": str(t)}
+        conn.execute(text("DELETE FROM change_requests WHERE tenant_id = :tid"), tid)
+        conn.execute(text("DELETE FROM time_entries WHERE tenant_id = :tid"), tid)
+        conn.execute(text("DELETE FROM public_holidays WHERE tenant_id = :tid"), tid)
+        conn.execute(text("DELETE FROM users WHERE tenant_id = :tid"), tid)
+        conn.execute(text("DELETE FROM tenants WHERE id = :tid"), tid)
 
 
 @pytest.fixture(scope="module")
@@ -184,3 +190,104 @@ def test_seed_creates_both_change_requests(seeded, app_engine, monkeypatch, caps
     # Abgelehnt heißt: von jemandem, zu einem Zeitpunkt (wie review_change_request).
     assert thomas.reviewed_by == ADMIN_ID
     assert thomas.reviewed_at is not None
+
+
+# ── Mandantenfilter im Superadmin-Kontext ───────────────────────────────────
+#
+# Der Seed läuft unter ``set_superadmin_context`` — RLS greift dort nicht, jede
+# Abfrage muss den Mandanten selbst filtern (CLAUDE.md, Security-Review
+# 2026-07-25). Ohne Filter traf der Seed in einer Datenbank mit mehreren
+# Mandanten (SaaS-Entwicklung, E2E-Signups) die Zeilen eines FREMDEN Mandanten:
+# das Admin-Konto eines anderen Mandanten bekam Name, E-Mail und Passwort der
+# Musterpraxis, eine gleichnamige fremde Mitarbeiterin wurde als „existiert
+# bereits" übernommen und bekam die Demo-Daten, und fremde Feiertage strichen
+# Arbeitstage aus dem Demo-Zeitraum.
+
+
+@pytest.fixture
+def foreign_tenant(admin_engine):
+    """Zielmandant ohne Konten, fremder Mandant mit ``admin`` und
+    ``maria.hoffmann`` — dazu je ein Feiertag im Demo-Zeitraum."""
+    with admin_engine.connect() as conn:
+        _cleanup(conn)
+        for tid, slug in ((TENANT_ID, "b9-seed-test"), (FOREIGN_TENANT_ID, "b9-seed-fremd")):
+            conn.execute(text(
+                "INSERT INTO tenants (id, name, slug, is_active, mode) "
+                "VALUES (:id, :slug, :slug, true, 'multi')"
+            ), {"id": str(tid), "slug": slug})
+        insert_user = text("""
+            INSERT INTO users (id, tenant_id, username, email, password_hash,
+                               first_name, last_name, role, weekly_hours,
+                               vacation_days, work_days_per_week, is_active)
+            VALUES (:id, :tid, :username, :email, 'fremder-hash',
+                    'Fremd', 'Konto', :role, 40, 30, 5, true)
+        """)
+        for uid, username, role in ((FOREIGN_ADMIN_ID, "admin", "ADMIN"),
+                                    (FOREIGN_MARIA_ID, "maria.hoffmann", "EMPLOYEE")):
+            conn.execute(insert_user, {"id": str(uid), "tid": str(FOREIGN_TENANT_ID),
+                                       "username": username,
+                                       "email": f"{username}@b9-fremd.invalid", "role": role})
+        insert_holiday = text(
+            "INSERT INTO public_holidays (id, tenant_id, date, name, year) "
+            "VALUES (:id, :tid, :dt, :name, 2026)"
+        )
+        conn.execute(insert_holiday, {"id": str(uuid.uuid4()), "tid": str(TENANT_ID),
+                                      "dt": "2026-01-06", "name": "Heilige Drei Könige"})
+        conn.execute(insert_holiday, {"id": str(uuid.uuid4()), "tid": str(FOREIGN_TENANT_ID),
+                                      "dt": "2026-01-20", "name": "Fremder Feiertag"})
+    yield
+    with admin_engine.connect() as conn:
+        _cleanup(conn)
+
+
+def _foreign_user(admin_engine, uid):
+    with admin_engine.connect() as conn:
+        return conn.execute(text(
+            "SELECT first_name, email, password_hash, weekly_hours FROM users WHERE id = :id"
+        ), {"id": str(uid)}).one()
+
+
+def _seed_session(app_engine, seed, monkeypatch):
+    monkeypatch.setattr(seed, "TENANT_ID", str(TENANT_ID))
+    db = SessionLocal(bind=app_engine)
+    set_superadmin_context(db)
+    return db
+
+
+def test_admin_update_stays_in_own_tenant(foreign_tenant, admin_engine, app_engine,
+                                          monkeypatch, capsys):
+    seed = _load_seed()
+    db = _seed_session(app_engine, seed, monkeypatch)
+    try:
+        seed.update_admin_password(db)
+    finally:
+        db.close()
+    assert "Admin-User nicht gefunden" in capsys.readouterr().out
+    first_name, email, password_hash, _ = _foreign_user(admin_engine, FOREIGN_ADMIN_ID)
+    assert (first_name, email, password_hash) == ("Fremd", "admin@b9-fremd.invalid", "fremder-hash")
+
+
+def test_holidays_come_from_own_tenant(foreign_tenant, app_engine, monkeypatch):
+    from datetime import date
+
+    seed = _load_seed()
+    db = _seed_session(app_engine, seed, monkeypatch)
+    try:
+        assert seed.get_holiday_dates(db) == {date(2026, 1, 6)}
+    finally:
+        db.close()
+
+
+def test_employees_are_created_in_own_tenant(foreign_tenant, admin_engine, app_engine,
+                                             monkeypatch):
+    seed = _load_seed()
+    db = _seed_session(app_engine, seed, monkeypatch)
+    try:
+        users = seed.create_employees(db)
+        assert {u.tenant_id for u in users} == {TENANT_ID}
+        assert len(users) == len(seed.EMPLOYEES)
+    finally:
+        db.close()
+    # Die gleichnamige fremde Mitarbeiterin bleibt unberührt.
+    first_name, email, _, weekly_hours = _foreign_user(admin_engine, FOREIGN_MARIA_ID)
+    assert (first_name, email, float(weekly_hours)) == ("Fremd", "maria.hoffmann@b9-fremd.invalid", 40.0)
