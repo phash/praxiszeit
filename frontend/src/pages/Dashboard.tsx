@@ -224,8 +224,10 @@ export default function Dashboard() {
   const [clockLoadedAt, setClockLoadedAt] = useState(() => Date.now());
   const [nowMs, setNowMs] = useState(() => Date.now());
   const setClockStatus = useCallback((data: typeof clockStatus) => {
+    const loadedAt = Date.now();
     setClockStatusRaw(data);
-    setClockLoadedAt(Date.now());
+    setClockLoadedAt(loadedAt);
+    setNowMs(loadedAt);
   }, []);
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
@@ -378,12 +380,18 @@ export default function Dashboard() {
 
   // #494 (Gesamtreview B6): solange ein Eintrag läuft, einmal pro Minute neu
   // zeichnen. Hängt nur am Eingestempelt-Zustand — kein Abruf, keine Schleife.
+  // Gesamtreview B6 (Nachzug): auch ohne laufenden Eintrag, sobald heute zwei
+  // oder mehr Arbeitszeit-Blöcke gelten — der Status („Pause zwischen den
+  // Arbeitsblöcken" bzw. „Noch nicht eingestempelt") hängt dann an der Uhrzeit
+  // und muss beim Beginn und Ende der Lücke wechseln, ohne Neuladen.
   const isClockedInNow = clockStatus?.is_clocked_in ?? false;
+  const hasBlockGapToday = (clockStatus?.blocks_today?.length ?? 0) > 1;
+  const needsMinuteTick = isClockedInNow || hasBlockGapToday;
   useEffect(() => {
-    if (!isClockedInNow) return;
+    if (!needsMinuteTick) return;
     const id = setInterval(() => setNowMs(Date.now()), 60_000);
     return () => clearInterval(id);
-  }, [isClockedInNow]);
+  }, [needsMinuteTick]);
 
   // Refresh balances and clock status after stamp actions (clock-in/out)
   useEffect(() => {
@@ -534,7 +542,9 @@ export default function Dashboard() {
         // außerhalb des Beschäftigungsfensters gefüllt (der StampWidget kappt
         // damit), dort gibt es aber keine Arbeitsblöcke, zwischen denen man
         // pausieren könnte.
-        const nowDate = new Date();
+        // Uhrzeit aus dem Minutentakt (nicht `new Date()` beim Rendern), damit
+        // der Takt den Status beim Übergang der Lücke tatsächlich umschaltet.
+        const nowDate = new Date(nowMs);
         const inGap = isWorkday && !isClockedIn
           && isInBlockGap(clockStatus?.blocks_today, nowDate.getHours() * 60 + nowDate.getMinutes());
         const shouldBeClockedIn = isWorkday && !isClockedIn && !workedToday && !inGap;

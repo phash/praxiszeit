@@ -509,8 +509,12 @@ describe('Dashboard Übersicht Monat/Woche (#500)', () => {
 describe('Dashboard Stempelkarte in der Lücke zwischen den Arbeitsblöcken (Spec 14, E69)', () => {
   const BLOCKS = [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }];
 
-  function at(iso: string, todayTargetHours = 7) {
-    vi.useFakeTimers({ toFake: ['Date'] });
+  function at(
+    iso: string,
+    todayTargetHours = 7,
+    toFake: ('Date' | 'setInterval' | 'clearInterval')[] = ['Date'],
+  ) {
+    vi.useFakeTimers({ toFake });
     vi.setSystemTime(new Date(iso));
     const base = getMock.getMockImplementation()!;
     getMock.mockImplementation((url: string) =>
@@ -545,6 +549,40 @@ describe('Dashboard Stempelkarte in der Lücke zwischen den Arbeitsblöcken (Spe
       await waitFor(() => expect(within(card).getByText('Noch nicht eingestempelt')).toBeInTheDocument());
     },
   );
+
+  // Gesamtreview B6 (Nachzug): der Status hing an der Uhrzeit beim Rendern, der
+  // Minutentakt lief aber nur bei laufendem Eintrag. Wer nicht eingestempelt
+  // war, sah nach dem Ende der Lücke weiter neutral „Pause …" (bzw. beim
+  // Eintritt in die Lücke weiter Rot) — bis zum nächsten Neuladen.
+  describe('wechselt den Status beim Übergang der Lücke ohne Neuladen', () => {
+    const clockStatusCalls = () =>
+      getMock.mock.calls.filter((c) => c[0] === '/time-entries/clock-status').length;
+
+    it('Ende der Lücke: neutral „Pause …" → „Noch nicht eingestempelt"', async () => {
+      at('2026-06-01T14:58:00', 7, ['Date', 'setInterval', 'clearInterval']);
+      render(<MemoryRouter><Dashboard /></MemoryRouter>);
+      const card = await screen.findByRole('button', { name: 'Stempeluhr öffnen' });
+      await waitFor(() => expect(within(card).getByText('Pause zwischen den Arbeitsblöcken')).toBeInTheDocument());
+      const callsAfterLoad = clockStatusCalls();
+
+      act(() => { vi.advanceTimersByTime(3 * 60_000); });
+      expect(within(card).getByText('Noch nicht eingestempelt')).toBeInTheDocument();
+      expect(within(card).queryByText('Pause zwischen den Arbeitsblöcken')).not.toBeInTheDocument();
+      expect(card.className).toMatch(/bg-danger/);
+      expect(clockStatusCalls()).toBe(callsAfterLoad);
+    });
+
+    it('Beginn der Lücke: „Noch nicht eingestempelt" → neutral „Pause …"', async () => {
+      at('2026-06-01T11:58:00', 7, ['Date', 'setInterval', 'clearInterval']);
+      render(<MemoryRouter><Dashboard /></MemoryRouter>);
+      const card = await screen.findByRole('button', { name: 'Stempeluhr öffnen' });
+      await waitFor(() => expect(within(card).getByText('Noch nicht eingestempelt')).toBeInTheDocument());
+
+      act(() => { vi.advanceTimersByTime(3 * 60_000); });
+      expect(within(card).getByText('Pause zwischen den Arbeitsblöcken')).toBeInTheDocument();
+      expect(card.className).not.toMatch(/bg-danger/);
+    });
+  });
 
   // Review Task 17: `blocks_today` kommt aus `get_scheduled_blocks` und ist
   // auch an Tagen ohne Tagessoll gefüllt (ganztägig Urlaub/Krank/Fortbildung,
