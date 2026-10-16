@@ -382,6 +382,21 @@ def end_is_correction(incoming: Optional[time], prev_eff: Optional[time]) -> boo
     return not same_minute(incoming, prev_eff)
 
 
+def _request_input_for_approval(
+    proposed: Optional[time], original: Optional[time], current: Optional[time],
+) -> Optional[time]:
+    """Echo des Antrags → aktueller wirksamer Wert (siehe
+    ``request_end_for_approval``); jeder andere Wert bleibt, wie beantragt."""
+    if (
+        proposed is not None
+        and original is not None
+        and current is not None
+        and same_minute(proposed, original)
+    ):
+        return current
+    return proposed
+
+
 def request_end_for_approval(
     entry, proposed_end: Optional[time], original_end: Optional[time],
 ) -> Optional[time]:
@@ -398,22 +413,35 @@ def request_end_for_approval(
     eingetragenes Ende: das Protokoll-23:59 (Grenzfall ohne Blöcke → danach
     Blöcke) bzw. das frühere wirksame Ende wurde zum Stempel, das Kennzeichen
     fiel und „genehmigen und anerkennen" rechnete bis dorthin an (Schlupfloch
-    E36/E42). Deshalb gilt beim automatisch geschlossenen Eintrag ein Ende
-    minutengleich mit ``original_end`` als Echo und wird durch das AKTUELLE
-    wirksame Ende ersetzt; jedes andere Ende bleibt, wie es beantragt wurde.
-    Echo = wirksames Ende zum Zeitpunkt des Antrags ODER aktuelles wirksames
-    Ende (das prüft ``end_is_correction``).
+    E36/E42). Deshalb gilt ein Ende minutengleich mit ``original_end`` als Echo
+    und wird durch das AKTUELLE wirksame Ende ersetzt; jedes andere Ende
+    bleibt, wie es beantragt wurde. Echo = wirksames Ende zum Zeitpunkt des
+    Antrags ODER aktuelles wirksames Ende (das prüft ``end_is_correction``).
 
-    Ohne Kennzeichen, ohne beantragtes Ende oder ohne Vorher-Wert (Antrag zu
-    einem damals offenen Eintrag) unverändert."""
-    if (
-        getattr(entry, "auto_closed", False)
-        and proposed_end is not None
-        and original_end is not None
-        and same_minute(proposed_end, original_end)
-    ):
-        return entry.end_time
-    return proposed_end
+    Gesamtreview 1.20 (B2): gilt für JEDEN Eintrag, nicht nur beim automatisch
+    geschlossenen. Ohne Kennzeichen hielt ``unclamp_input`` das veraltete Echo
+    (18:15, Rohstempel 19:00, seither auf 17:15 neu gekappt) für eine neue
+    Eingabe, und ``clamp`` legte 18:15 als Rohende ab — der Stempel 19:00 (§16)
+    war weg. Jetzt rechnet ``end_input_for`` mit dem gespeicherten Paar weiter.
+    Den Beginn liest ``request_start_for_approval`` nach derselben Regel.
+
+    Ohne beantragtes Ende oder ohne Vorher-Wert (Antrag zu einem damals offenen
+    Eintrag) unverändert."""
+    return _request_input_for_approval(proposed_end, original_end, entry.end_time)
+
+
+def request_start_for_approval(
+    entry, proposed_start: Optional[time], original_start: Optional[time],
+) -> Optional[time]:
+    """Gesamtreview 1.20 (B2): der beantragte Beginn eines UPDATE-Antrags, wie
+    die Genehmigung ihn liest — dieselbe Regel wie ``request_end_for_approval``.
+    Ein Beginn minutengleich mit dem angerechneten Beginn ZUM ZEITPUNKT DES
+    ANTRAGS (``original_start_time``) ist Echo und wird durch den aktuellen
+    angerechneten Beginn ersetzt; ``unclamp_input`` stellt daraus den
+    Rohstempel her. Sonst hielt die Genehmigung nach einer Neukappung (Hülle
+    beginnt später) den alten Beginn 07:45 für eine Eingabe und legte ihn als
+    Rohbeginn ab — der Stempel 07:00 war weg."""
+    return _request_input_for_approval(proposed_start, original_start, entry.start_time)
 
 
 def end_input_for(

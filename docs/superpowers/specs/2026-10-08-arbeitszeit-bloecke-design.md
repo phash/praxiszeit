@@ -991,9 +991,12 @@ V1):** maßgeblich ist die Bedingung „wirksames Ende = 23:59", nicht „ohne B
 **Entschieden 2026-10-11 (Review V1, Folgefund):** In der UPDATE-Genehmigung (Vorprüfung Nr. 7,
 Schreiben Nr. 9) ist Echo das wirksame Ende zum Zeitpunkt des Antrags (`original_end_time`)
 oder das aktuelle wirksame Ende. `work_window_service.request_end_for_approval` ersetzt ein
-beantragtes Ende, das minutengleich mit `original_end_time` ist, beim automatisch geschlossenen
-Eintrag durch das aktuelle wirksame Ende; `lacks_actual_end`, `end_input_for` und
-`end_is_correction` lesen nur diesen Wert. Ohne diesen Schritt wurde das Echo eines offenen
+beantragtes Ende, das minutengleich mit `original_end_time` ist, durch das aktuelle wirksame
+Ende; `lacks_actual_end`, `end_input_for` und `end_is_correction` lesen nur diesen Wert.
+**Gesamtreview 1.20 (B2):** die Regel gilt für jeden Eintrag (nicht nur beim automatisch
+geschlossenen) und ebenso für den Beginn (`request_start_for_approval`, `original_start_time`) —
+ohne Kennzeichen hielt `unclamp_input` das veraltete Echo (18:15, Rohstempel 19:00, seither auf
+17:15 neu gekappt) für eine neue Eingabe, und der Rohstempel ging verloren. Ohne diesen Schritt wurde das Echo eines offenen
 Antrags zum Stempel, sobald eine Neukappung (Nr. 15) das wirksame Ende vor der Genehmigung
 änderte (Echo 23:59 eines Tages ohne Blöcke, danach Blöcke → 18:15: Kennzeichen weg,
 Anerkennen bis 23:59). Ein im Antrag eingetipptes anderes Ende bleibt Korrektur.

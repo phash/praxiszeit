@@ -206,7 +206,10 @@ raw_end, uncredited_minutes, grace_minutes)`:
    Arbeitszeit-Änderung (TZ-G) nimmt den aktuellen Puffer und schreibt ihn neu.
    Schickt ein Formular die gekappte Zeit unverändert zurück, rechnet die Neukappung mit dem
    Rohstempel weiter (`unclamp_input`); die Massen-Neukappung geht immer vom Rohstempel aus, ohne
-   Rohstempel von der gespeicherten Zeit.
+   Rohstempel von der gespeicherten Zeit. Bei der Genehmigung eines Änderungsantrags gilt auch die
+   Zeit als zurückgeschickt, die beim Stellen des Antrags angerechnet war (Beginn und Ende,
+   `request_start_for_approval`/`request_end_for_approval`) – eine Neukappung zwischen Antrag und
+   Genehmigung macht sie nicht zur neuen Eingabe, der Rohstempel bleibt.
 5. **Auto-Close:** Ein offener Eintrag eines vergangenen Tages wird mit Ende 23:59 über `clamp`
    geschlossen (`auto_closed = true`); angerechnet wird bis `letzter Block + g`, 23:59 bleibt als
    `raw_end_time` stehen, gilt aber nicht als Stempel (keine Anwesenheit, kein „nicht angerechnet",

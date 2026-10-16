@@ -652,7 +652,7 @@ def test_end_is_correction(incoming, eff, expected):
     (True, time(17, 15), time(18, 15), time(17, 15)),       # = aktuelles wirksames Ende (end_is_correction)
     (True, time(23, 59), None, time(23, 59)),               # Antrag zu einem damals offenen Eintrag
     (True, None, time(18, 15), None),                       # kein Ende beantragt
-    (False, time(18, 15), time(18, 15), time(18, 15)),      # ohne Kennzeichen unverändert
+    (False, time(18, 15), time(18, 15), time(17, 15)),      # ohne Kennzeichen ebenso (Gesamtreview 1.20 B2)
 ])
 def test_request_end_for_approval(auto_closed, proposed, original, expected):
     entry = TimeEntry(end_time=time(17, 15), raw_end_time=time(18, 15), auto_closed=auto_closed)

@@ -338,8 +338,10 @@ def review_change_request(
     # Pfad sie kennt.
     _in_start, _in_end = cr.proposed_start_time, cr.proposed_end_time
     # P18 (Review V1, Folgefund): das beantragte Ende, wie die Genehmigung es
-    # liest — bei UPDATE unten über ``request_end_for_approval`` bestimmt.
+    # liest — bei UPDATE unten über ``request_end_for_approval`` bestimmt;
+    # ebenso der Beginn (Gesamtreview 1.20 B2, ``request_start_for_approval``).
     _proposed_end = cr.proposed_end_time
+    _proposed_start = cr.proposed_start_time
     if cr.entry_kind != "absence":
         if cr.request_type == ChangeRequestType.CREATE:
             duplicate = db.query(TimeEntry).filter(
@@ -369,9 +371,15 @@ def review_change_request(
             # Ende seither geändert, bleibt dieses Echo trotzdem Echo — sonst
             # würde das Protokoll-23:59 bzw. das frühere wirksame Ende hier zum
             # Stempel. Vorprüfung, ``end_input_for`` und ``end_is_correction``
-            # lesen deshalb alle drei ``_proposed_end``.
+            # lesen deshalb alle drei ``_proposed_end``. Gesamtreview 1.20 (B2):
+            # an jedem Eintrag, auch ohne ``auto_closed``, und ebenso am Beginn
+            # (``original_start_time``) — sonst legte ``clamp`` das veraltete
+            # Echo als Rohwert ab, und der Stempel (§16) war weg.
             _proposed_end = work_window_service.request_end_for_approval(
                 entry, cr.proposed_end_time, cr.original_end_time,
+            )
+            _proposed_start = work_window_service.request_start_for_approval(
+                entry, cr.proposed_start_time, cr.original_start_time,
             )
             # P18/P21: Anerkennen setzt ein tatsächliches Ende voraus. Ohne es
             # bliebe der Eintrag nach dem UPDATE-Zweig ``auto_closed`` und
@@ -387,12 +395,14 @@ def review_change_request(
                     status_code=400, detail=credit_override_service.AUTO_CLOSED_DETAIL,
                 )
             # Check for unique constraint violation on date/start_time change
-            if cr.proposed_date != entry.date or cr.proposed_start_time != entry.start_time:
+            # (mit dem Beginn, wie die Genehmigung ihn liest — ein Echo ist
+            # keine Änderung, B2).
+            if cr.proposed_date != entry.date or _proposed_start != entry.start_time:
                 dup = db.query(TimeEntry).filter(
                     TimeEntry.tenant_id == cr.tenant_id,
                     TimeEntry.user_id == cr.user_id,
                     TimeEntry.date == cr.proposed_date,
-                    TimeEntry.start_time == cr.proposed_start_time,
+                    TimeEntry.start_time == _proposed_start,
                     TimeEntry.id != entry.id,
                 ).first()
                 if dup:
@@ -423,7 +433,7 @@ def review_change_request(
         # (E41) — der traegt das Ergebnis genau dieser Kappung.
         if cr.request_type == ChangeRequestType.UPDATE and entry is not None:
             _in_start = work_window_service.unclamp_input(
-                cr.proposed_start_time, entry.start_time, entry.raw_start_time)
+                _proposed_start, entry.start_time, entry.raw_start_time)
             # PR1-Review F1 (P18): Vorprüfung und Schreiben teilen sich diese Eingabe — ein
             # automatisch geschlossener Eintrag, der nur auf einen anderen Tag
             # wandert, rechnet mit dem wirksamen Ende statt dem Rohende 23:59.
