@@ -574,9 +574,10 @@ def create_absence(
         # eigene Fassung, die im gleichmaessigen Modus jeden Werktag als
         # Urlaubstag nahm — in einem Zeitraum mit 0 Wochenstunden (Elternzeit)
         # verlangte sie Budget fuer Tage, die danach nie gebucht werden.
+        # ``year_cache``: Sondertags-Konfiguration je Jahr EINMAL laden statt je Tag.
         cost_by_year = calculation_service.vacation_day_cost_by_year(
             db, target_user, dates_to_create, bool(absence_data.half_day),
-            wh_changes=wh_changes,
+            wh_changes=wh_changes, year_cache={},
         )
         for check_year in sorted({d.year for d in dates_to_create}):
             vacation_account = calculation_service.get_vacation_account(

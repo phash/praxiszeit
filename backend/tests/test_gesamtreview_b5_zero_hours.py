@@ -25,6 +25,7 @@ from decimal import Decimal
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
@@ -35,7 +36,7 @@ from app.models import (
 from app.routers.admin_change_requests import _vacation_day_contribution, review_change_request
 from app.schemas.change_request import ChangeRequestReview
 from app.services import auth_service, calculation_service
-from tests.conftest import DEFAULT_TENANT_ID
+from tests.conftest import DEFAULT_TENANT_ID, engine
 
 # 02.11.2026 = Montag. Ab Mi 04.11. gilt 0 h/Woche (geplante Elternzeit).
 NOV_MON, NOV_TUE, NOV_WED = date(2026, 11, 2), date(2026, 11, 3), date(2026, 11, 4)
@@ -211,6 +212,40 @@ class TestDirectBooking:
         })
         assert r.status_code == 400, r.text
         assert "0 Stunden geplant" in r.json()["detail"]
+
+
+def _count_statements(fn, needle):
+    seen = {"n": 0}
+
+    def _listener(conn, cursor, statement, parameters, context, executemany):
+        if needle in statement.lower():
+            seen["n"] += 1
+
+    event.listen(engine, "before_cursor_execute", _listener)
+    try:
+        fn()
+    finally:
+        event.remove(engine, "before_cursor_execute", _listener)
+    return seen["n"]
+
+
+def test_direct_precheck_loads_year_data_once(db, admin):
+    """Die Vorpruefung laedt Feiertage/Sondertage je Jahr EINMAL (``year_cache``)
+    — eine zweiwoechige Buchung stellt nicht mehr Feiertags-Abfragen als eine
+    einwoechige."""
+    emp_short = _make_user(db, "b5_q_short")
+    emp_long = _make_user(db, "b5_q_long")
+
+    def _book(emp, end):
+        r = _client_as(db, admin).post("/api/absences/", json={
+            "user_id": str(emp.id), "date": NOV_MON.isoformat(),
+            "end_date": end.isoformat(), "type": "vacation", "hours": 8.0,
+        })
+        assert r.status_code == 201, r.text
+
+    short = _count_statements(lambda: _book(emp_short, NOV_FRI), "from public_holidays")
+    long = _count_statements(lambda: _book(emp_long, date(2026, 11, 13)), "from public_holidays")
+    assert long == short
 
 
 # ── Aenderungsantrag (CREATE) ─────────────────────────────────────────────────
