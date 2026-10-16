@@ -4,7 +4,7 @@ Erstellt realistische Testdaten für Handbuch-Screenshots.
 """
 import sys
 import os
-from datetime import date, datetime, timedelta, time as dt_time
+from datetime import date, datetime, timedelta, timezone, time as dt_time
 from decimal import Decimal
 import random
 
@@ -346,36 +346,47 @@ def create_absences_for_user(db, user: User, holiday_dates: set):
     print(f"    ✓ {len(absence_entries)} Abwesenheiten erstellt")
 
 
-def _insert_change_request(db, user_id, time_entry_id, req_type, status,
-                            orig_start, orig_end, orig_break,
-                            prop_start, prop_end, prop_break,
-                            reason, rejection_reason=None):
-    """Insert a change request via direct psycopg2 to bypass SQLAlchemy enum issues."""
-    conn = db.connection()
-    raw_conn = conn.connection
-    cursor = raw_conn.cursor()
-    cursor.execute(f"""
-        INSERT INTO change_requests (
-            id, tenant_id, user_id, request_type, status, time_entry_id,
-            original_start_time, original_end_time, original_break_minutes,
-            proposed_start_time, proposed_end_time, proposed_break_minutes,
-            reason, rejection_reason
-        ) VALUES (
-            gen_random_uuid(), %s, %s,
-            %s::changerequesttype, %s::changerequeststatus,
-            %s, %s, %s, %s, %s, %s, %s, %s, %s
-        )
-    """, (
-        TENANT_ID, str(user_id), req_type, status, str(time_entry_id),
-        str(orig_start), str(orig_end), orig_break,
-        str(prop_start), str(prop_end), prop_break,
-        reason, rejection_reason,
-    ))
-    raw_conn.commit()
+def _add_change_request(db, user, entry, status, prop_start, prop_end, prop_break,
+                        reason, rejection_reason=None, reviewer=None):
+    """Legt einen UPDATE-Korrekturantrag über die Session an — mit Vorher-Bild
+    wie ``change_requests.create_change_request`` und, wenn abgelehnt, mit
+    Prüferin und Zeitpunkt wie ``review_change_request``.
+
+    Gesamtreview 1.20 (B9): früher ein INSERT über die rohe DBAPI-Verbindung mit
+    eigenem ``commit()``. Der Mandantenkontext steht per ``SET LOCAL`` nur in der
+    laufenden Transaktion und wird über das ``after_begin``-Ereignis der Session
+    erneuert (``app.database``) — ein Commit an der Session vorbei löst es nie
+    aus. Die folgende Abfrage lief ohne Kontext, RLS lieferte 0 Zeilen, und von
+    zwei Anträgen kam nur einer an („1 Change Requests erstellt"). Außerdem fehlte
+    das Datum im Vorher-Bild, die Antragsliste zeigte keine Datumszeile."""
+    cr = ChangeRequest(
+        tenant_id=TENANT_ID,
+        user_id=user.id,
+        request_type=ChangeRequestType.UPDATE,
+        status=status,
+        time_entry_id=entry.id,
+        proposed_date=entry.date,
+        proposed_start_time=prop_start,
+        proposed_end_time=prop_end,
+        proposed_break_minutes=prop_break,
+        original_date=entry.date,
+        original_start_time=entry.start_time,
+        original_end_time=entry.end_time,
+        original_break_minutes=entry.break_minutes,
+        original_note=entry.note,
+        original_uncredited_minutes=entry.uncredited_minutes,
+        reason=reason,
+        rejection_reason=rejection_reason,
+    )
+    if status != ChangeRequestStatus.PENDING:
+        cr.reviewed_by = reviewer.id if reviewer else None
+        cr.reviewed_at = datetime.now(timezone.utc)
+    db.add(cr)
 
 
-def create_change_requests(db, users: list):
-    """Erstellt einige Change Requests (Korrekturanträge)."""
+def create_change_requests(db, users: list, reviewer=None):
+    """Erstellt einige Change Requests (Korrekturanträge). ``reviewer`` = die
+    Verwalterin, die den abgelehnten Antrag geprüft hat."""
     maria = next((u for u in users if u.username == "maria.hoffmann"), None)
     thomas = next((u for u in users if u.username == "thomas.bauer"), None)
 
@@ -386,10 +397,9 @@ def create_change_requests(db, users: list):
             TimeEntry.date == date(2026, 2, 10)
         ).first()
         if entry:
-            _insert_change_request(
-                db, maria.id, entry.id, "update", "pending",
-                entry.start_time, entry.end_time, entry.break_minutes,
-                "08:00:00", "16:45:00", 45,
+            _add_change_request(
+                db, maria, entry, ChangeRequestStatus.PENDING,
+                dt_time(8, 0), dt_time(16, 45), 45,
                 "Hatte vergessen, mich einzustempeln – tatsächliche Arbeitszeit war 8:00–16:45 Uhr.",
             )
             count += 1
@@ -400,12 +410,12 @@ def create_change_requests(db, users: list):
             TimeEntry.date == date(2026, 1, 15)
         ).first()
         if entry:
-            _insert_change_request(
-                db, thomas.id, entry.id, "update", "rejected",
-                entry.start_time, entry.end_time, entry.break_minutes,
-                "07:30:00", "17:00:00", 30,
+            _add_change_request(
+                db, thomas, entry, ChangeRequestStatus.REJECTED,
+                dt_time(7, 30), dt_time(17, 0), 30,
                 "Bitte Korrektur: hatte durchgehend gearbeitet ohne längere Pause.",
                 "Pausen-Nachweis fehlt. Gemäß ArbZG §4 sind bei >6h Arbeitszeit 30 Min. Pause vorgeschrieben.",
+                reviewer=reviewer,
             )
             count += 1
 
@@ -472,7 +482,10 @@ def main():
 
         # 6. Change Requests
         print("\n6. Korrekturanträge erstellen...")
-        create_change_requests(db, users)
+        admin = db.query(User).filter(
+            User.username == "admin", User.tenant_id == TENANT_ID,
+        ).first()
+        create_change_requests(db, users, reviewer=admin)
 
         print("\n" + "=" * 60)
         print("✅ Testdaten erfolgreich erstellt!")

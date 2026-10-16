@@ -80,6 +80,7 @@ if docker compose exec -T -e TZ=Europe/Berlin backend pytest tests/ -q --tb=shor
        --ignore=tests/test_073_migration_pg.py \
        --ignore=tests/test_net_hours_parity_pg.py \
        --ignore=tests/test_reclamp_concurrency.py \
+       --ignore=tests/test_handbuch_seed_pg.py \
        --ignore=tests/test_concurrency.py </dev/null 2>&1 | tail -5; then
     ok "Backend tests passed"
 else
@@ -102,20 +103,20 @@ fi
 # CLAUDE.md. It is SQLite-backed (it exercises the explicit F-026
 # `tenant_id == current_user.tenant_id` filters, not RLS) and therefore already
 # runs inside step 1 — it is listed here only so the trio stays visible.
-# Reference counts: step 2 runs 76 tests against real Postgres
+# Reference counts: step 2 runs 78 tests against real Postgres
 # (20 RLS + 24 concurrency + 12 Art.-17 purge + 3 invalid-UUID #483 + 2 migration-073
 # — round trip, backfill as non-superuser owner under FORCE RLS — + 1 net_hours
 # parity + 14 reclamp concurrency — Arbeitszeit-Änderung gegen die Schreibpfade,
 # Anerkennen und Löschen, Spec 17.5/P5, dazu 4 Beginn-Kollisionen gegen den
-# Unique-Index); the 18 cross-tenant tests run
-# inside step 1. Same seven files as the Actions step "Cross-tenant RLS +
-# Art.17 purge + Race-Tests (real Postgres)".
+# Unique-Index — + 2 Handbuch-Seed unter RLS, Gesamtreview 1.20 B9); the 18
+# cross-tenant tests run inside step 1. Same eight files as the Actions step
+# "Cross-tenant RLS + Art.17 purge + Race-Tests (real Postgres)".
 step "Backend Postgres integration (RLS + concurrency + Art.17 purge)"
 if docker compose exec -T -e TZ=Europe/Berlin backend pytest \
        tests/test_tenant_rls.py tests/test_concurrency.py \
        tests/test_purge_user_postgres.py tests/test_invalid_uuid_postgres.py \
        tests/test_073_migration_pg.py tests/test_net_hours_parity_pg.py \
-       tests/test_reclamp_concurrency.py \
+       tests/test_reclamp_concurrency.py tests/test_handbuch_seed_pg.py \
        -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Postgres integration verified"
 else
