@@ -962,6 +962,20 @@ if [ "$BUILD_MACOS" = true ]; then
             error "  in PG_PRUNE (tools/macho_deps.py) aufnehmen, sonst Upstream melden."
             exit 1
         fi
+        # Gesamtreview B8: dieselbe Pruefung fuer das gebuendelte Python
+        # (python-build-standalone). Der Interpreter laedt seine Erweiterungs-
+        # module beim Kunden genauso wie postgres seine Bibliotheken; ein Modul
+        # gegen Homebrew-OpenSSL oder ein rpath auf den Build-Runner faellt erst
+        # dort auf. Bewusst OHNE --prune (PG_PRUNE betrifft nur PostgreSQL).
+        # Stand 20261001/CPython 3.13.16: je Architektur 10 Mach-O-Dateien, alle
+        # ueber /usr/lib, /System/Library, @rpath bzw. @executable_path/@loader_path.
+        # Die per pip beim Kunden installierten Pakete liegen hier noch nicht vor.
+        if ! python3 "${REPO_DIR}/tools/macho_deps.py" "${mac_dir}/bin/python"; then
+            error "macOS-${arch}: nicht portable Mach-O-Abhaengigkeiten im gebuendelten Python (Liste oben)."
+            error "  Auswirkung: Interpreter bzw. Module laden auf keinem Kunden-Mac."
+            error "  Neuer PYTHON_STANDALONE_TAG? Datei pruefen, sonst Upstream melden."
+            exit 1
+        fi
 
         _write_macos_installer "${mac_dir}"
 

@@ -30,6 +30,10 @@ ihrer eigenen Datei geprueft. Aufruf::
 
     python3 tools/macho_deps.py [--prune] <verzeichnis> [<verzeichnis> ...]
 
+``build-release.sh`` ruft es je macOS-Paket zweimal auf: mit ``--prune`` fuer
+``bin/postgresql`` und ohne fuer das gebuendelte Python ``bin/python``
+(python-build-standalone, Gesamtreview B8).
+
 ``--prune`` entfernt vorher die Teile des theseus-PostgreSQL-Pakets, die
 PraxisZeit nie ausfuehrt und die auf den Build-Runner zeigen (``PG_PRUNE``).
 Exitcode 0 = keine Funde, 1 = Funde (Liste auf stdout), 2 = Aufruffehler.
@@ -43,6 +47,13 @@ Runner zeigen nur die drei PGXS-Testtreiber unter ``lib/pgxs/src/test/``
 (``pg_regress``, ``isolationtester``, ``pg_isolation_regress``) — Werkzeuge,
 mit denen Entwickler selbst gebaute Erweiterungen testen (``make
 installcheck``). PraxisZeit baut keine Erweiterungen; sie fallen weg.
+
+Stand python-build-standalone 20261001 (CPython 3.13.16, arm64 + x64, mit
+diesem Skript nachgeprueft): je 10 Mach-O-Dateien, keine Funde. Abhaengigkeiten
+nur aus /usr/lib und /System/Library oder ueber ``@rpath`` (``libpython`` und
+``libtcl`` tragen ``@rpath/…`` als eigenen Namen), rpaths
+``@executable_path/../lib`` (Interpreter) und ``@loader_path/../..``
+(``_tkinter``, ``_dbm``).
 """
 from __future__ import annotations
 

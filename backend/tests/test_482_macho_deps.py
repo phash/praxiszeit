@@ -251,6 +251,79 @@ def test_cli_prune_does_not_hide_other_offenders(md, tmp_path, capsys):
     assert "dblink.dylib" in capsys.readouterr().out
 
 
+# --- Gebuendeltes Python (bin/python, Gesamtreview B8) ------------------------
+
+PBS_SYSTEM = [
+    "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+    LIBSYSTEM,
+    "/usr/lib/libz.1.dylib",
+    "/usr/lib/libedit.3.dylib",
+]
+
+
+def _pbs_like_tree(root: Path) -> Path:
+    """Nachbau des python-build-standalone-Pakets (20261001, CPython 3.13.16),
+    wie es ``build-release.sh`` nach ``bin/python`` entpackt: Interpreter mit
+    ``LC_RPATH @executable_path/../lib``, ``libpython`` mit eigenem Namen
+    ``@rpath/…``, ``_tkinter`` ueber ``@rpath`` + ``LC_RPATH @loader_path/../..``,
+    Systembibliotheken nur aus /usr/lib und /System/Library. Daneben Textdateien
+    (pip-Startskripte, get-pip.py), die keine Mach-O-Dateien sind."""
+    py = root / "bin" / "python"
+    (py / "bin").mkdir(parents=True)
+    dynload = py / "lib" / "python3.13" / "lib-dynload"
+    dynload.mkdir(parents=True)
+    (py / "bin" / "python3.13").write_bytes(_macho(PBS_SYSTEM, rpath="@executable_path/../lib"))
+    (py / "bin" / "python3").symlink_to("python3.13")
+    (py / "bin" / "pip3").write_text("#!/bin/sh\nexec python3 -m pip \"$@\"\n")
+    (py / "lib" / "libpython3.13.dylib").write_bytes(
+        _macho(PBS_SYSTEM, own_id="@rpath/libpython3.13.dylib"))
+    (py / "lib" / "libtcl9.0.dylib").write_bytes(
+        _macho([LIBSYSTEM], own_id="@rpath/libtcl9.0.dylib"))
+    (dynload / "_tkinter.cpython-313-darwin.so").write_bytes(
+        _macho(["@rpath/libtcl9.0.dylib", LIBSYSTEM], rpath="@loader_path/../.."))
+    (py / "get-pip.py").write_text("# pip-Installer\n")
+    return py
+
+
+def test_bundled_python_layout_passes(md, tmp_path):
+    """Das heutige Python-Paket besteht die Pruefung — die Ausweitung auf
+    bin/python bricht keinen funktionierenden Build (gegen die zwischengespeicherten
+    Original-Tarbaelle arm64 + x64 nachgeprueft: je 10 Mach-O-Dateien, 0 Funde)."""
+    py = _pbs_like_tree(tmp_path)
+    count, offenders = md.scan([str(py)])
+    assert count == 4  # Symlink, Startskript und get-pip.py zaehlen nicht
+    assert offenders == []
+    assert md.main(["macho_deps.py", str(py)]) == 0
+
+
+def test_bundled_python_homebrew_dependency_fails(md, tmp_path, capsys):
+    # Ein Erweiterungsmodul gegen Homebrew-OpenSSL laedt auf keinem Kunden-Mac
+    # (dasselbe Muster wie #183 bei PostgreSQL).
+    py = _pbs_like_tree(tmp_path)
+    ssl = py / "lib" / "python3.13" / "lib-dynload" / "_ssl.cpython-313-darwin.so"
+    ssl.write_bytes(_macho(["/opt/homebrew/opt/openssl@3/lib/libssl.3.dylib", LIBSYSTEM]))
+    assert md.main(["macho_deps.py", str(py)]) == 1
+    assert f"{ssl}: /opt/homebrew/opt/openssl@3/lib/libssl.3.dylib" in capsys.readouterr().out
+
+
+def test_bundled_python_runner_rpath_fails(md, tmp_path, capsys):
+    py = _pbs_like_tree(tmp_path)
+    (py / "bin" / "python3.13").write_bytes(
+        _macho(PBS_SYSTEM, rpath="/Users/runner/work/python-build-standalone/install/lib"))
+    assert md.main(["macho_deps.py", str(py)]) == 1
+    out = capsys.readouterr().out
+    assert "LC_RPATH /Users/runner/work/python-build-standalone/install/lib" in out
+
+
+def test_bundled_python_without_mach_o_is_refused(md, tmp_path):
+    # Leeres oder falsch entpacktes bin/python (nur get-pip.py) darf kein
+    # „alles sauber" ergeben.
+    py = tmp_path / "bin" / "python"
+    py.mkdir(parents=True)
+    (py / "get-pip.py").write_text("# pip-Installer\n")
+    assert md.main(["macho_deps.py", str(py)]) == 2
+
+
 def test_cli_refuses_a_tree_without_any_mach_o(md, tmp_path):
     # Ein falscher Pfad darf kein „alles sauber" ergeben.
     (tmp_path / "leer.txt").write_text("x")
@@ -271,4 +344,22 @@ def test_build_release_checks_both_macos_packages():
     call = body.index("macho_deps.py")
     assert "exit 1" in body[call:call + 600], "Fund muss den Build abbrechen"
     # Vor dem Packen, nicht danach.
+    assert call < body.index('tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-${arch}.tar.gz"')
+
+
+def test_build_release_checks_the_bundled_python():
+    """Gesamtreview B8: auch das gebuendelte Python (bin/python) wird geprueft —
+    ohne ``--prune`` (PG_PRUNE betrifft nur das PostgreSQL-Paket), mit Abbruch
+    bei Fund und vor dem Packen."""
+    src = _BUILD.read_text(encoding="utf-8")
+    start = src.index("_build_macos_arch() {")
+    end = src.index("\n    }\n", start)
+    body = src[start:end]
+    probe = 'tools/macho_deps.py" "${mac_dir}/bin/python"'
+    assert probe in body, body
+    assert '--prune "${mac_dir}/bin/python"' not in body
+    call = body.index(probe)
+    assert "exit 1" in body[call:call + 600], "Fund muss den Build abbrechen"
+    # Erst nach dem Entpacken, aber vor dem Packen.
+    assert body.index('tar xzf "${python_tar}"') < call
     assert call < body.index('tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-${arch}.tar.gz"')

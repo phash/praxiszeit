@@ -558,6 +558,13 @@ glibc-Symbole > 2.34 verlangt (`check_glibc_compat`).
   `@loader_path` und bleiben im Paket. Meldet die Prüfung nach einem PG-Bump
   eine neue Datei: wird sie nie ausgeführt, in `PG_PRUNE` aufnehmen, sonst
   Upstream melden.
+- macOS ebenso für das gebündelte Python (Gesamtreview B8): ein zweiter Aufruf
+  prüft `bin/python` (python-build-standalone) nach derselben Regel, inkl.
+  `LC_RPATH`, aber **ohne** `--prune`. Stand 20261001/CPython 3.13.16: je
+  Architektur 10 Mach-O-Dateien, alle sauber (`/usr/lib`, `/System/Library`,
+  `@rpath` über `@executable_path/../lib` bzw. `@loader_path/../..`). Die
+  Pakete, die `get-pip.py` erst beim Kunden installiert, sind dabei noch nicht
+  im Paket und werden nicht geprüft.
 
 **⚠️ macOS-CI-Gap:** `validate-macos.yml` läuft auf dem **privaten** Repo **nicht**
 (alle Runs hängen dauerhaft `queued` — keine macOS-Runner-Minuten). 1.8.1–1.8.7
