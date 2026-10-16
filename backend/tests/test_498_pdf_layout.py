@@ -29,6 +29,7 @@ import re
 import zlib
 from datetime import date, time
 
+import pytest
 from reportlab.lib.enums import TA_CENTER
 
 from app.models import TimeEntry, User, UserRole
@@ -234,17 +235,20 @@ def _cell_lines(paragraph, width):
 # Schmalste Spalte des Aushangs: sieben Wochentage im Querformat
 # ((273 mm − 38 mm) / 7 ≈ 95 pt, abzüglich 2 × 4 pt Innenabstand).
 SEVEN_DAY_TEXT_WIDTH = 87
+# Sechs Tage (Mo–Sa, Praxen mit Samstagsdienst): (273 mm − 38 mm) / 6 − 8 pt.
+SIX_DAY_TEXT_WIDTH = 103
 FITTING = ["Anna Meier", "Carla Dorn", "Dana Stein", "Ella Fischer-Wagner",
            "Frieda Schulze", "Greta Hoffmann"]
 TOO_WIDE = "Hanna Zimmermann-Schmidt"   # ≈ 106 pt — passt in keine Zeile
 
 
-def _assignment_lines(names):
+def _assignment_lines(names, text_width=SEVEN_DAY_TEXT_WIDTH, understaffed=False):
     cell = shift_plan_export_service._cell_paragraph([{
-        "start_time": "08:00", "end_time": "16:00", "note": None, "min_staff": 1,
+        "start_time": "08:00", "end_time": "16:00", "note": None,
+        "min_staff": len(names) + 1, "understaffed": understaffed,
         "assignments": [{"user_name": n} for n in names],
-    }], text_width=SEVEN_DAY_TEXT_WIDTH)
-    return [line.replace("\xa0", " ") for line in _cell_lines(cell, SEVEN_DAY_TEXT_WIDTH)]
+    }], text_width=text_width)
+    return [line.replace("\xa0", " ") for line in _cell_lines(cell, text_width)]
 
 
 def test_names_in_the_shift_plan_do_not_break_inside_a_name():
@@ -263,6 +267,30 @@ def test_a_name_wider_than_the_column_breaks_between_its_words():
 
     for word in TOO_WIDE.split():
         assert word in words, (word, lines)
+
+
+@pytest.mark.parametrize("text_width", [SEVEN_DAY_TEXT_WIDTH, SIX_DAY_TEXT_WIDTH])
+def test_a_name_wider_than_the_column_never_shares_a_line_with_another_person(text_width):
+    """Gesamtreview 1.20 (B7, Nachprüfung): ein zu breiter Name wird zwar an
+    seinem Leerzeichen umbrochen — hing er aber mit „, " am Vornamen, stand
+    wieder „Greta Hoffmann, Hanna" / „Zimmermann-Schmidt, Jo Li" im Aushang,
+    also genau das Bild zweier falsch zusammengesetzter Personen. Ein zu
+    breiter Name beginnt und endet deshalb auf einer eigenen Zeile."""
+    lines = _assignment_lines(["Greta Hoffmann", TOO_WIDE, "Jo Li"], text_width)
+
+    for line in lines:
+        assert not ("Hoffmann" in line and "Hanna" in line), lines
+        assert not ("Schmidt" in line and "Jo" in line), lines
+    for n in ["Greta Hoffmann", "Jo Li"]:
+        assert any(n in line for line in lines), (n, lines)
+
+
+def test_the_understaffed_count_still_counts_people_not_lines():
+    """Die Zeilentrennung um einen zu breiten Namen ändert nichts an der Zahl
+    der Eingeteilten in „Unterbesetzt (n/m)"."""
+    lines = _assignment_lines(["Greta Hoffmann", TOO_WIDE, "Jo Li"], understaffed=True)
+
+    assert "Unterbesetzt (3/4)" in lines, lines
 
 
 def test_the_printout_protects_names_at_the_real_column_width():

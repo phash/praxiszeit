@@ -95,23 +95,42 @@ def _status_note(detail: dict, today: date) -> str:
     return "Vorschau — gilt derzeit nicht"
 
 
-def _name_markup(name: Optional[str], text_width: float) -> str:
-    """Ein Name für die Zelle — Gesamtreview 1.20 (B7).
+def _name_markup(name: Optional[str], text_width: float) -> tuple[str, bool]:
+    """Ein Name für die Zelle — Gesamtreview 1.20 (B7). Liefert das Markup und
+    ob der Name samt folgendem Komma in eine Zeile der Spalte passt.
 
     Vorher brach reportlab mitten im Namen um („… Dana Stein, Ella" /
     „Fischer-Wagner …"); am Schwarzen Brett las sich das wie zwei Personen.
-    Passt der Name samt folgendem Komma in eine Zeile der Spalte, werden seine
-    Leerzeichen geschützt (U+00A0, in Helvetica/WinAnsi vorhanden) — umbrochen
-    wird dann nur zwischen zwei Namen. Ein breiterer Name behält normale
-    Leerzeichen und bricht dort um; geschützt würde reportlab ihn mitten im
-    Wort trennen (splitLongWords). Gemessen wird der Rohtext, ausgegeben die
-    escapte Fassung.
+    Passt der Name, werden seine Leerzeichen geschützt (U+00A0, in
+    Helvetica/WinAnsi vorhanden) — umbrochen wird dann nur zwischen zwei
+    Namen. Ein breiterer Name behält normale Leerzeichen und bricht dort um;
+    geschützt würde reportlab ihn mitten im Wort trennen (splitLongWords).
+    Damit er dabei nicht an einen Nachbarn gerät, setzt ``_names_markup`` ihn
+    auf eigene Zeilen. Gemessen wird der Rohtext, ausgegeben die escapte
+    Fassung.
     """
     raw = name or ""
     text = escape_pdf_text(raw)
     if pdfmetrics.stringWidth(f"{raw},", _CELL.fontName, _CELL.fontSize) <= text_width:
-        return text.replace(" ", "\u00a0")
-    return text
+        return text.replace(" ", "\u00a0"), True
+    return text, False
+
+
+def _names_markup(names: list[tuple[str, bool]]) -> str:
+    """Die Namen einer Einteilung, durch Komma getrennt.
+
+    Ein zu breiter Name (``fits`` False) beginnt und endet auf einer eigenen
+    Zeile — hinge er mit „, " am Vorgänger oder Nachfolger, stünde wieder
+    „Greta Hoffmann, Hanna" / „Zimmermann-Schmidt, Jo Li" im Aushang, also
+    genau das Bild zweier falsch zusammengesetzter Personen (Gesamtreview 1.20,
+    B7-Nachprüfung; bei sechs Tagen Mo–Sa in jeder Spalte sichtbar).
+    """
+    parts: list[str] = []
+    for i, (markup, fits) in enumerate(names):
+        if i:
+            parts.append(", " if fits and names[i - 1][1] else ",<br/>")
+        parts.append(markup)
+    return "".join(parts)
 
 
 def _cell_paragraph(slots_of_cell: list[dict], *, text_width: float) -> Paragraph:
@@ -130,7 +149,7 @@ def _cell_paragraph(slots_of_cell: list[dict], *, text_width: float) -> Paragrap
         names = [_name_markup(a.get("user_name"), text_width) for a in (s.get("assignments") or [])]
         min_staff = s.get("min_staff") or 0
         if names:
-            lines.append(", ".join(names))
+            lines.append(_names_markup(names))
             # M-3: die Unterbesetzung selbst sichtbar machen, nicht nur wer
             # eingeteilt ist. Das Bildschirmraster zeigt sie über ein
             # Warndreieck (WeekGrid.tsx `slot.understaffed`) — der Ausdruck
