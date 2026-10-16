@@ -1128,6 +1128,19 @@ weder `raw_*` noch `uncredited` noch Pause, sondern rechnet neu (Manipulationssc
 `routers/import_xls.py:29`, um `net_hours` und `uncredited_minutes` erweitert) statt
 clientseitig zu rechnen.
 
+**Gesamtreview 1.20 (B4):** Die Auto-Pause gilt dem **Tag** (#499), nicht der Zeile:
+`_day_break_minutes` rechnet Bedarf und Deckung über alle Zeilen des Tages plus den stehenden
+Bestand mit `daily_break_figures` (Abstände ≥ 15 Min zwischen Einträgen decken mit, erfasste
+Pausen des Bestands ebenso); der Rest steht an der längsten Zeile, `_calc_break_minutes` ist
+der Einzelzeilen-Sonderfall. `/confirm` schreibt die Zeilen eines Tages, rechnet danach die
+Pause (`_apply_day_breaks`, auch ohne Kappung — die Pause kommt nie vom Client) und legt erst
+dann die Protokollzeilen an. Die Vorschau meldet §3/§4 einmal je Tag an dessen letzter Zeile
+und §5 an der ersten, gegen das Arbeitsende des letzten Arbeitstags davor (Bestand + Datei,
+wie `rest_time_service`); bis hierher zählte eine Zeile die Vorzeile desselben Tages als
+Ruhezeit (geteilter Dienst → „§5 … 2.0h"), ein geteilter Dienst bekam keine oder eine doppelte
+Pause, und ein erst von einer späteren Zeile überschriebener Bestandseintrag zählte für die
+früheren Zeilen des Tages noch mit.
+
 ---
 
 ## 8. ArbZG-Prüfungen
