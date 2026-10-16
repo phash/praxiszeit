@@ -282,6 +282,10 @@ def parse_xls(
     grace = work_window_service.get_grace_minutes(db, user_tenant)
 
     ws = wb.sheet_by_name("Zeiterfassung")
+    rows = _read_rows(ws, db, user, user_id, user_tenant, grace)
+    if not rows:
+        raise ValueError("Keine Datenzeilen im Sheet 'Zeiterfassung' gefunden")
+
     entries: list[ImportedEntry] = []
     prev_end_dt: Optional[datetime] = None
     first_import_date: Optional[date] = None
@@ -299,48 +303,14 @@ def parse_xls(
     # Review Focus 4: Bestandseinträge, die eine Zeile der Datei überschreibt,
     # zählen weder in der harten §3/§4-Aggregation noch in der Anwesenheit —
     # sonst stünde der Tag doppelt da (§3 „16.0h" neben „Angerechnet 8:00 h").
-    replaced_ids: set = set()
+    # Gesamtreview 1.20 (B4): VOR der Bewertung der ersten Zeile vollständig —
+    # sonst zählte eine frühere Zeile des Tages den Eintrag noch mit, den erst
+    # eine spätere Zeile derselben Datei überschreibt.
+    replaced_ids = {row.existing.id for row in rows if row.existing is not None}
 
-    for row_idx in range(ws.nrows):
-        # Datenzeile erkennbar durch numerischen ctype (3) in Ein-Spalte (D)
-        if ws.cell(row_idx, 3).ctype != 3:
-            continue
-
-        ein_serial = ws.cell_value(row_idx, 3)
-        aus_serial = ws.cell_value(row_idx, 4)
-        notiz_raw = ws.cell_value(row_idx, 5)
-
-        ein_dt = _excel_serial_to_datetime(ein_serial)
-        aus_dt = _excel_serial_to_datetime(aus_serial)
-        note = str(notiz_raw).strip() if notiz_raw is not None and str(notiz_raw).strip() else None
-
-        entry_date = ein_dt.date()
-        # Sekunden auf 0 setzen (XLS hat keine Sekunden)
-        file_start = ein_dt.time().replace(second=0, microsecond=0)
-        file_end = aus_dt.time().replace(second=0, microsecond=0)
-
-        # Spec 6.1/E80: neue Zeilen kappen mit dem aktuellen Puffer; trifft die
-        # Zeile einen GESPEICHERTEN Eintrag, gelten dessen Puffer und dessen
-        # Anerkennung (P3) — die Vorschau zeigt, was /confirm schreiben wird.
-        r = work_window_service.clamp(
-            db, user, entry_date, file_start, file_end, grace, credit_override=False,
-        )
-        existing = _find_existing_entry(
-            db, user_id, user_tenant, entry_date, starts=(r.eff_start,), raw_start=file_start,
-        )
-        if existing is not None:
-            replaced_ids.add(existing.id)
-        override = bool(existing is not None and existing.credit_override)
-        row_grace = (
-            work_window_service.grace_for_entry(db, existing) if existing is not None else grace
-        )
-        if override or row_grace != grace:
-            r = work_window_service.clamp(
-                db, user, entry_date, file_start, file_end, row_grace, credit_override=override,
-            )
-        segs = work_window_service.gap_segments(
-            db, user, entry_date, file_start, file_end, row_grace, credit_override=override,
-        )
+    for row in rows:
+        entry_date, note = row.date, row.note
+        r, segs, existing, override = row.r, row.segs, row.existing, row.override
         start_t, end_t = r.eff_start, r.eff_end
         raw_start_t, raw_end_t = r.raw_start, r.raw_end
 
@@ -468,10 +438,59 @@ def parse_xls(
 
         prev_end_dt = datetime.combine(entry_date, raw_end_t or end_t)
 
-    if not entries:
-        raise ValueError("Keine Datenzeilen im Sheet 'Zeiterfassung' gefunden")
-
     return entries
+
+
+def _read_rows(ws, db: Session, user, user_id, user_tenant, grace: int) -> list:
+    """Erster Durchgang der Vorschau: Datenzeilen lesen, kappen und den
+    Bestandseintrag suchen, den die Zeile überschreiben würde.
+
+    Gesamtreview 1.20 (B4): getrennt von der Bewertung, damit die Menge der
+    überschriebenen Einträge (und die Zeilen eines Tages) schon vor der ersten
+    Prüfung feststeht."""
+    rows = []
+    for row_idx in range(ws.nrows):
+        # Datenzeile erkennbar durch numerischen ctype (3) in Ein-Spalte (D)
+        if ws.cell(row_idx, 3).ctype != 3:
+            continue
+
+        ein_serial = ws.cell_value(row_idx, 3)
+        aus_serial = ws.cell_value(row_idx, 4)
+        notiz_raw = ws.cell_value(row_idx, 5)
+
+        ein_dt = _excel_serial_to_datetime(ein_serial)
+        aus_dt = _excel_serial_to_datetime(aus_serial)
+        note = str(notiz_raw).strip() if notiz_raw is not None and str(notiz_raw).strip() else None
+
+        entry_date = ein_dt.date()
+        # Sekunden auf 0 setzen (XLS hat keine Sekunden)
+        file_start = ein_dt.time().replace(second=0, microsecond=0)
+        file_end = aus_dt.time().replace(second=0, microsecond=0)
+
+        # Spec 6.1/E80: neue Zeilen kappen mit dem aktuellen Puffer; trifft die
+        # Zeile einen GESPEICHERTEN Eintrag, gelten dessen Puffer und dessen
+        # Anerkennung (P3) — die Vorschau zeigt, was /confirm schreiben wird.
+        r = work_window_service.clamp(
+            db, user, entry_date, file_start, file_end, grace, credit_override=False,
+        )
+        existing = _find_existing_entry(
+            db, user_id, user_tenant, entry_date, starts=(r.eff_start,), raw_start=file_start,
+        )
+        override = bool(existing is not None and existing.credit_override)
+        row_grace = (
+            work_window_service.grace_for_entry(db, existing) if existing is not None else grace
+        )
+        if override or row_grace != grace:
+            r = work_window_service.clamp(
+                db, user, entry_date, file_start, file_end, row_grace, credit_override=override,
+            )
+        segs = work_window_service.gap_segments(
+            db, user, entry_date, file_start, file_end, row_grace, credit_override=override,
+        )
+        rows.append(SimpleNamespace(
+            date=entry_date, note=note, r=r, segs=segs, existing=existing, override=override,
+        ))
+    return rows
 
 
 def execute_import(
