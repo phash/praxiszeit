@@ -8,7 +8,7 @@ import { getErrorMessage } from '../../../utils/errorMessage';
 import { parseHours, deHoursExact, formatDayPlan } from '../../../utils/formatters';
 import { showResponseWarning } from '../../../utils/arbzgWarnings';
 import {
-  deriveTargets, emptyWeek, formatBlocksText, isLegacyWeek, validateWeekBlocks,
+  blocksOf, deriveTargets, emptyWeek, formatBlocksText, isLegacyWeek, validateWeekBlocks,
 } from '../../../utils/workBlocks';
 import type { WeekBlocks } from '../../../types/workBlocks';
 import type { WorkingHoursChange, WorkingHoursChangePreview } from './workingHoursTypes';
@@ -181,10 +181,12 @@ function blocksLine(week: WeekBlocks | null, trackHours: boolean): string | null
   return legacy ? `${LEGACY_BOX_TITLE}: ${text}` : null;
 }
 
-/** Kanonische Vergleichsform der Blöcke (Schlüsselreihenfolge egal). */
+/** Kanonische Vergleichsform der Blöcke (Schlüsselreihenfolge egal). Ein
+ * fehlender „blocks"-Schlüssel heißt „keine Blöcke" (`blocksOf`) — der Server
+ * gibt eine solche Verlaufszeile unverändert aus (Gesamtreview B3). */
 function blocksKey(week: WeekBlocks | null): string | null {
   if (!Array.isArray(week)) return null;
-  return JSON.stringify(week.map((d) => [d.blocks.map((b) => [b.start, b.end]), d.pause_minutes]));
+  return JSON.stringify(week.map((d) => [blocksOf(d).map((b) => [b.start, b.end]), d?.pause_minutes ?? null]));
 }
 
 /**
@@ -231,10 +233,13 @@ function formFromSnapshot(s: ScheduleSnapshot, effectiveFrom: string, trackHours
  * (07:37, 23:59), Pause leer und Pflicht an Tagen mit Blöcken (Review Focus 4:
  * der Editor meldet Raster und Pause, statt still zu korrigieren). */
 function legacyToEditable(week: WeekBlocks): WeekBlocks {
-  return week.map((d) => ({
-    blocks: d.blocks.map((b) => ({ start: b.start.slice(0, 5), end: b.end.slice(0, 5) })),
-    pause_minutes: d.blocks.length ? null : 0,
-  }));
+  return week.map((d) => {
+    const bs = blocksOf(d);
+    return {
+      blocks: bs.map((b) => ({ start: b.start.slice(0, 5), end: b.end.slice(0, 5) })),
+      pause_minutes: bs.length ? null : 0,
+    };
+  });
 }
 
 // M1 (Abschluss-Review): „heute" in der LOKALEN Zeitzone des Browsers, nicht

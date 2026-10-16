@@ -2109,3 +2109,57 @@ describe('Löschen einer Arbeitszeit-Änderung (Spec 9.7/P13)', () => {
     expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
   });
 });
+
+// Gesamtreview B3 (Nachprüfung): ein Tag OHNE „blocks"-Schlüssel ist für den
+// Server lesbar (`day.get("blocks", [])` = „keine Blöcke", is_readable_week) —
+// die Verlaufszeile kommt also unverändert an. Nur per Hand in der Datenbank
+// erzeugbar (Migration 073 und jeder Schreibweg schreiben „blocks" immer).
+// Der Dialog liest sie über `blocksOf` (DIE Regel „fehlend = keine Blöcke")
+// und stürzt weder beim Öffnen (Vergleich) noch beim Umwandeln ab.
+describe('Gesamtreview B3: Tag ohne „blocks"-Schlüssel in einer Verlaufszeile', () => {
+  const noKey = (pause: number | null) => ({ pause_minutes: pause }) as unknown as WeekBlocks[number];
+
+  it('neue Blöcke: Dialog öffnet im Block-Modus und vergleicht ohne Scheinänderung', async () => {
+    const blocks: WeekBlocks = [day([['08:00', '12:00']]), noKey(0), noKey(0), noKey(0), noKey(0)];
+    mockHistory([{
+      id: 'c-nokey', effective_from: '2026-03-01', weekly_hours: 4, use_daily_schedule: true,
+      hours_monday: 4, hours_tuesday: 0, hours_wednesday: 0, hours_thursday: 0, hours_friday: 0,
+      work_days_per_week: 1, blocks,
+    }], QUIET);
+    renderModal({
+      currentWeeklyHours: 4, currentUseDailySchedule: true, currentDayHours: [4, 0, 0, 0, 0],
+      currentWorkDays: 1, currentBlocks: [day([['08:00', '12:00']]), NONE, NONE, NONE, NONE],
+    });
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    expect(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' })).toBeChecked();
+    expect(screen.getByLabelText('Mo Block 1 von')).toHaveValue('08:00');
+    expect(screen.queryByLabelText('Di Block 1 von')).not.toBeInTheDocument();
+    expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+  });
+
+  it('Altfenster: Kasten zeigt die Werte, „In Arbeitszeit-Blöcke umwandeln" übernimmt sie', async () => {
+    const blocks: WeekBlocks = [LEGACY_DAY([['07:37', '16:30']]), noKey(null), noKey(null), noKey(null), noKey(null)];
+    mockHistory([{ id: 'c-legacy-nokey', effective_from: '2026-01-01', weekly_hours: 40, blocks }], QUIET);
+    renderModal({ currentBlocks: blocks });
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    const box = screen.getByRole('group', { name: LEGACY_BOX_TITLE });
+    expect(within(box).getByText('Mo 07:37–16:30')).toBeInTheDocument();
+    expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
+
+    fireEvent.click(within(box).getByRole('button', { name: 'In Arbeitszeit-Blöcke umwandeln' }));
+    expect(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' })).toBeChecked();
+    expect(screen.getByLabelText('Mo Block 1 von')).toHaveValue('07:37');
+    expect(screen.queryByLabelText('Di Block 1 von')).not.toBeInTheDocument();
+  });
+
+  it('Altfenster ohne jeden „blocks"-Schlüssel und ohne Stundenzählung: Dialog öffnet, „Fenster entfernen" vergleicht', async () => {
+    const blocks: WeekBlocks = [noKey(null), noKey(null), noKey(null), noKey(null), noKey(null)];
+    mockHistory([{ id: 'c-legacy-empty', effective_from: '2026-01-01', weekly_hours: 40, blocks }], QUIET);
+    renderModal({ currentBlocks: blocks, trackHours: false });
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    const box = screen.getByRole('group', { name: LEGACY_BOX_TITLE });
+    fireEvent.click(within(box).getByRole('button', { name: 'Fenster entfernen' }));
+    expect(within(box).getByRole('button', { name: 'Fenster behalten' })).toBeInTheDocument();
+  });
+});
