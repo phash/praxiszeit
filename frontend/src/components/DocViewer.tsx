@@ -243,15 +243,15 @@ export function CheatsheetAdmin() {
             <tr><td className="px-3 py-2 border border-gray-200 font-medium text-gray-700">Jahresreport Detailliert</td><td className="px-3 py-2 border border-gray-200 text-gray-600">Steuerberater, Prüfung</td></tr>
           </tbody>
         </table>
-        <p className="text-sm text-gray-500 mt-2">Tageszeilen von Monatsreport und Jahresreport Detailliert: hinten angehängt „Unterbrechung (Min)" und „Zeiteinträge" (Excel/ODS), als letzte Spalte – auch im PDF – „Nicht angerechnet (Min)" (Lücke + vor/nach den Blöcken abgeschnittene Zeit). „Netto" ist die angerechnete Zeit. Der Jahresreport Classic (eine Zeile je Monat) hat diese Spalten nicht.</p>
+        <p className="text-sm text-gray-500 mt-2">Tageszeilen von Monatsreport und Jahresreport Detailliert: hinten angehängt „Unterbrechung (Min)" und „Zeiteinträge" (Excel/ODS), als letzte Spalte – auch im PDF – „Nicht angerechnet (Min)" (Lücke + vor/nach den Blöcken abgeschnittene Zeit). „Netto" ist die angerechnete Zeit. Der Jahresreport Classic (nur Monatswerte, keine Tageszeilen) hat diese Spalten nicht.</p>
         <p className="text-sm text-gray-500 mt-2">Aufbewahrungspflicht: 2 Jahre (§16 ArbZG)</p>
       </section>
 
-      {/* Korrekturanträge */}
+      {/* Änderungsanträge (Menüpunkt „Änderungsanträge", Filter „Offen") */}
       <section>
-        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">✅ Korrekturanträge prüfen</h3>
+        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">✅ Änderungsanträge prüfen</h3>
         <ol className="text-sm text-gray-600 list-decimal list-inside space-y-0.5">
-          <li>Korrekturanträge → offene Anträge → Prüfen</li>
+          <li>Änderungsanträge → Filter „Offen" (vorausgewählt)</li>
           <li>Alt- und Neuwerte + Begründung lesen</li>
           <li>Genehmigen oder Ablehnen (mit optionalem Grund)</li>
           <li>„Anrechnung beantragt": „Genehmigen und anerkennen" oder „Ohne Anerkennen genehmigen"; sonst ggf. zusätzlich „Genehmigen und anerkennen"</li>

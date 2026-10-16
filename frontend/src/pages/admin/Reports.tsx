@@ -486,12 +486,12 @@ export default function Reports() {
                 <span>Classic Format</span>
               </h3>
               <p className="text-sm text-gray-600 mb-4">
-                Kompakte Übersicht mit allen 12 Monaten in einer Zeile pro Mitarbeiter:in.
+                Kompakte Übersicht mit allen 12 Monaten je Mitarbeiter:in.
                 Ideal für Geschäftsführung und schnellen Überblick.
               </p>
               <ul className="text-xs text-gray-600 space-y-1 mb-4">
                 <li>✓ Ein Sheet pro Mitarbeiter:in</li>
-                <li>✓ Monate als Spalten</li>
+                <li>✓ Excel: Monate als Spalten, ODS: eine Zeile je Monat</li>
                 <li>✓ Überstunden kumuliert</li>
                 <li>✓ Resturlaub</li>
               </ul>

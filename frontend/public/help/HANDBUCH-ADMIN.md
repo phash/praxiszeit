@@ -457,8 +457,8 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 ### Jahresreport Classic
 
 - **Format:** Excel (.xlsx) oder ODS (.ods)
-- **Inhalt:** Pro Mitarbeiter eine Zeile pro Monat
-- **Details:** Soll, Ist, Saldo, Urlaubstage, Krankheitstage, Fortbildungstage
+- **Inhalt:** Pro Mitarbeiter ein Tabellenblatt mit den 12 Monatswerten – in Excel die Monate als Spalten, in ODS eine Zeile je Monat
+- **Details:** Soll, Ist, Saldo, Urlaub und Krankheit in Stunden (ODS zusätzlich Fortbildung und die übrigen Abwesenheitsarten), Überstunden kumuliert, Resturlaub
 
 **Verwendung:** Jahresüberblick, schnelle Kontrolle
 

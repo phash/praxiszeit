@@ -717,6 +717,16 @@ group_begriffe() {
     # ods_export_service._classic_sheet).
     forbid "$f" 'durchgehender Block'
     forbid "$f" 'Spalte aller Formate'
+    # Gesamtreview B6 (Nachzug): der Jahresreport Classic hat in Excel die
+    # Monate als Spalten, in ODS eine Zeile je Monat – „eine Zeile je Monat"
+    # ohne Format stimmt nur zur Hälfte. Die Karte „Konto-Vorgänge" kennt kein
+    # selbst geändertes Passwort (security_events: admin_set_password + CLI).
+    # Den Weg „offene Anträge → Prüfen" gibt es nicht (Menü „Änderungsanträge",
+    # Filter „Offen").
+    forbid "$f" 'Jahresreport Classic (eine Zeile je Monat)'
+    forbid "$f" 'Rollen- und Passwortänderungen'
+    forbid "$f" 'offene Anträge → Prüfen'
+    forbid "$f" 'offene Anträge → Antrag öffnen'
   done
 }
 

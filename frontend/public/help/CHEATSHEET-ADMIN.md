@@ -102,13 +102,13 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 | Bericht | Inhalt | Formate |
 |---------|--------|---------|
 | **Monatsreport** | Tägliche Einträge aller MA | Excel (.xlsx) + ODS (.ods) + PDF (.pdf) |
-| **Jahresreport Classic** | 12 Monate kompakt | Excel (.xlsx) + ODS (.ods) |
+| **Jahresreport Classic** | 12 Monate kompakt (Excel: Monate als Spalten, ODS: eine Zeile je Monat) | Excel (.xlsx) + ODS (.ods) |
 | **Jahresreport Detailliert** | 365 Tage, ~5s | Excel (.xlsx) + ODS (.ods) |
 
 **Exportieren:** Berichte → Typ & Zeitraum wählen → Format klicken (**PDF nur beim Monatsreport**)
 **Krankheitsdaten:** Checkbox „Krankheitsdaten einschließen" (Art. 9 DSGVO) → nimmt Krank-Daten auf, jeder solche Export wird protokolliert
 **Aufbewahrungspflicht: 2 Jahre** (§16 ArbZG)
-**Tagesspalten (Monatsreport und Jahresreport Detailliert, Excel/ODS):** hinten angehängt „Unterbrechung (Min)", „Zeiteinträge" und – auch im PDF – als letzte Spalte „Nicht angerechnet (Min)" (Lücke + vor/nach den Blöcken abgeschnittene Zeit); „Netto (Std)" ist die angerechnete Zeit; der Jahresreport Classic (eine Zeile je Monat) hat diese Spalten nicht
+**Tagesspalten (Monatsreport und Jahresreport Detailliert, Excel/ODS):** hinten angehängt „Unterbrechung (Min)", „Zeiteinträge" und – auch im PDF – als letzte Spalte „Nicht angerechnet (Min)" (Lücke + vor/nach den Blöcken abgeschnittene Zeit); „Netto (Std)" ist die angerechnete Zeit; der Jahresreport Classic (nur Monatswerte, keine Tageszeilen) hat diese Spalten nicht
 
 ---
 
@@ -127,9 +127,9 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 
 ---
 
-## Korrekturanträge prüfen
+## Änderungsanträge prüfen
 
-**Änderungsanträge** → offene Anträge → Antrag öffnen
+**Änderungsanträge** → Filter **„Offen"** (vorausgewählt)
 - Alt vs. Neu vergleichen, Begründung lesen
 - **Genehmigen** → Eintrag wird sofort geändert
 - **Ablehnen** → optional Ablehnungsgrund eintragen

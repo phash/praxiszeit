@@ -222,10 +222,10 @@ export const helpContent: Record<string, HelpEntry> = {
           <h3 className="font-semibold text-gray-800 mb-2">Export-Typen</h3>
           <ul className="space-y-2 text-sm text-gray-600">
             <li><span className="font-medium text-gray-700">Monatsreport:</span> Tägliche Einträge aller MA für einen Monat, als Excel, ODS oder PDF. Ideal für die Gehaltsabrechnung.</li>
-            <li><span className="font-medium text-gray-700">Jahresreport Classic:</span> 12 Monate kompakt (Monate als Spalten), als Excel oder ODS.</li>
+            <li><span className="font-medium text-gray-700">Jahresreport Classic:</span> 12 Monate kompakt je Mitarbeiter:in, als Excel (Monate als Spalten) oder ODS (eine Zeile je Monat).</li>
             <li><span className="font-medium text-gray-700">Jahresreport Detailliert:</span> 365 Tage pro MA, für Steuerberater, als Excel oder ODS.</li>
           </ul>
-          <p className="mt-2 text-sm text-gray-600">Monatsreport und Jahresreport Detailliert: letzte Spalte der Tageszeilen „Nicht angerechnet (Min)" – gestempelte, nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken. „Netto" ist die angerechnete Zeit. Der Jahresreport Classic (eine Zeile je Monat) hat diese Spalte nicht.</p>
+          <p className="mt-2 text-sm text-gray-600">Monatsreport und Jahresreport Detailliert: letzte Spalte der Tageszeilen „Nicht angerechnet (Min)" – gestempelte, nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken. „Netto" ist die angerechnete Zeit. Der Jahresreport Classic (nur Monatswerte, keine Tageszeilen) hat diese Spalte nicht.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">ArbZG-Berichte</h3>
@@ -284,7 +284,7 @@ export const helpContent: Record<string, HelpEntry> = {
           <ul className="space-y-1 text-sm text-gray-600">
             <li>Änderungen an Zeiteinträgen und Abwesenheiten – Spalte „Quelle": Admin, Antrag, Import, Pausen-Verzicht, Stundenänderung, Neukappung (Arbeitszeit-Änderung), Anrechnung anerkannt u. a.</li>
             <li>Zugriffe auf Gesundheitsdaten, Exporte und DSGVO-Vorgänge (Anonymisieren, Endgültig löschen)</li>
-            <li>Karte „Konto-Vorgänge": Deaktivieren, Reaktivieren, Rollen- und Passwortänderungen</li>
+            <li>Karte „Konto-Vorgänge": Deaktivieren, Reaktivieren, Rollenwechsel, von der Verwaltung gesetzte Passwörter sowie Notfall-Vorgänge per Kommandozeile (Passwort zurückgesetzt, Zwei-Faktor abgeschaltet)</li>
           </ul>
         </section>
         <section>

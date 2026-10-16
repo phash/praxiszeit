@@ -271,6 +271,12 @@ describe('Kontexthilfe entspricht der Oberfläche (Gesamtreview B6)', () => {
     expect(t).toContain('Konto-Vorgänge');
     expect(t).toContain('Anrechnung anerkannt');
     expect(t).not.toContain('Aktionstyp');
+    // Gesamtreview B6 (Nachzug): ein selbst geändertes Passwort steht dort NICHT
+    // (security_events kennt nur admin_set_password und die Kommandozeile,
+    // SecurityEventsCard.EVENT_LABELS) — „Passwortänderungen" versprach mehr.
+    expect(t).toContain('von der Verwaltung gesetzte Passwörter');
+    expect(t).toContain('Notfall-Vorgänge per Kommandozeile');
+    expect(t).not.toContain('Rollen- und Passwortänderungen');
   });
 
   it('Änderungsanträge: Titel wie die Seite, MA verfolgen den Stand im Tab „Anträge"', () => {
@@ -293,6 +299,25 @@ describe('Kontexthilfe entspricht der Oberfläche (Gesamtreview B6)', () => {
   it('Berichte: Formate je Export', () => {
     const t = help('/admin/reports');
     expect(t).toContain('Excel, ODS oder PDF');
+    // Gesamtreview B6 (Nachzug): der Jahresreport Classic hat in Excel die
+    // Monate als Spalten (export_service._create_employee_classic_sheet), in ODS
+    // eine Zeile je Monat (ods_export_service._classic_sheet). Die Hilfe sagte
+    // beides – jeweils für beide Formate.
+    expect(t).toContain('als Excel (Monate als Spalten) oder ODS (eine Zeile je Monat)');
+    expect(t).toContain('Der Jahresreport Classic (nur Monatswerte, keine Tageszeilen)');
+    expect(t).not.toContain('12 Monate kompakt (Monate als Spalten), als Excel oder ODS');
+    expect(t).not.toContain('Classic (eine Zeile je Monat)');
+  });
+
+  it('Admin-Kurzanleitung: Classic formatgenau, Änderungsanträge wie Menü und Filter', () => {
+    const t = textOf(<CheatsheetAdmin />);
+    expect(t).toContain('Der Jahresreport Classic (nur Monatswerte, keine Tageszeilen)');
+    expect(t).not.toContain('Classic (eine Zeile je Monat)');
+    // Menüpunkt „Änderungsanträge" (Layout.tsx), Filter „Offen"
+    // (admin/ChangeRequests.tsx); einen Knopf „Prüfen" gibt es nicht.
+    expect(t).toContain('Änderungsanträge prüfen');
+    expect(t).toContain('Änderungsanträge → Filter „Offen"');
+    expect(t).not.toContain('offene Anträge → Prüfen');
   });
 
   it('Fallback und tote Route: kein Knopf „Neuer Antrag"', () => {
