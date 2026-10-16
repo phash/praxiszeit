@@ -122,6 +122,9 @@ group_code() {
   # Abwesenheit buchen an einem Tag mit anerkanntem Eintrag (absences.create_absence,
   # eigener Text seit Gesamtreview 1.20 B1; HANDBUCH-MITARBEITER 4.1).
   need_code "gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."
+  # Buchung/Genehmigung ohne Tag mit geplanter Arbeitszeit (admin_helpers.
+  # ZERO_HOURS_ABSENCE_DETAIL, Gesamtreview 1.20 B5; HANDBUCH-ADMIN 5 + 7, DocViewer).
+  need_code "sind 0 Stunden geplant — an einem Tag ohne geplante Arbeitszeit kann keine Abwesenheit gebucht werden."
   need_code "Genehmigen und anerkennen"
   need_code "Eintrag ist anerkannt"
   need_code "Anwesenheit nicht angerechnet"

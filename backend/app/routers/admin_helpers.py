@@ -192,6 +192,23 @@ def _create_audit_log(
     return log
 
 
+# Audit 2026-07-31 (U1) / Gesamtreview 1.20 B5: eine Buchung, die an keinem Tag
+# bucht (alle Zieltage ohne Tagessoll), ist ein Fehler — keine Erfolgsantwort
+# ohne Inhalt. EIN Wortlaut für Direktbuchung (``absences.create_absence``) und
+# Antrags-Genehmigung (``admin_vacations.review_vacation_request``); zitiert im
+# Admin-Handbuch (Doku-Gate check-doc-sync.sh).
+ZERO_HOURS_ABSENCE_DETAIL = (
+    "Für {days} sind 0 Stunden geplant — an einem Tag ohne geplante Arbeitszeit kann keine Abwesenheit gebucht werden."
+)
+
+
+def zero_hours_absence_detail(dates) -> str:
+    """Fehlertext für eine Buchung ohne buchbaren Tag (die ersten fünf Tage)."""
+    return ZERO_HOURS_ABSENCE_DETAIL.format(
+        days=", ".join(d.strftime("%d.%m.%Y") for d in list(dates)[:5])
+    )
+
+
 def _enrich_cr_response(cr: ChangeRequest, db: Session) -> ChangeRequestResponse:
     """Add user names to the change request response (single item)."""
     return _enrich_cr_responses([cr], db)[0]

@@ -352,7 +352,7 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 **Felder:**
 
 1. **Datum** – Beginn der Abwesenheit
-2. **Zeitraum** – Aktivieren Sie diese Option für mehrere Tage; Wochenenden und Feiertage werden automatisch ausgeschlossen
+2. **Zeitraum** – Aktivieren Sie diese Option für mehrere Tage; Wochenenden und Feiertage werden automatisch ausgeschlossen, ebenso Tage, an denen Sie laut Arbeitsplan nicht arbeiten (z. B. ein freier Wochentag bei Teilzeit). An solchen Tagen erfasste Arbeitszeit bleibt stehen. Liegt im Zeitraum kein einziger Tag, an dem Sie arbeiten, lehnt PraxisZeit die Buchung ab
 3. **Halber Tag** – Nur bei einzelnen Tagen wählbar (nicht bei Zeitraum, nicht bei Krank oder Überstundenausgleich); lässt den Tag nur zur Hälfte zählen (**0,5 statt 1,0 Tag**)
 4. **Typ** – Urlaub / Krank / Fortbildung / Überstundenausgleich / Sonstiges
 5. **Stunden** – Bei Urlaub, Krank, Fortbildung und Sonstigem ist das Feld vorausgefüllt und wird ohnehin durch Ihr Tagessoll ersetzt; nur bei **Überstundenausgleich** zählt der hier eingetragene Wert – er wird von Ihrem Überstundenkonto abgezogen
@@ -362,7 +362,7 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 > **Hinweis zu Urlaubstagen:**
 > Das System berechnet automatisch, wie viele Urlaubstage eingetragen werden und zieht diese von Ihrem Budget ab.
 
-> **Tag mit anerkanntem Zeiteintrag:** Liegt an einem der gewählten Tage ein Zeiteintrag, den die Verwaltung anerkannt hat (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)), lehnt PraxisZeit die Buchung ab und nennt den Tag, z. B. *„Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."* Die Verwaltung trägt die Abwesenheit für diesen Tag ein. Die übrigen Tage können Sie getrennt buchen.
+> **Tag mit anerkanntem Zeiteintrag:** Liegt an einem der zu buchenden Tage ein Zeiteintrag, den die Verwaltung anerkannt hat (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)), lehnt PraxisZeit die Buchung ab und nennt den Tag, z. B. *„Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."* Die Verwaltung trägt die Abwesenheit für diesen Tag ein. Die übrigen Tage können Sie getrennt buchen.
 
 **Abwesenheitstypen:**
 
@@ -394,7 +394,7 @@ Statt direkt eingetragen zu werden, erscheint die Meldung: **„Urlaubsantrag ge
 
 Die App wechselt automatisch zum Tab **„Meine Anträge"**, wo Sie den Status verfolgen können.
 
-Neben dem Zeitraum steht, wie viele **Tage** der Antrag kostet. Gezählt werden nur Ihre Arbeitstage – arbeiten Sie z. B. mittwochs nicht, kostet eine Woche Montag bis Freitag 4 Tage. Wochenenden, Feiertage und als „frei" eingestellte Sondertage (24./31.12.) zählen nicht; ein halber Tag und ein als „halber Feiertag" eingestellter 24./31.12. zählen je **0,5**. Dieselbe Zahl sieht Ihr Administrator bei der Entscheidung. Bei einem Urlaubsantrag werden genau so viele Urlaubstage nach der Genehmigung von Ihrem Konto abgezogen.
+Neben dem Zeitraum steht, wie viele **Tage** der Antrag kostet. Gezählt werden nur Ihre Arbeitstage – arbeiten Sie z. B. mittwochs nicht, kostet eine Woche Montag bis Freitag 4 Tage. Wochenenden, Feiertage und als „frei" eingestellte Sondertage (24./31.12.) zählen nicht; ein halber Tag und ein als „halber Feiertag" eingestellter 24./31.12. zählen je **0,5**. Dieselbe Zahl sieht Ihr Administrator bei der Entscheidung. Bei einem Urlaubsantrag werden genau so viele Urlaubstage nach der Genehmigung von Ihrem Konto abgezogen. Steht dort **0**, liegt im Zeitraum kein Tag, an dem Sie arbeiten – ein solcher Antrag kann nicht genehmigt werden.
 
 **Statusbedeutungen:**
 

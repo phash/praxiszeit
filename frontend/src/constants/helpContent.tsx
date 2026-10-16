@@ -112,7 +112,7 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Zeiträume</h3>
-          <p className="text-sm text-gray-600">Bei Zeiträumen werden Wochenenden und Feiertage automatisch ausgeschlossen. Nur Werktage werden eingetragen.</p>
+          <p className="text-sm text-gray-600">Bei Zeiträumen werden Wochenenden, Feiertage und Ihre freien Tage laut Arbeitsplan automatisch ausgeschlossen. Nur Ihre Arbeitstage werden eingetragen – an freien Tagen erfasste Arbeitszeit bleibt stehen.</p>
         </section>
       </div>
     ),

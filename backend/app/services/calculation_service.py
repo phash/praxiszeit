@@ -925,6 +925,43 @@ def is_vacation_billable_day(
     return get_daily_target_for_date(user, target_date, schedule) > 0
 
 
+def absence_booking_dates(
+    db: Session,
+    user: User,
+    dates: List[date],
+    absence_type: AbsenceType,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> List[date]:
+    """Die Tage aus ``dates``, an denen Direktbuchung
+    (``absences.create_absence``) und Antrags-Genehmigung
+    (``admin_vacations.review_vacation_request``) tatsaechlich eine Abwesenheit
+    anlegen — in der Reihenfolge von ``dates``.
+
+    Ueberspringen wird ein Tag ohne Tagessoll laut dem zum Datum aufgeloesten
+    Snapshot (#431), solange die Person Stunden zaehlt
+    (:func:`is_vacation_billable_day`, fuer jeden Typ dieselbe Regel); ohne
+    Stundenzaehlung (#191) wird jeder Tag gebucht. Ausnahme: Ueberstundenausgleich
+    im gleichmaessigen Modus bucht die beantragten Stunden und kennt keinen
+    Tagessoll-Skip.
+
+    Gesamtreview 1.20 B5 (Nachzug): beide Pfade entschieden das bis hier erst in
+    der Buchungsschleife — NACH dem Loeschen der Zeiteintraege und der
+    Urlaubsrueckgabe, die alle Kandidaten-Tage erfassten. An einem uebersprungenen
+    Tag blieb deshalb nichts zurueck (Vertretungsdienst einer Teilzeitkraft am
+    freien Wochentag: Ist und Saldo sanken). Die Betriebsferien pruefen dieselbe
+    Bedingung bewusst vor dem Loeschen. Jetzt steht die Menge vor dem ersten
+    Schreibschritt fest, und jeder Schreibschritt nutzt nur sie.
+    """
+    result: List[date] = []
+    for d in dates:
+        schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
+        if absence_type == AbsenceType.OVERTIME and not schedule.use_daily_schedule:
+            result.append(d)
+        elif is_vacation_billable_day(db, user, d, schedule=schedule):
+            result.append(d)
+    return result
+
+
 def fixed_monthly_target(user: User, year: int, month: int) -> Decimal:
     """#377 Baustein 2b: festes Monats-Soll = agreed_monthly_hours, anteilig bei
     Eintritt/Austritt (Kalendertag-Bruchteil des Beschäftigungsfensters im Monat).

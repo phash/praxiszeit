@@ -426,6 +426,8 @@ Die Anzeige folgt der Konfiguration unter **Einstellungen → „Sondertage (24.
 3. Wählen Sie Datum, Typ und ggf. Zeitraum
 4. Speichern
 
+Eingetragen wird nur an den **Arbeitstagen** der Person: Wochenenden, Feiertage, als „frei" eingestellte Sondertage (24./31.12.) und Tage ohne geplante Arbeitszeit – freie Wochentage laut Tagesplan, Zeiträume mit **0 Wochenstunden** (z. B. Elternzeit) – bleiben ausgenommen (bei Mitarbeitenden ohne Stundenzählung zählt jeder Werktag). Zeiteinträge an einem ausgenommenen Tag – etwa eine Vertretung am freien Wochentag – bleiben in jedem Fall stehen; ersetzt werden höchstens die Einträge der eingetragenen Tage. Liegt im Zeitraum kein einziger Tag mit geplanter Arbeitszeit, lehnt PraxisZeit die Buchung ab: *„Für ‹Tage› sind 0 Stunden geplant — an einem Tag ohne geplante Arbeitszeit kann keine Abwesenheit gebucht werden."*
+
 ### Betriebsferien im Kalender
 
 Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle aktiven Mitarbeiter gleichzeitig (→ [Abschnitt 11](#11-betriebsferien-verwalten)).
@@ -501,7 +503,7 @@ Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspfl
 
 1. Antragskarte aufrufen – zeigt Mitarbeitername, Zeitraum, **Arbeitstage**, Notiz
 2. Klicken Sie auf **„Genehmigen"** (grüner Button)
-3. Das System trägt automatisch Abwesenheiten für alle Arbeitstage der Person ein (Wochenenden, Feiertage, als „frei" eingestellte Sondertage 24./31.12. und freie Wochentage laut Tagesplan ausgeschlossen)
+3. Das System trägt automatisch Abwesenheiten für alle Arbeitstage der Person ein (Wochenenden, Feiertage, als „frei" eingestellte Sondertage 24./31.12., freie Wochentage laut Tagesplan und Zeiträume mit 0 Wochenstunden ausgeschlossen). Vorhandene Zeiteinträge an diesen Tagen werden ersetzt (im Änderungsprotokoll dokumentiert); an den ausgeschlossenen Tagen bleiben sie stehen.
 
 **„Arbeitstage" auf der Antragskarte** zeigt, wie viele Tage der Antrag nach der Genehmigung tatsächlich kostet – nach genau denselben Regeln wie die Buchung und das Urlaubskonto:
 
@@ -509,6 +511,7 @@ Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspfl
 - Wochenenden, Feiertage und als „frei" eingestellte Sondertage (24./31.12.) zählen nicht.
 - Ein **halber Tag** zählt **0,5**; ein als **„halber Feiertag"** eingestellter 24./31.12. ebenfalls **0,5**.
 - Tage nach einem inzwischen eingetragenen **letzten Arbeitstag** zählen nicht mit – ein solcher Antrag lässt sich so aber nicht mehr genehmigen (Fehlermeldung „Datum liegt nach dem letzten Arbeitstag"). Kürzen Sie ihn vorher über **„Bearbeiten"** auf den Beschäftigungszeitraum.
+- Zeigt die Karte **0**, deckt der Antrag keinen Tag, an dem die Person arbeitet. Die Genehmigung lehnt PraxisZeit dann ab – bei Tagen ohne geplante Arbeitszeit mit *„Für ‹Tage› sind 0 Stunden geplant — an einem Tag ohne geplante Arbeitszeit kann keine Abwesenheit gebucht werden."* –, und der Antrag bleibt offen. Lehnen Sie ihn ab oder passen Sie ihn über **„Bearbeiten"** an.
 
 Dieselbe Zahl sehen Mitarbeitende im Tab **„Meine Anträge"**. Bis Version 1.19.3 zählte die Anzeige stumpf Montag bis Freitag ohne Feiertage und widersprach damit bei Teilzeitkräften mit Tagesplan, bei Halbtagen und bei freien Sondertagen dem, was die Genehmigung danach verbucht.
 

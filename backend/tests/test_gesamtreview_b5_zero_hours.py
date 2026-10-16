@@ -20,7 +20,7 @@ Aenderungsantrag nicht:
   als ganzen Urlaubstag (Elternzeit verlor Urlaub an die Betriebsferien).
 """
 import uuid
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 
 import pytest
@@ -32,7 +32,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
 from app.models import (
     Absence, AbsenceType, ChangeRequest, ChangeRequestStatus, ChangeRequestType,
-    TimeEntryAuditLog, User, UserRole, WorkingHoursChange,
+    TimeEntry, TimeEntryAuditLog, User, UserRole, WorkingHoursChange,
 )
 from app.models.system_setting import SystemSetting
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
@@ -658,3 +658,232 @@ class TestClosureResaveCleansZeroHourRows:
         _resave(client, closure)
 
         assert len(_closure_rows(db, emp)) == 2
+
+
+# ── Tage ohne Buchung: kein Schreibschritt (Nachzug B5) ───────────────────────
+#
+# Direktbuchung und Antrags-Genehmigung loeschten die Zeiteintraege (und bei
+# „Krank waehrend Urlaub" den Urlaub) ALLER Kandidaten-Tage, uebersprangen die
+# Tage ohne Tagessoll aber erst danach in der Buchungsschleife — dort blieb
+# nichts zurueck: Ist und Saldo sanken. Die Betriebsferien pruefen dieselbe
+# Bedingung bewusst VOR dem Loeschen. Welche Tage gebucht werden, steht jetzt
+# vor dem ersten Schreibschritt fest; nur diese Tage werden angefasst.
+
+def _entry(db, user, d, credit_override=False):
+    e = TimeEntry(
+        user_id=user.id, tenant_id=DEFAULT_TENANT_ID, date=d,
+        start_time=time(8, 0), end_time=time(12, 0), break_minutes=0,
+        credit_override=credit_override,
+    )
+    db.add(e)
+    db.commit()
+    db.refresh(e)
+    return e
+
+
+def _entry_dates(db, user):
+    db.expire_all()
+    return {e.date for e in db.query(TimeEntry).filter(TimeEntry.user_id == user.id)}
+
+
+def _day_plan_mo_mi_fr(db, username):
+    """Teilzeit Mo/Mi/Fr je 8 h, Di/Do frei (Tagesplan)."""
+    u = _make_user(db, username, weekly_hours=24.0)
+    u.use_daily_schedule = True
+    u.work_days_per_week = 3
+    u.hours_monday, u.hours_tuesday, u.hours_wednesday = 8, None, 8
+    u.hours_thursday, u.hours_friday = None, 8
+    db.commit()
+    db.refresh(u)
+    return u
+
+
+def _book(client, emp, start, end, absence_type="vacation", **extra):
+    payload = {
+        "user_id": str(emp.id), "date": start.isoformat(),
+        "end_date": end.isoformat(), "type": absence_type, "hours": 8.0,
+    }
+    payload.update(extra)
+    return client.post("/api/absences/", json=payload)
+
+
+def _pending_request(db, emp, start, end, absence_type="vacation"):
+    vr = VacationRequest(
+        user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, date=start,
+        end_date=end, hours=8.0, absence_type=absence_type,
+        half_day=False, status=VacationRequestStatus.PENDING.value,
+    )
+    db.add(vr)
+    db.commit()
+    db.refresh(vr)
+    return vr
+
+
+def _approve(db, admin, vr):
+    return _client_as(db, admin).post(
+        f"/api/admin/vacation-requests/{vr.id}/review", json={"action": "approve"})
+
+
+class TestUnbookedDaysKeepTheirData:
+
+    def test_direct_booking_keeps_entry_on_zero_hour_day(self, db, admin):
+        """Probe aus dem Review: 0 h ab Mi, Zeiteintrag am Do, Urlaub Mo–Fr →
+        gebucht Mo + Di; der Do-Eintrag verschwand ersatzlos."""
+        emp = _planned_parental(db, "b5_te_direct", 30)
+        _entry(db, emp, NOV_MON)
+        _entry(db, emp, NOV_THU)
+
+        r = _book(_client_as(db, admin), emp, NOV_MON, NOV_FRI)
+
+        assert r.status_code == 201, r.text
+        assert _booked(db, emp) == {NOV_MON, NOV_TUE}
+        # Mo wird wie bisher durch die Abwesenheit ersetzt, Do bleibt.
+        assert _entry_dates(db, emp) == {NOV_THU}
+
+    def test_day_plan_stand_in_shift_survives_direct_booking(self, db, admin):
+        """Realfall: Teilzeit Mo/Mi/Fr stempelt am freien Di eine Vertretung;
+        Urlaub Mo–Fr darf die Di-Stunden nicht loeschen."""
+        emp = _day_plan_mo_mi_fr(db, "b5_te_dayplan")
+        _entry(db, emp, NOV_TUE)
+
+        r = _book(_client_as(db, admin), emp, NOV_MON, NOV_FRI)
+
+        assert r.status_code == 201, r.text
+        assert _booked(db, emp) == {NOV_MON, NOV_WED, NOV_FRI}
+        assert _entry_dates(db, emp) == {NOV_TUE}
+
+    def test_other_types_follow_the_same_rule(self, db, admin):
+        """Die Bedingung gilt fuer jeden Typ ausser Ueberstundenausgleich im
+        gleichmaessigen Modus — hier Fortbildung."""
+        emp = _day_plan_mo_mi_fr(db, "b5_te_training")
+        _entry(db, emp, NOV_THU)
+
+        r = _book(_client_as(db, admin), emp, NOV_MON, NOV_FRI, "training")
+
+        assert r.status_code == 201, r.text
+        assert _entry_dates(db, emp) == {NOV_THU}
+
+    def test_sick_refund_keeps_vacation_on_zero_hour_day(self, db, admin):
+        """„Krank waehrend Urlaub": der Urlaub eines Tages, an dem keine
+        Krankmeldung gebucht wird (0 h), darf nicht ersatzlos verschwinden."""
+        emp = _planned_parental(db, "b5_te_refund", 30)
+        for d, h in ((NOV_MON, 8.0), (NOV_THU, 0.0)):
+            db.add(Absence(user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, date=d,
+                           type=AbsenceType.VACATION, hours=h, half_day=False))
+        db.commit()
+
+        r = _book(_client_as(db, admin), emp, NOV_MON, NOV_FRI, "sick",
+                  refund_vacation=True)
+
+        assert r.status_code == 201, r.text
+        db.expire_all()
+        by_date = {a.date: a.type for a in db.query(Absence).filter(Absence.user_id == emp.id)}
+        assert by_date == {
+            NOV_MON: AbsenceType.SICK, NOV_TUE: AbsenceType.SICK,
+            NOV_THU: AbsenceType.VACATION,
+        }
+
+    def test_employee_recognized_entry_on_unbooked_day_does_not_block(self, db, admin):
+        """Die 409 bei anerkanntem Eintrag schuetzt ihn vor dem Loeschen — an
+        einem Tag, den die Buchung nicht anfasst, gibt es nichts zu schuetzen."""
+        emp = _day_plan_mo_mi_fr(db, "b5_te_recognized")
+        _entry(db, emp, NOV_TUE, credit_override=True)
+
+        r = _client_as(db, emp).post("/api/absences/", json={
+            "date": NOV_MON.isoformat(), "end_date": NOV_FRI.isoformat(),
+            "type": "sick", "hours": 8.0,
+        })
+
+        assert r.status_code == 201, r.text
+        assert _entry_dates(db, emp) == {NOV_TUE}
+
+    def test_employee_recognized_entry_on_booked_day_still_blocks(self, db, admin):
+        """Kontrolle: auf einem gebuchten Tag bleibt es bei der 409."""
+        emp = _day_plan_mo_mi_fr(db, "b5_te_recognized_ctrl")
+        _entry(db, emp, NOV_WED, credit_override=True)
+
+        r = _client_as(db, emp).post("/api/absences/", json={
+            "date": NOV_MON.isoformat(), "end_date": NOV_FRI.isoformat(),
+            "type": "sick", "hours": 8.0,
+        })
+
+        assert r.status_code == 409, r.text
+        assert "04.11.2026" in r.json()["detail"]
+
+    def test_direct_booking_of_only_zero_hour_days_writes_nothing(self, db, admin):
+        """Die 400 „0 Stunden geplant" faellt VOR dem ersten Schreibschritt —
+        auch ein Flush danach loescht nichts."""
+        emp = _planned_parental(db, "b5_te_direct_zero", 30)
+        _entry(db, emp, NOV_THU)
+
+        r = _book(_client_as(db, admin), emp, NOV_WED, NOV_FRI)
+
+        assert r.status_code == 400, r.text
+        assert "0 Stunden geplant" in r.json()["detail"]
+        db.flush()
+        assert _entry_dates(db, emp) == {NOV_THU}
+
+    def test_approval_keeps_entry_on_zero_hour_day(self, db, admin):
+        emp = _planned_parental(db, "b5_te_review", 30)
+        _entry(db, emp, NOV_MON)
+        _entry(db, emp, NOV_THU)
+        vr = _pending_request(db, emp, NOV_MON, NOV_FRI)
+
+        r = _approve(db, admin, vr)
+
+        assert r.status_code == 200, r.text
+        assert _booked(db, emp) == {NOV_MON, NOV_TUE}
+        assert _entry_dates(db, emp) == {NOV_THU}
+
+    def test_approval_day_plan_stand_in_shift_survives(self, db, admin):
+        emp = _day_plan_mo_mi_fr(db, "b5_te_review_dayplan")
+        _entry(db, emp, NOV_TUE)
+        vr = _pending_request(db, emp, NOV_MON, NOV_FRI)
+
+        r = _approve(db, admin, vr)
+
+        assert r.status_code == 200, r.text
+        assert _booked(db, emp) == {NOV_MON, NOV_WED, NOV_FRI}
+        assert _entry_dates(db, emp) == {NOV_TUE}
+
+
+class TestApprovalWithoutBookableDay:
+    """Ein Antrag nur ueber Tage ohne Tagessoll wurde genehmigt und buchte
+    nichts — die Person sah einen genehmigten Urlaub, der keinen Tag deckt.
+    Die Direktbuchung antwortet auf denselben Fall mit 400 (U1)."""
+
+    @pytest.mark.parametrize("vacation_days", [30, 0])
+    def test_rejected_and_request_stays_pending(self, db, admin, vacation_days):
+        emp = _planned_parental(db, f"b5_rv_zero_{vacation_days}", vacation_days)
+        _entry(db, emp, NOV_THU)
+        vr = _pending_request(db, emp, NOV_WED, NOV_FRI)
+
+        r = _approve(db, admin, vr)
+
+        assert r.status_code == 400, r.text
+        assert "0 Stunden geplant" in r.json()["detail"]
+        assert "Urlaubstage" not in r.json()["detail"]
+        db.flush()
+        db.expire_all()
+        assert db.get(VacationRequest, vr.id).status == VacationRequestStatus.PENDING.value
+        assert _booked(db, emp) == set()
+        assert _entry_dates(db, emp) == {NOV_THU}
+
+    def test_other_types_are_rejected_too(self, db, admin):
+        emp = _day_plan_mo_mi_fr(db, "b5_rv_zero_training")
+        vr = _pending_request(db, emp, NOV_TUE, NOV_TUE, "training")
+
+        r = _approve(db, admin, vr)
+
+        assert r.status_code == 400, r.text
+        assert "0 Stunden geplant" in r.json()["detail"]
+        db.expire_all()
+        assert db.get(VacationRequest, vr.id).status == VacationRequestStatus.PENDING.value
+
+    def test_same_text_as_direct_booking(self, db, admin):
+        emp_a = _planned_parental(db, "b5_rv_text_a", 30)
+        emp_b = _planned_parental(db, "b5_rv_text_b", 30)
+        direct = _book(_client_as(db, admin), emp_a, NOV_WED, NOV_FRI)
+        approval = _approve(db, admin, _pending_request(db, emp_b, NOV_WED, NOV_FRI))
+        assert direct.status_code == approval.status_code == 400
+        assert direct.json()["detail"] == approval.json()["detail"]

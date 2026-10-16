@@ -377,7 +377,11 @@ class TestZeroHoursUniformPeriod:
     Antrag deshalb „5 Tage", gebucht wurde nichts, und die Vorpruefung verlangte
     Budget fuer Tage, die nie verbraucht werden."""
 
-    def test_display_is_zero_and_approval_books_nothing(self, db, admin):
+    def test_display_is_zero_and_approval_is_rejected(self, db, admin):
+        """Anzeige 0 Tage; die Genehmigung bucht nichts — seit Gesamtreview
+        1.20 B5 (Nachzug) antwortet sie darauf wie die Direktbuchung mit 400
+        „0 Stunden geplant", statt einen Urlaub ohne gedeckten Tag als
+        genehmigt zu melden. Der Antrag bleibt offen."""
         emp = _make_user(db, "parental")
         _zero_hours_from(db, emp, date(2026, 11, 1))
         vr = _pending(db, emp, NOV_MON, NOV_FRI)
@@ -385,8 +389,14 @@ class TestZeroHoursUniformPeriod:
         assert _admin_days(db, admin, vr) == 0
         assert _own_days(db, emp, vr) == 0
 
-        _approve(db, admin, vr)
+        r = _client_as(db, admin).post(
+            f"/api/admin/vacation-requests/{vr.id}/review", json={"action": "approve"})
+        _app.dependency_overrides.clear()
+        assert r.status_code == 400, r.text
+        assert "0 Stunden geplant" in r.json()["detail"]
         assert db.query(Absence).filter(Absence.user_id == emp.id).count() == 0
+        db.expire_all()
+        assert db.get(VacationRequest, vr.id).status == VacationRequestStatus.PENDING.value
 
     def test_partial_zero_period_counts_only_the_booked_days(self, db, admin):
         """0 h ab Mi 04.11.: Mo/Di werden gebucht, Mi–Fr nicht → 2 Tage."""

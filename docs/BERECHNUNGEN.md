@@ -697,6 +697,19 @@ Betriebsferien über das Budget hinaus) sperrt keine Buchung, die dort nichts ve
 Urlaub über den Jahreswechsel, dessen Dezember-Tage in einen Zeitraum mit 0 Wochenstunden
 fallen.
 
+Welche Tage Direktbuchung und Antrags-Genehmigung tatsächlich buchen, legt
+`absence_booking_dates` **vor dem ersten Schreibschritt** fest — für jeden Typ dieselbe Regel:
+Tagessoll > 0 laut Snapshot, ohne Stundenzählung jeder Kandidaten-Tag, Überstundenausgleich im
+gleichmäßigen Modus ebenfalls jeder Kandidaten-Tag (er bucht die beantragten Stunden). Nur an
+diesen Tagen werden Zeiteinträge ersetzt, gibt „Krank während Urlaub" den Urlaub zurück und rechnet
+die F1-Klemmung (TZ-E, „Misch-Tage"); ein Tag ohne Tagessoll bleibt unberührt. Vor Version 1.20.0
+löschten beide Pfade die Zeiteinträge **aller** Kandidaten-Tage und übersprangen die Tage ohne
+Tagessoll erst danach — eine am freien Wochentag gestempelte Vertretung verschwand mit einer
+Urlaubswoche ersatzlos (die Betriebsferien prüfen dieselbe Bedingung vor dem Löschen, §9.1). Bleibt
+kein Tag übrig, antworten **beide** Pfade mit 400 („Für ‹Tage› sind 0 Stunden geplant — …"), bevor
+etwas geschrieben wird; die Antrags-Genehmigung genehmigte einen solchen Antrag vorher, ohne einen
+Tag zu buchen.
+
 Die Anzeige „Arbeitstage" am Antrag (Admin-Liste „Abwesenheitsanträge" und „Meine Anträge")
 nutzt dieselbe Regel (`request_day_count`) und blendet zusätzlich Tage außerhalb des
 Beschäftigungsfensters aus (#496) — ein offener Antrag kann älter sein als ein später gesetzter

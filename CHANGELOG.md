@@ -199,6 +199,14 @@ dieses Backup verlustfrei (`UPDATE.md`).
   bisher jeder Schließtag einen Urlaubstag (#496). Für bereits eingetragene
   Betriebsferien: einmal öffnen und neu speichern – dann verschwinden die alten
   Einträge an diesen Tagen.
+- **Abwesenheit über einen freien Tag** (direkt eingetragen oder per Antrag
+  genehmigt): Zeiteinträge wurden an allen Werktagen des Zeitraums gelöscht –
+  auch an Tagen, an denen gar keine Abwesenheit entsteht (freier Wochentag laut
+  Tagesplan, Zeitraum mit 0 Wochenstunden). Eine am freien Dienstag gestempelte
+  Vertretung verschwand so mit einer Urlaubswoche ersatzlos. Ersetzt werden jetzt
+  nur die Einträge der gebuchten Tage. Ein Antrag nur über Tage ohne geplante
+  Arbeitszeit wurde genehmigt, ohne einen Tag zu buchen; die Genehmigung lehnt ihn
+  jetzt wie die direkte Buchung ab („0 Stunden geplant"), der Antrag bleibt offen.
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images
