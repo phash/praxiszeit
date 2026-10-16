@@ -768,6 +768,8 @@ Ist die Ausnahme erlaubt, steuert der Schalter **„Genehmigung erforderlich"**,
 
 **Beim Ausstempeln** wird eine Begründung dagegen immer **sofort wirksam** – auch bei eingeschalteter Genehmigungspflicht. Die Arbeitszeit ist dann bereits geleistet, und der Eintrag muss geschlossen werden (§ 16 ArbZG). Diese Ausnahmen finden Sie im Änderungsprotokoll (Quelle „break_waiver", siehe [Abschnitt 9](#9-änderungsprotokoll-audit-log)). Soll beim Ausstempeln gar keine Ausnahme möglich sein, schalten Sie die Ausnahme ganz ab. Änderungsanträge gehen ohnehin immer zur Genehmigung an Sie; Korrekturen durch Admins wirken sofort.
 
+Bearbeiten Mitarbeitende einen Eintrag, ohne Datum, Zeiten oder Pause zu ändern (z. B. nur die Notiz), ist das keine neue Ausnahme: Der Eintrag wird sofort gespeichert, eine schon dokumentierte Begründung bleibt unverändert stehen – auch bei Genehmigungspflicht oder abgeschalteter Ausnahme. Erst eine geänderte Begründung, Zeit oder Pause wird wieder nach § 4 geprüft.
+
 > **4-Augen-Prinzip:** Ein Admin darf seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen** – sie muss von einem anderen Admin geprüft werden.
 
 <a id="soll-arbeitszeit-fenster-puffer"></a>

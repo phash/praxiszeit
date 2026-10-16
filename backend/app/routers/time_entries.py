@@ -1239,6 +1239,9 @@ def update_time_entry(
         # P28: Vorher-Stand der nicht angerechneten Lückenminuten für den
         # Snapshot eines Waiver-Antrags.
         "uncredited_minutes": entry.uncredited_minutes,
+        # Gesamtreview 1.20 (B1): schon dokumentierte §4-Ausnahme — die
+        # setattr-Schleife unten überschreibt das Feld mit dem Payload.
+        "break_waiver_reason": entry.break_waiver_reason,
     }
 
     # Release-Review 1.16.0: gegen den EIGENTÜMER des Eintrags kappen und prüfen,
@@ -1456,6 +1459,15 @@ def update_time_entry(
 
     # #144 §4 ArbZG: documented break-exception (only non-exempt users).
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
+    # Gesamtreview 1.20 (B1): das Bearbeiten-Formular belegt Haken und
+    # Begründung mit der gespeicherten Ausnahme vor und schickt sie unverändert
+    # zurück. Das ist keine NEUE Ausnahme — sonst wurde eine reine Notiz an
+    # einem mit Begründung ausgestempelten Eintrag (wirkt sofort, Entscheidung
+    # 2026-10-12) bei Genehmigungspflicht zum Antrag (202) bzw. bei
+    # abgeschalteter Ausnahme (#499) zum 400.
+    _new_waiver = bool(waiver_reason) and waiver_reason != (
+        orig_snapshot["break_waiver_reason"] or ""
+    ).strip()
     break_waiver_active = False
     break_error = None
 
@@ -1473,10 +1485,15 @@ def update_time_entry(
             tenant_id=entry.tenant_id,
         )
         # Unverändert bestehender §4-Befund (B1, siehe oben): keine Sperre — außer
-        # es kommt eine Begründung mit; die Ausnahme zu dokumentieren (samt
+        # es kommt eine NEUE Begründung mit; die Ausnahme zu dokumentieren (samt
         # Genehmigungspflicht #144 und Schalter #499) bleibt eine §4-Änderung.
-        # Sonst hält ``break_error`` nur ``PRESENCE_BREAK`` zurück (P14).
-        if break_error and (_time_relevant_change or waiver_reason):
+        # Sonst hält ``break_error`` nur ``PRESENCE_BREAK`` zurück (P14), und die
+        # schon dokumentierte Ausnahme bleibt stehen — auch wenn die Begründung
+        # leer oder ``null`` mitkommt (die setattr-Schleife hätte sie gelöscht,
+        # der Befund besteht aber unverändert).
+        if break_error and not (_time_relevant_change or _new_waiver):
+            entry.break_waiver_reason = orig_snapshot["break_waiver_reason"]
+        if break_error and (_time_relevant_change or _new_waiver):
             # #499: einheitliche Entscheidung (Begründung fehlt / Ausnahme
             # im Mandanten abgeschaltet → 400).
             rejection = break_waiver_rejection(

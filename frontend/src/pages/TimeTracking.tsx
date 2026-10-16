@@ -400,7 +400,18 @@ export default function TimeTracking() {
     const newSegs = editing?.credit_override
       ? []
       : gapSegments(dayBlocks, newGrace, newSpan.start, newSpan.end);
-    const breakError = computeBreakError(
+    // Gesamtreview 1.20 (B1): ändert die Bearbeitung weder Datum, Beginn, Ende
+    // noch Pause, prüft der Server §4 nicht hart (sein Ergebnis wäre das des
+    // gespeicherten Stands) — die Vorprüfung auch nicht. Sonst sperrte schon eine
+    // reine Notiz an einem Eintrag ohne Pflicht-Pause, bei abgeschalteter
+    // Ausnahme (#499) sogar ohne Ausweg. Eine schon dokumentierte Ausnahme bleibt
+    // am Eintrag stehen.
+    const timesUnchanged = !!editing
+      && formData.date === editing.date
+      && formData.start_time === editing.start_time.substring(0, 5)
+      && formData.end_time === (editing.end_time ?? '').substring(0, 5)
+      && formData.break_minutes === editing.break_minutes;
+    const breakError = timesUnchanged ? null : computeBreakError(
       existingBlocks,
       newSpan.start,
       newSpan.end,

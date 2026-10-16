@@ -171,6 +171,11 @@ dieses Backup verlustfrei (`UPDATE.md`).
   zwei Admins führte zu doppelten oder fehlenden Protokollzeilen; das Konto
   konnte im Zustand der ersten Anfrage stehen bleiben, obwohl die zweite Erfolg
   meldete (#491).
+- **Nur die Notiz bearbeiten** an einem Eintrag ohne ausreichende Pause, dessen
+  Ausnahme schon begründet ist (z. B. beim Ausstempeln), wurde bei
+  eingeschalteter Genehmigungspflicht zum Genehmigungsantrag, bei abgeschalteter
+  Ausnahme abgelehnt. Bleiben Datum, Zeiten und Pause gleich, wird der Eintrag
+  jetzt sofort gespeichert; die Begründung bleibt stehen.
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images

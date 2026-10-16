@@ -226,6 +226,51 @@ describe('<TimeTracking /> Pflicht-Pause-Ausnahme (#499)', () => {
     expect(putMock).not.toHaveBeenCalled();
   });
 
+  // Gesamtreview 1.20 (B1): ändert die Bearbeitung weder Datum, Beginn, Ende
+  // noch Pause, prüft der Server §4 nicht hart — die Vorprüfung auch nicht.
+  // Sonst sperrte schon eine Notiz an einem Eintrag ohne Pflicht-Pause.
+  const noBreakEntry = { ...closedEntry, break_minutes: 0, net_hours: 8 }; // 08:00–16:00
+
+  async function editNoteOnly() {
+    mockEntries([noBreakEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    fireEvent.change(screen.getByLabelText('Notiz'), { target: { value: 'neu' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+  }
+
+  it('speichert eine reine Notiz an einem Eintrag ohne Pflicht-Pause, auch wenn die Ausnahme abgeschaltet ist', async () => {
+    useSystemStore.setState({
+      info: { deployment_mode: 'onprem', version: '', break_exception_allowed: false },
+      isLoaded: true,
+    });
+    await editNoteOnly();
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).toMatchObject({ note: 'neu', break_minutes: 0 });
+    expect(screen.queryByText(/in dieser Praxis abgeschaltet/)).not.toBeInTheDocument();
+  });
+
+  it('speichert eine reine Notiz ohne erneute §4-Abfrage, solange die Ausnahme erlaubt ist', async () => {
+    useSystemStore.setState({ info: { deployment_mode: 'onprem', version: '' }, isLoaded: true });
+    await editNoteOnly();
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).not.toHaveProperty('break_waiver_reason');
+  });
+
+  it('Kontrolle: eine geänderte Zeit wird an demselben Eintrag weiter geprüft', async () => {
+    useSystemStore.setState({
+      info: { deployment_mode: 'onprem', version: '', break_exception_allowed: false },
+      isLoaded: true,
+    });
+    mockEntries([noBreakEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '16:30' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    expect(await screen.findByText(/in dieser Praxis abgeschaltet/)).toBeInTheDocument();
+    expect(putMock).not.toHaveBeenCalled();
+  });
+
   it('schickt eine vorhandene Begründung nicht mit, wenn die Ausnahme abgeschaltet ist', async () => {
     useSystemStore.setState({
       info: { deployment_mode: 'onprem', version: '', break_exception_allowed: false },

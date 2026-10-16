@@ -231,6 +231,7 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 - **Aus** (Standard): Eintrag sofort wirksam, Abweichung als Warnung
 - **Ein**: Eintrag erst nach Admin-Genehmigung wirksam
 - **Ausstempeln:** Begründung wirkt **immer sofort** (Eintrag muss geschlossen werden, §16) → im Änderungsprotokoll prüfen (Quelle „break_waiver"). Keine Ausnahme beim Ausstempeln gewünscht → Ausnahme ganz abschalten.
+- **Nur Notiz geändert** (Datum, Zeiten, Pause gleich): keine neue Ausnahme – sofort gespeichert, dokumentierte Begründung bleibt (auch bei Genehmigungspflicht/abgeschalteter Ausnahme)
 > **4-Augen:** Eigene Pflicht-Pause-Ausnahme **nie selbst genehmigen** – muss ein anderer Admin prüfen.
 
 ---

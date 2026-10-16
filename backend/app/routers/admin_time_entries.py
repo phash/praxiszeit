@@ -431,6 +431,13 @@ def admin_update_time_entry(
         if _clamp_warn:
             admin_update_warnings.append(_clamp_warn)
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
+    # Gesamtreview 1.20 (B1), wie ``update_time_entry``: die gespeicherte
+    # Begründung unverändert zurückgeschickt ist keine NEUE Ausnahme (kein 400
+    # bei abgeschalteter Ausnahme #499, keine erneute Dokumentation).
+    # ``entry.break_waiver_reason`` trägt hier noch den gespeicherten Stand.
+    _new_waiver = bool(waiver_reason) and waiver_reason != (
+        entry.break_waiver_reason or ""
+    ).strip()
     break_waiver_active = False
     # Gesamtreview 1.20 (B1): ändert die Bearbeitung nichts, was §3/§4 rechnen
     # (Datum, angerechneter Beginn/Ende, Pause, nicht angerechnete Minuten),
@@ -440,7 +447,7 @@ def admin_update_time_entry(
     # unverändert gespeicherte Formular (400/422). Weiche Warnungen bleiben; ein
     # unverändert bestehender §4-Befund wird nicht erneut gemeldet und
     # unterdrückt wie sonst ``PRESENCE_BREAK`` (P14, ``break_check_passed``).
-    # Kommt eine Begründung mit, läuft §4 wie bisher (die Ausnahme zu
+    # Kommt eine neue Begründung mit, läuft §4 wie bisher (die Ausnahme zu
     # dokumentieren ist eine §4-Änderung, Schalter #499 inklusive).
     _time_relevant_change = (
         update_date != entry.date
@@ -463,7 +470,7 @@ def admin_update_time_entry(
             uncredited_segments=_segs, exclude_entry_id=entry.id,
             tenant_id=current_user.tenant_id,
         )
-        if break_error and (_time_relevant_change or waiver_reason):
+        if break_error and (_time_relevant_change or _new_waiver):
             # M-ARB3: parity with the employee path (#144) — documented waiver
             # records the §4 deviation instead of a hard 400. §3 (below) stays
             # a hard cap. #499: Mandanten-Schalter beachten.
