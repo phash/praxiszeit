@@ -42,7 +42,8 @@ from app.models.time_entry_audit_log import TimeEntryAuditLog
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
-# Spec 2026-10-08 P21 / 13.3: „Genehmigen = Anerkennen" nur an Zeiteinträgen.
+# Spec 2026-10-08 P21 / 13.3: Anerkennen bei der Genehmigung („Genehmigen und
+# anerkennen") nur an Änderungsanträgen zu einem bestehenden Zeiteintrag.
 GRANT_ONLY_UPDATE_DETAIL = (
     "Anerkennen ist nur bei einem Änderungsantrag zu einem bestehenden Zeiteintrag möglich."
 )
@@ -318,9 +319,11 @@ def review_change_request(
             ),
         )
 
-    # Spec 2026-10-08 P21 / 13.3: „Genehmigen = Anerkennen". Ohne Angabe gilt der
-    # Wert des Antrags — auch in der Sammel-Genehmigung (ChangeRequestReview ohne
-    # grant_credit_override). Precondition VOR der Statusänderung.
+    # Spec 2026-10-08 P21 / 13.3: ob die Genehmigung zugleich anerkennt, entscheidet
+    # ``grant_credit_override`` („Genehmigen und anerkennen" bzw. „Ohne Anerkennen
+    # genehmigen"). Ohne Angabe gilt der Wert des Antrags — auch in der
+    # Sammel-Genehmigung (ChangeRequestReview ohne grant_credit_override).
+    # Precondition VOR der Statusänderung.
     grant_override = (
         review.grant_credit_override
         if review.grant_credit_override is not None

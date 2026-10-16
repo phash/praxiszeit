@@ -5,7 +5,7 @@ import { useSystemStore } from '../stores/systemStore';
 
 // ---------------------------------------------------------------------------
 // #499 (Kundenmeldung): 08:49–13:59 + 13:59–18:00 wurde ohne Pause und ohne
-// Begründung ausgestempelt. Der Dialog prüfte nur den laufenden Block (je < 6 h)
+// Begründung ausgestempelt. Der Dialog prüfte nur den laufenden Eintrag (je < 6 h)
 // — der Tagesverstoß kam allein als Warn-Toast. Seit #499 lehnt der Server das
 // Ausstempeln ab; das Widget zeigt die Server-Meldung im Pausen-Dialog und
 // bietet dort Pause bzw. (falls erlaubt) Begründung an.
@@ -68,7 +68,7 @@ beforeEach(() => {
 
 describe('<StampWidget /> §4 über den ganzen Tag (#499)', () => {
   it('zeigt die Tages-Meldung des Servers im Dialog statt eines Toasts und bietet die Begründung an', async () => {
-    clockedInSince(startedAgo(5)); // laufender Block kurz → die Vorprüfung im Browser greift nicht
+    clockedInSince(startedAgo(5)); // laufender Eintrag kurz → die Vorprüfung im Browser greift nicht
     rejectWith(S4);
     await openBreakDialog();
 

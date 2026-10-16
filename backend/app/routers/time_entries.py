@@ -364,7 +364,7 @@ def get_clock_status(
     """Get the current clock-in/out status for the authenticated user.
 
     #494: zusätzlich ``today_net_minutes`` (Tages-Ist inkl. bereits
-    abgeschlossener Blöcke) und ``today_target_hours`` (Tagessoll laut Snapshot).
+    abgeschlossener Einträge) und ``today_target_hours`` (Tagessoll laut Snapshot).
     """
     today = _today_local()
     open_entry = _get_open_entry(db, current_user.id, tenant_id=current_user.tenant_id)
@@ -406,8 +406,8 @@ def get_clock_status(
     now = _now_local()
     start_dt = datetime.combine(open_entry.date, open_entry.start_time, tzinfo=LOCAL_TZ)
     elapsed = int((now - start_dt).total_seconds() / 60)
-    # Laufender Block netto: eine schon erfasste Pause abziehen; ein auf das
-    # Arbeitszeitfenster gekappter Beginn kann nach „jetzt" liegen (#201) — das
+    # Laufender Eintrag netto: eine schon erfasste Pause abziehen; ein an den
+    # Arbeitszeit-Blöcken gekappter Beginn kann nach „jetzt" liegen (#201) — das
     # darf das Tages-Ist nicht senken.
     running_net = max(0, elapsed - (open_entry.break_minutes or 0))
 
@@ -645,7 +645,7 @@ def clock_out(
     # anders als §3 BLOCKIERT ein Verstoß das Ausstempeln jetzt (400), solange
     # weder ausreichende Pause noch eine zulässige Begründung mitkommt. Bis
     # 1.19.x war das nur eine weiche Warnung; zusammen mit dem Ausstempel-Dialog,
-    # der allein den laufenden Block ansah, ließen sich so zwei aneinander-
+    # der allein den laufenden Eintrag ansah, ließen sich so zwei aneinander-
     # gereihte Einträge (08:49–13:59 + 13:59–18:00) ohne Pause und ohne
     # Begründung schließen. Anders als bei §3 kann die Person den Verstoß im
     # selben Aufruf beheben (Pause eintragen oder — falls erlaubt — begründen),

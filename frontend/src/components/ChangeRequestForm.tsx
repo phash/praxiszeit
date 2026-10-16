@@ -28,7 +28,7 @@ const SUNDAY_REASON_LABEL = 'Ausnahmegrund (§10 ArbZG)';
 interface Props {
   entry: TimeEntry | null; // null for CREATE
   requestType: 'create' | 'update' | 'delete';
-  /** Spec P21: „Anrechnung beantragen" — Zeiten = Rohstempel, Genehmigung = Anerkennen. */
+  /** Spec P21: „Anrechnung beantragen" — Zeiten = Rohstempel; die Verwaltung genehmigt mit oder ohne Anerkennen. */
   requestCredit?: boolean;
   onClose: () => void;
   onSuccess: () => void;

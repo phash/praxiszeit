@@ -222,7 +222,7 @@ describe('Dashboard Stempelkarte „x von y h heute" (#494)', () => {
     );
   }
 
-  it('zählt abgeschlossene Blöcke des Tages mit, auch ohne offenen Eintrag', async () => {
+  it('zählt abgeschlossene Einträge des Tages mit, auch ohne offenen Eintrag', async () => {
     withClockStatus({
       is_clocked_in: false, elapsed_minutes: null,
       today_net_minutes: 424, today_target_hours: 7,

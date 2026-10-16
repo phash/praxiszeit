@@ -24,7 +24,8 @@ class ChangeRequestCreate(BaseModel):
     # SEC-D: cap length to prevent storage DoS via unbounded free text.
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG
     proposed_sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # #485 §10 ArbZG
-    # Spec 2026-10-08 P21: „Anrechnung beantragen" — Genehmigung = Anerkennen.
+    # Spec 2026-10-08 P21: „Anrechnung beantragen" — die Genehmigung erkennt
+    # standardmäßig an; die Verwaltung kann auch ohne Anerkennen genehmigen.
     request_credit_override: bool = False
 
 

@@ -203,7 +203,7 @@ export default function Dashboard() {
     is_clocked_in: boolean;
     elapsed_minutes?: number | null;
     current_entry?: { start_time: string };
-    today_net_minutes?: number; // #494: Tages-Ist inkl. abgeschlossener Blöcke
+    today_net_minutes?: number; // #494: Tages-Ist inkl. abgeschlossener Einträge
     today_target_hours?: number; // #494/#431: Tagessoll laut Snapshot
     blocks_today?: TimeBlock[]; // Spec 2026-10-08 (14, E69)
   } | null>(null);
