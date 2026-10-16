@@ -298,6 +298,69 @@ describe('Dashboard Stempelkarte „x von y h heute" (#494)', () => {
     expect(within(card).queryByText(/h heute$/)).not.toBeInTheDocument();
   });
 
+  // Gesamtreview B6: die Zeile stand auf dem Stand beim Laden — wer die Seite
+  // offen ließ, sah um 16 Uhr noch die Zahl von 14 Uhr. Bei laufendem Eintrag
+  // zählt sie jetzt minütlich mit (wie der Timer der Stempeluhr), ohne neu zu laden.
+  describe('zählt bei laufendem Eintrag live mit', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      vi.setSystemTime(new Date('2026-10-08T15:27:00'));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const clockStatusCalls = () =>
+      getMock.mock.calls.filter((c) => c[0] === '/time-entries/clock-status').length;
+
+    it('schreibt „x von y" jede Minute fort, ohne /clock-status erneut abzufragen', async () => {
+      withClockStatus({
+        is_clocked_in: true, elapsed_minutes: 70,
+        current_entry: { start_time: '14:17:00', break_minutes: 0 },
+        today_net_minutes: 331, today_target_hours: 7,
+      });
+      render(<MemoryRouter><Dashboard /></MemoryRouter>);
+      expect(await screen.findByText('5:31 von 7:00 h heute')).toBeInTheDocument();
+      const callsAfterLoad = clockStatusCalls();
+
+      act(() => { vi.advanceTimersByTime(60_000); });
+      expect(screen.getByText('5:32 von 7:00 h heute')).toBeInTheDocument();
+
+      act(() => { vi.advanceTimersByTime(29 * 60_000); });
+      expect(screen.getByText('6:01 von 7:00 h heute')).toBeInTheDocument();
+      expect(clockStatusCalls()).toBe(callsAfterLoad);
+    });
+
+    it('zieht die Pause des laufenden Eintrags wie der Server ab (kein Sprung über die Pause)', async () => {
+      // 20 Min gestempelt, 30 Min Pause schon erfasst → laufend netto 0 (Server:
+      // max(0, elapsed − Pause)). Erst nach weiteren 10 Minuten zählt es.
+      withClockStatus({
+        is_clocked_in: true, elapsed_minutes: 20,
+        current_entry: { start_time: '15:07:00', break_minutes: 30 },
+        today_net_minutes: 261, today_target_hours: 7,
+      });
+      render(<MemoryRouter><Dashboard /></MemoryRouter>);
+      expect(await screen.findByText('4:21 von 7:00 h heute')).toBeInTheDocument();
+
+      act(() => { vi.advanceTimersByTime(10 * 60_000); });
+      expect(screen.getByText('4:21 von 7:00 h heute')).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(5 * 60_000); });
+      expect(screen.getByText('4:26 von 7:00 h heute')).toBeInTheDocument();
+    });
+
+    it('bleibt stehen, wenn nicht eingestempelt', async () => {
+      withClockStatus({
+        is_clocked_in: false, elapsed_minutes: null,
+        today_net_minutes: 424, today_target_hours: 7,
+      });
+      render(<MemoryRouter><Dashboard /></MemoryRouter>);
+      expect(await screen.findByText('7:04 von 7:00 h heute')).toBeInTheDocument();
+
+      act(() => { vi.advanceTimersByTime(10 * 60_000); });
+      expect(screen.getByText('7:04 von 7:00 h heute')).toBeInTheDocument();
+    });
+  });
+
   it('nimmt das Tagessoll aus der API, nicht aus der User-Zeile', async () => {
     withClockStatus({
       is_clocked_in: false, elapsed_minutes: null,

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { stripWarningCode } from '../utils/arbzgWarnings';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -209,14 +209,24 @@ export default function Dashboard() {
   const { openStampSheet, stampVersion, notifyStampChange } = useUIStore();
   const trackHours = user?.track_hours !== false;
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [clockStatus, setClockStatus] = useState<{
+  const [clockStatus, setClockStatusRaw] = useState<{
     is_clocked_in: boolean;
     elapsed_minutes?: number | null;
-    current_entry?: { start_time: string };
+    current_entry?: { start_time: string; break_minutes?: number | null };
     today_net_minutes?: number; // #494: Tages-Ist inkl. abgeschlossener Einträge
     today_target_hours?: number; // #494/#431: Tagessoll laut Snapshot
     blocks_today?: TimeBlock[]; // Spec 2026-10-08 (14, E69)
   } | null>(null);
+  // #494 (Gesamtreview B6): „x von y h heute" zählt bei laufendem Eintrag live
+  // mit. Gemessen wird die Wanduhr seit dem Laden des Status (nicht die Zahl der
+  // Intervall-Ticks — ein Hintergrund-Tab drosselt Intervalle); der Takt löst
+  // nur ein Neuzeichnen aus, keine Abfrage.
+  const [clockLoadedAt, setClockLoadedAt] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const setClockStatus = useCallback((data: typeof clockStatus) => {
+    setClockStatusRaw(data);
+    setClockLoadedAt(Date.now());
+  }, []);
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const [overtimeAccount, setOvertimeAccount] = useState<OvertimeAccount | null>(null);
   const [vacationAccount, setVacationAccount] = useState<VacationAccount | null>(null);
@@ -366,6 +376,15 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // #494 (Gesamtreview B6): solange ein Eintrag läuft, einmal pro Minute neu
+  // zeichnen. Hängt nur am Eingestempelt-Zustand — kein Abruf, keine Schleife.
+  const isClockedInNow = clockStatus?.is_clocked_in ?? false;
+  useEffect(() => {
+    if (!isClockedInNow) return;
+    const id = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, [isClockedInNow]);
+
   // Refresh balances and clock status after stamp actions (clock-in/out)
   useEffect(() => {
     if (stampVersion === 0 || !trackHours) return;
@@ -391,7 +410,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [stampVersion, trackHours]);
+  }, [stampVersion, trackHours, setClockStatus]);
 
   if (loading) {
     return (
@@ -495,8 +514,17 @@ export default function Dashboard() {
         // Blöcke (geteilter Dienst), nicht nur die Laufzeit des offenen Eintrags.
         const todayTarget = clockStatus?.today_target_hours ?? 0;
         const isWorkday = todayTarget > 0;
-        const todayActual = (clockStatus?.today_net_minutes ?? 0) / 60;
         const isClockedIn = clockStatus?.is_clocked_in ?? false;
+        // Gesamtreview B6: der laufende Eintrag zählt seit dem Laden weiter —
+        // nach derselben Regel wie der Server (laufend netto = max(0, gestempelte
+        // Minuten − schon erfasste Pause)), damit eine erfasste Pause nicht
+        // doppelt oder gar nicht wirkt.
+        const sinceLoad = isClockedIn ? Math.max(0, Math.floor((nowMs - clockLoadedAt) / 60_000)) : 0;
+        const runningElapsed = clockStatus?.elapsed_minutes ?? 0;
+        const runningBreak = clockStatus?.current_entry?.break_minutes ?? 0;
+        const runningGrowth = Math.max(0, runningElapsed + sinceLoad - runningBreak)
+          - Math.max(0, runningElapsed - runningBreak);
+        const todayActual = ((clockStatus?.today_net_minutes ?? 0) + runningGrowth) / 60;
         // Wer heute schon gestempelt hat (z. B. Mittagspause, Feierabend), ist
         // nicht „noch nicht eingestempelt" — kein roter Hinweis.
         const workedToday = todayActual > 0;
