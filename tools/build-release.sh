@@ -1029,7 +1029,7 @@ if [ "$BUILD_DOCKER" = true ]; then
     # (sonst landen sie leer im Bundle), Werkzeug-Caches, Agenten-Notizen
     # (.claude) und Datenbanksicherungen (backups/, personenbezogen).
     # tests/test_491_deploy_pull.py faehrt diesen Block gegen die Beispielpfade
-    # aus test_backend_dockerignore.py.
+    # aus test_backend_dockerignore.py bzw. test_frontend_dockerignore.py.
     _copy_tree backend \
         --exclude='__pycache__' --exclude='*.pyc' --exclude='*.pyo' \
         --exclude='backend/tests' \
@@ -1039,10 +1039,14 @@ if [ "$BUILD_DOCKER" = true ]; then
         --exclude='backend/test.db*' --exclude='backend/.venv' --exclude='backend/venv' \
         --exclude='backend/.claude' --exclude='backend/backups' \
         --exclude='*.pem' --exclude='*.key' --exclude='.env' --exclude='.env.*'
+    # frontend/ ebenso gegen frontend/.dockerignore: node_modules, dist,
+    # Agenten-Notizen, der leere root-eigene Rest eines Docker-Mounts
+    # (frontend/backend), .env-Varianten und Testausgaben.
     _copy_tree frontend \
         --exclude='frontend/node_modules' --exclude='frontend/dist' \
-        --exclude='frontend/.claude' \
-        --exclude='*.pem' --exclude='*.key' --exclude='.env'
+        --exclude='frontend/.claude' --exclude='frontend/backend' \
+        --exclude='frontend/coverage' --exclude='frontend/test-results' \
+        --exclude='*.pem' --exclude='*.key' --exclude='.env' --exclude='.env.*'
     # ssl/: Skript + nginx-Config, aber NIE einen evtl. lokal erzeugten Key/Cert
     _copy_tree ssl --exclude='ssl/cert.pem' --exclude='ssl/key.pem'
     _copy_tree prometheus

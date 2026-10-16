@@ -343,16 +343,26 @@ def test_docker_bundle_laesst_was_die_dockerignore_ausschliesst_auch_weg(tmp_pat
 
 
 @_NEEDS_TAR
-def test_docker_bundle_laesst_werkzeugzustand_aus_frontend_weg(tmp_path):
-    staged = _stage_bundle(tmp_path, [
-        "frontend/.claude/agent-memory/notizen.md",
-        "frontend/node_modules/react/index.js",
-        "frontend/dist/index.html",
-        "frontend/Dockerfile",
-        "frontend/package.json",
-        "frontend/src/main.tsx",
-    ])
-    for kept in ("frontend/Dockerfile", "frontend/package.json", "frontend/src/main.tsx"):
-        assert kept in staged, kept
-    for gone in ("frontend/.claude", "frontend/node_modules", "frontend/dist"):
-        assert not any(p == gone or p.startswith(gone + "/") for p in staged), gone
+def test_docker_bundle_laesst_was_die_frontend_dockerignore_ausschliesst_auch_weg(tmp_path):
+    """Dasselbe fuer frontend/: node_modules, dist, Agenten-Notizen, das leere
+    frontend/backend eines Docker-Mounts, .env-Varianten und Testausgaben.
+    Beispielpfade aus test_frontend_dockerignore.py."""
+    from tests.test_backend_dockerignore import _excluded, _rules
+    from tests.test_frontend_dockerignore import BENOETIGT, DOCKERIGNORE, HOST_RESTE
+
+    pfade = [f"frontend/{p}" for p in HOST_RESTE + BENOETIGT]
+    # "backend" ist zugleich Elternverzeichnis von "backend/app/main.py" —
+    # als Datei angelegt, scheiterte das mkdir des Kindes.
+    files = [p for p in pfade if not any(q.startswith(p + "/") for q in pfade)]
+    files.append("frontend/.dockerignore")
+    staged = _stage_bundle(tmp_path, files)
+
+    rules = _rules(DOCKERIGNORE)
+    durchgerutscht = sorted(
+        p for p in staged
+        if p.startswith("frontend/") and _excluded(p[len("frontend/"):], rules)
+    )
+    assert not durchgerutscht, durchgerutscht
+    fehlt = sorted(f"frontend/{p}" for p in BENOETIGT if f"frontend/{p}" not in staged)
+    assert not fehlt, fehlt
+    assert "frontend/.dockerignore" in staged
