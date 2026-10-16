@@ -1,3 +1,5 @@
+import logging
+
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 from typing import Any, List, Literal, Optional
 from datetime import date, datetime, time
@@ -6,6 +8,8 @@ from uuid import UUID
 
 from app.schemas.validators import validate_week_blocks
 from app.services import work_blocks_service
+
+logger = logging.getLogger(__name__)
 
 # Spec 11.4: blocks + weekly_hours/hours_* im selben Body.
 BLOCKS_WITH_HOURS_DETAIL = "Tagesstunden werden aus den Arbeitszeit-Blöcken abgeleitet."
@@ -205,10 +209,28 @@ class WorkingHoursChangeResponse(WorkingHoursChangeBase):
     # Gleiches Muster wie ``adjusted_absences``: transientes Attribut, sonst 0.
     adjusted_time_entries: int = 0
     skipped_time_entries: int = 0
-    # Spec 11.1/11.5: Blöcke der Zeile, LOCKER (kein Validator — Altzeilen aus
-    # Migration 073 tragen 07:37/23:59). Bewusst nicht auf WorkingHoursChangeBase:
-    # das Create-Schema erbte sonst ein ungeprüftes Eingabefeld (PR3 typisiert es).
+    # Spec 11.1/11.5: Blöcke der Zeile, LOCKER (kein strenger Validator —
+    # Altzeilen aus Migration 073 tragen 07:37/23:59). Bewusst nicht auf
+    # WorkingHoursChangeBase: das Create-Schema erbte sonst ein ungeprüftes
+    # Eingabefeld (PR3 typisiert es).
     blocks: Optional[Any] = None
+
+    @field_validator('blocks')
+    @classmethod
+    def unreadable_blocks_as_none(cls, value, info):
+        """Gesamtreview B3: strukturell kaputtes JSON (nur per Hand in der
+        Datenbank erzeugbar) geht als ``null`` hinaus — dieselbe Antwort, mit
+        der der Resolver rechnet („keine Blöcke"). Der Arbeitszeit-Dialog
+        formatiert jede Verlaufszeile (``day.blocks.map``) und stürzte an einem
+        Tag mit ``"blocks": "kaputt"`` ab. Wirft nie (E29); Altwerte bleiben
+        wie gespeichert."""
+        if work_blocks_service.is_readable_week(value):
+            return value
+        logger.warning(
+            "Arbeitszeit-Blöcke der Verlaufszeile %s nicht lesbar — als „keine Blöcke“ ausgegeben",
+            info.data.get("id"),
+        )
+        return None
 
     @field_serializer('id', 'user_id')
     def serialize_uuid(self, value: UUID) -> str:

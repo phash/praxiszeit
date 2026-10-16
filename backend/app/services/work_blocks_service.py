@@ -87,6 +87,18 @@ def parse_week_blocks(raw: Any) -> Optional[ParsedWeek]:
     return ParsedWeek(tuple(all_blocks), tuple(pauses))
 
 
+def is_readable_week(raw: Any) -> bool:
+    """Liest der Resolver diese Woche? ``False`` nur bei strukturell kaputtem
+    JSON (nur per Hand in der Datenbank erzeugbar); Altwerte aus Migration 073
+    und ``None`` sind lesbar. Für Leseschemas, die den gespeicherten Wert
+    ausgeben (Gesamtreview B3)."""
+    try:
+        parse_week_blocks(raw)
+    except ValueError:
+        return False
+    return True
+
+
 def week_blocks_to_json(blocks: Optional[tuple], pauses: Optional[tuple]) -> Optional[list]:
     """Umkehrung von :func:`parse_week_blocks` — ``None`` bleibt ``None``."""
     if blocks is None:

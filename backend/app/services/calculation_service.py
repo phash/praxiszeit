@@ -65,11 +65,28 @@ def _parsed_blocks(holder, raw) -> Optional[work_blocks_service.ParsedWeek]:
     """Parse-Cache am ORM-Objekt (Spec 3.6): der Preload-Pfad (#449) löst
     hunderte Tage gegen dieselbe Zeile auf. Geprüft wird die IDENTITÄT des
     JSON-Werts — eine Neuzuweisung (einziger erlaubter Änderungsweg) macht den
-    Cache ungültig."""
+    Cache ungültig.
+
+    Gesamtreview B3: strukturell kaputtes JSON (nur per Hand in der Datenbank
+    erzeugbar — jeder Schreibweg prüft streng) gilt wie NULL als „keine Blöcke"
+    (E8) und wird geloggt, statt ``ValueError`` zu werfen. Vorher endeten
+    ``/me/work-schedule``, Dashboard, der Admin-Monatsbericht (eine kaputte
+    Person sperrte die ganze Team-Tabelle), Stempeln und jede Soll-Rechnung der
+    Person in HTTP 500. Folgen: das Soll bleibt unberührt (es liest Blöcke nie,
+    sondern die materialisierten ``hours_*``), die Kappung entfällt an diesen
+    Tagen wie an jedem Tag ohne Blöcke, gestempelt werden kann weiter (§16).
+    Auch das Scheitern landet im Cache — eine Warnung je Zeile, nicht je Tag."""
     cache = getattr(holder, "_parsed_blocks", None)
     if cache is not None and cache[0] is raw:
         return cache[1]
-    parsed = work_blocks_service.parse_week_blocks(raw)
+    try:
+        parsed = work_blocks_service.parse_week_blocks(raw)
+    except ValueError as exc:
+        logger.warning(
+            "Arbeitszeit-Blöcke nicht lesbar (%s %s): %r — gelten als „keine Blöcke“",
+            type(holder).__name__, getattr(holder, "id", None), str(exc),
+        )
+        parsed = None
     holder._parsed_blocks = (raw, parsed)
     return parsed
 
@@ -183,8 +200,8 @@ def attach_work_blocks_today(db: Session, users, on_date: date) -> None:
     übergebenen Personen (Muster #449/#204).
 
     Locker wie ein Leseschema (E29): strukturell kaputtes JSON (nur per Hand in
-    der Datenbank erzeugbar) wird als ``None`` angezeigt und geloggt, statt
-    Login oder Benutzerliste mit HTTP 500 zu sperren."""
+    der Datenbank erzeugbar) liefert schon der Resolver als ``None`` (geloggt,
+    ``_parsed_blocks``) — Login und Benutzerliste sperrt es nicht."""
     users = [u for u in users if u is not None]
     if not users:
         return
@@ -196,12 +213,8 @@ def attach_work_blocks_today(db: Session, users, on_date: date) -> None:
     ).all():
         by_user.setdefault(row.user_id, []).append(row)
     for user in users:
-        try:
-            user.work_blocks_today = get_blocks_json_for_date(
-                db, user, on_date, by_user.get(user.id, []))
-        except ValueError:
-            logger.warning("work_blocks_today: Blöcke von Benutzer %s nicht lesbar", user.id)
-            user.work_blocks_today = None
+        user.work_blocks_today = get_blocks_json_for_date(
+            db, user, on_date, by_user.get(user.id, []))
 
 
 class ScheduleSegment(NamedTuple):
