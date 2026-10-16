@@ -1,5 +1,13 @@
 import { test, expect } from '../../fixtures/base.fixture';
 
+// Gesamtreview 1.20 (B9): diese Spec schaltet mandantenweite Einstellungen um —
+// das Bundesland (`holiday_state`, löscht und erzeugt dabei die Feiertage des
+// Mandanten neu) und die Genehmigungspflicht (`vacation_approval_required`).
+// Bei `workers: 2` lief das neben Specs, die Urlaub buchen oder beantragen und
+// mit Feiertagen rechnen. Sie liegt deshalb in tests/tenant-settings/ und läuft
+// im Projekt "tenant-settings" erst nach "chromium", einzeln nacheinander
+// (playwright.config.ts). Die Genehmigungspflicht steht dabei auf dem Wert aus
+// global-setup.ts (`false`).
 test.describe('Admin Einstellungen', () => {
   test.beforeEach(async ({ adminPage }) => {
     await adminPage.goto('/admin/settings');

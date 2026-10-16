@@ -45,9 +45,21 @@ const ALL_SHIFT_PLANNING_SPECS = /admin[\\/]shift-planning[^\\/]*\.spec\.ts$/;
 // dem Puffer 15 (Anlegen und Neukappung lesen den AKTUELLEN Mandantenwert).
 // Im selben Projekt liefen beide Dateien bei `workers: 2` gleichzeitig — die
 // Puffer-Spec startet deshalb erst, wenn das ganze Projekt "chromium" fertig
-// ist. Eine künftige Spec, die einen mandantenweiten Wert schaltet, von dem
-// andere Specs abhängen, gehört ebenfalls in ein solches Folgeprojekt.
-const GRACE_SETTING_SPEC = /admin[\\/]grace-setting\.spec\.ts$/;
+// ist.
+//
+// Gesamtreview 1.20 (B9): dasselbe galt für die Genehmigungspflicht
+// (`vacation_approval_required`, vacation-approvals.spec.ts, settings.spec.ts
+// und zwei Tests aus employee/absences.spec.ts), das Bundesland
+// (`holiday_state`, settings.spec.ts — löscht und erzeugt die Feiertage neu)
+// und den #314-Schalter (`closure_overtime_after_vacation`). Alle Specs, die
+// eine mandantenweite Einstellung umschalten, liegen jetzt in
+// tests/tenant-settings/ — Muster statt Dateiliste (#461 K-8): eine neue Spec
+// dort fällt automatisch ins Folgeprojekt. Das Projekt läuft erst nach
+// "chromium" und mit `workers: 1`: zwei seiner Dateien schalten sonst
+// gegeneinander (die Bundesland-Umschaltung neben einem Urlaubsantrag). Die
+// Genehmigungspflicht steht im Projekt "chromium" durchgehend auf dem Wert aus
+// global-setup.ts (`false`).
+const TENANT_SETTINGS_SPECS = /tests[\\/]tenant-settings[\\/][^\\/]*\.spec\.ts$/;
 
 export default defineConfig({
   testDir: './tests',
@@ -75,7 +87,7 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { browserName: 'chromium' },
-      testIgnore: [ALL_SHIFT_PLANNING_SPECS, GRACE_SETTING_SPEC],
+      testIgnore: [ALL_SHIFT_PLANNING_SPECS, TENANT_SETTINGS_SPECS],
     },
     {
       name: 'shift-planning',
@@ -92,14 +104,18 @@ export default defineConfig({
       dependencies: ['shift-planning'],
     },
     {
-      name: 'grace-setting',
+      name: 'tenant-settings',
       use: { browserName: 'chromium' },
-      testMatch: GRACE_SETTING_SPEC,
-      // Startet garantiert erst, nachdem work-blocks.spec.ts (und der Rest des
-      // Projekts "chromium") durchgelaufen ist — siehe GRACE_SETTING_SPEC oben.
-      // Nebenwirkung wie beim Flag-Aus-Test: ein Fehlschlag in "chromium"
-      // lässt diesen Test als "did not run" stehen.
+      testMatch: TENANT_SETTINGS_SPECS,
+      // Startet garantiert erst, nachdem das ganze Projekt "chromium"
+      // durchgelaufen ist, und fährt seine Dateien einzeln nacheinander —
+      // siehe TENANT_SETTINGS_SPECS oben. Nebenwirkung wie beim Flag-Aus-Test:
+      // ein Fehlschlag in "chromium" lässt diese Tests als "did not run" stehen.
+      // Die Schichtplanungs-Projekte laufen weiter daneben: keine dieser
+      // Einstellungen wirkt auf sie (der Generator liest Abwesenheiten, keine
+      // Feiertage, und die Specs buchen keinen Urlaub).
       dependencies: ['chromium'],
+      workers: 1,
     },
   ],
 });

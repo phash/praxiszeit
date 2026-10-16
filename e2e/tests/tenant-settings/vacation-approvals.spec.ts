@@ -1,12 +1,20 @@
 import { test, expect } from '../../fixtures/base.fixture';
 import { weekdayFromNow } from '../../helpers/date.helper';
 
+// Gesamtreview 1.20 (B9): die Genehmigungspflicht ist mandantenweit. Liefe diese
+// Spec bei `workers: 2` neben Specs, die als Mitarbeiter:in Urlaub direkt buchen
+// (→ 400 bei aktiver Pflicht) oder sie selbst wieder abschalten (→ 400 beim
+// Antrag), träfe es abwechselnd die eine oder die andere Seite. Sie liegt deshalb
+// in tests/tenant-settings/ (Projekt "tenant-settings": erst nach "chromium",
+// Dateien einzeln nacheinander, playwright.config.ts). Ausgangswert ist `false`
+// (global-setup.ts besitzt die Einstellung für den ganzen Lauf).
 test.describe('Admin Vacation Approvals', () => {
   // Mehrere Tests hier schalten die Genehmigungspflicht ein. Bricht einer
   // vorzeitig ab, bliebe sie an und veränderte das Verhalten aller folgenden
-  // Specs (Urlaub direkt buchen → 400). Das Zurücksetzen gehört deshalb in ein
-  // afterEach und nicht ans Ende des Erfolgspfads — genau die Lücke, die die
-  // entfernten `catch { test.skip() }` bisher verdeckt haben.
+  // Specs (Urlaub direkt buchen → 400). Das Zurücksetzen auf den Ausgangswert
+  // `false` gehört deshalb in ein afterEach und nicht ans Ende des Erfolgspfads
+  // — genau die Lücke, die die entfernten `catch { test.skip() }` bisher
+  // verdeckt haben.
   test.afterEach(async ({ adminApi }) => {
     try {
       await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' });

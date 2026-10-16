@@ -13,9 +13,9 @@ import type { Browser, Page } from '@playwright/test';
 // Die erwarteten Werte der Tests 2 und 7 („1:30 h zwischen den Blöcken nicht
 // angerechnet", „Nicht angerechnet (Lücke): 2:30 h") setzen den mandantenweiten
 // Puffer `work_window_grace_minutes` = 15 voraus: Anlegen und Neukappung lesen
-// den AKTUELLEN Wert. Der einzige Test, der ihn umschaltet (grace-setting.spec.ts),
-// läuft deshalb in einem eigenen Playwright-Projekt erst nach "chromium"
-// (playwright.config.ts). `expectGrace15` macht einen von einem abgebrochenen
+// den AKTUELLEN Wert. Der einzige Test, der ihn umschaltet
+// (tests/tenant-settings/grace-setting.spec.ts), läuft deshalb im
+// Playwright-Projekt "tenant-settings" erst nach "chromium" (playwright.config.ts). `expectGrace15` macht einen von einem abgebrochenen
 // Lauf zurückgelassenen anderen Wert als Vorbedingung sichtbar.
 type Day = { blocks: { start: string; end: string }[]; pause_minutes: number };
 const day = (spans: [string, string][], pause = 0): Day => ({

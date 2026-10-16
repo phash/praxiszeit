@@ -13,14 +13,17 @@ import { test, expect } from '../../fixtures/base.fixture';
  * (`workers: 2`), träfe ein paralleler Worker gelegentlich den geänderten Wert
  * und stünde rot da, ohne beteiligt zu sein.
  *
- * Deshalb lebt der Test in einem eigenen Playwright-Projekt ("grace-setting",
- * siehe playwright.config.ts), das per `dependencies: ['chromium']` garantiert
- * erst startet, nachdem alle Specs des Projekts "chromium" durchgelaufen sind.
- * Das `finally` schreibt den Originalwert trotzdem sofort zurück — reiner
- * Aufräum-Reflex, kein Isolationsmechanismus.
+ * Deshalb lebt der Test in tests/tenant-settings/ — Playwright-Projekt
+ * "tenant-settings" (siehe playwright.config.ts), das per
+ * `dependencies: ['chromium']` garantiert erst startet, nachdem alle Specs des
+ * Projekts "chromium" durchgelaufen sind, und seine Dateien mit `workers: 1`
+ * einzeln nacheinander fährt (Gesamtreview 1.20 B9: dort liegen alle Specs, die
+ * eine mandantenweite Einstellung umschalten). Das `finally` schreibt den
+ * Originalwert trotzdem sofort zurück — reiner Aufräum-Reflex, kein
+ * Isolationsmechanismus.
  *
  * Ein Dateifilter auf diese Spec startet das ganze Projekt "chromium" mit;
- * gezielt allein: `npx playwright test tests/admin/grace-setting.spec.ts --no-deps`.
+ * gezielt allein: `npx playwright test tests/tenant-settings/grace-setting.spec.ts --no-deps`.
  */
 test.describe('Soll-Fenster-Puffer (#201)', () => {
   test('#201: Soll-Fenster-Puffer lässt sich in den Einstellungen speichern', async ({ adminPage, adminApi }) => {

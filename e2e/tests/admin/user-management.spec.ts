@@ -418,9 +418,12 @@ test.describe('Admin User Management', () => {
   });
 
   test('Abwesenheit vor erstem Arbeitstag zeigt Fehler', async ({ adminApi, employeePage, testEmployee }) => {
-    // Reset vacation_approval_required – if left true by another test, the absence form routes to
-    // /vacation-requests (no first_work_day check there) and the error toast never appears.
-    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch { /* best effort */ }
+    // Voraussetzung: Genehmigungspflicht aus — sonst schickt das Formular einen
+    // Antrag (/vacation-requests, ohne first_work_day-Prüfung) und der Fehler-Toast
+    // bleibt aus. Den Wert `false` besitzt global-setup.ts für den ganzen Lauf;
+    // wer ihn umschaltet, läuft im Projekt "tenant-settings" erst nach dieser
+    // Spec (Gesamtreview 1.20 B9). Vorher setzte dieser Test ihn selbst zurück —
+    // mitten in einen parallel laufenden Genehmigungstest hinein.
 
     // first_work_day auf 30 Tage in der Zukunft setzen
     const future = new Date();
@@ -449,8 +452,7 @@ test.describe('Admin User Management', () => {
   });
 
   test('Abwesenheit nach letztem Arbeitstag zeigt Fehler', async ({ adminApi, employeePage, testEmployee }) => {
-    // Reset vacation_approval_required – same reason as the test above.
-    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch { /* best effort */ }
+    // Genehmigungspflicht aus: wie im Test oben (global-setup.ts).
 
     // last_work_day auf gestern setzen
     const yesterday = new Date();

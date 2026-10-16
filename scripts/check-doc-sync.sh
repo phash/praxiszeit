@@ -885,8 +885,13 @@ group_claude() {
   forbid "$f" '12 „Arbeitsblöcke“'
   forbid "$f" 'Füllungen/Zellverbindungen reichen bis Spalte L'
   forbid "$f" 'Krank 4,0 h — Wochenstunden-Änderung ab 15.03.2026'
-  # E2E-/Vitest-Hinweise (PR3 Review Task 22, Speicher)
-  need "$f" 'Projekt `grace-setting`'
+  # E2E-/Vitest-Hinweise (PR3 Review Task 22, Speicher; Gesamtreview 1.20 B9:
+  # alle Mandanten-Schalter-Specs im Projekt tenant-settings)
+  need "$f" 'Projekt `tenant-settings` mit `dependencies:'
+  need "$f" 'UND `workers: 1` (Dateien einzeln nacheinander'
+  need "$f" 'tests/tenant-settings/grace-setting.spec.ts --no-deps'
+  forbid "$f" 'Projekt `grace-setting`'
+  forbid "$f" 'tests/admin/grace-setting.spec.ts'
   need "$f" '--maxWorkers=2'
   # #394: die Direktbuchung trägt das ungewichtete Tagessoll (PR3 Task 6)
   need "$f" '`calculation_service.f1_clamp_hours`'

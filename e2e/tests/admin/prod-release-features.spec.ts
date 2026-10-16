@@ -10,9 +10,10 @@ import { purgeUser } from '../../fixtures/test-data.fixture';
  * then cleans up after itself.
  *
  * Der Test zum mandantenweiten Puffer `work_window_grace_minutes` (#201) lebt in
- * grace-setting.spec.ts mit eigenem Playwright-Projekt: er schaltet den Wert
- * kurzzeitig um, und work-blocks.spec.ts rechnet mit dem Puffer 15 (Review
- * Task 22, Muster #451).
+ * tests/tenant-settings/grace-setting.spec.ts (Playwright-Projekt
+ * "tenant-settings", erst nach "chromium"): er schaltet den Wert kurzzeitig um,
+ * und work-blocks.spec.ts rechnet mit dem Puffer 15 (Review Task 22, Muster
+ * #451, Gesamtreview 1.20 B9).
  */
 test.describe('Prod-Release-Features (Admin UI)', () => {
   async function openNewUserForm(adminPage: any) {
