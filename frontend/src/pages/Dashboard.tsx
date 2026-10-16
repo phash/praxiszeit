@@ -174,14 +174,24 @@ interface RecentEntry {
   net_hours: number;
 }
 
+/** #493: so viele Einträge zeigt die Karte „Letzte Einträge". */
+const RECENT_ENTRIES_LIMIT = 5;
+
+/**
+ * #493 (Gesamtreview B6): die neuesten Einträge UNABHÄNGIG von der Monatsgrenze.
+ * Vorher `?month=<laufender Monat>` — am Monatsersten vor dem ersten Stempeln war
+ * die Karte leer, am 2. stand dort ein einziger Eintrag. Ohne `month` sortiert
+ * der Endpunkt absteigend (Datum, Beginn) und schneidet danach mit `limit` ab.
+ */
+const RECENT_ENTRIES_URL = `/time-entries?limit=${RECENT_ENTRIES_LIMIT}`;
+
 /**
  * #493: die `n` neuesten Einträge, neueste zuerst. Sortiert selbst statt sich auf
- * die Reihenfolge der API-Antwort zu verlassen — `GET /time-entries?month=`
- * liefert absteigend, das frühere `slice(-5).reverse()` setzte aufsteigend voraus
- * und zeigte so die fünf ÄLTESTEN Einträge des Monats. ISO-Datum und `HH:MM:SS`
- * sortieren lexikografisch korrekt.
+ * die Reihenfolge der API-Antwort zu verlassen — das frühere `slice(-5).reverse()`
+ * setzte eine aufsteigende Antwort voraus und zeigte so die fünf ÄLTESTEN
+ * Einträge. ISO-Datum und `HH:MM:SS` sortieren lexikografisch korrekt.
  */
-function newestEntries(entries: RecentEntry[], n = 5): RecentEntry[] {
+function newestEntries(entries: RecentEntry[], n = RECENT_ENTRIES_LIMIT): RecentEntry[] {
   return [...entries]
     .sort((a, b) => b.date.localeCompare(a.date) || (b.start_time ?? '').localeCompare(a.start_time ?? ''))
     .slice(0, n);
@@ -297,9 +307,8 @@ export default function Dashboard() {
 
         // Fetch recent entries + clock status for mobile
         try {
-          const currentMonth = format(new Date(), 'yyyy-MM');
           const [entriesRes, clockRes] = await Promise.all([
-            apiClient.get(`/time-entries?month=${currentMonth}`),
+            apiClient.get(RECENT_ENTRIES_URL),
             trackHours ? apiClient.get('/time-entries/clock-status') : Promise.resolve({ data: null }),
           ]);
           if (cancelled) return;
@@ -362,13 +371,12 @@ export default function Dashboard() {
     if (stampVersion === 0 || !trackHours) return;
 
     let cancelled = false;
-    const currentMonth = format(new Date(), 'yyyy-MM');
     Promise.all([
       apiClient.get('/time-entries/clock-status'),
       apiClient.get('/dashboard'),
       apiClient.get('/dashboard/overtime'),
       apiClient.get('/dashboard/ytd-overtime'),
-      apiClient.get(`/time-entries?month=${currentMonth}`),
+      apiClient.get(RECENT_ENTRIES_URL),
     ]).then(([clockRes, dashRes, overtimeRes, ytdRes, entriesRes]) => {
       if (cancelled) return;
       setClockStatus(clockRes.data);

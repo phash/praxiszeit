@@ -1,7 +1,8 @@
-import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Dashboard from './Dashboard';
+import { useUIStore } from '../stores/uiStore';
 
 // Backlog item (Audit 2026-07-31): vacation-day counts were rendered with
 // `.toFixed(1)` (English decimal point, "26.5 Tage") right next to hour
@@ -156,10 +157,15 @@ describe('Dashboard Urlaubscountdown mit Praxisschliessung (#476)', () => {
 // liefert aber absteigend (date desc, start_time desc), also standen dort ab der
 // zweiten Monatswoche die fünf ÄLTESTEN Einträge.
 describe('Dashboard „Letzte Einträge" (#493)', () => {
+  // Gesamtreview B6: die Karte fragt die neuesten Einträge OHNE Monatsfilter
+  // (`?limit=5`). Eine Monatsabfrage wird hier absichtlich leer beantwortet —
+  // so fällt ein Rückfall auf den laufenden Monat sofort auf.
   function withMonthEntries(entries: unknown[]) {
     const base = getMock.getMockImplementation()!;
     getMock.mockImplementation((url: string) =>
-      url.startsWith('/time-entries?month=') ? Promise.resolve({ data: entries }) : base(url),
+      url === '/time-entries?limit=5'
+        ? Promise.resolve({ data: entries })
+        : url.startsWith('/time-entries?month=') ? Promise.resolve({ data: [] }) : base(url),
     );
   }
 
@@ -207,6 +213,37 @@ describe('Dashboard „Letzte Einträge" (#493)', () => {
     render(<MemoryRouter><Dashboard /></MemoryRouter>);
 
     expect(await renderedRanges()).toEqual(NEWEST_FIVE);
+  });
+
+  it('ist am Monatsersten nicht leer — die Einträge des Vormonats erscheinen', async () => {
+    // Gesamtreview B6: am 1. vor dem ersten Stempeln lieferte die Monatsabfrage
+    // nichts, die Karte verschwand. Jetzt kommen die neuesten Einträge über die
+    // Monatsgrenze hinweg.
+    withMonthEntries([
+      entry('s30b', '2026-09-30', '14:11:00', '17:00:00'),
+      entry('s30a', '2026-09-30', '07:41:00', '12:00:00'),
+    ]);
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+
+    expect(await renderedRanges()).toEqual(['14:11–17:00', '07:41–12:00']);
+    expect(getMock.mock.calls.map((c) => c[0])).not.toContainEqual(
+      expect.stringMatching(/^\/time-entries\?month=/),
+    );
+  });
+
+  it('lädt nach dem Stempeln dieselbe monatsunabhängige Liste neu', async () => {
+    withMonthEntries([entry('s30', '2026-09-30', '07:41:00', '12:00:00')]);
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    expect(await renderedRanges()).toEqual(['07:41–12:00']);
+
+    withMonthEntries([
+      entry('o1', '2026-10-01', '07:39:00', '12:05:00'),
+      entry('s30', '2026-09-30', '07:41:00', '12:00:00'),
+    ]);
+    act(() => useUIStore.getState().notifyStampChange());
+
+    await waitFor(async () => expect(await renderedRanges()).toEqual(['07:39–12:05', '07:41–12:00']));
+    act(() => useUIStore.setState({ stampVersion: 0 }));
   });
 });
 
