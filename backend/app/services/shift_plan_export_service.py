@@ -23,6 +23,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.services.export_service import escape_pdf_text
@@ -94,18 +95,39 @@ def _status_note(detail: dict, today: date) -> str:
     return "Vorschau — gilt derzeit nicht"
 
 
-def _cell_paragraph(slots_of_cell: list[dict]) -> Paragraph:
+def _name_markup(name: Optional[str], text_width: float) -> str:
+    """Ein Name für die Zelle — Gesamtreview 1.20 (B7).
+
+    Vorher brach reportlab mitten im Namen um („… Dana Stein, Ella" /
+    „Fischer-Wagner …"); am Schwarzen Brett las sich das wie zwei Personen.
+    Passt der Name samt folgendem Komma in eine Zeile der Spalte, werden seine
+    Leerzeichen geschützt (U+00A0, in Helvetica/WinAnsi vorhanden) — umbrochen
+    wird dann nur zwischen zwei Namen. Ein breiterer Name behält normale
+    Leerzeichen und bricht dort um; geschützt würde reportlab ihn mitten im
+    Wort trennen (splitLongWords). Gemessen wird der Rohtext, ausgegeben die
+    escapte Fassung.
+    """
+    raw = name or ""
+    text = escape_pdf_text(raw)
+    if pdfmetrics.stringWidth(f"{raw},", _CELL.fontName, _CELL.fontSize) <= text_width:
+        return text.replace(" ", "\u00a0")
+    return text
+
+
+def _cell_paragraph(slots_of_cell: list[dict], *, text_width: float) -> Paragraph:
     """Eine Tabellenzelle: alle Einteilungen dieses Arbeitsplatzes an diesem Tag.
 
     Mehrere Einteilungen (z. B. Vormittag und Nachmittag) stapeln untereinander,
-    getrennt durch eine Leerzeile.
+    getrennt durch eine Leerzeile. ``text_width`` ist die nutzbare Breite der
+    Spalte (ohne Innenabstand) — sie entscheidet, ob ein Name zusammenbleibt
+    (``_name_markup``).
     """
     if not slots_of_cell:
         return Paragraph("—", _CELL)
     blocks = []
     for s in sorted(slots_of_cell, key=lambda x: x.get("start_time") or ""):
         lines = [f"<b>{escape_pdf_text(s.get('start_time'))}–{escape_pdf_text(s.get('end_time'))}</b>"]
-        names = [escape_pdf_text(a.get("user_name")) for a in (s.get("assignments") or [])]
+        names = [_name_markup(a.get("user_name"), text_width) for a in (s.get("assignments") or [])]
         min_staff = s.get("min_staff") or 0
         if names:
             lines.append(", ".join(names))
@@ -230,6 +252,13 @@ def generate_plan_pdf(
     story.append(Paragraph(" · ".join(meta_bits), _META))
     story.append(Spacer(1, 5 * mm))
 
+    usable = landscape(A4)[0] - 24 * mm
+    first = 38 * mm
+    day_width = (usable - first) / len(days)
+    col_widths = [first] + [day_width] * len(days)
+    cell_pad = 4  # LEFTPADDING/RIGHTPADDING unten — die Zelle hat Breite − 2 × cell_pad
+    text_width = day_width - 2 * cell_pad
+
     header = [Paragraph("Arbeitsplatz", _HEAD)] + [Paragraph(WEEKDAY_LABELS[d], _HEAD) for d in days]
     table_data = [header]
     for ws_name in rows_order:
@@ -246,7 +275,7 @@ def generate_plan_pdf(
             row.append(_cell_paragraph([
                 s for s in slots
                 if (s.get("workstation_name") or "(ohne Arbeitsplatz)") == ws_name and s.get("weekday") == d
-            ]))
+            ], text_width=text_width))
         table_data.append(row)
 
     if len(table_data) == 1:
@@ -257,9 +286,6 @@ def generate_plan_pdf(
         # unschön zu lesen — deshalb hier bewusst ein Fließtext statt der Tabelle.
         story.append(Paragraph("Für diesen Plan sind keine Einteilungen hinterlegt.", _CELL))
     else:
-        usable = landscape(A4)[0] - 24 * mm
-        first = 38 * mm
-        col_widths = [first] + [(usable - first) / len(days)] * len(days)
         # C-1 (Prüfrunde 2): reportlab kann eine Tabellenzeile nicht über einen
         # Seitenumbruch teilen. Wird eine Zeile höher als der Rahmen (Querformat
         # A4 ≈ 515 pt) — z. B. drei Einteilungen mit je 500-Zeichen-Hinweis am
@@ -276,8 +302,8 @@ def generate_plan_pdf(
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("TOPPADDING", (0, 0), (-1, -1), 3),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ("LEFTPADDING", (0, 0), (-1, -1), 4),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), cell_pad),
+            ("RIGHTPADDING", (0, 0), (-1, -1), cell_pad),
         ]))
         story.append(table)
 

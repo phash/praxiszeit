@@ -1950,12 +1950,48 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
     from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, KeepTogether
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
 
+    month_names = ['Januar', 'Februar', 'Maerz', 'April', 'Mai', 'Juni',
+                   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
+
+    class _MonthlyReportDoc(SimpleDocTemplate):
+        """Gesamtreview 1.20 (B7): Fußzeile „Name · Monatsreport Monat Jahr ·
+        Seite n" auf JEDER Seite. Geteilte Dienste (#498) machen die Tageszeilen
+        mehrzeilig, die Tabelle läuft öfter auf eine Folgeseite — die trug bis
+        dahin weder Namen noch Monat, ein loses Blatt des §16-Belegs war keiner
+        Person zuzuordnen. Die Person setzt ihr Titel-Absatz (``pz_employee``),
+        sobald er gezeichnet ist; ``afterPage`` läuft erst nach allen Flowables
+        der Seite. Jede Person beginnt auf einer neuen Seite (PageBreak), die
+        Zählung „Seite n" läuft deshalb je Person ab 1."""
+
+        _pz_employee = ""
+        _pz_first_page = 1
+
+        def afterFlowable(self, flowable):
+            name = getattr(flowable, "pz_employee", None)
+            if name is not None:
+                self._pz_employee = name
+                self._pz_first_page = self.page
+
+        def afterPage(self):
+            canv = self.canv
+            canv.saveState()
+            canv.setFont('Helvetica', 7)
+            canv.setFillColor(colors.HexColor('#6B7280'))
+            y = self.bottomMargin / 2
+            label = f"Monatsreport {month_names[month - 1]} {year}"
+            if self._pz_employee:
+                label = f"{self._pz_employee} \u00b7 {label}"
+            canv.drawString(self.leftMargin, y, label)
+            canv.drawRightString(self.pagesize[0] - self.rightMargin, y,
+                                 f"Seite {self.page - self._pz_first_page + 1}")
+            canv.restoreState()
+
     output = BytesIO()
-    doc = SimpleDocTemplate(
+    doc = _MonthlyReportDoc(
         output,
         pagesize=landscape(A4),
         rightMargin=15 * mm, leftMargin=15 * mm,
@@ -1972,12 +2008,12 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
     s_sum_val = ParagraphStyle('sv', fontName='Helvetica', fontSize=7.5, leading=10)
 
     def colored(text, hex_color, bold=False):
+        # B7: zentriert wie ±0 (s_center) — vorher standen +/− linksbündig,
+        # ±0 mittig in derselben Spalte.
         fn = 'Helvetica-Bold' if bold else 'Helvetica'
         return Paragraph(text, ParagraphStyle('col', fontName=fn, fontSize=7, leading=9,
+                                              alignment=TA_CENTER,
                                               textColor=colors.HexColor(hex_color)))
-
-    month_names = ['Januar', 'Februar', 'Maerz', 'April', 'Mai', 'Juni',
-                   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
     # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
     users = export_users(db, tenant_id, date(year, month, 1),
@@ -2005,10 +2041,14 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         reason_names = _load_reason_names(db, user.tenant_id)  # #312
 
         # ── Title ──
-        story.append(Paragraph(
+        title_par = Paragraph(
             f"PraxisZeit \u2013 Monatsreport {month_names[month - 1]} {year}",
             s_title
-        ))
+        )
+        # B7: setzt die Person der Fußzeile (_MonthlyReportDoc.afterFlowable).
+        # Rohtext — drawString parst keine Auszeichnung.
+        title_par.pz_employee = f"{user.first_name} {user.last_name}"
+        story.append(title_par)
         story.append(Spacer(1, 2 * mm))
 
         # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
@@ -2248,7 +2288,26 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         for row_idx, bg_color in row_bgs.items():
             tbl_style.append(('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color))
 
-        main_tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
+        # B7: eine Tageszeile höher als eine ganze Seite (die Notizen aller
+        # Einträge des Tages; ``note`` ist unbegrenzt, der §10-Grund bis 2000
+        # Zeichen) warf in doc.build eine LayoutError — HTTP 500 für den
+        # Bericht der ganzen Praxis (wie C-1 im Schichtplan-Aushang). NUR dann
+        # darf reportlab in der Zeile umbrechen (splitInRow): global gesetzt
+        # teilte es auch gewöhnliche mehrzeilige Zeilen (geteilte Dienste) am
+        # Seitenende, mit einer wiederholten Kopfzeile mitten auf der Seite.
+        # Die überlange Zeile steht oben ausgerichtet — mittig zerfiel ihr
+        # Rest in eine Kaskade fast leerer Seiten aus Kopfzeilen.
+        frame_height = doc.height - 12  # Frame-Innenabstand 6 pt oben/unten
+        header_height = max(c.wrap(w - 6, frame_height)[1] for c, w in zip(table_data[0], col_widths)) + 4
+        overlong_rows = [
+            r for r, row in enumerate(table_data[1:], start=1)
+            if max(c.wrap(w - 6, frame_height)[1] for c, w in zip(row, col_widths)) + 4
+            > frame_height - header_height
+        ]
+        for r in overlong_rows:
+            tbl_style.append(('VALIGN', (0, r), (-1, r), 'TOP'))
+        main_tbl = Table(table_data, colWidths=col_widths, repeatRows=1,
+                         splitInRow=1 if overlong_rows else 0)
         main_tbl.setStyle(TableStyle(tbl_style))
         story.append(main_tbl)
 
@@ -2277,13 +2336,15 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             [Paragraph('Zusammenfassung', ParagraphStyle('st', fontName='Helvetica-Bold', fontSize=8, leading=10)), ''],
             [Paragraph('Soll-Stunden:', s_sum_lbl), Paragraph(f"{float(summary_target):.2f} h", s_sum_val)],
             [Paragraph('Ist-Stunden:', s_sum_lbl), Paragraph(f"{float(summary_actual):.2f} h", s_sum_val)],
+            # B7: leading wie s_sum_lbl/s_sum_val — ohne Angabe gilt 12, die
+            # Zeile war höher und der Wert saß über seiner Beschriftung.
             [Paragraph('Saldo Monat:', s_sum_lbl),
              Paragraph(f"{float(monthly_balance):+.2f} h",
-                       ParagraphStyle('sb', fontName='Helvetica-Bold', fontSize=7.5,
+                       ParagraphStyle('sb', fontName='Helvetica-Bold', fontSize=7.5, leading=10,
                                       textColor=colors.HexColor(bal_color)))],
             [Paragraph('\u00dcberstunden kumuliert:', s_sum_lbl),
              Paragraph(f"{float(overtime_account):+.2f} h",
-                       ParagraphStyle('so', fontName='Helvetica-Bold', fontSize=7.5,
+                       ParagraphStyle('so', fontName='Helvetica-Bold', fontSize=7.5, leading=10,
                                       textColor=colors.HexColor(ot_color)))],
             [Paragraph('Urlaub genommen:', s_sum_lbl),
              Paragraph(f"{float(vacation_account['used_hours']):.2f} h", s_sum_val)],
@@ -2306,7 +2367,10 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#CCCCCC')),
             ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8FAFC')),
         ]))
-        story.append(sum_tbl)
+        # B7: als Block — sonst stand „Zusammenfassung" unten auf der einen
+        # Seite und die Zahlen auf der nächsten (schon bei einem Monat ohne
+        # jeden Eintrag: 31 Tageszeilen lassen nur Platz für den Kopf).
+        story.append(KeepTogether([sum_tbl]))
 
     doc.build(story)
     output.seek(0)
