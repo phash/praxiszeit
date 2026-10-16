@@ -16,7 +16,9 @@
 from datetime import date, time
 
 from app.models import TimeEntry, TimeEntryAuditLog
-from app.services.xls_import_service import ImportedEntry, execute_import, parse_xls
+from app.services.xls_import_service import (
+    CREDIT_OVERRIDE_IMPORT_NOTE, ImportedEntry, execute_import, parse_xls,
+)
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_xls_import_service import _dt, _make_data_row, _make_xls_bytes
 from tests.work_blocks_fixtures import K_BLOCKS, MON, legacy_week
@@ -347,3 +349,35 @@ def test_rest_time_is_reported_at_the_first_counted_row(db, test_user):
     rows = parse_xls(_xls((_mon(9), _mon(8)), (_mon(10), _mon(12))), test_user.id, db)
     assert [len(_rest(r)) for r in rows] == [0, 1], [r.arbzg_warnings for r in rows]
     assert _rest(rows[1])[0].startswith("§5 ArbZG: Ruhezeit 10.5h"), rows[1].arbzg_warnings
+
+
+# ── Review-Nachzug B4 (2) ─────────────────────────────────────────────────────
+
+def test_skipped_row_replaces_no_entry(db, test_user, test_admin):
+    """Bestand 06:00–12:00; die Zeile 06:00–05:00 trifft ihn über den Beginn, wird
+    aber übersprungen (Ende vor Beginn) — der Bestand bleibt stehen, auch mit
+    „überschreiben". Die Vorschau rechnete ihn trotzdem als ersetzt: Zeile
+    12:00–18:00 mit Pause 0 und ohne §3/§4, obwohl der gespeicherte Tag 12 h hat;
+    ``/confirm`` meldete dann „Pause an den Tag angepasst (0 → 45 Min)"."""
+    _entry(db, test_user, time(6), time(12))
+    rows = parse_xls(_xls((_mon(6), _mon(5)), (_mon(12), _mon(18))), test_user.id, db)
+    assert rows[1].break_minutes == 45
+    assert any(w.startswith("§3 ArbZG: Tages-Netto-Arbeitszeit 11.2h") for w in _hard(rows[1])), \
+        rows[1].arbzg_warnings
+
+    result = _run(db, test_user, test_admin, rows, overwrite=True)
+    assert (result.imported, result.overwritten, result.skipped) == (1, 0, 1)
+    assert not any("Pause an den Tag angepasst" in w for w in result.warnings), result.warnings
+    stored = db.query(TimeEntry).order_by(TimeEntry.start_time).all()
+    assert [(e.start_time, e.end_time, e.break_minutes) for e in stored] == [
+        (time(6), time(12), 0), (time(12), time(18), 45),
+    ]
+
+
+def test_skipped_row_carries_no_credit_override_note(db, test_user):
+    """Trifft die übersprungene Zeile einen anerkannten Eintrag, ersetzt sie ihn
+    nicht — der Hinweis „Eintrag ist anerkannt – die neuen Zeiten werden ungekappt
+    angerechnet." wäre falsch."""
+    _entry(db, test_user, time(6), time(12), credit_override=True)
+    rows = parse_xls(_xls((_mon(6), _mon(5)), (_mon(12), _mon(13))), test_user.id, db)
+    assert CREDIT_OVERRIDE_IMPORT_NOTE not in rows[0].arbzg_warnings, rows[0].arbzg_warnings

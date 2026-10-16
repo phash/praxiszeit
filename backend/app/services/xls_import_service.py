@@ -310,7 +310,8 @@ def _kept_entries(db: Session, user_id, tenant_id, rows_by_date: dict, replaced_
 def _row_counts(row) -> bool:
     """Zählt die Zeile für den Tag? Zeilen mit (wirksamem) Ende ≤ Beginn
     überspringt ``/confirm`` — sie zählen weder für Pause, §3/§4 und
-    Anwesenheit noch für §5 (Gesamtreview 1.20 B4)."""
+    Anwesenheit noch für §5 (Gesamtreview 1.20 B4), und sie ersetzen keinen
+    Bestandseintrag (``replaced_ids``, Review-Nachzug B4)."""
     return row.r.eff_end > row.r.eff_start
 
 
@@ -426,8 +427,13 @@ def parse_xls(
     # sonst stünde der Tag doppelt da (§3 „16.0h" neben „Angerechnet 8:00 h").
     # Gesamtreview 1.20 (B4): VOR der Bewertung der ersten Zeile vollständig —
     # sonst zählte eine frühere Zeile des Tages den Eintrag noch mit, den erst
-    # eine spätere Zeile derselben Datei überschreibt.
-    replaced_ids = {row.existing.id for row in rows if row.existing is not None}
+    # eine spätere Zeile derselben Datei überschreibt. Nur Zeilen, die zählen
+    # (``_row_counts``): eine Zeile mit Ende ≤ Beginn überspringt /confirm, bevor
+    # sie einen Eintrag sucht — der getroffene Bestand bleibt stehen, auch mit
+    # „überschreiben" (Review-Nachzug B4).
+    replaced_ids = {
+        row.existing.id for row in rows if row.existing is not None and _row_counts(row)
+    }
 
     # Gesamtreview 1.20 (B4): Pause, §3/§4 und §5 je TAG (#499) — die Zeilen
     # eines Tages und der Bestand, der stehen bleibt.
@@ -517,7 +523,8 @@ def parse_xls(
             )
             if clamp_note:
                 arbzg_warnings = arbzg_warnings + [clamp_note]
-        if override:
+        # Eine übersprungene Zeile ersetzt den anerkannten Eintrag nicht.
+        if override and _row_counts(row):
             arbzg_warnings = arbzg_warnings + [CREDIT_OVERRIDE_IMPORT_NOTE]
 
         # Spec 8.3: weiche Anwesenheits-Hinweise (Tag, Woche) als Klartext ohne
