@@ -8,6 +8,13 @@ Kappung mit ``None`` als Datum (500), für Mitarbeitende kam der irreführende
 ``break_minutes`` endeten ebenso (Vergleich mit ``None`` bzw. NOT-NULL-Spalte).
 Jetzt 422 am Schema für beide Routen — ein weggelassenes Feld bleibt
 unverändert wie bisher.
+
+Nachzug (Review zu B1): ``end_time`` gehört dazu. Die Spalte ist zwar nullable
+(offener Eintrag), ein ``{"end_time": null}`` öffnete über die MA-Route aber
+einen geschlossenen Eintrag wieder — §16-Endstempel weg, §3/§4 übersprungen,
+beim nächsten Einstempeln schloss ``_close_stale_entry`` ihn um 23:59 (an einem
+Tag ohne Blöcke voll angerechnet). Die Admin-Route las dasselbe ``null`` als
+„unverändert". Ein offener Eintrag bleibt offen, solange ``end_time`` fehlt.
 """
 from datetime import time
 
@@ -34,7 +41,7 @@ def _entry(db, user, d=MON):
 
 
 @pytest.mark.parametrize("route", ROUTES, ids=["ma-route", "admin-route"])
-@pytest.mark.parametrize("field", ["date", "start_time", "break_minutes"])
+@pytest.mark.parametrize("field", ["date", "start_time", "end_time", "break_minutes"])
 def test_admin_null_for_a_required_field_is_422(_db_session, employee_user, admin_client,
                                                 route, field):
     e = _entry(_db_session, employee_user)
@@ -42,7 +49,35 @@ def test_admin_null_for_a_required_field_is_422(_db_session, employee_user, admi
     assert r.status_code == 422, r.text
     _db_session.expire_all()
     e = _db_session.get(TimeEntry, e.id)
-    assert (e.date, e.start_time, e.break_minutes, e.note) == (MON, time(8), 0, "alt")
+    assert (e.date, e.start_time, e.end_time, e.break_minutes, e.note) == (
+        MON, time(8), time(12), 0, "alt")
+
+
+def test_employee_null_end_does_not_reopen_todays_entry(_db_session, employee_user,
+                                                        employee_client, monkeypatch):
+    """Nachzug: ein geschlossener heutiger Eintrag bleibt geschlossen — sonst
+    entstanden nach erneutem Einstempeln zwei offene Einträge."""
+    monkeypatch.setattr(te, "_today_local", lambda: MON)
+    e = _entry(_db_session, employee_user)
+    r = employee_client.put(f"/api/time-entries/{e.id}", json={"end_time": None})
+    assert r.status_code == 422, r.text
+    _db_session.expire_all()
+    assert _db_session.get(TimeEntry, e.id).end_time == time(12)
+
+
+def test_open_entry_stays_open_when_end_is_omitted(_db_session, employee_user, employee_client,
+                                                   monkeypatch):
+    """Kontrolle: so arbeitet die Zeiterfassung — bei einem offenen Eintrag
+    fehlt ``end_time`` im PUT, der Eintrag bleibt offen."""
+    monkeypatch.setattr(te, "_today_local", lambda: MON)
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, date=MON,
+                  start_time=time(8), end_time=None, break_minutes=0, note="alt")
+    _db_session.add(e)
+    _db_session.commit()
+    r = employee_client.put(f"/api/time-entries/{e.id}", json={"note": "neu"})
+    assert r.status_code == 200, r.text
+    _db_session.refresh(e)
+    assert (e.end_time, e.note) == (None, "neu")
 
 
 def test_employee_null_date_is_422_not_403(_db_session, employee_user, employee_client,
