@@ -18,7 +18,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from app.services.export_service import escape_pdf_text
-from app.services.practice_name_service import practice_display_name
+from app.services.practice_name_service import billing_address_parts, practice_display_name
 
 if TYPE_CHECKING:
     from app.models.tenant import Tenant
@@ -121,14 +121,14 @@ def generate_avv_pdf(tenant: "Tenant") -> bytes:
 
 
 def _address_line(tenant: "Tenant") -> str | None:
-    addr = tenant.billing_address or {}
-    if not addr:
+    if not tenant.billing_address:
         return None
     # Escape each part individually so the intentional <br/> separators survive
     # while user-controlled address fields can't inject reportlab markup.
-    street = escape_pdf_text(addr.get("street", ""))
-    zip_ = escape_pdf_text(addr.get("zip", ""))
-    city = escape_pdf_text(addr.get("city", ""))
-    country = escape_pdf_text(tenant.country or "")
-    parts = [p for p in (street, f"{zip_} {city}".strip(), country) if p and p.strip()]
+    # Welche Teile die Anschrift hat, sagt billing_address_parts (#495, eine
+    # Quelle mit dem klassischen Jahresbericht); das Land hängt der AVV an.
+    parts = [escape_pdf_text(p) for p in billing_address_parts(tenant)]
+    country = escape_pdf_text((tenant.country or "").strip())
+    if country:
+        parts.append(country)
     return "<br/>".join(parts) or None

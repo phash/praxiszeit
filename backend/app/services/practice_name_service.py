@@ -26,9 +26,15 @@ Ersatz zur Laufzeit statt einer Migration oder eines Startup-Abgleichs:
 * Ersetzt wird ausschließlich der Bootstrap-Platzhalter. Jeder andere Wert
   (SaaS-Signup-Name, der Anonymisierungs-Ersatz „[gelöscht]", ein künftig
   bewusst gesetzter Name) wird unverändert ausgegeben.
+
+``practice_display_address`` ist dasselbe für die Anschrift (klassischer
+Jahresbericht, Zelle B1): Bootstrap-Mandant → ``PRACTICE_ADDRESS`` aus der
+Konfiguration, sonst die Abrechnungsanschrift des Mandanten — in SaaS NIE
+``PRACTICE_ADDRESS``, das ist dort die Anschrift des Betreibers, nicht die der
+Praxis.
 """
 
-from typing import Optional
+from typing import List, Optional
 
 from app.config import settings
 from app.core.deployment import is_onprem
@@ -63,3 +69,43 @@ def practice_display_name(tenant) -> Optional[str]:
     if is_bootstrap_placeholder(tenant):
         return (settings.PRACTICE_NAME or "").strip() or None
     return (tenant.name or "").strip() or None
+
+
+def billing_address_parts(tenant) -> List[str]:
+    """Straße und „PLZ Ort" aus den Abrechnungsdaten des Mandanten, als Rohtext.
+
+    Die EINE Stelle, die ``tenants.billing_address`` (JSON, Form laut
+    ``schemas.tenant.BillingAddress``) liest — genutzt von
+    ``practice_display_address`` und vom AVV-Entwurf. Leere oder fehlende
+    Teile entfallen; ein ``None`` aus dem Schema wird nie als „None" gedruckt.
+    Das Land steht bewusst nicht darin (``tenant.country`` ist ein ISO-Code für
+    die Steuerlogik; wer es drucken will, hängt es selbst an). Escaping ist
+    Sache des Aufrufers (PDF: ``escape_pdf_text``, Tabelle:
+    ``neutralize_spreadsheet_formula``).
+    """
+    addr = getattr(tenant, "billing_address", None)
+    if not isinstance(addr, dict):
+        return []
+
+    def _part(key: str) -> str:
+        return str(addr.get(key) or "").strip()
+
+    street = _part("street")
+    zip_city = f"{_part('zip')} {_part('city')}".strip()
+    return [p for p in (street, zip_city) if p]
+
+
+def practice_display_address(tenant) -> Optional[str]:
+    """Die Praxisanschrift, wie sie auf Ausdrucken stehen soll (eine Zeile).
+
+    On-prem mit unverändertem Bootstrap-Mandanten: das konfigurierte
+    ``PRACTICE_ADDRESS`` (``[practice] address`` bzw. ``.env``). Sonst: die
+    Abrechnungsanschrift des Mandanten („Straße, PLZ Ort"). Ohne Anschrift
+    ``None`` — der Aufrufer lässt die Zelle dann leer, statt (in SaaS) die
+    Anschrift des Betreibers unter den Namen einer fremden Praxis zu setzen.
+    """
+    if tenant is None:
+        return None
+    if is_bootstrap_placeholder(tenant):
+        return (settings.PRACTICE_ADDRESS or "").strip() or None
+    return ", ".join(billing_address_parts(tenant)) or None

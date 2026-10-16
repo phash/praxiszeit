@@ -1659,8 +1659,13 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     practice_name = practice_name_service.practice_display_name(tenant) or settings.PRACTICE_NAME
     sheet.cell(row=1, column=1).value = neutralize_spreadsheet_formula(practice_name)
     sheet.cell(row=1, column=1).font = header_font
-    if settings.PRACTICE_ADDRESS:
-        sheet.cell(row=1, column=2).value = settings.PRACTICE_ADDRESS
+    # Anschrift (B1): dieselbe Regel über practice_display_address — direkt
+    # gelesen war PRACTICE_ADDRESS in SaaS die Anschrift des Betreibers, gedruckt
+    # unter dem Namen jeder Praxis. Dort Abrechnungsanschrift des Mandanten
+    # (Nutzereingabe, daher neutralisiert), ohne sie bleibt die Zelle leer.
+    practice_address = practice_name_service.practice_display_address(tenant)
+    if practice_address:
+        sheet.cell(row=1, column=2).value = neutralize_spreadsheet_formula(practice_address)
 
     # Row 2: Employee name
     sheet.cell(row=2, column=1).value = "Mitarbeiterin"
