@@ -346,19 +346,9 @@ def review_change_request(
     _proposed_end = cr.proposed_end_time
     _proposed_start = cr.proposed_start_time
     if cr.entry_kind != "absence":
-        if cr.request_type == ChangeRequestType.CREATE:
-            duplicate = db.query(TimeEntry).filter(
-                TimeEntry.tenant_id == cr.tenant_id,
-                TimeEntry.user_id == cr.user_id,
-                TimeEntry.date == cr.proposed_date,
-                TimeEntry.start_time == cr.proposed_start_time,
-            ).first()
-            if duplicate:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
-                )
-        elif cr.request_type == ChangeRequestType.UPDATE:
+        # Die Duplikatprüfung (CREATE und UPDATE) läuft unten auf dem GEKAPPTEN
+        # Beginn, sobald die Eingabezeiten feststehen (Gesamtreview 1.20 B2).
+        if cr.request_type == ChangeRequestType.UPDATE:
             # N-3: lock the target entry for the duration of the approval txn,
             # matching the update_time_entry path — prevents a concurrent admin
             # edit from racing the re-validation/materialisation below.
@@ -397,22 +387,6 @@ def review_change_request(
                 raise HTTPException(
                     status_code=400, detail=credit_override_service.AUTO_CLOSED_DETAIL,
                 )
-            # Check for unique constraint violation on date/start_time change
-            # (mit dem Beginn, wie die Genehmigung ihn liest — ein Echo ist
-            # keine Änderung, B2).
-            if cr.proposed_date != entry.date or _proposed_start != entry.start_time:
-                dup = db.query(TimeEntry).filter(
-                    TimeEntry.tenant_id == cr.tenant_id,
-                    TimeEntry.user_id == cr.user_id,
-                    TimeEntry.date == cr.proposed_date,
-                    TimeEntry.start_time == _proposed_start,
-                    TimeEntry.id != entry.id,
-                ).first()
-                if dup:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
-                    )
 
         elif cr.request_type == ChangeRequestType.DELETE:
             # N-3: lock the target entry for the duration of the approval txn,
@@ -454,6 +428,51 @@ def review_change_request(
             )
             if _order_error:
                 raise HTTPException(status_code=400, detail=_order_error)
+
+        # UNIQUE (tenant, user, date, start_time): Duplikatprüfung NACH dem
+        # Kappen, wie ``time_entries.create_time_entry`` und
+        # ``admin_time_entries`` seit Release-Review 1.16.0 — gespeichert wird
+        # unten ``clamp(...).eff_start``, nicht der beantragte Beginn
+        # (Gesamtreview 1.20 B2). Ein Beginn vor der Hülle (07:30 → 07:45) oder
+        # ein Echo, dessen Rohstempel auf einem anderen Tag gilt (07:45 mit
+        # Rohstempel 07:00 → 07:00), kann so auf den Beginn eines anderen
+        # Eintrags fallen; eine Sonde auf dem ungekappten Wert sah das nicht,
+        # und die Genehmigung scheiterte erst am INSERT/UPDATE (IntegrityError →
+        # 500, Antrag blieb offen, die Sammel-Genehmigung brach ganz ab).
+        # Dieselben Eingaben, derselbe Puffer und dasselbe ``credit_override``
+        # wie der Schreibzweig; unabhängig von ``exempt_from_arbzg`` (C-1 unten
+        # läuft dort nicht). Die Ankersperre oben deckt den Wettlauf ab (P5).
+        if (
+            cr.request_type in (ChangeRequestType.CREATE, ChangeRequestType.UPDATE)
+            and _in_start is not None
+            and cr.proposed_date is not None
+        ):
+            _dup_user = db.query(User).filter(
+                User.id == cr.user_id,
+                User.tenant_id == cr.tenant_id,
+            ).first()
+            _dup_grace = (
+                work_window_service.grace_for_entry(db, entry)
+                if cr.request_type == ChangeRequestType.UPDATE and entry is not None
+                else work_window_service.get_grace_minutes(db, current_user.tenant_id)
+            )
+            _dup_r = work_window_service.clamp(
+                db, _dup_user, cr.proposed_date, _in_start, _in_end, _dup_grace,
+                credit_override=bool(entry is not None and entry.credit_override),
+            )
+            _dup_q = db.query(TimeEntry.id).filter(
+                TimeEntry.tenant_id == cr.tenant_id,
+                TimeEntry.user_id == cr.user_id,
+                TimeEntry.date == cr.proposed_date,
+                TimeEntry.start_time == _dup_r.eff_start,
+            )
+            if entry is not None:
+                _dup_q = _dup_q.filter(TimeEntry.id != entry.id)
+            if _dup_q.first() is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
+                )
 
         # C-1: Re-validate §3 (daily hard cap) and §4 (breaks) against the
         # CURRENT DB state before materialising a CREATE/UPDATE. The CR was
