@@ -487,6 +487,14 @@ export default function TimeTracking() {
       if (editingId && editingOpenEntry && !formData.end_time) {
         delete payload.end_time;
       }
+      // #491 (Gesamtreview B6): den §10-Grund nur mitschicken, wenn das Feld
+      // sichtbar ist (Sonn- oder Feiertag). Sonst ginge ein am Sonntag getippter
+      // Grund nach dem Wechsel auf einen Werktag mit, und das Bearbeiten eines
+      // Werktags-Eintrags schickte immer '' — wie im Monatsjournal fehlt das Feld
+      // dann, ein gespeicherter Grund bleibt beim PUT unverändert.
+      if (!showSundayReason) {
+        delete payload.sunday_exception_reason;
+      }
       let response;
       if (editingId) {
         response = await apiClient.put(`/time-entries/${editingId}`, payload);

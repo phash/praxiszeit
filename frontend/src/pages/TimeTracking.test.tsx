@@ -186,6 +186,47 @@ describe('<TimeTracking /> §10-Ausnahmegrund bei der Direkteingabe (#491 F4)', 
     expect(screen.queryByLabelText(REASON)).not.toBeInTheDocument();
   });
 
+  // Gesamtreview B6: das ausgeblendete Feld ging trotzdem mit — ein am Sonntag
+  // getippter Grund landete nach dem Wechsel auf einen Werktag im Eintrag, und
+  // beim Bearbeiten eines Werktags-Eintrags schickte das Formular immer '' mit.
+  it('schickt einen am Sonntag getippten Grund nach Wechsel auf einen Werktag nicht mit', async () => {
+    mockEntriesAndHolidays([]);
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    await openNewEntryWithDate(SUNDAY);
+    fireEvent.change(await screen.findByLabelText(REASON), { target: { value: 'Notdienst' } });
+    fireEvent.change(screen.getByLabelText('Datum'), { target: { value: THURSDAY_BEFORE } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '12:00' } });
+    await waitFor(() => expect(screen.queryByLabelText(REASON)).not.toBeInTheDocument());
+
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ date: THURSDAY_BEFORE });
+    expect(postMock.mock.calls[0][1]).not.toHaveProperty('sunday_exception_reason');
+  });
+
+  it('Kontrolle: am Sonntag geht der Grund mit', async () => {
+    mockEntriesAndHolidays([]);
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    await openNewEntryWithDate(SUNDAY);
+    fireEvent.change(await screen.findByLabelText(REASON), { target: { value: 'Notdienst' } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '12:00' } });
+
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ date: SUNDAY, sunday_exception_reason: 'Notdienst' });
+  });
+
+  it('lässt das Feld beim Bearbeiten eines Werktags-Eintrags weg (bleibt unverändert)', async () => {
+    mockEntriesAndHolidays([closedEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    expect(screen.queryByLabelText(REASON)).not.toBeInTheDocument();
+
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).not.toHaveProperty('sunday_exception_reason');
+  });
+
   it('fragt die Feiertage erst ab, wenn das Formular offen ist', async () => {
     mockEntriesAndHolidays([]);
     renderPage();
