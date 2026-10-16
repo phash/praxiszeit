@@ -568,6 +568,9 @@ def update_closure(
       a foreign absence).
     - Absences for days no longer in range are removed (matched via
       ``closure_id`` FK, not the note string).
+    - Absences of tracked participants on days without a daily target are
+      removed (legacy 0-h rows from before Gesamtreview 1.20 B5 — the create
+      helper no longer books such days).
     - On rename, the ``note`` of all still-linked absences is updated.
     - On a Urlaub<->Freistellung switch, the ``type`` of all still-linked
       absences is updated to match the new flag (#145).
@@ -703,12 +706,51 @@ def update_closure(
             ).all()
         }
 
+    # Gesamtreview 1.20 B5 (Nachzug): Altbestand an Tagen ohne Tagessoll. Bis B5
+    # buchte der Create-Helper im gleichmäßigen Modus auch an Tagen ohne
+    # Tagessoll (0 Wochenstunden, z. B. Elternzeit) eine 0-h-„Urlaub"-Zeile;
+    # steht der Vertrag HEUTE auf 0 h, zählt das Urlaubskonto jede davon als
+    # ganzen Urlaubstag. Seit B5 bucht er dort nichts mehr — ein neues Speichern
+    # räumt den Bestand der Teilnehmenden deshalb in BEIDEN Modi ab (bei aktivem
+    # #314-Split liefen solche Zeilen bisher unter „werden neu gebucht" mit,
+    # ohne neu gebucht zu werden; bei abgeschaltetem blieben sie stehen).
+    # Bedingung = Skip des Create-Helpers (``is_vacation_billable_day``: mit
+    # Stundenzählung und Tagessoll 0 laut Snapshot zum Datum, #431); ohne
+    # Stundenzählung (#191) zählt jeder Schließtag und bleibt. Ausgeschiedene/
+    # Abgewählte fasst dieses Speichern wie oben nicht an. Unabhängig von
+    # ``_worked_keys``: die Zeile wird nicht neu gebucht, die Arbeitszeit bleibt.
+    _participants_by_id = {e.id: e for e in employees}
+    _tracked_linked_ids = {
+        a.user_id for a in linked
+        if a.user_id in _participants_by_id and _participants_by_id[a.user_id].track_hours
+    }
+    _zero_target_ids = set()
+    if _tracked_linked_ids:
+        _wh_by_user: dict = {}
+        for wh in db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id.in_(_tracked_linked_ids),
+            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
+        ).order_by(WorkingHoursChange.effective_from).all():
+            _wh_by_user.setdefault(wh.user_id, []).append(wh)
+        _zero_target_ids = {
+            a.id for a in linked
+            if a.user_id in _tracked_linked_ids and a.date in workday_set
+            and not calculation_service.is_vacation_billable_day(
+                db, _participants_by_id[a.user_id], a.date,
+                wh_changes=_wh_by_user.get(a.user_id, []),
+            )
+        }
+
     _deleted_out_of_range = 0
+    _deleted_zero_target = 0
     _deleted_for_resplit = 0
     for absence in linked:
         if absence.date not in workday_set:
             db.delete(absence)
             _deleted_out_of_range += 1
+        elif absence.id in _zero_target_ids:
+            db.delete(absence)
+            _deleted_zero_target += 1
         elif (split_active and absence.user_id in _rebookable_user_ids
                 and (absence.user_id, absence.date) not in _worked_keys):
             # delete → re-created + re-split by the create helper below
@@ -726,6 +768,10 @@ def update_closure(
     _audit_closure_absence_deletion(
         db, current_user, closure, _deleted_out_of_range,
         "Tag nicht mehr vom Zeitraum abgedeckt",
+    )
+    _audit_closure_absence_deletion(
+        db, current_user, closure, _deleted_zero_target,
+        "Tag ohne Tagessoll (0 Stunden geplant), wird nicht neu gebucht",
     )
     _audit_closure_absence_deletion(
         db, current_user, closure, _deleted_for_resplit,

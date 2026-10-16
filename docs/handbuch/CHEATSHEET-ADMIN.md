@@ -142,7 +142,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 **Abwesenheiten → Tab Betriebsferien → Neue Betriebsferien**
 - Bezeichnung + Von–Bis + **Verrechnung** → Speichern
 - → Alle MA **mit „Nimmt an Betriebsferien teil"** (Standard) erhalten automatisch Einträge an ihren **Arbeitstagen** – rollenunabhängig (auch Admins, die MA sind)
-- **Nicht gebucht:** Wochenende, Feiertage, freie Wochentage (Teilzeit), Zeiträume mit 0 Wochenstunden (z. B. Elternzeit), „Frei"-Sondertage (24./31.12.), außerhalb des Beschäftigungszeitraums (Eintritt/Austritt), Tage mit vorhandener Abwesenheit
+- **Nicht gebucht:** Wochenende, Feiertage, freie Wochentage (Teilzeit), Zeiträume mit 0 Wochenstunden (z. B. Elternzeit; ältere Einträge dort entfernt erneutes Speichern der Betriebsferien), „Frei"-Sondertage (24./31.12.), außerhalb des Beschäftigungszeitraums (Eintritt/Austritt), Tage mit vorhandener Abwesenheit
 - **Verrechnung:** *Als Urlaub werten* (**Standard**, zieht 1 Urlaubstag je Tag, an einem Halbtags-Sondertag 24./31.12. nur 0,5, #394) **oder** *Bezahlte Freistellung* (kein Urlaubsabzug, saldoneutral)
 - Nachträglich Berechtigte: Option setzen → Einträge werden **automatisch** für laufende und künftige Betriebsferien nachgetragen (Neu-Speichern nicht nötig)
 - Löschen: Einträge werden bei allen MA automatisch entfernt

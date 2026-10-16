@@ -725,7 +725,11 @@ per Flag abwählen).
   diesem Wochentag = 0) und Zeiträumen mit 0 Wochenstunden im gleichmäßigen Modus (z. B.
   Elternzeit) — beides zum Datum der Schließung historisch aufgelöst (#431). Ohne
   Stundenzählung (`track_hours=false`, #191) ist das Tagessoll immer 0; dort wird trotzdem
-  jeder Tag gebucht
+  jeder Tag gebucht. Bis 1.20.0 entstand im gleichmäßigen Modus an solchen Tagen eine
+  0-h-Urlaubszeile; ein erneutes Speichern der Schließung (`PUT /api/company-closures/{id}`)
+  entfernt diesen Bestand der Teilnehmenden in beiden Schalterstellungen von §9.4 (Summenzeile
+  im Änderungsprotokoll „Tag ohne Tagessoll"). Zeilen nicht (mehr) teilnehmender MA bleiben
+  unverändert
 - als `free` konfigurierten Sondertagen (24./31.12. — ein soll-freier Tag darf keinen
   Urlaubstag kosten)
 - Tagen außerhalb `[first_work_day, last_work_day]` (#298 — künftige oder bereits

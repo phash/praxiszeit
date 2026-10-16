@@ -196,7 +196,9 @@ dieses Backup verlustfrei (`UPDATE.md`).
   Änderungsantrag auf Urlaub an einem Tag ohne Soll (auch am Samstag) verlangte
   einen Urlaubstag, den das Konto nie abzieht. Betriebsferien tragen an solchen
   Tagen nichts mehr ein – stand die Arbeitszeit bereits auf 0 Stunden, kostete
-  bisher jeder Schließtag einen Urlaubstag (#496).
+  bisher jeder Schließtag einen Urlaubstag (#496). Für bereits eingetragene
+  Betriebsferien: einmal öffnen und neu speichern – dann verschwinden die alten
+  Einträge an diesen Tagen.
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images

@@ -19,6 +19,7 @@ Aenderungsantrag nicht:
   an — bei einem HEUTE auf 0 h stehenden Vertrag zaehlte das Konto jede davon
   als ganzen Urlaubstag (Elternzeit verlor Urlaub an die Betriebsferien).
 """
+import uuid
 from datetime import date
 from decimal import Decimal
 
@@ -31,7 +32,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
 from app.models import (
     Absence, AbsenceType, ChangeRequest, ChangeRequestStatus, ChangeRequestType,
-    User, UserRole, WorkingHoursChange,
+    TimeEntryAuditLog, User, UserRole, WorkingHoursChange,
 )
 from app.models.system_setting import SystemSetting
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
@@ -528,3 +529,132 @@ class TestClosureBooking:
 
         db.expire_all()
         assert db.query(Absence).filter(Absence.user_id == emp.id).count() == 5
+
+
+# ── Betriebsferien neu speichern: Altbestand an 0-h-Tagen (Nachzug B5) ────────
+#
+# Vor B5 legten Betriebsferien im gleichmaessigen Modus an Tagen ohne Tagessoll
+# eine 0-h-„Urlaub"-Zeile an. Steht der Vertrag HEUTE auf 0 h, zaehlt das Konto
+# jede davon als ganzen Urlaubstag. Neues Speichern raeumt sie jetzt in beiden
+# Modi ab (vorher nur bei aktivem #314-Split, und dort mit der falschen
+# Begruendung „werden neu gebucht").
+
+def _legacy_zero_rows(db, closure_id, user, days):
+    for d in days:
+        db.add(Absence(
+            user_id=user.id, tenant_id=DEFAULT_TENANT_ID, date=d,
+            type=AbsenceType.VACATION, hours=0.0, half_day=False,
+            note="Betriebsferien: BF", closure_id=uuid.UUID(closure_id),
+        ))
+    db.commit()
+
+
+def _resave(client, closure, name="BF neu"):
+    r = client.put(f"/api/company-closures/{closure['id']}", json={
+        "name": name, "start_date": closure["start_date"],
+        "end_date": closure["end_date"], "counts_as_vacation": True,
+    })
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _closure_rows(db, user):
+    db.expire_all()
+    return db.query(Absence).filter(
+        Absence.user_id == user.id, Absence.closure_id.isnot(None)).all()
+
+
+def _closure_audit_notes(db):
+    db.expire_all()
+    return [a.old_note for a in db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.source == "company_closure").all()]
+
+
+def _split_on(db):
+    db.merge(SystemSetting(key="closure_overtime_after_vacation",
+                           tenant_id=DEFAULT_TENANT_ID, value="true"))
+    db.commit()
+
+
+class TestClosureResaveCleansZeroHourRows:
+
+    def test_resave_removes_legacy_rows_without_split(self, db, admin):
+        """Probe aus dem Review: Elternzeit seit 01.03., zwei Alt-Zeilen an
+        0-h-Tagen, Umbenennen bei abgeschaltetem #314-Split → vorher blieben
+        beide stehen (Resturlaub 28 statt 30)."""
+        emp = _current_parental(db, "b5_rs_off", 30)
+        client = _client_as(db, admin)
+        closure = _create_closure(client)
+        _legacy_zero_rows(db, closure["id"], emp, [NOV_MON, NOV_TUE])
+        assert _remaining(db, emp) == pytest.approx(28)
+
+        _resave(client, closure)
+
+        assert _closure_rows(db, emp) == []
+        assert _remaining(db, emp) == pytest.approx(30)
+        assert any("2 generierte Abwesenheit(en) gelöscht — Tag ohne Tagessoll" in n
+                   for n in _closure_audit_notes(db))
+        # Die echten Schliesstage der Admin (40 h) bleiben, nur umbenannt.
+        admin_rows = _closure_rows(db, admin)
+        assert len(admin_rows) == 5
+        assert {a.note for a in admin_rows} == {"Betriebsferien: BF neu"}
+
+    def test_resave_with_split_names_the_real_reason(self, db, admin):
+        """Bei aktivem Split verschwanden die Alt-Zeilen schon vorher — aber
+        unter „werden neu gebucht", obwohl nichts neu gebucht wird."""
+        _split_on(db)
+        emp = _current_parental(db, "b5_rs_on", 30)
+        client = _client_as(db, admin)
+        closure = _create_closure(client)
+        _legacy_zero_rows(db, closure["id"], emp, [NOV_MON, NOV_TUE])
+
+        _resave(client, closure)
+
+        assert _closure_rows(db, emp) == []
+        assert _remaining(db, emp) == pytest.approx(30)
+        notes = _closure_audit_notes(db)
+        assert any("2 generierte Abwesenheit(en) gelöscht — Tag ohne Tagessoll" in n
+                   for n in notes)
+        # Neu gebucht werden nur die fuenf Tage der Admin.
+        assert any("5 generierte Abwesenheit(en) gelöscht — Neuaufteilung" in n
+                   for n in notes)
+        assert len(_closure_rows(db, admin)) == 5
+
+    def test_planned_zero_hour_period_keeps_working_days(self, db, admin):
+        """Gemischte Woche (0 h ab Mi): nur die Alt-Zeilen Mi–Fr gehen, Mo/Di
+        (40 h) bleiben als echte Schliesstage."""
+        emp = _planned_parental(db, "b5_rs_mixed", 30)
+        client = _client_as(db, admin)
+        closure = _create_closure(client)
+        _legacy_zero_rows(db, closure["id"], emp, [NOV_WED, NOV_THU, NOV_FRI])
+
+        _resave(client, closure)
+
+        assert {a.date for a in _closure_rows(db, emp)} == {NOV_MON, NOV_TUE}
+
+    def test_untracked_rows_stay(self, db, admin):
+        """#191: ohne Stundenzaehlung ist das Tagessoll immer 0 — deren
+        Schliesstage sind echte Urlaubstage und bleiben beim Neuspeichern."""
+        emp = _make_user(db, "b5_rs_untracked", track_hours=False)
+        _zero_hours_from(db, emp, NOV_WED)
+        client = _client_as(db, admin)
+        closure = _create_closure(client)
+
+        _resave(client, closure)
+
+        assert len(_closure_rows(db, emp)) == 5
+
+    def test_non_participant_rows_stay_untouched(self, db, admin):
+        """Wie bisher fasst das Neuspeichern Zeilen von Personen, die nicht
+        (mehr) teilnehmen, nicht an (Release-Review 1.16.0) — die Bereinigung
+        gilt den Teilnehmenden, deren Tage dieses Speichern neu entscheidet."""
+        emp = _current_parental(db, "b5_rs_optout", 30)
+        client = _client_as(db, admin)
+        closure = _create_closure(client)
+        _legacy_zero_rows(db, closure["id"], emp, [NOV_MON, NOV_TUE])
+        emp.receives_company_closures = False
+        db.commit()
+
+        _resave(client, closure)
+
+        assert len(_closure_rows(db, emp)) == 2
