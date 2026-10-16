@@ -45,8 +45,10 @@ interface ChangeRequest {
   // Ende `null` bei einem automatisch geschlossenen Eintrag (P18).
   entry_raw_start_time?: string | null;
   entry_raw_end_time?: string | null;
-  // Gesamtreview 1.20 (B2): AKTUELLES wirksames Ende des Zieleintrags.
+  // Gesamtreview 1.20 (B2): AKTUELLES wirksames Ende und AKTUELLER
+  // angerechneter Beginn des Zieleintrags (Echo-Regel der Genehmigung).
   entry_end_time?: string | null;
+  entry_start_time?: string | null;
   reason: string;
   rejection_reason?: string;
   reviewer_first_name?: string;
@@ -138,21 +140,44 @@ function stampedLine(cr: ChangeRequest): string | null {
   return `gestempelt ${span} · nicht angerechnet aktuell ${formatHoursHM(notCredited / 60)} h`;
 }
 
+/**
+ * Gesamtreview 1.20 (B2, Folgefund): gilt ein beantragter Wert als Stempel?
+ * Ja, wenn er der Stempel ist — oder das Echo der angerechneten Zeit, die das
+ * Antragsformular vorbelegt: zum Zeitpunkt des Antrags (`original_*`) oder
+ * aktuell (`entry_start_time`/`entry_end_time`, nach einer Neukappung). Das
+ * Echo ersetzt die Genehmigung durch den Stempel (`request_*_for_approval` +
+ * `unclamp_input`) — auch „Genehmigen und anerkennen" erkennt dann die
+ * Stempel an, nicht die angezeigten beantragten Zeiten. Minutengenau wie der
+ * Server (`same_minute`).
+ */
+function isStampInput(
+  proposed: string | undefined, stamp: string,
+  original: string | undefined, current: string | null | undefined,
+): boolean {
+  const p = hhmm(proposed);
+  return p === stamp || (!!p && (p === hhmm(original) || p === hhmm(current)));
+}
+
 /** Fund 2: weichen die vorgeschlagenen Zeiten von den Stempeln ab? Beim
  * automatisch geschlossenen Eintrag gibt es kein Stempel-Ende (P18) — dort
- * zählt nur der Beginn. */
+ * zählt nur der Beginn. Ein Echo der angerechneten Zeit ist keine Abweichung
+ * (`isStampInput`). */
 function stampDeviation(cr: ChangeRequest): string | null {
   if (!stampedLine(cr)) return null;
   const start = hhmm(cr.entry_raw_start_time);
+  const startIsStamp = isStampInput(
+    cr.proposed_start_time, start, cr.original_start_time, cr.entry_start_time,
+  );
   if (cr.entry_auto_closed) {
-    return hhmm(cr.proposed_start_time) !== start
-      ? `Beginn weicht vom Stempel ab (gestempelt ab ${start})`
-      : null;
+    return startIsStamp ? null : `Beginn weicht vom Stempel ab (gestempelt ab ${start})`;
   }
   const end = hhmm(cr.entry_raw_end_time);
-  return hhmm(cr.proposed_start_time) !== start || hhmm(cr.proposed_end_time) !== end
-    ? `Zeiten weichen von den Stempeln ab (gestempelt ${start}–${end})`
-    : null;
+  const endIsStamp = isStampInput(
+    cr.proposed_end_time, end, cr.original_end_time, cr.entry_end_time,
+  );
+  return startIsStamp && endIsStamp
+    ? null
+    : `Zeiten weichen von den Stempeln ab (gestempelt ${start}–${end})`;
 }
 
 function formatDateDE(dateStr: string): string {

@@ -259,7 +259,80 @@ describe('<AdminChangeRequests /> Anrechnung beantragen (Spec P21, P3)', () => {
       mockApi([stamped]);
       render(<AdminChangeRequests />);
       expect(await screen.findByText('gestempelt 07:00–19:00 · nicht angerechnet aktuell 4:00 h')).toBeInTheDocument();
-      expect(screen.queryByText(/weicht von den Stempeln ab/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/weichen|weicht/)).not.toBeInTheDocument();
+    });
+
+    // Gesamtreview 1.20 (B2, Folgefund): ein gewöhnlicher Antrag schickt die
+    // vorbelegten ANGERECHNETEN Zeiten zurück. Der Server wertet sie als Echo
+    // (request_*_for_approval + unclamp_input) und rechnet mit den Stempeln
+    // weiter — „Genehmigen und anerkennen" erkennt die Stempel an. Echo ist der
+    // angerechnete Wert zum Zeitpunkt des Antrags (original_*) ODER der
+    // aktuelle (entry_start_time/entry_end_time).
+    it('Echo der damals angerechneten Zeiten: keine Abweichung von den Stempeln', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false,
+        entry_start_time: '07:45:00', entry_end_time: '18:15:00',
+        proposed_start_time: '07:45:00', proposed_end_time: '18:15:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('gestempelt 07:00–19:00 · nicht angerechnet aktuell 4:00 h')).toBeInTheDocument();
+      expect(screen.queryByText(/weichen|weicht/)).not.toBeInTheDocument();
+    });
+
+    it('Echo der AKTUELL angerechneten Zeiten (nach einer Neukappung): keine Abweichung', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false,
+        entry_start_time: '08:45:00', entry_end_time: '17:15:00',
+        proposed_start_time: '08:45:00', proposed_end_time: '17:15:00',
+      }]);
+      render(<AdminChangeRequests />);
+      await screen.findByText('gestempelt 07:00–19:00 · nicht angerechnet aktuell 4:00 h');
+      expect(screen.queryByText(/weichen|weicht/)).not.toBeInTheDocument();
+    });
+
+    it('Kontrolltest: Echo am Beginn, eingetipptes Ende — der Hinweis bleibt', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false,
+        entry_start_time: '07:45:00', entry_end_time: '18:15:00',
+        proposed_start_time: '07:45:00', proposed_end_time: '20:00:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('Zeiten weichen von den Stempeln ab (gestempelt 07:00–19:00)')).toBeInTheDocument();
+    });
+
+    it('Kontrolltest: eingetippt 06:00–20:00 bei Echo-Werten im Antrag — der Hinweis bleibt', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false,
+        entry_start_time: '07:45:00', entry_end_time: '18:15:00',
+        proposed_start_time: '06:00:00', proposed_end_time: '20:00:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('Zeiten weichen von den Stempeln ab (gestempelt 07:00–19:00)')).toBeInTheDocument();
+    });
+
+    it('automatisch geschlossen: Echo des angerechneten Beginns ist keine Abweichung', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false, entry_auto_closed: true,
+        entry_raw_start_time: '07:00:00', entry_raw_end_time: null,
+        original_start_time: '07:45:00', entry_start_time: '08:45:00', entry_end_time: '18:15:00',
+        entry_not_credited_minutes: 150, proposed_start_time: '08:45:00', proposed_end_time: '17:30:00',
+      }]);
+      render(<AdminChangeRequests />);
+      await screen.findByText(
+        'gestempelt ab 07:00, nicht ausgestempelt (automatisch geschlossen) · nicht angerechnet aktuell 2:30 h',
+      );
+      expect(screen.queryByText(/weicht|weichen/)).not.toBeInTheDocument();
+    });
+
+    it('Kontrolltest: automatisch geschlossen, eingetippter Beginn — der Hinweis bleibt', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false, entry_auto_closed: true,
+        entry_raw_start_time: '07:00:00', entry_raw_end_time: null,
+        original_start_time: '07:45:00', entry_start_time: '07:45:00', entry_end_time: '18:15:00',
+        entry_not_credited_minutes: 150, proposed_start_time: '06:30:00', proposed_end_time: '17:30:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('Beginn weicht vom Stempel ab (gestempelt ab 07:00)')).toBeInTheDocument();
     });
 
     it('hebt vorgeschlagene Zeiten hervor, die nicht den Stempeln entsprechen', async () => {

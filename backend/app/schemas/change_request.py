@@ -108,6 +108,12 @@ class ChangeRequestResponse(BaseModel):
     # Eintrag gibt es dann kein „genehmigen und anerkennen" (400, P18). Nach
     # einer Neukappung weicht es von ``original_end_time`` ab.
     entry_end_time: Optional[time] = None
+    # Gesamtreview 1.20 (B2, Folgefund): ebenso der AKTUELLE angerechnete
+    # Beginn — ein beantragter Beginn darauf (oder auf ``original_start_time``)
+    # ist Echo (``request_start_for_approval`` + ``unclamp_input``), die
+    # Genehmigung rechnet mit dem Stempel weiter; die Prüfung meldet dann
+    # keine Abweichung von den Stempeln.
+    entry_start_time: Optional[time] = None
 
     reason: str
     break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG
