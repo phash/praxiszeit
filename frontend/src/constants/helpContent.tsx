@@ -13,18 +13,19 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Übersicht der Karten</h3>
           <ul className="space-y-2 text-sm text-gray-600">
-            <li><span className="font-medium text-gray-700">Monatssaldo:</span> Differenz zwischen geleisteten und Soll-Stunden im aktuellen Monat. Grün = Überstunden, Rot = Fehlstunden.</li>
-            <li><span className="font-medium text-gray-700">Überstunden gesamt:</span> Kumulierter Saldo über alle Monate.</li>
-            <li><span className="font-medium text-gray-700">Urlaub verbleibend:</span> Noch nicht genommene Urlaubstage im laufenden Jahr.</li>
+            <li><span className="font-medium text-gray-700">Monatssaldo:</span> Ist minus Soll im laufenden Monat – das Soll zählt bis zum letzten abgeschlossenen Arbeitstag (heute, sobald Sie ausgestempelt haben). Grün = Mehrarbeit, Rot = Minusstunden.</li>
+            <li><span className="font-medium text-gray-700">Überstundenkonto:</span> Kumulierter Saldo; darunter, falls geplant, der voraussichtliche Stand zum Jahresende nach bereits eingetragenem Freizeitausgleich.</li>
+            <li><span className="font-medium text-gray-700">Urlaubskonto:</span> Resturlaub, Budget und genommene Tage im laufenden Jahr.</li>
+            <li><span className="font-medium text-gray-700">Urlaubscountdown:</span> Tage bis zum nächsten Urlaub oder zur nächsten Praxisschließung.</li>
           </ul>
         </section>
         <section>
-          <h3 className="font-semibold text-gray-800 mb-2">Überstunden-Diagramm</h3>
-          <p className="text-sm text-gray-600">Das Balkendiagramm zeigt den Monatssaldo der letzten 6 Monate. Blau = positiv, Rot = negativ.</p>
+          <h3 className="font-semibold text-gray-800 mb-2">Monats- und Wochenübersicht</h3>
+          <p className="text-sm text-gray-600">Tabelle mit Soll, Ist, Saldo und Überstunden kumuliert. Der Umschalter „Monat"/„Woche" zeigt statt der Monate die letzten 8 Kalenderwochen. „Details anzeigen" öffnet Jahresübersicht und Team-Kalender.</p>
         </section>
         <section>
-          <h3 className="font-semibold text-gray-800 mb-2">Meine heutigen Einträge</h3>
-          <p className="text-sm text-gray-600">Zeigt alle Zeiteinträge für heute. Klicken Sie auf „Zur Zeiterfassung" um direkt zu bearbeiten.</p>
+          <h3 className="font-semibold text-gray-800 mb-2">Auf dem Smartphone</h3>
+          <p className="text-sm text-gray-600">Oben die Stempelkarte mit „x von y h heute" (zählt bei laufendem Eintrag minütlich mit), darunter die Karte „Letzte Einträge" mit Ihren fünf neuesten Einträgen – auch aus dem Vormonat. Fehlt eine Buchung, erscheint „Buchung fehlt" mit dem Link „Zur Zeiterfassung →".</p>
         </section>
       </div>
     ),
@@ -46,8 +47,8 @@ export const helpContent: Record<string, HelpEntry> = {
           <h3 className="font-semibold text-gray-800 mb-2">Eintrag erstellen</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
             <li>Klicken Sie auf <span className="font-medium">„+ Neuer Eintrag"</span> (Mitarbeitende: nur für heute; einen vergangenen Tag beantragen Sie über <span className="font-medium">„Antrag"</span>)</li>
-            <li>Start- und Endzeit eintragen</li>
-            <li>Pause in Minuten eingeben (Pflicht!)</li>
+            <li>„Von" und „Bis" eintragen (sind Arbeitszeit-Blöcke für Sie hinterlegt, sind die Felder daraus vorbelegt)</li>
+            <li>Pause in Minuten eingeben – Pflicht bei mehr als 6 Stunden (siehe unten); eine Lücke zwischen Ihren Arbeitszeit-Blöcken zählt als Pause</li>
             <li>Optional: Notiz hinzufügen</li>
             <li>Auf <span className="font-medium">„Speichern"</span> klicken</li>
           </ol>
@@ -75,8 +76,8 @@ export const helpContent: Record<string, HelpEntry> = {
           <p className="text-sm text-gray-600">Für Mitarbeitende ist beim Bearbeiten das Datum gesperrt. Gehört die Zeit zu einem anderen Tag: Eintrag löschen und über <span className="font-medium">„Antrag"</span> einen Änderungsantrag für diesen Tag stellen. Admins ändern das Datum direkt.</p>
         </section>
         <section>
-          <h3 className="font-semibold text-gray-800 mb-2">Wochenansicht</h3>
-          <p className="text-sm text-gray-600">Mit den Pfeilen &larr; &rarr; zwischen Wochen navigieren. Die aktuelle Woche ist vorausgewählt.</p>
+          <h3 className="font-semibold text-gray-800 mb-2">Monat wählen</h3>
+          <p className="text-sm text-gray-600">Die Liste zeigt einen Monat (am Computer unten mit der Summe der Netto-Stunden). Mit „Vorheriger Monat" bzw. „Nächster Monat" (Pfeile &larr; &rarr;) blättern, „Heute" springt zum laufenden Monat zurück. Auf dem Smartphone zeigt eine Wochenleiste Punkte für Tage mit Eintrag – ein Tipp springt zum Eintrag.</p>
         </section>
       </div>
     ),
@@ -90,8 +91,8 @@ export const helpContent: Record<string, HelpEntry> = {
           <h3 className="font-semibold text-gray-800 mb-2">Abwesenheit eintragen</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
             <li>Auf <span className="font-medium">„Abwesenheit eintragen"</span> klicken</li>
-            <li>Typ wählen: Urlaub / Krank / Fortbildung / Überstundenausgleich / Sonstiges</li>
-            <li>Einzeltag: nur Startdatum; Zeitraum: Checkbox aktivieren + Enddatum</li>
+            <li>Typ wählen: Urlaub / Krank / Fortbildung / Überstundenausgleich / Sonstiges – oder einen der „Eigene Gründe" Ihrer Praxis</li>
+            <li>Einzeltag: nur Datum (optional „Halber Tag", zählt 0,5 Tag); Zeitraum: „Zeitraum (mehrere Tage)" aktivieren + „Bis"</li>
             <li>Optional: Notiz</li>
             <li>Speichern</li>
           </ol>
@@ -107,42 +108,16 @@ export const helpContent: Record<string, HelpEntry> = {
           </ul>
         </section>
         <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Urlaubsantrag</h3>
+          <p className="text-sm text-gray-600">Verlangt Ihre Praxis eine Genehmigung, wird aus dem Eintrag ein Antrag. Stand, Bearbeiten und Zurückziehen finden Sie im Reiter „Meine Anträge".</p>
+        </section>
+        <section>
           <h3 className="font-semibold text-gray-800 mb-2">Eintrag löschen</h3>
-          <p className="text-sm text-gray-600">Im Kalender auf den farbigen Eintrag klicken → Löschen-Symbol erscheint.</p>
+          <p className="text-sm text-gray-600">Unten in der Liste „Meine Abwesenheiten" auf „Löschen" klicken (Smartphone: Papierkorb-Symbol).</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Zeiträume</h3>
           <p className="text-sm text-gray-600">Bei Zeiträumen werden Wochenenden, Feiertage und Ihre freien Tage laut Arbeitsplan automatisch ausgeschlossen. Nur Ihre Arbeitstage werden eingetragen – an freien Tagen erfasste Arbeitszeit bleibt stehen.</p>
-        </section>
-      </div>
-    ),
-  },
-
-  '/change-requests': {
-    title: 'Korrekturanträge',
-    content: (
-      <div className="space-y-4">
-        <section>
-          <h3 className="font-semibold text-gray-800 mb-2">Wann ein Antrag nötig ist</h3>
-          <p className="text-sm text-gray-600">Vergangene Zeiteinträge können nicht direkt bearbeitet werden. Stellen Sie einen Korrekturantrag, wenn Sie einen Fehler bemerken.</p>
-        </section>
-        <section>
-          <h3 className="font-semibold text-gray-800 mb-2">Antrag stellen</h3>
-          <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
-            <li>Auf <span className="font-medium">„Neuer Antrag"</span> klicken</li>
-            <li>Betroffenes Datum wählen</li>
-            <li>Korrekte Start-/Endzeit und Pause eintragen</li>
-            <li>Begründung schreiben</li>
-            <li>Absenden</li>
-          </ol>
-        </section>
-        <section>
-          <h3 className="font-semibold text-gray-800 mb-2">Status verfolgen</h3>
-          <ul className="space-y-1 text-sm text-gray-600">
-            <li>🟡 <span className="font-medium">Ausstehend</span> – wartet auf Admin-Entscheidung</li>
-            <li>🟢 <span className="font-medium">Genehmigt</span> – Zeiteintrag wurde angepasst</li>
-            <li>🔴 <span className="font-medium">Abgelehnt</span> – Ablehnungsgrund prüfen</li>
-          </ul>
         </section>
       </div>
     ),
@@ -155,9 +130,9 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Passwort ändern</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
-            <li>Altes Passwort eingeben</li>
-            <li>Neues Passwort wählen</li>
-            <li>Passwort bestätigen</li>
+            <li>Bei „Passwort ändern" auf <span className="font-medium">„Ändern"</span> klicken</li>
+            <li>„Aktuelles Passwort" eingeben</li>
+            <li>Neues Passwort wählen und bestätigen</li>
             <li>Auf <span className="font-medium">„Speichern"</span> klicken</li>
           </ol>
           <div className="mt-2 text-xs bg-blue-50 border border-blue-200 rounded-sm p-2 text-blue-700">
@@ -170,7 +145,11 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Persönliche Daten</h3>
-          <p className="text-sm text-gray-600">Persönliche Daten (Name, Wochenstunden) können nur vom Admin geändert werden. Ihre Arbeitszeit-Blöcke und deren Verlauf zeigt die Karte „Meine Arbeitszeit".</p>
+          <p className="text-sm text-gray-600">Vorname, Nachname und E-Mail ändern Sie über „Bearbeiten" neben Ihrem Namen, das Profilbild per Klick aufs Bild. Wochenstunden, Urlaubstage und Rolle legt die Verwaltung fest. Ihre Arbeitszeit-Blöcke und deren Verlauf zeigt die Karte „Meine Arbeitszeit".</p>
+        </section>
+        <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Sicherheit und Daten</h3>
+          <p className="text-sm text-gray-600">Unter „Zwei-Faktor-Authentifizierung (2FA)" richten Sie einen zweiten Faktor per Authenticator-App ein (dafür fragt PraxisZeit Ihr Passwort ab). „Meine Daten exportieren" lädt Ihre gespeicherten Daten herunter (DSGVO Art. 15/20).</p>
         </section>
       </div>
     ),
@@ -182,20 +161,20 @@ export const helpContent: Record<string, HelpEntry> = {
       <div className="space-y-4">
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Teamübersicht</h3>
-          <p className="text-sm text-gray-600">Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatssalden, Überstunden und Urlaubskonten.</p>
+          <p className="text-sm text-gray-600">Monats- bzw. Wochenübersicht aller aktiven Mitarbeitenden mit Wochenstunden, Soll, Ist, Saldo, Überstunden kumuliert und Urlaub. Umschalter „Monat"/„Woche"; die Soll-Basis „bis heute" (Standard, kein Anfangs-Minus) lässt sich auf „Monatsende" bzw. „volle Woche" stellen. Die Suche filtert nach Namen.</p>
         </section>
         <section>
-          <h3 className="font-semibold text-gray-800 mb-2">Ampel-System</h3>
+          <h3 className="font-semibold text-gray-800 mb-2">Ampel (Jahresübersicht, Resturlaub)</h3>
           <ul className="space-y-1 text-sm text-gray-600">
-            <li>🟢 Grün – Resturlaub ≥ 50% des Budgets</li>
-            <li>🟡 Gelb – Resturlaub 25–50%</li>
-            <li>🔴 Rot – Resturlaub unter 25%</li>
+            <li>🟢 Grün – mehr als 5 Tage Resturlaub</li>
+            <li>🟡 Gelb – bis 5 Tage</li>
+            <li>🔴 Rot – kein Resturlaub mehr</li>
           </ul>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Schnellzugriff</h3>
           <ul className="space-y-1 text-sm text-gray-600">
-            <li>Klick auf Mitarbeiter → Detailansicht (Einträge + Abwesenheiten)</li>
+            <li>Klick auf eine Zeile → Detailansicht (Zeiteinträge, Abwesenheiten, Änderungsprotokoll); dort Einträge anlegen und nicht angerechnete Zeit mit „Anerkennen" anrechnen</li>
             <li>Links in der Sidebar führen zu allen Admin-Bereichen</li>
           </ul>
         </section>
@@ -213,7 +192,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Auf <span className="font-medium">„Neue:r Mitarbeiter:in"</span> klicken</li>
             <li>Benutzername, Name, Passwort eingeben</li>
             <li>Wochenstunden/Arbeitstage, Tagesplan oder Arbeitszeit-Blöcke sowie Urlaubstage festlegen</li>
-            <li>Rolle: Mitarbeiter oder Admin</li>
+            <li>Rolle: Mitarbeiter:in oder Administrator</li>
             <li>Speichern</li>
           </ol>
         </section>
@@ -224,7 +203,7 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Mitarbeiter deaktivieren</h3>
           <div className="text-sm bg-amber-50 border border-amber-200 rounded-sm p-2 text-amber-800">
-            ⚠️ Niemals löschen! Nur Status auf „Inaktiv" setzen. Daten müssen 2 Jahre aufbewahrt werden (§16 ArbZG).
+            ⚠️ Ausgeschiedene Mitarbeitende nicht löschen, sondern in ihrer Zeile auf „Deaktivieren" klicken: Anmelden ist dann nicht mehr möglich, die Daten bleiben erhalten (§16 ArbZG: 2 Jahre aufbewahren). „Reaktivieren" holt das Konto zurück; „Inaktive anzeigen" blendet deaktivierte Konten ein. Den letzten aktiven Admin kann man nicht deaktivieren.
           </div>
         </section>
         <section>
@@ -242,9 +221,9 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Export-Typen</h3>
           <ul className="space-y-2 text-sm text-gray-600">
-            <li><span className="font-medium text-gray-700">Monatsreport:</span> Tägliche Einträge aller MA für einen Monat. Ideal für die Gehaltsabrechnung.</li>
-            <li><span className="font-medium text-gray-700">Jahresreport Classic:</span> 12 Monate kompakt, schnell (~2 Sek.).</li>
-            <li><span className="font-medium text-gray-700">Jahresreport Detailliert:</span> 365 Tage pro MA, für Steuerberater (~5 Sek.).</li>
+            <li><span className="font-medium text-gray-700">Monatsreport:</span> Tägliche Einträge aller MA für einen Monat, als Excel, ODS oder PDF. Ideal für die Gehaltsabrechnung.</li>
+            <li><span className="font-medium text-gray-700">Jahresreport Classic:</span> 12 Monate kompakt (Monate als Spalten), als Excel oder ODS.</li>
+            <li><span className="font-medium text-gray-700">Jahresreport Detailliert:</span> 365 Tage pro MA, für Steuerberater, als Excel oder ODS.</li>
           </ul>
           <p className="mt-2 text-sm text-gray-600">Monatsreport und Jahresreport Detailliert: letzte Spalte der Tageszeilen „Nicht angerechnet (Min)" – gestempelte, nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken. „Netto" ist die angerechnete Zeit. Der Jahresreport Classic (eine Zeile je Monat) hat diese Spalte nicht.</p>
         </section>
@@ -268,21 +247,21 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/admin/change-requests': {
-    title: 'Korrekturanträge (Admin)',
+    title: 'Änderungsanträge',
     content: (
       <div className="space-y-4">
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Antrag prüfen</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
-            <li>Offenen Antrag in der Liste wählen</li>
+            <li>Filter „Offen" (Standard), optional eine Person wählen</li>
             <li>Alt- und Neuwerte vergleichen</li>
             <li>Begründung des Mitarbeiters lesen</li>
-            <li><span className="font-medium">Genehmigen</span> oder <span className="font-medium">Ablehnen</span></li>
+            <li><span className="font-medium">Genehmigen</span> oder <span className="font-medium">Ablehnen</span> – mehrere auf einmal: anhaken bzw. „Alle … auswählen", dann „… genehmigen" oder „… ablehnen"</li>
           </ol>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Nach Genehmigung</h3>
-          <p className="text-sm text-gray-600">Der Zeiteintrag wird sofort aktualisiert. Der MA sieht den neuen Status in seinem Bereich „Korrekturanträge".</p>
+          <p className="text-sm text-gray-600">Der Zeiteintrag wird sofort aktualisiert. Mitarbeitende sehen den neuen Status unter Zeiterfassung im Tab „Anträge".</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Anrechnung beantragt</h3>
@@ -303,15 +282,14 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Was wird protokolliert?</h3>
           <ul className="space-y-1 text-sm text-gray-600">
-            <li>Alle Admin-Aktionen (Benutzer anlegen/bearbeiten)</li>
-            <li>Zeiteintrags-Änderungen durch Admins</li>
-            <li>Genehmigte/abgelehnte Korrekturanträge</li>
-            <li>Passwortänderungen</li>
+            <li>Änderungen an Zeiteinträgen und Abwesenheiten – Spalte „Quelle": Admin, Antrag, Import, Pausen-Verzicht, Stundenänderung, Neukappung (Arbeitszeit-Änderung), Anrechnung anerkannt u. a.</li>
+            <li>Zugriffe auf Gesundheitsdaten, Exporte und DSGVO-Vorgänge (Anonymisieren, Endgültig löschen)</li>
+            <li>Karte „Konto-Vorgänge": Deaktivieren, Reaktivieren, Rollen- und Passwortänderungen</li>
           </ul>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Filtern</h3>
-          <p className="text-sm text-gray-600">Nach Benutzer, Zeitraum oder Aktionstyp filtern. Das Protokoll ist chronologisch sortiert (neueste zuerst).</p>
+          <p className="text-sm text-gray-600">Monat wählen (Pfeile) und optional eine Person („Alle Mitarbeitende"). Das Protokoll ist chronologisch sortiert (neueste zuerst).</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Rechtliche Bedeutung</h3>
@@ -328,21 +306,21 @@ export const helpContent: Record<string, HelpEntry> = {
     content: (
       <div className="space-y-4">
         <section>
-          <h3 className="font-semibold text-gray-800 mb-2">Team-Kalender</h3>
-          <p className="text-sm text-gray-600">Übersicht aller Mitarbeiter-Abwesenheiten im Monatskalender. Jeder MA hat eine eigene Farbe (in der Benutzerverwaltung festlegbar).</p>
+          <h3 className="font-semibold text-gray-800 mb-2">Mitarbeiter-Abwesenheiten</h3>
+          <p className="text-sm text-gray-600">Abteilung, Mitarbeiter und Monat wählen – die Liste zeigt die Abwesenheiten (bei „Alle Mitarbeiter" je Person aufklappbar, mit „+ Eintragen"); Löschen über das Papierkorb-Symbol in der Spalte „Aktion".</p>
+        </section>
+        <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Abwesenheit für MA eintragen</h3>
+          <p className="text-sm text-gray-600">Mitarbeiter in der Dropdown-Liste wählen → „Abwesenheit eintragen" → Formular wie bei der Selbsteintragung, zusätzlich mit „Bezahlte Freistellung (kein Urlaubsabzug)".</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Betriebsferien eintragen</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
-            <li>Auf <span className="font-medium">„Neue Betriebsferien"</span> klicken</li>
+            <li>Reiter „Betriebsferien" → <span className="font-medium">„Betriebsferien erstellen"</span></li>
             <li>Bezeichnung + Von–Bis eintragen</li>
-            <li>Speichern → alle MA erhalten automatisch Einträge</li>
+            <li>Verrechnung wählen: „Als Urlaub werten" (vom Urlaubskonto abgezogen) oder „Bezahlte Freistellung" (wie ein Feiertag, kein Urlaubsabzug)</li>
+            <li>„Betriebsferien erstellen &amp; Urlaub eintragen" → alle teilnehmenden MA erhalten automatisch Einträge</li>
           </ol>
-          <p className="text-sm text-gray-500 mt-1">Betriebsferien ziehen keine Urlaubstage ab.</p>
-        </section>
-        <section>
-          <h3 className="font-semibold text-gray-800 mb-2">Abwesenheit für MA eintragen</h3>
-          <p className="text-sm text-gray-600">Mitarbeiter in der Dropdown-Liste wählen → Formular wie bei MA-Selbsteintragung.</p>
         </section>
       </div>
     ),
@@ -383,8 +361,8 @@ export const getFallbackHelp = (): HelpEntry => ({
         </ul>
       </section>
       <section>
-        <h3 className="font-semibold text-gray-800 mb-2">Korrekturanträge</h3>
-        <p className="text-sm text-gray-600">Zeiterfassung → Tab „Anträge" → Neuer Antrag.</p>
+        <h3 className="font-semibold text-gray-800 mb-2">Änderungsanträge</h3>
+        <p className="text-sm text-gray-600">Zeiterfassung → „Antrag" (vergangener Tag) bzw. am gesperrten Eintrag „Änderungsantrag stellen"; den Stand zeigt der Tab „Anträge".</p>
       </section>
       <section>
         <h3 className="font-semibold text-gray-800 mb-2">Journal</h3>

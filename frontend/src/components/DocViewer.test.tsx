@@ -9,7 +9,7 @@ import {
   handbuchMitarbeiterSections,
   type AccordionItem,
 } from './DocViewer';
-import { helpContent } from '../constants/helpContent';
+import { getFallbackHelp, helpContent } from '../constants/helpContent';
 
 // Sichtbarer Text einer Doku-Fläche, Leerraum zusammengefasst.
 function textOf(node: ReactNode): string {
@@ -203,5 +203,102 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
     expect(reports).toContain('Nicht angerechnet (Min)');
     expect(reports).toContain('Monatsreport und Jahresreport Detailliert');
     expectNoStaleTerms(reports);
+  });
+});
+
+// Gesamtreview 1.20 B6: die Kontexthilfe der im Zweig geänderten Seiten gegen
+// die echte Oberfläche geprüft. Jeder Fall nennt, was die Seite wirklich zeigt
+// (Knopf-/Abschnittsname), und was die alte Hilfe fälschlich versprach.
+describe('Kontexthilfe entspricht der Oberfläche (Gesamtreview B6)', () => {
+  const help = (path: string) => textOf(helpContent[path].content);
+
+  it('Zeiterfassung: ein Monat mit Monatspfeilen, keine Wochenansicht', () => {
+    const t = help('/time-tracking');
+    expect(t).toContain('„Vorheriger Monat"');
+    expect(t).toContain('Wochenleiste');
+    expect(t).not.toContain('zwischen Wochen navigieren');
+    expect(t).not.toContain('Die aktuelle Woche ist vorausgewählt');
+    // Pause ist nicht immer Pflicht — erst ab 6 h, und eine Lücke zwischen den Blöcken zählt.
+    expect(t).not.toContain('(Pflicht!)');
+  });
+
+  it('Benutzerverwaltung: der Knopf heißt „Deaktivieren", kein Status „Inaktiv" zum Setzen', () => {
+    const t = help('/admin/users');
+    expect(t).toContain('„Deaktivieren"');
+    expect(t).toContain('„Reaktivieren"');
+    expect(t).not.toContain('Status auf „Inaktiv" setzen');
+    expect(t).toContain('Rolle: Mitarbeiter:in oder Administrator');
+  });
+
+  it('Dashboard: Monats-/Wochenübersicht statt Diagramm, keine Karte „heutige Einträge"', () => {
+    const t = help('/');
+    for (const card of ['Monatssaldo', 'Überstundenkonto', 'Urlaubskonto', 'Urlaubscountdown', 'Letzte Einträge']) {
+      expect(t).toContain(card);
+    }
+    expect(t).toContain('„Monat"/„Woche"');
+    expect(t).not.toContain('Balkendiagramm');
+    expect(t).not.toContain('Meine heutigen Einträge');
+  });
+
+  it('Admin-Dashboard: Ampel nach Resturlaub-Tagen, Umschalter und Soll-Basis', () => {
+    const t = help('/admin');
+    expect(t).toContain('mehr als 5 Tage');
+    expect(t).not.toContain('≥ 50%');
+    expect(t).toContain('„bis heute"');
+    expect(t).toContain('Anerkennen');
+  });
+
+  it('Abwesenheiten (Admin): Betriebsferien mit Verrechnung, keine Mitarbeiterfarben', () => {
+    const t = help('/admin/absences');
+    expect(t).toContain('„Als Urlaub werten"');
+    expect(t).toContain('„Bezahlte Freistellung"');
+    expect(t).toContain('„Betriebsferien erstellen"');
+    expect(t).not.toContain('Betriebsferien ziehen keine Urlaubstage ab');
+    expect(t).not.toContain('Jeder MA hat eine eigene Farbe');
+  });
+
+  it('Abwesenheiten (MA): löschen in „Meine Abwesenheiten", Halbtag, eigene Gründe, Anträge', () => {
+    const t = help('/absences');
+    expect(t).toContain('„Meine Abwesenheiten"');
+    expect(t).toContain('Halber Tag');
+    expect(t).toContain('Eigene Gründe');
+    expect(t).toContain('„Meine Anträge"');
+    expect(t).not.toContain('Im Kalender auf den farbigen Eintrag klicken');
+  });
+
+  it('Änderungsprotokoll: Monat + Mitarbeitende, Karte „Konto-Vorgänge"', () => {
+    const t = help('/admin/audit-log');
+    expect(t).toContain('Konto-Vorgänge');
+    expect(t).toContain('Anrechnung anerkannt');
+    expect(t).not.toContain('Aktionstyp');
+  });
+
+  it('Änderungsanträge: Titel wie die Seite, MA verfolgen den Stand im Tab „Anträge"', () => {
+    expect(helpContent['/admin/change-requests'].title).toBe('Änderungsanträge');
+    const t = help('/admin/change-requests');
+    expect(t).toContain('Tab „Anträge"');
+    expect(t).toContain('„Alle … auswählen"');
+    expect(t).not.toContain('Bereich „Korrekturanträge"');
+  });
+
+  it('Profil: Name und E-Mail ändert man selbst; 2FA und Datenexport sind erwähnt', () => {
+    const t = help('/profile');
+    expect(t).not.toContain('Persönliche Daten (Name, Wochenstunden) können nur vom Admin geändert werden');
+    expect(t).toContain('„Bearbeiten"');
+    expect(t).toContain('„Aktuelles Passwort"');
+    expect(t).toContain('Zwei-Faktor');
+    expect(t).toContain('„Meine Daten exportieren"');
+  });
+
+  it('Berichte: Formate je Export', () => {
+    const t = help('/admin/reports');
+    expect(t).toContain('Excel, ODS oder PDF');
+  });
+
+  it('Fallback und tote Route: kein Knopf „Neuer Antrag"', () => {
+    expect(textOf(getFallbackHelp().content)).not.toContain('Neuer Antrag');
+    // /change-requests leitet auf /time-tracking?tab=requests um — die Hilfe
+    // dort sieht nie jemand (HelpPanel schlägt den Pfad nach).
+    expect(helpContent['/change-requests']).toBeUndefined();
   });
 });
