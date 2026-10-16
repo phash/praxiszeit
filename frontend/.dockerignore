@@ -1,0 +1,33 @@
+# Build-Kontext des Frontend-Images (Gesamtreview B8, Parallelpfad zu
+# backend/.dockerignore).
+#
+# Das Dockerfile installiert zuerst lock-treu (`npm ci`) und kopiert danach mit
+# `COPY . .` den ganzen Ordner. COPY fuehrt Verzeichnisse zusammen: ohne diese
+# Datei ueberschrieb das Host-node_modules die eben installierten Pakete. War
+# es nach einem Abhaengigkeits-Bump noch veraltet (git pull ohne npm install),
+# baute `docker compose build frontend` die alten Versionen in dist ein — auch
+# Laufzeitpakete wie axios, teils als Gemisch alter und neuer Dateien.
+#
+# NICHT ausschliessen: src/, public/ (Handbuch-Spiegel, Schriften, Icons),
+# index.html, package.json, package-lock.json, vite.config.ts, tsconfig*.json,
+# postcss.config.js, nginx.conf. backend/tests/test_frontend_dockerignore.py
+# prueft beides.
+
+# Abhaengigkeiten kommen aus `npm ci`, das Build-Ergebnis aus `npm run build`
+node_modules
+dist
+
+# Lokaler Werkzeugzustand (Agenten-Notizen), gehoert nicht ins Image
+.claude
+
+# Leerer, root-eigener Rest eines Docker-Mounts aus dem falschen cwd
+# (`-v $(pwd)/backend:…` aus frontend/ heraus)
+backend
+
+# Geheimnisse gehoeren nie ins Image; der Build liest keine VITE_-Variablen
+.env
+.env.*
+
+# Testausgaben (vitest --coverage, Playwright)
+coverage
+test-results

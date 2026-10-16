@@ -48,9 +48,11 @@ def _to_regex(pattern: str) -> "re.Pattern[str]":
     return re.compile("^" + out + "$")
 
 
-def _rules():
+def _rules(path: Path = DOCKERIGNORE):
+    """Regeln einer .dockerignore; test_frontend_dockerignore.py nutzt denselben
+    Nachbau fuer ``frontend/.dockerignore``."""
     rules = []
-    for raw in DOCKERIGNORE.read_text(encoding="utf-8").splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
