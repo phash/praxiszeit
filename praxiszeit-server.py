@@ -18,6 +18,7 @@ import logging
 import os
 import platform
 import secrets
+import shlex
 import shutil
 import socket
 import signal
@@ -1984,6 +1985,24 @@ def _service_start_command() -> str:
     return "systemctl start praxiszeit"
 
 
+def _reset_cli_options(args) -> list:
+    """Die Optionen, die ``reset-admin-password`` an das Werkzeug weiterreicht.
+
+    EINE Liste fuer den Aufruf und fuer die kopierfertige Zeile im root-Hinweis
+    (Gesamtreview B8): die Zeile liess sie weg, wer sie uebernahm, setzte nur
+    das Passwort neu — 2FA blieb an bzw. das Konto deaktiviert. #489:
+    ``getattr``, damit ein aelterer Aufrufer (Test, Skript) ohne ``reactivate``
+    nicht abstuerzt."""
+    opts = []
+    if args.username:
+        opts += ["--username", args.username]
+    if args.disable_2fa:
+        opts.append("--disable-2fa")
+    if getattr(args, "reactivate", False):
+        opts.append("--reactivate")
+    return opts
+
+
 def _running_as_root() -> bool:
     """Unter Windows gibt es ``geteuid`` nicht — dort ist die Frage bedeutungslos."""
     return hasattr(os, "geteuid") and os.geteuid() == 0
@@ -2025,9 +2044,15 @@ def cmd_reset_admin_password(args):
                 "(pg_ctl lehnt das ab). Zwei Wege: entweder den Dienst starten "
                 "(%s) und das Kommando erneut aufrufen, oder "
                 "es als Dienstkonto ausfuehren:\n"
-                "  sudo -u %s %s %s reset-admin-password",
-                _service_start_command(), _install_owner(), bundled_python(),
-                Path(__file__).resolve(),
+                "  %s",
+                _service_start_command(),
+                # Kopierfertig: mit den Optionen dieses Aufrufs, fuer die Shell
+                # gequotet (der Benutzername ist frei waehlbar).
+                shlex.join([
+                    "sudo", "-u", _install_owner(), bundled_python(),
+                    str(Path(__file__).resolve()), "reset-admin-password",
+                    *_reset_cli_options(args),
+                ]),
             )
             sys.exit(1)
         logger.info("PostgreSQL ist nicht gestartet — wird fuer den Vorgang kurz hochgefahren.")
@@ -2052,15 +2077,8 @@ def cmd_reset_admin_password(args):
         env.setdefault("SECRET_KEY", resolve_secret_key(config, persist=False))
 
         # Release-Review 1.19.0: NICHT ``sys.executable`` — siehe bundled_python().
-        cmd = [bundled_python(), "-m", "app.cli.reset_admin_password"]
-        if args.username:
-            cmd += ["--username", args.username]
-        if args.disable_2fa:
-            cmd.append("--disable-2fa")
-        # #489: deaktiviertes Konto zurueckholen. getattr: ein aelterer Aufrufer
-        # (Test, Skript) ohne das Attribut soll nicht abstuerzen.
-        if getattr(args, "reactivate", False):
-            cmd.append("--reactivate")
+        cmd = [bundled_python(), "-m", "app.cli.reset_admin_password",
+               *_reset_cli_options(args)]
 
         # BEWUSST ohne capture_output: das Werkzeug fragt das Passwort
         # interaktiv ab (getpass), ein abgefangener Datenstrom haette keine

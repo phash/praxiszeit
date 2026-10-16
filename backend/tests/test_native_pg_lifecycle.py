@@ -940,11 +940,13 @@ class TestResetAdminPasswordRootHinweisJePlattform:
     launchd-Dienst ``de.praxiszeit.server`` (``installer/macos/install.sh``),
     gestartet wird er mit ``launchctl load`` auf die Plist."""
 
-    def _abbruch(self, srv, caplog, monkeypatch, *, macos: bool):
+    def _abbruch(self, srv, caplog, monkeypatch, *, macos: bool, **flags):
         import argparse
         import logging
         monkeypatch.setattr(srv, "IS_MACOS", macos)
         args = argparse.Namespace(username=None, disable_2fa=False, reactivate=False)
+        for k, v in flags.items():
+            setattr(args, k, v)
         with patch.object(srv, "load_config", return_value={}), \
              patch.object(srv, "pg_load_credentials", return_value=("su", "app")), \
              patch.object(srv, "pg_is_running", return_value=False), \
@@ -972,6 +974,29 @@ class TestResetAdminPasswordRootHinweisJePlattform:
         assert "launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist" in text
         assert "systemctl" not in text
         assert "sudo -u dienstkonto" in text
+
+    def test_ausweg_uebernimmt_die_optionen_des_aufrufs(self, srv, caplog, monkeypatch):
+        # Gesamtreview B8: die kopierfertige Zeile liess --username,
+        # --disable-2fa und --reactivate weg. Wer sie uebernahm, setzte nur das
+        # Passwort neu — 2FA blieb an bzw. das Konto deaktiviert, und ein
+        # zweiter Lauf (erneut token_version + 1, weitere Protokollzeile) war
+        # noetig. Die Zeile endet deshalb mit genau den Optionen des Aufrufs.
+        text = self._abbruch(srv, caplog, monkeypatch, macos=False,
+                             username="chefin", disable_2fa=True, reactivate=True)
+        assert text.rstrip().endswith(
+            "reset-admin-password --username chefin --disable-2fa --reactivate"), text
+
+    def test_ausweg_ohne_optionen_bleibt_unveraendert(self, srv, caplog, monkeypatch):
+        text = self._abbruch(srv, caplog, monkeypatch, macos=False)
+        assert text.rstrip().endswith("reset-admin-password"), text
+
+    def test_ausweg_quotet_den_benutzernamen_fuer_die_shell(self, srv, caplog, monkeypatch):
+        # Der Benutzername ist frei waehlbar; die Zeile muss kopiert in der
+        # Shell genau dieses Konto treffen (Leerzeichen, Shell-Sonderzeichen).
+        text = self._abbruch(srv, caplog, monkeypatch, macos=True,
+                             username="Dr. Müller; rm")
+        assert text.rstrip().endswith(
+            "reset-admin-password --username 'Dr. Müller; rm'"), text
 
     def test_launchd_label_stimmt_mit_den_installern_ueberein(self, srv):
         # Leitplanke wie test_pg_service_name_matches_installer: der Hinweis
