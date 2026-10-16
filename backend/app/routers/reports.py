@@ -424,6 +424,9 @@ def get_yearly_absences(
             has_year_end_warning=calculation_service.has_year_end_vacation_warning(
                 remaining_vacation_days, year, _today
             ),
+            # Gesamtreview 1.20 B5: das Verfallsdatum des Banners kommt aus den
+            # Daten (individuelle Frist), nicht hart „31.03." im Frontend.
+            carryover_deadline=calculation_service.vacation_carryover_deadline(user, year),
         ))
 
     # L-2: Übersicht erfolgreich gebaut -> health_data_read-Audit festschreiben.

@@ -2619,6 +2619,22 @@ def child_sick_days_used(db: Session, user: User, year: int,
 YEAR_END_VACATION_WARNING_MIN_DAYS = Decimal('1')
 
 
+def vacation_carryover_deadline(user: User, year: int) -> date:
+    """Bis wann der Resturlaub des Jahres ``year`` genommen sein muss: die
+    individuelle Frist der Person (``users.vacation_carryover_deadline``), sonst
+    der 31.03. des Folgejahres.
+
+    DIE eine Regel fuer das Urlaubskonto im Mitarbeiter-Dashboard
+    (``/dashboard/vacation`` → ``carryover_deadline``) und den Banner
+    „Jahresend-Warnung: Offene Urlaubstage" im Admin-Dashboard
+    (``/admin/reports/yearly-absences``). Gesamtreview 1.20 B5: der Banner nannte
+    vorher hart den 31.03. und uebersah eine individuelle Frist.
+    """
+    if user.vacation_carryover_deadline:
+        return user.vacation_carryover_deadline
+    return date(year + 1, 3, 31)
+
+
 def has_year_end_vacation_warning(remaining_days, year: int, today: date) -> bool:
     """#501: DIE eine Regel für die plakative Jahresend-Warnung vor verfallendem
     Urlaub — gespeist in ``/dashboard/vacation`` (``has_carryover_warning``) UND

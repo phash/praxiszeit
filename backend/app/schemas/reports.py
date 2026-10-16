@@ -238,3 +238,7 @@ class EmployeeYearlyAbsences(BaseModel):
     # dieselbe Regel wie VacationAccount.has_carryover_warning
     # (calculation_service.has_year_end_vacation_warning).
     has_year_end_warning: bool = False
+    # Gesamtreview 1.20 B5: bis wann der Rest genommen sein muss — individuelle
+    # Frist oder 31.03. des Folgejahres (calculation_service.vacation_carryover_deadline,
+    # dieselbe Regel wie VacationAccount.carryover_deadline).
+    carryover_deadline: Optional[date] = None

@@ -95,6 +95,57 @@ describe('AdminDashboard Jahresend-Warnung (#501)', () => {
   });
 });
 
+// Gesamtreview 1.20 B5 (#501): Der Banner nannte hart „bis 31.03.{Jahr+1}" —
+// eine individuelle Verfallsfrist (users.vacation_carryover_deadline) kam nie an,
+// obwohl das Mitarbeiter-Dashboard sie zeigt. Das Datum liefert jetzt der Server
+// je Person (carryover_deadline). Die Resttage standen mit Punkt da („3.5 Tage").
+describe('AdminDashboard Jahresend-Warnung: Verfallsdatum und Zahlformat (Gesamtreview B5)', () => {
+  const withDeadline = (row: ReturnType<typeof yearlyRow>, deadline: string) => ({
+    ...row, carryover_deadline: deadline,
+  });
+
+  async function banner() {
+    const heading = await screen.findByText(/Jahresend-Warnung: Offene Urlaubstage/);
+    return heading.closest('div')!;
+  }
+
+  it('nennt das gemeinsame Verfallsdatum aus den Daten und die Resttage mit Komma', async () => {
+    mockEndpoints([
+      withDeadline(yearlyRow('u2', 'Aura', 'Haiser', 1.0, true), '2027-03-31'),
+      withDeadline(yearlyRow('u3', 'Nadja', 'Jacob', 3.5, true), '2027-03-31'),
+    ]);
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+
+    const b = await banner();
+    expect(within(b).getByText(/die bis 31\.03\.2027 verfallen:/)).toBeInTheDocument();
+    expect(within(b).getByText('Aura Haiser: 1 Tag')).toBeInTheDocument();
+    expect(within(b).getByText('Nadja Jacob: 3,5 Tage')).toBeInTheDocument();
+    expect(within(b).queryByText(/3\.5/)).not.toBeInTheDocument();
+  });
+
+  it('nennt eine individuelle Frist statt des 31.03.', async () => {
+    mockEndpoints([withDeadline(yearlyRow('u3', 'Nadja', 'Jacob', 3.5, true), '2027-06-30')]);
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+
+    const b = await banner();
+    expect(within(b).getByText(/die bis 30\.06\.2027 verfallen:/)).toBeInTheDocument();
+    expect(within(b).queryByText(/31\.03\./)).not.toBeInTheDocument();
+  });
+
+  it('nennt bei unterschiedlichen Fristen das Datum je Person', async () => {
+    mockEndpoints([
+      withDeadline(yearlyRow('u2', 'Aura', 'Haiser', 1.0, true), '2027-03-31'),
+      withDeadline(yearlyRow('u3', 'Nadja', 'Jacob', 3.5, true), '2027-06-30'),
+    ]);
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+
+    const b = await banner();
+    expect(within(b).getByText(/zum jeweils genannten Datum verfallen:/)).toBeInTheDocument();
+    expect(within(b).getByText('Aura Haiser: 1 Tag (bis 31.03.2027)')).toBeInTheDocument();
+    expect(within(b).getByText('Nadja Jacob: 3,5 Tage (bis 30.06.2027)')).toBeInTheDocument();
+  });
+});
+
 // Review F3 (#501): Seit der Banner allein am Server-Flag hängt, darf er beim
 // Umschalten des Jahres nicht mit der Liste des VORHERIGEN Jahres stehen bleiben —
 // weder solange die neue Anfrage läuft noch wenn sie scheitert. Sonst stünden die

@@ -376,11 +376,9 @@ def get_vacation_account(
 
     account = calculation_service.get_vacation_account(db, target_user, year)
 
-    # Determine carryover deadline (individual or default: March 31 of next year)
-    if target_user.vacation_carryover_deadline:
-        carryover_deadline = target_user.vacation_carryover_deadline
-    else:
-        carryover_deadline = date(year + 1, 3, 31)
+    # Verfallsdatum: individuelle Frist oder 31.03. des Folgejahres — dieselbe
+    # Regel wie der Admin-Banner (Gesamtreview 1.20 B5).
+    carryover_deadline = calculation_service.vacation_carryover_deadline(target_user, year)
 
     # Jahresend-Warnung (Q4 des laufenden Jahres, #501: erst ab einem ganzen
     # offenen Urlaubstag) — dieselbe Regel wie der Admin-Banner.

@@ -142,3 +142,46 @@ def test_admin_jahresuebersicht_ausserhalb_q4_ohne_warnung(db, test_user, test_a
     r = _client(db, test_admin).get("/api/admin/reports/yearly-absences?year=2026")
     rows = {row["user_id"]: row for row in r.json()}
     assert rows[str(test_user.id)]["has_year_end_warning"] is False
+
+
+# --- Verfallsdatum (Gesamtreview 1.20 B5) -------------------------------------
+#
+# Der Banner nannte hart „bis 31.03.{Jahr+1}" — die individuelle Frist
+# (``users.vacation_carryover_deadline``) kannte nur das Mitarbeiter-Dashboard.
+# Beide Flächen liefern das Datum jetzt aus EINER Regel
+# (``calculation_service.vacation_carryover_deadline``).
+
+def test_verfallsdatum_regel():
+    from types import SimpleNamespace
+    from app.services.calculation_service import vacation_carryover_deadline
+
+    assert vacation_carryover_deadline(
+        SimpleNamespace(vacation_carryover_deadline=None), 2026) == dt.date(2027, 3, 31)
+    assert vacation_carryover_deadline(
+        SimpleNamespace(vacation_carryover_deadline=dt.date(2027, 6, 30)), 2026) == dt.date(2027, 6, 30)
+
+
+def test_jahresuebersicht_liefert_das_verfallsdatum(db, test_user, test_admin, in_october):
+    _set_budget(db, test_user, 3.0)
+    test_admin.vacation_carryover_deadline = dt.date(2027, 6, 30)
+    db.commit()
+
+    r = _client(db, test_admin).get("/api/admin/reports/yearly-absences?year=2026")
+    assert r.status_code == 200, r.text
+    rows = {row["user_id"]: row for row in r.json()}
+    assert rows[str(test_user.id)]["carryover_deadline"] == "2027-03-31"
+    assert rows[str(test_admin.id)]["carryover_deadline"] == "2027-06-30"
+
+
+@pytest.mark.parametrize("individual", [None, dt.date(2027, 6, 30)])
+def test_beide_flaechen_nennen_dasselbe_datum(db, test_user, test_admin, in_october, individual):
+    test_user.vacation_carryover_deadline = individual
+    db.commit()
+
+    own = _client(db, test_user).get("/api/dashboard/vacation?year=2026")
+    _APP.dependency_overrides.clear()
+    admin_rows = _client(db, test_admin).get("/api/admin/reports/yearly-absences?year=2026")
+
+    assert own.status_code == 200 and admin_rows.status_code == 200
+    row = next(x for x in admin_rows.json() if x["user_id"] == str(test_user.id))
+    assert row["carryover_deadline"] == own.json()["carryover_deadline"]

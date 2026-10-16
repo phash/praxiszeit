@@ -167,7 +167,10 @@ dieses Backup verlustfrei (`UPDATE.md`).
   (#497, #498) – ein Krank- oder Fortbildungstag steht bei ±0, die Summe der
   Spalte ergibt den „Saldo Monat"; neue Spalten „Unterbrechung (Min)" und
   „Zeiteinträge".
-- **Jahresend-Warnung zu offenem Urlaub** (#501) erst ab einem ganzen offenen Tag.
+- **Jahresend-Warnung zu offenem Urlaub** (#501) erst ab einem ganzen offenen Tag;
+  der Hinweis im Admin-Dashboard nennt das tatsächliche Verfallsdatum (auch eine
+  abweichende Frist der Person) statt pauschal den 31.03. und die Resttage mit
+  Komma.
 - **§10-Ausnahmegrund** auch im Antragsformular der Zeiterfassung und bei der
   Direkteingabe an Feiertagen (#491).
 

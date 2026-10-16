@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { Link } from 'react-router-dom';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
@@ -10,7 +10,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 import WeekSelector, { isoWeekMonday, weekLabel } from '../../components/WeekSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { deHoursExact, formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges } from '../../utils/formatters';
+import { deHoursExact, formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount } from '../../utils/formatters';
 import type { WeeklyHoursChangeInPeriod } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import { showArbzgWarnings } from '../../utils/arbzgWarnings';
@@ -73,6 +73,9 @@ interface YearlyAbsences {
   overtime_year: number;
   total_days: number;
   has_year_end_warning?: boolean; // #501: serverseitige Jahresend-Warnung (ab 1,0 Tagen, Q4)
+  // Gesamtreview B5: Verfallsdatum je Person (individuelle Frist oder 31.03. des
+  // Folgejahres) — dieselbe Regel wie im Mitarbeiter-Dashboard.
+  carryover_deadline?: string | null;
 }
 
 interface UserDetails {
@@ -1028,28 +1031,39 @@ export default function AdminDashboard() {
             wie im Mitarbeiter-Dashboard; hier wird NICHT mehr selbst gefiltert.
             Review F3: nur mit Daten des GEWÄHLTEN Jahres — beim Umschalten (Anfrage
             läuft oder scheitert) stünden sonst die Namen des Vorjahres unter dem
-            Verfallsdatum des neu gewählten Jahres. */}
+            Verfallsdatum des neu gewählten Jahres.
+            Gesamtreview B5: das Verfallsdatum kommt je Person vom Server
+            (individuelle Frist, sonst 31.03. des Folgejahres); die Resttage mit
+            deutschem Komma. */}
         {(() => {
           const withRemaining = yearlyAbsencesYear === currentYear
             ? yearlyAbsences.filter(e => e.has_year_end_warning)
             : [];
-          return withRemaining.length > 0 ? (
+          if (withRemaining.length === 0) return null;
+          const deadlineOf = (e: YearlyAbsences) =>
+            format(parseISO(e.carryover_deadline ?? `${currentYear + 1}-03-31`), 'dd.MM.yyyy');
+          const deadlines = new Set(withRemaining.map(deadlineOf));
+          const commonDeadline = deadlines.size === 1 ? [...deadlines][0] : null;
+          return (
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
               <p className="font-semibold text-amber-800 mb-2">
                 ⚠️ Jahresend-Warnung: Offene Urlaubstage
               </p>
               <p className="text-sm text-amber-700 mb-3">
-                Folgende Mitarbeiter haben noch offene Urlaubstage, die bis 31.03.{currentYear + 1} verfallen:
+                {commonDeadline
+                  ? `Folgende Mitarbeiter haben noch offene Urlaubstage, die bis ${commonDeadline} verfallen:`
+                  : 'Folgende Mitarbeiter haben noch offene Urlaubstage, die zum jeweils genannten Datum verfallen:'}
               </p>
               <div className="flex flex-wrap gap-2">
                 {withRemaining.map(emp => (
                   <span key={emp.user_id} className="px-3 py-1 bg-amber-100 border border-amber-300 rounded-full text-sm font-medium text-amber-900">
-                    {emp.first_name} {emp.last_name}: {emp.remaining_vacation_days.toFixed(1)} Tage
+                    {`${emp.first_name} ${emp.last_name}: ${formatDayCount(emp.remaining_vacation_days)}`
+                      + (commonDeadline ? '' : ` (bis ${deadlineOf(emp)})`)}
                   </span>
                 ))}
               </div>
             </div>
-          ) : null;
+          );
         })()}
 
         <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
