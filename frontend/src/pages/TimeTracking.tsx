@@ -257,6 +257,46 @@ export default function TimeTracking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blocksKey]);
 
+  // Gesamtreview 1.20 B6 (PR2 Task 17): Blöcke und Puffer des FORMULAR-Datums.
+  // Heute aus /clock-status (oben); an jedem anderen Tag aus /day-blocks — sonst
+  // rechneten §4-Vorprüfung und Pausen-Automatik dort ohne Blöcke und sperrten
+  // einen geteilten Dienst fälschlich (die Lücke deckt §4) bzw. zogen eine Pause
+  // zusätzlich zur Lücke ab. Nur Admins erfassen eigene Einträge vergangener Tage
+  // direkt bzw. ändern das Datum (Mitarbeitende: nur heute, #502).
+  const todayIso = format(new Date(), 'yyyy-MM-dd');
+  const [otherDayInfo, setOtherDayInfo] = useState<
+    { date: string; blocks: TimeBlock[] | null; grace: number | null } | null
+  >(null);
+  const needsOtherDay = showForm && /^\d{4}-\d{2}-\d{2}$/.test(formData.date) && formData.date !== todayIso;
+  useEffect(() => {
+    if (!needsOtherDay) return;
+    const date = formData.date;
+    let cancelled = false;
+    apiClient
+      .get(`/time-entries/day-blocks?date=${date}`)
+      .then((res) => {
+        if (cancelled) return;
+        const d = res.data;
+        setOtherDayInfo({
+          date,
+          blocks: Array.isArray(d?.blocks) ? d.blocks : [],
+          grace: typeof d?.grace_minutes === 'number' ? d.grace_minutes : null,
+        });
+      })
+      .catch(() => {
+        // Unbekannt → keine Vorprüfung, keine Pausen-Automatik; der Server entscheidet.
+        if (!cancelled) setOtherDayInfo({ date, blocks: null, grace: null });
+      });
+    return () => { cancelled = true; };
+  }, [needsOtherDay, formData.date]);
+
+  /** Blöcke + Puffer des Formular-Datums; `null` = (noch) nicht bekannt. */
+  const formDayBlocks = (): { blocks: TimeBlock[]; grace: number } | null => {
+    if (formData.date === todayIso) return clockInfo;
+    if (otherDayInfo?.date !== formData.date || otherDayInfo.blocks === null) return null;
+    return { blocks: otherDayInfo.blocks, grace: otherDayInfo.grace ?? clockInfo.grace };
+  };
+
   // #491 F4: §10-Ausnahmegrund an Sonn- UND Feiertagen (vorher nur Sonntag) —
   // dieselbe Regel wie im Antragsformular. Feiertage erst laden, wenn das
   // Formular offen ist.
@@ -373,12 +413,16 @@ export default function TimeTracking() {
     // und nicht angerechnete Minuten nicht als Arbeitszeit — wie der Server.
     // Bestehende Einträge mit IHREM Puffer (E80); weicht Σ Segmente vom
     // gespeicherten Wert ab, zählt der gespeicherte als Abzug, nicht als Pause.
-    const dayBlocks = formData.date === format(new Date(), 'yyyy-MM-dd') ? clockInfo.blocks : [];
+    // Gesamtreview B6: die Blöcke des FORMULAR-Datums (nicht nur heute); sind sie
+    // noch nicht bekannt, entfällt die Vorprüfung — der Server entscheidet.
+    const known = formDayBlocks();
+    const dayBlocks = known?.blocks ?? [];
+    const dayGrace = known?.grace ?? clockInfo.grace;
     const existingBlocks = sameDay.map((e) => {
       const stored = e.uncredited_minutes ?? 0;
       const segs = e.credit_override
         ? []
-        : gapSegments(dayBlocks, e.clamp_grace_minutes ?? clockInfo.grace, e.start_time, e.end_time!);
+        : gapSegments(dayBlocks, e.clamp_grace_minutes ?? dayGrace, e.start_time, e.end_time!);
       const matches = segs.reduce((a, b) => a + b, 0) === stored;
       return {
         start: hhmmToMinutes(e.start_time),
@@ -393,7 +437,7 @@ export default function TimeTracking() {
     // (E43) — auch die Hülle, nicht nur die Lücke. Bestehende Einträge tragen
     // ihre wirksamen Zeiten schon; die Eingabe wird hier wie beim Speichern
     // gekappt. Ein anerkannter Eintrag wird nicht gekappt (P3).
-    const newGrace = editing?.clamp_grace_minutes ?? clockInfo.grace;
+    const newGrace = editing?.clamp_grace_minutes ?? dayGrace;
     const newSpan = editing?.credit_override
       ? { start: formData.start_time, end: formData.end_time }
       : hullClamp(dayBlocks, newGrace, formData.start_time, formData.end_time);
@@ -411,7 +455,7 @@ export default function TimeTracking() {
       && formData.start_time === editing.start_time.substring(0, 5)
       && formData.end_time === (editing.end_time ?? '').substring(0, 5)
       && formData.break_minutes === editing.break_minutes;
-    const breakError = timesUnchanged ? null : computeBreakError(
+    const breakError = timesUnchanged || !known ? null : computeBreakError(
       existingBlocks,
       newSpan.start,
       newSpan.end,
@@ -454,17 +498,16 @@ export default function TimeTracking() {
     // Spec 8.4 (E45): nicht, wenn eine Lücke zwischen den Arbeitsblöcken §4 schon
     // deckt (sonst würde die Pause zusätzlich zur Lücke abgezogen).
     let submitData: typeof formData & { break_waiver_reason?: string } = { ...formData };
-    if (!editingId && submitData.break_minutes === 0) {
+    // Gesamtreview B6: mit den Blöcken des Formular-Datums; unbekannt → keine
+    // Automatik (der Server entscheidet, statt eine Pause zusätzlich zu einer
+    // Lücke abzuziehen, die das Formular nicht kennt).
+    const autoDay = formDayBlocks();
+    if (!editingId && submitData.break_minutes === 0 && autoDay) {
       // Gesamtreview PR2 (Fund 13): angerechnet = gekappt (Hülle) minus Lücke —
       // eine Pause für Stempelzeit außerhalb der Hülle kostete angerechnete Zeit.
-      const isToday = submitData.date === format(new Date(), 'yyyy-MM-dd');
-      const span = isToday
-        ? hullClamp(clockInfo.blocks, clockInfo.grace, submitData.start_time, submitData.end_time)
-        : { start: submitData.start_time, end: submitData.end_time };
+      const span = hullClamp(autoDay.blocks, autoDay.grace, submitData.start_time, submitData.end_time);
       const gross = hhmmToMinutes(span.end) - hhmmToMinutes(span.start);
-      const segs = isToday
-        ? gapSegments(clockInfo.blocks, clockInfo.grace, span.start, span.end)
-        : [];
+      const segs = gapSegments(autoDay.blocks, autoDay.grace, span.start, span.end);
       const credited = gross - segs.reduce((a, b) => a + b, 0);
       const covered = segs.filter((s) => s >= 15).reduce((a, b) => a + b, 0);
       if (credited > 360 && covered < 30) {

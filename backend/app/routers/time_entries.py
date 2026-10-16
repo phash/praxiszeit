@@ -14,7 +14,7 @@ from app.services import settings_service, milog_service, calculation_service, p
 from app.middleware.auth import get_current_user
 from app.schemas.time_entry import (
     TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse,
-    ClockInRequest, ClockOutRequest, ClockStatusResponse,
+    ClockInRequest, ClockOutRequest, ClockStatusResponse, DayBlocksResponse,
 )
 from app.services.holiday_service import is_holiday
 from app.services.break_validation_service import validate_daily_break, break_waiver_rejection
@@ -329,14 +329,15 @@ def _today_target_hours(db: Session, user: User, today: date) -> float:
 
 
 def _clock_blocks_and_grace(db: Session, user: User, today: date, open_entry) -> tuple:
-    """Spec 2026-10-08, 8.4/11.1/14 (PR2): Blöcke von heute als ``{"start",
-    "end"}`` und der Puffer, mit dem ``clock_out`` kappen wird — der
+    """Spec 2026-10-08, 8.4/11.1/14 (PR2): Blöcke des Tages ``today`` als
+    ``{"start", "end"}`` und der Puffer, mit dem ``clock_out`` kappen wird — der
     gespeicherte des offenen Eintrags (E80), sonst der aktuelle
     Mandanten-Puffer. Ohne Stundenzählung kappt nichts → keine Blöcke.
 
     Die Blöcke kommen datumsaufgelöst über ``get_scheduled_blocks`` (leer am
     Wochenende, an Feiertagen und freien Sondertagen, #484) — nie aus der
-    Live-Spalte ``users.work_blocks``."""
+    Live-Spalte ``users.work_blocks``. ``/day-blocks`` ruft die Funktion mit
+    einem beliebigen Datum und ohne offenen Eintrag (Gesamtreview B6)."""
     from app.services import work_blocks_service, work_window_service
 
     grace = (
@@ -423,6 +424,27 @@ def get_clock_status(
         blocks_today=blocks_today,
         grace_minutes=grace_minutes,
     )
+
+
+@router.get("/day-blocks", response_model=DayBlocksResponse)
+def get_day_blocks(
+    day: date = Query(..., alias="date", description="Tag (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Gesamtreview 1.20 B6 (PR2 Task 17): Arbeitszeit-Blöcke und Puffer eines
+    beliebigen Tages der EIGENEN Person.
+
+    Die Zeiterfassung prüft §4 vor dem Speichern und ergänzt bei einem neuen
+    Eintrag > 6 h ohne Pause 30 Min (Spec 8.4: nicht, wenn die Lücke zwischen den
+    Blöcken §4 deckt). Beides brauchte die Blöcke des ZIELdatums — sie kannte aber
+    nur die von heute (``/clock-status``) und rechnete an jedem anderen Tag ohne
+    Blöcke: bei geteiltem Dienst fälschlich gesperrt bzw. Pause zusätzlich zur
+    Lücke. Kein ``user_id``: die Zeiterfassung ist die eigene Ansicht. Rein
+    lesend, keine Ankersperre (wie die Vorschauen, Spec 9.3).
+    """
+    blocks, grace = _clock_blocks_and_grace(db, current_user, day, None)
+    return DayBlocksResponse(date=day, blocks=blocks, grace_minutes=grace)
 
 
 @router.post("/clock-in", response_model=TimeEntryResponse, status_code=status.HTTP_201_CREATED)

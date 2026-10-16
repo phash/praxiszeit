@@ -683,3 +683,114 @@ describe('<TimeTracking /> Blöcke von heute (Spec 8.4, 14)', () => {
     expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Gesamtreview 1.20 B6 (PR2 Task 17): §4-Vorprüfung und Pausen-Automatik
+// kannten nur die Blöcke von HEUTE (/clock-status) und rechneten an jedem
+// anderen Tag ohne Blöcke. Bei geteiltem Dienst sperrte das Formular deshalb
+// fälschlich (die Lücke deckt §4, der Server hätte angenommen) — etwa wenn die
+// Verwaltung ihren eigenen Eintrag eines vergangenen Tages erfasst oder das
+// Datum ändert. Jetzt kommen die Blöcke des Zieldatums aus /day-blocks.
+// ---------------------------------------------------------------------------
+describe('<TimeTracking /> Blöcke des Zieldatums (Gesamtreview B6)', () => {
+  const PAST_MON = '2026-06-01';
+  const SPLIT = [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }];
+  const dayUrl = (d: string) => `/time-entries/day-blocks?date=${d}`;
+
+  function mockDays(dayBlocks: Record<string, unknown[] | 'error'>, entries: unknown[] = []) {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') {
+        return Promise.resolve({ data: { is_clocked_in: false, blocks_today: [], grace_minutes: 15 } });
+      }
+      if (url.startsWith('/time-entries/day-blocks?date=')) {
+        const d = url.split('=')[1];
+        const b = dayBlocks[d];
+        if (b === 'error') return Promise.reject(new Error('Netzwerk'));
+        return Promise.resolve({ data: { date: d, blocks: b ?? [], grace_minutes: 15 } });
+      }
+      if (url.includes('/settings')) return Promise.resolve({ data: {} });
+      if (url.includes('/time-entries')) return Promise.resolve({ data: entries });
+      return Promise.resolve({ data: [] });
+    });
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+  }
+
+  async function newEntry(date: string, start: string, end: string) {
+    mockRole = 'admin';
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    fireEvent.change(screen.getByLabelText('Datum'), { target: { value: date } });
+    fireEvent.change(screen.getByLabelText('Von'), { target: { value: start } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: end } });
+    fireEvent.change(screen.getByLabelText('Pause (Min.)'), { target: { value: '0' } });
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith(dayUrl(date)));
+  }
+
+  const submit = () => fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+
+  it('vergangener Tag mit geteiltem Dienst: die Lücke deckt §4 — kein Hinweis, keine Zusatzpause', async () => {
+    mockDays({ [PAST_MON]: SPLIT });
+    await newEntry(PAST_MON, '08:00', '18:00');
+    // Erst absenden, wenn die Blöcke des Tages da sind (sonst entscheidet der Server).
+    await new Promise((r) => setTimeout(r, 0));
+    submit();
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({
+      date: PAST_MON, start_time: '08:00', end_time: '18:00', break_minutes: 0,
+    });
+    expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
+  });
+
+  it('Kontrolle: verlangen die Blöcke des Tages eine Pause, bleibt der Hinweis', async () => {
+    // Ein Block 08:00–15:00, Puffer 15: angerechnet 07:45–15:15 = 7:30 h ohne Pause.
+    mockDays({ [PAST_MON]: [{ start: '08:00', end: '15:00' }] });
+    await newEntry(PAST_MON, '07:45', '16:00');
+    await new Promise((r) => setTimeout(r, 0));
+    submit();
+    expect(await screen.findByText('Bei >6h Arbeitszeit sind mind. 30 Min. Pause erforderlich (ArbZG §4)')).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('Kontrolle: ein Tag ohne Blöcke wird wie bisher ungekappt geprüft', async () => {
+    mockDays({ [PAST_MON]: [] });
+    await newEntry(PAST_MON, '08:00', '18:00');
+    await new Promise((r) => setTimeout(r, 0));
+    submit();
+    expect(await screen.findByText('Bei >9h Arbeitszeit sind mind. 45 Min. Pause erforderlich (ArbZG §4)')).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('sind die Blöcke des Tages nicht abrufbar, entscheidet der Server (keine Vorprüfung, keine Automatik)', async () => {
+    mockDays({ [PAST_MON]: 'error' });
+    await newEntry(PAST_MON, '08:00', '18:00');
+    await new Promise((r) => setTimeout(r, 0));
+    submit();
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ date: PAST_MON, break_minutes: 0 });
+  });
+
+  it('Bearbeiten eines vergangenen geteilten Dienstes: Ende verschoben, die Lücke zählt weiter', async () => {
+    mockDays({ [PAST_MON]: SPLIT }, [{
+      ...closedEntry, id: 'te-past', date: PAST_MON, start_time: '08:00:00', end_time: '18:00:00',
+      break_minutes: 0, uncredited_minutes: 150, clamp_grace_minutes: 15, is_editable: true,
+    }]);
+    mockRole = 'admin';
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith(dayUrl(PAST_MON)));
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '18:05' } });
+    await new Promise((r) => setTimeout(r, 0));
+    submit();
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).toMatchObject({ date: PAST_MON, end_time: '18:05', break_minutes: 0 });
+  });
+
+  it('fragt für heute nichts zusätzlich ab (die Blöcke von heute kommen aus /clock-status)', async () => {
+    mockDays({});
+    mockRole = 'admin';
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith('/time-entries/clock-status'));
+    expect(getMock.mock.calls.some(([u]) => String(u).startsWith('/time-entries/day-blocks'))).toBe(false);
+  });
+});

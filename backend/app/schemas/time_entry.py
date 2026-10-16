@@ -173,9 +173,21 @@ class ClockOutRequest(BaseModel):
 
 
 class ClockBlock(BaseModel):
-    """Spec 2026-10-08, 8.4/14: ein Arbeitszeit-Block des heutigen Tages."""
+    """Spec 2026-10-08, 8.4/14: ein Arbeitszeit-Block eines Tages (``/clock-status``:
+    heute; ``/day-blocks``: das angefragte Datum)."""
     start: str  # "HH:MM"
     end: str    # "HH:MM"
+
+
+class DayBlocksResponse(BaseModel):
+    """Gesamtreview 1.20 B6 (PR2 Task 17): Blöcke und Puffer eines beliebigen
+    Tages der eigenen Person — für die §4-Vorprüfung und die Pausen-Automatik der
+    Zeiterfassung an Tagen ≠ heute (dort fehlten sie, das Formular rechnete ohne
+    Blöcke). ``grace_minutes`` = aktueller Mandanten-Puffer, mit dem eine
+    Neuanlage kappt (ein gespeicherter Eintrag bringt seinen eigenen mit, E80)."""
+    date: date_type
+    blocks: List[ClockBlock] = []
+    grace_minutes: int = 15
 
 
 class ClockStatusResponse(BaseModel):
