@@ -65,6 +65,14 @@ BACKEND_DIR = APP_DIR / "backend"
 CONFIG_FILE = CONFIG_DIR / "praxiszeit.conf"
 
 IS_WINDOWS = platform.system() == "Windows"
+IS_MACOS = platform.system() == "Darwin"
+
+# launchd-Dienst der macOS-Installation — Label und Plist wie in
+# installer/macos/install.sh und MacOsPlatform.cs (GUI-Installer); ein Test
+# haelt die drei Stellen gleich. Gebraucht fuer Hinweise, die den Dienststart
+# nennen: auf macOS gibt es kein systemctl (Gesamtreview B8, #491).
+MACOS_LAUNCHD_LABEL = "de.praxiszeit.server"
+MACOS_LAUNCHD_PLIST = f"/Library/LaunchDaemons/{MACOS_LAUNCHD_LABEL}.plist"
 
 # Windows NTSTATUS exit codes meaning the OS loader could not start a PG binary
 # at all — it exited before running any of its own code, so there is no PG log
@@ -1952,12 +1960,28 @@ def bundled_python() -> str:
 
 def _install_owner() -> str:
     """Das Konto, dem die Installation gehoert — der richtige Aufrufer, wenn die
-    Datenbank noch hochgefahren werden muss (Release-Review 1.19.0)."""
+    Datenbank noch hochgefahren werden muss (Release-Review 1.19.0).
+
+    Rueckfall ist das Dienstkonto, das der Installer der Plattform anlegt: auf
+    macOS ``_praxiszeit`` (mit Unterstrich, ``dscl`` in
+    installer/macos/install.sh), sonst ``praxiszeit``."""
     try:
         import pwd
         return pwd.getpwuid(BASE_DIR.stat().st_uid).pw_name
     except Exception:  # noqa: BLE001 — Windows/unbekannte UID: der Hinweis bleibt brauchbar
-        return "praxiszeit"
+        return "_praxiszeit" if IS_MACOS else "praxiszeit"
+
+
+def _service_start_command() -> str:
+    """Wie der PraxisZeit-Dienst auf dieser Plattform gestartet wird.
+
+    Gesamtreview B8 (#491): der Hinweis nannte auf jeder Plattform
+    ``systemctl`` — auf macOS laeuft der Dienst unter launchd. ``launchctl
+    load`` auf die Plist ist dieselbe Form, die der macOS-Installer am Ende
+    als „Starten" ausgibt."""
+    if IS_MACOS:
+        return f"launchctl load {MACOS_LAUNCHD_PLIST}"
+    return "systemctl start praxiszeit"
 
 
 def _running_as_root() -> bool:
@@ -1999,10 +2023,11 @@ def cmd_reset_admin_password(args):
             logger.error(
                 "PostgreSQL laeuft nicht, und als root darf es nicht gestartet werden "
                 "(pg_ctl lehnt das ab). Zwei Wege: entweder den Dienst starten "
-                "(systemctl start praxiszeit) und das Kommando erneut aufrufen, oder "
+                "(%s) und das Kommando erneut aufrufen, oder "
                 "es als Dienstkonto ausfuehren:\n"
                 "  sudo -u %s %s %s reset-admin-password",
-                _install_owner(), bundled_python(), Path(__file__).resolve(),
+                _service_start_command(), _install_owner(), bundled_python(),
+                Path(__file__).resolve(),
             )
             sys.exit(1)
         logger.info("PostgreSQL ist nicht gestartet — wird fuer den Vorgang kurz hochgefahren.")
