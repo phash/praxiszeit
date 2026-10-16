@@ -431,9 +431,11 @@ def test_execute_import_audit_log_for_overwrite(db, test_user, test_admin):
 
 
 def test_execute_import_returns_arbzg_warnings(db, test_user, test_admin):
-    """Prüft dass ArbZG-Warnungen im Import-Ergebnis zurueckgegeben werden."""
+    """Prüft dass ArbZG-Warnungen im Import-Ergebnis zurueckgegeben werden.
+    Pause wie in der Vorschau (5:30 h → 0) — eine abweichende Pause nennt das
+    Ergebnis zusätzlich als Anpassung (Review-Nachzug B4)."""
     entries = [ImportedEntry(date=date(2026, 1, 12), start_time=time(7, 15),
-                             end_time=time(12, 45), break_minutes=30, note=None,
+                             end_time=time(12, 45), break_minutes=0, note=None,
                              has_conflict=False, arbzg_warnings=["§3 ArbZG: Test-Warnung"])]
     result = execute_import(test_user.id, entries, overwrite=False, db=db,
                             changed_by_id=test_admin.id, filename="test.xls",

@@ -139,7 +139,12 @@ dieses Backup verlustfrei (`UPDATE.md`).
   doppelt (zu hohe Wochen- und Nachtarbeits-Hinweise).
 - **XLS-Import:** zieht keine automatische Pause mehr doppelt ab, wenn die
   Lücke zwischen den Blöcken die Pausenpflicht deckt; die Ruhezeitprüfung nutzt
-  die tatsächlich gestempelte Endzeit.
+  die tatsächlich gestempelte Endzeit. Die automatische Pause gilt dem ganzen
+  Tag (mehrere Zeilen und vorhandene Einträge zählen zusammen) und ist nie
+  länger als die Zeile, an der sie steht; Höchstarbeitszeit, Pause und Ruhezeit
+  meldet die Vorschau einmal je Tag, die Ruhezeit gemessen ab dem vorigen
+  Arbeitstag statt ab der vorigen Zeile. Weicht die gespeicherte Pause von der
+  Vorschau ab (Konflikte nicht überschrieben), nennt das Ergebnis die Anpassung.
 - **ODS-Jahresbericht:** Das Mitarbeiterblatt nennt wie die Excel-Datei die
   Summe der Nachtarbeitstage (sie wurde gezählt, aber nie ausgegeben).
 

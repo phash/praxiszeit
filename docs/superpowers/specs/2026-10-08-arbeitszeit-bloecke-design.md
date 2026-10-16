@@ -1141,6 +1141,19 @@ Ruhezeit (geteilter Dienst → „§5 … 2.0h"), ein geteilter Dienst bekam kei
 Pause, und ein erst von einer späteren Zeile überschriebener Bestandseintrag zählte für die
 früheren Zeilen des Tages noch mit.
 
+Review-Nachzug B4: eine Zeile trägt höchstens ihre angerechneten Minuten (`end − start −
+deduct_minutes`); reicht die längste nicht, kommen die nächstlängeren dazu (so wenige wie
+möglich, jedes Stück ≥ 15 Min, eine Zeile unter 15 Min trägt keins). Was die Zeilen der Datei
+nicht tragen, bucht der Import nicht — die Tagesprüfung der Vorschau meldet §4 (bis hierher
+„Pause 45 Min" an einer 20-Minuten-Zeile neben langem Bestand). Die weichen Tages-Hinweise
+(8.3) meldet die Vorschau wie §3/§4 einmal je Tag an dessen letzter gültiger Zeile, über den
+stehenden Bestand plus alle gültigen Zeilen mit ihrer Tages-Pause; der Wochenhinweis bleibt
+schrittweise. Zeilen mit Ende ≤ Beginn (von `/confirm` übersprungen) zählen auch für §5 nicht;
+§5 steht an der ersten gültigen Zeile. Die Vorschau rechnet jeden Konflikt als überschrieben;
+ohne „überschreiben" zählt `/confirm` den stehenden Bestand mit — weicht die gespeicherte
+Pause von der vom Client geschickten ab, nennt das Ergebnis die Anpassung („Pause an den Tag
+angepasst (X → Y Min) – …").
+
 ---
 
 ## 8. ArbZG-Prüfungen

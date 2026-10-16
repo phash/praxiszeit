@@ -19,7 +19,7 @@ from app.models import TimeEntry, TimeEntryAuditLog
 from app.services.xls_import_service import ImportedEntry, execute_import, parse_xls
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_xls_import_service import _dt, _make_data_row, _make_xls_bytes
-from tests.work_blocks_fixtures import MON, legacy_week
+from tests.work_blocks_fixtures import K_BLOCKS, MON, legacy_week
 
 HEADER = ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"]
 SUN = date(2026, 5, 31)
@@ -222,3 +222,128 @@ def test_rest_time_ignores_a_replaced_entry_of_the_previous_day(db, test_user):
                      test_user.id, db)
     assert rows[0].has_conflict is True
     assert _rest(rows[1]) == [], rows[1].arbzg_warnings
+
+
+# ── Review-Nachzug B4 ─────────────────────────────────────────────────────────
+
+def _presence(row):
+    """Die weichen Tages-Hinweise zur Anwesenheit laut Stempel (Spec 8.3)."""
+    return [w for w in row.arbzg_warnings if "Laut Stempel" in w or "Ruhepause" in w]
+
+
+def test_presence_hints_see_the_whole_day(db, test_user):
+    """08:00–11:00 + 11:05–14:10 + 14:15–17:45 ohne Blöcke: der Tag bekommt seine
+    45 Min an der letzten (längsten) Zeile. Die zweite Zeile meldete über den bis
+    dahin gelesenen Teil des Tages (6:05 h, ohne Pause) „ohne ausreichende
+    erfasste Ruhepause" — obwohl der Tag die Pause bekommt."""
+    rows = parse_xls(
+        _xls((_mon(8), _mon(11)), (_mon(11, 5), _mon(14, 10)), (_mon(14, 15), _mon(17, 45))),
+        test_user.id, db,
+    )
+    assert [r.break_minutes for r in rows] == [0, 0, 45]
+    assert [_presence(r) for r in rows] == [[], [], []], [r.arbzg_warnings for r in rows]
+
+
+def test_presence_hints_are_reported_once_at_the_last_row(db, test_user):
+    """Blöcke 08:00–12:00 + 15:00–18:00, gestempelt 08:00–11:00, 11:05–14:30 und
+    14:35–18:00: angerechnet 7:25 h, die Lücke deckt §4 — laut Stempel 9:50 h
+    ohne Pause. Der Hinweis gilt dem Tag und steht einmal an der letzten Zeile
+    (bisher schon an der zweiten, über die ersten beiden Zeilen)."""
+    test_user.work_blocks = K_BLOCKS
+    db.commit()
+    rows = parse_xls(
+        _xls((_mon(8), _mon(11)), (_mon(11, 5), _mon(14, 30)), (_mon(14, 35), _mon(18))),
+        test_user.id, db,
+    )
+    assert [r.break_minutes for r in rows] == [0, 0, 0]
+    assert [len(_presence(r)) for r in rows] == [0, 0, 1], [r.arbzg_warnings for r in rows]
+    assert _presence(rows[2])[0].startswith("§4 ArbZG: Durchgehend über die Lücke")
+
+
+def test_auto_pause_never_exceeds_the_row(db, test_user, test_admin):
+    """Bestand 08:00–17:00 ohne Pause bleibt stehen, die Datei bringt 17:00–17:20.
+    Der Tag braucht 45 Min — die 20-Minuten-Zeile trägt höchstens 20. Bisher
+    standen 45 Min Pause an einem 20-Minuten-Eintrag (§16-Beleg mit einer Pause,
+    die nicht hineinpasst), und die Vorschau zählte sie als erfasst und meldete
+    nichts."""
+    _entry(db, test_user, time(8), time(17))
+    [row] = parse_xls(_xls((_mon(17), _mon(17, 20))), test_user.id, db)
+    assert row.has_conflict is False
+    assert row.break_minutes == 20
+    assert any(w.startswith("§4 ArbZG") for w in _hard(row)), row.arbzg_warnings
+
+    _run(db, test_user, test_admin, [row])
+    new = db.query(TimeEntry).filter(TimeEntry.start_time == time(17)).one()
+    assert new.break_minutes == 20
+
+
+def test_auto_pause_spreads_over_rows_longest_first(db, test_user):
+    """Bestand 08:00–17:00 + Zeilen 17:00–17:20 und 17:20–17:50: der Tag braucht
+    45 Min, keine Zeile trägt sie allein. Verteilt längste zuerst, jedes Stück
+    mindestens 15 Min (§4 Satz 2), zusammen genau der Bedarf."""
+    _entry(db, test_user, time(8), time(17))
+    rows = parse_xls(_xls((_mon(17), _mon(17, 20)), (_mon(17, 20), _mon(17, 50))), test_user.id, db)
+    assert [r.break_minutes for r in rows] == [15, 30]
+    assert not any(_hard(r) for r in rows), [r.arbzg_warnings for r in rows]
+
+
+def test_auto_pause_skips_rows_shorter_than_a_break_section(db, test_user):
+    """Eine Zeile unter 15 Min kann keinen Pausenabschnitt tragen (§4 Satz 2):
+    Bestand 08:00–17:00 + Zeile 17:00–17:10 → keine Pause, die Vorschau meldet §4."""
+    _entry(db, test_user, time(8), time(17))
+    [row] = parse_xls(_xls((_mon(17), _mon(17, 10))), test_user.id, db)
+    assert row.break_minutes == 0
+    assert any(w.startswith("§4 ArbZG") for w in _hard(row)), row.arbzg_warnings
+
+
+def test_confirm_reports_a_break_adjusted_by_a_kept_conflict(db, test_user, test_admin):
+    """Ohne „überschreiben" bleibt der Bestand 08:00–11:00 stehen (die Vorschau
+    rechnete ihn als ersetzt: 08:00–10:00 + 11:00–15:30 → Abstand 60 Min, keine
+    Pause). Gespeichert sind 30 Min — das Ergebnis nennt die Abweichung, statt
+    still von der Vorschau abzuweichen."""
+    _entry(db, test_user, time(8), time(11))
+    preview = parse_xls(_xls((_mon(8), _mon(10)), (_mon(11), _mon(15, 30))), test_user.id, db)
+    assert [r.break_minutes for r in preview] == [0, 0]
+    result = _run(db, test_user, test_admin, preview)
+    new = db.query(TimeEntry).filter(TimeEntry.start_time == time(11)).one()
+    assert new.break_minutes == 30
+    assert "01.06.2026 11:00: Pause an den Tag angepasst (0 → 30 Min) – Einträge, die stehen " \
+           "bleiben (z. B. nicht überschriebene Konflikte), zählen für die Tagespause mit." \
+           in result.warnings, result.warnings
+
+
+def test_confirm_with_overwrite_reports_no_adjustment(db, test_user, test_admin):
+    """Mit „überschreiben" speichert ``/confirm``, was die Vorschau zeigt — kein
+    Anpassungshinweis."""
+    _entry(db, test_user, time(8), time(11))
+    preview = parse_xls(_xls((_mon(8), _mon(10)), (_mon(11), _mon(15, 30))), test_user.id, db)
+    result = _run(db, test_user, test_admin, preview, overwrite=True)
+    stored = db.query(TimeEntry).order_by(TimeEntry.start_time).all()
+    assert [e.break_minutes for e in stored] == [r.break_minutes for r in preview] == [0, 0]
+    assert not any("Pause an den Tag angepasst" in w for w in result.warnings), result.warnings
+
+
+def test_rest_time_ignores_a_row_confirm_skips(db, test_user):
+    """Vortag bis 23:00; die Zeile 09:00–08:00 überspringt ``/confirm`` (Ende vor
+    Beginn), der gespeicherte Tag beginnt um 10:00 — 11 h Ruhezeit, kein §5. Die
+    übersprungene Zeile trug bisher „§5 … 10.0h"."""
+    _entry(db, test_user, time(15), time(23), day=SUN)
+    rows = parse_xls(_xls((_mon(9), _mon(8)), (_mon(10), _mon(12))), test_user.id, db)
+    assert [_rest(r) for r in rows] == [[], []], [r.arbzg_warnings for r in rows]
+
+
+def test_rest_time_ignores_the_end_of_a_skipped_row(db, test_user):
+    """Eine übersprungene Zeile (22:00–21:00) setzt kein Arbeitsende: der Montag
+    endet um 12:00, der Dienstag beginnt 07:00 → 19 h, kein §5."""
+    tue = (_dt(2026, 6, 2, 7, 0), _dt(2026, 6, 2, 12, 0))
+    rows = parse_xls(_xls((_mon(10), _mon(12)), (_mon(22), _mon(21)), tue), test_user.id, db)
+    assert [_rest(r) for r in rows] == [[], [], []], [r.arbzg_warnings for r in rows]
+
+
+def test_rest_time_is_reported_at_the_first_counted_row(db, test_user):
+    """Dieselbe Datei mit Vortag bis 23:30: §5 (10,5 h ab 10:00) steht an der
+    ersten Zeile, die zählt — nicht an der übersprungenen davor."""
+    _entry(db, test_user, time(15), time(23, 30), day=SUN)
+    rows = parse_xls(_xls((_mon(9), _mon(8)), (_mon(10), _mon(12))), test_user.id, db)
+    assert [len(_rest(r)) for r in rows] == [0, 1], [r.arbzg_warnings for r in rows]
+    assert _rest(rows[1])[0].startswith("§5 ArbZG: Ruhezeit 10.5h"), rows[1].arbzg_warnings

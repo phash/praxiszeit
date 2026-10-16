@@ -140,7 +140,7 @@ Wenn an einem Tag sowohl TimeEntries als auch Absences existieren:
 | `_close_stale_entry` (Auto-Close) | Ende 23:59 über `clamp`, `auto_closed=True`; der Aufrufer hält die Sperre |
 | `create_time_entry` / `update_time_entry` | MA-CRUD; `update` kappt auch bei Datumswechsel neu (Datum ändern nur die Verwaltung, #502); anerkannter Eintrag → 409 für Mitarbeitende; fremde/unbekannte ID → 404 vor jeder Sperre |
 | `admin_time_entries` create + update | Admin-CRUD; `credit_override` bleibt |
-| `xls_import_service` | Vorschau + Ausführung (`clamp_applies`; Auto-Pause je Tag nur für den von Lücken und Abständen ungedeckten §4-Rest, `_day_break_minutes`; §3/§4/§5 der Vorschau je Tag) |
+| `xls_import_service` | Vorschau + Ausführung (`clamp_applies`; Auto-Pause je Tag nur für den von Lücken und Abständen ungedeckten §4-Rest, je Zeile höchstens deren angerechnete Minuten, `_day_break_minutes`; §3/§4/§5 und Tages-Anwesenheitshinweise der Vorschau je Tag; abweichende Pause ohne „überschreiben" → Ergebnis-Hinweis) |
 | `admin_change_requests.review_change_request` | CR-Genehmigung (CREATE/UPDATE, auch Bulk), „Genehmigen und anerkennen" (`grant_credit_override`) |
 | `change_requests.create_change_request` | prüft mit `clamp` (Puffer des Eintrags bzw. aktueller Puffer), speichert den Vorschlag roh und schreibt keinen Eintrag; `request_credit_override`, `original_uncredited_minutes` |
 | `work_window_service.reclamp_time_entries` | Massen-Neukappung einer Arbeitszeit-Änderung (über `wh_change_service.run_change`, Router `admin_users`); flusht jeden neuen Beginn sofort (Unique-Index `uq_tenant_user_date_start` ist nicht verzögerbar) |

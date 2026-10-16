@@ -227,6 +227,9 @@ group_code() {
   # f-Strings nur als zusammenhängende Stücke), 24-Wochen-Auswertung (Reports).
   need_code '"Unterbrechung (Min)", "Zeiteinträge"'
   need_code "Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet."
+  # XLS-Import ohne „überschreiben": Ergebnis-Hinweis zur Tagespause
+  # (xls_import_service._apply_day_breaks, Review-Nachzug B4; f-String-Stück).
+  need_code "Pause an den Tag angepasst ("
   need_code "Zeiten weichen von den Stempeln ab (gestempelt "
   need_code " · nicht angerechnet aktuell "
   need_code "Nicht angerechnet (Lücke): "
@@ -424,6 +427,7 @@ group_admin_rest() {
   need "$f" 'Ohne Anerkennen genehmigen'
   need "$f" 'Alle genehmigen'
   need "$f" 'Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.'
+  need "$f" 'Pause an den Tag angepasst (0 → 30 Min)'
   need "$f" '| **Anerkennungen** |'
   need "$f" 'Neukappung (Arbeitszeit-Änderung)'
   need "$f" 'Eine Änderung des Puffers wirkt auf neue Einträge. Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn, auch wenn er später bearbeitet wird.'

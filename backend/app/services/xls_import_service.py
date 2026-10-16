@@ -95,14 +95,24 @@ def _day_break_minutes(
     gedeckt durch erfasste Pausen, Abstände zwischen Einträgen und
     Lückensegmente von je mindestens 15 Min. Nachgetragen wird nur, was fehlt —
     sonst zöge der Import eine Pause in der Lücke ein zweites Mal ab
-    (Doppelabzug, E45). Ein Rest unter 15 Min wird auf 15 aufgerundet (§4 Satz 2).
+    (Doppelabzug, E45).
+
     Der Rest steht an der längsten Zeile (bei Gleichstand an der ersten): dort
     liegt die Pause am ehesten, und eine kurze Zeile verlöre sonst den größten
-    Teil ihrer Zeit.
+    Teil ihrer Zeit. Eine Zeile trägt höchstens ihre angerechneten Minuten
+    (``end − start − deduct_minutes``) — sonst stünde im §16-Beleg eine Pause,
+    die nicht in den Eintrag passt. Reicht die längste nicht, kommen die
+    nächstlängeren dazu, so wenige wie möglich; jedes Stück ist mindestens
+    15 Min lang (§4 Satz 2 — ein Rest unter 15 wird so auf 15 aufgerundet), eine
+    Zeile unter 15 Min trägt keins. Was die Zeilen der Datei nicht tragen
+    können (kurze Zeile neben langem Bestand), bucht der Import nicht — die
+    Tagesprüfung der Vorschau meldet dann §4.
 
     Gesamtreview 1.20 (B4): bis hierher je ZEILE gerechnet — ein geteilter
     Dienst aus zwei Zeilen unter 6 h bekam gar keine Pause, zwei Zeilen über 6 h
-    bekamen je eine (der Abstand dazwischen zählte nicht).
+    bekamen je eine (der Abstand dazwischen zählte nicht). Review-Nachzug: der
+    ganze Rest stand an der längsten Zeile, auch wenn sie kürzer war (Bestand
+    08:00–17:00 + Zeile 17:00–17:20 → „Pause 45 Min" am 20-Minuten-Eintrag).
     Note: assumes end > start (no overnight shifts) — TimeRec liefert keine."""
     if not rows:
         return []
@@ -110,15 +120,24 @@ def _day_break_minutes(
     credited, covered = daily_break_figures(list(kept) + own)
     required = 45 if credited > 9 * 60 else 30 if credited > 6 * 60 else 0
     rest = max(0, required - covered)
-    if 0 < rest < 15:
-        rest = 15
     breaks = [0] * len(rows)
-    if rest:
-        longest = max(
-            range(len(own)),
-            key=lambda i: (own[i].end - own[i].start - own[i].deduct_minutes, -i),
-        )
-        breaks[longest] = rest
+    if not rest:
+        return breaks
+    caps = [b.end - b.start - b.deduct_minutes for b in own]
+    order = [i for i in sorted(range(len(own)), key=lambda i: (-caps[i], i)) if caps[i] >= 15]
+    used, carry = [], 0
+    for i in order:
+        if carry >= rest:
+            break
+        used.append(i)
+        carry += caps[i]
+    # Je Zeile 15 Min, der Rest bis zum Bedarf (höchstens, was die Zeilen tragen)
+    # längste zuerst obendrauf.
+    extra = min(rest, carry) - 15 * len(used)
+    for i in used:
+        add = max(0, min(extra, caps[i] - 15))
+        breaks[i] = 15 + add
+        extra -= add
     return breaks
 
 
@@ -288,15 +307,24 @@ def _kept_entries(db: Session, user_id, tenant_id, rows_by_date: dict, replaced_
     return kept
 
 
+def _row_counts(row) -> bool:
+    """Zählt die Zeile für den Tag? Zeilen mit (wirksamem) Ende ≤ Beginn
+    überspringt ``/confirm`` — sie zählen weder für Pause, §3/§4 und
+    Anwesenheit noch für §5 (Gesamtreview 1.20 B4)."""
+    return row.r.eff_end > row.r.eff_start
+
+
 def _rest_reference(db: Session, user_id, tenant_id, rows: list, kept_by_date: dict,
                     rows_by_date: dict) -> tuple[dict, dict]:
     """§5 je Tag der Datei wie ``rest_time_service``: (Ende des letzten
-    Arbeitstags davor bzw. ``None``, erster Beginn des Tages).
+    Arbeitstags davor bzw. ``None``, erster Beginn des Tages bzw. ``None``).
 
     Arbeitstage = stehender Bestand plus Zeilen der Datei; vor dem ersten Tag der
     Datei der letzte Arbeitstag des Bestands. Ende = ``presence_end``
     (Rohstempel, beim automatisch geschlossenen Eintrag das wirksame Ende — P18),
-    Beginn = Rohstempel, sonst der wirksame Wert (Spec 7.3).
+    Beginn = Rohstempel, sonst der wirksame Wert (Spec 7.3). Nur Zeilen, die
+    zählen (``_row_counts``) — eine übersprungene Zeile setzt weder Beginn noch
+    Ende.
 
     Gesamtreview 1.20 (B4): bis hierher verglich die Vorschau jede Zeile mit der
     Vorzeile — beim geteilten Dienst also die Pause mit der Ruhezeit („§5 …
@@ -327,15 +355,16 @@ def _rest_reference(db: Session, user_id, tenant_id, rows: list, kept_by_date: d
             _end(d, work_window_service.presence_end(e))
             _start(d, e.raw_start_time or e.start_time)
     for row in rows:
-        _end(row.date, row.r.raw_end or row.r.eff_end)
-        _start(row.date, row.r.raw_start or row.r.eff_start)
+        if _row_counts(row):
+            _end(row.date, row.r.raw_end or row.r.eff_end)
+            _start(row.date, row.r.raw_start or row.r.eff_start)
 
     worked = sorted(day_end)
     reference: dict[date, Optional[datetime]] = {}
     for d in rows_by_date:
         k = bisect_left(worked, d)
         reference[d] = datetime.combine(worked[k - 1], day_end[worked[k - 1]]) if k else None
-    return reference, {d: day_start[d] for d in rows_by_date}
+    return reference, {d: day_start.get(d) for d in rows_by_date}
 
 
 def parse_xls(
@@ -412,8 +441,7 @@ def parse_xls(
     }
     # Zeilen mit Ende ≤ Beginn überspringt /confirm — sie zählen für den Tag nicht.
     valid_by_date = {
-        d: [i for i in idxs if rows[i].r.eff_end > rows[i].r.eff_start]
-        for d, idxs in rows_by_date.items()
+        d: [i for i in idxs if _row_counts(rows[i])] for d, idxs in rows_by_date.items()
     }
     for d, valid in valid_by_date.items():
         for i in rows_by_date[d]:
@@ -427,6 +455,22 @@ def parse_xls(
     rest_ref, day_first_start = _rest_reference(
         db, user_id, user_tenant, rows, kept_by_date, rows_by_date,
     )
+    # Ansicht jeder Zeile mit ihrer Tages-Pause für die Anwesenheits-Hinweise —
+    # vorab, damit die Tagesprüfung alle Zeilen des Tages sieht. Netto wie
+    # TimeEntry.net_hours (E13, Spec 7.4) — dieselbe Formel, die der Import speichert.
+    views = [
+        SimpleNamespace(
+            date=row.date, start_time=row.r.eff_start, end_time=row.r.eff_end,
+            raw_start_time=row.r.raw_start, raw_end_time=row.r.raw_end,
+            break_minutes=row.break_min, auto_closed=False,
+            uncredited_minutes=row.r.uncredited_minutes,
+            net_hours=float(TimeEntry(
+                start_time=row.r.eff_start, end_time=row.r.eff_end,
+                break_minutes=row.break_min, uncredited_minutes=row.r.uncredited_minutes,
+            ).net_hours),
+        )
+        for row in rows
+    ]
 
     for i, row in enumerate(rows):
         entry_date, note = row.date, row.note
@@ -434,11 +478,12 @@ def parse_xls(
         start_t, end_t = r.eff_start, r.eff_end
         raw_start_t, raw_end_t = r.raw_start, r.raw_end
         break_min = row.break_min
+        net = views[i].net_hours
 
         # §3/§4 einmal je Tag, an seiner letzten (gültigen) Zeile: alle Zeilen
         # des Tages mit ihrer Tages-Pause plus der stehende Bestand. §5 einmal je
-        # Tag, an seiner ersten Zeile: Ende des letzten Arbeitstags davor gegen
-        # den ersten Beginn des Tages (Rohstempel, Spec 7.3) — nie gegen die
+        # Tag, an seiner ersten gültigen Zeile: Ende des letzten Arbeitstags davor
+        # gegen den ersten Beginn des Tages (Rohstempel, Spec 7.3) — nie gegen die
         # Vorzeile desselben Tages (geteilter Dienst = Pause, keine Ruhezeit).
         valid = valid_by_date[entry_date]
         day_check = bool(valid) and i == valid[-1]
@@ -449,7 +494,7 @@ def parse_xls(
                                     rows[j].break_min, rows[j].segs)
                 for j in valid if j != i
             ]
-        first_of_day = i == rows_by_date[entry_date][0]
+        first_of_day = bool(valid) and i == valid[0]
 
         arbzg_warnings = _check_arbzg(
             entry_date, start_t, end_t, break_min,
@@ -462,13 +507,6 @@ def parse_xls(
         )
         # P14: §4 auf angerechneter Zeit „bestanden" = keine §4-Meldung der Vorschau.
         break_passed = not any(w.startswith("§4 ArbZG") for w in arbzg_warnings)
-
-        # Spec 7.4: Netto wie TimeEntry.net_hours (E13) — dieselbe Formel, die
-        # der Import speichert.
-        net = float(TimeEntry(
-            start_time=start_t, end_time=end_t, break_minutes=break_min,
-            uncredited_minutes=r.uncredited_minutes,
-        ).net_hours)
 
         # #462: Die Kappung darf auch hier nicht stumm passieren. Spec 7.1 Nr. 11:
         # auch ein reiner Lückenfall (K1, ohne raw_*) bekommt den Hinweis.
@@ -490,12 +528,15 @@ def parse_xls(
         # sie trägt nur den §4-Rest, den die Lückensegmente nicht decken (7.4).
         # „Bitte die Pause auf 0 setzen" wäre hier falsch (§4-Verstoß) und in
         # der Vorschau ohnehin nicht umsetzbar (/confirm rechnet die Pause neu).
+        # Die Tages-Hinweise gelten dem Tag wie §3/§4: einmal an dessen letzter
+        # gültiger Zeile, über den stehenden Bestand plus ALLE gültigen Zeilen
+        # mit ihrer Tages-Pause; an den übrigen Zeilen kein Tag (``[]``). Bis
+        # zum Review-Nachzug B4 je Zeile über den bis dahin gelesenen Teil des
+        # Tages — eine frühere Zeile meldete eine fehlende Ruhepause, die erst
+        # eine spätere Zeile des Tages trägt. Der Wochenhinweis bleibt
+        # schrittweise (Bestand + bisherige Zeilen).
         if not exempt:
-            row_view = SimpleNamespace(
-                date=entry_date, start_time=start_t, end_time=end_t,
-                raw_start_time=raw_start_t, raw_end_time=raw_end_t, break_minutes=break_min,
-                auto_closed=False, uncredited_minutes=r.uncredited_minutes, net_hours=net,
-            )
+            own_view = [views[i]] if _row_counts(row) else []
             monday = entry_date - timedelta(days=entry_date.weekday())
             if monday not in db_presence_by_week:
                 db_presence_by_week[monday] = presence_service.closed_entries(
@@ -504,14 +545,17 @@ def parse_xls(
             week_rows = (
                 [e for e in db_presence_by_week[monday] if e.id not in replaced_ids]
                 + batch_presence_by_week.get(monday, [])
-                + [row_view]
+                + own_view
+            )
+            day_rows = (
+                kept_by_date.get(entry_date, []) + [views[j] for j in valid]
+                if day_check else []
             )
             hints = presence_service.presence_hints(
-                None, [e for e in week_rows if e.date == entry_date], week_rows,
-                break_check_passed=break_passed,
+                None, day_rows, week_rows, break_check_passed=break_passed,
             )
             arbzg_warnings = arbzg_warnings + [presence_service.plain_text(h) for h in hints]
-            batch_presence_by_week.setdefault(monday, []).append(row_view)
+            batch_presence_by_week.setdefault(monday, []).extend(own_view)
 
         entries.append(ImportedEntry(
             date=entry_date,
@@ -584,16 +628,23 @@ def _read_rows(ws, db: Session, user, user_id, user_tenant, grace: int) -> list:
 
 
 def _apply_day_breaks(db: Session, user, user_id, tenant_id, day: date,
-                      written: dict, logs: list) -> None:
+                      written: dict, logs: list) -> list[str]:
     """``/confirm``: Tages-Pause der an ``day`` geschriebenen Einträge setzen und
     deren Protokollzeilen anlegen (Gesamtreview 1.20 B4).
 
-    ``written`` = Eintrags-ID → (Eintrag, Lückensegmente) in Schreibreihenfolge,
-    ``logs`` = (Protokollzeile, Eintrag). Mitgerechnet wird der Bestand des Tages,
-    den der Import nicht angefasst hat — auch ein Konflikt, der ohne
-    „überschreiben" stehen bleibt. Dieselbe Regel wie die Vorschau
-    (``_day_break_minutes``). Die Protokollzeilen entstehen erst hier, weil
-    ``new_break_minutes`` in den Manipulationsschutz ``row_hash`` (#121) eingeht."""
+    ``written`` = Eintrags-ID → (Eintrag, Lückensegmente, Pause der Vorschau) in
+    Schreibreihenfolge, ``logs`` = (Protokollzeile, Eintrag). Mitgerechnet wird
+    der Bestand des Tages, den der Import nicht angefasst hat — auch ein
+    Konflikt, der ohne „überschreiben" stehen bleibt. Dieselbe Regel wie die
+    Vorschau (``_day_break_minutes``). Die Protokollzeilen entstehen erst hier,
+    weil ``new_break_minutes`` in den Manipulationsschutz ``row_hash`` (#121)
+    eingeht.
+
+    Rückgabe: Ergebnis-Hinweise je Eintrag, dessen Pause von der Vorschau
+    abweicht. Die Vorschau rechnet jeden Konflikt als überschrieben; ohne
+    „überschreiben" bleibt der Bestand stehen und zählt hier mit — die Pause
+    ändert sich dann, ohne dass es jemand sähe (Review-Nachzug B4). Ebenso nach
+    einer Zwischenänderung oder bei einer doppelten Zeile der Datei."""
     kept = [
         break_block_for_entry(db, user, e)
         for e in db.query(TimeEntry).filter(
@@ -604,12 +655,21 @@ def _apply_day_breaks(db: Session, user, user_id, tenant_id, day: date,
         if e.end_time is not None and e.id not in written
     ]
     items = list(written.values())
-    breaks = _day_break_minutes([(e.start_time, e.end_time, segs) for e, segs in items], kept)
-    for (e, _), minutes in zip(items, breaks):
+    breaks = _day_break_minutes([(e.start_time, e.end_time, segs) for e, segs, _ in items], kept)
+    notes = []
+    for (e, _, shown), minutes in zip(items, breaks):
         e.break_minutes = minutes
+        if minutes != shown:
+            notes.append(
+                f"{day.strftime('%d.%m.%Y')} {e.start_time.strftime('%H:%M')}: "
+                f"Pause an den Tag angepasst ({shown} → {minutes} Min) – Einträge, die "
+                f"stehen bleiben (z. B. nicht überschriebene Konflikte), zählen für die "
+                f"Tagespause mit."
+            )
     for log, e in logs:
         log.new_break_minutes = e.break_minutes
         db.add(log)
+    return notes
 
 
 def execute_import(
@@ -704,8 +764,9 @@ def _execute_import_inner(
         by_date.setdefault(entry.date, []).append(entry)
 
     for day, day_entries in by_date.items():
-        # Eintrags-ID → (Eintrag, Lückensegmente) in Schreibreihenfolge; die
-        # Protokollzeilen entstehen erst mit der Tages-Pause (``new_break_minutes``).
+        # Eintrags-ID → (Eintrag, Lückensegmente, Pause der Vorschau) in
+        # Schreibreihenfolge; die Protokollzeilen entstehen erst mit der
+        # Tages-Pause (``new_break_minutes``).
         written: dict = {}
         logs: list = []
         for entry in day_entries:
@@ -855,11 +916,13 @@ def _execute_import_inner(
             # Eine doppelte Zeile der Datei überschreibt den eben angelegten Eintrag
             # — er zählt für den Tag nur einmal, an der späteren Stelle.
             written.pop(target.id, None)
-            written[target.id] = (target, segs)
+            written[target.id] = (target, segs, entry.break_minutes)
             logs.append((log, target))
 
         if written:
-            _apply_day_breaks(db, target_user, user_id, tenant_id, day, written, logs)
+            all_warnings.extend(
+                _apply_day_breaks(db, target_user, user_id, tenant_id, day, written, logs)
+            )
 
     # Zusammenfassungs-Eintrag im Audit-Log (action="import", time_entry_id=None)
     username = f"{target_user.first_name} {target_user.last_name}" if target_user else str(user_id)
