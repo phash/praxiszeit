@@ -30,6 +30,15 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
     await adminPage.locator('#f-vacation').fill('30');
   }
 
+  // Genau die Erfolgsmeldung des Anlegens (UserForm) — ein loses „erstellt"
+  // träfe jede Meldung, die das Wort zufällig enthält (Gesamtreview 1.20 B9).
+  // Die Zeile selbst prüft jeder Test danach über die API.
+  async function expectCreatedToast(adminPage: any) {
+    await expect(
+      adminPage.getByRole('alert').getByText('Benutzer erfolgreich erstellt', { exact: true })
+    ).toBeVisible({ timeout: 10000 });
+  }
+
   // Über die Oberfläche angelegte Konten endgültig löschen. `DELETE
   // /admin/users/{id}` deaktiviert nur — die Zeile bliebe samt ihrer
   // automatisch eingebuchten Betriebsferien-Abwesenheiten dauerhaft im
@@ -57,9 +66,7 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
       await adminPage.locator('#receives_company_closures').uncheck();
 
       await adminPage.getByRole('button', { name: 'Speichern' }).click();
-      await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: 'erstellt' })
-      ).toBeVisible({ timeout: 10000 });
+      await expectCreatedToast(adminPage);
 
       // Persistenz über die API verifizieren
       const users = await adminApi.get('/admin/users?include_inactive=true');
@@ -92,9 +99,7 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
       await adminPage.locator('#track_hours').uncheck();
 
       await adminPage.getByRole('button', { name: 'Speichern' }).click();
-      await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: 'erstellt' })
-      ).toBeVisible({ timeout: 10000 });
+      await expectCreatedToast(adminPage);
 
       // track_hours=false persistiert?
       const users = await adminApi.get('/admin/users?include_inactive=true');

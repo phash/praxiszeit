@@ -29,10 +29,15 @@ test.describe('Admin User Management', () => {
     // Submit
     await adminPage.getByRole('button', { name: 'Speichern' }).click();
 
-    // Check for success toast
+    // Genau die Erfolgsmeldung des Anlegens (UserForm) — ein loses „erstellt"
+    // träfe jede Meldung, die das Wort zufällig enthält (Gesamtreview 1.20 B9).
     await expect(
-      adminPage.locator('[role="alert"]').filter({ hasText: 'erstellt' })
+      adminPage.getByRole('alert').getByText('Benutzer erfolgreich erstellt', { exact: true })
     ).toBeVisible({ timeout: 10000 });
+    // … und die neue Zeile steht in der Benutzerliste.
+    const createdRow = adminPage.locator('main tr').filter({ hasText: uniqueName });
+    await expect(createdRow).toHaveCount(1, { timeout: 10000 });
+    await expect(createdRow).toContainText('User, TestCreate');
 
     // Cleanup: das über die Oberfläche angelegte Konto endgültig löschen.
     // `DELETE /admin/users/{id}` deaktiviert nur — die Zeile bliebe samt ihrer
