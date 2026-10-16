@@ -285,6 +285,10 @@ def review_change_request(
     if waiver_reason is not None and not is_break_exception_allowed(db, cr.tenant_id):
         waiver_reason = None
         waiver_disabled = True
+    # P14: ``PRESENCE_BREAK`` nur, wenn die §4-Vorprüfung auf angerechneter Zeit
+    # bestanden hat — mit wirksamer Ausnahme nie. Die C-1-Vorprüfung unten setzt
+    # den tatsächlichen Befund (Gesamtreview 1.20 B1).
+    _break_check_passed = waiver_reason is None
 
     # SEC-E: 4-eyes principle for the break-waiver workflow. An admin must not
     # approve their OWN documented break-exception (#144 §4 ArbZG) — the whole
@@ -483,6 +487,27 @@ def review_change_request(
                     credit_override=bool(entry is not None and entry.credit_override),
                 )
 
+                # Gesamtreview 1.20 (B1, Nachzug zu Punkt 4): wie in beiden
+                # Bearbeiten-Routen und beim Stellen des Antrags — ändert ein
+                # UPDATE-Antrag nichts, was §3/§4 rechnen (Datum, angerechneter
+                # Beginn/Ende, Pause, nicht angerechnete Minuten), bleiben die
+                # HARTEN Prüfungen aus; ihr Ergebnis wäre das des gespeicherten
+                # Stands. Sonst liess sich ein anerkannter Eintrag über 10 h bzw.
+                # ohne §4-Pause (13.3, P4) auch per Antrag nicht mit einer Notiz
+                # versehen. Verglichen wird mit dem, was die Prüfungen rechnen
+                # (Pause ``or 0``). Eine inzwischen abgeschaltete Ausnahme
+                # (#499, ``waiver_disabled``) prüft §4 weiter — wie eine
+                # mitgeschickte Begründung in den Bearbeiten-Routen.
+                _time_relevant_change = (
+                    cr.request_type != ChangeRequestType.UPDATE
+                    or entry is None
+                    or cr.proposed_date != entry.date
+                    or _eff_start != entry.start_time
+                    or _eff_end != entry.end_time
+                    or (cr.proposed_break_minutes or 0) != entry.break_minutes
+                    or _r_pre.uncredited_minutes != int(entry.uncredited_minutes or 0)
+                )
+
                 daily_hours_revalidate = _calculate_daily_net_hours(
                     db=db,
                     user_id=cr.user_id,
@@ -494,14 +519,17 @@ def review_change_request(
                     exclude_entry_id=exclude_id,
                     tenant_id=cr.tenant_id,
                 )
-                if daily_hours_revalidate > MAX_DAILY_HOURS_HARD:
+                if daily_hours_revalidate > MAX_DAILY_HOURS_HARD and _time_relevant_change:
                     raise HTTPException(
                         status_code=422,
                         detail=f"Tagesarbeitszeit würde {daily_hours_revalidate:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
                     )
 
                 # §4 break validation — skipped only when a documented waiver
-                # is attached (waiver excuses §4, never §3).
+                # is attached (waiver excuses §4, never §3). B1: ein unverändert
+                # bestehender §4-Befund sperrt nicht (siehe oben); er hält nur
+                # ``PRESENCE_BREAK`` zurück (P14, wie ``break_check_passed`` in
+                # den Bearbeiten-Routen).
                 if waiver_reason is None:
                     break_error = validate_daily_break(
                         db=db,
@@ -514,10 +542,11 @@ def review_change_request(
                         exclude_entry_id=exclude_id,
                         tenant_id=cr.tenant_id,
                     )
-                    if break_error:
+                    if break_error and (_time_relevant_change or waiver_disabled):
                         if waiver_disabled:
                             break_error = f"{break_error} {BREAK_EXCEPTION_DISABLED_HINT}"
                         raise HTTPException(status_code=422, detail=break_error)
+                    _break_check_passed = break_error is None
 
     # Absence CR preconditions
     absence = None
@@ -1204,7 +1233,8 @@ def review_change_request(
             # (P4; die 48-h-Warnung steht schon oben). ``_w_entry`` ist der eben
             # geschriebene Eintrag (CREATE- bzw. UPDATE-Zweig). §4 hat die
             # Vorprüfung auf angerechneter Zeit hart geprüft — außer bei einer
-            # mitgebrachten Ausnahme (P14: dann kein PRESENCE_BREAK zusätzlich).
+            # mitgebrachten Ausnahme oder einem unverändert bestehenden Befund
+            # (B1; P14: dann jeweils kein PRESENCE_BREAK zusätzlich).
             if grant_override:
                 cr_response.warnings.extend(credit_override_service.override_warnings(
                     db, cr_user, _w_entry, include_weekly=False,
@@ -1212,7 +1242,7 @@ def review_change_request(
             else:
                 cr_response.warnings.extend(presence_service.presence_warnings(
                     db, cr_user, _w_entry.date,
-                    break_check_passed=waiver_reason is None, entry=_w_entry,
+                    break_check_passed=_break_check_passed, entry=_w_entry,
                 ))
 
     return cr_response

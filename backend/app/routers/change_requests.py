@@ -306,6 +306,26 @@ def create_change_request(
     _chk_end = _cr_clamp.eff_end if _cr_clamp else data.proposed_end_time
     _chk_unc = _cr_clamp.uncredited_minutes if _cr_clamp else 0
 
+    # Gesamtreview 1.20 (B1, Nachzug zu Punkt 4): wie in beiden Bearbeiten-Routen
+    # — ändert ein UPDATE-Antrag nichts, was §3/§4 rechnen (Datum, angerechneter
+    # Beginn/Ende, Pause, nicht angerechnete Minuten), bleiben die HARTEN
+    # Prüfungen aus; ihr Ergebnis wäre das des gespeicherten Stands. Sonst
+    # scheiterte an einem anerkannten Eintrag über 10 h bzw. ohne §4-Pause (13.3,
+    # P4) schon ein Antrag, der nur die Notiz oder den §10-Grund ändert — und
+    # genau auf diesen Weg verweist der 409 der MA-Route. Verglichen wird mit dem,
+    # was die Prüfungen rechnen würden (Pause ``or 0``). Kommt eine Begründung
+    # mit, läuft §4 wie bisher (Schalter #499 inklusive).
+    _time_relevant_change = (
+        data.request_type != "update"
+        or entry is None
+        or _cr_clamp is None
+        or data.proposed_date != entry.date
+        or _chk_start != entry.start_time
+        or _chk_end != entry.end_time
+        or (data.proposed_break_minutes or 0) != entry.break_minutes
+        or _chk_unc != int(entry.uncredited_minutes or 0)
+    )
+
     # Break validation for CREATE and UPDATE (§18-Ausnahme: exempt_from_arbzg überspringt §3/§4)
     if not current_user.exempt_from_arbzg and data.request_type in ("create", "update") and data.proposed_date:
         break_error = validate_daily_break(
@@ -324,7 +344,8 @@ def create_change_request(
         # (admin_change_requests honoriert ihn beim Genehmigen). Der §3-10h-Cap
         # unten bleibt unabhängig davon hart. #499: ist die Ausnahme im
         # Mandanten abgeschaltet, bleibt der §4-Block auch mit Begründung.
-        if break_error:
+        # B1: ein unverändert bestehender §4-Befund sperrt nicht (siehe oben).
+        if break_error and (_time_relevant_change or (data.break_waiver_reason or "").strip()):
             rejection = break_waiver_rejection(
                 db, current_user.tenant_id, break_error, data.break_waiver_reason,
             )
@@ -344,7 +365,7 @@ def create_change_request(
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )
-        if daily_hours > MAX_DAILY_HOURS_HARD:
+        if daily_hours > MAX_DAILY_HOURS_HARD and _time_relevant_change:
             raise HTTPException(
                 status_code=422,
                 detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
