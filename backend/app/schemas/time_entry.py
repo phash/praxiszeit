@@ -186,7 +186,7 @@ class ClockStatusResponse(BaseModel):
     # #494: Tages-Ist von heute = Σ net_hours der heute abgeschlossenen Einträge
     # + laufende Netto-Minuten des offenen Eintrags. Ohne den abgeschlossenen
     # Vormittag zeigte die mobile Karte bei geteilten Diensten nur den
-    # Nachmittagsblock (bzw. 0:00 nach dem Ausstempeln).
+    # laufenden Nachmittagseintrag (bzw. 0:00 nach dem Ausstempeln).
     today_net_minutes: int = 0
     # #494/#431: Tagessoll von heute aus dem datumsaufgelösten Vertrags-Snapshot
     # (nicht aus den Live-Feldern der User-Zeile). Wochenende/track_hours=False → 0.

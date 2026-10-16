@@ -235,7 +235,7 @@ describe('Dashboard Stempelkarte „x von y h heute" (#494)', () => {
     expect(screen.getByText('Ausgestempelt')).toBeInTheDocument();
   });
 
-  it('addiert im Nachmittagsblock den Vormittag (nicht nur die laufenden Minuten)', async () => {
+  it('addiert im laufenden Nachmittagseintrag den Vormittag (nicht nur die laufenden Minuten)', async () => {
     withClockStatus({
       is_clocked_in: true, elapsed_minutes: 70,
       current_entry: { start_time: '14:17:00' },
