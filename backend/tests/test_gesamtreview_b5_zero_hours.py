@@ -33,6 +33,9 @@ from app.models import (
     Absence, AbsenceType, ChangeRequest, ChangeRequestStatus, ChangeRequestType,
     User, UserRole, WorkingHoursChange,
 )
+from app.models.system_setting import SystemSetting
+from app.models.vacation_request import VacationRequest, VacationRequestStatus
+from app.models.year_carryover import YearCarryover
 from app.routers.admin_change_requests import _vacation_day_contribution, review_change_request
 from app.schemas.change_request import ChangeRequestReview
 from app.services import auth_service, calculation_service
@@ -47,7 +50,7 @@ PARENTAL_FROM = date(2026, 3, 1)
 
 def _create_test_app() -> FastAPI:
     from app.core.limiter import limiter
-    from app.routers import absences, company_closures
+    from app.routers import absences, admin_vacations, company_closures, vacation_requests
     from slowapi import _rate_limit_exceeded_handler
     from slowapi.errors import RateLimitExceeded
 
@@ -57,6 +60,8 @@ def _create_test_app() -> FastAPI:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(absences.router)
     app.include_router(company_closures.router)
+    app.include_router(vacation_requests.router)
+    app.include_router(admin_vacations.router)
     return app
 
 
@@ -212,6 +217,154 @@ class TestDirectBooking:
         })
         assert r.status_code == 400, r.text
         assert "0 Stunden geplant" in r.json()["detail"]
+
+
+# ── Jahre ohne Kosten (Nachzug Gesamtreview B5) ───────────────────────────────
+#
+# Die Budget-Schleifen pruefen jedes Jahr des Zeitraums, auch eines, in dem die
+# Buchung nichts kostet. Ein Resturlaub im Minus (erlaubt: Betriebsferien ohne
+# Deckel, Fix #6) sperrte dort mit ``0 > -1`` eine Buchung, die in diesem Jahr
+# gar nichts verbraucht. Der CREATE-Zweig des Aenderungsantrags prueft nur bei
+# Kosten > 0 — die vier Schleifen ziehen jetzt nach.
+
+# 28.12.2026 = Montag. 0 h vom 01.12.2026 bis 03.01.2027, ab Mo 04.01.2027 40 h.
+DEC_MON_28, DEC_THU_31 = date(2026, 12, 28), date(2026, 12, 31)
+JAN_MON_04, JAN_FRI_08 = date(2027, 1, 4), date(2027, 1, 8)
+JAN_WEEK = {date(2027, 1, d) for d in range(4, 9)}
+
+
+def _negative_2026_back_in_2027(db, username):
+    """Resturlaub 2026 = 30 − 31 = −1 (Uebertrag), Dezember auf 0 h,
+    ab 04.01.2027 wieder 40 h; 2027 volle 30 Tage."""
+    u = _make_user(db, username, vacation_days=30)
+    _zero_hours_from(db, u, date(2026, 12, 1))
+    db.add(WorkingHoursChange(
+        user_id=u.id, tenant_id=DEFAULT_TENANT_ID, effective_from=JAN_MON_04,
+        weekly_hours=Decimal("40"), use_daily_schedule=False, work_days_per_week=5,
+    ))
+    db.add(YearCarryover(
+        user_id=u.id, tenant_id=DEFAULT_TENANT_ID, year=2026,
+        vacation_days=Decimal("-31"), overtime_hours=Decimal("0"), source="manual",
+    ))
+    db.commit()
+    assert _remaining(db, u) == pytest.approx(-1)
+    return u
+
+
+def _remaining_2027(db, user):
+    db.expire_all()
+    return calculation_service.get_vacation_account(db, user, 2027)["remaining_days"]
+
+
+def _booked(db, user):
+    db.expire_all()
+    return {a.date for a in db.query(Absence).filter(Absence.user_id == user.id)}
+
+
+def _approval_required(db):
+    db.merge(SystemSetting(key="vacation_approval_required",
+                           tenant_id=DEFAULT_TENANT_ID, value="true"))
+    db.commit()
+
+
+class TestYearWithoutCost:
+
+    def test_direct_booking_ignores_negative_year_it_does_not_touch(self, db, admin):
+        """28.12.2026–08.01.2027: 2026 kostet nichts (0 h), 2027 fuenf Tage.
+        Vorher: 400 „Nicht genügend Urlaubstage für 2026 (-1.0 …)"."""
+        emp = _negative_2026_back_in_2027(db, "b5_ny_direct")
+
+        r = _client_as(db, admin).post("/api/absences/", json={
+            "user_id": str(emp.id), "date": DEC_MON_28.isoformat(),
+            "end_date": JAN_FRI_08.isoformat(), "type": "vacation", "hours": 8.0,
+        })
+
+        assert r.status_code == 201, r.text
+        assert _booked(db, emp) == JAN_WEEK
+        assert _remaining(db, emp) == pytest.approx(-1)
+        assert _remaining_2027(db, emp) == pytest.approx(25)
+
+    def test_direct_booking_only_zero_hour_days_names_real_reason(self, db, admin):
+        """Nur 0-h-Tage bei Resturlaub im Minus: die Antwort nennt den echten
+        Grund („0 Stunden geplant"), nicht ein fehlendes Budget."""
+        emp = _negative_2026_back_in_2027(db, "b5_ny_direct_zero")
+
+        r = _client_as(db, admin).post("/api/absences/", json={
+            "user_id": str(emp.id), "date": DEC_MON_28.isoformat(),
+            "end_date": DEC_THU_31.isoformat(), "type": "vacation", "hours": 8.0,
+        })
+
+        assert r.status_code == 400, r.text
+        assert "0 Stunden geplant" in r.json()["detail"]
+        assert "Urlaubstage" not in r.json()["detail"]
+
+    def test_direct_booking_still_checks_the_year_it_costs(self, db, admin):
+        """Kontrolle: kostet die Buchung im Minus-Jahr etwas, bleibt es 400."""
+        emp = _negative_2026_back_in_2027(db, "b5_ny_direct_ctrl")
+
+        r = _client_as(db, admin).post("/api/absences/", json={
+            "user_id": str(emp.id), "date": date(2026, 11, 30).isoformat(),
+            "end_date": JAN_FRI_08.isoformat(), "type": "vacation", "hours": 8.0,
+        })
+
+        assert r.status_code == 400, r.text
+        assert r.json()["detail"].startswith("Nicht genügend Urlaubstage für 2026")
+
+    def test_request_create(self, db, admin):
+        emp = _negative_2026_back_in_2027(db, "b5_ny_req_create")
+        _approval_required(db)
+
+        r = _client_as(db, emp).post("/api/vacation-requests/", json={
+            "date": DEC_MON_28.isoformat(), "end_date": JAN_FRI_08.isoformat(),
+            "hours": 8.0,
+        })
+
+        assert r.status_code == 201, r.text
+
+    def test_request_edit(self, db, admin):
+        emp = _negative_2026_back_in_2027(db, "b5_ny_req_edit")
+        _approval_required(db)
+        vr = VacationRequest(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, date=JAN_MON_04,
+            end_date=JAN_FRI_08, hours=8.0, absence_type="vacation",
+            half_day=False, status=VacationRequestStatus.PENDING.value,
+        )
+        db.add(vr)
+        db.commit()
+
+        r = _client_as(db, emp).patch(f"/api/vacation-requests/{vr.id}", json={
+            "date": DEC_MON_28.isoformat(),
+        })
+
+        assert r.status_code == 200, r.text
+
+    def test_request_approval_books_only_the_costing_year(self, db, admin):
+        emp = _negative_2026_back_in_2027(db, "b5_ny_req_review")
+        vr = VacationRequest(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, date=DEC_MON_28,
+            end_date=JAN_FRI_08, hours=8.0, absence_type="vacation",
+            half_day=False, status=VacationRequestStatus.PENDING.value,
+        )
+        db.add(vr)
+        db.commit()
+
+        r = _client_as(db, admin).post(
+            f"/api/admin/vacation-requests/{vr.id}/review", json={"action": "approve"})
+
+        assert r.status_code == 200, r.text
+        assert _booked(db, emp) == JAN_WEEK
+        assert _remaining_2027(db, emp) == pytest.approx(25)
+
+    def test_budget_helper_skips_years_without_cost(self, db, default_tenant):
+        """Der gemeinsame Helfer fragt das Konto eines Jahres ohne Kosten gar
+        nicht erst — und meldet das erste Jahr, das nicht reicht."""
+        emp = _negative_2026_back_in_2027(db, "b5_ny_helper")
+        assert calculation_service.vacation_budget_shortfall(
+            db, emp, {2027: Decimal("5")}) is None
+        assert calculation_service.vacation_budget_shortfall(
+            db, emp, {2026: Decimal("0"), 2027: Decimal("5")}) is None
+        assert calculation_service.vacation_budget_shortfall(
+            db, emp, {2026: Decimal("1"), 2027: Decimal("5")}) == (2026, pytest.approx(-1))
 
 
 def _count_statements(fn, needle):

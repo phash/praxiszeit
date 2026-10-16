@@ -579,16 +579,18 @@ def create_absence(
             db, target_user, dates_to_create, bool(absence_data.half_day),
             wh_changes=wh_changes, year_cache={},
         )
-        for check_year in sorted({d.year for d in dates_to_create}):
-            vacation_account = calculation_service.get_vacation_account(
-                db, target_user, check_year, wh_changes=wh_changes
+        # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug): ein Jahr im
+        # Minus sperrt keine Buchung, die dort nichts verbraucht — reine
+        # 0-h-Zeitraeume enden unten bei „0 Stunden geplant".
+        shortfall = calculation_service.vacation_budget_shortfall(
+            db, target_user, cost_by_year, wh_changes=wh_changes
+        )
+        if shortfall:
+            check_year, remaining = shortfall
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Nicht genügend Urlaubstage für {check_year} ({remaining:.1f} Tage verfügbar)"
             )
-            days_needed = float(cost_by_year.get(check_year, 0))
-            if days_needed > vacation_account["remaining_days"] + 1e-9:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Nicht genügend Urlaubstage für {check_year} ({vacation_account['remaining_days']:.1f} Tage verfügbar)"
-                )
 
     # If sick leave with vacation refund: remove overlapping vacation entries first
     refunded_vacation_dates = []

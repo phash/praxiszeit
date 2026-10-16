@@ -3005,6 +3005,38 @@ def vacation_day_cost_by_year(
     return cost
 
 
+def vacation_budget_shortfall(
+    db: Session,
+    user: User,
+    cost_by_year: Dict[int, Decimal],
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Optional[tuple]:
+    """Erstes Kalenderjahr (aufsteigend), dessen Kosten den Resturlaub
+    uebersteigen, als ``(jahr, resturlaub_tage)`` — sonst ``None``.
+
+    Die eine Budget-Pruefung der Urlaubs-Vorpruefungen mit Zeitraum
+    (Direktbuchung, Antrag anlegen/bearbeiten, Antrags-Genehmigung); die Kosten
+    kommen aus :func:`vacation_day_cost_by_year`. Geprueft wird nur ein Jahr, in
+    dem die Buchung tatsaechlich etwas kostet (Gesamtreview 1.20 B5, Nachzug):
+    vorher lief die Schleife ueber jedes Jahr des Zeitraums und verglich dort
+    ``0 > Resturlaub`` — ein Resturlaub im Minus (zulaessig: Betriebsferien
+    buchen bewusst ohne Deckel, Fix #6) sperrte damit eine Buchung, die in
+    diesem Jahr nichts verbraucht (Zeitraum mit 0 Wochenstunden ueber den
+    Jahreswechsel). Der Einzeltag-Check des Aenderungsantrags prueft ebenso nur
+    bei Kosten > 0.
+    """
+    for year in sorted(cost_by_year):
+        needed = float(cost_by_year[year])
+        if needed <= 1e-9:
+            continue
+        remaining = float(
+            get_vacation_account(db, user, year, wh_changes=wh_changes)["remaining_days"]
+        )
+        if needed > remaining + 1e-9:
+            return year, remaining
+    return None
+
+
 def request_day_count(
     db: Session,
     user: User,

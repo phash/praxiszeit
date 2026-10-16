@@ -190,11 +190,13 @@ dieses Backup verlustfrei (`UPDATE.md`).
   jetzt sofort gespeichert; die Begründung bleibt stehen.
 - **Urlaub in einem Zeitraum mit 0 Wochenstunden** (z. B. Elternzeit): Die
   direkte Urlaubsbuchung verlangte Resturlaub auch für Tage, die sie gar nicht
-  bucht, und lehnte deshalb ab; ein Änderungsantrag auf Urlaub an einem Tag ohne
-  Soll (auch am Samstag) verlangte einen Urlaubstag, den das Konto nie abzieht.
-  Betriebsferien tragen an solchen Tagen nichts mehr ein – stand die Arbeitszeit
-  bereits auf 0 Stunden, kostete bisher jeder Schließtag einen Urlaubstag
-  (#496).
+  bucht, und lehnte deshalb ab. Ein Jahr mit Resturlaub im Minus sperrte außerdem
+  Buchungen und Anträge, die in diesem Jahr gar keinen Urlaubstag kosten (etwa
+  Urlaub über den Jahreswechsel, dessen Dezember-Tage auf 0 Stunden stehen). Ein
+  Änderungsantrag auf Urlaub an einem Tag ohne Soll (auch am Samstag) verlangte
+  einen Urlaubstag, den das Konto nie abzieht. Betriebsferien tragen an solchen
+  Tagen nichts mehr ein – stand die Arbeitszeit bereits auf 0 Stunden, kostete
+  bisher jeder Schließtag einen Urlaubstag (#496).
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images

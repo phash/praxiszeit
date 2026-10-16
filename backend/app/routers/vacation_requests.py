@@ -197,16 +197,16 @@ def apply_vacation_request_patch(
             db, target_user, candidates, new_half_day,
             wh_changes=wh_changes, year_cache=year_cache,
         )
-        for check_year in sorted({d.year for d in candidates}):
-            account = calculation_service.get_vacation_account(
-                db, target_user, check_year, wh_changes=wh_changes
+        # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug).
+        shortfall = calculation_service.vacation_budget_shortfall(
+            db, target_user, cost_by_year, wh_changes=wh_changes
+        )
+        if shortfall:
+            check_year, remaining = shortfall
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Nicht genügend Urlaubstage für {check_year} ({remaining:.1f} Tage verfügbar)",
             )
-            days_needed = float(cost_by_year.get(check_year, 0))
-            if days_needed > float(account['remaining_days']) + 1e-9:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Nicht genügend Urlaubstage für {check_year} ({account['remaining_days']:.1f} Tage verfügbar)",
-                )
 
     vr.date = new_date
     vr.end_date = new_end_date
@@ -329,16 +329,16 @@ def create_vacation_request(
             db, current_user, candidates, bool(data.half_day),
             wh_changes=wh_changes, year_cache=year_cache,
         )
-        for check_year in sorted({d.year for d in candidates}):
-            account = calculation_service.get_vacation_account(
-                db, current_user, check_year, wh_changes=wh_changes
+        # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug).
+        shortfall = calculation_service.vacation_budget_shortfall(
+            db, current_user, cost_by_year, wh_changes=wh_changes
+        )
+        if shortfall:
+            check_year, remaining = shortfall
+            raise HTTPException(
+                status_code=400,
+                detail=f"Nicht genügend Urlaubstage für {check_year} ({remaining:.1f} Tage verfügbar)",
             )
-            days_needed = float(cost_by_year.get(check_year, 0))
-            if days_needed > float(account['remaining_days']) + 1e-9:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Nicht genügend Urlaubstage für {check_year} ({account['remaining_days']:.1f} Tage verfügbar)",
-                )
 
     vr = VacationRequest(
         user_id=current_user.id,

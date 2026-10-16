@@ -690,7 +690,12 @@ Zeitraum mit 0 Wochenstunden. Der Änderungsantrag legt immer genau **eine** Zei
 Wochenende oder an einem Tag ohne Soll) und verlangt deshalb genau, was das Urlaubskonto für
 diese Zeile zählt (`_vacation_day_contribution`, derselbe Helfer im Anlege- und im
 Änderungszweig). Dieser Check ist **hart** (400 bei Überziehung) — anders als die
-Betriebsferien-Buchung (§9.5), die bewusst nicht cappt.
+Betriebsferien-Buchung (§9.5), die bewusst nicht cappt. Verglichen wird je Kalenderjahr und
+nur dort, wo die Buchung tatsächlich Urlaubstage kostet (`vacation_budget_shortfall`, gemeinsam
+für Direktbuchung und die drei Antragspfade): ein Jahr mit Resturlaub im Minus (etwa nach
+Betriebsferien über das Budget hinaus) sperrt keine Buchung, die dort nichts verbraucht — z. B.
+Urlaub über den Jahreswechsel, dessen Dezember-Tage in einen Zeitraum mit 0 Wochenstunden
+fallen.
 
 Die Anzeige „Arbeitstage" am Antrag (Admin-Liste „Abwesenheitsanträge" und „Meine Anträge")
 nutzt dieselbe Regel (`request_day_count`) und blendet zusätzlich Tage außerhalb des
