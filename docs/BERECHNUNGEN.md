@@ -249,8 +249,9 @@ Hinweise auf der Anwesenheit laut Stempel (`presence_minutes` = `(raw_end or end
 (> 10 h), `PRESENCE_BREAK` (> 6 h ohne ausreichende erfasste Pause), `PRESENCE_WEEKLY_HOURS`
 (> 48 h je Kalenderwoche) – jeweils nur, wenn die harte Prüfung auf angerechneter Zeit nicht schon
 gegriffen hat (`presence_service`); `BREAK_IN_GAP`, wenn Pause **und** Lücke am selben Eintrag
-abgezogen werden. §5 rechnet unverändert gegen die Rohstempel. Die 24-Wochen-Auswertung (§3 ArbZG,
-Admin → Berichte) zeigt neben dem Durchschnitt der angerechneten Zeit je Arbeitstag zusätzlich die
+abgezogen werden. §5 rechnet gegen die Rohstempel; beim automatisch geschlossenen Eintrag ab dem
+wirksamen Ende (`work_window_service.presence_end`, 23:59 ist kein Stempel, P18). Die
+24-Wochen-Auswertung (§3 ArbZG, Admin → Berichte) zeigt neben dem Durchschnitt der angerechneten Zeit je Arbeitstag zusätzlich die
 „Anwesenheit laut Stempel" (Σ `presence_minutes`, `presence_hours`/`presence_average` und je
 Kalenderwoche `presence_weeks`); diesen Wert ändert keine Neukappung – außer bei automatisch
 geschlossenen Einträgen: ihre Anwesenheit zählt bis zum wirksamen Ende, und das verschiebt eine
