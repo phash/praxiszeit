@@ -549,19 +549,32 @@ def withdraw_change_request(
     # als manipuliert.
     # Mit der Sperre liefert Postgres nach dem Warten die AKTUELLE Zeilenversion
     # → die Statusprüfung unten sieht APPROVED und lehnt mit 400 ab.
+    #
+    # Gesamtreview B3 / Spec 16.2 Nr. 8: fremd oder unbekannt → 404 VOR der
+    # Sperre (Muster ``time_entries.update_time_entry``). Bis dahin sperrte die
+    # ID eines Antrags der Kollegin deren Zeile — und wartete, solange die
+    # Verwaltung ihn gerade genehmigte: die Wartezeit verriet als Timing-Orakel,
+    # dass die ID existiert (#120 verbirgt das nur in Statuscode und Text). Der
+    # Eigentümer eines Antrags ist unveränderlich — ungesperrt lesen genügt.
+    owner_id = db.query(ChangeRequest.user_id).filter(
+        ChangeRequest.id == request_id,
+        ChangeRequest.tenant_id == current_user.tenant_id,  # F-026
+    ).scalar()
+    if owner_id is None or owner_id != current_user.id:
+        # #120: 404 statt 403 — kein Existenz-Leak fremder Antraege.
+        raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     cr = (
         db.query(ChangeRequest)
         .filter(
             ChangeRequest.id == request_id,
-            ChangeRequest.tenant_id == current_user.tenant_id,
+            ChangeRequest.tenant_id == current_user.tenant_id,  # F-026
+            ChangeRequest.user_id == current_user.id,
         )
         .with_for_update()
         .first()
     )
     if not cr:
-        raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
-    if cr.user_id != current_user.id:
-        # #120: 404 statt 403 — kein Existenz-Leak fremder Antraege.
+        # Rückversicherung: zwischen Eigentümer-Lesen und Sperre gelöscht.
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     if cr.status != ChangeRequestStatus.PENDING:
         raise HTTPException(status_code=400, detail="Nur offene Anträge können zurückgezogen werden")

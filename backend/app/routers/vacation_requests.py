@@ -20,6 +20,44 @@ from app.routers.admin_helpers import _enrich_vr_response as _enrich, _enrich_vr
 
 router = APIRouter(prefix="/api/vacation-requests", tags=["vacation-requests"])
 
+VR_NOT_FOUND = "Urlaubsantrag nicht gefunden"
+
+
+def _load_own_vr_locked(db: Session, request_id: str, current_user: User) -> VacationRequest:
+    """Den EIGENEN Antrag gesperrt laden — fremd oder unbekannt → 404 VOR jeder
+    Sperre (Spec 16.2 Nr. 8, Gesamtreview B3; Muster ``time_entries.update_time_entry``).
+
+    Bis dahin lud ``FOR UPDATE`` die Zeile, bevor die Eigentümerprüfung griff:
+    die ID eines Antrags der Kollegin sperrte deren Zeile — und wartete, solange
+    die Verwaltung sie gerade genehmigte. Die Wartezeit verriet als
+    Timing-Orakel, dass die ID existiert; #120 verbirgt das nur in Statuscode
+    und Text. Der Eigentümer eines Antrags ist unveränderlich, ein ungesperrter
+    Lesezugriff genügt deshalb für die Prüfung. Eine unbekannte ID bricht an
+    derselben Stelle ab — sonst kostete sie einen Zugriff mehr als eine fremde.
+    """
+    owner_id = db.query(VacationRequest.user_id).filter(
+        VacationRequest.id == request_id,
+        VacationRequest.tenant_id == current_user.tenant_id,  # F-026
+    ).scalar()
+    if owner_id is None or str(owner_id) != str(current_user.id):
+        # #120: 404 statt 403 — ein fremder (Same-Tenant-)Antrag wird wie ein
+        # unbekannter behandelt (gleiche Meldung wie "not found").
+        raise HTTPException(status_code=404, detail=VR_NOT_FOUND)
+    vr = (
+        db.query(VacationRequest)
+        .filter(
+            VacationRequest.id == request_id,
+            VacationRequest.tenant_id == current_user.tenant_id,  # F-026
+            VacationRequest.user_id == current_user.id,
+        )
+        .with_for_update()
+        .first()
+    )
+    if not vr:
+        # Rückversicherung: zwischen Eigentümer-Lesen und Sperre gelöscht.
+        raise HTTPException(status_code=404, detail=VR_NOT_FOUND)
+    return vr
+
 
 def format_vacation_request_audit_text(vr: VacationRequest) -> str:
     """Compact one-line representation of a vacation request for audit logs.
@@ -406,22 +444,7 @@ def update_vacation_request(
 ):
     """Edit an own PENDING vacation request. Delegates the patch /
     validation / audit work to ``apply_vacation_request_patch``."""
-    vr = (
-        db.query(VacationRequest)
-        .filter(
-            VacationRequest.id == request_id,
-            VacationRequest.tenant_id == current_user.tenant_id,
-        )
-        .with_for_update()
-        .first()
-    )
-    if not vr:
-        raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
-    if str(vr.user_id) != str(current_user.id):
-        # #120: 404 statt 403 — ein fremder (Same-Tenant-)Antrag wird wie ein
-        # unbekannter behandelt, damit der Response-Code nicht die Existenz einer
-        # fremden VR-ID im eigenen Tenant verraet (gleiche Meldung wie "not found").
-        raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
+    vr = _load_own_vr_locked(db, request_id, current_user)  # 404 vor jeder Sperre
     if vr.status != VacationRequestStatus.PENDING.value:
         raise HTTPException(
             status_code=400,
@@ -452,22 +475,7 @@ def withdraw_vacation_request(
     don't want a torn state where the audit row is written for an edit
     that lost to a concurrent delete.
     """
-    vr = (
-        db.query(VacationRequest)
-        .filter(
-            VacationRequest.id == request_id,
-            VacationRequest.tenant_id == current_user.tenant_id,
-        )
-        .with_for_update()
-        .first()
-    )
-    if not vr:
-        raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
-    if str(vr.user_id) != str(current_user.id):
-        # #120: 404 statt 403 — ein fremder (Same-Tenant-)Antrag wird wie ein
-        # unbekannter behandelt, damit der Response-Code nicht die Existenz einer
-        # fremden VR-ID im eigenen Tenant verraet (gleiche Meldung wie "not found").
-        raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
+    vr = _load_own_vr_locked(db, request_id, current_user)  # 404 vor jeder Sperre
 
     if vr.status == VacationRequestStatus.PENDING.value:
         db.delete(vr)
