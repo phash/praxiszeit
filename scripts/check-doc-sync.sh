@@ -644,7 +644,7 @@ group_kurz() {
   forbid "$a" '„Arbeitszeit heute: …"'
   # Review Task 6 (2. Runde): „Block" heißt jetzt Arbeitszeit-Block – die
   # §3-Zeile sagt „keine Sperre"; die verlustfreie Option endet je nach
-  # Kriterium auf „Einträge" oder „Tage" (ShorteningChoice.losslessLabel).
+  # Kriterium auf „Einträge" oder „Tage" (workingHoursTexts.losslessLabel).
   forbid "$a" '(kein Block)'
   forbid "$a" 'nicht geblockt'
   need "$a" '„… – vergangene Tage bleiben unverändert"'

@@ -7,22 +7,15 @@ import ConfirmDialog from './ConfirmDialog';
 import { getErrorMessage } from '../utils/errorMessage';
 import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { notCreditedMinutes, type CreditEntry } from '../utils/workBlocks';
+import { AUTO_CLOSED_HINT, creditConfirmText } from '../utils/creditOverride';
 
 /**
  * Spec 2026-10-08, 13.3 „Anerkennen": die gesamte gestempelte Zeit eines
  * Eintrags anrechnen — dauerhaft, protokolliert. Eine Komponente für
- * Admin-Dashboard und Monatsjournal (Admin-Ansicht).
+ * Admin-Dashboard und Monatsjournal (Admin-Ansicht). Die Texte liegen in
+ * `utils/creditOverride.ts` (Fast Refresh: eine Komponentendatei exportiert nur
+ * Komponenten).
  */
-export const AUTO_CLOSED_HINT = 'Automatisch geschlossener Eintrag: Bitte zuerst das tatsächliche Ende eintragen.';
-
-export function creditConfirmText(rawSpan: string): string {
-  return (
-    `Die gesamte gestempelte Zeit (${rawSpan}) wird angerechnet. Sie bleibt angerechnet — auch bei `
-    + 'späteren Neuberechnungen und wenn die Verwaltung die Zeiten ändert; Mitarbeitende können den '
-    + 'Eintrag danach nur noch per Änderungsantrag ändern. Wurde nur ein Teil der Zeit gearbeitet, den '
-    + 'Eintrag besser aufteilen oder korrigieren. Der Vorgang wird protokolliert.'
-  );
-}
 
 export interface CreditButtonEntry extends CreditEntry {
   id: string;

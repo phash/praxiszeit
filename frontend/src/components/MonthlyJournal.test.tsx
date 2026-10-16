@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { format } from 'date-fns';
 import MonthlyJournal, { isJournalData } from './MonthlyJournal';
-import { AUTO_CLOSED_HINT } from './CreditOverrideButton';
+import { AUTO_CLOSED_HINT } from '../utils/creditOverride';
 
 // #382: clicking a user opens the journal. A non-journal 200 body (e.g. an HTML
 // login page returned in the auth-edge after a token_version-invalidated

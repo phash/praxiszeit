@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import CreditOverrideButton, { AUTO_CLOSED_HINT } from './CreditOverrideButton';
+import CreditOverrideButton from './CreditOverrideButton';
+import { AUTO_CLOSED_HINT } from '../utils/creditOverride';
 
 const postMock = vi.fn();
 vi.mock('../api/client', () => ({ default: { post: (...a: unknown[]) => postMock(...a) } }));

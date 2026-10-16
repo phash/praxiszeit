@@ -3,6 +3,7 @@
 // Lösch-Dialog wortgleich bleiben. Die Grundtyp-SCHLÜSSEL sind eingefroren
 // (Backend `reclamp_audit.REASON_TYPES`), die Oberfläche zeigt nur die Beschriftungen.
 import { formatDayCount, formatHoursHM } from '../../../utils/formatters';
+import type { WorkingHoursChangePreview } from './workingHoursTypes';
 
 export const LEGAL_HINT =
   'Ändert sich der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine Vertragsänderung und braucht das '
@@ -180,4 +181,63 @@ export function dayBefore(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().split('T')[0];
+}
+
+// Verkürzungs-Kasten (`ShorteningChoice`, Spec 12.1/P1/P25) — hier statt in der
+// Komponentendatei, damit diese nur Komponenten exportiert (Fast Refresh).
+
+/** Spec 12.1: Kopfzeile je erfülltem Kriterium aus `shortening_reasons` (9.5). */
+export function shorteningHeadlines(p: WorkingHoursChangePreview): string[] {
+  const reasons = p.shortening_reasons ?? [];
+  const out: string[] = [];
+  if (reasons.includes('entries')) {
+    // Der heute offene Eintrag (P1) steht nicht in `time_entry_changes`; ob er
+    // verliert, sagt `open_entry_loses` — gezählt wie `criteria_text` in der
+    // 400-Meldung (9.5 (a)). Sein Verlust ist nicht bezifferbar (das Ende ist
+    // unbekannt), die Summe nennt nur die geschlossenen Einträge. `|| 1`: das
+    // Kriterium ist erfüllt, also verliert mindestens einer.
+    const closedLosing = (p.time_entry_changes ?? []).filter((c) => c.new_net < c.old_net).length;
+    const n = closedLosing + (p.open_entry_loses ? 1 : 0) || 1;
+    const lost = p.lost_credited_hours ?? 0;
+    out.push(`${n === 1 ? '1 Eintrag verliert' : `${n} Einträge verlieren`} angerechnete Zeit`
+      + (lost > 0 ? ` (zusammen ${hm(lost)} h)` : ''));
+  }
+  if (reasons.includes('saldo')) {
+    const saldo = p.saldo_delta_hours ?? 0;
+    const openDay = p.open_day_saldo_delta_hours ?? 0;
+    if (saldo < 0) {
+      const extra = !reasons.includes('entries') && (p.target_delta_hours ?? 0) > 0
+        ? ' (höheres Soll), obwohl kein Eintrag angerechnete Zeit verliert'
+        : '';
+      out.push(`Das Überstundenkonto sinkt im Wirkungsbereich um ${hm(saldo)} h${extra}`);
+    }
+    if (openDay < 0) {
+      out.push(`Heute steigt das Soll um ${hm(openDay)} h, während die Person eingestempelt ist – das Überstundenkonto sinkt beim Ausstempeln.`);
+    }
+    // (b) allein über den Anteil eines abgeschlossenen Jahres (dessen Saldo ist
+    // eingefroren, spätere Gewinne gleichen ihn nicht aus) — wie `criteria_text`.
+    if (saldo >= 0 && openDay >= 0) {
+      out.push(`Das Überstundenkonto sinkt im abgeschlossenen Jahr ${(p.shortening_closed_years ?? []).join(', ')}`);
+    }
+  }
+  if (reasons.includes('absence_credit')) {
+    const n = (p.absence_credit_reductions ?? []).length;
+    out.push(`${n === 1 ? '1 Abwesenheits-Gutschrift sinkt' : `${n} Abwesenheits-Gutschriften sinken`} stärker als das `
+      + 'Tagessoll (Arbeit und Gutschrift am selben Tag)');
+  }
+  return out;
+}
+
+/** P1/P25: Beschriftung der verlustfreien Option oder `null` (nicht angeboten). */
+export function losslessLabel(p: WorkingHoursChangePreview, today: string): string | null {
+  const d = p.earliest_lossless_date;
+  if (!d) return null;
+  const suffix = (p.shortening_reasons ?? []).includes('entries')
+    ? 'vergangene Einträge bleiben unverändert'
+    : 'vergangene Tage bleiben unverändert';
+  return d === today ? `Ab heute (${formatDate(d)}) wirksam – ${suffix}` : `Ab ${formatDate(d)} wirksam – ${suffix}`;
+}
+
+export function retroLabel(requestedDate: string): string {
+  return `Rückwirkend ab ${formatDate(requestedDate)} mit Neuberechnung`;
 }

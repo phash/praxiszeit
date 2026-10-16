@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { losslessLabel, retroLabel, shorteningHeadlines } from './ShorteningChoice';
+import { losslessLabel, retroLabel, shorteningHeadlines } from './workingHoursTexts';
 import type { WorkingHoursChangePreview } from './workingHoursTypes';
 
 const P = (o: Partial<WorkingHoursChangePreview>): WorkingHoursChangePreview => ({
