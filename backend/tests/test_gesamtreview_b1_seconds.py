@@ -48,6 +48,20 @@ def test_update_schema_drops_seconds():
     assert (m.start_time, m.end_time) == (time(7, 45), time(23, 59))
 
 
+@pytest.mark.parametrize("value", ["13:00:00Z", "08:00+02:00", "08:00:30-01:00"])
+def test_time_with_offset_is_rejected(value):
+    """Nachzug zu B1: eine Uhrzeit mit Zeitzone lief bis in die Vergleiche mit
+    gespeicherten (zeitzonenlosen) Zeiten — TypeError, HTTP 500 — bzw. wurde
+    angelegt und verlor den Offset still. Abgelehnt statt umgedeutet."""
+    with pytest.raises(ValidationError, match="Uhrzeit ohne Zeitzone"):
+        TimeEntryUpdate(end_time=value)
+    with pytest.raises(ValidationError, match="Uhrzeit ohne Zeitzone"):
+        TimeEntryCreate(date=MON, start_time=value, end_time="23:00")
+    with pytest.raises(ValidationError, match="Uhrzeit ohne Zeitzone"):
+        ChangeRequestCreate(request_type="create", proposed_date=MON,
+                            proposed_start_time=value, proposed_end_time="23:00", reason="x")
+
+
 def test_change_request_schema_drops_seconds():
     m = ChangeRequestCreate(request_type="create", proposed_date=MON,
                             proposed_start_time="08:00:30", proposed_end_time="12:00:45",
@@ -106,6 +120,26 @@ def test_resubmitted_clamped_start_with_seconds_keeps_the_raw_stamp(
     assert r.status_code == 200, r.text
     _db_session.refresh(e)
     assert (e.start_time, e.raw_start_time, e.note) == (time(7, 45), time(7, 30), "geprüft")
+
+
+def test_admin_put_with_offset_is_422(_db_session, employee_user, admin_client):
+    """Vorher 500 (TypeError „can't compare offset-naive and offset-aware times")."""
+    e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, date=MON,
+                  start_time=time(8), end_time=time(12), break_minutes=0, note="alt")
+    _db_session.add(e)
+    _db_session.commit()
+    r = admin_client.put(f"/api/admin/time-entries/{e.id}", json={"end_time": "13:00:00Z"})
+    assert r.status_code == 422, r.text
+    _db_session.refresh(e)
+    assert (e.end_time, e.note) == (time(12), "alt")
+
+
+def test_admin_create_with_offset_is_422(_db_session, employee_user, admin_client):
+    """Vorher 201 — der Offset fiel still weg."""
+    r = admin_client.post(f"/api/admin/users/{employee_user.id}/time-entries", json={
+        "date": MON.isoformat(), "start_time": "08:00:00+02:00", "end_time": "12:00"})
+    assert r.status_code == 422, r.text
+    assert _db_session.query(TimeEntry).count() == 0
 
 
 def test_employee_create_stores_minutes(_db_session, employee_user, employee_client, monkeypatch):

@@ -23,7 +23,15 @@ def truncate_to_minute(v: time) -> time:
     dann zählte ``net_hours`` sie, die Lückenüberlappung nicht, und
     ``unclamp_input`` hielt das gekappte „07:45:30" für eine neue Eingabe (der
     Rohstempel ging verloren, §16). Abgeschnitten (nicht gerundet) wie beim
-    Stempeln."""
+    Stempeln.
+
+    Nachzug zu B1: Uhrzeiten mit Zeitzone („13:00:00Z", „08:00+02:00") werden
+    abgelehnt (422). Gespeicherte Zeiten sind zeitzonenlos (Ortszeit der
+    Praxis) — der Vergleich mit ihnen warf ``TypeError`` (HTTP 500), beim
+    Anlegen fiel der Offset still weg. Abgelehnt statt ``tzinfo=None``: sonst
+    würde ein „+02:00" wortlos umgedeutet."""
+    if v.tzinfo is not None:
+        raise ValueError("Uhrzeit ohne Zeitzone angeben (HH:MM)")
     return v.replace(second=0, microsecond=0)
 
 
