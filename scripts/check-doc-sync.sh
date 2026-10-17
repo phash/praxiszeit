@@ -343,7 +343,8 @@ group_code() {
   # Gesamtreview 1.20: nachträgliche Feiertags-/Bundesland-/Sondertag-Änderung
   # nennt Einträge mit veralteter Kappung (work_window_service.stale_clamp_hint).
   need_code "Zeiteinträge an geänderten Tagen behalten ihre bisherige Anrechnung gegen "
-  need_code "wenn Sie ihn im Admin-Dashboard oder Monatsjournal öffnen und unverändert speichern."
+  need_code "wenn Sie ihn im Admin-Dashboard oder Monatsjournal öffnen und unverändert speichern "
+  need_code "(fehlt dann eine gesetzliche Pause, ergänzen Sie sie)."
 }
 
 group_mirror() {

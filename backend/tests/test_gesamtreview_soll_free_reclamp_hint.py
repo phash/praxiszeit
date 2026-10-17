@@ -111,6 +111,10 @@ def test_feiertag_anlegen_nennt_den_gekappten_eintrag(db, client, mitarbeiterin)
     text = _hint(resp)
     assert "1 Eintrag: 14.08.2026" in text, text
     assert "unverändert speichern" in text
+    # Gesamtreview: ein über die Blocklücke durchgestempelter Dienst verliert
+    # am neuen freien Tag die Lücke als Pause — dann scheitert das unveränderte
+    # Speichern an §4; der Hinweis nennt den Ausweg.
+    assert "(fehlt dann eine gesetzliche Pause, ergänzen Sie sie)." in text
 
 
 def test_feiertag_anlegen_ohne_eintraege_bleibt_still(db, client, mitarbeiterin):

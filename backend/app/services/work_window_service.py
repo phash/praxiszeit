@@ -896,7 +896,8 @@ def stale_clamp_hint(db: Session, tenant_id, dates) -> Optional[str]:
     return (
         "Zeiteinträge an geänderten Tagen behalten ihre bisherige Anrechnung gegen "
         f"die Arbeitszeit-Blöcke ({count}: {shown}). Neu berechnet wird ein Eintrag, "
-        "wenn Sie ihn im Admin-Dashboard oder Monatsjournal öffnen und unverändert speichern."
+        "wenn Sie ihn im Admin-Dashboard oder Monatsjournal öffnen und unverändert speichern "
+        "(fehlt dann eine gesetzliche Pause, ergänzen Sie sie)."
     )
 
 
