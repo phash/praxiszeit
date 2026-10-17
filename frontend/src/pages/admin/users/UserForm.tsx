@@ -31,8 +31,9 @@ interface UserFormProps {
   // liest ihn live aus `users`). NUR für die read-only-Anzeige unten —
   // `formData.weekly_hours` (und damit alles, was der Admin sonst im
   // Formular eingegeben hat) bleibt davon unberührt. Fehlt der Wert (Anlegen,
-  // kein Treffer mehr in `users`), fällt die Anzeige auf `formData.weekly_hours`
-  // zurück.
+  // kein Treffer mehr in `users`), fällt die Anzeige auf
+  // `editUser.schedule_today`, danach auf `formData.weekly_hours` zurück
+  // (Gesamtreview 1.20, Fund 25 — gilt für alle display*-Werte).
   displayWeeklyHours?: number;
   // Task-11-Review Fix-Runde 1 (Important): dasselbe Muster wie
   // `displayWeeklyHours`, aber für die fünf Tageswerte. Ohne das kombinierte
@@ -202,12 +203,47 @@ export default function UserForm({
   const createBlocksActive = !editUser && blocksMode && formData.track_hours;
   const createDerived = deriveTargets(createBlocks);
   const createBlocksError = createBlocksActive ? validateWeekBlocks(createBlocks) : null;
+
+  // Gesamtreview 1.20 (Fund 25, Nachzug): beim Bearbeiten gilt für ALLE
+  // Anzeigen und Ableitungen der heute gültige Vertragsstand — vorrangig frisch
+  // aus Users.tsx (`display*`), sonst `editUser.schedule_today` (derselbe
+  // Resolver wie `work_blocks_today`, wie `shownBlocks` unten), erst danach der
+  // Formularstand. `formData` stammt aus der User-Zeile, die eine
+  // zukunftsdatierte Änderung erst beim nächsten Schreibvorgang nachzieht.
+  // Beim Anlegen gibt es weder Props noch Snapshot → Formularstand.
+  const todaySchedule = editUser?.schedule_today ?? null;
+  const shownWeeklyHours = displayWeeklyHours ?? todaySchedule?.weekly_hours ?? formData.weekly_hours;
+  const shownWorkDays = displayWorkDays ?? todaySchedule?.work_days_per_week ?? formData.work_days_per_week;
+  const shownUseDailySchedule = displayUseDailySchedule ?? todaySchedule?.use_daily_schedule ?? formData.use_daily_schedule;
+  const shownDayHours = displayDayHours ?? (todaySchedule
+    ? [
+      todaySchedule.hours_monday,
+      todaySchedule.hours_tuesday,
+      todaySchedule.hours_wednesday,
+      todaySchedule.hours_thursday,
+      todaySchedule.hours_friday,
+    ]
+    : [
+      formData.hours_monday,
+      formData.hours_tuesday,
+      formData.hours_wednesday,
+      formData.hours_thursday,
+      formData.hours_friday,
+    ]);
+
   // Was beim Anlegen tatsächlich gespeichert wird: im Block-Modus die aus den
   // Blöcken abgeleiteten Werte, sonst die Eingabe. Urlaubsempfehlung und
   // MiLoG-Schätzung rechnen damit — sonst stünde „1 Arbeitstag" im Feld und
-  // daneben eine Empfehlung „basierend auf 5 Arbeitstagen/Woche".
-  const effectiveWeeklyHours = createBlocksActive ? createDerived.weeklyHours : formData.weekly_hours;
-  const effectiveWorkDays = createBlocksActive ? createDerived.workDays : formData.work_days_per_week;
+  // daneben eine Empfehlung „basierend auf 5 Arbeitstagen/Woche". Beim
+  // Bearbeiten der heute gültige Stand (Fund 25, Nachzug) — dieselben Werte wie
+  // die Anzeigen „Wochenstunden" und „Arbeitstage pro Woche"; so rechnet auch
+  // `milog_service.agreed_monthly_hours` (Wochenstunden zum Datum).
+  const effectiveWeeklyHours = createBlocksActive
+    ? createDerived.weeklyHours
+    : (editUser ? shownWeeklyHours : formData.weekly_hours);
+  const effectiveWorkDays = createBlocksActive
+    ? createDerived.workDays
+    : (editUser ? shownWorkDays : formData.work_days_per_week);
   const suggestedVacation = effectiveWorkDays > 0 ? Math.round(30 * effectiveWorkDays / 5) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -338,22 +374,18 @@ export default function UserForm({
   // `formData.hours_*`-Breakdown widersprechen (Regression, die dieser
   // Task erst eingeführt hätte: vorher zeigte die Box nur eine nackte,
   // ggf. veraltete Summe, nie eine in sich widersprüchliche Kombination).
-  const weeklyHoursTotal = deHoursExact(displayWeeklyHours ?? formData.weekly_hours);
-  const dayPlanText = formatDayPlan(displayDayHours ?? [
-    formData.hours_monday,
-    formData.hours_tuesday,
-    formData.hours_wednesday,
-    formData.hours_thursday,
-    formData.hours_friday,
-  ]);
+  // Gesamtreview 1.20 (Fund 25, Nachzug): ohne die Props gilt
+  // `editUser.schedule_today` vor dem Formularstand (`shown*` oben).
+  const weeklyHoursTotal = deHoursExact(shownWeeklyHours);
+  const dayPlanText = formatDayPlan(shownDayHours);
   // Fund 3 (Abschluss-Review #431): Modus und Arbeitstage kommen — wie Summe
   // und Breakdown — vorrangig aus den `display*`-Props. Sie sind seit #431
   // historisiert und werden ausschließlich über den Dialog geschrieben; der
   // liefert nach dem Speichern eine Refetch-Runde, die das Formular offen
   // lässt. Ohne diese beiden Werte behauptete die Anzeige weiter den Stand von
   // vor dem Dialog (Arbeitstage 5, obwohl 4 gespeichert wurde).
-  const displayedUseDailySchedule = displayUseDailySchedule ?? formData.use_daily_schedule;
-  const displayedWorkDays = displayWorkDays ?? formData.work_days_per_week;
+  const displayedUseDailySchedule = shownUseDailySchedule;
+  const displayedWorkDays = shownWorkDays;
   // Spec 2026-10-08 (E62/12.2): heute gültige Blöcke — frisch aus Users.tsx
   // (`displayBlocks`), sonst aus dem beim Öffnen übergebenen Nutzer.
   const shownBlocks = displayBlocks !== undefined ? displayBlocks : (editUser?.work_blocks_today ?? null);

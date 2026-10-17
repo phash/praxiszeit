@@ -822,3 +822,89 @@ describe('Gesamtreview 1.20 Fund 14: Block-Editor beim Anlegen mit fester Monats
     expect(screen.getByText('Wochenstunden, Tagessoll und Arbeitstage werden aus den Blöcken abgeleitet.')).toBeInTheDocument();
   });
 });
+
+// Gesamtreview 1.20 (Fund 25, Nachzug): Urlaubsempfehlung und MiLoG-Schätzung
+// rechnen beim Bearbeiten mit dem heute gültigen Vertragsstand — wie die
+// Anzeigen daneben. Die User-Zeile (40 h / 5 Tage) zieht eine zukunftsdatierte
+// Änderung erst beim nächsten Schreibvorgang nach; heute gelten 32 h / 4 Tage.
+// Vorher stand „Arbeitstage 4" neben „Empfehlung: 30 Tage (basierend auf 5
+// Arbeitstagen/Woche)", und „Übernehmen" schrieb 30 Tage für eine 4-Tage-Woche.
+describe('Gesamtreview 1.20 Fund 25: Empfehlung und MiLoG-Schätzung aus dem heute gültigen Stand', () => {
+  const today = {
+    weekly_hours: 32, use_daily_schedule: false, work_days_per_week: 4,
+    hours_monday: null, hours_tuesday: null, hours_wednesday: null, hours_thursday: null, hours_friday: null,
+  };
+  const rowUser = {
+    id: 'u1', username: 'jd', first_name: 'Jane', last_name: 'Doe', role: 'employee',
+    weekly_hours: 40, vacation_days: 20, work_days_per_week: 5, track_hours: true,
+    is_active: true, use_daily_schedule: false, milog_working_time_account: true,
+    schedule_today: today,
+  };
+
+  beforeEach(() => {
+    useSystemStore.setState({
+      info: { deployment_mode: 'onprem', version: '', minimum_wage: { current: 13.9, since: '2026-01-01', next: null } },
+      isLoaded: true,
+    } as never);
+  });
+
+  function expectToday() {
+    expect(document.getElementById('f-work-days')?.textContent).toBe('4');
+    expect(document.getElementById('f-weekly-hours')).toHaveTextContent('32,0 h/Woche');
+    // 30 × 4/5 = 24 Tage
+    expect(screen.getByText(/24 Tage \(basierend auf 4 Arbeitstagen\/Woche\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/basierend auf 5 Arbeitstagen/)).not.toBeInTheDocument();
+    // 32 h × 13/3 ≈ 138,7 h (so rechnet auch milog_service.agreed_monthly_hours)
+    expect(screen.getByText(/aus den Wochenstunden \(≈ 138\.7 h\)/)).toBeInTheDocument();
+    expect(document.getElementById('f-agreed-monthly')).toHaveAttribute('placeholder', 'aus Wochenstunden ≈ 138.7');
+    expect(screen.queryByText(/173\.3/)).not.toBeInTheDocument();
+  }
+
+  it('mit den display*-Props aus Users.tsx', () => {
+    renderForm({
+      editUser: rowUser,
+      displayWeeklyHours: 32, displayWorkDays: 4, displayUseDailySchedule: false,
+      displayDayHours: [null, null, null, null, null],
+    });
+    expectToday();
+  });
+
+  it('ohne display*-Props aus editUser.schedule_today (nicht aus der User-Zeile)', () => {
+    renderForm({ editUser: rowUser });
+    expectToday();
+    expect(screen.getByText('Einheitliche Tagesstunden (kein individueller Tagesplan)')).toBeInTheDocument();
+  });
+
+  it('ohne display*-Props: Modus und Tagesplan ebenfalls aus schedule_today', () => {
+    renderForm({
+      editUser: {
+        ...rowUser,
+        schedule_today: {
+          ...today, use_daily_schedule: true, weekly_hours: 17, work_days_per_week: 3,
+          hours_monday: 8, hours_tuesday: 5, hours_wednesday: 4, hours_thursday: 0, hours_friday: 0,
+        },
+      },
+    });
+    expect(screen.getByText('Individuelle Tagesstunden aktiv')).toBeInTheDocument();
+    expect(screen.getByText('Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche')).toBeInTheDocument();
+    expect(document.getElementById('f-work-days')?.textContent).toBe('3');
+  });
+
+  it('„Übernehmen" schreibt die Empfehlung für die heute gültige Woche', async () => {
+    renderForm({ editUser: rowUser });
+    fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
+    expect((screen.getByLabelText('Urlaubstage') as HTMLInputElement).value).toBe('24');
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => {
+      const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
+      expect(call).toBeTruthy();
+      expect(call![1]).toMatchObject({ vacation_days: 24 });
+    });
+  });
+
+  it('Kontrolle: ohne schedule_today (ältere Antwort) gilt weiter die User-Zeile', () => {
+    renderForm({ editUser: { ...rowUser, schedule_today: undefined } });
+    expect(screen.getByText(/30 Tage \(basierend auf 5 Arbeitstagen\/Woche\)/)).toBeInTheDocument();
+    expect(screen.getByText(/aus den Wochenstunden \(≈ 173\.3 h\)/)).toBeInTheDocument();
+  });
+});
