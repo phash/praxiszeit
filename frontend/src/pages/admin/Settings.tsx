@@ -564,8 +564,9 @@ const saveYearEndProjection = async () => {
     }
     setCreating(true);
     try {
-      await apiClient.post('/holidays/', { name: newName.trim(), date: newDate });
+      const res = await apiClient.post('/holidays/', { name: newName.trim(), date: newDate });
       toast.success('Eigener Feiertag angelegt.');
+      showResponseWarning(toast, res.data);
       setNewName('');
       setNewDate('');
       const yearOfNew = Number(newDate.slice(0, 4));
@@ -601,8 +602,9 @@ const saveYearEndProjection = async () => {
     }
     setMutating(true);
     try {
-      await apiClient.put(`/holidays/${id}`, { name: editName.trim(), date: editDate });
+      const res = await apiClient.put(`/holidays/${id}`, { name: editName.trim(), date: editDate });
       toast.success('Feiertag aktualisiert.');
+      showResponseWarning(toast, res.data);
       cancelEdit();
       const yearOfEdit = Number(editDate.slice(0, 4));
       if (yearOfEdit && yearOfEdit !== holidayYear) {
@@ -626,8 +628,9 @@ const saveYearEndProjection = async () => {
       onConfirm: async () => {
         setMutating(true);
         try {
-          await apiClient.delete(`/holidays/${h.id}`);
+          const res = await apiClient.delete(`/holidays/${h.id}`);
           toast.success('Feiertag gelöscht.');
+          showResponseWarning(toast, res.data);
           await loadHolidays(holidayYear);
         } catch (err) {
           toast.error(getErrorMessage(err));

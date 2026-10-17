@@ -264,6 +264,10 @@ dieses Backup verlustfrei (`UPDATE.md`).
   werden die gesetzlichen Feiertage aller Jahre für das neue Bundesland neu
   berechnet; eigene Feiertage bleiben. Betrifft das ein Jahr mit
   Jahresabschluss, weist PraxisZeit auf den veralteten Übertrag hin.
+- **Eigene Feiertage** in einem Jahr mit Jahresabschluss anlegen, verschieben
+  oder löschen verschob Soll und Saldo dieses Jahres ohne Hinweis. Jetzt meldet
+  PraxisZeit den veralteten Übertrag wie beim Bundesland-Wechsel; ein reines
+  Umbenennen bleibt still.
 - **Zeiterfassung im Änderungsprotokoll:** Anlegen und Bearbeiten über die
   Zeiterfassung (Mitarbeitende am selben Tag, Admins an eigenen Einträgen jedes
   Tages) hinterlassen jetzt eine Zeile mit alten und neuen Werten – bisher nur

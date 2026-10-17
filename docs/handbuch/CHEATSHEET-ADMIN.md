@@ -162,7 +162,7 @@ Jeder Bereich hat einen eigenen **Speichern**-Button.
 
 | Bereich | Was |
 |---------|-----|
-| **Feiertage** | Bundesland wählen (ein Wechsel berechnet die gesetzlichen Feiertage **aller** Jahre neu, auch zurückliegender; abgeschlossenes Jahr betroffen → Hinweis auf veralteten Übertrag) + eigene Feiertage (reduzieren Soll, grau im Kalender) |
+| **Feiertage** | Bundesland wählen (ein Wechsel berechnet die gesetzlichen Feiertage **aller** Jahre neu, auch zurückliegender; abgeschlossenes Jahr betroffen → Hinweis auf veralteten Übertrag) + eigene Feiertage (reduzieren Soll, grau im Kalender; Anlegen/Verschieben/Löschen in einem abgeschlossenen Jahr → derselbe Hinweis) |
 | **Sondertage (24./31.12.)** | s. u. (#188) |
 | **Urlaubsgenehmigung** | Genehmigungspflicht an/aus |
 | **Pflicht-Pause-Ausnahme** | Ausnahme erlauben an/aus (Standard **an**, #499) + Genehmigungspflicht für §4-Ausnahmen (s. o.) |

@@ -8,11 +8,12 @@ import Settings from './Settings';
 
 const getMock = vi.fn();
 const putMock = vi.fn();
+const postMock = vi.fn();
 vi.mock('../../api/client', () => ({
   default: {
     get: (...a: unknown[]) => getMock(...a),
     put: (...a: unknown[]) => putMock(...a),
-    post: vi.fn(),
+    post: (...a: unknown[]) => postMock(...a),
     delete: vi.fn(),
   },
 }));
@@ -54,6 +55,7 @@ beforeEach(() => {
   getMock.mockReset();
   putMock.mockReset();
   putMock.mockResolvedValue({ data: {} });
+  postMock.mockReset();
   Object.values(toastMock).forEach((fn) => fn.mockReset());
 });
 
@@ -153,5 +155,22 @@ describe('<Settings /> Bundesland-Wechsel (Gesamtreview 1.20 B9)', () => {
     await switchToBerlin();
     await waitFor(() => expect(toastMock.success).toHaveBeenCalled());
     expect(toastMock.warning).not.toHaveBeenCalled();
+  });
+});
+
+describe('<Settings /> Eigener Feiertag im abgeschlossenen Jahr (Gesamtreview 1.20)', () => {
+  it('zeigt nach dem Anlegen den Hinweis auf ein abgeschlossenes Jahr', async () => {
+    mockSettings([]);
+    const warning = 'Jahresabschluss 2025 bereits erfolgt — Carryover 2026 ist nun veraltet, bitte Jahresabschluss erneut ausführen.';
+    postMock.mockResolvedValue({
+      data: { id: 'h1', name: 'Schützenfest', date: '2025-08-15', year: 2025, is_custom: true, warning },
+    });
+    render(<Settings />);
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Schützenfest' } });
+    fireEvent.change(screen.getByLabelText('Datum'), { target: { value: '2025-08-15' } });
+    fireEvent.click(screen.getByRole('button', { name: /Hinzufügen/ }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Eigener Feiertag angelegt.'));
+    expect(postMock).toHaveBeenCalledWith('/holidays/', { name: 'Schützenfest', date: '2025-08-15' });
+    expect(toastMock.warning).toHaveBeenCalledWith(warning);
   });
 });
