@@ -162,6 +162,45 @@ def test_grant_and_recognize_on_approval_reclamps_the_credit(
     assert log.change_request_id == cr.id
 
 
+def test_grant_and_recognize_moving_the_entry_onto_a_sick_day_reclamps_there(
+    _db_session, employee_user, admin_client,
+):
+    """Gesamtreview 1.20 (Nachzug Fund 1): verschiebt der Antrag den Eintrag auf
+    einen Krank-Tag, klemmt das Anerkennen die Gutschrift DORT. Die Session
+    läuft mit ``autoflush=False`` — ohne Flush vor der Neuklemmung fand die
+    SQL-Abfrage den Eintrag noch am alten Tag: Krank Di blieb 8 h, +4 h Phantom,
+    und die nächste Rückrechnung meldete das Zurückklemmen als Verkürzung 9.5 (c)."""
+    e = _clamped_morning(_db_session, employee_user)
+    employee_user.work_blocks = block_week(
+        pause=30, mon=[("08:00", "16:30")], tue=[("08:00", "16:30")])
+    _db_session.commit()
+    _book_sick_keeping_entries(admin_client, employee_user, TUE)
+    assert float(_absence(_db_session, employee_user, TUE).hours) == 8.0   # Di ohne Arbeit
+    cr = ChangeRequest(
+        tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, entry_kind="time_entry",
+        request_type=ChangeRequestType.UPDATE, status=ChangeRequestStatus.PENDING,
+        time_entry_id=e.id, proposed_date=TUE, proposed_start_time=time(6, 30),
+        proposed_end_time=time(10, 30), proposed_break_minutes=0,
+        reason="Falscher Tag erfasst",
+    )
+    _db_session.add(cr)
+    _db_session.commit()
+    r = admin_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                          json={"action": "approve", "grant_credit_override": True})
+    assert r.status_code == 200, r.text
+
+    _db_session.expire_all()
+    moved = _db_session.get(TimeEntry, e.id)
+    assert (moved.date, moved.credit_override, float(moved.net_hours)) == (TUE, True, 4.0)
+    a = _absence(_db_session, employee_user, TUE)
+    assert float(a.hours) == 4.0                 # 8 − 4,0 (vorher blieb 8 stehen)
+    assert float(a.raw_hours) == 8.0
+    assert _day_saldo(_db_session, employee_user, TUE) == 0    # vorher +4 h Phantom
+    assert _no_reduction_left(_db_session, employee_user, TUE)
+    [log] = _absence_logs(_db_session)
+    assert (log.old_date, log.change_request_id) == (TUE, cr.id)
+
+
 def _sick_with_kept_entry(db, user, client, day=MON):
     """08:00–11:00 gearbeitet (ohne Blöcke), dann krank: Gutschrift 5 h."""
     db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=day,

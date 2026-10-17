@@ -138,6 +138,12 @@ def apply_credit_override(
     # Fund 1: F1 am Tag neu anwenden — dieselbe Rechnung wie die Rückrechnung
     # (``calculation_service.reapply_f1_for_day``); ``raw_hours`` bleibt stehen.
     # Die Ankersperre der Person hält der Aufrufer (P5).
+    # Erst flushen: die Session läuft mit ``autoflush=False``, die Neuklemmung
+    # liest die Einträge des Tages per SQL. Ohne Flush sähe sie bei
+    # „Genehmigen und anerkennen" mit Datumswechsel den Eintrag noch am alten
+    # Tag (Zieltag ungeklemmt, Phantom-Saldo). Die Kollisionsprüfung oben ist
+    # schon gelaufen — der neue Beginn verletzt die UNIQUE-Regel nicht.
+    db.flush()
     owner = db.query(User).filter(
         User.id == entry.user_id,
         User.tenant_id == entry.tenant_id,  # F-026
