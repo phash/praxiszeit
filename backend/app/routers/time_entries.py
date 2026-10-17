@@ -310,20 +310,19 @@ def _close_stale_entry(
 # --- Clock endpoints (must be BEFORE /{entry_id} to avoid route conflicts) ---
 
 def _today_closed_net_minutes(db: Session, user: User, today: date) -> int:
-    """#494: Σ net_hours der HEUTE abgeschlossenen Einträge, in Minuten.
+    """#494: angerechnete Minuten der HEUTE abgeschlossenen Einträge.
 
     ``net_hours`` ist derselbe Wert, der ins Ist geht (gekappte Zeit #201, Pause
     abgezogen, nie negativ) — die Karte rechnet ihn bewusst nicht aus Start/Ende
-    nach. ``net_hours`` ist auf 0,01 h gerundet (≤ 0,3 min Abweichung), daher
-    ist das Runden auf ganze Minuten exakt.
+    nach. Ultrareview: über ``presence_service.credited_minutes`` je Eintrag auf
+    Minuten gerundet (``net_hours`` trägt nur 0,01 h) — summiert und dann
+    umgerechnet wichen drei Einträge à 20 Min. um eine Minute ab (59 statt 60).
+    ``closed_entries`` filtert wie bisher auf Person, Mandant (F-026), den Tag
+    und gesetztes Ende.
     """
-    closed = db.query(TimeEntry).filter(
-        TimeEntry.user_id == user.id,
-        TimeEntry.tenant_id == user.tenant_id,  # F-026
-        TimeEntry.date == today,
-        TimeEntry.end_time.isnot(None),
-    ).all()
-    return int(round(sum(float(e.net_hours) for e in closed) * 60))
+    return presence_service.credited_minutes(
+        presence_service.closed_entries(db, user, today, today)
+    )
 
 
 def _today_target_hours(db: Session, user: User, today: date) -> float:

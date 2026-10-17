@@ -133,6 +133,18 @@ def test_offener_eintrag_vor_gekapptem_beginn_zaehlt_nicht_negativ(db, test_user
     assert body["today_net_minutes"] == 0
 
 
+def test_abgeschlossene_eintraege_je_eintrag_gerundet(db, test_user, frozen_now):
+    """Ultrareview: wie ``presence_service.credited_minutes`` je Eintrag auf
+    Minuten gerundet — drei Einträge à 20 Min. (``net_hours`` je 0,33) sind 60
+    Min., nicht Σ 0,99 h × 60 = 59."""
+    for h in (8, 9, 10):
+        db.add(_entry(test_user, TODAY, dt.time(h), dt.time(h, 20)))
+    db.commit()
+
+    body = _client(db, test_user).get("/api/time-entries/clock-status").json()
+    assert body["today_net_minutes"] == 60
+
+
 def test_ohne_eintraege_null(db, test_user, frozen_now):
     body = _client(db, test_user).get("/api/time-entries/clock-status").json()
     assert body["is_clocked_in"] is False
