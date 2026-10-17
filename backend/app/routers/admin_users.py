@@ -2110,6 +2110,19 @@ def _week_day_targets(user: User, effective_from: date, schedule) -> List[float]
             for i in range(5)]
 
 
+def _preview_account(db: Session, user: User, today: date, cutoff: date, vacation_year: int) -> tuple:
+    """Überstundenkonto (bis heute, Stichtag #313) und Urlaubsverbrauch des
+    Jahres — die Werte „bisher"/„neu" beider Vorschauen. Erhoben werden sie mit
+    Lauf zweimal im SELBEN flush/Rollback-Lauf: „bisher" über
+    ``run_change(after_close=…)`` nach dem P23-Schließen (Gesamtreview 1.20,
+    Fund 10), „neu" danach — so ist das Überstunden-Δ genau ``saldo_delta_hours``
+    (Spec 9.5 (b), ohne abgeschlossenes Jahr)."""
+    return (
+        float(calculation_service.get_overtime_account(db, user, today.year, today.month, cutoff_date=cutoff)),
+        float(calculation_service.get_vacation_account(db, user, vacation_year)["used_days"]),
+    )
+
+
 @router.post("/users/{user_id}/working-hours-changes/preview", response_model=WorkingHoursChangePreview)
 def preview_working_hours_change(
     user_id: str,
@@ -2229,16 +2242,13 @@ def preview_working_hours_change(
         new_blocks, new_pauses,
     )
 
-    # Saldo und Urlaub im IST-Zustand — vor dem Lauf, damit sie die hypothetische
-    # Zeile garantiert nicht sehen. Review-Fund 4 (Fix-Runde 1): Monatsobergrenze
-    # = heute wie in den Live-Anzeigen (``dashboard.get_overtime_account``,
-    # ``users_overview``), getrimmt über den Stichtag (#313).
+    # Saldo und Urlaub im IST-Zustand — ohne Lauf sofort, mit Lauf nach Schritt 2
+    # (``after_close``), in beiden Fällen ohne die hypothetische Zeile.
+    # Review-Fund 4 (Fix-Runde 1): Monatsobergrenze = heute wie in den
+    # Live-Anzeigen (``dashboard.get_overtime_account``, ``users_overview``),
+    # getrimmt über den Stichtag (#313).
     cutoff = calculation_service.get_soll_cutoff_date(db, user)
     vacation_year = window.start.year
-    overtime_before = float(calculation_service.get_overtime_account(
-        db, user, today.year, today.month, cutoff_date=cutoff))
-    vacation_before = float(calculation_service.get_vacation_account(db, user, vacation_year)["used_days"])
-    overtime_after, vacation_after = overtime_before, vacation_before
     fields: dict = {"affected_absences": 0}
     if not blocked_reason and not snapshot_unchanged:
         # EIN flush/Rollback-Lauf für alles (Spec 11.3): ``overtime_after`` und
@@ -2248,17 +2258,21 @@ def preview_working_hours_change(
         # läuft durch das ``finally`` — es gibt keinen Pfad an der
         # Rollback-Garantie vorbei. Protokolliert wird nie (10.3).
         try:
+            before: list = []
             impact = wh_change_service.run_change(
                 db, user, admin_id=current_user.id, effective_from=effective_from,
                 apply=lambda: _insert_change_rows(db, user, current_user, change_data, norm,
                                                   new_blocks, new_pauses),
+                after_close=lambda: before.append(_preview_account(db, user, today, cutoff, vacation_year)),
             )
-            overtime_after = float(calculation_service.get_overtime_account(
-                db, user, today.year, today.month, cutoff_date=cutoff))
-            vacation_after = float(calculation_service.get_vacation_account(db, user, vacation_year)["used_days"])
+            overtime_before, vacation_before = before[0]
+            overtime_after, vacation_after = _preview_account(db, user, today, cutoff, vacation_year)
             fields = wh_change_service.preview_fields(impact, user)
         finally:
             db.rollback()
+    else:
+        overtime_before, vacation_before = _preview_account(db, user, today, cutoff, vacation_year)
+        overtime_after, vacation_after = overtime_before, vacation_before
 
     # closed_years: ALLE im Zeitraum berührten abgeschlossenen Jahre;
     # closed_year_warning der fertige Text für das früheste.
@@ -2411,29 +2425,29 @@ def delete_preview_working_hours_change(
     blocked_reason = _earliest_row_lock_detail(db, user, current_user, change)
     cutoff = calculation_service.get_soll_cutoff_date(db, user)
     vacation_year = window.start.year
-    overtime_before = float(calculation_service.get_overtime_account(
-        db, user, today.year, today.month, cutoff_date=cutoff))
-    vacation_before = float(calculation_service.get_vacation_account(db, user, vacation_year)["used_days"])
-    overtime_after, vacation_after = overtime_before, vacation_before
     fields: dict = {"affected_absences": 0}
     reset = None
     if not blocked_reason:
         # Wie die Anlege-Vorschau: ``run_change`` komplett im ``try`` — kein Pfad
-        # an der Rollback-Garantie vorbei.
+        # an der Rollback-Garantie vorbei; „vorher" nach Schritt 2 (Fund 10).
         try:
+            before: list = []
             impact = wh_change_service.run_change(
                 db, user, admin_id=current_user.id, effective_from=effective_from,
                 apply=lambda: _delete_change_row(db, user, current_user, change),
+                after_close=lambda: before.append(_preview_account(db, user, today, cutoff, vacation_year)),
             )
-            overtime_after = float(calculation_service.get_overtime_account(
-                db, user, today.year, today.month, cutoff_date=cutoff))
-            vacation_after = float(calculation_service.get_vacation_account(db, user, vacation_year)["used_days"])
+            overtime_before, vacation_before = before[0]
+            overtime_after, vacation_after = _preview_account(db, user, today, cutoff, vacation_year)
             fields = wh_change_service.preview_fields(impact, user)
             earliest = impact.earliest_lossless_date
             if impact.is_shortening and earliest is not None and earliest > effective_from:
                 reset = wh_change_service.reset_body(predecessor, earliest, row_id)
         finally:
             db.rollback()
+    else:
+        overtime_before, vacation_before = _preview_account(db, user, today, cutoff, vacation_year)
+        overtime_after, vacation_after = overtime_before, vacation_before
     closed_years = calculation_service.closed_years_in_range(
         db, current_user.tenant_id, range(window.start.year, window.end.year + 1))
     day_targets_current = _week_day_targets(user, effective_from, current_schedule)

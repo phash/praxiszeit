@@ -164,9 +164,19 @@ def _next_change(db: Session, user: User, effective_from: date) -> Optional[Work
 
 
 def run_change(db: Session, user: User, *, admin_id, effective_from: date,
-               apply: Callable[[], None]) -> ChangeImpact:
+               apply: Callable[[], None],
+               after_close: Optional[Callable[[], None]] = None) -> ChangeImpact:
     """Spec 9.3 Schritte 2–7 (Docstring des Moduls). ``apply`` legt die neue Zeile
-    an bzw. löscht die bestehende — ohne commit."""
+    an bzw. löscht die bestehende — ohne commit.
+
+    ``after_close`` (Gesamtreview 1.20, Fund 10) läuft nach Schritt 2 und vor
+    Schritt 3 — dort, wo auch der Saldo „vorher" entsteht. Die Vorschauen erheben
+    darin ihr ``overtime_before``/``vacation_days_before``: vor dem Lauf erhoben,
+    zählte ein offener Alteintrag dort 0 h und nach dem Schließen mit der Hülle —
+    das Überstunden-Δ der Box enthielt dann die Stunden eines vergessenen
+    Ausstempelns, Soll- und Angerechnet-Δ daneben nicht (Spec 9.5 (b):
+    ``saldo_delta_hours`` = ``overtime_after − overtime_before``). Die neue Zeile
+    sieht der Callback noch nicht (``apply`` folgt erst in Schritt 4)."""
     from app.routers.time_entries import _close_stale_entry  # lokal: kein Router-Import beim Modul-Laden
 
     today = timezone_service.today_local()
@@ -186,6 +196,8 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
         _close_stale_entry(db, e, changed_by_id=admin_id)
     if stale:
         db.flush()
+    if after_close is not None:
+        after_close()
 
     # Schritt 3 — nach Schritt 2: das Schließen ist nicht Wirkung der Änderung.
     old_schedule = calculation_service.get_schedule_for_date(db, user, effective_from)
