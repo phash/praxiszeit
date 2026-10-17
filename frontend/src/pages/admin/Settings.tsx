@@ -360,12 +360,17 @@ export default function Settings() {
       setOriginalSpecialDays(specialDays);
       toast.success('Sondertage (24./31.12.) gespeichert.');
       // Gesamtreview: die Einstellung wirkt in jedem Jahr — betrifft sie ein
-      // abgeschlossenes Jahr, liefert der Server einen Hinweis (je PUT ggf.
-      // derselbe Text, deshalb nur einmal anzeigen).
-      const warningResponse = responses.find(
-        (r) => typeof (r?.data as { warning?: unknown } | undefined)?.warning === 'string',
-      );
-      if (warningResponse) showResponseWarning(toast, warningResponse.data);
+      // abgeschlossenes Jahr, liefert jeder PUT denselben Jahresabschluss-
+      // Hinweis; der Kappungshinweis (stale_clamp_hint) nennt dagegen je Tag
+      // andere Einträge (24.12. bzw. 31.12.). Deshalb alle verschiedenen Texte
+      // sammeln, Doppelte und in einem anderen schon enthaltene weglassen und
+      // gemeinsam anzeigen — nie nur den ersten.
+      const texts = responses
+        .map((r) => (r?.data as { warning?: unknown } | undefined)?.warning)
+        .filter((w): w is string => typeof w === 'string' && w.length > 0);
+      const unique = texts.filter((w, i) => texts.indexOf(w) === i);
+      const shown = unique.filter((w) => !unique.some((other) => other !== w && other.includes(w)));
+      if (shown.length > 0) showResponseWarning(toast, { warning: shown.join(' ') });
     } catch (err) {
       toast.error(getErrorMessage(err));
       // Re-sync from server so the UI reflects which keys actually persisted

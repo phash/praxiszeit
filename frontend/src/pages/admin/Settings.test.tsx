@@ -202,4 +202,26 @@ describe('<Settings /> Sondertage im abgeschlossenen Jahr (Gesamtreview 1.20)', 
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Sondertage (24./31.12.) gespeichert.'));
     expect(toastMock.warning).not.toHaveBeenCalled();
   });
+
+  it('zeigt verschiedene Hinweise der vier Antworten gemeinsam (je Tag andere Einträge)', async () => {
+    mockSettings([]);
+    const closing = 'Jahresabschluss 2025 bereits erfolgt — Carryover 2026 ist nun veraltet, bitte Jahresabschluss erneut ausführen.';
+    const dec24 = 'Zeiteinträge an geänderten Tagen behalten ihre bisherige Anrechnung gegen die Arbeitszeit-Blöcke (1 Eintrag: 24.12.2025). Neu berechnet …';
+    const dec31 = 'Zeiteinträge an geänderten Tagen behalten ihre bisherige Anrechnung gegen die Arbeitszeit-Blöcke (1 Eintrag: 31.12.2025). Neu berechnet …';
+    putMock.mockImplementation((url: string) => {
+      if (url.endsWith('special_day_dec24_mode')) return Promise.resolve({ data: { warning: `${closing} ${dec24}` } });
+      if (url.endsWith('special_day_dec24_counts_as_vacation')) return Promise.resolve({ data: { warning: closing } });
+      if (url.endsWith('special_day_dec31_mode')) return Promise.resolve({ data: { warning: dec31 } });
+      return Promise.resolve({ data: {} });
+    });
+    render(<Settings />);
+    fireEvent.change(await screen.findByLabelText('Modus', { selector: '#special-dec24-mode' }), {
+      target: { value: 'free' },
+    });
+    const card = screen.getByRole('heading', { name: 'Sondertage (24./31.12.)' }).parentElement!;
+    fireEvent.click(within(card).getByRole('button', { name: /Speichern/ }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Sondertage (24./31.12.) gespeichert.'));
+    expect(toastMock.warning).toHaveBeenCalledTimes(1);
+    expect(toastMock.warning).toHaveBeenCalledWith(`${closing} ${dec24} ${dec31}`);
+  });
 });
