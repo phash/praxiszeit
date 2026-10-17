@@ -302,9 +302,15 @@ def get_weekly_overview(
 
     cutoff = calculation_service.get_soll_cutoff_date(db, current_user)  # #313
 
-    rows: List[WeeklyOverviewRow] = []
+    mondays: List[date] = []
     while monday <= current_monday:
-        week = calculation_service.get_week_summary(db, current_user, monday, cutoff)
+        mondays.append(monday)
+        monday += timedelta(weeks=1)
+
+    # Ultrareview: alle Wochen in EINER Kontoberechnung (gleiche Zahlen wie
+    # get_week_summary je Woche, das der Admin-Wochenbericht nutzt).
+    rows: List[WeeklyOverviewRow] = []
+    for week in calculation_service.get_week_summaries(db, current_user, mondays, cutoff):
         iso = week.week_start.isocalendar()
         rows.append(WeeklyOverviewRow(
             week_start=week.week_start,
@@ -316,7 +322,6 @@ def get_weekly_overview(
             balance=float(week.balance),
             cumulative=float(week.cumulative),
         ))
-        monday += timedelta(weeks=1)
     return rows
 
 

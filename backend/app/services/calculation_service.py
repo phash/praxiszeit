@@ -2035,6 +2035,9 @@ def get_overtime_account(
     iterates months from that year forward (avoids double-counting).
     Otherwise falls back to calculating from the first time entry.
 
+    Dünner Wrapper über :func:`get_overtime_accounts` mit genau einem Punkt —
+    eine Rechnung für Einzel- und Mehrfachabfrage.
+
     Args:
         db: Database session
         user: User object
@@ -2044,42 +2047,77 @@ def get_overtime_account(
     Returns:
         Cumulative overtime as Decimal
     """
+    return get_overtime_accounts(db, user, [(up_to_year, up_to_month, cutoff_date)])[0]
+
+
+def get_overtime_accounts(
+    db: Session, user: User, points: List[tuple]
+) -> List[Decimal]:
+    """Überstundenkonto für mehrere Punkte ``(up_to_year, up_to_month, cutoff_date)``
+    in EINER Rechnung — je Punkt exakt der Wert von :func:`get_overtime_account`.
+
+    Ultrareview (Performance): die Wochenübersicht (#500) brauchte das Konto für
+    bis zu 53 Wochen und rechnete es je Woche komplett neu. Hier werden die
+    Daten einmal geladen (vom frühesten Start bis zum spätesten Monatsende) und
+    das Delta (Ist − Soll) je Monat einmal je *wirksamem* Stichtag gerechnet:
+    ein Stichtag am oder nach dem Monatsende wirkt in diesem Monat wie kein
+    Stichtag (alle Tage ≤ Stichtag), daher teilen sich alle Punkte mit späterem
+    Stichtag die volle Monatsrechnung. Je Punkt werden die Deltas in derselben
+    Reihenfolge wie bisher auf den Startwert addiert — byte-identisch.
+
+    Der Startpunkt (jüngster YearCarryover ≤ up_to_year, sonst Monat des ersten
+    Zeiteintrags) wird je Punkt bestimmt.
+    """
     if not user.track_hours:
-        return Decimal('0.00')
+        return [Decimal('0.00') for _ in points]
+    if not points:
+        return []
 
-    up_to_date = date(up_to_year, up_to_month, monthrange(up_to_year, up_to_month)[1])
-
-    # --- determine starting point ---
-    # Find the most recent carryover at or before up_to_year
-    latest_carryover = db.query(YearCarryover).filter(
+    # --- determine starting point per point ---
+    # The most recent carryover at or before up_to_year (one query for all points).
+    carryovers = db.query(YearCarryover).filter(
         YearCarryover.tenant_id == user.tenant_id,  # F-026
         YearCarryover.user_id == user.id,
-        YearCarryover.year <= up_to_year,
-    ).order_by(YearCarryover.year.desc()).first()
+        YearCarryover.year <= max(p[0] for p in points),
+    ).order_by(YearCarryover.year.desc()).all()
 
-    if latest_carryover:
-        # Start from Jan of the carryover year with the carryover value
-        start_year = latest_carryover.year
-        start_month = 1
-        initial_balance = Decimal(str(latest_carryover.overtime_hours))
-        start_date = date(start_year, 1, 1)
-    else:
+    first_entry = None
+    first_entry_loaded = False
+
+    starts: List[Optional[tuple]] = []  # (start_year, start_month, initial_balance) or None → 0.00
+    for (up_to_year, _up_to_month, _cutoff) in points:
+        latest_carryover = next((c for c in carryovers if c.year <= up_to_year), None)
+        if latest_carryover:
+            # Start from Jan of the carryover year with the carryover value
+            starts.append((latest_carryover.year, 1, Decimal(str(latest_carryover.overtime_hours))))
+            continue
         # No carryover: start from first time entry
-        first_entry = db.query(TimeEntry).filter(
-            TimeEntry.tenant_id == user.tenant_id,  # F-026
-            TimeEntry.user_id == user.id
-        ).order_by(TimeEntry.date).first()
-
+        if not first_entry_loaded:
+            first_entry = db.query(TimeEntry).filter(
+                TimeEntry.tenant_id == user.tenant_id,  # F-026
+                TimeEntry.user_id == user.id
+            ).order_by(TimeEntry.date).first()
+            first_entry_loaded = True
         if not first_entry:
-            return Decimal('0.00')
+            starts.append(None)
+            continue
+        starts.append((first_entry.date.year, first_entry.date.month, Decimal('0.00')))
 
-        start_year = first_entry.date.year
-        start_month = first_entry.date.month
-        initial_balance = Decimal('0.00')
-        start_date = date(start_year, start_month, 1)
+    live = [s for s in starts if s is not None]
+    if not live:
+        return [Decimal('0.00') for _ in points]
+
+    start_date = min(date(s[0], s[1], 1) for s in live)
+    up_to_date = max(
+        date(p[0], p[1], monthrange(p[0], p[1])[1])
+        for p, s in zip(points, starts) if s is not None
+    )
+
+    fixed_mode = bool(getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None))
 
     # --- single-pass bulk fetches ---
-    # All time entries in range (group by month in memory)
+    # All time entries in range (grouped by month in memory; the #313 cutoff
+    # is applied per month in _month_delta, because points differ in cutoff).
     entries = db.query(TimeEntry).filter(
         TimeEntry.tenant_id == user.tenant_id,  # F-026
         TimeEntry.user_id == user.id,
@@ -2089,14 +2127,11 @@ def get_overtime_account(
     # #195: skip Ist outside the employment window (symmetric to the Soll guard
     # in the month loop below) so out-of-window entries don't create phantom
     # overtime.
-    actual_by_month: Dict[tuple, Decimal] = {}
+    entries_by_month: Dict[tuple, list] = {}
     for e in entries:
         if not _within_employment_window(user, e.date):
             continue
-        if cutoff_date is not None and e.date > cutoff_date:  # #313
-            continue
-        key = (e.date.year, e.date.month)
-        actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(e.net_hours))
+        entries_by_month.setdefault((e.date.year, e.date.month), []).append(e)
 
     # All public holidays in range
     # Audit 2026-07-31 (Fund K): VOR die Gutschrift-Schleife gezogen — die
@@ -2129,18 +2164,11 @@ def get_overtime_account(
         Absence.date <= up_to_date,
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all()
+    credited_by_month: Dict[tuple, list] = {}
     for ca in credited_absences:
         if not _within_employment_window(user, ca.date):
             continue
-        if cutoff_date is not None and ca.date > cutoff_date:  # #313
-            continue
-        # Audit 2026-07-31 (Fund K): die Gutschrift folgt der Soll-Struktur des
-        # Tages (Wochenende/Feiertag 0, Sondertag mit dem #146-Faktor).
-        weight = credit_day_weight(ca.date, holiday_dates, _special_day_config(ca.date.year))
-        if weight <= 0:
-            continue
-        key = (ca.date.year, ca.date.month)
-        actual_by_month[key] = actual_by_month.get(key, Decimal('0')) + Decimal(str(ca.hours)) * weight
+        credited_by_month.setdefault((ca.date.year, ca.date.month), []).append(ca)
 
     # All absences in range (exclude TRAINING, SICK, OVERTIME — same rule as
     # get_monthly_target). VACATION/OTHER/PAID_LEAVE reduce the target and are
@@ -2168,12 +2196,19 @@ def get_overtime_account(
         WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
     ).order_by(WorkingHoursChange.effective_from).all()
 
-    # --- iterate months and compute balance in memory ---
-    total_balance = initial_balance
-    current_year, current_month = start_year, start_month
+    month_deltas: Dict[tuple, Decimal] = {}
 
-    while (current_year < up_to_year) or (current_year == up_to_year and current_month <= up_to_month):
-        key = (current_year, current_month)
+    def _month_delta(current_year: int, current_month: int, cutoff_date: Optional[date]) -> Decimal:
+        _, last_day = monthrange(current_year, current_month)
+        # Ein Stichtag am/nach dem Monatsende lässt jeden Tag des Monats zu —
+        # identisch zu „kein Stichtag" (auch im Fix-Modus: get_range_* clampen
+        # auf min(Monatsende, Stichtag)). Gemeinsamer Cache-Schlüssel.
+        if cutoff_date is not None and cutoff_date >= date(current_year, current_month, last_day):
+            cutoff_date = None
+        cache_key = (current_year, current_month, cutoff_date)
+        cached = month_deltas.get(cache_key)
+        if cached is not None:
+            return cached
 
         # #377 Baustein 2b: fest-Monats-Soll-Modus — statt die per-Tag-Summe
         # unten neu zu rekonstruieren (Risiko, die SICK/TRAINING-Gutschrift +
@@ -2183,22 +2218,33 @@ def get_overtime_account(
         # den der nicht-modus-Pfad unten pro Tag gegen `d` prüft; get_range_target/
         # get_range_actual clampen intern selbst gegen das jeweilige Monatsende
         # (`min(end, up_to_date)`), daher hier unverändert durchreichen — NICHT
-        # die oben berechnete `up_to_date` (= Monatsende des ANGEFRAGTEN
-        # up_to_year/up_to_month, nur für den Bulk-Fetch-Query-Bound gedacht).
-        if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+        # die oben berechnete `up_to_date` (= spätestes Monatsende der Punkte,
+        # nur für den Bulk-Fetch-Query-Bound gedacht).
+        if fixed_mode:
             monthly_target = get_monthly_target(db, user, current_year, current_month, up_to_date=cutoff_date)
             monthly_actual = get_monthly_actual(db, user, current_year, current_month, up_to_date=cutoff_date)
-            total_balance += (monthly_actual - monthly_target)
+            delta = monthly_actual - monthly_target
+            month_deltas[cache_key] = delta
+            return delta
 
-            if current_month == 12:
-                current_month = 1
-                current_year += 1
-            else:
-                current_month += 1
-            continue
+        key = (current_year, current_month)
+        # Ist: Zeiteinträge, dann Gutschrift Krank/Fortbildung (Reihenfolge wie bisher).
+        monthly_actual = Decimal('0')
+        for e in entries_by_month.get(key, ()):
+            if cutoff_date is not None and e.date > cutoff_date:  # #313
+                continue
+            monthly_actual = monthly_actual + Decimal(str(e.net_hours))
+        for ca in credited_by_month.get(key, ()):
+            if cutoff_date is not None and ca.date > cutoff_date:  # #313
+                continue
+            # Audit 2026-07-31 (Fund K): die Gutschrift folgt der Soll-Struktur des
+            # Tages (Wochenende/Feiertag 0, Sondertag mit dem #146-Faktor).
+            weight = credit_day_weight(ca.date, holiday_dates, _special_day_config(ca.date.year))
+            if weight <= 0:
+                continue
+            monthly_actual = monthly_actual + Decimal(str(ca.hours)) * weight
 
         # Monthly target (mirrors get_monthly_target logic)
-        _, last_day = monthrange(current_year, current_month)
         cfg = _special_day_config(current_year)
         monthly_target = Decimal('0')
         for day in range(1, last_day + 1):
@@ -2222,16 +2268,26 @@ def get_overtime_account(
                 worked_map=worked_map,
             )
 
-        monthly_actual = actual_by_month.get(key, Decimal('0'))
-        total_balance += (monthly_actual - monthly_target)
+        delta = monthly_actual - monthly_target
+        month_deltas[cache_key] = delta
+        return delta
 
-        if current_month == 12:
-            current_month = 1
-            current_year += 1
-        else:
-            current_month += 1
-
-    return total_balance.quantize(Decimal('0.01'))
+    # --- iterate months per point and compute balance in memory ---
+    results: List[Decimal] = []
+    for (up_to_year, up_to_month, cutoff_date), start in zip(points, starts):
+        if start is None:
+            results.append(Decimal('0.00'))
+            continue
+        current_year, current_month, total_balance = start
+        while (current_year < up_to_year) or (current_year == up_to_year and current_month <= up_to_month):
+            total_balance += _month_delta(current_year, current_month, cutoff_date)
+            if current_month == 12:
+                current_month = 1
+                current_year += 1
+            else:
+                current_month += 1
+        results.append(total_balance.quantize(Decimal('0.01')))
+    return results
 
 
 class WeekSummary(NamedTuple):
@@ -2266,24 +2322,45 @@ def get_week_summary(
     Monats-Soll-Modus #377 und die Gutschrift-Regeln mitkommen), das Konto über
     :func:`get_overtime_account` zum Wochenende bzw. zum Stichtag.
     """
-    wk_start = any_day - timedelta(days=any_day.weekday())  # Monday
-    wk_end = wk_start + timedelta(days=6)                   # Sunday
-    target = get_range_target(db, user, wk_start, wk_end, up_to_date=cutoff)
-    actual = get_range_actual(db, user, wk_start, wk_end, up_to_date=cutoff)
-    balance = (actual - target).quantize(Decimal('0.01'))
-    # Konto = kumulativer laufender Saldo zum Wochenende (in der laufenden Woche
-    # am bis_heute-Stichtag gekappt).
-    ot_cutoff = wk_end if cutoff is None else min(wk_end, cutoff)
-    cumulative = get_overtime_account(db, user, wk_end.year, wk_end.month, cutoff_date=ot_cutoff)
-    return WeekSummary(
-        week_start=wk_start,
-        week_end=wk_end,
-        target=target,
-        actual=actual,
-        balance=balance,
-        cumulative=cumulative,
-        ot_cutoff=ot_cutoff,
+    return get_week_summaries(db, user, [any_day], cutoff)[0]
+
+
+def get_week_summaries(
+    db: Session, user: User, days: List[date], cutoff: Optional[date] = None
+) -> List[WeekSummary]:
+    """:func:`get_week_summary` für mehrere Wochen (je Eintrag in ``days`` eine,
+    gleiche Reihenfolge) — dieselbe Rechnung, das Konto aber für alle Wochen in
+    EINER Kontoberechnung (:func:`get_overtime_accounts`) statt je Woche neu
+    (Ultrareview: bis zu 53 volle Kontoberechnungen je Aufruf der
+    Wochenübersicht). Werte byte-identisch zur Einzelrechnung.
+    """
+    partial = []
+    for any_day in days:
+        wk_start = any_day - timedelta(days=any_day.weekday())  # Monday
+        wk_end = wk_start + timedelta(days=6)                   # Sunday
+        target = get_range_target(db, user, wk_start, wk_end, up_to_date=cutoff)
+        actual = get_range_actual(db, user, wk_start, wk_end, up_to_date=cutoff)
+        balance = (actual - target).quantize(Decimal('0.01'))
+        # Konto = kumulativer laufender Saldo zum Wochenende (in der laufenden
+        # Woche am bis_heute-Stichtag gekappt).
+        ot_cutoff = wk_end if cutoff is None else min(wk_end, cutoff)
+        partial.append((wk_start, wk_end, target, actual, balance, ot_cutoff))
+
+    cumulatives = get_overtime_accounts(
+        db, user, [(wk_end.year, wk_end.month, ot_cutoff) for (_, wk_end, _, _, _, ot_cutoff) in partial]
     )
+    return [
+        WeekSummary(
+            week_start=wk_start,
+            week_end=wk_end,
+            target=target,
+            actual=actual,
+            balance=balance,
+            cumulative=cumulative,
+            ot_cutoff=ot_cutoff,
+        )
+        for (wk_start, wk_end, target, actual, balance, ot_cutoff), cumulative in zip(partial, cumulatives)
+    ]
 
 
 class MonthlyOvertime(NamedTuple):
