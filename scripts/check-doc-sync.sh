@@ -956,6 +956,21 @@ group_technik() {
     forbid "$f" 'Tagessoll laut Snapshot'
   done
   forbid frontend/src/pages/Dashboard.tsx '// Blöcke (geteilter Dienst)'
+  # Gesamtreview 1.20 (Nachzug Fund 27): dieselbe Verwechslung im API-Vertrag
+  # (Antwortschema), im Router-Docstring und in den Testkommentaren — das
+  # Schema liest eine neue Fläche als Erstes. Dazu die schiefe Grammatik
+  # „Basis der Vertrags-Snapshot“ (richtig: „Basis: der Vertrags-Snapshot“).
+  for f in backend/app/schemas/time_entry.py backend/app/routers/time_entries.py \
+           backend/tests/test_494_clock_status_today.py; do
+    forbid "$f" 'Tagessoll von heute aus dem datumsaufgelösten'
+    forbid "$f" 'Tagessoll von heute aus dem DATUMSAUFGELÖSTEN'
+  done
+  need backend/app/schemas/time_entry.py 'calculation_service.get_day_presence_target'
+  forbid frontend/src/pages/Dashboard.test.tsx 'das Tagessoll als `today_target_hours` (Snapshot #431)'
+  forbid docs/specs/features/dashboard.md 'Basis der Vertrags-Snapshot'
+  # Dashboard.tsx bricht den Satz nach „Basis“ um, grep -F prüft zeilenweise —
+  # deshalb das Zeilenende davor („…, Basis“ statt „…; Basis:“).
+  forbid frontend/src/pages/Dashboard.tsx '(get_day_presence_target, Basis'
 }
 
 # CLAUDE.md (Spec 16.2, zwölf Regeln, plus Doku-Regeln dieses PRs). Über den

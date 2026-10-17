@@ -200,8 +200,12 @@ class ClockStatusResponse(BaseModel):
     # Vormittag zeigte die mobile Karte bei geteilten Diensten nur den
     # laufenden Nachmittagseintrag (bzw. 0:00 nach dem Ausstempeln).
     today_net_minutes: int = 0
-    # #494/#431: Tagessoll von heute aus dem datumsaufgelösten Vertrags-Snapshot
-    # (nicht aus den Live-Feldern der User-Zeile). Wochenende/track_hours=False → 0.
+    # #494 F1: heute zu stempelnde Stunden aus
+    # ``calculation_service.get_day_presence_target`` — 0 am Wochenende, an
+    # Feiertagen, bei ganztägiger Abwesenheit jeden Typs, außerhalb des
+    # Beschäftigungsfensters und ohne Stundenzählung; Halbtag und Sondertag
+    # anteilig (Basis: der Vertrags-Snapshot #431). Kein Vertrags-Tagessoll,
+    # nie für Saldo, Exporte oder Journal.
     today_target_hours: float = 0.0
     # Spec 2026-10-08 (8.4, 11.1, 14): die Blöcke von heute — für die §4-Vorprüfung
     # im StampWidget und den Dashboard-Status in der Lücke (E69) — und der

@@ -250,7 +250,8 @@ describe('Dashboard „Letzte Einträge" (#493)', () => {
 // #494: „x von y h heute" zählte nur die Laufzeit des OFFENEN Eintrags
 // (`elapsed_minutes`). Geteilte Dienste verloren den Vormittag, nach dem
 // Ausstempeln stand 0:00. Das Tages-Ist kommt jetzt als `today_net_minutes`,
-// das Tagessoll als `today_target_hours` (Snapshot #431) aus /clock-status.
+// die heute zu stempelnden Stunden als `today_target_hours` (Präsenz-Soll aus
+// `get_day_presence_target`, kein Vertrags-Tagessoll) aus /clock-status.
 describe('Dashboard Stempelkarte „x von y h heute" (#494)', () => {
   function withClockStatus(data: unknown) {
     const base = getMock.getMockImplementation()!;

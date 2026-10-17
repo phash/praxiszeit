@@ -1,18 +1,21 @@
-"""#494: ``GET /api/time-entries/clock-status`` liefert das Tages-Ist und das
-Tagessoll von heute mit.
+"""#494: ``GET /api/time-entries/clock-status`` liefert das Tages-Ist und die
+heute zu stempelnden Stunden mit.
 
 Die mobile Stempelkarte zeigte „x von y h heute" bisher aus ``elapsed_minutes``
 — das ist allein die Laufzeit des gerade OFFENEN Eintrags. Bei geteilten
 Diensten (Vormittag + Nachmittag, in Praxen die Regel) fehlte damit der bereits
-abgeschlossene Block, und nach dem Ausstempeln sprang die Anzeige auf 0:00.
+abgeschlossene Eintrag, und nach dem Ausstempeln sprang die Anzeige auf 0:00.
 
 ``today_net_minutes`` = Σ ``net_hours`` der heute abgeschlossenen Einträge
 (gekappte Zeit, Pause abgezogen — derselbe Wert, der ins Ist geht) + laufende
 Netto-Minuten des offenen Eintrags.
 
-``today_target_hours`` = Tagessoll von heute aus dem DATUMSAUFGELÖSTEN
-Vertrags-Snapshot (#431), nicht aus den Live-Feldern der User-Zeile, die das
-Frontend vorher selbst las.
+``today_target_hours`` = Präsenz-Soll aus ``get_day_presence_target`` (Review
+F1): 0 am Wochenende, an Feiertagen, bei ganztägiger Abwesenheit jeden Typs,
+außerhalb des Beschäftigungsfensters und ohne Stundenzählung; Halbtag und
+Sondertag anteilig. Basis ist der DATUMSAUFGELÖSTE Vertrags-Snapshot (#431),
+nicht die Live-Felder der User-Zeile, die das Frontend vorher selbst las. Kein
+Vertrags-Tagessoll, nie für Saldo, Exporte oder Journal.
 """
 import datetime as dt
 from decimal import Decimal

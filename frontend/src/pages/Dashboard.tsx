@@ -517,7 +517,7 @@ export default function Dashboard() {
       {/* Status Card - Mobile Hero */}
       {trackHours && (() => {
         // #494: Tagessoll und Tages-Ist kommen vom Server. Das Soll sind die
-        // Stunden, die heute zu stempeln sind (get_day_presence_target, Basis
+        // Stunden, die heute zu stempeln sind (get_day_presence_target; Basis:
         // der datumsaufgelöste Vertrags-Snapshot #431): 0 an Feiertagen, bei
         // ganztägiger Abwesenheit jeden Typs und außerhalb des
         // Beschäftigungsfensters — kein Vertrags-Tagessoll, nie für den Saldo.

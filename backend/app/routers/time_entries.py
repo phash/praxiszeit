@@ -327,7 +327,7 @@ def _today_closed_net_minutes(db: Session, user: User, today: date) -> int:
 
 
 def _today_target_hours(db: Session, user: User, today: date) -> float:
-    """#494/#431: Tagessoll von heute aus dem datumsaufgelösten Snapshot.
+    """#494 F1: heute zu stempelnde Stunden (Präsenz-Soll), kein Vertrags-Tagessoll.
 
     Vorher las das Frontend ``user.hours_<wochentag>`` bzw. ``weekly_hours /
     work_days_per_week`` live von der User-Zeile — bei einer heute wirksamen
