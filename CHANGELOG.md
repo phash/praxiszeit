@@ -4,7 +4,7 @@
 
 ## [1.20.0] - 2026-10-17
 
-Geplant als **1.20.0** (Minor-Release). Update aus jeder 1.19.x ohne
+Minor-Release. Update aus jeder 1.19.x ohne
 Zwischenschritte. **Enthält eine Datenbank-Migration** (`073_work_blocks`): Sie
 übernimmt jedes hinterlegte Arbeitszeit-Fenster (Soll-Beginn/Soll-Ende je
 Wochentag) als einen Block je Tag und entfernt die alten Fenster-Spalten.
