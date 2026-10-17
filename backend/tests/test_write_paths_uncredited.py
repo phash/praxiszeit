@@ -219,17 +219,22 @@ def test_clock_out_daily_check_counts_credited_time(_db_session, employee_user, 
 # angerechneten Zeit. Mo–Do je 10,0 h ohne Blöcke (07:00–17:15, Pause 15),
 # Fr mit Lücke 12:15–14:45: 08:00–18:00, Pause 45 → roh 9,25 h (Woche
 # 49,25 h → beide Warnungen), angerechnet 6,75 h (Woche 46,75 h → keine).
+# Je Pfad eine Kontrolle ohne Lücke (Fr-Block 08:00–18:00, roh = angerechnet
+# 9,25 h, Woche 49,25 h): sie warnt, damit der Negativfall nicht still grün
+# bleibt, falls eine der fünf Stellen gar nicht mehr warnt (Gesamtreview,
+# Muster wie test_e40_request_weekly_warning_uses_credited_time).
 # Die Nachprüfung der Antragsgenehmigung (Nr. 10) meldet die Wochengrenze in
 # eigenem Wortlaut (§3 ArbZG: …) und liest seit E41 den gespeicherten Eintrag;
 # sie ist in test_legacy_fixes_blocks.py festgehalten
 # (test_e41_entry_counts_exactly_once, test_e41_post_commit_uses_credited_time).
 FRI = date(2026, 6, 5)
-FRI_BLOCKS = block_week(fri=[("08:00", "12:00"), ("15:00", "18:00")])
+FRI_GAP = [("08:00", "12:00"), ("15:00", "18:00")]   # Lücke 12:15–14:45
+FRI_NO_GAP = [("08:00", "18:00")]                     # Kontrolle ohne Lücke
 FRI_DAY = {"start_time": "08:00", "end_time": "18:00", "break_minutes": 45}
 
 
-def _seed_week(db, user):
-    user.work_blocks = FRI_BLOCKS
+def _seed_week(db, user, fri_blocks):
+    user.work_blocks = block_week(fri=fri_blocks)
     for d in range(1, 5):
         db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=date(2026, 6, d),
                          start_time=time(7, 0), end_time=time(17, 15), break_minutes=15))
@@ -262,22 +267,28 @@ def _week_admin_update(db, user, request):
     return request.getfixturevalue("admin_client").put(f"/api/admin/time-entries/{e.id}", json=FRI_DAY)
 
 
+@pytest.mark.parametrize("fri_blocks, uncredited, net, warned", [
+    (FRI_GAP, 150, Decimal("6.75"), False),
+    (FRI_NO_GAP, 0, Decimal("9.25"), True),
+], ids=["luecke", "kontrolle"])
 @pytest.mark.parametrize("path", [
     _week_ma_create, _week_ma_update, _week_clock_out, _week_admin_create, _week_admin_update,
 ], ids=["ma_create", "ma_update", "clock_out", "admin_create", "admin_update"])
 def test_weekly_and_post_commit_daily_warnings_use_credited_time(_db_session, employee_user, request,
-                                                                 monkeypatch, path):
-    _seed_week(_db_session, employee_user)
+                                                                 monkeypatch, path, fri_blocks,
+                                                                 uncredited, net, warned):
+    _seed_week(_db_session, employee_user, fri_blocks)
     monkeypatch.setattr(te, "_today_local", lambda: FRI)
     monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 5, 18, 0))
     resp = path(_db_session, employee_user, request)
     assert resp.status_code in (200, 201), resp.text
     warnings = resp.json()["warnings"]
-    assert not any(w.startswith("WEEKLY_HOURS_WARNING") for w in warnings), warnings
-    assert not any(w.startswith("DAILY_HOURS_WARNING") for w in warnings), warnings
+    # Präfix: die Admin-Pfade hängen an den Code einen Text an.
+    assert any(w.startswith("WEEKLY_HOURS_WARNING") for w in warnings) is warned, warnings
+    assert any(w.startswith("DAILY_HOURS_WARNING") for w in warnings) is warned, warnings
     _db_session.expire_all()
     fri = _db_session.query(TimeEntry).filter(TimeEntry.date == FRI).one()
-    assert (fri.uncredited_minutes, fri.net_hours) == (150, Decimal("6.75"))
+    assert (fri.uncredited_minutes, fri.net_hours) == (uncredited, net)
 
 
 # Review Task 3 (PR2): genau AUF der Grenze greift die harte Prüfung nicht.
