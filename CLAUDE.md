@@ -1,7 +1,7 @@
 # CLAUDE.md – PraxisZeit
 
 **Repo:** https://github.com/phash/praxiszeit
-**Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 16
+**Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 18
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
 **Aktuelle Version:** 1.20.0 (Stand 2026-10-17)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
@@ -18,6 +18,11 @@ docker compose up -d          # Frontend :80, API-Docs :8000/docs
 docker compose down
 ```
 
+### Struktur
+- `backend/app/`: `routers/` (HTTP, Sperren, Tenant-Filter) · `services/` (Fachlogik; Soll/Ist `calculation_service`, Kappung `work_window_service`, Arbeitszeit-Änderung `wh_change_service`, Exporte `export_service`/`ods_export_service`, `journal_service`) · `models/` · `schemas/` (Pydantic, `response_model` filtert) · `core/` (Lizenz, Updater, DB-Fehler, Deployment-Modus) · `config.py` (Einstellungen) · `../alembic/versions/` (Migrationen, Rev-ID ≤ 32 Zeichen)
+- `frontend/src/`: `pages/` (+ `pages/admin/`) · `components/` (u. a. `DocViewer.tsx` = In-App-Handbuch) · `utils/` (Frontend-Zwillinge der Backend-Regeln, z. B. `workBlocks.ts`) · `stores/` (auth/system/ui) · `api/client.ts`
+- `e2e/` (Playwright, `tests/tenant-settings/` = mandantenweite Schalter) · `scripts/` (`local-ci.sh`, `check-doc-sync.sh`) · `tools/` (`build-release.sh`, `validate-release.sh`, `win-test/`, `migration-073/`) · `installer/` (linux/windows/setup .NET) · `praxiszeit-server.py` (nativer Prozessmanager)
+
 ### Prod-Deployment (Docker)
 ```bash
 ssh manuel@192.168.178.44 "cd /opt/praxiszeit/praxiszeit && sudo ./deploy.sh"
@@ -32,8 +37,15 @@ Native-Laufzeit, PostgreSQL, Windows-Installer, SSL, systemd → **[docs/NATIVE-
 ### Tests
 ```bash
 cd e2e && npx playwright test                                    # E2E (155+ Tests)
-docker compose exec backend pytest tests/ -v                     # Backend Unit (4100+ Tests) – Ignore-Liste siehe Test-Stratifizierung
-docker compose exec backend pytest tests/test_tenant_rls.py -v   # RLS Integration (13 Tests)
+# Backend Unit (4100+ Tests) — Wegwerf-Container gegen den aktuellen Code, SQLite, die 6 PG-Dateien ausgeschlossen:
+rm -f backend/test.db*; docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/backend":/app -w /app \
+  -e SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(32))') -e ADMIN_EMAIL=ci@example.invalid \
+  -e ADMIN_PASSWORD=LocalCiDummy2025X -e APP_DB_USER=ci -e APP_DB_PASSWORD=ci -e ENVIRONMENT=development \
+  -e CORS_ORIGINS=http://localhost -e DATABASE_URL=sqlite:////tmp/t.db -e TZ=Europe/Berlin praxiszeit-backend \
+  python -m pytest tests/ -q -p no:cacheprovider --ignore=tests/test_tenant_rls.py --ignore=tests/test_073_migration_pg.py \
+  --ignore=tests/test_net_hours_parity_pg.py --ignore=tests/test_reclamp_concurrency.py --ignore=tests/test_handbuch_seed_pg.py \
+  --ignore=tests/test_concurrency.py
+docker compose exec backend pytest tests/test_tenant_rls.py -v   # RLS Integration (20 Tests, gegen Dev-PG)
 docker compose exec backend pytest tests/test_cross_tenant_api.py -v  # App-Layer Tenant-Filter (F-026)
 docker compose exec backend pytest tests/test_concurrency.py     # Postgres-only Race-Tests
 cd frontend && npm test                                          # Vitest Utils-Tests
@@ -45,7 +57,7 @@ cd frontend && npm test                                          # Vitest Utils-
 - **⚠️ Vitest hängt mit Default-`forks`-Pool** (Node 24 + vitest 4: `Failed to start forks worker … Timeout waiting for worker to respond`, `Test Files no tests`) → `npx vitest run --pool=threads` (einzeln `npx vitest run <datei> --pool=threads`; hängt `scripts/local-ci.sh`, Pool dort gleich setzen). **Speicher knapp (Exit 137 = OOM-Killer, kein Testfehler):** Vollsuite mit `--pool=threads --maxWorkers=2`; vitest, pytest, Playwright und `docker build` nie gleichzeitig.
 - **⚠️ Backend-Suite ~22–24 Uhr UTC = Mitternachts-Flakes** (`date.today()` Container-UTC vs. `now_local()` Europe/Berlin; clock/create/break_waiver-Tests) → Suite mit `-e TZ=Europe/Berlin` fahren.
 - Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker compose up -d frontend`
-- **Version-Smoke-Test:** `/api/health` liefert keine Version → `/openapi.json`, Frontend-Footer (Hard-Refresh) oder `/` (nur `SERVE_FRONTEND=False`).
+- **Version-Smoke-Test:** `GET /api/system/info` → `version` (überall: Docker, nativ, Windows). `/api/health` liefert keine Version; `/openapi.json` nur ohne `ENVIRONMENT=production` (Docker: HTML bzw. 404).
 - **⚠️ `validate-release.sh` smoke-testet NUR `postgres`/`initdb`, KEINEN echten Login/keine API** → nach JEDEM Dependency-Bump oder Installer-Change echten Login auf einem REALEN Host prüfen (nativ auf [[reference_test-box-131]] via `install.sh` + Browser/`curl POST /api/auth/login`, oder Docker-Bundle). Unit-Tests + validate-release reichen NICHT (1.8.5–1.8.10-Hotfix-Kette).
 
 ### E2E-Patterns (Playwright)
