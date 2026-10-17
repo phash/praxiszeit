@@ -66,16 +66,23 @@ need_code_label() {
 
 # Gate: Wortlaute, die die Doku dieses PRs zitiert (Spec 6.2, 8.3, 8.4, 11.4,
 # 12.1, 12.3, 13.1, 13.3, 14). Weicht der Code ab, entscheidet Task 0 Step 3.
+# Gesamtreview 1.20 B10: kurze Wortlaute, die auch in Kommentaren, fremden
+# Komponenten oder Nachbartexten stehen („Anerkennen" in 18 Dateien,
+# „automatisch geschlossen" in 18, „Anrechnung beantragen" in 11 …), trafen
+# immer – das Gate blieb grün, auch wenn der zitierte Knopf längst anders hieß.
+# Solche Einträge sind an ihre Komponente gebunden (need_code_label) oder auf
+# den vollständigen Wortlaut geschärft, wie er im Code steht.
 group_code() {
   # Dialog, Editor, Benutzerformular (PR3)
-  need_code "Arbeitszeit anpassen…"
-  need_code "Arbeitszeit & Wochenstunden" "Arbeitszeit &amp; Wochenstunden"
+  need_code_label frontend/src/pages/admin/users/UserForm.tsx "Arbeitszeit anpassen…"
+  need_code_label frontend/src/pages/admin/users/WorkingHoursModal.tsx "Arbeitszeit &amp; Wochenstunden"
   need_code "Nach Arbeitsblöcken"
   need_code "Pause innerhalb der Blöcke"
   need_code "Keine Arbeitszeit-Blöcke hinterlegt"
   need_code "Ich habe die Auswirkungen geprüft und möchte speichern"
   need_code "vergangene Einträge bleiben unverändert"
-  need_code "mit Neuberechnung"
+  need_code 'Rückwirkend ab ${formatDate(requestedDate)} mit Neuberechnung'
+  need_code "Nur eine Arbeitszeit-Änderung mit Neuberechnung kappt die"
   need_code "Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)"
   need_code "Mit der beschäftigten Person vereinbart"
   need_code "Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit."
@@ -108,15 +115,19 @@ group_code() {
   need_code "beantragen Sie die Anrechnung"
   need_code "Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt"
   need_code "Pause in der Lücke wird zusätzlich abgezogen"
-  need_code "Laut Stempel"
+  # Server-Hinweis (presence_service, f-String-Stück); der Rückfalltext in
+  # arbzgWarnings („Laut Stempel mehr als …") erscheint nur ohne Serverdetail.
+  need_code "§3 ArbZG: Laut Stempel "
   need_code "Arbeitszeit-Änderung ab"
   # Sichtbarkeit, Anerkennen, Anträge (PR2)
   need_code "zwischen den Blöcken nicht angerechnet"
-  need_code "nicht ausgestempelt"
-  need_code "automatisch geschlossen"
-  need_code "Anrechnung beantragen"
-  need_code "Anerkennen"
-  need_code "Die gesamte gestempelte Zeit"
+  # Zusatzzeile des automatisch geschlossenen Eintrags (RawStampNote), mit und
+  # ohne Kappung („… automatisch geschlossen um 23:59").
+  need_code 'eingestempelt ${rawStart}, nicht ausgestempelt – automatisch geschlossen'
+  need_code '${base} um ${effEnd}'
+  need_code_label frontend/src/components/RawStampNote.tsx "Anrechnung beantragen"
+  need_code_label frontend/src/components/CreditOverrideButton.tsx "Anerkennen"
+  need_code 'Die gesamte gestempelte Zeit (${rawSpan}) wird angerechnet.'
   need_code "Automatisch geschlossener Eintrag: Bitte zuerst das tatsächliche Ende eintragen."
   need_code "Anerkannter Eintrag – Änderung bitte per Änderungsantrag." "Anerkannter Eintrag — Änderung bitte per Änderungsantrag."
   # Abwesenheit buchen an einem Tag mit anerkanntem Eintrag (absences.create_absence,
@@ -128,20 +139,20 @@ group_code() {
   # Veralteter Jahresübertrag (calculation_service.closed_year_warning_text) —
   # zitiert bei den Betriebsferien (HANDBUCH-ADMIN 11, DocViewer, Gesamtreview 1.20 B5).
   need_code "veraltet, bitte Jahresabschluss erneut ausführen."
-  need_code "Genehmigen und anerkennen"
-  need_code "Eintrag ist anerkannt"
-  need_code "Anwesenheit nicht angerechnet"
-  need_code "Nicht angerechnet (Min)"
+  need_code_label frontend/src/pages/admin/ChangeRequests.tsx "Genehmigen und anerkennen"
+  # „Eintrag ist anerkannt …" und „Anwesenheit nicht angerechnet: " prüfen die
+  # vollständigen Wortlaute weiter unten (Task 4/Task 5).
+  need_code 'NOT_CREDITED_HEADER = "Nicht angerechnet (Min)"'
   need_code "Neukappung (Arbeitszeit-Änderung)"
   need_code "Anrechnung anerkannt"
-  need_code "Anwesenheit laut Stempel"
+  need_code_label frontend/src/pages/admin/Reports.tsx "Anwesenheit laut Stempel"
   need_code "Eine Änderung des Puffers wirkt auf neue Einträge."
-  need_code "Meine Arbeitszeit"
+  need_code_label frontend/src/components/MyWorkScheduleCard.tsx "Meine Arbeitszeit"
   need_code "Pause zwischen den Arbeitsblöcken"
   need_code "Ihre Arbeitszeit wurde ab"
   need_code "Ihre Arbeitszeit wird in Blöcken hinterlegt."
   # Einstellungen: Abschnitt und Feld, die das Handbuch nennt
-  need_code "Soll-Arbeitszeit-Fenster"
+  need_code_label frontend/src/pages/admin/Settings.tsx "Soll-Arbeitszeit-Fenster"
   need_code "Puffer für Soll-Arbeitszeit-Fenster (Min.)"
   # Nachträge aus PR1–PR3 samt Reviews, die die Doku ebenfalls zitiert:
   # Datum beim Bearbeiten gesperrt (#502; im JSX umbrochen → zwei Stücke),
@@ -168,8 +179,9 @@ group_code() {
   # „Genehmigen = Anerkennen", Nachfrage der Sammel-Genehmigung, Kennzeichen
   # unter Zeiterfassung → „Anträge", Anrechnung heute erst nach Arbeitsende.
   need_code "Ohne Anerkennen genehmigen"
-  need_code "ohne Anerkennen genehmigt"
-  need_code "Anrechnung beantragt"
+  need_code_label frontend/src/pages/ChangeRequests.tsx "ohne Anerkennen genehmigt"
+  need_code_label frontend/src/pages/admin/ChangeRequests.tsx "Anrechnung beantragt"
+  need_code_label frontend/src/pages/ChangeRequests.tsx "Anrechnung beantragt"
   need_code "Genehmigen mit Anerkennen"
   need_code "Alle genehmigen"
   need_code " genehmigen, davon "
@@ -256,7 +268,7 @@ group_code() {
   need_code "Anwesenheit laut Stempel gesamt"
   need_code "Wochen &gt; 48 h laut Stempel"
   need_code "laut Stempel Ø &gt; 8 h"
-  need_code "keine Soll-Arbeitstage"
+  need_code_label frontend/src/pages/admin/Reports.tsx "keine Soll-Arbeitstage"
   need_code "Anrechnung später neu berechnet wird, und die Grenze gilt für die tatsächliche Arbeitszeit."
   # Sammelzeile der Abwesenheits-Rückrechnung (admin_users._log_wh_change_retarget,
   # Review Task 4): Quelle „wh_change", Anlegen und Löschen.
