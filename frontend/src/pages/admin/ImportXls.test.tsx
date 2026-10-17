@@ -110,3 +110,29 @@ describe('<ImportXls /> Hinweise auf Konfliktzeilen (Spec P3, 8.3)', () => {
     expect(screen.queryByText('Hinweis')).not.toBeInTheDocument();
   });
 });
+
+// Gesamtreview 1.20: die Ergebnisliste trägt nicht nur ArbZG-Warnungen, sondern
+// auch Kappungs-/Anwesenheits-Hinweise, die angepasste Tagespause und die Gründe
+// übersprungener Zeilen (Beschäftigungszeitraum, Ende ≤ Beginn) — wie in der
+// Vorschau (#462) heißt sie deshalb neutral „Hinweise".
+describe('<ImportXls /> Ergebnis: Hinweise statt „ArbZG-Warnungen"', () => {
+  const SKIP = '29.09.2026: übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).';
+
+  it('nennt die Liste „Hinweis(e)" und verweist für übersprungene Zeilen darauf', async () => {
+    await analyze({ start_time: '08:00:00', end_time: '16:30:00', break_minutes: 30, net_hours: 8 });
+    postMock.mockResolvedValueOnce({
+      data: { imported: 0, overwritten: 0, skipped: 1, warnings: [SKIP] },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Import bestätigen →' }));
+    expect(await screen.findByText('Import abgeschlossen')).toBeInTheDocument();
+
+    expect(screen.getByText(
+      '1 Einträge übersprungen (nicht überschriebene Konflikte; weitere Gründe bei den Hinweisen).',
+    )).toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: /1 Hinweis\(e\)/ });
+    fireEvent.click(toggle);
+    expect(screen.getByText(SKIP)).toBeInTheDocument();
+    expect(screen.queryByText(/ArbZG-Warn/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/bei den Warnungen/)).not.toBeInTheDocument();
+  });
+});

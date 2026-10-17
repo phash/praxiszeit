@@ -439,7 +439,7 @@ export default function ImportXls() {
           </div>
           <div className="bg-amber-50 rounded-lg p-4 text-center">
             <div className="text-2xl font-bold text-amber-700">{result.warnings.length}</div>
-            <div className="text-xs text-amber-600 mt-1">ArbZG-Warn.</div>
+            <div className="text-xs text-amber-600 mt-1">Hinweise</div>
           </div>
         </div>
 
@@ -447,8 +447,8 @@ export default function ImportXls() {
           <p className="text-sm text-gray-500 mb-4">
             {/* Gesamtreview 1.20: übersprungen werden auch Zeilen mit Ende ≤ Beginn und
                 Zeilen außerhalb des Beschäftigungszeitraums — deren Grund steht in den
-                Warnungen („… übersprungen — …"). */}
-            {result.skipped} Einträge übersprungen (nicht überschriebene Konflikte; weitere Gründe bei den Warnungen).
+                Hinweisen darunter („… übersprungen — …"). */}
+            {result.skipped} Einträge übersprungen (nicht überschriebene Konflikte; weitere Gründe bei den Hinweisen).
           </p>
         )}
 
@@ -459,7 +459,11 @@ export default function ImportXls() {
               className="flex items-center gap-2 text-sm text-amber-700 font-medium mb-2"
             >
               <AlertTriangle size={14} />
-              {result.warnings.length} ArbZG-Warnung(en)
+              {/* Gesamtreview 1.20: wie die Vorschau (#462) neutral „Hinweise" — die
+                  Liste trägt neben ArbZG-Warnungen auch Kappungs- und
+                  Anwesenheits-Hinweise, die angepasste Tagespause und die Gründe
+                  übersprungener Zeilen. */}
+              {result.warnings.length} Hinweis(e)
               <span className="text-gray-400">{warningsExpanded ? '▲' : '▼'}</span>
             </button>
             {warningsExpanded && (

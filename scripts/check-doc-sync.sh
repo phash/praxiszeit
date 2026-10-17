@@ -494,6 +494,15 @@ group_admin_rest() {
   # Gesamtreview 1.20: XLS-Zeilen außerhalb des Beschäftigungsfensters.
   need "$f" 'Wird übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'
   need "$f" '29.09.2026: übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'
+  # Gesamtreview 1.20: die Ergebnisliste heißt wie die Vorschau (#462) „Hinweise"
+  # — sie trägt auch die Gründe übersprungener Zeilen, keine ArbZG-Warnungen allein.
+  need "$f" 'das Ergebnis unter den Hinweisen (*„29.09.2026: übersprungen'
+  need "$f" 'und darunter die **Hinweise** – die ArbZG-Warnungen,'
+  forbid "$f" 'sowie die ArbZG-Warnungen (einschließlich'
+  need_code "weitere Gründe bei den Hinweisen)."
+  need_code_label frontend/src/pages/admin/ImportXls.tsx '{result.warnings.length} Hinweis(e)'
+  forbid frontend/src/pages/admin/ImportXls.tsx 'ArbZG-Warnung(en)'
+  forbid frontend/src/pages/admin/ImportXls.tsx '>ArbZG-Warn.<'
   need "$f" '| **Anerkennungen** |'
   # Gesamtreview 1.20: Quellen-Label „Manuell" statt „Admin" (auditSources.ts) —
   # Handbuch §9, In-App-Hilfe und Kontexthilfe des Änderungsprotokolls.
