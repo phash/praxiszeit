@@ -50,6 +50,7 @@ def check_rest_time_violations(
 
     # Build query
     query = db.query(TimeEntry).filter(
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
         TimeEntry.user_id == user.id,
         TimeEntry.end_time.isnot(None)
     )

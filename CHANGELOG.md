@@ -373,6 +373,10 @@ dieses Backup verlustfrei (`UPDATE.md`).
   (#482).
 - Ungültige Kennungen in Anfragen werden zusätzlich als Warnung protokolliert
   (#491).
+- Expliziter Mandantenfilter (F-026) zusätzlich zur Zeilensicherheit der
+  Datenbank in den §6/§11-Berichten, der §5-Ruhezeitprüfung, dem
+  Art.-20-Datenexport und den übrigen Abfragen der Saldo-, Jahres- und
+  Urlaubsberechnung (externes Zweitreview).
 - Ein unbekannter und ein fremder Zeiteintrag antworten mit demselben Text
   („Zeiteintrag nicht gefunden"); die Antwort verrät nicht mehr, ob es den
   Eintrag gibt.

@@ -1856,6 +1856,7 @@ def get_range_actual(
     # the SQL @expression for net_hours relies on Postgres EXTRACT(EPOCH ...)
     # semantics that do not port to the SQLite test suite.
     entries = db.query(TimeEntry).filter(
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
         TimeEntry.user_id == user.id,
         date_in_range(TimeEntry.date, start, end),
     ).all()
@@ -1992,6 +1993,7 @@ def get_monthly_worked_hours(db: Session, user: User, year: int, month: int) -> 
     absence-reduced soll. NOT a substitute for get_monthly_actual anywhere else.
     """
     entries = db.query(TimeEntry).filter(
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
         TimeEntry.user_id == user.id,
         date_in_month(TimeEntry.date, year, month),
     ).all()
@@ -2050,6 +2052,7 @@ def get_overtime_account(
     # --- determine starting point ---
     # Find the most recent carryover at or before up_to_year
     latest_carryover = db.query(YearCarryover).filter(
+        YearCarryover.tenant_id == user.tenant_id,  # F-026
         YearCarryover.user_id == user.id,
         YearCarryover.year <= up_to_year,
     ).order_by(YearCarryover.year.desc()).first()
@@ -2063,6 +2066,7 @@ def get_overtime_account(
     else:
         # No carryover: start from first time entry
         first_entry = db.query(TimeEntry).filter(
+            TimeEntry.tenant_id == user.tenant_id,  # F-026
             TimeEntry.user_id == user.id
         ).order_by(TimeEntry.date).first()
 
@@ -2077,6 +2081,7 @@ def get_overtime_account(
     # --- single-pass bulk fetches ---
     # All time entries in range (group by month in memory)
     entries = db.query(TimeEntry).filter(
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
         TimeEntry.user_id == user.id,
         TimeEntry.date >= start_date,
         TimeEntry.date <= up_to_date,
@@ -2142,6 +2147,7 @@ def get_overtime_account(
     # therefore balance-neutral (target drops, actual unaffected). PAID_LEAVE
     # (#145) is intentionally treated exactly like OTHER here.
     absences = db.query(Absence).filter(
+        Absence.tenant_id == user.tenant_id,  # F-026
         Absence.user_id == user.id,
         Absence.date >= start_date,
         Absence.date <= up_to_date,
@@ -2323,10 +2329,11 @@ def get_overtime_history_detailed(
 
     carryovers: Dict[int, Decimal] = {
         c.year: Decimal(str(c.overtime_hours))
-        for c in db.query(YearCarryover).filter(YearCarryover.user_id == user.id).all()
+        for c in db.query(YearCarryover).filter(YearCarryover.tenant_id == user.tenant_id, YearCarryover.user_id == user.id).all()
     }
 
     first_entry = db.query(TimeEntry).filter(
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
         TimeEntry.user_id == user.id
     ).order_by(TimeEntry.date).first()
     if first_entry is None and not carryovers:
@@ -2352,6 +2359,7 @@ def get_overtime_history_detailed(
     # --- ein Bulk-Fetch ueber den ganzen Bereich (wie get_overtime_account) ---
     actual_by_month: Dict[tuple, Decimal] = {}
     for e in db.query(TimeEntry).filter(
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
         TimeEntry.user_id == user.id,
         TimeEntry.date >= start_date,
         TimeEntry.date <= up_to_date,
@@ -2400,6 +2408,7 @@ def get_overtime_history_detailed(
 
     # Fix #1: half-day-aware map (full day → skip, half day → halve Soll).
     absence_half_map = _soll_reducing_absence_half_map(db.query(Absence).filter(
+        Absence.tenant_id == user.tenant_id,  # F-026
         Absence.user_id == user.id,
         Absence.date >= start_date,
         Absence.date <= up_to_date,
@@ -2576,6 +2585,7 @@ def get_ytd_summary(
             total_actual += get_monthly_actual(db, user, year, m, up_to_date=end)
 
         carryover = db.query(YearCarryover).filter(
+            YearCarryover.tenant_id == user.tenant_id,  # F-026
             YearCarryover.user_id == user.id,
             YearCarryover.year == year,
         ).first()
@@ -2606,6 +2616,7 @@ def get_ytd_summary(
     # get_monthly_target). PAID_LEAVE (#145) is treated like OTHER and falls
     # through this filter, so it reduces the target like a normal absence day.
     absences = db.query(Absence).filter(
+        Absence.tenant_id == user.tenant_id,  # F-026
         Absence.user_id == user.id,
         Absence.date >= start,
         Absence.date <= end,
@@ -2652,6 +2663,7 @@ def get_ytd_summary(
 
     # Sum actual hours (time entries + credited absence hours: training + sick)
     entries = db.query(TimeEntry).filter(
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
         TimeEntry.user_id == user.id,
         TimeEntry.date >= start,
         TimeEntry.date <= end,
@@ -2678,6 +2690,7 @@ def get_ytd_summary(
 
     # Include overtime carryover for this year
     carryover = db.query(YearCarryover).filter(
+        YearCarryover.tenant_id == user.tenant_id,  # F-026
         YearCarryover.user_id == user.id,
         YearCarryover.year == year,
     ).first()
@@ -2915,6 +2928,7 @@ def get_vacation_account(
     # budget and must not inherit a carryover either (Fix #1).
     if not year_outside_window:
         carryover = db.query(YearCarryover).filter(
+            YearCarryover.tenant_id == user.tenant_id,  # F-026
             YearCarryover.user_id == user.id,
             YearCarryover.year == year,
         ).first()
@@ -2928,6 +2942,7 @@ def get_vacation_account(
     # holiday and is intentionally NOT counted here, so a Betriebsferien booked
     # as bezahlte Freistellung leaves the vacation budget untouched.
     vacation_absences = db.query(Absence).filter(
+        Absence.tenant_id == user.tenant_id,  # F-026
         Absence.user_id == user.id,
         Absence.type == AbsenceType.VACATION,
         date_in_year(Absence.date, year),

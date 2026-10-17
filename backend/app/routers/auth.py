@@ -560,8 +560,8 @@ def export_my_data(
     """
     DSGVO Art. 20 – Datenportabilität: export all personal data as JSON.
     """
-    time_entries = db.query(TimeEntry).filter(TimeEntry.user_id == current_user.id).order_by(TimeEntry.date).all()
-    absences = db.query(Absence).filter(Absence.user_id == current_user.id).order_by(Absence.date).all()
+    time_entries = db.query(TimeEntry).filter(TimeEntry.tenant_id == current_user.tenant_id, TimeEntry.user_id == current_user.id).order_by(TimeEntry.date).all()
+    absences = db.query(Absence).filter(Absence.tenant_id == current_user.tenant_id, Absence.user_id == current_user.id).order_by(Absence.date).all()
     # #431: die Stundenhistorie ist ein vollstaendiger Vertrags-Snapshot je
     # Wirkungsdatum (Soll-relevant) und gehoert damit in den Art.-20-Export.
     # F-026: tenant_id explizit mitfiltern (belt-and-suspenders zu RLS).

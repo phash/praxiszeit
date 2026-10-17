@@ -768,6 +768,7 @@ def get_sunday_summary(
         entries = (
             db.query(TimeEntry)
             .filter(
+                TimeEntry.tenant_id == user.tenant_id,  # F-026
                 TimeEntry.user_id == user.id,
                 date_in_year(TimeEntry.date, year),
             )
@@ -819,6 +820,7 @@ def get_night_work_summary(
         entries = (
             db.query(TimeEntry)
             .filter(
+                TimeEntry.tenant_id == user.tenant_id,  # F-026
                 TimeEntry.user_id == user.id,
                 date_in_year(TimeEntry.date, year),
                 TimeEntry.end_time.isnot(None),
@@ -890,6 +892,7 @@ def get_compensatory_rest(
         entries = (
             db.query(TimeEntry)
             .filter(
+                TimeEntry.tenant_id == user.tenant_id,  # F-026
                 TimeEntry.user_id == user.id,
                 date_in_year(TimeEntry.date, year),
                 TimeEntry.end_time.isnot(None),
