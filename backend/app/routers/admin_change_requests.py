@@ -556,18 +556,28 @@ def review_change_request(
                 # HARTEN Prüfungen aus; ihr Ergebnis wäre das des gespeicherten
                 # Stands. Sonst liess sich ein anerkannter Eintrag über 10 h bzw.
                 # ohne §4-Pause (13.3, P4) auch per Antrag nicht mit einer Notiz
-                # versehen. Verglichen wird mit dem, was die Prüfungen rechnen
-                # (Pause ``or 0``). Eine inzwischen abgeschaltete Ausnahme
-                # (#499, ``waiver_disabled``) prüft §4 weiter — wie eine
-                # mitgeschickte Begründung in den Bearbeiten-Routen.
+                # versehen. Verglichen wird mit dem, was der Schreibzweig unten
+                # speichert (EINE Regel ``time_relevant_change``, Ultrareview
+                # 1.20: eine fehlende Pause bleibt stehen — vorher ``or 0``, der
+                # Schreibzweig behält aber die gespeicherte). Eine inzwischen
+                # abgeschaltete Ausnahme (#499, ``waiver_disabled``) prüft §4
+                # weiter — wie eine mitgeschickte Begründung in den
+                # Bearbeiten-Routen.
                 _time_relevant_change = (
                     cr.request_type != ChangeRequestType.UPDATE
-                    or entry is None
-                    or cr.proposed_date != entry.date
-                    or _eff_start != entry.start_time
-                    or _eff_end != entry.end_time
-                    or (cr.proposed_break_minutes or 0) != entry.break_minutes
-                    or _r_pre.uncredited_minutes != int(entry.uncredited_minutes or 0)
+                    or work_window_service.time_relevant_change(
+                        entry,
+                        date=cr.proposed_date,
+                        start=_eff_start,
+                        end=_eff_end,
+                        break_minutes=cr.proposed_break_minutes,
+                        uncredited_minutes=_r_pre.uncredited_minutes,
+                    )
+                )
+                # Geprüft wird die Pause, die gespeichert wird (s. o.).
+                _chk_break = work_window_service.effective_break_minutes(
+                    cr.proposed_break_minutes,
+                    entry if cr.request_type == ChangeRequestType.UPDATE else None,
                 )
 
                 daily_hours_revalidate = _calculate_daily_net_hours(
@@ -576,7 +586,7 @@ def review_change_request(
                     entry_date=cr.proposed_date,
                     start_time=_eff_start,
                     end_time=_eff_end,
-                    break_minutes=cr.proposed_break_minutes or 0,
+                    break_minutes=_chk_break,
                     uncredited_minutes=_r_pre.uncredited_minutes,
                     exclude_entry_id=exclude_id,
                     tenant_id=cr.tenant_id,
@@ -599,7 +609,7 @@ def review_change_request(
                         entry_date=cr.proposed_date,
                         start_time=_eff_start,
                         end_time=_eff_end,
-                        break_minutes=cr.proposed_break_minutes or 0,
+                        break_minutes=_chk_break,
                         uncredited_segments=_segs_pre,
                         exclude_entry_id=exclude_id,
                         tenant_id=cr.tenant_id,

@@ -1530,12 +1530,15 @@ def update_time_entry(
     # Ergebnis wäre das des gespeicherten Stands). Sonst ließ sich ein
     # anerkannter Eintrag über 10 h bzw. ohne §4-Pause (13.3, P4) nicht einmal
     # mit einer Notiz versehen. Weiche Warnungen bleiben.
-    _time_relevant_change = (
-        entry.date != orig_snapshot["date"]
-        or entry.start_time != orig_snapshot["start_time"]
-        or entry.end_time != orig_snapshot["end_time"]
-        or entry.break_minutes != orig_snapshot["break_minutes"]
-        or int(entry.uncredited_minutes or 0) != int(orig_snapshot["uncredited_minutes"] or 0)
+    # Ultrareview 1.20 (Fund B): EINE Regel (``time_relevant_change``) für
+    # beide Bearbeiten-Routen und den Änderungsantrag.
+    _time_relevant_change = work_window_service.time_relevant_change(
+        orig_snapshot,
+        date=entry.date,
+        start=entry.start_time,
+        end=entry.end_time,
+        break_minutes=entry.break_minutes,
+        uncredited_minutes=entry.uncredited_minutes,
     )
 
     # §3 ArbZG: daily hours hard cap – skipped for exempt users.

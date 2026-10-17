@@ -319,6 +319,10 @@ def create_change_request(
     _chk_start = _cr_clamp.eff_start if _cr_clamp else data.proposed_start_time
     _chk_end = _cr_clamp.eff_end if _cr_clamp else data.proposed_end_time
     _chk_unc = _cr_clamp.uncredited_minutes if _cr_clamp else 0
+    # Ultrareview 1.20 (Fund B): geprüft wird die Pause, die die Genehmigung
+    # SPEICHERT — fehlt sie im Antrag, bleibt die des Eintrags stehen (vorher
+    # rechneten §3/§4 hier mit 0 Minuten).
+    _chk_break = work_window_service.effective_break_minutes(data.proposed_break_minutes, entry)
 
     # Gesamtreview 1.20 (B1, Nachzug zu Punkt 4): wie in beiden Bearbeiten-Routen
     # — ändert ein UPDATE-Antrag nichts, was §3/§4 rechnen (Datum, angerechneter
@@ -327,17 +331,20 @@ def create_change_request(
     # scheiterte an einem anerkannten Eintrag über 10 h bzw. ohne §4-Pause (13.3,
     # P4) schon ein Antrag, der nur die Notiz oder den §10-Grund ändert — und
     # genau auf diesen Weg verweist der 409 der MA-Route. Verglichen wird mit dem,
-    # was die Prüfungen rechnen würden (Pause ``or 0``). Kommt eine Begründung
+    # was die Genehmigung speichert (EINE Regel ``time_relevant_change``,
+    # Ultrareview 1.20: eine fehlende Pause bleibt stehen). Kommt eine Begründung
     # mit, läuft §4 wie bisher (Schalter #499 inklusive).
     _time_relevant_change = (
         data.request_type != "update"
-        or entry is None
         or _cr_clamp is None
-        or data.proposed_date != entry.date
-        or _chk_start != entry.start_time
-        or _chk_end != entry.end_time
-        or (data.proposed_break_minutes or 0) != entry.break_minutes
-        or _chk_unc != int(entry.uncredited_minutes or 0)
+        or work_window_service.time_relevant_change(
+            entry,
+            date=data.proposed_date,
+            start=_chk_start,
+            end=_chk_end,
+            break_minutes=data.proposed_break_minutes,
+            uncredited_minutes=_chk_unc,
+        )
     )
 
     # Break validation for CREATE and UPDATE (§18-Ausnahme: exempt_from_arbzg überspringt §3/§4)
@@ -348,7 +355,7 @@ def create_change_request(
             entry_date=data.proposed_date,
             start_time=_chk_start,
             end_time=_chk_end,
-            break_minutes=data.proposed_break_minutes or 0,
+            break_minutes=_chk_break,
             uncredited_segments=_cr_segs,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
@@ -374,7 +381,7 @@ def create_change_request(
             entry_date=data.proposed_date,
             start_time=_chk_start,
             end_time=_chk_end,
-            break_minutes=data.proposed_break_minutes or 0,
+            break_minutes=_chk_break,
             uncredited_minutes=_chk_unc,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
@@ -456,7 +463,7 @@ def create_change_request(
             entry_date=data.proposed_date,
             start_time=_chk_start,
             end_time=_chk_end,
-            break_minutes=data.proposed_break_minutes or 0,
+            break_minutes=_chk_break,
             uncredited_minutes=_chk_unc,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
@@ -481,7 +488,7 @@ def create_change_request(
             entry_date=data.proposed_date,
             start_time=_chk_start,
             end_time=_chk_end,
-            break_minutes=data.proposed_break_minutes or 0,
+            break_minutes=_chk_break,
             uncredited_minutes=_chk_unc,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,

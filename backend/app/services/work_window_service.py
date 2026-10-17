@@ -367,6 +367,48 @@ def unclamp_input(
     return incoming
 
 
+def effective_break_minutes(proposed: Optional[int], before) -> int:
+    """Die Pause, die ein Schreibweg tatsächlich speichert (Ultrareview 1.20).
+
+    Fehlt sie in der Eingabe (``None``), bleibt die gespeicherte Pause stehen —
+    so schreiben es beide Bearbeiten-Routen und die Antragsgenehmigung; ohne
+    gespeicherten Eintrag (Neuanlage) 0. ``before`` ist der gespeicherte Eintrag
+    (Objekt oder Snapshot-Dict) oder ``None``."""
+    if proposed is not None:
+        return int(proposed)
+    if before is None:
+        return 0
+    stored = before.get("break_minutes") if isinstance(before, dict) else before.break_minutes
+    return int(stored or 0)
+
+
+def time_relevant_change(before, *, date, start, end, break_minutes, uncredited_minutes) -> bool:
+    """Ändert die Bearbeitung etwas, was §3/§4 rechnen? (Gesamtreview 1.20 B1)
+
+    DIE eine Regel für beide Bearbeiten-Routen und den Änderungsantrag (Stellen
+    + Genehmigung, Ultrareview 1.20): nur dann laufen die HARTEN Prüfungen (§3
+    10 h, §4-Sperre) — sonst wäre ihr Ergebnis das des gespeicherten Stands, und
+    ein anerkannter Eintrag über 10 h bzw. ohne §4-Pause (13.3, P4) liesse sich
+    nicht einmal mit einer Notiz versehen.
+
+    ``before`` ist der gespeicherte Stand (Eintrag oder Snapshot-Dict mit
+    ``date``, ``start_time``, ``end_time``, ``break_minutes``,
+    ``uncredited_minutes``); ``None`` (Neuanlage) ist immer eine Änderung. Die
+    übrigen Werte sind der Stand NACH der Bearbeitung — angerechneter Beginn/
+    Ende und Lückenminuten, wie sie gespeichert werden. Eine fehlende Pause
+    (``None``) ist keine Änderung: sie bleibt stehen (``effective_break_minutes``)."""
+    if before is None:
+        return True
+    get = before.get if isinstance(before, dict) else (lambda k: getattr(before, k))
+    return (
+        date != get("date")
+        or start != get("start_time")
+        or end != get("end_time")
+        or effective_break_minutes(break_minutes, before) != int(get("break_minutes") or 0)
+        or int(uncredited_minutes or 0) != int(get("uncredited_minutes") or 0)
+    )
+
+
 def end_is_correction(incoming: Optional[time], prev_eff: Optional[time]) -> bool:
     """P18: Liefert eine Eingabe ein tatsächliches Ende, das das Kennzeichen
     ``auto_closed`` aufhebt? Ja, außer sie schickt das gespeicherte WIRKSAME Ende

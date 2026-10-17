@@ -445,12 +445,23 @@ def admin_update_time_entry(
     # unterdrückt wie sonst ``PRESENCE_BREAK`` (P14, ``break_check_passed``).
     # Kommt eine neue Begründung mit, läuft §4 wie bisher (die Ausnahme zu
     # dokumentieren ist eine §4-Änderung, Schalter #499 inklusive).
-    _time_relevant_change = (
-        update_date != entry.date
-        or eff_start != entry.start_time
-        or eff_end != entry.end_time
-        or update_break_minutes != entry.break_minutes
-        or _r.uncredited_minutes != int(entry.uncredited_minutes or 0)
+    # Ultrareview 1.20 (Fund B): EINE Regel (``time_relevant_change``), gemessen
+    # am Stand, der unten GESPEICHERT wird — wie die MA-Route. Eine reine Notiz
+    # (ohne Datum/Zeit) schreibt die Zeiten nicht; der Vergleich mit der neu
+    # gekappten Zeit liess sie an einem Eintrag scheitern, dessen gespeicherte
+    # Kappung nicht mehr zum Snapshot passt. Dasselbe Gate wie das Schreiben unten.
+    _writes_start = entry_data.start_time is not None or entry_data.date is not None
+    _writes_end = entry_data.end_time is not None or entry_data.date is not None
+    _time_relevant_change = work_window_service.time_relevant_change(
+        entry,
+        date=update_date,
+        start=eff_start if _writes_start else entry.start_time,
+        end=eff_end if _writes_end else entry.end_time,
+        break_minutes=update_break_minutes,
+        uncredited_minutes=(
+            _r.uncredited_minutes if (_writes_start or _writes_end)
+            else entry.uncredited_minutes
+        ),
     )
     break_error = None
     # Gesamtreview 1.20 (B1, Nachzug): §4, §3 (hart und weich), 48 h und §6
