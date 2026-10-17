@@ -739,7 +739,14 @@ group_begriffe() {
     forbid "$f" 'Rollen- und Passwortänderungen'
     forbid "$f" 'offene Anträge → Prüfen'
     forbid "$f" 'offene Anträge → Antrag öffnen'
+    # Gesamtreview 1.20 B10: ohne Stundenzählung zählt ein halber Tag 0,5
+    # (#205; get_vacation_account, Zweig daily_target <= 0;
+    # tests/test_vacation_half_day.py), nicht als voller Tag.
+    forbid "$f" 'Halbtag zählt als voller Tag'
+    forbid "$f" 'halber Tag derzeit als voller Tag'
   done
+  need docs/handbuch/HANDBUCH-MITARBEITER.md '1 freier Arbeitstag = 1 Urlaubstag, ein halber Tag = 0,5 Urlaubstage – wie bei allen anderen.'
+  need docs/handbuch/HANDBUCH-ADMIN.md '**Hinweis zu Halbtagen:** Auch ohne Stundenzählung zählt ein halber freier Tag (Option „Halber Tag") **0,5 Urlaubstage**'
 }
 
 # Rechenregeln und Begriffe (Task 7): BERECHNUNGEN.md und GLOSSAR.md werden

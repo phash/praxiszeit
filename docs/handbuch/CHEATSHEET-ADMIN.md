@@ -35,7 +35,7 @@
 Checkbox **„Stundenzählung aktiv"** (Standard an). Aus = **Mitarbeiter ohne Stundenzählung** (NIE „leitende Angestellte" nennen!).
 - Keine Soll-/Ist-/Überstundenberechnung → Spalte „Überstunden (JTD)" zeigt **„—"**.
 - Feld Anfangssaldo und Auswahl **„Arbeitszeit"** (Tagesplan/Blöcke) entfallen; Arbeitszeit-Blöcke kappen nicht.
-- **Urlaub + Krank zählen trotzdem – tagebasiert** (1 Tag = 1 Tag; „Frei"-Sondertag = 1 Tag, „halber Feiertag" 24./31.12. = 0,5 Tag seit #394). Anspruch anteilig + Vorjahresübernahme bleiben.
+- **Urlaub + Krank zählen trotzdem – tagebasiert** (1 Tag = 1 Tag, halber Tag = 0,5; „Frei"-Sondertag = 1 Tag, „halber Feiertag" 24./31.12. = 0,5 Tag seit #394). Anspruch anteilig + Vorjahresübernahme bleiben.
 
 > **Abgrenzung – zwei getrennte Checkboxen, nicht verwechseln:**
 > - **„Stundenzählung aktiv"** = ob Soll-/Ist-/Überstunden geführt werden. Hat **nichts** mit §18 zu tun.

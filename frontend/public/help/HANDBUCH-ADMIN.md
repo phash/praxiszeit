@@ -208,13 +208,13 @@ Klicken Sie auf **„Neue:r Mitarbeiter:in"** und füllen Sie das Formular aus:
 **Was sich ändert, wenn die Stundenzählung deaktiviert ist:**
 - **Keine Soll-/Ist-Stundenberechnung** und **keine Überstundenberechnung.** In der Benutzerübersicht erscheint in der Spalte „Überstunden (JTD)" ein „—".
 - Die Felder „Anfangssaldo Überstunden", die Auswahl **„Arbeitszeit"** (Tagesplan bzw. Arbeitszeit-Blöcke) und das Soll-/Ist-Dashboard entfallen für diese Person.
-- **Urlaub und Krankheit werden trotzdem geführt** – und zwar **tagebasiert**: 1 genommener freier Arbeitstag = 1 Urlaubstag. Ein „Frei + zählt als Urlaub"-Sondertag (z. B. Heiligabend) zählt 1 Tag; ein als **„halber Feiertag"** konfigurierter Sondertag (24./31.12.) zählt **0,5 Tage** (seit #394). Der Urlaubsanspruch bleibt anteilig nach Arbeitstagen und behält die Vorjahresübernahme.
+- **Urlaub und Krankheit werden trotzdem geführt** – und zwar **tagebasiert**: 1 genommener freier Arbeitstag = 1 Urlaubstag, ein halber freier Tag = 0,5 Urlaubstage. Ein „Frei + zählt als Urlaub"-Sondertag (z. B. Heiligabend) zählt 1 Tag; ein als **„halber Feiertag"** konfigurierter Sondertag (24./31.12.) zählt **0,5 Tage** (seit #394). Der Urlaubsanspruch bleibt anteilig nach Arbeitstagen und behält die Vorjahresübernahme.
 
 **Wofür gedacht:** z. B. Personen, deren Arbeitszeit nicht erfasst, deren Urlaub aber dennoch verwaltet werden soll.
 
 > **Abgrenzung (bitte nicht verwechseln):** „Mitarbeiter ohne Stundenzählung" hat **nichts** mit § 18 ArbZG zu tun. Die § 18-Ausnahme („ArbZG-Prüfungen aussetzen") ist eine **separate, unabhängige Checkbox** und betrifft ausschließlich leitende Angestellte. Eine Person kann z. B. Stundenzählung haben **und** § 18-befreit sein – oder umgekehrt.
 >
-> **Hinweis zu Halbtagen:** Bei Mitarbeitern ohne Stundenzählung zählt ein halber Tag derzeit als voller Tag (es findet keine Stunden-/Halbtagsverrechnung statt).
+> **Hinweis zu Halbtagen:** Auch ohne Stundenzählung zählt ein halber freier Tag (Option „Halber Tag") **0,5 Urlaubstage** – wie bei Mitarbeitenden mit Stundenzählung; Stunden werden dabei nicht verrechnet.
 
 <a id="arbeitszeit-bloecke"></a>
 ### Arbeitszeit-Blöcke (Soll-Arbeitszeit je Wochentag)
@@ -1153,7 +1153,7 @@ Urlaub wird grundsätzlich **in Tagen** geführt, nicht in Stunden (Tagesprinzip
 
 ### 18.8 Sonderfälle
 
-- **Mitarbeiter ohne Stundenzählung:** kein Soll/Ist/Überstunden; Urlaub trotzdem tagebasiert (voller Urlaubstag / „Frei"-Sondertag = 1 Tag, „halber Feiertag" 24./31.12. = 0,5 Tag seit #394).
+- **Mitarbeiter ohne Stundenzählung:** kein Soll/Ist/Überstunden; Urlaub trotzdem tagebasiert (voller Urlaubstag / „Frei"-Sondertag = 1 Tag, halber freier Tag und „halber Feiertag" 24./31.12. = 0,5 Tag).
 - **Sondertage 24./31.12.:** je Tag Arbeitstag / Halbtag (Faktor 0,5) / Frei (Faktor 0). „Frei + zählt als Urlaub" zieht 1 Urlaubstag.
 - **Eintritt/Austritt:** vor dem ersten / nach dem letzten Arbeitstag entstehen weder Soll noch Ist; der Urlaubsanspruch wird anteilig berechnet.
 - **Arbeitszeit-Änderung (rückwirkend oder zukunftsdatiert):** alte Monate rechnen mit der damals gültigen Arbeitszeit (Verlauf / Gültig-ab-Datum). Rückwirkend werden erfasste Zeiteinträge an geänderten Wochentagen neu gekappt und danach die Stunden bereits gebuchter Abwesenheiten auf das neue Tagessoll umgestellt – Abwesenheiten auch bei einem Datum in der Zukunft (Ausnahme: Überstundenausgleich, MA ohne Stundenzählung); Urlaubs**tage** bleiben unberührt. Senkt eine rückwirkende Änderung angerechnete Zeit oder das Überstundenkonto, gilt der Verkürzungsschutz. Details in [Abschnitt 4 → „Mitarbeiter bearbeiten"](#mitarbeiter-bearbeiten).

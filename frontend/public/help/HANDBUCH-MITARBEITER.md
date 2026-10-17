@@ -508,7 +508,7 @@ Urlaub wird **nach Tagen** gezählt: 1 freier Arbeitstag = 1 Urlaubstag – egal
 Für manche Mitarbeitende führt die Praxis bewusst **keine Stundenzählung**. Das bedeutet:
 
 - Es gibt **kein Soll/Ist** und **keine Überstunden** für Sie. Auf dem Dashboard fehlen die Kacheln **Tagessaldo**, **Monatssaldo** und **Überstundenkonto**, und auch der Stempel-Button (Ein-/Ausstempeln) wird nicht angezeigt.
-- **Urlaub und Krankheit werden trotzdem erfasst** – und zwar **tagebasiert**: 1 freier Arbeitstag = 1 Urlaubstag (ein Halbtag zählt als voller Tag). Ihr **Urlaubskonto** auf dem Dashboard funktioniert wie bei allen anderen.
+- **Urlaub und Krankheit werden trotzdem erfasst** – und zwar **tagebasiert**: 1 freier Arbeitstag = 1 Urlaubstag, ein halber Tag = 0,5 Urlaubstage – wie bei allen anderen. Ihr **Urlaubskonto** auf dem Dashboard funktioniert genauso.
 - Sie nutzen den Bereich **Abwesenheiten** ganz normal (siehe [Abschnitt 4](#4-abwesenheiten)) – nur die reine Arbeitszeit-Erfassung entfällt.
 
 > **Ist das ein Fehler?** Nein. Wenn bei Ihnen die Stunden- und Überstundenanzeige fehlt, ist das eine bewusste Einstellung Ihrer Praxis für Ihren Account. Bei Fragen wenden Sie sich an Ihren Administrator.
