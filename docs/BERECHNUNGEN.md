@@ -293,6 +293,11 @@ dem Gewicht ihres Tages multipliziert (`calculation_service.credit_day_weight`):
 | Sondertag 24./31.12. als **„halber Feiertag"** | 0,5 × Tagessoll (#146) | **0,5** |
 | Sondertag 24./31.12. als **„frei"** | 0 | **0** |
 
+> **Wochentag ohne Soll** (0 h im Tagesplan, Wochentag ohne Blöcke): Das Gewicht ist 1,0,
+> die gespeicherten `hours` sind dort aber 0 — gebucht wird an einem solchen Tag nicht, und
+> wird er erst durch eine Arbeitszeit-Änderung frei, setzt die Rückrechnung Krank und
+> Fortbildung dort auf 0 (seit 1.20.0, §14 TZ-E). Die Gutschrift ist also auch hier 0.
+
 **Grundsatz:** An einem Tag ohne Arbeitspflicht kann keine Arbeitspflicht ausfallen — es gibt
 kein Soll, das auszugleichen wäre. Rechtlich ordnet **§ 4 Abs. 2 EntgFG** den Feiertag
 ausdrücklich der Feiertagsvergütung nach § 2 EntgFG zu, nicht zusätzlich der
@@ -1304,8 +1309,16 @@ Bewusst ausgenommen:
 * `OVERTIME` — Freizeitausgleich trägt explizit beantragte Stunden, kein abgeleitetes
   Tagessoll.
 * `track_hours = False` — dort zählt ausschließlich die Tageszählung.
-* Wochenenden, Feiertage und Tage ohne Soll (freier Wochentag im Tagesplan) — sie werden
-  übersprungen, nicht auf 0 gesetzt.
+* Wochenenden und Feiertage — sie werden übersprungen, nicht auf 0 gesetzt.
+* Tage ohne Soll (freier Wochentag im Tagesplan, Wochentag ohne Blöcke) — übersprungen,
+  **außer** bei `SICK`/`TRAINING`: deren `hours` sind Ist-Gutschrift und werden dort auf 0
+  gesetzt (kein Soll, keine Gutschrift, §4.2). Bis 1.20.0 blieben sie auf dem alten
+  Tagessoll stehen; weil `credit_day_weight` einen Wochentag mit 1,0 wertet, stand dann
+  Soll 0 gegen die volle Gutschrift (Krankentag am künftig freien Dienstag, 7,5 h →
+  +7:30 h Überstunden), ohne Zeile in der Vorschau und ohne Protokoll. Jetzt erscheint die
+  Abwesenheit in der Vorschau und im Protokoll („Krank 7,5 h" → „Krank 0,0 h — …"); das
+  Löschen der Änderung zieht sie wieder auf das Tagessoll hoch. Der Saldo des Tages bleibt
+  0 (Soll und Gutschrift sinken gleich, keine Verkürzung nach Kriterium c).
 * Tage außerhalb des Beschäftigungsfensters (#193).
 * Alt-Zeilen ohne Halbtags-Information (`half_day IS NULL`, gebucht vor #205) — für sie
   zählen `get_vacation_account`/`absence_days` die Tage stundenbasiert (`hours ÷ Tagessoll`),
@@ -1455,7 +1468,10 @@ ein eigener Wochentagsfilter ist dafür nicht nötig, die bestehende Gleichheits
 > `Absence.hours`-Wert bleibt dabei unverändert stehen (`retarget_absence_hours`
 > überspringt Tage mit neuem Tagessoll 0, statt sie auf 0 zu setzen) — nur der
 > **Urlaubsverbrauch** ändert sich, nicht die Stundenzahl. Genau das zeigt die
-> „Urlaub {Jahr}: bisher/neu"-Zeile der Vorschau vor dem Speichern.
+> „Urlaub {Jahr}: bisher/neu"-Zeile der Vorschau vor dem Speichern. Ein Kranken- oder
+> Fortbildungstag am wegfallenden Mittwoch wird dagegen auf `hours = 0` gesetzt (seit
+> 1.20.0, siehe „Bewusst ausgenommen" in TZ-E): seine Stunden sind Ist-Gutschrift, und ohne
+> Soll gibt es nichts auszugleichen.
 
 ### TZ-G: Rückwirkende Änderung der Arbeitszeit-Blöcke (ab 1.20.0)
 

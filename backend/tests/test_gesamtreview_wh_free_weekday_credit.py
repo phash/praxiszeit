@@ -1,0 +1,132 @@
+"""Gesamtreview 1.20 (Fund 4): kein Soll, keine Gutschrift — auch nach einer
+Arbeitszeit-Änderung, die einen Wochentag frei macht.
+
+Bert hat Blöcke Mo–Fr 08:00–16:00 mit Pause 30 (7,5 h/Tag) und ist am Di
+15.09.2026 krank (gebucht mit 7,5 h). Ab 01.09. arbeitet er dienstags nicht mehr
+(Dienstag ohne Blöcke → Tagessoll 0). Die Rückrechnung übersprang den Tag
+(``target <= 0``), die Krankmeldung stand weiter mit 7,5 h da — und
+``credit_day_weight`` gewichtet einen Wochentag mit 1,0: Soll 0 gegen 7,5 h
+Gutschrift = +7:30 h Überstunden für einen Krankentag ohne Arbeitspflicht, ohne
+Zeile in der Vorschau und ohne Protokoll.
+
+Jetzt setzt die Rückrechnung die Ist-Gutschrift (SICK/TRAINING) an einem Tag
+ohne Soll auf 0; Urlaub & Co. bleiben wie bisher stehen (ihre ``hours`` tragen
+kein Saldo). Das Löschen der Änderung zieht sie symmetrisch zurück."""
+from datetime import date
+from decimal import Decimal
+
+import pytest
+
+from app.models import Absence, AbsenceType, TimeEntryAuditLog
+from app.routers.admin_users import _delete_change_row
+from app.services import calculation_service, wh_change_service as svc
+from tests.test_endpoints import test_app
+from tests.wh_change_helpers import absence, add_row, admin_client, change_row, freeze
+from tests.work_blocks_fixtures import block_week
+
+DAY = [("08:00", "16:00")]
+FULL = block_week(pause=30, mon=DAY, tue=DAY, wed=DAY, thu=DAY, fri=DAY)
+NO_TUESDAY = block_week(pause=30, mon=DAY, wed=DAY, thu=DAY, fri=DAY)
+EFF = date(2026, 9, 1)
+SICK_DAY = date(2026, 9, 15)       # Dienstag
+TRAINING_DAY = date(2026, 9, 22)   # Dienstag
+VACATION_DAY = date(2026, 9, 29)   # Dienstag
+
+
+def _day_saldo(db, user, d):
+    db.expire_all()
+    return calculation_service.get_range_actual(db, user, d, d) - calculation_service.get_range_target(db, user, d, d)
+
+
+def _bert(db, user):
+    add_row(db, user, date(2026, 3, 1), week=FULL)
+    sick = absence(db, user, SICK_DAY, AbsenceType.SICK, 7.5)
+    training = absence(db, user, TRAINING_DAY, AbsenceType.TRAINING, 7.5)
+    vacation = absence(db, user, VACATION_DAY, AbsenceType.VACATION, 7.5)
+    return sick, training, vacation
+
+
+def test_free_weekday_zeroes_the_credit(db, test_user, test_admin, monkeypatch):
+    freeze(monkeypatch)
+    sick, training, vacation = _bert(db, test_user)
+    assert _day_saldo(db, test_user, SICK_DAY) == Decimal("0")
+
+    impact = svc.run_change(db, test_user, admin_id=test_admin.id, effective_from=EFF,
+                            apply=lambda: db.add(change_row(test_user, EFF, week=NO_TUESDAY)))
+
+    assert sorted((a.date, a.absence_type, a.old_hours, a.new_hours) for a in impact.absences) == [
+        (SICK_DAY, AbsenceType.SICK, Decimal("7.50"), Decimal("0.00")),
+        (TRAINING_DAY, AbsenceType.TRAINING, Decimal("7.50"), Decimal("0.00")),
+    ]
+    # Die Gutschrift sinkt genau mit dem Soll — keine Verkürzung (9.5 (c)).
+    assert impact.credit_reductions == []
+    # Fünf Dienstage bis zum Stichtag (01.09.–06.10., ohne den Urlaubstag 29.09.,
+    # dessen Soll der Urlaub schon vorher entlastete) verlieren je 7,5 h Soll; die
+    # Gutschrift sinkt um die beiden Abwesenheiten — vorher blieb sie stehen
+    # (Δ angerechnet 0, Saldo +37,5 statt +22,5).
+    assert (impact.target_delta, impact.credited_delta, impact.saldo_delta) == (
+        Decimal("-37.5"), Decimal("-15.0"), Decimal("22.5"))
+    db.flush()
+    for a in (sick, training):
+        db.refresh(a)
+        assert Decimal(str(a.hours)) == Decimal("0")
+        assert Decimal(str(a.raw_hours)) == Decimal("7.5")   # Rückversicherung bleibt
+    db.refresh(vacation)
+    assert Decimal(str(vacation.hours)) == Decimal("7.5")   # Urlaub: übersprungen, nicht auf 0
+    for d in (SICK_DAY, TRAINING_DAY):
+        assert _day_saldo(db, test_user, d) == Decimal("0")
+
+
+def test_deleting_the_change_restores_the_credit(db, test_user, test_admin, monkeypatch):
+    freeze(monkeypatch)
+    sick, _, _ = _bert(db, test_user)
+    row = add_row(db, test_user, EFF, week=NO_TUESDAY)
+    # Stand nach dem Anlegen (wie oben): Gutschrift 0.
+    calculation_service.retarget_absence_hours(
+        db, test_user, EFF, date(2026, 10, 8),
+        old_full_target_by_date=calculation_service.absence_full_targets(db, test_user, EFF, date(2026, 10, 8)))
+    db.commit()
+    db.refresh(sick)
+    assert Decimal(str(sick.hours)) == Decimal("0")
+
+    impact = svc.run_change(db, test_user, admin_id=test_admin.id, effective_from=EFF,
+                            apply=lambda: _delete_change_row(db, test_user, test_admin, row))
+
+    assert (SICK_DAY, Decimal("0.00"), Decimal("7.50")) in [
+        (a.date, a.old_hours, a.new_hours) for a in impact.absences]
+    assert impact.credit_reductions == []
+    db.flush()
+    db.refresh(sick)
+    assert Decimal(str(sick.hours)) == Decimal("7.5")
+    assert _day_saldo(db, test_user, SICK_DAY) == Decimal("0")
+
+
+@pytest.fixture
+def client(db, test_admin, monkeypatch):
+    freeze(monkeypatch)
+    c = admin_client(db, test_admin)
+    yield c
+    test_app.dependency_overrides.clear()
+
+
+def test_preview_and_saving_name_and_log_the_absence(client, db, test_user):
+    """Vorschau nennt die Abwesenheit, das Speichern protokolliert sie je Zeile."""
+    sick, _, _ = _bert(db, test_user)
+    body = {"effective_from": EFF.isoformat(), "blocks": NO_TUESDAY}
+
+    preview = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes/preview", json=body)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["affected_absences"] == 2
+    assert preview.json()["is_shortening"] is False
+
+    resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes", json=body)
+    assert resp.status_code in (200, 201), resp.text
+    db.expire_all()
+    assert Decimal(str(db.get(Absence, sick.id).hours)) == Decimal("0")
+    notes = [r.new_note for r in db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.user_id == test_user.id,
+        TimeEntryAuditLog.source == "wh_change",
+        TimeEntryAuditLog.old_date == SICK_DAY,
+    )]
+    assert notes == ["Krank 0,0 h — Arbeitszeit-Änderung ab 01.09.2026"]
+    assert _day_saldo(db, test_user, SICK_DAY) == Decimal("0")

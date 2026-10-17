@@ -260,6 +260,16 @@ dieses Backup verlustfrei (`UPDATE.md`).
   Beginn auf den eines anderen Eintrags des Tages fiel; jetzt kommt wie in der
   Verwaltung „Es existiert bereits ein Eintrag mit dieser Startzeit an diesem
   Datum".
+- **Krank oder Fortbildung an einem künftig freien Wochentag:** Machte eine
+  Arbeitszeit-Änderung einen Wochentag frei (keine Blöcke bzw. 0 Stunden), blieb
+  ein dort schon gebuchter Kranken- oder Fortbildungstag mit seinen alten
+  Stunden stehen und schrieb sie dem Überstundenkonto gut, obwohl der Tag kein
+  Soll mehr hat (z. B. +7:30 h für einen Krankentag am künftig freien
+  Dienstag) – ohne Hinweis in der Vorschau und ohne Protokollzeile. Jetzt setzt
+  PraxisZeit die Stunden dort auf 0 (Vorschau „Abwesenheit(en) betroffen",
+  Protokoll „Krank 7,5 h" → „Krank 0,0 h"); das Löschen der Änderung stellt sie
+  wieder her. Urlaub an solchen Tagen bleibt wie bisher stehen und kostet keinen
+  Urlaubstag.
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images

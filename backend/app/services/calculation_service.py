@@ -582,8 +582,12 @@ def retarget_absence_hours(
       abgeleitetes Tagessoll (CLAUDE.md: Soll bleibt, Ist = 0).
     * ``track_hours = False`` — dort zaehlt ausschliesslich die Tageszaehlung;
       die Stunden zu bewegen erzeugt nur Rauschen in den Belegen.
-    * Wochenenden, Feiertage und Tage ohne Soll (freier Wochentag im Tagesplan)
-      — sie werden uebersprungen, NICHT auf 0 gesetzt.
+    * Wochenenden und Feiertage — sie werden uebersprungen, NICHT auf 0 gesetzt
+      (die Leseseite wertet sie ohnehin mit 0, :func:`credit_day_weight`).
+    * Tage ohne Soll (freier Wochentag im Tagesplan bzw. ohne Bloecke) fuer
+      alle Typen AUSSER der Ist-Gutschrift: SICK/TRAINING werden dort auf 0
+      gesetzt (Gesamtreview 1.20, Fund 4 — kein Soll, keine Gutschrift; die
+      Leseseite wertet einen Wochentag mit 1,0 und verlaesst sich darauf).
     * Tage ausserhalb des Beschaeftigungsfensters (#193).
     * ``half_day IS NULL`` (Legacy-Zeilen von vor #205) — siehe Begruendung in
       der Schleife.
@@ -703,8 +707,24 @@ def retarget_absence_hours(
         # Sondertag dadurch IMMER vom neu berechneten ab, sodass die
         # Gleichheitspruefung unten bei JEDEM Lauf ansprang (nicht idempotent).
         target = get_daily_target_for_date(user, d, schedule)
-        if target <= 0:
+        if target <= 0 and a.type not in _IST_CREDITED_ABSENCE_TYPES:
             continue
+
+        # Gesamtreview 1.20 (Fund 4): an einem Tag OHNE Soll (Wochentag ohne
+        # Blöcke bzw. 0 h im Tagesplan, Wochenstunden 0) fällt die Ist-Gutschrift
+        # von SICK/TRAINING auf 0 — kein Soll, keine Gutschrift (Fund K). Bis
+        # dahin übersprang die Rückrechnung den Tag auch für diese Typen; die
+        # Gutschrift blieb auf dem alten Tagessoll stehen, und weil
+        # :func:`credit_day_weight` einen Wochentag mit 1,0 wertet (seine
+        # Annahme: dort ist ``hours`` 0), stand Soll 0 gegen eine volle
+        # Gutschrift — Phantom-Überstunden, ohne Zeile in der Vorschau, ohne
+        # Protokoll. Andere Typen bleiben wie bisher stehen: ihre ``hours``
+        # tragen kein Saldo, und der Urlaubsverbrauch zählt Tage mit Soll 0
+        # ohnehin nicht. Das Löschen der Änderung zieht die Zeile über denselben
+        # Weg wieder auf das Tagessoll hoch. Die F1-Klemmung unten ändert daran
+        # nichts (``f1_clamp_hours`` mit Tagessoll 0 ergibt 0, keine Klemmung).
+        if target <= 0:
+            target = Decimal('0')
 
         # Auf 0,01 h quantisiert VOR der F1-Klemmung (Spec 9.6: „nach der
         # Berechnung von new_hours" — im Bestand war das an dieser Stelle schon
@@ -1292,7 +1312,10 @@ def credit_day_weight(d: date, holiday_dates: set, special_cfg: Optional[dict] =
     * Ein **0-Stunden-Wochentag** im Tagesplan-Modus traegt zwar kein Soll,
       braucht hier aber keinen Zweig: dort bucht ``create_absence`` ``hours=0``,
       die Gutschrift ist also von sich aus 0 (und eine Buchung, die an allen
-      Zieltagen 0 waere, lehnt der Endpunkt seit 1.18.0 mit 400 ab).
+      Zieltagen 0 waere, lehnt der Endpunkt seit 1.18.0 mit 400 ab). Wird ein
+      Wochentag erst NACH dem Buchen frei (Arbeitszeit-Aenderung), setzt
+      :func:`retarget_absence_hours` die SICK/TRAINING-Zeilen dort auf 0
+      (Gesamtreview 1.20, Fund 4) — die Annahme gilt also auch dann.
     * Das **Beschaeftigungsfenster** (#195) filtern alle Aufrufstellen bereits
       selbst — wie auf der Soll-Seite auch.
 
