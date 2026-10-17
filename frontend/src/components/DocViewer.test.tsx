@@ -109,6 +109,14 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       // Gesamtreview PR4/V1: Grenzfall P18 – ein eingetragenes Ende genau auf
       // dem wirksamen Ende bleibt Echo (end_is_correction, lacks_actual_end).
       'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)',
+      // Gesamtreview 1.20 (Fund 6/25 und 14) wie HANDBUCH-ADMIN.md: das
+      // Bearbeiten-Formular zeigt den heute gültigen Stand und mit Blöcken den
+      // Modus „Nach Arbeitsblöcken"; bei fester Monatsarbeitszeit beschriftet
+      // der Block-Editor die Werte als „geplant".
+      'zeigen den heute gültigen Stand – auch nach dem Wirkungsdatum einer zukunftsdatierten Änderung',
+      'gelten heute Arbeitszeit-Blöcke, heißt der Modus „Nach Arbeitsblöcken"',
+      'bei fester Monatsarbeitszeit steht „geplant" statt „Tagessoll" bzw. „Wochensoll"',
+      'die Auswirkung nennt sie „Geplante Anwesenheit je Wochentag"',
     ]) {
       expect(text).toContain(expected);
     }
@@ -179,6 +187,8 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
     const start = textOf(<SchnellstartAdmin />);
     expect(start).toContain('Arbeitszeit anpassen…');
     expect(start).toContain('Nach Arbeitsblöcken');
+    // Gesamtreview 1.20 (Fund 14) wie HANDBUCH-ADMIN.md (Feste Monatsarbeitszeit).
+    expect(start).toContain('Mit Arbeitszeit-Blöcken gilt dasselbe: der Block-Editor beschriftet die Werte je Tag und Woche als „geplant".');
     expectNoStaleTerms(start);
   });
 
