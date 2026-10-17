@@ -173,25 +173,31 @@ async function clickButtonByText(page, texts) {
     await shot(ap, '15-admin-benutzer.png', true);
 
     // 16 Neuen Benutzer anlegen
-    await clickButtonByText(ap, ['Neuer Benutzer', 'Benutzer anlegen', 'Neuen Mitarbeiter', 'Hinzufügen', '+']);
+    await clickButtonByText(ap, ['Neue:r Mitarbeiter:in', 'Neuer Benutzer', 'Benutzer anlegen', 'Neuen Mitarbeiter', 'Hinzufügen', '+']);
     await sleep(1000);
+    await ap.evaluate(() => {
+      const el = [...document.querySelectorAll('label, button')]
+        .find(e => e.textContent.trim() === 'Nach Arbeitsblöcken');
+      if (el) el.click();
+    });
+    await sleep(500);
     await shot(ap, '16-admin-benutzer-formular.png', true);
     await ap.keyboard.press('Escape');
     await sleep(500);
 
     // 17 Einen Benutzer bearbeiten (erneut Formular-Screenshot)
     await goto(ap, '/admin/users');
-    // Klick auf den ersten "Bearbeiten"-Button mit direktem Selektor
+    // Bearbeiten-Button in der Zeile der Demo-Person mit Arbeitszeit-Blöcken (Sarah Klein)
     try {
-      const editBtns = await ap.$$('button');
-      for (const btn of editBtns) {
-        const text = await ap.evaluate(el => el.textContent.trim(), btn);
-        if (text.includes('Bearbeiten') || text.includes('Edit')) {
-          await btn.click();
-          await sleep(1000);
-          break;
-        }
-      }
+      const clicked = await ap.evaluate(() => {
+        const row = [...document.querySelectorAll('tr')].find(tr => tr.textContent.includes('Klein'));
+        const btn = row && [...row.querySelectorAll('button')].find(b =>
+          (b.getAttribute('aria-label') || b.title || b.textContent || '').includes('Bearbeiten'));
+        if (btn) { btn.click(); return true; }
+        return false;
+      });
+      if (!clicked) console.log('  ~ Zeile „Klein" mit Bearbeiten-Button nicht gefunden');
+      await sleep(1000);
     } catch(e) { console.log('  ~ Kein Bearbeiten-Button gefunden'); }
     await shot(ap, '17-admin-benutzer-bearbeiten.png', true);
     await ap.keyboard.press('Escape');

@@ -6,7 +6,8 @@
 # ausfuehrlichen "incompatible"-Meldung ab). Dieser Helfer macht den Umstieg
 # sicher: er sichert die laufende DB, entfernt NUR das DB-Volume (die #213-Backups
 # im praxiszeit_backups-Volume bleiben erhalten), startet einen frischen
-# PG18-Stack und spielt den Dump wieder ein.
+# PG18-Stack und spielt den Dump wieder ein (restore.sh startet danach das
+# Backend neu, damit die Migrationen laufen).
 #
 # Aufruf NEBEN der docker-compose.yml (im Docker-Bundle):  bash update-pg-major.sh
 # (Der ALTE Stack muss noch laufen, damit gesichert werden kann.)
@@ -81,8 +82,13 @@ done
     || { echo "FEHLER: neue Datenbank wurde nicht 'healthy'. Backup liegt unter ${BK}." >&2; exit 1; }
 
 echo "==> 5/5  Restore in den frischen Cluster..."
+# restore.sh haelt das (in Schritt 4 gestartete) Backend an, spielt den Dump in
+# eine frisch angelegte Datenbank, startet das Backend wieder und wartet, bis es
+# gesund ist — erst dann haben die Migrationen das Schema auf diese Version
+# gehoben. Ein `docker compose up -d backend` an dieser Stelle war ein No-op
+# (Backend lief schon): „Fertig“ stand da, waehrend das Schema auf dem Stand des
+# Dumps blieb (Gesamtreview 1.20).
 bash "$SCRIPT_DIR/restore.sh" "$BK"
-docker compose up -d backend
 trap - EXIT   # Erfolg — Abbruch-Falle entschaerfen
 
 echo ""

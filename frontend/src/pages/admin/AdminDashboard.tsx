@@ -1,16 +1,16 @@
 import { useEffect, useState, useRef } from 'react';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { Link } from 'react-router-dom';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
-import { Users, Clock, TrendingUp, X, Calendar, FileText, ChevronRight, Mail, Briefcase, ArrowUp, ArrowDown, Search, Plus, Edit2, Trash2, Save, ScrollText, BookCheck } from 'lucide-react';
+import { Users, Clock, TrendingUp, X, Calendar, FileText, ChevronRight, Mail, Briefcase, ArrowUp, ArrowDown, Search, Plus, Trash2, Save, ScrollText, BookCheck } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 import WeekSelector, { isoWeekMonday, weekLabel } from '../../components/WeekSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges } from '../../utils/formatters';
+import { deHoursExact, formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount } from '../../utils/formatters';
 import type { WeeklyHoursChangeInPeriod } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import { showArbzgWarnings } from '../../utils/arbzgWarnings';
@@ -19,7 +19,8 @@ import UpdateBanner from '../../components/UpdateBanner';
 // Geteilt mit dem Änderungsprotokoll (`admin/AuditLog.tsx`) — dieselben
 // Audit-Zeilen, dieselbe Darstellung.
 import AuditValues from '../../components/AuditValues';
-import { RawStampNote } from '../../components/RawStampNote';
+import { AUDIT_SOURCE_LABELS } from '../../constants/auditSources';
+import EmployeeTimeEntryTable, { type EmployeeTimeEntry } from './EmployeeTimeEntryTable';
 
 interface EmployeeReport {
   user_id: string;
@@ -46,19 +47,10 @@ interface EmployeeReport {
   weekly_hours_changes?: WeeklyHoursChangeInPeriod[];
 }
 
-interface TimeEntry {
-  id: string;
-  date: string;
-  start_time: string;
-  end_time: string | null; // #382: null bei offenem (eingestempeltem) Eintrag — Deref nur über formatClockTime
-  break_minutes: number;
-  note?: string;
-  // #201/#462: gesetzt, wenn die Zeit auf das Arbeitszeit-Fenster gekappt wurde.
-  // Ohne die Anzeige sieht der Admin nur die gekappte Zeit und erfährt nie, dass
-  // seine Eingabe verändert wurde — der Kern der Meldung #462.
-  raw_start_time?: string | null;
-  raw_end_time?: string | null;
-}
+// Spec 2026-10-08 (12.3): Felder inkl. nicht angerechneter Zeit — eine Quelle
+// mit der herausgelösten Detailtabelle. #201/#462: raw_start_time/raw_end_time
+// bleiben dort Teil des Typs; ohne die Anzeige sähe der Admin nur die gekappte Zeit.
+type TimeEntry = EmployeeTimeEntry;
 
 interface Absence {
   id: string;
@@ -80,6 +72,10 @@ interface YearlyAbsences {
   overtime_comp_days?: number;
   overtime_year: number;
   total_days: number;
+  has_year_end_warning?: boolean; // #501: serverseitige Jahresend-Warnung (ab 1,0 Tagen, Q4)
+  // Gesamtreview B5: Verfallsdatum je Person (individuelle Frist oder 31.03. des
+  // Folgejahres) — dieselbe Regel wie im Mitarbeiter-Dashboard.
+  carryover_deadline?: string | null;
 }
 
 interface UserDetails {
@@ -96,6 +92,10 @@ export default function AdminDashboard() {
   // #159: leitende MA (§18) verzerren den Schnitt — standardmäßig aus dem Ø ausschließen.
   const [includeExemptInAvg, setIncludeExemptInAvg] = useState(false);
   const [yearlyAbsences, setYearlyAbsences] = useState<YearlyAbsences[]>([]);
+  // #501/Review F3: Jahr, zu dem `yearlyAbsences` gehört. Beim Umschalten bleibt
+  // die alte Liste stehen, bis die neue Antwort da ist (oder für immer, wenn die
+  // Anfrage scheitert) — der Jahresend-Banner darf sie nur fürs eigene Jahr zeigen.
+  const [yearlyAbsencesYear, setYearlyAbsencesYear] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [yearlyLoading, setYearlyLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
@@ -180,7 +180,9 @@ export default function AdminDashboard() {
 
   // C-2: Out-of-order-Schutz bei schnellem Monatswechsel (Last-Write-Wins).
   const reportSeq = useRef(0);
-  const fetchReport = async () => {
+  // Liefert die gesetzten Zeilen zurück (null, wenn überholt oder gescheitert) —
+  // refreshReportAndDetailSummary liest daraus im Monatsmodus die Modal-Kacheln.
+  const fetchReport = async (): Promise<EmployeeReport[] | null> => {
     const seq = ++reportSeq.current;
     try {
       const hp = showHealthData ? '&include_health_data=true' : '';
@@ -188,12 +190,15 @@ export default function AdminDashboard() {
         ? `/admin/reports/weekly?week_start=${currentWeek}${hp}&soll_basis=${sollBasis}`
         : `/admin/reports/monthly?month=${currentMonth}${hp}&soll_basis=${sollBasis}`;
       const response = await apiClient.get(url);
-      if (seq !== reportSeq.current) return;
+      if (seq !== reportSeq.current) return null;
       // #382: guard against a non-array 200 body (auth/proxy edge) — the render
       // calls report.filter/.map unconditionally and would white-screen.
-      setReport(Array.isArray(response.data) ? response.data : []);
+      const rows: EmployeeReport[] = Array.isArray(response.data) ? response.data : [];
+      setReport(rows);
+      return rows;
     } catch (error) {
       if (seq === reportSeq.current) toast.error('Fehler beim Laden des Berichts');
+      return null;
     } finally {
       if (seq === reportSeq.current) setLoading(false);
     }
@@ -203,12 +208,14 @@ export default function AdminDashboard() {
   const yearlySeq = useRef(0);
   const fetchYearlyAbsences = async () => {
     const seq = ++yearlySeq.current;
+    const year = currentYear;
     try {
       const hp = showHealthData ? '&include_health_data=true' : '';
-      const response = await apiClient.get(`/admin/reports/yearly-absences?year=${currentYear}${hp}`);
+      const response = await apiClient.get(`/admin/reports/yearly-absences?year=${year}${hp}`);
       if (seq !== yearlySeq.current) return;
       // #382: same guard — yearlyAbsences.filter/.map run unconditionally in render.
       setYearlyAbsences(Array.isArray(response.data) ? response.data : []);
+      setYearlyAbsencesYear(year);
     } catch (error) {
       if (seq === yearlySeq.current) toast.error('Fehler beim Laden der Jahresübersicht');
     } finally {
@@ -314,6 +321,39 @@ export default function AdminDashboard() {
     }
   };
 
+  // Review Task 15: nach einer Änderung an den Einträgen (Speichern, Löschen,
+  // Anerkennen) den Bericht UND die Kacheln Soll/Ist/Saldo/Überstunden kum. des
+  // Detail-Modals neu laden. Die Kacheln lesen detailSummary — im Monatsmodus die
+  // beim Öffnen angeklickte Zeile, im Wochenmodus die nachgeladene Monatszeile
+  // (#329). fetchReport() ersetzt nur `report`; ohne diesen Schritt stünden Ist
+  // und Saldo im Modal auf dem alten Wert, direkt über der schon geänderten
+  // Eintragszeile. Im Monatsmodus ist der Bericht bereits die Monatszeile — kein
+  // zweiter Abruf.
+  const refreshReportAndDetailSummary = async () => {
+    const employee = selectedEmployee;
+    const seq = detailSeq.current;
+    const reportRows = fetchReport();
+    if (!employee) return;
+    let monthlyRows: EmployeeReport[] | null = null;
+    if (viewMode === 'week') {
+      try {
+        const hp = showHealthData ? '&include_health_data=true' : '';
+        const monthly = await apiClient.get(
+          `/admin/reports/monthly?month=${currentMonth}${hp}&soll_basis=${sollBasis}`,
+        );
+        monthlyRows = Array.isArray(monthly.data) ? monthly.data : null; // #382
+      } catch {
+        return; // Kacheln bleiben stehen; der Wochenbericht meldet Ladefehler selbst.
+      }
+    } else {
+      monthlyRows = await reportRows;
+    }
+    // C-2: inzwischen ein anderer Mitarbeiter/Monat geöffnet → nichts überschreiben.
+    if (seq !== detailSeq.current || !monthlyRows) return;
+    const row = monthlyRows.find((r) => r.user_id === employee.user_id);
+    if (row) setDetailSummary(row);
+  };
+
   const closeDetail = () => {
     setSelectedEmployee(null);
     setDetailSummary(null);
@@ -404,12 +444,35 @@ export default function AdminDashboard() {
       });
       setEmployeeAbsences(Array.isArray(absencesResponse.data) ? absencesResponse.data : []); // #382
       fetchAuditForUser(selectedEmployee.user_id);
-      // C-2: Monatsbericht (Ist, Saldo, Urlaub/Krank) + Jahresübersicht aktualisieren,
-      // damit die Zusammenfassung sofort die Mutation widerspiegelt.
-      fetchReport();
+      // C-2: Monatsbericht (Ist, Saldo, Urlaub/Krank), Modal-Kacheln + Jahresübersicht
+      // aktualisieren, damit die Zusammenfassung sofort die Mutation widerspiegelt.
+      void refreshReportAndDetailSummary();
       fetchYearlyAbsences();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
+    }
+  };
+
+  // Spec 13.3: nach „Anerkennen" Einträge, Abwesenheiten, Protokoll, Monatsbericht
+  // (samt Modal-Kacheln) und Jahresübersicht neu laden — wie nach Speichern/Löschen
+  // (C-2): Anerkennen erhöht das Ist und damit „Überstunden Jahr" (get_ytd_summary)
+  // und gleicht eine Abwesenheit am selben Tag an (F1, Gesamtreview 1.20 Fund 1).
+  const reloadEmployeeEntries = async () => {
+    if (!selectedEmployee) return;
+    try {
+      const entriesResponse = await apiClient.get('/time-entries', {
+        params: { user_id: selectedEmployee.user_id, month: currentMonth },
+      });
+      setEmployeeTimeEntries(Array.isArray(entriesResponse.data) ? entriesResponse.data : []); // #382
+      const absencesResponse = await apiClient.get('/absences', {
+        params: { user_id: selectedEmployee.user_id, year: currentMonth.split('-')[0] },
+      });
+      setEmployeeAbsences(Array.isArray(absencesResponse.data) ? absencesResponse.data : []); // #382
+      fetchAuditForUser(selectedEmployee.user_id);
+      void refreshReportAndDetailSummary();
+      fetchYearlyAbsences();
+    } catch {
+      toast.error('Fehler beim Laden der Mitarbeiterdaten');
     }
   };
 
@@ -430,8 +493,8 @@ export default function AdminDashboard() {
             setEmployeeTimeEntries(Array.isArray(entriesResponse.data) ? entriesResponse.data : []); // #382
             fetchAuditForUser(selectedEmployee.user_id);
           }
-          // C-2: Monatsbericht + Jahresübersicht aktualisieren.
-          fetchReport();
+          // C-2: Monatsbericht (samt Modal-Kacheln) + Jahresübersicht aktualisieren.
+          void refreshReportAndDetailSummary();
           fetchYearlyAbsences();
         } catch (error) {
           toast.error('Fehler beim Löschen');
@@ -783,7 +846,7 @@ export default function AdminDashboard() {
                       {emp.last_name}, {emp.first_name}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      {emp.weekly_hours}
+                      {deHoursExact(emp.weekly_hours)}
                       {formatWeeklyHoursChanges(emp.weekly_hours_changes) && (
                         <span
                           className="block text-xs text-amber-700"
@@ -866,7 +929,7 @@ export default function AdminDashboard() {
                       <p className="font-semibold text-gray-900">
                         {emp.last_name}, {emp.first_name}
                       </p>
-                      <p className="text-sm text-gray-500">{emp.weekly_hours} Std./Woche</p>
+                      <p className="text-sm text-gray-500">{deHoursExact(emp.weekly_hours)} Std./Woche</p>
                       {formatWeeklyHoursChanges(emp.weekly_hours_changes) && (
                         <p className="text-xs text-amber-700">
                           {formatWeeklyHoursChanges(emp.weekly_hours_changes)}
@@ -967,26 +1030,45 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Year-end vacation warning banner (Q4 only) */}
-        {new Date().getMonth() >= 9 && currentYear === new Date().getFullYear() && (() => {
-          const withRemaining = yearlyAbsences.filter(e => e.remaining_vacation_days > 0);
-          return withRemaining.length > 0 ? (
+        {/* Year-end vacation warning banner. #501: Ob gewarnt wird (Q4 des
+            laufenden Jahres, erst ab 1,0 offenen Tagen — Teilzeit-Bruchteile
+            wandern ins Folgejahr), entscheidet der Server über dieselbe Regel
+            wie im Mitarbeiter-Dashboard; hier wird NICHT mehr selbst gefiltert.
+            Review F3: nur mit Daten des GEWÄHLTEN Jahres — beim Umschalten (Anfrage
+            läuft oder scheitert) stünden sonst die Namen des Vorjahres unter dem
+            Verfallsdatum des neu gewählten Jahres.
+            Gesamtreview B5: das Verfallsdatum kommt je Person vom Server
+            (individuelle Frist, sonst 31.03. des Folgejahres); die Resttage mit
+            deutschem Komma. */}
+        {(() => {
+          const withRemaining = yearlyAbsencesYear === currentYear
+            ? yearlyAbsences.filter(e => e.has_year_end_warning)
+            : [];
+          if (withRemaining.length === 0) return null;
+          const deadlineOf = (e: YearlyAbsences) =>
+            format(parseISO(e.carryover_deadline ?? `${currentYear + 1}-03-31`), 'dd.MM.yyyy');
+          const deadlines = new Set(withRemaining.map(deadlineOf));
+          const commonDeadline = deadlines.size === 1 ? [...deadlines][0] : null;
+          return (
             <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
               <p className="font-semibold text-amber-800 mb-2">
                 ⚠️ Jahresend-Warnung: Offene Urlaubstage
               </p>
               <p className="text-sm text-amber-700 mb-3">
-                Folgende Mitarbeiter haben noch offene Urlaubstage, die bis 31.03.{currentYear + 1} verfallen:
+                {commonDeadline
+                  ? `Folgende Mitarbeiter haben noch offene Urlaubstage, die bis ${commonDeadline} verfallen:`
+                  : 'Folgende Mitarbeiter haben noch offene Urlaubstage, die zum jeweils genannten Datum verfallen:'}
               </p>
               <div className="flex flex-wrap gap-2">
                 {withRemaining.map(emp => (
                   <span key={emp.user_id} className="px-3 py-1 bg-amber-100 border border-amber-300 rounded-full text-sm font-medium text-amber-900">
-                    {emp.first_name} {emp.last_name}: {emp.remaining_vacation_days.toFixed(1)} Tage
+                    {`${emp.first_name} ${emp.last_name}: ${formatDayCount(emp.remaining_vacation_days)}`
+                      + (commonDeadline ? '' : ` (bis ${deadlineOf(emp)})`)}
                   </span>
                 ))}
               </div>
             </div>
-          ) : null;
+          );
         })()}
 
         <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
@@ -1286,7 +1368,7 @@ export default function AdminDashboard() {
                         </div>
                         <div>
                           <p className="text-gray-500 mb-1">Wochenstunden</p>
-                          <p className="text-gray-900">{selectedEmployee.weekly_hours} Std.</p>
+                          <p className="text-gray-900">{deHoursExact(selectedEmployee.weekly_hours)} Std.</p>
                           {formatWeeklyHoursChanges(selectedEmployee.weekly_hours_changes) && (
                             <p className="text-xs text-amber-700 mt-0.5">
                               {formatWeeklyHoursChanges(selectedEmployee.weekly_hours_changes)}
@@ -1470,51 +1552,12 @@ export default function AdminDashboard() {
                       {employeeTimeEntries.length === 0 ? (
                         <p className="px-4 py-3 text-sm text-gray-500">Keine Zeiteinträge vorhanden</p>
                       ) : (
-                        <table className="w-full">
-                          <thead className="bg-gray-50 sticky top-0">
-                            <tr>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Datum</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Von</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Bis</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Pause</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Notiz</th>
-                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">Aktionen</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {employeeTimeEntries.map((entry) => (
-                              <tr key={entry.id} className="hover:bg-gray-50">
-                                <td className="px-4 py-2 text-sm">{format(new Date(entry.date), 'dd.MM.yyyy')}</td>
-                                <td className="px-4 py-2 text-sm">
-                                  {formatClockTime(entry.start_time)}
-                                  <RawStampNote raw={entry.raw_start_time} effective={entry.start_time} side="start" />
-                                </td>
-                                <td className="px-4 py-2 text-sm">
-                                  {formatClockTime(entry.end_time, 'offen')}
-                                  <RawStampNote raw={entry.raw_end_time} effective={entry.end_time} side="end" />
-                                </td>
-                                <td className="px-4 py-2 text-sm">{entry.break_minutes} min</td>
-                                <td className="px-4 py-2 text-sm text-gray-500">{entry.note || '-'}</td>
-                                <td className="px-4 py-2 text-right text-sm space-x-1">
-                                  <button
-                                    onClick={() => handleAdminEditEntry(entry)}
-                                    className="text-primary hover:text-primary-dark p-1 rounded-sm"
-                                    aria-label={`Eintrag vom ${format(new Date(entry.date), 'dd.MM.yyyy')} bearbeiten`}
-                                  >
-                                    <Edit2 size={14} aria-hidden="true" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleAdminDeleteEntry(entry.id)}
-                                    className="text-red-600 hover:text-red-800 p-1 rounded-sm"
-                                    aria-label={`Eintrag vom ${format(new Date(entry.date), 'dd.MM.yyyy')} löschen`}
-                                  >
-                                    <Trash2 size={14} aria-hidden="true" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                        <EmployeeTimeEntryTable
+                          entries={employeeTimeEntries}
+                          onEdit={handleAdminEditEntry}
+                          onDelete={handleAdminDeleteEntry}
+                          onCredited={() => { void reloadEmployeeEntries(); }}
+                        />
                       )}
                     </div>
                   </div>
@@ -1603,7 +1646,14 @@ export default function AdminDashboard() {
                                 </span>
                                 <span className="text-gray-500">
                                   {format(new Date(log.created_at), 'dd.MM. HH:mm')} | {log.changed_by_first_name} {log.changed_by_last_name}
-                                  {log.source === 'change_request' && ' (Antrag)'}
+                                  {/* Gesamtreview PR2 (Fund 6): dieselben Quellen-Labels wie
+                                      `admin/AuditLog.tsx`; „manual" (von Hand angelegt oder
+                                      geändert — wer, steht direkt davor) bleibt ohne Zusatz,
+                                      unbekannte Quellen ebenso. Gesamtreview 1.20 (Fund 21):
+                                      hinter „ | " wie in AuditLog.tsx, nicht in Klammern —
+                                      „Neukappung (Arbeitszeit-Änderung)" trägt selbst eine. */}
+                                  {log.source && log.source !== 'manual' && AUDIT_SOURCE_LABELS[log.source]
+                                    && ` | ${AUDIT_SOURCE_LABELS[log.source]}`}
                                 </span>
                               </div>
                               {/* Dieselbe Darstellung wie im Änderungsprotokoll

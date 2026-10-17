@@ -24,59 +24,59 @@ def _make_entry(db, user, start_h, start_m, end_h, end_m, break_min=0, d=None):
 
 def test_under_6h_no_break_required(db, test_user):
     """§4 ArbZG: Unter 6h Arbeitszeit ist keine Pause vorgeschrieben."""
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(8, 0), time(13, 59), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(8, 0), time(13, 59), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is None
 
 
 def test_exactly_6h_no_break_required(db, test_user):
     """§4 ArbZG: Exakt 6h Arbeitszeit erfordert noch keine Pause (erst bei Überschreitung)."""
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(8, 0), time(14, 0), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(8, 0), time(14, 0), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is None
 
 
 def test_over_6h_without_break_fails(db, test_user):
     """§4 ArbZG: Über 6h ohne Pause ist ein Verstoß — mindestens 30 Min erforderlich."""
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(8, 0), time(14, 31), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(8, 0), time(14, 31), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is not None
     assert "30 Minuten" in result
 
 
 def test_over_6h_with_30min_break_ok(db, test_user):
     """§4 ArbZG: Über 6h mit 30 Min Pause ist korrekt — Mindestanforderung erfüllt."""
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(8, 0), time(14, 31), break_minutes=30)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(8, 0), time(14, 31), break_minutes=30, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is None
 
 
 def test_over_9h_with_30min_break_fails(db, test_user):
     """§4 ArbZG: Über 9h erfordert 45 Min Pause — 30 Min reichen nicht mehr."""
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(8, 0), time(17, 31), break_minutes=30)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(8, 0), time(17, 31), break_minutes=30, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is not None
     assert "45 Minuten" in result
 
 
 def test_over_9h_with_45min_break_ok(db, test_user):
     """§4 ArbZG: Über 9h mit 45 Min Pause ist korrekt — höhere Schwelle erfüllt."""
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(8, 0), time(17, 31), break_minutes=45)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(8, 0), time(17, 31), break_minutes=45, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is None
 
 
 def test_exactly_9h_needs_only_30min(db, test_user):
     """§4 ArbZG: Exakt 9h erfordert nur 30 Min Pause — 45 Min erst bei Überschreitung."""
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(8, 0), time(17, 0), break_minutes=30)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(8, 0), time(17, 0), break_minutes=30, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is None
 
 
 def test_gap_between_entries_counts_as_break(db, test_user):
     """Prüft dass Lücken zwischen Einträgen als Pause gewertet werden — realistisches Szenario."""
     _make_entry(db, test_user, 8, 0, 12, 0, break_min=0)
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(13, 0), time(16, 1), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(13, 0), time(16, 1), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is None  # 60min gap > 30min needed
 
 
 def test_gap_not_sufficient_for_long_day(db, test_user):
     """§4 ArbZG: Kurze Lücke (20 Min) reicht bei >9h Gesamtarbeitszeit nicht für 45 Min Pause."""
     _make_entry(db, test_user, 8, 0, 12, 0, break_min=0)
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(12, 20), time(17, 41), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(12, 20), time(17, 41), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is not None
     assert "45 Minuten" in result
 
@@ -85,7 +85,7 @@ def test_multiple_entries_cumulated(db, test_user):
     """Prüft dass mehrere Einträge am Tag kumuliert werden — Gesamtarbeitszeit zählt."""
     _make_entry(db, test_user, 8, 0, 10, 0, break_min=0)
     _make_entry(db, test_user, 10, 0, 12, 0, break_min=0)
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(12, 0), time(14, 1), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(12, 0), time(14, 1), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is not None
     assert "30 Minuten" in result
 
@@ -93,14 +93,14 @@ def test_multiple_entries_cumulated(db, test_user):
 def test_exclude_entry_id_skips_existing(db, test_user):
     """Prüft dass beim Bearbeiten eines Eintrags dieser selbst nicht doppelt gezählt wird."""
     existing = _make_entry(db, test_user, 8, 0, 16, 0, break_min=0)
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(8, 0), time(14, 0), break_minutes=0, exclude_entry_id=existing.id)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(8, 0), time(14, 0), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID, exclude_entry_id=existing.id)
     assert result is None
 
 
 def test_without_exclude_old_entry_counted(db, test_user):
     """Prüft dass ohne exclude_entry_id bestehende Einträge mitgezählt werden — Gegenstück zum Exclude-Test."""
     _make_entry(db, test_user, 8, 0, 14, 1, break_min=0)
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(14, 30), time(15, 0), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(14, 30), time(15, 0), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is not None
 
 
@@ -120,8 +120,8 @@ def test_open_entry_without_end_time_ignored(db, test_user):
     # New entry alone: only 5 hours (under 6h threshold)
     # If open entry were counted: 7h total → would require 30min break
     result = validate_daily_break(
-        db, test_user.id, date(2026, 3, 10),
-        time(8, 0), time(13, 0), break_minutes=0
+        db, test_user, date(2026, 3, 10),
+        time(8, 0), time(13, 0), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID
     )
     assert result is None  # Open entry correctly ignored
 
@@ -129,13 +129,13 @@ def test_open_entry_without_end_time_ignored(db, test_user):
 def test_different_dates_independent(db, test_user):
     """Prüft dass Einträge anderer Tage die Pausenvalidierung nicht beeinflussen."""
     _make_entry(db, test_user, 8, 0, 14, 1, break_min=0, d=date(2026, 3, 9))
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(8, 0), time(13, 0), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(8, 0), time(13, 0), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is None
 
 
 def test_zero_net_hours_no_error(db, test_user):
     """Prüft dass 0h Arbeitszeit keinen Fehler wirft — Edge Case bei Start=Ende."""
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(8, 0), time(8, 0), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(8, 0), time(8, 0), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is None
 
 
@@ -143,7 +143,7 @@ def test_gap_under_15min_not_counted_as_break(db, test_user):
     """§4 Satz 2 ArbZG: Pausenabschnitte unter 15 Min zählen nicht."""
     # 08:00-11:00 (3h) + 5min gap + 11:05-14:10 (3h05m) = 6h05m net, only 5min gap
     _make_entry(db, test_user, 8, 0, 11, 0, break_min=0)
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(11, 5), time(14, 10), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(11, 5), time(14, 10), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is not None
     assert "30 Minuten" in result
 
@@ -152,7 +152,7 @@ def test_gap_exactly_15min_counts_as_break(db, test_user):
     """§4 Satz 2 ArbZG: 15 Min Pause ist der Mindestwert — zählt."""
     # 08:00-11:00 (3h) + 15min gap + 11:15-14:16 (3h01m) = 6h01m net, 15min gap
     _make_entry(db, test_user, 8, 0, 11, 0, break_min=0)
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(11, 15), time(14, 16), break_minutes=15)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(11, 15), time(14, 16), break_minutes=15, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is None  # 15min gap + 15min declared = 30min >= 30min
 
 
@@ -166,7 +166,7 @@ def test_six_5min_gaps_not_valid_break(db, test_user):
     _make_entry(db, test_user, 13, 20, 14, 35, break_min=0) # 75min
     # New entry: 14:40-15:07 → total gross = 75×5+27 = 402min, net = 402 > 360
     # Gaps: 5+5+5+5+5 = 25min total, but none >= 15min → effective break = 0
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(14, 40), time(15, 7), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(14, 40), time(15, 7), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is not None
     assert "30 Minuten" in result
 
@@ -176,7 +176,7 @@ def test_two_15min_gaps_valid_break(db, test_user):
     _make_entry(db, test_user, 8, 0, 10, 30, break_min=0)
     _make_entry(db, test_user, 10, 45, 13, 15, break_min=0)
     # New entry: 13:30-14:31 → total net = 6h31m, two 15-min gaps = 30min
-    result = validate_daily_break(db, test_user.id, date(2026, 3, 10), time(13, 30), time(14, 31), break_minutes=0)
+    result = validate_daily_break(db, test_user, date(2026, 3, 10), time(13, 30), time(14, 31), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID)
     assert result is None
 
 
@@ -194,7 +194,7 @@ def test_preexisting_short_declared_break_not_counted(db, test_user):
     _make_entry(db, test_user, 11, 15, 14, 31, break_min=10)  # 3h16m, 10min break
     # New tiny entry back-to-back, no gaps anywhere; total net ~6h12m (>6h)
     result = validate_daily_break(
-        db, test_user.id, date(2026, 3, 10), time(14, 31), time(14, 50), break_minutes=0
+        db, test_user, date(2026, 3, 10), time(14, 31), time(14, 50), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID
     )
     assert result is not None
     assert "30 Minuten" in result
@@ -207,6 +207,6 @@ def test_preexisting_15min_declared_break_counts(db, test_user):
     # → 6h01m net, 30min valid break. New back-to-back tiny entry keeps it >6h.
     _make_entry(db, test_user, 8, 0, 14, 31, break_min=30)
     result = validate_daily_break(
-        db, test_user.id, date(2026, 3, 10), time(14, 31), time(14, 50), break_minutes=0
+        db, test_user, date(2026, 3, 10), time(14, 31), time(14, 50), break_minutes=0, uncredited_segments=[], tenant_id=DEFAULT_TENANT_ID
     )
     assert result is None

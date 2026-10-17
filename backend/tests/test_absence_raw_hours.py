@@ -33,10 +33,11 @@ from app.routers.admin_users import (
     create_working_hours_change, delete_working_hours_change,
     preview_working_hours_change,
 )
-from app.schemas.working_hours_change import WorkingHoursChangeCreate
+from app.schemas.working_hours_change import WorkingHoursChangeCreate, WorkingHoursChangeDelete
 from app.services import calculation_service
 from app.services.timezone_service import today_local
 from tests.conftest import DEFAULT_TENANT_ID
+from tests.wh_change_helpers import RETRO_REASON
 
 
 def _make_user(db, username, **kwargs):
@@ -147,7 +148,7 @@ class TestRetargetNeverTouchesRawHours:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
         _wh_change(db, test_user, date(2026, 3, 1), 20.0)
 
-        calculation_service.retarget_absence_hours(db, test_user, *WINDOW)
+        calculation_service.retarget_absence_hours(db, test_user, *WINDOW, old_full_target_by_date={})
         db.commit()
 
         db.expire_all()
@@ -162,10 +163,10 @@ class TestRetargetNeverTouchesRawHours:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
 
         _wh_change(db, test_user, date(2026, 3, 1), 20.0)
-        calculation_service.retarget_absence_hours(db, test_user, *WINDOW)
+        calculation_service.retarget_absence_hours(db, test_user, *WINDOW, old_full_target_by_date={})
         db.commit()
         _wh_change(db, test_user, date(2026, 3, 2), 10.0)
-        calculation_service.retarget_absence_hours(db, test_user, *WINDOW)
+        calculation_service.retarget_absence_hours(db, test_user, *WINDOW, old_full_target_by_date={})
         db.commit()
 
         db.expire_all()
@@ -177,7 +178,7 @@ class TestRetargetNeverTouchesRawHours:
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
         _wh_change(db, test_user, date(2026, 3, 1), 20.0)
 
-        calculation_service.retarget_absence_hours(db, test_user, *WINDOW, dry_run=True)
+        calculation_service.retarget_absence_hours(db, test_user, *WINDOW, dry_run=True, old_full_target_by_date={})
 
         db.expire_all()
         row = db.query(Absence).filter(Absence.id == a.id).one()
@@ -192,7 +193,7 @@ class TestRetargetReturnsRecords:
         a = _absence(db, test_user, MON, AbsenceType.SICK, 8.0)
         _wh_change(db, test_user, date(2026, 3, 1), 20.0)
 
-        changed = calculation_service.retarget_absence_hours(db, test_user, *WINDOW)
+        changed = calculation_service.retarget_absence_hours(db, test_user, *WINDOW, old_full_target_by_date={})
 
         assert len(changed) == 1
         rec = changed[0]
@@ -204,8 +205,7 @@ class TestRetargetReturnsRecords:
 
     def test_empty_window_returns_empty_list(self, db, test_user):
         assert calculation_service.retarget_absence_hours(
-            db, test_user, date(2026, 3, 31), date(2026, 3, 1)
-        ) == []
+            db, test_user, date(2026, 3, 31), date(2026, 3, 1), old_full_target_by_date={}) == []
 
 
 class TestHumanCorrectionSetsBoth:
@@ -283,7 +283,7 @@ class TestPerAbsenceAuditRows:
         assert sick.time_entry_id is None
         assert sick.old_date == mon
         assert sick.old_note == "Krank 8,0 h"
-        assert sick.new_note.startswith("Krank 4,0 h — Wochenstunden-Änderung ab ")
+        assert sick.new_note.startswith("Krank 4,0 h — Arbeitszeit-Änderung ab ")
         assert mon.strftime("%d.%m.%Y") in sick.new_note
 
     def test_delete_writes_per_absence_rows_too(self, db, default_tenant):
@@ -304,15 +304,15 @@ class TestPerAbsenceAuditRows:
 
         delete_working_hours_change(
             user_id=str(emp.id), change_id=str(change.id),
-            db=db, current_user=admin,
+            db=db, current_user=admin, body=WorkingHoursChangeDelete(**RETRO_REASON),
         )
 
         # Die Einzelzeile beginnt mit dem Typ-Label, der Auslöser steht dahinter.
-        rows = [x for x in _wh_logs(db, "%Löschung der Wochenstunden-Änderung%")
+        rows = [x for x in _wh_logs(db, "%Löschung der Arbeitszeit-Änderung%")
                 if x.new_date is not None]
         assert len(rows) == 1
         assert rows[0].old_note == "Urlaub 4,0 h"
-        assert rows[0].new_note.startswith("Urlaub 8,0 h — Löschung der Wochenstunden-Änderung ab ")
+        assert rows[0].new_note.startswith("Urlaub 8,0 h — Löschung der Arbeitszeit-Änderung ab ")
 
     def test_no_rows_when_nothing_changed(self, db, default_tenant):
         admin = _admin(db, "raw_noop_admin")
@@ -334,14 +334,10 @@ class TestPreviewWritesNoAuditRow:
     Dialog eine Aenderung, die nie stattfand."""
 
     def _run_preview(self, db, admin, emp, mon):
-        # Direktaufruf: die ``Query(...)``-Defaults der Signatur sind ausserhalb
-        # von FastAPI keine Werte, sondern Query-Objekte — alle Parameter
-        # explizit setzen.
+        # Direktaufruf: Spec 11.1 — die Vorschau nimmt den Body wie das
+        # Speichern als untypisiertes JSON-Objekt entgegen.
         return preview_working_hours_change(
-            user_id=str(emp.id), effective_from=mon, weekly_hours=20.0,
-            use_daily_schedule=False, hours_monday=None, hours_tuesday=None,
-            hours_wednesday=None, hours_thursday=None, hours_friday=None,
-            work_days_per_week=None,
+            user_id=str(emp.id), body={"effective_from": mon.isoformat(), "weekly_hours": 20.0},
             db=db, current_user=admin,
         )
 

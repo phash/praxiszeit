@@ -21,6 +21,8 @@ interface CompanyClosure {
   end_date: string;
   counts_as_vacation: boolean;
   affected_employees: number;
+  // Nur in der Antwort auf Anlegen/Ändern gesetzt (Jahresabschluss veraltet).
+  warning?: string | null;
 }
 
 interface Employee {
@@ -138,12 +140,17 @@ export default function AdminAbsences() {
     if (submitting) return;
     setSubmitting(true);
     try {
+      // Gesamtreview 1.20 B5 (Nachzug): ändern Anlegen oder Speichern Buchungen
+      // in einem Jahr mit Jahresabschluss, trägt die Antwort `warning`
+      // (veralteter Übertrag) — wie beim Löschen.
       if (editingClosureId) {
-        await apiClient.put(`/company-closures/${editingClosureId}`, closureForm);
+        const res = await apiClient.put(`/company-closures/${editingClosureId}`, closureForm);
         toast.success('Betriebsferien aktualisiert – betroffene Abwesenheiten wurden angepasst');
+        showResponseWarning(toast, res.data);
       } else {
-        await apiClient.post('/company-closures', closureForm);
+        const res = await apiClient.post('/company-closures', closureForm);
         toast.success('Betriebsferien eingetragen und Urlaub für alle Mitarbeiter erstellt');
+        showResponseWarning(toast, res.data);
       }
       setShowClosureForm(false);
       resetClosureForm();

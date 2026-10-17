@@ -19,16 +19,16 @@ Query-Pfad). Dieser Test misst zusaetzlich, was Fix-Welle 4 #3 tatsaechlich
 aendert: die Zahl der ``working_hours_changes``-Queries der BUDGET-VORPRUEFUNG
 ist jetzt KONSTANT statt proportional zur Range-/Absence-Zahl.
 
-Hinweis (Fund waehrend dieser Fix-Welle, NICHT behoben — siehe Bericht):
-``absences.create_absence`` (Zeile ~577) und ``admin_vacations.
-review_vacation_request`` (Zeile ~275) haben je Endpoint EINE ZWEITE,
-separate Schleife, die die eigentlichen ``Absence``-Zeilen anlegt und dabei
-``get_schedule_for_date`` PRO GEBUCHTEM TAG ohne Preload aufruft — derselbe
-Fehlermuster, aber ausserhalb der vier vom Review benannten Vorpruefungs-
-Call-Sites. Die Tests fuer diese beiden Endpoints isolieren deshalb den
-DELTA zwischen einer kurzen und einer langen Range: waechst er exakt um die
-Tagesdifferenz, kommt der Zuwachs vollstaendig aus der (hier unveraenderten)
-Buchungsschleife — die Vorpruefung selbst traegt keine Pro-Tag-Kosten mehr.
+Hinweis (Fund waehrend dieser Fix-Welle, damals NICHT behoben):
+``absences.create_absence`` und ``admin_vacations.review_vacation_request``
+hatten je Endpoint EINE ZWEITE, separate Schleife, die die eigentlichen
+``Absence``-Zeilen anlegt und dabei ``get_schedule_for_date`` PRO GEBUCHTEM
+TAG ohne Preload aufrief. Seit Gesamtreview 1.20 B5 (Nachzug) bestimmen beide
+Endpoints die gebuchten Tage vorab (``calculation_service.
+absence_booking_dates``) und reichen den Preload auch an die Buchungsschleife
+durch. Die Tests messen deshalb den DELTA zwischen einer kurzen und einer
+langen Range: er ist 0 — der ganze Pfad (Auswahl, Vorpruefung, Buchung) traegt
+keine Pro-Tag-Kosten mehr.
 """
 from datetime import date, timedelta
 
@@ -140,10 +140,9 @@ class _WhQueryCounter:
 
 def test_create_absence_precheck_wh_queries_do_not_scale_with_range(db, default_tenant, admin):
     """absences.create_absence: die Budget-VORPRUEFUNG darf mit der Range-
-    Laenge NICHT mehr WHChange-Queries kosten (Fix-Welle 4 #3). Isoliert per
-    Delta zwischen 2 und 10 Werktagen von der separaten, hier unveraenderten
-    Buchungsschleife (s. Modul-Docstring) — waechst der Delta exakt um die
-    Tagesdifferenz, stammt der GESAMTE Zuwachs aus der Buchungsschleife."""
+    Laenge NICHT mehr WHChange-Queries kosten (Fix-Welle 4 #3), und seit
+    Gesamtreview 1.20 B5 (Nachzug) auch die Buchungsschleife nicht (s.
+    Modul-Docstring) — Delta zwischen 2 und 10 Werktagen = 0."""
     short_user = _make_user(db, "short4", vacation_days=30)
     long_user = _make_user(db, "long4", vacation_days=30)
     client = _client_as(db, admin)
@@ -167,12 +166,11 @@ def test_create_absence_precheck_wh_queries_do_not_scale_with_range(db, default_
     n_long = len(r2.json())
     assert n_long == 10  # 2 volle Wochen, keine Feiertage im Testfenster
 
-    day_delta = n_long - n_short
     query_delta = c_long.count - c_short.count
-    assert query_delta == day_delta, (
-        f"WHChange-Queries wachsen ueber den Buchungsschleifen-Anteil hinaus "
+    assert query_delta == 0, (
+        f"WHChange-Queries wachsen mit der Range "
         f"({c_short.count} -> {c_long.count} bei {n_short} -> {n_long} Tagen) "
-        f"— die Vorpruefung selbst ist nicht mehr O(1)?"
+        f"— Auswahl, Vorpruefung oder Buchungsschleife ohne Preload?"
     )
 
     # Byte-Identitaet: das Ergebnis (verbrauchte/verbleibende Urlaubstage)
@@ -184,7 +182,7 @@ def test_create_absence_precheck_wh_queries_do_not_scale_with_range(db, default_
 
 def test_review_vacation_request_precheck_wh_queries_do_not_scale_with_range(db, default_tenant, admin):
     """admin_vacations.review_vacation_request (Genehmigung, approve): dieselbe
-    Delta-Messung wie oben, ueber den Antrags-Genehmigungspfad."""
+    Delta-Messung wie oben, ueber den Antrags-Genehmigungspfad (Delta = 0)."""
     short_user = _make_user(db, "short4b", vacation_days=30)
     long_user = _make_user(db, "long4b", vacation_days=30)
     short_end = RANGE_START + timedelta(days=1)
@@ -207,12 +205,11 @@ def test_review_vacation_request_precheck_wh_queries_do_not_scale_with_range(db,
         r2 = client.post(f"/api/admin/vacation-requests/{vr_long.id}/review", json={"action": "approve"})
     assert r2.status_code == 200, r2.text
 
-    day_delta = 10 - 2
     query_delta = c_long.count - c_short.count
-    assert query_delta == day_delta, (
-        f"WHChange-Queries wachsen ueber den Buchungsschleifen-Anteil hinaus "
-        f"({c_short.count} -> {c_long.count}) — die Vorpruefung selbst ist "
-        f"nicht mehr O(1)?"
+    assert query_delta == 0, (
+        f"WHChange-Queries wachsen mit der Range "
+        f"({c_short.count} -> {c_long.count}) — Auswahl, Vorpruefung oder "
+        f"Buchungsschleife ohne Preload?"
     )
 
     account = calculation_service.get_vacation_account(db, long_user, RANGE_START.year)
@@ -235,7 +232,10 @@ def test_vacation_request_patch_wh_query_count_is_constant(db, default_tenant, e
     with _WhQueryCounter() as c:
         r = client.patch(f"/api/vacation-requests/{vr.id}", json={"end_date": RANGE_END.isoformat()})
     assert r.status_code == 200, r.text
-    assert c.count == 1, f"erwartet 1 WHChange-Preload, gemessen {c.count}"
+    # 1 Preload der Budget-Vorpruefung + 1 Preload des Antwort-Enrichers, der
+    # seit #496 die „Arbeitstage" nach dem Tagesplan je Datum zaehlt — beide
+    # konstant, unabhaengig von der Laenge des Zeitraums.
+    assert c.count == 2, f"erwartet 2 WHChange-Preloads, gemessen {c.count}"
 
 
 def test_vacation_request_create_wh_query_count_is_constant(db, default_tenant, emp):
@@ -251,7 +251,8 @@ def test_vacation_request_create_wh_query_count_is_constant(db, default_tenant, 
             "hours": 8, "absence_type": "vacation",
         })
     assert r.status_code == 201, r.text
-    assert c.count == 1, f"erwartet 1 WHChange-Preload, gemessen {c.count}"
+    # Vorpruefung + Antwort-Enricher (#496) je ein konstanter Preload.
+    assert c.count == 2, f"erwartet 2 WHChange-Preloads, gemessen {c.count}"
 
 
 def _set_closure_toggle(db, on: bool):

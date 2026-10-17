@@ -33,7 +33,7 @@ def test_only_changed_weekday_is_retargeted(db, test_user):
         hours_wednesday=Decimal("6.0"), work_days_per_week=2))
     db.commit()
 
-    changed = cs.retarget_absence_hours(db, test_user, date(2026, 3, 1), date(2026, 3, 31))
+    changed = cs.retarget_absence_hours(db, test_user, date(2026, 3, 1), date(2026, 3, 31), old_full_target_by_date={})
     db.commit()
 
     rows = {a.date: Decimal(str(a.hours)) for a in db.query(Absence).filter(
@@ -44,7 +44,30 @@ def test_only_changed_weekday_is_retargeted(db, test_user):
 
 
 def test_free_weekday_is_skipped_not_zeroed(db, test_user):
-    """Ein Tag ohne Soll im Plan wird uebersprungen, nicht auf 0 gesetzt."""
+    """Ein Tag ohne Soll im Plan wird fuer Urlaub uebersprungen, nicht auf 0
+    gesetzt — dessen ``hours`` tragen kein Saldo."""
+    test_user.use_daily_schedule = True
+    db.add(WorkingHoursChange(
+        user_id=test_user.id, tenant_id=test_user.tenant_id,
+        effective_from=date(2026, 1, 1), weekly_hours=Decimal("8.0"),
+        use_daily_schedule=True, hours_monday=Decimal("8.0"), work_days_per_week=1))
+    fri = date(2026, 3, 6)
+    vacation = _absence(test_user, fri, 3.0)
+    vacation.type = AbsenceType.VACATION
+    db.add(vacation)
+    db.commit()
+
+    changed = cs.retarget_absence_hours(db, test_user, date(2026, 3, 1), date(2026, 3, 31), old_full_target_by_date={})
+    row = db.query(Absence).filter(Absence.date == fri).first()
+
+    assert len(changed) == 0
+    assert Decimal(str(row.hours)) == Decimal("3.0")
+
+
+def test_free_weekday_zeroes_the_ist_credit(db, test_user):
+    """Gesamtreview 1.20 (Fund 4): Krank/Fortbildung an einem Tag ohne Soll —
+    kein Soll, keine Gutschrift. Bis dahin blieb die Zeile wie Urlaub stehen,
+    und ``credit_day_weight`` (Wochentag = 1,0) schrieb sie dem Ist gut."""
     test_user.use_daily_schedule = True
     db.add(WorkingHoursChange(
         user_id=test_user.id, tenant_id=test_user.tenant_id,
@@ -54,8 +77,13 @@ def test_free_weekday_is_skipped_not_zeroed(db, test_user):
     db.add(_absence(test_user, fri, 3.0))
     db.commit()
 
-    changed = cs.retarget_absence_hours(db, test_user, date(2026, 3, 1), date(2026, 3, 31))
+    changed = cs.retarget_absence_hours(db, test_user, date(2026, 3, 1), date(2026, 3, 31), old_full_target_by_date={})
+    db.commit()
     row = db.query(Absence).filter(Absence.date == fri).first()
 
-    assert len(changed) == 0
-    assert Decimal(str(row.hours)) == Decimal("3.0")
+    assert [(c.date, c.old_hours, c.new_hours, c.f1_clamped, c.credit_reduction) for c in changed] == [
+        (fri, Decimal("3.00"), Decimal("0.00"), False, False)]
+    assert Decimal(str(row.hours)) == Decimal("0")
+    assert cs.get_range_actual(db, test_user, fri, fri) - cs.get_range_target(db, test_user, fri, fri) == 0
+    # Idempotent: ein zweiter Lauf findet nichts mehr.
+    assert cs.retarget_absence_hours(db, test_user, date(2026, 3, 1), date(2026, 3, 31), old_full_target_by_date={}) == []

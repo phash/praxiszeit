@@ -203,11 +203,7 @@ Das `[admin].password` wird beim Start gelesen, um das Admin-Konto anzulegen, **
 
 Den Klartextwert sollte man deshalb entwerten. ⚠️ **Nicht durch einen festen Platzhalter** wie `set-via-ui`: fehlt das Admin-Konto irgendwann (Benutzername umgestellt, Konto nach Art. 17 endgültig gelöscht), legt der nächste Start es mit genau diesem Wert neu an — und ein in der Projektdokumentation veröffentlichter Wert ist dann das Passwort. Die Schwachpasswort-Prüfung greift dabei nicht: sie bricht den Start nur bei `ENVIRONMENT=production` ab, und der native Standard ist `development`.
 
-Stattdessen einen **zufälligen** Ersatzwert eintragen — oder einfacher das mitgelieferte Kommando nutzen, das den Eintrag selbst mit einem Zufallswert überschreibt (siehe Admin-Handbuch, „Admin-Passwort verloren"):
-
-```
-bin\python\python.exe praxiszeit-server.py reset-admin-password
-```
+Stattdessen einen **zufälligen** Ersatzwert eintragen — oder das mitgelieferte Kommando nutzen, das den Eintrag selbst mit einem Zufallswert überschreibt. **Beides erst nach dem ersten Login** (Schritt 7): jetzt, vor dem ersten Dienststart, gibt es weder Datenbank noch Admin-Konto — das Kommando hätte nichts, dessen Passwort es setzen könnte, und der Wert in der Datei wird für die Anlage des Kontos noch gebraucht. Wie es geht, steht in Schritt 7.
 
 ### Optional, aber empfohlen: Produktiv-Modus erzwingen
 
@@ -319,25 +315,38 @@ Login:
 - **Benutzername:** `admin` (oder der Wert aus `[admin].username`)
 - **Passwort:** der Wert aus `[admin].password`
 
-**Sofort nach dem ersten Login Pflicht:** rechts oben das Profil-Menü öffnen → **Profil → Passwort ändern** → neues Passwort setzen.
+**Sofort nach dem ersten Login Pflicht:** das Startpasswort ersetzen **und** den Klartext-Eintrag `[admin].password` in `praxiszeit.conf` entwerten (Begründung in Schritt 5). Zwei Wege:
+
+- **Im Browser:** rechts oben das Profil-Menü öffnen → **Profil → Passwort ändern** → neues Passwort setzen. Danach in `praxiszeit.conf` den Wert von `[admin].password` durch einen **zufälligen** Wert ersetzen (nicht löschen — der Dienst setzt den Eintrag beim Start voraus).
+- **Beides in einem Schritt per Kommando** (Eingabeaufforderung **als Administrator**): es fragt das neue Passwort ab, setzt es und überschreibt den Eintrag in der Datei selbst mit einem Zufallswert. Der Vorgang wird protokolliert (siehe Admin-Handbuch, „Admin-Passwort verloren").
+
+  ```cmd
+  cd C:\PraxisZeit
+  bin\python\python.exe praxiszeit-server.py reset-admin-password
+  ```
 
 ---
 
 ## 8. Praxis-Stammdaten ergänzen
 
-Im Menü **Einstellungen → Praxis** vervollständigen:
+**Praxis-Name und Anschrift** stehen nicht in der Oberfläche, sondern im Abschnitt `[practice]` der Datei `C:\PraxisZeit\config\praxiszeit.conf` (siehe [Schritt 5](#5-praxiszeitconf-anpassen)):
 
-- Vollständiger Praxis-Name (taucht in Excel-Exporten auf)
-- Adresse, ggf. weitere Standorte
-- **Bundesland** (steuert die gesetzlichen Feiertage)
-- Optional: Betriebsferien einplanen (**Einstellungen → Betriebsferien**)
-- Optional: Lizenzschlüssel laden (**Einstellungen → Lizenz**)
+- `name` – Praxis-Name (Excel-Exporte, Kopfzeile des Schichtplan-Aushangs)
+- `address` – Anschrift (Kopf der Excel-Exporte)
+
+Nach einer Änderung den Dienst neu starten (`net stop PraxisZeit`, dann `net start PraxisZeit`).
+
+In der Oberfläche vervollständigen:
+
+- **Bundesland** (**Einstellungen**, Karte „Feiertage" – steuert die gesetzlichen Feiertage)
+- Optional: Betriebsferien einplanen (**Abwesenheiten → Tab „Betriebsferien"**)
+- Eine Lizenz ist in der Beta nicht nötig (siehe Hinweis am Anfang).
 
 ---
 
 ## 9. Erste Mitarbeiter:innen anlegen
 
-Navigation: **Mitarbeiter → „Neuer Mitarbeiter:in"**
+Navigation: **Benutzerverwaltung → „Neue:r Mitarbeiter:in"**
 
 ### Pflichtfelder (vom Backend erzwungen)
 
@@ -358,7 +367,7 @@ Navigation: **Mitarbeiter → „Neuer Mitarbeiter:in"**
 - **Erster Arbeitstag** — wichtig für die korrekte Soll-Stunden-Berechnung im Eintrittsmonat. Vor diesem Datum kann sich die Person **nicht einstempeln** („Datum liegt vor dem ersten Arbeitstag").
 - **Letzter Arbeitstag** — analog für Austritt
 - **Individuelle Tagesstunden** (Mo–Fr) — wenn z. B. Freitags nur halbtags gearbeitet wird
-- **Stundenzählung aktiv** — deaktivieren für leitende Angestellte ohne Stundenpflicht; **ohne diese Option sehen Mitarbeiter:innen keine Stempeluhr** (siehe Abschnitt 11)
+- **Stundenzählung aktiv** — deaktivieren für Mitarbeiter:innen ohne Stundenzählung (hat nichts mit § 18 zu tun, s. nächster Punkt); **ohne diese Option sehen Mitarbeiter:innen keine Stempeluhr** (siehe Abschnitt 11)
 - **ArbZG-Prüfungen aussetzen** (§ 18 ArbZG) — leitende Angestellte: keine Ruhezeit-/Pausen-Warnungen
 - **Nachtarbeitnehmer** (§ 6 ArbZG) — 8h-Tageslimit statt 10h
 - **Kalenderfarbe** — für die Darstellung im Abwesenheitskalender
@@ -463,7 +472,7 @@ Ist der Tag bereits gesperrt (typisch nach Monatsabschluss): Button **Änderungs
 
 - Läuft täglich um **03:00** als Scheduled Task `PraxisZeit-Backup` (eingerichtet durch `install-service.bat`)
 - Ablage: `C:\PraxisZeit\data\backups\praxiszeit_YYYYMMDD_HHMMSS.sql.gz`
-- Format: PostgreSQL **Custom Format** (`pg_dump -Fc`), gzip-komprimiert — Wiederherstellung erfolgt mit `pg_restore` (siehe unten)
+- Format: gzip-komprimierter **Plain-SQL-Dump** (`pg_dump --clean --if-exists`) — eingespielt wird er mit `restore-backup.bat` (siehe unten)
 - Aufbewahrung: gesetzt durch `praxiszeit.conf` → `[backup].retention_days`. **Default in der Vorlage ist 31** — für die ArbZG-Pflicht von 2 Jahren manuell auf **730** erhöhen (siehe Schritt 5).
 
 ### Backup-Status prüfen
@@ -482,27 +491,26 @@ bin\python\python.exe praxiszeit-server.py backup
 
 ### Wiederherstellung aus Backup
 
-Backups liegen als `.sql.gz` im PostgreSQL-**Custom-Format** vor. Dadurch ist `pg_restore` Pflicht — `psql` funktioniert mit diesem Format **nicht**.
-
-Schritt für Schritt (Administrator-Eingabeaufforderung):
+Die Backups sind gzip-komprimierte **Plain-SQL-Dumps** (`.sql.gz`). Eingespielt
+werden sie mit dem mitgelieferten `restore-backup.bat <datei>` aus dem
+Installationsordner – in einer **Administrator**-Eingabeaufforderung:
 
 ```cmd
-:: 1. PraxisZeit stoppen, PostgreSQL läuft weiter
-net stop PraxisZeit
-
-:: 2. Datenbankpasswort aus der Credentials-Datei in die Umgebung holen
-for /f "tokens=1,* delims==" %A in (C:\PraxisZeit\config\.db-credentials) do @if "%A"=="SUPERUSER_PASSWORD" set "PGPASSWORD=%B"
-
-:: 3. Backup zuerst entpacken (PowerShell hat kein eingebautes gunzip,
-::    daher Tools wie 7-Zip oder das Bundle-Binary "gzip.exe" nutzen)
-"C:\Program Files\7-Zip\7z.exe" e C:\PraxisZeit\data\backups\praxiszeit_20260523_030001.sql.gz -oC:\Temp\
-
-:: 4. Wiederherstellen (entpackte Datei: praxiszeit_20260523_030001.sql)
-"C:\PraxisZeit\bin\postgresql\bin\pg_restore.exe" -U praxiszeit -d praxiszeit --clean --if-exists C:\Temp\praxiszeit_20260523_030001.sql
-
-:: 5. Dienst wieder starten
-net start PraxisZeit
+cd C:\PraxisZeit
+restore-backup.bat data\backups\praxiszeit_20260523_030001.sql.gz
 ```
+
+Das Script verlangt zur Bestätigung die Eingabe `LOESCHEN`, prüft das Backup auf
+Vollständigkeit, hält den Dienst an, spielt das Backup in eine Zwischendatenbank
+ein, ersetzt erst dann die bisherige Datenbank, setzt die Rechte der
+Anwendungsrolle und startet den Dienst wieder. Erst dieser Start hebt ein Backup
+einer älteren Version per Migration auf den Stand der installierten Version.
+Scheitert ein Schritt – etwa bei einem unvollständig kopierten Backup –, bleibt
+die bisherige Datenbank unverändert und der Dienst aus; das Script endet dann
+mit einer FEHLER-Meldung.
+Liegt PraxisZeit nicht unter `C:\praxiszeit`, vorher den Ordner angeben:
+`set PRAXISZEIT_INSTALL_DIR=D:\PraxisZeit`. Einzelheiten und die übrigen
+Installationsarten: [BACKUP.md → Restore](BACKUP.md#restore-wiederherstellung).
 
 > **Vor jeder Restore-Aktion:** aktuellen Stand sichern (`praxiszeit-server.py backup`) und schriftlich dokumentieren, **wer wann warum** zurückgespielt hat. Restores sind nach § 16 ArbZG protokollpflichtig.
 

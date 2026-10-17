@@ -55,9 +55,13 @@ Erzeugt sofort ein Backup im konfigurierten `data/backups/`-Verzeichnis (gleiche
 Routine wie das automatische, inkl. Aufräumen alter Backups):
 
 ```bash
-# Linux / macOS
+# Linux
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \
-    /opt/praxiszeit/praxiszeit-server.py backup          # macOS: /usr/local/praxiszeit/...
+    /opt/praxiszeit/praxiszeit-server.py backup
+
+# macOS (Dienstkonto mit Unterstrich, anderer Installationsordner)
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 \
+    /usr/local/praxiszeit/praxiszeit-server.py backup
 ```
 
 ```bat
@@ -108,45 +112,89 @@ täglich 02:00 + 30-Tage-Rotation:
 
 ### Native
 
-Die Backups sind **gzip-komprimierte Plain-SQL-Dumps** (`praxiszeit_<ts>.sql.gz`,
-erzeugt mit `--clean --if-exists` → der Restore dropt + legt die Objekte neu an).
-Erst entpacken, dann durch `psql` leiten — **nicht** `psql -f` auf die `.gz`:
+Die Backups sind **gzip-komprimierte Plain-SQL-Dumps** (`praxiszeit_<ts>.sql.gz`).
+Unter Linux und macOS spielt sie ab 1.20.0 der Prozessmanager ein — Dienst
+anhalten, Backup einspielen, Dienst wieder starten:
 
 ```bash
-# Linux/macOS — gebündeltes psql, Verbindung über den eigenen Unix-Socket.
-# Das Superuser-Passwort steht in config/.db-credentials (SUPERUSER_PASSWORD=...).
-PZ=/opt/praxiszeit          # macOS: /usr/local/praxiszeit
-export PGPASSWORD="$(grep '^SUPERUSER_PASSWORD=' "$PZ/config/.db-credentials" | cut -d= -f2-)"
-gunzip -c "$PZ/data/backups/<datei>.sql.gz" \
-  | "$PZ/bin/postgresql/bin/psql" -w -h "$PZ/data/run" -U praxiszeit -d praxiszeit
-unset PGPASSWORD
+# Linux
+sudo systemctl stop praxiszeit
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<datei>.sql.gz
+sudo systemctl start praxiszeit
+
+# macOS (Dienstkonto mit Unterstrich, launchd statt systemd)
+sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore /usr/local/praxiszeit/data/backups/<datei>.sql.gz
+sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist
 ```
-> Möglichst zu einem ruhigen Zeitpunkt einspielen (kein paralleles Stempeln).
-> Der Dienst (und damit PostgreSQL) muss laufen, damit der Socket erreichbar ist.
+
+`restore` prüft das Backup auf Vollständigkeit, startet PostgreSQL nur für die
+Dauer des Vorgangs, spielt das Backup in eine Zwischendatenbank ein und ersetzt
+die bisherige Datenbank erst, wenn das gelungen ist. Scheitert etwas — abgebrochener
+Dump, Fehler beim Einspielen, Backup einer **neueren** Version —, bleibt die
+bisherige Datenbank unverändert, und der Dienst lässt sich wieder starten. Läuft
+der Dienst noch, bricht das Kommando ab, ohne etwas anzufassen.
+
+Erst der anschließende Dienststart hebt ein Backup einer älteren Version per
+Migration auf den Stand der installierten Version (nativ laufen Migrationen nur
+beim Start des Dienstes). Danach die Ausgabe der Migrationen in
+`logs/praxiszeit.log` lesen (Zeilen mit `alembic:`, Hinweise zwischen
+`*** HINWEIS` und `*** ENDE HINWEIS ***`).
+
+> **Als Dienstkonto, nicht als root:** Bei angehaltenem Dienst muss `restore`
+> PostgreSQL selbst starten, und `pg_ctl` verweigert das als root. Die
+> Backup-Datei muss für das Dienstkonto lesbar sein — eine Datei von außerhalb
+> zuerst nach `data/backups/` kopieren und dem Dienstkonto geben
+> (`chown praxiszeit:praxiszeit …`, macOS `_praxiszeit:staff`).
+>
+> Bis 1.19 stand hier ein `gunzip -c … | psql` bei **laufendem** Dienst. Das
+> ließ den Dienst gegen den Stand des Backups weiterarbeiten (nach dem Update auf
+> 1.20.0: Anmeldung mit HTTP 500, bis zum nächsten Neustart), brach bei Backups
+> von 1.18 und älter an Tabellen ab, die erst später hinzukamen, und meldete
+> trotz Fehlern Erfolg.
 
 ```bat
-:: Windows — der gebündelte restore-backup.bat stoppt den Dienst, legt die DB
-:: frisch an, entpackt und spielt das Backup ein (erwartet die .sql.gz direkt):
+:: Windows — als Administrator; erwartet die .sql.gz direkt:
 cd C:\PraxisZeit
 restore-backup.bat data\backups\<datei>.sql.gz
 ```
 
+`restore-backup.bat` arbeitet wie `restore`: Es prüft das Backup **vor** jeder
+Änderung auf Vollständigkeit, hält dann den Dienst an, spielt das Backup in eine
+Zwischendatenbank ein (Abbruch beim ersten Fehler) und ersetzt die bisherige
+Datenbank erst danach. Scheitert ein Schritt — auch bei einem Backup einer
+**neueren** Version —, bleibt die bisherige Datenbank unverändert, der Dienst
+bleibt aus, und das Script endet mit einer FEHLER-Meldung statt „Restore abgeschlossen!“. Liegt PraxisZeit nicht unter `C:\praxiszeit`,
+vorher `set PRAXISZEIT_INSTALL_DIR=<ordner>` setzen.
+
 ### Docker
 
-Mit dem mitgelieferten Script (empfohlen — entpackt + spielt ein), aus dem
-Verzeichnis neben der `docker-compose.yml` ausführen:
+Mit dem mitgelieferten Script (empfohlen), aus dem Verzeichnis neben der
+`docker-compose.yml` ausführen (im git-Checkout: `bash tools/docker/restore.sh …`):
 
 ```bash
 bash restore.sh backups/praxiszeit_<ts>.sql.gz
 ```
 
-Oder von Hand — das `.sql.gz` **direkt** durch `psql` leiten (nicht vorher als
-Datei entpacken). Da die Dumps mit `--clean --if-exists` erzeugt werden, ist der
-Restore idempotent (vorhandene Objekte werden gedroppt und neu angelegt) — ein
-manuelles Leeren der DB ist **nicht** nötig:
+Das Script prüft das Backup auf Vollständigkeit, hält das Backend an, legt die
+Datenbank frisch an, spielt das Backup ein und startet das Backend wieder. Erst
+dieser Start hebt ein Backup einer älteren Version per Migration auf den Stand der
+installierten Version – Migrationen laufen nur beim Start des Backend-Containers,
+und `docker compose up -d backend` startet ein schon laufendes Backend **nicht**
+neu. Das Script meldet sich erst, wenn das Backend wieder gesund ist; danach die
+Ausgabe der Migrationen lesen (`docker compose logs backend`).
+
+Oder von Hand — nur für ein Backup **derselben** Version und mit angehaltenem
+Backend. Die Dumps sind mit `--clean --if-exists` erzeugt: vorhandene Objekte, die
+im Backup vorkommen, werden gedroppt und neu angelegt. Eine Tabelle, die erst eine
+neuere Version angelegt hat, bleibt dagegen stehen und kann das Einspielen eines
+älteren Backups abbrechen – dafür das Script nehmen. Das `.sql.gz` **direkt** durch
+`psql` leiten (nicht vorher als Datei entpacken):
 
 ```bash
+docker compose stop backend
 gunzip -c backup.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U praxiszeit -d praxiszeit
+docker compose start backend
 ```
 
 ---

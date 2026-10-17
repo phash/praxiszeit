@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import type { User } from '../../types/user';
+import { formatHoursHM } from '../../utils/formatters';
 
 // ── Typen ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,14 @@ interface ImportedEntry {
   note: string | null;
   has_conflict: boolean;
   arbzg_warnings: string[];
+  raw_start_time?: string | null;
+  raw_end_time?: string | null;
+  // Spec 2026-10-08 (7.4): Netto und nicht angerechnete Zeit rechnet der Server.
+  // not_credited_minutes = Lücke + Hülle (P19); uncredited_minutes ist nur die Lücke.
+  // Alle drei sind reine Anzeige — /confirm rechnet neu und nimmt sie nicht an.
+  uncredited_minutes?: number;
+  not_credited_minutes?: number;
+  net_hours?: number;
 }
 
 interface PreviewResponse {
@@ -47,16 +56,6 @@ function formatTime(t: string): string {
 function formatDate(d: string): string {
   const [y, m, day] = d.split('-');
   return `${day}.${m}.${y}`;
-}
-
-function calcNetHours(start: string, end: string, breakMin: number): string {
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  const gross = (eh * 60 + em) - (sh * 60 + sm);
-  const net = gross - breakMin;
-  const h = Math.floor(net / 60);
-  const m = net % 60;
-  return `${h}:${String(m).padStart(2, '0')}`;
 }
 
 // ── StepIndicator ─────────────────────────────────────────────────────────────
@@ -342,25 +341,40 @@ export default function ImportXls() {
                     <td className="px-3 py-2">{formatTime(e.start_time)}</td>
                     <td className="px-3 py-2">{formatTime(e.end_time)}</td>
                     <td className="px-3 py-2">{e.break_minutes} min</td>
-                    <td className="px-3 py-2">{calcNetHours(e.start_time, e.end_time, e.break_minutes)}</td>
+                    <td className="px-3 py-2">
+                      {formatHoursHM(e.net_hours ?? 0)}
+                      {(e.not_credited_minutes ?? 0) > 0 && (
+                        <div className="text-xs text-gray-500">
+                          {`${formatHoursHM((e.not_credited_minutes ?? 0) / 60)} h nicht angerechnet`}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-gray-500">{e.note || '–'}</td>
                     <td className="px-3 py-2">
-                      {e.has_conflict ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
-                          <XCircle size={11} /> Konflikt
-                        </span>
-                      ) : hasWarning ? (
-                        <span
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 cursor-help"
-                          title={e.arbzg_warnings.join('\n')}
-                        >
-                          <AlertTriangle size={11} /> Hinweis
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
-                          <CheckCircle size={11} /> Neu
-                        </span>
-                      )}
+                      {/* Review Task 12: „Konflikt" und „Hinweis" schließen sich nicht aus.
+                          Eine Konfliktzeile (Überschreib-Import) trägt dieselben Hinweise wie
+                          eine neue Zeile — und der Hinweis aus P3 („Eintrag ist anerkannt …")
+                          entsteht überhaupt nur dort. */}
+                      <div className="flex flex-wrap gap-1">
+                        {e.has_conflict && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
+                            <XCircle size={11} /> Konflikt
+                          </span>
+                        )}
+                        {hasWarning && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 cursor-help"
+                            title={e.arbzg_warnings.join('\n')}
+                          >
+                            <AlertTriangle size={11} /> Hinweis
+                          </span>
+                        )}
+                        {!e.has_conflict && !hasWarning && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+                            <CheckCircle size={11} /> Neu
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -425,13 +439,16 @@ export default function ImportXls() {
           </div>
           <div className="bg-amber-50 rounded-lg p-4 text-center">
             <div className="text-2xl font-bold text-amber-700">{result.warnings.length}</div>
-            <div className="text-xs text-amber-600 mt-1">ArbZG-Warn.</div>
+            <div className="text-xs text-amber-600 mt-1">Hinweise</div>
           </div>
         </div>
 
         {result.skipped > 0 && (
           <p className="text-sm text-gray-500 mb-4">
-            {result.skipped} Einträge übersprungen (Konflikte nicht überschrieben).
+            {/* Gesamtreview 1.20: übersprungen werden auch Zeilen mit Ende ≤ Beginn und
+                Zeilen außerhalb des Beschäftigungszeitraums — deren Grund steht in den
+                Hinweisen darunter („… übersprungen — …"). */}
+            {result.skipped} Einträge übersprungen (nicht überschriebene Konflikte; weitere Gründe bei den Hinweisen).
           </p>
         )}
 
@@ -442,7 +459,11 @@ export default function ImportXls() {
               className="flex items-center gap-2 text-sm text-amber-700 font-medium mb-2"
             >
               <AlertTriangle size={14} />
-              {result.warnings.length} ArbZG-Warnung(en)
+              {/* Gesamtreview 1.20: wie die Vorschau (#462) neutral „Hinweise" — die
+                  Liste trägt neben ArbZG-Warnungen auch Kappungs- und
+                  Anwesenheits-Hinweise, die angepasste Tagespause und die Gründe
+                  übersprungener Zeilen. */}
+              {result.warnings.length} Hinweis(e)
               <span className="text-gray-400">{warningsExpanded ? '▲' : '▼'}</span>
             </button>
             {warningsExpanded && (

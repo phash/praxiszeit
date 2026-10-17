@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month
+from app.services import work_window_service
 from app.models import User, TimeEntry
 from app.config import settings
 
@@ -49,6 +50,7 @@ def check_rest_time_violations(
 
     # Build query
     query = db.query(TimeEntry).filter(
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
         TimeEntry.user_id == user.id,
         TimeEntry.end_time.isnot(None)
     )
@@ -73,7 +75,9 @@ def check_rest_time_violations(
         # nicht die work-window-gekappten Zeiten. Sonst erscheint die Ruhelücke
         # größer als sie ist (spätes Ausstempeln / frühes Einstempeln) und ein
         # echter §5-Verstoß bleibt unentdeckt. Fallback für Rows ohne Kappung.
-        eff_end = entry.raw_end_time or entry.end_time
+        # Ende über ``presence_end``: beim automatisch geschlossenen Eintrag ist
+        # das Rohende 23:59 kein Stempel (P18, Gesamtreview 1.20 B1).
+        eff_end = work_window_service.presence_end(entry)
         eff_start = entry.raw_start_time or entry.start_time
         if d not in day_last_end or eff_end > day_last_end[d]:
             day_last_end[d] = eff_end

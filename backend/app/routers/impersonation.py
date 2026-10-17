@@ -86,6 +86,10 @@ def start_impersonation(
         # und entwerten damit auch das Impersonation-Token sofort.
         impersonator_token_version=current_user.token_version or 0,
     )
+    # Spec 11.1: wie der Login.
+    from app.services import calculation_service
+    from app.services.timezone_service import today_local
+    calculation_service.attach_work_blocks_today(db, [target], today_local())
     return {
         "access_token": token,
         "token_type": "bearer",

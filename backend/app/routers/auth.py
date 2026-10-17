@@ -48,7 +48,9 @@ from app.schemas.user import (
     ChangePasswordRequest, UpdateCalendarColorRequest,
     TotpSetupRequest, TotpSetupResponse, TotpVerifyRequest, TotpDisableRequest,
 )
+from app.schemas.work_schedule import MyWorkScheduleResponse
 from app.services import auth_service
+from app.services import work_schedule_service
 from app.middleware.auth import get_current_user
 from app.config import settings
 
@@ -297,6 +299,11 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
 
     security_logger.info("AUTH login_success user=%s", username_lower)
 
+    # Spec 11.1: heute gültige Blöcke (locker, E29 — nie ein 500 im Login).
+    from app.services import calculation_service
+    from app.services.timezone_service import today_local
+    calculation_service.attach_work_blocks_today(db, [user], today_local())
+
     return LoginResponse(
         access_token=access_token,
         user=UserListResponse.model_validate(user),
@@ -407,6 +414,16 @@ def get_me(current_user: User = Depends(get_current_user)):
     Use this to lazily load data not included in the login response.
     """
     return UserResponse.model_validate(current_user)
+
+
+@router.get("/me/work-schedule", response_model=MyWorkScheduleResponse)
+def get_my_work_schedule(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Spec 2026-10-08, 14 / E67: die heute gültigen Arbeitszeit-Blöcke und ihr
+    Verlauf — nur eigene Daten, ohne Freitext (P12)."""
+    return work_schedule_service.build_my_work_schedule(db, current_user, now_local().date())
 
 
 @router.post("/change-password")
@@ -543,8 +560,8 @@ def export_my_data(
     """
     DSGVO Art. 20 – Datenportabilität: export all personal data as JSON.
     """
-    time_entries = db.query(TimeEntry).filter(TimeEntry.user_id == current_user.id).order_by(TimeEntry.date).all()
-    absences = db.query(Absence).filter(Absence.user_id == current_user.id).order_by(Absence.date).all()
+    time_entries = db.query(TimeEntry).filter(TimeEntry.tenant_id == current_user.tenant_id, TimeEntry.user_id == current_user.id).order_by(TimeEntry.date).all()
+    absences = db.query(Absence).filter(Absence.tenant_id == current_user.tenant_id, Absence.user_id == current_user.id).order_by(Absence.date).all()
     # #431: die Stundenhistorie ist ein vollstaendiger Vertrags-Snapshot je
     # Wirkungsdatum (Soll-relevant) und gehoert damit in den Art.-20-Export.
     # F-026: tenant_id explizit mitfiltern (belt-and-suspenders zu RLS).
@@ -572,6 +589,7 @@ def export_my_data(
             "role": current_user.role.value,
             "weekly_hours": float(current_user.weekly_hours),
             "vacation_days": float(current_user.vacation_days),  # #408: Numeric(4,1)→Decimal; JSONResponse/json.dumps kann Decimal nicht serialisieren
+            "work_blocks": current_user.work_blocks,  # Spec 15.3 / E72: wie gespeichert
             "is_active": current_user.is_active,
             "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
         },
@@ -587,6 +605,11 @@ def export_my_data(
                 "raw_end_time": str(e.raw_end_time) if e.raw_end_time else None,
                 "break_minutes": e.break_minutes,
                 "note": e.note,
+                # Spec 2026-10-08 (15.3): nur int/bool/None — rohes JSONResponse.
+                "uncredited_minutes": int(e.uncredited_minutes or 0),
+                "credit_override": bool(e.credit_override),
+                "auto_closed": bool(e.auto_closed),
+                "clamp_grace_minutes": e.clamp_grace_minutes,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
             }
             for e in time_entries
@@ -616,6 +639,7 @@ def export_my_data(
                 "hours_thursday": float(h.hours_thursday) if h.hours_thursday is not None else None,
                 "hours_friday": float(h.hours_friday) if h.hours_friday is not None else None,
                 "work_days_per_week": h.work_days_per_week,
+                "blocks": h.blocks,  # Spec 15.3: wie gespeichert, NULL = keine Blöcke
                 "note": h.note,
                 "created_at": h.created_at.isoformat() if h.created_at else None,
             }

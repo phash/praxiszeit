@@ -17,7 +17,7 @@
 - Quelldateien: `docs/handbuch/*.md`
 - Screenshots: `docs/handbuch/screenshots/`
 - Downloadbar in der App: `frontend/public/help/*.md`
-- PDF-Dateien (optional): `frontend/public/docs/*.pdf`
+- PDF-Dateien: keine im Repo — bei Bedarf erzeugen (siehe [Schritt 7](#7-pdf-dateien-bei-bedarf-erzeugen))
 
 **Wichtig:** Nach jeder Änderung an den Quelldateien müssen die Dateien nach `frontend/public/help/` synchronisiert werden (siehe [Schritt 5: Synchronisieren](#5-dateien-synchronisieren)).
 
@@ -51,6 +51,16 @@ Screenshots werden mit **Playwright** automatisiert aufgenommen. Die App muss lo
 docker-compose up -d
 ```
 
+Demo-Daten und Aufnahme (Musterpraxis, Januar/Februar 2026; Sarah Klein ist die Demo-Person mit Arbeitszeit-Blöcken 08:00–12:00 + 15:00–16:00 und zwei über die Mittagslücke durchgestempelten Montagen):
+
+```bash
+docker compose cp backend/create_handbuch_testdata.py backend:/app/create_handbuch_testdata.py
+docker compose exec -T backend python create_handbuch_testdata.py </dev/null
+cd e2e && npx --yes tsx capture-handbook-screenshots.ts
+```
+
+Das Seed-Skript läuft nur gegen PostgreSQL und setzt das Admin-Passwort auf `Admin2026!` (Mitarbeitende: `Mitarbeiter2026!`). Die E2E-Tests erwarten `Admin2025!` – danach zurücksetzen: `docker compose exec backend python -m app.cli.reset_admin_password` (Vorgabe-Konto `admin`; fragt das neue Passwort zweimal verdeckt ab und braucht dafür ein Terminal, deshalb ohne `-T`; der Vorgang wird in `security_events` protokolliert). Außerdem benennt das Seed-Skript den Admin in „Andreas Werner" (`admin@musterpraxis.de`) um; das bleibt nach dem Zurücksetzen so und spielt für die E2E-Tests keine Rolle. Das Aufnahmeskript nimmt alle Bilder neu auf (git meldet danach meist deutlich mehr Bilder als geändert, als inhaltlich neu sind). Zuerst die inhaltlich neuen Bilder mit `git add docs/handbuch/screenshots/<datei>.png` vormerken, danach den Rest mit `git restore docs/handbuch/screenshots/` verwerfen – in umgekehrter Reihenfolge verwirft `git restore` auch die gewollten Bilder.
+
 #### Mitarbeiter-Screenshots (als Employee einloggen oder als Admin mit Employee-Sicht)
 
 | Datei | URL | Beschreibung |
@@ -64,7 +74,7 @@ docker-compose up -d
 | `07-ma-abwesenheit-formular.png` | `/absences` | Formular „+ Abwesenheit eintragen" |
 | `08-ma-korrekturantraege.png` | `/time-tracking` (Tab: Anträge) | Änderungsanträge-Tab leer |
 | `09-ma-korrekturantrag-modal.png` | `/time-tracking` | Modal nach Klick auf „Änderungsantrag" bei gesperrtem Eintrag |
-| `10-ma-profil.png` | `/profile` | Profilseite |
+| `10-ma-profil.png` | `/profile` | Profilseite (persönliche Daten, Karte „Meine Arbeitszeit") |
 | `11-ma-mobile-dashboard.png` | `/` | Mobil (390px) – Dashboard |
 | `12-ma-mobile-zeiterfassung.png` | `/time-tracking` | Mobil (390px) – Zeiterfassung |
 | `13-ma-mobile-menu.png` | beliebig | Mobil (390px) – Hamburger-Menü offen |
@@ -75,8 +85,8 @@ docker-compose up -d
 |-------|-----|-------------|
 | `14-admin-dashboard.png` | `/admin` | Admin-Dashboard mit Teamübersicht |
 | `15-admin-benutzer.png` | `/admin/users` | Benutzerliste |
-| `16-admin-benutzer-formular.png` | `/admin/users` | Formular „Neuer Mitarbeiter:in" |
-| `17-admin-benutzer-bearbeiten.png` | `/admin/users` | Bearbeiten-Formular eines Benutzers |
+| `16-admin-benutzer-formular.png` | `/admin/users` | Formular „Neue:r Mitarbeiter:in", Modus „Nach Arbeitsblöcken" (Block-Editor mit Beispielwoche) |
+| `17-admin-benutzer-bearbeiten.png` | `/admin/users` | Bearbeiten-Formular der Demo-Person mit Arbeitszeit-Blöcken (Sarah Klein, „Arbeitszeit heute: …") |
 | `18-admin-abwesenheitskalender.png` | `/admin/absences` | Abwesenheitskalender Admin |
 | `19-admin-berichte.png` | `/admin/reports` | Berichte & Export |
 | `20-admin-korrekturantraege.png` | `/admin/change-requests` | Korrekturanträge-Liste |
@@ -172,20 +182,20 @@ Diese müssen **manuell** aktualisiert werden, wenn sich der Inhalt der Markdown
 - Geänderte Abläufe in den Cheatsheet-Sektionen anpassen
 - Neue Navigationspunkte in der Login/Navigation-Sektion aktualisieren
 
-### 7. PDF-Dateien generieren (optional)
+### 7. PDF-Dateien bei Bedarf erzeugen
 
-Die PDFs in `frontend/public/docs/` können aus den Markdown-Dateien generiert werden.
+Im Repo liegen bewusst **keine** PDF-Abzüge der Handbücher (auch nicht unter `frontend/public/`). Ein PDF neben der Markdown-Quelle veraltet mit der nächsten Änderung unbemerkt: die früheren `frontend/public/docs/*.pdf` standen bis 1.20.0 auf dem Stand Februar 2026, ohne Arbeitszeit-Blöcke, und waren trotzdem öffentlich abrufbar. `bash scripts/check-doc-sync.sh pdf` schlägt fehl, sobald wieder ein solches PDF eingecheckt wird.
 
-**Mit pandoc (empfohlen):**
+Wer ein PDF braucht (z. B. zum Versenden), erzeugt es aus dem aktuellen Markdown-Stand und legt es außerhalb des Repos ab:
+
 ```bash
 pandoc docs/handbuch/HANDBUCH-MITARBEITER.md \
-  -o frontend/public/docs/Mitarbeiter-Handbuch.pdf \
+  -o /tmp/Mitarbeiter-Handbuch.pdf \
   --pdf-engine=wkhtmltopdf \
-  --css=docs/handbuch/handbuch.css \
   --metadata title="PraxisZeit – Mitarbeiter-Handbuch"
 ```
 
-**Hinweis:** Wenn keine automatische PDF-Generierung eingerichtet ist, müssen die PDFs manuell erstellt werden (z. B. via Browser → Drucken → Als PDF speichern).
+In der App laden Nutzer die Handbücher als Markdown aus `frontend/public/help/` herunter.
 
 ### 8. Committen und pushen
 

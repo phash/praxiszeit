@@ -1,75 +1,49 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../../api/client';
-import { Plus, X, Trash2 } from 'lucide-react';
+import { Save, X, Trash2, Info } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
-import { useConfirm } from '../../../hooks/useConfirm';
-import ConfirmDialog from '../../../components/ConfirmDialog';
+import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
 import { getErrorMessage } from '../../../utils/errorMessage';
 import { parseHours, deHoursExact, formatDayPlan } from '../../../utils/formatters';
-
-// #431: Eine Zeile der Historie ist ein vollstaendiger Vertrags-Snapshot ab
-// `effective_from` — Modus, Tageswerte, Arbeitstage und Wochenstunden. Die
-// Snapshot-Felder sind optional typisiert, weil eine ganz alte Antwort (oder
-// ein Testdouble) sie nicht tragen muss; aufgeloest wird ueber
-// `scheduleFromChange`.
-interface WorkingHoursChange {
-  id: string;
-  user_id: string;
-  effective_from: string;
-  weekly_hours: number;
-  use_daily_schedule?: boolean;
-  hours_monday?: number | null;
-  hours_tuesday?: number | null;
-  hours_wednesday?: number | null;
-  hours_thursday?: number | null;
-  hours_friday?: number | null;
-  work_days_per_week?: number | null;
-  note?: string;
-  created_at: string;
-}
-
-// Task 7 (#Wochenstunden-anpassen): Antwortform von
-// GET .../working-hours-changes/preview — strikt lesend, schreibt nichts.
-interface WorkingHoursChangePreview {
-  is_retroactive: boolean;
-  period_start: string;
-  period_end: string;
-  current_daily_target: number;
-  new_daily_target: number;
-  // #431: Tagessoll je Wochentag (Mo…Fr, immer fuenf Eintraege) vor und nach
-  // der Aenderung. Ein Skalar bildet einen individuellen Tagesplan nicht ab.
-  day_targets_current: number[];
-  day_targets_new: number[];
-  // #431: Ueberstundensaldo (Stichtag #313) und verbrauchte Urlaubstage des
-  // Jahres von `period_start` — im Ist-Zustand und im simulierten Zustand nach
-  // dem Speichern.
-  overtime_before: number;
-  overtime_after: number;
-  vacation_days_before: number;
-  vacation_days_after: number;
-  affected_absences: number;
-  blocked_reason: string | null;
-  closed_years: number[];
-  closed_year_warning: string | null;
-}
+import { showResponseWarning } from '../../../utils/arbzgWarnings';
+import {
+  blocksOf, deriveTargets, emptyWeek, formatBlocksText, isLegacyWeek, validateWeekBlocks,
+} from '../../../utils/workBlocks';
+import type { WeekBlocks } from '../../../types/workBlocks';
+import type { WorkingHoursChange, WorkingHoursChangePreview } from './workingHoursTypes';
+import WhImpactBox from './WhImpactBox';
+import ShorteningChoice from './ShorteningChoice';
+import WhDeletePanel from './WhDeletePanel';
+import {
+  BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT,
+  NOTE_MAX_LENGTH, NOTE_TOO_LONG, closedYearMessage, composedNoteTooLong, dayBefore, formatDate, losslessLabel,
+  modeSwitchHint, reasonComplete, reasonPayload, retroLabel, savedMessage, type ReasonState, type ShorteningOption,
+} from './workingHoursTexts';
 
 interface WorkingHoursModalProps {
   userId: string;
   userName: string;
   currentWeeklyHours: number;
-  // #431: der Rest des aktuell gueltigen Snapshots. Optional mit Defaults, weil
-  // sie nur der RUECKFALL fuer den (seltenen) Fall „noch keine Historie" sind —
+  // #431: der Rest des aktuell gültigen Snapshots. Optional mit Defaults, weil
+  // sie nur der RÜCKFALL für den (seltenen) Fall „noch keine Historie" sind —
   // sobald der Verlauf geladen ist, gewinnt er (siehe `scheduleAt`).
   currentUseDailySchedule?: boolean;
   currentDayHours?: (number | null)[];
   currentWorkDays?: number;
+  // Spec 2026-10-08 (12.1): heute gültige Blöcke (`work_blocks_today`) — ebenfalls
+  // nur Rückfall — und die Stundenzählung (ohne sie kein Block-Modus, P24).
+  currentBlocks?: WeekBlocks | null;
+  trackHours?: boolean;
+  // Gesamtreview 1.20 (Fund 14): feste Monatsarbeitszeit (#377 2b) — die Werte
+  // des Block-Editors sind dann geplante Anwesenheit, kein Tages-/Wochensoll.
+  fixedMonthlyTarget?: boolean;
   onClose: () => void;
   onChanged: () => void;
 }
 
-// #431: Die fuenf Wochentagsfelder an EINER Stelle — Feldname (= API-Feld),
-// Beschriftung des Eingabefelds und Kurzform fuer Verlauf/Vorschau.
+// #431: Die fünf Wochentagsfelder an EINER Stelle — Feldname (= API-Feld),
+// Beschriftung des Eingabefelds und Kurzform.
 const DAY_FIELDS = [
   { key: 'hours_monday', label: 'Montag', short: 'Mo' },
   { key: 'hours_tuesday', label: 'Dienstag', short: 'Di' },
@@ -82,29 +56,33 @@ type DayFieldKey = typeof DAY_FIELDS[number]['key'];
 
 const NO_DAY_HOURS: (number | null)[] = [null, null, null, null, null];
 
-// U+2212 MINUS SIGN — nicht der Bindestrich: „−47,5 h" steht in einer Spalte
-// neben „+41,5 h", da muss das Vorzeichen auf einen Blick lesbar sein.
-const MINUS_SIGN = '−';
+/** Spec 12.1: „Gleichmäßig" / „Nach Tagen" / „Nach Arbeitsblöcken". */
+type Mode = 'even' | 'days' | 'blocks';
 
-/** #431: der Vertrags-Snapshot, wie ihn Dialog und Backend gleichermaßen sehen. */
+/** #431 + Spec 3.1: der Vertrags-Snapshot, wie ihn Dialog und Backend sehen. */
 interface ScheduleSnapshot {
   weekly_hours: number;
   use_daily_schedule: boolean;
   /** Fünf Werte, Index 0 = Montag. 0 = kein geplanter Arbeitstag (wie `null`). */
   day_hours: number[];
   work_days_per_week: number;
+  /** Blöcke der Zeile — neu (mit Pausen) oder Altfenster (Pausen NULL) — oder `null`. */
+  blocks: WeekBlocks | null;
 }
 
 interface FormState {
   effective_from: string;
+  mode: Mode;
   weekly_hours: number;
-  use_daily_schedule: boolean;
   hours_monday: number;
   hours_tuesday: number;
   hours_wednesday: number;
   hours_thursday: number;
   hours_friday: number;
   work_days_per_week: number;
+  blocks: WeekBlocks;
+  /** P2: Altfenster ausdrücklich entfernen statt übernehmen. */
+  remove_legacy_window: boolean;
   note: string;
 }
 
@@ -130,6 +108,14 @@ function dayFieldsFromSnapshot(dayHours: number[]): Record<DayFieldKey, number> 
   };
 }
 
+function hasNewBlocks(week: WeekBlocks | null): boolean {
+  return Array.isArray(week) && !isLegacyWeek(week);
+}
+
+function hasLegacyBlocks(week: WeekBlocks | null): boolean {
+  return Array.isArray(week) && isLegacyWeek(week);
+}
+
 function scheduleFromChange(change: WorkingHoursChange, fallbackWorkDays: number): ScheduleSnapshot {
   return {
     weekly_hours: change.weekly_hours,
@@ -141,16 +127,15 @@ function scheduleFromChange(change: WorkingHoursChange, fallbackWorkDays: number
     // NULL heißt beim Backend „Rückfall auf die User-Zeile" (Bestandszeilen vor
     // #431) — hier ist das die Prop.
     work_days_per_week: change.work_days_per_week ?? fallbackWorkDays,
+    blocks: Array.isArray(change.blocks) ? change.blocks : null,
   };
 }
 
-// Fund 3 (Release-Review 1.17.0), #431 erweitert: der zu einem Datum gültige
-// Snapshot wird NICHT aus den Props übernommen (die sind ein Stand von vor dem
-// Öffnen des Dialogs und werden von Users.tsx nach dem Speichern nicht
-// nachgezogen — der Dialog bleibt offen), sondern aus dem gerade geladenen
-// Verlauf abgeleitet: die jüngste Zeile mit `effective_from <= datum` gilt.
-// Genau die Auflösung, die `calculation_service.get_schedule_for_date`
-// backendseitig macht.
+// Fund 3 (Release-Review 1.17.0), #431: der zu einem Datum gültige Snapshot
+// kommt aus dem geladenen Verlauf (jüngste Zeile mit effective_from <= datum),
+// nicht aus den Props — die sind ein Stand von vor dem Öffnen des Dialogs und
+// werden von Users.tsx nach dem Speichern nicht nachgezogen. Genau die
+// Auflösung von `calculation_service.get_schedule_for_date`.
 function scheduleAt(
   changes: WorkingHoursChange[], iso: string, fallback: ScheduleSnapshot,
 ): ScheduleSnapshot {
@@ -164,13 +149,19 @@ function scheduleAt(
 }
 
 /**
- * #431: Der Snapshot als Klartext — für die Kopfzeile und jede Verlaufszeile.
- *
- * Formuliert wie der Datei-Export (`export_service.format_weekly_hours_history`
- * / `utils/formatters.ts::formatWeeklyHoursChanges`): Bildschirm und §16-Beleg
- * müssen denselben Satz schreiben.
+ * #431: Der Snapshot als Klartext — für die Kopfzeile und jede Verlaufszeile,
+ * formuliert wie der Datei-Export (`export_service.format_weekly_hours_history`
+ * / `utils/formatters.ts::formatWeeklyHoursChanges`). Eine Zeile mit neuen
+ * Blöcken (mit Stundenzählung) trägt den Berichtssatz aus Spec 15.2/12.1
+ * („Mo 08:00–12:00 + 15:00–18:00 / Di 08:00–12:00 = 11,0 h/Woche") statt des
+ * dezimalen Tagesplans — die Tagesstunden sind daraus abgeleitet (4.1), und der
+ * Editor zeigt dieselben Tage minutengenau (Gesamtreview PR3).
  */
-function describeSchedule(s: ScheduleSnapshot): string {
+function describeSchedule(s: ScheduleSnapshot, trackHours: boolean): string {
+  if (trackHours && hasNewBlocks(s.blocks)) {
+    const spans = formatBlocksText(s.blocks);
+    if (spans) return `${spans} = ${deHoursExact(s.weekly_hours)} h/Woche`;
+  }
   const days = `${s.work_days_per_week} Tage/Woche`;
   if (s.use_daily_schedule) {
     const plan = formatDayPlan(s.day_hours);
@@ -180,60 +171,85 @@ function describeSchedule(s: ScheduleSnapshot): string {
   return `${deHoursExact(s.weekly_hours)} Std/Woche · ${days}`;
 }
 
+/** Zusatzzeile für Kopf und Verlauf (Spec 12.1/4.4): Altfenster und Blöcke
+ * ohne Stundenzählung. Neue Blöcke mit Stundenzählung stehen schon im Satz von
+ * ``describeSchedule`` — keine zweite Zeile. */
+function blocksLine(week: WeekBlocks | null, trackHours: boolean): string | null {
+  const text = formatBlocksText(week);
+  if (!text) return null;
+  // Ein Altfenster bleibt auch ohne Stundenzählung ein Fenster, nie „Blöcke"
+  // (Spec 4.4) — sonst trüge derselbe Datensatz im Dialog zwei Namen.
+  const legacy = hasLegacyBlocks(week);
+  if (!trackHours) return `${legacy ? LEGACY_WITHOUT_EFFECT : BLOCKS_WITHOUT_EFFECT}: ${text}`;
+  return legacy ? `${LEGACY_BOX_TITLE}: ${text}` : null;
+}
+
+/** Kanonische Vergleichsform der Blöcke (Schlüsselreihenfolge egal). Ein
+ * fehlender „blocks"-Schlüssel heißt „keine Blöcke" (`blocksOf`) — der Server
+ * gibt eine solche Verlaufszeile unverändert aus (Gesamtreview B3). */
+function blocksKey(week: WeekBlocks | null): string | null {
+  if (!Array.isArray(week)) return null;
+  return JSON.stringify(week.map((d) => [blocksOf(d).map((b) => [b.start, b.end]), d?.pause_minutes ?? null]));
+}
+
 /**
- * #431: Vergleichsform des Snapshots — DIE eine Definition von „hat sich
- * etwas geändert" im Dialog, gebaut wie `admin_users._comparable_snapshot`.
+ * #431 + Spec 12.1: DIE Definition von „hat sich etwas geändert" — wie
+ * `admin_users._comparable_snapshot`, jetzt mit Blöcken und Pausen.
  *
  * Im gleichmäßigen Modus sind die Tageswerte inert (das Tagessoll liest sie
- * dort nicht) und werden ausgeblendet, sonst würde ein Rest aus einer früheren
- * Tagesplan-Phase eine Änderung vortäuschen.
+ * dort nicht) und werden ausgeblendet, sonst täuschte ein Rest aus einer
+ * früheren Tagesplan-Phase eine Änderung vor. Ohne Stundenzählung zählen die
+ * Blöcke nicht (sie wirken nicht; beendet werden sie von jeder echten
+ * Änderung, P24) — außer beim ausdrücklichen Entfernen eines Altfensters
+ * (`compareBlocks` im Aufrufer).
+ *
+ * Review Focus 5: verglichen wird über die auf 0,01 h gerundeten Tageswerte —
+ * 7:55 h im Editor ist gespeichert 7,92 h, beides ist derselbe Stand.
  */
-function comparableSnapshot(s: ScheduleSnapshot): string {
+function comparableSnapshot(s: ScheduleSnapshot, withBlocks: boolean): string {
   return JSON.stringify([
     round2(s.weekly_hours),
     s.use_daily_schedule,
     s.use_daily_schedule ? s.day_hours.map(round2) : [0, 0, 0, 0, 0],
     s.work_days_per_week,
+    withBlocks ? blocksKey(s.blocks) : null,
   ]);
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('de-DE', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
+/** Formularstand aus einem Snapshot: Block-Modus, sobald neue Blöcke gelten
+ * (und Stunden gezählt werden, P24). */
+function formFromSnapshot(s: ScheduleSnapshot, effectiveFrom: string, trackHours: boolean): FormState {
+  const blocksMode = trackHours && hasNewBlocks(s.blocks);
+  return {
+    effective_from: effectiveFrom,
+    mode: blocksMode ? 'blocks' : s.use_daily_schedule ? 'days' : 'even',
+    weekly_hours: s.weekly_hours,
+    ...dayFieldsFromSnapshot(s.day_hours),
+    work_days_per_week: s.work_days_per_week,
+    blocks: blocksMode && s.blocks ? s.blocks : emptyWeek(),
+    remove_legacy_window: false,
+    note: '',
+  };
+}
+
+/** Spec 4.4: Altfenster vorbefüllt in den Block-Modus — Werte unverändert
+ * (07:37, 23:59), Pause leer und Pflicht an Tagen mit Blöcken (Review Focus 4:
+ * der Editor meldet Raster und Pause, statt still zu korrigieren). */
+function legacyToEditable(week: WeekBlocks): WeekBlocks {
+  return week.map((d) => {
+    const bs = blocksOf(d);
+    return {
+      blocks: bs.map((b) => ({ start: b.start.slice(0, 5), end: b.end.slice(0, 5) })),
+      pause_minutes: bs.length ? null : 0,
+    };
   });
 }
 
-/** #431: '+41,5' / '−47,5' / '0,0' — Vorzeichen vor der DE-Schreibweise. */
-function signed(value: number): string {
-  const v = round2(value);
-  const text = deHoursExact(Math.abs(v));
-  if (v > 0) return `+${text}`;
-  if (v < 0) return `${MINUS_SIGN}${text}`;
-  return text;
-}
-
-// Kalendertag VOR dem übergebenen ISO-Datum (YYYY-MM-DD) — UTC-basiert, um
-// Zeitzonen-/DST-Rollover bei reiner Tagesarithmetik zu vermeiden.
-function dayBefore(iso: string): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().split('T')[0];
-}
-
-// „Heute" in der LOKALEN Zeitzone des Browsers (= die des Praxis-Rechners,
-// faktisch Europe/Berlin) als YYYY-MM-DD.
-//
-// M1 (Abschluss-Review): NICHT `toISOString()` — das liefert UTC. Zwischen
-// 00:00 und 02:00 Berliner Zeit hielt der Dialog damit das GESTRIGE Datum für
-// „heute": keine Vorschau, keine Bestätigungspflicht — während das Backend
-// (`today_local()`, Europe/Berlin) dasselbe Datum als rückwirkend behandelt und
-// die Abwesenheits-Stunden retargetet. Die laut Spezifikation zwingende
-// ausdrückliche Bestätigung war damit umgehbar.
-//
-// (`dayBefore` rechnet weiterhin bewusst in UTC — dort geht es um reine
-// Tagesarithmetik auf einem bereits feststehenden Datum, ohne DST-Rollover.)
+// M1 (Abschluss-Review): „heute" in der LOKALEN Zeitzone des Browsers, nicht
+// `toISOString()` (UTC) — sonst hält der Dialog zwischen 00:00 und 02:00
+// Berliner Zeit das gestrige Datum für „heute" und umgeht die
+// Bestätigungspflicht, während das Backend (`today_local()`) dasselbe Datum
+// als rückwirkend behandelt.
 function todayIso(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -241,7 +257,7 @@ function todayIso(): string {
 }
 
 // Debounce (ms), bevor die rein lesende Vorschau abgerufen wird, während der
-// Admin Datum/Stunden noch anpasst.
+// Admin Datum/Stunden/Blöcke noch anpasst.
 const PREVIEW_DEBOUNCE_MS = 400;
 
 export default function WorkingHoursModal({
@@ -251,185 +267,174 @@ export default function WorkingHoursModal({
   currentUseDailySchedule = false,
   currentDayHours = NO_DAY_HOURS,
   currentWorkDays = 5,
+  currentBlocks = null,
+  trackHours = true,
+  fixedMonthlyTarget = false,
   onClose,
   onChanged,
 }: WorkingHoursModalProps) {
   const toast = useToast();
-  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
+  // Spec 12.1/9.7: Lösch-Panel der jüngsten Zeile.
+  const [deleting, setDeleting] = useState<WorkingHoursChange | null>(null);
+  // Review Task 20: Fokusziele beim Schließen des Panels — der frühere
+  // ConfirmDialog gab den Fokus selbst zurück (returnFocusOnDeactivate).
+  const trashRef = useRef<HTMLButtonElement>(null);
+  const historyHeadingRef = useRef<HTMLHeadingElement>(null);
   const [hoursChanges, setHoursChanges] = useState<WorkingHoursChange[]>([]);
-  // Guards against double-submit (fast double-click would add duplicate hours changes).
+  // Schützt vor doppeltem Absenden (schneller Doppelklick legte zwei Zeilen an).
   const [submitting, setSubmitting] = useState(false);
 
-  // Der Snapshot aus den Props — Rückfall, solange (oder falls) es keine
-  // Historie gibt.
+  // Der Snapshot aus den Props — Rückfall, solange (oder falls) es keine Historie gibt.
   const propsSchedule = useMemo<ScheduleSnapshot>(() => ({
     weekly_hours: currentWeeklyHours,
     use_daily_schedule: currentUseDailySchedule,
     day_hours: normaliseDayHours(currentDayHours),
     work_days_per_week: currentWorkDays,
-  }), [currentWeeklyHours, currentUseDailySchedule, currentDayHours, currentWorkDays]);
+    blocks: currentBlocks,
+  }), [currentWeeklyHours, currentUseDailySchedule, currentDayHours, currentWorkDays, currentBlocks]);
 
-  const [formData, setFormData] = useState<FormState>(() => ({
-    effective_from: todayIso(),
-    note: '',
-    weekly_hours: currentWeeklyHours,
-    use_daily_schedule: currentUseDailySchedule,
-    ...dayFieldsFromSnapshot(normaliseDayHours(currentDayHours)),
-    work_days_per_week: currentWorkDays,
-  }));
+  const [formData, setFormData] = useState<FormState>(() => formFromSnapshot(propsSchedule, todayIso(), trackHours));
 
-  // Task 7: rückwirkende Vorschau (Zeitraum, altes/neues Tagessoll, betroffene
-  // Abwesenheiten, abgeschlossene Jahre, Blockade-Grund) — siehe Backend
-  // GET .../working-hours-changes/preview.
   const [preview, setPreview] = useState<WorkingHoursChangePreview | null>(null);
+  // Der Schlüssel, zu dem `preview` gehört: zwischen einer neuen Eingabe und
+  // dem Start ihrer Vorschau steht noch die alte Antwort im Zustand.
+  const [previewFor, setPreviewFor] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   // Fund 4 (Release-Review 1.17.0): scheitert die Vorschau (Netzwerk, 5xx, ein
-  // getipptes weekly_hours > 60 → 422 …), zeigte der Dialog bisher einen leeren
-  // amber Kasten und ein gesperrtes „Hinzufügen" ohne jede Begründung. Jetzt
-  // wird der Fehler festgehalten und angezeigt, plus eine Möglichkeit, die
-  // Vorschau erneut anzustoßen, ohne Datum/Stunden ändern zu müssen.
+  // gecachtes altes Frontend gegen den entfallenen GET → 405 …), wird der
+  // Fehler angezeigt, mit „Erneut prüfen" — statt eines leeren Kastens neben
+  // einem gesperrten Knopf ohne Begründung.
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewRetryToken, setPreviewRetryToken] = useState(0);
-  // Der Kern des Verständnisproblems: eine rückwirkende Änderung darf erst
-  // nach ausdrücklicher Bestätigung der Vorschau gespeichert werden.
+  // Eine Änderung mit Auswirkung darf erst nach ausdrücklicher Bestätigung der
+  // Vorschau gespeichert werden (9.4/12.1).
   const [confirmedRetroactive, setConfirmedRetroactive] = useState(false);
-
-  const isRetroactive = formData.effective_from < todayIso();
+  // Spec 12.1 (F24): Verkürzungs-Wahl. Das eingegebene Datum und seine Vorschau
+  // bleiben stehen; Option 1 sendet `earliest_lossless_date` und zeigt dafür
+  // eine zweite Vorschau.
+  const [shorteningOption, setShorteningOption] = useState<ShorteningOption>('lossless');
+  const [reason, setReason] = useState<ReasonState>(EMPTY_REASON);
+  const [losslessPreview, setLosslessPreview] = useState<WorkingHoursChangePreview | null>(null);
+  const [losslessLoading, setLosslessLoading] = useState(false);
+  const [losslessError, setLosslessError] = useState<string | null>(null);
 
   const dayValues = DAY_FIELDS.map((f) => formData[f.key]);
   const daySum = round2(dayValues.reduce((sum, h) => sum + h, 0));
   const plannedDays = dayValues.filter((h) => h > 0).length;
+  const derived = useMemo(() => deriveTargets(formData.blocks), [formData.blocks]);
+  // Spec 3.4/12.1: Validierung im Client mit den Texten des Servers; Speichern
+  // bleibt bei einem Fehler gesperrt (der Editor zeigt ihn als `role="alert"`).
+  const blocksError = formData.mode === 'blocks' ? validateWeekBlocks(formData.blocks) : null;
 
-  // Fund 3: die Kopfzeile hängt an diesem abgeleiteten Wert statt an der (nicht
-  // nachgezogenen) Prop.
+  // Fund 3: die Kopfzeile hängt am Verlauf statt an der (nicht nachgezogenen) Prop.
   const displaySchedule = useMemo(
     () => scheduleAt(hoursChanges, todayIso(), propsSchedule),
     [hoursChanges, propsSchedule],
   );
+  // #431: Verglichen wird gegen den Stand AM WIRKUNGSDATUM, nicht gegen den von
+  // heute — „ab 01.03. gelten 20 h" kann eine echte Änderung sein, obwohl heute
+  // längst 20 h gelten. Dieselbe Auflösung nutzt der Schreibpfad.
+  const baselineSchedule = scheduleAt(hoursChanges, formData.effective_from, propsSchedule);
+  const baselineLegacy = hasLegacyBlocks(baselineSchedule.blocks);
+  const baselineNewBlocks = hasNewBlocks(baselineSchedule.blocks);
+  // P2: ein Altfenster des Vorgänger-Snapshots wird in „Gleichmäßig"/„Nach
+  // Tagen" übernommen, außer es wird ausdrücklich entfernt.
+  const removeLegacy = baselineLegacy && formData.remove_legacy_window;
+  const carriedBlocks = baselineLegacy && !formData.remove_legacy_window ? baselineSchedule.blocks : null;
 
-  // #431: Die Vorschau-Parameter UND der POST-Body kommen aus derselben
-  // Funktion — zwei Formulierungen desselben Payloads laufen garantiert
-  // auseinander, und die beiden Modi schließen einander serverseitig hart aus
-  // (Tageswerte im gleichmäßigen Modus → HTTP 400).
-  //
-  // Bewusst nur PRIMITIVE Abhängigkeiten: dieses Objekt hängt im
-  // Dependency-Array des Vorschau-Effekts. Eine bei jedem Rendern neu erzeugte
-  // Identität (z. B. über ein Array wie `dayValues`) würde bei JEDEM Rendern
-  // einen Request auslösen.
-  const scheduleParams = useMemo<Record<string, string | number | boolean>>(() => {
-    if (formData.use_daily_schedule) {
-      const days = [
-        formData.hours_monday, formData.hours_tuesday, formData.hours_wednesday,
-        formData.hours_thursday, formData.hours_friday,
-      ];
-      const planned = days.filter((h) => h > 0).length;
-      const params: Record<string, string | number | boolean> = { use_daily_schedule: true };
-      DAY_FIELDS.forEach((f, i) => { params[f.key] = days[i]; });
+  // #431 + Spec 11.1/11.2: Vorschau-Body UND Anlege-Body aus DERSELBEN Quelle —
+  // zwei Formulierungen desselben Payloads laufen garantiert auseinander. Die
+  // Modi schließen einander serverseitig hart aus: Block-Modus sendet nur
+  // `blocks` (Stundenwerte daneben → 422, der Server leitet sie selbst ab, 4.2),
+  // „Gleichmäßig" keine Tageswerte (→ 400).
+  const scheduleBody: Record<string, unknown> = (() => {
+    if (formData.mode === 'blocks') return { blocks: formData.blocks };
+    const legacy = removeLegacy ? { remove_legacy_window: true } : {};
+    if (formData.mode === 'days') {
+      const body: Record<string, unknown> = { use_daily_schedule: true, ...legacy };
+      DAY_FIELDS.forEach((f, i) => { body[f.key] = dayValues[i]; });
       // Die Wochensumme setzt der Server (`check_mode`) — ein eigener Wert des
-      // Clients könnte ihr widersprechen. Die Arbeitstage ergeben sich aus den
-      // Tagen MIT Stunden; ohne einen einzigen bleibt der Rückfall auf die
-      // User-Zeile (die Eingabe ist dann ohnehin ungültig und kommt als
+      // Clients könnte ihr widersprechen. Arbeitstage = Tage mit Stunden; ohne
+      // einen einzigen bleibt der Rückfall (die Eingabe kommt dann ohnehin als
       // `blocked_reason` zurück).
-      if (planned > 0) params.work_days_per_week = planned;
-      return params;
+      if (plannedDays > 0) body.work_days_per_week = plannedDays;
+      return body;
     }
     return {
       use_daily_schedule: false,
       weekly_hours: formData.weekly_hours,
       work_days_per_week: formData.work_days_per_week,
+      ...legacy,
     };
-  }, [
-    formData.use_daily_schedule, formData.weekly_hours, formData.work_days_per_week,
-    formData.hours_monday, formData.hours_tuesday, formData.hours_wednesday,
-    formData.hours_thursday, formData.hours_friday,
-  ]);
+  })();
+  // Spec 12.1: der Effekt-Schlüssel ist der serialisierte Body — ein String,
+  // also stabil über Renderläufe. Ein bei jedem Rendern neu erzeugtes Objekt im
+  // Dependency-Array löste bei JEDEM Rendern eine Anfrage aus (Anfragesturm);
+  // die Notiz gehört bewusst nicht dazu.
+  const previewKey = JSON.stringify({ effective_from: formData.effective_from, ...scheduleBody });
 
   useEffect(() => {
     fetchHoursChanges();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  // Jede Änderung an Datum/Stunden entwertet eine zuvor gegebene Bestätigung
-  // — der Admin muss die (ggf. neue) Vorschau erneut bestätigen.
+  // Vorschau für JEDES Wirkungsdatum (Release-Review 1.17.0: auch ein
+  // zukünftiges Datum schreibt gebuchte Abwesenheiten um), seit Spec 11.1 per
+  // POST mit JSON-Body — unfertige Eingaben kommen als `blocked_reason` zurück,
+  // nie als 422. Jede Änderung entwertet eine zuvor gegebene Bestätigung.
   //
-  // Release-Review 1.17.0: Die Vorschau wird jetzt für JEDES Wirkungsdatum
-  // geladen, nicht nur für ein rückwirkendes. Hier stand vorher „ein
-  // zukünftiges Datum betrifft ausschließlich noch nicht gebuchte Tage" —
-  // das stimmt nicht: genehmigte Urlaubsanträge, Betriebsferien und geplante
-  // Fortbildungen sind längst gebucht und werden vom Speichern auf das neue
-  // Tagessoll umgeschrieben. Ohne Vorschau passierte das still. Ob ein
-  // Warnblock erscheint, entscheidet deshalb nicht mehr das Datum allein,
-  // sondern `affected_absences` (siehe `showImpactBox`).
-  //
-  // #431: Der Effekt hängt jetzt an bis zu acht Formularwerten (Datum, Modus,
-  // fünf Tageswerte, Wochenstunden, Arbeitstage) — gebündelt in
-  // `scheduleParams`. Der 400-ms-Debounce plus das Aufräumen unten sorgen
-  // dafür, dass daraus trotzdem EIN Request je Eingabepause wird und nicht
-  // acht parallele.
+  // Fund 1 (Release-Review 1.17.0): `cancelled` verwirft verspätete Antworten
+  // — React räumt den vorigen Effekt bei JEDER Schlüsseländerung auf, also
+  // gewinnt die letzte Anfrage, nicht die letzte Antwort.
   useEffect(() => {
     setConfirmedRetroactive(false);
     setPreviewLoading(true);
     setPreviewError(null);
-    // Fund 1 (Release-Review 1.17.0): `cancelled` is the same guard UserForm.tsx
-    // uses for its carryover fetch (:148/:157). Without it, last-RESPONSE-wins
-    // instead of last-REQUEST-wins: a slow answer for a date/hours combination
-    // the admin has since navigated away from could still land in `setPreview`
-    // after a newer, faster request already resolved — showing a period/
-    // Tagessoll/Abwesenheits-Anzahl that doesn't match the change actually
-    // about to be saved, right under the mandatory confirmation checkbox.
-    // Setting `cancelled = true` in the cleanup (which React runs for the
-    // PREVIOUS effect invocation before running the next one, i.e. on EVERY
-    // dependency change) discards a stale response regardless of arrival
-    // order — out-of-order (B-before-A) is covered exactly like the more
-    // common late-A-after-B case.
+    // Neue Eingabe → neue Bewertung; Standard ist wieder Option 1 (12.1). Die
+    // Bestätigungen des Schutzpakets gelten der bisherigen Änderung und fallen
+    // wie der Haken der Auswirkungs-Box; Grund und Begründung bleiben stehen.
+    setShorteningOption('lossless');
+    setReason((r) => (r.wageConfirmed || r.otherConfirmed ? { ...r, wageConfirmed: false, otherConfirmed: false } : r));
     let cancelled = false;
     const handle = setTimeout(() => {
       apiClient
-        .get(`/admin/users/${userId}/working-hours-changes/preview`, {
-          params: { effective_from: formData.effective_from, ...scheduleParams },
-        })
+        .post(`/admin/users/${userId}/working-hours-changes/preview`, JSON.parse(previewKey))
         .then((res) => {
           if (cancelled) return;
           setPreview(res.data);
+          setPreviewFor(previewKey);
         })
         .catch((error) => {
           if (cancelled) return;
           setPreview(null);
-          // Fund 4: surface WHY the preview is unavailable instead of leaving
-          // an unexplained empty box + a disabled save button.
           setPreviewError(getErrorMessage(error, 'Auswirkungen konnten nicht geprüft werden'));
         })
         .finally(() => {
-          if (cancelled) return;
-          setPreviewLoading(false);
+          if (!cancelled) setPreviewLoading(false);
         });
     }, PREVIEW_DEBOUNCE_MS);
     return () => {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [userId, formData.effective_from, scheduleParams, previewRetryToken]);
+  }, [userId, previewKey, previewRetryToken]);
 
   // Fund 3: gibt die frisch geladene Liste zurück (nicht nur über State), damit
-  // handleAddHoursChange den soeben aktualisierten aktiven Wert SOFORT für den
-  // Formular-Reset verwenden kann — auf `hoursChanges` selbst wartend würde
-  // noch der Wert von vor dem Re-Fetch im Closure stehen (State-Updates sind
-  // nicht synchron).
+  // der Formular-Reset nach dem Speichern SOFORT den neuen Stand nutzt.
   const fetchHoursChanges = async (): Promise<WorkingHoursChange[]> => {
     try {
       const response = await apiClient.get(`/admin/users/${userId}/working-hours-changes`);
       const list: WorkingHoursChange[] = Array.isArray(response.data) ? response.data : []; // #382
       setHoursChanges(list);
       return list;
-    } catch (error) {
+    } catch {
       toast.error('Fehler beim Laden der Stundenhistorie');
       return hoursChanges;
     }
   };
 
-  // Task 7: "ab … bis …" statt nur "ab …" — das Ende ergibt sich implizit aus
-  // dem jeweils nächsten Eintrag (Vortag), der jüngste Eintrag läuft "bis
-  // heute". Genau dieses implizite Ende war der Kern des Verständnisproblems.
+  // Task 7: „ab … bis …" — das Ende ergibt sich aus dem jeweils nächsten
+  // Eintrag (Vortag), der jüngste läuft „bis heute".
   const historyEndDates = useMemo(() => {
     const asc = [...hoursChanges].sort((a, b) => a.effective_from.localeCompare(b.effective_from));
     const map = new Map<string, string | null>();
@@ -440,105 +445,152 @@ export default function WorkingHoursModal({
     return map;
   }, [hoursChanges]);
 
-  // I4: Das Backend lehnt das Löschen der FRÜHESTEN Zeile ab, solange spätere
-  // existieren — sie verankert den davor gültigen Wert, der sonst nirgends
-  // mehr gespeichert ist. Verbieten und trotzdem anbieten ist schlechte
-  // Führung: der Löschen-Button ist dort deaktiviert und nennt den Grund.
-  // Ist es die EINZIGE Zeile, bleibt das Löschen erlaubt (Backend genauso).
-  const lockedEarliestId = useMemo(() => {
-    if (hoursChanges.length < 2) return null;
-    const asc = [...hoursChanges].sort((a, b) => a.effective_from.localeCompare(b.effective_from));
-    return asc[0].id;
+  // Spec 12.1: [Löschen] nur an der JÜNGSTEN Zeile (die früheste bleibt damit
+  // gesperrt, solange spätere existieren — I4; der Server prüft es weiter).
+  const youngestId = useMemo(() => {
+    let latest: WorkingHoursChange | null = null;
+    for (const c of hoursChanges) {
+      if (!latest || c.effective_from > latest.effective_from) latest = c;
+    }
+    return latest?.id ?? null;
   }, [hoursChanges]);
 
-  const LOCKED_EARLIEST_HINT =
-    'Die früheste erfasste Stundenänderung verankert den davor gültigen Wert — '
-    + 'bitte zuerst die späteren Änderungen löschen.';
+  // Spec 9.5/12.1 (F24): ob verkürzt wird und welche Optionen es gibt, steht
+  // IMMER in der Vorschau des eingegebenen Datums — nie in der von Option 1,
+  // sonst verschwände nach der Wahl von Option 1 der Rückweg zu Option 2. Nur
+  // die Vorschau DIESER Eingabe zählt: die zweite Vorschau läuft ohne Debounce,
+  // aus einer veralteten Antwort entstünde je Tastendruck eine Anfrage mit
+  // altem Datum und neuer Eingabe.
+  const isShortening = !previewLoading && previewFor === previewKey
+    && !!preview && !preview.blocked_reason && !!preview.is_shortening;
+  const losslessDate = isShortening ? (preview?.earliest_lossless_date ?? null) : null;
+  const closedText = isShortening ? closedYearMessage(preview?.shortening_closed_years) : null;
+  const useLossless = losslessDate !== null && shorteningOption === 'lossless';
+  const needsReason = isShortening && !useLossless;
+  // Spec 9.5: Notiz, Grund-Präfix und Begründung landen in EINER Spalte (≤ 500).
+  const noteTooLong = needsReason && composedNoteTooLong(reason, formData.note);
+  const losslessKey = useLossless
+    ? JSON.stringify({ ...JSON.parse(previewKey), effective_from: losslessDate })
+    : null;
 
-  // Release-Review 1.17.0, Nachtrag: `blocked_reason` galt nur für rückwirkende
-  // Daten — ein Rest aus der Zeit, als die Vorschau ausschließlich dafür geladen
-  // wurde. Jetzt kennt der Dialog auch bei einem Datum ab heute die Fälle, in
-  // denen der POST mit 400 abweist (unvollständiger Tagesplan, bereits belegtes
-  // Wirkungsdatum). Genau dafür wurde der Mechanismus gebaut: den Grund vorher
-  // zeigen, statt den Admin in den 400 laufen zu lassen.
-  const blockedReason = preview?.blocked_reason ?? null;
-  // Release-Review 1.17.0: Der eigentliche Grund für die Bestätigungspflicht ist
-  // nicht „das Datum liegt in der Vergangenheit", sondern „das Speichern
-  // schreibt bereits gebuchte, §16-relevante Zeilen um". Das kann ein
-  // zukünftiges Wirkungsdatum genauso (bereits genehmigter Urlaub,
-  // Betriebsferien, geplante Fortbildung ab diesem Datum) — dann muss der
-  // Dialog es anzeigen und bestätigen lassen, statt still zu korrigieren.
-  const affectsBookedAbsences = !!preview && !preview.blocked_reason && preview.affected_absences > 0;
+  // Option 1: zweite Vorschau für `earliest_lossless_date` (ohne Debounce — der
+  // Schlüssel ändert sich nur mit einer neuen Antwort oder einem Klick).
+  useEffect(() => {
+    if (!losslessKey) {
+      setLosslessPreview(null);
+      return;
+    }
+    setConfirmedRetroactive(false);
+    setLosslessLoading(true);
+    setLosslessError(null);
+    let cancelled = false;
+    apiClient
+      .post(`/admin/users/${userId}/working-hours-changes/preview`, JSON.parse(losslessKey))
+      .then((res) => {
+        if (!cancelled) setLosslessPreview(res.data);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setLosslessPreview(null);
+        setLosslessError(getErrorMessage(error, 'Auswirkungen konnten nicht geprüft werden'));
+      })
+      .finally(() => {
+        if (!cancelled) setLosslessLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, losslessKey, previewRetryToken]);
 
-  // #431: Saldo/Urlaub vorher-nachher. Stehen hier, weil `affectsBalance`
-  // (direkt darunter) mit darüber entscheidet, ob der Kasten überhaupt
-  // erscheint — nicht erst, was in ihm steht.
-  //
-  // `round2` ist der Rundungs-, nicht der Gleichheitstest: ein Vergleich auf
-  // exakte Float-Gleichheit meldete 12,500000000000002 h als Änderung. Alles
-  // unterhalb von 0,005 ist unterhalb der angezeigten Genauigkeit und damit
-  // keine Auswirkung.
-  const overtimeDelta = preview ? round2(preview.overtime_after - preview.overtime_before) : 0;
-  const vacationDelta = preview ? round2(preview.vacation_days_after - preview.vacation_days_before) : 0;
+  // Was gesendet wird und welche Vorschau die Auswirkungs-Box zeigt: bei
+  // Option 1 das verlustfreie Datum und dessen Vorschau, sonst die Eingabe.
+  const sentDate = useLossless && losslessDate ? losslessDate : formData.effective_from;
+  const shown: WorkingHoursChangePreview | null = useLossless ? losslessPreview : preview;
+  const shownLoading = useLossless ? losslessLoading : previewLoading;
+  const shownError = useLossless ? losslessError : previewError;
+  const isRetroactive = sentDate < todayIso();
 
-  // Abschluss-Review #431, Fund 2: Eine ZUKUNFTSdatierte Änderung, die einen
-  // Wochentag wegfallen lässt, ändert den Urlaubsverbrauch, ohne eine einzige
-  // Abwesenheits-Stunde umzuschreiben — `retarget_absence_hours` überspringt
-  // Tage, deren neues Tagessoll 0 ist. `affected_absences` blieb 0,
-  // `isRetroactive` false, und der ganze Kasten blieb aus, obwohl
-  // `vacation_days_after` um einen Tag niedriger war: ein genehmigter
-  // Urlaubstag zählte nach dem Speichern nicht mehr als Verbrauch. Handbuch und
-  // In-App-Hilfe fordern ausdrücklich auf, „die Zeile ‚Urlaub {Jahr}:
-  // bisher/neu' der Vorschau" zu prüfen — die es in genau diesem Fall nie gab.
-  //
-  // Ein materieller Unterschied in diesen Zahlen ist eine echte Auswirkung und
-  // wird deshalb wie die anderen gezeigt UND bestätigt (siehe `saveDisabled`).
-  // Bei unverändertem Snapshot steigt die Vorschau serverseitig vor der
-  // Simulation aus und liefert „nachher == vorher" — dieser (häufigste) Fall
-  // bleibt damit weiterhin still.
-  const affectsBalance = !!preview && !blockedReason && (overtimeDelta !== 0 || vacationDelta !== 0);
-  const showImpactBox = isRetroactive || affectsBookedAbsences || affectsBalance || !!blockedReason;
+  // Release-Review 1.17.0: `blocked_reason` gilt für jedes Datum — der POST
+  // weist unabhängig davon ab (Datum belegt, Blockfehler, …).
+  const blockedReason = shown?.blocked_reason ?? null;
+  const affectsBookedAbsences = !!shown && !blockedReason && shown.affected_absences > 0;
+  // Spec 9.4/12.1: neu gekappte Einträge verlangen die Bestätigung — auch bei
+  // Wirkungsdatum heute (Einträge von heute werden trotzdem neu gekappt).
+  const affectsEntries = !!shown && !blockedReason && (shown.affected_time_entries ?? 0) > 0;
+  // `round2` ist der Rundungs-, nicht der Gleichheitstest: 12,500000000000002 h
+  // ist derselbe Saldo.
+  const overtimeDelta = shown ? round2(shown.overtime_after - shown.overtime_before) : 0;
+  const vacationDelta = shown ? round2(shown.vacation_days_after - shown.vacation_days_before) : 0;
+  // Abschluss-Review #431, Fund 2: eine reine Saldo-/Urlaubswirkung (z. B. ein
+  // wegfallender Wochentag ohne umgeschriebene Abwesenheits-Stunde) zählt mit.
+  const affectsBalance = !!shown && !blockedReason && (overtimeDelta !== 0 || vacationDelta !== 0);
+  // 9.4 ERGÄNZT die Auslöser aus 1.17.0/#431, nimmt keinen weg.
+  const needsConfirmation = affectsEntries || affectsBookedAbsences || affectsBalance;
+  // Review Task 19 (Fund 4): Option 1 sperrt „Speichern", bis ihre eigene
+  // Vorschau da ist (`saveDisabled`). Ihr Datum ist mindestens heute, also hängt
+  // die Box hier nicht an `isRetroactive` — ohne den letzten Ausdruck stünde der
+  // gesperrte Knopf ohne „Prüfe Auswirkungen…" bzw. Fehler und „Erneut prüfen" da.
+  const showImpactBox = isRetroactive || needsConfirmation || !!blockedReason
+    || (useLossless && (shownLoading || !!shownError));
 
-  // #431: Was der Admin eingegeben hat — und was zum Wirkungsdatum ohnehin
-  // gilt. Sind beide gleich, gibt es nichts zu speichern (das Backend rechnet
-  // für diesen Fall bewusst nicht einmal eine Simulation).
-  //
-  // Verglichen wird gegen den Stand AM WIRKUNGSDATUM, nicht gegen den von
-  // heute: „ab 01.03. gelten 20 h" kann eine echte Änderung sein, obwohl heute
-  // längst 20 h gelten. Dieselbe Auflösung nutzt der Schreibpfad.
-  const inputSchedule: ScheduleSnapshot = {
-    weekly_hours: formData.use_daily_schedule ? daySum : formData.weekly_hours,
-    use_daily_schedule: formData.use_daily_schedule,
-    day_hours: dayValues,
-    work_days_per_week: formData.use_daily_schedule
-      ? (plannedDays || formData.work_days_per_week)
-      : formData.work_days_per_week,
-  };
-  const baselineSchedule = scheduleAt(hoursChanges, formData.effective_from, propsSchedule);
+  // #431: Was der Admin eingegeben hat — als Snapshot. Im Block-Modus über
+  // dieselbe Ableitung wie der Server (`deriveTargets`, 4.1).
+  const inputSchedule: ScheduleSnapshot = formData.mode === 'blocks'
+    ? {
+      weekly_hours: derived.weeklyHours,
+      use_daily_schedule: true,
+      day_hours: derived.hours,
+      work_days_per_week: derived.workDays || formData.work_days_per_week,
+      blocks: formData.blocks,
+    }
+    : {
+      weekly_hours: formData.mode === 'days' ? daySum : formData.weekly_hours,
+      use_daily_schedule: formData.mode === 'days',
+      day_hours: dayValues,
+      work_days_per_week: formData.mode === 'days'
+        ? (plannedDays || formData.work_days_per_week)
+        : formData.work_days_per_week,
+      blocks: carriedBlocks,
+    };
+  // Ohne Stundenzählung bleiben die Blöcke aus dem Vergleich (P24) — außer das
+  // Altfenster wird ausdrücklich entfernt: das IST die Änderung (der Server
+  // vergleicht Blöcke immer), sonst bliebe „Fenster entfernen" unspeicherbar.
+  const compareBlocks = trackHours || removeLegacy;
   const snapshotUnchanged =
-    comparableSnapshot(inputSchedule) === comparableSnapshot(baselineSchedule);
+    comparableSnapshot(inputSchedule, compareBlocks) === comparableSnapshot(baselineSchedule, compareBlocks);
 
-  // Solange die Vorschau für ein rückwirkendes Datum noch lädt/fehlt, blockiert
-  // oder noch nicht bestätigt ist, bleibt „Hinzufügen" gesperrt — der Nutzer
-  // soll nicht ungeprüft in einen 400 laufen (blocked_reason) oder eine
-  // rückwirkende Änderung ohne die Vorschau gesehen zu haben speichern.
-  //
-  // Für ein Datum ab heute hängt die Sperre AUSSCHLIESSLICH an einem positiven
-  // Vorschau-Befund — bewusst nicht an `previewLoading`/`!preview`: fällt die
-  // Vorschau aus (Netzwerk, 5xx), bleibt das Anlegen einer normalen
-  // zukunftsdatierten Änderung wie bisher möglich, statt dauerhaft zu blockieren.
+  // Rückwirkend: Vorschau muss da und bestätigt sein. Ab heute sperrt ein
+  // positiver Befund — und das Laden: bis die Vorschau zur NEUEN Eingabe da
+  // ist, gilt noch die alte, und ein Enter direkt nach der Eingabe umginge
+  // sonst den Pflicht-Haken (9.4/12.1, der Server prüft ihn nicht). Fällt die
+  // Vorschau aus (Netzwerk, 5xx), endet das Laden und das Anlegen einer
+  // normalen zukunftsdatierten Änderung bleibt möglich.
   const saveDisabled =
     submitting ||
     !!blockedReason ||
+    !!blocksError ||
     snapshotUnchanged ||
-    (isRetroactive && (previewLoading || !preview || !confirmedRetroactive)) ||
-    // Fund 2: die Bestätigungspflicht hängt an der AUSWIRKUNG, nicht an ihrer
-    // Bauart — ein verschobener Urlaubsverbrauch wiegt so schwer wie eine
-    // umgeschriebene Abwesenheits-Stunde.
-    (!isRetroactive && (affectsBookedAbsences || affectsBalance) && !confirmedRetroactive);
+    // Option 1 erst mit ihrer eigenen Vorschau (auch wenn deren Datum heute ist).
+    (useLossless && (shownLoading || !shown)) ||
+    // P15/P26/11.4: Option 2 nur mit allen Pflichtangaben, nie in ein abgeschlossenes Jahr.
+    (needsReason && (!!closedText || !reasonComplete(reason))) ||
+    noteTooLong ||
+    (isRetroactive && (shownLoading || !shown || !confirmedRetroactive)) ||
+    (!isRetroactive && (shownLoading || (needsConfirmation && !confirmedRetroactive)));
 
   const setDayHours = (key: DayFieldKey, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: parseHours(value) }));
+  };
+
+  // Fund 3: Formular aus dem frisch geladenen Verlauf, nicht aus den Props —
+  // sonst spränge es auf den ALTEN Stand zurück, obwohl der Verlauf darunter
+  // schon den neuen zeigt. Nach dem Speichern UND nach dem Löschen.
+  const resetFormTo = (freshChanges: WorkingHoursChange[]) => {
+    setFormData(formFromSnapshot(scheduleAt(freshChanges, todayIso(), propsSchedule), todayIso(), trackHours));
+    setPreview(null);
+    setConfirmedRetroactive(false);
+    setReason(EMPTY_REASON);
+    setShorteningOption('lossless');
   };
 
   const handleAddHoursChange = async (e: React.FormEvent) => {
@@ -547,113 +599,72 @@ export default function WorkingHoursModal({
     setSubmitting(true);
     try {
       const res = await apiClient.post(`/admin/users/${userId}/working-hours-changes`, {
-        effective_from: formData.effective_from,
+        effective_from: sentDate,
         note: formData.note,
-        ...scheduleParams,
+        ...scheduleBody,
+        ...(needsReason ? reasonPayload(reason) : {}),
       });
+      // Review Task 20: ein offenes Lösch-Panel ist ab jetzt veraltet — seine
+      // Zeile ist evtl. nicht mehr die jüngste (12.1), und sein `reset_body`
+      // läge womöglich hinter der gerade gespeicherten Änderung und
+      // überschriebe deren Vertrag (F07, P25). Neu öffnen lädt eine frische
+      // `delete-preview`.
+      setDeleting(null);
       const freshChanges = await fetchHoursChanges();
       onChanged();
-      // Fund 3: der neue aktive Snapshot steht jetzt in `freshChanges` (die
-      // gerade gespeicherte Änderung eingeschlossen) — NICHT in den Props, die
-      // Users.tsx erst beim nächsten Öffnen des Dialogs neu übergibt. Ohne das
-      // sprang das Feld nach dem Speichern auf den ALTEN Wert zurück, obwohl
-      // der Verlauf darunter schon den neuen zeigte.
-      const active = scheduleAt(freshChanges, todayIso(), propsSchedule);
-      setFormData({
-        effective_from: todayIso(),
-        note: '',
-        weekly_hours: active.weekly_hours,
-        use_daily_schedule: active.use_daily_schedule,
-        ...dayFieldsFromSnapshot(active.day_hours),
-        work_days_per_week: active.work_days_per_week,
-      });
-      setPreview(null);
-      setConfirmedRetroactive(false);
-      // Task 7: adjusted_absences + warning aus der Antwort mit zurückmelden.
-      const created: { adjusted_absences?: number; warning?: string | null } = res.data ?? {};
-      let message = 'Stundenänderung erfolgreich hinzugefügt';
-      if (created.adjusted_absences) {
-        message += ` — ${created.adjusted_absences} Abwesenheit(en) auf das neue Tagessoll umgerechnet`;
-      }
-      toast.success(message);
-      if (created.warning) {
-        toast.warning(created.warning);
-      }
-    } catch (error: any) {
-      toast.error(getErrorMessage(error, 'Fehler beim Hinzufügen'));
+      resetFormTo(freshChanges);
+      const created: {
+        adjusted_time_entries?: number; skipped_time_entries?: number; adjusted_absences?: number;
+        warning?: string | null;
+      } = res.data ?? {};
+      toast.success(savedMessage(created));
+      showResponseWarning(toast, created);
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDeleteHoursChange = (changeId: string) => {
-    confirm({
-      title: 'Stundenänderung löschen',
-      message: 'Möchten Sie diese Stundenänderung wirklich löschen?',
-      confirmLabel: 'Löschen',
-      variant: 'danger',
-      onConfirm: async () => {
-        try {
-          const res = await apiClient.delete(`/admin/users/${userId}/working-hours-changes/${changeId}`);
-          await fetchHoursChanges();
-          onChanged();
-          toast.success('Stundenänderung erfolgreich gelöscht');
-          // I3: Berührt die Rückrechnung ein bereits abgeschlossenes Jahr,
-          // antwortet das Backend mit 200 + {warning} statt 204 ohne Body
-          // (Muster von delete_closure / Urlaubs-Storno). Bei 204 setzt axios
-          // data auf '' — der Objekt-Check fängt das ab.
-          const body = res?.data;
-          const warning = body && typeof body === 'object' ? (body as { warning?: string }).warning : undefined;
-          if (warning) {
-            toast.warning(warning);
-          }
-        } catch (error: unknown) {
-          // I4: Der Grund kommt vom Backend (z. B. „…verankert den davor
-          // gültigen Wert… bitte zuerst die späteren Änderungen löschen") —
-          // eine hardcodierte Meldung verschluckte ihn. Parität zum Anlegen.
-          toast.error(getErrorMessage(error, 'Fehler beim Löschen der Stundenänderung'));
-        }
-      },
-    });
+  // Fund 3 wie nach dem Speichern: das Formular zieht auf den frisch
+  // geladenen Stand nach — sonst stünde der gelöschte (bzw. zurückgesetzte)
+  // Wert als neue Änderung gegen den wieder gültigen Stand im Formular. Die
+  // Vorschau wird neu geholt: der Server-Stand hinter ihr hat sich geändert.
+  //
+  // Review Task 20: der Fokus geht an die Überschrift „Verlauf" — die Zeile ist
+  // weg bzw. nicht mehr die jüngste, die Überschrift steht immer. Gesetzt wird
+  // er VOR dem Abbau des Panels: fiele der fokussierte Knopf mit dem Panel aus
+  // dem Dokument, landete der Fokus auf `body` (bzw. holte focus-trap ihn an
+  // den Anfang des Dialogs).
+  const finishDelete = async () => {
+    historyHeadingRef.current?.focus();
+    setDeleting(null);
+    const freshChanges = await fetchHoursChanges();
+    onChanged();
+    resetFormTo(freshChanges);
+    setPreviewRetryToken((t) => t + 1);
   };
 
-  // #431: Tagessoll je Wochentag aus der Vorschau. Nur Tage, an denen VOR oder
-  // NACH der Änderung ein Soll steht — ein durchgehend freier Freitag sagt
-  // nichts. Bewusst nicht als „geplante Arbeitstage" beschriftet: im
-  // gleichmäßigen Modus trägt jeder der fünf Wochentage denselben Wert, so
-  // rechnet die Engine.
-  const dayTargetText = (() => {
-    const before = preview?.day_targets_current;
-    const after = preview?.day_targets_new;
-    if (!Array.isArray(before) || !Array.isArray(after)) return '';
-    const parts = DAY_FIELDS.map((f, i) => {
-      const cur = before[i] ?? 0;
-      const next = after[i] ?? 0;
-      if (cur <= 0 && next <= 0) return null;
-      return `${f.short} ${deHoursExact(cur)} → ${deHoursExact(next)}`;
-    }).filter((p): p is string => p !== null);
-    return parts.length ? `Tagessoll je Wochentag: ${parts.join(' · ')}` : '';
-  })();
+  // Abbrechen (Knopf oder Escape): zurück an den Papierkorb, der das Panel
+  // geöffnet hat — ebenfalls vor dem Abbau des Panels.
+  const cancelDelete = () => {
+    trashRef.current?.focus();
+    setDeleting(null);
+  };
 
-  // Ein zukunftsdatierter Wechsel liefert oft „12,5 → 12,5". Das ist korrekt —
-  // der Saldo-Stichtag (#313) liegt vor dem Wirkungsfenster — darf aber nicht
-  // als „keine Auswirkung" gelesen werden, während unten Abwesenheiten
-  // umgeschrieben werden.
+  // Ein zukunftsdatierter Wechsel liefert oft „12:30 → 12:30" — korrekt (der
+  // Saldo-Stichtag #313 liegt vor dem Wirkungsfenster), darf aber nicht als
+  // „keine Auswirkung" gelesen werden, während Abwesenheiten umgeschrieben werden.
+  // Nur dann: seit 9.4 öffnen auch neu gekappte Einträge (oder ein
+  // `blocked_reason`) den Kasten — ohne umgeschriebene Abwesenheit widerspräche
+  // der Satz der Zeile „0 Abwesenheit(en) betroffen." direkt darüber.
   const balanceUnchangedAhead =
-    !!preview && !isRetroactive && overtimeDelta === 0 && vacationDelta === 0;
-  const vacationYear = preview ? preview.period_start.slice(0, 4) : '';
+    !!shown && !isRetroactive && affectsBookedAbsences && overtimeDelta === 0 && vacationDelta === 0;
+  const displayBlocksLine = blocksLine(displaySchedule.blocks, trackHours);
+  const planNotices = preview?.block_break_notices ?? [];
 
   return (
     <>
-      <ConfirmDialog
-        isOpen={confirmState.isOpen}
-        title={confirmState.title}
-        message={confirmState.message}
-        confirmLabel={confirmState.confirmLabel}
-        variant={confirmState.variant}
-        onConfirm={handleConfirm}
-        onCancel={handleCancel}
-      />
       <div
         className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
         onClick={onClose}
@@ -672,28 +683,28 @@ export default function WorkingHoursModal({
             className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <div>
-                <h2 id="hours-modal-title" className="text-2xl font-bold text-gray-900">
-                  Wochenstunden &amp; Tagesplan
+            <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-start justify-between gap-3">
+              <div className="min-w-0 break-words">
+                <h2 id="hours-modal-title" className="text-xl sm:text-2xl font-bold text-gray-900">
+                  Arbeitszeit &amp; Wochenstunden
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  {userName} • Aktuell: {describeSchedule(displaySchedule)}
+                  {userName} • Aktuell: {describeSchedule(displaySchedule, trackHours)}
                 </p>
+                {displayBlocksLine && <p className="text-sm text-gray-600">{displayBlocksLine}</p>}
               </div>
               <button
                 onClick={onClose}
-                className="text-gray-500 hover:text-gray-700"
-                aria-label={`Wochenstunden & Tagesplan für ${userName} schließen`}
+                className="shrink-0 text-gray-500 hover:text-gray-700"
+                aria-label={`Arbeitszeit & Wochenstunden für ${userName} schließen`}
               >
                 <X size={24} />
               </button>
             </div>
 
-            <div className="p-6">
-              {/* Add New Change Form */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                <h3 className="font-semibold text-blue-900 mb-3">Neue Stundenänderung</h3>
+            <div className="p-4 sm:p-6">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4 mb-6">
+                <h3 className="font-semibold text-blue-900 mb-3">Neue Änderung</h3>
                 <form onSubmit={handleAddHoursChange} className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
@@ -716,6 +727,7 @@ export default function WorkingHoursModal({
                       <input
                         id="wh-note"
                         type="text"
+                        maxLength={NOTE_MAX_LENGTH}
                         value={formData.note}
                         onChange={(e) => setFormData({ ...formData, note: e.target.value })}
                         placeholder="z.B. Teilzeitänderung"
@@ -725,37 +737,39 @@ export default function WorkingHoursModal({
                   </div>
 
                   {/* #431: Modus-Umschalter. Der Wechsel selbst ist eine
-                      Vertragsänderung mit Wirkungsdatum — deshalb steht er
-                      hier und nicht mehr als Haken im Bearbeiten-Formular. */}
-                  <fieldset className="border border-blue-200 rounded-lg p-3 bg-white">
-                    <legend className="px-1 text-sm font-medium text-gray-700">
-                      Ab diesem Datum gilt
-                    </legend>
-                    <div className="flex flex-wrap gap-4 mb-3">
-                      <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="wh-mode"
-                          checked={!formData.use_daily_schedule}
-                          onChange={() => setFormData((prev) => ({ ...prev, use_daily_schedule: false }))}
-                          className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
-                        />
-                        Gleichmäßig
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="wh-mode"
-                          checked={formData.use_daily_schedule}
-                          onChange={() => setFormData((prev) => ({ ...prev, use_daily_schedule: true }))}
-                          className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
-                        />
-                        Nach Tagen
-                      </label>
+                      Vertragsänderung mit Wirkungsdatum. Spec 12.1/P24: den
+                      Block-Modus gibt es nur mit Stundenzählung. */}
+                  <fieldset className="border border-blue-200 rounded-lg p-3 bg-white min-w-0">
+                    <legend className="px-1 text-sm font-medium text-gray-700">Ab diesem Datum gilt</legend>
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 mb-3">
+                      {([
+                        ['even', 'Gleichmäßig'],
+                        ['days', 'Nach Tagen'],
+                        ...(trackHours ? [['blocks', 'Nach Arbeitsblöcken']] : []),
+                      ] as [Mode, string][]).map(([value, label]) => (
+                        <label key={value} className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="wh-mode"
+                            checked={formData.mode === value}
+                            onChange={() => setFormData((prev) => ({ ...prev, mode: value }))}
+                            className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
+                          />
+                          {label}
+                        </label>
+                      ))}
                     </div>
 
-                    {formData.use_daily_schedule ? (
-                      <div className="grid grid-cols-5 gap-2">
+                    {formData.mode === 'blocks' ? (
+                      <WorkBlocksEditor
+                        value={formData.blocks}
+                        onChange={(blocks) => setFormData((prev) => ({ ...prev, blocks }))}
+                        idPrefix="wh-blocks"
+                        plannedPresence={fixedMonthlyTarget}
+                      />
+                    ) : formData.mode === 'days' ? (
+                      // Handy: zwei Spalten statt fünf gequetschter Felder.
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                         {DAY_FIELDS.map((f) => (
                           <div key={f.key}>
                             <label htmlFor={`wh-${f.key}`} className="block text-xs font-medium text-gray-600 mb-1">
@@ -764,15 +778,7 @@ export default function WorkingHoursModal({
                             <input
                               id={`wh-${f.key}`}
                               type="number"
-                              // Fund C (Abschluss-Review #431): dieser Dialog ist
-                              // seit diesem Branch der EINZIGE Weg, die
-                              // Tagesstunden eines bestehenden Mitarbeiters zu
-                              // ändern. `step="0.5"` ließ die native
-                              // HTML-Validierung Viertelstunden (8,25) als
-                              // Schrittfehler abweisen — das Anlege-Formular
-                              // (`UserForm.tsx`, `f-hours-*`) erlaubt sie längst,
-                              // `Numeric(4,2)` trägt sie, und Handbuch/In-App-Hilfe
-                              // versprechen sie ausdrücklich.
+                              // Fund C (#431): Viertelstunden wie im Anlegeformular.
                               step="0.25"
                               min="0"
                               max="24"
@@ -783,10 +789,8 @@ export default function WorkingHoursModal({
                           </div>
                         ))}
                         {/* Die Wochensumme rechnet der Server aus denselben
-                            Werten (`check_mode`) — hier steht sie in derselben
-                            Schreibweise, damit Bildschirm und gespeicherte
-                            Zeile nie verschiedene Zahlen nennen. */}
-                        <p className="col-span-5 text-sm text-gray-700 mt-1">
+                            Werten (`check_mode`) — hier in derselben Schreibweise. */}
+                        <p className="col-span-full text-sm text-gray-700 mt-1">
                           → {deHoursExact(daySum)} h/Woche · {plannedDays}{' '}
                           {plannedDays === 1 ? 'Arbeitstag' : 'Arbeitstage'}
                         </p>
@@ -800,10 +804,7 @@ export default function WorkingHoursModal({
                           <input
                             id="wh-weekly-hours"
                             type="number"
-                            // Fund C: derselbe Schritt wie bei den Tagesfeldern —
-                            // sonst ließe „Gleichmäßig" andere Werte zu als
-                            // „Nach Tagen" (dessen Summe in 0,25er-Schritten
-                            // entsteht).
+                            // Fund C: derselbe Schritt wie bei den Tagesfeldern.
                             step="0.25"
                             value={formData.weekly_hours}
                             onChange={(e) => setFormData({ ...formData, weekly_hours: parseHours(e.target.value) })}
@@ -836,98 +837,136 @@ export default function WorkingHoursModal({
                     )}
                   </fieldset>
 
-                  {/* Task 7: Auswirkungs-Hinweis — VOR dem Speichern zeigen, was
-                      die Änderung anfasst (Zeitraum, Tagessoll je Wochentag,
-                      betroffene Abwesenheiten, Saldo/Urlaub vorher-nachher,
-                      abgeschlossenes Jahr), plus Blockade-Grund bzw.
-                      Bestätigungspflicht.
-                      Release-Review 1.17.0: auch bei einem Datum AB heute, sobald
-                      die Vorschau bereits gebuchte Abwesenheiten meldet. */}
+                  {/* Spec 4.4: Altfenster — Aktionen „umwandeln" / „entfernen". */}
+                  {baselineLegacy && formData.mode !== 'blocks' && (
+                    <div
+                      role="group"
+                      aria-labelledby="wh-legacy-title"
+                      className="rounded-lg border border-gray-300 bg-gray-50 p-3 text-sm break-words"
+                    >
+                      <p id="wh-legacy-title" className="font-medium text-gray-800">{LEGACY_BOX_TITLE}</p>
+                      <p className="text-gray-700 mt-1">{formatBlocksText(baselineSchedule.blocks)}</p>
+                      {/* Ohne Stundenzählung kappt das Fenster nichts
+                          (`work_window_service`: track_hours_off) — wie die
+                          Kopfzeile „ohne Wirkung", nie „kappt". */}
+                      <p className="text-gray-600 mt-1">
+                        {formData.remove_legacy_window
+                          ? trackHours
+                            ? `Das Fenster wird ab ${formatDate(sentDate)} entfernt; danach wird nicht mehr gekappt.`
+                            : `Das Fenster wird ab ${formatDate(sentDate)} entfernt.`
+                          : trackHours
+                            ? 'Bleibt mit dieser Änderung bestehen: kappt die erfasste Zeit, ändert das Tagessoll nicht.'
+                            : 'Bleibt mit dieser Änderung bestehen, ohne Wirkung (keine Stundenzählung): kappt nichts, ändert das Tagessoll nicht.'}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {trackHours && (
+                          <button
+                            type="button"
+                            onClick={() => setFormData((prev) => ({
+                              ...prev,
+                              mode: 'blocks',
+                              blocks: legacyToEditable(baselineSchedule.blocks ?? emptyWeek()),
+                              remove_legacy_window: false,
+                            }))}
+                            className="px-3 py-1 rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
+                          >
+                            In Arbeitszeit-Blöcke umwandeln
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          aria-pressed={formData.remove_legacy_window}
+                          onClick={() => setFormData((prev) => ({ ...prev, remove_legacy_window: !prev.remove_legacy_window }))}
+                          className="px-3 py-1 rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-100"
+                        >
+                          {formData.remove_legacy_window ? 'Fenster behalten' : 'Fenster entfernen'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* P24: Moduswechsel weg von Blöcken — vor dem Speichern nennen
+                      (bei track_hours=false bei JEDER Änderung, der Block-Modus
+                      wird dort nicht angeboten). */}
+                  {baselineNewBlocks && formData.mode !== 'blocks' && !snapshotUnchanged && (
+                    <p className="text-sm font-medium text-amber-800">
+                      {/* Gesendetes Datum: bei Option 1 des Verkürzungs-Kastens das verlustfreie. */}
+                      {modeSwitchHint(formatDate(sentDate))}
+                    </p>
+                  )}
+
+                  {/* Spec 12.1: Rechtshinweise fest unter dem Editor. */}
+                  <div className="space-y-1 text-xs text-gray-600">
+                    <p className="flex gap-1"><Info size={14} className="shrink-0 mt-0.5" aria-hidden="true" />{LEGAL_HINT}</p>
+                    <p className="flex gap-1"><Info size={14} className="shrink-0 mt-0.5" aria-hidden="true" />{JARBSCHG_HINT}</p>
+                  </div>
+
+                  {/* P9: Plan-Hinweise aus der Vorschau — nicht blockierend. */}
+                  {planNotices.length > 0 && (
+                    <ul aria-label="Hinweise zum Plan" className="list-disc pl-5 text-sm text-blue-900 space-y-0.5 break-words">
+                      {planNotices.map((n) => <li key={n}>{n}</li>)}
+                    </ul>
+                  )}
+
+                  {/* Spec 12.1: vor der Box, damit der Haken das letzte Element vor „Speichern" bleibt. */}
+                  {isShortening && preview && (
+                    <ShorteningChoice
+                      preview={preview}
+                      losslessText={losslessLabel(preview, todayIso())}
+                      retroText={retroLabel(formData.effective_from)}
+                      option={useLossless ? 'lossless' : 'retro'}
+                      onOptionChange={(o) => {
+                        setShorteningOption(o);
+                        setConfirmedRetroactive(false);
+                      }}
+                      closedText={closedText}
+                      reason={reason}
+                      onReasonChange={setReason}
+                      idPrefix="wh-short"
+                    />
+                  )}
+                  {noteTooLong && (
+                    <p role="alert" className="text-sm font-medium text-red-700">{NOTE_TOO_LONG}</p>
+                  )}
+
+                  {/* Auswirkungs-Box: VOR dem Speichern zeigen, was die Änderung
+                      anfasst, plus Blockade-Grund bzw. Bestätigungspflicht. */}
                   {showImpactBox && (
                     <div
                       role="status"
-                      className={`rounded-lg border p-3 text-sm ${
-                        blockedReason || previewError ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
+                      className={`rounded-lg border p-3 text-sm min-w-0 ${
+                        blockedReason || shownError ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
                       }`}
                     >
-                      {previewLoading ? (
+                      {shownLoading ? (
                         <p className="text-gray-600">Prüfe Auswirkungen…</p>
-                      ) : preview ? (
+                      ) : shown ? (
                         <>
+                          {/* Fund A (#431): `blockedReason` entscheidet die
+                              Überschrift vor allen anderen Gründen — gespeichert
+                              wird dann ohnehin nichts. */}
                           <p className="font-semibold text-amber-900">
-                            {/* Fund 2: „Betrifft bereits gebuchte
-                                Abwesenheiten" wäre falsch, wenn keine einzige
-                                umgeschrieben wird — die Auswirkung steckt dann
-                                allein in Saldo/Urlaub.
-                                Fund A (Abschluss-Review #431): `blockedReason`
-                                zeigt den Kasten unabhängig von `isRetroactive`
-                                (auch bei einem Datum AB heute, z. B. Datum
-                                bereits belegt) — und erzwingt dabei
-                                `affected_absences === 0` UND unveränderte
-                                Salden. Die alte Reihenfolge ließ in diesem Fall
-                                „Rückwirkende Änderung" (falsch, wenn das Datum
-                                in der Zukunft liegt) oder „Ändert Überstunden
-                                oder Urlaubsverbrauch" (falsch, weil nichts
-                                gespeichert wird) stehen. `blockedReason` muss
-                                deshalb VOR allen anderen Gründen entscheiden —
-                                der rote Text darunter nennt ohnehin schon den
-                                konkreten Grund. */}
                             {blockedReason
                               ? 'Änderung nicht möglich'
                               : isRetroactive
                                 ? 'Rückwirkende Änderung'
-                                : affectsBookedAbsences
-                                  ? 'Betrifft bereits gebuchte Abwesenheiten'
-                                  : 'Ändert Überstunden oder Urlaubsverbrauch'}:{' '}
-                            {formatDate(preview.period_start)} – {formatDate(preview.period_end)}
+                                : affectsEntries
+                                  ? 'Betrifft bereits erfasste Zeiteinträge'
+                                  : affectsBookedAbsences
+                                    ? 'Betrifft bereits gebuchte Abwesenheiten'
+                                    : 'Ändert Überstunden oder Urlaubsverbrauch'}:{' '}
+                            {formatDate(shown.period_start)} – {formatDate(shown.period_end)}
                           </p>
-                          {dayTargetText && (
-                            <p className="text-amber-800 mt-1">{dayTargetText}</p>
-                          )}
-                          <p className="text-amber-800">
-                            {preview.affected_absences} Abwesenheit(en) betroffen.
-                          </p>
-                          {!blockedReason && (
-                            <table className="mt-2 w-full text-amber-900">
-                              <thead>
-                                <tr className="text-xs uppercase text-amber-700">
-                                  <th scope="col" className="text-left font-medium">Auswirkung</th>
-                                  <th scope="col" className="text-right font-medium">bisher</th>
-                                  <th scope="col" className="text-right font-medium">neu</th>
-                                  <th scope="col" className="text-right font-medium">
-                                    <span aria-hidden="true">Δ</span>
-                                    <span className="sr-only">Änderung</span>
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                <tr>
-                                  <th scope="row" className="text-left font-medium">Überstunden</th>
-                                  <td className="text-right">{`${signed(preview.overtime_before)} h`}</td>
-                                  <td className="text-right">{`${signed(preview.overtime_after)} h`}</td>
-                                  <td className="text-right font-medium">{`${signed(overtimeDelta)} h`}</td>
-                                </tr>
-                                <tr>
-                                  {/* Die Urlaubszahlen gehören zum Jahr des
-                                      Wirkungszeitraums — ohne Jahreszahl liest
-                                      man sie als „dieses Jahr". */}
-                                  <th scope="row" className="text-left font-medium">{`Urlaub ${vacationYear}`}</th>
-                                  <td className="text-right">{`${deHoursExact(preview.vacation_days_before)} Tage`}</td>
-                                  <td className="text-right">{`${deHoursExact(preview.vacation_days_after)} Tage`}</td>
-                                  <td className="text-right font-medium">{`${signed(vacationDelta)} Tage`}</td>
-                                </tr>
-                              </tbody>
-                            </table>
-                          )}
+                          {!blockedReason && <WhImpactBox preview={shown} plannedPresence={fixedMonthlyTarget} />}
                           {balanceUnchangedAhead && (
                             <p className="text-amber-800 mt-1">
                               Saldo und Urlaub stehen auf dem Stand von heute — die Änderung
-                              wirkt erst ab dem {formatDate(formData.effective_from)}. Die oben
+                              wirkt erst ab dem {formatDate(sentDate)}. Die oben
                               genannten Abwesenheiten werden trotzdem umgeschrieben.
                             </p>
                           )}
-                          {preview.closed_year_warning && (
-                            <p className="text-amber-900 font-medium mt-1">{preview.closed_year_warning}</p>
+                          {shown.closed_year_warning && (
+                            <p className="text-amber-900 font-medium mt-1">{shown.closed_year_warning}</p>
                           )}
                           {blockedReason ? (
                             <p className="text-red-700 font-medium mt-2">{blockedReason}</p>
@@ -937,18 +976,15 @@ export default function WorkingHoursModal({
                                 type="checkbox"
                                 checked={confirmedRetroactive}
                                 onChange={(e) => setConfirmedRetroactive(e.target.checked)}
-                                className="w-4 h-4 text-amber-600 border-gray-300 rounded-sm focus:ring-amber-500"
+                                className="w-4 h-4 shrink-0 text-amber-600 border-gray-300 rounded-sm focus:ring-amber-500"
                               />
-                              Ich habe die Auswirkungen geprüft und möchte trotzdem speichern
+                              Ich habe die Auswirkungen geprüft und möchte speichern
                             </label>
                           )}
                         </>
-                      ) : previewError ? (
-                        // Fund 4 (Release-Review 1.17.0): vorher `: null` — ein
-                        // sichtbar leerer Kasten neben einem gesperrten
-                        // „Hinzufügen"-Button, ohne jede Begründung.
+                      ) : shownError ? (
                         <>
-                          <p className="text-red-700 font-medium">{previewError}</p>
+                          <p className="text-red-700 font-medium">{shownError}</p>
                           <button
                             type="button"
                             onClick={() => setPreviewRetryToken((t) => t + 1)}
@@ -961,9 +997,8 @@ export default function WorkingHoursModal({
                     </div>
                   )}
 
-                  {/* Ein gesperrter Button ohne Begründung ist genau der
-                      Fund-4-Fehler — der häufigste Grund ist der frisch
-                      geöffnete, mit dem aktuellen Stand vorbefüllte Dialog. */}
+                  {/* Ein gesperrter Knopf ohne Begründung ist genau der Fund-4-Fehler —
+                      der häufigste Grund ist der frisch geöffnete, vorbefüllte Dialog. */}
                   {snapshotUnchanged && !blockedReason && (
                     <p className="text-sm text-gray-600">
                       Noch nichts zu speichern — die Eingabe entspricht dem Stand, der
@@ -971,41 +1006,64 @@ export default function WorkingHoursModal({
                     </p>
                   )}
 
-                  <div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    >
+                      Abbrechen
+                    </button>
                     <button
                       type="submit"
                       disabled={saveDisabled}
-                      className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Plus size={18} />
-                      <span>Hinzufügen</span>
+                      <Save size={18} />
+                      <span>Speichern</span>
                     </button>
                   </div>
                 </form>
               </div>
 
-              {/* History List */}
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">Verlauf</h3>
+                <h3
+                  ref={historyHeadingRef}
+                  tabIndex={-1}
+                  className="font-semibold text-gray-900 mb-3 focus:outline-none"
+                >
+                  Verlauf
+                </h3>
+                {/* Spec 12.1: das Panel gehört immer zur jüngsten Zeile. */}
+                {deleting && deleting.id === youngestId && (
+                  <WhDeletePanel
+                    key={deleting.id}
+                    userId={userId}
+                    change={deleting}
+                    onCancel={cancelDelete}
+                    onDone={finishDelete}
+                    plannedPresence={fixedMonthlyTarget}
+                  />
+                )}
                 {hoursChanges.length === 0 ? (
                   <p className="text-gray-500 text-center py-8">Keine Änderungen vorhanden</p>
                 ) : (
                   <div className="space-y-3">
                     {hoursChanges.map((change) => {
                       const end = historyEndDates.get(change.id);
+                      const rowBlocks = blocksLine(Array.isArray(change.blocks) ? change.blocks : null, trackHours);
                       return (
                         <div
                           key={change.id}
-                          className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center justify-between"
+                          className="bg-gray-50 border border-gray-200 rounded-lg p-3 sm:p-4 flex items-start justify-between gap-3"
                         >
-                          <div>
+                          <div className="min-w-0 break-words">
                             <p className="font-medium text-gray-900">
                               Ab {formatDate(change.effective_from)} bis {end ? formatDate(end) : 'heute'}:{' '}
-                              {describeSchedule(scheduleFromChange(change, propsSchedule.work_days_per_week))}
+                              {describeSchedule(scheduleFromChange(change, propsSchedule.work_days_per_week), trackHours)}
                             </p>
-                            {change.note && (
-                              <p className="text-sm text-gray-600 mt-1">{change.note}</p>
-                            )}
+                            {rowBlocks && <p className="text-sm text-gray-700 mt-1">{rowBlocks}</p>}
+                            {change.note && <p className="text-sm text-gray-600 mt-1">{change.note}</p>}
                             <p className="text-xs text-gray-500 mt-1">
                               Erstellt: {new Date(change.created_at).toLocaleDateString('de-DE', {
                                 day: '2-digit',
@@ -1016,24 +1074,12 @@ export default function WorkingHoursModal({
                               })}
                             </p>
                           </div>
-                          {change.id === lockedEarliestId ? (
-                            // Der Titel sitzt am umschließenden <span>: ein
-                            // disabled <button> feuert keine Hover-Events, der
-                            // Tooltip käme dort nie an.
-                            <span title={LOCKED_EARLIEST_HINT} className="shrink-0">
-                              <button
-                                type="button"
-                                disabled
-                                aria-label="Löschen nicht möglich – früheste Stundenänderung"
-                                className="text-gray-300 cursor-not-allowed"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </span>
-                          ) : (
+                          {change.id === youngestId && (
                             <button
-                              onClick={() => handleDeleteHoursChange(change.id)}
-                              className="text-red-600 hover:text-red-800"
+                              ref={trashRef}
+                              type="button"
+                              onClick={() => setDeleting(change)}
+                              className="shrink-0 text-red-600 hover:text-red-800"
                               title="Löschen"
                             >
                               <Trash2 size={18} />
@@ -1049,11 +1095,16 @@ export default function WorkingHoursModal({
               <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-800">
                   <strong>Hinweis:</strong> Die Berechnungen von Soll-Stunden berücksichtigen automatisch die
-                  historischen Werte — bei „Gleichmäßig" <strong>und</strong> bei „Nach Tagen", auch über einen
-                  Moduswechsel hinweg. Wenn z.B. jemand ab 15.03. von 20h auf 30h wechselt, werden für den März
-                  die ersten 14 Tage mit 20h und ab dem 15. mit 30h berechnet. Bei „Nach Tagen" gilt das pro
-                  Wochentag: Ändert sich nur der Mittwochswert, rechnen nur die Mittwoch-Zeilen mit dem neuen
-                  Wert.
+                  historischen Werte — bei „Gleichmäßig", „Nach Tagen" <strong>und</strong> „Nach
+                  Arbeitsblöcken", auch über einen Moduswechsel hinweg. Bei „Nach Arbeitsblöcken" ist das
+                  Tagessoll die Gesamtzeit der Blöcke minus der Pause innerhalb der Blöcke; erfasste Zeit
+                  wird an den Blockrändern mit dem Puffer gekappt.
+                  {fixedMonthlyTarget && (
+                    <>
+                      {' '}Bei fester Monatsarbeitszeit sind diese Werte geplante Anwesenheit; das Monats-Soll
+                      bleibt die vereinbarte Monatsarbeitszeit.
+                    </>
+                  )}
                 </p>
               </div>
             </div>

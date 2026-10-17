@@ -839,6 +839,9 @@ class TestSurfacesShowTheDayPlan:
                 # Befund nicht (die Wochentage stehen dort namentlich da), das
                 # Feld sagt trotzdem die Wahrheit.
                 "work_days_changed": True,
+                # Spec 15.2: additiv — ohne Arbeitszeit-Blöcke `None`/`False`.
+                "blocks": None,
+                "blocks_changed": False,
             }]
         finally:
             test_app.dependency_overrides.clear()
@@ -868,6 +871,8 @@ class TestSurfacesShowTheDayPlan:
                 "day_hours": [8.0, 5.0, 4.0, None, None],
                 "work_days_per_week": 3,
                 "work_days_changed": True,  # 5 → 3, wie im Monatsbericht
+                "blocks": None,  # Spec 15.2, additiv
+                "blocks_changed": False,
             }]
         finally:
             test_app.dependency_overrides.clear()
@@ -975,6 +980,8 @@ class TestMonthlyReportApi:
                 # Arbeitstage bleiben — der Bildschirm schreibt denselben Satz
                 # wie vor diesem Branch.
                 "work_days_changed": False,
+                "blocks": None,  # Spec 15.2, additiv
+                "blocks_changed": False,
             }]
         finally:
             test_app.dependency_overrides.clear()
@@ -1011,6 +1018,8 @@ class TestMonthlyReportApi:
                 "day_hours": [None] * 5,
                 "work_days_per_week": 4,
                 "work_days_changed": True,
+                "blocks": None,  # Spec 15.2, additiv
+                "blocks_changed": False,
             }]
         finally:
             test_app.dependency_overrides.clear()

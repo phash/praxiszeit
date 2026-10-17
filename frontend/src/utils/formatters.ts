@@ -1,3 +1,6 @@
+import type { WeekBlocks } from '../types/workBlocks';
+import { formatBlocksText, isLegacyWeek } from './workBlocks';
+
 /**
  * Format decimal hours as H:MM (e.g. 6.5 → "6:30", 0.1 → "0:06", -1.5 → "-1:30").
  *
@@ -74,6 +77,10 @@ export interface WeeklyHoursChangeInPeriod {
    * beantworten. Fehlt das Feld (Altbestand), wird nichts behauptet.
    */
   work_days_changed?: boolean;
+  /** Spec 15.2: Blöcke des Segments und ob sie sich gegenüber dem vorhergehenden
+   * ändern (vom Server, `calculation_service.blocks_changed`). */
+  blocks?: WeekBlocks | null;
+  blocks_changed?: boolean;
 }
 
 const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr'];
@@ -128,6 +135,21 @@ export function formatDayPlan(dayHours?: (number | null)[] | null): string {
 }
 
 /**
+ * #496: Tage-Anzahl eines Abwesenheitsantrags — '1 Tag', '4 Tage', '0,5 Tage'.
+ *
+ * Seit #496 zählt der Server die Antrags-Tage nach der Buchungsregel (Tagesplan,
+ * Halbtag 0,5, halber Feiertag 0,5 — zusammen auch 0,25). Vorher kamen nur ganze
+ * Zahlen, und `${days} Tage` schrieb einen Bruch mit Dezimalpunkt. Höchstens
+ * zwei Nachkommastellen, deutsches Komma, Singular nur für genau einen Tag.
+ */
+export function formatDayCount(days: number): string {
+  if (!Number.isFinite(days)) return '? Tage';
+  const rounded = Math.round(days * 100) / 100;
+  const text = String(rounded).replace('.', ',');
+  return `${text} ${rounded === 1 ? 'Tag' : 'Tage'}`;
+}
+
+/**
  * ' auf 4 Arbeitstage' — aber nur, wenn diese Änderung die Arbeitstage
  * tatsächlich verschiebt (Leerstring sonst). Zwilling von
  * `export_service._work_days_suffix`; die Kurzform („4 Tage") gibt es nur in
@@ -147,7 +169,7 @@ function workDaysSuffix(change: WeeklyHoursChangeInPeriod): string {
  * Stundenzahl mitten im Monat, gilt diese Zahl nur für die erste Hälfte. Diese
  * Funktion rendert den Rest — Wortlaut und Format identisch zu
  * `export_service.format_weekly_hours_history`, damit Bildschirm und
- * Datei-Export dasselbe sagen:
+ * Datei-Export dasselbe sagen. Der Grundsatz richtet sich nach dem Modus:
  *
  * - gleichmäßig: `ab 15.03.2026: 20,0 Std/Woche`
  * - Tagesplan (#431): `ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche`
@@ -160,6 +182,24 @@ function workDaysSuffix(change: WeeklyHoursChangeInPeriod): string {
  * damit der eingefrorene #415-Wortlaut für jeden vor #431 möglichen Fall
  * zeichengleich bleibt.
  *
+ * Arbeitszeit-Blöcke (Spec 15.2) kommen NUR hinzu, wenn der Server
+ * `blocks_changed` meldet (`calculation_service.blocks_changed`: Blöcke oder
+ * Pausen gegenüber der vorherigen Zeile geändert); sonst bleibt der Satz
+ * byte-identisch zum Grundsatz — auch wenn nach Migration 073 jede
+ * Verlaufszeile dasselbe Altfenster trägt (E20). Drei Fälle:
+ *
+ * - neue Blöcke ERSETZEN den Grundsatz (samt Arbeitstage-Zusatz — die Blöcke
+ *   nennen die Tage selbst):
+ *   `ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–13:00 = 11,5 h/Woche`
+ * - ein Altfenster (Blöcke ohne Pausenangabe wie aus Migration 073 — kappt
+ *   nur, treibt kein Soll) wird an den Grundsatz angehängt:
+ *   `ab 01.09.2026: 40,0 Std/Woche · Mo 07:30–16:30 (nur Kappung)`
+ * - entfernte Blöcke werden an den Grundsatz angehängt:
+ *   `ab 01.10.2026: Mo 6,5 / Di 5,0 = 11,5 h/Woche · ohne Arbeitszeit-Blöcke`
+ *
+ * Der Bildschirm zeigt immer die Langform; die Kurzformen des Datei-Exports
+ * („P30", „4 Tage") stehen nur in der PDF-Meta und deshalb nicht hier.
+ *
  * Leerstring, wenn es im Zeitraum keine Änderung gab → die Aufrufer rendern
  * dann gar nichts und unveränderte Berichte sehen aus wie vorher.
  */
@@ -171,21 +211,31 @@ export function formatWeeklyHoursChanges(
     .map((c) => {
       const [y, m, d] = c.effective_from.split('-');
       const prefix = `ab ${d}.${m}.${y}: `;
+      let base: string | null = null;
       let suffix = '';
       if (c.use_daily_schedule) {
         const plan = formatDayPlan(c.day_hours);
-        if (plan) return `${prefix}${plan} = ${deHoursExact(c.weekly_hours)} h/Woche`;
+        if (plan) base = `${prefix}${plan} = ${deHoursExact(c.weekly_hours)} h/Woche`;
         // Kein einziger Tageswert → gleichmäßige Formulierung statt leerem
         // Satz, und ohne Arbeitstage-Zusatz: die Arbeitstage einer Zeile ohne
         // einen einzigen Tageswert sagen nichts (Zwilling:
-        // `export_service._format_segment_change`).
+        // `export_service._format_segment_change_base`).
       } else {
         suffix = workDaysSuffix(c);
       }
       // Auch hier verlustfrei (nicht `toFixed(1)`): für jeden vor #431
       // speicherbaren Wert zeichengleich zu #415, und nur so sagt der
       // Bildschirm bei 38,25 h dasselbe wie der Datei-Export.
-      return `${prefix}${deHoursExact(c.weekly_hours)} Std/Woche${suffix}`;
+      if (base === null) base = `${prefix}${deHoursExact(c.weekly_hours)} Std/Woche${suffix}`;
+      // Spec 15.2: Blöcke nur, wenn sie sich geändert haben (Befund vom
+      // Server) — Zwilling von export_service._format_segment_change. Neue
+      // Blöcke ersetzen den Satz, ein Altfenster und das Entfernen von Blöcken
+      // werden angehängt; ohne Blockänderung bleibt der Satz byte-identisch.
+      if (!c.blocks_changed) return base;
+      const spans = formatBlocksText(c.blocks);
+      if (!spans) return `${base} · ohne Arbeitszeit-Blöcke`;
+      if (isLegacyWeek(c.blocks)) return `${base} · ${spans} (nur Kappung)`;
+      return `${prefix}${spans} = ${deHoursExact(c.weekly_hours)} h/Woche`;
     })
     .join('; ');
 }

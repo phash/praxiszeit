@@ -39,6 +39,28 @@ const SHIFT_PLANNING_FLAG_OFF_SPEC = /admin[\\/]shift-planning-flag-off\.spec\.t
 const SHIFT_PLANNING_SPECS = /admin[\\/]shift-planning(?!-flag-off)[^\\/]*\.spec\.ts$/;
 const ALL_SHIFT_PLANNING_SPECS = /admin[\\/]shift-planning[^\\/]*\.spec\.ts$/;
 
+// Review Task 22 (Arbeitszeit-Blöcke), dasselbe Muster für den mandantenweiten
+// Puffer `work_window_grace_minutes`: grace-setting.spec.ts schaltet ihn für
+// einige Sekunden um, work-blocks.spec.ts rechnet seine erwarteten Werte mit
+// dem Puffer 15 (Anlegen und Neukappung lesen den AKTUELLEN Mandantenwert).
+// Im selben Projekt liefen beide Dateien bei `workers: 2` gleichzeitig — die
+// Puffer-Spec startet deshalb erst, wenn das ganze Projekt "chromium" fertig
+// ist.
+//
+// Gesamtreview 1.20 (B9): dasselbe galt für die Genehmigungspflicht
+// (`vacation_approval_required`, vacation-approvals.spec.ts, settings.spec.ts
+// und zwei Tests aus employee/absences.spec.ts), das Bundesland
+// (`holiday_state`, settings.spec.ts — löscht und erzeugt die Feiertage neu)
+// und den #314-Schalter (`closure_overtime_after_vacation`). Alle Specs, die
+// eine mandantenweite Einstellung umschalten, liegen jetzt in
+// tests/tenant-settings/ — Muster statt Dateiliste (#461 K-8): eine neue Spec
+// dort fällt automatisch ins Folgeprojekt. Das Projekt läuft erst nach
+// "chromium" und mit `workers: 1`: zwei seiner Dateien schalten sonst
+// gegeneinander (die Bundesland-Umschaltung neben einem Urlaubsantrag). Die
+// Genehmigungspflicht steht im Projekt "chromium" durchgehend auf dem Wert aus
+// global-setup.ts (`false`).
+const TENANT_SETTINGS_SPECS = /tests[\\/]tenant-settings[\\/][^\\/]*\.spec\.ts$/;
+
 export default defineConfig({
   testDir: './tests',
   timeout: 60_000,
@@ -65,7 +87,7 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { browserName: 'chromium' },
-      testIgnore: ALL_SHIFT_PLANNING_SPECS,
+      testIgnore: [ALL_SHIFT_PLANNING_SPECS, TENANT_SETTINGS_SPECS],
     },
     {
       name: 'shift-planning',
@@ -80,6 +102,20 @@ export default defineConfig({
       // Specs (Projekt "shift-planning") vollständig durchgelaufen sind —
       // siehe die Abwägung oben.
       dependencies: ['shift-planning'],
+    },
+    {
+      name: 'tenant-settings',
+      use: { browserName: 'chromium' },
+      testMatch: TENANT_SETTINGS_SPECS,
+      // Startet garantiert erst, nachdem das ganze Projekt "chromium"
+      // durchgelaufen ist, und fährt seine Dateien einzeln nacheinander —
+      // siehe TENANT_SETTINGS_SPECS oben. Nebenwirkung wie beim Flag-Aus-Test:
+      // ein Fehlschlag in "chromium" lässt diese Tests als "did not run" stehen.
+      // Die Schichtplanungs-Projekte laufen weiter daneben: keine dieser
+      // Einstellungen wirkt auf sie (der Generator liest Abwesenheiten, keine
+      // Feiertage, und die Specs buchen keinen Urlaub).
+      dependencies: ['chromium'],
+      workers: 1,
     },
   ],
 });

@@ -8,17 +8,19 @@ from typing import List, Optional
 from app.database import get_db
 from app.models import User, TimeEntry, TimeEntryAuditLog
 from app.middleware.auth import require_admin
-from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse, TimeEntryUpdate
+from app.schemas.time_entry import (
+    TimeEntryCreate, TimeEntryResponse, TimeEntryUpdate, assert_date_change_not_future,
+)
 from app.schemas.time_entry_audit_log import AuditLogResponse
-from app.routers.admin_helpers import _create_audit_log, _enrich_audit_response, _enrich_audit_responses
-from app.services.break_validation_service import validate_daily_break
+from app.routers.admin_helpers import _create_audit_log, _enrich_audit_response, _enrich_audit_responses, lock_user_row
+from app.services.break_validation_service import validate_daily_break, break_waiver_rejection
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_DAILY_HOURS_WARN, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
-    BREAK_WAIVER_SOURCE,
+    BREAK_WAIVER_SOURCE, _assert_within_employment_window,
 )
 from app.services.arbzg_utils import is_night_work
-from app.services import work_window_service
+from app.services import credit_override_service, presence_service, work_window_service
 from app.routers.absences import _MASKED_ABSENCE_TYPES
 from app.services.export_service import ABSENCE_TYPE_LABELS_DE
 
@@ -82,12 +84,24 @@ def admin_create_time_entry(
     if not user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 
+    # #502-Review: Parallelpfad zu ``create_time_entry`` — dasselbe
+    # Beschäftigungsfenster der Zielperson (nicht der Admin). Ein Eintrag vor
+    # dem ersten / nach dem letzten Arbeitstag fiele sonst still aus dem Ist
+    # (#195 fenstert die Ist-Seite).
+    _assert_within_employment_window(user, entry_data.date)
+
+    # P5: Ankersperre auf die Zielperson vor Puffer, Snapshot und clamp.
+    lock_user_row(db, current_user.tenant_id, user.id)
+
     # #201: Clamp start/end to the employee's soll window (grace from tenant setting).
     # The affected employee is `user`, NOT the admin (current_user).
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-    eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
+    # Spec 8.2: Lückensegmente für §4 aus DEMSELBEN Kappungslauf (Ultrareview 1.20).
+    _r, _segs = work_window_service.clamp_with_segments(
         db, user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
+        credit_override=False,
     )
+    eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
 
     # #375-Review: mirror the employee path's duplicate-start guard, BEFORE the
     # ArbZG aggregate checks. The admin per-day journal add is now available for
@@ -112,7 +126,7 @@ def admin_create_time_entry(
     # #462: Die Kappung darf nicht stumm passieren — genau der Fall, den der
     # Melder als "Rundung auf Viertelstunden" wahrgenommen hat.
     _clamp_warn = work_window_service.clamp_warning(
-        raw_start, raw_end, eff_start, eff_end, _grace,
+        db, user, entry_data.date, _r, for_employee=False,
     )
     if _clamp_warn:
         admin_create_warnings.append(_clamp_warn)
@@ -121,17 +135,23 @@ def admin_create_time_entry(
     if not user.exempt_from_arbzg:
         # Break validation (§4 ArbZG) — use clamped times
         break_error = validate_daily_break(
-            db=db, user_id=user.id, entry_date=entry_data.date,
+            db=db, user=user, entry_date=entry_data.date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            uncredited_segments=_segs,
+            tenant_id=current_user.tenant_id,
         )
         if break_error:
             # M-ARB3: parity with the employee path (#144) — a documented break
             # waiver lets the admin record the §4 deviation instead of being
             # hard-blocked. §3 (10h hard cap, below) is checked afterwards and
-            # is NOT waivable.
-            if not waiver_reason:
-                raise HTTPException(status_code=400, detail=break_error)
+            # is NOT waivable. #499: gilt nur, solange der Mandant die Ausnahme
+            # nicht abgeschaltet hat — dann auch für Admins nicht.
+            rejection = break_waiver_rejection(
+                db, current_user.tenant_id, break_error, waiver_reason,
+            )
+            if rejection:
+                raise HTTPException(status_code=400, detail=rejection)
             break_waiver_active = True
             admin_create_warnings.append(f"BREAK_WAIVER: {break_error}")
 
@@ -140,6 +160,7 @@ def admin_create_time_entry(
             db=db, user_id=user.id, entry_date=entry_data.date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            uncredited_minutes=_r.uncredited_minutes,
             tenant_id=current_user.tenant_id,
         )
         if daily_hours > MAX_DAILY_HOURS_HARD:
@@ -157,6 +178,7 @@ def admin_create_time_entry(
             db=db, user_id=user.id, entry_date=entry_data.date,
             start_time=eff_start, end_time=eff_end,
             break_minutes=entry_data.break_minutes,
+            uncredited_minutes=_r.uncredited_minutes,
             tenant_id=current_user.tenant_id,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
@@ -186,6 +208,10 @@ def admin_create_time_entry(
         break_waiver_reason=waiver_reason if break_waiver_active else None,
         raw_start_time=raw_start,
         raw_end_time=raw_end,
+        # Spec 7.1 Nr. 5 (E11): Lückenminuten immer serverseitig aus clamp().
+        uncredited_minutes=_r.uncredited_minutes,
+        # Spec E79/E80: Neuanlage merkt sich den aktuellen Puffer.
+        clamp_grace_minutes=_r.grace_minutes,
     )
     db.add(entry)
     db.flush()
@@ -199,6 +225,10 @@ def admin_create_time_entry(
 
     db.commit()
     db.refresh(entry)
+    # Spec 8.3/8.4 (P14, P22): weiche Anwesenheits-Warnungen für die Person.
+    admin_create_warnings.extend(presence_service.presence_warnings(
+        db, user, entry.date, break_check_passed=not break_waiver_active, entry=entry,
+    ))
     response = TimeEntryResponse.model_validate(entry)
     response.warnings = admin_create_warnings
     return response
@@ -212,6 +242,14 @@ def admin_update_time_entry(
     current_user: User = Depends(require_admin),
 ):
     """Admin updates a time entry with audit logging."""
+    # P5: Ankersperre (Eigentümer) VOR der Zeilensperre F-028 — feste
+    # Reihenfolge gegen Deadlocks (40P01 → 500).
+    _owner_id = db.query(TimeEntry.user_id).filter(
+        TimeEntry.id == entry_id,
+        TimeEntry.tenant_id == current_user.tenant_id,
+    ).scalar()
+    if _owner_id is not None:
+        lock_user_row(db, current_user.tenant_id, _owner_id)
     # F-028: lock the row so two concurrent admin edits can't race between
     # validation and apply — otherwise state-B is written while state-A was
     # validated.
@@ -233,6 +271,21 @@ def admin_update_time_entry(
         User.id == entry.user_id,
         User.tenant_id == current_user.tenant_id,
     ).first()
+    # Spec 8.2: §4 und die Lückensegmente brauchen die betroffene Person.
+    if affected_user is None:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+
+    # #502-Review: ein Datums**wechsel** landet nur im Beschäftigungsfenster der
+    # Person des Eintrags — wie in ``update_time_entry``. Diese Route ist die,
+    # über die AdminDashboard und Monatsjournal fremde Einträge tatsächlich
+    # bearbeiten. Das unverändert mitgeschickte Datum wird nicht geprüft
+    # (Alteintrag außerhalb eines später gesetzten Fensters bleibt korrigierbar).
+    # Ultrareview 1.20 (Fund 2): Zukunftsprüfung ebenso nur beim Datumswechsel.
+    assert_date_change_not_future(entry_data, entry.date)
+    if (entry_data.date is not None
+            and "date" in entry_data.model_fields_set
+            and entry_data.date != entry.date):
+        _assert_within_employment_window(affected_user, entry_data.date)
 
     # Use provided values or fall back to existing.
     # Release-Review 1.18.2: der Rückfallwert ist der ROHSTEMPEL, nicht die
@@ -251,9 +304,16 @@ def admin_update_time_entry(
         entry_data.start_time if entry_data.start_time is not None
         else (entry.raw_start_time or entry.start_time)
     )
+    # Entschieden 2026-10-11 (P18): der Rückfall für das ENDE ist das gespeicherte
+    # WIRKSAME Ende, nie das Rohende. ``end_input_for`` unten stellt daraus den
+    # Rohstempel wieder her (``unclamp_input`` — dasselbe Ergebnis wie der frühere
+    # Rückfall ``raw_end_time or end_time``, 1.18.2 bleibt gewahrt), beim
+    # automatisch geschlossenen Eintrag am selben Tag das Protokoll-23:59 und beim
+    # Verschieben das wirksame Ende. Das eingesetzte Rohende 23:59 hielt
+    # ``end_is_correction`` seit der Entscheidung für ein eingetragenes Ende —
+    # ein reiner Datums-PUT rechnete am Samstag wieder 15:00–23:59 an (F1).
     update_end_time = (
-        entry_data.end_time if entry_data.end_time is not None
-        else (entry.raw_end_time or entry.end_time)
+        entry_data.end_time if entry_data.end_time is not None else entry.end_time
     )
     update_break_minutes = entry_data.break_minutes if entry_data.break_minutes is not None else entry.break_minutes
 
@@ -261,10 +321,13 @@ def admin_update_time_entry(
     # `TimeEntryUpdate.validate_end_after_start` sieht nur den Payload — ein PUT mit
     # ausschliesslich `end_time` kommt daran vorbei, und der Router schrieb bisher
     # end < start durch; `net_hours` fiel dann still über den max(0,…)-Floor auf 0
-    # und der Tag verschwand aus Saldo und §16-Beleg.
+    # und der Tag verschwand aus Saldo und §16-Beleg. Ohne Ende im Payload prüft
+    # erst ``input_order_error`` unten die tatsächliche Kappungseingabe: das
+    # gespeicherte wirksame Ende eines gekappten Eintrags (Kollaps 19:00–19:00)
+    # ist kein Ende, gegen das eine Notiz-Korrektur scheitern darf.
     if (
         update_start_time is not None
-        and update_end_time is not None
+        and entry_data.end_time is not None
         and update_end_time <= update_start_time
     ):
         raise HTTPException(
@@ -282,19 +345,34 @@ def admin_update_time_entry(
     update_start_time = work_window_service.unclamp_input(
         update_start_time, entry.start_time, entry.raw_start_time,
     )
-    update_end_time = work_window_service.unclamp_input(
+    # PR1-Review F1 (P18): auch der Rückfall eines reinen Datums-PUT (wirksames
+    # Ende oben) läuft hier durch — beim Verschieben eines automatisch
+    # geschlossenen Eintrags gilt das wirksame Ende, ein eingetragenes 23:59 ist
+    # eine Korrektur (Entschieden 2026-10-11).
+    update_end_time = work_window_service.end_input_for(
         update_end_time, entry.end_time, entry.raw_end_time,
+        auto_closed=entry.auto_closed, prev_date=entry.date, target_date=update_date,
     )
+    # Die Prüfung oben sah die rohe Eingabe; ``end_input_for`` kann das Ende davor
+    # legen (verschobener Auto-Close-Eintrag, späterer Beginn) — gespeichert würde
+    # end < start mit net 0, ohne Warnung.
+    _order_error = work_window_service.input_order_error(
+        update_start_time, update_end_time, auto_closed=entry.auto_closed,
+    )
+    if _order_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_order_error)
 
     # #201: Clamp start/end to the affected employee's soll window.
     # Use `affected_user` (the employee whose entry this is), NOT current_user (admin).
-    _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-    if affected_user is not None:
-        eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-            db, affected_user, update_date, update_start_time, update_end_time, _grace,
-        )
-    else:
-        eff_start, eff_end, raw_start, raw_end = update_start_time, update_end_time, None, None
+    # E80: Einzel-Neukappung eines gespeicherten Eintrags (auch Datumswechsel)
+    # mit SEINEM Puffer; NULL (Bestand vor 073) → aktueller Mandanten-Puffer.
+    _grace = work_window_service.grace_for_entry(db, entry)
+    # Spec 8.2: Lückensegmente für §4 aus DEMSELBEN Kappungslauf (Ultrareview 1.20).
+    _r, _segs = work_window_service.clamp_with_segments(
+        db, affected_user, update_date, update_start_time, update_end_time, _grace,
+        credit_override=entry.credit_override,
+    )
+    eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
 
     # #375-Review: mirror the create-path duplicate-start guard (exclude self) —
     # editing start_time/date onto an existing sibling entry would otherwise hit
@@ -313,6 +391,14 @@ def admin_update_time_entry(
             detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum",
         )
 
+    # P18: VOR dem Überschreiben festhalten — ``entry.end_time`` trägt hier noch
+    # das gespeicherte wirksame Ende. Nur ein ANDERES Ende ist eine echte
+    # Korrektur; das Formular schickt das wirksame Ende sonst unverändert mit.
+    # Entschieden 2026-10-11: auch ein eingetragenes 23:59 (gleiche Regel wie
+    # MA-Route und Antragsgenehmigung).
+    _end_corrected = entry.auto_closed and entry_data.end_time is not None \
+        and work_window_service.end_is_correction(entry_data.end_time, entry.end_time)
+
     admin_update_warnings: list[str] = []
     # #462: wie im Anlege-Pfad — eine stille Aenderung fremder Arbeitszeit ist
     # das eigentliche Problem, nicht die Kappung selbst. Nur melden, wenn die
@@ -325,33 +411,81 @@ def admin_update_time_entry(
     # diesen Vergleich meldete jede Notiz- oder Pausenkorrektur erneut eine
     # Kappung, die laengst passiert ist — derselbe Laerm, den der Notiz-Gate
     # vermeiden sollte. ``entry.*`` traegt an dieser Stelle noch den gespeicherten
-    # Stand (geschrieben wird weiter unten).
+    # Stand (geschrieben wird weiter unten). Ein eingetragenes 23:59 trifft beim
+    # automatisch geschlossenen Eintrag dasselbe Rohende wie vorher — es ist aber
+    # jetzt ein Stempel statt einer Protokollzeile, die Kappung damit neu.
     _times_written = (
         entry_data.date is not None
         and entry_data.date != entry.date
     ) or update_start_time != (entry.raw_start_time or entry.start_time) \
-      or update_end_time != (entry.raw_end_time or entry.end_time)
+      or update_end_time != (entry.raw_end_time or entry.end_time) \
+      or _end_corrected
     if _times_written:
         _clamp_warn = work_window_service.clamp_warning(
-            raw_start, raw_end, eff_start, eff_end, _grace,
+            db, affected_user, update_date, _r, for_employee=False,
         )
         if _clamp_warn:
             admin_update_warnings.append(_clamp_warn)
     waiver_reason = (entry_data.break_waiver_reason or "").strip()
+    # Gesamtreview 1.20 (B1), wie ``update_time_entry``: die gespeicherte
+    # Begründung unverändert zurückgeschickt ist keine NEUE Ausnahme (kein 400
+    # bei abgeschalteter Ausnahme #499, keine erneute Dokumentation).
+    # ``entry.break_waiver_reason`` trägt hier noch den gespeicherten Stand.
+    _new_waiver = bool(waiver_reason) and waiver_reason != (
+        entry.break_waiver_reason or ""
+    ).strip()
     break_waiver_active = False
-    if not affected_user or not affected_user.exempt_from_arbzg:
+    # Gesamtreview 1.20 (B1): ändert die Bearbeitung nichts, was §3/§4 rechnen
+    # (Datum, angerechneter Beginn/Ende, Pause, nicht angerechnete Minuten),
+    # bleiben die HARTEN Prüfungen aus — ihr Ergebnis wäre das des gespeicherten
+    # Stands. Sonst scheiterte an einem anerkannten Eintrag über 10 h bzw. ohne
+    # §4-Pause (13.3, P4: dort nur weich) schon eine reine Notiz oder das
+    # unverändert gespeicherte Formular (400/422). Weiche Warnungen bleiben; ein
+    # unverändert bestehender §4-Befund wird nicht erneut gemeldet und
+    # unterdrückt wie sonst ``PRESENCE_BREAK`` (P14, ``break_check_passed``).
+    # Kommt eine neue Begründung mit, läuft §4 wie bisher (die Ausnahme zu
+    # dokumentieren ist eine §4-Änderung, Schalter #499 inklusive).
+    # Ultrareview 1.20 (Fund B): EINE Regel (``time_relevant_change``), gemessen
+    # am Stand, der unten GESPEICHERT wird — wie die MA-Route. Eine reine Notiz
+    # (ohne Datum/Zeit) schreibt die Zeiten nicht; der Vergleich mit der neu
+    # gekappten Zeit liess sie an einem Eintrag scheitern, dessen gespeicherte
+    # Kappung nicht mehr zum Snapshot passt. Dasselbe Gate wie das Schreiben unten.
+    _writes_start = entry_data.start_time is not None or entry_data.date is not None
+    _writes_end = entry_data.end_time is not None or entry_data.date is not None
+    _time_relevant_change = work_window_service.time_relevant_change(
+        entry,
+        date=update_date,
+        start=eff_start if _writes_start else entry.start_time,
+        end=eff_end if _writes_end else entry.end_time,
+        break_minutes=update_break_minutes,
+        uncredited_minutes=(
+            _r.uncredited_minutes if (_writes_start or _writes_end)
+            else entry.uncredited_minutes
+        ),
+    )
+    break_error = None
+    # Gesamtreview 1.20 (B1, Nachzug): §4, §3 (hart und weich), 48 h und §6
+    # rechnen mit einem Ende — ein laufender Eintrag (Ende fehlt im Payload)
+    # wird wie in ``update_time_entry`` nicht geprüft. Sonst endete schon eine
+    # Notiz an einem offenen Eintrag mit 500.
+    if not affected_user.exempt_from_arbzg and eff_end is not None:
         # Break validation (§4 ArbZG) — use clamped times
         break_error = validate_daily_break(
-            db=db, user_id=entry.user_id, entry_date=update_date,
+            db=db, user=affected_user, entry_date=update_date,
             start_time=eff_start, end_time=eff_end,
-            break_minutes=update_break_minutes, exclude_entry_id=entry.id,
+            break_minutes=update_break_minutes,
+            uncredited_segments=_segs, exclude_entry_id=entry.id,
+            tenant_id=current_user.tenant_id,
         )
-        if break_error:
+        if break_error and (_time_relevant_change or _new_waiver):
             # M-ARB3: parity with the employee path (#144) — documented waiver
             # records the §4 deviation instead of a hard 400. §3 (below) stays
-            # a hard cap.
-            if not waiver_reason:
-                raise HTTPException(status_code=400, detail=break_error)
+            # a hard cap. #499: Mandanten-Schalter beachten.
+            rejection = break_waiver_rejection(
+                db, current_user.tenant_id, break_error, waiver_reason,
+            )
+            if rejection:
+                raise HTTPException(status_code=400, detail=rejection)
             break_waiver_active = True
             admin_update_warnings.append(f"BREAK_WAIVER: {break_error}")
 
@@ -359,10 +493,12 @@ def admin_update_time_entry(
         daily_hours = _calculate_daily_net_hours(
             db=db, user_id=entry.user_id, entry_date=update_date,
             start_time=eff_start, end_time=eff_end,
-            break_minutes=update_break_minutes, exclude_entry_id=entry.id,
+            break_minutes=update_break_minutes,
+            uncredited_minutes=_r.uncredited_minutes,
+            exclude_entry_id=entry.id,
             tenant_id=current_user.tenant_id,
         )
-        if daily_hours > MAX_DAILY_HOURS_HARD:
+        if daily_hours > MAX_DAILY_HOURS_HARD and _time_relevant_change:
             raise HTTPException(
                 status_code=422,
                 detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
@@ -376,7 +512,9 @@ def admin_update_time_entry(
         weekly_hours = _calculate_weekly_net_hours(
             db=db, user_id=entry.user_id, entry_date=update_date,
             start_time=eff_start, end_time=eff_end,
-            break_minutes=update_break_minutes, exclude_entry_id=entry.id,
+            break_minutes=update_break_minutes,
+            uncredited_minutes=_r.uncredited_minutes,
+            exclude_entry_id=entry.id,
             tenant_id=current_user.tenant_id,
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
@@ -440,12 +578,66 @@ def admin_update_time_entry(
         entry.raw_start_time = raw_start
     if entry_data.end_time is not None or _times_affected:
         entry.raw_end_time = raw_end
+    # Spec 7.1 Nr. 6 (E11/E79): Lückenminuten und angewandter Puffer folgen dem
+    # geschriebenen Zeitpaar — dasselbe Gate wie start/end; eine reine Notiz-
+    # oder Pausenkorrektur lässt die gespeicherten Werte stehen, ein None-Puffer
+    # (Tag ohne Blöcke) ebenso.
+    if entry_data.start_time is not None or entry_data.end_time is not None or _times_affected:
+        entry.uncredited_minutes = _r.uncredited_minutes
+        if _r.grace_minutes is not None:
+            entry.clamp_grace_minutes = _r.grace_minutes
+    if _end_corrected:
+        entry.auto_closed = False  # P18: tatsächliches Ende eingetragen
 
     db.commit()
     db.refresh(entry)
 
+    # Spec 8.3/8.4 (P14, P22): weiche Anwesenheits-Warnungen für die Person —
+    # nur für geschlossene Einträge (``affected_user`` ist oben schon geprüft).
+    if entry.end_time is not None:
+        admin_update_warnings.extend(presence_service.presence_warnings(
+            db, affected_user, entry.date,
+            break_check_passed=break_error is None, entry=entry,
+        ))
+
     response = TimeEntryResponse.model_validate(entry)
     response.warnings = admin_update_warnings
+    return response
+
+
+@router.post("/time-entries/{entry_id}/credit-override", response_model=TimeEntryResponse)
+def admin_credit_override(
+    entry_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Spec 2026-10-08, 13.3 „Anerkennen": die gesamte gestempelte Zeit des
+    Eintrags wird angerechnet — dauerhaft, auch über spätere Neukappungen.
+    §3/§4/48 h und Anwesenheit nur als weiche Warnung (P4)."""
+    # 13.3 Schritt 1: Eigentümer ungesperrt lesen; unbekannt oder fremder
+    # Mandant → 404 VOR jeder Sperre (Spec 16.2 Nr. 8).
+    owner_id = db.query(TimeEntry.user_id).filter(
+        TimeEntry.id == entry_id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+    ).scalar()
+    if owner_id is None:
+        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
+    # P5: Anker VOR der Eintragszeile — dieselbe Reihenfolge wie jede Neukappung.
+    owner = lock_user_row(db, current_user.tenant_id, owner_id)
+    entry = credit_override_service.load_entry_locked(db, current_user.tenant_id, entry_id)
+    # Rückversicherung: zwischen Eigentümer-Lesen und Sperre gelöscht.
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
+    changed = credit_override_service.apply_credit_override(
+        db, entry, changed_by_id=current_user.id, on_request=False,
+    )
+    db.commit()
+    db.refresh(entry)
+    response = TimeEntryResponse.model_validate(entry)
+    # Idempotent (Schritt 2): ohne Änderung keine erneuten Warnungen.
+    response.warnings = (
+        credit_override_service.override_warnings(db, owner, entry) if changed else []
+    )
     return response
 
 

@@ -483,7 +483,7 @@ retention_days = 730                  # § 16 ArbZG: min. 2 Jahre!
 | `COOKIE_SECURE` | — | true | `false` für HTTP-only Erststart |
 | `CORS_ORIGINS` | — | `http://localhost,http://localhost:5173` | Komma-Liste erlaubter Origins |
 | `LOGIN_RATE_LIMIT` / `REFRESH_RATE_LIMIT` | — | `5/minute` / `10/minute` | Rate-Limits |
-| `PRACTICE_NAME` / `PRACTICE_ADDRESS` / `HOLIDAY_STATE` | — | „Praxis" / leer / Bayern | Excel-Export-Header + Feiertage |
+| `PRACTICE_NAME` / `PRACTICE_ADDRESS` / `HOLIDAY_STATE` | — | „Praxis" / leer / Bayern | Excel-Export-Header, Kopfzeile des Schichtplan-Aushangs (nur der Name) + Feiertage |
 | `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_FIRST_NAME` / `ADMIN_LAST_NAME` | ✅ (Email + Pwd) | admin / — / — / Admin / Praxis | Initial-Admin (nur Erststart) |
 | `GRAFANA_ADMIN_PASSWORD` | ✅ | — | Pflicht-Variable (sonst startet Stack nicht) |
 
@@ -561,6 +561,9 @@ systemctl status praxiszeit-backup.timer
 systemctl list-timers | grep praxiszeit
 # Manuell sofort: sudo systemctl start praxiszeit-backup.service
 ```
+macOS: statt des systemd-Timers ein LaunchDaemon (`de.praxiszeit.backup`, täglich
+03:00, Protokoll in `/usr/local/praxiszeit/logs/backup.log`):
+`sudo launchctl list | grep de.praxiszeit.backup`.
 
 Retention erhöhen für ArbZG-Konformität:
 ```toml
@@ -571,10 +574,15 @@ schedule = "02:00"
 retention_days = 730       # 2 Jahre
 ```
 
-Backup manuell triggern:
+Backup manuell triggern (die volle Form mit dem gebündelten Interpreter ist
+nötig: `praxiszeit-server.py` ist nicht ausführbar, und nur `bin/python` hat
+die Abhängigkeiten der Anwendung):
 ```bash
-# Linux/macOS
-sudo -u praxiszeit /opt/praxiszeit/praxiszeit-server.py backup
+# Linux
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py backup
+
+# macOS (Dienstkonto mit Unterstrich, anderer Installationsordner)
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py backup
 
 # Windows
 cd C:\PraxisZeit
@@ -599,19 +607,26 @@ crontab -e
 
 **Native (Windows):** `restore-backup.bat` aus dem Installer-Verzeichnis ausführen (fordert die Eingabe „LOESCHEN" zur Bestätigung).
 
-**Native (Linux/macOS):**
+**Native (Linux/macOS, ab 1.20.0):** Dienst anhalten, Backup mit dem
+Prozessmanager einspielen, Dienst wieder starten:
 ```bash
 sudo systemctl stop praxiszeit
-gunzip -c /opt/praxiszeit/data/backups/<dump>.sql.gz \
-  | sudo -u praxiszeit /opt/praxiszeit/bin/postgresql/bin/psql -d praxiszeit
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<datei>.sql.gz
 sudo systemctl start praxiszeit
 ```
+Erst dieser Start hebt ein Backup einer älteren Version per Migration auf den
+Stand der installierten Version. Scheitert das Einspielen, bleibt die bisherige
+Datenbank unverändert. macOS (`_praxiszeit`, `launchctl unload`/`load`) und
+Einzelheiten: [BACKUP.md → Restore → Native](BACKUP.md#restore-wiederherstellung).
 
-**Docker:**
+**Docker:** mit dem mitgelieferten Script (neben der `docker-compose.yml`; im
+git-Checkout `bash tools/docker/restore.sh …`):
 ```bash
-gunzip -c ~/backups/praxiszeit_20260214.sql.gz \
-  | docker compose exec -T db psql -U praxiszeit praxiszeit
+bash restore.sh ~/backups/praxiszeit_20260214.sql.gz
 ```
+Das Script hält das Backend an, legt die Datenbank frisch an, spielt das Backup
+ein und startet das Backend wieder — erst dieser Start migriert ein Backup einer
+älteren Version. Einzelheiten: [BACKUP.md → Restore → Docker](BACKUP.md#restore-wiederherstellung).
 
 ### 9.5 Compliance-Checkliste
 
@@ -625,6 +640,12 @@ gunzip -c ~/backups/praxiszeit_20260214.sql.gz \
 ---
 
 ## 10. Updates einspielen
+
+> **Vor jedem Update ein Backup ziehen** (Abschnitt 9). Vor dem Update auf **1.20.0**
+> ist das Pflicht: Die Migration `073_work_blocks` übernimmt die Arbeitszeit-Fenster
+> als Arbeitszeit-Blöcke und entfernt die alten Fenster-Spalten –
+> zurück auf 1.19.x geht es nur über dieses Backup. Alle Wege und was nach dem
+> Update zu prüfen ist: [UPDATE.md](UPDATE.md).
 
 ### 10.1 Native (alle Plattformen)
 
@@ -658,10 +679,12 @@ net start PraxisZeit
 cd ~/praxiszeit
 git pull
 docker compose down
+docker compose pull db                 # PostgreSQL-18-Patchstand (`up` zieht ihn nie neu)
+docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
 # Ohne SSL:
-docker compose up -d --build
+docker compose up -d
 # Mit SSL:
-docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 ```
 
 DB-Migrationen laufen automatisch beim Backend-Start (über den Superuser via `DATABASE_URL_MIGRATIONS`).
@@ -679,7 +702,7 @@ DB-Migrationen laufen automatisch beim Backend-Start (über den Superuser via `D
 1. `https://<server-ip>` (bzw. `http://...` ohne SSL) im Browser öffnen
 2. Login mit Admin-Daten aus Installer / `.env`
 3. **Pflicht:** Admin-Passwort sofort unter `Profil → Passwort ändern` neu setzen
-4. Praxis-Daten vervollständigen: `Einstellungen → Praxis`
+4. Praxis-Daten prüfen: Name und Anschrift stehen nicht in der Oberfläche, sondern in der Konfiguration – nativ `[practice] name`/`address` in `config/praxiszeit.conf` (Abschnitt 7.1), Docker `PRACTICE_NAME`/`PRACTICE_ADDRESS` in `.env` (Abschnitt 7.2); der Name erscheint u. a. in der Kopfzeile des Schichtplan-Aushangs. Änderungen gelten nach einem Neustart des Dienstes (Docker: `docker compose up -d`). Das Bundesland lässt sich zusätzlich unter `Einstellungen` (Karte „Feiertage") umstellen.
 5. Erste Mitarbeitenden anlegen: `Mitarbeiter → Neu`
 6. Wöchentliche Soll-Stunden, Urlaubsanspruch und Vertragsbeginn pro Person eintragen
 7. Test-Stempelung über `Stempeluhr` → kontrollieren, dass Eintrag in „Heute" erscheint

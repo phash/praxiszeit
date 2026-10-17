@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { format } from 'date-fns';
 import TimeTracking from './TimeTracking';
+import { useSystemStore } from '../stores/systemStore';
 
 // ---------------------------------------------------------------------------
 // U2 (Audit 2026-07-31): ein noch LAUFENDER Zeiteintrag (ohne Ende) galt als
@@ -29,10 +30,12 @@ vi.mock('../api/client', () => ({
 vi.mock('../contexts/ToastContext', () => ({
   useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
 }));
+// #502: Rolle je Test umschaltbar (Datumsfeld beim Bearbeiten nur fuer Admins).
+let mockRole: 'employee' | 'admin' = 'employee';
 vi.mock('../stores/authStore', () => ({
   useAuthStore: () => ({
     user: {
-      id: 'u1', role: 'employee', weekly_hours: 40, work_days_per_week: 5,
+      id: 'u1', role: mockRole, weekly_hours: 40, work_days_per_week: 5,
       exempt_from_arbzg: false,
     },
   }),
@@ -80,6 +83,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  mockRole = 'employee';
   getMock.mockReset();
   putMock.mockReset();
   postMock.mockReset();
@@ -129,5 +133,696 @@ describe('<TimeTracking /> laufender Eintrag (U2, Audit 2026-07-31)', () => {
     expect(putMock.mock.calls[0][1]).toMatchObject({
       start_time: '08:00', end_time: '16:00', break_minutes: 30,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #491 F4 (Review-Nachzug): auch die Direkteingabe „+ Neuer Eintrag" fragt an
+// einem gesetzlichen Feiertag unter der Woche (KV-Dienst an Christi
+// Himmelfahrt) nach dem §10-Ausnahmegrund — bisher nur an Sonntagen. Gleiche
+// Regel wie im Antragsformular und im Monatsjournal.
+// ---------------------------------------------------------------------------
+
+const ASCENSION = '2026-05-14'; // Donnerstag, Christi Himmelfahrt
+const SUNDAY = '2026-05-17';
+const THURSDAY_BEFORE = '2026-05-07';
+const REASON = /Ausnahmegrund/;
+
+function mockEntriesAndHolidays(entries: unknown[]) {
+  getMock.mockImplementation((url: string) => {
+    if (url.includes('/settings')) return Promise.resolve({ data: {} });
+    if (url.includes('/time-entries')) return Promise.resolve({ data: entries });
+    if (url.includes('/holidays')) {
+      return Promise.resolve({ data: [{ date: ASCENSION, name: 'Christi Himmelfahrt' }] });
+    }
+    return Promise.resolve({ data: [] });
+  });
+}
+
+async function openNewEntryWithDate(date: string) {
+  renderPage();
+  fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+  fireEvent.change(screen.getByLabelText('Datum'), { target: { value: date } });
+}
+
+describe('<TimeTracking /> §10-Ausnahmegrund bei der Direkteingabe (#491 F4)', () => {
+  it('zeigt das Feld an einem gesetzlichen Feiertag unter der Woche', async () => {
+    mockEntriesAndHolidays([]);
+    await openNewEntryWithDate(ASCENSION);
+    expect(await screen.findByLabelText(REASON)).toBeInTheDocument();
+    expect(getMock).toHaveBeenCalledWith('/holidays?year=2026');
+  });
+
+  it('zeigt das Feld weiterhin an einem Sonntag', async () => {
+    mockEntriesAndHolidays([]);
+    await openNewEntryWithDate(SUNDAY);
+    expect(await screen.findByLabelText(REASON)).toBeInTheDocument();
+  });
+
+  it('zeigt das Feld an einem normalen Werktag nicht', async () => {
+    mockEntriesAndHolidays([]);
+    await openNewEntryWithDate(THURSDAY_BEFORE);
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith('/holidays?year=2026'));
+    expect(screen.queryByLabelText(REASON)).not.toBeInTheDocument();
+  });
+
+  // Gesamtreview B6: das ausgeblendete Feld ging trotzdem mit — ein am Sonntag
+  // getippter Grund landete nach dem Wechsel auf einen Werktag im Eintrag, und
+  // beim Bearbeiten eines Werktags-Eintrags schickte das Formular immer '' mit.
+  it('schickt einen am Sonntag getippten Grund nach Wechsel auf einen Werktag nicht mit', async () => {
+    mockEntriesAndHolidays([]);
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    await openNewEntryWithDate(SUNDAY);
+    fireEvent.change(await screen.findByLabelText(REASON), { target: { value: 'Notdienst' } });
+    fireEvent.change(screen.getByLabelText('Datum'), { target: { value: THURSDAY_BEFORE } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '12:00' } });
+    await waitFor(() => expect(screen.queryByLabelText(REASON)).not.toBeInTheDocument());
+
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ date: THURSDAY_BEFORE });
+    expect(postMock.mock.calls[0][1]).not.toHaveProperty('sunday_exception_reason');
+  });
+
+  it('Kontrolle: am Sonntag geht der Grund mit', async () => {
+    mockEntriesAndHolidays([]);
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    await openNewEntryWithDate(SUNDAY);
+    fireEvent.change(await screen.findByLabelText(REASON), { target: { value: 'Notdienst' } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '12:00' } });
+
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ date: SUNDAY, sunday_exception_reason: 'Notdienst' });
+  });
+
+  it('lässt das Feld beim Bearbeiten eines Werktags-Eintrags weg (bleibt unverändert)', async () => {
+    mockEntriesAndHolidays([closedEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    expect(screen.queryByLabelText(REASON)).not.toBeInTheDocument();
+
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).not.toHaveProperty('sunday_exception_reason');
+  });
+
+  it('fragt die Feiertage erst ab, wenn das Formular offen ist', async () => {
+    mockEntriesAndHolidays([]);
+    renderPage();
+    await screen.findByRole('button', { name: /Neuer Eintrag/ });
+    expect(getMock.mock.calls.some(([url]) => String(url).includes('/holidays'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #499: Mandanten-Schalter für „Pflicht-Pause war nicht möglich". Aus → die
+// Checkbox erscheint gar nicht erst; der §4-Hinweis bleibt eine harte Sperre.
+// ---------------------------------------------------------------------------
+describe('<TimeTracking /> Pflicht-Pause-Ausnahme (#499)', () => {
+  async function editWithoutBreak() {
+    mockEntries([closedEntry]); // 08:00–16:00
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    fireEvent.change(screen.getByLabelText('Pause (Min.)'), { target: { value: '0' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+  }
+
+  it('bietet die Checkbox an, solange die Ausnahme erlaubt ist (Default)', async () => {
+    useSystemStore.setState({ info: { deployment_mode: 'onprem', version: '' }, isLoaded: true });
+    await editWithoutBreak();
+    expect(await screen.findByText('Pflicht-Pause war nicht möglich')).toBeInTheDocument();
+    expect(putMock).not.toHaveBeenCalled();
+  });
+
+  it('blendet die Checkbox aus und nennt den Grund, wenn die Praxis sie abgeschaltet hat', async () => {
+    useSystemStore.setState({
+      info: { deployment_mode: 'onprem', version: '', break_exception_allowed: false },
+      isLoaded: true,
+    });
+    await editWithoutBreak();
+    expect(await screen.findByText(/mind\. 30 Min\. Pause/)).toBeInTheDocument();
+    expect(screen.getByText(/in dieser Praxis abgeschaltet/)).toBeInTheDocument();
+    expect(screen.queryByText('Pflicht-Pause war nicht möglich')).not.toBeInTheDocument();
+    expect(putMock).not.toHaveBeenCalled();
+  });
+
+  // Gesamtreview 1.20 (B1): ändert die Bearbeitung weder Datum, Beginn, Ende
+  // noch Pause, prüft der Server §4 nicht hart — die Vorprüfung auch nicht.
+  // Sonst sperrte schon eine Notiz an einem Eintrag ohne Pflicht-Pause.
+  const noBreakEntry = { ...closedEntry, break_minutes: 0, net_hours: 8 }; // 08:00–16:00
+
+  async function editNoteOnly() {
+    mockEntries([noBreakEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    fireEvent.change(screen.getByLabelText('Notiz'), { target: { value: 'neu' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+  }
+
+  it('speichert eine reine Notiz an einem Eintrag ohne Pflicht-Pause, auch wenn die Ausnahme abgeschaltet ist', async () => {
+    useSystemStore.setState({
+      info: { deployment_mode: 'onprem', version: '', break_exception_allowed: false },
+      isLoaded: true,
+    });
+    await editNoteOnly();
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).toMatchObject({ note: 'neu', break_minutes: 0 });
+    expect(screen.queryByText(/in dieser Praxis abgeschaltet/)).not.toBeInTheDocument();
+  });
+
+  it('speichert eine reine Notiz ohne erneute §4-Abfrage, solange die Ausnahme erlaubt ist', async () => {
+    useSystemStore.setState({ info: { deployment_mode: 'onprem', version: '' }, isLoaded: true });
+    await editNoteOnly();
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).not.toHaveProperty('break_waiver_reason');
+  });
+
+  it('Kontrolle: eine geänderte Zeit wird an demselben Eintrag weiter geprüft', async () => {
+    useSystemStore.setState({
+      info: { deployment_mode: 'onprem', version: '', break_exception_allowed: false },
+      isLoaded: true,
+    });
+    mockEntries([noBreakEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '16:30' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    expect(await screen.findByText(/in dieser Praxis abgeschaltet/)).toBeInTheDocument();
+    expect(putMock).not.toHaveBeenCalled();
+  });
+
+  it('schickt eine vorhandene Begründung nicht mit, wenn die Ausnahme abgeschaltet ist', async () => {
+    useSystemStore.setState({
+      info: { deployment_mode: 'onprem', version: '', break_exception_allowed: false },
+      isLoaded: true,
+    });
+    mockEntries([{ ...closedEntry, break_waiver_reason: 'Altfall' }]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).not.toHaveProperty('break_waiver_reason');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #502: Mitarbeitende verschieben einen Eintrag nicht ueber das Datumsfeld des
+// Bearbeiten-Formulars auf einen anderen Tag — der Server lehnt das mit 403 ab
+// (Einträge vergangener Tage nur per Änderungsantrag). Das Feld ist beim
+// Bearbeiten deshalb gesperrt und sagt, warum; Admins behalten es.
+// ---------------------------------------------------------------------------
+describe('<TimeTracking /> Datum beim Bearbeiten (#502)', () => {
+  // #502-Review: der Hinweis muss einen Weg nennen, den es fuer DIESEN Eintrag
+  // gibt. Gesperrt ist das Feld nur bei heutigen (bearbeitbaren) Eintraegen —
+  // deren Zeile bietet nur Bearbeiten/Loeschen, der Zeilen-Knopf
+  // „Änderungsantrag" erscheint erst auf gesperrten Zeilen. Der tatsaechliche
+  // Weg: Eintrag loeschen + oben ueber „Antrag" den vergangenen Tag beantragen.
+  const HINT = /Eintrag löschen und oben über „Antrag“/;
+
+  it('sperrt das Datumsfeld beim Bearbeiten fuer Mitarbeitende und nennt den Weg', async () => {
+    mockEntries([closedEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+
+    const dateInput = screen.getByLabelText('Datum') as HTMLInputElement;
+    expect(dateInput.disabled).toBe(true);
+    expect(dateInput.value).toBe(today);
+    const hint = screen.getByText(HINT);
+    expect(dateInput.getAttribute('aria-describedby')).toBe(hint.id);
+    // Der genannte Weg existiert: Knopf „Antrag" oben, Loeschen in der Zeile —
+    // und KEIN Zeilen-Änderungsantrag, auf den ein anderer Wortlaut verwiese.
+    expect(screen.getByTitle('Antrag für vergangenen Tag stellen')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Eintrag vom .* löschen/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Änderungsantrag für/)).not.toBeInTheDocument();
+  });
+
+  it('beschriftet den genannten Knopf „Antrag" auf jeder Breite', async () => {
+    // #502-Review: der Hinweis verweist auf den Knopf über seine Beschriftung.
+    // Unter 640 px stand dort bis dahin nur das Symbol (`hidden sm:inline`) —
+    // wer am Handy einen Knopf „Antrag" suchte, fand keinen. jsdom wendet kein
+    // CSS an, deshalb prüft der Test die Klassen zwischen Text und Knopf.
+    mockEntries([]);
+    renderPage();
+    const button = await screen.findByRole('button', { name: 'Antrag' });
+    const label = within(button).getByText('Antrag');
+    for (let el: HTMLElement | null = label; el && el !== button.parentElement; el = el.parentElement) {
+      expect(el.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    }
+  });
+
+  it('schickt beim Speichern weiterhin das heutige Datum mit', async () => {
+    mockEntries([closedEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).toMatchObject({ date: today });
+  });
+
+  it('laesst das Datumsfeld beim NEUEN Eintrag offen', async () => {
+    mockEntries([]);
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    expect((screen.getByLabelText('Datum') as HTMLInputElement).disabled).toBe(false);
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+  });
+
+  it('laesst Admins das Datum beim Bearbeiten aendern', async () => {
+    mockRole = 'admin';
+    mockEntries([closedEntry]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    expect((screen.getByLabelText('Datum') as HTMLInputElement).disabled).toBe(false);
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+  });
+});
+
+describe('<TimeTracking /> RawStampNote (Spec 13.1)', () => {
+  it('Tabelle und Mobilkarte nutzen dieselbe Komponente', async () => {
+    mockEntries([{
+      ...closedEntry, start_time: '07:45:00', raw_start_time: '07:37:00', not_credited_minutes: 8,
+    }]);
+    renderPage();
+    expect(await screen.findAllByText('gestempelt 07:37 · angerechnet ab 07:45')).toHaveLength(2);
+  });
+
+  // Die alte Inline-Kopie der Mobilkarte kannte nur die Hüllen-Zeilen — die
+  // Lückenzeile beweist, dass auch die Karte die Komponente nutzt.
+  it('Lückenzeile in Tabelle UND Mobilkarte', async () => {
+    mockEntries([{
+      ...closedEntry, start_time: '08:00:00', end_time: '18:00:00', break_minutes: 0, net_hours: 7.5,
+      uncredited_minutes: 150, not_credited_minutes: 150,
+    }]);
+    renderPage();
+    expect(await screen.findAllByText(
+      'gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet',
+    )).toHaveLength(2);
+  });
+});
+
+describe('<TimeTracking /> Anrechnung beantragen und anerkannte Einträge (Spec P21, P3)', () => {
+  const past = {
+    ...closedEntry, id: 'te-past', date: '2026-06-01', is_editable: false,
+    start_time: '07:45:00', end_time: '18:15:00', raw_start_time: '07:00:00', raw_end_time: '19:00:00',
+    break_minutes: 0, net_hours: 8, uncredited_minutes: 150, not_credited_minutes: 240,
+    credit_override: false, auto_closed: false,
+  };
+
+  it('öffnet an einem vergangenen Eintrag den Antrag mit den Rohstempeln', async () => {
+    mockEntries([past]);
+    renderPage();
+    const [button] = await screen.findAllByRole('button', { name: 'Anrechnung beantragen' });
+    fireEvent.click(button);
+    expect(await screen.findByRole('heading', { name: 'Änderungsantrag: Anrechnung beantragen' })).toBeInTheDocument();
+    expect((screen.getByLabelText('Von') as HTMLInputElement).value).toBe('07:00');
+  });
+
+  // Gesamtreview PR2 (Fund 1): der Lückentext an clock_out/create/update —
+  // für Mitarbeitende immer der HEUTIGE Eintrag — verweist auf diese Aktion;
+  // der Server nimmt den Antrag für den heutigen, geschlossenen Eintrag an.
+  it('heutige geschlossene Einträge bieten die Aktion an (Fund 1)', async () => {
+    mockEntries([{ ...past, date: today, is_editable: true }]);
+    renderPage();
+    const [button] = await screen.findAllByRole('button', { name: 'Anrechnung beantragen' });
+    fireEvent.click(button);
+    expect(await screen.findByRole('heading', { name: 'Änderungsantrag: Anrechnung beantragen' })).toBeInTheDocument();
+    expect((screen.getByLabelText('Datum') as HTMLInputElement).value).toBe(today);
+  });
+
+  it('der laufende Eintrag von heute bietet die Aktion nicht an (erst nach dem Ausstempeln)', async () => {
+    mockEntries([{ ...past, date: today, is_editable: true, end_time: null, raw_end_time: null, uncredited_minutes: 0 }]);
+    renderPage();
+    await screen.findAllByText(/gestempelt 07:00 · angerechnet ab 07:45/);
+    expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
+  });
+
+  // Spec 6.2/13.1: die Aktion hängt an der eigenen Ansicht, nicht an der Rolle.
+  // Die Lückentexte der Mitarbeiterpfade (clock_out, create_time_entry) weisen
+  // auch Admins, die selbst Zeit erfassen, auf „Zeiterfassung → Eintrag →
+  // „Anrechnung beantragen"" hin — wie das Monatsjournal (isAdminView=false).
+  it('Admins sehen die Aktion an eigenen vergangenen Einträgen (Spec 6.2, 13.1)', async () => {
+    mockRole = 'admin';
+    mockEntries([{ ...past, is_editable: true }]);
+    renderPage();
+    const [button] = await screen.findAllByRole('button', { name: 'Anrechnung beantragen' });
+    fireEvent.click(button);
+    expect(await screen.findByRole('heading', { name: 'Änderungsantrag: Anrechnung beantragen' })).toBeInTheDocument();
+  });
+
+  it('Admins: an eigenen heutigen, geschlossenen Einträgen ebenso (Fund 1)', async () => {
+    mockRole = 'admin';
+    mockEntries([{ ...past, date: today, is_editable: true }]);
+    renderPage();
+    expect((await screen.findAllByRole('button', { name: 'Anrechnung beantragen' })).length).toBeGreaterThan(0);
+  });
+
+  it('anerkannter Eintrag eines vergangenen Tages: kein direktes Bearbeiten, nur Antrag', async () => {
+    mockEntries([{ ...closedEntry, date: '2026-06-01', is_editable: false, credit_override: true }]);
+    renderPage();
+    await screen.findAllByLabelText(/Änderungsantrag für/);
+    expect(screen.queryByLabelText(/bearbeiten/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Löschantrag für/)).toBeInTheDocument();
+    // Mobilkarte: auch dort kein „Bearbeiten", sondern „Ändern" per Antrag.
+    expect(screen.queryByRole('button', { name: /bearbeiten/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ändern/ })).toBeInTheDocument();
+  });
+
+  // P3 + Ultrareview 1.20 (Fund 1): direktes PUT/DELETE → 409, Änderungs- und
+  // Löschantrag nimmt der Server für den heute anerkannten Eintrag an —
+  // Antragsknöpfe plus Hinweis statt einer Sackgasse bis morgen.
+  it('anerkannter Eintrag von heute: kein Bearbeiten, aber Anträge und Hinweis', async () => {
+    mockEntries([{ ...closedEntry, credit_override: true }]);
+    renderPage();
+    expect(await screen.findAllByText(
+      'Anerkannter Eintrag – Änderung per Änderungsantrag oder über die Verwaltung',
+    )).toHaveLength(2);
+    expect(screen.queryByLabelText(/bearbeiten/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Eintrag vom .* löschen/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Änderungsantrag für/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Löschantrag für/)).toBeInTheDocument();
+    // Mobilkarte: „Ändern"/„Löschen" per Antrag, kein „Bearbeiten".
+    expect(screen.queryByRole('button', { name: /Bearbeiten/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ändern/ })).toBeInTheDocument();
+  });
+
+  it('Kontrolltest: Admins bearbeiten einen anerkannten Eintrag weiter direkt (P3)', async () => {
+    mockRole = 'admin';
+    mockEntries([{ ...closedEntry, credit_override: true }]);
+    renderPage();
+    expect(await screen.findByLabelText(/bearbeiten/i)).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P18, Entschieden 2026-10-11 (Produktinhaber): ein echtes Ende 23:59 ist bei
+// einem automatisch geschlossenen Eintrag eintragbar — der Server wertet jedes
+// Ende außer dem gespeicherten wirksamen als Korrektur. Voraussetzung: kein
+// Formular legt das Rohende 23:59 ins Feld, beide zeigen und schicken das
+// WIRKSAME Ende (hier 18:15).
+// ---------------------------------------------------------------------------
+describe('<TimeTracking /> automatisch geschlossene Einträge (P18)', () => {
+  const autoClosed = {
+    ...closedEntry, id: 'te-auto', start_time: '08:00:00', end_time: '18:15:00',
+    raw_start_time: null, raw_end_time: '23:59:00', break_minutes: 45, net_hours: 9.5,
+    uncredited_minutes: 0, not_credited_minutes: 0, credit_override: false, auto_closed: true,
+  };
+
+  it('Änderungsantrag (vergangener Tag): „Bis" = wirksames Ende, gesendet wird 18:15', async () => {
+    postMock.mockResolvedValue({ data: {} });
+    mockEntries([{ ...autoClosed, date: '2026-06-01', is_editable: false }]);
+    renderPage();
+    fireEvent.click((await screen.findAllByLabelText(/Änderungsantrag für/))[0]);
+    await screen.findByRole('heading', { name: /Änderungsantrag/ });
+    expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('18:15');
+    fireEvent.change(screen.getByPlaceholderText('Warum ist diese Änderung notwendig?'), {
+      target: { value: 'Pause nachgetragen' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Antrag stellen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ proposed_end_time: '18:15' });
+  });
+
+  it('Bearbeiten: „Bis" = wirksames Ende, der PUT schickt 18:15 (nie das Rohende 23:59)', async () => {
+    mockRole = 'admin';
+    mockEntries([autoClosed]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('18:15');
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).toMatchObject({ start_time: '08:00', end_time: '18:15' });
+  });
+});
+
+describe('<TimeTracking /> Blöcke von heute (Spec 8.4, 14)', () => {
+  const BLOCKS = [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }];
+
+  function mockWithBlocks(entries: unknown[]) {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') {
+        return Promise.resolve({ data: { is_clocked_in: false, blocks_today: BLOCKS, grace_minutes: 15 } });
+      }
+      if (url.includes('/settings')) return Promise.resolve({ data: {} });
+      if (url.includes('/time-entries')) return Promise.resolve({ data: entries });
+      return Promise.resolve({ data: [] });
+    });
+  }
+
+  it('belegt Von/Bis neuer Einträge aus den heutigen Blöcken vor', async () => {
+    mockWithBlocks([]);
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Von') as HTMLInputElement).value).toBe('08:00'));
+    expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('18:00');
+  });
+
+  it('verlangt keine Pause und setzt keine automatische Pause, wenn die Lücke §4 deckt (E45)', async () => {
+    mockWithBlocks([]);
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('18:00'));
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '08:00', end_time: '18:00', break_minutes: 0 });
+  });
+
+  // Gesamtreview PR2 (Fund 13): Altfenster 08:00–13:30, Puffer 15. Eingetragen
+  // 07:45–14:30 = 6:45 h brutto, angerechnet 07:45–13:45 = 6:00 h — der Server
+  // prüft §4 darauf (E43) und braucht keine Pause. Weder Hinweis noch die
+  // automatische 30-Min-Pause (sie kostete 30 Min angerechnete Zeit).
+  it('Altfenster: §4 und automatische Pause rechnen mit der gekappten Zeit', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') {
+        return Promise.resolve({ data: { is_clocked_in: false, blocks_today: [{ start: '08:00', end: '13:30' }], grace_minutes: 15 } });
+      }
+      if (url.includes('/settings')) return Promise.resolve({ data: {} });
+      if (url.includes('/time-entries')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [] });
+    });
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('13:30'));
+    fireEvent.change(screen.getByLabelText('Von'), { target: { value: '07:45' } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '14:30' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '07:45', end_time: '14:30', break_minutes: 0 });
+    expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
+  });
+
+  it('Kontrolle: angerechnet über 6 h bleibt der §4-Hinweis', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') {
+        return Promise.resolve({ data: { is_clocked_in: false, blocks_today: [{ start: '08:00', end: '15:00' }], grace_minutes: 15 } });
+      }
+      if (url.includes('/settings')) return Promise.resolve({ data: {} });
+      if (url.includes('/time-entries')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [] });
+    });
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('15:00'));
+    fireEvent.change(screen.getByLabelText('Von'), { target: { value: '07:45' } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '16:00' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    // angerechnet 07:45–15:15 = 7:30 h → §4-Hinweis (Pause 0) wie bisher
+    expect(await screen.findByText(/Bei >6h Arbeitszeit sind mind\. 30 Min\. Pause erforderlich \(ArbZG §4\)/)).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  // Spec 8.2 + E80: bestehende Einträge des Tages gehen mit IHREM Puffer in die
+  // §4-Vorprüfung ein. Ihre Lückensegmente zählen als Pause und der gespeicherte
+  // `uncredited_minutes` als Abzug — weicht Σ Segmente vom gespeicherten Wert ab,
+  // zählt er nur als Abzug (strenge Richtung), wie `break_block_for_entry`.
+  // Der Tag 08:00–18:00 hat bei Puffer 15 genau ein Segment: 12:15–14:45 = 150 Min.
+  const dayEntry = {
+    ...closedEntry, id: 'te-day', start_time: '08:00:00', end_time: '18:00:00',
+    break_minutes: 0, uncredited_minutes: 150, clamp_grace_minutes: 15,
+  };
+
+  async function submitShortEntryAfter(existing: Record<string, unknown>) {
+    useSystemStore.setState({ info: { deployment_mode: 'onprem', version: '' }, isLoaded: true });
+    mockWithBlocks([existing]);
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('18:00'));
+    fireEvent.change(screen.getByLabelText('Von'), { target: { value: '18:00' } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '18:10' } });
+    fireEvent.change(screen.getByLabelText('Pause (Min.)'), { target: { value: '0' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+  }
+
+  it('wertet das Lückensegment eines bestehenden Eintrags als Pause und den gespeicherten Wert als Abzug', async () => {
+    // Brutto 600 − 150 + 10 = 460 Min > 6 h, Pause 150 aus dem Segment → kein Hinweis.
+    await submitShortEntryAfter(dayEntry);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '18:00', end_time: '18:10', break_minutes: 0 });
+    expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
+  });
+
+  it('rechnet streng, wenn Σ Segmente vom gespeicherten Wert abweicht (keine Pausensegmente, Abzug = gespeichert)', async () => {
+    // Brutto 600 − 120 + 10 = 490 Min > 6 h, keine Pause → §4-Hinweis (die >9-h-
+    // Meldung käme, wenn der gespeicherte Abzug fehlte: 610 Min).
+    await submitShortEntryAfter({ ...dayEntry, uncredited_minutes: 120 });
+    expect(
+      await screen.findByText('Bei >6h Arbeitszeit sind mind. 30 Min. Pause erforderlich (ArbZG §4)'),
+    ).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  // Gesamtreview 1.20 (Fund 24): eingestempelt liefert /clock-status in
+  // `grace_minutes` den Puffer des OFFENEN Eintrags (15, fürs Ausstempeln). Die
+  // Verwaltung hat den Mandanten-Puffer inzwischen auf 0 gesetzt — eine
+  // Neuanlage kappt der Server damit (E80). Block 08:00–13:45, eingetragen
+  // 07:45–14:30: mit 0 angerechnet 08:00–13:45 = 5:45 h → keine Pflicht-Pause;
+  // mit dem Puffer des offenen Eintrags wären es 07:45–14:00 = 6:15 h → Hinweis.
+  it('rechnet einen neuen Eintrag mit dem aktuellen Mandanten-Puffer, nicht mit dem des offenen Eintrags', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') {
+        return Promise.resolve({ data: {
+          is_clocked_in: true, blocks_today: [{ start: '08:00', end: '13:45' }],
+          grace_minutes: 15, tenant_grace_minutes: 0,
+        } });
+      }
+      if (url.includes('/settings')) return Promise.resolve({ data: {} });
+      if (url.includes('/time-entries')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [] });
+    });
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('13:45'));
+    fireEvent.change(screen.getByLabelText('Von'), { target: { value: '07:45' } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '14:30' } });
+    fireEvent.change(screen.getByLabelText('Pause (Min.)'), { target: { value: '0' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '07:45', end_time: '14:30', break_minutes: 0 });
+    expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
+  });
+
+  it('nimmt den Puffer des Eintrags, nicht den aus /clock-status (E80)', async () => {
+    // Puffer 0 → Segment 12:00–15:00 = 180 = gespeichert → Pause 180, kein Hinweis.
+    // Mit dem Puffer 15 aus /clock-status wären es 150 ≠ 180 → streng → Hinweis.
+    await submitShortEntryAfter({ ...dayEntry, uncredited_minutes: 180, clamp_grace_minutes: 0 });
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '18:00', end_time: '18:10', break_minutes: 0 });
+    expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gesamtreview 1.20 B6 (PR2 Task 17): §4-Vorprüfung und Pausen-Automatik
+// kannten nur die Blöcke von HEUTE (/clock-status) und rechneten an jedem
+// anderen Tag ohne Blöcke. Bei geteiltem Dienst sperrte das Formular deshalb
+// fälschlich (die Lücke deckt §4, der Server hätte angenommen) — etwa wenn die
+// Verwaltung ihren eigenen Eintrag eines vergangenen Tages erfasst oder das
+// Datum ändert. Jetzt kommen die Blöcke des Zieldatums aus /day-blocks.
+// ---------------------------------------------------------------------------
+describe('<TimeTracking /> Blöcke des Zieldatums (Gesamtreview B6)', () => {
+  const PAST_MON = '2026-06-01';
+  const SPLIT = [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }];
+  const dayUrl = (d: string) => `/time-entries/day-blocks?date=${d}`;
+
+  function mockDays(dayBlocks: Record<string, unknown[] | 'error'>, entries: unknown[] = []) {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') {
+        return Promise.resolve({ data: { is_clocked_in: false, blocks_today: [], grace_minutes: 15 } });
+      }
+      if (url.startsWith('/time-entries/day-blocks?date=')) {
+        const d = url.split('=')[1];
+        const b = dayBlocks[d];
+        if (b === 'error') return Promise.reject(new Error('Netzwerk'));
+        return Promise.resolve({ data: { date: d, blocks: b ?? [], grace_minutes: 15 } });
+      }
+      if (url.includes('/settings')) return Promise.resolve({ data: {} });
+      if (url.includes('/time-entries')) return Promise.resolve({ data: entries });
+      return Promise.resolve({ data: [] });
+    });
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+  }
+
+  async function newEntry(date: string, start: string, end: string) {
+    mockRole = 'admin';
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    fireEvent.change(screen.getByLabelText('Datum'), { target: { value: date } });
+    fireEvent.change(screen.getByLabelText('Von'), { target: { value: start } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: end } });
+    fireEvent.change(screen.getByLabelText('Pause (Min.)'), { target: { value: '0' } });
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith(dayUrl(date)));
+  }
+
+  const submit = () => fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+
+  it('vergangener Tag mit geteiltem Dienst: die Lücke deckt §4 — kein Hinweis, keine Zusatzpause', async () => {
+    mockDays({ [PAST_MON]: SPLIT });
+    await newEntry(PAST_MON, '08:00', '18:00');
+    // Erst absenden, wenn die Blöcke des Tages da sind (sonst entscheidet der Server).
+    await new Promise((r) => setTimeout(r, 0));
+    submit();
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({
+      date: PAST_MON, start_time: '08:00', end_time: '18:00', break_minutes: 0,
+    });
+    expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
+  });
+
+  it('Kontrolle: verlangen die Blöcke des Tages eine Pause, bleibt der Hinweis', async () => {
+    // Ein Block 08:00–15:00, Puffer 15: angerechnet 07:45–15:15 = 7:30 h ohne Pause.
+    mockDays({ [PAST_MON]: [{ start: '08:00', end: '15:00' }] });
+    await newEntry(PAST_MON, '07:45', '16:00');
+    await new Promise((r) => setTimeout(r, 0));
+    submit();
+    expect(await screen.findByText('Bei >6h Arbeitszeit sind mind. 30 Min. Pause erforderlich (ArbZG §4)')).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('Kontrolle: ein Tag ohne Blöcke wird wie bisher ungekappt geprüft', async () => {
+    mockDays({ [PAST_MON]: [] });
+    await newEntry(PAST_MON, '08:00', '18:00');
+    await new Promise((r) => setTimeout(r, 0));
+    submit();
+    expect(await screen.findByText('Bei >9h Arbeitszeit sind mind. 45 Min. Pause erforderlich (ArbZG §4)')).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('sind die Blöcke des Tages nicht abrufbar, entscheidet der Server (keine Vorprüfung, keine Automatik)', async () => {
+    mockDays({ [PAST_MON]: 'error' });
+    await newEntry(PAST_MON, '08:00', '18:00');
+    await new Promise((r) => setTimeout(r, 0));
+    submit();
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ date: PAST_MON, break_minutes: 0 });
+  });
+
+  it('Bearbeiten eines vergangenen geteilten Dienstes: Ende verschoben, die Lücke zählt weiter', async () => {
+    mockDays({ [PAST_MON]: SPLIT }, [{
+      ...closedEntry, id: 'te-past', date: PAST_MON, start_time: '08:00:00', end_time: '18:00:00',
+      break_minutes: 0, uncredited_minutes: 150, clamp_grace_minutes: 15, is_editable: true,
+    }]);
+    mockRole = 'admin';
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith(dayUrl(PAST_MON)));
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '18:05' } });
+    await new Promise((r) => setTimeout(r, 0));
+    submit();
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1]).toMatchObject({ date: PAST_MON, end_time: '18:05', break_minutes: 0 });
+  });
+
+  it('fragt für heute nichts zusätzlich ab (die Blöcke von heute kommen aus /clock-status)', async () => {
+    mockDays({});
+    mockRole = 'admin';
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith('/time-entries/clock-status'));
+    expect(getMock.mock.calls.some(([u]) => String(u).startsWith('/time-entries/day-blocks'))).toBe(false);
   });
 });

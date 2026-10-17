@@ -1,7 +1,7 @@
 # Verarbeitungsverzeichnis nach Art. 30 DSGVO
 
 **Verantwortlicher:** [Name der Praxis / des Unternehmens]
-**Stand:** 2026-06-06
+**Stand:** 2026-10 (PraxisZeit 1.20.0)
 **Erstellt mit:** PraxisZeit-Zeiterfassungssystem
 
 ---
@@ -12,7 +12,7 @@
 |------|--------|
 | **Bezeichnung** | Elektronische Zeiterfassung und Arbeitszeitverwaltung |
 | **Zweck** | Erfassung und Auswertung von Arbeitszeiten, Abwesenheiten und Überstunden der Mitarbeitenden; Einhaltung des ArbZG (§16 Aufzeichnungspflicht) |
-| **Rechtsgrundlage** | Art. 6 Abs. 1 lit. c DSGVO (rechtliche Verpflichtung: §16 ArbZG), Art. 6 Abs. 1 lit. b DSGVO (Durchführung des Beschäftigungsverhältnisses), Art. 88 DSGVO i.V.m. §26 BDSG |
+| **Rechtsgrundlage** | Art. 6 Abs. 1 lit. c DSGVO (rechtliche Verpflichtung: § 16 Abs. 2 ArbZG, § 3 Abs. 2 Nr. 1 ArbSchG i. V. m. BAG 1 ABR 22/21, § 17 MiLoG), Art. 6 Abs. 1 lit. b DSGVO (Durchführung des Beschäftigungsverhältnisses, u. a. Anrechnung der Arbeitszeit); § 26 BDSG nach EuGH C-34/21 nur ergänzend |
 | **Besondere Kategorien (Art. 9)** | Ja: Gesundheitsdaten (Krankmeldungen/Abwesenheiten wegen Krankheit) |
 | **Rechtsgrundlage Art. 9** | Art. 9 Abs. 2 lit. b DSGVO (Beschäftigungsverhältnis) i.V.m. §26 Abs. 3 BDSG |
 
@@ -48,7 +48,7 @@
 | Identifikationsdaten | Benutzername, Vorname, Nachname | Art. 6 Abs. 1 lit. b DSGVO |
 | Kontaktdaten | E-Mail-Adresse (optional) | Art. 6 Abs. 1 lit. b DSGVO |
 | Zugangs­daten | Passwort-Hash (bcrypt_sha256), JWT-Token-Version, TOTP-Secret (Base32-Klartext, DB-Spalte users.totp_secret – AES-Verschlüsselung ausstehend, siehe TODO), optional | Art. 6 Abs. 1 lit. b DSGVO |
-| Vertrags­daten | Wochenstunden, Arbeitstage, Urlaubstage, Kalenderfarbe | Art. 6 Abs. 1 lit. b DSGVO |
+| Vertrags­daten | Wochenstunden, Arbeitstage, Tagesplan, Soll-Arbeitszeiten (Arbeitszeit-Blöcke je Wochentag mit Pause innerhalb der Blöcke), Urlaubstage, Kalenderfarbe | Art. 6 Abs. 1 lit. b DSGVO |
 | Organisations­daten | Abteilung/Bereich (optional, Freitext; #162) | Art. 6 Abs. 1 lit. f DSGVO (Organisation/Dienstplanung) |
 
 > **Abteilung (#162):** optionales Gruppierungsmerkmal. Im Team-Abwesenheitskalender wird die Abteilung aus Datenminimierungsgründen **nur Administrator:innen** ausgeliefert (Filter-Use-Case); Kolleg:innen erhalten die Kalenderansicht ohne Abteilungsmerkmal.
@@ -59,6 +59,7 @@
 |----------------|--------|-----------------|
 | Arbeitszeitdaten | Datum, Startzeit, Endzeit, Pausenminuten, Notiztxt | Art. 6 Abs. 1 lit. c DSGVO (§16 ArbZG) |
 | Sonn-/Feiertagsarbeit | Ausnahmegrund-Dokumentation (§10 ArbZG) | Art. 6 Abs. 1 lit. c DSGVO |
+| Anrechnung der Arbeitszeit | nicht angerechnete Minuten (`uncredited_minutes`), Anerkennung (`credit_override`), automatisch geschlossen (`auto_closed`), angewandter Puffer (`clamp_grace_minutes`), Rohstempel (`raw_start_time`/`raw_end_time`) | Art. 6 Abs. 1 lit. b DSGVO (Anrechnung), lit. c (§ 16 Abs. 2 ArbZG, § 17 MiLoG) |
 
 ### 4.3 Abwesenheitsdaten
 
@@ -78,9 +79,11 @@
 
 | Datenkategorie | Felder | Zweck |
 |----------------|--------|-------|
-| Arbeitszeitenhistorie | Wochenstunden, Gültigkeitsdatum | Korrekte historische Berechnung von Soll-Stunden |
-| Änderungsanträge | Zeiteintrags-Korrekturen mit Begründung | Transparenz, Nachvollziehbarkeit |
-| Audit-Log | Benutzer, Aktion, Zeitstempel, Details | Nachvollziehbarkeit von Admin-Aktionen, DSGVO-Compliance |
+| Arbeitszeitenhistorie | Wochenstunden, Tagesplan, Arbeitszeit-Blöcke, Gültigkeitsdatum, Begründung rückwirkender Änderungen (Freitext, bei Anonymisierung geleert) | Korrekte historische Berechnung von Soll und Anrechnung; Nachweis rückwirkender Änderungen |
+| Änderungsanträge | Zeiteintrags-Korrekturen mit Begründung, inkl. Antrag auf Anrechnung nicht angerechneter Zeit | Transparenz, Nachvollziehbarkeit, Anfechtung der automatischen Anrechnung |
+| Audit-Log | Benutzer, Aktion, Zeitstempel, Details, inkl. Neukappungen und Anerkennungen | Nachvollziehbarkeit von Admin-Aktionen, DSGVO-Compliance |
+
+> **Automatisierte Anrechnung (Art. 22, Art. 13 Abs. 2 lit. f DSGVO):** Die Kappung gegen die Arbeitszeit-Blöcke läuft beim Stempeln automatisch und wirkt auf das Überstundenkonto (Risiko gering bis mittel). Schutzmaßnahmen: jede nicht angerechnete Zeit ist sichtbar (Eintrag, Monatsjournal, Exportspalte), die Verwaltung kann sie anerkennen, Beschäftigte können die Anrechnung mit Begründung beantragen; Arbeitszeit-Änderungen laufen mit Vorschau, Bestätigung, Protokoll und Dashboard-Hinweis an die Betroffenen. Die Logik ist auf der Datenschutzseite der Anwendung beschrieben.
 
 ### 4.5 Signup-/Einwilligungs-Nachweisdaten (nur SaaS-Modus)
 
@@ -164,7 +167,7 @@ Mitarbeitende haben folgende Rechte gem. DSGVO:
 
 | Recht | Grundlage | Umsetzung |
 |-------|-----------|-----------|
-| Auskunft | Art. 15 DSGVO | GET /api/me/data-export (vollständig: Stammdaten inkl. ArbZG-Status, Zeit + §10-Begründung, Abwesenheiten, Urlaubs- und Änderungsanträge inkl. Begründung + proposed/original, Audit-Logs mit old/new-Werten); zusätzlich `art15_meta`-Block mit Pflichtangaben Art. 15 (1)(a-h). Profile-Button "Meine Daten exportieren". Self-Export wird selbst als Audit-Eintrag (source=self_data_export) festgehalten. Diese Audit-Rows bleiben auch nach Anonymisierung erhalten (Rechenschaftspflicht Art. 5 Abs. 2). |
+| Auskunft | Art. 15 DSGVO | GET /api/me/data-export (vollständig: Stammdaten inkl. ArbZG-Status und Arbeitszeit-Blöcken samt Verlauf, Zeit + §10-Begründung + nicht angerechnete Minuten/Anerkennung, Abwesenheiten, Urlaubs- und Änderungsanträge inkl. Begründung + proposed/original + Antrag auf Anrechnung, Audit-Logs mit old/new-Werten); zusätzlich `art15_meta`-Block mit Pflichtangaben Art. 15 (1)(a-h). Profile-Button "Meine Daten exportieren". Self-Export wird selbst als Audit-Eintrag (source=self_data_export) festgehalten. Diese Audit-Rows bleiben auch nach Anonymisierung erhalten (Rechenschaftspflicht Art. 5 Abs. 2). |
 | Berichtigung | Art. 16 DSGVO | PUT /api/auth/profile: Name und E-Mail direkt änderbar; Änderungsantrag für Zeiteinträge |
 | Löschung | Art. 17 DSGVO | Anonymisierung + Purge-Prozess (s. Abschnitt 5); POST /anonymize, DELETE /purge |
 | Einschränkung | Art. 18 DSGVO | Deaktivierung des Kontos auf Anfrage (is_active = False) |
@@ -207,6 +210,7 @@ Wahrnehmung der Rechte").
 | 2026-02-28 | 1.1 | TOTP-2FA-Felder, is_night_worker (Art. 9), GitHub als Empfänger, TOM aktualisiert, Betroffenenrechte vervollständigt | Claude Sonnet 4.6 |
 | 2026-05-24 | 1.2 | Self-Service-Art-15-Export `/api/me/data-export` (Issue #119); Vacation-Audit-Purge nach 730 Tagen dokumentiert; Self-Export-Audit-Rows bleiben nach Anonymisierung erhalten (Art. 5 Abs. 2 Rechenschaftspflicht) | Claude Opus 4.7 |
 | 2026-05-26 | 1.3 | H2-Fix: `LicenseReadOnlyMiddleware` exempted DSGVO-Betroffenenrechts-Endpoints (Art. 16 PUT /api/auth/profile; Art. 17 anonymize/purge/request-deletion/cancel-deletion) via Method+Pattern-Allowlist — Lizenz ist kein Druckmittel gegen Art. 12 Abs. 2 mehr | Claude Opus 4.7 |
+| 2026-10 | 1.4 | PraxisZeit 1.20.0: Arbeitszeit-Blöcke als Vertragsdaten und im Verlauf; neue Kategorie „Anrechnung der Arbeitszeit" (`uncredited_minutes`, `credit_override`, `auto_closed`, `clamp_grace_minutes`); Rechtsgrundlage nach EuGH C-34/21 (§ 26 BDSG nur ergänzend); Hinweis zur automatisierten Anrechnung (Art. 22, Art. 13 Abs. 2 lit. f DSGVO) | Claude Opus 5.5 |
 
 ---
 

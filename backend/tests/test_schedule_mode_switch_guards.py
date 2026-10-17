@@ -457,11 +457,14 @@ class TestResplitMatchesBookingClassifier:
         db.expire_all()
         assert CLO_TUE not in {a.date for a in _absences(db, emp)}
 
-    def test_stale_zero_hour_row_is_accounting_neutral(self, db, default_tenant, admin):
-        """Ohne aktiven Split behaelt das Re-Save die Bestandszeile (der
-        Loeschzweig greift nur bei ``split_active``). Sie ist aber in BEIDEN
-        tagebasierten Zaehlungen neutral — ``get_vacation_account.used_days`` und
-        ``absence_days`` ueberspringen Tagessoll 0 —, also rein kosmetisch."""
+    def test_resave_without_split_removes_stale_zero_hour_row(self, db, default_tenant, admin):
+        """Auch ohne aktiven Split raeumt das Re-Save die Bestandszeile ab
+        (Gesamtreview 1.20 B5, Nachzug — bis dahin griff der Loeschzweig nur bei
+        ``split_active``). Beim Tagesplan war sie in beiden tagebasierten
+        Zaehlungen ohnehin neutral (``get_vacation_account.used_days`` und
+        ``absence_days`` ueberspringen Tagessoll 0); bei einem HEUTE auf 0 h
+        stehenden Vertrag zaehlt das Konto sie dagegen als ganzen Tag
+        (``test_gesamtreview_b5_zero_hours.py``) — deshalb einheitlich weg."""
         emp = _switched_user(db, "resave_nosplit", vacation_days=10)
         client = _client_as(db, admin)
         closure = _create_closure(client)
@@ -480,8 +483,8 @@ class TestResplitMatchesBookingClassifier:
 
         db.expire_all()
         rows = _absences(db, emp)
-        assert CLO_TUE in {a.date for a in rows}          # bleibt stehen ...
-        # ... kostet aber nichts: nur die drei echten Arbeitstage zaehlen.
+        assert CLO_TUE not in {a.date for a in rows}
+        # Die drei echten Arbeitstage bleiben und zaehlen wie zuvor.
         assert calculation_service.get_vacation_account(db, emp, 2026)["used_days"] == pytest.approx(3.0)
         assert float(calculation_service.absence_days(db, emp, rows)) == pytest.approx(3.0)
 

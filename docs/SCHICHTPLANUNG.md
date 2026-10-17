@@ -170,8 +170,12 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
   "automatisch", ohne dass der Renderer die Felder je gelesen hätte. Zugriff über
   `is_plan_visible_to`, nicht
   `require_admin` — Mitarbeitende drucken nur, was sie ohnehin sehen; Einweisungs-Flags
-  stehen nie im PDF. Der Praxisname im Kopf kommt aus `Tenant.name` (`practice_name`
-  ist **kein** Settings-Key im Projekt). Alle Nutzertexte (Plan-/Arbeitsplatzname,
+  stehen nie im PDF. Der Praxisname im Kopf kommt aus
+  `practice_name_service.practice_display_name(tenant)` (#495), NIE direkt aus
+  `Tenant.name`: SaaS ist das der Signup-Name, on-prem trägt der Mandant dort nur
+  den Bootstrap-Platzhalter „Default" (Migration 027/`main.py`) und der Helfer
+  liefert stattdessen `PRACTICE_NAME` aus der Konfiguration (`practice_name` ist
+  **kein** Settings-Key im Projekt). Alle Nutzertexte (Plan-/Arbeitsplatzname,
   Hinweis) laufen durch `escape_pdf_text`. Der Hinweis-Marker vor `shift_slots.note`
   ist **`»`** (U+00BB), nicht der ursprünglich vorgesehene Pfeil `↳` (U+21B3) — der
   fehlt in reportlabs Standardschrift Helvetica/WinAnsiEncoding und erschien im

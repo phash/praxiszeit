@@ -3,6 +3,25 @@
 // UserListResponse/UserResponse (backend/app/schemas/user.py). Felder, die nicht
 // in JEDER Response enthalten sind (Login liefert z. B. kein profile_picture),
 // sind optional markiert.
+import type { WeekBlocks } from './workBlocks';
+
+/**
+ * Gesamtreview 1.20 (Fund 25): der HEUTE gültige Vertragsstand, aufgelöst wie
+ * `work_blocks_today` (`calculation_service.attach_work_blocks_today`). Die
+ * gleichnamigen Felder der User-Zeile zieht der Server erst beim nächsten
+ * Schreibvorgang nach — für Anzeigen gilt dieser Stand.
+ */
+export interface ScheduleToday {
+  weekly_hours: number;
+  use_daily_schedule: boolean;
+  hours_monday: number | null;
+  hours_tuesday: number | null;
+  hours_wednesday: number | null;
+  hours_thursday: number | null;
+  hours_friday: number | null;
+  work_days_per_week: number;
+}
+
 export interface User {
   id: string;
   username: string;
@@ -27,16 +46,6 @@ export interface User {
   hours_wednesday: number | null;
   hours_thursday: number | null;
   hours_friday: number | null;
-  scheduled_start_monday: string | null;
-  scheduled_end_monday: string | null;
-  scheduled_start_tuesday: string | null;
-  scheduled_end_tuesday: string | null;
-  scheduled_start_wednesday: string | null;
-  scheduled_end_wednesday: string | null;
-  scheduled_start_thursday: string | null;
-  scheduled_end_thursday: string | null;
-  scheduled_start_friday: string | null;
-  scheduled_end_friday: string | null;
   first_work_day: string | null;
   last_work_day: string | null;
   deactivated_at: string | null;
@@ -51,4 +60,10 @@ export interface User {
   profile_picture?: string | null; // aus Login-Response ausgeschlossen (~690 KB)
   onboarding_completed_at?: string | null; // NULL = Onboarding noch nicht gesehen
   vacation_carryover_deadline?: string | null;
+  // Spec 2026-10-08 (11.1/11.5): Rohwert der User-Zeile und die für HEUTE
+  // datumsaufgelösten Blöcke (Admin-Liste/-Detail, Login). Nur Anzeige — die
+  // Blöcke ändern sich ausschließlich über den Verlauf mit Wirkungsdatum.
+  work_blocks?: WeekBlocks | null;
+  work_blocks_today?: WeekBlocks | null;
+  schedule_today?: ScheduleToday | null;
 }

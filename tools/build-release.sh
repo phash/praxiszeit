@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.19.3"
+APP_VERSION="1.20.0"
 PYTHON_VERSION="3.13.16"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 # 20261001 buendelt CPython 3.13.16 (u. a. SSLContext-Use-after-free behoben)
@@ -940,6 +940,43 @@ if [ "$BUILD_MACOS" = true ]; then
             exit 1
         fi
 
+        # #482: Load-Commands ALLER Mach-O-Dateien pruefen — ohne otool, direkt aus
+        # den Mach-O-Koepfen (laeuft auf dem Linux-Build-Host). Jede Bibliothek muss
+        # ueber @loader_path/@rpath/@executable_path oder aus /usr/lib bzw.
+        # /System/Library aufloesbar sein; ein Pfad auf dem theseus-Build-Runner
+        # (/Users/runner/...) oder in Homebrew bricht den Build ab, bevor ein auf
+        # dem Kunden-Mac nicht ladbares Paket entsteht (das #183-Muster).
+        # --prune entfernt vorher die PGXS-Testtreiber (lib/pgxs/src/test:
+        # pg_regress, isolationtester, pg_isolation_regress) — in theseus 18.6.0
+        # die einzigen Dateien mit Runner-Pfad, und nur zum Testen selbst gebauter
+        # Erweiterungen da. dblink/postgres_fdw/libpqwalreceiver laden in 18.6.0
+        # sauber und bleiben im Paket.
+        if ! command -v python3 &>/dev/null; then
+            error "python3 fehlt — Mach-O-Pruefung (#482) nicht moeglich, Abbruch."
+            exit 1
+        fi
+        if ! python3 "${REPO_DIR}/tools/macho_deps.py" --prune "${mac_dir}/bin/postgresql"; then
+            error "macOS-${arch}: nicht portable Mach-O-Abhaengigkeiten (Liste oben)."
+            error "  Auswirkung: diese Dateien laden auf keinem Kunden-Mac."
+            error "  Neue theseus-Version? Datei pruefen; wird sie nie ausgefuehrt,"
+            error "  in PG_PRUNE (tools/macho_deps.py) aufnehmen, sonst Upstream melden."
+            exit 1
+        fi
+        # Gesamtreview B8: dieselbe Pruefung fuer das gebuendelte Python
+        # (python-build-standalone). Der Interpreter laedt seine Erweiterungs-
+        # module beim Kunden genauso wie postgres seine Bibliotheken; ein Modul
+        # gegen Homebrew-OpenSSL oder ein rpath auf den Build-Runner faellt erst
+        # dort auf. Bewusst OHNE --prune (PG_PRUNE betrifft nur PostgreSQL).
+        # Stand 20261001/CPython 3.13.16: je Architektur 10 Mach-O-Dateien, alle
+        # ueber /usr/lib, /System/Library, @rpath bzw. @executable_path/@loader_path.
+        # Die per pip beim Kunden installierten Pakete liegen hier noch nicht vor.
+        if ! python3 "${REPO_DIR}/tools/macho_deps.py" "${mac_dir}/bin/python"; then
+            error "macOS-${arch}: nicht portable Mach-O-Abhaengigkeiten im gebuendelten Python (Liste oben)."
+            error "  Auswirkung: Interpreter bzw. Module laden auf keinem Kunden-Mac."
+            error "  Neuer PYTHON_STANDALONE_TAG? Datei pruefen, sonst Upstream melden."
+            exit 1
+        fi
+
         _write_macos_installer "${mac_dir}"
 
         tar -czf "${DIST_DIR}/praxiszeit-${APP_VERSION}-macos-${arch}.tar.gz" -C "${mac_dir}" .
@@ -986,14 +1023,30 @@ if [ "$BUILD_DOCKER" = true ]; then
     }
     # Belt-and-suspenders: nie lokale Secrets/Keys ins Bundle, auch wenn jemand
     # mal welche unter backend/ oder frontend/ ablegt.
+    # Gesamtreview B8: backend/ deckt mindestens alles ab, was backend/.dockerignore
+    # aus dem Image haelt — die .dockerignore wirkt beim Kunden nur auf das Image,
+    # nicht auf diese Datei. Test-DB samt WAL/SHM/Journal, Bytecode-Verzeichnisse
+    # (sonst landen sie leer im Bundle), Werkzeug-Caches, Agenten-Notizen
+    # (.claude) und Datenbanksicherungen (backups/, personenbezogen).
+    # tests/test_491_deploy_pull.py faehrt diesen Block gegen die Beispielpfade
+    # aus test_backend_dockerignore.py bzw. test_frontend_dockerignore.py.
     _copy_tree backend \
-        --exclude='backend/__pycache__' --exclude='*.pyc' --exclude='backend/tests' \
-        --exclude='backend/.pytest_cache' --exclude='backend/htmlcov' \
-        --exclude='backend/test.db' --exclude='backend/.venv' \
-        --exclude='*.pem' --exclude='*.key' --exclude='.env'
+        --exclude='__pycache__' --exclude='*.pyc' --exclude='*.pyo' \
+        --exclude='backend/tests' \
+        --exclude='backend/.pytest_cache' --exclude='backend/.mypy_cache' \
+        --exclude='backend/.ruff_cache' --exclude='backend/.coverage' \
+        --exclude='backend/htmlcov' \
+        --exclude='backend/test.db*' --exclude='backend/.venv' --exclude='backend/venv' \
+        --exclude='backend/.claude' --exclude='backend/backups' \
+        --exclude='*.pem' --exclude='*.key' --exclude='.env' --exclude='.env.*'
+    # frontend/ ebenso gegen frontend/.dockerignore: node_modules, dist,
+    # Agenten-Notizen, der leere root-eigene Rest eines Docker-Mounts
+    # (frontend/backend), .env-Varianten und Testausgaben.
     _copy_tree frontend \
         --exclude='frontend/node_modules' --exclude='frontend/dist' \
-        --exclude='*.pem' --exclude='*.key' --exclude='.env'
+        --exclude='frontend/.claude' --exclude='frontend/backend' \
+        --exclude='frontend/coverage' --exclude='frontend/test-results' \
+        --exclude='*.pem' --exclude='*.key' --exclude='.env' --exclude='.env.*'
     # ssl/: Skript + nginx-Config, aber NIE einen evtl. lokal erzeugten Key/Cert
     _copy_tree ssl --exclude='ssl/cert.pem' --exclude='ssl/key.pem'
     _copy_tree prometheus
@@ -1014,11 +1067,29 @@ Vor jedem Versions-Update die DB der laufenden (alten) Version sichern und nach
 dem Hochziehen der neuen Version wieder einspielen:
 
     bash backup.sh                                  # -> backups/praxiszeit_<ts>.sql.gz
-    # ... neue Version entpacken, .env + backups/ uebernehmen ...
+    # ... neue Version entpacken, .env + backups/ + eigene Aenderungen an
+    #     docker-compose.yml (z. B. Port) uebernehmen; alten Ordner danach
+    #     nicht mehr starten (gleicher Projektname, alte Version) ...
     docker compose pull db                          # PostgreSQL-18-Patchstand (Sicherheitsupdates)
-    # ... Stack starten ...
-    bash restore.sh backups/praxiszeit_<ts>.sql.gz  # DB einspielen
-    docker compose up -d backend                    # Alembic-Migrationen -> Schema auf head
+    docker compose build --pull                     # frische Basis-Images (Debian/Alpine-Sicherheitsupdates)
+    docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d   # nur HTTP: docker compose up -d
+    bash restore.sh backups/praxiszeit_<ts>.sql.gz  # DB frisch anlegen + einspielen, Backend neu starten
+
+restore.sh haelt das Backend an, legt die Datenbank frisch an, spielt das Backup
+ein und startet das Backend wieder — erst dieser Start hebt das Schema per
+Migration auf die neue Version (ein \`docker compose up -d backend\` bei schon
+laufendem Backend tut nichts). Es meldet sich erst, wenn das Backend wieder
+gesund ist, und zeigt dann die Hinweise der Migrationen an (vollstaendige
+Ausgabe: \`docker compose logs backend\`). Danach die Seite im Browser neu
+laden (Strg+F5).
+
+Update auf 1.20.0 oder spaeter von einer aelteren Version: Migration 073 ersetzt
+die Arbeitszeit-Fenster durch Arbeitszeit-Bloecke und entfernt die alten
+Spalten. Zurueck auf 1.19.x geht es nur ueber das Backup von vor dem Update.
+Den Abschnitt zwischen \`*** HINWEIS (Migration 073) ***\` und
+\`*** ENDE HINWEIS ***\` lesen: er nennt die uebernommenen Konten und Personen,
+deren Arbeitszeit im Dialog „Arbeitszeit anpassen…“ zu pruefen ist.
+Alle Versionshinweise: https://github.com/phash/praxiszeit/blob/master/docs/UPDATE.md
 
 ## ⚠️ PostgreSQL-Major-Upgrade (ab dieser Version PostgreSQL 18)
 
@@ -1034,8 +1105,11 @@ STATT eines einfachen \`up\` — er sichert, ersetzt nur das DB-Volume (deine
 -> docker compose down -> Volume \`*_postgres_data\` entfernen -> neuen Stack
 hochziehen -> restore.sh.
 
-Die Backups sind gzip-komprimierte Plain-SQL-Dumps und lassen sich auch per
-\`gunzip -c <datei>.sql.gz | docker compose exec -T db psql -U praxiszeit praxiszeit\` einspielen.
+Die Backups sind gzip-komprimierte Plain-SQL-Dumps. Von Hand
+(\`gunzip -c <datei>.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U praxiszeit -d praxiszeit\`)
+nur in eine Datenbank derselben Version und mit angehaltenem Backend
+(vorher \`docker compose stop backend\`, danach \`docker compose start backend\`) —
+restore.sh nimmt beides ab und kommt auch mit einem Backup einer aelteren Version zurecht.
 
 Volle Anleitung: https://github.com/phash/praxiszeit/blob/master/docs/INSTALL-DOCKER.md
 DOCKEREOF

@@ -7,6 +7,7 @@ survive a Bundesland resync.
 """
 from datetime import date as date_type
 
+from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -54,3 +55,13 @@ class HolidayResponse(BaseModel):
     @classmethod
     def _coerce_id(cls, v):
         return str(v)
+
+
+class HolidayWriteResponse(HolidayResponse):
+    """Antwort auf Anlegen/Bearbeiten eines eigenen Feiertags.
+
+    ``warning`` meldet (Fix #5, Gesamtreview 1.20) ein bereits abgeschlossenes
+    Jahr, dessen Soll sich durch die Änderung verschoben hat — der Übertrag ins
+    Folgejahr ist dann veraltet. Neu gerechnet wird nichts. Sonst None.
+    """
+    warning: Optional[str] = None

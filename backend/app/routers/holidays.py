@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
@@ -6,8 +7,8 @@ from app.middleware.auth import get_current_user, require_admin
 from app.services.timezone_service import today_local
 from app.models import User
 from app.models.public_holiday import PublicHoliday
-from app.schemas.holiday import HolidayCreate, HolidayUpdate, HolidayResponse
-from app.services import holiday_service
+from app.schemas.holiday import HolidayCreate, HolidayUpdate, HolidayResponse, HolidayWriteResponse
+from app.services import calculation_service, holiday_service, work_window_service
 
 router = APIRouter(prefix="/api/holidays", tags=["holidays"])
 
@@ -54,7 +55,7 @@ def list_holidays(
     return holidays
 
 
-@router.post("/", response_model=HolidayResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=HolidayWriteResponse, status_code=status.HTTP_201_CREATED)
 def create_holiday(
     body: HolidayCreate,
     db: Session = Depends(get_db),
@@ -95,10 +96,22 @@ def create_holiday(
     # F-034: invalidate the per-(tenant, year) holiday cache after the write.
     holiday_service.invalidate_holiday_cache(tenant_id=current_user.tenant_id, year=holiday.year)
 
-    return holiday
+    # Fix #5 (Gesamtreview 1.20, wie der Bundesland-Wechsel seit B9): ein
+    # Feiertag setzt Soll und Gutschrift des Tages auf 0 — liegt er in einem
+    # abgeschlossenen Jahr, ist dessen Übertrag veraltet. Nur melden.
+    response = HolidayWriteResponse.model_validate(holiday)
+    response.warning = work_window_service.join_warnings(
+        calculation_service.stale_year_closing_warning(
+            db, current_user.tenant_id, {holiday.year}
+        ),
+        # Gesamtreview 1.20: die Kappung bestehender Einträge des Tages bleibt
+        # stehen (E35 gilt beim Schreiben) — betroffene Einträge nennen.
+        work_window_service.stale_clamp_hint(db, current_user.tenant_id, {holiday.date}),
+    )
+    return response
 
 
-@router.put("/{holiday_id}", response_model=HolidayResponse)
+@router.put("/{holiday_id}", response_model=HolidayWriteResponse)
 def update_holiday(
     holiday_id: str,
     body: HolidayUpdate,
@@ -109,6 +122,8 @@ def update_holiday(
     holiday = _get_custom_holiday_in_tenant(db, holiday_id, current_user)
 
     old_year = holiday.year
+    old_date = holiday.date
+    date_changed = False
 
     if body.name is not None:
         holiday.name = body.name
@@ -130,6 +145,7 @@ def update_holiday(
             )
         holiday.date = body.date
         holiday.year = body.date.year
+        date_changed = True
 
     db.commit()
     db.refresh(holiday)
@@ -138,7 +154,19 @@ def update_holiday(
     holiday_service.invalidate_holiday_cache(tenant_id=current_user.tenant_id, year=old_year)
     holiday_service.invalidate_holiday_cache(tenant_id=current_user.tenant_id, year=holiday.year)
 
-    return holiday
+    # Fix #5: nur ein Datumswechsel verschiebt Soll/Saldo — altes UND neues
+    # Jahr prüfen. Ein reines Umbenennen bleibt still.
+    response = HolidayWriteResponse.model_validate(holiday)
+    if date_changed:
+        response.warning = work_window_service.join_warnings(
+            calculation_service.stale_year_closing_warning(
+                db, current_user.tenant_id, {old_year, holiday.year}
+            ),
+            work_window_service.stale_clamp_hint(
+                db, current_user.tenant_id, {old_date, holiday.date}
+            ),
+        )
+    return response
 
 
 @router.delete("/{holiday_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -150,6 +178,7 @@ def delete_holiday(
     """Delete a custom holiday (admin only). Standard holidays return 403."""
     holiday = _get_custom_holiday_in_tenant(db, holiday_id, current_user)
     year = holiday.year
+    day = holiday.date
 
     db.delete(holiday)
     db.commit()
@@ -157,6 +186,15 @@ def delete_holiday(
     # F-034: invalidate the per-(tenant, year) holiday cache after the delete.
     holiday_service.invalidate_holiday_cache(tenant_id=current_user.tenant_id, year=year)
 
+    # Fix #5: wie delete_closure — abgeschlossenes Jahr → 200 + {"warning"}.
+    warning = work_window_service.join_warnings(
+        calculation_service.stale_year_closing_warning(
+            db, current_user.tenant_id, {year}
+        ),
+        work_window_service.stale_clamp_hint(db, current_user.tenant_id, {day}),
+    )
+    if warning:
+        return JSONResponse(status_code=200, content={"warning": warning})
     return None
 
 

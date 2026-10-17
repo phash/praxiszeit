@@ -1,6 +1,7 @@
 /**
- * Globaler Besitzer der mandantenweiten Einstellung `shift_planning_enabled`
- * (#451).
+ * Globaler Besitzer der mandantenweiten Einstellungen `shift_planning_enabled`
+ * (#451) und `vacation_approval_required` (Gesamtreview 1.20 B9, siehe
+ * OWNED_SETTINGS).
  *
  * Vorher schaltete jede der vier Schichtplanungs-Specs (shift-planning.spec.ts,
  * shift-planning-m2.spec.ts, shift-planning-followups.spec.ts,
@@ -40,26 +41,52 @@ import { ApiHelper } from './helpers/api.helper';
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'Admin2025!';
 
-/** Vom Teardown gelesen: der Wert, den die Instanz VOR dem Lauf hatte. */
-export const PREV_FLAG_ENV = 'E2E_PREV_SHIFT_PLANNING_ENABLED';
-/** Vom Teardown gelesen: nur ein durchgelaufenes Setup darf zurückschreiben. */
-export const SETUP_DONE_ENV = 'E2E_SHIFT_PLANNING_SETUP_DONE';
+/**
+ * Mandantenweite Einstellungen, die der Lauf für seine GESAMTE Dauer besitzt,
+ * mit dem Wert, den alle Specs voraussetzen.
+ *
+ * Gesamtreview 1.20 (B9), dasselbe Muster für `vacation_approval_required`:
+ * bisher schalteten vacation-approvals.spec.ts, settings.spec.ts,
+ * employee/absences.spec.ts und user-management.spec.ts die
+ * Genehmigungspflicht in eigenen Tests/Hooks an und aus — bei `workers: 2`
+ * über Dateien hinweg gleichzeitig. Ein Urlaubsantrag (`POST /vacation-requests`
+ * → 400 „Urlaubsanträge sind nicht aktiviert") bzw. eine Direktbuchung als
+ * Mitarbeiter:in (→ 400 „Urlaub ist genehmigungspflichtig") scheiterte dann
+ * an der Einstellung einer fremden Datei. Jetzt gilt im Projekt „chromium"
+ * durchgehend `false`; die Specs, die eine mandantenweite Einstellung
+ * umschalten, liegen in tests/tenant-settings/ und laufen erst danach,
+ * einzeln nacheinander (playwright.config.ts). Ihr Aufräumen schreibt den hier
+ * gesetzten Wert zurück.
+ */
+export const OWNED_SETTINGS: Readonly<Record<string, string>> = {
+  shift_planning_enabled: 'true',
+  vacation_approval_required: 'false',
+};
+
+/**
+ * Vom Teardown gelesen (JSON `{key: vorheriger Wert}`): NUR die Einstellungen,
+ * die das Setup tatsächlich geschrieben hat, mit dem Wert VOR dem Lauf.
+ */
+export const PREV_SETTINGS_ENV = 'E2E_PREV_TENANT_SETTINGS';
 
 export default async function globalSetup(): Promise<void> {
   const api = new ApiHelper();
   await api.login(ADMIN_USER, ADMIN_PASS);
 
-  // Fehlt die Zeile ganz, ist der wirksame Wert der Default `false` — das
-  // Zurückschreiben von 'false' ist dazu gleichbedeutend (es gibt keinen
-  // Endpunkt, der eine Einstellung wieder entfernt).
+  // Fehlt die Zeile ganz, ist der wirksame Wert bei beiden Schaltern der
+  // Default `false` — das Zurückschreiben von 'false' ist dazu gleichbedeutend
+  // (es gibt keinen Endpunkt, der eine Einstellung wieder entfernt).
+  delete process.env[PREV_SETTINGS_ENV];
   const settings: { key: string; value: string }[] = await api.get('/admin/settings');
-  const prev = settings.find((s) => s.key === 'shift_planning_enabled')?.value ?? 'false';
-  process.env[PREV_FLAG_ENV] = prev;
-
-  await api.put('/admin/settings/shift_planning_enabled', { value: 'true' });
-
-  // Erst NACH dem erfolgreichen Schreiben setzen: scheitert das Setup vorher
-  // (429 beim Login, Backend unten, Read-only-Lizenz), hat es das Flag nicht
-  // angefasst und der Teardown darf es ebenfalls nicht anfassen.
-  process.env[SETUP_DONE_ENV] = '1';
+  const written: Record<string, string> = {};
+  for (const [key, value] of Object.entries(OWNED_SETTINGS)) {
+    const prev = settings.find((s) => s.key === key)?.value ?? 'false';
+    await api.put(`/admin/settings/${key}`, { value });
+    // Erst NACH dem erfolgreichen Schreiben vormerken: scheitert das Setup
+    // vorher (429 beim Login, Backend unten, Read-only-Lizenz), hat es die
+    // Einstellung nicht angefasst und der Teardown darf sie ebenfalls nicht
+    // anfassen.
+    written[key] = prev;
+    process.env[PREV_SETTINGS_ENV] = JSON.stringify(written);
+  }
 }

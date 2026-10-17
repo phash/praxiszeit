@@ -25,6 +25,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
 from app.models import Absence, AbsenceType, WorkingHoursChange
 from tests.test_endpoints import test_app
+from tests.wh_change_helpers import RETRO_REASON
 
 
 @pytest.fixture
@@ -76,9 +77,14 @@ def test_delete_pulls_absence_hours_back(client, admin_headers, db_session, day_
         type=AbsenceType.SICK, hours=4.0, half_day=False))
     db_session.commit()
 
-    d = client.delete(
+    d = client.request(
+        "DELETE",
         f"/api/admin/users/{day_plan_user.id}/working-hours-changes/{change_id}",
-        headers=admin_headers)
+        headers=admin_headers,
+        # Spec 9.5 (b): das Löschen der Senkung hebt das Montags-Soll rückwirkend
+        # wieder an — Verkürzung, also mit Grund und Haken.
+        json=RETRO_REASON,
+    )
     assert d.status_code in (200, 204), d.text
 
     row = db_session.query(Absence).filter(Absence.date == monday).first()

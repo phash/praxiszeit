@@ -89,6 +89,16 @@ export default function Privacy() {
               </li>
               <li className="flex gap-2">
                 <span className="text-primary mt-1">•</span>
+                <span>
+                  <strong>Soll-Arbeitszeiten (Arbeitszeit-Blöcke, Pause) und nicht angerechnete Zeit:</strong>{' '}
+                  Ihre Arbeitszeit wird in Blöcken hinterlegt. Gestempelte Zeit vor dem ersten Block, nach dem letzten
+                  Block und zwischen den Blöcken wird – abzüglich eines Puffers – automatisch nicht angerechnet; die
+                  Stempelzeiten bleiben gespeichert. Die Verwaltung kann nicht angerechnete Zeit anerkennen; Sie können
+                  die Anrechnung per Änderungsantrag beantragen.
+                </span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-primary mt-1">•</span>
                 <span><strong>Abwesenheitsdaten:</strong> Urlaub, Fortbildung, Überstundenausgleich, sonstige Abwesenheiten</span>
               </li>
               <li className="flex gap-2">

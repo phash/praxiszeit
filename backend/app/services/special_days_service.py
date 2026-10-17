@@ -35,6 +35,7 @@ from typing import Dict, Optional
 
 from sqlalchemy.orm import Session
 
+from app.models.public_holiday import PublicHoliday
 from app.models.system_setting import SystemSetting
 
 # Valid modes for a special day.
@@ -225,3 +226,70 @@ def free_special_days_in_range(db: Session, tenant_id, start: date, end: date) -
             if entry["mode"] == MODE_FREE and start <= d <= end:
                 result.add(d)
     return result
+
+
+def _effective_state(settings: Dict[str, object], prefix: str):
+    """Wirksamer Zustand eines Sondertags: Modus plus Urlaubs-Schalter — der
+    Schalter zählt nur bei ``free`` (sonst wirkt er nirgends)."""
+    mode = settings[f"{prefix}_mode"]
+    if mode not in VALID_MODES:
+        mode = MODE_WORKING_DAY
+    cav = settings[f"{prefix}_counts_as_vacation"] if mode == MODE_FREE else None
+    return mode, cav
+
+
+def free_state_changed_dates(
+    before: Dict[str, object],
+    after: Dict[str, object],
+    years,
+) -> set:
+    """Sondertage in ``years``, die durch den Wechsel ``before`` → ``after``
+    zu „frei" werden oder es nicht mehr sind (Gesamtreview 1.20) — nur dort
+    ändert sich, ob gegen die Arbeitszeit-Blöcke gekappt wird (E35/#484; ein
+    „halber Feiertag" behält die Blöcke seines Wochentags)."""
+    changed = [
+        (month, day)
+        for (month, day), prefix in _SPECIAL_DAYS.items()
+        if (_effective_state(before, prefix)[0] == MODE_FREE)
+        != (_effective_state(after, prefix)[0] == MODE_FREE)
+    ]
+    return {date(y, m, d) for y in years for (m, d) in changed}
+
+
+def years_affected_by_change(
+    db: Session,
+    tenant_id,
+    before: Dict[str, object],
+    after: Dict[str, object],
+    years,
+) -> list:
+    """Jahre aus ``years``, in denen ein Wechsel der Sondertag-Einstellungen
+    (``before`` → ``after``, je im Format von :func:`get_special_day_settings`)
+    Soll, Gutschrift oder Urlaubsverbrauch tatsächlich ändert (Gesamtreview).
+
+    Die Einstellungen haben keine Jahresgrenze und wirken in jedem Jahr. Ein
+    Sondertag zählt nur, wenn sich sein wirksamer Zustand ändert und er im Jahr
+    auf einen Werktag ohne Feiertag des Mandanten fällt — an Wochenenden und
+    Feiertagen wird er gar nicht ausgewertet.
+    """
+    changed = [
+        (month, day)
+        for (month, day), prefix in _SPECIAL_DAYS.items()
+        if _effective_state(before, prefix) != _effective_state(after, prefix)
+    ]
+    if not changed:
+        return []
+    candidates = {
+        date(y, m, d) for y in years for (m, d) in changed
+        if date(y, m, d).weekday() < 5
+    }
+    if not candidates:
+        return []
+    holidays = {
+        r[0]
+        for r in db.query(PublicHoliday.date).filter(
+            PublicHoliday.tenant_id == tenant_id,
+            PublicHoliday.date.in_(candidates),
+        ).all()
+    }
+    return sorted({d.year for d in candidates if d not in holidays})

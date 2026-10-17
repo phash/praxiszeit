@@ -6,6 +6,9 @@ import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { showArbzgWarnings } from '../../utils/arbzgWarnings';
+import { formatHoursHM } from '../../utils/formatters';
+import { useConfirm } from '../../hooks/useConfirm';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 interface ChangeRequest {
   id: string;
@@ -31,6 +34,21 @@ interface ChangeRequest {
   original_note?: string;
   original_absence_type?: string;
   original_absence_hours?: number;
+  // Spec 2026-10-08 P21/P28/P3/P18: Antrag „Anrechnung beantragen", Vorher-
+  // Snapshot der Lückenminuten, aktueller Zustand des Zieleintrags.
+  request_credit_override?: boolean;
+  original_uncredited_minutes?: number | null;
+  entry_credit_override?: boolean;
+  entry_not_credited_minutes?: number;
+  entry_auto_closed?: boolean;
+  // Gesamtreview PR2 (Fund 2): Stempel des Zieleintrags (raw_* or start/end);
+  // Ende `null` bei einem automatisch geschlossenen Eintrag (P18).
+  entry_raw_start_time?: string | null;
+  entry_raw_end_time?: string | null;
+  // Gesamtreview 1.20 (B2): AKTUELLES wirksames Ende und AKTUELLER
+  // angerechneter Beginn des Zieleintrags (Echo-Regel der Genehmigung).
+  entry_end_time?: string | null;
+  entry_start_time?: string | null;
   reason: string;
   rejection_reason?: string;
   reviewer_first_name?: string;
@@ -75,6 +93,93 @@ function getDateRange(range: TimeRange): { from: string; to: string } {
   }
 }
 
+/**
+ * P18: Bringt ein Antrag zu einem automatisch geschlossenen Eintrag ein
+ * tatsächliches Ende mit? Sonst lehnt der Server das Anerkennen mit 400 ab
+ * (`credit_override_service.lacks_actual_end`) — das gespeicherte (wirksame)
+ * Ende zählt nicht; der Antrag kennt es als `original_end_time`. Entschieden
+ * 2026-10-11 (Produktinhaber): ein beantragtes 23:59 ist ein tatsächliches
+ * Ende (außer wo das wirksame Ende selbst 23:59 ist, weil der Auto-Close nicht
+ * gekappt hat — Tag ohne Blöcke, ohne Stundenzählung, halboffenes Altfenster,
+ * Hülle bis 23:59). Echo ist das wirksame Ende zum Zeitpunkt des Antrags
+ * (`original_end_time`) — genau so liest es auch der Server
+ * (`work_window_service.request_end_for_approval`, Review V1), auch wenn eine
+ * Neukappung das wirksame Ende seither geändert hat — und ebenso das AKTUELLE
+ * wirksame Ende (`entry_end_time`, `end_is_correction`; Gesamtreview 1.20 B2):
+ * fällt ein beantragtes Ende genau darauf, lehnt der Server das Anerkennen mit
+ * 400 ab.
+ */
+function bringsActualEnd(cr: ChangeRequest): boolean {
+  if (!cr.entry_auto_closed) return true;
+  const end = cr.proposed_end_time?.substring(0, 5);
+  return !!end
+    && end !== cr.original_end_time?.substring(0, 5)
+    && end !== cr.entry_end_time?.substring(0, 5);
+}
+
+const hhmm = (t?: string | null) => (t ? t.substring(0, 5) : '');
+
+/**
+ * Gesamtreview PR2 (Fund 2): „Genehmigen und anerkennen" rechnet die
+ * vorgeschlagenen Zeiten dauerhaft und ungekappt an (P11) — die Prüfung zeigt
+ * deshalb die Stempel des Eintrags daneben. Nur an offenen Änderungsanträgen
+ * zu Einträgen mit nicht angerechneter Zeit (bzw. mit Anrechnungsantrag): die
+ * Werte sind der AKTUELLE Zustand des Eintrags, an erledigten Anträgen wären
+ * sie nicht mehr die, über die entschieden wurde.
+ */
+function stampedLine(cr: ChangeRequest): string | null {
+  if (cr.status !== 'pending' || cr.entry_kind === 'absence' || cr.request_type !== 'update') return null;
+  const notCredited = cr.entry_not_credited_minutes ?? 0;
+  if (!cr.request_credit_override && notCredited <= 0) return null;
+  const start = hhmm(cr.entry_raw_start_time);
+  if (!start) return null;
+  const span = cr.entry_auto_closed
+    ? `ab ${start}, nicht ausgestempelt (automatisch geschlossen)`
+    : cr.entry_raw_end_time ? `${start}–${hhmm(cr.entry_raw_end_time)}` : null;
+  if (!span) return null;
+  return `gestempelt ${span} · nicht angerechnet aktuell ${formatHoursHM(notCredited / 60)} h`;
+}
+
+/**
+ * Gesamtreview 1.20 (B2, Folgefund): gilt ein beantragter Wert als Stempel?
+ * Ja, wenn er der Stempel ist — oder das Echo der angerechneten Zeit, die das
+ * Antragsformular vorbelegt: zum Zeitpunkt des Antrags (`original_*`) oder
+ * aktuell (`entry_start_time`/`entry_end_time`, nach einer Neukappung). Das
+ * Echo ersetzt die Genehmigung durch den Stempel (`request_*_for_approval` +
+ * `unclamp_input`) — auch „Genehmigen und anerkennen" erkennt dann die
+ * Stempel an, nicht die angezeigten beantragten Zeiten. Minutengenau wie der
+ * Server (`same_minute`).
+ */
+function isStampInput(
+  proposed: string | undefined, stamp: string,
+  original: string | undefined, current: string | null | undefined,
+): boolean {
+  const p = hhmm(proposed);
+  return p === stamp || (!!p && (p === hhmm(original) || p === hhmm(current)));
+}
+
+/** Fund 2: weichen die vorgeschlagenen Zeiten von den Stempeln ab? Beim
+ * automatisch geschlossenen Eintrag gibt es kein Stempel-Ende (P18) — dort
+ * zählt nur der Beginn. Ein Echo der angerechneten Zeit ist keine Abweichung
+ * (`isStampInput`). */
+function stampDeviation(cr: ChangeRequest): string | null {
+  if (!stampedLine(cr)) return null;
+  const start = hhmm(cr.entry_raw_start_time);
+  const startIsStamp = isStampInput(
+    cr.proposed_start_time, start, cr.original_start_time, cr.entry_start_time,
+  );
+  if (cr.entry_auto_closed) {
+    return startIsStamp ? null : `Beginn weicht vom Stempel ab (gestempelt ab ${start})`;
+  }
+  const end = hhmm(cr.entry_raw_end_time);
+  const endIsStamp = isStampInput(
+    cr.proposed_end_time, end, cr.original_end_time, cr.entry_end_time,
+  );
+  return startIsStamp && endIsStamp
+    ? null
+    : `Zeiten weichen von den Stempeln ab (gestempelt ${start}–${end})`;
+}
+
 function formatDateDE(dateStr: string): string {
   return format(new Date(dateStr + 'T12:00:00'), 'dd.MM.yyyy');
 }
@@ -96,6 +201,7 @@ export default function AdminChangeRequests() {
   const [bulkRejectMode, setBulkRejectMode] = useState(false);
   const [bulkRejectionReason, setBulkRejectionReason] = useState('');
   const [bulkProcessing, setBulkProcessing] = useState(false);
+  const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
   useEffect(() => {
     apiClient.get('/admin/users').then(res => {
@@ -143,12 +249,14 @@ export default function AdminChangeRequests() {
   // Bulk-Pfad ist via bulkProcessing bereits geschützt).
   const actionLock = useRef(false);
 
-  const handleApprove = async (id: string) => {
+  const handleApprove = async (id: string, grant?: boolean) => {
     if (actionLock.current) return;
     actionLock.current = true;
     try {
+      // Spec P21: ohne `grant` gilt der Antragswert (request_credit_override).
       const response = await apiClient.post(`/admin/change-requests/${id}/review`, {
         action: 'approve',
+        ...(grant === undefined ? {} : { grant_credit_override: grant }),
       });
       toast.success('Antrag genehmigt');
       // ArbZG-Warnungen der Genehmigung anzeigen (§3 >48h/Woche, §6 Nacht) —
@@ -184,6 +292,31 @@ export default function AdminChangeRequests() {
   const pendingCount = requests.filter(r => r.status === 'pending').length;
   const pendingIds = requests.filter(r => r.status === 'pending').map(r => r.id);
   const allPendingSelected = pendingIds.length > 0 && pendingIds.every(id => selectedIds.has(id));
+
+  // Gesamtreview PR2 (Fund 4): die Sammel-Genehmigung übernimmt den
+  // Antragswert (P21) — ausgewählte „Anrechnung beantragt"-Anträge werden damit
+  // dauerhaft anerkannt (P11). Der Knopf nennt sie, und vorher wird gefragt.
+  const creditSelectedCount = requests.filter(
+    (r) => r.status === 'pending' && selectedIds.has(r.id) && r.request_credit_override,
+  ).length;
+
+  const startBulkApprove = () => {
+    if (creditSelectedCount === 0) {
+      void runBulkReview('approve');
+      return;
+    }
+    confirm({
+      title: 'Genehmigen mit Anerkennen',
+      message:
+        `${creditSelectedCount} der ${selectedIds.size} ausgewählten Anträge beantragen die Anrechnung. `
+        + 'Genehmigen erkennt dort die gesamte beantragte Zeit dauerhaft an – auch bei späteren '
+        + 'Neuberechnungen; eine Rücknahme gibt es nicht. Soll ein Antrag ohne Anerkennen genehmigt '
+        + 'werden, ihn abwählen und einzeln mit „Ohne Anerkennen genehmigen" bearbeiten.',
+      confirmLabel: 'Alle genehmigen',
+      variant: 'warning',
+      onConfirm: () => { void runBulkReview('approve'); },
+    });
+  };
 
   const toggleOne = (id: string) => {
     setSelectedIds(prev => {
@@ -247,6 +380,15 @@ export default function AdminChangeRequests() {
 
   return (
     <div>
+      <ConfirmDialog
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel={confirmState.confirmLabel}
+        variant={confirmState.variant}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Änderungsanträge</h1>
@@ -356,11 +498,14 @@ export default function AdminChangeRequests() {
             {selectedIds.size > 0 && !bulkRejectMode && (
               <div className="flex gap-2">
                 <button
-                  onClick={() => runBulkReview('approve')}
+                  onClick={startBulkApprove}
                   disabled={bulkProcessing}
                   className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm rounded-lg transition"
                 >
-                  <Check size={16} /> {selectedIds.size} genehmigen
+                  <Check size={16} />
+                  {creditSelectedCount > 0
+                    ? `${selectedIds.size} genehmigen, davon ${creditSelectedCount} mit Anerkennen`
+                    : `${selectedIds.size} genehmigen`}
                 </button>
                 <button
                   onClick={() => setBulkRejectMode(true)}
@@ -441,6 +586,11 @@ export default function AdminChangeRequests() {
                         {config.label}
                       </span>
                       <span className="text-sm text-gray-600">{typeLabels[cr.request_type]}</span>
+                      {cr.request_credit_override && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-800">
+                          Anrechnung beantragt
+                        </span>
+                      )}
                     </div>
                     <span className="text-xs text-gray-500">
                       Erstellt: {format(new Date(cr.created_at), 'dd.MM.yyyy HH:mm')}
@@ -487,6 +637,10 @@ export default function AdminChangeRequests() {
                             <p>Datum: <span className="font-medium">{formatDateDE(cr.original_date)}</span></p>
                             <p>Zeit: <span className="font-medium">{cr.original_start_time?.substring(0, 5)} – {cr.original_end_time?.substring(0, 5)}</span></p>
                             <p>Pause: <span className="font-medium">{cr.original_break_minutes} min</span></p>
+                            {(cr.original_uncredited_minutes ?? 0) > 0 && (
+                              <p>{`Nicht angerechnet (Lücke): ${formatHoursHM((cr.original_uncredited_minutes ?? 0) / 60)} h`}</p>
+                            )}
+                            {stampedLine(cr) && <p className="text-gray-600">{stampedLine(cr)}</p>}
                             {cr.original_note && <p>Notiz: {cr.original_note}</p>}
                           </div>
                         </div>
@@ -502,12 +656,23 @@ export default function AdminChangeRequests() {
                             <p>Pause: <span className="font-medium">{cr.proposed_break_minutes} min</span></p>
                             {cr.proposed_note && <p>Notiz: {cr.proposed_note}</p>}
                             {cr.proposed_sunday_exception_reason && <p>§10-Ausnahmegrund: {cr.proposed_sunday_exception_reason}</p>}
+                            {stampDeviation(cr) && <p className="text-red-700 font-medium">{stampDeviation(cr)}</p>}
                           </div>
                         </div>
                       )}
                     </>
                   )}
                 </div>
+
+                {/* P3: Hinweis für die Antragsprüfung. Er hängt am AKTUELLEN Zustand des
+                    Eintrags — an erledigten Anträgen wäre er eine Zusage für Zeiten, die
+                    längst übernommen bzw. nie übernommen wurden. */}
+                {cr.status === 'pending' && cr.entry_kind !== 'absence' && cr.request_type === 'update'
+                  && cr.entry_credit_override && (
+                  <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
+                    Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.
+                  </div>
+                )}
 
                 {/* Reason */}
                 <div className="text-sm mb-4">
@@ -559,14 +724,45 @@ export default function AdminChangeRequests() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex space-x-3">
-                        <button
-                          onClick={() => handleApprove(cr.id)}
-                          className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition"
-                        >
-                          <Check size={16} />
-                          <span>Genehmigen</span>
-                        </button>
+                      <div className="flex flex-wrap gap-3">
+                        {cr.request_credit_override ? (
+                          <>
+                            <button
+                              onClick={() => handleApprove(cr.id)}
+                              className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition"
+                            >
+                              <Check size={16} />
+                              <span>Genehmigen und anerkennen</span>
+                            </button>
+                            <button
+                              onClick={() => handleApprove(cr.id, false)}
+                              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg transition"
+                            >
+                              Ohne Anerkennen genehmigen
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleApprove(cr.id)}
+                              className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition"
+                            >
+                              <Check size={16} />
+                              <span>Genehmigen</span>
+                            </button>
+                            {/* P21: jeder UPDATE-Antrag auf einen Eintrag mit nicht angerechneter Zeit */}
+                            {cr.entry_kind !== 'absence' && cr.request_type === 'update'
+                              && !cr.entry_credit_override && (cr.entry_not_credited_minutes ?? 0) > 0
+                              && bringsActualEnd(cr) && (
+                              <button
+                                onClick={() => handleApprove(cr.id, true)}
+                                className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-800 text-sm rounded-lg transition"
+                              >
+                                Genehmigen und anerkennen
+                              </button>
+                            )}
+                          </>
+                        )}
                         <button
                           onClick={() => setRejectingId(cr.id)}
                           className="flex items-center space-x-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm rounded-lg transition"

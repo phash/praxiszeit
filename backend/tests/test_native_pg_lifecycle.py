@@ -930,3 +930,134 @@ class TestResetAdminPasswordReichtOptionenDurch:
                 pass
         assert handler.called
         assert handler.call_args[0][0].reactivate is True
+
+
+class TestResetAdminPasswordRootHinweisJePlattform:
+    """Gesamtreview B8 (#491): als root ohne laufende Datenbank bricht das
+    Kommando ab (``pg_ctl`` lehnt root ab) und nennt zwei Auswege. Der erste —
+    den Dienst starten — hiess bis dahin auf JEDER Plattform ``systemctl start
+    praxiszeit``. Auf macOS gibt es kein systemctl; dort laeuft PraxisZeit als
+    launchd-Dienst ``de.praxiszeit.server`` (``installer/macos/install.sh``),
+    gestartet wird er mit ``launchctl load`` auf die Plist."""
+
+    def _abbruch(self, srv, caplog, monkeypatch, *, macos: bool, **flags):
+        import argparse
+        import logging
+        monkeypatch.setattr(srv, "IS_MACOS", macos)
+        args = argparse.Namespace(username=None, disable_2fa=False, reactivate=False)
+        for k, v in flags.items():
+            setattr(args, k, v)
+        with patch.object(srv, "load_config", return_value={}), \
+             patch.object(srv, "pg_load_credentials", return_value=("su", "app")), \
+             patch.object(srv, "pg_is_running", return_value=False), \
+             patch.object(srv, "_running_as_root", return_value=True), \
+             patch.object(srv, "_install_owner", return_value="dienstkonto"), \
+             patch.object(srv, "pg_start") as pg_start, \
+             patch.object(srv.subprocess, "run") as run, \
+             caplog.at_level(logging.ERROR, logger="praxiszeit"):
+            with pytest.raises(SystemExit) as exc:
+                srv.cmd_reset_admin_password(args)
+        assert exc.value.code == 1
+        # Nichts angefasst: weder Datenbank gestartet noch Werkzeug aufgerufen.
+        assert not pg_start.called
+        assert not run.called
+        return caplog.text
+
+    def test_linux_nennt_systemctl(self, srv, caplog, monkeypatch):
+        text = self._abbruch(srv, caplog, monkeypatch, macos=False)
+        assert "systemctl start praxiszeit" in text
+        assert "launchctl" not in text
+        assert "sudo -u dienstkonto" in text
+
+    def test_macos_nennt_launchctl_statt_systemctl(self, srv, caplog, monkeypatch):
+        text = self._abbruch(srv, caplog, monkeypatch, macos=True)
+        assert "launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist" in text
+        assert "systemctl" not in text
+        assert "sudo -u dienstkonto" in text
+
+    def test_ausweg_uebernimmt_die_optionen_des_aufrufs(self, srv, caplog, monkeypatch):
+        # Gesamtreview B8: die kopierfertige Zeile liess --username,
+        # --disable-2fa und --reactivate weg. Wer sie uebernahm, setzte nur das
+        # Passwort neu — 2FA blieb an bzw. das Konto deaktiviert, und ein
+        # zweiter Lauf (erneut token_version + 1, weitere Protokollzeile) war
+        # noetig. Die Zeile endet deshalb mit genau den Optionen des Aufrufs.
+        text = self._abbruch(srv, caplog, monkeypatch, macos=False,
+                             username="chefin", disable_2fa=True, reactivate=True)
+        assert text.rstrip().endswith(
+            "reset-admin-password --username chefin --disable-2fa --reactivate"), text
+
+    def test_ausweg_ohne_optionen_bleibt_unveraendert(self, srv, caplog, monkeypatch):
+        text = self._abbruch(srv, caplog, monkeypatch, macos=False)
+        assert text.rstrip().endswith("reset-admin-password"), text
+
+    def test_ausweg_quotet_den_benutzernamen_fuer_die_shell(self, srv, caplog, monkeypatch):
+        # Der Benutzername ist frei waehlbar; die Zeile muss kopiert in der
+        # Shell genau dieses Konto treffen (Leerzeichen, Shell-Sonderzeichen).
+        text = self._abbruch(srv, caplog, monkeypatch, macos=True,
+                             username="Dr. Müller; rm")
+        assert text.rstrip().endswith(
+            "reset-admin-password --username 'Dr. Müller; rm'"), text
+
+    def test_launchd_label_stimmt_mit_den_installern_ueberein(self, srv):
+        # Leitplanke wie test_pg_service_name_matches_installer: der Hinweis
+        # muss genau den Dienst nennen, den die macOS-Installer anlegen.
+        repo = _SERVER_PATH.parent
+        assert srv.MACOS_LAUNCHD_LABEL == "de.praxiszeit.server"
+        assert srv.MACOS_LAUNCHD_PLIST == "/Library/LaunchDaemons/de.praxiszeit.server.plist"
+        installer = (repo / "installer" / "macos" / "install.sh").read_text(encoding="utf-8")
+        assert f"cat > {srv.MACOS_LAUNCHD_PLIST} << PLISTEOF" in installer
+        assert f"<key>Label</key>\n    <string>{srv.MACOS_LAUNCHD_LABEL}</string>" in installer
+        gui = (repo / "installer" / "setup" / "src" / "PraxisZeit.Setup.Core" / "Platform"
+               / "MacOsPlatform.cs").read_text(encoding="utf-8")
+        assert f'PlistLabel = "{srv.MACOS_LAUNCHD_LABEL}"' in gui
+        assert f'PlistPath = "{srv.MACOS_LAUNCHD_PLIST}"' in gui
+
+    @pytest.mark.parametrize("macos,erwartet", [(False, "praxiszeit"), (True, "_praxiszeit")])
+    def test_rueckfall_des_dienstkontos_je_plattform(self, srv, monkeypatch, tmp_path,
+                                                     macos, erwartet):
+        # Ist der Eigentuemer des Installationsordners nicht ermittelbar, nennt
+        # der Hinweis das Dienstkonto, das der Installer der Plattform anlegt —
+        # auf macOS mit Unterstrich (dscl in installer/macos/install.sh).
+        monkeypatch.setattr(srv, "IS_MACOS", macos)
+        monkeypatch.setattr(srv, "BASE_DIR", tmp_path / "gibt-es-nicht")
+        assert srv._install_owner() == erwartet
+
+
+class TestMigrationenLaufenInUtf8:
+    """Review Task 13 (073): die Diagnose der Migration 073 enthaelt „→", das
+    cp1252 nicht kennt. Nativ unter Windows ist stdout des alembic-Kinds eine
+    Pipe in der ANSI-Codepage, solange PYTHONUTF8 nicht geerbt wird (etwa beim
+    Konsolenstart ``bin\\python\\python.exe praxiszeit-server.py start``) —
+    ``run_migrations`` setzt die Variable deshalb selbst, wie ``uvicorn_start``
+    und ``cmd_reset_admin_password``. Und weil das Kind dann UTF-8 schreibt,
+    muss der Elternprozess UTF-8 lesen, unabhaengig von seiner eigenen
+    Codepage: sonst wird die Ausgabe zu Zeichensalat, und ein Byte, das cp1252
+    nicht belegt (0x81/0x8D/0x8F/0x90/0x9D, etwa in „Ł" oder „”"), braeche
+    ``subprocess.run`` NACH der erfolgreichen Migration mit UnicodeDecodeError ab."""
+
+    def _run(self, srv, stdout=""):
+        import subprocess as sp
+        captured = {}
+
+        def fake_run(cmd, **kw):
+            captured.update(kw)
+            return sp.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+        with patch.object(srv.subprocess, "run", side_effect=fake_run):
+            srv.run_migrations({})
+        return captured
+
+    def test_kind_laeuft_im_utf8_modus(self, srv, monkeypatch):
+        monkeypatch.delenv("PYTHONUTF8", raising=False)
+        assert self._run(srv)["env"]["PYTHONUTF8"] == "1"
+
+    def test_eltern_lesen_utf8_ohne_abbruch(self, srv):
+        kw = self._run(srv)
+        assert kw["encoding"] == "utf-8"
+        assert kw["errors"] == "replace"
+
+    def test_diagnose_landet_im_log(self, srv, caplog):
+        import logging
+        with caplog.at_level(logging.INFO):
+            self._run(srv, stdout="halboffen: Fr ab 07:30 → Ende 23:59\n")
+        assert "alembic: halboffen: Fr ab 07:30 → Ende 23:59" in caplog.text

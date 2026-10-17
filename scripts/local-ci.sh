@@ -8,15 +8,21 @@
 # (steps 1+2 below). This script exists because that workflow deliberately stops
 # at the backend — everything else is only ever checked here:
 #
+#   * step 0  Doku-Abgleich (Handbücher, Hilfe-Spiegel, zitierte Wortlaute)
 #   * step 3  native PostgreSQL lifecycle (praxiszeit-server.py, needs the repo
 #             mounted — impossible in the backend-only workflow)
 #   * steps 4-7  frontend: tsc, vitest, eslint, vite build
 #   * step 8  E2E against a live docker compose stack
 #
-# So: a backend-only change is already gated by Actions; anything touching the
-# frontend, the installer or the E2E surface needs this script.
+# So: a backend-only change is already gated by Actions (unless it rewords a
+# message the docs quote: step 0 also checks backend/app); anything touching
+# the frontend, the installer, the docs (handbooks, help mirror, CLAUDE.md,
+# CHANGELOG, architecture docs) or the E2E surface needs this script.
 #
 # Steps:
+#   0. Doku-Abgleich              (scripts/check-doc-sync.sh all — Spiegel,
+#                                  Anker, Pflichtbegriffe, zitierte Wortlaute;
+#                                  braucht kein Docker, nur bash + python3)
 #   1. Backend pytest             (unit + integration, SQLite-backed)
 #   2. Backend RLS integration    (test_tenant_rls.py against real Postgres)
 #   3. Native PG lifecycle        (praxiszeit-server.py, needs the repo mounted)
@@ -51,6 +57,16 @@ warn() { echo -e "${YELLOW}⚠${NC} $*"; }
 step() { echo -e "\n${YELLOW}==>${NC} $*"; }
 
 # -----------------------------------------------------------------------
+# 0. Doku-Abgleich (fünf Sync-Flächen, Spiegel, Anker, zitierte Wortlaute)
+# -----------------------------------------------------------------------
+step "Doku-Abgleich (scripts/check-doc-sync.sh all)"
+if bash scripts/check-doc-sync.sh all; then
+    ok "Doku-Abgleich OK"
+else
+    fail "Doku-Abgleich: Abweichungen siehe oben"
+fi
+
+# -----------------------------------------------------------------------
 # 1. Backend pytest (SQLite-backed unit + integration tests)
 # -----------------------------------------------------------------------
 # Excludes Postgres-only tests (RLS, concurrency) — run separately in step 2.
@@ -61,6 +77,10 @@ step() { echo -e "\n${YELLOW}==>${NC} $*"; }
 step "Backend tests (pytest)"
 if docker compose exec -T -e TZ=Europe/Berlin backend pytest tests/ -q --tb=short \
        --ignore=tests/test_tenant_rls.py \
+       --ignore=tests/test_073_migration_pg.py \
+       --ignore=tests/test_net_hours_parity_pg.py \
+       --ignore=tests/test_reclamp_concurrency.py \
+       --ignore=tests/test_handbuch_seed_pg.py \
        --ignore=tests/test_concurrency.py </dev/null 2>&1 | tail -5; then
     ok "Backend tests passed"
 else
@@ -83,14 +103,20 @@ fi
 # CLAUDE.md. It is SQLite-backed (it exercises the explicit F-026
 # `tenant_id == current_user.tenant_id` filters, not RLS) and therefore already
 # runs inside step 1 — it is listed here only so the trio stays visible.
-# Reference counts: step 2 runs 46 tests against real Postgres
-# (20 RLS + 12 concurrency + 12 Art.-17 purge + 2 invalid-UUID #483); the 18 cross-tenant tests run
-# inside step 1. Same three files as the Actions step "Cross-tenant RLS +
-# Art.17 purge + Race-Tests (real Postgres)".
+# Reference counts: step 2 runs 83 tests against real Postgres
+# (20 RLS + 24 concurrency + 12 Art.-17 purge + 3 invalid-UUID #483 + 2 migration-073
+# — round trip, backfill as non-superuser owner under FORCE RLS — + 1 net_hours
+# parity + 14 reclamp concurrency — Arbeitszeit-Änderung gegen die Schreibpfade,
+# Anerkennen und Löschen, Spec 17.5/P5, dazu 4 Beginn-Kollisionen gegen den
+# Unique-Index — + 7 Handbuch-Seed unter RLS, Gesamtreview 1.20 B9); the 18
+# cross-tenant tests run inside step 1. Same eight files as the Actions step
+# "Cross-tenant RLS + Art.17 purge + Race-Tests (real Postgres)".
 step "Backend Postgres integration (RLS + concurrency + Art.17 purge)"
 if docker compose exec -T -e TZ=Europe/Berlin backend pytest \
        tests/test_tenant_rls.py tests/test_concurrency.py \
        tests/test_purge_user_postgres.py tests/test_invalid_uuid_postgres.py \
+       tests/test_073_migration_pg.py tests/test_net_hours_parity_pg.py \
+       tests/test_reclamp_concurrency.py tests/test_handbuch_seed_pg.py \
        -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Postgres integration verified"
 else
@@ -113,6 +139,14 @@ fi
 #
 # --user: the mount is host-owned; the image's default user cannot create the
 # logs/ directory the orchestrator opens at import time.
+#
+# Same mount, same reason: test_491_deploy_pull.py drives the real ../deploy.sh
+# against git/docker stubs (#491 DEP-4), test_482_macho_deps.py the macOS
+# load-command check in ../tools (#482), test_frontend_dockerignore.py the
+# build-context rules in ../frontend (Gesamtreview B8), test_docker_restore.py
+# the real ../tools/docker/restore.sh + update-pg-major.sh (Gesamtreview 1.20),
+# test_native_restore.py the `restore` subcommand of ../praxiszeit-server.py
+# (Gesamtreview 1.20); all skip without the repo.
 step "Native PG lifecycle (praxiszeit-server.py)"
 if docker run --rm --user "$(id -u):$(id -g)" \
        -v "$(pwd)":/work -w /work/backend \
@@ -123,7 +157,11 @@ if docker run --rm --user "$(id -u):$(id -g)" \
        -e ENVIRONMENT=development -e CORS_ORIGINS=http://localhost \
        -e DATABASE_URL=sqlite:////tmp/native-lifecycle.db \
        praxiszeit-backend \
-       python -m pytest tests/test_native_pg_lifecycle.py -q --tb=short </dev/null 2>&1 | tail -5; then
+       python -m pytest tests/test_native_pg_lifecycle.py \
+         tests/test_491_deploy_pull.py tests/test_482_macho_deps.py \
+         tests/test_frontend_dockerignore.py tests/test_docker_restore.py \
+         tests/test_native_restore.py \
+         -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Native PG lifecycle verified"
 else
     fail "Native PG lifecycle tests failed"
@@ -226,9 +264,17 @@ else
         fail "Frontend image rebuild failed"
     fi
 
+    # -------------------------------------------------------------------
+    # 8c. TZ=Europe/Berlin: the specs compute "today" in the Playwright
+    # container (UTC by default), the app computes it in Europe/Berlin. In the
+    # window after Berlin midnight (~22-24 h UTC) both disagree by one day and
+    # time-tracking.spec.ts failed 4 tests for reasons that have nothing to do
+    # with the code under test. Same fix as the backend suite (-e TZ=...).
+    # -------------------------------------------------------------------
     step "E2E tests (playwright)"
     if docker run --rm \
            -v "$(pwd)/e2e":/app -w /app \
+           -e TZ=Europe/Berlin \
            --network host \
            mcr.microsoft.com/playwright:v1.58.2-jammy \
            sh -c "npm install --silent && npx playwright test --reporter=line" 2>&1 | tail -15; then

@@ -4,7 +4,7 @@ Erstellt realistische Testdaten für Handbuch-Screenshots.
 """
 import sys
 import os
-from datetime import date, datetime, timedelta, time as dt_time
+from datetime import date, datetime, timedelta, timezone, time as dt_time
 from decimal import Decimal
 import random
 
@@ -18,6 +18,8 @@ from app.models import (
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
 from app.models.user import UserRole
 from app.services import auth_service
+from app.services import work_window_service
+from app.services.work_blocks_service import derive_targets
 
 random.seed(42)  # Reproduzierbar
 
@@ -64,6 +66,13 @@ EMPLOYEES = [
         "track_hours": True,
         "is_night_worker": False,
         "exempt_from_arbzg": False,
+        # 1.20.0: Demo für Handbuch-Screenshots 16/17 — Vormittag + Nachmittag mit
+        # Mittagslücke; Tagessoll 4 h + 1 h = 5 h, also unverändert 25 h/Woche.
+        "work_blocks": [
+            {"blocks": [{"start": "08:00", "end": "12:00"}, {"start": "15:00", "end": "16:00"}],
+             "pause_minutes": 0}
+            for _ in range(5)
+        ],
     },
     {
         "username": "petra.schulz",
@@ -97,21 +106,87 @@ EMPLOYEES = [
 START_DATE = date(2026, 1, 5)   # Erster Arbeitstag (Mo nach Neujahr)
 END_DATE   = date(2026, 2, 27)  # Gestern (Fr)
 
+# Tage, an denen die Demo-Person über die Mittagslücke durchstempelt — erzeugt die
+# Zusatzzeile „… zwischen den Blöcken nicht angerechnet" im Handbuch.
+BLOCK_DEMO_THROUGH_DAYS = {date(2026, 2, 9), date(2026, 2, 23)}
+
 
 def get_holiday_dates(db) -> set:
+    # Superadmin-Kontext: RLS greift nicht, der Mandantenfilter ist Pflicht
+    # (Gesamtreview 1.20 B9) — sonst strichen Feiertage fremder Mandanten
+    # Arbeitstage aus dem Demo-Zeitraum.
     holidays = db.query(PublicHoliday).filter(
+        PublicHoliday.tenant_id == TENANT_ID,
         PublicHoliday.date >= START_DATE,
         PublicHoliday.date <= END_DATE
     ).all()
     return {h.date for h in holidays}
 
 
+def _apply_work_blocks(db, user: User, emp: dict) -> None:
+    """Setzt Arbeitszeit-Blöcke samt abgeleitetem Soll (Spec 4.1, E9).
+
+    ``users.work_blocks`` ist der Rückfall vor der ersten Verlaufszeile — die
+    Demo-Person hat keine Verlaufszeile, also gelten diese Blöcke für den ganzen
+    Demo-Zeitraum. Soll-Felder über ``derive_targets`` wie im Anlege-Pfad, damit
+    Blöcke und Tagessoll zusammenpassen."""
+    blocks = emp.get("work_blocks")
+    if not blocks:
+        return
+    user.work_blocks = blocks
+    for field, value in derive_targets(blocks).items():
+        setattr(user, field, value)
+    db.commit()
+
+
+def _minutes_to_time(minutes: int) -> dt_time:
+    return dt_time(minutes // 60, minutes % 60)
+
+
+def create_block_entries_for_user(db, user: User, work_days: list) -> int:
+    """Je Arbeitstag ein Eintrag je Block; an BLOCK_DEMO_THROUGH_DAYS ein Eintrag
+    vom ersten Blockbeginn bis zum letzten Blockende. Die Blöcke kommen über den
+    Resolver (``work_window_service.get_scheduled_blocks``), gekappt wird über
+    den echten ``clamp`` (Puffer aus den Einstellungen), wie jeder Schreibpfad
+    es tut."""
+    grace = work_window_service.get_grace_minutes(db, TENANT_ID)
+    count = 0
+    for d in work_days:
+        day_blocks = work_window_service.get_scheduled_blocks(db, user, d)
+        if not day_blocks:
+            continue
+        if d in BLOCK_DEMO_THROUGH_DAYS:
+            spans = [(day_blocks[0][0], day_blocks[-1][1])]
+        else:
+            spans = list(day_blocks)
+        for start_min, end_min in spans:
+            r = work_window_service.clamp(
+                db, user, d, _minutes_to_time(start_min), _minutes_to_time(end_min),
+                grace, credit_override=False,
+            )
+            db.add(TimeEntry(
+                tenant_id=TENANT_ID, user_id=user.id, date=d,
+                start_time=r.eff_start, end_time=r.eff_end,
+                raw_start_time=r.raw_start, raw_end_time=r.raw_end,
+                uncredited_minutes=r.uncredited_minutes,
+                clamp_grace_minutes=r.grace_minutes,
+                break_minutes=0, note="",
+            ))
+            count += 1
+    db.commit()
+    return count
+
+
 def create_employees(db) -> list:
     created = []
     for emp in EMPLOYEES:
-        existing = db.query(User).filter(User.username == emp["username"]).first()
+        existing = db.query(User).filter(
+            User.username == emp["username"],
+            User.tenant_id == TENANT_ID,  # Superadmin-Kontext, nie fremde Konten übernehmen
+        ).first()
         if existing:
             print(f"  ~ {emp['first_name']} {emp['last_name']} existiert bereits (übersprungen)")
+            _apply_work_blocks(db, existing, emp)
             created.append(existing)
             continue
 
@@ -136,6 +211,7 @@ def create_employees(db) -> list:
         db.add(u)
         db.commit()
         db.refresh(u)
+        _apply_work_blocks(db, u, emp)
         created.append(u)
         print(f"  ✓ {emp['first_name']} {emp['last_name']} ({emp['weekly_hours']}h/Woche) angelegt")
     return created
@@ -192,13 +268,21 @@ def make_time_entry(user: User, d: date, target_hours: float,
 def create_time_entries_for_user(db, user: User, holiday_dates: set):
     daily_hours = float(user.weekly_hours) / user.work_days_per_week
 
-    # Abwesenheiten dieses Nutzers abrufen
+    # Abwesenheiten dieses Nutzers abrufen. Superadmin-Kontext: der
+    # Mandantenfilter gilt auch neben user_id (Gesamtreview 1.20 B9).
     absence_dates = {
-        a.date for a in db.query(Absence).filter(Absence.user_id == user.id).all()
+        a.date for a in db.query(Absence).filter(
+            Absence.user_id == user.id, Absence.tenant_id == TENANT_ID,
+        ).all()
     }
 
     work_days = working_days_in_range(START_DATE, END_DATE, holiday_dates,
                                       user.work_days_per_week)
+    if getattr(user, "work_blocks", None):
+        count = create_block_entries_for_user(
+            db, user, [d for d in work_days if d not in absence_dates])
+        print(f"    ✓ {count} Zeiteinträge nach Arbeitszeit-Blöcken erstellt")
+        return
 
     count = 0
     for d in work_days:
@@ -272,36 +356,47 @@ def create_absences_for_user(db, user: User, holiday_dates: set):
     print(f"    ✓ {len(absence_entries)} Abwesenheiten erstellt")
 
 
-def _insert_change_request(db, user_id, time_entry_id, req_type, status,
-                            orig_start, orig_end, orig_break,
-                            prop_start, prop_end, prop_break,
-                            reason, rejection_reason=None):
-    """Insert a change request via direct psycopg2 to bypass SQLAlchemy enum issues."""
-    conn = db.connection()
-    raw_conn = conn.connection
-    cursor = raw_conn.cursor()
-    cursor.execute(f"""
-        INSERT INTO change_requests (
-            id, tenant_id, user_id, request_type, status, time_entry_id,
-            original_start_time, original_end_time, original_break_minutes,
-            proposed_start_time, proposed_end_time, proposed_break_minutes,
-            reason, rejection_reason
-        ) VALUES (
-            gen_random_uuid(), %s, %s,
-            %s::changerequesttype, %s::changerequeststatus,
-            %s, %s, %s, %s, %s, %s, %s, %s, %s
-        )
-    """, (
-        TENANT_ID, str(user_id), req_type, status, str(time_entry_id),
-        str(orig_start), str(orig_end), orig_break,
-        str(prop_start), str(prop_end), prop_break,
-        reason, rejection_reason,
-    ))
-    raw_conn.commit()
+def _add_change_request(db, user, entry, status, prop_start, prop_end, prop_break,
+                        reason, rejection_reason=None, reviewer=None):
+    """Legt einen UPDATE-Korrekturantrag über die Session an — mit Vorher-Bild
+    wie ``change_requests.create_change_request`` und, wenn abgelehnt, mit
+    Prüferin und Zeitpunkt wie ``review_change_request``.
+
+    Gesamtreview 1.20 (B9): früher ein INSERT über die rohe DBAPI-Verbindung mit
+    eigenem ``commit()``. Der Mandantenkontext steht per ``SET LOCAL`` nur in der
+    laufenden Transaktion und wird über das ``after_begin``-Ereignis der Session
+    erneuert (``app.database``) — ein Commit an der Session vorbei löst es nie
+    aus. Die folgende Abfrage lief ohne Kontext, RLS lieferte 0 Zeilen, und von
+    zwei Anträgen kam nur einer an („1 Change Requests erstellt"). Außerdem fehlte
+    das Datum im Vorher-Bild, die Antragsliste zeigte keine Datumszeile."""
+    cr = ChangeRequest(
+        tenant_id=TENANT_ID,
+        user_id=user.id,
+        request_type=ChangeRequestType.UPDATE,
+        status=status,
+        time_entry_id=entry.id,
+        proposed_date=entry.date,
+        proposed_start_time=prop_start,
+        proposed_end_time=prop_end,
+        proposed_break_minutes=prop_break,
+        original_date=entry.date,
+        original_start_time=entry.start_time,
+        original_end_time=entry.end_time,
+        original_break_minutes=entry.break_minutes,
+        original_note=entry.note,
+        original_uncredited_minutes=entry.uncredited_minutes,
+        reason=reason,
+        rejection_reason=rejection_reason,
+    )
+    if status != ChangeRequestStatus.PENDING:
+        cr.reviewed_by = reviewer.id if reviewer else None
+        cr.reviewed_at = datetime.now(timezone.utc)
+    db.add(cr)
 
 
-def create_change_requests(db, users: list):
-    """Erstellt einige Change Requests (Korrekturanträge)."""
+def create_change_requests(db, users: list, reviewer=None):
+    """Erstellt einige Change Requests (Korrekturanträge). ``reviewer`` = die
+    Verwalterin, die den abgelehnten Antrag geprüft hat."""
     maria = next((u for u in users if u.username == "maria.hoffmann"), None)
     thomas = next((u for u in users if u.username == "thomas.bauer"), None)
 
@@ -309,13 +404,13 @@ def create_change_requests(db, users: list):
     if maria:
         entry = db.query(TimeEntry).filter(
             TimeEntry.user_id == maria.id,
+            TimeEntry.tenant_id == TENANT_ID,  # Superadmin-Kontext
             TimeEntry.date == date(2026, 2, 10)
         ).first()
         if entry:
-            _insert_change_request(
-                db, maria.id, entry.id, "update", "pending",
-                entry.start_time, entry.end_time, entry.break_minutes,
-                "08:00:00", "16:45:00", 45,
+            _add_change_request(
+                db, maria, entry, ChangeRequestStatus.PENDING,
+                dt_time(8, 0), dt_time(16, 45), 45,
                 "Hatte vergessen, mich einzustempeln – tatsächliche Arbeitszeit war 8:00–16:45 Uhr.",
             )
             count += 1
@@ -323,15 +418,16 @@ def create_change_requests(db, users: list):
     if thomas:
         entry = db.query(TimeEntry).filter(
             TimeEntry.user_id == thomas.id,
+            TimeEntry.tenant_id == TENANT_ID,  # Superadmin-Kontext
             TimeEntry.date == date(2026, 1, 15)
         ).first()
         if entry:
-            _insert_change_request(
-                db, thomas.id, entry.id, "update", "rejected",
-                entry.start_time, entry.end_time, entry.break_minutes,
-                "07:30:00", "17:00:00", 30,
+            _add_change_request(
+                db, thomas, entry, ChangeRequestStatus.REJECTED,
+                dt_time(7, 30), dt_time(17, 0), 30,
                 "Bitte Korrektur: hatte durchgehend gearbeitet ohne längere Pause.",
                 "Pausen-Nachweis fehlt. Gemäß ArbZG §4 sind bei >6h Arbeitszeit 30 Min. Pause vorgeschrieben.",
+                reviewer=reviewer,
             )
             count += 1
 
@@ -341,7 +437,10 @@ def create_change_requests(db, users: list):
 
 def update_admin_password(db):
     """Setzt Admin-Passwort auf einen sicheren Wert."""
-    admin = db.query(User).filter(User.username == "admin").first()
+    admin = db.query(User).filter(
+        User.username == "admin",
+        User.tenant_id == TENANT_ID,  # Superadmin-Kontext: nie das Admin-Konto eines fremden Mandanten
+    ).first()
     if admin:
         admin.first_name = "Andreas"
         admin.last_name = "Werner"
@@ -381,9 +480,15 @@ def main():
         # 4. Bestehende Einträge dieser User löschen
         print("\n4. Alte Einträge bereinigen...")
         for u in users:
-            deleted_te = db.query(TimeEntry).filter(TimeEntry.user_id == u.id).delete()
-            deleted_ab = db.query(Absence).filter(Absence.user_id == u.id).delete()
-            deleted_cr = db.query(ChangeRequest).filter(ChangeRequest.user_id == u.id).delete()
+            deleted_te = db.query(TimeEntry).filter(
+                TimeEntry.user_id == u.id, TimeEntry.tenant_id == TENANT_ID,
+            ).delete(synchronize_session=False)
+            deleted_ab = db.query(Absence).filter(
+                Absence.user_id == u.id, Absence.tenant_id == TENANT_ID,
+            ).delete(synchronize_session=False)
+            deleted_cr = db.query(ChangeRequest).filter(
+                ChangeRequest.user_id == u.id, ChangeRequest.tenant_id == TENANT_ID,
+            ).delete(synchronize_session=False)
             db.commit()
             if deleted_te or deleted_ab:
                 print(f"  ~ {u.first_name}: {deleted_te} Zeiteinträge + {deleted_ab} Abwesenheiten gelöscht")
@@ -398,7 +503,10 @@ def main():
 
         # 6. Change Requests
         print("\n6. Korrekturanträge erstellen...")
-        create_change_requests(db, users)
+        admin = db.query(User).filter(
+            User.username == "admin", User.tenant_id == TENANT_ID,
+        ).first()
+        create_change_requests(db, users, reviewer=admin)
 
         print("\n" + "=" * 60)
         print("✅ Testdaten erfolgreich erstellt!")

@@ -79,7 +79,7 @@ nano .env
 |----------|-----------|
 | `ADMIN_USERNAME` / `ADMIN_EMAIL` | Initialer Admin-Login |
 | `ADMIN_FIRST_NAME` / `ADMIN_LAST_NAME` | Name des Admins |
-| `PRACTICE_NAME` / `PRACTICE_ADDRESS` | Erscheint in Excel-Exporten (DSGVO) |
+| `PRACTICE_NAME` / `PRACTICE_ADDRESS` | Erscheint in Excel-Exporten (DSGVO); `PRACTICE_NAME` auch in der Kopfzeile des Schichtplan-Aushangs (PDF) |
 | `HOLIDAY_STATE` | Bundesland für Feiertage (z. B. `Bayern`) |
 | `CORS_ORIGINS` / `ALLOWED_HOSTS` | Eigene Domain statt `localhost` (bei Internet-Zugriff) |
 | `COOKIE_SECURE` | **Bei HTTP-Betrieb auf `false` setzen** (siehe Kasten unten) |
@@ -250,14 +250,22 @@ docker compose up -d
 > dem git-Checkout): `bash tools/docker/update-pg-major.sh`. Vollständige
 > Anleitung inkl. Backup/Restore: **[UPDATE.md](UPDATE.md)**.
 
+> **⚠️ Update auf 1.20.0:** Vorher ein Backup ziehen (siehe
+> [Datensicherung](#datensicherung-backup)). Die Migration `073_work_blocks`
+> übernimmt die Arbeitszeit-Fenster als Arbeitszeit-Blöcke und entfernt die alten
+> Fenster-Spalten – zurück auf 1.19.x geht es nur über dieses Backup. Was nach dem
+> Update zu prüfen ist: **[UPDATE.md](UPDATE.md)**.
+
 ```bash
 cd ~/praxiszeit
 docker compose down
 git pull
+docker compose pull db                 # PostgreSQL-18-Patchstand (`up` zieht ihn nie neu)
+docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
 # Ohne SSL:
-docker compose up -d --build
+docker compose up -d
 # Mit SSL:
-docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 ```
 
 Datenbank-Migrationen werden automatisch beim Start ausgefuehrt.
@@ -291,9 +299,15 @@ mkdir -p ~/backups
 ### Backup wiederherstellen
 ```bash
 cd ~/praxiszeit
-gunzip -c backup_20260214.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U praxiszeit -d praxiszeit
-docker compose up -d backend   # Migrationen heben das Schema auf head
+bash tools/docker/restore.sh backup_20260214.sql.gz
+docker compose logs backend    # Ausgabe der Migrationen lesen
 ```
+
+Das Script hält das Backend an, legt die Datenbank frisch an, spielt das Backup ein
+und startet das Backend wieder. Erst dieser Start hebt ein Backup einer älteren
+Version per Migration auf den Stand der installierten Version – ein
+`docker compose up -d backend` startet ein schon laufendes Backend nicht neu.
+Details und der Weg von Hand: [BACKUP.md](BACKUP.md).
 
 ---
 

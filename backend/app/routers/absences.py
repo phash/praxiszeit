@@ -4,11 +4,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month, parse_year_month
 from typing import List, Optional
-from datetime import timedelta, date
+from datetime import date
 from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import (
-    User, Absence, AbsenceType, UserRole, PublicHoliday, TimeEntry, TimeEntryAuditLog,
+    User, Absence, AbsenceType, UserRole, TimeEntry, TimeEntryAuditLog,
     AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE, ChangeRequest,
     WorkingHoursChange, CompanyClosure,
 )
@@ -16,9 +16,18 @@ from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
 from app.services import calculation_service, settings_service, special_days_service
 from app.services.closure_split_service import resplit_year_closures
-from app.routers.admin_helpers import _create_audit_log, lock_user_row
+from app.routers.admin_helpers import (
+    _create_audit_log, ensure_vacation_budget, lock_user_row, zero_hours_absence_detail,
+)
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
+
+# P3 / Gesamtreview 1.20 (B1): Abwesenheit buchen (Mitarbeitende) an einem Tag
+# mit anerkanntem Zeiteintrag — 409 in ``create_absence``. Wortlaut in
+# HANDBUCH-MITARBEITER 4.1, DocViewer und pzweb (Doku-Gate check-doc-sync.sh).
+CREDIT_OVERRIDE_ABSENCE_DETAIL = (
+    "Am {day} gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."
+)
 
 # DSGVO Art. 9: in the colleague-facing feeds (team calendar / upcoming), the
 # masked bucket must NOT be a 1:1 tell for sick-leave. If only SICK were
@@ -396,40 +405,21 @@ def create_absence(
             detail=f"Datum liegt nach dem letzten Arbeitstag ({target_user.last_work_day.strftime('%d.%m.%Y')})"
         )
 
-    # Generate list of weekdays (Mon-Fri, excluding weekends and holidays)
-    dates_to_create = []
-    current_date = start_date
-
-    # Get holidays for the affected years
-    years = set()
-    temp_date = start_date
-    while temp_date <= end_date:
-        years.add(temp_date.year)
-        temp_date += timedelta(days=1)
-
-    holidays = set()
-    for year in years:
-        # F-026: explicit tenant scope on the standalone holiday lookup.
-        year_holidays = db.query(PublicHoliday).filter(
-            PublicHoliday.year == year,
-            PublicHoliday.tenant_id == target_user.tenant_id,
-        ).all()
-        holidays.update([h.date for h in year_holidays])
-
-    # AC-11: auch im Direkt-Buchungspfad 'free'-Sondertage (24./31.12.) wie
-    # Feiertage ausschließen — soll-freie Tage dürfen keine Absence bekommen
-    # (sonst kostet ein freier Tag bei VACATION fälschlich einen Urlaubstag).
-    # Konsistent zu company_closures + admin_vacations.review_vacation_request.
-    holidays |= special_days_service.free_special_days_in_range(
-        db, target_user.tenant_id, start_date, end_date
+    # Kandidaten-Tage: Mo–Fr ohne Feiertage des Mandanten (F-026) und ohne
+    # 'free'-Sondertage (AC-11: soll-freie Tage bekommen keine Absence — sonst
+    # kostete ein freier Tag bei VACATION fälschlich einen Urlaubstag).
+    # Ultrareview 1.20 (Fund 4): derselbe Helfer wie in den Antragspfaden
+    # (``request_workday_candidates``, #496) statt einer eigenen Fassung;
+    # ``year_cache`` lädt die Jahresdaten EINMAL je Jahr.
+    year_cache: dict = {}
+    dates_to_create = calculation_service.request_workday_candidates(
+        db, target_user.tenant_id, start_date, end_date, year_cache=year_cache
     )
-
-    # Collect all weekdays in range (excluding weekends and holidays)
-    while current_date <= end_date:
-        # Check if it's a weekday (0=Monday, 6=Sunday)
-        if current_date.weekday() < 5 and current_date not in holidays:
-            dates_to_create.append(current_date)
-        current_date += timedelta(days=1)
+    # Feiertage ∪ 'free'-Sondertage aus demselben Cache — für die Gutschrifts-
+    # Gewichtung der F1-Klemmung unten (``credit_day_weight``).
+    holidays: set = set()
+    for info in year_cache.values():
+        holidays |= info["holidays"] | info["free_special"]
 
     if not dates_to_create:
         raise HTTPException(
@@ -521,59 +511,98 @@ def create_absence(
             detail="Alle Tage im Zeitraum haben bereits eine Abwesenheit dieses Typs"
         )
 
+    # Fix-Welle 4 #3: Vertragshistorie EINMAL je Anfrage laden statt je Tag eine
+    # Query in ``get_schedule_for_date`` (F-026: tenant-gefiltert, wie die
+    # anderen wh_changes-Preloads). Gesamtreview 1.20 B5 (Nachzug): fuer jeden
+    # Typ — die gebuchten Tage unten werden fuer jeden Typ bestimmt.
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == target_user.id,
+        WorkingHoursChange.tenant_id == target_user.tenant_id,
+    ).order_by(WorkingHoursChange.effective_from).all()
+
+    # Gesamtreview 1.20 B5 (Nachzug): welche Tage diese Buchung tatsaechlich
+    # bucht, steht VOR dem ersten Schreibschritt fest. Bis hier entschied das
+    # erst die Buchungsschleife (Tag ohne Tagessoll bei Stundenzaehlung →
+    # ueberspringen) — NACH der Urlaubsrueckgabe und dem Loeschen der
+    # Zeiteintraege, die alle Kandidaten-Tage erfassten. An einem
+    # uebersprungenen Tag blieb nichts zurueck: der Vertretungsdienst einer
+    # Teilzeitkraft am freien Dienstag verschwand mit einer Urlaubswoche, Ist
+    # und Saldo sanken. Die Betriebsferien pruefen dieselbe Bedingung bewusst
+    # vor dem Loeschen. Rueckgabe, Loeschen, F1-Klemmung und Schleife arbeiten
+    # jetzt nur auf ``booked_dates``; Konfliktpruefung und Budget-Vorpruefung
+    # sehen weiter alle Kandidaten (die Kosten zaehlen ohnehin nur gebuchte Tage).
+    booked_dates = calculation_service.absence_booking_dates(
+        db, target_user, dates_to_create, absence_data.type, wh_changes=wh_changes,
+    )
+
+    # Audit 2026-07-31 (U1, Serverseite): eine Buchung, die NICHTS bucht, ist ein
+    # Fehler — keine 201 mit leerer Liste. Erreichbar, wenn jeder Zieltag ein
+    # 0-Stunden-Tag ist (Tagesplan-MA mit ``track_hours``, z. B. Di/Do frei;
+    # Zeitraum mit 0 Wochenstunden). Das Monatsjournal meldete sonst
+    # „Gespeichert", obwohl nichts entstand. Gesamtreview 1.20 B5 (Nachzug):
+    # VOR jedem Schreibschritt — vorher stand die Pruefung hinter der Schleife,
+    # und die Zeiteintraege waren bereits zum Loeschen vorgemerkt.
+    if not booked_dates:
+        raise HTTPException(
+            status_code=400,
+            detail=zero_hours_absence_detail(dates_to_create),
+        )
+
+    # P3 (Spec 2026-10-08, Review PR2 Task 5): ohne ``keep_time_entries`` löscht
+    # diese Buchung unten alle Zeiteinträge der Zieltage — auch einen anerkannten
+    # (``credit_override``). Für Mitarbeitende ist das derselbe Weg wie das
+    # gesperrte DELETE (SEC-PR1-ROLE-03), nur ohne dessen Sperre auf heute:
+    # Abwesenheit buchen, wieder löschen, Eintrag neu anlegen — die neue Zeile
+    # wäre wieder gekappt (stille Rücknahme ohne Antrag, P11). Deshalb 409, VOR
+    # der ersten Schreiboperation (Urlaubsrückgabe, Löschschleife). Die
+    # Verwaltung bucht weiter darüber (P3), mit ``keep_time_entries`` bleibt der
+    # Eintrag ohnehin stehen. Gesamtreview 1.20 (B1): eigener Text — „bitte per
+    # Änderungsantrag" (PUT/DELETE) führte hier ins Leere: einen Antrag, der die
+    # Abwesenheit bucht und den Eintrag löscht, gibt es nicht (für heute gar
+    # keinen Antrag); die Verwaltung trägt den Tag ein. Das Datum nennt den Tag.
+    # Gesamtreview 1.20 B5 (Nachzug): nur gebuchte Tage — an einem Tag ohne
+    # Buchung bleibt der Eintrag stehen, es gibt nichts zu schützen.
+    if current_user.role != UserRole.ADMIN and not absence_data.keep_time_entries:
+        recognized_day = db.query(TimeEntry.date).filter(
+            TimeEntry.user_id == target_user.id,
+            TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+            TimeEntry.date.in_(booked_dates),
+            TimeEntry.credit_override.is_(True),
+        ).order_by(TimeEntry.date).first()
+        if recognized_day:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=CREDIT_OVERRIDE_ABSENCE_DETAIL.format(
+                    day=recognized_day[0].strftime('%d.%m.%Y')),
+            )
+
     # For vacation, check remaining vacation days (per year for cross-year ranges).
     # Die User-Zeile ist oben bereits per with_for_update gesperrt (BUG-3 +
     # ABBA-Fix) -> Budget-Check + Insert sind pro MA serialisiert.
     if absence_data.type == AbsenceType.VACATION:
-        # Group dates by year for budget check
-        dates_by_year = {}
-        for d in dates_to_create:
-            dates_by_year.setdefault(d.year, []).append(d)
-        # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
-        # ``is_vacation_billable_day`` (dort ruft es intern get_schedule_for_date
-        # auf) — im gleichmaessigen Modus liefen vorher NULL Queries, jetzt eine.
-        # F-026: tenant-gefiltert, wie die anderen wh_changes-Preloads.
-        wh_changes = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == target_user.id,
-            WorkingHoursChange.tenant_id == target_user.tenant_id,
-        ).order_by(WorkingHoursChange.effective_from).all()
-        for check_year, year_dates in dates_by_year.items():
-            vacation_account = calculation_service.get_vacation_account(
-                db, target_user, check_year, wh_changes=wh_changes
-            )
-            # #156/T2 — Tagesprinzip: each booked working day consumes one vacation
-            # day (0,5 for a half day, #167); compare the day COUNT against the
-            # remaining DAYS, not hours (hours-based checks mis-block uneven
-            # schedules / part-time).
-            # R1-3: skip days with 0h daily target (e.g. Mon/Wed/Fri user — Tuesday
-            # has 0h and is skipped by the creation loop too). #431: der Modus wird
-            # PRO TAG aufgeloest, nicht am Live-Flag der User-Zeile gelesen —
-            # sonst rechnet eine rueckwirkende Buchung in einen Zeitraum mit
-            # anderem Modus gegen den falschen Zweig. Details + track_hours=False-
-            # Ausnahme in ``is_vacation_billable_day``.
-            billable_days = [
-                d for d in year_dates
-                if calculation_service.is_vacation_billable_day(db, target_user, d, wh_changes=wh_changes)
-            ]
-            # #394: ein Halbtags-Sondertag (24./31.12.) kostet 0,5 — der Pre-Check
-            # muss exakt so viel verlangen wie get_vacation_account nachher zählt,
-            # sonst wird eine 0,5-passende Buchung fälschlich mit 400 abgelehnt.
-            _base = 0.5 if absence_data.half_day else 1.0
-            _cfg = special_days_service.get_special_day_config(db, target_user.tenant_id, check_year)
-            days_needed = sum(
-                _base * float(calculation_service.half_special_day_weight(d, _cfg))
-                for d in billable_days
-            )
-            if days_needed > vacation_account["remaining_days"] + 1e-9:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Nicht genügend Urlaubstage für {check_year} ({vacation_account['remaining_days']:.1f} Tage verfügbar)"
-                )
+        # #156/T2 + #167: tagebasiert (jeder Tag = 1, Halbtag = 0,5). R1-3: Tage
+        # mit 0 h Tagessoll zaehlen nicht — sie fehlen in ``booked_dates``;
+        # #431: Modus PRO TAG aufgeloest; #394: Halbtags-Sondertag = 0,5.
+        # Alles in ``vacation_day_cost_by_year`` — derselbe Helfer wie in den
+        # Antragspfaden (#496). Gesamtreview 1.20 B5: vorher zaehlte hier eine
+        # eigene Fassung, die im gleichmaessigen Modus jeden Werktag als
+        # Urlaubstag nahm — in einem Zeitraum mit 0 Wochenstunden (Elternzeit)
+        # verlangte sie Budget fuer Tage, die danach nie gebucht werden.
+        # ``year_cache``: Sondertags-Konfiguration je Jahr EINMAL laden statt je Tag.
+        # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug): ein Jahr im
+        # Minus sperrt keine Buchung, die dort nichts verbraucht — reine
+        # 0-h-Zeitraeume enden schon oben bei „0 Stunden geplant".
+        ensure_vacation_budget(
+            db, target_user, dates_to_create, bool(absence_data.half_day),
+            wh_changes=wh_changes, year_cache=year_cache,
+        )
 
     # If sick leave with vacation refund: remove overlapping vacation entries first
+    # (nur gebuchte Tage — Gesamtreview 1.20 B5: an einem Tag ohne Krankbuchung
+    # verschwand sonst der Urlaub ersatzlos)
     refunded_vacation_dates = []
     if absence_data.type == AbsenceType.SICK and absence_data.refund_vacation:
-        for date in dates_to_create:
+        for date in booked_dates:
             vacation_entry = db.query(Absence).filter(
                 Absence.user_id == target_user.id,
                 Absence.tenant_id == target_user.tenant_id,  # F-026
@@ -606,11 +635,13 @@ def create_absence(
                 refunded_vacation_dates.append(date)
 
     # Delete existing time entries on affected dates (unless keep_time_entries for mixed days)
+    # Gesamtreview 1.20 B5 (Nachzug): nur an gebuchten Tagen — die Abwesenheit
+    # ersetzt den Eintrag; wo keine entsteht, bleibt er stehen.
     if not absence_data.keep_time_entries:
         existing_entries = db.query(TimeEntry).filter(
             TimeEntry.user_id == target_user.id,
             TimeEntry.tenant_id == current_user.tenant_id,
-            TimeEntry.date.in_(dates_to_create),
+            TimeEntry.date.in_(booked_dates),
         ).all()
         for entry in existing_entries:
             _create_audit_log(
@@ -633,15 +664,23 @@ def create_absence(
         for entry in db.query(TimeEntry).filter(
             TimeEntry.user_id == target_user.id,
             TimeEntry.tenant_id == current_user.tenant_id,  # F-026
-            TimeEntry.date.in_(dates_to_create),
+            TimeEntry.date.in_(booked_dates),
         ).all():
             kept_net_by_date[entry.date] = (
                 kept_net_by_date.get(entry.date, 0.0) + float(entry.net_hours)
             )
+    # Spec 9.6 (Review Task 6): die Klemmung rechnet in GUTSCHRIFTS-Einheiten
+    # (``credit_day_weight``) — am halben 24./31.12. trägt der Tag nur das halbe
+    # Tagessoll. Die Sondertags-Konfiguration braucht es nur für Misch-Tage, die
+    # auf einen dieser beiden Tage fallen.
+    kept_special_cfgs = {
+        yr: special_days_service.get_special_day_config(db, target_user.tenant_id, yr)
+        for yr in {d.year for d in kept_net_by_date if (d.month, d.day) in ((12, 24), (12, 31))}
+    }
 
-    # Create absences for all dates
+    # Create absences for all booked dates
     created_absences = []
-    for date in dates_to_create:
+    for date in booked_dates:
         # #156 Sofortmaßnahme: a full-day absence is always credited with the
         # employee's *own* scheduled daily target — never a caller-supplied value
         # (which the booking form defaults to 8h). That guarantees one absent
@@ -652,17 +691,17 @@ def create_absence(
         # #431: der Modus kommt aus dem zum DATUM aufgeloesten Snapshot, nicht vom
         # Live-Flag — eine rueckwirkende OVERTIME-Buchung in einen Tagesplan-Zeitraum
         # muss dessen Tagessoll nehmen, nicht das des heutigen Vertrags.
-        schedule = calculation_service.get_schedule_for_date(db, target_user, date)
+        schedule = calculation_service.get_schedule_for_date(
+            db, target_user, date, wh_changes=wh_changes)
         if absence_data.type != AbsenceType.OVERTIME or schedule.use_daily_schedule:
             hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, date, schedule))
-            # Review R3 (HIGH): only skip genuine 0h days for TRACKED users (e.g.
-            # a Mo/Mi/Fr part-timer's Tue/Thu). For track_hours=False the daily
-            # target is ALWAYS 0 — skipping here would create NO absence at all,
-            # so the day-based vacation account (#191) never sees a row to count.
-            # dates_to_create already excludes weekends/holidays, so every
-            # remaining day must be booked (hours stay 0, counted day-based).
-            if hours_for_day == 0 and target_user.track_hours:
-                continue  # tracked user: scheduled non-working day → skip
+            # Review R3 (HIGH): echte 0-h-Tage (z. B. Di/Do einer Mo/Mi/Fr-
+            # Teilzeitkraft) bucht nur, wer Stunden zaehlt, NICHT — ohne
+            # Stundenzaehlung ist das Tagessoll IMMER 0, und jeder Werktag muss
+            # gebucht werden (Stunden 0, tagebasiert gezaehlt, #191). Diese
+            # Auswahl steckt seit Gesamtreview 1.20 B5 in ``booked_dates``
+            # (``calculation_service.absence_booking_dates``), getroffen vor dem
+            # ersten Schreibschritt — hier kommt kein 0-h-Tag mehr an.
             # #167: halber Tag = 0,5 × Tagessoll → zählt diskriminierungsfrei als 0,5
             # Urlaubstag (8h-Tag: 4h; 3h-Tag: 1,5h — je 0,5 Tag). Nicht für OVERTIME.
             if absence_data.half_day:
@@ -671,12 +710,19 @@ def create_absence(
             # ein Zeiteintrag stehen bleibt. Der gewollte Halbtagsfall (½ Urlaub
             # vormittags, nachmittags gearbeitet) bleibt unberuehrt — dort ist
             # bereits 0,5 × Tagessoll ≤ Rest. Nur der Ganztags-Fall wird gekappt.
+            # Spec 9.6: DIESELBE Regel wie die Rueckrechnung
+            # (``calculation_service.f1_clamp_hours``, Gutschrifts-Einheiten) —
+            # sonst meldete ``retarget_absence_hours`` bei unveraendertem Vertrag
+            # eine Senkung (9.5 (c)) fuer eine Zeile, die hier gebucht wurde.
             kept_net = kept_net_by_date.get(date, 0.0)
             if kept_net > 0:
                 full_target = float(
                     calculation_service.get_daily_target_for_date(target_user, date, schedule)
                 )
-                hours_for_day = round(max(0.0, min(hours_for_day, full_target - kept_net)), 2)
+                w = float(calculation_service.credit_day_weight(
+                    date, holidays, kept_special_cfgs.get(date.year)))
+                hours_for_day = calculation_service.f1_clamp_hours(
+                    hours_for_day, full_target, kept_net, w)
         else:
             hours_for_day = absence_data.hours
 
@@ -698,25 +744,6 @@ def create_absence(
         )
         db.add(absence)
         created_absences.append(absence)
-
-    # Audit 2026-07-31 (U1, Serverseite): eine Buchung, die NICHTS bucht, ist ein
-    # Fehler — keine 201 mit leerer Liste. Erreichbar, wenn die Schleife oben
-    # jeden Zieltag als 0-Stunden-Tag uebersprungen hat (Tagesplan-MA mit
-    # ``track_hours``, z. B. Di/Do frei). Der Aufrufer bekam bisher eine
-    # Erfolgsantwort ohne Inhalt; das Monatsjournal meldete daraufhin
-    # „Gespeichert", obwohl nichts entstand (und hatte den vorherigen Eintrag
-    # bereits geloescht). Der Rollback der bis hier vorgemerkten Aenderungen
-    # (Urlaubsrueckgabe, geloeschte Zeiteintraege) passiert implizit: es wurde
-    # noch nicht committet, die Session wird am Request-Ende geschlossen.
-    if not created_absences:
-        _days = ", ".join(d.strftime("%d.%m.%Y") for d in dates_to_create[:5])
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Für {_days} sind 0 Stunden geplant — an einem Tag ohne "
-                f"geplante Arbeitszeit kann keine Abwesenheit gebucht werden."
-            ),
-        )
 
     # Audit 2026-07-31 (A2): letzte Verteidigungslinie. Die Existenz-Sonde oben
     # laeuft unter der Anker-Sperre, aber eine parallele Sitzung kann ihre Zeile

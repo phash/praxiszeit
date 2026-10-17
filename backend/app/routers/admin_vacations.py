@@ -4,21 +4,23 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from app.core.limiter import limiter
 from app.database import get_db
-from app.models import User, Absence, PublicHoliday, AbsenceType, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
+from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.middleware.auth import require_admin
 from app.schemas.vacation_request import VacationRequestResponse, VacationRequestReview, VacationRequestUpdate
-from app.services import calculation_service, special_days_service, settings_service
+from app.services import calculation_service, settings_service
 from app.services.closure_split_service import resplit_year_closures
 from app.services.timezone_service import today_local
 from app.routers.admin_helpers import (
     _create_audit_log,
     _enrich_vr_response,
     _enrich_vr_responses,
+    ensure_vacation_budget,
     lock_user_row,
+    zero_hours_absence_detail,
 )
 from app.routers.admin_users import _tenant_has_other_active_admin
 from app.routers.vacation_requests import (
@@ -165,38 +167,15 @@ def review_vacation_request(
             detail=f"Datum liegt nach dem letzten Arbeitstag ({target_user.last_work_day.strftime('%d.%m.%Y')})",
         )
 
-    # Collect affected years for holidays
-    years = set()
-    cur = start_date
-    while cur <= end_date:
-        years.add(cur.year)
-        cur += timedelta(days=1)
-
-    holidays = set()
-    for year in years:
-        # F-026 + CLAUDE.md PublicHoliday rule: standalone holiday queries must
-        # be tenant-scoped explicitly (RLS does not always cover them).
-        rows = db.query(PublicHoliday).filter(
-            PublicHoliday.year == year,
-            PublicHoliday.tenant_id == current_user.tenant_id,
-        ).all()
-        for h in rows:
-            holidays.add(h.date)
-
-    # AC-11: 'free'-Sondertage (24./31.12.) sind soll-frei → wie Feiertage
-    # ausschließen, sonst kostet ein Urlaubsantrag über einen freien Tag fälschlich
-    # einen Urlaubstag (free+counts_as_vacation wird separat im Konto gezählt).
-    holidays |= special_days_service.free_special_days_in_range(
-        db, current_user.tenant_id, start_date, end_date
+    # Determine working days: Mo–Fr ohne Feiertage (F-026: tenant-gefiltert) und
+    # ohne 'free'-Sondertage (AC-11: soll-frei → wie Feiertage ausschließen, sonst
+    # kostet ein Urlaubsantrag über einen freien Tag fälschlich einen Urlaubstag;
+    # free+counts_as_vacation wird separat im Konto gezählt).
+    # #496: dieselbe Quelle wie die Anzeige „Arbeitstage" am Antrag.
+    year_cache: dict = {}
+    dates_to_create = calculation_service.request_workday_candidates(
+        db, current_user.tenant_id, start_date, end_date, year_cache=year_cache
     )
-
-    # Determine working days
-    dates_to_create = []
-    cur = start_date
-    while cur <= end_date:
-        if cur.weekday() < 5 and cur not in holidays:
-            dates_to_create.append(cur)
-        cur += timedelta(days=1)
 
     if not dates_to_create:
         raise HTTPException(status_code=400, detail="Keine gültigen Arbeitstage im Zeitraum")
@@ -220,49 +199,55 @@ def review_vacation_request(
                 detail=f"Am {d.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit ({existing.type.value})",
             )
 
+    # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
+    # ``get_schedule_for_date`` (F-026: tenant-gefiltert). Gesamtreview 1.20 B5
+    # (Nachzug): fuer jeden Typ — die gebuchten Tage werden fuer jeden Typ bestimmt.
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == target_user.id,
+        WorkingHoursChange.tenant_id == target_user.tenant_id,
+    ).order_by(WorkingHoursChange.effective_from).all()
+
+    # Gesamtreview 1.20 B5 (Nachzug): welche Tage die Genehmigung tatsaechlich
+    # bucht, steht VOR dem ersten Schreibschritt fest — dieselbe Regel und
+    # derselbe Helfer wie ``absences.create_absence``. Bis hier loeschte die
+    # Genehmigung die Zeiteintraege ALLER Kandidaten-Tage und uebersprang die
+    # Tage ohne Tagessoll erst danach in der Schleife: ein am freien Wochentag
+    # gestempelter Vertretungsdienst verschwand ersatzlos.
+    booked_dates = calculation_service.absence_booking_dates(
+        db, target_user, dates_to_create, absence_type, wh_changes=wh_changes,
+    )
+    # Audit 2026-07-31 (U1) fuer den Parallelpfad: ein Antrag nur ueber Tage
+    # ohne Tagessoll wurde genehmigt und buchte nichts — die Person sah einen
+    # genehmigten Urlaub, der keinen Tag deckt. Dieselbe 400 wie die
+    # Direktbuchung, VOR Statuswechsel und Loeschen (CLAUDE.md
+    # „Precondition-Checks VOR Status-Änderung"); der Antrag bleibt offen.
+    if not booked_dates:
+        raise HTTPException(
+            status_code=400,
+            detail=zero_hours_absence_detail(dates_to_create),
+        )
+
     # Check vacation budget only for VACATION type (per year for cross-year requests)
     if absence_type == AbsenceType.VACATION:
-        dates_by_year = {}
-        for d in dates_to_create:
-            dates_by_year.setdefault(d.year, []).append(d)
-        # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
-        # ``is_vacation_billable_day`` (F-026: tenant-gefiltert).
-        wh_changes = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == target_user.id,
-            WorkingHoursChange.tenant_id == target_user.tenant_id,
-        ).order_by(WorkingHoursChange.effective_from).all()
-        for check_year, year_dates in dates_by_year.items():
-            vacation_account = calculation_service.get_vacation_account(
-                db, target_user, check_year, wh_changes=wh_changes
-            )
-            # #156/T2 + #167: tagebasiert (jeder Tag = 1, Halbtag = 0,5).
-            # R1-3: skip days with 0h target (e.g. Mo/Mi/Fr user — mirrors the
-            # creation loop which skips hours_for_day == 0). #431: der Modus wird
-            # PRO TAG aufgeloest, nicht am Live-Flag gelesen (siehe
-            # ``is_vacation_billable_day``, dort auch die track_hours=False-Ausnahme).
-            billable_days = [
-                d for d in year_dates
-                if calculation_service.is_vacation_billable_day(db, target_user, d, wh_changes=wh_changes)
-            ]
-            # #394: Halbtags-Sondertag kostet 0,5 — Pre-Check muss get_vacation_account matchen.
-            _base = 0.5 if vr.half_day else 1.0
-            _cfg = special_days_service.get_special_day_config(db, target_user.tenant_id, check_year)
-            days_needed = sum(
-                _base * float(calculation_service.half_special_day_weight(d, _cfg))
-                for d in billable_days
-            )
-            if days_needed > vacation_account["remaining_days"] + 1e-9:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Nicht genügend Urlaubstage für {check_year} ({vacation_account['remaining_days']:.1f} Tage verfügbar)",
-                )
+        # #156/T2 + #167: tagebasiert (jeder Tag = 1, Halbtag = 0,5). R1-3: Tage
+        # mit 0 h Tagessoll zaehlen nicht (fehlen in ``booked_dates``). #431:
+        # Modus PRO TAG aufgeloest. #394: Halbtags-Sondertag = 0,5. Alles in
+        # ``vacation_day_cost_by_year`` — #496: dieselbe Zahl zeigt der Antrag
+        # unter „Arbeitstage".
+        # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug): ein Jahr im
+        # Minus sperrt keine Genehmigung, die dort nichts verbraucht.
+        ensure_vacation_budget(
+            db, target_user, dates_to_create, bool(vr.half_day),
+            wh_changes=wh_changes, year_cache=year_cache,
+        )
 
     # Delete existing time entries on the affected dates (Fall 2: overwrite)
     # Log deletions for audit trail, then bulk-delete with tenant scope
+    # Gesamtreview 1.20 B5 (Nachzug): nur an gebuchten Tagen.
     existing_entries = db.query(TimeEntry).filter(
         TimeEntry.user_id == target_user.id,
         TimeEntry.tenant_id == current_user.tenant_id,
-        TimeEntry.date.in_(dates_to_create),
+        TimeEntry.date.in_(booked_dates),
     ).all()
     for entry in existing_entries:
         _create_audit_log(
@@ -274,8 +259,9 @@ def review_vacation_request(
         db.delete(entry)
 
     # Create absence entries
-    for d in dates_to_create:
-        schedule = calculation_service.get_schedule_for_date(db, target_user, d)
+    for d in booked_dates:
+        schedule = calculation_service.get_schedule_for_date(
+            db, target_user, d, wh_changes=wh_changes)
         # #156/T1 + #167: Voll-Tag-Typen werden immer mit dem Tagessoll des Tages
         # gebucht (Tagesprinzip), nicht mit vr.hours (das den 8h-Default tragen
         # kann). Halber Tag = 0,5 × Tagessoll. NUR der Überstundenausgleich
@@ -288,13 +274,10 @@ def review_vacation_request(
         # nicht vom Live-Flag der User-Zeile — identisch zu ``create_absence``.
         if absence_type != AbsenceType.OVERTIME or schedule.use_daily_schedule:
             hours_for_day = float(calculation_service.get_daily_target_for_date(target_user, d, schedule))
-            # Review R3 (HIGH): only skip genuine 0h days for TRACKED users. For
-            # track_hours=False the daily target is always 0; skipping would book
-            # nothing, leaving the approved request with no absence rows and the
-            # day-based vacation account at 0 used. dates_to_create already excludes
-            # weekends/holidays → every remaining day is booked (hours stay 0).
-            if hours_for_day == 0 and target_user.track_hours:
-                continue
+            # Review R3 (HIGH): echte 0-h-Tage bucht nur, wer Stunden zaehlt,
+            # NICHT — ohne Stundenzaehlung ist das Tagessoll immer 0, und jeder
+            # Werktag wird gebucht (Stunden 0, tagebasiert gezaehlt, #191). Die
+            # Auswahl steckt seit Gesamtreview 1.20 B5 in ``booked_dates``.
             if vr.half_day:
                 hours_for_day = round(hours_for_day / 2, 2)
         else:

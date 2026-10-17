@@ -16,12 +16,12 @@ test.describe('Visual: Prod-Release-Bildschirme seit 1.6.0', () => {
     await adminPage.screenshot({ path: `${SHOTS}/01-users-overview.png`, fullPage: true });
   });
 
-  test('Benutzerformular: Flags + Soll-Arbeitszeit-Fenster (#189/#191/#201)', async ({ adminPage }) => {
+  test('Benutzerformular: Flags ohne Soll-Fenster (#189/#191, Spec 2026-10-08)', async ({ adminPage }) => {
     await adminPage.goto('/admin/users');
     await adminPage.getByRole('button', { name: 'Neue:r Mitarbeiter:in' }).click();
     await adminPage.locator('#track_hours').waitFor();
     await adminPage.waitForTimeout(400);
-    await adminPage.screenshot({ path: `${SHOTS}/02-userform-flags-workwindow.png`, fullPage: true });
+    await adminPage.screenshot({ path: `${SHOTS}/02-userform-flags.png`, fullPage: true });
   });
 
   test('Einstellungen: Soll-Fenster-Puffer + Sondertage (#201/#188)', async ({ adminPage }) => {

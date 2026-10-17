@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { format } from 'date-fns';
 import MonthlyJournal, { isJournalData } from './MonthlyJournal';
+import { AUTO_CLOSED_HINT } from '../utils/creditOverride';
 
 // #382: clicking a user opens the journal. A non-journal 200 body (e.g. an HTML
 // login page returned in the auth-edge after a token_version-invalidated
@@ -484,6 +485,54 @@ describe('<MonthlyJournal /> Misch-Tag bearbeiten', () => {
   });
 });
 
+// P18, Entschieden 2026-10-11 (Produktinhaber): ein echtes Ende 23:59 ist bei
+// einem automatisch geschlossenen Eintrag eintragbar — der Server wertet jedes
+// Ende außer dem gespeicherten wirksamen als Korrektur. Voraussetzung: das
+// Journal legt nie das Rohende 23:59 ins Feld, sondern das WIRKSAME Ende — in
+// der Verwaltungsansicht (PUT, auch über die §4-Rückfrage submitWithBreakWaiver)
+// wie im Antrag der Mitarbeitenden.
+describe('<MonthlyJournal /> automatisch geschlossener Eintrag (P18)', () => {
+  const autoClosedDay = {
+    ...validDay,
+    date: '2026-06-01',
+    time_entries: [{
+      id: 'te-auto', start_time: '08:00', end_time: '18:15', raw_start_time: null,
+      raw_end_time: '23:59', break_minutes: 0, net_hours: 7.75,
+      uncredited_minutes: 150, not_credited_minutes: 150, auto_closed: true,
+    }],
+  };
+
+  it('Verwaltung: „Bis" = wirksames Ende, der PUT schickt 18:15', async () => {
+    mockJournal([autoClosedDay]);
+    putMock.mockResolvedValue({ data: {} });
+    const { container } = render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('08:00–18:15 bearbeiten'));
+    const [, bis] = Array.from(container.querySelectorAll('input[type="time"]')) as HTMLInputElement[];
+    expect(bis.value).toBe('18:15');
+    fireEvent.click(screen.getByTitle('Speichern'));
+    await waitFor(() => expect(putMock).toHaveBeenCalledWith(
+      '/admin/time-entries/te-auto', expect.objectContaining({ end_time: '18:15' }),
+    ));
+  });
+
+  it('Mitarbeitende: der Antrag schickt das wirksame Ende 18:15', async () => {
+    mockJournal([autoClosedDay]);
+    postMock.mockResolvedValue({ data: {} });
+    const { container } = render(<MonthlyJournal />);
+    fireEvent.click(await screen.findByTitle('08:00–18:15 bearbeiten'));
+    const [, bis] = Array.from(container.querySelectorAll('input[type="time"]')) as HTMLInputElement[];
+    expect(bis.value).toBe('18:15');
+    fireEvent.click(screen.getByTitle('Speichern'));
+    fireEvent.change(screen.getByPlaceholderText('Begründung eingeben (Pflicht)'), {
+      target: { value: 'Pause nachgetragen' },
+    });
+    fireEvent.click(screen.getByText('Absenden'));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests/', expect.objectContaining({
+      request_type: 'update', time_entry_id: 'te-auto', proposed_end_time: '18:15',
+    })));
+  });
+});
+
 describe('<MonthlyJournal /> feste Monatsarbeitszeit (#463)', () => {
   const fixedJournal = { ...validJournal, use_fixed_monthly_target: true };
 
@@ -638,6 +687,217 @@ describe('<MonthlyJournal /> §10-Ausnahmegrund (#485)', () => {
     }]);
     render(<MonthlyJournal userId="u1" isAdminView />);
     expect(await screen.findByText('§10: KV-Notdienst')).toBeInTheDocument();
-    expect(screen.getByText(/gestempelt 08:52/)).toBeInTheDocument();
+    // Von–Bis-Spalte und Mobilzeile (Gesamtreview PR2, Fund 9)
+    expect(screen.getAllByText(/gestempelt 08:52/)).toHaveLength(2);
+  });
+});
+
+const k7Entry = {
+  id: 'te1', start_time: '07:45', end_time: '18:15', break_minutes: 0, net_hours: 8,
+  raw_start_time: '07:00', raw_end_time: '19:00', uncredited_minutes: 150,
+  not_credited_minutes: 240, credit_override: false, auto_closed: false,
+};
+const creditJournal = { ...validJournal, days: [{ ...validDay, time_entries: [k7Entry] }] };
+
+describe('<MonthlyJournal /> nicht angerechnete Zeit (Spec 13.1, PR2)', () => {
+  it('zeigt die Zeile „nicht angerechnet" am Eintrag', async () => {
+    getMock.mockResolvedValue({ data: creditJournal });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    // Von–Bis-Spalte und Mobilzeile (Gesamtreview PR2, Fund 9)
+    expect(await screen.findAllByText(
+      'gestempelt 07:00–19:00 · angerechnet 8:00 h (07:45–18:15) · 4:00 h nicht angerechnet, davon 2:30 h zwischen den Blöcken',
+    )).toHaveLength(2);
+  });
+});
+
+describe('<MonthlyJournal /> Anerkennen und Monatssumme (Spec 13.2/13.3)', () => {
+  const withTotal = (total: number) => ({
+    ...creditJournal,
+    monthly_summary: { ...creditJournal.monthly_summary, not_credited_minutes_total: total },
+  });
+
+  it('Admin-Ansicht: „Anerkennen" am Eintrag und die Summenzeile', async () => {
+    getMock.mockResolvedValue({ data: withTotal(450) });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    expect(await screen.findAllByRole('button', { name: 'Anerkennen' })).toHaveLength(2); // + Mobilzeile
+    expect(screen.getByText('Anwesenheit nicht angerechnet: 7:30 h')).toBeInTheDocument();
+  });
+
+  it('Admin-Ansicht: nach dem Anerkennen lädt das Journal neu', async () => {
+    getMock.mockResolvedValue({ data: withTotal(450) });
+    postMock.mockResolvedValue({ data: { warnings: [] } });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Anerkennen' }))[0]);
+    const journalCalls = () => getMock.mock.calls.filter(c => String(c[0]).includes('/journal')).length;
+    const before = journalCalls();
+    fireEvent.click(screen.getByRole('button', { name: 'Zeit anerkennen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/admin/time-entries/te1/credit-override'));
+    await waitFor(() => expect(journalCalls()).toBeGreaterThan(before));
+  });
+
+  // Spec 17.7 / Review Task 15: nicht nur auf Komponentenebene — ein Journal-seitiger
+  // Fehler (Mapping/Typ verliert `auto_closed`) fiele sonst nicht auf.
+  it('Admin-Ansicht: „Anerkennen" ist bei automatisch geschlossenen Einträgen deaktiviert (P18)', async () => {
+    // Endseite bei auto_closed ausgenommen (P19): 150 Lücke + 45 vorne = 195.
+    const autoClosed = { ...k7Entry, auto_closed: true, not_credited_minutes: 195 };
+    getMock.mockResolvedValue({
+      data: { ...withTotal(195), days: [{ ...validDay, time_entries: [autoClosed] }] },
+    });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    const buttons = await screen.findAllByRole('button', { name: 'Anerkennen' });
+    expect(buttons).toHaveLength(2); // + Mobilzeile
+    buttons.forEach((b) => expect(b).toBeDisabled());
+    expect(screen.getAllByText(AUTO_CLOSED_HINT)).toHaveLength(2);
+  });
+
+  it('Mitarbeiter-Ansicht: kein „Anerkennen"; ohne nicht angerechnete Zeit keine Summenzeile', async () => {
+    getMock.mockResolvedValue({ data: withTotal(0) });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    await screen.findAllByText(/gestempelt 07:00–19:00/);
+    expect(screen.queryByRole('button', { name: 'Anerkennen' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Anwesenheit nicht angerechnet/)).not.toBeInTheDocument();
+  });
+});
+
+describe('<MonthlyJournal /> Anrechnung beantragen (Spec P21)', () => {
+  function mockMe(journal: unknown) {
+    getMock.mockImplementation((url: string) =>
+      String(url).startsWith('/journal/me')
+        ? Promise.resolve({ data: journal })
+        : Promise.resolve({ data: [] }));
+  }
+
+  it('Mitarbeiter-Ansicht: öffnet den Antrag mit den Rohstempeln', async () => {
+    mockMe(creditJournal);
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Anrechnung beantragen' }))[0]);
+    expect(await screen.findByRole('heading', { name: 'Änderungsantrag: Anrechnung beantragen' })).toBeInTheDocument();
+    expect((screen.getByLabelText('Von') as HTMLInputElement).value).toBe('07:00');
+  });
+
+  it('sendet den Antrag mit Kennzeichen, ohne die (unbekannte) Notiz zu überschreiben, und lädt neu', async () => {
+    mockMe(creditJournal);
+    postMock.mockResolvedValue({ data: {} });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Anrechnung beantragen' }))[0]);
+    fireEvent.change(screen.getByPlaceholderText('Warum ist diese Änderung notwendig?'), {
+      target: { value: 'Patientin in der Mittagspause versorgt' },
+    });
+    const journalCalls = () => getMock.mock.calls.filter(c => String(c[0]).includes('/journal')).length;
+    const before = journalCalls();
+    fireEvent.click(screen.getByRole('button', { name: 'Antrag stellen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests', expect.objectContaining({
+      request_type: 'update', time_entry_id: 'te1', proposed_date: '2026-06-01',
+      proposed_start_time: '07:00', proposed_end_time: '19:00', request_credit_override: true,
+      proposed_note: null,
+    })));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Antrag auf Anrechnung eingereicht'));
+    await waitFor(() => expect(journalCalls()).toBeGreaterThan(before));
+  });
+
+  // Gesamtreview PR2 (Fund 1): der Lückentext beim Ausstempeln verweist auf
+  // die Aktion — sie gilt auch am heutigen, geschlossenen Eintrag.
+  it('Mitarbeiter-Ansicht: auch am heutigen Tag', async () => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    mockMe({ ...creditJournal, days: [{ ...validDay, date: today, time_entries: [k7Entry] }] });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Anrechnung beantragen' }))[0]);
+    expect((await screen.findByLabelText('Datum') as HTMLInputElement).value).toBe(today);
+  });
+
+  it('anerkannte Einträge und die Admin-Ansicht bieten die Aktion nicht an', async () => {
+    mockMe({ ...creditJournal, days: [{ ...validDay, time_entries: [{ ...k7Entry, credit_override: true }] }] });
+    const { unmount } = render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    await screen.findAllByText('anerkannt');
+    expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
+    unmount();
+
+    getMock.mockResolvedValue({ data: creditJournal });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findAllByRole('button', { name: 'Anerkennen' });
+    expect(screen.queryByRole('button', { name: 'Anrechnung beantragen' })).not.toBeInTheDocument();
+  });
+});
+
+// Gesamtreview PR2 (Fund 9): die Spalte „Von–Bis" ist unterhalb von md
+// ausgeblendet, eine Mobil-Alternative gab es nicht — auf dem Telefon fehlten
+// Eintragszeile, „Anrechnung beantragen" und „Anerkennen". Eine eigene Zeile
+// (md:hidden) unter dem Tag trägt sie dort; am Desktop bleibt alles in der Spalte.
+describe('<MonthlyJournal /> nicht angerechnete Zeit auf schmalen Bildschirmen (Fund 9)', () => {
+  const inMobileRow = (el: HTMLElement) => !!el.closest('tr')?.className.split(/\s+/).includes('md:hidden');
+  const inDesktopCell = (el: HTMLElement) => !!el.closest('td')?.className.includes('hidden md:table-cell');
+
+  it('Mitarbeiter-Ansicht: Zeile und „Anrechnung beantragen" auch unterhalb von md', async () => {
+    getMock.mockResolvedValue({ data: creditJournal });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    const buttons = await screen.findAllByRole('button', { name: 'Anrechnung beantragen' });
+    expect(buttons).toHaveLength(2);
+    expect(buttons.filter(inMobileRow)).toHaveLength(1);
+    expect(buttons.filter(inDesktopCell)).toHaveLength(1);
+    const notes = screen.getAllByText(/^gestempelt 07:00–19:00/);
+    expect(notes.filter(inMobileRow)).toHaveLength(1);
+    // Mobil fehlt die Von–Bis-Spalte — die Zeile nennt die angerechnete Spanne mit.
+    const mobileRow = buttons.find(inMobileRow)!.closest('tr')!;
+    expect(mobileRow.textContent).toContain('07:45–18:15');
+  });
+
+  it('Admin-Ansicht: „Anerkennen" auch unterhalb von md', async () => {
+    getMock.mockResolvedValue({ data: creditJournal });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    const buttons = await screen.findAllByRole('button', { name: 'Anerkennen' });
+    expect(buttons.filter(inMobileRow)).toHaveLength(1);
+    expect(buttons.filter(inDesktopCell)).toHaveLength(1);
+  });
+
+  it('ohne Kappung keine zusätzliche Mobilzeile', async () => {
+    getMock.mockResolvedValue({ data: { ...validJournal, days: [{ ...validDay, time_entries: [{
+      id: 'te2', start_time: '08:00', end_time: '16:30', break_minutes: 30, net_hours: 8,
+    }] }] } });
+    const { container } = render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    await screen.findByText('08:00–16:30');
+    expect(container.querySelectorAll('tr.md\\:hidden')).toHaveLength(0);
+  });
+});
+
+// Gesamtreview 1.20 (Fund 15): die Von–Bis-Spalte ist whitespace-nowrap (die
+// Spanne „08:00–17:00" soll nicht umbrechen). Die langen Hinweiszeilen darin
+// (RawStampNote, „Anerkennen" samt Auto-Close-Hinweis, §10-Grund) erbten das
+// und machten die Tabelle mehrere hundert Pixel breiter — Saldo und Aktionen
+// nur noch per Querscrollen. Sie brechen jetzt in einem eigenen Container um.
+describe('<MonthlyJournal /> Hinweiszeilen in der Von–Bis-Spalte brechen um (Fund 15)', () => {
+  const inDesktopCell = (el: HTMLElement) => !!el.closest('td')?.className.includes('hidden md:table-cell');
+  /** Liegt zwischen `el` und seiner Tabellenzelle ein Container, der den Umbruch wieder erlaubt? */
+  const wraps = (el: HTMLElement) => {
+    for (let n: HTMLElement | null = el; n && n.tagName !== 'TD'; n = n.parentElement) {
+      if (n.classList.contains('whitespace-normal')) return true;
+    }
+    return false;
+  };
+
+  it('Eintragszeile, „Anerkennen", Auto-Close-Hinweis und §10-Grund dürfen umbrechen', async () => {
+    const autoClosed = {
+      ...k7Entry, auto_closed: true, not_credited_minutes: 195,
+      sunday_exception_reason: 'Notdienst wegen Ausfall der Vertretung',
+    };
+    getMock.mockResolvedValue({ data: { ...validJournal, days: [{ ...validDay, time_entries: [autoClosed] }] } });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    const button = (await screen.findAllByRole('button', { name: 'Anerkennen' })).find(inDesktopCell)!;
+    expect(wraps(button)).toBe(true);
+    const note = screen.getAllByText(/^eingestempelt 07:00, nicht ausgestempelt/).find(inDesktopCell)!;
+    expect(wraps(note)).toBe(true);
+    const hint = screen.getAllByText(AUTO_CLOSED_HINT).find(inDesktopCell)!;
+    expect(wraps(hint)).toBe(true);
+    const reason = screen.getByText('§10: Notdienst wegen Ausfall der Vertretung');
+    expect(wraps(reason)).toBe(true);
+  });
+
+  it('Kontrolle: die Zeitspanne selbst bleibt einzeilig', async () => {
+    getMock.mockResolvedValue({ data: { ...validJournal, days: [{ ...validDay, time_entries: [{
+      id: 'te2', start_time: '08:00', end_time: '16:30', break_minutes: 30, net_hours: 8,
+    }] }] } });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    const span = await screen.findByText('08:00–16:30');
+    expect(wraps(span)).toBe(false);
+    expect(span.closest('td')!.className).toContain('whitespace-nowrap');
   });
 });

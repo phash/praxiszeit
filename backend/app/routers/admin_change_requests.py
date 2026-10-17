@@ -22,34 +22,48 @@ from app.routers.admin_users import _tenant_has_other_active_admin
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
-    BREAK_WAIVER_SOURCE,
+    BREAK_WAIVER_SOURCE, _assert_within_employment_window,
 )
-from app.services.break_validation_service import validate_daily_break
+from app.services.break_validation_service import (
+    validate_daily_break, is_break_exception_allowed, BREAK_EXCEPTION_DISABLED_HINT,
+)
 from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
     get_schedule_for_date, get_daily_target_for_date, get_vacation_account,
-    get_daily_target, child_sick_cap, child_sick_days_used, half_special_day_weight,
-    is_vacation_billable_day,
+    counts_vacation_by_day_only, child_sick_cap, child_sick_days_used, half_special_day_weight,
+    f1_clamp_for_day,
 )
-from app.services import work_window_service, settings_service, special_days_service
+from app.services import (
+    credit_override_service, presence_service, settings_service, special_days_service,
+    work_window_service,
+)
 from app.services.closure_split_service import resplit_year_closures
 from app.models.time_entry_audit_log import TimeEntryAuditLog
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
+# Spec 2026-10-08 P21 / 13.3: Anerkennen bei der Genehmigung („Genehmigen und
+# anerkennen") nur an Änderungsanträgen zu einem bestehenden Zeiteintrag.
+GRANT_ONLY_UPDATE_DETAIL = (
+    "Anerkennen ist nur bei einem Änderungsantrag zu einem bestehenden Zeiteintrag möglich."
+)
+
 
 def _vacation_day_contribution(db, user, d, half_day) -> float:
     """Fix #4: tagebasierter Urlaubsverbrauch EINES VACATION-Tags am Datum ``d``,
-    exakt nach der Regel in ``get_vacation_account``: untracked (Tagessoll 0
-    gesamt) → 0,5/1,0; sonst Tagessoll-des-Tages ≤ 0 → 0, sonst 0,5 (Halbtag)
+    exakt nach der Regel in ``get_vacation_account``: ohne Stundenzählung
+    (``counts_vacation_by_day_only``, allein ``track_hours=False``, B11) →
+    0,5/1,0; sonst Tagessoll-des-Tages ≤ 0 → 0, sonst 0,5 (Halbtag)
     bzw. 1,0 (voller Tag). ``half_day=None`` (Legacy/CR-Default) zählt als voller
     Tag (ein CR bucht ganztags). Wird für den Netto-Neuverbrauch-Vergleich im
-    UPDATE-Budget-Check verwendet."""
+    UPDATE-Budget-Check verwendet und (Gesamtreview 1.20 B5) für die
+    Budget-Prüfung im CREATE-Zweig — beide Zweige legen die Zeile in jedem Fall
+    an, verlangt wird also genau, was das Konto für sie zählt."""
     # #394: an einem Halbtags-Sondertag (24./31.12.) kostet der Urlaubstag 0,5 —
     # exakt wie get_vacation_account/absence_days (zentraler Helper).
     _cfg = special_days_service.get_special_day_config(db, user.tenant_id, d.year)
     weight = float(half_special_day_weight(d, _cfg))
-    if get_daily_target(user) <= 0:  # untracked / work_days_per_week == 0
+    if counts_vacation_by_day_only(user):  # #191, Gesamtreview B11
         return (0.5 if half_day else 1.0) * weight
     dt = get_daily_target_for_date(user, d, get_schedule_for_date(db, user, d))
     if dt <= 0:
@@ -265,10 +279,29 @@ def review_change_request(
         db.refresh(cr)
         return _enrich_cr_response(cr, db)
 
+    # #499: Eine im Antrag mitgebrachte Pflicht-Pause-Ausnahme gilt nur, solange
+    # der Mandant sie erlaubt. Wurde sie nach dem Stellen abgeschaltet, wird der
+    # Antrag wie einer OHNE Ausnahme behandelt: §4 erneut prüfen (422 bei
+    # Verstoß), und die Begründung landet weder am Eintrag noch als
+    # 'break_waiver'-Quelle im Protokoll.
+    waiver_reason = cr.break_waiver_reason
+    waiver_disabled = False
+    if waiver_reason is not None and not is_break_exception_allowed(db, cr.tenant_id):
+        waiver_reason = None
+        waiver_disabled = True
+    # P14: ``PRESENCE_BREAK`` nur, wenn die §4-Vorprüfung auf angerechneter Zeit
+    # bestanden hat — mit wirksamer Ausnahme nie. Die C-1-Vorprüfung unten setzt
+    # den tatsächlichen Befund (Gesamtreview 1.20 B1).
+    _break_check_passed = waiver_reason is None
+
     # SEC-E: 4-eyes principle for the break-waiver workflow. An admin must not
     # approve their OWN documented break-exception (#144 §4 ArbZG) — the whole
     # point of the approval mode is independent oversight.
-    if cr.break_waiver_reason is not None and cr.user_id == current_user.id:
+    # #499-Review (F3): maßgeblich ist die WIRKSAME Ausnahme (``waiver_reason``
+    # nach der Neutralisierung oben), nicht die gespeicherte. Ist der Schalter
+    # aus, gewährt die Genehmigung keine Ausnahme mehr (§4 wird neu geprüft) —
+    # dann ist es ein gewöhnlicher Antrag, für den die A01-Regel darunter gilt.
+    if waiver_reason is not None and cr.user_id == current_user.id:
         raise HTTPException(
             status_code=403,
             detail="Eigene Pflicht-Pause-Ausnahmen dürfen nicht selbst genehmigt werden.",
@@ -289,25 +322,36 @@ def review_change_request(
             ),
         )
 
+    # Spec 2026-10-08 P21 / 13.3: ob die Genehmigung zugleich anerkennt, entscheidet
+    # ``grant_credit_override`` („Genehmigen und anerkennen" bzw. „Ohne Anerkennen
+    # genehmigen"). Ohne Angabe gilt der Wert des Antrags — auch in der
+    # Sammel-Genehmigung (ChangeRequestReview ohne grant_credit_override).
+    # Precondition VOR der Statusänderung.
+    grant_override = (
+        review.grant_credit_override
+        if review.grant_credit_override is not None
+        else bool(cr.request_credit_override)
+    )
+    if grant_override and (
+        cr.entry_kind == "absence" or cr.request_type != ChangeRequestType.UPDATE
+    ):
+        raise HTTPException(status_code=400, detail=GRANT_ONLY_UPDATE_DETAIL)
+
     # Approve: validate preconditions BEFORE changing status
     entry = None
     # Release-Review 1.19.3 (F1): Eingabezeiten fuer clamp. Bei UPDATE unten durch
-    # unclamp_input ersetzt; hier der Antragswert, damit jeder Pfad sie kennt.
+    # unclamp_input bzw. end_input_for ersetzt; hier der Antragswert, damit jeder
+    # Pfad sie kennt.
     _in_start, _in_end = cr.proposed_start_time, cr.proposed_end_time
+    # P18 (Review V1, Folgefund): das beantragte Ende, wie die Genehmigung es
+    # liest — bei UPDATE unten über ``request_end_for_approval`` bestimmt;
+    # ebenso der Beginn (Gesamtreview 1.20 B2, ``request_start_for_approval``).
+    _proposed_end = cr.proposed_end_time
+    _proposed_start = cr.proposed_start_time
     if cr.entry_kind != "absence":
-        if cr.request_type == ChangeRequestType.CREATE:
-            duplicate = db.query(TimeEntry).filter(
-                TimeEntry.tenant_id == cr.tenant_id,
-                TimeEntry.user_id == cr.user_id,
-                TimeEntry.date == cr.proposed_date,
-                TimeEntry.start_time == cr.proposed_start_time,
-            ).first()
-            if duplicate:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
-                )
-        elif cr.request_type == ChangeRequestType.UPDATE:
+        # Die Duplikatprüfung (CREATE und UPDATE) läuft unten auf dem GEKAPPTEN
+        # Beginn, sobald die Eingabezeiten feststehen (Gesamtreview 1.20 B2).
+        if cr.request_type == ChangeRequestType.UPDATE:
             # N-3: lock the target entry for the duration of the approval txn,
             # matching the update_time_entry path — prevents a concurrent admin
             # edit from racing the re-validation/materialisation below.
@@ -317,20 +361,35 @@ def review_change_request(
             ).with_for_update().first()
             if not entry:
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
-            # Check for unique constraint violation on date/start_time change
-            if cr.proposed_date != entry.date or cr.proposed_start_time != entry.start_time:
-                dup = db.query(TimeEntry).filter(
-                    TimeEntry.tenant_id == cr.tenant_id,
-                    TimeEntry.user_id == cr.user_id,
-                    TimeEntry.date == cr.proposed_date,
-                    TimeEntry.start_time == cr.proposed_start_time,
-                    TimeEntry.id != entry.id,
-                ).first()
-                if dup:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
-                    )
+            # P18 (Review V1, Folgefund): ein offener Antrag trägt das
+            # Formular-Echo des wirksamen Endes ZUM ZEITPUNKT DES ANTRAGS
+            # (``original_end_time``). Hat eine Neukappung (9.2) das wirksame
+            # Ende seither geändert, bleibt dieses Echo trotzdem Echo — sonst
+            # würde das Protokoll-23:59 bzw. das frühere wirksame Ende hier zum
+            # Stempel. Vorprüfung, ``end_input_for`` und ``end_is_correction``
+            # lesen deshalb alle drei ``_proposed_end``. Gesamtreview 1.20 (B2):
+            # an jedem Eintrag, auch ohne ``auto_closed``, und ebenso am Beginn
+            # (``original_start_time``) — sonst legte ``clamp`` das veraltete
+            # Echo als Rohwert ab, und der Stempel (§16) war weg.
+            _proposed_end = work_window_service.request_end_for_approval(
+                entry, cr.proposed_end_time, cr.original_end_time,
+            )
+            _proposed_start = work_window_service.request_start_for_approval(
+                entry, cr.proposed_start_time, cr.original_start_time,
+            )
+            # P18/P21: Anerkennen setzt ein tatsächliches Ende voraus. Ohne es
+            # bliebe der Eintrag nach dem UPDATE-Zweig ``auto_closed`` und
+            # ``apply_credit_override`` lehnte erst NACH der Statusänderung ab.
+            # Dieselbe Regel wie beim Stellen des Antrags und wie
+            # ``end_is_correction`` (ein beantragtes 23:59 ist seit 2026-10-11 ein
+            # tatsächliches Ende, sofern es kein Echo ist) — sie greift auch für
+            # ältere Anträge.
+            if grant_override and credit_override_service.lacks_actual_end(
+                entry, _proposed_end,
+            ):
+                raise HTTPException(
+                    status_code=400, detail=credit_override_service.AUTO_CLOSED_DETAIL,
+                )
 
         elif cr.request_type == ChangeRequestType.DELETE:
             # N-3: lock the target entry for the duration of the approval txn,
@@ -343,19 +402,118 @@ def review_change_request(
             if not entry:
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
 
+        # Gesamtreview 1.20 (Fund 8): Beschäftigungsfenster der Person des
+        # Antrags NEU prüfen — wie der Abwesenheitszweig unten und die
+        # Verwaltungswege (``admin_create/update_time_entry``, #502). Beim
+        # Stellen geprüft zu haben genügt nicht: setzt die Verwaltung danach den
+        # ersten/letzten Arbeitstag, fiele der genehmigte Eintrag still aus dem
+        # gefensterten Ist (#195). Bei UPDATE nur ein tatsächlicher
+        # Datumswechsel — ein Alteintrag außerhalb eines später gesetzten
+        # Fensters bleibt per Zeitkorrektur reparierbar. Vor der Statusänderung.
+        if cr.proposed_date is not None and (
+            cr.request_type == ChangeRequestType.CREATE
+            or (
+                cr.request_type == ChangeRequestType.UPDATE
+                and entry is not None
+                and cr.proposed_date != entry.date
+            )
+        ):
+            _window_user = db.query(User).filter(
+                User.id == cr.user_id,
+                User.tenant_id == cr.tenant_id,
+            ).first()
+            if _window_user is not None:
+                _assert_within_employment_window(_window_user, cr.proposed_date)
+
         # Release-Review 1.19.3 (F1): die Genehmigung ist ein dritter Schreibpfad
         # neben den beiden Bearbeiten-Wegen. Die Antragsformulare belegen die
         # Zeiten mit der ANGERECHNETEN Zeit vor — ein Antrag, der nur die Pause
         # oder den §10-Grund korrigiert, schickt die gekappte Zeit zurueck. Ohne
         # unclamp_input hielt clamp sie fuer eine neue Eingabe und loeschte den
         # Rohstempel (§16-Nachweis, Grundlage der §5-Ruhezeit). Hier festhalten,
-        # bevor ``entry`` unten ueberschrieben wird — die informative
-        # Nachpruefung nach dem Commit nutzt dieselben Werte.
+        # bevor ``entry`` unten ueberschrieben wird. Die informative
+        # Nachpruefung nach dem Commit liest dagegen den gespeicherten Eintrag
+        # (E41) — der traegt das Ergebnis genau dieser Kappung.
         if cr.request_type == ChangeRequestType.UPDATE and entry is not None:
             _in_start = work_window_service.unclamp_input(
-                cr.proposed_start_time, entry.start_time, entry.raw_start_time)
-            _in_end = work_window_service.unclamp_input(
-                cr.proposed_end_time, entry.end_time, entry.raw_end_time)
+                _proposed_start, entry.start_time, entry.raw_start_time)
+            # PR1-Review F1 (P18): Vorprüfung und Schreiben teilen sich diese Eingabe — ein
+            # automatisch geschlossener Eintrag, der nur auf einen anderen Tag
+            # wandert, rechnet mit dem wirksamen Ende statt dem Rohende 23:59.
+            _in_end = work_window_service.end_input_for(
+                _proposed_end, entry.end_time, entry.raw_end_time,
+                auto_closed=entry.auto_closed, prev_date=entry.date,
+                target_date=cr.proposed_date,
+            )
+            # Die Genehmigung prüft die Reihenfolge sonst gar nicht: ``end_input_for``
+            # kann das Ende vor den Beginn legen (verschobener Auto-Close-Eintrag,
+            # späterer Beginn) — auch bei einem Antrag, der vor dieser Prüfung
+            # gestellt wurde. Vor der Vorprüfung und vor jeder Statusänderung.
+            _order_error = work_window_service.input_order_error(
+                _in_start, _in_end, auto_closed=entry.auto_closed,
+            )
+            if _order_error:
+                raise HTTPException(status_code=400, detail=_order_error)
+
+        # Ultrareview 1.20 (Fund A): Duplikat-Sonde, Vorprüfung (C-1) und
+        # Schreibzweig kappen mit IDENTISCHEN Eingaben — Person des Antrags,
+        # ``cr.proposed_date``, ``_in_start``/``_in_end``, Puffer (UPDATE: der
+        # gespeicherte des Eintrags, E80; CREATE: der aktuelle Mandanten-Puffer)
+        # und ``credit_override`` des Eintrags. Bis dahin lief ``_clamp_core`` bis
+        # zu viermal; jetzt EIN Lauf (bei erstem Bedarf), alle lesen ihn. Weder
+        # Snapshot noch Puffer noch ``credit_override`` ändern sich zwischen
+        # Vorprüfung und Schreiben (Anerkennen folgt erst nach dem Schreiben).
+        _approval_clamp_cache: list = []
+
+        def _approval_clamp():
+            if not _approval_clamp_cache:
+                _cr_owner = db.query(User).filter(
+                    User.id == cr.user_id,
+                    User.tenant_id == cr.tenant_id,
+                ).first()
+                _cr_grace = (
+                    work_window_service.grace_for_entry(db, entry)
+                    if cr.request_type == ChangeRequestType.UPDATE and entry is not None
+                    else work_window_service.get_grace_minutes(db, current_user.tenant_id)
+                )
+                _approval_clamp_cache.append(work_window_service.clamp_with_segments(
+                    db, _cr_owner, cr.proposed_date, _in_start, _in_end, _cr_grace,
+                    credit_override=bool(entry is not None and entry.credit_override),
+                ))
+            return _approval_clamp_cache[0]
+
+        # UNIQUE (tenant, user, date, start_time): Duplikatprüfung NACH dem
+        # Kappen, wie ``time_entries.create_time_entry`` und
+        # ``admin_time_entries`` seit Release-Review 1.16.0 — gespeichert wird
+        # unten ``clamp(...).eff_start``, nicht der beantragte Beginn
+        # (Gesamtreview 1.20 B2). Ein Beginn vor der Hülle (07:30 → 07:45) oder
+        # ein Echo, dessen Rohstempel auf einem anderen Tag gilt (07:45 mit
+        # Rohstempel 07:00 → 07:00), kann so auf den Beginn eines anderen
+        # Eintrags fallen; eine Sonde auf dem ungekappten Wert sah das nicht,
+        # und die Genehmigung scheiterte erst am INSERT/UPDATE (IntegrityError →
+        # 500, Antrag blieb offen, die Sammel-Genehmigung brach ganz ab).
+        # Dieselben Eingaben, derselbe Puffer und dasselbe ``credit_override``
+        # wie der Schreibzweig; unabhängig von ``exempt_from_arbzg`` (C-1 unten
+        # läuft dort nicht). Die Ankersperre oben deckt den Wettlauf ab (P5).
+        if (
+            cr.request_type in (ChangeRequestType.CREATE, ChangeRequestType.UPDATE)
+            and _in_start is not None
+            and cr.proposed_date is not None
+        ):
+            _dup_r = _approval_clamp()[0]
+            _dup_q = db.query(TimeEntry.id).filter(
+                TimeEntry.tenant_id == cr.tenant_id,
+                TimeEntry.user_id == cr.user_id,
+                TimeEntry.date == cr.proposed_date,
+                TimeEntry.start_time == _dup_r.eff_start,
+            )
+            if entry is not None:
+                _dup_q = _dup_q.filter(TimeEntry.id != entry.id)
+            if _dup_q.first() is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
+                )
 
         # C-1: Re-validate §3 (daily hard cap) and §4 (breaks) against the
         # CURRENT DB state before materialising a CREATE/UPDATE. The CR was
@@ -383,9 +541,43 @@ def review_change_request(
                 # the soll-window first, then re-validate. Checking the raw span
                 # here would wrongly reject an entry whose credited time is legal
                 # (e.g. a wide raw stamp the window clamps back under 10h).
-                _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-                _eff_start, _eff_end, _, _ = work_window_service.clamp(
-                    db, cr_user, cr.proposed_date, _in_start, _in_end, _grace,
+                # E80: dieselbe Puffer-Herkunft wie der Schreibzweig unten —
+                # UPDATE kappt mit dem gespeicherten Puffer des Eintrags,
+                # CREATE (Neuanlage) mit dem aktuellen Mandanten-Puffer. Spec
+                # 8.2: Lückensegmente für §4 aus demselben Lauf
+                # (``_approval_clamp``, Ultrareview 1.20).
+                _r_pre, _segs_pre = _approval_clamp()
+                _eff_start, _eff_end = _r_pre.eff_start, _r_pre.eff_end
+
+                # Gesamtreview 1.20 (B1, Nachzug zu Punkt 4): wie in beiden
+                # Bearbeiten-Routen und beim Stellen des Antrags — ändert ein
+                # UPDATE-Antrag nichts, was §3/§4 rechnen (Datum, angerechneter
+                # Beginn/Ende, Pause, nicht angerechnete Minuten), bleiben die
+                # HARTEN Prüfungen aus; ihr Ergebnis wäre das des gespeicherten
+                # Stands. Sonst liess sich ein anerkannter Eintrag über 10 h bzw.
+                # ohne §4-Pause (13.3, P4) auch per Antrag nicht mit einer Notiz
+                # versehen. Verglichen wird mit dem, was der Schreibzweig unten
+                # speichert (EINE Regel ``time_relevant_change``, Ultrareview
+                # 1.20: eine fehlende Pause bleibt stehen — vorher ``or 0``, der
+                # Schreibzweig behält aber die gespeicherte). Eine inzwischen
+                # abgeschaltete Ausnahme (#499, ``waiver_disabled``) prüft §4
+                # weiter — wie eine mitgeschickte Begründung in den
+                # Bearbeiten-Routen.
+                _time_relevant_change = (
+                    cr.request_type != ChangeRequestType.UPDATE
+                    or work_window_service.time_relevant_change(
+                        entry,
+                        date=cr.proposed_date,
+                        start=_eff_start,
+                        end=_eff_end,
+                        break_minutes=cr.proposed_break_minutes,
+                        uncredited_minutes=_r_pre.uncredited_minutes,
+                    )
+                )
+                # Geprüft wird die Pause, die gespeichert wird (s. o.).
+                _chk_break = work_window_service.effective_break_minutes(
+                    cr.proposed_break_minutes,
+                    entry if cr.request_type == ChangeRequestType.UPDATE else None,
                 )
 
                 daily_hours_revalidate = _calculate_daily_net_hours(
@@ -394,30 +586,39 @@ def review_change_request(
                     entry_date=cr.proposed_date,
                     start_time=_eff_start,
                     end_time=_eff_end,
-                    break_minutes=cr.proposed_break_minutes or 0,
+                    break_minutes=_chk_break,
+                    uncredited_minutes=_r_pre.uncredited_minutes,
                     exclude_entry_id=exclude_id,
                     tenant_id=cr.tenant_id,
                 )
-                if daily_hours_revalidate > MAX_DAILY_HOURS_HARD:
+                if daily_hours_revalidate > MAX_DAILY_HOURS_HARD and _time_relevant_change:
                     raise HTTPException(
                         status_code=422,
                         detail=f"Tagesarbeitszeit würde {daily_hours_revalidate:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
                     )
 
                 # §4 break validation — skipped only when a documented waiver
-                # is attached (waiver excuses §4, never §3).
-                if cr.break_waiver_reason is None:
+                # is attached (waiver excuses §4, never §3). B1: ein unverändert
+                # bestehender §4-Befund sperrt nicht (siehe oben); er hält nur
+                # ``PRESENCE_BREAK`` zurück (P14, wie ``break_check_passed`` in
+                # den Bearbeiten-Routen).
+                if waiver_reason is None:
                     break_error = validate_daily_break(
                         db=db,
-                        user_id=cr.user_id,
+                        user=cr_user,
                         entry_date=cr.proposed_date,
                         start_time=_eff_start,
                         end_time=_eff_end,
-                        break_minutes=cr.proposed_break_minutes or 0,
+                        break_minutes=_chk_break,
+                        uncredited_segments=_segs_pre,
                         exclude_entry_id=exclude_id,
+                        tenant_id=cr.tenant_id,
                     )
-                    if break_error:
+                    if break_error and (_time_relevant_change or waiver_disabled):
+                        if waiver_disabled:
+                            break_error = f"{break_error} {BREAK_EXCEPTION_DISABLED_HINT}"
                         raise HTTPException(status_code=422, detail=break_error)
+                    _break_check_passed = break_error is None
 
     # Absence CR preconditions
     absence = None
@@ -484,15 +685,15 @@ def review_change_request(
                 User.id == cr.user_id,
                 User.tenant_id == cr.tenant_id,
             ).first()
-            _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-            eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-                db, _cr_user_te, cr.proposed_date, _in_start, _in_end, _grace,
-            )
+            # Aktueller Mandanten-Puffer, ohne Anerkennung — derselbe Lauf wie
+            # Duplikat-Sonde und Vorprüfung (``_approval_clamp``).
+            _r = _approval_clamp()[0]
+            eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
             # die Kappung nicht stumm bleiben. Die Verwaltung genehmigt sonst
             # 07:37 und speichert 07:45, ohne dass es jemand erfaehrt.
             _clamp_warn = work_window_service.clamp_warning(
-                raw_start, raw_end, eff_start, eff_end, _grace,
+                db, _cr_user_te, cr.proposed_date, _r, for_employee=False,
             )
             entry = TimeEntry(
                 user_id=cr.user_id,
@@ -502,11 +703,16 @@ def review_change_request(
                 end_time=eff_end,
                 raw_start_time=raw_start,
                 raw_end_time=raw_end,
+                # Spec 7.1 Nr. 8 (E11): Lückenminuten immer serverseitig aus clamp().
+                uncredited_minutes=_r.uncredited_minutes,
+                # Spec E79/E80: Neuanlage merkt sich den aktuellen Puffer.
+                clamp_grace_minutes=_r.grace_minutes,
                 break_minutes=cr.proposed_break_minutes or 0,
                 note=cr.proposed_note,
                 # #144 §4 ArbZG: materialise the documented break-exception on
                 # the entry so the deviation stays auditable after approval.
-                break_waiver_reason=cr.break_waiver_reason,
+                # #499: nur, solange der Mandant die Ausnahme erlaubt.
+                break_waiver_reason=waiver_reason,
                 # #485 §10 ArbZG: Ausnahmegrund aus dem Antrag uebernehmen.
                 sunday_exception_reason=cr.proposed_sunday_exception_reason,
             )
@@ -519,7 +725,7 @@ def review_change_request(
             _create_audit_log(
                 db, entry.id, cr.user_id, current_user.id,
                 action="create", new_entry=entry,
-                source=BREAK_WAIVER_SOURCE if cr.break_waiver_reason is not None else "change_request",
+                source=BREAK_WAIVER_SOURCE if waiver_reason is not None else "change_request",
                 change_request_id=cr.id,
                 tenant_id=cr_tenant_id,
             )
@@ -531,15 +737,15 @@ def review_change_request(
                 User.id == cr.user_id,
                 User.tenant_id == cr.tenant_id,
             ).first()
-            _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-            eff_start, eff_end, raw_start, raw_end = work_window_service.clamp(
-                db, _cr_user_te, cr.proposed_date, _in_start, _in_end, _grace,
-            )
+            # E80: Einzel-Neukappung des gespeicherten Eintrags mit SEINEM Puffer
+            # — derselbe Lauf wie Duplikat-Sonde und Vorprüfung (``_approval_clamp``).
+            _r = _approval_clamp()[0]
+            eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
             # die Kappung nicht stumm bleiben. Die Verwaltung genehmigt sonst
             # 07:37 und speichert 07:45, ohne dass es jemand erfaehrt.
             _clamp_warn = work_window_service.clamp_warning(
-                raw_start, raw_end, eff_start, eff_end, _grace,
+                db, _cr_user_te, cr.proposed_date, _r, for_employee=False,
             )
             # #144 §4 ArbZG: mark the audit source as 'break_waiver' when this
             # CR carries a documented break-exception, mirroring the direct path.
@@ -553,25 +759,58 @@ def review_change_request(
                     "break_minutes": cr.proposed_break_minutes,
                     "note": cr.proposed_note,
                 },
-                source=BREAK_WAIVER_SOURCE if cr.break_waiver_reason is not None else "change_request",
+                source=BREAK_WAIVER_SOURCE if waiver_reason is not None else "change_request",
                 change_request_id=cr.id,
                 tenant_id=cr_tenant_id,
+            )
+            # P18: VOR dem Überschreiben festhalten — nur ein ANDERES Ende als das
+            # gespeicherte wirksame ist eine echte Korrektur; ein Antrag, der nur
+            # Pause oder Notiz ändert, schickt das wirksame Ende unverändert mit
+            # (``end_input_for`` rechnet oben am selben Tag mit dem Rohende 23:59
+            # weiter, bei einem Datumswechsel gilt das wirksame Ende, PR1-Review
+            # F1). Entschieden 2026-10-11: ein beantragtes 23:59 ist eine
+            # Korrektur — echter Stempel, gekappt wie jedes andere Ende. Das
+            # Echo des damals wirksamen Endes hat ``request_end_for_approval``
+            # oben schon auf das aktuelle wirksame Ende abgebildet (Review V1).
+            _end_corrected = (
+                entry.auto_closed
+                and _proposed_end is not None
+                and work_window_service.end_is_correction(_proposed_end, entry.end_time)
             )
             entry.date = cr.proposed_date
             entry.start_time = eff_start
             entry.end_time = eff_end
             entry.raw_start_time = raw_start
             entry.raw_end_time = raw_end
+            # Spec 7.1 Nr. 9 (E11): die Lückenminuten folgen dem übernommenen Zeitpaar.
+            entry.uncredited_minutes = _r.uncredited_minutes
+            # E79: angewandten Puffer merken; None (Tag ohne Blöcke) lässt den
+            # gespeicherten Wert stehen.
+            if _r.grace_minutes is not None:
+                entry.clamp_grace_minutes = _r.grace_minutes
+            if _end_corrected:
+                entry.auto_closed = False  # P18: tatsächliches Ende genehmigt
             entry.break_minutes = cr.proposed_break_minutes if cr.proposed_break_minutes is not None else entry.break_minutes
             if cr.proposed_note is not None:
                 entry.note = cr.proposed_note
             # #144 §4 ArbZG: carry the documented break-exception onto the entry.
-            if cr.break_waiver_reason is not None:
-                entry.break_waiver_reason = cr.break_waiver_reason
+            if waiver_reason is not None:
+                entry.break_waiver_reason = waiver_reason
             # #485 §10 ArbZG: ein mitgebrachter Ausnahmegrund ersetzt den alten;
             # ohne Angabe bleibt der bestehende stehen.
             if cr.proposed_sunday_exception_reason is not None:
                 entry.sunday_exception_reason = cr.proposed_sunday_exception_reason
+            # Spec 13.3 Schritte 2–6 im Genehmigungspfad (P21) — die Ankersperre
+            # hält dieser Pfad schon (Anker vor Antrag vor Eintrag, P5).
+            if grant_override:
+                credit_override_service.apply_credit_override(
+                    db, entry,
+                    changed_by_id=current_user.id,
+                    on_request=bool(cr.request_credit_override),
+                    change_request_id=cr.id,
+                )
+                # Die Kappungswarnung dieser Genehmigung gilt nicht mehr.
+                _clamp_warn = None
 
         elif cr.request_type == ChangeRequestType.DELETE:
             # entry already fetched in precondition check above
@@ -655,7 +894,7 @@ def review_change_request(
             # Antrags-Pfad prüfen, dieser nicht). Tagesprinzip (#156/#167): 1 freier
             # Arbeitstag = 1 Urlaubstag. Die CR bucht genau EINEN Tag (cr.proposed_date)
             # und kennt KEIN half_day-Feld → days_needed = 1,0 für einen abrechenbaren
-            # Tag. Für use_daily_schedule+track_hours-User zählt ein 0h-Tag nicht.
+            # Tag. Ein Tag ohne Tagessoll (in beiden Modi) zählt nicht.
             if (
                 cr_user
                 and cr.proposed_absence_type == AbsenceType.VACATION.value
@@ -676,14 +915,17 @@ def review_change_request(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Kein gültiger Arbeitstag (soll-freier Sondertag) — es kann kein Urlaubstag gebucht werden.",
                     )
-                # #431: Modus pro TAG aufloesen, nicht am Live-Flag (siehe
-                # ``is_vacation_billable_day``; ``schedule`` ist oben schon
-                # aufgeloest und wird durchgereicht, kein zweiter Lookup).
-                if is_vacation_billable_day(db, cr_user, cr.proposed_date, schedule=schedule):
+                # Gesamtreview 1.20 B5: verlangt wird genau, was das Konto fuer
+                # die gleich angelegte Zeile zaehlt — derselbe Helfer wie im
+                # UPDATE-Zweig unten (Tagessoll des Tages laut Snapshot #431,
+                # Halbtags-Sondertag 0,5 #394). Dieser Zweig bucht IMMER eine
+                # Zeile, auch an einem Tag ohne Soll (Wochenende, Zeitraum mit
+                # 0 Wochenstunden) — die fruehere Abkuerzung „gleichmaessiger
+                # Modus → jeder Tag kostet 1" verlangte dort einen Urlaubstag,
+                # den das Konto nie abzog.
+                days_needed = _vacation_day_contribution(db, cr_user, cr.proposed_date, False)
+                if days_needed > 1e-9:
                     vacation_account = get_vacation_account(db, cr_user, cr.proposed_date.year)
-                    # #394: ein Halbtags-Sondertag (24./31.12.) kostet nur 0,5.
-                    _cfg = special_days_service.get_special_day_config(db, cr_user.tenant_id, cr.proposed_date.year)
-                    days_needed = float(half_special_day_weight(cr.proposed_date, _cfg))
                     if days_needed > vacation_account["remaining_days"] + 1e-9:
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
@@ -870,6 +1112,12 @@ def review_change_request(
                 User.id == cr.user_id, User.tenant_id == cr_tenant_id
             ).first()
             _upd_date = cr.proposed_date or absence.date
+            # Fix #3 / Gesamtreview 1.20 (Fund 1): zieht die Abwesenheit auf einen
+            # anderen Tag oder wechselt sie den Typ, ersetzt sie die Einträge des
+            # Zieltags (unten). Sonst bleiben sie stehen — ein Misch-Tag.
+            _clears_day_entries = (
+                _upd_date != _orig_abs_date or absence.type != _orig_abs_type
+            )
             _upd_is_overtime = absence.type == AbsenceType.OVERTIME
             # #431: Modus aus dem zum DATUM aufgeloesten Snapshot, nicht vom Live-Flag.
             _upd_schedule = (
@@ -883,6 +1131,16 @@ def review_change_request(
                 # als Ist gutgeschrieben, sodass ein halber Krank-Tag plus halber
                 # Arbeitstag plötzlich 12 statt 8 Ist-Stunden ergibt.
                 absence.hours = round(_upd_target / 2, 2) if absence.half_day else _upd_target
+                # Gesamtreview 1.20 (Fund 1): bleiben die Einträge des Tages
+                # stehen (gleicher Tag, gleicher Typ — z. B. nur Uhrzeit oder
+                # Notiz geändert an einer mit ``keep_time_entries`` gebuchten
+                # Abwesenheit), gilt F1 wie beim Buchen: nur der nicht gearbeitete
+                # Rest. Bis hierher fiel die Gutschrift auf das volle Tagessoll
+                # zurück — Arbeit UND volle Gutschrift im Ist (Phantom-Saldo).
+                if not _clears_day_entries:
+                    absence.hours = f1_clamp_for_day(
+                        db, _upd_user, _upd_date, float(absence.hours), _upd_target,
+                    )
                 # Task 15: eine genehmigte Änderung ist eine NEUBUCHUNG durch
                 # einen Menschen — hier IST der neue Wert der gebuchte, also
                 # wandert er auch in den Rohwert. Nur die gerechnete
@@ -906,8 +1164,10 @@ def review_change_request(
             # Fix #3: when the absence moved to a new day or changed type, clear
             # the (new) target day's time entries so absence + entry don't
             # double-count (mirror create_absence). A pure time-only edit on the
-            # same day/type leaves entries alone (they were cleared at creation).
-            if absence.date != _orig_abs_date or absence.type != _orig_abs_type:
+            # same day/type leaves entries alone — at creation they were either
+            # cleared or kept on purpose (``keep_time_entries``, Misch-Tag: the
+            # F1 clamp above then keeps the credit at the unworked rest).
+            if _clears_day_entries:
                 _delete_day_time_entries(
                     db, cr.user_id, cr_tenant_id, absence.date, current_user.id, cr.id,
                 )
@@ -1011,28 +1271,37 @@ def review_change_request(
         and cr.proposed_end_time
     ):
         cr_user = db.query(User).filter(User.id == cr.user_id, User.tenant_id == cr.tenant_id).first()
-        if cr_user and not cr_user.exempt_from_arbzg:
-            # §16/#201: assess the informational ArbZG warnings on the CREDITED
-            # (clamped) time too — consistent with the §3/§4 hard re-check above
-            # and the create/update paths. The CR stores the RAW proposed times.
-            _wgrace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-            _w_start, _w_end, _, _ = work_window_service.clamp(
-                db, cr_user, cr.proposed_date, _in_start, _in_end, _wgrace,
-            )
-            daily_hours_cr = _calculate_daily_net_hours(
+        # E41 (Spec 2026-10-08): der eben geschriebene Eintrag steht schon in der
+        # Tabelle — er wird ausgeschlossen und mit seinen GESPEICHERTEN Werten
+        # (gekappt, uncredited, Pause) einmal addiert, statt doppelt gezählt zu
+        # werden. Die gespeicherten Werte sind genau die angerechnete Zeit, die
+        # der Schreibzweig oben aus ``clamp`` übernommen hat (CREATE setzt
+        # ``cr.time_entry_id`` auf die neue Zeile) — eine zweite Kappung entfällt.
+        _w_entry = (
+            db.query(TimeEntry).filter(
+                TimeEntry.id == cr.time_entry_id,
+                TimeEntry.tenant_id == cr.tenant_id,  # F-026
+            ).first()
+            if cr.time_entry_id else None
+        )
+        if cr_user and not cr_user.exempt_from_arbzg and _w_entry is not None and _w_entry.end_time is not None:
+            _w_kwargs = dict(
                 db=db,
                 user_id=cr.user_id,
-                entry_date=cr.proposed_date,
-                start_time=_w_start,
-                end_time=_w_end,
-                break_minutes=cr.proposed_break_minutes or 0,
+                entry_date=_w_entry.date,
+                start_time=_w_entry.start_time,
+                end_time=_w_entry.end_time,
+                break_minutes=_w_entry.break_minutes,
+                uncredited_minutes=_w_entry.uncredited_minutes,
+                exclude_entry_id=_w_entry.id,
                 tenant_id=cr.tenant_id,
             )
+            daily_hours_cr = _calculate_daily_net_hours(**_w_kwargs)
 
             # SS6 Abs. 2: Nachtarbeitnehmer-Tageslimit
             if (
                 cr_user.is_night_worker
-                and is_night_work(_w_start, _w_end)
+                and is_night_work(_w_entry.start_time, _w_entry.end_time)
                 and daily_hours_cr > MAX_NIGHT_WORKER_DAILY_WARN
             ):
                 cr_response.warnings.append(
@@ -1041,19 +1310,28 @@ def review_change_request(
                 )
 
             # §3 ArbZG: Wochenarbeitszeit-Warnung (48h)
-            weekly = _calculate_weekly_net_hours(
-                db=db,
-                user_id=cr.user_id,
-                entry_date=cr.proposed_date,
-                start_time=_w_start,
-                end_time=_w_end,
-                break_minutes=cr.proposed_break_minutes or 0,
-                tenant_id=cr.tenant_id,
-            )
+            weekly = _calculate_weekly_net_hours(**_w_kwargs)
             if weekly > MAX_WEEKLY_HOURS_WARN:
                 cr_response.warnings.append(
                     f"§3 ArbZG: Wochenarbeitszeit {weekly:.1f}h überschreitet 48h-Grenze."
                 )
+
+            # Spec 8.3/8.4: weiche Anwesenheits-Warnungen und Pausen-Doppelabzug —
+            # nach „Anerkennen" stattdessen die weichen Warnungen aus 13.3 Schritt 6
+            # (P4; die 48-h-Warnung steht schon oben). ``_w_entry`` ist der eben
+            # geschriebene Eintrag (CREATE- bzw. UPDATE-Zweig). §4 hat die
+            # Vorprüfung auf angerechneter Zeit hart geprüft — außer bei einer
+            # mitgebrachten Ausnahme oder einem unverändert bestehenden Befund
+            # (B1; P14: dann jeweils kein PRESENCE_BREAK zusätzlich).
+            if grant_override:
+                cr_response.warnings.extend(credit_override_service.override_warnings(
+                    db, cr_user, _w_entry, include_weekly=False,
+                ))
+            else:
+                cr_response.warnings.extend(presence_service.presence_warnings(
+                    db, cr_user, _w_entry.date,
+                    break_check_passed=_break_check_passed, entry=_w_entry,
+                ))
 
     return cr_response
 

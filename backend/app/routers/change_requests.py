@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date
-from app.services.timezone_service import today_local
+from app.services.timezone_service import now_local, today_local
 from app.database import get_db
 from app.models import (
     User, TimeEntry, ChangeRequest, ChangeRequestType, ChangeRequestStatus, UserRole, Absence, AbsenceType,
@@ -10,17 +10,30 @@ from app.models import (
 )
 from app.middleware.auth import get_current_user
 from app.schemas.change_request import ChangeRequestCreate, ChangeRequestResponse
-from app.services.break_validation_service import validate_daily_break
+from app.services.break_validation_service import validate_daily_break, break_waiver_rejection
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
 )
 from app.services.arbzg_utils import is_night_work
+from app.services import credit_override_service, work_window_service
 # #219: single shared CR-enricher (was duplicated per-item here vs the batch in
 # admin_helpers). _enrich_cr_response wraps the batch _enrich_cr_responses([cr]).
-from app.routers.admin_helpers import _enrich_cr_response as _enrich_response
+from app.routers.admin_helpers import (
+    _enrich_cr_response as _enrich_response, _enrich_cr_responses,
+)
 
 router = APIRouter(prefix="/api/change-requests", tags=["change-requests"])
+
+# Spec 2026-10-08, 11.4 / P21 (wörtlich).
+CREDIT_REQUEST_REJECTED_DETAIL = "Für diesen Eintrag kann keine Anrechnung beantragt werden."
+# Gesamtreview PR2 (Fund 1): heute beantragbar, aber nur für bereits vergangene Zeit.
+CREDIT_REQUEST_FUTURE_END_DETAIL = (
+    "Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden."
+)
+RECOGNIZED_TODAY_FUTURE_END_DETAIL = (
+    "Das Ende liegt in der Zukunft – die Änderung kann erst nach Arbeitsende beantragt werden."
+)
 
 
 @router.post("/", response_model=ChangeRequestResponse, status_code=status.HTTP_201_CREATED)
@@ -29,7 +42,8 @@ def create_change_request(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Employee creates a change request for a past day."""
+    """Employee creates a change request for a past day (Anrechnung beantragen:
+    auch für den heutigen, geschlossenen Eintrag — Gesamtreview PR2, Fund 1)."""
 
     # Validate request_type
     if data.request_type not in ("create", "update", "delete"):
@@ -38,6 +52,10 @@ def create_change_request(
     # Validate entry_kind
     if data.entry_kind not in ("time_entry", "absence"):
         raise HTTPException(status_code=400, detail="Ungültiger Antragstyp (entry_kind)")
+
+    # Spec 2026-10-08 P21: „Anrechnung beantragen" gibt es nur für Zeiteinträge.
+    if data.request_credit_override and data.entry_kind != "time_entry":
+        raise HTTPException(status_code=400, detail=CREDIT_REQUEST_REJECTED_DETAIL)
 
     # --- Absence CR branch ---
     if data.entry_kind == "absence":
@@ -173,18 +191,72 @@ def create_change_request(
         if current_user.last_work_day and data.proposed_date > current_user.last_work_day:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Datum liegt nach dem letzten Arbeitstag")
 
+    # Gesamtreview PR2 (Fund 1): „Anrechnung beantragen" auch für den HEUTIGEN,
+    # geschlossenen Eintrag — der Lückentext an clock_out/create/update (für
+    # Mitarbeitende immer heute) verweist genau darauf, und Spec 14 kennt keine
+    # Tagesgrenze. Nur bei gleichbleibendem Datum (heute → heute, wie #502);
+    # gewöhnliche Änderungen des heutigen Eintrags laufen weiter direkt.
+    _credit_today = bool(
+        data.request_credit_override
+        and entry is not None
+        and entry.date == today_local()
+        and data.proposed_date == entry.date
+    )
+
+    # Ultrareview 1.20 (Fund 1): ein HEUTE anerkannter Eintrag sperrt das
+    # direkte Bearbeiten und Löschen der Mitarbeitenden (409 „… bitte per
+    # Änderungsantrag.", time_entries) — der Antrag muss dann auch heute gehen,
+    # sonst ist der Verweis eine Sackgasse. Nur für Ziel heute oder früher.
+    _recognized_today = bool(
+        entry is not None
+        and entry.credit_override
+        and entry.date == today_local()
+    )
+
     # For UPDATE, proposed values required and must be for past day
     if data.request_type == "update":
         if not all([data.proposed_date, data.proposed_start_time, data.proposed_end_time]):
             raise HTTPException(status_code=400, detail="Datum, Von und Bis sind erforderlich")
-        if data.proposed_date >= today_local():
+        _recognized_stays_today = _recognized_today and data.proposed_date == entry.date
+        if data.proposed_date >= today_local() and not (_credit_today or _recognized_stays_today):
             raise HTTPException(status_code=400, detail="Änderungsanträge sind nur für vergangene Tage möglich")
+        # Die Anerkennung überlebt die Genehmigung (P11) — ein späteres Ende
+        # rechnete dauerhaft noch nicht gearbeitete Zeit an.
+        if _recognized_stays_today and data.proposed_end_time > now_local().time():
+            raise HTTPException(status_code=400, detail=RECOGNIZED_TODAY_FUTURE_END_DETAIL)
         # Arbeitszeitraum-Prüfung (I1)
         if data.proposed_date:
             if current_user.first_work_day and data.proposed_date < current_user.first_work_day:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Datum liegt vor dem ersten Arbeitstag")
             if current_user.last_work_day and data.proposed_date > current_user.last_work_day:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Datum liegt nach dem letzten Arbeitstag")
+
+    # Spec 2026-10-08 P21: nur als Änderung (UPDATE) an einem eigenen (die
+    # Eigentümerprüfung oben antwortet für fremde Einträge wie für unbekannte
+    # mit 404, #120), geschlossenen, noch nicht anerkannten Eintrag mit nicht
+    # angerechneter Zeit (P19: Lücke und Hülle). Ein automatisch geschlossener
+    # Eintrag braucht das TATSÄCHLICHE Ende im selben Antrag (P18): 23:59 ist
+    # kein Stempel, und das gekappte Ende liefe bei der Genehmigung über
+    # unclamp_input wieder auf 23:59 hinaus.
+    if data.request_credit_override:
+        if (
+            data.request_type != "update"
+            or entry is None
+            or entry.end_time is None
+            or entry.credit_override
+            or work_window_service.not_credited_minutes(entry) <= 0
+            # Gesamtreview PR2 (Fund 3): Nicht-Anrechnung und Begründung gehören
+            # zum Tag des Eintrags. Ein anderes Datum kappte die Genehmigung gegen
+            # die Blöcke des Zieltags und erkennte die Zeiten DORT an.
+            or data.proposed_date != entry.date
+        ):
+            raise HTTPException(status_code=400, detail=CREDIT_REQUEST_REJECTED_DETAIL)
+        if credit_override_service.lacks_actual_end(entry, data.proposed_end_time):
+            raise HTTPException(status_code=400, detail=credit_override_service.AUTO_CLOSED_DETAIL)
+        # Heute lässt das Anlegen ein späteres Ende zu (time_entries.create_time_entry);
+        # anerkannt würde dauerhaft (P11) noch nicht gearbeitete Zeit.
+        if _credit_today and data.proposed_end_time > now_local().time():
+            raise HTTPException(status_code=400, detail=CREDIT_REQUEST_FUTURE_END_DETAIL)
 
     # Time range validation for CREATE and UPDATE
     if data.request_type in ("create", "update") and data.proposed_start_time and data.proposed_end_time:
@@ -193,39 +265,128 @@ def create_change_request(
 
     # For DELETE, entry must be from past
     if data.request_type == "delete" and entry:
-        if entry.date >= today_local():
+        if entry.date >= today_local() and not _recognized_today:
             raise HTTPException(status_code=400, detail="Heutige Einträge können direkt gelöscht werden")
+
+    # #499-Review (F4): die Begründung wird nur dann am Antrag gespeichert, wenn
+    # sie eine §4-Ausnahme tatsächlich trägt. Eine überflüssige Begründung ließ
+    # die Genehmigung die §4-Neuprüfung überspringen (admin_change_requests:
+    # ``if waiver_reason is None``) — ein inzwischen entstandener Tagesverstoß
+    # wäre dann ungeprüft als 'break_waiver' gebucht worden.
+    waiver_needed = False
+
+    # E40 (Spec 2026-10-08): der Antrag prüft §3/§4/§6/48 h auf der
+    # ANGERECHNETEN Zeit — wie die Genehmigung. Gespeichert werden weiter die
+    # ROHEN Vorschläge (die Genehmigung kappt genau einmal, admin_change_requests).
+    _cr_clamp = None
+    _cr_segs: list = []
+    if (data.request_type in ("create", "update")
+            and data.proposed_date and data.proposed_start_time and data.proposed_end_time):
+        _in_start, _in_end = data.proposed_start_time, data.proposed_end_time
+        _override = bool(entry is not None and entry.credit_override)
+        if entry is not None:
+            # Das Antragsformular belegt die Zeiten mit der angerechneten Zeit vor
+            # (Release-Review 1.19.3 F1) — derselbe Rohwert-Rückgriff wie bei der
+            # Genehmigung, sonst zählte eine reine Pausen-Korrektur gekappt.
+            _in_start = work_window_service.unclamp_input(_in_start, entry.start_time, entry.raw_start_time)
+            # PR1-Review F1 (P18): ein automatisch geschlossener Eintrag, der nur auf einen
+            # anderen Tag wandert, rechnet mit dem wirksamen Ende statt 23:59. Ein
+            # eingetragenes 23:59 ist seit 2026-10-11 eine Korrektur und gilt wie
+            # eingetragen (Entscheidung des Produktinhabers).
+            _in_end = work_window_service.end_input_for(
+                _in_end, entry.end_time, entry.raw_end_time,
+                auto_closed=entry.auto_closed, prev_date=entry.date,
+                target_date=data.proposed_date,
+            )
+            # E80: UPDATE-Prüfung mit dem gespeicherten Puffer des Eintrags,
+            # CREATE-Prüfung mit dem aktuellen Mandanten-Puffer — dieselbe
+            # Herkunft wie der Schreibzweig der Genehmigung.
+            _cr_grace = work_window_service.grace_for_entry(db, entry)
+        else:
+            _cr_grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
+        # Die Prüfung oben sah den rohen Vorschlag; ``end_input_for`` kann das Ende
+        # davor legen (verschobener Auto-Close-Eintrag, späterer Beginn).
+        _order_error = work_window_service.input_order_error(
+            _in_start, _in_end, auto_closed=bool(entry is not None and entry.auto_closed),
+        )
+        if _order_error:
+            raise HTTPException(status_code=400, detail=_order_error)
+        # Spec 8.2: Lückensegmente für §4 aus DEMSELBEN Kappungslauf (Ultrareview 1.20).
+        _cr_clamp, _cr_segs = work_window_service.clamp_with_segments(
+            db, current_user, data.proposed_date, _in_start, _in_end, _cr_grace,
+            credit_override=_override,
+        )
+    _chk_start = _cr_clamp.eff_start if _cr_clamp else data.proposed_start_time
+    _chk_end = _cr_clamp.eff_end if _cr_clamp else data.proposed_end_time
+    _chk_unc = _cr_clamp.uncredited_minutes if _cr_clamp else 0
+    # Ultrareview 1.20 (Fund B): geprüft wird die Pause, die die Genehmigung
+    # SPEICHERT — fehlt sie im Antrag, bleibt die des Eintrags stehen (vorher
+    # rechneten §3/§4 hier mit 0 Minuten).
+    _chk_break = work_window_service.effective_break_minutes(data.proposed_break_minutes, entry)
+
+    # Gesamtreview 1.20 (B1, Nachzug zu Punkt 4): wie in beiden Bearbeiten-Routen
+    # — ändert ein UPDATE-Antrag nichts, was §3/§4 rechnen (Datum, angerechneter
+    # Beginn/Ende, Pause, nicht angerechnete Minuten), bleiben die HARTEN
+    # Prüfungen aus; ihr Ergebnis wäre das des gespeicherten Stands. Sonst
+    # scheiterte an einem anerkannten Eintrag über 10 h bzw. ohne §4-Pause (13.3,
+    # P4) schon ein Antrag, der nur die Notiz oder den §10-Grund ändert — und
+    # genau auf diesen Weg verweist der 409 der MA-Route. Verglichen wird mit dem,
+    # was die Genehmigung speichert (EINE Regel ``time_relevant_change``,
+    # Ultrareview 1.20: eine fehlende Pause bleibt stehen). Kommt eine Begründung
+    # mit, läuft §4 wie bisher (Schalter #499 inklusive).
+    _time_relevant_change = (
+        data.request_type != "update"
+        or _cr_clamp is None
+        or work_window_service.time_relevant_change(
+            entry,
+            date=data.proposed_date,
+            start=_chk_start,
+            end=_chk_end,
+            break_minutes=data.proposed_break_minutes,
+            uncredited_minutes=_chk_unc,
+        )
+    )
 
     # Break validation for CREATE and UPDATE (§18-Ausnahme: exempt_from_arbzg überspringt §3/§4)
     if not current_user.exempt_from_arbzg and data.request_type in ("create", "update") and data.proposed_date:
         break_error = validate_daily_break(
             db=db,
-            user_id=current_user.id,
+            user=current_user,
             entry_date=data.proposed_date,
-            start_time=data.proposed_start_time,
-            end_time=data.proposed_end_time,
-            break_minutes=data.proposed_break_minutes or 0,
+            start_time=_chk_start,
+            end_time=_chk_end,
+            break_minutes=_chk_break,
+            uncredited_segments=_cr_segs,
             exclude_entry_id=entry.id if entry else None,
+            tenant_id=current_user.tenant_id,
         )
         # #200: §4-Pausen-Ausnahme — bei dokumentierter Begründung den §4-Block
         # NICHT hart werfen, sondern den Antrag mit break_waiver_reason anlegen
         # (admin_change_requests honoriert ihn beim Genehmigen). Der §3-10h-Cap
-        # unten bleibt unabhängig davon hart.
-        if break_error and not (data.break_waiver_reason and data.break_waiver_reason.strip()):
-            raise HTTPException(status_code=400, detail=break_error)
+        # unten bleibt unabhängig davon hart. #499: ist die Ausnahme im
+        # Mandanten abgeschaltet, bleibt der §4-Block auch mit Begründung.
+        # B1: ein unverändert bestehender §4-Befund sperrt nicht (siehe oben).
+        if break_error and (_time_relevant_change or (data.break_waiver_reason or "").strip()):
+            rejection = break_waiver_rejection(
+                db, current_user.tenant_id, break_error, data.break_waiver_reason,
+            )
+            if rejection:
+                raise HTTPException(status_code=400, detail=rejection)
+            waiver_needed = True
 
         # §3 ArbZG: daily hours hard limit
         daily_hours = _calculate_daily_net_hours(
             db=db,
             user_id=current_user.id,
             entry_date=data.proposed_date,
-            start_time=data.proposed_start_time,
-            end_time=data.proposed_end_time,
-            break_minutes=data.proposed_break_minutes or 0,
+            start_time=_chk_start,
+            end_time=_chk_end,
+            break_minutes=_chk_break,
+            uncredited_minutes=_chk_unc,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )
-        if daily_hours > MAX_DAILY_HOURS_HARD:
+        if daily_hours > MAX_DAILY_HOURS_HARD and _time_relevant_change:
             raise HTTPException(
                 status_code=422,
                 detail=f"Tagesarbeitszeit würde {daily_hours:.1f}h betragen und überschreitet die gesetzliche Höchstgrenze von {MAX_DAILY_HOURS_HARD:.0f}h (§3 ArbZG).",
@@ -264,13 +425,14 @@ def create_change_request(
         reason=data.reason,
         break_waiver_reason=(
             data.break_waiver_reason.strip()
-            if data.break_waiver_reason and data.break_waiver_reason.strip()
+            if waiver_needed and data.break_waiver_reason and data.break_waiver_reason.strip()
             else None
         ),
         # #485 §10 ArbZG: Ausnahmegrund fuer Sonn-/Feiertagsarbeit.
         proposed_sunday_exception_reason=(
             (data.proposed_sunday_exception_reason or "").strip() or None
         ),
+        request_credit_override=bool(data.request_credit_override),  # P21
     )
 
     # Snapshot original values
@@ -280,6 +442,7 @@ def create_change_request(
         cr.original_end_time = entry.end_time
         cr.original_break_minutes = entry.break_minutes
         cr.original_note = entry.note
+        cr.original_uncredited_minutes = entry.uncredited_minutes  # P28
 
     db.add(cr)
     db.commit()
@@ -298,15 +461,16 @@ def create_change_request(
             db=db,
             user_id=current_user.id,
             entry_date=data.proposed_date,
-            start_time=data.proposed_start_time,
-            end_time=data.proposed_end_time,
-            break_minutes=data.proposed_break_minutes or 0,
+            start_time=_chk_start,
+            end_time=_chk_end,
+            break_minutes=_chk_break,
+            uncredited_minutes=_chk_unc,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )
         if (
             current_user.is_night_worker
-            and is_night_work(data.proposed_start_time, data.proposed_end_time)
+            and is_night_work(_chk_start, _chk_end)
             and daily_hours_check > MAX_NIGHT_WORKER_DAILY_WARN
         ):
             response.warnings.append(
@@ -322,9 +486,10 @@ def create_change_request(
             db=db,
             user_id=current_user.id,
             entry_date=data.proposed_date,
-            start_time=data.proposed_start_time,
-            end_time=data.proposed_end_time,
-            break_minutes=data.proposed_break_minutes or 0,
+            start_time=_chk_start,
+            end_time=_chk_end,
+            break_minutes=_chk_break,
+            uncredited_minutes=_chk_unc,
             exclude_entry_id=entry.id if entry else None,
             tenant_id=current_user.tenant_id,
         )
@@ -359,7 +524,9 @@ def list_change_requests(
             )
 
     requests = query.order_by(ChangeRequest.created_at.desc()).offset(skip).limit(limit).all()
-    return [_enrich_response(cr, db) for cr in requests]
+    # Batch wie admin_change_requests.list_all_change_requests: EIN User- und EIN
+    # Eintrags-Query für die ganze Liste (bis 500 Anträge), nicht je Antrag.
+    return _enrich_cr_responses(requests, db)
 
 
 @router.get("/{request_id}", response_model=ChangeRequestResponse)
@@ -403,19 +570,32 @@ def withdraw_change_request(
     # als manipuliert.
     # Mit der Sperre liefert Postgres nach dem Warten die AKTUELLE Zeilenversion
     # → die Statusprüfung unten sieht APPROVED und lehnt mit 400 ab.
+    #
+    # Gesamtreview B3 / Spec 16.2 Nr. 8: fremd oder unbekannt → 404 VOR der
+    # Sperre (Muster ``time_entries.update_time_entry``). Bis dahin sperrte die
+    # ID eines Antrags der Kollegin deren Zeile — und wartete, solange die
+    # Verwaltung ihn gerade genehmigte: die Wartezeit verriet als Timing-Orakel,
+    # dass die ID existiert (#120 verbirgt das nur in Statuscode und Text). Der
+    # Eigentümer eines Antrags ist unveränderlich — ungesperrt lesen genügt.
+    owner_id = db.query(ChangeRequest.user_id).filter(
+        ChangeRequest.id == request_id,
+        ChangeRequest.tenant_id == current_user.tenant_id,  # F-026
+    ).scalar()
+    if owner_id is None or owner_id != current_user.id:
+        # #120: 404 statt 403 — kein Existenz-Leak fremder Antraege.
+        raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     cr = (
         db.query(ChangeRequest)
         .filter(
             ChangeRequest.id == request_id,
-            ChangeRequest.tenant_id == current_user.tenant_id,
+            ChangeRequest.tenant_id == current_user.tenant_id,  # F-026
+            ChangeRequest.user_id == current_user.id,
         )
         .with_for_update()
         .first()
     )
     if not cr:
-        raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
-    if cr.user_id != current_user.id:
-        # #120: 404 statt 403 — kein Existenz-Leak fremder Antraege.
+        # Rückversicherung: zwischen Eigentümer-Lesen und Sperre gelöscht.
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
     if cr.status != ChangeRequestStatus.PENDING:
         raise HTTPException(status_code=400, detail="Nur offene Anträge können zurückgezogen werden")

@@ -5,7 +5,10 @@ import { test, expect } from '../../fixtures/base.fixture';
  *   #311 Monatsjournal heading shows employee name
  *   #312 eigene Abwesenheitsgründe (Settings CRUD + booking picker)
  *   #313 Monatssaldo „bis heute / Monatsende" toggle (Admin-Dashboard)
- *   #314 Betriebsferien-Überstundenabbau toggle (Settings)
+ *
+ * Der #314-Schalter (Betriebsferien-Überstundenabbau) ist eine mandantenweite
+ * Einstellung und liegt deshalb in
+ * tests/tenant-settings/closure-overtime-setting.spec.ts (Gesamtreview 1.20 B9).
  */
 
 test.describe('#312 Eigene Abwesenheitsgründe', () => {
@@ -38,26 +41,6 @@ test.describe('#312 Eigene Abwesenheitsgründe', () => {
     // the type <select> now contains an "Eigene Gründe" optgroup with our reason
     const typeSelect = adminPage.locator('select').filter({ has: adminPage.locator('option[value="vacation"]') }).first();
     await expect(typeSelect.locator('option', { hasText: name })).toBeAttached({ timeout: 10000 });
-  });
-});
-
-test.describe('#314 Betriebsferien-Überstundenabbau-Schalter', () => {
-  test('toggle the closure-overtime setting and persist it', async ({ adminPage }) => {
-    await adminPage.goto('/admin/settings');
-    await expect(adminPage.getByRole('heading', { name: 'Betriebsferien & Urlaub' })).toBeVisible();
-    const toggle = adminPage.locator('#closure-overtime-toggle');
-    await expect(toggle).toBeVisible();
-    const before = await toggle.getAttribute('aria-checked');
-    await toggle.click();
-    const saveResp = adminPage.waitForResponse(
-      (r) => r.url().includes('/api/admin/settings/closure_overtime_after_vacation') && r.request().method() === 'PUT',
-    );
-    // the section's own Speichern button (last "Betriebsferien & Urlaub" block)
-    await adminPage.locator('div', { has: adminPage.getByRole('heading', { name: 'Betriebsferien & Urlaub' }) })
-      .last().getByRole('button', { name: 'Speichern' }).click();
-    const resp = await saveResp;
-    expect(resp.ok()).toBeTruthy();
-    await expect(toggle).toHaveAttribute('aria-checked', String(before !== 'true'));
   });
 });
 

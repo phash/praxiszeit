@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
 import { X, ArrowRight } from 'lucide-react';
 import FocusTrap from 'focus-trap-react';
+import { format } from 'date-fns';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
+import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
+import { isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
+import { useSystemStore } from '../stores/systemStore';
 
 interface TimeEntry {
   id: string;
@@ -11,20 +15,69 @@ interface TimeEntry {
   end_time: string | null;
   break_minutes: number;
   note?: string;
+  is_sunday_or_holiday?: boolean;
+  sunday_exception_reason?: string | null;
+  // Spec 2026-10-08 P21: „Anrechnung beantragen" belegt die Rohstempel vor.
+  raw_start_time?: string | null;
+  raw_end_time?: string | null;
+  auto_closed?: boolean | null;
+}
+
+// #491 F4: Wortgleich zum Monatsjournal, damit beide Antragswege dasselbe fragen.
+const SUNDAY_REASON_LABEL = 'Ausnahmegrund (§10 ArbZG)';
+
+// Gesamtreview 1.20 (Fund 18): Datum wie überall sonst in der App (TT.MM.JJJJ),
+// wie `formatDateDE` in der Admin-Prüfung desselben Antrags. Mittag statt
+// Mitternacht, damit die Zeitzone den Tag nicht verschiebt.
+function formatEntryDate(iso: string): string {
+  return format(new Date(`${iso}T12:00:00`), 'dd.MM.yyyy');
 }
 
 interface Props {
   entry: TimeEntry | null; // null for CREATE
   requestType: 'create' | 'update' | 'delete';
+  /** Spec P21: „Anrechnung beantragen" — Zeiten = Rohstempel; die Verwaltung genehmigt mit oder ohne Anerkennen. */
+  requestCredit?: boolean;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function ChangeRequestForm({ entry, requestType, onClose, onSuccess }: Props) {
+/**
+ * P18/P21: Bringt ein Antrag zu einem automatisch geschlossenen Eintrag KEIN
+ * tatsächliches Ende mit? Dieselbe Regel wie der Server
+ * (`credit_override_service.lacks_actual_end`): leer oder das gespeicherte
+ * (gekappte) Ende zählen nicht — die Genehmigung machte daraus wieder 23:59
+ * (bis zu 16 h angerechnet). Minutengenau.
+ *
+ * Entschieden 2026-10-11 (Produktinhaber): ein eingetragenes 23:59 ist ein
+ * tatsächliches Ende — das Formular belegt nie das Rohende vor, 23:59 kommt
+ * nur aus echter Eingabe. Hat der Auto-Close nicht gekappt (Tag ohne Blöcke,
+ * ohne Stundenzählung, halboffenes Altfenster, Hülle bis 23:59), ist das
+ * gespeicherte Ende selbst 23:59 und bleibt vom unveränderten Ende nicht zu
+ * unterscheiden.
+ */
+function lacksActualEnd(entry: TimeEntry, proposedEnd: string): boolean {
+  if (!entry.auto_closed) return false;
+  const end = proposedEnd.substring(0, 5);
+  return !end || (!!entry.end_time && entry.end_time.substring(0, 5) === end);
+}
+
+export default function ChangeRequestForm({ entry, requestType, requestCredit = false, onClose, onSuccess }: Props) {
+  // P21: die gestempelten (Roh-)Zeiten vorbelegen. Ein automatisch geschlossener
+  // Eintrag hat kein echtes Ende (P18) — das Feld bleibt leer und ist Pflicht.
+  // Erkannt über `auto_closed`, nie über „Rohende leer": ein verschobener
+  // Auto-Close-Eintrag trägt kein bzw. ein übernommenes Rohende. Nie das Rohende
+  // (23:59) vorbelegen: ein 23:59 im Antrag gilt als eingetragenes Ende
+  // (Entschieden 2026-10-11). Der gewöhnliche Antrag belegt das WIRKSAME Ende vor.
+  const creditStart = entry?.raw_start_time ?? entry?.start_time ?? null;
+  const creditEnd = entry?.auto_closed ? '' : (entry?.raw_end_time ?? entry?.end_time ?? '');
+  const needsActualEnd = requestCredit && !!entry?.auto_closed;
   const [formData, setFormData] = useState({
     proposed_date: entry?.date || '',
-    proposed_start_time: entry?.start_time?.substring(0, 5) || '08:00',
-    proposed_end_time: entry?.end_time?.substring(0, 5) || '17:00',
+    proposed_start_time: (requestCredit ? creditStart : entry?.start_time)?.substring(0, 5) || '08:00',
+    proposed_end_time: requestCredit
+      ? creditEnd.substring(0, 5)
+      : entry?.end_time?.substring(0, 5) || '17:00',
     proposed_break_minutes: entry?.break_minutes ?? 0,
     proposed_note: entry?.note || '',
     reason: '',
@@ -36,11 +89,24 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
   // Eintrag" ab, die das Formular allein nicht vorab erkennen kann).
   const [showWaiver, setShowWaiver] = useState(false);
   const [breakWaiverReason, setBreakWaiverReason] = useState('');
+  // #491 F4: §10-ArbZG-Ausnahmegrund für Sonn- und Feiertage. Ohne dieses Feld
+  // kamen Anträge über den Button „Antrag" ohne Grund an, während das
+  // Monatsjournal danach fragt.
+  const [sundayReason, setSundayReason] = useState(entry?.sunday_exception_reason || '');
+  // Gemeinsame Regel mit der Direkteingabe (TimeTracking): Sonntag oder
+  // Feiertag des Mandanten, Samstag nicht; ohne Feiertagsliste die Sonntagsregel.
+  const showSundayReason = useSundayOrHoliday(formData.proposed_date, entry, requestType !== 'delete');
+  // #499: abgeschaltete Ausnahme → kein Begründungsfeld, der §4-Fehler bleibt stehen.
+  const breakExceptionAllowed = useSystemStore((s) => s.isBreakExceptionAllowed());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.reason.trim()) {
       setError('Bitte geben Sie eine Begründung an');
+      return;
+    }
+    if (needsActualEnd && entry && lacksActualEnd(entry, formData.proposed_end_time)) {
+      setError('Der Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende angeben.');
       return;
     }
     if (showWaiver && !breakWaiverReason.trim()) {
@@ -59,15 +125,28 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
         proposed_start_time: requestType !== 'delete' ? formData.proposed_start_time : null,
         proposed_end_time: requestType !== 'delete' ? formData.proposed_end_time : null,
         proposed_break_minutes: requestType !== 'delete' ? formData.proposed_break_minutes : null,
-        proposed_note: requestType !== 'delete' ? formData.proposed_note : null,
+        // Kennt der Aufrufer die Notiz nicht (Monatsjournal: JournalTimeEntry
+        // führt sie nicht) und bleibt das Feld leer, kein '' senden — die
+        // Genehmigung übernimmt jede nicht-null Notiz und löschte die gespeicherte.
+        proposed_note: requestType === 'delete' || (entry && entry.note === undefined && !formData.proposed_note)
+          ? null
+          : formData.proposed_note,
         reason: formData.reason,
         break_waiver_reason: showWaiver && breakWaiverReason.trim() ? breakWaiverReason.trim() : null,
+        proposed_sunday_exception_reason: showSundayReason && sundayReason.trim() ? sundayReason.trim() : null,
+        ...(requestCredit ? { request_credit_override: true } : {}),
       });
       onSuccess();
     } catch (err: any) {
       const msg = getErrorMessage(err, 'Fehler beim Erstellen des Antrags');
-      // §4-Pausenfehler enthält stets „Pause" (§3-10h-Cap nicht) → Ausnahme anbieten.
-      if (!showWaiver && msg.includes('Pause')) {
+      // §4-Pausenfehler enthält stets „Pause" (§3-10h-Cap nicht) → Ausnahme anbieten,
+      // sofern die Praxis sie erlaubt (#499).
+      if (
+        !showWaiver
+        && breakExceptionAllowed
+        && msg.includes('Pause')
+        && !isBreakExceptionDisabledMessage(msg)
+      ) {
         setShowWaiver(true);
         setError(`${msg} Wenn die Pflicht-Pause nachweislich nicht möglich war, begründen Sie dies unten und senden Sie erneut.`);
       } else {
@@ -95,11 +174,17 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <FocusTrap focusTrapOptions={{ allowOutsideClick: true, initialFocus: false }}>
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      {/* Gesamtreview 1.20 (Fund 16): als modaler Dialog angekündigt, Name = Überschrift. */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cr-dialog-title"
+        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+      >
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-amber-500 text-white rounded-t-xl">
-          <h2 className="text-lg font-bold">Änderungsantrag: {typeLabels[requestType]}</h2>
-          <button onClick={onClose} className="hover:bg-white/20 rounded-lg p-1 transition">
-            <X size={20} />
+          <h2 id="cr-dialog-title" className="text-lg font-bold">Änderungsantrag: {requestCredit ? 'Anrechnung beantragen' : typeLabels[requestType]}</h2>
+          <button type="button" onClick={onClose} aria-label="Schließen" className="hover:bg-white/20 rounded-lg p-1 transition">
+            <X size={20} aria-hidden="true" />
           </button>
         </div>
 
@@ -115,7 +200,7 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
               <h3 className="font-semibold text-red-800 mb-2">Eintrag zum Löschen</h3>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-gray-500">Datum:</span> {entry.date}</div>
+                <div><span className="text-gray-500">Datum:</span> {formatEntryDate(entry.date)}</div>
                 <div><span className="text-gray-500">Von:</span> {entry.start_time?.substring(0, 5)}</div>
                 <div><span className="text-gray-500">Bis:</span> {entry.end_time?.substring(0, 5)}</div>
                 <div><span className="text-gray-500">Pause:</span> {entry.break_minutes} min</div>
@@ -128,7 +213,7 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <h3 className="font-semibold text-gray-700 mb-3">Aktuelle Werte</h3>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-gray-500">Datum:</span> {entry.date}</div>
+                <div><span className="text-gray-500">Datum:</span> {formatEntryDate(entry.date)}</div>
                 <div><span className="text-gray-500">Von:</span> {entry.start_time?.substring(0, 5)}</div>
                 <div><span className="text-gray-500">Bis:</span> {entry.end_time?.substring(0, 5)}</div>
                 <div><span className="text-gray-500">Pause:</span> {entry.break_minutes} min</div>
@@ -141,22 +226,34 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
             </div>
           )}
 
+          {requestCredit && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+              Die gesamte gestempelte Zeit soll angerechnet werden. Bitte begründen Sie, warum Sie in dieser Zeit gearbeitet haben.
+              {needsActualEnd && ' Der Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende angeben.'}
+            </div>
+          )}
+
           {/* Proposed values form (for CREATE and UPDATE) */}
           {requestType !== 'delete' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
+                <label htmlFor="cr-date" className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
+                {/* Gesamtreview PR2 (Fund 3): die Anrechnung gilt dem Tag des
+                    Eintrags — ein anderes Datum lehnt der Server mit 400 ab. */}
                 <input
+                  id="cr-date"
                   type="date"
                   value={formData.proposed_date}
                   onChange={(e) => setFormData({ ...formData, proposed_date: e.target.value })}
+                  readOnly={requestCredit}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+                  className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500${requestCredit ? ' bg-gray-50 text-gray-600' : ''}`}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Von</label>
+                <label htmlFor="cr-start" className="block text-sm font-medium text-gray-700 mb-1">Von</label>
                 <input
+                  id="cr-start"
                   type="time"
                   value={formData.proposed_start_time}
                   onChange={(e) => setFormData({ ...formData, proposed_start_time: e.target.value })}
@@ -165,18 +262,22 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bis</label>
+                <label htmlFor="cr-end" className="block text-sm font-medium text-gray-700 mb-1">Bis</label>
                 <input
+                  id="cr-end"
                   type="time"
                   value={formData.proposed_end_time}
                   onChange={(e) => setFormData({ ...formData, proposed_end_time: e.target.value })}
-                  required
+                  // P18: bei fehlendem Ende prüft handleSubmit selbst und nennt den Grund
+                  // (die Browser-Pflichtfeldmeldung sagte nicht, warum das Ende fehlt).
+                  required={!needsActualEnd}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Pause (Min.)</label>
+                <label htmlFor="cr-break" className="block text-sm font-medium text-gray-700 mb-1">Pause (Min.)</label>
                 <input
+                  id="cr-break"
                   type="number"
                   min="0"
                   value={formData.proposed_break_minutes}
@@ -185,8 +286,9 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notiz</label>
+                <label htmlFor="cr-note" className="block text-sm font-medium text-gray-700 mb-1">Notiz</label>
                 <input
+                  id="cr-note"
                   type="text"
                   value={formData.proposed_note}
                   onChange={(e) => setFormData({ ...formData, proposed_note: e.target.value })}
@@ -194,15 +296,32 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
                 />
               </div>
+              {showSundayReason && (
+                <div className="md:col-span-2">
+                  <label htmlFor="cr-sunday-reason" className="block text-sm font-medium text-gray-700 mb-1">
+                    {SUNDAY_REASON_LABEL} <span className="text-gray-400 font-normal">– Sonn-/Feiertagsarbeit</span>
+                  </label>
+                  <input
+                    id="cr-sunday-reason"
+                    type="text"
+                    value={sundayReason}
+                    onChange={(e) => setSundayReason(e.target.value)}
+                    placeholder="z. B. Notdienst, Patientenversorgung"
+                    maxLength={2000}
+                    className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-400 bg-amber-50"
+                  />
+                </div>
+              )}
             </div>
           )}
 
           {/* Reason (always required) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="cr-reason" className="block text-sm font-medium text-gray-700 mb-1">
               Begründung <span className="text-red-500">*</span>
             </label>
             <textarea
+              id="cr-reason"
               value={formData.reason}
               onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
               rows={3}
@@ -215,10 +334,11 @@ export default function ChangeRequestForm({ entry, requestType, onClose, onSucce
           {/* #200: Pflicht-Pause-Ausnahme (§4 ArbZG) — erscheint bei §4-Verstoß */}
           {showWaiver && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
-              <label className="block text-sm font-medium text-amber-800">
+              <label htmlFor="cr-break-waiver-reason" className="block text-sm font-medium text-amber-800">
                 Pflicht-Pause war nicht möglich – Begründung <span className="text-red-500">*</span>
               </label>
               <textarea
+                id="cr-break-waiver-reason"
                 value={breakWaiverReason}
                 onChange={(e) => setBreakWaiverReason(e.target.value)}
                 rows={2}

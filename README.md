@@ -185,7 +185,7 @@ Neue Migration erstellen:
 docker compose exec backend alembic revision --autogenerate -m "description"
 ```
 
-**Aktuelle Migrationen (001–059):**
+**Aktuelle Migrationen (001–073):**
 - `001` - Initial Schema (User, TimeEntry, Absence, PublicHoliday)
 - `002` - Add track_hours field
 - `003` - Add end_date to absences (Zeiträume)
@@ -242,6 +242,14 @@ docker compose exec backend alembic revision --autogenerate -m "description"
 - `063` - agreed_monthly_hours (vereinbarte Monatsarbeitszeit, #377 Baustein 2a)
 - `064` - year_carryovers.vacation_days Numeric(4,1) → Numeric(5,2) (#383)
 - `065` - use_fixed_monthly_target (fester Monats-Soll für Minijobs, #377 Baustein 2b)
+- `066` - users.vacation_days dezimal (Numeric(4,1), #408)
+- `067` - working_hours_changes als vollständiger Vertrags-Snapshot (#431)
+- `068` - absences.raw_hours (beim Buchen festgeschriebener Stundenwert)
+- `069` - users.weekly_hours Numeric(4,2) (#431)
+- `070` - Schichtplan-Freigabe für Mitarbeitende + Hinweis je Einteilung (#443)
+- `071` - security_events (Konto-Vorgänge, #425)
+- `072` - change_requests.proposed_sunday_exception_reason (§10-Grund im Antrag, #485)
+- `073` - Arbeitszeit-Blöcke: users.work_blocks + working_hours_changes.blocks, time_entries.uncredited_minutes/credit_override/auto_closed/clamp_grace_minutes, change_requests.request_credit_override/original_uncredited_minutes; users.scheduled_start/end_<wochentag> entfallen
 
 ## Entwicklung
 
@@ -336,9 +344,17 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 ```
 
 **Updates einspielen:**
+
+> Vorher ein Backup ziehen (siehe [Backup](#backup)). Vor dem Update auf **1.20.0**
+> ist das Pflicht: Die Migration `073_work_blocks` entfernt die alten
+> Arbeitszeit-Fenster-Spalten, zurück auf 1.19.x geht es nur über dieses Backup.
+> Alle Wege und Hinweise: [docs/UPDATE.md](docs/UPDATE.md).
+
 ```bash
 git pull
-docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+docker compose pull db                 # PostgreSQL-18-Patchstand (`up` zieht ihn nie neu)
+docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 ```
 
 Datenbank-Migrationen werden automatisch beim Start ausgeführt.
@@ -354,10 +370,18 @@ Sicherungen herunterladen. Auf der Kommandozeile (Docker):
 docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit | gzip > backup.sql.gz
 ```
 
-**Restore** (idempotent dank `--clean --if-exists`, kein manuelles Leeren nötig):
+**Restore** mit dem mitgelieferten Script (im Docker-Paket neben der
+`docker-compose.yml`: `bash restore.sh backups/praxiszeit_<ts>.sql.gz`):
 ```bash
-gunzip -c backup.sql.gz | docker compose exec -T db psql -U praxiszeit praxiszeit
+bash tools/docker/restore.sh backup.sql.gz
 ```
+
+Das Script hält das Backend an, legt die Datenbank frisch an, spielt das Backup
+ein und startet das Backend wieder. Erst dieser Start hebt ein Backup einer
+älteren Version per Migration auf den Stand der installierten Version —
+`docker compose up -d backend` startet ein schon laufendes Backend nicht neu.
+Nativ (Linux/macOS): Dienst anhalten, `praxiszeit-server.py restore <datei>`,
+Dienst starten; Windows: `restore-backup.bat <datei>`.
 
 Vollständige Anleitung (Native + Docker, geplante Sicherung, §16-Aufbewahrung):
 [docs/BACKUP.md](docs/BACKUP.md).

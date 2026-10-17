@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { ToastProvider } from '../../contexts/ToastContext';
 import Users from './Users';
 import type { User } from '../../types/user';
+import type { WeekBlocks } from '../../types/workBlocks';
 
 const getMock = vi.fn();
 const postMock = vi.fn();
@@ -55,6 +56,8 @@ function FakeUserForm(props: {
   // soll-treibenden Felder, die der Dialog schreibt.
   displayWorkDays?: number;
   displayUseDailySchedule?: boolean;
+  // Spec 2026-10-08 (E62/12.2): heute gültige Blöcke, gleiche Bauart.
+  displayBlocks?: WeekBlocks | null;
   onOpenHoursHistory?: (u: User) => void;
 }) {
   const [unsavedDept, setUnsavedDept] = useState('');
@@ -71,6 +74,9 @@ function FakeUserForm(props: {
       <span data-testid="display-weekly-hours">{props.displayWeeklyHours ?? ''}</span>
       <span data-testid="display-day-hours">{(props.displayDayHours ?? []).join(',')}</span>
       <span data-testid="display-work-days">{props.displayWorkDays ?? ''}</span>
+      <span data-testid="display-blocks">
+        {props.displayBlocks === undefined ? 'undefined' : JSON.stringify(props.displayBlocks)}
+      </span>
       <span data-testid="display-use-daily-schedule">
         {props.displayUseDailySchedule === undefined ? '' : String(props.displayUseDailySchedule)}
       </span>
@@ -78,7 +84,7 @@ function FakeUserForm(props: {
         type="button"
         onClick={() => props.editUser && props.onOpenHoursHistory?.(props.editUser)}
       >
-        Wochenstunden anpassen…
+        Arbeitszeit anpassen…
       </button>
     </div>
   );
@@ -103,11 +109,18 @@ vi.mock('./users/UserForm', () => ({
 // The dialog's OWN correctness (preview, sequence guard, stale display …) is
 // covered exhaustively in WorkingHoursModal.test.tsx — faked here to a single
 // button so this test stays focused on how Users.tsx reacts to `onChanged`.
-function FakeWorkingHoursModal(props: { onChanged: () => void }) {
+function FakeWorkingHoursModal(props: {
+  onChanged: () => void; currentBlocks?: unknown; trackHours?: boolean; fixedMonthlyTarget?: boolean;
+}) {
   return (
-    <button type="button" onClick={props.onChanged}>
-      Stundenänderung speichern (simuliert)
-    </button>
+    <div>
+      <span data-testid="modal-track-hours">{String(props.trackHours)}</span>
+      <span data-testid="modal-fixed-monthly">{String(props.fixedMonthlyTarget)}</span>
+      <span data-testid="modal-blocks">{JSON.stringify(props.currentBlocks ?? null)}</span>
+      <button type="button" onClick={props.onChanged}>
+        Stundenänderung speichern (simuliert)
+      </button>
+    </div>
   );
 }
 vi.mock('./users/WorkingHoursModal', () => ({
@@ -139,16 +152,6 @@ function makeUser(overrides: Partial<User> = {}): User {
     hours_wednesday: null,
     hours_thursday: null,
     hours_friday: null,
-    scheduled_start_monday: null,
-    scheduled_end_monday: null,
-    scheduled_start_tuesday: null,
-    scheduled_end_tuesday: null,
-    scheduled_start_wednesday: null,
-    scheduled_end_wednesday: null,
-    scheduled_start_thursday: null,
-    scheduled_end_thursday: null,
-    scheduled_start_friday: null,
-    scheduled_end_friday: null,
     first_work_day: null,
     last_work_day: null,
     deactivated_at: null,
@@ -212,7 +215,7 @@ describe('Release-Review 1.17.0 Fund 2: editingUser-Sync darf offene Eingaben ni
     fireEvent.change(screen.getByLabelText('Abteilung (unsaved)'), { target: { value: 'Labor' } });
     expect(screen.getByLabelText('Abteilung (unsaved)')).toHaveValue('Labor');
 
-    fireEvent.click(screen.getByText('Wochenstunden anpassen…'));
+    fireEvent.click(screen.getByText('Arbeitszeit anpassen…'));
 
     // Simulate the dialog having saved a change — Di 8→5, server now reports
     // 37h total (20h in the pre-existing weekly_hours-only assertion below).
@@ -289,7 +292,7 @@ describe('Abschluss-Review #431 Fund 3: Arbeitstage und Modus werden mit nachgez
     expect(screen.getByTestId('display-use-daily-schedule')).toHaveTextContent('false');
 
     fireEvent.change(screen.getByLabelText('Abteilung (unsaved)'), { target: { value: 'Labor' } });
-    fireEvent.click(screen.getByText('Wochenstunden anpassen…'));
+    fireEvent.click(screen.getByText('Arbeitszeit anpassen…'));
 
     weekly = 20;
     workDays = 4;
@@ -302,5 +305,162 @@ describe('Abschluss-Review #431 Fund 3: Arbeitstage und Modus werden mit nachgez
     // Und weiterhin ohne die offene Eingabe zu verwerfen — der Grund, warum
     // hier schmale Props stehen und nicht ein neues `editingUser`.
     expect(screen.getByLabelText('Abteilung (unsaved)')).toHaveValue('Labor');
+  });
+});
+
+describe('Spec 2026-10-08 (PR1): heute gültige Blöcke werden mit nachgezogen', () => {
+  it('reicht work_blocks_today als displayBlocks durch und zieht es nach einer Dialog-Speicherung nach', async () => {
+    const before: WeekBlocks = [
+      { blocks: [{ start: '08:00', end: '17:00' }], pause_minutes: null },
+      { blocks: [], pause_minutes: null }, { blocks: [], pause_minutes: null },
+      { blocks: [], pause_minutes: null }, { blocks: [], pause_minutes: null },
+    ];
+    let today: WeekBlocks | null = before;
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({ data: [makeUser({ work_blocks_today: today })] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getAllByTitle('Bearbeiten')[0]);
+    await screen.findByTestId('fake-user-form');
+    expect(screen.getByTestId('display-blocks')).toHaveTextContent('"start":"08:00","end":"17:00"');
+
+    fireEvent.click(screen.getByText('Arbeitszeit anpassen…'));
+    today = null;
+    fireEvent.click(screen.getByText('Stundenänderung speichern (simuliert)'));
+
+    await waitFor(() => expect(screen.getByTestId('display-blocks')).toHaveTextContent('null'));
+  });
+});
+
+describe('Spec 2026-10-08 (12.1): Dialog bekommt heute gültige Blöcke und Stundenzählung', () => {
+  it('reicht work_blocks_today und track_hours an den Dialog weiter', async () => {
+    const blocks = [{ blocks: [{ start: '08:00', end: '12:00' }], pause_minutes: 0 }];
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({ data: [makeUser({ track_hours: false, work_blocks_today: blocks as never })] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Arbeitszeit & Wochenstunden für Jane Doe' })[0]);
+    expect(await screen.findByTestId('modal-track-hours')).toHaveTextContent('false');
+    expect(screen.getByTestId('modal-blocks')).toHaveTextContent('08:00');
+  });
+});
+
+describe('Gesamtreview PR3: Wochenstunden der Liste im deutschen Zahlenformat', () => {
+  it('Tabelle und Mobilkarte zeigen 39,58 statt der rohen JS-Zahl 39.58', async () => {
+    // Blöcke leiten Wochenstunden mit zwei Nachkommastellen ab (Spec 4.1) —
+    // Formular, Dialog und Exporte schreiben sie mit Komma (deHoursExact).
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') return Promise.resolve({ data: [makeUser({ weekly_hours: 39.58 })] });
+      return Promise.resolve({ data: [] });
+    });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    expect(screen.getAllByText('39,58')).toHaveLength(2); // Tabelle + Mobilkarte
+    expect(screen.queryByText('39.58')).not.toBeInTheDocument();
+  });
+});
+
+// Gesamtreview 1.20 (Fund 25): die User-Zeile zieht eine zukunftsdatierte
+// Änderung erst beim nächsten Schreibvorgang nach (kein Scheduler, Spec 9.8).
+// Liste und Formular zeigen deshalb den heute gültigen Stand (`schedule_today`,
+// derselbe Resolver wie `work_blocks_today`) — sonst stand „40 h/Woche ·
+// Einheitliche Tagesstunden" über „Arbeitszeit heute: Mo 08:00–12:00 …".
+describe('Gesamtreview 1.20 Fund 25: heute gültiger Vertragsstand statt User-Zeile', () => {
+  const today = {
+    weekly_hours: 20, use_daily_schedule: true, work_days_per_week: 4,
+    hours_monday: 5, hours_tuesday: 5, hours_wednesday: 5, hours_thursday: 5, hours_friday: 0,
+  };
+
+  function mockList(overrides: Partial<User> = {}) {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({ data: [makeUser({
+          weekly_hours: 40, work_days_per_week: 5, use_daily_schedule: false, ...overrides,
+        })] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+  }
+
+  it('Tabelle und Mobilkarte zeigen Wochenstunden und Arbeitstage von heute', async () => {
+    mockList({ schedule_today: today });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    expect(screen.getAllByText('20,0')).toHaveLength(2); // Tabelle + Mobilkarte
+    expect(screen.getByText('4 Tage/Wo')).toBeInTheDocument();
+    expect(screen.getByText('4/Wo')).toBeInTheDocument();
+    expect(screen.queryByText('40,0')).not.toBeInTheDocument();
+  });
+
+  it('das Formular bekommt dieselben Werte als Anzeige-Props', async () => {
+    mockList({ schedule_today: today });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getAllByTitle('Bearbeiten')[0]);
+    await screen.findByTestId('fake-user-form');
+    expect(screen.getByTestId('display-weekly-hours')).toHaveTextContent('20');
+    expect(screen.getByTestId('display-work-days')).toHaveTextContent('4');
+    expect(screen.getByTestId('display-use-daily-schedule')).toHaveTextContent('true');
+    expect(screen.getByTestId('display-day-hours')).toHaveTextContent('5,5,5,5,0');
+  });
+
+  it('sortiert „Wochenstd." nach dem heute gültigen Wert', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({ data: [
+          // Zeile 40, heute 20 — muss VOR der Person mit 30 h stehen.
+          makeUser({ id: 'u1', first_name: 'Jane', last_name: 'Doe', weekly_hours: 40, schedule_today: today }),
+          makeUser({ id: 'u2', first_name: 'Max', last_name: 'Muster', weekly_hours: 30 }),
+        ] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getByText('Wochenstd.'));
+    const names = screen.getAllByText(/^(Doe, Jane|Muster, Max)$/).map((el) => el.textContent);
+    expect(names.slice(0, 2)).toEqual(['Doe, Jane', 'Muster, Max']);
+  });
+
+  it('Kontrolle: ohne schedule_today (ältere Antwort) gilt weiter die User-Zeile', async () => {
+    mockList();
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    expect(screen.getAllByText('40,0')).toHaveLength(2);
+    expect(screen.getByText('5 Tage/Wo')).toBeInTheDocument();
+  });
+});
+
+// Gesamtreview 1.20 (Fund 14): der Dialog erfährt, dass die Person ein festes
+// Monats-Soll hat — der Block-Editor beschriftet die Werte dann als „geplant".
+describe('Gesamtreview 1.20 Fund 14: feste Monatsarbeitszeit an den Dialog', () => {
+  it('reicht use_fixed_monthly_target als fixedMonthlyTarget weiter', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({ data: [makeUser({
+          milog_working_time_account: true, agreed_monthly_hours: 40, use_fixed_monthly_target: true,
+        })] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Arbeitszeit & Wochenstunden für Jane Doe' })[0]);
+    expect(await screen.findByTestId('modal-fixed-monthly')).toHaveTextContent('true');
   });
 });

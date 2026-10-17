@@ -9,6 +9,7 @@ import ChangeRequests from './ChangeRequests';
 import { Plus, Edit2, Trash2, Save, X, Lock, FileEdit } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
+import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
 import { useAuthStore } from '../stores/authStore';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ChangeRequestForm from '../components/ChangeRequestForm';
@@ -19,10 +20,14 @@ import EmptyState from '../components/EmptyState';
 import { getErrorMessage, formatHoursHM } from '../utils/errorMessage';
 import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { computeBreakError } from '../utils/breakValidation';
+import { BREAK_EXCEPTION_DISABLED_HINT } from '../utils/breakWaiverRetry';
+import { useSystemStore } from '../stores/systemStore';
 import { useUIStore } from '../stores/uiStore';
 import { RawStampNote } from '../components/RawStampNote';
+import { blocksSpan, gapSegments, hhmmToMinutes, hullClamp, stampNoteProps, type StampEntry } from '../utils/workBlocks';
+import type { TimeBlock } from '../types/workBlocks';
 
-interface TimeEntry {
+interface TimeEntry extends StampEntry {
   id: string;
   date: string;
   start_time: string;
@@ -38,7 +43,16 @@ interface TimeEntry {
   break_waiver_reason?: string | null;
   raw_start_time?: string | null;
   raw_end_time?: string | null;
+  // Spec 2026-10-08 (7.1, P19): nur lesend, vom Server abgeleitet.
+  uncredited_minutes?: number;
+  not_credited_minutes?: number;
+  credit_override?: boolean;
+  auto_closed?: boolean;
+  clamp_grace_minutes?: number | null;
 }
+
+/** P3: heutiger anerkannter Eintrag — weder direkt noch per Antrag änderbar. */
+const CREDITED_TODAY_HINT = 'Anerkannter Eintrag – Änderung per Änderungsantrag oder über die Verwaltung';
 
 interface DailyScheduleUser {
   use_daily_schedule: boolean;
@@ -205,11 +219,106 @@ export default function TimeTracking() {
   const [submitting, setSubmitting] = useState(false);
   // Whether the practice requires admin approval for such exceptions (public setting).
   const [breakApprovalRequired, setBreakApprovalRequired] = useState(false);
+  // #499: die Praxis kann die Ausnahme ganz abschalten — dann keine Checkbox,
+  // der §4-Hinweis bleibt eine harte Sperre (der Server lehnt sonst mit 400 ab).
+  const breakExceptionAllowed = useSystemStore((s) => s.isBreakExceptionAllowed());
+
+  // Spec 2026-10-08 (8.4, 14): Blöcke von heute und Puffer aus /clock-status —
+  // für die §4-Vorprüfung (Lückensegmente) und die Vorbelegung neuer Einträge.
+  // Ohne Antwort (oder fremde Form) bleibt alles wie bisher; der Server prüft ohnehin.
+  // Gesamtreview 1.20 (Fund 24): Puffer = der AKTUELLE Mandanten-Puffer
+  // (`tenant_grace_minutes`), mit dem der Server eine Neuanlage und einen
+  // Eintrag ohne gespeicherten Puffer kappt (E80) — nicht `grace_minutes`: das
+  // ist eingestempelt der Puffer des offenen Eintrags (fürs Ausstempeln im
+  // StampWidget) und weicht ab, sobald die Verwaltung den Puffer danach ändert.
+  const [clockInfo, setClockInfo] = useState<{ blocks: TimeBlock[]; grace: number }>({ blocks: [], grace: 15 });
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get('/time-entries/clock-status')
+      .then((res) => {
+        if (cancelled) return;
+        const d = res.data;
+        const grace = typeof d?.tenant_grace_minutes === 'number'
+          ? d.tenant_grace_minutes
+          : (typeof d?.grace_minutes === 'number' ? d.grace_minutes : 15);
+        setClockInfo({
+          blocks: Array.isArray(d?.blocks_today) ? d.blocks_today : [],
+          grace,
+        });
+      })
+      .catch(() => { /* Vorprüfung ohne Blöcke */ });
+    return () => { cancelled = true; };
+  }, [stampVersion]);
+
+  // Spec 14: Von/Bis neuer Einträge aus den heutigen Blöcken vorbelegen.
+  // Abhängig vom INHALT der Blöcke, nicht von der Array-Referenz: ein
+  // Neuladen nach dem Stempeln (stampVersion) mit denselben Blöcken darf
+  // schon getippte Zeiten eines offenen Formulars nicht überschreiben.
+  const blocksKey = JSON.stringify(clockInfo.blocks);
+  useEffect(() => {
+    const span = blocksSpan(clockInfo.blocks);
+    if (!span || editingId) return;
+    setFormData((f) => (f.date === format(new Date(), 'yyyy-MM-dd')
+      ? { ...f, start_time: span.start, end_time: span.end }
+      : f));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocksKey]);
+
+  // Gesamtreview 1.20 B6 (PR2 Task 17): Blöcke und Puffer des FORMULAR-Datums.
+  // Heute aus /clock-status (oben); an jedem anderen Tag aus /day-blocks — sonst
+  // rechneten §4-Vorprüfung und Pausen-Automatik dort ohne Blöcke und sperrten
+  // einen geteilten Dienst fälschlich (die Lücke deckt §4) bzw. zogen eine Pause
+  // zusätzlich zur Lücke ab. Nur Admins erfassen eigene Einträge vergangener Tage
+  // direkt bzw. ändern das Datum (Mitarbeitende: nur heute, #502).
+  const todayIso = format(new Date(), 'yyyy-MM-dd');
+  const [otherDayInfo, setOtherDayInfo] = useState<
+    { date: string; blocks: TimeBlock[] | null; grace: number | null } | null
+  >(null);
+  const needsOtherDay = showForm && /^\d{4}-\d{2}-\d{2}$/.test(formData.date) && formData.date !== todayIso;
+  useEffect(() => {
+    if (!needsOtherDay) return;
+    const date = formData.date;
+    let cancelled = false;
+    apiClient
+      .get(`/time-entries/day-blocks?date=${date}`)
+      .then((res) => {
+        if (cancelled) return;
+        const d = res.data;
+        setOtherDayInfo({
+          date,
+          blocks: Array.isArray(d?.blocks) ? d.blocks : [],
+          grace: typeof d?.grace_minutes === 'number' ? d.grace_minutes : null,
+        });
+      })
+      .catch(() => {
+        // Unbekannt → keine Vorprüfung, keine Pausen-Automatik; der Server entscheidet.
+        if (!cancelled) setOtherDayInfo({ date, blocks: null, grace: null });
+      });
+    return () => { cancelled = true; };
+  }, [needsOtherDay, formData.date]);
+
+  /** Blöcke + Puffer des Formular-Datums; `null` = (noch) nicht bekannt. */
+  const formDayBlocks = (): { blocks: TimeBlock[]; grace: number } | null => {
+    if (formData.date === todayIso) return clockInfo;
+    if (otherDayInfo?.date !== formData.date || otherDayInfo.blocks === null) return null;
+    return { blocks: otherDayInfo.blocks, grace: otherDayInfo.grace ?? clockInfo.grace };
+  };
+
+  // #491 F4: §10-Ausnahmegrund an Sonn- UND Feiertagen (vorher nur Sonntag) —
+  // dieselbe Regel wie im Antragsformular. Feiertage erst laden, wenn das
+  // Formular offen ist.
+  const showSundayReason = useSundayOrHoliday(
+    formData.date,
+    editingId ? entries.find((e) => e.id === editingId) : null,
+    showForm,
+  );
 
   // Change request modal
   const [crModalOpen, setCrModalOpen] = useState(false);
   const [crEntry, setCrEntry] = useState<TimeEntry | null>(null);
   const [crType, setCrType] = useState<'create' | 'update' | 'delete'>('update');
+  const [crRequestCredit, setCrRequestCredit] = useState(false);  // Spec P21
 
   // Tab navigation
   const [searchParams, setSearchParams] = useSearchParams();
@@ -308,20 +417,65 @@ export default function TimeTracking() {
     // every write path, so the client must mirror that.
     // Also count gaps between other entries on same day (skip open entries)
     // §4 Satz 2: only gaps >= 15 min count as valid break segments.
-    const existingBlocks = sameDay.map((e) => ({
-      start: parseInt(e.start_time.substring(0, 2)) * 60 + parseInt(e.start_time.substring(3, 5)),
-      end: parseInt(e.end_time!.substring(0, 2)) * 60 + parseInt(e.end_time!.substring(3, 5)),
-      brk: e.break_minutes,
-    }));
-    const breakError = computeBreakError(
+    // Spec 8.2/8.4: an heutigen Einträgen zählen Lückensegmente ≥ 15 Min als Pause
+    // und nicht angerechnete Minuten nicht als Arbeitszeit — wie der Server.
+    // Bestehende Einträge mit IHREM Puffer (E80); weicht Σ Segmente vom
+    // gespeicherten Wert ab, zählt der gespeicherte als Abzug, nicht als Pause.
+    // Gesamtreview B6: die Blöcke des FORMULAR-Datums (nicht nur heute); sind sie
+    // noch nicht bekannt, entfällt die Vorprüfung — der Server entscheidet.
+    const known = formDayBlocks();
+    const dayBlocks = known?.blocks ?? [];
+    const dayGrace = known?.grace ?? clockInfo.grace;
+    const existingBlocks = sameDay.map((e) => {
+      const stored = e.uncredited_minutes ?? 0;
+      const segs = e.credit_override
+        ? []
+        : gapSegments(dayBlocks, e.clamp_grace_minutes ?? dayGrace, e.start_time, e.end_time!);
+      const matches = segs.reduce((a, b) => a + b, 0) === stored;
+      return {
+        start: hhmmToMinutes(e.start_time),
+        end: hhmmToMinutes(e.end_time!),
+        brk: e.break_minutes,
+        deduct: stored,
+        pauseSegments: matches ? segs : [],
+      };
+    });
+    const editing = editingId ? entries.find((x) => x.id === editingId) : undefined;
+    // Gesamtreview PR2 (Fund 13): §4 rechnet der Server auf der GEKAPPTEN Zeit
+    // (E43) — auch die Hülle, nicht nur die Lücke. Bestehende Einträge tragen
+    // ihre wirksamen Zeiten schon; die Eingabe wird hier wie beim Speichern
+    // gekappt. Ein anerkannter Eintrag wird nicht gekappt (P3).
+    const newGrace = editing?.clamp_grace_minutes ?? dayGrace;
+    const newSpan = editing?.credit_override
+      ? { start: formData.start_time, end: formData.end_time }
+      : hullClamp(dayBlocks, newGrace, formData.start_time, formData.end_time);
+    const newSegs = editing?.credit_override
+      ? []
+      : gapSegments(dayBlocks, newGrace, newSpan.start, newSpan.end);
+    // Gesamtreview 1.20 (B1): ändert die Bearbeitung weder Datum, Beginn, Ende
+    // noch Pause, prüft der Server §4 nicht hart (sein Ergebnis wäre das des
+    // gespeicherten Stands) — die Vorprüfung auch nicht. Sonst sperrte schon eine
+    // reine Notiz an einem Eintrag ohne Pflicht-Pause, bei abgeschalteter
+    // Ausnahme (#499) sogar ohne Ausweg. Eine schon dokumentierte Ausnahme bleibt
+    // am Eintrag stehen.
+    const timesUnchanged = !!editing
+      && formData.date === editing.date
+      && formData.start_time === editing.start_time.substring(0, 5)
+      && formData.end_time === (editing.end_time ?? '').substring(0, 5)
+      && formData.break_minutes === editing.break_minutes;
+    const breakError = timesUnchanged || !known ? null : computeBreakError(
       existingBlocks,
-      formData.start_time,
-      formData.end_time,
+      newSpan.start,
+      newSpan.end,
       formData.break_minutes,
-      !!user?.exempt_from_arbzg
+      !!user?.exempt_from_arbzg,
+      newSegs,
     );
     if (breakError) {
-      if (breakWaiverChecked) {
+      if (!breakExceptionAllowed) {
+        // #499: Ausnahme abgeschaltet → nur die Pause selbst hilft.
+        newErrors.break_time = `${breakError}. ${BREAK_EXCEPTION_DISABLED_HINT}`;
+      } else if (breakWaiverChecked) {
         // #144: the user opted to document an exception → the §4 block is
         // lifted, but the reason is mandatory (backend enforces this too).
         if (!breakWaiverReason.trim()) {
@@ -348,19 +502,31 @@ export default function TimeTracking() {
     if (submitting) return;
     setSubmitting(true);
 
-    // Smart break default: auto-set 30 min when creating entry >6h with no break
+    // Smart break default: auto-set 30 min when creating entry >6h with no break —
+    // Spec 8.4 (E45): nicht, wenn eine Lücke zwischen den Arbeitsblöcken §4 schon
+    // deckt (sonst würde die Pause zusätzlich zur Lücke abgezogen).
     let submitData: typeof formData & { break_waiver_reason?: string } = { ...formData };
-    if (!editingId && submitData.break_minutes === 0) {
-      const [sh, sm] = submitData.start_time.split(':').map(Number);
-      const [eh, em] = submitData.end_time.split(':').map(Number);
-      const grossMinutes = (eh * 60 + em) - (sh * 60 + sm);
-      if (grossMinutes > 360) {
+    // Gesamtreview B6: mit den Blöcken des Formular-Datums; unbekannt → keine
+    // Automatik (der Server entscheidet, statt eine Pause zusätzlich zu einer
+    // Lücke abzuziehen, die das Formular nicht kennt).
+    const autoDay = formDayBlocks();
+    if (!editingId && submitData.break_minutes === 0 && autoDay) {
+      // Gesamtreview PR2 (Fund 13): angerechnet = gekappt (Hülle) minus Lücke —
+      // eine Pause für Stempelzeit außerhalb der Hülle kostete angerechnete Zeit.
+      const span = hullClamp(autoDay.blocks, autoDay.grace, submitData.start_time, submitData.end_time);
+      const gross = hhmmToMinutes(span.end) - hhmmToMinutes(span.start);
+      const segs = gapSegments(autoDay.blocks, autoDay.grace, span.start, span.end);
+      const credited = gross - segs.reduce((a, b) => a + b, 0);
+      const covered = segs.filter((s) => s >= 15).reduce((a, b) => a + b, 0);
+      if (credited > 360 && covered < 30) {
         submitData = { ...submitData, break_minutes: 30 };
       }
     }
 
     // #144: attach the documented break-exception reason when the user opted in.
-    if (breakWaiverChecked && breakWaiverReason.trim()) {
+    // #499: nie, wenn die Praxis die Ausnahme abgeschaltet hat (auch nicht die
+    // aus einem Alt-Eintrag vorbelegte Begründung).
+    if (breakExceptionAllowed && breakWaiverChecked && breakWaiverReason.trim()) {
       submitData = { ...submitData, break_waiver_reason: breakWaiverReason.trim() };
     }
 
@@ -371,6 +537,14 @@ export default function TimeTracking() {
       const payload: Record<string, unknown> = { ...submitData };
       if (editingId && editingOpenEntry && !formData.end_time) {
         delete payload.end_time;
+      }
+      // #491 (Gesamtreview B6): den §10-Grund nur mitschicken, wenn das Feld
+      // sichtbar ist (Sonn- oder Feiertag). Sonst ginge ein am Sonntag getippter
+      // Grund nach dem Wechsel auf einen Werktag mit, und das Bearbeiten eines
+      // Werktags-Eintrags schickte immer '' — wie im Monatsjournal fehlt das Feld
+      // dann, ein gespeicherter Grund bleibt beim PUT unverändert.
+      if (!showSundayReason) {
+        delete payload.sunday_exception_reason;
       }
       let response;
       if (editingId) {
@@ -447,15 +621,17 @@ export default function TimeTracking() {
     });
   };
 
-  const openChangeRequest = (entry: TimeEntry, type: 'update' | 'delete') => {
+  const openChangeRequest = (entry: TimeEntry, type: 'update' | 'delete', requestCredit = false) => {
     setCrEntry(entry);
     setCrType(type);
+    setCrRequestCredit(requestCredit);
     setCrModalOpen(true);
   };
 
   const openCreateChangeRequest = () => {
     setCrEntry(null);
     setCrType('create');
+    setCrRequestCredit(false);
     setCrModalOpen(true);
   };
 
@@ -466,10 +642,11 @@ export default function TimeTracking() {
     const today = format(new Date(), 'yyyy-MM-dd');
     const targetHours = getDailyTargetHours(user, today);
     const defaultEnd = targetHours > 0 ? addHoursToTime('08:00', targetHours) : '17:00';
+    const span = blocksSpan(clockInfo.blocks);  // Spec 14
     setFormData({
       date: today,
-      start_time: '08:00',
-      end_time: defaultEnd,
+      start_time: span?.start ?? '08:00',
+      end_time: span?.end ?? defaultEnd,
       break_minutes: 0,
       note: '',
       sunday_exception_reason: '',
@@ -482,6 +659,32 @@ export default function TimeTracking() {
   const totalNet = entries.reduce((sum, entry) => sum + entry.net_hours, 0);
   const weekdayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
   const isAdmin = user?.role === 'admin';
+  // Spec P21: die Anrechnung wird an eigenen, geschlossenen, nicht anerkannten
+  // Einträgen beantragt — auch am heutigen (Gesamtreview PR2, Fund 1: der
+  // Lückentext an clock_out/create/update betrifft für Mitarbeitende immer den
+  // heutigen Eintrag; der Server nimmt den Antrag dafür an, solange das Datum
+  // bleibt). Die Zeiterfassung ist die eigene Ansicht — auch für Admins, die
+  // selbst Zeit erfassen (Spec 6.2/13.1: der Lückentext ihrer Mitarbeiterpfade
+  // verweist hierher; das Monatsjournal unter /journal bietet die Aktion ebenso
+  // an). Ob nicht angerechnete Zeit vorliegt, entscheidet RawStampNote.
+  const creditRequestFor = (entry: TimeEntry) => (
+    !!entry.end_time && !entry.credit_override
+      && entry.date <= format(new Date(), 'yyyy-MM-dd')
+      ? () => openChangeRequest(entry, 'update', true)
+      : undefined
+  );
+  // P3: ein anerkannter Eintrag ist für Mitarbeitende nur per Antrag änderbar
+  // (der Server antwortet auf PUT/DELETE mit 409). Ist er von heute (für
+  // Mitarbeitende heißt `is_editable` genau das), nimmt der Server Änderungs-
+  // und Löschantrag seit Ultrareview 1.20 (Fund 1) auch heute an — vorher eine
+  // Sackgasse bis morgen. Angeboten werden die Antragsknöpfe plus Hinweis.
+  const lockedAsCredited = (entry: TimeEntry) => entry.is_editable && !!entry.credit_override && !isAdmin;
+  const directlyEditable = (entry: TimeEntry) => entry.is_editable && !lockedAsCredited(entry);
+  // #502: Mitarbeitende verschieben einen Eintrag beim Bearbeiten nicht auf
+  // einen anderen Tag — der Server lehnt jedes andere Datum als heute mit 403
+  // ab (Einträge vergangener Tage nur per Änderungsantrag). Gespeichert wird
+  // weiter mit dem Datum des Eintrags (= heute).
+  const dateLocked = !!editingId && !isAdmin;
 
   return (
     <div>
@@ -499,10 +702,11 @@ export default function TimeTracking() {
         <ChangeRequestForm
           entry={crEntry}
           requestType={crType}
+          requestCredit={crRequestCredit}
           onClose={() => setCrModalOpen(false)}
           onSuccess={() => {
             setCrModalOpen(false);
-            toast.success('Änderungsantrag erfolgreich erstellt');
+            toast.success(crRequestCredit ? 'Antrag auf Anrechnung eingereicht' : 'Änderungsantrag erfolgreich erstellt');
           }}
         />
       )}
@@ -515,12 +719,16 @@ export default function TimeTracking() {
               <Button
                 variant="secondary"
                 size="md"
-                icon={FileEdit}
                 onClick={openCreateChangeRequest}
                 title="Antrag für vergangenen Tag stellen"
                 className="bg-amber-500 hover:bg-amber-600 text-white focus:ring-amber-400"
               >
-                <span className="hidden sm:inline">Antrag</span>
+                {/* #502-Review: der Datums-Hinweis im Formular verweist auf
+                    diesen Knopf über seine Beschriftung — sie steht deshalb auf
+                    jeder Breite. Unter sm entfällt dafür das Symbol, sonst
+                    kürzt die Kopfzeile „Zeiterfassung" schon auf 360-px-Handys. */}
+                <FileEdit size={20} className="hidden sm:inline mr-2" aria-hidden="true" />
+                Antrag
               </Button>
             )}
             <Button
@@ -613,7 +821,7 @@ export default function TimeTracking() {
 
           {/* #144 §4 ArbZG: documented exception when the mandatory break was
               not possible. Only offered to non-exempt users (exempt skip §4). */}
-          {!user?.exempt_from_arbzg && (errors.break_time || breakWaiverChecked) && (
+          {!user?.exempt_from_arbzg && breakExceptionAllowed && (errors.break_time || breakWaiverChecked) && (
             <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
               <label className="flex items-start gap-2 cursor-pointer">
                 <input
@@ -688,8 +896,19 @@ export default function TimeTracking() {
                   setErrors({});
                 }}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                disabled={dateLocked}
+                aria-describedby={dateLocked ? 'tt-date-locked-hint' : undefined}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
               />
+              {dateLocked && (
+                // #502-Review: gesperrt ist das Feld nur bei heutigen Einträgen,
+                // deren Zeile keinen „Änderungsantrag"-Knopf hat — der Hinweis
+                // nennt deshalb den Weg, den es für diesen Eintrag gibt.
+                <p id="tt-date-locked-hint" className="text-sm text-gray-500 mt-1">
+                  Das Datum bleibt beim Bearbeiten fest. Gehört die Zeit zu einem anderen Tag:
+                  Eintrag löschen und oben über „Antrag“ einen Änderungsantrag für diesen Tag stellen.
+                </p>
+              )}
             </div>
             <div>
               <label htmlFor="start-time" className="block text-sm font-medium text-gray-700 mb-1">Von</label>
@@ -781,8 +1000,7 @@ export default function TimeTracking() {
               />
               <p className="text-xs text-gray-400 mt-1">Bitte keine Gesundheitsangaben oder sensiblen Daten eintragen.</p>
             </div>
-            {(new Date(formData.date + 'T12:00:00').getDay() === 0 ||
-              (editingId && entries.find(e => e.id === editingId)?.is_sunday_or_holiday)) && (
+            {showSundayReason && (
               <div className="md:col-span-2 lg:col-span-5">
                 <label htmlFor="sunday-exception-reason" className="block text-sm font-medium text-gray-700 mb-1">
                   Ausnahmegrund <span className="text-gray-400 font-normal">– Sonn-/Feiertagsarbeit</span>
@@ -860,7 +1078,7 @@ export default function TimeTracking() {
                   const entryDate = new Date(entry.date + 'T00:00:00');
                   const weekday = weekdayNames[entryDate.getDay()];
                   return (
-                    <tr key={entry.id} className={`hover:bg-gray-50 ${!entry.end_time && new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'bg-red-50 border-l-4 border-l-danger' : !entry.is_editable ? 'bg-gray-50/50' : ''} ${entry.is_sunday_or_holiday ? 'bg-orange-50/40' : ''}`}>
+                    <tr key={entry.id} className={`hover:bg-gray-50 ${!entry.end_time && new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'bg-red-50 border-l-4 border-l-danger' : !directlyEditable(entry) ? 'bg-gray-50/50' : ''} ${entry.is_sunday_or_holiday ? 'bg-orange-50/40' : ''}`}>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         <div className="flex flex-col gap-1">
                           <span>{format(entryDate, 'dd.MM.yyyy')}</span>
@@ -881,14 +1099,11 @@ export default function TimeTracking() {
                       <td className="px-6 py-4 text-sm text-gray-500">{weekday}</td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {entry.start_time.substring(0, 5)}
-                        <RawStampNote raw={entry.raw_start_time} effective={entry.start_time} side="start" />
+                        <RawStampNote {...stampNoteProps(entry)} onRequestCredit={creditRequestFor(entry)} />
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {entry.end_time ? (
-                          <>
-                            {entry.end_time.substring(0, 5)}
-                            <RawStampNote raw={entry.raw_end_time} effective={entry.end_time} side="end" />
-                          </>
+                          entry.end_time.substring(0, 5)
                         ) : (
                           <span className={`font-medium ${new Date(entry.date + 'T00:00:00') < new Date(new Date().toDateString()) ? 'text-danger' : 'text-green-600'}`}>offen</span>
                         )}
@@ -899,7 +1114,7 @@ export default function TimeTracking() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{entry.note || '-'}</td>
                       <td className="px-6 py-4 text-right text-sm space-x-1">
-                        {entry.is_editable ? (
+                        {directlyEditable(entry) ? (
                           <>
                             <button
                               onClick={() => handleEdit(entry)}
@@ -918,7 +1133,14 @@ export default function TimeTracking() {
                           </>
                         ) : (
                           <>
-                            <span title="Gesperrt"><Lock size={14} className="inline text-gray-400 mr-1" /></span>
+                            {lockedAsCredited(entry) ? (
+                              <span title={CREDITED_TODAY_HINT}>
+                                <Lock size={14} className="inline text-gray-400 mr-1" aria-hidden="true" />
+                                <span className="sr-only">{CREDITED_TODAY_HINT}</span>
+                              </span>
+                            ) : (
+                              <span title="Gesperrt"><Lock size={14} className="inline text-gray-400 mr-1" /></span>
+                            )}
                             <button
                               onClick={() => openChangeRequest(entry, 'update')}
                               className="text-amber-600 hover:text-amber-800"
@@ -984,21 +1206,12 @@ export default function TimeTracking() {
                       <div className="flex justify-between items-start">
                         <div className="font-semibold text-text-primary">
                           {format(entryDate, 'EEEE, d. MMMM', { locale: de })}
-                          {!entry.is_editable && <Lock size={12} className="inline ml-1 text-text-secondary" />}
+                          {!directlyEditable(entry) && <Lock size={12} className="inline ml-1 text-text-secondary" />}
                         </div>
                         <span className="text-lg font-bold tabular-nums text-primary">{formatHoursHM(entry.net_hours)}h</span>
                       </div>
                       <TimeBar startTime={entry.start_time} endTime={entry.end_time} />
-                      {(entry.raw_start_time || entry.raw_end_time) && (
-                        <div className="text-xs text-gray-500 mb-2 space-y-0.5">
-                          {entry.raw_start_time && (
-                            <div>gestempelt {entry.raw_start_time.substring(0, 5)} · angerechnet ab {entry.start_time.substring(0, 5)}</div>
-                          )}
-                          {entry.raw_end_time && entry.end_time && (
-                            <div>gestempelt {entry.raw_end_time.substring(0, 5)} · angerechnet bis {entry.end_time.substring(0, 5)}</div>
-                          )}
-                        </div>
-                      )}
+                      <RawStampNote {...stampNoteProps(entry)} className="text-xs text-gray-500 mb-2 space-y-0.5" onRequestCredit={creditRequestFor(entry)} />
                       <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                         <div className="flex justify-between">
                           <span className="text-text-secondary">Arbeitszeit</span>
@@ -1010,7 +1223,7 @@ export default function TimeTracking() {
                         </div>
                       </div>
                       {entry.note && <p className="text-sm text-text-secondary mb-3">{entry.note}</p>}
-                      {entry.is_editable ? (
+                      {directlyEditable(entry) ? (
                         <div className="flex gap-2">
                           <button
                             onClick={() => handleEdit(entry)}
@@ -1026,6 +1239,10 @@ export default function TimeTracking() {
                           </button>
                         </div>
                       ) : (
+                        <>
+                        {lockedAsCredited(entry) && (
+                          <p className="text-xs text-text-secondary mb-2">{CREDITED_TODAY_HINT}</p>
+                        )}
                         <div className="flex gap-2">
                           <button
                             onClick={() => openChangeRequest(entry, 'update')}
@@ -1040,6 +1257,7 @@ export default function TimeTracking() {
                             <Trash2 size={14} /> Löschen
                           </button>
                         </div>
+                        </>
                       )}
                     </div>
                   );

@@ -252,6 +252,52 @@ def sync_current_and_next_year(db: Session, state: Optional[str] = None, tenant_
     }
 
 
+def _holiday_dates_by_year(db: Session, years, tenant_id=None) -> dict:
+    """{Jahr: Menge der Feiertagsdaten (alle Quellen)} für ``years``."""
+    query = db.query(PublicHoliday.year, PublicHoliday.date).filter(
+        PublicHoliday.year.in_(list(years))
+    )
+    if tenant_id is not None:
+        query = query.filter(PublicHoliday.tenant_id == tenant_id)
+    result: dict = {}
+    for year, holiday_date in query.all():
+        result.setdefault(year, set()).add(holiday_date)
+    return result
+
+
+def resync_state(db: Session, state: str, tenant_id=None) -> List[int]:
+    """Bundesland-Wechsel: die gesetzlichen Feiertage ALLER Jahre neu erzeugen.
+
+    Gesamtreview 1.20 (B9): der Wechsel löschte die gesetzlichen Feiertage
+    (``source='workalendar'``) über alle Jahre, legte aber nur das laufende und
+    das nächste Jahr neu an — frühere Jahre standen danach ohne Feiertage da
+    (jeder Feiertag ein Arbeitstag; Soll, Saldo und §16-Exporte dieser Jahre
+    änderten sich still). Jetzt wird jedes Jahr, für das der Mandant gesetzliche
+    Feiertage hatte, für das neue Bundesland neu erzeugt, dazu wie bisher das
+    laufende und das nächste Jahr. Ein Jahr mit ausschließlich eigenen
+    Feiertagen bleibt unberührt; eigene Feiertage (``source='admin'``, #143)
+    überstehen den Wechsel.
+
+    Eine Transaktion, ein Commit am Ende (über ``sync_current_and_next_year``).
+    Liefert aufsteigend die Jahre, deren Feiertagsdaten (alle Quellen) sich
+    geändert haben — der Aufrufer prüft damit abgeschlossene Jahre (Fix #5).
+    """
+    current_year = today_local().year
+    statutory = db.query(PublicHoliday.year).filter(PublicHoliday.source == "workalendar")
+    if tenant_id is not None:
+        statutory = statutory.filter(PublicHoliday.tenant_id == tenant_id)
+    years = {y for (y,) in statutory.distinct().all()} | {current_year, current_year + 1}
+
+    before = _holiday_dates_by_year(db, years, tenant_id=tenant_id)
+    delete_all_holidays(db, tenant_id=tenant_id, source="workalendar")  # kein Commit
+    for year in sorted(years - {current_year, current_year + 1}):
+        sync_holidays(db, year, state, tenant_id=tenant_id)  # kein Commit
+    sync_current_and_next_year(db, state=state, tenant_id=tenant_id)  # commitet
+    after = _holiday_dates_by_year(db, years, tenant_id=tenant_id)
+
+    return sorted(y for y in years if before.get(y, set()) != after.get(y, set()))
+
+
 def get_supported_states() -> List[str]:
     """Return list of supported German federal states."""
     return sorted(SUPPORTED_STATES.keys())

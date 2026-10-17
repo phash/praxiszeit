@@ -1,7 +1,17 @@
 from pydantic import BaseModel, ConfigDict, Field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import Any, List, Literal, Optional
+
+
+class ScheduleChangeNotice(BaseModel):
+    """Spec 14/P20: ein Hinweis zu einer Arbeitszeit-Änderung (letzte 30 Tage).
+    Der Text kommt fertig aus ``reclamp_audit.notice_text`` — eine Quelle für
+    Wortlaut, Grundtyp-Beschriftung und „neu: …"."""
+    created_at: datetime
+    effective_from: date
+    kind: Literal["change", "reset", "delete"]
+    text: str
 
 
 class MonthlyDashboard(BaseModel):
@@ -11,6 +21,8 @@ class MonthlyDashboard(BaseModel):
     target_hours: float
     actual_hours: float
     balance: float
+    # Spec 14: Hinweise zu Arbeitszeit-Änderungen der letzten 30 Tage, jüngste zuerst.
+    schedule_change_notices: List[ScheduleChangeNotice] = []
 
 
 class OvertimeHistory(BaseModel):
@@ -34,6 +46,23 @@ class OvertimeAccount(BaseModel):
     # (Frontend blendet die Zeile dann aus).
     future_comp_hours: float = 0.0
     projected_year_end: Optional[float] = None
+
+
+class WeeklyOverviewRow(BaseModel):
+    """#500: eine ISO-Woche der Wochenübersicht im Mitarbeiter-Dashboard.
+
+    Gleiche Bedeutung wie eine Zeile von :class:`OvertimeHistory`, nur je Woche:
+    Soll/Ist/Saldo der Woche (laufende Woche bis zum #313-Stichtag) und das
+    Überstundenkonto zum Wochenende.
+    """
+    week_start: date  # Montag
+    week_end: date  # Sonntag
+    iso_year: int
+    iso_week: int
+    target: float
+    actual: float
+    balance: float
+    cumulative: float
 
 
 class YtdOvertime(BaseModel):
@@ -107,6 +136,11 @@ class WeeklyHoursChangeInPeriod(BaseModel):
     # ein serverseitig berechnetes Ja/Nein kann zwischen Datei und Bildschirm
     # nicht auseinanderlaufen. Default `False` = nichts behaupten.
     work_days_changed: bool = False
+    # Spec 15.2: Blöcke des Segments (kanonische JSON-Woche, locker) und ob sie
+    # sich gegenüber dem vorhergehenden Segment ändern — vom Server, aus
+    # derselben Regel wie der Datei-Export (`calculation_service.blocks_changed`).
+    blocks: Optional[Any] = None
+    blocks_changed: bool = False
 
     @classmethod
     def from_segment(cls, segment, previous=None) -> "WeeklyHoursChangeInPeriod":
@@ -123,7 +157,8 @@ class WeeklyHoursChangeInPeriod(BaseModel):
         # Lokaler Import: die Schema-Schicht soll den Service nicht schon beim
         # Modul-Laden ziehen (die Router importieren beide, aber in eigener
         # Reihenfolge) — die Regel selbst darf trotzdem nur EINMAL existieren.
-        from app.services.calculation_service import work_days_changed
+        from app.services.calculation_service import blocks_changed, work_days_changed
+        from app.services.work_blocks_service import week_blocks_to_json
         return cls(
             effective_from=segment.start,
             weekly_hours=float(segment.weekly_hours),
@@ -131,6 +166,8 @@ class WeeklyHoursChangeInPeriod(BaseModel):
             day_hours=[None if h is None else float(h) for h in segment.day_hours],
             work_days_per_week=segment.work_days_per_week,
             work_days_changed=work_days_changed(previous, segment),
+            blocks=week_blocks_to_json(getattr(segment, "blocks", None), getattr(segment, "block_pauses", None)),
+            blocks_changed=blocks_changed(previous, segment),
         )
 
 
@@ -197,3 +234,11 @@ class EmployeeYearlyAbsences(BaseModel):
     paid_leave_days: float = 0.0
     overtime_year: float
     total_days: float
+    # #501: Banner „Jahresend-Warnung: Offene Urlaubstage" im Admin-Dashboard —
+    # dieselbe Regel wie VacationAccount.has_carryover_warning
+    # (calculation_service.has_year_end_vacation_warning).
+    has_year_end_warning: bool = False
+    # Gesamtreview 1.20 B5: bis wann der Rest genommen sein muss — individuelle
+    # Frist oder 31.03. des Folgejahres (calculation_service.vacation_carryover_deadline,
+    # dieselbe Regel wie VacationAccount.carryover_deadline).
+    carryover_deadline: Optional[date] = None

@@ -7,8 +7,8 @@ from app.database import get_db
 from app.models import User, TimeEntry, UserRole
 from app.models.absence import Absence
 from app.middleware.auth import get_current_user
-from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry
-from app.services import calculation_service, milog_service
+from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry, WeeklyOverviewRow
+from app.services import calculation_service, milog_service, reclamp_audit
 from app.services.calculation_service import get_schedule_for_date, get_daily_target_for_date
 from app.services.holiday_service import is_holiday
 from app.services.timezone_service import today_local, now_local
@@ -131,7 +131,9 @@ def get_dashboard(
         month=month,
         target_hours=target,
         actual_hours=actual,
-        balance=balance
+        balance=balance,
+        # Spec 14/P20: nur eigene Sammelzeilen (current_user), auch unter Impersonation.
+        schedule_change_notices=reclamp_audit.schedule_change_notices(db, current_user),
     )
 
 
@@ -265,6 +267,64 @@ def get_overtime_account(
     )
 
 
+@router.get("/weekly-overview", response_model=List[WeeklyOverviewRow])
+def get_weekly_overview(
+    weeks: int = Query(8, ge=1, le=53, description="Anzahl Wochen bis einschließlich der laufenden"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """#500: Wochenübersicht der angemeldeten Person — die letzten ``weeks``
+    ISO-Wochen bis einschließlich der laufenden, **älteste zuerst** (wie
+    ``/dashboard/overtime``.history).
+
+    Pro Woche Soll/Ist/Saldo und das Überstundenkonto zum Wochenende — exakt die
+    Rechnung des Admin-Wochenberichts (#329) über
+    ``calculation_service.get_week_summary``. Die laufende Woche zählt „bis heute"
+    (#313-Stichtag, wie die Monatsübersicht dieses Dashboards).
+
+    Wie die Monatsübersicht beginnt die Liste frühestens mit der Woche des ersten
+    Zeiteintrags; ohne Zeiteinträge oder ohne Stundenzählung ist sie leer.
+    """
+    if not current_user.track_hours:
+        return []
+
+    first_entry = db.query(TimeEntry).filter(
+        TimeEntry.user_id == current_user.id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+    ).order_by(TimeEntry.date).first()
+    if not first_entry:
+        return []
+
+    today = today_local()
+    current_monday = today - timedelta(days=today.weekday())
+    first_monday = first_entry.date - timedelta(days=first_entry.date.weekday())
+    monday = max(current_monday - timedelta(weeks=weeks - 1), first_monday)
+
+    cutoff = calculation_service.get_soll_cutoff_date(db, current_user)  # #313
+
+    mondays: List[date] = []
+    while monday <= current_monday:
+        mondays.append(monday)
+        monday += timedelta(weeks=1)
+
+    # Ultrareview: alle Wochen in EINER Kontoberechnung (gleiche Zahlen wie
+    # get_week_summary je Woche, das der Admin-Wochenbericht nutzt).
+    rows: List[WeeklyOverviewRow] = []
+    for week in calculation_service.get_week_summaries(db, current_user, mondays, cutoff):
+        iso = week.week_start.isocalendar()
+        rows.append(WeeklyOverviewRow(
+            week_start=week.week_start,
+            week_end=week.week_end,
+            iso_year=iso[0],
+            iso_week=iso[1],
+            target=float(week.target),
+            actual=float(week.actual),
+            balance=float(week.balance),
+            cumulative=float(week.cumulative),
+        ))
+    return rows
+
+
 @router.get("/ytd-overtime", response_model=YtdOvertime)
 def get_ytd_overtime(
     year: Optional[int] = Query(None, description="Year (default: current year)"),
@@ -321,18 +381,14 @@ def get_vacation_account(
 
     account = calculation_service.get_vacation_account(db, target_user, year)
 
-    # Determine carryover deadline (individual or default: March 31 of next year)
-    if target_user.vacation_carryover_deadline:
-        carryover_deadline = target_user.vacation_carryover_deadline
-    else:
-        carryover_deadline = date(year + 1, 3, 31)
+    # Verfallsdatum: individuelle Frist oder 31.03. des Folgejahres — dieselbe
+    # Regel wie der Admin-Banner (Gesamtreview 1.20 B5).
+    carryover_deadline = calculation_service.vacation_carryover_deadline(target_user, year)
 
-    # Warning: remaining vacation AND deadline hasn't passed yet
-    today = today_local()
-    has_warning = (
-        float(account["remaining_days"]) > 0
-        and today.year == year  # only warn for current year
-        and today.month >= 10  # Q4 warning
+    # Jahresend-Warnung (Q4 des laufenden Jahres, #501: erst ab einem ganzen
+    # offenen Urlaubstag) — dieselbe Regel wie der Admin-Banner.
+    has_warning = calculation_service.has_year_end_vacation_warning(
+        account["remaining_days"], year, today_local()
     )
 
     return VacationAccount(

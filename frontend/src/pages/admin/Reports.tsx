@@ -4,7 +4,7 @@ import { Download, Calendar, FileText, Clock, AlertTriangle, ChevronDown, Chevro
 import apiClient from '../../api/client';
 import { downloadBlob } from '../../utils/downloadBlob';
 import { useToast } from '../../contexts/ToastContext';
-import { parseHours } from '../../utils/formatters';
+import { formatHoursHM, parseHours } from '../../utils/formatters';
 
 interface RestViolation {
   day1_date: string;
@@ -76,6 +76,51 @@ interface CompensatoryRest {
   non_compliant_count: number;
 }
 
+// Spec 2026-10-08, 8.1 / P22: 24-Wochen-Durchschnitt (§3 ArbZG) mit einem
+// zweiten, eigens gekennzeichneten Wert „Anwesenheit laut Stempel".
+interface AverageEmployee {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  total_hours: number;
+  scheduled_work_days: number;
+  average_daily_hours: number;
+  days_over_8h: number;
+  compliant: boolean;
+  presence_hours: number;
+  presence_average: number;
+  /** Spec 8.1/11.1 „je Woche": Σ Anwesenheit laut Stempel je ISO-Kalenderwoche. */
+  presence_weeks?: { iso_week: string; presence_hours: number }[];
+}
+
+// Gesamtreview PR2 (Fund 8): „2026-W05" → „KW 5/2026" wie WeekSelector und
+// Dashboard (#500). Das 24-Wochen-Fenster kann einen Jahreswechsel enthalten —
+// deshalb immer mit Jahr. Unbekanntes Format bleibt unverändert.
+function isoWeekLabel(isoWeek: string): string {
+  const m = /^(\d{4})-W(\d{1,2})$/.exec(isoWeek);
+  return m ? `KW ${Number(m[2])}/${m[1]}` : isoWeek;
+}
+
+// P22: Wochen über der 48-h-Grenze laut Stempel — Text der Spalte, sonst „–".
+function weeksOver48Text(weeks: AverageEmployee['presence_weeks']): string {
+  const over = (weeks ?? []).filter((w) => w.presence_hours > 48);
+  if (over.length === 0) return '–';
+  return `${over.length} (${over.map((w) => `${isoWeekLabel(w.iso_week)}: ${formatHoursHM(w.presence_hours)} h`).join(', ')})`;
+}
+
+interface AverageReport {
+  window_start: string;
+  window_end: string;
+  employees: AverageEmployee[];
+  non_compliant_count: number;
+}
+
+// Gesamtreview 1.20 (Fund 22): ISO-Datum der Antwort als TT.MM.JJJJ (Mittag,
+// damit die Zeitzone den Tag nicht verschiebt).
+function isoDateDe(iso: string): string {
+  return format(new Date(`${iso}T12:00:00`), 'dd.MM.yyyy');
+}
+
 export default function Reports() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -104,6 +149,11 @@ export default function Reports() {
   const [compRestYear, setCompRestYear] = useState(new Date().getFullYear());
   const [compRest, setCompRest] = useState<CompensatoryRest | null>(null);
   const [compRestLoading, setCompRestLoading] = useState(false);
+
+  // 24-Wochen-Durchschnitt §3 ArbZG (Spec 8.1, P22)
+  const [avgEndDate, setAvgEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [avgReport, setAvgReport] = useState<AverageReport | null>(null);
+  const [avgLoading, setAvgLoading] = useState(false);
 
   // DSGVO Art. 9: Gesundheitsdaten-Schutz bei Jahresexport
   const [includeHealthData, setIncludeHealthData] = useState(false);
@@ -167,6 +217,18 @@ export default function Reports() {
       toast.error('Fehler beim Laden der Ersatzruhetag-Prüfung');
     } finally {
       setCompRestLoading(false);
+    }
+  };
+
+  const checkAverage = async () => {
+    setAvgLoading(true);
+    try {
+      const res = await apiClient.get(`/admin/reports/24-week-average?end_date=${avgEndDate}`);
+      setAvgReport(res.data);
+    } catch {
+      toast.error('Fehler beim Laden des 24-Wochen-Durchschnitts');
+    } finally {
+      setAvgLoading(false);
     }
   };
 
@@ -360,6 +422,7 @@ export default function Reports() {
             <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
               <li>Ein Sheet pro Mitarbeiter:in</li>
               <li>Tägliche Zeiteinträge (Datum, Von, Bis, Pause, Netto)</li>
+              <li>Letzte Spalte „Nicht angerechnet (Min)": gestempelte, nicht angerechnete Zeit (vor, nach und zwischen den Arbeitszeit-Blöcken)</li>
               <li>Soll-Stunden pro Tag</li>
               <li>Markierung von Wochenenden, Feiertagen und Abwesenheiten</li>
               <li>Monatszusammenfassung (Soll, Ist, Saldo, Überstunden kumuliert, Urlaub)</li>
@@ -429,12 +492,12 @@ export default function Reports() {
                 <span>Classic Format</span>
               </h3>
               <p className="text-sm text-gray-600 mb-4">
-                Kompakte Übersicht mit allen 12 Monaten in einer Zeile pro Mitarbeiter:in.
+                Kompakte Übersicht mit allen 12 Monaten je Mitarbeiter:in.
                 Ideal für Geschäftsführung und schnellen Überblick.
               </p>
               <ul className="text-xs text-gray-600 space-y-1 mb-4">
                 <li>✓ Ein Sheet pro Mitarbeiter:in</li>
-                <li>✓ Monate als Spalten</li>
+                <li>✓ Excel: Monate als Spalten, ODS: eine Zeile je Monat</li>
                 <li>✓ Überstunden kumuliert</li>
                 <li>✓ Resturlaub</li>
               </ul>
@@ -797,6 +860,124 @@ export default function Reports() {
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 24-Wochen-Durchschnitt §3 ArbZG (Spec 2026-10-08, 8.1 / P22) */}
+      <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
+        <div className="flex items-center space-x-3 mb-2">
+          <Clock className="text-primary" size={24} />
+          <h2 className="text-xl font-semibold">24-Wochen-Durchschnitt §3 ArbZG</h2>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          Über 24 Wochen darf die Arbeitszeit im Durchschnitt <strong>8 Stunden je Arbeitstag</strong> nicht
+          überschreiten. „Ø angerechnet“ und der Status rechnen mit der angerechneten Zeit. Daneben steht die{' '}
+          <strong>Anwesenheit laut Stempel</strong> (abzüglich erfasster Pausen): Sie ändert sich nicht, wenn die
+          Anrechnung später neu berechnet wird, und die Grenze gilt für die tatsächliche Arbeitszeit.
+        </p>
+        <div className="flex flex-wrap items-end gap-4 mb-4">
+          <div>
+            <label htmlFor="avg-end-date" className="block text-sm font-medium text-gray-700 mb-1">Stichtag</label>
+            <input
+              id="avg-end-date"
+              type="date"
+              value={avgEndDate}
+              onChange={(e) => {
+                setAvgEndDate(e.target.value);
+                // Fund 22: das Ergebnis gehört zum alten Stichtag — nicht neben
+                // dem neuen Datum stehen lassen.
+                setAvgReport(null);
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
+          <button
+            onClick={checkAverage}
+            // Fund 22: ohne Stichtag ginge `end_date=` raus (422, allgemeiner Fehler-Toast).
+            disabled={avgLoading || !avgEndDate}
+            aria-label="24-Wochen-Durchschnitt prüfen"
+            className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition disabled:opacity-50"
+          >
+            <Clock size={18} />
+            <span>{avgLoading ? 'Prüfe...' : 'Prüfen'}</span>
+          </button>
+        </div>
+
+        {avgReport !== null && (
+          // Gesamtreview 1.20 (Fund 22): Zeitraum und Zahl der nicht konformen
+          // Personen wie bei den Nachbarkarten („Jahr: …"); eine leere Liste
+          // (z. B. alle § 18-befreit) wird erklärt statt eines leeren Tabellenkopfs.
+          <div className="mb-3 flex flex-wrap gap-3 text-sm text-gray-600">
+            <span>
+              Zeitraum: <strong>{isoDateDe(avgReport.window_start)} – {isoDateDe(avgReport.window_end)}</strong>
+            </span>
+            {avgReport.non_compliant_count > 0 && (
+              <span className="text-red-600 font-medium">
+                ⚠ {avgReport.non_compliant_count} Mitarbeitende nicht konform
+              </span>
+            )}
+          </div>
+        )}
+        {avgReport !== null && avgReport.employees.length === 0 && (
+          <p className="text-sm text-gray-500">
+            Keine Mitarbeitenden zu prüfen (§ 18-befreite Mitarbeitende erscheinen nicht).
+          </p>
+        )}
+        {avgReport !== null && avgReport.employees.length > 0 && (
+          // Fund 8: acht Spalten — auf Telefonbreite scrollt die Tabelle, nicht die Seite.
+          <div className="overflow-x-auto">
+            <table aria-label="24-Wochen-Durchschnitt" className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase">Mitarbeiter:in</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Ø angerechnet / Tag</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Anwesenheit laut Stempel (Ø / Tag)</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Angerechnet gesamt</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Anwesenheit laut Stempel gesamt</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Wochen &gt; 48 h laut Stempel</th>
+                  <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase">Tage &gt; 8 h</th>
+                  <th className="px-4 py-2 text-center text-xs text-gray-500 uppercase">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {avgReport.employees.map((emp) => {
+                  // Ohne Soll-Arbeitstag (z. B. track_hours=False, ganzes Fenster
+                  // außerhalb der Beschäftigung) fehlt der Nenner: das Backend liefert
+                  // dann Ø 0 und compliant=true — kein Urteil, keine Ø-Werte zeigen.
+                  const noScheduledDays = emp.scheduled_work_days === 0;
+                  // P22 / Pflicht 4: Der Status folgt der angerechneten Zeit (Spec 8.1).
+                  // Senkt eine Neukappung sie unter 8 h, darf ein Ø laut Stempel über
+                  // der Grenze nicht als unauffällige graue Zahl neben „Konform“ stehen.
+                  const presenceOver8 = !noScheduledDays && emp.presence_average > 8;
+                  return (
+                    <tr key={emp.user_id} className={`hover:bg-gray-50 ${!noScheduledDays && !emp.compliant ? 'bg-red-50' : ''}`}>
+                      <td className="px-4 py-2 font-medium text-gray-900">{emp.first_name} {emp.last_name}</td>
+                      <td className="px-4 py-2 text-right text-gray-700">{noScheduledDays ? '–' : formatHoursHM(emp.average_daily_hours)}</td>
+                      <td className={`px-4 py-2 text-right ${presenceOver8 ? 'text-red-700 font-medium' : 'text-gray-700'}`}>
+                        {noScheduledDays ? '–' : formatHoursHM(emp.presence_average)}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.total_hours)}</td>
+                      <td className="px-4 py-2 text-right text-gray-700">{formatHoursHM(emp.presence_hours)}</td>
+                      <td className={`px-4 py-2 text-right ${weeksOver48Text(emp.presence_weeks) === '–' ? 'text-gray-700' : 'text-red-700 font-medium'}`}>
+                        {weeksOver48Text(emp.presence_weeks)}
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-700">{emp.days_over_8h}</td>
+                      <td className="px-4 py-2 text-center">
+                        {noScheduledDays
+                          ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-gray-100 text-gray-700">keine Soll-Arbeitstage</span>
+                          : emp.compliant
+                            ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
+                            : <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>}
+                        {presenceOver8 && emp.compliant && (
+                          <div className="mt-1 text-xs font-medium text-red-700">laut Stempel Ø &gt; 8 h</div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

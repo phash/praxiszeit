@@ -14,6 +14,7 @@ from app.middleware.auth import get_current_user, require_admin
 from app.models import ChangeRequest, ChangeRequestStatus, ChangeRequestType
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import test_app
+from tests.work_blocks_fixtures import legacy_week
 
 MON = date(2026, 6, 1)
 
@@ -43,8 +44,7 @@ def _cr(db, user, start, end, d=MON):
 
 
 def test_bulk_approve_returns_each_items_warnings(admin_client, db, test_user):
-    test_user.scheduled_start_monday = time(8, 0)
-    test_user.scheduled_end_monday = time(17, 0)
+    test_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
     clamped = _cr(db, test_user, time(7, 0), time(16, 0))
     plain = _cr(db, test_user, time(9, 0), time(12, 0), d=date(2026, 6, 2))

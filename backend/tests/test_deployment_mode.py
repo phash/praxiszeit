@@ -95,6 +95,7 @@ class TestSystemInfoEndpoint:
             "shift_planning_enabled",
             "shift_planning_weekdays",
             "minimum_wage",  # #377: public compliance info (static, no internal state)
+            "break_exception_allowed",  # #499: UI-Schalter der §4-Ausnahme (Default an)
         }
 
 

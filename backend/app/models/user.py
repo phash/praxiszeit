@@ -1,5 +1,5 @@
-from sqlalchemy import Column, String, Boolean, Numeric, Integer, BigInteger, Enum, DateTime, Date, Text, Time, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Boolean, Numeric, Integer, BigInteger, Enum, DateTime, Date, Text, ForeignKey, JSON
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 import uuid
 import enum
@@ -41,18 +41,18 @@ class User(Base):
     hours_wednesday = Column(Numeric(4, 2), nullable=True)
     hours_thursday = Column(Numeric(4, 2), nullable=True)
     hours_friday = Column(Numeric(4, 2), nullable=True)
-    # #201: optionales Soll-Arbeitszeit-Fenster je Wochentag (Mo–Fr). NULL =
-    # kein Fenster an dem Tag → keine Kappung. Kappt nur das Ist, nicht das Soll.
-    scheduled_start_monday = Column(Time, nullable=True)
-    scheduled_end_monday = Column(Time, nullable=True)
-    scheduled_start_tuesday = Column(Time, nullable=True)
-    scheduled_end_tuesday = Column(Time, nullable=True)
-    scheduled_start_wednesday = Column(Time, nullable=True)
-    scheduled_end_wednesday = Column(Time, nullable=True)
-    scheduled_start_thursday = Column(Time, nullable=True)
-    scheduled_end_thursday = Column(Time, nullable=True)
-    scheduled_start_friday = Column(Time, nullable=True)
-    scheduled_end_friday = Column(Time, nullable=True)
+    # Spec 2026-10-08 (E9): Arbeitszeit-Blöcke als Rückfall NUR für Tage vor der
+    # ersten Verlaufszeile (wie weekly_hours seit #415) und Spiegel der jüngsten
+    # Zeile ≤ heute. Gelesen wird sie AUSSCHLIESSLICH vom Resolver
+    # (calculation_service.get_schedule_for_date) — Guard-Test
+    # test_no_live_work_blocks_read.py. JSON-Form: Spec 3.1.
+    # ``none_as_null`` an beiden Varianten: ``None`` (z. B. aus der Sync einer
+    # Verlaufszeile ohne Blöcke) muss SQL-NULL ergeben, nicht JSON-``null``
+    # (Begründung bei working_hours_changes.blocks).
+    work_blocks = Column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
+        nullable=True,
+    )
     is_active = Column(Boolean, default=True, nullable=False)
     is_hidden = Column(Boolean, default=False, nullable=False, server_default='false')  # Hidden from reports/overviews
     token_version = Column(Integer, default=0, nullable=False, server_default='0')  # Increment to invalidate all tokens

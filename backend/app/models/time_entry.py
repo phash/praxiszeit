@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Time, Integer, Text, DateTime, Numeric, ForeignKey, UniqueConstraint, case
+from sqlalchemy import Boolean, Column, Date, Time, Integer, Text, DateTime, Numeric, ForeignKey, UniqueConstraint, case
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -23,6 +23,16 @@ class TimeEntry(Base):
     # Kappung die jeweilige Seite verändert hat (sonst NULL = nicht gekappt).
     raw_start_time = Column(Time, nullable=True)
     raw_end_time = Column(Time, nullable=True)
+    # Spec 2026-10-08: nicht angerechnete Minuten in der Lücke zwischen zwei
+    # Arbeitsblöcken (E11). NIE Eingabefeld, immer serverseitig aus clamp().
+    uncredited_minutes = Column(Integer, nullable=False, default=0, server_default="0")
+    # „Anerkennen" (E12, Endpunkt in PR2): Eintrag wird nie gekappt.
+    credit_override = Column(Boolean, nullable=False, default=False, server_default="false")
+    # P18: vom Auto-Close geschlossen — raw_end_time 23:59 ist dann kein Stempel.
+    auto_closed = Column(Boolean, nullable=False, default=False, server_default="false")
+    # E79: Puffer der letzten Kappung gegen Blöcke; NULL = nie gegen Blöcke
+    # gekappt bzw. Bestand vor 073 („unbekannt → aktueller Puffer").
+    clamp_grace_minutes = Column(Integer, nullable=True)
     note = Column(Text, nullable=True)
     sunday_exception_reason = Column(Text, nullable=True)  # §10 ArbZG: reason for Sunday/holiday work
     break_waiver_reason = Column(Text, nullable=True)  # #144 §4 ArbZG: reason a mandatory break was not possible
@@ -36,8 +46,12 @@ class TimeEntry(Base):
     @hybrid_property
     def net_hours(self) -> Decimal:
         """
-        Calculate net hours worked (end - start - break).
+        Calculate net hours worked (end - start - break - uncredited).
         Returns hours as Decimal with 2 decimal places.
+
+        Spec 2026-10-08 (E13): ``uncredited_minutes`` = Zeit zwischen zwei
+        Arbeitsblöcken, die nicht angerechnet wird. ``or 0`` deckt transiente
+        Einträge vor dem flush ab (der Spalten-Default greift erst dort).
         """
         if not self.start_time or not self.end_time:
             return Decimal('0.00')
@@ -49,10 +63,11 @@ class TimeEntry(Base):
         # Calculate duration in hours
         duration_hours = (end_seconds - start_seconds) / 3600.0
 
-        # Subtract break time
+        # Subtract break time and the uncredited gap minutes
         break_hours = self.break_minutes / 60.0
+        uncredited_hours = (self.uncredited_minutes or 0) / 60.0
 
-        net = duration_hours - break_hours
+        net = duration_hours - break_hours - uncredited_hours
 
         return Decimal(str(max(round(net, 2), 0)))
 
@@ -68,10 +83,16 @@ class TimeEntry(Base):
         NULL-safe: returns 0 when end_time is NULL (open entries).
         Dialect-portable: uses CASE for the max(..., 0) floor instead of
         Postgres-only GREATEST(), so the test suite on SQLite still works.
+
+        Spec 2026-10-08 (E13/6.1): zieht ``uncredited_minutes`` ab wie der
+        Python-Pfad, rundet aber bewusst NICHT je Zeile — sonst änderten sich
+        bestehende SQL-Summen (Byte-Identität E22). Parität zum Python-Pfad
+        bis auf n × 0,005 h (``test_net_hours_parity_pg.py``).
         """
         duration = (
             func.extract("epoch", cls.end_time - cls.start_time) / 3600.0
             - cls.break_minutes / 60.0
+            - func.coalesce(cls.uncredited_minutes, 0) / 60.0
         )
         return case(
             (cls.end_time.is_(None), 0),

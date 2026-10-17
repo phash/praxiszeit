@@ -29,10 +29,15 @@ test.describe('Admin User Management', () => {
     // Submit
     await adminPage.getByRole('button', { name: 'Speichern' }).click();
 
-    // Check for success toast
+    // Genau die Erfolgsmeldung des Anlegens (UserForm) — ein loses „erstellt"
+    // träfe jede Meldung, die das Wort zufällig enthält (Gesamtreview 1.20 B9).
     await expect(
-      adminPage.locator('[role="alert"]').filter({ hasText: 'erstellt' })
+      adminPage.getByRole('alert').getByText('Benutzer erfolgreich erstellt', { exact: true })
     ).toBeVisible({ timeout: 10000 });
+    // … und die neue Zeile steht in der Benutzerliste.
+    const createdRow = adminPage.locator('main tr').filter({ hasText: uniqueName });
+    await expect(createdRow).toHaveCount(1, { timeout: 10000 });
+    await expect(createdRow).toContainText('User, TestCreate');
 
     // Cleanup: das über die Oberfläche angelegte Konto endgültig löschen.
     // `DELETE /admin/users/{id}` deaktiviert nur — die Zeile bliebe samt ihrer
@@ -48,7 +53,8 @@ test.describe('Admin User Management', () => {
   // noch Anzeige (das Feld überschrieb früher still den Rückfallwert für die
   // gesamte Vergangenheit — genau der Bug, den diese Umstellung behebt). Die
   // Änderung läuft jetzt ausschließlich über den Wochenstunden-Dialog mit
-  // Wirkungsdatum, den der "Wochenstunden anpassen…"-Button im Formular öffnet.
+  // Wirkungsdatum, den der "Arbeitszeit anpassen…"-Button im Formular öffnet
+  // (Spec 2026-10-08, E58: Dialog „Arbeitszeit & Wochenstunden").
   test('edit user weekly hours via Wochenstunden-Dialog', async ({ adminPage, testEmployee }) => {
     await adminPage.goto('/admin/users');
     await expect(adminPage.getByRole('heading', { name: 'Benutzerverwaltung' })).toBeVisible();
@@ -63,7 +69,7 @@ test.describe('Admin User Management', () => {
     await editButton.click();
 
     // The weekly-hours field itself is read-only now — open the dialog.
-    const openHoursButton = adminPage.getByRole('button', { name: 'Wochenstunden anpassen…' });
+    const openHoursButton = adminPage.getByRole('button', { name: 'Arbeitszeit anpassen…' });
     await expect(openHoursButton).toBeVisible({ timeout: 5000 });
     await openHoursButton.click();
 
@@ -76,11 +82,11 @@ test.describe('Admin User Management', () => {
     await dialog.getByLabel('Gültig ab').fill(daysFromNow(120));
     await dialog.getByLabel('Wochenstunden', { exact: true }).fill('38');
 
-    await dialog.getByRole('button', { name: 'Hinzufügen' }).click();
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
 
     // Check for success toast
     await expect(
-      adminPage.locator('[role="alert"]').filter({ hasText: 'hinzugefügt' })
+      adminPage.locator('[role="alert"]').filter({ hasText: 'Gespeichert' })
     ).toBeVisible({ timeout: 10000 });
 
     await dialog.getByRole('button', { name: /schließen/i }).click();
@@ -106,7 +112,7 @@ test.describe('Admin User Management', () => {
     await expect(editButton).toBeVisible({ timeout: 5000 });
     await editButton.click();
 
-    await adminPage.getByRole('button', { name: 'Wochenstunden anpassen…' }).click();
+    await adminPage.getByRole('button', { name: 'Arbeitszeit anpassen…' }).click();
     const dialog = adminPage.getByRole('dialog', { name: /Wochenstunden/i });
     await expect(dialog).toBeVisible({ timeout: 5000 });
 
@@ -121,18 +127,18 @@ test.describe('Admin User Management', () => {
     await expect(dialog.getByText(/Abwesenheit\(en\) betroffen/)).toBeVisible();
 
     // Ohne Bestätigung darf nicht gespeichert werden können.
-    const submit = dialog.getByRole('button', { name: 'Hinzufügen' });
+    const submit = dialog.getByRole('button', { name: 'Speichern' });
     await expect(submit).toBeDisabled();
 
     // Bestätigen -> Speichern wird frei.
     await dialog
-      .getByLabel('Ich habe die Auswirkungen geprüft und möchte trotzdem speichern')
+      .getByLabel('Ich habe die Auswirkungen geprüft und möchte speichern')
       .check();
     await expect(submit).toBeEnabled();
 
     await submit.click();
     await expect(
-      adminPage.locator('[role="alert"]').filter({ hasText: 'hinzugefügt' })
+      adminPage.locator('[role="alert"]').filter({ hasText: 'Gespeichert' })
     ).toBeVisible({ timeout: 10000 });
 
     // Der Verlauf zeigt den Gültigkeitszeitraum, nicht nur das Startdatum —
@@ -145,7 +151,7 @@ test.describe('Admin User Management', () => {
   // #431: Der Tagesplan (Mo–Fr einzeln) läuft seit dieser Änderung über denselben
   // Dialog wie die gleichmäßigen Wochenstunden — vorher lehnte das Backend eine
   // Stundenänderung für diese Gruppe mit 400 ab, weil die Zeile fürs Soll
-  // wirkungslos gewesen wäre. Der Weg „Bearbeiten → Wochenstunden anpassen… →
+  // wirkungslos gewesen wäre. Der Weg „Bearbeiten → Arbeitszeit anpassen… →
   // Nach Tagen → rückwirkend → bestätigen → speichern" ist damit der neue Kern
   // des Features und muss E2E abgesichert sein.
   test('Tagesplan rückwirkend über den Dialog ändern', async ({ adminPage, createUser }) => {
@@ -185,7 +191,7 @@ test.describe('Admin User Management', () => {
         adminPage.locator('#f-weekly-hours')
       ).toHaveText('Mo 8,0 / Di 6,0 / Mi 4,0 = 18,0 h/Woche');
 
-      await adminPage.getByRole('button', { name: 'Wochenstunden anpassen…' }).click();
+      await adminPage.getByRole('button', { name: 'Arbeitszeit anpassen…' }).click();
       const dialog = adminPage.getByRole('dialog', { name: /Wochenstunden/i });
       await expect(dialog).toBeVisible({ timeout: 5000 });
 
@@ -201,21 +207,31 @@ test.describe('Admin User Management', () => {
       // Die abgeleitete Wochensumme steht im Formular, bevor gespeichert wird.
       await expect(dialog.getByText('→ 23,0 h/Woche · 4 Arbeitstage')).toBeVisible();
 
-      // Die Auswirkungs-Box nennt das Tagessoll je Wochentag alt → neu. Genau das
-      // kann ein einzelner Skalar bei einem Tagesplan nicht ausdrücken.
-      await expect(dialog.getByText(/^Rückwirkende Änderung:/)).toBeVisible({ timeout: 10000 });
-      await expect(dialog.getByText(/Tagessoll je Wochentag:.*Do 0,0 → 5,0/)).toBeVisible();
+      // Spec 9.5 (b), 19.1 Nr. 1: rückwirkende Soll-Erhöhung → Verkürzungs-Kasten;
+      // gewollt ist hier die rückwirkende Variante mit Grund und Haken.
+      const region = dialog.getByRole('region', { name: 'Verkürzung' });
+      await expect(region).toBeVisible({ timeout: 10000 });
+      await region.getByRole('radio', { name: /^Rückwirkend ab/ }).check();
+      await region.getByLabel('Grund').selectOption('einvernehmlich');
+      await region.getByLabel('Begründung').fill('Donnerstag mit der Mitarbeiterin vereinbart');
+      await region.getByRole('checkbox', { name: /mit der beschäftigten Person vereinbart ist/ }).check();
 
-      const submit = dialog.getByRole('button', { name: 'Hinzufügen' });
+      // Die Auswirkungs-Box nennt das Tagessoll je Wochentag alt → neu. Genau das
+      // kann ein einzelner Skalar bei einem Tagesplan nicht ausdrücken. Seit
+      // Spec 2026-10-08 (12.1) in H:MM wie der Block-Editor darüber.
+      await expect(dialog.getByText(/^Rückwirkende Änderung:/)).toBeVisible({ timeout: 10000 });
+      await expect(dialog.getByText(/Tagessoll je Wochentag:.*Do 0:00 h → 5:00 h/)).toBeVisible();
+
+      const submit = dialog.getByRole('button', { name: 'Speichern' });
       await expect(submit).toBeDisabled();
       await dialog
-        .getByLabel('Ich habe die Auswirkungen geprüft und möchte trotzdem speichern')
+        .getByLabel('Ich habe die Auswirkungen geprüft und möchte speichern')
         .check();
       await expect(submit).toBeEnabled();
 
       await submit.click();
       await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: 'hinzugefügt' })
+        adminPage.locator('[role="alert"]').filter({ hasText: 'Gespeichert' })
       ).toBeVisible({ timeout: 10000 });
 
       // Die neue Verlaufszeile trägt den vollständigen Tagesplan, nicht nur eine
@@ -402,9 +418,12 @@ test.describe('Admin User Management', () => {
   });
 
   test('Abwesenheit vor erstem Arbeitstag zeigt Fehler', async ({ adminApi, employeePage, testEmployee }) => {
-    // Reset vacation_approval_required – if left true by another test, the absence form routes to
-    // /vacation-requests (no first_work_day check there) and the error toast never appears.
-    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch { /* best effort */ }
+    // Voraussetzung: Genehmigungspflicht aus — sonst schickt das Formular einen
+    // Antrag (/vacation-requests, ohne first_work_day-Prüfung) und der Fehler-Toast
+    // bleibt aus. Den Wert `false` besitzt global-setup.ts für den ganzen Lauf;
+    // wer ihn umschaltet, läuft im Projekt "tenant-settings" erst nach dieser
+    // Spec (Gesamtreview 1.20 B9). Vorher setzte dieser Test ihn selbst zurück —
+    // mitten in einen parallel laufenden Genehmigungstest hinein.
 
     // first_work_day auf 30 Tage in der Zukunft setzen
     const future = new Date();
@@ -433,8 +452,7 @@ test.describe('Admin User Management', () => {
   });
 
   test('Abwesenheit nach letztem Arbeitstag zeigt Fehler', async ({ adminApi, employeePage, testEmployee }) => {
-    // Reset vacation_approval_required – same reason as the test above.
-    try { await adminApi.put('/admin/settings/vacation_approval_required', { value: 'false' }); } catch { /* best effort */ }
+    // Genehmigungspflicht aus: wie im Test oben (global-setup.ts).
 
     // last_work_day auf gestern setzen
     const yesterday = new Date();

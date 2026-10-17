@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime, formatWeeklyHoursChanges } from './formatters';
+import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount } from './formatters';
 
 describe('formatHoursHM', () => {
   it('formats whole hours', () => {
@@ -337,5 +337,61 @@ describe('formatWeeklyHoursChanges (#415)', () => {
         { effective_from: '2026-03-16', weekly_hours: 40, work_days_changed: true },
       ]),
     ).toBe('ab 16.03.2026: 40,0 Std/Woche');
+  });
+});
+
+describe('formatDayCount (#496)', () => {
+  it('uses the singular only for exactly one day', () => {
+    expect(formatDayCount(1)).toBe('1 Tag');
+    expect(formatDayCount(4)).toBe('4 Tage');
+    expect(formatDayCount(0)).toBe('0 Tage');
+  });
+
+  it('writes fractions with a German decimal comma', () => {
+    // Halbtag = 0,5; halber Feiertag (24./31.12.) = 0,5; beides zusammen = 0,25.
+    expect(formatDayCount(0.5)).toBe('0,5 Tage');
+    expect(formatDayCount(3.5)).toBe('3,5 Tage');
+    expect(formatDayCount(0.25)).toBe('0,25 Tage');
+  });
+
+  it('does not leak float noise', () => {
+    expect(formatDayCount(0.1 + 0.2)).toBe('0,3 Tage');
+  });
+});
+
+describe('formatWeeklyHoursChanges mit Arbeitszeit-Blöcken (Spec 15.2, wortgleich zum Backend)', () => {
+  const B = [
+    { blocks: [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }], pause_minutes: 30 },
+    { blocks: [{ start: '08:00', end: '13:00' }], pause_minutes: 0 },
+    { blocks: [], pause_minutes: 0 }, { blocks: [], pause_minutes: 0 }, { blocks: [], pause_minutes: 0 },
+  ];
+  const legacyEmpty = { blocks: [], pause_minutes: null };
+
+  it('neue Blöcke', () => {
+    expect(formatWeeklyHoursChanges([{
+      effective_from: '2026-09-01', weekly_hours: 11.5, use_daily_schedule: true,
+      day_hours: [6.5, 5, null, null, null], work_days_per_week: 2, blocks: B, blocks_changed: true,
+    }])).toBe('ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–13:00 = 11,5 h/Woche');
+  });
+
+  it('Blöcke entfernt', () => {
+    expect(formatWeeklyHoursChanges([{
+      effective_from: '2026-10-01', weekly_hours: 11.5, use_daily_schedule: true,
+      day_hours: [6.5, 5, null, null, null], work_days_per_week: 2, blocks: null, blocks_changed: true,
+    }])).toBe('ab 01.10.2026: Mo 6,5 / Di 5,0 = 11,5 h/Woche · ohne Arbeitszeit-Blöcke');
+  });
+
+  it('Altfenster', () => {
+    expect(formatWeeklyHoursChanges([{
+      effective_from: '2026-09-01', weekly_hours: 40, use_daily_schedule: false, work_days_per_week: 5,
+      blocks: [{ blocks: [{ start: '07:30', end: '16:30' }], pause_minutes: null }, legacyEmpty, legacyEmpty,
+        legacyEmpty, legacyEmpty],
+      blocks_changed: true,
+    }])).toBe('ab 01.09.2026: 40,0 Std/Woche · Mo 07:30–16:30 (nur Kappung)');
+  });
+
+  it('ohne Blockänderung byte-identisch', () => {
+    expect(formatWeeklyHoursChanges([{ effective_from: '2026-09-01', weekly_hours: 30, blocks: B }]))
+      .toBe('ab 01.09.2026: 30,0 Std/Woche');
   });
 });

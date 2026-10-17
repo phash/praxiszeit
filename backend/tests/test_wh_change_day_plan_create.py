@@ -224,6 +224,18 @@ class TestSchemaValidation:
         )
         assert r.status_code == 422, r.text
 
+    def test_rejects_note_above_500_without_reason(self, client, db, test_user):
+        """Review Task 3: ``working_hours_changes.note`` ist ``String(500)``. Ohne
+        Begründung lief eine 501-Zeichen-Notiz durchs Schema; SQLite speicherte
+        sie, PostgreSQL brach mit 22001 ab (HTTP 500). Jetzt 422, keine Zeile."""
+        r = client.post(
+            _url(test_user.id),
+            json={"effective_from": str(_next_monday()), "weekly_hours": 30.0, "note": "n" * 501},
+        )
+        assert r.status_code == 422, r.text
+        assert "Die Notiz darf höchstens 500 Zeichen lang sein." in r.text
+        assert db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == test_user.id).count() == 0
+
     def test_rejects_day_plan_sum_above_60(self, client, day_plan_user):
         r = client.post(
             _url(day_plan_user.id),

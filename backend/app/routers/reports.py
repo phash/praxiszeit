@@ -14,8 +14,8 @@ from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
 from app.models.public_holiday import PublicHoliday
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences, WeeklyHoursChangeInPeriod
-from app.services import calculation_service, export_service, ods_export_service, rest_time_service
-from app.services.timezone_service import now_local
+from app.services import calculation_service, export_service, ods_export_service, rest_time_service, work_window_service
+from app.services.timezone_service import now_local, today_local
 from app.services.arbzg_utils import is_night_work
 import calendar
 from app.services.date_filters import date_in_year, date_in_month, date_in_range, parse_year_month
@@ -242,15 +242,12 @@ def get_weekly_report(
     for user in users:
         # #313: per-user cutoff (last finished workday) unless run on the full basis.
         cutoff = calculation_service.get_soll_cutoff_date(db, user) if soll_basis == "bis_heute" else None
-        target = calculation_service.get_range_target(db, user, wk_start, wk_end, up_to_date=cutoff)
-        actual = calculation_service.get_range_actual(db, user, wk_start, wk_end, up_to_date=cutoff)
-        balance = (actual - target).quantize(Decimal('0.01'))
-        # Überstunden = kumulativer laufender Saldo zum Wochenende (für die laufende
-        # Woche am bis_heute-Cutoff gekappt).
-        ot_cutoff = wk_end if cutoff is None else min(wk_end, cutoff)
-        overtime = calculation_service.get_overtime_account(
-            db, user, wk_end.year, wk_end.month, cutoff_date=ot_cutoff
-        )
+        # #500: Soll/Ist/Saldo + Konto zum Wochenende aus DER einen Wochenrechnung,
+        # die auch die Wochenübersicht des Mitarbeiter-Dashboards nutzt.
+        week = calculation_service.get_week_summary(db, user, wk_start, cutoff)
+        target, actual, balance = week.target, week.actual, week.balance
+        overtime = week.cumulative
+        ot_cutoff = week.ot_cutoff
 
         # #402: projizierter Jahresende-Saldo — nur in der AKTUELLEN Woche sinnvoll.
         # Boundary = ot_cutoff (Wochenende bzw. bis_heute-Cutoff), damit künftige
@@ -360,6 +357,7 @@ def get_yearly_absences(
     users = _get_active_visible_users(db, current_user.tenant_id)
 
     results = []
+    _today = today_local()  # #501: Gate der Jahresend-Warnung (Q4 des laufenden Jahres)
 
     for user in users:
         # F-033 + Sprint 3.4: fetch all absences for this user+year in ONE
@@ -421,7 +419,14 @@ def get_yearly_absences(
             other_days=other_days,
             paid_leave_days=paid_leave_days,
             overtime_year=float(overtime_year),
-            total_days=total_days
+            total_days=total_days,
+            # #501: dieselbe Regel wie die Warnung im Mitarbeiter-Dashboard.
+            has_year_end_warning=calculation_service.has_year_end_vacation_warning(
+                remaining_vacation_days, year, _today
+            ),
+            # Gesamtreview 1.20 B5: das Verfallsdatum des Banners kommt aus den
+            # Daten (individuelle Frist), nicht hart „31.03." im Frontend.
+            carryover_deadline=calculation_service.vacation_carryover_deadline(user, year),
         ))
 
     # L-2: Übersicht erfolgreich gebaut -> health_data_read-Audit festschreiben.
@@ -763,6 +768,7 @@ def get_sunday_summary(
         entries = (
             db.query(TimeEntry)
             .filter(
+                TimeEntry.tenant_id == user.tenant_id,  # F-026
                 TimeEntry.user_id == user.id,
                 date_in_year(TimeEntry.date, year),
             )
@@ -814,6 +820,7 @@ def get_night_work_summary(
         entries = (
             db.query(TimeEntry)
             .filter(
+                TimeEntry.tenant_id == user.tenant_id,  # F-026
                 TimeEntry.user_id == user.id,
                 date_in_year(TimeEntry.date, year),
                 TimeEntry.end_time.isnot(None),
@@ -885,6 +892,7 @@ def get_compensatory_rest(
         entries = (
             db.query(TimeEntry)
             .filter(
+                TimeEntry.tenant_id == user.tenant_id,  # F-026
                 TimeEntry.user_id == user.id,
                 date_in_year(TimeEntry.date, year),
                 TimeEntry.end_time.isnot(None),
@@ -1008,6 +1016,7 @@ def get_24_week_averaging_period(
             db.query(TimeEntry)
             .filter(
                 TimeEntry.user_id == user.id,
+                TimeEntry.tenant_id == current_user.tenant_id,  # F-026 (E74)
                 TimeEntry.date >= start_date,
                 TimeEntry.date <= end_date,
                 TimeEntry.end_time.isnot(None),
@@ -1015,6 +1024,22 @@ def get_24_week_averaging_period(
             .all()
         )
         total_hours = sum(float(e.net_hours or 0) for e in entries)
+        # Spec 8.1 / P22: zweiter, eigens gekennzeichneter Wert — Anwesenheit laut
+        # Stempel (Rohstempel abzüglich erfasster Pausen, bei Auto-Close bis zum
+        # wirksamen Ende). Eine Neukappung senkt total_hours, nie diesen Wert.
+        presence_hours = sum(work_window_service.presence_minutes(e) for e in entries) / 60.0
+        # Spec 8.1/11.1 „je Woche": dieselbe Größe je ISO-Kalenderwoche (Mo–So) —
+        # eine Woche > 48 h laut Stempel darf nicht im Fensterdurchschnitt verschwinden.
+        # Randwochen zählen nur ihre Tage im Fenster (die Abfrage oben begrenzt).
+        presence_by_week: dict[str, int] = {}
+        for e in entries:
+            iso_year, iso_week, _ = e.date.isocalendar()
+            key = f"{iso_year}-W{iso_week:02d}"
+            presence_by_week[key] = presence_by_week.get(key, 0) + work_window_service.presence_minutes(e)
+        presence_weeks = [
+            {"iso_week": key, "presence_hours": round(minutes / 60.0, 2)}
+            for key, minutes in sorted(presence_by_week.items())
+        ]
 
         # Absences that mean the employee was NOT scheduled to work that day.
         # Mirror get_monthly_target: TRAINING/SICK/OVERTIME keep the day
@@ -1035,10 +1060,18 @@ def get_24_week_averaging_period(
 
         # Count actually-scheduled working days in the window (weekday schedule
         # + contract history via get_*_for_date, minus holidays/absences).
+        # #193: get_daily_target_for_date kennt das Beschäftigungsfenster bewusst
+        # nicht — Tage vor Eintritt / nach Austritt sind keine Soll-Arbeitstage und
+        # dürfen den Durchschnitt einer Neueinstellung nicht verdünnen.
         scheduled_days = 0
         d = start_date
         while d <= end_date:
-            if d.weekday() < 5 and d not in holiday_dates and d not in absence_dates:
+            if (
+                d.weekday() < 5
+                and d not in holiday_dates
+                and d not in absence_dates
+                and calculation_service._within_employment_window(user, d)
+            ):
                 schedule = calculation_service.get_schedule_for_date(db, user, d)
                 if calculation_service.get_daily_target_for_date(user, d, schedule) > 0:
                     scheduled_days += 1
@@ -1046,6 +1079,7 @@ def get_24_week_averaging_period(
 
         max_budget = 8.0 * scheduled_days
         average = (total_hours / scheduled_days) if scheduled_days else 0.0
+        presence_average = (presence_hours / scheduled_days) if scheduled_days else 0.0
 
         # Count days where the employee exceeded 8h — these are the days
         # that actually consume the averaging budget.
@@ -1070,6 +1104,9 @@ def get_24_week_averaging_period(
             "average_daily_hours": round(average, 2),
             "days_over_8h": over_8h_count,
             "compliant": average <= 8.0,
+            "presence_hours": round(presence_hours, 2),
+            "presence_average": round(presence_average, 2),
+            "presence_weeks": presence_weeks,
         })
 
     return {

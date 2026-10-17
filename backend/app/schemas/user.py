@@ -1,11 +1,13 @@
 import re
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
-from typing import Optional
-from datetime import datetime, date, time
+from typing import Any, List, Optional
+from datetime import datetime, date
 from decimal import Decimal
 from uuid import UUID
 from app.models.user import UserRole
-from app.schemas.validators import validate_employment_and_window_order
+from app.schemas.validators import strip_legacy_window_fields, validate_employment_order, validate_week_blocks
+from app.schemas.working_hours_change import DayBlocksIn
+from app.services import work_blocks_service
 
 
 def _validate_password_complexity(password: str) -> str:
@@ -55,21 +57,10 @@ class UserBase(BaseModel):
     last_work_day: Optional[date] = None   # Letzter Arbeitstag
     department: Optional[str] = Field(None, max_length=100)  # #162: Abteilung/Bereich
     child_sick_days_per_year: Optional[int] = Field(None, ge=0, le=70)  # #376 §45 SGB V; None = Tenant-Default
-    # #201: Soll-Zeitfenster pro Wochentag
-    scheduled_start_monday: Optional[time] = None
-    scheduled_end_monday: Optional[time] = None
-    scheduled_start_tuesday: Optional[time] = None
-    scheduled_end_tuesday: Optional[time] = None
-    scheduled_start_wednesday: Optional[time] = None
-    scheduled_end_wednesday: Optional[time] = None
-    scheduled_start_thursday: Optional[time] = None
-    scheduled_end_thursday: Optional[time] = None
-    scheduled_start_friday: Optional[time] = None
-    scheduled_end_friday: Optional[time] = None
 
     @model_validator(mode='after')
     def check_work_day_order(self):
-        return validate_employment_and_window_order(self)  # #219: shared
+        return validate_employment_order(self)  # #219: shared
 
     @model_validator(mode='after')
     def check_fixed_monthly_target_requirements(self):
@@ -89,11 +80,46 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(..., min_length=10)
     role: UserRole = UserRole.EMPLOYEE
+    # Spec 2026-10-08 (E28, 4.2): Startvertrag mit Arbeitszeit-Blöcken. STRENG
+    # geprüft — nur in diesem Schreibschema, nie in den Leseschemas (E29).
+    work_blocks: Optional[List[DayBlocksIn]] = None
+    # Spec 11.4 (E26): gesetzt vom before-Validator, nie serialisiert.
+    legacy_window_fields_sent: bool = Field(False, exclude=True)
+
+    @model_validator(mode='before')
+    @classmethod
+    def reject_legacy_window_fields(cls, data):
+        return strip_legacy_window_fields(data)
 
     @field_validator("password")
     @classmethod
     def check_password(cls, v: str) -> str:
         return _validate_password_complexity(v)
+
+    # Reihenfolge zählt: Pydantic führt die ``after``-Validatoren einer Klasse in
+    # Definitionsreihenfolge aus — ``derive_from_work_blocks`` muss das Soll
+    # setzen, BEVOR ``check_daily_schedule_matches_weekly_hours`` den Tagesplan
+    # prüft und ``weekly_hours`` summiert.
+    @model_validator(mode='after')
+    def derive_from_work_blocks(self):
+        """Spec 4.2: ableiten und ÜBERSCHREIBEN statt 422 — ``UserBase.weekly_hours``
+        ist Pflichtfeld, das Anlegeformular schickt es immer mit (Präzedenz
+        „Fund E"). Bewusst anders als ``WorkingHoursChangeCreate.derive_from_blocks``,
+        das ``weekly_hours``/``hours_*`` neben ``blocks`` mit 422 ablehnt.
+        ``track_hours=False`` wird angenommen (11.2): die Zeile speichert Blöcke
+        und abgeleitete ``hours_*``, ohne Stundenzählung wirken aber weder Soll
+        noch Kappung (E35, E63)."""
+        if self.work_blocks is None:
+            return self
+        week = validate_week_blocks(self.work_blocks)
+        derived = work_blocks_service.derive_targets(week)
+        self.work_blocks = [DayBlocksIn.model_validate(d) for d in week]
+        self.use_daily_schedule = True
+        for field in work_blocks_service.HOURS_FIELDS:
+            setattr(self, field, float(derived[field]))
+        self.weekly_hours = float(derived["weekly_hours"])
+        self.work_days_per_week = derived["work_days_per_week"]
+        return self
 
     @model_validator(mode='after')
     def check_daily_schedule_matches_weekly_hours(self):
@@ -172,21 +198,20 @@ class UserUpdate(BaseModel):
     last_work_day: Optional[date] = None    # Letzter Arbeitstag
     department: Optional[str] = Field(None, max_length=100)  # #162: Abteilung/Bereich
     child_sick_days_per_year: Optional[int] = Field(None, ge=0, le=70)  # #376
-    # #201: Soll-Zeitfenster pro Wochentag
-    scheduled_start_monday: Optional[time] = None
-    scheduled_end_monday: Optional[time] = None
-    scheduled_start_tuesday: Optional[time] = None
-    scheduled_end_tuesday: Optional[time] = None
-    scheduled_start_wednesday: Optional[time] = None
-    scheduled_end_wednesday: Optional[time] = None
-    scheduled_start_thursday: Optional[time] = None
-    scheduled_end_thursday: Optional[time] = None
-    scheduled_start_friday: Optional[time] = None
-    scheduled_end_friday: Optional[time] = None
+    # E27: nur deklariert, damit die Sperre in update_user greift (400) —
+    # Blöcke haben genau EINEN Schreibweg, den Verlauf mit Wirkungsdatum.
+    work_blocks: Optional[Any] = None
+    # Spec 11.4 (E26): gesetzt vom before-Validator, nie serialisiert.
+    legacy_window_fields_sent: bool = Field(False, exclude=True)
+
+    @model_validator(mode='before')
+    @classmethod
+    def reject_legacy_window_fields(cls, data):
+        return strip_legacy_window_fields(data)
 
     @model_validator(mode='after')
     def check_work_day_order(self):
-        return validate_employment_and_window_order(self)  # #219: shared
+        return validate_employment_order(self)  # #219: shared
 
     @model_validator(mode='after')
     def check_fixed_monthly_target_requirements(self):
@@ -207,6 +232,20 @@ class UserUpdate(BaseModel):
         return self
 
 
+class ScheduleTodayResponse(BaseModel):
+    """Gesamtreview 1.20 (Fund 25): der heute gültige Vertragsstand für die
+    Anzeige (``calculation_service.attach_work_blocks_today``) — die User-Zeile
+    zieht eine zukunftsdatierte Änderung erst beim nächsten Schreibvorgang nach."""
+    weekly_hours: float
+    use_daily_schedule: bool
+    hours_monday: Optional[float] = None
+    hours_tuesday: Optional[float] = None
+    hours_wednesday: Optional[float] = None
+    hours_thursday: Optional[float] = None
+    hours_friday: Optional[float] = None
+    work_days_per_week: int
+
+
 class UserResponse(UserBase):
     id: UUID
     role: UserRole
@@ -221,6 +260,14 @@ class UserResponse(UserBase):
     created_at: datetime
     suggested_vacation_days: int
     vacation_carryover_deadline: Optional[date] = None
+    # Spec E29/11.5: Leseschema LOCKER (kein Validator) — Altwerte wie 07:37 oder
+    # 23:59 dürfen Login und Listen nie in einen HTTP 500 verwandeln.
+    work_blocks: Optional[Any] = None
+    # Spec 11.1: datumsaufgelöst für heute (calculation_service.attach_work_blocks_today);
+    # ohne Aufruf None.
+    work_blocks_today: Optional[Any] = None
+    # Fund 25: derselbe Snapshot für Wochenstunden/Modus/Tageswerte/Arbeitstage.
+    schedule_today: Optional[ScheduleTodayResponse] = None
 
     @field_serializer('id')
     def serialize_uuid(self, value: UUID) -> str:
@@ -260,17 +307,10 @@ class UserListResponse(BaseModel):
     last_work_day: Optional[date] = None
     department: Optional[str] = None  # #162: Abteilung/Bereich
     child_sick_days_per_year: Optional[int] = None  # #376 (latenter Bug: fehlte hier → Edit-Reset)
-    # #201: Soll-Zeitfenster pro Wochentag
-    scheduled_start_monday: Optional[time] = None
-    scheduled_end_monday: Optional[time] = None
-    scheduled_start_tuesday: Optional[time] = None
-    scheduled_end_tuesday: Optional[time] = None
-    scheduled_start_wednesday: Optional[time] = None
-    scheduled_end_wednesday: Optional[time] = None
-    scheduled_start_thursday: Optional[time] = None
-    scheduled_end_thursday: Optional[time] = None
-    scheduled_start_friday: Optional[time] = None
-    scheduled_end_friday: Optional[time] = None
+    # Spec E29/11.5: locker, siehe UserResponse.
+    work_blocks: Optional[Any] = None
+    work_blocks_today: Optional[Any] = None
+    schedule_today: Optional[ScheduleTodayResponse] = None  # Fund 25, siehe UserResponse
     totp_enabled: bool = False
     deactivated_at: Optional[datetime] = None
     created_at: datetime

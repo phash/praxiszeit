@@ -51,8 +51,7 @@ def _run(db, user, dry_run=False):
     (``AbsenceRetarget``), nicht mehr die nackte Anzahl — der bisherige Zähler
     ist ``len(...)``. Aus dieser Liste baut der Router das Einzelprotokoll."""
     return calculation_service.retarget_absence_hours(
-        db, user, WINDOW[0], WINDOW[1], dry_run=dry_run
-    )
+        db, user, WINDOW[0], WINDOW[1], dry_run=dry_run, old_full_target_by_date={})
 
 
 class TestAdjustsWhatItShould:
@@ -226,8 +225,7 @@ class TestDryRun:
 
     def test_empty_window_returns_zero(self, db, test_user):
         assert calculation_service.retarget_absence_hours(
-            db, test_user, date(2026, 3, 31), date(2026, 3, 1)
-        ) == []
+            db, test_user, date(2026, 3, 31), date(2026, 3, 1), old_full_target_by_date={}) == []
 
 
 XMAS = date(2026, 12, 24)  # Donnerstag
@@ -266,8 +264,7 @@ class TestSpecialDays:
         _halve_hours(db, test_user, effective_from=date(2026, 1, 1))
 
         changed = calculation_service.retarget_absence_hours(
-            db, test_user, *DEC_WINDOW
-        )
+            db, test_user, *DEC_WINDOW, old_full_target_by_date={})
         assert len(changed) == 1
         db.refresh(a)
         assert float(a.hours) == 4.0, "volles Tagessoll (40→20 h/Woche), OHNE Sondertagsfaktor"
@@ -285,7 +282,7 @@ class TestSpecialDays:
         assert before_soll == before_ist == Decimal("4.00")
 
         _halve_hours(db, test_user, effective_from=date(2026, 1, 1))
-        calculation_service.retarget_absence_hours(db, test_user, *DEC_WINDOW)
+        calculation_service.retarget_absence_hours(db, test_user, *DEC_WINDOW, old_full_target_by_date={})
         db.expire_all()
 
         soll = calculation_service.get_range_target(db, test_user, XMAS, XMAS)
@@ -305,17 +302,17 @@ class TestSpecialDays:
         _half_special_day(db)
         a = _absence(db, test_user, XMAS, AbsenceType.SICK, 8.0)
 
-        first = calculation_service.retarget_absence_hours(db, test_user, *DEC_WINDOW)
+        first = calculation_service.retarget_absence_hours(db, test_user, *DEC_WINDOW, old_full_target_by_date={})
         assert first == [], "unveränderter Vertrag ⇒ keine Zeile anzufassen"
         db.refresh(a)
         assert float(a.hours) == 8.0
 
         # Und auch nach einer echten Änderung konvergiert es nach EINEM Lauf.
         _halve_hours(db, test_user, effective_from=date(2026, 1, 1))
-        assert len(calculation_service.retarget_absence_hours(db, test_user, *DEC_WINDOW)) == 1
+        assert len(calculation_service.retarget_absence_hours(db, test_user, *DEC_WINDOW, old_full_target_by_date={})) == 1
         db.refresh(a)
         assert float(a.hours) == 4.0
-        assert calculation_service.retarget_absence_hours(db, test_user, *DEC_WINDOW) == [], \
+        assert calculation_service.retarget_absence_hours(db, test_user, *DEC_WINDOW, old_full_target_by_date={}) == [], \
             "zweiter Lauf darf den Wert nicht erneut verschieben"
         db.refresh(a)
         assert float(a.hours) == 4.0
@@ -345,7 +342,7 @@ class TestSpecialDays:
         a = _absence(db, test_user, XMAS, AbsenceType.SICK, 8.0)
         _halve_hours(db, test_user, effective_from=date(2026, 1, 1))
 
-        assert len(calculation_service.retarget_absence_hours(db, test_user, *DEC_WINDOW)) == 1
+        assert len(calculation_service.retarget_absence_hours(db, test_user, *DEC_WINDOW, old_full_target_by_date={})) == 1
         db.refresh(a)
         assert float(a.hours) == 4.0
         db.expire_all()

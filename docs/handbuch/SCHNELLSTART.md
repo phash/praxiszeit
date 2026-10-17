@@ -34,22 +34,23 @@
 1. **Benutzername** + **Passwort** (Startpasswort, Mitarbeiter ändert es selbst)
 2. **Vor- / Nachname**, optional E-Mail
 3. **Wochenstunden** (z. B. 40 für Vollzeit, 20 für Teilzeit)
-4. **Arbeitstage** bzw. – bei ungleichmäßiger Verteilung – **Tagesplan** (Stunden je Wochentag)
+4. **Arbeitstage** bzw. – bei ungleichmäßiger Verteilung – **Tagesplan** (Stunden je Wochentag) oder **Arbeitszeit-Blöcke** (Modus „Nach Arbeitsblöcken")
 5. **Urlaubsanspruch** (Tage/Jahr)
 6. **Speichern**
 
 **Sonderfälle:**
-- **Leitende Angestellte ohne Stundenzählung:** Häkchen *„Keine Stundenzählung"* (`track_hours=False`) – Urlaub/Krank werden trotzdem tagebasiert geführt.
+- **Ohne Stundenzählung:** Häkchen *„Stundenzählung aktiv (Soll-Stunden werden berechnet)"* entfernen – kein Soll/Ist, keine Überstunden; Urlaub/Krank werden trotzdem tagebasiert geführt. Hat nichts mit § 18 ArbZG zu tun (eigene Checkbox *„ArbZG-Prüfungen aussetzen"*).
 - **Ein-/Austritt:** *Erster/Letzter Arbeitstag* setzen – außerhalb zählt kein Soll.
-- **Soll-Arbeitszeit-Fenster (optional):** Soll-Beginn/-Ende je Wochentag, wenn früh-/spät-Stempel auf das Soll begrenzt werden sollen.
-- **Spätere Änderungen:** Wochenstunden, Tagesplan, Modus (gleichmäßig/Tagesplan) und Arbeitstage lassen sich nach dem Anlegen nur noch über den Button „Wochenstunden anpassen…" mit Wirkungsdatum ändern – direkt im Formular sind diese Felder dann nur noch Anzeige (siehe [Admin-Handbuch](HANDBUCH-ADMIN.md#mitarbeiter-bearbeiten)).
+- **Arbeitszeit-Blöcke (optional):** Modus „Nach Arbeitsblöcken" – je Wochentag bis zu drei Blöcke „von–bis" plus „Pause innerhalb der Blöcke"; daraus folgen Tagessoll und Anrechnung (Zeit vor, nach und zwischen den Blöcken zählt nur bis zum Puffer).
+- **Spätere Änderungen:** Wochenstunden, Tagesplan, Blöcke, Modus und Arbeitstage lassen sich nach dem Anlegen nur noch über den Button „Arbeitszeit anpassen…" mit Wirkungsdatum ändern – direkt im Formular sind diese Felder dann nur noch Anzeige (siehe [Admin-Handbuch](HANDBUCH-ADMIN.md#mitarbeiter-bearbeiten)).
 
 ---
 
 ## 3. Erste Zeiterfassung prüfen
 
-- Mitarbeiter melden sich an und **stempeln** (Dashboard → *Einstempeln* / *Ausstempeln* mit Pauseneingabe) **oder** tragen Zeiten manuell ein (*Zeiterfassung → + Neuer Eintrag*).
+- Mitarbeiter melden sich an und **stempeln** (Dashboard → *Einstempeln* / *Ausstempeln* mit Pauseneingabe) **oder** tragen Zeiten manuell ein (*Zeiterfassung → + Neuer Eintrag*; einen vergangenen Tag beantragen sie über *Antrag*).
 - Das **Admin-Dashboard** zeigt Team-Stunden, Salden und fehlende Buchungen.
+- Gestempelte Zeit vor, nach oder zwischen den Arbeitszeit-Blöcken zeigt PraxisZeit als „nicht angerechnet"; tatsächlich geleistete Arbeit dort **„Anerkennen"** (Admin-Dashboard → Detailansicht oder Monatsjournal).
 
 ---
 

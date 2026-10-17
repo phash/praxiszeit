@@ -550,6 +550,10 @@ def _user_dict(db: Session, u: User) -> dict[str, Any]:
         "hours_wednesday": float(u.hours_wednesday) if u.hours_wednesday is not None else None,
         "hours_thursday": float(u.hours_thursday) if u.hours_thursday is not None else None,
         "hours_friday": float(u.hours_friday) if u.hours_friday is not None else None,
+        # Spec 2026-10-08 (15.3, E72): Arbeitszeit-Blöcke wie gespeichert — Liste
+        # aus Dicts mit "HH:MM"-Strings, JSON-fähig. Rückfallwert vor der ersten
+        # Verlaufszeile; Ausgabe, keine Berechnung (Guard-Erlaubnisliste).
+        "work_blocks": u.work_blocks,
         "is_active": u.is_active,
         "is_hidden": u.is_hidden,
         # Art-9-analog (Nachtarbeiter-Status loest § 6 ArbZG-Sonderregeln aus)
@@ -581,6 +585,9 @@ def _user_dict(db: Session, u: User) -> dict[str, Any]:
                 "hours_thursday": float(h.hours_thursday) if h.hours_thursday is not None else None,
                 "hours_friday": float(h.hours_friday) if h.hours_friday is not None else None,
                 "work_days_per_week": h.work_days_per_week,
+                # Spec 2026-10-08 (15.3): Blöcke ab effective_from wie gespeichert
+                # (NULL = keine Blöcke, nie Rückfall auf users.work_blocks).
+                "blocks": h.blocks,
                 "note": h.note,
                 "created_at": h.created_at.isoformat() if h.created_at else None,
             }
@@ -606,6 +613,13 @@ def _time_entry_dict(te: TimeEntry) -> dict[str, Any]:
         # §10 ArbZG: Begruendung fuer Sonn-/Feiertagsarbeit — Pflichtbestandteil
         # der Arbeitszeitaufzeichnung, gehoert in jeden Auskunfts-Export
         "sunday_exception_reason": getattr(te, "sunday_exception_reason", None),
+        # Spec 2026-10-08 (15.3): nicht angerechnete Lückenminuten, Anerkennung,
+        # Auto-Close-Kennzeichen (P18: sonst läse sich raw_end 23:59 als Stempel)
+        # und der Puffer der letzten Kappung (E79). Nur int/bool/None.
+        "uncredited_minutes": int(getattr(te, "uncredited_minutes", 0) or 0),
+        "credit_override": bool(getattr(te, "credit_override", False)),
+        "auto_closed": bool(getattr(te, "auto_closed", False)),
+        "clamp_grace_minutes": getattr(te, "clamp_grace_minutes", None),
         "created_at": te.created_at.isoformat() if te.created_at else None,
     }
 
@@ -829,6 +843,8 @@ def _build_art15_meta() -> dict[str, Any]:
             "Stammdaten (Name, E-Mail, Rolle)",
             "Vertragsdaten (Wochenstunden, Urlaubsanspruch, Arbeitstage)",
             "Zeiteintraege (Datum, Beginn, Ende, Pausen, Notiz)",
+            "Soll-Arbeitszeiten (Arbeitszeit-Blöcke, Pause, Verlauf)",
+            "nicht angerechnete Zeit und Anerkennungen",
             "Abwesenheiten (Urlaub, Krank, Sonderurlaub, Ueberstunden)",
             "Aenderungs- und Urlaubsantraege inkl. Begruendungen",
             "Audit-Log (Wer hat wann was geaendert)",
@@ -879,7 +895,12 @@ def _build_art15_meta() -> dict[str, Any]:
         "h_automatisierte_entscheidung": (
             "Es findet KEINE automatisierte Entscheidung im Sinne von Art. 22 "
             "DSGVO statt. Genehmigungen von Antraegen erfolgen ausschliesslich "
-            "durch einen menschlichen Admin."
+            "durch einen menschlichen Admin. Hinterlegte Arbeitszeit-Blöcke wirken "
+            "automatisch auf die Anrechnung: gestempelte Zeit vor dem ersten Block, "
+            "nach dem letzten Block und zwischen den Blöcken wird – abzüglich eines "
+            "Puffers – nicht angerechnet; die Stempelzeiten bleiben gespeichert. Die "
+            "Verwaltung kann nicht angerechnete Zeit anerkennen; die Anrechnung kann "
+            "per Änderungsantrag beantragt werden."
         ),
         "hinweis_audit_log": (
             "Dieser Auskunfts-Export wird selbst im Audit-Log festgehalten "
@@ -942,6 +963,9 @@ def _change_request_dict(c: ChangeRequest) -> dict[str, Any]:
         "original_end_time": str(c.original_end_time) if c.original_end_time else None,
         "original_break_minutes": c.original_break_minutes,
         "original_note": c.original_note,
+        # Spec 2026-10-08 (P21, P28): „Anrechnung beantragen" und Vorher-Snapshot.
+        "request_credit_override": bool(getattr(c, "request_credit_override", False)),
+        "original_uncredited_minutes": getattr(c, "original_uncredited_minutes", None),
         # Original-Werte (Abwesenheit)
         "original_absence_type": c.original_absence_type,
         "original_absence_hours": (

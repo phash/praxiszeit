@@ -1,13 +1,15 @@
 """Admin sub-router: System Settings."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User
+from app.models import TimeEntry, User
+from app.models.public_holiday import PublicHoliday
 from app.models.system_setting import SystemSetting
 from app.middleware.auth import require_admin
 from app.routers.admin_helpers import SettingUpdate
-from app.services import special_days_service, type_colors_service
+from app.services import calculation_service, special_days_service, type_colors_service, work_window_service
 from typing import Dict
 from app.services.settings_service import (
     SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD,
@@ -25,6 +27,7 @@ _ALLOWED_SETTINGS = {
     "vacation_approval_required",
     "holiday_state",
     "break_exception_requires_approval",  # #144 §4 ArbZG: Pflicht-Pause-Ausnahme
+    "break_exception_allowed",  # #499 §4-Ausnahme „Pause war nicht möglich" an/aus (Default an)
     "work_window_grace_minutes",  # #201 Arbeitszeit-Fenster: Pufferzeit in Minuten
     "onboarding_enabled",  # Erst-Login-Willkommens-Tour an/aus (Default an)
     "shift_planning_enabled",  # #305 Schichtplanung aktivieren (Default aus)
@@ -36,7 +39,7 @@ _ALLOWED_SETTINGS = {
 } | special_days_service.SETTING_KEYS
 
 # Settings whose value must be a boolean ("true"/"false").
-_BOOL_SETTINGS = {"vacation_approval_required", "break_exception_requires_approval", "onboarding_enabled", "shift_planning_enabled", "closure_overtime_after_vacation", SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, }
+_BOOL_SETTINGS = {"vacation_approval_required", "break_exception_requires_approval", "break_exception_allowed", "onboarding_enabled", "shift_planning_enabled", "closure_overtime_after_vacation", SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, }
 
 
 @router.get("/settings")
@@ -47,6 +50,25 @@ def list_settings(
     """List all system settings."""
     rows = db.query(SystemSetting).filter(SystemSetting.tenant_id == current_user.tenant_id).all()
     return [{"key": r.key, "value": r.value, "description": r.description, "updated_at": r.updated_at} for r in rows]
+
+
+def _tenant_holiday_dates(db: Session, tenant_id) -> set:
+    """Alle Feiertagsdaten des Mandanten (alle Quellen, F-026)."""
+    return {
+        d for (d,) in db.query(PublicHoliday.date).filter(
+            PublicHoliday.tenant_id == tenant_id
+        ).all()
+    }
+
+
+def _tenant_entry_years(db: Session, tenant_id) -> range:
+    """Jahre vom ersten bis zum letzten Zeiteintrag des Mandanten (F-026)."""
+    lo, hi = db.query(func.min(TimeEntry.date), func.max(TimeEntry.date)).filter(
+        TimeEntry.tenant_id == tenant_id
+    ).one()
+    if lo is None:
+        return range(0)
+    return range(lo.year, hi.year + 1)
 
 
 @router.get("/settings/special-days")
@@ -101,13 +123,21 @@ def update_setting(
         raise HTTPException(status_code=400, detail=f"Unbekannte Einstellung: {key}")
     value = body.value
 
-    # #201: validate work_window_grace_minutes as a non-negative integer
+    # #201: work_window_grace_minutes als ganze Zahl von 0 bis 1439 (ein ganzer
+    # Tag, Gesamtreview 1.20 Fund 11) — mehr kappt nicht anders, sprengte aber
+    # die int4-Spalte time_entries.clamp_grace_minutes (500 bei jedem Stempeln).
     if key == "work_window_grace_minutes":
         try:
-            if int(value) < 0:
+            if not 0 <= int(value) <= work_window_service.MAX_GRACE_MINUTES:
                 raise ValueError
         except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="work_window_grace_minutes muss eine nicht-negative Zahl sein")
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Der Puffer muss eine ganze Zahl zwischen 0 und "
+                    f"{work_window_service.MAX_GRACE_MINUTES} Minuten sein."
+                ),
+            )
 
     # #376: validate child_sick_days_default as a non-negative integer
     if key == "child_sick_days_default":
@@ -167,6 +197,14 @@ def update_setting(
             raise HTTPException(status_code=400, detail=f"Ungültiger Wert für {key}: true/false erwartet")
         value = str(value).lower()
 
+    # Gesamtreview: die Sondertag-Einstellungen wirken ohne Jahresgrenze, also
+    # auch in abgeschlossenen Jahren — Zustand vor der Änderung festhalten.
+    special_before = None
+    if key in special_days_service.SETTING_KEYS:
+        special_before = special_days_service.get_special_day_settings(
+            db, current_user.tenant_id
+        )
+
     s = db.query(SystemSetting).filter(
         SystemSetting.key == key,
         SystemSetting.tenant_id == current_user.tenant_id
@@ -177,23 +215,70 @@ def update_setting(
     else:
         s.value = str(value)
 
+    warning = None
     if key == "holiday_state":
         # Atomarer Delete + Sync: alles in einer Transaktion (C2, I5)
         # #143: nur workalendar-Feiertage neu generieren; admin-gepflegte
         # Custom-Feiertage (source='admin') überstehen den Bundesland-Resync.
+        # Gesamtreview 1.20 (B9): ALLE Jahre mit gesetzlichen Feiertagen neu
+        # erzeugen, nicht nur das laufende und das nächste (frühere Jahre
+        # standen sonst ohne Feiertage da) — siehe holiday_service.resync_state.
+        holidays_before = _tenant_holiday_dates(db, current_user.tenant_id)
         try:
-            holiday_service.delete_all_holidays(
-                db, tenant_id=current_user.tenant_id, source="workalendar"
-            )   # kein commit
-            holiday_service.sync_current_and_next_year(db, state=str(value), tenant_id=current_user.tenant_id)  # commitet am Ende
+            changed_years = holiday_service.resync_state(
+                db, str(value), tenant_id=current_user.tenant_id
+            )  # commitet am Ende
         except Exception as e:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Einstellung gespeichert, aber Feiertage konnten nicht synchronisiert werden: {e}"
             )
+        # Fix #5: geänderte Feiertage in einem abgeschlossenen Jahr machen dessen
+        # Übertrag veraltet — melden, nie automatisch neu berechnen.
+        warning = work_window_service.join_warnings(
+            calculation_service.stale_year_closing_warning(
+                db, current_user.tenant_id, changed_years
+            ),
+            # Gesamtreview 1.20: weggefallene bzw. neue Feiertage ändern, ob
+            # gekappt wird (E35) — bestehende Einträge dort nur nennen.
+            work_window_service.stale_clamp_hint(
+                db, current_user.tenant_id,
+                holidays_before ^ _tenant_holiday_dates(db, current_user.tenant_id),
+            ),
+        )
     else:
+        if special_before is not None:
+            db.flush()
+            # Fix #5 auch hier: ändert der Wechsel Soll, Gutschrift oder
+            # Urlaubsverbrauch des 24./31.12. in einem abgeschlossenen Jahr, ist
+            # dessen Übertrag veraltet — melden, nie automatisch neu berechnen.
+            special_after = special_days_service.get_special_day_settings(
+                db, current_user.tenant_id
+            )
+            affected = special_days_service.years_affected_by_change(
+                db,
+                current_user.tenant_id,
+                special_before,
+                special_after,
+                calculation_service.all_closed_years(db, current_user.tenant_id),
+            )
+            # Gesamtreview 1.20: „frei" ↔ Arbeitstag ändert, ob gekappt wird
+            # (E35) — bestehende Einträge an diesen Tagen nur nennen.
+            warning = work_window_service.join_warnings(
+                calculation_service.closed_year_warning_text(affected),
+                work_window_service.stale_clamp_hint(
+                    db, current_user.tenant_id,
+                    special_days_service.free_state_changed_dates(
+                        special_before, special_after,
+                        _tenant_entry_years(db, current_user.tenant_id),
+                    ),
+                ),
+            )
         db.commit()
 
     db.refresh(s)
-    return {"key": s.key, "value": s.value, "updated_at": s.updated_at}
+    result = {"key": s.key, "value": s.value, "updated_at": s.updated_at}
+    if warning:
+        result["warning"] = warning
+    return result

@@ -4,10 +4,16 @@ import { purgeUser } from '../../fixtures/test-data.fixture';
 /**
  * UI coverage for the 1.8.0-beta prod-release features that previously had no
  * e2e spec (#189 Betriebsferien-Flag, #191 Stundenzählung-Toggle,
- * #194 Überstunden-Übersicht, #201 Soll-Arbeitszeit-Fenster + Puffer).
+ * #194 Überstunden-Übersicht, #201 → Arbeitszeit-Blöcke (Spec 2026-10-08)).
  *
  * Each test drives the real admin UI and verifies persistence through the API,
  * then cleans up after itself.
+ *
+ * Der Test zum mandantenweiten Puffer `work_window_grace_minutes` (#201) lebt in
+ * tests/tenant-settings/grace-setting.spec.ts (Playwright-Projekt
+ * "tenant-settings", erst nach "chromium"): er schaltet den Wert kurzzeitig um,
+ * und work-blocks.spec.ts rechnet mit dem Puffer 15 (Review Task 22, Muster
+ * #451, Gesamtreview 1.20 B9).
  */
 test.describe('Prod-Release-Features (Admin UI)', () => {
   async function openNewUserForm(adminPage: any) {
@@ -25,6 +31,15 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
     await adminPage.locator('#f-vacation').fill('30');
   }
 
+  // Genau die Erfolgsmeldung des Anlegens (UserForm) — ein loses „erstellt"
+  // träfe jede Meldung, die das Wort zufällig enthält (Gesamtreview 1.20 B9).
+  // Die Zeile selbst prüft jeder Test danach über die API.
+  async function expectCreatedToast(adminPage: any) {
+    await expect(
+      adminPage.getByRole('alert').getByText('Benutzer erfolgreich erstellt', { exact: true })
+    ).toBeVisible({ timeout: 10000 });
+  }
+
   // Über die Oberfläche angelegte Konten endgültig löschen. `DELETE
   // /admin/users/{id}` deaktiviert nur — die Zeile bliebe samt ihrer
   // automatisch eingebuchten Betriebsferien-Abwesenheiten dauerhaft im
@@ -37,31 +52,39 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
     } catch { /* best effort */ }
   }
 
-  test('#201 + #189: Soll-Arbeitszeit-Fenster und Betriebsferien-Flag werden gespeichert', async ({ adminPage, adminApi }) => {
+  test('#201 → Blöcke + #189: kein Soll-Fenster im Formular, Altfelder per API abgelehnt, Betriebsferien-Flag gespeichert', async ({ adminPage, adminApi }) => {
     const username = `e2e_ww_${Date.now()}`;
     try {
       await openNewUserForm(adminPage);
       await fillRequired(adminPage, username);
 
-      // #201: Soll-Beginn/-Ende für Montag setzen
-      await adminPage.getByLabel('Soll-Beginn Mo').fill('09:00');
-      await adminPage.getByLabel('Soll-Ende Mo').fill('17:00');
+      // Spec 2026-10-08 (E62/12.2): die #201-Fenster sind mit Migration 073 in
+      // Arbeitszeit-Blöcke übergegangen — das Formular hat keine Fensterfelder mehr.
+      await expect(adminPage.getByLabel('Soll-Beginn Mo')).toHaveCount(0);
+      await expect(adminPage.getByLabel('Soll-Ende Mo')).toHaveCount(0);
 
       // #189: Teilnahme an Betriebsferien abwählen
       await adminPage.locator('#receives_company_closures').uncheck();
 
       await adminPage.getByRole('button', { name: 'Speichern' }).click();
-      await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: 'erstellt' })
-      ).toBeVisible({ timeout: 10000 });
+      await expectCreatedToast(adminPage);
 
       // Persistenz über die API verifizieren
       const users = await adminApi.get('/admin/users?include_inactive=true');
       const created = users.find((u: any) => u.username === username);
       expect(created, 'created user should exist').toBeTruthy();
-      expect(created.scheduled_start_monday).toMatch(/^09:00/);
-      expect(created.scheduled_end_monday).toMatch(/^17:00/);
+      expect(Object.keys(created).filter((k) => k.startsWith('scheduled_'))).toEqual([]);
+      expect(created.work_blocks ?? null).toBeNull();
+      expect(created.work_blocks_today ?? null).toBeNull();
       expect(created.receives_company_closures).toBe(false);
+
+      // E26: ein gecachtes altes Frontend schickt die Altfelder mit → 400, nichts gespeichert.
+      await expect(
+        adminApi.put(`/admin/users/${created.id}`, { first_name: 'Alt', scheduled_start_monday: '09:00' })
+      ).rejects.toThrow(/failed: 400 .*Bitte Seite neu laden/);
+      const again = (await adminApi.get('/admin/users?include_inactive=true'))
+        .find((u: any) => u.id === created.id);
+      expect(again.first_name).toBe('E2E');
     } finally {
       await cleanup(adminApi, username);
     }
@@ -77,9 +100,7 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
       await adminPage.locator('#track_hours').uncheck();
 
       await adminPage.getByRole('button', { name: 'Speichern' }).click();
-      await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: 'erstellt' })
-      ).toBeVisible({ timeout: 10000 });
+      await expectCreatedToast(adminPage);
 
       // track_hours=false persistiert?
       const users = await adminApi.get('/admin/users?include_inactive=true');
@@ -95,45 +116,6 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
       await expect(row.getByTitle('Keine Stundenzählung')).toBeVisible();
     } finally {
       await cleanup(adminApi, username);
-    }
-  });
-
-  test('#201: Soll-Fenster-Puffer lässt sich in den Einstellungen speichern', async ({ adminPage, adminApi }) => {
-    // Originalwert merken, um ihn am Ende wiederherzustellen
-    let original = '15';
-    try {
-      const settings = await adminApi.get('/admin/settings');
-      const grace = settings.find((s: any) => s.key === 'work_window_grace_minutes');
-      if (grace?.value) original = String(grace.value);
-    } catch { /* default 15 */ }
-
-    const newValue = original === '20' ? '25' : '20';
-    try {
-      await adminPage.goto('/admin/settings');
-      await expect(adminPage.getByRole('heading', { name: 'Einstellungen' })).toBeVisible();
-
-      const input = adminPage.locator('#grace-minutes');
-      await expect(input).toBeVisible();
-      await input.fill(newValue);
-      // Scope to the "Soll-Arbeitszeit-Fenster" section — every settings card
-      // has its own "Speichern" button.
-      const graceSection = adminPage.locator('div.bg-white', {
-        has: adminPage.getByRole('heading', { name: 'Soll-Arbeitszeit-Fenster' }),
-      });
-      await graceSection.getByRole('button', { name: 'Speichern' }).click();
-
-      await expect(
-        adminPage.locator('[role="alert"]').filter({ hasText: 'Puffer gespeichert' })
-      ).toBeVisible({ timeout: 10000 });
-
-      const after = await adminApi.get('/admin/settings');
-      const grace = after.find((s: any) => s.key === 'work_window_grace_minutes');
-      expect(String(grace.value)).toBe(newValue);
-    } finally {
-      // Originalwert zurückschreiben
-      try {
-        await adminApi.put('/admin/settings/work_window_grace_minutes', { value: original });
-      } catch { /* best effort */ }
     }
   });
 });

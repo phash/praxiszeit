@@ -9,6 +9,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTypeColorsStore, pickTextColor } from '../../stores/typeColorsStore';
 import AbsenceReasonsManager from '../../components/AbsenceReasonsManager';
 import { useSystemStore } from '../../stores/systemStore';
+import { showResponseWarning } from '../../utils/arbzgWarnings';
 
 // #371: Wochentag-Labels (Index 0=Mo … 6=So) für den Schichtplaner-Wochentag-Picker.
 const SHIFT_WEEKDAY_LABELS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
@@ -105,6 +106,9 @@ export default function Settings() {
   const [breakApprovalRequired, setBreakApprovalRequired] = useState(false);
   const [originalBreakApproval, setOriginalBreakApproval] = useState(false);
   const [savingBreakApproval, setSavingBreakApproval] = useState(false);
+  // #499 Ausnahme „Pflicht-Pause war nicht möglich" überhaupt anbieten (Default an)
+  const [breakExceptionAllowed, setBreakExceptionAllowed] = useState(true);
+  const [originalBreakExceptionAllowed, setOriginalBreakExceptionAllowed] = useState(true);
 
   // Onboarding (Erst-Login-Willkommens-Tour) an/aus — Default an.
   const [onboardingEnabled, setOnboardingEnabled] = useState(true);
@@ -217,6 +221,11 @@ export default function Settings() {
       const breakVal = breakSetting?.value?.toLowerCase() === 'true';
       setBreakApprovalRequired(breakVal);
       setOriginalBreakApproval(breakVal);
+      // #499: Default an — nur ein explizites "false" schaltet die Ausnahme ab.
+      const allowSetting = settingsRes.data.find((s) => s.key === 'break_exception_allowed');
+      const allowVal = allowSetting?.value?.toLowerCase() !== 'false';
+      setBreakExceptionAllowed(allowVal);
+      setOriginalBreakExceptionAllowed(allowVal);
 
       // Onboarding-Tour (Default an: nur ein explizites "false" deaktiviert)
       const obSetting = settingsRes.data.find((s) => s.key === 'onboarding_enabled');
@@ -298,9 +307,13 @@ export default function Settings() {
   const saveHolidayState = async () => {
     setSavingHolidayState(true);
     try {
-      await apiClient.put('/admin/settings/holiday_state', { value: selectedState });
+      const res = await apiClient.put('/admin/settings/holiday_state', { value: selectedState });
       setOriginalState(selectedState);
       toast.success('Bundesland aktualisiert. Feiertage wurden neu berechnet.');
+      // Gesamtreview 1.20 (B9): die Feiertage ALLER Jahre werden neu erzeugt —
+      // ändert sich dabei ein abgeschlossenes Jahr, trägt die Antwort `warning`
+      // (veralteter Übertrag, Fix #5).
+      showResponseWarning(toast, res.data);
       // Eigene Feiertage bleiben erhalten, Standard-Feiertage wurden ersetzt.
       await loadHolidays(holidayYear);
     } catch (err) {
@@ -330,20 +343,34 @@ export default function Settings() {
     setSavingSpecialDays(true);
     try {
       // Persist all four keys; backend validates mode + bool.
-      await apiClient.put('/admin/settings/special_day_dec24_mode', {
-        value: specialDays.special_day_dec24_mode,
-      });
-      await apiClient.put('/admin/settings/special_day_dec24_counts_as_vacation', {
-        value: String(specialDays.special_day_dec24_counts_as_vacation),
-      });
-      await apiClient.put('/admin/settings/special_day_dec31_mode', {
-        value: specialDays.special_day_dec31_mode,
-      });
-      await apiClient.put('/admin/settings/special_day_dec31_counts_as_vacation', {
-        value: String(specialDays.special_day_dec31_counts_as_vacation),
-      });
+      const responses = [
+        await apiClient.put('/admin/settings/special_day_dec24_mode', {
+          value: specialDays.special_day_dec24_mode,
+        }),
+        await apiClient.put('/admin/settings/special_day_dec24_counts_as_vacation', {
+          value: String(specialDays.special_day_dec24_counts_as_vacation),
+        }),
+        await apiClient.put('/admin/settings/special_day_dec31_mode', {
+          value: specialDays.special_day_dec31_mode,
+        }),
+        await apiClient.put('/admin/settings/special_day_dec31_counts_as_vacation', {
+          value: String(specialDays.special_day_dec31_counts_as_vacation),
+        }),
+      ];
       setOriginalSpecialDays(specialDays);
       toast.success('Sondertage (24./31.12.) gespeichert.');
+      // Gesamtreview: die Einstellung wirkt in jedem Jahr — betrifft sie ein
+      // abgeschlossenes Jahr, liefert jeder PUT denselben Jahresabschluss-
+      // Hinweis; der Kappungshinweis (stale_clamp_hint) nennt dagegen je Tag
+      // andere Einträge (24.12. bzw. 31.12.). Deshalb alle verschiedenen Texte
+      // sammeln, Doppelte und in einem anderen schon enthaltene weglassen und
+      // gemeinsam anzeigen — nie nur den ersten.
+      const texts = responses
+        .map((r) => (r?.data as { warning?: unknown } | undefined)?.warning)
+        .filter((w): w is string => typeof w === 'string' && w.length > 0);
+      const unique = texts.filter((w, i) => texts.indexOf(w) === i);
+      const shown = unique.filter((w) => !unique.some((other) => other !== w && other.includes(w)));
+      if (shown.length > 0) showResponseWarning(toast, { warning: shown.join(' ') });
     } catch (err) {
       toast.error(getErrorMessage(err));
       // Re-sync from server so the UI reflects which keys actually persisted
@@ -377,10 +404,22 @@ export default function Settings() {
   const saveBreakApproval = async () => {
     setSavingBreakApproval(true);
     try {
-      await apiClient.put('/admin/settings/break_exception_requires_approval', {
-        value: String(breakApprovalRequired),
-      });
-      setOriginalBreakApproval(breakApprovalRequired);
+      // #499: beide Schalter der Karte gemeinsam speichern — nur, was sich geändert hat.
+      if (breakExceptionAllowed !== originalBreakExceptionAllowed) {
+        await apiClient.put('/admin/settings/break_exception_allowed', {
+          value: String(breakExceptionAllowed),
+        });
+        setOriginalBreakExceptionAllowed(breakExceptionAllowed);
+        // systemStore aktualisieren, damit Stempel-Dialog, Zeiterfassung und
+        // Anträge die Checkbox sofort aus-/einblenden (sonst erst nach Reload).
+        await useSystemStore.getState().fetch();
+      }
+      if (breakApprovalRequired !== originalBreakApproval) {
+        await apiClient.put('/admin/settings/break_exception_requires_approval', {
+          value: String(breakApprovalRequired),
+        });
+        setOriginalBreakApproval(breakApprovalRequired);
+      }
       toast.success('Pflicht-Pause-Ausnahme-Einstellung gespeichert.');
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -539,8 +578,9 @@ const saveYearEndProjection = async () => {
     }
     setCreating(true);
     try {
-      await apiClient.post('/holidays/', { name: newName.trim(), date: newDate });
+      const res = await apiClient.post('/holidays/', { name: newName.trim(), date: newDate });
       toast.success('Eigener Feiertag angelegt.');
+      showResponseWarning(toast, res.data);
       setNewName('');
       setNewDate('');
       const yearOfNew = Number(newDate.slice(0, 4));
@@ -576,8 +616,9 @@ const saveYearEndProjection = async () => {
     }
     setMutating(true);
     try {
-      await apiClient.put(`/holidays/${id}`, { name: editName.trim(), date: editDate });
+      const res = await apiClient.put(`/holidays/${id}`, { name: editName.trim(), date: editDate });
       toast.success('Feiertag aktualisiert.');
+      showResponseWarning(toast, res.data);
       cancelEdit();
       const yearOfEdit = Number(editDate.slice(0, 4));
       if (yearOfEdit && yearOfEdit !== holidayYear) {
@@ -601,8 +642,9 @@ const saveYearEndProjection = async () => {
       onConfirm: async () => {
         setMutating(true);
         try {
-          await apiClient.delete(`/holidays/${h.id}`);
+          const res = await apiClient.delete(`/holidays/${h.id}`);
           toast.success('Feiertag gelöscht.');
+          showResponseWarning(toast, res.data);
           await loadHolidays(holidayYear);
         } catch (err) {
           toast.error(getErrorMessage(err));
@@ -640,8 +682,10 @@ const saveYearEndProjection = async () => {
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Feiertage</h2>
         <p className="text-sm text-gray-500 mb-4">
           Wählen Sie das Bundesland aus, dessen gesetzliche Feiertage verwendet werden sollen.
-          Bei Änderung werden alle gesetzlichen Feiertage automatisch neu berechnet. Eigene
-          Feiertage (siehe unten) bleiben dabei erhalten.
+          Bei Änderung werden die gesetzlichen Feiertage aller Jahre automatisch neu berechnet,
+          auch zurückliegender – Soll und Salden dieser Jahre ändern sich entsprechend. Eigene
+          Feiertage (siehe unten) bleiben dabei erhalten. Betrifft die Änderung ein bereits
+          abgeschlossenes Jahr, weist PraxisZeit auf den veralteten Übertrag hin.
         </p>
         <div className="flex items-end gap-4">
           <div className="flex-1 max-w-sm">
@@ -855,7 +899,9 @@ const saveYearEndProjection = async () => {
           Legen Sie pro Tag fest, ob der 24.12. (Heiligabend) und der 31.12. (Silvester) ein
           ganzer Arbeitstag, ein Halbtag (halbe Sollzeit) oder frei sind. Bei „Frei" wählen Sie
           zusätzlich, ob der Tag als Urlaub (vom Urlaubskonto abgezogen) oder als bezahlte
-          Freistellung (kein Abzug, wie ein Feiertag) gilt. Standard: Arbeitstag.
+          Freistellung (kein Abzug, wie ein Feiertag) gilt. Standard: Arbeitstag. Die
+          Einstellung gilt für alle Jahre — ändert sie ein bereits abgeschlossenes Jahr, weist
+          PraxisZeit nach dem Speichern darauf hin.
         </p>
         {specialDays && (
           <div className="space-y-4">
@@ -985,10 +1031,40 @@ const saveYearEndProjection = async () => {
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Pflicht-Pause-Ausnahme</h2>
         <p className="text-sm text-gray-500 mb-4">
           Konnte eine gesetzlich vorgeschriebene Pause (§4 ArbZG) nicht eingelegt werden, können
-          Mitarbeiter den Eintrag mit einer Pflicht-Begründung trotzdem erfassen. Wenn diese Option
-          aktiviert ist, wird ein solcher Eintrag erst nach Admin-Genehmigung wirksam (4-Augen-Prinzip);
-          andernfalls wird er sofort gespeichert und die Abweichung als Warnung sowie im Änderungsprotokoll
-          dokumentiert.
+          Mitarbeiter den Eintrag mit einer Pflicht-Begründung („Pflicht-Pause war nicht möglich“)
+          trotzdem erfassen. Ist in Ihrer Praxis immer eine Pause möglich, schalten Sie diese Ausnahme
+          ab: Die Auswahl verschwindet dann beim Ausstempeln, in der Zeiterfassung und in Anträgen, und
+          ein Tag über 6 bzw. 9 Stunden lässt sich nur noch mit eingetragener Pause speichern (auch für
+          Admins). Bereits erfasste Ausnahmen bleiben unverändert.
+        </p>
+        <div className="flex items-center justify-between max-w-sm mb-4">
+          <label htmlFor="break-exception-allowed-toggle" className="text-sm font-medium text-gray-700">
+            Ausnahme „Pflicht-Pause war nicht möglich“ erlauben
+          </label>
+          <button
+            id="break-exception-allowed-toggle"
+            role="switch"
+            aria-checked={breakExceptionAllowed}
+            onClick={() => setBreakExceptionAllowed(!breakExceptionAllowed)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              breakExceptionAllowed ? 'bg-primary' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                breakExceptionAllowed ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+        {breakExceptionAllowed && (
+        <>
+        <p className="text-sm text-gray-500 mb-4">
+          Wenn die Genehmigung aktiviert ist, wird ein solcher Eintrag erst nach Admin-Genehmigung wirksam
+          (4-Augen-Prinzip); andernfalls wird er sofort gespeichert und die Abweichung als Warnung sowie im
+          Änderungsprotokoll dokumentiert. Das gilt für Einträge, die Mitarbeiter in der Zeiterfassung
+          anlegen oder bearbeiten. Beim Ausstempeln wirkt eine Begründung immer sofort, weil der Eintrag
+          geschlossen werden muss (§16 ArbZG) – diese Ausnahmen prüfen Sie im Änderungsprotokoll.
         </p>
         <div className="flex items-center justify-between max-w-sm">
           <label htmlFor="break-approval-toggle" className="text-sm font-medium text-gray-700">
@@ -1010,10 +1086,16 @@ const saveYearEndProjection = async () => {
             />
           </button>
         </div>
+        </>
+        )}
         <div className="mt-4">
           <button
             onClick={saveBreakApproval}
-            disabled={savingBreakApproval || breakApprovalRequired === originalBreakApproval}
+            disabled={
+              savingBreakApproval
+              || (breakApprovalRequired === originalBreakApproval
+                && breakExceptionAllowed === originalBreakExceptionAllowed)
+            }
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />
@@ -1323,9 +1405,18 @@ const saveYearEndProjection = async () => {
       {/* Soll-Fenster-Puffer (#201) */}
       <div className="bg-white rounded-xl shadow-sm p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Soll-Arbeitszeit-Fenster</h2>
+        <p className="text-sm text-gray-500 mb-2">
+          Anwesenheit vor dem ersten und nach dem letzten Arbeitszeit-Block zählt nur bis zu diesem Puffer zur
+          Arbeitszeit; Stempel außerhalb werden auf diese Grenze gekürzt. Der Puffer gilt an jedem Blockrand, auch
+          zwischen zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet.
+        </p>
         <p className="text-sm text-gray-500 mb-4">
-          Anwesenheit vor oder nach dem Soll-Fenster zählt nur bis zu diesem Puffer zur Arbeitszeit.
-          Stempel außerhalb des Puffers werden auf die Fenstergrenze gekürzt.
+          Eine Änderung des Puffers wirkt auf neue Einträge. Jeder gekappte Eintrag merkt sich seinen Puffer und behält
+          ihn, auch wenn er später bearbeitet wird. Nur eine Arbeitszeit-Änderung mit Neuberechnung kappt die
+          betroffenen Einträge mit dem dann gültigen Puffer neu; die Vorschau nennt ihn, und verliert dabei ein Eintrag
+          angerechnete Zeit, gilt der Verkürzungsschutz. Einträge aus der Zeit vor Version 1.20.0 tragen keinen
+          gespeicherten Puffer und werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt. Bereits gespeicherte
+          Einträge ändern sich durch das Speichern dieser Einstellung allein nicht.
         </p>
         <div className="flex items-end gap-4">
           <div>
@@ -1339,6 +1430,7 @@ const saveYearEndProjection = async () => {
               id="grace-minutes"
               type="number"
               min="0"
+              max="1439"
               value={graceMinutes}
               onChange={(e) => setGraceMinutes(e.target.value)}
               className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"

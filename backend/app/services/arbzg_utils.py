@@ -21,7 +21,14 @@ def is_night_work(start_time: Optional[time], end_time: Optional[time]) -> bool:
 
     s = to_min(start_time)
     e = to_min(end_time)
-    if e <= s:  # Mitternachtsübergang
+    # Gesamtreview 1.20 (Fund 32): Beginn == Ende ist kein 24-h-Dienst, sondern
+    # ein vollständig gekappter Eintrag (Kollaps außerhalb der Hülle, 0 h,
+    # ``work_window_service._clamp_core``) — jeder Schreibweg verlangt sonst
+    # Ende > Beginn. Ohne diese Abfrage zählte jeder solche Eintrag als
+    # Nachtarbeit (420 Nachtminuten, gleich welche Uhrzeit).
+    if e == s:
+        return False
+    if e < s:  # Mitternachtsübergang
         e += 1440
 
     # Nachtzeit-Segmente in Minuten seit Tagesbeginn:

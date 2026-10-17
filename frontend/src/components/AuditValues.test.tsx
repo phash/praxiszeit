@@ -83,3 +83,12 @@ describe('AuditValues (Inline-Variante, Detail-Modal)', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+describe('AuditValues — Protokollzeilen der Anerkennung (Spec 10.3)', () => {
+  it('zeigt die Notiz auch bei vorhandenem Von–Bis', () => {
+    render(<AuditValues date="2026-06-01" start="07:00:00" end="19:00:00" breakMinutes={0}
+      note="angerechnet 12:00 h — von der Verwaltung anerkannt" />);
+    expect(screen.getByText('angerechnet 12:00 h — von der Verwaltung anerkannt')).toBeInTheDocument();
+    expect(screen.getByText('07:00 - 19:00')).toBeInTheDocument();
+  });
+});

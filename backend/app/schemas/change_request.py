@@ -3,6 +3,8 @@ from typing import List, Optional
 from datetime import date, time, datetime
 from uuid import UUID
 
+from app.schemas.validators import MinuteTime
+
 
 class ChangeRequestCreate(BaseModel):
     request_type: str  # "create", "update", "delete"
@@ -10,8 +12,9 @@ class ChangeRequestCreate(BaseModel):
     entry_kind: str = "time_entry"  # 'time_entry' | 'absence'
     absence_id: Optional[str] = None
     proposed_date: Optional[date] = None
-    proposed_start_time: Optional[time] = None
-    proposed_end_time: Optional[time] = None
+    # Gesamtreview 1.20 (B1): minutengenau wie jeder Schreibweg (``MinuteTime``).
+    proposed_start_time: Optional[MinuteTime] = None
+    proposed_end_time: Optional[MinuteTime] = None
     proposed_break_minutes: Optional[int] = Field(None, ge=0)
     proposed_note: Optional[str] = None
     proposed_absence_type: Optional[str] = None
@@ -21,11 +24,17 @@ class ChangeRequestCreate(BaseModel):
     # SEC-D: cap length to prevent storage DoS via unbounded free text.
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG
     proposed_sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # #485 §10 ArbZG
+    # Spec 2026-10-08 P21: „Anrechnung beantragen" — die Genehmigung erkennt
+    # standardmäßig an; die Verwaltung kann auch ohne Anerkennen genehmigen.
+    request_credit_override: bool = False
 
 
 class ChangeRequestReview(BaseModel):
     action: str  # "approve" or "reject"
     rejection_reason: Optional[str] = None
+    # Spec 2026-10-08 P21 / 13.3: None = Wert des Antrags (request_credit_override);
+    # True auch für „genehmigen und anerkennen" eines gewöhnlichen UPDATE-Antrags.
+    grant_credit_override: Optional[bool] = None
 
 
 class ChangeRequestBulkReview(BaseModel):
@@ -78,6 +87,33 @@ class ChangeRequestResponse(BaseModel):
     original_note: Optional[str] = None
     original_absence_type: Optional[str] = None
     original_absence_hours: Optional[float] = None
+    # Spec 2026-10-08 P21/P28: Antragskennzeichen und Vorher-Snapshot der Lücke.
+    request_credit_override: bool = False
+    original_uncredited_minutes: Optional[int] = None
+    # Spec P3/P21: AKTUELLER Zustand des Zieleintrags (batch-geladen in
+    # admin_helpers._enrich_cr_responses) — Hinweis „Eintrag ist anerkannt …"
+    # und die Option „genehmigen und anerkennen".
+    entry_credit_override: bool = False
+    entry_not_credited_minutes: int = 0
+    entry_auto_closed: bool = False
+    # Gesamtreview PR2 (Fund 2): die STEMPEL des Zieleintrags (``raw_* or
+    # start/end``) — dagegen prüft die Verwaltung die vorgeschlagenen Zeiten,
+    # bevor „genehmigen und anerkennen" sie dauerhaft anrechnet (P11). Das Ende
+    # eines automatisch geschlossenen Eintrags ist kein Stempel (P18) → None.
+    entry_raw_start_time: Optional[time] = None
+    entry_raw_end_time: Optional[time] = None
+    # Gesamtreview 1.20 (B2): das AKTUELLE wirksame Ende des Zieleintrags. Die
+    # Genehmigung wertet ein beantragtes Ende auch dann als Echo, wenn es genau
+    # darauf fällt (``end_is_correction``) — beim automatisch geschlossenen
+    # Eintrag gibt es dann kein „genehmigen und anerkennen" (400, P18). Nach
+    # einer Neukappung weicht es von ``original_end_time`` ab.
+    entry_end_time: Optional[time] = None
+    # Gesamtreview 1.20 (B2, Folgefund): ebenso der AKTUELLE angerechnete
+    # Beginn — ein beantragter Beginn darauf (oder auf ``original_start_time``)
+    # ist Echo (``request_start_for_approval`` + ``unclamp_input``), die
+    # Genehmigung rechnet mit dem Stempel weiter; die Prüfung meldet dann
+    # keine Abweichung von den Stempeln.
+    entry_start_time: Optional[time] = None
 
     reason: str
     break_waiver_reason: Optional[str] = None  # #144 §4 ArbZG

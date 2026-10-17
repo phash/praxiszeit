@@ -1,0 +1,39 @@
+# Build-Kontext des Backend-Images (Gesamtreview B8).
+#
+# Das Dockerfile kopiert mit `COPY . .` den ganzen Ordner. Ohne diese Datei
+# landeten Host-Reste im Image — vor allem eine `test.db` aus einem pytest-Lauf
+# mit gemountetem backend/: die Suite im Container (local-ci Schritt 1) oeffnet
+# `sqlite:///./test.db` relativ zu /app und fand die mitgebackene Datei vor.
+#
+# NICHT ausschliessen: app/, alembic/, alembic.ini, tests/ (local-ci fuehrt die
+# Suite IM Image aus), requirements.txt, pytest.ini, init-db-user.*, die
+# Testdaten-Skripte. tests/test_backend_dockerignore.py prueft beides.
+
+# SQLite-Testdatenbank samt Journal/WAL/SHM
+test.db*
+
+# Python-Bytecode und Werkzeug-Caches
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Lokale virtuelle Umgebungen
+.venv
+venv
+
+# Lokaler Werkzeugzustand (Agenten-Notizen), gehoert nicht ins Image
+.claude
+
+# Geheimnisse gehoeren nie ins Image — die Umgebung kommt von docker compose
+# (wie im Docker-Bundle von build-release.sh, das .env ebenfalls auslaesst)
+.env
+.env.*
+
+# Datenbanksicherungen (personenbezogen). Das Dockerfile legt /app/backups
+# selbst an, zur Laufzeit liegt dort das Volume praxiszeit_backups.
+backups

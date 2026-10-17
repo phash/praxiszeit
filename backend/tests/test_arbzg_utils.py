@@ -66,3 +66,12 @@ class TestIsNightWork:
     def test_night_threshold_constant(self):
         """Prüft dass die Nachtzeit-Schwelle 120 Min (2h) beträgt — §2 Abs. 4 ArbZG Vorgabe."""
         assert NIGHT_THRESHOLD_MINUTES == 120
+
+    def test_zero_duration_is_not_night_work(self):
+        """Gesamtreview 1.20 (Fund 32): Beginn == Ende ist ein vollständig gekappter
+        Eintrag (Kollaps außerhalb der Hülle, 0 h angerechnet) — keine 24-h-Schicht.
+        Vorher las ``e <= s`` ihn als Mitternachtsübergang: 420 Nachtminuten, egal
+        zu welcher Uhrzeit."""
+        assert is_night_work(time(19, 0), time(19, 0)) is False
+        assert is_night_work(time(5, 0), time(5, 0)) is False
+        assert is_night_work(time(23, 30), time(23, 30)) is False

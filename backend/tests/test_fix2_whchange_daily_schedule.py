@@ -22,6 +22,7 @@ from app.routers.admin_users import create_working_hours_change
 from app.schemas.working_hours_change import WorkingHoursChangeCreate
 from app.services import calculation_service
 from tests.conftest import DEFAULT_TENANT_ID
+from tests.wh_change_helpers import RETRO_REASON
 
 
 def _make_user(db, username, **kwargs):
@@ -190,7 +191,7 @@ def test_whchange_second_superseding_change_updates_to_new_value(db, default_ten
     result = create_working_hours_change(
         user_id=str(emp.id),
         change_data=WorkingHoursChangeCreate(
-            effective_from=date(2020, 6, 1), weekly_hours=30.0,
+            effective_from=date(2020, 6, 1), weekly_hours=30.0, **RETRO_REASON,
         ),
         db=db, current_user=admin,
     )

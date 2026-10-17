@@ -62,7 +62,12 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
-        changeOrigin: true,
+        // Host-Header des Browsers durchreichen (wie nginx `Host $http_host`):
+        // FastAPI baut die Location des 307-Trailing-Slash-Redirects
+        // (`/api/dashboard` → `/api/dashboard/`) absolut aus dem Host-Header.
+        // Mit `changeOrigin: true` zeigte sie auf das Backend (:8000), der
+        // Browser folgte cross-origin. Betrifft nur `npm run dev`.
+        changeOrigin: false,
       },
     },
   },

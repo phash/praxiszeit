@@ -40,9 +40,11 @@ def client(db, test_admin):
     test_app.dependency_overrides.clear()
 
 
-def _url(user_id, eff, hours=20.0):
-    return (f"/api/admin/users/{user_id}/working-hours-changes/preview"
-            f"?effective_from={eff.isoformat()}&weekly_hours={hours}")
+def _req(user_id, eff, hours=20.0):
+    """Spec 11.1: die Vorschau ist POST mit JSON-Body (dieselbe Body-Verarbeitung
+    wie beim Speichern)."""
+    return {"url": f"/api/admin/users/{user_id}/working-hours-changes/preview",
+            "json": {"effective_from": eff.isoformat(), "weekly_hours": hours}}
 
 
 def _absence(db, user, d, typ=AbsenceType.VACATION, hours=8.0):
@@ -87,27 +89,27 @@ def _first_monday_of_year():
 
 
 def _preview(client, user, eff, **params):
-    """Vorschau mit beliebigen Snapshot-Parametern (Tagesplan-Modus)."""
-    return client.get(
+    """Vorschau mit beliebigen Snapshot-Feldern (Tagesplan-Modus)."""
+    return client.post(
         f"/api/admin/users/{user.id}/working-hours-changes/preview",
-        params={"effective_from": eff.isoformat(), **params},
+        json={"effective_from": eff.isoformat(), **params},
     )
 
 
 class TestRetroactiveDetection:
     def test_future_date_is_not_retroactive(self, client, test_user):
-        r = client.get(_url(test_user.id, today_local() + timedelta(days=7)))
+        r = client.post(**_req(test_user.id, today_local() + timedelta(days=7)))
         assert r.status_code == 200, r.text
         assert r.json()["is_retroactive"] is False
         assert r.json()["affected_absences"] == 0
 
     def test_today_is_not_retroactive(self, client, test_user):
-        r = client.get(_url(test_user.id, today_local()))
+        r = client.post(**_req(test_user.id, today_local()))
         assert r.status_code == 200, r.text
         assert r.json()["is_retroactive"] is False
 
     def test_yesterday_is_retroactive(self, client, test_user):
-        r = client.get(_url(test_user.id, today_local() - timedelta(days=1)))
+        r = client.post(**_req(test_user.id, today_local() - timedelta(days=1)))
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["is_retroactive"] is True
@@ -119,16 +121,16 @@ class TestNumbers:
         mon = _last_monday()
         _absence(db, test_user, mon)
         _absence(db, test_user, mon + timedelta(days=1))
-        r = client.get(_url(test_user.id, mon))
+        r = client.post(**_req(test_user.id, mon))
         assert r.json()["affected_absences"] == 2
 
     def test_overtime_is_not_counted(self, client, db, test_user):
         mon = _last_monday()
         _absence(db, test_user, mon, AbsenceType.OVERTIME)
-        assert client.get(_url(test_user.id, mon)).json()["affected_absences"] == 0
+        assert client.post(**_req(test_user.id, mon)).json()["affected_absences"] == 0
 
     def test_reports_old_and_new_daily_target(self, client, test_user):
-        r = client.get(_url(test_user.id, _last_monday(), hours=20.0))
+        r = client.post(**_req(test_user.id, _last_monday(), hours=20.0))
         body = r.json()
         assert body["current_daily_target"] == 8.0
         assert body["new_daily_target"] == 4.0
@@ -147,7 +149,7 @@ class TestNumbers:
         # während die Tagessoll-Anzeige 0.0 → 0.0 behauptete.
         _absence(db, test_user, sunday + timedelta(days=1))
 
-        body = client.get(_url(test_user.id, sunday, hours=20.0)).json()
+        body = client.post(**_req(test_user.id, sunday, hours=20.0)).json()
 
         assert body["current_daily_target"] == 8.0
         assert body["new_daily_target"] == 4.0
@@ -157,7 +159,7 @@ class TestNumbers:
         """Strikt lesend — weder Abwesenheit noch Historie darf sich bewegen."""
         mon = _last_monday()
         a = _absence(db, test_user, mon)
-        client.get(_url(test_user.id, mon))
+        client.post(**_req(test_user.id, mon))
         db.refresh(a)
         assert float(a.hours) == 8.0
         assert db.query(WorkingHoursChange).filter(
@@ -181,7 +183,7 @@ class TestEffectWindow:
         absence_day = eff + timedelta(days=1)
         _absence(db, test_user, absence_day, AbsenceType.TRAINING)
 
-        body = client.get(_url(test_user.id, eff)).json()
+        body = client.post(**_req(test_user.id, eff)).json()
 
         assert body["is_retroactive"] is False, "Bedeutung unverändert: Datum ab heute"
         assert body["affected_absences"] == 1, "die bereits gebuchte Zeile wird angefasst"
@@ -199,7 +201,7 @@ class TestEffectWindow:
         _absence(db, test_user, first + timedelta(days=1), AbsenceType.TRAINING)
         _absence(db, test_user, second + timedelta(days=1), AbsenceType.TRAINING)
 
-        body = client.get(_url(test_user.id, first)).json()
+        body = client.post(**_req(test_user.id, first)).json()
 
         assert body["period_end"] == (second - timedelta(days=1)).isoformat()
         assert body["affected_absences"] == 1, "nur die Zeile im eigenen Wirkungsbereich"
@@ -210,7 +212,7 @@ class TestEffectWindow:
         _absence(db, test_user, mon)
         _absence(db, test_user, future_day, AbsenceType.TRAINING)
 
-        body = client.get(_url(test_user.id, mon)).json()
+        body = client.post(**_req(test_user.id, mon)).json()
 
         assert body["is_retroactive"] is True
         assert body["period_end"] == future_day.isoformat()
@@ -223,7 +225,7 @@ class TestBlockedReasons:
         Änderungen an, die Vorschau darf sie also nicht mehr als aussichtslos
         melden. Hier zusätzlich der Modus-WECHSEL Tagesplan → gleichmäßig:
         20 h auf 3 Arbeitstage = 6,67 h an jedem Wochentag."""
-        body = client.get(_url(day_plan_user.id, _last_monday(), hours=20.0)).json()
+        body = client.post(**_req(day_plan_user.id, _last_monday(), hours=20.0)).json()
         assert body["blocked_reason"] is None
         assert body["day_targets_current"] == [8.0, 5.0, 4.0, 0.0, 0.0]
         assert body["day_targets_new"] == [6.67] * 5
@@ -274,12 +276,12 @@ class TestBlockedReasons:
             effective_from=eff, weekly_hours=Decimal("30.0"),
         ))
         db.commit()
-        body = client.get(_url(test_user.id, eff)).json()
+        body = client.post(**_req(test_user.id, eff)).json()
         assert body["blocked_reason"] is not None
         assert "existiert bereits" in body["blocked_reason"]
 
     def test_normal_case_is_not_blocked(self, client, test_user):
-        assert client.get(_url(test_user.id, _last_monday())).json()["blocked_reason"] is None
+        assert client.post(**_req(test_user.id, _last_monday())).json()["blocked_reason"] is None
 
     def test_duplicate_date_reports_zero_affected_absences(self, client, db, test_user):
         """Regression: blockiert wegen Duplikat-Datum -> KEIN Dry-Run-Insert, also
@@ -300,7 +302,7 @@ class TestBlockedReasons:
         db.commit()
         _absence(db, test_user, eff)
         _absence(db, test_user, eff + timedelta(days=1))
-        body = client.get(_url(test_user.id, eff)).json()
+        body = client.post(**_req(test_user.id, eff)).json()
         assert body["blocked_reason"] is not None
         assert body["affected_absences"] == 0
 
@@ -382,7 +384,7 @@ class TestDayPlanAndAccounts:
         mon = _last_monday()
         _absence(db, test_user, mon, AbsenceType.VACATION, hours=6.0)
 
-        same = client.get(_url(test_user.id, mon, hours=40.0)).json()
+        same = client.post(**_req(test_user.id, mon, hours=40.0)).json()
         assert same["blocked_reason"] is None
         assert same["affected_absences"] == 0, "keine Simulation, also nichts gezählt"
         assert same["overtime_after"] == same["overtime_before"]
@@ -391,7 +393,7 @@ class TestDayPlanAndAccounts:
 
         # Gegenprobe: dieselbe Ausgangslage mit ABWEICHENDEN Wochenstunden
         # simuliert sehr wohl — sonst wäre die Assertion oben wertlos.
-        changed = client.get(_url(test_user.id, mon, hours=20.0)).json()
+        changed = client.post(**_req(test_user.id, mon, hours=20.0)).json()
         assert changed["affected_absences"] == 1
 
     def test_unchanged_day_plan_runs_no_simulation(self, client, db, day_plan_user):
@@ -431,7 +433,7 @@ class TestDayPlanAndAccounts:
             lambda _db, _user, today=None: date(year - 1, 12, 31),
         )
 
-        body = client.get(_url(test_user.id, date(year, 1, 1), hours=20.0)).json()
+        body = client.post(**_req(test_user.id, date(year, 1, 1), hours=20.0)).json()
 
         assert body["overtime_before"] == 99.0
 
@@ -454,7 +456,7 @@ class TestDayPlanAndAccounts:
 
         monkeypatch.setattr(db, "flush", boom)
         with pytest.raises(RuntimeError):
-            client.get(_url(test_user.id, mon))
+            client.post(**_req(test_user.id, mon))
         monkeypatch.undo()
 
         assert not [o for o in db.new if isinstance(o, WorkingHoursChange)], \
@@ -491,14 +493,14 @@ class TestClosedYears:
             vacation_days=Decimal("0"), source="year_closing",
         ))
         db.commit()
-        r = client.get(_url(test_user.id, date(last_year, 6, 1)))
+        r = client.post(**_req(test_user.id, date(last_year, 6, 1)))
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["closed_year_warning"] is not None
         assert body["closed_years"] == [last_year]
 
     def test_open_year_has_no_warning(self, client, test_user):
-        body = client.get(_url(test_user.id, _last_monday())).json()
+        body = client.post(**_req(test_user.id, _last_monday())).json()
         assert body["closed_year_warning"] is None
         assert body["closed_years"] == []
 
@@ -515,7 +517,7 @@ class TestClosedYears:
                 vacation_days=Decimal("0"), source="year_closing",
             ))
         db.commit()
-        r = client.get(_url(test_user.id, date(first_year, 6, 1)))
+        r = client.post(**_req(test_user.id, date(first_year, 6, 1)))
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["closed_years"] == [first_year, second_year]
@@ -533,7 +535,7 @@ class TestAuthorization:
             is_active=True, tenant_id=uuid.uuid4(),
         )
         db.add(foreign); db.commit(); db.refresh(foreign)
-        assert client.get(_url(foreign.id, _last_monday())).status_code == 404
+        assert client.post(**_req(foreign.id, _last_monday())).status_code == 404
 
     def test_employee_is_forbidden(self, db, test_user):
         """Ohne require_admin-Override greift die echte Rolle."""
@@ -543,6 +545,6 @@ class TestAuthorization:
         test_app.dependency_overrides[get_current_user] = lambda: test_user
         try:
             c = TestClient(test_app)
-            assert c.get(_url(test_user.id, _last_monday())).status_code == 403
+            assert c.post(**_req(test_user.id, _last_monday())).status_code == 403
         finally:
             test_app.dependency_overrides.clear()

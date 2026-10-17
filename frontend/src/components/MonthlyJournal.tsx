@@ -4,7 +4,7 @@ import { de } from 'date-fns/locale';
 import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
-import { formatHoursHMText, parseHours } from '../utils/formatters';
+import { formatHoursHM, formatHoursHMText, parseHours } from '../utils/formatters';
 import { submitWithBreakWaiver } from '../utils/breakWaiverRetry';
 import { showArbzgWarnings, collectAbsenceWarnings } from '../utils/arbzgWarnings';
 import { useToast } from '../contexts/ToastContext';
@@ -13,6 +13,9 @@ import ConfirmDialog from './ConfirmDialog';
 import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
 import { RawStampNote } from './RawStampNote';
+import CreditOverrideButton from './CreditOverrideButton';
+import ChangeRequestForm from './ChangeRequestForm';
+import { stampNoteProps } from '../utils/workBlocks';
 import { myReasons } from '../api/absenceReasons';
 import type { AbsenceReason } from '../api/absenceReasons';
 
@@ -27,6 +30,11 @@ interface TimeEntryItem {
   raw_start_time?: string | null;
   raw_end_time?: string | null;
   sunday_exception_reason?: string | null; // #485 §10 ArbZG
+  // Spec 2026-10-08 (13.2): nicht angerechnete Zeit, Anerkennung, Auto-Close.
+  uncredited_minutes?: number;
+  not_credited_minutes?: number;
+  credit_override?: boolean;
+  auto_closed?: boolean;
 }
 
 interface AbsenceItem {
@@ -55,7 +63,9 @@ interface JournalData {
   year: number;
   month: number;
   days: JournalDay[];
-  monthly_summary: { actual_hours: number; target_hours: number; balance: number };
+  // Spec 2026-10-08 (13.2): Σ not_credited_minutes des Monats (Lücke UND Hülle,
+  // P19). Optional, weil ältere Antworten das Feld nicht führen.
+  monthly_summary: { actual_hours: number; target_hours: number; balance: number; not_credited_minutes_total?: number };
   yearly_overtime: number;
   // #463: Im festen Monats-Soll (#377 Baustein 2b) gibt es kein Tages-Soll.
   // `target_hours` der Tageszeilen trägt dort die GEPLANTE Anwesenheit, und ein
@@ -207,6 +217,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [submitReason, setSubmitReason] = useState('');
   const [savingChangeRequest, setSavingChangeRequest] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  // Spec P21: „Anrechnung beantragen" aus der Mitarbeiter-Ansicht.
+  const [creditRequest, setCreditRequest] = useState<{ day: JournalDay; entry: TimeEntryItem } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -588,6 +600,60 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   // #485: §10-Ausnahmegrund — eigene Zeile, damit das Feld auch auf schmalen
   // Bildschirmen Platz hat (die Zeitspalten sind dort ausgeblendet). Steht
   // unter der Zeile, in der gerade bearbeitet bzw. hinzugefuegt wird.
+  // Spec 13.1/13.3/14: Eintragszeile (RawStampNote) samt „Anrechnung
+  // beantragen" (eigene Ansicht) bzw. „Anerkennen" (Admin-Ansicht) — EINE
+  // Quelle für die Von–Bis-Spalte und die Mobilzeile darunter.
+  function renderCreditNote(day: JournalDay, e: TimeEntryItem) {
+    return (
+      <>
+        <RawStampNote
+          {...stampNoteProps(e)}
+          className="text-xs text-gray-500"
+          onRequestCredit={
+            // Vergangene Tage und heute (Gesamtreview PR2, Fund 1: der
+            // Lückentext beim Ausstempeln verweist hierher); Admins
+            // erkennen selbst an.
+            !isAdminView && !isFutureDay(day.date) && e.end_time && !e.credit_override
+              ? () => setCreditRequest({ day, entry: e })
+              : undefined
+          }
+        />
+        {isAdminView && (
+          <CreditOverrideButton entry={e} onDone={() => setReloadKey((k) => k + 1)} />
+        )}
+      </>
+    );
+  }
+
+  // Gesamtreview PR2 (Fund 9): „Von–Bis" ist unterhalb von md ausgeblendet —
+  // ohne diese Zeile sähe man auf dem Telefon nur die Monatssumme „Anwesenheit
+  // nicht angerechnet", nicht die Einträge dazu und keine der beiden Aktionen.
+  // Nur Einträge, zu denen RawStampNote etwas sagt (gekappt, anerkannt,
+  // automatisch geschlossen); die Spanne steht mit dabei, weil die Spalte fehlt.
+  function renderMobileCreditRow(day: JournalDay, rowClass: string) {
+    const shown = day.time_entries.filter((e) => {
+      const p = stampNoteProps(e);
+      return p.creditOverride || p.autoClosed || p.notCreditedMinutes > 0;
+    });
+    if (shown.length === 0) return null;
+    return (
+      <tr key={`${day.date}-credit-mobile`} className={`md:hidden ${rowClass}`}>
+        <td colSpan={fixedMode ? 8 : 9} className="px-3 pb-2 pt-0">
+          <div className="space-y-1">
+            {shown.map((e) => (
+              <div key={e.id} className="text-xs text-gray-600">
+                <span className="font-medium">
+                  {e.start_time && e.end_time ? `${e.start_time.substring(0, 5)}–${e.end_time.substring(0, 5)}` : e.start_time?.substring(0, 5)}
+                </span>
+                {renderCreditNote(day, e)}
+              </div>
+            ))}
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
   function renderSundayReasonRow(day: JournalDay) {
     if (editState.entryType !== 'work' || !needsSundayReason(day)) return null;
     return (
@@ -621,6 +687,31 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
+      {creditRequest && (
+        <ChangeRequestForm
+          entry={{
+            id: creditRequest.entry.id,
+            date: creditRequest.day.date,
+            start_time: creditRequest.entry.start_time ?? '',
+            end_time: creditRequest.entry.end_time,
+            break_minutes: creditRequest.entry.break_minutes,
+            raw_start_time: creditRequest.entry.raw_start_time,
+            raw_end_time: creditRequest.entry.raw_end_time,
+            auto_closed: creditRequest.entry.auto_closed,
+            sunday_exception_reason: creditRequest.entry.sunday_exception_reason,
+            // `note` bewusst nicht gesetzt: das Journal kennt sie nicht, das
+            // Formular sendet dann keine (die gespeicherte bleibt stehen).
+          }}
+          requestType="update"
+          requestCredit
+          onClose={() => setCreditRequest(null)}
+          onSuccess={() => {
+            setCreditRequest(null);
+            toast.success('Antrag auf Anrechnung eingereicht');
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
       <MonthSelector
         value={selectedMonth}
         onChange={(month) => {
@@ -797,11 +888,16 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               {day.time_entries.map((e, i) => (
                                 <div key={`w${i}`}>
                                   {e.start_time && e.end_time ? `${e.start_time.substring(0, 5)}–${e.end_time.substring(0, 5)}` : '–'}
-                                  <RawStampNote raw={e.raw_start_time} effective={e.start_time} side="start" className="text-xs text-gray-500" />
-                                  <RawStampNote raw={e.raw_end_time} effective={e.end_time} side="end" className="text-xs text-gray-500" />
-                                  {e.sunday_exception_reason && (
-                                    <div className="text-xs text-amber-700">§10: {e.sunday_exception_reason}</div>
-                                  )}
+                                  {/* Gesamtreview 1.20 (Fund 15): die Zelle ist whitespace-nowrap
+                                      (die Spanne bricht nicht um); die langen Hinweiszeilen
+                                      darunter erbten das und machten die ganze Tabelle breit —
+                                      Saldo und Aktionen nur noch per Querscrollen. */}
+                                  <div className="whitespace-normal max-w-xs">
+                                    {renderCreditNote(day, e)}
+                                    {e.sunday_exception_reason && (
+                                      <div className="text-xs text-amber-700">§10: {e.sunday_exception_reason}</div>
+                                    )}
+                                  </div>
                                 </div>
                               ))}
                               {labelType === 'mixed' && day.absences.map((a, i) => (
@@ -940,6 +1036,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                           ) : null}
                         </td>
                       </tr>
+                      {!hideEntries && editingDate !== day.date && renderMobileCreditRow(day, rowClass)}
                       {editingDate === day.date && renderSundayReasonRow(day)}
                       {/* Add-new-entry row */}
                       {addingDate === day.date && isAdminView && (
@@ -1070,6 +1167,12 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
               </p>
             </div>
           </div>
+          {/* Spec 13.2: gestempelte, aber nicht angerechnete Zeit des Monats — nur wenn > 0. */}
+          {(data.monthly_summary.not_credited_minutes_total ?? 0) > 0 && (
+            <p className="text-sm text-gray-600 mt-3">
+              {`Anwesenheit nicht angerechnet: ${formatHoursHM((data.monthly_summary.not_credited_minutes_total ?? 0) / 60)} h`}
+            </p>
+          )}
         </>
       )}
     </div>

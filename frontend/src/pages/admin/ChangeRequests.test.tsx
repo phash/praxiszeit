@@ -82,3 +82,311 @@ describe('<AdminChangeRequests /> Sammel-Genehmigung (#486)', () => {
     expect(toast.info).not.toHaveBeenCalled();
   });
 });
+
+describe('<AdminChangeRequests /> Sammel-Genehmigung mit Anrechnungsanträgen (Gesamtreview PR2, Fund 4)', () => {
+  const creditPending = {
+    ...pendingCr, id: 'cr9', request_type: 'update', time_entry_id: 'te9',
+    request_credit_override: true, entry_not_credited_minutes: 240,
+  };
+
+  it('nennt die Anträge, die anerkannt würden, und fragt vorher nach', async () => {
+    mockApi([pendingCr, creditPending]);
+    postMock.mockResolvedValue({ data: { succeeded: 2, failed: 0, items: [] } });
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByText('Alle 2 auswählen'));
+    fireEvent.click(screen.getByRole('button', { name: '2 genehmigen, davon 1 mit Anerkennen' }));
+    expect(await screen.findByText(/dauerhaft an/)).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Alle genehmigen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/admin/change-requests/bulk-review', {
+      request_ids: ['cr1', 'cr9'], action: 'approve', rejection_reason: undefined,
+    }));
+  });
+
+  it('Kontrolltest: ohne Anrechnungsantrag ohne Rückfrage', async () => {
+    mockApi([pendingCr]);
+    postMock.mockResolvedValue({ data: { succeeded: 1, failed: 0, items: [] } });
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByLabelText('Antrag von Anna Meier auswählen'));
+    fireEvent.click(screen.getByRole('button', { name: '1 genehmigen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+  });
+});
+
+describe('<AdminChangeRequests /> Anrechnung beantragen (Spec P21, P3)', () => {
+  const creditCr = {
+    ...pendingCr, id: 'cr2', request_type: 'update', time_entry_id: 'te1',
+    original_date: '2026-06-01', original_start_time: '07:45:00', original_end_time: '18:15:00',
+    original_break_minutes: 0, proposed_date: '2026-06-01', proposed_start_time: '07:00:00',
+    proposed_end_time: '19:00:00', request_credit_override: true, original_uncredited_minutes: 150,
+    entry_credit_override: false, entry_not_credited_minutes: 240,
+  };
+
+  it('kennzeichnet den Antrag und genehmigt mit Anerkennen (Antragswert)', async () => {
+    mockApi([creditCr]);
+    postMock.mockResolvedValue({ data: { warnings: [] } });
+    render(<AdminChangeRequests />);
+    expect(await screen.findByText('Anrechnung beantragt')).toBeInTheDocument();
+    expect(screen.getByText('Nicht angerechnet (Lücke): 2:30 h')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Genehmigen und anerkennen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
+      '/admin/change-requests/cr2/review', { action: 'approve' }));
+  });
+
+  it('erlaubt, ohne Anerkennen zu genehmigen', async () => {
+    mockApi([creditCr]);
+    postMock.mockResolvedValue({ data: { warnings: [] } });
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Ohne Anerkennen genehmigen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
+      '/admin/change-requests/cr2/review', { action: 'approve', grant_credit_override: false }));
+  });
+
+  it('bietet „Genehmigen und anerkennen" auch für gewöhnliche Änderungen mit nicht angerechneter Zeit', async () => {
+    mockApi([{ ...creditCr, request_credit_override: false }]);
+    postMock.mockResolvedValue({ data: { warnings: [] } });
+    render(<AdminChangeRequests />);
+    expect(await screen.findByRole('button', { name: 'Genehmigen' })).toBeInTheDocument();
+    expect(screen.queryByText('Anrechnung beantragt')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Genehmigen und anerkennen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
+      '/admin/change-requests/cr2/review', { action: 'approve', grant_credit_override: true }));
+  });
+
+  it('Kontrolltest: „Genehmigen" sendet bei gewöhnlichen Anträgen nur die Aktion', async () => {
+    mockApi([{ ...creditCr, request_credit_override: false }]);
+    postMock.mockResolvedValue({ data: { warnings: [] } });
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Genehmigen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
+      '/admin/change-requests/cr2/review', { action: 'approve' }));
+  });
+
+  it('ohne nicht angerechnete Zeit gibt es kein „Genehmigen und anerkennen"', async () => {
+    mockApi([{ ...creditCr, request_credit_override: false, entry_not_credited_minutes: 0, original_uncredited_minutes: 0 }]);
+    render(<AdminChangeRequests />);
+    await screen.findByRole('button', { name: 'Genehmigen' });
+    expect(screen.queryByRole('button', { name: 'Genehmigen und anerkennen' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Nicht angerechnet \(Lücke\)/)).not.toBeInTheDocument();
+  });
+
+  // P18: der Server lehnt Anerkennen ab, solange der Antrag zu einem
+  // automatisch geschlossenen Eintrag kein tatsächliches Ende mitbringt
+  // (credit_override_service.lacks_actual_end) — die Prüfung bietet es dann
+  // nicht an, statt mit 400 zu scheitern.
+  it('automatisch geschlossener Zieleintrag ohne tatsächliches Ende: kein „Genehmigen und anerkennen"', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_auto_closed: true,
+      original_start_time: '08:00:00', proposed_start_time: '08:00:00', proposed_end_time: '18:15:00',
+    }]);
+    render(<AdminChangeRequests />);
+    await screen.findByRole('button', { name: 'Genehmigen' });
+    expect(screen.queryByRole('button', { name: 'Genehmigen und anerkennen' })).not.toBeInTheDocument();
+  });
+
+  it('automatisch geschlossener Zieleintrag mit tatsächlichem Ende: „Genehmigen und anerkennen" bleibt', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_auto_closed: true,
+      original_start_time: '08:00:00', proposed_start_time: '08:00:00', proposed_end_time: '17:30:00',
+    }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByRole('button', { name: 'Genehmigen und anerkennen' })).toBeInTheDocument();
+  });
+
+  // Entschieden 2026-10-11 (Produktinhaber, P18): ein beantragtes 23:59 ist ein
+  // tatsächliches Ende — bis dahin blendete die Prüfung den Knopf dafür aus.
+  it('automatisch geschlossener Zieleintrag mit beantragtem 23:59: „Genehmigen und anerkennen" bleibt', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_auto_closed: true,
+      original_start_time: '08:00:00', proposed_start_time: '08:00:00', proposed_end_time: '23:59:00',
+    }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByRole('button', { name: 'Genehmigen und anerkennen' })).toBeInTheDocument();
+  });
+
+  // Gesamtreview 1.20 (B2): der Server wertet auch das AKTUELLE wirksame Ende
+  // als Echo (end_is_correction). Nach einer Neukappung weicht es vom damaligen
+  // (original_end_time) ab — fällt das beantragte Ende genau darauf, lehnt der
+  // Server das Anerkennen mit 400 ab; die Prüfung bietet es dann nicht an.
+  it('automatisch geschlossen, beantragtes Ende = aktuelles wirksames Ende: kein „Genehmigen und anerkennen"', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_auto_closed: true,
+      original_start_time: '08:00:00', original_end_time: '18:15:00', entry_end_time: '17:15:00',
+      proposed_start_time: '08:00:00', proposed_end_time: '17:15:00',
+    }]);
+    render(<AdminChangeRequests />);
+    await screen.findByRole('button', { name: 'Genehmigen' });
+    expect(screen.queryByRole('button', { name: 'Genehmigen und anerkennen' })).not.toBeInTheDocument();
+  });
+
+  it('Kontrolltest: automatisch geschlossen, beantragtes Ende weder damals noch aktuell wirksam: Knopf bleibt', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_auto_closed: true,
+      original_start_time: '08:00:00', original_end_time: '18:15:00', entry_end_time: '17:15:00',
+      proposed_start_time: '08:00:00', proposed_end_time: '17:30:00',
+    }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByRole('button', { name: 'Genehmigen und anerkennen' })).toBeInTheDocument();
+  });
+
+  it('Kontrolltest: ohne Kennzeichen zählt das aktuelle wirksame Ende nicht', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_end_time: '19:00:00',
+      proposed_end_time: '19:00:00',
+    }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByRole('button', { name: 'Genehmigen und anerkennen' })).toBeInTheDocument();
+  });
+
+  it('ohne Blöcke (wirksames Ende 23:59): ein beantragtes 23:59 bringt kein tatsächliches Ende', async () => {
+    mockApi([{
+      ...creditCr, request_credit_override: false, entry_auto_closed: true,
+      original_start_time: '18:00:00', original_end_time: '23:59:00',
+      proposed_start_time: '18:00:00', proposed_end_time: '23:59:00',
+    }]);
+    render(<AdminChangeRequests />);
+    await screen.findByRole('button', { name: 'Genehmigen' });
+    expect(screen.queryByRole('button', { name: 'Genehmigen und anerkennen' })).not.toBeInTheDocument();
+  });
+
+  // Gesamtreview PR2 (Fund 2): „Genehmigen und anerkennen" rechnet die
+  // vorgeschlagenen Zeiten dauerhaft an (P11) — die Prüfung zeigt deshalb die
+  // Stempel des Eintrags und hebt Abweichungen hervor.
+  describe('Stempel des Eintrags (Fund 2)', () => {
+    const stamped = { ...creditCr, entry_raw_start_time: '07:00:00', entry_raw_end_time: '19:00:00' };
+
+    it('nennt gestempelte Spanne und die aktuell nicht angerechnete Zeit', async () => {
+      mockApi([stamped]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('gestempelt 07:00–19:00 · nicht angerechnet aktuell 4:00 h')).toBeInTheDocument();
+      expect(screen.queryByText(/weichen|weicht/)).not.toBeInTheDocument();
+    });
+
+    // Gesamtreview 1.20 (B2, Folgefund): ein gewöhnlicher Antrag schickt die
+    // vorbelegten ANGERECHNETEN Zeiten zurück. Der Server wertet sie als Echo
+    // (request_*_for_approval + unclamp_input) und rechnet mit den Stempeln
+    // weiter — „Genehmigen und anerkennen" erkennt die Stempel an. Echo ist der
+    // angerechnete Wert zum Zeitpunkt des Antrags (original_*) ODER der
+    // aktuelle (entry_start_time/entry_end_time).
+    it('Echo der damals angerechneten Zeiten: keine Abweichung von den Stempeln', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false,
+        entry_start_time: '07:45:00', entry_end_time: '18:15:00',
+        proposed_start_time: '07:45:00', proposed_end_time: '18:15:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('gestempelt 07:00–19:00 · nicht angerechnet aktuell 4:00 h')).toBeInTheDocument();
+      expect(screen.queryByText(/weichen|weicht/)).not.toBeInTheDocument();
+    });
+
+    it('Echo der AKTUELL angerechneten Zeiten (nach einer Neukappung): keine Abweichung', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false,
+        entry_start_time: '08:45:00', entry_end_time: '17:15:00',
+        proposed_start_time: '08:45:00', proposed_end_time: '17:15:00',
+      }]);
+      render(<AdminChangeRequests />);
+      await screen.findByText('gestempelt 07:00–19:00 · nicht angerechnet aktuell 4:00 h');
+      expect(screen.queryByText(/weichen|weicht/)).not.toBeInTheDocument();
+    });
+
+    it('Kontrolltest: Echo am Beginn, eingetipptes Ende — der Hinweis bleibt', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false,
+        entry_start_time: '07:45:00', entry_end_time: '18:15:00',
+        proposed_start_time: '07:45:00', proposed_end_time: '20:00:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('Zeiten weichen von den Stempeln ab (gestempelt 07:00–19:00)')).toBeInTheDocument();
+    });
+
+    it('Kontrolltest: eingetippt 06:00–20:00 bei Echo-Werten im Antrag — der Hinweis bleibt', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false,
+        entry_start_time: '07:45:00', entry_end_time: '18:15:00',
+        proposed_start_time: '06:00:00', proposed_end_time: '20:00:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('Zeiten weichen von den Stempeln ab (gestempelt 07:00–19:00)')).toBeInTheDocument();
+    });
+
+    it('automatisch geschlossen: Echo des angerechneten Beginns ist keine Abweichung', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false, entry_auto_closed: true,
+        entry_raw_start_time: '07:00:00', entry_raw_end_time: null,
+        original_start_time: '07:45:00', entry_start_time: '08:45:00', entry_end_time: '18:15:00',
+        entry_not_credited_minutes: 150, proposed_start_time: '08:45:00', proposed_end_time: '17:30:00',
+      }]);
+      render(<AdminChangeRequests />);
+      await screen.findByText(
+        'gestempelt ab 07:00, nicht ausgestempelt (automatisch geschlossen) · nicht angerechnet aktuell 2:30 h',
+      );
+      expect(screen.queryByText(/weicht|weichen/)).not.toBeInTheDocument();
+    });
+
+    it('Kontrolltest: automatisch geschlossen, eingetippter Beginn — der Hinweis bleibt', async () => {
+      mockApi([{
+        ...stamped, request_credit_override: false, entry_auto_closed: true,
+        entry_raw_start_time: '07:00:00', entry_raw_end_time: null,
+        original_start_time: '07:45:00', entry_start_time: '07:45:00', entry_end_time: '18:15:00',
+        entry_not_credited_minutes: 150, proposed_start_time: '06:30:00', proposed_end_time: '17:30:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('Beginn weicht vom Stempel ab (gestempelt ab 07:00)')).toBeInTheDocument();
+    });
+
+    it('hebt vorgeschlagene Zeiten hervor, die nicht den Stempeln entsprechen', async () => {
+      mockApi([{ ...stamped, proposed_start_time: '06:00:00', proposed_end_time: '20:00:00' }]);
+      render(<AdminChangeRequests />);
+      const hint = await screen.findByText('Zeiten weichen von den Stempeln ab (gestempelt 07:00–19:00)');
+      expect(hint.className).toMatch(/text-red-700/);
+    });
+
+    it('nennt die nicht angerechnete Zeit auch, wenn nur die Hülle kappt (Lücke 0)', async () => {
+      mockApi([{
+        ...stamped, original_uncredited_minutes: 0, entry_not_credited_minutes: 45,
+        original_start_time: '07:45:00', original_end_time: '16:00:00',
+        entry_raw_end_time: '16:00:00', proposed_end_time: '16:00:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText('gestempelt 07:00–16:00 · nicht angerechnet aktuell 0:45 h')).toBeInTheDocument();
+      expect(screen.queryByText(/Nicht angerechnet \(Lücke\)/)).not.toBeInTheDocument();
+    });
+
+    it('automatisch geschlossen: kein Stempel-Ende, verglichen wird nur der Beginn (P18)', async () => {
+      mockApi([{
+        ...stamped, entry_auto_closed: true, entry_raw_start_time: '08:00:00', entry_raw_end_time: null,
+        entry_not_credited_minutes: 150, proposed_start_time: '08:00:00', proposed_end_time: '17:30:00',
+      }]);
+      render(<AdminChangeRequests />);
+      expect(await screen.findByText(
+        'gestempelt ab 08:00, nicht ausgestempelt (automatisch geschlossen) · nicht angerechnet aktuell 2:30 h',
+      )).toBeInTheDocument();
+      expect(screen.queryByText(/weicht|weichen/)).not.toBeInTheDocument();
+    });
+
+    it('nicht an erledigten Anträgen (der Eintrag hat sich seither geändert)', async () => {
+      mockApi([{ ...stamped, status: 'approved' }]);
+      render(<AdminChangeRequests />);
+      await screen.findByText('Anrechnung beantragt');
+      expect(screen.queryByText(/^gestempelt /)).not.toBeInTheDocument();
+    });
+  });
+
+  it('zeigt bei einem anerkannten Zieleintrag den Hinweis aus P3', async () => {
+    mockApi([{ ...creditCr, request_credit_override: false, entry_credit_override: true, entry_not_credited_minutes: 0 }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByText('Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Genehmigen und anerkennen' })).not.toBeInTheDocument();
+  });
+
+  // P3 meint die Antragsprüfung: der Hinweis hängt am AKTUELLEN Zustand des
+  // Eintrags (entry_credit_override) und wäre an erledigten Anträgen eine
+  // Zusage für Zeiten, die längst übernommen bzw. nie übernommen wurden.
+  it.each(['approved', 'rejected'])('zeigt den Hinweis aus P3 nicht an erledigten Anträgen (%s)', async (status) => {
+    mockApi([{ ...creditCr, status, entry_credit_override: true, entry_not_credited_minutes: 0 }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByText('Anrechnung beantragt')).toBeInTheDocument();
+    expect(screen.queryByText('Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.')).not.toBeInTheDocument();
+  });
+});

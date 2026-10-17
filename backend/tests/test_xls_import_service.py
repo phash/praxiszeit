@@ -17,6 +17,7 @@ from app.services.xls_import_service import (
     MAX_FILE_SIZE_BYTES,
 )
 from tests.conftest import DEFAULT_TENANT_ID
+from tests.work_blocks_fixtures import legacy_week
 
 
 # ── Hilfsfunktionen ──────────────────────────────────────────────────────────
@@ -50,60 +51,60 @@ def _make_data_row(ein_dt: datetime, aus_dt: datetime, notiz: str = ""):
 
 def test_break_under_6h_is_0():
     """Prüft dass unter 6h Arbeitszeit keine Pflichtpause berechnet wird — §4 ArbZG."""
-    assert _calc_break_minutes(time(8, 0), time(13, 59)) == 0
+    assert _calc_break_minutes(time(8, 0), time(13, 59), []) == 0
 
 
 def test_break_exactly_6h_is_0():
     """Prüft dass exakt 6h Arbeitszeit noch keine Pflichtpause ausloest — §4 ArbZG Grenze."""
-    assert _calc_break_minutes(time(8, 0), time(14, 0)) == 0
+    assert _calc_break_minutes(time(8, 0), time(14, 0), []) == 0
 
 
 def test_break_over_6h_is_30():
     """Prüft dass ueber 6h Arbeitszeit 30min Pflichtpause berechnet wird — §4 Abs. 1 ArbZG."""
-    assert _calc_break_minutes(time(8, 0), time(14, 1)) == 30
+    assert _calc_break_minutes(time(8, 0), time(14, 1), []) == 30
 
 
 def test_break_exactly_9h_is_30():
     """Prüft dass exakt 9h Arbeitszeit noch 30min Pause ergibt — §4 Abs. 1 ArbZG Grenze."""
-    assert _calc_break_minutes(time(7, 0), time(16, 0)) == 30
+    assert _calc_break_minutes(time(7, 0), time(16, 0), []) == 30
 
 
 def test_break_over_9h_is_45():
     """Prüft dass ueber 9h Arbeitszeit 45min Pflichtpause berechnet wird — §4 Abs. 2 ArbZG."""
-    assert _calc_break_minutes(time(7, 0), time(16, 1)) == 45
+    assert _calc_break_minutes(time(7, 0), time(16, 1), []) == 45
 
 
 # ── _check_arbzg ─────────────────────────────────────────────────────────────
 
 def test_no_warnings_for_normal_entry():
     """Prüft dass ein normaler Arbeitstag keine ArbZG-Warnungen erzeugt."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 15), time(12, 45), 30, None)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 15), time(12, 45), 30, None, uncredited_segments=[])
     assert warnings == []
 
 
 def test_warning_for_over_10h():
     """Prüft dass ueber 10h Netto-Arbeitszeit eine §3 ArbZG-Warnung erzeugt — Hoechstarbeitszeit."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(18, 30), 45, None)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(18, 30), 45, None, uncredited_segments=[])
     assert any("§3" in w for w in warnings)
 
 
 def test_warning_for_night_work():
     """Prüft dass Nachtarbeit (22:00-06:00) eine §6 ArbZG-Warnung erzeugt."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(22, 0), time(6, 0), 0, None)
+    warnings = _check_arbzg(date(2026, 1, 12), time(22, 0), time(6, 0), 0, None, uncredited_segments=[])
     assert any("§6" in w for w in warnings)
 
 
 def test_warning_for_insufficient_rest():
     """Prüft dass bei unter 11h Ruhezeit eine §5 ArbZG-Warnung erzeugt wird — Mindestruhezeit."""
     prev_end = datetime(2026, 1, 11, 23, 0)  # Vortag 23:00
-    warnings = _check_arbzg(date(2026, 1, 12), time(8, 0), time(14, 0), 30, prev_end)
+    warnings = _check_arbzg(date(2026, 1, 12), time(8, 0), time(14, 0), 30, prev_end, uncredited_segments=[])
     assert any("§5" in w for w in warnings)
 
 
 def test_no_rest_warning_for_sufficient_rest():
     """Prüft dass bei ausreichender Ruhezeit (>11h) keine §5-Warnung erzeugt wird."""
     prev_end = datetime(2026, 1, 11, 18, 0)  # Vortag 18:00
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 15), time(12, 45), 30, prev_end)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 15), time(12, 45), 30, prev_end, uncredited_segments=[])
     assert not any("§5" in w for w in warnings)
 
 
@@ -112,27 +113,27 @@ def test_exempt_user_gets_no_warnings():
     prev_end = datetime(2026, 1, 11, 23, 0)
     warnings = _check_arbzg(
         date(2026, 1, 12), time(7, 0), time(18, 30), 45, prev_end,
-        exempt=True,
+        exempt=True, uncredited_segments=[],
     )
     assert warnings == []
 
 
 def test_night_worker_8h_warning():
     """Prüft dass Nachtarbeitnehmer ab 8h Netto §6 Abs. 2 ArbZG-Warnung erhalten statt §3."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(16, 30), 45, None, is_night_worker=True)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(16, 30), 45, None, is_night_worker=True, uncredited_segments=[])
     assert any("§6 Abs. 2" in w for w in warnings)
     assert not any("§3" in w for w in warnings)
 
 
 def test_night_worker_no_warning_under_8h():
     """Prüft dass Nachtarbeitnehmer unter 8h keine §6 Abs. 2-Warnung erhalten."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(14, 30), 30, None, is_night_worker=True)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(14, 30), 30, None, is_night_worker=True, uncredited_segments=[])
     assert not any("§6 Abs. 2" in w for w in warnings)
 
 
 def test_non_night_worker_no_8h_warning():
     """Prüft dass normale User die §3-Warnung erhalten, nicht §6 Abs. 2 — kein Nachtarbeitnehmer."""
-    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(18, 30), 45, None, is_night_worker=False)
+    warnings = _check_arbzg(date(2026, 1, 12), time(7, 0), time(18, 30), 45, None, is_night_worker=False, uncredited_segments=[])
     assert any("§3" in w for w in warnings)
     assert not any("§6 Abs. 2" in w for w in warnings)
 
@@ -430,9 +431,11 @@ def test_execute_import_audit_log_for_overwrite(db, test_user, test_admin):
 
 
 def test_execute_import_returns_arbzg_warnings(db, test_user, test_admin):
-    """Prüft dass ArbZG-Warnungen im Import-Ergebnis zurueckgegeben werden."""
+    """Prüft dass ArbZG-Warnungen im Import-Ergebnis zurueckgegeben werden.
+    Pause wie in der Vorschau (5:30 h → 0) — eine abweichende Pause nennt das
+    Ergebnis zusätzlich als Anpassung (Review-Nachzug B4)."""
     entries = [ImportedEntry(date=date(2026, 1, 12), start_time=time(7, 15),
-                             end_time=time(12, 45), break_minutes=30, note=None,
+                             end_time=time(12, 45), break_minutes=0, note=None,
                              has_conflict=False, arbzg_warnings=["§3 ArbZG: Test-Warnung"])]
     result = execute_import(test_user.id, entries, overwrite=False, db=db,
                             changed_by_id=test_admin.id, filename="test.xls",
@@ -447,8 +450,7 @@ def test_parse_xls_clamps_early_start_to_soll_window(db, test_user):
     """#201: Zeilen vor dem Soll-Fenster (inkl. Puffer) werden auf Fenster-Beginn minus
     Puffer gekappt; raw_start_time bewahrt den Rohwert."""
     # Montag 2026-01-12, Soll-Beginn 08:00
-    test_user.scheduled_start_monday = time(8, 0)
-    test_user.scheduled_end_monday = time(17, 0)
+    test_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     # Importzeile: 07:00 Uhr — 15 min Puffer → floor = 07:45
@@ -470,8 +472,7 @@ def test_parse_xls_clamps_early_start_to_soll_window(db, test_user):
 
 def test_execute_import_stores_raw_start_time_in_db(db, test_user, test_admin):
     """#201: execute_import schreibt raw_start_time/-end_time in den TimeEntry."""
-    test_user.scheduled_start_monday = time(8, 0)
-    test_user.scheduled_end_monday = time(17, 0)
+    test_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     rows = [
@@ -493,37 +494,25 @@ def test_execute_import_stores_raw_start_time_in_db(db, test_user, test_admin):
 
 # ── §3/§4 Tagesaggregation im Import (Fix A) ─────────────────────────────────
 
-def test_parse_xls_two_batch_rows_same_day_trigger_s4_warning(db, test_user):
-    """Fix A: Zwei Import-Zeilen am selben Tag, die einzeln <6h sind, aber zusammen >6h ohne
-    ausreichende Pause bilden, müssen eine §4-ArbZG-Warnung auslösen.
-    Vor dem Fix: keine Warnung (jede Zeile wurde isoliert geprüft).
-    Nach dem Fix: §4-Warnung an der zweiten Zeile (Tages-Aggregation).
+def test_parse_xls_two_batch_rows_same_day_get_the_day_break(db, test_user):
+    """Fix A / Gesamtreview 1.20 (B4): Zwei Import-Zeilen am selben Tag, die einzeln
+    <6h sind, zusammen aber 7,5h ohne Abstand bilden. Bis Fix A prüfte jede Zeile
+    isoliert (keine §4-Warnung), danach meldete die Tagesaggregation den Verstoß,
+    den die Automatik-Pause je ZEILE selbst verursacht hatte (beide Zeilen 0 Min).
+    Seit B4 gilt die Automatik-Pause dem Tag: 30 Min an der längeren Zeile — der
+    Tag ist gedeckt, §3/§4 meldet die Vorschau einmal je Tag an der letzten Zeile.
     """
-    # 08:00–11:00 = 3h, 11:30–15:00 = 3,5h → Zusammen 6,5h netto (Lücke 30 min < min. 30 min
-    # Pflichtpause für >6h?). Lücke von 30 min zwischen 11:00 und 11:30 ist genau 30 min
-    # → Grenzfall: Pause >= 30 min → kein §4-Fehler. Um sicher eine Warnung zu erzeugen,
-    # nutzen wir eine Lücke von 0 min: Zwei Blöcke 08:00–11:00 und 11:00–15:30 → 7,5h netto,
-    # keine deklarierten Pausen, keine Lücke → Lücke 0 min → §4 Warnung.
     rows = [
         ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
-        _make_data_row(_dt(2026, 1, 12, 8, 0), _dt(2026, 1, 12, 11, 0)),   # 3h, break=0
-        _make_data_row(_dt(2026, 1, 12, 11, 0), _dt(2026, 1, 12, 15, 30)), # 4,5h, break=0
+        _make_data_row(_dt(2026, 1, 12, 8, 0), _dt(2026, 1, 12, 11, 0)),   # 3h
+        _make_data_row(_dt(2026, 1, 12, 11, 0), _dt(2026, 1, 12, 15, 30)), # 4,5h
     ]
     entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
     assert len(entries) == 2
-
-    # Erster Eintrag: 3h, einzeln kein §4-Problem
-    assert not any("§4" in w for w in entries[0].arbzg_warnings), (
-        f"Erster Eintrag soll keine §4-Warnung haben: {entries[0].arbzg_warnings}"
-    )
-
-    # Zweiter Eintrag: bei Tagesaggregation zusammen 7,5h netto, 0 min Pause → §4-Warnung
-    all_warnings_day = entries[0].arbzg_warnings + entries[1].arbzg_warnings
-    assert any("§4" in w for w in all_warnings_day), (
-        f"Tages-§4-Warnung erwartet, aber nicht gefunden. "
-        f"Warnungen Eintrag 0: {entries[0].arbzg_warnings} | "
-        f"Warnungen Eintrag 1: {entries[1].arbzg_warnings}"
-    )
+    assert [e.break_minutes for e in entries] == [0, 30]
+    assert [e.net_hours for e in entries] == [3.0, 4.0]
+    all_s4 = [w for e in entries for w in e.arbzg_warnings if "§4" in w]
+    assert all_s4 == [], f"Tag ist durch die Tages-Pause gedeckt: {all_s4}"
 
 
 def test_parse_xls_two_batch_rows_same_day_no_spurious_s4_warning(db, test_user):
@@ -540,31 +529,33 @@ def test_parse_xls_two_batch_rows_same_day_no_spurious_s4_warning(db, test_user)
     assert all_s4 == [], f"Keine §4-Warnung erwartet, aber erhalten: {all_s4}"
 
 
-def test_parse_xls_db_entry_plus_import_same_day_trigger_s4_warning(db, test_user):
-    """Fix A: Ein vorhandener DB-Eintrag + ein importierter Eintrag am selben Tag ergeben
-    zusammen >6h ohne ausreichende Pause → §4-Warnung im Import-Eintrag."""
-    # DB-Eintrag: 08:00–11:00 = 3h
+def test_parse_xls_db_entry_plus_import_same_day_day_break_and_s3(db, test_user):
+    """Fix A / Gesamtreview 1.20 (B4): Ein vorhandener DB-Eintrag + ein importierter
+    Eintrag am selben Tag zählen zusammen — für die Automatik-Pause (der Tag braucht
+    45 Min, die Importzeile trägt sie) und für §3 (Tages-Netto über 10h)."""
+    # DB-Eintrag: 06:00–11:00 = 5h, ohne Pause
     existing = TimeEntry(
         user_id=test_user.id,
         tenant_id=DEFAULT_TENANT_ID,
         date=date(2026, 1, 14),
-        start_time=time(8, 0),
+        start_time=time(6, 0),
         end_time=time(11, 0),
         break_minutes=0,
     )
     db.add(existing)
     db.commit()
 
-    # Import-Zeile am selben Tag: 11:00–15:30 = 4,5h, keine Pause, keine Lücke → 7,5h gesamt
+    # Import-Zeile am selben Tag: 11:00–17:00 = 6h, keine Lücke → 11h am Tag
     rows = [
         ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
-        _make_data_row(_dt(2026, 1, 14, 11, 0), _dt(2026, 1, 14, 15, 30)),
+        _make_data_row(_dt(2026, 1, 14, 11, 0), _dt(2026, 1, 14, 17, 0)),
     ]
     entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
     assert len(entries) == 1
-    assert any("§4" in w for w in entries[0].arbzg_warnings), (
-        f"§4-Warnung erwartet (DB+Import), aber nicht gefunden: {entries[0].arbzg_warnings}"
-    )
+    assert entries[0].break_minutes == 45
+    warnings = entries[0].arbzg_warnings
+    assert any(w.startswith("§3 ArbZG: Tages-Netto-Arbeitszeit") for w in warnings), warnings
+    assert not any(w.startswith("§4 ArbZG: Tages-Netto-Arbeitszeit") for w in warnings), warnings
 
 
 def test_parse_xls_reports_clamp_as_row_warning(db, test_user):
@@ -576,8 +567,7 @@ def test_parse_xls_reports_clamp_as_row_warning(db, test_user):
     hin, sonst bestaetigt der Admin einen Import, der seine Daten stillschweigend
     veraendert.
     """
-    test_user.scheduled_start_monday = time(8, 0)
-    test_user.scheduled_end_monday = time(17, 0)
+    test_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     rows = [
@@ -597,8 +587,7 @@ def test_parse_xls_reports_clamp_as_row_warning(db, test_user):
 
 def test_parse_xls_without_soll_window_has_no_clamp_warning(db, test_user):
     """#462 Gegenprobe: ohne hinterlegte Soll-Zeiten wird nicht gekappt und nichts gemeldet."""
-    test_user.scheduled_start_monday = None
-    test_user.scheduled_end_monday = None
+    test_user.work_blocks = None
     db.commit()
 
     rows = [
@@ -616,8 +605,7 @@ def test_execute_import_kappt_selbst_und_traut_dem_client_nicht(db, test_user, t
     aus dem Request-Body — geklammert wurde nur in der Vorschau. Wer den Aufruf
     nachbaut, schreibt damit Zeiten am Arbeitszeit-Fenster vorbei und faelscht
     obendrein den Rohstempel, der als Anwesenheitsnachweis gilt."""
-    test_user.scheduled_start_monday = time(8, 0)
-    test_user.scheduled_end_monday = time(17, 0)
+    test_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     manipuliert = [ImportedEntry(
@@ -638,8 +626,7 @@ def test_execute_import_kappt_selbst_und_traut_dem_client_nicht(db, test_user, t
 def test_execute_import_ist_idempotent_zur_vorschau(db, test_user, test_admin):
     """Gegenprobe: die unveraenderte Vorschau darf durch die zweite Kappung nicht
     ihren Rohstempel verlieren (die Vorschau liefert bereits gekappte Zeiten)."""
-    test_user.scheduled_start_monday = time(8, 0)
-    test_user.scheduled_end_monday = time(17, 0)
+    test_user.work_blocks = legacy_week(mon=("08:00", "17:00"))
     db.commit()
 
     rows = [

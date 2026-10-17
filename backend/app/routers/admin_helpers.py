@@ -1,13 +1,16 @@
 """Shared helpers used by the router layer (admin sub-routers + Buchungspfade)."""
 
+from fastapi import HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
-from app.models import User, UserRole, ChangeRequest, TimeEntryAuditLog
+from app.models import User, UserRole, ChangeRequest, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
 from app.models.vacation_request import VacationRequest
 from app.schemas.change_request import ChangeRequestResponse
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.schemas.vacation_request import VacationRequestResponse
-from app.services.calculation_service import count_workdays
+from app.services.calculation_service import request_day_count
+from app.services import calculation_service, work_window_service
 
 
 # ── Anker-Sperre auf Benutzerzeilen ──────────────────────────────────────────
@@ -48,7 +51,8 @@ from app.services.calculation_service import count_workdays
 #     (2) ``admin_time_entries`` hält die ZEITEINTRAGS-Zeile und will
 #         ``KEY SHARE`` auf der Benutzerzeile; die Betriebsferien halten die
 #         Benutzerzeile und wollen den Zeiteintrag → Zyklus über nur EINE
-#         Benutzerzeile.
+#         Benutzerzeile. (Befund vor Spec 2026-10-08; seit P5 sperrt
+#         ``admin_time_entries`` zuerst die Benutzerzeile.)
 #
 #   ``FOR NO KEY UPDATE`` (Zeile 3) entfernt genau diese Kante (Spalte 1 =
 #   frei) und behält alles, wofür der Anker da ist: er schließt sich weiterhin
@@ -107,30 +111,43 @@ def lock_user_row(db: Session, tenant_id, user_id):
     return rows[0] if rows else None
 
 
-def lock_active_admin_ids(db: Session, tenant_id) -> list:
-    """#489: Anker-Sperre auf ALLEN aktiven Admin-Zeilen eines Mandanten.
+def lock_active_admins_and_user(db: Session, tenant_id, user_id) -> list:
+    """#491 API-2 (Nachzug): Admin-Menge UND Zielzeile in EINER sortierten Sperre.
 
-    Grundlage der Regel „der letzte aktive Admin bleibt aktiv"
-    (``admin_users._is_last_active_admin``). Sortiert und ``FOR NO KEY UPDATE``
-    wie ``lock_user_rows`` (Begruendung oben): schliesst sich weiterhin gegen
-    sich selbst aus — deaktivieren sich zwei Admins gleichzeitig gegenseitig,
-    wartet die zweite Transaktion, prueft die gesperrten Zeilen danach gegen die
-    Bedingung neu (READ COMMITTED) und sieht die erste Deaktivierung —, laesst
-    aber die impliziten ``FOR KEY SHARE`` der Fremdschluessel-INSERTs durch.
-    Gibt die gesperrten IDs in Sortierreihenfolge zurueck.
+    Grundlage der Regel „der letzte aktive Admin bleibt aktiv" (#489) fuer den
+    Rollenwechsel (``admin_users.update_user``) und das Deaktivieren
+    (``admin_users._lock_admins_and_reload``, Gesamtreview B3): beide brauchen
+    die Admin-Menge (Letzter-Admin-Regel) und die Zielzeile (Stand nach der
+    Sperre lesen). Zwei Anweisungen nacheinander — erst die Admin-Menge, dann die
+    Zielzeile — verklemmen sich mit jeder sortierten Mehrzeilen-Sperre
+    (``lock_user_rows``, z. B. Betriebsferien-Buchung), sobald die Ziel-ID vor
+    einer Admin-ID liegt: jene haelt das Ziel und wartet auf den Admin, diese
+    haelt den Admin und wartet auf das Ziel (``DeadlockDetected``, belegt in
+    ``test_concurrency.py``). In EINER Anweisung mit ``ORDER BY id`` werden
+    alle Zeilen in derselben globalen Reihenfolge gesperrt wie dort.
+
+    READ COMMITTED: die Bedingung wird nach dem Warten an der neuesten Version
+    neu geprueft — ein inzwischen herabgestufter Admin faellt heraus, die
+    Zielzeile bleibt (``id``-Treffer) immer drin und kommt mit ihrem neuesten
+    Stand zurueck.
+
+    Gibt die IDs der AKTIVEN ADMINS unter den gesperrten Zeilen zurueck
+    (sortiert; die Zielzeile nur, wenn sie selbst aktiver Admin ist).
     """
     rows = (
-        db.query(User.id)
+        db.query(User.id, User.role, User.is_active)
         .filter(
             User.tenant_id == tenant_id,  # F-026
-            User.role == UserRole.ADMIN,
-            User.is_active == True,  # noqa: E712
+            or_(
+                and_(User.role == UserRole.ADMIN, User.is_active == True),  # noqa: E712
+                User.id == user_id,
+            ),
         )
         .order_by(User.id)
         .with_for_update(key_share=True)
         .all()
     )
-    return [r.id for r in rows]
+    return [r.id for r in rows if r.role == UserRole.ADMIN and r.is_active]
 
 
 def _get_field(entry, field: str):
@@ -176,6 +193,58 @@ def _create_audit_log(
     return log
 
 
+# Audit 2026-07-31 (U1) / Gesamtreview 1.20 B5: eine Buchung, die an keinem Tag
+# bucht (alle Zieltage ohne Tagessoll), ist ein Fehler — keine Erfolgsantwort
+# ohne Inhalt. EIN Wortlaut für Direktbuchung (``absences.create_absence``) und
+# Antrags-Genehmigung (``admin_vacations.review_vacation_request``); zitiert im
+# Admin-Handbuch (Doku-Gate check-doc-sync.sh).
+ZERO_HOURS_ABSENCE_DETAIL = (
+    "Für {days} sind 0 Stunden geplant — an einem Tag ohne geplante Arbeitszeit kann keine Abwesenheit gebucht werden."
+)
+
+
+def zero_hours_absence_detail(dates) -> str:
+    """Fehlertext für eine Buchung ohne buchbaren Tag (die ersten fünf Tage)."""
+    return ZERO_HOURS_ABSENCE_DETAIL.format(
+        days=", ".join(d.strftime("%d.%m.%Y") for d in list(dates)[:5])
+    )
+
+
+# Ultrareview 1.20 (Fund 3): EIN Wortlaut und EIN Ablauf für die Urlaubsbudget-
+# Vorprüfung mit Zeitraum — Direktbuchung (``absences.create_absence``),
+# Antrag anlegen/bearbeiten (``vacation_requests``) und Antrags-Genehmigung
+# (``admin_vacations.review_vacation_request``). Vorher viermal ausgeschrieben.
+# Der Einzeltag-Check des Änderungsantrags (``admin_change_requests``) zählt
+# mit ``_vacation_day_contribution`` bewusst anders und bleibt eigen.
+VACATION_BUDGET_DETAIL = "Nicht genügend Urlaubstage für {year} ({remaining:.1f} Tage verfügbar)"
+
+
+def ensure_vacation_budget(
+    db: Session,
+    user: User,
+    dates,
+    half_day: bool,
+    wh_changes=None,
+    year_cache=None,
+) -> None:
+    """400, wenn die Buchung dieser Tage in einem Kalenderjahr den Resturlaub
+    übersteigt — Kosten über ``calculation_service.vacation_day_cost_by_year``,
+    Vergleich über ``vacation_budget_shortfall`` (nur Jahre mit Kosten > 0,
+    Gesamtreview 1.20 B5)."""
+    cost_by_year = calculation_service.vacation_day_cost_by_year(
+        db, user, dates, half_day, wh_changes=wh_changes, year_cache=year_cache,
+    )
+    shortfall = calculation_service.vacation_budget_shortfall(
+        db, user, cost_by_year, wh_changes=wh_changes
+    )
+    if shortfall:
+        year, remaining = shortfall
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=VACATION_BUDGET_DETAIL.format(year=year, remaining=remaining),
+        )
+
+
 def _enrich_cr_response(cr: ChangeRequest, db: Session) -> ChangeRequestResponse:
     """Add user names to the change request response (single item)."""
     return _enrich_cr_responses([cr], db)[0]
@@ -203,10 +272,34 @@ def _enrich_cr_responses(crs: list, db: Session) -> list[ChangeRequestResponse]:
         else []
     )
     user_map = {u.id: u for u in users}
+    # Spec 2026-10-08 P3/P21: aktueller Zustand der Zieleinträge — EIN Query, F-026.
+    entry_ids = {cr.time_entry_id for cr in crs if cr.time_entry_id}
+    entries = {
+        e.id: e for e in db.query(TimeEntry).filter(
+            TimeEntry.id.in_(entry_ids), TimeEntry.tenant_id.in_(tenant_ids),
+        ).all()
+    } if entry_ids else {}
 
     results = []
     for cr in crs:
         response = ChangeRequestResponse.model_validate(cr)
+        target = entries.get(cr.time_entry_id)
+        if target is not None:
+            response.entry_credit_override = bool(target.credit_override)
+            response.entry_auto_closed = bool(target.auto_closed)
+            response.entry_not_credited_minutes = work_window_service.not_credited_minutes(target)
+            # Gesamtreview PR2 (Fund 2): gestempelte Spanne wie beim Anerkennen
+            # (13.3 Schritt 3); 23:59 des Auto-Close ist kein Stempel (P18).
+            response.entry_raw_start_time = target.raw_start_time or target.start_time
+            response.entry_raw_end_time = (
+                None if target.auto_closed else (target.raw_end_time or target.end_time)
+            )
+            # Gesamtreview 1.20 (B2): aktuelles wirksames Ende und aktueller
+            # angerechneter Beginn — Echo-Regel der Genehmigung
+            # (``request_end_for_approval``/``request_start_for_approval``,
+            # ``end_is_correction``, ``unclamp_input``).
+            response.entry_end_time = target.end_time
+            response.entry_start_time = target.start_time
         user = user_map.get(cr.user_id)
         if user:
             response.user_first_name = user.first_name
@@ -250,6 +343,23 @@ def _enrich_vr_responses(vrs: list, db: Session) -> list[VacationRequestResponse
     )
     user_map = {u.id: u for u in users}
 
+    # #496: Vertrags-Historie der ANTRAGSTELLENDEN einmal fuer die ganze Liste
+    # laden (die Tage-Zaehlung loest den Tagesplan je Datum auf, #431) — sonst
+    # eine Abfrage je Tag und Antrag. F-026: tenant-gefiltert wie oben.
+    requester_ids = {vr.user_id for vr in vrs}
+    wh_by_user: dict = {}
+    for change in (
+        db.query(WorkingHoursChange)
+        .filter(
+            WorkingHoursChange.user_id.in_(requester_ids),
+            WorkingHoursChange.tenant_id.in_(tenant_ids),
+        )
+        .order_by(WorkingHoursChange.effective_from)
+        .all()
+    ):
+        wh_by_user.setdefault(change.user_id, []).append(change)
+    year_cache: dict = {}
+
     results = []
     for vr in vrs:
         resp = VacationRequestResponse.model_validate(vr)
@@ -267,8 +377,16 @@ def _enrich_vr_responses(vrs: list, db: Session) -> list[VacationRequestResponse
             if modifier:
                 resp.last_modifier_first_name = modifier.first_name
                 resp.last_modifier_last_name = modifier.last_name
-        end = vr.end_date if vr.end_date else vr.date
-        resp.days = count_workdays(db, vr.date, end, tenant_id=vr.tenant_id)
+        # #496: dieselbe Regel wie Genehmigung + Budget-Vorpruefung (Tagesplan je
+        # Datum, Halbtag 0,5, freie/halbe Sondertage) — vorher stumpf Mo–Fr, die
+        # Admin sah bei einer 4-Tage-Kraft „5 Tage", gebucht wurden 4.
+        if user:
+            end = vr.end_date if vr.end_date else vr.date
+            resp.days = float(request_day_count(
+                db, user, vr.date, end, bool(vr.half_day),
+                wh_changes=[c for c in wh_by_user.get(user.id, []) if c.tenant_id == user.tenant_id],
+                year_cache=year_cache,
+            ))
         results.append(resp)
     return results
 

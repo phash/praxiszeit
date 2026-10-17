@@ -4,6 +4,7 @@ from datetime import time
 import pytest
 
 from app.services import work_window_service
+from app.services.work_window_service import ClampResult
 
 
 class TestUnclampInput:
@@ -38,26 +39,26 @@ class TestClampWarningCollapse:
 
     def test_no_part_for_an_unchanged_side(self):
         text = work_window_service.clamp_warning_text(
-            raw_start=time(5, 0), raw_end=time(6, 0),
-            eff_start=time(5, 0), eff_end=time(5, 0),
-            grace_minutes=15,
+            None, None, None,
+            ClampResult(time(5, 0), time(5, 0), time(5, 0), time(6, 0), 0, 15),
+            for_employee=False,
         )
         assert text is not None
         assert "05:00 → 05:00" not in text, text
 
     def test_names_the_zero_hours_consequence(self):
         text = work_window_service.clamp_warning_text(
-            raw_start=time(5, 0), raw_end=time(6, 0),
-            eff_start=time(5, 0), eff_end=time(5, 0),
-            grace_minutes=15,
+            None, None, None,
+            ClampResult(time(5, 0), time(5, 0), time(5, 0), time(6, 0), 0, 15),
+            for_employee=False,
         )
         assert "0 Stunden" in text, text
 
     def test_normal_clamp_text_unchanged(self):
         text = work_window_service.clamp_warning_text(
-            raw_start=time(7, 0), raw_end=None,
-            eff_start=time(7, 45), eff_end=time(16, 0),
-            grace_minutes=15,
+            None, None, None,
+            ClampResult(time(7, 45), time(16, 0), time(7, 0), None, 0, 15),
+            for_employee=False,
         )
         assert "Beginn 07:00 → 07:45" in text
         assert "0 Stunden" not in text

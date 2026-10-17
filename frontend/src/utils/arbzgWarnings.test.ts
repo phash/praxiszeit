@@ -153,3 +153,45 @@ describe('U3 showResponseWarning (Audit 2026-07-31)', () => {
     expect(toast.warning).not.toHaveBeenCalled();
   });
 });
+
+describe('Spec 2026-10-08, 8.3/8.4: weiche Anwesenheits-Codes', () => {
+  it.each([
+    'PRESENCE_DAILY_HOURS: §3 ArbZG: Laut Stempel 12:00 h anwesend (abzüglich erfasster Pausen) – mehr als 10 Stunden.',
+    'PRESENCE_BREAK: §4 ArbZG: Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst (10:00 h Anwesenheit).',
+    'PRESENCE_WEEKLY_HOURS: §3 ArbZG: Laut Stempel 50:00 h in dieser Woche anwesend (abzüglich erfasster Pausen) – mehr als 48 Stunden.',
+    'BREAK_IN_GAP: Pause in der Lücke wird zusätzlich abgezogen: 30 Min Pause und 2:30 h nicht angerechnet zwischen den Arbeitsblöcken.',
+  ])('reicht den Servertext durch: %s', (raw) => {
+    const toast = mockToast();
+    showArbzgWarnings(toast, [raw]);
+    expect(toast.warning).toHaveBeenCalledWith(raw.slice(raw.indexOf(':') + 1).trim());
+  });
+
+  it.each(['PRESENCE_DAILY_HOURS', 'PRESENCE_BREAK', 'PRESENCE_WEEKLY_HOURS', 'BREAK_IN_GAP'])(
+    'hat einen Rückfalltext ohne Servertext: %s', (code) => {
+      const toast = mockToast();
+      showArbzgWarnings(toast, [code]);
+      const text = (toast.warning as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(text).not.toBe(code);
+      expect(text.length).toBeGreaterThan(20);
+    },
+  );
+});
+
+describe('Gesamtreview 1.20 (B1): §4 nach „Anerkennen" (Spec 13.3 Schritt 6, P4)', () => {
+  // An allen Schreibwegen ist §4 eine Sperre (#499) bzw. eine dokumentierte
+  // Ausnahme (BREAK_WAIVER). Einzige Quelle der WEICHEN §4-Warnung ist
+  // `credit_override_service.override_warnings` — Code BREAK_WARNING.
+  it('zeigt den §4-Text des Servers ohne Code', () => {
+    const toast = mockToast();
+    const detail = 'Bei mehr als 9 Stunden Arbeitszeit ist eine Pause von mindestens 45 Minuten erforderlich (ArbZG §4). Aktuelle Netto-Arbeitszeit: 12h 0min, Gesamtpause: 0 Minuten.';
+    showArbzgWarnings(toast, [`BREAK_WARNING: ${detail}`]);
+    expect(toast.warning).toHaveBeenCalledWith(detail);
+  });
+
+  it('hat einen §4-Rückfalltext ohne Servertext', () => {
+    const toast = mockToast();
+    showArbzgWarnings(toast, ['BREAK_WARNING']);
+    expect(toast.warning.mock.calls[0][0]).toMatch(/§4/);
+    expect(toast.warning.mock.calls[0][0]).not.toBe('BREAK_WARNING');
+  });
+});

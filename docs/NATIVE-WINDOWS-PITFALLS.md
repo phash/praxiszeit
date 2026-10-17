@@ -69,7 +69,14 @@ ist cp1252, das keine Emojis unterstuetzt.
 env["PYTHONUTF8"] = "1"
 ```
 
-**Datei:** `praxiszeit-server.py` → `uvicorn_start()`
+**Datei:** `praxiszeit-server.py` → `uvicorn_start()`, `cmd_reset_admin_password()`,
+`run_migrations()` (seit Migration 073, deren Diagnose „→" enthaelt — ohne die
+Variable scheiterte das Update beim Konsolenstart mit UnicodeEncodeError). Wer die
+Ausgabe eines solchen Kinds mit `capture_output` einsammelt, liest sie mit
+`encoding="utf-8", errors="replace"` statt `text=True` — sonst dekodiert der
+Elternprozess mit seiner eigenen Codepage (Zeichensalat bzw. UnicodeDecodeError).
+Migrationen selbst geben Diagnosen ueber einen Rueckfall aus (`_emit` in 073), der
+auch ohne UTF-8-Modus nicht abbricht.
 
 ---
 

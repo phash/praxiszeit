@@ -2,6 +2,408 @@
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-10-17
+
+Geplant als **1.20.0** (Minor-Release). Update aus jeder 1.19.x ohne
+Zwischenschritte. **Enthält eine Datenbank-Migration** (`073_work_blocks`): Sie
+übernimmt jedes hinterlegte Arbeitszeit-Fenster (Soll-Beginn/Soll-Ende je
+Wochentag) als einen Block je Tag und entfernt die alten Fenster-Spalten.
+Tagessoll, angerechnete Zeit und Überstundensaldo aller bestehenden Einträge
+bleiben dabei unverändert. Die Ausgabe der Migration nennt die Zahl der
+übernommenen Konten und Verlaufszeilen und listet unter „Besonderheiten" die
+Personen, die im Dialog „Arbeitszeit anpassen…" zu prüfen sind (`UPDATE.md`).
+**Vor dem Update ein Backup ziehen** – der Rückweg auf 1.19.x ist nur über
+dieses Backup verlustfrei (`UPDATE.md`).
+
+### ✨ Arbeitszeit als Blöcke je Tag
+- **Bis zu drei Arbeitszeit-Blöcke je Wochentag** mit „Pause innerhalb der
+  Blöcke", z. B. Mo 08:00–12:00 und 15:00–18:00. Daraus folgt das Tagessoll
+  (Summe der Blöcke minus Pause); Wochenstunden und Arbeitstage werden
+  abgeleitet – eine zweite Pflegestelle entfällt. Gepflegt mit Wirkungsdatum im
+  Dialog „Arbeitszeit & Wochenstunden" (Knopf „Arbeitszeit anpassen…", Modus
+  „Nach Arbeitsblöcken"), beim Anlegen direkt im Formular; für Mitarbeitende
+  mit Stundenzählung.
+- **Zeit zwischen den Blöcken wird nicht angerechnet** – mit Puffer an jedem
+  Blockrand. Wer bei obigen Blöcken und 15 Minuten Puffer 08:00–18:00
+  durchstempelt, bekommt 7:30 h angerechnet; die gestempelten Zeiten bleiben
+  gespeichert (§ 16 ArbZG). Bleiben von der Lücke nach Abzug des Puffers
+  mindestens 15 Minuten, zählt sie für die Pausenpflicht (§ 4 ArbZG) als Pause.
+- **Nicht angerechnete Zeit ist überall sichtbar:** unter jedem Eintrag
+  (Admin-Dashboard, Monatsjournal, Zeiterfassung), als Monatssumme
+  „Anwesenheit nicht angerechnet" im Journal und als neue letzte Spalte „Nicht
+  angerechnet (Min)" in Excel, ODS und PDF.
+- **Anerkennen und „Anrechnung beantragen":** Die Verwaltung kann nicht
+  angerechnete Zeit je Eintrag anerkennen (dauerhaft, protokolliert; steht am
+  selben Tag eine Abwesenheit, wird deren Gutschrift angeglichen);
+  Mitarbeitende können die Anrechnung per Änderungsantrag beantragen, die
+  Prüfung bietet „Genehmigen und anerkennen" und zeigt die gestempelten Zeiten.
+  Im Tab „Anträge" der Zeiterfassung tragen solche Anträge das Kennzeichen
+  „Anrechnung beantragt" (nach der Genehmigung „anerkannt" bzw. „ohne
+  Anerkennen genehmigt"). Einen anerkannten Eintrag ändern Mitarbeitende nur
+  noch per Änderungsantrag.
+- **Rückwirkende Änderungen rechnen neu** – mit Vorschau (Einträge je Monat
+  alt → neu, Differenz von Soll, angerechneter Zeit und Überstundenkonto,
+  übersprungene Einträge mit Grund), Protokoll je Eintrag und einer Sammelzeile
+  je Änderung. Offene Einträge vergangener Tage werden vorher automatisch
+  geschlossen.
+- **Schutz gegen rückwirkende Verkürzung:** Verliert ein Eintrag angerechnete
+  Zeit, sinkt das Überstundenkonto oder sinkt eine Abwesenheits-Gutschrift
+  stärker als das Tagessoll, gilt die Änderung standardmäßig erst ab dem
+  frühesten Tag, an dem nichts verloren geht (meist heute). Rückwirkend nur mit
+  Grund („Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)", „Mit der
+  beschäftigten Person vereinbart", „Sonstiges"), Begründung und Bestätigung; in
+  abgeschlossene Jahre gesperrt. Notiz, Grund und Begründung zusammen höchstens
+  500 Zeichen.
+- **Hinweise schon beim Planen:** Der Dialog meldet geplante Pausen, die für
+  § 4 ArbZG nicht reichen, Lücken, die im Puffer verschwinden, und ein Tagessoll
+  über 10 bzw. 8 Stunden oder ein Wochensoll über 48 Stunden; dazu Kurzhinweise
+  zu Arbeitsrecht/Mitbestimmung und zu Jugendlichen.
+- **Mitarbeitende werden informiert:** 30 Tage lang der Kasten „Hinweis zu Ihrer
+  Arbeitszeit" auf dem Dashboard nach jeder Änderung ihrer Arbeitszeit, im
+  Profil die Karte „Meine Arbeitszeit" mit Blöcken und Verlauf; in der geplanten
+  Pause zwischen zwei Blöcken zeigt das Dashboard neutral „Pause zwischen den
+  Arbeitsblöcken" statt rot.
+- **ArbZG auch auf der tatsächlichen Anwesenheit:** Zusätzlich zu den
+  Prüfungen auf der angerechneten Zeit weisen Hinweise auf eine Anwesenheit laut
+  Stempel über 10 Stunden am Tag, auf eine fehlende Ruhepause laut Stempel und
+  auf über 48 Stunden je Woche hin; die 24-Wochen-Auswertung zeigt einen zweiten
+  Wert „Anwesenheit laut Stempel". Ein Hinweis meldet, wenn eine Pause
+  zusätzlich zur Lücke abgezogen wird.
+- **Datenschutz:** Die Datenschutzseite beschreibt die Nichtanrechnung. Die
+  Datenexporte nach Art. 15 und 20 DSGVO, der Mandanten-Export und der
+  §16-Notfallexport enthalten die Arbeitszeit-Blöcke samt Verlauf und je Eintrag
+  die nicht angerechnete Zeit, das Anerkennen, die Kennzeichnung „automatisch
+  geschlossen" und den Puffer.
+
+### ⚠️ Geändertes Verhalten
+- **Vergessenes Ausstempeln:** Ein automatisch um 23:59 geschlossener Eintrag
+  wird jetzt gegen die Arbeitszeit gekappt – der Abend wird nicht mehr voll
+  angerechnet. Das automatisch gesetzte 23:59 bleibt gespeichert, gilt aber
+  nicht als Stempel – auch die Ruhezeitprüfung (§ 5) rechnet ab dem
+  angerechneten Ende. Ein tatsächliches Ende um 23:59 (z. B. nach einem Spät-
+  oder Notdienst) lässt sich weiterhin eintragen und gilt dann als echter
+  Stempel.
+- **Rückwirkende Erhöhung der Wochenstunden oder des Tagesplans** braucht jetzt
+  Grund und Bestätigung, wenn das Überstundenkonto dadurch sinkt (bisher genügte
+  der Bestätigungshaken). Ab dem frühesten Tag ohne Verlust (meist heute; morgen,
+  wenn die Person heute schon gestempelt hat oder eingestempelt ist) bleibt die
+  Änderung ohne Grund möglich.
+- **Arbeitszeit-Änderung löschen** geht nur noch an der jüngsten Zeile des
+  Verlaufs. Verkürzt das Löschen, setzt es standardmäßig ab dem frühesten Tag
+  ohne Verlust (meist heute) auf den vorherigen Stand zurück; rückwirkendes
+  Löschen nur mit Grund, Begründung und Bestätigung. Wurde inzwischen eine
+  weitere Änderung angelegt, lehnt PraxisZeit die Rücksetzung ab
+  („Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu
+  laden.").
+- **Der Puffer wird je Eintrag gespeichert.** Eine Änderung des Puffers in den
+  Einstellungen wirkt auf neue Einträge; jeder gekappte Eintrag behält seinen
+  Puffer, auch wenn er später bearbeitet wird. Das Speichern der Einstellung
+  allein ändert keinen gespeicherten Eintrag.
+  Nur eine Arbeitszeit-Änderung mit Neuberechnung kappt die betroffenen
+  Einträge mit dem dann gültigen Puffer neu; die Vorschau nennt ihn, und
+  verliert dabei ein Eintrag angerechnete Zeit, gilt der Schutz gegen
+  rückwirkende Verkürzung. Einträge aus der Zeit vor 1.20.0 werden bei einer
+  Bearbeitung mit dem aktuellen Puffer gekappt.
+- **Ausstempeln ohne ausreichende Pause wird abgelehnt** (#499): Die
+  Pausenpflicht (§ 4 ArbZG) gilt beim Ausstempeln für den ganzen Tag – auch zwei
+  aneinandergereihte Einträge zählen zusammen, Lücken unter 15 Minuten sind
+  keine Pause. Ohne ausreichende Pause oder Begründung bleibt der Eintrag offen
+  (bisher nur eine Warnung). Der neue Schalter „Ausnahme ‚Pflicht-Pause war
+  nicht möglich' erlauben" in den Einstellungen (Standard an) schaltet die
+  Ausnahme ab.
+- **Datum beim Bearbeiten** (#502): Mitarbeitende können das Datum eines
+  Eintrags nicht mehr ändern – das Feld ist gesperrt. Gehört die Zeit zu einem
+  anderen Tag, den Eintrag löschen und über „Antrag" einen Änderungsantrag für
+  diesen Tag stellen (bisher ließ sich ein Eintrag ohne Antrag auf einen
+  vergangenen Tag verschieben). Die Verwaltung kann einen Eintrag nicht mehr vor
+  den Eintritt oder nach den Austritt einer Person verschieben oder dort
+  anlegen; ein Datum in der Zukunft wird auch beim Bearbeiten abgelehnt.
+- **XLS-Import außerhalb des Beschäftigungszeitraums:** Zeilen, deren Datum vor
+  dem ersten oder nach dem letzten Arbeitstag der Person liegt, überspringt der
+  Import jetzt – die Vorschau nennt den Grund („Wird übersprungen — Datum liegt
+  nach dem letzten Arbeitstag (25.09.2026)."), das Ergebnis führt die Zeile
+  unter den Hinweisen; einen vorhandenen Eintrag ersetzt sie auch mit
+  „Konflikte überschreiben" nicht. Bisher wurden solche Zeilen gespeichert,
+  fielen aber aus angerechneter Zeit und Saldo heraus. **Vor einer Übernahme
+  von Altdaten** aus der Zeit vor PraxisZeit prüfen, dass als erster
+  Arbeitstag der tatsächliche Eintritt eingetragen ist und nicht der Starttag
+  von PraxisZeit. Die Ergebnisliste heißt dazu „Hinweise" statt
+  „ArbZG-Warnungen".
+- **Antragsgenehmigung außerhalb des Beschäftigungszeitraums:** Die
+  Genehmigung eines Änderungsantrags prüft den Zeitraum erneut. Liegt der Tag
+  eines neuen Eintrags – oder das neue Datum eines verschobenen – vor dem
+  ersten bzw. nach dem letzten Arbeitstag, lehnt PraxisZeit die Genehmigung ab
+  („Datum liegt nach dem letzten Arbeitstag"), auch wenn Ein- oder Austritt
+  erst nach dem Stellen des Antrags eingetragen wurden; der Antrag bleibt offen.
+  Bisher entstand der Eintrag und fiel still aus Saldo und Exporten.
+- **Bisherige Arbeitszeit-Fenster** wirken als „Arbeitszeit-Fenster
+  (Altbestand, nur Kappung)" weiter wie bisher – neu kappen sie auch
+  automatisch geschlossene Einträge (siehe oben) – und lassen sich im Dialog
+  in Blöcke umwandeln oder entfernen.
+- **Nach dem Update die Seite neu laden:** Ein noch geöffnetes altes
+  Benutzerformular meldet beim Speichern „Bitte Seite neu laden: Die
+  Arbeitszeit-Fenster (Soll-Beginn/Soll-Ende) wurden durch Arbeitszeit-Blöcke
+  ersetzt."
+- **Downgrade auf 1.19.x:** Ein Schema-Downgrade stellt je Tag die Hülle der
+  Blöcke (Beginn des ersten bis Ende des letzten Blocks) als Fenster her; Zeit
+  zwischen den Blöcken würde dann wieder angerechnet. Empfohlen ist der Rückweg
+  über das Backup.
+
+### 🐞 Korrekturen (mit den Blöcken behoben)
+- **Datumswechsel durch die Verwaltung:** Ein in der Zeiterfassung auf einen
+  anderen Wochentag verschobener Eintrag wird jetzt gegen die Arbeitszeit des
+  neuen Tags gekappt.
+- **Änderungsanträge mit geteiltem Dienst** (z. B. „08–18, Pause 0" bei einer
+  Mittagslücke) ließen sich nicht stellen, weil der Antrag die gestempelte Zeit
+  prüfte, die Genehmigung aber die angerechnete; beide prüfen jetzt dasselbe.
+- **Nachprüfung nach einer Antrags-Genehmigung** zählte den geänderten Eintrag
+  doppelt (zu hohe Wochen- und Nachtarbeits-Hinweise).
+- **XLS-Import:** zieht keine automatische Pause mehr doppelt ab, wenn die
+  Lücke zwischen den Blöcken die Pausenpflicht deckt; die Ruhezeitprüfung nutzt
+  die tatsächlich gestempelte Endzeit. Die automatische Pause gilt dem ganzen
+  Tag (mehrere Zeilen und vorhandene Einträge zählen zusammen) und ist nie
+  länger als die Zeile, an der sie steht; Höchstarbeitszeit, Pause und Ruhezeit
+  meldet die Vorschau einmal je Tag, die Ruhezeit gemessen ab dem vorigen
+  Arbeitstag statt ab der vorigen Zeile. Weicht die gespeicherte Pause von der
+  Vorschau ab (Konflikte nicht überschrieben), nennt das Ergebnis die Anpassung.
+  Eine Zeile, deren Ende nicht nach dem Beginn liegt, ersetzt auch in der
+  Vorschau keinen vorhandenen Eintrag mehr; eine zu kurze Ruhezeit bis zu
+  einem vorhandenen Eintrag am Folgetag, der nicht in der Datei steht, meldet
+  die Vorschau jetzt ebenfalls. Eine Zeile ganz außerhalb der Arbeitszeit-Blöcke
+  (z. B. 18:00–20:00 bei einem Block 08:00–12:00) übernimmt der Import wie jeden
+  gestempelten Eintrag mit 0 Stunden angerechnet und den Zeiten der Datei als
+  Rohstempel; bisher übersprang er sie mit „Endzeit (18:00) liegt nicht nach
+  Startzeit (18:00)". Können die Zeilen eines Tages die Pflichtpause nicht
+  tragen (z. B. eine kurze Zeile neben einem langen vorhandenen Eintrag),
+  übernimmt der Import diesen Tag nicht mehr – unabhängig vom Schalter für die
+  Pausen-Ausnahme, der Import kennt keine Begründung; Vorschau und Ergebnis
+  nennen den Grund („… die Pause nach § 4 ArbZG lässt sich mit den Zeilen
+  dieses Tages nicht abziehen (es fehlen 10 Min). Bitte den Tag von Hand
+  erfassen."). Bisher legte er den Tag mit fehlender Pause an.
+- **ODS-Jahresbericht:** Das Mitarbeiterblatt nennt wie die Excel-Datei die
+  Summe der Nachtarbeitstage (sie wurde gezählt, aber nie ausgegeben).
+- **Nachtarbeit:** Ein Eintrag ganz außerhalb der Arbeitszeit-Blöcke (0 h
+  angerechnet, etwa nach vergessenem Ausstempeln am Abend) galt als
+  Nachtarbeit – mit Kennzeichen „Nacht" in der Zeiterfassung, als Tag in der
+  Nachtarbeit-Auswertung und in den Exporten.
+
+### ✨ Weitere Verbesserungen
+- **Mitarbeiter-Dashboard: Umschalter Monat/Woche** (#500) – die letzten
+  8 Kalenderwochen mit Soll, Ist, Saldo und Überstundenkonto; vergessene
+  Einträge fallen pro Woche sofort auf.
+- **Stempelkarte „x von y h heute"** (#494) auf dem Smartphone zählt alle
+  Einträge des Tages (bei geteiltem Dienst Vormittag und Nachmittag, auch nach
+  dem Ausstempeln – dann neutral „Ausgestempelt"); das Tagessoll folgt
+  Feiertag, ganztägiger Abwesenheit und Sondertag – kein rotes „Noch nicht
+  eingestempelt" mehr an freien Tagen. Der laufende Eintrag zählt wie beim
+  Ausstempeln nur die angerechnete Zeit (ohne Lücke zwischen den
+  Arbeitszeit-Blöcken und ohne Zeit nach dem Hüllenende).
+- **„Arbeitstage" am Abwesenheitsantrag** (#496) zählt nach derselben Regel wie
+  die Buchung (Tagesplan, Halbtage, freie Sondertage).
+- **Exporte: Tages-Differenz mit Gutschrift, geteilte Dienste sichtbar**
+  (#497, #498) – ein Krank- oder Fortbildungstag steht bei ±0, die Summe der
+  Spalte ergibt den „Saldo Monat"; neue Spalten „Unterbrechung (Min)" und
+  „Zeiteinträge".
+- **Jahresend-Warnung zu offenem Urlaub** (#501) erst ab einem ganzen offenen Tag;
+  der Hinweis im Admin-Dashboard nennt das tatsächliche Verfallsdatum (auch eine
+  abweichende Frist der Person) statt pauschal den 31.03. und die Resttage mit
+  Komma.
+- **§10-Ausnahmegrund** auch im Antragsformular der Zeiterfassung und bei der
+  Direkteingabe an Feiertagen (#491).
+
+### 🐞 Weitere Korrekturen
+- **„Letzte Einträge"** auf dem Smartphone zeigt die neuesten statt der ältesten
+  Einträge (#493).
+- **Schichtplan-Aushang und AVV-Entwurf** zeigen on-prem den Praxisnamen statt
+  „Default" (#495).
+- **Konto deaktivieren/reaktivieren oder Rolle wechseln** gleichzeitig durch
+  zwei Admins führte zu doppelten oder fehlenden Protokollzeilen; das Konto
+  konnte im Zustand der ersten Anfrage stehen bleiben, obwohl die zweite Erfolg
+  meldete (#491).
+- **Nur die Notiz bearbeiten** an einem Eintrag ohne ausreichende Pause, dessen
+  Ausnahme schon begründet ist (z. B. beim Ausstempeln), wurde bei
+  eingeschalteter Genehmigungspflicht zum Genehmigungsantrag, bei abgeschalteter
+  Ausnahme abgelehnt. Bleiben Datum, Zeiten und Pause gleich, wird der Eintrag
+  jetzt sofort gespeichert; die Begründung bleibt stehen.
+- **Änderungsantrag ohne Angabe einer Pause** zählte beim Stellen und bei der
+  Genehmigung als Pause 0: Ein Antrag, der nur die Notiz ändert, galt dadurch
+  als Zeitänderung, und § 3/§ 4 ArbZG wurden ohne die gespeicherte Pause geprüft
+  (z. B. 08:00–16:30 mit 30 Min Pause abgelehnt). Geprüft wird jetzt mit der
+  Pause, die tatsächlich gespeichert wird. Ebenso lehnte die Verwaltung beim
+  reinen Notiz-Bearbeiten einen Eintrag ab, dessen gespeicherte Kappung nicht
+  mehr zu den aktuellen Arbeitszeit-Blöcken passte – jetzt wie in der
+  Zeiterfassung der Mitarbeitenden.
+- **Genau 10:00 h am Tag bzw. 48:00 h in der Woche:** Verteilte sich die
+  angerechnete Zeit auf mehrere Einträge (z. B. 2:00 + 6:10 + 1:50 h), landete
+  die Summe durch Rundung beim Addieren knapp über der Grenze. Anlegen,
+  Bearbeiten und Änderungsanträge wurden dann mit „Tagesarbeitszeit würde 10.0h
+  betragen und überschreitet die gesetzliche Höchstgrenze von 10h (§3 ArbZG)."
+  abgelehnt, das Ausstempeln meldete die Überschreitung, und genau 48:00 h in
+  der Woche lösten den Wochenhinweis aus. Die Prüfungen rechnen jetzt in ganzen
+  Minuten; erst mehr als 10:00 h bzw. 48:00 h gelten als zu viel.
+- **Urlaub in einem Zeitraum mit 0 Wochenstunden** (z. B. Elternzeit): Die
+  direkte Urlaubsbuchung verlangte Resturlaub auch für Tage, die sie gar nicht
+  bucht, und lehnte deshalb ab. Ein Jahr mit Resturlaub im Minus sperrte außerdem
+  Buchungen und Anträge, die in diesem Jahr gar keinen Urlaubstag kosten (etwa
+  Urlaub über den Jahreswechsel, dessen Dezember-Tage auf 0 Stunden stehen). Ein
+  Änderungsantrag auf Urlaub an einem Tag ohne Soll (auch am Samstag) verlangte
+  einen Urlaubstag, den das Konto nie abzieht. Das Urlaubskonto selbst zählt mit
+  Stundenzählung nur noch Urlaubstage an Tagen mit Soll: stand die Person heute
+  auf 0 Stunden, zählte es bisher jede eingetragene Urlaubszeile als ganzen Tag
+  – auch an Tagen ohne Soll – und jeden freien 24./31.12. mit Urlaubsabzug. Ohne
+  Stundenzählung bleibt es bei der reinen Tageszählung. Betriebsferien tragen an solchen
+  Tagen nichts mehr ein – stand die Arbeitszeit bereits auf 0 Stunden, kostete
+  bisher jeder Schließtag einen Urlaubstag (#496). Für bereits eingetragene
+  Betriebsferien: einmal öffnen und neu speichern – dann verschwinden die alten
+  Einträge an diesen Tagen. Liegt die Schließung in einem Jahr mit
+  Jahresabschluss, ändert das den eingefrorenen Übertrag nicht: PraxisZeit weist
+  nach dem Speichern darauf hin – den Übertrag unter „Jahresabschluss" prüfen und
+  ggf. von Hand korrigieren. Denselben Hinweis gibt es jetzt auch, wenn eine
+  Schließung in einem abgeschlossenen Jahr angelegt oder so geändert wird, dass
+  sich Buchungen ändern (bisher nur beim Löschen).
+- **Abwesenheit über einen freien Tag** (direkt eingetragen oder per Antrag
+  genehmigt): Zeiteinträge wurden an allen Werktagen des Zeitraums gelöscht –
+  auch an Tagen, an denen gar keine Abwesenheit entsteht (freier Wochentag laut
+  Tagesplan, Zeitraum mit 0 Wochenstunden). Eine am freien Dienstag gestempelte
+  Vertretung verschwand so mit einer Urlaubswoche ersatzlos. Ersetzt werden jetzt
+  nur die Einträge der gebuchten Tage. Ein Antrag nur über Tage ohne geplante
+  Arbeitszeit wurde genehmigt, ohne einen Tag zu buchen; die Genehmigung lehnt ihn
+  jetzt wie die direkte Buchung ab („0 Stunden geplant"), der Antrag bleibt offen.
+- **Bundesland wechseln** (Einstellungen → Feiertage) löschte die gesetzlichen
+  Feiertage aller zurückliegenden Jahre und legte nur das laufende und das
+  nächste Jahr neu an – in früheren Jahren zählte danach jeder Feiertag als
+  Arbeitstag (Soll, Überstundenkonto und Exporte änderten sich still). Jetzt
+  werden die gesetzlichen Feiertage aller Jahre für das neue Bundesland neu
+  berechnet; eigene Feiertage bleiben. Betrifft das ein Jahr mit
+  Jahresabschluss, weist PraxisZeit auf den veralteten Übertrag hin.
+- **Feiertag, Bundesland oder Sondertag nachträglich geändert:** Ob ein Tag
+  gegen die Arbeitszeit-Blöcke gekappt wird, entscheidet sich beim Speichern des
+  Eintrags. Wurde ein Tag danach frei (oder wieder Arbeitstag), behielten
+  bestehende Einträge still die alte Anrechnung. Jetzt nennt PraxisZeit nach dem
+  Speichern eines eigenen Feiertags, des Bundeslands oder der Sondertage die
+  betroffenen Einträge; unverändert neu speichern berechnet sie neu (keine
+  automatische rückwirkende Änderung der angerechneten Zeit).
+- **Sondertage 24./31.12.** umzustellen änderte Soll und Urlaubskonto auch in
+  Jahren mit Jahresabschluss ohne Hinweis (die Einstellung gilt für alle Jahre).
+  Jetzt meldet PraxisZeit den veralteten Übertrag, sobald sich der Tag in einem
+  abgeschlossenen Jahr tatsächlich ändert.
+- **Eigene Feiertage** in einem Jahr mit Jahresabschluss anlegen, verschieben
+  oder löschen verschob Soll und Saldo dieses Jahres ohne Hinweis. Jetzt meldet
+  PraxisZeit den veralteten Übertrag wie beim Bundesland-Wechsel; ein reines
+  Umbenennen bleibt still.
+- **Zeiterfassung im Änderungsprotokoll:** Anlegen und Bearbeiten über die
+  Zeiterfassung (Mitarbeitende am selben Tag, Admins an eigenen Einträgen jedes
+  Tages) hinterlassen jetzt eine Zeile mit alten und neuen Werten – bisher nur
+  bei einer Pflicht-Pause-Ausnahme; korrigierte eine Admin einen eigenen Eintrag
+  eines vergangenen Tages, blieb das ohne Spur. Die Spalte „Quelle" nennt von
+  Hand angelegte oder geänderte Einträge „Manuell" statt „Admin" (wer gehandelt
+  hat, steht unter „Geändert von"), Ausstempeln und automatisch geschlossene
+  Einträge „Ausstempeln" bzw. „Automatisch geschlossen" statt der Rohwerte.
+- **Gleicher Beginn wie ein vorhandener Eintrag:** Wer nach einem Fehlstempel
+  aus- und gleich wieder einstempelte und dabei auf dem Beginn eines heutigen
+  Eintrags landete (ein Beginn vor dem ersten Block wird nach vorn gekappt,
+  z. B. 07:30 → 07:45), bekam einen Serverfehler, und der Stempel ging
+  verloren. Jetzt nennt PraxisZeit den Ausweg („Einstempeln nicht möglich: Ein
+  Zeiteintrag von heute beginnt bereits um 07:45, …"). Ebenso scheiterte das
+  Bearbeiten in der Zeiterfassung mit einem Serverfehler, wenn der gekappte
+  Beginn auf den eines anderen Eintrags des Tages fiel; jetzt kommt wie in der
+  Verwaltung „Es existiert bereits ein Eintrag mit dieser Startzeit an diesem
+  Datum".
+- **Krank oder Fortbildung an einem künftig freien Wochentag:** Machte eine
+  Arbeitszeit-Änderung einen Wochentag frei (keine Blöcke bzw. 0 Stunden), blieb
+  ein dort schon gebuchter Kranken- oder Fortbildungstag mit seinen alten
+  Stunden stehen und schrieb sie dem Überstundenkonto gut, obwohl der Tag kein
+  Soll mehr hat (z. B. +7:30 h für einen Krankentag am künftig freien
+  Dienstag) – ohne Hinweis in der Vorschau und ohne Protokollzeile. Jetzt setzt
+  PraxisZeit die Stunden dort auf 0 (Vorschau „Abwesenheit(en) betroffen",
+  Protokoll „Krank 7,5 h" → „Krank 0,0 h"); das Löschen der Änderung stellt sie
+  wieder her. Urlaub an solchen Tagen bleibt wie bisher stehen und kostet keinen
+  Urlaubstag. **Bestand:** Kranken- und Fortbildungstage, die schon vor dem
+  Update so stehen (z. B. nach einer früheren Änderung, die einen Wochentag frei
+  gemacht hat), ändert das Update nicht – ihre Stunden zählen weiter zum
+  Überstundenkonto. Erst die nächste Arbeitszeit-Änderung (Anlegen oder
+  Löschen), deren Wirkungsbereich den Tag umfasst, setzt sie auf 0, auch wenn
+  sie diesen Wochentag gar nicht ändert. Liegt der Tag in der Vergangenheit,
+  sinkt dabei das Überstundenkonto um diese Stunden, und die Auswirkung zeigt
+  die Änderung als **Verkürzung** (rückwirkend nur mit Grund, Begründung und
+  Bestätigung, in ein abgeschlossenes Jahr gesperrt); „Ab heute" lässt solche
+  vergangenen Tage unverändert. **Ausnahme:** Abwesenheiten, die vor dem Update
+  auf 1.10.0 gebucht wurden (über einen Änderungsantrag: vor dem Update auf
+  1.16.0), passt eine Arbeitszeit-Änderung nie an, weder beim Freimachen des
+  Wochentags noch später – ein solcher Kranken- oder Fortbildungstag an einem
+  Wochentag ohne Soll zählt weiter zum Überstundenkonto. Bei Bedarf die
+  Abwesenheit an diesem Tag von Hand löschen (an einem Tag ohne Soll zählt sie
+  ohnehin nicht als Abwesenheitstag).
+- **Docker: Backup einer älteren Version einspielen** (`restore.sh`, Update-Weg
+  im Docker-Paket, `update-pg-major.sh`): Das abschließende
+  `docker compose up -d backend` startete das schon laufende Backend nicht neu.
+  Die Migrationen liefen deshalb nicht, und das Backend arbeitete gegen das
+  Schema des Backups – bei einem Update auf 1.20.0 auf diesem Weg wäre jede
+  Anmeldung mit HTTP 500 gescheitert, während `/api/health` „healthy" meldet. Hatte
+  die neuere Version seither eine Tabelle angelegt (Sprung über mehrere
+  Versionen, PostgreSQL-Umstieg von 1.9.x), brach das Einspielen sogar ab.
+  `restore.sh` hält das Backend jetzt an, legt die Datenbank frisch an, spielt
+  das Backup ein, startet das Backend wieder, wartet, bis es bereit ist, und
+  zeigt die Hinweise der Migrationen an (`BACKUP.md`, `UPDATE.md`).
+- **Linux/macOS: Backup einspielen** mit dem neuen Befehl
+  `praxiszeit-server.py restore <datei>` bei angehaltenem Dienst (Windows wie
+  bisher `restore-backup.bat`). Die Anleitung leitete das Backup bisher bei
+  laufendem Dienst durch `psql`: der Dienst arbeitete danach gegen das Schema
+  des Backups (nach dem Update auf 1.20.0: Anmeldung mit HTTP 500 bis zum
+  nächsten Neustart), ein Backup von 1.18 oder älter brach an später
+  hinzugekommenen Tabellen ab, und `psql` meldete trotz Fehlern Erfolg. `restore`
+  spielt das Backup erst in eine Zwischendatenbank ein und ersetzt die bisherige
+  Datenbank nur, wenn das gelungen ist und das Backup nicht von einer neueren
+  Version stammt; der anschließende Dienststart migriert. Auch für den Rollback:
+  Backup mit der installierten Version einspielen, den Ordner `app/` beiseitelegen
+  und dann die alte Version installieren. Der Installer ersetzt `app/` nicht, er
+  kopiert nur darüber (Windows-Update-Wizard ebenso); ohne diesen Schritt fand die
+  alte Version die Migrationen der neueren und wandte sie beim Start erneut an
+  (1.20.0 → 1.19.x: `073` erneut, danach startete 1.19.x nicht mehr). `restore` nennt den
+  Schritt, wenn das Backup älter ist als die Installation (`BACKUP.md`,
+  `UPDATE.md`, `INSTALL-NATIVE.md`). README,
+  Einrichtungsanleitung und die In-App-Hilfe nennen für Docker `restore.sh`
+  statt des alten `psql`-Wegs bzw. eines „idempotenten" Restores.
+- **Windows: `restore-backup.bat` meldet keinen Erfolg mehr für ein kaputtes
+  Backup.** Ein abgeschnittenes Backup (Kopie von NAS oder USB abgebrochen)
+  wurde eingespielt, soweit es reichte, Fehler beim Einspielen wurden
+  übergangen, und am Ende startete das Script den Dienst und meldete
+  „Restore abgeschlossen!“ – auf einer halben Datenbank. Die bisherige
+  Datenbank wurde zudem nie ersetzt, sondern überschrieben. Jetzt prüft das
+  Script das Backup vor jeder Änderung, spielt es in eine Zwischendatenbank
+  ein und ersetzt die bisherige erst danach; bei einem Fehler bleibt sie
+  unverändert und der Dienst aus. Ein Backup einer neueren PraxisZeit-Version
+  lehnt es wie `restore` vor dem Tausch ab, statt die Datenbank zu ersetzen
+  und am Dienststart zu scheitern (`BACKUP.md`, `setup-windows.md`).
+
+### 🔧 Technik
+- `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images
+  beim Bauen neu (Debian/Alpine-Sicherheitsupdates); der Rollback startet die
+  vorherigen Images, statt neu zu bauen (#491).
+- Prometheus 3.12.0 → 3.13.4 (LTS) (#491).
+- macOS-Build prüft die Mach-O-Abhängigkeiten aller ausgelieferten Bibliotheken
+  (#482).
+- Ungültige Kennungen in Anfragen werden zusätzlich als Warnung protokolliert
+  (#491).
+- Expliziter Mandantenfilter (F-026) zusätzlich zur Zeilensicherheit der
+  Datenbank in den §6/§11-Berichten, der §5-Ruhezeitprüfung, dem
+  Art.-20-Datenexport und den übrigen Abfragen der Saldo-, Jahres- und
+  Urlaubsberechnung (externes Zweitreview).
+- Ein unbekannter und ein fremder Zeiteintrag antworten mit demselben Text
+  („Zeiteintrag nicht gefunden"); die Antwort verrät nicht mehr, ob es den
+  Eintrag gibt.
+
+### 📖 Dokumentation
+- Handbücher, Kurzanleitungen, In-App-Hilfe, Schnellstart, Berechnungs-Doku und
+  Glossar beschreiben Arbeitszeit-Blöcke, Kappung, Rückwirkung, Schutzpaket,
+  Anerkennen und „Anrechnung beantragen" – mit Hinweisen zur Vergütung
+  (§ 611a, § 612 BGB; MiLoG) und zur Mitbestimmung (§ 87 BetrVG).
+- Installations-, Update- und Backup-Anleitungen trennen Linux und macOS
+  (Dienstkonto `_praxiszeit`); der Passwort-Reset unter Windows steht nach dem
+  ersten Login (#491).
+- Neues Prüfskript `scripts/check-doc-sync.sh` hält die fünf Doku-Flächen
+  zusammen (Teil von `scripts/local-ci.sh`).
+
 ## [1.19.3] - 2026-10-06
 
 Patch-Release. Update aus jeder 1.19.x ohne Zwischenschritte. **Enthält eine
