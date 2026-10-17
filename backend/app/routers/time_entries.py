@@ -1129,21 +1129,23 @@ def create_time_entry(
     )
 
     db.add(entry)
+    db.flush()
 
-    # #144 §4 ArbZG: leave an audit trail for the documented break waiver so the
-    # deviation is traceable (source marker 'break_waiver', < 40 chars).
-    if break_waiver_active:
-        db.flush()
-        _create_audit_log(
-            db,
-            entry.id,
-            entry.user_id,
-            current_user.id,
-            action="create",
-            new_entry=entry,
-            source=BREAK_WAIVER_SOURCE,
-            tenant_id=current_user.tenant_id,
-        )
+    # §16 ArbZG: jede Neuanlage hinterlässt eine Protokollzeile — wie
+    # ``admin_create_time_entry`` (Gesamtreview 1.20, Fund 3; bis dahin nur bei
+    # einer §4-Ausnahme, und Admins legen über die Zeiterfassung Einträge für
+    # jeden Tag an). #144: Quelle ``break_waiver`` bei einer dokumentierten
+    # §4-Ausnahme (< 40 Zeichen), sonst ``manual``.
+    _create_audit_log(
+        db,
+        entry.id,
+        entry.user_id,
+        current_user.id,
+        action="create",
+        new_entry=entry,
+        source=BREAK_WAIVER_SOURCE if break_waiver_active else "manual",
+        tenant_id=current_user.tenant_id,
+    )
 
     db.commit()
     db.refresh(entry)
@@ -1596,19 +1598,26 @@ def update_time_entry(
             break_waiver_active = True
             entry.break_waiver_reason = waiver_reason
 
-    # #144 §4 ArbZG: audit trail for a documented break waiver on update.
-    if break_waiver_active:
-        _create_audit_log(
-            db,
-            entry.id,
-            entry.user_id,
-            current_user.id,
-            action="update",
-            old_entry=orig_snapshot,
-            new_entry=entry,
-            source=BREAK_WAIVER_SOURCE,
-            tenant_id=current_user.tenant_id,
-        )
+    # §16 ArbZG: jede gespeicherte Bearbeitung hinterlässt eine Protokollzeile —
+    # wie ``admin_update_time_entry`` und wie Löschen/Ausstempeln auf dieser
+    # Route (Gesamtreview 1.20, Fund 3). Bis dahin nur bei einer §4-Ausnahme:
+    # Admins bearbeiten über die Zeiterfassung ihre eigenen Einträge an jedem
+    # Tag (und fremde), und eine nachträgliche Änderung eines vergangenen Tages
+    # — auch die Korrektur des Auto-Close-Endes (P18) oder ein Datumswechsel mit
+    # Neukappung (E39) — blieb ohne Spur. Quelle ``break_waiver`` bei einer
+    # dokumentierten §4-Ausnahme (#144), sonst ``manual``. Der 202-Antrag oben
+    # ist schon zurückgekehrt (nichts gespeichert, die Genehmigung protokolliert).
+    _create_audit_log(
+        db,
+        entry.id,
+        entry.user_id,
+        current_user.id,
+        action="update",
+        old_entry=orig_snapshot,
+        new_entry=entry,
+        source=BREAK_WAIVER_SOURCE if break_waiver_active else "manual",
+        tenant_id=current_user.tenant_id,
+    )
 
     db.commit()
     db.refresh(entry)
