@@ -230,7 +230,7 @@ beschriebenen Schritte.
 
 - **App-Footer** (unten links, nach Hard-Refresh): zeigt die aktive Version.
 - `GET /api/system/info` liefert die Version auf **jeder** Installationsart.
-- `GET /openapi.json` enthält sie ebenfalls — aber nur, solange `ENVIRONMENT` nicht auf `production` steht. Die Docker-Installation setzt das über `generate-secrets.sh` automatisch, dort antwortet der Pfad mit **404**.
+- `GET /openapi.json` enthält sie ebenfalls — aber nur, solange `ENVIRONMENT` nicht auf `production` steht. Die Docker-Installation setzt das über `generate-secrets.sh` automatisch, dort liefert der Pfad keine Versionsangabe (über den Frontend-Port kommt die HTML-Startseite der Anwendung, direkt am Backend ein **404**).
 - `GET /api/health` liefert die Version bewusst **nicht** (nur Status und Datenbank).
 
 ---
