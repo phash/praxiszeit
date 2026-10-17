@@ -88,3 +88,41 @@ def test_row_with_end_before_start_is_still_skipped(db, test_user, test_admin):
     assert any("Endzeit (18:00) liegt nicht nach Startzeit (20:00)" in w for w in result.warnings), \
         result.warnings
     assert db.query(TimeEntry).filter(TimeEntry.user_id == test_user.id).count() == 0
+
+
+# --- Review-Nachzug B11: Zweig ohne Kappung folgt nicht blind den Client-Zeiten ---
+
+def test_unclamped_forged_end_before_start_takes_file_times(db, test_user, test_admin):
+    """Ohne Kappung (``track_hours=False``) und mit gefälschter Zeile
+    (gespeicherte Zeiten 12:00–08:00, Rohstempel 08:00–12:00): nie ein Eintrag
+    mit Ende vor Beginn — es gilt die Datei-Zeile."""
+    test_user.track_hours = False
+    db.commit()
+    [row] = parse_xls(_xls((_mon(8), _mon(12))), test_user.id, db)
+    forged = row.model_copy(update={
+        "start_time": time(12), "end_time": time(8),
+        "raw_start_time": time(8), "raw_end_time": time(12),
+    })
+    result = _run(db, test_user, test_admin, [forged])
+    entries = db.query(TimeEntry).filter(TimeEntry.user_id == test_user.id).all()
+    for e in entries:
+        assert e.end_time > e.start_time, (e.start_time, e.end_time)
+    assert result.imported == 1, result.warnings
+    [e] = entries
+    assert (e.start_time, e.end_time) == (time(8), time(12))
+
+
+def test_stale_collapse_preview_without_clamp_credits_file_row(db, test_user, test_admin):
+    """Vorschau mit Blöcken kollabiert 18:00–20:00 auf 18:00–18:00; vor
+    ``/confirm`` entfällt die Kappung (``track_hours=False``). Gespeichert wird
+    die Datei-Zeile 18:00–20:00 (2 h), nicht der veraltete Kollaps mit 0 h."""
+    _blocks(db, test_user)
+    preview = parse_xls(_xls((_mon(18), _mon(20))), test_user.id, db)
+    assert (preview[0].start_time, preview[0].end_time) == (time(18), time(18))
+    test_user.track_hours = False
+    db.commit()
+    result = _run(db, test_user, test_admin, preview)
+    assert (result.imported, result.skipped) == (1, 0), result.warnings
+    e = db.query(TimeEntry).filter(TimeEntry.user_id == test_user.id).one()
+    assert (e.start_time, e.end_time) == (time(18), time(20))
+    assert float(e.net_hours) == 2.0

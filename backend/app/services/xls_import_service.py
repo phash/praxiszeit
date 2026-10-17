@@ -1039,6 +1039,16 @@ def _execute_import_inner(
                 )
                 eff_start, eff_end, raw_start, raw_end = r.eff_start, r.eff_end, r.raw_start, r.raw_end
                 uncredited, applied_grace = r.uncredited_minutes, r.grace_minutes
+            elif entry.end_time is None or entry.end_time <= entry.start_time:
+                # Gesamtreview 1.20 (B11-Nachzug): ohne Kappung gilt die
+                # Invariante Ende > Beginn auch für die mitgeschickten Zeiten.
+                # Eine veraltete Kollaps-Vorschau (18:00–18:00 aus Blöcken, die
+                # jetzt nicht mehr kappen) oder eine gefälschte Zeile folgt der
+                # Datei-Zeile — geprüft oben, Ende nach Beginn.
+                eff_start, eff_end = file_start, file_end
+                raw_start, raw_end = None, None
+                uncredited, applied_grace = 0, None
+                segs = []
             else:
                 eff_start, eff_end = entry.start_time, entry.end_time
                 raw_start, raw_end = entry.raw_start_time, entry.raw_end_time
