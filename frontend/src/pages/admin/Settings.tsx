@@ -9,6 +9,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import { useTypeColorsStore, pickTextColor } from '../../stores/typeColorsStore';
 import AbsenceReasonsManager from '../../components/AbsenceReasonsManager';
 import { useSystemStore } from '../../stores/systemStore';
+import { showResponseWarning } from '../../utils/arbzgWarnings';
 
 // #371: Wochentag-Labels (Index 0=Mo … 6=So) für den Schichtplaner-Wochentag-Picker.
 const SHIFT_WEEKDAY_LABELS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
@@ -306,9 +307,13 @@ export default function Settings() {
   const saveHolidayState = async () => {
     setSavingHolidayState(true);
     try {
-      await apiClient.put('/admin/settings/holiday_state', { value: selectedState });
+      const res = await apiClient.put('/admin/settings/holiday_state', { value: selectedState });
       setOriginalState(selectedState);
       toast.success('Bundesland aktualisiert. Feiertage wurden neu berechnet.');
+      // Gesamtreview 1.20 (B9): die Feiertage ALLER Jahre werden neu erzeugt —
+      // ändert sich dabei ein abgeschlossenes Jahr, trägt die Antwort `warning`
+      // (veralteter Übertrag, Fix #5).
+      showResponseWarning(toast, res.data);
       // Eigene Feiertage bleiben erhalten, Standard-Feiertage wurden ersetzt.
       await loadHolidays(holidayYear);
     } catch (err) {
@@ -660,8 +665,10 @@ const saveYearEndProjection = async () => {
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Feiertage</h2>
         <p className="text-sm text-gray-500 mb-4">
           Wählen Sie das Bundesland aus, dessen gesetzliche Feiertage verwendet werden sollen.
-          Bei Änderung werden alle gesetzlichen Feiertage automatisch neu berechnet. Eigene
-          Feiertage (siehe unten) bleiben dabei erhalten.
+          Bei Änderung werden die gesetzlichen Feiertage aller Jahre automatisch neu berechnet,
+          auch zurückliegender – Soll und Salden dieser Jahre ändern sich entsprechend. Eigene
+          Feiertage (siehe unten) bleiben dabei erhalten. Betrifft die Änderung ein bereits
+          abgeschlossenes Jahr, weist PraxisZeit auf den veralteten Übertrag hin.
         </p>
         <div className="flex items-end gap-4">
           <div className="flex-1 max-w-sm">

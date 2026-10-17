@@ -715,7 +715,7 @@ Beim **ersten Login** sehen neue Mitarbeitende und Admins eine kurze, rollenspez
 <a id="feiertage"></a>
 ### Feiertage / Eigene Feiertage
 
-**Feiertage:** Wählen Sie das **Bundesland**, dessen gesetzliche Feiertage gelten sollen. Nach dem Speichern werden alle gesetzlichen Feiertage automatisch neu berechnet. Feiertage reduzieren das Stundensoll und werden im Kalender grau dargestellt.
+**Feiertage:** Wählen Sie das **Bundesland**, dessen gesetzliche Feiertage gelten sollen. Nach dem Speichern werden die gesetzlichen Feiertage **aller Jahre** automatisch neu berechnet – auch zurückliegender Jahre; Soll, Überstundenkonto und Exporte dieser Jahre richten sich danach. Betrifft das ein Jahr, für das der Jahresabschluss schon erfolgt ist, weist PraxisZeit auf den veralteten Übertrag hin („Jahresabschluss 2025 bereits erfolgt — Carryover 2026 ist nun veraltet, bitte Jahresabschluss erneut ausführen.") – den Übertrag unter „Jahresabschluss" prüfen und ggf. von Hand korrigieren; er wird nie automatisch neu berechnet. Feiertage reduzieren das Stundensoll und werden im Kalender grau dargestellt.
 
 **Eigene Feiertage:** Legen Sie zusätzlich lokale/regionale Feiertage an (z. B. Schützenfest, Karneval) – mit **Name** und **Datum**. Eigene Feiertage reduzieren die Soll-Zeit wie gesetzliche Feiertage und können bearbeitet oder gelöscht werden. Gesetzliche Feiertage werden nur zur Information angezeigt und lassen sich nicht ändern. Über das Jahr-Auswahlfeld blättern Sie zwischen den Jahren. Eigene Feiertage bleiben erhalten, wenn Sie das Bundesland wechseln.
 

@@ -212,6 +212,13 @@ dieses Backup verlustfrei (`UPDATE.md`).
   nur die Einträge der gebuchten Tage. Ein Antrag nur über Tage ohne geplante
   Arbeitszeit wurde genehmigt, ohne einen Tag zu buchen; die Genehmigung lehnt ihn
   jetzt wie die direkte Buchung ab („0 Stunden geplant"), der Antrag bleibt offen.
+- **Bundesland wechseln** (Einstellungen → Feiertage) löschte die gesetzlichen
+  Feiertage aller zurückliegenden Jahre und legte nur das laufende und das
+  nächste Jahr neu an – in früheren Jahren zählte danach jeder Feiertag als
+  Arbeitstag (Soll, Überstundenkonto und Exporte änderten sich still). Jetzt
+  werden die gesetzlichen Feiertage aller Jahre für das neue Bundesland neu
+  berechnet; eigene Feiertage bleiben. Betrifft das ein Jahr mit
+  Jahresabschluss, weist PraxisZeit auf den veralteten Übertrag hin.
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images

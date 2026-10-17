@@ -326,8 +326,8 @@ Der Krankheitszeitraum ist damit vollständig saldo-neutral — genau wie beabsi
 > **Warum es das Gewicht 0 für Feiertage trotzdem braucht.** Der Ausschluss beim Buchen ist
 > eine Momentaufnahme gegen eine **veränderliche** Feiertagstabelle. Eine bereits gebuchte
 > Abwesenheit kann nachträglich auf einem Feiertag liegen: wenn der Mandant das Bundesland
-> wechselt (`holiday_state` löscht und synchronisiert die workalendar-Feiertage neu, ohne
-> bestehende Abwesenheiten zu prüfen), wenn ein Admin einen eigenen Feiertag auf ein bereits
+> wechselt (`holiday_state` löscht die workalendar-Feiertage und erzeugt sie für alle Jahre neu,
+> ohne bestehende Abwesenheiten zu prüfen), wenn ein Admin einen eigenen Feiertag auf ein bereits
 > gebuchtes Datum legt, oder wenn in ein Jahr gebucht wurde, für das noch keine Feiertage
 > synchronisiert waren. Für **Wochenenden** gilt das nicht — dort entsteht über keinen
 > Buchungspfad eine Zeile mit Stunden; das Gewicht 0 ist dort reine Absicherung.
@@ -992,7 +992,12 @@ Budget-Tage). ⚠️ Offen (#191): Carryover für `track_hours = false` (ohne St
 > Ändern einer Schließung (`create_closure`/`update_closure`, Feld `warning` der Antwort)
 > warnen, sobald sich ihre Buchungen `(MA, Datum, Typ, Stunden)` in einem abgeschlossenen Jahr
 > ändern — etwa wenn das Neuspeichern 0-h-Altbestand abräumt (§9.1); ein reines Umbenennen
-> und eine wertgleiche #314-Neuaufteilung bleiben still.
+> und eine wertgleiche #314-Neuaufteilung bleiben still. Ein **Bundesland-Wechsel**
+> (`PUT /admin/settings/holiday_state` → `holiday_service.resync_state`) erzeugt die
+> gesetzlichen Feiertage **aller** Jahre neu, für die der Mandant welche hatte (dazu laufendes
+> und nächstes Jahr), und warnt über das Feld `warning`, sobald sich die Feiertagsdaten eines
+> abgeschlossenen Jahres ändern. Bis zum Gesamtreview 1.20 legte er nur das laufende und das
+> nächste Jahr neu an — frühere Jahre standen danach ohne Feiertage da.
 
 ---
 

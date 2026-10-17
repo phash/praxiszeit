@@ -7,7 +7,7 @@ from app.models import User
 from app.models.system_setting import SystemSetting
 from app.middleware.auth import require_admin
 from app.routers.admin_helpers import SettingUpdate
-from app.services import special_days_service, type_colors_service
+from app.services import calculation_service, special_days_service, type_colors_service
 from typing import Dict
 from app.services.settings_service import (
     SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD,
@@ -178,23 +178,34 @@ def update_setting(
     else:
         s.value = str(value)
 
+    warning = None
     if key == "holiday_state":
         # Atomarer Delete + Sync: alles in einer Transaktion (C2, I5)
         # #143: nur workalendar-Feiertage neu generieren; admin-gepflegte
         # Custom-Feiertage (source='admin') überstehen den Bundesland-Resync.
+        # Gesamtreview 1.20 (B9): ALLE Jahre mit gesetzlichen Feiertagen neu
+        # erzeugen, nicht nur das laufende und das nächste (frühere Jahre
+        # standen sonst ohne Feiertage da) — siehe holiday_service.resync_state.
         try:
-            holiday_service.delete_all_holidays(
-                db, tenant_id=current_user.tenant_id, source="workalendar"
-            )   # kein commit
-            holiday_service.sync_current_and_next_year(db, state=str(value), tenant_id=current_user.tenant_id)  # commitet am Ende
+            changed_years = holiday_service.resync_state(
+                db, str(value), tenant_id=current_user.tenant_id
+            )  # commitet am Ende
         except Exception as e:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Einstellung gespeichert, aber Feiertage konnten nicht synchronisiert werden: {e}"
             )
+        # Fix #5: geänderte Feiertage in einem abgeschlossenen Jahr machen dessen
+        # Übertrag veraltet — melden, nie automatisch neu berechnen.
+        warning = calculation_service.stale_year_closing_warning(
+            db, current_user.tenant_id, changed_years
+        )
     else:
         db.commit()
 
     db.refresh(s)
-    return {"key": s.key, "value": s.value, "updated_at": s.updated_at}
+    result = {"key": s.key, "value": s.value, "updated_at": s.updated_at}
+    if warning:
+        result["warning"] = warning
+    return result
