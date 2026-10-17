@@ -675,6 +675,9 @@ reine Tageszählung (§12.1) gilt allein bei `track_hours = false`
 (`calculation_service.counts_vacation_by_day_only`, eine Regel für `get_vacation_account`,
 `absence_days` und den Änderungsantrag). Bis Gesamtreview 1.20 (B11) entschied das **heutige**
 Tagessoll: wer heute auf 0 h stand, dem zählte jede Urlaubszeile als ganzer Tag.
+Die Stundenfelder des Kontos (Budget/genommen/Rest in Stunden, u. a. in den Datei-Exporten)
+bleiben in diesem Fall bei 0: Tage lassen sich mit einem heutigen Tagessoll von 0 nicht in
+Stunden umrechnen, ein Rest von „−8,00 h“ neben offenen Tagen wäre ein Widerspruch im Beleg.
 
 ### 8.3 Rest
 

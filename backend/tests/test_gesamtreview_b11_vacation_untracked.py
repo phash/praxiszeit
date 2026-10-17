@@ -111,3 +111,35 @@ def test_normal_employee_unchanged(db, default_tenant):
     assert (acc["used_days"], acc["used_hours"], acc["track_hours"]) == (3.0, 24.0, True), acc
     assert calculation_service.absence_days(db, u, rows) == Decimal("2")
     assert _vacation_day_contribution(db, u, AUG, False) == 1.0
+
+
+def test_parental_leave_hour_fields_not_negative(db, default_tenant):
+    """Review-Fund zu B11: mit Stundenzählung und heute 0 h Tagessoll lassen sich
+    die Urlaubstage nicht in Stunden umrechnen (budget_hours = Tage × 0). Die
+    Stundenfelder bleiben deshalb wie vor B11 bei 0 — kein „Urlaub Rest (Std):
+    −8,00" neben 29 offenen Tagen. Die Tage kommen aus dem Snapshot."""
+    u = _parental_leave_user(db)
+    _vac(db, u, MAR, 8.0)
+    acc = calculation_service.get_vacation_account(db, u, 2026)
+    assert (acc["used_days"], acc["remaining_days"]) == (1.0, 29.0), acc
+    assert (acc["budget_hours"], acc["used_hours"], acc["remaining_hours"]) == (0.0, 0.0, 0.0), acc
+    assert acc["track_hours"] is True, acc
+
+
+def test_parental_leave_monthly_xlsx_no_negative_vacation_hours(db, default_tenant):
+    """Datei-Export: das XLSX-Monatsblatt liest die Stundenfelder ungeprüft."""
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from app.services.export_service import generate_monthly_report
+
+    u = _parental_leave_user(db)
+    _vac(db, u, MAR, 8.0)
+    bio = generate_monthly_report(db, 2026, 3)
+    bio.seek(0)
+    sheet = load_workbook(BytesIO(bio.read()))[f"{u.last_name} {u.first_name}"[:31]]
+    values = {
+        sheet.cell(row=r, column=1).value: sheet.cell(row=r, column=2).value
+        for r in range(1, sheet.max_row + 1)
+    }
+    assert values["Urlaub Rest (Std):"] == 0.0, values
+    assert values["Urlaub genommen (Std):"] == 0.0, values

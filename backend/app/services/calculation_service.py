@@ -3054,6 +3054,15 @@ def get_vacation_account(
     # Calculate remaining — days are authoritative (Tagesprinzip); hours informativ.
     remaining_days = budget_days - used_days
     remaining_hours = budget_hours - used_hours
+    if daily_target <= 0:
+        # Review-Fund zu B11: mit Stundenzählung, aber heute 0 h Tagessoll
+        # (Elternzeit) lassen sich die Tage nicht in Stunden umrechnen
+        # (budget_hours = Tage × 0). Gebuchte Stunden davon abzuziehen ergäbe
+        # „Urlaub Rest (Std): −8,00" neben offenen Tagen in den Datei-Exporten
+        # (lesen die Felder ungeprüft). Stundenfelder wie vor B11 bei 0; die
+        # Tage (maßgeblich) kommen aus der Snapshot-Zählung oben.
+        used_hours = Decimal('0')
+        remaining_hours = Decimal('0')
 
     return {
         "budget_hours": float(budget_hours.quantize(Decimal('0.01'))),
