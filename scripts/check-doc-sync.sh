@@ -1088,6 +1088,15 @@ group_changelog() {
   # Gesamtreview 1.20: Protokoll der Zeiterfassung und Quellen-Label „Manuell".
   need "$f" '**Zeiterfassung im Änderungsprotokoll:**'
   need "$f" 'Hand angelegte oder geänderte Einträge „Manuell" statt „Admin"'
+  # Gesamtreview 1.20: Beschäftigungszeitraum bei XLS-Import und
+  # Antragsgenehmigung (Geändertes Verhalten), 409 statt Serverfehler beim
+  # Einstempeln und Bearbeiten (Weitere Korrekturen).
+  need "$f" '**XLS-Import außerhalb des Beschäftigungszeitraums:**'
+  need "$f" '**Vor einer Übernahme'
+  need "$f" '**Antragsgenehmigung außerhalb des Beschäftigungszeitraums:**'
+  need "$f" '**Gleicher Beginn wie ein vorhandener Eintrag:**'
+  need_code '"Datum liegt nach dem letzten Arbeitstag"'
+  need_code '"Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum"'
 }
 
 # Versionsangaben der beiden Handbücher (Gesamtreview 1.20 B10): Kopf und

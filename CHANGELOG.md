@@ -116,6 +116,24 @@ dieses Backup verlustfrei (`UPDATE.md`).
   vergangenen Tag verschieben). Die Verwaltung kann einen Eintrag nicht mehr vor
   den Eintritt oder nach den Austritt einer Person verschieben oder dort
   anlegen; ein Datum in der Zukunft wird auch beim Bearbeiten abgelehnt.
+- **XLS-Import außerhalb des Beschäftigungszeitraums:** Zeilen, deren Datum vor
+  dem ersten oder nach dem letzten Arbeitstag der Person liegt, überspringt der
+  Import jetzt – die Vorschau nennt den Grund („Wird übersprungen — Datum liegt
+  nach dem letzten Arbeitstag (25.09.2026)."), das Ergebnis führt die Zeile
+  unter den Hinweisen; einen vorhandenen Eintrag ersetzt sie auch mit
+  „Konflikte überschreiben" nicht. Bisher wurden solche Zeilen gespeichert,
+  fielen aber aus angerechneter Zeit und Saldo heraus. **Vor einer Übernahme
+  von Altdaten** aus der Zeit vor PraxisZeit prüfen, dass als erster
+  Arbeitstag der tatsächliche Eintritt eingetragen ist und nicht der Starttag
+  von PraxisZeit. Die Ergebnisliste heißt dazu „Hinweise" statt
+  „ArbZG-Warnungen".
+- **Antragsgenehmigung außerhalb des Beschäftigungszeitraums:** Die
+  Genehmigung eines Änderungsantrags prüft den Zeitraum erneut. Liegt der Tag
+  eines neuen Eintrags – oder das neue Datum eines verschobenen – vor dem
+  ersten bzw. nach dem letzten Arbeitstag, lehnt PraxisZeit die Genehmigung ab
+  („Datum liegt nach dem letzten Arbeitstag"), auch wenn Ein- oder Austritt
+  erst nach dem Stellen des Antrags eingetragen wurden; der Antrag bleibt offen.
+  Bisher entstand der Eintrag und fiel still aus Saldo und Exporten.
 - **Bisherige Arbeitszeit-Fenster** wirken als „Arbeitszeit-Fenster
   (Altbestand, nur Kappung)" weiter wie bisher – neu kappen sie auch
   automatisch geschlossene Einträge (siehe oben) – und lassen sich im Dialog
@@ -232,6 +250,16 @@ dieses Backup verlustfrei (`UPDATE.md`).
   Hand angelegte oder geänderte Einträge „Manuell" statt „Admin" (wer gehandelt
   hat, steht unter „Geändert von"), Ausstempeln und automatisch geschlossene
   Einträge „Ausstempeln" bzw. „Automatisch geschlossen" statt der Rohwerte.
+- **Gleicher Beginn wie ein vorhandener Eintrag:** Wer nach einem Fehlstempel
+  aus- und gleich wieder einstempelte und dabei auf dem Beginn eines heutigen
+  Eintrags landete (ein Beginn vor dem ersten Block wird nach vorn gekappt,
+  z. B. 07:30 → 07:45), bekam einen Serverfehler, und der Stempel ging
+  verloren. Jetzt nennt PraxisZeit den Ausweg („Einstempeln nicht möglich: Ein
+  Zeiteintrag von heute beginnt bereits um 07:45, …"). Ebenso scheiterte das
+  Bearbeiten in der Zeiterfassung mit einem Serverfehler, wenn der gekappte
+  Beginn auf den eines anderen Eintrags des Tages fiel; jetzt kommt wie in der
+  Verwaltung „Es existiert bereits ein Eintrag mit dieser Startzeit an diesem
+  Datum".
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images
