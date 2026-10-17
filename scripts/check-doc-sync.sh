@@ -340,6 +340,10 @@ group_code() {
   need_code "Diese Zeiten begrenzen nur die Anrechnung der erfassten Zeit; das Tagessoll wird nicht aus ihnen berechnet."
   need_code '{base} · {window} (nur Kappung)'
   need_code_label frontend/src/pages/TimeTracking.tsx "Antrag"
+  # Gesamtreview 1.20: nachträgliche Feiertags-/Bundesland-/Sondertag-Änderung
+  # nennt Einträge mit veralteter Kappung (work_window_service.stale_clamp_hint).
+  need_code "Zeiteinträge an geänderten Tagen behalten ihre bisherige Anrechnung gegen "
+  need_code "wenn Sie ihn im Admin-Dashboard oder Monatsjournal öffnen und unverändert speichern."
 }
 
 group_mirror() {

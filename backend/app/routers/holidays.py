@@ -8,7 +8,7 @@ from app.services.timezone_service import today_local
 from app.models import User
 from app.models.public_holiday import PublicHoliday
 from app.schemas.holiday import HolidayCreate, HolidayUpdate, HolidayResponse, HolidayWriteResponse
-from app.services import calculation_service, holiday_service
+from app.services import calculation_service, holiday_service, work_window_service
 
 router = APIRouter(prefix="/api/holidays", tags=["holidays"])
 
@@ -100,8 +100,13 @@ def create_holiday(
     # Feiertag setzt Soll und Gutschrift des Tages auf 0 — liegt er in einem
     # abgeschlossenen Jahr, ist dessen Übertrag veraltet. Nur melden.
     response = HolidayWriteResponse.model_validate(holiday)
-    response.warning = calculation_service.stale_year_closing_warning(
-        db, current_user.tenant_id, {holiday.year}
+    response.warning = work_window_service.join_warnings(
+        calculation_service.stale_year_closing_warning(
+            db, current_user.tenant_id, {holiday.year}
+        ),
+        # Gesamtreview 1.20: die Kappung bestehender Einträge des Tages bleibt
+        # stehen (E35 gilt beim Schreiben) — betroffene Einträge nennen.
+        work_window_service.stale_clamp_hint(db, current_user.tenant_id, {holiday.date}),
     )
     return response
 
@@ -117,6 +122,7 @@ def update_holiday(
     holiday = _get_custom_holiday_in_tenant(db, holiday_id, current_user)
 
     old_year = holiday.year
+    old_date = holiday.date
     date_changed = False
 
     if body.name is not None:
@@ -152,8 +158,13 @@ def update_holiday(
     # Jahr prüfen. Ein reines Umbenennen bleibt still.
     response = HolidayWriteResponse.model_validate(holiday)
     if date_changed:
-        response.warning = calculation_service.stale_year_closing_warning(
-            db, current_user.tenant_id, {old_year, holiday.year}
+        response.warning = work_window_service.join_warnings(
+            calculation_service.stale_year_closing_warning(
+                db, current_user.tenant_id, {old_year, holiday.year}
+            ),
+            work_window_service.stale_clamp_hint(
+                db, current_user.tenant_id, {old_date, holiday.date}
+            ),
         )
     return response
 
@@ -167,6 +178,7 @@ def delete_holiday(
     """Delete a custom holiday (admin only). Standard holidays return 403."""
     holiday = _get_custom_holiday_in_tenant(db, holiday_id, current_user)
     year = holiday.year
+    day = holiday.date
 
     db.delete(holiday)
     db.commit()
@@ -175,8 +187,11 @@ def delete_holiday(
     holiday_service.invalidate_holiday_cache(tenant_id=current_user.tenant_id, year=year)
 
     # Fix #5: wie delete_closure — abgeschlossenes Jahr → 200 + {"warning"}.
-    warning = calculation_service.stale_year_closing_warning(
-        db, current_user.tenant_id, {year}
+    warning = work_window_service.join_warnings(
+        calculation_service.stale_year_closing_warning(
+            db, current_user.tenant_id, {year}
+        ),
+        work_window_service.stale_clamp_hint(db, current_user.tenant_id, {day}),
     )
     if warning:
         return JSONResponse(status_code=200, content={"warning": warning})

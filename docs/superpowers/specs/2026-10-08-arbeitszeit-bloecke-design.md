@@ -3102,6 +3102,7 @@ Detail-Modal), `ChangeRequestForm.test.tsx` (gewöhnlicher Antrag), `breakWaiver
 | Live-Timer mit angerechneter Zeit im Dashboard | D34, später. |
 | ~~MA-`PUT` in die Vergangenheit (Datums-Validator in `TimeEntryUpdate`)~~ | **Umgesetzt** (#502, Entschieden 2026-10-10): D16-Nebenbefund nachgezogen — Mitarbeitende wechseln das Datum nur noch heute → heute, siehe E39, 7.1 Nr. 4 und 7.2. |
 | Bearbeiten-Formular für Kollaps-Einträge | `admin_time_entries.py:262-274`; Bestandsproblem, unabhängig. |
+| Automatische Neukappung nach Feiertags-/Bundesland-/Sondertag-Änderung | E35 wirkt beim Schreiben; eine spätere Änderung, ob ein Tag soll-frei ist, lässt die gespeicherte Kappung stehen. Bis dahin (Gesamtreview 1.20) nennen `holidays` POST/PUT/DELETE und `admin_settings` (`holiday_state`, Sondertag-Modus) die betroffenen Einträge in `warning` (`work_window_service.stale_clamp_hint`); Ausweg: unverändert speichern. Eine automatische Neukappung wäre eine rückwirkende Verkürzung ohne Vorschau und Grund (9.5) und bräuchte dasselbe Schutzpaket. |
 
 ---
 

@@ -1,9 +1,11 @@
 """Admin sub-router: System Settings."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User
+from app.models import TimeEntry, User
+from app.models.public_holiday import PublicHoliday
 from app.models.system_setting import SystemSetting
 from app.middleware.auth import require_admin
 from app.routers.admin_helpers import SettingUpdate
@@ -48,6 +50,25 @@ def list_settings(
     """List all system settings."""
     rows = db.query(SystemSetting).filter(SystemSetting.tenant_id == current_user.tenant_id).all()
     return [{"key": r.key, "value": r.value, "description": r.description, "updated_at": r.updated_at} for r in rows]
+
+
+def _tenant_holiday_dates(db: Session, tenant_id) -> set:
+    """Alle Feiertagsdaten des Mandanten (alle Quellen, F-026)."""
+    return {
+        d for (d,) in db.query(PublicHoliday.date).filter(
+            PublicHoliday.tenant_id == tenant_id
+        ).all()
+    }
+
+
+def _tenant_entry_years(db: Session, tenant_id) -> range:
+    """Jahre vom ersten bis zum letzten Zeiteintrag des Mandanten (F-026)."""
+    lo, hi = db.query(func.min(TimeEntry.date), func.max(TimeEntry.date)).filter(
+        TimeEntry.tenant_id == tenant_id
+    ).one()
+    if lo is None:
+        return range(0)
+    return range(lo.year, hi.year + 1)
 
 
 @router.get("/settings/special-days")
@@ -202,6 +223,7 @@ def update_setting(
         # Gesamtreview 1.20 (B9): ALLE Jahre mit gesetzlichen Feiertagen neu
         # erzeugen, nicht nur das laufende und das nächste (frühere Jahre
         # standen sonst ohne Feiertage da) — siehe holiday_service.resync_state.
+        holidays_before = _tenant_holiday_dates(db, current_user.tenant_id)
         try:
             changed_years = holiday_service.resync_state(
                 db, str(value), tenant_id=current_user.tenant_id
@@ -214,8 +236,16 @@ def update_setting(
             )
         # Fix #5: geänderte Feiertage in einem abgeschlossenen Jahr machen dessen
         # Übertrag veraltet — melden, nie automatisch neu berechnen.
-        warning = calculation_service.stale_year_closing_warning(
-            db, current_user.tenant_id, changed_years
+        warning = work_window_service.join_warnings(
+            calculation_service.stale_year_closing_warning(
+                db, current_user.tenant_id, changed_years
+            ),
+            # Gesamtreview 1.20: weggefallene bzw. neue Feiertage ändern, ob
+            # gekappt wird (E35) — bestehende Einträge dort nur nennen.
+            work_window_service.stale_clamp_hint(
+                db, current_user.tenant_id,
+                holidays_before ^ _tenant_holiday_dates(db, current_user.tenant_id),
+            ),
         )
     else:
         if special_before is not None:
@@ -223,14 +253,28 @@ def update_setting(
             # Fix #5 auch hier: ändert der Wechsel Soll, Gutschrift oder
             # Urlaubsverbrauch des 24./31.12. in einem abgeschlossenen Jahr, ist
             # dessen Übertrag veraltet — melden, nie automatisch neu berechnen.
+            special_after = special_days_service.get_special_day_settings(
+                db, current_user.tenant_id
+            )
             affected = special_days_service.years_affected_by_change(
                 db,
                 current_user.tenant_id,
                 special_before,
-                special_days_service.get_special_day_settings(db, current_user.tenant_id),
+                special_after,
                 calculation_service.all_closed_years(db, current_user.tenant_id),
             )
-            warning = calculation_service.closed_year_warning_text(affected)
+            # Gesamtreview 1.20: „frei" ↔ Arbeitstag ändert, ob gekappt wird
+            # (E35) — bestehende Einträge an diesen Tagen nur nennen.
+            warning = work_window_service.join_warnings(
+                calculation_service.closed_year_warning_text(affected),
+                work_window_service.stale_clamp_hint(
+                    db, current_user.tenant_id,
+                    special_days_service.free_state_changed_dates(
+                        special_before, special_after,
+                        _tenant_entry_years(db, current_user.tenant_id),
+                    ),
+                ),
+            )
         db.commit()
 
     db.refresh(s)

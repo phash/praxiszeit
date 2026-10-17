@@ -238,6 +238,24 @@ def _effective_state(settings: Dict[str, object], prefix: str):
     return mode, cav
 
 
+def free_state_changed_dates(
+    before: Dict[str, object],
+    after: Dict[str, object],
+    years,
+) -> set:
+    """Sondertage in ``years``, die durch den Wechsel ``before`` → ``after``
+    zu „frei" werden oder es nicht mehr sind (Gesamtreview 1.20) — nur dort
+    ändert sich, ob gegen die Arbeitszeit-Blöcke gekappt wird (E35/#484; ein
+    „halber Feiertag" behält die Blöcke seines Wochentags)."""
+    changed = [
+        (month, day)
+        for (month, day), prefix in _SPECIAL_DAYS.items()
+        if (_effective_state(before, prefix)[0] == MODE_FREE)
+        != (_effective_state(after, prefix)[0] == MODE_FREE)
+    ]
+    return {date(y, m, d) for y in years for (m, d) in changed}
+
+
 def years_affected_by_change(
     db: Session,
     tenant_id,

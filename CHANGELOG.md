@@ -264,6 +264,13 @@ dieses Backup verlustfrei (`UPDATE.md`).
   werden die gesetzlichen Feiertage aller Jahre für das neue Bundesland neu
   berechnet; eigene Feiertage bleiben. Betrifft das ein Jahr mit
   Jahresabschluss, weist PraxisZeit auf den veralteten Übertrag hin.
+- **Feiertag, Bundesland oder Sondertag nachträglich geändert:** Ob ein Tag
+  gegen die Arbeitszeit-Blöcke gekappt wird, entscheidet sich beim Speichern des
+  Eintrags. Wurde ein Tag danach frei (oder wieder Arbeitstag), behielten
+  bestehende Einträge still die alte Anrechnung. Jetzt nennt PraxisZeit nach dem
+  Speichern eines eigenen Feiertags, des Bundeslands oder der Sondertage die
+  betroffenen Einträge; unverändert neu speichern berechnet sie neu (keine
+  automatische rückwirkende Änderung der angerechneten Zeit).
 - **Sondertage 24./31.12.** umzustellen änderte Soll und Urlaubskonto auch in
   Jahren mit Jahresabschluss ohne Hinweis (die Einstellung gilt für alle Jahre).
   Jetzt meldet PraxisZeit den veralteten Übertrag, sobald sich der Tag in einem

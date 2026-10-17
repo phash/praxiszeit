@@ -824,6 +824,88 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
     return ReclampResult(changed, skipped, flagged)
 
 
+STALE_CLAMP_MAX_DATES = 5
+
+
+def stale_clamp_entries(db: Session, tenant_id, dates) -> list:
+    """Gesamtreview 1.20: geschlossene Einträge an ``dates``, deren gespeicherte
+    Anrechnung (Beginn, Ende, ``uncredited_minutes``) nicht mehr der Kappung
+    entspricht, die ``clamp`` heute ergäbe.
+
+    Aufrufer sind die Wege, die nachträglich ändern, ob ein Tag soll-frei ist
+    (E35/#484): eigener Feiertag anlegen/verschieben/löschen, Bundesland-Wechsel,
+    Sondertag 24./31.12. zwischen „frei" und Arbeitstag. Sie schreiben nichts an
+    den Einträgen — eine stille Neukappung wäre eine rückwirkende Verkürzung
+    ohne Vorschau und Grund (Spec 9.5) — und melden nur, was die Verwaltung per
+    unverändertem Speichern neu berechnen lässt. Ausgenommen wie bei der
+    Neukappung (E49): offene Einträge, ohne Stundenzählung, außerhalb des
+    Beschäftigungsfensters, anerkannte Einträge. Eingaben wie
+    ``reclamp_time_entries`` (Rohstempel, bei ``auto_closed`` nie 23:59),
+    Puffer je Eintrag (``grace_for_entry``, E80)."""
+    from app.models import User
+
+    dates = set(dates or ())
+    if not dates:
+        return []
+    entries = db.query(TimeEntry).filter(
+        TimeEntry.tenant_id == tenant_id,  # F-026
+        TimeEntry.date.in_(dates),
+        TimeEntry.end_time.isnot(None),
+    ).order_by(TimeEntry.date, TimeEntry.start_time).all()
+    entries = [e for e in entries if not e.credit_override]
+    if not entries:
+        return []
+    users = {
+        u.id: u for u in db.query(User).filter(
+            User.tenant_id == tenant_id,  # F-026
+            User.id.in_({e.user_id for e in entries}),
+        ).all()
+    }
+    soll_free = _soll_free_dates(db, tenant_id, min(dates), max(dates))
+    stale = []
+    for e in entries:
+        user = users.get(e.user_id)
+        if user is None or not getattr(user, "track_hours", True):
+            continue
+        if not calculation_service._within_employment_window(user, e.date):
+            continue
+        src_start = e.raw_start_time or e.start_time
+        if e.auto_closed:
+            src_end = _auto_closed_end_input(e.end_time, e.raw_end_time)
+        else:
+            src_end = e.raw_end_time or e.end_time
+        r = clamp(db, user, e.date, src_start, src_end, grace_for_entry(db, e),
+                  credit_override=False, soll_free_dates=soll_free)
+        if (r.eff_start, r.eff_end, int(r.uncredited_minutes)) != (
+                e.start_time, e.end_time, int(e.uncredited_minutes or 0)):
+            stale.append(e)
+    return stale
+
+
+def stale_clamp_hint(db: Session, tenant_id, dates) -> Optional[str]:
+    """Hinweistext zu ``stale_clamp_entries`` (None = nichts betroffen)."""
+    stale = stale_clamp_entries(db, tenant_id, dates)
+    if not stale:
+        return None
+    days = sorted({e.date for e in stale})
+    shown = ", ".join(d.strftime("%d.%m.%Y") for d in days[:STALE_CLAMP_MAX_DATES])
+    if len(days) > STALE_CLAMP_MAX_DATES:
+        shown += ", …"
+    n = len(stale)
+    count = "1 Eintrag" if n == 1 else f"{n} Einträge"
+    return (
+        "Zeiteinträge an geänderten Tagen behalten ihre bisherige Anrechnung gegen "
+        f"die Arbeitszeit-Blöcke ({count}: {shown}). Neu berechnet wird ein Eintrag, "
+        "wenn Sie ihn im Admin-Dashboard oder Monatsjournal öffnen und unverändert speichern."
+    )
+
+
+def join_warnings(*warnings: Optional[str]) -> Optional[str]:
+    """Mehrere Hinweise einer Antwort zu EINEM ``warning`` (None = keiner)."""
+    parts = [w for w in warnings if w]
+    return " ".join(parts) if parts else None
+
+
 def credited_minutes_for(blocks: list, grace: int, start_min: int, end_min: int) -> int:
     """Angerechnete Minuten (ohne Pause) eines Eintrags ``start``–``end`` gegen
     die Blöcke EINES Tages — dieselbe Regel wie ``_clamp_core``, rein in Minuten
