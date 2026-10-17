@@ -339,12 +339,17 @@ def _kept_entries(db: Session, user_id, tenant_id, rows_by_date: dict, replaced_
 
 
 def _row_counts(row) -> bool:
-    """Zählt die Zeile für den Tag? Zeilen mit (wirksamem) Ende ≤ Beginn
+    """Zählt die Zeile für den Tag? Datei-Zeilen mit Ende ≤ Beginn
     überspringt ``/confirm`` — sie zählen weder für Pause, §3/§4 und
     Anwesenheit noch für §5 (Gesamtreview 1.20 B4), und sie ersetzen keinen
     Bestandseintrag (``replaced_ids``, Review-Nachzug B4). Dasselbe gilt für
-    Zeilen außerhalb des Beschäftigungsfensters (``row.outside``)."""
-    return getattr(row, "outside", None) is None and row.r.eff_end > row.r.eff_start
+    Zeilen außerhalb des Beschäftigungsfensters (``row.outside``).
+
+    Gesamtreview 1.20 (B11): maßgeblich ist die Reihenfolge der DATEI-Zeile
+    (Rohstempel), nicht die gekappte Zeit — eine Zeile ganz außerhalb der Hülle
+    kollabiert auf Beginn = Ende (0 h) und zählt trotzdem, wie an jedem anderen
+    Schreibweg (``work_window_service._clamp_core``)."""
+    return getattr(row, "outside", None) is None and row.file_end > row.file_start
 
 
 def _rest_reference(db: Session, user_id, tenant_id, rows: list, kept_by_date: dict,
@@ -708,7 +713,7 @@ def _read_rows(ws, db: Session, user, user_id, user_tenant, grace: int) -> list:
         )
         rows.append(SimpleNamespace(
             date=entry_date, note=note, r=r, segs=segs, existing=existing, override=override,
-            outside=outside,
+            outside=outside, file_start=file_start, file_end=file_end,
         ))
     return rows
 
@@ -872,22 +877,6 @@ def _execute_import_inner(
                     f"{entry.date.strftime('%d.%m.%Y')}: übersprungen — {outside}."
                 )
                 continue
-            # Invariant end_time > start_time. net_hours floors a negative duration
-            # to 0, so an end<=start row (over-midnight shift, or corrupt/forged
-            # source — /confirm trusts client-supplied entries) would otherwise be
-            # stored as a phantom 0h entry: wrong pay + it bypasses the §3 daily cap.
-            # The interactive write paths reject this; the importer must too. Skip it
-            # with a visible warning (over-midnight shifts are entered as two entries).
-            if entry.end_time is None or entry.end_time <= entry.start_time:
-                skipped += 1
-                all_warnings.append(
-                    f"{entry.date.strftime('%d.%m.%Y')}: übersprungen — Endzeit "
-                    f"({entry.end_time.strftime('%H:%M') if entry.end_time else '—'}) "
-                    f"liegt nicht nach Startzeit ({entry.start_time.strftime('%H:%M')}). "
-                    f"Über-Mitternacht-Schichten als zwei Einträge erfassen."
-                )
-                continue
-
             # Release-Review 1.19.1 + Spec 7.4: NICHT den Client-Werten vertrauen.
             # /confirm nimmt die Einträge aus dem Request-Body entgegen; wo gekappt
             # wird, rechnet der Server Zeiten, raw_* und uncredited neu, und zwar
@@ -895,6 +884,28 @@ def _execute_import_inner(
             # Auto-Pause rechnet er immer selbst (je Tag, ``_apply_day_breaks``).
             file_start = entry.raw_start_time or entry.start_time
             file_end = entry.raw_end_time or entry.end_time
+
+            # Invariant end_time > start_time. net_hours floors a negative duration
+            # to 0, so an end<=start row (over-midnight shift, or corrupt/forged
+            # source — /confirm trusts client-supplied entries) would otherwise be
+            # stored as a phantom 0h entry: wrong pay + it bypasses the §3 daily cap.
+            # The interactive write paths reject this; the importer must too. Skip it
+            # with a visible warning (over-midnight shifts are entered as two entries).
+            # Gesamtreview 1.20 (B11): geprüft wird die DATEI-Zeile (Rohstempel),
+            # nicht die gekappte Zeit der Vorschau — eine Zeile ganz außerhalb der
+            # Hülle (18:00–20:00 bei Block 08–12) kollabiert auf 18:00–18:00 und
+            # wird wie an jedem anderen Schreibweg mit 0 h angelegt, Rohstempel
+            # erhalten (§16), statt mit „Endzeit (18:00) liegt nicht nach
+            # Startzeit (18:00)" verloren zu gehen.
+            if file_end is None or file_end <= file_start:
+                skipped += 1
+                all_warnings.append(
+                    f"{entry.date.strftime('%d.%m.%Y')}: übersprungen — Endzeit "
+                    f"({file_end.strftime('%H:%M') if file_end else '—'}) "
+                    f"liegt nicht nach Startzeit ({file_start.strftime('%H:%M')}). "
+                    f"Über-Mitternacht-Schichten als zwei Einträge erfassen."
+                )
+                continue
             first = work_window_service.clamp(
                 db, target_user, entry.date, file_start, file_end, grace, credit_override=False,
             )

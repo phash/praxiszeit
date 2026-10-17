@@ -167,7 +167,11 @@ dieses Backup verlustfrei (`UPDATE.md`).
   Eine Zeile, deren Ende nicht nach dem Beginn liegt, ersetzt auch in der
   Vorschau keinen vorhandenen Eintrag mehr; eine zu kurze Ruhezeit bis zu
   einem vorhandenen Eintrag am Folgetag, der nicht in der Datei steht, meldet
-  die Vorschau jetzt ebenfalls.
+  die Vorschau jetzt ebenfalls. Eine Zeile ganz außerhalb der Arbeitszeit-Blöcke
+  (z. B. 18:00–20:00 bei einem Block 08:00–12:00) übernimmt der Import wie jeden
+  gestempelten Eintrag mit 0 Stunden angerechnet und den Zeiten der Datei als
+  Rohstempel; bisher übersprang er sie mit „Endzeit (18:00) liegt nicht nach
+  Startzeit (18:00)".
 - **ODS-Jahresbericht:** Das Mitarbeiterblatt nennt wie die Excel-Datei die
   Summe der Nachtarbeitstage (sie wurde gezählt, aber nie ausgegeben).
 - **Nachtarbeit:** Ein Eintrag ganz außerhalb der Arbeitszeit-Blöcke (0 h
