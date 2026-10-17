@@ -241,6 +241,10 @@ describe('AdminDashboard Anerkennen im Detail-Modal (Spec 13.3)', () => {
         if (state === 'geloescht') return Promise.resolve({ data: [] });
         return Promise.resolve({ data: [{ ...K7, net_hours: state === 'anerkannt' ? 12 : 8, credit_override: state === 'anerkannt' }] });
       }
+      if (url === '/absences') {
+        // Misch-Tag (F1): Anerkennen gleicht die Krank-Gutschrift am selben Tag an.
+        return Promise.resolve({ data: [{ id: 'a1', date: '2026-10-05', type: 'sick', hours: state === 'anerkannt' ? 4 : 5.25, note: '' }] });
+      }
       return Promise.resolve({ data: [] });
     });
   }
@@ -276,6 +280,17 @@ describe('AdminDashboard Anerkennen im Detail-Modal (Spec 13.3)', () => {
     const before = yearlyCalls();
     await credit(dialog);
     await waitFor(() => expect(yearlyCalls()).toBeGreaterThan(before));
+  });
+
+  // Gesamtreview 1.20 (Nachzug Fund 1): Anerkennen ändert auch die Stunden einer
+  // Abwesenheit am selben Tag — die Liste im Modal muss nachladen, sonst steht dort
+  // weiter „Krank 5:15 h", während das Protokoll daneben schon 4,0 h nennt.
+  it('lädt die Abwesenheitsliste nach (angeglichene Gutschrift am Misch-Tag)', async () => {
+    const dialog = await openDetail();
+    await within(dialog).findByText('5:15 h');
+    await credit(dialog);
+    await within(dialog).findByText('4:00 h');
+    expect(within(dialog).queryByText('5:15 h')).not.toBeInTheDocument();
   });
 
   it('zeigt Ist und Saldo der Detail-Kacheln nach dem Anerkennen neu (Monatsansicht)', async () => {

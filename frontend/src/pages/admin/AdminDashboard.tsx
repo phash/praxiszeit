@@ -453,9 +453,10 @@ export default function AdminDashboard() {
     }
   };
 
-  // Spec 13.3: nach „Anerkennen" Einträge, Protokoll, Monatsbericht (samt
-  // Modal-Kacheln) und Jahresübersicht neu laden — wie nach Speichern/Löschen
-  // (C-2): Anerkennen erhöht das Ist und damit „Überstunden Jahr" (get_ytd_summary).
+  // Spec 13.3: nach „Anerkennen" Einträge, Abwesenheiten, Protokoll, Monatsbericht
+  // (samt Modal-Kacheln) und Jahresübersicht neu laden — wie nach Speichern/Löschen
+  // (C-2): Anerkennen erhöht das Ist und damit „Überstunden Jahr" (get_ytd_summary)
+  // und gleicht eine Abwesenheit am selben Tag an (F1, Gesamtreview 1.20 Fund 1).
   const reloadEmployeeEntries = async () => {
     if (!selectedEmployee) return;
     try {
@@ -463,6 +464,10 @@ export default function AdminDashboard() {
         params: { user_id: selectedEmployee.user_id, month: currentMonth },
       });
       setEmployeeTimeEntries(Array.isArray(entriesResponse.data) ? entriesResponse.data : []); // #382
+      const absencesResponse = await apiClient.get('/absences', {
+        params: { user_id: selectedEmployee.user_id, year: currentMonth.split('-')[0] },
+      });
+      setEmployeeAbsences(Array.isArray(absencesResponse.data) ? absencesResponse.data : []); // #382
       fetchAuditForUser(selectedEmployee.user_id);
       void refreshReportAndDetailSummary();
       fetchYearlyAbsences();
