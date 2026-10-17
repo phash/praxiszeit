@@ -1411,6 +1411,7 @@ const saveYearEndProjection = async () => {
               id="grace-minutes"
               type="number"
               min="0"
+              max="1439"
               value={graceMinutes}
               onChange={(e) => setGraceMinutes(e.target.value)}
               className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"

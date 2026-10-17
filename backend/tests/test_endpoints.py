@@ -955,6 +955,18 @@ class TestAdminSettings:
         bad = admin_client.put("/api/admin/settings/work_window_grace_minutes", json={"value": "-5"})
         assert bad.status_code == 400
 
+    def test_work_window_grace_minutes_upper_bound(self, admin_client):
+        """Gesamtreview 1.20 (Fund 11): höchstens 1439 Minuten (ein ganzer Tag).
+        Ein größerer Wert kappt nicht anders, sprengte aber die int4-Spalte
+        ``time_entries.clamp_grace_minutes`` (PG 22003 → 500 bei jedem Stempeln)."""
+        url = "/api/admin/settings/work_window_grace_minutes"
+        assert admin_client.put(url, json={"value": "1439"}).status_code == 200
+        assert admin_client.put(url, json={"value": "0"}).status_code == 200
+        for value in ("1440", "10000000000", "abc"):
+            resp = admin_client.put(url, json={"value": value})
+            assert resp.status_code == 400, (value, resp.text)
+            assert "1439" in resp.json()["detail"], value
+
     def test_inverted_legacy_window_is_rejected_as_legacy_field(self, admin_client):
         """#201 → Spec 11.4: auch ein (invertiertes) Altfenster ist ein Altfeld → 400."""
         resp = admin_client.post("/api/admin/users", json={

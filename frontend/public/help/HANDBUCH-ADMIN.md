@@ -786,7 +786,7 @@ Bearbeiten Mitarbeitende einen Eintrag, ohne Datum, Zeiten oder Pause zu ändern
 <a id="soll-arbeitszeit-fenster-puffer"></a>
 ### Soll-Arbeitszeit-Fenster (Puffer)
 
-Im Bereich **„Soll-Arbeitszeit-Fenster"** legen Sie im Feld **„Puffer für Soll-Arbeitszeit-Fenster (Min.)"** den systemweiten Puffer für die Arbeitszeit-Blöcke fest (Standard: **15** Minuten). Er gilt an jedem Blockrand, auch zwischen zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet. Gestempelte Zeit weiter außerhalb wird nicht angerechnet – Details und Beispiel: [Abschnitt 4 → „Arbeitszeit-Blöcke"](#arbeitszeit-bloecke).
+Im Bereich **„Soll-Arbeitszeit-Fenster"** legen Sie im Feld **„Puffer für Soll-Arbeitszeit-Fenster (Min.)"** den systemweiten Puffer für die Arbeitszeit-Blöcke fest (Standard: **15** Minuten, zulässig 0 bis 1439 Minuten – ab 1439 Minuten, einem ganzen Tag, kappt PraxisZeit nichts mehr). Er gilt an jedem Blockrand, auch zwischen zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet. Gestempelte Zeit weiter außerhalb wird nicht angerechnet – Details und Beispiel: [Abschnitt 4 → „Arbeitszeit-Blöcke"](#arbeitszeit-bloecke).
 
 Eine Änderung des Puffers wirkt auf neue Einträge. Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn, auch wenn er später bearbeitet wird. Nur eine Arbeitszeit-Änderung mit Neuberechnung kappt die betroffenen Einträge mit dem dann gültigen Puffer neu; die Vorschau nennt ihn, und verliert dabei ein Eintrag angerechnete Zeit, gilt der Verkürzungsschutz. Einträge aus der Zeit vor Version 1.20.0 tragen keinen gespeicherten Puffer und werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt. Bereits gespeicherte Einträge ändern sich durch das Speichern dieser Einstellung allein nicht.
 

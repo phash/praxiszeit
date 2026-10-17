@@ -103,6 +103,15 @@ describe('<Settings /> Puffer-Hinweis (Spec 2026-10-08, 12.3)', () => {
       /Bereits gespeicherte Einträge ändern sich durch das Speichern dieser Einstellung allein nicht\.$/,
     )).toBeInTheDocument();
   });
+
+  // Gesamtreview 1.20 (Fund 11): Obergrenze wie im Backend (ein ganzer Tag).
+  it('begrenzt das Puffer-Feld auf 0 bis 1439 Minuten', async () => {
+    mockSettings([]);
+    render(<Settings />);
+    const input = await screen.findByLabelText('Puffer für Soll-Arbeitszeit-Fenster (Min.)');
+    expect(input).toHaveAttribute('min', '0');
+    expect(input).toHaveAttribute('max', '1439');
+  });
 });
 
 describe('<Settings /> Bundesland-Wechsel (Gesamtreview 1.20 B9)', () => {

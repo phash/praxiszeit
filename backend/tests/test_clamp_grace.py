@@ -357,3 +357,35 @@ def test_admin_full_form_resave_keeps_gap_state(_db_session, employee_user, admi
     assert (e.start_time, e.end_time, e.raw_start_time, e.raw_end_time) == (
         time(7, 45), time(18, 15), time(7, 0), time(19, 0))
     assert (e.uncredited_minutes, e.clamp_grace_minutes, e.break_minutes) == (150, 15, 30)
+
+
+# Gesamtreview 1.20 (Fund 11): Obergrenze des Puffers. Ab 1439 Minuten (ein
+# ganzer Tag) reicht die Hülle über den ganzen Tag und jede Lücke verschwindet –
+# ein größerer Puffer kappt nicht anders. Seit 073 schreibt aber jede Kappung den
+# Puffer in die int4-Spalte ``clamp_grace_minutes``; ein gespeicherter Wert
+# ≥ 2^31 ließ auf PostgreSQL jedes Stempeln an einem Tag mit Blöcken mit 500
+# scheitern (22003), mandantenweit.
+def test_oversized_stored_grace_is_capped_to_a_day(_db_session, employee_user, employee_client, monkeypatch):
+    from app.services import work_window_service
+
+    _window(_db_session, employee_user)
+    _grace(_db_session, 10_000_000_000)
+    assert work_window_service.get_grace_minutes(_db_session, DEFAULT_TENANT_ID) == 1439
+    monkeypatch.setattr(te, "_today_local", lambda: MON)
+    monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 7, 0))
+    assert employee_client.post("/api/time-entries/clock-in", json={}).status_code == 201
+    assert _only(_db_session).clamp_grace_minutes == 1439
+
+
+def test_grace_above_a_day_clamps_like_a_day(_db_session, employee_user):
+    """Die Obergrenze ändert keine Anrechnung: 1439 und jeder größere Puffer
+    kappen gleich (Hülle 00:00–23:59, keine Lücke)."""
+    from app.services.work_window_service import clamp
+
+    employee_user.work_blocks = K_BLOCKS
+    _db_session.commit()
+    for start, end in [(time(0, 0), time(23, 59)), (time(7, 0), time(19, 0)),
+                       (time(12, 30), time(14, 30)), (time(6, 0), None)]:
+        day = clamp(_db_session, employee_user, MON, start, end, 1439, credit_override=False)
+        huge = clamp(_db_session, employee_user, MON, start, end, 10_000_000_000, credit_override=False)
+        assert day[:5] == huge[:5], (start, end)

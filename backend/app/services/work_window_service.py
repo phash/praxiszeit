@@ -22,9 +22,14 @@ from app.models.system_setting import SystemSetting
 from app.services import calculation_service
 
 DEFAULT_GRACE_MINUTES = 15
+_LAST_MINUTE = 23 * 60 + 59
+# Gesamtreview 1.20 (Fund 11): Obergrenze des Puffers = ein ganzer Tag. Ab hier
+# reicht die Hülle von 00:00 bis 23:59 und jede Lücke verschwindet; ein größerer
+# Puffer kappt nicht anders. Er sprengte aber die int4-Spalte
+# ``time_entries.clamp_grace_minutes`` (PG 22003 → 500 bei jedem Stempeln).
+MAX_GRACE_MINUTES = _LAST_MINUTE
 # #462: Kennung der weichen Warnung ("CODE: Text", läuft durch showArbzgWarnings).
 CLAMP_WARNING_CODE = "WORK_WINDOW_CLAMPED"
-_LAST_MINUTE = 23 * 60 + 59
 # P18: Ende, mit dem der Auto-Close einen offenen Eintrag schließt — ein
 # synthetischer Wert, nie ein Stempel (``time_entries._close_stale_entry``,
 # ``end_input_for``).
@@ -46,7 +51,9 @@ class ClampResult(NamedTuple):
 
 
 def get_grace_minutes(db: Session, tenant_id) -> int:
-    """work_window_grace_minutes aus system_settings (Default 15, >= 0)."""
+    """work_window_grace_minutes aus system_settings (Default 15, 0 bis
+    ``MAX_GRACE_MINUTES``). Die Obergrenze greift auch für einen vor der
+    Eingabeprüfung gespeicherten Altwert – er kappt wie ein ganzer Tag."""
     s = db.query(SystemSetting).filter(
         SystemSetting.key == "work_window_grace_minutes",
         SystemSetting.tenant_id == tenant_id,
@@ -54,7 +61,7 @@ def get_grace_minutes(db: Session, tenant_id) -> int:
     if not s:
         return DEFAULT_GRACE_MINUTES
     try:
-        return max(0, int(s.value))
+        return min(max(0, int(s.value)), MAX_GRACE_MINUTES)
     except (TypeError, ValueError):
         return DEFAULT_GRACE_MINUTES
 

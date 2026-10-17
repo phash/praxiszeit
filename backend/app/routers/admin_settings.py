@@ -7,7 +7,7 @@ from app.models import User
 from app.models.system_setting import SystemSetting
 from app.middleware.auth import require_admin
 from app.routers.admin_helpers import SettingUpdate
-from app.services import calculation_service, special_days_service, type_colors_service
+from app.services import calculation_service, special_days_service, type_colors_service, work_window_service
 from typing import Dict
 from app.services.settings_service import (
     SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD,
@@ -102,13 +102,21 @@ def update_setting(
         raise HTTPException(status_code=400, detail=f"Unbekannte Einstellung: {key}")
     value = body.value
 
-    # #201: validate work_window_grace_minutes as a non-negative integer
+    # #201: work_window_grace_minutes als ganze Zahl von 0 bis 1439 (ein ganzer
+    # Tag, Gesamtreview 1.20 Fund 11) — mehr kappt nicht anders, sprengte aber
+    # die int4-Spalte time_entries.clamp_grace_minutes (500 bei jedem Stempeln).
     if key == "work_window_grace_minutes":
         try:
-            if int(value) < 0:
+            if not 0 <= int(value) <= work_window_service.MAX_GRACE_MINUTES:
                 raise ValueError
         except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="work_window_grace_minutes muss eine nicht-negative Zahl sein")
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Der Puffer muss eine ganze Zahl zwischen 0 und "
+                    f"{work_window_service.MAX_GRACE_MINUTES} Minuten sein."
+                ),
+            )
 
     # #376: validate child_sick_days_default as a non-negative integer
     if key == "child_sick_days_default":
