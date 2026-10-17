@@ -296,7 +296,10 @@ dem Gewicht ihres Tages multipliziert (`calculation_service.credit_day_weight`):
 > **Wochentag ohne Soll** (0 h im Tagesplan, Wochentag ohne Blöcke): Das Gewicht ist 1,0,
 > die gespeicherten `hours` sind dort aber 0 — gebucht wird an einem solchen Tag nicht, und
 > wird er erst durch eine Arbeitszeit-Änderung frei, setzt die Rückrechnung Krank und
-> Fortbildung dort auf 0 (seit 1.20.0, §14 TZ-E). Die Gutschrift ist also auch hier 0.
+> Fortbildung dort auf 0 (seit 1.20.0, §14 TZ-E). Die Gutschrift ist also auch hier 0 —
+> ausgenommen Bestand aus früheren Versionen: Solche Zeilen tragen ihre alten Stunden, bis die
+> nächste Arbeitszeit-Änderung, deren Wirkungsbereich den Tag umfasst, sie auf 0 setzt
+> (§14 TZ-E „Bestand").
 
 **Grundsatz:** An einem Tag ohne Arbeitspflicht kann keine Arbeitspflicht ausfallen — es gibt
 kein Soll, das auszugleichen wäre. Rechtlich ordnet **§ 4 Abs. 2 EntgFG** den Feiertag
@@ -1319,6 +1322,19 @@ Bewusst ausgenommen:
   Abwesenheit in der Vorschau und im Protokoll („Krank 7,5 h" → „Krank 0,0 h — …"); das
   Löschen der Änderung zieht sie wieder auf das Tagessoll hoch. Der Saldo des Tages bleibt
   0 (Soll und Gutschrift sinken gleich, keine Verkürzung nach Kriterium c).
+  **Bestand:** Zeilen, die schon vor 1.20.0 so gespeichert wurden (Wochentag bereits ohne
+  Soll, Krank/Fortbildung mit den alten Stunden), korrigiert das Update nicht von selbst —
+  ihre Gutschrift steht bis dahin weiter im Saldo. Weil die Rückrechnung **jede** Zeile im
+  Wirkungsbereich an das Tagessoll angleicht, nicht nur die an geänderten Wochentagen, setzt
+  die nächste Änderung (Anlegen oder Löschen), deren Wirkungsbereich eine solche Zeile
+  umfasst, sie auf 0 — auch wenn sie nur einen anderen Wochentag ändert. Dort sinkt nur die
+  Gutschrift, das Soll war schon 0: Liegt der Tag vor dem Stichtag (#313), sinkt der Saldo um
+  die alten Stunden, und die Änderung ist eine **Verkürzung** nach Kriterium b (mit
+  Schutzpaket, in abgeschlossene Jahre gesperrt). Beispiel: Dienstag frei ab 01.09. (ohne
+  Rückrechnung, Krank 15.09. mit 7,5 h), danach ab 07.09. nur Mo 08:00–16:00 → 08:00–15:00 —
+  Δ Soll −5:00 h, Δ angerechnet −7:30 h, Überstundenkonto −2:30 h statt +5:00 h. Der Standard
+  „Ab heute" lässt eine vergangene Zeile stehen (der Wirkungsbereich beginnt danach). Eine
+  einmalige Bereinigung des Bestands beim Update gibt es nicht.
 * Tage außerhalb des Beschäftigungsfensters (#193).
 * Alt-Zeilen ohne Halbtags-Information (`half_day IS NULL`, gebucht vor #205) — für sie
   zählen `get_vacation_account`/`absence_days` die Tage stundenbasiert (`hours ÷ Tagessoll`),
@@ -1455,7 +1471,10 @@ umgerechnet — ein Montags- oder Dienstags-Krankheitstag im selben Fenster blie
 unangetastet, weil sich deren Tagessoll (8 h) nicht geändert hat. `retarget_absence_hours`
 prüft pro gebuchtem Tag, ob sich **sein** historisch aufgelöstes Tagessoll geändert hat —
 ein eigener Wochentagsfilter ist dafür nicht nötig, die bestehende Gleichheitsprüfung
-überspringt unveränderte Tage von selbst.
+überspringt unveränderte Tage von selbst. Genau genommen vergleicht sie die gespeicherten
+Stunden mit dem neuen Tagessoll; bei stimmigem Bestand ist das dasselbe. Weicht eine Zeile
+schon vorher ab (Krank/Fortbildung mit alten Stunden an einem Wochentag ohne Soll, siehe
+TZ-E „Bestand"), wird sie auch an einem unveränderten Wochentag angeglichen.
 
 > ⚠️ **Fallstrick — eine Arbeitstage-Verschiebung ändert den Urlaubsverbrauch, nicht immer
 > das Tagessoll.** Verschiebt eine Änderung Stunden von einem Wochentag auf einen anderen,

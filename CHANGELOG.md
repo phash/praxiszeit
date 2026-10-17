@@ -269,7 +269,16 @@ dieses Backup verlustfrei (`UPDATE.md`).
   PraxisZeit die Stunden dort auf 0 (Vorschau „Abwesenheit(en) betroffen",
   Protokoll „Krank 7,5 h" → „Krank 0,0 h"); das Löschen der Änderung stellt sie
   wieder her. Urlaub an solchen Tagen bleibt wie bisher stehen und kostet keinen
-  Urlaubstag.
+  Urlaubstag. **Bestand:** Kranken- und Fortbildungstage, die schon vor dem
+  Update so stehen (z. B. nach einer früheren Änderung, die einen Wochentag frei
+  gemacht hat), ändert das Update nicht – ihre Stunden zählen weiter zum
+  Überstundenkonto. Erst die nächste Arbeitszeit-Änderung (Anlegen oder
+  Löschen), deren Wirkungsbereich den Tag umfasst, setzt sie auf 0, auch wenn
+  sie diesen Wochentag gar nicht ändert. Liegt der Tag in der Vergangenheit,
+  sinkt dabei das Überstundenkonto um diese Stunden, und die Auswirkung zeigt
+  die Änderung als **Verkürzung** (rückwirkend nur mit Grund, Begründung und
+  Bestätigung, in ein abgeschlossenes Jahr gesperrt); „Ab heute" lässt solche
+  vergangenen Tage unverändert.
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images

@@ -101,6 +101,43 @@ def test_deleting_the_change_restores_the_credit(db, test_user, test_admin, monk
     assert _day_saldo(db, test_user, SICK_DAY) == Decimal("0")
 
 
+def test_existing_row_is_zeroed_by_the_next_covering_change(db, test_user, test_admin, monkeypatch):
+    """Bestand (Gesamtreview 1.20, Nachzug zu Fund 4): Eine Krankmeldung, die
+    schon VOR 1.20.0 an einem frei gewordenen Dienstag mit den alten 7,5 h
+    stehen blieb (die Rückrechnung übersprang den Tag damals), korrigiert das
+    Update nicht von selbst. Die Rückrechnung gleicht jede Zeile im
+    Wirkungsbereich an das Tagessoll an — die nächste Änderung, deren Bereich
+    den Tag umfasst, setzt sie also auf 0, auch wenn sie nur den Montag ändert.
+    Weil das Soll dort schon 0 war, sinkt nur die Gutschrift: das
+    Überstundenkonto fällt, die Änderung ist eine Verkürzung (Kriterium b).
+    So steht es im CHANGELOG, in BERECHNUNGEN (TZ-E) und im Admin-Handbuch."""
+    freeze(monkeypatch)
+    add_row(db, test_user, date(2026, 3, 1), week=FULL)
+    sick = absence(db, test_user, SICK_DAY, AbsenceType.SICK, 7.5)
+    # Altzustand: Dienstag frei ab 01.09. OHNE Rückrechnung (wie vor dem Fix).
+    add_row(db, test_user, EFF, week=NO_TUESDAY)
+    assert _day_saldo(db, test_user, SICK_DAY) == Decimal("7.5")   # Phantom-Gutschrift
+
+    later = date(2026, 9, 7)   # Montag
+    shorter_monday = block_week(pause=30, mon=[("08:00", "15:00")], wed=DAY, thu=DAY, fri=DAY)
+    impact = svc.run_change(db, test_user, admin_id=test_admin.id, effective_from=later,
+                            apply=lambda: db.add(change_row(test_user, later, week=shorter_monday)))
+
+    assert impact.changed_weekdays == [0]   # nur Montag geändert …
+    assert [(a.date, a.absence_type, a.old_hours, a.new_hours) for a in impact.absences] == [
+        (SICK_DAY, AbsenceType.SICK, Decimal("7.50"), Decimal("0.00"))]   # … der Dienstag trotzdem
+    # Fünf Montage verlieren je 1 h Soll, die Gutschrift sinkt um die 7,5 h.
+    assert (impact.target_delta, impact.credited_delta, impact.saldo_delta) == (
+        Decimal("-5.00"), Decimal("-7.50"), Decimal("-2.50"))
+    assert impact.shortening_reasons == ["saldo"]
+    # „Ab heute" lässt die Zeile stehen (der Wirkungsbereich beginnt danach).
+    assert impact.earliest_lossless_date == date(2026, 10, 8)
+    db.flush()
+    db.refresh(sick)
+    assert Decimal(str(sick.hours)) == Decimal("0")
+    assert _day_saldo(db, test_user, SICK_DAY) == Decimal("0")
+
+
 @pytest.fixture
 def client(db, test_admin, monkeypatch):
     freeze(monkeypatch)
