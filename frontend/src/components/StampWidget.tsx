@@ -24,6 +24,9 @@ interface ClockStatus {
   grace_minutes?: number;
 }
 
+// Zugänglicher Name des §4-Begründungsfelds (beide Varianten).
+const BREAK_WAIVER_FIELD_LABEL = 'Begründung, warum die Pflicht-Pause nicht möglich war';
+
 interface StampWidgetProps {
   variant?: 'inline' | 'sheet';
   onSuccess?: () => void;
@@ -284,6 +287,9 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
                       value={breakWaiverReason}
                       onChange={(e) => setBreakWaiverReason(e.target.value)}
                       rows={2}
+                      // Gesamtreview 1.20 (Fund 19): eigener Name — der Platzhalter
+                      // ist nur ein Beispiel (wie TimeTracking: „Begründung …").
+                      aria-label={BREAK_WAIVER_FIELD_LABEL}
                       placeholder="z. B. Notfall, keine Vertretung"
                       className="w-full mt-2 border border-amber-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500"
                     />
@@ -376,6 +382,9 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
                       value={breakWaiverReason}
                       onChange={(e) => setBreakWaiverReason(e.target.value)}
                       rows={2}
+                      // Gesamtreview 1.20 (Fund 19): eigener Name — der Platzhalter
+                      // ist nur ein Beispiel (wie TimeTracking: „Begründung …").
+                      aria-label={BREAK_WAIVER_FIELD_LABEL}
                       placeholder="z. B. Notfall, keine Vertretung"
                       className="w-full mt-2 border border-amber-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500"
                     />

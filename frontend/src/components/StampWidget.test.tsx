@@ -219,3 +219,30 @@ describe('<StampWidget /> §4-Vorprüfung mit Lückensegmenten (Spec 8.4)', () =
     expect(postMock).not.toHaveBeenCalled();
   });
 });
+
+// Gesamtreview 1.20 (Fund 19): das Begründungsfeld der §4-Ausnahme trägt einen
+// eigenen Namen — der Platzhalter („z. B. Notfall …") ist nur ein Beispiel und
+// sagt nicht, dass hier die Pflicht-Begründung hingehört. Beide Varianten.
+describe('<StampWidget /> §4-Begründung beschriftet (Gesamtreview Fund 19)', () => {
+  const NAME = 'Begründung, warum die Pflicht-Pause nicht möglich war';
+
+  it('Inline-Variante: das Textfeld heißt wie die Pflicht-Begründung', async () => {
+    clockedInSince(startedAgo(5));
+    rejectWith(S4);
+    await openBreakDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
+    const field = await screen.findByLabelText(NAME);
+    expect(field.tagName).toBe('TEXTAREA');
+  });
+
+  it('Sheet-Variante: das Textfeld heißt wie die Pflicht-Begründung', async () => {
+    clockedInSince(startedAgo(5));
+    rejectWith(S4);
+    render(<StampWidget variant="sheet" />);
+    fireEvent.click(await screen.findByRole('button', { name: /Ausstempeln/ }));
+    await screen.findByLabelText('Pause (Minuten)');
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
+    const field = await screen.findByLabelText(NAME);
+    expect(field.tagName).toBe('TEXTAREA');
+  });
+});
