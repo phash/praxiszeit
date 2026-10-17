@@ -1067,7 +1067,9 @@ Vor jedem Versions-Update die DB der laufenden (alten) Version sichern und nach
 dem Hochziehen der neuen Version wieder einspielen:
 
     bash backup.sh                                  # -> backups/praxiszeit_<ts>.sql.gz
-    # ... neue Version entpacken, .env + backups/ uebernehmen ...
+    # ... neue Version entpacken, .env + backups/ + eigene Aenderungen an
+    #     docker-compose.yml (z. B. Port) uebernehmen; alten Ordner danach
+    #     nicht mehr starten (gleicher Projektname, alte Version) ...
     docker compose pull db                          # PostgreSQL-18-Patchstand (Sicherheitsupdates)
     docker compose build --pull                     # frische Basis-Images (Debian/Alpine-Sicherheitsupdates)
     docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d   # nur HTTP: docker compose up -d
