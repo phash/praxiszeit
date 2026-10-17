@@ -641,6 +641,12 @@ ein und startet das Backend wieder — erst dieser Start migriert ein Backup ein
 
 ## 10. Updates einspielen
 
+> **Vor jedem Update ein Backup ziehen** (Abschnitt 9). Vor dem Update auf **1.20.0**
+> ist das Pflicht: Die Migration `073_work_blocks` übernimmt die Arbeitszeit-Fenster
+> als Arbeitszeit-Blöcke und entfernt die alten Fenster-Spalten –
+> zurück auf 1.19.x geht es nur über dieses Backup. Alle Wege und was nach dem
+> Update zu prüfen ist: [UPDATE.md](UPDATE.md).
+
 ### 10.1 Native (alle Plattformen)
 
 **Variante 1 — Update-Wizard im Browser** (empfohlen):
@@ -673,10 +679,12 @@ net start PraxisZeit
 cd ~/praxiszeit
 git pull
 docker compose down
+docker compose pull db                 # PostgreSQL-18-Patchstand (`up` zieht ihn nie neu)
+docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
 # Ohne SSL:
-docker compose up -d --build
+docker compose up -d
 # Mit SSL:
-docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 ```
 
 DB-Migrationen laufen automatisch beim Backend-Start (über den Superuser via `DATABASE_URL_MIGRATIONS`).

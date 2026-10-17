@@ -250,14 +250,22 @@ docker compose up -d
 > dem git-Checkout): `bash tools/docker/update-pg-major.sh`. Vollständige
 > Anleitung inkl. Backup/Restore: **[UPDATE.md](UPDATE.md)**.
 
+> **⚠️ Update auf 1.20.0:** Vorher ein Backup ziehen (siehe
+> [Datensicherung](#datensicherung-backup)). Die Migration `073_work_blocks`
+> übernimmt die Arbeitszeit-Fenster als Arbeitszeit-Blöcke und entfernt die alten
+> Fenster-Spalten – zurück auf 1.19.x geht es nur über dieses Backup. Was nach dem
+> Update zu prüfen ist: **[UPDATE.md](UPDATE.md)**.
+
 ```bash
 cd ~/praxiszeit
 docker compose down
 git pull
+docker compose pull db                 # PostgreSQL-18-Patchstand (`up` zieht ihn nie neu)
+docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
 # Ohne SSL:
-docker compose up -d --build
+docker compose up -d
 # Mit SSL:
-docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 ```
 
 Datenbank-Migrationen werden automatisch beim Start ausgefuehrt.

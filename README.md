@@ -344,9 +344,17 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 ```
 
 **Updates einspielen:**
+
+> Vorher ein Backup ziehen (siehe [Backup](#backup)). Vor dem Update auf **1.20.0**
+> ist das Pflicht: Die Migration `073_work_blocks` entfernt die alten
+> Arbeitszeit-Fenster-Spalten, zurück auf 1.19.x geht es nur über dieses Backup.
+> Alle Wege und Hinweise: [docs/UPDATE.md](docs/UPDATE.md).
+
 ```bash
 git pull
-docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+docker compose pull db                 # PostgreSQL-18-Patchstand (`up` zieht ihn nie neu)
+docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
+docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 ```
 
 Datenbank-Migrationen werden automatisch beim Start ausgeführt.

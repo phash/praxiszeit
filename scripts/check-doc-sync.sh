@@ -1190,6 +1190,41 @@ group_restore() {
   forbid "$f" 'Custom Format'
 }
 
+# section_has DATEI ANFANG ENDE TEXT — TEXT steht zwischen der Zeile ANFANG
+# (wörtlich, ganze Zeile) und der nächsten Zeile, die mit ENDE beginnt (z. B.
+# „## " für die nächste Überschrift der Ebene 2). Kommentare in Codeblöcken
+# beginnen mit einem einzelnen „#" und beenden den Abschnitt nicht.
+section_has() {
+  awk -v a="$2" -v e="$3" -v t="$4" '
+    $0 == a { f = 1; next }
+    f && index($0, e) == 1 { exit }
+    f && index($0, t) { hit = 1; exit }
+    END { exit !hit }' "$1"
+}
+
+# Docker-Update-Anleitungen (Gesamtreview 1.20): README, INSTALLATION und die
+# Einrichtungsanleitung gaben nur `up -d --build` an — ohne `pull db` (das
+# PostgreSQL-Image wird bei `up` nie neu gezogen) und ohne `build --pull`
+# (#491 DEP-4: Basis-Images mit Sicherheitsupdates) — und verlangten vor dem
+# Update auf 1.20.0 kein Backup, obwohl Migration 073 die Fenster-Spalten
+# löscht und nur das Backup verlustfrei auf 1.19.x zurückführt (UPDATE.md).
+group_update() {
+  local f a e t
+  while IFS='|' read -r f a e; do
+    for t in 'docker compose pull db' 'docker compose build --pull' '1.20.0' \
+             'zurück auf 1.19.x geht es nur über dieses Backup' 'UPDATE.md'; do
+      section_has "$f" "$a" "$e" "$t" || { echo "FEHLT     $f ($a): $t"; FAIL=1; }
+    done
+    if section_has "$f" "$a" "$e" 'up -d --build'; then
+      echo "VERALTET  $f ($a): up -d --build"; FAIL=1
+    fi
+  done <<'EOF'
+README.md|**Updates einspielen:**|### 
+docs/INSTALLATION.md|## Updates einspielen|## 
+docs/setup-anleitung.md|## 10. Updates einspielen|## 
+EOF
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {
