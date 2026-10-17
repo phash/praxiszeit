@@ -302,6 +302,10 @@ group_code() {
   # Zusatzzeile „angerechnet bis", Antragsformular „Anrechnung beantragen",
   # Profilkarte „Meine Arbeitszeit".
   need_code "Du hast vor deinem Soll-Beginn eingestempelt — angerechnet ab "
+  # Gesamtreview 1.20: zweites Einstempeln auf demselben (gekappten) Beginn →
+  # 409 statt 500 (time_entries._clock_in_start_taken_detail, f-String-Stücke).
+  need_code "Einstempeln nicht möglich: Ein Zeiteintrag von heute beginnt bereits um "
+  need_code "vorhandenen Eintrag in der Zeiterfassung bearbeiten oder nach {hhmm} "
   need_code 'gestempelt ${rawEnd} · angerechnet bis ${effEnd}'
   need_code 'nach ${hm(breakMinutes)} h Pause'
   need_code "Die gesamte gestempelte Zeit soll angerechnet werden. Bitte begründen Sie, warum Sie in dieser Zeit gearbeitet haben."
@@ -579,6 +583,9 @@ group_mitarbeiter() {
   # und konkrete Uhrzeit; den Rückfalltext mit Halbgeviertstrich gibt es nicht.
   need "$f" 'Du hast vor deinem Soll-Beginn eingestempelt — angerechnet ab 07:45.'
   forbid "$f" 'eingestempelt – die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt'
+  # Gesamtreview 1.20: zweites Einstempeln vor der Hülle → 409 (clock_in).
+  need "$f" 'Einstempeln nicht möglich: Ein Zeiteintrag von heute beginnt bereits um 07:45, und der neue Eintrag würde ebenfalls um 07:45 beginnen. Bitte den vorhandenen Eintrag in der Zeiterfassung bearbeiten oder nach 07:45 erneut einstempeln.'
+  need frontend/src/components/DocViewer.tsx 'Einstempeln nicht möglich: Ein Zeiteintrag von heute beginnt bereits um 07:45 …'
   # Alle Zusatzzeilen aus Spec 13.1, auch Ende gekürzt, Hülle + Lücke, Pause,
   # dazu die Monatssumme im Journal (13.2).
   need "$f" 'gestempelt 19:00 · angerechnet bis 18:15'

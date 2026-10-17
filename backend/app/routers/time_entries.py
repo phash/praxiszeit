@@ -208,6 +208,19 @@ def _assert_within_employment_window(user: User, d: date) -> None:
         raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
 
 
+def _clock_in_start_taken_detail(start: time) -> str:
+    """409-Text, wenn das Einstempeln auf dem Beginn eines heutigen Eintrags
+    landen würde (Gesamtreview 1.20). Nennt den Ausweg: den vorhandenen Eintrag
+    bearbeiten oder ab der Folgeminute stempeln (dann ist der Beginn frei)."""
+    hhmm = start.strftime("%H:%M")
+    return (
+        f"Einstempeln nicht möglich: Ein Zeiteintrag von heute beginnt bereits um "
+        f"{hhmm}, und der neue Eintrag würde ebenfalls um {hhmm} beginnen. Bitte den "
+        f"vorhandenen Eintrag in der Zeiterfassung bearbeiten oder nach {hhmm} "
+        f"erneut einstempeln."
+    )
+
+
 def _get_open_entry(db: Session, user_id, with_lock: bool = False, tenant_id=None) -> Optional[TimeEntry]:
     """Find an open (clocked-in, no end_time) entry for the user."""
     query = db.query(TimeEntry).filter(
@@ -508,6 +521,27 @@ def clock_in(
         db, current_user, now.date(), start_t, None, grace, credit_override=False,
     )
     eff_start, raw_start = _r.eff_start, _r.raw_start
+
+    # UNIQUE (tenant, user, date, start_time): Duplikatprüfung auf dem Beginn,
+    # der unten tatsächlich geschrieben wird — wie ``create_time_entry``, beide
+    # Bearbeiten-Routen und die Antragsgenehmigung (Gesamtreview 1.20). Vor der
+    # Hülle landet jedes Einstempeln auf deren Beginn (07:30 und 07:40 → 07:45);
+    # wer nach einem Fehlstempel aus- und gleich wieder einstempelt, kollidierte
+    # bis dahin erst am Index (IntegrityError → HTTP 500, der Stempel war weg).
+    # Ohne Blöcke dasselbe, wenn Aus- und Einstempeln in dieselbe Minute fallen.
+    # Ein offener Eintrag von heute ist oben schon abgefangen — der Treffer ist
+    # also immer ein abgeschlossener, den die Person heute bearbeiten darf.
+    _taken = db.query(TimeEntry.id).filter(
+        TimeEntry.user_id == current_user.id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+        TimeEntry.date == now.date(),
+        TimeEntry.start_time == eff_start,
+    ).first()
+    if _taken is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_clock_in_start_taken_detail(eff_start),
+        )
 
     entry = TimeEntry(
         user_id=current_user.id,
