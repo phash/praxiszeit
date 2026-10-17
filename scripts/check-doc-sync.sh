@@ -275,6 +275,17 @@ group_code() {
   need_code "Abwesenheit(en) im Zeitraum "
   need_code "auf neues Tagessoll nachgezogen"
   need_code "auf den davor gültigen Wert zurückgerechnet"
+  # Gesamtreview 1.20 B10 (Nachzug): Handbuch und CLAUDE.md zitieren die Zeilen
+  # vollständig („Krank 4,0 h — Arbeitszeit-Änderung ab 15.03.2026", „Arbeitszeit-
+  # Änderung zum 2026-09-01: …", „Löschung der Arbeitszeit-Änderung zum …").
+  # „Arbeitszeit-Änderung ab" allein trifft auch reclamp_audit.py und
+  # WhDeletePanel.tsx — ein umbenannter Auslöser blieb unentdeckt. Deshalb an
+  # Aufruf und Format in admin_users._log_wh_change_retarget gebunden.
+  need_code 'prefix="Arbeitszeit-Änderung", suffix="auf neues Tagessoll nachgezogen"'
+  need_code 'prefix="Löschung der Arbeitszeit-Änderung", suffix="auf den davor gültigen Wert zurückgerechnet"'
+  need_code '{prefix} zum {effective_from.isoformat()}: '
+  need_code "trigger = f\"{prefix} ab {effective_from.strftime('%d.%m.%Y')}\""
+  need_code ' h — {trigger}'
   # Task 5 (Mitarbeiter-Handbuch): Frühstart-Meldung, wie sie der Server schickt
   # (clock_in, Geviertstrich; der Rückfalltext in arbzgWarnings erscheint nie),
   # Zusatzzeile „angerechnet bis", Antragsformular „Anrechnung beantragen",
@@ -1015,7 +1026,13 @@ group_changelog() {
   need_code "Zeiteintrag nicht gefunden"
   need_code "'Ausgestempelt'"
   need_code "'Noch nicht eingestempelt'"
-  need_code "Pflicht-Pause war nicht möglich"
+  # Gesamtreview 1.20 B10 (Nachzug): der bloße Wortlaut „Pflicht-Pause war nicht
+  # möglich" steht in neun Dateien, meist in Kommentaren — das Gate blieb immer
+  # grün. Zitiert werden der Schalter (Settings.tsx), die Checkbox der
+  # Zeiterfassung und das Begründungsfeld im Antrag (ChangeRequestForm.tsx).
+  need_code 'Ausnahme „Pflicht-Pause war nicht möglich“ erlauben'
+  need_code_label frontend/src/pages/TimeTracking.tsx "Pflicht-Pause war nicht möglich"
+  need_code "Pflicht-Pause war nicht möglich – Begründung"
   need_code '"Saldo Monat:"'
 }
 
