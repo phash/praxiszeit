@@ -338,17 +338,26 @@ class WorkingHoursChangePreview(BaseModel):
     * ``overtime_before``/``overtime_after`` und
       ``vacation_days_before``/``vacation_days_after`` (#431) — Überstundensaldo
       (Stichtag #313) und verbrauchte Urlaubstage des Jahres von
-      ``period_start``, jeweils im Ist-Zustand und im simulierten Zustand NACH
-      dem Speichern. Beide „nachher"-Werte stammen aus DEMSELBEN, wieder
+      ``period_start``, jeweils „bisher" und im simulierten Zustand NACH dem
+      Speichern. Beide Wertepaare stammen aus DEMSELBEN, wieder
       zurückgerollten Dry-Run wie ``affected_absences`` — ein Flush, ein
-      Rollback, kein zweiter Rechenpfad.
+      Rollback, kein zweiter Rechenpfad. „Bisher" ist dabei der Stand NACH dem
+      simulierten Schließen offener Einträge vergangener Tage (P23, Schritt 2
+      von ``run_change``, erhoben über ``after_close``; Gesamtreview 1.20,
+      Fund 10) — das Schließen ist nicht Wirkung der Änderung. Steht ein
+      solcher Eintrag offen, weicht „bisher" deshalb vom aktuellen Kontostand
+      (z. B. in der Benutzerübersicht) ab; dafür ist ohne abgeschlossenes Jahr
+      im Bereich ``overtime_after − overtime_before`` genau
+      ``saldo_delta_hours`` (Spec 9.5 (b)).
 
-      Der Dry-Run entfällt (und „nachher" == „vorher", ``affected_absences``
-      == 0) in zwei Fällen: bei gesetztem ``blocked_reason`` (es gibt nichts zu
-      simulieren) und wenn der eingegebene Snapshot dem aktuell gültigen
-      entspricht — dann verschiebt die Änderung im gesamten Wirkungsbereich
-      kein Tagessoll, das Ergebnis ist also exakt und nicht genähert. Dieser
-      zweite Fall ist der Normalzustand des vorbefüllten Dialogs.
+      Der Dry-Run entfällt (und „nachher" == „vorher" == aktueller Stand,
+      ``affected_absences`` == 0) in zwei Fällen: bei gesetztem
+      ``blocked_reason`` (es gibt nichts zu simulieren) und wenn der
+      eingegebene Snapshot dem aktuell gültigen entspricht — dann verschiebt
+      die Änderung im gesamten Wirkungsbereich kein Tagessoll, das Ergebnis ist
+      also exakt und nicht genähert. Dieser zweite Fall ist der Normalzustand
+      des vorbefüllten Dialogs. Für die Lösch-Vorschau gilt dasselbe (dort
+      entfällt der Lauf nur bei ``blocked_reason``).
     """
     is_retroactive: bool
     period_start: date
