@@ -352,3 +352,50 @@ def test_credit_override_unknown_entry_takes_no_lock(_db_session, employee_user,
     assert resp.status_code == 404, resp.text
     assert not [c for c in calls if c[0] == "lock"], calls
     assert ("row_lock",) not in calls, calls
+
+
+def test_delete_locks_anchor_before_entry(_db_session, employee_user, employee_client, calls, monkeypatch):
+    """Ultrareview (P5): auch das Löschen durch Mitarbeitende nimmt zuerst die
+    Ankersperre und lädt den Eintrag danach mit FOR UPDATE — wie das Bearbeiten."""
+    e = _entry(_db_session, employee_user, time(8), time(11))
+    _clock(monkeypatch, MON, 13)
+    resp = employee_client.delete(f"/api/time-entries/{e.id}")
+    assert resp.status_code == 204, resp.text
+    assert_lock_first(calls, employee_user.id)
+    assert_row_lock_seen(calls)
+
+
+def test_delete_unknown_entry_takes_no_lock(_db_session, employee_user, employee_client, calls, monkeypatch):
+    """Unbekannte ID → 404 vor jeder Sperre (Spec 16.2 Nr. 8, wie beim Bearbeiten)."""
+    _clock(monkeypatch, MON, 13)
+    resp = employee_client.delete(f"/api/time-entries/{uuid.uuid4()}")
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Zeiteintrag nicht gefunden"
+    assert not [c for c in calls if c[0] == "lock"], calls
+    assert ("row_lock",) not in calls, calls
+
+
+def test_delete_sees_recognition_committed_before_lock(_db_session, employee_user, employee_client,
+                                                       monkeypatch):
+    """Ultrareview: ein paralleles „Anerkennen" der Verwaltung, das vor der
+    Ankersperre committet, muss die Löschung noch mit 409 stoppen. Bis dahin las
+    der Löschpfad den Eintrag ungesperrt und prüfte ``credit_override`` auf dem
+    veralteten Stand — die Person löschte den anerkannten Eintrag."""
+    from sqlalchemy import update
+
+    e = _entry(_db_session, employee_user, time(8), time(11))
+    entry_id = e.id
+    _db_session.expire_all()
+    _clock(monkeypatch, MON, 13)
+    real_lock = admin_helpers.lock_user_row
+
+    def lock_after_parallel_recognition(db, tenant_id, user_id):
+        # Simuliert die parallele Verwaltung: ihr Commit liegt vor unserer Sperre.
+        db.execute(update(TimeEntry).where(TimeEntry.id == entry_id).values(credit_override=True))
+        return real_lock(db, tenant_id, user_id)
+
+    monkeypatch.setattr(te, "lock_user_row", lock_after_parallel_recognition)
+    resp = employee_client.delete(f"/api/time-entries/{entry_id}")
+    assert resp.status_code == 409, resp.text
+    _db_session.expire_all()
+    assert _db_session.get(TimeEntry, entry_id) is not None

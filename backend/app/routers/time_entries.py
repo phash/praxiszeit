@@ -1795,11 +1795,26 @@ def delete_time_entry(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a time entry."""
+    # P5 (Ultrareview): wie ``update_time_entry`` — Eigentümer ungesperrt lesen,
+    # fremd/unbekannt → 404 VOR jeder Sperre (kein Timing-Orakel, keine Sperre
+    # fremder Benutzerzeilen), dann Ankersperre, dann den Eintrag mit FOR UPDATE
+    # laden. Erst danach ist ``credit_override`` belastbar: ungesperrt gelesen sah
+    # der Pfad ein paralleles „Anerkennen" der Verwaltung nicht und löschte den
+    # anerkannten Eintrag.
+    _owner_id = db.query(TimeEntry.user_id).filter(
+        TimeEntry.id == entry_id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+    ).scalar()
+    if _owner_id is None or (_owner_id != current_user.id
+                             and current_user.role != UserRole.ADMIN):
+        raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
+    lock_user_row(db, current_user.tenant_id, _owner_id)
     entry = db.query(TimeEntry).filter(
         TimeEntry.id == entry_id,
         TimeEntry.tenant_id == current_user.tenant_id,  # F-026
-    ).first()
+    ).with_for_update().first()
 
+    # Rückversicherung: zwischen Eigentümer-Lesen und Sperre gelöscht.
     if not entry:
         raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
 
