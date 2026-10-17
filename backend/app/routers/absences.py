@@ -4,11 +4,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month, parse_year_month
 from typing import List, Optional
-from datetime import timedelta, date
+from datetime import date
 from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import (
-    User, Absence, AbsenceType, UserRole, PublicHoliday, TimeEntry, TimeEntryAuditLog,
+    User, Absence, AbsenceType, UserRole, TimeEntry, TimeEntryAuditLog,
     AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE, ChangeRequest,
     WorkingHoursChange, CompanyClosure,
 )
@@ -405,40 +405,21 @@ def create_absence(
             detail=f"Datum liegt nach dem letzten Arbeitstag ({target_user.last_work_day.strftime('%d.%m.%Y')})"
         )
 
-    # Generate list of weekdays (Mon-Fri, excluding weekends and holidays)
-    dates_to_create = []
-    current_date = start_date
-
-    # Get holidays for the affected years
-    years = set()
-    temp_date = start_date
-    while temp_date <= end_date:
-        years.add(temp_date.year)
-        temp_date += timedelta(days=1)
-
-    holidays = set()
-    for year in years:
-        # F-026: explicit tenant scope on the standalone holiday lookup.
-        year_holidays = db.query(PublicHoliday).filter(
-            PublicHoliday.year == year,
-            PublicHoliday.tenant_id == target_user.tenant_id,
-        ).all()
-        holidays.update([h.date for h in year_holidays])
-
-    # AC-11: auch im Direkt-Buchungspfad 'free'-Sondertage (24./31.12.) wie
-    # Feiertage ausschließen — soll-freie Tage dürfen keine Absence bekommen
-    # (sonst kostet ein freier Tag bei VACATION fälschlich einen Urlaubstag).
-    # Konsistent zu company_closures + admin_vacations.review_vacation_request.
-    holidays |= special_days_service.free_special_days_in_range(
-        db, target_user.tenant_id, start_date, end_date
+    # Kandidaten-Tage: Mo–Fr ohne Feiertage des Mandanten (F-026) und ohne
+    # 'free'-Sondertage (AC-11: soll-freie Tage bekommen keine Absence — sonst
+    # kostete ein freier Tag bei VACATION fälschlich einen Urlaubstag).
+    # Ultrareview 1.20 (Fund 4): derselbe Helfer wie in den Antragspfaden
+    # (``request_workday_candidates``, #496) statt einer eigenen Fassung;
+    # ``year_cache`` lädt die Jahresdaten EINMAL je Jahr.
+    year_cache: dict = {}
+    dates_to_create = calculation_service.request_workday_candidates(
+        db, target_user.tenant_id, start_date, end_date, year_cache=year_cache
     )
-
-    # Collect all weekdays in range (excluding weekends and holidays)
-    while current_date <= end_date:
-        # Check if it's a weekday (0=Monday, 6=Sunday)
-        if current_date.weekday() < 5 and current_date not in holidays:
-            dates_to_create.append(current_date)
-        current_date += timedelta(days=1)
+    # Feiertage ∪ 'free'-Sondertage aus demselben Cache — für die Gutschrifts-
+    # Gewichtung der F1-Klemmung unten (``credit_day_weight``).
+    holidays: set = set()
+    for info in year_cache.values():
+        holidays |= info["holidays"] | info["free_special"]
 
     if not dates_to_create:
         raise HTTPException(
@@ -613,7 +594,7 @@ def create_absence(
         # 0-h-Zeitraeume enden schon oben bei „0 Stunden geplant".
         ensure_vacation_budget(
             db, target_user, dates_to_create, bool(absence_data.half_day),
-            wh_changes=wh_changes, year_cache={},
+            wh_changes=wh_changes, year_cache=year_cache,
         )
 
     # If sick leave with vacation refund: remove overlapping vacation entries first
