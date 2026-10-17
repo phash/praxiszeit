@@ -1397,6 +1397,28 @@ def update_time_entry(
         db, _entry_owner, entry.date, _clamp_start, _clamp_end, _grace,
         credit_override=entry.credit_override,
     )
+    # UNIQUE (tenant, user, date, start_time): Duplikatprüfung auf dem Beginn,
+    # der unten tatsächlich geschrieben wird — wie ``create_time_entry``
+    # (Release-Review 1.16.0), ``admin_update_time_entry`` (#375-Review) und die
+    # Antragsgenehmigung (Gesamtreview B2). Ein Beginn vor der Hülle (07:40 →
+    # 07:45) oder ein Datumswechsel, der mit dem Rohstempel neu kappt (E39),
+    # kann auf den Beginn eines anderen Eintrags des Tages fallen; ohne Sonde
+    # scheiterte das erst am Index (IntegrityError → HTTP 500). Ohne Beginn oder
+    # Datum im Update bleibt der gespeicherte Beginn stehen — dann keine
+    # Kollision möglich. Vor §3/§4 und vor dem Antrag (202), wie beim Anlegen.
+    if "start_time" in update_data or "date" in update_data:
+        _dup = db.query(TimeEntry.id).filter(
+            TimeEntry.user_id == entry.user_id,
+            TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+            TimeEntry.date == entry.date,
+            TimeEntry.start_time == _eff_start,
+            TimeEntry.id != entry.id,
+        ).first()
+        if _dup is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum",
+            )
     # Fix #2: only overwrite start/end + raw_* when the respective time was
     # actually part of this partial update — mirrors the admin path
     # (admin_time_entries.py). A note-only edit must NOT re-clamp the stored
