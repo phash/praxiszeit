@@ -151,6 +151,10 @@ dieses Backup verlustfrei (`UPDATE.md`).
   die Vorschau jetzt ebenfalls.
 - **ODS-Jahresbericht:** Das Mitarbeiterblatt nennt wie die Excel-Datei die
   Summe der Nachtarbeitstage (sie wurde gezählt, aber nie ausgegeben).
+- **Nachtarbeit:** Ein Eintrag ganz außerhalb der Arbeitszeit-Blöcke (0 h
+  angerechnet, etwa nach vergessenem Ausstempeln am Abend) galt als
+  Nachtarbeit – mit Kennzeichen „Nacht" in der Zeiterfassung, als Tag in der
+  Nachtarbeit-Auswertung und in den Exporten.
 
 ### ✨ Weitere Verbesserungen
 - **Mitarbeiter-Dashboard: Umschalter Monat/Woche** (#500) – die letzten
