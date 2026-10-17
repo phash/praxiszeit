@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from app.middleware.auth import require_admin
 from app.models import TimeEntry, TimeEntryAuditLog, User, UserRole
 from app.services import reclamp_audit as ra
 from tests.conftest import DEFAULT_TENANT_ID
@@ -34,6 +35,14 @@ def _note(**kw):
                 reason_text_value=None, contract_before="a", contract_after="b")
     base.update(kw)
     return ra.summary_note(**base)
+
+
+@pytest.fixture(autouse=True)
+def _clear_overrides():
+    """admin_client() schreibt in das geteilte test_app; aufgeräumt wird auch,
+    wenn eine Zusicherung vor dem Aufräumen im Testkörper scheitert (Gesamtreview)."""
+    yield
+    test_app.dependency_overrides.clear()
 
 
 @pytest.fixture
@@ -135,8 +144,8 @@ def test_dashboard_endpoint_shows_a_change_made_today(db, test_user, test_admin,
                       json={"effective_from": "2026-10-08", "blocks": SHORT}).status_code == 201
     test_app.dependency_overrides.clear()
     employee = admin_client(db, test_user)   # get_current_user → die Person selbst
+    del test_app.dependency_overrides[require_admin]   # ohne Admin-Rechte
     body = employee.get("/api/dashboard/").json()
-    test_app.dependency_overrides.clear()
     assert [n["text"] for n in body["schedule_change_notices"]] == [
         "Ihre Arbeitszeit wurde ab 08.10.2026 geändert (neu: Mo 08:00–12:00 + 15:00–17:00 / Di 08:00–12:00 / "
         "Do 08:00–12:00)."]
