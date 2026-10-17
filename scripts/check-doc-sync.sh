@@ -1085,7 +1085,7 @@ group_claude() {
 
 group_changelog() {
   local f=CHANGELOG.md
-  need "$f" 'Geplant als **1.20.0**'
+  need "$f" '## [1.20.0] - 2026-10-17'
   need "$f" '`073_work_blocks`'
   need "$f" '### ✨ Arbeitszeit als Blöcke je Tag'
   need "$f" '### ⚠️ Geändertes Verhalten'
