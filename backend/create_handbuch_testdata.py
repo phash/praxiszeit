@@ -268,9 +268,12 @@ def make_time_entry(user: User, d: date, target_hours: float,
 def create_time_entries_for_user(db, user: User, holiday_dates: set):
     daily_hours = float(user.weekly_hours) / user.work_days_per_week
 
-    # Abwesenheiten dieses Nutzers abrufen
+    # Abwesenheiten dieses Nutzers abrufen. Superadmin-Kontext: der
+    # Mandantenfilter gilt auch neben user_id (Gesamtreview 1.20 B9).
     absence_dates = {
-        a.date for a in db.query(Absence).filter(Absence.user_id == user.id).all()
+        a.date for a in db.query(Absence).filter(
+            Absence.user_id == user.id, Absence.tenant_id == TENANT_ID,
+        ).all()
     }
 
     work_days = working_days_in_range(START_DATE, END_DATE, holiday_dates,
@@ -401,6 +404,7 @@ def create_change_requests(db, users: list, reviewer=None):
     if maria:
         entry = db.query(TimeEntry).filter(
             TimeEntry.user_id == maria.id,
+            TimeEntry.tenant_id == TENANT_ID,  # Superadmin-Kontext
             TimeEntry.date == date(2026, 2, 10)
         ).first()
         if entry:
@@ -414,6 +418,7 @@ def create_change_requests(db, users: list, reviewer=None):
     if thomas:
         entry = db.query(TimeEntry).filter(
             TimeEntry.user_id == thomas.id,
+            TimeEntry.tenant_id == TENANT_ID,  # Superadmin-Kontext
             TimeEntry.date == date(2026, 1, 15)
         ).first()
         if entry:

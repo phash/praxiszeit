@@ -68,13 +68,12 @@ def _load_seed():
 
 
 def _cleanup(conn):
-    for t in (TENANT_ID, FOREIGN_TENANT_ID):
-        tid = {"tid": str(t)}
-        conn.execute(text("DELETE FROM change_requests WHERE tenant_id = :tid"), tid)
-        conn.execute(text("DELETE FROM time_entries WHERE tenant_id = :tid"), tid)
-        conn.execute(text("DELETE FROM public_holidays WHERE tenant_id = :tid"), tid)
-        conn.execute(text("DELETE FROM users WHERE tenant_id = :tid"), tid)
-        conn.execute(text("DELETE FROM tenants WHERE id = :tid"), tid)
+    # Abhängige Zeilen BEIDER Mandanten zuerst: die Gegenproben hängen Zeilen des
+    # fremden Mandanten an Konten des Zielmandanten (user_id ohne ON DELETE).
+    tids = {"a": str(TENANT_ID), "b": str(FOREIGN_TENANT_ID)}
+    for table in ("change_requests", "time_entries", "absences", "public_holidays", "users"):
+        conn.execute(text(f"DELETE FROM {table} WHERE tenant_id IN (:a, :b)"), tids)
+    conn.execute(text("DELETE FROM tenants WHERE id IN (:a, :b)"), tids)
 
 
 @pytest.fixture(scope="module")
@@ -291,3 +290,86 @@ def test_employees_are_created_in_own_tenant(foreign_tenant, admin_engine, app_e
     # Die gleichnamige fremde Mitarbeiterin bleibt unberührt.
     first_name, email, _, weekly_hours = _foreign_user(admin_engine, FOREIGN_MARIA_ID)
     assert (first_name, email, float(weekly_hours)) == ("Fremd", "maria.hoffmann@b9-fremd.invalid", 40.0)
+
+
+# ── Zeilen mit falsch gesetzter tenant_id ───────────────────────────────────
+#
+# Gesamtreview 1.20 (B9, Nachzug): auch die Abfragen, die schon über ``user_id``
+# eingeengt sind, filtern den Mandanten selbst — im Superadmin-Kontext ist das
+# nicht optional (CLAUDE.md). Gegenprobe: eine Zeile des FREMDEN Mandanten, die
+# (falsch abgelegt) an einem Konto des Zielmandanten hängt. Ohne Filter strich
+# eine solche Abwesenheit einen Demo-Arbeitstag, und ein solcher Zeiteintrag
+# bekam den Korrekturantrag der Musterpraxis.
+
+OWN_MARIA_ID = uuid.UUID("b9b90000-0000-4000-8000-000000000111")
+OWN_THOMAS_ID = uuid.UUID("b9b90000-0000-4000-8000-000000000112")
+
+
+@pytest.fixture
+def misfiled_rows(foreign_tenant, admin_engine):
+    """Maria und Thomas im Zielmandanten; im fremden Mandanten eine Abwesenheit
+    (Mi 07.01.2026) und zwei Zeiteinträge an genau den Tagen, an denen der Seed
+    die Korrekturanträge festmacht — alle mit der user_id der eigenen Konten."""
+    with admin_engine.connect() as conn:
+        insert_user = text("""
+            INSERT INTO users (id, tenant_id, username, email, password_hash,
+                               first_name, last_name, role, weekly_hours,
+                               vacation_days, work_days_per_week, is_active)
+            VALUES (:id, :tid, :username, :email, 'not-a-real-hash',
+                    :first, :last, 'EMPLOYEE', 40, 30, 5, true)
+        """)
+        for uid, username, first, last in ((OWN_MARIA_ID, "maria.hoffmann", "Maria", "Hoffmann"),
+                                           (OWN_THOMAS_ID, "thomas.bauer", "Thomas", "Bauer")):
+            conn.execute(insert_user, {"id": str(uid), "tid": str(TENANT_ID), "username": username,
+                                       "email": f"{username}@b9-seed.invalid",
+                                       "first": first, "last": last})
+        conn.execute(text("""
+            INSERT INTO absences (id, tenant_id, user_id, date, type, hours)
+            VALUES (:id, :tid, :uid, '2026-01-07', 'VACATION', 8)
+        """), {"id": str(uuid.uuid4()), "tid": str(FOREIGN_TENANT_ID), "uid": str(OWN_MARIA_ID)})
+        insert_entry = text("""
+            INSERT INTO time_entries (id, tenant_id, user_id, date, start_time, end_time, break_minutes)
+            VALUES (:id, :tid, :uid, :dt, '08:15', '16:45', 45)
+        """)
+        for uid, dt in ((OWN_MARIA_ID, "2026-02-10"), (OWN_THOMAS_ID, "2026-01-15")):
+            conn.execute(insert_entry, {"id": str(uuid.uuid4()), "tid": str(FOREIGN_TENANT_ID),
+                                        "uid": str(uid), "dt": dt})
+    yield
+
+
+def _own_users(db):
+    return db.query(User).filter(User.tenant_id == TENANT_ID).order_by(User.username).all()
+
+
+def test_foreign_absence_does_not_skip_own_workday(misfiled_rows, app_engine, monkeypatch):
+    from datetime import date
+
+    from app.models import TimeEntry
+
+    seed = _load_seed()
+    db = _seed_session(app_engine, seed, monkeypatch)
+    try:
+        maria = next(u for u in _own_users(db) if u.id == OWN_MARIA_ID)
+        seed.create_time_entries_for_user(db, maria, set())
+        own_days = {
+            e.date for e in db.query(TimeEntry).filter(
+                TimeEntry.tenant_id == TENANT_ID, TimeEntry.user_id == OWN_MARIA_ID,
+            )
+        }
+    finally:
+        db.close()
+    assert date(2026, 1, 7) in own_days
+
+
+def test_change_requests_ignore_foreign_entries(misfiled_rows, app_engine, monkeypatch, capsys):
+    seed = _load_seed()
+    db = _seed_session(app_engine, seed, monkeypatch)
+    try:
+        seed.create_change_requests(db, _own_users(db))
+        n = db.query(ChangeRequest).filter(
+            ChangeRequest.user_id.in_([OWN_MARIA_ID, OWN_THOMAS_ID]),
+        ).count()
+    finally:
+        db.close()
+    assert "0 Change Requests erstellt" in capsys.readouterr().out
+    assert n == 0
