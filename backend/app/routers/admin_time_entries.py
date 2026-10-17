@@ -96,16 +96,12 @@ def admin_create_time_entry(
     # #201: Clamp start/end to the employee's soll window (grace from tenant setting).
     # The affected employee is `user`, NOT the admin (current_user).
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-    _r = work_window_service.clamp(
+    # Spec 8.2: Lückensegmente für §4 aus DEMSELBEN Kappungslauf (Ultrareview 1.20).
+    _r, _segs = work_window_service.clamp_with_segments(
         db, user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
         credit_override=False,
     )
     eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
-    # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
-    _segs = work_window_service.gap_segments(
-        db, user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
-        credit_override=False,
-    )
 
     # #375-Review: mirror the employee path's duplicate-start guard, BEFORE the
     # ArbZG aggregate checks. The admin per-day journal add is now available for
@@ -371,16 +367,12 @@ def admin_update_time_entry(
     # E80: Einzel-Neukappung eines gespeicherten Eintrags (auch Datumswechsel)
     # mit SEINEM Puffer; NULL (Bestand vor 073) → aktueller Mandanten-Puffer.
     _grace = work_window_service.grace_for_entry(db, entry)
-    _r = work_window_service.clamp(
+    # Spec 8.2: Lückensegmente für §4 aus DEMSELBEN Kappungslauf (Ultrareview 1.20).
+    _r, _segs = work_window_service.clamp_with_segments(
         db, affected_user, update_date, update_start_time, update_end_time, _grace,
         credit_override=entry.credit_override,
     )
     eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
-    # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
-    _segs = work_window_service.gap_segments(
-        db, affected_user, update_date, update_start_time, update_end_time, _grace,
-        credit_override=entry.credit_override,
-    )
 
     # #375-Review: mirror the create-path duplicate-start guard (exclude self) —
     # editing start_time/date onto an existing sibling entry would otherwise hit

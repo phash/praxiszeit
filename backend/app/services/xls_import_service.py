@@ -767,7 +767,7 @@ def _read_rows(ws, db: Session, user, user_id, user_tenant, grace: int) -> list:
         # Spec 6.1/E80: neue Zeilen kappen mit dem aktuellen Puffer; trifft die
         # Zeile einen GESPEICHERTEN Eintrag, gelten dessen Puffer und dessen
         # Anerkennung (P3) — die Vorschau zeigt, was /confirm schreiben wird.
-        r = work_window_service.clamp(
+        r, segs = work_window_service.clamp_with_segments(
             db, user, entry_date, file_start, file_end, grace, credit_override=False,
         )
         # Außerhalb des Beschäftigungsfensters oder in der Zukunft (Ultrareview
@@ -781,13 +781,12 @@ def _read_rows(ws, db: Session, user, user_id, user_tenant, grace: int) -> list:
         row_grace = (
             work_window_service.grace_for_entry(db, existing) if existing is not None else grace
         )
+        # Ultrareview 1.20: Segmente aus demselben Lauf wie ``r`` — neu gekappt
+        # nur, wenn Puffer oder Anerkennung des gespeicherten Eintrags abweichen.
         if override or row_grace != grace:
-            r = work_window_service.clamp(
+            r, segs = work_window_service.clamp_with_segments(
                 db, user, entry_date, file_start, file_end, row_grace, credit_override=override,
             )
-        segs = work_window_service.gap_segments(
-            db, user, entry_date, file_start, file_end, row_grace, credit_override=override,
-        )
         rows.append(SimpleNamespace(
             date=entry_date, note=note, r=r, segs=segs, existing=existing, override=override,
             outside=outside, file_start=file_start, file_end=file_end,
@@ -1025,7 +1024,7 @@ def _execute_import_inner(
                     f"Über-Mitternacht-Schichten als zwei Einträge erfassen."
                 )
                 continue
-            first = work_window_service.clamp(
+            first, first_segs = work_window_service.clamp_with_segments(
                 db, target_user, entry.date, file_start, file_end, grace, credit_override=False,
             )
             # ``has_conflict`` der Vorschau ist nur ein Stand: zwischen Vorschau und
@@ -1045,14 +1044,15 @@ def _execute_import_inner(
             if target_user is not None and work_window_service.clamp_applies(
                 db, target_user, entry.date, credit_override=override,
             ):
-                r = work_window_service.clamp(
-                    db, target_user, entry.date, file_start, file_end, row_grace,
-                    credit_override=False,
-                )
-                segs = work_window_service.gap_segments(
-                    db, target_user, entry.date, file_start, file_end, row_grace,
-                    credit_override=False,
-                )
+                # Ultrareview 1.20: dieselben Eingaben wie ``first`` (gleicher
+                # Puffer) → dessen Lauf wiederverwenden statt erneut zu kappen.
+                if row_grace == grace:
+                    r, segs = first, first_segs
+                else:
+                    r, segs = work_window_service.clamp_with_segments(
+                        db, target_user, entry.date, file_start, file_end, row_grace,
+                        credit_override=False,
+                    )
                 eff_start, eff_end, raw_start, raw_end = r.eff_start, r.eff_end, r.raw_start, r.raw_end
                 uncredited, applied_grace = r.uncredited_minutes, r.grace_minutes
             elif entry.end_time is None or entry.end_time <= entry.start_time:

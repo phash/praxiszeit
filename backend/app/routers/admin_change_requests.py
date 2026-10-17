@@ -455,6 +455,33 @@ def review_change_request(
             if _order_error:
                 raise HTTPException(status_code=400, detail=_order_error)
 
+        # Ultrareview 1.20 (Fund A): Duplikat-Sonde, Vorprüfung (C-1) und
+        # Schreibzweig kappen mit IDENTISCHEN Eingaben — Person des Antrags,
+        # ``cr.proposed_date``, ``_in_start``/``_in_end``, Puffer (UPDATE: der
+        # gespeicherte des Eintrags, E80; CREATE: der aktuelle Mandanten-Puffer)
+        # und ``credit_override`` des Eintrags. Bis dahin lief ``_clamp_core`` bis
+        # zu viermal; jetzt EIN Lauf (bei erstem Bedarf), alle lesen ihn. Weder
+        # Snapshot noch Puffer noch ``credit_override`` ändern sich zwischen
+        # Vorprüfung und Schreiben (Anerkennen folgt erst nach dem Schreiben).
+        _approval_clamp_cache: list = []
+
+        def _approval_clamp():
+            if not _approval_clamp_cache:
+                _cr_owner = db.query(User).filter(
+                    User.id == cr.user_id,
+                    User.tenant_id == cr.tenant_id,
+                ).first()
+                _cr_grace = (
+                    work_window_service.grace_for_entry(db, entry)
+                    if cr.request_type == ChangeRequestType.UPDATE and entry is not None
+                    else work_window_service.get_grace_minutes(db, current_user.tenant_id)
+                )
+                _approval_clamp_cache.append(work_window_service.clamp_with_segments(
+                    db, _cr_owner, cr.proposed_date, _in_start, _in_end, _cr_grace,
+                    credit_override=bool(entry is not None and entry.credit_override),
+                ))
+            return _approval_clamp_cache[0]
+
         # UNIQUE (tenant, user, date, start_time): Duplikatprüfung NACH dem
         # Kappen, wie ``time_entries.create_time_entry`` und
         # ``admin_time_entries`` seit Release-Review 1.16.0 — gespeichert wird
@@ -473,19 +500,7 @@ def review_change_request(
             and _in_start is not None
             and cr.proposed_date is not None
         ):
-            _dup_user = db.query(User).filter(
-                User.id == cr.user_id,
-                User.tenant_id == cr.tenant_id,
-            ).first()
-            _dup_grace = (
-                work_window_service.grace_for_entry(db, entry)
-                if cr.request_type == ChangeRequestType.UPDATE and entry is not None
-                else work_window_service.get_grace_minutes(db, current_user.tenant_id)
-            )
-            _dup_r = work_window_service.clamp(
-                db, _dup_user, cr.proposed_date, _in_start, _in_end, _dup_grace,
-                credit_override=bool(entry is not None and entry.credit_override),
-            )
+            _dup_r = _approval_clamp()[0]
             _dup_q = db.query(TimeEntry.id).filter(
                 TimeEntry.tenant_id == cr.tenant_id,
                 TimeEntry.user_id == cr.user_id,
@@ -528,22 +543,11 @@ def review_change_request(
                 # (e.g. a wide raw stamp the window clamps back under 10h).
                 # E80: dieselbe Puffer-Herkunft wie der Schreibzweig unten —
                 # UPDATE kappt mit dem gespeicherten Puffer des Eintrags,
-                # CREATE (Neuanlage) mit dem aktuellen Mandanten-Puffer.
-                _grace = (
-                    work_window_service.grace_for_entry(db, entry)
-                    if cr.request_type == ChangeRequestType.UPDATE and entry is not None
-                    else work_window_service.get_grace_minutes(db, current_user.tenant_id)
-                )
-                _r_pre = work_window_service.clamp(
-                    db, cr_user, cr.proposed_date, _in_start, _in_end, _grace,
-                    credit_override=bool(entry is not None and entry.credit_override),
-                )
+                # CREATE (Neuanlage) mit dem aktuellen Mandanten-Puffer. Spec
+                # 8.2: Lückensegmente für §4 aus demselben Lauf
+                # (``_approval_clamp``, Ultrareview 1.20).
+                _r_pre, _segs_pre = _approval_clamp()
                 _eff_start, _eff_end = _r_pre.eff_start, _r_pre.eff_end
-                # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
-                _segs_pre = work_window_service.gap_segments(
-                    db, cr_user, cr.proposed_date, _in_start, _in_end, _grace,
-                    credit_override=bool(entry is not None and entry.credit_override),
-                )
 
                 # Gesamtreview 1.20 (B1, Nachzug zu Punkt 4): wie in beiden
                 # Bearbeiten-Routen und beim Stellen des Antrags — ändert ein
@@ -671,11 +675,9 @@ def review_change_request(
                 User.id == cr.user_id,
                 User.tenant_id == cr.tenant_id,
             ).first()
-            _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-            _r = work_window_service.clamp(
-                db, _cr_user_te, cr.proposed_date, _in_start, _in_end, _grace,
-                credit_override=False,
-            )
+            # Aktueller Mandanten-Puffer, ohne Anerkennung — derselbe Lauf wie
+            # Duplikat-Sonde und Vorprüfung (``_approval_clamp``).
+            _r = _approval_clamp()[0]
             eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
             # die Kappung nicht stumm bleiben. Die Verwaltung genehmigt sonst
@@ -725,12 +727,9 @@ def review_change_request(
                 User.id == cr.user_id,
                 User.tenant_id == cr.tenant_id,
             ).first()
-            # E80: Einzel-Neukappung des gespeicherten Eintrags mit SEINEM Puffer.
-            _grace = work_window_service.grace_for_entry(db, entry)
-            _r = work_window_service.clamp(
-                db, _cr_user_te, cr.proposed_date, _in_start, _in_end, _grace,
-                credit_override=entry.credit_override,
-            )
+            # E80: Einzel-Neukappung des gespeicherten Eintrags mit SEINEM Puffer
+            # — derselbe Lauf wie Duplikat-Sonde und Vorprüfung (``_approval_clamp``).
+            _r = _approval_clamp()[0]
             eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
             # #462: Die Genehmigung ist ein eigener Schreibpfad — auch hier darf
             # die Kappung nicht stumm bleiben. Die Verwaltung genehmigt sonst

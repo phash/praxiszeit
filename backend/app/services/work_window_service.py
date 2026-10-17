@@ -237,9 +237,24 @@ def clamp(db: Session, user, d: date, start: Optional[time], end: Optional[time]
 def gap_segments(db: Session, user, d: date, start: Optional[time], end: Optional[time], grace: int,
                  *, credit_override: bool, wh_changes=None, soll_free_dates=None) -> list:
     """Die Überlappungen mit den Lücken je Lücke (für §4, XLS-Auto-Pause).
-    Invariante: ``sum(gap_segments(...)) == clamp(...).uncredited_minutes``."""
+    Invariante: ``sum(gap_segments(...)) == clamp(...).uncredited_minutes``.
+    Wer beides braucht, ruft ``clamp_with_segments``."""
     return _clamp_core(db, user, d, start, end, grace, credit_override=credit_override,
                        wh_changes=wh_changes, soll_free_dates=soll_free_dates)[1]
+
+
+def clamp_with_segments(db: Session, user, d: date, start: Optional[time], end: Optional[time],
+                        grace: int, *, credit_override: bool, wh_changes=None,
+                        soll_free_dates=None) -> tuple:
+    """``(clamp(...), gap_segments(...))`` aus EINEM Kappungslauf (Ultrareview 1.20).
+
+    Jeder Schreibpfad braucht beides — das Ergebnis zum Speichern, die Segmente
+    für §4 (Spec 8.2). Zwei getrennte Aufrufe lösten Snapshot, Feiertage und
+    Sondertage doppelt auf, und ihre Argumente konnten auseinanderlaufen; dann
+    stimmte ``sum(segments) == result.uncredited_minutes`` nicht mehr. Hier
+    entstehen beide aus denselben Eingaben, die Invariante gilt per Bau."""
+    return _clamp_core(db, user, d, start, end, grace, credit_override=credit_override,
+                       wh_changes=wh_changes, soll_free_dates=soll_free_dates)
 
 
 def _hull_sentence(teile, grace) -> str:

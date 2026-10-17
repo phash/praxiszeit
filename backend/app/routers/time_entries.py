@@ -695,16 +695,12 @@ def clock_out(
     from app.services import work_window_service
     # E80: Einzel-Neukappung des offenen Eintrags mit SEINEM Puffer aus clock_in.
     grace = work_window_service.grace_for_entry(db, open_entry)
-    _r = work_window_service.clamp(
+    # Spec 8.2: Lückensegmente für §4 aus DEMSELBEN Kappungslauf (Ultrareview 1.20).
+    _r, _segs = work_window_service.clamp_with_segments(
         db, current_user, open_entry.date, open_entry.start_time, new_end_time, grace,
         credit_override=open_entry.credit_override,
     )
     eff_end, raw_end = _r.eff_end, _r.raw_end
-    # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
-    _segs = work_window_service.gap_segments(
-        db, current_user, open_entry.date, open_entry.start_time, new_end_time, grace,
-        credit_override=open_entry.credit_override,
-    )
 
     # §3 ArbZG: check daily hours before committing – skipped for exempt users
     daily_hours = _calculate_daily_net_hours(
@@ -997,16 +993,12 @@ def create_time_entry(
     # not on the raw input. raw_* store the original stamp when clamping occurs.
     from app.services import work_window_service
     _grace = work_window_service.get_grace_minutes(db, current_user.tenant_id)
-    _r = work_window_service.clamp(
+    # Spec 8.2: Lückensegmente für §4 aus DEMSELBEN Kappungslauf (Ultrareview 1.20).
+    _r, _segs = work_window_service.clamp_with_segments(
         db, current_user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
         credit_override=False,
     )
     eff_start, eff_end, raw_start, raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
-    # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
-    _segs = work_window_service.gap_segments(
-        db, current_user, entry_data.date, entry_data.start_time, entry_data.end_time, _grace,
-        credit_override=False,
-    )
 
     # Duplikatsprüfung NACH dem Kappen (Release-Review 1.16.0). Gespeichert wird
     # `eff_start`, geprüft wurde vorher die ROHE `entry_data.start_time` — zwei
@@ -1459,16 +1451,12 @@ def update_time_entry(
     )
     if _order_error:
         raise HTTPException(status_code=400, detail=_order_error)
-    _r = work_window_service.clamp(
+    # Spec 8.2: Lückensegmente für §4 aus DEMSELBEN Kappungslauf (Ultrareview 1.20).
+    _r, _segs = work_window_service.clamp_with_segments(
         db, _entry_owner, entry.date, _clamp_start, _clamp_end, _grace,
         credit_override=entry.credit_override,
     )
     _eff_start, _eff_end, _raw_start, _raw_end = _r.eff_start, _r.eff_end, _r.raw_start, _r.raw_end
-    # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
-    _segs = work_window_service.gap_segments(
-        db, _entry_owner, entry.date, _clamp_start, _clamp_end, _grace,
-        credit_override=entry.credit_override,
-    )
     # UNIQUE (tenant, user, date, start_time): Duplikatprüfung auf dem Beginn,
     # der unten tatsächlich geschrieben wird — wie ``create_time_entry``
     # (Release-Review 1.16.0), ``admin_update_time_entry`` (#375-Review) und die

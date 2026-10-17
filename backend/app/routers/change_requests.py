@@ -311,12 +311,8 @@ def create_change_request(
         )
         if _order_error:
             raise HTTPException(status_code=400, detail=_order_error)
-        _cr_clamp = work_window_service.clamp(
-            db, current_user, data.proposed_date, _in_start, _in_end, _cr_grace,
-            credit_override=_override,
-        )
-        # Spec 8.2: Lückensegmente aus DENSELBEN Eingaben wie ``clamp`` für §4.
-        _cr_segs = work_window_service.gap_segments(
+        # Spec 8.2: Lückensegmente für §4 aus DEMSELBEN Kappungslauf (Ultrareview 1.20).
+        _cr_clamp, _cr_segs = work_window_service.clamp_with_segments(
             db, current_user, data.proposed_date, _in_start, _in_end, _cr_grace,
             credit_override=_override,
         )
