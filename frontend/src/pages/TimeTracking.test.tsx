@@ -674,6 +674,37 @@ describe('<TimeTracking /> Blöcke von heute (Spec 8.4, 14)', () => {
     expect(postMock).not.toHaveBeenCalled();
   });
 
+  // Gesamtreview 1.20 (Fund 24): eingestempelt liefert /clock-status in
+  // `grace_minutes` den Puffer des OFFENEN Eintrags (15, fürs Ausstempeln). Die
+  // Verwaltung hat den Mandanten-Puffer inzwischen auf 0 gesetzt — eine
+  // Neuanlage kappt der Server damit (E80). Block 08:00–13:45, eingetragen
+  // 07:45–14:30: mit 0 angerechnet 08:00–13:45 = 5:45 h → keine Pflicht-Pause;
+  // mit dem Puffer des offenen Eintrags wären es 07:45–14:00 = 6:15 h → Hinweis.
+  it('rechnet einen neuen Eintrag mit dem aktuellen Mandanten-Puffer, nicht mit dem des offenen Eintrags', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') {
+        return Promise.resolve({ data: {
+          is_clocked_in: true, blocks_today: [{ start: '08:00', end: '13:45' }],
+          grace_minutes: 15, tenant_grace_minutes: 0,
+        } });
+      }
+      if (url.includes('/settings')) return Promise.resolve({ data: {} });
+      if (url.includes('/time-entries')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [] });
+    });
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+    await waitFor(() => expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('13:45'));
+    fireEvent.change(screen.getByLabelText('Von'), { target: { value: '07:45' } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '14:30' } });
+    fireEvent.change(screen.getByLabelText('Pause (Min.)'), { target: { value: '0' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '07:45', end_time: '14:30', break_minutes: 0 });
+    expect(screen.queryByText(/ArbZG §4/)).not.toBeInTheDocument();
+  });
+
   it('nimmt den Puffer des Eintrags, nicht den aus /clock-status (E80)', async () => {
     // Puffer 0 → Segment 12:00–15:00 = 180 = gespeichert → Pause 180, kein Hinweis.
     // Mit dem Puffer 15 aus /clock-status wären es 150 ≠ 180 → streng → Hinweis.

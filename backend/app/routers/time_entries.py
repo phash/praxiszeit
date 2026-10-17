@@ -406,6 +406,13 @@ def get_clock_status(
     # (``open_entry`` ist dann None → Mandanten-Puffer) und gerade im nicht
     # eingestempelten Zustand (Dashboard-Status in der Lücke, E69).
     blocks_today, grace_minutes = _clock_blocks_and_grace(db, current_user, today, open_entry)
+    # Gesamtreview 1.20 (Fund 24): eine Neuanlage kappt mit dem AKTUELLEN
+    # Mandanten-Puffer (E80), nicht mit dem des offenen Eintrags.
+    from app.services import work_window_service
+    tenant_grace_minutes = (
+        grace_minutes if open_entry is None
+        else work_window_service.get_grace_minutes(db, current_user.tenant_id)
+    )
 
     if not open_entry:
         return ClockStatusResponse(
@@ -414,6 +421,7 @@ def get_clock_status(
             today_target_hours=target_hours,
             blocks_today=blocks_today,
             grace_minutes=grace_minutes,
+            tenant_grace_minutes=tenant_grace_minutes,
         )
 
     # Calculate elapsed minutes in local time
@@ -436,6 +444,7 @@ def get_clock_status(
         today_target_hours=target_hours,
         blocks_today=blocks_today,
         grace_minutes=grace_minutes,
+        tenant_grace_minutes=tenant_grace_minutes,
     )
 
 

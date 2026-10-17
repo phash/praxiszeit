@@ -65,6 +65,35 @@ def test_clocked_in_uses_the_stored_grace_of_the_open_entry(_db_session, employe
     assert body["current_entry"]["clamp_grace_minutes"] == 15
 
 
+def test_reports_the_current_tenant_grace_separately(_db_session, employee_user, employee_client, monkeypatch):
+    """Gesamtreview 1.20 (Fund 24): ``grace_minutes`` ist der Puffer des offenen
+    Eintrags (Ausstempeln, E80). Eine NEUANLAGE kappt der Server aber mit dem
+    aktuellen Mandanten-Puffer — die Zeiterfassung braucht deshalb diesen Wert
+    getrennt (``tenant_grace_minutes``), sonst rechnet ihre §4-Vorprüfung nach
+    einer Puffer-Änderung am selben Tag mit dem alten Wert."""
+    employee_user.work_blocks = WEEK
+    _db_session.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=employee_user.id, date=MON,
+                              start_time=time(8), end_time=None, break_minutes=0, clamp_grace_minutes=15))
+    _db_session.commit()
+    _grace(_db_session, 0)
+    _at(monkeypatch, MON, 13)
+    body = _status(employee_client)
+    assert body["is_clocked_in"] is True
+    assert body["grace_minutes"] == 15
+    assert body["tenant_grace_minutes"] == 0
+
+
+def test_tenant_grace_equals_grace_when_not_clocked_in(_db_session, employee_user, employee_client, monkeypatch):
+    employee_user.work_blocks = WEEK
+    _db_session.commit()
+    _grace(_db_session, 10)
+    _at(monkeypatch, MON)
+    body = _status(employee_client)
+    assert body["is_clocked_in"] is False
+    assert body["grace_minutes"] == 10
+    assert body["tenant_grace_minutes"] == 10
+
+
 def test_clocked_in_without_stored_grace_falls_back_to_tenant_grace(
     _db_session, employee_user, employee_client, monkeypatch,
 ):

@@ -208,3 +208,9 @@ class ClockStatusResponse(BaseModel):
     # Puffer, mit dem das Ausstempeln kappen wird (E80). In JEDEM Zweig.
     blocks_today: List[ClockBlock] = []
     grace_minutes: int = 15
+    # Gesamtreview 1.20 (Fund 24): der AKTUELLE Mandanten-Puffer, mit dem eine
+    # Neuanlage kappt (E80) — für die §4-Vorprüfung und die Pausen-Automatik der
+    # Zeiterfassung. Eingestempelt weicht ``grace_minutes`` (Puffer des offenen
+    # Eintrags) davon ab, sobald die Verwaltung den Puffer nach dem Einstempeln
+    # ändert; nicht eingestempelt sind beide gleich.
+    tenant_grace_minutes: int = 15

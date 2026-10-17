@@ -226,6 +226,11 @@ export default function TimeTracking() {
   // Spec 2026-10-08 (8.4, 14): Blöcke von heute und Puffer aus /clock-status —
   // für die §4-Vorprüfung (Lückensegmente) und die Vorbelegung neuer Einträge.
   // Ohne Antwort (oder fremde Form) bleibt alles wie bisher; der Server prüft ohnehin.
+  // Gesamtreview 1.20 (Fund 24): Puffer = der AKTUELLE Mandanten-Puffer
+  // (`tenant_grace_minutes`), mit dem der Server eine Neuanlage und einen
+  // Eintrag ohne gespeicherten Puffer kappt (E80) — nicht `grace_minutes`: das
+  // ist eingestempelt der Puffer des offenen Eintrags (fürs Ausstempeln im
+  // StampWidget) und weicht ab, sobald die Verwaltung den Puffer danach ändert.
   const [clockInfo, setClockInfo] = useState<{ blocks: TimeBlock[]; grace: number }>({ blocks: [], grace: 15 });
   useEffect(() => {
     let cancelled = false;
@@ -234,9 +239,12 @@ export default function TimeTracking() {
       .then((res) => {
         if (cancelled) return;
         const d = res.data;
+        const grace = typeof d?.tenant_grace_minutes === 'number'
+          ? d.tenant_grace_minutes
+          : (typeof d?.grace_minutes === 'number' ? d.grace_minutes : 15);
         setClockInfo({
           blocks: Array.isArray(d?.blocks_today) ? d.blocks_today : [],
-          grace: typeof d?.grace_minutes === 'number' ? d.grace_minutes : 15,
+          grace,
         });
       })
       .catch(() => { /* Vorprüfung ohne Blöcke */ });
