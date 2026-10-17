@@ -1154,6 +1154,13 @@ group_restore() {
   done
   forbid docs/BACKUP.md '| "$PZ/bin/postgresql/bin/psql"'
   forbid docs/setup-anleitung.md '| docker compose exec -T db psql -U praxiszeit praxiszeit'
+  # Windows-Einrichtung (Gesamtreview 1.20, Runde 2): beschrieb die Backups als
+  # Custom-Format und gab pg_restore vor – das bricht an Plain-SQL-Dumps ab.
+  f=docs/setup-windows.md
+  need "$f" 'restore-backup.bat <datei>'
+  forbid "$f" 'pg_restore'
+  forbid "$f" 'Custom-Format'
+  forbid "$f" 'Custom Format'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---

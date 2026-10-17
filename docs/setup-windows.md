@@ -472,7 +472,7 @@ Ist der Tag bereits gesperrt (typisch nach Monatsabschluss): Button **Änderungs
 
 - Läuft täglich um **03:00** als Scheduled Task `PraxisZeit-Backup` (eingerichtet durch `install-service.bat`)
 - Ablage: `C:\PraxisZeit\data\backups\praxiszeit_YYYYMMDD_HHMMSS.sql.gz`
-- Format: PostgreSQL **Custom Format** (`pg_dump -Fc`), gzip-komprimiert — Wiederherstellung erfolgt mit `pg_restore` (siehe unten)
+- Format: gzip-komprimierter **Plain-SQL-Dump** (`pg_dump --clean --if-exists`) — eingespielt wird er mit `restore-backup.bat` (siehe unten)
 - Aufbewahrung: gesetzt durch `praxiszeit.conf` → `[backup].retention_days`. **Default in der Vorlage ist 31** — für die ArbZG-Pflicht von 2 Jahren manuell auf **730** erhöhen (siehe Schritt 5).
 
 ### Backup-Status prüfen
@@ -491,27 +491,22 @@ bin\python\python.exe praxiszeit-server.py backup
 
 ### Wiederherstellung aus Backup
 
-Backups liegen als `.sql.gz` im PostgreSQL-**Custom-Format** vor. Dadurch ist `pg_restore` Pflicht — `psql` funktioniert mit diesem Format **nicht**.
-
-Schritt für Schritt (Administrator-Eingabeaufforderung):
+Die Backups sind gzip-komprimierte **Plain-SQL-Dumps** (`.sql.gz`). Eingespielt
+werden sie mit dem mitgelieferten `restore-backup.bat <datei>` aus dem
+Installationsordner – in einer **Administrator**-Eingabeaufforderung:
 
 ```cmd
-:: 1. PraxisZeit stoppen, PostgreSQL läuft weiter
-net stop PraxisZeit
-
-:: 2. Datenbankpasswort aus der Credentials-Datei in die Umgebung holen
-for /f "tokens=1,* delims==" %A in (C:\PraxisZeit\config\.db-credentials) do @if "%A"=="SUPERUSER_PASSWORD" set "PGPASSWORD=%B"
-
-:: 3. Backup zuerst entpacken (PowerShell hat kein eingebautes gunzip,
-::    daher Tools wie 7-Zip oder das Bundle-Binary "gzip.exe" nutzen)
-"C:\Program Files\7-Zip\7z.exe" e C:\PraxisZeit\data\backups\praxiszeit_20260523_030001.sql.gz -oC:\Temp\
-
-:: 4. Wiederherstellen (entpackte Datei: praxiszeit_20260523_030001.sql)
-"C:\PraxisZeit\bin\postgresql\bin\pg_restore.exe" -U praxiszeit -d praxiszeit --clean --if-exists C:\Temp\praxiszeit_20260523_030001.sql
-
-:: 5. Dienst wieder starten
-net start PraxisZeit
+cd C:\PraxisZeit
+restore-backup.bat data\backups\praxiszeit_20260523_030001.sql.gz
 ```
+
+Das Script verlangt zur Bestätigung die Eingabe `LOESCHEN`, hält den Dienst an,
+legt die Datenbank frisch an, spielt das Backup ein, setzt die Rechte der
+Anwendungsrolle und startet den Dienst wieder. Erst dieser Start hebt ein Backup
+einer älteren Version per Migration auf den Stand der installierten Version.
+Liegt PraxisZeit nicht unter `C:\praxiszeit`, vorher den Ordner angeben:
+`set PRAXISZEIT_INSTALL_DIR=D:\PraxisZeit`. Einzelheiten und die übrigen
+Installationsarten: [BACKUP.md → Restore](BACKUP.md#restore-wiederherstellung).
 
 > **Vor jeder Restore-Aktion:** aktuellen Stand sichern (`praxiszeit-server.py backup`) und schriftlich dokumentieren, **wer wann warum** zurückgespielt hat. Restores sind nach § 16 ArbZG protokollpflichtig.
 
