@@ -488,21 +488,22 @@ describe('<TimeTracking /> Anrechnung beantragen und anerkannte Einträge (Spec 
     expect(screen.getByRole('button', { name: /Ändern/ })).toBeInTheDocument();
   });
 
-  // P3 + Antragsregeln: direktes PUT/DELETE → 409, Änderungs- und Löschantrag
-  // für heute → 400 (Anträge nur für vergangene Tage). Keine Knöpfe anbieten,
-  // die garantiert scheitern — nur der Hinweis.
-  it('anerkannter Eintrag von heute: weder Bearbeiten noch Anträge, sondern Hinweis', async () => {
+  // P3 + Ultrareview 1.20 (Fund 1): direktes PUT/DELETE → 409, Änderungs- und
+  // Löschantrag nimmt der Server für den heute anerkannten Eintrag an —
+  // Antragsknöpfe plus Hinweis statt einer Sackgasse bis morgen.
+  it('anerkannter Eintrag von heute: kein Bearbeiten, aber Anträge und Hinweis', async () => {
     mockEntries([{ ...closedEntry, credit_override: true }]);
     renderPage();
     expect(await screen.findAllByText(
-      'Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung',
+      'Anerkannter Eintrag – Änderung per Änderungsantrag oder über die Verwaltung',
     )).toHaveLength(2);
     expect(screen.queryByLabelText(/bearbeiten/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/löschen/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/Änderungsantrag für/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/Löschantrag für/)).not.toBeInTheDocument();
-    // Mobilkarte: weder „Bearbeiten"/„Löschen" noch „Ändern".
-    expect(screen.queryByRole('button', { name: /Bearbeiten|Löschen|Ändern/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Eintrag vom .* löschen/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Änderungsantrag für/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Löschantrag für/)).toBeInTheDocument();
+    // Mobilkarte: „Ändern"/„Löschen" per Antrag, kein „Bearbeiten".
+    expect(screen.queryByRole('button', { name: /Bearbeiten/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ändern/ })).toBeInTheDocument();
   });
 
   it('Kontrolltest: Admins bearbeiten einen anerkannten Eintrag weiter direkt (P3)', async () => {

@@ -129,7 +129,7 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       '5. Arbeitszeit-Blöcke & Anrechnung',
       '2:30 h zwischen den Blöcken nicht angerechnet',
       'Anrechnung beantragen',
-      'Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung',
+      'Anerkannter Eintrag – Änderung per Änderungsantrag oder über die Verwaltung',
       'erst nach Arbeitsende',
       'Pause zwischen den Arbeitsblöcken',
       'Meine Arbeitszeit',

@@ -52,7 +52,7 @@ interface TimeEntry extends StampEntry {
 }
 
 /** P3: heutiger anerkannter Eintrag — weder direkt noch per Antrag änderbar. */
-const CREDITED_TODAY_HINT = 'Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung';
+const CREDITED_TODAY_HINT = 'Anerkannter Eintrag – Änderung per Änderungsantrag oder über die Verwaltung';
 
 interface DailyScheduleUser {
   use_daily_schedule: boolean;
@@ -675,8 +675,9 @@ export default function TimeTracking() {
   );
   // P3: ein anerkannter Eintrag ist für Mitarbeitende nur per Antrag änderbar
   // (der Server antwortet auf PUT/DELETE mit 409). Ist er von heute (für
-  // Mitarbeitende heißt `is_editable` genau das), scheitern auch Änderungs- und
-  // Löschantrag (400, Anträge nur für vergangene Tage) — dann nur der Hinweis.
+  // Mitarbeitende heißt `is_editable` genau das), nimmt der Server Änderungs-
+  // und Löschantrag seit Ultrareview 1.20 (Fund 1) auch heute an — vorher eine
+  // Sackgasse bis morgen. Angeboten werden die Antragsknöpfe plus Hinweis.
   const lockedAsCredited = (entry: TimeEntry) => entry.is_editable && !!entry.credit_override && !isAdmin;
   const directlyEditable = (entry: TimeEntry) => entry.is_editable && !lockedAsCredited(entry);
   // #502: Mitarbeitende verschieben einen Eintrag beim Bearbeiten nicht auf
@@ -1130,14 +1131,16 @@ export default function TimeTracking() {
                               <Trash2 size={16} />
                             </button>
                           </>
-                        ) : lockedAsCredited(entry) ? (
-                          <span title={CREDITED_TODAY_HINT}>
-                            <Lock size={14} className="inline text-gray-400" aria-hidden="true" />
-                            <span className="sr-only">{CREDITED_TODAY_HINT}</span>
-                          </span>
                         ) : (
                           <>
-                            <span title="Gesperrt"><Lock size={14} className="inline text-gray-400 mr-1" /></span>
+                            {lockedAsCredited(entry) ? (
+                              <span title={CREDITED_TODAY_HINT}>
+                                <Lock size={14} className="inline text-gray-400 mr-1" aria-hidden="true" />
+                                <span className="sr-only">{CREDITED_TODAY_HINT}</span>
+                              </span>
+                            ) : (
+                              <span title="Gesperrt"><Lock size={14} className="inline text-gray-400 mr-1" /></span>
+                            )}
                             <button
                               onClick={() => openChangeRequest(entry, 'update')}
                               className="text-amber-600 hover:text-amber-800"
@@ -1235,9 +1238,11 @@ export default function TimeTracking() {
                             <Trash2 size={14} /> Löschen
                           </button>
                         </div>
-                      ) : lockedAsCredited(entry) ? (
-                        <p className="text-xs text-text-secondary">{CREDITED_TODAY_HINT}</p>
                       ) : (
+                        <>
+                        {lockedAsCredited(entry) && (
+                          <p className="text-xs text-text-secondary mb-2">{CREDITED_TODAY_HINT}</p>
+                        )}
                         <div className="flex gap-2">
                           <button
                             onClick={() => openChangeRequest(entry, 'update')}
@@ -1252,6 +1257,7 @@ export default function TimeTracking() {
                             <Trash2 size={14} /> Löschen
                           </button>
                         </div>
+                        </>
                       )}
                     </div>
                   );

@@ -174,11 +174,12 @@ group_code() {
   need_code "Notiz und Begründung zusammen höchstens 500 Zeichen."
   need_code "Ihre Arbeitszeit ändert sich ab"
   need_code "auf den vorherigen Stand zurückgesetzt (neu: "
-  # Heute anerkannter Eintrag: kein Bearbeiten/Löschen, nur Schloss mit Hinweis
-  # (TimeTracking CREDITED_TODAY_HINT, PR2 T16). Einen Knopf „Änderung beantragen"
-  # gibt es nicht; ab morgen gelten „Änderungsantrag stellen"/„Löschantrag stellen".
+  # Heute anerkannter Eintrag: kein Bearbeiten/Löschen, Schloss mit Hinweis
+  # (TimeTracking CREDITED_TODAY_HINT, PR2 T16) und — seit Ultrareview 1.20
+  # (Fund 1) schon am selben Tag — „Änderungsantrag stellen"/„Löschantrag stellen".
   # Die 409-Meldung oben erreicht die Oberfläche praktisch nicht mehr.
-  need_code "Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung"
+  need_code "Anerkannter Eintrag – Änderung per Änderungsantrag oder über die Verwaltung"
+  need_code "Das Ende liegt in der Zukunft – die Änderung kann erst nach Arbeitsende beantragt werden."
   need_code "Änderungsantrag stellen"
   need_code "Löschantrag stellen"
   # Anrechnungsanträge (Gesamtreview PR2, Fund 1/4/5): zwei Knöpfe statt
@@ -604,7 +605,8 @@ group_mitarbeiter() {
   need "$f" 'Pause in der Lücke wird zusätzlich abgezogen'
   need "$f" 'nicht ausgestempelt – automatisch geschlossen'
   need "$f" 'Anrechnung beantragen'
-  need "$f" 'Anerkannter Eintrag – Änderung ab morgen per Änderungsantrag oder über die Verwaltung'
+  need "$f" 'Anerkannter Eintrag – Änderung per Änderungsantrag oder über die Verwaltung'
+  need "$f" 'Das Ende liegt in der Zukunft – die Änderung kann erst nach Arbeitsende beantragt werden.'
   need "$f" 'Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden.'
   need "$f" 'ohne Anerkennen genehmigt'
   need "$f" 'Pause zwischen den Arbeitsblöcken'

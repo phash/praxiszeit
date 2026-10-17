@@ -31,6 +31,9 @@ CREDIT_REQUEST_REJECTED_DETAIL = "Für diesen Eintrag kann keine Anrechnung bean
 CREDIT_REQUEST_FUTURE_END_DETAIL = (
     "Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden."
 )
+RECOGNIZED_TODAY_FUTURE_END_DETAIL = (
+    "Das Ende liegt in der Zukunft – die Änderung kann erst nach Arbeitsende beantragt werden."
+)
 
 
 @router.post("/", response_model=ChangeRequestResponse, status_code=status.HTTP_201_CREATED)
@@ -200,12 +203,27 @@ def create_change_request(
         and data.proposed_date == entry.date
     )
 
+    # Ultrareview 1.20 (Fund 1): ein HEUTE anerkannter Eintrag sperrt das
+    # direkte Bearbeiten und Löschen der Mitarbeitenden (409 „… bitte per
+    # Änderungsantrag.", time_entries) — der Antrag muss dann auch heute gehen,
+    # sonst ist der Verweis eine Sackgasse. Nur für Ziel heute oder früher.
+    _recognized_today = bool(
+        entry is not None
+        and entry.credit_override
+        and entry.date == today_local()
+    )
+
     # For UPDATE, proposed values required and must be for past day
     if data.request_type == "update":
         if not all([data.proposed_date, data.proposed_start_time, data.proposed_end_time]):
             raise HTTPException(status_code=400, detail="Datum, Von und Bis sind erforderlich")
-        if data.proposed_date >= today_local() and not _credit_today:
+        _recognized_stays_today = _recognized_today and data.proposed_date == entry.date
+        if data.proposed_date >= today_local() and not (_credit_today or _recognized_stays_today):
             raise HTTPException(status_code=400, detail="Änderungsanträge sind nur für vergangene Tage möglich")
+        # Die Anerkennung überlebt die Genehmigung (P11) — ein späteres Ende
+        # rechnete dauerhaft noch nicht gearbeitete Zeit an.
+        if _recognized_stays_today and data.proposed_end_time > now_local().time():
+            raise HTTPException(status_code=400, detail=RECOGNIZED_TODAY_FUTURE_END_DETAIL)
         # Arbeitszeitraum-Prüfung (I1)
         if data.proposed_date:
             if current_user.first_work_day and data.proposed_date < current_user.first_work_day:
@@ -247,7 +265,7 @@ def create_change_request(
 
     # For DELETE, entry must be from past
     if data.request_type == "delete" and entry:
-        if entry.date >= today_local():
+        if entry.date >= today_local() and not _recognized_today:
             raise HTTPException(status_code=400, detail="Heutige Einträge können direkt gelöscht werden")
 
     # #499-Review (F4): die Begründung wird nur dann am Antrag gespeichert, wenn
