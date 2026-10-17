@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   blocksOf, blocksSpan, deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, gapSegments, hhmmToMinutes, hullClamp,
-  isInBlockGap, isLegacyWeek, minutesToHm, notCreditedMinutes, parseHhmm, stampNoteProps, sumBlocks, validateWeekBlocks,
+  isInBlockGap, isLegacyWeek, minutesToHm, notCreditedMinutes, parseHhmm, runningCreditedMinutes, stampNoteProps, sumBlocks,
+  validateWeekBlocks,
 } from './workBlocks';
 import { K_CASES_FE } from './workBlocksCases';
 import type { WeekBlocks } from '../types/workBlocks';
@@ -66,6 +67,27 @@ describe('notCreditedMinutes — Kollaps nach gekapptem Beginn (Ultrareview)', (
       start_time: s, end_time: e, raw_start_time: rs, raw_end_time: re,
       uncredited_minutes: unc, auto_closed: ac,
     })).toBe(exp);
+  });
+});
+
+// Ultrareview: wortgleich zu backend/tests/test_ultrareview_clock_status.py —
+// der laufende Eintrag zählt wie beim Ausstempeln (Hülle + Lücke, Pause ab).
+describe('runningCreditedMinutes — laufender Eintrag wie clock_out (Ultrareview)', () => {
+  const BLOCKS = [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }];
+  const cases: [string, string, number, boolean, number][] = [
+    ['16:00', '08:00', 0, false, 330],
+    ['13:00', '08:00', 0, false, 255],
+    ['19:00', '07:45', 0, false, 480],
+    ['16:00', '08:00', 30, false, 300],
+    ['07:30', '07:45', 0, false, 0],
+    ['16:00', '08:00', 0, true, 480],
+  ];
+  it.each(cases)('jetzt %s, Beginn %s, Pause %i, anerkannt %s → %i', (now, start, brk, override, exp) => {
+    expect(runningCreditedMinutes(BLOCKS, 15, start, hhmmToMinutes(now), brk, override)).toBe(exp);
+  });
+  it('ohne Blöcke: Wanduhrzeit minus Pause, nie negativ', () => {
+    expect(runningCreditedMinutes([], 15, '14:17', hhmmToMinutes('15:27'), 0, false)).toBe(70);
+    expect(runningCreditedMinutes(undefined, 15, '15:07', hhmmToMinutes('15:27'), 30, false)).toBe(0);
   });
 });
 

@@ -17,7 +17,7 @@ import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 import { ABSENCE_TYPE_LABELS } from '../constants/absenceTypes';
 import { useTypeColorsStore, pickTextColor } from '../stores/typeColorsStore';
-import { isInBlockGap } from '../utils/workBlocks';
+import { isInBlockGap, runningCreditedMinutes } from '../utils/workBlocks';
 import type { TimeBlock } from '../types/workBlocks';
 
 interface DashboardData {
@@ -212,10 +212,11 @@ export default function Dashboard() {
   const [clockStatus, setClockStatusRaw] = useState<{
     is_clocked_in: boolean;
     elapsed_minutes?: number | null;
-    current_entry?: { start_time: string; break_minutes?: number | null };
+    current_entry?: { start_time: string; break_minutes?: number | null; credit_override?: boolean | null };
     today_net_minutes?: number; // #494: Tages-Ist inkl. abgeschlossener Einträge
     today_target_hours?: number; // #494 F1: heute zu stempelnde Stunden (get_day_presence_target, 0 an freien Tagen)
     blocks_today?: TimeBlock[]; // Spec 2026-10-08 (14, E69)
+    grace_minutes?: number; // Puffer, mit dem clock_out kappen wird (E80)
   } | null>(null);
   // #494 (Gesamtreview B6): „x von y h heute" zählt bei laufendem Eintrag live
   // mit. Gemessen wird die Wanduhr seit dem Laden des Status (nicht die Zahl der
@@ -527,14 +528,25 @@ export default function Dashboard() {
         const isWorkday = todayTarget > 0;
         const isClockedIn = clockStatus?.is_clocked_in ?? false;
         // Gesamtreview B6: der laufende Eintrag zählt seit dem Laden weiter —
-        // nach derselben Regel wie der Server (laufend netto = max(0, gestempelte
-        // Minuten − schon erfasste Pause)), damit eine erfasste Pause nicht
-        // doppelt oder gar nicht wirkt.
+        // nach derselben Regel wie der Server (Ultrareview: angerechnet wie beim
+        // Ausstempeln — Hülle und Lücke zwischen den Arbeitszeit-Blöcken zählen
+        // nicht, die schon erfasste Pause wird abgezogen; `runningCreditedMinutes`
+        // ist der Zwilling von `_running_credited_minutes`). Wachstum =
+        // angerechnet bis jetzt − angerechnet bis zum Laden.
         const sinceLoad = isClockedIn ? Math.max(0, Math.floor((nowMs - clockLoadedAt) / 60_000)) : 0;
-        const runningElapsed = clockStatus?.elapsed_minutes ?? 0;
-        const runningBreak = clockStatus?.current_entry?.break_minutes ?? 0;
-        const runningGrowth = Math.max(0, runningElapsed + sinceLoad - runningBreak)
-          - Math.max(0, runningElapsed - runningBreak);
+        const loadedAt = new Date(clockLoadedAt);
+        const loadMinutes = loadedAt.getHours() * 60 + loadedAt.getMinutes();
+        const running = clockStatus?.current_entry;
+        const creditedUntil = (minutes: number) => (running?.start_time
+          ? runningCreditedMinutes(
+            clockStatus?.blocks_today, clockStatus?.grace_minutes ?? 0,
+            (running.start_time.includes('T') ? running.start_time.split('T')[1] : running.start_time),
+            minutes, running.break_minutes ?? 0, running.credit_override ?? false,
+          )
+          : 0);
+        const runningGrowth = isClockedIn && sinceLoad > 0
+          ? Math.max(0, creditedUntil(loadMinutes + sinceLoad) - creditedUntil(loadMinutes))
+          : 0;
         const todayActual = ((clockStatus?.today_net_minutes ?? 0) + runningGrowth) / 60;
         // Wer heute schon gestempelt hat (z. B. Mittagspause, Feierabend), ist
         // nicht „noch nicht eingestempelt" — kein roter Hinweis.

@@ -107,6 +107,30 @@ export function hullClamp(
   return { start: toHHMM(effS), end: toHHMM(effE) };
 }
 
+/**
+ * Zwilling von `time_entries._running_credited_minutes` (#494, Ultrareview):
+ * angerechnete Minuten des LAUFENDEN Eintrags (gespeicherter Beginn `start`) bis
+ * `nowMinutes` (Minuten seit Mitternacht) — wie beim Ausstempeln: Hülle und
+ * Lücke zwischen den Blöcken zählen nicht, die schon erfasste Pause wird
+ * abgezogen, nie negativ. Liegt „jetzt" nicht nach dem Beginn (gekappter Beginn
+ * #201), 0. Anerkannt oder ohne Blöcke: Wanduhrzeit minus Pause.
+ */
+export function runningCreditedMinutes(
+  blocks: TimeBlock[] | null | undefined, grace: number, start: string, nowMinutes: number,
+  breakMinutes: number, creditOverride: boolean,
+): number {
+  const s = hhmmToMinutes(start);
+  const now = Math.min(Math.floor(nowMinutes), LAST_MINUTE);
+  if (Number.isNaN(s) || now <= s) return 0;
+  const brk = breakMinutes || 0;
+  if (creditOverride || !blocks || blocks.length === 0) return Math.max(0, now - s - brk);
+  const nowHHMM = toHHMM(now);
+  const eff = hullClamp(blocks, grace, start, nowHHMM);
+  const span = hhmmToMinutes(eff.end) - hhmmToMinutes(eff.start);
+  const gap = gapSegments(blocks, grace, start, nowHHMM).reduce((a, b) => a + b, 0);
+  return Math.max(0, span - gap - brk);
+}
+
 /** Spec 14 / E69: liegt `minutes` in einer UNGESCHRUMPFTEN Lücke (Ende Block i
  * bis Beginn Block i+1)? Laut Plan beginnt die Pause am Blockende, nicht erst
  * nach dem Puffer — der geschrumpfte Wert gilt nur für die Anrechnung. */

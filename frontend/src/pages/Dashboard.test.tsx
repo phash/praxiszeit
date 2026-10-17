@@ -349,6 +349,28 @@ describe('Dashboard Stempelkarte „x von y h heute" (#494)', () => {
       expect(screen.getByText('4:26 von 7:00 h heute')).toBeInTheDocument();
     });
 
+    it('zählt die Lücke zwischen den Arbeitsblöcken nicht mit (wie der Server, Ultrareview)', async () => {
+      // Mo–Fr 08–12 + 15–18, Puffer 15: seit 08:00 eingestempelt, geladen um
+      // 12:00 (angerechnet 240). Vorher zählte die Karte die Wanduhr weiter.
+      vi.setSystemTime(new Date('2026-10-08T12:00:00'));
+      withClockStatus({
+        is_clocked_in: true, elapsed_minutes: 240,
+        current_entry: { start_time: '08:00:00', break_minutes: 0, credit_override: false },
+        today_net_minutes: 240, today_target_hours: 7,
+        blocks_today: [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }],
+        grace_minutes: 15,
+      });
+      render(<MemoryRouter><Dashboard /></MemoryRouter>);
+      expect(await screen.findByText('4:00 von 7:00 h heute')).toBeInTheDocument();
+
+      // 13:00: nur 12:00–12:15 (Puffer) zählt, die Lücke ab 12:15 nicht.
+      act(() => { vi.advanceTimersByTime(60 * 60_000); });
+      expect(screen.getByText('4:15 von 7:00 h heute')).toBeInTheDocument();
+      // 16:00: 14:45–16:00 zählt wieder → 4:15 + 1:15.
+      act(() => { vi.advanceTimersByTime(3 * 60 * 60_000); });
+      expect(screen.getByText('5:30 von 7:00 h heute')).toBeInTheDocument();
+    });
+
     it('bleibt stehen, wenn nicht eingestempelt', async () => {
       withClockStatus({
         is_clocked_in: false, elapsed_minutes: null,

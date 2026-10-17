@@ -193,7 +193,9 @@ dieses Backup verlustfrei (`UPDATE.md`).
   Einträge des Tages (bei geteiltem Dienst Vormittag und Nachmittag, auch nach
   dem Ausstempeln – dann neutral „Ausgestempelt"); das Tagessoll folgt
   Feiertag, ganztägiger Abwesenheit und Sondertag – kein rotes „Noch nicht
-  eingestempelt" mehr an freien Tagen.
+  eingestempelt" mehr an freien Tagen. Der laufende Eintrag zählt wie beim
+  Ausstempeln nur die angerechnete Zeit (ohne Lücke zwischen den
+  Arbeitszeit-Blöcken und ohne Zeit nach dem Hüllenende).
 - **„Arbeitstage" am Abwesenheitsantrag** (#496) zählt nach derselben Regel wie
   die Buchung (Tagesplan, Halbtage, freie Sondertage).
 - **Exporte: Tages-Differenz mit Gutschrift, geteilte Dienste sichtbar**

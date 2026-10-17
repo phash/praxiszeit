@@ -326,6 +326,30 @@ def _today_closed_net_minutes(db: Session, user: User, today: date) -> int:
     )
 
 
+def _running_credited_minutes(db: Session, user: User, open_entry, now: datetime) -> int:
+    """#494 / Ultrareview: angerechnete Minuten des LAUFENDEN Eintrags bis „jetzt"
+    — dieselbe Regel wie beim Ausstempeln (``clamp`` mit ``grace_for_entry``):
+    Hüllenende und die Lücke zwischen den Arbeitszeit-Blöcken zählen nicht, eine
+    schon erfasste Pause wird abgezogen. Vorher zählte die Wanduhrzeit (Mo 08–12
+    + 15–18, eingestempelt 08:00, jetzt 16:00 → 480 statt 330 Min.).
+
+    Ein an der Hülle gekappter Beginn kann nach „jetzt" liegen (#201) — dann 0,
+    ``clamp`` wird mit verkehrter Reihenfolge gar nicht erst aufgerufen.
+    Frontend-Zwilling (lokales Weiterzählen): ``utils/workBlocks.ts::runningCreditedMinutes``."""
+    from app.services import work_window_service
+
+    now_time = now.time().replace(second=0, microsecond=0, tzinfo=None)
+    if open_entry.start_time is None or now_time <= open_entry.start_time:
+        return 0
+    r = work_window_service.clamp(
+        db, user, open_entry.date, open_entry.start_time, now_time,
+        work_window_service.grace_for_entry(db, open_entry),
+        credit_override=open_entry.credit_override,
+    )
+    span = (r.eff_end.hour * 60 + r.eff_end.minute) - (r.eff_start.hour * 60 + r.eff_start.minute)
+    return max(0, span - r.uncredited_minutes - (open_entry.break_minutes or 0))
+
+
 def _today_target_hours(db: Session, user: User, today: date) -> float:
     """#494 F1: heute zu stempelnde Stunden (Präsenz-Soll), kein Vertrags-Tagessoll.
 
@@ -430,10 +454,7 @@ def get_clock_status(
     now = _now_local()
     start_dt = datetime.combine(open_entry.date, open_entry.start_time, tzinfo=LOCAL_TZ)
     elapsed = int((now - start_dt).total_seconds() / 60)
-    # Laufender Eintrag netto: eine schon erfasste Pause abziehen; ein an den
-    # Arbeitszeit-Blöcken gekappter Beginn kann nach „jetzt" liegen (#201) — das
-    # darf das Tages-Ist nicht senken.
-    running_net = max(0, elapsed - (open_entry.break_minutes or 0))
+    running_net = _running_credited_minutes(db, current_user, open_entry, now)
 
     response_entry = TimeEntryResponse.model_validate(open_entry)
     _enrich_response(response_entry, open_entry, current_user, db)
