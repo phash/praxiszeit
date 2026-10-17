@@ -155,6 +155,14 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
     expectNoStaleTerms(text);
   });
 
+  it('Mitarbeiter-Handbuch: Name und E-Mail ändert man im Profil selbst (Gesamtreview 1.20)', () => {
+    // Profile.tsx zeigt „Bearbeiten" für jede Rolle (PUT /auth/profile, Art. 16
+    // DSGVO) — nur Arbeitszeit, Rolle und Urlaubsanspruch legt die Verwaltung fest.
+    const text = sectionsText(handbuchMitarbeiterSections);
+    expect(text).not.toContain('Persönliche Daten wie Name und Wochenstunden können nur vom Administrator geändert werden');
+    expect(text).toContain('Vorname, Nachname und E-Mail-Adresse ändern Sie selbst über „Bearbeiten" neben Ihrem Namen');
+  });
+
   it('Kurzanleitungen und Schnellstart nennen Knopf, Modus und Anrechnung', () => {
     const admin = textOf(<CheatsheetAdmin />);
     for (const expected of [

@@ -686,6 +686,12 @@ group_mitarbeiter() {
   need "$f" 'Einträge für vergangene Tage können nur per Änderungsantrag erstellt werden'
   need "$f" 'Änderungsantrag: Neuer Eintrag (vergangener Tag)'
   forbid "$f" 'einen vergangenen Tag nachtragen möchten'
+  # Gesamtreview 1.20: Name und E-Mail ändert jede Person selbst (Profile.tsx
+  # „Bearbeiten" → PUT /auth/profile, Art. 16 DSGVO) — nicht „vom Administrator
+  # hinterlegt" wie Rolle, Urlaubstage und Arbeitszeit.
+  forbid "$f" '**persönlichen Daten** (vom Administrator hinterlegt)'
+  need "$f" 'ändern Sie selbst über **Bearbeiten** neben Ihrem Namen'
+  need frontend/src/pages/Profile.tsx "{showProfileEdit ? 'Abbrechen' : 'Bearbeiten'}"
 }
 
 group_kurz() {

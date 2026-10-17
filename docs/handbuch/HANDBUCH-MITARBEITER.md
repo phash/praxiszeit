@@ -522,10 +522,12 @@ Klicken Sie in der Navigation auf **Profil**.
 
 ![Profil](screenshots/10-ma-profil.png)
 
-Hier sehen Sie Ihre **persönlichen Daten** (vom Administrator hinterlegt):
+Hier sehen Sie Ihre **persönlichen Daten**:
 
 - Vor- und Nachname, Benutzername, E-Mail-Adresse
 - Rolle, Urlaubstage, Status
+
+Vorname, Nachname und E-Mail-Adresse ändern Sie selbst über **Bearbeiten** neben Ihrem Namen (→ **Speichern**), das Profilbild per Klick aufs Bild. Benutzername, Rolle, Urlaubstage und Ihre Arbeitszeit legt die Verwaltung fest.
 
 **Meine Arbeitszeit:** Die Karte zeigt je Wochentag Ihre heute gültigen Arbeitszeit-Blöcke mit Tagessoll (z. B. „Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) · Tagessoll 6:30 h"), darunter Ihre Wochenstunden (z. B. „Wochenstunden: 15,5") und im **Verlauf** jede Änderung mit Wirkungsdatum, z. B. „ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) · Di 08:00–13:00 · Do 08:00–12:00 · 15,5 Std/Woche". Sind keine Blöcke hinterlegt, steht „–" statt der Zeiten; Tagessoll und Wochenstunden sehen Sie trotzdem. Bei einem aus früheren Versionen übernommenen Arbeitszeit-Fenster stehen dort dessen Zeiten ohne Pause, das Tagessoll aus Ihren Wochenstunden bzw. Tagesstunden und darunter der Hinweis *„Diese Zeiten begrenzen nur die Anrechnung der erfassten Zeit; das Tagessoll wird nicht aus ihnen berechnet."* (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)). Bei einer festen Monatsarbeitszeit (Minijob) heißen die Tageswerte „geplant" und darunter steht die feste Monatsarbeitszeit; ohne Stundenzählung entfällt das Tagessoll (*„Ohne Stundenzählung: kein Tagessoll; die Arbeitszeit-Blöcke begrenzen die Anrechnung nicht."*). Ändern kann Ihre Arbeitszeit nur die Verwaltung; jede Änderung kündigt Ihr Dashboard 30 Tage lang an (→ [Abschnitt 2](#2-dashboard--die-übersicht)).
 
