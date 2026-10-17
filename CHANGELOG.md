@@ -211,6 +211,14 @@ dieses Backup verlustfrei (`UPDATE.md`).
   eingeschalteter Genehmigungspflicht zum Genehmigungsantrag, bei abgeschalteter
   Ausnahme abgelehnt. Bleiben Datum, Zeiten und Pause gleich, wird der Eintrag
   jetzt sofort gespeichert; die Begründung bleibt stehen.
+- **Genau 10:00 h am Tag bzw. 48:00 h in der Woche:** Verteilte sich die
+  angerechnete Zeit auf mehrere Einträge (z. B. 2:00 + 6:10 + 1:50 h), landete
+  die Summe durch Rundung beim Addieren knapp über der Grenze. Anlegen,
+  Bearbeiten und Änderungsanträge wurden dann mit „Tagesarbeitszeit würde 10.0h
+  betragen und überschreitet die gesetzliche Höchstgrenze von 10h (§3 ArbZG)."
+  abgelehnt, das Ausstempeln meldete die Überschreitung, und genau 48:00 h in
+  der Woche lösten den Wochenhinweis aus. Die Prüfungen rechnen jetzt in ganzen
+  Minuten; erst mehr als 10:00 h bzw. 48:00 h gelten als zu viel.
 - **Urlaub in einem Zeitraum mit 0 Wochenstunden** (z. B. Elternzeit): Die
   direkte Urlaubsbuchung verlangte Resturlaub auch für Tage, die sie gar nicht
   bucht, und lehnte deshalb ab. Ein Jahr mit Resturlaub im Minus sperrte außerdem

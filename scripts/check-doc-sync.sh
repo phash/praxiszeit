@@ -1098,6 +1098,10 @@ group_changelog() {
   need "$f" '**Vor einer Übernahme'
   need "$f" '**Antragsgenehmigung außerhalb des Beschäftigungszeitraums:**'
   need "$f" '**Gleicher Beginn wie ein vorhandener Eintrag:**'
+  # Gesamtreview 1.20: die §3-/48-h-Summen rechnen in ganzen Minuten (c7a2383);
+  # genau 10:00 h bzw. 48:00 h aus mehreren Einträgen galten vorher als zu viel.
+  need "$f" '**Genau 10:00 h am Tag bzw. 48:00 h in der Woche:**'
+  need_code 'überschreitet die gesetzliche Höchstgrenze von'
   need_code '"Datum liegt nach dem letzten Arbeitstag"'
   need_code '"Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum"'
 }
