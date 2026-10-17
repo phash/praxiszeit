@@ -556,13 +556,25 @@ def not_credited_minutes(entry) -> int:
     + von der Hülle gekappte Minuten (``eff_start − raw_start``,
     ``raw_end − eff_end``; 0 ohne ``raw_*``; Endseite bei ``auto_closed``
     ausgenommen, dort ist 23:59 kein Stempel, P18). Frontend-Zwilling (PR2):
-    ``utils/workBlocks.ts::notCreditedMinutes``."""
+    ``utils/workBlocks.ts::notCreditedMinutes``.
+
+    Ultrareview: jede Hüllen-Seite endet an der Rohspanne. Einstempeln 05:00
+    (gespeichert 07:45, Rohbeginn 05:00) und Ausstempeln 06:00 kollabieren auf
+    07:45–07:45 mit Rohende 06:00 — ``eff_start − raw_start`` wären 165 Min.
+    „nicht angerechnet" bei 60 Min. Anwesenheit. Die Startseite zählt deshalb
+    nur bis zum Anwesenheitsende (``presence_end``), die Endseite erst ab dem
+    Anwesenheitsbeginn."""
     total = int(getattr(entry, "uncredited_minutes", 0) or 0)
     if entry.start_time is not None and entry.raw_start_time is not None:
-        total += max(0, _min(entry.start_time) - _min(entry.raw_start_time))
+        cut = _min(entry.start_time)
+        end = presence_end(entry)
+        if end is not None:
+            cut = min(cut, _min(end))
+        total += max(0, cut - _min(entry.raw_start_time))
     if (entry.end_time is not None and entry.raw_end_time is not None
             and not getattr(entry, "auto_closed", False)):
-        total += max(0, _min(entry.raw_end_time) - _min(entry.end_time))
+        begin = max(_min(entry.end_time), _min(entry.raw_start_time or entry.start_time))
+        total += max(0, _min(entry.raw_end_time) - begin)
     return total
 
 

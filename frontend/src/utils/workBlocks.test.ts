@@ -51,6 +51,24 @@ describe('notCreditedMinutes — Zwilling von not_credited_minutes (Spec 6.3, P1
   });
 });
 
+// Ultrareview: wortgleich zu backend/tests/test_ultrareview_not_credited_collapse.py —
+// jede Hüllen-Seite endet an der Rohspanne (Kollaps nach gekapptem Beginn:
+// Einstempeln 05:00 → 07:45, Ausstempeln 06:00 → 07:45–07:45, anwesend 60 Min.).
+describe('notCreditedMinutes — Kollaps nach gekapptem Beginn (Ultrareview)', () => {
+  const cases: [string, string, string, string | null, string, number, boolean, number][] = [
+    ['N1', '07:45', '07:45', '05:00', '06:00', 0, false, 60],
+    ['N2', '07:45', '07:45', '07:00', '07:30', 0, false, 30],
+    ['N3', '07:45', '18:15', '07:00', '19:00', 150, false, 240],
+    ['N4', '19:00', '19:00', null, '20:00', 0, false, 60],
+  ];
+  it.each(cases)('%s', (_id, s, e, rs, re, unc, ac, exp) => {
+    expect(notCreditedMinutes({
+      start_time: s, end_time: e, raw_start_time: rs, raw_end_time: re,
+      uncredited_minutes: unc, auto_closed: ac,
+    })).toBe(exp);
+  });
+});
+
 describe('gapSegments — Zwilling von gap_segments (Σ = uncredited_minutes)', () => {
   const closed = K_CASES_FE.filter((k) => k.end !== null && !k.creditOverride);
   it.each(closed.map((k) => [k.id, k] as const))('%s', (_id, k) => {

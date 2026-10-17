@@ -238,6 +238,8 @@ Lücke 12:15–14:45):
 **„Nicht angerechnet"** (`work_window_service.not_credited_minutes`, Frontend-Zwilling
 `utils/workBlocks.ts::notCreditedMinutes`) = `uncredited_minutes` + die an der Hülle abgeschnittenen
 Minuten (`eff_start − raw_start`, `raw_end − eff_end`); beim Auto-Close zählt die Endseite nicht.
+Jede Seite endet an der gestempelten Spanne: wer 05:00 ein- und 06:00 wieder ausstempelt (beides
+vor der Hülle 07:45), hat 60 Minuten nicht angerechnet, nicht 165.
 Diese Zahl steht unter dem Eintrag, im Monatsjournal („Anwesenheit nicht angerechnet") und in der
 letzten Exportspalte „Nicht angerechnet (Min)".
 

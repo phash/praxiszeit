@@ -145,14 +145,26 @@ export interface CreditEntry {
 
 /** Zwilling von `work_window_service.not_credited_minutes` (P19): Lücke +
  * von der Hülle gekappte Minuten; die Endseite eines automatisch geschlossenen
- * Eintrags zählt nicht (23:59 ist kein Stempel, P18). */
+ * Eintrags zählt nicht (23:59 ist kein Stempel, P18). Jede Hüllen-Seite endet an
+ * der Rohspanne (Ultrareview): die Startseite zählt nur bis zum
+ * Anwesenheitsende, die Endseite erst ab dem Anwesenheitsbeginn — sonst ergab
+ * ein Kollaps nach gekapptem Beginn (07:45–07:45, Rohstempel 05:00–06:00)
+ * 165 Min. „nicht angerechnet" bei 60 Min. Anwesenheit. */
 export function notCreditedMinutes(e: CreditEntry): number {
   let total = e.uncredited_minutes ?? 0;
   if (e.start_time && e.raw_start_time) {
-    total += Math.max(0, hhmmToMinutes(e.start_time) - hhmmToMinutes(e.raw_start_time));
+    let cut = hhmmToMinutes(e.start_time);
+    // Anwesenheitsende wie `presence_end`: Rohende, bei auto_closed das wirksame Ende.
+    const presenceEnd = e.auto_closed ? e.end_time : (e.raw_end_time || e.end_time);
+    if (presenceEnd) cut = Math.min(cut, hhmmToMinutes(presenceEnd));
+    total += Math.max(0, cut - hhmmToMinutes(e.raw_start_time));
   }
   if (e.end_time && e.raw_end_time && !e.auto_closed) {
-    total += Math.max(0, hhmmToMinutes(e.raw_end_time) - hhmmToMinutes(e.end_time));
+    const begin = Math.max(
+      hhmmToMinutes(e.end_time),
+      hhmmToMinutes(e.raw_start_time || e.start_time || e.end_time),
+    );
+    total += Math.max(0, hhmmToMinutes(e.raw_end_time) - begin);
   }
   return total;
 }
