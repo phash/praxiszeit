@@ -100,6 +100,17 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 > Volume), oder setzen Sie `COMPOSE_PROJECT_NAME` identisch. Im Zweifel: vor dem
 > Wechsel das SQL-Backup ziehen und nach dem Start prüfen, ob die Daten da sind.
 
+> **Eigene Anpassungen an `docker-compose.yml`** (z. B. ein anderer Port als 80
+> oder ein freigegebener Prometheus-Port) stehen im neuen Paket wieder auf dem
+> Auslieferungsstand und gehen beim Update verloren — die Anwendung lauscht dann
+> still wieder auf Port 80. Vor dem `up` übernehmen, oder dauerhaft in eine
+> eigene `docker-compose.override.yml` legen (Compose liest sie automatisch mit).
+>
+> **Den alten Paket-Ordner nicht mehr starten.** Er trägt denselben
+> Projektnamen; ein `docker compose up` dort startet die alte Version gegen die
+> bereits aktualisierte Datenbank. Nach erfolgreichem Update löschen oder
+> umbenennen.
+
 ### 2b. Aus dem Quellcode (nur mit git-Zugriff)
 
 > **Von 1.9.x oder älter? Erst das PostgreSQL-Major-Upgrade fahren** — sonst
