@@ -668,6 +668,14 @@ konfiguriert ist, verbraucht ebenfalls **1 Urlaubstag** je MA (sofern im Beschä
 und nicht schon als echter Urlaub gebucht) — er ist als kompletter freier Tag konfiguriert,
 nicht als Halbtag, und kostet daher den vollen Tag.
 
+**Tag ohne Soll (z. B. Elternzeit mit 0 Wochenstunden):** Mit Stundenzählung zählen Urlaubszeilen
+und `free`+`counts_as_vacation`-Sondertage nur an Tagen, an denen der **zum Datum aufgelöste**
+Vertrags-Snapshot ein Tagessoll > 0 hat — auch wenn die Person heute auf 0 Stunden steht. Die
+reine Tageszählung (§12.1) gilt allein bei `track_hours = false`
+(`calculation_service.counts_vacation_by_day_only`, eine Regel für `get_vacation_account`,
+`absence_days` und den Änderungsantrag). Bis Gesamtreview 1.20 (B11) entschied das **heutige**
+Tagessoll: wer heute auf 0 h stand, dem zählte jede Urlaubszeile als ganzer Tag.
+
 ### 8.3 Rest
 
 ```
@@ -1029,7 +1037,8 @@ Angestellte)" (`exempt_from_arbzg`), die an der Stundenzählung nichts ändert.
 - **Urlaub trotzdem tagebasiert**: jeder VACATION-Tag = **1 Tag** (Halbtage `half_day=True`
   zählen 0,5, ein Halbtags-Sondertag zusätzlich × 0,5, siehe §8.2/§9.3), jeder
   `free`+`counts_as_vacation`-Sondertag = 1 Tag. Alle Stundenwerte bleiben 0; Budget folgt
-  normaler Pro-rata- + Carryover-Logik.
+  normaler Pro-rata- + Carryover-Logik. Maßgeblich ist allein das Häkchen, nicht ein Tagessoll
+  von 0: mit Stundenzählung und 0 Wochenstunden (Elternzeit) zählen nur Tage mit Soll (§8.2).
 - **Keine Kappung**: hinterlegte Arbeitszeit-Blöcke wirken nicht (§4.1); der Dialog bietet den
   Modus „Nach Arbeitsblöcken" nicht an.
 - Response trägt `track_hours: false` (UI blendet Stundenspalten aus).

@@ -30,7 +30,7 @@ from app.services.break_validation_service import (
 from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
     get_schedule_for_date, get_daily_target_for_date, get_vacation_account,
-    get_daily_target, child_sick_cap, child_sick_days_used, half_special_day_weight,
+    counts_vacation_by_day_only, child_sick_cap, child_sick_days_used, half_special_day_weight,
     f1_clamp_for_day,
 )
 from app.services import (
@@ -51,8 +51,9 @@ GRANT_ONLY_UPDATE_DETAIL = (
 
 def _vacation_day_contribution(db, user, d, half_day) -> float:
     """Fix #4: tagebasierter Urlaubsverbrauch EINES VACATION-Tags am Datum ``d``,
-    exakt nach der Regel in ``get_vacation_account``: untracked (Tagessoll 0
-    gesamt) → 0,5/1,0; sonst Tagessoll-des-Tages ≤ 0 → 0, sonst 0,5 (Halbtag)
+    exakt nach der Regel in ``get_vacation_account``: ohne Stundenzählung
+    (``counts_vacation_by_day_only``, allein ``track_hours=False``, B11) →
+    0,5/1,0; sonst Tagessoll-des-Tages ≤ 0 → 0, sonst 0,5 (Halbtag)
     bzw. 1,0 (voller Tag). ``half_day=None`` (Legacy/CR-Default) zählt als voller
     Tag (ein CR bucht ganztags). Wird für den Netto-Neuverbrauch-Vergleich im
     UPDATE-Budget-Check verwendet und (Gesamtreview 1.20 B5) für die
@@ -62,7 +63,7 @@ def _vacation_day_contribution(db, user, d, half_day) -> float:
     # exakt wie get_vacation_account/absence_days (zentraler Helper).
     _cfg = special_days_service.get_special_day_config(db, user.tenant_id, d.year)
     weight = float(half_special_day_weight(d, _cfg))
-    if get_daily_target(user) <= 0:  # untracked / work_days_per_week == 0
+    if counts_vacation_by_day_only(user):  # #191, Gesamtreview B11
         return (0.5 if half_day else 1.0) * weight
     dt = get_daily_target_for_date(user, d, get_schedule_for_date(db, user, d))
     if dt <= 0:

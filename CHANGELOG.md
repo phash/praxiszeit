@@ -235,7 +235,11 @@ dieses Backup verlustfrei (`UPDATE.md`).
   Buchungen und Anträge, die in diesem Jahr gar keinen Urlaubstag kosten (etwa
   Urlaub über den Jahreswechsel, dessen Dezember-Tage auf 0 Stunden stehen). Ein
   Änderungsantrag auf Urlaub an einem Tag ohne Soll (auch am Samstag) verlangte
-  einen Urlaubstag, den das Konto nie abzieht. Betriebsferien tragen an solchen
+  einen Urlaubstag, den das Konto nie abzieht. Das Urlaubskonto selbst zählt mit
+  Stundenzählung nur noch Urlaubstage an Tagen mit Soll: stand die Person heute
+  auf 0 Stunden, zählte es bisher jede eingetragene Urlaubszeile als ganzen Tag
+  – auch an Tagen ohne Soll – und jeden freien 24./31.12. mit Urlaubsabzug. Ohne
+  Stundenzählung bleibt es bei der reinen Tageszählung. Betriebsferien tragen an solchen
   Tagen nichts mehr ein – stand die Arbeitszeit bereits auf 0 Stunden, kostete
   bisher jeder Schließtag einen Urlaubstag (#496). Für bereits eingetragene
   Betriebsferien: einmal öffnen und neu speichern – dann verschwinden die alten

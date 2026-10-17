@@ -894,6 +894,24 @@ def f1_clamp_for_day(db: Session, user: User, d: date, hours: float, full_target
     return f1_clamp_hours(hours, full_target, kept_net, w)
 
 
+def counts_vacation_by_day_only(user: User) -> bool:
+    """Zählt das Urlaubskonto der Person rein tagebasiert, ohne Stunden
+    („ohne Stundenzählung", #191: jede Urlaubszeile 1 Tag, Halbtag 0,5, der freie
+    Sondertag mit Urlaubsabzug 1 Tag, alle Stundenwerte 0)?
+
+    DIE eine Regel für ``get_vacation_account``, ``absence_days`` und
+    ``admin_change_requests._vacation_day_contribution``: allein
+    ``track_hours=False`` (Gesamtreview 1.20 B11, Produktentscheidung
+    2026-10-17). Bis hierher entschied das LIVE-Tagessoll
+    (``get_daily_target(user) <= 0``) — eine Person mit Stundenzählung, die
+    heute auf 0 Wochenstunden steht (Elternzeit), zählte dadurch jede
+    Urlaubszeile als ganzen Tag, auch an Tagen ohne Soll, während Buchung und
+    Vorprüfung (``is_vacation_billable_day``) solche Tage nach dem Snapshot
+    überspringen. Mit Stundenzählung zählen nur Tage, an denen der zum Datum
+    aufgelöste Snapshot ein Tagessoll hat."""
+    return not user.track_hours
+
+
 def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
     """
     Calculate daily target hours based on weekly hours and work days.
@@ -2697,11 +2715,11 @@ def absence_days(db: Session, user: User, absences: list,
     nach derselben Regel wie ``used_days`` in ``get_vacation_account``: voller Tag
     = 1,0, ``half_day=True`` = 0,5, Legacy-Row (``half_day=None``) = Stunden ÷
     Tagessoll DES TAGES. Ein Tag mit Tagessoll 0 (Urlaub an einem Nicht-Arbeitstag)
-    zählt 0. Untracked-MA (``get_daily_target<=0``, leitende Angestellte): rein
-    tagebasiert (Halbtag 0,5, sonst 1,0). Quelle für die Tage-Anzeige in den
+    zählt 0. Ohne Stundenzählung (``counts_vacation_by_day_only``, #191 —
+    allein ``track_hours=False``, B11): rein tagebasiert (Halbtag 0,5, sonst 1,0). Quelle für die Tage-Anzeige in den
     Reports — NICHT die naive Σh ÷ Ø-Tagessoll (die für ungleichmäßige Tagespläne
     bzw. Halbtage falsch ist)."""
-    tracked = get_daily_target(user) > 0
+    tracked = not counts_vacation_by_day_only(user)
     total = Decimal('0')
     # #394: Halbtags-Sondertag (24./31.12.) → ein Absenz-Tag darauf zählt 0,5
     # (halber Arbeitstag). Config lazy je Jahr (Liste kann jahresübergreifend sein).
@@ -2835,8 +2853,10 @@ def get_vacation_account(
     Returns:
         Dict with vacation account details
     """
-    # daily_target == 0 means the user has no Soll/Ist tracking
-    # (track_hours=False, e.g. leitende Angestellte) or work_days_per_week == 0.
+    # track_hours=False (leitende Angestellte, #191) means no Soll/Ist
+    # tracking — ``counts_vacation_by_day_only``, Gesamtreview B11; NICHT ein
+    # heute auf 0 stehendes Tagessoll (Elternzeit mit Stundenzählung zählt nur
+    # Tage mit Soll laut Snapshot, Zweig weiter unten).
     # Such users still get a DAY-BASED vacation account — they are NOT shortcut
     # here. The pure day count happens further down (reine Tageszählung, hours
     # stay 0); the day-based budget below is shared with tracked users.
@@ -2983,7 +3003,7 @@ def get_vacation_account(
     existing_vacation_dates = {a.date for a in vacation_absences}
 
     # #189 / leitende Angestellte: a user without hours tracking
-    # (daily_target == 0) gets a pure DAY count — each VACATION absence day is
+    # (track_hours=False, ``counts_vacation_by_day_only``) gets a pure DAY count — each VACATION absence day is
     # one vacation day, each 'free'+counts_as_vacation special day (24./31.12.)
     # is one vacation day, and all hour figures stay 0. Budget (budget_days)
     # follows the normal pro-rata + carryover logic above — "sonst wie ein
@@ -2991,7 +3011,7 @@ def get_vacation_account(
     # #205: Halbtage werden jetzt unterschieden — half_day=True zaehlt 0,5 (passt
     # zum 0,5-Vorab-Budgetcheck). Legacy-Rows (half_day=None, vor dem Feld) und
     # Voll-Tage zaehlen 1,0 wie bisher.
-    if daily_target <= 0:
+    if counts_vacation_by_day_only(user):
         # #394: halber Feiertag (24./31.12.) → 0,5 (auch für untracked/leitende).
         used_days = sum(
             ((Decimal('0.5') if a.half_day else Decimal('1'))

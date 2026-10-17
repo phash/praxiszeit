@@ -581,12 +581,15 @@ class TestClosureResaveCleansZeroHourRows:
     def test_resave_removes_legacy_rows_without_split(self, db, admin):
         """Probe aus dem Review: Elternzeit seit 01.03., zwei Alt-Zeilen an
         0-h-Tagen, Umbenennen bei abgeschaltetem #314-Split → vorher blieben
-        beide stehen (Resturlaub 28 statt 30)."""
+        beide stehen. Seit Gesamtreview B11 zählt das Urlaubskonto sie schon
+        nicht mehr (Stundenzählung an, Tag ohne Soll → 0; bis dahin Resturlaub
+        28 statt 30) — das Neuspeichern räumt sie trotzdem ab."""
         emp = _current_parental(db, "b5_rs_off", 30)
         client = _client_as(db, admin)
         closure = _create_closure(client)
         _legacy_zero_rows(db, closure["id"], emp, [NOV_MON, NOV_TUE])
-        assert _remaining(db, emp) == pytest.approx(28)
+        assert len(_closure_rows(db, emp)) == 2
+        assert _remaining(db, emp) == pytest.approx(30)
 
         _resave(client, closure)
 
