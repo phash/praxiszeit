@@ -2185,3 +2185,41 @@ describe('Gesamtreview 1.20 Fund 14: Block-Editor bei fester Monatsarbeitszeit',
     expect(screen.queryByText(/Bei fester Monatsarbeitszeit/)).not.toBeInTheDocument();
   });
 });
+
+// Gesamtreview 1.20 (Fund 14, Nachzug): die Auswirkungs-Box direkt unter dem
+// Editor (Anlegen) und im Lösch-Bereich nennt bei fester Monatsarbeitszeit die
+// Tageswerte ebenfalls geplante Anwesenheit — sonst stand „geplant 6:30 h" im
+// Editor über „Tagessoll je Wochentag: Mo 7:00 h → 6:30 h" in der Box.
+describe('Gesamtreview 1.20 Fund 14: Auswirkungs-Box bei fester Monatsarbeitszeit', () => {
+  it('Vorschau einer Änderung: „Geplante Anwesenheit je Wochentag"', async () => {
+    mockPreview();
+    renderModal({ fixedMonthlyTarget: true });
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-06-01' } });
+    await flushDebounce();
+    const box = await screen.findByRole('status');
+    expect(within(box).getByText(/^Geplante Anwesenheit je Wochentag: Mo 8:00 h → 6:00 h/)).toBeInTheDocument();
+    expect(within(box).queryByText(/Tagessoll je Wochentag/)).not.toBeInTheDocument();
+  });
+
+  it('Kontrolle: ohne feste Monatsarbeitszeit „Tagessoll je Wochentag"', async () => {
+    mockPreview();
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-06-01' } });
+    await flushDebounce();
+    const box = await screen.findByRole('status');
+    expect(within(box).getByText(/^Tagessoll je Wochentag: Mo 8:00 h → 6:00 h/)).toBeInTheDocument();
+    expect(within(box).queryByText(/Geplante Anwesenheit/)).not.toBeInTheDocument();
+  });
+
+  it('Lösch-Vorschau: ebenfalls „Geplante Anwesenheit je Wochentag"', async () => {
+    mockHistory([{ id: 'c1', effective_from: '2026-01-01', weekly_hours: 30 }], QUIET);
+    renderModal({ currentWeeklyHours: 30, fixedMonthlyTarget: true });
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    fireEvent.click(screen.getByRole('button', { name: 'Löschen' }));
+    const panel = await screen.findByRole('alertdialog', { name: 'Arbeitszeit-Änderung ab 01.01.2026 löschen' });
+    expect(await within(panel).findByText(/^Geplante Anwesenheit je Wochentag: Mo 8:00 h → 6:00 h/)).toBeInTheDocument();
+    expect(within(panel).queryByText(/Tagessoll je Wochentag/)).not.toBeInTheDocument();
+  });
+});

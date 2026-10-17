@@ -16,6 +16,9 @@ interface WhDeletePanelProps {
   change: WorkingHoursChange;
   onCancel: () => void;
   onDone: () => Promise<void> | void;
+  // Gesamtreview 1.20 (Fund 14, Nachzug): feste Monatsarbeitszeit — die
+  // Auswirkungs-Box nennt die Tageswerte dann geplante Anwesenheit.
+  plannedPresence?: boolean;
 }
 
 const PREVIEW_FAILED = 'Auswirkungen konnten nicht geprüft werden';
@@ -28,7 +31,9 @@ const PREVIEW_FAILED = 'Auswirkungen konnten nicht geprüft werden';
  * Snapshot nie selbst nach. Verkürzt es nicht, bleibt es bei der einfachen
  * Bestätigung (dieses Panel).
  */
-export default function WhDeletePanel({ userId, change, onCancel, onDone }: WhDeletePanelProps) {
+export default function WhDeletePanel({
+  userId, change, onCancel, onDone, plannedPresence = false,
+}: WhDeletePanelProps) {
   const toast = useToast();
   const base = `/admin/users/${userId}/working-hours-changes/${change.id}`;
   const panelRef = useRef<HTMLElement>(null);
@@ -239,7 +244,7 @@ export default function WhDeletePanel({ userId, change, onCancel, onDone }: WhDe
                   </>
                 ) : (
                   <>
-                    <WhImpactBox preview={shown} />
+                    <WhImpactBox preview={shown} plannedPresence={plannedPresence} />
                     {shown.closed_year_warning && (
                       <p className="mt-1 font-medium text-amber-900">{shown.closed_year_warning}</p>
                     )}

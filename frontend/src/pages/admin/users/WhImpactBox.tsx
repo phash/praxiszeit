@@ -43,8 +43,17 @@ function f1Text(n: number): string {
  * — auch das Tagessoll, damit es zum Block-Editor darüber passt (7:55 h, nicht
  * 7,92); Urlaub über `formatDayCount`; Datumsangaben TT.MM.JJJJ (ein
  * Wirkungsbereich kann über den Jahreswechsel reichen).
+ *
+ * Gesamtreview 1.20 (Fund 14, Nachzug): `plannedPresence` = feste
+ * Monatsarbeitszeit (#377 2b). Die Tageswerte (`day_targets_*`, aus
+ * `get_daily_target_for_date`) sind dann geplante Anwesenheit — so beschriftet
+ * sie auch der Block-Editor darüber („geplant"). Ohne den Modus bleibt
+ * „Tagessoll je Wochentag" (E2E, Spickzettel, Handbuch zitieren den Wortlaut).
  */
-export default function WhImpactBox({ preview }: { preview: WorkingHoursChangePreview }) {
+export default function WhImpactBox({ preview, plannedPresence = false }: {
+  preview: WorkingHoursChangePreview;
+  plannedPresence?: boolean;
+}) {
   const [details, setDetails] = useState(false);
   const changedDays = (preview.changed_weekdays ?? []).map((i) => WEEKDAY_LABELS[i]).join(', ');
   const entries = preview.affected_time_entries ?? 0;
@@ -71,7 +80,10 @@ export default function WhImpactBox({ preview }: { preview: WorkingHoursChangePr
       const next = after[i] ?? 0;
       return cur <= 0 && next <= 0 ? null : `${label} ${hm(cur)} h → ${hm(next)} h`;
     }).filter((p): p is string => p !== null);
-    return parts.length ? `Tagessoll je Wochentag: ${parts.join(' · ')}` : '';
+    if (!parts.length) return '';
+    return plannedPresence
+      ? `Geplante Anwesenheit je Wochentag: ${parts.join(' · ')}`
+      : `Tagessoll je Wochentag: ${parts.join(' · ')}`;
   })();
 
   const hasDetails = changes.length > 0 || skipped.length > 0 || reductions.length > 0;

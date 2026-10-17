@@ -957,7 +957,7 @@ export default function WorkingHoursModal({
                                     : 'Ändert Überstunden oder Urlaubsverbrauch'}:{' '}
                             {formatDate(shown.period_start)} – {formatDate(shown.period_end)}
                           </p>
-                          {!blockedReason && <WhImpactBox preview={shown} />}
+                          {!blockedReason && <WhImpactBox preview={shown} plannedPresence={fixedMonthlyTarget} />}
                           {balanceUnchangedAhead && (
                             <p className="text-amber-800 mt-1">
                               Saldo und Urlaub stehen auf dem Stand von heute — die Änderung
@@ -1042,6 +1042,7 @@ export default function WorkingHoursModal({
                     change={deleting}
                     onCancel={cancelDelete}
                     onDone={finishDelete}
+                    plannedPresence={fixedMonthlyTarget}
                   />
                 )}
                 {hoursChanges.length === 0 ? (

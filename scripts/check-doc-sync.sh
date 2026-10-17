@@ -216,6 +216,9 @@ group_code() {
   need_code "Ändert Überstunden oder Urlaubsverbrauch"
   need_code "Auswirkung (Puffer "
   need_code "Tagessoll je Wochentag: "
+  # Feste Monatsarbeitszeit (#377 2b): dieselbe Zeile als geplante Anwesenheit
+  # (Gesamtreview 1.20, Fund 14 Nachzug).
+  need_code "Geplante Anwesenheit je Wochentag: "
   need_code "Zeiteinträge: "
   need_code "ohne Rohstempel – nicht erweiterbar"
   need_code "1 offener Eintrag eines vergangenen Tages wird vorher automatisch geschlossen."

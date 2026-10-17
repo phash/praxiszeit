@@ -49,6 +49,23 @@ describe('WhImpactBox (Spec 12.1)', () => {
       .toBeInTheDocument();
   });
 
+  // Gesamtreview 1.20 (Fund 14, Nachzug): bei fester Monatsarbeitszeit (#377 2b)
+  // sind die Tageswerte geplante Anwesenheit — wie der Block-Editor darüber
+  // („geplant 6:30 h") und die Fußnote des Dialogs. Ohne den Modus bleibt der
+  // Wortlaut „Tagessoll je Wochentag" (E2E, Spickzettel, Handbuch).
+  it('feste Monatsarbeitszeit: „Geplante Anwesenheit je Wochentag" statt Tagessoll', () => {
+    render(<WhImpactBox preview={FIRST_STATE} plannedPresence />);
+    expect(screen.getByText('Geplante Anwesenheit je Wochentag: Mo 7:00 h → 6:00 h · Di 4:00 h → 4:00 h · Do 4:00 h → 4:00 h'))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/Tagessoll/)).not.toBeInTheDocument();
+  });
+
+  it('Kontrolle: plannedPresence={false} lässt „Tagessoll je Wochentag" stehen', () => {
+    render(<WhImpactBox preview={FIRST_STATE} plannedPresence={false} />);
+    expect(screen.getByText(/^Tagessoll je Wochentag: Mo 7:00 h → 6:00 h/)).toBeInTheDocument();
+    expect(screen.queryByText(/Geplante Anwesenheit/)).not.toBeInTheDocument();
+  });
+
   it('Tagessoll mit Rundung: 7,92 h erscheint minutengenau als 7:55 h (Review-Fokus 5)', () => {
     render(<WhImpactBox preview={{ ...FIRST_STATE, day_targets_current: [7, 0, 0, 0, 0], day_targets_new: [7.92, 0, 0, 0, 0] }} />);
     expect(screen.getByText('Tagessoll je Wochentag: Mo 7:00 h → 7:55 h')).toBeInTheDocument();
