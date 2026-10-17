@@ -716,3 +716,78 @@ describe('Spec 2026-10-08 (12.2): Anlegen mit Arbeitszeit-Blöcken', () => {
     expect(screen.queryByRole('radio', { name: 'Nach Arbeitsblöcken' })).not.toBeInTheDocument();
   });
 });
+
+// Gesamtreview 1.20 (Fund 6): das Formular kennt den Block-Modus auch in seinen
+// Texten. Bearbeiten: Modus „Nach Arbeitsblöcken" und der Blocksatz wie im
+// Dialog-Kopf (describeSchedule) statt „Individuelle Tagesstunden aktiv" und
+// dezimalem Tagesplan. Anlegen: unter den schreibgeschützten Feldern steht, dass
+// sie abgeleitet sind — nicht die Eingabeanleitung „(1-7)".
+describe('Gesamtreview 1.20 Fund 6: Texte im Block-Modus', () => {
+  const empty = { blocks: [], pause_minutes: 0 };
+  const ANNA = [
+    { blocks: [{ start: '07:30', end: '12:00' }, { start: '13:00', end: '16:25' }], pause_minutes: 0 },
+    empty, empty, empty, empty,
+  ];
+  const blockUser = {
+    id: 'u1', username: 'ab', first_name: 'Anna', last_name: 'Block', role: 'employee',
+    weekly_hours: 7.92, vacation_days: 30, work_days_per_week: 1, track_hours: true,
+    is_active: true, use_daily_schedule: true,
+    hours_monday: 7.92, hours_tuesday: 0, hours_wednesday: 0, hours_thursday: 0, hours_friday: 0,
+  };
+  const display = {
+    displayBlocks: ANNA, displayWeeklyHours: 7.92, displayUseDailySchedule: true,
+    displayDayHours: [7.92, 0, 0, 0, 0], displayWorkDays: 1,
+  };
+
+  it('Bearbeiten: Modus „Nach Arbeitsblöcken" und Blocksatz statt dezimalem Tagesplan', () => {
+    renderForm({ editUser: blockUser, ...display });
+    expect(document.getElementById('f-weekly-hours')).toHaveTextContent(
+      'Mo 07:30–12:00 + 13:00–16:25 = 7,92 h/Woche',
+    );
+    expect(screen.queryByText(/Mo 7,92/)).not.toBeInTheDocument();
+    expect(screen.getByText('Nach Arbeitsblöcken')).toBeInTheDocument();
+    expect(screen.queryByText('Individuelle Tagesstunden aktiv')).not.toBeInTheDocument();
+    expect(screen.getByText(/Wird aus den Arbeitszeit-Blöcken abgeleitet/)).toBeInTheDocument();
+    expect(screen.queryByText(/im Tagesplan abgeleitet/)).not.toBeInTheDocument();
+  });
+
+  it('Bearbeiten mit fester Monatsarbeitszeit: „Nach Arbeitsblöcken (geplante Anwesenheit)"', () => {
+    renderForm({
+      editUser: { ...blockUser, milog_working_time_account: true, agreed_monthly_hours: 40, use_fixed_monthly_target: true },
+      ...display,
+    });
+    expect(screen.getByText('Nach Arbeitsblöcken (geplante Anwesenheit)')).toBeInTheDocument();
+    expect(screen.queryByText('Geplante Anwesenheit aktiv')).not.toBeInTheDocument();
+  });
+
+  it('Kontrolle: Altfenster ist kein Block-Modus (der Dialog nennt es nie „Blöcke")', () => {
+    const legacyEmpty = { blocks: [], pause_minutes: null };
+    const LEGACY = [{ blocks: [{ start: '07:37', end: '16:30' }], pause_minutes: null },
+      legacyEmpty, legacyEmpty, legacyEmpty, legacyEmpty];
+    renderForm({
+      editUser: { ...blockUser, use_daily_schedule: false, weekly_hours: 40, work_days_per_week: 5 },
+      displayBlocks: LEGACY,
+    });
+    expect(screen.getByText('Einheitliche Tagesstunden (kein individueller Tagesplan)')).toBeInTheDocument();
+    expect(screen.queryByText('Nach Arbeitsblöcken')).not.toBeInTheDocument();
+    expect(document.getElementById('f-weekly-hours')).toHaveTextContent('40,0 h/Woche');
+  });
+
+  it('Kontrolle: ohne Stundenzählung bleibt der Satz ohne Blöcke (wie describeSchedule)', () => {
+    renderForm({ editUser: { ...blockUser, track_hours: false }, ...display });
+    expect(document.getElementById('f-weekly-hours')).not.toHaveTextContent('07:30');
+  });
+
+  it('Anlegen im Block-Modus: beide Felder beschreiben sich als abgeleitet, keine Eingabeanleitung', () => {
+    renderForm({ editUser: null });
+    expect(screen.getByText('Anzahl der Arbeitstage pro Woche (1-7)')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' }));
+    expect(screen.queryByText('Anzahl der Arbeitstage pro Woche (1-7)')).not.toBeInTheDocument();
+    expect(document.getElementById('f-weekly-hours')).toHaveAccessibleDescription(
+      'Aus den Arbeitszeit-Blöcken abgeleitet.',
+    );
+    expect(document.getElementById('f-work-days')).toHaveAccessibleDescription(
+      'Aus den Arbeitszeit-Blöcken abgeleitet (Tage mit Blöcken).',
+    );
+  });
+});

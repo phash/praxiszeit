@@ -8,7 +8,9 @@ import PasswordInput from '../../../components/PasswordInput';
 import { getErrorMessage } from '../../../utils/errorMessage';
 import { parseHours, deHoursExact, formatDayPlan } from '../../../utils/formatters';
 import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../../../utils/calendarColors';
-import { deriveTargets, emptyWeek, formatWeekBlocks, isLegacyWeek, validateWeekBlocks } from '../../../utils/workBlocks';
+import {
+  deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, isLegacyWeek, validateWeekBlocks,
+} from '../../../utils/workBlocks';
 import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
 import { BLOCKS_WITHOUT_EFFECT, LEGACY_WITHOUT_EFFECT } from './workingHoursTexts';
 
@@ -352,13 +354,24 @@ export default function UserForm({
   // vor dem Dialog (Arbeitstage 5, obwohl 4 gespeichert wurde).
   const displayedUseDailySchedule = displayUseDailySchedule ?? formData.use_daily_schedule;
   const displayedWorkDays = displayWorkDays ?? formData.work_days_per_week;
-  const weeklyHoursDisplay = displayedUseDailySchedule && dayPlanText
-    ? `${dayPlanText} = ${weeklyHoursTotal} h/Woche`
-    : `${weeklyHoursTotal} h/Woche`;
   // Spec 2026-10-08 (E62/12.2): heute gültige Blöcke — frisch aus Users.tsx
   // (`displayBlocks`), sonst aus dem beim Öffnen übergebenen Nutzer.
   const shownBlocks = displayBlocks !== undefined ? displayBlocks : (editUser?.work_blocks_today ?? null);
   const workBlocksText = formatWeekBlocks(shownBlocks);
+  // Gesamtreview 1.20 (Fund 6): Block-Modus beim Bearbeiten — dieselbe Regel wie
+  // der Dialog (`formFromSnapshot`/`describeSchedule`): neue Blöcke (kein
+  // Altfenster) mit Stundenzählung. Dann nennen Wochenstunden-Box, Modus und
+  // Arbeitstage-Hinweis die Blöcke statt des daraus abgeleiteten dezimalen
+  // Tagesplans („Mo 7,92") — derselbe Satz wie im Dialog-Kopf und in den Berichten.
+  const blocksSentence = editUser && formData.track_hours && !isLegacyWeek(shownBlocks)
+    ? formatBlocksText(shownBlocks)
+    : null;
+  const editBlocksMode = blocksSentence !== null;
+  const weeklyHoursDisplay = blocksSentence
+    ? `${blocksSentence} = ${weeklyHoursTotal} h/Woche`
+    : displayedUseDailySchedule && dayPlanText
+      ? `${dayPlanText} = ${weeklyHoursTotal} h/Woche`
+      : `${weeklyHoursTotal} h/Woche`;
 
   return (
     <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
@@ -500,11 +513,18 @@ export default function UserForm({
                 // nimmt das Feld zugleich aus der nativen Formularprüfung — ein
                 // abgeleitetes 7,92 h fiele sonst durch step="0.25".
                 readOnly={createBlocksActive}
+                aria-describedby={createBlocksActive ? 'f-weekly-hours-hint' : undefined}
                 required
                 min="0"
                 max="60"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary read-only:bg-gray-50 read-only:text-gray-700"
               />
+            )}
+            {/* Fund 6: das schreibgeschützte Feld sagt selbst, woher sein Wert kommt. */}
+            {createBlocksActive && (
+              <p id="f-weekly-hours-hint" className="text-xs text-gray-500 mt-1">
+                Aus den Arbeitszeit-Blöcken abgeleitet.
+              </p>
             )}
             {formData.use_fixed_monthly_target && (
               <p className="mt-1 text-xs text-gray-500">
@@ -532,6 +552,7 @@ export default function UserForm({
               <div
                 id="f-work-days"
                 aria-labelledby="f-work-days-label"
+                aria-describedby="f-work-days-hint"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900"
               >
                 {/* Fund 3: der frisch nachgezogene Wert, nicht der beim Öffnen
@@ -545,18 +566,24 @@ export default function UserForm({
                 value={createBlocksActive ? createDerived.workDays : formData.work_days_per_week}
                 onChange={(e) => setFormData({ ...formData, work_days_per_week: parseInt(e.target.value) || 5 })}
                 readOnly={createBlocksActive}
+                aria-describedby="f-work-days-hint"
                 required
                 min="1"
                 max="7"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary read-only:bg-gray-50 read-only:text-gray-700"
               />
             )}
-            <p className="text-xs text-gray-500 mt-1">
+            <p id="f-work-days-hint" className="text-xs text-gray-500 mt-1">
               {editUser
-                ? (displayedUseDailySchedule
-                  ? 'Wird aus der Zahl der belegten Wochentage im Tagesplan abgeleitet. Änderung über „Arbeitszeit anpassen…" mit Wirkungsdatum.'
-                  : 'Änderung über „Arbeitszeit anpassen…" mit Wirkungsdatum.')
-                : 'Anzahl der Arbeitstage pro Woche (1-7)'}
+                ? (editBlocksMode
+                  ? 'Wird aus den Arbeitszeit-Blöcken abgeleitet (Tage mit Blöcken). Änderung über „Arbeitszeit anpassen…" mit Wirkungsdatum.'
+                  : displayedUseDailySchedule
+                    ? 'Wird aus der Zahl der belegten Wochentage im Tagesplan abgeleitet. Änderung über „Arbeitszeit anpassen…" mit Wirkungsdatum.'
+                    : 'Änderung über „Arbeitszeit anpassen…" mit Wirkungsdatum.')
+                : createBlocksActive
+                  // Fund 6: schreibgeschützt — keine Eingabeanleitung „(1-7)".
+                  ? 'Aus den Arbeitszeit-Blöcken abgeleitet (Tage mit Blöcken).'
+                  : 'Anzahl der Arbeitstage pro Woche (1-7)'}
             </p>
           </div>
           <div>
@@ -888,9 +915,12 @@ export default function UserForm({
                     {/* Fund 3: der Modus wird ebenfalls nachgezogen — sonst
                         stand „Einheitliche Tagesstunden" über einer
                         Wochenstunden-Box, die längst einen Tagesplan zeigt. */}
-                    {displayedUseDailySchedule
-                      ? (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit aktiv' : 'Individuelle Tagesstunden aktiv')
-                      : (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit nicht hinterlegt' : 'Einheitliche Tagesstunden (kein individueller Tagesplan)')}
+                    {/* Fund 6: mit Blöcken heißt der Modus wie im Dialog. */}
+                    {editBlocksMode
+                      ? (formData.use_fixed_monthly_target ? 'Nach Arbeitsblöcken (geplante Anwesenheit)' : 'Nach Arbeitsblöcken')
+                      : displayedUseDailySchedule
+                        ? (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit aktiv' : 'Individuelle Tagesstunden aktiv')
+                        : (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit nicht hinterlegt' : 'Einheitliche Tagesstunden (kein individueller Tagesplan)')}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     Änderung über „Arbeitszeit anpassen…" mit Wirkungsdatum.

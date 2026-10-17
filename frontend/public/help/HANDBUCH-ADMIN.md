@@ -170,7 +170,7 @@ Klicken Sie auf **„Neue:r Mitarbeiter:in"** und füllen Sie das Formular aus:
 | **Passwort** | Initiales Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer) |
 | **Rolle** | Mitarbeiter:in oder Admin |
 | **Wochenstunden** | Vertraglich vereinbarte Wochenstunden (Standard: 40), direkt eingegeben in Viertelstunden-Schritten (z. B. 20,25). Im Modus **„Nach Tagen"** (ebenfalls Viertelstunden je Wochentag) übernimmt das System die Wochenstunden automatisch als Summe der Tageswerte – der Eingabewert im Feld selbst spielt dann keine Rolle. Im Modus **„Nach Arbeitsblöcken"** leitet das System Wochenstunden, Tagesstunden und Arbeitstage aus den Blöcken ab (→ [Arbeitszeit-Blöcke](#arbeitszeit-bloecke)). |
-| **Arbeitstage pro Woche** | Anzahl der Arbeitstage 1–7 (Standard: 5). Bestimmt den anteiligen Urlaubsvorschlag. |
+| **Arbeitstage pro Woche** | Anzahl der Arbeitstage 1–7 (Standard: 5). Bestimmt den anteiligen Urlaubsvorschlag. Im Modus **„Nach Arbeitsblöcken"** schreibgeschützt: die Zahl der Tage mit Blöcken (wie die Wochenstunden mit dem Hinweis „Aus den Arbeitszeit-Blöcken abgeleitet"). |
 | **Urlaubstage** | Jährlicher Urlaubsanspruch in **Tagen**. Vorschlag anteilig nach Arbeitstagen: `30 × Arbeitstage ÷ 5` (5 Tage → 30, 3 Tage → 18). Überschreibbar. |
 
 **Optionale Felder:**
@@ -283,7 +283,7 @@ Nicht angerechnete Zeit ist nie still. Unter der Uhrzeit eines Eintrags steht im
 Klicken Sie in der Benutzerliste auf den Namen des Mitarbeiters.
 
 **Arbeitszeit ändern:**
-Wochenstunden, Tagesstunden, der Modus, die Arbeitstage pro Woche und die Arbeitszeit-Blöcke werden im Bearbeiten-Formular nur **angezeigt** – für **alle** Mitarbeitenden. Unter **„Arbeitszeit heute"** stehen die heute gültigen Blöcke, z. B. *„Mo 08:00–12:00 + 15:00–18:00 · Di 08:00–12:00 · Do 08:00–12:00"* (ohne Blöcke: *„Keine Arbeitszeit-Blöcke hinterlegt"*). Neben den Wochenstunden steht der Button **„Arbeitszeit anpassen…"**. Er öffnet denselben Dialog **„Arbeitszeit & Wochenstunden"** wie das Uhr-Symbol in der Benutzerliste; der Kopf des Dialogs nennt die heute gültige Regelung.
+Wochenstunden, Tagesstunden, der Modus, die Arbeitstage pro Woche und die Arbeitszeit-Blöcke werden im Bearbeiten-Formular nur **angezeigt** – für **alle** Mitarbeitenden. Unter **„Arbeitszeit heute"** stehen die heute gültigen Blöcke, z. B. *„Mo 08:00–12:00 + 15:00–18:00 · Di 08:00–12:00 · Do 08:00–12:00"* (ohne Blöcke: *„Keine Arbeitszeit-Blöcke hinterlegt"*). Alle diese Werte sind die **heute gültigen** – auch nach dem Wirkungsdatum einer zukunftsdatierten Änderung. Gelten heute Arbeitszeit-Blöcke, heißt der Modus **„Nach Arbeitsblöcken"**, und die Wochenstunden stehen wie im Kopf des Dialogs mit den Blöcken, z. B. *„Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–12:00 = 10,5 h/Woche"*. Neben den Wochenstunden steht der Button **„Arbeitszeit anpassen…"**. Er öffnet denselben Dialog **„Arbeitszeit & Wochenstunden"** wie das Uhr-Symbol in der Benutzerliste; der Kopf des Dialogs nennt die heute gültige Regelung.
 
 So ändern Sie die Arbeitszeit (Teilzeitumstellung, neuer Tagesplan, neue Blöcke):
 
