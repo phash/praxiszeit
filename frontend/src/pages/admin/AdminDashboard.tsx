@@ -1649,9 +1649,11 @@ export default function AdminDashboard() {
                                   {/* Gesamtreview PR2 (Fund 6): dieselben Quellen-Labels wie
                                       `admin/AuditLog.tsx`; „manual" (von Hand angelegt oder
                                       geändert — wer, steht direkt davor) bleibt ohne Zusatz,
-                                      unbekannte Quellen ebenso. */}
+                                      unbekannte Quellen ebenso. Gesamtreview 1.20 (Fund 21):
+                                      hinter „ | " wie in AuditLog.tsx, nicht in Klammern —
+                                      „Neukappung (Arbeitszeit-Änderung)" trägt selbst eine. */}
                                   {log.source && log.source !== 'manual' && AUDIT_SOURCE_LABELS[log.source]
-                                    && ` (${AUDIT_SOURCE_LABELS[log.source]})`}
+                                    && ` | ${AUDIT_SOURCE_LABELS[log.source]}`}
                                 </span>
                               </div>
                               {/* Dieselbe Darstellung wie im Änderungsprotokoll

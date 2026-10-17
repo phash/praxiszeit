@@ -349,6 +349,9 @@ describe('AdminDashboard Anerkennen im Detail-Modal (Spec 13.3)', () => {
 // Gesamtreview PR2 (Fund 6): das Änderungsprotokoll im Detail-Modal zeigt
 // dieselben Zeilen wie admin/AuditLog.tsx — mit denselben Quellen-Labels
 // (constants/auditSources.ts), nicht nur „(Antrag)".
+// Gesamtreview 1.20 (Fund 21): das Label steht wie in AuditLog.tsx hinter
+// „ | " statt in Klammern — „Neukappung (Arbeitszeit-Änderung)" trägt selbst
+// eine Klammer, sonst stünde „(Neukappung (Arbeitszeit-Änderung))" da.
 describe('AdminDashboard Änderungsprotokoll im Detail-Modal: Quellen-Labels', () => {
   function log(id: string, source: string) {
     return {
@@ -376,6 +379,7 @@ describe('AdminDashboard Änderungsprotokoll im Detail-Modal: Quellen-Labels', (
       if (url.startsWith('/admin/audit-log')) {
         return Promise.resolve({ data: [
           log('l1', 'credit_override'), log('l2', 'change_request'), log('l3', 'manual'),
+          log('l4', 'wh_reclamp'),
         ] });
       }
       if (url.startsWith('/admin/users/')) {
@@ -386,12 +390,13 @@ describe('AdminDashboard Änderungsprotokoll im Detail-Modal: Quellen-Labels', (
     render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
     fireEvent.click((await screen.findAllByRole('button', { name: 'Details für Kern, Anna anzeigen' }))[0]);
     const dialog = await screen.findByRole('dialog');
-    await within(dialog).findByText('Änderungsprotokoll (3)');
+    await within(dialog).findByText('Änderungsprotokoll (4)');
     const lines = within(dialog).getAllByText(/\| Ada Admin/).map((el) => el.textContent);
     expect(lines).toEqual([
-      '05.10. 10:00 | Ada Admin (Anrechnung anerkannt)',
-      '05.10. 10:00 | Ada Admin (Antrag)',
+      '05.10. 10:00 | Ada Admin | Anrechnung anerkannt',
+      '05.10. 10:00 | Ada Admin | Antrag',
       '05.10. 10:00 | Ada Admin',
+      '05.10. 10:00 | Ada Admin | Neukappung (Arbeitszeit-Änderung)',
     ]);
   });
 });
