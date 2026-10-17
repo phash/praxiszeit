@@ -1154,6 +1154,14 @@ group_restore() {
   done
   forbid docs/BACKUP.md '| "$PZ/bin/postgresql/bin/psql"'
   forbid docs/setup-anleitung.md '| docker compose exec -T db psql -U praxiszeit praxiszeit'
+  # Rollback nativ (Gesamtreview 1.20, Runde 2): die Installer kopieren nur über
+  # app/ – ohne Beiseitelegen fand die alte Version 073 und wandte sie erneut an.
+  f=docs/UPDATE.md
+  need "$f" 'sudo mv /opt/praxiszeit/app /opt/praxiszeit/app.neu-$(date +%F)'
+  need "$f" 'sudo mv /usr/local/praxiszeit/app /usr/local/praxiszeit/app.neu-$(date +%F)'
+  need "$f" 'ren app app.neu'
+  forbid "$f" 'Andersherum scheitert schon der'
+  need docs/NATIVE-BETRIEB.md '**`app/` beiseitelegen**'
   # Windows-Einrichtung (Gesamtreview 1.20, Runde 2): beschrieb die Backups als
   # Custom-Format und gab pg_restore vor – das bricht an Plain-SQL-Dumps ab.
   f=docs/setup-windows.md

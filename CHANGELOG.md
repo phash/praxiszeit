@@ -306,8 +306,13 @@ dieses Backup verlustfrei (`UPDATE.md`).
   spielt das Backup erst in eine Zwischendatenbank ein und ersetzt die bisherige
   Datenbank nur, wenn das gelungen ist und das Backup nicht von einer neueren
   Version stammt; der anschließende Dienststart migriert. Auch für den Rollback:
-  Backup mit der installierten Version einspielen, dann die alte Version
-  installieren (`BACKUP.md`, `UPDATE.md`, `INSTALL-NATIVE.md`). README,
+  Backup mit der installierten Version einspielen, den Ordner `app/` beiseitelegen
+  und dann die alte Version installieren. Der Installer ersetzt `app/` nicht, er
+  kopiert nur darüber (Windows-Update-Wizard ebenso); ohne diesen Schritt fand die
+  alte Version die Migrationen der neueren und wandte sie beim Start erneut an
+  (1.20.0 → 1.19.x: `073` erneut, danach startete 1.19.x nicht mehr). `restore` nennt den
+  Schritt, wenn das Backup älter ist als die Installation (`BACKUP.md`,
+  `UPDATE.md`, `INSTALL-NATIVE.md`). README,
   Einrichtungsanleitung und die In-App-Hilfe nennen für Docker `restore.sh`
   statt des alten `psql`-Wegs bzw. eines „idempotenten" Restores.
 

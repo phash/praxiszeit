@@ -260,6 +260,49 @@ def test_meldet_dienststart_und_migration(srv, inst, caplog):
     assert "072_cr_sunday_reason" in caplog.text
 
 
+def test_aelteres_backup_nennt_den_rollback_weg(srv, inst, caplog):
+    """Gesamtreview 1.20, Runde 2: der Installer ersetzt ``app/`` nicht, er
+    kopiert nur darueber. Nach ``restore`` + altem Paket lag die Migration der
+    neueren Version weiter in ``alembic/versions``; der Start der alten Version
+    wandte sie erneut an (073: ``users.scheduled_*`` weg, 1.19.3 startet nicht mehr).
+    Wer ``restore`` fuer einen Rollback nutzt, liest an dieser Stelle „Jetzt
+    den Dienst starten" — die Meldung muss den Rollback-Weg nennen."""
+    with caplog.at_level(logging.INFO, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst), FakeCluster(revision="072_cr_sunday_reason"))
+    assert code == 0
+    app = inst / "app"
+    assert "Rollback" in caplog.text
+    assert f"sudo mv {app} {app}.neu" in caplog.text
+    assert "NICHT starten" in caplog.text
+
+
+def test_backup_dieser_version_nennt_keinen_rollback(srv, inst, caplog):
+    with caplog.at_level(logging.INFO, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst), FakeCluster(revision="073_work_blocks"))
+    assert code == 0
+    assert "systemctl start praxiszeit" in caplog.text
+    assert "Rollback" not in caplog.text
+
+
+def test_migration_heads_folgen_der_kette(srv, tmp_path):
+    (tmp_path / "a.py").write_text("revision = '001'\ndown_revision = None\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text(
+        "revision: str = '002'\ndown_revision: Union[str, None] = '001'\n", encoding="utf-8")
+    (tmp_path / "c.py").write_text('revision = "003a"\ndown_revision = "002"\n', encoding="utf-8")
+    (tmp_path / "d.py").write_text('revision = "003b"\ndown_revision = "002"\n', encoding="utf-8")
+    (tmp_path / "e.py").write_text(
+        'revision = "004"\ndown_revision = ("003a", "003b")\n', encoding="utf-8")
+    assert srv.migration_heads(tmp_path) == {"004"}
+
+
+def test_migration_head_der_installation_ist_die_juengste_migration(srv):
+    versions = _REPO / "backend" / "alembic" / "versions"
+    newest = sorted(p for p in versions.glob("*.py") if p.name != "__init__.py")[-1]
+    revision = re.search(r"""^revision[^=\n]*=\s*['"]([^'"]+)""",
+                         newest.read_text(encoding="utf-8"), re.M).group(1)
+    assert srv.migration_heads(versions) == {revision}
+
+
 def test_macos_nennt_launchctl(srv, inst, caplog, monkeypatch):
     monkeypatch.setattr(srv, "IS_MACOS", True)
     with caplog.at_level(logging.INFO, logger="praxiszeit"):
@@ -497,9 +540,47 @@ def test_backup_md_nativ_haelt_den_dienst_an_und_startet_ihn_neu():
         assert section.index(stop) < section.index(restore) < section.index(start), section
 
 
+def _update_rollback_section() -> str:
+    text = (_REPO / "docs" / "UPDATE.md").read_text(encoding="utf-8")
+    start = text.index("## Rollback")
+    return text[start:]
+
+
+def test_update_md_rollback_legt_app_vor_dem_alten_paket_beiseite():
+    """Gesamtreview 1.20, Runde 2: install.sh (``cp -r app/* …/app/``), der
+    macOS-Installer (``cp -R app``) und der Windows-Update-Wizard (robocopy
+    ``/E`` ohne ``/PURGE``) mischen das neue ``app/`` ueber das alte. Beim
+    Rollback blieb 073 in ``alembic/versions`` liegen, der Start von 1.19.3
+    wandte sie erneut an → der Start bricht ab (UndefinedColumn). Die Anleitung legt
+    ``app/`` deshalb nach dem Einspielen und vor dem alten Paket beiseite."""
+    section = _update_rollback_section()
+    for stop, restore, move in (
+        ("sudo systemctl stop praxiszeit",
+         "sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore",
+         "sudo mv /opt/praxiszeit/app /opt/praxiszeit/app.neu-$(date +%F)"),
+        ("sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist",
+         "sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore",
+         "sudo mv /usr/local/praxiszeit/app /usr/local/praxiszeit/app.neu-$(date +%F)"),
+    ):
+        assert stop in section and restore in section and move in section, section
+        assert section.index(stop) < section.index(restore) < section.index(move), section
+    # Windows: erst app umbenennen und das alte Paket einspielen, dann dessen
+    # restore-backup.bat (es startet den Dienst am Ende selbst).
+    bat = section[section.index("```bat"):]
+    bat = bat[:bat.index("```", 3)]
+    steps = ("net stop PraxisZeit", "ren app app.neu", "update-wizard.bat",
+             "restore-backup.bat data\\backups\\")
+    for step in steps:
+        assert step in bat, (step, bat)
+    assert [bat.index(s) for s in steps] == sorted(bat.index(s) for s in steps), bat
+    # Der alte Satz stimmte nur bei komplett ersetztem app/.
+    assert "Andersherum scheitert schon der\nStart der alten Version" not in section
+
+
 def test_die_anderen_anleitungen_nennen_den_unterbefehl():
     for name in ("docs/setup-anleitung.md", "docs/INSTALL-NATIVE.md", "docs/UPDATE.md"):
         text = (_REPO / name).read_text(encoding="utf-8")
         assert "praxiszeit-server.py restore" in text, name
     setup = (_REPO / "docs" / "setup-anleitung.md").read_text(encoding="utf-8")
     assert "muss beim\nEinspielen **laufen**" not in setup
+

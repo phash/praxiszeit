@@ -259,23 +259,59 @@ Schema des Backups. Ab 1.20.0 erledigt `bash restore.sh backup-JJJJ-MM-TT.sql.gz
 Schritte und meldet sich erst, wenn das Backend wieder gesund ist.
 
 Nativ (Linux/macOS) in dieser Reihenfolge: **zuerst** mit der noch installierten
-neuen Version das Backup einspielen, **dann** die alte Version installieren —
-deren Start findet den Stand des Backups vor. Andersherum scheitert schon der
-Start der alten Version an der ihr unbekannten Migration, und vor 1.20.0 kennt
-der Prozessmanager kein `restore`.
+neuen Version das Backup einspielen, **dann** den Anwendungsordner `app/` beiseitelegen
+und **danach** die alte Version installieren – deren Start findet den Stand des
+Backups vor.
 
 ```bash
 sudo systemctl stop praxiszeit
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<backup-vor-dem-update>.sql.gz
-# danach das alte Paket wie unter „Native → Linux“ installieren (startet den Dienst)
+sudo mv /opt/praxiszeit/app /opt/praxiszeit/app.neu-$(date +%F)
+# danach das alte Paket wie unter „Native → Linux“ installieren (legt app/ neu an und startet den Dienst)
 ```
 
-Den Dienst dazwischen **nicht** starten: die noch installierte neue Version höbe
-das Backup beim Start wieder auf ihren Stand.
+```bash
+# macOS: Ordner /usr/local/praxiszeit, Dienstkonto _praxiszeit, launchd
+sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore /usr/local/praxiszeit/data/backups/<backup-vor-dem-update>.sql.gz
+sudo mv /usr/local/praxiszeit/app /usr/local/praxiszeit/app.neu-$(date +%F)
+# danach das alte Paket wie unter „Native → macOS“ installieren (lädt den Dienst am Ende)
+```
 
-macOS mit `launchctl unload`/`load` und `sudo -u _praxiszeit` (siehe
-[BACKUP.md → Restore](BACKUP.md#restore-wiederherstellung)); Windows:
-`restore-backup.bat <datei>`.
+**Warum `app/` beiseite:** Der Installer ersetzt `app/` nicht, er kopiert das neue
+Paket nur darüber (er „löscht nichts“, siehe oben). Ohne diesen Schritt blieben die
+Migrationsdateien der neueren Version in `app/backend/alembic/versions` liegen; schon
+der erste Start der alten Version fände sie und höbe die Datenbank gleich wieder auf
+den neuen Stand – mit Programmcode, der dieses Schema nicht kennt. Beim Rückweg von
+1.20.0 auf 1.19.x wendet er `073` erneut an: die alten Fenster-Spalten sind wieder
+weg, und **die alte Version startet nicht mehr** (sie fragt diese Spalten ab:
+„column users.scheduled_start_monday does not exist“). `restore` erinnert daran, wenn
+das Backup älter ist als die installierte Version. Den beiseitegelegten Ordner nach
+erfolgreichem Rollback löschen.
+
+Den Dienst zwischen `restore` und dem alten Paket **nicht** starten: die noch
+installierte neue Version höbe das Backup beim Start wieder auf ihren Stand.
+Andersherum (erst das alte Paket, dann das Backup) geht es nicht: mit frischem `app/`
+startet die alte Version auf dem Datenbankstand der neueren gar nicht („Can't locate
+revision“), und vor 1.20.0 kennt der Prozessmanager kein `restore`.
+
+Windows (Administrator-Eingabeaufforderung) in dieser Reihenfolge: Dienst anhalten,
+den Ordner `app` umbenennen, das alte Paket mit **dessen** `update-wizard.bat`
+einspielen und **danach** mit `restore-backup.bat` das Backup einspielen. Der
+Update-Wizard mischt ebenfalls nur darüber (robocopy ohne Löschen). Der Dienststart
+am Ende des Wizards kann scheitern – die alte Version kennt den Datenbankstand der
+neueren nicht; `restore-backup.bat` hält den Dienst an, spielt das Backup ein und
+startet ihn wieder. Andersherum ginge es nicht: das Script startet den Dienst am Ende,
+und die noch installierte neue Version höbe das Backup sofort wieder auf ihren Stand.
+
+```bat
+net stop PraxisZeit
+cd C:\PraxisZeit
+ren app app.neu
+:: im entpackten alten Paket: update-wizard.bat (legt app neu an)
+:: danach im Installationsordner:
+restore-backup.bat data\backups\<backup-vor-dem-update>.sql.gz
+```
 
 Migrationen sind in der Regel vorwärtskompatibel; ein Downgrade des Schemas wird
 **nicht** unterstützt — daher das Backup. Ab 1.20.0 gilt das besonders: Migration `073` entfernt die Spalten der alten Arbeitszeit-Fenster (siehe Kasten oben).

@@ -2207,6 +2207,21 @@ def known_migration_revisions(versions_dir: Path | None = None) -> set:
     return found
 
 
+def migration_heads(versions_dir: Path | None = None) -> set:
+    """Die juengsten Revisionen (Heads) dieser Installation: jede Revision, auf
+    die keine andere als ``down_revision`` verweist. Wie
+    :func:`known_migration_revisions` ohne Alembic; ``down_revision`` darf
+    annotiert sein, ``None`` oder ein Tupel (Merge-Migration)."""
+    import re
+    versions_dir = versions_dir or BACKEND_DIR / "alembic" / "versions"
+    down = re.compile(r"^down_revision\b[^=\n]*=(.*)$", re.M)
+    parents = set()
+    for path in sorted(versions_dir.glob("*.py")):
+        for line in down.findall(path.read_text(encoding="utf-8")):
+            parents.update(re.findall(r"""['"]([^'"]+)['"]""", line))
+    return known_migration_revisions(versions_dir) - parents
+
+
 def _process_manager_running() -> bool:
     """Laeuft der Prozessmanager dieser Installation (``start``)?
 
@@ -2355,8 +2370,12 @@ def cmd_restore(args):
     Zwischendatenbank einspielen → Stand pruefen → bisherige Datenbank ersetzen →
     Rechte wie bei der Erstinitialisierung. Migriert wird beim naechsten
     Dienststart: so bleibt ``restore`` auch der Weg fuer einen Rollback (Backup
-    mit der installierten Version einspielen, dann die alte Version
-    installieren — deren Start findet den Stand des Backups vor).
+    mit der installierten Version einspielen, ``app/`` beiseitelegen, dann die
+    alte Version installieren — deren Start findet den Stand des Backups vor).
+    ``app/`` muss beiseite, weil die Installer nur darueber kopieren: sonst
+    faende die alte Version die Migrationen dieser Version und wendete sie beim
+    Start erneut an (Gesamtreview 1.20, Runde 2). Ist das Backup aelter als die
+    Installation, nennt die Schlussmeldung diesen Schritt.
     """
     if IS_WINDOWS:
         logger.error(
@@ -2494,6 +2513,21 @@ def cmd_restore(args):
         "(Zeilen mit „alembic:“, Hinweise zwischen „*** HINWEIS“ und „*** ENDE HINWEIS ***“).",
         revision, _service_start_command(), LOG_DIR / "praxiszeit.log",
     )
+    if revision not in migration_heads():
+        # Gesamtreview 1.20, Runde 2: die Installer ersetzen app/ nicht, sie
+        # kopieren nur darueber. Ohne diesen Schritt fand der Start der alten
+        # Version die Migrationen dieser Installation in alembic/versions und
+        # hob die Datenbank gleich wieder an (1.20 → 1.19.3: 073 erneut
+        # angewandt, danach startete 1.19.3 nicht mehr).
+        app_dir = BACKEND_DIR.parent
+        logger.info(
+            "Rollback auf die Version des Backups: den Dienst NICHT starten, sondern "
+            "zuerst den Anwendungsordner beiseitelegen (sudo mv %s %s.neu) und dann das "
+            "alte Paket installieren. Der Installer ersetzt app/ nicht; die Migrationen "
+            "dieser Version blieben sonst liegen, und schon der erste Start der alten "
+            "Version hoebe die Datenbank wieder auf diesen Stand (UPDATE.md → Rollback).",
+            app_dir, app_dir,
+        )
 
 
 def main():
