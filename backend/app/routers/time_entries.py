@@ -378,7 +378,9 @@ def get_clock_status(
     """Get the current clock-in/out status for the authenticated user.
 
     #494: zusätzlich ``today_net_minutes`` (Tages-Ist inkl. bereits
-    abgeschlossener Einträge) und ``today_target_hours`` (Tagessoll laut Snapshot).
+    abgeschlossener Einträge) und ``today_target_hours`` (heute zu stempelnde
+    Stunden aus ``get_day_presence_target`` — 0 an freien Tagen, siehe
+    ``_today_target_hours``).
     """
     today = _today_local()
     open_entry = _get_open_entry(db, current_user.id, tenant_id=current_user.tenant_id)

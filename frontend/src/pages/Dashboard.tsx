@@ -214,7 +214,7 @@ export default function Dashboard() {
     elapsed_minutes?: number | null;
     current_entry?: { start_time: string; break_minutes?: number | null };
     today_net_minutes?: number; // #494: Tages-Ist inkl. abgeschlossener Einträge
-    today_target_hours?: number; // #494/#431: Tagessoll laut Snapshot
+    today_target_hours?: number; // #494 F1: heute zu stempelnde Stunden (get_day_presence_target, 0 an freien Tagen)
     blocks_today?: TimeBlock[]; // Spec 2026-10-08 (14, E69)
   } | null>(null);
   // #494 (Gesamtreview B6): „x von y h heute" zählt bei laufendem Eintrag live
@@ -516,10 +516,13 @@ export default function Dashboard() {
 
       {/* Status Card - Mobile Hero */}
       {trackHours && (() => {
-        // #494: Tagessoll und Tages-Ist kommen vom Server. Das Soll stammt aus dem
-        // datumsaufgelösten Vertrags-Snapshot (#431) statt aus den Live-Feldern
-        // der User-Zeile; das Ist enthält auch die heute bereits ABGESCHLOSSENEN
-        // Blöcke (geteilter Dienst), nicht nur die Laufzeit des offenen Eintrags.
+        // #494: Tagessoll und Tages-Ist kommen vom Server. Das Soll sind die
+        // Stunden, die heute zu stempeln sind (get_day_presence_target, Basis
+        // der datumsaufgelöste Vertrags-Snapshot #431): 0 an Feiertagen, bei
+        // ganztägiger Abwesenheit jeden Typs und außerhalb des
+        // Beschäftigungsfensters — kein Vertrags-Tagessoll, nie für den Saldo.
+        // Das Ist enthält auch die heute bereits ABGESCHLOSSENEN Einträge
+        // (geteilter Dienst), nicht nur die Laufzeit des offenen Eintrags.
         const todayTarget = clockStatus?.today_target_hours ?? 0;
         const isWorkday = todayTarget > 0;
         const isClockedIn = clockStatus?.is_clocked_in ?? false;

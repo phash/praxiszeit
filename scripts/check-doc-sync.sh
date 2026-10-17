@@ -938,6 +938,18 @@ group_technik() {
   need "$f" '*** HINWEIS (Migration 073) ***'
   need "$f" '*** ENDE HINWEIS ***'
   forbid "$f" 'Der Block'
+  # Gesamtreview 1.20: clock-status liefert seit #494 F1 das Präsenz-Soll
+  # (get_day_presence_target: 0 an Feiertag, bei ganztägiger Abwesenheit und
+  # außerhalb des Beschäftigungsfensters), nicht das Vertrags-Tagessoll laut
+  # Snapshot — und gestempelte Einträge heißen nie „Blöcke".
+  f=docs/specs/features/dashboard.md
+  need "$f" '`today_target_hours` (`calculation_service.get_day_presence_target`'
+  forbid "$f" 'alle Blöcke des Tages'
+  for f in docs/specs/features/dashboard.md frontend/src/pages/Dashboard.tsx \
+           backend/app/routers/time_entries.py; do
+    forbid "$f" 'Tagessoll laut Snapshot'
+  done
+  forbid frontend/src/pages/Dashboard.tsx '// Blöcke (geteilter Dienst)'
 }
 
 # CLAUDE.md (Spec 16.2, zwölf Regeln, plus Doku-Regeln dieses PRs). Über den

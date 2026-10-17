@@ -51,7 +51,7 @@ Als **Admin** möchte ich eine Teamübersicht aller Mitarbeiter sehen.
 | `GET` | `/api/dashboard/overtime` | Employee | Überstunden-Verlauf (months=6) |
 | `GET` | `/api/dashboard/weekly-overview` | Employee | #500: letzte `weeks` (Default 8, 1–53) ISO-Wochen, älteste zuerst — Soll/Ist/Saldo + Konto zum Wochenende; Rechnung = Admin-Wochenbericht (`calculation_service.get_week_summary`), laufende Woche „bis heute" (#313) |
 | `GET` | `/api/dashboard/vacation` | Employee | Urlaubskonto (year) |
-| `GET` | `/api/time-entries/clock-status` | Employee | Stempelstatus; #494: zusätzlich `today_net_minutes` (alle Blöcke des Tages) + `today_target_hours` (Tagessoll laut Snapshot #431) |
+| `GET` | `/api/time-entries/clock-status` | Employee | Stempelstatus; #494: zusätzlich `today_net_minutes` (alle Einträge des Tages netto, der laufende abzüglich erfasster Pause) + `today_target_hours` (`calculation_service.get_day_presence_target`: Stunden, die heute zu stempeln sind — 0 am Wochenende, an Feiertagen, bei ganztägiger Abwesenheit jeden Typs, außerhalb des Beschäftigungsfensters und ohne Stundenzählung; Halbtag und Sondertag anteilig; Basis der Vertrags-Snapshot #431; nie für Saldo, Exporte oder Journal) |
 | `GET` | `/api/admin/dashboard` | Admin | Team-Übersicht |
 
 **Vacation Account Schema:**
