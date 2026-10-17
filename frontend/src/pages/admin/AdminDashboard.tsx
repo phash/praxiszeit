@@ -1647,8 +1647,9 @@ export default function AdminDashboard() {
                                 <span className="text-gray-500">
                                   {format(new Date(log.created_at), 'dd.MM. HH:mm')} | {log.changed_by_first_name} {log.changed_by_last_name}
                                   {/* Gesamtreview PR2 (Fund 6): dieselben Quellen-Labels wie
-                                      `admin/AuditLog.tsx`; „manual" (die Verwaltung selbst)
-                                      bleibt ohne Zusatz, unbekannte Quellen ebenso. */}
+                                      `admin/AuditLog.tsx`; „manual" (von Hand angelegt oder
+                                      geändert — wer, steht direkt davor) bleibt ohne Zusatz,
+                                      unbekannte Quellen ebenso. */}
                                   {log.source && log.source !== 'manual' && AUDIT_SOURCE_LABELS[log.source]
                                     && ` (${AUDIT_SOURCE_LABELS[log.source]})`}
                                 </span>

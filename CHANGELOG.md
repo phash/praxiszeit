@@ -224,6 +224,14 @@ dieses Backup verlustfrei (`UPDATE.md`).
   werden die gesetzlichen Feiertage aller Jahre für das neue Bundesland neu
   berechnet; eigene Feiertage bleiben. Betrifft das ein Jahr mit
   Jahresabschluss, weist PraxisZeit auf den veralteten Übertrag hin.
+- **Zeiterfassung im Änderungsprotokoll:** Anlegen und Bearbeiten über die
+  Zeiterfassung (Mitarbeitende am selben Tag, Admins an eigenen Einträgen jedes
+  Tages) hinterlassen jetzt eine Zeile mit alten und neuen Werten – bisher nur
+  bei einer Pflicht-Pause-Ausnahme; korrigierte eine Admin einen eigenen Eintrag
+  eines vergangenen Tages, blieb das ohne Spur. Die Spalte „Quelle" nennt von
+  Hand angelegte oder geänderte Einträge „Manuell" statt „Admin" (wer gehandelt
+  hat, steht unter „Geändert von"), Ausstempeln und automatisch geschlossene
+  Einträge „Ausstempeln" bzw. „Automatisch geschlossen" statt der Rohwerte.
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images

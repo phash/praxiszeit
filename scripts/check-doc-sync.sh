@@ -242,6 +242,12 @@ group_code() {
   need_code " Rückwirkende Verkürzung – Grund: "
   need_code "wurde zurückgenommen."
   need_code "wh_change: 'Stundenänderung'"
+  # Gesamtreview 1.20: Quelle `manual` heißt „Manuell" (seit die Zeiterfassung
+  # Anlegen und Bearbeiten protokolliert, auch jede Selbsterfassung), dazu
+  # „Ausstempeln" und „Automatisch geschlossen" statt der Rohwerte.
+  need_code "manual: 'Manuell'"
+  need_code "clock_out: 'Ausstempeln'"
+  need_code "auto_close: 'Automatisch geschlossen'"
   # Spaltenkopf der Jahresübersicht (XLSX/ODS), den „Berichte" nennt.
   need_code '"Stundenänderungen",'
   need_code "Arbeitszeit-Änderung ab "
@@ -489,6 +495,12 @@ group_admin_rest() {
   need "$f" 'Wird übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'
   need "$f" '29.09.2026: übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'
   need "$f" '| **Anerkennungen** |'
+  # Gesamtreview 1.20: Quellen-Label „Manuell" statt „Admin" (auditSources.ts) —
+  # Handbuch §9, In-App-Hilfe und Kontexthilfe des Änderungsprotokolls.
+  need "$f" 'zeigt bei solchen Zeilen – wie bei Korrekturen durch die Verwaltung – „Manuell"'
+  need frontend/src/components/DocViewer.tsx 'Spalte „Quelle" dann „Manuell"'
+  need frontend/src/constants/helpContent.tsx 'Spalte „Quelle": Manuell'
+  forbid frontend/src/constants/helpContent.tsx 'Spalte „Quelle": Admin'
   # Gesamtreview 1.20: das Anerkennen an einem Misch-Tag schreibt zusätzlich je
   # angeglichener Abwesenheit eine Zeile (credit_override_service, Fund 1) —
   # die Protokolltabelle nannte nur die Zeile des Eintrags.
@@ -1064,6 +1076,9 @@ group_changelog() {
   need_code_label frontend/src/pages/TimeTracking.tsx "Pflicht-Pause war nicht möglich"
   need_code "Pflicht-Pause war nicht möglich – Begründung"
   need_code '"Saldo Monat:"'
+  # Gesamtreview 1.20: Protokoll der Zeiterfassung und Quellen-Label „Manuell".
+  need "$f" '**Zeiterfassung im Änderungsprotokoll:**'
+  need "$f" 'Hand angelegte oder geänderte Einträge „Manuell" statt „Admin"'
 }
 
 # Versionsangaben der beiden Handbücher (Gesamtreview 1.20 B10): Kopf und
