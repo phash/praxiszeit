@@ -993,6 +993,34 @@ group_changelog() {
   need_code '"Saldo Monat:"'
 }
 
+# Versionsangaben der beiden Handbücher (Gesamtreview 1.20 B10): Kopf und
+# Fußzeile nennen dieselbe PraxisZeit-Version, und beide Handbücher dieselbe.
+# Die Fußzeile des Admin-Handbuchs stand nach dem Kopf-Update noch auf 1.19.3.
+# Kurzanleitungen und Schnellstart tragen keine Version.
+group_versionen() {
+  python3 - docs/handbuch/HANDBUCH-ADMIN.md docs/handbuch/HANDBUCH-MITARBEITER.md <<'PY' || FAIL=1
+import re
+import sys
+
+found, bad = {}, 0
+for path in sys.argv[1:]:
+    with open(path, encoding="utf-8") as fh:
+        lines = fh.read().splitlines()
+    for where, chunk in (("Kopf", lines[:5]), ("Fußzeile", lines[-5:])):
+        versions = sorted(set(re.findall(r"PraxisZeit (\d+\.\d+\.\d+)", "\n".join(chunk))))
+        if len(versions) != 1:
+            print(f"VERSION   {path}: {where} nennt {', '.join(versions) or 'keine'} statt genau einer PraxisZeit-Version")
+            bad = 1
+        else:
+            found[f"{path} ({where})"] = versions[0]
+if len(set(found.values())) > 1:
+    for where, version in found.items():
+        print(f"VERSION   {where}: PraxisZeit {version}")
+    bad = 1
+sys.exit(bad)
+PY
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {

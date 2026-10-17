@@ -1353,4 +1353,4 @@ Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
 ---
 
 *PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: Oktober 2026 (für PraxisZeit 1.19.3)*
+*Stand: Oktober 2026 (für PraxisZeit 1.20.0)*
