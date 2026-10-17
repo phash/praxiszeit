@@ -150,3 +150,74 @@ describe('<Reports /> 24-Wochen-Durchschnitt (Spec 8.1, P22)', () => {
     expect(screen.getByText(/die Grenze gilt für die tatsächliche Arbeitszeit/)).toBeInTheDocument();
   });
 });
+
+// Gesamtreview 1.20 (Fund 22): die Karte nennt den ausgewerteten Zeitraum und
+// die Zahl der nicht konformen Personen (wie die Nachbarkarten „Jahr: …"),
+// erklärt eine leere Liste und fragt ohne Stichtag nicht an.
+describe('<Reports /> 24-Wochen-Durchschnitt: Zeitraum und Leerzustand (Fund 22)', () => {
+  const employee = (over: Record<string, unknown> = {}) => ({
+    user_id: 'u1', first_name: 'Anna', last_name: 'Meier', total_hours: 1000,
+    scheduled_work_days: 110, average_daily_hours: 9.09, days_over_8h: 40, compliant: false,
+    presence_hours: 1000, presence_average: 9.09, presence_weeks: [],
+    ...over,
+  });
+
+  it('zeigt den Zeitraum der Antwort und die Zahl der nicht konformen Personen', async () => {
+    getMock.mockResolvedValue({
+      data: {
+        window_start: '2025-10-29', window_end: '2026-04-15', non_compliant_count: 1,
+        employees: [employee()],
+      },
+    });
+    render(<Reports />);
+    fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
+    await screen.findByRole('table', { name: '24-Wochen-Durchschnitt' });
+    expect(screen.getByText('29.10.2025 – 15.04.2026')).toBeInTheDocument();
+    expect(screen.getByText('⚠ 1 Mitarbeitende nicht konform')).toBeInTheDocument();
+  });
+
+  it('ohne nicht konforme Personen kein Warnhinweis', async () => {
+    getMock.mockResolvedValue({
+      data: {
+        window_start: '2025-10-29', window_end: '2026-04-15', non_compliant_count: 0,
+        employees: [employee({ compliant: true, average_daily_hours: 7.5 })],
+      },
+    });
+    render(<Reports />);
+    fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
+    await screen.findByText('29.10.2025 – 15.04.2026');
+    expect(screen.queryByText(/nicht konform/)).not.toBeInTheDocument();
+  });
+
+  it('erklärt eine leere Liste statt eines leeren Tabellenkopfs', async () => {
+    getMock.mockResolvedValue({
+      data: { window_start: '2025-10-29', window_end: '2026-04-15', non_compliant_count: 0, employees: [] },
+    });
+    render(<Reports />);
+    fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
+    expect(await screen.findByText(/Keine Mitarbeitenden zu prüfen/)).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: '24-Wochen-Durchschnitt' })).not.toBeInTheDocument();
+    expect(screen.getByText('29.10.2025 – 15.04.2026')).toBeInTheDocument();
+  });
+
+  it('sperrt „Prüfen" ohne Stichtag', () => {
+    render(<Reports />);
+    fireEvent.change(screen.getByLabelText('Stichtag'), { target: { value: '' } });
+    expect(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' })).toBeDisabled();
+  });
+
+  it('ein neuer Stichtag verwirft das alte Ergebnis (es gehörte zu einem anderen Zeitraum)', async () => {
+    getMock.mockResolvedValue({
+      data: {
+        window_start: '2025-10-29', window_end: '2026-04-15', non_compliant_count: 1,
+        employees: [employee()],
+      },
+    });
+    render(<Reports />);
+    fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
+    await screen.findByRole('table', { name: '24-Wochen-Durchschnitt' });
+    fireEvent.change(screen.getByLabelText('Stichtag'), { target: { value: '2026-06-30' } });
+    expect(screen.queryByRole('table', { name: '24-Wochen-Durchschnitt' })).not.toBeInTheDocument();
+    expect(screen.queryByText('29.10.2025 – 15.04.2026')).not.toBeInTheDocument();
+  });
+});

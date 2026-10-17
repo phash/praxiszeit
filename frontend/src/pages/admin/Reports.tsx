@@ -115,6 +115,12 @@ interface AverageReport {
   non_compliant_count: number;
 }
 
+// Gesamtreview 1.20 (Fund 22): ISO-Datum der Antwort als TT.MM.JJJJ (Mittag,
+// damit die Zeitzone den Tag nicht verschiebt).
+function isoDateDe(iso: string): string {
+  return format(new Date(`${iso}T12:00:00`), 'dd.MM.yyyy');
+}
+
 export default function Reports() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -879,13 +885,19 @@ export default function Reports() {
               id="avg-end-date"
               type="date"
               value={avgEndDate}
-              onChange={(e) => setAvgEndDate(e.target.value)}
+              onChange={(e) => {
+                setAvgEndDate(e.target.value);
+                // Fund 22: das Ergebnis gehört zum alten Stichtag — nicht neben
+                // dem neuen Datum stehen lassen.
+                setAvgReport(null);
+              }}
               className="px-3 py-2 border border-gray-300 rounded-lg"
             />
           </div>
           <button
             onClick={checkAverage}
-            disabled={avgLoading}
+            // Fund 22: ohne Stichtag ginge `end_date=` raus (422, allgemeiner Fehler-Toast).
+            disabled={avgLoading || !avgEndDate}
             aria-label="24-Wochen-Durchschnitt prüfen"
             className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition disabled:opacity-50"
           >
@@ -895,6 +907,26 @@ export default function Reports() {
         </div>
 
         {avgReport !== null && (
+          // Gesamtreview 1.20 (Fund 22): Zeitraum und Zahl der nicht konformen
+          // Personen wie bei den Nachbarkarten („Jahr: …"); eine leere Liste
+          // (z. B. alle § 18-befreit) wird erklärt statt eines leeren Tabellenkopfs.
+          <div className="mb-3 flex flex-wrap gap-3 text-sm text-gray-600">
+            <span>
+              Zeitraum: <strong>{isoDateDe(avgReport.window_start)} – {isoDateDe(avgReport.window_end)}</strong>
+            </span>
+            {avgReport.non_compliant_count > 0 && (
+              <span className="text-red-600 font-medium">
+                ⚠ {avgReport.non_compliant_count} Mitarbeitende nicht konform
+              </span>
+            )}
+          </div>
+        )}
+        {avgReport !== null && avgReport.employees.length === 0 && (
+          <p className="text-sm text-gray-500">
+            Keine Mitarbeitenden zu prüfen (§ 18-befreite Mitarbeitende erscheinen nicht).
+          </p>
+        )}
+        {avgReport !== null && avgReport.employees.length > 0 && (
           // Fund 8: acht Spalten — auf Telefonbreite scrollt die Tabelle, nicht die Seite.
           <div className="overflow-x-auto">
             <table aria-label="24-Wochen-Durchschnitt" className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
