@@ -239,12 +239,24 @@ beschriebenen Schritte.
 
 Es gibt keinen automatischen Rollback. Im Problemfall: die alte Paket-/Code-Version
 erneut einspielen und das **vor** dem Update gezogene DB-Backup zurückspielen.
-Docker (zum `--clean`-gzip-Backup aus Schritt 1):
+Docker (zum `--clean`-gzip-Backup aus Schritt 1) — Backend anhalten, Datenbank
+frisch anlegen, Backup einspielen, Backend wieder starten:
 
 ```bash
+docker compose stop backend
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U praxiszeit -d postgres \
+    -c 'DROP DATABASE IF EXISTS praxiszeit WITH (FORCE)' -c 'CREATE DATABASE praxiszeit'
 gunzip -c backup-JJJJ-MM-TT.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U praxiszeit -d praxiszeit
-docker compose up -d backend
+docker compose start backend           # Migrationen laufen nur beim Start des Containers
 ```
+
+Frisch anlegen, weil `--clean` nur entfernt, was im Backup vorkommt: eine Tabelle,
+die erst die neuere Version angelegt hat, bliebe stehen und könnte das Einspielen
+abbrechen. Und `docker compose up -d backend` startet ein schon laufendes Backend
+**nicht** neu – die Migrationen liefen dann nicht, das Backend arbeitete gegen das
+Schema des Backups. Ab 1.20.0 erledigt `bash restore.sh backup-JJJJ-MM-TT.sql.gz`
+(Docker-Paket; im git-Checkout `bash tools/docker/restore.sh …`) genau diese
+Schritte und meldet sich erst, wenn das Backend wieder gesund ist.
 
 Nativ: `pg_dump`/`psql` aus `bin/postgresql/bin` (siehe INSTALL-Dokumente).
 Migrationen sind in der Regel vorwärtskompatibel; ein Downgrade des Schemas wird

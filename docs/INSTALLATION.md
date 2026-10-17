@@ -291,9 +291,15 @@ mkdir -p ~/backups
 ### Backup wiederherstellen
 ```bash
 cd ~/praxiszeit
-gunzip -c backup_20260214.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U praxiszeit -d praxiszeit
-docker compose up -d backend   # Migrationen heben das Schema auf head
+bash tools/docker/restore.sh backup_20260214.sql.gz
+docker compose logs backend    # Ausgabe der Migrationen lesen
 ```
+
+Das Script hält das Backend an, legt die Datenbank frisch an, spielt das Backup ein
+und startet das Backend wieder. Erst dieser Start hebt ein Backup einer älteren
+Version per Migration auf den Stand der installierten Version – ein
+`docker compose up -d backend` startet ein schon laufendes Backend nicht neu.
+Details und der Weg von Hand: [BACKUP.md](BACKUP.md).
 
 ---
 

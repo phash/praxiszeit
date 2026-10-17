@@ -143,8 +143,9 @@ fi
 # Same mount, same reason: test_491_deploy_pull.py drives the real ../deploy.sh
 # against git/docker stubs (#491 DEP-4), test_482_macho_deps.py the macOS
 # load-command check in ../tools (#482), test_frontend_dockerignore.py the
-# build-context rules in ../frontend (Gesamtreview B8); all skip without the
-# repo.
+# build-context rules in ../frontend (Gesamtreview B8), test_docker_restore.py
+# the real ../tools/docker/restore.sh + update-pg-major.sh (Gesamtreview 1.20);
+# all skip without the repo.
 step "Native PG lifecycle (praxiszeit-server.py)"
 if docker run --rm --user "$(id -u):$(id -g)" \
        -v "$(pwd)":/work -w /work/backend \
@@ -157,7 +158,7 @@ if docker run --rm --user "$(id -u):$(id -g)" \
        praxiszeit-backend \
        python -m pytest tests/test_native_pg_lifecycle.py \
          tests/test_491_deploy_pull.py tests/test_482_macho_deps.py \
-         tests/test_frontend_dockerignore.py \
+         tests/test_frontend_dockerignore.py tests/test_docker_restore.py \
          -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Native PG lifecycle verified"
 else

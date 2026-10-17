@@ -285,6 +285,17 @@ dieses Backup verlustfrei (`UPDATE.md`).
   Wochentag ohne Soll zählt weiter zum Überstundenkonto. Bei Bedarf die
   Abwesenheit an diesem Tag von Hand löschen (an einem Tag ohne Soll zählt sie
   ohnehin nicht als Abwesenheitstag).
+- **Docker: Backup einer älteren Version einspielen** (`restore.sh`, Update-Weg
+  im Docker-Paket, `update-pg-major.sh`): Das abschließende
+  `docker compose up -d backend` startete das schon laufende Backend nicht neu.
+  Die Migrationen liefen deshalb nicht, und das Backend arbeitete gegen das
+  Schema des Backups – bei einem Update auf 1.20.0 auf diesem Weg wäre jede
+  Anmeldung mit HTTP 500 gescheitert, während `/api/health` „healthy" meldet. Hatte
+  die neuere Version seither eine Tabelle angelegt (Sprung über mehrere
+  Versionen, PostgreSQL-Umstieg von 1.9.x), brach das Einspielen sogar ab.
+  `restore.sh` hält das Backend jetzt an, legt die Datenbank frisch an, spielt
+  das Backup ein, startet das Backend wieder, wartet, bis es bereit ist, und
+  zeigt die Hinweise der Migrationen an (`BACKUP.md`, `UPDATE.md`).
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images

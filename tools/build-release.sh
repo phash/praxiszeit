@@ -1071,8 +1071,23 @@ dem Hochziehen der neuen Version wieder einspielen:
     docker compose pull db                          # PostgreSQL-18-Patchstand (Sicherheitsupdates)
     docker compose build --pull                     # frische Basis-Images (Debian/Alpine-Sicherheitsupdates)
     docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d   # nur HTTP: docker compose up -d
-    bash restore.sh backups/praxiszeit_<ts>.sql.gz  # DB einspielen
-    docker compose up -d backend                    # Alembic-Migrationen -> Schema auf head
+    bash restore.sh backups/praxiszeit_<ts>.sql.gz  # DB frisch anlegen + einspielen, Backend neu starten
+
+restore.sh haelt das Backend an, legt die Datenbank frisch an, spielt das Backup
+ein und startet das Backend wieder — erst dieser Start hebt das Schema per
+Migration auf die neue Version (ein \`docker compose up -d backend\` bei schon
+laufendem Backend tut nichts). Es meldet sich erst, wenn das Backend wieder
+gesund ist, und zeigt dann die Hinweise der Migrationen an (vollstaendige
+Ausgabe: \`docker compose logs backend\`). Danach die Seite im Browser neu
+laden (Strg+F5).
+
+Update auf 1.20.0 oder spaeter von einer aelteren Version: Migration 073 ersetzt
+die Arbeitszeit-Fenster durch Arbeitszeit-Bloecke und entfernt die alten
+Spalten. Zurueck auf 1.19.x geht es nur ueber das Backup von vor dem Update.
+Den Abschnitt zwischen \`*** HINWEIS (Migration 073) ***\` und
+\`*** ENDE HINWEIS ***\` lesen: er nennt die uebernommenen Konten und Personen,
+deren Arbeitszeit im Dialog „Arbeitszeit anpassen…“ zu pruefen ist.
+Alle Versionshinweise: https://github.com/phash/praxiszeit/blob/master/docs/UPDATE.md
 
 ## ⚠️ PostgreSQL-Major-Upgrade (ab dieser Version PostgreSQL 18)
 
@@ -1088,8 +1103,11 @@ STATT eines einfachen \`up\` — er sichert, ersetzt nur das DB-Volume (deine
 -> docker compose down -> Volume \`*_postgres_data\` entfernen -> neuen Stack
 hochziehen -> restore.sh.
 
-Die Backups sind gzip-komprimierte Plain-SQL-Dumps und lassen sich auch per
-\`gunzip -c <datei>.sql.gz | docker compose exec -T db psql -U praxiszeit praxiszeit\` einspielen.
+Die Backups sind gzip-komprimierte Plain-SQL-Dumps. Von Hand
+(\`gunzip -c <datei>.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U praxiszeit -d praxiszeit\`)
+nur in eine Datenbank derselben Version und mit angehaltenem Backend
+(vorher \`docker compose stop backend\`, danach \`docker compose start backend\`) —
+restore.sh nimmt beides ab und kommt auch mit einem Backup einer aelteren Version zurecht.
 
 Volle Anleitung: https://github.com/phash/praxiszeit/blob/master/docs/INSTALL-DOCKER.md
 DOCKEREOF

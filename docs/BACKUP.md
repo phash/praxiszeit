@@ -139,20 +139,32 @@ restore-backup.bat data\backups\<datei>.sql.gz
 
 ### Docker
 
-Mit dem mitgelieferten Script (empfohlen — entpackt + spielt ein), aus dem
-Verzeichnis neben der `docker-compose.yml` ausführen:
+Mit dem mitgelieferten Script (empfohlen), aus dem Verzeichnis neben der
+`docker-compose.yml` ausführen (im git-Checkout: `bash tools/docker/restore.sh …`):
 
 ```bash
 bash restore.sh backups/praxiszeit_<ts>.sql.gz
 ```
 
-Oder von Hand — das `.sql.gz` **direkt** durch `psql` leiten (nicht vorher als
-Datei entpacken). Da die Dumps mit `--clean --if-exists` erzeugt werden, ist der
-Restore idempotent (vorhandene Objekte werden gedroppt und neu angelegt) — ein
-manuelles Leeren der DB ist **nicht** nötig:
+Das Script prüft das Backup auf Vollständigkeit, hält das Backend an, legt die
+Datenbank frisch an, spielt das Backup ein und startet das Backend wieder. Erst
+dieser Start hebt ein Backup einer älteren Version per Migration auf den Stand der
+installierten Version – Migrationen laufen nur beim Start des Backend-Containers,
+und `docker compose up -d backend` startet ein schon laufendes Backend **nicht**
+neu. Das Script meldet sich erst, wenn das Backend wieder gesund ist; danach die
+Ausgabe der Migrationen lesen (`docker compose logs backend`).
+
+Oder von Hand — nur für ein Backup **derselben** Version und mit angehaltenem
+Backend. Die Dumps sind mit `--clean --if-exists` erzeugt: vorhandene Objekte, die
+im Backup vorkommen, werden gedroppt und neu angelegt. Eine Tabelle, die erst eine
+neuere Version angelegt hat, bleibt dagegen stehen und kann das Einspielen eines
+älteren Backups abbrechen – dafür das Script nehmen. Das `.sql.gz` **direkt** durch
+`psql` leiten (nicht vorher als Datei entpacken):
 
 ```bash
+docker compose stop backend
 gunzip -c backup.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U praxiszeit -d praxiszeit
+docker compose start backend
 ```
 
 ---
