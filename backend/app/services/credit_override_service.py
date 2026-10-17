@@ -13,8 +13,10 @@ from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models import TimeEntry, TimeEntryAuditLog
-from app.services import presence_service, work_window_service
+from app.models import TimeEntry, TimeEntryAuditLog, User
+from app.services import (
+    absence_retarget_audit, calculation_service, presence_service, work_window_service,
+)
 
 CREDIT_OVERRIDE_SOURCE = "credit_override"  # 15 Zeichen < varchar(40)
 OPEN_ENTRY_DETAIL = "Ein offener Eintrag kann erst nach dem Ausstempeln anerkannt werden."
@@ -23,6 +25,9 @@ AUTO_CLOSED_DETAIL = (
 )
 _BY_ADMIN = "von der Verwaltung anerkannt"
 _ON_REQUEST = "auf Antrag der beschäftigten Person von der Verwaltung anerkannt"
+# Gesamtreview 1.20 (Fund 1): Auslöser der Einzelzeile, wenn das Anerkennen die
+# Gutschrift einer Abwesenheit am selben Tag neu klemmt (F1, Misch-Tag).
+MIXED_DAY_TRIGGER = "an die anerkannte Arbeitszeit des Tages angeglichen"
 
 
 def start_taken_detail(t: time) -> str:
@@ -69,7 +74,14 @@ def apply_credit_override(
     db: Session, entry: TimeEntry, *, changed_by_id, on_request: bool, change_request_id=None,
 ) -> bool:
     """Spec 13.3 Schritte 2–5. ``False`` = war schon anerkannt (idempotent,
-    kein Protokoll). Wirft 400 (offen, ``auto_closed``) bzw. 409 (Kollision)."""
+    kein Protokoll). Wirft 400 (offen, ``auto_closed``) bzw. 409 (Kollision).
+
+    Gesamtreview 1.20 (Fund 1): steht am Tag eine Abwesenheit (Misch-Tag,
+    gebucht mit ``keep_time_entries``), wird ihre Gutschrift danach auf den
+    nicht gearbeiteten Rest neu geklemmt (F1, Spec 9.6) — sonst zählte das Ist
+    die anerkannte Arbeit UND die beim Buchen gegen das gekappte Netto geklemmte
+    Gutschrift. Eine Einzelzeile je angeglichener Abwesenheit, Quelle
+    ``credit_override`` wie die Zeile des Eintrags."""
     if entry.end_time is None:
         raise HTTPException(status_code=400, detail=OPEN_ENTRY_DETAIL)
     if entry.auto_closed:
@@ -123,6 +135,23 @@ def apply_credit_override(
         new_break_minutes=entry.break_minutes,
         new_note=f"{work_window_service.credit_summary_text(entry)} — {suffix}",
     ))
+    # Fund 1: F1 am Tag neu anwenden — dieselbe Rechnung wie die Rückrechnung
+    # (``calculation_service.reapply_f1_for_day``); ``raw_hours`` bleibt stehen.
+    # Die Ankersperre der Person hält der Aufrufer (P5).
+    owner = db.query(User).filter(
+        User.id == entry.user_id,
+        User.tenant_id == entry.tenant_id,  # F-026
+    ).first()
+    if owner is not None:
+        absence_retarget_audit.add_absence_retarget_rows(
+            db, calculation_service.reapply_f1_for_day(db, owner, entry.date),
+            user_id=entry.user_id,
+            changed_by=changed_by_id,
+            tenant_id=entry.tenant_id,
+            source=CREDIT_OVERRIDE_SOURCE,
+            trigger=MIXED_DAY_TRIGGER,
+            change_request_id=change_request_id,
+        )
     db.flush()
     return True
 

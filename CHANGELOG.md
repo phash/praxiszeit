@@ -31,7 +31,8 @@ dieses Backup verlustfrei (`UPDATE.md`).
   „Anwesenheit nicht angerechnet" im Journal und als neue letzte Spalte „Nicht
   angerechnet (Min)" in Excel, ODS und PDF.
 - **Anerkennen und „Anrechnung beantragen":** Die Verwaltung kann nicht
-  angerechnete Zeit je Eintrag anerkennen (dauerhaft, protokolliert);
+  angerechnete Zeit je Eintrag anerkennen (dauerhaft, protokolliert; steht am
+  selben Tag eine Abwesenheit, wird deren Gutschrift angeglichen);
   Mitarbeitende können die Anrechnung per Änderungsantrag beantragen, die
   Prüfung bietet „Genehmigen und anerkennen" und zeigt die gestempelten Zeiten.
   Im Tab „Anträge" der Zeiterfassung tragen solche Anträge das Kennzeichen

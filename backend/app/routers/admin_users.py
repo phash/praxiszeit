@@ -36,12 +36,9 @@ from app.schemas.working_hours_change import (
 )
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
 from app.services import (
-    auth_service, calculation_service, lifecycle_service, milog_service, reclamp_audit, settings_service,
-    wh_change_service, work_blocks_service, work_window_service,
+    absence_retarget_audit, auth_service, calculation_service, lifecycle_service, milog_service,
+    reclamp_audit, settings_service, wh_change_service, work_blocks_service, work_window_service,
 )
-# Task 15: dieselbe Zahl- und Label-Schreibweise wie die §16-Exporte — das
-# Aenderungsprotokoll darf die Stunden nicht anders schreiben als der Beleg.
-from app.services.export_service import ABSENCE_TYPE_LABELS_DE, format_hours_de
 # #448: gleiche Single Source of Truth wie absences.py/admin_vacations.py/
 # vacation_requests.py/admin_change_requests.py — direkt aus dem Service
 # importiert (kein Router-Zirkelimport).
@@ -136,31 +133,18 @@ def _log_wh_change_retarget(
         tenant_id=tenant_id,
     ))
 
-    # Der Ausloeser im Klartext, identisch auf jeder Einzelzeile.
+    # Der Ausloeser im Klartext, identisch auf jeder Einzelzeile. Das Format der
+    # Einzelzeilen teilt sich dieser Pfad mit dem Anerkennen an einem Misch-Tag
+    # (``absence_retarget_audit``, Gesamtreview 1.20 Fund 1).
     trigger = f"{prefix} ab {effective_from.strftime('%d.%m.%Y')}"
-    for rec in adjusted:
-        # Nur der eingebaute TYP, nie der Name eines eigenen Grundes (#312):
-        # der kann gesundheitsbezogen sein ("Reha"), und den Typ treibt ohnehin
-        # die Berechnung, um die es hier geht.
-        label = ABSENCE_TYPE_LABELS_DE.get(
-            rec.absence_type.value, rec.absence_type.value
-        )
-        db.add(TimeEntryAuditLog(
-            time_entry_id=None,
-            user_id=user.id,
-            changed_by=admin.id,
-            action="update",
-            source="wh_change",
-            # Das Datum der Abwesenheit — auf beiden Seiten gleich (die
-            # Rueckrechnung verschiebt nie den Tag, nur die Stunden), damit die
-            # Zeile in der Vorher/Nachher-Darstellung des Protokolls nicht wie
-            # eine Verschiebung aussieht.
-            old_date=rec.date,
-            new_date=rec.date,
-            old_note=f"{label} {format_hours_de(rec.old_hours)} h",
-            new_note=f"{label} {format_hours_de(rec.new_hours)} h — {trigger}",
-            tenant_id=tenant_id,
-        ))
+    absence_retarget_audit.add_absence_retarget_rows(
+        db, adjusted,
+        user_id=user.id,
+        changed_by=admin.id,
+        tenant_id=tenant_id,
+        source="wh_change",
+        trigger=trigger,
+    )
 
 
 def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_per_week,

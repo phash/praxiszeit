@@ -31,6 +31,7 @@ from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
     get_schedule_for_date, get_daily_target_for_date, get_vacation_account,
     get_daily_target, child_sick_cap, child_sick_days_used, half_special_day_weight,
+    f1_clamp_for_day,
 )
 from app.services import (
     credit_override_service, presence_service, settings_service, special_days_service,
@@ -1078,6 +1079,12 @@ def review_change_request(
                 User.id == cr.user_id, User.tenant_id == cr_tenant_id
             ).first()
             _upd_date = cr.proposed_date or absence.date
+            # Fix #3 / Gesamtreview 1.20 (Fund 1): zieht die Abwesenheit auf einen
+            # anderen Tag oder wechselt sie den Typ, ersetzt sie die Einträge des
+            # Zieltags (unten). Sonst bleiben sie stehen — ein Misch-Tag.
+            _clears_day_entries = (
+                _upd_date != _orig_abs_date or absence.type != _orig_abs_type
+            )
             _upd_is_overtime = absence.type == AbsenceType.OVERTIME
             # #431: Modus aus dem zum DATUM aufgeloesten Snapshot, nicht vom Live-Flag.
             _upd_schedule = (
@@ -1091,6 +1098,16 @@ def review_change_request(
                 # als Ist gutgeschrieben, sodass ein halber Krank-Tag plus halber
                 # Arbeitstag plötzlich 12 statt 8 Ist-Stunden ergibt.
                 absence.hours = round(_upd_target / 2, 2) if absence.half_day else _upd_target
+                # Gesamtreview 1.20 (Fund 1): bleiben die Einträge des Tages
+                # stehen (gleicher Tag, gleicher Typ — z. B. nur Uhrzeit oder
+                # Notiz geändert an einer mit ``keep_time_entries`` gebuchten
+                # Abwesenheit), gilt F1 wie beim Buchen: nur der nicht gearbeitete
+                # Rest. Bis hierher fiel die Gutschrift auf das volle Tagessoll
+                # zurück — Arbeit UND volle Gutschrift im Ist (Phantom-Saldo).
+                if not _clears_day_entries:
+                    absence.hours = f1_clamp_for_day(
+                        db, _upd_user, _upd_date, float(absence.hours), _upd_target,
+                    )
                 # Task 15: eine genehmigte Änderung ist eine NEUBUCHUNG durch
                 # einen Menschen — hier IST der neue Wert der gebuchte, also
                 # wandert er auch in den Rohwert. Nur die gerechnete
@@ -1114,8 +1131,10 @@ def review_change_request(
             # Fix #3: when the absence moved to a new day or changed type, clear
             # the (new) target day's time entries so absence + entry don't
             # double-count (mirror create_absence). A pure time-only edit on the
-            # same day/type leaves entries alone (they were cleared at creation).
-            if absence.date != _orig_abs_date or absence.type != _orig_abs_type:
+            # same day/type leaves entries alone — at creation they were either
+            # cleared or kept on purpose (``keep_time_entries``, Misch-Tag: the
+            # F1 clamp above then keeps the credit at the unworked rest).
+            if _clears_day_entries:
                 _delete_day_time_entries(
                     db, cr.user_id, cr_tenant_id, absence.date, current_user.id, cr.id,
                 )

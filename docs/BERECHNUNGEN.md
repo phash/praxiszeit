@@ -243,7 +243,10 @@ letzten Exportspalte „Nicht angerechnet (Min)".
 
 **Anerkennen** (`credit_override = true`, `POST /admin/time-entries/{id}/credit-override`): Der
 Eintrag bekommt seine Rohstempel als wirksame Zeiten, `uncredited_minutes` = 0, und wird von keiner
-späteren Kappung mehr erfasst.
+späteren Kappung mehr erfasst. Steht am Tag eine Abwesenheit (Misch-Tag), klemmt
+`calculation_service.reapply_f1_for_day` deren `hours` danach neu auf den nicht gearbeiteten Rest
+(F1, TZ-E, „Misch-Tage") — die Rückrechnung für genau diesen Tag, `raw_hours` bleibt stehen; je
+angeglichener Abwesenheit eine Protokollzeile unter der Quelle `credit_override`.
 
 **ArbZG:** §3 und §4 rechnen hart auf der angerechneten Zeit; ein Lückensegment ≥ 15 Min zählt für
 §4 als Pausenabschnitt (`validate_daily_break(…, uncredited_segments=…)`). Zusätzlich weiche
@@ -1340,6 +1343,17 @@ Wochenstunden-Änderungen; Zeilen, die vor 1.18.0 ungeklemmt gebucht wurden, wer
 angeglichen (Tagessoll 8 h, Krank + 4 h Arbeit, gebucht mit 8 h → 4 h).
 Senkt das eine Gutschrift (SICK/TRAINING) stärker als das Tagessoll des Tages, ist die Änderung
 eine Verkürzung (TZ-G, Kriterium c); sinkt sie nur mit dem Soll, bleibt der Tag saldo-neutral.
+
+Dieselbe Klemmung gilt an den beiden Einzel-Schreibpfaden, die eine Seite eines Misch-Tags
+ändern: **Anerkennen** hebt das Netto auf die gestempelte Zeit (`reapply_f1_for_day`, die
+Rückrechnung für genau diesen Tag), und die Genehmigung eines **Abwesenheits-Antrags UPDATE**, der
+Tag und Typ behält, bucht wie die Direktbuchung nur den Rest (`f1_clamp_for_day`; die Einträge
+des Tages bleiben dort stehen; solche Anträge entstehen nur über die API — die Oberfläche stellt
+Abwesenheits-Anträge nur zum Anlegen). Vorher blieb beim Anerkennen die gegen das gekappte Netto
+geklemmte Gutschrift stehen (Tagessoll 8 h, Krank ab 10:30 nach 06:30–10:30, gekappt 2,75 h →
+Gutschrift 5,25 h; nach dem Anerkennen 4 h Arbeit + 5,25 h = +1,25 h, in umgekehrter Reihenfolge
+±0), und die Antrags-Genehmigung setzte das volle Tagessoll — die nächste Arbeitszeit-Änderung
+über den Tag hätte das als Verkürzung (c) zurückgenommen, im abgeschlossenen Jahr gesperrt.
 
 **Die Abwesenheits-TAGE ändern sich durch die Rückrechnung nie** —
 Urlaub (und jede tagebasierte Zählung) hängt an `absence_days`/`get_vacation_account`,

@@ -524,7 +524,9 @@ def f1_clamp_hours(hours: float, full_target: float, kept_net: float, w: float) 
     """Spec 9.6 / F1 (1.18.0): DIE eine Klemmregel für Abwesenheits-``hours`` an
     einem Tag, an dem GESCHLOSSENE Zeiteinträge stehen bleiben (Misch-Tag) —
     ``absences.create_absence`` (Direktbuchung mit ``keep_time_entries``) und
-    :func:`retarget_absence_hours` rufen beide hier hinein. Nicht nachbauen.
+    :func:`retarget_absence_hours` rufen beide hier hinein, ebenso
+    :func:`f1_clamp_for_day` (Abwesenheits-Antrag UPDATE) und über die
+    Rückrechnung :func:`reapply_f1_for_day` (Anerkennen). Nicht nachbauen.
 
     Gerechnet wird in GUTSCHRIFTS-Einheiten: die Gutschrift ist ``hours × w``
     (:func:`credit_day_weight` — Halbtags-Sondertag 0,5, frei/Feiertag 0, sonst
@@ -785,6 +787,64 @@ def absence_full_targets(db: Session, user: User, start: date, end: date) -> Dic
         d: get_daily_target_for_date(user, d, get_schedule_for_date(db, user, d, wh_changes))
         for d in dates
     }
+
+
+def reapply_f1_for_day(db: Session, user: User, d: date) -> List[AbsenceRetarget]:
+    """Gesamtreview 1.20 (Fund 1): die F1-Klemmung (Spec 9.6) an EINEM Tag neu
+    anwenden, nachdem ein Einzel-Schreibpfad die ARBEITS-Seite eines Misch-Tags
+    geändert hat — „Anerkennen" (``credit_override_service.apply_credit_override``,
+    Admin-Aktion und „Genehmigen und anerkennen") hebt das Netto auf die volle
+    gestempelte Zeit. Ohne Neuklemmung stünde die beim Buchen geklemmte
+    Gutschrift daneben weiter (Phantom-Saldo, reihenfolgeabhängig: erst
+    anerkennen und dann buchen ergab das Richtige), und die nächste
+    Arbeitszeit-Änderung über den Tag meldete das Zurückklemmen als Verkürzung
+    9.5 (c) — im abgeschlossenen Jahr gesperrt.
+
+    Bewusst KEINE eigene Rechnung: :func:`retarget_absence_hours` mit dem
+    Fenster ``[d, d]`` und dem heute gültigen vollen Tagessoll als „vorher" —
+    genau das, was die nächste Rückrechnung ohnehin täte. Damit bleibt sie der
+    einzige ``hours``-Schreiber, der ``raw_hours`` stehen lässt (der gebuchte
+    Wert bleibt die Rückversicherung), und es gibt keine dritte Fassung der
+    Klemmregel. Den Rückgabewert protokolliert der Aufrufer.
+    """
+    return retarget_absence_hours(
+        db, user, d, d, old_full_target_by_date=absence_full_targets(db, user, d, d),
+    )
+
+
+def f1_clamp_for_day(db: Session, user: User, d: date, hours: float, full_target: float) -> float:
+    """Gesamtreview 1.20 (Fund 1): F1 (Spec 9.6) für EINE neu gebuchte
+    Abwesenheit an ``d`` gegen die dort stehenbleibenden GESCHLOSSENEN
+    Zeiteinträge — für einen menschlichen Schreiber, der ``hours`` (und mit ihm
+    ``raw_hours``) selbst setzt: die Genehmigung eines Abwesenheits-Antrags
+    UPDATE, der Tag und Typ behält (sonst ersetzt die Abwesenheit die Einträge
+    des Tages, ``admin_change_requests._delete_day_time_entries``). Dieselbe
+    Regel wie ``absences.create_absence`` beim Buchen mit
+    ``keep_time_entries`` (:func:`f1_clamp_hours`, Gutschrifts-Einheiten über
+    :func:`credit_day_weight`); ``full_target`` ist das UNGEWICHTETE Tagessoll.
+    Ohne Arbeit am Tag bleibt ``hours`` unverändert."""
+    kept_net = sum(
+        float(e.net_hours) for e in db.query(TimeEntry).filter(
+            TimeEntry.user_id == user.id,
+            TimeEntry.tenant_id == user.tenant_id,  # F-026
+            TimeEntry.date == d,
+            TimeEntry.end_time.isnot(None),
+        ).all()
+    )
+    if kept_net <= 0:
+        return hours
+    holidays = {
+        h.date for h in db.query(PublicHoliday).filter(
+            PublicHoliday.tenant_id == user.tenant_id,  # F-026
+            PublicHoliday.date == d,
+        ).all()
+    }
+    special_cfg = (
+        special_days_service.get_special_day_config(db, user.tenant_id, d.year)
+        if (d.month, d.day) in ((12, 24), (12, 31)) else None
+    )
+    w = float(credit_day_weight(d, holidays, special_cfg))
+    return f1_clamp_hours(hours, full_target, kept_net, w)
 
 
 def get_daily_target(user: User, weekly_hours: Decimal = None) -> Decimal:
