@@ -16,6 +16,7 @@ from app.schemas.time_entry import (
     TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse,
     ClockInRequest, ClockOutRequest, ClockStatusResponse, DayBlocksResponse,
 )
+from app.schemas.time_entry import assert_date_change_not_future
 from app.services.holiday_service import is_holiday
 from app.services.break_validation_service import validate_daily_break, break_waiver_rejection
 from app.services.arbzg_utils import is_night_work
@@ -1262,6 +1263,10 @@ def update_time_entry(
         # wird wie ein unbekannter behandelt (kein Existenz-Leak über Statuscode
         # oder Antworttext — ENTRY_NOT_FOUND, Review N3 2026-10-10).
         raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
+
+    # #502 / Ultrareview 1.20 (Fund 2): kein Datumswechsel in die Zukunft (422,
+    # wie zuvor das Schema) — das unverändert mitgeschickte Datum bleibt erlaubt.
+    assert_date_change_not_future(entry_data, entry.date)
 
     # Edit protection: employees can only edit today's entries
     if current_user.role != UserRole.ADMIN and entry.date != _today_local():

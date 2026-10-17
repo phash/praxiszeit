@@ -89,16 +89,14 @@ class TimeEntryUpdate(BaseModel):
             )
         return v
 
-    # #502: dieselbe Grenze wie beim Anlegen (``TimeEntryBase.validate_not_future``).
-    # Ohne sie liess sich ein Eintrag per PUT in die Zukunft verschieben — fuer
-    # §16 eine erfundene Zeit. Gilt fuer beide Routen, die dieses Schema nutzen
-    # (MA-Route und ``admin_update_time_entry``).
-    @field_validator('date')
-    @classmethod
-    def validate_not_future(cls, v):
-        if v is not None and v > today_local():
-            raise ValueError('Datum darf nicht in der Zukunft liegen')
-        return v
+    # #502: dieselbe Grenze wie beim Anlegen (``TimeEntryBase.validate_not_future``)
+    # — seit Ultrareview 1.20 (Fund 2) aber NICHT mehr hier im Schema, sondern in
+    # beiden Bearbeiten-Routen (``time_entries.update_time_entry``,
+    # ``admin_time_entries.admin_update_time_entry``) über
+    # ``assert_date_change_not_future``: das Schema sieht das gespeicherte Datum
+    # nicht und lehnte auch das unverändert mitgeschickte ab (die Formulare
+    # schicken es immer mit) — ein künftig datierter Eintrag war dann nicht mehr
+    # korrigierbar.
 
     @field_validator('end_time')
     @classmethod
@@ -113,6 +111,23 @@ class TimeEntryUpdate(BaseModel):
     @classmethod
     def _sunday_reason(cls, v):
         return _normalize_sunday_reason(v)
+
+
+FUTURE_DATE_DETAIL = 'Datum darf nicht in der Zukunft liegen'
+
+
+def assert_date_change_not_future(entry_data: "TimeEntryUpdate", stored_date) -> None:
+    """#502 / Ultrareview 1.20 (Fund 2): ein Datums**wechsel** in die Zukunft
+    → 422 (für §16 eine erfundene Zeit). Das unverändert mitgeschickte Datum
+    eines bereits künftig datierten Eintrags (z. B. aus einem Import vor dieser
+    Prüfung) bleibt bearbeitbar."""
+    from fastapi import HTTPException
+
+    if ("date" in entry_data.model_fields_set
+            and entry_data.date is not None
+            and entry_data.date != stored_date
+            and entry_data.date > today_local()):
+        raise HTTPException(status_code=422, detail=FUTURE_DATE_DETAIL)
 
 
 class TimeEntryResponse(BaseModel):

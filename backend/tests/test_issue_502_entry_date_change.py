@@ -10,9 +10,10 @@ Mitarbeitende nur per Antrag; Anlegen und Löschen setzten das bereits durch.
 
 Zusätzlich: ein Datumswechsel prüft das Beschäftigungsfenster der Person des
 Eintrags (wie ``create_time_entry``) — auf beiden Bearbeiten-Routen, und das
-Admin-Anlegen (``admin_create_time_entry``) ebenso —, und
-``TimeEntryUpdate.date`` lehnt ein Datum in der Zukunft ab (wie
-``TimeEntryBase``)."""
+Admin-Anlegen (``admin_create_time_entry``) ebenso —, und ein Datumswechsel
+in die Zukunft scheitert mit 422 (wie ``TimeEntryBase``; seit Ultrareview 1.20
+in beiden Routen statt im Schema, damit das unverändert mitgeschickte Datum
+eines künftig datierten Eintrags bearbeitbar bleibt)."""
 import datetime as dt
 from datetime import date, time, timedelta
 

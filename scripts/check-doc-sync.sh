@@ -326,6 +326,8 @@ group_code() {
   need_code 'f"{break_shortfall_skip_reason(missing)}."'
   need_code ': übersprungen — {outside}."'
   need_code "return f\"Datum liegt nach dem letzten Arbeitstag ({last.strftime('%d.%m.%Y')})\""
+  # Ultrareview 1.20 (Fund 2): XLS-Zeilen mit Datum in der Zukunft.
+  need_code 'return "Datum liegt in der Zukunft"'
   need_code 'gestempelt ${rawEnd} · angerechnet bis ${effEnd}'
   need_code 'nach ${hm(breakMinutes)} h Pause'
   need_code "Die gesamte gestempelte Zeit soll angerechnet werden. Bitte begründen Sie, warum Sie in dieser Zeit gearbeitet haben."
@@ -508,6 +510,7 @@ group_admin_rest() {
   # Gesamtreview 1.20: XLS-Zeilen außerhalb des Beschäftigungsfensters.
   need "$f" 'Wird übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'
   need "$f" '29.09.2026: übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'
+  need "$f" 'Wird übersprungen — Datum liegt in der Zukunft.'
   # Gesamtreview 1.20: die Ergebnisliste heißt wie die Vorschau (#462) „Hinweise"
   # — sie trägt auch die Gründe übersprungener Zeilen, keine ArbZG-Warnungen allein.
   need "$f" 'das Ergebnis unter den Hinweisen (*„29.09.2026: übersprungen'

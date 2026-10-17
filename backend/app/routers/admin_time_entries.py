@@ -8,7 +8,9 @@ from typing import List, Optional
 from app.database import get_db
 from app.models import User, TimeEntry, TimeEntryAuditLog
 from app.middleware.auth import require_admin
-from app.schemas.time_entry import TimeEntryCreate, TimeEntryResponse, TimeEntryUpdate
+from app.schemas.time_entry import (
+    TimeEntryCreate, TimeEntryResponse, TimeEntryUpdate, assert_date_change_not_future,
+)
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.routers.admin_helpers import _create_audit_log, _enrich_audit_response, _enrich_audit_responses, lock_user_row
 from app.services.break_validation_service import validate_daily_break, break_waiver_rejection
@@ -282,6 +284,8 @@ def admin_update_time_entry(
     # über die AdminDashboard und Monatsjournal fremde Einträge tatsächlich
     # bearbeiten. Das unverändert mitgeschickte Datum wird nicht geprüft
     # (Alteintrag außerhalb eines später gesetzten Fensters bleibt korrigierbar).
+    # Ultrareview 1.20 (Fund 2): Zukunftsprüfung ebenso nur beim Datumswechsel.
+    assert_date_change_not_future(entry_data, entry.date)
     if (entry_data.date is not None
             and "date" in entry_data.model_fields_set
             and entry_data.date != entry.date):

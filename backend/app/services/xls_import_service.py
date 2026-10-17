@@ -15,6 +15,7 @@ from app.models import TimeEntry, TimeEntryAuditLog, User
 from app.schemas.validators import MinuteTime
 from app.services.arbzg_utils import is_night_work
 from app.services import presence_service, work_window_service
+from app.services.timezone_service import today_local
 from app.services.break_validation_service import (
     BreakBlock, break_block_for_entry, break_block_for_new, daily_break_figures,
 )
@@ -48,6 +49,22 @@ def employment_window_skip_reason(user, d: date) -> Optional[str]:
     if last and d > last:
         return f"Datum liegt nach dem letzten Arbeitstag ({last.strftime('%d.%m.%Y')})"
     return None
+
+
+def import_skip_reason(user, d: date) -> Optional[str]:
+    """Grund, warum der Import eine Zeile mit Datum ``d`` überspringt — sonst None.
+
+    Ultrareview 1.20 (Fund 2): ein Datum nach heute lehnen alle anderen
+    Schreibwege ab (``TimeEntryBase.validate_not_future``, Datumswechsel beim
+    Bearbeiten); ``/confirm`` legte solche Zeilen still an. Danach das
+    Beschäftigungsfenster (``employment_window_skip_reason``). Dieselbe
+    Behandlung: sichtbar überspringen, vor der Eintragssuche (ersetzt keinen
+    Bestand), zählt für keinen Tag."""
+    if d > today_local():
+        return "Datum liegt in der Zukunft"
+    if user is None:
+        return None
+    return employment_window_skip_reason(user, d)
 
 
 class ImportedEntryIn(BaseModel):
@@ -753,9 +770,10 @@ def _read_rows(ws, db: Session, user, user_id, user_tenant, grace: int) -> list:
         r = work_window_service.clamp(
             db, user, entry_date, file_start, file_end, grace, credit_override=False,
         )
-        # Außerhalb des Beschäftigungsfensters überspringt ``/confirm`` die Zeile,
+        # Außerhalb des Beschäftigungsfensters oder in der Zukunft (Ultrareview
+        # 1.20, Fund 2) überspringt ``/confirm`` die Zeile,
         # bevor sie einen Eintrag sucht — sie ersetzt also auch keinen.
-        outside = employment_window_skip_reason(user, entry_date)
+        outside = import_skip_reason(user, entry_date)
         existing = None if outside is not None else _find_existing_entry(
             db, user_id, user_tenant, entry_date, starts=(r.eff_start,), raw_start=file_start,
         )
@@ -970,10 +988,8 @@ def _execute_import_inner(
             # — vor der Eintragssuche, die Zeile ersetzt also auch mit
             # „überschreiben" keinen Bestand. Server-seitig, /confirm nimmt die
             # Zeilen vom Client; der Hinweis der Vorschau wird nicht übernommen.
-            outside = (
-                employment_window_skip_reason(target_user, entry.date)
-                if target_user is not None else None
-            )
+            # Ultrareview 1.20 (Fund 2): ebenso ein Datum in der Zukunft.
+            outside = import_skip_reason(target_user, entry.date)
             if outside is not None:
                 skipped += 1
                 all_warnings.append(
