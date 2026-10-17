@@ -676,8 +676,12 @@ reine Tageszählung (§12.1) gilt allein bei `track_hours = false`
 `absence_days` und den Änderungsantrag). Bis Gesamtreview 1.20 (B11) entschied das **heutige**
 Tagessoll: wer heute auf 0 h stand, dem zählte jede Urlaubszeile als ganzer Tag.
 Die Stundenfelder des Kontos (Budget/genommen/Rest in Stunden, u. a. in den Datei-Exporten)
-bleiben in diesem Fall bei 0: Tage lassen sich mit einem heutigen Tagessoll von 0 nicht in
-Stunden umrechnen, ein Rest von „−8,00 h“ neben offenen Tagen wäre ein Widerspruch im Beleg.
+rechnen mit dem Tagessoll des Vertrags im **berechneten Jahr** (Wochenstunden ÷ Arbeitstage am
+Stichtag: heute im laufenden Jahr, 31.12. eines vergangenen, 01.01. eines künftigen Jahres,
+jeweils ins Beschäftigungsfenster geklemmt). Ist dieses Tagessoll 0, bleiben sie bei 0: Tage
+lassen sich dann nicht in Stunden umrechnen, ein Rest von „−8,00 h“ neben offenen Tagen wäre ein
+Widerspruch im Beleg. Das Konto eines Vorjahres zeigt so nach einem Wechsel in die Elternzeit
+weiter die Stunden des damaligen Vertrags.
 
 ### 8.3 Rest
 

@@ -554,3 +554,29 @@ class TestUncoveredPastIsFrozenOnDelete:
         resp = _delete(client, test_user, only.id, RETRO_REASON)
         assert resp.status_code in (200, 204), resp.text
         assert _rows(db, test_user) == []
+
+
+def test_reset_body_round_trips_for_legacy_daily_plan_with_inconsistent_weekly_hours(client, db, test_user):
+    """Ultrareview 2026-10-17: Tagesplan aus der Zeit vor #431, dessen
+    ``weekly_hours`` nicht der Summe der Tageswerte entspricht (früher per
+    ``PUT /admin/users`` frei editierbar). Die Basis-Zeile übernimmt den
+    Widerspruch; ``reset_body`` schickt nur die Tageswerte, das Schema setzt
+    ``weekly_hours`` = Σ Tage — der Vergleich mit dem gespeicherten Wert schlug
+    deshalb immer fehl (409, Rücksetzung unmöglich)."""
+    test_user.use_daily_schedule = True
+    for day in ("monday", "tuesday", "wednesday", "thursday", "friday"):
+        setattr(test_user, f"hours_{day}", 8.0)
+    test_user.weekly_hours = 38.0  # Altbestand: ≠ Σ 40
+    db.commit()
+    change = _create(client, test_user, {
+        "effective_from": "2026-09-01", "use_daily_schedule": True, "work_days_per_week": 5,
+        "hours_monday": 4.0, "hours_tuesday": 4.0, "hours_wednesday": 4.0,
+        "hours_thursday": 4.0, "hours_friday": 4.0, **RETRO_REASON})
+    body = _delete_preview(client, test_user, change["id"])
+    assert body["is_shortening"] is True
+    assert body["reset_body"] is not None
+    preview = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes/preview",
+                          json=body["reset_body"])
+    assert preview.status_code == 200, preview.text
+    assert preview.json().get("blocked_reason") != RESET_CONFLICT
+    _create(client, test_user, body["reset_body"])

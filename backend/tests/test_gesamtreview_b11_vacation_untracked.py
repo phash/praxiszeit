@@ -143,3 +143,43 @@ def test_parental_leave_monthly_xlsx_no_negative_vacation_hours(db, default_tena
     }
     assert values["Urlaub Rest (Std):"] == 0.0, values
     assert values["Urlaub genommen (Std):"] == 0.0, values
+
+
+# --------------------------------------------------------------------------
+# Ultrareview 2026-10-17: Stundenfelder des Urlaubskontos am Vertrag des
+# berechneten JAHRES, nicht am heutigen Live-Tagessoll der User-Zeile
+# --------------------------------------------------------------------------
+
+def _contract_switch_user(db, *, before, after, username):
+    """``before`` Wochenstunden 2025, ``after`` ab 01.01.2026; die User-Zeile
+    spiegelt den heute gültigen Wert ``after``."""
+    u = _user(db, weekly_hours=after, username=username)
+    db.add(WorkingHoursChange(user_id=u.id, tenant_id=DEFAULT_TENANT_ID,
+                              weekly_hours=before, effective_from=date(2025, 1, 1)))
+    db.add(WorkingHoursChange(user_id=u.id, tenant_id=DEFAULT_TENANT_ID,
+                              weekly_hours=after, effective_from=date(2026, 1, 1)))
+    db.commit()
+    return u
+
+
+def test_past_year_hours_use_that_years_contract(db, default_tenant):
+    """2025 mit 20 h/Woche, heute Elternzeit (0 h): das Konto 2025 (Datei-Export
+    des Vorjahres) nennt die Stunden des damaligen Vertrags — nicht 0."""
+    u = _contract_switch_user(db, before=20.0, after=0.0, username="b11_past")
+    _vac(db, u, date(2025, 3, 3), 4.0)
+    acc = calculation_service.get_vacation_account(db, u, 2025)
+    assert acc["budget_hours"] == 120.0, acc
+    assert acc["used_hours"] == 4.0, acc
+    assert acc["remaining_hours"] == 116.0, acc
+    assert acc["used_days"] == 1.0, acc
+
+
+def test_past_year_without_target_shows_no_hours(db, default_tenant):
+    """Umgekehrt: 2025 mit 0 h, heute 20 h — das Konto 2025 rechnet die Tage
+    nicht mit dem heutigen Tagessoll in Stunden um."""
+    u = _contract_switch_user(db, before=0.0, after=20.0, username="b11_rev")
+    acc = calculation_service.get_vacation_account(db, u, 2025)
+    assert acc["budget_hours"] == 0.0, acc
+    assert acc["used_hours"] == 0.0, acc
+    assert acc["remaining_hours"] == 0.0, acc
+    assert acc["budget_days"] == 30.0, acc

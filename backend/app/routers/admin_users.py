@@ -1636,11 +1636,17 @@ def _reset_matches(change_data: WorkingHoursChangeCreate, norm, reset_schedule) 
     target = (None if reset_schedule.blocks is None
               else work_blocks_service.ParsedWeek(reset_schedule.blocks, reset_schedule.block_pauses))
     expected = None if work_blocks_service.is_legacy_week(target) else target
+    # Im Tagesplan setzt das Schema ``weekly_hours`` = Σ Tageswerte; ein
+    # Altbestand von vor #431 kann einen abweichenden Wert gespeichert haben.
+    # Derselbe Abgleich auf der Vorgängerseite, sonst bestünde der eigene
+    # ``reset_body`` die Prüfung nie (Ultrareview 2026-10-17).
+    expected_weekly = (round(sum(float(d or 0) for d in reset_schedule.day_hours), 2)
+                       if reset_schedule.use_daily_schedule else reset_schedule.weekly_hours)
     return _comparable_snapshot(
         norm.weekly_hours, norm.use_daily_schedule, norm.day_hours, norm.work_days_per_week,
         body.blocks if body else None, body.pauses if body else None,
     ) == _comparable_snapshot(
-        reset_schedule.weekly_hours, reset_schedule.use_daily_schedule, reset_schedule.day_hours,
+        expected_weekly, reset_schedule.use_daily_schedule, reset_schedule.day_hours,
         reset_schedule.work_days_per_week,
         expected.blocks if expected else None, expected.pauses if expected else None,
     )

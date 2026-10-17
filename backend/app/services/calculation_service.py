@@ -2832,6 +2832,36 @@ def has_year_end_vacation_warning(remaining_days, year: int, today: date) -> boo
     )
 
 
+def _vacation_reference_daily_target(
+    db: Session, user: User, year: int,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Decimal:
+    """Tagessoll, mit dem ``get_vacation_account`` die Urlaubstage eines Jahres
+    in Stunden umrechnet: Wochenstunden ÷ Arbeitstage des Vertrags-Snapshots am
+    Stichtag des Jahres — heute im laufenden Jahr (byte-identisch zum bisherigen
+    Live-Wert, die User-Zeile spiegelt den heutigen Snapshot), 31.12. in einem
+    vergangenen, 01.01. in einem künftigen Jahr, jeweils ins
+    Beschäftigungsfenster geklemmt."""
+    if not user.track_hours:
+        return Decimal('0')
+    today = today_local()
+    if year == today.year:
+        ref = today
+    elif year < today.year:
+        ref = date(year, 12, 31)
+    else:
+        ref = date(year, 1, 1)
+    if user.last_work_day and user.last_work_day.year == year and user.last_work_day < ref:
+        ref = user.last_work_day
+    if user.first_work_day and user.first_work_day.year == year and user.first_work_day > ref:
+        ref = user.first_work_day
+    schedule = get_schedule_for_date(db, user, ref, wh_changes=wh_changes)
+    work_days = Decimal(str(schedule.work_days_per_week or 0))
+    if work_days == 0:
+        return Decimal('0')
+    return (Decimal(str(schedule.weekly_hours)) / work_days).quantize(Decimal('0.01'))
+
+
 def get_vacation_account(
     db: Session,
     user: User,
@@ -2875,7 +2905,12 @@ def get_vacation_account(
     # stay 0); the day-based budget below is shared with tracked users.
     # (Replaces the old F-046 "not applicable" zero shape, which made the
     # tagebasierte Budget-Check ins Leere laufen — Über-Buchung war möglich.)
-    daily_target = get_daily_target(user)
+    # Stundenfelder (informativ, Tage maßgeblich) rechnen mit dem Tagessoll des
+    # Vertrags im berechneten JAHR, nicht mit dem heutigen Live-Wert der
+    # User-Zeile (Ultrareview 2026-10-17): sonst zeigte das Konto eines
+    # Vorjahres nach einem Wechsel in Elternzeit 0 h bzw. umgekehrt Stunden
+    # für ein Jahr ohne Soll.
+    daily_target = _vacation_reference_daily_target(db, user, year, wh_changes)
 
     # Calculate budget in hours, pro-rated for first/last work day
     budget_days = Decimal(str(user.vacation_days))
@@ -3070,7 +3105,7 @@ def get_vacation_account(
     remaining_days = budget_days - used_days
     remaining_hours = budget_hours - used_hours
     if daily_target <= 0:
-        # Review-Fund zu B11: mit Stundenzählung, aber heute 0 h Tagessoll
+        # Review-Fund zu B11: mit Stundenzählung, aber im Jahr 0 h Tagessoll
         # (Elternzeit) lassen sich die Tage nicht in Stunden umrechnen
         # (budget_hours = Tage × 0). Gebuchte Stunden davon abzuziehen ergäbe
         # „Urlaub Rest (Std): −8,00" neben offenen Tagen in den Datei-Exporten
