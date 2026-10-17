@@ -171,7 +171,13 @@ dieses Backup verlustfrei (`UPDATE.md`).
   (z. B. 18:00–20:00 bei einem Block 08:00–12:00) übernimmt der Import wie jeden
   gestempelten Eintrag mit 0 Stunden angerechnet und den Zeiten der Datei als
   Rohstempel; bisher übersprang er sie mit „Endzeit (18:00) liegt nicht nach
-  Startzeit (18:00)".
+  Startzeit (18:00)". Können die Zeilen eines Tages die Pflichtpause nicht
+  tragen (z. B. eine kurze Zeile neben einem langen vorhandenen Eintrag),
+  übernimmt der Import diesen Tag nicht mehr – unabhängig vom Schalter für die
+  Pausen-Ausnahme, der Import kennt keine Begründung; Vorschau und Ergebnis
+  nennen den Grund („… die Pause nach § 4 ArbZG lässt sich mit den Zeilen
+  dieses Tages nicht abziehen (es fehlen 10 Min). Bitte den Tag von Hand
+  erfassen."). Bisher legte er den Tag mit fehlender Pause an.
 - **ODS-Jahresbericht:** Das Mitarbeiterblatt nennt wie die Excel-Datei die
   Summe der Nachtarbeitstage (sie wurde gezählt, aber nie ausgegeben).
 - **Nachtarbeit:** Ein Eintrag ganz außerhalb der Arbeitszeit-Blöcke (0 h

@@ -124,8 +124,9 @@ def _day_break_minutes(
     nächstlängeren dazu, so wenige wie möglich; jedes Stück ist mindestens
     15 Min lang (§4 Satz 2 — ein Rest unter 15 wird so auf 15 aufgerundet), eine
     Zeile unter 15 Min trägt keins. Was die Zeilen der Datei nicht tragen
-    können (kurze Zeile neben langem Bestand), bucht der Import nicht — die
-    Tagesprüfung der Vorschau meldet dann §4.
+    können (kurze Zeile neben langem Bestand), bucht der Import nicht — bleibt
+    so ein Fehlbetrag (``_day_break_shortfall``), übernimmt der Import den
+    ganzen Tag nicht (Gesamtreview 1.20 B11).
 
     Gesamtreview 1.20 (B4): bis hierher je ZEILE gerechnet — ein geteilter
     Dienst aus zwei Zeilen unter 6 h bekam gar keine Pause, zwei Zeilen über 6 h
@@ -164,6 +165,38 @@ def _calc_break_minutes(eff_start: time, eff_end: time, segments: Sequence[int])
     """Auto-Pause einer einzelnen Zeile ohne weitere Einträge am Tag — der
     Sonderfall von ``_day_break_minutes`` (eine Regel, kein Nachbau)."""
     return _day_break_minutes([(eff_start, eff_end, segments)])[0]
+
+
+def _day_break_shortfall(
+    rows: Sequence[tuple[time, time, Sequence[int], int]],
+    kept: Sequence[BreakBlock] = (),
+) -> int:
+    """§4-Fehlbetrag des Tages in Minuten NACH der Automatik-Pause — 0, wenn die
+    Pausenpflicht gedeckt ist.
+
+    ``rows`` = ``(eff_start, eff_end, segments, break_minutes)`` je Importzeile
+    mit der Pause aus ``_day_break_minutes``, ``kept`` wie dort. Dieselbe Regel
+    wie die §4-Tagesprüfung der Vorschau (``_check_arbzg``) und
+    ``validate_daily_break`` (``daily_break_figures``): die eingetragene Pause
+    senkt die angerechnete Zeit und damit ggf. den Bedarf."""
+    blocks = list(kept) + [break_block_for_new(s, e, b, segs) for s, e, segs, b in rows]
+    credited, covered = daily_break_figures(blocks)
+    required = 45 if credited > 9 * 60 else 30 if credited > 6 * 60 else 0
+    return max(0, required - covered)
+
+
+def break_shortfall_skip_reason(missing_minutes: int) -> str:
+    """Grund, warum der Import einen Tag nicht übernimmt (Gesamtreview 1.20 B11,
+    Produktentscheidung 2026-10-17): nach der Automatik-Pause fehlt noch Pause
+    nach §4 ArbZG — die Zeilen der Datei können sie nicht tragen (z. B. eine
+    kurze Zeile neben einem langen vorhandenen Eintrag). Der Import kennt keine
+    Begründung, kann also keine §4-Ausnahme belegen — unabhängig vom Schalter
+    ``break_exception_allowed``. Ohne Schlusspunkt, wie
+    ``employment_window_skip_reason``."""
+    return (
+        f"die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht "
+        f"abziehen (es fehlen {missing_minutes} Min). Bitte den Tag von Hand erfassen"
+    )
 
 
 NIGHT_WORKER_MAX_NET_HOURS = 8.0  # §6 Abs. 2 ArbZG: Nachtarbeitnehmer
@@ -343,13 +376,19 @@ def _row_counts(row) -> bool:
     überspringt ``/confirm`` — sie zählen weder für Pause, §3/§4 und
     Anwesenheit noch für §5 (Gesamtreview 1.20 B4), und sie ersetzen keinen
     Bestandseintrag (``replaced_ids``, Review-Nachzug B4). Dasselbe gilt für
-    Zeilen außerhalb des Beschäftigungsfensters (``row.outside``).
+    Zeilen außerhalb des Beschäftigungsfensters (``row.outside``) und für die
+    Zeilen eines Tages, dessen §4-Pause sie nicht tragen (``row.day_skip``,
+    Gesamtreview 1.20 B11).
 
     Gesamtreview 1.20 (B11): maßgeblich ist die Reihenfolge der DATEI-Zeile
     (Rohstempel), nicht die gekappte Zeit — eine Zeile ganz außerhalb der Hülle
     kollabiert auf Beginn = Ende (0 h) und zählt trotzdem, wie an jedem anderen
     Schreibweg (``work_window_service._clamp_core``)."""
-    return getattr(row, "outside", None) is None and row.file_end > row.file_start
+    return (
+        getattr(row, "outside", None) is None
+        and getattr(row, "day_skip", None) is None
+        and row.file_end > row.file_start
+    )
 
 
 def _rest_reference(db: Session, user_id, tenant_id, rows: list, kept_by_date: dict,
@@ -489,33 +528,52 @@ def parse_xls(
     # (``_row_counts``): eine Zeile mit Ende ≤ Beginn überspringt /confirm, bevor
     # sie einen Eintrag sucht — der getroffene Bestand bleibt stehen, auch mit
     # „überschreiben" (Review-Nachzug B4).
-    replaced_ids = {
-        row.existing.id for row in rows if row.existing is not None and _row_counts(row)
-    }
+    # Gesamtreview 1.20 (B11): kann ein Tag die §4-Pause mit den Zeilen der
+    # Datei nicht tragen (Rest nach der Automatik-Pause), übernimmt /confirm ihn
+    # nicht — seine Zeilen zählen danach nicht mehr (``_row_counts``), ersetzen
+    # also auch keinen Bestand. Deshalb ein zweiter Durchgang mit derselben
+    # Rechnung, sobald ein Tag herausfällt (ein übersprungener Tag hat keine
+    # gültige Zeile mehr, ein dritter Durchgang ändert nichts).
+    while True:
+        replaced_ids = {
+            row.existing.id for row in rows if row.existing is not None and _row_counts(row)
+        }
 
-    # Gesamtreview 1.20 (B4): Pause, §3/§4 und §5 je TAG (#499) — die Zeilen
-    # eines Tages und der Bestand, der stehen bleibt.
-    rows_by_date: dict[date, list[int]] = {}
-    for i, row in enumerate(rows):
-        rows_by_date.setdefault(row.date, []).append(i)
-    kept_by_date = _kept_entries(db, user_id, user_tenant, rows_by_date, replaced_ids)
-    kept_blocks = {
-        d: [break_block_for_entry(db, user, e) for e in kept_by_date.get(d, [])]
-        for d in rows_by_date
-    }
-    # Zeilen mit Ende ≤ Beginn überspringt /confirm — sie zählen für den Tag nicht.
-    valid_by_date = {
-        d: [i for i in idxs if _row_counts(rows[i])] for d, idxs in rows_by_date.items()
-    }
-    for d, valid in valid_by_date.items():
-        for i in rows_by_date[d]:
-            rows[i].break_min = 0
-        day_breaks = _day_break_minutes(
-            [(rows[i].r.eff_start, rows[i].r.eff_end, rows[i].segs) for i in valid],
-            kept_blocks[d],
-        )
-        for i, b in zip(valid, day_breaks):
-            rows[i].break_min = b
+        # Gesamtreview 1.20 (B4): Pause, §3/§4 und §5 je TAG (#499) — die Zeilen
+        # eines Tages und der Bestand, der stehen bleibt.
+        rows_by_date: dict[date, list[int]] = {}
+        for i, row in enumerate(rows):
+            rows_by_date.setdefault(row.date, []).append(i)
+        kept_by_date = _kept_entries(db, user_id, user_tenant, rows_by_date, replaced_ids)
+        kept_blocks = {
+            d: [break_block_for_entry(db, user, e) for e in kept_by_date.get(d, [])]
+            for d in rows_by_date
+        }
+        # Zeilen mit Ende ≤ Beginn überspringt /confirm — sie zählen für den Tag nicht.
+        valid_by_date = {
+            d: [i for i in idxs if _row_counts(rows[i])] for d, idxs in rows_by_date.items()
+        }
+        newly_skipped = False
+        for d, valid in valid_by_date.items():
+            for i in rows_by_date[d]:
+                rows[i].break_min = 0
+            day_rows = [(rows[i].r.eff_start, rows[i].r.eff_end, rows[i].segs) for i in valid]
+            day_breaks = _day_break_minutes(day_rows, kept_blocks[d])
+            for i, b in zip(valid, day_breaks):
+                rows[i].break_min = b
+            if exempt or not valid:
+                continue
+            missing = _day_break_shortfall(
+                [(*day_rows[k], day_breaks[k]) for k in range(len(valid))], kept_blocks[d],
+            )
+            if missing:
+                reason = break_shortfall_skip_reason(missing)
+                for i in valid:
+                    rows[i].day_skip = reason
+                    rows[i].break_min = 0
+                newly_skipped = True
+        if not newly_skipped:
+            break
     rest_ref, day_first_start, rest_next = _rest_reference(
         db, user_id, user_tenant, rows, kept_by_date, rows_by_date,
     )
@@ -548,7 +606,8 @@ def parse_xls(
         # Zeile — die Vorschau sagt das, und nur das (jede weitere Meldung gälte
         # einem Eintrag, den es nie geben wird). Sie zählt für keinen Tag und
         # trifft keinen Bestand (``_read_rows``: ``existing`` None).
-        if row.outside is not None:
+        skip_reason = row.outside if row.outside is not None else getattr(row, "day_skip", None)
+        if skip_reason is not None:
             entries.append(ImportedEntry(
                 date=entry_date,
                 start_time=start_t,
@@ -556,7 +615,7 @@ def parse_xls(
                 break_minutes=break_min,
                 note=note,
                 has_conflict=False,
-                arbzg_warnings=[f"Wird übersprungen — {row.outside}."],
+                arbzg_warnings=[f"Wird übersprungen — {skip_reason}."],
                 raw_start_time=raw_start_t,
                 raw_end_time=raw_end_t,
                 uncredited_minutes=r.uncredited_minutes,
@@ -720,7 +779,7 @@ def _read_rows(ws, db: Session, user, user_id, user_tenant, grace: int) -> list:
 
 
 def _apply_day_breaks(db: Session, user, user_id, tenant_id, day: date,
-                      written: dict, logs: list) -> list[str]:
+                      written: dict, logs: list, *, exempt: bool = False) -> tuple[list[str], int]:
     """``/confirm``: Tages-Pause der an ``day`` geschriebenen Einträge setzen und
     deren Protokollzeilen anlegen (Gesamtreview 1.20 B4).
 
@@ -732,11 +791,17 @@ def _apply_day_breaks(db: Session, user, user_id, tenant_id, day: date,
     weil ``new_break_minutes`` in den Manipulationsschutz ``row_hash`` (#121)
     eingeht.
 
-    Rückgabe: Ergebnis-Hinweise je Eintrag, dessen Pause von der Vorschau
-    abweicht. Die Vorschau rechnet jeden Konflikt als überschrieben; ohne
-    „überschreiben" bleibt der Bestand stehen und zählt hier mit — die Pause
-    ändert sich dann, ohne dass es jemand sähe (Review-Nachzug B4). Ebenso nach
-    einer Zwischenänderung oder bei einer doppelten Zeile der Datei."""
+    Rückgabe: (Ergebnis-Hinweise je Eintrag, dessen Pause von der Vorschau
+    abweicht; §4-Fehlbetrag in Minuten). Die Vorschau rechnet jeden Konflikt als
+    überschrieben; ohne „überschreiben" bleibt der Bestand stehen und zählt hier
+    mit — die Pause ändert sich dann, ohne dass es jemand sähe (Review-Nachzug
+    B4). Ebenso nach einer Zwischenänderung oder bei einer doppelten Zeile der
+    Datei.
+
+    Gesamtreview 1.20 (B11): bleibt nach der Automatik-Pause ein §4-Fehlbetrag
+    (``_day_break_shortfall``, außer bei §18-Befreiung), setzt die Funktion
+    nichts und legt keine Protokollzeile an — der Aufrufer nimmt den Tag dann
+    zurück (``_undo_day``)."""
     kept = [
         break_block_for_entry(db, user, e)
         for e in db.query(TimeEntry).filter(
@@ -747,7 +812,14 @@ def _apply_day_breaks(db: Session, user, user_id, tenant_id, day: date,
         if e.end_time is not None and e.id not in written
     ]
     items = list(written.values())
-    breaks = _day_break_minutes([(e.start_time, e.end_time, segs) for e, segs, _ in items], kept)
+    day_rows = [(e.start_time, e.end_time, segs) for e, segs, _ in items]
+    breaks = _day_break_minutes(day_rows, kept)
+    if not exempt:
+        missing = _day_break_shortfall(
+            [(*row, b) for row, b in zip(day_rows, breaks)], kept,
+        )
+        if missing:
+            return [], missing
     notes = []
     for (e, _, shown), minutes in zip(items, breaks):
         e.break_minutes = minutes
@@ -761,7 +833,32 @@ def _apply_day_breaks(db: Session, user, user_id, tenant_id, day: date,
     for log, e in logs:
         log.new_break_minutes = e.break_minutes
         db.add(log)
-    return notes
+    return notes, 0
+
+
+# Spalten, die ``/confirm`` an einem überschriebenen Eintrag setzt — für die
+# Rücknahme eines Tages (``_undo_day``).
+_OVERWRITE_FIELDS = (
+    "start_time", "end_time", "note", "raw_start_time", "raw_end_time",
+    "uncredited_minutes", "clamp_grace_minutes", "auto_closed", "break_minutes",
+)
+
+
+def _undo_day(db: Session, undo: list) -> None:
+    """Nimmt die Schreibschritte eines Tages zurück (Gesamtreview 1.20 B11) —
+    in umgekehrter Reihenfolge: ``("new", entry)`` wird gelöscht,
+    ``("overwrite", entry, snapshot)`` bekommt seine alten Werte zurück. Jeder
+    Schritt wird sofort geflusht (``uq_tenant_user_date_start`` ist nicht
+    verzögerbar; ein gemeinsamer Flush ordnete UPDATE vor DELETE). Protokollzeilen
+    gibt es zu diesem Zeitpunkt noch keine (``_apply_day_breaks``)."""
+    for step in reversed(undo):
+        if step[0] == "new":
+            db.delete(step[1])
+        else:
+            _, entry, snapshot = step
+            for field, value in snapshot.items():
+                setattr(entry, field, value)
+        db.flush()
 
 
 def execute_import(
@@ -861,6 +958,12 @@ def _execute_import_inner(
         # Tages-Pause (``new_break_minutes``).
         written: dict = {}
         logs: list = []
+        # Gesamtreview 1.20 (B11): Schreibschritte, Zähler und Hinweise des Tages
+        # erst nach der Tages-Pause übernehmen — fehlt dann noch §4-Pause, nimmt
+        # ``_undo_day`` den Tag zurück.
+        undo: list = []
+        day_imported = day_overwritten = 0
+        day_warnings: list[str] = []
         for entry in day_entries:
             # Gesamtreview 1.20: außerhalb des Beschäftigungsfensters der
             # Zielperson sichtbar überspringen (``employment_window_skip_reason``)
@@ -945,7 +1048,7 @@ def _execute_import_inner(
                 segs = []
 
             for w in entry.arbzg_warnings:
-                all_warnings.append(f"{entry.date.strftime('%d.%m.%Y')}: {w}")
+                day_warnings.append(f"{entry.date.strftime('%d.%m.%Y')}: {w}")
 
             if existing:
                 if not overwrite:
@@ -961,6 +1064,9 @@ def _execute_import_inner(
                     )
                     continue
 
+                undo.append(("overwrite", existing, {
+                    f: getattr(existing, f) for f in _OVERWRITE_FIELDS
+                }))
                 # Audit-Log: alter Zustand
                 log = TimeEntryAuditLog(
                     time_entry_id=existing.id,
@@ -993,7 +1099,7 @@ def _execute_import_inner(
                 # P18: der Import liefert ein echtes Ende; credit_override bleibt (P3).
                 existing.auto_closed = False
                 target = existing
-                overwritten += 1
+                day_overwritten += 1
             else:
                 new_entry = TimeEntry(
                     user_id=user_id,
@@ -1010,6 +1116,7 @@ def _execute_import_inner(
                 )
                 db.add(new_entry)
                 db.flush()  # ID für Audit-Log
+                undo.append(("new", new_entry))
 
                 log = TimeEntryAuditLog(
                     time_entry_id=new_entry.id,
@@ -1024,7 +1131,7 @@ def _execute_import_inner(
                     tenant_id=tenant_id,
                 )
                 target = new_entry
-                imported += 1
+                day_imported += 1
 
             # Eine doppelte Zeile der Datei überschreibt den eben angelegten Eintrag
             # — er zählt für den Tag nur einmal, an der späteren Stelle.
@@ -1033,9 +1140,27 @@ def _execute_import_inner(
             logs.append((log, target))
 
         if written:
-            all_warnings.extend(
-                _apply_day_breaks(db, target_user, user_id, tenant_id, day, written, logs)
+            notes, missing = _apply_day_breaks(
+                db, target_user, user_id, tenant_id, day, written, logs,
+                exempt=bool(getattr(target_user, "exempt_from_arbzg", False)),
             )
+            if missing:
+                # Der Tag bleibt, wie er war: keine der Zeilen wird übernommen,
+                # ihre Vorschau-Hinweise entfallen (sie gälten Einträgen, die es
+                # nicht gibt).
+                _undo_day(db, undo)
+                skipped += day_imported + day_overwritten
+                all_warnings.append(
+                    f"{day.strftime('%d.%m.%Y')}: übersprungen — "
+                    f"{break_shortfall_skip_reason(missing)}."
+                )
+                continue
+            all_warnings.extend(day_warnings)
+            all_warnings.extend(notes)
+            imported += day_imported
+            overwritten += day_overwritten
+        else:
+            all_warnings.extend(day_warnings)
 
     # Zusammenfassungs-Eintrag im Audit-Log (action="import", time_entry_id=None)
     username = f"{target_user.first_name} {target_user.last_name}" if target_user else str(user_id)

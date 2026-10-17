@@ -317,7 +317,12 @@ group_code() {
   need_code "vorhandenen Eintrag in der Zeiterfassung bearbeiten oder nach {hhmm} "
   # XLS-Import: Zeilen außerhalb des Beschäftigungsfensters
   # (xls_import_service.employment_window_skip_reason, Vorschau und /confirm).
-  need_code 'arbzg_warnings=[f"Wird übersprungen — {row.outside}."]'
+  need_code 'arbzg_warnings=[f"Wird übersprungen — {skip_reason}."]'
+  # Gesamtreview B11: Tag, dessen §4-Pause die Zeilen nicht tragen
+  # (xls_import_service.break_shortfall_skip_reason, f-String-Stücke).
+  need_code 'f"die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht "'
+  need_code 'f"abziehen (es fehlen {missing_minutes} Min). Bitte den Tag von Hand erfassen"'
+  need_code 'f"{break_shortfall_skip_reason(missing)}."'
   need_code ': übersprungen — {outside}."'
   need_code "return f\"Datum liegt nach dem letzten Arbeitstag ({last.strftime('%d.%m.%Y')})\""
   need_code 'gestempelt ${rawEnd} · angerechnet bis ${effEnd}'

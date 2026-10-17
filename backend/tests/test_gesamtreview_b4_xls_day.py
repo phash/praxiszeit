@@ -263,19 +263,20 @@ def test_presence_hints_are_reported_once_at_the_last_row(db, test_user):
 
 
 def test_auto_pause_never_exceeds_the_row(db, test_user, test_admin):
-    """Bestand 08:00–17:00 ohne Pause bleibt stehen, die Datei bringt 17:00–17:20.
-    Der Tag braucht 45 Min — die 20-Minuten-Zeile trägt höchstens 20. Bisher
-    standen 45 Min Pause an einem 20-Minuten-Eintrag (§16-Beleg mit einer Pause,
-    die nicht hineinpasst), und die Vorschau zählte sie als erfasst und meldete
-    nichts."""
-    _entry(db, test_user, time(8), time(17))
-    [row] = parse_xls(_xls((_mon(17), _mon(17, 20))), test_user.id, db)
+    """Bestand 08:00–13:50 ohne Pause bleibt stehen, die Datei bringt 13:50–14:10.
+    Der Tag (6:10 h) braucht 30 Min — die 20-Minuten-Zeile trägt höchstens 20
+    (danach 5:50 h, keine Pausenpflicht mehr). Bisher standen bis zu 45 Min Pause
+    an einem 20-Minuten-Eintrag (§16-Beleg mit einer Pause, die nicht
+    hineinpasst). Bleibt dagegen ein Rest, übernimmt der Import den Tag nicht
+    (Gesamtreview B11, ``test_gesamtreview_b11_xls_break.py``)."""
+    _entry(db, test_user, time(8), time(13, 50))
+    [row] = parse_xls(_xls((_mon(13, 50), _mon(14, 10))), test_user.id, db)
     assert row.has_conflict is False
     assert row.break_minutes == 20
-    assert any(w.startswith("§4 ArbZG") for w in _hard(row)), row.arbzg_warnings
+    assert _hard(row) == [], row.arbzg_warnings
 
     _run(db, test_user, test_admin, [row])
-    new = db.query(TimeEntry).filter(TimeEntry.start_time == time(17)).one()
+    new = db.query(TimeEntry).filter(TimeEntry.start_time == time(13, 50)).one()
     assert new.break_minutes == 20
 
 
@@ -291,11 +292,15 @@ def test_auto_pause_spreads_over_rows_longest_first(db, test_user):
 
 def test_auto_pause_skips_rows_shorter_than_a_break_section(db, test_user):
     """Eine Zeile unter 15 Min kann keinen Pausenabschnitt tragen (§4 Satz 2):
-    Bestand 08:00–17:00 + Zeile 17:00–17:10 → keine Pause, die Vorschau meldet §4."""
+    Bestand 08:00–17:00 + Zeile 17:00–17:10 → keine Pause; es fehlen 45 Min, der
+    Import übernimmt den Tag nicht (Gesamtreview B11)."""
     _entry(db, test_user, time(8), time(17))
     [row] = parse_xls(_xls((_mon(17), _mon(17, 10))), test_user.id, db)
     assert row.break_minutes == 0
-    assert any(w.startswith("§4 ArbZG") for w in _hard(row)), row.arbzg_warnings
+    assert row.arbzg_warnings == [
+        "Wird übersprungen — die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses "
+        "Tages nicht abziehen (es fehlen 45 Min). Bitte den Tag von Hand erfassen."
+    ]
 
 
 def test_confirm_reports_a_break_adjusted_by_a_kept_conflict(db, test_user, test_admin):

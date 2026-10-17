@@ -1144,8 +1144,18 @@ früheren Zeilen des Tages noch mit.
 Review-Nachzug B4: eine Zeile trägt höchstens ihre angerechneten Minuten (`end − start −
 deduct_minutes`); reicht die längste nicht, kommen die nächstlängeren dazu (so wenige wie
 möglich, jedes Stück ≥ 15 Min, eine Zeile unter 15 Min trägt keins). Was die Zeilen der Datei
-nicht tragen, bucht der Import nicht — die Tagesprüfung der Vorschau meldet §4 (bis hierher
-„Pause 45 Min" an einer 20-Minuten-Zeile neben langem Bestand). Die weichen Tages-Hinweise
+nicht tragen, bucht der Import nicht (bis hierher „Pause 45 Min" an einer 20-Minuten-Zeile
+neben langem Bestand). Gesamtreview B11 (Produktentscheidung 2026-10-17): bleibt nach der
+Automatik-Pause ein §4-Fehlbetrag (`_day_break_shortfall`, dieselbe Regel wie die
+Tagesprüfung), übernimmt der Import den Tag NICHT — unabhängig von `break_exception_allowed`,
+der Import kennt keine Begründung. Die Vorschau kennzeichnet die gültigen Zeilen des Tages mit
+„Wird übersprungen — die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht
+abziehen (es fehlen N Min). Bitte den Tag von Hand erfassen." (`row.day_skip`; sie zählen
+danach wie die übrigen übersprungenen Zeilen nicht, `_row_counts`, und ersetzen keinen
+Bestand — die Vorschau rechnet deshalb ein zweites Mal); `/confirm` stellt dasselbe nach
+`_apply_day_breaks` fest (Bestand abweichend von der Vorschau) und nimmt die Schreibschritte
+des Tages zurück (`_undo_day`, Protokollzeilen entstehen ohnehin erst danach), Ergebnis
+„TT.MM.JJJJ: übersprungen — …". §18-Befreite (`exempt_from_arbzg`) sind ausgenommen. Die weichen Tages-Hinweise
 (8.3) meldet die Vorschau wie §3/§4 einmal je Tag an dessen letzter gültiger Zeile, über den
 stehenden Bestand plus alle gültigen Zeilen mit ihrer Tages-Pause; der Wochenhinweis bleibt
 schrittweise. Zeilen mit Ende ≤ Beginn (von `/confirm` übersprungen) zählen auch für §5 nicht
