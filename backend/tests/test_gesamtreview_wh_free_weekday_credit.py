@@ -138,6 +138,68 @@ def test_existing_row_is_zeroed_by_the_next_covering_change(db, test_user, test_
     assert _day_saldo(db, test_user, SICK_DAY) == Decimal("0")
 
 
+JUNE = date(2026, 6, 1)
+LEGACY_DAY = date(2026, 6, 16)   # Dienstag, Alt-Zeile ohne Halbtags-Information
+MODERN_DAY = date(2026, 6, 23)   # Dienstag, heutige Buchung (half_day=False)
+
+
+def test_legacy_row_without_half_day_is_never_adjusted(db, test_user, test_admin, monkeypatch):
+    """Grenze (Gesamtreview 1.20, Nachzug zu Fund 4): Alt-Zeilen ohne
+    Halbtags-Information (``half_day IS NULL`` — gebucht vor 1.10.0 (#205), über
+    einen genehmigten Änderungsantrag vor 1.16.0) fasst die Rückrechnung NIE an
+    (C1, ``retarget_absence_hours``) — auch nicht auf 0 an einem frei gewordenen
+    Wochentag. Ein Krankentag dieser Art behält dort seine Stunden, die Gutschrift
+    bleibt im Saldo, ohne Zeile in der Vorschau. Bewusst so (C1: ein Umschreiben
+    löschte die einzige Spur eines Alt-Halbtags, und das Löschen der Änderung
+    könnte den Wert nicht wiederherstellen); dokumentiert in BERECHNUNGEN (§4.2,
+    TZ-E „Bestand"), CHANGELOG und Admin-Handbuch — Korrektur von Hand."""
+    freeze(monkeypatch)
+    add_row(db, test_user, date(2026, 3, 1), week=FULL)
+    legacy = absence(db, test_user, LEGACY_DAY, AbsenceType.SICK, 7.5, half_day=None)
+    modern = absence(db, test_user, MODERN_DAY, AbsenceType.SICK, 7.5)
+
+    impact = svc.run_change(db, test_user, admin_id=test_admin.id, effective_from=JUNE,
+                            apply=lambda: db.add(change_row(test_user, JUNE, week=NO_TUESDAY)))
+
+    # Nur die heutige Buchung wird auf 0 gesetzt — die Alt-Zeile fehlt in der Vorschau.
+    assert [(a.date, a.old_hours, a.new_hours) for a in impact.absences] == [
+        (MODERN_DAY, Decimal("7.50"), Decimal("0.00"))]
+    db.flush()
+    db.refresh(legacy)
+    db.refresh(modern)
+    assert Decimal(str(legacy.hours)) == Decimal("7.5")
+    assert Decimal(str(modern.hours)) == Decimal("0")
+    assert _day_saldo(db, test_user, LEGACY_DAY) == Decimal("7.5")   # dokumentierte Grenze
+    assert _day_saldo(db, test_user, MODERN_DAY) == Decimal("0")
+
+
+def test_legacy_row_on_already_free_weekday_stays_on_the_next_change(db, test_user, test_admin, monkeypatch):
+    """Dieselbe Grenze für den Bestand: Anders als eine heutige Buchung
+    (``test_existing_row_is_zeroed_by_the_next_covering_change``) setzt auch die
+    nächste Änderung, deren Wirkungsbereich den Tag umfasst, eine Alt-Zeile ohne
+    Halbtags-Information nicht auf 0 — keine Gutschrift sinkt, also auch keine
+    Verkürzung aus dieser Zeile."""
+    freeze(monkeypatch)
+    add_row(db, test_user, date(2026, 3, 1), week=FULL)
+    legacy = absence(db, test_user, LEGACY_DAY, AbsenceType.SICK, 7.5, half_day=None)
+    # Altzustand: Dienstag frei ab 01.06. OHNE Rückrechnung.
+    add_row(db, test_user, JUNE, week=NO_TUESDAY)
+    assert _day_saldo(db, test_user, LEGACY_DAY) == Decimal("7.5")
+
+    later = date(2026, 6, 8)   # Montag
+    shorter_monday = block_week(pause=30, mon=[("08:00", "15:00")], wed=DAY, thu=DAY, fri=DAY)
+    impact = svc.run_change(db, test_user, admin_id=test_admin.id, effective_from=later,
+                            apply=lambda: db.add(change_row(test_user, later, week=shorter_monday)))
+
+    assert impact.absences == []
+    assert impact.credited_delta == Decimal("0")
+    assert "saldo" not in impact.shortening_reasons
+    db.flush()
+    db.refresh(legacy)
+    assert Decimal(str(legacy.hours)) == Decimal("7.5")
+    assert _day_saldo(db, test_user, LEGACY_DAY) == Decimal("7.5")
+
+
 @pytest.fixture
 def client(db, test_admin, monkeypatch):
     freeze(monkeypatch)

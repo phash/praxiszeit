@@ -299,7 +299,12 @@ dem Gewicht ihres Tages multipliziert (`calculation_service.credit_day_weight`):
 > Fortbildung dort auf 0 (seit 1.20.0, §14 TZ-E). Die Gutschrift ist also auch hier 0 —
 > ausgenommen Bestand aus früheren Versionen: Solche Zeilen tragen ihre alten Stunden, bis die
 > nächste Arbeitszeit-Änderung, deren Wirkungsbereich den Tag umfasst, sie auf 0 setzt
-> (§14 TZ-E „Bestand").
+> (§14 TZ-E „Bestand"). **Nie** auf 0 gesetzt werden Alt-Zeilen ohne Halbtags-Information
+> (`half_day IS NULL` — gebucht vor dem Update auf 1.10.0, über einen genehmigten
+> Änderungsantrag vor dem Update auf 1.16.0):
+> Die Rückrechnung lässt sie immer stehen (§14 TZ-E). Ein Kranken- oder Fortbildungstag dieser
+> Art behält an einem Wochentag ohne Soll seine Gutschrift, jetzt und bei jeder späteren
+> Änderung; bei Bedarf korrigiert die Verwaltung ihn von Hand (Abwesenheit löschen).
 
 **Grundsatz:** An einem Tag ohne Arbeitspflicht kann keine Arbeitspflicht ausfallen — es gibt
 kein Soll, das auszugleichen wäre. Rechtlich ordnet **§ 4 Abs. 2 EntgFG** den Feiertag
@@ -1334,12 +1339,26 @@ Bewusst ausgenommen:
   Rückrechnung, Krank 15.09. mit 7,5 h), danach ab 07.09. nur Mo 08:00–16:00 → 08:00–15:00 —
   Δ Soll −5:00 h, Δ angerechnet −7:30 h, Überstundenkonto −2:30 h statt +5:00 h. Der Standard
   „Ab heute" lässt eine vergangene Zeile stehen (der Wirkungsbereich beginnt danach). Eine
-  einmalige Bereinigung des Bestands beim Update gibt es nicht.
+  einmalige Bereinigung des Bestands beim Update gibt es nicht. Weder das Nullsetzen noch die
+  Bestandsregel erreicht Alt-Zeilen ohne Halbtags-Information (übernächster Punkt): Die
+  Rückrechnung überspringt sie vorher.
 * Tage außerhalb des Beschäftigungsfensters (#193).
-* Alt-Zeilen ohne Halbtags-Information (`half_day IS NULL`, gebucht vor #205) — für sie
+* Alt-Zeilen ohne Halbtags-Information (`half_day IS NULL`, gebucht vor #205 = 1.10.0; über
+  einen genehmigten Änderungsantrag entstanden sie noch bis 1.16.0) — für sie
   zählen `get_vacation_account`/`absence_days` die Tage stundenbasiert (`hours ÷ Tagessoll`),
   ein Umschreiben der Stunden würde also den Tage-Verbrauch verschieben und die einzige
-  verbliebene Spur des Halbtags löschen.
+  verbliebene Spur des Halbtags löschen. Sie werden **nie** angepasst, auch nicht auf 0 an
+  einem Tag ohne Soll: Ein Kranken- oder Fortbildungstag dieser Art an einem frei gewordenen
+  Wochentag behält seine Stunden und damit die Gutschrift (`credit_day_weight` 1,0 — Soll 0,
+  Krank 7,5 h → +7:30 h), ohne Zeile in der Vorschau und ohne Protokoll, bei der Änderung,
+  die den Wochentag frei macht, wie bei jeder späteren. Ein Nullsetzen allein für Krank und
+  Fortbildung ließe sich beim Löschen der Änderung nicht umkehren — die Zeile bliebe auf 0
+  stehen (Soll wieder voll, Gutschrift 0, Phantom-Defizit), und den alten Wert kennt nur
+  `raw_hours`, das in keine Berechnung einfließt. Solche Zeilen stammen aus der Zeit vor dem
+  Update auf 1.10.0 bzw. 1.16.0 — eine Änderung erreicht sie in aller Regel nur weit
+  rückwirkend. Bei Bedarf korrigiert die Verwaltung die Zeile von Hand, indem sie die
+  Abwesenheit löscht: An einem Tag ohne Soll zählt sie ohnehin nicht als Abwesenheitstag
+  (`absence_days`), neu buchen lässt sie sich dort nicht.
 
 `half_day` halbiert die Umrechnung. Der **#146/#394-Sondertagsfaktor (24./31.12.) wird hier
 bewusst NICHT angewandt**: die Rückrechnung schreibt das **ungewichtete** Tagessoll des Tages
@@ -1474,7 +1493,8 @@ ein eigener Wochentagsfilter ist dafür nicht nötig, die bestehende Gleichheits
 überspringt unveränderte Tage von selbst. Genau genommen vergleicht sie die gespeicherten
 Stunden mit dem neuen Tagessoll; bei stimmigem Bestand ist das dasselbe. Weicht eine Zeile
 schon vorher ab (Krank/Fortbildung mit alten Stunden an einem Wochentag ohne Soll, siehe
-TZ-E „Bestand"), wird sie auch an einem unveränderten Wochentag angeglichen.
+TZ-E „Bestand"), wird sie auch an einem unveränderten Wochentag angeglichen — außer einer
+Alt-Zeile ohne Halbtags-Information (TZ-E), die bleibt immer stehen.
 
 > ⚠️ **Fallstrick — eine Arbeitstage-Verschiebung ändert den Urlaubsverbrauch, nicht immer
 > das Tagessoll.** Verschiebt eine Änderung Stunden von einem Wochentag auf einen anderen,

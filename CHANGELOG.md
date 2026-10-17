@@ -278,7 +278,13 @@ dieses Backup verlustfrei (`UPDATE.md`).
   sinkt dabei das Überstundenkonto um diese Stunden, und die Auswirkung zeigt
   die Änderung als **Verkürzung** (rückwirkend nur mit Grund, Begründung und
   Bestätigung, in ein abgeschlossenes Jahr gesperrt); „Ab heute" lässt solche
-  vergangenen Tage unverändert.
+  vergangenen Tage unverändert. **Ausnahme:** Abwesenheiten, die vor dem Update
+  auf 1.10.0 gebucht wurden (über einen Änderungsantrag: vor dem Update auf
+  1.16.0), passt eine Arbeitszeit-Änderung nie an, weder beim Freimachen des
+  Wochentags noch später – ein solcher Kranken- oder Fortbildungstag an einem
+  Wochentag ohne Soll zählt weiter zum Überstundenkonto. Bei Bedarf die
+  Abwesenheit an diesem Tag von Hand löschen (an einem Tag ohne Soll zählt sie
+  ohnehin nicht als Abwesenheitstag).
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images
