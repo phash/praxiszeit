@@ -1266,6 +1266,20 @@ docs/setup-anleitung.md|## 10. Updates einspielen|##
 EOF
 }
 
+# Keine PDF-Abzüge der lebenden Nutzer-Doku: ein PDF neben der Markdown-Quelle
+# veraltet mit der nächsten Änderung unbemerkt (die PDFs unter
+# frontend/public/docs/ standen bis 1.20.0 auf Februar 2026, ohne Arbeitszeit-
+# Blöcke, und nginx lieferte sie öffentlich aus). Die App liefert die Handbücher
+# als frontend/public/help/*.md aus; ein PDF entsteht bei Bedarf außerhalb des
+# Repos (docs/handbuch/HANDBUCH-ERSTELLEN.md, Schritt 7).
+group_pdf() {
+  local f
+  while IFS= read -r f; do
+    echo "PDF-ABZUG $f (veraltet neben der Quelle — nicht ins Repo legen)"; FAIL=1
+  done < <(find frontend/public docs/handbuch -name '*.pdf' 2>/dev/null; \
+           ls docs/BERECHNUNGEN.pdf docs/GLOSSAR.pdf 2>/dev/null)
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {

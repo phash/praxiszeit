@@ -17,7 +17,7 @@
 - Quelldateien: `docs/handbuch/*.md`
 - Screenshots: `docs/handbuch/screenshots/`
 - Downloadbar in der App: `frontend/public/help/*.md`
-- PDF-Dateien (optional): `frontend/public/docs/*.pdf`
+- PDF-Dateien: keine im Repo — bei Bedarf erzeugen (siehe [Schritt 7](#7-pdf-dateien-bei-bedarf-erzeugen))
 
 **Wichtig:** Nach jeder Änderung an den Quelldateien müssen die Dateien nach `frontend/public/help/` synchronisiert werden (siehe [Schritt 5: Synchronisieren](#5-dateien-synchronisieren)).
 
@@ -182,20 +182,20 @@ Diese müssen **manuell** aktualisiert werden, wenn sich der Inhalt der Markdown
 - Geänderte Abläufe in den Cheatsheet-Sektionen anpassen
 - Neue Navigationspunkte in der Login/Navigation-Sektion aktualisieren
 
-### 7. PDF-Dateien generieren (optional)
+### 7. PDF-Dateien bei Bedarf erzeugen
 
-Die PDFs in `frontend/public/docs/` können aus den Markdown-Dateien generiert werden.
+Im Repo liegen bewusst **keine** PDF-Abzüge der Handbücher (auch nicht unter `frontend/public/`). Ein PDF neben der Markdown-Quelle veraltet mit der nächsten Änderung unbemerkt: die früheren `frontend/public/docs/*.pdf` standen bis 1.20.0 auf dem Stand Februar 2026, ohne Arbeitszeit-Blöcke, und waren trotzdem öffentlich abrufbar. `bash scripts/check-doc-sync.sh pdf` schlägt fehl, sobald wieder ein solches PDF eingecheckt wird.
 
-**Mit pandoc (empfohlen):**
+Wer ein PDF braucht (z. B. zum Versenden), erzeugt es aus dem aktuellen Markdown-Stand und legt es außerhalb des Repos ab:
+
 ```bash
 pandoc docs/handbuch/HANDBUCH-MITARBEITER.md \
-  -o frontend/public/docs/Mitarbeiter-Handbuch.pdf \
+  -o /tmp/Mitarbeiter-Handbuch.pdf \
   --pdf-engine=wkhtmltopdf \
-  --css=docs/handbuch/handbuch.css \
   --metadata title="PraxisZeit – Mitarbeiter-Handbuch"
 ```
 
-**Hinweis:** Wenn keine automatische PDF-Generierung eingerichtet ist, müssen die PDFs manuell erstellt werden (z. B. via Browser → Drucken → Als PDF speichern).
+In der App laden Nutzer die Handbücher als Markdown aus `frontend/public/help/` herunter.
 
 ### 8. Committen und pushen
 
