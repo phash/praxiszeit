@@ -572,7 +572,7 @@ LicenseReadOnlyMiddleware: blockt POST/PUT/PATCH/DELETE (Login + Export bleiben 
 | **`BETA_MODE=True`** im Auslieferungsstand | Hoch | Vor erstem Paid-Release auf `False` (Build-Script warnt) |
 | Native: Fremd-PostgreSQL auf `:5432` (#174) | Mittel | Bootstrap-Check verwechselt Fremd-PG; nur dedizierte Hosts unterstützt |
 | Native: Rolling-Distros libxml2 ≥2.14 (#177) | Mittel | theseus-PG braucht `libxml2.so.2`; Fail-Fast vorhanden, Bundle-Fix offen |
-| Carryover für `track_hours=False` (#191) | Niedrig | Jahresabschluss-Übertrag für leitende Angestellte offen |
+| Carryover für `track_hours=False` (#191) | Niedrig | Jahresabschluss-Übertrag für Mitarbeitende ohne Stundenzählung offen |
 | Employment-Window-Filter an 6 Stellen | Niedrig | Tech-Debt: gemeinsamer Per-Tag-Helper statt 6 Filterstellen |
 | Doku-Drift `DocViewer.tsx` ↔ `docs/handbuch/*` | Niedrig | Bei Doku-Änderungen beides pflegen |
 | SaaS-Roadmap (#100) | – | 8-Phasen-Umbau; Phase 0–4/6 umgesetzt, Rest offen |

@@ -713,7 +713,8 @@ group_beschriftung() {
 # Stundenzählung" (Checkbox „Stundenzählung aktiv (…)", UserForm) ist NICHT
 # „leitende Angestellte" – das ist § 18 (eigene Checkbox „ArbZG-Prüfungen
 # aussetzen (§18 ArbZG – leitende Angestellte)"). BERECHNUNGEN.md prüft die
-# Gruppe „berechnungen" (Task 7); offen: ARC42.md (Task 10), pzweb (Task 14/15).
+# Gruppe „berechnungen" (Task 7), ARC42.md die Gruppe „technik" und CLAUDE.md
+# die Gruppe „claude" (Gesamtreview 1.20 B10); pzweb prüft seine eigenen Tests.
 group_begriffe() {
   local f
   need_code "Stundenzählung aktiv (Soll-Stunden werden berechnet)"
@@ -830,6 +831,9 @@ group_technik() {
   forbid "$f" 'Arbeitszeit-Fenster pro Wochentag setzen'
   forbid "$f" '`…/api/admin/users/{id}/working-hours` |'
   forbid "$f" 'Sonntag, Arbeitszeit-Fenster)'
+  # Gesamtreview 1.20 B10: ohne Stundenzählung ist nicht „leitende Angestellte"
+  forbid "$f" 'Jahresabschluss-Übertrag für leitende Angestellte offen'
+  need "$f" 'Jahresabschluss-Übertrag für Mitarbeitende ohne Stundenzählung offen'
   # local-ci Schritt 0 (Review Task 13): auch der Doku-Abgleich läuft nur lokal
   need "$f" '**E2E**, der **Doku-Abgleich** (`scripts/check-doc-sync.sh`)'
   f=README.md
@@ -920,6 +924,11 @@ group_claude() {
   forbid "$f" 'den laufenden Block'
   forbid "$f" 'laufender Block netto'
   forbid "$f" 'Timer des offenen Blocks'
+  # Gesamtreview 1.20 B10: track_hours=False heißt „ohne Stundenzählung";
+  # leitende Angestellte sind nur ein Beispiel, § 18 ArbZG ist exempt_from_arbzg.
+  forbid "$f" 'Leitende Angestellte = `track_hours=False`'
+  forbid "$f" 'untracked/leitende'
+  need "$f" '**Ohne Stundenzählung = `track_hours=False` (#191):**'
   # Spiegel nur für die fünf Nutzerdateien — HANDBUCH-ERSTELLEN.md ist intern
   # (Seed-Passwörter) und darf nie nach frontend/public/help/
   need "$f" 'HANDBUCH-ERSTELLEN.md (intern)'
