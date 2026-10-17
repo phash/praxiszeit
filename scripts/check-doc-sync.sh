@@ -1127,6 +1127,35 @@ sys.exit(bad)
 PY
 }
 
+# Wiederherstellung (Gesamtreview 1.20, migration-native): Docker über
+# restore.sh, Linux/macOS über `praxiszeit-server.py restore` bei angehaltenem
+# Dienst, Windows über restore-backup.bat — erst der Start danach migriert.
+# Die In-App-Hilfe versprach weiter einen „idempotenten" Restore dank
+# --clean --if-exists, README und setup-anleitung führten den alten
+# psql-Weg bei laufendem Dienst.
+group_restore() {
+  local f
+  need praxiszeit-server.py 'set_defaults(func=cmd_restore)'
+  f=docs/handbuch/HANDBUCH-ADMIN.md
+  need "$f" '`bash restore.sh <datei>`'
+  need "$f" '`praxiszeit-server.py restore <datei>`'
+  need "$f" '`restore-backup.bat <datei>`'
+  forbid "$f" 'idempotent'
+  f=frontend/src/components/DocViewer.tsx
+  need "$f" '<code>bash restore.sh &lt;datei&gt;</code>'
+  need "$f" '<code>praxiszeit-server.py restore &lt;datei&gt;</code>'
+  need "$f" '<code>restore-backup.bat &lt;datei&gt;</code>'
+  forbid "$f" 'idempotent wiederherstellbar'
+  f=README.md
+  need "$f" 'bash tools/docker/restore.sh'
+  forbid "$f" 'idempotent dank'
+  for f in docs/BACKUP.md docs/INSTALL-NATIVE.md docs/setup-anleitung.md docs/UPDATE.md; do
+    need "$f" 'praxiszeit-server.py restore'
+  done
+  forbid docs/BACKUP.md '| "$PZ/bin/postgresql/bin/psql"'
+  forbid docs/setup-anleitung.md '| docker compose exec -T db psql -U praxiszeit praxiszeit'
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {

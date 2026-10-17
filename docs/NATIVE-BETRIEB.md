@@ -54,6 +54,24 @@ macOS: Dienstkonto **`_praxiszeit`** (so legt es `installer/macos/install.sh` pe
 - Die Logik liegt im Backend (`app/cli/reset_admin_password.py`), damit sie Modelle, Passwort-Hashing und die Komplexitätsregel der Anwendung mitbenutzt statt sie nachzubauen. Der Prozessmanager reicht nur Umgebung und Argumente durch. Tests: `test_425_reset_admin_password.py`.
 - **Mehrmandanten-Installation:** existiert derselbe Benutzername in mehreren Mandanten, bricht das Kommando ab statt zu raten.
 
+## Backup einspielen (Linux/macOS, Gesamtreview 1.20)
+
+```
+sudo systemctl stop praxiszeit
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore <datei>.sql.gz
+sudo systemctl start praxiszeit
+```
+
+Bis 1.19 dokumentierte `BACKUP.md` nativ nur `gunzip | psql` bei **laufendem** Dienst — ohne `ON_ERROR_STOP`, ohne frische Datenbank, ohne Neustart. Nativ laufen Migrationen aber nur in `cmd_start`/`cmd_init` (`run_migrations`): ein Backup einer älteren Version ließ den laufenden Prozess gegen dessen Schema arbeiten (1.19.3-Backup in 1.20: `alembic_version` 072, Login HTTP 500, `/api/health` weiter „healthy“), ein 1.18-Backup (069) in eine 073-Datenbank brach an `users_pkey`/`tenants_pkey` ab (`security_events` u. a. hängen daran), und `psql` meldete trotz 12 `ERROR`-Zeilen Exit 0. Beides auf einer echten 1.19.3-/1.18.2-Native-Installation nachgestellt.
+
+- **Dienst muss stehen** (`_process_manager_running()` über `data/praxiszeit.pid`; eine PID, die das Konto nicht signalisieren darf, gilt als laufend) — sonst Abbruch, bevor irgendetwas angefasst wird. Kein automatisches Anhalten: das braucht root, PostgreSQL starten darf root nicht.
+- **Als Dienstkonto**: bei angehaltenem Dienst startet `restore` PostgreSQL selbst (wie `reset-admin-password`, nur für die Dauer des Vorgangs); als root ohne laufendes PostgreSQL bricht es mit einer kopierfertigen `sudo -u <konto> …`-Zeile ab.
+- **Zwischendatenbank `praxiszeit_restore`**: Dump vorher entpacken (0600, im `data/`-Verzeichnis) und auf die pg_dump-Schlusszeile prüfen, dann einspielen (`-X -w -v ON_ERROR_STOP=1`), `alembic_version` gegen die Revisionen der Installation prüfen (`known_migration_revisions`, liest `alembic/versions` ohne Alembic zu importieren) und erst dann `DROP DATABASE praxiszeit WITH (FORCE)` + `RENAME`. Jeder Fehler davor lässt den Bestand unverändert; scheitert nur das Umbenennen, bleiben die Daten in der Zwischendatenbank, und die Meldung rät, den Dienst nicht zu starten und `restore` mit derselben Datei erneut aufzurufen. Danach `init-db-user.sql` (GRANT CONNECT steht nicht im Dump).
+- **Migriert wird beim nächsten Dienststart, nicht in `restore`** — wie unter Docker. Damit taugt `restore` auch für den Rollback: Backup mit der installierten (neueren) Version einspielen, dann die alte Version installieren; deren Start findet den Stand des Backups vor. Ein Backup einer **neueren** Version lehnt `restore` ab (der Start fiele an „Can't locate revision“).
+- **Windows** bleibt bei `restore-backup.bat` (Dienst stoppen, DB frisch, einspielen, Dienst starten); `restore` verweist dort darauf.
+
+Tests: `test_native_restore.py` (Attrappe für `psql`, die die Datenbanken des Clusters als Wörterbuch führt; Bestand bleibt bei jedem Fehler stehen).
+
 ## Windows-Installer (setup.bat / Wizard)
 - **Native Windows-Fallstricke:** Siehe [docs/NATIVE-WINDOWS-PITFALLS.md](NATIVE-WINDOWS-PITFALLS.md) (psql -v, Glob-Expansion, SYSTEM-Permissions, cp1252, SPA-Routing).
 - **setup.bat `DisableDelayedExpansion`:** Absicht (PowerShell-Passwort mit `!`). `%VAR%` in `(...)`-Blöcken wird beim Block-Parse substituiert → leere Vars erzeugen Syntax-Fehler (`if  GEQ 16`). Defaults vor dem Block setzen.

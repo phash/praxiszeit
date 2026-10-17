@@ -296,6 +296,20 @@ dieses Backup verlustfrei (`UPDATE.md`).
   `restore.sh` hält das Backend jetzt an, legt die Datenbank frisch an, spielt
   das Backup ein, startet das Backend wieder, wartet, bis es bereit ist, und
   zeigt die Hinweise der Migrationen an (`BACKUP.md`, `UPDATE.md`).
+- **Linux/macOS: Backup einspielen** mit dem neuen Befehl
+  `praxiszeit-server.py restore <datei>` bei angehaltenem Dienst (Windows wie
+  bisher `restore-backup.bat`). Die Anleitung leitete das Backup bisher bei
+  laufendem Dienst durch `psql`: der Dienst arbeitete danach gegen das Schema
+  des Backups (nach dem Update auf 1.20.0: Anmeldung mit HTTP 500 bis zum
+  nächsten Neustart), ein Backup von 1.18 oder älter brach an später
+  hinzugekommenen Tabellen ab, und `psql` meldete trotz Fehlern Erfolg. `restore`
+  spielt das Backup erst in eine Zwischendatenbank ein und ersetzt die bisherige
+  Datenbank nur, wenn das gelungen ist und das Backup nicht von einer neueren
+  Version stammt; der anschließende Dienststart migriert. Auch für den Rollback:
+  Backup mit der installierten Version einspielen, dann die alte Version
+  installieren (`BACKUP.md`, `UPDATE.md`, `INSTALL-NATIVE.md`). README,
+  Einrichtungsanleitung und die In-App-Hilfe nennen für Docker `restore.sh`
+  statt des alten `psql`-Wegs bzw. eines „idempotenten" Restores.
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images

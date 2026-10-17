@@ -607,17 +607,26 @@ crontab -e
 
 **Native (Windows):** `restore-backup.bat` aus dem Installer-Verzeichnis ausführen (fordert die Eingabe „LOESCHEN" zur Bestätigung).
 
-**Native (Linux/macOS):** Der Dienst (und damit PostgreSQL) muss beim
-Einspielen **laufen** — `psql` erreicht die Datenbank nur über den eigenen
-Unix-Socket unter `data/run`, ein vorheriges Stoppen des Dienstes nähme ihn mit.
-Den vollständigen Befehl (Linux und macOS, als root, mit dem Passwort aus
-`config/.db-credentials`) enthält [BACKUP.md → Restore → Native](BACKUP.md#restore-wiederherstellung).
-
-**Docker:**
+**Native (Linux/macOS, ab 1.20.0):** Dienst anhalten, Backup mit dem
+Prozessmanager einspielen, Dienst wieder starten:
 ```bash
-gunzip -c ~/backups/praxiszeit_20260214.sql.gz \
-  | docker compose exec -T db psql -U praxiszeit praxiszeit
+sudo systemctl stop praxiszeit
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<datei>.sql.gz
+sudo systemctl start praxiszeit
 ```
+Erst dieser Start hebt ein Backup einer älteren Version per Migration auf den
+Stand der installierten Version. Scheitert das Einspielen, bleibt die bisherige
+Datenbank unverändert. macOS (`_praxiszeit`, `launchctl unload`/`load`) und
+Einzelheiten: [BACKUP.md → Restore → Native](BACKUP.md#restore-wiederherstellung).
+
+**Docker:** mit dem mitgelieferten Script (neben der `docker-compose.yml`; im
+git-Checkout `bash tools/docker/restore.sh …`):
+```bash
+bash restore.sh ~/backups/praxiszeit_20260214.sql.gz
+```
+Das Script hält das Backend an, legt die Datenbank frisch an, spielt das Backup
+ein und startet das Backend wieder — erst dieser Start migriert ein Backup einer
+älteren Version. Einzelheiten: [BACKUP.md → Restore → Docker](BACKUP.md#restore-wiederherstellung).
 
 ### 9.5 Compliance-Checkliste
 

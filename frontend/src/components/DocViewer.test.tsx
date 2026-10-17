@@ -359,3 +359,26 @@ describe('Kontexthilfe entspricht der Oberfläche (Gesamtreview B6)', () => {
     expect(helpContent['/change-requests']).toBeUndefined();
   });
 });
+
+// Gesamtreview 1.20 (migration-native): das Admin-Handbuch (§19) nennt seit dem
+// Docker-Restore-Fix restore.sh bzw. praxiszeit-server.py restore — die In-App-
+// Fassung versprach weiter einen „idempotenten" Restore dank --clean --if-exists.
+// Genau das stimmte nicht: ein älteres Backup bricht an Tabellen ab, die erst
+// eine neuere Version angelegt hat, und ohne Neustart migriert nichts.
+describe('Datensicherung: Wiederherstellung wie im Admin-Handbuch', () => {
+  const section = () => {
+    const item = handbuchAdminSections.find((s) => s.title.startsWith('13. Datensicherung'));
+    expect(item).toBeDefined();
+    return textOf(item!.content);
+  };
+
+  it('nennt Script, nativen Befehl und den Neustart statt „idempotent"', () => {
+    const t = section();
+    expect(t).not.toContain('idempotent');
+    expect(t).toContain('bash restore.sh <datei>');
+    expect(t).toContain('praxiszeit-server.py restore <datei>');
+    expect(t).toContain('restore-backup.bat <datei>');
+    expect(t).toContain('erst dieser Start');
+    expect(t).toContain('docs/BACKUP.md');
+  });
+});

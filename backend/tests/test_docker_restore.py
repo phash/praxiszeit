@@ -285,15 +285,72 @@ def _restore_followups(text: str) -> list[str]:
     return out
 
 
-@pytest.mark.parametrize("name", [
+# Gesamtreview 1.20 (Nachzug): README.md und setup-anleitung.md §9.4 fuehrten
+# weiter den alten Weg (`gunzip | docker compose exec -T db psql` bei laufendem
+# Backend, ohne ON_ERROR_STOP, README sogar „idempotent … kein manuelles
+# Leeren“). Sie fehlten in dieser Liste — und eine Anleitung ganz OHNE Neustart
+# bestand die Pruefung auf ein nachfolgendes `up -d backend` ohnehin.
+_GUIDES = [
     "DOCKER-README", "docs/UPDATE.md", "docs/INSTALLATION.md", "docs/BACKUP.md",
-])
+    "README.md", "docs/setup-anleitung.md",
+]
+
+
+def _guide(name: str) -> str:
+    return _docker_readme() if name == "DOCKER-README" else (_REPO / name).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("name", _GUIDES)
 def test_no_guide_restarts_the_backend_with_a_no_op(name):
-    text = _docker_readme() if name == "DOCKER-README" else (_REPO / name).read_text(encoding="utf-8")
-    followups = _restore_followups(text)
+    followups = _restore_followups(_guide(name))
     assert followups, f"kein Restore-Befehl in {name} gefunden"
     for nxt in followups:
         assert not nxt.startswith("docker compose up -d backend"), (name, nxt)
+
+
+def _chunks(text: str) -> list[tuple[bool, list[str]]]:
+    """Absaetze und Codebloecke: (ist_codeblock, zeilen). Ein Codeblock endet am
+    schliessenden Zaun, ein Absatz an der naechsten Leerzeile."""
+    out, cur, fenced = [], [], False
+    for line in text.splitlines():
+        if line.strip().startswith("```"):
+            if fenced:
+                out.append((True, cur))
+                cur, fenced = [], False
+            else:
+                if cur:
+                    out.append((False, cur))
+                cur, fenced = [], True
+            continue
+        if not fenced and not line.strip():
+            if cur:
+                out.append((False, cur))
+            cur = []
+            continue
+        cur.append(line)
+    if cur:
+        out.append((fenced, cur))
+    return out
+
+
+@pytest.mark.parametrize("name", _GUIDES)
+def test_manual_restore_is_wrapped_in_backend_stop_and_start(name):
+    """Wer von Hand durch ``psql`` einspielt, haelt das Backend vorher an und
+    startet es danach wieder — sonst arbeitet es gegen den Stand des Backups,
+    und erst sein naechster Start migrierte."""
+    for fenced, lines in _chunks(_guide(name)):
+        manual = [i for i, line in enumerate(lines)
+                  if "| docker compose exec -T db psql" in line and not line.lstrip().startswith(">")]
+        if not manual:
+            continue
+        block = "\n".join(lines)
+        assert "docker compose stop backend" in block, (name, block)
+        assert "docker compose start backend" in block, (name, block)
+        assert "ON_ERROR_STOP=1" in block, (name, block)
+        if fenced:
+            stop = next(i for i, l in enumerate(lines) if "docker compose stop backend" in l)
+            start = max(i for i, l in enumerate(lines) if "docker compose start backend" in l)
+            assert stop < manual[0] and manual[-1] < start, (name, block)
 
 
 def test_docker_readme_points_to_the_migration_output():

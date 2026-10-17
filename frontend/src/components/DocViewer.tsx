@@ -609,9 +609,10 @@ export const handbuchAdminSections: AccordionItem[] = [
     content: (
       <div className="space-y-2">
         <p>Unter <strong>Datensicherung</strong> erstellen Sie jederzeit eine vollständige, komprimierte Sicherung der Datenbank (<strong>Jetzt sichern</strong>) oder aktivieren eine <strong>tägliche automatische Sicherung</strong> mit Aufbewahrungsdauer und optionalem Speicherort.</p>
-        <p>Vorhandene Sicherungen lassen sich in der Liste <strong>herunterladen</strong> (für eine externe Kopie) oder löschen. Format ist Plain-SQL + gzip (<code>praxiszeit_&lt;Zeitstempel&gt;.sql.gz</code>), mit <code>--clean --if-exists</code> idempotent wiederherstellbar.</p>
+        <p>Vorhandene Sicherungen lassen sich in der Liste <strong>herunterladen</strong> (für eine externe Kopie) oder löschen. Format ist Plain-SQL + gzip (<code>praxiszeit_&lt;Zeitstempel&gt;.sql.gz</code>).</p>
+        <p><strong>Wiederherstellung:</strong> im Docker-Betrieb mit <code>bash restore.sh &lt;datei&gt;</code> neben der <code>docker-compose.yml</code>. Das Script legt die Datenbank frisch an, spielt die Sicherung ein und startet das Backend neu – erst dieser Start hebt eine Sicherung einer älteren Version per Migration auf den Stand der installierten Version. Native unter Linux und macOS den Dienst anhalten, die Sicherung mit <code>praxiszeit-server.py restore &lt;datei&gt;</code> einspielen und den Dienst wieder starten – auch hier migriert erst dieser Start; scheitert das Einspielen, bleibt die bisherige Datenbank unverändert. Unter Windows <code>restore-backup.bat &lt;datei&gt;</code>.</p>
         <p><strong>§16 ArbZG:</strong> Zeitaufzeichnungen sind mind. 2 Jahre aufzubewahren — Aufbewahrungsdauer entsprechend setzen und eine Kopie <strong>außerhalb</strong> des Servers vorhalten. Vor jedem Update zusätzlich sichern.</p>
-        <p className="text-gray-500">Native installiert läuft die <em>geplante</em> Sicherung über den OS-Timer; der <em>manuelle</em> Trigger und die Liste funktionieren überall. Wiederherstellung &amp; Details: <code>docs/BACKUP.md</code>.</p>
+        <p className="text-gray-500">Native installiert läuft die <em>geplante</em> Sicherung über den OS-Timer; der <em>manuelle</em> Trigger und die Liste funktionieren überall. Alle Kommandozeilen-Varianten: <code>docs/BACKUP.md</code>.</p>
       </div>
     ),
   },

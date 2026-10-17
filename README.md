@@ -362,10 +362,18 @@ Sicherungen herunterladen. Auf der Kommandozeile (Docker):
 docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit | gzip > backup.sql.gz
 ```
 
-**Restore** (idempotent dank `--clean --if-exists`, kein manuelles Leeren nötig):
+**Restore** mit dem mitgelieferten Script (im Docker-Paket neben der
+`docker-compose.yml`: `bash restore.sh backups/praxiszeit_<ts>.sql.gz`):
 ```bash
-gunzip -c backup.sql.gz | docker compose exec -T db psql -U praxiszeit praxiszeit
+bash tools/docker/restore.sh backup.sql.gz
 ```
+
+Das Script hält das Backend an, legt die Datenbank frisch an, spielt das Backup
+ein und startet das Backend wieder. Erst dieser Start hebt ein Backup einer
+älteren Version per Migration auf den Stand der installierten Version —
+`docker compose up -d backend` startet ein schon laufendes Backend nicht neu.
+Nativ (Linux/macOS): Dienst anhalten, `praxiszeit-server.py restore <datei>`,
+Dienst starten; Windows: `restore-backup.bat <datei>`.
 
 Vollständige Anleitung (Native + Docker, geplante Sicherung, §16-Aufbewahrung):
 [docs/BACKUP.md](docs/BACKUP.md).

@@ -1194,7 +1194,7 @@ Unter **Admin → Datensicherung** (ab Version 1.9.0) verwalten Sie Backups ohne
 
 > **Native:** Die *geplante* Sicherung läuft weiterhin über den OS-Timer (systemd/launchd/Task); der *manuelle* Trigger und die Liste funktionieren überall.
 
-**Wiederherstellung:** im Docker-Betrieb mit `bash restore.sh <datei>` neben der `docker-compose.yml`. Das Script legt die Datenbank frisch an, spielt die Sicherung ein und startet das Backend neu – erst dieser Start hebt eine Sicherung einer älteren Version per Migration auf den Stand der installierten Version. Alle Kommandozeilen-Varianten (auch nativ): siehe [`docs/BACKUP.md`](../BACKUP.md).
+**Wiederherstellung:** im Docker-Betrieb mit `bash restore.sh <datei>` neben der `docker-compose.yml`. Das Script legt die Datenbank frisch an, spielt die Sicherung ein und startet das Backend neu – erst dieser Start hebt eine Sicherung einer älteren Version per Migration auf den Stand der installierten Version. Native unter Linux und macOS den Dienst anhalten, die Sicherung mit `praxiszeit-server.py restore <datei>` einspielen und den Dienst wieder starten – auch hier migriert erst dieser Start; scheitert das Einspielen, bleibt die bisherige Datenbank unverändert. Unter Windows `restore-backup.bat <datei>`. Alle Kommandozeilen-Varianten: siehe [`docs/BACKUP.md`](../BACKUP.md).
 
 ---
 

@@ -281,6 +281,26 @@ ls -la /opt/praxiszeit/data/backups/
 
 Aufbewahrung: 31 Tage. ArbZG §16 verlangt 2 Jahre — passen Sie `retention_days` entsprechend an.
 
+**Backup einspielen** (ab 1.20.0) — Dienst anhalten, einspielen, Dienst starten:
+
+```bash
+# Linux
+sudo systemctl stop praxiszeit
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<datei>.sql.gz
+sudo systemctl start praxiszeit
+
+# macOS
+sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore /usr/local/praxiszeit/data/backups/<datei>.sql.gz
+sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist
+```
+
+`restore` spielt das Backup erst in eine Zwischendatenbank ein und ersetzt die
+bisherige Datenbank nur, wenn das gelungen ist; der anschließende Dienststart
+migriert ein Backup einer älteren Version. Windows: `restore-backup.bat <datei>`
+im Installationsordner (als Administrator). Einzelheiten:
+[BACKUP.md → Restore](BACKUP.md#restore-wiederherstellung).
+
 ---
 
 ## Lizenzierung

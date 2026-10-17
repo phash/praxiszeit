@@ -258,6 +258,24 @@ Schema des Backups. Ab 1.20.0 erledigt `bash restore.sh backup-JJJJ-MM-TT.sql.gz
 (Docker-Paket; im git-Checkout `bash tools/docker/restore.sh …`) genau diese
 Schritte und meldet sich erst, wenn das Backend wieder gesund ist.
 
-Nativ: `pg_dump`/`psql` aus `bin/postgresql/bin` (siehe INSTALL-Dokumente).
+Nativ (Linux/macOS) in dieser Reihenfolge: **zuerst** mit der noch installierten
+neuen Version das Backup einspielen, **dann** die alte Version installieren —
+deren Start findet den Stand des Backups vor. Andersherum scheitert schon der
+Start der alten Version an der ihr unbekannten Migration, und vor 1.20.0 kennt
+der Prozessmanager kein `restore`.
+
+```bash
+sudo systemctl stop praxiszeit
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<backup-vor-dem-update>.sql.gz
+# danach das alte Paket wie unter „Native → Linux“ installieren (startet den Dienst)
+```
+
+Den Dienst dazwischen **nicht** starten: die noch installierte neue Version höbe
+das Backup beim Start wieder auf ihren Stand.
+
+macOS mit `launchctl unload`/`load` und `sudo -u _praxiszeit` (siehe
+[BACKUP.md → Restore](BACKUP.md#restore-wiederherstellung)); Windows:
+`restore-backup.bat <datei>`.
+
 Migrationen sind in der Regel vorwärtskompatibel; ein Downgrade des Schemas wird
 **nicht** unterstützt — daher das Backup. Ab 1.20.0 gilt das besonders: Migration `073` entfernt die Spalten der alten Arbeitszeit-Fenster (siehe Kasten oben).

@@ -11,6 +11,9 @@ Usage:
     python praxiszeit-server.py status      # Check service status
     python praxiszeit-server.py init        # First-time initialization only
     python praxiszeit-server.py backup      # Create database backup
+    python praxiszeit-server.py restore <datei>   # Backup einspielen (Linux/macOS,
+                                                  # Dienst vorher anhalten)
+    python praxiszeit-server.py reset-admin-password  # Admin-Passwort neu setzen
 """
 
 import argparse
@@ -1985,6 +1988,15 @@ def _service_start_command() -> str:
     return "systemctl start praxiszeit"
 
 
+def _service_stop_command() -> str:
+    """Gegenstueck zu :func:`_service_start_command`. Auf macOS ``unload``, nicht
+    ``stop``: die Plist setzt ``KeepAlive``, launchd startete den Dienst sofort
+    wieder."""
+    if IS_MACOS:
+        return f"launchctl unload {MACOS_LAUNCHD_PLIST}"
+    return "systemctl stop praxiszeit"
+
+
 def _reset_cli_options(args) -> list:
     """Die Optionen, die ``reset-admin-password`` an das Werkzeug weiterreicht.
 
@@ -2158,6 +2170,332 @@ def _invalidate_admin_password_in_config():
     logger.info("Veralteten Klartext-Eintrag [admin] password in der Konfiguration entwertet.")
 
 
+# --- Restore (Linux/macOS) ---
+
+# Zwischendatenbank fuer ``restore``: das Backup landet zuerst hier und ersetzt
+# die bisherige Datenbank erst, wenn das Einspielen gelungen ist und das Backup
+# von einer Version stammt, die diese Installation kennt.
+RESTORE_DB_NAME = DB_NAME + "_restore"
+
+# Schlusszeile eines vollstaendigen Plain-SQL-Dumps. pg_dump 18 haengt danach
+# noch ``\unrestrict <token>`` an — deshalb die letzten Kilobytes, nicht die
+# letzte Zeile.
+_PG_DUMP_TRAILER = b"PostgreSQL database dump complete"
+
+
+class RestoreError(RuntimeError):
+    """Ein Schritt von ``restore`` ist gescheitert, bevor die bisherige
+    Datenbank ersetzt wurde — sie ist unveraendert."""
+
+
+class _SwapError(RestoreError):
+    """Der Tausch selbst ist gescheitert: ob die bisherige Datenbank noch
+    da ist, muss der Aufrufer nachsehen."""
+
+
+def known_migration_revisions(versions_dir: Path | None = None) -> set:
+    """Die Alembic-Revisionen dieser Installation (``alembic/versions``).
+
+    Bewusst ohne Alembic zu importieren: ``restore`` laeuft auch mit einem
+    Interpreter ohne die Abhaengigkeiten der Anwendung (System-Python)."""
+    import re
+    versions_dir = versions_dir or BACKEND_DIR / "alembic" / "versions"
+    pattern = re.compile(r"""^revision(?:\s*:\s*str)?\s*=\s*['"]([^'"]+)['"]""", re.M)
+    found = set()
+    for path in sorted(versions_dir.glob("*.py")):
+        found.update(pattern.findall(path.read_text(encoding="utf-8")))
+    return found
+
+
+def _process_manager_running() -> bool:
+    """Laeuft der Prozessmanager dieser Installation (``start``)?
+
+    Anders als :func:`_read_pid`: ein Prozess, den dieses Konto nicht
+    signalisieren darf (``PermissionError``), existiert — er gilt als laufend."""
+    try:
+        pid = int(PID_FILE.read_text().strip())
+    except (OSError, ValueError):
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _unpack_dump(src: Path) -> Path:
+    """Backup neben die Datenbank entpacken und auf Vollstaendigkeit pruefen.
+
+    Die entpackte Datei enthaelt personenbezogene Daten im Klartext → nur fuer
+    das ausfuehrende Konto lesbar (``mkstemp`` legt sie mit 0600 an), und sie
+    wird bei jedem Fehler sofort entfernt."""
+    import gzip
+    import tempfile
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".restore-", suffix=".sql", dir=str(DATA_DIR))
+    tmp_path = Path(tmp)
+    try:
+        with os.fdopen(fd, "wb") as out, gzip.open(src, "rb") as gz:
+            shutil.copyfileobj(gz, out, 1024 * 1024)
+        with open(tmp_path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - 4096))
+            tail = fh.read()
+    except PermissionError as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise RestoreError(
+            f"'{src}' ist fuer dieses Konto nicht lesbar ({exc}) — die Datei zuerst nach "
+            f"{BACKUP_DIR} kopieren und dem Dienstkonto geben."
+        ) from exc
+    except (OSError, EOFError) as exc:
+        # gzip.BadGzipFile ist ein OSError; abgeschnittene Archive enden in EOFError.
+        tmp_path.unlink(missing_ok=True)
+        raise RestoreError(f"'{src}' ist kein lesbares gzip-Backup ({exc}).") from exc
+    if _PG_DUMP_TRAILER not in tail:
+        tmp_path.unlink(missing_ok=True)
+        raise RestoreError(
+            f"'{src}' ist unvollstaendig (die Schlusszeile von pg_dump fehlt) — der Dump "
+            "wurde abgebrochen."
+        )
+    return tmp_path
+
+
+def _restore_psql(superuser: str, env: dict, db: str, *args: str):
+    """``psql`` gegen den eigenen Cluster: ``-X`` (keine ~/.psqlrc des
+    Aufrufers), ``-w`` (nie nach einem Passwort fragen), ``ON_ERROR_STOP``
+    (beim ersten Fehler abbrechen — sonst meldet psql trotz Fehlern Exit 0)."""
+    return subprocess.run(
+        [str(pg_cmd("psql")), "-X", "-w", "-q", "-v", "ON_ERROR_STOP=1",
+         "-U", superuser, "-d", db, *args],
+        env=env, capture_output=True, encoding="utf-8", errors="replace",
+    )
+
+
+def _psql_error_tail(result) -> str:
+    lines = [line for line in (result.stderr or "").splitlines() if line.strip()]
+    return "\n".join(lines[-8:]) or f"psql Exit {result.returncode}"
+
+
+def _database_exists(superuser: str, env: dict, name: str) -> bool:
+    result = _restore_psql(superuser, env, "postgres", "-tA", "-c",
+                           f"SELECT 1 FROM pg_database WHERE datname = '{name}'")
+    return result.returncode == 0 and result.stdout.strip() == "1"
+
+
+def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set) -> str:
+    """Zwischendatenbank anlegen, Backup einspielen, Datenbankstand pruefen.
+
+    Liefert den Datenbankstand (Alembic-Revision) des Backups. Die bisherige
+    Datenbank wird hier nicht angefasst — scheitert ein Schritt
+    (:class:`RestoreError`), ist sie unveraendert."""
+    result = _restore_psql(
+        superuser, env, "postgres",
+        "-c", f'DROP DATABASE IF EXISTS "{RESTORE_DB_NAME}" WITH (FORCE)',
+        "-c", f'CREATE DATABASE "{RESTORE_DB_NAME}" OWNER "{superuser}" ENCODING \'UTF8\'',
+    )
+    if result.returncode != 0:
+        raise RestoreError(
+            f"Die Zwischendatenbank {RESTORE_DB_NAME} liess sich nicht anlegen:\n"
+            f"{_psql_error_tail(result)}"
+        )
+
+    logger.info("Spiele das Backup in die Zwischendatenbank %s ein ...", RESTORE_DB_NAME)
+    result = _restore_psql(superuser, env, RESTORE_DB_NAME, "-f", str(sql))
+    if result.returncode != 0:
+        raise RestoreError(f"Einspielen fehlgeschlagen:\n{_psql_error_tail(result)}")
+
+    result = _restore_psql(superuser, env, RESTORE_DB_NAME, "-tA", "-c",
+                           "SELECT version_num FROM alembic_version")
+    revisions = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+    if result.returncode != 0 or not revisions:
+        raise RestoreError(
+            "Das Backup enthaelt keine PraxisZeit-Datenbank (Tabelle alembic_version "
+            "fehlt oder ist leer)."
+        )
+    unknown = [r for r in revisions if r not in known]
+    if unknown:
+        # Der naechste Dienststart fiele an „Can't locate revision“ — mit
+        # bereits ersetztem Bestand. Deshalb hier, vor dem Tausch.
+        raise RestoreError(
+            f"Das Backup stammt aus einer neueren PraxisZeit-Version (Datenbankstand "
+            f"{', '.join(unknown)}), diese Installation kennt diesen Stand nicht. Zuerst "
+            "auf die Version aktualisieren, die das Backup erzeugt hat."
+        )
+
+    return revisions[0]
+
+
+def _swap_in_restore_db(superuser: str, env: dict) -> None:
+    """Bisherige Datenbank durch die Zwischendatenbank ersetzen. Scheitert das
+    (:class:`_SwapError`), sieht der Aufrufer nach, was noch da ist."""
+    result = _restore_psql(
+        superuser, env, "postgres",
+        "-c", f'DROP DATABASE IF EXISTS "{DB_NAME}" WITH (FORCE)',
+        "-c", f'ALTER DATABASE "{RESTORE_DB_NAME}" RENAME TO "{DB_NAME}"',
+    )
+    if result.returncode != 0:
+        raise _SwapError(_psql_error_tail(result))
+
+
+def cmd_restore(args):
+    """Backup einspielen (Linux/macOS) — Gegenstueck zu ``restore-backup.bat``.
+
+    Gesamtreview 1.20: die Anleitung leitete den Dump bei laufendem Dienst durch
+    ``psql`` in die bestehende Datenbank. Migrationen laufen nativ nur beim
+    Dienststart — ein Backup einer aelteren Version liess den laufenden Prozess
+    gegen das alte Schema arbeiten (1.20: Login HTTP 500), ein Backup von vor
+    071 (1.18 und aelter) brach an den Fremdschluesseln von ``security_events``
+    auf ``users``/``tenants`` ab, und ohne ``ON_ERROR_STOP`` blieb eine halb
+    eingespielte Datenbank mit Exit 0 zurueck.
+
+    Ablauf: Dienst muss angehalten sein → Backup entpacken und pruefen →
+    PostgreSQL bei Bedarf nur fuer den Vorgang starten → in eine
+    Zwischendatenbank einspielen → Stand pruefen → bisherige Datenbank ersetzen →
+    Rechte wie bei der Erstinitialisierung. Migriert wird beim naechsten
+    Dienststart: so bleibt ``restore`` auch der Weg fuer einen Rollback (Backup
+    mit der installierten Version einspielen, dann die alte Version
+    installieren — deren Start findet den Stand des Backups vor).
+    """
+    if IS_WINDOWS:
+        logger.error(
+            "Unter Windows spielt restore-backup.bat das Backup ein (im "
+            "Installationsordner, als Administrator): restore-backup.bat <datei>.sql.gz"
+        )
+        sys.exit(1)
+
+    dump = Path(args.file).expanduser().absolute()
+    try:
+        found = dump.is_file()
+    except OSError:
+        found = False
+    if not found:
+        logger.error(f"Backup-Datei nicht gefunden: {dump}")
+        sys.exit(1)
+
+    if _process_manager_running():
+        logger.error(
+            "PraxisZeit laeuft noch. Den Dienst zuerst anhalten (%s), dann das Backup "
+            "einspielen und den Dienst wieder starten (%s). Laeuft der Dienst "
+            "nachweislich nicht mehr, die veraltete Datei %s loeschen.",
+            _service_stop_command(), _service_start_command(), PID_FILE,
+        )
+        sys.exit(1)
+
+    config = load_config()
+    su_password, _ = pg_load_credentials()
+    if not su_password:
+        logger.error(
+            "Keine Datenbank-Zugangsdaten gefunden (config/.db-credentials fehlt). "
+            "Ohne sie laesst sich kein Backup einspielen."
+        )
+        sys.exit(1)
+
+    known = known_migration_revisions()
+    if not known:
+        logger.error(
+            "Keine Migrationen unter %s gefunden — die Installation ist unvollstaendig.",
+            BACKEND_DIR / "alembic" / "versions",
+        )
+        sys.exit(1)
+
+    if not pg_is_running() and _running_as_root():
+        # Wie bei reset-admin-password: pg_ctl verweigert den Start als root.
+        logger.error(
+            "PostgreSQL laeuft nicht, und als root darf es nicht gestartet werden "
+            "(pg_ctl lehnt das ab). Das Kommando als Dienstkonto ausfuehren:\n  %s",
+            shlex.join([
+                "sudo", "-u", _install_owner(), bundled_python(),
+                str(Path(__file__).resolve()), "restore", str(dump),
+            ]),
+        )
+        sys.exit(1)
+
+    superuser = _validate_pg_identifier(
+        get_config_value(config, "database", "superuser", "praxiszeit")
+    )
+    try:
+        sql = _unpack_dump(dump)
+    except RestoreError as exc:
+        logger.error("%s Die Datenbank ist unveraendert.", exc)
+        sys.exit(1)
+
+    env = {
+        **pg_env(),
+        "PGPASSWORD": su_password,
+        # Die DROP … IF EXISTS aus --clean --if-exists melden in der frischen
+        # Zwischendatenbank je Objekt ein NOTICE — Fehler zeigt psql weiter.
+        "PGOPTIONS": "-c client_min_messages=warning",
+    }
+    started_here = False
+    swap_attempted = False
+    swapped = False
+    revision = None
+    try:
+        if not pg_is_running():
+            logger.info("PostgreSQL ist nicht gestartet — wird fuer den Vorgang kurz hochgefahren.")
+            pg_start()
+            started_here = True
+        try:
+            revision = _load_into_restore_db(superuser, env, sql, known)
+            # Ab hier kann die bisherige Datenbank weg sein — auch wenn der
+            # Tausch unterbrochen wird (Strg+C), raeumt ``finally`` die
+            # Zwischendatenbank dann nur noch weg, wenn der Bestand noch steht.
+            swap_attempted = True
+            _swap_in_restore_db(superuser, env)
+            swapped = True
+        except _SwapError as exc:
+            if _database_exists(superuser, env, DB_NAME):
+                logger.error(
+                    "Die bisherige Datenbank liess sich nicht ersetzen:\n%s\nSie ist "
+                    "unveraendert; der Dienst kann wieder gestartet werden.", exc,
+                )
+            else:
+                logger.error(
+                    "Die bisherige Datenbank ist entfernt, die eingespielten Daten liegen "
+                    "noch in der Zwischendatenbank %s:\n%s\nDen Dienst NICHT starten, "
+                    "sondern das Kommando mit derselben Datei erneut aufrufen.",
+                    RESTORE_DB_NAME, exc,
+                )
+            sys.exit(1)
+        except RestoreError as exc:
+            logger.error(
+                "%s\nDie bisherige Datenbank ist unveraendert; der Dienst kann wieder "
+                "gestartet werden.", exc,
+            )
+            sys.exit(1)
+
+        # GRANT CONNECT ON DATABASE gehoert zur Datenbank, nicht zu ihrem Inhalt,
+        # und steht deshalb nicht im Dump — dieselben Rechte wie beim Erststart.
+        init_sql = BACKEND_DIR / "init-db-user.sql"
+        if init_sql.is_file():
+            result = _restore_psql(superuser, env, DB_NAME, "-f", str(init_sql))
+            if result.returncode != 0:
+                logger.error(
+                    "Backup eingespielt, aber die Rechte der Anwendungsrolle liessen sich "
+                    "nicht setzen:\n%s\nDas Kommando erneut aufrufen.", _psql_error_tail(result),
+                )
+                sys.exit(1)
+    finally:
+        sql.unlink(missing_ok=True)
+        if not swapped and pg_is_running() and (
+                not swap_attempted or _database_exists(superuser, env, DB_NAME)):
+            _restore_psql(superuser, env, "postgres",
+                          "-c", f'DROP DATABASE IF EXISTS "{RESTORE_DB_NAME}" WITH (FORCE)')
+        if started_here:
+            logger.info("PostgreSQL wird wieder gestoppt (war vor dem Vorgang nicht gestartet).")
+            pg_stop()
+
+    logger.info(
+        "Backup eingespielt (Datenbankstand des Backups: %s). Jetzt den Dienst starten: "
+        "%s — erst dieser Start hebt ein Backup einer aelteren Version per Migration auf "
+        "den Stand dieser Installation. Die Ausgabe der Migrationen steht danach in %s "
+        "(Zeilen mit „alembic:“, Hinweise zwischen „*** HINWEIS“ und „*** ENDE HINWEIS ***“).",
+        revision, _service_start_command(), LOG_DIR / "praxiszeit.log",
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="PraxisZeit Process Manager",
@@ -2170,6 +2508,15 @@ def main():
     subparsers.add_parser("status", help="Show service status").set_defaults(func=cmd_status)
     subparsers.add_parser("init", help="First-time database initialization").set_defaults(func=cmd_init)
     subparsers.add_parser("backup", help="Create database backup").set_defaults(func=cmd_backup)
+
+    # Gesamtreview 1.20: Gegenstueck zu restore-backup.bat fuer Linux/macOS.
+    # Bei angehaltenem Dienst; migriert wird beim naechsten Dienststart.
+    p_restore = subparsers.add_parser(
+        "restore",
+        help="Backup (praxiszeit_*.sql.gz) einspielen — Linux/macOS, Dienst vorher anhalten",
+    )
+    p_restore.add_argument("file", help="Pfad zum Backup (praxiszeit_<zeitstempel>.sql.gz)")
+    p_restore.set_defaults(func=cmd_restore)
 
     # #425: der einzige Weg zurueck bei verlorenem Admin-Passwort. Das Passwort
     # wird vom Werkzeug interaktiv abgefragt — hier bewusst KEIN Argument dafuer
