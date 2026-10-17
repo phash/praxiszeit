@@ -248,3 +248,52 @@ describe('ChangeRequestForm — Anrechnung beantragen (Spec P21)', () => {
     expect(post.mock.calls[0][1].proposed_note).toBe('');
   });
 });
+
+// Gesamtreview 1.20 (Fund 16): „Anrechnung beantragen" läuft über diesen
+// Dialog — sein einziges Pflichtfeld, der Schließen-Knopf und der Dialog selbst
+// brauchen einen zugänglichen Namen.
+describe('ChangeRequestForm — Zugänglichkeit (Gesamtreview Fund 16)', () => {
+  const ENTRY = {
+    id: 'te1', date: '2026-06-01', start_time: '07:45:00', end_time: '18:15:00', break_minutes: 0,
+  };
+
+  it('kündigt sich als modaler Dialog mit der Überschrift als Namen an', () => {
+    render(<ChangeRequestForm entry={ENTRY} requestType="update" requestCredit onClose={vi.fn()} onSuccess={vi.fn()} />);
+    const dialog = screen.getByRole('dialog', { name: 'Änderungsantrag: Anrechnung beantragen' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+  });
+
+  it('der X-Knopf heißt „Schließen" und schließt den Dialog', () => {
+    const onClose = vi.fn();
+    render(<ChangeRequestForm entry={ENTRY} requestType="update" onClose={onClose} onSuccess={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('das Pflichtfeld „Begründung" ist mit seinem Label verknüpft', () => {
+    render(<ChangeRequestForm entry={ENTRY} requestType="update" requestCredit onClose={vi.fn()} onSuccess={vi.fn()} />);
+    const field = screen.getByLabelText(/^Begründung/);
+    expect(field.tagName).toBe('TEXTAREA');
+    expect(field).toBeRequired();
+  });
+});
+
+// Gesamtreview 1.20 (Fund 18): „Aktuelle Werte" und „Eintrag zum Löschen"
+// nennen das Datum wie der Rest der App (TT.MM.JJJJ), nicht im ISO-Format.
+describe('ChangeRequestForm — Datum der aktuellen Werte (Gesamtreview Fund 18)', () => {
+  const ENTRY = {
+    id: 'te1', date: '2026-10-05', start_time: '07:45:00', end_time: '18:15:00', break_minutes: 0,
+  };
+
+  it('zeigt im Kasten „Aktuelle Werte" das Datum als TT.MM.JJJJ', () => {
+    render(<ChangeRequestForm entry={ENTRY} requestType="update" requestCredit onClose={vi.fn()} onSuccess={vi.fn()} />);
+    expect(screen.getByText('05.10.2026')).toBeInTheDocument();
+    expect(screen.queryByText('2026-10-05')).not.toBeInTheDocument();
+  });
+
+  it('zeigt beim Löschantrag das Datum als TT.MM.JJJJ', () => {
+    render(<ChangeRequestForm entry={ENTRY} requestType="delete" onClose={vi.fn()} onSuccess={vi.fn()} />);
+    expect(screen.getByText('05.10.2026')).toBeInTheDocument();
+    expect(screen.queryByText('2026-10-05')).not.toBeInTheDocument();
+  });
+});

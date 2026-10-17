@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, ArrowRight } from 'lucide-react';
 import FocusTrap from 'focus-trap-react';
+import { format } from 'date-fns';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
 import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
@@ -24,6 +25,13 @@ interface TimeEntry {
 
 // #491 F4: Wortgleich zum Monatsjournal, damit beide Antragswege dasselbe fragen.
 const SUNDAY_REASON_LABEL = 'Ausnahmegrund (§10 ArbZG)';
+
+// Gesamtreview 1.20 (Fund 18): Datum wie überall sonst in der App (TT.MM.JJJJ),
+// wie `formatDateDE` in der Admin-Prüfung desselben Antrags. Mittag statt
+// Mitternacht, damit die Zeitzone den Tag nicht verschiebt.
+function formatEntryDate(iso: string): string {
+  return format(new Date(`${iso}T12:00:00`), 'dd.MM.yyyy');
+}
 
 interface Props {
   entry: TimeEntry | null; // null for CREATE
@@ -166,11 +174,17 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <FocusTrap focusTrapOptions={{ allowOutsideClick: true, initialFocus: false }}>
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      {/* Gesamtreview 1.20 (Fund 16): als modaler Dialog angekündigt, Name = Überschrift. */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cr-dialog-title"
+        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+      >
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-amber-500 text-white rounded-t-xl">
-          <h2 className="text-lg font-bold">Änderungsantrag: {requestCredit ? 'Anrechnung beantragen' : typeLabels[requestType]}</h2>
-          <button onClick={onClose} className="hover:bg-white/20 rounded-lg p-1 transition">
-            <X size={20} />
+          <h2 id="cr-dialog-title" className="text-lg font-bold">Änderungsantrag: {requestCredit ? 'Anrechnung beantragen' : typeLabels[requestType]}</h2>
+          <button type="button" onClick={onClose} aria-label="Schließen" className="hover:bg-white/20 rounded-lg p-1 transition">
+            <X size={20} aria-hidden="true" />
           </button>
         </div>
 
@@ -186,7 +200,7 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
               <h3 className="font-semibold text-red-800 mb-2">Eintrag zum Löschen</h3>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-gray-500">Datum:</span> {entry.date}</div>
+                <div><span className="text-gray-500">Datum:</span> {formatEntryDate(entry.date)}</div>
                 <div><span className="text-gray-500">Von:</span> {entry.start_time?.substring(0, 5)}</div>
                 <div><span className="text-gray-500">Bis:</span> {entry.end_time?.substring(0, 5)}</div>
                 <div><span className="text-gray-500">Pause:</span> {entry.break_minutes} min</div>
@@ -199,7 +213,7 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <h3 className="font-semibold text-gray-700 mb-3">Aktuelle Werte</h3>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-gray-500">Datum:</span> {entry.date}</div>
+                <div><span className="text-gray-500">Datum:</span> {formatEntryDate(entry.date)}</div>
                 <div><span className="text-gray-500">Von:</span> {entry.start_time?.substring(0, 5)}</div>
                 <div><span className="text-gray-500">Bis:</span> {entry.end_time?.substring(0, 5)}</div>
                 <div><span className="text-gray-500">Pause:</span> {entry.break_minutes} min</div>
@@ -303,10 +317,11 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
 
           {/* Reason (always required) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="cr-reason" className="block text-sm font-medium text-gray-700 mb-1">
               Begründung <span className="text-red-500">*</span>
             </label>
             <textarea
+              id="cr-reason"
               value={formData.reason}
               onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
               rows={3}
@@ -319,10 +334,11 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
           {/* #200: Pflicht-Pause-Ausnahme (§4 ArbZG) — erscheint bei §4-Verstoß */}
           {showWaiver && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
-              <label className="block text-sm font-medium text-amber-800">
+              <label htmlFor="cr-break-waiver-reason" className="block text-sm font-medium text-amber-800">
                 Pflicht-Pause war nicht möglich – Begründung <span className="text-red-500">*</span>
               </label>
               <textarea
+                id="cr-break-waiver-reason"
                 value={breakWaiverReason}
                 onChange={(e) => setBreakWaiverReason(e.target.value)}
                 rows={2}

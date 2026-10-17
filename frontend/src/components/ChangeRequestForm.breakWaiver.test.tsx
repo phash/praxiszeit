@@ -49,3 +49,14 @@ describe('<ChangeRequestForm /> Pflicht-Pause-Ausnahme (#499)', () => {
     expect(screen.queryByText(/Pflicht-Pause war nicht möglich – Begründung/)).not.toBeInTheDocument();
   });
 });
+
+// Gesamtreview 1.20 (Fund 16): die Ausnahme-Begründung ist mit ihrem Label verknüpft.
+describe('<ChangeRequestForm /> Pflicht-Pause-Ausnahme — Label (Gesamtreview Fund 16)', () => {
+  it('das Begründungsfeld der Ausnahme trägt sein Label als Namen', async () => {
+    useSystemStore.setState({ info: { deployment_mode: 'onprem', version: '' }, isLoaded: true });
+    rejectOnce(S4);
+    await submitCreate();
+    const field = await screen.findByLabelText(/Pflicht-Pause war nicht möglich – Begründung/);
+    expect(field.tagName).toBe('TEXTAREA');
+  });
+});
