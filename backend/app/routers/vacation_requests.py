@@ -16,7 +16,9 @@ from app.services import settings_service
 from app.services.closure_split_service import resplit_year_closures
 # #219: single shared VR-enricher (was duplicated here as a per-item N+1 copy of
 # admin_vacations._enrich_vr_responses). _enrich = thin single-item alias.
-from app.routers.admin_helpers import _enrich_vr_response as _enrich, _enrich_vr_responses
+from app.routers.admin_helpers import (
+    _enrich_vr_response as _enrich, _enrich_vr_responses, ensure_vacation_budget,
+)
 
 router = APIRouter(prefix="/api/vacation-requests", tags=["vacation-requests"])
 
@@ -193,20 +195,11 @@ def apply_vacation_request_patch(
             WorkingHoursChange.user_id == target_user.id,
             WorkingHoursChange.tenant_id == target_user.tenant_id,
         ).order_by(WorkingHoursChange.effective_from).all()
-        cost_by_year = calculation_service.vacation_day_cost_by_year(
+        # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug).
+        ensure_vacation_budget(
             db, target_user, candidates, new_half_day,
             wh_changes=wh_changes, year_cache=year_cache,
         )
-        # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug).
-        shortfall = calculation_service.vacation_budget_shortfall(
-            db, target_user, cost_by_year, wh_changes=wh_changes
-        )
-        if shortfall:
-            check_year, remaining = shortfall
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Nicht genügend Urlaubstage für {check_year} ({remaining:.1f} Tage verfügbar)",
-            )
 
     vr.date = new_date
     vr.end_date = new_end_date
@@ -325,20 +318,11 @@ def create_vacation_request(
             WorkingHoursChange.user_id == current_user.id,
             WorkingHoursChange.tenant_id == current_user.tenant_id,
         ).order_by(WorkingHoursChange.effective_from).all()
-        cost_by_year = calculation_service.vacation_day_cost_by_year(
+        # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug).
+        ensure_vacation_budget(
             db, current_user, candidates, bool(data.half_day),
             wh_changes=wh_changes, year_cache=year_cache,
         )
-        # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug).
-        shortfall = calculation_service.vacation_budget_shortfall(
-            db, current_user, cost_by_year, wh_changes=wh_changes
-        )
-        if shortfall:
-            check_year, remaining = shortfall
-            raise HTTPException(
-                status_code=400,
-                detail=f"Nicht genügend Urlaubstage für {check_year} ({remaining:.1f} Tage verfügbar)",
-            )
 
     vr = VacationRequest(
         user_id=current_user.id,

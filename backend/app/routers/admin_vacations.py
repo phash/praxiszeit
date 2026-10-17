@@ -18,6 +18,7 @@ from app.routers.admin_helpers import (
     _create_audit_log,
     _enrich_vr_response,
     _enrich_vr_responses,
+    ensure_vacation_budget,
     lock_user_row,
     zero_hours_absence_detail,
 )
@@ -233,21 +234,12 @@ def review_vacation_request(
         # Modus PRO TAG aufgeloest. #394: Halbtags-Sondertag = 0,5. Alles in
         # ``vacation_day_cost_by_year`` — #496: dieselbe Zahl zeigt der Antrag
         # unter „Arbeitstage".
-        cost_by_year = calculation_service.vacation_day_cost_by_year(
+        # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug): ein Jahr im
+        # Minus sperrt keine Genehmigung, die dort nichts verbraucht.
+        ensure_vacation_budget(
             db, target_user, dates_to_create, bool(vr.half_day),
             wh_changes=wh_changes, year_cache=year_cache,
         )
-        # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug): ein Jahr im
-        # Minus sperrt keine Genehmigung, die dort nichts verbraucht.
-        shortfall = calculation_service.vacation_budget_shortfall(
-            db, target_user, cost_by_year, wh_changes=wh_changes
-        )
-        if shortfall:
-            check_year, remaining = shortfall
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Nicht genügend Urlaubstage für {check_year} ({remaining:.1f} Tage verfügbar)",
-            )
 
     # Delete existing time entries on the affected dates (Fall 2: overwrite)
     # Log deletions for audit trail, then bulk-delete with tenant scope

@@ -1,5 +1,6 @@
 """Shared helpers used by the router layer (admin sub-routers + Buchungspfade)."""
 
+from fastapi import HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
@@ -9,7 +10,7 @@ from app.schemas.change_request import ChangeRequestResponse
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.schemas.vacation_request import VacationRequestResponse
 from app.services.calculation_service import request_day_count
-from app.services import work_window_service
+from app.services import calculation_service, work_window_service
 
 
 # ── Anker-Sperre auf Benutzerzeilen ──────────────────────────────────────────
@@ -207,6 +208,41 @@ def zero_hours_absence_detail(dates) -> str:
     return ZERO_HOURS_ABSENCE_DETAIL.format(
         days=", ".join(d.strftime("%d.%m.%Y") for d in list(dates)[:5])
     )
+
+
+# Ultrareview 1.20 (Fund 3): EIN Wortlaut und EIN Ablauf für die Urlaubsbudget-
+# Vorprüfung mit Zeitraum — Direktbuchung (``absences.create_absence``),
+# Antrag anlegen/bearbeiten (``vacation_requests``) und Antrags-Genehmigung
+# (``admin_vacations.review_vacation_request``). Vorher viermal ausgeschrieben.
+# Der Einzeltag-Check des Änderungsantrags (``admin_change_requests``) zählt
+# mit ``_vacation_day_contribution`` bewusst anders und bleibt eigen.
+VACATION_BUDGET_DETAIL = "Nicht genügend Urlaubstage für {year} ({remaining:.1f} Tage verfügbar)"
+
+
+def ensure_vacation_budget(
+    db: Session,
+    user: User,
+    dates,
+    half_day: bool,
+    wh_changes=None,
+    year_cache=None,
+) -> None:
+    """400, wenn die Buchung dieser Tage in einem Kalenderjahr den Resturlaub
+    übersteigt — Kosten über ``calculation_service.vacation_day_cost_by_year``,
+    Vergleich über ``vacation_budget_shortfall`` (nur Jahre mit Kosten > 0,
+    Gesamtreview 1.20 B5)."""
+    cost_by_year = calculation_service.vacation_day_cost_by_year(
+        db, user, dates, half_day, wh_changes=wh_changes, year_cache=year_cache,
+    )
+    shortfall = calculation_service.vacation_budget_shortfall(
+        db, user, cost_by_year, wh_changes=wh_changes
+    )
+    if shortfall:
+        year, remaining = shortfall
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=VACATION_BUDGET_DETAIL.format(year=year, remaining=remaining),
+        )
 
 
 def _enrich_cr_response(cr: ChangeRequest, db: Session) -> ChangeRequestResponse:

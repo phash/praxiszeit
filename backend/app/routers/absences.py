@@ -16,7 +16,9 @@ from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
 from app.services import calculation_service, settings_service, special_days_service
 from app.services.closure_split_service import resplit_year_closures
-from app.routers.admin_helpers import _create_audit_log, lock_user_row, zero_hours_absence_detail
+from app.routers.admin_helpers import (
+    _create_audit_log, ensure_vacation_budget, lock_user_row, zero_hours_absence_detail,
+)
 
 router = APIRouter(prefix="/api/absences", tags=["absences"])
 
@@ -606,22 +608,13 @@ def create_absence(
         # Urlaubstag nahm — in einem Zeitraum mit 0 Wochenstunden (Elternzeit)
         # verlangte sie Budget fuer Tage, die danach nie gebucht werden.
         # ``year_cache``: Sondertags-Konfiguration je Jahr EINMAL laden statt je Tag.
-        cost_by_year = calculation_service.vacation_day_cost_by_year(
-            db, target_user, dates_to_create, bool(absence_data.half_day),
-            wh_changes=wh_changes, year_cache={},
-        )
         # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug): ein Jahr im
         # Minus sperrt keine Buchung, die dort nichts verbraucht — reine
         # 0-h-Zeitraeume enden schon oben bei „0 Stunden geplant".
-        shortfall = calculation_service.vacation_budget_shortfall(
-            db, target_user, cost_by_year, wh_changes=wh_changes
+        ensure_vacation_budget(
+            db, target_user, dates_to_create, bool(absence_data.half_day),
+            wh_changes=wh_changes, year_cache={},
         )
-        if shortfall:
-            check_year, remaining = shortfall
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Nicht genügend Urlaubstage für {check_year} ({remaining:.1f} Tage verfügbar)"
-            )
 
     # If sick leave with vacation refund: remove overlapping vacation entries first
     # (nur gebuchte Tage — Gesamtreview 1.20 B5: an einem Tag ohne Krankbuchung
