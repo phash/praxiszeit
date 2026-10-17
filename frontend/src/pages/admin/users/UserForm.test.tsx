@@ -791,3 +791,34 @@ describe('Gesamtreview 1.20 Fund 6: Texte im Block-Modus', () => {
     );
   });
 });
+
+// Gesamtreview 1.20 (Fund 14): Anlegen mit fester Monatsarbeitszeit und Blöcken —
+// der Editor nennt die Werte „geplant", der Hinweis darunter kein Tagessoll.
+describe('Gesamtreview 1.20 Fund 14: Block-Editor beim Anlegen mit fester Monatsarbeitszeit', () => {
+  it('beschriftet die Blöcke als geplante Anwesenheit', () => {
+    renderForm({ editUser: null });
+    fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/i));
+    fireEvent.change(screen.getByLabelText(/Vereinbarte Monatsarbeitszeit/), { target: { value: '40' } });
+    fireEvent.click(screen.getByLabelText(/Feste Monatsarbeitszeit/));
+    fireEvent.click(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mo: Block hinzufügen' }));
+    fireEvent.change(screen.getByLabelText('Mo Block 1 von'), { target: { value: '08:00' } });
+    fireEvent.change(screen.getByLabelText('Mo Block 1 bis'), { target: { value: '12:00' } });
+    expect(screen.getByTestId('f-blocks-day-0')).toHaveTextContent('geplant 4:00 h');
+    expect(screen.getByTestId('f-blocks-week')).toHaveTextContent('geplant 4:00 h');
+    expect(screen.getByText(
+      'Wochenstunden, geplante Anwesenheit und Arbeitstage werden aus den Blöcken abgeleitet; das Monats-Soll bleibt die vereinbarte Monatsarbeitszeit.',
+    )).toBeInTheDocument();
+    expect(screen.queryByText(/Tagessoll und Arbeitstage werden aus den Blöcken abgeleitet/)).not.toBeInTheDocument();
+  });
+
+  it('Kontrolle: ohne feste Monatsarbeitszeit „Tagessoll"', () => {
+    renderForm({ editUser: null });
+    fireEvent.click(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mo: Block hinzufügen' }));
+    fireEvent.change(screen.getByLabelText('Mo Block 1 von'), { target: { value: '08:00' } });
+    fireEvent.change(screen.getByLabelText('Mo Block 1 bis'), { target: { value: '12:00' } });
+    expect(screen.getByTestId('f-blocks-day-0')).toHaveTextContent('Tagessoll 4:00 h');
+    expect(screen.getByText('Wochenstunden, Tagessoll und Arbeitstage werden aus den Blöcken abgeleitet.')).toBeInTheDocument();
+  });
+});

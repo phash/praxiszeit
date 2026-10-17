@@ -2163,3 +2163,25 @@ describe('Gesamtreview B3: Tag ohne „blocks"-Schlüssel in einer Verlaufszeile
     expect(within(box).getByRole('button', { name: 'Fenster behalten' })).toBeInTheDocument();
   });
 });
+
+// Gesamtreview 1.20 (Fund 14): bei fester Monatsarbeitszeit (#377 2b) beschriftet
+// der Block-Editor die Werte als geplante Anwesenheit — kein Tages-/Wochensoll.
+describe('Gesamtreview 1.20 Fund 14: Block-Editor bei fester Monatsarbeitszeit', () => {
+  it('zeigt „geplant" statt Tagessoll/Wochensoll und nennt das feste Monats-Soll', async () => {
+    mockHistory([ANNA_ROW], QUIET);
+    renderModal({ ...ANNA_PROPS, fixedMonthlyTarget: true });
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    expect(screen.getByTestId('wh-blocks-day-0')).toHaveTextContent('Gesamtzeit 7:00 h · Pause 0:00 h · geplant 7:00 h');
+    expect(screen.getByTestId('wh-blocks-week')).toHaveTextContent('geplant 15:00 h');
+    expect(screen.queryByText(/Tagessoll \d|Wochensoll/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Bei fester Monatsarbeitszeit sind diese Werte geplante Anwesenheit/)).toBeInTheDocument();
+  });
+
+  it('Kontrolle: ohne feste Monatsarbeitszeit „Tagessoll"', async () => {
+    mockHistory([ANNA_ROW], QUIET);
+    renderModal(ANNA_PROPS);
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    expect(screen.getByTestId('wh-blocks-day-0')).toHaveTextContent('Tagessoll 7:00 h');
+    expect(screen.queryByText(/Bei fester Monatsarbeitszeit/)).not.toBeInTheDocument();
+  });
+});

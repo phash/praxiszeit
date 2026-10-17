@@ -97,3 +97,24 @@ describe('WorkBlocksEditor (Spec 12.1)', () => {
     ]);
   });
 });
+
+// Gesamtreview 1.20 (Fund 14): bei fester Monatsarbeitszeit (#377 2b) sind die
+// Tageswerte geplante Anwesenheit, kein Soll — wie die Profilkarte („geplant")
+// und die Option „Nach Tagen (geplante Anwesenheit)".
+describe('WorkBlocksEditor — feste Monatsarbeitszeit (Gesamtreview Fund 14)', () => {
+  const MO = { blocks: [{ start: '08:00', end: '12:00' }, { start: '15:00', end: '18:00' }], pause_minutes: 30 };
+
+  it('beschriftet Tag und Woche mit „geplant" statt Tagessoll/Wochensoll', () => {
+    render(<WorkBlocksEditor value={[MO, E, E, E, E]} onChange={vi.fn()} idPrefix="t" plannedPresence />);
+    expect(screen.getByTestId('t-day-0')).toHaveTextContent('Gesamtzeit 7:00 h · Pause 0:30 h · geplant 6:30 h');
+    expect(screen.getByTestId('t-week')).toHaveTextContent(
+      'Woche: Gesamtzeit 7:00 h · Pause 0:30 h · geplant 6:30 h · 1 Arbeitstag');
+    expect(screen.queryByText(/Tagessoll|Wochensoll/)).not.toBeInTheDocument();
+  });
+
+  it('Kontrolle: ohne den Schalter bleibt „Tagessoll"/„Wochensoll" (Spec E59)', () => {
+    render(<WorkBlocksEditor value={[MO, E, E, E, E]} onChange={vi.fn()} idPrefix="t" />);
+    expect(screen.getByTestId('t-day-0')).toHaveTextContent('Tagessoll 6:30 h');
+    expect(screen.getByTestId('t-week')).toHaveTextContent('Wochensoll 6:30 h');
+  });
+});

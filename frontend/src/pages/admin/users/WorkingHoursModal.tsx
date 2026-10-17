@@ -35,6 +35,9 @@ interface WorkingHoursModalProps {
   // nur Rückfall — und die Stundenzählung (ohne sie kein Block-Modus, P24).
   currentBlocks?: WeekBlocks | null;
   trackHours?: boolean;
+  // Gesamtreview 1.20 (Fund 14): feste Monatsarbeitszeit (#377 2b) — die Werte
+  // des Block-Editors sind dann geplante Anwesenheit, kein Tages-/Wochensoll.
+  fixedMonthlyTarget?: boolean;
   onClose: () => void;
   onChanged: () => void;
 }
@@ -266,6 +269,7 @@ export default function WorkingHoursModal({
   currentWorkDays = 5,
   currentBlocks = null,
   trackHours = true,
+  fixedMonthlyTarget = false,
   onClose,
   onChanged,
 }: WorkingHoursModalProps) {
@@ -761,6 +765,7 @@ export default function WorkingHoursModal({
                         value={formData.blocks}
                         onChange={(blocks) => setFormData((prev) => ({ ...prev, blocks }))}
                         idPrefix="wh-blocks"
+                        plannedPresence={fixedMonthlyTarget}
                       />
                     ) : formData.mode === 'days' ? (
                       // Handy: zwei Spalten statt fünf gequetschter Felder.
@@ -1093,6 +1098,12 @@ export default function WorkingHoursModal({
                   Arbeitsblöcken", auch über einen Moduswechsel hinweg. Bei „Nach Arbeitsblöcken" ist das
                   Tagessoll die Gesamtzeit der Blöcke minus der Pause innerhalb der Blöcke; erfasste Zeit
                   wird an den Blockrändern mit dem Puffer gekappt.
+                  {fixedMonthlyTarget && (
+                    <>
+                      {' '}Bei fester Monatsarbeitszeit sind diese Werte geplante Anwesenheit; das Monats-Soll
+                      bleibt die vereinbarte Monatsarbeitszeit.
+                    </>
+                  )}
                 </p>
               </div>
             </div>

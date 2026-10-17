@@ -987,6 +987,8 @@ export default function Users() {
           // ohne Stundenzählung kein Block-Modus (P24).
           currentBlocks={hoursModalUser.work_blocks_today ?? null}
           trackHours={hoursModalUser.track_hours}
+          // Gesamtreview 1.20 (Fund 14): Block-Editor beschriftet dann „geplant".
+          fixedMonthlyTarget={!!hoursModalUser.use_fixed_monthly_target && hoursModalUser.track_hours}
           onClose={() => setHoursModalUser(null)}
           onChanged={fetchUsers}
         />

@@ -109,10 +109,13 @@ vi.mock('./users/UserForm', () => ({
 // The dialog's OWN correctness (preview, sequence guard, stale display …) is
 // covered exhaustively in WorkingHoursModal.test.tsx — faked here to a single
 // button so this test stays focused on how Users.tsx reacts to `onChanged`.
-function FakeWorkingHoursModal(props: { onChanged: () => void; currentBlocks?: unknown; trackHours?: boolean }) {
+function FakeWorkingHoursModal(props: {
+  onChanged: () => void; currentBlocks?: unknown; trackHours?: boolean; fixedMonthlyTarget?: boolean;
+}) {
   return (
     <div>
       <span data-testid="modal-track-hours">{String(props.trackHours)}</span>
+      <span data-testid="modal-fixed-monthly">{String(props.fixedMonthlyTarget)}</span>
       <span data-testid="modal-blocks">{JSON.stringify(props.currentBlocks ?? null)}</span>
       <button type="button" onClick={props.onChanged}>
         Stundenänderung speichern (simuliert)
@@ -439,5 +442,25 @@ describe('Gesamtreview 1.20 Fund 25: heute gültiger Vertragsstand statt User-Ze
     await screen.findAllByText('Doe, Jane');
     expect(screen.getAllByText('40,0')).toHaveLength(2);
     expect(screen.getByText('5 Tage/Wo')).toBeInTheDocument();
+  });
+});
+
+// Gesamtreview 1.20 (Fund 14): der Dialog erfährt, dass die Person ein festes
+// Monats-Soll hat — der Block-Editor beschriftet die Werte dann als „geplant".
+describe('Gesamtreview 1.20 Fund 14: feste Monatsarbeitszeit an den Dialog', () => {
+  it('reicht use_fixed_monthly_target als fixedMonthlyTarget weiter', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({ data: [makeUser({
+          milog_working_time_account: true, agreed_monthly_hours: 40, use_fixed_monthly_target: true,
+        })] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Arbeitszeit & Wochenstunden für Jane Doe' })[0]);
+    expect(await screen.findByTestId('modal-fixed-monthly')).toHaveTextContent('true');
   });
 });

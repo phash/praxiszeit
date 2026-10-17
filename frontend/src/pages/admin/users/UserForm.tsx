@@ -1010,9 +1010,17 @@ export default function UserForm({
                   )}
                   {createBlocksActive && (
                     <>
-                      <WorkBlocksEditor value={createBlocks} onChange={setCreateBlocks} idPrefix="f-blocks" />
+                      <WorkBlocksEditor
+                        value={createBlocks}
+                        onChange={setCreateBlocks}
+                        idPrefix="f-blocks"
+                        plannedPresence={formData.use_fixed_monthly_target}
+                      />
                       <p className="text-xs text-gray-500 mt-2">
-                        Wochenstunden, Tagessoll und Arbeitstage werden aus den Blöcken abgeleitet.
+                        {/* Gesamtreview 1.20 (Fund 14): bei fester Monatsarbeitszeit kein Tagessoll. */}
+                        {formData.use_fixed_monthly_target
+                          ? 'Wochenstunden, geplante Anwesenheit und Arbeitstage werden aus den Blöcken abgeleitet; das Monats-Soll bleibt die vereinbarte Monatsarbeitszeit.'
+                          : 'Wochenstunden, Tagessoll und Arbeitstage werden aus den Blöcken abgeleitet.'}
                       </p>
                     </>
                   )}

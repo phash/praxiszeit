@@ -8,6 +8,12 @@ interface WorkBlocksEditorProps {
   value: WeekBlocks;
   onChange: (week: WeekBlocks) => void;
   idPrefix?: string;
+  /**
+   * Gesamtreview 1.20 (Fund 14): feste Monatsarbeitszeit (#377 2b) — die
+   * Tageswerte sind dann geplante Anwesenheit, kein Soll (wie die Profilkarte
+   * „geplant" und die Option „Nach Tagen (geplante Anwesenheit)").
+   */
+  plannedPresence?: boolean;
 }
 
 const MAX_BLOCKS_PER_DAY = 3;
@@ -26,7 +32,11 @@ const MAX_BLOCKS_PER_DAY = 3;
  * Schmale Bildschirme: die Zeile eines Tages bricht um (flex-wrap), ein Block
  * bleibt als „von – bis ×" zusammen — nichts wird abgeschnitten.
  */
-export default function WorkBlocksEditor({ value, onChange, idPrefix = 'wb' }: WorkBlocksEditorProps) {
+export default function WorkBlocksEditor({
+  value, onChange, idPrefix = 'wb', plannedPresence = false,
+}: WorkBlocksEditorProps) {
+  const dayTargetLabel = plannedPresence ? 'geplant' : 'Tagessoll';
+  const weekTargetLabel = plannedPresence ? 'geplant' : 'Wochensoll';
   // Immer fünf Tage zurückgeben, auch wenn ein unvollständiger Wert hereinkommt.
   const updateDay = (index: number, day: DayBlocks) =>
     onChange(WEEKDAY_LABELS.map((_, k) => (k === index ? day : value[k] ?? { blocks: [], pause_minutes: 0 })));
@@ -122,7 +132,7 @@ export default function WorkBlocksEditor({ value, onChange, idPrefix = 'wb' }: W
             </div>
             {blocks.length > 0 && (
               <p className="mt-1 text-xs text-gray-600" data-testid={`${idPrefix}-day-${i}`}>
-                Gesamtzeit {minutesToHm(t.grossMinutes)} h · Pause {minutesToHm(t.pauseMinutes)} h · Tagessoll{' '}
+                Gesamtzeit {minutesToHm(t.grossMinutes)} h · Pause {minutesToHm(t.pauseMinutes)} h · {dayTargetLabel}{' '}
                 {minutesToHm(t.netMinutes)} h
               </p>
             )}
@@ -130,7 +140,7 @@ export default function WorkBlocksEditor({ value, onChange, idPrefix = 'wb' }: W
         );
       })}
       <p className="text-sm text-gray-800" data-testid={`${idPrefix}-week`}>
-        Woche: Gesamtzeit {minutesToHm(totals.gross)} h · Pause {minutesToHm(totals.pause)} h · Wochensoll{' '}
+        Woche: Gesamtzeit {minutesToHm(totals.gross)} h · Pause {minutesToHm(totals.pause)} h · {weekTargetLabel}{' '}
         {minutesToHm(totals.net)} h · {workDays} {workDays === 1 ? 'Arbeitstag' : 'Arbeitstage'}
       </p>
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
