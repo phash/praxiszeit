@@ -22,7 +22,7 @@ from app.routers.admin_users import _tenant_has_other_active_admin
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
-    BREAK_WAIVER_SOURCE,
+    BREAK_WAIVER_SOURCE, _assert_within_employment_window,
 )
 from app.services.break_validation_service import (
     validate_daily_break, is_break_exception_allowed, BREAK_EXCEPTION_DISABLED_HINT,
@@ -400,6 +400,29 @@ def review_change_request(
             ).with_for_update().first()
             if not entry:
                 raise HTTPException(status_code=404, detail="Zeiteintrag nicht mehr vorhanden")
+
+        # Gesamtreview 1.20 (Fund 8): Beschäftigungsfenster der Person des
+        # Antrags NEU prüfen — wie der Abwesenheitszweig unten und die
+        # Verwaltungswege (``admin_create/update_time_entry``, #502). Beim
+        # Stellen geprüft zu haben genügt nicht: setzt die Verwaltung danach den
+        # ersten/letzten Arbeitstag, fiele der genehmigte Eintrag still aus dem
+        # gefensterten Ist (#195). Bei UPDATE nur ein tatsächlicher
+        # Datumswechsel — ein Alteintrag außerhalb eines später gesetzten
+        # Fensters bleibt per Zeitkorrektur reparierbar. Vor der Statusänderung.
+        if cr.proposed_date is not None and (
+            cr.request_type == ChangeRequestType.CREATE
+            or (
+                cr.request_type == ChangeRequestType.UPDATE
+                and entry is not None
+                and cr.proposed_date != entry.date
+            )
+        ):
+            _window_user = db.query(User).filter(
+                User.id == cr.user_id,
+                User.tenant_id == cr.tenant_id,
+            ).first()
+            if _window_user is not None:
+                _assert_within_employment_window(_window_user, cr.proposed_date)
 
         # Release-Review 1.19.3 (F1): die Genehmigung ist ein dritter Schreibpfad
         # neben den beiden Bearbeiten-Wegen. Die Antragsformulare belegen die
