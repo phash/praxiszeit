@@ -430,6 +430,11 @@ group_admin_aendern() {
   # Review Task 12: auch eine Erhöhung ab heute verkürzt, wenn die Person heute
   # schon gestempelt hat oder eingestempelt ist (earliest_lossless_date = morgen).
   forbid "$f" '„Ab heute" bleibt ohne Grund möglich'
+  # Gesamtreview 1.20 B10: die Endung „vergangene Tage bleiben unverändert"
+  # hängt nur daran, dass kein Eintrag verliert (workingHoursTexts.losslessLabel,
+  # Grund 'entries') – sie kommt auch, wenn nur eine Abwesenheits-Gutschrift sinkt.
+  forbid "$f" 'verliert kein Eintrag, sondern nur das Überstundenkonto'
+  need "$f" 'verliert kein Eintrag angerechnete Zeit, sondern sinken nur das Überstundenkonto oder eine Abwesenheits-Gutschrift'
   need "$f" 'Ab dem frühesten Tag ohne Verlust (meist heute; morgen, wenn die Person heute schon gestempelt hat oder eingestempelt ist) bleibt die Änderung ohne Grund möglich.'
   # Review Task 4: die wh_change-Sammelzeile (nur wenn Abwesenheiten nachgezogen werden).
   need "$f" 'sind Abwesenheiten betroffen, zusätzlich eine Sammelzeile **„Stundenänderung"** ohne Datum'
