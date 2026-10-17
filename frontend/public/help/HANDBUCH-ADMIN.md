@@ -577,7 +577,7 @@ Das Audit-Log protokolliert alle Aktionen im System vollständig und unveränder
 | **Korrekturanträge** | Stellen, Genehmigen, Ablehnen |
 | **Betriebsferien** | Anlegen und Löschen |
 | **Arbeitszeit-Änderungen** | Je Änderung und je Löschung eine Sammelzeile (Wirkungsdatum, neu berechnete Einträge, Differenz der angerechneten Zeit, Saldo-Differenz, Puffer, Grund, Vertrag alt → neu) und je neu berechnetem Eintrag eine Zeile mit alten und neuen Zeiten (Quelle „wh_reclamp", Anzeige „Neukappung (Arbeitszeit-Änderung)"); sind Abwesenheiten betroffen, zusätzlich eine Sammelzeile ohne Datum (z. B. „Arbeitszeit-Änderung zum 2026-09-01: 2 Abwesenheit(en) im Zeitraum 2026-09-01–2026-10-09 auf neues Tagessoll nachgezogen", beim Löschen „… auf den davor gültigen Wert zurückgerechnet") und je nachgezogener Abwesenheit eine Zeile mit altem/neuem Stundenwert (beide Quelle „wh_change", Anzeige „Stundenänderung"). Alle Zeilen stehen im Monat, in dem die Änderung gespeichert wurde. |
-| **Anerkennungen** | Anerkannte Einträge mit vorher und nachher angerechneter Zeit (Quelle „credit_override", Anzeige „Anrechnung anerkannt") |
+| **Anerkennungen** | Anerkannte Einträge mit vorher und nachher angerechneter Zeit (Quelle „credit_override", Anzeige „Anrechnung anerkannt"); steht am selben Tag eine Abwesenheit, zusätzlich je angeglichener Abwesenheit eine Zeile ohne Zeiten, nur mit Datum und altem/neuem Stundenwert (z. B. „Krank 5,25 h" → „Krank 4,0 h — an die anerkannte Arbeitszeit des Tages angeglichen", ebenfalls Anzeige „Anrechnung anerkannt") |
 | **Pflicht-Pause-Ausnahmen** | Erfasste § 4-Ausnahmen samt Begründung (Quelle „break_waiver") |
 
 ### Konto-Vorgänge

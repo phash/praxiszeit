@@ -262,6 +262,9 @@ group_code() {
   need_code "Nicht angerechnet (Lücke): "
   need_code 'AUDIT_SOURCE = "wh_reclamp"'
   need_code 'CREDIT_OVERRIDE_SOURCE = "credit_override"'
+  # Auslöser der Abwesenheitszeile beim Anerkennen (Absatz „Anerkennen" und
+  # Protokolltabelle zitieren ihn, Gesamtreview 1.20).
+  need_code 'MIXED_DAY_TRIGGER = "an die anerkannte Arbeitszeit des Tages angeglichen"'
   need_code "zwischen zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet."
   need_code "Einträge ändern sich durch das Speichern dieser Einstellung allein nicht."
   need_code "eine Ruhepause ist nicht erfasst ("
@@ -474,6 +477,10 @@ group_admin_rest() {
   need "$f" 'Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.'
   need "$f" 'Pause an den Tag angepasst (0 → 30 Min)'
   need "$f" '| **Anerkennungen** |'
+  # Gesamtreview 1.20: das Anerkennen an einem Misch-Tag schreibt zusätzlich je
+  # angeglichener Abwesenheit eine Zeile (credit_override_service, Fund 1) —
+  # die Protokolltabelle nannte nur die Zeile des Eintrags.
+  need "$f" 'steht am selben Tag eine Abwesenheit, zusätzlich je angeglichener Abwesenheit eine Zeile ohne Zeiten'
   need "$f" 'Neukappung (Arbeitszeit-Änderung)'
   need "$f" 'Eine Änderung des Puffers wirkt auf neue Einträge. Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn, auch wenn er später bearbeitet wird.'
   need "$f" 'Bereits gespeicherte Einträge ändern sich durch das Speichern dieser Einstellung allein nicht.'
