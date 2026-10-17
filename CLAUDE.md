@@ -38,7 +38,7 @@ Native-Laufzeit, PostgreSQL, Windows-Installer, SSL, systemd → **[docs/NATIVE-
 ```bash
 cd e2e && npx playwright test                                    # E2E (155+ Tests)
 # Backend Unit (4100+ Tests) — Wegwerf-Container gegen den aktuellen Code, SQLite, die 6 PG-Dateien ausgeschlossen:
-rm -f backend/test.db*; docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/backend":/app -w /app \
+rm -f backend/test.db backend/test.db-wal backend/test.db-shm; docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/backend":/app -w /app \
   -e SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(32))') -e ADMIN_EMAIL=ci@example.invalid \
   -e ADMIN_PASSWORD=LocalCiDummy2025X -e APP_DB_USER=ci -e APP_DB_PASSWORD=ci -e ENVIRONMENT=development \
   -e CORS_ORIGINS=http://localhost -e DATABASE_URL=sqlite:////tmp/t.db -e TZ=Europe/Berlin praxiszeit-backend \
