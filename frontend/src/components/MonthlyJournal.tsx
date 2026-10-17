@@ -888,10 +888,16 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               {day.time_entries.map((e, i) => (
                                 <div key={`w${i}`}>
                                   {e.start_time && e.end_time ? `${e.start_time.substring(0, 5)}–${e.end_time.substring(0, 5)}` : '–'}
-                                  {renderCreditNote(day, e)}
-                                  {e.sunday_exception_reason && (
-                                    <div className="text-xs text-amber-700">§10: {e.sunday_exception_reason}</div>
-                                  )}
+                                  {/* Gesamtreview 1.20 (Fund 15): die Zelle ist whitespace-nowrap
+                                      (die Spanne bricht nicht um); die langen Hinweiszeilen
+                                      darunter erbten das und machten die ganze Tabelle breit —
+                                      Saldo und Aktionen nur noch per Querscrollen. */}
+                                  <div className="whitespace-normal max-w-xs">
+                                    {renderCreditNote(day, e)}
+                                    {e.sunday_exception_reason && (
+                                      <div className="text-xs text-amber-700">§10: {e.sunday_exception_reason}</div>
+                                    )}
+                                  </div>
                                 </div>
                               ))}
                               {labelType === 'mixed' && day.absences.map((a, i) => (

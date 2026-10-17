@@ -858,3 +858,46 @@ describe('<MonthlyJournal /> nicht angerechnete Zeit auf schmalen Bildschirmen (
     expect(container.querySelectorAll('tr.md\\:hidden')).toHaveLength(0);
   });
 });
+
+// Gesamtreview 1.20 (Fund 15): die Von–Bis-Spalte ist whitespace-nowrap (die
+// Spanne „08:00–17:00" soll nicht umbrechen). Die langen Hinweiszeilen darin
+// (RawStampNote, „Anerkennen" samt Auto-Close-Hinweis, §10-Grund) erbten das
+// und machten die Tabelle mehrere hundert Pixel breiter — Saldo und Aktionen
+// nur noch per Querscrollen. Sie brechen jetzt in einem eigenen Container um.
+describe('<MonthlyJournal /> Hinweiszeilen in der Von–Bis-Spalte brechen um (Fund 15)', () => {
+  const inDesktopCell = (el: HTMLElement) => !!el.closest('td')?.className.includes('hidden md:table-cell');
+  /** Liegt zwischen `el` und seiner Tabellenzelle ein Container, der den Umbruch wieder erlaubt? */
+  const wraps = (el: HTMLElement) => {
+    for (let n: HTMLElement | null = el; n && n.tagName !== 'TD'; n = n.parentElement) {
+      if (n.classList.contains('whitespace-normal')) return true;
+    }
+    return false;
+  };
+
+  it('Eintragszeile, „Anerkennen", Auto-Close-Hinweis und §10-Grund dürfen umbrechen', async () => {
+    const autoClosed = {
+      ...k7Entry, auto_closed: true, not_credited_minutes: 195,
+      sunday_exception_reason: 'Notdienst wegen Ausfall der Vertretung',
+    };
+    getMock.mockResolvedValue({ data: { ...validJournal, days: [{ ...validDay, time_entries: [autoClosed] }] } });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    const button = (await screen.findAllByRole('button', { name: 'Anerkennen' })).find(inDesktopCell)!;
+    expect(wraps(button)).toBe(true);
+    const note = screen.getAllByText(/^eingestempelt 07:00, nicht ausgestempelt/).find(inDesktopCell)!;
+    expect(wraps(note)).toBe(true);
+    const hint = screen.getAllByText(AUTO_CLOSED_HINT).find(inDesktopCell)!;
+    expect(wraps(hint)).toBe(true);
+    const reason = screen.getByText('§10: Notdienst wegen Ausfall der Vertretung');
+    expect(wraps(reason)).toBe(true);
+  });
+
+  it('Kontrolle: die Zeitspanne selbst bleibt einzeilig', async () => {
+    getMock.mockResolvedValue({ data: { ...validJournal, days: [{ ...validDay, time_entries: [{
+      id: 'te2', start_time: '08:00', end_time: '16:30', break_minutes: 30, net_hours: 8,
+    }] }] } });
+    render(<MonthlyJournal userId="u1" isAdminView={false} />);
+    const span = await screen.findByText('08:00–16:30');
+    expect(wraps(span)).toBe(false);
+    expect(span.closest('td')!.className).toContain('whitespace-nowrap');
+  });
+});
