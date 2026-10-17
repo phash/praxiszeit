@@ -223,6 +223,14 @@ dieses Backup verlustfrei (`UPDATE.md`).
   eingeschalteter Genehmigungspflicht zum Genehmigungsantrag, bei abgeschalteter
   Ausnahme abgelehnt. Bleiben Datum, Zeiten und Pause gleich, wird der Eintrag
   jetzt sofort gespeichert; die Begründung bleibt stehen.
+- **Änderungsantrag ohne Angabe einer Pause** zählte beim Stellen und bei der
+  Genehmigung als Pause 0: Ein Antrag, der nur die Notiz ändert, galt dadurch
+  als Zeitänderung, und § 3/§ 4 ArbZG wurden ohne die gespeicherte Pause geprüft
+  (z. B. 08:00–16:30 mit 30 Min Pause abgelehnt). Geprüft wird jetzt mit der
+  Pause, die tatsächlich gespeichert wird. Ebenso lehnte die Verwaltung beim
+  reinen Notiz-Bearbeiten einen Eintrag ab, dessen gespeicherte Kappung nicht
+  mehr zu den aktuellen Arbeitszeit-Blöcken passte – jetzt wie in der
+  Zeiterfassung der Mitarbeitenden.
 - **Genau 10:00 h am Tag bzw. 48:00 h in der Woche:** Verteilte sich die
   angerechnete Zeit auf mehrere Einträge (z. B. 2:00 + 6:10 + 1:50 h), landete
   die Summe durch Rundung beim Addieren knapp über der Grenze. Anlegen,
