@@ -76,7 +76,11 @@ group_code() {
   # Dialog, Editor, Benutzerformular (PR3)
   need_code_label frontend/src/pages/admin/users/UserForm.tsx "Arbeitszeit anpassen…"
   need_code_label frontend/src/pages/admin/users/WorkingHoursModal.tsx "Arbeitszeit &amp; Wochenstunden"
-  need_code "Nach Arbeitsblöcken"
+  # Modus „Nach Arbeitsblöcken": Radio im Anlegen-Formular und Option des
+  # Dialogs. Der bloße Wortlaut stand auch im JSDoc des Dialogs (Spec 12.1)
+  # und hielt das Gate grün, wenn beide Beschriftungen anders hießen.
+  need_code_label frontend/src/pages/admin/users/UserForm.tsx "Nach Arbeitsblöcken"
+  need_code "['blocks', 'Nach Arbeitsblöcken']"
   need_code "Pause innerhalb der Blöcke"
   need_code "Keine Arbeitszeit-Blöcke hinterlegt"
   need_code "Ich habe die Auswirkungen geprüft und möchte speichern"
@@ -97,7 +101,9 @@ group_code() {
   need_code "Der vorherige Stand hat sich inzwischen geändert"
   need_code "Arbeitszeit-Fenster (Altbestand, nur Kappung)"
   need_code "In Arbeitszeit-Blöcke umwandeln"
-  need_code "Fenster entfernen"
+  # Knopf im Altfenster-Bereich (Beschriftung wechselt mit „Fenster behalten");
+  # „Fenster entfernen" allein trifft auch einen Kommentar desselben Dialogs.
+  need_code "'Fenster behalten' : 'Fenster entfernen'"
   need_code "Die Arbeitszeit-Blöcke enden mit dieser Änderung"
   need_code "ohne Wirkung (keine Stundenzählung)"
   need_code "ist nicht länger als der doppelte Puffer"
@@ -262,7 +268,9 @@ group_code() {
   need_code "Die Lücke gilt nur dann als Pause, wenn sie tatsächlich frei war."
   need_code "(abzüglich erfasster Pausen) – mehr als 10 Stunden. Angerechnet werden "
   need_code " h; die Höchstgrenze gilt für die tatsächliche Arbeitszeit."
-  need_code "24-Wochen-Durchschnitt §3 ArbZG"
+  # Überschrift der Auswertung; zwei Kommentare in Reports.tsx tragen denselben
+  # Wortlaut.
+  need_code_label frontend/src/pages/admin/Reports.tsx "24-Wochen-Durchschnitt §3 ArbZG"
   need_code "Ø angerechnet / Tag"
   need_code "Anwesenheit laut Stempel (Ø / Tag)"
   need_code "Anwesenheit laut Stempel gesamt"
