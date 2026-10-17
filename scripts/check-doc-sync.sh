@@ -824,6 +824,11 @@ group_technik() {
   forbid "$f" '### Arbeitszeit-Fenster (#201, work_window_service.py)'
   forbid "$f" 'jeder Pfad, der Einträge schreibt, nimmt'
   forbid "$f" 'scheduled_start_<wd>'
+  # Gesamtreview 1.20 B10 (Nachzug): ohne Stundenzählung zählt ein Halbtag 0,5
+  # (#205, get_vacation_account-Zweig daily_target <= 0) — der alte Satz stand
+  # hier noch, nachdem die Handbücher ihn verloren hatten.
+  forbid "$f" 'Halbtage sind ohne Stundenzählung nicht erkennbar'
+  need "$f" '`half_day=True` = 0,5 (#205)'
   f=docs/ARC42.md
   need "$f" '| 013 |'
   need "$f" '**Arbeitszeit-Block**'

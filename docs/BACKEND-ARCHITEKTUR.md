@@ -113,7 +113,7 @@ Wenn an einem Tag sowohl TimeEntries als auch Absences existieren:
 - Pro-Rata bei Eintritt/Austritt im laufenden Jahr
 - Verbrauch = Summe aller VACATION-Absences im Jahr (PAID_LEAVE wird NICHT mitgezählt, #145) **+** Sondertage 24./31.12. mit `free`+`counts_as_vacation` (#146, nicht-invasiv ohne Absence-Datensatz)
 - Konvertierung Tage ↔ Stunden via aktuellem `daily_target`
-- **`track_hours=False` (Mitarbeitende ohne Stundenzählung, #191):** `daily_target == 0`, daher **reine Tageszählung** — jede VACATION-Absence = 1 Tag, jeder `free`+`counts_as_vacation`-Sondertag = 1 Tag; alle Stunden-Felder bleiben 0, `budget_days` behält Pro-Rata + Carryover. Ersetzt die alte F-046-„nicht anwendbar"-Rückgabe (0 verbraucht / voller Rest), die den tagebasierten Budget-Check aushebelte. Halbtage sind ohne Stundenzählung nicht erkennbar → zählen als voller Tag. Edit-Pfad-Budget-Check tagebasiert (#196 behoben). Offen: Jahresabschluss-Carryover für untracked (#191).
+- **`track_hours=False` (Mitarbeitende ohne Stundenzählung, #191):** `daily_target == 0`, daher **reine Tageszählung** — jede ganztägige VACATION-Absence = 1 Tag, `half_day=True` = 0,5 (#205), ein Halbtags-Sondertag zusätzlich × `half_special_day_weight` (#394), jeder `free`+`counts_as_vacation`-Sondertag = 1 Tag; alle Stunden-Felder bleiben 0, `budget_days` behält Pro-Rata + Carryover. Ersetzt die alte F-046-„nicht anwendbar"-Rückgabe (0 verbraucht / voller Rest), die den tagebasierten Budget-Check aushebelte. Edit-Pfad-Budget-Check tagebasiert (#196 behoben). Offen: Jahresabschluss-Carryover für untracked (#191).
 
 ### Arbeitszeit-Blöcke und Kappung (work_window_service.py, ab 1.20.0)
 
