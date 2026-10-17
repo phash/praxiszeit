@@ -86,7 +86,7 @@ def _entry(user, d, start, end, break_min=0):
                      start_time=start, end_time=end, break_minutes=break_min)
 
 
-def test_abgeschlossene_bloecke_zaehlen_ohne_offenen_eintrag(db, test_user, frozen_now):
+def test_abgeschlossene_eintraege_zaehlen_ohne_offenen_eintrag(db, test_user, frozen_now):
     """Reproduktion aus dem Ticket: 07:43–12:04 + 14:17–17:00, beide geschlossen →
     7:04 h (424 min), obwohl kein Eintrag offen ist."""
     db.add(_entry(test_user, TODAY, dt.time(7, 43), dt.time(12, 4)))
@@ -100,8 +100,8 @@ def test_abgeschlossene_bloecke_zaehlen_ohne_offenen_eintrag(db, test_user, froz
     assert body["today_net_minutes"] == 261 + 163
 
 
-def test_offener_nachmittagsblock_plus_vormittag(db, test_user, frozen_now):
-    """Während des Nachmittagsblocks: Vormittag (4:21) + laufende Minuten (1:10)."""
+def test_offener_nachmittagseintrag_plus_vormittag(db, test_user, frozen_now):
+    """Während des Nachmittagseintrags: Vormittag (4:21) + laufende Minuten (1:10)."""
     frozen_now(15, 27)
     db.add(_entry(test_user, TODAY, dt.time(7, 43), dt.time(12, 4)))
     db.add(_entry(test_user, TODAY, dt.time(14, 17), None))
@@ -109,7 +109,7 @@ def test_offener_nachmittagsblock_plus_vormittag(db, test_user, frozen_now):
 
     body = _client(db, test_user).get("/api/time-entries/clock-status").json()
     assert body["is_clocked_in"] is True
-    assert body["elapsed_minutes"] == 70  # unverändert: nur der offene Block
+    assert body["elapsed_minutes"] == 70  # unverändert: nur der offene Eintrag
     assert body["today_net_minutes"] == 261 + 70
 
 
@@ -122,9 +122,9 @@ def test_pause_wird_abgezogen_und_andere_tage_zaehlen_nicht(db, test_user, froze
     assert body["today_net_minutes"] == 330
 
 
-def test_offener_block_vor_gekapptem_beginn_zaehlt_nicht_negativ(db, test_user, frozen_now):
-    """Ein auf das Arbeitszeitfenster gekappter Beginn kann nach „jetzt" liegen
-    (Einstempeln 06:40, Fenster ab 07:30). Das darf das Tages-Ist nicht senken."""
+def test_offener_eintrag_vor_gekapptem_beginn_zaehlt_nicht_negativ(db, test_user, frozen_now):
+    """Ein auf die Hülle der Arbeitszeit-Blöcke gekappter Beginn kann nach
+    „jetzt" liegen (Einstempeln 06:40, Hülle ab 07:30). Das darf das Tages-Ist nicht senken."""
     frozen_now(6, 40)
     db.add(_entry(test_user, TODAY, dt.time(7, 30), None))
     db.commit()

@@ -965,6 +965,16 @@ group_technik() {
     forbid "$f" 'Tagessoll von heute aus dem datumsaufgelösten'
     forbid "$f" 'Tagessoll von heute aus dem DATUMSAUFGELÖSTEN'
   done
+  # Gesamtreview 1.20 (Nachzug zu Fund 27): auch Testnamen und -kommentare
+  # nennen den gestempelten Eintrag nicht „Block“ (Begriffsregel CLAUDE.md),
+  # und das #201-„Arbeitszeitfenster“ heißt seit 1.20.0 Hülle der Blöcke.
+  f=backend/tests/test_494_clock_status_today.py
+  forbid "$f" 'Nachmittagsblock'
+  forbid "$f" 'nachmittagsblock'
+  forbid "$f" 'offene Block'
+  forbid "$f" 'offener_block'
+  forbid "$f" 'abgeschlossene_bloecke'
+  forbid "$f" 'Arbeitszeitfenster'
   need backend/app/schemas/time_entry.py 'calculation_service.get_day_presence_target'
   forbid frontend/src/pages/Dashboard.test.tsx 'das Tagessoll als `today_target_hours` (Snapshot #431)'
   forbid docs/specs/features/dashboard.md 'Basis der Vertrags-Snapshot'
