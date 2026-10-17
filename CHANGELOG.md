@@ -315,6 +315,15 @@ dieses Backup verlustfrei (`UPDATE.md`).
   `UPDATE.md`, `INSTALL-NATIVE.md`). README,
   Einrichtungsanleitung und die In-App-Hilfe nennen für Docker `restore.sh`
   statt des alten `psql`-Wegs bzw. eines „idempotenten" Restores.
+- **Windows: `restore-backup.bat` meldet keinen Erfolg mehr für ein kaputtes
+  Backup.** Ein abgeschnittenes Backup (Kopie von NAS oder USB abgebrochen)
+  wurde eingespielt, soweit es reichte, Fehler beim Einspielen wurden
+  übergangen, und am Ende startete das Script den Dienst und meldete
+  „Restore abgeschlossen!“ – auf einer halben Datenbank. Die bisherige
+  Datenbank wurde zudem nie ersetzt, sondern überschrieben. Jetzt prüft das
+  Script das Backup vor jeder Änderung, spielt es in eine Zwischendatenbank
+  ein und ersetzt die bisherige erst danach; bei einem Fehler bleibt sie
+  unverändert und der Dienst aus (`BACKUP.md`, `setup-windows.md`).
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images

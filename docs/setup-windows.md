@@ -500,10 +500,14 @@ cd C:\PraxisZeit
 restore-backup.bat data\backups\praxiszeit_20260523_030001.sql.gz
 ```
 
-Das Script verlangt zur Bestätigung die Eingabe `LOESCHEN`, hält den Dienst an,
-legt die Datenbank frisch an, spielt das Backup ein, setzt die Rechte der
+Das Script verlangt zur Bestätigung die Eingabe `LOESCHEN`, prüft das Backup auf
+Vollständigkeit, hält den Dienst an, spielt das Backup in eine Zwischendatenbank
+ein, ersetzt erst dann die bisherige Datenbank, setzt die Rechte der
 Anwendungsrolle und startet den Dienst wieder. Erst dieser Start hebt ein Backup
 einer älteren Version per Migration auf den Stand der installierten Version.
+Scheitert ein Schritt – etwa bei einem unvollständig kopierten Backup –, bleibt
+die bisherige Datenbank unverändert und der Dienst aus; das Script endet dann
+mit einer FEHLER-Meldung.
 Liegt PraxisZeit nicht unter `C:\praxiszeit`, vorher den Ordner angeben:
 `set PRAXISZEIT_INSTALL_DIR=D:\PraxisZeit`. Einzelheiten und die übrigen
 Installationsarten: [BACKUP.md → Restore](BACKUP.md#restore-wiederherstellung).

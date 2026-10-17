@@ -11,8 +11,8 @@ das alte Schema (072: ``users.work_blocks`` fehlt → Login HTTP 500 bis zum
 naechsten Dienststart). Ein Backup von 070 oder aelter brach am Fremdschluessel
 von ``security_events`` auf ``users_pkey`` ab, und ohne ``ON_ERROR_STOP`` lief
 ``psql`` weiter und hinterliess mit Exit 0 eine halb eingespielte Datenbank.
-Windows machte es mit ``restore-backup.bat`` schon richtig (Dienst anhalten,
-frische Datenbank, einspielen, Dienst starten).
+``restore-backup.bat`` unter Windows hatte dieselben Luecken (Tests am Ende
+der Datei).
 
 ``restore`` spielt das Backup zuerst in eine Zwischendatenbank ein und ersetzt
 die bisherige erst, wenn das Einspielen gelungen ist und das Backup von einer
@@ -584,3 +584,103 @@ def test_die_anderen_anleitungen_nennen_den_unterbefehl():
     setup = (_REPO / "docs" / "setup-anleitung.md").read_text(encoding="utf-8")
     assert "muss beim\nEinspielen **laufen**" not in setup
 
+
+# --- Windows: restore-backup.bat ---------------------------------------------
+#
+# Gesamtreview 1.20, Runde 2: derselbe Fehler wie beim alten Linux-Weg. Kein
+# psql-Aufruf setzte ON_ERROR_STOP, kein Schritt pruefte den errorlevel, das
+# Entpacken pruefte nur, ob die Zieldatei existiert (ein abgeschnittenes .gz
+# laesst Python mit EOFError abbrechen, die angefangene .sql-Datei liegt aber
+# da und wurde eingespielt), DROP lief ohne FORCE und ungeprueft (scheitert
+# es, scheitert CREATE, und der Dump laeuft in die alte Datenbank). Am Ende
+# startete das Script den Dienst bedingungslos und meldete „Restore
+# abgeschlossen!" — fuer ein von NAS/USB nur teilweise kopiertes Backup eine
+# halbe Datenbank, auf der beim Dienststart alembic und der Bootstrap liefen.
+# cmd.exe gibt es hier nicht; die Tests pruefen den Aufbau des Scripts.
+
+_BAT = _REPO / "installer" / "windows" / "restore-backup.template.bat"
+
+
+def _bat_text() -> str:
+    return _BAT.read_bytes().decode("ascii")
+
+
+def _bat_lines() -> list[str]:
+    return _bat_text().split("\r\n")
+
+
+def _bat_blocks() -> dict[str, list[str]]:
+    """Zeilen je Sprungmarke; ``""`` = Hauptteil bis zur ersten Marke."""
+    blocks: dict[str, list[str]] = {"": []}
+    current = ""
+    for line in _bat_lines():
+        if line.startswith(":") and not line.startswith("::"):
+            current = line[1:].strip().lower()
+            blocks[current] = []
+        else:
+            blocks[current].append(line.strip())
+    return blocks
+
+
+def test_restore_bat_hat_durchgehend_crlf():
+    # Mit LF findet cmd.exe die Sprungmarken nicht (setup.bat, #286).
+    raw = _BAT.read_bytes()
+    assert b"\n" not in raw.replace(b"\r\n", b""), "restore-backup.template.bat braucht CRLF"
+
+
+def test_restore_bat_prueft_jeden_schritt():
+    main = _bat_blocks()[""]
+    commands = [i for i, line in enumerate(main)
+                if line.startswith(('"%PSQL%"', '"%PYTHON%"'))]
+    assert len(commands) >= 6, main
+    for i in commands:
+        assert "%PSQL_ARGS%" in main[i] or main[i].startswith('"%PYTHON%"'), main[i]
+        follow = next(line for line in main[i + 1:] if line and not line.upper().startswith("REM"))
+        assert follow.lower().startswith("if errorlevel 1"), (main[i], follow)
+    args = next(line for line in main if line.startswith('SET "PSQL_ARGS='))
+    assert "-v ON_ERROR_STOP=1" in args and "-w" in args.split(), args
+
+
+def test_restore_bat_prueft_das_backup_vor_jeder_aenderung():
+    text = _bat_text()
+    check = text.index("PostgreSQL database dump complete")
+    assert check < text.index("net stop PraxisZeit")
+    assert check < text.index("DROP DATABASE")
+    # Entpacken ueber argv, nicht ueber in den Python-Code eingesetzte Pfade.
+    unpack = next(line for line in _bat_lines() if "gzip" in line and '"%PYTHON%"' in line)
+    assert unpack.rstrip().endswith('"%BACKUP_GZ%" "%BACKUP_DUMP%"'), unpack
+    assert "r'%BACKUP_GZ%'" not in text
+
+
+def test_restore_bat_ersetzt_die_datenbank_erst_nach_dem_einspielen():
+    text = _bat_text()
+    assert 'SET "RESTORE_DB=praxiszeit_restore"' in text
+    create = text.index("CREATE DATABASE %RESTORE_DB%")
+    load = text.index('-d %RESTORE_DB% -f "%BACKUP_DUMP%"')
+    check = text.index("FROM alembic_version")
+    drop = text.index("DROP DATABASE IF EXISTS praxiszeit WITH (FORCE)")
+    rename = text.index("ALTER DATABASE %RESTORE_DB% RENAME TO praxiszeit")
+    grants = text.index("init-db-user.sql")
+    assert create < load < check < drop < rename < grants
+    assert "DROP DATABASE IF EXISTS praxiszeit;" not in text
+
+
+def test_restore_bat_startet_den_dienst_nur_nach_erfolg():
+    blocks = _bat_blocks()
+    main = blocks[""]
+    starts = [i for i, line in enumerate(main) if line.lower().startswith("net start praxiszeit")]
+    assert len(starts) == 1, main
+    grants = next(i for i, line in enumerate(main) if "init-db-user.sql" in line)
+    assert grants < starts[0]
+    success = next(i for i, line in enumerate(main) if "Restore abgeschlossen" in line)
+    assert starts[0] < success
+    assert any(line.lower() == "exit /b 0" for line in main[success:])
+    targets = {line.split("goto :", 1)[1].split()[0].lower()
+               for line in _bat_lines() if "goto :" in line.lower()}
+    assert targets, "keine Fehlerpfade"
+    for label in targets:
+        block = blocks[label]
+        assert not any(line.lower().startswith("net start") for line in block), (label, block)
+        assert not any("Restore abgeschlossen" in line for line in block), (label, block)
+        ends = [line.lower() for line in block if line.lower().startswith(("exit /b", "goto :"))]
+        assert ends and (ends[-1] == "exit /b 1" or ends[-1].startswith("goto :")), (label, block)
