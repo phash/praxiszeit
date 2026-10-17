@@ -306,6 +306,11 @@ group_code() {
   # 409 statt 500 (time_entries._clock_in_start_taken_detail, f-String-Stücke).
   need_code "Einstempeln nicht möglich: Ein Zeiteintrag von heute beginnt bereits um "
   need_code "vorhandenen Eintrag in der Zeiterfassung bearbeiten oder nach {hhmm} "
+  # XLS-Import: Zeilen außerhalb des Beschäftigungsfensters
+  # (xls_import_service.employment_window_skip_reason, Vorschau und /confirm).
+  need_code 'arbzg_warnings=[f"Wird übersprungen — {row.outside}."]'
+  need_code ': übersprungen — {outside}."'
+  need_code "return f\"Datum liegt nach dem letzten Arbeitstag ({last.strftime('%d.%m.%Y')})\""
   need_code 'gestempelt ${rawEnd} · angerechnet bis ${effEnd}'
   need_code 'nach ${hm(breakMinutes)} h Pause'
   need_code "Die gesamte gestempelte Zeit soll angerechnet werden. Bitte begründen Sie, warum Sie in dieser Zeit gearbeitet haben."
@@ -480,6 +485,9 @@ group_admin_rest() {
   need "$f" 'Alle genehmigen'
   need "$f" 'Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.'
   need "$f" 'Pause an den Tag angepasst (0 → 30 Min)'
+  # Gesamtreview 1.20: XLS-Zeilen außerhalb des Beschäftigungsfensters.
+  need "$f" 'Wird übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'
+  need "$f" '29.09.2026: übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'
   need "$f" '| **Anerkennungen** |'
   # Gesamtreview 1.20: das Anerkennen an einem Misch-Tag schreibt zusätzlich je
   # angeglichener Abwesenheit eine Zeile (credit_override_service, Fund 1) —

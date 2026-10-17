@@ -31,6 +31,25 @@ CREDIT_OVERRIDE_IMPORT_NOTE = (
 )
 
 
+def employment_window_skip_reason(user, d: date) -> Optional[str]:
+    """Grund, warum eine Zeile mit Datum ``d`` außerhalb des Beschäftigungsfensters
+    der Zielperson liegt — sonst None (Gesamtreview 1.20, Parallelpfad zu #502).
+
+    Einstempeln, beide Anlege-/Bearbeiten-Routen und die Antragsgenehmigung
+    lehnen ein solches Datum mit 400 ab (``time_entries._assert_within_employment_window``,
+    gleicher Wortlaut, hier mit Datum wie bei den Abwesenheiten). Der Import
+    speicherte die Zeile bis dahin still, und sie fiel danach aus dem
+    gefensterten Ist (#195) heraus. Jetzt überspringt er sie sichtbar — wie
+    Zeilen mit Ende ≤ Beginn."""
+    first = getattr(user, "first_work_day", None)
+    last = getattr(user, "last_work_day", None)
+    if first and d < first:
+        return f"Datum liegt vor dem ersten Arbeitstag ({first.strftime('%d.%m.%Y')})"
+    if last and d > last:
+        return f"Datum liegt nach dem letzten Arbeitstag ({last.strftime('%d.%m.%Y')})"
+    return None
+
+
 class ImportedEntryIn(BaseModel):
     """Eine Importzeile, wie ``/confirm`` sie annimmt (Eingabe).
 
@@ -323,8 +342,9 @@ def _row_counts(row) -> bool:
     """Zählt die Zeile für den Tag? Zeilen mit (wirksamem) Ende ≤ Beginn
     überspringt ``/confirm`` — sie zählen weder für Pause, §3/§4 und
     Anwesenheit noch für §5 (Gesamtreview 1.20 B4), und sie ersetzen keinen
-    Bestandseintrag (``replaced_ids``, Review-Nachzug B4)."""
-    return row.r.eff_end > row.r.eff_start
+    Bestandseintrag (``replaced_ids``, Review-Nachzug B4). Dasselbe gilt für
+    Zeilen außerhalb des Beschäftigungsfensters (``row.outside``)."""
+    return getattr(row, "outside", None) is None and row.r.eff_end > row.r.eff_start
 
 
 def _rest_reference(db: Session, user_id, tenant_id, rows: list, kept_by_date: dict,
@@ -519,6 +539,26 @@ def parse_xls(
         break_min = row.break_min
         net = views[i].net_hours
 
+        # Außerhalb des Beschäftigungsfensters: ``/confirm`` überspringt die
+        # Zeile — die Vorschau sagt das, und nur das (jede weitere Meldung gälte
+        # einem Eintrag, den es nie geben wird). Sie zählt für keinen Tag und
+        # trifft keinen Bestand (``_read_rows``: ``existing`` None).
+        if row.outside is not None:
+            entries.append(ImportedEntry(
+                date=entry_date,
+                start_time=start_t,
+                end_time=end_t,
+                break_minutes=break_min,
+                note=note,
+                has_conflict=False,
+                arbzg_warnings=[f"Wird übersprungen — {row.outside}."],
+                raw_start_time=raw_start_t,
+                raw_end_time=raw_end_t,
+                uncredited_minutes=r.uncredited_minutes,
+                net_hours=net,
+            ))
+            continue
+
         # §3/§4 einmal je Tag, an seiner letzten (gültigen) Zeile: alle Zeilen
         # des Tages mit ihrer Tages-Pause plus der stehende Bestand. §5 einmal je
         # Tag, an seiner ersten gültigen Zeile: Ende des letzten Arbeitstags davor
@@ -649,7 +689,10 @@ def _read_rows(ws, db: Session, user, user_id, user_tenant, grace: int) -> list:
         r = work_window_service.clamp(
             db, user, entry_date, file_start, file_end, grace, credit_override=False,
         )
-        existing = _find_existing_entry(
+        # Außerhalb des Beschäftigungsfensters überspringt ``/confirm`` die Zeile,
+        # bevor sie einen Eintrag sucht — sie ersetzt also auch keinen.
+        outside = employment_window_skip_reason(user, entry_date)
+        existing = None if outside is not None else _find_existing_entry(
             db, user_id, user_tenant, entry_date, starts=(r.eff_start,), raw_start=file_start,
         )
         override = bool(existing is not None and existing.credit_override)
@@ -665,6 +708,7 @@ def _read_rows(ws, db: Session, user, user_id, user_tenant, grace: int) -> list:
         )
         rows.append(SimpleNamespace(
             date=entry_date, note=note, r=r, segs=segs, existing=existing, override=override,
+            outside=outside,
         ))
     return rows
 
@@ -813,6 +857,21 @@ def _execute_import_inner(
         written: dict = {}
         logs: list = []
         for entry in day_entries:
+            # Gesamtreview 1.20: außerhalb des Beschäftigungsfensters der
+            # Zielperson sichtbar überspringen (``employment_window_skip_reason``)
+            # — vor der Eintragssuche, die Zeile ersetzt also auch mit
+            # „überschreiben" keinen Bestand. Server-seitig, /confirm nimmt die
+            # Zeilen vom Client; der Hinweis der Vorschau wird nicht übernommen.
+            outside = (
+                employment_window_skip_reason(target_user, entry.date)
+                if target_user is not None else None
+            )
+            if outside is not None:
+                skipped += 1
+                all_warnings.append(
+                    f"{entry.date.strftime('%d.%m.%Y')}: übersprungen — {outside}."
+                )
+                continue
             # Invariant end_time > start_time. net_hours floors a negative duration
             # to 0, so an end<=start row (over-midnight shift, or corrupt/forged
             # source — /confirm trusts client-supplied entries) would otherwise be

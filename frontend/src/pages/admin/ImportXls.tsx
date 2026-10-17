@@ -445,7 +445,10 @@ export default function ImportXls() {
 
         {result.skipped > 0 && (
           <p className="text-sm text-gray-500 mb-4">
-            {result.skipped} Einträge übersprungen (Konflikte nicht überschrieben).
+            {/* Gesamtreview 1.20: übersprungen werden auch Zeilen mit Ende ≤ Beginn und
+                Zeilen außerhalb des Beschäftigungszeitraums — deren Grund steht in den
+                Warnungen („… übersprungen — …"). */}
+            {result.skipped} Einträge übersprungen (nicht überschriebene Konflikte; weitere Gründe bei den Warnungen).
           </p>
         )}
 
