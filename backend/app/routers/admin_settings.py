@@ -176,6 +176,14 @@ def update_setting(
             raise HTTPException(status_code=400, detail=f"Ungültiger Wert für {key}: true/false erwartet")
         value = str(value).lower()
 
+    # Gesamtreview: die Sondertag-Einstellungen wirken ohne Jahresgrenze, also
+    # auch in abgeschlossenen Jahren — Zustand vor der Änderung festhalten.
+    special_before = None
+    if key in special_days_service.SETTING_KEYS:
+        special_before = special_days_service.get_special_day_settings(
+            db, current_user.tenant_id
+        )
+
     s = db.query(SystemSetting).filter(
         SystemSetting.key == key,
         SystemSetting.tenant_id == current_user.tenant_id
@@ -210,6 +218,19 @@ def update_setting(
             db, current_user.tenant_id, changed_years
         )
     else:
+        if special_before is not None:
+            db.flush()
+            # Fix #5 auch hier: ändert der Wechsel Soll, Gutschrift oder
+            # Urlaubsverbrauch des 24./31.12. in einem abgeschlossenen Jahr, ist
+            # dessen Übertrag veraltet — melden, nie automatisch neu berechnen.
+            affected = special_days_service.years_affected_by_change(
+                db,
+                current_user.tenant_id,
+                special_before,
+                special_days_service.get_special_day_settings(db, current_user.tenant_id),
+                calculation_service.all_closed_years(db, current_user.tenant_id),
+            )
+            warning = calculation_service.closed_year_warning_text(affected)
         db.commit()
 
     db.refresh(s)

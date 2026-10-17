@@ -264,6 +264,10 @@ dieses Backup verlustfrei (`UPDATE.md`).
   werden die gesetzlichen Feiertage aller Jahre für das neue Bundesland neu
   berechnet; eigene Feiertage bleiben. Betrifft das ein Jahr mit
   Jahresabschluss, weist PraxisZeit auf den veralteten Übertrag hin.
+- **Sondertage 24./31.12.** umzustellen änderte Soll und Urlaubskonto auch in
+  Jahren mit Jahresabschluss ohne Hinweis (die Einstellung gilt für alle Jahre).
+  Jetzt meldet PraxisZeit den veralteten Übertrag, sobald sich der Tag in einem
+  abgeschlossenen Jahr tatsächlich ändert.
 - **Eigene Feiertage** in einem Jahr mit Jahresabschluss anlegen, verschieben
   oder löschen verschob Soll und Saldo dieses Jahres ohne Hinweis. Jetzt meldet
   PraxisZeit den veralteten Übertrag wie beim Bundesland-Wechsel; ein reines

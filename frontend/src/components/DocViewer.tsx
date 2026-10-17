@@ -532,7 +532,7 @@ export const handbuchAdminSections: AccordionItem[] = [
           <li><strong>Frei</strong> – arbeitsfrei, kein Stundensoll. Im Kalender grau, nicht buchbar.</li>
           <li><strong>Halbtag</strong> – halbes Tagessoll. Im Kalender amber/gelb.</li>
         </ul>
-        <p>Die Einstellung wirkt direkt auf Soll-Berechnung und Kalenderdarstellung bei allen Mitarbeitenden.</p>
+        <p>Die Einstellung wirkt direkt auf Soll-Berechnung und Kalenderdarstellung bei allen Mitarbeitenden – in <strong>allen</strong> Jahren, auch zurückliegenden. Ändert sie ein Jahr, für das der Jahresabschluss schon erfolgt ist, weist PraxisZeit nach dem Speichern auf den veralteten Übertrag hin; den Übertrag unter „Jahresabschluss“ prüfen und ggf. von Hand korrigieren.</p>
       </div>
     ),
   },

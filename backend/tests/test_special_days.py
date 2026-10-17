@@ -381,3 +381,81 @@ def test_router_put_invalid_bool_rejected(db, test_admin):
         "/api/admin/settings/special_day_dec31_counts_as_vacation", json={"value": "maybe"}
     )
     assert res.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Gesamtreview: Sondertag-Wechsel in abgeschlossenem Jahr meldet den veralteten
+# Übertrag (Fix #5 wie beim Bundesland bzw. den eigenen Feiertagen)
+# ---------------------------------------------------------------------------
+
+def _close_year(db, user, year: int):
+    from app.models import YearCarryover
+    db.add(YearCarryover(
+        tenant_id=DEFAULT_TENANT_ID, user_id=user.id, year=year + 1,
+        overtime_hours=0, vacation_days=0,
+    ))
+    db.commit()
+
+
+def test_router_special_day_change_in_closed_year_warns(db, test_admin):
+    _close_year(db, test_admin, 2025)
+    client = _settings_client(db, test_admin)
+    res = client.put("/api/admin/settings/special_day_dec24_mode", json={"value": "free"})
+    assert res.status_code == 200
+    assert "Jahresabschluss 2025" in res.json().get("warning", "")
+
+
+def test_router_special_day_same_value_no_warning(db, test_admin):
+    _close_year(db, test_admin, 2025)
+    client = _settings_client(db, test_admin)
+    # Default ist working_day → erneutes Speichern ändert nichts.
+    res = client.put("/api/admin/settings/special_day_dec24_mode", json={"value": "working_day"})
+    assert res.status_code == 200
+    assert "warning" not in res.json()
+
+
+def test_router_special_day_change_without_closed_year_no_warning(db, test_admin):
+    client = _settings_client(db, test_admin)
+    res = client.put("/api/admin/settings/special_day_dec31_mode", json={"value": "half_day"})
+    assert res.status_code == 200
+    assert "warning" not in res.json()
+
+
+def test_router_vacation_flag_only_warns_when_day_is_free(db, test_admin):
+    _close_year(db, test_admin, 2025)
+    client = _settings_client(db, test_admin)
+    # Modus working_day: der Schalter wirkt nicht → kein Hinweis.
+    res = client.put(
+        "/api/admin/settings/special_day_dec24_counts_as_vacation", json={"value": "false"}
+    )
+    assert res.status_code == 200
+    assert "warning" not in res.json()
+    # Modus free: der Schalter ändert den Urlaubsverbrauch → Hinweis.
+    _set_setting(db, "special_day_dec31_mode", "free")
+    res = client.put(
+        "/api/admin/settings/special_day_dec31_counts_as_vacation", json={"value": "false"}
+    )
+    assert res.status_code == 200
+    assert "Jahresabschluss 2025" in res.json().get("warning", "")
+
+
+def test_router_special_day_on_weekend_in_closed_year_no_warning(db, test_admin):
+    # 24.12.2022 und 31.12.2022 sind Samstage → kein Soll, keine Wirkung.
+    _close_year(db, test_admin, 2022)
+    client = _settings_client(db, test_admin)
+    res = client.put("/api/admin/settings/special_day_dec24_mode", json={"value": "free"})
+    assert res.status_code == 200
+    assert "warning" not in res.json()
+
+
+def test_router_special_day_on_holiday_in_closed_year_no_warning(db, test_admin):
+    # Eigener Feiertag am 24.12.2025 → der Sondertag-Modus wirkt dort nicht.
+    _close_year(db, test_admin, 2025)
+    db.add(PublicHoliday(
+        tenant_id=DEFAULT_TENANT_ID, date=DEC24, name="Heiligabend", year=2025,
+    ))
+    db.commit()
+    client = _settings_client(db, test_admin)
+    res = client.put("/api/admin/settings/special_day_dec24_mode", json={"value": "free"})
+    assert res.status_code == 200
+    assert "warning" not in res.json()

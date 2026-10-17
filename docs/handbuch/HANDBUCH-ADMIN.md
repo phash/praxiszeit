@@ -741,7 +741,7 @@ Heiligabend (24.12.) und Silvester (31.12.) sind keine gesetzlichen Feiertage. I
 | **Urlaub** | Der freie Tag wird vom Urlaubskonto abgezogen |
 | **Bezahlte Freistellung** | Kein Abzug vom Urlaubskonto (wie ein Feiertag) |
 
-Die Einstellung wirkt sich automatisch auf **Stundensoll**, **Urlaubskonto** und die **Kalenderdarstellung** aus. Klicken Sie nach Änderungen auf **Speichern**.
+Die Einstellung wirkt sich automatisch auf **Stundensoll**, **Urlaubskonto** und die **Kalenderdarstellung** aus. Klicken Sie nach Änderungen auf **Speichern**. Sie gilt für **alle Jahre**, auch zurückliegende. Ändert sie Soll oder Urlaubskonto eines Jahres, für das der Jahresabschluss schon erfolgt ist (der Tag fällt dort auf einen Werktag ohne Feiertag), erscheint nach dem Speichern derselbe Hinweis auf den veralteten Übertrag wie beim Bundesland-Wechsel – den Übertrag unter „Jahresabschluss“ prüfen und ggf. von Hand korrigieren.
 
 <a id="urlaubsgenehmigung"></a>
 ### Urlaubsgenehmigung

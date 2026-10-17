@@ -3265,6 +3265,20 @@ def closed_years_in_range(db: Session, tenant_id, years) -> List[int]:
     })
 
 
+def all_closed_years(db: Session, tenant_id) -> List[int]:
+    """Alle Jahre Y des Mandanten mit Jahresabschluss (``YearCarryover`` für
+    Y+1 vorhanden), aufsteigend — dieselbe Definition wie
+    ``closed_years_in_range``, nur ohne vorgegebenen Jahresbereich. Für
+    Änderungen ohne Jahresgrenze (Sondertag-Einstellungen, Gesamtreview)."""
+    rows = (
+        db.query(YearCarryover.year)
+        .filter(YearCarryover.tenant_id == tenant_id)
+        .distinct()
+        .all()
+    )
+    return sorted({r[0] - 1 for r in rows})
+
+
 def closed_year_warning_text(closed_years: List[int]) -> Optional[str]:
     """Build the German warning string naming the EARLIEST year in
     ``closed_years`` (empty/falsy -> no warning). Pure/no DB access — split out

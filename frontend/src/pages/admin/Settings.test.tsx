@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import Settings from './Settings';
 
 // #499: Admin-Schalter „Ausnahme ‚Pflicht-Pause war nicht möglich' erlauben".
@@ -172,5 +172,34 @@ describe('<Settings /> Eigener Feiertag im abgeschlossenen Jahr (Gesamtreview 1.
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Eigener Feiertag angelegt.'));
     expect(postMock).toHaveBeenCalledWith('/holidays/', { name: 'Schützenfest', date: '2025-08-15' });
     expect(toastMock.warning).toHaveBeenCalledWith(warning);
+  });
+});
+
+describe('<Settings /> Sondertage im abgeschlossenen Jahr (Gesamtreview 1.20)', () => {
+  it('zeigt den Hinweis aus der Antwort genau einmal', async () => {
+    mockSettings([]);
+    const warning = 'Jahresabschluss 2025 bereits erfolgt — Carryover 2026 ist nun veraltet, bitte Jahresabschluss erneut ausführen.';
+    putMock.mockResolvedValue({ data: { key: 'special_day_dec24_mode', value: 'free', warning } });
+    render(<Settings />);
+    fireEvent.change(await screen.findByLabelText('Modus', { selector: '#special-dec24-mode' }), {
+      target: { value: 'free' },
+    });
+    const card = screen.getByRole('heading', { name: 'Sondertage (24./31.12.)' }).parentElement!;
+    fireEvent.click(within(card).getByRole('button', { name: /Speichern/ }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Sondertage (24./31.12.) gespeichert.'));
+    expect(toastMock.warning).toHaveBeenCalledTimes(1);
+    expect(toastMock.warning).toHaveBeenCalledWith(warning);
+  });
+
+  it('zeigt ohne abgeschlossenes Jahr keinen Hinweis', async () => {
+    mockSettings([]);
+    render(<Settings />);
+    fireEvent.change(await screen.findByLabelText('Modus', { selector: '#special-dec31-mode' }), {
+      target: { value: 'half_day' },
+    });
+    const card = screen.getByRole('heading', { name: 'Sondertage (24./31.12.)' }).parentElement!;
+    fireEvent.click(within(card).getByRole('button', { name: /Speichern/ }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Sondertage (24./31.12.) gespeichert.'));
+    expect(toastMock.warning).not.toHaveBeenCalled();
   });
 });

@@ -182,7 +182,7 @@ Heiligabend + Silvester sind **keine** gesetzlichen Feiertage → pro Tag getren
 | **Halbtag** | halbes Tagessoll | **amber/gelb** |
 | **Frei** | Tagessoll 0 (wie Feiertag) | **grau** |
 
-Bei „Frei" zusätzlich **Anrechnung:** Urlaub (vom Konto) oder Bezahlte Freistellung (kein Abzug). Wirkt auf Soll, Urlaubskonto und Kalender.
+Bei „Frei" zusätzlich **Anrechnung:** Urlaub (vom Konto) oder Bezahlte Freistellung (kein Abzug). Wirkt auf Soll, Urlaubskonto und Kalender. Gilt für **alle** Jahre – betrifft eine Änderung ein abgeschlossenes Jahr → Hinweis auf veralteten Übertrag.
 
 ### Eigene Abwesenheitsgründe (#312)
 

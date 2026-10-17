@@ -343,20 +343,29 @@ export default function Settings() {
     setSavingSpecialDays(true);
     try {
       // Persist all four keys; backend validates mode + bool.
-      await apiClient.put('/admin/settings/special_day_dec24_mode', {
-        value: specialDays.special_day_dec24_mode,
-      });
-      await apiClient.put('/admin/settings/special_day_dec24_counts_as_vacation', {
-        value: String(specialDays.special_day_dec24_counts_as_vacation),
-      });
-      await apiClient.put('/admin/settings/special_day_dec31_mode', {
-        value: specialDays.special_day_dec31_mode,
-      });
-      await apiClient.put('/admin/settings/special_day_dec31_counts_as_vacation', {
-        value: String(specialDays.special_day_dec31_counts_as_vacation),
-      });
+      const responses = [
+        await apiClient.put('/admin/settings/special_day_dec24_mode', {
+          value: specialDays.special_day_dec24_mode,
+        }),
+        await apiClient.put('/admin/settings/special_day_dec24_counts_as_vacation', {
+          value: String(specialDays.special_day_dec24_counts_as_vacation),
+        }),
+        await apiClient.put('/admin/settings/special_day_dec31_mode', {
+          value: specialDays.special_day_dec31_mode,
+        }),
+        await apiClient.put('/admin/settings/special_day_dec31_counts_as_vacation', {
+          value: String(specialDays.special_day_dec31_counts_as_vacation),
+        }),
+      ];
       setOriginalSpecialDays(specialDays);
       toast.success('Sondertage (24./31.12.) gespeichert.');
+      // Gesamtreview: die Einstellung wirkt in jedem Jahr — betrifft sie ein
+      // abgeschlossenes Jahr, liefert der Server einen Hinweis (je PUT ggf.
+      // derselbe Text, deshalb nur einmal anzeigen).
+      const warningResponse = responses.find(
+        (r) => typeof (r?.data as { warning?: unknown } | undefined)?.warning === 'string',
+      );
+      if (warningResponse) showResponseWarning(toast, warningResponse.data);
     } catch (err) {
       toast.error(getErrorMessage(err));
       // Re-sync from server so the UI reflects which keys actually persisted
@@ -885,7 +894,9 @@ const saveYearEndProjection = async () => {
           Legen Sie pro Tag fest, ob der 24.12. (Heiligabend) und der 31.12. (Silvester) ein
           ganzer Arbeitstag, ein Halbtag (halbe Sollzeit) oder frei sind. Bei „Frei" wählen Sie
           zusätzlich, ob der Tag als Urlaub (vom Urlaubskonto abgezogen) oder als bezahlte
-          Freistellung (kein Abzug, wie ein Feiertag) gilt. Standard: Arbeitstag.
+          Freistellung (kein Abzug, wie ein Feiertag) gilt. Standard: Arbeitstag. Die
+          Einstellung gilt für alle Jahre — ändert sie ein bereits abgeschlossenes Jahr, weist
+          PraxisZeit nach dem Speichern darauf hin.
         </p>
         {specialDays && (
           <div className="space-y-4">
