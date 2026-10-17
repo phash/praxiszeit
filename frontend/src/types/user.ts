@@ -5,6 +5,23 @@
 // sind optional markiert.
 import type { WeekBlocks } from './workBlocks';
 
+/**
+ * Gesamtreview 1.20 (Fund 25): der HEUTE gültige Vertragsstand, aufgelöst wie
+ * `work_blocks_today` (`calculation_service.attach_work_blocks_today`). Die
+ * gleichnamigen Felder der User-Zeile zieht der Server erst beim nächsten
+ * Schreibvorgang nach — für Anzeigen gilt dieser Stand.
+ */
+export interface ScheduleToday {
+  weekly_hours: number;
+  use_daily_schedule: boolean;
+  hours_monday: number | null;
+  hours_tuesday: number | null;
+  hours_wednesday: number | null;
+  hours_thursday: number | null;
+  hours_friday: number | null;
+  work_days_per_week: number;
+}
+
 export interface User {
   id: string;
   username: string;
@@ -48,4 +65,5 @@ export interface User {
   // Blöcke ändern sich ausschließlich über den Verlauf mit Wirkungsdatum.
   work_blocks?: WeekBlocks | null;
   work_blocks_today?: WeekBlocks | null;
+  schedule_today?: ScheduleToday | null;
 }

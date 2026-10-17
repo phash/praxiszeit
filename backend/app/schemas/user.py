@@ -232,6 +232,20 @@ class UserUpdate(BaseModel):
         return self
 
 
+class ScheduleTodayResponse(BaseModel):
+    """Gesamtreview 1.20 (Fund 25): der heute gültige Vertragsstand für die
+    Anzeige (``calculation_service.attach_work_blocks_today``) — die User-Zeile
+    zieht eine zukunftsdatierte Änderung erst beim nächsten Schreibvorgang nach."""
+    weekly_hours: float
+    use_daily_schedule: bool
+    hours_monday: Optional[float] = None
+    hours_tuesday: Optional[float] = None
+    hours_wednesday: Optional[float] = None
+    hours_thursday: Optional[float] = None
+    hours_friday: Optional[float] = None
+    work_days_per_week: int
+
+
 class UserResponse(UserBase):
     id: UUID
     role: UserRole
@@ -252,6 +266,8 @@ class UserResponse(UserBase):
     # Spec 11.1: datumsaufgelöst für heute (calculation_service.attach_work_blocks_today);
     # ohne Aufruf None.
     work_blocks_today: Optional[Any] = None
+    # Fund 25: derselbe Snapshot für Wochenstunden/Modus/Tageswerte/Arbeitstage.
+    schedule_today: Optional[ScheduleTodayResponse] = None
 
     @field_serializer('id')
     def serialize_uuid(self, value: UUID) -> str:
@@ -294,6 +310,7 @@ class UserListResponse(BaseModel):
     # Spec E29/11.5: locker, siehe UserResponse.
     work_blocks: Optional[Any] = None
     work_blocks_today: Optional[Any] = None
+    schedule_today: Optional[ScheduleTodayResponse] = None  # Fund 25, siehe UserResponse
     totp_enabled: bool = False
     deactivated_at: Optional[datetime] = None
     created_at: datetime

@@ -193,11 +193,36 @@ def get_blocks_json_for_date(
     return work_blocks_service.week_blocks_to_json(schedule.blocks, schedule.block_pauses)
 
 
+def schedule_display_json(schedule: Schedule) -> dict:
+    """Gesamtreview 1.20 (Fund 25): die vier Anzeigewerte eines Snapshots als
+    JSON (``float`` statt ``Decimal``, Pydantic-Regel) — Feld ``schedule_today``."""
+    def _f(value):
+        return None if value is None else float(value)
+
+    mon, tue, wed, thu, fri = schedule.day_hours
+    return {
+        "weekly_hours": float(schedule.weekly_hours),
+        "use_daily_schedule": bool(schedule.use_daily_schedule),
+        "hours_monday": _f(mon),
+        "hours_tuesday": _f(tue),
+        "hours_wednesday": _f(wed),
+        "hours_thursday": _f(thu),
+        "hours_friday": _f(fri),
+        "work_days_per_week": int(schedule.work_days_per_week),
+    }
+
+
 def attach_work_blocks_today(db: Session, users, on_date: date) -> None:
     """Spec 11.1 ``work_blocks_today``: hängt die für ``on_date`` aufgelösten
     Blöcke als transientes Attribut an jede User-Instanz — die Leseschemas
     lesen es per ``from_attributes``. EIN Preload der Verlaufszeilen für alle
     übergebenen Personen (Muster #449/#204).
+
+    Gesamtreview 1.20 (Fund 25): aus DEMSELBEN Snapshot zusätzlich
+    ``schedule_today`` (Wochenstunden, Modus, Tageswerte, Arbeitstage). Die
+    User-Zeile zieht eine zukunftsdatierte Änderung erst beim nächsten
+    Schreibvorgang nach (``_sync_user_to_current_change``, kein Scheduler,
+    Spec 9.8) — Liste und Formular widersprachen sonst den Blöcken daneben.
 
     Locker wie ein Leseschema (E29): strukturell kaputtes JSON (nur per Hand in
     der Datenbank erzeugbar) liefert schon der Resolver als ``None`` (geloggt,
@@ -213,8 +238,10 @@ def attach_work_blocks_today(db: Session, users, on_date: date) -> None:
     ).all():
         by_user.setdefault(row.user_id, []).append(row)
     for user in users:
-        user.work_blocks_today = get_blocks_json_for_date(
-            db, user, on_date, by_user.get(user.id, []))
+        schedule = get_schedule_for_date(db, user, on_date, by_user.get(user.id, []))
+        user.work_blocks_today = work_blocks_service.week_blocks_to_json(
+            schedule.blocks, schedule.block_pauses)
+        user.schedule_today = schedule_display_json(schedule)
 
 
 class ScheduleSegment(NamedTuple):

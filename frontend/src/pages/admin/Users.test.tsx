@@ -368,3 +368,76 @@ describe('Gesamtreview PR3: Wochenstunden der Liste im deutschen Zahlenformat', 
     expect(screen.queryByText('39.58')).not.toBeInTheDocument();
   });
 });
+
+// Gesamtreview 1.20 (Fund 25): die User-Zeile zieht eine zukunftsdatierte
+// Änderung erst beim nächsten Schreibvorgang nach (kein Scheduler, Spec 9.8).
+// Liste und Formular zeigen deshalb den heute gültigen Stand (`schedule_today`,
+// derselbe Resolver wie `work_blocks_today`) — sonst stand „40 h/Woche ·
+// Einheitliche Tagesstunden" über „Arbeitszeit heute: Mo 08:00–12:00 …".
+describe('Gesamtreview 1.20 Fund 25: heute gültiger Vertragsstand statt User-Zeile', () => {
+  const today = {
+    weekly_hours: 20, use_daily_schedule: true, work_days_per_week: 4,
+    hours_monday: 5, hours_tuesday: 5, hours_wednesday: 5, hours_thursday: 5, hours_friday: 0,
+  };
+
+  function mockList(overrides: Partial<User> = {}) {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({ data: [makeUser({
+          weekly_hours: 40, work_days_per_week: 5, use_daily_schedule: false, ...overrides,
+        })] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+  }
+
+  it('Tabelle und Mobilkarte zeigen Wochenstunden und Arbeitstage von heute', async () => {
+    mockList({ schedule_today: today });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    expect(screen.getAllByText('20,0')).toHaveLength(2); // Tabelle + Mobilkarte
+    expect(screen.getByText('4 Tage/Wo')).toBeInTheDocument();
+    expect(screen.getByText('4/Wo')).toBeInTheDocument();
+    expect(screen.queryByText('40,0')).not.toBeInTheDocument();
+  });
+
+  it('das Formular bekommt dieselben Werte als Anzeige-Props', async () => {
+    mockList({ schedule_today: today });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getAllByTitle('Bearbeiten')[0]);
+    await screen.findByTestId('fake-user-form');
+    expect(screen.getByTestId('display-weekly-hours')).toHaveTextContent('20');
+    expect(screen.getByTestId('display-work-days')).toHaveTextContent('4');
+    expect(screen.getByTestId('display-use-daily-schedule')).toHaveTextContent('true');
+    expect(screen.getByTestId('display-day-hours')).toHaveTextContent('5,5,5,5,0');
+  });
+
+  it('sortiert „Wochenstd." nach dem heute gültigen Wert', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({ data: [
+          // Zeile 40, heute 20 — muss VOR der Person mit 30 h stehen.
+          makeUser({ id: 'u1', first_name: 'Jane', last_name: 'Doe', weekly_hours: 40, schedule_today: today }),
+          makeUser({ id: 'u2', first_name: 'Max', last_name: 'Muster', weekly_hours: 30 }),
+        ] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getByText('Wochenstd.'));
+    const names = screen.getAllByText(/^(Doe, Jane|Muster, Max)$/).map((el) => el.textContent);
+    expect(names.slice(0, 2)).toEqual(['Doe, Jane', 'Muster, Max']);
+  });
+
+  it('Kontrolle: ohne schedule_today (ältere Antwort) gilt weiter die User-Zeile', async () => {
+    mockList();
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    expect(screen.getAllByText('40,0')).toHaveLength(2);
+    expect(screen.getByText('5 Tage/Wo')).toBeInTheDocument();
+  });
+});

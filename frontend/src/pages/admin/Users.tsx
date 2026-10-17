@@ -16,7 +16,28 @@ import CarryoverModal from './users/CarryoverModal';
 import WorkingHoursModal from './users/WorkingHoursModal';
 import UserForm from './users/UserForm';
 
-import type { User } from '../../types/user';
+import type { ScheduleToday, User } from '../../types/user';
+
+/**
+ * Gesamtreview 1.20 (Fund 25): Wochenstunden, Modus, Tageswerte und Arbeitstage
+ * für die Anzeige — der heute gültige Stand vom Server (`schedule_today`, derselbe
+ * Resolver wie `work_blocks_today`). Die User-Zeile zieht eine zukunftsdatierte
+ * Änderung erst beim nächsten Schreibvorgang nach (kein Scheduler, Spec 9.8);
+ * Liste und Formular widersprachen sonst „Arbeitszeit heute". Ältere Antworten
+ * ohne das Feld fallen auf die User-Zeile zurück.
+ */
+function scheduleToday(user: User): ScheduleToday {
+  return user.schedule_today ?? {
+    weekly_hours: user.weekly_hours,
+    use_daily_schedule: user.use_daily_schedule,
+    hours_monday: user.hours_monday,
+    hours_tuesday: user.hours_tuesday,
+    hours_wednesday: user.hours_wednesday,
+    hours_thursday: user.hours_thursday,
+    hours_friday: user.hours_friday,
+    work_days_per_week: user.work_days_per_week,
+  };
+}
 
 interface VacationInfo {
   budget_days: number;
@@ -152,7 +173,9 @@ export default function Users() {
   // through the narrow `displayWeeklyHours` prop below — that value alone can
   // go stale without wiping the rest of the form.
   const freshEditingUser = editingUser ? users.find((u) => u.id === editingUser.id) : undefined;
-  const displayWeeklyHours = freshEditingUser?.weekly_hours;
+  // Gesamtreview 1.20 (Fund 25): alle display*-Werte aus dem heute gültigen Stand.
+  const freshToday = freshEditingUser ? scheduleToday(freshEditingUser) : undefined;
+  const displayWeeklyHours = freshToday?.weekly_hours;
 
   // Task-11-Review Fix-Runde 1 (Important): dasselbe Muster für die fünf
   // Tageswerte des Tagesplans — UserForm's read-only Wochenstunden-Box (#431)
@@ -162,13 +185,13 @@ export default function Users() {
   // (Summe frisch über displayWeeklyHours, Aufschlüsselung eingefroren aus
   // dem beim Öffnen gesetzten formData). `editingUser` bleibt weiterhin
   // unangetastet — nur diese schmalen Werte werden nachgeführt.
-  const displayDayHours = freshEditingUser
+  const displayDayHours = freshToday
     ? [
-      freshEditingUser.hours_monday,
-      freshEditingUser.hours_tuesday,
-      freshEditingUser.hours_wednesday,
-      freshEditingUser.hours_thursday,
-      freshEditingUser.hours_friday,
+      freshToday.hours_monday,
+      freshToday.hours_tuesday,
+      freshToday.hours_wednesday,
+      freshToday.hours_thursday,
+      freshToday.hours_friday,
     ]
     : undefined;
 
@@ -180,8 +203,8 @@ export default function Users() {
   // „Einheitliche Tagesstunden" über einem frischen Tagesplan). Wieder
   // ausschließlich als schmale Anzeige-Props: `editingUser`/`formData` bleiben
   // unangetastet, sonst verwirft der Sync ungespeicherte Eingaben.
-  const displayWorkDays = freshEditingUser?.work_days_per_week;
-  const displayUseDailySchedule = freshEditingUser?.use_daily_schedule;
+  const displayWorkDays = freshToday?.work_days_per_week;
+  const displayUseDailySchedule = freshToday?.use_daily_schedule;
   // Spec 2026-10-08 (E62/12.2): dieselbe Bauart für die heute gültigen Blöcke.
   const displayBlocks = freshEditingUser ? (freshEditingUser.work_blocks_today ?? null) : undefined;
 
@@ -319,8 +342,9 @@ export default function Users() {
     .sort((a, b) => {
       if (!sortField) return 0;
 
-      const aValue = a[sortField];
-      const bValue = b[sortField];
+      // Fund 25: „Wochenstd." sortiert nach dem angezeigten (heute gültigen) Wert.
+      const aValue = sortField === 'weekly_hours' ? scheduleToday(a).weekly_hours : a[sortField];
+      const bValue = sortField === 'weekly_hours' ? scheduleToday(b).weekly_hours : b[sortField];
 
       if (aValue === undefined || bValue === undefined) return 0;
 
@@ -524,8 +548,8 @@ export default function Users() {
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {user.role === 'admin' ? 'Admin' : 'Mitarbeiter:in'}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{deHoursExact(user.weekly_hours)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{user.work_days_per_week} Tage/Wo</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{deHoursExact(scheduleToday(user).weekly_hours)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{scheduleToday(user).work_days_per_week} Tage/Wo</td>
                     <td className="px-6 py-4 text-sm">
                       {vacationInfo[user.id] ? (
                         <div className="space-y-1">
@@ -791,11 +815,11 @@ export default function Users() {
                   <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                     <div>
                       <span className="text-gray-500 block">Wochenstunden</span>
-                      <p className="font-medium">{deHoursExact(user.weekly_hours)}</p>
+                      <p className="font-medium">{deHoursExact(scheduleToday(user).weekly_hours)}</p>
                     </div>
                     <div>
                       <span className="text-gray-500 block">Arbeitstage</span>
-                      <p className="font-medium">{user.work_days_per_week}/Wo</p>
+                      <p className="font-medium">{scheduleToday(user).work_days_per_week}/Wo</p>
                     </div>
                     {user.first_work_day && (
                       <div>
