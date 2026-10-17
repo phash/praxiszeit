@@ -19,7 +19,8 @@ REM Zwischendatenbank, psql bricht beim ersten Fehler ab. Erst danach ersetzt
 REM sie die bisherige Datenbank. Scheitert ein Schritt, bleibt der Dienst aus
 REM und das Script endet mit Exit-Code 1 - frueher startete es den Dienst
 REM immer und meldete Erfolg, auch fuer eine halb eingespielte Datenbank.
-REM Gegenstueck zu praxiszeit-server.py restore unter Linux und macOS.
+REM Gegenstueck zu praxiszeit-server.py restore unter Linux und macOS; wie
+REM dort wird ein Backup einer neueren Version vor dem Tausch abgelehnt.
 REM ============================================================
 
 echo.
@@ -52,6 +53,7 @@ if defined PRAXISZEIT_INSTALL_DIR (
 )
 
 SET "BACKUP_DUMP=%TEMP%\praxiszeit-restore.sql"
+SET "REV_FILE=%TEMP%\praxiszeit-restore-revision.txt"
 SET "PYTHON=%DIR%\bin\python\python.exe"
 SET "PSQL=%DIR%\bin\postgresql\bin\psql.exe"
 SET "PG_CTL=%DIR%\bin\postgresql\bin\pg_ctl.exe"
@@ -128,6 +130,16 @@ if errorlevel 1 goto :bestand_unveraendert
 REM Ohne alembic_version ist es kein PraxisZeit-Backup.
 "%PSQL%" %PSQL_ARGS% -d %RESTORE_DB% -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM alembic_version) THEN RAISE EXCEPTION 'Tabelle alembic_version ist leer'; END IF; END $$"
 if errorlevel 1 goto :kein_praxiszeit_backup
+REM Ein Backup einer NEUEREN Version liesse sich einspielen, der Dienststart
+REM fiele aber an "Can't locate revision" - mit bereits ersetztem Bestand.
+REM Deshalb hier, vor dem Tausch: jeder Datenbankstand des Backups muss eine
+REM Migration dieser Installation sein (wie known_migration_revisions in
+REM praxiszeit-server.py, ohne Alembic zu importieren).
+"%PSQL%" %PSQL_ARGS% -d %RESTORE_DB% -tA -c "SELECT version_num FROM alembic_version" -o "%REV_FILE%"
+if errorlevel 1 goto :kein_praxiszeit_backup
+"%PYTHON%" -c "import re,sys,pathlib;sys.excepthook=lambda t,v,b:print(t.__name__+': '+str(v),file=sys.stderr);f,d=sys.argv[1:3];p=re.compile(r'^revision(?:\s*:\s*str)?\s*=\s*[\x27\x22]([^\x27\x22]+)[\x27\x22]',re.M);k={r for x in pathlib.Path(d).glob('*.py') for r in p.findall(x.read_text(encoding='utf-8'))};k or sys.exit('Keine Migrationen unter '+d+' gefunden - Installation unvollstaendig.');u=[r for r in (l.strip() for l in open(f,encoding='utf-8')) if r and r not in k];u and sys.exit('Das Backup stammt aus einer neueren PraxisZeit-Version (Datenbankstand '+', '.join(u)+'), diese Installation kennt diesen Stand nicht. Zuerst auf die Version aktualisieren, die das Backup erzeugt hat.')" "%REV_FILE%" "%DIR%\app\backend\alembic\versions"
+if errorlevel 1 goto :bestand_unveraendert
+del "%REV_FILE%" 2>nul
 echo OK.
 echo.
 
@@ -187,6 +199,7 @@ echo alembic_version fehlt oder ist leer.
 goto :bestand_unveraendert
 
 :bestand_unveraendert
+del "%REV_FILE%" 2>nul
 "%PSQL%" %PSQL_ARGS% -d postgres -c "DROP DATABASE IF EXISTS %RESTORE_DB% WITH (FORCE)" >nul 2>&1
 "%PG_CTL%" -D "%PG_DATA%" -m fast stop >nul 2>&1
 del "%BACKUP_DUMP%" 2>nul

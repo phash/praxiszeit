@@ -34,6 +34,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -684,3 +685,72 @@ def test_restore_bat_startet_den_dienst_nur_nach_erfolg():
         assert not any("Restore abgeschlossen" in line for line in block), (label, block)
         ends = [line.lower() for line in block if line.lower().startswith(("exit /b", "goto :"))]
         assert ends and (ends[-1] == "exit /b 1" or ends[-1].startswith("goto :")), (label, block)
+
+
+# Gesamtreview 1.20, Runde 3: die .bat pruefte nur, ob alembic_version Zeilen
+# hat. Ein Backup einer NEUEREN Version lief durch: DROP der bisherigen
+# Datenbank, RENAME, ``net start`` — und der Dienst brach an „Can't locate
+# revision“ ab, der Bestand war schon weg. ``restore`` lehnt das vor dem Tausch
+# ab (``_load_into_restore_db``); die .bat jetzt ebenso, ueber denselben
+# Revisionsvergleich mit ``app\backend\alembic\versions``. Die Pruefung laeuft
+# im gebuendelten Python — die Tests fuehren genau diesen Code aus.
+
+def _bat_revision_check() -> tuple[str, str]:
+    """(Python-Code, Argumente) der Revisionspruefung aus der .bat."""
+    line = next(line for line in _bat_lines()
+                if line.startswith('"%PYTHON%"') and "alembic" in line)
+    code, args = line[len('"%PYTHON%" -c "'):].split('" ', 1)
+    return code, args
+
+
+def _run_bat_revision_check(tmp_path: Path, revisions: list[str], versions: Path):
+    code, _ = _bat_revision_check()
+    # In der .bat stuende %% fuer ein %; der Code soll gar keins brauchen.
+    assert "%" not in code and '"' not in code, code
+    rev_file = tmp_path / "rev.txt"
+    rev_file.write_text("".join(f"{r}\n" for r in revisions), encoding="utf-8")
+    return subprocess.run([sys.executable, "-I", "-c", code, str(rev_file), str(versions)],
+                          capture_output=True, encoding="utf-8")
+
+
+def test_restore_bat_lehnt_ein_backup_einer_neueren_version_vor_dem_tausch_ab():
+    text = _bat_text()
+    read = text.index("SELECT version_num FROM alembic_version")
+    code, args = _bat_revision_check()
+    check = text.index(code)
+    assert text.index('-d %RESTORE_DB% -f "%BACKUP_DUMP%"') < read < check
+    assert check < text.index("DROP DATABASE IF EXISTS praxiszeit WITH (FORCE)")
+    assert args.strip() == '"%REV_FILE%" "%DIR%\\app\\backend\\alembic\\versions"', args
+
+
+def test_restore_bat_revisionspruefung_kennt_die_staende_der_installation(tmp_path):
+    versions = _REPO / "backend" / "alembic" / "versions"
+    result = _run_bat_revision_check(tmp_path, ["073_work_blocks"], versions)
+    assert result.returncode == 0, result.stderr
+    result = _run_bat_revision_check(tmp_path, ["001"], versions)
+    assert result.returncode == 0, result.stderr
+
+
+def test_restore_bat_revisionspruefung_wie_restore(srv, tmp_path):
+    # Dieselbe Menge wie known_migration_revisions — jede Revision geht durch.
+    versions = _REPO / "backend" / "alembic" / "versions"
+    known = sorted(srv.known_migration_revisions(versions))
+    result = _run_bat_revision_check(tmp_path, known, versions)
+    assert result.returncode == 0, result.stderr
+
+
+def test_restore_bat_revisionspruefung_lehnt_unbekannten_stand_ab(tmp_path):
+    versions = _REPO / "backend" / "alembic" / "versions"
+    result = _run_bat_revision_check(tmp_path, ["074_aus_der_zukunft"], versions)
+    assert result.returncode != 0
+    assert "074_aus_der_zukunft" in result.stderr
+    assert "neueren PraxisZeit-Version" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_restore_bat_revisionspruefung_ohne_migrationen_lehnt_ab(tmp_path):
+    empty = tmp_path / "versions"
+    empty.mkdir()
+    result = _run_bat_revision_check(tmp_path, ["073_work_blocks"], empty)
+    assert result.returncode != 0
+    assert "Traceback" not in result.stderr

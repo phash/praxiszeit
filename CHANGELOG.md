@@ -360,7 +360,9 @@ dieses Backup verlustfrei (`UPDATE.md`).
   Datenbank wurde zudem nie ersetzt, sondern überschrieben. Jetzt prüft das
   Script das Backup vor jeder Änderung, spielt es in eine Zwischendatenbank
   ein und ersetzt die bisherige erst danach; bei einem Fehler bleibt sie
-  unverändert und der Dienst aus (`BACKUP.md`, `setup-windows.md`).
+  unverändert und der Dienst aus. Ein Backup einer neueren PraxisZeit-Version
+  lehnt es wie `restore` vor dem Tausch ab, statt die Datenbank zu ersetzen
+  und am Dienststart zu scheitern (`BACKUP.md`, `setup-windows.md`).
 
 ### 🔧 Technik
 - `deploy.sh` und die Update-Anleitung im Docker-Paket ziehen die Basis-Images

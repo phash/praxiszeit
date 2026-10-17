@@ -162,9 +162,9 @@ restore-backup.bat data\backups\<datei>.sql.gz
 `restore-backup.bat` arbeitet wie `restore`: Es prüft das Backup **vor** jeder
 Änderung auf Vollständigkeit, hält dann den Dienst an, spielt das Backup in eine
 Zwischendatenbank ein (Abbruch beim ersten Fehler) und ersetzt die bisherige
-Datenbank erst danach. Scheitert ein Schritt, bleibt die bisherige Datenbank
-unverändert, der Dienst bleibt aus, und das Script endet mit einer FEHLER-Meldung
-statt „Restore abgeschlossen!“. Liegt PraxisZeit nicht unter `C:\praxiszeit`,
+Datenbank erst danach. Scheitert ein Schritt — auch bei einem Backup einer
+**neueren** Version —, bleibt die bisherige Datenbank unverändert, der Dienst
+bleibt aus, und das Script endet mit einer FEHLER-Meldung statt „Restore abgeschlossen!“. Liegt PraxisZeit nicht unter `C:\praxiszeit`,
 vorher `set PRAXISZEIT_INSTALL_DIR=<ordner>` setzen.
 
 ### Docker
