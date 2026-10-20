@@ -12,6 +12,7 @@
 #   * step 3  native PostgreSQL lifecycle (praxiszeit-server.py, needs the repo
 #             mounted — impossible in the backend-only workflow)
 #   * steps 4-7  frontend: tsc, vitest, eslint, vite build
+#   * step 4b E2E type check (tsc over e2e/ — Playwright only transpiles)
 #   * step 8  E2E against a live docker compose stack
 #
 # So: a backend-only change is already gated by Actions (unless it rewords a
@@ -28,6 +29,8 @@
 #   3. Native PG lifecycle        (praxiszeit-server.py, needs the repo mounted)
 #   4. Frontend tsc --noEmit      (via node:20-alpine container, avoids
 #                                  node_modules permission issues)
+#   4b. E2E tsc --noEmit          (specs, fixtures, helpers; runs even with
+#                                  --skip-e2e, needs no compose stack)
 #   5. Frontend vitest            (unit tests for utils / pure logic)
 #   6. Frontend eslint
 #   7. Frontend vite build
@@ -176,6 +179,20 @@ if docker run --rm -v "$(pwd)/frontend":/app -w /app node:20-alpine \
     ok "TypeScript clean"
 else
     fail "TypeScript errors"
+fi
+
+# -----------------------------------------------------------------------
+# 4b. E2E TypeScript (#503) — Playwright transpiles the specs without checking
+#     types, so stale fixture/API types only surface here. As the host user:
+#     e2e/node_modules is user-owned and npm install must not leave root files.
+# -----------------------------------------------------------------------
+step "E2E TypeScript (tsc --noEmit)"
+if docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+       -v "$(pwd)/e2e":/app -w /app node:20-alpine \
+       sh -c "npm install --no-audit --no-fund --silent && npx tsc --noEmit" 2>&1 | tail -5; then
+    ok "E2E TypeScript clean"
+else
+    fail "E2E TypeScript errors"
 fi
 
 # -----------------------------------------------------------------------

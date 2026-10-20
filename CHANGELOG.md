@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### 🔧 Entwicklung
+
+- Die E2E-Suite (`e2e/`) wird jetzt typgeprüft: `typescript` und `@types/node` als devDependencies, Fixture- und Helfer-Typen korrigiert (Worker-Fixture `adminApi`, `onboarding_completed_at`, `absence_type` bei `createVacationRequest`). `scripts/local-ci.sh` führt dafür Schritt 4b `tsc --noEmit` über `e2e/` aus (#503).
+
 ## [1.20.0] - 2026-10-17
 
 Minor-Release. Update aus jeder 1.19.x ohne

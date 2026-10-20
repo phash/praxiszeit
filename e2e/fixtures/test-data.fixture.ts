@@ -106,6 +106,7 @@ export type TestDataFixtures = {
     end_date?: string;
     hours: number;
     note?: string;
+    absence_type?: string;
   }) => Promise<any>;
   /**
    * Legt einen zusätzlichen Mitarbeiter an (für Tests, denen die eine
@@ -298,6 +299,7 @@ export const testDataTest = authTest.extend<TestDataFixtures>({
       end_date?: string;
       hours: number;
       note?: string;
+      absence_type?: string;
     }) => {
       const result = await employeeApi.post('/vacation-requests', data);
       if (result?.id) createdIds.push(result.id);

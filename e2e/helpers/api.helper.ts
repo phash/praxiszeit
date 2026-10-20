@@ -35,6 +35,10 @@ interface LoginResponse {
     totp_enabled: boolean;
     created_at: string;
     use_daily_schedule: boolean;
+    // Not part of the login response (UserListResponse). The fixtures set it
+    // locally after POST /auth/onboarding/complete so the seeded auth-storage
+    // never shows the onboarding modal (#132).
+    onboarding_completed_at?: string | null;
   };
 }
 
