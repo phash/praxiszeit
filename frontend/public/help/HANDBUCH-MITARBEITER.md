@@ -414,7 +414,7 @@ Neben dem Zeitraum steht, wie viele **Tage** der Antrag kostet. Gezählt werden 
 
 In der Listenansicht Ihrer Abwesenheiten befindet sich der Button **Löschen**. Bestätigen Sie die Löschung im Dialogfenster.
 
-> Bereits vom Administrator bestätigte Einträge können nicht mehr selbst gelöscht werden. Wenden Sie sich an Ihren Administrator.
+> Nicht selbst löschen können Sie **Betriebsferien-Tage** (die ändert nur die Verwaltung) und **Urlaub**, der aus einem genehmigten Urlaubsantrag stammt oder bei eingeschalteter Genehmigungspflicht gebucht ist. Für diese Zeilen fehlt der Löschen-Button. Einen genehmigten Antrag ziehen Sie unter **„Meine Anträge"** zurück, solange der Urlaub noch nicht begonnen hat; danach stellen Sie einen Änderungsantrag oder wenden sich an die Verwaltung.
 
 ---
 

@@ -36,6 +36,9 @@ class AbsenceResponse(AbsenceBase):
     end_date: Optional[date] = None
     created_at: datetime
     reason_id: Optional[UUID] = None  # #312
+    # Release-Review 1.20.1: Betriebsferien-Tag — Mitarbeitende dürfen ihn nicht
+    # löschen (``absences.delete_absence``); das Frontend blendet „Löschen" aus.
+    closure_id: Optional[UUID] = None
     # #376: weiche, non-blocking Hinweise (z. B. CHILD_SICK_LIMIT). Leer auf GET
     # (ORM-Row hat kein `warnings`-Attribut → default_factory greift); create_absence
     # setzt es als transientes Attribut auf die erzeugte Row.
@@ -47,7 +50,7 @@ class AbsenceResponse(AbsenceBase):
     def serialize_uuid(self, value: UUID) -> str:
         return str(value)
 
-    @field_serializer('reason_id')
+    @field_serializer('reason_id', 'closure_id')
     def serialize_reason_id(self, value: Optional[UUID]) -> Optional[str]:
         return str(value) if value else None
 
