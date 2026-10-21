@@ -832,23 +832,26 @@ def _assert_employee_may_delete_absence(db: Session, current_user: User, absence
     """409, wenn Mitarbeitende diese eigene Abwesenheit nicht selbst löschen dürfen.
 
     - Betriebsferien-Tag (``closure_id`` gesetzt) → ``CLOSURE_ABSENCE_DELETE_DETAIL``.
-    - Urlaub bei Genehmigungspflicht (``vacation_approval_required``) ODER Urlaub,
-      dessen Datum ein genehmigter Urlaubsantrag desselben Users abdeckt
+    - Urlaub bei Genehmigungspflicht (``vacation_approval_required``) ODER eine
+      Abwesenheit, deren Datum und Typ ein genehmigter Antrag desselben Users abdeckt
       (``date..end_date``; Abwesenheiten tragen keinen Fremdschlüssel auf den
       Antrag, deshalb Abgleich über User + Datum + Status) →
       ``APPROVED_VACATION_DELETE_DETAIL``.
     """
     if absence.closure_id is not None:
         raise HTTPException(status_code=409, detail=CLOSURE_ABSENCE_DELETE_DETAIL)
-    if absence.type != AbsenceType.VACATION:
-        return
-    if settings_service.get_bool_setting(
+    if absence.type == AbsenceType.VACATION and settings_service.get_bool_setting(
             db, "vacation_approval_required", current_user.tenant_id, False):
         raise HTTPException(status_code=409, detail=APPROVED_VACATION_DELETE_DETAIL)
+    # Antraege buchen auch Fortbildung, Ueberstundenausgleich und Sonstiges
+    # (``VacationRequest.absence_type``, NULL = vacation; review_vacation_request
+    # bucht genau diesen Typ) — die Abdeckung gilt deshalb fuer jeden Typ.
     covered = db.query(VacationRequest.id).filter(
         VacationRequest.tenant_id == current_user.tenant_id,  # F-026
         VacationRequest.user_id == absence.user_id,
         VacationRequest.status == VacationRequestStatus.APPROVED.value,
+        func.coalesce(VacationRequest.absence_type, AbsenceType.VACATION.value)
+        == absence.type.value,
         VacationRequest.date <= absence.date,
         func.coalesce(VacationRequest.end_date, VacationRequest.date) >= absence.date,
     ).first()

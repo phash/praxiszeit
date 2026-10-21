@@ -40,9 +40,10 @@ def _closure(db, admin):
     return c
 
 
-def _vr(db, user, start, end=None, status=VacationRequestStatus.APPROVED.value):
+def _vr(db, user, start, end=None, status=VacationRequestStatus.APPROVED.value,
+        absence_type="vacation"):
     vr = VacationRequest(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=start,
-                         end_date=end, hours=8.0, absence_type="vacation", status=status)
+                         end_date=end, hours=8.0, absence_type=absence_type, status=status)
     db.add(vr)
     db.commit()
     return vr
@@ -127,3 +128,29 @@ def test_admin_can_delete_vacation_from_approved_request(
     _vr(_db_session, employee_user, DAY)
     a = _absence(_db_session, employee_user)
     assert admin_client.delete(f"/api/absences/{a.id}").status_code == 204
+
+
+def test_employee_cannot_delete_training_from_approved_request(
+        _db_session, employee_user, employee_client):
+    """Anträge buchen auch Fortbildung (``absence_type``) — gleiche Sperre."""
+    _vr(_db_session, employee_user, DAY, absence_type="training")
+    a = _absence(_db_session, employee_user, t=AbsenceType.TRAINING)
+    r = employee_client.delete(f"/api/absences/{a.id}")
+    assert r.status_code == 409, r.text
+    assert _exists(_db_session, a.id)
+
+
+def test_employee_cannot_delete_vacation_from_request_without_type(
+        _db_session, employee_user, employee_client):
+    """``absence_type`` NULL bucht Urlaub (admin_vacations: ``or "vacation"``)."""
+    _vr(_db_session, employee_user, DAY, absence_type=None)
+    a = _absence(_db_session, employee_user)
+    assert employee_client.delete(f"/api/absences/{a.id}").status_code == 409
+
+
+def test_request_of_other_type_does_not_block(_db_session, employee_user, employee_client):
+    """Ein genehmigter Urlaubsantrag deckt keine Krankmeldung am selben Tag."""
+    _vr(_db_session, employee_user, DAY, absence_type="vacation")
+    a = _absence(_db_session, employee_user, t=AbsenceType.SICK)
+    assert employee_client.delete(f"/api/absences/{a.id}").status_code == 204
+    assert not _exists(_db_session, a.id)

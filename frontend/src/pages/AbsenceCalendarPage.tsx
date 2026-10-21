@@ -288,11 +288,12 @@ export default function AbsenceCalendarPage() {
   const canDeleteAbsence = (absence: Absence): boolean => {
     if (currentUser?.role === 'admin') return true;
     if (absence.closure_id) return false;
-    if (absence.type !== 'vacation') return true;
-    if (vacationApprovalRequired) return false;
+    if (absence.type === 'vacation' && vacationApprovalRequired) return false;
+    // Anträge buchen auch Fortbildung, Überstundenausgleich, Sonstiges (absence_type).
     return !myVacationRequests.some(
       (vr) =>
         vr.status === 'approved' &&
+        (vr.absence_type || 'vacation') === absence.type &&
         vr.date <= absence.date &&
         (vr.end_date || vr.date) >= absence.date,
     );
