@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 🔒 Sicherheit
+
+- Docker: Web-Server `nginx:1.31.7-alpine` (vorher 1.31.6) — behebt u. a. zwei Pufferüberläufe (CVE-2026-15176 alias+rewrite, CVE-2026-93479 Ausdrücke mit Variablen), eine HTTP/3-Request-Body-Injection, eine Sitzungsfälschung bei TLS-Session-Ticket-Rotation und einen Use-after-free. Betrifft nur die Docker-Installation; die native Installation bündelt kein nginx.
+- Docker-Monitoring: Grafana 13.0.10 → 13.0.11 (vier CVEs), Prometheus v3.13.4 → v3.13.5 (Go 1.26.10, HTTP/2-Korrekturen in `golang.org/x/net`, CA-Zertifikate).
+- Frontend-Build: vite 8.2.0 → 8.3.4 (drei Lücken in `launch-editor`, nur Entwicklungsserver) und follow-redirects ≥ 1.16.1 (Weitergabe von Anmeldedaten bei Weiterleitungen). Ersetzt Dependabot-PR #509.
+
 ### 🔧 Entwicklung
 
 - Die E2E-Suite (`e2e/`) wird jetzt typgeprüft: `typescript` und `@types/node` als devDependencies, Fixture- und Helfer-Typen korrigiert (Worker-Fixture `adminApi`, `onboarding_completed_at`, `absence_type` bei `createVacationRequest`). `scripts/local-ci.sh` führt dafür Schritt 4b `tsc --noEmit` über `e2e/` aus (#503).
