@@ -6,10 +6,14 @@ const ADMIN_PASS = 'Admin2025!';
 
 export type AuthFixtures = {
   adminPage: Page;
+};
+
+// adminApi is worker-scoped, so it belongs in the second type parameter only.
+export type AuthWorkerFixtures = {
   adminApi: ApiHelper;
 };
 
-export const authTest = base.extend<AuthFixtures, { adminApi: ApiHelper }>({
+export const authTest = base.extend<AuthFixtures, AuthWorkerFixtures>({
   // Worker-scoped: login once per worker, share token across all tests in that worker
   adminApi: [
     async ({}, use) => {
