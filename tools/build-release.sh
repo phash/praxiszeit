@@ -1063,17 +1063,29 @@ if [ "$BUILD_DOCKER" = true ]; then
 
 ## Datensicherung / Update
 
-Vor jedem Versions-Update die DB der laufenden (alten) Version sichern und nach
-dem Hochziehen der neuen Version wieder einspielen:
+Das Paket entpackt in einen NEUEN Ordner praxiszeit-<version>/. Docker Compose
+leitet den Projektnamen (und damit die Volumes <projekt>_postgres_data und
+<projekt>_praxiszeit_backups) aus dem Ordnernamen ab, solange in der .env kein
+COMPOSE_PROJECT_NAME steht — ein neuer Ordner ergaebe eine NEUE, LEERE Datenbank.
+Deshalb den Projektnamen der alten Installation in die .env uebernehmen:
 
+    # im ALTEN Ordner: Projektnamen merken, sichern, anhalten (OHNE -v!)
+    docker compose config | sed -n 's/^name: //p'   # z. B. praxiszeit-1200
     bash backup.sh                                  # -> backups/praxiszeit_<ts>.sql.gz
-    # ... neue Version entpacken, .env + backups/ + eigene Aenderungen an
-    #     docker-compose.yml (z. B. Port) uebernehmen; alten Ordner danach
-    #     nicht mehr starten (gleicher Projektname, alte Version) ...
+    docker compose down
+    # im NEUEN Ordner: .env + backups/ + ggf. ssl/cert.pem, ssl/key.pem und eigene
+    #     Aenderungen an docker-compose.yml (z. B. Port) uebernehmen, dann den
+    #     alten Projektnamen festschreiben (falls die .env ihn noch nicht hat):
+    grep -q '^COMPOSE_PROJECT_NAME=' .env || echo "COMPOSE_PROJECT_NAME=<alter-projektname>" >> .env
+    docker compose config | grep -E '^name:|_postgres_data'   # muss den alten Namen zeigen
     docker compose pull db                          # PostgreSQL-18-Patchstand (Sicherheitsupdates)
     docker compose build --pull                     # frische Basis-Images (Debian/Alpine-Sicherheitsupdates)
     docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d   # nur HTTP: docker compose up -d
+    docker compose exec -T db psql -U praxiszeit -d praxiszeit -tAc 'SELECT count(*) FROM users'
+    # NUR falls die Daten trotz richtigem Projektnamen fehlen (count = 1):
     bash restore.sh backups/praxiszeit_<ts>.sql.gz  # DB frisch anlegen + einspielen, Backend neu starten
+
+Den alten Ordner danach nicht mehr starten (gleiche Volumes, alte Version).
 
 restore.sh haelt das Backend an, legt die Datenbank frisch an, spielt das Backup
 ein und startet das Backend wieder — erst dieser Start hebt das Schema per

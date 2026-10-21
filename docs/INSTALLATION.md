@@ -77,7 +77,7 @@ nano .env
 
 | Variable | Bedeutung |
 |----------|-----------|
-| `ADMIN_USERNAME` / `ADMIN_EMAIL` | Initialer Admin-Login |
+| `ADMIN_USERNAME` / `ADMIN_EMAIL` | Initialer Admin (angemeldet wird mit `ADMIN_USERNAME`) |
 | `ADMIN_FIRST_NAME` / `ADMIN_LAST_NAME` | Name des Admins |
 | `PRACTICE_NAME` / `PRACTICE_ADDRESS` | Erscheint in Excel-Exporten (DSGVO); `PRACTICE_NAME` auch in der Kopfzeile des Schichtplan-Aushangs (PDF) |
 | `HOLIDAY_STATE` | Bundesland für Feiertage (z. B. `Bayern`) |
@@ -153,7 +153,7 @@ hostname -I
 ```
 
 ### Erster Login
-- **Email/Benutzer:** der in `.env` gesetzte `ADMIN_EMAIL` / `ADMIN_USERNAME`
+- **Benutzername:** der in `.env` gesetzte `ADMIN_USERNAME` (Standard `admin`) — die Anmeldung geht nur mit dem Benutzernamen, nicht mit `ADMIN_EMAIL`
 - **Passwort:** das von `generate-secrets.sh` ausgegebene `ADMIN_PASSWORD`
 - **Wichtig:** Passwort nach dem ersten Login unter "Profil" aendern!
 

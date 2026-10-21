@@ -1242,7 +1242,7 @@ Betrifft es ein anderes Konto als `admin`, geben Sie den Benutzernamen mit an: `
 
 > **Vorher prüfen — ist das Passwort wirklich falsch?** Die Anmeldung geht nur mit dem **Benutzernamen**, nicht mit der E-Mail-Adresse; Passwortmanager setzen gern die E-Mail ein. Nach **5 Fehlversuchen in 15 Minuten** sperrt PraxisZeit den Benutzer vorübergehend („Konto vorübergehend gesperrt") — dann hilft Warten oder ein Neustart des Dienstes. Welcher Fall vorliegt, steht im Protokoll des Servers: `AUTH login_failed user=<name> reason=unknown_user` (Benutzername unbekannt **oder Konto deaktiviert** – dann hilft `--reactivate`, siehe oben) bzw. `reason=bad_password` (Passwort falsch).
 
-> **Docker-Installation:** Dasselbe Werkzeug steckt auch im Backend-Abbild — dort lautet der Befehl `docker compose exec backend python -m app.cli.reset_admin_password` (mit `--username <name>` bzw. `--disable-2fa` wie oben). Ein Eingriff von Hand in die Datenbank ist weder nötig noch empfohlen: dabei entfiele die Protokollzeile.
+> **Docker-Installation:** Dasselbe Werkzeug steckt auch im Backend-Abbild — dort lautet der Befehl `docker compose exec backend python -m app.cli.reset_admin_password` (mit `--username <name>`, `--disable-2fa` bzw. `--reactivate` wie oben). Ein Eingriff von Hand in die Datenbank ist weder nötig noch empfohlen: dabei entfiele die Protokollzeile.
 
 > **Der Eintrag `[admin] password` in `config/praxiszeit.conf` ist keine Antwort auf die Frage:** er ist nur der Startwert der Erstinstallation und wird bei einer späteren Passwortänderung nicht nachgeführt. Nach einem Reset überschreibt ihn das Kommando mit einem Zufallswert — er steht dann nur noch da, weil die Anwendung das Feld beim Start voraussetzt.
 

@@ -72,16 +72,45 @@ docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit |
 ### 2a. Mit Docker-Paket (Tarball/ZIP, ohne git)
 
 Neues Paket `praxiszeit-<neu>-docker.(tar.gz|zip)` herunterladen und entpacken.
+Es entpackt in einen **neuen** Ordner `praxiszeit-<neu>/`.
+
+> **Achtung, Projektname:** Docker Compose leitet den Projektnamen — und damit die
+> Namen der Volumes `<projekt>_postgres_data` und `<projekt>_praxiszeit_backups` —
+> aus dem **Ordnernamen** ab, solange in der `.env` kein `COMPOSE_PROJECT_NAME`
+> steht. Der neue Ordner `praxiszeit-<neu>` ergäbe einen anderen Projektnamen als
+> der alte (z. B. `praxiszeit-1201` statt `praxiszeit-1200`) und damit eine
+> **neue, leere Datenbank**: Anmelden ginge nur mit dem Initial-Admin, keine
+> Mitarbeitenden, keine Zeiten. Der alte Stack liefe zudem weiter und hielte
+> Port 80. Deshalb den alten Projektnamen in die `.env` übernehmen (unten,
+> Schritt 3). Installationen ab 1.20.1, deren `.env` von `generate-secrets.sh`
+> erzeugt wurde, tragen bereits `COMPOSE_PROJECT_NAME=praxiszeit`.
+
 **Die bestehende `.env` übernehmen** (NICHT `generate-secrets.sh` erneut laufen
-lassen — das überschriebe Secrets und das Admin-Passwort):
+lassen — das überschriebe Secrets und das Admin-Passwort). Kopierfertig, nur die
+beiden Pfade anpassen:
 
 ```bash
-# im neuen, entpackten Paket-Ordner:
-cp /pfad/zur/alten/installation/.env ./.env
-# Falls SSL genutzt wird, auch das Zertifikat übernehmen:
-cp /pfad/zur/alten/installation/ssl/cert.pem ssl/cert.pem 2>/dev/null || true
-cp /pfad/zur/alten/installation/ssl/key.pem  ssl/key.pem  2>/dev/null || true
+ALT=/pfad/zur/alten/installation          # Ordner mit der laufenden Version
+NEU=/pfad/zum/neuen/praxiszeit-<neu>      # frisch entpacktes Paket
 
+# 1. Projektnamen der alten Installation ermitteln — er bestimmt die Volumes:
+PROJEKT="$(cd "$ALT" && docker compose config | sed -n 's/^name: //p')"
+echo "Projektname: $PROJEKT"
+docker volume ls | grep "${PROJEKT}_postgres_data"   # MUSS eine Zeile zeigen — sonst abbrechen
+
+# 2. Alten Stack anhalten — OHNE -v, die Volumes (= Daten) bleiben erhalten:
+(cd "$ALT" && docker compose down)
+
+# 3. .env übernehmen und den alten Projektnamen festschreiben:
+cd "$NEU"
+cp "$ALT/.env" .env
+grep -q '^COMPOSE_PROJECT_NAME=' .env || echo "COMPOSE_PROJECT_NAME=${PROJEKT}" >> .env
+docker compose config | grep -E '^name:|_postgres_data'   # muss ${PROJEKT} zeigen
+# Falls SSL genutzt wird, auch das Zertifikat übernehmen:
+cp "$ALT/ssl/cert.pem" ssl/cert.pem 2>/dev/null || true
+cp "$ALT/ssl/key.pem"  ssl/key.pem  2>/dev/null || true
+
+# 4. Images aktualisieren und starten.
 # Datenbank-Image auf den neuesten 18.x-Patchstand holen (Sicherheitsupdates —
 # `up` allein nimmt sonst das bereits vorhandene, ältere Image):
 docker compose pull db
@@ -93,12 +122,28 @@ docker compose build --pull
 docker compose up -d
 # ODER HTTPS:
 docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
+
+# 5. Prüfen, dass die alten Daten da sind:
+docker compose ps                                        # alle Dienste "running"/"healthy"
+docker compose exec -T db psql -U praxiszeit -d praxiszeit -tAc 'SELECT count(*) FROM users'
 ```
 
-> Wichtig: Das **Postgres-Volume** muss dasselbe bleiben. Starten Sie das Update
-> im **selben Verzeichnis** wie zuvor (gleicher Compose-Projektname = gleiches
-> Volume), oder setzen Sie `COMPOSE_PROJECT_NAME` identisch. Im Zweifel: vor dem
-> Wechsel das SQL-Backup ziehen und nach dem Start prüfen, ob die Daten da sind.
+Danach im Browser mit einem **bestehenden** Konto anmelden und unter
+**Mitarbeitende** nachsehen, ob alle Personen und ihre Zeiten da sind. Zeigt
+`count(*)` nur `1` (der Initial-Admin) oder fehlen die Mitarbeitenden, lief der
+Stack gegen ein neues, leeres Volume:
+
+```bash
+cd "$NEU" && docker compose down                     # OHNE -v
+docker volume ls | grep postgres_data                # richtiges <projekt>_postgres_data suchen
+# COMPOSE_PROJECT_NAME in .env auf dieses <projekt> korrigieren, dann Schritt 4 wiederholen.
+# Notfalls: Stack starten und das Backup aus Schritt 1 einspielen:
+#   bash restore.sh /pfad/zu/backup-JJJJ-MM-TT.sql.gz
+```
+
+Das versehentlich angelegte, leere Volume lässt sich danach mit
+`docker volume rm <falsches-projekt>_postgres_data` entfernen — **nur** nach
+Prüfung, dass es wirklich das leere ist.
 
 > **Eigene Anpassungen an `docker-compose.yml`** (z. B. ein anderer Port als 80
 > oder ein freigegebener Prometheus-Port) stehen im neuen Paket wieder auf dem
@@ -106,10 +151,10 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 > still wieder auf Port 80. Vor dem `up` übernehmen, oder dauerhaft in eine
 > eigene `docker-compose.override.yml` legen (Compose liest sie automatisch mit).
 >
-> **Den alten Paket-Ordner nicht mehr starten.** Er trägt denselben
-> Projektnamen; ein `docker compose up` dort startet die alte Version gegen die
-> bereits aktualisierte Datenbank. Nach erfolgreichem Update löschen oder
-> umbenennen.
+> **Den alten Paket-Ordner nicht mehr starten.** Ein `docker compose up` dort
+> nutzt — sobald der Projektname übereinstimmt — dieselben Volumes und startet die
+> alte Version gegen die bereits aktualisierte Datenbank. Nach erfolgreichem
+> Update löschen oder umbenennen (die `backups/`-Dateien vorher sichern).
 
 ### 2b. Aus dem Quellcode (nur mit git-Zugriff)
 
