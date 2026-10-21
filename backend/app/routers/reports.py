@@ -325,7 +325,7 @@ def get_weekly_report(
 
 @router.get("/yearly-absences", response_model=List[EmployeeYearlyAbsences])
 def get_yearly_absences(
-    year: int = Query(..., description="Year (e.g., 2025)"),
+    year: int = Query(..., ge=2000, le=2100, description="Year (e.g., 2025)"),
     include_health_data: bool = Query(False, description="Krankheitsdaten einschließen (Art. 9 DSGVO)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -492,7 +492,7 @@ def export_monthly_report(
 @limiter.limit("20/minute")
 def export_yearly_report(
     request: Request,
-    year: int = Query(..., description="Year (e.g., 2026)"),
+    year: int = Query(..., ge=2000, le=2100, description="Year (e.g., 2026)"),
     include_health_data: bool = Query(False, description="Include sick/health data (Art. 9 DSGVO – logged in audit trail)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -532,7 +532,7 @@ def export_yearly_report(
 @limiter.limit("20/minute")
 def export_yearly_report_classic(
     request: Request,
-    year: int = Query(..., description="Year (e.g., 2026)"),
+    year: int = Query(..., ge=2000, le=2100, description="Year (e.g., 2026)"),
     include_health_data: bool = Query(False, description="Include sick/health data (Art. 9 DSGVO – logged in audit trail)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -649,7 +649,7 @@ def export_monthly_report_pdf(
 @limiter.limit("20/minute")
 def export_yearly_report_ods(
     request: Request,
-    year: int = Query(..., description="Year (e.g., 2026)"),
+    year: int = Query(..., ge=2000, le=2100, description="Year (e.g., 2026)"),
     include_health_data: bool = Query(False, description="Include sick/health data (Art. 9 DSGVO – logged in audit trail)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -682,7 +682,7 @@ def export_yearly_report_ods(
 @limiter.limit("20/minute")
 def export_yearly_report_classic_ods(
     request: Request,
-    year: int = Query(..., description="Year (e.g., 2026)"),
+    year: int = Query(..., ge=2000, le=2100, description="Year (e.g., 2026)"),
     include_health_data: bool = Query(False, description="Include sick/health data (Art. 9 DSGVO – logged in audit trail)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -713,8 +713,8 @@ def export_yearly_report_classic_ods(
 
 @router.get("/rest-time-violations")
 def get_rest_time_violations(
-    year: int = Query(..., description="Year to check"),
-    month: int = Query(None, description="Optional month to check"),
+    year: int = Query(..., ge=2000, le=2100, description="Year to check"),
+    month: int = Query(None, ge=1, le=12, description="Optional month to check"),
     min_rest_hours: float = Query(None, description="Minimum rest hours (default: 11)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -739,7 +739,7 @@ def get_rest_time_violations(
 
 @router.get("/sunday-summary")
 def get_sunday_summary(
-    year: int = Query(..., description="Year to check (e.g., 2026)"),
+    year: int = Query(..., ge=2000, le=2100, description="Year to check (e.g., 2026)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -801,7 +801,7 @@ def get_sunday_summary(
 
 @router.get("/night-work-summary")
 def get_night_work_summary(
-    year: int = Query(..., description="Year to check (e.g., 2026)"),
+    year: int = Query(..., ge=2000, le=2100, description="Year to check (e.g., 2026)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -860,7 +860,7 @@ def get_night_work_summary(
 
 @router.get("/compensatory-rest")
 def get_compensatory_rest(
-    year: int = Query(..., description="Year to check (e.g., 2026)"),
+    year: int = Query(..., ge=2000, le=2100, description="Year to check (e.g., 2026)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):

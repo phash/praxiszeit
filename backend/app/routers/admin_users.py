@@ -530,7 +530,7 @@ def list_users(
 def users_overview(
     include_inactive: bool = False,
     include_hidden: bool = False,
-    year: int = Query(None),
+    year: int = Query(None, ge=2000, le=2100),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -1475,6 +1475,19 @@ def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
 
     _lock_and_reload(db, current_user, user)  # #491 API-2
     was_inactive = not user.is_active
+    if was_inactive:
+        # Release-Review 1.20.1: Reaktivieren belegt einen Lizenzplatz wie
+        # create_user — sonst liesse sich max_employees per Deaktivieren +
+        # Neuanlegen + Reaktivieren umgehen.
+        active_count = (
+            db.query(User)
+            .filter(
+                User.tenant_id == current_user.tenant_id,
+                User.is_active == True,  # noqa: E712
+            )
+            .count()
+        )
+        check_employee_limit(active_count)
     user.is_active = True
     user.deactivated_at = None
     if was_inactive:

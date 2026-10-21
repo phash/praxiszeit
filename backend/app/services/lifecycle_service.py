@@ -488,7 +488,7 @@ def build_tenant_export_payload(db: Session, tenant: Tenant, *, requester: User)
         "absences": [_absence_dict(a) for a in absences],
         "change_requests": [
             {
-                "id": str(c.id), "user_id": str(c.user_id), "status": str(c.status),
+                "id": str(c.id), "user_id": str(c.user_id), "status": c.status.value if hasattr(c.status, "value") else str(c.status),
                 "created_at": c.created_at.isoformat() if c.created_at else None,
             }
             for c in change_requests

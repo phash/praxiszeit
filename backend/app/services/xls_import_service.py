@@ -502,8 +502,13 @@ def parse_xls(
 
     try:
         wb = xlrd.open_workbook(file_contents=file_bytes)
-    except xlrd.XLRDError as e:
-        raise ValueError(f"Datei konnte nicht geöffnet werden: {e}")
+    except Exception as e:  # noqa: BLE001
+        # Release-Review 1.20.1: abgeschnittene/beschaedigte OLE2-Dateien
+        # werfen nicht nur XLRDError, sondern z. B. CompDocError/IndexError
+        # -> sonst HTTP 500. Jede Oeffnungs-Panne ist eine 400.
+        raise ValueError(
+            "Datei konnte nicht geöffnet werden – Datei beschädigt oder unvollständig."
+        ) from e
 
     if "Zeiterfassung" not in wb.sheet_names():
         raise ValueError(

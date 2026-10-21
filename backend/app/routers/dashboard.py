@@ -104,8 +104,8 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None) -> L
 
 @router.get("/", response_model=MonthlyDashboard)
 def get_dashboard(
-    year: Optional[int] = Query(None, description="Year (default: current year)"),
-    month: Optional[int] = Query(None, description="Month (default: current month)"),
+    year: Optional[int] = Query(None, ge=2000, le=2100, description="Year (default: current year)"),
+    month: Optional[int] = Query(None, ge=1, le=12, description="Month (default: current month)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -327,7 +327,7 @@ def get_weekly_overview(
 
 @router.get("/ytd-overtime", response_model=YtdOvertime)
 def get_ytd_overtime(
-    year: Optional[int] = Query(None, description="Year (default: current year)"),
+    year: Optional[int] = Query(None, ge=2000, le=2100, description="Year (default: current year)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -349,7 +349,7 @@ def get_ytd_overtime(
 
 @router.get("/vacation", response_model=VacationAccount)
 def get_vacation_account(
-    year: Optional[int] = Query(None, description="Year (default: current year)"),
+    year: Optional[int] = Query(None, ge=2000, le=2100, description="Year (default: current year)"),
     user_id: Optional[str] = Query(None, description="User ID (admin only)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
