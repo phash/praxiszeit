@@ -2,11 +2,30 @@
 
 ## [Unreleased]
 
+## [1.20.1] - 2026-10-21
+
 ### 🔒 Sicherheit
 
 - Docker: Web-Server `nginx:1.31.7-alpine` (vorher 1.31.6) — behebt u. a. zwei Pufferüberläufe (CVE-2026-15176 alias+rewrite, CVE-2026-93479 Ausdrücke mit Variablen), eine HTTP/3-Request-Body-Injection, eine Sitzungsfälschung bei TLS-Session-Ticket-Rotation und einen Use-after-free. Betrifft nur die Docker-Installation; die native Installation bündelt kein nginx.
 - Docker-Monitoring: Grafana 13.0.10 → 13.0.11 (vier CVEs), Prometheus v3.13.4 → v3.13.5 (Go 1.26.10, HTTP/2-Korrekturen in `golang.org/x/net`, CA-Zertifikate).
 - Frontend-Build: vite 8.2.0 → 8.3.4 (drei Lücken in `launch-editor`, nur Entwicklungsserver) und follow-redirects ≥ 1.16.1 (Weitergabe von Anmeldedaten bei Weiterleitungen). Ersetzt Dependabot-PR #509.
+
+### ⚠️ Geändertes Verhalten
+
+- **Mitarbeitende können Betriebsferien-Tage und genehmigten Urlaub nicht mehr selbst löschen.** Bisher prüfte `DELETE /api/absences/{id}` nur, ob die Abwesenheit der eigenen Person gehört. So ließ sich genehmigter, auch schon genommener Urlaub tageweise löschen: Die Urlaubstage kamen zurück, der Antrag blieb „genehmigt“, und die Regel „Zurückziehen nur vor Beginn“ war umgangen. Dasselbe ging mit Pflichturlaub aus Betriebsferien. Jetzt antwortet der Server mit 409, und die Liste „Meine Abwesenheiten“ zeigt für diese Zeilen keinen Löschen-Button mehr. Betroffen sind Betriebsferien-Tage und Urlaub, den ein genehmigter Antrag abdeckt oder der bei eingeschalteter Genehmigungspflicht gebucht ist. Für die Verwaltung ändert sich nichts. Das Mitarbeiter-Handbuch (4.3) beschreibt den Weg über „Meine Anträge“ bzw. einen Änderungsantrag.
+
+### 🐞 Korrekturen
+
+- **Docker-Update mit neuem Paket landete in einer leeren Datenbank.** Das Paket entpackt in einen neuen Ordner `praxiszeit-<version>`. Ohne `COMPOSE_PROJECT_NAME` leitet Docker Compose den Projektnamen und damit das Datenbank-Volume aus dem Ordnernamen ab. Die Anleitung behauptete das Gegenteil. `docs/UPDATE.md` 2a, `INSTALL-DOCKER.md`, das `DOCKER-README.md` im Paket und die Web-Anleitung beschreiben jetzt, wie man den alten Projektnamen ermittelt, den alten Stack (ohne `-v`) anhält und den Namen in die neue `.env` übernimmt, mit Prüfung danach. `generate-secrets.sh` schreibt für neue Installationen `COMPOSE_PROJECT_NAME=praxiszeit` in die `.env`.
+- **Docker-Schnellstart:** Der erste Login geht mit dem Benutzernamen `admin` (`ADMIN_USERNAME`), nicht mit der E-Mail-Adresse. `generate-secrets.sh` gibt den Benutzernamen jetzt mit aus. Für HTTP-Betrieb steht der Hinweis auf `COOKIE_SECURE=false` jetzt auch in `DOCKER-START.md`.
+- **XLS-Import bis 5 MB funktioniert jetzt wirklich.** Die Oberfläche versprach 5 MB, Backend und nginx schnitten Anfragen aber bei 2 MB ab. Für `/api/admin/import/` gelten jetzt 6 MB (Multipart-Anteil), für alles andere bleiben 2 MB.
+- XLS-Import: Eine beschädigte oder abgeschnittene `.xls` ergibt eine verständliche Meldung (400) statt eines Serverfehlers (500).
+- Betriebsferien-Name: leer oder länger als 255 Zeichen wird mit 422 abgelehnt, statt auf PostgreSQL mit 500 zu scheitern.
+- Monats- und Jahresparameter der Berichte, des Dashboards, der Feiertage, Abwesenheiten und Urlaubsanträge sind auf Monat 1–12 und Jahr 2000–2100 begrenzt (422 statt 500, z. B. bei `month=13`).
+- Mandanten-Export (`GET /api/tenant/export`): Der Status von Änderungsanträgen steht als `approved` in der Datei, nicht als `ChangeRequestStatus.APPROVED`.
+- ODS-Export: Die Spalte „Bemerkung“ zeigt an Tagen mit Zeiteintrag und Abwesenheit sowie außerhalb des Beschäftigungszeitraums die Notiz des Zeiteintrags, wie im XLSX-Export.
+- Lizenz: Das Reaktivieren einer Person prüft die Mitarbeitenden-Grenze der Lizenz wie das Anlegen. Wirkt erst ohne Beta-Modus.
+- Admin-Handbuch: Die Docker-Variante von `reset_admin_password` nennt auch `--reactivate`.
 
 ### 🔧 Entwicklung
 
