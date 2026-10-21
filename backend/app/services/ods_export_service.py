@@ -123,6 +123,19 @@ def _absence_cell_parts(day_absences, reason_names, include_health_data):
     return " | ".join(labels), " | ".join(notes)
 
 
+def _entry_remark(day_entries, is_sunday, is_holiday):
+    """Spalte 10 „Bemerkung" aus den Zeiteinträgen — Parität zu XLSX
+    (export_service: §10-Ausnahmegrund nur an Sonn-/Feiertagen, dann die Notiz,
+    beides je Eintrag, " | "-verbunden). _str_cell neutralisiert Formeln."""
+    parts = []
+    for e in day_entries:
+        if e.sunday_exception_reason and (is_sunday or is_holiday):
+            parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
+        if e.note:
+            parts.append(e.note)
+    return " | ".join(parts)
+
+
 def _empty_cell() -> TableCell:
     return TableCell(valuetype="string")
 
@@ -330,7 +343,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             tr.addElement(_float_cell(0.0))
             tr.addElement(_float_cell(0.0))
             tr.addElement(_str_cell("Außerhalb des Beschäftigungszeitraums"))
-            tr.addElement(_str_cell(""))
+            tr.addElement(_str_cell(_entry_remark(day_entries, is_sunday, is_holiday)))
         elif is_weekend:
             target = Decimal("0.00")
             if is_sunday and day_entries:
@@ -347,14 +360,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             # Die Gutschrift ist hier per credit_day_weight 0.
             tr.addElement(_float_cell(float(net) + float(credit)))
             tr.addElement(_str_cell(abw))
-            # Bemerkung: §10-Ausnahmegrund wenn vorhanden
-            bem_parts = []
-            for e in day_entries:
-                if e.sunday_exception_reason:
-                    bem_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
-                if e.note:  # Release-Review 1.18.2: kein elif — sonst verschluckt der §10-Grund die Notiz (XLSX/PDF zeigen beides)
-                    bem_parts.append(e.note)
-            tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
+            tr.addElement(_str_cell(_entry_remark(day_entries, is_sunday, is_holiday)))
         elif is_holiday:
             target = Decimal("0.00")
             holiday = holidays_by_date[current_date]
@@ -370,13 +376,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             # Die Gutschrift ist hier per credit_day_weight 0.
             tr.addElement(_float_cell(float(net) + float(credit)))
             tr.addElement(_str_cell(abw))
-            bem_parts = []
-            for e in day_entries:
-                if e.sunday_exception_reason:
-                    bem_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
-                if e.note:
-                    bem_parts.append(e.note)
-            tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
+            tr.addElement(_str_cell(_entry_remark(day_entries, is_sunday, is_holiday)))
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0
             # (Halbtag/SICK/TRAINING/OVERTIME behalten Soll) — Parität zu XLSX.
@@ -390,7 +390,9 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             # #497: + Gutschrift Krank/Fortbildung (Soll bleibt dort stehen).
             tr.addElement(_float_cell(float(net + credit - target)))
             tr.addElement(_str_cell(label))
-            tr.addElement(_str_cell(note_str))
+            # XLSX-Parität: Abwesenheitsnotizen ersetzen die Eintrags-Bemerkung
+            # nur, wenn sie nicht leer sind (Misch-Tag „Arzttermin" + Halbtag).
+            tr.addElement(_str_cell(note_str or _entry_remark(day_entries, is_sunday, is_holiday)))
         else:
             target = daily_target
             diff = float(net + credit - target)  # credit hier 0 (keine Abwesenheit)
@@ -398,8 +400,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             tr.addElement(_float_cell(diff))
             abw = "Nachtarbeit (§6 ArbZG)" if is_night_wrk else ""
             tr.addElement(_str_cell(abw))
-            notes = " | ".join(e.note for e in day_entries if e.note)
-            tr.addElement(_str_cell(notes))
+            tr.addElement(_str_cell(_entry_remark(day_entries, is_sunday, is_holiday)))
 
         # #498: angehängte Spalten 11/12 — Unterbrechung zwischen den Blöcken
         # und die Blöcke selbst (geteilter Dienst), Parität zu XLSX.
@@ -719,7 +720,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             tr.addElement(_float_cell(0.0))  # F2: kein Soll außerhalb der Beschäftigung
             tr.addElement(_float_cell(0.0))
             tr.addElement(_str_cell("Außerhalb des Beschäftigungszeitraums"))
-            tr.addElement(_str_cell(""))
+            tr.addElement(_str_cell(_entry_remark(day_entries, is_sunday, is_holiday)))
         elif is_weekend:
             if is_sunday and day_entries:
                 abw = "Sonntagsarbeit (§9/§10 ArbZG)"
@@ -735,13 +736,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             # Die Gutschrift ist hier per credit_day_weight 0.
             tr.addElement(_float_cell(float(net) + float(credit)))
             tr.addElement(_str_cell(abw))
-            bem_parts = []
-            for e in day_entries:
-                if e.sunday_exception_reason:
-                    bem_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
-                if e.note:  # Release-Review 1.18.2: kein elif — sonst verschluckt der §10-Grund die Notiz (XLSX/PDF zeigen beides)
-                    bem_parts.append(e.note)
-            tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
+            tr.addElement(_str_cell(_entry_remark(day_entries, is_sunday, is_holiday)))
         elif is_holiday:
             holiday = holidays_by_date[current_date]
             if day_entries:
@@ -756,13 +751,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             # Die Gutschrift ist hier per credit_day_weight 0.
             tr.addElement(_float_cell(float(net) + float(credit)))
             tr.addElement(_str_cell(abw))
-            bem_parts = []
-            for e in day_entries:
-                if e.sunday_exception_reason:
-                    bem_parts.append(f"§10-Ausnahmegrund: {e.sunday_exception_reason}")
-                if e.note:
-                    bem_parts.append(e.note)
-            tr.addElement(_str_cell(" | ".join(bem_parts) if bem_parts else ""))
+            tr.addElement(_str_cell(_entry_remark(day_entries, is_sunday, is_holiday)))
         elif day_absences:
             # DSGVO F-003/Art. 9 / #312: sick + custom-reason maskiert außer bei
             # angeforderten Gesundheitsdaten; ALLE Abwesenheiten des Tages (Misch-Tag).
@@ -772,15 +761,16 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
             tr.addElement(_float_cell(target))
             tr.addElement(_float_cell(net + float(credit) - target))  # #497
             tr.addElement(_str_cell(label))
-            tr.addElement(_str_cell(note_str))
+            # XLSX-Parität: Abwesenheitsnotizen ersetzen die Eintrags-Bemerkung
+            # nur, wenn sie nicht leer sind (Misch-Tag „Arzttermin" + Halbtag).
+            tr.addElement(_str_cell(note_str or _entry_remark(day_entries, is_sunday, is_holiday)))
         else:
             target = float(daily_target)
             tr.addElement(_float_cell(target))
             tr.addElement(_float_cell(net + float(credit) - target))  # credit hier 0
             abw = "Nachtarbeit (§6 ArbZG)" if is_night_wrk else ""
             tr.addElement(_str_cell(abw))
-            notes = " | ".join(e.note for e in day_entries if e.note)
-            tr.addElement(_str_cell(notes))
+            tr.addElement(_str_cell(_entry_remark(day_entries, is_sunday, is_holiday)))
 
         # #498: angehängte Spalten 11/12 (s. Monatsblatt).
         _blocks, _gap = day_work_blocks(day_entries)
