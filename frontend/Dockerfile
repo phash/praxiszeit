@@ -23,14 +23,14 @@ RUN npm run build
 # python:3.12.15-slim-bookworm-Pin) statt des floatenden `:alpine`-Tags, das
 # sich ohne Vorwarnung unter dem Build aendern kann. Aktueller Stand (siehe
 # `docker pull nginx:alpine` zum Zeitpunkt des Pins):
-#   nginx:1.31.6-alpine
+#   nginx:1.31.7-alpine
 #   sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
 # Zum Aktualisieren bewusst per `docker pull nginx:alpine` + `docker inspect
 # nginx:alpine --format '{{index .RepoDigests 0}}'` die neue Version+Digest
 # holen, hier eintragen und den Frontend-Build (`docker compose build
 # frontend`) + einen Smoke-Test (Login) verifizieren — nicht automatisch via
 # Renovate/Dependabot ohne Review (gleiche Regel wie beim Backend-Image).
-FROM nginx:1.31.6-alpine
+FROM nginx:1.31.7-alpine
 
 # Copy built files
 COPY --from=build /app/dist /usr/share/nginx/html
