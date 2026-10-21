@@ -61,6 +61,7 @@ hinweg erhalten — der `docker compose down`/`up`-Zyklus löscht sie **nicht**
 ### 1. Backup
 
 ```bash
+# Im Ordner der LAUFENDEN (alten) Installation ausführen.
 # Default-User/-DB = praxiszeit (eigene Werte ggf. aus der .env ablesen).
 # --clean --if-exists + gzip → exakt so zurückspielbar wie unter „Rollback".
 docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit | gzip > backup-$(date +%F).sql.gz
@@ -110,7 +111,8 @@ docker compose config | grep -E '^name:|_postgres_data'   # muss ${PROJEKT} zeig
 cp "$ALT/ssl/cert.pem" ssl/cert.pem 2>/dev/null || true
 cp "$ALT/ssl/key.pem"  ssl/key.pem  2>/dev/null || true
 
-# 4. Images aktualisieren und starten.
+# 4. Eigene Anpassungen an docker-compose.yml (Port, Prometheus-Port) aus "$ALT"
+#    übernehmen — siehe Hinweis unter dem Block —, dann Images aktualisieren und starten.
 # Datenbank-Image auf den neuesten 18.x-Patchstand holen (Sicherheitsupdates —
 # `up` allein nimmt sonst das bereits vorhandene, ältere Image):
 docker compose pull db
@@ -154,7 +156,8 @@ Prüfung, dass es wirklich das leere ist.
 > **Den alten Paket-Ordner nicht mehr starten.** Ein `docker compose up` dort
 > nutzt — sobald der Projektname übereinstimmt — dieselben Volumes und startet die
 > alte Version gegen die bereits aktualisierte Datenbank. Nach erfolgreichem
-> Update löschen oder umbenennen (die `backups/`-Dateien vorher sichern).
+> Update löschen oder umbenennen (vorher die `backups/`-Dateien **und** das
+> Update-Backup `backup-<datum>.sql.gz` aus Schritt 1 sichern — es liegt im alten Ordner).
 
 ### 2b. Aus dem Quellcode (nur mit git-Zugriff)
 
@@ -181,6 +184,7 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d   # oder oh
 
 ```bash
 docker compose ps                      # alle Dienste "Up"/"healthy"
+# Bei geändertem Port: http://localhost:<port>/… (bzw. https://…, mit -k bei eigenem Zertifikat)
 curl http://localhost/api/health       # {"status":"healthy","database":"connected"}
 curl http://localhost/api/system/info   # enthält die neue Version
 ```
