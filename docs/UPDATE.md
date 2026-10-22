@@ -97,8 +97,15 @@ NEU=/pfad/zum/neuen/praxiszeit-<neu>      # frisch entpacktes Paket
 # 1. Projektnamen der alten Installation ermitteln — er bestimmt die Volumes:
 PROJEKT="$(cd "$ALT" && docker compose config | sed -n 's/^name: //p')"
 echo "Projektname: $PROJEKT"
-docker volume ls | grep "${PROJEKT}_postgres_data"   # MUSS eine Zeile zeigen — sonst abbrechen
+docker volume ls | grep "${PROJEKT}_postgres_data"   # MUSS eine Zeile zeigen
+```
 
+**Nur weitermachen, wenn die letzte Zeile ein Volume `<projekt>_postgres_data`
+angezeigt hat.** Bleibt sie leer, stimmt `ALT` nicht oder die alte Installation
+läuft unter einem anderen Projektnamen — dann hier abbrechen und `docker volume ls`
+prüfen. (In derselben Shell weiter, damit `ALT`, `NEU` und `PROJEKT` gesetzt bleiben.)
+
+```bash
 # 2. Alten Stack anhalten — OHNE -v, die Volumes (= Daten) bleiben erhalten:
 (cd "$ALT" && docker compose down)
 
@@ -151,7 +158,23 @@ Prüfung, dass es wirklich das leere ist.
 > oder ein freigegebener Prometheus-Port) stehen im neuen Paket wieder auf dem
 > Auslieferungsstand und gehen beim Update verloren — die Anwendung lauscht dann
 > still wieder auf Port 80. Vor dem `up` übernehmen, oder dauerhaft in eine
-> eigene `docker-compose.override.yml` legen (Compose liest sie automatisch mit).
+> eigene `docker-compose.override.yml` neben der `docker-compose.yml` legen (Compose
+> liest sie automatisch mit) und beim Update mitkopieren. **Ports dort mit
+> `!override` angeben** — sonst *ergänzt* Compose die Ports der Grunddatei, statt
+> sie zu ersetzen, und bindet weiter zusätzlich Port 80 bzw. 9090:
+>
+> ```yaml
+> services:
+>   frontend:
+>     ports: !override
+>       - "8095:80"
+>   prometheus:
+>     ports: !override
+>       - "9090"
+> ```
+>
+> `!override` braucht Docker Compose ≥ 2.24 (`docker compose version`). Prüfen mit
+> `docker compose config | grep -A4 "ports:"`.
 >
 > **Den alten Paket-Ordner nicht mehr starten.** Ein `docker compose up` dort
 > nutzt — sobald der Projektname übereinstimmt — dieselben Volumes und startet die
