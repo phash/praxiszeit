@@ -68,22 +68,39 @@ class RequestSizeLimitMiddleware:
     exceeds ``max_size``.
 
     Default: 2MB (matching nginx.conf's client_max_body_size).
+
+    ``path_limits`` (Release-Review 1.20.1): optional ``{path_prefix: bytes}``
+    for single routes that legitimately need more — the XLS import promises
+    5 MB. The longest matching prefix wins; everything else keeps ``max_size``.
+    Mirrors the location-specific ``client_max_body_size`` in nginx.
     """
 
-    def __init__(self, app, max_size: int = 2 * 1024 * 1024):
+    def __init__(self, app, max_size: int = 2 * 1024 * 1024,
+                 path_limits: dict[str, int] | None = None):
         self.app = app
         self.max_size = max_size
+        # longest prefix first
+        self.path_limits = sorted((path_limits or {}).items(),
+                                  key=lambda kv: len(kv[0]), reverse=True)
+
+    def _limit_for(self, path: str) -> int:
+        for prefix, size in self.path_limits:
+            if path.startswith(prefix):
+                return size
+        return self.max_size
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
+
+        max_size = self._limit_for(scope.get("path", ""))
 
         # Fast-path: if the client sent a Content-Length we can reject before
         # reading any body at all.
         for name, value in scope.get("headers", []):
             if name == b"content-length":
                 try:
-                    if int(value) > self.max_size:
+                    if int(value) > max_size:
                         return await self._send_413(send)
                 except ValueError:
                     # malformed Content-Length — force-reject
@@ -98,7 +115,7 @@ class RequestSizeLimitMiddleware:
             if message["type"] == "http.request":
                 body = message.get("body", b"") or b""
                 received_bytes += len(body)
-                if received_bytes > self.max_size:
+                if received_bytes > max_size:
                     # Signal end-of-stream so downstream cleanup runs, then
                     # raise so the app sees the aborted request.
                     raise _RequestTooLargeError()

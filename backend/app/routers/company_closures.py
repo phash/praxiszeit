@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date, timedelta
 from decimal import Decimal
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
@@ -52,7 +52,8 @@ router = APIRouter(prefix="/api/company-closures", tags=["company-closures"])
 
 
 class CompanyClosureCreate(BaseModel):
-    name: str
+    # Spalte company_closures.name ist String(255) (Release-Review 1.20.1).
+    name: str = Field(..., min_length=1, max_length=255)
     start_date: date
     end_date: date
     # #145: True (default) -> generated absences are VACATION (deduct the
@@ -62,7 +63,7 @@ class CompanyClosureCreate(BaseModel):
 
 
 class CompanyClosureUpdate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=255)
     start_date: date
     end_date: date
     counts_as_vacation: bool = True

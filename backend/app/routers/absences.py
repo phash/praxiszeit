@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models import (
     User, Absence, AbsenceType, UserRole, TimeEntry, TimeEntryAuditLog,
     AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE, ChangeRequest,
-    WorkingHoursChange, CompanyClosure,
+    WorkingHoursChange, CompanyClosure, VacationRequest, VacationRequestStatus,
 )
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
@@ -27,6 +27,18 @@ router = APIRouter(prefix="/api/absences", tags=["absences"])
 # HANDBUCH-MITARBEITER 4.1, DocViewer und pzweb (Doku-Gate check-doc-sync.sh).
 CREDIT_OVERRIDE_ABSENCE_DETAIL = (
     "Am {day} gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."
+)
+
+# Release-Review 1.20.1: Löschsperren für Mitarbeitende in ``delete_absence``
+# (Gegenstück zu MA-ABS-01 in ``create_absence``). Betriebsferien-Tage gehören
+# der Verwaltung; genehmigter Urlaub läuft über das Zurückziehen des Antrags
+# (nur vor Beginn, ``vacation_requests.withdraw_vacation_request``) oder einen
+# Änderungsantrag — sonst kämen die Urlaubstage zurück, der Antrag bliebe
+# ``approved`` ohne Abwesenheiten.
+CLOSURE_ABSENCE_DELETE_DETAIL = "Betriebsferien-Tage kann nur die Verwaltung ändern."
+APPROVED_VACATION_DELETE_DETAIL = (
+    "Genehmigter Urlaub – bitte unter „Meine Anträge“ zurückziehen "
+    "oder einen Änderungsantrag stellen."
 )
 
 # DSGVO Art. 9: in the colleague-facing feeds (team calendar / upcoming), the
@@ -53,7 +65,7 @@ def get_daily_target_for_date_endpoint(
 
 @router.get("/", response_model=List[AbsenceResponse])
 def list_absences(
-    year: Optional[int] = Query(None, description="Filter by year"),
+    year: Optional[int] = Query(None, ge=2000, le=2100, description="Filter by year"),
     user_id: Optional[str] = Query(None, description="Filter by user ID (admin only)"),
     skip: int = 0,
     limit: int = Query(default=100, le=500),
@@ -816,6 +828,37 @@ def create_absence(
     return created_absences
 
 
+def _assert_employee_may_delete_absence(db: Session, current_user: User, absence: Absence) -> None:
+    """409, wenn Mitarbeitende diese eigene Abwesenheit nicht selbst löschen dürfen.
+
+    - Betriebsferien-Tag (``closure_id`` gesetzt) → ``CLOSURE_ABSENCE_DELETE_DETAIL``.
+    - Urlaub bei Genehmigungspflicht (``vacation_approval_required``) ODER eine
+      Abwesenheit, deren Datum und Typ ein genehmigter Antrag desselben Users abdeckt
+      (``date..end_date``; Abwesenheiten tragen keinen Fremdschlüssel auf den
+      Antrag, deshalb Abgleich über User + Datum + Status) →
+      ``APPROVED_VACATION_DELETE_DETAIL``.
+    """
+    if absence.closure_id is not None:
+        raise HTTPException(status_code=409, detail=CLOSURE_ABSENCE_DELETE_DETAIL)
+    if absence.type == AbsenceType.VACATION and settings_service.get_bool_setting(
+            db, "vacation_approval_required", current_user.tenant_id, False):
+        raise HTTPException(status_code=409, detail=APPROVED_VACATION_DELETE_DETAIL)
+    # Antraege buchen auch Fortbildung, Ueberstundenausgleich und Sonstiges
+    # (``VacationRequest.absence_type``, NULL = vacation; review_vacation_request
+    # bucht genau diesen Typ) — die Abdeckung gilt deshalb fuer jeden Typ.
+    covered = db.query(VacationRequest.id).filter(
+        VacationRequest.tenant_id == current_user.tenant_id,  # F-026
+        VacationRequest.user_id == absence.user_id,
+        VacationRequest.status == VacationRequestStatus.APPROVED.value,
+        func.coalesce(VacationRequest.absence_type, AbsenceType.VACATION.value)
+        == absence.type.value,
+        VacationRequest.date <= absence.date,
+        func.coalesce(VacationRequest.end_date, VacationRequest.date) >= absence.date,
+    ).first()
+    if covered is not None:
+        raise HTTPException(status_code=409, detail=APPROVED_VACATION_DELETE_DETAIL)
+
+
 @router.delete("/{absence_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_absence(
     absence_id: str,
@@ -838,6 +881,11 @@ def delete_absence(
         # #120: 404 statt 403 — fremde (Same-Tenant-)Abwesenheit wird wie eine
         # unbekannte behandelt, kein Existenz-Leak via Response-Code.
         raise HTTPException(status_code=404, detail="Abwesenheit nicht gefunden")
+
+    # Release-Review 1.20.1: Löschsperren für Mitarbeitende — VOR jeder Sperre
+    # und jedem Schreiben. Admins unverändert.
+    if current_user.role != UserRole.ADMIN:
+        _assert_employee_may_delete_absence(db, current_user, absence)
 
     # Audit 2026-07-31 (uebernommen aus Welle C): Anker-Sperre auf der
     # Benutzerzeile VOR dem Anfassen der abhaengigen Zeilen. Die Sperrreihenfolge

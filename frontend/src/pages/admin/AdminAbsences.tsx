@@ -375,6 +375,7 @@ export default function AdminAbsences() {
                   <input
                     type="text"
                     value={closureForm.name}
+                    maxLength={255}
                     onChange={e => setClosureForm(p => ({ ...p, name: e.target.value }))}
                     placeholder="z.B. Betriebsferien Sommer 2026"
                     required

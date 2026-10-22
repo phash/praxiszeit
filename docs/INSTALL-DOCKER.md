@@ -31,7 +31,9 @@ cd praxiszeit-<version>      # z. B. praxiszeit-1.10.3
 
 # 2. Secrets erzeugen (.env mit Zufallswerten + komplexem Admin-Passwort)
 bash generate-secrets.sh
-#    -> gibt das initiale Admin-Passwort aus. Notieren!
+#    -> gibt Benutzername (admin) und initiales Admin-Passwort aus. Notieren!
+#    -> schreibt COMPOSE_PROJECT_NAME=praxiszeit in die .env: die Volumes heißen
+#       damit unabhängig vom Ordnernamen praxiszeit_postgres_data usw.
 
 # 3a. Schneller HTTP-Test (nur lokal/intern, KEINE externe Exposition):
 #     in .env ENVIRONMENT=development und COOKIE_SECURE=false setzen, dann:
@@ -118,8 +120,19 @@ Monitoring (Prometheus/Grafana) läuft mit — wer es nicht braucht, kann
 docker compose ps                 # Status
 docker compose logs -f backend    # Backend-Logs
 docker compose down               # Stoppen (Daten bleiben im Volume)
-docker compose pull && docker compose build --pull && docker compose up -d   # Update (Weg A: neues Bundle entpacken)
+docker compose pull && docker compose build --pull && docker compose up -d   # Update im selben Ordner (Weg B: nach git pull)
 ```
+
+**Update mit neuem Bundle (Weg A):** Das neue Paket entpackt in einen **neuen**
+Ordner. Ohne `COMPOSE_PROJECT_NAME` in der `.env` leitet Docker Compose den
+Projektnamen — und damit das Volume `<projekt>_postgres_data` — aus dem
+Ordnernamen ab: Der neue Ordner liefe gegen eine **neue, leere Datenbank**, der
+alte Stack hielte weiter Port 80. Deshalb: im alten Ordner den Projektnamen
+ermitteln (`docker compose config | sed -n 's/^name: //p'`) und mit
+`docker compose down` (**ohne** `-v`) anhalten, im neuen Ordner die `.env`
+übernehmen, `COMPOSE_PROJECT_NAME=<alter Projektname>` eintragen (falls noch
+nicht vorhanden), dann `pull db`, `build --pull`, `up -d`. Kopierfertiger Ablauf
+mit Prüfung und Rückweg: [UPDATE.md, Abschnitt 2a](UPDATE.md#2a-mit-docker-paket-tarballzip-ohne-git).
 
 ---
 

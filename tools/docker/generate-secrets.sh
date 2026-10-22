@@ -58,13 +58,34 @@ sed -i "s|^ENVIRONMENT=.*|ENVIRONMENT=production|"                      .env
 # nur zur Kohaerenz der .env):
 sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://praxiszeit_app:${APP_DB_PASSWORD}@db:5432/praxiszeit|" .env
 
+# Release-Review 1.20.1: Ohne COMPOSE_PROJECT_NAME leitet Docker Compose den
+# Projektnamen — und damit die Volume-Namen (<projekt>_postgres_data,
+# <projekt>_praxiszeit_backups) — aus dem ORDNERNAMEN ab. Das Bundle entpackt
+# je Version in einen neuen Ordner praxiszeit-<version>/ -> beim Update entstand
+# ein neues, LEERES Volume. Ein fester Name macht kuenftige Updates
+# ordnerunabhaengig. Nur fuer NEUE .env (Bestands-.env behalten ihren Namen,
+# siehe UPDATE.md 2a). Steht der Wert schon aktiv in der .env.example, bleibt er.
+if ! grep -q '^COMPOSE_PROJECT_NAME=' .env; then
+    {
+        echo ""
+        echo "# Docker-Compose-Projektname (bestimmt die Volume-Namen, z. B."
+        echo "# praxiszeit_postgres_data). NICHT aendern, solange Daten existieren —"
+        echo "# ein anderer Name startet gegen eine neue, leere Datenbank."
+        echo "COMPOSE_PROJECT_NAME=praxiszeit"
+    } >> .env
+fi
+ADMIN_USERNAME="$(sed -n 's/^ADMIN_USERNAME=//p' .env | head -n1)"
+ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
+
 chmod 600 .env
 
 echo ""
 echo "============================================================"
 echo "  .env erzeugt — Secrets zufaellig gesetzt."
 echo "------------------------------------------------------------"
-echo "  Initiales Admin-Passwort: ${ADMIN_PASSWORD}"
+echo "  Erster Login — Benutzername: ${ADMIN_USERNAME}"
+echo "  Initiales Admin-Passwort:    ${ADMIN_PASSWORD}"
+echo "  (Anmeldung mit dem Benutzernamen, nicht mit der E-Mail-Adresse.)"
 echo "  (Nach dem ersten Login in der Benutzerverwaltung aendern!)"
 echo "============================================================"
 echo ""

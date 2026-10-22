@@ -38,13 +38,21 @@ bash generate-secrets.sh
 ```
 
 Schreibt eine `.env` mit zufälligem `SECRET_KEY`, Datenbank-Passwörtern und einem
-komplexen `ADMIN_PASSWORD` (wird am Ende ausgegeben — **notieren!**).
+komplexen `ADMIN_PASSWORD`. Am Ende gibt das Skript den Benutzernamen
+(`ADMIN_USERNAME`, Standard `admin`) und das Passwort aus — **notieren!**
+Außerdem setzt es `COMPOSE_PROJECT_NAME=praxiszeit`: Die Datenbank liegt damit
+im Volume `praxiszeit_postgres_data`, unabhängig vom Ordnernamen — wichtig für
+spätere Updates mit einem neuen Paket-Ordner (nicht ändern).
 Anschließend in `.env` noch Praxis-Name, `ADMIN_EMAIL` und `HOLIDAY_STATE`
 (Bundesland) anpassen.
 
 ## 3. Starten
 
 **Variante A — HTTP** (nur internes Netz / schneller Test):
+
+Vorher in `.env` `ENVIRONMENT=development` und `COOKIE_SECURE=false` setzen —
+sonst schickt der Browser das Anmelde-Cookie über HTTP nicht mit, und nach dem
+Login bzw. beim Neuladen der Seite ist man sofort wieder abgemeldet.
 
 ```bash
 docker compose up -d --build
@@ -72,8 +80,10 @@ curl http://localhost/api/health        # {"status":"healthy","database":"connec
 docker compose ps                        # alle Dienste "Up"/"healthy"
 ```
 
-Im Browser öffnen und mit den Admin-Zugangsdaten aus Schritt 2 (`ADMIN_EMAIL` /
-ausgegebenes `ADMIN_PASSWORD`) anmelden. Eine kurze **Willkommens-Tour** und der
+Im Browser öffnen und mit den Admin-Zugangsdaten aus Schritt 2 anmelden:
+Benutzername `admin` (bzw. `ADMIN_USERNAME` aus der `.env`) und das ausgegebene
+`ADMIN_PASSWORD`. Die Anmeldung geht nur mit dem **Benutzernamen**, nicht mit der
+E-Mail-Adresse (`ADMIN_EMAIL`). Eine kurze **Willkommens-Tour** und der
 **Schnellstart** (unten links) führen durch die Ersteinrichtung.
 
 ---

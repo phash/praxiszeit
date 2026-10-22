@@ -40,7 +40,7 @@ def _get_custom_holiday_in_tenant(db: Session, holiday_id: str, current_user: Us
 
 @router.get("/", response_model=List[HolidayResponse])
 def list_holidays(
-    year: int = Query(None, description="Year (default: current year)"),
+    year: int = Query(None, ge=2000, le=2100, description="Year (default: current year)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

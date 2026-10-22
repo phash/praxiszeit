@@ -67,6 +67,7 @@ interface Absence {
   type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other';
   hours: number;
   note?: string;
+  closure_id?: string | null; // Release-Review 1.20.1: Betriebsferien-Tag
 }
 
 interface PublicHoliday {
@@ -281,6 +282,23 @@ export default function AbsenceCalendarPage() {
     await doSubmit(false);
   };
 
+  // Release-Review 1.20.1: Spiegel der Löschsperre in ``absences.delete_absence``
+  // (Server antwortet 409). Mitarbeitende löschen weder Betriebsferien-Tage noch
+  // Urlaub bei Genehmigungspflicht oder aus einem genehmigten Antrag.
+  const canDeleteAbsence = (absence: Absence): boolean => {
+    if (currentUser?.role === 'admin') return true;
+    if (absence.closure_id) return false;
+    if (absence.type === 'vacation' && vacationApprovalRequired) return false;
+    // Anträge buchen auch Fortbildung, Überstundenausgleich, Sonstiges (absence_type).
+    return !myVacationRequests.some(
+      (vr) =>
+        vr.status === 'approved' &&
+        (vr.absence_type || 'vacation') === absence.type &&
+        vr.date <= absence.date &&
+        (vr.end_date || vr.date) >= absence.date,
+    );
+  };
+
   const handleDelete = (id: string) => {
     confirm({
       title: 'Abwesenheit löschen',
@@ -293,7 +311,7 @@ export default function AbsenceCalendarPage() {
           toast.success('Abwesenheit erfolgreich gelöscht');
           fetchData();
         } catch (error) {
-          toast.error('Fehler beim Löschen');
+          toast.error(getErrorMessage(error, 'Fehler beim Löschen'));
         }
       },
     });
@@ -1059,12 +1077,14 @@ export default function AbsenceCalendarPage() {
                     <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
                     <td className="px-6 py-4 text-sm text-gray-500">{absence.note || '-'}</td>
                     <td className="px-6 py-4 text-right text-sm">
-                      <button
-                        onClick={() => handleDelete(absence.id)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        Löschen
-                      </button>
+                      {canDeleteAbsence(absence) && (
+                        <button
+                          onClick={() => handleDelete(absence.id)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          Löschen
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -1098,13 +1118,15 @@ export default function AbsenceCalendarPage() {
                         </Badge>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleDelete(absence.id)}
-                      className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition"
-                      aria-label="Abwesenheit löschen"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                    {canDeleteAbsence(absence) && (
+                      <button
+                        onClick={() => handleDelete(absence.id)}
+                        className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition"
+                        aria-label="Abwesenheit löschen"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
                   </div>
 
                   <div className="space-y-2 text-sm">

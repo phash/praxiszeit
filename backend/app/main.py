@@ -439,7 +439,15 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 # Native mode middleware (replaces nginx features). Request-size guard is
 # attached unconditionally — defence-in-depth against a missing/misconfigured
 # nginx `client_max_body_size` when running behind a reverse proxy.
-app.add_middleware(RequestSizeLimitMiddleware, max_size=2 * 1024 * 1024)  # 2MB
+# Release-Review 1.20.1: der XLS-Import verspricht 5 MB (import_xls.py) — nur
+# dieser Pfad bekommt 6 MB (Multipart-Overhead), alles andere bleibt bei 2 MB.
+# Gegenstueck: `location ^~ /api/admin/import/` in frontend/nginx.conf und
+# ssl/nginx-ssl.conf.
+app.add_middleware(
+    RequestSizeLimitMiddleware,
+    max_size=2 * 1024 * 1024,  # 2MB
+    path_limits={"/api/admin/import/": 6 * 1024 * 1024},
+)
 # M-SEC2: attach unconditionally (was gated on SERVE_FRONTEND). It only *sets*
 # response headers, so it is harmless behind nginx (which sets the identical
 # CSP) and provides a baseline CSP / anti-clickjacking guarantee if the reverse

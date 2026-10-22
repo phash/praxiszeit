@@ -343,7 +343,7 @@ def create_vacation_request(
 
 @router.get("/", response_model=List[VacationRequestResponse])
 def list_my_vacation_requests(
-    year: Optional[int] = Query(None),
+    year: Optional[int] = Query(None, ge=2000, le=2100),
     status: Optional[str] = Query(None),
     skip: int = 0,
     limit: int = Query(default=100, le=500),
