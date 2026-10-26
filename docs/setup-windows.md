@@ -201,24 +201,22 @@ Das Backend prüft:
 
 Das `[admin].password` wird beim Start gelesen, um das Admin-Konto anzulegen, **falls es fehlt**; existiert es bereits, bleibt es unberührt. Spätere Passwortänderungen erfolgen über das Frontend (Profil → Passwort ändern) — der Wert in der Datei wird dabei **nicht** nachgeführt und ist danach falsch.
 
-Den Klartextwert sollte man deshalb entwerten. ⚠️ **Nicht durch einen festen Platzhalter** wie `set-via-ui`: fehlt das Admin-Konto irgendwann (Benutzername umgestellt, Konto nach Art. 17 endgültig gelöscht), legt der nächste Start es mit genau diesem Wert neu an — und ein in der Projektdokumentation veröffentlichter Wert ist dann das Passwort. Die Schwachpasswort-Prüfung greift dabei nicht: sie bricht den Start nur bei `ENVIRONMENT=production` ab, und der native Standard ist `development`.
+Den Klartextwert sollte man deshalb entwerten. ⚠️ **Nicht durch einen festen Platzhalter** wie `set-via-ui`: fehlt das Admin-Konto irgendwann (Benutzername umgestellt, Konto nach Art. 17 endgültig gelöscht), legt der nächste Start es mit genau diesem Wert neu an — und ein in der Projektdokumentation veröffentlichter Wert ist dann das Passwort. Die Schwachpasswort-Prüfung des Backends hilft dabei nicht: steht ein schwacher Wert in der Datei, startet PraxisZeit absichtlich im `development`-Modus (siehe „Produktiv-Modus“), in dem die Prüfung nur warnt.
 
 Stattdessen einen **zufälligen** Ersatzwert eintragen — oder das mitgelieferte Kommando nutzen, das den Eintrag selbst mit einem Zufallswert überschreibt. **Beides erst nach dem ersten Login** (Schritt 7): jetzt, vor dem ersten Dienststart, gibt es weder Datenbank noch Admin-Konto — das Kommando hätte nichts, dessen Passwort es setzen könnte, und der Wert in der Datei wird für die Anlage des Kontos noch gebraucht. Wie es geht, steht in Schritt 7.
 
-### Optional, aber empfohlen: Produktiv-Modus erzwingen
+### Produktiv-Modus
 
-Das Backend startet im Native-Modus per Default mit `ENVIRONMENT=development`. Das bedeutet: schwache Admin-Passwörter erzeugen nur eine Log-Warnung statt einen Service-Abbruch, und die API-Doku unter `/docs` (Swagger) ist im LAN erreichbar.
+Seit dem Sicherheitsreview 2026-10 startet das Backend im Native-Modus mit `ENVIRONMENT=production`: die API-Doku (`/docs`, `/redoc`, `/openapi.json`) ist abgeschaltet. Einzige Ausnahme: steht in `[admin] password` für das Konto `admin` ein Standardwert oder ein Passwort unter 12 Zeichen, bleibt es bei `development` und das Protokoll nennt den Grund — im Produktionsmodus würde der Start an genau diesem Passwort scheitern. Sobald der Eintrag einen langen Zufallswert trägt (Schritt 7), läuft PraxisZeit im Produktionsmodus.
 
-Für den Praxisbetrieb empfohlen: nach `install-service.bat` (Schritt 6) als Administrator setzen:
+Bewusst abweichen lässt sich über `praxiszeit.conf`:
 
-```cmd
-cd C:\PraxisZeit
-nssm.exe set PraxisZeit AppEnvironmentExtra ENVIRONMENT=production
-net stop PraxisZeit
-net start PraxisZeit
+```toml
+[server]
+environment = "development"
 ```
 
-Damit wird ein schwaches Admin-Passwort zum harten Startfehler (der Dienst bleibt aus, bis die Konfiguration korrigiert wird), Swagger wird deaktiviert. Variable ausschließlich für den `PraxisZeit`-Dienst — keine System-Env, also kein Konflikt mit anderer Software.
+⚠️ Nicht über `nssm.exe set PraxisZeit AppEnvironmentExtra …`: das **ersetzt** die von `install-service.bat` gesetzten Variablen (`PYTHONUTF8=1` u. a.).
 
 ---
 

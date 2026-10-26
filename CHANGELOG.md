@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 🔒 Sicherheit (Installer, native Installation, nginx)
+
+- **Windows: Installationsordner nicht mehr für alle Konten änderbar.** `C:\PraxisZeit` erbte die Rechte von `C:\` („Authentifizierte Benutzer: Ändern“). Da der Dienst als SYSTEM läuft, konnte jedes Windows-Konto am Praxis-PC Programmdateien austauschen und so Code mit Systemrechten ausführen sowie die Datenbanksicherungen lesen. Setup, Update-Assistent und jeder Dienststart setzen die Rechte jetzt fest: Administratoren und SYSTEM Vollzugriff, normale Benutzer nur Lesen auf die Programmteile, `data`, `logs` und `config` ohne Benutzerzugriff. Bestandsinstallationen werden beim ersten Start nach dem Update umgestellt. Folge: `praxiszeit-server.py`-Befehle von Hand brauchen eine Administrator-Konsole.
+- **Linux/macOS: Datenbanksicherungen nur noch für den Dienstbenutzer lesbar** (vorher `0644`). Die systemd-Units setzen `UMask=0077`, `install.sh` beschränkt `data/` und `logs/` auf `750`.
+- **Native PostgreSQL ohne „trust“-Phase.** Die Datenbank wird von Anfang an mit Passwortschutz (`scram-sha-256`) angelegt; Passwörter stehen nicht mehr auf der Kommandozeile von `psql` und sind damit nicht in der Prozessliste sichtbar. `.db-credentials` entsteht direkt mit eingeschränkten Rechten.
+- **Native Installation im Produktionsmodus:** die API-Dokumentation (`/docs`, `/redoc`, `/openapi.json`) ist nicht mehr im Praxisnetz abrufbar. Ausnahme mit Hinweis im Protokoll: steht in `[admin] password` noch ein Standardwert oder ein Passwort unter 12 Zeichen, bleibt der Entwicklungsmodus (sonst würde der Start daran scheitern). Abweichend einstellbar über `[server] environment` in `praxiszeit.conf`.
+- Docker/nginx: `Permissions-Policy`-Header (Kamera, Mikrofon, Standort u. a. aus); HTTPS (TLS 1.2) nur noch mit ECDHE- und AEAD-Verfahren. `.env.example` steht auf `ENVIRONMENT=production`.
+- Sicherheitsbericht `docs/specs/security/security-audit-report-initial.html`: zitierte Altwerte einer `.env` unkenntlich gemacht.
+
 ## [1.20.1] - 2026-10-21
 
 ### 🔒 Sicherheit
