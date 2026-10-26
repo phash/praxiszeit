@@ -475,12 +475,19 @@ Ist der Tag bereits gesperrt (typisch nach Monatsabschluss): Button **Änderungs
 
 ### Backup-Status prüfen
 
+`data\` und `logs\` sind nur für SYSTEM, Administratoren und den Dienst
+(NetworkService) lesbar — die folgenden Befehle daher in einer
+**Administrator**-Eingabeaufforderung ausführen (Rechtsklick → „Als
+Administrator ausführen"):
+
 ```cmd
 schtasks /query /tn "PraxisZeit-Backup" /v /fo LIST
 dir C:\PraxisZeit\data\backups\
 ```
 
 ### Manuelles Backup
+
+Ebenfalls in einer **Administrator**-Eingabeaufforderung:
 
 ```cmd
 cd C:\PraxisZeit
@@ -571,16 +578,22 @@ Anschließend im Browser einen **Hard-Refresh** (`Strg + F5`) erzwingen, sonst l
 
 ### Logs für den Support sammeln
 
+`logs\` ist nur für SYSTEM, Administratoren und den Dienst (NetworkService)
+lesbar — deshalb in einer **Administrator**-Eingabeaufforderung ausführen. Das
+ZIP und die Statusdateien landen im eigenen Benutzerordner (`%USERPROFILE%`),
+nicht im Installationsordner, damit Sie sie ohne Administratorrechte
+weitergeben können:
+
 ```cmd
 cd C:\PraxisZeit\logs
-powershell Compress-Archive *.log ..\praxiszeit-support.zip
+powershell Compress-Archive *.log "%USERPROFILE%\praxiszeit-support.zip"
 ```
 
 Zusätzlich nützlich:
 
 ```cmd
-sc query PraxisZeit > C:\PraxisZeit\logs\service-status.txt
-schtasks /query /tn "PraxisZeit-Backup" /v /fo LIST > C:\PraxisZeit\logs\task-status.txt
+sc query PraxisZeit > "%USERPROFILE%\service-status.txt"
+schtasks /query /tn "PraxisZeit-Backup" /v /fo LIST > "%USERPROFILE%\task-status.txt"
 ```
 
 ---

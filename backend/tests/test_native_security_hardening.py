@@ -482,3 +482,51 @@ def test_every_service_unit_sets_umask(rel):
 def test_install_sh_restricts_data_and_logs():
     text = _read("installer/linux/install.sh").decode("utf-8")
     assert 'chmod 750 "${INSTALL_DIR}/data" "${INSTALL_DIR}/logs"' in text
+
+
+# --- Release-Review 1.20.2: Unix data/logs/backups at every service start -----
+# install.sh chmods data/ and logs/ to 750, but GUI setup, install-local.sh and
+# macOS installs never did; dumps written before 1.20.2 kept 0644.
+
+@pytest.mark.skipif(os.name != "posix", reason="Unix file mode")
+class TestRestrictUnixDataDirsAtStart:
+    def _wire(self, srv, tmp_path, monkeypatch):
+        data, logs = tmp_path / "data", tmp_path / "logs"
+        backups = data / "backups"
+        backups.mkdir(parents=True)
+        logs.mkdir()
+        for d in (data, logs, backups):
+            d.chmod(0o755)
+        monkeypatch.setattr(srv, "IS_WINDOWS", False)
+        monkeypatch.setattr(srv, "DATA_DIR", data)
+        monkeypatch.setattr(srv, "LOG_DIR", logs)
+        monkeypatch.setattr(srv, "BACKUP_DIR", backups)
+        return data, logs, backups
+
+    def test_dirs_lose_world_access_and_old_dumps_become_0600(self, srv, tmp_path, monkeypatch):
+        data, logs, backups = self._wire(srv, tmp_path, monkeypatch)
+        old_dump = backups / "praxiszeit_20261001_030000.sql.gz"
+        old_dump.write_bytes(b"x")
+        old_dump.chmod(0o644)
+        srv._restrict_unix_data_dirs()
+        assert stat.S_IMODE(data.stat().st_mode) == 0o750
+        assert stat.S_IMODE(logs.stat().st_mode) == 0o750
+        assert stat.S_IMODE(backups.stat().st_mode) == 0o700
+        assert stat.S_IMODE(old_dump.stat().st_mode) == 0o600
+
+    def test_never_widens_tighter_modes(self, srv, tmp_path, monkeypatch):
+        data, logs, backups = self._wire(srv, tmp_path, monkeypatch)
+        data.chmod(0o700)
+        srv._restrict_unix_data_dirs()
+        assert stat.S_IMODE(data.stat().st_mode) == 0o700
+
+    def test_noop_on_windows(self, srv, tmp_path, monkeypatch):
+        data, logs, backups = self._wire(srv, tmp_path, monkeypatch)
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        srv._restrict_unix_data_dirs()
+        assert stat.S_IMODE(data.stat().st_mode) == 0o755
+
+    def test_called_from_cmd_start(self, srv):
+        src = Path(srv.__file__).read_text(encoding="utf-8")
+        body = src.split("def cmd_start(", 1)[1].split("\ndef ", 1)[0]
+        assert "_restrict_unix_data_dirs()" in body

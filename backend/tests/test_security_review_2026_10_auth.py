@@ -197,6 +197,7 @@ class TestTotp:
         r = c.request("DELETE", "/api/auth/totp/disable",
                       json={"password": TEST_USER_PASSWORD, "code": wrong})
         assert r.status_code == 400
+        assert "bereits verwendet" not in r.json()["detail"]
         db.refresh(test_user)
         assert test_user.totp_enabled is True
         assert db.query(SecurityEvent).count() == 0
@@ -225,6 +226,9 @@ class TestTotp:
         r = c.request("DELETE", "/api/auth/totp/disable",
                       json={"password": TEST_USER_PASSWORD, "code": code})
         assert r.status_code == 400
+        # Release-Review 1.20.2: eigene Meldung statt "Ungültiger Code" — die
+        # App zeigt den beim Login verbrauchten Code noch an.
+        assert "bereits verwendet" in r.json()["detail"]
         db.refresh(test_user)
         assert test_user.totp_enabled is True
 

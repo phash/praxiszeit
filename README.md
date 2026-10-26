@@ -102,7 +102,9 @@ Bearbeite `.env` und setze:
 - `POSTGRES_PASSWORD` - Datenbank-Passwort
 - `SECRET_KEY` - JWT Secret (generiere mit `openssl rand -hex 32`)
 - `ADMIN_EMAIL` - Admin E-Mail (z.B. admin@praxis.de)
-- `ADMIN_PASSWORD` - Admin Passwort
+- `ADMIN_PASSWORD` - Admin Passwort: mindestens 12 Zeichen und kein schwacher Standardwert (z. B. `Admin2025!`, `admin123`, `password`) — sonst verweigert das Backend mit `ENVIRONMENT=production` den Start
+
+`.env.example` setzt `ENVIRONMENT=production` (empfohlen für jeden Betrieb). Für lokale Entwicklung `ENVIRONMENT=development` setzen — erst dann gibt es die API-Dokumentation unter `/docs` und `/redoc`.
 
 3. **Docker Container starten:**
 ```bash
@@ -115,7 +117,7 @@ Die Datenbank wird automatisch initialisiert und Migrationen ausgeführt.
 ```
 Frontend: http://localhost
 Backend API: http://localhost:8000
-API Docs: http://localhost:8000/docs
+API Docs: http://localhost:8000/docs   (nur mit ENVIRONMENT=development)
 ```
 
 ### PWA-Installation
@@ -281,7 +283,7 @@ docker compose logs -f frontend
 
 ## API Dokumentation
 
-Die vollständige API-Dokumentation ist verfügbar unter:
+Die vollständige API-Dokumentation ist verfügbar unter (nur mit `ENVIRONMENT=development` — mit `ENVIRONMENT=production`, der Vorgabe aus `.env.example`, sind `/docs` und `/redoc` abgeschaltet):
 - **Swagger UI:** http://localhost:8000/docs
 - **ReDoc:** http://localhost:8000/redoc
 
@@ -409,7 +411,7 @@ Jeder Ordner enthält eine `HOWTO.md` mit dem Audit-Prozess, dem Claude-Prompt z
 - **docs/UPDATE.md** - Bestehende Docker-/Native-Installation aktualisieren
 - **docs/BACKUP.md** - Datensicherung: Auto-Backup je Variante, manuelles Backup, Restore
 - **docs/specs/** - Audit-Berichte (Security, DSGVO, ArbZG)
-- **API Docs** - http://localhost:8000/docs
+- **API Docs** - http://localhost:8000/docs (nur mit `ENVIRONMENT=development`)
 - **GitHub Issues** - https://github.com/phash/praxiszeit/issues
 
 ## Lizenz

@@ -8,8 +8,8 @@ Version aktualisieren.
 
 | Version | Unterstützt        |
 | ------- | ------------------ |
-| 1.12.x  | :white_check_mark: |
-| < 1.12  | :x:                |
+| 1.20.x  | :white_check_mark: |
+| < 1.20  | :x:                |
 
 ## Sicherheitslücke melden
 

@@ -43,6 +43,8 @@ Routing:
 
 **Gotcha:** Neue SPA-Routes die mit einem statischen Verzeichnis kollidieren brauchen explizite `location =` **vor** dem Fallback-Block.
 
+**Gotcha Host-Reverse-Proxy:** nginx reicht `X-Real-IP $remote_addr` ans Backend weiter. Steht vor dem Docker-Stack ein Reverse-Proxy auf dem Host (Caddy, Traefik …), ist `$remote_addr` für alle Clients die Gateway-IP des Docker-Netzes — die Anmelde-Sperre pro Rechner (5 Fehlversuche in 15 min je Benutzer und IP) sperrt dann alle Rechner gemeinsam. Für die Sperre pro Rechner muss die echte Client-IP weitergereicht werden: in beiden nginx-Konfigurationen den auskommentierten Block `set_real_ip_from <proxy-netz>;` / `real_ip_header X-Forwarded-For;` aktivieren (nur das Proxy-/Docker-Netz eintragen, nie `0.0.0.0/0`).
+
 ## Caddy
 
 > **TODO:** Caddy-Integration dokumentieren. Falls Caddy als externer Reverse Proxy vor dem Docker-Stack eingesetzt wird, hier Konfiguration beschreiben (TLS-Termination, Proxy-Header, etc.)

@@ -239,7 +239,7 @@ das Backup-Verzeichnis bleiben dabei erhalten.
 # 1. Backup — frischer DB-Dump (Dienst läuft dabei), dann Konfiguration sichern
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \
     /opt/praxiszeit/praxiszeit-server.py backup
-ls /opt/praxiszeit/data/backups/                       # der neue Dump liegt hier
+sudo ls /opt/praxiszeit/data/backups/                  # der neue Dump liegt hier (data/ ist chmod 750)
 sudo systemctl stop praxiszeit
 sudo cp -a /opt/praxiszeit/config /opt/praxiszeit/config.bak-$(date +%F)   # config/ ist nur fürs Dienstkonto lesbar
 

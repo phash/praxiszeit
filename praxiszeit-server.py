@@ -1068,6 +1068,31 @@ def _ensure_install_dir_acl():
         logger.info("Install directory access rights restricted.")
 
 
+def _restrict_unix_data_dirs():
+    """Safety net at every service start (Linux/macOS): data/ and logs/ to
+    0750, backups/ to 0700, existing dumps to 0600.
+
+    install.sh does the chmod, but GUI-setup, install-local.sh and macOS
+    installs never did, and dumps written before 1.20.2 kept 0644 until the
+    retention deleted them (Release-Review 1.20.2). Only removes bits, never
+    widens a tighter mode. Errors (e.g. not the owner) are logged, not fatal.
+    """
+    if IS_WINDOWS:
+        return
+    targets = [(DATA_DIR, 0o750), (LOG_DIR, 0o750), (BACKUP_DIR, 0o700)]
+    if BACKUP_DIR.is_dir():
+        targets += [(f, 0o600) for f in BACKUP_DIR.glob("*.sql.gz") if f.is_file()]
+    for path, limit in targets:
+        try:
+            if not path.exists():
+                continue
+            mode = path.stat().st_mode & 0o777
+            if mode & ~limit:
+                path.chmod(mode & limit)
+        except OSError as exc:
+            logger.warning(f"Could not restrict access rights on {path}: {exc}")
+
+
 def _psql_script(superuser: str, db: str, sql: str, env: dict) -> None:
     """Run ``sql`` through psql via STDIN (``-f -``), stop at the first error.
 
@@ -2016,6 +2041,8 @@ def cmd_start(args):
     # Windows: the whole install directory (program files run as SYSTEM, data
     # and backups) — no-op once hardened.
     _ensure_install_dir_acl()
+    # Linux/macOS: data, logs and backups only for the service account.
+    _restrict_unix_data_dirs()
 
     # 1. Initialize PostgreSQL if needed
     creds_file = CONFIG_DIR / ".db-credentials"

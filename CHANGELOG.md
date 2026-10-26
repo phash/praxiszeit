@@ -6,13 +6,13 @@
 
 - Backend: Pillow ≥ 13.0.0 (kam über reportlab als 12.3.0 mit 37 bekannten Lücken ins Image), certifi ≥ 2026.10.23 (PYSEC-2026-4320). Dazu fastapi 0.141 → 0.162, uvicorn 0.52 → 0.54, alembic 1.18 → 1.20, holidays 0.101 → 0.107 (Feiertage aller 16 Bundesländer 2025–2028 unverändert, SHA256-gleich). stripe bleibt bei 15.x.
 - Docker: Web-Server `nginx:1.31.8-alpine` (vorher 1.31.7).
-- Native Installation: CPython 3.13.17 (python-build-standalone 20261021, vorher 3.13.16).
+- Native Installation: CPython 3.13.18 (python-build-standalone 20261026, vorher 3.13.16) — Sicherheits-Bugfix-Release (`tarfile`, `tempfile`, `http.cookiejar`, eMudhra-Sperrliste, expat 2.9.0).
 - Frontend-Build/Tests: undici ≥ 7.30.1 (DoS im EventSource-Parser, SRI-Umgehung), serialize-javascript ≥ 7.1.3, fast-uri ≥ 4.2.3, vitest 4.1.12, vite 8.3.5; Werkzeuge: puppeteer 25.16 (zod); E2E: Playwright 1.64.1. `npm audit` ohne Befund.
 
 ### 🔒 Sicherheit (Installer, native Installation, nginx)
 
 - **Windows: Installationsordner nicht mehr für alle Konten änderbar.** `C:\PraxisZeit` erbte die Rechte von `C:\` („Authentifizierte Benutzer: Ändern“). Da der Dienst als SYSTEM läuft, konnte jedes Windows-Konto am Praxis-PC Programmdateien austauschen und so Code mit Systemrechten ausführen sowie die Datenbanksicherungen lesen. Setup, Update-Assistent und jeder Dienststart setzen die Rechte jetzt fest: Administratoren und SYSTEM Vollzugriff, normale Benutzer nur Lesen auf die Programmteile, `data`, `logs` und `config` ohne Benutzerzugriff. Bestandsinstallationen werden beim ersten Start nach dem Update umgestellt. Folge: `praxiszeit-server.py`-Befehle von Hand brauchen eine Administrator-Konsole.
-- **Linux/macOS: Datenbanksicherungen nur noch für den Dienstbenutzer lesbar** (vorher `0644`). Die systemd-Units setzen `UMask=0077`, `install.sh` beschränkt `data/` und `logs/` auf `750`.
+- **Linux/macOS: Datenbanksicherungen nur noch für den Dienstbenutzer lesbar** (vorher `0644`). Die systemd-Units setzen `UMask=0077`, `install.sh` beschränkt `data/` und `logs/` auf `750`. Zusätzlich zieht jeder Dienststart (`praxiszeit-server.py`) auf Linux und macOS `data/` und `logs/` auf `750`, `data/backups/` auf `700` und ältere Sicherungen auf `0600` nach — auch bei Installationen über das grafische Setup, `install-local.sh` oder macOS.
 - **Native PostgreSQL ohne „trust“-Phase.** Die Datenbank wird von Anfang an mit Passwortschutz (`scram-sha-256`) angelegt; Passwörter stehen nicht mehr auf der Kommandozeile von `psql` und sind damit nicht in der Prozessliste sichtbar. `.db-credentials` entsteht direkt mit eingeschränkten Rechten.
 - **Native Installation im Produktionsmodus:** die API-Dokumentation (`/docs`, `/redoc`, `/openapi.json`) ist nicht mehr im Praxisnetz abrufbar. Ausnahme mit Hinweis im Protokoll: steht in `[admin] password` noch ein Standardwert oder ein Passwort unter 12 Zeichen, bleibt der Entwicklungsmodus (sonst würde der Start daran scheitern). Abweichend einstellbar über `[server] environment` in `praxiszeit.conf`.
 - Docker/nginx: `Permissions-Policy`-Header (Kamera, Mikrofon, Standort u. a. aus); HTTPS (TLS 1.2) nur noch mit ECDHE- und AEAD-Verfahren. `.env.example` steht auf `ENVIRONMENT=production`.
@@ -26,7 +26,7 @@
 
 ### 🔒 Sicherheit (Berechtigungen, Impersonation)
 
-- **„Login als …“ (Impersonation) ist jetzt auch bei lesenden Aufrufen ohne Nebenwirkung.** `GET /api/time-entries/clock-status` schließt unter Impersonation keinen offenen Eintrag eines Vortags mehr automatisch (vorher entstand dabei eine Änderung im Namen der Person). Das eigene Monatsjournal (`GET /api/journal/me`) zeigt der Verwaltung in dieser Ansicht Krankheit und sensible Gründe maskiert als „Abwesend“, wie das Admin-Journal ohne Gesundheitsdaten (Art. 9 DSGVO). Der Art.-15-Datenexport (`GET /api/me/data-export`) antwortet unter Impersonation mit 403.
+- **„Login als …“ (Impersonation) ist jetzt auch bei lesenden Aufrufen ohne Nebenwirkung.** `GET /api/time-entries/clock-status` schließt unter Impersonation keinen offenen Eintrag eines Vortags mehr automatisch (vorher entstand dabei eine Änderung im Namen der Person). Das eigene Monatsjournal (`GET /api/journal/me`) zeigt der Verwaltung in dieser Ansicht Krankheit und sensible Gründe maskiert als „Abwesend“, wie das Admin-Journal ohne Gesundheitsdaten (Art. 9 DSGVO). Der Art.-15-Datenexport (`GET /api/me/data-export`) antwortet unter Impersonation mit 403. Bekannte Lücke: Die Abwesenheitsseite (`GET /api/absences/`, Kalender) maskiert in dieser Ansicht noch nicht (#514).
 - **Mitarbeitende können Zeiteinträge vergangener Tage nicht mehr über eine Abwesenheitsbuchung löschen.** `POST /api/absences` löschte ohne `keep_time_entries` die Einträge der gebuchten Tage — auch an vergangenen Tagen, die Mitarbeitende sonst nur per Änderungsantrag ändern. Jetzt: 400 *„Am TT.MM.JJJJ gibt es bereits Zeiteinträge – eine Abwesenheit für einen vergangenen Tag mit Zeiteinträgen bitte per Änderungsantrag im Journal stellen.“* Vergangene Tage ohne Eintrag (Krankmeldung für gestern) und heute bleiben direkt buchbar; für die Verwaltung ändert sich nichts.
 - Änderungsantrag „Neuer Eintrag“: eine mitgeschickte `time_entry_id` wird verworfen; die Antragsliste zeigt Zeiten nur von Einträgen der antragstellenden Person (vorher ließen sich so Stempelzeiten von Kolleginnen und Kollegen auslesen).
 - Admin-Löschen eines Zeiteintrags nimmt zuerst die Personensperre, dann die Zeilensperre (Sperrreihenfolge P5; unbekannte ID → 404 ohne Sperre).
@@ -40,6 +40,7 @@
 - **Anmeldeprotokoll:** Unbekannte Benutzernamen erscheinen nur noch verkürzt (erste zwei Zeichen + Prüfkennung) — ins Namensfeld getippte Passwörter landen nicht mehr lesbar im Serverprotokoll; Steuerzeichen werden eingeebnet (keine gefälschten Protokollzeilen mehr). Benutzernamen beim Login höchstens 100 Zeichen.
 - **Admins setzen ihr eigenes Passwort nicht mehr über die Benutzerverwaltung** (`POST /api/admin/users/{id}/set-password` auf sich selbst → 400), sondern unter Profil → Passwort ändern mit dem bisherigen Passwort.
 - **Datenauszug (Art. 15/20 DSGVO) nicht in der Ansicht als Mitarbeiter:in:** `GET /api/auth/me/export` antwortet dort mit 403.
+- 2FA abschalten: Ein Code, der schon bei der Anmeldung verbraucht wurde, wird weiter abgelehnt (Schutz vor Wiederverwendung), jetzt aber mit der Meldung *„Dieser 2FA-Code wurde bereits verwendet. Bitte den nächsten Code der Authenticator-App abwarten.“* statt „Ungültiger 2FA-Code“.
 
 ## [1.20.1] - 2026-10-21
 

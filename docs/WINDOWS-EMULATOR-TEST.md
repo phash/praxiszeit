@@ -33,7 +33,7 @@ geplante Aufgabe Dienst, Anmeldung und Rechte noch einmal.
 | Docker | mit Compose-Plugin |
 | Plattenplatz | ~60 GB frei (VM-Disk 48 GB dünn belegt + ~700 MB entpacktes Paket + Image) |
 | VM-Ressourcen | 4 Kerne / 4 GB RAM (Vorgabe in `docker-compose.yml`) — der Host sollte deutlich mehr haben |
-| Zeit | **30–50 Minuten** (Windows-Einrichtung, Installation, zwei Wartefenster von je bis zu 6 Minuten auf die Anwendung) |
+| Zeit | **40–70 Minuten** (Windows-Einrichtung, Installation, VM-Neustart; Wartefenster auf die Anwendung von je bis zu 6 Minuten nach dem Erststart und nach dem Dienst-Neustart, im `update`-Lauf zusätzlich nach dem Update, dazu bis zu 10 Minuten nach dem Neustart der VM) |
 | Paket | ein gebautes `dist/praxiszeit-<version>-windows-x64.zip` → [BUILD-RELEASE.md](BUILD-RELEASE.md) |
 
 ---
@@ -161,7 +161,9 @@ landen. Deshalb nicht blind `cat`, sondern gezielt lesen:
 python3 - <<'PY'
 t = open('share/install-result.txt', encoding='utf-8', errors='replace').read()
 keys = ['PAKET_VERSION','HEALTH_HTTP','LOGIN_HTTP','ALEMBIC','psql (','VERDICT',
-        'Setup abgeschlossen','deployment_mode','FEHLER','STATE','===== ']
+        'Setup abgeschlossen','deployment_mode','FEHLER','STATE','===== ',
+        'PROBE','BACKUP_EXIT','LAST_BOOT','REBOOT','UPDATE_EXIT','NEUER_CODE',
+        'INSTALLDIR']
 for line in t.splitlines():
     l = line.strip()
     if l and any(k in l for k in keys):
@@ -178,7 +180,7 @@ PY
 | `HEALTH_HTTP` | `200` |
 | `LOGIN_HTTP` | `200` — echte Anmeldung, nicht nur ein erreichbarer Port |
 | `SYSTEM_INFO_RAW` | `"version":"<version>"` passend zu `PAKET_VERSION` |
-| `ALEMBIC_VERSION` | der aktuelle Migrations-Kopf (z. B. `071_security_events`) |
+| `ALEMBIC_VERSION` | der aktuelle Migrations-Kopf (z. B. `073_work_blocks`) |
 | `psql (PostgreSQL)` | `18.6` — der gepinnte Stand, siehe `PG_WINDOWS_SHA256` |
 | `STATE` | `4  RUNNING` |
 | `HEALTH_HTTP_NACH_NEUSTART` / `LOGIN_HTTP_NACH_NEUSTART` | beide `200` (Dienst-Neustart) |
@@ -245,18 +247,26 @@ Vorgänger.
 6. bis zu 6 Minuten auf `GET /api/health` warten, dann `POST /api/auth/login`
 7. `/api/system/info` abholen (Version, Modus, Beta-Kennzeichen)
 8. `alembic_version` und `psql --version` direkt aus der mitgelieferten Datenbank
+
+   Zwischen Schritt 8 und 9: im `update`-Lauf zuerst die Messung des Altstands
+   (`INSTALLDIR_ACL_ALT`) und das Update (`UPDATE_EXIT`, `NEUER_CODE`, Anmeldung
+   danach); in beiden Läufen dann Sicherung anlegen (`BACKUP_EXIT`), Rechte des
+   ganzen Ordners messen (`INSTALLDIR_ACL`) und die Probe als Standardkonto
+   (`PROBE_BEGIN`).
+
 9. Rechte-Nachweis auf den Bestandsdateien
 10. Rechte-Nachweis auf dem Neuanlage-Zweig von `setup.bat`
+
+    Zwischen Schritt 10 und 11 die Gegenprobe: Rechte aufweichen → Dienst neu
+    starten → prüfen, dass er sich repariert **und** weiterhin hochkommt (eine zu
+    strenge Rechtevergabe würde das Dienstkonto aussperren — deshalb wird beides
+    gemessen).
+
 11. Rechte-Nachweis auf dem GUI-Installer-Pfad (nur mit `AclProbe.exe`)
 
-Danach: Sicherung anlegen, Rechte des ganzen Ordners messen, Probe als
-Standardkonto; am Ende geplante Aufgabe anlegen und die VM neu starten
-(`post-reboot.bat` schreibt erst danach `===== DONE =====`). Im `update`-Lauf
-kommen vor dem Ordner-Block die Messung des Altstands und das Update hinzu.
-
-Dazwischen die Gegenprobe: Rechte aufweichen → Dienst neu starten → prüfen, dass
-er sich repariert **und** weiterhin hochkommt (eine zu strenge Rechtevergabe
-würde das Dienstkonto aussperren — deshalb wird beides gemessen).
+Am Ende: geplante Aufgabe anlegen und die VM neu starten (`REBOOT=JETZT`);
+`post-reboot.bat` prüft danach Dienst, Anmeldung, Migrationsstand, Ordnerrechte
+und Probe noch einmal und schreibt erst dann `===== DONE =====`.
 
 ---
 

@@ -15,10 +15,12 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.20.1"
-PYTHON_VERSION="3.13.17"
+APP_VERSION="1.20.2"
+PYTHON_VERSION="3.13.18"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
-# 20261021 buendelt CPython 3.13.17 (Punktrelease, Security-Review 2026-10-26).
+# 20261026 buendelt CPython 3.13.18 (Security-Punktrelease: tarfile, tempfile,
+# http.cookiejar, eMudhra-Denylist, expat 2.9.0; Release 1.20.2), glibc-Bedarf
+# unveraendert 2.17. Davor 20261021 = 3.13.17 (Security-Review 2026-10-26).
 # Davor 20261001 buendelte CPython 3.13.16 (u. a. SSLContext-Use-after-free behoben)
 # mit OpenSSL 3.5.9, expat 2.8.5 und xz 5.8.4 (Dependency-Review 1.19.2).
 # Davor 20260825 = 3.13.15 / OpenSSL 3.5.8; davor 20260510 = OpenSSL 3.5.6.
@@ -28,7 +30,7 @@ PYTHON_VERSION="3.13.17"
 # CPython-Punktversion hat ein python-build-standalone-Release) und danach am
 # gebauten Artefakt gegenmessen:
 #   build/release-<ver>/linux/bin/python/bin/python3 -c "import ssl; print(ssl.OPENSSL_VERSION)"
-PYTHON_STANDALONE_TAG="20261021"
+PYTHON_STANDALONE_TAG="20261026"
 # theseus-rs/postgresql-binaries — manylinux-Build, portable bis glibc 2.34
 # (Ubuntu 22.04, Debian 12, RHEL 9 und neuer). Releases:
 #   https://github.com/theseus-rs/postgresql-binaries/releases
