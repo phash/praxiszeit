@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 🔒 Sicherheit (Abhängigkeiten)
+
+- Backend: Pillow ≥ 13.0.0 (kam über reportlab als 12.3.0 mit 37 bekannten Lücken ins Image), certifi ≥ 2026.10.23 (PYSEC-2026-4320). Dazu fastapi 0.141 → 0.162, uvicorn 0.52 → 0.54, alembic 1.18 → 1.20, holidays 0.101 → 0.107 (Feiertage aller 16 Bundesländer 2025–2028 unverändert, SHA256-gleich). stripe bleibt bei 15.x.
+- Docker: Web-Server `nginx:1.31.8-alpine` (vorher 1.31.7).
+- Native Installation: CPython 3.13.17 (python-build-standalone 20261021, vorher 3.13.16).
+- Frontend-Build/Tests: undici ≥ 7.30.1 (DoS im EventSource-Parser, SRI-Umgehung), serialize-javascript ≥ 7.1.3, fast-uri ≥ 4.2.3, vitest 4.1.12, vite 8.3.5; Werkzeuge: puppeteer 25.16 (zod); E2E: Playwright 1.64.1. `npm audit` ohne Befund.
+
 ### 🔒 Sicherheit (Installer, native Installation, nginx)
 
 - **Windows: Installationsordner nicht mehr für alle Konten änderbar.** `C:\PraxisZeit` erbte die Rechte von `C:\` („Authentifizierte Benutzer: Ändern“). Da der Dienst als SYSTEM läuft, konnte jedes Windows-Konto am Praxis-PC Programmdateien austauschen und so Code mit Systemrechten ausführen sowie die Datenbanksicherungen lesen. Setup, Update-Assistent und jeder Dienststart setzen die Rechte jetzt fest: Administratoren und SYSTEM Vollzugriff, normale Benutzer nur Lesen auf die Programmteile, `data`, `logs` und `config` ohne Benutzerzugriff. Bestandsinstallationen werden beim ersten Start nach dem Update umgestellt. Folge: `praxiszeit-server.py`-Befehle von Hand brauchen eine Administrator-Konsole.
