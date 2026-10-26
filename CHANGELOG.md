@@ -11,6 +11,12 @@
 - Docker/nginx: `Permissions-Policy`-Header (Kamera, Mikrofon, Standort u. a. aus); HTTPS (TLS 1.2) nur noch mit ECDHE- und AEAD-Verfahren. `.env.example` steht auf `ENVIRONMENT=production`.
 - Sicherheitsbericht `docs/specs/security/security-audit-report-initial.html`: zitierte Altwerte einer `.env` unkenntlich gemacht.
 
+### 🔒 Sicherheit (Exporte, Backup)
+
+- **Tabellen-Exporte (XLSX/ODS) scheitern nicht mehr an Nutzer-Text.** Ein unsichtbares Steuerzeichen (z. B. `\u0001`) in einer Notiz oder im eigenen Namen ließ den XLSX-Monats-, Jahres- und Kompaktbericht der ganzen Praxis mit HTTP 500 abbrechen. Solche Zeichen werden jetzt beim Schreiben jeder Textzelle entfernt (`neutralize_spreadsheet_formula`, gilt für beide Formate); der Schutz gegen Formel-Einschleusung bleibt.
+- **Blattnamen aus Mitarbeiternamen sind immer gültig.** Ein Doppelname wie „Müller/Schmidt" (oder `\ * ? : [ ]` im Namen) brach jeden XLSX-Export mit 500 ab. Diese Zeichen werden durch `_` ersetzt, der Name auf 31 Zeichen gekürzt, und zwei gleich heißende Mitarbeitende bekommen „Name (2)" — auch im ODS, wo gleiche Blattnamen bisher doppelt vergeben wurden.
+- **Native Installation: Backup-Ort nicht mehr im Web-Verzeichnis.** Der in den Einstellungen wählbare Backup-Ordner durfte im ohne Anmeldung ausgelieferten Frontend-Verzeichnis liegen; die täglichen Datenbank-Sicherungen wären dann für jeden im Netz abrufbar gewesen. Orte im Web- oder Programmverzeichnis (auch über Symlinks) werden jetzt mit 400 abgelehnt, ein bereits gespeicherter solcher Ort wird ignoriert (Rückfall auf das Standard-Verzeichnis).
+
 ## [1.20.1] - 2026-10-21
 
 ### 🔒 Sicherheit

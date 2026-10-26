@@ -196,3 +196,68 @@ def test_create_backup_pg_dump_failure_removes_partial(db, default_tenant, tmp_p
     with pytest.raises(bs.BackupError, match="auth failed"):
         bs.create_backup(db)
     assert list(tmp_path.glob("*.sql.gz")) == []  # kein truncated/leeres Artefakt
+
+
+# --- Sicherheits-Review 2026-10: Backup-Ort nie im ausgelieferten Web-Root ---
+
+def test_location_inside_frontend_dir_refused(db, default_tenant, tmp_path, monkeypatch):
+    from app.config import settings
+    web = tmp_path / "frontend"
+    web.mkdir()
+    monkeypatch.setattr(settings, "FRONTEND_DIR", str(web))
+    with pytest.raises(bs.BackupError, match="Web"):
+        bs.update_config(db, location=str(web / "backups"))
+    with pytest.raises(bs.BackupError):
+        bs.update_config(db, location=str(web))
+    assert not (web / "backups").exists()
+
+
+def test_location_symlink_into_frontend_dir_refused(db, default_tenant, tmp_path, monkeypatch):
+    from app.config import settings
+    web = tmp_path / "frontend"
+    (web / "assets").mkdir(parents=True)
+    monkeypatch.setattr(settings, "FRONTEND_DIR", str(web))
+    link = tmp_path / "harmlos"
+    link.symlink_to(web / "assets")
+    with pytest.raises(bs.BackupError):
+        bs.update_config(db, location=str(link))
+    with pytest.raises(bs.BackupError):
+        bs.update_config(db, location=str(tmp_path / "x" / ".." / "frontend" / "sub"))
+
+
+def test_location_inside_app_code_refused(db, default_tenant):
+    import app as app_pkg
+    code_dir = os.path.dirname(os.path.abspath(app_pkg.__file__))
+    with pytest.raises(bs.BackupError):
+        bs.update_config(db, location=os.path.join(code_dir, "static_backups"))
+
+
+def test_native_install_app_dir_refused(db, default_tenant, tmp_path, monkeypatch):
+    """Nativ (SERVE_FRONTEND): das ganze Programmverzeichnis (``<install>/app``,
+    enthält backend/ und frontend/, wird beim Update per rsync --delete ersetzt)."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "SERVE_FRONTEND", True)
+    install_app = bs._backend_root().parent
+    with pytest.raises(bs.BackupError):
+        bs.update_config(db, location=str(install_app / "backups"))
+
+
+def test_location_outside_web_root_still_allowed(db, default_tenant, tmp_path, monkeypatch):
+    from app.config import settings
+    web = tmp_path / "frontend"
+    web.mkdir()
+    monkeypatch.setattr(settings, "FRONTEND_DIR", str(web))
+    cfg = bs.update_config(db, location=str(tmp_path / "frontend-backups"))
+    assert cfg.location == str(tmp_path / "frontend-backups")
+
+
+def test_stored_forbidden_location_is_ignored(db, default_tenant, tmp_path, monkeypatch):
+    """Ein vor dem Fix gespeicherter Web-Root-Pfad darf nicht mehr beschrieben werden."""
+    from app.config import settings
+    web = tmp_path / "frontend"
+    web.mkdir()
+    monkeypatch.setattr(settings, "FRONTEND_DIR", str(web))
+    bs._set_setting(db, bs.SETTING_LOCATION, str(web / "backups"))
+    db.commit()
+    monkeypatch.setenv("PRAXISZEIT_BACKUP_DIR", str(tmp_path / "data"))
+    assert bs.get_backup_dir(db) == tmp_path / "data"

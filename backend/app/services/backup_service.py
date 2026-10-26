@@ -84,11 +84,66 @@ def _set_setting(db: Session, key: str, value: str) -> None:
         db.add(SystemSetting(key=key, value=value, tenant_id=DEFAULT_TENANT_ID))
 
 
+def _backend_root() -> Path:
+    """Wurzel des laufenden Backend-Codes (Docker: ``/app``; nativ:
+    ``<install>/app/backend``) — dieselbe Basis, gegen die ``main.py`` einen
+    relativen ``FRONTEND_DIR`` auflöst."""
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def _forbidden_backup_roots() -> list[Path]:
+    """Verzeichnisse, in denen nie ein Datenbank-Dump liegen darf.
+
+    Sicherheits-Review 2026-10: nativ liefert FastAPI ``FRONTEND_DIR`` ohne Login
+    aus (``SPAFallbackMiddleware``/``StaticFiles``). Ein Backup-Ort darin machte
+    jeden nächtlichen Dump für jeden im Netz herunterladbar. Ebenfalls gesperrt:
+    das Python-Paket ``app`` und nativ das ganze Programmverzeichnis
+    ``<install>/app`` (Backend + Frontend; das Update ersetzt es per
+    ``rsync --delete``). Docker-Default ``/app/backups`` bleibt erlaubt."""
+    from app.config import settings
+
+    frontend = Path(settings.FRONTEND_DIR)
+    if not frontend.is_absolute():
+        frontend = _backend_root() / settings.FRONTEND_DIR
+    roots = [frontend.resolve(), (_backend_root() / "app").resolve()]
+    if settings.SERVE_FRONTEND:
+        roots.append(_backend_root().parent.resolve())
+    return roots
+
+
+def _is_forbidden_location(loc: str) -> bool:
+    """True, wenn ``loc`` (Symlinks und ``..`` aufgelöst) in einem gesperrten
+    Verzeichnis liegt oder es selbst ist."""
+    try:
+        real = Path(os.path.realpath(loc))
+    except (OSError, ValueError):
+        return True
+    for root in _forbidden_backup_roots():
+        if real == root or root in real.parents:
+            return True
+    return False
+
+
+FORBIDDEN_LOCATION_DETAIL = (
+    "Dieser Backup-Ort ist nicht erlaubt: er liegt im Web-Verzeichnis oder im "
+    "Programmverzeichnis von PraxisZeit, von wo Dateien ohne Anmeldung abrufbar "
+    "wären oder beim Update gelöscht würden. Bitte einen Ordner außerhalb wählen "
+    "(z. B. das Standard-Verzeichnis data/backups)."
+)
+
+
 def get_backup_dir(db: Session) -> Path:
-    """Effektives Backup-Verzeichnis: Setting-Override > Env > Docker-Default."""
+    """Effektives Backup-Verzeichnis: Setting-Override > Env > Docker-Default.
+
+    Ein gespeicherter Override, der (z. B. aus der Zeit vor der Prüfung in
+    ``update_config``) in einem gesperrten Verzeichnis liegt, wird ignoriert."""
     override = (settings_service.get_setting(db, SETTING_LOCATION, tenant_id=DEFAULT_TENANT_ID) or "").strip()
     if override:
-        return Path(override)
+        if not _is_forbidden_location(override):
+            return Path(override)
+        logger.warning(
+            "Backup-Ort %r liegt im Web-/Programmverzeichnis und wird ignoriert", override
+        )
     env_dir = os.environ.get("PRAXISZEIT_BACKUP_DIR", "").strip()
     if env_dir:
         return Path(env_dir)
@@ -129,6 +184,8 @@ def update_config(
         _set_setting(db, SETTING_RETENTION_DAYS, str(max(1, int(retention_days))))
     if location is not None:
         loc = location.strip()
+        if loc and _is_forbidden_location(loc):
+            raise BackupError(FORBIDDEN_LOCATION_DETAIL)
         if loc:
             # Schreibprobe (Review 2026-06-23): einen nicht beschreibbaren Pfad
             # ablehnen, statt ihn still zu speichern und erst beim naechsten Backup
