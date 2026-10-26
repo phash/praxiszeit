@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.responses import PlainTextResponse
 
-from app.middleware.static_serving import SecurityHeadersMiddleware
+from app.middleware.static_serving import PERMISSIONS_POLICY, SecurityHeadersMiddleware
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +50,12 @@ class TestSecurityHeadersMiddleware:
         """Prüft dass Referrer-Policy gesetzt ist — verhindert URL-Leak an Dritte."""
         response = app_with_middleware.get("/test")
         assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+
+    def test_permissions_policy(self, app_with_middleware):
+        """Permissions-Policy wortgleich zu frontend/nginx.conf (Security-Review 2026-10-26)."""
+        response = app_with_middleware.get("/test")
+        assert response.headers["Permissions-Policy"] == PERMISSIONS_POLICY
+        assert "camera=()" in PERMISSIONS_POLICY
 
     def test_hsts(self, app_with_middleware):
         """Prüft dass HSTS-Header mit 1 Jahr max-age über HTTPS gesetzt ist — erzwingt HTTPS.
