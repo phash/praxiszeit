@@ -29,6 +29,7 @@ import threading
 import time as time_module
 import uuid
 from datetime import date, datetime, time, timedelta
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text, create_engine
@@ -352,7 +353,8 @@ def test_clock_status_auto_close_waits_and_clamps_with_the_new_blocks(fresh, mon
 
     def writer(session):
         user = session.query(User).filter(User.id == USER_ID).first()
-        time_entries.get_clock_status(db=session, current_user=user)
+        time_entries.get_clock_status(
+            request=SimpleNamespace(state=SimpleNamespace()), db=session, current_user=user)
 
     e = _assert_waited_and_clamped(_race(monkeypatch, writer, today=NEXT_DAY, now=time(8, 0)),
                                    raw_end=time(23, 59))
