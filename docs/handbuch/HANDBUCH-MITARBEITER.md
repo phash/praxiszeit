@@ -365,6 +365,8 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 
 > **Tag mit anerkanntem Zeiteintrag:** Liegt an einem der zu buchenden Tage ein Zeiteintrag, den die Verwaltung anerkannt hat (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)), lehnt PraxisZeit die Buchung ab und nennt den Tag, z. B. *„Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."* Die Verwaltung trägt die Abwesenheit für diesen Tag ein. Die übrigen Tage können Sie getrennt buchen.
 
+> **Vergangener Tag mit Zeiteinträgen:** Liegen an einem vergangenen Tag bereits Zeiteinträge, können Sie dort hier keine Abwesenheit buchen – PraxisZeit würde dabei Ihre Einträge löschen, und Einträge vergangener Tage ändern Sie nur per Antrag. Sie erhalten z. B. *„Am 05.10.2026 gibt es bereits Zeiteinträge – eine Abwesenheit für einen vergangenen Tag mit Zeiteinträgen bitte per Änderungsantrag im Journal stellen."* Wählen Sie im **Journal** in der Zeile des Tages den Abwesenheitstyp und stellen Sie den Antrag (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)). Vergangene Tage **ohne** Zeiteintrag (z. B. eine Krankmeldung für gestern) buchen Sie weiterhin direkt hier.
+
 **Abwesenheitstypen:**
 
 | Typ | Wann eintragen |
@@ -559,7 +561,9 @@ Sie können Ihr Konto zusätzlich mit einem Einmal-Code aus einer **Authenticato
 
 **Login mit aktiver 2FA:** Geben Sie wie gewohnt Benutzername und Passwort ein. Anschließend werden Sie nach dem **6-stelligen Code** aus Ihrer Authenticator-App gefragt.
 
-**2FA deaktivieren:** Klicken Sie auf **„2FA deaktivieren"** und bestätigen Sie zur Sicherheit Ihr **aktuelles Passwort**.
+**2FA deaktivieren:** Klicken Sie auf **„2FA deaktivieren"** und bestätigen Sie zur Sicherheit Ihr **aktuelles Passwort** und den **aktuellen 6-stelligen Code** aus Ihrer Authenticator-App.
+
+**Neues Handy:** Solange 2FA aktiv ist, lässt sie sich nicht neu einrichten. Deaktivieren Sie 2FA zuerst (mit dem Code vom alten Gerät) und richten Sie sie danach auf dem neuen Gerät neu ein.
 
 > **Tipp:** Bewahren Sie Ihr Smartphone bzw. die Authenticator-App sicher auf. Verlieren Sie den Zugang zur App, wenden Sie sich an Ihren Administrator – er kann Ihr Konto zurücksetzen.
 

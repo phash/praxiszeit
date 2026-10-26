@@ -8,6 +8,14 @@ from starlette.responses import Response, PlainTextResponse
 from app.config import settings
 
 
+# Keep byte-identical to the Permissions-Policy in frontend/nginx.conf and
+# ssl/nginx-ssl.conf. The app only needs clipboard-write, which stays allowed.
+PERMISSIONS_POLICY = (
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), "
+    "bluetooth=(), magnetometer=(), gyroscope=(), accelerometer=()"
+)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
     Adds security headers to all responses.
@@ -20,6 +28,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = PERMISSIONS_POLICY
         # M-SEC3: style-src keeps 'unsafe-inline' deliberately — the React UI
         # uses dynamic inline styles (style={{...}} for colours/widths) and two
         # inline <style> keyframe blocks. Dropping it would break rendering;
@@ -152,6 +161,7 @@ _PROPAGATED_SECURITY_HEADERS = (
     "X-Frame-Options",
     "X-Content-Type-Options",
     "Referrer-Policy",
+    "Permissions-Policy",
     "Content-Security-Policy",
     "Strict-Transport-Security",
 )

@@ -89,9 +89,13 @@ export const useAuthStore = create<AuthState>()(
         }
         resetImpersonationState();
 
-        // Best-effort server logout (bumps token_version, clears refresh cookie)
+        // Best-effort server logout (bumps token_version, clears refresh cookie).
+        // Sicherheits-Review 2026-10: /auth/refresh/logout instead of
+        // /auth/logout — the HttpOnly refresh cookie is path-scoped to
+        // /api/auth/refresh, so only this path lets the server revoke the
+        // session even after the access token has expired (shared practice PC).
         try {
-          await apiClient.post('/auth/logout');
+          await apiClient.post('/auth/refresh/logout');
         } catch {
           // Ignore — we still clear client state below
         }

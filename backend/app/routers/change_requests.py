@@ -398,9 +398,9 @@ def create_change_request(
         ChangeRequest.user_id == current_user.id,
         ChangeRequest.status == ChangeRequestStatus.PENDING,
     )
-    if data.time_entry_id:
+    if entry is not None:
         existing_pending = existing_pending.filter(
-            ChangeRequest.time_entry_id == data.time_entry_id
+            ChangeRequest.time_entry_id == entry.id
         )
     if data.request_type == "create" and data.proposed_date:
         existing_pending = existing_pending.filter(
@@ -416,7 +416,11 @@ def create_change_request(
         user_id=current_user.id,
         tenant_id=current_user.tenant_id,
         request_type=data.request_type,
-        time_entry_id=data.time_entry_id,
+        # Security-Review 2026-10-26: nur UPDATE/DELETE beziehen sich auf einen
+        # (oben als eigen geprüften) Eintrag. Ein CREATE trug sonst eine
+        # beliebige, ungeprüfte ID — auch die eines Kollegen, dessen Zeiten
+        # die Anreicherung dann auslieferte.
+        time_entry_id=entry.id if entry is not None else None,
         proposed_date=data.proposed_date,
         proposed_start_time=data.proposed_start_time,
         proposed_end_time=data.proposed_end_time,

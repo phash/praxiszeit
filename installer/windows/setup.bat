@@ -256,6 +256,21 @@ if not exist "%DIR%config\praxiszeit.conf" (
 )
 
 REM ============================================================
+REM Schritt 4: Zugriffsrechte des Installationsordners
+REM ============================================================
+REM Der Ordner erbt sonst die Rechte von C:\ - dort duerfen "Authentifizierte
+REM Benutzer" aendern. Der Dienst laeuft als SYSTEM: jedes lokale Konto koennte
+REM bin\python\python.exe oder eine .py-Datei austauschen und so Code als SYSTEM
+REM ausfuehren, und die Sicherungen in data\backups lesen. praxiszeit-server.py
+REM setzt die Rechte per SID - SYSTEM/Administratoren Vollzugriff, Benutzer nur
+REM Lesen auf die Programmteile, data/logs/config ohne Benutzer. Der Dienststart
+REM prueft dasselbe bei jedem Start nach, ein Fehlschlag hier ist kein Abbruch.
+echo.
+echo Schraenke Zugriffsrechte des Installationsordners ein...
+"%PYTHON%" "%DIR%praxiszeit-server.py" harden-permissions
+if errorlevel 1 echo WARNUNG: Zugriffsrechte konnten nicht vollstaendig eingeschraenkt werden - der Dienststart versucht es erneut.
+
+REM ============================================================
 REM Fertig
 REM ============================================================
 

@@ -22,6 +22,7 @@ import json
 import uuid
 from datetime import date, time
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -198,6 +199,6 @@ def test_compensatory_rest_ignores_foreign_entries(db, pair, admin):
 
 def test_me_export_ignores_foreign_rows(db, pair):
     user, _ = pair
-    data = json.loads(export_my_data(current_user=user, db=db).body)
+    data = json.loads(export_my_data(request=SimpleNamespace(state=SimpleNamespace()), current_user=user, db=db).body)
     assert [e["date"] for e in data["zeiteintraege"]] == [str(MONDAY)]
     assert data["abwesenheiten"] == []

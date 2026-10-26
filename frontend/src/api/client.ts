@@ -112,10 +112,14 @@ apiClient.interceptors.response.use(
     //   then fails again) re-dispatches 'auth:session-expired' → logout() → an
     //   infinite logout↔refresh storm that saturates the connection pool and
     //   hangs every other request (incident: logout 401 ×382, refresh 429 ×50).
+    //   The logout path is /auth/refresh/logout (Sicherheits-Review 2026-10),
+    //   already covered by '/auth/refresh'; listed explicitly so removing the
+    //   refresh guard can never re-open the loop. /auth/logout stays excluded.
     const url: string = originalRequest?.url || '';
     if (
       url.includes('/auth/login') ||
       url.includes('/auth/refresh') ||
+      url.includes('/auth/refresh/logout') ||
       url.includes('/auth/logout')
     ) {
       return Promise.reject(error);

@@ -1,7 +1,7 @@
 # backend/app/routers/journal.py
 """Journal-Router: Monatsjournal für Admin und Mitarbeiter."""
 import logging
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
 
@@ -58,7 +58,9 @@ def get_user_journal(
         )
         db.add(TimeEntryAuditLog(
             time_entry_id=None,
-            user_id=current_user.id,
+            # Security-Review 2026-10-26: ``user_id`` = betroffene Person (wie
+            # absences.list_absences), ``changed_by`` = lesender Admin.
+            user_id=user.id,
             changed_by=current_user.id,
             action="health_data_read",
             source="dsgvo",
@@ -75,14 +77,23 @@ def get_user_journal(
 
 @router.get("/journal/me", response_model=JournalResponse)
 def get_my_journal(
+    request: Request,
     year: int = Query(default=None, ge=2000, le=2100, description="Jahr (Standard: aktuell)"),
     month: int = Query(default=None, ge=1, le=12, description="Monat 1-12 (Standard: aktuell)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Monatsjournal des aktuell eingeloggten Mitarbeiters."""
+    """Monatsjournal des aktuell eingeloggten Mitarbeiters.
+
+    Security-Review 2026-10-26 (Art. 9 DSGVO): unter Impersonation (#370) liest
+    ein Admin — Gesundheitsdaten dann maskiert wie im Admin-Journal ohne
+    ``include_health_data``.
+    """
     now = now_local()
     year = year or now.year
     month = month or now.month
 
-    return journal_service.get_journal(db, current_user, year, month)
+    impersonating = bool(getattr(request.state, "is_impersonating", False))
+    return journal_service.get_journal(
+        db, current_user, year, month, include_health_data=not impersonating,
+    )

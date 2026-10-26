@@ -23,7 +23,7 @@ from app.services.date_filters import date_in_month, date_in_year
 from app.services.export_service import (
     absence_day_target,  # Release-Review 1.16.0
     export_users,  # Release-Review 1.16.0
-    neutralize_spreadsheet_formula, _load_reason_names, _absence_export_label, _group_by_date,
+    neutralize_spreadsheet_formula, safe_sheet_title, _load_reason_names, _absence_export_label, _group_by_date,
     format_weekly_hours_history,  # #415
     day_work_blocks,  # #498
     day_credit_minutes, NOT_CREDITED_HEADER,  # Spec 2026-10-08, 15.1
@@ -147,6 +147,13 @@ def _header_row(columns: List[str], bold_style) -> TableRow:
     return tr
 
 
+def _table_names(doc: OpenDocumentSpreadsheet) -> List[str]:
+    """Namen der bereits angelegten Blätter — für ``safe_sheet_title``, damit zwei
+    gleich (oder nach dem Ersetzen verbotener Zeichen gleich) heißende
+    Mitarbeitende nicht dasselbe ``table:name`` bekommen."""
+    return [t.getAttribute("name") for t in doc.spreadsheet.getElementsByType(Table)]
+
+
 def _save(doc: OpenDocumentSpreadsheet) -> BytesIO:
     buf = BytesIO()
     doc.save(buf)
@@ -190,7 +197,7 @@ def generate_monthly_report(db: Session, year: int, month: int, include_health_d
 
 def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data: bool = False):
     reason_names = _load_reason_names(db, user.tenant_id)  # #312
-    sheet_name = f"{user.last_name} {user.first_name}"[:31]
+    sheet_name = safe_sheet_title(f"{user.last_name} {user.first_name}", _table_names(doc))
     table = Table(name=sheet_name)
     doc.spreadsheet.addElement(table)
 
@@ -591,7 +598,7 @@ def _absences_overview_sheet(doc, db, users, year, bold, include_health_data: bo
 
 def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool = False):
     reason_names = _load_reason_names(db, user.tenant_id)  # #312
-    sheet_name = f"{user.last_name} {user.first_name}"[:31]
+    sheet_name = safe_sheet_title(f"{user.last_name} {user.first_name}", _table_names(doc))
     table = Table(name=sheet_name)
     doc.spreadsheet.addElement(table)
 
@@ -818,7 +825,7 @@ def generate_yearly_report_classic(db: Session, year: int, include_health_data: 
 
 
 def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False):
-    sheet_name = f"{user.last_name} {user.first_name}"[:31]
+    sheet_name = safe_sheet_title(f"{user.last_name} {user.first_name}", _table_names(doc))
     table = Table(name=sheet_name)
     doc.spreadsheet.addElement(table)
 

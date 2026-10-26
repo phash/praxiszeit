@@ -284,6 +284,11 @@ def _enrich_cr_responses(crs: list, db: Session) -> list[ChangeRequestResponse]:
     for cr in crs:
         response = ChangeRequestResponse.model_validate(cr)
         target = entries.get(cr.time_entry_id)
+        # Security-Review 2026-10-26: nur ein Eintrag der antragstellenden
+        # Person — ein Altbestand-CREATE mit fremder ``time_entry_id`` darf
+        # keine Zeiten eines Kollegen ausliefern.
+        if target is not None and target.user_id != cr.user_id:
+            target = None
         if target is not None:
             response.entry_credit_override = bool(target.credit_override)
             response.entry_auto_closed = bool(target.auto_closed)

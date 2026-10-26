@@ -406,6 +406,7 @@ class TestForeignPgIsolation:
         monkeypatch.setattr(srv, "DATA_DIR", tmp_path)
         monkeypatch.setattr(srv, "BIN_DIR", tmp_path / "bin")
         monkeypatch.setattr(srv, "LOG_DIR", log_dir)
+        monkeypatch.setattr(srv, "CONFIG_DIR", tmp_path / "config")
 
         import types
 
@@ -414,7 +415,7 @@ class TestForeignPgIsolation:
 
         monkeypatch.setattr(srv.subprocess, "run", _fake_run)
 
-        srv.pg_init({})
+        srv.pg_init({}, "su-pw")
 
         conf = (pg_data / "postgresql.conf").read_text()
         # Socket-only: no TCP listener at all, so a foreign PG already bound to
@@ -522,13 +523,13 @@ class TestCmdStartBranching:
             "env_set": False,
         }
 
-        def _pg_init(config):
+        def _pg_init(config, *a, **kw):
             calls["pg_init"] += 1
 
         def _pg_start():
             calls["pg_start"] += 1
 
-        def _pg_setup_database(config):
+        def _pg_setup_database(config, *a, **kw):
             calls["pg_setup_database"] += 1
 
         def _quarantine():

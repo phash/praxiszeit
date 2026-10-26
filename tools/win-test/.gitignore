@@ -2,7 +2,10 @@
 # Anleitung: docs/WINDOWS-EMULATOR-TEST.md
 
 # Entpacktes Release-Paket (~700 MB), wird vor jedem Lauf neu befuellt.
+# tree-old = Vorgaengerpaket fuer den Update-Lauf (mode.txt = update).
 share/tree/
+share/tree-old/
+share/mode.txt
 
 # Optionale .NET-Sonde fuer den GUI-Installer-Pfad (~80 MB, selbst gebaut).
 share/aclprobe/

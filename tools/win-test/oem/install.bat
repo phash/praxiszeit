@@ -11,12 +11,22 @@ REM naechsten Release sofort veraltet und wuerde ein falsches Ergebnis behaupten
 set "RES=\\host.lan\Data\install-result.txt"
 > "%RES%" echo ===== PraxisZeit Windows-Install-Test (ACL-Haertung) =====
 >> "%RES%" echo Start: %date% %time%
+REM MODE=fresh (Vorgabe): Erstinstallation des Pakets aus share\tree.
+REM MODE=update: zuerst das Vorgaengerpaket aus share\tree-old installieren,
+REM dann per update-wizard.ps1 -Headless auf share\tree aktualisieren.
+set "MODE=fresh"
+if exist "\\host.lan\Data\mode.txt" for /f "usebackq delims=" %%m in ("\\host.lan\Data\mode.txt") do set "MODE=%%m"
+set "SRC=\\host.lan\Data\tree"
+if /i "!MODE!"=="update" set "SRC=\\host.lan\Data\tree-old"
+>> "%RES%" echo MODE=!MODE!
 >> "%RES%" echo.
 
 >> "%RES%" echo [1/11] Kopiere Paket nach C:\PraxisZeit ...
-robocopy "\\host.lan\Data\tree" "C:\PraxisZeit" /E /R:2 /W:2 /NFL /NDL /NJH /NJS >nul
+robocopy "!SRC!" "C:\PraxisZeit" /E /R:2 /W:2 /NFL /NDL /NJH /NJS >nul
 if not exist "C:\PraxisZeit\setup.bat" ( >> "%RES%" echo FEHLER: Kopie unvollstaendig & goto :done )
 copy /Y "\\host.lan\Data\acl-check.ps1" "C:\acl-check.ps1" >nul
+mkdir "C:\pz-harness" 2>nul
+for %%f in (install-acl-check.ps1 run-probe.ps1 nonadmin-probe.ps1 post-reboot.bat) do copy /Y "\\host.lan\Data\%%f" "C:\pz-harness\%%f" >nul
 cd /d C:\PraxisZeit
 set "PKGVER="
 for /f "usebackq tokens=2 delims==" %%v in (`findstr /B "APP_VERSION" "C:\PraxisZeit\app\backend\app\core\updater.py"`) do set "PKGVER=%%v"
@@ -26,10 +36,10 @@ for /f "usebackq tokens=2 delims==" %%v in (`findstr /B "APP_VERSION" "C:\Praxis
 REM Das Test-Passwort steht NICHT in diesem Skript: ein fest eingetragenes
 REM Kennwort im Repo ist ein Fund fuer jeden Secret-Scanner, auch wenn es nur in
 REM einer Wegwerf-VM gilt. Es kommt aus der geteilten Ablage (gitignoriert) und
-REM wird vor dem Lauf angelegt — siehe docs/WINDOWS-EMULATOR-TEST.md.
+REM wird vor dem Lauf angelegt - siehe docs/WINDOWS-EMULATOR-TEST.md.
 REM Secret-Scanner schlagen auf eine zusammenhaengende Zeichenkette
 REM {"username":"admin","password":"…"} an, auch wenn der Wert erst zur Laufzeit
-REM aus der Datei kommt. Der Feldname wird deshalb zusammengesetzt — dieselbe
+REM aus der Datei kommt. Der Feldname wird deshalb zusammengesetzt - dieselbe
 REM Auflage wie bei den Datenbank-URLs in den Tests (siehe CLAUDE.md).
 set "PWKEY=pass"
 set "PWKEY=!PWKEY!word"
@@ -70,7 +80,7 @@ type "%TEMP%\sysinfo.json" >> "%RES%" 2>&1
 >> "%RES%" echo [8/11] DB pruefen (alembic_version + PostgreSQL-Version) ...
 REM Die Zugangsdaten legt der Installer selbst in config\.db-credentials ab.
 REM psql bekommt sie ueber eine temporaere pgpass-Datei statt ueber eine
-REM Umgebungsvariable — so steht in diesem Skript an keiner Stelle eine
+REM Umgebungsvariable - so steht in diesem Skript an keiner Stelle eine
 REM Zuweisung, die wie ein hinterlegtes Kennwort aussieht. Die Datei wird
 REM unmittelbar danach geloescht.
 set "PGPASSFILE=%TEMP%\pz-pgpass.conf"
@@ -84,6 +94,51 @@ del /f /q "%PGPASSFILE%" 2>nul
 set "PGPASSFILE="
 sc query PraxisZeit | findstr STATE >> "%RES%" 2>&1
 "C:\PraxisZeit\bin\postgresql\bin\psql.exe" --version >> "%RES%" 2>&1
+
+if /i not "!MODE!"=="update" goto :after_update
+REM ============================================================
+REM Update-Pfad: Ausgangsstand = Vorgaengerversion ohne Ordnerhaertung.
+REM Erwartet VOR dem Update: INSTALLDIR_ACL_ALT meldet FAIL (der Mangel, den
+REM das Update behebt). NACH dem Update: alles OK.
+REM ============================================================
+>> "%RES%" echo.
+>> "%RES%" echo [Update] Ordnerrechte der Vorgaengerversion (FAIL erwartet) ...
+>> "%RES%" echo ===INSTALLDIR_ACL_ALT_BEGIN===
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\install-acl-check.ps1" -InstallDir "C:\PraxisZeit" >> "%RES%" 2>&1
+>> "%RES%" echo ===INSTALLDIR_ACL_ALT_END===
+>> "%RES%" echo [Update] update-wizard.ps1 -Headless aus dem neuen Paket ...
+robocopy "\\host.lan\Data\tree" "C:\PZNew" /E /R:2 /W:2 /NFL /NDL /NJH /NJS >nul
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\PZNew\update-wizard.ps1" -InstallDir "C:\PraxisZeit" -Headless >> "%RES%" 2>&1
+>> "%RES%" echo UPDATE_EXIT=!errorlevel!
+findstr /C:"harden-permissions" "C:\PraxisZeit\praxiszeit-server.py" >nul && (>> "%RES%" echo NEUER_CODE=ja) || (>> "%RES%" echo NEUER_CODE=nein)
+set "HCU=000"
+for /l %%i in (1,1,36) do (
+    for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" https://localhost/api/health') do set "HCU=%%c"
+    if "!HCU!"=="200" goto :verified_update
+    timeout /t 10 /nobreak >nul
+)
+:verified_update
+>> "%RES%" echo HEALTH_HTTP_NACH_UPDATE=!HCU!
+for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" -X POST https://localhost/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"!PWKEY!\":\"!ADMPW!\"}"') do >> "%RES%" echo LOGIN_HTTP_NACH_UPDATE=%%c
+sc query PraxisZeit | findstr STATE >> "%RES%" 2>&1
+:after_update
+
+REM ============================================================
+REM Ordnerrechte des ganzen Installationsordners + echte Probe als
+REM Standardkonto. Vorher eine Sicherung anlegen, damit data\backups
+REM etwas enthaelt, das gelesen werden koennte.
+REM ============================================================
+>> "%RES%" echo.
+>> "%RES%" echo [Ordner] Sicherung anlegen ...
+set PYTHONUTF8=1
+"C:\PraxisZeit\bin\python\python.exe" "C:\PraxisZeit\praxiszeit-server.py" backup >> "%RES%" 2>&1
+>> "%RES%" echo BACKUP_EXIT=!errorlevel!
+>> "%RES%" echo ===INSTALLDIR_ACL_BEGIN===
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\install-acl-check.ps1" -InstallDir "C:\PraxisZeit" >> "%RES%" 2>&1
+>> "%RES%" echo ===INSTALLDIR_ACL_END===
+>> "%RES%" echo ===PROBE_BEGIN===
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\run-probe.ps1" -InstallDir "C:\PraxisZeit" >> "%RES%" 2>&1
+>> "%RES%" echo ===PROBE_END===
 
 REM ============================================================
 REM ACL-Nachweis: die beiden vertraulichen Dateien duerfen KEINE
@@ -131,6 +186,14 @@ icacls "C:\PraxisZeit\config\praxiszeit.conf" /inheritance:e >> "%RES%" 2>&1
 icacls "C:\PraxisZeit\config\praxiszeit.conf" /grant "*S-1-5-32-545:(R)" >> "%RES%" 2>&1
 icacls "C:\PraxisZeit\config\ssl\key.pem" /inheritance:e >> "%RES%" 2>&1
 icacls "C:\PraxisZeit\config\ssl\key.pem" /grant "*S-1-5-32-545:(R)" >> "%RES%" 2>&1
+REM Ordner wie bei einer Altinstallation: Vererbung von C:\ wieder an
+REM ("Authentifizierte Benutzer: Aendern") + data fuer Benutzer lesbar.
+icacls "C:\PraxisZeit" /inheritance:e >> "%RES%" 2>&1
+icacls "C:\PraxisZeit\data" /inheritance:e >> "%RES%" 2>&1
+icacls "C:\PraxisZeit\data" /grant "*S-1-5-32-545:(OI)(CI)(R)" >> "%RES%" 2>&1
+>> "%RES%" echo ===INSTALLDIR_ACL_AUFGEWEICHT_BEGIN===
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\install-acl-check.ps1" -InstallDir "C:\PraxisZeit" >> "%RES%" 2>&1
+>> "%RES%" echo ===INSTALLDIR_ACL_AUFGEWEICHT_END===
 >> "%RES%" echo ===ACL_AUFGEWEICHT_BEGIN===
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\acl-check.ps1" "C:\PraxisZeit\config\praxiszeit.conf" "C:\PraxisZeit\config\ssl\key.pem" >> "%RES%" 2>&1
 >> "%RES%" echo ===ACL_AUFGEWEICHT_END===
@@ -150,6 +213,9 @@ for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" -X POST https://localhost/a
 >> "%RES%" echo ===ACL_REPARIERT_BEGIN===
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\acl-check.ps1" "C:\PraxisZeit\config\praxiszeit.conf" "C:\PraxisZeit\config\ssl\key.pem" >> "%RES%" 2>&1
 >> "%RES%" echo ===ACL_REPARIERT_END===
+>> "%RES%" echo ===INSTALLDIR_ACL_REPARIERT_BEGIN===
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\install-acl-check.ps1" -InstallDir "C:\PraxisZeit" >> "%RES%" 2>&1
+>> "%RES%" echo ===INSTALLDIR_ACL_REPARIERT_END===
 
 REM ============================================================
 REM GUI-Installer-Pfad (.NET): AclProbe ruft GENAU die Produktions-
@@ -168,6 +234,23 @@ if exist "\\host.lan\Data\aclprobe\AclProbe.exe" (
 ) else (
     >> "%RES%" echo AclProbe.exe nicht gefunden - Schritt uebersprungen.
 )
+
+REM ============================================================
+REM Echter Neustart der VM: post-reboot.bat laeuft als geplante Aufgabe bei
+REM der naechsten Anmeldung (dockur meldet automatisch an), prueft Dienst,
+REM Anmeldung und Rechte erneut und schreibt erst dann "===== DONE =====".
+REM ============================================================
+>> "%RES%" echo.
+>> "%RES%" echo [Neustart] geplante Aufgabe anlegen und VM neu starten ...
+schtasks /create /tn PZPostReboot /sc onlogon /ru "%USERDOMAIN%\%USERNAME%" /it /rl highest /tr "C:\pz-harness\post-reboot.bat" /f >> "%RES%" 2>&1
+if errorlevel 1 (
+    >> "%RES%" echo REBOOT=UEBERSPRUNGEN (geplante Aufgabe nicht angelegt)
+    goto :done
+)
+>> "%RES%" echo REBOOT=JETZT %date% %time%
+shutdown /r /t 15 /c "PraxisZeit-Test: Neustart"
+endlocal
+exit /b 0
 
 :done
 >> "%RES%" echo.

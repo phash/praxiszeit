@@ -206,6 +206,8 @@ ExecStop=${INSTALL_DIR}/start.sh stop
 Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
+# Neue Dateien (Sicherungen, Logs, Schluessel) nur fuer den Dienstbenutzer.
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

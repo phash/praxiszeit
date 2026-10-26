@@ -613,6 +613,9 @@ fi
 
 info "Setze Berechtigungen..."
 chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}"
+# Datenbank, Sicherungen und Protokolle nur fuer den Dienstbenutzer (und root):
+# die Sicherungen enthalten die Arbeitszeiten aller Beschaeftigten.
+chmod 750 "${INSTALL_DIR}/data" "${INSTALL_DIR}/logs"
 chmod 600 "${INSTALL_DIR}/config/praxiszeit.conf"
 chmod 600 "${INSTALL_DIR}/config/ssl/"*.pem 2>/dev/null || true
 
@@ -657,6 +660,9 @@ ExecStop=${INSTALL_DIR}/bin/python/bin/python3 ${INSTALL_DIR}/praxiszeit-server.
 Restart=on-failure
 RestartSec=10
 Environment=PYTHONUNBUFFERED=1
+# Neue Dateien (Sicherungen, Logs, Schluessel) nur fuer den Dienstbenutzer
+# lesbar — ohne UMask erbt der Dienst 022 und legt sie world-readable an.
+UMask=0077
 
 # Privilegierte Ports (<1024) als non-root binden
 ${CAP_AMBIENT}
@@ -703,6 +709,7 @@ User=${SERVICE_USER}
 Group=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
 ExecStart=${INSTALL_DIR}/bin/python/bin/python3 ${INSTALL_DIR}/praxiszeit-server.py backup
+UMask=0077
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

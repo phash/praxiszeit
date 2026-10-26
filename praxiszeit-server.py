@@ -11,6 +11,8 @@ Usage:
     python praxiszeit-server.py status      # Check service status
     python praxiszeit-server.py init        # First-time initialization only
     python praxiszeit-server.py backup      # Create database backup
+    python praxiszeit-server.py harden-permissions  # Windows: Rechte des
+                                                  # Installationsordners
     python praxiszeit-server.py restore <datei>   # Backup einspielen (Linux/macOS,
                                                   # Dienst vorher anhalten)
     python praxiszeit-server.py reset-admin-password  # Admin-Passwort neu setzen
@@ -52,7 +54,7 @@ BACKUP_DIR = DATA_DIR / "backups"
 PG_SERVICE_NAME = "PraxisZeit-PostgreSQL"
 
 # Marker file written into PG_DATA after *our* initdb. Its presence means the
-# cluster was initialized by PraxisZeit (trust-bootstrapped, superuser
+# cluster was initialized by PraxisZeit (scram-sha-256 from initdb on, superuser
 # "praxiszeit"). A data directory that exists WITHOUT this marker is foreign
 # (e.g. an EDB-installer leftover with scram auth + "postgres" superuser) and
 # must not be trusted — see cmd_start's self-healing reinit.
@@ -299,8 +301,41 @@ def _database_url(user: str, password: str, db: str) -> str:
     return f"postgresql://{cred}@/{db}?host={sock}"
 
 
-def pg_init(config: dict):
-    """Initialize a new PostgreSQL data directory."""
+# Temporary file that hands the superuser password to initdb (--pwfile). Lives
+# next to the other secrets in CONFIG_DIR, is created with restricted
+# permissions BEFORE the password is written (_open_restricted) and removed
+# right after initdb.
+INITDB_PWFILE_NAME = ".initdb-pwfile"
+
+
+def resolve_db_passwords(config: dict) -> tuple[str, str]:
+    """Superuser and app passwords for a NEW cluster.
+
+    Configured values win (``[database] superuser_password`` /
+    ``app_password``); otherwise fresh random ones. Resolved ONCE in the
+    caller, because initdb (pg_init) and pg_setup_database need the same
+    superuser password: the cluster is scram-protected from its first second.
+    """
+    su_password = get_config_value(config, "database", "superuser_password")
+    app_password = get_config_value(config, "database", "app_password")
+    if not su_password:
+        su_password = secrets.token_hex(32)
+        logger.info("Generated superuser database password")
+    if not app_password:
+        app_password = secrets.token_hex(32)
+    return str(su_password), str(app_password)
+
+
+def pg_init(config: dict, su_password: str):
+    """Initialize a new PostgreSQL data directory.
+
+    The cluster is created with ``scram-sha-256`` for local AND host
+    connections and the superuser password set by initdb itself (``--pwfile``).
+    There is no "trust" phase any more: earlier versions ran ``initdb -A
+    trust`` and switched to scram only after pg_setup_database, so every local
+    account (Unix socket) or local process (Windows: localhost TCP) could log
+    in as superuser in the meantime — and for good if that switch failed.
+    """
     if PG_DATA.exists() and any(PG_DATA.iterdir()):
         logger.info("PostgreSQL data directory already initialized")
         return
@@ -315,27 +350,42 @@ def pg_init(config: dict):
     pg_lib = str(BIN_DIR / "postgresql" / "lib").replace("\\", "/")
     pg_share = str(BIN_DIR / "postgresql" / "share" / "postgresql").replace("\\", "/")
 
+    pwfile = CONFIG_DIR / INITDB_PWFILE_NAME
     init_cmd = [
         str(pg_cmd("initdb")),
         "-D", str(PG_DATA),
         "-U", superuser,
         "-E", "UTF8",
         "--locale=C",
-        "-A", "trust",
+        "--auth=scram-sha-256",
+        f"--pwfile={pwfile}",
         "-c", f"dynamic_library_path={pg_lib}",
     ]
     # Add -L if share dir exists (bundled binaries)
     if Path(pg_share).is_dir():
         init_cmd.extend(["-L", pg_share])
 
-    result = subprocess.run(init_cmd, env=pg_env())
+    try:
+        # Restricted BEFORE the password is written (0600 / SYSTEM+Admins ACL).
+        # The password goes through a file, never through argv (visible in
+        # /proc/<pid>/cmdline or the Windows process list).
+        with _open_restricted(pwfile) as handle:
+            handle.write(f"{su_password}\n".encode("utf-8"))
+        result = subprocess.run(init_cmd, env=pg_env())
+    finally:
+        try:
+            pwfile.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:  # never mask the initdb result over cleanup
+            logger.warning(f"Could not remove {pwfile.name}: {exc}")
     # A Windows DLL-load failure (missing VC++ runtime) gets a clear, actionable
     # error here; every other failure keeps its existing CalledProcessError.
     _check_pg_launchable(result.returncode, "initdb.exe")
     result.check_returncode()
 
-    # pg_hba.conf starts with trust — pg_setup_database() will set passwords
-    # and then harden to scram-sha-256 via pg_harden_auth().
+    # pg_hba.conf is scram-sha-256 from the start (see docstring);
+    # pg_setup_database() only rewrites it to the minimal PraxisZeit set.
 
     # Configure postgresql.conf for local-only access
     pg_conf = PG_DATA / "postgresql.conf"
@@ -371,7 +421,7 @@ def pg_init(config: dict):
             f.write(f"unix_socket_directories = '{pg_run}'\n")
 
     # Mark this cluster as PraxisZeit-managed so a later start can tell our own
-    # trust-bootstrapped cluster apart from a foreign (EDB) leftover.
+    # cluster apart from a foreign (EDB) leftover.
     (PG_DATA / PG_CLUSTER_MARKER).write_text("praxiszeit-managed\n", encoding="utf-8")
 
     # initdb restricts the data dir to the creating account (LocalSystem here).
@@ -835,8 +885,211 @@ def _open_restricted(file_path: Path):
     return open(file_path, "wb")
 
 
-def pg_setup_database(config: dict):
-    """Create database and app user on first run."""
+# --- Windows: access rights of the whole install directory ---
+#
+# The default install dir C:\PraxisZeit inherits the ACL of C:\, which grants
+# "Authenticated Users: Modify". The PraxisZeit service runs as LocalSystem
+# (NSSM without ObjectName), so every local account could replace
+# bin\python\python.exe, a .py file of the app or plant a DLL and run code as
+# SYSTEM on the next start — and read the database dumps in data\backups.
+#
+# Target state (SIDs, never localized names — German vs. English Windows):
+#
+#   <install>            no inheritance; SYSTEM + Administrators Full,
+#                        Users + NetworkService Read&Execute (OI)(CI).
+#                        NetworkService runs the PostgreSQL service
+#                        (pg_ctl register -U "NT AUTHORITY\NetworkService") and
+#                        needs to read/execute bin\postgresql.
+#   <install>\data       no inheritance; SYSTEM + Administrators Full; no Users.
+#                        NetworkService gets list/traverse on THIS directory
+#                        only (no (OI)(CI) -> nothing for data\backups).
+#                        data\db keeps its own explicit NetworkService Full
+#                        (pg_init / pg_start, _win_grant_networkservice).
+#   <install>\logs       no inheritance; SYSTEM + Administrators Full,
+#                        NetworkService Modify (logging_collector, as in
+#                        pg_start). Logs contain user names — not for Users.
+#   <install>\config     no inheritance; SYSTEM + Administrators Full.
+#
+# No /T and no owner changes: changing a directory's DACL makes Windows
+# re-propagate the inheritable entries to every child that inherits, and /T
+# would also walk into bin\postgresql when setup.bat made it a junction to a
+# system PostgreSQL.
+_SID_SYSTEM = "*S-1-5-18"
+_SID_ADMINISTRATORS = "*S-1-5-32-544"
+_SID_USERS = "*S-1-5-32-545"
+_SID_AUTHENTICATED_USERS = "*S-1-5-11"
+_SID_EVERYONE = "*S-1-1-0"
+_SID_NETWORK_SERVICE = "*S-1-5-20"
+
+
+def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
+                            config_dir: Path) -> list[dict]:
+    """The icacls argument lists for :func:`_harden_install_dir`.
+
+    Pure / side-effect free so it can be unit-tested without icacls. One entry
+    per directory, root first; each entry has ``grants`` (must ALL succeed),
+    ``removes`` (best-effort, a missing SID is no error) and ``protect`` (the
+    ``/inheritance:r`` call, only run after all grants succeeded — the other
+    way round a directory could end up with no entry at all and the service
+    could not read its own files).
+    """
+    def grant(path: Path, sid: str, perms: str) -> list[str]:
+        # /grant:r replaces earlier EXPLICIT entries of this SID (e.g. a
+        # hand-made "Users: Modify") instead of adding to them.
+        return ["icacls", str(path), "/grant:r", f"{sid}:{perms}"]
+
+    def remove(path: Path, sid: str) -> list[str]:
+        return ["icacls", str(path), "/remove:g", sid]
+
+    def protect(path: Path) -> list[str]:
+        return ["icacls", str(path), "/inheritance:r"]
+
+    full = "(OI)(CI)F"
+    private_removes = (_SID_USERS, _SID_AUTHENTICATED_USERS, _SID_EVERYONE)
+    return [
+        {
+            "path": base_dir,
+            "grants": [
+                grant(base_dir, _SID_SYSTEM, full),
+                grant(base_dir, _SID_ADMINISTRATORS, full),
+                grant(base_dir, _SID_USERS, "(OI)(CI)RX"),
+                grant(base_dir, _SID_NETWORK_SERVICE, "(OI)(CI)RX"),
+            ],
+            # Users is NOT removed here — /grant:r above already cut it down
+            # to Read&Execute.
+            "removes": [remove(base_dir, sid)
+                        for sid in (_SID_AUTHENTICATED_USERS, _SID_EVERYONE)],
+            "protect": protect(base_dir),
+        },
+        {
+            "path": data_dir,
+            "grants": [
+                grant(data_dir, _SID_SYSTEM, full),
+                grant(data_dir, _SID_ADMINISTRATORS, full),
+                grant(data_dir, _SID_NETWORK_SERVICE, "(RX)"),
+            ],
+            "removes": [remove(data_dir, sid) for sid in private_removes],
+            "protect": protect(data_dir),
+        },
+        {
+            "path": log_dir,
+            "grants": [
+                grant(log_dir, _SID_SYSTEM, full),
+                grant(log_dir, _SID_ADMINISTRATORS, full),
+                grant(log_dir, _SID_NETWORK_SERVICE, "(OI)(CI)M"),
+            ],
+            "removes": [remove(log_dir, sid) for sid in private_removes],
+            "protect": protect(log_dir),
+        },
+        {
+            "path": config_dir,
+            "grants": [
+                grant(config_dir, _SID_SYSTEM, full),
+                grant(config_dir, _SID_ADMINISTRATORS, full),
+            ],
+            "removes": [remove(config_dir, sid) for sid in private_removes],
+            "protect": protect(config_dir),
+        },
+    ]
+
+
+def _run_icacls(cmd: list[str]) -> bool:
+    """Run one icacls call; True on success. Never raises."""
+    try:
+        # errors="replace": icacls answers in the OEM codepage, the service
+        # runs with PYTHONUTF8=1 (see _restrict_file_permissions).
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning(f"icacls {' '.join(cmd[2:])} on {cmd[1]} failed: {exc}")
+        return False
+    if result.returncode != 0:
+        logger.warning(
+            f"icacls {' '.join(cmd[2:])} on {cmd[1]} failed "
+            f"(rc={result.returncode}): {(result.stdout or '').strip()} "
+            f"{(result.stderr or '').strip()}"
+        )
+        return False
+    return True
+
+
+def _harden_install_dir() -> bool:
+    """Apply the install-directory ACL described above (Windows only).
+
+    Returns True if every directory was hardened. Best-effort per directory: a
+    failed grant leaves THAT directory's inheritance untouched (never an empty
+    ACL) and the next service start tries again.
+    """
+    if not IS_WINDOWS:
+        return True
+    if BASE_DIR.parent == BASE_DIR:
+        # Never strip inheritance from a drive root.
+        logger.warning(f"Install directory {BASE_DIR} is a drive root — ACL not changed.")
+        return False
+    # Create the private directories first: one created AFTER the root was
+    # hardened would inherit "Users: Read" from it.
+    for directory in (DATA_DIR, LOG_DIR, CONFIG_DIR):
+        directory.mkdir(parents=True, exist_ok=True)
+    all_ok = True
+    for step in _build_install_acl_plan(BASE_DIR, DATA_DIR, LOG_DIR, CONFIG_DIR):
+        if not all(_run_icacls(cmd) for cmd in step["grants"]):
+            logger.warning(
+                f"Access rights on {step['path']} not restricted (a grant failed); "
+                "inheritance left in place, retried at the next start."
+            )
+            all_ok = False
+            continue
+        for cmd in step["removes"]:
+            _run_icacls(cmd)
+        if not _run_icacls(step["protect"]):
+            all_ok = False
+    return all_ok
+
+
+def _ensure_install_dir_acl():
+    """Safety net at every service start (Windows): harden the install dir if
+    it still inherits — same reasoning as :func:`_ensure_restricted_permissions`
+    (every kind of installation passes through the service start, also ZIP +
+    setup.bat installs from before this check and hand-made copies).
+
+    Costs one ``icacls <dir>`` per directory once hardened.
+    """
+    if not IS_WINDOWS:
+        return
+    targets = (BASE_DIR, DATA_DIR, LOG_DIR, CONFIG_DIR)
+    if not any((not t.is_dir()) or _windows_acl_is_inherited(t) for t in targets):
+        return
+    logger.info(
+        f"Restricting access rights on {BASE_DIR} (still inherited from the "
+        "parent directory, e.g. 'Authenticated Users: Modify' of C:\\)"
+    )
+    if _harden_install_dir():
+        logger.info("Install directory access rights restricted.")
+
+
+def _psql_script(superuser: str, db: str, sql: str, env: dict) -> None:
+    """Run ``sql`` through psql via STDIN (``-f -``), stop at the first error.
+
+    Statements that carry a password (ALTER ROLE ... PASSWORD) must never be
+    passed with ``-c``: the argument vector of a running process is readable
+    by every local account (``/proc/<pid>/cmdline``, Windows process list).
+    """
+    subprocess.run(
+        [str(pg_cmd("psql")), "-X", "-w", "-v", "ON_ERROR_STOP=1",
+         "-U", superuser, "-d", db, "-f", "-"],
+        input=sql, check=True, capture_output=True, text=True, env=env,
+    )
+
+
+def pg_setup_database(config: dict, su_password: str | None = None,
+                      app_password: str | None = None):
+    """Create database and app user on first run.
+
+    ``su_password`` must be the password pg_init gave initdb (the cluster is
+    scram-protected from the start); it is passed to psql via ``PGPASSWORD``,
+    never on the command line.
+    """
     superuser = _validate_pg_identifier(
         get_config_value(config, "database", "superuser", "praxiszeit")
     )
@@ -845,33 +1098,33 @@ def pg_setup_database(config: dict):
     )
     db_name = "praxiszeit"
 
-    # Generate passwords if not in config
-    su_password = get_config_value(config, "database", "superuser_password")
-    app_password = get_config_value(config, "database", "app_password")
-    if not su_password:
-        su_password = secrets.token_hex(32)
-        logger.info("Generated superuser database password")
-    if not app_password:
-        app_password = secrets.token_hex(32)
+    if su_password is None or app_password is None:
+        resolved_su, resolved_app = resolve_db_passwords(config)
+        su_password = su_password or resolved_su
+        app_password = app_password or resolved_app
 
     psql = str(pg_cmd("psql"))
-    # "-w" = never prompt for a password. These calls run against a freshly
-    # trust-bootstrapped cluster (initdb -A trust), so no password is needed.
-    # Without -w, a cluster that unexpectedly requires scram auth (e.g. a
-    # foreign data dir) makes psql block forever on an interactive prompt that
-    # can never be answered inside a Windows service — the original F-0xx hang.
-    # With -w it fails fast and check=True surfaces a clear error instead.
-    subprocess.run(
-        [psql, "-w", "-U", superuser, "-d", "postgres",
-         "-c", f"ALTER ROLE {superuser} PASSWORD '{_escape_pg_password(su_password)}'"],
-        check=True, capture_output=True, text=True, env=pg_env(),
+    # "-w" = never prompt for a password. The password comes from PGPASSWORD.
+    # Without -w, a cluster that unexpectedly rejects it (e.g. a foreign data
+    # dir) makes psql block forever on an interactive prompt that can never be
+    # answered inside a Windows service — the original F-0xx hang. With -w it
+    # fails fast and check=True surfaces a clear error instead.
+    env = {**pg_env(), "PGPASSWORD": su_password}
+
+    # (Re)set the superuser password. Normally initdb --pwfile already did;
+    # this keeps `init` working on a cluster left behind by an older,
+    # trust-bootstrapped version.
+    _psql_script(
+        superuser, "postgres",
+        f"ALTER ROLE {superuser} PASSWORD '{_escape_pg_password(su_password)}';\n",
+        env,
     )
 
     # Check if database exists
     result = subprocess.run(
         [psql, "-w", "-U", superuser, "-d", "postgres", "-tAc",
          "SELECT 1 FROM pg_database WHERE datname = 'praxiszeit'"],
-        capture_output=True, text=True, env=pg_env(),
+        capture_output=True, text=True, env=env,
     )
 
     if "1" not in result.stdout:
@@ -879,7 +1132,7 @@ def pg_setup_database(config: dict):
         subprocess.run(
             [psql, "-w", "-U", superuser, "-d", "postgres", "-c",
              f"CREATE DATABASE {db_name} OWNER {superuser} ENCODING 'UTF8'"],
-            check=True, capture_output=True, text=True, env=pg_env(),
+            check=True, capture_output=True, text=True, env=env,
         )
 
     # Run init-db-user.sql to create app user with RLS permissions
@@ -888,15 +1141,14 @@ def pg_setup_database(config: dict):
         logger.info("Setting up application database user (RLS)...")
         subprocess.run(
             [psql, "-w", "-U", superuser, "-d", db_name, "-f", str(init_sql)],
-            check=True, capture_output=True, text=True, env=pg_env(),
+            check=True, capture_output=True, text=True, env=env,
         )
 
-    # Set app user password
-    escaped_app_pw = _escape_pg_password(app_password)
-    subprocess.run(
-        [psql, "-w", "-U", superuser, "-d", db_name,
-         "-c", f"ALTER ROLE {app_user} PASSWORD '{escaped_app_pw}'"],
-        check=True, capture_output=True, text=True, env=pg_env(),
+    # Set app user password (via stdin, see _psql_script)
+    _psql_script(
+        superuser, db_name,
+        f"ALTER ROLE {app_user} PASSWORD '{_escape_pg_password(app_password)}';\n",
+        env,
     )
 
     # Store connection strings as environment variables for the backend.
@@ -907,7 +1159,10 @@ def pg_setup_database(config: dict):
     # Save passwords to a secure file for future starts
     _save_credentials(su_password, app_password)
 
-    # Harden pg_hba.conf from trust to scram-sha-256 now that passwords are set
+    # Reduce pg_hba.conf to the minimal PraxisZeit set (no replication lines).
+    # initdb already wrote scram-sha-256 everywhere, so this is tidying, not
+    # the security boundary: a failed reload only delays the tidy-up until the
+    # next PostgreSQL restart. That is why it is a warning and not fatal.
     pg_hba = PG_DATA / "pg_hba.conf"
     pg_hba.write_text(
         "# PraxisZeit PostgreSQL client authentication\n"
@@ -916,24 +1171,36 @@ def pg_setup_database(config: dict):
         "host    all       all   127.0.0.1/32  scram-sha-256\n"
         "host    all       all   ::1/128       scram-sha-256\n"
     )
-    subprocess.run(
+    reload = subprocess.run(
         [str(pg_cmd("pg_ctl")), "-D", str(PG_DATA), "reload"],
-        capture_output=True, env=pg_env(),
+        capture_output=True, text=True, errors="replace", env=pg_env(),
     )
-    logger.info("Authentication hardened to scram-sha-256")
+    if reload.returncode != 0:
+        logger.warning(
+            "pg_ctl reload failed (rc=%s) — pg_hba.conf takes effect at the next "
+            "PostgreSQL restart (authentication is scram-sha-256 already): %s",
+            reload.returncode, (reload.stderr or "").strip(),
+        )
+    else:
+        logger.info("pg_hba.conf reloaded (scram-sha-256)")
 
     logger.info("Database setup complete")
     return su_password, app_password
 
 
 def _save_credentials(su_password: str, app_password: str):
-    """Save database credentials securely."""
+    """Save database credentials securely.
+
+    Created through :func:`_open_restricted`: the permissions (0600 / SYSTEM +
+    Administrators) are in place BEFORE the passwords are written — no window
+    in which the file carries the default (umask / inherited) permissions.
+    """
     creds_file = CONFIG_DIR / ".db-credentials"
-    creds_file.write_text(
-        f"SUPERUSER_PASSWORD={su_password}\n"
-        f"APP_PASSWORD={app_password}\n"
-    )
-    _restrict_file_permissions(creds_file)
+    with _open_restricted(creds_file) as handle:
+        handle.write(
+            (f"SUPERUSER_PASSWORD={su_password}\n"
+             f"APP_PASSWORD={app_password}\n").encode("utf-8")
+        )
 
 
 def pg_load_credentials():
@@ -988,6 +1255,9 @@ _CONF_TO_ENV = {
     ("backup", "enabled"): "BACKUP_ENABLED",
     ("backup", "schedule"): "BACKUP_SCHEDULE",
     ("backup", "retention_days"): "BACKUP_RETENTION_DAYS",
+    # Optional: "production" (Vorgabe nativ, siehe native_environment) oder
+    # "development" (API-Doku unter /docs, schwaches Admin-Passwort nur Warnung).
+    ("server", "environment"): "ENVIRONMENT",
 }
 
 # Konfigurationswerte, die Dateipfade sind (relativ zu BASE_DIR aufloesen)
@@ -1325,6 +1595,56 @@ def should_give_up(restart_times, now: float,
     return len(recent) >= limit
 
 
+# Spiegel von ``_WEAK_ADMIN_PASSWORDS`` in backend/app/main.py (ein Test haelt
+# beide gleich). Der Backend-Start bricht unter ENVIRONMENT=production ab, wenn
+# das Konto "admin" noch mit einem dieser Werte bzw. einem Passwort unter 12
+# Zeichen aus der Konfiguration anmeldbar ist.
+_BACKEND_WEAK_ADMIN_PASSWORDS = frozenset({"Admin2025!", "admin123", "password", "admin"})
+_BACKEND_MIN_ADMIN_PASSWORD_LEN = 12
+
+
+def native_environment(env) -> str:
+    """ENVIRONMENT, mit dem uvicorn auf einer nativen Installation laeuft.
+
+    Vorgabe ist ``production``: ohne das stand jede native Installation im
+    ``development``-Modus (Default in backend/app/config.py), und
+    ``/docs``, ``/redoc`` und ``/openapi.json`` waren fuer das ganze
+    Praxisnetz offen.
+
+    Ein ausdruecklich gesetzter Wert gewinnt (Dienst-Umgebung oder
+    ``[server] environment`` in praxiszeit.conf).
+
+    Ausnahme: steht in der Konfiguration fuer das Konto ``admin`` ein Passwort,
+    an dem der Backend-Start im Produktionsmodus HART abbricht (Liste oben oder
+    kuerzer als 12 Zeichen — die Installer verlangten frueher nur 10), bleibt
+    es bei ``development`` plus Warnung. Sonst wuerde ein Update eine bisher
+    laufende Installation in eine Absturzschleife schicken. Die Pruefung hier
+    ist bewusst weiter als die im Backend (die zusaetzlich verlangt, dass das
+    Passwort noch zum Konto passt): lieber einmal zu oft ``development`` als
+    ein Dienst, der nicht mehr startet.
+    """
+    explicit = (env.get("ENVIRONMENT") or "").strip()
+    if explicit:
+        return explicit
+    username = env.get("ADMIN_USERNAME") or "admin"
+    password = env.get("ADMIN_PASSWORD") or ""
+    if username == "admin" and (
+        password in _BACKEND_WEAK_ADMIN_PASSWORDS
+        or len(password) < _BACKEND_MIN_ADMIN_PASSWORD_LEN
+    ):
+        logger.warning(
+            "ENVIRONMENT bleibt 'development': [admin] password in praxiszeit.conf "
+            "ist kuerzer als %s Zeichen oder ein Standardwert — im Produktionsmodus "
+            "wuerde der Start daran scheitern. Den Eintrag durch einen langen "
+            "Zufallswert ersetzen (oder 'praxiszeit-server.py reset-admin-password' "
+            "nutzen, das ihn selbst entwertet); danach laeuft PraxisZeit im "
+            "Produktionsmodus (API-Doku /docs aus).",
+            _BACKEND_MIN_ADMIN_PASSWORD_LEN,
+        )
+        return "development"
+    return "production"
+
+
 def uvicorn_start(config: dict):
     """Start uvicorn with the FastAPI app."""
     global _uvicorn_process
@@ -1405,6 +1725,9 @@ def uvicorn_start(config: dict):
     env["PYTHONUTF8"] = "1"  # Avoid cp1252 encoding errors on Windows
     # Native install: frontend lives at app/frontend/ (no dist/ subfolder)
     env["FRONTEND_DIR"] = str(APP_DIR / "frontend")
+    # Produktionsmodus als Vorgabe (API-Doku aus) — Ausnahmen siehe
+    # native_environment.
+    env["ENVIRONMENT"] = native_environment(env)
 
     # #427: Ist der Port schon belegt, beendet sich uvicorn sofort mit
     # "address already in use" — und der belegende Prozess (typischerweise eine
@@ -1532,7 +1855,12 @@ def create_backup(config: dict):
     import gzip
     write_error = None
     try:
-        with open(backup_file, "wb") as f:
+        # 0600 from the first byte (not open() + umask 022 -> world-readable
+        # 0644 dump with every employee's data). On Windows the mode only
+        # drives the read-only attribute; there the ACL of the data dir applies
+        # (see _harden_install_dir).
+        fd = os.open(str(backup_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
             with gzip.open(f, "wb") as gz:
                 while True:
                     chunk = pg_dump.stdout.read(8192)
@@ -1685,6 +2013,9 @@ def cmd_start(args):
         )
     for _secret in _secrets:
         _ensure_restricted_permissions(_secret)
+    # Windows: the whole install directory (program files run as SYSTEM, data
+    # and backups) — no-op once hardened.
+    _ensure_install_dir_acl()
 
     # 1. Initialize PostgreSQL if needed
     creds_file = CONFIG_DIR / ".db-credentials"
@@ -1738,9 +2069,9 @@ def cmd_start(args):
         # Self-healing: PG_DATA exists but was NOT initialized by us
         # (no marker) and has no credentials file — typically an
         # EDB-installer leftover with scram auth and the "postgres"
-        # superuser. Trusting it would make pg_setup_database's trust-based
+        # superuser. Trusting it would make pg_setup_database's
         # psql calls fail (or, before -w, hang). Move it aside and
-        # re-initialize a clean, trust-bootstrapped cluster.
+        # re-initialize a clean cluster.
         logger.warning(
             "PostgreSQL data directory exists but is not PraxisZeit-managed and "
             "no credentials file was found — moving it aside and reinitializing "
@@ -1753,15 +2084,17 @@ def cmd_start(args):
         backup = _quarantine_pg_data()
         logger.warning(f"Previous data directory preserved at: {backup}")
 
+    su_password = app_password = None
     if needs_initdb:
-        pg_init(config)
+        su_password, app_password = resolve_db_passwords(config)
+        pg_init(config, su_password)
 
     # 2. Start PostgreSQL
     pg_start()
 
     # 3. Setup database if needed (first run or missing credentials)
     if needs_setup:
-        pg_setup_database(config)
+        pg_setup_database(config, su_password, app_password)
     else:
         # Load saved credentials
         su_password, app_password = pg_load_credentials()
@@ -1920,12 +2253,27 @@ def cmd_status(args):
 def cmd_init(args):
     """First-time initialization only."""
     config = load_config()
-    pg_init(config)
+    su_password, app_password = resolve_db_passwords(config)
+    pg_init(config, su_password)
     pg_start()
-    pg_setup_database(config)
+    pg_setup_database(config, su_password, app_password)
     run_migrations(config)
     logger.info("Initialization complete. Run 'praxiszeit-server start' to start the application.")
     pg_stop()
+
+
+def cmd_harden_permissions(args):
+    """Windows: restrict the access rights of the install directory.
+
+    Called by setup.bat and the update wizard; the service start does the same
+    as a safety net (_ensure_install_dir_acl). Exit 1 if a step failed.
+    """
+    if not IS_WINDOWS:
+        logger.info("harden-permissions: only needed on Windows — nothing to do.")
+        return
+    if not _harden_install_dir():
+        sys.exit(1)
+    logger.info(f"Access rights on {BASE_DIR} restricted.")
 
 
 def cmd_backup(args):
@@ -2542,6 +2890,10 @@ def main():
     subparsers.add_parser("status", help="Show service status").set_defaults(func=cmd_status)
     subparsers.add_parser("init", help="First-time database initialization").set_defaults(func=cmd_init)
     subparsers.add_parser("backup", help="Create database backup").set_defaults(func=cmd_backup)
+    subparsers.add_parser(
+        "harden-permissions",
+        help="Windows: Zugriffsrechte des Installationsverzeichnisses einschraenken",
+    ).set_defaults(func=cmd_harden_permissions)
 
     # Gesamtreview 1.20: Gegenstueck zu restore-backup.bat fuer Linux/macOS.
     # Bei angehaltenem Dienst; migriert wird beim naechsten Dienststart.

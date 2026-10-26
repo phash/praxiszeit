@@ -777,10 +777,41 @@ function Step-VcRedist {
     }
 }
 
+function Invoke-InstallDirAcl {
+    # Zugriffsrechte des GANZEN Installationsordners (nicht nur der
+    # vertraulichen Dateien wie Step-ACLFix): ohne das erbt C:\PraxisZeit die
+    # Rechte von C:\ ("Authentifizierte Benutzer: Aendern"), und jedes lokale
+    # Konto koennte Programmdateien des als SYSTEM laufenden Dienstes
+    # austauschen oder die Sicherungen in data\backups lesen. Die Logik steckt
+    # in praxiszeit-server.py (harden-permissions, frisch kopierte Version),
+    # damit setup.bat, Update und Dienststart dieselben Regeln anwenden. Nie
+    # fatal: der Dienststart prueft dasselbe ohnehin bei jedem Start nach.
+    $python = Join-Path $InstallDir 'bin\python\python.exe'
+    $server = Join-Path $InstallDir 'praxiszeit-server.py'
+    if (-not (Test-Path $python) -or -not (Test-Path $server)) { return }
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $env:PYTHONUTF8 = '1'
+        $out = & $python $server 'harden-permissions' 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "WARNUNG: Zugriffsrechte des Installationsordners nicht vollstaendig eingeschraenkt (Exit $LASTEXITCODE) - der Dienststart versucht es erneut."
+            foreach ($line in $out) { Write-Log "  $line" }
+        } else {
+            Write-Log 'Zugriffsrechte des Installationsordners eingeschraenkt.'
+        }
+    } catch {
+        Write-Log "WARNUNG: Zugriffsrechte des Installationsordners: $_"
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+}
+
 function Step-StartService {
     Set-StepStatus 'start' 'running'
     Write-Log 'Starte PraxisZeit-Service...'
     if ($DryRun) { Start-Sleep -Seconds 1; Set-StepStatus 'start' 'ok'; return $true }
+    Invoke-InstallDirAcl
     try {
         Start-Service -Name 'PraxisZeit' -ErrorAction Stop
         $svc = Get-Service -Name 'PraxisZeit'

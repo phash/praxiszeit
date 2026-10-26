@@ -27,6 +27,9 @@ EVENT_USER_DEACTIVATED = "user_deactivated"
 EVENT_USER_REACTIVATED = "user_reactivated"
 EVENT_USER_ROLE_CHANGED = "user_role_changed"
 EVENT_ADMIN_SET_PASSWORD = "admin_set_password"
+# Sicherheits-Review 2026-10: Selbstbedienung am zweiten Faktor (Profil).
+EVENT_TOTP_ENABLED = "totp_enabled"
+EVENT_TOTP_DISABLED_SELF = "totp_disabled"
 
 
 class SecurityEvent(Base):

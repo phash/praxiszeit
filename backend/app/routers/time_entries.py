@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month
@@ -396,6 +396,7 @@ def _clock_blocks_and_grace(db: Session, user: User, today: date, open_entry) ->
 
 @router.get("/clock-status", response_model=ClockStatusResponse)
 def get_clock_status(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -408,6 +409,15 @@ def get_clock_status(
     """
     today = _today_local()
     open_entry = _get_open_entry(db, current_user.id, tenant_id=current_user.tenant_id)
+
+    # Security-Review 2026-10-26: unter Impersonation (#370, rein lesend) wird
+    # nichts geschrieben — auch dieser GET schließt dann keinen alten Eintrag
+    # (sonst entstünde ein Protokolleintrag im Namen der Person). Angezeigt
+    # wird der Stand, den die Person nach dem Auto-Close sähe: nicht
+    # eingestempelt.
+    if (open_entry is not None and open_entry.date != today
+            and getattr(request.state, "is_impersonating", False)):
+        open_entry = None
 
     # If the open entry is from a previous day, auto-close it.
     # P5: Ankersperre, danach den offenen Eintrag NEU lesen (ein paralleler

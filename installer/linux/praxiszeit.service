@@ -20,6 +20,9 @@ ExecStart=/opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-serv
 ExecStop=/opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py stop
 Restart=on-failure
 RestartSec=10
+# Neue Dateien (Sicherungen, Logs, Schluessel) nur fuer den Dienstbenutzer
+# lesbar — ohne UMask erbt der Dienst 022 und legt sie world-readable an.
+UMask=0077
 
 # Privilegierte Ports (<1024, z.B. 443) als non-root binden.
 # Bei Port >= 1024 koennen die naechsten beiden Zeilen entfernt werden.

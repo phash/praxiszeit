@@ -128,8 +128,11 @@ test.describe('Admin Absences', () => {
 
       // Set start and end dates (future dates)
       const dateInputs = adminPage.locator('input[type="date"]');
-      const startDate = daysFromNow(60);
-      const endDate = daysFromNow(62);
+      // weekdayFromNow: der Zeitraum muss Arbeitstage enthalten, sonst lehnt
+      // der Server ab (z. B. 25.–27.12. = zwei Feiertage + Sonntag).
+      const startDate = weekdayFromNow(60);
+      const candidateEnd = weekdayFromNow(62);
+      const endDate = candidateEnd >= startDate ? candidateEnd : startDate;
       await dateInputs.first().fill(startDate);
       await dateInputs.nth(1).fill(endDate);
 

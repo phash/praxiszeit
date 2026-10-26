@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, File, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
 from urllib.parse import quote
-from app.core.limiter import limiter
+from app.core.limiter import limiter, _get_real_ip
+from app.core.db_errors import _CONTROL_CHARS
 from app.core import totp_crypto
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -9,6 +11,8 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 import base64
+import hashlib
+import hmac
 import logging
 import secrets
 from collections import OrderedDict
@@ -18,6 +22,9 @@ from app.models import (
     User, TimeEntry, Absence, TimeEntryAuditLog, ImpersonationSession, WorkingHoursChange,
 )
 from app.models.tenant import Tenant
+from app.models.security_event import (
+    EVENT_TOTP_DISABLED_SELF, EVENT_TOTP_ENABLED, SecurityEvent,
+)
 from app.services.timezone_service import now_local
 
 # Audit A09 (OWASP Security Logging Failures): security-relevant auth events
@@ -27,9 +34,31 @@ from app.services.timezone_service import now_local
 # keyword keeps the records greppable for a SIEM.
 #
 # CRITICAL: never log the password, JWT, refresh token, or TOTP secret. We log
-# the submitted *username* (attacker-supplied identifier, useful for forensics)
-# but not the email.
+# the submitted *username* of EXISTING accounts (useful for forensics) but not
+# the email. Sicherheits-Review 2026-10: a name that matches no account is only
+# logged in redacted form (``_redact_username``) — people regularly type their
+# password into the username field — and every logged name is flattened
+# (``_safe_log_text``) so a newline in the input cannot forge log lines.
 security_logger = logging.getLogger("praxiszeit.security")
+
+
+def _safe_log_text(text: Optional[str], limit: int = 100) -> str:
+    """Steuerzeichen (inkl. CR/LF, U+2028/9) einebnen und kuerzen — gleiche
+    Zeichenklasse wie ``app.core.db_errors`` (#483)."""
+    return _CONTROL_CHARS.sub(" ", text or "")[:limit]
+
+
+def _redact_username(username_lower: str) -> str:
+    """Kurze, nicht umkehrbare Form eines eingegebenen Namens ohne Konto.
+
+    Erste zwei Zeichen + 12 Hex-Stellen HMAC-SHA256 (Schluessel SECRET_KEY):
+    gleiche Eingabe → gleiche Kennung (Angriffe bleiben korrelierbar), aber ein
+    ins Namensfeld getipptes Passwort steht nicht lesbar im Protokoll und laesst
+    sich ohne den Schluessel auch nicht per Woerterbuch zurueckrechnen."""
+    digest = hmac.new(
+        settings.SECRET_KEY.encode("utf-8"), username_lower.encode("utf-8"), hashlib.sha256
+    ).hexdigest()[:12]
+    return f"{_safe_log_text(username_lower[:2], 2)}…#{digest}"
 
 # F-039: In-memory failed login tracking as an OrderedDict LRU so eviction
 # is O(1) instead of O(n log n). Also fixes the attacker-evicts-real-user
@@ -38,9 +67,16 @@ security_logger = logging.getLogger("praxiszeit.security")
 #
 # NOTE: still per-worker, not shared across gunicorn workers. For
 # multi-worker deployments consider Redis-backed slowapi instead.
-_failed_logins: "OrderedDict[str, list[datetime]]" = OrderedDict()
+#
+# Sicherheits-Review 2026-10: the lockout is keyed on (username, client IP) —
+# keyed on the name alone, anyone could lock ``admin`` out of the practice with
+# five bad attempts every 15 minutes. A second, much higher cap per username
+# (``_GLOBAL_LOCKOUT_ATTEMPTS``) still bounds a brute force spread over many
+# IPs. Keys: ``("ip", username, ip)`` and ``("user", username)``.
+_failed_logins: "OrderedDict[tuple, list[datetime]]" = OrderedDict()
 _MAX_TRACKED_USERS = 10000
 _LOCKOUT_ATTEMPTS = 5
+_GLOBAL_LOCKOUT_ATTEMPTS = 50
 _LOCKOUT_WINDOW = timedelta(minutes=15)
 
 from app.schemas.user import (
@@ -85,25 +121,61 @@ class UpdateProfileRequest(BaseModel):
             raise ValueError(f'Ungültiges E-Mail-Format: {e}')
         return v
 
-def _record_failed_login(username_lower: str, now: datetime) -> None:
+def _lockout_keys(username_lower: str, client_ip: str) -> tuple[tuple, tuple]:
+    return ("ip", username_lower, client_ip), ("user", username_lower)
+
+
+def _record_failed_login(username_lower: str, client_ip: str, now: datetime) -> None:
     """F-039: Append a failed attempt and maintain LRU ordering.
 
     The OrderedDict pops the oldest entry in O(1) once the cap is hit. The
     move_to_end() call keeps the victim's entry "hot" so a flood of bogus
-    usernames can't evict their lockout record.
+    usernames can't evict their lockout record. Both the per-(name, IP) and the
+    per-name counter are updated.
     """
-    attempts = _failed_logins.get(username_lower)
-    if attempts is None:
-        _failed_logins[username_lower] = [now]
-    else:
-        attempts.append(now)
-        _failed_logins.move_to_end(username_lower)
+    for key in _lockout_keys(username_lower, client_ip):
+        attempts = _failed_logins.get(key)
+        if attempts is None:
+            _failed_logins[key] = [now]
+        else:
+            attempts.append(now)
+            _failed_logins.move_to_end(key)
 
     while len(_failed_logins) > _MAX_TRACKED_USERS:
         _failed_logins.popitem(last=False)  # oldest first
 
 
+def _recent_attempts(key: tuple, now: datetime) -> int:
+    """Prune attempts outside the window and return how many remain."""
+    attempts = [t for t in _failed_logins.get(key, []) if now - t < _LOCKOUT_WINDOW]
+    if attempts:
+        _failed_logins[key] = attempts
+        _failed_logins.move_to_end(key)
+    else:
+        _failed_logins.pop(key, None)
+    return len(attempts)
+
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+TOTP_ALREADY_ENABLED_DETAIL = (
+    "2FA ist bereits aktiv. Um ein neues Gerät einzurichten, 2FA zuerst "
+    "deaktivieren (Passwort und aktueller Code) und dann neu einrichten."
+)
+
+
+def _log_self_security_event(db: Session, user: User, event: str, detail: str) -> None:
+    """Eine ``security_events``-Zeile fuer einen Vorgang, den die Person an
+    ihrem EIGENEN Konto ausloest — Muster ``admin_users._log_account_event``
+    (actor = Konto-ID, nie Klarname; gleiche Transaktion wie der Vorgang)."""
+    db.add(SecurityEvent(
+        tenant_id=user.tenant_id,
+        event=event,
+        subject_user_id=user.id,
+        actor=f"user:{user.id}",
+        detail=detail,
+    ))
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -158,20 +230,24 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     F-010: Returns access token in JSON; refresh token set as HttpOnly cookie.
     F-019: If TOTP is enabled, requires totp_code in the request body.
     """
-    # Account lockout: block after 5 failed attempts within 15 minutes
+    # Account lockout: block after 5 failed attempts within 15 minutes from the
+    # same client IP, or after 50 from anywhere (Sicherheits-Review 2026-10).
+    # Checked BEFORE the user lookup → same 429 for existing and unknown names.
     username_lower = login_data.username.lower()
+    client_ip = _get_real_ip(request)
     now = datetime.now(timezone.utc)
-    attempts = _failed_logins.get(username_lower, [])
-    # Prune old attempts outside the window
-    attempts = [t for t in attempts if now - t < _LOCKOUT_WINDOW]
-    if attempts:
-        _failed_logins[username_lower] = attempts
-        _failed_logins.move_to_end(username_lower)
-    elif username_lower in _failed_logins:
-        del _failed_logins[username_lower]
+    ip_key, user_key = _lockout_keys(username_lower, client_ip)
+    ip_attempts = _recent_attempts(ip_key, now)
+    user_attempts = _recent_attempts(user_key, now)
 
-    if len(attempts) >= _LOCKOUT_ATTEMPTS:
-        security_logger.warning("AUTH account_locked user=%s attempts=%d", username_lower, len(attempts))
+    if ip_attempts >= _LOCKOUT_ATTEMPTS or user_attempts >= _GLOBAL_LOCKOUT_ATTEMPTS:
+        # Whether the name exists is unknown here → redacted form.
+        security_logger.warning(
+            "AUTH account_locked user=%s scope=%s attempts=%d",
+            _redact_username(username_lower),
+            "ip" if ip_attempts >= _LOCKOUT_ATTEMPTS else "global",
+            max(ip_attempts, user_attempts),
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Konto vorübergehend gesperrt. Bitte in 15 Minuten erneut versuchen."
@@ -194,9 +270,10 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         # Equalise timing (dummy verify), record the failure and log the
         # ambiguity for ops — but never reveal which/that accounts exist.
         auth_service.verify_password(login_data.password, _DUMMY_BCRYPT_HASH)
-        _record_failed_login(username_lower, now)
+        _record_failed_login(username_lower, client_ip, now)
         security_logger.warning(
-            "AUTH login_ambiguous user=%s active_matches=%d", username_lower, len(active_matches),
+            "AUTH login_ambiguous user=%s active_matches=%d",
+            _safe_log_text(username_lower), len(active_matches),
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -209,7 +286,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         # reveal whether the user exists. The dummy hash is generated at
         # module load time from a random string (see _DUMMY_BCRYPT_HASH).
         auth_service.verify_password(login_data.password, _DUMMY_BCRYPT_HASH)
-        _record_failed_login(username_lower, now)
+        _record_failed_login(username_lower, client_ip, now)
         # M-001 (DSGVO Art. 5 Abs. 1 lit. f/c): do NOT distinguish a deactivated
         # account from a non-existent one in the security log. A distinct
         # reason=inactive_user would let anyone with log access infer that a
@@ -220,7 +297,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         # codes (bad_password/bad_totp), which only reveal what colleagues
         # already know (the person works here).
         security_logger.warning(
-            "AUTH login_failed user=%s reason=%s", username_lower, "unknown_user",
+            "AUTH login_failed user=%s reason=%s", _redact_username(username_lower), "unknown_user",
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -228,8 +305,10 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         )
 
     if not auth_service.verify_password(login_data.password, user.password_hash):
-        _record_failed_login(username_lower, now)
-        security_logger.warning("AUTH login_failed user=%s reason=%s", username_lower, "bad_password")
+        _record_failed_login(username_lower, client_ip, now)
+        security_logger.warning(
+            "AUTH login_failed user=%s reason=%s", _safe_log_text(username_lower), "bad_password",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Ungültiger Benutzername oder Passwort"
@@ -257,7 +336,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         if not login_data.totp_code:
             # Not a hard failure (the client is expected to re-submit with a
             # code), but record it so a SIEM can correlate the 2FA challenge.
-            security_logger.info("AUTH totp_required user=%s", username_lower)
+            security_logger.info("AUTH totp_required user=%s", _safe_log_text(username_lower))
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="TOTP-Code erforderlich",
@@ -269,8 +348,10 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
             plain_secret, login_data.totp_code, user.last_totp_counter
         )
         if accepted_counter is None:
-            _record_failed_login(username_lower, now)
-            security_logger.warning("AUTH login_failed user=%s reason=%s", username_lower, "bad_totp")
+            _record_failed_login(username_lower, client_ip, now)
+            security_logger.warning(
+                "AUTH login_failed user=%s reason=%s", _safe_log_text(username_lower), "bad_totp",
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Ungültiger TOTP-Code",
@@ -285,8 +366,10 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         db.add(user)
         db.commit()
 
-    # Clear failed login counter on success
-    _failed_logins.pop(username_lower, None)
+    # Clear this client's failed-login counter on success. The per-name cap is
+    # deliberately NOT reset: otherwise every successful login of the real user
+    # would hand a distributed attacker a fresh budget of 50 attempts.
+    _failed_logins.pop(ip_key, None)
 
     tenant_id_str = str(user.tenant_id) if user.tenant_id else None
     access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version, tenant_id_str)
@@ -297,7 +380,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     # F-024: issue a fresh CSRF double-submit token
     _set_csrf_cookie(response)
 
-    security_logger.info("AUTH login_success user=%s", username_lower)
+    security_logger.info("AUTH login_success user=%s", _safe_log_text(username_lower))
 
     # Spec 11.1: heute gültige Blöcke (locker, E29 — nie ein 500 im Login).
     from app.services import calculation_service
@@ -371,10 +454,75 @@ def refresh_token(request: Request, response: Response, db: Session = Depends(ge
     return RefreshResponse(access_token=access_token)
 
 
+_optional_bearer = HTTPBearer(auto_error=False)
+
+
+def get_optional_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """Like ``get_current_user`` but returns None instead of 401 — only for
+    logout, which must work after the access token has expired.
+
+    An impersonation token never counts here: logging out under it would bump
+    the *employee's* token_version (the read-only middleware already rejects
+    that POST; this is the second line).
+    """
+    if credentials is None:
+        return None
+    try:
+        user = get_current_user(request, credentials, db)
+    except HTTPException:
+        return None
+    if getattr(request.state, "is_impersonating", False):
+        return None
+    return user
+
+
+def _user_from_refresh_cookie(request: Request, db: Session) -> Optional[User]:
+    """The account behind a still-valid refresh cookie, else None.
+
+    Same checks as ``/refresh`` (type, active account, current token_version):
+    a stale or foreign cookie revokes nothing.
+    """
+    token = request.cookies.get(_REFRESH_COOKIE)
+    if not token:
+        return None
+    payload = auth_service.decode_token(token)
+    if not payload or payload.get("type") != "refresh" or not payload.get("sub"):
+        return None
+    set_superadmin_context(db)
+    user = db.query(User).filter(User.id == payload.get("sub")).first()
+    if not user or not user.is_active:
+        return None
+    if payload.get("tv", 0) != user.token_version:
+        return None
+    return user
+
+
+def _revoke_sessions(db: Session, user: User) -> None:
+    """token_version++ and close the user's open impersonation sessions."""
+    user.token_version = (user.token_version or 0) + 1
+    open_sessions = (
+        db.query(ImpersonationSession)
+        .filter(
+            ImpersonationSession.impersonator_id == user.id,
+            ImpersonationSession.tenant_id == user.tenant_id,
+            ImpersonationSession.ended_at.is_(None),
+        )
+        .all()
+    )
+    for session in open_sessions:
+        session.ended_at = now_local()
+
+
 @router.post("/logout")
+@router.post("/refresh/logout")
 def logout(
+    request: Request,
     response: Response,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -385,25 +533,38 @@ def logout(
     close the open ``impersonation_sessions`` rows so the DSGVO Art. 5(2)
     accountability log has an ``ended_at`` instead of dangling open forever
     when an admin logs out without pressing "Zurück zu Admin".
+
+    Sicherheits-Review 2026-10: logout no longer requires a valid access token.
+    After the 30-min access token had expired, logout used to 401 — the
+    frontend cleared its state, but the refresh cookie and the server session
+    stayed valid for 7 days (shared practice PC: the next person just called
+    /refresh). Now the cookies are ALWAYS deleted, and the session is revoked
+    via the access token if valid, otherwise via the refresh cookie. The
+    refresh cookie is path-scoped to ``/api/auth/refresh``, so the browser only
+    sends it to ``/api/auth/refresh/logout`` — the frontend calls that path;
+    ``/api/auth/logout`` stays for API clients and older frontends.
+    CSRF: unchanged (double-submit enforced by the middleware when the cookie
+    is present); a forged cross-site logout can at worst end a session.
     """
-    current_user.token_version = (current_user.token_version or 0) + 1
+    users: dict = {}
+    if current_user is not None:
+        users[current_user.id] = current_user
+    cookie_user = _user_from_refresh_cookie(request, db)
+    if cookie_user is not None and cookie_user.id not in users:
+        users[cookie_user.id] = cookie_user
 
-    open_sessions = (
-        db.query(ImpersonationSession)
-        .filter(
-            ImpersonationSession.impersonator_id == current_user.id,
-            ImpersonationSession.tenant_id == current_user.tenant_id,
-            ImpersonationSession.ended_at.is_(None),
-        )
-        .all()
-    )
-    for session in open_sessions:
-        session.ended_at = now_local()
+    for user in users.values():
+        _revoke_sessions(db, user)
+    if users:
+        db.commit()
 
-    db.commit()
     _delete_refresh_cookie(response)
     _delete_csrf_cookie(response)
-    security_logger.info("AUTH logout user=%s", current_user.username)
+    if users:
+        for user in users.values():
+            security_logger.info("AUTH logout user=%s", _safe_log_text(user.username))
+    else:
+        security_logger.info("AUTH logout user=%s", "-")
     return {"message": "Erfolgreich abgemeldet"}
 
 
@@ -442,7 +603,7 @@ def change_password(
     if not auth_service.verify_password(password_data.current_password, current_user.password_hash):
         security_logger.warning(
             "AUTH password_change_failed user=%s reason=%s",
-            current_user.username, "wrong_current_password",
+            _safe_log_text(current_user.username), "wrong_current_password",
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -455,7 +616,7 @@ def change_password(
     db.commit()
     db.refresh(current_user)
 
-    security_logger.warning("AUTH password_changed user=%s", current_user.username)
+    security_logger.warning("AUTH password_changed user=%s", _safe_log_text(current_user.username))
 
     # Issue a fresh token so the frontend session stays valid after the version bump
     tenant_id_str = str(current_user.tenant_id) if current_user.tenant_id else None
@@ -554,12 +715,22 @@ def update_profile(
 
 @router.get("/me/export")
 def export_my_data(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     DSGVO Art. 20 – Datenportabilität: export all personal data as JSON.
+
+    Sicherheits-Review 2026-10: not under impersonation — the export is the
+    data subject's own request (Art. 15/20); an admin viewing "as employee"
+    would otherwise pull the full personal-data package in the employee's name.
     """
+    if getattr(request.state, "is_impersonating", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Der Datenauszug ist in der Ansicht als Mitarbeiter:in nicht verfügbar.",
+        )
     time_entries = db.query(TimeEntry).filter(TimeEntry.tenant_id == current_user.tenant_id, TimeEntry.user_id == current_user.id).order_by(TimeEntry.date).all()
     absences = db.query(Absence).filter(Absence.tenant_id == current_user.tenant_id, Absence.user_id == current_user.id).order_by(Absence.date).all()
     # #431: die Stundenhistorie ist ein vollstaendiger Vertrags-Snapshot je
@@ -726,11 +897,22 @@ def totp_setup(
     none, locking the owner out for good the moment they change their password.
     ``/totp/disable`` already required the password; this closes the weaker path
     that bypassed it.
+
+    Sicherheits-Review 2026-10: refused while 2FA is ACTIVE. Previously a new
+    secret replaced the active one immediately (``totp_enabled`` stayed True),
+    so an unverified secret was live — cancelling the wizard locked the owner
+    out, and password alone sufficed to swap the second factor. Re-enrolling now
+    means: disable (password + current code), then set up again.
     """
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=TOTP_ALREADY_ENABLED_DETAIL,
+        )
     if not auth_service.verify_password(setup_data.password, current_user.password_hash):
         security_logger.warning(
             "AUTH totp_setup_failed user=%s reason=%s",
-            current_user.username, "wrong_password",
+            _safe_log_text(current_user.username), "wrong_password",
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -744,11 +926,9 @@ def totp_setup(
     current_user.last_totp_counter = None
     db.commit()
 
-    # A09: eine Neu-Einrichtung bei bereits aktivem 2FA ersetzt den zweiten
-    # Faktor — das gehoert in die Security-Spur (Konto-Uebernahme-Indikator).
+    # A09: jede Ausgabe eines neuen Secrets gehoert in die Security-Spur.
     security_logger.warning(
-        "AUTH totp_secret_issued user=%s was_enabled=%s",
-        current_user.username, bool(current_user.totp_enabled),
+        "AUTH totp_secret_issued user=%s", _safe_log_text(current_user.username),
     )
 
     return TotpSetupResponse(
@@ -788,7 +968,11 @@ def totp_verify(
         )
 
     current_user.last_totp_counter = accepted_counter
+    was_enabled = bool(current_user.totp_enabled)
     current_user.totp_enabled = True
+    if not was_enabled:
+        _log_self_security_event(db, current_user, EVENT_TOTP_ENABLED,
+                                 "Zwei-Faktor im Profil eingeschaltet")
     db.commit()
     db.refresh(current_user)
     return UserResponse.model_validate(current_user)
@@ -804,12 +988,36 @@ def totp_disable(
 ):
     """
     F-019: Disable TOTP 2FA. Requires current password confirmation.
+
+    Sicherheits-Review 2026-10: additionally requires a valid CURRENT code
+    (replay-safe, same verifier as /login) — the password alone (shoulder-
+    surfed, reused) must not remove the second factor from an open session.
+    Writes a ``security_events`` row. Lost device: no self-service path; the
+    CLI ``praxiszeit-server.py reset-admin-password --disable-2fa`` (native)
+    resets it.
     """
     if not auth_service.verify_password(disable_data.password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Passwort ist falsch"
         )
+    if current_user.totp_enabled and current_user.totp_secret:
+        accepted_counter = auth_service.verify_totp_with_counter(
+            totp_crypto.decrypt_secret(current_user.totp_secret),
+            disable_data.code,
+            current_user.last_totp_counter,
+        )
+        if accepted_counter is None:
+            security_logger.warning(
+                "AUTH totp_disable_failed user=%s reason=%s",
+                _safe_log_text(current_user.username), "bad_totp",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ungültiger 2FA-Code. Bitte den aktuellen Code aus der Authenticator-App eingeben.",
+            )
+        _log_self_security_event(db, current_user, EVENT_TOTP_DISABLED_SELF,
+                                 "Zwei-Faktor im Profil abgeschaltet")
 
     current_user.totp_secret = None
     current_user.totp_enabled = False

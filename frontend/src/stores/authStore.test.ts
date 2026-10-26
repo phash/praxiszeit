@@ -93,7 +93,7 @@ describe('logout', () => {
 
     await useAuthStore.getState().logout();
 
-    expect(post).toHaveBeenCalledWith('/auth/logout');
+    expect(post).toHaveBeenCalledWith('/auth/refresh/logout');
     expect(mockSetAccessToken).toHaveBeenCalledWith(null);
     const s = useAuthStore.getState();
     expect(s.user).toBeNull();
@@ -235,13 +235,13 @@ describe('impersonation (#370)', () => {
     get.mockResolvedValueOnce({ data: TARGET });
     await useAuthStore.getState().startImpersonation('9', 'Max');
 
-    post.mockResolvedValueOnce({ data: {} }); // /auth/logout
+    post.mockResolvedValueOnce({ data: {} }); // /auth/refresh/logout
     await useAuthStore.getState().logout();
 
     expect(useAuthStore.getState().isImpersonating()).toBe(false);
     expect(useAuthStore.getState().impersonation).toBeNull();
     expect(mockSetImpersonating).toHaveBeenLastCalledWith(false);
-    expect(post).toHaveBeenCalledWith('/auth/logout');
+    expect(post).toHaveBeenCalledWith('/auth/refresh/logout');
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 
@@ -286,7 +286,7 @@ describe('auth:session-expired listener', () => {
     await vi.waitFor(() => {
       expect(useAuthStore.getState().isAuthenticated).toBe(false);
     });
-    expect(post).toHaveBeenCalledWith('/auth/logout');
+    expect(post).toHaveBeenCalledWith('/auth/refresh/logout');
   });
 
   it('collapses a burst of session-expired events into a single logout', async () => {
@@ -304,6 +304,6 @@ describe('auth:session-expired listener', () => {
       expect(useAuthStore.getState().isAuthenticated).toBe(false);
     });
     expect(post).toHaveBeenCalledTimes(1);
-    expect(post).toHaveBeenCalledWith('/auth/logout');
+    expect(post).toHaveBeenCalledWith('/auth/refresh/logout');
   });
 });

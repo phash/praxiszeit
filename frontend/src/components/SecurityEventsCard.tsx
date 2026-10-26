@@ -29,6 +29,8 @@ const EVENT_LABELS: Record<string, string> = {
   admin_password_reset_cli: 'Passwort per Kommandozeile zurückgesetzt',
   totp_disabled_cli: 'Zwei-Faktor per Kommandozeile abgeschaltet',
   user_reactivated_cli: 'Konto per Kommandozeile reaktiviert',
+  totp_enabled: 'Zwei-Faktor im Profil eingeschaltet',
+  totp_disabled: 'Zwei-Faktor im Profil abgeschaltet',
 };
 
 function formatWhen(iso: string): string {

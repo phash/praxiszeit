@@ -1,3 +1,4 @@
+import re
 from io import BytesIO
 from datetime import date, datetime, timedelta
 from calendar import monthrange
@@ -9,6 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.comments import Comment
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, AbsenceReason, WorkingHoursChange, Tenant
 from app.services import (
     calculation_service, practice_name_service, special_days_service, work_blocks_service, work_window_service,
@@ -127,11 +129,57 @@ def day_credit_minutes(day_entries) -> DayCredit:
 
 
 def neutralize_spreadsheet_formula(value):
-    """Return ``value`` with a leading apostrophe if it could be parsed as a
-    spreadsheet formula. Non-strings and safe strings are returned unchanged."""
-    if isinstance(value, str) and value and value[0] in _FORMULA_PREFIXES:
+    """Return ``value`` safe for a spreadsheet text cell.
+
+    1. Steuerzeichen, die XML 1.0 nicht erlaubt (\\x00-\\x08, \\x0b, \\x0c,
+       \\x0e-\\x1f), werden entfernt — openpyxl bricht sonst mit
+       ``IllegalCharacterError`` ab, und ein einziges solches Zeichen in einer
+       Notiz oder im eigenen Namen legt den Export der ganzen Praxis lahm
+       (HTTP 500); im ODS wäre es ungültiges XML (Sicherheits-Review 2026-10).
+    2. Danach (damit ``"\\x01=..."`` nicht an der Prüfung vorbeirutscht) bekommt
+       ein Wert, der als Formel gelesen werden könnte, ein führendes Apostroph.
+
+    Non-strings are returned unchanged."""
+    if not isinstance(value, str):
+        return value
+    value = ILLEGAL_CHARACTERS_RE.sub("", value)
+    if value and value[0] in _FORMULA_PREFIXES:
         return "'" + value
     return value
+
+
+# Excel/openpyxl: Blattnamen max. 31 Zeichen, ohne ``\ / * ? : [ ]``, nicht mit
+# Apostroph beginnend/endend, eindeutig ohne Rücksicht auf Groß-/Kleinschreibung.
+# LibreOffice (ODS ``table:name``) verbietet dieselben Zeichen.
+_SHEET_TITLE_FORBIDDEN = re.compile(r"[\\/*?:\[\]]")
+_SHEET_TITLE_MAX = 31
+_SHEET_TITLE_FALLBACK = "Mitarbeiter"
+
+
+def safe_sheet_title(raw, existing=()) -> str:
+    """Blattname aus Nutzer-Text (Nachname/Vorname), gültig in XLSX und ODS.
+
+    Sicherheits-Review 2026-10: ein Doppelname wie „Müller/Schmidt" ließ openpyxl
+    mit ``ValueError`` abbrechen → jeder XLSX-Export 500. Verbotene Zeichen → ``_``,
+    Steuerzeichen raus, auf 31 Zeichen gekürzt, leer → „Mitarbeiter"; kollidiert
+    der Name (Groß-/Kleinschreibung egal) mit einem aus ``existing``, wird
+    `` (2)``, `` (3)`` … angehängt — innerhalb der 31 Zeichen (openpyxl hängt
+    selbst nur eine Ziffer an und überschreitet dabei die Länge, ODS gar nichts)."""
+    title = ILLEGAL_CHARACTERS_RE.sub("", str(raw or ""))
+    title = _SHEET_TITLE_FORBIDDEN.sub("_", title)
+    title = title.strip().strip("'").strip()[:_SHEET_TITLE_MAX].strip().strip("'")
+    if not title:
+        title = _SHEET_TITLE_FALLBACK
+    taken = {str(t).lower() for t in existing}
+    if title.lower() not in taken:
+        return title
+    n = 2
+    while True:
+        suffix = f" ({n})"
+        candidate = title[:_SHEET_TITLE_MAX - len(suffix)].rstrip() + suffix
+        if candidate.lower() not in taken:
+            return candidate
+        n += 1
 
 
 def export_users(db, tenant_id, period_start: date, period_end: date) -> List[User]:
@@ -584,7 +632,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     - Zeiteinträge          (#498, angehängt)
     - Nicht angerechnet (Min) (Spec 2026-10-08, angehängt)
     """
-    sheet = wb.create_sheet(title=f"{user.last_name} {user.first_name}"[:31])  # Excel sheet name max 31 chars
+    sheet = wb.create_sheet(title=safe_sheet_title(f"{user.last_name} {user.first_name}", wb.sheetnames))
 
     reason_names = _load_reason_names(db, user.tenant_id)  # #312
 
@@ -793,7 +841,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                 abw = "Samstag"
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
-            sheet.cell(row=row, column=9).value = abw
+            sheet.cell(row=row, column=9).value = neutralize_spreadsheet_formula(abw)
             for col in range(1, 14):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
         elif is_holiday:
@@ -805,7 +853,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                 abw = f"Feiertag: {holiday.name}"
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
-            sheet.cell(row=row, column=9).value = abw
+            sheet.cell(row=row, column=9).value = neutralize_spreadsheet_formula(abw)
             # col 10 (Bemerkung) bereits oben gesetzt – NICHT mit holiday.name überschreiben
             for col in range(1, 14):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
@@ -1221,7 +1269,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     Create detailed yearly sheet for a single employee with all days.
     Similar to monthly report but for the entire year.
     """
-    sheet = wb.create_sheet(title=f"{user.last_name[:20]}")
+    sheet = wb.create_sheet(title=safe_sheet_title(user.last_name[:20], wb.sheetnames))
     reason_names = _load_reason_names(db, user.tenant_id)  # #312
 
     # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
@@ -1425,7 +1473,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                 abw = "Samstag"
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
-            sheet.cell(row=row, column=9).value = abw
+            sheet.cell(row=row, column=9).value = neutralize_spreadsheet_formula(abw)
             for col in range(1, 14):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
         elif is_holiday:
@@ -1437,7 +1485,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
                 abw = f"Feiertag: {holiday.name}"
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
-            sheet.cell(row=row, column=9).value = abw
+            sheet.cell(row=row, column=9).value = neutralize_spreadsheet_formula(abw)
             for col in range(1, 14):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
@@ -1635,7 +1683,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     (`generate_yearly_report`/`_yearly_employee_sheet`) nutzen — der ist
     modus-korrekt. Eine Anpassung des Legacy-Formats ist bewusst offen.
     """
-    sheet = wb.create_sheet(title=f"{user.last_name}")
+    sheet = wb.create_sheet(title=safe_sheet_title(user.last_name, wb.sheetnames))
 
     # Styles
     header_font = Font(bold=True, size=11)
