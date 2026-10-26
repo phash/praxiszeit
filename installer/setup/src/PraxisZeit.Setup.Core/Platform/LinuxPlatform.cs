@@ -109,6 +109,7 @@ public sealed class LinuxPlatform : IPlatform
             ExecStart={execStart}
             Restart=on-failure
             RestartSec=5
+            UMask=0077
             StandardOutput=append:{workingDirectory}/logs/service-stdout.log
             StandardError=append:{workingDirectory}/logs/service-stderr.log
             Environment=PYTHONUTF8=1
