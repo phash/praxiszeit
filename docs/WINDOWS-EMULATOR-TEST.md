@@ -13,9 +13,15 @@ kommt aus dem EDB-Installer statt aus den theseus-Tarbällen, und die
 Rechte-Härtung auf `praxiszeit.conf` und `ssl/key.pem` existiert nur dort.
 Unit-Tests und `validate-release.sh` sehen davon nichts.
 
-Der Lauf ist eine **Erstinstallation**. Der Update-Pfad (`update-wizard.bat`)
-ist nicht Teil davon — dafür bei Bedarf über den Web-Viewer (siehe unten) von
-Hand nachfahren.
+Es gibt zwei Läufe, gewählt über `share/mode.txt`:
+
+- `fresh` (Vorgabe, Datei fehlt oder leer): **Erstinstallation** des Pakets aus `share/tree`.
+- `update`: zuerst das **Vorgängerpaket** aus `share/tree-old` installieren, dann
+  mit `update-wizard.ps1 -Headless` aus dem neuen Paket aktualisieren — derselbe
+  Weg, den der GUI-Installer im Update-Modus nimmt.
+
+Beide Läufe enden mit einem **echten Neustart der VM**; danach prüft eine
+geplante Aufgabe Dienst, Anmeldung und Rechte noch einmal.
 
 ---
 
@@ -41,7 +47,13 @@ tools/win-test/
 ├── docker-compose.yml      dockur/windows (Windows 11), KVM, Web-Viewer auf :8006
 ├── oem/install.bat         läuft nach der Windows-Einrichtung automatisch als Administrator
 └── share/
-    ├── acl-check.ps1        Rechteprüfung (SID-basiert, also sprachunabhängig)
+    ├── acl-check.ps1        Rechteprüfung einzelner Dateien (SID-basiert, also sprachunabhängig)
+    ├── install-acl-check.ps1  Rechte des ganzen Installationsordners (Programmteile / private Ordner)
+    ├── run-probe.ps1        legt ein Standardkonto an und startet damit nonadmin-probe.ps1
+    ├── nonadmin-probe.ps1   versucht als Standardkonto zu schreiben und zu lesen
+    ├── post-reboot.bat      Nachprüfung nach dem Neustart (geplante Aufgabe)
+    ├── mode.txt            ← fresh | update (nicht im Repo)
+    ├── tree-old/           ← Vorgängerpaket für den Update-Lauf (nicht im Repo)
     ├── admin-password.txt  ← Admin-Kennwort der Test-VM (nicht im Repo)
     ├── tree/               ← hier wird das Release-Paket entpackt (nicht im Repo)
     ├── aclprobe/           ← optionale .NET-Sonde (nicht im Repo)
@@ -73,7 +85,18 @@ unzip -q ../../dist/praxiszeit-<version>-windows-x64.zip -d share/tree
 
 # Admin-Passwort der Test-VM (einmalig; die Datei ist gitignoriert)
 head -c 12 /dev/urandom | base64 | tr -d '/+=' > share/admin-password.txt
+
+# Lauf wählen
+echo fresh > share/mode.txt
+# … oder Update-Lauf: Vorgängerpaket (z. B. das veröffentlichte Release) daneben
+#   rm -rf share/tree-old && mkdir -p share/tree-old
+#   unzip -q praxiszeit-<vorgänger>-windows-x64.zip -d share/tree-old
+#   echo update > share/mode.txt
 ```
+
+⚠️ `build-release.sh` überschreibt `dist/praxiszeit-<version>-windows-x64.zip`,
+solange die Version nicht gehoben ist. Wer das veröffentlichte Paket als
+Vorgänger braucht, entpackt es **vor** dem Bauen nach `share/tree-old`.
 
 Das Kennwort steht bewusst **nicht** im Skript: ein fest eingetragenes Passwort
 im Repo ist ein Fund für jeden Secret-Scanner, auch wenn es nur in einer
@@ -158,7 +181,14 @@ PY
 | `ALEMBIC_VERSION` | der aktuelle Migrations-Kopf (z. B. `071_security_events`) |
 | `psql (PostgreSQL)` | `18.6` — der gepinnte Stand, siehe `PG_WINDOWS_SHA256` |
 | `STATE` | `4  RUNNING` |
-| `HEALTH_HTTP_NACH_NEUSTART` / `LOGIN_HTTP_NACH_NEUSTART` | beide `200` |
+| `HEALTH_HTTP_NACH_NEUSTART` / `LOGIN_HTTP_NACH_NEUSTART` | beide `200` (Dienst-Neustart) |
+| `UPDATE_EXIT` / `NEUER_CODE` | nur `update`: `0` / `ja` |
+| `HEALTH_HTTP_NACH_UPDATE` / `LOGIN_HTTP_NACH_UPDATE` | nur `update`: beide `200` |
+| `BACKUP_EXIT` | `0` — sonst prüft die Probe keine echte Sicherung |
+| `LAST_BOOT` | Zeitpunkt **nach** `REBOOT=JETZT` — belegt den echten Neustart |
+| `HEALTH_HTTP_NACH_REBOOT` / `LOGIN_HTTP_NACH_REBOOT` | beide `200` |
+| `ALEMBIC_VERSION_NACH_REBOOT` | wie `ALEMBIC_VERSION` |
+| jede Zeile `PROBE …` | `PROBE OK …` — kein `PROBE FAIL` |
 | `===== DONE =====` | vorhanden (sonst ist der Lauf abgebrochen, nicht bestanden) |
 
 ### Die Rechte-Blöcke
@@ -173,6 +203,28 @@ automatisch ein Fehler** — einer der Blöcke stellt den Schaden absichtlich he
 | `ACL_AUFGEWEICHT` | **FAIL (gewollt)** | Rechte werden künstlich aufgeweicht wie bei einer Altinstallation |
 | `ACL_REPARIERT` | OK | der Dienst hat sich beim Neustart selbst repariert — **das** ist der Nachweis |
 | `ACL_DOTNET` | OK, außer `cert.pem` | Pfad des GUI-Installers |
+
+Dazu die Blöcke des **ganzen Installationsordners** (`install-acl-check.ps1`):
+Programmteile (Ordner, `bin`, `python.exe`, `postgres.exe`, `main.py`,
+`praxiszeit-server.py`) dürfen für Benutzer höchstens lesbar sein, private
+Ordner (`data`, `data\backups`, die neueste Sicherung, `logs`, `config`) gar
+nicht.
+
+| Block | erwartet |
+|---|---|
+| `INSTALLDIR_ACL_ALT` | nur `update`: **FAIL (gewollt)** — der Stand vor der Härtung |
+| `INSTALLDIR_ACL` | OK |
+| `INSTALLDIR_ACL_AUFGEWEICHT` | **FAIL (gewollt)** — Vererbung von `C:\` wieder an |
+| `INSTALLDIR_ACL_REPARIERT` | OK — der Dienststart hat den Ordner selbst wieder gehärtet |
+| `INSTALLDIR_ACL_REBOOT` | OK |
+
+`PROBE_BEGIN` und `PROBE_REBOOT_BEGIN` sind die Gegenprobe mit einem echten
+Standardkonto (`pzprobe`, Kennwort zufällig, nur im Prozess): Schreiben in den
+Programmordner, in `bin`, nach `bin\python\Lib` und auf `.py`-Dateien muss
+scheitern, ebenso das Lesen von `data\backups`, einer Sicherung, der
+`praxiszeit.conf`, von `logs` und `data\db`. Die Lesekontrolle auf `main.py`
+muss dagegen **gelingen** — sonst beweist ein „verweigert" nur, dass das Konto
+gar nichts darf.
 
 **`cert.pem` meldet dauerhaft `FAIL`** — das ist das *öffentliche* Zertifikat,
 lesbar zu sein ist dort kein Mangel; der private `key.pem` daneben ist gesperrt.
@@ -196,6 +248,11 @@ Vorgänger.
 9. Rechte-Nachweis auf den Bestandsdateien
 10. Rechte-Nachweis auf dem Neuanlage-Zweig von `setup.bat`
 11. Rechte-Nachweis auf dem GUI-Installer-Pfad (nur mit `AclProbe.exe`)
+
+Danach: Sicherung anlegen, Rechte des ganzen Ordners messen, Probe als
+Standardkonto; am Ende geplante Aufgabe anlegen und die VM neu starten
+(`post-reboot.bat` schreibt erst danach `===== DONE =====`). Im `update`-Lauf
+kommen vor dem Ordner-Block die Messung des Altstands und das Update hinzu.
 
 Dazwischen die Gegenprobe: Rechte aufweichen → Dienst neu starten → prüfen, dass
 er sich repariert **und** weiterhin hochkommt (eine zu strenge Rechtevergabe
