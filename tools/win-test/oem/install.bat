@@ -244,7 +244,7 @@ REM ============================================================
 >> "%RES%" echo [Neustart] geplante Aufgabe anlegen und VM neu starten ...
 schtasks /create /tn PZPostReboot /sc onlogon /ru "%USERDOMAIN%\%USERNAME%" /it /rl highest /tr "C:\pz-harness\post-reboot.bat" /f >> "%RES%" 2>&1
 if errorlevel 1 (
-    >> "%RES%" echo REBOOT=UEBERSPRUNGEN (geplante Aufgabe nicht angelegt)
+    >> "%RES%" echo REBOOT=UEBERSPRUNGEN ^(geplante Aufgabe nicht angelegt^)
     goto :done
 )
 >> "%RES%" echo REBOOT=JETZT %date% %time%
