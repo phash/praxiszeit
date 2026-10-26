@@ -648,6 +648,16 @@ def admin_delete_time_entry(
     current_user: User = Depends(require_admin),
 ):
     """Admin deletes a time entry with audit logging."""
+    # Security-Review 2026-10-26 (P5): Eigentümer ungesperrt lesen — unbekannt
+    # oder fremder Mandant → 404 VOR jeder Sperre (Spec 16.2 Nr. 8) —, dann
+    # Ankersperre, erst danach die Eintragszeile (wie admin_credit_override).
+    owner_id = db.query(TimeEntry.user_id).filter(
+        TimeEntry.id == entry_id,
+        TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+    ).scalar()
+    if owner_id is None:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+    lock_user_row(db, current_user.tenant_id, owner_id)
     # F-026: explicit tenant scope so a guessed UUID from another tenant 404s.
     # F-028/S-M04: lock the row so a concurrent edit/delete can't race between
     # the lookup and the db.delete() below. Mirrors admin_update_time_entry.

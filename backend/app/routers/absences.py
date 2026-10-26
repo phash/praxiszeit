@@ -29,6 +29,15 @@ CREDIT_OVERRIDE_ABSENCE_DETAIL = (
     "Am {day} gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."
 )
 
+# Security-Review 2026-10-26: Mitarbeitende ersetzen über ``create_absence``
+# keine Zeiteinträge VERGANGENER Tage — die sind für sie nur per
+# Änderungsantrag änderbar (das Monatsjournal stellt dafür einen
+# Abwesenheits-Antrag, dessen Genehmigung die Einträge des Tages löscht).
+PAST_DAY_ENTRIES_ABSENCE_DETAIL = (
+    "Am {day} gibt es bereits Zeiteinträge – eine Abwesenheit für einen "
+    "vergangenen Tag mit Zeiteinträgen bitte per Änderungsantrag im Journal stellen."
+)
+
 # Release-Review 1.20.1: Löschsperren für Mitarbeitende in ``delete_absence``
 # (Gegenstück zu MA-ABS-01 in ``create_absence``). Betriebsferien-Tage gehören
 # der Verwaltung; genehmigter Urlaub läuft über das Zurückziehen des Antrags
@@ -586,6 +595,27 @@ def create_absence(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=CREDIT_OVERRIDE_ABSENCE_DETAIL.format(
                     day=recognized_day[0].strftime('%d.%m.%Y')),
+            )
+
+    # Security-Review 2026-10-26: ohne ``keep_time_entries`` löscht diese
+    # Buchung unten die Zeiteinträge der gebuchten Tage. Für Mitarbeitende sind
+    # Einträge vergangener Tage gesperrt (nur per Änderungsantrag) — dieser Pfad
+    # war ein Löschweg daran vorbei. Abwesenheiten für vergangene Tage OHNE
+    # Einträge (Krankmeldung für gestern) bleiben direkt buchbar, ebenso mit
+    # ``keep_time_entries`` (nichts wird gelöscht). VOR der ersten Schreib-
+    # operation; nach der 409-Sperre oben (anerkannter Eintrag, eigener Text).
+    if current_user.role != UserRole.ADMIN and not absence_data.keep_time_entries:
+        past_dates = [d for d in booked_dates if d < today_local()]
+        past_entry_day = db.query(TimeEntry.date).filter(
+            TimeEntry.user_id == target_user.id,
+            TimeEntry.tenant_id == current_user.tenant_id,  # F-026
+            TimeEntry.date.in_(past_dates),
+        ).order_by(TimeEntry.date).first() if past_dates else None
+        if past_entry_day:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=PAST_DAY_ENTRIES_ABSENCE_DETAIL.format(
+                    day=past_entry_day[0].strftime('%d.%m.%Y')),
             )
 
     # For vacation, check remaining vacation days (per year for cross-year ranges).

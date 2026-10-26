@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -56,6 +56,13 @@ def data_export(
     Schreibt fuer DSGVO-Nachvollziehbarkeit einen Audit-Log-Eintrag
     mit ``source='self_data_export'``.
     """
+    # Security-Review 2026-10-26: der Art.-15-Export ist eine Auskunft an die
+    # Person selbst — nicht an einen Admin, der sie impersoniert (#370).
+    if getattr(request.state, "is_impersonating", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Der Datenexport ist in der Ansicht als Mitarbeiter:in nicht verfügbar.",
+        )
     payload = lifecycle_service.build_self_export_payload(db, current_user)
 
     # Audit-Log mit Counts im Note-Feld fuer Nachvollziehbarkeit. Wird NACH

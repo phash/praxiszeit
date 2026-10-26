@@ -17,6 +17,14 @@
 - **Blattnamen aus Mitarbeiternamen sind immer gültig.** Ein Doppelname wie „Müller/Schmidt" (oder `\ * ? : [ ]` im Namen) brach jeden XLSX-Export mit 500 ab. Diese Zeichen werden durch `_` ersetzt, der Name auf 31 Zeichen gekürzt, und zwei gleich heißende Mitarbeitende bekommen „Name (2)" — auch im ODS, wo gleiche Blattnamen bisher doppelt vergeben wurden.
 - **Native Installation: Backup-Ort nicht mehr im Web-Verzeichnis.** Der in den Einstellungen wählbare Backup-Ordner durfte im ohne Anmeldung ausgelieferten Frontend-Verzeichnis liegen; die täglichen Datenbank-Sicherungen wären dann für jeden im Netz abrufbar gewesen. Orte im Web- oder Programmverzeichnis (auch über Symlinks) werden jetzt mit 400 abgelehnt, ein bereits gespeicherter solcher Ort wird ignoriert (Rückfall auf das Standard-Verzeichnis).
 
+### 🔒 Sicherheit (Berechtigungen, Impersonation)
+
+- **„Login als …“ (Impersonation) ist jetzt auch bei lesenden Aufrufen ohne Nebenwirkung.** `GET /api/time-entries/clock-status` schließt unter Impersonation keinen offenen Eintrag eines Vortags mehr automatisch (vorher entstand dabei eine Änderung im Namen der Person). Das eigene Monatsjournal (`GET /api/journal/me`) zeigt der Verwaltung in dieser Ansicht Krankheit und sensible Gründe maskiert als „Abwesend“, wie das Admin-Journal ohne Gesundheitsdaten (Art. 9 DSGVO). Der Art.-15-Datenexport (`GET /api/me/data-export`) antwortet unter Impersonation mit 403.
+- **Mitarbeitende können Zeiteinträge vergangener Tage nicht mehr über eine Abwesenheitsbuchung löschen.** `POST /api/absences` löschte ohne `keep_time_entries` die Einträge der gebuchten Tage — auch an vergangenen Tagen, die Mitarbeitende sonst nur per Änderungsantrag ändern. Jetzt: 400 *„Am TT.MM.JJJJ gibt es bereits Zeiteinträge – eine Abwesenheit für einen vergangenen Tag mit Zeiteinträgen bitte per Änderungsantrag im Journal stellen.“* Vergangene Tage ohne Eintrag (Krankmeldung für gestern) und heute bleiben direkt buchbar; für die Verwaltung ändert sich nichts.
+- Änderungsantrag „Neuer Eintrag“: eine mitgeschickte `time_entry_id` wird verworfen; die Antragsliste zeigt Zeiten nur von Einträgen der antragstellenden Person (vorher ließen sich so Stempelzeiten von Kolleginnen und Kollegen auslesen).
+- Admin-Löschen eines Zeiteintrags nimmt zuerst die Personensperre, dann die Zeilensperre (Sperrreihenfolge P5; unbekannte ID → 404 ohne Sperre).
+- Die Art.-9-Protokollzeile beim Admin-Monatsjournal mit Gesundheitsdaten führt die betroffene Person als `user_id` (lesender Admin in `changed_by`), wie bei der Abwesenheitsliste.
+
 ## [1.20.1] - 2026-10-21
 
 ### 🔒 Sicherheit
