@@ -97,7 +97,10 @@ class TestLoginFailedLogging:
         assert resp.status_code == 401
         recs = [r for r in caplog.records if "AUTH login_failed" in r.getMessage()]
         assert recs, "expected an 'AUTH login_failed' record on unknown user"
-        assert "ghost" in recs[0].getMessage()
+        # Sicherheits-Review 2026-10: unknown names only in redacted form
+        # (a password typed into the username field must not land in the log).
+        from app.routers import auth as auth_mod
+        assert auth_mod._redact_username("ghost") in recs[0].getMessage()
         _no_credentials_leaked(caplog, password=SECRET_PASSWORD)
 
     def test_inactive_user_indistinguishable_from_unknown(
@@ -148,19 +151,24 @@ class TestAccountLockedLogging:
         # Clean slate for the in-memory tracker.
         auth_router._failed_logins.clear()
 
-        with caplog.at_level(logging.WARNING, logger=SECURITY_LOGGER):
-            for _ in range(auth_router._LOCKOUT_ATTEMPTS):
-                _login(login_client, "employee", SECRET_PASSWORD)
-            # This attempt should trip the lockout (>= threshold).
-            locked = _login(login_client, "employee", SECRET_PASSWORD)
+        try:
+            with caplog.at_level(logging.WARNING, logger=SECURITY_LOGGER):
+                for _ in range(auth_router._LOCKOUT_ATTEMPTS):
+                    _login(login_client, "employee", SECRET_PASSWORD)
+                # This attempt should trip the lockout (>= threshold).
+                locked = _login(login_client, "employee", SECRET_PASSWORD)
+        finally:
+            auth_router._failed_logins.clear()
 
         assert locked.status_code == 429
         recs = [r for r in caplog.records if "AUTH account_locked" in r.getMessage()]
         assert recs, "expected an 'AUTH account_locked' record once lockout trips"
         assert recs[0].levelno == logging.WARNING
-        assert "employee" in recs[0].getMessage()
+        # Sicherheits-Review 2026-10: at lockout time it is unknown whether the
+        # name exists → redacted form, plus the lockout scope (per-IP here).
+        assert auth_router._redact_username("employee") in recs[0].getMessage()
+        assert "scope=ip" in recs[0].getMessage()
         _no_credentials_leaked(caplog, password=SECRET_PASSWORD)
-        auth_router._failed_logins.clear()
 
 
 class TestLogoutLogging:
@@ -173,8 +181,13 @@ class TestLogoutLogging:
         def _override_current_user():
             return employee_user
 
+        from app.routers.auth import get_optional_current_user
+
         app.dependency_overrides[get_db] = _override_db
         app.dependency_overrides[get_current_user] = _override_current_user
+        # Sicherheits-Review 2026-10: logout uses the optional variant (works
+        # without a valid access token).
+        app.dependency_overrides[get_optional_current_user] = _override_current_user
         try:
             with caplog.at_level(logging.INFO, logger=SECURITY_LOGGER):
                 with TestClient(app) as client:

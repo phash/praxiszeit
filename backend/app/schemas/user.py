@@ -325,7 +325,9 @@ class UserListResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str = Field(..., min_length=1)
+    # Sicherheits-Review 2026-10: Obergrenze = Spaltenbreite users.username;
+    # sonst landen beliebig lange Eingaben im Protokoll und im Sperr-Speicher.
+    username: str = Field(..., min_length=1, max_length=100)
     password: str = Field(..., min_length=1)
     totp_code: Optional[str] = Field(None, pattern=r'^\d{6}$')  # F-019: optional TOTP code
 
@@ -393,4 +395,8 @@ class TotpVerifyRequest(BaseModel):
 
 
 class TotpDisableRequest(BaseModel):
+    """Sicherheits-Review 2026-10: Abschalten verlangt Passwort UND einen
+    gueltigen Code — ein offenes Profil plus das (ggf. mitgelesene) Passwort
+    reicht nicht mehr, um den zweiten Faktor zu entfernen."""
     password: str = Field(..., min_length=1)
+    code: str = Field(..., pattern=r'^\d{6}$')

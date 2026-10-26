@@ -1422,6 +1422,17 @@ def set_password(
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
 
+    # Sicherheits-Review 2026-10: das EIGENE Passwort nur mit Nachweis des
+    # bisherigen (POST /api/auth/change-password) — sonst genuegt ein
+    # unbeaufsichtigtes Admin-Fenster, um das Konto dauerhaft zu uebernehmen.
+    # An der gefundenen Zeile vergleichen (wie deactivate_user, B3).
+    if user.id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail="Das eigene Passwort bitte unter „Profil → Passwort ändern“ "
+                   "ändern (mit dem bisherigen Passwort).",
+        )
+
     user.password_hash = auth_service.hash_password(body.password)
     user.token_version += 1  # Invalidate all existing tokens
     _log_account_event(db, current_user, EVENT_ADMIN_SET_PASSWORD, user,

@@ -43,6 +43,9 @@ def _client(db, user, *, admin=False):
         yield db
     test_app.dependency_overrides[get_db] = _override_db
     test_app.dependency_overrides[get_current_user] = lambda: user
+    # Sicherheits-Review 2026-10: logout resolves the caller optionally.
+    from app.routers.auth import get_optional_current_user
+    test_app.dependency_overrides[get_optional_current_user] = lambda: user
     if admin:
         test_app.dependency_overrides[require_admin] = lambda: user
     return TestClient(test_app)
@@ -112,18 +115,21 @@ class TestTotpSetupRequiresPassword:
         assert test_user.totp_enabled is True
         assert totp_crypto.decrypt_secret(test_user.totp_secret) == original_plain
 
-    def test_reenrollment_with_password_is_allowed(self, user_client, db, test_user):
-        """Der legitime Weg (Geraetewechsel mit Passwort) bleibt offen."""
+    def test_reenrollment_while_active_is_refused(self, user_client, db, test_user):
+        """Sicherheits-Review 2026-10 (ersetzt den frueheren Geraetewechsel-Test):
+        bei AKTIVER 2FA ersetzt ``/totp/setup`` das Secret nicht mehr sofort —
+        sonst war ein unbestaetigtes Secret scharf und Abbrechen sperrte aus.
+        Geraetewechsel = abschalten (Passwort + Code), dann neu einrichten."""
         original_plain = auth_service.generate_totp_secret()
         test_user.totp_secret = totp_crypto.encrypt_secret(original_plain)
         test_user.totp_enabled = True
         db.commit()
 
         r = user_client.post("/api/auth/totp/setup", json={"password": TEST_USER_PASSWORD})
-        assert r.status_code == 200, r.text
+        assert r.status_code == 400, r.text
         db.refresh(test_user)
-        assert totp_crypto.decrypt_secret(test_user.totp_secret) == r.json()["secret"]
-        assert totp_crypto.decrypt_secret(test_user.totp_secret) != original_plain
+        assert test_user.totp_enabled is True
+        assert totp_crypto.decrypt_secret(test_user.totp_secret) == original_plain
 
 
 # ─────────────────────────────────────────────────────────────────────
