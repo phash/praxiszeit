@@ -46,6 +46,8 @@ export default function Profile() {
   const [totpVerifyCode, setTotpVerifyCode] = useState('');
   const [showTotpDisable, setShowTotpDisable] = useState(false);
   const [totpDisablePassword, setTotpDisablePassword] = useState('');
+  // Sicherheits-Review 2026-10: Abschalten verlangt zusaetzlich den aktuellen Code.
+  const [totpDisableCode, setTotpDisableCode] = useState('');
   const [totpMessage, setTotpMessage] = useState('');
   const [totpError, setTotpError] = useState('');
   const [secretCopied, setSecretCopied] = useState(false);
@@ -243,12 +245,13 @@ export default function Profile() {
     setTotpError('');
     try {
       const response = await apiClient.delete('/auth/totp/disable', {
-        data: { password: totpDisablePassword },
+        data: { password: totpDisablePassword, code: totpDisableCode },
       });
       setUser(response.data);
       setTotpEnabled(false);
       setShowTotpDisable(false);
       setTotpDisablePassword('');
+      setTotpDisableCode('');
       setTotpMessage('2FA wurde deaktiviert.');
       setTimeout(() => setTotpMessage(''), 5000);
     } catch (err: any) {
@@ -682,7 +685,7 @@ export default function Profile() {
               {showTotpDisable && (
                 <div className="border border-red-200 bg-red-50 rounded-xl p-5 space-y-3">
                   <p className="text-sm font-medium text-red-800">
-                    Bitte bestätigen Sie Ihr Passwort, um 2FA zu deaktivieren:
+                    Bitte bestätigen Sie Ihr Passwort und den aktuellen Code aus der Authenticator-App, um 2FA zu deaktivieren:
                   </p>
                   <form onSubmit={handleTotpDisable} className="space-y-3">
                     <PasswordInput
@@ -692,17 +695,30 @@ export default function Profile() {
                       placeholder="Ihr aktuelles Passwort"
                       className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-400"
                     />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      pattern="\d{6}"
+                      maxLength={6}
+                      aria-label="2FA-Code"
+                      value={totpDisableCode}
+                      onChange={(e) => setTotpDisableCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      required
+                      placeholder="6-stelliger Code"
+                      className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-400 text-center tracking-widest font-mono"
+                    />
                     <div className="flex gap-3">
                       <button
                         type="submit"
-                        disabled={!totpDisablePassword}
+                        disabled={!totpDisablePassword || totpDisableCode.length !== 6}
                         className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50"
                       >
                         2FA deaktivieren
                       </button>
                       <button
                         type="button"
-                        onClick={() => { setShowTotpDisable(false); setTotpDisablePassword(''); setTotpError(''); }}
+                        onClick={() => { setShowTotpDisable(false); setTotpDisablePassword(''); setTotpDisableCode(''); setTotpError(''); }}
                         className="flex-1 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg transition text-sm hover:bg-gray-50"
                       >
                         Abbrechen

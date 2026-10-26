@@ -25,6 +25,15 @@
 - Admin-Löschen eines Zeiteintrags nimmt zuerst die Personensperre, dann die Zeilensperre (Sperrreihenfolge P5; unbekannte ID → 404 ohne Sperre).
 - Die Art.-9-Protokollzeile beim Admin-Monatsjournal mit Gesundheitsdaten führt die betroffene Person als `user_id` (lesender Admin in `changed_by`), wie bei der Abwesenheitsliste.
 
+### 🔒 Sicherheit (Anmeldung, 2FA)
+
+- **Abmelden wirkt auch nach Ablauf der Anmeldung.** War das 30-Minuten-Zugangstoken abgelaufen, lehnte der Server das Abmelden ab: die Oberfläche war abgemeldet, die Sitzung im Browser aber noch 7 Tage gültig — am geteilten Praxis-PC konnte die nächste Person sie fortsetzen. Jetzt löscht das Abmelden die Sitzungs-Cookies immer und entwertet die Sitzung serverseitig über den Sitzungs-Cookie (neuer Pfad `POST /api/auth/refresh/logout`; `POST /api/auth/logout` bleibt).
+- **Zwei-Faktor-Anmeldung:** Bei aktiver 2FA lehnt `POST /api/auth/totp/setup` eine Neueinrichtung ab (400, *„2FA ist bereits aktiv …“*) — bisher war ein noch unbestätigter Schlüssel sofort scharf, und Abbrechen sperrte aus. Abschalten verlangt zusätzlich zum Passwort den aktuellen 6-stelligen Code. Ein- und Abschalten im Profil stehen in „Konto-Vorgänge“.
+- **Anmeldesperre je Rechner:** 5 Fehlversuche in 15 Minuten sperren den Benutzernamen nur noch für den Rechner (Client-IP), von dem sie kamen; nach 50 Fehlversuchen insgesamt ist er überall gesperrt. Bisher konnte jeder mit fünf falschen Passwörtern alle 15 Minuten das Admin-Konto aussperren.
+- **Anmeldeprotokoll:** Unbekannte Benutzernamen erscheinen nur noch verkürzt (erste zwei Zeichen + Prüfkennung) — ins Namensfeld getippte Passwörter landen nicht mehr lesbar im Serverprotokoll; Steuerzeichen werden eingeebnet (keine gefälschten Protokollzeilen mehr). Benutzernamen beim Login höchstens 100 Zeichen.
+- **Admins setzen ihr eigenes Passwort nicht mehr über die Benutzerverwaltung** (`POST /api/admin/users/{id}/set-password` auf sich selbst → 400), sondern unter Profil → Passwort ändern mit dem bisherigen Passwort.
+- **Datenauszug (Art. 15/20 DSGVO) nicht in der Ansicht als Mitarbeiter:in:** `GET /api/auth/me/export` antwortet dort mit 403.
+
 ## [1.20.1] - 2026-10-21
 
 ### 🔒 Sicherheit

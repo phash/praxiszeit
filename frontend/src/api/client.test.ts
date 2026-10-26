@@ -172,6 +172,24 @@ describe('401 response interceptor', () => {
     expect(onExpired).not.toHaveBeenCalled();
     window.removeEventListener('auth:session-expired', onExpired);
   });
+
+  it('does NOT attempt refresh for /auth/refresh/logout 401 either', async () => {
+    // Sicherheits-Review 2026-10: authStore.logout() now posts to
+    // /auth/refresh/logout (refresh cookie is path-scoped) — same #229 guard.
+    setAccessToken('stale');
+    const refresh = vi
+      .spyOn(axios, 'post')
+      .mockRejectedValue(new Error('refresh must not be called from logout'));
+    const onExpired = vi.fn();
+    window.addEventListener('auth:session-expired', onExpired);
+
+    apiClient.defaults.adapter = (config) => reply(config, 401);
+
+    await expect(apiClient.post('/auth/refresh/logout')).rejects.toBeTruthy();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(onExpired).not.toHaveBeenCalled();
+    window.removeEventListener('auth:session-expired', onExpired);
+  });
 });
 
 describe('impersonation 401 handling (#370)', () => {

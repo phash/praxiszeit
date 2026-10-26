@@ -178,7 +178,8 @@ Zusätzlicher Schutz per Einmal-Code aus einer Authenticator-App (z. B. Google A
 
 **Aktivieren:** Profil → Karte „Zwei-Faktor-Authentifizierung" → **2FA aktivieren** → aktuelles **Passwort** bestätigen → QR-Code scannen (oder Schlüssel manuell eintragen) → 6-stelligen Code eingeben → **Bestätigen**
 **Login:** Benutzername + Passwort → danach **6-stelligen Code** aus der App
-**Deaktivieren:** **2FA deaktivieren** → aktuelles **Passwort** bestätigen
+**Deaktivieren:** **2FA deaktivieren** → aktuelles **Passwort** + aktuellen **6-stelligen Code** bestätigen
+**Neues Handy:** erst deaktivieren (Code vom alten Gerät), dann neu einrichten
 > App/Handy verloren? → Administrator kontaktieren
 
 ---

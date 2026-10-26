@@ -561,7 +561,9 @@ Sie können Ihr Konto zusätzlich mit einem Einmal-Code aus einer **Authenticato
 
 **Login mit aktiver 2FA:** Geben Sie wie gewohnt Benutzername und Passwort ein. Anschließend werden Sie nach dem **6-stelligen Code** aus Ihrer Authenticator-App gefragt.
 
-**2FA deaktivieren:** Klicken Sie auf **„2FA deaktivieren"** und bestätigen Sie zur Sicherheit Ihr **aktuelles Passwort**.
+**2FA deaktivieren:** Klicken Sie auf **„2FA deaktivieren"** und bestätigen Sie zur Sicherheit Ihr **aktuelles Passwort** und den **aktuellen 6-stelligen Code** aus Ihrer Authenticator-App.
+
+**Neues Handy:** Solange 2FA aktiv ist, lässt sie sich nicht neu einrichten. Deaktivieren Sie 2FA zuerst (mit dem Code vom alten Gerät) und richten Sie sie danach auf dem neuen Gerät neu ein.
 
 > **Tipp:** Bewahren Sie Ihr Smartphone bzw. die Authenticator-App sicher auf. Verlieren Sie den Zugang zur App, wenden Sie sich an Ihren Administrator – er kann Ihr Konto zurücksetzen.
 
