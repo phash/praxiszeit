@@ -1008,13 +1008,25 @@ def totp_disable(
             current_user.last_totp_counter,
         )
         if accepted_counter is None:
+            # Release-Review 1.20.2: a code already consumed at login is still
+            # shown by the app — tell the user to wait for the next one instead
+            # of calling it invalid. The replay protection itself stays.
+            replayed = current_user.last_totp_counter is not None and auth_service.verify_totp_with_counter(
+                totp_crypto.decrypt_secret(current_user.totp_secret),
+                disable_data.code,
+                None,
+            ) is not None
             security_logger.warning(
                 "AUTH totp_disable_failed user=%s reason=%s",
-                _safe_log_text(current_user.username), "bad_totp",
+                _safe_log_text(current_user.username), "replayed_totp" if replayed else "bad_totp",
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Ungültiger 2FA-Code. Bitte den aktuellen Code aus der Authenticator-App eingeben.",
+                detail=(
+                    "Dieser 2FA-Code wurde bereits verwendet. Bitte den nächsten Code der Authenticator-App abwarten."
+                    if replayed else
+                    "Ungültiger 2FA-Code. Bitte den aktuellen Code aus der Authenticator-App eingeben."
+                ),
             )
         _log_self_security_event(db, current_user, EVENT_TOTP_DISABLED_SELF,
                                  "Zwei-Faktor im Profil abgeschaltet")

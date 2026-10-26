@@ -70,14 +70,15 @@ journalctl -u praxiszeit -f          # Live-Logs
 5. net start PraxisZeit
 ```
 
-Service-Verwaltung:
+Service-Verwaltung (Eingabeaufforderung **als Administrator** — `data\` und
+`logs\` sind nur für SYSTEM, Administratoren und den Dienst lesbar):
 ```cmd
 net start PraxisZeit          &:: Starten
 net stop PraxisZeit           &:: Stoppen
 sc query PraxisZeit           &:: Status
 
-type C:\PraxisZeit\logs\praxiszeit.log       &:: Logs
-type C:\PraxisZeit\logs\service-stdout.log   &:: Service-Logs
+type C:\PraxisZeit\logs\praxiszeit.log       &:: Logs (als Administrator)
+type C:\PraxisZeit\logs\service-stdout.log   &:: Service-Logs (als Administrator)
 ```
 
 Deinstallation: `uninstall-service.bat` ausfuehren (Datenbank wird beibehalten).
@@ -275,8 +276,8 @@ sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 \
 sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 \
     /usr/local/praxiszeit/praxiszeit-server.py backup
 
-# Backups anzeigen
-ls -la /opt/praxiszeit/data/backups/
+# Backups anzeigen (data/ ist chmod 750, nur fürs Dienstkonto lesbar)
+sudo ls -la /opt/praxiszeit/data/backups/
 ```
 
 Aufbewahrung: 31 Tage. ArbZG §16 verlangt 2 Jahre — passen Sie `retention_days` entsprechend an.

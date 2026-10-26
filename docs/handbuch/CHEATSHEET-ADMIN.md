@@ -248,7 +248,7 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 ## Abwesenheits-Änderungsanträge
 
 - MA können Urlaub/Fortbildung per Änderungsantrag beantragen
-- Krankmeldung per Antrag **gesperrt** (nur Admin)
+- Krankmeldung per Antrag **möglich** (nur vergangene Tage) — Genehmigung **ersetzt die Zeiteinträge des Tages**
 - Genehmigung → Abwesenheit wird automatisch erstellt
 - DSGVO: Kranktage im Kalender für Nicht-Admins als „abwesend" maskiert
 

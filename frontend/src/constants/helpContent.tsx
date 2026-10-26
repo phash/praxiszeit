@@ -288,7 +288,7 @@ export const helpContent: Record<string, HelpEntry> = {
           <ul className="space-y-1 text-sm text-gray-600">
             <li>Änderungen an Zeiteinträgen und Abwesenheiten – Spalte „Quelle": Manuell (von Hand angelegt oder geändert – durch die Verwaltung oder in der Zeiterfassung; wer, steht unter „Geändert von"), Ausstempeln, Automatisch geschlossen, Antrag, Import, Pausen-Verzicht, Stundenänderung, Neukappung (Arbeitszeit-Änderung), Anrechnung anerkannt u. a.</li>
             <li>Zugriffe auf Gesundheitsdaten, Exporte und DSGVO-Vorgänge (Anonymisieren, Endgültig löschen)</li>
-            <li>Karte „Konto-Vorgänge": Deaktivieren, Reaktivieren, Rollenwechsel, von der Verwaltung gesetzte Passwörter sowie Notfall-Vorgänge per Kommandozeile (Passwort zurückgesetzt, Zwei-Faktor abgeschaltet)</li>
+            <li>Karte „Konto-Vorgänge": Deaktivieren, Reaktivieren, Rollenwechsel, von der Verwaltung gesetzte Passwörter, Zwei-Faktor im Profil ein-/abgeschaltet sowie Notfall-Vorgänge per Kommandozeile (Passwort zurückgesetzt, Zwei-Faktor abgeschaltet)</li>
           </ul>
         </section>
         <section>

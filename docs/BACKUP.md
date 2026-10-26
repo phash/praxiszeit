@@ -70,9 +70,10 @@ cd C:\PraxisZeit
 backup.bat
 ```
 
-Backups anzeigen:
+Backups anzeigen (`data/` ist nur fürs Dienstkonto lesbar — Linux mit `sudo`,
+Windows in einer Eingabeaufforderung **als Administrator**):
 ```bash
-ls -la /opt/praxiszeit/data/backups/          # Windows: dir C:\PraxisZeit\data\backups
+sudo ls -la /opt/praxiszeit/data/backups/     # Windows (als Administrator): dir C:\PraxisZeit\data\backups
 ```
 
 ### Docker
