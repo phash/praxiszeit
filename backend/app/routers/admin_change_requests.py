@@ -37,7 +37,7 @@ from app.services import (
     credit_override_service, presence_service, settings_service, special_days_service,
     work_window_service,
 )
-from app.services.closure_split_service import resplit_year_closures
+from app.services.closure_split_service import rebook_freed_closure_days, resplit_year_closures
 from app.models.time_entry_audit_log import TimeEntryAuditLog
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -827,6 +827,9 @@ def review_change_request(
     # approval — every VACATION-creating/-removing path triggers resplit so a
     # closure day can flip VACATION<->OVERTIME (toggle-gated, see end of fn).
     _resplit_years: set = set()
+    # #511: days this approval frees inside a Betriebsferien (DELETE, or an
+    # UPDATE that moves the absence away). Closure days themselves never count.
+    _freed_closure_dates: list = []
     if cr.entry_kind == "absence":
         if cr.request_type == ChangeRequestType.CREATE and existing_absence is not None:
             # Review R2-a: idempotent — an absence of the SAME type already
@@ -1179,6 +1182,8 @@ def review_change_request(
                 _resplit_years.add(_orig_abs_date.year)
             if absence.type == AbsenceType.VACATION:
                 _resplit_years.add(absence.date.year)
+            if absence.date != _orig_abs_date and absence.closure_id is None:
+                _freed_closure_dates.append(_orig_abs_date)
 
         elif cr.request_type == ChangeRequestType.DELETE:
             # Audit-Log für Absence-CR DELETE
@@ -1209,7 +1214,16 @@ def review_change_request(
             # BEFORE delete, attributes expire afterwards).
             if absence.type == AbsenceType.VACATION:
                 _resplit_years.add(absence.date.year)
+            if absence.closure_id is None:
+                _freed_closure_dates.append(absence.date)
             db.delete(absence)
+
+        # #511: the freed day gets its closure absence back. The employee's
+        # anchor lock is held since the top of this function.
+        if _freed_closure_dates:
+            rebook_freed_closure_days(
+                db, cr_tenant_id, cr.user_id, _freed_closure_dates, current_user,
+            )
 
     db.commit()
     db.refresh(cr)

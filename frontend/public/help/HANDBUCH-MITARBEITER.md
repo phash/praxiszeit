@@ -434,7 +434,7 @@ PraxisZeit führt Urlaub **nach Arbeitstagen** (Tagesprinzip nach § 3 BUrlG) �
 
 ### 4.5 Betriebsferien (Praxisschließung)
 
-Wenn Ihre Praxis **Betriebsferien** einträgt (z. B. Weihnachts- oder Sommerschließung), legt PraxisZeit für Ihre Arbeitstage in diesem Zeitraum **automatisch** Abwesenheiten an – Sie müssen dafür nichts selbst eintragen. Wochenenden, Feiertage und Ihre freien Wochentage bleiben dabei außen vor.
+Wenn Ihre Praxis **Betriebsferien** einträgt (z. B. Weihnachts- oder Sommerschließung), legt PraxisZeit für Ihre Arbeitstage in diesem Zeitraum **automatisch** Abwesenheiten an – Sie müssen dafür nichts selbst eintragen. Wochenenden, Feiertage und Ihre freien Wochentage bleiben dabei außen vor. Tage, an denen Sie schon Urlaub oder eine andere Abwesenheit haben, bleiben ebenfalls unberührt. Ziehen Sie einen solchen Urlaubsantrag später zurück, trägt PraxisZeit an diesen Tagen automatisch den Betriebsferientag ein.
 
 Wie sich das auf Ihr Konto auswirkt, legt Ihre Praxisleitung fest:
 

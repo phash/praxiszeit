@@ -651,7 +651,7 @@ Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie a
 - **freien Wochentagen** von Teilzeitkräften mit individuellem Tagesplan (Tagessoll an diesem Wochentag = 0) und Zeiträumen, in denen die Arbeitszeit auf **0 Wochenstunden** steht (z. B. Elternzeit) – dort gibt es nichts zu schließen, es wird also auch kein Urlaubstag abgezogen. Betriebsferien, die vor Version 1.20.0 eingetragen wurden, können an solchen Tagen noch Einträge mit 0 Stunden enthalten: die Betriebsferien einmal öffnen und **erneut speichern**, dann werden diese Einträge entfernt (im Änderungsprotokoll vermerkt). Liegen sie in einem Jahr mit Jahresabschluss, prüfen Sie danach den Übertrag (→ [Betriebsferien in einem abgeschlossenen Jahr](#betriebsferien-in-einem-abgeschlossenen-jahr))
 - als **„Frei" konfigurierten Sondertagen** (24./31.12.)
 - Tagen **außerhalb des Beschäftigungszeitraums**: noch nicht eingetretene (Eintrittsdatum in der Zukunft) oder bereits ausgetretene Mitarbeiter bekommen für die betreffenden Tage **keine** Betriebsferien-Einträge
-- Tagen, an denen die Mitarbeiterin bereits eine andere Abwesenheit hat (diese wird nicht überschrieben)
+- Tagen, an denen die Mitarbeiterin bereits eine andere Abwesenheit hat (diese wird nicht überschrieben). Fällt diese Abwesenheit später weg – Urlaubsantrag zurückgezogen oder storniert, Abwesenheit gelöscht oder per Änderungsantrag gelöscht oder auf einen anderen Tag verschoben –, bucht PraxisZeit den Schließtag automatisch nach. Ausnahme: Am Tag steht inzwischen ein Arbeitszeit-Eintrag, dann bleibt die Arbeit stehen. Einen Schließtag, den Sie selbst löschen, bucht PraxisZeit nicht wieder nach.
 
 ### Verrechnung: Urlaub oder bezahlte Freistellung
 

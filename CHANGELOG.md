@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### 🐛 Fehlerbehebungen
+
+- **Betriebsferien: freigewordene Schließtage werden nachgebucht (#511).** Hatte eine Person an einem Schließtag schon Urlaub oder eine andere Abwesenheit, ließen die Betriebsferien den Tag aus. Fiel diese Abwesenheit später weg, blieb der Tag leer: volles Tagessoll ohne Abwesenheit, das Überstundenkonto sank, der Pflichturlaub zählte nicht. Jetzt bucht PraxisZeit den Schließtag nach, wenn ein genehmigter Urlaubsantrag zurückgezogen oder storniert, eine Abwesenheit gelöscht oder per Änderungsantrag gelöscht bzw. auf einen anderen Tag verschoben wird. Steht am Tag inzwischen ein Zeiteintrag, bleibt die Arbeit stehen. Ein von der Verwaltung gelöschter Schließtag wird nicht wieder angelegt. Das Stornieren eines Urlaubsantrags entfernt außerdem keine Betriebsferientage mehr, die im Antragszeitraum liegen.
+
 ## [1.20.2] - 2026-10-26
 
 ### 🔒 Sicherheit (Abhängigkeiten)

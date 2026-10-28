@@ -15,7 +15,7 @@ from app.models import (
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
 from app.services import calculation_service, settings_service, special_days_service
-from app.services.closure_split_service import resplit_year_closures
+from app.services.closure_split_service import rebook_freed_closure_days, resplit_year_closures
 from app.routers.admin_helpers import (
     _create_audit_log, ensure_vacation_budget, lock_user_row, zero_hours_absence_detail,
 )
@@ -966,9 +966,18 @@ def delete_absence(
     _was_vacation = absence.type == AbsenceType.VACATION
     _abs_year = absence.date.year
     _abs_tenant = absence.tenant_id
+    # #511: snapshot for the closure rebooking below (a closure day the admin
+    # deletes on purpose is never rebooked).
+    _abs_user_id = absence.user_id
+    _abs_date = absence.date
+    _was_closure_day = absence.closure_id is not None
 
     db.delete(absence)
     db.flush()
+
+    # #511: a day freed inside a Betriebsferien gets its closure absence back.
+    if not _was_closure_day:
+        rebook_freed_closure_days(db, _abs_tenant, _abs_user_id, [_abs_date], current_user)
 
     # Fix #8: deleting a VACATION absence frees budget that the #314 Betriebsferien
     # split reserves up front → a closure OVERTIME day may flip back to VACATION.
