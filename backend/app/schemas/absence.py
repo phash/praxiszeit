@@ -31,6 +31,9 @@ class AbsenceCreate(AbsenceBase):
 
 
 class AbsenceResponse(AbsenceBase):
+    # #514: unter Impersonation maskiert ``absences.list_absences`` Gesundheits-
+    # daten wie die Kollegen-Feeds — der Typ ist dann der Pseudo-Typ "absent".
+    type: AbsenceType | Literal["absent"]
     id: UUID
     user_id: UUID
     end_date: Optional[date] = None

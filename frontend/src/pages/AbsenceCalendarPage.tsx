@@ -64,7 +64,9 @@ interface Absence {
   id: string;
   date: string;
   end_date?: string;
-  type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other';
+  // #514: unter „Login als …" liefert der Server Krank/Sonstiges/Freistellung
+  // und eigene Gründe maskiert als "absent" (DSGVO Art. 9).
+  type: AbsenceType | 'absent';
   hours: number;
   note?: string;
   closure_id?: string | null; // Release-Review 1.20.1: Betriebsferien-Tag
@@ -1070,8 +1072,8 @@ export default function AbsenceCalendarPage() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <span className={`px-2 py-1 rounded-sm text-xs ${typeColors[absence.type]}`}>
-                        {typeLabels[absence.type]}
+                      <span className={`px-2 py-1 rounded-sm text-xs ${absence.type === 'absent' ? 'bg-gray-100 text-gray-800' : typeColors[absence.type]}`}>
+                        {absenceTypeLabel(absence.type)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
@@ -1113,8 +1115,8 @@ export default function AbsenceCalendarPage() {
                         )}
                       </p>
                       <div className="mt-2">
-                        <Badge variant={absence.type} size="sm">
-                          {typeLabels[absence.type]}
+                        <Badge variant={absence.type === 'absent' ? 'default' : absence.type} size="sm">
+                          {absenceTypeLabel(absence.type)}
                         </Badge>
                       </div>
                     </div>

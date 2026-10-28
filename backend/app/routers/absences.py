@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -60,6 +60,25 @@ APPROVED_VACATION_DELETE_DETAIL = (
 _MASKED_ABSENCE_TYPES = {AbsenceType.SICK, AbsenceType.OTHER, AbsenceType.PAID_LEAVE}
 
 
+def _is_sensitive(absence: Absence) -> bool:
+    """Art. 9 DSGVO: Krank/Sonstiges/bezahlte Freistellung und jeder eigene
+    Grund (#312, z. B. „Reha") gelten als Gesundheitsdaten."""
+    return absence.type in _MASKED_ABSENCE_TYPES or absence.reason_id is not None
+
+
+def _hide_health_data(request: Request, current_user: User, absence: Absence) -> bool:
+    """Maskieren? Kolleg:innen sehen fremde sensible Abwesenheiten nur als
+    "absent" (Admins und die Person selbst sehen sie). #514: unter
+    Impersonation („Login als …") liest ein Admin ohne Art.-9-Protokollzeile
+    — dann ist auch die eigene Abwesenheit der Person maskiert, wie in
+    ``/journal/me``."""
+    if not _is_sensitive(absence):
+        return False
+    if getattr(request.state, "is_impersonating", False):
+        return True
+    return current_user.role != UserRole.ADMIN and absence.user_id != current_user.id
+
+
 @router.get("/daily-target")
 def get_daily_target_for_date_endpoint(
     target_date: date = Query(..., alias="date"),
@@ -74,6 +93,7 @@ def get_daily_target_for_date_endpoint(
 
 @router.get("/", response_model=List[AbsenceResponse])
 def list_absences(
+    request: Request,
     year: Optional[int] = Query(None, ge=2000, le=2100, description="Filter by year"),
     user_id: Optional[str] = Query(None, description="Filter by user ID (admin only)"),
     skip: int = 0,
@@ -137,11 +157,21 @@ def list_absences(
         ))
         db.commit()
 
+    # #514: unter Impersonation Gesundheitsdaten maskieren — Typ "absent",
+    # ohne Notiz und Grund (beide können die Diagnose verraten).
+    if getattr(request.state, "is_impersonating", False):
+        return [
+            AbsenceResponse.model_validate(a).model_copy(
+                update={"type": "absent", "note": None, "reason_id": None}
+            ) if _is_sensitive(a) else a
+            for a in absences
+        ]
     return absences
 
 
 @router.get("/calendar", response_model=List[AbsenceCalendarEntry])
 def get_absence_calendar(
+    request: Request,
     month: str = Query(..., description="Month in YYYY-MM format"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -182,12 +212,7 @@ def get_absence_calendar(
     for absence, first_name, last_name, calendar_color, department in rows:
         display_type = absence.type.value
         # #312: any custom-reason absence is masked for non-admin colleagues too.
-        masked = (
-            (absence.type in _MASKED_ABSENCE_TYPES or absence.reason_id is not None)
-            and current_user.role != UserRole.ADMIN
-            and absence.user_id != current_user.id
-        )
-        if masked:
+        if _hide_health_data(request, current_user, absence):
             display_type = "absent"
         elif absence.reason_id is not None:
             display_type = reason_names.get(str(absence.reason_id), display_type)
@@ -210,6 +235,7 @@ def get_absence_calendar(
 
 @router.get("/team/upcoming", response_model=List[TeamAbsenceEntry])
 def get_team_upcoming_absences(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -254,12 +280,7 @@ def get_team_upcoming_absences(
             seen.add(key)
             display_type = absence.type.value
             # #312: custom-reason absences are masked for non-admin colleagues too.
-            masked = (
-                (absence.type in _MASKED_ABSENCE_TYPES or absence.reason_id is not None)
-                and current_user.role != UserRole.ADMIN
-                and absence.user_id != current_user.id
-            )
-            if masked:
+            if _hide_health_data(request, current_user, absence):
                 display_type = "absent"
             elif absence.reason_id is not None:
                 display_type = reason_names.get(str(absence.reason_id), display_type)
