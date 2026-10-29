@@ -45,6 +45,12 @@ class AbsenceType(str, enum.Enum):
     PAID_LEAVE = "paid_leave"
 
 
+# Art. 9 DSGVO: types shown only as "absent" wherever health data is masked
+# (colleague feeds, "Login als …", journal without health data). See the
+# reasoning at ``routers.absences._MASKED_ABSENCE_TYPES``.
+MASKED_ABSENCE_TYPES = frozenset({AbsenceType.SICK, AbsenceType.OTHER, AbsenceType.PAID_LEAVE})
+
+
 class AbsenceReasonBehavior(str, enum.Enum):
     """#312: how a custom absence reason behaves in the Soll/Ist calculation.
 

@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models import (
     User, Absence, AbsenceType, UserRole, TimeEntry, TimeEntryAuditLog,
     AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE, ChangeRequest,
-    WorkingHoursChange, CompanyClosure, VacationRequest, VacationRequestStatus,
+    WorkingHoursChange, CompanyClosure, VacationRequest, VacationRequestStatus, MASKED_ABSENCE_TYPES,
 )
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
@@ -57,7 +57,7 @@ APPROVED_VACATION_DELETE_DETAIL = (
 # health status. We therefore collapse the sensitive / unspecified types into
 # the same generic "absent" bucket; non-sensitive planning types (VACATION,
 # TRAINING, OVERTIME) stay truthful so colleagues can still coordinate cover.
-_MASKED_ABSENCE_TYPES = {AbsenceType.SICK, AbsenceType.OTHER, AbsenceType.PAID_LEAVE}
+_MASKED_ABSENCE_TYPES = MASKED_ABSENCE_TYPES
 
 
 def _is_sensitive(absence: Absence) -> bool:
