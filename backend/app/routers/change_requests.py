@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date
@@ -22,8 +22,54 @@ from app.services import credit_override_service, work_window_service
 from app.routers.admin_helpers import (
     _enrich_cr_response as _enrich_response, _enrich_cr_responses,
 )
+from app.routers.absences import _MASKED_ABSENCE_TYPES
 
 router = APIRouter(prefix="/api/change-requests", tags=["change-requests"])
+
+_MASKED_TYPE_VALUES = {t.value for t in _MASKED_ABSENCE_TYPES}
+# #514: Platzhalter für die Begründung eines maskierten Antrags (Pflichtfeld).
+MASKED_REASON_TEXT = "Ausgeblendet (Gesundheitsdaten)"
+
+
+def _mask_health_data(request: Request, crs: List[ChangeRequest], responses: list, db: Session) -> list:
+    """#514: unter Impersonation („Login als …") liest ein Admin die Anträge
+    der Person ohne Art.-9-Protokollzeile. Abwesenheitsanträge mit sensiblem
+    Typ (wie ``absences._MASKED_ABSENCE_TYPES``) oder eigenem Grund zeigen dann
+    Typ "absent", ohne Notizen und ohne Begründung — wie ``/absences/``."""
+    if not getattr(request.state, "is_impersonating", False):
+        return responses
+    absence_ids = [cr.absence_id for cr in crs if cr.absence_id is not None]
+    reasoned = set()
+    if absence_ids:
+        reasoned = {
+            row.id for row in db.query(Absence.id).filter(
+                Absence.id.in_(absence_ids),
+                Absence.tenant_id == crs[0].tenant_id,  # F-026
+                Absence.reason_id.isnot(None),
+            ).all()
+        }
+    masked = []
+    for cr, resp in zip(crs, responses):
+        sensitive = cr.entry_kind == "absence" and (
+            cr.proposed_absence_type in _MASKED_TYPE_VALUES
+            or cr.original_absence_type in _MASKED_TYPE_VALUES
+            or cr.proposed_reason_id is not None
+            or cr.absence_id in reasoned
+        )
+        if not sensitive:
+            masked.append(resp)
+            continue
+        update = {
+            "proposed_note": None, "original_note": None, "reason": MASKED_REASON_TEXT,
+            "rejection_reason": None,
+        }
+        if cr.proposed_absence_type is not None:
+            update["proposed_absence_type"] = "absent"
+        if cr.original_absence_type is not None:
+            update["original_absence_type"] = "absent"
+        resp = resp if isinstance(resp, ChangeRequestResponse) else ChangeRequestResponse.model_validate(resp)
+        masked.append(resp.model_copy(update=update))
+    return masked
 
 # Spec 2026-10-08, 11.4 / P21 (wörtlich).
 CREDIT_REQUEST_REJECTED_DETAIL = "Für diesen Eintrag kann keine Anrechnung beantragt werden."
@@ -505,6 +551,7 @@ def create_change_request(
 
 @router.get("/", response_model=List[ChangeRequestResponse])
 def list_change_requests(
+    request: Request,
     request_status: Optional[str] = Query(None, alias="status", description="Filter by status"),
     skip: int = 0,
     limit: int = Query(default=100, le=500),
@@ -530,11 +577,12 @@ def list_change_requests(
     requests = query.order_by(ChangeRequest.created_at.desc()).offset(skip).limit(limit).all()
     # Batch wie admin_change_requests.list_all_change_requests: EIN User- und EIN
     # Eintrags-Query für die ganze Liste (bis 500 Anträge), nicht je Antrag.
-    return _enrich_cr_responses(requests, db)
+    return _mask_health_data(request, requests, _enrich_cr_responses(requests, db), db)
 
 
 @router.get("/{request_id}", response_model=ChangeRequestResponse)
 def get_change_request(
+    request: Request,
     request_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -546,7 +594,7 @@ def get_change_request(
     if cr.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         # #120: 404 statt 403 — kein Existenz-Leak fremder Antraege.
         raise HTTPException(status_code=404, detail="Antrag nicht gefunden")
-    return _enrich_response(cr, db)
+    return _mask_health_data(request, [cr], [_enrich_response(cr, db)], db)[0]
 
 
 @router.delete("/{request_id}", status_code=status.HTTP_204_NO_CONTENT)

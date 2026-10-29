@@ -112,3 +112,76 @@ def test_team_upcoming_own_view_shows_paid_leave(_db_session, employee_user, emp
     _absence(_db_session, employee_user, DAY, AbsenceType.PAID_LEAVE)
     (row,) = _by_date(employee_client.get("/api/absences/team/upcoming").json(), DAY)
     assert row["type"] == "paid_leave"
+
+
+# --- Anträge: /api/change-requests/ und /api/vacation-requests/ ---------------
+
+def _absence_cr(db, user, proposed_type, reason="Arzttermin wegen Migräne", note="Neurologe"):
+    from app.models import ChangeRequest
+    from app.models.change_request import ChangeRequestStatus, ChangeRequestType
+    cr = ChangeRequest(
+        user_id=user.id, tenant_id=DEFAULT_TENANT_ID, request_type=ChangeRequestType.CREATE,
+        entry_kind="absence", status=ChangeRequestStatus.PENDING, reason=reason,
+        proposed_date=DAY, proposed_absence_type=proposed_type, proposed_absence_hours=8.0,
+        proposed_note=note,
+    )
+    db.add(cr)
+    db.commit()
+    db.refresh(cr)
+    return cr
+
+
+def test_change_request_list_masks_sick_under_impersonation(
+        _db_session, employee_user, employee_client):
+    cr = _absence_cr(_db_session, employee_user, "sick")
+    _impersonate(employee_user)
+    (row,) = employee_client.get("/api/change-requests/").json()
+    assert row["proposed_absence_type"] == "absent"
+    assert row["proposed_note"] is None
+    assert "Migräne" not in row["reason"]
+    detail = employee_client.get(f"/api/change-requests/{cr.id}").json()
+    assert detail["proposed_absence_type"] == "absent"
+    assert "Migräne" not in detail["reason"]
+
+
+def test_change_request_list_keeps_vacation_under_impersonation(
+        _db_session, employee_user, employee_client):
+    _absence_cr(_db_session, employee_user, "vacation", reason="Familienfeier")
+    _impersonate(employee_user)
+    (row,) = employee_client.get("/api/change-requests/").json()
+    assert row["proposed_absence_type"] == "vacation"
+    assert row["reason"] == "Familienfeier"
+
+
+def test_change_request_own_view_shows_sick(_db_session, employee_user, employee_client):
+    _absence_cr(_db_session, employee_user, "sick")
+    (row,) = employee_client.get("/api/change-requests/").json()
+    assert row["proposed_absence_type"] == "sick"
+    assert "Migräne" in row["reason"]
+
+
+def _vr(db, user, absence_type, note="Kind krank"):
+    from app.models.vacation_request import VacationRequest, VacationRequestStatus
+    db.add(VacationRequest(
+        user_id=user.id, tenant_id=DEFAULT_TENANT_ID, date=DAY, end_date=DAY, hours=8.0,
+        absence_type=absence_type, note=note, status=VacationRequestStatus.PENDING.value,
+    ))
+    db.commit()
+
+
+def test_vacation_request_list_masks_other_under_impersonation(
+        _db_session, employee_user, employee_client):
+    _vr(_db_session, employee_user, "other")
+    _impersonate(employee_user)
+    (row,) = employee_client.get("/api/vacation-requests/").json()
+    assert row["absence_type"] == "absent"
+    assert row["note"] is None
+
+
+def test_vacation_request_list_keeps_vacation_under_impersonation(
+        _db_session, employee_user, employee_client):
+    _vr(_db_session, employee_user, "vacation", note="Spanien")
+    _impersonate(employee_user)
+    (row,) = employee_client.get("/api/vacation-requests/").json()
+    assert row["absence_type"] == "vacation"
+    assert row["note"] == "Spanien"

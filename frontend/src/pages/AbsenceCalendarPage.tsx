@@ -7,7 +7,7 @@ import { useToast } from '../contexts/ToastContext';
 import { showArbzgWarnings, collectAbsenceWarnings, showResponseWarning } from '../utils/arbzgWarnings';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../constants/absenceTypes';
+import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS, absenceTypeLabel } from '../constants/absenceTypes';
 import AbsenceBadge from '../components/AbsenceBadge';
 import { useTypeColorsStore } from '../stores/typeColorsStore';
 import Badge from '../components/Badge';
@@ -19,10 +19,6 @@ import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 import VacationRequestEditModal from '../components/VacationRequestEditModal';
-
-// Label helper that tolerates the DSGVO-masked "absent" pseudo-type.
-const absenceTypeLabel = (t: string): string =>
-  t === 'absent' ? 'Abwesend' : (ABSENCE_TYPE_LABELS[t as AbsenceType] ?? t);
 
 interface VacationRequest {
   id: string;
@@ -432,7 +428,7 @@ export default function AbsenceCalendarPage() {
                         </span>
                         {vr.absence_type && (
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ABSENCE_TYPE_COLORS[vr.absence_type as AbsenceType] || 'bg-gray-100 text-gray-800'}`}>
-                            {ABSENCE_TYPE_LABELS[vr.absence_type as AbsenceType] || vr.absence_type}
+                            {absenceTypeLabel(vr.absence_type)}
                           </span>
                         )}
                         <span className="text-xs text-gray-500">

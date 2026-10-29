@@ -4,7 +4,7 @@
 
 ### 🔒 Sicherheit
 
-- **„Login als …“ maskiert Gesundheitsdaten auch auf der Abwesenheitsseite (#514).** Seit 1.20.2 zeigt das Monatsjournal unter „Login als …“ Krank, Sonstiges, bezahlte Freistellung und eigene Gründe nur als „Abwesend“. Die Abwesenheitsliste, der Kalender und die Teamübersicht (`GET /api/absences/`, `/calendar`, `/team/upcoming`) lieferten Typ, Notiz und Grund noch offen. Jetzt maskieren sie gleich: Typ „absent“, ohne Notiz und Grund. Die Verwaltung liest die Gründe weiter über die Verwaltungsansicht, mit Art.-9-Protokollzeile.
+- **„Login als …“ maskiert Gesundheitsdaten auch auf der Abwesenheitsseite (#514).** Seit 1.20.2 zeigt das Monatsjournal unter „Login als …“ Krank, Sonstiges, bezahlte Freistellung und eigene Gründe nur als „Abwesend“. Die Abwesenheitsliste, der Kalender und die Teamübersicht (`GET /api/absences/`, `/calendar`, `/team/upcoming`) lieferten Typ, Notiz und Grund noch offen. Jetzt maskieren sie gleich: Typ „absent“, ohne Notiz und Grund. Dasselbe gilt für die eigenen Anträge der Person (`GET /api/change-requests/`, `/api/change-requests/{id}`, `GET /api/vacation-requests/`): Abwesenheitsanträge mit sensiblem Typ oder eigenem Grund zeigen „Abwesend“ ohne Notizen, Begründung und Ablehnungsgrund. Die Verwaltung liest die Gründe weiter über die Verwaltungsansicht, mit Art.-9-Protokollzeile.
 
 ### 🐛 Fehlerbehebungen
 

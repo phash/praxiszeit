@@ -9,6 +9,10 @@ export const ABSENCE_TYPE_LABELS: Record<AbsenceType, string> = {
   paid_leave: 'Bezahlte Freistellung',
 };
 
+// Label that tolerates the DSGVO-masked "absent" pseudo-type (#514).
+export const absenceTypeLabel = (t: string): string =>
+  t === 'absent' ? 'Abwesend' : (ABSENCE_TYPE_LABELS[t as AbsenceType] ?? t);
+
 export const ABSENCE_TYPE_COLORS: Record<AbsenceType, string> = {
   vacation: 'bg-blue-100 text-blue-800 border-blue-300',
   sick: 'bg-red-100 text-red-800 border-red-300',

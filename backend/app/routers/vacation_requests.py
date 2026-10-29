@@ -20,10 +20,25 @@ from app.routers.admin_helpers import (
     _enrich_vr_response as _enrich, _enrich_vr_responses, ensure_vacation_budget,
     lock_user_row,
 )
+from app.routers.absences import _MASKED_ABSENCE_TYPES
 
 router = APIRouter(prefix="/api/vacation-requests", tags=["vacation-requests"])
 
 VR_NOT_FOUND = "Urlaubsantrag nicht gefunden"
+
+
+def _mask_health_data(request: Request, responses: list) -> list:
+    """#514: unter Impersonation („Login als …") Anträge mit sensiblem Typ
+    (``absences._MASKED_ABSENCE_TYPES``, hier nur „Sonstiges") als "absent"
+    ohne Notiz und Ablehnungsgrund — wie ``/absences/``."""
+    if not getattr(request.state, "is_impersonating", False):
+        return responses
+    masked_values = {t.value for t in _MASKED_ABSENCE_TYPES}
+    return [
+        r.model_copy(update={"absence_type": "absent", "note": None, "rejection_reason": None})
+        if r.absence_type in masked_values else r
+        for r in responses
+    ]
 
 
 def _load_own_vr_locked(db: Session, request_id: str, current_user: User) -> VacationRequest:
@@ -350,6 +365,7 @@ def create_vacation_request(
 
 @router.get("/", response_model=List[VacationRequestResponse])
 def list_my_vacation_requests(
+    request: Request,
     year: Optional[int] = Query(None, ge=2000, le=2100),
     status: Optional[str] = Query(None),
     skip: int = 0,
@@ -368,7 +384,7 @@ def list_my_vacation_requests(
     if status:
         query = query.filter(VacationRequest.status == status)
     requests = query.order_by(VacationRequest.created_at.desc()).offset(skip).limit(limit).all()
-    return _enrich_vr_responses(requests, db)  # #219: batch (was per-item N+1)
+    return _mask_health_data(request, _enrich_vr_responses(requests, db))  # #219: batch
 
 
 def cancel_approved_vacation_request(
