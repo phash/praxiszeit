@@ -304,6 +304,22 @@ def _consteq(a: str, b: str) -> bool:
     return result == 0
 
 
+def bearer_token(authorization: Optional[str]) -> Optional[str]:
+    """Bearer token from an Authorization header, parsed exactly like the
+    auth dependency (``HTTPBearer`` -> ``get_authorization_scheme_param``).
+
+    Security review 2026-10-28: middlewares used ``split(" ", 1)``, which kept
+    a leading space for "Bearer  <token>". The token then failed to decode in
+    the middleware but authenticated downstream — the impersonation read-only
+    guard let such writes through.
+    """
+    from fastapi.security.utils import get_authorization_scheme_param
+    scheme, token = get_authorization_scheme_param(authorization)
+    if scheme.lower() != "bearer" or not token:
+        return None
+    return token
+
+
 def decode_token(token: str) -> Optional[dict]:
     """
     Decode and validate JWT token.

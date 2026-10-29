@@ -642,3 +642,41 @@ def test_execute_import_ist_idempotent_zur_vorschau(db, test_user, test_admin):
     db_entry = db.query(TimeEntry).filter(TimeEntry.user_id == test_user.id).one()
     assert db_entry.start_time == time(7, 45)
     assert db_entry.raw_start_time == time(7, 0)
+
+
+def test_parse_xls_short_row_without_note_column(db, test_user):
+    """Security review 2026-10-28: the sheet is read with ``ragged_rows`` —
+    a data row that ends at "Aus" (no note cell) still imports, note None."""
+    rows = [
+        ["Datum", "Tag", "Total", "Ein", "Aus", "Tagesnotiz"],
+        ["12.01", "Mo", "05:30", _dt(2026, 1, 12, 7, 15), _dt(2026, 1, 12, 12, 45)],
+    ]
+    (entry,) = parse_xls(_make_xls_bytes(rows), test_user.id, db)
+    assert entry.note is None
+
+
+def test_parse_xls_loads_only_the_import_sheet(db, test_user, monkeypatch):
+    """Security review 2026-10-28: padded extra sheets blew a 5.6 KB file up
+    to 1.26 GB. Only "Zeiterfassung" is parsed (on_demand)."""
+    wb = xlwt.Workbook()
+    for name in ("Andere", "Zeiterfassung", "Noch eins"):
+        ws = wb.add_sheet(name)
+        if name == "Zeiterfassung":
+            ws.write(0, 3, _dt(2026, 1, 12, 7, 15), xlwt.easyxf(num_format_str="DD.MM.YYYY HH:MM"))
+            ws.write(0, 4, _dt(2026, 1, 12, 12, 45), xlwt.easyxf(num_format_str="DD.MM.YYYY HH:MM"))
+        else:
+            ws.write(200, 200, "x")
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    loaded = []
+    real_get_sheet = xlrd.book.Book.get_sheet
+
+    def spy(self, sh_number, *a, **kw):
+        loaded.append(self._sheet_names[sh_number])
+        return real_get_sheet(self, sh_number, *a, **kw)
+
+    monkeypatch.setattr(xlrd.book.Book, "get_sheet", spy)
+    entries = parse_xls(buf.getvalue(), test_user.id, db)
+    assert len(entries) == 1
+    assert loaded == ["Zeiterfassung"]

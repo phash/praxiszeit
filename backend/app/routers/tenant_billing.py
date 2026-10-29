@@ -160,6 +160,16 @@ class TransferOwnershipRequest(BaseModel):
     new_owner_id: str
 
 
+def _require_saas() -> None:
+    """Security review 2026-10-28: self-suspension and the tenant deletion
+    request are SaaS paths. On-prem the menu is hidden, yet one admin call
+    used to lock every account and anonymize names and e-mails 30 days later
+    — unnoticed, with nobody to cancel it. On-prem → 404."""
+    from app.core.deployment import is_saas
+    if not is_saas():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
+
 @router.post("/suspend")
 def self_suspend(
     db: Session = Depends(get_db),
@@ -167,6 +177,7 @@ def self_suspend(
 ):
     """Admin schedules self-suspension 7 days from now (grace window so
     the UI can reverse it before the cron applies it)."""
+    _require_saas()
     from app.services import lifecycle_service
     tenant = _get_own_tenant(db, current_user)
     when = lifecycle_service.request_suspend(db, tenant, current_user)
@@ -191,6 +202,7 @@ def request_deletion(
 ):
     """Admin requests tenant deletion. Cron anonymizes after 30d grace.
     The response includes the deadline so the UI can show a countdown."""
+    _require_saas()
     from app.services import lifecycle_service
     tenant = _get_own_tenant(db, current_user)
     deadline = lifecycle_service.request_deletion(db, tenant, current_user)

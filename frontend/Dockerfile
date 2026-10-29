@@ -20,7 +20,7 @@ RUN npm run build
 
 # Production stage
 # Pinned to a specific version (Projektregel, Paritaet zu backend/Dockerfile's
-# python:3.12.15-slim-bookworm-Pin) statt des floatenden `:alpine`-Tags, das
+# python:3.12.16-slim-bookworm-Pin) statt des floatenden `:alpine`-Tags, das
 # sich ohne Vorwarnung unter dem Build aendern kann. Aktueller Stand (siehe
 # `docker pull nginx:alpine` zum Zeitpunkt des Pins):
 #   nginx:1.31.8-alpine

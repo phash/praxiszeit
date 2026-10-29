@@ -27,7 +27,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from app.database import engine, SessionLocal, set_tenant_context
-from app.config import settings
+from app.config import settings, is_placeholder_secret
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
 from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
@@ -149,6 +149,60 @@ def audit_license_readonly_event(
         db.close()
 
 
+def _bootstrap_admin(db, default_tenant_id) -> None:
+    """Startup step 4 (onprem): create the initial admin from the config."""
+    admin = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
+    # Security review 2026-10-28: only bootstrap into an EMPTY admin
+    # set. A renamed admin used to come back on the next start as a
+    # second "admin" with the install password from the config.
+    other_admin = None if admin else db.query(User.id).filter(
+        User.tenant_id == default_tenant_id, User.role == UserRole.ADMIN,
+    ).first()
+    if not admin and other_admin:
+        print(f"✅ Admin account exists under another name — {settings.ADMIN_USERNAME} not created")
+    elif not admin:
+        if is_placeholder_secret(settings.ADMIN_PASSWORD):
+            # The example value is public (repository) — never an admin password.
+            raise RuntimeError(
+                "ADMIN_PASSWORD is still the placeholder from the example file. "
+                "Set your own password ([admin] password in praxiszeit.conf or .env)."
+            )
+        print(f"👤 Creating admin user: {settings.ADMIN_USERNAME}")
+        admin = User(
+            username=settings.ADMIN_USERNAME,
+            email=settings.ADMIN_EMAIL,
+            password_hash=auth_service.hash_password(settings.ADMIN_PASSWORD),
+            first_name=settings.ADMIN_FIRST_NAME,
+            last_name=settings.ADMIN_LAST_NAME,
+            role=UserRole.ADMIN,
+            weekly_hours=40.0,
+            vacation_days=30,
+            is_active=True,
+            # Bootstrap-Admin ist ein technisches Konto, kein zeiterfasster
+            # Mitarbeiter -> aus der Zeitzaehlung nehmen (keine "Buchung
+            # fehlt"-Warnungen, nicht im Team-Fehlbuchungs-Widget).
+            # Per Benutzerverwaltung jederzeit umstellbar.
+            track_hours=False,
+            tenant_id=default_tenant_id,
+        )
+        db.add(admin)
+        db.commit()
+        print(f"✅ Admin user created")
+    else:
+        print(f"✅ Admin user already exists: {settings.ADMIN_USERNAME}")
+
+    # Security warning: check if admin still uses default credentials
+    if admin and settings.ADMIN_USERNAME == "admin" and auth_service.verify_password(
+        settings.ADMIN_PASSWORD, admin.password_hash
+    ):
+        if (settings.ADMIN_PASSWORD in _WEAK_ADMIN_PASSWORDS or len(settings.ADMIN_PASSWORD) < 12
+                or is_placeholder_secret(settings.ADMIN_PASSWORD)):
+            msg = "SECURITY: Admin account uses a weak/default password! Set a strong ADMIN_PASSWORD in .env."
+            if settings.ENVIRONMENT == "production":
+                raise RuntimeError(msg)
+            print(f"⚠️  {msg}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -211,41 +265,7 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         try:
             set_tenant_context(db, str(default_tenant_id))
-            admin = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
-            if not admin:
-                print(f"👤 Creating admin user: {settings.ADMIN_USERNAME}")
-                admin = User(
-                    username=settings.ADMIN_USERNAME,
-                    email=settings.ADMIN_EMAIL,
-                    password_hash=auth_service.hash_password(settings.ADMIN_PASSWORD),
-                    first_name=settings.ADMIN_FIRST_NAME,
-                    last_name=settings.ADMIN_LAST_NAME,
-                    role=UserRole.ADMIN,
-                    weekly_hours=40.0,
-                    vacation_days=30,
-                    is_active=True,
-                    # Bootstrap-Admin ist ein technisches Konto, kein zeiterfasster
-                    # Mitarbeiter -> aus der Zeitzaehlung nehmen (keine "Buchung
-                    # fehlt"-Warnungen, nicht im Team-Fehlbuchungs-Widget).
-                    # Per Benutzerverwaltung jederzeit umstellbar.
-                    track_hours=False,
-                    tenant_id=default_tenant_id,
-                )
-                db.add(admin)
-                db.commit()
-                print(f"✅ Admin user created")
-            else:
-                print(f"✅ Admin user already exists: {settings.ADMIN_USERNAME}")
-
-            # Security warning: check if admin still uses default credentials
-            if settings.ADMIN_USERNAME == "admin" and auth_service.verify_password(
-                settings.ADMIN_PASSWORD, admin.password_hash
-            ):
-                if settings.ADMIN_PASSWORD in _WEAK_ADMIN_PASSWORDS or len(settings.ADMIN_PASSWORD) < 12:
-                    msg = "SECURITY: Admin account uses a weak/default password! Set a strong ADMIN_PASSWORD in .env."
-                    if settings.ENVIRONMENT == "production":
-                        raise RuntimeError(msg)
-                    print(f"⚠️  {msg}")
+            _bootstrap_admin(db, default_tenant_id)
         finally:
             db.close()
 
@@ -568,11 +588,12 @@ async def tenant_metrics_middleware(request: Request, call_next):
     """Increment per-tenant HTTP counter before handing off to the route.
     Only adds a label lookup per request — cheap enough for the hot path."""
     tid = None
-    auth = request.headers.get("authorization", "")
-    if auth.lower().startswith("bearer "):
+    from app.services.auth_service import bearer_token
+    token = bearer_token(request.headers.get("authorization"))
+    if token:
         try:
             from app.services.auth_service import decode_token
-            payload = decode_token(auth.split(" ", 1)[1]) or {}
+            payload = decode_token(token) or {}
             tid = payload.get("tid")
         except Exception:  # noqa: BLE001
             tid = None
@@ -597,11 +618,12 @@ def _tenant_from_request(request: Request) -> Optional[str]:
     tid = getattr(request.state, "tenant_id", None)
     if tid:
         return tid
-    auth = request.headers.get("authorization", "")
-    if auth.lower().startswith("bearer "):
+    from app.services.auth_service import bearer_token
+    token = bearer_token(request.headers.get("authorization"))
+    if token:
         try:
             from app.services.auth_service import decode_token
-            payload = decode_token(auth.split(" ", 1)[1]) or {}
+            payload = decode_token(token) or {}
             return payload.get("tid")
         except Exception:  # noqa: BLE001
             return None

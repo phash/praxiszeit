@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
-from app.services.auth_service import decode_token
+from app.services.auth_service import bearer_token, decode_token
 
 _WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
@@ -47,8 +47,8 @@ class ImpersonationReadOnlyMiddleware(BaseHTTPMiddleware):
 
 def _is_impersonation_request(request: Request) -> bool:
     """True if the bearer token carries an ``imp`` claim (impersonation session)."""
-    auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
+    token = bearer_token(request.headers.get("authorization"))
+    if token is None:
         return False
-    payload = decode_token(auth.split(" ", 1)[1]) or {}
+    payload = decode_token(token) or {}
     return bool(payload.get("imp"))

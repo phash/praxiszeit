@@ -256,6 +256,17 @@ class TestNativeEnvironment:
             assert srv.native_environment({"ADMIN_PASSWORD": pw}) == "development"
         assert any("development" in r.message for r in caplog.records)
 
+    def test_placeholder_admin_password_keeps_development(self, srv):
+        assert srv.native_environment({"ADMIN_PASSWORD": "BITTE_AENDERN_min12zeichen"}) == "development"
+
+    @pytest.mark.parametrize("value", [
+        "BITTE_AENDERN_min12zeichen", "<initiales-admin-pw>", "<generierter-key-mindestens-64-hex-zeichen>",
+        "CHANGE_ME_GENERATE_RANDOM_PASSWORD", " <x> ", "", "Sicheres-Passwort-2026", "a<b>c", "<offen",
+    ])
+    def test_placeholder_check_matches_backend(self, srv, value):
+        from app.config import is_placeholder_secret
+        assert srv._backend_is_placeholder_secret(value) == is_placeholder_secret(value)
+
     def test_weak_password_of_other_username_is_no_blocker(self, srv):
         env = {"ADMIN_USERNAME": "chefin", "ADMIN_PASSWORD": "admin"}
         assert srv.native_environment(env) == "production"

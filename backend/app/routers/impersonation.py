@@ -31,10 +31,10 @@ router = APIRouter(prefix="/api/admin", tags=["impersonation"])
 
 def _decode_bearer(request: Request) -> dict | None:
     """Decode the request's bearer token (already authenticated upstream)."""
-    auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
+    token = auth_service.bearer_token(request.headers.get("authorization"))
+    if token is None:
         return None
-    return auth_service.decode_token(auth.split(" ", 1)[1])
+    return auth_service.decode_token(token)
 
 
 @router.post("/users/{user_id}/impersonate")
