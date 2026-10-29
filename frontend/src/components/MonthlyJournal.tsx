@@ -443,8 +443,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         }
         // Eine bestehende Abwesenheit ANDEREN Typs muss weichen — der POST würde
         // sonst mit 409 abgelehnt (ein Ersetzen kennt der Endpunkt nicht).
+        // rebook_closure=false: der freie Tag darf nicht sofort wieder mit dem
+        // Betriebsferien-Tag belegt werden (#511), sonst scheitert der POST.
         if (hadAbsence && day.absences[0]) {
-          await apiClient.delete(`/absences/${day.absences[0].id}`);
+          await apiClient.delete(`/absences/${day.absences[0].id}?rebook_closure=false`);
         }
         const res = await apiClient.post('/absences', {
           user_id: userId,

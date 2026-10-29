@@ -167,6 +167,8 @@ Im Docker-Bundle gibt es dafür auch die geprüften Scripts `bash backup.sh` /
 |---------|--------|
 | Login bricht nach 30 Min ab (HTTP) | `COOKIE_SECURE=false` setzen **oder** auf HTTPS umstellen |
 | `APP_DB_PASSWORD is missing` | `generate-secrets.sh` ausführen / `.env` prüfen |
-| Backend startet nicht (production) | Schwaches/Platzhalter-`ADMIN_PASSWORD` → von `generate-secrets.sh` setzen lassen |
+| Backend startet nicht (production) | Schwaches `ADMIN_PASSWORD` → von `generate-secrets.sh` setzen lassen |
+| Backend startet nicht: „SECRET_KEY is still the placeholder“ | `SECRET_KEY` steht noch auf dem Vorlagenwert `<…>` → `python3 -c "import secrets; print(secrets.token_hex(64))"` eintragen (alle Sitzungen werden abgemeldet) |
+| Backend startet nicht: „ADMIN_PASSWORD is still the placeholder“ | Erststart ohne Admin-Konto mit Vorlagenwert → echtes Passwort eintragen (gilt in jeder Umgebung, seit 1.20.3) |
 | 502 auf `/grafana/` | Grafana-Container läuft nicht (`docker compose up -d grafana`) |
 | Port 80/443 belegt | Anderen Host-Port mappen oder Konflikt auflösen |

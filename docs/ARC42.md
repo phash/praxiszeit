@@ -503,7 +503,7 @@ LicenseReadOnlyMiddleware: blockt POST/PUT/PATCH/DELETE (Login + Export bleiben 
 - Strukturiertes Error-Logging mit PII-Scrubbing + 90-Tage-Purge.
 
 ### 8.7 Scheduler (autonom)
-- APScheduler startet im Lifespan (deaktiviert unter pytest): Vacation-Audit-Purge, Tenant-Suspend, Tenant-Deletion (jeweils 03:00). Jobs nutzen `set_superadmin_context`.
+- APScheduler startet im Lifespan (deaktiviert unter pytest). On-Prem: Vacation-Audit-Purge, Error-Log-Cleanup (03:00), geplantes Backup (stündlich :30); nur SaaS zusätzlich Tenant-Suspend/-Deletion und Billing-Suspends (seit 1.20.3). Jobs nutzen `set_superadmin_context`.
 
 ### 8.8 Sicherheits-Querschnitt
 - Middleware-Stack: CORS → CSRF (Double-Submit) → License-Read-Only → GZip → RequestSizeLimit (2 MB) → SecurityHeaders (CSP, X-Frame-Options, HSTS).

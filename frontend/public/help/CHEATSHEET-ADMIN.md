@@ -123,7 +123,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 **Arbeitstage** auf der Karte = was die Genehmigung kostet: nur Arbeitstage laut Tagesplan zum jeweiligen Datum (4-Tage-Woche, Mi frei: Mo–Fr = 4), ohne Wochenende/Feiertag/„frei"-Sondertag; Halbtag und „halber Feiertag" je 0,5
 **Genehmigen:** Grüner Button → Abwesenheiten werden automatisch eingetragen (nur an Arbeitstagen; Zeiteinträge an freien Tagen bleiben stehen). Karte zeigt **0** → Genehmigung nicht möglich (z. B. „0 Stunden geplant"), Antrag bleibt offen
 **Ablehnen:** Roter Button → optionalen Ablehnungsgrund eingeben
-**Stornieren:** Filter „Genehmigt" → Antrag → **„Urlaub stornieren"** (nur wenn Zeitraum noch nicht begonnen) → Abwesenheiten werden **automatisch entfernt**, Antrag wird „Zurückgezogen"
+**Stornieren:** Filter „Genehmigt" → Antrag → **„Urlaub stornieren"** (nur wenn Zeitraum noch nicht begonnen) → Abwesenheiten werden **automatisch entfernt** (Betriebsferientage im Zeitraum bleiben bzw. werden nachgebucht), Antrag wird „Zurückgezogen"
 
 ---
 
@@ -142,7 +142,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 **Abwesenheiten → Tab Betriebsferien → Neue Betriebsferien**
 - Bezeichnung + Von–Bis + **Verrechnung** → Speichern
 - → Alle MA **mit „Nimmt an Betriebsferien teil"** (Standard) erhalten automatisch Einträge an ihren **Arbeitstagen** – rollenunabhängig (auch Admins, die MA sind)
-- **Nicht gebucht:** Wochenende, Feiertage, freie Wochentage (Teilzeit), Zeiträume mit 0 Wochenstunden (z. B. Elternzeit; ältere Einträge dort entfernt erneutes Speichern der Betriebsferien), „Frei"-Sondertage (24./31.12.), außerhalb des Beschäftigungszeitraums (Eintritt/Austritt), Tage mit vorhandener Abwesenheit
+- **Nicht gebucht:** Wochenende, Feiertage, freie Wochentage (Teilzeit), Zeiträume mit 0 Wochenstunden (z. B. Elternzeit; ältere Einträge dort entfernt erneutes Speichern der Betriebsferien), „Frei"-Sondertage (24./31.12.), außerhalb des Beschäftigungszeitraums (Eintritt/Austritt), Tage mit vorhandener Abwesenheit – fällt sie später weg, wird der Schließtag nachgebucht (außer bei Arbeitszeit am Tag)
 - **Verrechnung:** *Als Urlaub werten* (**Standard**, zieht 1 Urlaubstag je Tag, an einem Halbtags-Sondertag 24./31.12. nur 0,5, #394) **oder** *Bezahlte Freistellung* (kein Urlaubsabzug, saldoneutral)
 - Nachträglich Berechtigte: Option setzen → Einträge werden **automatisch** für laufende und künftige Betriebsferien nachgetragen (Neu-Speichern nicht nötig)
 - Löschen: Einträge werden bei allen MA automatisch entfernt

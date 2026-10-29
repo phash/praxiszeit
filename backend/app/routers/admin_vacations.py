@@ -82,6 +82,17 @@ def review_vacation_request(
     """
     from decimal import Decimal
 
+    # Release review 1.20.3: lock order user -> request, as in every other
+    # booking path. Since #511 the employee's withdraw and the admin cancel lock
+    # the user row first; locking the request first here could deadlock with
+    # them (ABBA). Owner is read unlocked; unknown/foreign id -> 404 before any lock.
+    owner_id = db.query(VacationRequest.user_id).filter(
+        VacationRequest.id == request_id,
+        VacationRequest.tenant_id == current_user.tenant_id,  # F-026
+    ).scalar()
+    if owner_id is None:
+        raise HTTPException(status_code=404, detail="Urlaubsantrag nicht gefunden")
+    target_user = lock_user_row(db, current_user.tenant_id, owner_id)
     # F-028: lock the VR row to prevent concurrent-click races where two
     # admin requests both pass the PENDING check and both try to create
     # absence entries. Also scope to the admin's tenant.
@@ -138,7 +149,7 @@ def review_vacation_request(
     # ``changed_by = handelnder Admin``. Begruendung im Kopf von
     # ``admin_helpers``. Die Ausschlusswirkung gegen andere Buchungspfade
     # (und damit der Budget-Schutz) bleibt unveraendert.
-    target_user = lock_user_row(db, current_user.tenant_id, vr.user_id)
+    # (Sperre seit Release-Review 1.20.3 oben, vor der Antragszeile.)
     if not target_user:
         raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
 

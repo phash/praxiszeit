@@ -781,7 +781,12 @@ per Flag abwählen).
 - Tagen außerhalb `[first_work_day, last_work_day]` (#298 — künftige oder bereits
   ausgetretene MA werden übersprungen, kein „genommener Urlaub" vor dem Eintritt)
 - Tagen, an denen der MA bereits **irgendeine** Abwesenheit hat (eine Fremd-Absence wird
-  nie überschrieben)
+  nie überschrieben). Fällt diese Abwesenheit später weg (Antrag zurückgezogen/storniert,
+  Abwesenheit gelöscht, Änderungsantrag löscht oder verschiebt sie), bucht
+  `closure_split_service.rebook_freed_closure_days` den Schließtag nach — mit denselben
+  Regeln wie die Schließung selbst, ein Zeiteintrag am Tag gewinnt (#511). Ein gelöschter
+  Schließtag wird nicht nachgebucht, ebenso nicht beim Ersetzen im Monatsjournal
+  (`DELETE /absences/{id}?rebook_closure=false`, nur Admin).
 
 Jede generierte Abwesenheit ist ein **Einzeltag** (`end_date = None`, #394) mit
 `note = "Betriebsferien: <Name>"` und einer `closure_id`-Verknüpfung (nicht die ganze

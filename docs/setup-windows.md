@@ -199,7 +199,7 @@ Das Backend prüft:
 - **nicht** in der Liste typischer Default-/Beispielpasswörter (z. B. `change`, `secret`, `password`, `12345`, `BITTE_AENDERN…`)
 - praktisch **min. 12 Zeichen** — kürzere Passwörter lösen einen Sicherheitshinweis im Log aus
 
-Das `[admin].password` wird beim Start gelesen, um das Admin-Konto anzulegen, **falls es fehlt**; existiert es bereits, bleibt es unberührt. Spätere Passwortänderungen erfolgen über das Frontend (Profil → Passwort ändern) — der Wert in der Datei wird dabei **nicht** nachgeführt und ist danach falsch.
+Das `[admin].password` wird beim Start gelesen, um das Admin-Konto anzulegen, **falls noch gar kein Admin-Konto existiert** (auch kein umbenanntes); existiert eines, bleibt der Wert unberührt. Spätere Passwortänderungen erfolgen über das Frontend (Profil → Passwort ändern) — der Wert in der Datei wird dabei **nicht** nachgeführt und ist danach falsch.
 
 Den Klartextwert sollte man deshalb entwerten. ⚠️ **Nicht durch einen festen Platzhalter** wie `set-via-ui`: fehlt das Admin-Konto irgendwann (Benutzername umgestellt, Konto nach Art. 17 endgültig gelöscht), legt der nächste Start es mit genau diesem Wert neu an — und ein in der Projektdokumentation veröffentlichter Wert ist dann das Passwort. Die Schwachpasswort-Prüfung des Backends hilft dabei nicht: steht ein schwacher Wert in der Datei, startet PraxisZeit absichtlich im `development`-Modus (siehe „Produktiv-Modus“), in dem die Prüfung nur warnt.
 
@@ -207,7 +207,7 @@ Stattdessen einen **zufälligen** Ersatzwert eintragen — oder das mitgeliefert
 
 ### Produktiv-Modus
 
-Seit dem Sicherheitsreview 2026-10 startet das Backend im Native-Modus mit `ENVIRONMENT=production`: die API-Doku (`/docs`, `/redoc`, `/openapi.json`) ist abgeschaltet. Einzige Ausnahme: steht in `[admin] password` für das Konto `admin` ein Standardwert oder ein Passwort unter 12 Zeichen, bleibt es bei `development` und das Protokoll nennt den Grund — im Produktionsmodus würde der Start an genau diesem Passwort scheitern. Sobald der Eintrag einen langen Zufallswert trägt (Schritt 7), läuft PraxisZeit im Produktionsmodus.
+Seit dem Sicherheitsreview 2026-10 startet das Backend im Native-Modus mit `ENVIRONMENT=production`: die API-Doku (`/docs`, `/redoc`, `/openapi.json`) ist abgeschaltet. Einzige Ausnahme: steht in `[admin] password` für das Konto `admin` ein Standardwert, ein Platzhalter aus der Vorlage (`<…>`, `BITTE_AENDERN…`, `CHANGE_ME…`) oder ein Passwort unter 12 Zeichen, bleibt es bei `development` und das Protokoll nennt den Grund — im Produktionsmodus würde der Start an genau diesem Passwort scheitern. Sobald der Eintrag einen langen Zufallswert trägt (Schritt 7), läuft PraxisZeit im Produktionsmodus.
 
 Bewusst abweichen lässt sich über `praxiszeit.conf`:
 

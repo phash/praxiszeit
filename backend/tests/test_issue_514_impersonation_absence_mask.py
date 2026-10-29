@@ -185,3 +185,26 @@ def test_vacation_request_list_keeps_vacation_under_impersonation(
     (row,) = employee_client.get("/api/vacation-requests/").json()
     assert row["absence_type"] == "vacation"
     assert row["note"] == "Spanien"
+
+
+def test_change_request_masks_delete_of_vanished_absence_under_impersonation(
+        _db_session, employee_user, employee_client):
+    """Release review 1.20.3: once an approved DELETE CR removed the absence,
+    ``absence_id`` is NULL and the live ``reason_id`` lookup finds nothing. A
+    custom reason with base behaviour ``worked`` stores ``training`` as the
+    original type, so the CR used to show its note and reason unmasked."""
+    from app.models import ChangeRequest
+    from app.models.change_request import ChangeRequestStatus, ChangeRequestType
+    cr = ChangeRequest(
+        user_id=employee_user.id, tenant_id=DEFAULT_TENANT_ID, request_type=ChangeRequestType.DELETE,
+        entry_kind="absence", status=ChangeRequestStatus.APPROVED, reason="Reha nach OP",
+        absence_id=None, original_date=DAY, original_absence_type="training",
+        original_absence_hours=8.0, original_note="Bandscheibe",
+    )
+    _db_session.add(cr)
+    _db_session.commit()
+    _impersonate(employee_user)
+    (row,) = employee_client.get("/api/change-requests/").json()
+    assert row["original_absence_type"] == "absent"
+    assert row["original_note"] is None
+    assert "Reha" not in row["reason"]

@@ -6,7 +6,7 @@ PraxisZeit liefert **eine Codebasis in zwei Varianten**, gesteuert über die Env
 
 | Modus | Default | Verwendung | Merkmale |
 |-------|---------|-----------|---------|
-| `onprem` | ✅ | Docker-Server, Native-Installer (Kundenserver) | Single-Tenant, License-Middleware aktiv, Public-Signup deaktiviert, Default-Tenant + Default-Admin werden beim Start angelegt |
+| `onprem` | ✅ | Docker-Server, Native-Installer (Kundenserver) | Single-Tenant, License-Middleware aktiv, Public-Signup deaktiviert, Default-Tenant beim Start angelegt, Default-Admin nur, wenn noch kein Admin-Konto existiert |
 | `saas` | — | Hosted-Cloud (praxiszeit.de) | Multi-Tenant, Self-Service-Signup, Stripe-Billing, KEINE automatische Tenant-/Admin-Erzeugung, License-Middleware pausiert (Suspend erfolgt per Tenant-Status) |
 
 **Default = `onprem`**: Bestandsinstallationen werden beim Upgrade nicht gebrochen — sie benötigen keine Env-Änderung.

@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 18
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.20.2 (Stand 2026-10-26)
+**Aktuelle Version:** 1.20.3 (Stand 2026-10-29)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 > Regeln in Kurzform (Regel · Helfer/Datei · Test · Grund). Hintergrund, Fallgeschichten und ausführlicher Wortlaut: [docs/CLAUDE-HISTORIE.md](docs/CLAUDE-HISTORIE.md).
@@ -92,7 +92,7 @@ cd frontend && npm test                                          # Vitest Utils-
 - **Integer→`Numeric`-Umstellung leakt `Decimal` in ROHE `json.dumps`/`JSONResponse`-Exporte → HTTP 500 für jeden (#383/#408):** alle Rohexport-Flächen des Felds auf `float(x)` prüfen (`grep '"<feld>"' app/services app/routers`; u. a. `lifecycle_service._user_dict`, `auth.py /me/export`). `response_model`/`jsonable_encoder` und Calc (`Decimal(str(...))`) sind safe. SQLite versteckt Numeric-Precision → Round-Trip auf Wegwerf-PG18 + VOLLE `pytest tests/`. (→ docs/CLAUDE-HISTORIE.md#allgemein)
 - **Ungültige ID → 422, nicht 500 (#483):** `app/core/db_errors.py` übersetzt NUR SQLSTATE `22P02` (andere wie `22001`/`22003` bleiben 500); Beleg nur auf PG (`test_invalid_uuid_postgres.py`). Logging als WARNING über Logger `app.core.db_errors` mit eingeebneten Steuerzeichen (`message_primary` zitiert Eingaben roh), NICHT nach `error_logs`, nie an den `DBErrorHandler` hängen.
 - **SPA-Fallback:** Middleware statt catch-all Route (`@app.get("/{full_path:path}")` → 405 für POST/PUT/DELETE).
-- **Daily-Scheduler:** APScheduler in `main.py`, täglich 03:00 Lifecycle-Jobs (Vacation-Audit-Purge 730 Tage, Tenant-Suspend, Tenant-Deletion); im pytest-Mode aus via `PYTEST_CURRENT_TEST`.
+- **Daily-Scheduler:** APScheduler in `main.py`; on-prem Vacation-Audit-Purge 730 Tage + Error-Log-Cleanup (03:00) + geplantes Backup (:30), Tenant-Suspend/-Deletion + Billing nur SaaS (1.20.3); im pytest-Mode aus via `PYTEST_CURRENT_TEST`.
 - **CR-Approval:** Precondition-Checks VOR Status-Änderung (Race-Condition).
 - **clock_out `with_for_update`:** `_get_open_entry()` in `clock_out` MUSS mit Lock laufen (Doppelklick).
 - Stunden-Anzeige: `formatHoursHM()` aus `utils/errorMessage.ts` (H:MM, Overflow-safe).

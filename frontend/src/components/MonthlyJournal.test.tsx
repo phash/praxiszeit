@@ -421,6 +421,27 @@ describe('<MonthlyJournal /> Eintragen an Wochenend-/Feiertagen (#479)', () => {
     expect(postMock).not.toHaveBeenCalled();
   });
 
+  // Release-Review 1.20.3: Ersetzen = DELETE + POST. Ohne rebook_closure=false
+  // belegte das Backend den frei gewordenen Betriebsferien-Tag sofort neu (#511)
+  // und der POST des neuen Typs scheiterte mit 409.
+  it('ersetzt eine Abwesenheit ohne Betriebsferien-Neubuchung', async () => {
+    mockJournal([{
+      ...validDay,
+      date: '2026-06-09',
+      type: 'sick' as const,
+      absences: [{ id: 'ab1', type: 'sick', hours: 8, start_time: null, end_time: null }],
+    }]);
+    deleteMock.mockResolvedValue({});
+    postMock.mockResolvedValue({ data: [{ id: 'ab2', type: 'training', hours: 8 }] });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('Krank bearbeiten'));
+    fireEvent.change(await screen.findByDisplayValue('Krank'), { target: { value: 'training' } });
+    fireEvent.click(screen.getByTitle('Speichern'));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(deleteMock).toHaveBeenCalledWith('/absences/ab1?rebook_closure=false');
+  });
+
   it('bietet an Wochenend-/Feiertagen fuer einen Zeiteintrag keine Abwesenheitstypen an', async () => {
     mockJournal([{
       ...sunday,
