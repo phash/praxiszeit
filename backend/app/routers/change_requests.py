@@ -55,6 +55,13 @@ def _mask_health_data(request: Request, crs: List[ChangeRequest], responses: lis
             or cr.original_absence_type in _MASKED_TYPE_VALUES
             or cr.proposed_reason_id is not None
             or cr.absence_id in reasoned
+            # Release review 1.20.3: the absence is gone (approved DELETE CR,
+            # ``absence_id`` SET NULL), so its ``reason_id`` cannot be looked
+            # up. No custom reason maps to VACATION, everything else could
+            # hide one — mask conservatively.
+            or (cr.request_type in (ChangeRequestType.UPDATE, ChangeRequestType.DELETE)
+                and cr.absence_id is None
+                and cr.original_absence_type != AbsenceType.VACATION.value)
         )
         if not sensitive:
             masked.append(resp)

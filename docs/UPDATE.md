@@ -114,6 +114,10 @@ cd "$NEU"
 cp "$ALT/.env" .env
 grep -q '^COMPOSE_PROJECT_NAME=' .env || echo "COMPOSE_PROJECT_NAME=${PROJEKT}" >> .env
 docker compose config | grep -E '^name:|_postgres_data'   # muss ${PROJEKT} zeigen
+# Ab 1.20.3 startet das Backend nicht mehr mit Vorlagenwerten. Diese Zeile muss
+# LEER bleiben — sonst den Wert ersetzen (SECRET_KEY: python3 -c "import secrets;
+# print(secrets.token_hex(64))", meldet alle Sitzungen ab):
+grep -nE '^(SECRET_KEY|ADMIN_PASSWORD)=(<|BITTE_AENDERN|CHANGE_ME)' .env
 # Falls SSL genutzt wird, auch das Zertifikat übernehmen:
 cp "$ALT/ssl/cert.pem" ssl/cert.pem 2>/dev/null || true
 cp "$ALT/ssl/key.pem"  ssl/key.pem  2>/dev/null || true

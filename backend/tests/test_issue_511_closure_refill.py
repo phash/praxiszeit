@@ -306,3 +306,33 @@ def test_rebooked_day_follows_the_overtime_split(db, admin, admin_client):
     ).order_by(Absence.date).all()
     assert [r.date for r in rows] == [MON, TUE, WED, THU]
     assert all(r.type == AbsenceType.OVERTIME for r in rows), [(r.date, r.type) for r in rows]
+
+
+def test_journal_replace_delete_does_not_rebook(db, admin, admin_client):
+    """Release review 1.20.3: the admin journal replaces an absence with
+    DELETE + POST. If the DELETE rebooked the closure day, the POST of the new
+    type hit 409 and the original absence (e.g. a SICK record that replaced
+    the closure vacation) was lost. The journal sends ``rebook_closure=false``."""
+    emp = _make_user(db, "e_journal")
+    (sick_tue,) = _private_vacation(db, emp, [TUE])
+    sick_tue.type = AbsenceType.SICK
+    db.commit()
+    closure_id = _make_closure(admin_client)
+    assert _closure_days(db, emp, closure_id) == [MON, WED, THU]
+
+    delete_absence(str(sick_tue.id), rebook_closure=False, db=db, current_user=admin)
+
+    assert _closure_days(db, emp, closure_id) == [MON, WED, THU]
+    assert db.query(Absence).filter(Absence.user_id == emp.id, Absence.date == TUE).count() == 0
+
+
+def test_employee_cannot_skip_the_rebooking(db, admin, admin_client):
+    """The opt-out is an admin replace tool; an employee deleting their own
+    absence still gets the closure day back."""
+    emp = _make_user(db, "e_self")
+    (priv_tue,) = _private_vacation(db, emp, [TUE])
+    closure_id = _make_closure(admin_client)
+
+    delete_absence(str(priv_tue.id), rebook_closure=False, db=db, current_user=emp)
+
+    assert TUE in _closure_days(db, emp, closure_id)

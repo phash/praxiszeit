@@ -913,6 +913,7 @@ def _assert_employee_may_delete_absence(db: Session, current_user: User, absence
 @router.delete("/{absence_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_absence(
     absence_id: str,
+    rebook_closure: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -997,7 +998,11 @@ def delete_absence(
     db.flush()
 
     # #511: a day freed inside a Betriebsferien gets its closure absence back.
-    if not _was_closure_day:
+    # Release review 1.20.3: an admin who REPLACES the absence (journal: DELETE
+    # then POST of the new type) sends ``rebook_closure=false``; rebooking here
+    # made that POST fail with 409 and the original record was lost.
+    skip_rebook = not rebook_closure and current_user.role == UserRole.ADMIN
+    if not _was_closure_day and not skip_rebook:
         rebook_freed_closure_days(db, _abs_tenant, _abs_user_id, [_abs_date], current_user)
 
     # Fix #8: deleting a VACATION absence frees budget that the #314 Betriebsferien
