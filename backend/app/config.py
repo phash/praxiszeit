@@ -7,6 +7,18 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def is_placeholder_secret(value: str) -> bool:
+    """True for the template values shipped in ``.env.example`` and
+    ``praxiszeit.conf.example`` (``<…>``, ``BITTE_AENDERN…``, ``CHANGE_ME…``).
+
+    The repository is public: a placeholder left in place is a secret everyone
+    knows (forged tokens with SECRET_KEY, admin login with ADMIN_PASSWORD).
+    """
+    v = (value or "").strip()
+    upper = v.upper()
+    return (v.startswith("<") and v.endswith(">")) or "BITTE_AENDERN" in upper or "CHANGE_ME" in upper
+
+
 # --- TOML Config Loader (native installations) ---
 # If a praxiszeit.conf TOML file exists, load its values as environment
 # variables before Pydantic Settings initializes. Environment variables
@@ -219,6 +231,11 @@ class Settings(BaseSettings):
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
         weak_indicators = ["change", "secret", "default", "example", "12345", "password"]
+        if is_placeholder_secret(v):
+            raise ValueError(
+                "SECRET_KEY is still the placeholder from the example file. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(64))\""
+            )
         if len(v) < 32:
             raise ValueError(
                 "SECRET_KEY must be at least 32 characters. "

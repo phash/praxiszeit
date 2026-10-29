@@ -1628,6 +1628,14 @@ _BACKEND_WEAK_ADMIN_PASSWORDS = frozenset({"Admin2025!", "admin123", "password",
 _BACKEND_MIN_ADMIN_PASSWORD_LEN = 12
 
 
+def _backend_is_placeholder_secret(value: str) -> bool:
+    """Spiegel von ``is_placeholder_secret`` in backend/app/config.py (ein Test
+    haelt beide gleich): Vorlagenwert aus der Beispielkonfiguration."""
+    v = (value or "").strip()
+    upper = v.upper()
+    return (v.startswith("<") and v.endswith(">")) or "BITTE_AENDERN" in upper or "CHANGE_ME" in upper
+
+
 def native_environment(env) -> str:
     """ENVIRONMENT, mit dem uvicorn auf einer nativen Installation laeuft.
 
@@ -1656,6 +1664,7 @@ def native_environment(env) -> str:
     if username == "admin" and (
         password in _BACKEND_WEAK_ADMIN_PASSWORDS
         or len(password) < _BACKEND_MIN_ADMIN_PASSWORD_LEN
+        or _backend_is_placeholder_secret(password)
     ):
         logger.warning(
             "ENVIRONMENT bleibt 'development': [admin] password in praxiszeit.conf "

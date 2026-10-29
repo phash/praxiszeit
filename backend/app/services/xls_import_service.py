@@ -501,7 +501,10 @@ def parse_xls(
         raise ValueError("Datei zu groß (max. 5 MB)")
 
     try:
-        wb = xlrd.open_workbook(file_contents=file_bytes)
+        # Security review 2026-10-28: a 5.6 KB .xls with 8 padded sheets took
+        # 1.26 GB. on_demand loads only the sheet we read; ragged_rows drops the
+        # padding to the widest row (short rows read as empty, _cell below).
+        wb = xlrd.open_workbook(file_contents=file_bytes, on_demand=True, ragged_rows=True)
     except Exception as e:  # noqa: BLE001
         # Release-Review 1.20.1: abgeschnittene/beschaedigte OLE2-Dateien
         # werfen nicht nur XLRDError, sondern z. B. CompDocError/IndexError
@@ -530,7 +533,14 @@ def parse_xls(
     # Puffer des Mandanten (Default 15 min) — für NEUE Einträge (E80).
     grace = work_window_service.get_grace_minutes(db, user_tenant)
 
-    ws = wb.sheet_by_name("Zeiterfassung")
+    try:
+        ws = wb.sheet_by_name("Zeiterfassung")
+    except Exception as e:  # noqa: BLE001 — on_demand: the sheet is parsed only now
+        raise ValueError(
+            "Datei konnte nicht geöffnet werden – Datei beschädigt oder unvollständig."
+        ) from e
+    finally:
+        wb.release_resources()
     rows = _read_rows(ws, db, user, user_id, user_tenant, grace)
     if not rows:
         raise ValueError("Keine Datenzeilen im Sheet 'Zeiterfassung' gefunden")
@@ -743,6 +753,14 @@ def parse_xls(
     return entries
 
 
+def _cell(ws, row_idx: int, col: int):
+    """Cell of a ``ragged_rows`` sheet; past the end of a short row it reads
+    as the empty cell the padded layout used to hold."""
+    if col >= ws.row_len(row_idx):
+        return xlrd.sheet.empty_cell
+    return ws.cell(row_idx, col)
+
+
 def _read_rows(ws, db: Session, user, user_id, user_tenant, grace: int) -> list:
     """Erster Durchgang der Vorschau: Datenzeilen lesen, kappen und den
     Bestandseintrag suchen, den die Zeile überschreiben würde.
@@ -753,12 +771,12 @@ def _read_rows(ws, db: Session, user, user_id, user_tenant, grace: int) -> list:
     rows = []
     for row_idx in range(ws.nrows):
         # Datenzeile erkennbar durch numerischen ctype (3) in Ein-Spalte (D)
-        if ws.cell(row_idx, 3).ctype != 3:
+        if _cell(ws, row_idx, 3).ctype != 3:
             continue
 
-        ein_serial = ws.cell_value(row_idx, 3)
-        aus_serial = ws.cell_value(row_idx, 4)
-        notiz_raw = ws.cell_value(row_idx, 5)
+        ein_serial = _cell(ws, row_idx, 3).value
+        aus_serial = _cell(ws, row_idx, 4).value
+        notiz_raw = _cell(ws, row_idx, 5).value
 
         ein_dt = _excel_serial_to_datetime(ein_serial)
         aus_dt = _excel_serial_to_datetime(aus_serial)

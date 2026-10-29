@@ -42,21 +42,20 @@ def test_start_scheduler_skipped_in_pytest_mode():
 
 
 def test_start_scheduler_registers_daily_cron_jobs():
-    """Outside pytest mode, the four daily lifecycle jobs PLUS the #213 hourly
-    backup job are registered."""
+    """Outside pytest mode (on-prem), the two daily DSGVO jobs PLUS the #213
+    hourly backup job are registered. The tenant lifecycle jobs (suspend,
+    deletion) are SaaS-only (security review 2026-10-28)."""
     with patch.object(scheduler_service, "_is_pytest_mode", return_value=False):
         sched = scheduler_service.start_scheduler(app=MagicMock())
 
     assert sched is not None
     try:
         jobs = sched.get_jobs()
-        assert len(jobs) == 5
+        assert len(jobs) == 3
 
         job_ids = {j.id for j in jobs}
         assert job_ids == {
             scheduler_service.JOB_VACATION_AUDIT_PURGE,
-            scheduler_service.JOB_APPLY_SCHEDULED_SUSPENDS,
-            scheduler_service.JOB_APPLY_SCHEDULED_DELETIONS,
             scheduler_service.JOB_CLEANUP_OLD_ERRORS,
             scheduler_service.JOB_SCHEDULED_BACKUP,
         }
@@ -85,7 +84,7 @@ def test_start_scheduler_is_idempotent():
 
     try:
         assert first is second
-        assert len(first.get_jobs()) == 5
+        assert len(first.get_jobs()) == 3
     finally:
         first.shutdown(wait=False)
 
@@ -187,3 +186,18 @@ def test_stop_scheduler_shuts_down_running_scheduler():
     assert sched is not None
     scheduler_service.stop_scheduler()
     assert scheduler_service.get_scheduler() is None
+
+
+def test_tenant_lifecycle_jobs_only_in_saas(monkeypatch):
+    """Security review 2026-10-28: on-prem a leftover deletion request must
+    never anonymize the practice; in SaaS the lifecycle jobs run."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "saas")
+    with patch.object(scheduler_service, "_is_pytest_mode", return_value=False):
+        sched = scheduler_service.start_scheduler(app=MagicMock())
+    try:
+        job_ids = {j.id for j in sched.get_jobs()}
+        assert scheduler_service.JOB_APPLY_SCHEDULED_SUSPENDS in job_ids
+        assert scheduler_service.JOB_APPLY_SCHEDULED_DELETIONS in job_ids
+    finally:
+        sched.shutdown(wait=False)

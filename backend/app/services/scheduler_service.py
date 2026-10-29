@@ -260,24 +260,6 @@ def start_scheduler(app: FastAPI):  # noqa: ARG001  (kept for future use)
         max_instances=1,
     )
     scheduler.add_job(
-        _run_apply_scheduled_suspends,
-        trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
-        id=JOB_APPLY_SCHEDULED_SUSPENDS,
-        name="Lifecycle: flip tenants past scheduled_suspend_at to 'suspended'",
-        replace_existing=True,
-        coalesce=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
-        _run_apply_scheduled_deletions,
-        trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
-        id=JOB_APPLY_SCHEDULED_DELETIONS,
-        name="Lifecycle: anonymize tenants past deletion grace period",
-        replace_existing=True,
-        coalesce=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
         _run_cleanup_old_errors,
         trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
         id=JOB_CLEANUP_OLD_ERRORS,
@@ -302,6 +284,27 @@ def start_scheduler(app: FastAPI):  # noqa: ARG001  (kept for future use)
     # on-prem tenant). Only registered in saas mode.
     from app.core.deployment import is_saas
     if is_saas():
+        # Security review 2026-10-28: the tenant self-suspend / deletion
+        # lifecycle is SaaS-only too (the routes are 404 on-prem). Without the
+        # job a deletion request left over in an on-prem DB never fires.
+        scheduler.add_job(
+            _run_apply_scheduled_suspends,
+            trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
+            id=JOB_APPLY_SCHEDULED_SUSPENDS,
+            name="Lifecycle: flip tenants past scheduled_suspend_at to 'suspended'",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            _run_apply_scheduled_deletions,
+            trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
+            id=JOB_APPLY_SCHEDULED_DELETIONS,
+            name="Lifecycle: anonymize tenants past deletion grace period",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
         scheduler.add_job(
             _run_suspend_expired_trials,
             trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),

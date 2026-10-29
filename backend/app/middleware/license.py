@@ -131,10 +131,10 @@ class LicenseReadOnlyMiddleware(BaseHTTPMiddleware):
 def _check_saas_suspend(request: Request) -> str | None:
     """Return a human-readable message when the caller's tenant is suspended,
     else None. Decoded lazily per-request — cheap enough for the hot path."""
-    auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
+    from app.services.auth_service import bearer_token
+    token = bearer_token(request.headers.get("authorization"))
+    if token is None:
         return None  # no JWT → the auth layer will reject; nothing for us to do
-    token = auth.split(" ", 1)[1]
 
     from app.database import SessionLocal, set_superadmin_context
     from app.models.tenant import Tenant

@@ -206,6 +206,14 @@ class TestImpersonationReadOnlyMiddleware:
         r = client.post("/api/time-entries", headers=self._hdr(_imp_token()))
         assert r.status_code == 403
 
+    @pytest.mark.parametrize("header", ["Bearer  {t}", "bearer {t}", "Bearer {t} ", "BEARER \t{t}"])
+    def test_impersonation_blocks_writes_with_odd_header_spacing(self, header):
+        # Security review 2026-10-28: "Bearer  <token>" (two spaces) used to slip
+        # past the guard while HTTPBearer still authenticated it downstream.
+        client = TestClient(_mini_app_with_middleware())
+        r = client.post("/api/time-entries", headers={"Authorization": header.format(t=_imp_token())})
+        assert r.status_code == 403
+
     def test_impersonation_allows_reads(self):
         client = TestClient(_mini_app_with_middleware())
         r = client.get("/api/dashboard", headers=self._hdr(_imp_token()))

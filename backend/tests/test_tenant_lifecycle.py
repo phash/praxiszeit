@@ -68,7 +68,11 @@ def _mk_user(db, tenant_id, name, role=UserRole.ADMIN, active=True):
 
 
 @pytest.fixture
-def admin_client(_db_session, tenant):
+def admin_client(_db_session, tenant, monkeypatch):
+    # Self-suspend / deletion request are SaaS paths (404 on-prem, security
+    # review 2026-10-28).
+    from app.config import settings
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "saas")
     admin = _mk_user(_db_session, TID, "admin")
     def _db(): yield _db_session
     def _who(): return admin
@@ -81,6 +85,18 @@ def admin_client(_db_session, tenant):
 
 
 # ─── Self-service suspend ──────────────────────────────────────────
+
+@pytest.mark.parametrize("path", ["/api/tenant/suspend", "/api/tenant/request-deletion"])
+def test_self_suspend_and_deletion_are_404_on_prem(_db_session, admin_client, monkeypatch, path):
+    """Security review 2026-10-28: on-prem one admin call used to lock every
+    account and anonymize the practice 30 days later, unnoticed."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "onprem")
+    client, _ = admin_client
+    assert client.post(path).status_code == 404
+    t = _db_session.query(Tenant).filter(Tenant.id == TID).first()
+    assert t.scheduled_suspend_at is None
+    assert t.deletion_requested_at is None
 
 def test_self_suspend_sets_scheduled_timestamp(_db_session, admin_client):
     client, admin = admin_client
