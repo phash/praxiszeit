@@ -13,16 +13,32 @@ from app.middleware.auth import get_current_user
 from app.schemas.vacation_request import VacationRequestCreate, VacationRequestResponse, VacationRequestUpdate
 from app.services.timezone_service import today_local
 from app.services import settings_service
-from app.services.closure_split_service import resplit_year_closures
+from app.services.closure_split_service import rebook_freed_closure_days, resplit_year_closures
 # #219: single shared VR-enricher (was duplicated here as a per-item N+1 copy of
 # admin_vacations._enrich_vr_responses). _enrich = thin single-item alias.
 from app.routers.admin_helpers import (
     _enrich_vr_response as _enrich, _enrich_vr_responses, ensure_vacation_budget,
+    lock_user_row,
 )
+from app.routers.absences import _MASKED_ABSENCE_TYPES
 
 router = APIRouter(prefix="/api/vacation-requests", tags=["vacation-requests"])
 
 VR_NOT_FOUND = "Urlaubsantrag nicht gefunden"
+
+
+def _mask_health_data(request: Request, responses: list) -> list:
+    """#514: unter Impersonation („Login als …") Anträge mit sensiblem Typ
+    (``absences._MASKED_ABSENCE_TYPES``, hier nur „Sonstiges") als "absent"
+    ohne Notiz und Ablehnungsgrund — wie ``/absences/``."""
+    if not getattr(request.state, "is_impersonating", False):
+        return responses
+    masked_values = {t.value for t in _MASKED_ABSENCE_TYPES}
+    return [
+        r.model_copy(update={"absence_type": "absent", "note": None, "rejection_reason": None})
+        if r.absence_type in masked_values else r
+        for r in responses
+    ]
 
 
 def _load_own_vr_locked(db: Session, request_id: str, current_user: User) -> VacationRequest:
@@ -45,6 +61,12 @@ def _load_own_vr_locked(db: Session, request_id: str, current_user: User) -> Vac
         # #120: 404 statt 403 — ein fremder (Same-Tenant-)Antrag wird wie ein
         # unbekannter behandelt (gleiche Meldung wie "not found").
         raise HTTPException(status_code=404, detail=VR_NOT_FOUND)
+    # #511: Anker-Sperre auf der eigenen Benutzerzeile VOR der Antragszeile —
+    # Reihenfolge Benutzer → Antrag wie in allen Buchungspfaden. Das Zurückziehen
+    # bucht seitdem Betriebsferientage nach (``rebook_freed_closure_days`` →
+    # ``_create_closure_absences`` sperrt die Benutzerzeile); erst danach zu
+    # sperren, verklemmte sich mit einer gleichzeitigen Genehmigung.
+    lock_user_row(db, current_user.tenant_id, current_user.id)
     vr = (
         db.query(VacationRequest)
         .filter(
@@ -343,6 +365,7 @@ def create_vacation_request(
 
 @router.get("/", response_model=List[VacationRequestResponse])
 def list_my_vacation_requests(
+    request: Request,
     year: Optional[int] = Query(None, ge=2000, le=2100),
     status: Optional[str] = Query(None),
     skip: int = 0,
@@ -361,7 +384,7 @@ def list_my_vacation_requests(
     if status:
         query = query.filter(VacationRequest.status == status)
     requests = query.order_by(VacationRequest.created_at.desc()).offset(skip).limit(limit).all()
-    return _enrich_vr_responses(requests, db)  # #219: batch (was per-item N+1)
+    return _mask_health_data(request, _enrich_vr_responses(requests, db))  # #219: batch
 
 
 def cancel_approved_vacation_request(
@@ -392,7 +415,11 @@ def cancel_approved_vacation_request(
         Absence.date >= vr.date,
         Absence.date <= end_date,
         Absence.type == absence_type_enum,
+        # #511: closure days inside the request range belong to the closure,
+        # not to this request — never take them along.
+        Absence.closure_id.is_(None),
     ).all()
+    freed_dates = [a.date for a in absences_to_remove]
 
     for absence in absences_to_remove:
         audit = TimeEntryAuditLog(
@@ -409,6 +436,9 @@ def cancel_approved_vacation_request(
         db.delete(absence)
 
     vr.status = VacationRequestStatus.WITHDRAWN.value
+
+    # #511: the freed days inside a Betriebsferien get their closure absence.
+    rebook_freed_closure_days(db, vr.tenant_id, vr.user_id, freed_dates, cancelled_by)
 
     # Fix #5: non-destructive stale-closing warning for the touched year(s).
     from app.services import calculation_service

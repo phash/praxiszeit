@@ -7,6 +7,7 @@ from app.models.absence import (
     AbsenceReason,
     AbsenceReasonBehavior,
     BEHAVIOR_TO_ABSENCE_TYPE,
+    MASKED_ABSENCE_TYPES,
 )
 from app.models.public_holiday import PublicHoliday
 from app.models.working_hours_change import WorkingHoursChange
@@ -41,6 +42,7 @@ __all__ = [
     "AbsenceReason",
     "AbsenceReasonBehavior",
     "BEHAVIOR_TO_ABSENCE_TYPE",
+    "MASKED_ABSENCE_TYPES",
     "PublicHoliday",
     "WorkingHoursChange",
     "ChangeRequest",

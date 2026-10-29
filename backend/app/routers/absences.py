@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -10,12 +10,12 @@ from app.database import get_db
 from app.models import (
     User, Absence, AbsenceType, UserRole, TimeEntry, TimeEntryAuditLog,
     AbsenceReason, AbsenceReasonBehavior, BEHAVIOR_TO_ABSENCE_TYPE, ChangeRequest,
-    WorkingHoursChange, CompanyClosure, VacationRequest, VacationRequestStatus,
+    WorkingHoursChange, CompanyClosure, VacationRequest, VacationRequestStatus, MASKED_ABSENCE_TYPES,
 )
 from app.middleware.auth import get_current_user
 from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceCalendarEntry, TeamAbsenceEntry, NextVacationResponse
 from app.services import calculation_service, settings_service, special_days_service
-from app.services.closure_split_service import resplit_year_closures
+from app.services.closure_split_service import rebook_freed_closure_days, resplit_year_closures
 from app.routers.admin_helpers import (
     _create_audit_log, ensure_vacation_budget, lock_user_row, zero_hours_absence_detail,
 )
@@ -57,7 +57,26 @@ APPROVED_VACATION_DELETE_DETAIL = (
 # health status. We therefore collapse the sensitive / unspecified types into
 # the same generic "absent" bucket; non-sensitive planning types (VACATION,
 # TRAINING, OVERTIME) stay truthful so colleagues can still coordinate cover.
-_MASKED_ABSENCE_TYPES = {AbsenceType.SICK, AbsenceType.OTHER, AbsenceType.PAID_LEAVE}
+_MASKED_ABSENCE_TYPES = MASKED_ABSENCE_TYPES
+
+
+def _is_sensitive(absence: Absence) -> bool:
+    """Art. 9 DSGVO: Krank/Sonstiges/bezahlte Freistellung und jeder eigene
+    Grund (#312, z. B. „Reha") gelten als Gesundheitsdaten."""
+    return absence.type in _MASKED_ABSENCE_TYPES or absence.reason_id is not None
+
+
+def _hide_health_data(request: Request, current_user: User, absence: Absence) -> bool:
+    """Maskieren? Kolleg:innen sehen fremde sensible Abwesenheiten nur als
+    "absent" (Admins und die Person selbst sehen sie). #514: unter
+    Impersonation („Login als …") liest ein Admin ohne Art.-9-Protokollzeile
+    — dann ist auch die eigene Abwesenheit der Person maskiert, wie in
+    ``/journal/me``."""
+    if not _is_sensitive(absence):
+        return False
+    if getattr(request.state, "is_impersonating", False):
+        return True
+    return current_user.role != UserRole.ADMIN and absence.user_id != current_user.id
 
 
 @router.get("/daily-target")
@@ -74,6 +93,7 @@ def get_daily_target_for_date_endpoint(
 
 @router.get("/", response_model=List[AbsenceResponse])
 def list_absences(
+    request: Request,
     year: Optional[int] = Query(None, ge=2000, le=2100, description="Filter by year"),
     user_id: Optional[str] = Query(None, description="Filter by user ID (admin only)"),
     skip: int = 0,
@@ -137,11 +157,21 @@ def list_absences(
         ))
         db.commit()
 
+    # #514: unter Impersonation Gesundheitsdaten maskieren — Typ "absent",
+    # ohne Notiz und Grund (beide können die Diagnose verraten).
+    if getattr(request.state, "is_impersonating", False):
+        return [
+            AbsenceResponse.model_validate(a).model_copy(
+                update={"type": "absent", "note": None, "reason_id": None}
+            ) if _is_sensitive(a) else a
+            for a in absences
+        ]
     return absences
 
 
 @router.get("/calendar", response_model=List[AbsenceCalendarEntry])
 def get_absence_calendar(
+    request: Request,
     month: str = Query(..., description="Month in YYYY-MM format"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -182,12 +212,7 @@ def get_absence_calendar(
     for absence, first_name, last_name, calendar_color, department in rows:
         display_type = absence.type.value
         # #312: any custom-reason absence is masked for non-admin colleagues too.
-        masked = (
-            (absence.type in _MASKED_ABSENCE_TYPES or absence.reason_id is not None)
-            and current_user.role != UserRole.ADMIN
-            and absence.user_id != current_user.id
-        )
-        if masked:
+        if _hide_health_data(request, current_user, absence):
             display_type = "absent"
         elif absence.reason_id is not None:
             display_type = reason_names.get(str(absence.reason_id), display_type)
@@ -210,6 +235,7 @@ def get_absence_calendar(
 
 @router.get("/team/upcoming", response_model=List[TeamAbsenceEntry])
 def get_team_upcoming_absences(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -254,12 +280,7 @@ def get_team_upcoming_absences(
             seen.add(key)
             display_type = absence.type.value
             # #312: custom-reason absences are masked for non-admin colleagues too.
-            masked = (
-                (absence.type in _MASKED_ABSENCE_TYPES or absence.reason_id is not None)
-                and current_user.role != UserRole.ADMIN
-                and absence.user_id != current_user.id
-            )
-            if masked:
+            if _hide_health_data(request, current_user, absence):
                 display_type = "absent"
             elif absence.reason_id is not None:
                 display_type = reason_names.get(str(absence.reason_id), display_type)
@@ -966,9 +987,18 @@ def delete_absence(
     _was_vacation = absence.type == AbsenceType.VACATION
     _abs_year = absence.date.year
     _abs_tenant = absence.tenant_id
+    # #511: snapshot for the closure rebooking below (a closure day the admin
+    # deletes on purpose is never rebooked).
+    _abs_user_id = absence.user_id
+    _abs_date = absence.date
+    _was_closure_day = absence.closure_id is not None
 
     db.delete(absence)
     db.flush()
+
+    # #511: a day freed inside a Betriebsferien gets its closure absence back.
+    if not _was_closure_day:
+        rebook_freed_closure_days(db, _abs_tenant, _abs_user_id, [_abs_date], current_user)
 
     # Fix #8: deleting a VACATION absence frees budget that the #314 Betriebsferien
     # split reserves up front → a closure OVERTIME day may flip back to VACATION.

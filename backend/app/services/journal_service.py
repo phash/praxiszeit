@@ -5,7 +5,9 @@ from decimal import Decimal
 from typing import Dict, List, Any
 from sqlalchemy.orm import Session
 
-from app.models import User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange
+from app.models import (
+    User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange, MASKED_ABSENCE_TYPES,
+)
 from app.services import calculation_service, special_days_service, work_window_service
 from app.services.date_filters import date_in_month
 
@@ -47,7 +49,9 @@ def get_journal(
         }
 
     def _is_masked(a: Absence) -> bool:
-        return not include_health_data and (a.type == AbsenceType.SICK or a.reason_id is not None)
+        # #514: dieselbe Menge wie die Abwesenheitsseite — maskierte nur SICK,
+        # verriet der Abgleich beider Ansichten, welche „Abwesend“-Tage Krankheit waren.
+        return not include_health_data and (a.type in MASKED_ABSENCE_TYPES or a.reason_id is not None)
 
     def _abs_type_label(a: Absence) -> str:
         if _is_masked(a):

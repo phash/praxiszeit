@@ -380,6 +380,16 @@ def cancel_vacation_request_as_admin(
 
     Tenant-scoped: admin cannot reach into foreign tenants.
     """
+    # #511: Anker-Sperre auf der Benutzerzeile VOR der Antragszeile (Reihenfolge
+    # Benutzer → Antrag). Der Storno bucht freigewordene Betriebsferientage nach
+    # und sperrt dabei die Benutzerzeile. Der Eigentümer ist unveränderlich, ein
+    # ungesperrter Lesezugriff genügt.
+    _vr_owner = db.query(VacationRequest.user_id).filter(
+        VacationRequest.id == request_id,
+        VacationRequest.tenant_id == current_user.tenant_id,  # F-026
+    ).scalar()
+    if _vr_owner is not None:
+        lock_user_row(db, current_user.tenant_id, _vr_owner)
     vr = (
         db.query(VacationRequest)
         .filter(

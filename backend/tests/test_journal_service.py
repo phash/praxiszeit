@@ -515,3 +515,22 @@ def test_summe_der_tages_ist_werte_entspricht_dem_monats_ist(db, default_tenant,
     ergebnis = journal_service.get_journal(db, u, 2025, 3)
     summe_tage = sum(d["actual_hours"] for d in ergebnis["days"])
     assert summe_tage == pytest.approx(ergebnis["monthly_summary"]["actual_hours"], abs=0.02)
+
+
+@pytest.mark.parametrize("absence_type", [AbsenceType.OTHER, AbsenceType.PAID_LEAVE])
+def test_journal_masks_other_and_paid_leave_like_absence_page(db, test_user, absence_type):
+    """#514: das Journal maskiert dieselbe Menge wie die Abwesenheitsseite.
+    Maskierte es nur SICK, zeigte der Abgleich beider Ansichten unter
+    „Login als …“, welche „Abwesend“-Tage Krankheit waren."""
+    db.add(Absence(user_id=test_user.id, tenant_id=test_user.tenant_id, date=date(2026, 3, 5),
+                   type=absence_type, hours=Decimal("8")))
+    db.commit()
+
+    masked = journal_service.get_journal(db, test_user, 2026, 3, include_health_data=False)
+    day_m = next(d for d in masked["days"] if d["date"] == "2026-03-05")
+    assert day_m["type"] == "absent"
+    assert day_m["absences"][0]["type"] == "absent"
+
+    shown = journal_service.get_journal(db, test_user, 2026, 3, include_health_data=True)
+    day_s = next(d for d in shown["days"] if d["date"] == "2026-03-05")
+    assert day_s["absences"][0]["type"] == absence_type.value

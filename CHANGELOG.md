@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### 🔒 Sicherheit
+
+- **„Login als …“ maskiert Gesundheitsdaten auch auf der Abwesenheitsseite (#514).** Seit 1.20.2 zeigt das Monatsjournal unter „Login als …“ Krank, Sonstiges, bezahlte Freistellung und eigene Gründe nur als „Abwesend“. Die Abwesenheitsliste, der Kalender und die Teamübersicht (`GET /api/absences/`, `/calendar`, `/team/upcoming`) lieferten Typ, Notiz und Grund noch offen. Jetzt maskieren sie gleich: Typ „absent“, ohne Notiz und Grund. Dasselbe gilt für die eigenen Anträge der Person (`GET /api/change-requests/`, `/api/change-requests/{id}`, `GET /api/vacation-requests/`): Abwesenheitsanträge mit sensiblem Typ oder eigenem Grund zeigen „Abwesend“ ohne Notizen, Begründung und Ablehnungsgrund. Das Monatsjournal maskiert ohne angeforderte Gesundheitsdaten jetzt dieselben Typen wie die Abwesenheitsseite (vorher nur Krank und eigene Gründe) — sonst verriet der Abgleich beider Ansichten, welche „Abwesend“-Tage Krankheit waren. Die Verwaltung liest die Gründe weiter über die Verwaltungsansicht, mit Art.-9-Protokollzeile.
+
+### 🐛 Fehlerbehebungen
+
+- **Betriebsferien: freigewordene Schließtage werden nachgebucht (#511).** Hatte eine Person an einem Schließtag schon Urlaub oder eine andere Abwesenheit, ließen die Betriebsferien den Tag aus. Fiel diese Abwesenheit später weg, blieb der Tag leer: volles Tagessoll ohne Abwesenheit, das Überstundenkonto sank, der Pflichturlaub zählte nicht. Jetzt bucht PraxisZeit den Schließtag nach, wenn ein genehmigter Urlaubsantrag zurückgezogen oder storniert, eine Abwesenheit gelöscht oder per Änderungsantrag gelöscht bzw. auf einen anderen Tag verschoben wird. Steht am Tag inzwischen ein Zeiteintrag, bleibt die Arbeit stehen. Ein von der Verwaltung gelöschter Schließtag wird nicht wieder angelegt. Das Stornieren eines Urlaubsantrags entfernt außerdem keine Betriebsferientage mehr, die im Antragszeitraum liegen.
+
 ## [1.20.2] - 2026-10-26
 
 ### 🔒 Sicherheit (Abhängigkeiten)

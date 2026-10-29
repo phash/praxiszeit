@@ -155,7 +155,7 @@ Die Liste zeigt alle aktiven Mitarbeiter mit:
 
 **„Login als …" – Ansicht als Mitarbeiter:in (#370):** Über das Anmelde-Symbol in der Aktionsspalte (nur bei **aktiven Mitarbeitenden**, nicht bei Admins) öffnen Sie die Anwendung aus der Perspektive dieser Person – praktisch, um das individuelle Dashboard zu beurteilen oder ein gemeldetes Problem nachzustellen. Die Ansicht ist **ausschließlich lesend**: Stempeln, Anträge stellen und jegliche Änderungen sind gesperrt (der Server weist Schreibversuche ab). Ein dauerhaftes Hinweisbanner am oberen Rand zeigt **„Sie sehen PraxisZeit als … – nur Lesen"**; über **„Zurück zu Admin"** kehren Sie jederzeit zu Ihrem eigenen Konto zurück.
 
-> **Datenschutz:** Jede „Login als"-Sitzung wird protokolliert (welcher Admin, welche Person, Beginn und Ende) – Rechenschaftspflicht nach Art. 5 Abs. 2 DSGVO. Da keine Änderungen möglich sind, kann keine Aktion fälschlich der/dem Mitarbeitenden zugerechnet werden (§ 16 ArbZG).
+> **Datenschutz:** Jede „Login als"-Sitzung wird protokolliert (welcher Admin, welche Person, Beginn und Ende) – Rechenschaftspflicht nach Art. 5 Abs. 2 DSGVO. Da keine Änderungen möglich sind, kann keine Aktion fälschlich der/dem Mitarbeitenden zugerechnet werden (§ 16 ArbZG). Gesundheitsdaten der Person (Krank, Sonstiges, bezahlte Freistellung und eigene Abwesenheitsgründe) zeigt die Ansicht nur als **„Abwesend"** ohne Notiz – im Monatsjournal, in der Abwesenheitsliste, im Kalender, in der Teamübersicht und in den eigenen Urlaubs- und Änderungsanträgen (dort ohne Begründung). Brauchen Sie die Gründe, öffnen Sie die Abwesenheiten über die Verwaltung; dieser Zugriff wird protokolliert.
 
 ### Neuen Mitarbeiter anlegen
 
@@ -651,7 +651,7 @@ Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie a
 - **freien Wochentagen** von Teilzeitkräften mit individuellem Tagesplan (Tagessoll an diesem Wochentag = 0) und Zeiträumen, in denen die Arbeitszeit auf **0 Wochenstunden** steht (z. B. Elternzeit) – dort gibt es nichts zu schließen, es wird also auch kein Urlaubstag abgezogen. Betriebsferien, die vor Version 1.20.0 eingetragen wurden, können an solchen Tagen noch Einträge mit 0 Stunden enthalten: die Betriebsferien einmal öffnen und **erneut speichern**, dann werden diese Einträge entfernt (im Änderungsprotokoll vermerkt). Liegen sie in einem Jahr mit Jahresabschluss, prüfen Sie danach den Übertrag (→ [Betriebsferien in einem abgeschlossenen Jahr](#betriebsferien-in-einem-abgeschlossenen-jahr))
 - als **„Frei" konfigurierten Sondertagen** (24./31.12.)
 - Tagen **außerhalb des Beschäftigungszeitraums**: noch nicht eingetretene (Eintrittsdatum in der Zukunft) oder bereits ausgetretene Mitarbeiter bekommen für die betreffenden Tage **keine** Betriebsferien-Einträge
-- Tagen, an denen die Mitarbeiterin bereits eine andere Abwesenheit hat (diese wird nicht überschrieben)
+- Tagen, an denen die Mitarbeiterin bereits eine andere Abwesenheit hat (diese wird nicht überschrieben). Fällt diese Abwesenheit später weg – Urlaubsantrag zurückgezogen oder storniert, Abwesenheit gelöscht oder per Änderungsantrag gelöscht oder auf einen anderen Tag verschoben –, bucht PraxisZeit den Schließtag automatisch nach. Ausnahme: Am Tag steht inzwischen ein Arbeitszeit-Eintrag, dann bleibt die Arbeit stehen. Einen Schließtag, den Sie selbst löschen, bucht PraxisZeit nicht wieder nach.
 
 ### Verrechnung: Urlaub oder bezahlte Freistellung
 

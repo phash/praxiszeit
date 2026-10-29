@@ -262,3 +262,83 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
                 used += day_cost
             else:
                 a.type = AbsenceType.OVERTIME
+
+
+def rebook_freed_closure_days(db: Session, tenant_id, user_id, freed_dates, acting_user: User) -> None:
+    """#511: book the closure absence on days that just became free.
+
+    ``_create_closure_absences`` skips every day on which the employee already
+    has an absence. When that absence later goes away (withdrawn or cancelled
+    vacation request, deleted absence, approved DELETE or date-moving UPDATE
+    change request), the closure day used to stay empty: full daily target and
+    no absence, so the overtime account dropped and the mandatory leave was not
+    counted. Callers pass the dates they freed, AFTER the delete or move.
+
+    Callers must leave out dates whose removed absence was itself a closure day
+    (``closure_id`` set): an admin who deletes one on purpose (the person
+    worked) must not see it come straight back.
+
+    Booking goes through ``_create_closure_absences`` with
+    ``delete_time_entries=False``, so all of its guards apply (employment
+    window, days without target, free special days, existing absences) and
+    logged work on the day wins (#290). Afterwards the touched years are
+    re-split in calendar order when ``closure_overtime_after_vacation`` is on,
+    exactly like the enrolment path (#448).
+
+    Locking: the caller holds the employee's anchor lock already;
+    ``_create_closure_absences`` takes the same row again, which is a no-op
+    inside the transaction.
+    """
+    # Lazy import: the router imports this module (circular otherwise).
+    from app.routers.company_closures import (
+        _create_closure_absences, _get_holidays_for_range, _get_workdays,
+    )
+
+    freed = set(freed_dates or ())
+    if not freed:
+        return
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.tenant_id == tenant_id,  # F-026
+    ).first()
+    if not user or not user.is_active or not user.receives_company_closures:
+        return
+
+    lo, hi = min(freed), max(freed)
+    closures = db.query(CompanyClosure).filter(
+        CompanyClosure.tenant_id == tenant_id,  # F-026
+        CompanyClosure.start_date <= hi,
+        CompanyClosure.end_date >= lo,
+    ).order_by(CompanyClosure.start_date).all()
+    if not closures:
+        return
+
+    # The freed rows must be gone before ``_create_closure_absences`` reads the
+    # days that are still taken.
+    db.flush()
+    resplit_years: set = set()
+    for closure in closures:
+        holidays = _get_holidays_for_range(db, closure.start_date, closure.end_date, tenant_id)
+        holidays |= special_days_service.free_special_days_in_range(
+            db, tenant_id, closure.start_date, closure.end_date
+        )
+        workdays = [
+            d for d in _get_workdays(closure.start_date, closure.end_date, holidays)
+            if d in freed
+        ]
+        if not workdays:
+            continue
+        if _create_closure_absences(
+            db, closure, workdays, [user], acting_user, delete_time_entries=False
+        ):
+            # Flush per closure: overlapping closures must see this booking
+            # (same reason as in ``_enroll_user_in_open_closures``).
+            db.flush()
+            if closure.counts_as_vacation:
+                resplit_years |= {d.year for d in workdays}
+
+    if resplit_years and settings_service.get_bool_setting(
+        db, "closure_overtime_after_vacation", tenant_id, False
+    ):
+        for yr in sorted(resplit_years):
+            resplit_year_closures(db, tenant_id, yr)

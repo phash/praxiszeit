@@ -45,7 +45,7 @@ interface ChangeRequest {
 
 import { STATUS_CONFIG as statusConfig } from '../constants/statusConfig';
 import { CHANGE_REQUEST_TYPE_LABELS } from '../constants/changeRequestTypes';
-import { ABSENCE_TYPE_LABELS } from '../constants/absenceTypes';
+import { absenceTypeLabel } from '../constants/absenceTypes';
 const typeLabels = CHANGE_REQUEST_TYPE_LABELS;
 
 export default function ChangeRequests() {
@@ -192,7 +192,7 @@ export default function ChangeRequests() {
                         <div className="bg-gray-50 rounded-lg p-3">
                           <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Aktuell</h4>
                           <div className="text-sm space-y-1">
-                            <p>Typ: <span className="font-medium">{ABSENCE_TYPE_LABELS[cr.original_absence_type as keyof typeof ABSENCE_TYPE_LABELS] || cr.original_absence_type}</span></p>
+                            <p>Typ: <span className="font-medium">{absenceTypeLabel(cr.original_absence_type)}</span></p>
                             <p>Datum: {format(new Date(cr.original_date + 'T12:00:00'), 'dd.MM.yyyy')}</p>
                             <p>Stunden: <span className="font-medium">{cr.original_absence_hours}h</span></p>
                           </div>
@@ -204,7 +204,7 @@ export default function ChangeRequests() {
                             {cr.request_type === 'create' ? 'Neue Abwesenheit' : 'Gewünscht'}
                           </h4>
                           <div className="text-sm space-y-1">
-                            <p>Typ: <span className="font-medium">{ABSENCE_TYPE_LABELS[cr.proposed_absence_type as keyof typeof ABSENCE_TYPE_LABELS] || cr.proposed_absence_type}</span></p>
+                            <p>Typ: <span className="font-medium">{absenceTypeLabel(cr.proposed_absence_type)}</span></p>
                             <p>Datum: {format(new Date(cr.proposed_date + 'T12:00:00'), 'dd.MM.yyyy')}</p>
                             <p>Stunden: <span className="font-medium">{cr.proposed_absence_hours}h</span></p>
                             {cr.proposed_start_time && cr.proposed_end_time && (
