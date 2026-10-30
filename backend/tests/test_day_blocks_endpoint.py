@@ -41,7 +41,7 @@ def test_blocks_and_tenant_grace_of_the_requested_day(_db_session, employee_user
     _db_session.commit()
 
     body = _day(employee_client, MON)
-    assert body == {"date": MON.isoformat(), "blocks": MON_BLOCKS, "grace_minutes": 10}
+    assert body == {"date": MON.isoformat(), "blocks": MON_BLOCKS, "blockless_workday": False, "grace_minutes": 10}
     assert _day(employee_client, TUE)["blocks"] == [{"start": "08:00", "end": "13:00"}]
 
 

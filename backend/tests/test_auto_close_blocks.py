@@ -19,6 +19,7 @@ from tests.work_blocks_fixtures import K_BLOCKS, MON, block_week, legacy_week
 import app.routers.time_entries as te
 
 TUE = date(2026, 6, 2)
+SAT = date(2026, 6, 6)
 
 
 def _open(db, user, start=time(8, 0), **kw):
@@ -467,15 +468,16 @@ def test_open_request_echo_moved_after_reclamp_keeps_flag(_db_session, employee_
     """PR1-Review F1 mit Neukappung dazwischen: Antrag auf Dienstag mit dem Echo
     18:15, danach kürzt die Neukappung den Montag auf 17:15. Das Echo ist keine
     Korrektur — die Kappungseingabe des Zieltags ist das übernommene Ende 18:15
-    (``end_input_for``), Dienstag ohne Blöcke → 15:00–18:15, Kennzeichen bleibt."""
+    (``end_input_for``), Samstag ungekappt → 15:00–18:15, Kennzeichen bleibt.
+    (Ein Werktag ohne Blöcke wie der Dienstag zöge den Eintrag auf 0 h zusammen.)"""
     e, cr, _ = _open_request_then_reclamp(_db_session, employee_user, employee_client,
-                                          _echo_1815_with_blocks, proposed_date=TUE)
+                                          _echo_1815_with_blocks, proposed_date=SAT)
     _as_admin(admin_user)
     resp = employee_client.post(f"/api/admin/change-requests/{cr.id}/review",
                                 json={"action": "approve"})
     assert resp.status_code == 200, resp.text
     _db_session.refresh(e)
-    assert (e.date, e.end_time, e.raw_end_time, e.auto_closed) == (TUE, time(18, 15), None, True)
+    assert (e.date, e.end_time, e.raw_end_time, e.auto_closed) == (SAT, time(18, 15), None, True)
 
 
 def test_open_request_typed_2359_after_reclamp_is_a_correction(_db_session, employee_user,

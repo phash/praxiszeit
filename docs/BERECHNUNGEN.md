@@ -193,7 +193,13 @@ raw_end, uncredited_minutes, grace_minutes)`:
    eine Lücke ≤ 2 × g verschwindet. Die Überlappung des (an der Hülle gekappten) Eintrags mit den
    geschrumpften Lücken ist `uncredited_minutes` (je Lücke einzeln: `gap_segments`). Ein Beginn in
    der Lücke wird **nicht** verschoben (UNIQUE auf Beginn je Tag).
-3. **Keine Kappung** (`uncredited_minutes` = 0, keine Rohstempel): Tag ohne Blöcke, Wochenende,
+3. **Werktag ohne Blöcke** (`credit_blocks` → `[]`): Hat die Woche des Snapshots Blöcke im
+   Blockmodell, aber der Werktag (Mo–Fr, kein Feiertag, kein `free`-Sondertag) keinen, wird jeder
+   geschlossene Eintrag auf 0 h zusammengezogen wie ganz außerhalb der Hülle (Beginn = Ende,
+   Rohstempel bleiben); ein offener Eintrag behält seinen Beginn. Angerechnet wird erst nach
+   `credit_override`. Altzeilen aus Migration 073 (ein `pause_minutes` = NULL) sind ausgenommen:
+   dort bleibt ein Tag ohne Fenster ungekappt. Bis 1.20.3 zählte Arbeit an solchen Tagen voll.
+   **Keine Kappung** (`uncredited_minutes` = 0, keine Rohstempel): keine Blöcke im Snapshot, Wochenende,
    Feiertag des Mandanten, Sondertag `free` (#484), `track_hours = false`, `credit_override`
    (anerkannt). Ein `half_day`-Sondertag hat ein Soll und behält seine Blöcke. Ein offener Eintrag
    (`end = None`) wird nur an der Hülle gekappt.

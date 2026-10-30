@@ -231,7 +231,8 @@ export default function TimeTracking() {
   // Eintrag ohne gespeicherten Puffer kappt (E80) — nicht `grace_minutes`: das
   // ist eingestempelt der Puffer des offenen Eintrags (fürs Ausstempeln im
   // StampWidget) und weicht ab, sobald die Verwaltung den Puffer danach ändert.
-  const [clockInfo, setClockInfo] = useState<{ blocks: TimeBlock[]; grace: number }>({ blocks: [], grace: 15 });
+  const [clockInfo, setClockInfo] = useState<{ blocks: TimeBlock[]; grace: number; blockless: boolean }>(
+    { blocks: [], grace: 15, blockless: false });
   useEffect(() => {
     let cancelled = false;
     apiClient
@@ -245,6 +246,7 @@ export default function TimeTracking() {
         setClockInfo({
           blocks: Array.isArray(d?.blocks_today) ? d.blocks_today : [],
           grace,
+          blockless: d?.blockless_workday === true,
         });
       })
       .catch(() => { /* Vorprüfung ohne Blöcke */ });
@@ -273,7 +275,7 @@ export default function TimeTracking() {
   // direkt bzw. ändern das Datum (Mitarbeitende: nur heute, #502).
   const todayIso = format(new Date(), 'yyyy-MM-dd');
   const [otherDayInfo, setOtherDayInfo] = useState<
-    { date: string; blocks: TimeBlock[] | null; grace: number | null } | null
+    { date: string; blocks: TimeBlock[] | null; grace: number | null; blockless: boolean } | null
   >(null);
   const needsOtherDay = showForm && /^\d{4}-\d{2}-\d{2}$/.test(formData.date) && formData.date !== todayIso;
   useEffect(() => {
@@ -289,20 +291,23 @@ export default function TimeTracking() {
           date,
           blocks: Array.isArray(d?.blocks) ? d.blocks : [],
           grace: typeof d?.grace_minutes === 'number' ? d.grace_minutes : null,
+          blockless: d?.blockless_workday === true,
         });
       })
       .catch(() => {
         // Unbekannt → keine Vorprüfung, keine Pausen-Automatik; der Server entscheidet.
-        if (!cancelled) setOtherDayInfo({ date, blocks: null, grace: null });
+        if (!cancelled) setOtherDayInfo({ date, blocks: null, grace: null, blockless: false });
       });
     return () => { cancelled = true; };
   }, [needsOtherDay, formData.date]);
 
   /** Blöcke + Puffer des Formular-Datums; `null` = (noch) nicht bekannt. */
-  const formDayBlocks = (): { blocks: TimeBlock[]; grace: number } | null => {
+  const formDayBlocks = (): { blocks: TimeBlock[]; grace: number; blockless: boolean } | null => {
     if (formData.date === todayIso) return clockInfo;
     if (otherDayInfo?.date !== formData.date || otherDayInfo.blocks === null) return null;
-    return { blocks: otherDayInfo.blocks, grace: otherDayInfo.grace ?? clockInfo.grace };
+    return {
+      blocks: otherDayInfo.blocks, grace: otherDayInfo.grace ?? clockInfo.grace, blockless: otherDayInfo.blockless,
+    };
   };
 
   // #491 F4: §10-Ausnahmegrund an Sonn- UND Feiertagen (vorher nur Sonntag) —
@@ -448,7 +453,7 @@ export default function TimeTracking() {
     const newGrace = editing?.clamp_grace_minutes ?? dayGrace;
     const newSpan = editing?.credit_override
       ? { start: formData.start_time, end: formData.end_time }
-      : hullClamp(dayBlocks, newGrace, formData.start_time, formData.end_time);
+      : hullClamp(dayBlocks, newGrace, formData.start_time, formData.end_time, known?.blockless ?? false);
     const newSegs = editing?.credit_override
       ? []
       : gapSegments(dayBlocks, newGrace, newSpan.start, newSpan.end);
@@ -513,7 +518,8 @@ export default function TimeTracking() {
     if (!editingId && submitData.break_minutes === 0 && autoDay) {
       // Gesamtreview PR2 (Fund 13): angerechnet = gekappt (Hülle) minus Lücke —
       // eine Pause für Stempelzeit außerhalb der Hülle kostete angerechnete Zeit.
-      const span = hullClamp(autoDay.blocks, autoDay.grace, submitData.start_time, submitData.end_time);
+      const span = hullClamp(
+        autoDay.blocks, autoDay.grace, submitData.start_time, submitData.end_time, autoDay.blockless);
       const gross = hhmmToMinutes(span.end) - hhmmToMinutes(span.start);
       const segs = gapSegments(autoDay.blocks, autoDay.grace, span.start, span.end);
       const credited = gross - segs.reduce((a, b) => a + b, 0);

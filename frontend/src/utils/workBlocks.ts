@@ -85,18 +85,22 @@ export function gapSegments(
  * Die Vorprüfungen im Browser (StampWidget, TimeTracking) rechnen deshalb mit
  * diesen Zeiten — sonst verlangten sie für Stempelzeit außerhalb der Hülle
  * eine Pause, die angerechnete Zeit kostet. Ohne Blöcke und bei Ende ≤ Beginn
- * (über Mitternacht) unverändert.
+ * (über Mitternacht) unverändert. `blocklessWorkday` (Werktag ohne Blöcke, vom
+ * Server als `blockless_workday` gemeldet): Kollaps auf den Beginn, 0 h — wie
+ * `work_window_service.credit_blocks` → `[]`.
  */
 export function hullClamp(
   blocks: TimeBlock[] | null | undefined, grace: number, start: string, end: string,
+  blocklessWorkday = false,
 ): { start: string; end: string } {
   const startHHMM = start.substring(0, 5);
   const endHHMM = end.substring(0, 5);
-  if (!blocks || blocks.length === 0) return { start: startHHMM, end: endHHMM };
+  if (!blocklessWorkday && (!blocks || blocks.length === 0)) return { start: startHHMM, end: endHHMM };
   const s = hhmmToMinutes(start);
   const e = hhmmToMinutes(end);
   // Unvollständige Eingabe (leeres Feld) oder über Mitternacht: unverändert.
   if (Number.isNaN(s) || Number.isNaN(e) || e <= s) return { start: startHHMM, end: endHHMM };
+  if (blocklessWorkday || !blocks) return { start: startHHMM, end: startHHMM };
   const mins = sortedMinutes(blocks);
   const lastEnd = mins[mins.length - 1][1];
   const floor = Math.max(0, Math.min(mins[0][0] - grace, LAST_MINUTE));
@@ -113,15 +117,17 @@ export function hullClamp(
  * `nowMinutes` (Minuten seit Mitternacht) — wie beim Ausstempeln: Hülle und
  * Lücke zwischen den Blöcken zählen nicht, die schon erfasste Pause wird
  * abgezogen, nie negativ. Liegt „jetzt" nicht nach dem Beginn (gekappter Beginn
- * #201), 0. Anerkannt oder ohne Blöcke: Wanduhrzeit minus Pause.
+ * #201), 0. Anerkannt oder ohne Blöcke: Wanduhrzeit minus Pause. Werktag ohne
+ * Blöcke (`blocklessWorkday`), nicht anerkannt: 0.
  */
 export function runningCreditedMinutes(
   blocks: TimeBlock[] | null | undefined, grace: number, start: string, nowMinutes: number,
-  breakMinutes: number, creditOverride: boolean,
+  breakMinutes: number, creditOverride: boolean, blocklessWorkday = false,
 ): number {
   const s = hhmmToMinutes(start);
   const now = Math.min(Math.floor(nowMinutes), LAST_MINUTE);
   if (Number.isNaN(s) || now <= s) return 0;
+  if (blocklessWorkday && !creditOverride) return 0;
   const brk = breakMinutes || 0;
   if (creditOverride || !blocks || blocks.length === 0) return Math.max(0, now - s - brk);
   const nowHHMM = toHHMM(now);

@@ -216,6 +216,7 @@ export default function Dashboard() {
     today_net_minutes?: number; // #494: Tages-Ist inkl. abgeschlossener Einträge
     today_target_hours?: number; // #494 F1: heute zu stempelnde Stunden (get_day_presence_target, 0 an freien Tagen)
     blocks_today?: TimeBlock[]; // Spec 2026-10-08 (14, E69)
+    blockless_workday?: boolean; // Werktag ohne Blöcke → laufender Eintrag zählt 0
     grace_minutes?: number; // Puffer, mit dem clock_out kappen wird (E80)
   } | null>(null);
   // #494 (Gesamtreview B6): „x von y h heute" zählt bei laufendem Eintrag live
@@ -542,6 +543,7 @@ export default function Dashboard() {
             clockStatus?.blocks_today, clockStatus?.grace_minutes ?? 0,
             (running.start_time.includes('T') ? running.start_time.split('T')[1] : running.start_time),
             minutes, running.break_minutes ?? 0, running.credit_override ?? false,
+            clockStatus?.blockless_workday ?? false,
           )
           : 0);
         const runningGrowth = isClockedIn && sinceLoad > 0

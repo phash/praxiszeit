@@ -219,7 +219,7 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
     saldo_before = _saldo_by_year(db, user, window.start, window.end, cutoff)
     today_before = _day_saldo(db, user, today) if (open_day or today_counts) else _ZERO
     old_full = calculation_service.absence_full_targets(db, user, window.start, window.end)
-    old_today_blocks = work_window_service.get_scheduled_blocks(db, user, today) if open_today else []
+    old_today_blocks = work_window_service.credit_blocks(db, user, today) if open_today else None
     before = {e.id: _snapshot(e) for e in presence_service.closed_entries(db, user, window.start, window.end)}
 
     # Schritt 4
@@ -238,7 +238,7 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
             and today.weekday() in weekdays):
         # P1: das Ausstempeln kappt mit dem gespeicherten Puffer des Eintrags (E80).
         open_loses = work_window_service.open_entry_loses(
-            old_today_blocks, work_window_service.get_scheduled_blocks(db, user, today),
+            old_today_blocks, work_window_service.credit_blocks(db, user, today),
             work_window_service.grace_for_entry(db, open_today), open_today.start_time,
             timezone_service.now_local().time(),
         )
