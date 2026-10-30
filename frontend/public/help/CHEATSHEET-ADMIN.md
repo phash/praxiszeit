@@ -7,7 +7,7 @@
 
 **Mitarbeiter-Bereich:** Dashboard · Zeiterfassung · Abwesenheiten · Profil
 
-**Administration:** Admin-Dashboard · Benutzerverwaltung · Änderungsanträge · Berichte · Abwesenheiten · Änderungsprotokoll · Fehler-Monitoring · Anträge · Import · Einstellungen
+**Administration:** Admin-Dashboard · Benutzerverwaltung · Arbeitszeiten im Team · Änderungsanträge · Berichte · Abwesenheiten · Änderungsprotokoll · Fehler-Monitoring · Anträge · Import · Einstellungen
 
 > **Neu hier?** Der **Schnellstart** (Button unten links in der Seitenleiste) führt in wenigen Minuten durch die Ersteinrichtung der Praxis.
 
@@ -47,8 +47,9 @@ Je MA und Wochentag (Mo–Fr) bis zu **3 Blöcke** „von–bis" + **„Pause in
 - **Tagessoll = Σ Blöcke − Pause** (z. B. 08–12 + 15–18, Pause 30 → 6:30 h); Wochenstunden und Arbeitstage werden abgeleitet, ein Wochentag ohne Block ist kein Arbeitstag.
 - **Kappung:** vor dem ersten, nach dem letzten und **zwischen** den Blöcken nicht angerechnet; **Puffer an jedem Blockrand** (Einstellungen → „Soll-Arbeitszeit-Fenster", Default **15**). Lücke ≤ 2 × Puffer wird voll angerechnet → geplante Pause als „Pause innerhalb der Blöcke" erfassen, nicht als kurze Lücke.
 - Beispiel: Blöcke 08–12 + 15–18, Puffer 15, gestempelt 08:00–18:00 ohne Pause → **7:30 h** angerechnet (08:00–12:15 + 14:45–18:00), 2:30 h nicht; die Stempel bleiben gespeichert (§16).
-- **Kein Block → keine Kappung:** blockfreie Wochentage, Wochenende, Feiertage, „freie" Sondertage („halber Feiertag" behält die Blöcke); MA ohne Stundenzählung; **anerkannte** Einträge. §18-MA werden trotzdem gekappt. Greift an allen Schreibwegen (Stempeln, manuell, Admin-Korrektur, Antrag, XLS-Import). Feiertag/Bundesland/Sondertag **nachträglich** geändert → bestehende Einträge dieser Tage werden nur genannt, nicht neu berechnet: öffnen + unverändert speichern (fehlt dann die gesetzliche Pause, z. B. bei über die Blocklücke durchgestempeltem Dienst: Pause ergänzen).
-- **Auto-Close** (vergessenes Ausstempeln, 23:59) rechnet nur bis zum letzten Block + Puffer an („automatisch geschlossen"); tatsächliches Ende nachtragen (MA per Änderungsantrag) – auch ein echtes Ende 23:59 ist eintragbar (wird gekappt wie jedes Ende, bis 23:59 angerechnet erst nach „Anerkennen").
+- **Werktag ohne Block** (bei MA mit Blöcken) = **0 h** angerechnet (Stempel bleibt gespeichert), bis **„Anerkennen“** bzw. **„Genehmigen und anerkennen“**; übernommene Arbeitszeit-Fenster ausgenommen (Tag ohne Fenster bleibt ungekappt).
+- **Kein Block → keine Kappung:** Wochenende, Feiertage, „freie" Sondertage („halber Feiertag" behält die Blöcke); MA ohne Stundenzählung; **anerkannte** Einträge. §18-MA werden trotzdem gekappt. Greift an allen Schreibwegen (Stempeln, manuell, Admin-Korrektur, Antrag, XLS-Import). Feiertag/Bundesland/Sondertag **nachträglich** geändert → bestehende Einträge dieser Tage werden nur genannt, nicht neu berechnet: öffnen + unverändert speichern (fehlt dann die gesetzliche Pause, z. B. bei über die Blocklücke durchgestempeltem Dienst: Pause ergänzen).
+- **Auto-Close** (vergessenes Ausstempeln, 23:59) rechnet nur bis zum letzten Block + Puffer an („automatisch geschlossen"), an einem Werktag ohne Block 0 h; bis 23:59 nur, wo nichts gekappt wird (keine Blöcke hinterlegt, Wochenende/Feiertag, ohne Stundenzählung); tatsächliches Ende nachtragen (MA per Änderungsantrag) – auch ein echtes Ende 23:59 ist eintragbar (wird gekappt wie jedes Ende, bis 23:59 angerechnet erst nach „Anerkennen").
 - **Pausen:** Lücke ab 15 Min. (nach Abzug des Puffers) zählt für §4 als Pause; Pause eingetragen **und** über die Lücke durchgestempelt → beides abgezogen (Hinweis „Pause in der Lücke wird zusätzlich abgezogen: …").
 - **Sichtbar:** Zusatzzeile am Eintrag („… 2:30 h zwischen den Blöcken nicht angerechnet"), Journal-Summe „Anwesenheit nicht angerechnet", Export-Spalte „Nicht angerechnet (Min)" (letzte Spalte).
 - **Anerkennen** (Admin-Dashboard-Detail, Monatsjournal): ganze gestempelte Zeit zählt, dauerhaft (keine Rücknahme), protokolliert („Anrechnung anerkannt"); offener Eintrag erst nach dem Ausstempeln, automatisch geschlossener erst mit tatsächlichem Ende. MA beantragen das per **„Anrechnung beantragen"**.
@@ -66,6 +67,7 @@ Je MA und Wochentag (Mo–Fr) bis zu **3 Blöcke** „von–bis" + **„Pause in
 → MA sehen 30 Tage den Dashboard-Kasten **„Hinweis zu Ihrer Arbeitszeit"** + Profil „Meine Arbeitszeit"; Protokoll: „Neukappung (Arbeitszeit-Änderung)" je Eintrag + Sammelzeile je Änderung/Löschung
 → Berichte: Wert zu Zeitraumsbeginn + „ab TT.MM.JJJJ: …" (bei Blöcken „Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / …")
 → ⚠️ Arbeitstage-only-Änderung (gleiche Wochenstunden, andere Arbeitstage): Berichtstext nennt bei „Gleichmäßig" zwar die neue Arbeitstage-Zahl, die Wochenstundenzahl selbst bleibt aber gleich – das Tagessoll verschiebt sich trotzdem still; bei „Nach Tagen"/„Nach Arbeitsblöcken" ändert sich stattdessen der Urlaubsverbrauch – immer die Auswirkung prüfen, nicht nur die Wochenstundenzahl
+→ **Arbeitszeiten im Team** (Menü): Blöcke aller MA je Wochentag + Besetzung je halbe Stunde, „Stand am" + Abteilungsfilter; Schieber **„Bearbeiten"** einschalten, Blöcke ziehen (15-Min.-Raster) → **„Änderung speichern…"** öffnet den Dialog **„Arbeitszeit & Wochenstunden"** – wirksam erst dort mit Stichtag „Gültig ab" (+ Vorschau)
 
 ### Mitarbeiter deaktivieren (niemals löschen!)
 Benutzerliste → Aktionsspalte → **„Deaktivieren"** (Person mit X); das **letzte aktive Admin-Konto** ist nicht deaktivierbar

@@ -139,3 +139,45 @@ def test_reclamp_closes_a_former_block_day(db, test_user):
     assert (c.old_net, c.new_net) == (Decimal("4.75"), Decimal("0.00"))
     assert (e.start_time, e.end_time, e.raw_start_time, e.raw_end_time) == (t(7, 15), t(7, 15), t(7, 15), t(12))
     assert result.flagged == []
+
+
+# Release-Review 1.21 (Fund 0): ein leerer Wochentag wechselt seine Bedeutung,
+# wenn ein Snapshot ohne Blöcke (oder eine Altzeile) von einer Woche im
+# Blockmodell abgelöst wird — und umgekehrt. Die Neukappung muss diese Tage
+# mitnehmen, sonst behalten Einträge dort still ihre volle Anrechnung.
+from app.services import wh_change_service  # noqa: E402
+from tests.wh_change_helpers import change_row, freeze  # noqa: E402
+
+FRI_IN_WINDOW = date(2026, 10, 2)    # Freitag zwischen EFF (01.09.) und TODAY (08.10.)
+MON_THU = block_week(mon=[("08:00", "12:00")], tue=[("08:00", "12:00")],
+                     wed=[("08:00", "12:00")], thu=[("08:00", "12:00")])
+
+
+def _run_change(db, user, admin, week, eff=date(2026, 9, 1)):
+    return wh_change_service.run_change(db, user, admin_id=admin.id, effective_from=eff,
+                                        apply=lambda: db.add(change_row(user, eff, week=week)))
+
+
+@pytest.mark.parametrize("old", [
+    dict(weekly_hours=20),                                              # ohne Blöcke
+    dict(weekly_hours=20, blocks=legacy_week(mon=("07:00", "17:00"))),  # Altfenster, Fr leer
+])
+def test_weekday_turning_blockless_is_reclamped(db, test_user, test_admin, monkeypatch, old):
+    freeze(monkeypatch)
+    add_row(db, test_user, date(2026, 1, 1), **old)
+    fri = entry(db, test_user, FRI_IN_WINDOW, t(8), t(12))
+    impact = _run_change(db, test_user, test_admin, MON_THU)
+    assert 4 in impact.changed_weekdays
+    assert [(c.entry_id, c.new_net) for c in impact.reclamp.changed if c.date == FRI_IN_WINDOW] == [
+        (fri.id, Decimal("0.00"))]
+    assert "entries" in impact.shortening_reasons
+
+
+def test_weekly_hours_only_change_touches_no_weekday(db, test_user, test_admin, monkeypatch):
+    freeze(monkeypatch)
+    add_row(db, test_user, date(2026, 1, 1), weekly_hours=20)
+    eff = date(2026, 9, 1)
+    impact = wh_change_service.run_change(
+        db, test_user, admin_id=test_admin.id, effective_from=eff,
+        apply=lambda: db.add(change_row(test_user, eff, weekly_hours=30)))
+    assert impact.changed_weekdays == []

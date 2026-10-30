@@ -67,7 +67,7 @@ Gilt für den **ganzen Tag** (alle Einträge zusammen); Lücken unter 15 Min. z�
 ### Arbeitszeit-Blöcke
 *Nur aktiv, wenn die Praxis für Sie Arbeitszeit-Blöcke hinterlegt hat (Profil → „Meine Arbeitszeit") – sonst zählt alles wie gewohnt. Ein aus früheren Versionen übernommenes Arbeitszeit-Fenster wirkt genauso, ändert aber Ihr Tagessoll nicht.*
 - Angerechnet wird innerhalb der Blöcke, mit **Puffer** (Std. 15 Min.) an jedem Blockrand. Wochenende und Feiertage haben keine Blöcke → alles zählt.
-- Werktag (Mo–Fr) ohne Block = freier Tag → gestempelte Zeit zählt **0 h**, bis die Verwaltung „Anrechnung beantragen“ genehmigt.
+- Werktag (Mo–Fr) ohne Block = freier Tag → gestempelte Zeit zählt **0 h**, bis die Verwaltung „Anrechnung beantragen“ mit „Genehmigen und anerkennen“ annimmt (auch ein vergessenes Ausstempeln zählt dort 0 h).
 - Zu früh / zu spät → *„gestempelt 07:30 · angerechnet ab 07:45"*.
 - Über die Pause zwischen zwei Blöcken durchgestempelt → *„gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet"*.
 - **Pause in der Lücke gemacht und durchgestempelt?** Die Lücke zählt als Pause (§4 ArbZG; ab 15 Min. nach Abzug des Puffers) – dann **keine zusätzliche Pause eintragen**, sonst wird beides abgezogen (Hinweis *„Pause in der Lücke wird zusätzlich abgezogen: …"* → Pause im Eintrag auf 0 setzen).

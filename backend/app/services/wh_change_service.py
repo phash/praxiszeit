@@ -228,7 +228,8 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
 
     # Schritt 5
     new_schedule = calculation_service.get_schedule_for_date(db, user, effective_from)
-    weekdays = work_blocks_service.changed_weekdays(old_schedule.blocks, new_schedule.blocks)
+    weekdays = work_blocks_service.changed_weekdays(
+        old_schedule.blocks, new_schedule.blocks, old_schedule.block_pauses, new_schedule.block_pauses)
     grace = work_window_service.get_grace_minutes(db, user.tenant_id)
     reclamp = work_window_service.reclamp_time_entries(
         db, user, window.start, window.end, set(weekdays), old_schedule.blocks, grace)

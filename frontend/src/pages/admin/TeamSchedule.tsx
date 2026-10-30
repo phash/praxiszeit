@@ -38,7 +38,9 @@ interface TeamRow {
 
 type Drag = {
   userId: string; day: number; idx: number; mode: 'move' | 'start' | 'end';
-  x0: number; width: number; base: WeekBlocks;
+  // Achsenspanne beim Greifen: wächst die Achse während des Ziehens, liefe der
+  // Block sonst dem Zeiger davon (Release-Review 1.21).
+  x0: number; width: number; span: number; base: WeekBlocks;
 };
 
 const ALL = '';
@@ -73,16 +75,25 @@ export default function TeamSchedule() {
   const [drafts, setDrafts] = useState<Record<string, WeekBlocks>>({});
   const [modalRow, setModalRow] = useState<TeamRow | null>(null);
   const drag = useRef<Drag | null>(null);
+  // Nur die jüngste Anfrage zählt — eine verspätete Antwort auf ein schon
+  // verlassenes Datum überschriebe sonst die Liste (Release-Review 1.21).
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const res = await apiClient.get('/admin/team-schedule', { params: { date: onDate } });
-      setRows(Array.isArray(res.data) ? res.data : []);
+      if (seq !== loadSeq.current) return;
+      const next: TeamRow[] = Array.isArray(res.data) ? res.data : [];
+      setRows(next);
+      // Entwürfe gehören zu Personen der Liste; wer fehlt, verliert seinen Entwurf.
+      setDrafts((d) => Object.fromEntries(
+        Object.entries(d).filter(([id]) => next.some((r) => r.user_id === id))));
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Arbeitszeiten konnten nicht geladen werden'));
+      if (seq === loadSeq.current) toast.error(getErrorMessage(err, 'Arbeitszeiten konnten nicht geladen werden'));
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onDate]);
@@ -90,9 +101,11 @@ export default function TeamSchedule() {
   useEffect(() => { load(); }, [load]);
 
   const departments = useMemo(() => departmentsOf(rows), [rows]);
+  // Fehlt die gewählte Abteilung nach dem Neuladen, gilt wieder „Alle".
+  const activeDepartment = departments.includes(department) ? department : ALL;
   const shown = useMemo(
-    () => rows.filter((r) => department === ALL || (r.department ?? '').trim() === department),
-    [rows, department],
+    () => rows.filter((r) => activeDepartment === ALL || (r.department ?? '').trim() === activeDepartment),
+    [rows, activeDepartment],
   );
   const weekOf = (r: TeamRow): WeekBlocks | null => drafts[r.user_id] ?? r.blocks;
   // Altfenster (nur Kappung, oft 00:00/23:59-Platzhalter) sind keine Planung:
@@ -139,10 +152,11 @@ export default function TeamSchedule() {
     const track = e.currentTarget.parentElement;
     if (!track) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const edge = 6;
+    // Randzone höchstens ein Viertel des Blocks — auch kurze Blöcke bleiben verschiebbar.
+    const edge = Math.min(6, rect.width / 4);
     const mode = e.clientX - rect.left < edge ? 'start' : rect.right - e.clientX < edge ? 'end' : 'move';
     drag.current = {
-      userId: r.user_id, day, idx, mode, x0: e.clientX,
+      userId: r.user_id, day, idx, mode, x0: e.clientX, span,
       width: track.getBoundingClientRect().width || 1, base: weekOf(r) as WeekBlocks,
     };
     e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -152,7 +166,7 @@ export default function TeamSchedule() {
   const onPointerMove = (e: React.PointerEvent<HTMLElement>, r: TeamRow) => {
     const d = drag.current;
     if (!d || d.userId !== r.user_id) return;
-    const delta = snapMinutes(((e.clientX - d.x0) / d.width) * span);
+    const delta = snapMinutes(((e.clientX - d.x0) / d.width) * d.span);
     const week = d.mode === 'move'
       ? moveBlock(d.base, d.day, d.idx, delta)
       : resizeBlock(d.base, d.day, d.idx, d.mode, delta);
@@ -246,9 +260,9 @@ export default function TeamSchedule() {
             key={d || 'all'}
             type="button"
             onClick={() => setDepartment(d)}
-            aria-pressed={department === d}
+            aria-pressed={activeDepartment === d}
             className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-              department === d
+              activeDepartment === d
                 ? 'bg-primary text-white border-primary'
                 : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
             }`}
@@ -323,7 +337,7 @@ export default function TeamSchedule() {
             const week = weekOf(r);
             const dirty = !!drafts[r.user_id];
             const error = dirty ? validateWeekBlocks(week) : null;
-            const canDrag = editing && draggable(r);
+            const canDrag = editing && !loading && draggable(r);
             return (
               <div
                 key={r.user_id}

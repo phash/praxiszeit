@@ -146,7 +146,9 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       // und der 409 der Abwesenheitsbuchung an einem anerkannten Tag
       // (absences.create_absence, CREDIT_OVERRIDE_ABSENCE_DETAIL — eigener Text
       // seit Gesamtreview 1.20 B1).
-      'Ist das angerechnete Ende bereits 23:59 – etwa an einem Tag ohne Arbeitszeit-Blöcke –, bleibt die Kennzeichnung „automatisch geschlossen" stehen; angerechnet wird dann ohnehin bis 23:59.',
+      // 1.21: auf einem Werktag ohne Block zieht der Auto-Close auf 0 h zusammen —
+      // 23:59 bleibt nur, wo nichts gekappt wird.
+      'Ist das angerechnete Ende bereits 23:59 – nur dort, wo nichts gekappt wird: Sie haben keine Arbeitszeit-Blöcke, es ist Wochenende oder Feiertag, oder Ihre Stunden werden nicht gezählt –, bleibt die Kennzeichnung „automatisch geschlossen" stehen; angerechnet wird dann ohnehin bis 23:59.',
       'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)',
       'gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden.',
     ]) {

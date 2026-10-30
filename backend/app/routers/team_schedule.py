@@ -34,6 +34,9 @@ def team_schedule(
         User.is_active == True,  # noqa: E712
         User.is_hidden == False,  # noqa: E712
     ).order_by(User.last_name, User.first_name).all()
+    # Wer am Datum (noch) nicht beschäftigt ist, arbeitet dort laut Vertrag nicht
+    # (Release-Review 1.21) — dieselbe Regel wie das Soll.
+    users = [u for u in users if calculation_service._within_employment_window(u, on_date)]
     by_user: dict = {}
     if users:
         for row in db.query(WorkingHoursChange).filter(

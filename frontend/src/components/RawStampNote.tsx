@@ -83,7 +83,12 @@ export function RawStampNote({
 
   // Spec 14: nur an geschlossenen Einträgen; ob der Tag vorbei ist und der
   // Eintrag der Person gehört, entscheidet der Aufrufer.
-  const offer = !!onRequestCredit && !!effEnd && notCreditedMinutes > 0;
+  // Release-Review 1.21 (Fund 1): automatisch geschlossen und auf 0 h
+  // zusammengezogen (Werktag ohne Blöcke, ganz hinter der Hülle) — nichts zählt
+  // als „nicht angerechnet" (23:59 ist kein Stempel), beantragen geht trotzdem:
+  // der Antrag bringt das tatsächliche Ende mit (Zwilling von change_requests).
+  const collapsedAutoClose = autoClosed && !!effEnd && effStart === effEnd;
+  const offer = !!onRequestCredit && !!effEnd && (notCreditedMinutes > 0 || collapsedAutoClose);
   if (lines.length === 0 && !offer) return null;
   return (
     <div className={cls}>

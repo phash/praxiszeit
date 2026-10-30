@@ -144,14 +144,24 @@ def derive_targets(week_blocks: list) -> dict:
     return derived
 
 
-def changed_weekdays(old_blocks: Optional[tuple], new_blocks: Optional[tuple]) -> list:
-    """Spec 9.1: Wochentage (0 = Mo … 4 = Fr), deren Blocklisten sich zwischen dem
-    alten und dem neuen Snapshot unterscheiden — OHNE Pause (eine reine
-    Pausenänderung kappt nichts neu). Schedule-Format: ``None`` == fünf leere Tage
-    (3.3, der Resolver normalisiert bereits)."""
-    old = old_blocks or ((),) * 5
-    new = new_blocks or ((),) * 5
-    return [i for i in range(5) if tuple(old[i]) != tuple(new[i])]
+def changed_weekdays(old_blocks: Optional[tuple], new_blocks: Optional[tuple],
+                     old_pauses: Optional[tuple] = None, new_pauses: Optional[tuple] = None) -> list:
+    """Spec 9.1: Wochentage (0 = Mo … 4 = Fr), deren Anrechnung sich zwischen dem
+    alten und dem neuen Snapshot ändern kann — verglichen werden die Blocklisten
+    OHNE Pause (eine reine Pausenänderung kappt nichts neu).
+
+    Ein LEERER Tag hat seit 1.21 zwei Bedeutungen (``work_window_service.credit_blocks``):
+    ohne Blöcke im Snapshot bzw. in einer Altzeile (ein ``pause_minutes`` None)
+    wird er nicht gekappt, in einer Woche des Blockmodells zählt er 0 h. Wechselt
+    ein leerer Tag zwischen beiden, ist er geändert (Release-Review 1.21, Fund 0)."""
+    def days(blocks, pauses):
+        if blocks is None:
+            return (None,) * 5
+        legacy = any(p is None for p in (pauses or ()))
+        return tuple(None if (legacy and not day) else tuple(day) for day in blocks)
+
+    old, new = days(old_blocks, old_pauses), days(new_blocks, new_pauses)
+    return [i for i in range(5) if old[i] != new[i]]
 
 
 def blocks_text(blocks: tuple, pauses: Optional[tuple], *, compact: bool) -> str:

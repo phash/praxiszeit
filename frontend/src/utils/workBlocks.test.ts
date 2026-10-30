@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  blocksOf, blocksSpan, deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, gapSegments, hhmmToMinutes, hullClamp,
+  blocksOf, blocksSpan, deriveTargets, editableEnd, emptyWeek, formatBlocksText, formatWeekBlocks, gapSegments, hhmmToMinutes, hullClamp,
   isInBlockGap, isLegacyWeek, minutesToHm, notCreditedMinutes, parseHhmm, runningCreditedMinutes, stampNoteProps, sumBlocks,
   validateWeekBlocks,
 } from './workBlocks';
@@ -354,5 +354,17 @@ describe('sumBlocks / minutesToHm / emptyWeek', () => {
 
   it('leere Woche hat fünf Tage ohne Blöcke mit Pause 0', () => {
     expect(emptyWeek()).toEqual([E, E, E, E, E]);
+  });
+});
+
+describe('editableEnd — Ende fürs Bearbeiten-Formular (Release-Review 1.21, Fund 2)', () => {
+  it('zusammengezogener Eintrag (Beginn = Ende): das gestempelte Rohende', () => {
+    expect(editableEnd({ start_time: '08:00:00', end_time: '08:00:00', raw_end_time: '12:00:00' })).toBe('12:00');
+  });
+  it('sonst das wirksame Ende; automatisch geschlossen nie das Rohende 23:59', () => {
+    expect(editableEnd({ start_time: '08:00', end_time: '18:15', raw_end_time: '19:00' })).toBe('18:15');
+    expect(editableEnd({ start_time: '19:00', end_time: '19:00', raw_end_time: '23:59', auto_closed: true })).toBe('19:00');
+    expect(editableEnd({ start_time: '08:00', end_time: null })).toBeNull();
+    expect(editableEnd({ start_time: '08:00', end_time: '08:00', raw_end_time: null })).toBe('08:00');
   });
 });

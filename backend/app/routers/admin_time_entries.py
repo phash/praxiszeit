@@ -420,7 +420,16 @@ def admin_update_time_entry(
     ) or update_start_time != (entry.raw_start_time or entry.start_time) \
       or update_end_time != (entry.raw_end_time or entry.end_time) \
       or _end_corrected
-    if _times_written:
+    # Release-Review 1.21 (Fund 3): unverändert eingereichte Zeiten, deren
+    # Neukappung die gespeicherte Anrechnung trotzdem ändert (Eintrag von vor
+    # einer Regeländerung, z. B. Werktag ohne Blöcke seit 1.21), sind nie still.
+    _credit_changed = (
+        (entry_data.start_time is not None and eff_start != entry.start_time)
+        or (entry_data.end_time is not None and eff_end != entry.end_time)
+        or ((entry_data.start_time is not None or entry_data.end_time is not None)
+            and _r.uncredited_minutes != (entry.uncredited_minutes or 0))
+    )
+    if _times_written or _credit_changed:
         _clamp_warn = work_window_service.clamp_warning(
             db, affected_user, update_date, _r, for_employee=False,
         )

@@ -207,8 +207,8 @@ raw_end, uncredited_minutes, grace_minutes)`:
    den aktuellen Mandanten-Puffer; jede Einzel-Neukappung eines gespeicherten Eintrags (Ausstempeln,
    Bearbeiten, Datumswechsel, Antragsgenehmigung, XLS-Überschreiben, Auto-Close) nimmt dessen
    gespeicherten Puffer (`grace_for_entry`; NULL – Bestand vor 1.20.0 oder nie gegen Blöcke gekappt,
-   z. B. an einem Tag ohne Blöcke angelegt – → aktueller Puffer). Ein Speichern ohne Kappung (etwa
-   Tag ohne Blöcke, anerkannt) lässt einen gespeicherten Puffer stehen. Nur die Massen-Neukappung einer
+   z. B. an einem Wochenende angelegt – → aktueller Puffer). Ein Speichern ohne Kappung (etwa
+   Wochenende, Feiertag, anerkannt) lässt einen gespeicherten Puffer stehen. Nur die Massen-Neukappung einer
    Arbeitszeit-Änderung (TZ-G) nimmt den aktuellen Puffer und schreibt ihn neu.
    Schickt ein Formular die gekappte Zeit unverändert zurück, rechnet die Neukappung mit dem
    Rohstempel weiter (`unclamp_input`); die Massen-Neukappung geht immer vom Rohstempel aus, ohne
@@ -221,8 +221,9 @@ raw_end, uncredited_minutes, grace_minutes)`:
    `raw_end_time` stehen, gilt aber nicht als Stempel (keine Anwesenheit, kein „nicht angerechnet",
    Anerkennen → 400). Wird ein tatsächliches Ende eingetragen – auch ein echtes 23:59 nach einem
    Spät- oder Notdienst –, ist das eine Korrektur (`end_is_correction`): `auto_closed = false`, das
-   Ende wird gegen die Hülle gekappt wie jedes andere. Kappt der Auto-Close nicht (Tag ohne Blöcke,
-   `track_hours = false`, halboffenes Altfenster, Hülle bis 23:59), ist das wirksame Ende selbst
+   Ende wird gegen die Hülle gekappt wie jedes andere. An einem Werktag ohne Blöcke (`credit_blocks` → `[]`)
+   kollabiert auch der automatisch geschlossene Eintrag auf 0 h. Kappt der Auto-Close nicht (keine
+   Blöcke im Snapshot, Wochenende/Feiertag, `track_hours = false`, halboffenes Altfenster, Hülle bis 23:59), ist das wirksame Ende selbst
    23:59; ein zurückgeschicktes 23:59 bleibt dort Echo, das Kennzeichen bleibt. Ebenso bleibt ein
    eingetragenes Ende minutengleich mit dem wirksamen Ende (z. B. 18:15) Echo: Anerkennen → 400,
    „Anrechnung beantragen" verlangt ein anderes Ende (`credit_override_service.lacks_actual_end`).

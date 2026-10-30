@@ -119,9 +119,14 @@ def test_changed_weekdays_compares_blocks_without_pause():
                                                    tue=[("08:00", "12:00")]))
     assert wbs.changed_weekdays(old.blocks, pause_only.blocks) == []
     assert wbs.changed_weekdays(old.blocks, shorter_mon.blocks) == [0]
-    assert wbs.changed_weekdays(None, old.blocks) == [0, 1]
-    assert wbs.changed_weekdays(old.blocks, None) == [0, 1]
+    # 1.21: ohne Blöcke → Blockmodell ändert auch die leeren Tage (ungekappt → 0 h).
+    assert wbs.changed_weekdays(None, old.blocks) == [0, 1, 2, 3, 4]
+    assert wbs.changed_weekdays(old.blocks, None) == [0, 1, 2, 3, 4]
     assert wbs.changed_weekdays(None, None) == []
+    # Altzeile (Pausen None): ihr leerer Tag ist ungekappt wie „ohne Blöcke".
+    legacy = wbs.parse_week_blocks(legacy_week(mon=("08:00", "12:00"), tue=("08:00", "12:00")))
+    assert wbs.changed_weekdays(None, legacy.blocks, None, legacy.pauses) == [0, 1]
+    assert wbs.changed_weekdays(legacy.blocks, old.blocks, legacy.pauses, old.pauses) == [0, 2, 3, 4]
 
 
 def test_blocks_text_long_and_compact():

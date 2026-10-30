@@ -297,7 +297,14 @@ def create_change_request(
             or entry is None
             or entry.end_time is None
             or entry.credit_override
-            or work_window_service.not_credited_minutes(entry) <= 0
+            or (work_window_service.not_credited_minutes(entry) <= 0
+                # Release-Review 1.21 (Fund 1): ein automatisch geschlossener, auf
+                # 0 h zusammengezogener Eintrag (Werktag ohne Blöcke, ganz hinter
+                # der Hülle) zählt nichts als „nicht angerechnet" — sein Rohende
+                # 23:59 ist kein Stempel (P18). Das tatsächliche Ende kommt mit
+                # dem Antrag (``lacks_actual_end`` unten).
+                and not (entry.auto_closed
+                         and work_window_service.same_minute(entry.start_time, entry.end_time)))
             # Gesamtreview PR2 (Fund 3): Nicht-Anrechnung und Begründung gehören
             # zum Tag des Eintrags. Ein anderes Datum kappte die Genehmigung gegen
             # die Blöcke des Zieltags und erkennte die Zeiten DORT an.
@@ -313,7 +320,17 @@ def create_change_request(
 
     # Time range validation for CREATE and UPDATE
     if data.request_type in ("create", "update") and data.proposed_start_time and data.proposed_end_time:
-        if data.proposed_start_time >= data.proposed_end_time:
+        # Release-Review 1.21 (Fund 2): das vorbelegte wirksame Paar eines auf 0 h
+        # zusammengezogenen Eintrags (Beginn = Ende) ist derselbe Eintrag, keine
+        # Eingabe „Ende vor Beginn" — die Kappungseingabe prüft
+        # ``input_order_error`` nach ``unclamp_input``/``end_input_for`` unten.
+        _echo_collapse = (
+            entry is not None and entry.end_time is not None
+            and work_window_service.same_minute(entry.start_time, entry.end_time)
+            and work_window_service.same_minute(data.proposed_start_time, entry.start_time)
+            and work_window_service.same_minute(data.proposed_end_time, entry.end_time)
+        )
+        if data.proposed_start_time >= data.proposed_end_time and not _echo_collapse:
             raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
     # For DELETE, entry must be from past
