@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 18
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.20.3 (Stand 2026-10-29)
+**Aktuelle Version:** 1.21.0 (Stand 2026-10-30)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 > Regeln in Kurzform (Regel · Helfer/Datei · Test · Grund). Hintergrund, Fallgeschichten und ausführlicher Wortlaut: [docs/CLAUDE-HISTORIE.md](docs/CLAUDE-HISTORIE.md).

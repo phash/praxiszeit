@@ -15,7 +15,7 @@ import LoadingSpinner from './LoadingSpinner';
 import { RawStampNote } from './RawStampNote';
 import CreditOverrideButton from './CreditOverrideButton';
 import ChangeRequestForm from './ChangeRequestForm';
-import { stampNoteProps } from '../utils/workBlocks';
+import { editableEnd, stampNoteProps } from '../utils/workBlocks';
 import { myReasons } from '../api/absenceReasons';
 import type { AbsenceReason } from '../api/absenceReasons';
 
@@ -280,7 +280,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     setEditingEntryId(entry?.id ?? null);
     setEditState({
       startTime: entry?.start_time ?? '',
-      endTime: entry?.end_time ?? '',
+      endTime: (entry ? editableEnd(entry) : null) ?? '',
       breakMinutes: String(entry?.break_minutes ?? 0),
       entryType: hasAbsence ? (absence.type as EditState['entryType']) : 'work',
       absenceHours: hasAbsence ? String(absence.hours) : '8',

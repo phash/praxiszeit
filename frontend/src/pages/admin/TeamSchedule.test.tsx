@@ -69,6 +69,16 @@ describe('Teamübersicht der Arbeitszeiten', () => {
     expect(screen.getByText('Arzt, Anna')).toBeInTheDocument();
   });
 
+  it('fällt auf „Alle" zurück, wenn die gewählte Abteilung nach dem Neuladen fehlt', async () => {
+    renderPage();
+    await screen.findByText('Arzt, Anna');
+    fireEvent.click(screen.getByRole('button', { name: 'MFA' }));
+    getMock.mockResolvedValue({ data: rows().filter((r) => r.department !== 'MFA') });
+    fireEvent.change(screen.getByLabelText('Stand am'), { target: { value: '2026-11-02' } });
+    expect(await screen.findByText('Arzt, Anna')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Alle' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('lädt den Stand zum gewählten Datum', async () => {
     renderPage();
     await screen.findByText('Arzt, Anna');

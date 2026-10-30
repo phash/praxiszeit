@@ -7,6 +7,7 @@ import { getErrorMessage } from '../utils/errorMessage';
 import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
 import { isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
+import { editableEnd } from '../utils/workBlocks';
 
 interface TimeEntry {
   id: string;
@@ -77,7 +78,7 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
     proposed_start_time: (requestCredit ? creditStart : entry?.start_time)?.substring(0, 5) || '08:00',
     proposed_end_time: requestCredit
       ? creditEnd.substring(0, 5)
-      : entry?.end_time?.substring(0, 5) || '17:00',
+      : (entry ? editableEnd(entry) : null) || '17:00',
     proposed_break_minutes: entry?.break_minutes ?? 0,
     proposed_note: entry?.note || '',
     reason: '',

@@ -21,6 +21,7 @@ import UpdateBanner from '../../components/UpdateBanner';
 import AuditValues from '../../components/AuditValues';
 import { AUDIT_SOURCE_LABELS } from '../../constants/auditSources';
 import EmployeeTimeEntryTable, { type EmployeeTimeEntry } from './EmployeeTimeEntryTable';
+import { editableEnd } from '../../utils/workBlocks';
 
 interface EmployeeReport {
   user_id: string;
@@ -386,7 +387,7 @@ export default function AdminDashboard() {
     setEntryForm({
       date: entry.date,
       start_time: formatClockTime(entry.start_time, '08:00'),
-      end_time: formatClockTime(entry.end_time, '17:00'),
+      end_time: editableEnd(entry) ?? '17:00',
       break_minutes: entry.break_minutes,
       note: entry.note || '',
       entry_type: 'work',

@@ -24,7 +24,7 @@ import { BREAK_EXCEPTION_DISABLED_HINT } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
 import { useUIStore } from '../stores/uiStore';
 import { RawStampNote } from '../components/RawStampNote';
-import { blocksSpan, gapSegments, hhmmToMinutes, hullClamp, stampNoteProps, type StampEntry } from '../utils/workBlocks';
+import { blocksSpan, editableEnd, gapSegments, hhmmToMinutes, hullClamp, stampNoteProps, type StampEntry } from '../utils/workBlocks';
 import type { TimeBlock } from '../types/workBlocks';
 
 interface TimeEntry extends StampEntry {
@@ -597,7 +597,7 @@ export default function TimeTracking() {
     setFormData({
       date: entry.date,
       start_time: entry.start_time.substring(0, 5),
-      end_time: entry.end_time ? entry.end_time.substring(0, 5) : '',
+      end_time: editableEnd(entry) ?? '',
       break_minutes: entry.break_minutes,
       note: entry.note || '',
       sunday_exception_reason: entry.sunday_exception_reason || '',

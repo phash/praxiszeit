@@ -114,6 +114,15 @@ describe('RawStampNote — Spec 13.1 (PR2)', () => {
     expect(onRequestCredit).toHaveBeenCalled();
   });
 
+  it('„Anrechnung beantragen" am automatisch geschlossenen, auf 0 h zusammengezogenen Eintrag (Release-Review 1.21)', () => {
+    const onRequestCredit = vi.fn();
+    render(<RawStampNote onRequestCredit={onRequestCredit} {...stampNoteProps({
+      start_time: '08:00:00', end_time: '08:00:00', raw_end_time: '23:59:00', auto_closed: true,
+      break_minutes: 0, net_hours: 0, uncredited_minutes: 0,
+    })} />);
+    expect(screen.getByRole('button', { name: 'Anrechnung beantragen' })).toBeInTheDocument();
+  });
+
   it('„Anrechnung beantragen" nicht an offenen Einträgen (Spec 14: nur geschlossene)', () => {
     render(<RawStampNote {...stampNoteProps({
       start_time: '07:45:00', end_time: null, raw_start_time: '07:00:00',

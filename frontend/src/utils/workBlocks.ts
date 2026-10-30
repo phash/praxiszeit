@@ -384,3 +384,22 @@ export function validateWeekBlocks(week: WeekBlocks | null | undefined): string 
   if (deriveTargets(week).weeklyHours > WEEK_LIMIT_HOURS) return 'Die Wochensumme darf 60 Stunden nicht überschreiten.';
   return null;
 }
+
+/**
+ * Release-Review 1.21 (Fund 2): Ende fürs Bearbeiten-/Antragsformular. Ein auf
+ * 0 h zusammengezogener Eintrag (Beginn = Ende, z. B. Werktag ohne Blöcke)
+ * trägt sein gestempeltes Ende nur als Rohende — das Formular belegt es vor,
+ * sonst schickte es „Ende = Beginn" zurück und scheiterte an der Prüfung
+ * „Endzeit muss nach Startzeit liegen". Beim automatisch geschlossenen Eintrag
+ * ist das Rohende 23:59 kein Stempel (P18) → wirksames Ende. Ergebnis „HH:MM"
+ * bzw. `null` ohne Ende.
+ */
+export function editableEnd(e: {
+  start_time: string | null; end_time: string | null; raw_end_time?: string | null; auto_closed?: boolean | null;
+}): string | null {
+  if (!e.end_time) return null;
+  const end = e.end_time.substring(0, 5);
+  const collapsed = !!e.start_time && e.start_time.substring(0, 5) === end;
+  if (collapsed && !e.auto_closed && e.raw_end_time) return e.raw_end_time.substring(0, 5);
+  return end;
+}

@@ -1381,8 +1381,13 @@ def update_time_entry(
     for field, value in update_data.items():
         setattr(entry, field, value)
 
-    # Validate end_time > start_time (only if both are set)
-    if entry.end_time is not None and entry.end_time <= entry.start_time:
+    # Validate end_time > start_time — nur wenn ein Ende mitkam, wie im Admin-Pfad.
+    # Release-Review 1.21 (Fund 2): das gespeicherte wirksame Paar eines auf 0 h
+    # zusammengezogenen Eintrags (Beginn = Ende, Werktag ohne Blöcke) ist kein
+    # Ende, an dem eine Notiz-Korrektur scheitern darf; die tatsächliche
+    # Kappungseingabe prüft ``input_order_error`` unten.
+    if ("end_time" in update_data and entry.end_time is not None
+            and entry.end_time <= entry.start_time):
         raise HTTPException(status_code=400, detail="Endzeit muss nach Startzeit liegen")
 
     # Audit 2026-07-31 (U2): einen LAUFENDEN Eintrag (bisher ohne Ende) darf
@@ -1715,7 +1720,15 @@ def update_time_entry(
         and _clamp_end == (orig_snapshot["raw_end_time"] or orig_snapshot["end_time"])
         and not _auto_close_corrected
     )
-    if _times_written and not _resubmitted_unchanged:
+    # Release-Review 1.21 (Fund 3): ändert die Neukappung die gespeicherte
+    # Anrechnung trotz unveränderter Zeiten (Eintrag von vor einer
+    # Regeländerung, z. B. Werktag ohne Blöcke seit 1.21), wird es gemeldet.
+    _credit_changed = (
+        entry.start_time, entry.end_time, int(entry.uncredited_minutes or 0),
+    ) != (
+        orig_snapshot["start_time"], orig_snapshot["end_time"], int(orig_snapshot["uncredited_minutes"] or 0),
+    )
+    if _times_written and (not _resubmitted_unchanged or _credit_changed):
         # Spec 6.2: der Hinweis „Anrechnung beantragen" gilt der Person des
         # Eintrags. Eine Admin, die hier einen fremden Eintrag bearbeitet, ist
         # die Verwaltung (P3, siehe oben) und erkennt selbst an — wie bei der

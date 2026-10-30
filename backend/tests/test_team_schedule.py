@@ -92,3 +92,16 @@ def test_date_defaults_to_today(_db_session, admin_client):
 
 def test_employees_are_rejected(_db_session, employee_client):
     assert employee_client.get("/api/admin/team-schedule").status_code == 403
+
+
+def test_people_outside_their_employment_window_are_not_listed(_db_session, admin_client):
+    """Release-Review 1.21: wer am Datum schon ausgeschieden ist oder noch nicht
+    angefangen hat, arbeitet dort laut Vertrag nicht (``_within_employment_window``)."""
+    gone = _person(_db_session, "Gina", "Gegangen", blocks=NEW)
+    gone.last_work_day = date(2026, 9, 30)
+    later = _person(_db_session, "Nora", "Neu", blocks=NEW)
+    later.first_work_day = date(2026, 12, 1)
+    _db_session.commit()
+    names = _rows(admin_client, date(2026, 10, 20))
+    assert "Gegangen" not in names and "Neu" not in names
+    assert "Neu" in _rows(admin_client, date(2026, 12, 1))

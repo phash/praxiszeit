@@ -311,14 +311,14 @@ export const helpContent: Record<string, HelpEntry> = {
       <div className="space-y-4">
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Übersicht</h3>
-          <p className="text-sm text-gray-600">Je Person und Wochentag die hinterlegten Arbeitszeit-Blöcke, Stand am gewählten Tag. Die Zeile „Besetzung" zeigt je halbe Stunde, wie viele Personen eingeplant sind. Filter oben: „Alle" oder eine Abteilung (Feld „Abteilung" der Person, z. B. MFA oder Ärzte). „ab … neu" kündigt eine schon eingetragene spätere Änderung an.</p>
+          <p className="text-sm text-gray-600">Je Person und Wochentag die hinterlegten Arbeitszeit-Blöcke, Stand am gewählten Tag. Die Zeile „Besetzung" zeigt je halbe Stunde, wie viele Personen eingeplant sind. Filter oben: „Alle" oder eine Abteilung (Feld „Abteilung/Bereich" der Person, z. B. MFA oder Ärzte). „ab … neu" kündigt eine schon eingetragene spätere Änderung an.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Bearbeiten</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
             <li>Schieber <span className="font-medium">„Bearbeiten"</span> rechts oben einschalten – vorher lässt sich nichts verschieben.</li>
             <li>Block ziehen verschiebt ihn, an den Rändern ziehen ändert Beginn oder Ende (15-Minuten-Raster; Tastatur: Pfeiltasten, mit Umschalt das Ende).</li>
-            <li><span className="font-medium">„Änderung speichern…"</span> öffnet „Arbeitszeit anpassen" mit den neuen Blöcken; „Gültig ab" ist der gewählte Tag. Erst dort gespeichert ändert sich das Soll – mit Vorschau wie jede Arbeitszeit-Änderung.</li>
+            <li><span className="font-medium">„Änderung speichern…"</span> öffnet den Dialog „Arbeitszeit &amp; Wochenstunden" mit den neuen Blöcken; „Gültig ab" ist der gewählte Tag. Erst dort gespeichert ändert sich das Soll – mit Vorschau wie jede Arbeitszeit-Änderung.</li>
           </ol>
           <p className="text-sm text-gray-600 mt-2">Personen ohne Blöcke, ohne Stundenzählung oder mit übernommenem Arbeitszeit-Fenster ändern Sie über „Ändern…" direkt im Dialog.</p>
         </section>
