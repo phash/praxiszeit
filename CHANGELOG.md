@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### ✨ Neu
+
+- **Arbeitszeiten im Team.** Neue Admin-Seite zeigt für alle aktiven Mitarbeitenden die Arbeitszeit-Blöcke je Wochentag als Balken auf einer Zeitachse, Stand am gewählten Tag. Filter „Alle“ oder je Abteilung (Feld „Abteilung“, z. B. MFA/Ärzte), eine Besetzungszeile je halbe Stunde und der Hinweis „ab … neu“ für schon eingetragene spätere Änderungen. Mit dem Schieber „Bearbeiten“ rechts oben lassen sich Blöcke ziehen (verschieben, Beginn/Ende ändern, 15-Minuten-Raster, auch per Tastatur). „Änderung speichern…“ öffnet „Arbeitszeit anpassen“ mit den neuen Blöcken und dem gewählten Tag als „Gültig ab“ – wirksam wird die Änderung erst dort, mit Vorschau und Schutzregeln. Neuer Endpunkt `GET /api/admin/team-schedule?date=`.
+
 ### ⚠️ Verhaltensänderung
 
 - **Arbeitszeit-Blöcke: Werktag ohne Block zählt 0 Stunden.** Hat eine Person Arbeitszeit-Blöcke, aber an einem Werktag (Mo–Fr) keinen Block, ist das laut Vertrag ihr freier Tag. Dort gestempelte Zeit wird jetzt gespeichert, aber nicht angerechnet: „An diesem Tag sind keine Arbeitszeit-Blöcke hinterlegt — angerechnet werden 0 Stunden. Die gestempelte Zeit bleibt gespeichert.“ Angerechnet wird sie nach „Anerkennen“ oder einer genehmigten „Anrechnung beantragen“. Bis 1.20.3 wurde ein solcher Tag gar nicht gekappt und voll angerechnet; so ließen sich die Zeiten eines Vertrags (z. B. „Di 07:30–13:00, Do 15:00–18:00“) nicht durchsetzen. Unverändert ungekappt bleiben Wochenende, Feiertage, „freie“ Sondertage, Personen ohne Blöcke oder ohne Stundenzählung sowie aus 1.19 übernommene Arbeitszeit-Fenster. Bestehende Einträge rechnet PraxisZeit nicht von selbst neu; eine Arbeitszeit-Änderung, die einen Wochentag frei macht, kappt die Einträge dieses Tages im Wirkungsbereich mit Vorschau. `/clock-status` und `/day-blocks` melden den Tag als `blockless_workday`, damit Stempelkarte und Pausen-Vorprüfung gleich rechnen.

@@ -277,6 +277,23 @@ Nicht angerechnete Zeit ist nie still. Unter der Uhrzeit eines Eintrags steht im
 
 > **Rechtlicher Hinweis:** Die Nichtanrechnung von Zeit vor, nach und zwischen den Blöcken ist eine **Anrechnungsregel des Betriebs**, keine gesetzliche Vorgabe. Der erhaltene Rohstempel dokumentiert gemäß § 16 ArbZG die tatsächliche Anwesenheit.
 
+### Arbeitszeiten im Team
+
+Menü **„Arbeitszeiten im Team"** zeigt für alle aktiven Mitarbeitenden auf einen Blick, wer laut Arbeitszeit-Blöcken wann arbeitet – je Wochentag (Mo–Fr) als Balken auf einer Zeitachse, in der Kalenderfarbe der Person.
+
+- **Stand am:** Gezeigt werden die Blöcke, die am gewählten Tag gelten. Wählen Sie einen späteren Tag, sehen Sie schon eingetragene künftige Arbeitszeiten. Steht bei einer Person **„ab 02.11.2026 neu"**, ist für sie eine spätere Änderung hinterlegt (die neuen Zeiten stehen im Tooltip).
+- **Filter:** **„Alle"** oder eine Abteilung. Die Auswahl entsteht aus dem Feld **„Abteilung"** der Mitarbeitenden (z. B. „MFA", „Ärzte") – tragen Sie es unter Benutzerverwaltung → Bearbeiten ein.
+- **Besetzung:** Die Zeile unter den Wochentagen zeigt je halbe Stunde, wie viele der gefilterten Personen eingeplant sind (Tooltip, z. B. *„Di 13:00–13:30: niemand"*). So fallen Lücken in der Besetzung sofort auf.
+- Personen ohne Blöcke (Soll nur nach Stunden) stehen mit „keine Arbeitszeit-Blöcke" in der Liste; ein aus früheren Versionen übernommenes Fenster ist grau gestrichelt, Mitarbeitende ohne Stundenzählung ebenso.
+
+**Bearbeiten:** Schalten Sie zuerst rechts oben den Schieber **„Bearbeiten"** ein – vorher lässt sich nichts verschieben, ein versehentliches Ziehen ist ausgeschlossen. Dann gilt:
+
+1. Einen Block **ziehen** verschiebt ihn; an seinem **linken oder rechten Rand** ziehen ändert Beginn bzw. Ende. Gezogen wird im 15-Minuten-Raster. Per Tastatur: Block anwählen, **Pfeiltasten** verschieben um 15 Minuten, mit **Umschalt** ändert sich das Ende.
+2. Geänderte Zeilen sind gelb hinterlegt. **„Verwerfen"** stellt den gespeicherten Stand wieder her.
+3. **„Änderung speichern…"** öffnet den Dialog **„Arbeitszeit anpassen"** (→ [Mitarbeiter bearbeiten](#mitarbeiter-bearbeiten)) mit den neuen Blöcken; **„Gültig ab"** ist der unter „Stand am" gewählte Tag und lässt sich dort ändern. Erst mit dem Speichern im Dialog ändern sich Tagessoll und Anrechnung – mit derselben Vorschau und denselben Schutzregeln wie jede Arbeitszeit-Änderung (rückwirkend nur mit Grund). Feinere Zeiten (5-Minuten-Raster), weitere Blöcke und die Pause innerhalb der Blöcke stellen Sie ebenfalls im Dialog ein.
+
+Personen ohne Blöcke, ohne Stundenzählung oder mit übernommenem Fenster lassen sich nicht ziehen; **„Ändern…"** öffnet für sie direkt den Dialog. Solange Änderungen offen sind, ist „Stand am" gesperrt; den Schieber auszuschalten verwirft sie nach Rückfrage.
+
 ### Mitarbeiter bearbeiten
 
 ![Mitarbeiter bearbeiten](screenshots/17-admin-benutzer-bearbeiten.png)
