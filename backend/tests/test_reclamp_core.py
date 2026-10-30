@@ -165,14 +165,18 @@ def test_not_extendable_at_the_old_edge(db, test_user):
 
 
 def test_not_extendable_when_the_weekday_loses_its_blocks(db, test_user):
-    """E50 / 9.2 Schritt 12 (Review Task 7): fallen die Blöcke des Wochentags
-    weg, gilt dort keine Hülle mehr — die weiteste mögliche, also „auf dieser
-    Seite weiter". Hauptfall: ein Altfenster aus #201 wird entfernt, die
+    """E50 / 9.2 Schritt 12 (Review Task 7): fallen die Blöcke weg (neue Zeile
+    ohne Blöcke), gilt dort keine Hülle mehr — die weiteste mögliche, also „auf
+    dieser Seite weiter". Verliert in einer Woche MIT Blöcken nur ein Wochentag
+    seinen Block, wird dort nichts mehr angerechnet (``test_closed_weekday_clamp``).
+    Hauptfall: ein Altfenster aus #201 wird entfernt, die
     Rohstempel gingen vor 1.19.1 verloren. Ohne Hinweis bliebe der Eintrag still
     gekappt. Am Feiertag kappte auch der alte Snapshot nicht (#484) — ein Treffer
     auf der Kante wäre dort Zufall, kein verlorener Stempel."""
     old = block_week(mon=[("15:00", "18:00")], tue=[("08:00", "12:00")])
-    prev = _setup(db, test_user, old=old, new=block_week(tue=[("08:00", "12:00")]))
+    add_row(db, test_user, date(2026, 1, 1), week=old)
+    add_row(db, test_user, MON, weekly_hours=20)                # Blöcke entfernt
+    prev = work_blocks_service.parse_week_blocks(old).blocks
     db.add(PublicHoliday(date=date(2026, 6, 8), name="Testfeiertag", year=2026, tenant_id=DEFAULT_TENANT_ID))
     db.commit()
     invalidate_holiday_cache()
@@ -350,12 +354,14 @@ def test_collapsed_auto_closed_entry_keeps_its_synthetic_raw_end(db, test_user):
 
 
 def test_auto_closed_entry_keeps_its_marker_without_blocks(db, test_user):
-    """Fallen die Blöcke des Wochentags weg, bleibt der Eintrag unverändert:
+    """Fallen die Blöcke weg (Zeile ohne Blöcke), bleibt der Eintrag unverändert:
     angerechnet bis zum wirksamen Ende, Rohende 23:59 als Protokoll — keine
     Scheinänderung, keine Anrechnung bis 23:59. Ohne Hülle wäre das Ende
     erweiterbar, ein echter Stempel fehlt aber: Hinweis „nicht erweiterbar"
     (E50, Review Task 7)."""
-    prev = _setup(db, test_user, new=block_week(tue=[("08:00", "12:00")]))
+    add_row(db, test_user, date(2026, 1, 1), week=OLD)
+    add_row(db, test_user, MON, weekly_hours=20)                # Blöcke entfernt
+    prev = work_blocks_service.parse_week_blocks(OLD).blocks
     e = entry(db, test_user, MON, t(8), t(18, 15), raw_end=t(23, 59), auto_closed=True)
     result = _run(db, test_user, prev)
     assert (result.changed, result.skipped) == ([], [])
@@ -379,7 +385,8 @@ def test_credited_minutes_for():
     assert wws.credited_minutes_for(k, 15, 480, 1080) == 450        # K1
     assert wws.credited_minutes_for(k, 15, 420, 1140) == 480        # K7: Hülle + Lücke
     assert wws.credited_minutes_for(k, 15, 300, 420) == 0           # K8: Kollaps
-    assert wws.credited_minutes_for([], 15, 480, 1080) == 600
+    assert wws.credited_minutes_for(None, 15, 480, 1080) == 600      # keine Kappung
+    assert wws.credited_minutes_for([], 15, 480, 1080) == 0          # Werktag ohne Blöcke
 
 
 def test_open_entry_loses_checks_every_kink():

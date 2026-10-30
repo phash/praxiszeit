@@ -21,6 +21,7 @@ interface ClockStatus {
   elapsed_minutes?: number | null;
   // Spec 2026-10-08 (8.4): Blöcke von heute und der Puffer des Ausstempelns (E80).
   blocks_today?: TimeBlock[];
+  blockless_workday?: boolean; // Werktag ohne Blöcke → nichts angerechnet
   grace_minutes?: number;
 }
 
@@ -144,7 +145,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
       // Zeit, Stempelzeit nach [letzter Block + Puffer] ist keine Arbeitszeit.
       const blocks = status?.blocks_today ?? [];
       const grace = status?.grace_minutes ?? 15;
-      const credited = hullClamp(blocks, grace, startHHMM, endHHMM);
+      const credited = hullClamp(blocks, grace, startHHMM, endHHMM, status?.blockless_workday ?? false);
       const segs = gapSegments(blocks, grace, credited.start, credited.end);
       const breakErr = computeBreakError([], credited.start, credited.end, breakMinutes, false, segs);
       if (breakErr && !waiver) {

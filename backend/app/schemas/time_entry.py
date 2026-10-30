@@ -202,6 +202,8 @@ class DayBlocksResponse(BaseModel):
     Neuanlage kappt (ein gespeicherter Eintrag bringt seinen eigenen mit, E80)."""
     date: date_type
     blocks: List[ClockBlock] = []
+    # Werktag ohne Blöcke im Blockmodell: Arbeit wird nicht angerechnet (0 h).
+    blockless_workday: bool = False
     grace_minutes: int = 15
 
 
@@ -226,6 +228,7 @@ class ClockStatusResponse(BaseModel):
     # im StampWidget und den Dashboard-Status in der Lücke (E69) — und der
     # Puffer, mit dem das Ausstempeln kappen wird (E80). In JEDEM Zweig.
     blocks_today: List[ClockBlock] = []
+    blockless_workday: bool = False       # Werktag ohne Blöcke → nichts angerechnet
     grace_minutes: int = 15
     # Gesamtreview 1.20 (Fund 24): der AKTUELLE Mandanten-Puffer, mit dem eine
     # Neuanlage kappt (E80) — für die §4-Vorprüfung und die Pausen-Automatik der

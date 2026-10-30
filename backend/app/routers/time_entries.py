@@ -310,7 +310,7 @@ def _close_stale_entry(
 
 # --- Clock endpoints (must be BEFORE /{entry_id} to avoid route conflicts) ---
 
-def _today_closed_net_minutes(db: Session, user: User, today: date) -> int:
+def _toblockless_workday_net_minutes(db: Session, user: User, today: date) -> int:
     """#494: angerechnete Minuten der HEUTE abgeschlossenen Einträge.
 
     ``net_hours`` ist derselbe Wert, der ins Ist geht (gekappte Zeit #201, Pause
@@ -370,6 +370,8 @@ def _clock_blocks_and_grace(db: Session, user: User, today: date, open_entry) ->
     ``{"start", "end"}`` und der Puffer, mit dem ``clock_out`` kappen wird — der
     gespeicherte des offenen Eintrags (E80), sonst der aktuelle
     Mandanten-Puffer. Ohne Stundenzählung kappt nichts → keine Blöcke.
+    Drittes Element: Werktag ohne Blöcke (``credit_blocks`` → ``[]``) — dort
+    wird nichts angerechnet, das Frontend rechnet dann mit 0.
 
     Die Blöcke kommen datumsaufgelöst über ``get_scheduled_blocks`` (leer am
     Wochenende, an Feiertagen und freien Sondertagen, #484) — nie aus der
@@ -383,15 +385,16 @@ def _clock_blocks_and_grace(db: Session, user: User, today: date, open_entry) ->
         else work_window_service.get_grace_minutes(db, user.tenant_id)
     )
     if not getattr(user, "track_hours", True):
-        return [], grace
+        return [], grace, False
+    day = work_window_service.credit_blocks(db, user, today)
     blocks = [
         {
             "start": work_blocks_service.minutes_to_hhmm(start),
             "end": work_blocks_service.minutes_to_hhmm(end),
         }
-        for start, end in work_window_service.get_scheduled_blocks(db, user, today)
+        for start, end in day or []
     ]
-    return blocks, grace
+    return blocks, grace, day == []
 
 
 @router.get("/clock-status", response_model=ClockStatusResponse)
@@ -436,12 +439,12 @@ def get_clock_status(
             db.commit()  # F-043: /clock-status owns the commit
             open_entry = None
 
-    closed_minutes = _today_closed_net_minutes(db, current_user, today)
+    closed_minutes = _toblockless_workday_net_minutes(db, current_user, today)
     target_hours = _today_target_hours(db, current_user, today)
     # Spec 2026-10-08 (11.1): in JEDEM Zweig — auch nach dem Stale-Auto-Close
     # (``open_entry`` ist dann None → Mandanten-Puffer) und gerade im nicht
     # eingestempelten Zustand (Dashboard-Status in der Lücke, E69).
-    blocks_today, grace_minutes = _clock_blocks_and_grace(db, current_user, today, open_entry)
+    blocks_today, grace_minutes, blockless_workday = _clock_blocks_and_grace(db, current_user, today, open_entry)
     # Gesamtreview 1.20 (Fund 24): eine Neuanlage kappt mit dem AKTUELLEN
     # Mandanten-Puffer (E80), nicht mit dem des offenen Eintrags.
     from app.services import work_window_service
@@ -456,6 +459,7 @@ def get_clock_status(
             today_net_minutes=closed_minutes,
             today_target_hours=target_hours,
             blocks_today=blocks_today,
+            blockless_workday=blockless_workday,
             grace_minutes=grace_minutes,
             tenant_grace_minutes=tenant_grace_minutes,
         )
@@ -476,6 +480,7 @@ def get_clock_status(
         today_net_minutes=closed_minutes + running_net,
         today_target_hours=target_hours,
         blocks_today=blocks_today,
+        blockless_workday=blockless_workday,
         grace_minutes=grace_minutes,
         tenant_grace_minutes=tenant_grace_minutes,
     )
@@ -498,8 +503,8 @@ def get_day_blocks(
     Lücke. Kein ``user_id``: die Zeiterfassung ist die eigene Ansicht. Rein
     lesend, keine Ankersperre (wie die Vorschauen, Spec 9.3).
     """
-    blocks, grace = _clock_blocks_and_grace(db, current_user, day, None)
-    return DayBlocksResponse(date=day, blocks=blocks, grace_minutes=grace)
+    blocks, grace, blockless = _clock_blocks_and_grace(db, current_user, day, None)
+    return DayBlocksResponse(date=day, blocks=blocks, blockless_workday=blockless, grace_minutes=grace)
 
 
 @router.post("/clock-in", response_model=TimeEntryResponse, status_code=status.HTTP_201_CREATED)

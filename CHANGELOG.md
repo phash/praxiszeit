@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### ⚠️ Verhaltensänderung
+
+- **Arbeitszeit-Blöcke: Werktag ohne Block zählt 0 Stunden.** Hat eine Person Arbeitszeit-Blöcke, aber an einem Werktag (Mo–Fr) keinen Block, ist das laut Vertrag ihr freier Tag. Dort gestempelte Zeit wird jetzt gespeichert, aber nicht angerechnet: „An diesem Tag sind keine Arbeitszeit-Blöcke hinterlegt — angerechnet werden 0 Stunden. Die gestempelte Zeit bleibt gespeichert.“ Angerechnet wird sie nach „Anerkennen“ oder einer genehmigten „Anrechnung beantragen“. Bis 1.20.3 wurde ein solcher Tag gar nicht gekappt und voll angerechnet; so ließen sich die Zeiten eines Vertrags (z. B. „Di 07:30–13:00, Do 15:00–18:00“) nicht durchsetzen. Unverändert ungekappt bleiben Wochenende, Feiertage, „freie“ Sondertage, Personen ohne Blöcke oder ohne Stundenzählung sowie aus 1.19 übernommene Arbeitszeit-Fenster. Bestehende Einträge rechnet PraxisZeit nicht von selbst neu; eine Arbeitszeit-Änderung, die einen Wochentag frei macht, kappt die Einträge dieses Tages im Wirkungsbereich mit Vorschau. `/clock-status` und `/day-blocks` melden den Tag als `blockless_workday`, damit Stempelkarte und Pausen-Vorprüfung gleich rechnen.
+
 ## [1.20.3] - 2026-10-29
 
 ### 🔒 Sicherheit

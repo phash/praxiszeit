@@ -89,6 +89,10 @@ describe('runningCreditedMinutes — laufender Eintrag wie clock_out (Ultrarevie
     expect(runningCreditedMinutes([], 15, '14:17', hhmmToMinutes('15:27'), 0, false)).toBe(70);
     expect(runningCreditedMinutes(undefined, 15, '15:07', hhmmToMinutes('15:27'), 30, false)).toBe(0);
   });
+  it('Werktag ohne Blöcke (blocklessWorkday): 0, anerkannt Wanduhrzeit', () => {
+    expect(runningCreditedMinutes([], 15, '08:00', hhmmToMinutes('11:00'), 0, false, true)).toBe(0);
+    expect(runningCreditedMinutes([], 15, '08:00', hhmmToMinutes('11:00'), 0, true, true)).toBe(180);
+  });
 });
 
 describe('gapSegments — Zwilling von gap_segments (Σ = uncredited_minutes)', () => {
@@ -152,6 +156,12 @@ describe('hullClamp — Zwilling der Hülle in clamp (Spec 6.1)', () => {
       .toEqual({ start: '22:00', end: '06:00' });
     expect(hullClamp([{ start: '08:00', end: '16:00' }], 15, '07:00:00', '17:00:00'))
       .toEqual({ start: '07:45', end: '16:15' });
+  });
+
+  it('Werktag ohne Blöcke (blocklessWorkday): Kollaps auf den Beginn wie clamp', () => {
+    expect(hullClamp([], 15, '07:30', '13:00', true)).toEqual({ start: '07:30', end: '07:30' });
+    // unvollständige Eingabe bleibt unverändert
+    expect(hullClamp([], 15, '07:30', '', true)).toEqual({ start: '07:30', end: '' });
   });
 });
 

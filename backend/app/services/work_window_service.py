@@ -35,6 +35,12 @@ CLAMP_WARNING_CODE = "WORK_WINDOW_CLAMPED"
 # ``end_input_for``).
 AUTO_CLOSE_RAW_END = time(23, 59)
 # Spec 6.2 / P21: nur Mitarbeiterpfade, nur an Lückentexten geschlossener Einträge.
+# Werktag ohne Arbeitszeit-Blöcke (``credit_blocks`` → ``[]``). Mit
+# Antrags-Hinweis für Mitarbeitende: genau hier gehört die Anerkennung hin.
+CLOSED_DAY_TEXT = (
+    "An diesem Tag sind keine Arbeitszeit-Blöcke hinterlegt — angerechnet werden 0 Stunden. "
+    "Die gestempelte Zeit bleibt gespeichert."
+)
 EMPLOYEE_CREDIT_HINT = (
     " Haben Sie in dieser Zeit gearbeitet, beantragen Sie die Anrechnung "
     "(Zeiterfassung → Eintrag → „Anrechnung beantragen“)."
@@ -146,21 +152,44 @@ def get_scheduled_blocks(db: Session, user, d: date, *, wh_changes=None,
     statt Feiertage still weiter zu kappen. ``wh_changes`` /
     ``soll_free_dates``: optional vorgeladen (Muster #449); ohne sie fragt die
     Funktion je Aufruf den Resolver bzw. die Feiertage ab."""
+    return credit_blocks(db, user, d, wh_changes=wh_changes, soll_free_dates=soll_free_dates) or []
+
+
+def credit_blocks(db: Session, user, d: date, *, wh_changes=None,
+                  soll_free_dates=None) -> Optional[list]:
+    """Wie ``get_scheduled_blocks``, unterscheidet aber die zwei Bedeutungen von
+    „keine Blöcke":
+
+    - ``None`` — der Tag wird nicht gekappt: Wochenende, Feiertag, freier
+      Sondertag (#484), keine Blöcke im Snapshot, oder eine Altzeile aus
+      Migration 073 (dort hieß „Tag ohne Fenster" schon immer „keine Kappung").
+    - ``[]`` — Werktag ohne Blöcke in einer Woche des Blockmodells: laut Vertrag
+      wird an diesem Tag nicht gearbeitet, angerechnet wird nichts (0 h, bis
+      zur Anerkennung). Bis 1.20.3 zählte Arbeit dort voll.
+    - sonst die Blöcke des Tages."""
     if d.weekday() > 4:
-        return []
+        return None
     sched = calculation_service.get_schedule_for_date(db, user, d, wh_changes)
-    if sched.blocks is None or not sched.blocks[d.weekday()]:
-        return []
+    if sched.blocks is None:
+        return None
     if soll_free_dates is not None:
         if d in soll_free_dates:
-            return []
+            return None
     elif _is_soll_free_weekday(db, user, d):
-        return []
-    return list(sched.blocks[d.weekday()])
+        return None
+    day = list(sched.blocks[d.weekday()])
+    if not day and any(p is None for p in sched.block_pauses or ()):  # Altzeile (Spec 3.3)
+        return None
+    return day
 
 
 def has_blocks(db: Session, user, d: date, **preload) -> bool:
     return bool(get_scheduled_blocks(db, user, d, **preload))
+
+
+def is_closed_day(db: Session, user, d: date, **preload) -> bool:
+    """Werktag ohne Blöcke im Blockmodell (siehe ``credit_blocks``)."""
+    return credit_blocks(db, user, d, **preload) == []
 
 
 def clamp_applies(db: Session, user, d: date, *, credit_override: bool, **preload) -> bool:
@@ -171,7 +200,7 @@ def clamp_applies(db: Session, user, d: date, *, credit_override: bool, **preloa
         user is not None
         and bool(getattr(user, "track_hours", True))
         and not credit_override
-        and has_blocks(db, user, d, **preload)
+        and credit_blocks(db, user, d, **preload) is not None
     )
 
 
@@ -189,9 +218,16 @@ def credit_gaps(blocks, grace: int) -> list:
 def _clamp_core(db, user, d, start, end, grace, *, credit_override, wh_changes, soll_free_dates):
     if credit_override or user is None or not getattr(user, "track_hours", True):
         return ClampResult(start, end, None, None, 0, None), []
-    blocks = get_scheduled_blocks(db, user, d, wh_changes=wh_changes, soll_free_dates=soll_free_dates)
-    if not blocks:
+    blocks = credit_blocks(db, user, d, wh_changes=wh_changes, soll_free_dates=soll_free_dates)
+    if blocks is None:
         return ClampResult(start, end, None, None, 0, None), []
+    if not blocks:
+        # Werktag ohne Blöcke: wie ein Eintrag ganz außerhalb der Hülle. Ein
+        # offener Eintrag behält seinen Beginn (Kollaps erst beim Ausstempeln);
+        # ohne Beginn (Teil-Update) gibt es keinen Kollaps-Punkt.
+        if start is None or end is None:
+            return ClampResult(start, end, None, None, 0, grace), []
+        return ClampResult(start, start, start, end, 0, grace), []
 
     floor = _t(_shift_min(blocks[0][0], -grace))
     ceil = _t(_shift_min(blocks[-1][1], grace))
@@ -277,10 +313,13 @@ def clamp_warning_text(db: Session, user, d: date, result: ClampResult, *,
     Aufrufer wäre genau das Muster, das in diesem Projekt schon mehrfach
     auseinandergelaufen ist. Der genannte Puffer ist der tatsächlich
     angewandte (``result.grace_minutes``, E80). ``db``/``user``/``d`` werden nur
-    gelesen, wenn eine Lücke aufzulösen ist. Ohne Code-Präfix, weil die
+    gelesen, wenn gekappt wurde (Tag ohne Blöcke, Lücke). Ohne Code-Präfix, weil die
     Zeilen-Warnungen der XLS-Vorschau als Klartext im Tooltip stehen."""
     if result.grace_minutes is None:
         return None
+    if user is not None and d is not None and is_closed_day(db, user, d):
+        text = CLOSED_DAY_TEXT
+        return text + EMPLOYEE_CREDIT_HINT if for_employee else text
     g = result.grace_minutes
     es, ee, rs, re_ = result.eff_start, result.eff_end, result.raw_start, result.raw_end
 
@@ -738,15 +777,16 @@ def _soll_free_dates(db: Session, tenant_id, start: date, end: date) -> set:
     return holidays | set(free_special_days_in_range(db, tenant_id, start, end))
 
 
-def _not_extendable(entry, old_day: list, new_day: list, grace: int,
+def _not_extendable(entry, old_day: list, new_day: Optional[list], grace: int,
                     old_grace: Optional[int]) -> Optional[str]:
     """E50: Seite ohne Rohstempel, gespeicherte Zeit exakt auf der ALTEN
     Hüllenkante (mit dem gespeicherten Puffer, sonst dem aktuellen) und die neue
     Hülle ist auf dieser Seite weiter → der Eintrag kann nicht erweitert werden,
     weil der echte Stempel vor 1.19.1 verloren ging.
 
-    Review Task 7: ein Tag OHNE neue Blöcke hat keine Hülle — die weiteste
-    mögliche, also auf beiden Seiten „weiter" (Hauptfall: ein Altfenster aus
+    ``new_day`` wie ``credit_blocks``. Review Task 7: ein Tag ohne Kappung
+    (``None``) hat keine Hülle — die weiteste mögliche, also auf beiden Seiten
+    „weiter" (Hauptfall: ein Altfenster aus
     #201 wird entfernt). Und das Rohende 23:59 eines automatisch geschlossenen
     Eintrags ist kein Stempel (P18): sein Ende ist „ohne Rohstempel", die
     Neukappung verlängert es nie. Ein übernommenes echtes Rohende nach einem
@@ -757,7 +797,7 @@ def _not_extendable(entry, old_day: list, new_day: list, grace: int,
     offene Seite eines halboffenen #201-Fensters (Platzhalter-Ende 23:59 = kein
     Ende, Spec 5.3; Beginn-Untergrenze 00:00, vor der nichts liegt) hat nie
     gekappt — eine Zeit dort ist kein verlorener Stempel."""
-    if not old_day:
+    if not old_day or new_day == []:  # Tag ohne Blöcke: nichts zu erweitern
         return None
     g_old = old_grace if old_grace is not None else grace
     sides = []
@@ -856,7 +896,7 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
         # Stempel (Schritt 12, Review Task 7).
         old_day = (list(prev_blocks_by_weekday[wd])
                    if prev_blocks_by_weekday and e.date not in soll_free else [])
-        new_day = get_scheduled_blocks(db, user, e.date, wh_changes=wh_changes, soll_free_dates=soll_free)
+        new_day = credit_blocks(db, user, e.date, wh_changes=wh_changes, soll_free_dates=soll_free)
         flag = _not_extendable(e, old_day, new_day, grace, old_grace)    # Schritt 12 (vor dem Setzen)
         if r.grace_minutes is not None:
             e.clamp_grace_minutes = r.grace_minutes
@@ -976,12 +1016,15 @@ def join_warnings(*warnings: Optional[str]) -> Optional[str]:
     return " ".join(parts) if parts else None
 
 
-def credited_minutes_for(blocks: list, grace: int, start_min: int, end_min: int) -> int:
+def credited_minutes_for(blocks: Optional[list], grace: int, start_min: int, end_min: int) -> int:
     """Angerechnete Minuten (ohne Pause) eines Eintrags ``start``–``end`` gegen
     die Blöcke EINES Tages — dieselbe Regel wie ``_clamp_core``, rein in Minuten
-    und ohne Datenbank (für die P1-Knickstellen-Prüfung)."""
-    if not blocks:
+    und ohne Datenbank (für die P1-Knickstellen-Prüfung). ``blocks`` wie
+    ``credit_blocks``: ``None`` = keine Kappung, ``[]`` = Tag ohne Blöcke (0)."""
+    if blocks is None:
         return max(0, end_min - start_min)
+    if not blocks:
+        return 0
     s = max(start_min, _shift_min(blocks[0][0], -grace))
     e = min(end_min, _shift_min(blocks[-1][1], grace))
     if s >= e:
@@ -989,7 +1032,7 @@ def credited_minutes_for(blocks: list, grace: int, start_min: int, end_min: int)
     return e - s - sum(_overlap(s, e, gs, ge) for gs, ge in credit_gaps(blocks, grace))
 
 
-def open_entry_loses(old_blocks: list, new_blocks: list, grace: int, start: time, now: time) -> bool:
+def open_entry_loses(old_blocks: Optional[list], new_blocks: Optional[list], grace: int, start: time, now: time) -> bool:
     """P1: verliert der offene Eintrag von heute für IRGENDEIN mögliches Ende ≥
     jetzt? ``angerechnet_neu(Ende) − angerechnet_alt(Ende)`` ist stückweise linear
     mit Knicken an Hüllen- und Lückenkanten beider Snapshots — geprüft wird an
