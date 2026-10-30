@@ -27,6 +27,8 @@ const AdminSettings = lazy(() => import('./pages/admin/Settings'));
 const AdminBackups = lazy(() => import('./pages/admin/Backups'));
 const AdminBilling = lazy(() => import('./pages/admin/Billing'));
 const UserJournal = lazy(() => import('./pages/admin/UserJournal'));
+// 1.21 Teamübersicht der Arbeitszeiten
+const TeamSchedule = lazy(() => import('./pages/admin/TeamSchedule'));
 const Help = lazy(() => import('./pages/Help'));
 // #305 Schichtplanung — lazy (zieht @dnd-kit nur bei Bedarf ins Bundle)
 const ShiftPlanning = lazy(() => import('./pages/ShiftPlanning'));
@@ -153,6 +155,7 @@ function App() {
           <Route index element={<AdminDashboard />} />
           <Route path="users" element={<Users />} />
           <Route path="users/:userId/journal" element={<UserJournal />} />
+          <Route path="team-schedule" element={<TeamSchedule />} />
           <Route path="change-requests" element={<AdminChangeRequests />} />
           <Route path="reports" element={<Reports />} />
           <Route path="audit-log" element={<AuditLog />} />

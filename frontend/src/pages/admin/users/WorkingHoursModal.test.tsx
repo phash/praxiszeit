@@ -2223,3 +2223,26 @@ describe('Gesamtreview 1.20 Fund 14: Auswirkungs-Box bei fester Monatsarbeitszei
     expect(within(panel).queryByText(/Tagessoll je Wochentag/)).not.toBeInTheDocument();
   });
 });
+
+describe('1.21 Teamübersicht: Entwurf vorbelegen (initialBlocks/initialEffectiveFrom)', () => {
+  const draft: WeekBlocks = [
+    { blocks: [], pause_minutes: 0 },
+    { blocks: [{ start: '07:30', end: '13:00' }], pause_minutes: 0 },
+    { blocks: [], pause_minutes: 0 },
+    { blocks: [{ start: '15:00', end: '18:00' }], pause_minutes: 0 },
+    { blocks: [], pause_minutes: 0 },
+  ];
+
+  it('öffnet im Block-Modus mit den gezogenen Blöcken und dem Stichtag', async () => {
+    renderModal({ initialBlocks: draft, initialEffectiveFrom: '2026-08-03' });
+    expect(await screen.findByLabelText('Di Block 1 von')).toHaveValue('07:30');
+    expect(screen.getByLabelText('Do Block 1 bis')).toHaveValue('18:00');
+    expect(screen.getByLabelText('Gültig ab')).toHaveValue('2026-08-03');
+  });
+
+  it('ohne Entwurf bleibt der heutige Stand die Vorgabe', async () => {
+    renderModal();
+    expect(await screen.findByLabelText('Gültig ab')).toHaveValue('2026-07-26');
+    expect(screen.queryByLabelText('Di Block 1 von')).toBeNull();
+  });
+});

@@ -38,6 +38,11 @@ interface WorkingHoursModalProps {
   // Gesamtreview 1.20 (Fund 14): feste Monatsarbeitszeit (#377 2b) — die Werte
   // des Block-Editors sind dann geplante Anwesenheit, kein Tages-/Wochensoll.
   fixedMonthlyTarget?: boolean;
+  // 1.21 Teamübersicht: in der Übersicht gezogene Blöcke als Entwurf (Block-Modus)
+  // und das dort gewählte Datum als Vorgabe für „Gültig ab". Gespeichert wird
+  // wie jede Änderung hier — mit Vorschau und Verkürzungsschutz.
+  initialBlocks?: WeekBlocks | null;
+  initialEffectiveFrom?: string;
   onClose: () => void;
   onChanged: () => void;
 }
@@ -270,6 +275,8 @@ export default function WorkingHoursModal({
   currentBlocks = null,
   trackHours = true,
   fixedMonthlyTarget = false,
+  initialBlocks = null,
+  initialEffectiveFrom,
   onClose,
   onChanged,
 }: WorkingHoursModalProps) {
@@ -293,7 +300,10 @@ export default function WorkingHoursModal({
     blocks: currentBlocks,
   }), [currentWeeklyHours, currentUseDailySchedule, currentDayHours, currentWorkDays, currentBlocks]);
 
-  const [formData, setFormData] = useState<FormState>(() => formFromSnapshot(propsSchedule, todayIso(), trackHours));
+  const [formData, setFormData] = useState<FormState>(() => {
+    const base = formFromSnapshot(propsSchedule, initialEffectiveFrom ?? todayIso(), trackHours);
+    return trackHours && initialBlocks ? { ...base, mode: 'blocks', blocks: initialBlocks } : base;
+  });
 
   const [preview, setPreview] = useState<WorkingHoursChangePreview | null>(null);
   // Der Schlüssel, zu dem `preview` gehört: zwischen einer neuen Eingabe und
