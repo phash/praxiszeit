@@ -33,6 +33,7 @@ import {
   Rocket,
   Database,
   CalendarClock,
+  CalendarRange,
 } from 'lucide-react';
 import HelpPanel from './HelpPanel';
 import StampWidget from './StampWidget';
@@ -192,6 +193,8 @@ export default function Layout() {
   const adminNavItems = [
     { path: '/admin', label: 'Admin-Dashboard', icon: Settings, badge: 0 },
     { path: '/admin/users', label: 'Benutzerverwaltung', icon: Users, badge: 0 },
+    // 1.21 Teamübersicht: wer arbeitet laut Arbeitszeit-Blöcken wann
+    { path: '/admin/team-schedule', label: 'Arbeitszeiten im Team', icon: CalendarRange, badge: 0 },
     { path: '/admin/change-requests', label: 'Änderungsanträge', icon: FileEdit, badge: pendingCRCount },
     { path: '/admin/reports', label: 'Berichte', icon: FileText, badge: 0 },
     { path: '/admin/absences', label: 'Abwesenheiten', icon: Calendar, badge: 0 },
