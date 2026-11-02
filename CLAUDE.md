@@ -37,14 +37,14 @@ Native-Laufzeit, PostgreSQL, Windows-Installer, SSL, systemd → **[docs/NATIVE-
 ### Tests
 ```bash
 cd e2e && npx playwright test                                    # E2E (155+ Tests)
-# Backend Unit (4100+ Tests) — Wegwerf-Container gegen den aktuellen Code, SQLite, die 6 PG-Dateien ausgeschlossen:
+# Backend Unit (4100+ Tests) — Wegwerf-Container gegen den aktuellen Code, SQLite, die 7 PG-Dateien ausgeschlossen:
 rm -f backend/test.db backend/test.db-wal backend/test.db-shm; docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/backend":/app -w /app \
   -e SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_hex(32))') -e ADMIN_EMAIL=ci@example.invalid \
   -e ADMIN_PASSWORD=LocalCiDummy2025X -e APP_DB_USER=ci -e APP_DB_PASSWORD=ci -e ENVIRONMENT=development \
   -e CORS_ORIGINS=http://localhost -e DATABASE_URL=sqlite:////tmp/t.db -e TZ=Europe/Berlin praxiszeit-backend \
   python -m pytest tests/ -q -p no:cacheprovider --ignore=tests/test_tenant_rls.py --ignore=tests/test_073_migration_pg.py \
   --ignore=tests/test_net_hours_parity_pg.py --ignore=tests/test_reclamp_concurrency.py --ignore=tests/test_handbuch_seed_pg.py \
-  --ignore=tests/test_concurrency.py
+  --ignore=tests/test_year_closing_lock_pg.py --ignore=tests/test_concurrency.py
 docker compose exec backend pytest tests/test_tenant_rls.py -v   # RLS Integration (20 Tests, gegen Dev-PG)
 docker compose exec backend pytest tests/test_cross_tenant_api.py -v  # App-Layer Tenant-Filter (F-026)
 docker compose exec backend pytest tests/test_concurrency.py     # Postgres-only Race-Tests
@@ -57,6 +57,7 @@ cd frontend && npm test                                          # Vitest Utils-
 - **⚠️ Vitest hängt mit Default-`forks`-Pool** (Node 24 + vitest 4: `Failed to start forks worker … Timeout waiting for worker to respond`, `Test Files no tests`) → `npx vitest run --pool=threads` (einzeln `npx vitest run <datei> --pool=threads`; hängt `scripts/local-ci.sh`, Pool dort gleich setzen). **Speicher knapp (Exit 137 = OOM-Killer, kein Testfehler):** Vollsuite mit `--pool=threads --maxWorkers=2`; vitest, pytest, Playwright und `docker build` nie gleichzeitig.
 - **⚠️ Backend-Suite ~22–24 Uhr UTC = Mitternachts-Flakes** (`date.today()` Container-UTC vs. `now_local()` Europe/Berlin; clock/create/break_waiver-Tests) → Suite mit `-e TZ=Europe/Berlin` fahren.
 - Nach nginx.conf / Frontend-Änderungen: `docker compose build frontend && docker compose up -d frontend`
+- **SQLite sieht abgebrochene PG-Transaktionen nie:** Schreibpfade mit rohem SQL (`text(...)`, `pg_*`-Funktionen) brauchen einen `_pg`-Test; der Release-Smoke führt jeden geänderten Schreibpfad einmal auf einer echten PG-Installation aus (alte Version mit Daten befüllen, updaten, Funktion ausführen).
 - **Version-Smoke-Test:** `GET /api/system/info` → `version` (überall: Docker, nativ, Windows). `/api/health` liefert keine Version; `/openapi.json` nur ohne `ENVIRONMENT=production` (Docker: HTML bzw. 404).
 - **⚠️ `validate-release.sh` smoke-testet NUR `postgres`/`initdb`, KEINEN echten Login/keine API** → nach JEDEM Dependency-Bump oder Installer-Change echten Login auf einem REALEN Host prüfen (nativ auf [[reference_test-box-131]] via `install.sh` + Browser/`curl POST /api/auth/login`, oder Docker-Bundle). Unit-Tests + validate-release reichen NICHT (1.8.5–1.8.10-Hotfix-Kette).
 
@@ -82,7 +83,7 @@ cd frontend && npm test                                          # Vitest Utils-
 - **`.env`-Drift:** seit Migration 027 braucht `.env` `APP_DB_USER`, `APP_DB_PASSWORD`, `ENVIRONMENT`, `CORS_ORIGINS` (siehe `.env.example`), sonst `required variable APP_DB_PASSWORD is missing`.
 - **Backend-Container ist gebaut** (kein Host-Volume): nach Edits `docker compose cp <host-file> backend:/app/<path>` VOR `pytest`; Prod: `docker compose build backend && docker compose up -d backend`.
 - **Frontend `node_modules` ist root-owned** → Host-`npm install` EACCES; `docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm install --silent && ..."`. `npx tsc --noEmit`, `npm run build`, `npm test -- --run` laufen ohne install. Gemischte Owner → als root installieren + im selben Lauf `chown -R <uid>:<gid> node_modules package.json package-lock.json` (auch `tools/`).
-- **Test-Stratifizierung:** Unit-Tests laufen gegen SQLite (conftest.py). Immer die SECHS Postgres-Dateien per `--ignore=` ausschließen wie `scripts/local-ci.sh` (`test_tenant_rls.py`, `test_073_migration_pg.py`, `test_net_hours_parity_pg.py`, `test_reclamp_concurrency.py`, `test_handbuch_seed_pg.py`, `test_concurrency.py`) — sonst `OperationalError`-Kaskade in der geteilten SQLite-Engine. Repo-Wurzel-Tests (`test_native_pg_lifecycle.py`, `test_491_deploy_pull.py`, `test_482_macho_deps.py`, `test_frontend_dockerignore.py`, `test_docker_restore.py`, `test_native_restore.py` inkl. `restore-backup.bat`) melden im Backend-Container nur „skipped"; sie laufen in GH-CI und `local-ci.sh` Schritt 3 — neue Datei dieser Art dort aufnehmen.
+- **Test-Stratifizierung:** Unit-Tests laufen gegen SQLite (conftest.py). Immer die SIEBEN Postgres-Dateien per `--ignore=` ausschließen wie `scripts/local-ci.sh` (`test_tenant_rls.py`, `test_073_migration_pg.py`, `test_net_hours_parity_pg.py`, `test_reclamp_concurrency.py`, `test_handbuch_seed_pg.py`, `test_year_closing_lock_pg.py`, `test_concurrency.py`) — sonst `OperationalError`-Kaskade in der geteilten SQLite-Engine. Repo-Wurzel-Tests (`test_native_pg_lifecycle.py`, `test_491_deploy_pull.py`, `test_482_macho_deps.py`, `test_frontend_dockerignore.py`, `test_docker_restore.py`, `test_native_restore.py` inkl. `restore-backup.bat`) melden im Backend-Container nur „skipped"; sie laufen in GH-CI und `local-ci.sh` Schritt 3 — neue Datei dieser Art dort aufnehmen.
 
 ### Kritische Regeln
 
@@ -264,6 +265,7 @@ cd frontend && npm test                                          # Vitest Utils-
 - **`$` in Passwort-Hashes nie durch die Shell** (bcrypt-Hash wird zerlegt → Login 401): Hash in Datei, serverseitig `psql … pg_read_file('/pfad')`, im Container `$$…$$`-Quoting.
 - `cd` in einem Bash-Aufruf **persistiert** → bei git `git -C <pfad>` oder cwd zurücksetzen.
 - `docker compose cp <host-file> <svc>:<container-path>` löst Host-Pfade **relativ zum cwd** auf und braucht den **Service-Namen** (`backend:`, nicht `praxiszeit-backend-1:` — kopiert sonst still nichts). Aus fremdem cwd (z. B. `e2e/` → `lstat e2e/backend/...: no such file`): `docker cp <host-abs-path> praxiszeit-backend-1:/app/<path>`. Verzeichnis: `docker compose cp backend/app backend:/app/` (→ `/app/app`).
+- **`build-release.sh` (Windows-Teil) braucht das wine-binfmt `DOSWin`** (`ls /proc/sys/fs/binfmt_misc/DOSWin`); fehlt es: Manuel führt `sudo systemctl restart systemd-binfmt` im eigenen Terminal aus (`! sudo` im Chat kann kein Passwort lesen).
 - **Fish-Shell:** mehrzeilige `while`/`for … end` scheitern → Einzeiler oder `Monitor`/`run_in_background`.
 - **Commit-/PR-/Issue-Texte mit Sonderzeichen** → `git commit -F -` / `gh … --body-file -` mit Heredoc (`<<'EOF'`).
 - **`docker compose exec -T …` in einem SSH-`bash -s`-Heredoc frisst den restlichen stdin** → `</dev/null` an jedes `exec -T` oder Skript als Datei + `bash datei.sh`.
