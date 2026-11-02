@@ -582,8 +582,9 @@ export default function WorkingHoursModal({
     snapshotUnchanged ||
     // Option 1 erst mit ihrer eigenen Vorschau (auch wenn deren Datum heute ist).
     (useLossless && (shownLoading || !shown)) ||
-    // P15/P26/11.4: Option 2 nur mit allen Pflichtangaben, nie in ein abgeschlossenes Jahr.
-    (needsReason && (!!closedText || !reasonComplete(reason))) ||
+    // P15/P26/11.4: Option 2 nur mit allen Pflichtangaben (abgeschlossene Jahre
+    // sperren seit 2026-11-02 nicht mehr, s. `closedYearMessage`).
+    (needsReason && !reasonComplete(reason)) ||
     noteTooLong ||
     (isRetroactive && (shownLoading || !shown || !confirmedRetroactive)) ||
     (!isRetroactive && (shownLoading || (needsConfirmation && !confirmedRetroactive)));

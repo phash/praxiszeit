@@ -120,7 +120,9 @@ class TestSaldoCriterion:
         assert impact.saldo_delta == Decimal("4")
         assert (impact.shortening_reasons, impact.shortening_closed_years) == (["saldo"], [2025])
         assert svc.protection_error(impact, WorkingHoursChangeDelete(**RETRO_REASON), deleting=False,
-                                    reset_offered=False) == svc.closed_year_detail([2025])
+                                    reset_offered=False) is None
+        assert "im abgeschlossenen Jahr 2025 gesenkt" in svc.protection_error(
+            impact, None, deleting=False, reset_offered=False)
 
     def test_two_closed_years_name_the_larger_one(self, db, test_user, test_admin, monkeypatch):
         freeze(monkeypatch)
@@ -132,9 +134,6 @@ class TestSaldoCriterion:
         add_row(db, test_user, date(2024, 1, 1), day_hours=(8, 8, 8, 8, 8))
         impact = _run(db, test_user, test_admin, eff=date(2024, 6, 3), day_hours=(9, 8, 8, 8, 8))
         assert impact.shortening_closed_years == [2024, 2025]
-        assert svc.closed_year_detail(impact.shortening_closed_years) == (
-            "Rückwirkende Verkürzung in das abgeschlossene Jahr 2025 ist gesperrt. "
-            "Bitte die Änderung frühestens ab 01.01.2026 wirksam werden lassen.")
 
 
 class TestAbsenceCreditCriterion:

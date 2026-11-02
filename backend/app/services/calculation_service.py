@@ -3376,7 +3376,10 @@ def request_day_count(
 
 def closed_years_in_range(db: Session, tenant_id, years) -> List[int]:
     """Return, ascending, every year Y in ``years`` whose Jahresabschluss was
-    already done — i.e. a ``YearCarryover`` for Y+1 exists in the tenant.
+    already done — i.e. a ``YearCarryover`` for Y+1 with ``source='year_closing'``
+    exists in the tenant. Von Hand eingetragene Überträge (``source='manual'``,
+    Dialog „Übernahme") sind KEIN Jahresabschluss (Kundenfall 2026-11-02: ein
+    Resturlaub-Übertrag für 2027 machte 2026 mandantenweit „abgeschlossen").
 
     This is THE definition of "closed year" shared by ``stale_year_closing_warning``
     (single-year warning text) and any caller that needs the full list (e.g. the
@@ -3388,6 +3391,7 @@ def closed_years_in_range(db: Session, tenant_id, years) -> List[int]:
         if db.query(YearCarryover.id).filter(
             YearCarryover.tenant_id == tenant_id,
             YearCarryover.year == y + 1,
+            YearCarryover.source == "year_closing",
         ).first() is not None
     })
 
@@ -3399,7 +3403,7 @@ def all_closed_years(db: Session, tenant_id) -> List[int]:
     Änderungen ohne Jahresgrenze (Sondertag-Einstellungen, Gesamtreview)."""
     rows = (
         db.query(YearCarryover.year)
-        .filter(YearCarryover.tenant_id == tenant_id)
+        .filter(YearCarryover.tenant_id == tenant_id, YearCarryover.source == "year_closing")
         .distinct()
         .all()
     )

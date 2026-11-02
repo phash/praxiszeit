@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### ⚠️ Verhaltensänderung
+
+- **Arbeitszeit-Änderung in ein abgeschlossenes Jahr ist nicht mehr gesperrt.** Reichte eine rückwirkende Verkürzung (Eintrag verliert Zeit, Überstundenkonto oder Gutschrift sinkt) in ein Jahr mit Jahresabschluss, lehnte PraxisZeit sie bisher auch mit Begründung ab („Rückwirkende Verkürzung in das abgeschlossene Jahr … ist gesperrt.“) – Anlegen wie Löschen. Jetzt gilt dieselbe Regel wie für jede rückwirkende Verkürzung: Grund, Begründung und Bestätigung sind Pflicht, das Protokoll hält beides fest, und Dialog wie Antwort weisen darauf hin, den Jahresabschluss für dieses Jahr erneut auszuführen. Der Übertrag wird weiterhin nie automatisch neu berechnet.
+- **Von Hand eingetragene Überträge sind kein Jahresabschluss.** Bisher machte ein im Dialog „Übernahme“ eingetragener Übertrag für das Folgejahr – bei irgendeiner Person – das Jahr für den ganzen Mandanten zum „abgeschlossenen Jahr“, mit Sperre und Warnungen, obwohl niemand einen Jahresabschluss ausgeführt hatte. Als abgeschlossen zählt jetzt nur ein Jahr, für das der Jahresabschluss tatsächlich lief. Das betrifft alle Hinweise „Jahresabschluss … bereits erfolgt“ (Arbeitszeit-Änderung, Betriebsferien, Feiertage, Bundesland, Sondertage, Urlaubsstorno).
+
 ## [1.21.0] - 2026-10-30
 
 ### ✨ Neu

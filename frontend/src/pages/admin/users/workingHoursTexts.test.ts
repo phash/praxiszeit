@@ -130,9 +130,12 @@ describe('workingHoursTexts', () => {
     });
   });
 
-  it('gesperrtes abgeschlossenes Jahr nennt das größte Jahr (11.4)', () => {
-    expect(closedYearMessage([2024, 2025])).toBe(
-      'Rückwirkende Verkürzung in das abgeschlossene Jahr 2025 ist gesperrt. Bitte die Änderung frühestens ab 01.01.2026 wirksam werden lassen.',
+  it('abgeschlossenes Jahr ist nur ein Hinweis und nennt alle Jahre (2026-11-02)', () => {
+    expect(closedYearMessage([2025])).toBe(
+      'Die Verkürzung reicht in das abgeschlossene Jahr 2025. Gespeichert wird mit Begründung; danach bitte den Jahresabschluss 2025 erneut ausführen.',
+    );
+    expect(closedYearMessage([2025, 2024])).toBe(
+      'Die Verkürzung reicht in die abgeschlossenen Jahre 2024, 2025. Gespeichert wird mit Begründung; danach bitte den Jahresabschluss 2024, 2025 erneut ausführen.',
     );
     expect(closedYearMessage([])).toBeNull();
   });

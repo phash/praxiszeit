@@ -109,7 +109,7 @@ group_code() {
   need_code "ist nicht länger als der doppelte Puffer"
   need_code "Für Jugendliche gelten strengere Pausen- und Schichtzeitregeln (§§ 11, 12 JArbSchG); PraxisZeit prüft diese nicht."
   need_code "Mit Betriebsrat ist die Änderung mitbestimmungspflichtig"
-  need_code "Rückwirkende Verkürzung in das abgeschlossene Jahr"
+  need_code "Gespeichert wird mit Begründung; danach bitte den Jahresabschluss"
   need_code "nur rückwirkend mit Begründung oder abbrechen"
   need_code "Zeiteinträge neu berechnet"
   # Kappung und Hinweise (PR1/PR2)
@@ -447,7 +447,7 @@ group_admin_aendern() {
   need "$f" '[Erfassungsfehler korrigiert]'
   need "$f" '[Einvernehmlich vereinbart]'
   need "$f" 'Ich habe die Gründe geprüft.'
-  need "$f" 'Rückwirkende Verkürzung in das abgeschlossene Jahr 2025 ist gesperrt.'
+  need "$f" 'Die Verkürzung reicht in das abgeschlossene Jahr 2025. Gespeichert wird mit Begründung; danach bitte den Jahresabschluss 2025 erneut ausführen.'
   need "$f" 'auf den vorherigen Stand zurücksetzen'
   need "$f" 'Rückwirkend löschen mit Neuberechnung'
   need "$f" 'Auch eine rückwirkende **Erhöhung**'

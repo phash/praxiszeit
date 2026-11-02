@@ -74,7 +74,7 @@ describe('Teamübersicht der Arbeitszeiten', () => {
     await screen.findByText('Arzt, Anna');
     fireEvent.click(screen.getByRole('button', { name: 'MFA' }));
     getMock.mockResolvedValue({ data: rows().filter((r) => r.department !== 'MFA') });
-    fireEvent.change(screen.getByLabelText('Stand am'), { target: { value: '2026-11-02' } });
+    fireEvent.change(screen.getByLabelText('Stand am'), { target: { value: '2026-10-05' } });
     expect(await screen.findByText('Arzt, Anna')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Alle' })).toHaveAttribute('aria-pressed', 'true');
   });
@@ -82,9 +82,9 @@ describe('Teamübersicht der Arbeitszeiten', () => {
   it('lädt den Stand zum gewählten Datum', async () => {
     renderPage();
     await screen.findByText('Arzt, Anna');
-    fireEvent.change(screen.getByLabelText('Stand am'), { target: { value: '2026-11-02' } });
+    fireEvent.change(screen.getByLabelText('Stand am'), { target: { value: '2026-10-05' } });
     await waitFor(() => expect(getMock).toHaveBeenLastCalledWith(
-      '/admin/team-schedule', { params: { date: '2026-11-02' } }));
+      '/admin/team-schedule', { params: { date: '2026-10-05' } }));
   });
 
   it('ohne Bearbeiten-Schieber lässt sich nichts verschieben', async () => {

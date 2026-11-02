@@ -219,14 +219,16 @@ class TestRetroactiveDelete:
         assert resp.json() == {"adjusted_absences": 1, "adjusted_time_entries": 0, "skipped_time_entries": 0,
                                "warning": None}
 
-    def test_loss_in_a_closed_year_is_400(self, client, db, test_user):
+    def test_loss_in_a_closed_year_deletes_with_reason_and_warns(self, client, db, test_user):
         test_user.first_work_day = date(2025, 1, 1)
         db.add(YearCarryover(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, year=2026,
                              overtime_hours=Decimal("0"), vacation_days=Decimal("0"), source="year_closing"))
         db.commit()
         change = _create(client, test_user, {"effective_from": "2025-06-02", "weekly_hours": 30})
+        assert _delete(client, test_user, change["id"]).status_code == 400
         resp = _delete(client, test_user, change["id"], RETRO_REASON)
-        assert (resp.status_code, resp.json()["detail"]) == (400, wh_change_service.closed_year_detail([2025]))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["warning"] == calculation_service.closed_year_warning_text([2025])
 
     def test_earliest_row_stays_locked(self, client, db, test_user):
         _create(client, test_user, {"effective_from": "2026-09-01", "weekly_hours": 30})
