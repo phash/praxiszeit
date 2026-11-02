@@ -3398,7 +3398,7 @@ def closed_years_in_range(db: Session, tenant_id, years) -> List[int]:
 
 def all_closed_years(db: Session, tenant_id) -> List[int]:
     """Alle Jahre Y des Mandanten mit Jahresabschluss (``YearCarryover`` für
-    Y+1 vorhanden), aufsteigend — dieselbe Definition wie
+    Y+1 mit ``source='year_closing'`` vorhanden), aufsteigend — dieselbe Definition wie
     ``closed_years_in_range``, nur ohne vorgegebenen Jahresbereich. Für
     Änderungen ohne Jahresgrenze (Sondertag-Einstellungen, Gesamtreview)."""
     rows = (
