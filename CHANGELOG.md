@@ -7,6 +7,10 @@
 - **Arbeitszeit-Änderung in ein abgeschlossenes Jahr ist nicht mehr gesperrt.** Reichte eine rückwirkende Verkürzung (Eintrag verliert Zeit, Überstundenkonto oder Gutschrift sinkt) in ein Jahr mit Jahresabschluss, lehnte PraxisZeit sie bisher auch mit Begründung ab („Rückwirkende Verkürzung in das abgeschlossene Jahr … ist gesperrt.“) – Anlegen wie Löschen. Jetzt gilt dieselbe Regel wie für jede rückwirkende Verkürzung: Grund, Begründung und Bestätigung sind Pflicht, das Protokoll hält beides fest, und Dialog wie Antwort weisen darauf hin, den Jahresabschluss für dieses Jahr erneut auszuführen. Der Übertrag wird weiterhin nie automatisch neu berechnet. Betrifft eine Änderung mehrere abgeschlossene Jahre, nennt die Warnung alle.
 - **Von Hand eingetragene Überträge sind kein Jahresabschluss.** Bisher machte ein in der „Vorjahresübernahme“ eingetragener Übertrag für das Folgejahr – bei irgendeiner Person – das Jahr für den ganzen Mandanten zum „abgeschlossenen Jahr“, mit Sperre und Warnungen, obwohl niemand einen Jahresabschluss ausgeführt hatte. Als abgeschlossen zählt jetzt nur ein Jahr, für das der Jahresabschluss tatsächlich lief. Das betrifft alle Hinweise „Jahresabschluss … bereits erfolgt“ (Arbeitszeit-Änderung, Betriebsferien, Feiertage, Bundesland, Sondertage, Urlaubsstorno).
 
+### Behoben
+
+- **Jahresabschluss schlug mit PostgreSQL immer fehl (HTTP 500).** Die Sperre, die zwei gleichzeitige Jahresabschlüsse verhindern soll, rief `pg_advisory_xact_lock` mit einem Argument auf, das PostgreSQL nicht annimmt. Der Fehler wurde verschluckt, die Datenbank-Transaktion war danach aber abgebrochen, und jeder Jahresabschluss endete mit „Interner Serverfehler“ – in allen Installationen seit dem Sprint-Review vom April 2026 (Docker und nativ; die Tests auf SQLite sahen es nicht). Der Jahresabschluss läuft jetzt wieder, die Sperre gilt dabei tatsächlich über alle Server-Prozesse hinweg. Ein neuer Test prüft die Sperre gegen echtes PostgreSQL.
+
 ## [1.21.0] - 2026-10-30
 
 ### ✨ Neu
