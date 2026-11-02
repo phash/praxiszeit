@@ -3411,18 +3411,28 @@ def all_closed_years(db: Session, tenant_id) -> List[int]:
 
 
 def closed_year_warning_text(closed_years: List[int]) -> Optional[str]:
-    """Build the German warning string naming the EARLIEST year in
-    ``closed_years`` (empty/falsy -> no warning). Pure/no DB access — split out
+    """Build the German warning string naming EVERY year in ``closed_years``
+    (one year: the historic wording; empty/falsy -> no warning). Pure/no DB access — split out
     of ``stale_year_closing_warning`` so callers that already computed the full
     list via ``closed_years_in_range`` don't need a second DB round-trip to get
     the display text.
     """
     if not closed_years:
         return None
-    y = closed_years[0]
+    years = sorted(closed_years)
+    if len(years) == 1:
+        y = years[0]
+        return (
+            f"Jahresabschluss {y} bereits erfolgt — Carryover {y + 1} ist nun "
+            f"veraltet, bitte Jahresabschluss erneut ausführen."
+        )
+    # Release-Review 1.21.1: ALLE Jahre nennen — wer nur das früheste neu
+    # abschließt, lässt den Übertrag der späteren Jahre veraltet stehen.
+    closed = ", ".join(str(y) for y in years)
+    carried = ", ".join(str(y + 1) for y in years)
     return (
-        f"Jahresabschluss {y} bereits erfolgt — Carryover {y + 1} ist nun "
-        f"veraltet, bitte Jahresabschluss erneut ausführen."
+        f"Jahresabschlüsse {closed} bereits erfolgt — Carryover {carried} ist nun "
+        f"veraltet, bitte die Jahresabschlüsse {closed} in dieser Reihenfolge erneut ausführen."
     )
 
 
@@ -3430,12 +3440,12 @@ def stale_year_closing_warning(db: Session, tenant_id, years) -> Optional[str]:
     """Fix #5: warn (non-destructively) when a retroactive change touches a year
     whose Jahresabschluss was already done.
 
-    A year ``Y`` counts as closed when a ``YearCarryover`` for ``Y+1`` exists in
-    the tenant (see ``closed_years_in_range``). After a retroactive storno /
+    A year ``Y`` counts as closed when a ``YearCarryover`` for ``Y+1`` with
+    ``source='year_closing'`` exists in the tenant (see ``closed_years_in_range``). After a retroactive storno /
     closure deletion the frozen carryover ``Y+1`` is now stale. We deliberately
     do NOT recompute it (that could overwrite manual adjustments) — we only
-    return a German warning string naming the EARLIEST affected closed year so
-    the caller can surface it. Returns None when no touched year was closed.
+    return a German warning string naming every affected closed year so the
+    caller can surface it. Returns None when no touched year was closed.
     """
     return closed_year_warning_text(closed_years_in_range(db, tenant_id, years))
 

@@ -399,7 +399,8 @@ def cancel_approved_vacation_request(
     per deleted absence (DSGVO Art. 5 Abs. 2).
 
     Fix #5: returns a non-destructive ``warning`` string when the cancelled
-    range touches an already-closed year (a YearCarryover for year+1 exists) —
+    range touches an already-closed year (a YearCarryover for year+1 with
+    source='year_closing' exists, see ``closed_years_in_range``) —
     that frozen carryover is now stale. Returns None otherwise. (No automatic
     recompute: that could overwrite manual carryover adjustments.)
     """

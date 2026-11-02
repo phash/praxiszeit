@@ -301,7 +301,7 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 | Aktion | Button | Beschreibung |
 |--------|--------|--------------|
 | **Erstellen** | 🟠 Jahresabschluss | Berechnet Überstunden-Saldo + Resturlaub aller aktiven MA und übernimmt sie ins Folgejahr |
-| **Löschen** | 🔴 Abschluss löschen | Entfernt alle Übernahmen fürs Folgejahr unwiderruflich (inkl. manueller Übernahmen!) |
+| **Löschen** | 🔴 Abschluss löschen | Entfernt die vom Abschluss erzeugten Übernahmen fürs Folgejahr unwiderruflich (von Hand eingetragene bzw. korrigierte bleiben) |
 
 **Wo:** Admin-Dashboard → Jahresübersicht → Jahr auswählen → Button klicken
 **Achtung:** Löschen betrifft **alle** Mitarbeiter und kann nicht rückgängig gemacht werden. Bestätigungsdialog lesen!

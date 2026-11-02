@@ -105,7 +105,8 @@ def _closed_year_warning_for_changes(db: Session, tenant_id, before: set, after:
     """Warnung, wenn sich eine Buchung der Schließung in einem bereits
     abgeschlossenen Jahr geändert hat (Gesamtreview 1.20 B5, Nachzug).
 
-    Der Jahresabschluss ist ein eingefrorener Übertrag (``YearCarryover`` Y+1)
+    Der Jahresabschluss ist ein eingefrorener Übertrag (``YearCarryover`` Y+1,
+    ``source='year_closing'``, s. ``closed_years_in_range``)
     und wird bewusst nie automatisch neu berechnet (Fix #5). Beim Löschen einer
     Schließung meldete ``delete_closure`` das schon immer; Anlegen und Ändern
     schwiegen — etwa beim Neuspeichern, das 0-h-Altbestand abräumt (Elternzeit

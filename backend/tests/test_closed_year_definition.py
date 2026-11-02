@@ -27,3 +27,17 @@ def test_year_closing_carryover_closes_the_year(db, test_user):
     _carry(db, test_user, 2027, "year_closing")
     assert calculation_service.closed_years_in_range(db, DEFAULT_TENANT_ID, [2026]) == [2026]
     assert calculation_service.all_closed_years(db, DEFAULT_TENANT_ID) == [2026]
+
+
+def test_warning_text_single_year_unchanged():
+    assert calculation_service.closed_year_warning_text([2025]) == (
+        "Jahresabschluss 2025 bereits erfolgt — Carryover 2026 ist nun veraltet, "
+        "bitte Jahresabschluss erneut ausführen.")
+
+
+def test_warning_text_names_every_closed_year():
+    """Release-Review 1.21.1: der Dialog nennt alle Jahre, die Antwort nannte nur
+    das früheste — wer nur dieses neu abschließt, lässt den späteren Übertrag stehen."""
+    assert calculation_service.closed_year_warning_text([2024, 2025]) == (
+        "Jahresabschlüsse 2024, 2025 bereits erfolgt — Carryover 2025, 2026 ist nun veraltet, "
+        "bitte die Jahresabschlüsse 2024, 2025 in dieser Reihenfolge erneut ausführen.")
