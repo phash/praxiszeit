@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 18
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.21.0 (Stand 2026-10-30)
+**Aktuelle Version:** 1.21.1 (Stand 2026-11-02)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 > Regeln in Kurzform (Regel · Helfer/Datei · Test · Grund). Hintergrund, Fallgeschichten und ausführlicher Wortlaut: [docs/CLAUDE-HISTORIE.md](docs/CLAUDE-HISTORIE.md).
@@ -152,6 +152,7 @@ cd frontend && npm test                                          # Vitest Utils-
 - **Closure-Absencen sind EINZELTAGE (`end_date=None`, #394 Teil B)** in `_create_closure_absences` UND `update_closure` (sonst Spanne je Zeile, `shift_planning_generator` liest Mehrtages-Span). Zugehörigkeit über `note` („Betriebsferien: …") + `closure_id`. Altbestand: Re-Save fixt Teil B; Teil A braucht bei OFF-Schalter Neu-Anlegen.
 - **Rückwirkende Änderungen an abgeschlossenen Jahren warnen, NIE auto-neuberechnen (Fix #5):** `create_year_closing` = eingefrorener Snapshot. `calculation_service.stale_year_closing_warning(db, tenant_id, years)` warnt, wenn `YearCarryover` für Y+1 existiert: `cancel_approved_vacation_request` + `delete_closure` → **200 + `{"warning": …}`**; `create_closure`/`update_closure` → `CompanyClosureResponse.warning` (`showResponseWarning`), nur bei tatsächlich geänderten `(user, date, type, hours)`.
 - **`YearCarryover.source` (`year_closing`|`manual`, Fix #7, Migration `058`):** `delete_year_closing` löscht NUR `source=="year_closing"`; `upsert_carryover` setzt `manual`, `create_year_closing` `year_closing`.
+- **PG-Sperren nie in `try/except` schlucken (1.21.1):** ein gescheitertes Statement bricht die PostgreSQL-Transaktion ab, jede Folgeabfrage → 500 (Jahresabschluss war April–November 2026 auf PG immer 500). Jahresabschluss-Sperre nur über `admin_carryovers.lock_year_closing` (Ein-Argument-bigint, Schlüssel aus `blake2b`, nie `hash()` — pro Prozess zufällig), Weiche über den Dialekt; Beleg `test_year_closing_lock_pg.py`.
 - **`/api/settings` (public, no-auth) liefert `special_days` (#188)** für den Default-Tenant (`getSpecialDayInfo` in `utils/specialDays.ts`); Admin: `/admin/settings/special-days`. Hardcoded Default-Tenant → bei SaaS-Cutover (#100) umbauen.
 
 #### Änderungsanträge (CR) als paralleler Buchungspfad
