@@ -116,7 +116,7 @@ export default function WhDeletePanel({
   const shownBlocked = useReset ? (resetPreview?.blocked_reason ?? null) : null;
   const actionDisabled = busy || !dp || !!blocked
     || (useReset && (resetLoading || !resetPreview || !!resetPreview.blocked_reason))
-    || (needsReason && (!!closedText || !reasonComplete(reason)));
+    || (needsReason && !reasonComplete(reason));
 
   // „Erneut prüfen" lädt die `delete-preview` neu — sie liefert einen frischen
   // `reset_body`, dessen Vorschau danach von selbst neu läuft.

@@ -110,11 +110,18 @@ export const SKIP_LABELS: Record<string, string> = {
   unique_collision: 'Überschneidung',
 };
 
-/** Spec 11.4 — Wortlaut des 400 bei Verlust in einem abgeschlossenen Jahr (größtes Jahr). */
+/**
+ * Hinweis bei Verlust in einem abgeschlossenen Jahr. Sperrt NICHT (Kundenfall
+ * 2026-11-02, bis 1.21.0 eine harte 400): gespeichert wird mit Grund und Haken
+ * wie jede rückwirkende Verkürzung, danach den Jahresabschluss erneut ausführen.
+ */
 export function closedYearMessage(years: number[] | null | undefined): string | null {
   if (!years || years.length === 0) return null;
-  const y = Math.max(...years);
-  return `Rückwirkende Verkürzung in das abgeschlossene Jahr ${y} ist gesperrt. Bitte die Änderung frühestens ab 01.01.${y + 1} wirksam werden lassen.`;
+  const sorted = [...years].sort((a, b) => a - b);
+  const list = sorted.join(', ');
+  const plural = sorted.length > 1;
+  return `Die Verkürzung reicht in ${plural ? 'die abgeschlossenen Jahre' : 'das abgeschlossene Jahr'} ${list}. `
+    + `Gespeichert wird mit Begründung; danach bitte den Jahresabschluss ${list} erneut ausführen.`;
 }
 
 /** "2026-09-07" → "07.09.2026" (reine Zeichenkette, keine Zeitzonen-Umrechnung). */

@@ -168,11 +168,21 @@ class TestClosedYears:
                              overtime_hours=Decimal("0"), vacation_days=Decimal("0"), source="year_closing"))
         db.commit()
 
-    def test_shortening_into_a_closed_year_is_400_even_with_reason(self, client, db, test_user):
+    def test_shortening_into_a_closed_year_needs_a_reason(self, client, db, test_user):
+        """2026-11-02 (Kundenfall): ein abgeschlossenes Jahr sperrt nicht mehr —
+        die Verkürzung braucht wie jede rückwirkende Verkürzung Grund + Haken."""
+        self._closed_2025(db, test_user)
+        resp = _post(client, test_user, {"effective_from": "2025-06-02", "weekly_hours": 45})
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"].startswith("Rückwirkende Verkürzung (")
+
+    def test_shortening_into_a_closed_year_with_reason_saves_and_warns(self, client, db, test_user):
         self._closed_2025(db, test_user)
         resp = _post(client, test_user, {"effective_from": "2025-06-02", "weekly_hours": 45, **RETRO_REASON})
-        assert resp.status_code == 400, resp.text
-        assert resp.json()["detail"] == wh_change_service.closed_year_detail([2025])
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["warning"] == calculation_service.closed_year_warning_text([2025])
+        [summary] = reclamp_logs(db, test_user, summary=True)
+        assert " · Verkürzung · Grund: [Erfassungsfehler korrigiert] " in summary.new_note
 
     def test_lengthening_into_a_closed_year_only_warns(self, client, db, test_user):
         self._closed_2025(db, test_user)

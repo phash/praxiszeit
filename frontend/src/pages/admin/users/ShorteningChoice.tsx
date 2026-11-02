@@ -92,7 +92,7 @@ interface ShorteningChoiceProps {
   retroText: string;
   option: ShorteningOption;
   onOptionChange: (option: ShorteningOption) => void;
-  /** Text der 400-Meldung bei Verlust in einem abgeschlossenen Jahr. */
+  /** Hinweis bei Verlust in einem abgeschlossenen Jahr (sperrt nicht). */
   closedText: string | null;
   reason: ReasonState;
   onReasonChange: (reason: ReasonState) => void;
@@ -138,20 +138,19 @@ export default function ShorteningChoice({
           preview.earliest_lossless_note && <p className="text-gray-800">{preview.earliest_lossless_note}</p>
         )}
         {!retroSelected && losslessNote && <p className="pl-6 text-gray-700">{losslessNote}</p>}
-        <label className={`flex items-start gap-2 ${closedText ? 'text-gray-400' : 'text-gray-900 cursor-pointer'}`}>
+        <label className="flex items-start gap-2 text-gray-900 cursor-pointer">
           <input
             type="radio"
             name={`${idPrefix}-option`}
-            checked={retroSelected && !closedText}
-            disabled={!!closedText}
+            checked={retroSelected}
             onChange={() => onOptionChange('retro')}
             className="mt-0.5 w-4 h-4 shrink-0"
           />
           <span>{retroText}</span>
         </label>
-        {closedText && <p className="pl-6 font-medium text-red-700">{closedText}</p>}
+        {closedText && <p className="pl-6 font-medium text-amber-900">{closedText}</p>}
       </fieldset>
-      {retroSelected && !closedText && (
+      {retroSelected && (
         <RetroReasonFields
           value={reason}
           onChange={onReasonChange}

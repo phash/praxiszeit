@@ -1,8 +1,9 @@
 """Admin sub-router: Year Carryovers + Year Closing."""
 
+import hashlib
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
@@ -35,6 +36,32 @@ def list_carryovers(
     ).order_by(YearCarryover.year.desc()).all()
 
     return carryovers
+
+
+def year_closing_lock_key(tenant_id, year: int) -> int:
+    """Deterministic signed 64-bit key for the year-closing advisory lock.
+
+    ``hash()`` is randomized per process (PYTHONHASHSEED), so workers would not
+    share a key; a digest is stable everywhere. The namespace ``year_closing``
+    is part of the digest input, so the one-argument bigint form is enough.
+    """
+    digest = hashlib.blake2b(f"year_closing:{tenant_id}:{year}".encode(), digest_size=8).digest()
+    return int.from_bytes(digest, "big", signed=True)
+
+
+def lock_year_closing(db: Session, tenant_id, year: int) -> None:
+    """F-029: serialize year closing per (tenant, year) until the transaction ends.
+
+    Two admins clicking at once would otherwise race on the YearCarryover upsert.
+    Only PostgreSQL has advisory locks; SQLite tests run single-threaded. Never
+    wrap this in ``try/except``: a failed statement aborts the PostgreSQL
+    transaction, and every later query of the request fails (until 1.21.1 every
+    year closing ended in HTTP 500 because the old call used a bigint as second
+    argument of ``pg_advisory_xact_lock(int, int)``).
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": year_closing_lock_key(tenant_id, year)})
 
 
 @router.put("/users/{user_id}/carryovers/{year}", response_model=YearCarryoverResponse)
@@ -98,23 +125,8 @@ def create_year_closing(
     if year < 2000 or year > 2100:
         raise HTTPException(status_code=400, detail=f"Ungültiges Jahr: {year} (erlaubt 2000–2100)")
 
-    # F-029: Serialize year-closing per (tenant, year). Two admins clicking
-    # simultaneously would otherwise race on the upsert of YearCarryover and
-    # also compute against a moving snapshot of time entries. pg_advisory_xact_lock
-    # uses a namespaced 64-bit key (namespace=42, payload=hash(tenant,year))
-    # and releases at transaction end regardless of commit/rollback.
-    # SQLite ignores pg_advisory_xact_lock — only Postgres enforces this.
-    from sqlalchemy import text
-    try:
-        lock_key = hash((str(current_user.tenant_id), year)) & 0x7FFFFFFFFFFFFFFF
-        db.execute(
-            text("SELECT pg_advisory_xact_lock(:ns, :key)"),
-            {"ns": 42, "key": lock_key},
-        )
-    except Exception:
-        # Non-Postgres backends (tests on SQLite) don't have this function;
-        # accept the loss of serialization since tests run single-threaded.
-        pass
+    # F-029: serialize year closing per (tenant, year), see lock_year_closing.
+    lock_year_closing(db, current_user.tenant_id, year)
 
     # F-029: refuse the operation if any change request for the closing
     # year is still pending — approving it later would retroactively move

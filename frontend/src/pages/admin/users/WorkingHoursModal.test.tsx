@@ -1534,21 +1534,23 @@ describe('Spec 2026-10-08 (PR3): Verkürzungs-Kasten', () => {
     expect(within(box).getByText('Gutschrift 15.06.2026: 8:00 h → 4:00 h')).toBeInTheDocument();
   });
 
-  it('abgeschlossenes Jahr: Option 2 deaktiviert mit dem Text der 400-Meldung, Option 1 bleibt', async () => {
+  it('abgeschlossenes Jahr (2026-11-02): Option 2 wählbar, Hinweis statt Sperre, Option 1 bleibt Standard', async () => {
     mockShortening({ shortening_closed_years: [2025] });
     const region = await enterShortening();
-    expect(within(region).getByRole('radio', { name: /^Rückwirkend ab/ })).toBeDisabled();
+    expect(within(region).getByRole('radio', { name: /^Rückwirkend ab/ })).toBeEnabled();
     expect(within(region).getByText(
-      'Rückwirkende Verkürzung in das abgeschlossene Jahr 2025 ist gesperrt. Bitte die Änderung frühestens ab 01.01.2026 wirksam werden lassen.',
+      'Die Verkürzung reicht in das abgeschlossene Jahr 2025. Gespeichert wird mit Begründung; danach bitte den Jahresabschluss 2025 erneut ausführen.',
     )).toBeInTheDocument();
     expect(within(region).getByRole('radio', { name: /^Ab heute/ })).toBeChecked();
+    fireEvent.click(within(region).getByRole('radio', { name: /^Rückwirkend ab/ }));
+    expect(within(region).getByLabelText('Grund')).toBeInTheDocument();
   });
 
-  it('abgeschlossenes Jahr ohne verlustfreies Datum (P25): nichts speicherbar', async () => {
+  it('abgeschlossenes Jahr ohne verlustfreies Datum (P25): rückwirkend mit Grund, ohne Grund nicht speicherbar', async () => {
     mockShortening({ shortening_closed_years: [2025], earliest_lossless_date: null, earliest_lossless_note: P25_NOTE });
     const region = await enterShortening();
-    expect(within(region).getByRole('radio', { name: /^Rückwirkend ab/ })).toBeDisabled();
-    expect(within(region).queryByLabelText('Grund')).not.toBeInTheDocument();
+    expect(within(region).getByRole('radio', { name: /^Rückwirkend ab/ })).toBeChecked();
+    expect(within(region).getByLabelText('Grund')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
     expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
   });
@@ -1926,12 +1928,12 @@ describe('Löschen einer Arbeitszeit-Änderung (Spec 9.7/P13)', () => {
     expect(within(dialog).queryByRole('button', { name: 'Zurücksetzen' })).not.toBeInTheDocument();
   });
 
-  it('abgeschlossenes Jahr: rückwirkendes Löschen deaktiviert mit dem Text der 400-Meldung', async () => {
+  it('abgeschlossenes Jahr (2026-11-02): rückwirkendes Löschen wählbar, Hinweis statt Sperre', async () => {
     deletePreviewMock.mockResolvedValue(previewResponse({ ...SHORT_DELETE, shortening_closed_years: [2025] }));
     const dialog = await openDelete();
     const region = await within(dialog).findByRole('region', { name: 'Verkürzung' });
-    expect(within(region).getByRole('radio', { name: 'Rückwirkend löschen mit Neuberechnung' })).toBeDisabled();
-    expect(within(region).getByText(/abgeschlossene Jahr 2025 ist gesperrt/)).toBeInTheDocument();
+    expect(within(region).getByRole('radio', { name: 'Rückwirkend löschen mit Neuberechnung' })).toBeEnabled();
+    expect(within(region).getByText(/Jahresabschluss 2025 erneut ausführen/)).toBeInTheDocument();
   });
 
   // Review Task 20 (Tastatur): der ConfirmDialog brachte den Fokus selbst an

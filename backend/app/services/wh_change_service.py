@@ -423,22 +423,17 @@ def criteria_text(impact: ChangeImpact) -> str:
     return "; ".join(parts)
 
 
-def closed_year_detail(years: List[int]) -> str:
-    """Spec 11.4 — genannt wird das GRÖSSTE Jahr (sonst scheiterte auch der Vorschlag)."""
-    y = max(years)
-    return (f"Rückwirkende Verkürzung in das abgeschlossene Jahr {y} ist gesperrt. "
-            f"Bitte die Änderung frühestens ab 01.01.{y + 1} wirksam werden lassen.")
-
-
 def protection_error(impact: ChangeImpact, reason, *, deleting: bool, reset_offered: bool) -> Optional[str]:
     """Spec 9.5/11.4 — ``None`` = speicherbar, sonst der 400-Text. Reihenfolge:
-    abgeschlossenes Jahr (auch mit Grund gesperrt) → fehlender Grund/Haken →
-    „Sonstiges" ohne zweiten Haken. ``reason`` trägt die vier
-    ``RetroReasonFields`` (Anlege- bzw. DELETE-Body) oder ist ``None``."""
+    fehlender Grund/Haken → „Sonstiges" ohne zweiten Haken. ``reason`` trägt die
+    vier ``RetroReasonFields`` (Anlege- bzw. DELETE-Body) oder ist ``None``.
+
+    Ein abgeschlossenes Jahr sperrt NICHT (Kundenfall 2026-11-02, war bis 1.21.0
+    eine harte 400): die Verkürzung braucht wie jede rückwirkende Verkürzung
+    Grund und Haken, die Sammelzeile protokolliert beides, und die Antwort trägt
+    ``stale_year_closing_warning`` („Jahresabschluss erneut ausführen")."""
     if not impact.is_shortening:
         return None
-    if impact.shortening_closed_years:
-        return closed_year_detail(impact.shortening_closed_years)
     complete = bool(reason is not None and reason.retroactive_reason_type
                     and reason.retroactive_reason_text and reason.wage_risk_confirmed)
     if not complete:

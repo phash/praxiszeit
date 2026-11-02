@@ -1365,7 +1365,7 @@ Bewusst ausgenommen:
   umfasst, sie auf 0 — auch wenn sie nur einen anderen Wochentag ändert. Dort sinkt nur die
   Gutschrift, das Soll war schon 0: Liegt der Tag vor dem Stichtag (#313), sinkt der Saldo um
   die alten Stunden, und die Änderung ist eine **Verkürzung** nach Kriterium b (mit
-  Schutzpaket, in abgeschlossene Jahre gesperrt). Beispiel: Dienstag frei ab 01.09. (ohne
+  Schutzpaket; in abgeschlossene Jahre nur mit Hinweis „Jahresabschluss erneut ausführen“). Beispiel: Dienstag frei ab 01.09. (ohne
   Rückrechnung, Krank 15.09. mit 7,5 h), danach ab 07.09. nur Mo 08:00–16:00 → 08:00–15:00 —
   Δ Soll −5:00 h, Δ angerechnet −7:30 h, Überstundenkonto −2:30 h statt +5:00 h. Der Standard
   „Ab heute" lässt eine vergangene Zeile stehen (der Wirkungsbereich beginnt danach). Eine
@@ -1431,7 +1431,7 @@ Abwesenheits-Anträge nur zum Anlegen). Vorher blieb beim Anerkennen die gegen d
 geklemmte Gutschrift stehen (Tagessoll 8 h, Krank ab 10:30 nach 06:30–10:30, gekappt 2,75 h →
 Gutschrift 5,25 h; nach dem Anerkennen 4 h Arbeit + 5,25 h = +1,25 h, in umgekehrter Reihenfolge
 ±0), und die Antrags-Genehmigung setzte das volle Tagessoll — die nächste Arbeitszeit-Änderung
-über den Tag hätte das als Verkürzung (c) zurückgenommen, im abgeschlossenen Jahr gesperrt.
+über den Tag hätte das als Verkürzung (c) zurückgenommen (Schutzpaket, im abgeschlossenen Jahr mit Hinweis).
 
 **Die Abwesenheits-TAGE ändern sich durch die Rückrechnung nie** —
 Urlaub (und jede tagebasierte Zählung) hängt an `absence_days`/`get_vacation_account`,
@@ -1593,8 +1593,12 @@ ist dieselbe Änderung verlustfrei.
 `earliest_lossless_date = max(heute, letzter verlierender Eintrag + 1, letzte gesenkte Gutschrift + 1, H)`
 mit H = morgen, wenn der heutige Tag schon Saldo verliert; liegt es am oder nach der nächsten Änderung,
 gibt es keinen verlustfreien Standard („… nur rückwirkend mit Begründung oder abbrechen."). Eine
-rückwirkende Verkürzung in ein abgeschlossenes Jahr (`YearCarryover` für das Folgejahr) ist auch mit
-Grund gesperrt (400 „Rückwirkende Verkürzung in das abgeschlossene Jahr … ist gesperrt.").
+rückwirkende Verkürzung in ein abgeschlossenes Jahr (`YearCarryover` für das Folgejahr mit
+`source='year_closing'`; von Hand eingetragene Überträge zählen seit 1.21.1 nicht) ist seit 1.21.1
+**nicht mehr gesperrt**: Sie braucht wie jede rückwirkende Verkürzung Grund und Haken, die Sammelzeile
+protokolliert beides, und die Antwort trägt die Warnung „Jahresabschluss … bereits erfolgt — Carryover …
+ist nun veraltet, bitte Jahresabschluss erneut ausführen." Neu berechnet wird der Übertrag nie
+automatisch (bis 1.21.0: 400, auch mit Grund).
 
 Dieselben Kriterien gelten beim **Löschen** einer Verlaufszeile (in der Oberfläche nur die jüngste);
 es rechnet Einträge und Abwesenheiten symmetrisch zurück. Verkürzt es, ist neben „Rückwirkend
