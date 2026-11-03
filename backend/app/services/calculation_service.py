@@ -1129,6 +1129,10 @@ def _fixed_planned_hours(
     planned = get_daily_target_for_date(user, d, schedule)
     if planned <= 0:
         return Decimal('0')
+    if special_days_service.special_day_mode(d, special_cfg) == special_days_service.MODE_MAX_HOURS:
+        # Teil B: verkuerzter Tag = min(geplant, X), nie der Halbtags-Faktor.
+        # MUSS vor half_special_day_weight stehen (das liefert fuer max_hours 0,5).
+        return min(planned, Decimal(str(special_cfg[d]["max_hours"])))
     return (planned * half_special_day_weight(d, special_cfg))
 
 
@@ -1503,8 +1507,9 @@ def _day_soll_contribution(
 
     The CALLER is responsible for the weekend / employment-window / up_to_date
     cutoff skips. This helper handles, in order: holidays, soll-reducing
-    absences (full vs. half day), the per-date weekly-hours lookup, the #146
-    special-day factor and finally the half-day halving — special-day factor
+    absences (full vs. half day), the per-date weekly-hours lookup, the
+    special-day rule (``special_day_target``: #146 plus reduced days,
+    min(target, X)) and finally the half-day halving — special-day rule
     FIRST, then ×0,5 for a half day. Returns 0 for a holiday or a full-day
     soll-reducing absence.
 
@@ -1524,9 +1529,7 @@ def _day_soll_contribution(
         return Decimal('0')  # full-day soll-reducing absence → no Soll this day
     schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
     daily_target = get_daily_target_for_date(user, d, schedule)
-    factor = special_days_service.special_day_target_factor(d, special_cfg)
-    if factor is not None:
-        daily_target = daily_target * factor
+    daily_target = special_days_service.special_day_target(d, daily_target, special_cfg)
     if half is True:
         daily_target = daily_target * Decimal('0.5')
     elif half is False:
@@ -1541,8 +1544,8 @@ def get_day_presence_target(db: Session, user: User, d: date) -> Decimal:
     eingestempelt" nur bei Wert > 0).
 
     Die Soll-STRUKTUR des Tages kommt aus :func:`_day_soll_contribution` (Feiertag
-    des Mandanten, datumsaufgelöster Vertrags-Snapshot #431, #146-Sondertagsfaktor
-    24./31.12.); Wochenende, Beschäftigungsfenster (#193) und ``track_hours``
+    des Mandanten, datumsaufgelöster Vertrags-Snapshot #431,
+    ``special_days_service.special_day_target``: Sondertag 24./31.12. und verkürzte Tage); Wochenende, Beschäftigungsfenster (#193) und ``track_hours``
     (#191) prüft — wie in jeder Soll-Schleife — der Aufrufer, also hier.
 
     Abwesenheiten zählen hier anders als in der Saldo-Rechnung: dort senken
@@ -1553,7 +1556,7 @@ def get_day_presence_target(db: Session, user: User, d: date) -> Decimal:
     * ganztägige Abwesenheit (``start_time IS NULL``, nicht ``half_day``) → 0
     * ``half_day``-Abwesenheiten decken je einen halben Tag ab (zwei Hälften,
       z. B. ½ Urlaub + ½ Krank, den ganzen Tag) — derselbe Halbierungs-Pfad wie
-      im Soll (Sondertagsfaktor ZUERST, dann × 0,5)
+      im Soll (``special_day_target`` ZUERST, dann × 0,5)
     * stundenweise Abwesenheit (Uhrzeiten gesetzt) lässt das Soll stehen — die
       Person kommt an dem Tag noch
 
@@ -1976,9 +1979,7 @@ def get_gross_monthly_target(db: Session, user: User, year: int, month: int) -> 
             continue
         schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
         daily_target = get_daily_target_for_date(user, d, schedule)
-        factor = special_days_service.special_day_target_factor(d, special_day_config)
-        if factor is not None:
-            daily_target = daily_target * factor
+        daily_target = special_days_service.special_day_target(d, daily_target, special_day_config)
         gross += daily_target
 
     return gross.quantize(Decimal('0.01'))
