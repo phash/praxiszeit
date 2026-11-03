@@ -244,6 +244,11 @@ class ScheduleTodayResponse(BaseModel):
     hours_thursday: Optional[float] = None
     hours_friday: Optional[float] = None
     work_days_per_week: int
+    vacation_days: Optional[float] = None
+    track_hours: Optional[bool] = None
+    milog_working_time_account: Optional[bool] = None
+    agreed_monthly_hours: Optional[float] = None
+    use_fixed_monthly_target: Optional[bool] = None
 
 
 class UserResponse(UserBase):

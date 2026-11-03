@@ -31,6 +31,12 @@ class Schedule(NamedTuple):
     work_days_per_week: int
     blocks: Optional[tuple]        # 5 × tuple[(start_min, end_min), …] oder None
     block_pauses: Optional[tuple]  # 5 × Optional[int]; None-Einträge = Altzeile
+    # Teil A (Vertragsverlauf): Anspruch, Stundenzählung, Minijob — ohne Vorgabewert.
+    vacation_days: Decimal
+    track_hours: bool
+    milog_working_time_account: bool
+    agreed_monthly_hours: Optional[Decimal]  # None = aus weekly_hours abgeleitet
+    use_fixed_monthly_target: bool
 
 
 def _latest_change(
@@ -55,6 +61,36 @@ def _latest_change(
         ):
             change = c
     return change
+
+
+def _earliest_change(
+    db: Session,
+    user: User,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Optional[WorkingHoursChange]:
+    """Aelteste Aenderung der Person (Zwilling von ``_latest_change``; ``ORDER BY
+    effective_from ASC LIMIT 1``). Query- und In-Memory-Pfad gleich."""
+    if wh_changes is None:
+        return db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user.id,
+            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+        ).order_by(WorkingHoursChange.effective_from.asc()).first()
+    change = None
+    for c in wh_changes:
+        if change is None or c.effective_from < change.effective_from:
+            change = c
+    return change
+
+
+def _contract_fields(holder) -> dict:
+    """Die fuenf Vertragsfelder aus einer Verlaufszeile ODER der User-Zeile."""
+    return dict(
+        vacation_days=Decimal(str(holder.vacation_days)),
+        track_hours=bool(holder.track_hours),
+        milog_working_time_account=bool(holder.milog_working_time_account),
+        agreed_monthly_hours=_dec_or_none(holder.agreed_monthly_hours),
+        use_fixed_monthly_target=bool(holder.use_fixed_monthly_target),
+    )
 
 
 def _dec_or_none(value) -> Optional[Decimal]:
@@ -104,6 +140,12 @@ def get_schedule_for_date(
     still das Soll der gesamten Vergangenheit. Alle vier Werte stecken jetzt in
     derselben Snapshot-Zeile, deshalb genuegt EIN Lookup (und der bereits
     vorhandene ``wh_changes``-Preload der Hot-Loops).
+
+    Teil A: ``vacation_days``, ``track_hours``, ``milog_working_time_account``,
+    ``agreed_monthly_hours``, ``use_fixed_monthly_target`` folgen einer eigenen
+    Regel: keine Zeile → User-Zeile; Datum vor der ersten Zeile → Werte der
+    ERSTEN Zeile (die User-Zeile ist nur Spiegel des Heute); sonst juengste
+    Zeile ≤ Datum. Stunden/Modus/Tage/Bloecke fallen weiter auf die User-Zeile.
     """
     change = _latest_change(db, user, target_date, wh_changes)
     if change is not None:
@@ -126,10 +168,15 @@ def get_schedule_for_date(
             ),
             blocks=parsed.blocks if parsed else None,
             block_pauses=parsed.pauses if parsed else None,
+            **_contract_fields(change),
         )
+    first = _earliest_change(db, user, wh_changes)
+    contract = _contract_fields(first if first is not None else user)
     # Kein Eintrag → aktuelle User-Felder. Dies ist die EINZIGE Stelle im Code,
     # die user.weekly_hours / user.hours_* / user.work_days_per_week /
-    # user.work_blocks direkt lesen darf.
+    # user.work_blocks sowie die fuenf Vertragsfelder (vacation_days, track_hours,
+    # milog_working_time_account, agreed_monthly_hours, use_fixed_monthly_target)
+    # direkt lesen darf.
     parsed = _parsed_blocks(user, getattr(user, "work_blocks", None))
     return Schedule(
         weekly_hours=Decimal(str(user.weekly_hours)),
@@ -144,7 +191,18 @@ def get_schedule_for_date(
         work_days_per_week=int(user.work_days_per_week),
         blocks=parsed.blocks if parsed else None,
         block_pauses=parsed.pauses if parsed else None,
+        **contract,
     )
+
+
+def tracks_hours_on(
+    db: Session,
+    user: User,
+    d: date,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> bool:
+    """Zaehlt die Person an diesem Tag Stunden (``track_hours`` laut Snapshot)?"""
+    return get_schedule_for_date(db, user, d, wh_changes).track_hours
 
 
 def get_weekly_hours_for_date(
@@ -209,6 +267,11 @@ def schedule_display_json(schedule: Schedule) -> dict:
         "hours_thursday": _f(thu),
         "hours_friday": _f(fri),
         "work_days_per_week": int(schedule.work_days_per_week),
+        "vacation_days": float(schedule.vacation_days),
+        "track_hours": bool(schedule.track_hours),
+        "milog_working_time_account": bool(schedule.milog_working_time_account),
+        "agreed_monthly_hours": _f(schedule.agreed_monthly_hours),
+        "use_fixed_monthly_target": bool(schedule.use_fixed_monthly_target),
     }
 
 

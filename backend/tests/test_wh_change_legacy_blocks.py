@@ -142,6 +142,8 @@ def test_carried_blocks_rule():
             work_days_per_week=5,
             blocks=parsed.blocks if parsed else None,
             block_pauses=parsed.pauses if parsed else None,
+            vacation_days=Decimal("30"), track_hours=True, milog_working_time_account=False,
+            agreed_monthly_hours=None, use_fixed_monthly_target=False,
         )
 
     assert _carried_blocks(schedule(legacy)) == (legacy.blocks, legacy.pauses)

@@ -2242,6 +2242,12 @@ def preview_working_hours_change(
             work_days_per_week=norm.work_days_per_week,
             blocks=new_blocks,
             block_pauses=new_pauses,
+            # Task 4 ersetzt diese Werte durch die der Eingabe.
+            vacation_days=current_schedule.vacation_days,
+            track_hours=current_schedule.track_hours,
+            milog_working_time_account=current_schedule.milog_working_time_account,
+            agreed_monthly_hours=current_schedule.agreed_monthly_hours,
+            use_fixed_monthly_target=current_schedule.use_fixed_monthly_target,
         )
     day_targets_current = _week_day_targets(user, effective_from, current_schedule)
     day_targets_new = _week_day_targets(user, effective_from, new_schedule)

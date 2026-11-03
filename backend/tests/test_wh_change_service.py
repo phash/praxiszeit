@@ -420,7 +420,9 @@ def test_reset_body_for_every_kind_of_predecessor():
 
     def sched(**kw):
         base = dict(weekly_hours=Decimal("40"), use_daily_schedule=False, day_hours=(None,) * 5,
-                    work_days_per_week=5, blocks=None, block_pauses=None)
+                    work_days_per_week=5, blocks=None, block_pauses=None,
+                    vacation_days=Decimal("30"), track_hours=True, milog_working_time_account=False,
+                    agreed_monthly_hours=None, use_fixed_monthly_target=False)
         base.update(kw)
         return calculation_service.Schedule(**base)
 

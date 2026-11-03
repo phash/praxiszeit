@@ -27,6 +27,8 @@ def _schedule(*, week=None, weekly=Decimal("40"), daily=None, work_days=5):
         work_days_per_week=work_days,
         blocks=parsed.blocks if parsed else None,
         block_pauses=parsed.pauses if parsed else None,
+        vacation_days=Decimal("30"), track_hours=True, milog_working_time_account=False,
+        agreed_monthly_hours=None, use_fixed_monthly_target=False,
     )
 
 
