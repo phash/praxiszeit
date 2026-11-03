@@ -10,6 +10,7 @@ import { useTypeColorsStore, pickTextColor } from '../../stores/typeColorsStore'
 import AbsenceReasonsManager from '../../components/AbsenceReasonsManager';
 import { useSystemStore } from '../../stores/systemStore';
 import { showResponseWarning } from '../../utils/arbzgWarnings';
+import ReducedDaysCard from '../../components/ReducedDaysCard';
 
 // #371: Wochentag-Labels (Index 0=Mo … 6=So) für den Schichtplaner-Wochentag-Picker.
 const SHIFT_WEEKDAY_LABELS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
@@ -51,19 +52,22 @@ interface Holiday {
 }
 
 // #146: configurable handling of 24./31.12.
-type SpecialDayMode = 'working_day' | 'half_day' | 'free';
+type SpecialDayMode = 'working_day' | 'half_day' | 'free' | 'max_hours';
 
 interface SpecialDaysConfig {
   special_day_dec24_mode: SpecialDayMode;
   special_day_dec24_counts_as_vacation: boolean;
   special_day_dec31_mode: SpecialDayMode;
   special_day_dec31_counts_as_vacation: boolean;
+  special_day_dec24_max_hours?: number;
+  special_day_dec31_max_hours?: number;
 }
 
 const SPECIAL_DAY_MODE_LABELS: Record<SpecialDayMode, string> = {
   working_day: 'Arbeitstag',
   half_day: 'Halbtag',
   free: 'Frei',
+  max_hours: 'Verkürzt auf X Stunden',
 };
 
 function formatGermanDate(iso: string): string {
@@ -342,8 +346,15 @@ export default function Settings() {
     if (!specialDays) return;
     setSavingSpecialDays(true);
     try {
-      // Persist all four keys; backend validates mode + bool.
+      // Persist all six keys; backend validates mode + bool.
+      // Stunden VOR den Modi, damit der Modus sofort mit gültigen Stunden greift.
       const responses = [
+        await apiClient.put('/admin/settings/special_day_dec24_max_hours', {
+          value: String(specialDays.special_day_dec24_max_hours ?? 4),
+        }),
+        await apiClient.put('/admin/settings/special_day_dec31_max_hours', {
+          value: String(specialDays.special_day_dec31_max_hours ?? 4),
+        }),
         await apiClient.put('/admin/settings/special_day_dec24_mode', {
           value: specialDays.special_day_dec24_mode,
         }),
@@ -901,7 +912,8 @@ const saveYearEndProjection = async () => {
           zusätzlich, ob der Tag als Urlaub (vom Urlaubskonto abgezogen) oder als bezahlte
           Freistellung (kein Abzug, wie ein Feiertag) gilt. Standard: Arbeitstag. Die
           Einstellung gilt für alle Jahre — ändert sie ein bereits abgeschlossenes Jahr, weist
-          PraxisZeit nach dem Speichern darauf hin.
+          PraxisZeit nach dem Speichern darauf hin. „Verkürzt auf X Stunden“ begrenzt die
+          Sollzeit des Tages auf die eingetragene Stundenzahl; Urlaub kostet dann einen halben Tag.
         </p>
         {specialDays && (
           <div className="space-y-4">
@@ -913,6 +925,7 @@ const saveYearEndProjection = async () => {
               const vacField = `special_day_${key}_counts_as_vacation` as keyof SpecialDaysConfig;
               const mode = specialDays[modeField] as SpecialDayMode;
               const countsAsVacation = specialDays[vacField] as boolean;
+              const hoursField = `special_day_${key}_max_hours` as 'special_day_dec24_max_hours';
               return (
                 <div key={key} className="flex flex-wrap items-end gap-4 p-4 bg-gray-50 rounded-lg">
                   <div className="min-w-[12rem]">
@@ -943,6 +956,31 @@ const saveYearEndProjection = async () => {
                       ))}
                     </select>
                   </div>
+                  {mode === 'max_hours' && (
+                    <div>
+                      <label
+                        htmlFor={`special-${key}-hours`}
+                        className="block text-sm font-medium text-gray-700 mb-1"
+                      >
+                        Höchstens (Stunden)
+                      </label>
+                      <input
+                        id={`special-${key}-hours`}
+                        type="number"
+                        step="0.25"
+                        min="0.25"
+                        max="12"
+                        value={specialDays[hoursField] ?? 4}
+                        onChange={(e) =>
+                          setSpecialDays({
+                            ...specialDays,
+                            [hoursField]: e.target.value === '' ? ('' as unknown as number) : Number(e.target.value),
+                          })
+                        }
+                        className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
+                      />
+                    </div>
+                  )}
                   {mode === 'free' && (
                     <div>
                       <label
@@ -986,6 +1024,8 @@ const saveYearEndProjection = async () => {
           </div>
         )}
       </div>
+
+      <ReducedDaysCard />
 
       {/* Urlaubsgenehmigung */}
       <div className="bg-white rounded-xl shadow-sm p-6">

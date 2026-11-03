@@ -26,6 +26,7 @@ vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => toastMock,
 }));
 vi.mock('../../components/AbsenceReasonsManager', () => ({ default: () => null }));
+vi.mock('../../components/ReducedDaysCard', () => ({ default: () => null }));
 
 function mockSettings(rows: { key: string; value: string }[]) {
   getMock.mockImplementation((url: string) => {
@@ -223,5 +224,33 @@ describe('<Settings /> Sondertage im abgeschlossenen Jahr (Gesamtreview 1.20)', 
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Sondertage (24./31.12.) gespeichert.'));
     expect(toastMock.warning).toHaveBeenCalledTimes(1);
     expect(toastMock.warning).toHaveBeenCalledWith(`${closing} ${dec24} ${dec31}`);
+  });
+});
+
+describe('<Settings /> Sondertage max_hours', () => {
+  it('shows the hours field only in max_hours mode and saves hours before mode', async () => {
+    mockSettings([]);
+    render(<Settings />);
+    const select = (await screen.findByLabelText('Modus', { selector: '#special-dec24-mode' })) as HTMLSelectElement;
+    const card = select.closest('div.bg-white') as HTMLElement;
+    expect(within(card).queryByLabelText('Höchstens (Stunden)')).not.toBeInTheDocument();
+    fireEvent.change(select, { target: { value: 'max_hours' } });
+    const hours = within(card).getByLabelText('Höchstens (Stunden)');
+    expect(hours).toHaveAttribute('step', '0.25');
+    expect(hours).toHaveAttribute('min', '0.25');
+    expect(hours).toHaveAttribute('max', '12');
+    fireEvent.change(hours, { target: { value: '4' } });
+    fireEvent.click(within(card).getByRole('button', { name: 'Speichern' }));
+    await waitFor(() =>
+      expect(putMock).toHaveBeenCalledWith('/admin/settings/special_day_dec24_mode', { value: 'max_hours' }),
+    );
+    const keys = putMock.mock.calls.map((c) => c[0]);
+    expect(putMock).toHaveBeenCalledWith('/admin/settings/special_day_dec24_max_hours', { value: '4' });
+    expect(keys.indexOf('/admin/settings/special_day_dec24_max_hours')).toBeLessThan(
+      keys.indexOf('/admin/settings/special_day_dec24_mode'),
+    );
+    expect(keys.indexOf('/admin/settings/special_day_dec31_max_hours')).toBeLessThan(
+      keys.indexOf('/admin/settings/special_day_dec31_mode'),
+    );
   });
 });
