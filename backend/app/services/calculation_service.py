@@ -688,10 +688,10 @@ def retarget_absence_hours(
         TimeEntry.end_time.isnot(None),
     ).all():
         kept_net_by_date[kept.date] = kept_net_by_date.get(kept.date, 0.0) + float(kept.net_hours)
-    special_cfgs = {
-        yr: special_days_service.get_special_day_config(db, user.tenant_id, yr)
-        for yr in {a.date.year for a in absences if (a.date.month, a.date.day) in ((12, 24), (12, 31))}
-    }
+    # Teil B: kein 24./31.12.-Vorfilter mehr — eigene verkürzte Tage (z. B.
+    # Rosenmontag) stehen in derselben Jahres-Config.
+    special_cfgs = special_days_service.configs_for_years(
+        db, user.tenant_id, {a.date.year for a in absences})
 
     changed: List[AbsenceRetarget] = []
     for a in absences:
@@ -769,7 +769,7 @@ def retarget_absence_hours(
             # wirksame Tagessoll trägt denselben Faktor. Die Klemmregel selbst
             # teilt sich dieser Pfad mit ``absences.create_absence``
             # (:func:`f1_clamp_hours`).
-            w = float(credit_day_weight(d, holidays, special_cfgs.get(d.year)))
+            w = float(credit_day_weight(d, holidays, special_cfgs.get(d.year), daily_target=target))
             if w > 0:
                 full_target = float(target)
                 clamped = f1_clamp_hours(new_hours_f, full_target, kept_net, w)
@@ -886,11 +886,9 @@ def f1_clamp_for_day(db: Session, user: User, d: date, hours: float, full_target
             PublicHoliday.date == d,
         ).all()
     }
-    special_cfg = (
-        special_days_service.get_special_day_config(db, user.tenant_id, d.year)
-        if (d.month, d.day) in ((12, 24), (12, 31)) else None
-    )
-    w = float(credit_day_weight(d, holidays, special_cfg))
+    special_cfg = special_days_service.get_special_day_config(db, user.tenant_id, d.year)
+    w = float(credit_day_weight(d, holidays, special_cfg,
+                                daily_target=Decimal(str(full_target))))
     return f1_clamp_hours(hours, full_target, kept_net, w)
 
 
@@ -1319,7 +1317,8 @@ def _within_employment_window(user: User, d: date) -> bool:
     return True
 
 
-def credit_day_weight(d: date, holiday_dates: set, special_cfg: Optional[dict] = None) -> Decimal:
+def credit_day_weight(d: date, holiday_dates: set, special_cfg: Optional[dict] = None, *,
+                      daily_target: Optional[Decimal] = None) -> Decimal:
     """Audit 2026-07-31 (Fund K): Gewicht, mit dem eine ist-gutgeschriebene
     Abwesenheit (TRAINING/SICK) an ``d`` ins Ist eingeht.
 
@@ -1344,12 +1343,20 @@ def credit_day_weight(d: date, holiday_dates: set, special_cfg: Optional[dict] =
       fuer den Feiertag gilt die Feiertagsverguetung (§ 2 EntgFG), nicht
       zusaetzlich eine Entgeltfortzahlung wegen Krankheit (§ 3 EntgFG) — § 4
       Abs. 2 EntgFG ordnet den Feiertag ausdruecklich § 2 zu.
-    * **Sondertag 24./31.12. → derselbe Faktor wie das Soll** (``half_day`` 0,5,
-      ``free`` 0). ``create_absence`` bucht dort das VOLLE Tagessoll als
-      ``hours`` (der Faktor lebt allein auf der Soll-Seite), also standen an
-      einem halben 24.12. 8 h Gutschrift gegen 4 h Soll = +4 h aus dem Nichts.
-      Der Faktor kommt aus ``special_days_service.special_day_target_factor`` —
-      derselben Quelle, die auch ``_day_soll_contribution`` benutzt.
+    * **Sondertag / verkürzter Tag → dieselbe Regel wie das Soll** (``half_day``
+      0,5, ``free`` 0, ``max_hours`` ``min(t, X) ÷ t``). ``create_absence`` bucht
+      dort das VOLLE Tagessoll als ``hours`` (die Regel lebt allein auf der
+      Soll-Seite), also standen an einem halben 24.12. 8 h Gutschrift gegen 4 h
+      Soll = +4 h aus dem Nichts. Der Modus kommt aus
+      ``special_days_service.special_day_mode`` — derselben Config, die auch
+      ``_day_soll_contribution`` über ``special_day_target`` liest.
+    * **Verkürzter Tag (``max_hours``, Teil B):** das Gewicht hängt vom
+      UNGEWICHTETEN Tagessoll laut Snapshot ab (``daily_target`` = t): ``min(t,
+      X) ÷ t``, bei t ≤ 0 → 0. Für eine 3-h-Kraft an einem auf 4 h verkürzten
+      Tag also 1, für eine 8-h-Kraft 0,5. Fehlt ``daily_target`` an einem
+      solchen Tag, ist das ein übersehener Aufrufer → ``ValueError`` (laut
+      scheitern statt still 1,0 werten). Aufrufer mit DB greifen zu
+      :func:`_credit_weight`, das t nur an verkürzten Tagen auflöst.
 
     Bewusst NICHT abgedeckt (die Regel lautet „die Gutschrift folgt der
     Soll-STRUKTUR des Tages", nicht „Gutschrift = Soll"):
@@ -1368,19 +1375,45 @@ def credit_day_weight(d: date, holiday_dates: set, special_cfg: Optional[dict] =
     * Das **Beschaeftigungsfenster** (#195) filtern alle Aufrufstellen bereits
       selbst — wie auf der Soll-Seite auch.
 
-    ``special_cfg`` darf ``None``/``{}`` sein, wenn der Aufrufer weiss, dass ``d``
-    kein Sondertag sein kann: ``get_special_day_config`` legt ausschliesslich die
-    Schluessel 24.12. und 31.12. des Jahres an, fuer jedes andere Datum liefert
-    ``special_day_target_factor`` also ohnehin ``None`` (Gewicht 1).
+    ``special_cfg`` ist die ``get_special_day_config``-Map des Jahres von ``d``
+    (24./31.12. UND alle eigenen verkürzten Tage des Mandanten, z. B.
+    Rosenmontag). ``None``/``{}`` heißt „kein Sondertag" (Gewicht 1) — das darf
+    ein Aufrufer nur übergeben, wenn er die Config des Jahres wirklich nicht
+    braucht; einen Datums-Vorfilter auf 24./31.12. gibt es nicht mehr.
     """
     if d.weekday() >= 5 or d in holiday_dates:
         return Decimal('0')
-    factor = special_days_service.special_day_target_factor(d, special_cfg or {})
-    return Decimal('1') if factor is None else Decimal(str(factor))
+    cfg = special_cfg or {}
+    mode = special_days_service.special_day_mode(d, cfg)
+    if mode == special_days_service.MODE_HALF_DAY:
+        return Decimal('0.5')
+    if mode == special_days_service.MODE_FREE:
+        return Decimal('0')
+    if mode == special_days_service.MODE_MAX_HOURS:
+        if daily_target is None:
+            raise ValueError("credit_day_weight: daily_target ist an einem verkürzten Tag Pflicht")
+        t = Decimal(str(daily_target))
+        if t <= 0:
+            return Decimal('0')
+        return special_days_service.special_day_target(d, t, cfg) / t
+    return Decimal('1')
+
+
+def _credit_weight(db: Session, user: User, d: date, holiday_dates: set,
+                   special_cfg: Optional[dict], wh_changes=None) -> Decimal:
+    """:func:`credit_day_weight` für Aufrufer mit DB: löst das UNGEWICHTETE
+    Tagessoll laut Snapshot nur an einem verkürzten Tag (``max_hours``) auf —
+    an allen anderen Tagen entsteht keine zusätzliche Arbeit."""
+    daily_target = None
+    if special_days_service.special_day_mode(d, special_cfg or {}) == special_days_service.MODE_MAX_HOURS:
+        daily_target = get_daily_target_for_date(
+            user, d, get_schedule_for_date(db, user, d, wh_changes=wh_changes))
+    return credit_day_weight(d, holiday_dates, special_cfg, daily_target=daily_target)
 
 
 def credited_absence_hours(day_absences, d: date, holiday_dates: set,
-                           special_cfg: Optional[dict] = None) -> Decimal:
+                           special_cfg: Optional[dict] = None, *,
+                           daily_target: Optional[Decimal] = None) -> Decimal:
     """#497: Ist-Gutschrift EINES Tages — Σ ``hours`` der TRAINING/SICK-
     Abwesenheiten × :func:`credit_day_weight`.
 
@@ -1392,7 +1425,8 @@ def credited_absence_hours(day_absences, d: date, holiday_dates: set,
     saldo-neutral zaehlte. Nicht nachbauen — diese Funktion aufrufen.
 
     Das Beschaeftigungsfenster (#195) bleibt Sache des Aufrufers, wie bei
-    :func:`credit_day_weight`.
+    :func:`credit_day_weight`. ``daily_target`` (ungewichtetes Tagessoll laut
+    Snapshot) ist an einem verkürzten Tag Pflicht — siehe dort.
     """
     hours = sum(
         (Decimal(str(a.hours)) for a in day_absences
@@ -1401,7 +1435,7 @@ def credited_absence_hours(day_absences, d: date, holiday_dates: set,
     )
     if not hours:
         return Decimal('0')
-    return hours * credit_day_weight(d, holiday_dates, special_cfg)
+    return hours * credit_day_weight(d, holiday_dates, special_cfg, daily_target=daily_target)
 
 
 def _credited_day_context(db: Session, user: User, credited_absences: List[Absence]):
@@ -1414,7 +1448,8 @@ def _credited_day_context(db: Session, user: User, credited_absences: List[Absen
 
     * Feiertage nur an den Werktagen mit einer solchen Abwesenheit,
     * die Sondertags-Konfiguration nur fuer Jahre, in denen eine solche
-      Abwesenheit tatsaechlich auf den 24. oder 31.12. faellt.
+      Abwesenheit an einem Werktag liegt (kein 24./31.12.-Vorfilter mehr —
+      eigene verkürzte Tage wie Rosenmontag stehen in derselben Config).
 
     Ohne TRAINING/SICK-Abwesenheit im Zeitraum (der Regelfall) entsteht **keine**
     zusaetzliche Query — ``get_monthly_actual`` bleibt unveraendert schnell.
@@ -1426,11 +1461,8 @@ def _credited_day_context(db: Session, user: User, credited_absences: List[Absen
         PublicHoliday.date.in_(weekday_dates),
         PublicHoliday.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
     ).all()}
-    special_years = {d.year for d in weekday_dates if (d.month, d.day) in ((12, 24), (12, 31))}
-    special_cfgs = {
-        yr: special_days_service.get_special_day_config(db, user.tenant_id, yr)
-        for yr in special_years
-    }
+    special_cfgs = special_days_service.configs_for_years(
+        db, user.tenant_id, {d.year for d in weekday_dates})
     return holiday_dates, special_cfgs
 
 
@@ -1883,7 +1915,7 @@ def get_range_actual(
     # Kontext leer und es entsteht keine zusaetzliche Query.
     credit_holidays, credit_cfgs = _credited_day_context(db, user, credited_absences)
     credited_hours = sum((Decimal(str(a.hours))
-                          * credit_day_weight(a.date, credit_holidays, credit_cfgs.get(a.date.year))
+                          * _credit_weight(db, user, a.date, credit_holidays, credit_cfgs.get(a.date.year))
                           for a in credited_absences
                           if _within_employment_window(user, a.date)
                           and (up_to_date is None or a.date <= up_to_date)), Decimal('0'))
@@ -2240,7 +2272,8 @@ def get_overtime_accounts(
                 continue
             # Audit 2026-07-31 (Fund K): die Gutschrift folgt der Soll-Struktur des
             # Tages (Wochenende/Feiertag 0, Sondertag mit dem #146-Faktor).
-            weight = credit_day_weight(ca.date, holiday_dates, _special_day_config(ca.date.year))
+            weight = _credit_weight(db, user, ca.date, holiday_dates,
+                                    _special_day_config(ca.date.year), wh_changes=wh_changes)
             if weight <= 0:
                 continue
             monthly_actual = monthly_actual + Decimal(str(ca.hours)) * weight
@@ -2458,6 +2491,13 @@ def get_overtime_history_detailed(
         PublicHoliday.tenant_id == user.tenant_id,
     ).all()}
 
+    # Teil B: vor die Gutschrift-Schleife gezogen — ``_credit_weight`` braucht
+    # den Snapshot an verkürzten Tagen (ungewichtetes Tagessoll).
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
+    ).order_by(WorkingHoursChange.effective_from).all()
+
     special_day_configs: Dict[int, dict] = {}
 
     def _cfg(yr: int) -> dict:
@@ -2478,7 +2518,8 @@ def get_overtime_history_detailed(
             continue
         if cutoff_date is not None and ca.date > cutoff_date:  # #313
             continue
-        weight = credit_day_weight(ca.date, holiday_dates, _cfg(ca.date.year))
+        weight = _credit_weight(db, user, ca.date, holiday_dates, _cfg(ca.date.year),
+                                wh_changes=wh_changes)
         if weight <= 0:
             continue
         k = (ca.date.year, ca.date.month)
@@ -2494,11 +2535,6 @@ def get_overtime_history_detailed(
     ).all())
     # F1 (1.18.0): siehe worked_hours_map.
     worked_map = worked_hours_map(db, user, absence_half_map)
-
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
-    ).order_by(WorkingHoursChange.effective_from).all()
 
     history: Dict[tuple, MonthlyOvertime] = {}
     total_balance = initial_balance
@@ -2762,7 +2798,8 @@ def get_ytd_summary(
     # (Wochenende/Feiertag 0, Sondertag mit dem #146-Faktor) — dieselbe
     # ``holiday_dates``/``special_day_config``-Quelle wie die Soll-Schleife oben.
     total_actual += sum((Decimal(str(a.hours))
-                         * credit_day_weight(a.date, holiday_dates, special_day_config)
+                         * _credit_weight(db, user, a.date, holiday_dates, special_day_config,
+                                          wh_changes=wh_changes)
                          for a in credited_absences
                          if _within_employment_window(user, a.date)), start=Decimal('0'))
 
@@ -2786,8 +2823,11 @@ def get_ytd_summary(
 
 def half_special_day_weight(d: date, special_cfg: dict) -> Decimal:
     """#394: Tage-Kosten-Gewicht EINES Tages für die tagebasierte Urlaubs-/Absenz-
-    Zählung. ``Decimal('0.5')`` wenn ``d`` als „halber Feiertag" (24./31.12.,
-    ``special_day_target_factor == 0,5``) konfiguriert ist, sonst ``Decimal('1')``.
+    Zählung. ``Decimal('0.5')`` wenn ``d`` als „halber Feiertag" (``half_day``)
+    ODER als verkürzter Tag (``max_hours``, Teil B — 24./31.12. oder ein eigener
+    verkürzter Tag des Mandanten) konfiguriert ist, sonst ``Decimal('1')``. Der
+    verkürzte Tag kostet 0,5 für ALLE, unabhängig vom Tagessoll der Person
+    (auch für eine 3-h-Kraft, deren Soll dort gar nicht sinkt).
 
     DIE eine Quelle für alle tagebasierten Urlaubs-/Absenz-Kosten — ``get_vacation_
     account``, ``absence_days``, ``closure_split_service`` UND die Budget-Pre-Checks
@@ -2796,8 +2836,10 @@ def half_special_day_weight(d: date, special_cfg: dict) -> Decimal:
     Re-Split + die Pre-Checks hatten den Faktor zunächst NICHT — Release-Review 1.14.3).
     ``special_cfg`` ist die je Jahr geladene ``get_special_day_config``-Map.
     """
-    f = special_days_service.special_day_target_factor(d, special_cfg)
-    return Decimal('0.5') if (f is not None and f == Decimal('0.5')) else Decimal('1')
+    mode = special_days_service.special_day_mode(d, special_cfg or {})
+    if mode in (special_days_service.MODE_HALF_DAY, special_days_service.MODE_MAX_HOURS):
+        return Decimal('0.5')
+    return Decimal('1')
 
 
 def absence_days(db: Session, user: User, absences: list,
