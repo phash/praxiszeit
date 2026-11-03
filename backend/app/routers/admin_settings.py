@@ -96,6 +96,19 @@ def get_type_colors_setting(
     return type_colors_service.get_type_colors(db, current_user.tenant_id)
 
 
+def _resave_closures_after_special_day_change(db, current_user, before, after):
+    from app.routers import company_closures
+
+    years = company_closures.closure_years(db, current_user.tenant_id)
+    changed = special_days_service.changed_dates(
+        special_days_service.setting_states(before, years),
+        special_days_service.setting_states(after, years),
+    )
+    if not changed:
+        return None
+    return company_closures.resave_closures_for_dates(db, current_user, changed)
+
+
 @router.put("/settings/type-colors")
 def update_type_colors_setting(
     colors: Dict[str, str],
@@ -180,6 +193,14 @@ def update_setting(
                     f"Ungültiger Modus: {value}. "
                     f"Erlaubt: {', '.join(sorted(special_days_service.VALID_MODES))}"
                 ),
+            )
+    if key in special_days_service.MAX_HOURS_KEYS:
+        # Teil B: Stundenzahl am verkürzten 24./31.12. (0,25–12 in 0,25-Schritten).
+        try:
+            value = str(special_days_service.parse_max_hours(value))
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail=special_days_service.MAX_HOURS_ERROR
             )
     if key in special_days_service.VACATION_FLAG_KEYS:
         # Normalise to a canonical "true"/"false" string.
@@ -274,6 +295,12 @@ def update_setting(
                         special_days_service.setting_states(special_before, entry_years),
                         special_days_service.setting_states(special_after, entry_years),
                     ),
+                ),
+                # Teil B: Betriebsferien an Tagen mit geändertem Zustand neu
+                # buchen (gleiche Transaktion, committet erst unten). Import
+                # lokal: Router untereinander nicht auf Modulebene verketten.
+                _resave_closures_after_special_day_change(
+                    db, current_user, special_before, special_after
                 ),
             )
         db.commit()
