@@ -1,7 +1,9 @@
 # PraxisZeit - Zeiterfassungssystem
 
-Webbasiertes Zeiterfassungssystem für eine Arztpraxis in Bayern.
+Webbasierte Arbeitszeiterfassung für Arzt-, Zahnarzt- und Therapiepraxen – nach Arbeitszeitgesetz, DSGVO-freundlich auf dem eigenen Praxis-Rechner (Windows, Linux, macOS, Docker).
 Installierbar als **Progressive Web App (PWA)** auf Smartphone und Desktop.
+
+**Website, Download und Anleitungen:** [praxiszeit.mr-development.de](https://praxiszeit.mr-development.de) · [Download](https://praxiszeit.mr-development.de/download) · [Handbuch für die Praxisverwaltung](https://praxiszeit.mr-development.de/anleitung/handbuch-admin) · [So rechnet PraxisZeit](https://praxiszeit.mr-development.de/anleitung/berechnungen) · [Ratgeber Arbeitszeiterfassung](https://praxiszeit.mr-development.de/ratgeber)
 
 ## Features
 
@@ -416,4 +418,4 @@ Jeder Ordner enthält eine `HOWTO.md` mit dem Audit-Prozess, dem Claude-Prompt z
 
 ## Lizenz
 
-Proprietär - Alle Rechte vorbehalten
+GNU Affero General Public License v3.0 – siehe [LICENSE](LICENSE).
