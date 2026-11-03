@@ -224,6 +224,9 @@ class ClockStatusResponse(BaseModel):
     # anteilig (Basis: der Vertrags-Snapshot #431). Kein Vertrags-Tagessoll,
     # nie für Saldo, Exporte oder Journal.
     today_target_hours: float = 0.0
+    # Teil B: „verkürzter Tag (max. X h)" für die Stempelkarte, nur an einem
+    # Werktag ohne Feiertag; sonst None.
+    today_special_day_label: Optional[str] = None
     # Spec 2026-10-08 (8.4, 11.1, 14): die Blöcke von heute — für die §4-Vorprüfung
     # im StampWidget und den Dashboard-Status in der Lücke (E69) — und der
     # Puffer, mit dem das Ausstempeln kappen wird (E80). In JEDEM Zweig.

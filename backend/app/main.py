@@ -749,7 +749,10 @@ def get_public_settings():
             "break_exception_requires_approval": _get("break_exception_requires_approval", "false").lower() == "true",
             # #188: Sondertage 24./31.12. — der Kalender (auch für MA) markiert
             # `free`/`half_day` damit sichtbar. Single-Tenant/on-prem: Default-Tenant.
-            "special_days": special_days_service.get_special_day_settings(db, _default_tid),
+            "special_days": {
+                **special_days_service.get_special_day_settings(db, _default_tid),
+                "reduced_days": special_days_service.list_reduced_days_public(db, _default_tid),
+            },
         }
 
         # License state (native installations). Nur das nicht-identifizierende

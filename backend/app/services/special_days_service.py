@@ -260,6 +260,28 @@ def reduced_day_label(max_hours: Decimal) -> str:
     return f"verkürzter Tag (max. {format_hours_de(max_hours)} h)"
 
 
+def day_label(target_date: date, config: Dict[date, Dict[str, object]]) -> Optional[str]:
+    """„verkürzter Tag (max. X h)" für einen ``max_hours``-Tag, sonst None."""
+    entry = config.get(target_date)
+    if entry is None or entry["mode"] != MODE_MAX_HOURS or entry.get("max_hours") is None:
+        return None
+    return reduced_day_label(Decimal(str(entry["max_hours"])))
+
+
+def list_reduced_days_public(db: Session, tenant_id) -> List[dict]:
+    """Verkürzte Tage des Mandanten für den öffentlichen /api/settings-Kalender."""
+    rows = (
+        db.query(ReducedDay)
+        .filter(ReducedDay.tenant_id == tenant_id)
+        .order_by(ReducedDay.date)
+        .all()
+    )
+    return [
+        {"date": r.date.isoformat(), "label": r.label, "max_hours": float(r.max_hours)}
+        for r in rows
+    ]
+
+
 def special_day_target_factor(
     target_date: date,
     config: Dict[date, Dict[str, object]],

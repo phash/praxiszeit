@@ -365,6 +365,23 @@ def _today_target_hours(db: Session, user: User, today: date) -> float:
     return float(calculation_service.get_day_presence_target(db, user, today))
 
 
+def _today_special_day_label(db: Session, user: User, today: date) -> Optional[str]:
+    """Teil B: Beschriftung eines verkürzten Tages (None am Wochenende/Feiertag)."""
+    from app.models.public_holiday import PublicHoliday
+    from app.services import special_days_service
+
+    if today.weekday() >= 5:
+        return None
+    is_holiday = db.query(PublicHoliday.id).filter(
+        PublicHoliday.date == today,
+        PublicHoliday.tenant_id == user.tenant_id,
+    ).first() is not None
+    if is_holiday:
+        return None
+    cfg = special_days_service.get_special_day_config(db, user.tenant_id, today.year)
+    return special_days_service.day_label(today, cfg)
+
+
 def _clock_blocks_and_grace(db: Session, user: User, today: date, open_entry) -> tuple:
     """Spec 2026-10-08, 8.4/11.1/14 (PR2): Blöcke des Tages ``today`` als
     ``{"start", "end"}`` und der Puffer, mit dem ``clock_out`` kappen wird — der
@@ -441,6 +458,7 @@ def get_clock_status(
 
     closed_minutes = _toblockless_workday_net_minutes(db, current_user, today)
     target_hours = _today_target_hours(db, current_user, today)
+    special_day_label = _today_special_day_label(db, current_user, today)
     # Spec 2026-10-08 (11.1): in JEDEM Zweig — auch nach dem Stale-Auto-Close
     # (``open_entry`` ist dann None → Mandanten-Puffer) und gerade im nicht
     # eingestempelten Zustand (Dashboard-Status in der Lücke, E69).
@@ -458,6 +476,7 @@ def get_clock_status(
             is_clocked_in=False,
             today_net_minutes=closed_minutes,
             today_target_hours=target_hours,
+            today_special_day_label=special_day_label,
             blocks_today=blocks_today,
             blockless_workday=blockless_workday,
             grace_minutes=grace_minutes,
@@ -479,6 +498,7 @@ def get_clock_status(
         elapsed_minutes=elapsed,
         today_net_minutes=closed_minutes + running_net,
         today_target_hours=target_hours,
+        today_special_day_label=special_day_label,
         blocks_today=blocks_today,
         blockless_workday=blockless_workday,
         grace_minutes=grace_minutes,
