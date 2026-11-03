@@ -56,11 +56,12 @@ def with_pauses(week: list, **pauses: int) -> list:
 
 
 def change_row(user, effective_from: date, *, week=None, weekly_hours=None, day_hours=None,
-               blocks=None, note=None) -> WorkingHoursChange:
+               blocks=None, note=None, **contract) -> WorkingHoursChange:
     """Ungespeicherte Verlaufszeile: NEUE Blöcke (``week``, Soll materialisiert wie
     der Dialog), Tagesplan (``day_hours``) oder gleichmäßig (``weekly_hours``);
     ``blocks`` setzt bei den beiden letzten ein Altfenster."""
-    common = dict(user_id=user.id, tenant_id=DEFAULT_TENANT_ID, effective_from=effective_from, note=note)
+    common = dict(user_id=user.id, tenant_id=DEFAULT_TENANT_ID, effective_from=effective_from, note=note,
+                  **contract)
     if week is not None:
         d = work_blocks_service.derive_targets(week)
         return WorkingHoursChange(

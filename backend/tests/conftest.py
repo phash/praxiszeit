@@ -124,6 +124,34 @@ PG_UUID.bind_processor = _patched_bind_processor
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+_CONTRACT_FIELDS = ("vacation_days", "track_hours", "milog_working_time_account",
+                    "agreed_monthly_hours", "use_fixed_monthly_target")
+
+
+def _fill_contract_from_user(mapper, connection, target):
+    """Nur Tests — Produktion setzt alle fünf ausdrücklich (NOT NULL scheitert laut).
+
+    Füllt ein Vertragsfeld aus der User-Zeile, wenn es nie zugewiesen wurde;
+    ein ausdrückliches ``None`` bleibt stehen."""
+    from sqlalchemy import inspect as sa_inspect, select
+    state = sa_inspect(target)
+    missing = [n for n in _CONTRACT_FIELDS if not state.attrs[n].history.added]
+    if not missing:
+        return
+    users = User.__table__
+    row = connection.execute(
+        select(*[users.c[n] for n in missing]).where(users.c.id == target.user_id)
+    ).mappings().first()
+    if row is None:
+        return
+    for n in missing:
+        setattr(target, n, row[n])
+
+
+from app.models import WorkingHoursChange as _WHC
+event.listen(_WHC, "before_insert", _fill_contract_from_user)
+
+
 @pytest.fixture(scope="function")
 def db():
     """Create a fresh database for each test."""
