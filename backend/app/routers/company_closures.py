@@ -235,7 +235,7 @@ def _create_closure_absences(
     workdays = sorted(workdays)
     affected = 0
 
-    # #394: half-day special days (24./31.12. configured as "halber Feiertag")
+    # #394 / Teil B: reduced special days (24./31.12. as "halber Feiertag" or "verkürzt")
     # have a 0.5 target factor. The closure must book only HALF a day for them —
     # otherwise a full vacation/overtime day is deducted for a 0.5-Soll day
     # (customer report philvdb). `free` special days already reduce the target to
@@ -364,17 +364,15 @@ def _create_closure_absences(
                     )
                     db.delete(entry)
 
-            # #394: a `half_day` special day (24./31.12.) contributes only 0.5×
-            # its target — book a HALF day (half the target hours, half_day flag,
-            # 0.5 budget consumption) instead of a full one.
-            sd_factor = special_days_service.special_day_target_factor(
-                workday, special_cfg_by_year[workday.year]
-            )
-            if sd_factor is not None and sd_factor == Decimal("0"):
+            # #394 / Teil B: on a reduced day (`half_day` or `max_hours`) the closure
+            # books the reduced target (hours = special_day_target, half_day=False)
+            # and consumes 0.5 day via half_special_day_weight (same helper as
+            # get_vacation_account and the budget checks).
+            sd_cfg = special_cfg_by_year[workday.year]
+            if special_days_service.special_day_mode(workday, sd_cfg) == special_days_service.MODE_FREE:
                 continue  # `free` day — defensive; already excluded from workdays
-            is_half_special = sd_factor is not None and sd_factor == Decimal("0.5")
-            booked_target = day_target * Decimal("0.5") if is_half_special else day_target
-            day_consumption = 0.5 if is_half_special else 1.0
+            booked_target = special_days_service.special_day_target(workday, day_target, sd_cfg)
+            day_consumption = float(calculation_service.half_special_day_weight(workday, sd_cfg))
 
             # #314: decide VACATION vs OVERTIME per day. VACATION while the
             # remaining budget covers this day's consumption; afterwards OVERTIME

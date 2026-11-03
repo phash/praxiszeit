@@ -89,6 +89,9 @@ def get_daily_target_for_date_endpoint(
     """Get daily target hours for a specific date (for pre-filling absence forms)."""
     schedule = calculation_service.get_schedule_for_date(db, current_user, target_date)
     daily = calculation_service.get_daily_target_for_date(current_user, target_date, schedule)
+    # Teil B: Sondertag-/Verkürzungsregel (min(Soll, X), halber Tag, frei) anwenden.
+    cfg = special_days_service.get_special_day_config(db, current_user.tenant_id, target_date.year)
+    daily = special_days_service.special_day_target(target_date, daily, cfg)
     return {"date": str(target_date), "hours": float(daily)}
 
 
