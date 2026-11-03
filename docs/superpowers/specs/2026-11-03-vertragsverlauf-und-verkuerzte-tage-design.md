@@ -126,7 +126,7 @@ Für Jahr J:
 
 **Benutzerformular (`UserForm.tsx`):**
 - Beim Anlegen unverändert editierbar (inkl. Vorschlag `30 × Arbeitstage ÷ 5`).
-- Beim Bearbeiten nur Anzeige des heute gültigen Werts mit Verweis „Ändern über Arbeitszeit ändern“. Das Formular schickt die fünf Felder beim Bearbeiten **nicht** mehr mit (heute schickt es `vacation_days` immer, `:300-306`).
+- Beim Bearbeiten nur Anzeige des heute gültigen Werts mit Verweis „Ändern über ‚Arbeitszeit anpassen…‘“. Das Formular schickt die fünf Felder beim Bearbeiten **nicht** mehr mit (heute schickt es `vacation_days` immer, `:300-306`).
 
 **Dialog „Arbeitszeit ändern“ (`WorkingHoursModal.tsx`):** neuer Abschnitt „Urlaub und Abrechnung“ unter den Stunden:
 - **Urlaubsanspruch pro Jahr ab diesem Datum** — Zahlfeld, Schritt 0,1, 0–50.
