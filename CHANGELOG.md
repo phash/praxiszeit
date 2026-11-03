@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### ✨ Neu
+
+- **Verkürzte Tage.** Das Tagessoll lässt sich für einzelne Tage begrenzen: Soll = die kleinere Zahl aus normalem Tagessoll und der eingetragenen Höchststundenzahl (X). Unter *Einstellungen → „Sondertage (24./31.12.)“* gibt es dafür die vierte Betriebsart **„Verkürzt auf X Stunden“** (Feld „Höchstens (Stunden)“, 0,25–12 in Schritten von 0,25, Standard 4); neue Karte **„Verkürzte Tage“** für beliebige weitere Tage wie Rosenmontag (Datum, Bezeichnung, Höchststunden; der 24./31.12. läuft nur über die Sondertage-Einstellung). Ein Feiertag geht vor, am Wochenende hat der Tag keine Wirkung, Urlaub kostet 0,5 Tage, die Gutschrift für Krank/Fortbildung wiegt `min(Tagessoll, X) ÷ Tagessoll`, Betriebsferien buchen das verkürzte Soll; das feste Monats-Soll (Minijob) bleibt unverändert. Angerechnet wird weiter die gestempelte Zeit, sie wird nicht auf X gekappt. Kalender und Stempelkarte zeigen „verkürzter Tag (max. 4 h)“. Neue Endpunkte `/api/admin/reduced-days` und `GET /api/reduced-days?year=` (angemeldet, nicht im öffentlichen `/api/settings`); Migration 074 legt nur die Tabelle `reduced_days` an und ändert keine bestehenden Werte.
+
+### ⚠️ Verhaltensänderung
+
+- **Änderung der 24./31.12.-Einstellung bucht Betriebsferien automatisch neu.** Bisher musste man betroffene Betriebsferien nach einer Änderung von Hand erneut speichern, sonst blieben die gebuchten Abwesenheiten auf dem alten Stand. Jetzt bucht PraxisZeit die betroffenen Betriebsferien beim Speichern der Sondertage-Einstellung und bei jeder Änderung eines verkürzten Tages selbst neu. In **abgeschlossenen Jahren** wird nichts neu gebucht, dort erscheint nur der Hinweis auf den veralteten Übertrag.
+
 ## [1.21.1] - 2026-11-02
 
 ### ⚠️ Verhaltensänderung

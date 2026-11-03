@@ -125,7 +125,7 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 **Löschen:** Kalender-Eintrag anklicken → Löschen-Symbol
 
 ### Sondertage 24./31.12.
-Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, sind diese im Kalender markiert (z. B. „Heiligabend (frei)" / „Silvester (½ Tag)") – wie ein Feiertag.
+Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, sind diese im Kalender markiert (z. B. „Heiligabend (frei)" / „Silvester (½ Tag)") – wie ein Feiertag. **„verkürzter Tag (max. 4 h)"** = Soll an dem Tag höchstens so viele Stunden; Urlaub kostet einen halben Tag.
 
 ### Bei aktiver Urlaubsgenehmigungspflicht
 - Urlaub-Speichern → **Antrag** (kein direkter Eintrag)

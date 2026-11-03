@@ -1285,6 +1285,23 @@ group_pdf() {
            ls docs/BERECHNUNGEN.pdf docs/GLOSSAR.pdf 2>/dev/null)
 }
 
+# Verkürzte Tage (Teil B, Migration 074): vierte Betriebsart „Verkürzt auf X
+# Stunden“ für den 24./31.12. und freie verkürzte Tage. Wortlaute stehen im Code,
+# die Doku zitiert sie; das veraltete credit_day_weight-Docstring darf nicht bleiben.
+group_verkuerzt() {
+  need_code "Für den 24. und 31.12. bitte die Einstellung Sondertage verwenden."
+  need_code "verkürzter Tag (max."
+  need_code "Die Stundenzahl muss zwischen 0,25 und 12 liegen (in Schritten von 0,25)."
+  need_code_label frontend/src/components/ReducedDaysCard.tsx "Verkürzte Tage"
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Verkürzt auf X Stunden'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'verkürzter Tag (max. 4 h)'
+  need docs/GLOSSAR.md 'verkürzter Tag'
+  need docs/BERECHNUNGEN.md 'special_day_target'
+  need frontend/src/components/DocViewer.tsx 'Verkürzt auf X Stunden'
+  need frontend/src/constants/helpContent.tsx 'Verkürzte Tage'
+  forbid backend/app/services/calculation_service.py 'legt ausschliesslich die'
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {

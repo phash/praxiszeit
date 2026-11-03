@@ -122,7 +122,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 - **Aus** (Standard): Mitarbeiter buchen Urlaub direkt
 - **Ein**: Urlaub landet als „Offen" zur Genehmigung
 
-**Arbeitstage** auf der Karte = was die Genehmigung kostet: nur Arbeitstage laut Tagesplan zum jeweiligen Datum (4-Tage-Woche, Mi frei: Mo–Fr = 4), ohne Wochenende/Feiertag/„frei"-Sondertag; Halbtag und „halber Feiertag" je 0,5
+**Arbeitstage** auf der Karte = was die Genehmigung kostet: nur Arbeitstage laut Tagesplan zum jeweiligen Datum (4-Tage-Woche, Mi frei: Mo–Fr = 4), ohne Wochenende/Feiertag/„frei"-Sondertag; Halbtag, „halber Feiertag" und verkürzter Tag je 0,5
 **Genehmigen:** Grüner Button → Abwesenheiten werden automatisch eingetragen (nur an Arbeitstagen; Zeiteinträge an freien Tagen bleiben stehen). Karte zeigt **0** → Genehmigung nicht möglich (z. B. „0 Stunden geplant"), Antrag bleibt offen
 **Ablehnen:** Roter Button → optionalen Ablehnungsgrund eingeben
 **Stornieren:** Filter „Genehmigt" → Antrag → **„Urlaub stornieren"** (nur wenn Zeitraum noch nicht begonnen) → Abwesenheiten werden **automatisch entfernt** (Betriebsferientage im Zeitraum bleiben bzw. werden nachgebucht), Antrag wird „Zurückgezogen"
@@ -183,8 +183,11 @@ Heiligabend + Silvester sind **keine** gesetzlichen Feiertage → pro Tag getren
 | **Arbeitstag** (Standard) | volles Tagessoll | normal |
 | **Halbtag** | halbes Tagessoll | **amber/gelb** |
 | **Frei** | Tagessoll 0 (wie Feiertag) | **grau** |
+| **Verkürzt auf X Stunden** | Soll = kleinere Zahl aus Tagessoll und X (0,25–12 h, Standard 4); Urlaub 0,5 Tage | „verkürzter Tag (max. 4 h)" |
 
-Bei „Frei" zusätzlich **Anrechnung:** Urlaub (vom Konto) oder Bezahlte Freistellung (kein Abzug). Wirkt auf Soll, Urlaubskonto und Kalender. Gilt für **alle** Jahre – betrifft eine Änderung ein abgeschlossenes Jahr → Hinweis auf veralteten Übertrag.
+Bei „Frei" zusätzlich **Anrechnung:** Urlaub (vom Konto) oder Bezahlte Freistellung (kein Abzug). Wirkt auf Soll, Urlaubskonto und Kalender. Gilt für **alle** Jahre – betrifft eine Änderung ein abgeschlossenes Jahr → Hinweis auf veralteten Übertrag. Betroffene **Betriebsferien** bucht PraxisZeit beim Speichern automatisch neu (abgeschlossene Jahre: nur Hinweis).
+
+**Verkürzte Tage** (Einstellungen → „Verkürzte Tage"): einzelne Tage wie Rosenmontag mit Bezeichnung + „Höchstens (Stunden)" (0,25–12, Schritt 0,25). Gleiche Regel; der 24./31.12. läuft nur über die Sondertage-Einstellung. Im Kalender: „verkürzter Tag (max. 4 h)".
 
 ### Eigene Abwesenheitsgründe (#312)
 

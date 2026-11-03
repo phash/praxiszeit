@@ -435,6 +435,7 @@ Abwesenheiten werden farbcodiert nach Typ dargestellt (z. B. Urlaub, Krankheit, 
 **Sondertage und Feiertage im Kalender:**
 - **Gesetzliche Feiertage** und arbeitsfreie **Sondertage** (24./31.12. im Modus „Frei") werden **grau** hinterlegt und sind nicht buchbar.
 - **Halbe Sondertage** (24./31.12. im Modus „Halbtag") werden **amber/gelb** hinterlegt.
+- **Verkürzte Tage** (24./31.12. im Modus „Verkürzt auf X Stunden" und Einträge unter „Verkürzte Tage") tragen den Hinweis **„verkürzter Tag (max. 4 h)"** (bei X = 4); sie bleiben buchbar.
 
 Die Anzeige folgt der Konfiguration unter **Einstellungen → „Sondertage (24./31.12.)"** (→ [Abschnitt 13](#sondertage-2431-12)).
 
@@ -522,7 +523,7 @@ Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspfl
 
 1. Antragskarte aufrufen – zeigt Mitarbeitername, Zeitraum, **Arbeitstage**, Notiz
 2. Klicken Sie auf **„Genehmigen"** (grüner Button)
-3. Das System trägt automatisch Abwesenheiten für alle Arbeitstage der Person ein (Wochenenden, Feiertage, als „frei" eingestellte Sondertage 24./31.12., freie Wochentage laut Tagesplan und Zeiträume mit 0 Wochenstunden ausgeschlossen). Vorhandene Zeiteinträge an diesen Tagen werden ersetzt (im Änderungsprotokoll dokumentiert); an den ausgeschlossenen Tagen bleiben sie stehen.
+3. Das System trägt automatisch Abwesenheiten für alle Arbeitstage der Person ein (Wochenenden, Feiertage, als „frei" eingestellte Sondertage 24./31.12., freie Wochentage laut Tagesplan und Zeiträume mit 0 Wochenstunden ausgeschlossen). An einem **verkürzten Tag** wird das verkürzte Soll gebucht und 0,5 Urlaubstage verbraucht; ändern Sie einen verkürzten Tag später, bucht PraxisZeit die Betriebsferien automatisch neu. Vorhandene Zeiteinträge an diesen Tagen werden ersetzt (im Änderungsprotokoll dokumentiert); an den ausgeschlossenen Tagen bleiben sie stehen.
 
 **„Arbeitstage" auf der Antragskarte** zeigt, wie viele Tage der Antrag nach der Genehmigung tatsächlich kostet – nach genau denselben Regeln wie die Buchung und das Urlaubskonto:
 
@@ -753,6 +754,9 @@ Heiligabend (24.12.) und Silvester (31.12.) sind keine gesetzlichen Feiertage. I
 | **Arbeitstag** (Standard) | Voller Arbeitstag, normales Tagessoll |
 | **Halbtag** | Halbes Tagessoll; im Kalender amber/gelb hinterlegt |
 | **Frei** | Arbeitsfrei (wie ein Feiertag), Tagessoll 0; im Kalender grau hinterlegt |
+| **Verkürzt auf X Stunden** | Das Tagessoll beträgt höchstens X Stunden; im Kalender als „verkürzter Tag (max. 4 h)" gekennzeichnet |
+
+**Höchstens (Stunden)** (zusätzliches Feld, erscheint nur bei „Verkürzt auf X Stunden"): erlaubt sind 0,25 bis 12 Stunden in Schritten von 0,25; ist nichts Gültiges gespeichert, gilt 4 Stunden. Das Soll des Tages ist **die kleinere Zahl aus dem normalen Tagessoll und X** – wer an dem Tag ohnehin weniger Soll hat (z. B. 3 h bei X = 4), behält es. Urlaub an einem verkürzten Tag kostet **0,5 Tage**, Krank und Fortbildung zählen mit dem passenden Anteil (8 h Soll, X = 4 → 4 h Soll und 4 h Gutschrift, Saldo bleibt 0). Angerechnet wird weiterhin die gestempelte Zeit, sie wird nicht auf X gekappt; die Arbeitszeit-Blöcke des Wochentags gelten unverändert. Betriebsferien buchen an einem solchen Tag das verkürzte Soll und verbrauchen 0,5 Urlaubstage.
 
 **Anrechnung** (zusätzliches Auswahlfeld, erscheint nur bei Modus „Frei"):
 | Auswahl | Bedeutung |
@@ -761,6 +765,14 @@ Heiligabend (24.12.) und Silvester (31.12.) sind keine gesetzlichen Feiertage. I
 | **Bezahlte Freistellung** | Kein Abzug vom Urlaubskonto (wie ein Feiertag) |
 
 Die Einstellung wirkt sich automatisch auf **Stundensoll**, **Urlaubskonto** und die **Kalenderdarstellung** aus. Klicken Sie nach Änderungen auf **Speichern**. Sie gilt für **alle Jahre**, auch zurückliegende. Ändert sie Soll oder Urlaubskonto eines Jahres, für das der Jahresabschluss schon erfolgt ist (der Tag fällt dort auf einen Werktag ohne Feiertag), erscheint nach dem Speichern derselbe Hinweis auf den veralteten Übertrag wie beim Bundesland-Wechsel – den Übertrag unter „Jahresabschluss“ prüfen und ggf. von Hand korrigieren. Wechselt ein Tag zwischen „Frei" und Arbeitstag bzw. Halbtag, nennt PraxisZeit außerdem bestehende Zeiteinträge an diesem Tag, deren Anrechnung gegen die [Arbeitszeit-Blöcke](#arbeitszeit-bloecke) sich dadurch ändern müsste – unverändert neu speichern berechnet sie neu.
+
+**Betriebsferien werden automatisch neu gebucht:** Ändern Sie die Einstellung für den 24./31.12. oder einen verkürzten Tag, bucht PraxisZeit die betroffenen **Betriebsferien** beim Speichern selbst neu (im Änderungsprotokoll: „Sondertag oder verkürzter Tag geändert, wird neu gebucht"). Bis Version 1.21.1 mussten Sie die Betriebsferien dafür von Hand erneut speichern. In **abgeschlossenen Jahren** wird nichts neu gebucht, dort erscheint nur der Hinweis auf den veralteten Übertrag.
+
+#### Verkürzte Tage
+
+Für einzelne Tage außerhalb von 24./31.12. (z. B. Rosenmontag, Betriebsfeier) gibt es unter **Einstellungen → „Verkürzte Tage"** eine eigene Liste. Wählen Sie das **Jahr**, tragen Sie **Datum**, **Bezeichnung** und **Höchstens (Stunden)** ein und klicken Sie auf **Hinzufügen**; eine Zeile ändern Sie durch Anklicken, löschen mit dem Papierkorb. Es gilt dieselbe Regel wie bei „Verkürzt auf X Stunden": Soll = die kleinere Zahl aus Tagessoll und X, ein Feiertag geht vor, am Wochenende wirkt der Tag nicht, Urlaub kostet 0,5 Tage. Für den 24. und 31.12. nimmt PraxisZeit keinen Eintrag an – dort steht die Meldung „Für den 24. und 31.12. bitte die Einstellung Sondertage verwenden." Die Stundenzahl muss zwischen 0,25 und 12 liegen (in Schritten von 0,25). Pro Datum gibt es genau einen Eintrag. Auch jede Änderung hier bucht betroffene Betriebsferien neu; in abgeschlossenen Jahren erscheint nur der Hinweis.
+
+Mitarbeitende sehen den Tag im Kalender und auf der Stempelkarte als **„verkürzter Tag (max. 4 h)"** (bei benanntem Tag: „Rosenmontag: verkürzter Tag (max. 4 h)").
 
 <a id="urlaubsgenehmigung"></a>
 ### Urlaubsgenehmigung
@@ -1129,7 +1141,7 @@ Sind **Arbeitszeit-Blöcke** hinterlegt (→ [Abschnitt 4, Arbeitszeit-Blöcke](
 
 ### 18.4 Monats-Soll
 
-PraxisZeit geht jeden Kalendertag des Monats durch und addiert das Tagessoll – **außer** an: Wochenenden, Feiertagen, Tagen außerhalb des Beschäftigungszeitraums und Abwesenheitstagen, die das Soll reduzieren (siehe Matrix). Sondertage 24./31.12. wirken mit Faktor 0,5 (Halbtag) bzw. 0 (frei).
+PraxisZeit geht jeden Kalendertag des Monats durch und addiert das Tagessoll – **außer** an: Wochenenden, Feiertagen, Tagen außerhalb des Beschäftigungszeitraums und Abwesenheitstagen, die das Soll reduzieren (siehe Matrix). Sondertage 24./31.12. wirken mit Faktor 0,5 (Halbtag) bzw. 0 (frei); „Verkürzt auf X Stunden" und verkürzte Tage begrenzen das Tagessoll auf die kleinere Zahl aus Tagessoll und X.
 
 ### 18.5 Abwesenheits-Typen-Matrix
 
@@ -1177,7 +1189,7 @@ Urlaub wird grundsätzlich **in Tagen** geführt, nicht in Stunden (Tagesprinzip
 ### 18.8 Sonderfälle
 
 - **Mitarbeiter ohne Stundenzählung:** kein Soll/Ist/Überstunden; Urlaub trotzdem tagebasiert (voller Urlaubstag / „Frei"-Sondertag = 1 Tag, halber freier Tag und „halber Feiertag" 24./31.12. = 0,5 Tag).
-- **Sondertage 24./31.12.:** je Tag Arbeitstag / Halbtag (Faktor 0,5) / Frei (Faktor 0). „Frei + zählt als Urlaub" zieht 1 Urlaubstag.
+- **Sondertage 24./31.12.:** je Tag Arbeitstag / Halbtag (Faktor 0,5) / Frei (Faktor 0) / Verkürzt auf X Stunden (Soll = min(Tagessoll, X), Urlaub 0,5 Tage). „Frei + zählt als Urlaub" zieht 1 Urlaubstag. Einzelne weitere Tage: Einstellungen → „Verkürzte Tage".
 - **Eintritt/Austritt:** vor dem ersten / nach dem letzten Arbeitstag entstehen weder Soll noch Ist; der Urlaubsanspruch wird anteilig berechnet.
 - **Arbeitszeit-Änderung (rückwirkend oder zukunftsdatiert):** alte Monate rechnen mit der damals gültigen Arbeitszeit (Verlauf / Gültig-ab-Datum). Rückwirkend werden erfasste Zeiteinträge an geänderten Wochentagen neu gekappt und danach die Stunden bereits gebuchter Abwesenheiten auf das neue Tagessoll umgestellt – Abwesenheiten auch bei einem Datum in der Zukunft (Ausnahme: Überstundenausgleich, MA ohne Stundenzählung); Urlaubs**tage** bleiben unberührt. Senkt eine rückwirkende Änderung angerechnete Zeit oder das Überstundenkonto, gilt der Verkürzungsschutz. Details in [Abschnitt 4 → „Mitarbeiter bearbeiten"](#mitarbeiter-bearbeiten).
 - **Betriebsferien:** je nach Verrechnung Urlaubsabzug oder bezahlte Freistellung; bei aktivem Schalter „Überzählige Betriebsferien als Überstundenabbau" zuerst Urlaub, dann Überstundenausgleich (kein Minus-Urlaub) – Details in [Abschnitt 11](#11-betriebsferien-verwalten).

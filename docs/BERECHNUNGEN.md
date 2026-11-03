@@ -157,7 +157,8 @@ Eine Liste mit fünf leeren Tagen gilt wie NULL (keine Blöcke).
 
 - **Wochenende** (Sa/So): Tagessoll immer `0`.
 - **`track_hours = false`**: Tagessoll immer `0` (keine Stundenzählung).
-- **Sondertage 24./31.12.** (`half_day` / `free`): Tagessoll wird mit Faktor `0,5` bzw. `0` multipliziert (siehe §12.2).
+- **Sondertage 24./31.12.** (`half_day` / `free` / `max_hours`): `half_day` und `free` multiplizieren das Tagessoll mit `0,5` bzw. `0`; `max_hours` begrenzt es auf `min(Tagessoll, X)` (siehe §12.2).
+- **Verkürzte Tage** (frei gewählte Tage wie Rosenmontag, Tabelle `reduced_days`): Tagessoll = `min(Tagessoll laut Snapshot, X)`, Feiertag schlägt den verkürzten Tag, am Wochenende wirkt er nicht (siehe §12.2).
 
 ---
 
@@ -301,6 +302,7 @@ dem Gewicht ihres Tages multipliziert (`calculation_service.credit_day_weight`):
 | Gesetzlicher Feiertag | 0 | **0** |
 | Sondertag 24./31.12. als **„halber Feiertag"** | 0,5 × Tagessoll (#146) | **0,5** |
 | Sondertag 24./31.12. als **„frei"** | 0 | **0** |
+| **Verkürzter Tag** (24./31.12. als „Verkürzt auf X Stunden" oder Eintrag unter „Verkürzte Tage") | `min(t, X)` | **`min(t, X) ÷ t`** (t = ungewichtetes Snapshot-Soll; t = 0 → 0) |
 
 > **Wochentag ohne Soll** (0 h im Tagesplan, Wochentag ohne Blöcke): Das Gewicht ist 1,0,
 > die gespeicherten `hours` sind dort aber 0 — gebucht wird an einem solchen Tag nicht, und
@@ -422,7 +424,8 @@ für jeden Tag d im Monat:
     überspringe, wenn d ein Abwesenheitstag ist, der das Soll reduziert
     schedule = get_schedule_for_date(db, user, d)                   (#431)
     tagessoll = get_daily_target_for_date(user, d, schedule)
-    tagessoll × Sondertag-Faktor (24./31.12.)                       (#146)
+    tagessoll = special_day_target(d, tagessoll, cfg)               (#146, Teil B)
+                (half_day ×0,5 · free ×0 · max_hours min(t, X) · verkürzter Tag min(t, X))
     Monats-Soll += tagessoll
 ```
 
@@ -666,7 +669,8 @@ keinen Urlaub verbrauchen.
 
 **Halbtags-Sondertag (24./31.12. als `half_day`, #394):** Fällt ein Urlaubstag auf einen
 solchen Tag, kostet er nur **0,5** statt 1,0 Urlaubstag — die tagesbasierte Zählung wendet
-dafür den Faktor aus `calculation_service.half_special_day_weight(d, special_cfg)` an. Das
+dafür den Faktor aus `calculation_service.half_special_day_weight(d, special_cfg)` an
+(**0,5 für `half_day` und für `max_hours`/verkürzte Tage**, §12.2). Das
 ist **die eine** Quelle für diesen Faktor, geteilt von `get_vacation_account`, `absence_days`
 (§12.2), der Betriebsferien-Buchung und dem #314-Re-Split (§9.4) sowie allen
 Urlaubsbudget-Pre-Checks — so kann die Halbtags-Regel nie zwischen den Buchungspfaden
@@ -823,6 +827,21 @@ Urlaubs-/Konto-Kosten     = 0,5 × Tagessoll  über half_special_day_weight(), N
 > Sondertag-Faktor bereits auf die Hälfte reduziert — kein Rest-Defizit), die 0,5-Kosten für
 > die Urlaubs-/Konto-Zählung kommen zentral über den einen Helper
 > `calculation_service.half_special_day_weight(d, cfg)` (§8.2).
+
+**Verkürzter Tag in Betriebsferien (Teil B):** Auf einem verkürzten Tag (24./31.12. im Modus
+„Verkürzt auf X Stunden" oder freier verkürzter Tag) bucht die Schließung dasselbe Muster:
+
+```
+gebuchte hours          = special_day_target = min(Tagessoll, X)
+half_day (Feld)          = False
+Urlaubs-/Konto-Kosten     = 0,5   über half_special_day_weight()
+```
+
+Ändert sich ein verkürzter Tag oder die 24./31.12.-Einstellung, **bucht PraxisZeit die
+betroffenen Betriebsferien automatisch neu** (`company_closures.resave_closures_for_dates`,
+Grund im Änderungsprotokoll: „Sondertag oder verkürzter Tag geändert, wird neu gebucht").
+Betroffene Tage in **abgeschlossenen Jahren** werden nicht neu gebucht — dort erscheint nur
+der Hinweis auf den veralteten Übertrag (Fix #5, nie automatisch neu berechnen).
 
 ### 9.4 Betriebsferien über Jahresurlaub hinaus → Überstundenausgleich (#314)
 
@@ -1075,6 +1094,43 @@ Absenz-Zählung nur **0,5** statt 1,0 — egal ob privat gebuchter Urlaub (§8.2
 Betriebsferien-Buchung (§9.3) oder ein exportierter Bericht (`absence_days()`). Alle diese
 Stellen fragen denselben zentralen Helper `calculation_service.half_special_day_weight(d,
 cfg)` ab, damit der Faktor nie zwischen den Pfaden divergiert.
+
+**Betriebsart „Verkürzt auf X Stunden" (`max_hours`, Teil B):** vierter Modus je Tag, mit den
+Schlüsseln `special_day_dec24_max_hours` / `special_day_dec31_max_hours` (0,25–12 h, Schritt
+0,25; fehlt ein gültiger Wert, gilt der Rückfall 4 h). Das Tagessoll ist
+`min(Tagessoll laut Snapshot, X)`; wer an dem Tag ohnehin weniger Soll hat, behält es, ein
+Tag mit Soll 0 bleibt 0.
+
+**Verkürzte Tage (frei gewählt, Tabelle `reduced_days`, Migration 074):** Admins tragen unter
+**Einstellungen → „Verkürzte Tage"** einzelne Tage (z. B. Rosenmontag) mit Bezeichnung und
+„Höchstens (Stunden)" ein. Der 24. und 31.12. sind dort ausgeschlossen — sie laufen über die
+Sondertage-Einstellung. Es gilt dieselbe Regel wie bei `max_hours`.
+
+**Eine Quelle:** `special_days_service.special_day_target(d, tagessoll, cfg)` liefert das
+Tagessoll jedes Sondertags (Faktor- und Höchststunden-Modi); `special_day_target_factor(` darf
+nur dort stehen (Guard `test_no_special_factor_inline.py`). Reihenfolge: Feiertag (0) →
+Wochenende (keine Wirkung) → Sondertag/verkürzter Tag.
+
+| Regel | Wert |
+|-------|------|
+| Tagessoll | `min(Tagessoll laut Snapshot, X)`; Feiertag gewinnt, Wochenende ohne Wirkung |
+| Urlaub | kostet **0,5** Tage für alle (`half_special_day_weight`) |
+| Krank/Fortbildung (Gutschrift) | Gewicht `credit_day_weight(d, …, daily_target=t)` = `min(t, X) ÷ t` |
+| Betriebsferien | buchen `hours = min(Tagessoll, X)`, `half_day = False`, Verbrauch 0,5 (§9.3) |
+| Fix-Modus (#377 2b) | Monats-Soll **unverändert**; nur `_fixed_planned_hours` nimmt `min(geplant, X)` |
+| Angerechnete Zeit | **nicht** gekappt; Arbeitszeit-Blöcke und Kappung bleiben wie am Wochentag (wie `half_day`, #484) |
+
+**Beispiel:** 8 h/Tag, 24.12. „Verkürzt auf 4 Stunden", krank gemeldet: Soll 4 h, Gutschrift
+8 h × 4/8 = 4 h — Saldo bleibt 0. Bei 3 h/Tag ist das Soll `min(3, 4) = 3` und das Gewicht 1.
+
+**Anzeige:** Kalender und Stempelkarte nennen „verkürzter Tag (max. 4 h)" (bei benanntem Tag:
+„<Name>: verkürzter Tag (max. 4 h)"); `/time-entries/clock-status` liefert dafür
+`today_special_day_label`. Verkürzte Tage kommen aus dem angemeldeten Endpunkt
+`GET /api/reduced-days?year=` (nicht aus dem öffentlichen `/api/settings`).
+
+**Änderung wirkt rückwirkend, mit Hinweis:** jede Änderung eines verkürzten Tages oder der
+24./31.12.-Einstellung bucht die betroffenen Betriebsferien neu (§9.3); in abgeschlossenen
+Jahren wird nur gewarnt.
 
 ### 12.3 Eintritt/Austritt (#193/#195)
 

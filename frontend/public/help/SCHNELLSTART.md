@@ -22,7 +22,7 @@
 |-------------|---------|
 | **Bundesland** | Für die automatischen Feiertage (z. B. Bayern) |
 | **Urlaubsgenehmigung** | An, wenn Urlaub erst vom Admin freigegeben werden soll; aus = Mitarbeiter buchen direkt |
-| **Sondertage 24./31.12.** | Heiligabend / Silvester als *frei* oder *halber Tag* markieren |
+| **Sondertage 24./31.12.** | Heiligabend / Silvester als *frei*, *halber Tag* oder *verkürzt auf X Stunden* markieren (einzelne Tage unter „Verkürzte Tage") |
 | **Onboarding-Tour** | Willkommens-Tour für neue Nutzer (Standard: **an**) |
 
 ---
