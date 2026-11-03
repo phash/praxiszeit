@@ -91,6 +91,15 @@ class WorkingHoursChangeBase(BaseModel):
     hours_thursday: Optional[float] = Field(None, ge=0, le=24)
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
     work_days_per_week: Optional[int] = Field(None, ge=1, le=7)
+    # Teil A (Vertragsverlauf): Anspruch, Stundenzählung, Minijob. Beim Anlegen
+    # heißt ein NICHT gesendetes Feld (nicht in ``model_fields_set``) „vom
+    # Snapshot zum Wirkungsdatum übernehmen"; ein ausdrücklich gesendetes
+    # ``agreed_monthly_hours: null`` heißt „aus weekly_hours abgeleitet".
+    vacation_days: Optional[float] = Field(None, ge=0, le=50)
+    track_hours: Optional[bool] = None
+    milog_working_time_account: Optional[bool] = None
+    agreed_monthly_hours: Optional[float] = Field(None, gt=0, le=400)
+    use_fixed_monthly_target: Optional[bool] = None
     note: Optional[str] = None
 
 

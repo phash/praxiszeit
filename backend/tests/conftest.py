@@ -152,6 +152,17 @@ from app.models import WorkingHoursChange as _WHC
 event.listen(_WHC, "before_insert", _fill_contract_from_user)
 
 
+@pytest.fixture
+def no_contract_fill():
+    """Teil A, Task 4: den Test-Listener für EINEN Test abschalten — der Test
+    beweist, dass jeder Produktionskonstruktor alle fünf Vertragsfelder setzt."""
+    event.remove(_WHC, "before_insert", _fill_contract_from_user)
+    try:
+        yield
+    finally:
+        event.listen(_WHC, "before_insert", _fill_contract_from_user)
+
+
 @pytest.fixture(scope="function")
 def db():
     """Create a fresh database for each test."""

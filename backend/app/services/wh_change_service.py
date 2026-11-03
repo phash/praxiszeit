@@ -459,8 +459,19 @@ def reset_body(predecessor, effective_from: date, change_id) -> dict:
     """P13/9.7 — fertiger Anlege-Body „ab ‹Datum› auf den vorherigen Stand
     zurücksetzen": der Vorgänger-Snapshot samt neuen Blöcken; ein Altfenster
     trägt der Server selbst nach (der Schreibweg nimmt keine Altfenster an),
-    deshalb nur Modusfelder und — ohne Fenster — ``remove_legacy_window``."""
-    body: dict = {"effective_from": effective_from.isoformat(), "reset_of_change_id": str(change_id)}
+    deshalb nur Modusfelder und — ohne Fenster — ``remove_legacy_window``.
+
+    Teil A: immer mit den fünf Vertragsfeldern des Vorgängers (auch im
+    Block-Modus; ``agreed_monthly_hours`` ``None`` = abgeleitet)."""
+    agreed = predecessor.agreed_monthly_hours
+    body: dict = {
+        "effective_from": effective_from.isoformat(), "reset_of_change_id": str(change_id),
+        "vacation_days": float(predecessor.vacation_days),
+        "track_hours": bool(predecessor.track_hours),
+        "milog_working_time_account": bool(predecessor.milog_working_time_account),
+        "agreed_monthly_hours": None if agreed is None else float(agreed),
+        "use_fixed_monthly_target": bool(predecessor.use_fixed_monthly_target),
+    }
     parsed = (None if predecessor.blocks is None
               else work_blocks_service.ParsedWeek(predecessor.blocks, predecessor.block_pauses))
     if parsed is not None and not work_blocks_service.is_legacy_week(parsed):

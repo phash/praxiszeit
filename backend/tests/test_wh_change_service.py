@@ -426,17 +426,21 @@ def test_reset_body_for_every_kind_of_predecessor():
         base.update(kw)
         return calculation_service.Schedule(**base)
 
+    # Teil A, Task 4: immer die fünf Vertragsfelder, auch im Block-Modus.
+    contract = {"vacation_days": 30.0, "track_hours": True, "milog_working_time_account": False,
+                "agreed_monthly_hours": None, "use_fixed_monthly_target": False}
+
     assert svc.reset_body(sched(), TODAY, cid) == {
         "effective_from": "2026-10-08", "reset_of_change_id": str(cid), "use_daily_schedule": False,
-        "weekly_hours": 40.0, "work_days_per_week": 5, "remove_legacy_window": True}
+        "weekly_hours": 40.0, "work_days_per_week": 5, "remove_legacy_window": True, **contract}
     from app.services import work_blocks_service as wbs
     new = wbs.parse_week_blocks(ANNA_WEEK)
     assert svc.reset_body(sched(blocks=new.blocks, block_pauses=new.pauses), TODAY, cid) == {
-        "effective_from": "2026-10-08", "reset_of_change_id": str(cid), "blocks": ANNA_WEEK}
+        "effective_from": "2026-10-08", "reset_of_change_id": str(cid), "blocks": ANNA_WEEK, **contract}
     legacy = wbs.parse_week_blocks(legacy_week(mon=("07:30", "16:30")))
     body = svc.reset_body(sched(blocks=legacy.blocks, block_pauses=legacy.pauses, use_daily_schedule=True,
                                 day_hours=(Decimal("8"), Decimal("8"), None, None, None), work_days_per_week=2),
                           TODAY, cid)
     assert body == {"effective_from": "2026-10-08", "reset_of_change_id": str(cid), "use_daily_schedule": True,
                     "hours_monday": 8.0, "hours_tuesday": 8.0, "hours_wednesday": None, "hours_thursday": None,
-                    "hours_friday": None, "work_days_per_week": 2}
+                    "hours_friday": None, "work_days_per_week": 2, **contract}

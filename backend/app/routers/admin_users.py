@@ -148,7 +148,7 @@ def _log_wh_change_retarget(
 
 
 def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_per_week,
-                         blocks, block_pauses):
+                         blocks, block_pauses, contract: tuple):
     """#431: der Vertrags-Snapshot als vergleichbares Tupel.
 
     Verglichen wird, was das SOLL treibt. Im gleichmaessigen Modus sind die
@@ -166,6 +166,10 @@ def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_
     Snapshot — sie treiben die Kappung, und eine Änderung allein an ihnen
     (PR3: reine Blockänderung) braucht genauso eine Basis-Zeile, die die
     Vergangenheit einfriert.
+
+    Teil A (Vertragsverlauf): ``contract`` (``_contract_of``) — Anspruch,
+    Stundenzählung und Minijob-Felder gehören zum Snapshot; eine reine
+    Anspruchsänderung braucht genauso eine Basis-Zeile.
     """
     use_daily_schedule = bool(use_daily_schedule)
     return (
@@ -180,6 +184,21 @@ def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_
         # leere Tage), Pausen nur, wenn es Blöcke gibt.
         blocks,
         block_pauses if blocks is not None else None,
+        contract,
+    )
+
+
+def _contract_of(holder) -> tuple:
+    """Teil A: die fünf Vertragsfelder eines ``Schedule`` bzw.
+    ``_NormalisedSchedule`` als vergleichbares Tupel
+    ``(vacation_days, track_hours, milog, agreed|None, fixed)``."""
+    agreed = holder.agreed_monthly_hours
+    return (
+        Decimal(str(holder.vacation_days)),
+        bool(holder.track_hours),
+        bool(holder.milog_working_time_account),
+        None if agreed is None else Decimal(str(agreed)),
+        bool(holder.use_fixed_monthly_target),
     )
 
 
@@ -202,17 +221,24 @@ def _carried_blocks(predecessor: "calculation_service.Schedule") -> tuple:
 
 
 class _NormalisedSchedule(NamedTuple):
-    """#431: die fertig normalisierte Snapshot-Eingabe — genau die vier Werte,
-    die eine ``WorkingHoursChange``-Zeile ausmachen."""
+    """#431: die fertig normalisierte Snapshot-Eingabe — die Werte, die eine
+    ``WorkingHoursChange``-Zeile ausmachen (ohne Blöcke; die löst
+    ``_target_blocks`` auf)."""
 
     weekly_hours: float
     use_daily_schedule: bool
     day_hours: tuple          # (Mo, Di, Mi, Do, Fr), je Optional[float]
     work_days_per_week: int
+    # Teil A: gesendet oder vom Snapshot zum Wirkungsdatum übernommen.
+    vacation_days: Decimal
+    track_hours: bool
+    milog_working_time_account: bool
+    agreed_monthly_hours: Optional[Decimal]  # None = aus weekly_hours abgeleitet
+    use_fixed_monthly_target: bool
 
 
 def _normalise_schedule_input(
-    change_data: WorkingHoursChangeCreate, user: User
+    change_data: WorkingHoursChangeCreate, user: User, current: "calculation_service.Schedule"
 ) -> _NormalisedSchedule:
     """#431: DIE eine Normalisierung der Snapshot-Eingabe — genutzt vom
     Schreibpfad ``create_working_hours_change`` UND von der Vorschau.
@@ -232,7 +258,21 @@ def _normalise_schedule_input(
     der Snapshot wäre dann unvollständig. Vorher stand dieser Rückfall zweimal
     wörtlich im Schreibpfad und hätte in der Vorschau ein drittes Mal
     entstehen müssen.
+
+    Teil A (Vertragsverlauf): die fünf Vertragsfelder — nicht gesendet heißt
+    „vom Snapshot zum Wirkungsdatum (``current``) übernehmen", NIE von der
+    User-Zeile. Ein ausdrückliches ``agreed_monthly_hours: null`` heißt
+    „abgeleitet"; bei den übrigen vier ist ``null`` keine Aussage (übernehmen).
     """
+    sent = change_data.model_fields_set
+
+    def pick(field: str):
+        value = getattr(change_data, field)
+        if field in sent and (value is not None or field == "agreed_monthly_hours"):
+            return value
+        return getattr(current, field)
+
+    vacation_days, agreed = pick("vacation_days"), pick("agreed_monthly_hours")
     return _NormalisedSchedule(
         weekly_hours=change_data.weekly_hours,
         use_daily_schedule=bool(change_data.use_daily_schedule),
@@ -246,6 +286,11 @@ def _normalise_schedule_input(
         work_days_per_week=int(
             change_data.work_days_per_week or user.work_days_per_week
         ),
+        vacation_days=Decimal(str(vacation_days)),
+        track_hours=bool(pick("track_hours")),
+        milog_working_time_account=bool(pick("milog_working_time_account")),
+        agreed_monthly_hours=None if agreed is None else Decimal(str(agreed)),
+        use_fixed_monthly_target=bool(pick("use_fixed_monthly_target")),
     )
 
 
@@ -286,6 +331,13 @@ def _sync_user_from_change(user: User, most_recent: WorkingHoursChange) -> None:
     # Spec E9: Spiegel der jüngsten Zeile ≤ heute — als KOPIE (eine geteilte
     # Liste würde eine spätere In-place-Änderung in beide Zeilen tragen).
     user.work_blocks = copy.deepcopy(most_recent.blocks)
+    # Teil A (Vertragsverlauf): die fünf Vertragsfelder spiegeln mit — auch ein
+    # ``agreed_monthly_hours`` NULL (= abgeleitet).
+    user.vacation_days = most_recent.vacation_days
+    user.track_hours = most_recent.track_hours
+    user.milog_working_time_account = most_recent.milog_working_time_account
+    user.agreed_monthly_hours = most_recent.agreed_monthly_hours
+    user.use_fixed_monthly_target = most_recent.use_fixed_monthly_target
 
 
 def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -> None:
@@ -1668,11 +1720,12 @@ def _reset_matches(change_data: WorkingHoursChangeCreate, norm, reset_schedule) 
                        if reset_schedule.use_daily_schedule else reset_schedule.weekly_hours)
     return _comparable_snapshot(
         norm.weekly_hours, norm.use_daily_schedule, norm.day_hours, norm.work_days_per_week,
-        body.blocks if body else None, body.pauses if body else None,
+        body.blocks if body else None, body.pauses if body else None, _contract_of(norm),
     ) == _comparable_snapshot(
         expected_weekly, reset_schedule.use_daily_schedule, reset_schedule.day_hours,
         reset_schedule.work_days_per_week,
         expected.blocks if expected else None, expected.pauses if expected else None,
+        _contract_of(reset_schedule),
     )
 
 
@@ -1722,6 +1775,11 @@ def _frozen_row(user: User, tenant_id, effective_from: date, schedule) -> Workin
         hours_friday=schedule.day_hours[4], work_days_per_week=schedule.work_days_per_week,
         # E8: die Zeile friert auch die Blöcke der Vergangenheit ein.
         blocks=work_blocks_service.week_blocks_to_json(schedule.blocks, schedule.block_pauses),
+        # Teil A: auch Anspruch, Stundenzählung und Minijob-Felder eingefroren.
+        vacation_days=schedule.vacation_days, track_hours=schedule.track_hours,
+        milog_working_time_account=schedule.milog_working_time_account,
+        agreed_monthly_hours=schedule.agreed_monthly_hours,
+        use_fixed_monthly_target=schedule.use_fixed_monthly_target,
         note=BASELINE_ROW_NOTE,
     )
 
@@ -1780,10 +1838,10 @@ def _insert_change_rows(db: Session, user: User, current_user: User, change_data
             db, user, change_data.effective_from - timedelta(days=1))
         if _comparable_snapshot(
             current.weekly_hours, current.use_daily_schedule, current.day_hours,
-            current.work_days_per_week, current.blocks, current.block_pauses,
+            current.work_days_per_week, current.blocks, current.block_pauses, _contract_of(current),
         ) != _comparable_snapshot(
             norm.weekly_hours, norm.use_daily_schedule, norm.day_hours,
-            norm.work_days_per_week, new_blocks, new_pauses,
+            norm.work_days_per_week, new_blocks, new_pauses, _contract_of(norm),
         ):
             candidates = [change_data.effective_from - timedelta(days=1)]
             if coverage:
@@ -1803,6 +1861,11 @@ def _insert_change_rows(db: Session, user: User, current_user: User, change_data
         # Rückfall steckt in _normalise_schedule_input, gemeinsam mit der Vorschau.
         work_days_per_week=norm.work_days_per_week,
         blocks=work_blocks_service.week_blocks_to_json(new_blocks, new_pauses),
+        # Teil A: gesendet oder vom Snapshot zum Wirkungsdatum übernommen.
+        vacation_days=norm.vacation_days, track_hours=norm.track_hours,
+        milog_working_time_account=norm.milog_working_time_account,
+        agreed_monthly_hours=norm.agreed_monthly_hours,
+        use_fixed_monthly_target=norm.use_fixed_monthly_target,
         note=change_data.note,
     )
     db.add(change)
@@ -1918,7 +1981,10 @@ def create_working_hours_change(
     reset_row, reset_schedule = reset if reset else (None, None)
     # #431: die Eingabe wird ab hier ausschließlich über ``norm`` gelesen —
     # dieselbe Normalisierung wie in der Vorschau.
-    norm = _normalise_schedule_input(change_data, user)
+    # Teil A: nicht gesendete Vertragsfelder erben den Snapshot zum
+    # Wirkungsdatum — aufgelöst VOR dem Anlegen der neuen Zeile.
+    current = calculation_service.get_schedule_for_date(db, user, change_data.effective_from)
+    norm = _normalise_schedule_input(change_data, user, current)
     if reset_schedule is not None and not _reset_matches(change_data, norm, reset_schedule):
         raise HTTPException(status_code=409, detail=RESET_CONFLICT_DETAIL)
     new_blocks, new_pauses = _target_blocks(db, user, change_data, reset_schedule)
@@ -2212,7 +2278,7 @@ def preview_working_hours_change(
     if input_error is None:
         try:
             change_data = WorkingHoursChangeCreate.model_validate(raw)
-            norm = _normalise_schedule_input(change_data, user)
+            norm = _normalise_schedule_input(change_data, user, current_schedule)
         except ValidationError as exc:
             # ``date.fromisoformat`` nimmt auch Formen an, die das Speichern
             # (Pydantic) ablehnt (``20260901``, ``2026-W36-2``) — dort ist das
@@ -2242,12 +2308,11 @@ def preview_working_hours_change(
             work_days_per_week=norm.work_days_per_week,
             blocks=new_blocks,
             block_pauses=new_pauses,
-            # Task 4 ersetzt diese Werte durch die der Eingabe.
-            vacation_days=current_schedule.vacation_days,
-            track_hours=current_schedule.track_hours,
-            milog_working_time_account=current_schedule.milog_working_time_account,
-            agreed_monthly_hours=current_schedule.agreed_monthly_hours,
-            use_fixed_monthly_target=current_schedule.use_fixed_monthly_target,
+            vacation_days=norm.vacation_days,
+            track_hours=norm.track_hours,
+            milog_working_time_account=norm.milog_working_time_account,
+            agreed_monthly_hours=norm.agreed_monthly_hours,
+            use_fixed_monthly_target=norm.use_fixed_monthly_target,
         )
     day_targets_current = _week_day_targets(user, effective_from, current_schedule)
     day_targets_new = _week_day_targets(user, effective_from, new_schedule)
@@ -2272,10 +2337,10 @@ def preview_working_hours_change(
     snapshot_unchanged = norm is not None and not blocked_reason and _comparable_snapshot(
         current_schedule.weekly_hours, current_schedule.use_daily_schedule,
         current_schedule.day_hours, current_schedule.work_days_per_week,
-        current_schedule.blocks, current_schedule.block_pauses,
+        current_schedule.blocks, current_schedule.block_pauses, _contract_of(current_schedule),
     ) == _comparable_snapshot(
         norm.weekly_hours, norm.use_daily_schedule, norm.day_hours, norm.work_days_per_week,
-        new_blocks, new_pauses,
+        new_blocks, new_pauses, _contract_of(norm),
     )
 
     # Saldo und Urlaub im IST-Zustand — ohne Lauf sofort, mit Lauf nach Schritt 2

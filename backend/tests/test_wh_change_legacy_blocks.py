@@ -153,6 +153,7 @@ def test_carried_blocks_rule():
 
 def test_comparable_snapshot_sees_blocks():
     legacy = work_blocks_service.parse_week_blocks(LEGACY)
-    plain = _comparable_snapshot(40, False, (None,) * 5, 5, None, None)
-    assert plain == _comparable_snapshot(40.0, False, (None,) * 5, 5, None, None)
-    assert plain != _comparable_snapshot(40, False, (None,) * 5, 5, legacy.blocks, legacy.pauses)
+    contract = (Decimal("30"), True, False, None, False)   # Teil A, Task 4
+    plain = _comparable_snapshot(40, False, (None,) * 5, 5, None, None, contract)
+    assert plain == _comparable_snapshot(40.0, False, (None,) * 5, 5, None, None, contract)
+    assert plain != _comparable_snapshot(40, False, (None,) * 5, 5, legacy.blocks, legacy.pauses, contract)
