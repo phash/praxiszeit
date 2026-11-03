@@ -16,6 +16,7 @@ from app.models.time_entry_audit_log import TimeEntryAuditLog
 from app.models.company_closure import CompanyClosure
 from app.models.error_log import ErrorLog
 from app.models.security_event import SecurityEvent
+from app.models.reduced_day import ReducedDay
 from app.models.vacation_request import VacationRequest, VacationRequestStatus
 from app.models.system_setting import SystemSetting
 from app.models.year_carryover import YearCarryover
@@ -52,6 +53,7 @@ __all__ = [
     "CompanyClosure",
     "ErrorLog",
     "SecurityEvent",
+    "ReducedDay",
     "VacationRequest",
     "VacationRequestStatus",
     "SystemSetting",
