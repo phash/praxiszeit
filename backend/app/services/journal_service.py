@@ -122,15 +122,15 @@ def get_journal(
         WorkingHoursChange.tenant_id == user.tenant_id,
     ).order_by(WorkingHoursChange.effective_from).all()
 
+    def _raw_daily_target(d: date) -> Decimal:
+        """Ungewichtetes Tagessoll laut Snapshot (Gewicht der Gutschrift)."""
+        schedule = calculation_service.get_schedule_for_date(db, user, d, wh_changes=wh_changes)
+        return calculation_service.get_daily_target_for_date(user, d, schedule)
+
     def _eff_daily_target(d: date) -> Decimal:
         if not calculation_service._within_employment_window(user, d):
             return Decimal("0")
-        schedule = calculation_service.get_schedule_for_date(db, user, d, wh_changes=wh_changes)
-        dt = calculation_service.get_daily_target_for_date(user, d, schedule)
-        factor = special_days_service.special_day_target_factor(d, special_day_config)
-        if factor is not None:
-            dt = dt * factor
-        return dt
+        return special_days_service.special_day_target(d, _raw_daily_target(d), special_day_config)
 
     def _absence_day_target(d: date, day_absences: List[Absence], worked: Decimal) -> Decimal:
         """L2 + L3 (Audit 2026-07-31): Tages-Soll an einem Tag MIT Abwesenheit —
@@ -223,7 +223,8 @@ def get_journal(
         # #497: EINE Quelle fuer die Tages-Gutschrift — dieselbe Funktion nutzen
         # die Tageszeilen der §16-Datei-Exporte (Spalte „Differenz").
         credited_sum = calculation_service.credited_absence_hours(
-            day_absences, d, holiday_dates, special_day_config
+            day_absences, d, holiday_dates, special_day_config,
+            daily_target=_raw_daily_target(d),
         )
 
         if is_weekend or is_holiday_day:

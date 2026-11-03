@@ -306,11 +306,16 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         # Von/Bis bleiben sichtbar, Soll und Ist zählen 0.
         in_window = calculation_service._within_employment_window(user, current_date)
 
+        # Per-day target using the historical contract snapshot (#431)
+        schedule = calculation_service.get_schedule_for_date(db, user, current_date, wh_changes=wh_changes)
+        raw_daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)  # unweighted (credit weight)
+
         # #497: Ist-Gutschrift Krank/Fortbildung für die Tages-Differenz — siehe
         # export_service._create_employee_sheet (Parität, dieselbe Quelle wie
         # get_monthly_actual). An Wochenende/Feiertag per Gewicht 0.
         credit = (calculation_service.credited_absence_hours(
-            day_absences, current_date, set(holidays_by_date), special_day_config)
+            day_absences, current_date, set(holidays_by_date), special_day_config,
+            daily_target=raw_daily_target)
             if in_window else Decimal("0.00"))
 
         tr = TableRow()
@@ -337,12 +342,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
             tr.addElement(_float_cell(0.0))
             net = Decimal("0.00")
 
-        # Per-day target using the historical contract snapshot (#431)
-        schedule = calculation_service.get_schedule_for_date(db, user, current_date, wh_changes=wh_changes)
-        daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
-        _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
-        if _sd_factor is not None:
-            daily_target = daily_target * _sd_factor
+        daily_target = special_days_service.special_day_target(current_date, raw_daily_target, special_day_config)
 
         # Soll + Abwesenheit + Bemerkung
         if not in_window:
@@ -679,9 +679,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         day_entries = entries_by_date.get(current_date, [])
         schedule = calculation_service.get_schedule_for_date(db, user, current_date, wh_changes=wh_changes)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
-        _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
-        if _sd_factor is not None:
-            daily_target = daily_target * _sd_factor
+        raw_daily_target = daily_target  # unweighted snapshot target (credit weight)
+        daily_target = special_days_service.special_day_target(current_date, raw_daily_target, special_day_config)
 
         # Night work check (§6 / §2 Abs. 4 ArbZG)
         is_night_wrk = any(
@@ -697,7 +696,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
 
         # #497: Ist-Gutschrift Krank/Fortbildung für die Tages-Differenz (s. Monat).
         credit = (calculation_service.credited_absence_hours(
-            day_absences, current_date, set(holidays_by_date), special_day_config)
+            day_absences, current_date, set(holidays_by_date), special_day_config,
+            daily_target=raw_daily_target)
             if in_window else Decimal("0.00"))
 
         tr = TableRow()
