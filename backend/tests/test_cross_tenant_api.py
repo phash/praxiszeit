@@ -482,3 +482,35 @@ def test_create_user_persists_department(_db_session, client_as_admin_a):
     assert lst.status_code == 200, lst.text
     u = next(x for x in lst.json() if x["username"] == "dept_user")
     assert u["department"] == "Reinigung"
+
+
+def test_reduced_days_list_excludes_tenant_b(_db_session, client_as_admin_a, two_tenants):
+    """GET /api/admin/reduced-days — nur Zeilen des eigenen Mandanten (F-026)."""
+    from decimal import Decimal
+    from app.models import ReducedDay
+    _db_session.add_all([
+        ReducedDay(tenant_id=TENANT_A_ID, date=date(2026, 2, 16), label="A-Tag", max_hours=Decimal("4")),
+        ReducedDay(tenant_id=TENANT_B_ID, date=date(2026, 2, 17), label="B-Tag", max_hours=Decimal("4")),
+    ])
+    _db_session.commit()
+
+    resp = client_as_admin_a.get("/api/admin/reduced-days/?year=2026")
+    assert resp.status_code == 200, resp.text
+    labels = {r["label"] for r in resp.json()}
+    assert labels == {"A-Tag"}
+
+
+def test_admin_a_cannot_delete_tenant_b_reduced_day(_db_session, client_as_admin_a, two_tenants):
+    """DELETE /api/admin/reduced-days/{tenant_b_id} → 404, Zeile bleibt (F-026)."""
+    from decimal import Decimal
+    from app.models import ReducedDay
+    row = ReducedDay(tenant_id=TENANT_B_ID, date=date(2026, 2, 16), label="B-Tag", max_hours=Decimal("4"))
+    _db_session.add(row)
+    _db_session.commit()
+    row_id = row.id
+
+    resp = client_as_admin_a.delete(f"/api/admin/reduced-days/{row_id}")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Verkürzter Tag nicht gefunden"
+    _db_session.expire_all()
+    assert _db_session.query(ReducedDay).filter(ReducedDay.id == row_id).count() == 1

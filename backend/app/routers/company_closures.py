@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Set
 from datetime import date, timedelta
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
@@ -434,6 +434,145 @@ def _create_closure_absences(
         if created_for_employee:
             affected += 1
     return affected
+
+
+# Teil B: Summen-Audit beim automatischen Neubuchen (Sondertag / verkürzter Tag).
+CLOSURE_REBOOK_REASON = "Sondertag oder verkürzter Tag geändert, wird neu gebucht"
+
+
+def closure_years(db: Session, tenant_id) -> Set[int]:
+    """Alle Jahre, die eine Schließung des Mandanten berührt (F-026)."""
+    years: Set[int] = set()
+    for start, end in db.query(CompanyClosure.start_date, CompanyClosure.end_date).filter(
+        CompanyClosure.tenant_id == tenant_id,  # F-026
+    ).all():
+        years.update(range(start.year, end.year + 1))
+    return years
+
+
+def resave_closures_for_dates(db: Session, current_user: User, dates: Set[date]) -> Optional[str]:
+    """Teil B: Betriebsferien-Buchungen an ``dates`` neu buchen, nachdem sich
+    deren Sondertag-/Verkürzt-Zustand geändert hat (Soll, Verbrauch, ``free``).
+
+    Folgt ``closure_split_service.rebook_freed_closure_days``, nicht
+    ``update_closure``: nur die betroffenen Tage, in der Transaktion des
+    Aufrufers (committet nie). Der Aufrufer hat den neuen Zustand bereits
+    geflusht, damit ``get_special_day_config`` ihn sieht.
+
+    - Tage in abgeschlossenen Jahren bleiben unangetastet (Fix #5: dort nur
+      Warnung, die der Aufrufer über ``stale_year_closing_warning`` liefert).
+    - Gelöscht und neu gebucht werden nur Zeilen aktiver Teilnehmender an Tagen
+      ohne Zeiteintrag (#290); Zeilen Ausgeschiedener/Abgewählter und
+      gearbeitete Tage bleiben stehen.
+    - Sperren: Anker auf Teilnehmende ∪ Zeilen-Eigentümer ∪ Admin EINMAL vor
+      der ersten Löschung (``_lock_participant_rows``: erst sperren, dann
+      schreiben). Die Zeile des verkürzten Tags, die der Aufrufer vorher
+      schreibt, nimmt über ``created_by`` nur ein ``FOR KEY SHARE`` auf die
+      Admin-Zeile — verträglich mit dem ``FOR NO KEY UPDATE``-Anker.
+
+    Rückgabe: Jahresabschluss-Warnung zu geänderten Buchungen oder ``None``.
+    """
+    tid = current_user.tenant_id
+    closed = set(calculation_service.all_closed_years(db, tid))
+    remaining = {d for d in (dates or ()) if d.year not in closed}
+    if not remaining:
+        return None
+
+    lo, hi = min(remaining), max(remaining)
+    closures = [
+        c for c in db.query(CompanyClosure).filter(
+            CompanyClosure.tenant_id == tid,  # F-026
+            CompanyClosure.start_date <= hi,
+            CompanyClosure.end_date >= lo,
+        ).order_by(CompanyClosure.start_date).all()
+        if any(c.start_date <= d <= c.end_date for d in remaining)
+    ]
+    if not closures:
+        return None
+
+    # Teilnehmermenge wie update_closure (#189).
+    participants = db.query(User).filter(
+        User.is_active == True,
+        User.receives_company_closures == True,
+        User.tenant_id == tid,  # F-026
+    ).all()
+    participant_ids = {e.id for e in participants}
+    closure_ids = [c.id for c in closures]
+    linked = db.query(Absence).filter(
+        Absence.tenant_id == tid,  # F-026
+        Absence.closure_id.in_(closure_ids),
+        Absence.date.in_(remaining),
+    ).all()
+
+    _lock_participant_rows(
+        db, tid, participant_ids | {a.user_id for a in linked} | {current_user.id},
+    )
+
+    # #290: gearbeitete Tage bleiben, wie _worked_keys in update_closure.
+    worked_keys = set()
+    if participant_ids:
+        worked_keys = {
+            (uid, d) for uid, d in db.query(TimeEntry.user_id, TimeEntry.date).filter(
+                TimeEntry.tenant_id == tid,  # F-026
+                TimeEntry.user_id.in_(participant_ids),
+                TimeEntry.date.in_(remaining),
+            ).all()
+        }
+
+    # Buchungsstand vor/nach je Schließung; closure_id im Schlüssel, damit
+    # überlappende Schließungen sich nicht gegenseitig verdecken.
+    def _state(closure):
+        return {
+            ((closure.id, uid), d, t, h)
+            for (uid, d, t, h) in _closure_booking_state(db, closure.id, tid)
+        }
+
+    before: set = set()
+    linked_by_closure: dict = {}
+    for a in linked:
+        linked_by_closure.setdefault(a.closure_id, []).append(a)
+    for closure in closures:
+        before |= _state(closure)
+        deleted = 0
+        for a in linked_by_closure.get(closure.id, []):
+            if a.user_id in participant_ids and (a.user_id, a.date) not in worked_keys:
+                db.delete(a)
+                deleted += 1
+        _audit_closure_absence_deletion(db, current_user, closure, deleted, CLOSURE_REBOOK_REASON)
+    # Löschungen sichtbar machen, bevor der Create-Helper existing_keys liest.
+    db.flush()
+
+    split_needed = False
+    for closure in closures:
+        holidays = _get_holidays_for_range(db, closure.start_date, closure.end_date, tid)
+        holidays |= special_days_service.free_special_days_in_range(
+            db, tid, closure.start_date, closure.end_date
+        )
+        workdays = [
+            d for d in _get_workdays(closure.start_date, closure.end_date, holidays)
+            if d in remaining
+        ]
+        if workdays:
+            _create_closure_absences(
+                db, closure, workdays, participants, current_user, delete_time_entries=False
+            )
+            # Überlappende Schließungen müssen diese Buchung sehen.
+            db.flush()
+        if closure.counts_as_vacation:
+            split_needed = True
+
+    if split_needed and settings_service.get_bool_setting(
+        db, "closure_overtime_after_vacation", tid, False
+    ):
+        db.flush()
+        for yr in sorted({d.year for d in remaining}):
+            _resplit_year_closures(db, tid, yr, current_user)
+
+    db.flush()
+    after: set = set()
+    for closure in closures:
+        after |= _state(closure)
+    return _closed_year_warning_for_changes(db, tid, before, after)
 
 
 @router.get("/", response_model=List[CompanyClosureResponse])
