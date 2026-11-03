@@ -256,13 +256,14 @@ def update_setting(
             special_after = special_days_service.get_special_day_settings(
                 db, current_user.tenant_id
             )
+            closed = calculation_service.all_closed_years(db, current_user.tenant_id)
             affected = special_days_service.years_affected_by_change(
                 db,
                 current_user.tenant_id,
-                special_before,
-                special_after,
-                calculation_service.all_closed_years(db, current_user.tenant_id),
+                special_days_service.setting_states(special_before, closed),
+                special_days_service.setting_states(special_after, closed),
             )
+            entry_years = _tenant_entry_years(db, current_user.tenant_id)
             # Gesamtreview 1.20: „frei" ↔ Arbeitstag ändert, ob gekappt wird
             # (E35) — bestehende Einträge an diesen Tagen nur nennen.
             warning = work_window_service.join_warnings(
@@ -270,8 +271,8 @@ def update_setting(
                 work_window_service.stale_clamp_hint(
                     db, current_user.tenant_id,
                     special_days_service.free_state_changed_dates(
-                        special_before, special_after,
-                        _tenant_entry_years(db, current_user.tenant_id),
+                        special_days_service.setting_states(special_before, entry_years),
+                        special_days_service.setting_states(special_after, entry_years),
                     ),
                 ),
             )

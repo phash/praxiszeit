@@ -1,12 +1,16 @@
 """Service for the configurable special days 24.12. and 31.12. (#146).
 
 Each of the two dates can independently be configured per practice
-(tenant-scoped, stored in ``system_settings``) as one of:
+(tenant-scoped, stored in ``system_settings``) as one of four modes:
 
 - ``working_day`` (default, fully backward compatible — today both days are
   treated like any normal working day, no special handling at all),
 - ``half_day``   (the daily target on that date is halved), or
-- ``free``       (the daily target on that date is 0, like a public holiday).
+- ``free``       (the daily target on that date is 0, like a public holiday), or
+- ``max_hours``  (verkürzter Tag: the daily target is ``min(target, X)``).
+
+Additionally, arbitrary dates can be reduced days (table ``reduced_days``,
+mode ``max_hours`` as well); they are merged into the same config.
 
 When a day is ``free`` it additionally carries a ``counts_as_vacation`` flag:
 
@@ -20,29 +24,40 @@ When a day is ``free`` it additionally carries a ``counts_as_vacation`` flag:
 
 Settings (per tenant, in ``system_settings``):
 
-- ``special_day_dec24_mode``                 ∈ {working_day, half_day, free}
+- ``special_day_dec24_mode``                 ∈ {working_day, half_day, free, max_hours}
+- ``special_day_dec24_max_hours``            hours X (only meaningful for max_hours)
 - ``special_day_dec24_counts_as_vacation``   bool (only meaningful when free)
-- ``special_day_dec31_mode``                 ∈ {working_day, half_day, free}
+- ``special_day_dec31_mode``                 ∈ {working_day, half_day, free, max_hours}
+- ``special_day_dec31_max_hours``            hours X (only meaningful for max_hours)
 - ``special_day_dec31_counts_as_vacation``   bool (only meaningful when free)
 
-No new DB table or migration is required — the existing ``system_setting``
-key/value store is reused, mirroring the ``holiday_state`` setting pattern.
+The existing ``system_setting`` key/value store is reused, mirroring the
+``holiday_state`` setting pattern.
 """
 
 from datetime import date
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 
 from app.models.public_holiday import PublicHoliday
+from app.models.reduced_day import ReducedDay
 from app.models.system_setting import SystemSetting
 
 # Valid modes for a special day.
 MODE_WORKING_DAY = "working_day"
 MODE_HALF_DAY = "half_day"
 MODE_FREE = "free"
-VALID_MODES = {MODE_WORKING_DAY, MODE_HALF_DAY, MODE_FREE}
+MODE_MAX_HOURS = "max_hours"
+VALID_MODES = {MODE_WORKING_DAY, MODE_HALF_DAY, MODE_FREE, MODE_MAX_HOURS}
+
+DEFAULT_MAX_HOURS = Decimal("4")
+MIN_MAX_HOURS = Decimal("0.25")
+MAX_MAX_HOURS = Decimal("12")
+MAX_HOURS_ERROR = "Die Stundenzahl muss zwischen 0,25 und 12 liegen (in Schritten von 0,25)."
+
+_LABELS = {(12, 24): "Heiligabend", (12, 31): "Silvester"}
 
 # (month, day) of the two configurable special days and their setting prefixes.
 # Order matters only for readability; lookups are keyed by (month, day).
@@ -57,7 +72,11 @@ SETTING_KEYS = {
     "special_day_dec24_counts_as_vacation",
     "special_day_dec31_mode",
     "special_day_dec31_counts_as_vacation",
+    "special_day_dec24_max_hours",
+    "special_day_dec31_max_hours",
 }
+
+MAX_HOURS_KEYS = {"special_day_dec24_max_hours", "special_day_dec31_max_hours"}
 
 MODE_KEYS = {"special_day_dec24_mode", "special_day_dec31_mode"}
 VACATION_FLAG_KEYS = {
@@ -87,8 +106,31 @@ def _parse_bool(value: str) -> bool:
     return str(value).strip().lower() == "true"
 
 
+def parse_max_hours(value) -> Decimal:
+    """Strikt: Wert auf 0,01 quantisiert; ValueError(MAX_HOURS_ERROR) sonst."""
+    try:
+        d = Decimal(str(value).strip())
+    except Exception:
+        raise ValueError(MAX_HOURS_ERROR)
+    if not d.is_finite() or d < MIN_MAX_HOURS or d > MAX_MAX_HOURS:
+        raise ValueError(MAX_HOURS_ERROR)
+    if d % MIN_MAX_HOURS != 0:
+        raise ValueError(MAX_HOURS_ERROR)
+    return d.quantize(Decimal("0.01"))
+
+
+def _lenient_max_hours(value) -> Decimal:
+    """Lesepfad: ungültig oder fehlend -> DEFAULT_MAX_HOURS."""
+    if value is None:
+        return DEFAULT_MAX_HOURS
+    try:
+        return parse_max_hours(value)
+    except ValueError:
+        return DEFAULT_MAX_HOURS
+
+
 def get_special_day_settings(db: Session, tenant_id) -> Dict[str, object]:
-    """Return the four special-day settings for a tenant (with defaults).
+    """Return the six special-day settings for a tenant (with defaults).
 
     Used by the admin router to expose the current configuration to the UI.
     """
@@ -109,20 +151,28 @@ def get_special_day_settings(db: Session, tenant_id) -> Dict[str, object]:
                 db, "special_day_dec31_counts_as_vacation", tenant_id, "true"
             )
         ),
+        "special_day_dec24_max_hours": float(_lenient_max_hours(
+            _get_raw_setting(db, "special_day_dec24_max_hours", tenant_id, "")
+            or None
+        )),
+        "special_day_dec31_max_hours": float(_lenient_max_hours(
+            _get_raw_setting(db, "special_day_dec31_max_hours", tenant_id, "")
+            or None
+        )),
     }
 
 
 def get_special_day_config(db: Session, tenant_id, year: int) -> Dict[date, Dict[str, object]]:
     """Resolve the special-day configuration to concrete dates for ``year``.
 
-    Returns a mapping ``{date(year, 12, 24): {...}, date(year, 12, 31): {...}}``
-    where each value is ``{"mode": str, "counts_as_vacation": bool}``. Days
-    configured as ``working_day`` are still included (mode == working_day) so
-    callers can distinguish "not configured" (date absent) from "explicitly a
-    normal working day"; in practice both behave identically.
+    Each value is ``{"mode", "counts_as_vacation", "max_hours", "label"}``;
+    ``max_hours`` (Decimal) is set only for mode ``max_hours``. 24./31.12. are
+    always included (``working_day`` when unconfigured) so callers can tell
+    "not configured" (date absent) from "explicitly a normal working day".
+    All ``ReducedDay`` rows of the tenant in ``year`` are added as
+    ``max_hours`` entries; a settings entry on 24./31.12. wins over a stray row.
 
-    The lookup issues a single SELECT for all of the tenant's special-day
-    settings to avoid one query per key in the hot reporting loops.
+    Two queries per call (settings + reduced days), both tenant-filtered.
     """
     rows = (
         db.query(SystemSetting)
@@ -145,8 +195,69 @@ def get_special_day_config(db: Session, tenant_id, year: int) -> Dict[date, Dict
         config[date(year, month, day)] = {
             "mode": mode,
             "counts_as_vacation": counts_as_vacation,
+            "max_hours": (
+                _lenient_max_hours(raw.get(f"{prefix}_max_hours"))
+                if mode == MODE_MAX_HOURS else None
+            ),
+            "label": _LABELS[(month, day)],
+        }
+
+    reduced = (
+        db.query(ReducedDay)
+        .filter(
+            ReducedDay.tenant_id == tenant_id,
+            ReducedDay.date >= date(year, 1, 1),
+            ReducedDay.date <= date(year, 12, 31),
+        )
+        .all()
+    )
+    for r in reduced:
+        if r.date in config:
+            continue
+        config[r.date] = {
+            "mode": MODE_MAX_HOURS,
+            "counts_as_vacation": False,
+            "max_hours": Decimal(str(r.max_hours)),
+            "label": r.label,
         }
     return config
+
+
+def configs_for_years(db: Session, tenant_id, years) -> Dict[int, dict]:
+    """Eine Config je distinktem Jahr."""
+    return {y: get_special_day_config(db, tenant_id, y) for y in set(years)}
+
+
+def special_day_mode(target_date: date, config: Dict[date, Dict[str, object]]) -> Optional[str]:
+    """Modus des Tages oder None, wenn kein Eintrag existiert."""
+    entry = config.get(target_date)
+    return entry["mode"] if entry is not None else None
+
+
+def special_day_target(target_date: date, daily_target: Decimal, config: Dict[date, Dict[str, object]]) -> Decimal:
+    """Tagessoll nach Sondertag-/Verkürzungsregel (die EINE Stelle für Soll-Schleifen)."""
+    entry = config.get(target_date)
+    if entry is None:
+        return daily_target
+    mode = entry["mode"]
+    if mode == MODE_HALF_DAY:
+        return daily_target * Decimal("0.5")
+    if mode == MODE_FREE:
+        return Decimal("0")
+    if mode == MODE_MAX_HOURS and entry.get("max_hours") is not None:
+        return min(daily_target, Decimal(str(entry["max_hours"])))
+    return daily_target
+
+
+def format_hours_de(h: Decimal) -> str:
+    """4 -> '4', 4.5 -> '4,5', 4.25 -> '4,25'."""
+    text = format(Decimal(str(h)).quantize(Decimal("0.01")), "f")
+    text = text.rstrip("0").rstrip(".")
+    return text.replace(".", ",")
+
+
+def reduced_day_label(max_hours: Decimal) -> str:
+    return f"verkürzter Tag (max. {format_hours_de(max_hours)} h)"
 
 
 def special_day_target_factor(
@@ -158,6 +269,8 @@ def special_day_target_factor(
     - ``None``           → no special-day rule applies (treat the day normally).
     - ``Decimal('0.5')`` → ``half_day``: the daily target is halved.
     - ``Decimal('0')``   → ``free``: the daily target is 0 (like a holiday).
+    - ``None`` also for ``max_hours`` (kein fester Faktor; siehe
+      :func:`special_day_target`).
 
     ``config`` must be the dict returned by :func:`get_special_day_config` for
     the relevant year. The caller is responsible for first handling weekends
@@ -172,7 +285,6 @@ def special_day_target_factor(
         return Decimal("0.5")
     if mode == MODE_FREE:
         return Decimal("0")
-    # working_day → no change.
     return None
 
 
@@ -228,60 +340,72 @@ def free_special_days_in_range(db: Session, tenant_id, start: date, end: date) -
     return result
 
 
-def _effective_state(settings: Dict[str, object], prefix: str):
-    """Wirksamer Zustand eines Sondertags: Modus plus Urlaubs-Schalter — der
-    Schalter zählt nur bei ``free`` (sonst wirkt er nirgends)."""
-    mode = settings[f"{prefix}_mode"]
+DayState = Tuple[str, Optional[bool], Optional[Decimal]]
+_WORKING_STATE: DayState = (MODE_WORKING_DAY, None, None)
+
+
+def _effective_state(settings: Dict[str, object], prefix: str) -> DayState:
+    """Wirksamer Zustand eines Sondertags: (Modus, Urlaubs-Schalter, Stunden).
+    Der Schalter zählt nur bei ``free``, die Stunden nur bei ``max_hours``."""
+    mode = settings.get(f"{prefix}_mode", MODE_WORKING_DAY)
     if mode not in VALID_MODES:
         mode = MODE_WORKING_DAY
-    cav = settings[f"{prefix}_counts_as_vacation"] if mode == MODE_FREE else None
-    return mode, cav
+    cav = settings.get(f"{prefix}_counts_as_vacation") if mode == MODE_FREE else None
+    hours = None
+    if mode == MODE_MAX_HOURS:
+        hours = _lenient_max_hours(settings.get(f"{prefix}_max_hours"))
+    return mode, cav, hours
+
+
+def setting_states(settings: Dict[str, object], years) -> Dict[date, DayState]:
+    """Zustände des 24./31.12. in ``years`` aus Einstellungen (Format von
+    :func:`get_special_day_settings`)."""
+    return {
+        date(y, m, d): _effective_state(settings, prefix)
+        for y in years for (m, d), prefix in _SPECIAL_DAYS.items()
+    }
+
+
+def reduced_day_states(rows: Iterable[Tuple[date, Decimal]]) -> Dict[date, DayState]:
+    return {
+        d: (MODE_MAX_HOURS, None, Decimal(str(h)).quantize(Decimal("0.01")))
+        for d, h in rows
+    }
+
+
+def changed_dates(before: Dict[date, DayState], after: Dict[date, DayState]) -> Set[date]:
+    """Tage, deren Zustand sich unterscheidet (fehlend = Arbeitstag)."""
+    return {
+        d for d in set(before) | set(after)
+        if before.get(d, _WORKING_STATE) != after.get(d, _WORKING_STATE)
+    }
 
 
 def free_state_changed_dates(
-    before: Dict[str, object],
-    after: Dict[str, object],
-    years,
-) -> set:
-    """Sondertage in ``years``, die durch den Wechsel ``before`` → ``after``
-    zu „frei" werden oder es nicht mehr sind (Gesamtreview 1.20) — nur dort
-    ändert sich, ob gegen die Arbeitszeit-Blöcke gekappt wird (E35/#484; ein
-    „halber Feiertag" behält die Blöcke seines Wochentags)."""
-    changed = [
-        (month, day)
-        for (month, day), prefix in _SPECIAL_DAYS.items()
-        if (_effective_state(before, prefix)[0] == MODE_FREE)
-        != (_effective_state(after, prefix)[0] == MODE_FREE)
-    ]
-    return {date(y, m, d) for y in years for (m, d) in changed}
+    before_states: Dict[date, DayState],
+    after_states: Dict[date, DayState],
+) -> Set[date]:
+    """Tage, die durch den Wechsel zu „frei" werden oder es nicht mehr sind
+    (Gesamtreview 1.20) — nur dort ändert sich, ob gegen die Arbeitszeit-Blöcke
+    gekappt wird (E35/#484)."""
+    return {
+        d for d in set(before_states) | set(after_states)
+        if (before_states.get(d, _WORKING_STATE)[0] == MODE_FREE)
+        != (after_states.get(d, _WORKING_STATE)[0] == MODE_FREE)
+    }
 
 
 def years_affected_by_change(
     db: Session,
     tenant_id,
-    before: Dict[str, object],
-    after: Dict[str, object],
-    years,
-) -> list:
-    """Jahre aus ``years``, in denen ein Wechsel der Sondertag-Einstellungen
-    (``before`` → ``after``, je im Format von :func:`get_special_day_settings`)
-    Soll, Gutschrift oder Urlaubsverbrauch tatsächlich ändert (Gesamtreview).
-
-    Die Einstellungen haben keine Jahresgrenze und wirken in jedem Jahr. Ein
-    Sondertag zählt nur, wenn sich sein wirksamer Zustand ändert und er im Jahr
-    auf einen Werktag ohne Feiertag des Mandanten fällt — an Wochenenden und
-    Feiertagen wird er gar nicht ausgewertet.
-    """
-    changed = [
-        (month, day)
-        for (month, day), prefix in _SPECIAL_DAYS.items()
-        if _effective_state(before, prefix) != _effective_state(after, prefix)
-    ]
-    if not changed:
-        return []
+    before_states: Dict[date, DayState],
+    after_states: Dict[date, DayState],
+) -> List[int]:
+    """Jahre der geänderten Tage, an denen sich Soll, Gutschrift oder
+    Urlaubsverbrauch tatsächlich ändert: nur Werktage ohne Feiertag des
+    Mandanten zählen (an Wochenenden/Feiertagen wird der Tag nicht ausgewertet)."""
     candidates = {
-        date(y, m, d) for y in years for (m, d) in changed
-        if date(y, m, d).weekday() < 5
+        d for d in changed_dates(before_states, after_states) if d.weekday() < 5
     }
     if not candidates:
         return []
