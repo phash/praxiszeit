@@ -3045,6 +3045,116 @@ def _vacation_reference_daily_target(
     return (Decimal(str(schedule.weekly_hours)) / work_days).quantize(Decimal('0.01'))
 
 
+def _legacy_window_pro_rata(value: Decimal, year: int, first_work_day, last_work_day) -> Decimal:
+    """Ein-Segment-Fall von ``vacation_entitlement_days``: die drei Pro-rata-Zweige
+    der Ein-/Austrittsjahre aus ``get_vacation_account`` vor Teil A, WÖRTLICH
+    übernommen (``user.vacation_days`` → ``value``) — bitgleich zur Altlogik
+    (``test_contract_history_entitlement``). Jahre ganz außerhalb des Fensters
+    behandelt der Aufrufer (Fix #1)."""
+    budget_days = Decimal(str(value))
+    first_in_year = first_work_day and first_work_day.year == year
+    last_in_year = last_work_day and last_work_day.year == year
+    if first_in_year and last_in_year:
+        # Eintritt UND Austritt im selben Jahr: Beschäftigungsdauer ist die echte
+        # Überlappung beider Grenzen (nicht min() zweier einseitiger Pro-Ratas).
+        # employed_months = months_remaining + months_worked − 12  (≥ 0)
+        fwd = first_work_day
+        fwd_days_in_month = monthrange(fwd.year, fwd.month)[1]
+        fwd_days_remaining = fwd_days_in_month - fwd.day + 1  # inklusive Starttag
+        months_remaining = (Decimal(str(12 - fwd.month))
+                            + Decimal(str(fwd_days_remaining)) / Decimal(str(fwd_days_in_month)))
+        lwd = last_work_day
+        lwd_days_in_month = monthrange(lwd.year, lwd.month)[1]
+        lwd_days_worked = lwd.day  # inklusive letzten Tag
+        months_worked = (Decimal(str(lwd.month - 1))
+                         + Decimal(str(lwd_days_worked)) / Decimal(str(lwd_days_in_month)))
+        employed_months = max(Decimal('0'), months_remaining + months_worked - Decimal('12'))
+        budget_days = (Decimal(str(value)) * employed_months / Decimal('12')).quantize(Decimal('0.1'))
+    elif first_in_year:
+        fwd = first_work_day
+        days_in_month = monthrange(fwd.year, fwd.month)[1]
+        days_remaining = days_in_month - fwd.day + 1  # inklusive Starttag
+        # Vollständige Monate nach Startmonat + Anteil des Startmonats
+        months_remaining = Decimal(str(12 - fwd.month)) + Decimal(str(days_remaining)) / Decimal(str(days_in_month))
+        budget_days = (Decimal(str(value)) * months_remaining / Decimal('12')).quantize(Decimal('0.1'))
+    elif last_in_year:
+        lwd = last_work_day
+        days_in_month = monthrange(lwd.year, lwd.month)[1]
+        days_worked = lwd.day  # inklusive letzten Tag
+        # Vollständige Monate vor Endmonat + Anteil des Endmonats
+        months_worked = Decimal(str(lwd.month - 1)) + Decimal(str(days_worked)) / Decimal(str(days_in_month))
+        budget_days = (Decimal(str(value)) * months_worked / Decimal('12')).quantize(Decimal('0.1'))
+    return budget_days
+
+
+def _month_share(start: date, end: date) -> Decimal:
+    """Monatsanteil eines Abschnitts [start, end] (inklusive, ein Kalenderjahr):
+    ganze Monate als ganze Zahl + angebrochene Monate taggenau (Tage im Abschnitt
+    ÷ Tage im Monat) — dieselbe Bruchrechnung wie beim Ein-/Austritt."""
+    full = 0
+    partial = Decimal('0')
+    for month in range(start.month, end.month + 1):
+        days_in_month = monthrange(start.year, month)[1]
+        first = start.day if month == start.month else 1
+        last = end.day if month == end.month else days_in_month
+        days = last - first + 1
+        if days == days_in_month:
+            full += 1
+        else:
+            partial += Decimal(str(days)) / Decimal(str(days_in_month))
+    return Decimal(str(full)) + partial
+
+
+def vacation_entitlement_days(
+    db: Session,
+    user: User,
+    year: int,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Decimal:
+    """Teil A: Urlaubsanspruch des Jahres OHNE Übertrag — die EINZIGE Rechenstelle.
+
+    Segmente = Abschnitte gleichen ``vacation_days`` laut Vertragsverlauf
+    (``get_schedule_for_date``: keine Zeile → User-Zeile, vor der ersten Zeile →
+    erste Zeile), geschnitten mit dem Beschäftigungsfenster.
+    Anspruch = Σ Wert × Monatsanteil ÷ 12, gerundet auf 0,1. Genau ein Segment:
+    Altlogik ``_legacy_window_pro_rata`` (ganzes Jahr → Wert ungerundet)."""
+    window_start = date(year, 1, 1)
+    window_end = date(year, 12, 31)
+    if user.first_work_day and user.first_work_day > window_start:
+        window_start = user.first_work_day
+    if user.last_work_day and user.last_work_day < window_end:
+        window_end = user.last_work_day
+    if window_start > window_end:
+        return Decimal('0')
+    if wh_changes is None:
+        wh_changes = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user.id,
+            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+        ).all()
+
+    def value_on(d: date) -> Decimal:
+        return get_schedule_for_date(db, user, d, wh_changes=wh_changes).vacation_days
+
+    boundaries = sorted({c.effective_from for c in wh_changes
+                         if window_start < c.effective_from <= window_end})
+    runs = []  # [start, end, value], benachbarte gleiche Werte zusammengefasst
+    for seg_start, next_start in zip([window_start] + boundaries, boundaries + [None]):
+        seg_end = next_start - timedelta(days=1) if next_start else window_end
+        value = value_on(seg_start)
+        if runs and runs[-1][2] == value:
+            runs[-1][1] = seg_end
+        else:
+            runs.append([seg_start, seg_end, value])
+
+    if len(runs) == 1:
+        return _legacy_window_pro_rata(runs[0][2], year, user.first_work_day, user.last_work_day)
+    total = sum(
+        (value * _month_share(start, end) / Decimal('12') for start, end, value in runs),
+        Decimal('0'),
+    )
+    return total.quantize(Decimal('0.1'))
+
+
 def get_vacation_account(
     db: Session,
     user: User,
@@ -3061,8 +3171,10 @@ def get_vacation_account(
     byte-identische Ergebnisse (Test ``test_calc_preload``).
 
     Returns:
-        budget_hours: Total vacation budget in hours (vacation_days × daily_target)
-        budget_days: Total vacation days from user config
+        budget_hours: budget_hours = budget_days × Tagessoll des Snapshots am Stichtag
+            (``_vacation_reference_daily_target``; informativ)
+        budget_days: Anspruch (``vacation_entitlement_days``) + Übertrag
+        entitlement_days: Anspruch des Jahres ohne Übertrag (anteilig je Vertragssegment)
         used_hours: Hours of vacation taken
         used_days: Days of vacation taken (used_hours / daily_target)
         remaining_hours: Remaining vacation hours
@@ -3095,52 +3207,15 @@ def get_vacation_account(
     # für ein Jahr ohne Soll.
     daily_target = _vacation_reference_daily_target(db, user, year, wh_changes)
 
-    # Calculate budget in hours, pro-rated for first/last work day
-    budget_days = Decimal(str(user.vacation_days))
-    first_in_year = user.first_work_day and user.first_work_day.year == year
-    last_in_year = user.last_work_day and user.last_work_day.year == year
     # Fix #1: a year that lies ENTIRELY outside the employment window grants no
-    # budget. The pro-rata branches below only cover the entry/exit YEAR and have
-    # no `else`, so without this guard a departed employee kept the full
-    # `vacation_days` in every year AFTER last_work_day (and a future hire in
-    # every year BEFORE first_work_day) — phantom budget that even flowed into
-    # the carryover (double entitlement).
+    # budget — and must not inherit a carryover either (double entitlement).
     year_outside_window = bool(
         (user.last_work_day and user.last_work_day.year < year)
         or (user.first_work_day and user.first_work_day.year > year)
     )
-    if year_outside_window:
-        budget_days = Decimal('0')
-    elif first_in_year and last_in_year:
-        # Eintritt UND Austritt im selben Jahr: Beschäftigungsdauer ist die echte
-        # Überlappung beider Grenzen (nicht min() zweier einseitiger Pro-Ratas).
-        # employed_months = months_remaining + months_worked − 12  (≥ 0)
-        fwd = user.first_work_day
-        fwd_days_in_month = monthrange(fwd.year, fwd.month)[1]
-        fwd_days_remaining = fwd_days_in_month - fwd.day + 1  # inklusive Starttag
-        months_remaining = (Decimal(str(12 - fwd.month))
-                            + Decimal(str(fwd_days_remaining)) / Decimal(str(fwd_days_in_month)))
-        lwd = user.last_work_day
-        lwd_days_in_month = monthrange(lwd.year, lwd.month)[1]
-        lwd_days_worked = lwd.day  # inklusive letzten Tag
-        months_worked = (Decimal(str(lwd.month - 1))
-                         + Decimal(str(lwd_days_worked)) / Decimal(str(lwd_days_in_month)))
-        employed_months = max(Decimal('0'), months_remaining + months_worked - Decimal('12'))
-        budget_days = (Decimal(str(user.vacation_days)) * employed_months / Decimal('12')).quantize(Decimal('0.1'))
-    elif first_in_year:
-        fwd = user.first_work_day
-        days_in_month = monthrange(fwd.year, fwd.month)[1]
-        days_remaining = days_in_month - fwd.day + 1  # inklusive Starttag
-        # Vollständige Monate nach Startmonat + Anteil des Startmonats
-        months_remaining = Decimal(str(12 - fwd.month)) + Decimal(str(days_remaining)) / Decimal(str(days_in_month))
-        budget_days = (Decimal(str(user.vacation_days)) * months_remaining / Decimal('12')).quantize(Decimal('0.1'))
-    elif last_in_year:
-        lwd = user.last_work_day
-        days_in_month = monthrange(lwd.year, lwd.month)[1]
-        days_worked = lwd.day  # inklusive letzten Tag
-        # Vollständige Monate vor Endmonat + Anteil des Endmonats
-        months_worked = Decimal(str(lwd.month - 1)) + Decimal(str(days_worked)) / Decimal(str(days_in_month))
-        budget_days = (Decimal(str(user.vacation_days)) * months_worked / Decimal('12')).quantize(Decimal('0.1'))
+    # Teil A: Anspruch anteilig je Vertragssegment — EINE Rechenstelle.
+    entitlement_days = vacation_entitlement_days(db, user, year, wh_changes)
+    budget_days = entitlement_days
     # Add carryover vacation days from previous year — but only for a year the
     # employee was (at least partly) employed. An out-of-window year gets zero
     # budget and must not inherit a carryover either (Fix #1).
@@ -3263,6 +3338,7 @@ def get_vacation_account(
         return {
             "budget_hours": 0.0,
             "budget_days": float(budget_days),
+            "entitlement_days": float(entitlement_days),
             "used_hours": 0.0,
             "used_days": float(used_days.quantize(Decimal('0.1'))),
             "remaining_hours": 0.0,
@@ -3300,6 +3376,7 @@ def get_vacation_account(
     return {
         "budget_hours": float(budget_hours.quantize(Decimal('0.01'))),
         "budget_days": float(budget_days),
+        "entitlement_days": float(entitlement_days),
         "used_hours": float(used_hours.quantize(Decimal('0.01'))),
         "used_days": float(used_days.quantize(Decimal('0.1'))),
         "remaining_hours": float(remaining_hours.quantize(Decimal('0.01'))),
