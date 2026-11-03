@@ -57,7 +57,7 @@ def _reduced(db, d=MONDAY, label="Rosenmontag", hours="4", tenant=DEFAULT_TENANT
     db.commit()
 
 
-def test_public_settings_lists_reduced_days(db, test_user, monkeypatch):
+def test_public_settings_does_not_list_reduced_days(db, test_user, monkeypatch):
     import app.main
     import app.database
 
@@ -70,9 +70,7 @@ def test_public_settings_lists_reduced_days(db, test_user, monkeypatch):
 
     body = app.main.get_public_settings()
 
-    assert body["special_days"]["reduced_days"] == [
-        {"date": "2026-02-16", "label": "Rosenmontag", "max_hours": 4.0}
-    ]
+    assert "reduced_days" not in body["special_days"]
     assert body["special_days"]["special_day_dec24_max_hours"] == 4.0
     assert set(body) <= {
         "vacation_approval_required", "break_exception_requires_approval",
@@ -80,20 +78,38 @@ def test_public_settings_lists_reduced_days(db, test_user, monkeypatch):
     }
 
 
-def test_list_reduced_days_public_is_tenant_filtered_and_sorted(db, default_tenant):
+def _read_client(db, user):
+    from app.routers import reduced_days
+
+    app = FastAPI()
+    app.include_router(reduced_days.read_router)
+    app.dependency_overrides[get_db] = lambda: db
+    if user is not None:
+        app.dependency_overrides[get_current_user] = lambda: user
+    return TestClient(app)
+
+
+def test_read_endpoint_requires_auth(db, default_tenant):
+    assert _read_client(db, None).get("/api/reduced-days").status_code in (401, 403)
+
+
+def test_read_endpoint_tenant_filtered_sorted_and_year(db, test_user):
     from app.models.tenant import Tenant
-    from app.services import special_days_service
 
     db.add(Tenant(id=OTHER_TENANT, name="Other", slug="other"))
     db.commit()
     _reduced(db, d=dt.date(2026, 3, 2), label="B", hours="2.5")
     _reduced(db, d=dt.date(2026, 2, 16), label="A")
+    _reduced(db, d=dt.date(2027, 2, 8), label="C")
     _reduced(db, d=dt.date(2026, 2, 17), label="Fremd", tenant=OTHER_TENANT)
+    c = _read_client(db, test_user)
 
-    assert special_days_service.list_reduced_days_public(db, DEFAULT_TENANT_ID) == [
+    assert c.get("/api/reduced-days").json() == [
         {"date": "2026-02-16", "label": "A", "max_hours": 4.0},
         {"date": "2026-03-02", "label": "B", "max_hours": 2.5},
+        {"date": "2027-02-08", "label": "C", "max_hours": 4.0},
     ]
+    assert [r["label"] for r in c.get("/api/reduced-days?year=2026").json()] == ["A", "B"]
 
 
 def test_clock_status_label_on_reduced_day(db, test_user, monkeypatch):

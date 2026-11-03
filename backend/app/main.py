@@ -577,6 +577,7 @@ app.include_router(absence_reasons.read_router)
 app.include_router(impersonation.router)
 # Teil B: verkürzte Tage (Admin-CRUD, bucht Betriebsferien neu).
 app.include_router(reduced_days.router)
+app.include_router(reduced_days.read_router)
 # #213 DB-Backup-Verwaltung — NUR On-Prem einbinden. Im SaaS-Modus darf ein
 # Mandant nicht per API den (nicht tenant-scoped) DB-Server sichern/herunterladen
 # (Daten-Exfiltration über Tenant-Grenzen). Hart gaten statt nur per Doku-Kommentar.
@@ -749,10 +750,7 @@ def get_public_settings():
             "break_exception_requires_approval": _get("break_exception_requires_approval", "false").lower() == "true",
             # #188: Sondertage 24./31.12. — der Kalender (auch für MA) markiert
             # `free`/`half_day` damit sichtbar. Single-Tenant/on-prem: Default-Tenant.
-            "special_days": {
-                **special_days_service.get_special_day_settings(db, _default_tid),
-                "reduced_days": special_days_service.list_reduced_days_public(db, _default_tid),
-            },
+            "special_days": special_days_service.get_special_day_settings(db, _default_tid),
         }
 
         # License state (native installations). Nur das nicht-identifizierende

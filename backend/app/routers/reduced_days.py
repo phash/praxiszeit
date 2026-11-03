@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.middleware.auth import require_admin
+from app.middleware.auth import get_current_user, require_admin
 from app.models import ReducedDay, User
 from app.routers import company_closures
 from app.schemas.reduced_day import ReducedDayCreate, ReducedDayResponse, ReducedDayUpdate
@@ -26,6 +26,8 @@ router = APIRouter(
     tags=["admin"],
     dependencies=[Depends(require_admin)],
 )
+
+read_router = APIRouter(prefix="/api/reduced-days", tags=["reduced-days"])
 
 SPECIAL_DAY_DATE_DETAIL = "Für den 24. und 31.12. bitte die Einstellung Sondertage verwenden."
 DUPLICATE_DETAIL = "Für dieses Datum ist bereits ein verkürzter Tag eingetragen."
@@ -178,3 +180,13 @@ def delete_reduced_day(
     if warning:
         return JSONResponse(status_code=200, content={"warning": warning})
     return None
+
+
+@read_router.get("")
+def list_my_reduced_days(
+    year: Optional[int] = Query(None, ge=1900, le=2200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Verkürzte Tage des eigenen Mandanten (jeder angemeldete Nutzer)."""
+    return special_days_service.list_reduced_days(db, current_user.tenant_id, year)
