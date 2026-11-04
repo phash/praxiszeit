@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { getSpecialDayInfo, reducedDayLabel, type SpecialDaySettings } from './specialDays';
+import {
+  getSpecialDayInfo, isValidMaxHours, lenientMaxHours, reducedDayLabel, type SpecialDaySettings,
+} from './specialDays';
 
 const free24: SpecialDaySettings = {
   special_day_dec24_mode: 'free',
@@ -91,5 +93,33 @@ describe('getSpecialDayInfo', () => {
   it('formats hours like the backend', () => {
     expect(reducedDayLabel(4)).toBe('verkürzter Tag (max. 4 h)');
     expect(reducedDayLabel(4.25)).toBe('verkürzter Tag (max. 4,25 h)');
+  });
+
+  it('F099: a reduced day on a weekend has no label (backend: no effect)', () => {
+    const s = { ...free24, reduced_days: [{ date: '2027-02-06', label: 'Samstag', max_hours: 4 }] };
+    expect(getSpecialDayInfo('2027-02-06', s)).toBeNull();
+    const dec24 = { ...free24, special_day_dec24_mode: 'max_hours' as const };
+    expect(getSpecialDayInfo('2028-12-24', dec24)).toBeNull(); // Sonntag
+  });
+
+  it('F133: invalid stored hours fall back to 4 like the backend', () => {
+    const s = { ...free24, special_day_dec24_mode: 'max_hours' as const, special_day_dec24_max_hours: 4.3 };
+    expect(getSpecialDayInfo('2026-12-24', s)!.maxHours).toBe(4);
+    const r = { ...free24, reduced_days: [{ date: '2027-02-08', label: 'R', max_hours: 20 }] };
+    expect(getSpecialDayInfo('2027-02-08', r)!.label).toBe('R: verkürzter Tag (max. 4 h)');
+  });
+});
+
+describe('max-hours validity (twin of parse_max_hours)', () => {
+  it('accepts 0,25–12 in 0,25 steps only', () => {
+    expect(isValidMaxHours(0.25)).toBe(true);
+    expect(isValidMaxHours(12)).toBe(true);
+    expect(isValidMaxHours(4.75)).toBe(true);
+    expect(isValidMaxHours(0)).toBe(false);
+    expect(isValidMaxHours(12.25)).toBe(false);
+    expect(isValidMaxHours(4.3)).toBe(false);
+    expect(isValidMaxHours(Number.NaN)).toBe(false);
+    expect(isValidMaxHours('4')).toBe(false);
+    expect(lenientMaxHours(undefined)).toBe(4);
   });
 });

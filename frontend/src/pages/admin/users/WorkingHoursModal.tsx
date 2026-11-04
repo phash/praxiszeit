@@ -5,7 +5,7 @@ import { Save, X, Trash2, Info } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
 import { getErrorMessage } from '../../../utils/errorMessage';
-import { parseHours, deHoursExact, formatDayNumber, formatDayPlan } from '../../../utils/formatters';
+import { parseHours, deHoursExact, formatDayNumber, formatDayPlan, formatDecimalDe } from '../../../utils/formatters';
 import { showResponseWarning } from '../../../utils/arbzgWarnings';
 import {
   blocksOf, deriveTargets, emptyWeek, formatBlocksText, isLegacyWeek, validateWeekBlocks,
@@ -278,7 +278,7 @@ function contractParts(change: WorkingHoursChange): string[] {
   if (change.milog_working_time_account) {
     parts.push('MiLoG-Arbeitszeitkonto');
     if (change.agreed_monthly_hours != null) {
-      parts.push(`${formatDayNumber(change.agreed_monthly_hours)} h/Monat vereinbart`);
+      parts.push(`${formatDecimalDe(change.agreed_monthly_hours)} h/Monat vereinbart`);
     }
     if (change.use_fixed_monthly_target) parts.push('festes Monats-Soll');
   }

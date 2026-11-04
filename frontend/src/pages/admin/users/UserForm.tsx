@@ -5,7 +5,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useAuthStore } from '../../../stores/authStore';
 import PasswordInput from '../../../components/PasswordInput';
 import { getErrorMessage } from '../../../utils/errorMessage';
-import { parseHours, deHoursExact, formatDayPlan, formatDayNumber } from '../../../utils/formatters';
+import { parseHours, deHoursExact, formatDayPlan, formatDayNumber, formatDecimalDe } from '../../../utils/formatters';
 import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../../../utils/calendarColors';
 import {
   deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, isLegacyWeek, validateWeekBlocks,
@@ -655,7 +655,7 @@ export default function UserForm({
                 {shownMilog && (
                   <p>
                     MiLoG-Arbeitszeitkonto aktiv
-                    {shownAgreedMonthly != null && `. Vereinbarte Monatsarbeitszeit: ${formatDayNumber(shownAgreedMonthly)} h`}
+                    {shownAgreedMonthly != null && `. Vereinbarte Monatsarbeitszeit: ${formatDecimalDe(shownAgreedMonthly)} h`}
                     {shownFixedTarget && '. Festes Monats-Soll'}
                   </p>
                 )}

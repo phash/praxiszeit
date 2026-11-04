@@ -10,6 +10,8 @@
 // (`reduced_days`, nur mit Anmeldung über GET /api/reduced-days — nicht in
 // /api/settings; der Aufrufer ergänzt sie clientseitig).
 
+import { formatDecimalDe } from './formatters';
+
 export type SpecialDayMode = 'working_day' | 'half_day' | 'free' | 'max_hours';
 
 export interface ReducedDayEntry {
@@ -40,14 +42,40 @@ export interface SpecialDayInfo {
   maxHours?: number;
 }
 
-/** Zwilling von `format_hours_de`: Dezimalkomma, keine Nullen am Ende. */
-export function formatHoursDe(h: number): string {
-  return String(Math.round(h * 100) / 100).replace('.', ',');
+/** Zwillinge von `special_days_service.DEFAULT_MAX_HOURS` / `MIN_MAX_HOURS` /
+ * `MAX_MAX_HOURS` / `MAX_HOURS_ERROR` (F090). */
+export const DEFAULT_MAX_HOURS = 4;
+export const MIN_MAX_HOURS = 0.25;
+export const MAX_MAX_HOURS = 12;
+export const MAX_HOURS_ERROR = 'Die Stundenzahl muss zwischen 0,25 und 12 liegen (in Schritten von 0,25).';
+
+/** Zwilling von `parse_max_hours` (ohne Ausnahme): 0,25 ≤ x ≤ 12 in 0,25-Schritten. */
+export function isValidMaxHours(x: unknown): x is number {
+  return typeof x === 'number' && Number.isFinite(x)
+    && x >= MIN_MAX_HOURS && x <= MAX_MAX_HOURS && Math.round(x * 4) === x * 4;
+}
+
+/** Zwilling von `_lenient_max_hours` (Lesepfad): ungültig oder fehlend → 4 (F133). */
+export function lenientMaxHours(x: unknown): number {
+  return isValidMaxHours(x) ? x : DEFAULT_MAX_HOURS;
+}
+
+/** Zwilling von `format_max_hours_de` (F903): Dezimalkomma, keine Nullen am Ende —
+ * eine benannte Verwendung von `formatters.formatDecimalDe` (F069). */
+function formatMaxHoursDe(h: number): string {
+  return formatDecimalDe(h);
 }
 
 /** Zwilling von `reduced_day_label`. */
 export function reducedDayLabel(maxHours: number): string {
-  return `verkürzter Tag (max. ${formatHoursDe(maxHours)} h)`;
+  return `verkürzter Tag (max. ${formatMaxHoursDe(maxHours)} h)`;
+}
+
+/** Sa/So eines 'YYYY-MM-DD' — kalendarisch, unabhängig von der Zeitzone. */
+function isWeekendIso(dateStr: string): boolean {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return wd === 0 || wd === 6;
 }
 
 /**
@@ -76,17 +104,21 @@ export function getSpecialDayInfo(
     maxHours = settings.special_day_dec31_max_hours;
   } else {
     const custom = settings.reduced_days?.find((d) => d.date === dateStr);
-    if (!custom) return null;
+    // F099: am Wochenende hat ein verkürzter Tag keine Wirkung (Backend
+    // `special_day_target`) — dann auch kein Kalenderlabel.
+    if (!custom || isWeekendIso(dateStr)) return null;
+    const x = lenientMaxHours(custom.max_hours);
     return {
       mode: 'max_hours',
       isFree: false,
-      maxHours: custom.max_hours,
-      label: `${custom.label}: ${reducedDayLabel(custom.max_hours)}`,
+      maxHours: x,
+      label: `${custom.label}: ${reducedDayLabel(x)}`,
     };
   }
 
   if (mode === 'max_hours') {
-    const x = typeof maxHours === 'number' && maxHours > 0 ? maxHours : 4; // DEFAULT_MAX_HOURS
+    if (isWeekendIso(dateStr)) return null; // F099: wie oben
+    const x = lenientMaxHours(maxHours); // F133: gleiche Gültigkeitsregel wie das Backend
     return { mode, isFree: false, maxHours: x, label: `${name}: ${reducedDayLabel(x)}` };
   }
   if (mode !== 'free' && mode !== 'half_day') return null;

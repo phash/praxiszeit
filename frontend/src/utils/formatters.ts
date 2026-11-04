@@ -150,13 +150,24 @@ export function formatDayCount(days: number): string {
 }
 
 /**
- * Teil A: eine Tageszahl ohne Einheit — '30', '13,1', '24,5' (höchstens zwei
- * Nachkommastellen, deutsches Komma). Für Texte, die die Einheit selbst
- * nennen („Urlaub 30 Tage/Jahr", „Vorschlag übernehmen (30)"); mit Einheit
+ * F069/F089/F100: DIE eine Dezimalzahl-Formatierung ohne Einheit — höchstens
+ * zwei Nachkommastellen, keine Nullen am Ende, deutsches Komma ('30', '13,1',
+ * '4,25'). `formatDayNumber` (Tage) und `specialDays.formatMaxHoursDe`
+ * (Höchststunden) sind benannte Verwendungen davon; für Stundenangaben ohne
+ * eigenen Zwilling (z. B. vereinbarte Monatsarbeitszeit) direkt nutzen.
+ */
+export function formatDecimalDe(n: number): string {
+  return String(Math.round(n * 100) / 100).replace('.', ',');
+}
+
+/**
+ * Teil A: eine Tageszahl ohne Einheit — '30', '13,1', '24,5'. Zwilling von
+ * `reclamp_audit.format_days_de`. Für Texte, die die Einheit selbst nennen
+ * („Urlaub 30 Tage/Jahr", „Vorschlag übernehmen (30)"); mit Einheit
  * `formatDayCount`.
  */
 export function formatDayNumber(n: number): string {
-  return String(Math.round(n * 100) / 100).replace('.', ',');
+  return formatDecimalDe(n);
 }
 
 /**
