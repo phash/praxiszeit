@@ -1,24 +1,26 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../../api/client';
 import { Save, X, Trash2, Info } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
 import { getErrorMessage } from '../../../utils/errorMessage';
-import { parseHours, deHoursExact, formatDayPlan } from '../../../utils/formatters';
+import { parseHours, deHoursExact, formatDayNumber, formatDayPlan } from '../../../utils/formatters';
 import { showResponseWarning } from '../../../utils/arbzgWarnings';
 import {
   blocksOf, deriveTargets, emptyWeek, formatBlocksText, isLegacyWeek, validateWeekBlocks,
 } from '../../../utils/workBlocks';
 import type { WeekBlocks } from '../../../types/workBlocks';
-import type { WorkingHoursChange, WorkingHoursChangePreview } from './workingHoursTypes';
+import type { ContractTerms, WorkingHoursChange, WorkingHoursChangePreview } from './workingHoursTypes';
+import ContractTermsFields from './ContractTermsFields';
 import WhImpactBox from './WhImpactBox';
 import ShorteningChoice from './ShorteningChoice';
 import WhDeletePanel from './WhDeletePanel';
 import {
   BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT,
   NOTE_MAX_LENGTH, NOTE_TOO_LONG, closedYearMessage, composedNoteTooLong, dayBefore, formatDate, losslessLabel,
-  modeSwitchHint, reasonComplete, reasonPayload, retroLabel, savedMessage, type ReasonState, type ShorteningOption,
+  modeSwitchHint, reasonComplete, reasonPayload, retroLabel, savedMessage, suggestEntitlement, type ReasonState,
+  type ShorteningOption,
 } from './workingHoursTexts';
 
 interface WorkingHoursModalProps {
@@ -35,6 +37,10 @@ interface WorkingHoursModalProps {
   // nur Rückfall — und die Stundenzählung (ohne sie kein Block-Modus, P24).
   currentBlocks?: WeekBlocks | null;
   trackHours?: boolean;
+  // Teil A (Task 13): die fünf Vertragsfelder des heute gültigen Snapshots
+  // (`schedule_today`) — Rückfall wie die Stunden-Props. Ohne sie gelten
+  // `trackHours`/`fixedMonthlyTarget` und 30 Tage.
+  currentContract?: ContractTerms;
   // Gesamtreview 1.20 (Fund 14): feste Monatsarbeitszeit (#377 2b) — die Werte
   // des Block-Editors sind dann geplante Anwesenheit, kein Tages-/Wochensoll.
   fixedMonthlyTarget?: boolean;
@@ -73,7 +79,16 @@ interface ScheduleSnapshot {
   work_days_per_week: number;
   /** Blöcke der Zeile — neu (mit Pausen) oder Altfenster (Pausen NULL) — oder `null`. */
   blocks: WeekBlocks | null;
+  /** Teil A: Urlaubsanspruch, Stundenzählung und Minijob-Felder der Zeile. */
+  contract: ContractTerms;
 }
+
+/** Teil A: ein Urlaubsanspruch, den der Server annimmt (0–50 Tage). */
+function entitlementValid(days: number): boolean {
+  return Number.isFinite(days) && days >= 0 && days <= 50;
+}
+
+const ENTITLEMENT_INVALID = 'Bitte einen Urlaubsanspruch von 0 bis 50 Tagen eintragen.';
 
 interface FormState {
   effective_from: string;
@@ -89,6 +104,9 @@ interface FormState {
   /** P2: Altfenster ausdrücklich entfernen statt übernehmen. */
   remove_legacy_window: boolean;
   note: string;
+  /** Teil A: von der Admin geänderte Vertragsfelder. Was hier fehlt, folgt dem
+   * Stand am Wirkungsdatum (der Anspruch dem Vorschlag, solange es einen gibt). */
+  contract_edits: Partial<ContractTerms>;
 }
 
 function round2(value: number): number {
@@ -121,7 +139,22 @@ function hasLegacyBlocks(week: WeekBlocks | null): boolean {
   return Array.isArray(week) && isLegacyWeek(week);
 }
 
-function scheduleFromChange(change: WorkingHoursChange, fallbackWorkDays: number): ScheduleSnapshot {
+/** Teil A: die fünf Vertragsfelder einer Zeile; was eine ältere Antwort nicht
+ * trägt, kommt aus dem Rückfall. */
+function contractFromChange(change: WorkingHoursChange, fallback: ContractTerms): ContractTerms {
+  return {
+    vacation_days: change.vacation_days ?? fallback.vacation_days,
+    track_hours: change.track_hours ?? fallback.track_hours,
+    milog_working_time_account: change.milog_working_time_account ?? fallback.milog_working_time_account,
+    agreed_monthly_hours: change.agreed_monthly_hours !== undefined
+      ? change.agreed_monthly_hours
+      : fallback.agreed_monthly_hours,
+    use_fixed_monthly_target: change.use_fixed_monthly_target ?? fallback.use_fixed_monthly_target,
+  };
+}
+
+function scheduleFromChange(change: WorkingHoursChange, fallback: ScheduleSnapshot): ScheduleSnapshot {
+  const fallbackWorkDays = fallback.work_days_per_week;
   return {
     weekly_hours: change.weekly_hours,
     use_daily_schedule: !!change.use_daily_schedule,
@@ -133,6 +166,7 @@ function scheduleFromChange(change: WorkingHoursChange, fallbackWorkDays: number
     // #431) — hier ist das die Prop.
     work_days_per_week: change.work_days_per_week ?? fallbackWorkDays,
     blocks: Array.isArray(change.blocks) ? change.blocks : null,
+    contract: contractFromChange(change, fallback.contract),
   };
 }
 
@@ -145,12 +179,17 @@ function scheduleAt(
   changes: WorkingHoursChange[], iso: string, fallback: ScheduleSnapshot,
 ): ScheduleSnapshot {
   let latest: WorkingHoursChange | null = null;
+  let earliest: WorkingHoursChange | null = null;
   for (const c of changes) {
     if (c.effective_from <= iso && (!latest || c.effective_from > latest.effective_from)) {
       latest = c;
     }
+    if (!earliest || c.effective_from < earliest.effective_from) earliest = c;
   }
-  return latest ? scheduleFromChange(latest, fallback.work_days_per_week) : fallback;
+  if (latest) return scheduleFromChange(latest, fallback);
+  // Teil A (Auflösungsregel der fünf Vertragsfelder): vor der ersten Zeile gilt
+  // deren Vertrag; die Stunden bleiben beim Rückfall (User-Zeile).
+  return earliest ? { ...fallback, contract: contractFromChange(earliest, fallback.contract) } : fallback;
 }
 
 /**
@@ -162,8 +201,8 @@ function scheduleAt(
  * dezimalen Tagesplans — die Tagesstunden sind daraus abgeleitet (4.1), und der
  * Editor zeigt dieselben Tage minutengenau (Gesamtreview PR3).
  */
-function describeSchedule(s: ScheduleSnapshot, trackHours: boolean): string {
-  if (trackHours && hasNewBlocks(s.blocks)) {
+function describeSchedule(s: ScheduleSnapshot): string {
+  if (s.contract.track_hours && hasNewBlocks(s.blocks)) {
     const spans = formatBlocksText(s.blocks);
     if (spans) return `${spans} = ${deHoursExact(s.weekly_hours)} h/Woche`;
   }
@@ -218,13 +257,35 @@ function comparableSnapshot(s: ScheduleSnapshot, withBlocks: boolean): string {
     s.use_daily_schedule ? s.day_hours.map(round2) : [0, 0, 0, 0, 0],
     s.work_days_per_week,
     withBlocks ? blocksKey(s.blocks) : null,
+    // Teil A: auch eine reine Vertragsänderung (Anspruch, Stundenzählung,
+    // Minijob) ist eine Änderung.
+    Number.isFinite(s.contract.vacation_days) ? Math.round(s.contract.vacation_days * 10) / 10 : null,
+    s.contract.track_hours,
+    s.contract.milog_working_time_account,
+    s.contract.agreed_monthly_hours == null ? null : Math.round(s.contract.agreed_monthly_hours * 10) / 10,
+    s.contract.use_fixed_monthly_target,
   ]);
+}
+
+/** Teil A: Vertragszeile einer Verlaufskarte — nur, was die Zeile selbst trägt. */
+function contractParts(change: WorkingHoursChange): string[] {
+  const parts: string[] = [];
+  if (change.vacation_days != null) parts.push(`Urlaub ${formatDayNumber(change.vacation_days)} Tage/Jahr`);
+  if (change.track_hours === false) parts.push('ohne Stundenzählung');
+  if (change.milog_working_time_account) {
+    parts.push('MiLoG-Arbeitszeitkonto');
+    if (change.agreed_monthly_hours != null) {
+      parts.push(`${formatDayNumber(change.agreed_monthly_hours)} h/Monat vereinbart`);
+    }
+    if (change.use_fixed_monthly_target) parts.push('festes Monats-Soll');
+  }
+  return parts;
 }
 
 /** Formularstand aus einem Snapshot: Block-Modus, sobald neue Blöcke gelten
  * (und Stunden gezählt werden, P24). */
-function formFromSnapshot(s: ScheduleSnapshot, effectiveFrom: string, trackHours: boolean): FormState {
-  const blocksMode = trackHours && hasNewBlocks(s.blocks);
+function formFromSnapshot(s: ScheduleSnapshot, effectiveFrom: string): FormState {
+  const blocksMode = s.contract.track_hours && hasNewBlocks(s.blocks);
   return {
     effective_from: effectiveFrom,
     mode: blocksMode ? 'blocks' : s.use_daily_schedule ? 'days' : 'even',
@@ -234,6 +295,7 @@ function formFromSnapshot(s: ScheduleSnapshot, effectiveFrom: string, trackHours
     blocks: blocksMode && s.blocks ? s.blocks : emptyWeek(),
     remove_legacy_window: false,
     note: '',
+    contract_edits: {},
   };
 }
 
@@ -274,6 +336,7 @@ export default function WorkingHoursModal({
   currentWorkDays = 5,
   currentBlocks = null,
   trackHours = true,
+  currentContract,
   fixedMonthlyTarget = false,
   initialBlocks = null,
   initialEffectiveFrom,
@@ -292,17 +355,32 @@ export default function WorkingHoursModal({
   const [submitting, setSubmitting] = useState(false);
 
   // Der Snapshot aus den Props — Rückfall, solange (oder falls) es keine Historie gibt.
+  // Teil A: über die Einzelwerte memoisiert — Users.tsx baut das Objekt bei
+  // jedem Rendern neu.
+  const cVacation = currentContract?.vacation_days ?? 30;
+  const cTrack = currentContract?.track_hours ?? trackHours;
+  const cMilog = currentContract?.milog_working_time_account ?? false;
+  const cAgreed = currentContract ? currentContract.agreed_monthly_hours : null;
+  const cFixed = currentContract?.use_fixed_monthly_target ?? fixedMonthlyTarget;
   const propsSchedule = useMemo<ScheduleSnapshot>(() => ({
     weekly_hours: currentWeeklyHours,
     use_daily_schedule: currentUseDailySchedule,
     day_hours: normaliseDayHours(currentDayHours),
     work_days_per_week: currentWorkDays,
     blocks: currentBlocks,
-  }), [currentWeeklyHours, currentUseDailySchedule, currentDayHours, currentWorkDays, currentBlocks]);
+    contract: {
+      vacation_days: cVacation,
+      track_hours: cTrack,
+      milog_working_time_account: cMilog,
+      agreed_monthly_hours: cAgreed,
+      use_fixed_monthly_target: cFixed,
+    },
+  }), [currentWeeklyHours, currentUseDailySchedule, currentDayHours, currentWorkDays, currentBlocks,
+    cVacation, cTrack, cMilog, cAgreed, cFixed]);
 
   const [formData, setFormData] = useState<FormState>(() => {
-    const base = formFromSnapshot(propsSchedule, initialEffectiveFrom ?? todayIso(), trackHours);
-    return trackHours && initialBlocks ? { ...base, mode: 'blocks', blocks: initialBlocks } : base;
+    const base = formFromSnapshot(propsSchedule, initialEffectiveFrom ?? todayIso());
+    return propsSchedule.contract.track_hours && initialBlocks ? { ...base, mode: 'blocks', blocks: initialBlocks } : base;
   });
 
   const [preview, setPreview] = useState<WorkingHoursChangePreview | null>(null);
@@ -352,16 +430,50 @@ export default function WorkingHoursModal({
   const removeLegacy = baselineLegacy && formData.remove_legacy_window;
   const carriedBlocks = baselineLegacy && !formData.remove_legacy_window ? baselineSchedule.blocks : null;
 
+  // Teil A (Spec „Dialog"): der Vertrag der neuen Zeile. Nicht angefasste
+  // Felder folgen dem Stand am Wirkungsdatum; der Anspruch folgt dem Vorschlag
+  // (alter Anspruch × neue ÷ alte Arbeitstage), bis die Admin ihn selbst ändert
+  // — danach bleibt ihr Wert, und „Vorschlag übernehmen (N)" steht daneben.
+  const newWorkDays = formData.mode === 'blocks'
+    ? derived.workDays
+    : formData.mode === 'days' ? plannedDays : formData.work_days_per_week;
+  const entitlementSuggestion = suggestEntitlement(
+    baselineSchedule.contract.vacation_days, baselineSchedule.work_days_per_week, newWorkDays,
+  );
+  const entitlementTouched = formData.contract_edits.vacation_days !== undefined;
+  const contract: ContractTerms = {
+    ...baselineSchedule.contract,
+    ...(entitlementTouched || entitlementSuggestion === null ? {} : { vacation_days: entitlementSuggestion }),
+    ...formData.contract_edits,
+  };
+  // Stundenzählung des FORMULARS (nicht mehr die Prop) steuert Block-Modus und Texte.
+  const formTrackHours = contract.track_hours;
+  const entitlementInvalid = !entitlementValid(contract.vacation_days);
+  // Ein leerer oder unzulässiger Anspruch geht nie als `null` hinaus (422) —
+  // er fehlt im Body, und Speichern bleibt mit Hinweis gesperrt.
+  const contractBody: Partial<ContractTerms> = { ...contract };
+  if (entitlementInvalid) delete contractBody.vacation_days;
+  const setContract = (next: ContractTerms) => {
+    setFormData((prev) => {
+      const edits: Partial<ContractTerms> = { ...prev.contract_edits };
+      (Object.keys(next) as (keyof ContractTerms)[]).forEach((k) => {
+        if (!Object.is(next[k], contract[k])) (edits as Record<string, unknown>)[k] = next[k];
+      });
+      return { ...prev, contract_edits: edits };
+    });
+  };
+
   // #431 + Spec 11.1/11.2: Vorschau-Body UND Anlege-Body aus DERSELBEN Quelle —
   // zwei Formulierungen desselben Payloads laufen garantiert auseinander. Die
   // Modi schließen einander serverseitig hart aus: Block-Modus sendet nur
   // `blocks` (Stundenwerte daneben → 422, der Server leitet sie selbst ab, 4.2),
   // „Gleichmäßig" keine Tageswerte (→ 400).
   const scheduleBody: Record<string, unknown> = (() => {
-    if (formData.mode === 'blocks') return { blocks: formData.blocks };
+    // Teil A: die Vertragsfelder in JEDEM Modus, auch neben den Blöcken.
+    if (formData.mode === 'blocks') return { blocks: formData.blocks, ...contractBody };
     const legacy = removeLegacy ? { remove_legacy_window: true } : {};
     if (formData.mode === 'days') {
-      const body: Record<string, unknown> = { use_daily_schedule: true, ...legacy };
+      const body: Record<string, unknown> = { use_daily_schedule: true, ...legacy, ...contractBody };
       DAY_FIELDS.forEach((f, i) => { body[f.key] = dayValues[i]; });
       // Die Wochensumme setzt der Server (`check_mode`) — ein eigener Wert des
       // Clients könnte ihr widersprechen. Arbeitstage = Tage mit Stunden; ohne
@@ -375,6 +487,7 @@ export default function WorkingHoursModal({
       weekly_hours: formData.weekly_hours,
       work_days_per_week: formData.work_days_per_week,
       ...legacy,
+      ...contractBody,
     };
   })();
   // Spec 12.1: der Effekt-Schlüssel ist der serialisierte Body — ein String,
@@ -552,6 +665,7 @@ export default function WorkingHoursModal({
       day_hours: derived.hours,
       work_days_per_week: derived.workDays || formData.work_days_per_week,
       blocks: formData.blocks,
+      contract,
     }
     : {
       weekly_hours: formData.mode === 'days' ? daySum : formData.weekly_hours,
@@ -561,11 +675,14 @@ export default function WorkingHoursModal({
         ? (plannedDays || formData.work_days_per_week)
         : formData.work_days_per_week,
       blocks: carriedBlocks,
+      contract,
     };
   // Ohne Stundenzählung bleiben die Blöcke aus dem Vergleich (P24) — außer das
   // Altfenster wird ausdrücklich entfernt: das IST die Änderung (der Server
   // vergleicht Blöcke immer), sonst bliebe „Fenster entfernen" unspeicherbar.
-  const compareBlocks = trackHours || removeLegacy;
+  // Teil A (Review Focus 5): im Block-Modus ohne Stundenzählung bleiben die
+  // Blöcke stehen und werden gesendet — dann zählen sie auch im Vergleich.
+  const compareBlocks = formTrackHours || removeLegacy || formData.mode === 'blocks';
   const snapshotUnchanged =
     comparableSnapshot(inputSchedule, compareBlocks) === comparableSnapshot(baselineSchedule, compareBlocks);
 
@@ -579,6 +696,7 @@ export default function WorkingHoursModal({
     submitting ||
     !!blockedReason ||
     !!blocksError ||
+    entitlementInvalid ||
     snapshotUnchanged ||
     // Option 1 erst mit ihrer eigenen Vorschau (auch wenn deren Datum heute ist).
     (useLossless && (shownLoading || !shown)) ||
@@ -597,7 +715,7 @@ export default function WorkingHoursModal({
   // sonst spränge es auf den ALTEN Stand zurück, obwohl der Verlauf darunter
   // schon den neuen zeigt. Nach dem Speichern UND nach dem Löschen.
   const resetFormTo = (freshChanges: WorkingHoursChange[]) => {
-    setFormData(formFromSnapshot(scheduleAt(freshChanges, todayIso(), propsSchedule), todayIso(), trackHours));
+    setFormData(formFromSnapshot(scheduleAt(freshChanges, todayIso(), propsSchedule), todayIso()));
     setPreview(null);
     setConfirmedRetroactive(false);
     setReason(EMPTY_REASON);
@@ -671,7 +789,12 @@ export default function WorkingHoursModal({
   // der Satz der Zeile „0 Abwesenheit(en) betroffen." direkt darüber.
   const balanceUnchangedAhead =
     !!shown && !isRetroactive && affectsBookedAbsences && overtimeDelta === 0 && vacationDelta === 0;
-  const displayBlocksLine = blocksLine(displaySchedule.blocks, trackHours);
+  const displayBlocksLine = blocksLine(displaySchedule.blocks, displaySchedule.contract.track_hours);
+  // Review Focus 5: Block-Modus bei abgewählter Stundenzählung — die Blöcke
+  // bleiben, wirken aber nicht.
+  const inertBlocksLine = formData.mode === 'blocks' && !formTrackHours
+    ? blocksLine(formData.blocks, false)
+    : null;
   const planNotices = preview?.block_break_notices ?? [];
 
   return (
@@ -700,7 +823,7 @@ export default function WorkingHoursModal({
                   Arbeitszeit &amp; Wochenstunden
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  {userName} • Aktuell: {describeSchedule(displaySchedule, trackHours)}
+                  {userName} • Aktuell: {describeSchedule(displaySchedule)}
                 </p>
                 {displayBlocksLine && <p className="text-sm text-gray-600">{displayBlocksLine}</p>}
               </div>
@@ -756,7 +879,10 @@ export default function WorkingHoursModal({
                       {([
                         ['even', 'Gleichmäßig'],
                         ['days', 'Nach Tagen'],
-                        ...(trackHours ? [['blocks', 'Nach Arbeitsblöcken']] : []),
+                        // Review Focus 5: bleibt angeboten, solange der Block-Modus
+                        // gewählt ist — das Abwählen der Stundenzählung wirft die
+                        // Blöcke nicht weg.
+                        ...(formTrackHours || formData.mode === 'blocks' ? [['blocks', 'Nach Arbeitsblöcken']] : []),
                       ] as [Mode, string][]).map(([value, label]) => (
                         <label key={value} className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
                           <input
@@ -846,6 +972,25 @@ export default function WorkingHoursModal({
                         </div>
                       </div>
                     )}
+                    {inertBlocksLine && <p className="mt-2 text-sm text-gray-600 break-words">{inertBlocksLine}</p>}
+                  </fieldset>
+
+                  {/* Teil A (Task 13): Vertragsfelder mit demselben Wirkungsdatum. */}
+                  <fieldset className="border border-blue-200 rounded-lg p-3 bg-white min-w-0">
+                    <legend className="px-1 text-sm font-medium text-gray-700">Urlaub und Abrechnung</legend>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <ContractTermsFields
+                        value={contract}
+                        onChange={setContract}
+                        mode="change"
+                        suggestion={entitlementSuggestion}
+                        idPrefix="wh-"
+                        weeklyHours={inputSchedule.weekly_hours}
+                      />
+                    </div>
+                    {entitlementInvalid && (
+                      <p role="alert" className="mt-2 text-sm font-medium text-red-700">{ENTITLEMENT_INVALID}</p>
+                    )}
                   </fieldset>
 
                   {/* Spec 4.4: Altfenster — Aktionen „umwandeln" / „entfernen". */}
@@ -862,15 +1007,15 @@ export default function WorkingHoursModal({
                           Kopfzeile „ohne Wirkung", nie „kappt". */}
                       <p className="text-gray-600 mt-1">
                         {formData.remove_legacy_window
-                          ? trackHours
+                          ? formTrackHours
                             ? `Das Fenster wird ab ${formatDate(sentDate)} entfernt; danach wird nicht mehr gekappt.`
                             : `Das Fenster wird ab ${formatDate(sentDate)} entfernt.`
-                          : trackHours
+                          : formTrackHours
                             ? 'Bleibt mit dieser Änderung bestehen: kappt die erfasste Zeit, ändert das Tagessoll nicht.'
                             : 'Bleibt mit dieser Änderung bestehen, ohne Wirkung (keine Stundenzählung): kappt nichts, ändert das Tagessoll nicht.'}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {trackHours && (
+                        {formTrackHours && (
                           <button
                             type="button"
                             onClick={() => setFormData((prev) => ({
@@ -1062,7 +1207,9 @@ export default function WorkingHoursModal({
                   <div className="space-y-3">
                     {hoursChanges.map((change) => {
                       const end = historyEndDates.get(change.id);
-                      const rowBlocks = blocksLine(Array.isArray(change.blocks) ? change.blocks : null, trackHours);
+                      const rowSchedule = scheduleFromChange(change, propsSchedule);
+                      const rowBlocks = blocksLine(rowSchedule.blocks, rowSchedule.contract.track_hours);
+                      const rowContract = contractParts(change);
                       return (
                         <div
                           key={change.id}
@@ -1071,9 +1218,16 @@ export default function WorkingHoursModal({
                           <div className="min-w-0 break-words">
                             <p className="font-medium text-gray-900">
                               Ab {formatDate(change.effective_from)} bis {end ? formatDate(end) : 'heute'}:{' '}
-                              {describeSchedule(scheduleFromChange(change, propsSchedule.work_days_per_week), trackHours)}
+                              {describeSchedule(rowSchedule)}
                             </p>
                             {rowBlocks && <p className="text-sm text-gray-700 mt-1">{rowBlocks}</p>}
+                            {rowContract.length > 0 && (
+                              <p className="text-sm text-gray-700 mt-1">
+                                {rowContract.map((part, i) => (
+                                  <Fragment key={part}>{i > 0 && ' · '}<span>{part}</span></Fragment>
+                                ))}
+                              </p>
+                            )}
                             {change.note && <p className="text-sm text-gray-600 mt-1">{change.note}</p>}
                             <p className="text-xs text-gray-500 mt-1">
                               Erstellt: {new Date(change.created_at).toLocaleDateString('de-DE', {

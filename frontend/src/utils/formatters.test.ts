@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount } from './formatters';
+import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount, formatDayNumber } from './formatters';
 
 describe('formatHoursHM', () => {
   it('formats whole hours', () => {
@@ -393,5 +393,13 @@ describe('formatWeeklyHoursChanges mit Arbeitszeit-Blöcken (Spec 15.2, wortglei
   it('ohne Blockänderung byte-identisch', () => {
     expect(formatWeeklyHoursChanges([{ effective_from: '2026-09-01', weekly_hours: 30, blocks: B }]))
       .toBe('ab 01.09.2026: 30,0 Std/Woche');
+  });
+});
+
+describe('formatDayNumber (Teil A)', () => {
+  it('formatDayNumber', () => {
+    expect(formatDayNumber(30)).toBe('30');
+    expect(formatDayNumber(13.1)).toBe('13,1');
+    expect(formatDayNumber(24.5)).toBe('24,5');
   });
 });

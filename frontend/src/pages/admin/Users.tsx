@@ -14,6 +14,7 @@ import { deHoursExact, formatHoursHM } from '../../utils/formatters';
 import SetPasswordModal from './users/SetPasswordModal';
 import CarryoverModal from './users/CarryoverModal';
 import WorkingHoursModal from './users/WorkingHoursModal';
+import { contractTermsOf } from './users/workingHoursTexts';
 import UserForm from './users/UserForm';
 
 import type { ScheduleToday, User } from '../../types/user';
@@ -987,6 +988,9 @@ export default function Users() {
           // ohne Stundenzählung kein Block-Modus (P24).
           currentBlocks={hoursModalUser.work_blocks_today ?? null}
           trackHours={hoursModalUser.track_hours}
+          // Teil A (Task 13): Anspruch, Stundenzählung und Minijob-Felder des
+          // heute gültigen Snapshots — Rückfall wie die Stunden oben.
+          currentContract={contractTermsOf(hoursModalUser.schedule_today) ?? contractTermsOf(hoursModalUser)}
           // Gesamtreview 1.20 (Fund 14): Block-Editor beschriftet dann „geplant".
           fixedMonthlyTarget={!!hoursModalUser.use_fixed_monthly_target && hoursModalUser.track_hours}
           onClose={() => setHoursModalUser(null)}

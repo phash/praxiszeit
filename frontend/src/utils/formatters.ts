@@ -150,6 +150,16 @@ export function formatDayCount(days: number): string {
 }
 
 /**
+ * Teil A: eine Tageszahl ohne Einheit — '30', '13,1', '24,5' (höchstens zwei
+ * Nachkommastellen, deutsches Komma). Für Texte, die die Einheit selbst
+ * nennen („Urlaub 30 Tage/Jahr", „Vorschlag übernehmen (30)"); mit Einheit
+ * `formatDayCount`.
+ */
+export function formatDayNumber(n: number): string {
+  return String(Math.round(n * 100) / 100).replace('.', ',');
+}
+
+/**
  * ' auf 4 Arbeitstage' — aber nur, wenn diese Änderung die Arbeitstage
  * tatsächlich verschiebt (Leerstring sonst). Zwilling von
  * `export_service._work_days_suffix`; die Kurzform („4 Tage") gibt es nur in
