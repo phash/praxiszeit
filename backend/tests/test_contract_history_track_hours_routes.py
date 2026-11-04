@@ -244,3 +244,29 @@ def test_me_contract_fields_from_todays_snapshot(_db_session, employee_user, mon
         assert me["schedule_today"]["track_hours"] is False
     finally:
         endpoints_app.dependency_overrides.clear()
+
+
+def test_day_blocks_and_clock_status_on_untracked_snapshot_day(_db_session, employee_user, monkeypatch):
+    """F135 (5): ein Tag OHNE Stundenzählung laut Snapshot liefert keine Blöcke und
+    kein „Werktag ohne Blöcke" (nichts wird gekappt, kein Soll); der Tag davor
+    (mit Stundenzählung, gleiche Blöcke) liefert sie."""
+    from tests.work_blocks_fixtures import block_week
+    import app.routers.time_entries as te
+    db, u = _db_session, employee_user
+    week = block_week(mon=[("08:00", "12:00")], tue=[("08:00", "12:00")], wed=[("08:00", "12:00")],
+                      thu=[("08:00", "12:00")], fri=[("08:00", "12:00")])
+    add_row(db, u, date(2026, 1, 1), week=week, track_hours=True)
+    add_row(db, u, date(2026, 12, 1), week=week, track_hours=False)
+    freeze(monkeypatch, date(2026, 12, 8))
+    monkeypatch.setattr(te, "_today_local", lambda: date(2026, 12, 8))
+    try:
+        c = _client(db, u)
+        tracked = c.get("/api/time-entries/day-blocks", params={"date": "2026-11-24"}).json()
+        assert tracked["blocks"] and tracked["blockless_workday"] is False
+        untracked = c.get("/api/time-entries/day-blocks", params={"date": "2026-12-08"}).json()
+        assert untracked["blocks"] == [] and untracked["blockless_workday"] is False
+        status = c.get("/api/time-entries/clock-status").json()
+        assert status["today_target_hours"] == 0.0
+        assert status["blockless_workday"] is False
+    finally:
+        endpoints_app.dependency_overrides.clear()

@@ -21,16 +21,14 @@ Eingehängt in ``scripts/local-ci.sh`` Schritt 2 und den PostgreSQL-Schritt von
 import json
 import os
 import secrets
-import subprocess
-import sys
 import uuid
-from contextlib import contextmanager
 from datetime import time
 from pathlib import Path
 
 import pytest
 from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.engine import make_url
+from tests.pg_migration_helpers import alembic as _alembic, md5 as _md5, scratch_database
 
 ADMIN_URL = os.environ.get("ADMIN_DB_URL") or os.environ.get("DATABASE_URL_MIGRATIONS")
 if not ADMIN_URL or not ADMIN_URL.startswith("postgresql"):
@@ -53,22 +51,6 @@ WINDOW_COLUMNS = [f"scheduled_{k}_{d}" for d in ("monday", "tuesday", "wednesday
 COMPARED_TABLES = {"time_entries": (), "working_hours_changes": (), "users": tuple(WINDOW_COLUMNS)}
 
 
-def _alembic(url: str, *args: str) -> str:
-    env = {**os.environ, "DATABASE_URL_MIGRATIONS": url}
-    proc = subprocess.run(
-        [sys.executable, "-c", f"from alembic.config import main; main({list(args)!r})"],
-        cwd=BACKEND, env=env, capture_output=True, text=True, timeout=900,
-    )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    return proc.stdout + proc.stderr
-
-
-def _md5(conn, sql: str) -> tuple:
-    return tuple(conn.execute(text(
-        f"SELECT count(*), md5(string_agg(t::text, ',' ORDER BY t::text)) FROM ({sql}) t"
-    )).one())
-
-
 def _bestand(conn) -> dict:
     """Spaltenlisten der Bestandstabellen im Stand 072, in der Reihenfolge der
     Tabelle aus ``information_schema`` (nicht von Hand: eine vergessene Spalte
@@ -87,21 +69,8 @@ def _snapshot(conn, lists: dict) -> dict:
     return {table: _md5(conn, f"SELECT {cols} FROM {table}") for table, cols in lists.items()}
 
 
-@contextmanager
 def _scratch_database():
-    name = f"pz073_{uuid.uuid4().hex[:10]}"
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
-    with admin.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{name}"'))
-    url = make_url(ADMIN_URL).set(database=name).render_as_string(hide_password=False)
-    engine = create_engine(url)
-    try:
-        yield url, engine
-    finally:
-        engine.dispose()
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
-        admin.dispose()
+    return scratch_database(ADMIN_URL, "pz073")
 
 
 @pytest.fixture(scope="module")

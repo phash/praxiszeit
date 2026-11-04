@@ -13,15 +13,11 @@ Eingehaengt in ``scripts/local-ci.sh`` Schritt 2 und den PostgreSQL-Schritt von
 ``.github/workflows/cross-tenant-ci.yml`` (im SQLite-Schritt per ``--ignore``).
 """
 import os
-import subprocess
-import sys
-import uuid
-from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
+from sqlalchemy import text
+from tests.pg_migration_helpers import alembic as _alembic, md5 as _md5, scratch_database
 
 ADMIN_URL = os.environ.get("ADMIN_DB_URL") or os.environ.get("DATABASE_URL_MIGRATIONS")
 if not ADMIN_URL or not ADMIN_URL.startswith("postgresql"):
@@ -35,37 +31,8 @@ TENANT = "00000000-0000-0000-0000-000000000001"  # legt Migration 027 an
 COMPARED = ("absences", "system_settings", "company_closures")
 
 
-def _alembic(url: str, *args: str) -> str:
-    env = {**os.environ, "DATABASE_URL_MIGRATIONS": url}
-    proc = subprocess.run(
-        [sys.executable, "-c", f"from alembic.config import main; main({list(args)!r})"],
-        cwd=BACKEND, env=env, capture_output=True, text=True, timeout=900,
-    )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    return proc.stdout + proc.stderr
-
-
-def _md5(conn, sql: str) -> tuple:
-    return tuple(conn.execute(text(
-        f"SELECT count(*), md5(string_agg(t::text, ',' ORDER BY t::text)) FROM ({sql}) t"
-    )).one())
-
-
-@contextmanager
 def _scratch_database():
-    name = f"pz074_{uuid.uuid4().hex[:10]}"
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
-    with admin.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{name}"'))
-    url = make_url(ADMIN_URL).set(database=name).render_as_string(hide_password=False)
-    engine = create_engine(url)
-    try:
-        yield url, engine
-    finally:
-        engine.dispose()
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
-        admin.dispose()
+    return scratch_database(ADMIN_URL, "pz074")
 
 
 @pytest.fixture(scope="module")
@@ -85,8 +52,23 @@ def test_074_round_trip_keeps_existing_tables(scratch):
         conn.execute(text(
             "INSERT INTO system_settings (tenant_id, key, value) "
             "VALUES (:t, 'rd074_probe', 'x')"), {"t": TENANT})
+        # F045/F136: echte Zeilen in den verglichenen Tabellen, sonst vergleicht der
+        # md5-Schnappschuss (Anti-Ziel 1) leere Tabellen.
+        uid = conn.execute(text(
+            "INSERT INTO users (id, tenant_id, username, email, password_hash, first_name, last_name, "
+            "role, weekly_hours, vacation_days, is_active) "
+            "VALUES (gen_random_uuid(), :t, 'rd074', 'rd074@x.invalid', 'x', 'R', 'D', 'EMPLOYEE', 40, 30, true) "
+            "RETURNING id"), {"t": TENANT}).scalar()
+        conn.execute(text(
+            "INSERT INTO company_closures (id, tenant_id, name, start_date, end_date, counts_as_vacation, "
+            "created_by) VALUES (gen_random_uuid(), :t, 'BF', '2026-02-16', '2026-02-20', true, :u)"),
+            {"t": TENANT, "u": uid})
+        conn.execute(text(
+            "INSERT INTO absences (id, tenant_id, user_id, date, type, hours) "
+            "VALUES (gen_random_uuid(), :t, :u, '2026-02-17', 'VACATION', 8)"), {"t": TENANT, "u": uid})
     with engine.connect() as conn:
         before = _snapshot(conn)
+    assert before["absences"][0] == 1 and before["company_closures"][0] == 1   # nicht leer
 
     _alembic(url, "upgrade", "074_reduced_days")
     with engine.connect() as conn:
@@ -122,3 +104,18 @@ def test_074_round_trip_keeps_existing_tables(scratch):
     _alembic(url, "upgrade", "074_reduced_days")
     with engine.connect() as conn:
         assert _snapshot(conn) == before
+
+
+def test_074_unique_tenant_date_rejects_duplicate(scratch):
+    """F136: ``uq_reduced_days_tenant_date`` wirkt (nicht nur dem Namen nach)."""
+    from sqlalchemy.exc import IntegrityError
+    url, engine = scratch
+    _alembic(url, "upgrade", "074_reduced_days")
+    insert = text("INSERT INTO reduced_days (tenant_id, date, label, max_hours) "
+                  "VALUES (:t, '2026-02-16', 'Rosenmontag', 4)")
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM reduced_days"))
+        conn.execute(insert, {"t": TENANT})
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(insert, {"t": TENANT})

@@ -74,7 +74,7 @@ def every_pair(year: int, step: int):
             yield fwd, lwd
 
 
-def test_customer_case_4_to_5_days_from_nov(db, test_user):   # spec A5
+def test_customer_case_24_to_30_days_from_nov(db, test_user):   # spec A5
     test_user.first_work_day = date(2020, 1, 1)
     test_user.vacation_days = 24
     db.commit()
@@ -131,6 +131,46 @@ def test_single_segment_matches_legacy_pro_rata_for_every_entry_and_exit_day(db,
             got = cs.vacation_entitlement_days(db, test_user, 2026, wh_changes=rows)
             assert got == legacy_budget(value, fwd, lwd, 2026), (value, fwd, lwd)
     db.rollback()
+
+
+def test_hours_only_change_keeps_legacy_single_segment_path(db, test_user):
+    """F135 (1): wechseln nur die Wochenstunden, bleibt der Anspruch EIN Segment
+    (gleiche Werte werden zusammengefasst) und damit bitgleich zur Altlogik."""
+    for fwd, lwd in ((None, None), (date(2026, 3, 9), None), (None, date(2026, 9, 17)),
+                     (date(2026, 3, 9), date(2026, 9, 17))):
+        test_user.first_work_day, test_user.last_work_day = fwd, lwd
+        rows = [change_row(test_user, date(2020, 1, 1), weekly_hours=40, vacation_days=Decimal("24"),
+                           track_hours=True, milog_working_time_account=False,
+                           agreed_monthly_hours=None, use_fixed_monthly_target=False),
+                change_row(test_user, date(2026, 6, 1), weekly_hours=20, vacation_days=Decimal("24"),
+                           track_hours=True, milog_working_time_account=False,
+                           agreed_monthly_hours=None, use_fixed_monthly_target=False)]  # transient
+        assert cs.vacation_entitlement_days(db, test_user, 2026, wh_changes=rows) == \
+            legacy_budget(Decimal("24"), fwd, lwd, 2026), (fwd, lwd)
+    db.rollback()
+
+
+def test_multi_run_in_entry_and_exit_year(db, test_user):
+    """F135 (2): Ein- UND Austritt im selben Jahr, Wechsel in der Mitte: 4 Monate
+    × 24 + 4 Monate × 30, je ÷ 12 = 8,0 + 10,0."""
+    test_user.first_work_day = date(2028, 3, 1)
+    test_user.last_work_day = date(2028, 10, 31)
+    db.commit()
+    add_row(db, test_user, date(2020, 1, 1), weekly_hours=40, vacation_days=24)
+    add_row(db, test_user, date(2028, 7, 1), weekly_hours=40, vacation_days=30)
+    assert cs.vacation_entitlement_days(db, test_user, 2028) == Decimal("18.0")
+
+
+def test_change_on_leap_day_is_day_exact(db, test_user):
+    """F135 (2): Wechsel am 29.02.2028 — der Februar hat 29 Tage, der Schalttag
+    gehört zum neuen Wert: 0 bis 28.02., 120 ab 29.02. → 120 × (1/29 + 10) ÷ 12."""
+    test_user.first_work_day = date(2020, 1, 1)
+    db.commit()
+    add_row(db, test_user, date(2020, 1, 1), weekly_hours=40, vacation_days=0)
+    add_row(db, test_user, date(2028, 2, 29), weekly_hours=40, vacation_days=120)
+    expected = (Decimal(120) * (Decimal(1) / Decimal(29) + 10) / 12).quantize(Decimal("0.1"))
+    assert expected == Decimal("100.3")
+    assert cs.vacation_entitlement_days(db, test_user, 2028) == expected
 
 
 def test_fix1_year_outside_window_has_no_budget_and_no_carryover(db, test_user):

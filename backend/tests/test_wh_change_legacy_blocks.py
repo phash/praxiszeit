@@ -157,3 +157,6 @@ def test_comparable_snapshot_sees_blocks():
     plain = _comparable_snapshot(40, False, (None,) * 5, 5, None, None, contract)
     assert plain == _comparable_snapshot(40.0, False, (None,) * 5, 5, None, None, contract)
     assert plain != _comparable_snapshot(40, False, (None,) * 5, 5, legacy.blocks, legacy.pauses, contract)
+    # F135 (7): auch ein anderer Vertragswert macht die Schnappschüsse ungleich.
+    other = (Decimal("24"),) + contract[1:]
+    assert plain != _comparable_snapshot(40, False, (None,) * 5, 5, None, None, other)

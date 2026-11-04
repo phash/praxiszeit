@@ -7,7 +7,7 @@ eigenem Modus."""
 from datetime import date, time, timedelta
 from decimal import Decimal
 
-from app.models import Absence, AbsenceType, WorkingHoursChange
+from app.models import Absence, AbsenceType, WorkingHoursChange, YearCarryover
 from app.services import calculation_service as cs
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.wh_change_helpers import add_row, entry
@@ -191,3 +191,39 @@ def test_never_tracked_target_is_bare_zero(db, test_user):
     add_row(db, test_user, date(2026, 1, 1), weekly_hours=40, track_hours=False)
     assert str(cs.get_monthly_target(db, test_user, 2026, 3)) == "0"
     assert str(cs.get_gross_monthly_target(db, test_user, 2026, 3)) == "0"
+
+
+def test_always_untracked_person_with_year_carryover_unchanged(db, test_user):
+    """F135 (4): Übertrag + ewig ohne Stundenzählung — Konto und Jahressumme bleiben
+    mit und ohne (nie zählende) Verlaufszeilen bitgleich."""
+    _seed_entries(db, test_user, end=date(2026, 3, 31))
+    test_user.track_hours = False
+    db.add(YearCarryover(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, year=2026,
+                         overtime_hours=Decimal("5"), vacation_days=0, source="year_closing"))
+    db.commit()
+    without_rows = [cs.get_overtime_account(db, test_user, 2026, m) for m in (1, 2, 3)]
+    ytd_without = cs.get_ytd_summary(db, test_user, 2026, cutoff_date=date(2026, 3, 31))
+    add_row(db, test_user, date(2026, 1, 1), weekly_hours=40, track_hours=False)
+    add_row(db, test_user, date(2026, 2, 1), weekly_hours=40, track_hours=False)
+    assert [cs.get_overtime_account(db, test_user, 2026, m) for m in (1, 2, 3)] == without_rows
+    assert cs.get_ytd_summary(db, test_user, 2026, cutoff_date=date(2026, 3, 31)) == ytd_without
+
+
+def test_only_tracked_row_in_the_future_leaves_the_past_untouched(db, test_user):
+    """F135 (4): die einzige ZÄHLENDE Zeile liegt in der Zukunft (ab 2027), davor
+    steht die Basiszeile ohne Stundenzählung — 2026 behält Soll 0, erst 2027 hat
+    ein Soll. Das Ist folgt dem Tag (F001): sobald die Person irgendwann zählt,
+    zählt die Stempelzeit der Tage OHNE Stundenzählung nicht mehr mit (0 statt der
+    Stempelzeit einer nie zählenden Person). Ohne Basiszeile wäre die erste Zeile
+    die Vorgabe für die Vergangenheit — der Schreibweg legt sie deshalb an."""
+    _seed_entries(db, test_user, end=date(2026, 3, 31))
+    test_user.track_hours = False
+    db.commit()
+    never_tracked_actual = cs.get_monthly_actual(db, test_user, 2026, 3)
+    assert never_tracked_actual > Decimal("0")
+    add_row(db, test_user, date(2020, 1, 1), weekly_hours=40, track_hours=False)
+    add_row(db, test_user, date(2027, 1, 1), weekly_hours=40, track_hours=True)
+    assert cs.get_monthly_target(db, test_user, 2026, 3) == Decimal("0")
+    assert cs.get_monthly_actual(db, test_user, 2026, 3) == Decimal("0.00")
+    assert cs.get_monthly_target(db, test_user, 2026, 12) == Decimal("0")
+    assert cs.get_monthly_target(db, test_user, 2027, 1) > Decimal("0")

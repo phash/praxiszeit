@@ -143,7 +143,8 @@ def _fill_contract_from_user(mapper, connection, target):
         select(*[users.c[n] for n in missing]).where(users.c.id == target.user_id)
     ).mappings().first()
     if row is None:
-        return
+        raise AssertionError(
+            f"WorkingHoursChange for unknown user {target.user_id}: flush the user first")
     for n in missing:
         setattr(target, n, row[n])
 
