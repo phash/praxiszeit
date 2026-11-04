@@ -48,6 +48,19 @@ def test_same_date_on_later_row_still_400(db, test_user, client):
     assert len(rows_of(db, test_user)) == 2
 
 
+def test_second_row_on_an_existing_date_is_rejected_so_no_tie_exists(db, test_user, client):
+    """F135 (3): das Auflösen nach „letzte Zeile gewinnt" setzt voraus, dass es nie
+    zwei Zeilen mit gleichem Wirkungsdatum gibt — der Schreibweg lehnt die zweite ab
+    (die früheste Zeile wird ersetzt, s. o.) und lässt genau eine Zeile stehen."""
+    _history(db, test_user)
+    before = [(r.id, r.effective_from, float(r.vacation_days)) for r in rows_of(db, test_user)]
+    r = client.post(url(test_user), json=body("2026-11-01", vacation_days=27))
+    assert r.status_code == 400, r.text
+    assert "existiert bereits" in r.text
+    assert [(x.id, x.effective_from, float(x.vacation_days)) for x in rows_of(db, test_user)] == before
+    assert sum(1 for x in rows_of(db, test_user) if x.effective_from == date(2026, 11, 1)) == 1
+
+
 def test_preview_at_earliest_row_has_no_blocked_reason(db, test_user, client):
     _history(db, test_user)
     r = client.post(url(test_user) + "/preview", json=body("2020-01-01", vacation_days=28))

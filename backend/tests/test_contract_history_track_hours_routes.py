@@ -270,3 +270,43 @@ def test_day_blocks_and_clock_status_on_untracked_snapshot_day(_db_session, empl
         assert status["blockless_workday"] is False
     finally:
         endpoints_app.dependency_overrides.clear()
+
+
+def _fixed_from_july(db, u):
+    """Fester Monats-Soll (Minijob, 43,3 h) erst ab 01.07.2026; User-Zeile = Spiegel von heute."""
+    from decimal import Decimal
+    off = dict(milog_working_time_account=False, agreed_monthly_hours=None, use_fixed_monthly_target=False)
+    on = dict(milog_working_time_account=True, agreed_monthly_hours=Decimal("43.3"), use_fixed_monthly_target=True)
+    add_row(db, u, date(2026, 1, 1), weekly_hours=10, vacation_days=Decimal("30"), track_hours=True, **off)
+    add_row(db, u, date(2026, 7, 1), weekly_hours=10, vacation_days=Decimal("30"), track_hours=True, **on)
+
+
+def test_mid_year_fixed_mode_switch_in_journal_work_schedule_and_team(_db_session, employee_user,
+                                                                      admin_user, monkeypatch):
+    """F135 (6): Journal-Zusammenfassung, ``/me/work-schedule`` und Teamübersicht
+    lesen den Monatsvertrag des Monats/Datums — Juni Tagesrechnung, Juli fest."""
+    from app.services import journal_service
+    db, u = _db_session, employee_user
+    _fixed_from_july(db, u)
+    try:
+        assert journal_service.get_journal(db, u, 2026, 6)["use_fixed_monthly_target"] is False
+        july = journal_service.get_journal(db, u, 2026, 7)
+        assert july["use_fixed_monthly_target"] is True
+        assert july["monthly_summary"]["target_hours"] == 43.3
+
+        monkeypatch.setattr(auth_router, "now_local", lambda: dt.datetime(2026, 6, 15, 10, 0))
+        assert _client(db, u).get("/api/auth/me/work-schedule").json()["fixed_monthly_hours"] is None
+        monkeypatch.setattr(auth_router, "now_local", lambda: dt.datetime(2026, 7, 15, 10, 0))
+        assert _client(db, u).get("/api/auth/me/work-schedule").json()["fixed_monthly_hours"] == 43.3
+
+        adm = _client(db, admin_user, admin=True)
+
+        def fixed(d):
+            r = adm.get(f"/api/admin/team-schedule?date={d}")
+            assert r.status_code == 200, r.text
+            return {x["user_id"]: x["use_fixed_monthly_target"] for x in r.json()}[str(u.id)]
+
+        assert fixed("2026-06-30") is False
+        assert fixed("2026-07-01") is True
+    finally:
+        endpoints_app.dependency_overrides.clear()
