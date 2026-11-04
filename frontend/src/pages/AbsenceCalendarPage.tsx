@@ -13,7 +13,9 @@ import { useTypeColorsStore } from '../stores/typeColorsStore';
 import Badge from '../components/Badge';
 import { getErrorMessage } from '../utils/errorMessage';
 import { parseHours, formatHoursHM, formatDayCount } from '../utils/formatters';
-import { getSpecialDayInfo, type ReducedDayEntry, type SpecialDaySettings } from '../utils/specialDays';
+import {
+  DEFAULT_MAX_HOURS, getSpecialDayInfo, type ReducedDayEntry, type SpecialDaySettings,
+} from '../utils/specialDays';
 import { myReasons, type AbsenceReason } from '../api/absenceReasons';
 import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
@@ -95,6 +97,15 @@ function getHoursForDate(user: AuthUser | null | undefined, dateStr: string): nu
   return dayMap[weekday] ?? 0;
 }
 
+const NO_SPECIAL_DAY_SETTINGS: SpecialDaySettings = {
+  special_day_dec24_mode: 'working_day',
+  special_day_dec24_counts_as_vacation: false,
+  special_day_dec24_max_hours: DEFAULT_MAX_HOURS,
+  special_day_dec31_mode: 'working_day',
+  special_day_dec31_counts_as_vacation: false,
+  special_day_dec31_max_hours: DEFAULT_MAX_HOURS,
+};
+
 export default function AbsenceCalendarPage() {
   const toast = useToast();
   const { user: currentUser } = useAuthStore();
@@ -149,8 +160,10 @@ export default function AbsenceCalendarPage() {
     return () => { cancelled = true; };
   }, [displayedYear]);
 
+  // F133: scheitert /settings, bleiben die (angemeldet geladenen) verkürzten Tage
+  // trotzdem sichtbar — 24./31.12. dann ohne Sonderbehandlung.
   const specialDaysMerged = useMemo<SpecialDaySettings | null>(
-    () => (specialDays ? { ...specialDays, reduced_days: reducedDays } : null),
+    () => ({ ...(specialDays ?? NO_SPECIAL_DAY_SETTINGS), reduced_days: reducedDays }),
     [specialDays, reducedDays],
   );
 
