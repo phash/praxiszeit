@@ -2317,6 +2317,11 @@ describe('Teil A Task 13: Urlaub und Abrechnung', () => {
   it('suggests 13,1 for 17,5 days from 4 to 3 days', () => expect(suggestEntitlement(17.5, 4, 3)).toBe(13.1));
   it('no suggestion without work days', () => expect(suggestEntitlement(24, 4, 0)).toBeNull());
   it('no suggestion while the work days stay the same', () => expect(suggestEntitlement(24, 4, 4)).toBeNull());
+  it('F129: no suggestion when the old snapshot has no work days', () => expect(suggestEntitlement(24, 0, 5)).toBeNull());
+  it('F129: a suggestion above 50 is capped at 50 (never auto-fills an invalid value)', () => {
+    expect(suggestEntitlement(24, 2, 5)).toBe(50);
+    expect(suggestEntitlement(30, 2, 5)).toBe(50);
+  });
 
   it('auto-follows the suggestion until edited, then offers „Vorschlag übernehmen (30)"', async () => {
     mockHistory([ROW_24_4], QUIET);

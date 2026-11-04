@@ -11,6 +11,7 @@ import {
   blocksOf, deriveTargets, emptyWeek, formatBlocksText, isLegacyWeek, validateWeekBlocks,
 } from '../../../utils/workBlocks';
 import type { WeekBlocks } from '../../../types/workBlocks';
+import { DEFAULT_VACATION_DAYS, MAX_VACATION_DAYS } from './workingHoursTypes';
 import type { ContractTerms, WorkingHoursChange, WorkingHoursChangePreview } from './workingHoursTypes';
 import ContractTermsFields from './ContractTermsFields';
 import WhImpactBox from './WhImpactBox';
@@ -87,10 +88,10 @@ interface ScheduleSnapshot {
 
 /** Teil A: ein Urlaubsanspruch, den der Server annimmt (0–50 Tage). */
 function entitlementValid(days: number): boolean {
-  return Number.isFinite(days) && days >= 0 && days <= 50;
+  return Number.isFinite(days) && days >= 0 && days <= MAX_VACATION_DAYS;
 }
 
-const ENTITLEMENT_INVALID = 'Bitte einen Urlaubsanspruch von 0 bis 50 Tagen eintragen.';
+const ENTITLEMENT_INVALID = `Bitte einen Urlaubsanspruch von 0 bis ${MAX_VACATION_DAYS} Tagen eintragen.`;
 
 interface FormState {
   effective_from: string;
@@ -359,7 +360,7 @@ export default function WorkingHoursModal({
   // Der Snapshot aus den Props — Rückfall, solange (oder falls) es keine Historie gibt.
   // Teil A: über die Einzelwerte memoisiert — Users.tsx baut das Objekt bei
   // jedem Rendern neu.
-  const cVacation = currentContract?.vacation_days ?? 30;
+  const cVacation = currentContract?.vacation_days ?? DEFAULT_VACATION_DAYS;
   const cTrack = currentContract?.track_hours ?? trackHours;
   const cMilog = currentContract?.milog_working_time_account ?? false;
   const cAgreed = currentContract ? currentContract.agreed_monthly_hours : null;

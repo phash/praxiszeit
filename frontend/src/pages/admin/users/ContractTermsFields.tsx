@@ -1,5 +1,6 @@
 import { useSystemStore } from '../../../stores/systemStore';
 import { formatDayNumber } from '../../../utils/formatters';
+import { MAX_VACATION_DAYS } from './workingHoursTypes';
 import type { ContractTerms } from './workingHoursTypes';
 
 interface ContractTermsFieldsProps {
@@ -54,7 +55,7 @@ export default function ContractTermsFields({
           })}
           required
           min="0"
-          max="50"
+          max={MAX_VACATION_DAYS}
           step="0.1"
           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
         />

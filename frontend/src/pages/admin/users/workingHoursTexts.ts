@@ -3,6 +3,7 @@
 // Lösch-Dialog wortgleich bleiben. Die Grundtyp-SCHLÜSSEL sind eingefroren
 // (Backend `reclamp_audit.REASON_TYPES`), die Oberfläche zeigt nur die Beschriftungen.
 import { formatDayCount, formatDayNumber, formatHoursHM } from '../../../utils/formatters';
+import { MAX_VACATION_DAYS } from './workingHoursTypes';
 import type { ContractTerms, WorkingHoursChangePreview } from './workingHoursTypes';
 
 export const LEGAL_HINT =
@@ -264,7 +265,9 @@ export function retroLabel(requestedDate: string): string {
  */
 export function suggestEntitlement(oldDays: number, oldWd: number, newWd: number): number | null {
   if (oldWd <= 0 || newWd <= 0 || newWd === oldWd) return null;
-  return Math.round(oldDays * newWd / oldWd * 10) / 10;
+  // F129: nie über die Schema-Grenze — sonst übernähme das Feld automatisch einen
+  // Wert, den der Dialog selbst als ungültig sperrt (24 Tage bei 2 → 5 = 60).
+  return Math.min(MAX_VACATION_DAYS, Math.round(oldDays * newWd / oldWd * 10) / 10);
 }
 
 /** Teil A: die fünf Vertragsfelder aus einem Snapshot (`schedule_today`, User-Zeile)

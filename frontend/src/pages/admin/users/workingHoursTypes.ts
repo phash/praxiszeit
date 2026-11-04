@@ -30,6 +30,12 @@ export interface WorkingHoursChange {
   use_fixed_monthly_target?: boolean | null;
 }
 
+/** Obergrenze des Urlaubsanspruchs (Tage/Jahr) — Zwilling der Schema-Grenze
+ * `le=50` (`schemas/user.py`, `schemas/working_hours_change.py`). */
+export const MAX_VACATION_DAYS = 50;
+/** Rückfall-Anspruch, wenn kein Vertrag mitkommt (Schema-Default 30). */
+export const DEFAULT_VACATION_DAYS = 30;
+
 /** Teil A: Urlaubsanspruch, Stundenzählung und Minijob-Felder eines Vertrags-Snapshots. */
 export interface ContractTerms {
   vacation_days: number;
