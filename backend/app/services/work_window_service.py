@@ -197,10 +197,14 @@ def clamp_applies(db: Session, user, d: date, *, credit_override: bool, **preloa
     """Kappt ``clamp`` an diesem Tag überhaupt? (XLS-Gate, E38 — statt
     ``has_blocks`` allein, sonst löschte ``track_hours=False`` + Blöcke ein
     mitgeliefertes ``raw_*``.)"""
+    if user is None or credit_override:
+        return False
+    # F084: Verlauf EINMAL laden — Stundenzählung und Blöcke lösen denselben
+    # Snapshot auf (ohne Preload sonst zwei Abfragen je Auflösung).
+    if preload.get("wh_changes") is None:
+        preload = {**preload, "wh_changes": calculation_service.user_wh_changes(db, user)}
     return (
-        user is not None
-        and not credit_override
-        and calculation_service.tracks_hours_on(db, user, d, wh_changes=preload.get("wh_changes"))
+        calculation_service.tracks_hours_on(db, user, d, wh_changes=preload["wh_changes"])
         and credit_blocks(db, user, d, **preload) is not None
     )
 
@@ -219,8 +223,13 @@ def credit_gaps(blocks, grace: int) -> list:
 def _clamp_core(db, user, d, start, end, grace, *, credit_override, wh_changes, soll_free_dates):
     # Teil A (Task 10): Stundenzählung laut Snapshot DES TAGES, nie die User-Zeile
     # — eine rückwirkende Umstellung kappt bzw. entkappt danach Tag für Tag.
-    if (credit_override or user is None
-            or not calculation_service.tracks_hours_on(db, user, d, wh_changes=wh_changes)):
+    if credit_override or user is None:
+        return ClampResult(start, end, None, None, 0, None), []
+    if wh_changes is None:
+        # F084: Verlauf EINMAL laden — Stundenzählung und ``credit_blocks`` lösen
+        # denselben Snapshot auf.
+        wh_changes = calculation_service.user_wh_changes(db, user)
+    if not calculation_service.tracks_hours_on(db, user, d, wh_changes=wh_changes):
         return ClampResult(start, end, None, None, 0, None), []
     blocks = credit_blocks(db, user, d, wh_changes=wh_changes, soll_free_dates=soll_free_dates)
     if blocks is None:
@@ -855,15 +864,6 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
     ]
     if not entries:
         return ReclampResult([], [], [])
-    # Teil A (Task 10): Schritt 1 („ohne Stundenzählung → überspringen") gilt je
-    # TAG: übersprungen wird ein Tag, der vorher UND nachher ohne
-    # Stundenzählung ist (``prev_tracked_by_date``, ohne Angabe = unverändert).
-    # Wurde sie an dem Tag abgeschaltet, entkappt ``clamp`` (neuer Snapshot →
-    # ungekappt: Rohstempel → wirksame Zeit, ``uncredited`` 0; bei
-    # ``auto_closed`` bleibt das wirksame Ende nach P18 die Eingabe, nie 23:59);
-    # eingeschaltet kappt er. ``clamp_grace_minutes`` bleibt beim Entkappen
-    # stehen (``grace_minutes=None``, E79): an einem Tag ohne Stundenzählung
-    # wirkt der gespeicherte Puffer nicht.
 
     wh_changes = calculation_service.user_wh_changes(db, user)  # F-026
     soll_free = _soll_free_dates(db, user.tenant_id, start, end)
@@ -885,6 +885,15 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
             skipped.append(ReclampSkip(e.id, e.date, "credit_override"))
             continue
         new_sched = calculation_service.get_schedule_for_date(db, user, e.date, wh_changes)
+        # Teil A (Task 10): Schritt 1 („ohne Stundenzählung → überspringen") gilt
+        # je TAG: übersprungen wird ein Tag, der vorher UND nachher ohne
+        # Stundenzählung ist (``prev_tracked_by_date``, ohne Angabe = unverändert).
+        # Wurde sie an dem Tag abgeschaltet, entkappt ``clamp`` (neuer Snapshot →
+        # ungekappt: Rohstempel → wirksame Zeit, ``uncredited`` 0; bei
+        # ``auto_closed`` bleibt das wirksame Ende nach P18 die Eingabe, nie
+        # 23:59); eingeschaltet kappt er. ``clamp_grace_minutes`` bleibt beim
+        # Entkappen stehen (``grace_minutes=None``, E79): an einem Tag ohne
+        # Stundenzählung wirkt der gespeicherte Puffer nicht.
         if not new_sched.track_hours and not calculation_service.tracked_before(
                 prev_tracked_by_date, e.date, False):                     # Schritt 1 (je Tag)
             skipped.append(ReclampSkip(e.id, e.date, "track_hours_off"))
