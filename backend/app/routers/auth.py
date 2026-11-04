@@ -823,6 +823,13 @@ def export_my_data(
                 "hours_friday": float(h.hours_friday) if h.hours_friday is not None else None,
                 "work_days_per_week": h.work_days_per_week,
                 "blocks": h.blocks,  # Spec 15.3: wie gespeichert, NULL = keine Blöcke
+                # Teil A: die fünf Vertragsfelder je Datum; Numeric → float().
+                "vacation_days": float(h.vacation_days) if h.vacation_days is not None else None,
+                "track_hours": h.track_hours,
+                "milog_working_time_account": h.milog_working_time_account,
+                "agreed_monthly_hours": (
+                    float(h.agreed_monthly_hours) if h.agreed_monthly_hours is not None else None),
+                "use_fixed_monthly_target": h.use_fixed_monthly_target,
                 "note": h.note,
                 "created_at": h.created_at.isoformat() if h.created_at else None,
             }

@@ -588,6 +588,13 @@ def _user_dict(db: Session, u: User) -> dict[str, Any]:
                 # Spec 2026-10-08 (15.3): Blöcke ab effective_from wie gespeichert
                 # (NULL = keine Blöcke, nie Rückfall auf users.work_blocks).
                 "blocks": h.blocks,
+                # Teil A: die fünf Vertragsfelder je Datum; Numeric → float().
+                "vacation_days": float(h.vacation_days) if h.vacation_days is not None else None,
+                "track_hours": h.track_hours,
+                "milog_working_time_account": h.milog_working_time_account,
+                "agreed_monthly_hours": (
+                    float(h.agreed_monthly_hours) if h.agreed_monthly_hours is not None else None),
+                "use_fixed_monthly_target": h.use_fixed_monthly_target,
                 "note": h.note,
                 "created_at": h.created_at.isoformat() if h.created_at else None,
             }

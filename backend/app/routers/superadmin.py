@@ -111,6 +111,14 @@ def _user_dict(u: User, history: List["WorkingHoursChange"] = ()) -> dict:
                 # Spec 2026-10-08: Blöcke ab effective_from (NULL = keine Blöcke) —
                 # die autoritative Quelle der Kappung je Datum.
                 "blocks": h.blocks,
+                # Teil A: die fünf Vertragsfelder je Datum (Anspruch,
+                # Stundenzählung, Minijob) — sonst zeigte der Export nur den
+                # heutigen Stand der User-Zeile.
+                "vacation_days": _num(h.vacation_days),
+                "track_hours": h.track_hours,
+                "milog_working_time_account": h.milog_working_time_account,
+                "agreed_monthly_hours": _num(h.agreed_monthly_hours),
+                "use_fixed_monthly_target": h.use_fixed_monthly_target,
                 "note": h.note,
                 "created_at": _iso(h.created_at),
             }

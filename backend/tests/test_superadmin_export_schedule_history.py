@@ -212,3 +212,17 @@ def test_user_without_history_gets_empty_list(db, tenants, monkeypatch):
 
     row = next(u for u in payload["users"] if u["username"] == "plain")
     assert row["working_hours_changes"] == []
+
+
+def test_history_carries_the_five_contract_fields(db, seeded, monkeypatch):
+    """F012: der §16-Notfall-Export nennt je Verlaufszeile Anspruch,
+    Stundenzählung und Minijob-Felder (Numeric als float)."""
+    payload = _export(db, DEFAULT_TENANT_ID, monkeypatch)
+    row = next(u for u in payload["users"] if u["username"] == "empA")
+    for h in row["working_hours_changes"]:
+        for key in ("vacation_days", "track_hours", "milog_working_time_account",
+                    "agreed_monthly_hours", "use_fixed_monthly_target"):
+            assert key in h, key
+        assert isinstance(h["vacation_days"], float)
+        assert isinstance(h["track_hours"], bool)
+    json.dumps(payload)

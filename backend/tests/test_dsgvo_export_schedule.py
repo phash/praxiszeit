@@ -15,6 +15,7 @@ nicht nur die Anwesenheit der Felder.
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from datetime import date
 
 from fastapi import FastAPI
@@ -195,3 +196,23 @@ def test_auth_me_export_excludes_other_users_history(db, test_user, test_admin):
     assert resp.status_code == 200, resp.text
     notes = [h["note"] for h in resp.json()["stundenhistorie"]]
     assert notes == ["eigene Historie"]
+
+
+CONTRACT_KEYS = ("vacation_days", "track_hours", "milog_working_time_account",
+                 "agreed_monthly_hours", "use_fixed_monthly_target")
+
+
+def test_exports_carry_the_five_contract_fields(db, test_user):
+    """F012: Art. 15 (``lifecycle_service``) und Art. 20 (``/me/export``) tragen
+    je Verlaufszeile Anspruch, Stundenzählung und Minijob-Felder — Numeric als
+    float (rohes json.dumps, Fehlerklasse #383/#408)."""
+    _add_change(db, test_user, vacation_days=Decimal("16.8"), track_hours=False,
+                milog_working_time_account=True, agreed_monthly_hours=Decimal("43.3"),
+                use_fixed_monthly_target=False)
+    row = lifecycle_service._user_dict(db, test_user)["working_hours_changes"][0]
+    json.dumps(row)
+    assert {k: row[k] for k in CONTRACT_KEYS} == {
+        "vacation_days": 16.8, "track_hours": False, "milog_working_time_account": True,
+        "agreed_monthly_hours": 43.3, "use_fixed_monthly_target": False}
+    me = _export_client(db, test_user).get("/api/auth/me/export").json()["stundenhistorie"][0]
+    assert {k: me[k] for k in CONTRACT_KEYS} == {k: row[k] for k in CONTRACT_KEYS}
