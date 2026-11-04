@@ -230,3 +230,17 @@ def test_team_schedule_uses_snapshot_at_date(_db_session, employee_user, admin_u
         assert flag(date(2026, 12, 5)) is False
     finally:
         endpoints_app.dependency_overrides.clear()
+
+
+def test_me_contract_fields_from_todays_snapshot(_db_session, employee_user, monkeypatch):
+    """F006: /auth/me liefert Stundenzählung, Anspruch und Minijob-Felder aus dem
+    HEUTE gültigen Snapshot, nicht aus der (noch nicht gespiegelten) User-Zeile."""
+    db, u = _db_session, employee_user
+    _off_from_december(db, u)              # User-Zeile bleibt track_hours=True
+    freeze(monkeypatch, date(2026, 12, 2))
+    try:
+        me = _client(db, u).get("/api/auth/me").json()
+        assert me["track_hours"] is False
+        assert me["schedule_today"]["track_hours"] is False
+    finally:
+        endpoints_app.dependency_overrides.clear()

@@ -222,6 +222,18 @@ def _delete_csrf_cookie(response: Response) -> None:
     response.delete_cookie(key=CSRF_COOKIE_NAME, path="/")
 
 
+def _user_response(db: Session, user: User) -> UserResponse:
+    """F006: eigene Benutzerdaten mit dem HEUTE gültigen Vertrags-Snapshot
+    (``schedule_today``): ``UserResponse`` übernimmt daraus Stundenzählung,
+    Urlaubsanspruch und die Minijob-Felder — die User-Zeile spiegelt eine
+    zukunftsdatierte Verlaufszeile erst beim nächsten Schreiben, das Frontend
+    blendete sonst z. B. die Stempeluhr am ersten Tag mit Stundenzählung aus."""
+    from app.services import calculation_service
+    from app.services.timezone_service import today_local
+    calculation_service.attach_work_blocks_today(db, [user], today_local())
+    return UserResponse.model_validate(user)
+
+
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit(settings.LOGIN_RATE_LIMIT)
 def login(request: Request, response: Response, login_data: LoginRequest, db: Session = Depends(get_db)):
@@ -569,12 +581,12 @@ def logout(
 
 
 @router.get("/me", response_model=UserResponse)
-def get_me(current_user: User = Depends(get_current_user)):
+def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """
     Return the full profile of the authenticated user, including profile_picture.
     Use this to lazily load data not included in the login response.
     """
-    return UserResponse.model_validate(current_user)
+    return _user_response(db, current_user)
 
 
 @router.get("/me/work-schedule", response_model=MyWorkScheduleResponse)
@@ -644,7 +656,7 @@ def update_calendar_color(
     current_user.calendar_color = request.calendar_color
     db.commit()
     db.refresh(current_user)
-    return UserResponse.model_validate(current_user)
+    return _user_response(db, current_user)
 
 
 @router.post("/onboarding/complete", response_model=UserResponse)
@@ -663,7 +675,7 @@ def complete_onboarding(
         current_user.onboarding_completed_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(current_user)
-    return UserResponse.model_validate(current_user)
+    return _user_response(db, current_user)
 
 
 @router.put("/profile", response_model=UserResponse)
@@ -710,7 +722,7 @@ def update_profile(
 
     db.commit()
     db.refresh(current_user)
-    return UserResponse.model_validate(current_user)
+    return _user_response(db, current_user)
 
 
 @router.get("/me/export")
@@ -859,7 +871,7 @@ async def update_profile_picture(
     current_user.profile_picture = data_uri
     db.commit()
     db.refresh(current_user)
-    return UserResponse.model_validate(current_user)
+    return _user_response(db, current_user)
 
 
 @router.delete("/profile-picture", response_model=UserResponse)
@@ -871,7 +883,7 @@ def delete_profile_picture(
     current_user.profile_picture = None
     db.commit()
     db.refresh(current_user)
-    return UserResponse.model_validate(current_user)
+    return _user_response(db, current_user)
 
 
 # ── F-019: TOTP 2FA endpoints ────────────────────────────────────────────────
@@ -975,7 +987,7 @@ def totp_verify(
                                  "Zwei-Faktor im Profil eingeschaltet")
     db.commit()
     db.refresh(current_user)
-    return UserResponse.model_validate(current_user)
+    return _user_response(db, current_user)
 
 
 @router.delete("/totp/disable", response_model=UserResponse)
@@ -1042,4 +1054,4 @@ def totp_disable(
     current_user.token_version = (current_user.token_version or 0) + 1
     db.commit()
     db.refresh(current_user)
-    return UserResponse.model_validate(current_user)
+    return _user_response(db, current_user)

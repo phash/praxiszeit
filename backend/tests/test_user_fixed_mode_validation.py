@@ -337,3 +337,16 @@ def test_userlist_carries_use_fixed_monthly_target(db, admin, default_tenant):
     assert "use_fixed_monthly_target" in row
     assert row["use_fixed_monthly_target"] is True
     app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("payload", [
+    {"vacation_days": 99}, {"agreed_monthly_hours": 0}, {"track_hours": "x"},
+])
+def test_put_of_contract_field_out_of_range_is_400_not_422(db, admin, default_tenant, payload):
+    """F063: jeder Wert eines gesperrten Vertragsfelds erreicht die Sperre (400),
+    kein Feld-Constraint macht daraus eine 422."""
+    client = _client_as(db, admin, admin)
+    uid = _create_plain_user(client, "upd_lock")
+    resp = client.put(f"{USERS}/{uid}", json=payload)
+    assert resp.status_code == 400, resp.text
+    app.dependency_overrides.clear()

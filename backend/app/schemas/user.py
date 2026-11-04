@@ -175,9 +175,13 @@ class UserUpdate(BaseModel):
     first_name: Optional[str] = Field(None, min_length=1, max_length=100)
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
     weekly_hours: Optional[float] = Field(None, ge=0, le=60)
-    vacation_days: Optional[float] = Field(None, ge=0, le=50)  # #408: Dezimal
+    # Teil A: die fünf Vertragsfelder (vacation_days, track_hours und die drei
+    # Minijob-Felder) sind im PUT gesperrt (400 HISTORISED_FIELDS_PUT_DETAIL in
+    # ``update_user``) — nur deklariert, damit die Sperre greift; locker typisiert
+    # wie ``work_blocks``, sonst würde ein Feld-Constraint die 400 zur 422 machen.
+    vacation_days: Optional[Any] = None
     work_days_per_week: Optional[int] = Field(None, ge=1, le=7)
-    track_hours: Optional[bool] = None
+    track_hours: Optional[Any] = None
     is_active: Optional[bool] = None
     is_hidden: Optional[bool] = None
     calendar_color: Optional[str] = Field(None, pattern=r'^#[0-9A-Fa-f]{6}$')
@@ -190,9 +194,9 @@ class UserUpdate(BaseModel):
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
     exempt_from_arbzg: Optional[bool] = None  # §18 ArbZG
     is_night_worker: Optional[bool] = None  # §6 Abs. 2 ArbZG
-    milog_working_time_account: Optional[bool] = None  # #377 §2 Abs.2 MiLoG
-    agreed_monthly_hours: Optional[float] = Field(None, gt=0, le=400)  # #377 Baustein 2a
-    use_fixed_monthly_target: Optional[bool] = None  # #377 Baustein 2b
+    milog_working_time_account: Optional[Any] = None  # gesperrt, siehe vacation_days
+    agreed_monthly_hours: Optional[Any] = None  # gesperrt, siehe vacation_days
+    use_fixed_monthly_target: Optional[Any] = None  # gesperrt, siehe vacation_days
     receives_company_closures: Optional[bool] = None  # #189: Betriebsferien-Teilnahme
     first_work_day: Optional[date] = None   # Erster Arbeitstag
     last_work_day: Optional[date] = None    # Letzter Arbeitstag
@@ -217,6 +221,29 @@ class UserUpdate(BaseModel):
     # Vertragsfelder sind im PUT gesperrt (400 in ``update_user``); die Regel
     # prüft ``admin_users._contract_rule_error`` auf dem Snapshot der
     # Verlaufszeile. Ein Validator hier machte aus der Sperre eine 422.
+
+
+# F006: Vertragsfelder, die die Leseschemas aus dem HEUTE gültigen Snapshot
+# (``schedule_today``) statt aus dem Spiegel der User-Zeile nehmen.
+TODAY_CONTRACT_FIELDS = (
+    "vacation_days", "track_hours", "milog_working_time_account",
+    "agreed_monthly_hours", "use_fixed_monthly_target",
+)
+
+
+def _contract_fields_from_today(model):
+    """Kopiert die fünf Vertragsfelder aus ``schedule_today`` über die Werte der
+    User-Zeile — die spiegelt eine zukunftsdatierte Verlaufszeile erst beim
+    nächsten Schreiben (kein Scheduler). ``agreed_monthly_hours: None`` heißt
+    „abgeleitet" und wird mit übernommen; ohne ``schedule_today`` bleibt alles."""
+    st = model.schedule_today
+    if st is None:
+        return model
+    for field in TODAY_CONTRACT_FIELDS:
+        value = getattr(st, field)
+        if value is not None or field == "agreed_monthly_hours":
+            setattr(model, field, value)
+    return model
 
 
 class ScheduleTodayResponse(BaseModel):
@@ -260,6 +287,10 @@ class UserResponse(UserBase):
     work_blocks_today: Optional[Any] = None
     # Fund 25: derselbe Snapshot für Wochenstunden/Modus/Tageswerte/Arbeitstage.
     schedule_today: Optional[ScheduleTodayResponse] = None
+
+    @model_validator(mode='after')
+    def contract_fields_from_today(self):
+        return _contract_fields_from_today(self)  # F006
 
     @field_serializer('id')
     def serialize_uuid(self, value: UUID) -> str:
@@ -308,6 +339,10 @@ class UserListResponse(BaseModel):
     created_at: datetime
     suggested_vacation_days: int
     vacation_carryover_deadline: Optional[date] = None
+
+    @model_validator(mode='after')
+    def contract_fields_from_today(self):
+        return _contract_fields_from_today(self)  # F006
 
     @field_serializer('id')
     def serialize_uuid(self, value: UUID) -> str:
