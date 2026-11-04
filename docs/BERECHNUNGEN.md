@@ -1525,7 +1525,9 @@ mit `special_days_service.special_day_target(...)` (0,5 × Tagessoll bzw. `min(T
 bis 1.21.1 setzte sie sie auf das ungewichtete Tagessoll (4 h → 8 h), was Urlaubstage und Saldo
 nicht berührte, aber die Stundenangaben der Exporte und des klassischen Jahresberichts verfälschte
 und beim Neuspeichern der Schließung wieder umkippte. Direktbuchungen bleiben beim ungewichteten
-Tagessoll; `free`-Tage bucht die Schließung nie.
+Tagessoll. Ist der Tag inzwischen `free`, ergibt das 0. Bleiben am Schließtag Zeiteinträge stehen,
+klemmt die F1-Regel die Zeile auf den nicht gearbeiteten Rest des **verkürzten** Tagessolls
+(Gewicht 1, der Faktor steckt schon im Wert): halber 24.12. mit 1 h Arbeit → 3 h.
 
 **Misch-Tage (F1-Klemmung, seit 1.20.0).** Bleiben an einem Abwesenheitstag geschlossene
 Zeiteinträge stehen, setzt die Rückrechnung `hours` nicht auf das volle Tagessoll, sondern auf den

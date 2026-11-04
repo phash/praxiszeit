@@ -989,14 +989,15 @@ def retarget_absence_hours(
         # ``special_day_target(...)`` (``half_day=False``). Die Rückrechnung
         # folgt für diese Zeilen derselben Regel — sonst zog sie den 24.12.
         # einer Schließung von 4 h auf das volle Tagessoll, und Rückrechnung und
-        # Neuspeichern der Schließung widersprachen sich. ``free``-Tage bucht
-        # die Schließung nie; dort bleibt die Konvention der Direktbuchungen.
-        # ``target`` selbst bleibt ungewichtet (F1-Klemmung, 9.5 (c)).
+        # Neuspeichern der Schließung widersprachen sich. Ein inzwischen
+        # ``free`` gewordener Tag ergibt 0 (die Schließung bucht dort nichts).
+        # ``target`` selbst bleibt ungewichtet (9.5 (c)); die F1-Klemmung
+        # rechnet für diese Zeilen mit dem gewichteten Wert, siehe unten.
+        closure_weighted = a.closure_id is not None and target > 0
         stored_target = target
-        if a.closure_id is not None and target > 0:
-            cfg = special_cfgs.get(d.year) or {}
-            if special_days_service.special_day_mode(d, cfg) != special_days_service.MODE_FREE:
-                stored_target = special_days_service.special_day_target(d, target, cfg)
+        if closure_weighted:
+            stored_target = special_days_service.special_day_target(
+                d, target, special_cfgs.get(d.year) or {})
         new_hours_f = float(Decimal(str((stored_target / 2) if a.half_day else stored_target)).quantize(Decimal('0.01')))
         old_hours_f = float(a.hours)
         f1_clamped = False
@@ -1009,8 +1010,15 @@ def retarget_absence_hours(
             # teilt sich dieser Pfad mit ``absences.create_absence``
             # (:func:`f1_clamp_hours`).
             w = float(credit_day_weight(d, holidays, special_cfgs.get(d.year), daily_target=target))
+            full_target = float(target)
+            if closure_weighted:
+                # Betriebsferien-Zeile: ``new_hours_f`` trägt den Faktor schon
+                # (``special_day_target``) — dieselbe Regel in Gutschrifts-
+                # Einheiten heißt hier Gewicht 1 gegen das gewichtete Tagessoll.
+                # Sonst ergäbe min(t·w, (t·w − kept)/w) am halben 24.12. bei 1 h
+                # Arbeit 4 statt 3 h.
+                w, full_target = 1.0, float(stored_target)
             if w > 0:
-                full_target = float(target)
                 clamped = f1_clamp_hours(new_hours_f, full_target, kept_net, w)
                 f1_clamped = clamped < new_hours_f
                 new_hours_f = clamped

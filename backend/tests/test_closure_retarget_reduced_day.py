@@ -182,3 +182,42 @@ def test_reduced_day_row_closure(db, default_tenant, test_user, test_admin):
     rows = _rows(db, test_user)
     assert rows[ROSE].hours == 4.0
     assert rows[date(2027, 2, 9)].hours == 6.0
+
+
+@pytest.mark.parametrize("mode, kept_until, expected", [
+    ("max_hours", 11, 1.0),   # verkürzt auf 4 h, 3 h gearbeitet → Rest 1 h
+    ("half_day", 9, 3.0),     # 0,5 × 8 = 4 h, 1 h gearbeitet → Rest 3 h
+], indirect=["mode"])
+def test_f1_clamp_on_closure_row_uses_the_weighted_target(
+        db, mode, kept_until, expected, test_user, test_admin):
+    """Review Fix-Runde 1: bleibt am Schließtag ein Zeiteintrag stehen, klemmt
+    die Rückrechnung die Betriebsferien-Zeile auf den nicht gearbeiteten Rest des
+    VERKÜRZTEN Tagessolls (Gutschrifts-Einheiten, Gewicht 1 — der Faktor steckt
+    schon im Wert)."""
+    from datetime import time
+    from app.models import TimeEntry
+    client = _client(db, test_admin)
+    _closure(client)
+    db.add(TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=D24,
+                     start_time=time(8, 0), end_time=time(kept_until, 0), break_minutes=0))
+    db.commit()
+    _wh_change(client, test_user, 40.0)
+    assert _rows(db, test_user)[D24].hours == expected
+
+
+def test_stale_closure_row_on_a_day_that_became_free_goes_to_zero(db, default_tenant, test_user, test_admin):
+    """Review Fix-Runde 1 (Minor 3): ist der 24.12. inzwischen ``free`` (ohne
+    Neubuchung der Schließung), zieht die Rückrechnung die Zeile wie die
+    Buchungsregel auf ``special_day_target`` = 0."""
+    _set(db, "special_day_dec24_mode", "max_hours")
+    _set(db, "special_day_dec24_max_hours", "4")
+    client = _client(db, test_admin)
+    _closure(client)
+    assert _rows(db, test_user)[D24].hours == 4.0
+    row = db.query(SystemSetting).filter(SystemSetting.key == "special_day_dec24_mode").one()
+    row.value = "free"
+    db.commit()
+    _wh_change(client, test_user, 40.0)
+    rows = _rows(db, test_user)
+    assert rows[D24].hours == 0.0
+    assert rows[D23].hours == 8.0
