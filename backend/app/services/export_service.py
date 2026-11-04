@@ -644,6 +644,9 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         WorkingHoursChange.user_id == user.id,
         WorkingHoursChange.tenant_id == user.tenant_id,
     ).order_by(WorkingHoursChange.effective_from).all()
+    # F901: Tag ohne Stundenzählung einer Person, die sonst Stunden zählt →
+    # „Differenz" 0 (dieselbe Regel wie get_monthly_actual); Netto bleibt sichtbar.
+    ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)
 
     # Row 1–2: ArbZG-relevante Mitarbeiter-Metadaten (§16 ArbZG Aufzeichnungspflicht)
     sheet.cell(row=1, column=1).value = "Mitarbeiter:"
@@ -898,8 +901,8 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             daily_target=raw_daily_target)
             if in_window else Decimal('0.00'))
 
-        # Difference
-        diff = net + credit - target
+        # Difference (F901: 0 an einem Tag, dessen Ist nicht zählt)
+        diff = net + credit - target if ist_counted(current_date) else Decimal('0.00')
         sheet.cell(row=row, column=8).value = float(diff)
         sheet.cell(row=row, column=8).number_format = '0.00'
 
@@ -1279,6 +1282,9 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         WorkingHoursChange.user_id == user.id,
         WorkingHoursChange.tenant_id == user.tenant_id,
     ).order_by(WorkingHoursChange.effective_from).all()
+    # F901: Tag ohne Stundenzählung einer Person, die sonst Stunden zählt →
+    # „Differenz" 0 (dieselbe Regel wie get_monthly_actual); Netto bleibt sichtbar.
+    ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)
 
     # Title
     sheet.cell(row=1, column=1).value = neutralize_spreadsheet_formula(f"{user.first_name} {user.last_name} - Jahresreport {year}")
@@ -1527,7 +1533,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             daily_target=raw_daily_target)
             if in_window else Decimal('0.00'))
 
-        diff = net + credit - target
+        diff = net + credit - target if ist_counted(current_date) else Decimal('0.00')  # F901
         sheet.cell(row=row, column=8).value = float(diff)
         sheet.cell(row=row, column=8).number_format = '0.00'
 
@@ -2106,6 +2112,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             WorkingHoursChange.user_id == user.id,
             WorkingHoursChange.tenant_id == user.tenant_id,
         ).order_by(WorkingHoursChange.effective_from).all()
+        ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)  # F901
 
         # ── Employee meta ──
         arbzg_flag = " | \u00a718-befreit" if user.exempt_from_arbzg else ""
@@ -2294,7 +2301,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 day_absences, cur, set(holidays_by_date), special_day_config,
             daily_target=raw_daily_target)
                 if in_window else Decimal('0.00'))
-            diff = net + credit - target
+            diff = net + credit - target if ist_counted(cur) else Decimal('0.00')  # F901
             diff_str = f"{float(diff):+.2f}"
             if diff > 0:
                 diff_cell = colored(diff_str, '#006400', bold=True)

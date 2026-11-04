@@ -116,6 +116,10 @@ def get_journal(
     wh_changes = calculation_service.user_wh_changes(db, user)
     # Teil A (Task 11): Modus aus dem Monatsvertrag dieses Monats.
     fixed_mode = calculation_service.month_contract(db, user, year, month, wh_changes).fixed_mode
+    # F901: Ist und Saldo der Tageszeile nur an Tagen, deren Ist zählt — dieselbe
+    # Regel wie ``get_range_actual`` (Monatssumme). Die Zeiteinträge selbst
+    # bleiben sichtbar (§16).
+    ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)
 
     def _raw_daily_target(d: date) -> Decimal:
         """Ungewichtetes Tagessoll laut Snapshot (Gewicht der Gutschrift)."""
@@ -257,6 +261,12 @@ def get_journal(
         if not calculation_service._within_employment_window(user, d):
             actual_hours = Decimal("0")
             target_hours = Decimal("0")
+        # F901: Tag ohne Stundenzählung einer Person, die sonst Stunden zählt —
+        # kein Ist, kein Soll, Saldo 0 (wie die Monatssumme).
+        counted = ist_counted(d)
+        if not counted:
+            actual_hours = Decimal("0")
+            target_hours = Decimal("0")
 
         # #463: Im festen Monats-Soll (#377 Baustein 2b) erzaehlten die
         # Tageszeilen bisher eine andere Geschichte als die Monatssumme
@@ -299,7 +309,7 @@ def get_journal(
             fixed_credit = calculation_service.fixed_day_covered_hours(
                 planned, paid_day_absences, time_hours, is_holiday_day,
             )
-            actual_hours = time_hours + credited_sum + fixed_credit
+            actual_hours = (time_hours + credited_sum if counted else Decimal("0")) + fixed_credit
 
         balance = actual_hours - target_hours
 

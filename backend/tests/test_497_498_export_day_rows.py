@@ -489,3 +489,69 @@ class TestIssue498Pdf:
         assert (w[header.index("Von")], w[header.index("Bis")]) == ("08:00", "16:30")
         assert w[header.index("Unterbr. (Min)")] == "0"
         assert rows[EMPTY_DAY][header.index("Unterbr. (Min)")] == ""
+
+
+# ==========================================================================
+# F901 — Tage ohne Stundenzählung einer Person, die sonst Stunden zählt
+# ==========================================================================
+
+UNTRACKED_FROM = date(2026, 9, 15)   # Di — ab hier ohne Stundenzählung
+
+
+@pytest.fixture
+def mixed_month(db, month):
+    """Wie ``month``, ab 15.09. ohne Stundenzählung; dort ein Zeiteintrag (Mi
+    16.09.) und die Krank-/Fortbildungstage liegen schon in der ungezählten Zeit."""
+    from tests.wh_change_helpers import add_row
+    add_row(db, month, date(2026, 1, 1), weekly_hours=40, track_hours=True)
+    add_row(db, month, UNTRACKED_FROM, weekly_hours=40, track_hours=False)
+    _entry(db, month, date(2026, 9, 16), time(8, 0), time(12, 0))
+    return month
+
+
+class TestF901UntrackedDaysOfMixedPerson:
+    def test_xlsx_monthly_diff_zero_and_sum_equals_saldo(self, db, mixed_month):
+        sheet = _xlsx_employee_sheet(export_service.generate_monthly_report(
+            db, YEAR, MONTH, tenant_id=DEFAULT_TENANT_ID), mixed_month)
+        rows = _xlsx_day_rows(sheet)
+        row = rows[date(2026, 9, 16)]
+        assert row[5] == pytest.approx(4.0), "Netto bleibt die Stempelzeit (§16)"
+        assert row[7] == pytest.approx(0.0)
+        total = sum(r[7] for r in rows.values())
+        assert total == pytest.approx(_month_saldo(db, mixed_month), abs=0.005)
+
+    def test_xlsx_yearly_sum_equals_saldo(self, db, mixed_month):
+        sheet = _xlsx_employee_sheet(export_service.generate_yearly_report(
+            db, YEAR, tenant_id=DEFAULT_TENANT_ID), mixed_month, yearly=True)
+        rows = _xlsx_day_rows(sheet)
+        assert rows[date(2026, 9, 16)][7] == pytest.approx(0.0)
+        assert sum(r[7] for r in rows.values()) == pytest.approx(_year_saldo(db, mixed_month), abs=0.01)
+
+    def test_ods_monthly_and_yearly_sum_equals_saldo(self, db, mixed_month):
+        name = f"{mixed_month.last_name} {mixed_month.first_name}"[:31]
+        rows = _ods_day_rows(_ods_table(ods_export_service.generate_monthly_report(
+            db, YEAR, MONTH, tenant_id=DEFAULT_TENANT_ID), name))
+        assert float(rows[date(2026, 9, 16)][7][1]) == pytest.approx(0.0)
+        assert sum(float(r[7][1]) for r in rows.values()) == pytest.approx(
+            _month_saldo(db, mixed_month), abs=0.005)
+        rows = _ods_day_rows(_ods_table(ods_export_service.generate_yearly_report(
+            db, YEAR, tenant_id=DEFAULT_TENANT_ID), name))
+        assert sum(float(r[7][1]) for r in rows.values()) == pytest.approx(
+            _year_saldo(db, mixed_month), abs=0.01)
+
+    def test_journal_day_balances_sum_to_month_saldo(self, db, mixed_month):
+        from app.services import journal_service
+        journal = journal_service.get_journal(db, mixed_month, YEAR, MONTH)
+        day = next(d for d in journal["days"] if d["date"] == "2026-09-16")
+        assert day["balance"] == 0.0 and day["time_entries"][0]["net_hours"] == 4.0
+        assert sum(d["balance"] for d in journal["days"]) == pytest.approx(
+            _month_saldo(db, mixed_month), abs=0.005)
+
+    def test_never_tracked_person_keeps_old_diff(self, db, test_user):
+        """Wer NIE Stunden zählt, behält die bisherige Tageszeile."""
+        test_user.track_hours = False
+        db.commit()
+        _entry(db, test_user, WORK_DAY, time(8, 0), time(12, 0))
+        sheet = _xlsx_employee_sheet(export_service.generate_monthly_report(
+            db, YEAR, MONTH, tenant_id=DEFAULT_TENANT_ID), test_user)
+        assert _xlsx_day_rows(sheet)[WORK_DAY][7] == pytest.approx(4.0)

@@ -352,6 +352,19 @@ def _tracked_day_predicate(
     return lambda d: tracks_hours_on(db, user, d, wh_changes)
 
 
+def ist_counted_predicate(db: Session, user: User, wh_changes: List[WorkingHoursChange]):
+    """F001/F901: ``d -> bool`` „zählt das Ist dieses Tages?" — DIE Regel für
+    ``get_range_actual`` und die Tageszeilen (Journal-Saldo, Spalte „Differenz"
+    der Datei-Exporte). An Tagen ohne Stundenzählung einer Person, die an
+    IRGENDEINEM Tag Stunden zählt, zählt kein Ist (sonst Saldo +Ist gegen Soll 0).
+    Wer NIE Stunden zählt, behält den alten, ungefilterten Pfad (bitgleich; dort
+    blenden die Berichte die Stundenspalten aus)."""
+    values = _track_hours_values(db, user, wh_changes)
+    if True in values:
+        return _tracked_day_predicate(db, user, wh_changes, values)
+    return lambda _d: True
+
+
 def get_weekly_hours_for_date(
     db: Session,
     user: User,
@@ -2207,14 +2220,7 @@ def get_range_actual(
         wh_changes = user_wh_changes(db, user)
     # F001: Ist zaehlt nur an Tagen MIT Stundenzaehlung (Snapshot des Tages) —
     # dieselbe Regel wie Konto/Verlauf/YTD, sonst Saldo +Ist gegen Soll 0.
-    # Wer NIE Stunden zaehlt, behaelt den alten, ungefilterten Pfad (bitgleich;
-    # dort blenden die Berichte die Stundenspalten aus).
-    values = _track_hours_values(db, user, wh_changes)
-    if True in values:
-        tracked_on = _tracked_day_predicate(db, user, wh_changes, values)
-    else:
-        def tracked_on(_d):
-            return True
+    tracked_on = ist_counted_predicate(db, user, wh_changes)
 
     # F-033: sargable date range. The Python-level Decimal sum is kept because
     # the SQL @expression for net_hours relies on Postgres EXTRACT(EPOCH ...)
