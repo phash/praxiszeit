@@ -83,4 +83,16 @@ describe('ContractTermsFields', () => {
     fireEvent.click(screen.getByLabelText(/Stundenzählung aktiv/));
     expect(spy.mock.calls.at(-1)![0].track_hours).toBe(false);
   });
+
+  it('F009: switching off MiLoG or Stundenzählung clears the (then hidden) fixed monthly target', () => {
+    const spy = vi.fn();
+    const fixed = { ...BASE, milog_working_time_account: true, agreed_monthly_hours: 43.3, use_fixed_monthly_target: true };
+    const { unmount } = render(<Harness initial={fixed} spy={spy} />);
+    fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/));
+    expect(spy).toHaveBeenLastCalledWith({ ...fixed, milog_working_time_account: false, use_fixed_monthly_target: false });
+    unmount();
+    render(<Harness initial={fixed} spy={spy} />);
+    fireEvent.click(screen.getByLabelText(/Stundenzählung aktiv/));
+    expect(spy).toHaveBeenLastCalledWith({ ...fixed, track_hours: false, use_fixed_monthly_target: false });
+  });
 });

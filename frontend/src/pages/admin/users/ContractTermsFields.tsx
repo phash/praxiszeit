@@ -87,7 +87,12 @@ export default function ContractTermsFields({
           type="checkbox"
           id={`${idPrefix}track_hours`}
           checked={value.track_hours}
-          onChange={(e) => set({ track_hours: e.target.checked })}
+          // F009: festes Monats-Soll setzt Stundenzählung und MiLoG-Konto voraus
+          // (Backend 400) — beim Abschalten mit zurücksetzen, sonst blockiert
+          // ein (ggf. verborgener) Haken die Änderung.
+          onChange={(e) => set(e.target.checked
+            ? { track_hours: true }
+            : { track_hours: false, use_fixed_monthly_target: false })}
           className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
         />
         <label htmlFor={`${idPrefix}track_hours`} className="text-sm font-medium text-gray-700 cursor-pointer">
@@ -102,7 +107,9 @@ export default function ContractTermsFields({
             type="checkbox"
             id={`${idPrefix}milog_working_time_account`}
             checked={value.milog_working_time_account}
-            onChange={(e) => set({ milog_working_time_account: e.target.checked })}
+            onChange={(e) => set(e.target.checked
+              ? { milog_working_time_account: true }
+              : { milog_working_time_account: false, use_fixed_monthly_target: false })}
             className="w-4 h-4 text-amber-600 border-gray-300 rounded-sm focus:ring-amber-500"
           />
           <label
