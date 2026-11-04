@@ -196,13 +196,15 @@ class TestModesAndFlags:
         resp = _post(client, test_user, {"effective_from": "2026-11-02", "blocks": K_BLOCKS, "weekly_hours": 7})
         assert (resp.status_code, resp.json()["detail"]) == (422, "Tagesstunden werden aus den Arbeitszeit-Blöcken abgeleitet.")
 
-    def test_track_hours_off_accepts_blocks_and_skips_entries(self, client, db):
+    def test_track_hours_off_accepts_blocks_and_leaves_entries_unclamped(self, client, db):
         lead = _employee(db, "leitend3", track_hours=False)
         entry(db, lead, MONDAYS[1], t(8), t(18))
         resp = _post(client, lead, {"effective_from": "2026-09-01", "blocks": K_BLOCKS})
         assert resp.status_code == 201, resp.text
         assert (resp.json()["blocks"], resp.json()["hours_monday"]) == (K_BLOCKS, 7.0)
-        assert (resp.json()["adjusted_time_entries"], resp.json()["skipped_time_entries"]) == (0, 1)
+        # Teil A (Task 10): ohne Stundenzählung kappt ``clamp`` nicht — der
+        # Eintrag ist geprüft, unverändert, nicht übersprungen.
+        assert (resp.json()["adjusted_time_entries"], resp.json()["skipped_time_entries"]) == (0, 0)
 
     @pytest.mark.parametrize("track_hours", [True, False])
     def test_switch_from_blocks_to_weekly_ends_the_blocks(self, client, db, track_hours):

@@ -725,8 +725,12 @@ def retarget_absence_hours(
 
     * ``OVERTIME`` — Freizeitausgleich traegt explizit beantragte Stunden, kein
       abgeleitetes Tagessoll (CLAUDE.md: Soll bleibt, Ist = 0).
-    * ``track_hours = False`` — dort zaehlt ausschliesslich die Tageszaehlung;
-      die Stunden zu bewegen erzeugt nur Rauschen in den Belegen.
+    * Teil A (Task 10, Variante A): ``track_hours`` gilt je TAG laut Snapshot,
+      nicht nach der User-Zeile. An einem Tag ohne Stundenzaehlung ist das Ziel
+      fuer JEDEN Typ (ausser OVERTIME) 0 — dort zaehlt allein die
+      Tageszaehlung. Eine rueckwirkende Umstellung zieht die ``hours`` damit
+      zwischen 0 und dem Tagessoll hin und her; das Loeschen der Aenderung
+      stellt den Ausgangszustand ueber denselben Weg her.
     * Wochenenden und Feiertage — sie werden uebersprungen, NICHT auf 0 gesetzt
       (die Leseseite wertet sie ohnehin mit 0, :func:`credit_day_weight`).
     * Tage ohne Soll (freier Wochentag im Tagesplan bzw. ohne Bloecke) fuer
@@ -768,7 +772,7 @@ def retarget_absence_hours(
     DIE eine Stelle, die Abwesenheits-Stunden nachzieht — Anlegen, Loeschen und
     Vorschau rufen alle hier hinein.
     """
-    if start > end or not user.track_hours:
+    if start > end:
         return []
 
     holidays = {
@@ -852,7 +856,11 @@ def retarget_absence_hours(
         # Sondertag dadurch IMMER vom neu berechneten ab, sodass die
         # Gleichheitspruefung unten bei JEDEM Lauf ansprang (nicht idempotent).
         target = get_daily_target_for_date(user, d, schedule)
-        if target <= 0 and a.type not in _IST_CREDITED_ABSENCE_TYPES:
+        # Teil A (Task 10): ohne Stundenzaehlung laut Snapshot des Tages ist das
+        # Ziel fuer jeden Typ 0 (``get_daily_target_for_date`` liefert dort 0) —
+        # nicht nur fuer SICK/TRAINING. Mit Stundenzaehlung gelten die Regeln
+        # darunter unveraendert.
+        if target <= 0 and schedule.track_hours and a.type not in _IST_CREDITED_ABSENCE_TYPES:
             continue
 
         # Gesamtreview 1.20 (Fund 4): an einem Tag OHNE Soll (Wochentag ohne

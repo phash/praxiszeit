@@ -255,8 +255,13 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
 
     # Schritt 5
     new_schedule = calculation_service.get_schedule_for_date(db, user, effective_from)
-    weekdays = work_blocks_service.changed_weekdays(
-        old_schedule.blocks, new_schedule.blocks, old_schedule.block_pauses, new_schedule.block_pauses)
+    # Teil A (Task 10, Variante A): ein Wechsel der Stundenzählung ändert die
+    # Anrechnung an JEDEM Wochentag (kappen bzw. entkappen).
+    if old_schedule.track_hours != new_schedule.track_hours:
+        weekdays = [0, 1, 2, 3, 4]
+    else:
+        weekdays = work_blocks_service.changed_weekdays(
+            old_schedule.blocks, new_schedule.blocks, old_schedule.block_pauses, new_schedule.block_pauses)
     grace = work_window_service.get_grace_minutes(db, user.tenant_id)
     reclamp = work_window_service.reclamp_time_entries(
         db, user, window.start, window.end, set(weekdays), old_schedule.blocks, grace)
