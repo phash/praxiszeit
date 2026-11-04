@@ -32,6 +32,7 @@ Verbindliche Begriffsdefinitionen für die **Zeit- und Urlaubsrechnung**. Ziel: 
 | **Saldo** | Stunden | `Ist − Soll` über einen Zeitraum. | `(actual - target)` |
 | **Überstundenkonto** | Stunden | **Kumulativer** laufender Saldo (über Monate/Jahr). Darf negativ sein. | `get_overtime_account()` |
 | **Urlaubsanspruch / Budget** | **Tage** | Jahresanspruch in Tagen (z. B. 30), anteilig bei Ein-/Austritt + Carryover. | `get_vacation_account()["budget_days"]` |
+| **Urlaubsanspruch (anteilig nach Vertragsabschnitten)** | **Tage** | Der Jahresanspruch steht in jeder Arbeitszeit-Änderung und gilt ab deren Datum. Wechselt er im Jahr, wird jeder Abschnitt nach Monaten anteilig gerechnet und summiert, gerundet auf 0,1 (Beispiel 24 × 10/12 + 30 × 2/12 = 25,0); ein ganzjähriger Abschnitt bleibt ungerundet. Ändern nur im Dialog „Arbeitszeit anpassen…“, Feld „Urlaubsanspruch pro Jahr ab diesem Datum“. | `calculation_service.vacation_entitlement_days()` |
 | **Urlaubsverbrauch (used)** | **Tage** | Σ Urlaubstage (voller Tag = 1,0; Halbtag = 0,5). **Tagebasiert, nicht stundenbasiert.** | `get_vacation_account()["used_days"]` |
 | **Resturlaub (remaining)** | **Tage** | `budget_days − used_days`. | `get_vacation_account()["remaining_days"]` |
 

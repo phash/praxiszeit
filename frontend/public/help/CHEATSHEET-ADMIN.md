@@ -26,6 +26,8 @@
 
 > **Urlaub (Tagesprinzip):** 1 freier Arbeitstag = 1 Urlaubstag (unabhängig von Tagesstunden/Wochentag). Halbtag = 0,5. Anspruch anteilig: `30 × Arbeitstage/5`. Verbrauch tagebasiert, Stunden nur intern.
 
+> **Vertragsverlauf:** **Urlaubsanspruch pro Jahr ab diesem Datum**, Stundenzählung und Minijob-Einstellungen ändern Sie nur im Dialog **„Arbeitszeit anpassen…"** (Abschnitt **„Urlaub und Abrechnung"**, Vorschlag über **„Vorschlag übernehmen (N)"**). Wechselt der Anspruch im Jahr, wird anteilig nach Monaten gerechnet (24 × 10/12 + 30 × 2/12 = 25,0). Minijob-Änderungen nur zum Monatsersten. Das Bearbeiten-Formular zeigt die Werte nur an.
+
 > **Benutzerübersicht (#194)** zeigt je MA Urlaubskonto **und** aktuellen Überstundensaldo in der Spalte **„Überstunden (JTD)"**; „—" bei Mitarbeitern ohne Stundenzählung.
 
 > **Monatsjournal (#311):** Buch-Symbol in der Aktionsspalte öffnet das Journal; Überschrift jetzt **„Monatsjournal: Vorname Nachname"**.

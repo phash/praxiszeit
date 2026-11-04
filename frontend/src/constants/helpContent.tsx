@@ -203,6 +203,7 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Arbeitszeit ändern</h3>
           <p className="text-sm text-gray-600">Benutzer bearbeiten → <span className="font-medium">„Arbeitszeit anpassen…"</span> → Gültig ab + Modus (Gleichmäßig / Nach Tagen / Nach Arbeitsblöcken) → Auswirkung prüfen → Speichern. Rückwirkende Verkürzungen nur mit Grund und Bestätigung; historische Salden bleiben korrekt. Löschen nur an der jüngsten Zeile des Verlaufs.</p>
+          <p className="text-sm text-gray-600">Im Abschnitt „Urlaub und Abrechnung" des Dialogs stehen „Urlaubsanspruch pro Jahr ab diesem Datum" (Vorschlag über „Vorschlag übernehmen (N)"), Stundenzählung und Minijob-Einstellungen; Minijob-Änderungen gelten immer ab dem Monatsersten.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Mitarbeiter deaktivieren</h3>

@@ -157,6 +157,22 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
     expectNoStaleTerms(text);
   });
 
+  it('Vertragsverlauf: Urlaubsanspruch, Stundenzählung und Minijob gelten ab Datum (Teil A)', () => {
+    const handbuch = sectionsText(handbuchAdminSections);
+    for (const expected of [
+      'Urlaub und Abrechnung',
+      'Urlaubsanspruch pro Jahr ab diesem Datum',
+      'Vorschlag übernehmen (N)',
+      'Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten.',
+      'Urlaubsanspruch {Jahr}',
+      'Urlaub verbraucht {Jahr}',
+    ]) {
+      expect(handbuch).toContain(expected);
+    }
+    expect(textOf(<CheatsheetAdmin />)).toContain('Urlaub und Abrechnung');
+    expect(textOf(<SchnellstartAdmin />)).toContain('Urlaubsanspruch pro Jahr ab diesem Datum');
+  });
+
   it('Mitarbeiter-Handbuch: Name und E-Mail ändert man im Profil selbst (Gesamtreview 1.20)', () => {
     // Profile.tsx zeigt „Bearbeiten" für jede Rolle (PUT /auth/profile, Art. 16
     // DSGVO) — nur Arbeitszeit, Rolle und Urlaubsanspruch legt die Verwaltung fest.

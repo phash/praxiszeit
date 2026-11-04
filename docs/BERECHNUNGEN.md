@@ -629,13 +629,31 @@ budget_days  = vacation_days  (anteilig bei Eintritt/Austritt)  + carryover_days
 budget_hours = budget_days × Tagessoll
 ```
 
-- **Tagessoll fürs Budget** = `get_daily_target(user)` = `weekly_hours / work_days_per_week`
-  (Durchschnitt, **nicht** datumsabhängig).
+- **Tagessoll fürs Budget** = Durchschnitt `weekly_hours / work_days_per_week` laut
+  Vertrags-Snapshot am Stichtag (`get_schedule_for_date`), nicht der Live-Wert der Benutzerzeile.
 - **Anspruch (vacation_days):** wird pro MA konfiguriert. Empfehlung/Standard nach Tagesprinzip:
 
   ```
   vacation_days = 30 × work_days_per_week / 5      (Vollzeit 5 Tage → 30; 3 Tage → 18; 4 Tage → 24)
   ```
+
+- **Anspruch je Vertragsabschnitt (Migration 075):** `vacation_days` steht in jeder
+  Arbeitszeit-Änderung (Vertrags-Snapshot) und gilt ab deren Datum. Wechselt der Anspruch
+  im Jahr, rechnet `calculation_service.vacation_entitlement_days` jeden Abschnitt anteilig
+  nach Monaten und summiert:
+
+  ```
+  Anspruch(Jahr) = Σ Abschnitt  vacation_days × Monatsanteil ÷ 12      (gerundet auf 0,1)
+  Beispiel (Kundenfall 2026): 24 × 10/12 + 30 × 2/12 = 20,0 + 5,0 = 25,0 Tage;  2027: 30
+  ```
+
+  Ein Jahr mit genau **einem** ganzjährigen Abschnitt bleibt ungerundet (wie bisher). Vor der
+  ersten Zeile gelten die Werte der ersten Zeile; ohne Zeile die der Benutzerzeile. Der
+  einzige Schreibweg ist der Dialog „Arbeitszeit anpassen…“ (Abschnitt „Urlaub und
+  Abrechnung“, Feld „Urlaubsanspruch pro Jahr ab diesem Datum“); die Vorschau zeigt
+  „Urlaubsanspruch {Jahr}“ vorher → nachher. Sinkt der Anspruch rückwirkend (auch durch
+  Löschen oder Zurücksetzen einer früheren Erhöhung), ist das eine Verkürzung und braucht
+  einen Grund.
 
 - **Pro-rata bei Eintritt/Austritt im Jahr** (`first_work_day` / `last_work_day`):
 
@@ -965,6 +983,25 @@ Beide Warnungen tragen den Hinweis „sofern die Stunden zur Mindestlohnhöhe ve
 flache 13/3-Monatszeit für die 50-%-Prüfung (§10.2) exakt. Ohne gesetzten Wert bleibt die
 Ableitung aus den Wochenstunden aktiv.
 
+### 10.4a Stundenzählung und Minijob-Einstellungen ab Datum
+
+Seit Migration 075 stehen `track_hours`, `milog_working_time_account`, `agreed_monthly_hours`
+und `use_fixed_monthly_target` (zusammen mit `vacation_days`) im Vertrags-Snapshot der
+Arbeitszeit-Änderung und gelten **ab deren Datum**:
+
+- **`track_hours` je Tag** (`calculation_service.tracks_hours_on`): Soll, Ist und Kappung
+  eines Tages richten sich nach dem Wert, der an diesem Tag galt. Ein rückwirkender Wechsel
+  kappt bzw. entkappt Zeiteinträge neu und rechnet Abwesenheiten nur an Tagen nach, an denen
+  der Wert tatsächlich kippt; automatisch geschlossene Einträge behalten ihr angerechnetes
+  Ende (nie 23:59).
+- **Minijob-Felder je Monat** (`month_contract`, `MonthContract.fixed_mode`): gelten immer
+  ab dem Monatsersten. Eine Änderung mit anderem Datum wird mit 422 „Änderungen an
+  Minijob-Einstellungen gelten immer ab dem Monatsersten.“ abgelehnt. Ob der feste Monats-Soll
+  zulässig ist, prüft das System am Snapshot der neuen Zeile (400, Texte wie §10.5).
+- Eine Korrektur an der frühesten Zeile ersetzt diese Zeile an Ort und Stelle.
+- Kein Ergebnis der Vergangenheit ändert sich durch die Migration (Rückfüllung aus der
+  Benutzerzeile). Lesen nie über `user.<feld>` (Guard `test_no_live_contract_field_read.py`).
+
 ### 10.5 Baustein 2b — Festes Monats-Soll (`use_fixed_monthly_target`)
 
 Opt-in je MA (`User.use_fixed_monthly_target = true`), setzt zwingend `agreed_monthly_hours
@@ -1046,7 +1083,7 @@ carryover.vacation_days  = get_vacation_account(user, jahr).remaining_days   # R
 ```
 
 Diese Werte gehen als Startwerte ins Folgejahr ein (Überstundenkonto-Start bzw. zusätzliche
-Budget-Tage). ⚠️ Offen (#191): Carryover für `track_hours = false` (ohne Stundenzählung).
+Budget-Tage). Der Jahresabschluss schließt auch Personen ohne Stundenzählung (`track_hours = false`) ein.
 
 > **Rückwirkende Änderungen an einem bereits abgeschlossenen Jahr** (z. B. Storno eines
 > genehmigten Urlaubs, Löschen einer Betriebsferien-Schließung) machen dessen Carryover
@@ -1073,6 +1110,8 @@ Checkbox „Stundenzählung aktiv (Soll-Stunden werden berechnet)" aus. Nicht zu
 § 18 ArbZG: dafür gibt es die eigene Checkbox „ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende
 Angestellte)" (`exempt_from_arbzg`), die an der Stundenzählung nichts ändert.
 
+- **Gilt ab Datum**: das Häkchen steht im Vertrags-Snapshot und wirkt je Tag ab dem
+  Wirkungsdatum der Arbeitszeit-Änderung (§10.4a); der Wechsel erfolgt nur dort.
 - **Kein Soll/Ist**: Tagessoll = 0, keine Überstundenrechnung.
 - **Urlaub trotzdem tagebasiert**: jeder VACATION-Tag = **1 Tag** (Halbtage `half_day=True`
   zählen 0,5, ein Halbtags-Sondertag zusätzlich × 0,5, siehe §8.2/§9.3), jeder

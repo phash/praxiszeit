@@ -1302,6 +1302,33 @@ group_verkuerzt() {
   forbid backend/app/services/calculation_service.py 'legt ausschliesslich die'
 }
 
+# Vertragsverlauf (Teil A, Migration 075): Urlaubsanspruch, Stundenzählung und
+# Minijob-Einstellungen gelten ab Datum und werden allein im Dialog „Arbeitszeit
+# anpassen…“ geändert. Wortlaute stehen im Code, die Doku zitiert sie.
+group_vertragsverlauf() {
+  need_code "Urlaub und Abrechnung"
+  need_code "Urlaubsanspruch pro Jahr ab diesem Datum"
+  need_code "Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten."
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Urlaub und Abrechnung'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Urlaubsanspruch pro Jahr ab diesem Datum'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Vorschlag übernehmen'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten.'
+  need docs/handbuch/CHEATSHEET-ADMIN.md 'Urlaubsanspruch pro Jahr ab diesem Datum'
+  need docs/BERECHNUNGEN.md 'vacation_entitlement_days'
+  need docs/BERECHNUNGEN.md 'Stundenzählung und Minijob-Einstellungen ab Datum'
+  need docs/GLOSSAR.md 'Urlaubsanspruch (anteilig nach Vertragsabschnitten)'
+  need frontend/src/components/DocViewer.tsx 'Urlaub und Abrechnung'
+  need frontend/src/components/DocViewer.tsx 'Urlaubsanspruch pro Jahr ab diesem Datum'
+  need frontend/src/components/DocViewer.tsx 'Vorschlag übernehmen'
+  need frontend/src/constants/helpContent.tsx 'Urlaubsanspruch pro Jahr ab diesem Datum'
+  forbid frontend/src/pages/admin/AdminDashboard.tsx 'Manuelle Übernahmen für'
+  forbid docs/BERECHNUNGEN.md 'Offen (#191)'
+  forbid docs/BERECHNUNGEN.md 'nicht datumsabhängig'
+  need CLAUDE.md '`calculation_service.vacation_entitlement_days`'
+  need CLAUDE.md 'test_no_live_contract_field_read.py'
+  forbid CLAUDE.md 'für untracked noch offen'
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {
