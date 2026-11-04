@@ -96,7 +96,10 @@ def get_type_colors_setting(
     return type_colors_service.get_type_colors(db, current_user.tenant_id)
 
 
-def _resave_closures_after_special_day_change(db, current_user, before, after):
+def _resave_closures_after_special_day_change(db, current_user, before, after, closed_years) -> None:
+    """Teil B: Betriebsferien an Tagen mit geändertem Sondertag-Zustand neu
+    buchen. Keine Warnung: abgeschlossene Jahre bleiben unangetastet, deren
+    Hinweis liefert ``closed_year_warning_text`` im Aufrufer."""
     from app.routers import company_closures
 
     years = company_closures.closure_years(db, current_user.tenant_id)
@@ -104,9 +107,10 @@ def _resave_closures_after_special_day_change(db, current_user, before, after):
         special_days_service.setting_states(before, years),
         special_days_service.setting_states(after, years),
     )
-    if not changed:
-        return None
-    return company_closures.resave_closures_for_dates(db, current_user, changed)
+    if changed:
+        company_closures.resave_closures_for_dates(
+            db, current_user, changed, closed_years=closed_years
+        )
 
 
 @router.put("/settings/type-colors")
@@ -222,6 +226,9 @@ def update_setting(
     # auch in abgeschlossenen Jahren — Zustand vor der Änderung festhalten.
     special_before = None
     if key in special_days_service.SETTING_KEYS:
+        # Erst sperren, dann den Vorher-Zustand lesen: ein paralleler Wechsel
+        # rechnete sonst gegen einen veralteten Stand und buchte nichts neu.
+        special_days_service.lock_special_day_changes(db, current_user.tenant_id)
         special_before = special_days_service.get_special_day_settings(
             db, current_user.tenant_id
         )
@@ -296,12 +303,12 @@ def update_setting(
                         special_days_service.setting_states(special_after, entry_years),
                     ),
                 ),
-                # Teil B: Betriebsferien an Tagen mit geändertem Zustand neu
-                # buchen (gleiche Transaktion, committet erst unten). Import
-                # lokal: Router untereinander nicht auf Modulebene verketten.
-                _resave_closures_after_special_day_change(
-                    db, current_user, special_before, special_after
-                ),
+            )
+            # Teil B: Betriebsferien an Tagen mit geändertem Zustand neu
+            # buchen (gleiche Transaktion, committet erst unten). Import
+            # lokal: Router untereinander nicht auf Modulebene verketten.
+            _resave_closures_after_special_day_change(
+                db, current_user, special_before, special_after, closed
             )
         db.commit()
 

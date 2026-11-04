@@ -35,10 +35,12 @@ The existing ``system_setting`` key/value store is reused, mirroring the
 ``holiday_state`` setting pattern.
 """
 
+import hashlib
 from datetime import date
 from decimal import Decimal
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.public_holiday import PublicHoliday
@@ -65,6 +67,43 @@ _SPECIAL_DAYS = {
     (12, 24): "special_day_dec24",
     (12, 31): "special_day_dec31",
 }
+
+# Teil B: plausible Jahre für verkürzte Tage — EINE Grenze für Eingabe
+# (``ReducedDayCreate.date``) und beide Listen-Endpoints (Admin + Lesen),
+# gleich der Grenze des Wirkungsdatums einer Arbeitszeit-Änderung.
+REDUCED_DAY_YEAR_MIN = 2000
+REDUCED_DAY_YEAR_MAX = 2100
+REDUCED_DAY_DATE_RANGE_DETAIL = (
+    "Das Datum muss zwischen dem 01.01.2000 und dem 31.12.2100 liegen."
+)
+
+
+def special_day_lock_key(tenant_id) -> int:
+    """Stabiler 64-bit-Schlüssel (blake2b, nie ``hash()`` — pro Prozess zufällig)."""
+    digest = hashlib.blake2b(f"special_days:{tenant_id}".encode(), digest_size=8).digest()
+    return int.from_bytes(digest, "big", signed=True)
+
+
+def lock_special_day_changes(db: Session, tenant_id) -> None:
+    """Serialisiert Änderungen am Sondertag-/Verkürzt-Zustand eines Mandanten
+    (Einstellungen 24./31.12. und ``reduced_days``) bis zum Transaktionsende.
+
+    Beide Pfade lesen einen Vorher-Zustand und buchen danach die Betriebsferien
+    der geänderten Tage neu; zwei gleichzeitige Änderungen rechneten sonst gegen
+    einen veralteten Vorher-Zustand und ließen Buchungen auf dem falschen Soll
+    stehen. VOR dem Lesen des Vorher-Zustands nehmen, vor jeder Benutzersperre.
+    Nur PostgreSQL (SQLite-Tests laufen einzeln); nie in ``try/except``
+    (abgebrochene PG-Transaktion, vgl. ``admin_carryovers.lock_year_closing``)."""
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": special_day_lock_key(tenant_id)})
+
+
+def is_settings_special_day(d: date) -> bool:
+    """Ist ``d`` einer der beiden Sondertage (24./31.12.), die über die
+    Einstellung Sondertage laufen statt über ``reduced_days``?"""
+    return (d.month, d.day) in _SPECIAL_DAYS
+
 
 # All setting keys this feature owns — used by the admin router whitelist.
 SETTING_KEYS = {
@@ -272,16 +311,26 @@ def day_label(target_date: date, config: Dict[date, Dict[str, object]]) -> Optio
     return reduced_day_label(Decimal(str(entry["max_hours"])))
 
 
-def list_reduced_days(db: Session, tenant_id, year: Optional[int] = None) -> List[dict]:
-    """Verkürzte Tage des Mandanten (optional eines Jahres) für den
-    authentifizierten Lese-Endpoint ``GET /api/reduced-days`` — nie öffentlich."""
+def reduced_day_rows(
+    db: Session, tenant_id, year: Optional[int] = None, limit: Optional[int] = None,
+) -> List[ReducedDay]:
+    """Verkürzte Tage des Mandanten (optional eines Jahres), nach Datum —
+    DIE Abfrage für den Admin- und den Lese-Endpoint (F-026)."""
     q = db.query(ReducedDay).filter(ReducedDay.tenant_id == tenant_id)  # F-026
     if year is not None:
         q = q.filter(ReducedDay.date >= date(year, 1, 1), ReducedDay.date <= date(year, 12, 31))
-    rows = q.order_by(ReducedDay.date).all()
+    q = q.order_by(ReducedDay.date)
+    if limit is not None:
+        q = q.limit(limit)
+    return q.all()
+
+
+def list_reduced_days(db: Session, tenant_id, year: Optional[int] = None) -> List[dict]:
+    """Verkürzte Tage des Mandanten (optional eines Jahres) für den
+    authentifizierten Lese-Endpoint ``GET /api/reduced-days`` — nie öffentlich."""
     return [
         {"date": r.date.isoformat(), "label": r.label, "max_hours": float(r.max_hours)}
-        for r in rows
+        for r in reduced_day_rows(db, tenant_id, year)
     ]
 
 
@@ -402,9 +451,12 @@ def years_affected_by_change(
     """Jahre der geänderten Tage, an denen sich Soll, Gutschrift oder
     Urlaubsverbrauch tatsächlich ändert: nur Werktage ohne Feiertag des
     Mandanten zählen (an Wochenenden/Feiertagen wird der Tag nicht ausgewertet)."""
-    candidates = {
-        d for d in changed_dates(before_states, after_states) if d.weekday() < 5
-    }
+    return years_affected_by_dates(db, tenant_id, changed_dates(before_states, after_states))
+
+
+def years_affected_by_dates(db: Session, tenant_id, dates: Iterable[date]) -> List[int]:
+    """Wie :func:`years_affected_by_change`, für bereits ermittelte geänderte Tage."""
+    candidates = {d for d in dates if d.weekday() < 5}
     if not candidates:
         return []
     holidays = {

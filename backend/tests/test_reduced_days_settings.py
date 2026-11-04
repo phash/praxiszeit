@@ -125,3 +125,18 @@ def test_closed_year_not_resaved(client, db, employee):
     assert res.status_code == 200, res.text
     assert _hours(db, employee, d) == 8.0
     assert "2025" in (res.json().get("warning") or "")
+
+
+def test_other_setting_key_does_not_rebook(client, db, employee):
+    """F126: eine Nicht-Sondertag-Einstellung bucht keine Betriebsferien neu
+    (keine Rebook-Protokollzeile, Buchung unverändert)."""
+    _put(client, "special_day_dec24_mode", "max_hours")
+    _closure(client)
+    db.expire_all()
+    audits = db.query(TimeEntryAuditLog).count()
+    before = _hours(db, employee, D24)
+    r = _put(client, "closure_overtime_after_vacation", "false")
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    assert db.query(TimeEntryAuditLog).count() == audits
+    assert _hours(db, employee, D24) == before
