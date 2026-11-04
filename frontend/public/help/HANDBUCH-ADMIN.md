@@ -203,7 +203,7 @@ Klicken Sie auf **„Neue:r Mitarbeiter:in"** und füllen Sie das Formular aus:
 
 ### Mitarbeiter ohne Stundenzählung
 
-Über die Checkbox **„Stundenzählung aktiv (Soll-Stunden werden berechnet)"** (standardmäßig aktiv; beim Anlegen im Formular; bei bestehenden Mitarbeitenden nur über „Arbeitszeit anpassen…“ (Abschnitt „Urlaub und Abrechnung“, gilt ab dem Gültig-ab-Datum; Minijob-Einstellungen nur zum Monatsersten)) legen Sie fest, ob für eine Person die Arbeitszeit ausgewertet wird. Deaktivieren Sie die Checkbox, wird der/die Mitarbeitende zu einem **Mitarbeiter ohne Stundenzählung**.
+Über die Checkbox **„Stundenzählung aktiv (Soll-Stunden werden berechnet)"** (standardmäßig aktiv; beim Anlegen im Formular, bei bestehenden Mitarbeitenden nur über „Arbeitszeit anpassen…“, Abschnitt „Urlaub und Abrechnung“, gültig ab dem Gültig-ab-Datum) legen Sie fest, ob für eine Person die Arbeitszeit ausgewertet wird. Deaktivieren Sie die Checkbox, wird der/die Mitarbeitende zu einem **Mitarbeiter ohne Stundenzählung**.
 
 **Was sich ändert, wenn die Stundenzählung deaktiviert ist:**
 - **Keine Soll-/Ist-Stundenberechnung** und **keine Überstundenberechnung.** In der Benutzerübersicht erscheint in der Spalte „Überstunden (JTD)" ein „—".
@@ -854,7 +854,7 @@ Das Basis-Verhalten ist **nach dem Anlegen fix**. Gründe lassen sich umbenennen
 
 ### Minijob / Arbeitszeitkonto (§ 2 Abs. 2 MiLoG) (#377)
 
-Für Minijobber:innen, die **auf Arbeitszeitkonto** geführt werden („sonstige flexible Arbeitszeitregelung"), aktivieren Sie die Checkbox **„Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)"** (beim Anlegen im Formular; bei bestehenden Mitarbeitenden nur über „Arbeitszeit anpassen…“ (Abschnitt „Urlaub und Abrechnung“, gilt ab dem Gültig-ab-Datum; Minijob-Einstellungen nur zum Monatsersten)). PraxisZeit prüft dann zwei gesetzliche Grenzen als **weiche Hinweise** (nichts wird blockiert):
+Für Minijobber:innen, die **auf Arbeitszeitkonto** geführt werden („sonstige flexible Arbeitszeitregelung"), aktivieren Sie die Checkbox **„Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)"** (beim Anlegen im Formular, bei bestehenden Mitarbeitenden nur über „Arbeitszeit anpassen…“, Abschnitt „Urlaub und Abrechnung“, gültig ab dem Gültig-ab-Datum und nur zum Monatsersten). PraxisZeit prüft dann zwei gesetzliche Grenzen als **weiche Hinweise** (nichts wird blockiert):
 
 - **50-%-Regel:** Die auf das Konto eingestellten Plusstunden dürfen pro Monat **50 % der vertraglich vereinbarten Arbeitszeit** nicht übersteigen. Bei aktivem Arbeitszeitkonto erscheint das Feld **„Vereinbarte Monatsarbeitszeit (h)"** — tragen Sie dort die vereinbarte Monatszahl direkt ein (z. B. **33** → max. 16,5 h Konto/Monat). Bleibt das Feld leer, wird die Monatszeit wie bisher aus den Wochenstunden abgeleitet (× 13/3, z. B. 7,62 h/Woche ≈ 33 h/Monat). Die eingegebene Monatszahl ist die vertragliche Bezugsgröße für die **50-%-Prüfung**. Das **12-Monats-Aging** bleibt bewusst Soll-basiert (rechnet gegen das tatsächliche Monats-Soll, damit Urlaub/Feiertage das Konto nicht belasten). Der Hinweis erscheint beim Buchen/Ausstempeln, im **eigenen Überstundenkonto** der/des MA und in der **Benutzerübersicht**.
 - **12-Monats-Ausgleichsfrist:** Konto-Stunden müssen binnen 12 Kalendermonaten ausgeglichen werden — bei Überfälligkeit ein Hinweis.
