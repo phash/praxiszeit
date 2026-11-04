@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useAuthStore } from '../stores/authStore';
+import { vacationDaysToday } from '../utils/contractToday';
 import apiClient from '../api/client';
 import { downloadBlob } from '../utils/downloadBlob';
 import { Lock, Save, Palette, User as UserIcon, Download, ShieldCheck, ShieldOff, Smartphone, Copy, CheckCircle, Camera, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
@@ -377,7 +378,7 @@ export default function Profile() {
             </div>
             <div>
               <label className="text-sm font-medium text-gray-500">Urlaubstage</label>
-              <p className="text-gray-900 mt-1">{user?.vacation_days} Tage</p>
+              <p className="text-gray-900 mt-1">{vacationDaysToday(user)} Tage</p>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-500">Status</label>

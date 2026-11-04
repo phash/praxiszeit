@@ -124,6 +124,42 @@ describe('Teil A (Task 15): vertragsfelder beim Bearbeiten nur Anzeige', () => {
     expect(screen.getByText('ohne Stundenzählung')).toBeInTheDocument();
   });
 
+  // F010/F121: die Anzeige-Weichen folgen dem heute gültigen Vertrag, nicht der
+  // beim Öffnen übergebenen User-Zeile.
+  it('gates (carryover field, fixed-target hint) follow schedule_today, not the user row', () => {
+    const rowTracksTodayNot = {
+      ...(editMinijob as object), track_hours: true, use_fixed_monthly_target: false,
+      schedule_today: { ...(editMinijob as any).schedule_today, track_hours: false },
+    };
+    renderForm({ editUser: rowTracksTodayNot });
+    expect(screen.getByText('ohne Stundenzählung')).toBeInTheDocument();
+    expect(document.getElementById('f-overtime-carryover')).toBeNull();
+  });
+
+  it('fixed-target hint appears from schedule_today although the user row says no', () => {
+    const fixedToday = {
+      ...(editMinijob as object), use_fixed_monthly_target: false,
+      schedule_today: { ...(editMinijob as any).schedule_today, use_fixed_monthly_target: true },
+    };
+    renderForm({ editUser: fixedToday });
+    expect(screen.getByText(/Feste Monatsarbeitszeit aktiv: Nur noch Basisangabe/)).toBeInTheDocument();
+    expect(screen.getByText(/Festes Monats-Soll/)).toBeInTheDocument();
+  });
+
+  it('displayContract (fresh from Users.tsx) wins over the snapshot captured at open', () => {
+    renderForm({
+      editUser: editMinijob,
+      displayContract: {
+        vacation_days: 30, track_hours: false, milog_working_time_account: false,
+        agreed_monthly_hours: null, use_fixed_monthly_target: false,
+      },
+    });
+    expect(screen.getByText('30 Tage/Jahr')).toBeInTheDocument();
+    expect(screen.getByText('ohne Stundenzählung')).toBeInTheDocument();
+    expect(screen.queryByText(/MiLoG-Arbeitszeitkonto aktiv/)).not.toBeInTheDocument();
+    expect(document.getElementById('f-overtime-carryover')).toBeNull();
+  });
+
   it('create keeps the editable field and the 30 × days ÷ 5 suggestion', () => {
     renderForm();
     const f = document.getElementById('f-vacation') as HTMLInputElement;
@@ -847,7 +883,7 @@ describe('Gesamtreview 1.20 Fund 14: Block-Editor beim Anlegen mit fester Monats
 // Änderung erst beim nächsten Schreibvorgang nach; heute gelten 32 h / 4 Tage.
 // Vorher stand „Arbeitstage 4" neben „Empfehlung: 30 Tage (basierend auf 5
 // Arbeitstagen/Woche)", und „Übernehmen" schrieb 30 Tage für eine 4-Tage-Woche.
-describe('Gesamtreview 1.20 Fund 25: Empfehlung und MiLoG-Schätzung aus dem heute gültigen Stand', () => {
+describe('Bearbeiten: Anzeige aus schedule_today, keine Empfehlung/MiLoG-Schätzung (Fund 25, Teil A)', () => {
   const today = {
     weekly_hours: 32, use_daily_schedule: false, work_days_per_week: 4,
     hours_monday: null, hours_tuesday: null, hours_wednesday: null, hours_thursday: null, hours_friday: null,

@@ -285,3 +285,18 @@ export function contractTermsOf(source: {
     use_fixed_monthly_target: !!source.use_fixed_monthly_target,
   };
 }
+
+/** F011: die fünf Vertragsfelder, die HEUTE gelten — `schedule_today` mit der
+ * User-Zeile als Rückfall (ältere Antwort ohne die Felder). Die User-Zeile
+ * spiegelt eine zukunftsdatierte Verlaufszeile erst beim nächsten Schreiben
+ * (kein Scheduler, Spec 9.8); jede „heute"-Frage der Oberfläche liest hier. */
+export function contractToday(user: {
+  vacation_days: number;
+  track_hours: boolean;
+  milog_working_time_account?: boolean | null;
+  agreed_monthly_hours?: number | null;
+  use_fixed_monthly_target?: boolean | null;
+  schedule_today?: Parameters<typeof contractTermsOf>[0];
+}): ContractTerms {
+  return contractTermsOf(user.schedule_today) ?? (contractTermsOf(user) as ContractTerms);
+}

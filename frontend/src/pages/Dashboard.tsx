@@ -15,6 +15,7 @@ import ScheduleChangeNotices, { type ScheduleChangeNotice } from '../components/
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
+import { trackHoursToday } from '../utils/contractToday';
 import { ABSENCE_TYPE_LABELS } from '../constants/absenceTypes';
 import { useTypeColorsStore, pickTextColor } from '../stores/typeColorsStore';
 import { isInBlockGap, runningCreditedMinutes } from '../utils/workBlocks';
@@ -207,7 +208,8 @@ export default function Dashboard() {
   // mehr nach Mitarbeiter-Farbe.
   const absColors = useTypeColorsStore((s) => s.colors);
   const { openStampSheet, stampVersion, notifyStampChange } = useUIStore();
-  const trackHours = user?.track_hours !== false;
+  // F011: Stundenzählung laut heute gültigem Vertrag (schedule_today).
+  const trackHours = trackHoursToday(user) !== false;
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [clockStatus, setClockStatusRaw] = useState<{
     is_clocked_in: boolean;

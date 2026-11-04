@@ -12,6 +12,7 @@ import {
 } from '../../../utils/workBlocks';
 import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
 import ContractTermsFields from './ContractTermsFields';
+import type { ContractTerms } from './workingHoursTypes';
 import { BLOCKS_WITHOUT_EFFECT, LEGACY_WITHOUT_EFFECT } from './workingHoursTexts';
 
 import type { User } from '../../../types/user';
@@ -58,11 +59,14 @@ interface UserFormProps {
   // bearbeiteten Nutzers (serverseitig datumsaufgelöst, `work_blocks_today`),
   // wie `displayDayHours` frisch aus Users.tsx nachgeführt. Nur Anzeige.
   displayBlocks?: WeekBlocks | null;
+  // F010: dieselbe Bauart für die fünf Vertragsfelder (Teil A) — der heute
+  // gültige Stand, frisch aus Users.tsx. Nur Anzeige und Anzeige-Weichen.
+  displayContract?: ContractTerms;
 }
 
 export default function UserForm({
   editUser, onSaved, onOpenHoursHistory, displayWeeklyHours, displayDayHours,
-  displayWorkDays, displayUseDailySchedule, displayBlocks,
+  displayWorkDays, displayUseDailySchedule, displayBlocks, displayContract,
 }: UserFormProps) {
   const toast = useToast();
   const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
@@ -245,11 +249,21 @@ export default function UserForm({
     : (editUser ? shownWorkDays : formData.work_days_per_week);
   // Teil A (Task 15): Vertragsfelder beim Bearbeiten = Snapshot von heute,
   // Rückfall auf die User-Zeile (identischer Stand ohne Verlaufszeilen).
-  const shownVacationDays = todaySchedule?.vacation_days ?? editUser?.vacation_days ?? formData.vacation_days;
-  const shownTrackHours = todaySchedule?.track_hours ?? editUser?.track_hours ?? true;
-  const shownMilog = todaySchedule?.milog_working_time_account ?? editUser?.milog_working_time_account ?? false;
-  const shownAgreedMonthly = todaySchedule?.agreed_monthly_hours ?? editUser?.agreed_monthly_hours ?? null;
-  const shownFixedTarget = todaySchedule?.use_fixed_monthly_target ?? editUser?.use_fixed_monthly_target ?? false;
+  // F010: wie die übrigen display*-Werte frisch aus Users.tsx nachgeführt
+  // (`displayContract`), damit die Box nach einer Dialog-Änderung bei offenem
+  // Formular nicht den Stand vom Öffnen zeigt.
+  const shownVacationDays = displayContract?.vacation_days ?? todaySchedule?.vacation_days ?? editUser?.vacation_days ?? formData.vacation_days;
+  const shownTrackHours = displayContract?.track_hours ?? todaySchedule?.track_hours ?? editUser?.track_hours ?? true;
+  const shownMilog = displayContract?.milog_working_time_account ?? todaySchedule?.milog_working_time_account ?? editUser?.milog_working_time_account ?? false;
+  const shownAgreedMonthly = displayContract !== undefined
+    ? displayContract.agreed_monthly_hours
+    : (todaySchedule?.agreed_monthly_hours ?? editUser?.agreed_monthly_hours ?? null);
+  const shownFixedTarget = displayContract?.use_fixed_monthly_target ?? todaySchedule?.use_fixed_monthly_target ?? editUser?.use_fixed_monthly_target ?? false;
+  // F010/F121: alle Anzeige-Weichen (Blöcke-Satz, Überstunden-Vortrag,
+  // Tagesplan-Abschnitt, „geplante Anwesenheit") folgen beim Bearbeiten
+  // demselben heute gültigen Stand wie die Box — nie der User-Zeile vom Öffnen.
+  const effTrackHours = editUser ? shownTrackHours : formData.track_hours;
+  const effFixedTarget = editUser ? shownFixedTarget : formData.use_fixed_monthly_target;
   const suggestedVacation = effectiveWorkDays > 0 ? Math.round(30 * effectiveWorkDays / 5) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -405,7 +419,7 @@ export default function UserForm({
   // Altfenster) mit Stundenzählung. Dann nennen Wochenstunden-Box, Modus und
   // Arbeitstage-Hinweis die Blöcke statt des daraus abgeleiteten dezimalen
   // Tagesplans („Mo 7,92") — derselbe Satz wie im Dialog-Kopf und in den Berichten.
-  const blocksSentence = editUser && formData.track_hours && !isLegacyWeek(shownBlocks)
+  const blocksSentence = editUser && effTrackHours && !isLegacyWeek(shownBlocks)
     ? formatBlocksText(shownBlocks)
     : null;
   const editBlocksMode = blocksSentence !== null;
@@ -568,7 +582,7 @@ export default function UserForm({
                 Aus den Arbeitszeit-Blöcken abgeleitet.
               </p>
             )}
-            {formData.use_fixed_monthly_target && (
+            {effFixedTarget && (
               <p className="mt-1 text-xs text-gray-500">
                 ℹ️ Feste Monatsarbeitszeit aktiv: Nur noch Basisangabe — das Monats-Soll
                 kommt aus der vereinbarten Monatsarbeitszeit (siehe Arbeitszeitkonto unten),
@@ -686,7 +700,7 @@ export default function UserForm({
             />
             <p className="mt-1 text-xs text-gray-400">Leer = Standardwert aus den Einstellungen.</p>
           </div>
-          {formData.track_hours && (
+          {effTrackHours && (
             <div>
               <label htmlFor="f-overtime-carryover" className="block text-sm font-medium text-gray-700 mb-1">
                 Anfangssaldo Überstunden (h)
@@ -849,7 +863,7 @@ export default function UserForm({
           </div>
 
           {/* Daily Schedule Toggle */}
-          {formData.track_hours && (
+          {effTrackHours && (
             <div className="md:col-span-2 border border-gray-200 rounded-lg p-4">
               {editUser ? (
                 // Task 11 (#431): Haken UND Tagesstunden sind historisierte
@@ -867,10 +881,10 @@ export default function UserForm({
                         Wochenstunden-Box, die längst einen Tagesplan zeigt. */}
                     {/* Fund 6: mit Blöcken heißt der Modus wie im Dialog. */}
                     {editBlocksMode
-                      ? (formData.use_fixed_monthly_target ? 'Nach Arbeitsblöcken (geplante Anwesenheit)' : 'Nach Arbeitsblöcken')
+                      ? (effFixedTarget ? 'Nach Arbeitsblöcken (geplante Anwesenheit)' : 'Nach Arbeitsblöcken')
                       : displayedUseDailySchedule
-                        ? (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit aktiv' : 'Individuelle Tagesstunden aktiv')
-                        : (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit nicht hinterlegt' : 'Einheitliche Tagesstunden (kein individueller Tagesplan)')}
+                        ? (effFixedTarget ? 'Geplante Anwesenheit aktiv' : 'Individuelle Tagesstunden aktiv')
+                        : (effFixedTarget ? 'Geplante Anwesenheit nicht hinterlegt' : 'Einheitliche Tagesstunden (kein individueller Tagesplan)')}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     Änderung über „Arbeitszeit anpassen…" mit Wirkungsdatum.
@@ -906,7 +920,7 @@ export default function UserForm({
                           }}
                           className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
                         />
-                        {formData.use_fixed_monthly_target ? 'Nach Tagen (geplante Anwesenheit)' : 'Nach Tagen'}
+                        {effFixedTarget ? 'Nach Tagen (geplante Anwesenheit)' : 'Nach Tagen'}
                       </label>
                       <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
                         <input
@@ -920,7 +934,7 @@ export default function UserForm({
                       </label>
                     </div>
                   </fieldset>
-                  {formData.use_fixed_monthly_target && !createBlocksActive && !formData.use_daily_schedule && (
+                  {effFixedTarget && !createBlocksActive && !formData.use_daily_schedule && (
                     <p className="text-xs text-amber-600 mb-2">
                       Empfehlung bei fester Monatsarbeitszeit: hier die geplante Anwesenheit hinterlegen, damit
                       Feiertage/Fehltage korrekt gutgeschrieben werden (das Monats-Soll selbst bleibt fest).
@@ -964,11 +978,11 @@ export default function UserForm({
                         value={createBlocks}
                         onChange={setCreateBlocks}
                         idPrefix="f-blocks"
-                        plannedPresence={formData.use_fixed_monthly_target}
+                        plannedPresence={effFixedTarget}
                       />
                       <p className="text-xs text-gray-500 mt-2">
                         {/* Gesamtreview 1.20 (Fund 14): bei fester Monatsarbeitszeit kein Tagessoll. */}
-                        {formData.use_fixed_monthly_target
+                        {effFixedTarget
                           ? 'Wochenstunden, geplante Anwesenheit und Arbeitstage werden aus den Blöcken abgeleitet; das Monats-Soll bleibt die vereinbarte Monatsarbeitszeit.'
                           : 'Wochenstunden, Tagessoll und Arbeitstage werden aus den Blöcken abgeleitet.'}
                       </p>
@@ -993,12 +1007,12 @@ export default function UserForm({
                   Backend kappt dann nie (`clamp_applies`/`_clamp_core`), 073
                   übernimmt Altfenster aber unabhängig von track_hours (P2).
                   Wortlaut aus workingHoursTexts, wie im Dialog (Spec 12.1/4.4). */}
-              {workBlocksText && !formData.track_hours && (
+              {workBlocksText && !effTrackHours && (
                 <p className="text-xs text-gray-500 mt-1">
                   {`${isLegacyWeek(shownBlocks) ? LEGACY_WITHOUT_EFFECT : BLOCKS_WITHOUT_EFFECT}.`}
                 </p>
               )}
-              {workBlocksText && formData.track_hours && isLegacyWeek(shownBlocks) && (
+              {workBlocksText && effTrackHours && isLegacyWeek(shownBlocks) && (
                 <p className="text-xs text-gray-500 mt-1">
                   Arbeitszeit-Fenster aus dem Altbestand: kappt die erfasste Zeit, ändert das Tagessoll nicht.
                 </p>
