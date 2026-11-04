@@ -85,11 +85,10 @@ def test_special_day_target(mode, target, expected):
     assert sds.special_day_target(date(2026, 12, 25), Decimal(target), cfg) == Decimal(target)
 
 
-def test_factor_none_for_max_hours():
+def test_mode_max_hours():
     d = date(2026, 12, 24)
     cfg = {d: {"mode": "max_hours", "counts_as_vacation": False,
                "max_hours": Decimal("4"), "label": "x"}}
-    assert sds.special_day_target_factor(d, cfg) is None
     assert sds.special_day_mode(d, cfg) == "max_hours"
     assert sds.special_day_mode(date(2026, 1, 1), cfg) is None
 

@@ -244,26 +244,30 @@ def special_day_target(target_date: date, daily_target: Decimal, config: Dict[da
         return daily_target * Decimal("0.5")
     if mode == MODE_FREE:
         return Decimal("0")
-    if mode == MODE_MAX_HOURS and entry.get("max_hours") is not None:
+    if mode == MODE_MAX_HOURS:
+        # ``get_special_day_config`` fuellt ``max_hours`` fuer diesen Modus immer
+        # (Einstellung mit Rueckfall, Tabelle NOT NULL) — fehlt er, scheitert das laut.
         return min(daily_target, Decimal(str(entry["max_hours"])))
     return daily_target
 
 
-def format_hours_de(h: Decimal) -> str:
-    """4 -> '4', 4.5 -> '4,5', 4.25 -> '4,25'."""
+def format_max_hours_de(h: Decimal) -> str:
+    """Höchststunden eines verkürzten Tages ohne Nullen: 4 -> '4', 4.5 -> '4,5',
+    4.25 -> '4,25'. Bewusst anders als ``export_service.format_hours_de``
+    ('4,0') — daher ein eigener Name."""
     text = format(Decimal(str(h)).quantize(Decimal("0.01")), "f")
     text = text.rstrip("0").rstrip(".")
     return text.replace(".", ",")
 
 
 def reduced_day_label(max_hours: Decimal) -> str:
-    return f"verkürzter Tag (max. {format_hours_de(max_hours)} h)"
+    return f"verkürzter Tag (max. {format_max_hours_de(max_hours)} h)"
 
 
 def day_label(target_date: date, config: Dict[date, Dict[str, object]]) -> Optional[str]:
     """„verkürzter Tag (max. X h)" für einen ``max_hours``-Tag, sonst None."""
     entry = config.get(target_date)
-    if entry is None or entry["mode"] != MODE_MAX_HOURS or entry.get("max_hours") is None:
+    if entry is None or entry["mode"] != MODE_MAX_HOURS:
         return None
     return reduced_day_label(Decimal(str(entry["max_hours"])))
 
@@ -279,34 +283,6 @@ def list_reduced_days(db: Session, tenant_id, year: Optional[int] = None) -> Lis
         {"date": r.date.isoformat(), "label": r.label, "max_hours": float(r.max_hours)}
         for r in rows
     ]
-
-
-def special_day_target_factor(
-    target_date: date,
-    config: Dict[date, Dict[str, object]],
-) -> Optional[Decimal]:
-    """Return the target multiplier a special-day rule imposes on ``target_date``.
-
-    - ``None``           → no special-day rule applies (treat the day normally).
-    - ``Decimal('0.5')`` → ``half_day``: the daily target is halved.
-    - ``Decimal('0')``   → ``free``: the daily target is 0 (like a holiday).
-    - ``None`` also for ``max_hours`` (kein fester Faktor; siehe
-      :func:`special_day_target`).
-
-    ``config`` must be the dict returned by :func:`get_special_day_config` for
-    the relevant year. The caller is responsible for first handling weekends
-    and existing holidays/absences — those already reduce the target to 0, so
-    this function must NOT be consulted for them (avoids double-handling).
-    """
-    entry = config.get(target_date)
-    if entry is None:
-        return None
-    mode = entry["mode"]
-    if mode == MODE_HALF_DAY:
-        return Decimal("0.5")
-    if mode == MODE_FREE:
-        return Decimal("0")
-    return None
 
 
 def vacation_deduction_dates_for_year(
@@ -348,9 +324,10 @@ def free_special_days_in_range(db: Session, tenant_id, start: date, end: date) -
     ohnehin freier Tag fälschlich einen Urlaubstag und reduzierte das Soll doppelt).
     ``free`` + ``counts_as_vacation``-Tage werden separat in get_vacation_account
     gezählt (vacation_deduction_dates) → der Ausschluss hier bleibt budget-neutral.
-    (``half_day``-Sondertage sind KEINE freien Tage und werden NICHT ausgeschlossen;
-    ihre 0,5-Kosten kommen seit #394 über den ``special_day_target_factor`` in
-    get_vacation_account/absence_days + die Betriebsferien-Buchung.)
+    (``half_day``- und ``max_hours``-Tage sind KEINE freien Tage und werden NICHT
+    ausgeschlossen; ihre 0,5-Tag-Kosten kommen aus
+    ``calculation_service.half_special_day_weight``, ihre gebuchten Stunden aus
+    :func:`special_day_target`.)
     """
     result = set()
     for year in range(start.year, end.year + 1):
