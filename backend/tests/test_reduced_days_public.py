@@ -1,5 +1,5 @@
-"""Teil B (Task 9): verkürzte Tage im öffentlichen /api/settings und die
-Stempelkarten-Beschriftung ``today_special_day_label`` in /clock-status."""
+"""Teil B (Task 9): verkürzte Tage stehen NICHT im öffentlichen /api/settings
+(nur über die angemeldete Lese-Route) und die Stempelkarten-Beschriftung ``today_special_day_label`` in /clock-status."""
 import datetime as dt
 from decimal import Decimal
 
@@ -71,6 +71,7 @@ def test_public_settings_does_not_list_reduced_days(db, test_user, monkeypatch):
     body = app.main.get_public_settings()
 
     assert "reduced_days" not in body["special_days"]
+    assert "Rosenmontag" not in __import__("json").dumps(body, default=str)
     assert body["special_days"]["special_day_dec24_max_hours"] == 4.0
     assert set(body) <= {
         "vacation_approval_required", "break_exception_requires_approval",
@@ -90,7 +91,7 @@ def _read_client(db, user):
 
 
 def test_read_endpoint_requires_auth(db, default_tenant):
-    assert _read_client(db, None).get("/api/reduced-days").status_code in (401, 403)
+    assert _read_client(db, None).get("/api/reduced-days").status_code == 401
 
 
 def test_read_endpoint_tenant_filtered_sorted_and_year(db, test_user):

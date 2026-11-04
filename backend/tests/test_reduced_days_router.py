@@ -365,12 +365,15 @@ def test_resave_runs_314_split(client, db, admin):
 
     assert _post_rm(client).status_code == 201
     db.expire_all()
-    types_after_post = {
-        a.date: a.type for a in db.query(Absence).filter(Absence.user_id == emp.id).all()
+    rows = {a.date: a for a in db.query(Absence).filter(Absence.user_id == emp.id).all()}
+    types_after_post = {d: a.type for d, a in rows.items()}
+    # Budget 1 Tag: nur der 16.02. (verkürzt, 0,5 Tage) ist Urlaub; der 17.02. kostet
+    # einen ganzen Tag (Rest 0,5 < 1) → Überstundenausgleich, ebenso 18.–20.02.
+    assert types_after_post == {
+        RM: AbsenceType.VACATION,
+        **{date(2026, 2, d): AbsenceType.OVERTIME for d in (17, 18, 19, 20)},
     }
-    # Budget 1 Tag: 16.02. (0,5) + 17.02. (0,5) Urlaub, Rest Überstundenausgleich.
-    assert types_after_post[RM] == AbsenceType.VACATION
-    assert types_after_post[date(2026, 2, 20)] == AbsenceType.OVERTIME
+    assert float(rows[RM].hours) == 4.0
 
     resplit_year_closures(db, DEFAULT_TENANT_ID, 2026, admin)
     db.flush()

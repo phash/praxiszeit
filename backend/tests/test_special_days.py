@@ -21,19 +21,14 @@ from datetime import date
 import pytest
 
 from app.models import User, UserRole, Absence, AbsenceType, PublicHoliday
-from app.models.system_setting import SystemSetting
 from app.services import calculation_service, special_days_service
 from tests.conftest import DEFAULT_TENANT_ID
+from tests.setting_helpers import set_setting as _set_setting
 
 
 # 24./31.12.2025 are both Wednesdays.
 DEC24 = date(2025, 12, 24)
 DEC31 = date(2025, 12, 31)
-
-
-def _set_setting(db, key: str, value: str, tenant_id=DEFAULT_TENANT_ID):
-    db.add(SystemSetting(key=key, value=value, description=key, tenant_id=tenant_id))
-    db.commit()
 
 
 def _set_special_day(db, prefix: str, mode: str, counts_as_vacation: bool = True):

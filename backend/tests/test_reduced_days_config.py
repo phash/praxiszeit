@@ -9,7 +9,7 @@ import pytest
 from app.models import ReducedDay, PublicHoliday
 from app.services import special_days_service as sds
 from tests.conftest import DEFAULT_TENANT_ID
-from tests.test_special_days import _set_setting
+from tests.setting_helpers import set_setting as _set_setting
 
 
 @pytest.mark.parametrize("raw, ok", [

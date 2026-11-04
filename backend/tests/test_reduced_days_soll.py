@@ -4,12 +4,12 @@ from decimal import Decimal
 
 import pytest
 
-from app.models import (
-    User, UserRole, Absence, AbsenceType, PublicHoliday, TimeEntry, ReducedDay,
-)
+from app.models import Absence, AbsenceType, PublicHoliday, TimeEntry
 from app.models.system_setting import SystemSetting
 from app.services import calculation_service, special_days_service
 from tests.conftest import DEFAULT_TENANT_ID
+from tests.wh_change_helpers import add_row
+from tests.reduced_days_helpers import make_user_3h, reduce_day as _reduce
 
 D24 = date(2026, 12, 24)   # Thursday
 RM = date(2026, 2, 16)     # Monday, custom reduced day
@@ -17,31 +17,24 @@ TH = date(2026, 2, 19)     # Thursday, custom reduced day
 SAT = date(2026, 2, 14)
 
 
-def _reduce(db, d, hours):
-    if (d.month, d.day) in ((12, 24), (12, 31)):
-        prefix = "special_day_dec24" if d.day == 24 else "special_day_dec31"
-        for k, v in ((f"{prefix}_mode", "max_hours"), (f"{prefix}_max_hours", str(hours))):
-            db.add(SystemSetting(key=k, value=v, description=k, tenant_id=DEFAULT_TENANT_ID))
-    else:
-        db.add(ReducedDay(tenant_id=DEFAULT_TENANT_ID, date=d, label="Brueckentag",
-                          max_hours=Decimal(str(hours))))
-    db.commit()
-
-
 def _day_soll(db, user, d):
     return calculation_service.get_range_target(db, user, d, d)
 
 
-def _mk(db, **kw):
-    base = dict(username="u3", email="u3@t.l", password_hash="x", first_name="U",
-                last_name="3", role=UserRole.EMPLOYEE, weekly_hours=Decimal("15"),
-                work_days_per_week=5, track_hours=True, is_active=True,
-                tenant_id=DEFAULT_TENANT_ID)
-    base.update(kw)
-    u = User(**base)
-    db.add(u)
-    db.commit()
-    db.refresh(u)
+_mk = make_user_3h
+
+
+def _fixed(db, name, weekly, day_hours):
+    """Minijob mit festem Monats-Soll (Mo + Do ``day_hours`` h): der gültige Zustand
+    des Schreibwegs — MiLoG-Konto an — und der Modus kommt aus der Verlaufszeile
+    (Snapshot), nicht aus der User-Zeile."""
+    flags = dict(milog_working_time_account=True, use_fixed_monthly_target=True,
+                 agreed_monthly_hours=Decimal("40"))
+    u = _mk(db, username=name, email=f"{name}@t.l", weekly_hours=weekly, work_days_per_week=2,
+            use_daily_schedule=True, hours_monday=Decimal(day_hours), hours_thursday=Decimal(day_hours),
+            **flags)
+    add_row(db, u, date(2020, 1, 1), day_hours=[day_hours, None, None, day_hours, None],
+            vacation_days=Decimal("30"), track_hours=True, **flags)
     return u
 
 
@@ -52,18 +45,12 @@ def user_3h(db, default_tenant):
 
 @pytest.fixture
 def fixed_user(db, default_tenant):
-    return _mk(db, username="fx", email="fx@t.l", weekly_hours=Decimal("16"),
-               work_days_per_week=2, use_daily_schedule=True,
-               use_fixed_monthly_target=True, agreed_monthly_hours=Decimal("40"),
-               hours_monday=Decimal("8"), hours_thursday=Decimal("8"))
+    return _fixed(db, "fx", Decimal("16"), 8)
 
 
 @pytest.fixture
 def fixed_user_3h_thursday(db, default_tenant):
-    return _mk(db, username="fx3", email="fx3@t.l", weekly_hours=Decimal("6"),
-               work_days_per_week=2, use_daily_schedule=True,
-               use_fixed_monthly_target=True, agreed_monthly_hours=Decimal("40"),
-               hours_monday=Decimal("3"), hours_thursday=Decimal("3"))
+    return _fixed(db, "fx3", Decimal("6"), 3)
 
 
 def test_dec24_max_hours_caps_8h_person(db, test_user):

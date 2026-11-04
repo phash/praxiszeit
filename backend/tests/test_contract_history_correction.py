@@ -10,7 +10,7 @@ from app.models import WorkingHoursChange
 from app.services import calculation_service as cs
 from app.services import reclamp_audit
 from tests.wh_change_helpers import (
-    CONTRACT_TODAY as TODAY, contract_client_fixture, changes_url as url, rows_of, add_row, explicit_contract, reclamp_logs,
+    contract_client_fixture, changes_url as url, rows_of, add_row, explicit_contract, reclamp_logs,
 )
 
 client = pytest.fixture(name="client")(contract_client_fixture)

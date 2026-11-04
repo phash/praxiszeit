@@ -10,24 +10,13 @@ from fastapi.testclient import TestClient
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
-from app.models import User, UserRole, Absence, AbsenceType, TimeEntry, ReducedDay
-from app.models.system_setting import SystemSetting
+from app.models import Absence, AbsenceType, TimeEntry
 from app.services import calculation_service
 from tests.conftest import DEFAULT_TENANT_ID
+from tests.reduced_days_helpers import make_user_3h, reduce_day as _reduce
 
 D24 = date(2026, 12, 24)   # Donnerstag
 RM = date(2026, 2, 16)     # Rosenmontag (Montag), eigener verkuerzter Tag
-
-
-def _reduce(db, d, hours):
-    if (d.month, d.day) in ((12, 24), (12, 31)):
-        prefix = "special_day_dec24" if d.day == 24 else "special_day_dec31"
-        for k, v in ((f"{prefix}_mode", "max_hours"), (f"{prefix}_max_hours", str(hours))):
-            db.add(SystemSetting(key=k, value=v, description=k, tenant_id=DEFAULT_TENANT_ID))
-    else:
-        db.add(ReducedDay(tenant_id=DEFAULT_TENANT_ID, date=d, label="Rosenmontag",
-                          max_hours=Decimal(str(hours))))
-    db.commit()
 
 
 def _absence(db, user, d, atype, hours, half_day=False):
@@ -53,14 +42,7 @@ def _day_delta(db, user, d):
 
 @pytest.fixture
 def user_3h(db, default_tenant):
-    u = User(username="u3", email="u3@t.l", password_hash="x", first_name="U",
-             last_name="3", role=UserRole.EMPLOYEE, weekly_hours=Decimal("15"),
-             work_days_per_week=5, vacation_days=30, track_hours=True, is_active=True,
-             tenant_id=DEFAULT_TENANT_ID)
-    db.add(u)
-    db.commit()
-    db.refresh(u)
-    return u
+    return make_user_3h(db)
 
 
 def _client(db, admin):

@@ -11,12 +11,12 @@ from uuid import uuid4
 
 import pytest
 
-from app.models import TimeEntry, User, WorkingHoursChange
+from app.models import TimeEntry, User
 from app.services import calculation_service as cs
 from app.services import wh_change_service, work_blocks_service
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.wh_change_helpers import (
-    ANNA_WEEK, RETRO_REASON, add_row, contract_client_fixture, changes_url as url, rows_of, explicit_contract, freeze, t,
+    ANNA_WEEK, RETRO_REASON, add_row, contract_client_fixture, changes_url as url, rows_of, explicit_contract, t,
 )
 
 TODAY = date(2026, 11, 3)

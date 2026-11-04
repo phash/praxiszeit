@@ -15,6 +15,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user, require_admin
 from app.models import Absence, AbsenceType, User, UserRole
 from app.models.system_setting import SystemSetting
+from app.models.vacation_request import VacationRequest
 from app.services import auth_service, calculation_service
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import test_app
@@ -120,6 +121,63 @@ def test_budget_check_counts_half(db, d24_max4, test_admin):
     assert r.status_code == 201, r.text
 
 
+def _vr(db, user, day):
+    vr = VacationRequest(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=day, hours=8,
+                         absence_type="vacation", status="pending")
+    db.add(vr)
+    db.commit()
+    return vr
+
+
+def test_vacation_request_create_budget_counts_half(db, d24_max4, test_admin):
+    """F037: Budget-Vorprüfung beim Anlegen eines Urlaubsantrags (0,5 Tage Anspruch)."""
+    _set(db, "vacation_approval_required", "true")
+    emp = _mk_user(db, "vrcreate", vacation_days=0.5)
+    client = _client(db, emp, test_admin)
+    r = client.post("/api/vacation-requests/", json={"date": D23.isoformat(), "hours": 8})
+    assert r.status_code == 400, r.text
+    r = client.post("/api/vacation-requests/", json={"date": D24.isoformat(), "hours": 8})
+    assert r.status_code == 201, r.text
+
+
+def test_vacation_request_review_budget_counts_half(db, d24_max4, test_admin):
+    """F037: Budget-Vorprüfung bei der GENEHMIGUNG (Antrag direkt angelegt, damit die
+    Anlegeprüfung nicht vorher greift): 23.12. kostet 1, der 24.12. nur 0,5."""
+    _set(db, "vacation_approval_required", "true")
+    emp = _mk_user(db, "vrreview", vacation_days=0.5)
+    over = _vr(db, emp, D23)
+    fits = _vr(db, emp, D24)
+    admin_client = _client(db, test_admin, test_admin)
+    r = admin_client.post(f"/api/admin/vacation-requests/{over.id}/review", json={"action": "approve"})
+    assert r.status_code == 400, r.text
+    assert D23 not in _absences(db, emp)
+    r = admin_client.post(f"/api/admin/vacation-requests/{fits.id}/review", json={"action": "approve"})
+    assert r.status_code == 200, r.text
+    assert _used(db, emp) == 0.5
+
+
+def test_change_request_review_budget_counts_half(db, d24_max4, test_admin):
+    """F037: Budget-Prüfung der CR-Genehmigung (Absence-CREATE) am verkürzten Tag."""
+    emp = _mk_user(db, "crbudget", vacation_days=0.5)
+    past_d23 = date(2025, 12, 23)
+    ids = {}
+    for day in (past_d23, PAST_D24):
+        r = _client(db, emp, test_admin).post("/api/change-requests/", json={
+            "request_type": "create", "entry_kind": "absence",
+            "proposed_date": day.isoformat(), "proposed_absence_type": "vacation",
+            "proposed_absence_hours": 8, "reason": "Urlaub",
+        })
+        assert r.status_code in (200, 201), r.text
+        ids[day] = r.json()["id"]
+    admin_client = _client(db, test_admin, test_admin)
+    r = admin_client.post(f"/api/admin/change-requests/{ids[past_d23]}/review", json={"action": "approve"})
+    assert r.status_code == 400, r.text
+    assert past_d23 not in _absences(db, emp)
+    r = admin_client.post(f"/api/admin/change-requests/{ids[PAST_D24]}/review", json={"action": "approve"})
+    assert r.status_code == 200, r.text
+    assert _used(db, emp, 2025) == 0.5
+
+
 def test_request_day_count_half(db, d24_max4, test_user, test_admin):
     _set(db, "vacation_approval_required", "true")
     r = _client(db, test_user, test_admin).post("/api/vacation-requests/", json={
@@ -144,7 +202,8 @@ def test_closure_books_reduced_target(db, d24_max4, test_user, test_admin):
     assert full[D24].half_day is False
     assert full[D23].hours == 8.0
     assert _absences(db, short)[D24].hours == 3.0
-    # 21.-23. + 25.-31. (ohne Wochenenden/Feiertage) voll, der 24.12. nur 0,5
+    # 21.-23. + 25.-31. (ohne Wochenenden; im Test-Mandanten sind KEINE Feiertage
+    # angelegt, 25./26.12. buchen also voll) voll, der 24.12. nur 0,5
     d24_cost = _used(db, test_user)
     only_d24 = sum(1 for a in full.values() if a.date != D24)
     assert d24_cost == only_d24 + 0.5
@@ -170,6 +229,9 @@ def test_closure_split_consistent(db, d24_max4, test_admin):
         (D23, AbsenceType.VACATION), (D24, AbsenceType.VACATION)]
     assert [(d, t) for d, t, _ in types(poor)] == [
         (D23, AbsenceType.VACATION), (D24, AbsenceType.OVERTIME)]
+    # F039: auch die Stunden — am verkürzten Tag das verkürzte Soll (4 h), nie 8 h.
+    assert [h for _, _, h in types(rich)] == [8.0, 4.0]
+    assert [h for _, _, h in types(poor)] == [8.0, 4.0]
     assert float(calculation_service.get_vacation_account(db, rich, 2026)["remaining_days"]) == 0
 
     before = {e.id: types(e) for e in (rich, poor)}
@@ -181,6 +243,8 @@ def test_closure_split_consistent(db, d24_max4, test_admin):
 def test_daily_target_endpoint_reduced(db, d24_max4, test_user, test_admin):
     client = _client(db, test_user, test_admin)
     r = client.get("/api/absences/daily-target", params={"date": "2026-12-24"})
+    assert r.status_code == 200, r.text
     assert r.json()["hours"] == 4.0
     r = client.get("/api/absences/daily-target", params={"date": "2026-12-23"})
+    assert r.status_code == 200, r.text
     assert r.json()["hours"] == 8.0

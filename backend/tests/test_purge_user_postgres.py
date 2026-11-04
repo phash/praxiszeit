@@ -52,8 +52,8 @@ from __future__ import annotations
 
 import os
 import uuid
-from decimal import Decimal
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine, text

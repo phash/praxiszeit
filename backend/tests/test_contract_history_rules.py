@@ -14,7 +14,7 @@ from decimal import Decimal
 import pytest
 
 from app.models import User
-from tests.wh_change_helpers import contract_client_fixture, changes_url as url, rows_of, freeze
+from tests.wh_change_helpers import contract_client_fixture, changes_url as url, rows_of
 
 TODAY = date(2026, 11, 3)
 MONTH_START = "Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten."
