@@ -202,9 +202,9 @@ class TestImpactFields:
 
     def test_milog_warning_with_agreed_monthly_hours(self, client, db, test_user):
         _anna(db, test_user)
-        test_user.agreed_monthly_hours = 65.0
-        db.commit()
-        body = _preview(client, test_user, {"effective_from": "2026-09-01", "blocks": SHORT})
+        # Teil A (Task 11): der Snapshot der neuen Zeile trägt die Monatsstunden.
+        body = _preview(client, test_user, {"effective_from": "2026-09-01", "blocks": SHORT,
+                                            "agreed_monthly_hours": 65})
         assert body["milog_warning"] == [wh_change_service.MILOG_ACCOUNT_WARNING, wh_change_service.MILOG_GENERAL_WARNING]
 
     def test_lengthening_lists_the_not_extendable_entry(self, client, db, test_user):

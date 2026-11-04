@@ -684,7 +684,10 @@ def users_overview(
         # Ansicht (die Prüfung ist immer aktueller Monat / Aging bis heute). Perf:
         # EIN Overtime-Pass je Flag-MA — beide Signale aus demselben `detailed`.
         _milog_w: list[str] = []
-        if is_current_year and u.milog_working_time_account and u.track_hours:
+        # Teil A (Task 11): Gate aus dem Monatsvertrag von heute (Preload ``_uwh``).
+        _mc = (calculation_service.month_contract(db, u, today_local().year, today_local().month, _uwh)
+               if is_current_year else None)
+        if _mc is not None and _mc.milog_working_time_account and _mc.track_hours:
             _t = today_local()
             # #313 Saldo-Stichtag: den Stichtag durchreichen (Parität zum
             # MA-Dashboard, dashboard.py). Ohne cutoff trägt der laufende Monat

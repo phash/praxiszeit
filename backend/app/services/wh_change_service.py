@@ -387,11 +387,15 @@ def _change_out(c) -> dict:
 def milog_warnings(user, impact: ChangeImpact) -> List[str]:
     """Spec 9.5/P26: nur bei einer Verkürzung — Konto-/Monatszeit-Satz bei
     ``milog_working_time_account`` oder ``agreed_monthly_hours``, der allgemeine
-    Mindestlohnsatz bei JEDER (Minijobber ohne Kennzeichen, Risiko 9)."""
+    Mindestlohnsatz bei JEDER (Minijobber ohne Kennzeichen, Risiko 9).
+
+    Teil A (Task 11): die Kennzeichen aus dem Snapshot am Wirkungsdatum
+    (``impact.new_schedule``), nie aus der User-Zeile."""
     if not impact.is_shortening:
         return []
     out = []
-    if getattr(user, "milog_working_time_account", False) or getattr(user, "agreed_monthly_hours", None):
+    schedule = impact.new_schedule
+    if schedule.milog_working_time_account or schedule.agreed_monthly_hours:
         out.append(MILOG_ACCOUNT_WARNING)
     out.append(MILOG_GENERAL_WARNING)
     return out

@@ -408,9 +408,15 @@ class TestTexts:
         assert svc.protection_error(self._impact(), None, deleting=False, reset_offered=False) is None
 
     def test_milog_warnings(self, test_user):
-        shortening = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"])
+        # Teil A (Task 11): die Kennzeichen kommen aus dem Snapshot am Wirkungsdatum.
+        from types import SimpleNamespace
+        plain = SimpleNamespace(milog_working_time_account=False, agreed_monthly_hours=None)
+        agreed = SimpleNamespace(milog_working_time_account=False, agreed_monthly_hours=Decimal("43"))
+        shortening = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"], new_schedule=plain)
         assert svc.milog_warnings(test_user, shortening) == [svc.MILOG_GENERAL_WARNING]
-        test_user.agreed_monthly_hours = 43.0
+        test_user.agreed_monthly_hours = 43.0     # die User-Zeile allein zählt nicht mehr
+        assert svc.milog_warnings(test_user, shortening) == [svc.MILOG_GENERAL_WARNING]
+        shortening = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"], new_schedule=agreed)
         assert svc.milog_warnings(test_user, shortening) == [svc.MILOG_ACCOUNT_WARNING, svc.MILOG_GENERAL_WARNING]
         assert svc.milog_warnings(test_user, self._impact()) == []
 

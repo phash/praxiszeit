@@ -44,14 +44,13 @@ def build_my_work_schedule(db: Session, user: User, on_date: date) -> dict:
     # #463: dieselbe Bedingung wie ``journal_service.fixed_mode`` und
     # ``get_range_target`` — das Flag allein genügt nicht, ohne
     # ``agreed_monthly_hours`` gibt es kein festes Soll.
-    fixed_mode = bool(
-        getattr(user, "use_fixed_monthly_target", False)
-        and getattr(user, "agreed_monthly_hours", None)
-    )
+    # Teil A (Task 11): Monatsvertrag des Monats von ``on_date``.
+    contract = calculation_service.month_contract(db, user, on_date.year, on_date.month, rows)
+    fixed_mode = contract.fixed_mode
     return {
         "today": {"date": on_date, **_snapshot(db, user, on_date, rows)},
         "history": history,
         # Teil A: Snapshot von heute (``on_date``), nicht die User-Zeile.
         "track_hours": calculation_service.tracks_hours_on(db, user, on_date, rows),
-        "fixed_monthly_hours": float(user.agreed_monthly_hours) if fixed_mode else None,
+        "fixed_monthly_hours": float(contract.agreed_monthly_hours) if fixed_mode else None,
     }

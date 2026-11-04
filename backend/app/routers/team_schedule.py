@@ -65,7 +65,9 @@ def team_schedule(
             department=user.department,
             calendar_color=user.calendar_color,
             track_hours=schedule.track_hours,  # Teil A: Snapshot am Datum
-            use_fixed_monthly_target=bool(getattr(user, "use_fixed_monthly_target", False)),
+            # Teil A (Task 11): Monatsvertrag des Datums, nicht die User-Zeile.
+            use_fixed_monthly_target=calculation_service.month_contract(
+                db, user, on_date.year, on_date.month, changes).use_fixed_monthly_target,
             blocks=work_blocks_service.week_blocks_to_json(schedule.blocks, schedule.block_pauses),
             legacy=schedule.block_pauses is not None and any(p is None for p in schedule.block_pauses),
             schedule=calculation_service.schedule_display_json(schedule),

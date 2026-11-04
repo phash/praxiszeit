@@ -205,6 +205,59 @@ def tracks_hours_on(
     return get_schedule_for_date(db, user, d, wh_changes).track_hours
 
 
+class MonthContract(NamedTuple):
+    """Teil A, Task 11: die Minijob-Felder (und ``track_hours``) eines MONATS —
+    Snapshot am Monatsersten. Minijob-Felder ändern sich nur zum Monatsersten
+    (Schreibregel), deshalb gilt der Wert des 1. für den ganzen Monat."""
+
+    track_hours: bool
+    milog_working_time_account: bool
+    agreed_monthly_hours: Optional[Decimal]  # None = aus weekly_hours abgeleitet
+    use_fixed_monthly_target: bool
+
+    @property
+    def fixed_mode(self) -> bool:
+        """Festes Monats-Soll (#377 2b): Flag UND eine vereinbarte Zahl > 0."""
+        agreed = self.agreed_monthly_hours
+        return bool(self.use_fixed_monthly_target and agreed and agreed > 0)
+
+
+def month_contract(
+    db: Session,
+    user: User,
+    year: int,
+    month: int,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> MonthContract:
+    """Teil A, Task 11: DER Monatsvertrag (Snapshot am 1. des Monats)."""
+    schedule = get_schedule_for_date(db, user, date(year, month, 1), wh_changes)
+    return MonthContract(
+        track_hours=schedule.track_hours,
+        milog_working_time_account=schedule.milog_working_time_account,
+        agreed_monthly_hours=schedule.agreed_monthly_hours,
+        use_fixed_monthly_target=schedule.use_fixed_monthly_target,
+    )
+
+
+def _user_wh_changes(db: Session, user: User) -> List[WorkingHoursChange]:
+    """EIN Preload der Verlaufszeilen (F-026), Muster der Hot-Loops."""
+    return db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+    ).order_by(WorkingHoursChange.effective_from).all()
+
+
+def _months_between(start: date, end: date):
+    """(Jahr, Monat) von ``start`` bis ``end`` einschließlich."""
+    y, m = start.year, start.month
+    while (y, m) <= (end.year, end.month):
+        yield y, m
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+
+
 def tracks_hours_in_range(
     db: Session,
     user: User,
@@ -1272,14 +1325,20 @@ def absence_booking_dates(
     return result
 
 
-def fixed_monthly_target(user: User, year: int, month: int) -> Decimal:
+def fixed_monthly_target(
+    db: Session, user: User, year: int, month: int,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> Decimal:
     """#377 Baustein 2b: festes Monats-Soll = agreed_monthly_hours, anteilig bei
     Eintritt/Austritt (Kalendertag-Bruchteil des Beschäftigungsfensters im Monat).
-    Gibt 0, wenn der Modus aus ist oder agreed fehlt (Caller → wie Modus aus)."""
-    agreed = getattr(user, "agreed_monthly_hours", None)
-    if not getattr(user, "use_fixed_monthly_target", False) or not agreed or Decimal(str(agreed)) <= 0:
+    Gibt 0, wenn der Modus aus ist oder agreed fehlt (Caller → wie Modus aus).
+
+    Teil A (Task 11): Modus und Zahl aus dem Monatsvertrag (:func:`month_contract`),
+    nie aus der User-Zeile — eine Anhebung ab 2027 laesst 2026 unveraendert."""
+    mc = month_contract(db, user, year, month, wh_changes)
+    if not mc.fixed_mode:
         return Decimal('0')
-    agreed = Decimal(str(agreed))
+    agreed = mc.agreed_monthly_hours
     days_in_month = monthrange(year, month)[1]
     in_window = sum(
         1 for day in range(1, days_in_month + 1)
@@ -1441,7 +1500,7 @@ def fixed_month_credit(db: Session, user: User, year: int, month: int, up_to_dat
     VACATION/PAID_LEAVE) dem Ist gutschreiben. SICK/TRAINING NICHT (Doppelguard).
     ``from_date`` (Review-Medium): optionale Untergrenze für Range-genaue Aufrufe
     — None (Default) = ganzer Monat, unverändertes Verhalten."""
-    if not getattr(user, "use_fixed_monthly_target", False):
+    if not month_contract(db, user, year, month).use_fixed_monthly_target:  # Teil A: je Monat
         return Decimal('0')
     return _fixed_month_absence_hours(db, user, year, month, _FIXED_PAID_CREDIT_TYPES,
                                       up_to_date, include_holidays=True, from_date=from_date)
@@ -1453,7 +1512,7 @@ def fixed_month_unpaid_reduction(db: Session, user: User, year: int, month: int,
     feste Monats-Soll mindern (statt Ist+). ``from_date`` (Review-Medium):
     optionale Untergrenze für Range-genaue Aufrufe — None (Default) = ganzer
     Monat, unverändertes Verhalten."""
-    if not getattr(user, "use_fixed_monthly_target", False):
+    if not month_contract(db, user, year, month).use_fixed_monthly_target:  # Teil A: je Monat
         return Decimal('0')
     return _fixed_month_absence_hours(db, user, year, month, _FIXED_UNPAID_TYPES,
                                       up_to_date, include_holidays=False, from_date=from_date)
@@ -1864,10 +1923,7 @@ def future_freizeitausgleich_impact(
     #
     # Im Fix-Modus ist die maßgebliche Größe die geplante Tagesarbeitszeit
     # (_fixed_planned_hours), nicht das aus den Wochenstunden abgeleitete Tages-Soll.
-    _fixed_mode = bool(
-        getattr(user, "use_fixed_monthly_target", False)
-        and getattr(user, "agreed_monthly_hours", None)
-    )
+    # Teil A (Task 11): der Modus gilt je MONAT laut Monatsvertrag (unten je Tag).
     if today is None:
         today = today_local()
     if cutoff_date is None:
@@ -1908,7 +1964,7 @@ def future_freizeitausgleich_impact(
             continue
         if not tracks_hours_on(db, user, d, wh_changes):  # Teil A: Snapshot des Tages
             continue
-        if _fixed_mode:
+        if month_contract(db, user, d.year, d.month, wh_changes).fixed_mode:
             # Fix-Soll: das Monats-Soll ist flach und wird von einem OVERTIME-Tag
             # nicht gemindert; das Ist bekommt für ihn nichts gutgeschrieben. Der
             # Saldo sinkt also um die GEPLANTEN Stunden dieses Tages. An einem
@@ -1953,51 +2009,68 @@ def get_range_target(
     if end < start:
         return Decimal('0')
 
+    # Preload the user's WorkingHoursChange rows ONCE and resolve the per-day
+    # weekly hours in memory (avoids one SELECT per day — N+1 — for a multi-day
+    # range; mirrors get_overtime_account). F-026: tenant-scoped.
+    wh_changes = _user_wh_changes(db, user)
+
     # #377 Baustein 2b: fester Monats-Soll-Modus — statt der Per-Tag-Summe die
     # (pro-rata + unpaid-geminderten) festen Monats-Solls über die Range summieren.
-    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
-        total_fixed = Decimal('0')
-        y, m = start.year, start.month
-        while (y, m) <= (end.year, end.month):
-            first = date(y, m, 1)
-            last = date(y, m, monthrange(y, m)[1])
-            month_start = max(first, start)
-            month_end = min(last, end if up_to_date is None else min(end, up_to_date))
-            if month_end >= month_start:
-                # Review-Medium: NUR das Ziel wird über den Range-Anteil skaliert;
-                # die unbezahlte Reduktion wird direkt für [month_start,month_end]
-                # ermittelt (from_date=month_start) statt whole-month-dann-skaliert
-                # — sonst "smeart" eine einzelne Abwesenheit über jede Woche des
-                # Monats, auch Wochen, die den Abwesenheitstag gar nicht enthalten.
-                mt = fixed_monthly_target(user, y, m)
-                # Range-/cutoff-Skalierung: Anteil der in [month_start,month_end] ∩ Fenster
-                # liegenden Kalendertage an den Fenster-Tagen des Monats.
-                win_days = sum(1 for dd in range(1, monthrange(y, m)[1] + 1)
-                               if _within_employment_window(user, date(y, m, dd)))
-                in_days = sum(1 for dd in range(month_start.day, month_end.day + 1)
-                              if _within_employment_window(user, date(y, m, dd)))
-                if win_days > 0 and in_days < win_days:
-                    mt = (mt * Decimal(in_days) / Decimal(win_days))
-                # L4 (Audit 2026-07-31): Untergrenze 0 je Monatsscheibe. Ziel und
-                # Minderung haben unterschiedliche Basen — das Ziel ist
-                # KALENDERTAG-anteilig (agreed × Fenstertage), die Minderung ist
-                # die Summe der PLANSTUNDEN der unbezahlten Fehltage. Ein Monat
-                # kann mehr Planstunden tragen als `agreed` (22 Werktage sind
-                # 4,4 Wochen, mehr als die 13/3 der Ableitung), ebenso eine
-                # Wochenscheibe mehr als ihr Kalendertag-Anteil. Ohne Klemmung
-                # ergab ein voller Monat unbezahlt frei ein NEGATIVES Soll und
-                # damit Phantom-Überstunden in genau dieser Höhe (Monat −2,00 h,
-                # Wochenbericht −0,65 h). Mehr als das ganze Soll kann eine
-                # unbezahlte Freistellung nie streichen.
-                mt = max(Decimal('0'), mt - fixed_month_unpaid_reduction(
-                    db, user, y, m, from_date=month_start, up_to_date=month_end))
-                total_fixed += mt
-            m += 1
-            if m > 12:
-                m = 1
-                y += 1
-        return total_fixed.quantize(Decimal('0.01'))
+    # Teil A (Task 11): der Modus gilt je MONAT laut Monatsvertrag; ein Bereich
+    # über einen Moduswechsel rechnet jeden Monat in seinem eigenen Modus.
+    fixed_months = {ym for ym in _months_between(start, end)
+                    if month_contract(db, user, ym[0], ym[1], wh_changes).fixed_mode}
+    if not fixed_months:
+        return _range_target_by_day(db, user, start, end, up_to_date, wh_changes).quantize(Decimal('0.01'))
 
+    total_fixed = Decimal('0')
+    for y, m in _months_between(start, end):
+        first = date(y, m, 1)
+        last = date(y, m, monthrange(y, m)[1])
+        month_start = max(first, start)
+        month_end = min(last, end if up_to_date is None else min(end, up_to_date))
+        if month_end < month_start:
+            continue
+        if (y, m) not in fixed_months:
+            total_fixed += _range_target_by_day(db, user, month_start, month_end, None, wh_changes)
+            continue
+        # Review-Medium: NUR das Ziel wird über den Range-Anteil skaliert;
+        # die unbezahlte Reduktion wird direkt für [month_start,month_end]
+        # ermittelt (from_date=month_start) statt whole-month-dann-skaliert
+        # — sonst "smeart" eine einzelne Abwesenheit über jede Woche des
+        # Monats, auch Wochen, die den Abwesenheitstag gar nicht enthalten.
+        mt = fixed_monthly_target(db, user, y, m, wh_changes)
+        # Range-/cutoff-Skalierung: Anteil der in [month_start,month_end] ∩ Fenster
+        # liegenden Kalendertage an den Fenster-Tagen des Monats.
+        win_days = sum(1 for dd in range(1, monthrange(y, m)[1] + 1)
+                       if _within_employment_window(user, date(y, m, dd)))
+        in_days = sum(1 for dd in range(month_start.day, month_end.day + 1)
+                      if _within_employment_window(user, date(y, m, dd)))
+        if win_days > 0 and in_days < win_days:
+            mt = (mt * Decimal(in_days) / Decimal(win_days))
+        # L4 (Audit 2026-07-31): Untergrenze 0 je Monatsscheibe. Ziel und
+        # Minderung haben unterschiedliche Basen — das Ziel ist
+        # KALENDERTAG-anteilig (agreed × Fenstertage), die Minderung ist
+        # die Summe der PLANSTUNDEN der unbezahlten Fehltage. Ein Monat
+        # kann mehr Planstunden tragen als `agreed` (22 Werktage sind
+        # 4,4 Wochen, mehr als die 13/3 der Ableitung), ebenso eine
+        # Wochenscheibe mehr als ihr Kalendertag-Anteil. Ohne Klemmung
+        # ergab ein voller Monat unbezahlt frei ein NEGATIVES Soll und
+        # damit Phantom-Überstunden in genau dieser Höhe (Monat −2,00 h,
+        # Wochenbericht −0,65 h). Mehr als das ganze Soll kann eine
+        # unbezahlte Freistellung nie streichen.
+        mt = max(Decimal('0'), mt - fixed_month_unpaid_reduction(
+            db, user, y, m, from_date=month_start, up_to_date=month_end))
+        total_fixed += mt
+    return total_fixed.quantize(Decimal('0.01'))
+
+
+def _range_target_by_day(
+    db: Session, user: User, start: date, end: date, up_to_date: Optional[date],
+    wh_changes: List[WorkingHoursChange],
+) -> Decimal:
+    """Tagesrechnung des Solls über ``[start, end]`` (ungerundet) — der Pfad
+    ohne festes Monats-Soll von :func:`get_range_target`."""
     # F-033: sargable date range.
     holidays = db.query(PublicHoliday).filter(
         date_in_range(PublicHoliday.date, start, end),
@@ -2016,14 +2089,6 @@ def get_range_target(
     # F1 (1.18.0): erfasste Arbeitszeit auf Ganztags-Abwesenheitstagen (nur dann
     # eine Query) — die Abwesenheit darf nur den nicht gearbeiteten Teil streichen.
     worked_map = worked_hours_map(db, user, absence_half_map)
-
-    # Preload the user's WorkingHoursChange rows ONCE and resolve the per-day
-    # weekly hours in memory (avoids one SELECT per day — N+1 — for a multi-day
-    # range; mirrors get_overtime_account). F-026: tenant-scoped.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,
-    ).order_by(WorkingHoursChange.effective_from).all()
 
     # #146: special-day config can differ per year (a week may cross Dec/Jan).
     _special_cfg_cache: dict = {}
@@ -2064,7 +2129,7 @@ def get_range_target(
         )
         d += timedelta(days=1)
 
-    return total.quantize(Decimal('0.01'))
+    return total
 
 
 def get_range_actual(
@@ -2106,8 +2171,10 @@ def get_range_actual(
     # :func:`credit_day_weight`. Ohne solche Abwesenheit im Zeitraum ist der
     # Kontext leer und es entsteht keine zusaetzliche Query.
     credit_holidays, credit_cfgs = _credited_day_context(db, user, credited_absences)
+    wh_changes = _user_wh_changes(db, user)
     credited_hours = sum((Decimal(str(a.hours))
-                          * _credit_weight(db, user, a.date, credit_holidays, credit_cfgs.get(a.date.year))
+                          * _credit_weight(db, user, a.date, credit_holidays, credit_cfgs.get(a.date.year),
+                                           wh_changes=wh_changes)
                           for a in credited_absences
                           if _within_employment_window(user, a.date)
                           and (up_to_date is None or a.date <= up_to_date)), Decimal('0'))
@@ -2118,20 +2185,17 @@ def get_range_actual(
     # monatsweise arbeitet; from_date=month_start hält es range-genau (mirror
     # von get_range_target — eine Gutschrift in Woche A darf nicht in eine
     # Abfrage für Woche B desselben Monats durchsickern).
+    # Teil A (Task 11): der Modus gilt je MONAT laut Monatsvertrag.
     fixed_credit = Decimal('0')
-    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
-        y, m = start.year, start.month
-        while (y, m) <= (end.year, end.month):
-            first = date(y, m, 1)
-            last = date(y, m, monthrange(y, m)[1])
-            month_start = max(first, start)
-            month_end = min(last, end if up_to_date is None else min(end, up_to_date))
-            if month_end >= month_start:
-                fixed_credit += fixed_month_credit(db, user, y, m, from_date=month_start, up_to_date=month_end)
-            m += 1
-            if m > 12:
-                m = 1
-                y += 1
+    for y, m in _months_between(start, end):
+        if not month_contract(db, user, y, m, wh_changes).fixed_mode:
+            continue
+        first = date(y, m, 1)
+        last = date(y, m, monthrange(y, m)[1])
+        month_start = max(first, start)
+        month_end = min(last, end if up_to_date is None else min(end, up_to_date))
+        if month_end >= month_start:
+            fixed_credit += fixed_month_credit(db, user, y, m, from_date=month_start, up_to_date=month_end)
 
     return (Decimal(str(total)) + credited_hours + fixed_credit).quantize(Decimal('0.01'))
 
@@ -2352,8 +2416,6 @@ def get_overtime_accounts(
         for p, s in zip(points, starts) if s is not None
     )
 
-    fixed_mode = bool(getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None))
-
     # --- single-pass bulk fetches ---
     # All time entries in range (grouped by month in memory; the #313 cutoff
     # is applied per month in _month_delta, because points differ in cutoff).
@@ -2454,7 +2516,8 @@ def get_overtime_accounts(
         # (`min(end, up_to_date)`), daher hier unverändert durchreichen — NICHT
         # die oben berechnete `up_to_date` (= spätestes Monatsende der Punkte,
         # nur für den Bulk-Fetch-Query-Bound gedacht).
-        if fixed_mode:
+        # Teil A (Task 11): Modus je Monat laut Monatsvertrag, nicht je Person.
+        if month_contract(db, user, current_year, current_month, wh_changes).fixed_mode:
             monthly_target = get_monthly_target(db, user, current_year, current_month, up_to_date=cutoff_date)
             monthly_actual = get_monthly_actual(db, user, current_year, current_month, up_to_date=cutoff_date)
             delta = monthly_actual - monthly_target
@@ -2767,7 +2830,8 @@ def get_overtime_history_detailed(
         # Feiertage/Urlaub). `cutoff_date` unveraendert durchreichen (wie
         # Task 5) — get_range_target/get_range_actual clampen intern selbst
         # gegen das jeweilige Monatsende.
-        if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
+        # Teil A (Task 11): Modus je Monat laut Monatsvertrag, nicht je Person.
+        if month_contract(db, user, cy, cm, wh_changes).fixed_mode:
             monthly_target = get_monthly_target(db, user, cy, cm, up_to_date=cutoff_date)
             monthly_actual = get_monthly_actual(db, user, cy, cm, up_to_date=cutoff_date)
             total_balance += (monthly_actual - monthly_target)
@@ -2914,12 +2978,19 @@ def get_ytd_summary(
     # mit/ohne #313-cutoff, oder Vorjahr = 31.12.) — get_monthly_target/
     # get_monthly_actual clampen intern selbst gegen das jeweilige Monatsende
     # (min(Monatsende, up_to_date)), daher hier unverändert durchreichen.
-    if getattr(user, "use_fixed_monthly_target", False) and getattr(user, "agreed_monthly_hours", None):
-        total_target = Decimal('0')
-        total_actual = Decimal('0')
-        for m in range(1, end.month + 1):
-            total_target += get_monthly_target(db, user, year, m, up_to_date=end)
-            total_actual += get_monthly_actual(db, user, year, m, up_to_date=end)
+    # Teil A (Task 11): Modus je MONAT laut Monatsvertrag. Ein Jahr mit
+    # Moduswechsel rechnet die Monate mit festem Soll ueber die Wrapper und die
+    # uebrigen Tage in der Tagesschleife weiter unten.
+    fixed_months = {m for m in range(1, end.month + 1)
+                    if month_contract(db, user, year, m, wh_changes).fixed_mode}
+    fixed_target = Decimal('0')
+    fixed_actual = Decimal('0')
+    for m in sorted(fixed_months):
+        fixed_target += get_monthly_target(db, user, year, m, up_to_date=end)
+        fixed_actual += get_monthly_actual(db, user, year, m, up_to_date=end)
+    if fixed_months and len(fixed_months) == end.month:
+        total_target = fixed_target
+        total_actual = fixed_actual
 
         carryover = db.query(YearCarryover).filter(
             YearCarryover.tenant_id == user.tenant_id,  # F-026
@@ -2976,6 +3047,7 @@ def get_ytd_summary(
     current = start
     while current <= end:
         if (current.weekday() < 5
+                and current.month not in fixed_months  # Teil A: Monat mit festem Soll s. o.
                 and _within_employment_window(user, current)):  # #193
             # Fix #1: holiday / soll-reducing absence (full vs. half day) + #146
             # special-day factor via the shared per-day helper.
@@ -3000,6 +3072,7 @@ def get_ytd_summary(
     # loop above) — avoids phantom YTD overtime from out-of-window entries.
     total_actual = sum((Decimal(str(e.net_hours)) for e in entries
                         if _within_employment_window(user, e.date)
+                        and e.date.month not in fixed_months
                         and tracked_on(e.date)), start=Decimal('0'))  # Teil A
 
     credited_absences = db.query(Absence).filter(
@@ -3017,7 +3090,11 @@ def get_ytd_summary(
                                           wh_changes=wh_changes)
                          for a in credited_absences
                          if _within_employment_window(user, a.date)
+                         and a.date.month not in fixed_months
                          and tracked_on(a.date)), start=Decimal('0'))  # Teil A
+    # Teil A (Task 11): Monate mit festem Soll (oben ueber die Wrapper gerechnet).
+    total_target += fixed_target
+    total_actual += fixed_actual
 
     # Include overtime carryover for this year
     carryover = db.query(YearCarryover).filter(

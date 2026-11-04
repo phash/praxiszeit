@@ -220,7 +220,9 @@ def get_overtime_account(
     # Perf: KEIN zweiter Overtime-Pass — history_detail/current_month_detail sind
     # oben bereits berechnet (mit cutoff = month-to-date).
     milog_warnings: list[str] = []
-    if current_user.milog_working_time_account and current_user.track_hours:
+    # Teil A (Task 11): beide Flags aus dem Monatsvertrag des laufenden Monats.
+    _mc = calculation_service.month_contract(db, current_user, now.year, now.month)
+    if _mc.milog_working_time_account and _mc.track_hours:
         _actual = current_month_detail.actual if current_month_detail is not None else Decimal('0.00')
         _chk = milog_service.milog_50_check(db, current_user, now.year, now.month, monthly_actual=_actual)
         if _chk:

@@ -23,18 +23,18 @@ def _mk(db, **kw):
 def test_fixed_target_is_flat_across_months(db, default_tenant):
     u = _mk(db)
     # März 2025 (5 Montage) vs Feb 2025 (4 Montage) → beide 40h fix.
-    assert cs.fixed_monthly_target(u, 2025, 3) == Decimal("40.00")
-    assert cs.fixed_monthly_target(u, 2025, 2) == Decimal("40.00")
+    assert cs.fixed_monthly_target(db, u, 2025, 3) == Decimal("40.00")
+    assert cs.fixed_monthly_target(db, u, 2025, 2) == Decimal("40.00")
 
 
 def test_fixed_target_prorata_on_entry(db, default_tenant):
     u = _mk(db, first_work_day=date(2025, 3, 16))  # 16 von 31 Tagen im Fenster
-    assert cs.fixed_monthly_target(u, 2025, 3) == (Decimal("40") * 16 / 31).quantize(Decimal("0.01"))
+    assert cs.fixed_monthly_target(db, u, 2025, 3) == (Decimal("40") * 16 / 31).quantize(Decimal("0.01"))
 
 
 def test_fixed_target_zero_when_flag_off(db, default_tenant):
     u = _mk(db, use_fixed_monthly_target=False)
-    assert cs.fixed_monthly_target(u, 2025, 3) == Decimal("0")
+    assert cs.fixed_monthly_target(db, u, 2025, 3) == Decimal("0")
 
 
 def test_credit_holiday_on_planned_day(db, default_tenant):

@@ -106,12 +106,8 @@ def get_journal(
     # for why the summary, not the days, is the source of truth here.
     # #463: Fix-Modus einmal bestimmen (identische Bedingung wie in
     # ``get_range_actual``/``get_range_target``: das Flag allein genuegt nicht,
-    # ohne ``agreed_monthly_hours`` gibt es kein festes Soll).
-    fixed_mode = bool(
-        getattr(user, "use_fixed_monthly_target", False)
-        and getattr(user, "agreed_monthly_hours", None)
-    )
-
+    # ohne ``agreed_monthly_hours`` gibt es kein festes Soll) — unten, nach dem
+    # Preload der Verlaufszeilen.
     special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
 
     # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
@@ -121,6 +117,8 @@ def get_journal(
         WorkingHoursChange.user_id == user.id,
         WorkingHoursChange.tenant_id == user.tenant_id,
     ).order_by(WorkingHoursChange.effective_from).all()
+    # Teil A (Task 11): Modus aus dem Monatsvertrag dieses Monats.
+    fixed_mode = calculation_service.month_contract(db, user, year, month, wh_changes).fixed_mode
 
     def _raw_daily_target(d: date) -> Decimal:
         """Ungewichtetes Tagessoll laut Snapshot (Gewicht der Gutschrift)."""
