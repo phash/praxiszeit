@@ -262,7 +262,9 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
         db, user, window.start, window.end, set(weekdays), old_schedule.blocks, grace)
     db.flush()
     open_loses = False
-    if (open_today is not None and user.track_hours and not open_today.credit_override
+    # Teil A: Stundenzählung laut NEUEM Snapshot von heute (nach ``apply``).
+    if (open_today is not None and calculation_service.tracks_hours_on(db, user, today)
+            and not open_today.credit_override
             and today.weekday() in weekdays):
         # P1: das Ausstempeln kappt mit dem gespeicherten Puffer des Eintrags (E80).
         open_loses = work_window_service.open_entry_loses(

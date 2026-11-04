@@ -205,6 +205,28 @@ def tracks_hours_on(
     return get_schedule_for_date(db, user, d, wh_changes).track_hours
 
 
+def tracks_hours_in_range(
+    db: Session,
+    user: User,
+    start: date,
+    end: date,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
+) -> bool:
+    """Zaehlt die Person an IRGENDEINEM Tag in ``start``..``end`` Stunden?
+
+    Der Snapshot ist stueckweise konstant: innerhalb des Zeitraums gilt der Wert
+    am ``start`` oder der einer Zeile, die im Zeitraum wirksam wird. Damit genuegt
+    ein Blick auf diese Zeilen — keine Schleife je Tag, eine Query ohne Preload."""
+    if wh_changes is None:
+        wh_changes = db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.user_id == user.id,
+            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+        ).all()
+    if tracks_hours_on(db, user, start, wh_changes):
+        return True
+    return any(start < c.effective_from <= end and bool(c.track_hours) for c in wh_changes)
+
+
 def _track_hours_values(db: Session, user: User, wh_changes: List[WorkingHoursChange]) -> set:
     """Alle ``track_hours``-Werte, die der Snapshot der Person je annehmen kann:
     die der Verlaufszeilen (vor der ersten Zeile gelten deren Werte), ohne Zeile

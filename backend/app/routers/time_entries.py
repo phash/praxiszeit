@@ -401,7 +401,8 @@ def _clock_blocks_and_grace(db: Session, user: User, today: date, open_entry) ->
         if open_entry is not None
         else work_window_service.get_grace_minutes(db, user.tenant_id)
     )
-    if not getattr(user, "track_hours", True):
+    # Teil A: Stundenzählung laut Snapshot des Tages, nicht die User-Zeile.
+    if not calculation_service.tracks_hours_on(db, user, today):
         return [], grace, False
     day = work_window_service.credit_blocks(db, user, today)
     blocks = [

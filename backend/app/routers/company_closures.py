@@ -290,11 +290,13 @@ def _create_closure_absences(
         # #314: remaining vacation budget snapshot per year, consumed as we book
         # VACATION days; once exhausted the surplus days become OVERTIME.
         remaining_by_year: dict = {}
-        # The split only makes sense for time-tracked employees: an untracked MA
-        # (track_hours=False, daily target 0) has no overtime account, so an
-        # OVERTIME day would vanish from all accounting. Keep legacy VACATION for
-        # them (review finding).
-        emp_split = split_overtime and employee.track_hours
+        # The split only makes sense on time-tracked days: on a day without
+        # hour tracking (track_hours=False laut Snapshot, daily target 0) there is
+        # no overtime account, so an OVERTIME day would vanish from all
+        # accounting. Such days keep legacy VACATION (review finding). Teil A:
+        # decided per workday from the snapshot below (``day_target > 0`` is
+        # False there), never from the live user column.
+        emp_split = split_overtime
         for workday in workdays:
             # #298: never book closure absences OUTSIDE the employee's employment
             # window. A future-start employee (first_work_day in the future, e.g. an
@@ -335,7 +337,7 @@ def _create_closure_absences(
             # Betriebsferien). Deckungsgleich mit
             # ``calculation_service.is_vacation_billable_day`` (ruft ihn aus
             # Perf-Gruenden nicht selbst auf, der Snapshot liegt schon vor).
-            if employee.track_hours and day_target <= 0:
+            if schedule.track_hours and day_target <= 0:
                 continue
 
             # Skip if any absence already exists for this day (not just vacation)
@@ -909,22 +911,23 @@ def update_closure(
     # Stundenzählung (#191) zählt jeder Schließtag und bleibt. Ausgeschiedene/
     # Abgewählte fasst dieses Speichern wie oben nicht an. Unabhängig von
     # ``_worked_keys``: die Zeile wird nicht neu gebucht, die Arbeitszeit bleibt.
+    # Teil A: Stundenzählung je Abwesenheitsdatum — ``is_vacation_billable_day``
+    # liest sie aus dem Snapshot (ohne Stundenzählung zählt jeder Schließtag).
     _participants_by_id = {e.id: e for e in employees}
-    _tracked_linked_ids = {
-        a.user_id for a in linked
-        if a.user_id in _participants_by_id and _participants_by_id[a.user_id].track_hours
+    _participant_linked_ids = {
+        a.user_id for a in linked if a.user_id in _participants_by_id
     }
     _zero_target_ids = set()
-    if _tracked_linked_ids:
+    if _participant_linked_ids:
         _wh_by_user: dict = {}
         for wh in db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id.in_(_tracked_linked_ids),
+            WorkingHoursChange.user_id.in_(_participant_linked_ids),
             WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
         ).order_by(WorkingHoursChange.effective_from).all():
             _wh_by_user.setdefault(wh.user_id, []).append(wh)
         _zero_target_ids = {
             a.id for a in linked
-            if a.user_id in _tracked_linked_ids and a.date in workday_set
+            if a.user_id in _participant_linked_ids and a.date in workday_set
             and not calculation_service.is_vacation_billable_day(
                 db, _participants_by_id[a.user_id], a.date,
                 wh_changes=_wh_by_user.get(a.user_id, []),

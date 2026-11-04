@@ -712,7 +712,8 @@ def users_overview(
             user_id=str(u.id),
             first_name=u.first_name,
             last_name=u.last_name,
-            track_hours=u.track_hours,
+            # Teil A: Snapshot von heute (Preload ``_uwh``), nicht die User-Zeile.
+            track_hours=calculation_service.tracks_hours_on(db, u, today_local(), _uwh),
             vacation=VacationAccount(
                 year=year,
                 budget_hours=vac["budget_hours"],

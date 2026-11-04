@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from calendar import monthrange
 from urllib.parse import quote
 from app.database import get_db
-from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
+from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
 from app.models.public_holiday import PublicHoliday
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences, WeeklyHoursChangeInPeriod
@@ -37,6 +37,19 @@ def _get_active_visible_users(db: Session, tenant_id) -> list:
         User.is_active == True,
         User.is_hidden == False,
     ).order_by(User.last_name, User.first_name).all()
+
+
+def _wh_changes_by_user(db: Session, tenant_id, users: list) -> dict:
+    """Teil A: EIN Preload der Verlaufszeilen aller Berichtspersonen (F-026) —
+    ``track_hours`` des Zeitraums kommt aus dem Snapshot, nicht der User-Zeile."""
+    by_user: dict = {}
+    if users:
+        for row in db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.tenant_id == tenant_id,  # F-026
+            WorkingHoursChange.user_id.in_([u.id for u in users]),
+        ).all():
+            by_user.setdefault(row.user_id, []).append(row)
+    return by_user
 
 
 @router.get("/monthly", response_model=List[EmployeeMonthlyReport])
@@ -88,6 +101,7 @@ def get_monthly_report(
         db.flush()
 
     users = _get_active_visible_users(db, current_user.tenant_id)
+    wh_by_user = _wh_changes_by_user(db, current_user.tenant_id, users)
 
     show_year_end_projection = get_bool_setting(db, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, tenant_id=current_user.tenant_id, default=True, )
 
@@ -98,6 +112,11 @@ def get_monthly_report(
         # #313: per-user cutoff (each user's last finished workday) unless the
         # report is explicitly run on the full-month ('monatsende') basis.
         cutoff = calculation_service.get_soll_cutoff_date(db, user) if soll_basis == "bis_heute" else None
+        # Teil A: Stundenzählung an irgendeinem Tag des Monats (Snapshot).
+        tracks = calculation_service.tracks_hours_in_range(
+            db, user, date(year, month_num, 1), date(year, month_num, monthrange(year, month_num)[1]),
+            wh_by_user.get(user.id, []),
+        )
         target = calculation_service.get_monthly_target(db, user, year, month_num, up_to_date=cutoff)
         actual = calculation_service.get_monthly_actual(db, user, year, month_num, up_to_date=cutoff)
         # #150: target/actual sind bereits berechnet — get_monthly_balance würde
@@ -110,7 +129,7 @@ def get_monthly_report(
         # bis_heute→cutoff, monatsende→Monatsende (verhindert Doppelzählung künftiger
         # Freizeitausgleich-Tage im laufenden Monat).
         _future_comp = Decimal('0'); _projected = None
-        if show_year_end_projection and year == _now.year and month_num == _now.month and user.track_hours:
+        if show_year_end_projection and year == _now.year and month_num == _now.month and tracks:
             _boundary = cutoff if cutoff is not None else date(year, month_num, calendar.monthrange(year, month_num)[1])
             _future_comp = calculation_service.future_freizeitausgleich_impact(db, user, cutoff_date=_boundary)
             if _future_comp > 0:
@@ -166,7 +185,7 @@ def get_monthly_report(
             sick_hours=sick_hours if include_health_data else 0.0,
             sick_days=sick_days if include_health_data else 0.0,
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
-            track_hours=bool(user.track_hours),
+            track_hours=tracks,
             weekly_hours_changes=[
                 # Der Vorgaenger gehoert dazu: nur er sagt, ob sich die
                 # Arbeitstage geaendert haben (Abschluss-Review #431, Fund 1).
@@ -233,6 +252,7 @@ def get_weekly_report(
         db.flush()
 
     users = _get_active_visible_users(db, current_user.tenant_id)
+    wh_by_user = _wh_changes_by_user(db, current_user.tenant_id, users)
 
     show_year_end_projection = get_bool_setting(db, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, tenant_id=current_user.tenant_id, default=True, )
 
@@ -242,6 +262,9 @@ def get_weekly_report(
     for user in users:
         # #313: per-user cutoff (last finished workday) unless run on the full basis.
         cutoff = calculation_service.get_soll_cutoff_date(db, user) if soll_basis == "bis_heute" else None
+        # Teil A: Stundenzählung an irgendeinem Tag der Woche (Snapshot).
+        tracks = calculation_service.tracks_hours_in_range(
+            db, user, wk_start, wk_end, wh_by_user.get(user.id, []))
         # #500: Soll/Ist/Saldo + Konto zum Wochenende aus DER einen Wochenrechnung,
         # die auch die Wochenübersicht des Mitarbeiter-Dashboards nutzt.
         week = calculation_service.get_week_summary(db, user, wk_start, cutoff)
@@ -253,7 +276,7 @@ def get_weekly_report(
         # Boundary = ot_cutoff (Wochenende bzw. bis_heute-Cutoff), damit künftige
         # Freizeitausgleich-Tage nicht doppelt zählen.
         _future_comp = Decimal('0'); _projected = None
-        if show_year_end_projection and wk_end.year == _now.year and wk_start <= _now.date() <= wk_end and user.track_hours:
+        if show_year_end_projection and wk_end.year == _now.year and wk_start <= _now.date() <= wk_end and tracks:
             _future_comp = calculation_service.future_freizeitausgleich_impact(db, user, cutoff_date=ot_cutoff)
             if _future_comp > 0:
                 _projected = float(overtime) - float(_future_comp)
@@ -308,7 +331,7 @@ def get_weekly_report(
             sick_hours=sick_hours if include_health_data else 0.0,
             sick_days=sick_days if include_health_data else 0.0,
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
-            track_hours=bool(user.track_hours),
+            track_hours=tracks,
             weekly_hours_changes=[
                 # Wie im Monatsbericht: der Vorgaenger entscheidet ueber
                 # `work_days_changed`.

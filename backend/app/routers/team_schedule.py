@@ -64,7 +64,7 @@ def team_schedule(
             last_name=user.last_name,
             department=user.department,
             calendar_color=user.calendar_color,
-            track_hours=bool(user.track_hours),
+            track_hours=schedule.track_hours,  # Teil A: Snapshot am Datum
             use_fixed_monthly_target=bool(getattr(user, "use_fixed_monthly_target", False)),
             blocks=work_blocks_service.week_blocks_to_json(schedule.blocks, schedule.block_pauses),
             legacy=schedule.block_pauses is not None and any(p is None for p in schedule.block_pauses),

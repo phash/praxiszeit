@@ -51,6 +51,7 @@ def build_my_work_schedule(db: Session, user: User, on_date: date) -> dict:
     return {
         "today": {"date": on_date, **_snapshot(db, user, on_date, rows)},
         "history": history,
-        "track_hours": bool(getattr(user, "track_hours", True)),
+        # Teil A: Snapshot von heute (``on_date``), nicht die User-Zeile.
+        "track_hours": calculation_service.tracks_hours_on(db, user, on_date, rows),
         "fixed_monthly_hours": float(user.agreed_monthly_hours) if fixed_mode else None,
     }
