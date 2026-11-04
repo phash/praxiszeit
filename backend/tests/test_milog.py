@@ -98,7 +98,16 @@ def test_milog_flag_persisted_on_create_and_update(db, admin, default_tenant):
         "milog_working_time_account": True,
     }).json()["user"]["id"]
     assert client.get(f"{USERS}/{uid}").json()["milog_working_time_account"] is True
-    client.put(f"{USERS}/{uid}", json={"milog_working_time_account": False})
+    # Teil A: PUT ist für Minijob-Felder gesperrt (400); geändert wird über die
+    # Arbeitszeit-Änderung ab einem Monatsersten (hier: laufender Monat → Spiegel).
+    assert client.put(f"{USERS}/{uid}", json={"milog_working_time_account": False}).status_code == 400
+    from app.services.timezone_service import today_local
+    first = today_local().replace(day=1).isoformat()
+    r = client.post(f"{USERS}/{uid}/working-hours-changes", json={
+        "effective_from": first, "weekly_hours": 7.62, "work_days_per_week": 5,
+        "milog_working_time_account": False,
+    })
+    assert r.status_code == 201, r.text
     assert client.get(f"{USERS}/{uid}").json()["milog_working_time_account"] is False
     app.dependency_overrides.clear()
 

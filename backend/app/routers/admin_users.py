@@ -294,6 +294,54 @@ def _normalise_schedule_input(
     )
 
 
+HISTORISED_FIELDS_PUT_DETAIL = (
+    "Wochenstunden, Tagesstunden, Arbeitstage, Arbeitszeit-Blöcke, Urlaubsanspruch, "
+    "Stundenzählung und Minijob-Einstellungen werden über „Arbeitszeit anpassen…“ mit "
+    "Wirkungsdatum geändert, damit Historie und Soll vergangener Monate korrekt bleiben."
+)
+MINIJOB_MONTH_START_DETAIL = "Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten."
+FIXED_TARGET_AGREED_DETAIL = "Fester Monats-Soll braucht eine vereinbarte Monatsarbeitszeit (> 0)."
+FIXED_TARGET_TRACK_HOURS_DETAIL = "Fester Monats-Soll setzt Stundenzählung (track_hours) voraus."
+FIXED_TARGET_MILOG_DETAIL = "Fester Monats-Soll setzt das MiLoG-Arbeitszeitkonto voraus."
+_MINIJOB_FIELDS = ("milog_working_time_account", "agreed_monthly_hours", "use_fixed_monthly_target")
+
+
+def _contract_rule_error(
+    norm: _NormalisedSchedule, current: "calculation_service.Schedule", effective_from: date
+) -> Optional[tuple]:
+    """Teil A: Regeln an den Vertragsfeldern einer neuen Verlaufszeile —
+    gemeinsam für Anlegen (HTTPException) und Vorschau (``blocked_reason``).
+
+    1. Minijob-Felder ändern sich nur zum Monatsersten (die Monatsrechnung —
+       fester Monats-Soll, 50-%-Grenze — kennt keinen Wechsel mitten im Monat):
+       ``(422, MINIJOB_MONTH_START_DETAIL)``, sobald eines der drei Felder vom
+       Snapshot zum Wirkungsdatum abweicht und das Datum kein Monatserster ist.
+    2. Fester Monats-Soll wird auf dem ZUSAMMENGEFÜHRTEN Snapshot geprüft
+       (gesendete Felder + geerbte), nicht nur auf dem Body: ``(400, Text)``.
+
+    ``None`` = keine Verletzung."""
+    minijob_changed = any(
+        _contract_value(getattr(norm, f)) != _contract_value(getattr(current, f)) for f in _MINIJOB_FIELDS
+    )
+    if minijob_changed and effective_from.day != 1:
+        return 422, MINIJOB_MONTH_START_DETAIL
+    if norm.use_fixed_monthly_target:
+        if norm.agreed_monthly_hours is None or norm.agreed_monthly_hours <= 0:
+            return 400, FIXED_TARGET_AGREED_DETAIL
+        if norm.track_hours is not True:
+            return 400, FIXED_TARGET_TRACK_HOURS_DETAIL
+        if norm.milog_working_time_account is not True:
+            return 400, FIXED_TARGET_MILOG_DETAIL
+    return None
+
+
+def _contract_value(value):
+    """Vergleichsform eines Vertragsfelds (Decimal statt float/Decimal-Mix)."""
+    if value is None or isinstance(value, bool):
+        return value
+    return Decimal(str(value))
+
+
 def _sync_user_from_change(user: User, most_recent: WorkingHoursChange) -> None:
     """#431: den VOLLSTÄNDIGEN Vertrags-Snapshot einer ``WorkingHoursChange``
     auf die User-Zeile zurückspiegeln.
@@ -1336,16 +1384,13 @@ def update_user(
         'hours_thursday', 'hours_friday',
         # Spec E27: Blöcke gehören zum Vertrags-Snapshot.
         'work_blocks',
+        # Teil A (Vertragsverlauf): Anspruch, Stundenzählung, Minijob — genau
+        # ein Schreibweg je historisiertem Feld.
+        'vacation_days', 'track_hours', 'milog_working_time_account',
+        'agreed_monthly_hours', 'use_fixed_monthly_target',
     )
     if any(f in update_data for f in _HISTORISED_FIELDS):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Wochenstunden, Tagesstunden, Arbeitstage und Arbeitszeit-Blöcke "
-                "werden über „Arbeitszeit anpassen…“ mit Wirkungsdatum geändert, "
-                "damit Historie und Soll vergangener Monate korrekt bleiben."
-            ),
-        )
+        raise HTTPException(status_code=400, detail=HISTORISED_FIELDS_PUT_DETAIL)
 
     if user_data.username and user_data.username.lower() != user.username.lower():
         # F-026: scope the uniqueness probe to the tenant (parity with
@@ -1359,36 +1404,9 @@ def update_user(
 
     update_data.pop('is_active', None)  # Prevent bypassing the dedicated deactivate endpoint
 
-    # #377 Baustein 2b (Release-Review 1.15.0): the UserUpdate schema validator
-    # (check_fixed_monthly_target_requirements) only sees THIS payload, not the
-    # persisted row — a partial PUT that isolates e.g.
-    # {"milog_working_time_account": false} leaves use_fixed_monthly_target
-    # absent from the payload (None → skipped by the schema validator) while
-    # the DB row still has it True. That silently produces an INVALID row
-    # (fixed Soll active but its prerequisites off), so we must check the
-    # EFFECTIVE post-update state here (payload value if present, else the
-    # current DB value) — mirrors the schema validator's requirement logic 1:1
-    # so create and update agree.
-    eff_fixed = update_data.get('use_fixed_monthly_target', user.use_fixed_monthly_target)
-    if eff_fixed:
-        eff_milog = update_data.get('milog_working_time_account', user.milog_working_time_account)
-        eff_track_hours = update_data.get('track_hours', user.track_hours)
-        eff_agreed = update_data.get('agreed_monthly_hours', user.agreed_monthly_hours)
-        if not eff_agreed or eff_agreed <= 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Fester Monats-Soll braucht eine vereinbarte Monatsarbeitszeit (> 0)."
-            )
-        if eff_track_hours is not True:
-            raise HTTPException(
-                status_code=400,
-                detail="Fester Monats-Soll setzt Stundenzählung (track_hours) voraus."
-            )
-        if eff_milog is not True:
-            raise HTTPException(
-                status_code=400,
-                detail="Fester Monats-Soll setzt das MiLoG-Arbeitszeitkonto voraus."
-            )
+    # Teil A: der frühere ``eff_fixed``-Block (fester Monats-Soll gegen den
+    # effektiven Zustand) entfällt — seine Eingaben sind oben gesperrt; die
+    # Regel prüft ``_contract_rule_error`` auf dem Snapshot der Verlaufszeile.
 
     # Release-Review 1.16.0: Beschäftigungsfenster ebenfalls
     # gegen den EFFEKTIVEN Zustand prüfen, nicht nur gegen den Payload.
@@ -1398,7 +1416,7 @@ def update_user(
     # wirft der `UserResponse`-Validator beim SERIALISIEREN — also erst in der
     # Antwort und anschliessend bei jedem weiteren Endpoint, der den Nutzer
     # ausliefert (500, Benutzerliste unbenutzbar). Gleiches Muster wie beim
-    # eff_fixed-Block oben.
+    # früheren eff_fixed-Block (Teil A: jetzt ``_contract_rule_error``).
     _eff = lambda name: update_data.get(name, getattr(user, name, None))  # noqa: E731
     _eff_first, _eff_last = _eff('first_work_day'), _eff('last_work_day')
     if _eff_first and _eff_last and _eff_first > _eff_last:
@@ -1985,6 +2003,9 @@ def create_working_hours_change(
     # Wirkungsdatum — aufgelöst VOR dem Anlegen der neuen Zeile.
     current = calculation_service.get_schedule_for_date(db, user, change_data.effective_from)
     norm = _normalise_schedule_input(change_data, user, current)
+    rule_error = _contract_rule_error(norm, current, change_data.effective_from)
+    if rule_error:
+        raise HTTPException(status_code=rule_error[0], detail=rule_error[1])
     if reset_schedule is not None and not _reset_matches(change_data, norm, reset_schedule):
         raise HTTPException(status_code=409, detail=RESET_CONFLICT_DETAIL)
     new_blocks, new_pauses = _target_blocks(db, user, change_data, reset_schedule)
@@ -2286,6 +2307,11 @@ def preview_working_hours_change(
             # wie bei einem fehlenden Datum, nicht „Ungültige Eingabe.".
             date_invalid = any(tuple(e.get("loc") or ())[:1] == ("effective_from",) for e in exc.errors())
             input_error = PREVIEW_DATE_MISSING if date_invalid else _schedule_input_error(exc)
+    if norm is not None and input_error is None:
+        # Teil A: dieselben Regeln wie beim Anlegen, hier als ``blocked_reason``.
+        rule_error = _contract_rule_error(norm, current_schedule, effective_from)
+        if rule_error:
+            input_error = rule_error[1]
     if change_data is not None and input_error is None and change_data.reset_of_change_id is not None:
         try:
             reset_schedule = _reset_target(db, user, current_user, change_data)[1]

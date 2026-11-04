@@ -30,6 +30,16 @@ EFFECTIVE_FROM_MAX = date(2100, 12, 31)
 EFFECTIVE_FROM_RANGE_DETAIL = "Das Wirkungsdatum muss zwischen dem 01.01.2000 und dem 31.12.2100 liegen."
 
 
+# Teil A: Vertragsfelder, deren ausdrückliches ``null`` 422 ist (nicht
+# ``agreed_monthly_hours``: dort heißt ``null`` „abgeleitet").
+NULL_REJECTED_CONTRACT_FIELDS = {
+    "vacation_days": "Der Urlaubsanspruch",
+    "track_hours": "Die Stundenzählung",
+    "milog_working_time_account": "Das MiLoG-Arbeitszeitkonto",
+    "use_fixed_monthly_target": "Der feste Monats-Soll",
+}
+
+
 def effective_from_plausible(value: date) -> bool:
     """DIE eine Grenze für Anlegen (Validator) und Vorschau (Router)."""
     return EFFECTIVE_FROM_MIN <= value <= EFFECTIVE_FROM_MAX
@@ -121,6 +131,17 @@ class WorkingHoursChangeCreate(WorkingHoursChangeBase, RetroReasonFields):
         if not effective_from_plausible(value):
             raise ValueError(EFFECTIVE_FROM_RANGE_DETAIL)
         return value
+
+    @model_validator(mode='after')
+    def reject_null_contract_fields(self):
+        """Teil A: ein ausdrückliches ``null`` für Anspruch, Stundenzählung oder
+        Minijob-Schalter ist keine Aussage, die eine Verlaufszeile tragen kann —
+        422 statt still zu übernehmen. ``agreed_monthly_hours: null`` heißt
+        dagegen „aus weekly_hours abgeleitet" und bleibt erlaubt."""
+        for field, label in NULL_REJECTED_CONTRACT_FIELDS.items():
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{label} darf nicht leer sein.")
+        return self
 
     # Reihenfolge zählt: Pydantic führt die ``after``-Validatoren einer Klasse in
     # Definitionsreihenfolge aus — ``derive_from_blocks`` muss das Soll setzen,

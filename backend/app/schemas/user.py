@@ -213,23 +213,10 @@ class UserUpdate(BaseModel):
     def check_work_day_order(self):
         return validate_employment_order(self)  # #219: shared
 
-    @model_validator(mode='after')
-    def check_fixed_monthly_target_requirements(self):
-        # #377 Baustein 2b: partial update — only enforce when THIS payload sets
-        # the flag True. A partial update that turns the flag on must carry all
-        # three prerequisites explicitly in the same payload (None is treated
-        # the same as False here — the validator only sees this payload, not the
-        # persisted row, so it cannot assume an existing True elsewhere).
-        # Updates that don't touch the flag (None/unset) are unaffected, so
-        # existing partial-update flows for other fields keep working.
-        if self.use_fixed_monthly_target:
-            if not self.agreed_monthly_hours or self.agreed_monthly_hours <= 0:
-                raise ValueError("Fester Monats-Soll braucht eine vereinbarte Monatsarbeitszeit (> 0).")
-            if self.track_hours is not True:
-                raise ValueError("Fester Monats-Soll setzt Stundenzählung (track_hours) voraus.")
-            if self.milog_working_time_account is not True:
-                raise ValueError("Fester Monats-Soll setzt das MiLoG-Arbeitszeitkonto voraus.")
-        return self
+    # Teil A: kein ``check_fixed_monthly_target_requirements`` mehr — die fünf
+    # Vertragsfelder sind im PUT gesperrt (400 in ``update_user``); die Regel
+    # prüft ``admin_users._contract_rule_error`` auf dem Snapshot der
+    # Verlaufszeile. Ein Validator hier machte aus der Sperre eine 422.
 
 
 class ScheduleTodayResponse(BaseModel):
