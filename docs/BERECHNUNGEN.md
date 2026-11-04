@@ -647,7 +647,7 @@ budget_hours = budget_days × Tagessoll
   Beispiel (Kundenfall 2026): 24 × 10/12 + 30 × 2/12 = 20,0 + 5,0 = 25,0 Tage;  2027: 30
   ```
 
-  Ein Jahr mit genau **einem** Abschnitt bleibt es bei der bisherigen Pro-rata-Rechnung, ungerundet. Vor der
+  Bei genau **einem** Abschnitt gilt die bisherige Rechnung: ganzes Jahr = Wert unverändert, Ein-/Austrittsjahr anteilig und auf 0,1 gerundet. Vor der
   ersten Zeile gelten die Werte der ersten Zeile; ohne Zeile die der Benutzerzeile. Der
   einzige Schreibweg ist der Dialog „Arbeitszeit anpassen…“ (Abschnitt „Urlaub und
   Abrechnung“, Feld „Urlaubsanspruch pro Jahr ab diesem Datum“); die Vorschau zeigt
@@ -880,7 +880,10 @@ für jeden Tag:
 ```
 
 Nur für **Stunden-getrackte** MA (`track_hours = True`) — untracked MA (kein
-Überstundenkonto) bleiben immer `VACATION`.
+Überstundenkonto) bleiben immer `VACATION`. Das gilt auch beim Neu-Aufteilen (Re-Save):
+Hat eine Person an keinem Schließtag Stundenzählung, werden ihre Zeilen auf `VACATION`
+gesetzt (bereits `VACATION`-Zeilen bleiben); beim Neu-Buchen verbraucht ein solcher Tag
+weiter Budget.
 
 **Re-Save wirkt rückwirkend & idempotent:** Ein **nachträglich** aktivierter Schalter bucht
 bereits gespeicherte Betriebsferien nicht automatisch um — dafür muss die Schließung erneut
@@ -928,7 +931,7 @@ Lohndaten** und prüft keinen 603-€-Grenzwert.
 
 ### 10.2 Baustein 1 — 50-%-Warnung (`MILOG_ACCOUNT_50`)
 
-Opt-in je MA: `User.milog_working_time_account = true`. Vergleichsgröße ist die
+Opt-in je MA und Monat: `milog_working_time_account = true` im Vertrags-Snapshot am Monatsersten (`calculation_service.month_contract`, seit Migration 075, §10.4a) und Stundenzählung im Monat. Vergleichsgröße ist die
 **vereinbarte Monatszeit** — flach, **nicht** das schwankende Tages-Soll:
 
 ```
@@ -996,9 +999,24 @@ Arbeitszeit-Änderung und gelten **ab deren Datum**:
   Ende (nie 23:59).
 - **Minijob-Felder je Monat** (`month_contract`, `MonthContract.fixed_mode`): gelten immer
   ab dem Monatsersten. Eine Änderung mit anderem Datum wird mit 422 „Änderungen an
-  Minijob-Einstellungen gelten immer ab dem Monatsersten.“ abgelehnt. Ob der feste Monats-Soll
+  Minijob-Einstellungen gelten immer ab dem Monatsersten.“ abgelehnt. Ob das feste Monats-Soll
   zulässig ist, prüft das System am Snapshot der neuen Zeile (400, Texte wie §10.5).
-- Eine Korrektur an der frühesten Zeile ersetzt diese Zeile an Ort und Stelle.
+- Eine Korrektur an der frühesten Zeile ersetzt diese Zeile an Ort und Stelle. Die Tage
+  davor (Lücke bis zur Zeile) behalten dabei ihre bisherigen Werte: die Lücke wird vorher
+  mit dem alten Vertrag als eigene Zeile festgehalten, die Korrektur reicht nicht in frühere
+  Tage zurück (Protokoll: „Korrektur der frühesten Verlaufszeile“).
+- **Minijob-Wechsel durch eine spätere Zeile mitten im Monat:** Würde das Anlegen oder
+  Löschen einer Zeile bewirken, dass die nächste Zeile mitten im Monat andere
+  Minijob-Werte erbt, wird das mit 422 abgelehnt; die spätere Zeile ist vorher
+  anzugleichen. Beginnt die Zeile den Verlauf (ohne Lücke), gilt die Monatsersten-Regel nicht.
+- **Mitarbeitende, die die Stundenzählung wechseln:** An Tagen ohne Stundenzählung zählt
+  weder Ist (Stempelzeit, Krank-/Fortbildungs-Gutschrift) in Monatsbericht, Exporten und
+  Journal, noch hat die Tagesspalte „Differenz“ einen Wert (0, Netto und Stempel bleiben
+  sichtbar). Wer nie Stundenzählung hatte, bleibt unverändert. Das
+  MiLoG-Arbeitszeitkonto gilt je Monat nur, wenn im Monat Stundenzählung galt
+  (`milog_service.month_has_account`).
+- Die Wochenübersicht (Dashboard und Admin) berücksichtigt nur Wochen mit Stundenzählung;
+  fehlende Buchungen werden je Tag mit Stundenzählung gemeldet.
 - Kein Ergebnis der Vergangenheit ändert sich durch die Migration (Rückfüllung aus der
   Benutzerzeile). Lesen nie über `user.<feld>` (Guard `test_no_live_contract_field_read.py`).
 
@@ -1113,7 +1131,7 @@ Angestellte)" (`exempt_from_arbzg`), die an der Stundenzählung nichts ändert.
   Wirkungsdatum der Arbeitszeit-Änderung (§10.4a); der Wechsel erfolgt nur dort.
 - **Kein Soll/Ist**: Tagessoll = 0, keine Überstundenrechnung.
 - **Urlaub trotzdem tagebasiert**: jeder VACATION-Tag = **1 Tag** (Halbtage `half_day=True`
-  zählen 0,5, ein Halbtags-Sondertag zusätzlich × 0,5, siehe §8.2/§9.3), jeder
+  zählen 0,5, ein Halbtags-Sondertag zusätzlich × 0,5, ein verkürzter Tag (24./31.12. „Verkürzt auf X Stunden“ oder Eintrag unter „Verkürzte Tage“) × 0,5, siehe §8.2/§9.3), jeder
   `free`+`counts_as_vacation`-Sondertag = 1 Tag. Alle Stundenwerte bleiben 0; Budget folgt
   normaler Pro-rata- + Carryover-Logik. Maßgeblich ist allein das Häkchen, nicht ein Tagessoll
   von 0: mit Stundenzählung und 0 Wochenstunden (Elternzeit) zählen nur Tage mit Soll (§8.2).
@@ -1145,8 +1163,8 @@ Tag mit Soll 0 bleibt 0.
 Sondertage-Einstellung. Es gilt dieselbe Regel wie bei `max_hours`.
 
 **Eine Quelle:** `special_days_service.special_day_target(d, tagessoll, cfg)` liefert das
-Tagessoll jedes Sondertags (Faktor- und Höchststunden-Modi); `special_day_target_factor(` darf
-nur dort stehen (Guard `test_no_special_factor_inline.py`). Reihenfolge: Feiertag (0) →
+Tagessoll jedes Sondertags (Faktor- und Höchststunden-Modi); Der frühere
+`special_day_target_factor` ist entfernt (Guard `test_no_special_factor_inline.py` prüft, dass der Name nicht mehr vorkommt). Reihenfolge: Feiertag (0) →
 Wochenende (keine Wirkung) → Sondertag/verkürzter Tag.
 
 | Regel | Wert |
@@ -1161,8 +1179,8 @@ Wochenende (keine Wirkung) → Sondertag/verkürzter Tag.
 **Beispiel:** 8 h/Tag, 24.12. „Verkürzt auf 4 Stunden", krank gemeldet: Soll 4 h, Gutschrift
 8 h × 4/8 = 4 h — Saldo bleibt 0. Bei 3 h/Tag ist das Soll `min(3, 4) = 3` und das Gewicht 1.
 
-**Anzeige:** Kalender und Stempelkarte nennen „verkürzter Tag (max. 4 h)" (bei benanntem Tag:
-„<Name>: verkürzter Tag (max. 4 h)"); `/time-entries/clock-status` liefert dafür
+**Anzeige:** Der Kalender nennt „verkürzter Tag (max. 4 h)" (bei benanntem Tag:
+„<Name>: verkürzter Tag (max. 4 h)"); die Stempelkarte zeigt nur „verkürzter Tag (max. 4 h)" ohne Namen und nur, wenn der Tag ein Soll hat; `/time-entries/clock-status` liefert dafür
 `today_special_day_label`. Verkürzte Tage kommen aus dem angemeldeten Endpunkt
 `GET /api/reduced-days?year=` (nicht aus dem öffentlichen `/api/settings`).
 
@@ -1782,7 +1800,7 @@ Lohndaten in PraxisZeit).
 | `fixed_monthly_target`, `fixed_month_credit`, `fixed_month_unpaid_reduction` (#377 Baustein 2b) | `services/calculation_service.py` |
 | `create_year_closing`, `stale_year_closing_warning` | `services/calculation_service.py` |
 | `TimeEntry.net_hours` | `models/time_entry.py` |
-| Sondertag-Faktoren (`special_day_target_factor`, `vacation_deduction_dates_for_year`) | `services/special_days_service.py` |
+| Sondertag-Soll (`special_day_target`, `special_day_mode`, `vacation_deduction_dates_for_year`) | `services/special_days_service.py` |
 | Arbeitszeit-Blöcke: `clamp`/`ClampResult`, `clamp_applies`, `grace_for_entry`, `get_scheduled_blocks`, `credit_gaps`, `gap_segments`, `not_credited_minutes`, `presence_minutes`, `credit_summary_text`, Neukappung `reclamp_time_entries` | `services/work_window_service.py` |
 | JSON-Form der Blöcke, `derive_targets`, `blocks_text` | `services/work_blocks_service.py` |
 | Sammelzeile `summary_note`/`parse_summary_note`, Grundtypen `REASON_TYPES` | `services/reclamp_audit.py` |
