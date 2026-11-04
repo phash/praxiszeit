@@ -113,6 +113,16 @@ def test_read_endpoint_tenant_filtered_sorted_and_year(db, test_user):
     assert [r["label"] for r in c.get("/api/reduced-days?year=2026").json()] == ["A", "B"]
 
 
+def test_read_endpoint_accepts_any_year_and_returns_empty_outside_bounds(db, test_user):
+    """Residual 5: Lesen wirft nie 422 — außerhalb 2000–2100 gibt es nie Zeilen."""
+    _reduced(db, d=dt.date(2026, 2, 16), label="A")
+    c = _read_client(db, test_user)
+    for y in (1999, 2101, 0, -5, 99999):
+        res = c.get(f"/api/reduced-days?year={y}")
+        assert res.status_code == 200, (y, res.text)
+        assert res.json() == []
+
+
 def test_clock_status_label_on_reduced_day(db, test_user, monkeypatch):
     _reduced(db)
     body = _status(db, test_user, monkeypatch, MONDAY)

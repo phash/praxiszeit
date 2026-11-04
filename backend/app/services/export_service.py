@@ -640,10 +640,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # pro Tag (get_schedule_for_date/get_daily_target_for_date lösen den
     # Vertrags-Snapshot sonst 28-31× einzeln auf, plus die #415-Kopfzeile
     # unten). F-026: tenant-gefiltert.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,
-    ).order_by(WorkingHoursChange.effective_from).all()
+    wh_changes = calculation_service.user_wh_changes(db, user)
     # F901: Tag ohne Stundenzählung einer Person, die sonst Stunden zählt →
     # „Differenz" 0 (dieselbe Regel wie get_monthly_actual); Netto bleibt sichtbar.
     ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)
@@ -1278,10 +1275,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
     # pro Tag (365× get_schedule_for_date im Jahresblatt, plus die #415-
     # Kopfzeile unten). F-026: tenant-gefiltert.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,
-    ).order_by(WorkingHoursChange.effective_from).all()
+    wh_changes = calculation_service.user_wh_changes(db, user)
     # F901: Tag ohne Stundenzählung einer Person, die sonst Stunden zählt →
     # „Differenz" 0 (dieselbe Regel wie get_monthly_actual); Netto bleibt sichtbar.
     ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)
@@ -2108,10 +2102,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
         # pro Tag (28-31× get_schedule_for_date je PDF-Seite, plus die #415-
         # Kopfzeile unten). F-026: tenant-gefiltert.
-        wh_changes = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == user.id,
-            WorkingHoursChange.tenant_id == user.tenant_id,
-        ).order_by(WorkingHoursChange.effective_from).all()
+        wh_changes = calculation_service.user_wh_changes(db, user)
         ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)  # F901
 
         # ── Employee meta ──

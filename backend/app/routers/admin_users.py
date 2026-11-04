@@ -711,11 +711,8 @@ def users_overview(
         PublicHoliday.tenant_id == current_user.tenant_id,  # F-026
         date_in_year(PublicHoliday.date, year),
     ).all()}
-    _wh_by_user: dict = {}
-    for _c in db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-    ).order_by(WorkingHoursChange.effective_from).all():
-        _wh_by_user.setdefault(_c.user_id, []).append(_c)
+    _wh_by_user = calculation_service.wh_changes_by_user(
+        db, current_user.tenant_id, [u.id for u in users])
     result = []
     for u in users:
         _uwh = _wh_by_user.get(u.id, [])

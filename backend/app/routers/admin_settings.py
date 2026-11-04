@@ -1,5 +1,7 @@
 """Admin sub-router: System Settings."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -15,6 +17,8 @@ from app.services.settings_service import (
     SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD,
     SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -237,11 +241,19 @@ def update_setting(
         SystemSetting.key == key,
         SystemSetting.tenant_id == current_user.tenant_id
     ).first()
+    old_value = s.value if s else None
     if not s:
         s = SystemSetting(key=key, value=str(value), description=key, tenant_id=current_user.tenant_id)
         db.add(s)
     else:
         s.value = str(value)
+    if key in special_days_service.MODE_KEYS or key in special_days_service.MAX_HOURS_KEYS:
+        # F103: Nachvollziehbarkeit wie reduced_days._log_change — Akteur
+        # ``user:<id>``, nie Klarname; ohne DB-Tabelle (Spec B2).
+        logger.info(
+            "special_day_setting changed by user:%s tenant:%s: %s %s -> %s",
+            current_user.id, current_user.tenant_id, key, old_value, s.value,
+        )
 
     warning = None
     if key == "holiday_state":

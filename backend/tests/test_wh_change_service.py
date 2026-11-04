@@ -434,7 +434,6 @@ class TestTexts:
         agreed = SimpleNamespace(milog_working_time_account=False, agreed_monthly_hours=Decimal("43"))
         shortening = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"], new_schedule=plain)
         assert svc.milog_warnings(shortening) == [svc.MILOG_GENERAL_WARNING]
-        assert svc.milog_warnings(shortening) == [svc.MILOG_GENERAL_WARNING]
         shortening = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"], new_schedule=agreed)
         assert svc.milog_warnings(shortening) == [svc.MILOG_ACCOUNT_WARNING, svc.MILOG_GENERAL_WARNING]
         assert svc.milog_warnings(self._impact()) == []

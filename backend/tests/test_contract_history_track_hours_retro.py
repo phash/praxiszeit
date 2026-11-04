@@ -287,10 +287,12 @@ def test_retroactive_switch_on_without_reason_is_400_and_previewed_as_shortening
     assert _entry_state(db, e) == (t(7), t(13), None, None, 0)
 
 
-def test_retroactive_switch_off_is_never_a_shortening(db, test_user, client):
-    """F031 (Gegenprobe): Ausschalten hebt das Soll auf und entkappt — der Saldo
-    sinkt nie, also verlangt die Änderung keinen Grund (und das Löschen verlangt
-    ihn, s. u.). Die Gutschrift der Krankheit fällt mit dem Soll auf 0."""
+def test_retroactive_switch_off_with_negative_balance_needs_no_reason(db, test_user, client):
+    """F031 (Gegenprobe): Ausschalten hebt das Soll auf und entkappt. Hat die Person
+    im Fenster kein Plus (nur eine Krankheit ohne Einträge → Saldo ≤ 0), sinkt der
+    Saldo nicht — die Änderung verlangt keinen Grund. Die Gutschrift der Krankheit
+    fällt mit dem Soll auf 0. (Mit Plus-Stunden im Fenster ist es eine Verkürzung,
+    s. nächster Test.)"""
     u = test_user
     _set_mode(db, u, True)
     sick = absence(db, u, ABSENCE_DAY, AbsenceType.SICK, hours=4.0)
@@ -303,6 +305,28 @@ def test_retroactive_switch_off_is_never_a_shortening(db, test_user, client):
     r = client.post(url(u), json=plain)
     assert r.status_code == 201, r.text
     assert _hours(db, sick) == 0.0
+
+
+def test_retroactive_switch_off_with_plus_hours_is_a_shortening(db, test_user, client):
+    """Gegenprobe zum Vorigen: Einträge über dem Soll im Fenster (Plus-Saldo) gehen
+    mit dem Ausschalten verloren → Saldo sinkt → Verkürzung: Vorschau meldet
+    ``saldo``, das Schreiben ohne Grund ist 400 „Rückwirkende Verkürzung“."""
+    u = test_user
+    _set_mode(db, u, True)
+    eff = date(2026, 11, 2)   # Montag vor „heute“ (03.11.): Fenster = ein Tag mit Plus
+    entry(db, u, eff, t(8), t(14))   # 6 h bei Tagessoll 4 h → +2 h
+    rows = _row_count(db, u)
+    plain = {"effective_from": eff.isoformat(), "blocks": WEEK, "track_hours": False}
+
+    p = client.post(url(u) + "/preview", json=plain)
+    assert p.status_code == 200, p.text
+    assert p.json()["is_shortening"] is True
+    assert "saldo" in p.json()["shortening_reasons"]
+
+    r = client.post(url(u), json=plain)
+    assert r.status_code == 400, r.text
+    assert "Rückwirkende Verkürzung" in r.json()["detail"]
+    assert _row_count(db, u) == rows
 
 
 def test_delete_of_switch_off_without_reason_is_400(db, test_user, client):

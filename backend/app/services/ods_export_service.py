@@ -203,10 +203,7 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
 
     # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
     # pro Tag, plus die #415-Kopfzeile unten. F-026: tenant-gefiltert.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,
-    ).order_by(WorkingHoursChange.effective_from).all()
+    wh_changes = calculation_service.user_wh_changes(db, user)
     ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)  # F901
 
     # Rows 1–2: ArbZG-relevante Mitarbeiter-Metadaten
@@ -610,10 +607,7 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
     # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
     # pro Tag (365× get_schedule_for_date im Jahresblatt, plus die #415-
     # Kopfzeile unten). F-026: tenant-gefiltert.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,
-    ).order_by(WorkingHoursChange.effective_from).all()
+    wh_changes = calculation_service.user_wh_changes(db, user)
     ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)  # F901
 
     # ArbZG-relevante Metadaten

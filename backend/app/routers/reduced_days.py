@@ -223,9 +223,14 @@ def delete_reduced_day(
 
 @read_router.get("", response_model=List[ReducedDayPublic])
 def list_my_reduced_days(
-    year: Optional[int] = Query(None, ge=REDUCED_DAY_YEAR_MIN, le=REDUCED_DAY_YEAR_MAX),
+    year: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Verkürzte Tage des eigenen Mandanten (jeder angemeldete Nutzer)."""
+    """Verkürzte Tage des eigenen Mandanten (jeder angemeldete Nutzer).
+
+    Lesen akzeptiert jedes Jahr (kein 422); außerhalb 2000–2100 gibt es nie
+    Zeilen → ``[]``. Die Grenzen gelten nur für Eingabe/Admin."""
+    if year is not None and not (REDUCED_DAY_YEAR_MIN <= year <= REDUCED_DAY_YEAR_MAX):
+        return []
     return special_days_service.list_reduced_days(db, current_user.tenant_id, year)

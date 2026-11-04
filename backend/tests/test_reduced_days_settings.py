@@ -140,3 +140,19 @@ def test_other_setting_key_does_not_rebook(client, db, employee):
     db.expire_all()
     assert db.query(TimeEntryAuditLog).count() == audits
     assert _hours(db, employee, D24) == before
+
+
+def test_special_day_setting_change_is_logged_without_personal_data(client, test_admin, caplog):
+    """F103: Änderung von ``_max_hours``/``_mode`` → App-Log-Zeile mit user:<id>, Schlüssel,
+    alt → neu; keine Klarnamen."""
+    import logging
+    with caplog.at_level(logging.INFO, logger="app.routers.admin_settings"):
+        assert _put(client, "special_day_dec24_max_hours", "3.5").status_code == 200
+        assert _put(client, "special_day_dec24_max_hours", "2").status_code == 200
+        assert _put(client, "special_day_dec31_mode", "free").status_code == 200
+    lines = [r.getMessage() for r in caplog.records if "special_day_setting" in r.getMessage()]
+    assert len(lines) == 3
+    assert f"user:{test_admin.id}" in lines[1]
+    assert "special_day_dec24_max_hours 3.50 -> 2.00" in lines[1]
+    assert "special_day_dec31_mode" in lines[2] and "-> free" in lines[2]
+    assert test_admin.email not in " ".join(lines)

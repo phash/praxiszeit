@@ -213,10 +213,7 @@ def review_vacation_request(
     # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
     # ``get_schedule_for_date`` (F-026: tenant-gefiltert). Gesamtreview 1.20 B5
     # (Nachzug): fuer jeden Typ — die gebuchten Tage werden fuer jeden Typ bestimmt.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == target_user.id,
-        WorkingHoursChange.tenant_id == target_user.tenant_id,
-    ).order_by(WorkingHoursChange.effective_from).all()
+    wh_changes = calculation_service.user_wh_changes(db, target_user)
 
     # Gesamtreview 1.20 B5 (Nachzug): welche Tage die Genehmigung tatsaechlich
     # bucht, steht VOR dem ersten Schreibschritt fest — dieselbe Regel und

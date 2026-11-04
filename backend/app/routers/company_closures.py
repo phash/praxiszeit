@@ -280,11 +280,8 @@ def _create_closure_absences(
             TimeEntry.date.in_(workdays),
         ).all():
             te_by_key.setdefault((entry.user_id, entry.date), []).append(entry)
-        for wh in db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id.in_(emp_ids),
-            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-        ).order_by(WorkingHoursChange.effective_from).all():
-            wh_by_user.setdefault(wh.user_id, []).append(wh)
+        wh_by_user.update(calculation_service.wh_changes_by_user(
+            db, current_user.tenant_id, emp_ids))
 
     for employee in employees:
         created_for_employee = False
@@ -933,12 +930,8 @@ def update_closure(
     }
     _zero_target_ids = set()
     if _participant_linked_ids:
-        _wh_by_user: dict = {}
-        for wh in db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id.in_(_participant_linked_ids),
-            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-        ).order_by(WorkingHoursChange.effective_from).all():
-            _wh_by_user.setdefault(wh.user_id, []).append(wh)
+        _wh_by_user = calculation_service.wh_changes_by_user(
+            db, current_user.tenant_id, _participant_linked_ids)
         _zero_target_ids = {
             a.id for a in linked
             if a.user_id in _participant_linked_ids and a.date in workday_set
