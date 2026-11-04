@@ -755,7 +755,7 @@ class ReclampChange(NamedTuple):
 class ReclampSkip(NamedTuple):
     entry_id: Any
     date: date
-    reason: str   # open | soll_free_day | outside_employment
+    reason: str   # open | soll_free_day | track_hours_off | outside_employment
                   # | credit_override | unique_collision
 
 
@@ -823,7 +823,8 @@ def _not_extendable(entry, old_day: list, new_day: Optional[list], grace: int,
 
 
 def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: set,
-                         prev_blocks_by_weekday: Optional[tuple], grace: int) -> ReclampResult:
+                         prev_blocks_by_weekday: Optional[tuple], grace: int,
+                         prev_tracked_by_date: Optional[dict] = None) -> ReclampResult:
     """Spec 9.2 — kappt die Einträge in ``[start, end]`` an den geänderten
     ``weekdays`` gegen den NEUEN Snapshot (der Aufrufer hat ihn bereits
     geflusht). Quelle ist der Rohstempel, sonst die gespeicherte Zeit (E48).
@@ -854,12 +855,13 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
     ]
     if not entries:
         return ReclampResult([], [], [])
-    # Teil A (Task 10): kein Schritt 1 mehr („ohne Stundenzählung → alles
-    # überspringen" nach der User-Zeile). Ob ein Tag gekappt wird, entscheidet
-    # ``clamp`` nach dem NEUEN Snapshot des Tages: ohne Stundenzählung liefert er
-    # die Eingabe ungekappt (Rohstempel → wirksame Zeit, ``uncredited`` 0) — so
-    # entkappt das Ausschalten und kappt das Einschalten, und die Rücknahme
-    # stellt den Ausgangszustand her. ``clamp_grace_minutes`` bleibt dabei
+    # Teil A (Task 10): Schritt 1 („ohne Stundenzählung → überspringen") gilt je
+    # TAG: übersprungen wird ein Tag, der vorher UND nachher ohne
+    # Stundenzählung ist (``prev_tracked_by_date``, ohne Angabe = unverändert).
+    # Wurde sie an dem Tag abgeschaltet, entkappt ``clamp`` (neuer Snapshot →
+    # ungekappt: Rohstempel → wirksame Zeit, ``uncredited`` 0; bei
+    # ``auto_closed`` bleibt das wirksame Ende nach P18 die Eingabe, nie 23:59);
+    # eingeschaltet kappt er. ``clamp_grace_minutes`` bleibt beim Entkappen
     # stehen (``grace_minutes=None``, E79): an einem Tag ohne Stundenzählung
     # wirkt der gespeicherte Puffer nicht.
 
@@ -886,21 +888,16 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
             skipped.append(ReclampSkip(e.id, e.date, "credit_override"))
             continue
         new_sched = calculation_service.get_schedule_for_date(db, user, e.date, wh_changes)
+        if not new_sched.track_hours and not calculation_service.tracked_before(
+                prev_tracked_by_date, e.date, False):                     # Schritt 1 (je Tag)
+            skipped.append(ReclampSkip(e.id, e.date, "track_hours_off"))
+            continue
         day_has_blocks = wd < 5 and bool(new_sched.blocks) and bool(new_sched.blocks[wd])
         if day_has_blocks and e.date in soll_free:                         # Schritt 5
             skipped.append(ReclampSkip(e.id, e.date, "soll_free_day"))
             continue
         src_start = e.raw_start_time or e.start_time                      # Schritt 6 (E48)
-        # Teil A (Task 10): ohne Stundenzählung laut neuem Snapshot schreibt ein
-        # Auto-Close das Ende 23:59 ungekappt (Rohende leer). Die Entkappung
-        # stellt genau diesen Stand her — sonst blieb nach Ein- und wieder
-        # Ausschalten das gekappte Ende stehen (keine bitgleiche Rücknahme).
-        untracked_auto_close = (
-            e.auto_closed and not new_sched.track_hours
-            and e.raw_end_time is not None and same_minute(e.raw_end_time, AUTO_CLOSE_RAW_END))
-        if untracked_auto_close:
-            src_end = AUTO_CLOSE_RAW_END
-        elif e.auto_closed:                                                # P18: nie 23:59
+        if e.auto_closed:                                                  # P18: nie 23:59
             src_end = _auto_closed_end_input(e.end_time, e.raw_end_time)
         else:
             src_end = e.raw_end_time or e.end_time
@@ -923,8 +920,7 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
         # P18: Protokollwert bleibt, solange das Ende nicht gekappt wurde — auch
         # beim schon kollabierten Eintrag (19:00–19:00), für den ``clamp`` die
         # Eingabe als Rohende zurückgibt (Review Task 7).
-        if (e.auto_closed and not untracked_auto_close and e.raw_end_time is not None
-                and r.eff_end == src_end):
+        if e.auto_closed and e.raw_end_time is not None and r.eff_end == src_end:
             new_raw_end = AUTO_CLOSE_RAW_END
         old_vals = (e.start_time, e.end_time, e.raw_start_time, e.raw_end_time, int(e.uncredited_minutes or 0))
         new_vals = (r.eff_start, r.eff_end, r.raw_start, new_raw_end, int(r.uncredited_minutes))
@@ -990,11 +986,18 @@ def stale_clamp_entries(db: Session, tenant_id, dates) -> list:
             User.id.in_({e.user_id for e in entries}),
         ).all()
     }
+    wh_by_user: dict = {}
+    for c in db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.tenant_id == tenant_id,  # F-026
+        WorkingHoursChange.user_id.in_(set(users)),
+    ).all():
+        wh_by_user.setdefault(c.user_id, []).append(c)
     soll_free = _soll_free_dates(db, tenant_id, min(dates), max(dates))
     stale = []
     for e in entries:
         user = users.get(e.user_id)
-        if user is None or not calculation_service.tracks_hours_on(db, user, e.date):
+        wh_changes = wh_by_user.get(e.user_id, [])
+        if user is None or not calculation_service.tracks_hours_on(db, user, e.date, wh_changes):
             continue
         if not calculation_service._within_employment_window(user, e.date):
             continue
@@ -1004,7 +1007,7 @@ def stale_clamp_entries(db: Session, tenant_id, dates) -> list:
         else:
             src_end = e.raw_end_time or e.end_time
         r = clamp(db, user, e.date, src_start, src_end, grace_for_entry(db, e),
-                  credit_override=False, soll_free_dates=soll_free)
+                  credit_override=False, wh_changes=wh_changes, soll_free_dates=soll_free)
         if (r.eff_start, r.eff_end, int(r.uncredited_minutes)) != (
                 e.start_time, e.end_time, int(e.uncredited_minutes or 0)):
             stale.append(e)

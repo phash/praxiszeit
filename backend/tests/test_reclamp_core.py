@@ -103,9 +103,7 @@ def test_skipped_entries_keep_their_grace(db, test_user):
     assert (accepted.end_time, accepted.uncredited_minutes) == (t(18), 0)
 
 
-def test_track_hours_off_leaves_entries_unclamped(db, default_tenant):
-    """Teil A (Task 10): kein pauschales Überspringen mehr — ``clamp`` entscheidet
-    je Tag nach dem Snapshot und kappt ohne Stundenzählung nicht."""
+def test_track_hours_off_skips_everything(db, default_tenant):
     lead = User(username="leitend", email="l@x.de", password_hash="h", first_name="L", last_name="T",
                 role=UserRole.EMPLOYEE, weekly_hours=40.0, work_days_per_week=5, vacation_days=30,
                 track_hours=False, tenant_id=DEFAULT_TENANT_ID)
@@ -114,9 +112,8 @@ def test_track_hours_off_leaves_entries_unclamped(db, default_tenant):
     prev = _setup(db, lead)
     e = entry(db, lead, MON, t(8), t(18))
     result = _run(db, lead, prev)
-    assert (result.changed, result.skipped) == ([], [])
-    assert (e.start_time, e.end_time, e.raw_start_time, e.raw_end_time, e.uncredited_minutes) == (
-        t(8), t(18), None, None, 0)
+    assert [s.reason for s in result.skipped] == ["track_hours_off"]
+    assert e.uncredited_minutes == 0
 
 
 def test_unique_collision_keeps_the_entry(db, test_user):

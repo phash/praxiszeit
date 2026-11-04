@@ -244,6 +244,7 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
     saldo_before = _saldo_by_year(db, user, window.start, window.end, cutoff)
     today_before = _day_saldo(db, user, today) if (open_day or today_counts) else _ZERO
     old_full = calculation_service.absence_full_targets(db, user, window.start, window.end)
+    old_tracked = calculation_service.track_hours_by_date(db, user, window.start, window.end)
     old_today_blocks = work_window_service.credit_blocks(db, user, today) if open_today else None
     before = {e.id: _snapshot(e) for e in presence_service.closed_entries(db, user, window.start, window.end)}
     ent_years = entitlement_years(effective_from, today)
@@ -264,7 +265,8 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
             old_schedule.blocks, new_schedule.blocks, old_schedule.block_pauses, new_schedule.block_pauses)
     grace = work_window_service.get_grace_minutes(db, user.tenant_id)
     reclamp = work_window_service.reclamp_time_entries(
-        db, user, window.start, window.end, set(weekdays), old_schedule.blocks, grace)
+        db, user, window.start, window.end, set(weekdays), old_schedule.blocks, grace,
+        prev_tracked_by_date=old_tracked)
     db.flush()
     open_loses = False
     # Teil A: Stundenzählung laut NEUEM Snapshot von heute (nach ``apply``).
@@ -282,7 +284,8 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
     absences = []
     if window.has_absences:
         absences = calculation_service.retarget_absence_hours(
-            db, user, window.start, window.end, old_full_target_by_date=old_full)
+            db, user, window.start, window.end, old_full_target_by_date=old_full,
+            old_tracked_by_date=old_tracked)
 
     # Schritt 7
     ent_after = _entitlements(db, user, ent_years)

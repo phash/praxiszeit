@@ -116,19 +116,17 @@ class TestLeavesAloneWhatItShould:
         db.refresh(a)
         assert float(a.hours) == 8.0
 
-    def test_untracked_day_goes_to_zero(self, db, test_user):
-        """Teil A (Task 10): track_hours=False laut Snapshot des Tages — dort
-        zählt nur die Tageszählung, das Ziel ist für jeden Typ 0 (früher ließ ein
-        Rücksprung nach der User-Zeile die Stunden stehen). ``raw_hours`` bleibt."""
+    def test_untracked_user_is_untouched(self, db, test_user):
+        """track_hours=False (leitende Angestellte): dort zählt nur die
+        Tageszählung, Stunden sind Rauschen."""
         test_user.track_hours = False
         db.commit()
         a = _absence(db, test_user, MON, AbsenceType.VACATION, 8.0)
         _halve_hours(db, test_user)
 
-        assert len(_run(db, test_user)) == 1
+        assert len(_run(db, test_user)) == 0
         db.refresh(a)
-        assert float(a.hours) == 0.0
-        assert float(a.raw_hours) == 8.0
+        assert float(a.hours) == 8.0
 
     def test_weekend_is_skipped(self, db, test_user):
         a = _absence(db, test_user, SAT, AbsenceType.VACATION, 8.0)

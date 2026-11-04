@@ -702,6 +702,7 @@ def retarget_absence_hours(
     end: date,
     *,
     old_full_target_by_date: Dict[date, Decimal],
+    old_tracked_by_date: Optional[Dict[date, bool]] = None,
     dry_run: bool = False,
 ) -> List[AbsenceRetarget]:
     """Setzt ``Absence.hours`` im Fenster ``[start, end]`` auf das Tagessoll des
@@ -726,11 +727,12 @@ def retarget_absence_hours(
     * ``OVERTIME`` — Freizeitausgleich traegt explizit beantragte Stunden, kein
       abgeleitetes Tagessoll (CLAUDE.md: Soll bleibt, Ist = 0).
     * Teil A (Task 10, Variante A): ``track_hours`` gilt je TAG laut Snapshot,
-      nicht nach der User-Zeile. An einem Tag ohne Stundenzaehlung ist das Ziel
-      fuer JEDEN Typ (ausser OVERTIME) 0 — dort zaehlt allein die
-      Tageszaehlung. Eine rueckwirkende Umstellung zieht die ``hours`` damit
-      zwischen 0 und dem Tagessoll hin und her; das Loeschen der Aenderung
-      stellt den Ausgangszustand ueber denselben Weg her.
+      nicht nach der User-Zeile. Ein Tag, der VORHER Stunden zaehlte
+      (``old_tracked_by_date``, :func:`track_hours_by_date`) und nachher nicht,
+      bekommt fuer JEDEN Typ (ausser OVERTIME) das Ziel 0; ein Tag, der vorher
+      und nachher ohne Stundenzaehlung ist, bleibt unberuehrt (dort zaehlt allein
+      die Tageszaehlung, Stunden zu bewegen waere nur Rauschen). Ohne
+      ``old_tracked_by_date`` gilt der Tag als unveraendert.
     * Wochenenden und Feiertage — sie werden uebersprungen, NICHT auf 0 gesetzt
       (die Leseseite wertet sie ohnehin mit 0, :func:`credit_day_weight`).
     * Tage ohne Soll (freier Wochentag im Tagesplan bzw. ohne Bloecke) fuer
@@ -839,6 +841,8 @@ def retarget_absence_hours(
             continue
 
         schedule = get_schedule_for_date(db, user, d, wh_changes=wh_changes)
+        if not schedule.track_hours and not tracked_before(old_tracked_by_date, d, False):
+            continue  # vorher und nachher ohne Stundenzaehlung: unberuehrt
         # Audit 2026-07-31 (Fund A): BEWUSST das UNGEWICHTETE Tagessoll — der
         # #146/#394-Sondertagsfaktor (24./31.12.) gehoert NICHT in den
         # gespeicherten Wert. ``Absence.hours`` traegt in dieser Anwendung das
@@ -856,10 +860,10 @@ def retarget_absence_hours(
         # Sondertag dadurch IMMER vom neu berechneten ab, sodass die
         # Gleichheitspruefung unten bei JEDEM Lauf ansprang (nicht idempotent).
         target = get_daily_target_for_date(user, d, schedule)
-        # Teil A (Task 10): ohne Stundenzaehlung laut Snapshot des Tages ist das
-        # Ziel fuer jeden Typ 0 (``get_daily_target_for_date`` liefert dort 0) —
-        # nicht nur fuer SICK/TRAINING. Mit Stundenzaehlung gelten die Regeln
-        # darunter unveraendert.
+        # Teil A (Task 10): Stundenzaehlung eben abgeschaltet → Ziel fuer jeden
+        # Typ 0 (``get_daily_target_for_date`` liefert dort 0) — nicht nur fuer
+        # SICK/TRAINING. Mit Stundenzaehlung gelten die Regeln darunter
+        # unveraendert.
         if target <= 0 and schedule.track_hours and a.type not in _IST_CREDITED_ABSENCE_TYPES:
             continue
 
@@ -960,6 +964,52 @@ def absence_full_targets(db: Session, user: User, start: date, end: date) -> Dic
         d: get_daily_target_for_date(user, d, get_schedule_for_date(db, user, d, wh_changes))
         for d in dates
     }
+
+
+def track_hours_by_date(db: Session, user: User, start: date, end: date) -> Dict[date, bool]:
+    """Teil A (Task 10, Fix-Runde 1): die Stundenzählung VOR der Änderung je
+    Datum, an dem im Fenster eine Abwesenheit (ohne OVERTIME) oder ein
+    Zeiteintrag steht. Der Aufrufer ruft das wie :func:`absence_full_targets`
+    VOR dem Anwenden der Änderung (``apply`` kann die früheste Zeile an Ort und
+    Stelle ersetzen — deshalb Werte, keine Zeilen).
+
+    Rückrechnung und Neukappung handeln an einem Tag ohne Stundenzählung nur,
+    wenn dieser Tag VORHER Stunden zählte (Wechsel des Kennzeichens). Ein Tag,
+    der vorher und nachher ohne Stundenzählung ist, bleibt unberührt — sonst
+    zöge jede gewöhnliche Stundenänderung einer Person, die schon immer ohne
+    Stundenzählung arbeitet (oder deren Verlauf Migration 075 mit dem heutigen
+    Wert aufgefüllt hat), Altbestand auf 0 und verlangte einen Grund."""
+    if start > end:
+        return {}
+    wh_changes = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+    ).all()
+    dates = {
+        row[0] for row in db.query(Absence.date).filter(
+            Absence.user_id == user.id,
+            Absence.tenant_id == user.tenant_id,  # F-026
+            Absence.date >= start,
+            Absence.date <= end,
+            Absence.type != AbsenceType.OVERTIME,
+        ).all()
+    } | {
+        row[0] for row in db.query(TimeEntry.date).filter(
+            TimeEntry.user_id == user.id,
+            TimeEntry.tenant_id == user.tenant_id,  # F-026
+            TimeEntry.date >= start,
+            TimeEntry.date <= end,
+        ).all()
+    }
+    return {d: bool(get_schedule_for_date(db, user, d, wh_changes).track_hours) for d in dates}
+
+
+def tracked_before(old_tracked_by_date: Optional[Dict[date, bool]], d: date, now_tracked: bool) -> bool:
+    """Stundenzählung an ``d`` VOR der Änderung. Ohne Angabe (``None``, z. B.
+    :func:`reapply_f1_for_day`) oder ohne Eintrag gilt: unverändert."""
+    if old_tracked_by_date is None:
+        return now_tracked
+    return old_tracked_by_date.get(d, now_tracked)
 
 
 def reapply_f1_for_day(db: Session, user: User, d: date) -> List[AbsenceRetarget]:

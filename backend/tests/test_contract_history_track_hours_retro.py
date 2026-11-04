@@ -109,9 +109,6 @@ def test_delete_restores_bit_identical(db, test_user, client):
     _set_mode(db, u, False)
     entry(db, u, ENTRY_DAY, t(7), t(13))
     entry(db, u, date(2026, 6, 8), t(8, 30), t(11))
-    # Auto-Close ohne Stundenzählung: Ende 23:59 ungekappt, kein Rohende.
-    entry(db, u, date(2026, 6, 9), t(19), t(23, 59), auto_closed=True)
-    entry(db, u, date(2026, 6, 10), t(8), t(23, 59), auto_closed=True)
     absence(db, u, ABSENCE_DAY, AbsenceType.VACATION, hours=0.0)
     absence(db, u, date(2026, 6, 4), AbsenceType.SICK, hours=0.0)
     absence(db, u, date(2026, 6, 5), AbsenceType.VACATION, hours=0.0, half_day=True)
@@ -127,6 +124,35 @@ def test_delete_restores_bit_identical(db, test_user, client):
     resp = client.request("DELETE", f"{url(u)}/{change.id}", json=RETRO_REASON)
     assert resp.status_code in (200, 204), resp.text
     assert state(db, u) == snapshot
+
+
+def _delete_change(db, client, u):
+    db.expire_all()
+    change = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == u.id, WorkingHoursChange.effective_from == EFF).one()
+    resp = client.request("DELETE", f"{url(u)}/{change.id}", json=RETRO_REASON)
+    assert resp.status_code in (200, 204), resp.text
+
+
+def test_untracked_auto_close_round_trip_never_restores_2359(db, test_user, client):
+    """Fix-Runde 1 (Finding 1): bewusst NICHT bitgleich. Ein ohne
+    Stundenzählung automatisch geschlossener Eintrag steht auf 23:59 ohne
+    Rohende. Das Einschalten kappt ihn (Ende auf der Hülle bzw. Kollaps,
+    Rohende 23:59); die Rücknahme entkappt nach P18 nur bis zum wirksamen
+    Ende — das synthetische 23:59 wird nie wieder angerechnet (Sicherheitsfund
+    F1: sonst stünden ~16 h ohne Ausstempeln in §16-Belegen und im § 3 ArbZG)."""
+    u = test_user
+    _set_mode(db, u, False)
+    late = entry(db, u, date(2026, 6, 9), t(19), t(23, 59), auto_closed=True)
+    early = entry(db, u, date(2026, 6, 10), t(8), t(23, 59), auto_closed=True)
+
+    assert client.post(url(u), json=body(True)).status_code == 201
+    assert _entry_state(db, late) == (t(19), t(19), t(19), t(23, 59), 0)
+    assert _entry_state(db, early) == (t(8), t(12, 15), None, t(23, 59), 0)
+
+    _delete_change(db, client, u)
+    assert _entry_state(db, late) == (t(19), t(19), None, t(23, 59), 0)
+    assert _entry_state(db, early) == (t(8), t(12, 15), None, t(23, 59), 0)
 
 
 def test_track_hours_off_unclamps_and_zeroes_absences(db, test_user, client):
@@ -186,7 +212,8 @@ def test_blocks_with_track_hours_off_are_stored_and_inert(db, test_user, client)
 
 def test_switch_off_then_delete_restores_tracked_auto_close(db, test_user, client):
     """Gegenrichtung zur Rücknahme: gekappter Auto-Close (Ende auf der Hülle,
-    Rohende 23:59) → ausgeschaltet 23:59 ungekappt → gelöscht wieder gekappt."""
+    Rohende 23:59) → ausgeschaltet bleibt das wirksame Ende (P18) → gelöscht
+    bitgleich."""
     u = test_user
     _set_mode(db, u, True)
     e = entry(db, u, ENTRY_DAY, t(8), t(12, 15), raw_end=t(23, 59), auto_closed=True)
@@ -195,9 +222,32 @@ def test_switch_off_then_delete_restores_tracked_auto_close(db, test_user, clien
 
     r = client.post(url(u), json=body(False))
     assert r.status_code == 201, r.text
-    assert _entry_state(db, e) == (t(8), t(23, 59), None, None, 0)
+    # P18: das wirksame Ende bleibt die Eingabe, nie das synthetische 23:59.
+    assert _entry_state(db, e) == (t(8), t(12, 15), None, t(23, 59), 0)
     assert _hours(db, sick) == 0.0
 
     resp = client.request("DELETE", f"{url(u)}/{r.json()['id']}", json=RETRO_REASON)
     assert resp.status_code in (200, 204), resp.text
     assert state(db, u) == snapshot
+
+
+def test_always_untracked_person_hours_change_touches_nothing(db, test_user, client):
+    """Fix-Runde 1 (Finding 2): vorher UND nachher ohne Stundenzählung — eine
+    gewöhnliche rückwirkende Stundenänderung lässt Altbestand stehen (wie vor
+    Task 10): keine Rückrechnung, keine Entkappung, kein Grund nötig, keine
+    Einzelprotokolle."""
+    from app.models import TimeEntryAuditLog
+    u = test_user
+    _set_mode(db, u, False)
+    sick = absence(db, u, ABSENCE_DAY, AbsenceType.SICK, hours=8.0)
+    e = entry(db, u, ENTRY_DAY, t(7, 45), t(12, 15), raw_start=t(7), raw_end=t(13))
+    before = _entry_state(db, e)
+
+    r = client.post(url(u), json={"effective_from": EFF.isoformat(), "weekly_hours": 30})
+    assert r.status_code == 201, r.text
+    assert _hours(db, sick) == 8.0
+    assert _entry_state(db, e) == before
+    db.expire_all()
+    assert db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.user_id == u.id, TimeEntryAuditLog.source == "wh_change").count() == 0
+    assert reclamp_logs(db, u, summary=False) == []
