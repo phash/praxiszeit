@@ -100,9 +100,18 @@ def test_milog_50_check_off_in_months_without_account(db, minijob_user):
             track_hours=True, **MINIJOB)
     assert milog_service.milog_50_check(db, minijob_user, 2026, 3, monthly_actual=Decimal("100")) is None
     assert milog_service.milog_50_check(db, minijob_user, 2026, 8, monthly_actual=Decimal("100")) is not None
-    # Fix-Plausibilität ebenfalls je Monat.
-    entry(db, minijob_user, date(2026, 3, 2), time(6, 0), time(20, 0), grace=None)
+    # Fix-Plausibilität ebenfalls je Monat: gleiches Ist (4 × ~13 h > 43,3 h) im
+    # März (Fix-Modus im Snapshot aus) und im August (an). Der Spiegel der User-Zeile
+    # steht auf True — ein Live-Feld-Zugriff würde die März-Zusicherung kippen.
+    minijob_user.use_fixed_monthly_target = True
+    db.commit()
+    for d in (2, 3, 4, 5):
+        entry(db, minijob_user, date(2026, 3, d), time(6, 0), time(20, 0), grace=None)
+    for d in (3, 4, 5, 6):
+        entry(db, minijob_user, date(2026, 8, d), time(6, 0), time(20, 0), grace=None)
+    assert cs.get_monthly_actual(db, minijob_user, 2026, 3) > Decimal("43.3")
     assert milog_service.monthly_exceeded_check(db, minijob_user, 2026, 3) is None
+    assert milog_service.monthly_exceeded_check(db, minijob_user, 2026, 8) is not None
 
 
 def test_settlement_aging_skips_months_without_account(db, minijob_user):
@@ -165,6 +174,36 @@ def test_users_overview_milog_gate_uses_today_snapshot(_db_session, employee_use
         rows = {r["user_id"]: r for r in TestClient(endpoints_app).get("/api/admin/users-overview").json()}
         assert any("MILOG_ACCOUNT_50" in w for w in rows[str(u.id)]["milog_warnings"])
         assert rows[str(admin_user.id)]["milog_warnings"] == []
+    finally:
+        endpoints_app.dependency_overrides.clear()
+
+
+def test_users_overview_milog_gate_mirror_on_snapshot_off(_db_session, employee_user, admin_user, monkeypatch):
+    """F035 (Gegenrichtung): Spiegel noch True, der Snapshot von HEUTE aber aus —
+    keine Warnung. Ein ODER aus Spiegel und Snapshot bliebe sonst grün."""
+    db, u = _db_session, employee_user
+    add_row(db, u, date(2026, 1, 1), weekly_hours=40, track_hours=True, milog_working_time_account=True,
+            agreed_monthly_hours=None, use_fixed_monthly_target=False, vacation_days=Decimal("30"))
+    add_row(db, u, date(2026, 12, 1), weekly_hours=40, track_hours=True, milog_working_time_account=False,
+            agreed_monthly_hours=None, use_fixed_monthly_target=False, vacation_days=Decimal("30"))
+    u.milog_working_time_account = True       # Spiegel noch nicht nachgezogen
+    db.commit()
+    freeze(monkeypatch, date(2026, 12, 2))
+    monkeypatch.setattr(milog_service, "milog_50_check",
+                        lambda *a, **k: {"account_hours": 20.0, "cap": 16.5,
+                                         "agreed_monthly": 33.0, "caveat": "x"})
+    monkeypatch.setattr(milog_service, "settlement_aging", lambda *a, **k: None)
+    monkeypatch.setattr(cs, "get_overtime_history_detailed", lambda *a, **k: {(2026, 12): _MO(0, 0)})
+
+    def _override_db():
+        yield db
+    endpoints_app.dependency_overrides.clear()
+    endpoints_app.dependency_overrides[get_db] = _override_db
+    endpoints_app.dependency_overrides[get_current_user] = lambda: admin_user
+    endpoints_app.dependency_overrides[require_admin] = lambda: admin_user
+    try:
+        rows = {r["user_id"]: r for r in TestClient(endpoints_app).get("/api/admin/users-overview").json()}
+        assert rows[str(u.id)]["milog_warnings"] == []
     finally:
         endpoints_app.dependency_overrides.clear()
 

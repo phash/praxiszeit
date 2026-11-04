@@ -46,6 +46,15 @@ def db():
         Base.metadata.drop_all(bind=engine)
 
 
+@pytest.fixture(autouse=True)
+def _frozen_today(monkeypatch):
+    """WHC_EFF (2027-01-01) muss in der Zukunft bleiben, sonst wird der POST ab
+    2027-01-02 zur rückwirkenden Verkürzung (400 ohne Grund)."""
+    from datetime import date
+    from tests.wh_change_helpers import freeze
+    freeze(monkeypatch, date(2026, 11, 3))
+
+
 @pytest.fixture
 def default_tenant(db):
     t = Tenant(id=DEFAULT_TENANT_ID, name="D", slug="default", is_active=True, mode="single")
