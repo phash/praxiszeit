@@ -7,7 +7,8 @@ ab dann aus dem Vertrags-Snapshot. Anti-Ziel (Spec Abschnitt 4): kein
 vergangenes Ergebnis ändert sich. Diese Probe hält das auf einer Prod-Kopie fest.
 
 Schreibt je Person (sortiertes JSON nach stdout), je Jahr vom ersten Eintrag
-bzw. der ersten Abwesenheit bis ``PROBE_TODAY`` + 1 Jahr:
+bzw. der ersten Abwesenheit — frühestens ab ``BOOKING_FLOOR`` (01.01.2000) —
+bis ``PROBE_TODAY`` + 1 Jahr:
   - ``get_vacation_account`` (alle Schlüssel außer dem neuen ``entitlement_days``)
   - je Monat ``get_monthly_target``, ``get_monthly_actual`` und
     ``get_overtime_account`` (voller Monat)
@@ -31,7 +32,9 @@ Aufruf im Backend-Image, Arbeitsverzeichnis = Backend der jeweiligen Version:
     PROBE_TODAY=2026-11-04 python /probe/probe_075.py > /out/<name>.json
 
 ``PROBE_TODAY`` (ISO-Datum) hält „heute" für beide Läufe fest: die Probe ersetzt
-dafür jedes ``today_local`` im geladenen ``app``-Code. Ausgaben enthalten echte
+dafür jedes ``today_local`` im geladenen ``app``-Code (auch das von
+``timezone_service`` selbst, also auch ``timezone_service.today_local()``);
+``now_local`` bleibt ungefroren — die probierten Aufrufe lesen es nicht. Ausgaben enthalten echte
 Personendaten (Kennungen und Salden) — nie ins Repository legen.
 """
 import json
