@@ -7,12 +7,35 @@ absence_type-Set). Die Schemas behalten ihre dünnen ``@field_validator``/
 das Verhalten exakt gleich, aber es gibt nur noch EINE Quelle der Wahrheit.
 """
 from datetime import time
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Any
 
 from pydantic import AfterValidator
 
 from app.services.work_blocks_service import WEEK_SHAPE_TEXT, WEEKDAY_LABELS, derive_targets, hhmm_to_minutes
+
+
+AGREED_HOURS_MIN_DETAIL = "Die vereinbarte Monatsarbeitszeit muss mindestens 0,1 Stunden betragen."
+
+
+def quantize_one_decimal(v):
+    """F008/F028/F101: ``vacation_days`` und ``agreed_monthly_hours`` stehen in
+    ``Numeric(4,1)``/``Numeric(5,1)``. PostgreSQL rundet beim Schreiben (kaufmännisch,
+    ``ROUND_HALF_UP``); wird erst dort gerundet, rechnen Regelprüfung, Vorschau
+    und Protokoll mit einem anderen Wert als dem gespeicherten. Deshalb schon im
+    Eingabeschema auf eine Stelle runden — gleich wie die Datenbank."""
+    if v is None:
+        return v
+    return float(Decimal(str(v)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
+def quantize_agreed_hours(v):
+    """Wie :func:`quantize_one_decimal`; danach muss der Wert > 0 bleiben (0,04 h
+    würde gespeichert 0,0 — die Festes-Soll-Regel verlangt aber > 0)."""
+    v = quantize_one_decimal(v)
+    if v is not None and v <= 0:
+        raise ValueError(AGREED_HOURS_MIN_DETAIL)
+    return v
 
 
 def truncate_to_minute(v: time) -> time:

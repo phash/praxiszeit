@@ -5,7 +5,10 @@ from datetime import datetime, date
 from decimal import Decimal
 from uuid import UUID
 from app.models.user import UserRole
-from app.schemas.validators import strip_legacy_window_fields, validate_employment_order, validate_week_blocks
+from app.schemas.validators import (
+    quantize_agreed_hours, quantize_one_decimal, strip_legacy_window_fields,
+    validate_employment_order, validate_week_blocks,
+)
 from app.schemas.working_hours_change import DayBlocksIn
 from app.services import work_blocks_service
 
@@ -90,6 +93,16 @@ class UserCreate(UserBase):
     @classmethod
     def reject_legacy_window_fields(cls, data):
         return strip_legacy_window_fields(data)
+
+    @field_validator('vacation_days')
+    @classmethod
+    def round_vacation_days(cls, value):
+        return quantize_one_decimal(value)  # F101: Numeric(4,1), wie PostgreSQL
+
+    @field_validator('agreed_monthly_hours')
+    @classmethod
+    def round_agreed_monthly_hours(cls, value):
+        return quantize_agreed_hours(value)  # F101: Numeric(5,1), danach > 0
 
     @field_validator("password")
     @classmethod

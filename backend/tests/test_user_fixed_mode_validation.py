@@ -350,3 +350,28 @@ def test_put_of_contract_field_out_of_range_is_400_not_422(db, admin, default_te
     resp = client.put(f"{USERS}/{uid}", json=payload)
     assert resp.status_code == 400, resp.text
     app.dependency_overrides.clear()
+
+
+def test_whc_contract_numbers_rounded_like_the_column(db, admin, default_tenant):
+    """F008/F028: Anspruch und Monatsstunden werden schon im Schema auf eine
+    Stelle gerundet (kaufmännisch wie PostgreSQL) — Regel, Vorschau und Zeile
+    sehen denselben Wert."""
+    client = _client_as(db, admin, admin)
+    uid = _create_plain_user(client, "round1")
+    resp = _whc(client, uid, vacation_days=24.25, agreed_monthly_hours=40.04)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["vacation_days"] == 24.3
+    assert resp.json()["agreed_monthly_hours"] == 40.0
+    app.dependency_overrides.clear()
+
+
+def test_whc_fixed_target_with_agreed_rounding_to_zero_is_422(db, admin, default_tenant):
+    """F101: 0,04 h würde als 0,0 gespeichert — die Festes-Soll-Regel darf nicht
+    an der Rundung vorbeilaufen."""
+    client = _client_as(db, admin, admin)
+    uid = _create_plain_user(client, "round2")
+    resp = _whc(client, uid, use_fixed_monthly_target=True, agreed_monthly_hours=0.04,
+                track_hours=True, milog_working_time_account=True)
+    assert resp.status_code == 422, resp.text
+    assert "mindestens 0,1" in resp.text
+    app.dependency_overrides.clear()

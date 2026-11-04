@@ -6,7 +6,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID
 
-from app.schemas.validators import validate_week_blocks
+from app.schemas.validators import quantize_agreed_hours, quantize_one_decimal, validate_week_blocks
 from app.services import work_blocks_service
 
 logger = logging.getLogger(__name__)
@@ -131,6 +131,16 @@ class WorkingHoursChangeCreate(WorkingHoursChangeBase, RetroReasonFields):
         if not effective_from_plausible(value):
             raise ValueError(EFFECTIVE_FROM_RANGE_DETAIL)
         return value
+
+    @field_validator('vacation_days')
+    @classmethod
+    def round_vacation_days(cls, value):
+        return quantize_one_decimal(value)  # Numeric(4,1), wie PostgreSQL rundet
+
+    @field_validator('agreed_monthly_hours')
+    @classmethod
+    def round_agreed_monthly_hours(cls, value):
+        return quantize_agreed_hours(value)  # Numeric(5,1), danach > 0
 
     @model_validator(mode='after')
     def reject_null_contract_fields(self):
