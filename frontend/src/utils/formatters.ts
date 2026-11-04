@@ -57,6 +57,17 @@ export function parseHours(value: string): number {
 }
 
 /**
+ * 'YYYY-MM-DD' → 'DD.MM.YYYY', ohne Zeitzonen-Überraschung (kein `Date`).
+ * Ungültige Eingaben kommen unverändert zurück. (F091: eine Stelle für
+ * Einstellungen und verkürzte Tage.)
+ */
+export function formatIsoDateDe(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  if (!y || !m || !d) return iso;
+  return `${d}.${m}.${y}`;
+}
+
+/**
  * #415/#431: eine Vertragsänderung innerhalb eines Berichtszeitraums, so wie
  * `/admin/reports/monthly|weekly` sie liefert (Backend-Zwilling:
  * `schemas/reports.py::WeeklyHoursChangeInPeriod`).

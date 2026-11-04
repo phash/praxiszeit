@@ -10,6 +10,7 @@ import { useTypeColorsStore, pickTextColor } from '../../stores/typeColorsStore'
 import AbsenceReasonsManager from '../../components/AbsenceReasonsManager';
 import { useSystemStore } from '../../stores/systemStore';
 import { showResponseWarning } from '../../utils/arbzgWarnings';
+import { formatIsoDateDe } from '../../utils/formatters';
 import ReducedDaysCard from '../../components/ReducedDaysCard';
 
 // #371: Wochentag-Labels (Index 0=Mo … 6=So) für den Schichtplaner-Wochentag-Picker.
@@ -70,12 +71,8 @@ const SPECIAL_DAY_MODE_LABELS: Record<SpecialDayMode, string> = {
   max_hours: 'Verkürzt auf X Stunden',
 };
 
-function formatGermanDate(iso: string): string {
-  // iso is YYYY-MM-DD; render as DD.MM.YYYY without timezone surprises.
-  const [y, m, d] = iso.split('-');
-  if (!y || !m || !d) return iso;
-  return `${d}.${m}.${y}`;
-}
+// F091: eine Stelle für DD.MM.YYYY (auch ReducedDaysCard).
+const formatGermanDate = formatIsoDateDe;
 
 export default function Settings() {
   const toast = useToast();

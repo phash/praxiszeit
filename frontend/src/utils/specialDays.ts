@@ -55,6 +55,12 @@ export function isValidMaxHours(x: unknown): x is number {
     && x >= MIN_MAX_HOURS && x <= MAX_MAX_HOURS && Math.round(x * 4) === x * 4;
 }
 
+/** Eingabefeld → Zahl ('4,5' wie '4.5'); leer oder unlesbar → NaN (nie still 0). */
+export function parseMaxHoursInput(v: string): number {
+  const t = v.trim().replace(',', '.');
+  return t === '' ? Number.NaN : Number(t);
+}
+
 /** Zwilling von `_lenient_max_hours` (Lesepfad): ungültig oder fehlend → 4 (F133). */
 export function lenientMaxHours(x: unknown): number {
   return isValidMaxHours(x) ? x : DEFAULT_MAX_HOURS;

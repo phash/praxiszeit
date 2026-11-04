@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  getSpecialDayInfo, isValidMaxHours, lenientMaxHours, reducedDayLabel, type SpecialDaySettings,
+  getSpecialDayInfo, isValidMaxHours, lenientMaxHours, parseMaxHoursInput, reducedDayLabel, type SpecialDaySettings,
 } from './specialDays';
 
 const free24: SpecialDaySettings = {
@@ -121,5 +121,11 @@ describe('max-hours validity (twin of parse_max_hours)', () => {
     expect(isValidMaxHours(Number.NaN)).toBe(false);
     expect(isValidMaxHours('4')).toBe(false);
     expect(lenientMaxHours(undefined)).toBe(4);
+  });
+  it('parseMaxHoursInput: comma or dot; empty is NaN, never 0', () => {
+    expect(parseMaxHoursInput('4,5')).toBe(4.5);
+    expect(parseMaxHoursInput(' 3.25 ')).toBe(3.25);
+    expect(parseMaxHoursInput('')).toBeNaN();
+    expect(parseMaxHoursInput('abc')).toBeNaN();
   });
 });
