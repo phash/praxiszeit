@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
-from typing import Annotated, Any, List, NamedTuple, Optional
+from typing import Annotated, Any, List, NamedTuple, Optional, Tuple
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 from pydantic import ValidationError
@@ -148,7 +148,7 @@ def _log_wh_change_retarget(
 
 
 def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_per_week,
-                         blocks, block_pauses):
+                         blocks, block_pauses, contract: tuple):
     """#431: der Vertrags-Snapshot als vergleichbares Tupel.
 
     Verglichen wird, was das SOLL treibt. Im gleichmaessigen Modus sind die
@@ -166,6 +166,10 @@ def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_
     Snapshot — sie treiben die Kappung, und eine Änderung allein an ihnen
     (PR3: reine Blockänderung) braucht genauso eine Basis-Zeile, die die
     Vergangenheit einfriert.
+
+    Teil A (Vertragsverlauf): ``contract`` (``_contract_of``) — Anspruch,
+    Stundenzählung und Minijob-Felder gehören zum Snapshot; eine reine
+    Anspruchsänderung braucht genauso eine Basis-Zeile.
     """
     use_daily_schedule = bool(use_daily_schedule)
     return (
@@ -180,6 +184,21 @@ def _comparable_snapshot(weekly_hours, use_daily_schedule, day_hours, work_days_
         # leere Tage), Pausen nur, wenn es Blöcke gibt.
         blocks,
         block_pauses if blocks is not None else None,
+        contract,
+    )
+
+
+def _contract_of(holder) -> tuple:
+    """Teil A: die fünf Vertragsfelder eines ``Schedule`` bzw.
+    ``_NormalisedSchedule`` als vergleichbares Tupel
+    ``(vacation_days, track_hours, milog, agreed|None, fixed)``."""
+    agreed = holder.agreed_monthly_hours
+    return (
+        Decimal(str(holder.vacation_days)),
+        bool(holder.track_hours),
+        bool(holder.milog_working_time_account),
+        None if agreed is None else Decimal(str(agreed)),
+        bool(holder.use_fixed_monthly_target),
     )
 
 
@@ -202,17 +221,24 @@ def _carried_blocks(predecessor: "calculation_service.Schedule") -> tuple:
 
 
 class _NormalisedSchedule(NamedTuple):
-    """#431: die fertig normalisierte Snapshot-Eingabe — genau die vier Werte,
-    die eine ``WorkingHoursChange``-Zeile ausmachen."""
+    """#431: die fertig normalisierte Snapshot-Eingabe — die Werte, die eine
+    ``WorkingHoursChange``-Zeile ausmachen (ohne Blöcke; die löst
+    ``_target_blocks`` auf)."""
 
     weekly_hours: float
     use_daily_schedule: bool
     day_hours: tuple          # (Mo, Di, Mi, Do, Fr), je Optional[float]
     work_days_per_week: int
+    # Teil A: gesendet oder vom Snapshot zum Wirkungsdatum übernommen.
+    vacation_days: Decimal
+    track_hours: bool
+    milog_working_time_account: bool
+    agreed_monthly_hours: Optional[Decimal]  # None = aus weekly_hours abgeleitet
+    use_fixed_monthly_target: bool
 
 
 def _normalise_schedule_input(
-    change_data: WorkingHoursChangeCreate, user: User
+    change_data: WorkingHoursChangeCreate, user: User, current: "calculation_service.Schedule"
 ) -> _NormalisedSchedule:
     """#431: DIE eine Normalisierung der Snapshot-Eingabe — genutzt vom
     Schreibpfad ``create_working_hours_change`` UND von der Vorschau.
@@ -232,7 +258,21 @@ def _normalise_schedule_input(
     der Snapshot wäre dann unvollständig. Vorher stand dieser Rückfall zweimal
     wörtlich im Schreibpfad und hätte in der Vorschau ein drittes Mal
     entstehen müssen.
+
+    Teil A (Vertragsverlauf): die fünf Vertragsfelder — nicht gesendet heißt
+    „vom Snapshot zum Wirkungsdatum (``current``) übernehmen", NIE von der
+    User-Zeile. Ein ausdrückliches ``null`` für ``vacation_days``,
+    ``track_hours``, ``milog_working_time_account`` oder
+    ``use_fixed_monthly_target`` lehnt das Schema mit 422 ab
+    (``reject_null_contract_fields``); nur ``agreed_monthly_hours: null`` ist
+    erlaubt und heißt „abgeleitet".
     """
+    sent = change_data.model_fields_set
+
+    def pick(field: str):
+        return getattr(change_data, field) if field in sent else getattr(current, field)
+
+    vacation_days, agreed = pick("vacation_days"), pick("agreed_monthly_hours")
     return _NormalisedSchedule(
         weekly_hours=change_data.weekly_hours,
         use_daily_schedule=bool(change_data.use_daily_schedule),
@@ -246,7 +286,102 @@ def _normalise_schedule_input(
         work_days_per_week=int(
             change_data.work_days_per_week or user.work_days_per_week
         ),
+        vacation_days=Decimal(str(vacation_days)),
+        track_hours=bool(pick("track_hours")),
+        milog_working_time_account=bool(pick("milog_working_time_account")),
+        agreed_monthly_hours=None if agreed is None else Decimal(str(agreed)),
+        use_fixed_monthly_target=bool(pick("use_fixed_monthly_target")),
     )
+
+
+HISTORISED_FIELDS_PUT_DETAIL = (
+    "Wochenstunden, Tagesstunden, Arbeitstage, Arbeitszeit-Blöcke, Urlaubsanspruch, "
+    "Stundenzählung und Minijob-Einstellungen werden über „Arbeitszeit anpassen…“ mit "
+    "Wirkungsdatum geändert, damit Historie und Soll vergangener Monate korrekt bleiben."
+)
+MINIJOB_MONTH_START_DETAIL = "Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten."
+FIXED_TARGET_AGREED_DETAIL = "Fester Monats-Soll braucht eine vereinbarte Monatsarbeitszeit (> 0)."
+FIXED_TARGET_TRACK_HOURS_DETAIL = "Fester Monats-Soll setzt Stundenzählung (track_hours) voraus."
+FIXED_TARGET_MILOG_DETAIL = "Fester Monats-Soll setzt das MiLoG-Arbeitszeitkonto voraus."
+_MINIJOB_FIELDS = ("milog_working_time_account", "agreed_monthly_hours", "use_fixed_monthly_target")
+
+
+def _minijob_key(values) -> tuple:
+    """Die drei Minijob-Felder in Vergleichsform (Zeile, Snapshot oder Eingabe)."""
+    return tuple(_contract_value(getattr(values, f)) for f in _MINIJOB_FIELDS)
+
+
+def _minijob_switch_error(db: Session, user: User, tenant_id, after: date,
+                          predecessor) -> Optional[Tuple[int, str]]:
+    """F005: jede Verlaufszeile ist ein VOLLSTÄNDIGER Snapshot und trägt ihre
+    (geerbten) Minijob-Werte selbst. Ändert ein Anlegen oder Löschen den
+    Vorgänger der nächsten Zeile nach ``after``, darf an deren Datum kein
+    Minijob-Wechsel mitten im Monat entstehen (``month_contract`` liest den
+    Monatsersten — der Wechsel wirkte sonst still einen Monat später).
+    ``predecessor`` = der neue Vorgänger-Stand (Eingabe oder Snapshot)."""
+    nxt = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == tenant_id,  # F-026
+        WorkingHoursChange.effective_from > after,
+    ).order_by(WorkingHoursChange.effective_from).first()
+    if nxt is not None and nxt.effective_from.day != 1 and _minijob_key(nxt) != _minijob_key(predecessor):
+        return 422, MINIJOB_MONTH_START_DETAIL
+    return None
+
+
+def _starts_history(db: Session, user: User, tenant_id, effective_from: date) -> bool:
+    """F018: beginnt eine Zeile zu ``effective_from`` den Verlauf, ohne dass eine
+    Lückenzeile davor entsteht? Dann ist ihr Datum kein WECHSEL — Tage davor
+    lösen auf die Werte der ersten Zeile auf (auch im selben Monat), die
+    Monatserster-Regel greift nicht. Typischer Fall: die Basiszeile liegt mitten
+    im Monat und wird für alle Jahre korrigiert (Spec A4)."""
+    earliest = _earliest_row(db, user, tenant_id)
+    if earliest is None or earliest.effective_from < effective_from:
+        return False
+    coverage = _soll_coverage_start(db, user, tenant_id)
+    return coverage is None or coverage >= effective_from
+
+
+def _contract_rule_error(
+    db: Session, user: User, tenant_id,
+    norm: _NormalisedSchedule, current: "calculation_service.Schedule", effective_from: date,
+) -> Optional[Tuple[int, str]]:
+    """Teil A: Regeln an den Vertragsfeldern einer neuen Verlaufszeile —
+    gemeinsam für Anlegen (HTTPException) und Vorschau (``blocked_reason``).
+
+    1. Minijob-Felder ändern sich nur zum Monatsersten (die Monatsrechnung —
+       fester Monats-Soll, 50-%-Grenze — kennt keinen Wechsel mitten im Monat):
+       ``(422, MINIJOB_MONTH_START_DETAIL)``, sobald eines der drei Felder vom
+       Snapshot zum Wirkungsdatum abweicht und das Datum kein Monatserster ist
+       — außer die Zeile beginnt den Verlauf (``_starts_history``, F018). Ebenso,
+       wenn die NÄCHSTE Zeile mitten im Monat liegt und von der neuen abweicht
+       (F005, ``_minijob_switch_error``).
+    2. Fester Monats-Soll wird auf dem ZUSAMMENGEFÜHRTEN Snapshot geprüft
+       (gesendete Felder + geerbte), nicht nur auf dem Body: ``(400, Text)``.
+
+    ``None`` = keine Verletzung."""
+    minijob_changed = _minijob_key(norm) != _minijob_key(current)
+    if (minijob_changed and effective_from.day != 1
+            and not _starts_history(db, user, tenant_id, effective_from)):
+        return 422, MINIJOB_MONTH_START_DETAIL
+    switch = _minijob_switch_error(db, user, tenant_id, effective_from, norm)
+    if switch:
+        return switch
+    if norm.use_fixed_monthly_target:
+        if norm.agreed_monthly_hours is None or norm.agreed_monthly_hours <= 0:
+            return 400, FIXED_TARGET_AGREED_DETAIL
+        if norm.track_hours is not True:
+            return 400, FIXED_TARGET_TRACK_HOURS_DETAIL
+        if norm.milog_working_time_account is not True:
+            return 400, FIXED_TARGET_MILOG_DETAIL
+    return None
+
+
+def _contract_value(value):
+    """Vergleichsform eines Vertragsfelds (Decimal statt float/Decimal-Mix)."""
+    if value is None or isinstance(value, bool):
+        return value
+    return Decimal(str(value))
 
 
 def _sync_user_from_change(user: User, most_recent: WorkingHoursChange) -> None:
@@ -286,6 +421,13 @@ def _sync_user_from_change(user: User, most_recent: WorkingHoursChange) -> None:
     # Spec E9: Spiegel der jüngsten Zeile ≤ heute — als KOPIE (eine geteilte
     # Liste würde eine spätere In-place-Änderung in beide Zeilen tragen).
     user.work_blocks = copy.deepcopy(most_recent.blocks)
+    # Teil A (Vertragsverlauf): die fünf Vertragsfelder spiegeln mit — auch ein
+    # ``agreed_monthly_hours`` NULL (= abgeleitet).
+    user.vacation_days = most_recent.vacation_days
+    user.track_hours = most_recent.track_hours
+    user.milog_working_time_account = most_recent.milog_working_time_account
+    user.agreed_monthly_hours = most_recent.agreed_monthly_hours
+    user.use_fixed_monthly_target = most_recent.use_fixed_monthly_target
 
 
 def _enroll_user_in_open_closures(db: Session, user: User, current_user: User) -> None:
@@ -540,12 +682,15 @@ def users_overview(
     former per-user N+1 vacation fetch in the frontend with a single request.
     F-026: explicit tenant filter on top of RLS.
     """
-    year = year or today_local().year
+    # F076: „heute" EINMAL je Anfrage — Monats-Gate, Kontomonat und
+    # Stundenzählung beziehen sich auch über Mitternacht auf denselben Tag.
+    today = today_local()
+    year = year or today.year
     users = _filtered_user_list_query(
         db, current_user, include_inactive, include_hidden
     ).all()
 
-    is_current_year = (year == today_local().year)
+    is_current_year = (year == today.year)
     # #376 N+1-Vermeidung: der Tenant-Default wird EINMAL aufgelöst; die
     # per-User Absence⋈AbsenceReason-Verbrauchsquery entfällt komplett, solange
     # der Tenant keinen Grund mit tracks_child_sick_limit führt (der Regelfall).
@@ -566,11 +711,8 @@ def users_overview(
         PublicHoliday.tenant_id == current_user.tenant_id,  # F-026
         date_in_year(PublicHoliday.date, year),
     ).all()}
-    _wh_by_user: dict = {}
-    for _c in db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-    ).order_by(WorkingHoursChange.effective_from).all():
-        _wh_by_user.setdefault(_c.user_id, []).append(_c)
+    _wh_by_user = calculation_service.wh_changes_by_user(
+        db, current_user.tenant_id, [u.id for u in users])
     result = []
     for u in users:
         _uwh = _wh_by_user.get(u.id, [])
@@ -584,35 +726,41 @@ def users_overview(
         # Ansicht (die Prüfung ist immer aktueller Monat / Aging bis heute). Perf:
         # EIN Overtime-Pass je Flag-MA — beide Signale aus demselben `detailed`.
         _milog_w: list[str] = []
-        if is_current_year and u.milog_working_time_account and u.track_hours:
-            _t = today_local()
+        # Teil A (Task 11): Gate aus dem Monatsvertrag von heute (Preload ``_uwh``).
+        # F002: Stundenzählung an irgendeinem Tag des Monats (``month_has_account``).
+        if is_current_year and milog_service.month_has_account(
+                db, u, today.year, today.month, _uwh):
+            _t = today
             # #313 Saldo-Stichtag: den Stichtag durchreichen (Parität zum
             # MA-Dashboard, dashboard.py). Ohne cutoff trägt der laufende Monat
             # ein VOLLES Monats-Soll gegen einen nur monats-bis-heute-Ist → ein
             # Phantom-Defizit, das im FIFO die älteste (überfällige) Einlage
             # aufzehrt und die MILOG_SETTLEMENT_DUE-Warnung unterdrückt.
             _detailed = calculation_service.get_overtime_history_detailed(
-                db, u, _t.year, _t.month, cutoff_date=cutoff
+                db, u, _t.year, _t.month, cutoff_date=cutoff, wh_changes=_uwh
             )
             if _detailed:
                 _cur = _detailed.get((_t.year, _t.month))
                 _actual = _cur.actual if _cur is not None else 0.0
-                _chk = milog_service.milog_50_check(db, u, _t.year, _t.month, monthly_actual=_actual)
+                _chk = milog_service.milog_50_check(db, u, _t.year, _t.month, monthly_actual=_actual,
+                                                    wh_changes=_uwh)
                 if _chk:
                     _milog_w.append(milog_service.milog_50_warning_text(_chk))
-                _aging = milog_service.settlement_aging(db, u, _t, detailed=_detailed)
+                _aging = milog_service.settlement_aging(db, u, _t, detailed=_detailed, wh_changes=_uwh)
                 if _aging and (_aging["overdue"] or _aging["due_soon"] or _aging.get("incomplete")):
                     _milog_w.append(milog_service.settlement_warning_text(_aging))
             # #377 Baustein 2b: weiche Plausibilitäts-Warnung für Fix-Modus-MA
             # (gleicher Saldo-Stichtag wie oben, #313-Parität zum MA-Dashboard).
-            _exceeded = milog_service.monthly_exceeded_check(db, u, _t.year, _t.month, up_to_date=cutoff)
+            _exceeded = milog_service.monthly_exceeded_check(db, u, _t.year, _t.month, up_to_date=cutoff,
+                                                             wh_changes=_uwh)
             if _exceeded:
                 _milog_w.append(milog_service.monthly_exceeded_warning_text(_exceeded))
         result.append(AdminUserOverview(
             user_id=str(u.id),
             first_name=u.first_name,
             last_name=u.last_name,
-            track_hours=u.track_hours,
+            # Teil A: Snapshot von heute (Preload ``_uwh``), nicht die User-Zeile.
+            track_hours=calculation_service.tracks_hours_on(db, u, today, _uwh),
             vacation=VacationAccount(
                 year=year,
                 budget_hours=vac["budget_hours"],
@@ -1274,9 +1422,9 @@ def update_user(
     # Tagesplan-Mitarbeitende bis Task 6 keinen anderen Schreibweg gab — seit
     # Task 6 nimmt der Stundenverlauf-Endpoint auch ihre Änderungen an
     # (vollständiger Vertrags-Snapshot). Damit gilt für sie dieselbe Sperre wie
-    # für alle anderen, und die Sperre wird auf die übrigen sieben
-    # historisierten Felder ausgeweitet (use_daily_schedule, work_days_per_week,
-    # hours_monday…friday) — sonst kippte ein PUT still den Modus oder die
+    # für alle anderen, und die Sperre umfasst alle historisierten Felder
+    # (Modus, Arbeitstage, Tagesstunden, seit 1.20 die Blöcke, seit Teil A die
+    # fünf Vertragsfelder) — sonst kippte ein PUT still den Modus oder die
     # Tagesverteilung, ohne Historien-Zeile und ohne Absence-Retarget.
     _HISTORISED_FIELDS = (
         'weekly_hours', 'use_daily_schedule', 'work_days_per_week',
@@ -1284,16 +1432,13 @@ def update_user(
         'hours_thursday', 'hours_friday',
         # Spec E27: Blöcke gehören zum Vertrags-Snapshot.
         'work_blocks',
+        # Teil A (Vertragsverlauf): Anspruch, Stundenzählung, Minijob — genau
+        # ein Schreibweg je historisiertem Feld.
+        'vacation_days', 'track_hours', 'milog_working_time_account',
+        'agreed_monthly_hours', 'use_fixed_monthly_target',
     )
     if any(f in update_data for f in _HISTORISED_FIELDS):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Wochenstunden, Tagesstunden, Arbeitstage und Arbeitszeit-Blöcke "
-                "werden über „Arbeitszeit anpassen…“ mit Wirkungsdatum geändert, "
-                "damit Historie und Soll vergangener Monate korrekt bleiben."
-            ),
-        )
+        raise HTTPException(status_code=400, detail=HISTORISED_FIELDS_PUT_DETAIL)
 
     if user_data.username and user_data.username.lower() != user.username.lower():
         # F-026: scope the uniqueness probe to the tenant (parity with
@@ -1307,37 +1452,6 @@ def update_user(
 
     update_data.pop('is_active', None)  # Prevent bypassing the dedicated deactivate endpoint
 
-    # #377 Baustein 2b (Release-Review 1.15.0): the UserUpdate schema validator
-    # (check_fixed_monthly_target_requirements) only sees THIS payload, not the
-    # persisted row — a partial PUT that isolates e.g.
-    # {"milog_working_time_account": false} leaves use_fixed_monthly_target
-    # absent from the payload (None → skipped by the schema validator) while
-    # the DB row still has it True. That silently produces an INVALID row
-    # (fixed Soll active but its prerequisites off), so we must check the
-    # EFFECTIVE post-update state here (payload value if present, else the
-    # current DB value) — mirrors the schema validator's requirement logic 1:1
-    # so create and update agree.
-    eff_fixed = update_data.get('use_fixed_monthly_target', user.use_fixed_monthly_target)
-    if eff_fixed:
-        eff_milog = update_data.get('milog_working_time_account', user.milog_working_time_account)
-        eff_track_hours = update_data.get('track_hours', user.track_hours)
-        eff_agreed = update_data.get('agreed_monthly_hours', user.agreed_monthly_hours)
-        if not eff_agreed or eff_agreed <= 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Fester Monats-Soll braucht eine vereinbarte Monatsarbeitszeit (> 0)."
-            )
-        if eff_track_hours is not True:
-            raise HTTPException(
-                status_code=400,
-                detail="Fester Monats-Soll setzt Stundenzählung (track_hours) voraus."
-            )
-        if eff_milog is not True:
-            raise HTTPException(
-                status_code=400,
-                detail="Fester Monats-Soll setzt das MiLoG-Arbeitszeitkonto voraus."
-            )
-
     # Release-Review 1.16.0: Beschäftigungsfenster ebenfalls
     # gegen den EFFEKTIVEN Zustand prüfen, nicht nur gegen den Payload.
     # `validate_employment_order` im Schema sieht nur die mitgeschickten
@@ -1345,8 +1459,8 @@ def update_user(
     # (first_work_day ist dort None) und schreibt first > last in die DB. Danach
     # wirft der `UserResponse`-Validator beim SERIALISIEREN — also erst in der
     # Antwort und anschliessend bei jedem weiteren Endpoint, der den Nutzer
-    # ausliefert (500, Benutzerliste unbenutzbar). Gleiches Muster wie beim
-    # eff_fixed-Block oben.
+    # ausliefert (500, Benutzerliste unbenutzbar). Deshalb: gesendeter Wert,
+    # sonst der gespeicherte — der effektive Zustand nach dem PUT.
     _eff = lambda name: update_data.get(name, getattr(user, name, None))  # noqa: E731
     _eff_first, _eff_last = _eff('first_work_day'), _eff('last_work_day')
     if _eff_first and _eff_last and _eff_first > _eff_last:
@@ -1668,11 +1782,12 @@ def _reset_matches(change_data: WorkingHoursChangeCreate, norm, reset_schedule) 
                        if reset_schedule.use_daily_schedule else reset_schedule.weekly_hours)
     return _comparable_snapshot(
         norm.weekly_hours, norm.use_daily_schedule, norm.day_hours, norm.work_days_per_week,
-        body.blocks if body else None, body.pauses if body else None,
+        body.blocks if body else None, body.pauses if body else None, _contract_of(norm),
     ) == _comparable_snapshot(
         expected_weekly, reset_schedule.use_daily_schedule, reset_schedule.day_hours,
         reset_schedule.work_days_per_week,
         expected.blocks if expected else None, expected.pauses if expected else None,
+        _contract_of(reset_schedule),
     )
 
 
@@ -1722,6 +1837,11 @@ def _frozen_row(user: User, tenant_id, effective_from: date, schedule) -> Workin
         hours_friday=schedule.day_hours[4], work_days_per_week=schedule.work_days_per_week,
         # E8: die Zeile friert auch die Blöcke der Vergangenheit ein.
         blocks=work_blocks_service.week_blocks_to_json(schedule.blocks, schedule.block_pauses),
+        # Teil A: auch Anspruch, Stundenzählung und Minijob-Felder eingefroren.
+        vacation_days=schedule.vacation_days, track_hours=schedule.track_hours,
+        milog_working_time_account=schedule.milog_working_time_account,
+        agreed_monthly_hours=schedule.agreed_monthly_hours,
+        use_fixed_monthly_target=schedule.use_fixed_monthly_target,
         note=BASELINE_ROW_NOTE,
     )
 
@@ -1738,8 +1858,38 @@ def _freeze_gap_before(db: Session, user: User, tenant_id, first_row: date, cove
         db.add(_frozen_row(user, tenant_id, coverage, current))
 
 
+def _earliest_row(db: Session, user: User, tenant_id) -> Optional[WorkingHoursChange]:
+    """Früheste Verlaufszeile der Person (None ohne Verlauf)."""
+    return db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == tenant_id,  # F-026
+    ).order_by(WorkingHoursChange.effective_from).first()
+
+
+def _row_on_date(db: Session, user: User, tenant_id, effective_from: date) -> Optional[WorkingHoursChange]:
+    return db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == tenant_id,  # F-026
+        WorkingHoursChange.effective_from == effective_from,
+    ).first()
+
+
+def _correction_target(db: Session, user: User, tenant_id, effective_from: date):
+    """(replace, blocked): liegt auf dem Datum eine Zeile, ist sie nur dann
+    ersetzbar, wenn sie die früheste ist (Korrektur der Basis); sonst gilt
+    „Datum schon belegt"."""
+    existing = _row_on_date(db, user, tenant_id, effective_from)
+    if existing is None:
+        return None, None
+    earliest = _earliest_row(db, user, tenant_id)
+    if earliest is not None and earliest.id == existing.id:
+        return existing, None
+    return None, f"Eine Stundenänderung für den {effective_from.strftime('%d.%m.%Y')} existiert bereits"
+
+
 def _insert_change_rows(db: Session, user: User, current_user: User, change_data: WorkingHoursChangeCreate,
-                        norm, new_blocks, new_pauses) -> WorkingHoursChange:
+                        norm, new_blocks, new_pauses,
+                        replace: Optional[WorkingHoursChange] = None) -> WorkingHoursChange:
     """Spec 9.3 Schritt 4 — Basis-Zeile bzw. Lückenzeile, neue Zeile, flush. Die
     Logik ist die bisherige von ``create_working_hours_change``; neu sind die
     Blöcke und die Lückenzeile. Den Spiegel der User-Zeile (E9) macht der
@@ -1770,6 +1920,30 @@ def _insert_change_rows(db: Session, user: User, current_user: User, change_data
       Spiegel wählt, steht erst nach Schritt 10 fest, und eine Zeile mit dem
       bereits gültigen Snapshot ändert keine Rechnung."""
     tenant_id = current_user.tenant_id
+    if replace is not None:
+        # Korrektur der frühesten Zeile: ZUERST die Lücke davor einfrieren — mit
+        # dem bisher aufgelösten Vertrag (F004: Tage vor der ersten Zeile lösen
+        # ihre Vertragsfelder über die erste Zeile auf; nach dem Überschreiben
+        # froren sie die NEUEN Werte ein, ohne Neukappung, Rückrechnung und
+        # Klassifikation — wie der Einfüge-Pfad, der vor dem Anlegen einfriert).
+        # Dann den Snapshot an Ort und Stelle überschreiben (id und
+        # effective_from bleiben).
+        _freeze_gap_before(db, user, tenant_id, replace.effective_from,
+                           _soll_coverage_start(db, user, tenant_id))
+        replace.weekly_hours = norm.weekly_hours
+        replace.use_daily_schedule = norm.use_daily_schedule
+        (replace.hours_monday, replace.hours_tuesday, replace.hours_wednesday,
+         replace.hours_thursday, replace.hours_friday) = norm.day_hours
+        replace.work_days_per_week = norm.work_days_per_week
+        replace.blocks = work_blocks_service.week_blocks_to_json(new_blocks, new_pauses)
+        replace.vacation_days = norm.vacation_days
+        replace.track_hours = norm.track_hours
+        replace.milog_working_time_account = norm.milog_working_time_account
+        replace.agreed_monthly_hours = norm.agreed_monthly_hours
+        replace.use_fixed_monthly_target = norm.use_fixed_monthly_target
+        replace.note = change_data.note
+        db.flush()
+        return replace
     oldest_row = db.query(func.min(WorkingHoursChange.effective_from)).filter(
         WorkingHoursChange.user_id == user.id,
         WorkingHoursChange.tenant_id == tenant_id,  # F-026
@@ -1780,10 +1954,10 @@ def _insert_change_rows(db: Session, user: User, current_user: User, change_data
             db, user, change_data.effective_from - timedelta(days=1))
         if _comparable_snapshot(
             current.weekly_hours, current.use_daily_schedule, current.day_hours,
-            current.work_days_per_week, current.blocks, current.block_pauses,
+            current.work_days_per_week, current.blocks, current.block_pauses, _contract_of(current),
         ) != _comparable_snapshot(
             norm.weekly_hours, norm.use_daily_schedule, norm.day_hours,
-            norm.work_days_per_week, new_blocks, new_pauses,
+            norm.work_days_per_week, new_blocks, new_pauses, _contract_of(norm),
         ):
             candidates = [change_data.effective_from - timedelta(days=1)]
             if coverage:
@@ -1803,6 +1977,11 @@ def _insert_change_rows(db: Session, user: User, current_user: User, change_data
         # Rückfall steckt in _normalise_schedule_input, gemeinsam mit der Vorschau.
         work_days_per_week=norm.work_days_per_week,
         blocks=work_blocks_service.week_blocks_to_json(new_blocks, new_pauses),
+        # Teil A: gesendet oder vom Snapshot zum Wirkungsdatum übernommen.
+        vacation_days=norm.vacation_days, track_hours=norm.track_hours,
+        milog_working_time_account=norm.milog_working_time_account,
+        agreed_monthly_hours=norm.agreed_monthly_hours,
+        use_fixed_monthly_target=norm.use_fixed_monthly_target,
         note=change_data.note,
     )
     db.add(change)
@@ -1830,12 +2009,16 @@ def _sync_user_to_current_change(db: Session, user: User, tenant_id) -> None:
 
 
 def _log_reclamp(db: Session, *, user: User, admin: User, impact, effective_from: date, deleted: bool,
-                 reason_type: Optional[str], reason_text: Optional[str], reset_of: Optional[date]) -> None:
+                 reason_type: Optional[str], reason_text: Optional[str], reset_of: Optional[date],
+                 replaced_note: Optional[str] = None) -> None:
     """Spec 10.1/10.2 — je neu gekapptem Eintrag eine Zeile und IMMER genau eine
     Sammelzeile (P20: auch ohne Einträge, auch zukunftsdatiert). Per ``db.add``
     (row_hash, #121), kein Bulk-UPDATE; die Vorschau ruft das nie (10.3)."""
     shortening = impact.is_shortening
     changed = impact.reclamp.changed
+    # Teil A, Task 7: geänderte Vertragsbedingungen (Urlaub, Stundenzählung,
+    # Minijob) nach „Vertrag:" — nie geparst, ``contract_text`` bleibt der Hinweis.
+    contract_before, contract_after = reclamp_audit.contract_pair(impact.old_schedule, impact.new_schedule)
     entries = {}
     if changed:
         entries = {e.id: e for e in db.query(TimeEntry).filter(
@@ -1860,6 +2043,8 @@ def _log_reclamp(db: Session, *, user: User, admin: User, impact, effective_from
     db.add(TimeEntryAuditLog(
         time_entry_id=None, user_id=user.id, changed_by=admin.id, action="update",
         source=reclamp_audit.AUDIT_SOURCE,
+        # F022/F105: ersetzte früheste Zeile → ihr vollständiger vorheriger Stand.
+        old_note=replaced_note,
         new_note=reclamp_audit.summary_note(
             effective_from=effective_from, deleted=deleted, count=len(changed),
             delta_minutes=int(round(sum(float(c.new_net - c.old_net) for c in changed) * 60)),
@@ -1867,8 +2052,8 @@ def _log_reclamp(db: Session, *, user: User, admin: User, impact, effective_from
             skipped=dict(Counter(s.reason for s in impact.reclamp.skipped)),
             grace=impact.grace, credit_reductions=len(impact.credit_reductions), reset_of=reset_of,
             shortening=shortening, reason_type=reason_type, reason_text_value=reason_text,
-            contract_before=reclamp_audit.contract_text(impact.old_schedule, compact=True),
-            contract_after=reclamp_audit.contract_text(impact.new_schedule, compact=True),
+            contract_before=contract_before, contract_after=contract_after,
+            replaced=replaced_note is not None,
         ),
         tenant_id=user.tenant_id,
     ))
@@ -1904,29 +2089,36 @@ def create_working_hours_change(
     # gerade committeten Gegenseite (E9: User-Zeile ≠ jüngste Zeile ≤ heute).
     _lock_and_reload(db, current_user, user)
 
-    if db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-        WorkingHoursChange.effective_from == change_data.effective_from,
-    ).first():
-        raise HTTPException(
-            status_code=400,
-            detail=f"Eine Stundenänderung für den {change_data.effective_from.strftime('%d.%m.%Y')} existiert bereits",
-        )
+    replace_row, taken = _correction_target(db, user, current_user.tenant_id, change_data.effective_from)
+    if taken:
+        raise HTTPException(status_code=400, detail=taken)
 
     reset = _reset_target(db, user, current_user, change_data)
     reset_row, reset_schedule = reset if reset else (None, None)
     # #431: die Eingabe wird ab hier ausschließlich über ``norm`` gelesen —
     # dieselbe Normalisierung wie in der Vorschau.
-    norm = _normalise_schedule_input(change_data, user)
+    # Teil A: nicht gesendete Vertragsfelder erben den Snapshot zum
+    # Wirkungsdatum — aufgelöst VOR dem Anlegen der neuen Zeile.
+    current = calculation_service.get_schedule_for_date(db, user, change_data.effective_from)
+    norm = _normalise_schedule_input(change_data, user, current)
+    rule_error = _contract_rule_error(db, user, current_user.tenant_id, norm, current,
+                                      change_data.effective_from)
+    if rule_error:
+        raise HTTPException(status_code=rule_error[0], detail=rule_error[1])
     if reset_schedule is not None and not _reset_matches(change_data, norm, reset_schedule):
         raise HTTPException(status_code=409, detail=RESET_CONFLICT_DETAIL)
     new_blocks, new_pauses = _target_blocks(db, user, change_data, reset_schedule)
+    # F022/F105: vorheriger Stand der ersetzten Zeile, VOR dem Überschreiben.
+    replaced_note = (
+        reclamp_audit.replaced_row_text(replace_row.effective_from, current, replace_row.note)
+        if replace_row is not None else None
+    )
 
     created = {}
 
     def _apply():
-        created["row"] = _insert_change_rows(db, user, current_user, change_data, norm, new_blocks, new_pauses)
+        created["row"] = _insert_change_rows(db, user, current_user, change_data, norm, new_blocks, new_pauses,
+                                             replace=replace_row)
 
     impact = wh_change_service.run_change(
         db, user, admin_id=current_user.id, effective_from=change_data.effective_from, apply=_apply)
@@ -1941,7 +2133,7 @@ def create_working_hours_change(
         change_data.note, reason_type, change_data.retroactive_reason_text)
     _log_reclamp(db, user=user, admin=current_user, impact=impact, effective_from=change_data.effective_from,
                  deleted=False, reason_type=reason_type, reason_text=change_data.retroactive_reason_text,
-                 reset_of=reset_row.effective_from if reset_row else None)
+                 reset_of=reset_row.effective_from if reset_row else None, replaced_note=replaced_note)
     _log_wh_change_retarget(
         db, user=user, admin=current_user, tenant_id=current_user.tenant_id,
         effective_from=impact.window.start, period_end=impact.window.end, adjusted=impact.absences,
@@ -2212,7 +2404,7 @@ def preview_working_hours_change(
     if input_error is None:
         try:
             change_data = WorkingHoursChangeCreate.model_validate(raw)
-            norm = _normalise_schedule_input(change_data, user)
+            norm = _normalise_schedule_input(change_data, user, current_schedule)
         except ValidationError as exc:
             # ``date.fromisoformat`` nimmt auch Formen an, die das Speichern
             # (Pydantic) ablehnt (``20260901``, ``2026-W36-2``) — dort ist das
@@ -2220,6 +2412,12 @@ def preview_working_hours_change(
             # wie bei einem fehlenden Datum, nicht „Ungültige Eingabe.".
             date_invalid = any(tuple(e.get("loc") or ())[:1] == ("effective_from",) for e in exc.errors())
             input_error = PREVIEW_DATE_MISSING if date_invalid else _schedule_input_error(exc)
+    if norm is not None and input_error is None:
+        # Teil A: dieselben Regeln wie beim Anlegen, hier als ``blocked_reason``.
+        rule_error = _contract_rule_error(db, user, current_user.tenant_id, norm, current_schedule,
+                                          effective_from)
+        if rule_error:
+            input_error = rule_error[1]
     if change_data is not None and input_error is None and change_data.reset_of_change_id is not None:
         try:
             reset_schedule = _reset_target(db, user, current_user, change_data)[1]
@@ -2242,6 +2440,11 @@ def preview_working_hours_change(
             work_days_per_week=norm.work_days_per_week,
             blocks=new_blocks,
             block_pauses=new_pauses,
+            vacation_days=norm.vacation_days,
+            track_hours=norm.track_hours,
+            milog_working_time_account=norm.milog_working_time_account,
+            agreed_monthly_hours=norm.agreed_monthly_hours,
+            use_fixed_monthly_target=norm.use_fixed_monthly_target,
         )
     day_targets_current = _week_day_targets(user, effective_from, current_schedule)
     day_targets_new = _week_day_targets(user, effective_from, new_schedule)
@@ -2251,12 +2454,9 @@ def preview_working_hours_change(
     # Zeilen mit identischem ``effective_from`` — die Auflösung wählte dann
     # reproduzierbar die BESTEHENDE, gerechnet würde gegen den falschen Vertrag.
     blocked_reason = input_error
-    if not blocked_reason and db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-        WorkingHoursChange.effective_from == effective_from,
-    ).first():
-        blocked_reason = f"Eine Stundenänderung für den {effective_from.strftime('%d.%m.%Y')} existiert bereits"
+    replace_row = None
+    if not blocked_reason:
+        replace_row, blocked_reason = _correction_target(db, user, current_user.tenant_id, effective_from)
 
     # Kurzschluss „Snapshot unverändert" (Review-Fund 1, Fix-Runde 1) — der
     # häufigste Fall (der Dialog ist vorbefüllt) und fachlich exakt: eine Zeile
@@ -2266,10 +2466,10 @@ def preview_working_hours_change(
     snapshot_unchanged = norm is not None and not blocked_reason and _comparable_snapshot(
         current_schedule.weekly_hours, current_schedule.use_daily_schedule,
         current_schedule.day_hours, current_schedule.work_days_per_week,
-        current_schedule.blocks, current_schedule.block_pauses,
+        current_schedule.blocks, current_schedule.block_pauses, _contract_of(current_schedule),
     ) == _comparable_snapshot(
         norm.weekly_hours, norm.use_daily_schedule, norm.day_hours, norm.work_days_per_week,
-        new_blocks, new_pauses,
+        new_blocks, new_pauses, _contract_of(norm),
     )
 
     # Saldo und Urlaub im IST-Zustand — ohne Lauf sofort, mit Lauf nach Schritt 2
@@ -2292,17 +2492,18 @@ def preview_working_hours_change(
             impact = wh_change_service.run_change(
                 db, user, admin_id=current_user.id, effective_from=effective_from,
                 apply=lambda: _insert_change_rows(db, user, current_user, change_data, norm,
-                                                  new_blocks, new_pauses),
+                                                  new_blocks, new_pauses, replace=replace_row),
                 after_close=lambda: before.append(_preview_account(db, user, today, cutoff, vacation_year)),
             )
             overtime_before, vacation_before = before[0]
             overtime_after, vacation_after = _preview_account(db, user, today, cutoff, vacation_year)
-            fields = wh_change_service.preview_fields(impact, user)
+            fields = wh_change_service.preview_fields(impact)
         finally:
             db.rollback()
     else:
         overtime_before, vacation_before = _preview_account(db, user, today, cutoff, vacation_year)
         overtime_after, vacation_after = overtime_before, vacation_before
+        fields["vacation_entitlement"] = wh_change_service.entitlement_unchanged_out(db, user, effective_from)
 
     # closed_years: ALLE im Zeitraum berührten abgeschlossenen Jahre;
     # closed_year_warning der fertige Text für das früheste.
@@ -2453,6 +2654,10 @@ def delete_preview_working_hours_change(
     # Nach dem Löschen gilt ab ``effective_from`` der Snapshot des Vortags.
     predecessor = calculation_service.get_schedule_for_date(db, user, effective_from - timedelta(days=1))
     blocked_reason = _earliest_row_lock_detail(db, user, current_user, change)
+    if not blocked_reason:
+        # F005: Löschen macht ``predecessor`` zum Vorgänger der nächsten Zeile.
+        switch = _minijob_switch_error(db, user, current_user.tenant_id, effective_from, predecessor)
+        blocked_reason = switch[1] if switch else None
     cutoff = calculation_service.get_soll_cutoff_date(db, user)
     vacation_year = window.start.year
     fields: dict = {"affected_absences": 0}
@@ -2469,7 +2674,7 @@ def delete_preview_working_hours_change(
             )
             overtime_before, vacation_before = before[0]
             overtime_after, vacation_after = _preview_account(db, user, today, cutoff, vacation_year)
-            fields = wh_change_service.preview_fields(impact, user)
+            fields = wh_change_service.preview_fields(impact)
             earliest = impact.earliest_lossless_date
             if impact.is_shortening and earliest is not None and earliest > effective_from:
                 reset = wh_change_service.reset_body(predecessor, earliest, row_id)
@@ -2478,6 +2683,7 @@ def delete_preview_working_hours_change(
     else:
         overtime_before, vacation_before = _preview_account(db, user, today, cutoff, vacation_year)
         overtime_after, vacation_after = overtime_before, vacation_before
+        fields["vacation_entitlement"] = wh_change_service.entitlement_unchanged_out(db, user, effective_from)
     closed_years = calculation_service.closed_years_in_range(
         db, current_user.tenant_id, range(window.start.year, window.end.year + 1))
     day_targets_current = _week_day_targets(user, effective_from, current_schedule)
@@ -2540,6 +2746,14 @@ def delete_working_hours_change(
     if lock_detail:
         raise HTTPException(status_code=400, detail=lock_detail)
     effective_from = change.effective_from
+    # F005: nach dem Löschen gilt ab ``effective_from`` der Vortags-Snapshot — er
+    # wird Vorgänger der nächsten Zeile; dort darf kein Minijob-Wechsel mitten
+    # im Monat entstehen.
+    switch = _minijob_switch_error(
+        db, user, current_user.tenant_id, effective_from,
+        calculation_service.get_schedule_for_date(db, user, effective_from - timedelta(days=1)))
+    if switch:
+        raise HTTPException(status_code=switch[0], detail=switch[1])
 
     impact = wh_change_service.run_change(
         db, user, admin_id=current_user.id, effective_from=effective_from,

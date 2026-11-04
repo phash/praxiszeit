@@ -203,6 +203,7 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Arbeitszeit ändern</h3>
           <p className="text-sm text-gray-600">Benutzer bearbeiten → <span className="font-medium">„Arbeitszeit anpassen…"</span> → Gültig ab + Modus (Gleichmäßig / Nach Tagen / Nach Arbeitsblöcken) → Auswirkung prüfen → Speichern. Rückwirkende Verkürzungen nur mit Grund und Bestätigung; historische Salden bleiben korrekt. Löschen nur an der jüngsten Zeile des Verlaufs.</p>
+          <p className="text-sm text-gray-600">Im Abschnitt „Urlaub und Abrechnung" des Dialogs stehen „Urlaubsanspruch pro Jahr ab diesem Datum" (Vorschlag über „Vorschlag übernehmen (N)"), Stundenzählung und Minijob-Einstellungen; Minijob-Änderungen gelten immer ab dem Monatsersten.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Mitarbeiter deaktivieren</h3>
@@ -346,6 +347,22 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Verrechnung wählen: „Als Urlaub werten" (vom Urlaubskonto abgezogen) oder „Bezahlte Freistellung" (wie ein Feiertag, kein Urlaubsabzug)</li>
             <li>„Betriebsferien erstellen &amp; Urlaub eintragen" → alle teilnehmenden MA erhalten automatisch Einträge</li>
           </ol>
+        </section>
+      </div>
+    ),
+  },
+
+  '/admin/settings': {
+    title: 'Einstellungen',
+    content: (
+      <div className="space-y-4">
+        <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Sondertage (24./31.12.)</h3>
+          <p className="text-sm text-gray-600">Je Tag: Arbeitstag, Halbtag, Frei oder „Verkürzt auf X Stunden" (Soll = die kleinere Zahl aus Tagessoll und X, Urlaub kostet 0,5 Tage). Die Änderung bucht betroffene Betriebsferien automatisch neu; in abgeschlossenen Jahren erscheint nur ein Hinweis.</p>
+        </section>
+        <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Verkürzte Tage</h3>
+          <p className="text-sm text-gray-600">Einzelne Tage (z. B. Rosenmontag) mit Bezeichnung und „Höchstens (Stunden)" (0,25–12). Der 24. und 31.12. laufen nur über die Sondertage-Einstellung. Mitarbeitende sehen „verkürzter Tag (max. 4 h)" im Kalender und auf der Stempelkarte.</p>
         </section>
       </div>
     ),

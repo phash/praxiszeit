@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { trackHoursToday } from '../utils/contractToday';
 import { useUIStore } from '../stores/uiStore';
 import { useSystemStore } from '../stores/systemStore';
 import TrialBanner from './TrialBanner';
@@ -42,6 +43,8 @@ import OnboardingModal from './OnboardingModal';
 
 export default function Layout() {
   const { user, logout } = useAuthStore();
+  // F011: Stundenzählung laut heute gültigem Vertrag (schedule_today).
+  const userTracksHours = trackHoursToday(user) === true;
   // #370: during read-only impersonation, hide the primary write CTA (stamp
   // button). The backend middleware is the hard guarantee; this is UX.
   const isImpersonating = useAuthStore((s) => s.isImpersonating());
@@ -92,7 +95,7 @@ export default function Layout() {
 
   // Clock status for FAB appearance
   useEffect(() => {
-    if (!user?.track_hours) return;
+    if (!userTracksHours) return;
     const checkStatus = async () => {
       try {
         const res = await apiClient.get('/time-entries/clock-status');
@@ -102,7 +105,7 @@ export default function Layout() {
     checkStatus();
     const interval = setInterval(checkStatus, 60000);
     return () => clearInterval(interval);
-  }, [user?.track_hours]);
+  }, [userTracksHours]);
 
   const handleStampSuccess = () => {
     apiClient.get('/time-entries/clock-status').then(res => {
@@ -451,7 +454,7 @@ export default function Layout() {
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="relative">
           {/* FAB - Centered Stamp Button */}
-          {user?.track_hours && !isImpersonating && (
+          {userTracksHours && !isImpersonating && (
             <button
               ref={fabRef}
               onClick={openStampSheet}

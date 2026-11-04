@@ -157,7 +157,8 @@ Eine Liste mit fünf leeren Tagen gilt wie NULL (keine Blöcke).
 
 - **Wochenende** (Sa/So): Tagessoll immer `0`.
 - **`track_hours = false`**: Tagessoll immer `0` (keine Stundenzählung).
-- **Sondertage 24./31.12.** (`half_day` / `free`): Tagessoll wird mit Faktor `0,5` bzw. `0` multipliziert (siehe §12.2).
+- **Sondertage 24./31.12.** (`half_day` / `free` / `max_hours`): `half_day` und `free` multiplizieren das Tagessoll mit `0,5` bzw. `0`; `max_hours` begrenzt es auf `min(Tagessoll, X)` (siehe §12.2).
+- **Verkürzte Tage** (frei gewählte Tage wie Rosenmontag, Tabelle `reduced_days`): Tagessoll = `min(Tagessoll laut Snapshot, X)`, Feiertag schlägt den verkürzten Tag, am Wochenende wirkt er nicht (siehe §12.2).
 
 ---
 
@@ -301,6 +302,7 @@ dem Gewicht ihres Tages multipliziert (`calculation_service.credit_day_weight`):
 | Gesetzlicher Feiertag | 0 | **0** |
 | Sondertag 24./31.12. als **„halber Feiertag"** | 0,5 × Tagessoll (#146) | **0,5** |
 | Sondertag 24./31.12. als **„frei"** | 0 | **0** |
+| **Verkürzter Tag** (24./31.12. als „Verkürzt auf X Stunden" oder Eintrag unter „Verkürzte Tage") | `min(t, X)` | **`min(t, X) ÷ t`** (t = ungewichtetes Snapshot-Soll; t = 0 → 0) |
 
 > **Wochentag ohne Soll** (0 h im Tagesplan, Wochentag ohne Blöcke): Das Gewicht ist 1,0,
 > die gespeicherten `hours` sind dort aber 0 — gebucht wird an einem solchen Tag nicht, und
@@ -422,7 +424,8 @@ für jeden Tag d im Monat:
     überspringe, wenn d ein Abwesenheitstag ist, der das Soll reduziert
     schedule = get_schedule_for_date(db, user, d)                   (#431)
     tagessoll = get_daily_target_for_date(user, d, schedule)
-    tagessoll × Sondertag-Faktor (24./31.12.)                       (#146)
+    tagessoll = special_day_target(d, tagessoll, cfg)               (#146, Teil B)
+                (half_day ×0,5 · free ×0 · max_hours min(t, X) · verkürzter Tag min(t, X))
     Monats-Soll += tagessoll
 ```
 
@@ -626,13 +629,31 @@ budget_days  = vacation_days  (anteilig bei Eintritt/Austritt)  + carryover_days
 budget_hours = budget_days × Tagessoll
 ```
 
-- **Tagessoll fürs Budget** = `get_daily_target(user)` = `weekly_hours / work_days_per_week`
-  (Durchschnitt, **nicht** datumsabhängig).
+- **Tagessoll fürs Budget** = Durchschnitt `weekly_hours / work_days_per_week` laut
+  Vertrags-Snapshot am Stichtag (`get_schedule_for_date`), nicht der Live-Wert der Benutzerzeile.
 - **Anspruch (vacation_days):** wird pro MA konfiguriert. Empfehlung/Standard nach Tagesprinzip:
 
   ```
   vacation_days = 30 × work_days_per_week / 5      (Vollzeit 5 Tage → 30; 3 Tage → 18; 4 Tage → 24)
   ```
+
+- **Anspruch je Vertragsabschnitt (Migration 075):** `vacation_days` steht in jeder
+  Arbeitszeit-Änderung (Vertrags-Snapshot) und gilt ab deren Datum. Wechselt der Anspruch
+  im Jahr, rechnet `calculation_service.vacation_entitlement_days` jeden Abschnitt anteilig
+  nach Monaten und summiert:
+
+  ```
+  Anspruch(Jahr) = Σ Abschnitt  vacation_days × Monatsanteil ÷ 12      (gerundet auf 0,1)
+  Beispiel (Kundenfall 2026): 24 × 10/12 + 30 × 2/12 = 20,0 + 5,0 = 25,0 Tage;  2027: 30
+  ```
+
+  Bei genau **einem** Abschnitt gilt die bisherige Rechnung: ganzes Jahr = Wert unverändert, Ein-/Austrittsjahr anteilig und auf 0,1 gerundet. Vor der
+  ersten Zeile gelten die Werte der ersten Zeile; ohne Zeile die der Benutzerzeile. Der
+  einzige Schreibweg ist der Dialog „Arbeitszeit anpassen…“ (Abschnitt „Urlaub und
+  Abrechnung“, Feld „Urlaubsanspruch pro Jahr ab diesem Datum“); die Vorschau zeigt
+  „Urlaubsanspruch {Jahr}“ vorher → nachher. Sinkt der Anspruch rückwirkend (auch durch
+  Löschen oder Zurücksetzen einer früheren Erhöhung), ist das eine Verkürzung und braucht
+  einen Grund.
 
 - **Pro-rata bei Eintritt/Austritt im Jahr** (`first_work_day` / `last_work_day`):
 
@@ -666,7 +687,8 @@ keinen Urlaub verbrauchen.
 
 **Halbtags-Sondertag (24./31.12. als `half_day`, #394):** Fällt ein Urlaubstag auf einen
 solchen Tag, kostet er nur **0,5** statt 1,0 Urlaubstag — die tagesbasierte Zählung wendet
-dafür den Faktor aus `calculation_service.half_special_day_weight(d, special_cfg)` an. Das
+dafür den Faktor aus `calculation_service.half_special_day_weight(d, special_cfg)` an
+(**0,5 für `half_day` und für `max_hours`/verkürzte Tage**, §12.2). Das
 ist **die eine** Quelle für diesen Faktor, geteilt von `get_vacation_account`, `absence_days`
 (§12.2), der Betriebsferien-Buchung und dem #314-Re-Split (§9.4) sowie allen
 Urlaubsbudget-Pre-Checks — so kann die Halbtags-Regel nie zwischen den Buchungspfaden
@@ -824,6 +846,21 @@ Urlaubs-/Konto-Kosten     = 0,5 × Tagessoll  über half_special_day_weight(), N
 > die Urlaubs-/Konto-Zählung kommen zentral über den einen Helper
 > `calculation_service.half_special_day_weight(d, cfg)` (§8.2).
 
+**Verkürzter Tag in Betriebsferien (Teil B):** Auf einem verkürzten Tag (24./31.12. im Modus
+„Verkürzt auf X Stunden" oder freier verkürzter Tag) bucht die Schließung dasselbe Muster:
+
+```
+gebuchte hours          = special_day_target = min(Tagessoll, X)
+half_day (Feld)          = False
+Urlaubs-/Konto-Kosten     = 0,5   über half_special_day_weight()
+```
+
+Ändert sich ein verkürzter Tag oder die 24./31.12.-Einstellung, **bucht PraxisZeit die
+betroffenen Betriebsferien automatisch neu** (`company_closures.resave_closures_for_dates`,
+Grund im Änderungsprotokoll: „Sondertag oder verkürzter Tag geändert, wird neu gebucht").
+Betroffene Tage in **abgeschlossenen Jahren** werden nicht neu gebucht — dort erscheint nur
+der Hinweis auf den veralteten Übertrag (Fix #5, nie automatisch neu berechnen).
+
 ### 9.4 Betriebsferien über Jahresurlaub hinaus → Überstundenausgleich (#314)
 
 Ohne Einstellung bucht eine Betriebsferien-Schließung **immer** `VACATION` — reicht das
@@ -843,7 +880,10 @@ für jeden Tag:
 ```
 
 Nur für **Stunden-getrackte** MA (`track_hours = True`) — untracked MA (kein
-Überstundenkonto) bleiben immer `VACATION`.
+Überstundenkonto) bleiben immer `VACATION`. Das gilt auch beim Neu-Aufteilen (Re-Save):
+Hat eine Person an keinem Schließtag Stundenzählung, werden ihre Zeilen auf `VACATION`
+gesetzt (bereits `VACATION`-Zeilen bleiben); beim Neu-Buchen verbraucht ein solcher Tag
+weiter Budget.
 
 **Re-Save wirkt rückwirkend & idempotent:** Ein **nachträglich** aktivierter Schalter bucht
 bereits gespeicherte Betriebsferien nicht automatisch um — dafür muss die Schließung erneut
@@ -891,11 +931,11 @@ Lohndaten** und prüft keinen 603-€-Grenzwert.
 
 ### 10.2 Baustein 1 — 50-%-Warnung (`MILOG_ACCOUNT_50`)
 
-Opt-in je MA: `User.milog_working_time_account = true`. Vergleichsgröße ist die
+Opt-in je MA und Monat: `milog_working_time_account = true` im Vertrags-Snapshot am Monatsersten (`calculation_service.month_contract`, seit Migration 075, §10.4a) und Stundenzählung im Monat. Vergleichsgröße ist die
 **vereinbarte Monatszeit** — flach, **nicht** das schwankende Tages-Soll:
 
 ```
-agreed_monthly = User.agreed_monthly_hours              (Baustein 2a, §10.4, falls gesetzt)
+agreed_monthly = agreed_monthly_hours des Monats laut Snapshot (Baustein 2a, §10.4, falls gesetzt)
                  sonst  get_weekly_hours_for_date(...) × 13/3   (52 Wochen / 12 Monate)
 
 Konto-Plusstunden = max(0, Monats-Ist − agreed_monthly)
@@ -942,16 +982,49 @@ Beide Warnungen tragen den Hinweis „sofern die Stunden zur Mindestlohnhöhe ve
 
 ### 10.4 Baustein 2a — Vereinbarte Monatszeit direkt hinterlegen
 
-`User.agreed_monthly_hours` (optional): überschreibt die aus `weekly_hours` abgeleitete
+`agreed_monthly_hours` (optional, seit Migration 075 je Monat im Vertrags-Snapshot, `milog_service.agreed_monthly_hours`): überschreibt die aus `weekly_hours` abgeleitete
 flache 13/3-Monatszeit für die 50-%-Prüfung (§10.2) exakt. Ohne gesetzten Wert bleibt die
 Ableitung aus den Wochenstunden aktiv.
 
+### 10.4a Stundenzählung und Minijob-Einstellungen ab Datum
+
+Seit Migration 075 stehen `track_hours`, `milog_working_time_account`, `agreed_monthly_hours`
+und `use_fixed_monthly_target` (zusammen mit `vacation_days`) im Vertrags-Snapshot der
+Arbeitszeit-Änderung und gelten **ab deren Datum**:
+
+- **`track_hours` je Tag** (`calculation_service.tracks_hours_on`): Soll, Ist und Kappung
+  eines Tages richten sich nach dem Wert, der an diesem Tag galt. Ein rückwirkender Wechsel
+  kappt bzw. entkappt Zeiteinträge neu und rechnet Abwesenheiten nur an Tagen nach, an denen
+  der Wert tatsächlich kippt; automatisch geschlossene Einträge behalten ihr angerechnetes
+  Ende (nie 23:59).
+- **Minijob-Felder je Monat** (`month_contract`, `MonthContract.fixed_mode`): gelten immer
+  ab dem Monatsersten. Eine Änderung mit anderem Datum wird mit 422 „Änderungen an
+  Minijob-Einstellungen gelten immer ab dem Monatsersten.“ abgelehnt. Ob das feste Monats-Soll
+  zulässig ist, prüft das System am Snapshot der neuen Zeile (400, Texte wie §10.5).
+- Eine Korrektur an der frühesten Zeile ersetzt diese Zeile an Ort und Stelle. Die Tage
+  davor (Lücke bis zur Zeile) behalten dabei ihre bisherigen Werte: die Lücke wird vorher
+  mit dem alten Vertrag als eigene Zeile festgehalten, die Korrektur reicht nicht in frühere
+  Tage zurück (Protokoll: „Korrektur der frühesten Verlaufszeile“).
+- **Minijob-Wechsel durch eine spätere Zeile mitten im Monat:** Würde das Anlegen oder
+  Löschen einer Zeile bewirken, dass die nächste Zeile mitten im Monat andere
+  Minijob-Werte erbt, wird das mit 422 abgelehnt; die spätere Zeile ist vorher
+  anzugleichen. Beginnt die Zeile den Verlauf (ohne Lücke), gilt die Monatsersten-Regel nicht.
+- **Mitarbeitende, die die Stundenzählung wechseln:** An Tagen ohne Stundenzählung zählt
+  weder Ist (Stempelzeit, Krank-/Fortbildungs-Gutschrift) in Monatsbericht, Exporten und
+  Journal, noch hat die Tagesspalte „Differenz“ einen Wert (0, Netto und Stempel bleiben
+  sichtbar). Wer nie Stundenzählung hatte, bleibt unverändert. Das
+  MiLoG-Arbeitszeitkonto gilt je Monat nur, wenn im Monat Stundenzählung galt
+  (`milog_service.month_has_account`).
+- Die Wochenübersicht (Dashboard und Admin) berücksichtigt nur Wochen mit Stundenzählung;
+  fehlende Buchungen werden je Tag mit Stundenzählung gemeldet.
+- Kein Ergebnis der Vergangenheit ändert sich durch die Migration (Rückfüllung aus der
+  Benutzerzeile). Lesen nie über `user.<feld>` (Guard `test_no_live_contract_field_read.py`).
+
 ### 10.5 Baustein 2b — Festes Monats-Soll (`use_fixed_monthly_target`)
 
-Opt-in je MA (`User.use_fixed_monthly_target = true`), setzt zwingend `agreed_monthly_hours
+Opt-in je MA (`use_fixed_monthly_target = true` im Snapshot, je Monat über `month_contract`), setzt zwingend `agreed_monthly_hours
 > 0` **und** `track_hours = true` **und** `milog_working_time_account = true` voraus
-(Schema-Guard bei Anlage **und** Änderung — ein isoliertes Deaktivieren des Konto-Flags bei
-aktivem Fixmodus wird mit `400` blockiert). **Für alle anderen MA ändert sich nichts**
+(geprüft am Snapshot der neuen Arbeitszeit-Änderung, `400`; `PUT /admin/users/{id}` lehnt die fünf Vertragsfelder mit `400` ab — ein isoliertes Deaktivieren des Konto-Flags bei aktivem Fixmodus wird ebenfalls blockiert). **Für alle anderen MA ändert sich nichts**
 (byte-identisches Verhalten — der Modus ist rein opt-in).
 
 **Monats-Soll wird FEST statt aus Tagen summiert:**
@@ -1027,7 +1100,7 @@ carryover.vacation_days  = get_vacation_account(user, jahr).remaining_days   # R
 ```
 
 Diese Werte gehen als Startwerte ins Folgejahr ein (Überstundenkonto-Start bzw. zusätzliche
-Budget-Tage). ⚠️ Offen (#191): Carryover für `track_hours = false` (ohne Stundenzählung).
+Budget-Tage). Der Jahresabschluss schließt auch Personen ohne Stundenzählung (`track_hours = false`) ein.
 
 > **Rückwirkende Änderungen an einem bereits abgeschlossenen Jahr** (z. B. Storno eines
 > genehmigten Urlaubs, Löschen einer Betriebsferien-Schließung) machen dessen Carryover
@@ -1054,9 +1127,11 @@ Checkbox „Stundenzählung aktiv (Soll-Stunden werden berechnet)" aus. Nicht zu
 § 18 ArbZG: dafür gibt es die eigene Checkbox „ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende
 Angestellte)" (`exempt_from_arbzg`), die an der Stundenzählung nichts ändert.
 
+- **Gilt ab Datum**: das Häkchen steht im Vertrags-Snapshot und wirkt je Tag ab dem
+  Wirkungsdatum der Arbeitszeit-Änderung (§10.4a); der Wechsel erfolgt nur dort.
 - **Kein Soll/Ist**: Tagessoll = 0, keine Überstundenrechnung.
 - **Urlaub trotzdem tagebasiert**: jeder VACATION-Tag = **1 Tag** (Halbtage `half_day=True`
-  zählen 0,5, ein Halbtags-Sondertag zusätzlich × 0,5, siehe §8.2/§9.3), jeder
+  zählen 0,5, ein Halbtags-Sondertag zusätzlich × 0,5, ein verkürzter Tag (24./31.12. „Verkürzt auf X Stunden“ oder Eintrag unter „Verkürzte Tage“) × 0,5, siehe §8.2/§9.3), jeder
   `free`+`counts_as_vacation`-Sondertag = 1 Tag. Alle Stundenwerte bleiben 0; Budget folgt
   normaler Pro-rata- + Carryover-Logik. Maßgeblich ist allein das Häkchen, nicht ein Tagessoll
   von 0: mit Stundenzählung und 0 Wochenstunden (Elternzeit) zählen nur Tage mit Soll (§8.2).
@@ -1075,6 +1150,43 @@ Absenz-Zählung nur **0,5** statt 1,0 — egal ob privat gebuchter Urlaub (§8.2
 Betriebsferien-Buchung (§9.3) oder ein exportierter Bericht (`absence_days()`). Alle diese
 Stellen fragen denselben zentralen Helper `calculation_service.half_special_day_weight(d,
 cfg)` ab, damit der Faktor nie zwischen den Pfaden divergiert.
+
+**Betriebsart „Verkürzt auf X Stunden" (`max_hours`, Teil B):** vierter Modus je Tag, mit den
+Schlüsseln `special_day_dec24_max_hours` / `special_day_dec31_max_hours` (0,25–12 h, Schritt
+0,25; fehlt ein gültiger Wert, gilt der Rückfall 4 h). Das Tagessoll ist
+`min(Tagessoll laut Snapshot, X)`; wer an dem Tag ohnehin weniger Soll hat, behält es, ein
+Tag mit Soll 0 bleibt 0.
+
+**Verkürzte Tage (frei gewählt, Tabelle `reduced_days`, Migration 074):** Admins tragen unter
+**Einstellungen → „Verkürzte Tage"** einzelne Tage (z. B. Rosenmontag) mit Bezeichnung und
+„Höchstens (Stunden)" ein. Der 24. und 31.12. sind dort ausgeschlossen — sie laufen über die
+Sondertage-Einstellung. Es gilt dieselbe Regel wie bei `max_hours`.
+
+**Eine Quelle:** `special_days_service.special_day_target(d, tagessoll, cfg)` liefert das
+Tagessoll jedes Sondertags (Faktor- und Höchststunden-Modi); Der frühere
+`special_day_target_factor` ist entfernt (Guard `test_no_special_factor_inline.py` prüft, dass der Name nicht mehr vorkommt). Reihenfolge: Feiertag (0) →
+Wochenende (keine Wirkung) → Sondertag/verkürzter Tag.
+
+| Regel | Wert |
+|-------|------|
+| Tagessoll | `min(Tagessoll laut Snapshot, X)`; Feiertag gewinnt, Wochenende ohne Wirkung |
+| Urlaub | kostet **0,5** Tage für alle (`half_special_day_weight`) |
+| Krank/Fortbildung (Gutschrift) | Gewicht `credit_day_weight(d, …, daily_target=t)` = `min(t, X) ÷ t` |
+| Betriebsferien | buchen `hours = min(Tagessoll, X)`, `half_day = False`, Verbrauch 0,5 (§9.3) |
+| Fix-Modus (#377 2b) | Monats-Soll **unverändert**; nur `_fixed_planned_hours` nimmt `min(geplant, X)` |
+| Angerechnete Zeit | **nicht** gekappt; Arbeitszeit-Blöcke und Kappung bleiben wie am Wochentag (wie `half_day`, #484) |
+
+**Beispiel:** 8 h/Tag, 24.12. „Verkürzt auf 4 Stunden", krank gemeldet: Soll 4 h, Gutschrift
+8 h × 4/8 = 4 h — Saldo bleibt 0. Bei 3 h/Tag ist das Soll `min(3, 4) = 3` und das Gewicht 1.
+
+**Anzeige:** Der Kalender nennt „verkürzter Tag (max. 4 h)" (bei benanntem Tag:
+„<Name>: verkürzter Tag (max. 4 h)"); die Stempelkarte zeigt nur „verkürzter Tag (max. 4 h)" ohne Namen und nur, wenn der Tag ein Soll hat; `/time-entries/clock-status` liefert dafür
+`today_special_day_label`. Verkürzte Tage kommen aus dem angemeldeten Endpunkt
+`GET /api/reduced-days?year=` (nicht aus dem öffentlichen `/api/settings`).
+
+**Änderung wirkt rückwirkend, mit Hinweis:** jede Änderung eines verkürzten Tages oder der
+24./31.12.-Einstellung bucht die betroffenen Betriebsferien neu (§9.3); in abgeschlossenen
+Jahren wird nur gewarnt.
 
 ### 12.3 Eintritt/Austritt (#193/#195)
 
@@ -1406,6 +1518,17 @@ Tagessoll; der Faktor lebt auf der **Leseseite**: `_day_soll_contribution` fürs
 > **immer** vom neu berechneten ab, sodass die Gleichheitsprüfung bei **jedem** Lauf ansprang
 > — die Rückrechnung war an diesen Tagen nicht idempotent.
 
+**Ausnahme Betriebsferien (seit 1.22.0).** Zeilen mit `closure_id` bucht
+`company_closures._create_closure_absences` an einem `half_day`-Sondertag bzw. verkürzten Tag
+mit `special_days_service.special_day_target(...)` (0,5 × Tagessoll bzw. `min(Tagessoll, X)`,
+`half_day=False`, Verbrauch 0,5 Tag). Die Rückrechnung zieht diese Zeilen auf denselben Wert —
+bis 1.21.1 setzte sie sie auf das ungewichtete Tagessoll (4 h → 8 h), was Urlaubstage und Saldo
+nicht berührte, aber die Stundenangaben der Exporte und des klassischen Jahresberichts verfälschte
+und beim Neuspeichern der Schließung wieder umkippte. Direktbuchungen bleiben beim ungewichteten
+Tagessoll. Ist der Tag inzwischen `free`, ergibt das 0. Bleiben am Schließtag Zeiteinträge stehen,
+klemmt die F1-Regel die Zeile auf den nicht gearbeiteten Rest des **verkürzten** Tagessolls
+(Gewicht 1, der Faktor steckt schon im Wert): halber 24.12. mit 1 h Arbeit → 3 h.
+
 **Misch-Tage (F1-Klemmung, seit 1.20.0).** Bleiben an einem Abwesenheitstag geschlossene
 Zeiteinträge stehen, setzt die Rückrechnung `hours` nicht auf das volle Tagessoll, sondern auf den
 nicht gearbeiteten Rest — dieselbe Regel wie beim Buchen (`calculation_service.f1_clamp_hours`, auch
@@ -1688,7 +1811,7 @@ Lohndaten in PraxisZeit).
 | `fixed_monthly_target`, `fixed_month_credit`, `fixed_month_unpaid_reduction` (#377 Baustein 2b) | `services/calculation_service.py` |
 | `create_year_closing`, `stale_year_closing_warning` | `services/calculation_service.py` |
 | `TimeEntry.net_hours` | `models/time_entry.py` |
-| Sondertag-Faktoren (`special_day_target_factor`, `vacation_deduction_dates_for_year`) | `services/special_days_service.py` |
+| Sondertag-Soll (`special_day_target`, `special_day_mode`, `vacation_deduction_dates_for_year`) | `services/special_days_service.py` |
 | Arbeitszeit-Blöcke: `clamp`/`ClampResult`, `clamp_applies`, `grace_for_entry`, `get_scheduled_blocks`, `credit_gaps`, `gap_segments`, `not_credited_minutes`, `presence_minutes`, `credit_summary_text`, Neukappung `reclamp_time_entries` | `services/work_window_service.py` |
 | JSON-Form der Blöcke, `derive_targets`, `blocks_text` | `services/work_blocks_service.py` |
 | Sammelzeile `summary_note`/`parse_summary_note`, Grundtypen `REASON_TYPES` | `services/reclamp_audit.py` |

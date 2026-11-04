@@ -21,10 +21,33 @@ export interface WorkingHoursChange {
   created_at: string;
   /** Spec 11.1/11.5: locker gelesen — Altzeilen tragen 07:37/23:59 und Pause `null`. */
   blocks?: WeekBlocks | null;
+  // Teil A (075): die fünf Vertragsfelder der Zeile. Optional nur für ältere
+  // Antworten/Testdoubles — der Server liefert sie immer.
+  vacation_days?: number | null;
+  track_hours?: boolean | null;
+  milog_working_time_account?: boolean | null;
+  agreed_monthly_hours?: number | null;
+  use_fixed_monthly_target?: boolean | null;
+}
+
+/** Obergrenze des Urlaubsanspruchs (Tage/Jahr) — Zwilling der Schema-Grenze
+ * `le=50` (`schemas/user.py`, `schemas/working_hours_change.py`). */
+export const MAX_VACATION_DAYS = 50;
+/** Rückfall-Anspruch, wenn kein Vertrag mitkommt (Schema-Default 30). */
+export const DEFAULT_VACATION_DAYS = 30;
+
+/** Teil A: Urlaubsanspruch, Stundenzählung und Minijob-Felder eines Vertrags-Snapshots. */
+export interface ContractTerms {
+  vacation_days: number;
+  track_hours: boolean;
+  milog_working_time_account: boolean;
+  /** `null` = aus den Wochenstunden abgeleitet. */
+  agreed_monthly_hours: number | null;
+  use_fixed_monthly_target: boolean;
 }
 
 /** Erfüllte Verkürzungskriterien (Spec 9.5 (a)/(b)/(c)). */
-export type ShorteningReason = 'entries' | 'saldo' | 'absence_credit';
+export type ShorteningReason = 'entries' | 'saldo' | 'absence_credit' | 'vacation_entitlement';
 
 /** Ein neu gekappter Eintrag vorher/nachher (`TimeEntryChangeOut`); Zeiten "HH:MM:SS". */
 export interface TimeEntryChange {
@@ -83,6 +106,8 @@ export interface WorkingHoursChangePreview {
   not_extendable_entries?: TimeEntryChange[];
   is_shortening?: boolean;
   shortening_reasons?: ShorteningReason[];
+  // Teil A (075): Urlaubsanspruch je Jahr (Wirkungsjahr und Folgejahr) vor/nach der Änderung.
+  vacation_entitlement?: { year: number; before: number; after: number }[];
   shortening_closed_years?: number[];
   earliest_lossless_date?: string | null;
   earliest_lossless_note?: string | null;

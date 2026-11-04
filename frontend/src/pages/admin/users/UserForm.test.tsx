@@ -68,54 +68,107 @@ describe('#377 UserForm MiLoG checkbox', () => {
     expect(screen.queryByText(/Aktueller Mindestlohn/)).not.toBeInTheDocument();
   });
 
-  it('prefills the checkbox from editUser', () => {
-    renderForm({
-      editUser: {
-        id: 'u1', username: 'mj', first_name: 'M', last_name: 'J', role: 'employee',
-        weekly_hours: 7.62, vacation_days: 30, work_days_per_week: 5, track_hours: true,
-        is_active: true, milog_working_time_account: true,
-      },
-    });
-    expect((screen.getByLabelText(/Arbeitszeitkonto/i) as HTMLInputElement).checked).toBe(true);
-  });
-
   it('#377 2a: shows the monthly-hours field only when the account flag is on', () => {
     renderForm();
     expect(screen.queryByLabelText(/Vereinbarte Monatsarbeitszeit \(h\)/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/i));
     expect(screen.getByLabelText(/Vereinbarte Monatsarbeitszeit \(h\)/i)).toBeInTheDocument();
   });
+});
 
-  it('#377 2a: prefills agreed_monthly_hours from editUser', () => {
-    renderForm({
-      editUser: {
-        id: 'u1', username: 'mj', first_name: 'M', last_name: 'J', role: 'employee',
-        weekly_hours: 20, vacation_days: 30, work_days_per_week: 5, track_hours: true,
-        is_active: true, milog_working_time_account: true, agreed_monthly_hours: 33,
-      },
-    });
-    expect((screen.getByLabelText(/Vereinbarte Monatsarbeitszeit \(h\)/i) as HTMLInputElement).value).toBe('33');
+const editMinijob = {
+  id: 'u1', username: 'mj', first_name: 'M', last_name: 'J', role: 'employee',
+  weekly_hours: 20, vacation_days: 30, work_days_per_week: 5, track_hours: true,
+  is_active: true, milog_working_time_account: true, agreed_monthly_hours: 33,
+  schedule_today: {
+    weekly_hours: 20, use_daily_schedule: false, hours_monday: null, hours_tuesday: null,
+    hours_wednesday: null, hours_thursday: null, hours_friday: null, work_days_per_week: 5,
+    vacation_days: 28.5, track_hours: true, milog_working_time_account: true,
+    agreed_monthly_hours: 33, use_fixed_monthly_target: false,
+  },
+} as never;
+
+describe('Teil A (Task 15): vertragsfelder beim Bearbeiten nur Anzeige', () => {
+  beforeEach(() => {
+    useSystemStore.setState({
+      info: { deployment_mode: 'onprem', version: '', minimum_wage: { current: 13.9, since: '2026-01-01', next: null } },
+      isLoaded: true,
+    } as never);
   });
 
-  it('#377 2a: sends agreed_monthly_hours in the update payload', async () => {
-    getMock.mockResolvedValue({ data: [] });
-    render(
-      <ToastProvider>
-        <UserForm onSaved={() => {}} editUser={{
-          id: 'u1', username: 'mj', first_name: 'M', last_name: 'J', role: 'employee',
-          weekly_hours: 20, vacation_days: 30, work_days_per_week: 5, track_hours: true,
-          is_active: true, milog_working_time_account: true, agreed_monthly_hours: 33,
-        } as never} />
-      </ToastProvider>,
-    );
-    const field = screen.getByLabelText(/Vereinbarte Monatsarbeitszeit \(h\)/i);
-    fireEvent.change(field, { target: { value: '40' } });
+  it('edit PUT never sends the five contract fields', async () => {
+    renderForm({ editUser: editMinijob });
     fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
     await waitFor(() => {
-      const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
-      expect(call).toBeTruthy();
-      expect(call![1]).toMatchObject({ agreed_monthly_hours: 40 });
+      expect(putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])))).toBeTruthy();
     });
+    const payload = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])))![1];
+    for (const k of ['vacation_days', 'track_hours', 'milog_working_time_account', 'agreed_monthly_hours', 'use_fixed_monthly_target']) {
+      expect(payload).not.toHaveProperty(k);
+    }
+  });
+
+  it("edit shows today's entitlement read-only with the hint", () => {
+    renderForm({ editUser: editMinijob });
+    expect(screen.getByText('28,5 Tage/Jahr')).toBeInTheDocument();
+    expect(screen.getByText('Stundenzählung aktiv')).toBeInTheDocument();
+    expect(screen.getByText(/Vereinbarte Monatsarbeitszeit: 33/)).toBeInTheDocument();
+    expect(screen.getAllByText('Ändern über „Arbeitszeit anpassen…“').length).toBeGreaterThan(0);
+    expect(document.getElementById('f-vacation')).toBeNull();
+    expect(document.getElementById('track_hours')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Arbeitszeit anpassen…' })).toBeInTheDocument();
+  });
+
+  it('edit shows „ohne Stundenzählung" when the flag is off', () => {
+    renderForm({ editUser: { ...(editMinijob as object), schedule_today: { ...(editMinijob as any).schedule_today, track_hours: false } } });
+    expect(screen.getByText('ohne Stundenzählung')).toBeInTheDocument();
+  });
+
+  // F010/F121: die Anzeige-Weichen folgen dem heute gültigen Vertrag, nicht der
+  // beim Öffnen übergebenen User-Zeile.
+  it('gates (carryover field, fixed-target hint) follow schedule_today, not the user row', () => {
+    const rowTracksTodayNot = {
+      ...(editMinijob as object), track_hours: true, use_fixed_monthly_target: false,
+      schedule_today: { ...(editMinijob as any).schedule_today, track_hours: false },
+    };
+    renderForm({ editUser: rowTracksTodayNot });
+    expect(screen.getByText('ohne Stundenzählung')).toBeInTheDocument();
+    expect(document.getElementById('f-overtime-carryover')).toBeNull();
+  });
+
+  it('fixed-target hint appears from schedule_today although the user row says no', () => {
+    const fixedToday = {
+      ...(editMinijob as object), use_fixed_monthly_target: false,
+      schedule_today: { ...(editMinijob as any).schedule_today, use_fixed_monthly_target: true },
+    };
+    renderForm({ editUser: fixedToday });
+    expect(screen.getByText(/Feste Monatsarbeitszeit aktiv: Nur noch Basisangabe/)).toBeInTheDocument();
+    expect(screen.getByText(/Festes Monats-Soll/)).toBeInTheDocument();
+  });
+
+  it('displayContract (fresh from Users.tsx) wins over the snapshot captured at open', () => {
+    renderForm({
+      editUser: editMinijob,
+      displayContract: {
+        vacation_days: 30, track_hours: false, milog_working_time_account: false,
+        agreed_monthly_hours: null, use_fixed_monthly_target: false,
+      },
+    });
+    expect(screen.getByText('30 Tage/Jahr')).toBeInTheDocument();
+    expect(screen.getByText('ohne Stundenzählung')).toBeInTheDocument();
+    expect(screen.queryByText(/MiLoG-Arbeitszeitkonto aktiv/)).not.toBeInTheDocument();
+    expect(document.getElementById('f-overtime-carryover')).toBeNull();
+  });
+
+  it('create keeps the editable field and the 30 × days ÷ 5 suggestion', () => {
+    renderForm();
+    const f = document.getElementById('f-vacation') as HTMLInputElement;
+    expect(f).toBeInTheDocument();
+    fireEvent.change(f, { target: { value: '20' } });
+    expect(screen.getByText(/Empfehlung:/).parentElement?.textContent).toMatch(/30 Tage\s+\(basierend auf 5 Arbeitstagen\/Woche\)/);
+    fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
+    expect(f.value).toBe('30');
+    expect(document.getElementById('track_hours')).toBeInTheDocument();
   });
 });
 
@@ -591,10 +644,11 @@ describe('Spec 2026-10-08 (PR1): Arbeitszeit-Blöcke statt Soll-Fenster', () => 
     expect(screen.queryByText(/Altbestand/)).not.toBeInTheDocument();
   });
 
-  it('Hinweis folgt dem Haken „Stundenzählung aktiv" im Formular', () => {
-    renderForm({ editUser: { ...baseEditUser, work_blocks_today: LEGACY } });
+  it('Hinweis folgt dem Stand „Stundenzählung" (beim Bearbeiten nur Anzeige, Teil A Task 15)', () => {
+    const { unmount } = renderForm({ editUser: { ...baseEditUser, work_blocks_today: LEGACY } });
     expect(screen.getByText(/Altbestand: kappt die erfasste Zeit/)).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText(/Stundenzählung aktiv/));
+    unmount();
+    renderForm({ editUser: { ...baseEditUser, track_hours: false, work_blocks_today: LEGACY } });
     expect(screen.queryByText(/kappt die erfasste Zeit/)).not.toBeInTheDocument();
     expect(screen.getByText(/Altbestand gespeichert, ohne Wirkung/)).toBeInTheDocument();
   });
@@ -829,7 +883,7 @@ describe('Gesamtreview 1.20 Fund 14: Block-Editor beim Anlegen mit fester Monats
 // Änderung erst beim nächsten Schreibvorgang nach; heute gelten 32 h / 4 Tage.
 // Vorher stand „Arbeitstage 4" neben „Empfehlung: 30 Tage (basierend auf 5
 // Arbeitstagen/Woche)", und „Übernehmen" schrieb 30 Tage für eine 4-Tage-Woche.
-describe('Gesamtreview 1.20 Fund 25: Empfehlung und MiLoG-Schätzung aus dem heute gültigen Stand', () => {
+describe('Bearbeiten: Anzeige aus schedule_today, keine Empfehlung/MiLoG-Schätzung (Fund 25, Teil A)', () => {
   const today = {
     weekly_hours: 32, use_daily_schedule: false, work_days_per_week: 4,
     hours_monday: null, hours_tuesday: null, hours_wednesday: null, hours_thursday: null, hours_friday: null,
@@ -851,13 +905,9 @@ describe('Gesamtreview 1.20 Fund 25: Empfehlung und MiLoG-Schätzung aus dem heu
   function expectToday() {
     expect(document.getElementById('f-work-days')?.textContent).toBe('4');
     expect(document.getElementById('f-weekly-hours')).toHaveTextContent('32,0 h/Woche');
-    // 30 × 4/5 = 24 Tage
-    expect(screen.getByText(/24 Tage \(basierend auf 4 Arbeitstagen\/Woche\)/)).toBeInTheDocument();
-    expect(screen.queryByText(/basierend auf 5 Arbeitstagen/)).not.toBeInTheDocument();
-    // 32 h × 13/3 ≈ 138,7 h (so rechnet auch milog_service.agreed_monthly_hours)
-    expect(screen.getByText(/aus den Wochenstunden \(≈ 138\.7 h\)/)).toBeInTheDocument();
-    expect(document.getElementById('f-agreed-monthly')).toHaveAttribute('placeholder', 'aus Wochenstunden ≈ 138.7');
-    expect(screen.queryByText(/173\.3/)).not.toBeInTheDocument();
+    // Empfehlung und MiLoG-Schätzung gibt es beim Bearbeiten nicht mehr
+    // (Dialog „Arbeitszeit anpassen…", Task 13).
+    expect(screen.queryByText(/basierend auf/)).not.toBeInTheDocument();
   }
 
   it('mit den display*-Props aus Users.tsx', () => {
@@ -890,21 +940,15 @@ describe('Gesamtreview 1.20 Fund 25: Empfehlung und MiLoG-Schätzung aus dem heu
     expect(document.getElementById('f-work-days')?.textContent).toBe('3');
   });
 
-  it('„Übernehmen" schreibt die Empfehlung für die heute gültige Woche', async () => {
+  it('Vertragsfelder fallen ohne Wert im Snapshot auf die User-Zeile zurück (nur Anzeige)', () => {
     renderForm({ editUser: rowUser });
-    fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
-    expect((screen.getByLabelText('Urlaubstage') as HTMLInputElement).value).toBe('24');
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
-    await waitFor(() => {
-      const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
-      expect(call).toBeTruthy();
-      expect(call![1]).toMatchObject({ vacation_days: 24 });
-    });
+    expect(screen.getByText('20 Tage/Jahr')).toBeInTheDocument();
+    expect(screen.queryByText(/Empfehlung/)).not.toBeInTheDocument();
   });
 
   it('Kontrolle: ohne schedule_today (ältere Antwort) gilt weiter die User-Zeile', () => {
     renderForm({ editUser: { ...rowUser, schedule_today: undefined } });
-    expect(screen.getByText(/30 Tage \(basierend auf 5 Arbeitstagen\/Woche\)/)).toBeInTheDocument();
-    expect(screen.getByText(/aus den Wochenstunden \(≈ 173\.3 h\)/)).toBeInTheDocument();
+    expect(screen.getByText('20 Tage/Jahr')).toBeInTheDocument();
+    expect(screen.getByText('Stundenzählung aktiv')).toBeInTheDocument();
   });
 });

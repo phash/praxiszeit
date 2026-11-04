@@ -53,6 +53,7 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -73,6 +74,7 @@ from app.models import (
     AbsenceType,
     CompanyClosure,
     ImpersonationSession,
+    ReducedDay,
     SignupToken,
     TimeEntry,
     TimeEntryAuditLog,
@@ -122,6 +124,7 @@ SEEDED_USER_FK_COLUMNS = frozenset({
     ("error_logs", "user_id"),
     ("impersonation_sessions", "impersonator_id"),
     ("impersonation_sessions", "target_id"),
+    ("reduced_days", "created_by"),
     ("security_events", "subject_user_id"),
     ("shift_assignments", "user_id"),
     ("shift_plans", "created_by"),
@@ -184,7 +187,7 @@ def _wipe(engine):
         "time_entry_audit_logs", "change_requests", "vacation_requests",
         "absences", "time_entries", "working_hours_changes", "year_carryovers",
         "company_closures", "signup_tokens", "impersonation_sessions",
-        "security_events",
+        "security_events", "reduced_days",
     ]
     with engine.connect() as conn:
         for table in order:
@@ -308,6 +311,10 @@ def welt(pg_engine):
     db.add(SecurityEvent(tenant_id=TENANT_ID, event=EVENT_ADMIN_PASSWORD_RESET,
                          subject_user_id=VICTIM_ID, actor="cli:test@host",
                          detail="Passwort ueber die Kommandozeile neu gesetzt"))
+
+    # ── Verkuerzter Tag (Teil B): gehoert dem Mandanten, nur created_by -> SET NULL ──
+    db.add(ReducedDay(tenant_id=TENANT_ID, date=LONG_AGO, label="x",
+                      max_hours=Decimal("4"), created_by=VICTIM_ID))
 
     # ── Fehlerprotokoll: haengt allein an der Loeschregel SET NULL ──
     db.add(ErrorLog(tenant_id=TENANT_ID, level="ERROR", logger="test",
@@ -440,6 +447,13 @@ class TestEndloeschung:
             SecurityEvent.tenant_id == TENANT_ID).one()
         assert ereignis.subject_user_id is None
         assert ereignis.actor == "cli:test@host"
+
+    def test_verkuerzter_tag_bleibt_ohne_ersteller(self, welt):
+        """reduced_days.created_by: ON DELETE SET NULL -- die Zeile bleibt."""
+        db, victim, admin = welt
+        admin_users.purge_user(str(VICTIM_ID), db=db, current_user=admin)
+        tag = db.query(ReducedDay).filter(ReducedDay.tenant_id == TENANT_ID).one()
+        assert tag.created_by is None
 
     def test_fremde_objekte_werden_umgehaengt_statt_geloescht(self, welt):
         """``created_by`` ist NOT NULL: die Objekte muessen dem handelnden

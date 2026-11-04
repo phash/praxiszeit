@@ -21,19 +21,14 @@ from datetime import date
 import pytest
 
 from app.models import User, UserRole, Absence, AbsenceType, PublicHoliday
-from app.models.system_setting import SystemSetting
 from app.services import calculation_service, special_days_service
 from tests.conftest import DEFAULT_TENANT_ID
+from tests.setting_helpers import set_setting as _set_setting
 
 
 # 24./31.12.2025 are both Wednesdays.
 DEC24 = date(2025, 12, 24)
 DEC31 = date(2025, 12, 31)
-
-
-def _set_setting(db, key: str, value: str, tenant_id=DEFAULT_TENANT_ID):
-    db.add(SystemSetting(key=key, value=value, description=key, tenant_id=tenant_id))
-    db.commit()
 
 
 def _set_special_day(db, prefix: str, mode: str, counts_as_vacation: bool = True):
@@ -70,9 +65,9 @@ def test_config_resolves_defaults(db, test_user):
     cfg = special_days_service.get_special_day_config(db, DEFAULT_TENANT_ID, 2025)
     assert cfg[DEC24]["mode"] == "working_day"
     assert cfg[DEC31]["mode"] == "working_day"
-    # working_day imposes no factor.
-    assert special_days_service.special_day_target_factor(DEC24, cfg) is None
-    assert special_days_service.special_day_target_factor(DEC31, cfg) is None
+    # working_day imposes no rule: the daily target stays.
+    assert special_days_service.special_day_target(DEC24, Decimal("8"), cfg) == Decimal("8")
+    assert special_days_service.special_day_target(DEC31, Decimal("8"), cfg) == Decimal("8")
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +90,8 @@ def test_half_day_halves_target_for_that_day(db, test_user):
 def test_half_day_factor(db, test_user):
     _set_special_day(db, "special_day_dec31", "half_day")
     cfg = special_days_service.get_special_day_config(db, DEFAULT_TENANT_ID, 2025)
-    assert special_days_service.special_day_target_factor(DEC31, cfg) == Decimal("0.5")
+    assert special_days_service.special_day_mode(DEC31, cfg) == "half_day"
+    assert special_days_service.special_day_target(DEC31, Decimal("8"), cfg) == Decimal("4")
 
 
 def test_both_days_half(db, test_user):
@@ -128,7 +124,8 @@ def test_free_zeroes_target_for_that_day(db, test_user):
 def test_free_factor(db, test_user):
     _set_special_day(db, "special_day_dec24", "free")
     cfg = special_days_service.get_special_day_config(db, DEFAULT_TENANT_ID, 2025)
-    assert special_days_service.special_day_target_factor(DEC24, cfg) == Decimal("0")
+    assert special_days_service.special_day_mode(DEC24, cfg) == "free"
+    assert special_days_service.special_day_target(DEC24, Decimal("8"), cfg) == Decimal("0")
 
 
 def test_free_on_holiday_not_double_handled(db, test_user):

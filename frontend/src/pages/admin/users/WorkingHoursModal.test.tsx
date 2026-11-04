@@ -4,7 +4,7 @@ import { ToastProvider } from '../../../contexts/ToastContext';
 import WorkingHoursModal from './WorkingHoursModal';
 import type { WorkingHoursChangePreview } from './workingHoursTypes';
 import type { WeekBlocks } from '../../../types/workBlocks';
-import { JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGAL_HINT } from './workingHoursTexts';
+import { JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGAL_HINT, suggestEntitlement } from './workingHoursTexts';
 
 // Same pattern as UserForm.test.tsx: mock the API client, expose the mocks so
 // each test can configure GET (list vs. preview), POST and DELETE responses.
@@ -48,6 +48,11 @@ type HistoryRow = {
   hours_friday?: number | null;
   work_days_per_week?: number | null;
   blocks?: WeekBlocks | null;
+  vacation_days?: number;
+  track_hours?: boolean;
+  milog_working_time_account?: boolean;
+  agreed_monthly_hours?: number | null;
+  use_fixed_monthly_target?: boolean;
 };
 
 function historyResponse(rows: Array<HistoryRow>) {
@@ -217,7 +222,7 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
 
     const submit = screen.getByRole('button', { name: /Speichern/i });
     expect(submit).toBeDisabled();
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
     expect(submit).not.toBeDisabled();
   });
 
@@ -268,7 +273,7 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     const submit = screen.getByRole('button', { name: /Speichern/i });
     expect(submit).toBeDisabled();
 
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
     expect(submit).not.toBeDisabled();
 
     // Changing the date again must revoke the earlier confirmation.
@@ -295,7 +300,7 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     expect(screen.getByRole('button', { name: /Speichern/i })).toBeDisabled();
     // No confirmation checkbox is offered for a blocked change — there is
     // nothing to confirm your way past.
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /Auswirkungen geprüft/ })).not.toBeInTheDocument();
   });
 
   it('blocked_reason greift auch bei einem Datum in der ZUKUNFT', async () => {
@@ -324,7 +329,7 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
 
     await screen.findByText(/existiert bereits eine Änderung/);
     expect(screen.getByRole('button', { name: /Speichern/i })).toBeDisabled();
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /Auswirkungen geprüft/ })).not.toBeInTheDocument();
   });
 
   it('Fund A: die Kasten-Überschrift nennt bei blocked_reason weder "Rückwirkende Änderung" noch "Betrifft bereits gebuchte Abwesenheiten"', async () => {
@@ -395,7 +400,7 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
     await flushDebounce();
     await screen.findByText(/Abwesenheit\(en\) betroffen/);
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
 
     fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
 
@@ -695,7 +700,7 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
     // period_start — ohne Jahreszahl liest der Admin sie als "dieses Jahr".
     mockPreview({ period_start: '2025-11-01', period_end: '2025-12-31', vacation_days_before: 18, vacation_days_after: 19 });
     renderModal();
-    expect(await screen.findByText(/Urlaub 2025/)).toBeInTheDocument();
+    expect(await screen.findByText(/Urlaub verbraucht 2025/)).toBeInTheDocument();
   });
 
   it('erklärt einen unveränderten Saldo bei einem Wirkungsdatum in der Zukunft', async () => {
@@ -825,12 +830,33 @@ describe('Abschluss-Review #431, Fund 2: Vorschau erscheint auch bei reiner Sald
     await flushDebounce();
 
     const box = await screen.findByRole('status');
-    expect(within(box).getByText(/Urlaub 2026/)).toBeInTheDocument();
+    expect(within(box).getByText(/Urlaub verbraucht 2026/)).toBeInTheDocument();
     expect(within(box).getByText('12 Tage')).toBeInTheDocument();
     expect(within(box).getByText('11 Tage')).toBeInTheDocument();
     // Nicht als „betrifft gebuchte Abwesenheiten" überschreiben — es sind null.
     expect(within(box).queryByText(/Betrifft bereits gebuchte Abwesenheiten/)).not.toBeInTheDocument();
     expect(within(box).queryByText(/Rückwirkende Änderung/)).not.toBeInTheDocument();
+  });
+
+  // Review Focus 3: eine reine Anspruchsänderung (Saldo und verbrauchter Urlaub gleich) zeigt die Box.
+  it('shows the impact box for a pure entitlement change', async () => {
+    mockPreview({
+      is_retroactive: false,
+      period_start: '2026-09-01',
+      period_end: '2026-09-30',
+      overtime_before: 12.5, overtime_after: 12.5,
+      vacation_days_before: 12, vacation_days_after: 12,
+      affected_absences: 0,
+      vacation_entitlement: [{ year: 2026, before: 24, after: 25 }, { year: 2027, before: 24, after: 25 }],
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '24' } });
+    await flushDebounce();
+    await screen.findByRole('status');
+    expect(screen.getByRole('row', { name: /Urlaubsanspruch 2026/ })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ })).toBeInTheDocument();
   });
 
   it('verlangt für diese Auswirkung dieselbe ausdrückliche Bestätigung', async () => {
@@ -851,7 +877,7 @@ describe('Abschluss-Review #431, Fund 2: Vorschau erscheint auch bei reiner Sald
 
     const submit = screen.getByRole('button', { name: /Speichern/i });
     expect(submit).toBeDisabled();
-    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
     expect(submit).not.toBeDisabled();
   });
 
@@ -1031,7 +1057,7 @@ describe('Spec 2026-10-08 (PR3): Block-Modus und POST-Vorschau', () => {
     expect(within(box).getByText('Mo, Block 3: Uhrzeit im Format HH:MM angeben.')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Mo, Block 3: Uhrzeit im Format HH:MM angeben.');
     expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /Auswirkungen geprüft/ })).not.toBeInTheDocument();
   });
 
   it('Bestätigung Pflicht bei affected_time_entries > 0 — Wirkungsdatum heute', async () => {
@@ -1072,7 +1098,7 @@ describe('Spec 2026-10-08 (PR3): Block-Modus und POST-Vorschau', () => {
     fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
     await flushDebounce();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /Auswirkungen geprüft/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Speichern/ })).not.toBeDisabled();
   });
 
@@ -1859,6 +1885,16 @@ describe('Löschen einer Arbeitszeit-Änderung (Spec 9.7/P13)', () => {
     expect(within(dialog).getByRole('button', { name: 'Löschen' })).toBeDisabled();
   });
 
+  it('delete panel shows entitlement before → after', async () => {
+    deletePreviewMock.mockResolvedValue(previewResponse({
+      ...QUIET,
+      vacation_entitlement: [{ year: 2026, before: 30, after: 24 }, { year: 2027, before: 30, after: 24 }],
+    }));
+    const dialog = await openDelete();
+    const row = await within(dialog).findByRole('row', { name: /Urlaubsanspruch 2026/ });
+    expect(within(row).getAllByRole('cell').map((c) => c.textContent)).toEqual(['30 Tage', '24 Tage', '−6 Tage']);
+  });
+
   it('Verkürzung: Standard „auf vorherigen Stand zurücksetzen" sendet reset_body unverändert, Vorschau mit demselben Body', async () => {
     deletePreviewMock.mockResolvedValue(previewResponse(SHORT_DELETE));
     postMock.mockResolvedValue({ data: { id: 'c3', adjusted_time_entries: 0, adjusted_absences: 0, warning: null } });
@@ -2179,6 +2215,22 @@ describe('Gesamtreview 1.20 Fund 14: Block-Editor bei fester Monatsarbeitszeit',
     expect(screen.getByText(/Bei fester Monatsarbeitszeit sind diese Werte geplante Anwesenheit/)).toBeInTheDocument();
   });
 
+  it('F051/F092: folgt dem Vertrag im Formular, nicht der Prop', async () => {
+    mockHistory([ANNA_ROW], QUIET);
+    renderModal({
+      ...ANNA_PROPS, fixedMonthlyTarget: false,
+      currentContract: {
+        vacation_days: 18, track_hours: true, milog_working_time_account: true,
+        agreed_monthly_hours: 60, use_fixed_monthly_target: false,
+      },
+    });
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    expect(screen.getByTestId('wh-blocks-day-0')).toHaveTextContent('Tagessoll 7:00 h');
+    fireEvent.click(document.getElementById('wh-use_fixed_monthly_target')!);
+    expect(screen.getByTestId('wh-blocks-day-0')).toHaveTextContent('geplant 7:00 h');
+    expect(screen.getByText(/Bei fester Monatsarbeitszeit sind diese Werte geplante Anwesenheit/)).toBeInTheDocument();
+  });
+
   it('Kontrolle: ohne feste Monatsarbeitszeit „Tagessoll"', async () => {
     mockHistory([ANNA_ROW], QUIET);
     renderModal(ANNA_PROPS);
@@ -2246,5 +2298,136 @@ describe('1.21 Teamübersicht: Entwurf vorbelegen (initialBlocks/initialEffectiv
     renderModal();
     expect(await screen.findByLabelText('Gültig ab')).toHaveValue('2026-07-26');
     expect(screen.queryByLabelText('Di Block 1 von')).toBeNull();
+  });
+});
+
+// Teil A, Task 13: Abschnitt „Urlaub und Abrechnung".
+const CONTRACT_24_4 = {
+  vacation_days: 24, track_hours: true, milog_working_time_account: false,
+  agreed_monthly_hours: null, use_fixed_monthly_target: false,
+};
+const ROW_24_4 = {
+  id: 'c-24', effective_from: '2026-01-01', weekly_hours: 32, work_days_per_week: 4, ...CONTRACT_24_4,
+};
+const PROPS_24_4 = { currentWeeklyHours: 32, currentWorkDays: 4, currentContract: CONTRACT_24_4 };
+const entitlementField = () => screen.getByLabelText('Urlaubsanspruch pro Jahr ab diesem Datum');
+
+describe('Teil A Task 13: Urlaub und Abrechnung', () => {
+  it('suggests 30 for 24 days from 4 to 5 days', () => expect(suggestEntitlement(24, 4, 5)).toBe(30));
+  it('suggests 13,1 for 17,5 days from 4 to 3 days', () => expect(suggestEntitlement(17.5, 4, 3)).toBe(13.1));
+  it('no suggestion without work days', () => expect(suggestEntitlement(24, 4, 0)).toBeNull());
+  it('no suggestion while the work days stay the same', () => expect(suggestEntitlement(24, 4, 4)).toBeNull());
+  it('F129: no suggestion when the old snapshot has no work days', () => expect(suggestEntitlement(24, 0, 5)).toBeNull());
+  it('F129: a suggestion above 50 is capped at 50 (never auto-fills an invalid value)', () => {
+    expect(suggestEntitlement(24, 2, 5)).toBe(50);
+    expect(suggestEntitlement(30, 2, 5)).toBe(50);
+  });
+
+  it('auto-follows the suggestion until edited, then offers „Vorschlag übernehmen (30)"', async () => {
+    mockHistory([ROW_24_4], QUIET);
+    renderModal(PROPS_24_4);
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    expect(screen.getByRole('group', { name: 'Urlaub und Abrechnung' })).toBeInTheDocument();
+    expect(entitlementField()).toHaveValue(24);
+    fireEvent.change(screen.getByLabelText('Arbeitstage pro Woche'), { target: { value: '5' } });
+    expect(entitlementField()).toHaveValue(30);
+    expect(screen.queryByRole('button', { name: /Vorschlag übernehmen/ })).not.toBeInTheDocument();
+
+    fireEvent.change(entitlementField(), { target: { value: '28' } });
+    expect(entitlementField()).toHaveValue(28);
+    const link = screen.getByRole('button', { name: 'Vorschlag übernehmen (30)' });
+    // Bearbeitet bleibt bearbeitet: ein weiterer Arbeitstag ändert das Feld nicht mehr.
+    fireEvent.change(screen.getByLabelText('Arbeitstage pro Woche'), { target: { value: '5' } });
+    expect(entitlementField()).toHaveValue(28);
+    fireEvent.click(link);
+    expect(entitlementField()).toHaveValue(30);
+  });
+
+  it('sends the five contract fields in preview and create body', async () => {
+    mockHistory([ROW_24_4], QUIET);
+    renderModal(PROPS_24_4);
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    fireEvent.change(screen.getByLabelText('Arbeitstage pro Woche'), { target: { value: '5' } });
+    await flushDebounce();
+    const expected = {
+      vacation_days: 30, track_hours: true, milog_working_time_account: false,
+      agreed_monthly_hours: null, use_fixed_monthly_target: false,
+    };
+    await waitFor(() => expect(previewPosts().at(-1)?.body).toMatchObject({ work_days_per_week: 5, ...expected }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Speichern/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls.at(-1)![1]).toMatchObject(expected);
+  });
+
+  it('a pure entitlement change enables Speichern', async () => {
+    mockHistory([ROW_24_4], QUIET);
+    renderModal(PROPS_24_4);
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    await flushDebounce();
+    expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
+    fireEvent.change(entitlementField(), { target: { value: '25' } });
+    expect(screen.queryByText(/Noch nichts zu speichern/)).not.toBeInTheDocument();
+    await flushDebounce();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Speichern/ })).toBeEnabled());
+    expect(previewPosts().at(-1)?.body).toMatchObject({ vacation_days: 25 });
+  });
+
+  it('an empty entitlement blocks Speichern with a message and is never sent as null', async () => {
+    mockHistory([ROW_24_4], QUIET);
+    renderModal(PROPS_24_4);
+    await screen.findByText(/Ab 01\.01\.2026 bis heute/);
+    fireEvent.change(entitlementField(), { target: { value: '' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('Bitte einen Urlaubsanspruch von 0 bis 50 Tagen eintragen.');
+    await flushDebounce();
+    expect(previewPosts().at(-1)?.body).not.toHaveProperty('vacation_days');
+    expect(screen.getByRole('button', { name: /Speichern/ })).toBeDisabled();
+  });
+
+  it('history card shows „Urlaub 30 Tage/Jahr" and „ohne Stundenzählung"', async () => {
+    mockHistory([
+      { id: 'c1', effective_from: '2026-01-01', weekly_hours: 40, ...CONTRACT_24_4, vacation_days: 30, track_hours: false },
+      {
+        id: 'c2', effective_from: '2026-03-01', weekly_hours: 10, vacation_days: 13.1, track_hours: true,
+        milog_working_time_account: true, agreed_monthly_hours: 43.5, use_fixed_monthly_target: true,
+      },
+    ], QUIET);
+    renderModal();
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    expect(screen.getByText('Urlaub 30 Tage/Jahr')).toBeInTheDocument();
+    expect(screen.getByText('ohne Stundenzählung')).toBeInTheDocument();
+    expect(screen.getByText('Urlaub 13,1 Tage/Jahr')).toBeInTheDocument();
+    expect(screen.getByText('MiLoG-Arbeitszeitkonto')).toBeInTheDocument();
+    expect(screen.getByText('43,5 h/Monat vereinbart')).toBeInTheDocument();
+    expect(screen.getByText('festes Monats-Soll')).toBeInTheDocument();
+  });
+
+  it('scheduleAt before the first row uses the first row contract', async () => {
+    mockHistory([{ ...ROW_24_4, effective_from: '2026-09-01' }], QUIET);
+    // Die Props (Rückfall der Stunden) tragen einen anderen Vertrag als die Zeile.
+    renderModal({ ...PROPS_24_4, currentContract: { ...CONTRACT_24_4, vacation_days: 30 } });
+    await screen.findByText(/Ab 01\.09\.2026 bis heute/);
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-08-01' } });
+    expect(entitlementField()).toHaveValue(24);
+    expect(screen.getByText(/Noch nichts zu speichern/)).toBeInTheDocument();
+  });
+
+  it('unchecking Stundenzählung in block mode keeps the blocks in the body', async () => {
+    mockHistory([{ ...ANNA_ROW, ...CONTRACT_24_4 }], QUIET);
+    renderModal({ ...ANNA_PROPS, currentContract: CONTRACT_24_4 });
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    expect(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' })).toBeChecked();
+    fireEvent.click(screen.getByLabelText(/Stundenzählung aktiv/));
+    expect(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' })).toBeChecked();
+    expect(screen.getByLabelText('Mo Block 2 bis')).toHaveValue('18:00');
+    expect(screen.getByText(/^Arbeitszeit-Blöcke gespeichert, ohne Wirkung \(keine Stundenzählung\): Mo 08:00/))
+      .toBeInTheDocument();
+    await flushDebounce();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Speichern/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    const body = postMock.mock.calls.at(-1)![1] as Record<string, unknown>;
+    expect(body).toMatchObject({ track_hours: false });
+    expect((body.blocks as WeekBlocks)[0].blocks[1]).toEqual({ start: '15:00', end: '18:00' });
   });
 });

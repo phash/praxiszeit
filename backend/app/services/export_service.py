@@ -640,10 +640,10 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     # pro Tag (get_schedule_for_date/get_daily_target_for_date lösen den
     # Vertrags-Snapshot sonst 28-31× einzeln auf, plus die #415-Kopfzeile
     # unten). F-026: tenant-gefiltert.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,
-    ).order_by(WorkingHoursChange.effective_from).all()
+    wh_changes = calculation_service.user_wh_changes(db, user)
+    # F901: Tag ohne Stundenzählung einer Person, die sonst Stunden zählt →
+    # „Differenz" 0 (dieselbe Regel wie get_monthly_actual); Netto bleibt sichtbar.
+    ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)
 
     # Row 1–2: ArbZG-relevante Mitarbeiter-Metadaten (§16 ArbZG Aufzeichnungspflicht)
     sheet.cell(row=1, column=1).value = "Mitarbeiter:"
@@ -821,11 +821,10 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         # Per-day target using the historical contract snapshot (#431)
         schedule = calculation_service.get_schedule_for_date(db, user, current_date, wh_changes=wh_changes)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
-        # #146: apply the special-day factor (only the working-day branch below
+        # #146: Sondertag-/Verkürzungsregel ``special_day_target`` (only the working-day branch below
         # consumes daily_target; the weekend/holiday/absence branches hardcode 0).
-        _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
-        if _sd_factor is not None:
-            daily_target = daily_target * _sd_factor
+        raw_daily_target = daily_target  # unweighted snapshot target (credit weight)
+        daily_target = special_days_service.special_day_target(current_date, raw_daily_target, special_day_config)
 
         # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
         if not in_window:
@@ -895,11 +894,12 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         # nicht der Rohstempel); die nicht angerechnete Zeit steht in der
         # letzten Spalte (Spec 2026-10-08, 15.1).
         credit = (calculation_service.credited_absence_hours(
-            day_absences, current_date, set(holidays_by_date), special_day_config)
+            day_absences, current_date, set(holidays_by_date), special_day_config,
+            daily_target=raw_daily_target)
             if in_window else Decimal('0.00'))
 
-        # Difference
-        diff = net + credit - target
+        # Difference (F901: 0 an einem Tag, dessen Ist nicht zählt)
+        diff = net + credit - target if ist_counted(current_date) else Decimal('0.00')
         sheet.cell(row=row, column=8).value = float(diff)
         sheet.cell(row=row, column=8).number_format = '0.00'
 
@@ -1275,10 +1275,10 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
     # pro Tag (365× get_schedule_for_date im Jahresblatt, plus die #415-
     # Kopfzeile unten). F-026: tenant-gefiltert.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,
-    ).order_by(WorkingHoursChange.effective_from).all()
+    wh_changes = calculation_service.user_wh_changes(db, user)
+    # F901: Tag ohne Stundenzählung einer Person, die sonst Stunden zählt →
+    # „Differenz" 0 (dieselbe Regel wie get_monthly_actual); Netto bleibt sichtbar.
+    ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)
 
     # Title
     sheet.cell(row=1, column=1).value = neutralize_spreadsheet_formula(f"{user.first_name} {user.last_name} - Jahresreport {year}")
@@ -1455,9 +1455,8 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
 
         schedule = calculation_service.get_schedule_for_date(db, user, current_date, wh_changes=wh_changes)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
-        _sd_factor = special_days_service.special_day_target_factor(current_date, special_day_config)
-        if _sd_factor is not None:
-            daily_target = daily_target * _sd_factor
+        raw_daily_target = daily_target  # unweighted snapshot target (credit weight)
+        daily_target = special_days_service.special_day_target(current_date, raw_daily_target, special_day_config)
 
         # Target hours + Abwesenheit (col 9) – korrekte Labels für §9/§10/§6
         if not in_window:
@@ -1524,10 +1523,11 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
         # nicht der Rohstempel); die nicht angerechnete Zeit steht in der
         # letzten Spalte (Spec 2026-10-08, 15.1).
         credit = (calculation_service.credited_absence_hours(
-            day_absences, current_date, set(holidays_by_date), special_day_config)
+            day_absences, current_date, set(holidays_by_date), special_day_config,
+            daily_target=raw_daily_target)
             if in_window else Decimal('0.00'))
 
-        diff = net + credit - target
+        diff = net + credit - target if ist_counted(current_date) else Decimal('0.00')  # F901
         sheet.cell(row=row, column=8).value = float(diff)
         sheet.cell(row=row, column=8).number_format = '0.00'
 
@@ -2102,10 +2102,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
         # pro Tag (28-31× get_schedule_for_date je PDF-Seite, plus die #415-
         # Kopfzeile unten). F-026: tenant-gefiltert.
-        wh_changes = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == user.id,
-            WorkingHoursChange.tenant_id == user.tenant_id,
-        ).order_by(WorkingHoursChange.effective_from).all()
+        wh_changes = calculation_service.user_wh_changes(db, user)
+        ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)  # F901
 
         # ── Employee meta ──
         arbzg_flag = " | \u00a718-befreit" if user.exempt_from_arbzg else ""
@@ -2241,9 +2239,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             # Per-day target using the historical contract snapshot (#431)
             schedule = calculation_service.get_schedule_for_date(db, user, cur, wh_changes=wh_changes)
             daily_target = calculation_service.get_daily_target_for_date(user, cur, schedule)
-            _sd_factor = special_days_service.special_day_target_factor(cur, special_day_config)
-            if _sd_factor is not None:
-                daily_target = daily_target * _sd_factor
+            raw_daily_target = daily_target  # unweighted snapshot target (credit weight)
+            daily_target = special_days_service.special_day_target(cur, raw_daily_target, special_day_config)
 
             if not in_window:
                 target = Decimal('0.00')  # F2: kein Soll außerhalb der Beschäftigung
@@ -2292,9 +2289,10 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
             # #497: Gutschrift Krank/Fortbildung in die Tages-Differenz — siehe
             # _create_employee_sheet (dieselbe Quelle wie get_monthly_actual).
             credit = (calculation_service.credited_absence_hours(
-                day_absences, cur, set(holidays_by_date), special_day_config)
+                day_absences, cur, set(holidays_by_date), special_day_config,
+            daily_target=raw_daily_target)
                 if in_window else Decimal('0.00'))
-            diff = net + credit - target
+            diff = net + credit - target if ist_counted(cur) else Decimal('0.00')  # F901
             diff_str = f"{float(diff):+.2f}"
             if diff > 0:
                 diff_cell = colored(diff_str, '#006400', bold=True)

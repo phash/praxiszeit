@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, WorkingHoursChange
+from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure
 from app.services import calculation_service, settings_service, special_days_service
 
 
@@ -36,8 +36,11 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
     foreign-absence skip, audit log, half_day, closure_id, hours) stays intact.
 
     Runs only when the global ``closure_overtime_after_vacation`` toggle is on
-    (otherwise legacy all-VACATION). Untracked employees (track_hours=False) have
-    no overtime account and are left as VACATION (mirrors the emp_split guard).
+    (otherwise legacy all-VACATION). Days without hour tracking (track_hours=False
+    laut Snapshot, Teil A: per day) have no overtime account: they stay VACATION
+    and consume the budget by day; tracked days take part in the split. An
+    employee without any tracked closure day of the year gets VACATION on every
+    closure day (rows left on OVERTIME from a tracked period flip back, F003).
     F-026: every query is tenant-scoped. ``current_user`` is accepted for call-
     site compatibility but unused (everything keys off ``tenant_id``).
     """
@@ -87,12 +90,7 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
     # unten) — bei 30 MA × 10 Schließtagen bisher bis zu 300 zusätzliche
     # Queries je Re-Split, der aus vielen Urlaubs-Schreibpfaden ausgelöst wird
     # (#314). Muster wie ``admin_users.users_overview``/``company_closures``.
-    wh_by_user: dict = {}
-    for _c in db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id.in_(list(by_user.keys())),
-        WorkingHoursChange.tenant_id == tenant_id,  # F-026
-    ).order_by(WorkingHoursChange.effective_from).all():
-        wh_by_user.setdefault(_c.user_id, []).append(_c)
+    wh_by_user = calculation_service.wh_changes_by_user(db, tenant_id, by_user.keys())  # F-026
 
     # Free special days (24./31.12.) that cost a vacation day this year — same
     # source get_vacation_account uses, so the budget bookkeeping matches.
@@ -119,12 +117,24 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
 
     for user_id, absences in by_user.items():
         employee = users.get(user_id)
-        # Untracked MA: no overtime account → keep legacy VACATION. Missing user
-        # (shouldn't happen) → leave untouched.
-        if employee is None or not employee.track_hours:
+        # Missing user (shouldn't happen) → leave untouched.
+        if employee is None:
             continue
 
         emp_wh = wh_by_user.get(user_id, [])
+
+        # Teil A: Stundenzählung je TAG aus dem Snapshot (Preload ``emp_wh``).
+        def _tracked(d: date, _e=employee, _wh=emp_wh) -> bool:
+            return calculation_service.tracks_hours_on(db, _e, d, _wh)
+
+        # Ohne einen einzigen gezählten Schließtag: kein Überstundenkonto → alle
+        # Schließtage sind VACATION (wie bisher für track_hours=False). Zeilen, die
+        # noch aus einer Zeit MIT Stundenzählung auf OVERTIME stehen (rückwirkende
+        # Umstellung), kippen zurück (F003); VACATION-Zeilen bleiben unverändert.
+        if not any(_tracked(a.date) for a in absences):
+            for a in absences:
+                a.type = AbsenceType.VACATION
+            continue
 
         # Gross annual budget (pro-rata + carryover), independent of bookings.
         # Decimal (L2, review 2026-07-14): the walk gate below then compares
@@ -163,6 +173,11 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
         private_dates = {a.date for a in private}
         consumed = Decimal('0')
         for a in private:
+            if not _tracked(a.date):
+                # Teil A: ohne Stundenzählung zählt der Tag tagebasiert (#191) —
+                # wie ``get_vacation_account``/``absence_days``.
+                consumed += (Decimal('0.5') if a.half_day else Decimal('1')) * _wt(a.date)
+                continue
             # Fix #3: skip days with Tagessoll 0 (e.g. a use_daily_schedule MA's
             # free weekday) exactly like get_vacation_account's used_days loop —
             # a vacation day on a non-working day consumes 0 budget. Without this
@@ -192,6 +207,9 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             if employee.first_work_day and d < employee.first_work_day:
                 continue
             if employee.last_work_day and d > employee.last_work_day:
+                continue
+            if not _tracked(d):
+                consumed += Decimal('1')  # ohne Stundenzählung: 1 Tag (wie get_vacation_account)
                 continue
             # Fix #3: same Tagessoll>0 guard get_vacation_account applies to free
             # special days (24./31.12.) — a free day on the MA's non-working
@@ -234,6 +252,14 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             if not calculation_service._within_employment_window(employee, a.date):
                 a.type = AbsenceType.VACATION  # Basistyp, siehe unten
                 continue
+            # Teil A: ein Tag ohne Stundenzählung hat kein Überstundenkonto →
+            # bleibt Urlaub (auch über das Budget hinaus, wie bisher für
+            # track_hours=False) und verbraucht tagebasiert Budget, das den
+            # gezählten Tagen danach fehlt (wie ``get_vacation_account``).
+            if not _tracked(a.date):
+                a.type = AbsenceType.VACATION
+                used += _wt(a.date)
+                continue
             # #431: eine Closure-Zeile mit Tagessoll 0 (Nicht-Arbeitstag eines
             # Tagesplan-MA) kostet KEIN Urlaubsbudget — genau wie in
             # ``_create_closure_absences``, das den Split auf ``day_target > 0``
@@ -243,8 +269,8 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
             # Urlaubstag und kippte dadurch einen echten 8-h-Arbeitstag auf
             # OVERTIME, obwohl noch Budget da war. Der Modus wird zum DATUM
             # aufgelöst (die User-Zeile trägt nur den heutigen Wert).
-            # ``track_hours=False`` erreicht diese Schleife nie (oben `continue`),
-            # deren tagebasierter 1-Tag-Verbrauch (#191) bleibt also unberührt.
+            # Ein Tag ohne Stundenzählung (#191) ist oben schon als VACATION
+            # verbucht und erreicht diese Stelle nie.
             if calculation_service.get_daily_target_for_date(
                 employee, a.date,
                 calculation_service.get_schedule_for_date(db, employee, a.date, wh_changes=emp_wh),

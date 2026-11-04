@@ -1285,6 +1285,50 @@ group_pdf() {
            ls docs/BERECHNUNGEN.pdf docs/GLOSSAR.pdf 2>/dev/null)
 }
 
+# Verkürzte Tage (Teil B, Migration 074): vierte Betriebsart „Verkürzt auf X
+# Stunden“ für den 24./31.12. und freie verkürzte Tage. Wortlaute stehen im Code,
+# die Doku zitiert sie; das veraltete credit_day_weight-Docstring darf nicht bleiben.
+group_verkuerzt() {
+  need_code "Für den 24. und 31.12. bitte die Einstellung Sondertage verwenden."
+  need_code "verkürzter Tag (max."
+  need_code "Die Stundenzahl muss zwischen 0,25 und 12 liegen (in Schritten von 0,25)."
+  need_code_label frontend/src/components/ReducedDaysCard.tsx "Verkürzte Tage"
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Verkürzt auf X Stunden'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'verkürzter Tag (max. 4 h)'
+  need docs/GLOSSAR.md 'verkürzter Tag'
+  need docs/BERECHNUNGEN.md 'special_day_target'
+  need frontend/src/components/DocViewer.tsx 'Verkürzt auf X Stunden'
+  need frontend/src/constants/helpContent.tsx 'Verkürzte Tage'
+  forbid backend/app/services/calculation_service.py 'legt ausschliesslich die'
+}
+
+# Vertragsverlauf (Teil A, Migration 075): Urlaubsanspruch, Stundenzählung und
+# Minijob-Einstellungen gelten ab Datum und werden allein im Dialog „Arbeitszeit
+# anpassen…“ geändert. Wortlaute stehen im Code, die Doku zitiert sie.
+group_vertragsverlauf() {
+  need_code "Urlaub und Abrechnung"
+  need_code "Urlaubsanspruch pro Jahr ab diesem Datum"
+  need_code "Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten."
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Urlaub und Abrechnung'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Urlaubsanspruch pro Jahr ab diesem Datum'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Vorschlag übernehmen'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten.'
+  need docs/handbuch/CHEATSHEET-ADMIN.md 'Urlaubsanspruch pro Jahr ab diesem Datum'
+  need docs/BERECHNUNGEN.md 'vacation_entitlement_days'
+  need docs/BERECHNUNGEN.md 'Stundenzählung und Minijob-Einstellungen ab Datum'
+  need docs/GLOSSAR.md 'Urlaubsanspruch (anteilig nach Vertragsabschnitten)'
+  need frontend/src/components/DocViewer.tsx 'Urlaub und Abrechnung'
+  need frontend/src/components/DocViewer.tsx 'Urlaubsanspruch pro Jahr ab diesem Datum'
+  need frontend/src/components/DocViewer.tsx 'Vorschlag übernehmen'
+  need frontend/src/constants/helpContent.tsx 'Urlaubsanspruch pro Jahr ab diesem Datum'
+  forbid frontend/src/pages/admin/AdminDashboard.tsx 'Manuelle Übernahmen für'
+  forbid docs/BERECHNUNGEN.md 'Offen (#191)'
+  forbid docs/BERECHNUNGEN.md 'nicht datumsabhängig'
+  need CLAUDE.md '`calculation_service.vacation_entitlement_days`'
+  need CLAUDE.md 'test_no_live_contract_field_read.py'
+  forbid CLAUDE.md 'für untracked noch offen'
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {

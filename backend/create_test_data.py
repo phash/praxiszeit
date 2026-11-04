@@ -276,6 +276,11 @@ def add_hours_changes():
                 user_id=sophie.id,
                 effective_from=date(2026, 3, 1),
                 weekly_hours=Decimal("20.0"),
+                vacation_days=sophie.vacation_days,
+                track_hours=sophie.track_hours,
+                milog_working_time_account=sophie.milog_working_time_account,
+                agreed_monthly_hours=sophie.agreed_monthly_hours,
+                use_fixed_monthly_target=sophie.use_fixed_monthly_target,
                 note="Reduzierung von 30h auf 20h wegen Kinderbetreuung"
             )
             db.add(change)

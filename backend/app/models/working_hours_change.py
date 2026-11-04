@@ -51,6 +51,13 @@ class WorkingHoursChange(Base):
         JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"),
         nullable=True,
     )
+    # 075: Vertrags-Snapshot; NULL in agreed = abgeleitet, nie Rückfall auf users.
+    # Bewusst ohne Python-Default: jeder Schreibweg setzt alle fünf ausdrücklich.
+    vacation_days = Column(Numeric(4, 1), nullable=False)
+    track_hours = Column(Boolean, nullable=False)
+    milog_working_time_account = Column(Boolean, nullable=False)
+    agreed_monthly_hours = Column(Numeric(5, 1), nullable=True)
+    use_fixed_monthly_target = Column(Boolean, nullable=False)
     note = Column(String(500), nullable=True)  # Optional note about the change
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

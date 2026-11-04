@@ -643,3 +643,31 @@ describe('Spec 14: Dashboard-Hinweise zur Arbeitszeit', () => {
       .toBeInTheDocument();
   });
 });
+
+// Teil B: verkürzter Tag — Hinweis unter „x von y h heute"
+describe('Dashboard Stempelkarte: verkürzter Tag', () => {
+  function withClockStatus(data: unknown) {
+    const base = getMock.getMockImplementation()!;
+    getMock.mockImplementation((url: string) =>
+      url === '/time-entries/clock-status' ? Promise.resolve({ data }) : base(url),
+    );
+  }
+
+  it('zeigt das Label des verkürzten Tages', async () => {
+    withClockStatus({
+      is_clocked_in: false,
+      today_target_hours: 4,
+      today_net_minutes: 0,
+      today_special_day_label: 'verkürzter Tag (max. 4 h)',
+    });
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    expect(await screen.findByText('verkürzter Tag (max. 4 h)')).toBeInTheDocument();
+  });
+
+  it('zeigt nichts ohne das Feld', async () => {
+    withClockStatus({ is_clocked_in: false, today_target_hours: 4, today_net_minutes: 0 });
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    expect(await screen.findByText(/h heute/)).toBeInTheDocument();
+    expect(screen.queryByText(/verkürzter Tag/)).not.toBeInTheDocument();
+  });
+});

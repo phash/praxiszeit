@@ -142,6 +142,8 @@ def test_carried_blocks_rule():
             work_days_per_week=5,
             blocks=parsed.blocks if parsed else None,
             block_pauses=parsed.pauses if parsed else None,
+            vacation_days=Decimal("30"), track_hours=True, milog_working_time_account=False,
+            agreed_monthly_hours=None, use_fixed_monthly_target=False,
         )
 
     assert _carried_blocks(schedule(legacy)) == (legacy.blocks, legacy.pauses)
@@ -151,6 +153,10 @@ def test_carried_blocks_rule():
 
 def test_comparable_snapshot_sees_blocks():
     legacy = work_blocks_service.parse_week_blocks(LEGACY)
-    plain = _comparable_snapshot(40, False, (None,) * 5, 5, None, None)
-    assert plain == _comparable_snapshot(40.0, False, (None,) * 5, 5, None, None)
-    assert plain != _comparable_snapshot(40, False, (None,) * 5, 5, legacy.blocks, legacy.pauses)
+    contract = (Decimal("30"), True, False, None, False)   # Teil A, Task 4
+    plain = _comparable_snapshot(40, False, (None,) * 5, 5, None, None, contract)
+    assert plain == _comparable_snapshot(40.0, False, (None,) * 5, 5, None, None, contract)
+    assert plain != _comparable_snapshot(40, False, (None,) * 5, 5, legacy.blocks, legacy.pauses, contract)
+    # F135 (7): auch ein anderer Vertragswert macht die Schnappschüsse ungleich.
+    other = (Decimal("24"),) + contract[1:]
+    assert plain != _comparable_snapshot(40, False, (None,) * 5, 5, None, None, other)

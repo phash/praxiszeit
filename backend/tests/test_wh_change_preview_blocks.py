@@ -172,6 +172,20 @@ class TestImpactFields:
         assert resp.status_code == 400
         assert "(3 Einträge verlieren angerechnete Zeit)" in resp.json()["detail"]
 
+    def test_open_entry_does_not_lose_when_new_snapshot_has_no_hour_tracking(self, client, db, test_user):
+        """F135 (5): das ``open_loses``-Tor verlangt Stundenzählung laut NEUEM Snapshot
+        von heute — dieselbe Änderung wie oben, aber ohne Stundenzählung, kappt den
+        offenen Eintrag nicht."""
+        add_row(db, test_user, date(2026, 3, 1), week=ANNA_WEEK)
+        entry(db, test_user, date(2026, 10, 8), t(8), None)
+        week = block_week(mon=[("08:00", "12:00"), ("15:00", "18:00")], tue=[("08:00", "12:00")],
+                          thu=[("08:00", "11:00")])
+        losing = _preview(client, test_user, {"effective_from": "2026-09-24", "blocks": week})
+        assert losing["open_entry_loses"] is True
+        untracked = _preview(client, test_user, {"effective_from": "2026-09-24", "blocks": week,
+                                                  "track_hours": False})
+        assert untracked["open_entry_loses"] is False
+
     def test_preview_writes_and_logs_nothing(self, client, db, test_user):
         _anna(db, test_user)
         stale = entry(db, test_user, date(2026, 10, 6), t(8), None)
@@ -202,9 +216,9 @@ class TestImpactFields:
 
     def test_milog_warning_with_agreed_monthly_hours(self, client, db, test_user):
         _anna(db, test_user)
-        test_user.agreed_monthly_hours = 65.0
-        db.commit()
-        body = _preview(client, test_user, {"effective_from": "2026-09-01", "blocks": SHORT})
+        # Teil A (Task 11): der Snapshot der neuen Zeile trägt die Monatsstunden.
+        body = _preview(client, test_user, {"effective_from": "2026-09-01", "blocks": SHORT,
+                                            "agreed_monthly_hours": 65})
         assert body["milog_warning"] == [wh_change_service.MILOG_ACCOUNT_WARNING, wh_change_service.MILOG_GENERAL_WARNING]
 
     def test_lengthening_lists_the_not_extendable_entry(self, client, db, test_user):

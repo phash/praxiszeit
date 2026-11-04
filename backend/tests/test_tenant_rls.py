@@ -93,6 +93,7 @@ def seed_data(admin_engine):
     conn.execute(text("DELETE FROM time_entries WHERE tenant_id IN (:a, :b)"), _test_tids)
     conn.execute(text("DELETE FROM absences WHERE tenant_id IN (:a, :b)"), _test_tids)
     conn.execute(text("DELETE FROM public_holidays WHERE tenant_id IN (:a, :b)"), _test_tids)
+    conn.execute(text("DELETE FROM reduced_days WHERE tenant_id IN (:a, :b)"), _test_tids)
     conn.execute(text("DELETE FROM tenant_invoices WHERE tenant_id IN (:a, :b)"), _test_tids)
     conn.execute(text("DELETE FROM users WHERE tenant_id IN (:a, :b)"), _test_tids)
     conn.execute(text("DELETE FROM tenants WHERE id IN (:a, :b)"), _test_tids)
@@ -208,6 +209,14 @@ def seed_data(admin_engine):
         "sid": "in_rls_test_b", "cents": 3900,
     })
 
+    # ---- Create reduced_days (Teil B) ----
+    _insert_rd = text("""
+        INSERT INTO reduced_days (id, tenant_id, date, label, max_hours)
+        VALUES (gen_random_uuid(), :tid, '2026-02-16', :label, 4)
+    """)
+    conn.execute(_insert_rd, {"tid": str(TENANT_A_ID), "label": "rls_rd_a"})
+    conn.execute(_insert_rd, {"tid": str(TENANT_B_ID), "label": "rls_rd_b"})
+
     yield  # ---- run tests ----
 
     # ---- Teardown: delete everything in reverse dependency order ----
@@ -223,6 +232,9 @@ def seed_data(admin_engine):
     ), {"a": str(TENANT_A_ID), "b": str(TENANT_B_ID)})
     conn.execute(text(
         "DELETE FROM public_holidays WHERE tenant_id IN (:a, :b)"
+    ), {"a": str(TENANT_A_ID), "b": str(TENANT_B_ID)})
+    conn.execute(text(
+        "DELETE FROM reduced_days WHERE tenant_id IN (:a, :b)"
     ), {"a": str(TENANT_A_ID), "b": str(TENANT_B_ID)})
     conn.execute(text(
         "DELETE FROM users WHERE tenant_id IN (:a, :b)"
@@ -508,6 +520,34 @@ class TestTenantInvoicesIsolation:
             ids = {r[0] for r in rows}
             assert "in_rls_test_a" in ids
             assert "in_rls_test_b" in ids
+        finally:
+            trans.rollback()
+            conn.close()
+
+
+class TestReducedDaysIsolation:
+    """reduced_days (Teil B, Migration 074) is a NEW table -- verify RLS."""
+
+    def test_tenant_a_sees_only_own_reduced_days(self, app_engine, seed_data):
+        conn, trans = _tenant_session(app_engine, TENANT_A_ID)
+        try:
+            labels = {r[0] for r in conn.execute(text("SELECT label FROM reduced_days")).fetchall()}
+            assert "rls_rd_a" in labels
+            assert "rls_rd_b" not in labels
+        finally:
+            trans.rollback()
+            conn.close()
+
+    def test_tenant_a_cannot_insert_reduced_day_for_tenant_b(self, app_engine, seed_data):
+        """WITH CHECK policy must reject cross-tenant writes."""
+        from sqlalchemy.exc import DBAPIError
+        conn, trans = _tenant_session(app_engine, TENANT_A_ID)
+        try:
+            with pytest.raises(DBAPIError):
+                conn.execute(text("""
+                    INSERT INTO reduced_days (id, tenant_id, date, label, max_hours)
+                    VALUES (gen_random_uuid(), :tid, '2026-03-02', 'rls_rd_attack', 4)
+                """), {"tid": str(TENANT_B_ID)})
         finally:
             trans.rollback()
             conn.close()

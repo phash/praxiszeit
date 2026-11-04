@@ -6,7 +6,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID
 
-from app.schemas.validators import validate_week_blocks
+from app.schemas.validators import quantize_agreed_hours, quantize_one_decimal, validate_week_blocks
 from app.services import work_blocks_service
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,16 @@ RetroReasonType = Literal["erfassungsfehler", "einvernehmlich", "sonstiges"]
 EFFECTIVE_FROM_MIN = date(2000, 1, 1)
 EFFECTIVE_FROM_MAX = date(2100, 12, 31)
 EFFECTIVE_FROM_RANGE_DETAIL = "Das Wirkungsdatum muss zwischen dem 01.01.2000 und dem 31.12.2100 liegen."
+
+
+# Teil A: Vertragsfelder, deren ausdrückliches ``null`` 422 ist (nicht
+# ``agreed_monthly_hours``: dort heißt ``null`` „abgeleitet").
+NULL_REJECTED_CONTRACT_FIELDS = {
+    "vacation_days": "Der Urlaubsanspruch",
+    "track_hours": "Die Stundenzählung",
+    "milog_working_time_account": "Das MiLoG-Arbeitszeitkonto",
+    "use_fixed_monthly_target": "Der feste Monats-Soll",
+}
 
 
 def effective_from_plausible(value: date) -> bool:
@@ -91,6 +101,15 @@ class WorkingHoursChangeBase(BaseModel):
     hours_thursday: Optional[float] = Field(None, ge=0, le=24)
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
     work_days_per_week: Optional[int] = Field(None, ge=1, le=7)
+    # Teil A (Vertragsverlauf): Anspruch, Stundenzählung, Minijob. Beim Anlegen
+    # heißt ein NICHT gesendetes Feld (nicht in ``model_fields_set``) „vom
+    # Snapshot zum Wirkungsdatum übernehmen"; ein ausdrücklich gesendetes
+    # ``agreed_monthly_hours: null`` heißt „aus weekly_hours abgeleitet".
+    vacation_days: Optional[float] = Field(None, ge=0, le=50)
+    track_hours: Optional[bool] = None
+    milog_working_time_account: Optional[bool] = None
+    agreed_monthly_hours: Optional[float] = Field(None, gt=0, le=400)
+    use_fixed_monthly_target: Optional[bool] = None
     note: Optional[str] = None
 
 
@@ -112,6 +131,27 @@ class WorkingHoursChangeCreate(WorkingHoursChangeBase, RetroReasonFields):
         if not effective_from_plausible(value):
             raise ValueError(EFFECTIVE_FROM_RANGE_DETAIL)
         return value
+
+    @field_validator('vacation_days')
+    @classmethod
+    def round_vacation_days(cls, value):
+        return quantize_one_decimal(value)  # Numeric(4,1), wie PostgreSQL rundet
+
+    @field_validator('agreed_monthly_hours')
+    @classmethod
+    def round_agreed_monthly_hours(cls, value):
+        return quantize_agreed_hours(value)  # Numeric(5,1), danach > 0
+
+    @model_validator(mode='after')
+    def reject_null_contract_fields(self):
+        """Teil A: ein ausdrückliches ``null`` für Anspruch, Stundenzählung oder
+        Minijob-Schalter ist keine Aussage, die eine Verlaufszeile tragen kann —
+        422 statt still zu übernehmen. ``agreed_monthly_hours: null`` heißt
+        dagegen „aus weekly_hours abgeleitet" und bleibt erlaubt."""
+        for field, label in NULL_REJECTED_CONTRACT_FIELDS.items():
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{label} darf nicht leer sein.")
+        return self
 
     # Reihenfolge zählt: Pydantic führt die ``after``-Validatoren einer Klasse in
     # Definitionsreihenfolge aus — ``derive_from_blocks`` muss das Soll setzen,
@@ -280,6 +320,14 @@ class AbsenceCreditReductionOut(BaseModel):
     new_hours: float
 
 
+class VacationEntitlementOut(BaseModel):
+    """Teil A, Task 7 (Spec A4): Urlaubsanspruch eines Jahres ohne Übertrag
+    (``calculation_service.vacation_entitlement_days``) bisher → nach der Änderung."""
+    year: int
+    before: float
+    after: float
+
+
 class ArbzgFindingsOut(BaseModel):
     """Spec 11.3/P22: geänderte ArbZG-Befunde im Wirkungsbereich."""
     days_over_10_credited_before: int = 0
@@ -393,7 +441,8 @@ class WorkingHoursChangePreview(BaseModel):
     not_extendable_count: int = 0
     not_extendable_entries: List[TimeEntryChangeOut] = Field(default_factory=list)
     is_shortening: bool = False
-    shortening_reasons: List[Literal["entries", "saldo", "absence_credit"]] = Field(default_factory=list)
+    shortening_reasons: List[Literal["entries", "saldo", "absence_credit", "vacation_entitlement"]] = Field(
+        default_factory=list)
     shortening_closed_years: List[int] = Field(default_factory=list)
     earliest_lossless_date: Optional[date] = None
     earliest_lossless_note: Optional[str] = None
@@ -408,5 +457,8 @@ class WorkingHoursChangePreview(BaseModel):
     reset_body: Optional[dict] = None
     stale_entries_closed: int = 0
     arbzg_findings: ArbzgFindingsOut = Field(default_factory=ArbzgFindingsOut)
+    # Teil A, Task 7: Anspruch für Wirkungsjahr und Folgejahr, in BEIDEN Vorschauen;
+    # ohne Lauf (Snapshot unverändert, blockiert) ist bisher == neu.
+    vacation_entitlement: List[VacationEntitlementOut] = Field(default_factory=list)
     milog_warning: List[str] = Field(default_factory=list)
     block_break_notices: List[str] = Field(default_factory=list)

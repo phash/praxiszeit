@@ -686,3 +686,53 @@ class TestClosureRangeBound:
         })
         assert r.status_code == 400, r.text
         assert "maximal ein Jahr" in r.json()["detail"]
+
+
+class TestClosureResplitRetroUntracked:
+    def test_retro_untracked_year_turns_overtime_back_to_vacation(self, db, default_tenant, admin_client):
+        """F003: Schließtage, die als OVERTIME gesplittet wurden, solange die
+        Person Stunden zählte, werden nach rückwirkendem ``track_hours=False``
+        für das ganze Jahr beim nächsten Re-Split wieder VACATION (ohne
+        Überstundenkonto gibt es keinen Überstundenausgleich)."""
+        from app.models import WorkingHoursChange
+        from app.services import closure_split_service
+        emp = _make_user(db, "e_retro", vacation_days=0)
+        _set_toggle(db, True)
+        c = _create_closure(admin_client)
+        assert _types(db, emp, c["id"]) == [AbsenceType.OVERTIME] * 4
+        db.add(WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, effective_from=date(2025, 1, 1),
+            weekly_hours=40, use_daily_schedule=False, work_days_per_week=5,
+            vacation_days=0, track_hours=False, milog_working_time_account=False,
+            use_fixed_monthly_target=False))
+        db.commit()
+        closure_split_service.resplit_year_closures(db, DEFAULT_TENANT_ID, 2025)
+        db.commit()
+        assert _types(db, emp, c["id"]) == [AbsenceType.VACATION] * 4
+
+
+class TestClosureCreateSplitParityUntracked:
+    def test_untracked_day_consumes_budget_like_resplit(self, db, default_tenant, admin_client, monkeypatch):
+        """F074: ``_create_closure_absences`` und der Re-Split entscheiden
+        VACATION/OVERTIME gleich — ein Schließtag ohne Stundenzählung bleibt
+        Urlaub, verbraucht aber Budget (Decimal, wie ``resplit_year_closures``)."""
+        from app.models import WorkingHoursChange
+        from app.routers import company_closures
+        from app.services import closure_split_service
+        emp = _make_user(db, "e_mixed", vacation_days=2)
+        base = dict(user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, weekly_hours=40,
+                    use_daily_schedule=False, work_days_per_week=5, vacation_days=2,
+                    milog_working_time_account=False, use_fixed_monthly_target=False)
+        db.add(WorkingHoursChange(effective_from=date(2025, 1, 1), track_hours=False, **base))
+        db.add(WorkingHoursChange(effective_from=TUE, track_hours=True, **base))
+        db.commit()
+        _set_toggle(db, True)
+        # Nur den Buchungspfad ansehen: der Re-Split danach überschreibt sonst.
+        monkeypatch.setattr(company_closures, "_resplit_year_closures", lambda *a, **k: None)
+        c = _create_closure(admin_client)
+        created = _types(db, emp, c["id"])
+        assert created == [AbsenceType.VACATION, AbsenceType.VACATION,
+                           AbsenceType.OVERTIME, AbsenceType.OVERTIME]
+        closure_split_service.resplit_year_closures(db, DEFAULT_TENANT_ID, 2025)
+        db.commit()
+        assert _types(db, emp, c["id"]) == created

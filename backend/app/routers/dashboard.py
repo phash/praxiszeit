@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import List, Optional
 from app.database import get_db
-from app.models import User, TimeEntry, UserRole
+from app.models import User, TimeEntry, UserRole, WorkingHoursChange
 from app.models.absence import Absence
 from app.middleware.auth import get_current_user
 from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry, WeeklyOverviewRow
@@ -18,21 +18,29 @@ from app.services.settings_service import SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBO
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
-def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None) -> List[MissingBookingEntry]:
+def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None,
+                                   wh_changes: Optional[List[WorkingHoursChange]] = None) -> List[MissingBookingEntry]:
     """Find open entries (end_time NULL) and workdays without any entry/absence.
 
     tenant_id is the explicit tenant context for the caller. It is forwarded
     to is_holiday() — CLAUDE.md mandates passing tenant_id on every
-    holiday lookup (multi-tenant correctness).
+    holiday lookup (multi-tenant correctness). ``wh_changes`` = optionaler
+    Preload der Verlaufszeilen (Team-Widget: eine Query für alle).
     """
+    today = today_local()
+    if wh_changes is None:
+        wh_changes = calculation_service.user_wh_changes(db, user)
     # Nutzer ohne Soll/Ist-Zeiterfassung (z.B. das technische Bootstrap-Admin-
     # Konto, track_hours=False) werden nicht zur Buchung erwartet -> keine
-    # "Buchung fehlt"-Warnungen. Das Team-Widget filtert track_hours bereits in
-    # der Query; dieser Guard deckt das eigene Dashboard + /missing-bookings ab.
-    if not user.track_hours:
+    # "Buchung fehlt"-Warnungen. Teil A: laut Vertrags-Snapshot, nie die
+    # User-Zeile — je TAG: offene Einträge an Tagen mit Stundenzählung bleiben
+    # sichtbar, auch wenn heute nicht gezählt wird; fehlende Tage entscheidet die
+    # Tagesschleife unten über das Tagessoll (0 an Tagen ohne Stundenzählung).
+    track_values = calculation_service._track_hours_values(db, user, wh_changes)
+    if True not in track_values:
         return []
+    tracked_on = calculation_service._tracked_day_predicate(db, user, wh_changes, track_values)
 
-    today = today_local()
     if tenant_id is None:
         tenant_id = user.tenant_id
     entries: List[MissingBookingEntry] = []
@@ -46,6 +54,8 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None) -> L
     ).order_by(TimeEntry.date).all()
 
     for te in open_entries:
+        if not tracked_on(te.date):
+            continue
         entries.append(MissingBookingEntry(
             date=te.date,
             type="open",
@@ -90,7 +100,7 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None) -> L
     # Check each day using calculation_service for correct per-date targets
     d = start_date
     while d <= end_date:
-        schedule = get_schedule_for_date(db, user, d)
+        schedule = get_schedule_for_date(db, user, d, wh_changes)
         daily_target = float(get_daily_target_for_date(user, d, schedule))
         is_workday = daily_target > 0
         if is_workday and d not in entry_dates and d not in absence_dates:
@@ -218,7 +228,9 @@ def get_overtime_account(
     # Perf: KEIN zweiter Overtime-Pass — history_detail/current_month_detail sind
     # oben bereits berechnet (mit cutoff = month-to-date).
     milog_warnings: list[str] = []
-    if current_user.milog_working_time_account and current_user.track_hours:
+    # Teil A (Task 11): beide Flags aus dem Monatsvertrag des laufenden Monats.
+    # F002: Stundenzählung an irgendeinem Tag des Monats (``month_has_account``).
+    if milog_service.month_has_account(db, current_user, now.year, now.month):
         _actual = current_month_detail.actual if current_month_detail is not None else Decimal('0.00')
         _chk = milog_service.milog_50_check(db, current_user, now.year, now.month, monthly_actual=_actual)
         if _chk:
@@ -285,9 +297,6 @@ def get_weekly_overview(
     Wie die Monatsübersicht beginnt die Liste frühestens mit der Woche des ersten
     Zeiteintrags; ohne Zeiteinträge oder ohne Stundenzählung ist sie leer.
     """
-    if not current_user.track_hours:
-        return []
-
     first_entry = db.query(TimeEntry).filter(
         TimeEntry.user_id == current_user.id,
         TimeEntry.tenant_id == current_user.tenant_id,  # F-026
@@ -299,6 +308,11 @@ def get_weekly_overview(
     current_monday = today - timedelta(days=today.weekday())
     first_monday = first_entry.date - timedelta(days=first_entry.date.weekday())
     monday = max(current_monday - timedelta(weeks=weeks - 1), first_monday)
+
+    # Teil A: Stundenzählung an IRGENDEINEM Tag des Zeitraums (wie die
+    # Admin-Wochen-/Monatsberichte, ``tracks_hours_in_range``), nicht nur heute.
+    if not calculation_service.tracks_hours_in_range(db, current_user, monday, today):
+        return []
 
     cutoff = calculation_service.get_soll_cutoff_date(db, current_user)  # #313
 
@@ -405,13 +419,7 @@ def get_missing_bookings(
     current_user: User = Depends(get_current_user)
 ):
     """Get missing/open bookings for current user."""
-    if not current_user.track_hours:
-        return MissingBookings(
-            user_id=str(current_user.id),
-            first_name=current_user.first_name,
-            last_name=current_user.last_name,
-            entries=[]
-        )
+    # Ohne Stundenzählung (Snapshot von heute) liefert der Helper [].
     missing = _get_missing_bookings_for_user(db, current_user, tenant_id=current_user.tenant_id)
     return MissingBookings(
         user_id=str(current_user.id),
@@ -432,14 +440,20 @@ def get_team_missing_bookings(
 
     users = db.query(User).filter(
         User.is_active == True,
-        User.track_hours == True,
         User.is_hidden == False,
         User.tenant_id == current_user.tenant_id,  # F-026: explicit tenant scoping
     ).order_by(User.last_name).all()
+    # Teil A: Stundenzählung laut Snapshot von heute statt SQL-Filter auf die
+    # User-Zeile (die zukunftsdatierte Zeilen erst beim nächsten Schreiben
+    # spiegelt). EIN Preload der Verlaufszeilen für alle Personen.
+    wh_by_user = calculation_service.wh_changes_by_user(
+        db, current_user.tenant_id, [u.id for u in users])  # F-026
 
     results = []
     for user in users:
-        missing = _get_missing_bookings_for_user(db, user, tenant_id=current_user.tenant_id)
+        missing = _get_missing_bookings_for_user(
+            db, user, tenant_id=current_user.tenant_id, wh_changes=wh_by_user.get(user.id, []),
+        )
         if missing:
             results.append(MissingBookings(
                 user_id=str(user.id),

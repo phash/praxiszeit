@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import apiClient from '../api/client';
@@ -13,7 +13,9 @@ import { useTypeColorsStore } from '../stores/typeColorsStore';
 import Badge from '../components/Badge';
 import { getErrorMessage } from '../utils/errorMessage';
 import { parseHours, formatHoursHM, formatDayCount } from '../utils/formatters';
-import { getSpecialDayInfo, type SpecialDaySettings } from '../utils/specialDays';
+import {
+  DEFAULT_MAX_HOURS, getSpecialDayInfo, type ReducedDayEntry, type SpecialDaySettings,
+} from '../utils/specialDays';
 import { myReasons, type AbsenceReason } from '../api/absenceReasons';
 import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
@@ -95,6 +97,15 @@ function getHoursForDate(user: AuthUser | null | undefined, dateStr: string): nu
   return dayMap[weekday] ?? 0;
 }
 
+const NO_SPECIAL_DAY_SETTINGS: SpecialDaySettings = {
+  special_day_dec24_mode: 'working_day',
+  special_day_dec24_counts_as_vacation: false,
+  special_day_dec24_max_hours: DEFAULT_MAX_HOURS,
+  special_day_dec31_mode: 'working_day',
+  special_day_dec31_counts_as_vacation: false,
+  special_day_dec31_max_hours: DEFAULT_MAX_HOURS,
+};
+
 export default function AbsenceCalendarPage() {
   const toast = useToast();
   const { user: currentUser } = useAuthStore();
@@ -109,6 +120,8 @@ export default function AbsenceCalendarPage() {
   const [myAbsences, setMyAbsences] = useState<Absence[]>([]);
   const [holidays, setHolidays] = useState<PublicHoliday[]>([]);
   const [specialDays, setSpecialDays] = useState<SpecialDaySettings | null>(null); // #188: 24./31.12.
+  // Teil B: eigene verkürzte Tage (authentifizierter Endpunkt, nicht /settings).
+  const [reducedDays, setReducedDays] = useState<ReducedDayEntry[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [isDateRange, setIsDateRange] = useState(false);
   const [formData, setFormData] = useState({
@@ -135,6 +148,24 @@ export default function AbsenceCalendarPage() {
     // #312 MA-ABS-03: aktive eigene Abwesenheitsgründe für den Picker laden.
     myReasons().then(setReasons).catch(() => {});
   }, []);
+
+  // Teil B: verkürzte Tage des angezeigten Jahres. Abhängig nur vom Jahr (Zahl),
+  // fällt bei Fehler still auf „keine" zurück — der Kalender darf nicht brechen.
+  const displayedYear = viewMode === 'month' ? parseInt(currentMonth.split('-')[0]) : currentYear;
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.get(`/reduced-days?year=${displayedYear}`)
+      .then((res) => { if (!cancelled) setReducedDays(Array.isArray(res.data) ? res.data : []); })
+      .catch(() => { if (!cancelled) setReducedDays([]); });
+    return () => { cancelled = true; };
+  }, [displayedYear]);
+
+  // F133: scheitert /settings, bleiben die (angemeldet geladenen) verkürzten Tage
+  // trotzdem sichtbar — 24./31.12. dann ohne Sonderbehandlung.
+  const specialDaysMerged = useMemo<SpecialDaySettings | null>(
+    () => ({ ...(specialDays ?? NO_SPECIAL_DAY_SETTINGS), reduced_days: reducedDays }),
+    [specialDays, reducedDays],
+  );
 
   // Pre-fill hours from daily-target endpoint when type is "overtime"
   useEffect(() => {
@@ -776,7 +807,7 @@ export default function AbsenceCalendarPage() {
                 const dayEntries = visibleEntries.filter((e) => e.date === dateStr);
                 const dayHoliday = holidays.find((h) => h.date === dateStr);
                 const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                const special = getSpecialDayInfo(dateStr, specialDays); // #188
+                const special = getSpecialDayInfo(dateStr, specialDaysMerged); // #188
 
                 return (
                   <div
@@ -789,7 +820,7 @@ export default function AbsenceCalendarPage() {
                     className={`min-h-24 border rounded-lg p-2 cursor-pointer transition hover:border-primary hover:shadow-xs ${
                       isWeekend || dayHoliday || special?.isFree
                         ? 'bg-gray-50'
-                        : special?.mode === 'half_day'
+                        : special
                           ? 'bg-amber-50'
                           : 'bg-white'
                     }`}
@@ -840,7 +871,7 @@ export default function AbsenceCalendarPage() {
                 const dateStr = format(day, 'yyyy-MM-dd');
                 const dayEntries = visibleEntries.filter((e) => e.date === dateStr);
                 const dayHoliday = holidays.find((h) => h.date === dateStr);
-                const special = getSpecialDayInfo(dateStr, specialDays); // #188
+                const special = getSpecialDayInfo(dateStr, specialDaysMerged); // #188
                 const hasContent = dayEntries.length > 0 || !!dayHoliday || !!special;
 
                 return (
@@ -956,7 +987,7 @@ export default function AbsenceCalendarPage() {
                       const dayAbsences = monthAbsences.filter(e => e.date === dateStr);
                       const dayHoliday = holidays.find((h) => h.date === dateStr);
                       const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                      const special = getSpecialDayInfo(dateStr, specialDays); // #188
+                      const special = getSpecialDayInfo(dateStr, specialDaysMerged); // #188
                       // Review M-U1: type-coloured dots + descriptive title + overflow.
                       const dotTitle = dayAbsences
                         .map(a => `${a.user_first_name} ${a.user_last_name?.[0] ?? ''}. – ${absenceTypeLabel(a.type)}`)
@@ -973,7 +1004,7 @@ export default function AbsenceCalendarPage() {
                           className={`aspect-square flex flex-col items-center justify-center rounded text-xs cursor-pointer hover:ring-1 hover:ring-primary ${
                             isWeekend || dayHoliday || special?.isFree
                               ? 'bg-gray-100'
-                              : special?.mode === 'half_day'
+                              : special
                                 ? 'bg-amber-50'
                                 : 'bg-white'
                           }`}

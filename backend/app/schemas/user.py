@@ -5,7 +5,10 @@ from datetime import datetime, date
 from decimal import Decimal
 from uuid import UUID
 from app.models.user import UserRole
-from app.schemas.validators import strip_legacy_window_fields, validate_employment_order, validate_week_blocks
+from app.schemas.validators import (
+    quantize_agreed_hours, quantize_one_decimal, strip_legacy_window_fields,
+    validate_employment_order, validate_week_blocks,
+)
 from app.schemas.working_hours_change import DayBlocksIn
 from app.services import work_blocks_service
 
@@ -91,6 +94,16 @@ class UserCreate(UserBase):
     def reject_legacy_window_fields(cls, data):
         return strip_legacy_window_fields(data)
 
+    @field_validator('vacation_days')
+    @classmethod
+    def round_vacation_days(cls, value):
+        return quantize_one_decimal(value)  # F101: Numeric(4,1), wie PostgreSQL
+
+    @field_validator('agreed_monthly_hours')
+    @classmethod
+    def round_agreed_monthly_hours(cls, value):
+        return quantize_agreed_hours(value)  # F101: Numeric(5,1), danach > 0
+
     @field_validator("password")
     @classmethod
     def check_password(cls, v: str) -> str:
@@ -175,9 +188,13 @@ class UserUpdate(BaseModel):
     first_name: Optional[str] = Field(None, min_length=1, max_length=100)
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
     weekly_hours: Optional[float] = Field(None, ge=0, le=60)
-    vacation_days: Optional[float] = Field(None, ge=0, le=50)  # #408: Dezimal
+    # Teil A: die fünf Vertragsfelder (vacation_days, track_hours und die drei
+    # Minijob-Felder) sind im PUT gesperrt (400 HISTORISED_FIELDS_PUT_DETAIL in
+    # ``update_user``) — nur deklariert, damit die Sperre greift; locker typisiert
+    # wie ``work_blocks``, sonst würde ein Feld-Constraint die 400 zur 422 machen.
+    vacation_days: Optional[Any] = None
     work_days_per_week: Optional[int] = Field(None, ge=1, le=7)
-    track_hours: Optional[bool] = None
+    track_hours: Optional[Any] = None
     is_active: Optional[bool] = None
     is_hidden: Optional[bool] = None
     calendar_color: Optional[str] = Field(None, pattern=r'^#[0-9A-Fa-f]{6}$')
@@ -190,9 +207,9 @@ class UserUpdate(BaseModel):
     hours_friday: Optional[float] = Field(None, ge=0, le=24)
     exempt_from_arbzg: Optional[bool] = None  # §18 ArbZG
     is_night_worker: Optional[bool] = None  # §6 Abs. 2 ArbZG
-    milog_working_time_account: Optional[bool] = None  # #377 §2 Abs.2 MiLoG
-    agreed_monthly_hours: Optional[float] = Field(None, gt=0, le=400)  # #377 Baustein 2a
-    use_fixed_monthly_target: Optional[bool] = None  # #377 Baustein 2b
+    milog_working_time_account: Optional[Any] = None  # gesperrt, siehe vacation_days
+    agreed_monthly_hours: Optional[Any] = None  # gesperrt, siehe vacation_days
+    use_fixed_monthly_target: Optional[Any] = None  # gesperrt, siehe vacation_days
     receives_company_closures: Optional[bool] = None  # #189: Betriebsferien-Teilnahme
     first_work_day: Optional[date] = None   # Erster Arbeitstag
     last_work_day: Optional[date] = None    # Letzter Arbeitstag
@@ -213,23 +230,33 @@ class UserUpdate(BaseModel):
     def check_work_day_order(self):
         return validate_employment_order(self)  # #219: shared
 
-    @model_validator(mode='after')
-    def check_fixed_monthly_target_requirements(self):
-        # #377 Baustein 2b: partial update — only enforce when THIS payload sets
-        # the flag True. A partial update that turns the flag on must carry all
-        # three prerequisites explicitly in the same payload (None is treated
-        # the same as False here — the validator only sees this payload, not the
-        # persisted row, so it cannot assume an existing True elsewhere).
-        # Updates that don't touch the flag (None/unset) are unaffected, so
-        # existing partial-update flows for other fields keep working.
-        if self.use_fixed_monthly_target:
-            if not self.agreed_monthly_hours or self.agreed_monthly_hours <= 0:
-                raise ValueError("Fester Monats-Soll braucht eine vereinbarte Monatsarbeitszeit (> 0).")
-            if self.track_hours is not True:
-                raise ValueError("Fester Monats-Soll setzt Stundenzählung (track_hours) voraus.")
-            if self.milog_working_time_account is not True:
-                raise ValueError("Fester Monats-Soll setzt das MiLoG-Arbeitszeitkonto voraus.")
-        return self
+    # Teil A: kein ``check_fixed_monthly_target_requirements`` mehr — die fünf
+    # Vertragsfelder sind im PUT gesperrt (400 in ``update_user``); die Regel
+    # prüft ``admin_users._contract_rule_error`` auf dem Snapshot der
+    # Verlaufszeile. Ein Validator hier machte aus der Sperre eine 422.
+
+
+# F006: Vertragsfelder, die die Leseschemas aus dem HEUTE gültigen Snapshot
+# (``schedule_today``) statt aus dem Spiegel der User-Zeile nehmen.
+TODAY_CONTRACT_FIELDS = (
+    "vacation_days", "track_hours", "milog_working_time_account",
+    "agreed_monthly_hours", "use_fixed_monthly_target",
+)
+
+
+def _contract_fields_from_today(model):
+    """Kopiert die fünf Vertragsfelder aus ``schedule_today`` über die Werte der
+    User-Zeile — die spiegelt eine zukunftsdatierte Verlaufszeile erst beim
+    nächsten Schreiben (kein Scheduler). ``agreed_monthly_hours: None`` heißt
+    „abgeleitet" und wird mit übernommen; ohne ``schedule_today`` bleibt alles."""
+    st = model.schedule_today
+    if st is None:
+        return model
+    for field in TODAY_CONTRACT_FIELDS:
+        value = getattr(st, field)
+        if value is not None or field == "agreed_monthly_hours":
+            setattr(model, field, value)
+    return model
 
 
 class ScheduleTodayResponse(BaseModel):
@@ -244,6 +271,11 @@ class ScheduleTodayResponse(BaseModel):
     hours_thursday: Optional[float] = None
     hours_friday: Optional[float] = None
     work_days_per_week: int
+    vacation_days: Optional[float] = None
+    track_hours: Optional[bool] = None
+    milog_working_time_account: Optional[bool] = None
+    agreed_monthly_hours: Optional[float] = None
+    use_fixed_monthly_target: Optional[bool] = None
 
 
 class UserResponse(UserBase):
@@ -268,6 +300,10 @@ class UserResponse(UserBase):
     work_blocks_today: Optional[Any] = None
     # Fund 25: derselbe Snapshot für Wochenstunden/Modus/Tageswerte/Arbeitstage.
     schedule_today: Optional[ScheduleTodayResponse] = None
+
+    @model_validator(mode='after')
+    def contract_fields_from_today(self):
+        return _contract_fields_from_today(self)  # F006
 
     @field_serializer('id')
     def serialize_uuid(self, value: UUID) -> str:
@@ -316,6 +352,10 @@ class UserListResponse(BaseModel):
     created_at: datetime
     suggested_vacation_days: int
     vacation_carryover_deadline: Optional[date] = None
+
+    @model_validator(mode='after')
+    def contract_fields_from_today(self):
+        return _contract_fields_from_today(self)  # F006
 
     @field_serializer('id')
     def serialize_uuid(self, value: UUID) -> str:

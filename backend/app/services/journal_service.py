@@ -6,7 +6,7 @@ from typing import Dict, List, Any
 from sqlalchemy.orm import Session
 
 from app.models import (
-    User, TimeEntry, Absence, PublicHoliday, AbsenceType, WorkingHoursChange, MASKED_ABSENCE_TYPES,
+    User, TimeEntry, Absence, PublicHoliday, AbsenceType, MASKED_ABSENCE_TYPES,
 )
 from app.services import calculation_service, special_days_service, work_window_service
 from app.services.date_filters import date_in_month
@@ -88,8 +88,8 @@ def get_journal(
     holiday_map: Dict[date, str] = {h.date: h.name for h in holidays}
     holiday_dates: set = set(holiday_map)
 
-    # #146/#193: the per-day target rows MUST apply the same special-day factor
-    # (24./31.12.) and employment-window guard as get_monthly_target — otherwise
+    # #146/#193: the per-day target rows MUST apply the same special-day rule
+    # (24./31.12. and reduced days, ``special_day_target``) and employment-window guard as get_monthly_target — otherwise
     # the day rows do not sum to monthly_summary.target_hours (a half-day 24.12.
     # showed the full Tagessoll; days before first_work_day showed full target).
     #
@@ -106,31 +106,32 @@ def get_journal(
     # for why the summary, not the days, is the source of truth here.
     # #463: Fix-Modus einmal bestimmen (identische Bedingung wie in
     # ``get_range_actual``/``get_range_target``: das Flag allein genuegt nicht,
-    # ohne ``agreed_monthly_hours`` gibt es kein festes Soll).
-    fixed_mode = bool(
-        getattr(user, "use_fixed_monthly_target", False)
-        and getattr(user, "agreed_monthly_hours", None)
-    )
-
+    # ohne ``agreed_monthly_hours`` gibt es kein festes Soll) — unten, nach dem
+    # Preload der Verlaufszeilen.
     special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
 
     # #449: EIN Preload je Mitarbeitendem statt einer WorkingHoursChange-Query
     # pro Tag (bis zu 31× get_schedule_for_date über _eff_daily_target unten).
     # F-026: tenant-gefiltert.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,
-    ).order_by(WorkingHoursChange.effective_from).all()
+    wh_changes = calculation_service.user_wh_changes(db, user)
+    # Teil A (Task 11): Modus aus dem Monatsvertrag dieses Monats.
+    fixed_mode = calculation_service.month_contract(db, user, year, month, wh_changes).fixed_mode
+    # F901: Ist und Saldo der Tageszeile nur an Tagen, deren Ist zählt — dieselbe
+    # Regel wie ``get_range_actual`` (Monatssumme). Die Zeiteinträge selbst
+    # bleiben sichtbar (§16).
+    ist_counted = calculation_service.ist_counted_predicate(db, user, wh_changes)
 
-    def _eff_daily_target(d: date) -> Decimal:
+    def _raw_daily_target(d: date) -> Decimal:
+        """Ungewichtetes Tagessoll laut Snapshot (Gewicht der Gutschrift)."""
+        schedule = calculation_service.get_schedule_for_date(db, user, d, wh_changes=wh_changes)
+        return calculation_service.get_daily_target_for_date(user, d, schedule)
+
+    def _eff_daily_target(d: date, raw: Decimal) -> Decimal:
+        """Tagessoll nach Sondertag-/Verkürzungsregel; ``raw`` = :func:`_raw_daily_target`
+        des Tages (einmal je Tag aufgelöst, F085)."""
         if not calculation_service._within_employment_window(user, d):
             return Decimal("0")
-        schedule = calculation_service.get_schedule_for_date(db, user, d, wh_changes=wh_changes)
-        dt = calculation_service.get_daily_target_for_date(user, d, schedule)
-        factor = special_days_service.special_day_target_factor(d, special_day_config)
-        if factor is not None:
-            dt = dt * factor
-        return dt
+        return special_days_service.special_day_target(d, raw, special_day_config)
 
     def _absence_day_target(d: date, day_absences: List[Absence], worked: Decimal) -> Decimal:
         """L2 + L3 (Audit 2026-07-31): Tages-Soll an einem Tag MIT Abwesenheit —
@@ -213,8 +214,8 @@ def get_journal(
 
         # Credited absence hours (TRAINING, SICK count as worked)
         # Audit 2026-07-31 (Fund K): mit demselben Tages-Gewicht wie im
-        # calculation_service — an Wochenende/Feiertag 0, am Sondertag 24./31.12.
-        # mit dem #146-Faktor. Damit sagt die Tageszeile dasselbe wie das
+        # calculation_service — an Wochenende/Feiertag 0, am Sondertag/verkürzten
+        # Tag nach der Regel von ``special_day_target``. Damit sagt die Tageszeile dasselbe wie das
         # ``monthly_summary`` im SELBEN Response (``get_monthly_actual``).
         # Vorlaeufer: der Vorgaenger-Commit dieses Audits addierte ``credited_sum``
         # im Wochenend-/Feiertagszweig, weil ``get_range_actual`` sie damals
@@ -222,8 +223,10 @@ def get_journal(
         # stehen, ist an solchen Tagen aber per Gewicht 0.
         # #497: EINE Quelle fuer die Tages-Gutschrift — dieselbe Funktion nutzen
         # die Tageszeilen der §16-Datei-Exporte (Spalte „Differenz").
+        raw_target = _raw_daily_target(d)  # F085: einmal je Tag
         credited_sum = calculation_service.credited_absence_hours(
-            day_absences, d, holiday_dates, special_day_config
+            day_absences, d, holiday_dates, special_day_config,
+            daily_target=raw_target,
         )
 
         if is_weekend or is_holiday_day:
@@ -243,7 +246,7 @@ def get_journal(
             target_hours = _absence_day_target(d, day_absences, time_hours)
         else:
             actual_hours = time_hours
-            target_hours = _eff_daily_target(d)
+            target_hours = _eff_daily_target(d, raw_target)
 
         # #198: Tage ausserhalb des Beschaeftigungsfensters (vor first_work_day /
         # nach last_work_day) zaehlen kein Ist — symmetrisch zu get_monthly_actual
@@ -256,6 +259,12 @@ def get_journal(
         # und erzeugte damit einen phantom-positiven Tages-Saldo neben dem auf 0
         # gesetzten Ist; Review 2026-06-23).
         if not calculation_service._within_employment_window(user, d):
+            actual_hours = Decimal("0")
+            target_hours = Decimal("0")
+        # F901: Tag ohne Stundenzählung einer Person, die sonst Stunden zählt —
+        # kein Ist, kein Soll, Saldo 0 (wie die Monatssumme).
+        counted = ist_counted(d)
+        if not counted:
             actual_hours = Decimal("0")
             target_hours = Decimal("0")
 
@@ -300,7 +309,7 @@ def get_journal(
             fixed_credit = calculation_service.fixed_day_covered_hours(
                 planned, paid_day_absences, time_hours, is_holiday_day,
             )
-            actual_hours = time_hours + credited_sum + fixed_credit
+            actual_hours = (time_hours + credited_sum if counted else Decimal("0")) + fixed_credit
 
         balance = actual_hours - target_hours
 

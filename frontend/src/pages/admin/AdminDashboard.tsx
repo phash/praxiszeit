@@ -3,6 +3,7 @@ import { format, parseISO } from 'date-fns';
 import { Link } from 'react-router-dom';
 import FocusTrap from 'focus-trap-react';
 import apiClient from '../../api/client';
+import { trackHoursToday, vacationDaysToday } from '../../utils/contractToday';
 import { Users, Clock, TrendingUp, X, Calendar, FileText, ChevronRight, Mail, Briefcase, ArrowUp, ArrowDown, Search, Plus, Trash2, Save, ScrollText, BookCheck } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
@@ -86,6 +87,8 @@ interface UserDetails {
   role: 'admin' | 'employee';
   vacation_days: number;
   track_hours: boolean;
+  // F011: der heute gültige Vertrag (Teil A) — gewinnt vor der User-Zeile.
+  schedule_today?: { track_hours?: boolean | null; vacation_days?: number | null } | null;
 }
 
 export default function AdminDashboard() {
@@ -246,7 +249,7 @@ export default function AdminDashboard() {
   const handleDeleteYearClosing = () => {
     confirm({
       title: `Jahresabschluss ${currentYear} löschen`,
-      message: `Alle Übernahmen (Überstunden + Resturlaub) für ${currentYear + 1}, die durch den Jahresabschluss ${currentYear} erzeugt wurden, werden unwiderruflich gelöscht.\n\nDies betrifft alle Mitarbeiter. Manuelle Übernahmen für ${currentYear + 1} gehen ebenfalls verloren.\n\nWirklich löschen?`,
+      message: `Alle Übernahmen (Überstunden + Resturlaub) für ${currentYear + 1}, die durch den Jahresabschluss ${currentYear} erzeugt wurden, werden unwiderruflich gelöscht.\n\nDies betrifft alle Mitarbeiter. Von Hand eingetragene Übernahmen für ${currentYear + 1} bleiben erhalten.\n\nWirklich löschen?`,
       confirmLabel: 'Jahresabschluss löschen',
       variant: 'danger',
       onConfirm: async () => {
@@ -1378,12 +1381,12 @@ export default function AdminDashboard() {
                         </div>
                         <div>
                           <p className="text-gray-500 mb-1">Urlaubstage (Budget)</p>
-                          <p className="text-gray-900">{selectedUserDetails.vacation_days} Tage</p>
+                          <p className="text-gray-900">{vacationDaysToday(selectedUserDetails)} Tage</p>
                         </div>
                         <div>
                           <p className="text-gray-500 mb-1">Zeiterfassung</p>
-                          <p className={`font-medium ${selectedUserDetails.track_hours ? 'text-green-600' : 'text-gray-400'}`}>
-                            {selectedUserDetails.track_hours ? 'Aktiv' : 'Deaktiviert'}
+                          <p className={`font-medium ${trackHoursToday(selectedUserDetails) ? 'text-green-600' : 'text-gray-400'}`}>
+                            {trackHoursToday(selectedUserDetails) ? 'Aktiv' : 'Deaktiviert'}
                           </p>
                         </div>
                       </div>

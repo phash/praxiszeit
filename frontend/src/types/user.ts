@@ -20,6 +20,13 @@ export interface ScheduleToday {
   hours_thursday: number | null;
   hours_friday: number | null;
   work_days_per_week: number;
+  // Teil A (075): die fünf Vertragsfelder desselben Snapshots
+  // (`ScheduleTodayResponse`, dort optional).
+  vacation_days?: number | null;
+  track_hours?: boolean | null;
+  milog_working_time_account?: boolean | null;
+  agreed_monthly_hours?: number | null;
+  use_fixed_monthly_target?: boolean | null;
 }
 
 export interface User {

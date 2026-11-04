@@ -2,8 +2,9 @@
 // Wochenstunden" — an EINER Stelle, damit Dialog, Verkürzungs-Kasten und
 // Lösch-Dialog wortgleich bleiben. Die Grundtyp-SCHLÜSSEL sind eingefroren
 // (Backend `reclamp_audit.REASON_TYPES`), die Oberfläche zeigt nur die Beschriftungen.
-import { formatDayCount, formatHoursHM } from '../../../utils/formatters';
-import type { WorkingHoursChangePreview } from './workingHoursTypes';
+import { formatDayCount, formatDayNumber, formatHoursHM } from '../../../utils/formatters';
+import { MAX_VACATION_DAYS } from './workingHoursTypes';
+import type { ContractTerms, WorkingHoursChangePreview } from './workingHoursTypes';
 
 export const LEGAL_HINT =
   'Ändert sich der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine Vertragsänderung und braucht das '
@@ -232,6 +233,13 @@ export function shorteningHeadlines(p: WorkingHoursChangePreview): string[] {
     out.push(`${n === 1 ? '1 Abwesenheits-Gutschrift sinkt' : `${n} Abwesenheits-Gutschriften sinken`} stärker als das `
       + 'Tagessoll (Arbeit und Gutschrift am selben Tag)');
   }
+  if (reasons.includes('vacation_entitlement')) {
+    for (const e of p.vacation_entitlement ?? []) {
+      if (e.after < e.before) {
+        out.push(`Der Urlaubsanspruch ${e.year} sinkt von ${formatDayNumber(e.before)} auf ${formatDayNumber(e.after)} Tage`);
+      }
+    }
+  }
   return out;
 }
 
@@ -247,4 +255,51 @@ export function losslessLabel(p: WorkingHoursChangePreview, today: string): stri
 
 export function retroLabel(requestedDate: string): string {
   return `Rückwirkend ab ${formatDate(requestedDate)} mit Neuberechnung`;
+}
+
+/**
+ * Teil A (Spec „Dialog"): Vorschlag für den Urlaubsanspruch, sobald sich die
+ * Zahl der Arbeitstage ändert — alter Anspruch × neue ÷ alte Arbeitstage, auf
+ * 0,1 gerundet (24 × 5 ÷ 4 = 30). Ein praxisindividueller Anspruch bleibt so im
+ * Verhältnis erhalten. `null` = kein Vorschlag (keine oder unveränderte Tage).
+ */
+export function suggestEntitlement(oldDays: number, oldWd: number, newWd: number): number | null {
+  if (oldWd <= 0 || newWd <= 0 || newWd === oldWd) return null;
+  // F129: nie über die Schema-Grenze — sonst übernähme das Feld automatisch einen
+  // Wert, den der Dialog selbst als ungültig sperrt (24 Tage bei 2 → 5 = 60).
+  return Math.min(MAX_VACATION_DAYS, Math.round(oldDays * newWd / oldWd * 10) / 10);
+}
+
+/** Teil A: die fünf Vertragsfelder aus einem Snapshot (`schedule_today`, User-Zeile)
+ * — `undefined`, wenn Anspruch oder Stundenzählung fehlen (ältere Antwort). */
+export function contractTermsOf(source: {
+  vacation_days?: number | null;
+  track_hours?: boolean | null;
+  milog_working_time_account?: boolean | null;
+  agreed_monthly_hours?: number | null;
+  use_fixed_monthly_target?: boolean | null;
+} | null | undefined): ContractTerms | undefined {
+  if (!source || source.vacation_days == null || source.track_hours == null) return undefined;
+  return {
+    vacation_days: source.vacation_days,
+    track_hours: source.track_hours,
+    milog_working_time_account: !!source.milog_working_time_account,
+    agreed_monthly_hours: source.agreed_monthly_hours ?? null,
+    use_fixed_monthly_target: !!source.use_fixed_monthly_target,
+  };
+}
+
+/** F011: die fünf Vertragsfelder, die HEUTE gelten — `schedule_today` mit der
+ * User-Zeile als Rückfall (ältere Antwort ohne die Felder). Die User-Zeile
+ * spiegelt eine zukunftsdatierte Verlaufszeile erst beim nächsten Schreiben
+ * (kein Scheduler, Spec 9.8); jede „heute"-Frage der Oberfläche liest hier. */
+export function contractToday(user: {
+  vacation_days: number;
+  track_hours: boolean;
+  milog_working_time_account?: boolean | null;
+  agreed_monthly_hours?: number | null;
+  use_fixed_monthly_target?: boolean | null;
+  schedule_today?: Parameters<typeof contractTermsOf>[0];
+}): ContractTerms {
+  return contractTermsOf(user.schedule_today) ?? (contractTermsOf(user) as ContractTerms);
 }

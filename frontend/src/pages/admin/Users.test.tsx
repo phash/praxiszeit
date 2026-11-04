@@ -58,6 +58,8 @@ function FakeUserForm(props: {
   displayUseDailySchedule?: boolean;
   // Spec 2026-10-08 (E62/12.2): heute gültige Blöcke, gleiche Bauart.
   displayBlocks?: WeekBlocks | null;
+  // F010: die fünf Vertragsfelder von heute, gleiche Bauart.
+  displayContract?: { vacation_days: number; track_hours: boolean };
   onOpenHoursHistory?: (u: User) => void;
 }) {
   const [unsavedDept, setUnsavedDept] = useState('');
@@ -76,6 +78,9 @@ function FakeUserForm(props: {
       <span data-testid="display-work-days">{props.displayWorkDays ?? ''}</span>
       <span data-testid="display-blocks">
         {props.displayBlocks === undefined ? 'undefined' : JSON.stringify(props.displayBlocks)}
+      </span>
+      <span data-testid="display-contract">
+        {props.displayContract ? `${props.displayContract.vacation_days}/${props.displayContract.track_hours}` : ''}
       </span>
       <span data-testid="display-use-daily-schedule">
         {props.displayUseDailySchedule === undefined ? '' : String(props.displayUseDailySchedule)}
@@ -110,12 +115,13 @@ vi.mock('./users/UserForm', () => ({
 // covered exhaustively in WorkingHoursModal.test.tsx — faked here to a single
 // button so this test stays focused on how Users.tsx reacts to `onChanged`.
 function FakeWorkingHoursModal(props: {
-  onChanged: () => void; currentBlocks?: unknown; trackHours?: boolean; fixedMonthlyTarget?: boolean;
+  onChanged: () => void; currentBlocks?: unknown; trackHours?: boolean;
+  currentContract?: { track_hours: boolean; use_fixed_monthly_target: boolean };
 }) {
   return (
     <div>
       <span data-testid="modal-track-hours">{String(props.trackHours)}</span>
-      <span data-testid="modal-fixed-monthly">{String(props.fixedMonthlyTarget)}</span>
+      <span data-testid="modal-fixed-monthly">{String(props.currentContract?.use_fixed_monthly_target)}</span>
       <span data-testid="modal-blocks">{JSON.stringify(props.currentBlocks ?? null)}</span>
       <button type="button" onClick={props.onChanged}>
         Stundenänderung speichern (simuliert)
@@ -445,10 +451,56 @@ describe('Gesamtreview 1.20 Fund 25: heute gültiger Vertragsstand statt User-Ze
   });
 });
 
+// F010/F011: track_hours und die übrigen Vertragsfelder sind seit 075 je Datum
+// historisiert — Liste, Dialog-Props und Formular-Anzeige lesen den heute
+// gültigen Snapshot, nicht die (erst beim nächsten Schreiben nachgezogene) Zeile.
+describe('F010/F011: Vertragsfelder aus schedule_today', () => {
+  const today = {
+    weekly_hours: 40, use_daily_schedule: false, work_days_per_week: 5,
+    hours_monday: null, hours_tuesday: null, hours_wednesday: null, hours_thursday: null, hours_friday: null,
+    vacation_days: 28, track_hours: false, milog_working_time_account: false,
+    agreed_monthly_hours: null, use_fixed_monthly_target: false,
+  };
+  function mockOne() {
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
+      if (String(url) === '/admin/users') {
+        return Promise.resolve({ data: [makeUser({ track_hours: true, vacation_days: 30, schedule_today: today })] });
+      }
+      return Promise.resolve({ data: [] });
+    });
+  }
+
+  it('Spalte „Stundenzählung" zeigt den Stand von heute', async () => {
+    mockOne();
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    expect(screen.getByText('✗ Deaktiviert')).toBeInTheDocument();
+    expect(screen.queryByText('✓ Aktiv')).not.toBeInTheDocument();
+  });
+
+  it('Dialog bekommt trackHours aus schedule_today', async () => {
+    mockOne();
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Arbeitszeit & Wochenstunden für Jane Doe' })[0]);
+    expect(await screen.findByTestId('modal-track-hours')).toHaveTextContent('false');
+  });
+
+  it('Formular bekommt displayContract aus schedule_today', async () => {
+    mockOne();
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    fireEvent.click(screen.getAllByTitle('Bearbeiten')[0]);
+    await screen.findByTestId('fake-user-form');
+    expect(screen.getByTestId('display-contract')).toHaveTextContent('28/false');
+  });
+});
+
 // Gesamtreview 1.20 (Fund 14): der Dialog erfährt, dass die Person ein festes
 // Monats-Soll hat — der Block-Editor beschriftet die Werte dann als „geplant".
 describe('Gesamtreview 1.20 Fund 14: feste Monatsarbeitszeit an den Dialog', () => {
-  it('reicht use_fixed_monthly_target als fixedMonthlyTarget weiter', async () => {
+  it('reicht use_fixed_monthly_target im heutigen Vertrag (currentContract) weiter', async () => {
     getMock.mockImplementation((url: string) => {
       if (String(url).includes('/admin/users-overview')) return Promise.resolve({ data: [] });
       if (String(url) === '/admin/users') {

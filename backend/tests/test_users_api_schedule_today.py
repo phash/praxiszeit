@@ -29,6 +29,11 @@ from tests.work_blocks_fixtures import block_week
 
 HALF_DAYS = block_week(**{d: [("08:00", "12:00")] for d in ("mon", "tue", "wed", "thu", "fri")})
 
+CONTRACT_DEFAULTS = {
+    "vacation_days": 30.0, "track_hours": True, "milog_working_time_account": False,
+    "agreed_monthly_hours": None, "use_fixed_monthly_target": False,
+}
+
 TWENTY_FROM_BLOCKS = {
     "weekly_hours": 20.0,
     "use_daily_schedule": True,
@@ -38,6 +43,7 @@ TWENTY_FROM_BLOCKS = {
     "hours_thursday": 4.0,
     "hours_friday": 4.0,
     "work_days_per_week": 5,
+    **CONTRACT_DEFAULTS,
 }
 
 
@@ -72,6 +78,7 @@ def test_future_change_does_not_act_today(admin_client, employee_user, _db_sessi
         "weekly_hours": 40.0, "use_daily_schedule": False,
         "hours_monday": None, "hours_tuesday": None, "hours_wednesday": None,
         "hours_thursday": None, "hours_friday": None, "work_days_per_week": 5,
+        **CONTRACT_DEFAULTS,
     }
 
 
@@ -111,4 +118,5 @@ def test_attach_without_history_mirrors_the_user_row(_db_session, employee_user)
         "weekly_hours": 40.0, "use_daily_schedule": False,
         "hours_monday": None, "hours_tuesday": None, "hours_wednesday": None,
         "hours_thursday": None, "hours_friday": None, "work_days_per_week": 5,
+        **CONTRACT_DEFAULTS,
     }

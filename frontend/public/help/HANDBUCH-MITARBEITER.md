@@ -339,7 +339,7 @@ Die Seite zeigt zwei Tabs:
 | Orange | Fortbildung |
 | Grau | Sonstiges |
 
-> **Sondertage 24./31.12.:** Hat Ihre Praxis Heiligabend oder Silvester als arbeitsfrei oder halben Tag eingestellt, sind diese Tage im Kalender entsprechend markiert (grau „Heiligabend (frei)" bzw. „Silvester (½ Tag)") – ähnlich einem Feiertag.
+> **Sondertage 24./31.12.:** Hat Ihre Praxis Heiligabend oder Silvester als arbeitsfrei oder halben Tag eingestellt, sind diese Tage im Kalender entsprechend markiert (grau „Heiligabend (frei)" bzw. „Silvester (½ Tag)") – ähnlich einem Feiertag. Ist ein Tag **verkürzt** (z. B. Rosenmontag oder ein auf X Stunden verkürzter 24./31.12.), steht dort **„verkürzter Tag (max. 4 h)"** (bei benanntem Tag: „Rosenmontag: verkürzter Tag (max. 4 h)"); die Stempelkarte nennt ihn ohne Namen. Ihr Tagessoll ist an diesem Tag höchstens so hoch wie angegeben, Urlaub kostet einen halben Tag.
 
 > **Datenschutz bei Kollegen-Abwesenheiten:** Im Team-Kalender sehen Sie bei **Kolleginnen und Kollegen** nur Urlaub und Fortbildung mit ihrem echten Typ. Krankheit, bezahlte Freistellung, Sonstiges und alle eigenen (individuellen) Abwesenheitsgründe werden bei anderen Personen neutral als **„Abwesend"** angezeigt. Ihre **eigenen** Abwesenheiten sehen Sie natürlich immer mit dem echten Typ, ebenso Administratorinnen und Administratoren.
 

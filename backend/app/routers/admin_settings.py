@@ -1,5 +1,7 @@
 """Admin sub-router: System Settings."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -15,6 +17,8 @@ from app.services.settings_service import (
     SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD,
     SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -94,6 +98,23 @@ def get_type_colors_setting(
 ):
     """Effektive Typ-Farben (konfiguriert über Defaults gemerged)."""
     return type_colors_service.get_type_colors(db, current_user.tenant_id)
+
+
+def _resave_closures_after_special_day_change(db, current_user, before, after, closed_years) -> None:
+    """Teil B: Betriebsferien an Tagen mit geändertem Sondertag-Zustand neu
+    buchen. Keine Warnung: abgeschlossene Jahre bleiben unangetastet, deren
+    Hinweis liefert ``closed_year_warning_text`` im Aufrufer."""
+    from app.routers import company_closures
+
+    years = company_closures.closure_years(db, current_user.tenant_id)
+    changed = special_days_service.changed_dates(
+        special_days_service.setting_states(before, years),
+        special_days_service.setting_states(after, years),
+    )
+    if changed:
+        company_closures.resave_closures_for_dates(
+            db, current_user, changed, closed_years=closed_years
+        )
 
 
 @router.put("/settings/type-colors")
@@ -181,6 +202,14 @@ def update_setting(
                     f"Erlaubt: {', '.join(sorted(special_days_service.VALID_MODES))}"
                 ),
             )
+    if key in special_days_service.MAX_HOURS_KEYS:
+        # Teil B: Stundenzahl am verkürzten 24./31.12. (0,25–12 in 0,25-Schritten).
+        try:
+            value = str(special_days_service.parse_max_hours(value))
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail=special_days_service.MAX_HOURS_ERROR
+            )
     if key in special_days_service.VACATION_FLAG_KEYS:
         # Normalise to a canonical "true"/"false" string.
         if str(value).strip().lower() not in {"true", "false"}:
@@ -201,6 +230,9 @@ def update_setting(
     # auch in abgeschlossenen Jahren — Zustand vor der Änderung festhalten.
     special_before = None
     if key in special_days_service.SETTING_KEYS:
+        # Erst sperren, dann den Vorher-Zustand lesen: ein paralleler Wechsel
+        # rechnete sonst gegen einen veralteten Stand und buchte nichts neu.
+        special_days_service.lock_special_day_changes(db, current_user.tenant_id)
         special_before = special_days_service.get_special_day_settings(
             db, current_user.tenant_id
         )
@@ -209,11 +241,19 @@ def update_setting(
         SystemSetting.key == key,
         SystemSetting.tenant_id == current_user.tenant_id
     ).first()
+    old_value = s.value if s else None
     if not s:
         s = SystemSetting(key=key, value=str(value), description=key, tenant_id=current_user.tenant_id)
         db.add(s)
     else:
         s.value = str(value)
+    if key in special_days_service.MODE_KEYS or key in special_days_service.MAX_HOURS_KEYS:
+        # F103: Nachvollziehbarkeit wie reduced_days._log_change — Akteur
+        # ``user:<id>``, nie Klarname; ohne DB-Tabelle (Spec B2).
+        logger.info(
+            "special_day_setting changed by user:%s tenant:%s: %s %s -> %s",
+            current_user.id, current_user.tenant_id, key, old_value, s.value,
+        )
 
     warning = None
     if key == "holiday_state":
@@ -256,13 +296,14 @@ def update_setting(
             special_after = special_days_service.get_special_day_settings(
                 db, current_user.tenant_id
             )
+            closed = calculation_service.all_closed_years(db, current_user.tenant_id)
             affected = special_days_service.years_affected_by_change(
                 db,
                 current_user.tenant_id,
-                special_before,
-                special_after,
-                calculation_service.all_closed_years(db, current_user.tenant_id),
+                special_days_service.setting_states(special_before, closed),
+                special_days_service.setting_states(special_after, closed),
             )
+            entry_years = _tenant_entry_years(db, current_user.tenant_id)
             # Gesamtreview 1.20: „frei" ↔ Arbeitstag ändert, ob gekappt wird
             # (E35) — bestehende Einträge an diesen Tagen nur nennen.
             warning = work_window_service.join_warnings(
@@ -270,10 +311,16 @@ def update_setting(
                 work_window_service.stale_clamp_hint(
                     db, current_user.tenant_id,
                     special_days_service.free_state_changed_dates(
-                        special_before, special_after,
-                        _tenant_entry_years(db, current_user.tenant_id),
+                        special_days_service.setting_states(special_before, entry_years),
+                        special_days_service.setting_states(special_after, entry_years),
                     ),
                 ),
+            )
+            # Teil B: Betriebsferien an Tagen mit geändertem Zustand neu
+            # buchen (gleiche Transaktion, committet erst unten). Import
+            # lokal: Router untereinander nicht auf Modulebene verketten.
+            _resave_closures_after_special_day_change(
+                db, current_user, special_before, special_after, closed
             )
         db.commit()
 

@@ -213,10 +213,7 @@ def apply_vacation_request_patch(
         )
         # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
         # ``get_schedule_for_date`` (F-026: tenant-gefiltert).
-        wh_changes = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == target_user.id,
-            WorkingHoursChange.tenant_id == target_user.tenant_id,
-        ).order_by(WorkingHoursChange.effective_from).all()
+        wh_changes = calculation_service.user_wh_changes(db, target_user)
         # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug).
         ensure_vacation_budget(
             db, target_user, candidates, new_half_day,
@@ -336,10 +333,7 @@ def create_vacation_request(
         )
         # Fix-Welle 4 #3: EINMAL je Anfrage laden statt je Tag eine Query in
         # ``get_schedule_for_date`` (F-026: tenant-gefiltert).
-        wh_changes = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == current_user.id,
-            WorkingHoursChange.tenant_id == current_user.tenant_id,
-        ).order_by(WorkingHoursChange.effective_from).all()
+        wh_changes = calculation_service.user_wh_changes(db, current_user)
         # Nur Jahre mit Kosten > 0 (Gesamtreview 1.20 B5, Nachzug).
         ensure_vacation_budget(
             db, current_user, candidates, bool(data.half_day),

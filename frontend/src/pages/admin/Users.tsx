@@ -14,6 +14,7 @@ import { deHoursExact, formatHoursHM } from '../../utils/formatters';
 import SetPasswordModal from './users/SetPasswordModal';
 import CarryoverModal from './users/CarryoverModal';
 import WorkingHoursModal from './users/WorkingHoursModal';
+import { contractToday } from './users/workingHoursTexts';
 import UserForm from './users/UserForm';
 
 import type { ScheduleToday, User } from '../../types/user';
@@ -207,6 +208,8 @@ export default function Users() {
   const displayUseDailySchedule = freshToday?.use_daily_schedule;
   // Spec 2026-10-08 (E62/12.2): dieselbe Bauart für die heute gültigen Blöcke.
   const displayBlocks = freshEditingUser ? (freshEditingUser.work_blocks_today ?? null) : undefined;
+  // F010: dieselbe Bauart für die fünf Vertragsfelder (Teil A).
+  const displayContract = freshEditingUser ? contractToday(freshEditingUser) : undefined;
 
   const handleSetPassword = (userId: string, name: string) => {
     setSetPasswordModal({ userId, userName: name });
@@ -343,8 +346,13 @@ export default function Users() {
       if (!sortField) return 0;
 
       // Fund 25: „Wochenstd." sortiert nach dem angezeigten (heute gültigen) Wert.
-      const aValue = sortField === 'weekly_hours' ? scheduleToday(a).weekly_hours : a[sortField];
-      const bValue = sortField === 'weekly_hours' ? scheduleToday(b).weekly_hours : b[sortField];
+      // F011: „Stundenzählung" ebenso nach dem heute gültigen Snapshot.
+      const shownValue = (u: User) => (
+        sortField === 'weekly_hours' ? scheduleToday(u).weekly_hours
+          : sortField === 'track_hours' ? contractToday(u).track_hours
+            : u[sortField]);
+      const aValue = shownValue(a);
+      const bValue = shownValue(b);
 
       if (aValue === undefined || bValue === undefined) return 0;
 
@@ -422,6 +430,7 @@ export default function Users() {
           displayWorkDays={displayWorkDays}
           displayUseDailySchedule={displayUseDailySchedule}
           displayBlocks={displayBlocks}
+          displayContract={displayContract}
         />
       )}
 
@@ -647,7 +656,7 @@ export default function Users() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      {user.track_hours ? (
+                      {contractToday(user).track_hours ? (
                         <span className="text-green-600">✓ Aktiv</span>
                       ) : (
                         <span className="text-gray-500">✗ Deaktiviert</span>
@@ -986,9 +995,11 @@ export default function Users() {
           // Spec 2026-10-08 (12.1): heute gültige Blöcke und Stundenzählung —
           // ohne Stundenzählung kein Block-Modus (P24).
           currentBlocks={hoursModalUser.work_blocks_today ?? null}
-          trackHours={hoursModalUser.track_hours}
-          // Gesamtreview 1.20 (Fund 14): Block-Editor beschriftet dann „geplant".
-          fixedMonthlyTarget={!!hoursModalUser.use_fixed_monthly_target && hoursModalUser.track_hours}
+          trackHours={contractToday(hoursModalUser).track_hours}
+          // Teil A (Task 13): Anspruch, Stundenzählung und Minijob-Felder des
+          // heute gültigen Snapshots — Rückfall wie die Stunden oben. Daraus
+          // liest der Dialog auch „geplante Anwesenheit" (Fund 14, F051).
+          currentContract={contractToday(hoursModalUser)}
           onClose={() => setHoursModalUser(null)}
           onChanged={fetchUsers}
         />

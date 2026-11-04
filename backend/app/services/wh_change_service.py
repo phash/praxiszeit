@@ -23,12 +23,17 @@ from sqlalchemy.orm import Session
 
 from app.models import TimeEntry, User, WorkingHoursChange
 from app.services import (
-    calculation_service, presence_service, timezone_service, work_blocks_service, work_window_service,
+    calculation_service, presence_service, reclamp_audit, timezone_service, work_blocks_service,
+    work_window_service,
 )
 
 SHORTENING_ENTRIES = "entries"
 SHORTENING_SALDO = "saldo"
 SHORTENING_ABSENCE_CREDIT = "absence_credit"
+# Teil A, Task 7: eine RÜCKWIRKENDE Senkung des Urlaubsanspruchs eines Jahres
+# (Wirkungsdatum < heute); ab heute/künftig bleibt der erworbene Anteil durch die
+# anteilige Rechnung erhalten und ist keine Verkürzung.
+SHORTENING_VACATION_ENTITLEMENT = "vacation_entitlement"
 
 P25_NOTE = "Die Änderung liegt vollständig vor der Änderung ab {date}; nur rückwirkend mit Begründung oder abbrechen."
 MILOG_ACCOUNT_WARNING = (
@@ -70,6 +75,15 @@ class ChangeImpact(NamedTuple):
     months: list
     arbzg: dict
     entries_before: dict           # id → transiente Kopie „vorher" (Protokoll 10.1)
+    # Teil A, Task 7: Jahr → (Anspruch vorher, nachher), ``vacation_entitlement_days``
+    # (ohne Übertrag) für {Wirkungsjahr, Folgejahr} ∪ Wirkungsjahr…heute.
+    entitlement: dict
+    # Die Jahre der Vorschau (Wirkungsjahr, Folgejahr) — ausdrücklich, nicht „die
+    # beiden kleinsten Schlüssel" von ``entitlement`` (F072).
+    entitlement_preview_years: tuple
+    # Jahre, deren Anspruch rückwirkend sinkt — DIE eine Entscheidung aus
+    # ``run_change`` (mit dessen „heute"), ``criteria_text`` liest sie (F071).
+    entitlement_lost_years: tuple
 
     @property
     def is_shortening(self) -> bool:
@@ -155,6 +169,30 @@ def _credited_minutes(e) -> int:
     return presence_service.credited_minutes([e])
 
 
+def entitlement_years(effective_from: date, today: date) -> list:
+    """Teil A, Task 7: die Jahre, deren Anspruch ``run_change`` vergleicht —
+    {Wirkungsjahr, Folgejahr} (Vorschau) ∪ Wirkungsjahr … heute (Klassifikation)."""
+    return sorted({effective_from.year, effective_from.year + 1}
+                  | set(range(effective_from.year, today.year + 1)))
+
+
+def _entitlements(db: Session, user: User, years) -> Dict[int, Decimal]:
+    """Anspruch je Jahr — der Verlauf wird EINMAL geladen (F-026), nicht je Jahr."""
+    rows = calculation_service.user_wh_changes(db, user)  # F-026
+    return {y: calculation_service.vacation_entitlement_days(db, user, y, wh_changes=rows) for y in years}
+
+
+_MINIJOB_FIELDS = ("milog_working_time_account", "agreed_monthly_hours", "use_fixed_monthly_target")
+
+
+def _minijob_changed(old, new) -> bool:
+    """Unterscheiden sich zwei Snapshots in einem Minijob-Feld?"""
+    def norm(value):
+        return value if value is None or isinstance(value, bool) else Decimal(str(value))
+
+    return any(norm(getattr(old, f)) != norm(getattr(new, f)) for f in _MINIJOB_FIELDS)
+
+
 def _next_change(db: Session, user: User, effective_from: date) -> Optional[WorkingHoursChange]:
     return db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
@@ -219,8 +257,11 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
     saldo_before = _saldo_by_year(db, user, window.start, window.end, cutoff)
     today_before = _day_saldo(db, user, today) if (open_day or today_counts) else _ZERO
     old_full = calculation_service.absence_full_targets(db, user, window.start, window.end)
+    old_tracked = calculation_service.track_hours_by_date(db, user, window.start, window.end)
     old_today_blocks = work_window_service.credit_blocks(db, user, today) if open_today else None
     before = {e.id: _snapshot(e) for e in presence_service.closed_entries(db, user, window.start, window.end)}
+    ent_years = entitlement_years(effective_from, today)
+    ent_before = _entitlements(db, user, ent_years)
 
     # Schritt 4
     apply()
@@ -228,14 +269,22 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
 
     # Schritt 5
     new_schedule = calculation_service.get_schedule_for_date(db, user, effective_from)
-    weekdays = work_blocks_service.changed_weekdays(
-        old_schedule.blocks, new_schedule.blocks, old_schedule.block_pauses, new_schedule.block_pauses)
+    # Teil A (Task 10, Variante A): ein Wechsel der Stundenzählung ändert die
+    # Anrechnung an JEDEM Wochentag (kappen bzw. entkappen).
+    if old_schedule.track_hours != new_schedule.track_hours:
+        weekdays = [0, 1, 2, 3, 4]
+    else:
+        weekdays = work_blocks_service.changed_weekdays(
+            old_schedule.blocks, new_schedule.blocks, old_schedule.block_pauses, new_schedule.block_pauses)
     grace = work_window_service.get_grace_minutes(db, user.tenant_id)
     reclamp = work_window_service.reclamp_time_entries(
-        db, user, window.start, window.end, set(weekdays), old_schedule.blocks, grace)
+        db, user, window.start, window.end, set(weekdays), old_schedule.blocks, grace,
+        prev_tracked_by_date=old_tracked)
     db.flush()
     open_loses = False
-    if (open_today is not None and user.track_hours and not open_today.credit_override
+    # Teil A: Stundenzählung laut NEUEM Snapshot von heute (nach ``apply``).
+    if (open_today is not None and calculation_service.tracks_hours_on(db, user, today)
+            and not open_today.credit_override
             and today.weekday() in weekdays):
         # P1: das Ausstempeln kappt mit dem gespeicherten Puffer des Eintrags (E80).
         open_loses = work_window_service.open_entry_loses(
@@ -248,9 +297,13 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
     absences = []
     if window.has_absences:
         absences = calculation_service.retarget_absence_hours(
-            db, user, window.start, window.end, old_full_target_by_date=old_full)
+            db, user, window.start, window.end, old_full_target_by_date=old_full,
+            old_tracked_by_date=old_tracked)
 
     # Schritt 7
+    ent_after = _entitlements(db, user, ent_years)
+    ent_lost = ([y for y in range(effective_from.year, today.year + 1) if ent_after[y] < ent_before[y]]
+                if effective_from < today else [])
     saldo_after = _saldo_by_year(db, user, window.start, window.end, cutoff)
     years = sorted(set(saldo_before) | set(saldo_after))
     zero = (_ZERO, _ZERO)
@@ -276,8 +329,10 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
         reasons.append(SHORTENING_SALDO)
     if reductions:
         reasons.append(SHORTENING_ABSENCE_CREDIT)
+    if ent_lost:
+        reasons.append(SHORTENING_VACATION_ENTITLEMENT)
     loss_years = ({c.date.year for c in losing} | {a.date.year for a in reductions}
-                  | {y for y, d in saldo_by_year.items() if d < 0})
+                  | {y for y, d in saldo_by_year.items() if d < 0} | set(ent_lost))
     if open_loses or open_day_delta < 0:
         loss_years.add(today.year)
 
@@ -293,6 +348,11 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
         if open_loses or (today_counts and today_delta < 0) or open_day_delta < 0:
             candidates.append(tomorrow)                                                   # A heute / H (P1)
         earliest = max(candidates)
+        if _minijob_changed(old_schedule, new_schedule) and earliest.day != 1:
+            # F017: Minijob-Felder wechseln nur zum Monatsersten — ein Datum
+            # mitten im Monat bekäme beim Speichern 422 (auch der Reset-Body).
+            earliest = (date(earliest.year + 1, 1, 1) if earliest.month == 12
+                        else date(earliest.year, earliest.month + 1, 1))
         nxt = _next_change(db, user, effective_from)
         if nxt is not None and earliest >= nxt.effective_from:                            # P25
             note = P25_NOTE.format(date=nxt.effective_from.strftime("%d.%m.%Y"))
@@ -329,6 +389,9 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
             "weeks_over_48_presence": presence[1],
         },
         entries_before=before,
+        entitlement={y: (ent_before[y], ent_after[y]) for y in ent_years},
+        entitlement_preview_years=(effective_from.year, effective_from.year + 1),
+        entitlement_lost_years=tuple(ent_lost),
     )
 
 
@@ -341,20 +404,24 @@ def _change_out(c) -> dict:
     }
 
 
-def milog_warnings(user, impact: ChangeImpact) -> List[str]:
+def milog_warnings(impact: ChangeImpact) -> List[str]:
     """Spec 9.5/P26: nur bei einer Verkürzung — Konto-/Monatszeit-Satz bei
     ``milog_working_time_account`` oder ``agreed_monthly_hours``, der allgemeine
-    Mindestlohnsatz bei JEDER (Minijobber ohne Kennzeichen, Risiko 9)."""
+    Mindestlohnsatz bei JEDER (Minijobber ohne Kennzeichen, Risiko 9).
+
+    Teil A (Task 11): die Kennzeichen aus dem Snapshot am Wirkungsdatum
+    (``impact.new_schedule``), nie aus der User-Zeile."""
     if not impact.is_shortening:
         return []
     out = []
-    if getattr(user, "milog_working_time_account", False) or getattr(user, "agreed_monthly_hours", None):
+    schedule = impact.new_schedule
+    if schedule.milog_working_time_account or schedule.agreed_monthly_hours:
         out.append(MILOG_ACCOUNT_WARNING)
     out.append(MILOG_GENERAL_WARNING)
     return out
 
 
-def preview_fields(impact: ChangeImpact, user) -> dict:
+def preview_fields(impact: ChangeImpact) -> dict:
     """Spec 11.3: die neuen Vorschau-Felder aus EINEM flush/Rollback-Lauf."""
     changed = impact.reclamp.changed
     return {
@@ -386,9 +453,25 @@ def preview_fields(impact: ChangeImpact, user) -> dict:
              "new_hours": float(a.new_hours)} for a in impact.credit_reductions],
         "stale_entries_closed": impact.stale_closed,
         "arbzg_findings": impact.arbzg,
-        "milog_warning": milog_warnings(user, impact),
+        "milog_warning": milog_warnings(impact),
         "affected_absences": len(impact.absences),
+        "vacation_entitlement": entitlement_out(impact.entitlement, impact.entitlement_preview_years),
     }
+
+
+def entitlement_out(entitlement: dict, years) -> List[dict]:
+    """Spec A4 Vorschau: Anspruch bisher → neu für die übergebenen Jahre
+    (Wirkungsjahr und Folgejahr, ``ChangeImpact.entitlement_preview_years``)."""
+    return [{"year": y, "before": float(entitlement[y][0]), "after": float(entitlement[y][1])}
+            for y in years]
+
+
+def entitlement_unchanged_out(db: Session, user: User, effective_from: date) -> List[dict]:
+    """Vorschau ohne Lauf (Snapshot unverändert oder blockiert): bisher == neu
+    aus EINER Berechnung je Jahr."""
+    years = (effective_from.year, effective_from.year + 1)
+    current = _entitlements(db, user, years)
+    return entitlement_out({y: (v, v) for y, v in current.items()}, years)
 
 
 def _hm(hours) -> str:
@@ -420,6 +503,13 @@ def criteria_text(impact: ChangeImpact) -> str:
     if SHORTENING_ABSENCE_CREDIT in impact.shortening_reasons:
         n = len(impact.credit_reductions)
         parts.append("1 Abwesenheits-Gutschrift sinkt" if n == 1 else f"{n} Abwesenheits-Gutschriften sinken")
+    if SHORTENING_VACATION_ENTITLEMENT in impact.shortening_reasons:
+        # Nur die Jahre, deren Anspruch rückwirkend sinkt — dieselbe Menge, die
+        # ``run_change`` klassifiziert hat (kein zweites „heute", F071/F122).
+        for y in impact.entitlement_lost_years:
+            old, new = impact.entitlement[y]
+            parts.append(f"Urlaubsanspruch {y} {reclamp_audit.format_days_de(old)} → "
+                         f"{reclamp_audit.format_days_de(new)} Tage")
     return "; ".join(parts)
 
 
@@ -445,8 +535,15 @@ def protection_error(impact: ChangeImpact, reason, *, deleting: bool, reset_offe
                         f"auf den vorherigen Stand zurücksetzen.")
         else:
             head = f"Rückwirkende Verkürzung ({crit}): {_ASK}"
-            if impact.earliest_lossless_date is not None:
-                return f"{head} – oder die Änderung ab dem {impact.earliest_lossless_date:%d.%m.%Y} wirksam werden lassen."
+            earliest = impact.earliest_lossless_date
+            if earliest is not None:
+                text = f"{head} – oder die Änderung ab dem {earliest:%d.%m.%Y} wirksam werden lassen"
+                if (SHORTENING_VACATION_ENTITLEMENT in impact.shortening_reasons
+                        and (earliest.month, earliest.day) != (1, 1)):
+                    # F122: auch ab diesem Datum sinkt der Anspruch des Jahres —
+                    # nur nicht rückwirkend, sondern anteilig für den Rest.
+                    text += f" (der Urlaubsanspruch {earliest.year} sinkt dann anteilig)"
+                return f"{text}."
         if impact.earliest_lossless_note:
             return f"{head} – oder abbrechen: {impact.earliest_lossless_note}"
         return f"{head} – oder abbrechen."
@@ -459,8 +556,19 @@ def reset_body(predecessor, effective_from: date, change_id) -> dict:
     """P13/9.7 — fertiger Anlege-Body „ab ‹Datum› auf den vorherigen Stand
     zurücksetzen": der Vorgänger-Snapshot samt neuen Blöcken; ein Altfenster
     trägt der Server selbst nach (der Schreibweg nimmt keine Altfenster an),
-    deshalb nur Modusfelder und — ohne Fenster — ``remove_legacy_window``."""
-    body: dict = {"effective_from": effective_from.isoformat(), "reset_of_change_id": str(change_id)}
+    deshalb nur Modusfelder und — ohne Fenster — ``remove_legacy_window``.
+
+    Teil A: immer mit den fünf Vertragsfeldern des Vorgängers (auch im
+    Block-Modus; ``agreed_monthly_hours`` ``None`` = abgeleitet)."""
+    agreed = predecessor.agreed_monthly_hours
+    body: dict = {
+        "effective_from": effective_from.isoformat(), "reset_of_change_id": str(change_id),
+        "vacation_days": float(predecessor.vacation_days),
+        "track_hours": bool(predecessor.track_hours),
+        "milog_working_time_account": bool(predecessor.milog_working_time_account),
+        "agreed_monthly_hours": None if agreed is None else float(agreed),
+        "use_fixed_monthly_target": bool(predecessor.use_fixed_monthly_target),
+    }
     parsed = (None if predecessor.blocks is None
               else work_blocks_service.ParsedWeek(predecessor.blocks, predecessor.block_pauses))
     if parsed is not None and not work_blocks_service.is_legacy_week(parsed):

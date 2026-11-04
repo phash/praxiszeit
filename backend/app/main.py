@@ -31,7 +31,7 @@ from app.config import settings, is_placeholder_secret
 from app.models import User, UserRole
 from app.services import auth_service, holiday_service
 from app.services.error_log_service import DBErrorHandler, cleanup_old_errors
-from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin, tenant_billing, public_signup, billing, me, feedback, admin_backups, shift_planning, absence_reasons, impersonation
+from app.routers import auth, admin, time_entries, absences, dashboard, holidays, reports, change_requests, company_closures, error_logs, vacation_requests, journal, import_xls, superadmin, tenant_billing, public_signup, billing, me, feedback, admin_backups, shift_planning, absence_reasons, impersonation, reduced_days
 
 # Used by the startup bootstrap to warn/abort when the initial admin still
 # uses a throwaway password. Kept at module level so git diffs that re-indent
@@ -575,6 +575,9 @@ app.include_router(shift_planning.router)
 app.include_router(absence_reasons.admin_router)
 app.include_router(absence_reasons.read_router)
 app.include_router(impersonation.router)
+# Teil B: verkürzte Tage (Admin-CRUD, bucht Betriebsferien neu).
+app.include_router(reduced_days.router)
+app.include_router(reduced_days.read_router)
 # #213 DB-Backup-Verwaltung — NUR On-Prem einbinden. Im SaaS-Modus darf ein
 # Mandant nicht per API den (nicht tenant-scoped) DB-Server sichern/herunterladen
 # (Daten-Exfiltration über Tenant-Grenzen). Hart gaten statt nur per Doku-Kommentar.

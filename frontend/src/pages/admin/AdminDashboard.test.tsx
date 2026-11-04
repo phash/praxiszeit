@@ -429,3 +429,13 @@ describe('Gesamtreview PR3: Wochenstunden im deutschen Zahlenformat', () => {
     expect(screen.queryByText(/39\.58/)).not.toBeInTheDocument();
   });
 });
+
+describe('AdminDashboard Jahresabschluss löschen: Wortlaut (Teil A)', () => {
+  it('sagt, dass von Hand eingetragene Übernahmen erhalten bleiben', async () => {
+    mockEndpoints([]);
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle(/Jahresabschluss 2026 löschen/));
+    expect(await screen.findByText(/Von Hand eingetragene Übernahmen für 2027 bleiben erhalten\./)).toBeInTheDocument();
+    expect(screen.queryByText(/gehen ebenfalls verloren/)).not.toBeInTheDocument();
+  });
+});

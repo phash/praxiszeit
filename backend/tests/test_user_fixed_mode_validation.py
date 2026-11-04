@@ -46,6 +46,15 @@ def db():
         Base.metadata.drop_all(bind=engine)
 
 
+@pytest.fixture(autouse=True)
+def _frozen_today(monkeypatch):
+    """WHC_EFF (2027-01-01) muss in der Zukunft bleiben, sonst wird der POST ab
+    2027-01-02 zur rückwirkenden Verkürzung (400 ohne Grund)."""
+    from datetime import date
+    from tests.wh_change_helpers import freeze
+    freeze(monkeypatch, date(2026, 11, 3))
+
+
 @pytest.fixture
 def default_tenant(db):
     t = Tenant(id=DEFAULT_TENANT_ID, name="D", slug="default", is_active=True, mode="single")
@@ -161,70 +170,88 @@ def _create_plain_user(client, username="upduser"):
     return resp.json()["user"]["id"]
 
 
+# --------------------------------------------------------------------------- #
+# Teil A (Vertragsverlauf): die vier Felder sind historisiert. PUT lehnt sie ab
+# (400); geändert werden sie über die Arbeitszeit-Änderung, und die Regel prüft
+# den ZUSAMMENGEFÜHRTEN Snapshot (gesendet + vom Wirkungsdatum geerbt).
+# --------------------------------------------------------------------------- #
+WHC_EFF = "2027-01-01"   # Monatserster (Minijob-Felder nur zum Monatsersten)
+FIXED_AGREED = "Fester Monats-Soll braucht eine vereinbarte Monatsarbeitszeit (> 0)."
+FIXED_TRACK = "Fester Monats-Soll setzt Stundenzählung (track_hours) voraus."
+FIXED_MILOG = "Fester Monats-Soll setzt das MiLoG-Arbeitszeitkonto voraus."
+
+
+def _whc(client, uid, **fields):
+    return client.post(f"{USERS}/{uid}/working-hours-changes", json={
+        "effective_from": WHC_EFF, "weekly_hours": 40, "work_days_per_week": 5, **fields,
+    })
+
+
 def test_update_turn_on_fixed_target_without_agreed_fails(db, admin, default_tenant):
     client = _client_as(db, admin, admin)
     uid = _create_plain_user(client, "upd1")
-    resp = client.put(f"{USERS}/{uid}", json={"use_fixed_monthly_target": True})
-    assert resp.status_code == 422
+    resp = _whc(client, uid, use_fixed_monthly_target=True, track_hours=True, milog_working_time_account=True)
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"] == FIXED_AGREED
     app.dependency_overrides.clear()
 
 
 def test_update_turn_on_fixed_target_with_track_hours_false_fails(db, admin, default_tenant):
     client = _client_as(db, admin, admin)
     uid = _create_plain_user(client, "upd2")
-    resp = client.put(f"{USERS}/{uid}", json={
-        "use_fixed_monthly_target": True,
-        "agreed_monthly_hours": 173.3,
-        "track_hours": False,
-        "milog_working_time_account": True,
-    })
-    assert resp.status_code == 422
+    resp = _whc(client, uid, use_fixed_monthly_target=True, agreed_monthly_hours=173.3,
+                track_hours=False, milog_working_time_account=True)
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"] == FIXED_TRACK
     app.dependency_overrides.clear()
 
 
 def test_update_turn_on_fixed_target_with_milog_false_fails(db, admin, default_tenant):
     client = _client_as(db, admin, admin)
     uid = _create_plain_user(client, "upd3")
-    resp = client.put(f"{USERS}/{uid}", json={
-        "use_fixed_monthly_target": True,
-        "agreed_monthly_hours": 173.3,
-        "track_hours": True,
-        "milog_working_time_account": False,
-    })
-    assert resp.status_code == 422
+    resp = _whc(client, uid, use_fixed_monthly_target=True, agreed_monthly_hours=173.3,
+                track_hours=True, milog_working_time_account=False)
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"] == FIXED_MILOG
     app.dependency_overrides.clear()
 
 
-def test_update_turn_on_fixed_target_missing_track_hours_field_fails(db, admin, default_tenant):
-    # Partial update sets flag True but omits track_hours/milog entirely (None) —
-    # must be treated the same as explicitly False, not silently trusted from DB.
+def test_update_turn_on_fixed_target_omitted_fields_inherit_snapshot(db, admin, default_tenant):
+    # Nicht gesendete Felder erben den Snapshot (track_hours True, MiLoG aus) —
+    # geprüft wird der zusammengeführte Stand, nicht nur der Body.
     client = _client_as(db, admin, admin)
     uid = _create_plain_user(client, "upd4")
-    resp = client.put(f"{USERS}/{uid}", json={
-        "use_fixed_monthly_target": True,
-        "agreed_monthly_hours": 173.3,
-    })
-    assert resp.status_code == 422
+    resp = _whc(client, uid, use_fixed_monthly_target=True, agreed_monthly_hours=173.3)
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"] == FIXED_MILOG
     app.dependency_overrides.clear()
 
 
 def test_update_turn_on_fixed_target_with_all_requirements_ok(db, admin, default_tenant):
     client = _client_as(db, admin, admin)
     uid = _create_plain_user(client, "upd5")
-    resp = client.put(f"{USERS}/{uid}", json={
-        "use_fixed_monthly_target": True,
-        "agreed_monthly_hours": 173.3,
-        "track_hours": True,
-        "milog_working_time_account": True,
-    })
-    assert resp.status_code == 200, resp.text
-    assert client.get(f"{USERS}/{uid}").json()["use_fixed_monthly_target"] is True
+    resp = _whc(client, uid, use_fixed_monthly_target=True, agreed_monthly_hours=173.3,
+                track_hours=True, milog_working_time_account=True)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["use_fixed_monthly_target"] is True
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("payload", [
+    {"use_fixed_monthly_target": True},
+    {"use_fixed_monthly_target": True, "agreed_monthly_hours": 173.3,
+     "track_hours": True, "milog_working_time_account": True},
+])
+def test_update_put_of_fixed_target_fields_is_locked(db, admin, default_tenant, payload):
+    client = _client_as(db, admin, admin)
+    uid = _create_plain_user(client, "upd7")
+    resp = client.put(f"{USERS}/{uid}", json=payload)
+    assert resp.status_code == 400, resp.text
+    assert client.get(f"{USERS}/{uid}").json()["use_fixed_monthly_target"] is False
     app.dependency_overrides.clear()
 
 
 def test_update_unrelated_field_without_flag_unaffected(db, admin, default_tenant):
-    # Existing partial-update flows (unrelated fields) must not be broken by the
-    # new validator when use_fixed_monthly_target is not part of the payload.
     client = _client_as(db, admin, admin)
     uid = _create_plain_user(client, "upd6")
     resp = client.put(f"{USERS}/{uid}", json={"first_name": "Changed"})
@@ -233,13 +260,10 @@ def test_update_unrelated_field_without_flag_unaffected(db, admin, default_tenan
 
 
 # --------------------------------------------------------------------------- #
-# Release-Review 1.15.0 (#377 Baustein 2b): partial updates that turn OFF a
-# prerequisite while use_fixed_monthly_target is NOT in the payload. The
-# UserUpdate schema validator only sees this payload (not the DB row), so it
-# skips (flag absent → falsy → no check). Without a router-level effective-
-# state guard this silently persists an INVALID row (use_fixed_monthly_target
-# still True in the DB, but milog/track_hours off) — the plausibility warning
-# goes dark and the design invariant is broken.
+# Release-Review 1.15.0 (#377 Baustein 2b): eine Änderung, die eine
+# Voraussetzung des festen Monats-Solls abschaltet, ohne den Schalter selbst
+# mitzuschicken, darf keinen ungültigen Stand erzeugen. Seit Teil A: PUT ist
+# gesperrt (400), und die Arbeitszeit-Änderung prüft den Snapshot (400).
 # --------------------------------------------------------------------------- #
 def _create_fixed_target_user(client, username):
     resp = client.post(USERS, json={
@@ -254,33 +278,36 @@ def _create_fixed_target_user(client, username):
     return resp.json()["user"]["id"]
 
 
-def test_update_isolated_milog_off_on_fixed_target_user_fails(db, admin, default_tenant):
-    client = _client_as(db, admin, admin)
-    uid = _create_fixed_target_user(client, "iso1")
-    resp = client.put(f"{USERS}/{uid}", json={"milog_working_time_account": False})
-    assert resp.status_code == 400, resp.text
-    # DB row must remain untouched/consistent — the invariant-breaking update
-    # must not have been persisted.
+def _assert_still_fixed(client, uid):
     row = next(r for r in client.get(USERS).json() if r["id"] == uid)
     assert row["use_fixed_monthly_target"] is True
     assert row["milog_working_time_account"] is True
+    assert row["track_hours"] is True
+
+
+def test_update_isolated_milog_off_on_fixed_target_user_fails(db, admin, default_tenant):
+    client = _client_as(db, admin, admin)
+    uid = _create_fixed_target_user(client, "iso1")
+    assert client.put(f"{USERS}/{uid}", json={"milog_working_time_account": False}).status_code == 400
+    resp = _whc(client, uid, milog_working_time_account=False)
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"] == FIXED_MILOG
+    _assert_still_fixed(client, uid)
     app.dependency_overrides.clear()
 
 
 def test_update_isolated_track_hours_off_on_fixed_target_user_fails(db, admin, default_tenant):
     client = _client_as(db, admin, admin)
     uid = _create_fixed_target_user(client, "iso2")
-    resp = client.put(f"{USERS}/{uid}", json={"track_hours": False})
+    assert client.put(f"{USERS}/{uid}", json={"track_hours": False}).status_code == 400
+    resp = _whc(client, uid, track_hours=False)
     assert resp.status_code == 400, resp.text
-    row = next(r for r in client.get(USERS).json() if r["id"] == uid)
-    assert row["use_fixed_monthly_target"] is True
-    assert row["track_hours"] is True
+    assert resp.json()["detail"] == FIXED_TRACK
+    _assert_still_fixed(client, uid)
     app.dependency_overrides.clear()
 
 
 def test_update_normal_field_on_fixed_target_user_still_ok(db, admin, default_tenant):
-    # Sanity: a normal update on an existing fixed-target user that does not
-    # touch any of the four invariant fields must keep working (200).
     client = _client_as(db, admin, admin)
     uid = _create_fixed_target_user(client, "iso3")
     resp = client.put(f"{USERS}/{uid}", json={"first_name": "Changed"})
@@ -289,15 +316,12 @@ def test_update_normal_field_on_fixed_target_user_still_ok(db, admin, default_te
 
 
 def test_update_disable_fixed_target_and_milog_together_ok(db, admin, default_tenant):
-    # Turning the flag itself off in the same payload is the documented,
-    # correct way to leave fixed mode — must stay allowed.
+    # Den Schalter selbst in derselben Änderung abzuschalten ist der
+    # dokumentierte Weg aus dem festen Monats-Soll.
     client = _client_as(db, admin, admin)
     uid = _create_fixed_target_user(client, "iso4")
-    resp = client.put(f"{USERS}/{uid}", json={
-        "use_fixed_monthly_target": False,
-        "milog_working_time_account": False,
-    })
-    assert resp.status_code == 200, resp.text
+    resp = _whc(client, uid, use_fixed_monthly_target=False, milog_working_time_account=False)
+    assert resp.status_code == 201, resp.text
     app.dependency_overrides.clear()
 
 
@@ -321,4 +345,42 @@ def test_userlist_carries_use_fixed_monthly_target(db, admin, default_tenant):
     row = next(r for r in client.get(USERS).json() if r["id"] == uid)
     assert "use_fixed_monthly_target" in row
     assert row["use_fixed_monthly_target"] is True
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("payload", [
+    {"vacation_days": 99}, {"agreed_monthly_hours": 0}, {"track_hours": "x"},
+])
+def test_put_of_contract_field_out_of_range_is_400_not_422(db, admin, default_tenant, payload):
+    """F063: jeder Wert eines gesperrten Vertragsfelds erreicht die Sperre (400),
+    kein Feld-Constraint macht daraus eine 422."""
+    client = _client_as(db, admin, admin)
+    uid = _create_plain_user(client, "upd_lock")
+    resp = client.put(f"{USERS}/{uid}", json=payload)
+    assert resp.status_code == 400, resp.text
+    app.dependency_overrides.clear()
+
+
+def test_whc_contract_numbers_rounded_like_the_column(db, admin, default_tenant):
+    """F008/F028: Anspruch und Monatsstunden werden schon im Schema auf eine
+    Stelle gerundet (kaufmännisch wie PostgreSQL) — Regel, Vorschau und Zeile
+    sehen denselben Wert."""
+    client = _client_as(db, admin, admin)
+    uid = _create_plain_user(client, "round1")
+    resp = _whc(client, uid, vacation_days=24.25, agreed_monthly_hours=40.04)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["vacation_days"] == 24.3
+    assert resp.json()["agreed_monthly_hours"] == 40.0
+    app.dependency_overrides.clear()
+
+
+def test_whc_fixed_target_with_agreed_rounding_to_zero_is_422(db, admin, default_tenant):
+    """F101: 0,04 h würde als 0,0 gespeichert — die Festes-Soll-Regel darf nicht
+    an der Rundung vorbeilaufen."""
+    client = _client_as(db, admin, admin)
+    uid = _create_plain_user(client, "round2")
+    resp = _whc(client, uid, use_fixed_monthly_target=True, agreed_monthly_hours=0.04,
+                track_hours=True, milog_working_time_account=True)
+    assert resp.status_code == 422, resp.text
+    assert "mindestens 0,1" in resp.text
     app.dependency_overrides.clear()

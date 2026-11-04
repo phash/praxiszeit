@@ -21,6 +21,7 @@ import {
 import type { WeekBlocks } from '../../types/workBlocks';
 import type { ScheduleToday } from '../../types/user';
 import WorkingHoursModal from './users/WorkingHoursModal';
+import { contractTermsOf } from './users/workingHoursTexts';
 
 interface TeamRow {
   user_id: string;
@@ -456,6 +457,7 @@ export default function TeamSchedule() {
           currentWorkDays={modalRow.schedule.work_days_per_week}
           currentBlocks={modalRow.blocks}
           trackHours={modalRow.track_hours}
+          currentContract={contractTermsOf(modalRow.schedule)}
           fixedMonthlyTarget={modalRow.use_fixed_monthly_target}
           initialBlocks={drafts[modalRow.user_id] ?? null}
           initialEffectiveFrom={onDate}

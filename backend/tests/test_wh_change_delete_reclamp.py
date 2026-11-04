@@ -20,6 +20,9 @@ from tests.wh_change_helpers import (
 )
 from tests.work_blocks_fixtures import block_week
 
+# Teil A, Task 4: ``reset_body`` trägt immer die fünf Vertragsfelder des Vorgängers.
+RESET_CONTRACT = {"vacation_days": 30.0, "track_hours": True, "milog_working_time_account": False,
+                  "agreed_monthly_hours": None, "use_fixed_monthly_target": False}
 RESET_CONFLICT = "Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden."
 
 LONGER_PAUSED = with_pauses(block_week(mon=[("08:00", "12:00"), ("15:00", "19:00")], tue=[("08:00", "12:00")],
@@ -64,7 +67,7 @@ class TestReset:
             True, ["saldo"], "2026-10-08")
         assert body["reset_body"] == {
             "effective_from": "2026-10-08", "reset_of_change_id": change["id"], "use_daily_schedule": False,
-            "weekly_hours": 40.0, "work_days_per_week": 5, "remove_legacy_window": True}
+            "weekly_hours": 40.0, "work_days_per_week": 5, "remove_legacy_window": True, **RESET_CONTRACT}
 
     def test_reset_body_creates_a_new_row_and_keeps_the_old_one(self, client, db, test_user):
         change = _create(client, test_user, {"effective_from": "2026-09-01", "weekly_hours": 30})
@@ -99,7 +102,8 @@ class TestReset:
         assert before[2] == t(18, 30), "Vorbedingung: die Änderung hat den Eintrag verlängert"
         rows_before = [r[0] for r in _rows(db, test_user)]
         reset = _delete_preview(client, test_user, change["id"])["reset_body"]
-        assert reset == {"effective_from": "2026-10-08", "reset_of_change_id": change["id"], "blocks": ANNA_WEEK}
+        assert reset == {"effective_from": "2026-10-08", "reset_of_change_id": change["id"], "blocks": ANNA_WEEK,
+                         **RESET_CONTRACT}
         created = _create(client, test_user, reset)
         assert created["adjusted_time_entries"] == 0
         assert state() == before
@@ -164,7 +168,8 @@ class TestReset:
                              thu=[("08:00", "12:00")])
         change = _create(client, test_user, {"effective_from": "2026-09-01", "blocks": shorter})
         reset = _delete_preview(client, test_user, change["id"])["reset_body"]
-        assert reset == {"effective_from": "2026-10-08", "reset_of_change_id": change["id"], "blocks": ANNA_WEEK}
+        assert reset == {"effective_from": "2026-10-08", "reset_of_change_id": change["id"], "blocks": ANNA_WEEK,
+                         **RESET_CONTRACT}
         test_user.track_hours = False
         db.commit()
         resp = client.post(f"/api/admin/users/{test_user.id}/working-hours-changes", json=reset)
@@ -322,7 +327,7 @@ class TestDeletePreviewCriteria:
         assert (body["is_shortening"], body["shortening_reasons"], body["earliest_lossless_date"]) == (
             True, ["entries"], "2026-10-09")
         assert body["reset_body"] == {"effective_from": "2026-10-09", "reset_of_change_id": change["id"],
-                                      "blocks": ANNA_WEEK}
+                                      "blocks": ANNA_WEEK, **RESET_CONTRACT}
         resp = _delete(client, test_user, change["id"])
         assert resp.status_code == 400, resp.text
         assert resp.json()["detail"].startswith("Das Löschen verkürzt rückwirkend (1 Eintrag verliert angerechnete Zeit): ")

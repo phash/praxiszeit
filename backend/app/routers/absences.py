@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month, parse_year_month
 from typing import List, Optional
 from datetime import date
+from decimal import Decimal
 from app.services.timezone_service import today_local
 from app.database import get_db
 from app.models import (
@@ -88,6 +89,9 @@ def get_daily_target_for_date_endpoint(
     """Get daily target hours for a specific date (for pre-filling absence forms)."""
     schedule = calculation_service.get_schedule_for_date(db, current_user, target_date)
     daily = calculation_service.get_daily_target_for_date(current_user, target_date, schedule)
+    # Teil B: Sondertag-/Verkürzungsregel (min(Soll, X), halber Tag, frei) anwenden.
+    cfg = special_days_service.get_special_day_config(db, current_user.tenant_id, target_date.year)
+    daily = special_days_service.special_day_target(target_date, daily, cfg)
     return {"date": str(target_date), "hours": float(daily)}
 
 
@@ -557,10 +561,7 @@ def create_absence(
     # Query in ``get_schedule_for_date`` (F-026: tenant-gefiltert, wie die
     # anderen wh_changes-Preloads). Gesamtreview 1.20 B5 (Nachzug): fuer jeden
     # Typ — die gebuchten Tage unten werden fuer jeden Typ bestimmt.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == target_user.id,
-        WorkingHoursChange.tenant_id == target_user.tenant_id,
-    ).order_by(WorkingHoursChange.effective_from).all()
+    wh_changes = calculation_service.user_wh_changes(db, target_user)
 
     # Gesamtreview 1.20 B5 (Nachzug): welche Tage diese Buchung tatsaechlich
     # bucht, steht VOR dem ersten Schreibschritt fest. Bis hier entschied das
@@ -734,12 +735,11 @@ def create_absence(
             )
     # Spec 9.6 (Review Task 6): die Klemmung rechnet in GUTSCHRIFTS-Einheiten
     # (``credit_day_weight``) — am halben 24./31.12. trägt der Tag nur das halbe
-    # Tagessoll. Die Sondertags-Konfiguration braucht es nur für Misch-Tage, die
-    # auf einen dieser beiden Tage fallen.
-    kept_special_cfgs = {
-        yr: special_days_service.get_special_day_config(db, target_user.tenant_id, yr)
-        for yr in {d.year for d in kept_net_by_date if (d.month, d.day) in ((12, 24), (12, 31))}
-    }
+    # Tagessoll, am verkürzten Tag min(t, X). Die Sondertags-Konfiguration
+    # braucht es nur für Misch-Tage; kein 24./31.12.-Vorfilter (Teil B: eigene
+    # verkürzte Tage wie Rosenmontag stehen in derselben Jahres-Config).
+    kept_special_cfgs = special_days_service.configs_for_years(
+        db, target_user.tenant_id, {d.year for d in kept_net_by_date})
 
     # Create absences for all booked dates
     created_absences = []
@@ -783,7 +783,8 @@ def create_absence(
                     calculation_service.get_daily_target_for_date(target_user, date, schedule)
                 )
                 w = float(calculation_service.credit_day_weight(
-                    date, holidays, kept_special_cfgs.get(date.year)))
+                    date, holidays, kept_special_cfgs.get(date.year),
+                    daily_target=Decimal(str(full_target))))
                 hours_for_day = calculation_service.f1_clamp_hours(
                     hours_for_day, full_target, kept_net, w)
         else:

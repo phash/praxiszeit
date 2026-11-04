@@ -26,6 +26,7 @@ vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => toastMock,
 }));
 vi.mock('../../components/AbsenceReasonsManager', () => ({ default: () => null }));
+vi.mock('../../components/ReducedDaysCard', () => ({ default: () => null }));
 
 function mockSettings(rows: { key: string; value: string }[]) {
   getMock.mockImplementation((url: string) => {
@@ -203,7 +204,7 @@ describe('<Settings /> Sondertage im abgeschlossenen Jahr (Gesamtreview 1.20)', 
     expect(toastMock.warning).not.toHaveBeenCalled();
   });
 
-  it('zeigt verschiedene Hinweise der vier Antworten gemeinsam (je Tag andere Einträge)', async () => {
+  it('zeigt verschiedene Hinweise der Antworten gemeinsam (je Tag andere Einträge)', async () => {
     mockSettings([]);
     const closing = 'Jahresabschluss 2025 bereits erfolgt — Carryover 2026 ist nun veraltet, bitte Jahresabschluss erneut ausführen.';
     const dec24 = 'Zeiteinträge an geänderten Tagen behalten ihre bisherige Anrechnung gegen die Arbeitszeit-Blöcke (1 Eintrag: 24.12.2025). Neu berechnet …';
@@ -223,5 +224,83 @@ describe('<Settings /> Sondertage im abgeschlossenen Jahr (Gesamtreview 1.20)', 
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Sondertage (24./31.12.) gespeichert.'));
     expect(toastMock.warning).toHaveBeenCalledTimes(1);
     expect(toastMock.warning).toHaveBeenCalledWith(`${closing} ${dec24} ${dec31}`);
+  });
+});
+
+describe('<Settings /> Sondertage max_hours', () => {
+  it('shows the hours field only in max_hours mode and saves hours before mode', async () => {
+    mockSettings([]);
+    render(<Settings />);
+    const select = (await screen.findByLabelText('Modus', { selector: '#special-dec24-mode' })) as HTMLSelectElement;
+    const card = select.closest('div.bg-white') as HTMLElement;
+    expect(within(card).queryByLabelText('Höchstens (Stunden)')).not.toBeInTheDocument();
+    fireEvent.change(select, { target: { value: 'max_hours' } });
+    const hours = within(card).getByLabelText('Höchstens (Stunden)');
+    expect(hours).toHaveAttribute('step', '0.25');
+    expect(hours).toHaveAttribute('min', '0.25');
+    expect(hours).toHaveAttribute('max', '12');
+    fireEvent.change(hours, { target: { value: '4' } });
+    fireEvent.click(within(card).getByRole('button', { name: 'Speichern' }));
+    await waitFor(() =>
+      expect(putMock).toHaveBeenCalledWith('/admin/settings/special_day_dec24_mode', { value: 'max_hours' }),
+    );
+    const keys = putMock.mock.calls.map((c) => c[0]);
+    expect(putMock).toHaveBeenCalledWith('/admin/settings/special_day_dec24_max_hours', { value: '4' });
+    expect(keys).toContain('/admin/settings/special_day_dec24_mode');
+    expect(keys.indexOf('/admin/settings/special_day_dec24_max_hours')).toBeLessThan(
+      keys.indexOf('/admin/settings/special_day_dec24_mode'),
+    );
+    // F098/F131: 31.12. steht nicht auf max_hours → kein Stunden-PUT dafür.
+    expect(keys).not.toContain('/admin/settings/special_day_dec31_max_hours');
+  });
+
+  it('F041: both days in max_hours — both hours PUTs are sent, each before its mode', async () => {
+    mockSettings([]);
+    render(<Settings />);
+    const s24 = (await screen.findByLabelText('Modus', { selector: '#special-dec24-mode' })) as HTMLSelectElement;
+    const card = s24.closest('div.bg-white') as HTMLElement;
+    fireEvent.change(s24, { target: { value: 'max_hours' } });
+    fireEvent.change(within(card).getByLabelText('Modus', { selector: '#special-dec31-mode' }), { target: { value: 'max_hours' } });
+    fireEvent.change(document.getElementById('special-dec31-hours')!, { target: { value: '2.5' } });
+    fireEvent.click(within(card).getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Sondertage (24./31.12.) gespeichert.'));
+    const keys = putMock.mock.calls.map((c) => c[0]);
+    for (const day of ['dec24', 'dec31']) {
+      const hoursKey = `/admin/settings/special_day_${day}_max_hours`;
+      const modeKey = `/admin/settings/special_day_${day}_mode`;
+      expect(keys).toContain(hoursKey);
+      expect(keys).toContain(modeKey);
+      expect(keys.indexOf(hoursKey)).toBeLessThan(keys.indexOf(modeKey));
+    }
+    expect(putMock).toHaveBeenCalledWith('/admin/settings/special_day_dec31_max_hours', { value: '2.5' });
+  });
+
+  it('F098: an emptied or invalid hours field blocks saving with the server wording', async () => {
+    mockSettings([]);
+    render(<Settings />);
+    const s24 = (await screen.findByLabelText('Modus', { selector: '#special-dec24-mode' })) as HTMLSelectElement;
+    const card = s24.closest('div.bg-white') as HTMLElement;
+    fireEvent.change(s24, { target: { value: 'max_hours' } });
+    fireEvent.change(within(card).getByLabelText('Höchstens (Stunden)'), { target: { value: '' } });
+    expect(within(card).getByRole('button', { name: 'Speichern' })).toBeDisabled();
+    expect(within(card).getByRole('alert')).toHaveTextContent('zwischen 0,25 und 12 liegen');
+    fireEvent.change(within(card).getByLabelText('Höchstens (Stunden)'), { target: { value: '4.3' } });
+    expect(within(card).getByRole('button', { name: 'Speichern' })).toBeDisabled();
+  });
+
+  it('F131: clear the field, switch the mode away, save succeeds without a hours PUT', async () => {
+    mockSettings([]);
+    render(<Settings />);
+    const s24 = (await screen.findByLabelText('Modus', { selector: '#special-dec24-mode' })) as HTMLSelectElement;
+    const card = s24.closest('div.bg-white') as HTMLElement;
+    fireEvent.change(s24, { target: { value: 'max_hours' } });
+    fireEvent.change(within(card).getByLabelText('Höchstens (Stunden)'), { target: { value: '' } });
+    fireEvent.change(s24, { target: { value: 'free' } });
+    fireEvent.click(within(card).getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Sondertage (24./31.12.) gespeichert.'));
+    const keys = putMock.mock.calls.map((c) => c[0]);
+    expect(keys).not.toContain('/admin/settings/special_day_dec24_max_hours');
+    expect(putMock).toHaveBeenCalledWith('/admin/settings/special_day_dec24_mode', { value: 'free' });
+    expect(toastMock.error).not.toHaveBeenCalled();
   });
 });

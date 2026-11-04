@@ -362,6 +362,7 @@ class TestTexts:
             target_delta=Decimal("0"), credited_delta=Decimal("0"), saldo_delta=Decimal("0"),
             open_day_saldo_delta=Decimal("0"), shortening_reasons=[], shortening_closed_years=[],
             earliest_lossless_date=TODAY, earliest_lossless_note=None, months=[], arbzg={}, entries_before={},
+            entitlement={}, entitlement_preview_years=(), entitlement_lost_years=(),
         )
         base.update(overrides)
         return svc.ChangeImpact(**base)
@@ -397,6 +398,25 @@ class TestTexts:
                          earliest_lossless_note=note)
         assert svc.protection_error(n, None, deleting=False, reset_offered=False).endswith(f"– oder abbrechen: {note}")
 
+    def test_entitlement_texts_follow_run_change(self):
+        """F071/F122: ``criteria_text`` nennt genau die Jahre aus
+        ``entitlement_lost_years`` (kein zweites „heute"); ein Datum mitten im
+        Jahr sagt, dass der Anspruch dann anteilig sinkt."""
+        ent = {2025: (Decimal("30"), Decimal("24")), 2026: (Decimal("30"), Decimal("24")),
+               2027: (Decimal("30"), Decimal("24"))}
+        a = self._impact(reclamp=self._reclamp(0), shortening_reasons=["vacation_entitlement"],
+                         entitlement=ent, entitlement_lost_years=(2025,))
+        text = svc.protection_error(a, None, deleting=False, reset_offered=False)
+        assert "(Urlaubsanspruch 2025 30 → 24 Tage)" in text
+        assert "2026 30" not in text
+        assert text.endswith("ab dem 08.10.2026 wirksam werden lassen (der Urlaubsanspruch 2026 sinkt dann "
+                             "anteilig).")
+
+    def test_entitlement_out_uses_explicit_years(self):
+        ent = {2024: (Decimal("1"), Decimal("1")), 2026: (Decimal("30"), Decimal("24")),
+               2027: (Decimal("30"), Decimal("30"))}
+        assert [r["year"] for r in svc.entitlement_out(ent, (2026, 2027))] == [2026, 2027]
+
     def test_reason_rules(self):
         a = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"])
         assert svc.protection_error(a, WorkingHoursChangeDelete(**RETRO_REASON), deleting=False,
@@ -407,12 +427,16 @@ class TestTexts:
         assert svc.protection_error(a, no_hook, deleting=False, reset_offered=False).startswith("Rückwirkende Verkürzung")
         assert svc.protection_error(self._impact(), None, deleting=False, reset_offered=False) is None
 
-    def test_milog_warnings(self, test_user):
-        shortening = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"])
-        assert svc.milog_warnings(test_user, shortening) == [svc.MILOG_GENERAL_WARNING]
-        test_user.agreed_monthly_hours = 43.0
-        assert svc.milog_warnings(test_user, shortening) == [svc.MILOG_ACCOUNT_WARNING, svc.MILOG_GENERAL_WARNING]
-        assert svc.milog_warnings(test_user, self._impact()) == []
+    def test_milog_warnings(self):
+        # Teil A (Task 11): die Kennzeichen kommen aus dem Snapshot am Wirkungsdatum.
+        from types import SimpleNamespace
+        plain = SimpleNamespace(milog_working_time_account=False, agreed_monthly_hours=None)
+        agreed = SimpleNamespace(milog_working_time_account=False, agreed_monthly_hours=Decimal("43"))
+        shortening = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"], new_schedule=plain)
+        assert svc.milog_warnings(shortening) == [svc.MILOG_GENERAL_WARNING]
+        shortening = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"], new_schedule=agreed)
+        assert svc.milog_warnings(shortening) == [svc.MILOG_ACCOUNT_WARNING, svc.MILOG_GENERAL_WARNING]
+        assert svc.milog_warnings(self._impact()) == []
 
 
 def test_reset_body_for_every_kind_of_predecessor():
@@ -420,21 +444,27 @@ def test_reset_body_for_every_kind_of_predecessor():
 
     def sched(**kw):
         base = dict(weekly_hours=Decimal("40"), use_daily_schedule=False, day_hours=(None,) * 5,
-                    work_days_per_week=5, blocks=None, block_pauses=None)
+                    work_days_per_week=5, blocks=None, block_pauses=None,
+                    vacation_days=Decimal("30"), track_hours=True, milog_working_time_account=False,
+                    agreed_monthly_hours=None, use_fixed_monthly_target=False)
         base.update(kw)
         return calculation_service.Schedule(**base)
 
+    # Teil A, Task 4: immer die fünf Vertragsfelder, auch im Block-Modus.
+    contract = {"vacation_days": 30.0, "track_hours": True, "milog_working_time_account": False,
+                "agreed_monthly_hours": None, "use_fixed_monthly_target": False}
+
     assert svc.reset_body(sched(), TODAY, cid) == {
         "effective_from": "2026-10-08", "reset_of_change_id": str(cid), "use_daily_schedule": False,
-        "weekly_hours": 40.0, "work_days_per_week": 5, "remove_legacy_window": True}
+        "weekly_hours": 40.0, "work_days_per_week": 5, "remove_legacy_window": True, **contract}
     from app.services import work_blocks_service as wbs
     new = wbs.parse_week_blocks(ANNA_WEEK)
     assert svc.reset_body(sched(blocks=new.blocks, block_pauses=new.pauses), TODAY, cid) == {
-        "effective_from": "2026-10-08", "reset_of_change_id": str(cid), "blocks": ANNA_WEEK}
+        "effective_from": "2026-10-08", "reset_of_change_id": str(cid), "blocks": ANNA_WEEK, **contract}
     legacy = wbs.parse_week_blocks(legacy_week(mon=("07:30", "16:30")))
     body = svc.reset_body(sched(blocks=legacy.blocks, block_pauses=legacy.pauses, use_daily_schedule=True,
                                 day_hours=(Decimal("8"), Decimal("8"), None, None, None), work_days_per_week=2),
                           TODAY, cid)
     assert body == {"effective_from": "2026-10-08", "reset_of_change_id": str(cid), "use_daily_schedule": True,
                     "hours_monday": 8.0, "hours_tuesday": 8.0, "hours_wednesday": None, "hours_thursday": None,
-                    "hours_friday": None, "work_days_per_week": 2}
+                    "hours_friday": None, "work_days_per_week": 2, **contract}

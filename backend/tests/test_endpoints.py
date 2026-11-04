@@ -56,6 +56,7 @@ def _create_endpoints_app() -> FastAPI:
         admin_backups,
         shift_planning,
         impersonation,
+        reduced_days,
     )
 
     app = FastAPI(title="PraxisZeit Test")
@@ -91,6 +92,8 @@ def _create_endpoints_app() -> FastAPI:
     app.include_router(admin_backups.router)  # #213
     app.include_router(shift_planning.router)  # #305
     app.include_router(impersonation.router)  # #370
+    app.include_router(reduced_days.router)  # Teil B verkürzte Tage
+    app.include_router(reduced_days.read_router)
 
     # Health endpoint (duplicated from main.py since it is defined there directly)
     @app.get("/api/health")

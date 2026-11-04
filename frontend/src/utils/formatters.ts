@@ -57,6 +57,17 @@ export function parseHours(value: string): number {
 }
 
 /**
+ * 'YYYY-MM-DD' → 'DD.MM.YYYY', ohne Zeitzonen-Überraschung (kein `Date`).
+ * Ungültige Eingaben kommen unverändert zurück. (F091: eine Stelle für
+ * Einstellungen und verkürzte Tage.)
+ */
+export function formatIsoDateDe(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  if (!y || !m || !d) return iso;
+  return `${d}.${m}.${y}`;
+}
+
+/**
  * #415/#431: eine Vertragsänderung innerhalb eines Berichtszeitraums, so wie
  * `/admin/reports/monthly|weekly` sie liefert (Backend-Zwilling:
  * `schemas/reports.py::WeeklyHoursChangeInPeriod`).
@@ -147,6 +158,27 @@ export function formatDayCount(days: number): string {
   const rounded = Math.round(days * 100) / 100;
   const text = String(rounded).replace('.', ',');
   return `${text} ${rounded === 1 ? 'Tag' : 'Tage'}`;
+}
+
+/**
+ * F069/F089/F100: DIE eine Dezimalzahl-Formatierung ohne Einheit — höchstens
+ * zwei Nachkommastellen, keine Nullen am Ende, deutsches Komma ('30', '13,1',
+ * '4,25'). `formatDayNumber` (Tage) und `specialDays.formatMaxHoursDe`
+ * (Höchststunden) sind benannte Verwendungen davon; für Stundenangaben ohne
+ * eigenen Zwilling (z. B. vereinbarte Monatsarbeitszeit) direkt nutzen.
+ */
+export function formatDecimalDe(n: number): string {
+  return String(Math.round(n * 100) / 100).replace('.', ',');
+}
+
+/**
+ * Teil A: eine Tageszahl ohne Einheit — '30', '13,1', '24,5'. Zwilling von
+ * `reclamp_audit.format_days_de`. Für Texte, die die Einheit selbst nennen
+ * („Urlaub 30 Tage/Jahr", „Vorschlag übernehmen (30)"); mit Einheit
+ * `formatDayCount`.
+ */
+export function formatDayNumber(n: number): string {
+  return formatDecimalDe(n);
 }
 
 /**

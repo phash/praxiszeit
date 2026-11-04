@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import type { WorkingHoursChangePreview } from './workingHoursTypes';
 import {
   BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT, OTHER_CONFIRM,
   OTHER_WARNING,
   NOTE_TOO_LONG, REASON_HELP, REASON_OPTIONS, REASON_PREFIXES, SKIP_LABELS, closedYearMessage, composedNoteTooLong,
   dayBefore, formatDate, hm, modeSwitchHint, monthLabel, reasonComplete, reasonPayload, savedMessage, shortDate,
-  signedDays, signedHm,
+  shorteningHeadlines, signedDays, signedHm,
 } from './workingHoursTexts';
 
 const WAGE = 'Tatsächlich geleistete Arbeit, die angeordnet, gebilligt oder geduldet wurde, ist unabhängig von der '
@@ -156,5 +157,22 @@ describe('workingHoursTexts', () => {
     expect(dayBefore('2027-01-01')).toBe('2026-12-31');
     // Sommerzeitbeginn 29.03.2026 — reine Tagesarithmetik, kein Zeitzonen-Sprung.
     expect(dayBefore('2026-03-30')).toBe('2026-03-29');
+  });
+});
+
+describe('shorteningHeadlines: vacation_entitlement', () => {
+  const p = (o: Partial<WorkingHoursChangePreview>) => o as WorkingHoursChangePreview;
+  it('headline for vacation_entitlement', () => {
+    expect(shorteningHeadlines(p({
+      shortening_reasons: ['vacation_entitlement'],
+      vacation_entitlement: [{ year: 2026, before: 24.5, after: 24 }, { year: 2027, before: 30, after: 30 }],
+    }))).toContain('Der Urlaubsanspruch 2026 sinkt von 24,5 auf 24 Tage');
+  });
+  it('names only the sinking years', () => {
+    const out = shorteningHeadlines(p({
+      shortening_reasons: ['vacation_entitlement'],
+      vacation_entitlement: [{ year: 2026, before: 24, after: 25 }, { year: 2027, before: 30, after: 28 }],
+    }));
+    expect(out).toEqual(['Der Urlaubsanspruch 2027 sinkt von 30 auf 28 Tage']);
   });
 });

@@ -15,6 +15,7 @@ import ScheduleChangeNotices, { type ScheduleChangeNotice } from '../components/
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
+import { trackHoursToday } from '../utils/contractToday';
 import { ABSENCE_TYPE_LABELS } from '../constants/absenceTypes';
 import { useTypeColorsStore, pickTextColor } from '../stores/typeColorsStore';
 import { isInBlockGap, runningCreditedMinutes } from '../utils/workBlocks';
@@ -207,13 +208,15 @@ export default function Dashboard() {
   // mehr nach Mitarbeiter-Farbe.
   const absColors = useTypeColorsStore((s) => s.colors);
   const { openStampSheet, stampVersion, notifyStampChange } = useUIStore();
-  const trackHours = user?.track_hours !== false;
+  // F011: Stundenzählung laut heute gültigem Vertrag (schedule_today).
+  const trackHours = trackHoursToday(user) !== false;
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [clockStatus, setClockStatusRaw] = useState<{
     is_clocked_in: boolean;
     elapsed_minutes?: number | null;
     current_entry?: { start_time: string; break_minutes?: number | null; credit_override?: boolean | null };
     today_net_minutes?: number; // #494: Tages-Ist inkl. abgeschlossener Einträge
+    today_special_day_label?: string | null; // Teil B: z. B. „verkürzter Tag (max. 4 h)"
     today_target_hours?: number; // #494 F1: heute zu stempelnde Stunden (get_day_presence_target, 0 an freien Tagen)
     blocks_today?: TimeBlock[]; // Spec 2026-10-08 (14, E69)
     blockless_workday?: boolean; // Werktag ohne Blöcke → laufender Eintrag zählt 0
@@ -618,6 +621,9 @@ export default function Dashboard() {
                 <p className="text-xs text-text-secondary">
                   {formatHoursHM(todayActual)} von {formatHoursHM(todayTarget)} h heute
                 </p>
+                {clockStatus?.today_special_day_label && (
+                  <p className="text-xs text-text-secondary mt-0.5">{clockStatus.today_special_day_label}</p>
+                )}
               </>
             )}
           </button>

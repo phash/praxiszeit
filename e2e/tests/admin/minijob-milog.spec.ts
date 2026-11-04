@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
 import { test } from '../../fixtures/base.fixture';
-import { today } from '../../helpers/date.helper';
+import { currentMonth, today } from '../../helpers/date.helper';
 
 /**
  * #377 Minijob / § 2 Abs. 2 MiLoG: Mindestlohn-Ausgabe + weiche 50-%-Warnung.
@@ -75,8 +75,13 @@ test.describe('#377 Minijob MiLoG', () => {
       expect(row).toBeTruthy();
       expect(row.milog_warnings.some((w: string) => w.includes('MILOG_ACCOUNT_50'))).toBe(true);
 
-      // Flag aus → keine MiLoG-Warnung mehr
-      await adminApi.put(`/admin/users/${empId}`, { milog_working_time_account: false });
+      // Flag aus → keine MiLoG-Warnung mehr. Teil A: Minijob-Felder sind
+      // historisiert — einziger Schreibweg ist die Arbeitszeit-Änderung, und
+      // sie wirkt immer ab einem Monatsersten (PUT /admin/users → 400).
+      await adminApi.post(`/admin/users/${empId}/working-hours-changes`, {
+        effective_from: `${currentMonth()}-01`, weekly_hours: MILOG_WEEKLY_HOURS,
+        work_days_per_week: 5, milog_working_time_account: false,
+      });
       const rows2 = await adminApi.get('/admin/users-overview');
       const row2 = rows2.find((r: { user_id: string }) => r.user_id === empId);
       expect(row2.milog_warnings).toEqual([]);

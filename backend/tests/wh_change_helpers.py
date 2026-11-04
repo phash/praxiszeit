@@ -56,11 +56,12 @@ def with_pauses(week: list, **pauses: int) -> list:
 
 
 def change_row(user, effective_from: date, *, week=None, weekly_hours=None, day_hours=None,
-               blocks=None, note=None) -> WorkingHoursChange:
+               blocks=None, note=None, **contract) -> WorkingHoursChange:
     """Ungespeicherte Verlaufszeile: NEUE Blöcke (``week``, Soll materialisiert wie
     der Dialog), Tagesplan (``day_hours``) oder gleichmäßig (``weekly_hours``);
     ``blocks`` setzt bei den beiden letzten ein Altfenster."""
-    common = dict(user_id=user.id, tenant_id=DEFAULT_TENANT_ID, effective_from=effective_from, note=note)
+    common = dict(user_id=user.id, tenant_id=DEFAULT_TENANT_ID, effective_from=effective_from, note=note,
+                  **contract)
     if week is not None:
         d = work_blocks_service.derive_targets(week)
         return WorkingHoursChange(
@@ -123,6 +124,39 @@ def admin_client(db, admin) -> TestClient:
     test_app.dependency_overrides[get_current_user] = lambda: admin
     test_app.dependency_overrides[require_admin] = lambda: admin
     return TestClient(test_app)
+
+
+CONTRACT_TODAY = date(2026, 11, 3)
+
+
+def contract_client_fixture(db, test_admin, monkeypatch):
+    """Admin-Client mit eingefrorenem „heute" 2026-11-03 für die Suiten
+    ``test_contract_history_*`` — in jedem Modul als
+    ``client = pytest.fixture(name="client")(contract_client_fixture)`` eingehängt."""
+    freeze(monkeypatch, CONTRACT_TODAY)
+    yield admin_client(db, test_admin)
+    test_app.dependency_overrides.clear()
+
+
+def changes_url(user) -> str:
+    return f"/api/admin/users/{user.id}/working-hours-changes"
+
+
+def rows_of(db, user) -> list:
+    """Verlaufszeilen der Person, nach Wirkungsdatum sortiert (frisch geladen)."""
+    db.expire_all()
+    return db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == DEFAULT_TENANT_ID,
+    ).order_by(WorkingHoursChange.effective_from).all()
+
+
+def explicit_contract(**overrides) -> dict:
+    """Alle fünf Vertragsfelder ausdrücklich — Zeilen, die der Test-Listener nicht füllt."""
+    values = dict(vacation_days=Decimal("24"), track_hours=True, milog_working_time_account=False,
+                  agreed_monthly_hours=None, use_fixed_monthly_target=False)
+    values.update(overrides)
+    return values
 
 
 def reclamp_logs(db, user, *, summary: Optional[bool] = None) -> list:

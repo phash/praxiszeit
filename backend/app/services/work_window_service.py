@@ -9,7 +9,8 @@ verschoben (E33), nur die Hülle verschiebt Beginn/Ende und bewahrt den
 Rohstempel (§16, §5).
 
 Keine Kappung an Wochenenden, Feiertagen und freien Sondertagen (#484), bei
-``track_hours=False`` und für anerkannte Einträge (``credit_override``).
+``track_hours=False`` laut Snapshot des Tages und für anerkannte Einträge
+(``credit_override``).
 """
 from datetime import date, time
 from decimal import Decimal
@@ -17,7 +18,7 @@ from typing import Any, NamedTuple, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import TimeEntry, WorkingHoursChange
+from app.models import TimeEntry
 from app.models.system_setting import SystemSetting
 from app.services import calculation_service
 
@@ -196,10 +197,14 @@ def clamp_applies(db: Session, user, d: date, *, credit_override: bool, **preloa
     """Kappt ``clamp`` an diesem Tag überhaupt? (XLS-Gate, E38 — statt
     ``has_blocks`` allein, sonst löschte ``track_hours=False`` + Blöcke ein
     mitgeliefertes ``raw_*``.)"""
+    if user is None or credit_override:
+        return False
+    # F084: Verlauf EINMAL laden — Stundenzählung und Blöcke lösen denselben
+    # Snapshot auf (ohne Preload sonst zwei Abfragen je Auflösung).
+    if preload.get("wh_changes") is None:
+        preload = {**preload, "wh_changes": calculation_service.user_wh_changes(db, user)}
     return (
-        user is not None
-        and bool(getattr(user, "track_hours", True))
-        and not credit_override
+        calculation_service.tracks_hours_on(db, user, d, wh_changes=preload["wh_changes"])
         and credit_blocks(db, user, d, **preload) is not None
     )
 
@@ -216,7 +221,15 @@ def credit_gaps(blocks, grace: int) -> list:
 
 
 def _clamp_core(db, user, d, start, end, grace, *, credit_override, wh_changes, soll_free_dates):
-    if credit_override or user is None or not getattr(user, "track_hours", True):
+    # Teil A (Task 10): Stundenzählung laut Snapshot DES TAGES, nie die User-Zeile
+    # — eine rückwirkende Umstellung kappt bzw. entkappt danach Tag für Tag.
+    if credit_override or user is None:
+        return ClampResult(start, end, None, None, 0, None), []
+    if wh_changes is None:
+        # F084: Verlauf EINMAL laden — Stundenzählung und ``credit_blocks`` lösen
+        # denselben Snapshot auf.
+        wh_changes = calculation_service.user_wh_changes(db, user)
+    if not calculation_service.tracks_hours_on(db, user, d, wh_changes=wh_changes):
         return ClampResult(start, end, None, None, 0, None), []
     blocks = credit_blocks(db, user, d, wh_changes=wh_changes, soll_free_dates=soll_free_dates)
     if blocks is None:
@@ -819,7 +832,8 @@ def _not_extendable(entry, old_day: list, new_day: Optional[list], grace: int,
 
 
 def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: set,
-                         prev_blocks_by_weekday: Optional[tuple], grace: int) -> ReclampResult:
+                         prev_blocks_by_weekday: Optional[tuple], grace: int,
+                         prev_tracked_by_date: Optional[dict] = None) -> ReclampResult:
     """Spec 9.2 — kappt die Einträge in ``[start, end]`` an den geänderten
     ``weekdays`` gegen den NEUEN Snapshot (der Aufrufer hat ihn bereits
     geflusht). Quelle ist der Rohstempel, sonst die gespeicherte Zeit (E48).
@@ -850,13 +864,8 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
     ]
     if not entries:
         return ReclampResult([], [], [])
-    if not getattr(user, "track_hours", True):  # Schritt 1
-        return ReclampResult([], [ReclampSkip(e.id, e.date, "track_hours_off") for e in entries], [])
 
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-    ).all()
+    wh_changes = calculation_service.user_wh_changes(db, user)  # F-026
     soll_free = _soll_free_dates(db, user.tenant_id, start, end)
     planned_start = {e.id: e.start_time for e in entries}
     same_day: dict = {}
@@ -876,6 +885,19 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
             skipped.append(ReclampSkip(e.id, e.date, "credit_override"))
             continue
         new_sched = calculation_service.get_schedule_for_date(db, user, e.date, wh_changes)
+        # Teil A (Task 10): Schritt 1 („ohne Stundenzählung → überspringen") gilt
+        # je TAG: übersprungen wird ein Tag, der vorher UND nachher ohne
+        # Stundenzählung ist (``prev_tracked_by_date``, ohne Angabe = unverändert).
+        # Wurde sie an dem Tag abgeschaltet, entkappt ``clamp`` (neuer Snapshot →
+        # ungekappt: Rohstempel → wirksame Zeit, ``uncredited`` 0; bei
+        # ``auto_closed`` bleibt das wirksame Ende nach P18 die Eingabe, nie
+        # 23:59); eingeschaltet kappt er. ``clamp_grace_minutes`` bleibt beim
+        # Entkappen stehen (``grace_minutes=None``, E79): an einem Tag ohne
+        # Stundenzählung wirkt der gespeicherte Puffer nicht.
+        if not new_sched.track_hours and not calculation_service.tracked_before(
+                prev_tracked_by_date, e.date, False):                     # Schritt 1 (je Tag)
+            skipped.append(ReclampSkip(e.id, e.date, "track_hours_off"))
+            continue
         day_has_blocks = wd < 5 and bool(new_sched.blocks) and bool(new_sched.blocks[wd])
         if day_has_blocks and e.date in soll_free:                         # Schritt 5
             skipped.append(ReclampSkip(e.id, e.date, "soll_free_day"))
@@ -970,11 +992,13 @@ def stale_clamp_entries(db: Session, tenant_id, dates) -> list:
             User.id.in_({e.user_id for e in entries}),
         ).all()
     }
+    wh_by_user = calculation_service.wh_changes_by_user(db, tenant_id, set(users))  # F-026
     soll_free = _soll_free_dates(db, tenant_id, min(dates), max(dates))
     stale = []
     for e in entries:
         user = users.get(e.user_id)
-        if user is None or not getattr(user, "track_hours", True):
+        wh_changes = wh_by_user.get(e.user_id, [])
+        if user is None or not calculation_service.tracks_hours_on(db, user, e.date, wh_changes):
             continue
         if not calculation_service._within_employment_window(user, e.date):
             continue
@@ -984,7 +1008,7 @@ def stale_clamp_entries(db: Session, tenant_id, dates) -> list:
         else:
             src_end = e.raw_end_time or e.end_time
         r = clamp(db, user, e.date, src_start, src_end, grace_for_entry(db, e),
-                  credit_override=False, soll_free_dates=soll_free)
+                  credit_override=False, wh_changes=wh_changes, soll_free_dates=soll_free)
         if (r.eff_start, r.eff_end, int(r.uncredited_minutes)) != (
                 e.start_time, e.end_time, int(e.uncredited_minutes or 0)):
             stale.append(e)

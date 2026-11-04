@@ -3,15 +3,16 @@ import apiClient from '../../../api/client';
 import { Save } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAuthStore } from '../../../stores/authStore';
-import { useSystemStore } from '../../../stores/systemStore';
 import PasswordInput from '../../../components/PasswordInput';
 import { getErrorMessage } from '../../../utils/errorMessage';
-import { parseHours, deHoursExact, formatDayPlan } from '../../../utils/formatters';
+import { parseHours, deHoursExact, formatDayPlan, formatDayNumber, formatDecimalDe } from '../../../utils/formatters';
 import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../../../utils/calendarColors';
 import {
   deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, isLegacyWeek, validateWeekBlocks,
 } from '../../../utils/workBlocks';
 import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
+import ContractTermsFields from './ContractTermsFields';
+import type { ContractTerms } from './workingHoursTypes';
 import { BLOCKS_WITHOUT_EFFECT, LEGACY_WITHOUT_EFFECT } from './workingHoursTexts';
 
 import type { User } from '../../../types/user';
@@ -58,11 +59,14 @@ interface UserFormProps {
   // bearbeiteten Nutzers (serverseitig datumsaufgelöst, `work_blocks_today`),
   // wie `displayDayHours` frisch aus Users.tsx nachgeführt. Nur Anzeige.
   displayBlocks?: WeekBlocks | null;
+  // F010: dieselbe Bauart für die fünf Vertragsfelder (Teil A) — der heute
+  // gültige Stand, frisch aus Users.tsx. Nur Anzeige und Anzeige-Weichen.
+  displayContract?: ContractTerms;
 }
 
 export default function UserForm({
   editUser, onSaved, onOpenHoursHistory, displayWeeklyHours, displayDayHours,
-  displayWorkDays, displayUseDailySchedule, displayBlocks,
+  displayWorkDays, displayUseDailySchedule, displayBlocks, displayContract,
 }: UserFormProps) {
   const toast = useToast();
   const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
@@ -72,7 +76,6 @@ export default function UserForm({
   // beim Anlegen; danach ändern sich Blöcke ausschließlich über den Dialog.
   const [blocksMode, setBlocksMode] = useState(false);
   const [createBlocks, setCreateBlocks] = useState<WeekBlocks>(() => emptyWeek());
-  const minWage = useSystemStore((s) => s.getMinimumWage()); // #377
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -244,6 +247,23 @@ export default function UserForm({
   const effectiveWorkDays = createBlocksActive
     ? createDerived.workDays
     : (editUser ? shownWorkDays : formData.work_days_per_week);
+  // Teil A (Task 15): Vertragsfelder beim Bearbeiten = Snapshot von heute,
+  // Rückfall auf die User-Zeile (identischer Stand ohne Verlaufszeilen).
+  // F010: wie die übrigen display*-Werte frisch aus Users.tsx nachgeführt
+  // (`displayContract`), damit die Box nach einer Dialog-Änderung bei offenem
+  // Formular nicht den Stand vom Öffnen zeigt.
+  const shownVacationDays = displayContract?.vacation_days ?? todaySchedule?.vacation_days ?? editUser?.vacation_days ?? formData.vacation_days;
+  const shownTrackHours = displayContract?.track_hours ?? todaySchedule?.track_hours ?? editUser?.track_hours ?? true;
+  const shownMilog = displayContract?.milog_working_time_account ?? todaySchedule?.milog_working_time_account ?? editUser?.milog_working_time_account ?? false;
+  const shownAgreedMonthly = displayContract !== undefined
+    ? displayContract.agreed_monthly_hours
+    : (todaySchedule?.agreed_monthly_hours ?? editUser?.agreed_monthly_hours ?? null);
+  const shownFixedTarget = displayContract?.use_fixed_monthly_target ?? todaySchedule?.use_fixed_monthly_target ?? editUser?.use_fixed_monthly_target ?? false;
+  // F010/F121: alle Anzeige-Weichen (Blöcke-Satz, Überstunden-Vortrag,
+  // Tagesplan-Abschnitt, „geplante Anwesenheit") folgen beim Bearbeiten
+  // demselben heute gültigen Stand wie die Box — nie der User-Zeile vom Öffnen.
+  const effTrackHours = editUser ? shownTrackHours : formData.track_hours;
+  const effFixedTarget = editUser ? shownFixedTarget : formData.use_fixed_monthly_target;
   const suggestedVacation = effectiveWorkDays > 0 ? Math.round(30 * effectiveWorkDays / 5) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -300,6 +320,10 @@ export default function UserForm({
         const {
           password, weekly_hours, use_daily_schedule, work_days_per_week,
           hours_monday, hours_tuesday, hours_wednesday, hours_thursday, hours_friday,
+          // Teil A (Task 15): die fünf Vertragsfelder gehören ebenfalls nie in den
+          // PUT (400, Schreibweg = „Arbeitszeit anpassen…" mit Wirkungsdatum).
+          vacation_days, track_hours, milog_working_time_account,
+          agreed_monthly_hours, use_fixed_monthly_target,
           ...rest
         } = payload;
         const updateData = rest;
@@ -395,7 +419,7 @@ export default function UserForm({
   // Altfenster) mit Stundenzählung. Dann nennen Wochenstunden-Box, Modus und
   // Arbeitstage-Hinweis die Blöcke statt des daraus abgeleiteten dezimalen
   // Tagesplans („Mo 7,92") — derselbe Satz wie im Dialog-Kopf und in den Berichten.
-  const blocksSentence = editUser && formData.track_hours && !isLegacyWeek(shownBlocks)
+  const blocksSentence = editUser && effTrackHours && !isLegacyWeek(shownBlocks)
     ? formatBlocksText(shownBlocks)
     : null;
   const editBlocksMode = blocksSentence !== null;
@@ -558,7 +582,7 @@ export default function UserForm({
                 Aus den Arbeitszeit-Blöcken abgeleitet.
               </p>
             )}
-            {formData.use_fixed_monthly_target && (
+            {effFixedTarget && (
               <p className="mt-1 text-xs text-gray-500">
                 ℹ️ Feste Monatsarbeitszeit aktiv: Nur noch Basisangabe — das Monats-Soll
                 kommt aus der vereinbarten Monatsarbeitszeit (siehe Arbeitszeitkonto unten),
@@ -618,33 +642,43 @@ export default function UserForm({
                   : 'Anzahl der Arbeitstage pro Woche (1-7)'}
             </p>
           </div>
-          <div>
-            <label htmlFor="f-vacation" className="block text-sm font-medium text-gray-700 mb-1">Urlaubstage</label>
-            <input
-              id="f-vacation"
-              type="number"
-              value={formData.vacation_days}
-              onChange={(e) => setFormData({ ...formData, vacation_days: parseFloat(e.target.value) || 0 })}
-              required
-              min="0"
-              max="50"
-              step="0.1"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-            />
-            {suggestedVacation !== null && formData.vacation_days !== suggestedVacation && (
-              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-sm text-xs">
-                💡 <strong>Empfehlung:</strong> {suggestedVacation} Tage
-                (basierend auf {effectiveWorkDays} Arbeitstagen/Woche)
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, vacation_days: suggestedVacation })}
-                  className="ml-2 text-blue-600 underline"
-                >
-                  Übernehmen
-                </button>
+          {/* Teil A (Task 13): Urlaubsanspruch, Stundenzählung und Minijob-Felder
+              teilt sich das Formular mit dem Dialog „Arbeitszeit ändern". */}
+          {editUser ? (
+            // Teil A (Task 15): beim Bearbeiten nur Anzeige des heute gültigen
+            // Vertragsstands (`schedule_today`); Schreibweg ist der Dialog.
+            <div id="f-contract-terms" data-testid="contract-terms-readonly" className="md:col-span-2">
+              <span className="block text-sm font-medium text-gray-700 mb-1">Urlaub und Abrechnung</span>
+              <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900 space-y-1">
+                <p>{`${formatDayNumber(shownVacationDays)} Tage/Jahr`}</p>
+                <p>{shownTrackHours ? 'Stundenzählung aktiv' : 'ohne Stundenzählung'}</p>
+                {shownMilog && (
+                  <p>
+                    MiLoG-Arbeitszeitkonto aktiv
+                    {shownAgreedMonthly != null && `. Vereinbarte Monatsarbeitszeit: ${formatDecimalDe(shownAgreedMonthly)} h`}
+                    {shownFixedTarget && '. Festes Monats-Soll'}
+                  </p>
+                )}
               </div>
-            )}
-          </div>
+              <p className="mt-1 text-xs text-gray-400">Ändern über „Arbeitszeit anpassen…“</p>
+            </div>
+          ) : (
+            <ContractTermsFields
+              value={{
+                vacation_days: formData.vacation_days,
+                track_hours: formData.track_hours,
+                milog_working_time_account: formData.milog_working_time_account,
+                agreed_monthly_hours: formData.agreed_monthly_hours,
+                use_fixed_monthly_target: formData.use_fixed_monthly_target,
+              }}
+              onChange={(terms) => setFormData((prev) => ({ ...prev, ...terms }))}
+              mode="create"
+              suggestion={suggestedVacation}
+              idPrefix=""
+              weeklyHours={effectiveWeeklyHours}
+              workDays={effectiveWorkDays}
+            />
+          )}
           <div>
             <label htmlFor="f-child-sick" className="block text-sm font-medium text-gray-700 mb-1">
               Kind-krank-Tage/Jahr (§45 SGB V)
@@ -666,7 +700,7 @@ export default function UserForm({
             />
             <p className="mt-1 text-xs text-gray-400">Leer = Standardwert aus den Einstellungen.</p>
           </div>
-          {formData.track_hours && (
+          {effTrackHours && (
             <div>
               <label htmlFor="f-overtime-carryover" className="block text-sm font-medium text-gray-700 mb-1">
                 Anfangssaldo Überstunden (h)
@@ -710,19 +744,6 @@ export default function UserForm({
             </p>
           </div>
 
-          <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-gray-50 rounded-lg">
-            <input
-              type="checkbox"
-              id="track_hours"
-              checked={formData.track_hours}
-              onChange={(e) => setFormData({ ...formData, track_hours: e.target.checked })}
-              className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
-            />
-            <label htmlFor="track_hours" className="text-sm font-medium text-gray-700 cursor-pointer">
-              Stundenzählung aktiv (Soll-Stunden werden berechnet)
-            </label>
-          </div>
-
           <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
             <input
               type="checkbox"
@@ -747,95 +768,6 @@ export default function UserForm({
             <label htmlFor="is_night_worker" className="text-sm font-medium text-gray-700 cursor-pointer">
               Nachtarbeitnehmer (§6 ArbZG – 8h-Tageslimit bei Nachtarbeit)
             </label>
-          </div>
-
-          {/* #377 Minijob / Arbeitszeitkonto (§2 Abs.2 MiLoG) */}
-          <div className="md:col-span-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="milog_working_time_account"
-                checked={formData.milog_working_time_account ?? false}
-                onChange={(e) => setFormData({ ...formData, milog_working_time_account: e.target.checked })}
-                className="w-4 h-4 text-amber-600 border-gray-300 rounded-sm focus:ring-amber-500"
-              />
-              <label htmlFor="milog_working_time_account" className="text-sm font-medium text-gray-700 cursor-pointer">
-                Arbeitszeitkonto (§ 2 Abs. 2 MiLoG) – 50-%-Prüfung & 12-Monats-Ausgleichsfrist
-              </label>
-            </div>
-            {formData.milog_working_time_account && (
-              <div className="mt-2">
-                {/* #377 Baustein 2a: vereinbarte Monatsarbeitszeit direkt eingeben */}
-                <label htmlFor="f-agreed-monthly" className="block text-sm font-medium text-gray-700 mb-1">
-                  Vereinbarte Monatsarbeitszeit (h){formData.use_fixed_monthly_target ? ' *' : ''}
-                </label>
-                <input
-                  id="f-agreed-monthly"
-                  type="number"
-                  // Bug-Tracker #4: `0.5` wies u. a. den eigenen Vorschlagswert
-                  // (Wochenstunden × 13/3, eine Nachkommastelle) als Schrittfehler
-                  // ab. `0.1` = Genauigkeit der Spalte `Numeric(5, 1)`; feiner
-                  // einzugeben hieße, dass die DB still rundet.
-                  step="0.1"
-                  min="0"
-                  max="400"
-                  placeholder={
-                    formData.use_fixed_monthly_target
-                      ? 'Pflichtfeld – festes Monats-Soll'
-                      : `aus Wochenstunden ≈ ${(effectiveWeeklyHours * 13 / 3).toFixed(1)}`
-                  }
-                  value={formData.agreed_monthly_hours ?? ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    // #377 2a: 0/negativ/leer = „keine Monatszahl vereinbart" → null
-                    // (aus Wochenstunden ableiten). Backend akzeptiert nur > 0.
-                    agreed_monthly_hours: parseFloat(e.target.value) > 0 ? parseFloat(e.target.value) : null,
-                  })}
-                  required={formData.use_fixed_monthly_target}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary ${
-                    formData.use_fixed_monthly_target ? 'border-amber-400' : 'border-gray-300'
-                  }`}
-                />
-                {(() => {
-                  const monthly = formData.agreed_monthly_hours != null
-                    ? formData.agreed_monthly_hours
-                    : effectiveWeeklyHours * 13 / 3;
-                  return (
-                    <p className="mt-1 text-xs text-amber-800">
-                      {minWage && typeof minWage.current === 'number'
-                        ? `Aktueller Mindestlohn: ${minWage.current.toFixed(2)} €/h (seit ${new Date(minWage.since).toLocaleDateString('de-DE')}). `
-                        : ''}
-                      Leer = automatisch aus den Wochenstunden (≈ {(effectiveWeeklyHours * 13 / 3).toFixed(1)} h).
-                      Vereinbarte Monatszeit {formData.agreed_monthly_hours != null ? '' : '≈ '}{monthly.toFixed(1)} h
-                      → max. Konto ≈ {(monthly / 2).toFixed(1)} h/Monat (50 %, § 2 Abs. 2 MiLoG). Warnung ist weich
-                      (nicht blockierend), sofern zur Mindestlohnhöhe vergütet. Keine Verdienst-/603-€-Prüfung.
-                    </p>
-                  );
-                })()}
-
-                {/* #377 Baustein 2b: festes Monats-Soll statt Wochenstunden×Arbeitstage */}
-                <div className="mt-3 pt-3 border-t border-amber-200">
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id="use_fixed_monthly_target"
-                      checked={formData.use_fixed_monthly_target}
-                      onChange={(e) => setFormData({ ...formData, use_fixed_monthly_target: e.target.checked })}
-                      className="w-4 h-4 text-amber-600 border-gray-300 rounded-sm focus:ring-amber-500"
-                    />
-                    <label htmlFor="use_fixed_monthly_target" className="text-sm font-medium text-gray-700 cursor-pointer">
-                      Feste Monatsarbeitszeit (Monats-Soll = vereinbarte Monatsarbeitszeit)
-                    </label>
-                  </div>
-                  <p className="mt-1 text-xs text-amber-800">
-                    Statt aus Wochenstunden/Arbeitstagen/Kalendertagen wird das Monats-Soll fest auf die oben
-                    vereinbarte Monatsarbeitszeit gesetzt (Minijob-typisch bei schwankenden Einsatzplänen).
-                    Erfordert Stundenzählung und ein gesetztes Feld oben. Wochenstunden bleiben als Basisangabe
-                    bestehen, wirken sich in diesem Modus aber nicht mehr auf das Soll aus.
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
@@ -931,7 +863,7 @@ export default function UserForm({
           </div>
 
           {/* Daily Schedule Toggle */}
-          {formData.track_hours && (
+          {effTrackHours && (
             <div className="md:col-span-2 border border-gray-200 rounded-lg p-4">
               {editUser ? (
                 // Task 11 (#431): Haken UND Tagesstunden sind historisierte
@@ -949,10 +881,10 @@ export default function UserForm({
                         Wochenstunden-Box, die längst einen Tagesplan zeigt. */}
                     {/* Fund 6: mit Blöcken heißt der Modus wie im Dialog. */}
                     {editBlocksMode
-                      ? (formData.use_fixed_monthly_target ? 'Nach Arbeitsblöcken (geplante Anwesenheit)' : 'Nach Arbeitsblöcken')
+                      ? (effFixedTarget ? 'Nach Arbeitsblöcken (geplante Anwesenheit)' : 'Nach Arbeitsblöcken')
                       : displayedUseDailySchedule
-                        ? (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit aktiv' : 'Individuelle Tagesstunden aktiv')
-                        : (formData.use_fixed_monthly_target ? 'Geplante Anwesenheit nicht hinterlegt' : 'Einheitliche Tagesstunden (kein individueller Tagesplan)')}
+                        ? (effFixedTarget ? 'Geplante Anwesenheit aktiv' : 'Individuelle Tagesstunden aktiv')
+                        : (effFixedTarget ? 'Geplante Anwesenheit nicht hinterlegt' : 'Einheitliche Tagesstunden (kein individueller Tagesplan)')}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     Änderung über „Arbeitszeit anpassen…" mit Wirkungsdatum.
@@ -988,7 +920,7 @@ export default function UserForm({
                           }}
                           className="w-4 h-4 text-primary border-gray-300 focus:ring-primary"
                         />
-                        {formData.use_fixed_monthly_target ? 'Nach Tagen (geplante Anwesenheit)' : 'Nach Tagen'}
+                        {effFixedTarget ? 'Nach Tagen (geplante Anwesenheit)' : 'Nach Tagen'}
                       </label>
                       <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
                         <input
@@ -1002,7 +934,7 @@ export default function UserForm({
                       </label>
                     </div>
                   </fieldset>
-                  {formData.use_fixed_monthly_target && !createBlocksActive && !formData.use_daily_schedule && (
+                  {effFixedTarget && !createBlocksActive && !formData.use_daily_schedule && (
                     <p className="text-xs text-amber-600 mb-2">
                       Empfehlung bei fester Monatsarbeitszeit: hier die geplante Anwesenheit hinterlegen, damit
                       Feiertage/Fehltage korrekt gutgeschrieben werden (das Monats-Soll selbst bleibt fest).
@@ -1046,11 +978,11 @@ export default function UserForm({
                         value={createBlocks}
                         onChange={setCreateBlocks}
                         idPrefix="f-blocks"
-                        plannedPresence={formData.use_fixed_monthly_target}
+                        plannedPresence={effFixedTarget}
                       />
                       <p className="text-xs text-gray-500 mt-2">
                         {/* Gesamtreview 1.20 (Fund 14): bei fester Monatsarbeitszeit kein Tagessoll. */}
-                        {formData.use_fixed_monthly_target
+                        {effFixedTarget
                           ? 'Wochenstunden, geplante Anwesenheit und Arbeitstage werden aus den Blöcken abgeleitet; das Monats-Soll bleibt die vereinbarte Monatsarbeitszeit.'
                           : 'Wochenstunden, Tagessoll und Arbeitstage werden aus den Blöcken abgeleitet.'}
                       </p>
@@ -1075,12 +1007,12 @@ export default function UserForm({
                   Backend kappt dann nie (`clamp_applies`/`_clamp_core`), 073
                   übernimmt Altfenster aber unabhängig von track_hours (P2).
                   Wortlaut aus workingHoursTexts, wie im Dialog (Spec 12.1/4.4). */}
-              {workBlocksText && !formData.track_hours && (
+              {workBlocksText && !effTrackHours && (
                 <p className="text-xs text-gray-500 mt-1">
                   {`${isLegacyWeek(shownBlocks) ? LEGACY_WITHOUT_EFFECT : BLOCKS_WITHOUT_EFFECT}.`}
                 </p>
               )}
-              {workBlocksText && formData.track_hours && isLegacyWeek(shownBlocks) && (
+              {workBlocksText && effTrackHours && isLegacyWeek(shownBlocks) && (
                 <p className="text-xs text-gray-500 mt-1">
                   Arbeitszeit-Fenster aus dem Altbestand: kappt die erfasste Zeit, ändert das Tagessoll nicht.
                 </p>

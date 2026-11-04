@@ -26,6 +26,8 @@
 
 > **Urlaub (Tagesprinzip):** 1 freier Arbeitstag = 1 Urlaubstag (unabhängig von Tagesstunden/Wochentag). Halbtag = 0,5. Anspruch anteilig: `30 × Arbeitstage/5`. Verbrauch tagebasiert, Stunden nur intern.
 
+> **Vertragsverlauf:** **Urlaubsanspruch pro Jahr ab diesem Datum**, Stundenzählung und Minijob-Einstellungen ändern Sie nur im Dialog **„Arbeitszeit anpassen…"** (Abschnitt **„Urlaub und Abrechnung"**, Vorschlag über **„Vorschlag übernehmen (N)"**). Wechselt der Anspruch im Jahr, wird anteilig nach Monaten gerechnet (24 × 10/12 + 30 × 2/12 = 25,0). Minijob-Änderungen nur zum Monatsersten. Das Bearbeiten-Formular zeigt die Werte nur an.
+
 > **Benutzerübersicht (#194)** zeigt je MA Urlaubskonto **und** aktuellen Überstundensaldo in der Spalte **„Überstunden (JTD)"**; „—" bei Mitarbeitern ohne Stundenzählung.
 
 > **Monatsjournal (#311):** Buch-Symbol in der Aktionsspalte öffnet das Journal; Überschrift jetzt **„Monatsjournal: Vorname Nachname"**.
@@ -35,7 +37,7 @@
 Checkbox **„Stundenzählung aktiv"** (Standard an). Aus = **Mitarbeiter ohne Stundenzählung** (NIE „leitende Angestellte" nennen!).
 - Keine Soll-/Ist-/Überstundenberechnung → Spalte „Überstunden (JTD)" zeigt **„—"**.
 - Feld Anfangssaldo und Auswahl **„Arbeitszeit"** (Tagesplan/Blöcke) entfallen; Arbeitszeit-Blöcke kappen nicht.
-- **Urlaub + Krank zählen trotzdem – tagebasiert** (1 Tag = 1 Tag, halber Tag = 0,5; „Frei"-Sondertag = 1 Tag, „halber Feiertag" 24./31.12. = 0,5 Tag seit #394). Anspruch anteilig + Vorjahresübernahme bleiben.
+- **Urlaub + Krank zählen trotzdem – tagebasiert** (1 Tag = 1 Tag, halber Tag = 0,5; „Frei"-Sondertag = 1 Tag, „halber Feiertag" 24./31.12. und verkürzter Tag = 0,5 Tag). Anspruch anteilig + Vorjahresübernahme bleiben.
 
 > **Abgrenzung – zwei getrennte Checkboxen, nicht verwechseln:**
 > - **„Stundenzählung aktiv"** = ob Soll-/Ist-/Überstunden geführt werden. Hat **nichts** mit §18 zu tun.
@@ -48,7 +50,7 @@ Je MA und Wochentag (Mo–Fr) bis zu **3 Blöcke** „von–bis" + **„Pause in
 - **Kappung:** vor dem ersten, nach dem letzten und **zwischen** den Blöcken nicht angerechnet; **Puffer an jedem Blockrand** (Einstellungen → „Soll-Arbeitszeit-Fenster", Default **15**). Lücke ≤ 2 × Puffer wird voll angerechnet → geplante Pause als „Pause innerhalb der Blöcke" erfassen, nicht als kurze Lücke.
 - Beispiel: Blöcke 08–12 + 15–18, Puffer 15, gestempelt 08:00–18:00 ohne Pause → **7:30 h** angerechnet (08:00–12:15 + 14:45–18:00), 2:30 h nicht; die Stempel bleiben gespeichert (§16).
 - **Werktag ohne Block** (bei MA mit Blöcken) = **0 h** angerechnet (Stempel bleibt gespeichert), bis **„Anerkennen“** bzw. **„Genehmigen und anerkennen“**; übernommene Arbeitszeit-Fenster ausgenommen (Tag ohne Fenster bleibt ungekappt).
-- **Kein Block → keine Kappung:** Wochenende, Feiertage, „freie" Sondertage („halber Feiertag" behält die Blöcke); MA ohne Stundenzählung; **anerkannte** Einträge. §18-MA werden trotzdem gekappt. Greift an allen Schreibwegen (Stempeln, manuell, Admin-Korrektur, Antrag, XLS-Import). Feiertag/Bundesland/Sondertag **nachträglich** geändert → bestehende Einträge dieser Tage werden nur genannt, nicht neu berechnet: öffnen + unverändert speichern (fehlt dann die gesetzliche Pause, z. B. bei über die Blocklücke durchgestempeltem Dienst: Pause ergänzen).
+- **Kein Block → keine Kappung:** Wochenende, Feiertage, „freie" Sondertage („halber Feiertag" und verkürzter Tag behalten die Blöcke); MA ohne Stundenzählung; **anerkannte** Einträge. §18-MA werden trotzdem gekappt. Greift an allen Schreibwegen (Stempeln, manuell, Admin-Korrektur, Antrag, XLS-Import). Feiertag/Bundesland/Sondertag **nachträglich** geändert → bestehende Einträge dieser Tage werden nur genannt, nicht neu berechnet: öffnen + unverändert speichern (fehlt dann die gesetzliche Pause, z. B. bei über die Blocklücke durchgestempeltem Dienst: Pause ergänzen).
 - **Auto-Close** (vergessenes Ausstempeln, 23:59) rechnet nur bis zum letzten Block + Puffer an („automatisch geschlossen"), an einem Werktag ohne Block 0 h; bis 23:59 nur, wo nichts gekappt wird (keine Blöcke hinterlegt, Wochenende/Feiertag, ohne Stundenzählung); tatsächliches Ende nachtragen (MA per Änderungsantrag) – auch ein echtes Ende 23:59 ist eintragbar (wird gekappt wie jedes Ende, bis 23:59 angerechnet erst nach „Anerkennen").
 - **Pausen:** Lücke ab 15 Min. (nach Abzug des Puffers) zählt für §4 als Pause; Pause eingetragen **und** über die Lücke durchgestempelt → beides abgezogen (Hinweis „Pause in der Lücke wird zusätzlich abgezogen: …").
 - **Sichtbar:** Zusatzzeile am Eintrag („… 2:30 h zwischen den Blöcken nicht angerechnet"), Journal-Summe „Anwesenheit nicht angerechnet", Export-Spalte „Nicht angerechnet (Min)" (letzte Spalte).
@@ -122,7 +124,7 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 - **Aus** (Standard): Mitarbeiter buchen Urlaub direkt
 - **Ein**: Urlaub landet als „Offen" zur Genehmigung
 
-**Arbeitstage** auf der Karte = was die Genehmigung kostet: nur Arbeitstage laut Tagesplan zum jeweiligen Datum (4-Tage-Woche, Mi frei: Mo–Fr = 4), ohne Wochenende/Feiertag/„frei"-Sondertag; Halbtag und „halber Feiertag" je 0,5
+**Arbeitstage** auf der Karte = was die Genehmigung kostet: nur Arbeitstage laut Tagesplan zum jeweiligen Datum (4-Tage-Woche, Mi frei: Mo–Fr = 4), ohne Wochenende/Feiertag/„frei"-Sondertag; Halbtag, „halber Feiertag" und verkürzter Tag je 0,5
 **Genehmigen:** Grüner Button → Abwesenheiten werden automatisch eingetragen (nur an Arbeitstagen; Zeiteinträge an freien Tagen bleiben stehen). Karte zeigt **0** → Genehmigung nicht möglich (z. B. „0 Stunden geplant"), Antrag bleibt offen
 **Ablehnen:** Roter Button → optionalen Ablehnungsgrund eingeben
 **Stornieren:** Filter „Genehmigt" → Antrag → **„Urlaub stornieren"** (nur wenn Zeitraum noch nicht begonnen) → Abwesenheiten werden **automatisch entfernt** (Betriebsferientage im Zeitraum bleiben bzw. werden nachgebucht), Antrag wird „Zurückgezogen"
@@ -183,8 +185,11 @@ Heiligabend + Silvester sind **keine** gesetzlichen Feiertage → pro Tag getren
 | **Arbeitstag** (Standard) | volles Tagessoll | normal |
 | **Halbtag** | halbes Tagessoll | **amber/gelb** |
 | **Frei** | Tagessoll 0 (wie Feiertag) | **grau** |
+| **Verkürzt auf X Stunden** | Soll = kleinere Zahl aus Tagessoll und X (0,25–12 h, Standard 4); Urlaub 0,5 Tage | „verkürzter Tag (max. 4 h)" |
 
-Bei „Frei" zusätzlich **Anrechnung:** Urlaub (vom Konto) oder Bezahlte Freistellung (kein Abzug). Wirkt auf Soll, Urlaubskonto und Kalender. Gilt für **alle** Jahre – betrifft eine Änderung ein abgeschlossenes Jahr → Hinweis auf veralteten Übertrag.
+Bei „Frei" zusätzlich **Anrechnung:** Urlaub (vom Konto) oder Bezahlte Freistellung (kein Abzug). Wirkt auf Soll, Urlaubskonto und Kalender. Gilt für **alle** Jahre – betrifft eine Änderung ein abgeschlossenes Jahr → Hinweis auf veralteten Übertrag. Betroffene **Betriebsferien** bucht PraxisZeit beim Speichern automatisch neu (abgeschlossene Jahre: nur Hinweis).
+
+**Verkürzte Tage** (Einstellungen → „Verkürzte Tage"): einzelne Tage wie Rosenmontag mit Bezeichnung + „Höchstens (Stunden)" (0,25–12, Schritt 0,25). Gleiche Regel; der 24./31.12. läuft nur über die Sondertage-Einstellung. Im Kalender: „verkürzter Tag (max. 4 h)".
 
 ### Eigene Abwesenheitsgründe (#312)
 

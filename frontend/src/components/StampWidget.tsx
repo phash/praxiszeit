@@ -3,6 +3,7 @@ import { LogIn, LogOut, Play, Square, Check } from 'lucide-react';
 import apiClient from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { useAuthStore } from '../stores/authStore';
+import { trackHoursToday } from '../utils/contractToday';
 import { getErrorMessage } from '../utils/errorMessage';
 import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { computeBreakError } from '../utils/breakValidation';
@@ -212,7 +213,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
   };
 
   // Don't show stamp widget if time tracking is inactive for this user
-  if (user && user.track_hours === false) return null;
+  if (user && trackHoursToday(user) === false) return null; // F011: Vertrag von heute
 
   if (loading) {
     if (variant === 'sheet') {

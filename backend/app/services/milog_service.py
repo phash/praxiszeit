@@ -16,6 +16,7 @@ Modellentscheidungen (Spec § 7):
 Perf: die Router-Hot-Loops (users-overview, dashboard) reichen bereits berechnete
 Werte (`monthly_actual`, `detailed`) rein, damit pro MA nur EIN Overtime-Pass läuft.
 """
+from calendar import monthrange
 from datetime import date
 from decimal import Decimal
 
@@ -31,44 +32,73 @@ _WAGE_CAVEAT = ("sofern zur Mindestlohnhöhe vergütet; bei höherer Vergütung 
                 "unkritisch — bitte prüfen")
 
 
-def agreed_monthly_hours(db, user, ref_date: date) -> Decimal:
-    """Vertraglich vereinbarte Monatszeit. #377 Baustein 2a: wenn am MA eine
-    Monatszahl direkt hinterlegt ist (`agreed_monthly_hours`), gilt diese exakt;
-    sonst flach aus den Wochenstunden(zum Datum) abgeleitet (× 13/3)."""
-    explicit = getattr(user, "agreed_monthly_hours", None)
+def agreed_monthly_hours(db, user, ref_date: date, wh_changes=None) -> Decimal:
+    """Vertraglich vereinbarte Monatszeit. #377 Baustein 2a: wenn für den Monat
+    eine Monatszahl hinterlegt ist (`agreed_monthly_hours`), gilt diese exakt;
+    sonst flach aus den Wochenstunden(zum Datum) abgeleitet (× 13/3).
+
+    Teil A (Task 11): die Zahl kommt aus dem Monatsvertrag (Snapshot am
+    Monatsersten von ``ref_date``), nie aus der User-Zeile."""
+    explicit = calculation_service.month_contract(
+        db, user, ref_date.year, ref_date.month, wh_changes).agreed_monthly_hours
     if explicit is not None:
         return Decimal(str(explicit))
-    weekly = calculation_service.get_weekly_hours_for_date(db, user, ref_date)
+    weekly = calculation_service.get_weekly_hours_for_date(db, user, ref_date, wh_changes)
     return Decimal(str(weekly)) * AGREED_MONTHLY_FACTOR
 
 
+def _tracks_hours_in_month(db, user, year: int, month: int, wh_changes) -> bool:
+    """F002: ``track_hours`` darf mitten im Monat wechseln (anders als die drei
+    Minijob-Felder, die nur zum Monatsersten wirken). Der Monat hat ein
+    Arbeitszeitkonto, sobald an IRGENDEINEM seiner Tage Stunden gezählt werden —
+    das Konto (``get_overtime_history_detailed``) bucht genau diesen Anteil."""
+    first = date(year, month, 1)
+    last = date(year, month, monthrange(year, month)[1])
+    return calculation_service.tracks_hours_in_range(db, user, first, last, wh_changes)
+
+
+def month_has_account(db, user, year: int, month: int, wh_changes=None) -> bool:
+    """Hat der Monat ein MiLoG-Arbeitszeitkonto? Konto-Flag laut Monatsvertrag
+    (Snapshot am 1.) UND Stundenzählung an irgendeinem Tag des Monats (F002) —
+    DAS Gate aller MiLoG-Warnflächen."""
+    if wh_changes is None:
+        wh_changes = calculation_service.user_wh_changes(db, user)
+    mc = calculation_service.month_contract(db, user, year, month, wh_changes)
+    return mc.milog_working_time_account and _tracks_hours_in_month(db, user, year, month, wh_changes)
+
+
 def account_hours_in_month(db, user, year: int, month: int, up_to_date: date = None,
-                           monthly_actual=None) -> Decimal:
+                           monthly_actual=None, wh_changes=None) -> Decimal:
     """Auf das Konto eingestellte Plusstunden des Monats = max(0, Ist − vereinbarte
     Monatszeit). FLACHE Basis (Spec § 7.1). `monthly_actual` (falls vorberechnet)
-    spart den zusätzlichen get_monthly_actual-Pass in den Hot-Loops."""
+    spart den zusätzlichen get_monthly_actual-Pass in den Hot-Loops; ``wh_changes``
+    (Preload der Verlaufszeilen, Teil A) die Vertrags-Queries."""
     if monthly_actual is None:
-        monthly_actual = calculation_service.get_monthly_actual(db, user, year, month, up_to_date=up_to_date)
-    agreed = agreed_monthly_hours(db, user, date(year, month, 1))
+        monthly_actual = calculation_service.get_monthly_actual(db, user, year, month, up_to_date=up_to_date,
+                                                                wh_changes=wh_changes)
+    agreed = agreed_monthly_hours(db, user, date(year, month, 1), wh_changes)
     surplus = Decimal(str(monthly_actual)) - agreed
     return surplus if surplus > 0 else Decimal("0")
 
 
 def milog_50_check(db, user, year: int, month: int, up_to_date: date = None,
-                   monthly_actual=None):
+                   monthly_actual=None, wh_changes=None):
     """None, wenn Flag aus / kein Stundentracking / keine sinnvolle Vertragszeit /
     Konto-Plusstunden ≤ 50 % der vereinbarten Monatszeit. Sonst
     {account_hours, cap, agreed_monthly, caveat}."""
-    if not user.milog_working_time_account or not user.track_hours:
+    # Teil A (Task 11): beide Flags aus DEMSELBEN Monatsvertrag.
+    if wh_changes is None:  # Teil A (Task 12): einmal laden, an alle Helfer reichen
+        wh_changes = calculation_service.user_wh_changes(db, user)
+    if not month_has_account(db, user, year, month, wh_changes):
         return None
-    agreed = agreed_monthly_hours(db, user, date(year, month, 1))
+    agreed = agreed_monthly_hours(db, user, date(year, month, 1), wh_changes)
     if agreed <= 0:
         # Ein Arbeitszeitkonto mit 0 vereinbarten Monatsstunden hat keine
         # sinnvolle 50-%-Grenze — sonst würde jede Plusstunde warnen.
         return None
     cap = agreed / 2
     account = account_hours_in_month(db, user, year, month, up_to_date=up_to_date,
-                                     monthly_actual=monthly_actual)
+                                     monthly_actual=monthly_actual, wh_changes=wh_changes)
     if account > cap:
         return {"account_hours": float(account), "cap": float(cap),
                 "agreed_monthly": float(agreed), "caveat": _WAGE_CAVEAT}
@@ -84,7 +114,8 @@ def milog_50_warning_text(chk: dict) -> str:
     )
 
 
-def monthly_exceeded_check(db, user, year: int, month: int, up_to_date: date = None):
+def monthly_exceeded_check(db, user, year: int, month: int, up_to_date: date = None,
+                           wh_changes=None):
     """#377 Baustein 2b: weiche Plausibilitäts-Warnung, wenn das Monats-Ist
     (inkl. Gutschriften) die vereinbarte Monatsarbeitszeit eines Fix-Modus-MA
     übersteigt. None, wenn der Modus aus ist / kein Stundentracking / keine
@@ -93,22 +124,26 @@ def monthly_exceeded_check(db, user, year: int, month: int, up_to_date: date = N
     account`) — reine Fix-Soll-Plausibilität, kein 50-%-/Aging-Bezug. Das ist
     trotzdem KONSISTENT mit den anderen #377-Warnungen: `use_fixed_monthly_
     target=True` setzt `milog_working_time_account=True` zwingend voraus
-    (Schema-Invariante, erzwungen bei Create UND Update — siehe
-    `UserBase.check_fixed_monthly_target_requirements` +
-    `UserUpdate.check_fixed_monthly_target_requirements` + der
-    Effective-State-Guard in `admin_users.update_user` gegen isolierte
-    Teil-Updates), also ist bei jedem gültigen Fix-Modus-MA das Konto-Flag
-    ohnehin an. Alle 5 Call-Sites (dashboard.py, admin_users.py,
-    time_entries.py) rufen diese Funktion folglich nur innerhalb von
-    `if user.milog_working_time_account:` auf — das ist KEINE zusätzliche
-    Einschränkung, sondern deckt sich mit der Invariante."""
-    if not getattr(user, "use_fixed_monthly_target", False) or not getattr(user, "track_hours", False):
+    (Invariante, erzwungen beim Anlegen — `UserBase.check_fixed_monthly_target_
+    requirements` — und für jede Verlaufszeile auf deren Snapshot —
+    `admin_users._contract_rule_error`), also ist in jedem Monat mit festem Soll
+    das Konto-Flag ohnehin an. Alle 5 Call-Sites (dashboard.py, admin_users.py,
+    time_entries.py) rufen diese Funktion folglich nur hinter dem Konto-Gate des
+    Monatsvertrags auf — das ist KEINE zusätzliche Einschränkung, sondern deckt
+    sich mit der Invariante."""
+    # Teil A (Task 11): Modus und Zahl aus dem Monatsvertrag, Stundenzählung an
+    # irgendeinem Tag des Monats (F002).
+    if wh_changes is None:  # Teil A (Task 12): einmal laden, an alle Helfer reichen
+        wh_changes = calculation_service.user_wh_changes(db, user)
+    mc = calculation_service.month_contract(db, user, year, month, wh_changes)
+    if not mc.use_fixed_monthly_target or not _tracks_hours_in_month(db, user, year, month, wh_changes):
         return None
-    agreed = getattr(user, "agreed_monthly_hours", None)
+    agreed = mc.agreed_monthly_hours
     if not agreed:
         return None
     agreed = Decimal(str(agreed))
-    actual = calculation_service.get_monthly_actual(db, user, year, month, up_to_date=up_to_date)
+    actual = calculation_service.get_monthly_actual(db, user, year, month, up_to_date=up_to_date,
+                                                    wh_changes=wh_changes)
     if actual > agreed:
         return {"month_actual": float(actual), "agreed": float(agreed), "year": year, "month": month}
     return None
@@ -121,7 +156,7 @@ def monthly_exceeded_warning_text(chk: dict) -> str:
             f"({chk['agreed']:.1f}h). Bitte prüfen (sofern zur Mindestlohnhöhe vergütet).")
 
 
-def settlement_aging(db, user, as_of: date, detailed=None):
+def settlement_aging(db, user, as_of: date, detailed=None, wh_changes=None):
     """12-Monats-Ausgleichsfrist (§ 2 Abs. 2 S. 2 MiLoG). FIFO über die Monats-
     Deltas (Ist − Soll) des Kontos: Plus = Einzahlung (monatsstamped), Minus =
     Ausgleich (verbraucht älteste zuerst; ein Über-Defizit wird als laufender
@@ -132,8 +167,20 @@ def settlement_aging(db, user, as_of: date, detailed=None):
     wahre Alter der gefalteten Vor-Carryover-Historie ist unbekannt, § 7.3).
 
     None, wenn Flag aus / kein Stundentracking / kein offener Posten. `detailed`
-    (falls vorberechnet) spart den get_overtime_history_detailed-Pass."""
-    if not user.milog_working_time_account or not user.track_hours:
+    (falls vorberechnet) spart den get_overtime_history_detailed-Pass.
+
+    Teil A (Task 11): Konto-Flag je MONAT laut Monatsvertrag, Stundenzählung an
+    irgendeinem Tag des Monats (F002, ``_tracks_hours_in_month``) — None,
+    wenn der Monat von ``as_of`` kein Arbeitszeitkonto hat; das FIFO nimmt nur
+    Monate mit Konto auf (Monate ohne Konto zahlen weder ein noch aus).
+    ``wh_changes`` = optionaler Preload der Verlaufszeilen (Task 12)."""
+    if wh_changes is None:
+        wh_changes = calculation_service.user_wh_changes(db, user)
+
+    def _account_month(y: int, m: int) -> bool:
+        return month_has_account(db, user, y, m, wh_changes)
+
+    if not _account_month(as_of.year, as_of.month):
         return None
     if detailed is None:
         # Finding 8 (review 2026-07-14): a direct call (no pre-computed
@@ -145,7 +192,7 @@ def settlement_aging(db, user, as_of: date, detailed=None):
         # that eats the FIFO seed and silently drops MILOG_SETTLEMENT_DUE.
         cutoff = calculation_service.get_soll_cutoff_date(db, user, today=as_of)
         detailed = calculation_service.get_overtime_history_detailed(
-            db, user, as_of.year, as_of.month, cutoff_date=cutoff
+            db, user, as_of.year, as_of.month, cutoff_date=cutoff, wh_changes=wh_changes
         )
     if not detailed:
         return None
@@ -180,6 +227,8 @@ def settlement_aging(db, user, as_of: date, detailed=None):
     # Monats-Duty für die Akkumulation — daher fließt sie hier bewusst NICHT ein.
     for (y, m) in sorted(detailed.keys()):
         if start_ym is not None and (y, m) < start_ym:
+            continue
+        if not _account_month(y, m):  # Teil A: Monat ohne Arbeitszeitkonto
             continue
         mo = detailed[(y, m)]
         delta = Decimal(str(mo.actual)) - Decimal(str(mo.target))

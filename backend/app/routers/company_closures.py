@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Set
 from datetime import date, timedelta
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
@@ -235,11 +235,13 @@ def _create_closure_absences(
     workdays = sorted(workdays)
     affected = 0
 
-    # #394: half-day special days (24./31.12. configured as "halber Feiertag")
-    # have a 0.5 target factor. The closure must book only HALF a day for them —
-    # otherwise a full vacation/overtime day is deducted for a 0.5-Soll day
-    # (customer report philvdb). `free` special days already reduce the target to
-    # 0 and are excluded from `workdays` upstream; only `half_day` reaches here.
+    # #394 / Teil B: on reduced days the closure books the reduced target and
+    # consumes only HALF a vacation day (customer report philvdb): `half_day`
+    # (24./31.12. as "halber Feiertag") books 0.5 × t, `max_hours` (24./31.12.
+    # "verkürzt" and the verkürzte Tage of ``reduced_days``) books min(t, X) —
+    # both via ``special_day_target``; the 0.5-day consumption comes from
+    # ``half_special_day_weight``. `free` special days have target 0 and are
+    # excluded from `workdays` upstream.
     # Config is per-year, shared across all employees → load once.
     special_cfg_by_year = {
         yr: special_days_service.get_special_day_config(db, current_user.tenant_id, yr)
@@ -278,23 +280,16 @@ def _create_closure_absences(
             TimeEntry.date.in_(workdays),
         ).all():
             te_by_key.setdefault((entry.user_id, entry.date), []).append(entry)
-        for wh in db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id.in_(emp_ids),
-            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-        ).order_by(WorkingHoursChange.effective_from).all():
-            wh_by_user.setdefault(wh.user_id, []).append(wh)
+        wh_by_user.update(calculation_service.wh_changes_by_user(
+            db, current_user.tenant_id, emp_ids))
 
     for employee in employees:
         created_for_employee = False
         emp_wh = wh_by_user.get(employee.id, [])
-        # #314: remaining vacation budget snapshot per year, consumed as we book
-        # VACATION days; once exhausted the surplus days become OVERTIME.
+        # #314: remaining vacation budget snapshot per year (Decimal, like the
+        # re-split in closure_split_service), consumed as we book VACATION days;
+        # once exhausted the surplus days become OVERTIME.
         remaining_by_year: dict = {}
-        # The split only makes sense for time-tracked employees: an untracked MA
-        # (track_hours=False, daily target 0) has no overtime account, so an
-        # OVERTIME day would vanish from all accounting. Keep legacy VACATION for
-        # them (review finding).
-        emp_split = split_overtime and employee.track_hours
         for workday in workdays:
             # #298: never book closure absences OUTSIDE the employee's employment
             # window. A future-start employee (first_work_day in the future, e.g. an
@@ -335,7 +330,7 @@ def _create_closure_absences(
             # Betriebsferien). Deckungsgleich mit
             # ``calculation_service.is_vacation_billable_day`` (ruft ihn aus
             # Perf-Gruenden nicht selbst auf, der Snapshot liegt schon vor).
-            if employee.track_hours and day_target <= 0:
+            if schedule.track_hours and day_target <= 0:
                 continue
 
             # Skip if any absence already exists for this day (not just vacation)
@@ -364,23 +359,27 @@ def _create_closure_absences(
                     )
                     db.delete(entry)
 
-            # #394: a `half_day` special day (24./31.12.) contributes only 0.5×
-            # its target — book a HALF day (half the target hours, half_day flag,
-            # 0.5 budget consumption) instead of a full one.
-            sd_factor = special_days_service.special_day_target_factor(
-                workday, special_cfg_by_year[workday.year]
-            )
-            if sd_factor is not None and sd_factor == Decimal("0"):
+            # #394 / Teil B: on a reduced day (`half_day` or `max_hours`) the closure
+            # books the reduced target (hours = special_day_target, half_day=False)
+            # and consumes 0.5 day via half_special_day_weight (same helper as
+            # get_vacation_account and the budget checks).
+            sd_cfg = special_cfg_by_year[workday.year]
+            if special_days_service.special_day_mode(workday, sd_cfg) == special_days_service.MODE_FREE:
                 continue  # `free` day — defensive; already excluded from workdays
-            is_half_special = sd_factor is not None and sd_factor == Decimal("0.5")
-            booked_target = day_target * Decimal("0.5") if is_half_special else day_target
-            day_consumption = 0.5 if is_half_special else 1.0
+            booked_target = special_days_service.special_day_target(workday, day_target, sd_cfg)
+            day_consumption = calculation_service.half_special_day_weight(workday, sd_cfg)
 
             # #314: decide VACATION vs OVERTIME per day. VACATION while the
             # remaining budget covers this day's consumption; afterwards OVERTIME
             # (no minus-vacation). Only positive-target days consume the snapshot.
+            # The split only makes sense on time-tracked days: on a day without
+            # hour tracking (track_hours=False laut Snapshot, daily target 0) there
+            # is no overtime account, so an OVERTIME day would vanish from all
+            # accounting. Such days stay VACATION but consume the budget by day,
+            # exactly like the re-split (``resplit_year_closures``) — Teil A:
+            # decided per workday from the snapshot, never from the user column.
             day_type = absence_type
-            if emp_split and day_target > 0:
+            if split_overtime and (day_target > 0 or not schedule.track_hours):
                 yr = workday.year
                 if yr not in remaining_by_year:
                     # Resturlaub des Jahres als TAGE-Budget (Tagesprinzip). Die
@@ -390,10 +389,12 @@ def _create_closure_absences(
                     # chronologisch bis 0 auf, der Rest wird Überstundenausgleich —
                     # NIE Minus-Urlaub, auch wenn SPÄTER im Jahr Urlaub (z. B. Sommer)
                     # gebucht ist (der zählt korrekt mit; #314 Folgefix-Review).
-                    remaining_by_year[yr] = float(
+                    remaining_by_year[yr] = Decimal(str(
                         calculation_service.get_vacation_account(db, employee, yr)["remaining_days"]
-                    )
-                if remaining_by_year[yr] >= day_consumption:
+                    ))
+                if not schedule.track_hours:
+                    remaining_by_year[yr] -= day_consumption
+                elif remaining_by_year[yr] >= day_consumption:
                     day_type = AbsenceType.VACATION
                     remaining_by_year[yr] -= day_consumption
                 else:
@@ -436,6 +437,155 @@ def _create_closure_absences(
         if created_for_employee:
             affected += 1
     return affected
+
+
+# Teil B: Summen-Audit beim automatischen Neubuchen (Sondertag / verkürzter Tag).
+CLOSURE_REBOOK_REASON = "Sondertag oder verkürzter Tag geändert, wird neu gebucht"
+
+
+def closure_years(db: Session, tenant_id) -> Set[int]:
+    """Alle Jahre, die eine Schließung des Mandanten berührt (F-026)."""
+    years: Set[int] = set()
+    for start, end in db.query(CompanyClosure.start_date, CompanyClosure.end_date).filter(
+        CompanyClosure.tenant_id == tenant_id,  # F-026
+    ).all():
+        years.update(range(start.year, end.year + 1))
+    return years
+
+
+def resave_closures_for_dates(
+    db: Session, current_user: User, dates: Set[date], closed_years=None,
+) -> None:
+    """Teil B: Betriebsferien-Buchungen an ``dates`` neu buchen, nachdem sich
+    deren Sondertag-/Verkürzt-Zustand geändert hat (Soll, Verbrauch, ``free``).
+
+    Folgt ``closure_split_service.rebook_freed_closure_days``, nicht
+    ``update_closure``: nur die betroffenen Tage, in der Transaktion des
+    Aufrufers (committet nie). Der Aufrufer hat den neuen Zustand bereits
+    geflusht, damit ``get_special_day_config`` ihn sieht.
+
+    - Tage in abgeschlossenen Jahren bleiben unangetastet (Fix #5: dort nur
+      Warnung, die der Aufrufer über ``stale_year_closing_warning`` liefert).
+    - Gelöscht und neu gebucht werden nur Zeilen aktiver Teilnehmender an Tagen
+      ohne Zeiteintrag (#290); Zeilen Ausgeschiedener/Abgewählter und
+      gearbeitete Tage bleiben stehen.
+    - Sperren: Anker auf Teilnehmende ∪ Zeilen-Eigentümer ∪ Admin EINMAL vor
+      der ersten Löschung (``_lock_participant_rows``: erst sperren, dann
+      schreiben). Die Zeile des verkürzten Tags, die der Aufrufer vorher
+      schreibt, nimmt über ``created_by`` nur ein ``FOR KEY SHARE`` auf die
+      Admin-Zeile — verträglich mit dem ``FOR NO KEY UPDATE``-Anker.
+    - Zustand erst NACH der Sperre lesen (#491 API-2): die Vorab-Abfrage
+      bestimmt nur die Sperrmenge; Teilnehmende und verknüpfte Zeilen werden
+      danach neu gelesen und auf die gesperrte Menge beschränkt (wer erst
+      danach Teilnehmer wird, bucht über seinen eigenen Pfad —
+      ``_enroll_user_in_open_closures``).
+
+    Keine Rückgabe: abgeschlossene Jahre sind oben ausgenommen, hier ändert
+    sich dort nie eine Buchung — die Jahresabschluss-Warnung liefert allein der
+    Aufrufer (``stale_year_closing_warning`` / ``closed_year_warning_text``).
+    """
+    tid = current_user.tenant_id
+    # ``closed_years``: vom Aufrufer bereits ermittelt (spart die zweite Abfrage).
+    closed = set(
+        closed_years if closed_years is not None
+        else calculation_service.all_closed_years(db, tid)
+    )
+    remaining = {d for d in (dates or ()) if d.year not in closed}
+    if not remaining:
+        return
+
+    lo, hi = min(remaining), max(remaining)
+    closures = [
+        c for c in db.query(CompanyClosure).filter(
+            CompanyClosure.tenant_id == tid,  # F-026
+            CompanyClosure.start_date <= hi,
+            CompanyClosure.end_date >= lo,
+        ).order_by(CompanyClosure.start_date).all()
+        if any(c.start_date <= d <= c.end_date for d in remaining)
+    ]
+    if not closures:
+        return
+
+    closure_ids = [c.id for c in closures]
+
+    def _participants():
+        # Teilnehmermenge wie update_closure (#189).
+        return db.query(User).filter(
+            User.is_active == True,
+            User.receives_company_closures == True,
+            User.tenant_id == tid,  # F-026
+        ).all()
+
+    def _linked():
+        return db.query(Absence).filter(
+            Absence.tenant_id == tid,  # F-026
+            Absence.closure_id.in_(closure_ids),
+            Absence.date.in_(remaining),
+        ).all()
+
+    # Vorab-Lesen NUR für die Sperrmenge (ungesperrt).
+    locked_ids = (
+        {e.id for e in _participants()}
+        | {a.user_id for a in _linked()}
+        | {current_user.id}
+    )
+    _lock_participant_rows(db, tid, locked_ids)
+    # Zustand erst nach der Sperre lesen; nur gesperrte Personen anfassen.
+    participants = [e for e in _participants() if e.id in locked_ids]
+    participant_ids = {e.id for e in participants}
+    linked = [a for a in _linked() if a.user_id in locked_ids]
+
+    # #290: gearbeitete Tage bleiben, wie _worked_keys in update_closure.
+    worked_keys = set()
+    if participant_ids:
+        worked_keys = {
+            (uid, d) for uid, d in db.query(TimeEntry.user_id, TimeEntry.date).filter(
+                TimeEntry.tenant_id == tid,  # F-026
+                TimeEntry.user_id.in_(participant_ids),
+                TimeEntry.date.in_(remaining),
+            ).all()
+        }
+
+    linked_by_closure: dict = {}
+    for a in linked:
+        linked_by_closure.setdefault(a.closure_id, []).append(a)
+    for closure in closures:
+        deleted = 0
+        for a in linked_by_closure.get(closure.id, []):
+            if a.user_id in participant_ids and (a.user_id, a.date) not in worked_keys:
+                db.delete(a)
+                deleted += 1
+        _audit_closure_absence_deletion(db, current_user, closure, deleted, CLOSURE_REBOOK_REASON)
+    # Löschungen sichtbar machen, bevor der Create-Helper existing_keys liest.
+    db.flush()
+
+    split_needed = False
+    for closure in closures:
+        holidays = _get_holidays_for_range(db, closure.start_date, closure.end_date, tid)
+        holidays |= special_days_service.free_special_days_in_range(
+            db, tid, closure.start_date, closure.end_date
+        )
+        workdays = [
+            d for d in _get_workdays(closure.start_date, closure.end_date, holidays)
+            if d in remaining
+        ]
+        if workdays:
+            _create_closure_absences(
+                db, closure, workdays, participants, current_user, delete_time_entries=False
+            )
+            # Überlappende Schließungen müssen diese Buchung sehen.
+            db.flush()
+        if closure.counts_as_vacation:
+            split_needed = True
+
+    if split_needed and settings_service.get_bool_setting(
+        db, "closure_overtime_after_vacation", tid, False
+    ):
+        db.flush()
+        for yr in sorted({d.year for d in remaining}):
+            _resplit_year_closures(db, tid, yr, current_user)
+
+    db.flush()
 
 
 @router.get("/", response_model=List[CompanyClosureResponse])
@@ -772,22 +922,19 @@ def update_closure(
     # Stundenzählung (#191) zählt jeder Schließtag und bleibt. Ausgeschiedene/
     # Abgewählte fasst dieses Speichern wie oben nicht an. Unabhängig von
     # ``_worked_keys``: die Zeile wird nicht neu gebucht, die Arbeitszeit bleibt.
+    # Teil A: Stundenzählung je Abwesenheitsdatum — ``is_vacation_billable_day``
+    # liest sie aus dem Snapshot (ohne Stundenzählung zählt jeder Schließtag).
     _participants_by_id = {e.id: e for e in employees}
-    _tracked_linked_ids = {
-        a.user_id for a in linked
-        if a.user_id in _participants_by_id and _participants_by_id[a.user_id].track_hours
+    _participant_linked_ids = {
+        a.user_id for a in linked if a.user_id in _participants_by_id
     }
     _zero_target_ids = set()
-    if _tracked_linked_ids:
-        _wh_by_user: dict = {}
-        for wh in db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id.in_(_tracked_linked_ids),
-            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-        ).order_by(WorkingHoursChange.effective_from).all():
-            _wh_by_user.setdefault(wh.user_id, []).append(wh)
+    if _participant_linked_ids:
+        _wh_by_user = calculation_service.wh_changes_by_user(
+            db, current_user.tenant_id, _participant_linked_ids)
         _zero_target_ids = {
             a.id for a in linked
-            if a.user_id in _tracked_linked_ids and a.date in workday_set
+            if a.user_id in _participant_linked_ids and a.date in workday_set
             and not calculation_service.is_vacation_billable_day(
                 db, _participants_by_id[a.user_id], a.date,
                 wh_changes=_wh_by_user.get(a.user_id, []),
