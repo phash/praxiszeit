@@ -425,3 +425,35 @@ def test_closure_years(db, admin):
                           created_by=other_admin.id, tenant_id=OTHER_TENANT_ID))
     db.commit()
     assert closure_years(db, DEFAULT_TENANT_ID) == {2025, 2026, 2028}
+
+
+@pytest.mark.parametrize("d", ["0202-02-12", "1999-12-30", "2101-01-02"])
+def test_implausible_date_422(client, d):
+    """F027/F104: Tippfehler-Datum außerhalb 2000–2100 → deutsche 422."""
+    r = client.post("/api/admin/reduced-days/",
+                    json={"date": d, "label": "X", "max_hours": 4})
+    assert r.status_code == 422, r.text
+    assert "01.01.2000" in r.text
+
+
+def test_list_without_year_is_limited(client):
+    """F128: ohne Jahresfilter begrenzt ``limit`` die Antwort."""
+    _post_rm(client)
+    _post_rm(client, d=TUE, label="Dienstag")
+    r = client.get("/api/admin/reduced-days/?limit=1")
+    assert r.status_code == 200 and len(r.json()) == 1
+    assert client.get("/api/admin/reduced-days/?limit=5000").status_code == 422
+
+
+def test_unknown_id_404_on_update_and_delete(client):
+    rid = str(uuid.uuid4())
+    body = {"date": RM.isoformat(), "label": "X", "max_hours": 4}
+    assert client.put(f"/api/admin/reduced-days/{rid}", json=body).status_code == 404
+    assert client.delete(f"/api/admin/reduced-days/{rid}").status_code == 404
+
+
+def test_is_settings_special_day():
+    from app.services import special_days_service as sds
+    assert sds.is_settings_special_day(date(2026, 12, 24))
+    assert sds.is_settings_special_day(date(2030, 12, 31))
+    assert not sds.is_settings_special_day(date(2026, 12, 25))

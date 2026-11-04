@@ -39,7 +39,7 @@ def upgrade() -> None:
                   sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
         sa.UniqueConstraint("tenant_id", "date", name="uq_reduced_days_tenant_date"),
     )
-    op.create_index("ix_reduced_days_tenant_id", "reduced_days", ["tenant_id"])
+    # Kein eigener Index auf tenant_id: das UNIQUE (tenant_id, date) liefert ihn.
 
     op.execute("ALTER TABLE reduced_days ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE reduced_days FORCE ROW LEVEL SECURITY")
@@ -58,5 +58,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("DROP POLICY IF EXISTS tenant_isolation ON reduced_days")
-    op.drop_index("ix_reduced_days_tenant_id", table_name="reduced_days")
     op.drop_table("reduced_days")

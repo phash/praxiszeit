@@ -19,7 +19,8 @@ class ReducedDay(Base):
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    # Kein index=True: das UNIQUE (tenant_id, date) deckt tenant_id bereits ab.
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
     date = Column(Date, nullable=False)
     label = Column(String(100), nullable=False)
     max_hours = Column(Numeric(4, 2), nullable=False)

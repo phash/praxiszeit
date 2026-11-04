@@ -13,6 +13,15 @@ class ReducedDayCreate(BaseModel):
     label: str = Field(..., min_length=1, max_length=100)
     max_hours: Decimal
 
+    @field_validator("date")
+    @classmethod
+    def _plausible_date(cls, v):
+        # Tippfehler wie 0202-02-12 → deutsche 422 (gleiche Grenze wie die Listen).
+        if not (special_days_service.REDUCED_DAY_YEAR_MIN <= v.year
+                <= special_days_service.REDUCED_DAY_YEAR_MAX):
+            raise ValueError(special_days_service.REDUCED_DAY_DATE_RANGE_DETAIL)
+        return v
+
     @field_validator("label", mode="before")
     @classmethod
     def _strip_label(cls, v):
@@ -36,3 +45,10 @@ class ReducedDayResponse(BaseModel):
     max_hours: float
     created_at: datetime
     warning: Optional[str] = None
+
+
+class ReducedDayPublic(BaseModel):
+    """Lese-Endpoint ``GET /api/reduced-days`` (jede angemeldete Person)."""
+    date: str
+    label: str
+    max_hours: float
