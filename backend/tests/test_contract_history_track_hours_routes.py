@@ -71,7 +71,10 @@ def test_future_row_switching_track_hours_off_applies_without_mirror(
     try:
         emp = _client(db, u)
         assert emp.get("/api/dashboard/missing-bookings").json()["entries"] == []
-        assert emp.get("/api/dashboard/weekly-overview").json() == []
+        # F025: die Woche 30.11.–06.12. hat mit dem 30.11. einen gezählten Tag →
+        # sie erscheint (wie in den Admin-Berichten, tracks_hours_in_range).
+        assert [w["week_start"] for w in emp.get("/api/dashboard/weekly-overview").json()] == [
+            "2026-11-30"]
         adm = _client(db, admin_user, admin=True)
         team = adm.get("/api/dashboard/missing-bookings/team")
         assert team.status_code == 200, team.text
@@ -93,6 +96,20 @@ def test_missing_bookings_still_reported_before_the_switch(_db_session, employee
     try:
         body = _client(db, u).get("/api/dashboard/missing-bookings").json()
         assert [e["type"] for e in body["entries"]][:1] == ["open"]
+    finally:
+        endpoints_app.dependency_overrides.clear()
+
+
+def test_open_entry_of_tracked_day_reported_after_switch_off(_db_session, employee_user, monkeypatch):
+    """F025: heute ohne Stundenzählung — der offene Eintrag eines früheren Tages
+    MIT Stundenzählung bleibt als „offen" sichtbar (er muss noch beendet werden)."""
+    db, u = _db_session, employee_user
+    _off_from_december(db, u)
+    entry(db, u, date(2026, 11, 30), t(8), None)
+    freeze(monkeypatch, date(2026, 12, 2))
+    try:
+        body = _client(db, u).get("/api/dashboard/missing-bookings").json()
+        assert [(e["date"], e["type"]) for e in body["entries"]] == [("2026-11-30", "open")]
     finally:
         endpoints_app.dependency_overrides.clear()
 

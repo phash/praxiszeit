@@ -28,12 +28,18 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None,
     Preload der Verlaufszeilen (Team-Widget: eine Query für alle).
     """
     today = today_local()
+    if wh_changes is None:
+        wh_changes = calculation_service.user_wh_changes(db, user)
     # Nutzer ohne Soll/Ist-Zeiterfassung (z.B. das technische Bootstrap-Admin-
     # Konto, track_hours=False) werden nicht zur Buchung erwartet -> keine
-    # "Buchung fehlt"-Warnungen. Teil A: Snapshot von HEUTE, nicht die
-    # User-Zeile — eine zukunftsdatierte Zeile wird ohne Schreiben gültig.
-    if not calculation_service.tracks_hours_on(db, user, today, wh_changes):
+    # "Buchung fehlt"-Warnungen. Teil A: laut Vertrags-Snapshot, nie die
+    # User-Zeile — je TAG: offene Einträge an Tagen mit Stundenzählung bleiben
+    # sichtbar, auch wenn heute nicht gezählt wird; fehlende Tage entscheidet die
+    # Tagesschleife unten über das Tagessoll (0 an Tagen ohne Stundenzählung).
+    track_values = calculation_service._track_hours_values(db, user, wh_changes)
+    if True not in track_values:
         return []
+    tracked_on = calculation_service._tracked_day_predicate(db, user, wh_changes, track_values)
 
     if tenant_id is None:
         tenant_id = user.tenant_id
@@ -48,6 +54,8 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None,
     ).order_by(TimeEntry.date).all()
 
     for te in open_entries:
+        if not tracked_on(te.date):
+            continue
         entries.append(MissingBookingEntry(
             date=te.date,
             type="open",
@@ -289,10 +297,6 @@ def get_weekly_overview(
     Wie die Monatsübersicht beginnt die Liste frühestens mit der Woche des ersten
     Zeiteintrags; ohne Zeiteinträge oder ohne Stundenzählung ist sie leer.
     """
-    # Teil A: Stundenzählung laut Snapshot von heute.
-    if not calculation_service.tracks_hours_on(db, current_user, today_local()):
-        return []
-
     first_entry = db.query(TimeEntry).filter(
         TimeEntry.user_id == current_user.id,
         TimeEntry.tenant_id == current_user.tenant_id,  # F-026
@@ -304,6 +308,11 @@ def get_weekly_overview(
     current_monday = today - timedelta(days=today.weekday())
     first_monday = first_entry.date - timedelta(days=first_entry.date.weekday())
     monday = max(current_monday - timedelta(weeks=weeks - 1), first_monday)
+
+    # Teil A: Stundenzählung an IRGENDEINEM Tag des Zeitraums (wie die
+    # Admin-Wochen-/Monatsberichte, ``tracks_hours_in_range``), nicht nur heute.
+    if not calculation_service.tracks_hours_in_range(db, current_user, monday, today):
+        return []
 
     cutoff = calculation_service.get_soll_cutoff_date(db, current_user)  # #313
 
