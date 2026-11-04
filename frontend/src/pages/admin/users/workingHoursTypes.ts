@@ -41,7 +41,7 @@ export interface ContractTerms {
 }
 
 /** Erfüllte Verkürzungskriterien (Spec 9.5 (a)/(b)/(c)). */
-export type ShorteningReason = 'entries' | 'saldo' | 'absence_credit';
+export type ShorteningReason = 'entries' | 'saldo' | 'absence_credit' | 'vacation_entitlement';
 
 /** Ein neu gekappter Eintrag vorher/nachher (`TimeEntryChangeOut`); Zeiten "HH:MM:SS". */
 export interface TimeEntryChange {
@@ -100,6 +100,8 @@ export interface WorkingHoursChangePreview {
   not_extendable_entries?: TimeEntryChange[];
   is_shortening?: boolean;
   shortening_reasons?: ShorteningReason[];
+  // Teil A (075): Urlaubsanspruch je Jahr (Wirkungsjahr und Folgejahr) vor/nach der Änderung.
+  vacation_entitlement?: { year: number; before: number; after: number }[];
   shortening_closed_years?: number[];
   earliest_lossless_date?: string | null;
   earliest_lossless_note?: string | null;

@@ -88,11 +88,27 @@ describe('WhImpactBox (Spec 12.1)', () => {
     // Tage", `signedDays` liefert die Einheit bereits mit) fiele nicht auf.
     const cells = (row: HTMLElement) => within(row).getAllByRole('cell').map((c) => c.textContent);
     const { unmount } = render(<WhImpactBox preview={FIRST_STATE} />);
-    expect(cells(screen.getByRole('row', { name: /Urlaub 2026/ }))).toEqual(['10 Tage', '10 Tage', '0 Tage']);
+    expect(cells(screen.getByRole('row', { name: /Urlaub verbraucht 2026/ }))).toEqual(['10 Tage', '10 Tage', '0 Tage']);
     unmount();
 
     render(<WhImpactBox preview={{ ...FIRST_STATE, vacation_days_before: 10, vacation_days_after: 9.5 }} />);
-    expect(cells(screen.getByRole('row', { name: /Urlaub 2026/ }))).toEqual(['10 Tage', '9,5 Tage', '−0,5 Tage']);
+    expect(cells(screen.getByRole('row', { name: /Urlaub verbraucht 2026/ }))).toEqual(['10 Tage', '9,5 Tage', '−0,5 Tage']);
+  });
+
+  it('renames the used row to „Urlaub verbraucht 2026"', () => {
+    render(<WhImpactBox preview={FIRST_STATE} />);
+    expect(screen.getByRole('row', { name: /Urlaub verbraucht 2026/ })).toBeInTheDocument();
+    expect(screen.queryByRole('row', { name: /^Urlaub 2026/ })).not.toBeInTheDocument();
+  });
+
+  it('shows „Urlaubsanspruch 2026" 24 → 25 and „Urlaubsanspruch 2027" 24 → 30', () => {
+    const cells = (row: HTMLElement) => within(row).getAllByRole('cell').map((c) => c.textContent);
+    render(<WhImpactBox preview={{
+      ...FIRST_STATE,
+      vacation_entitlement: [{ year: 2026, before: 24, after: 25 }, { year: 2027, before: 24, after: 30 }],
+    }} />);
+    expect(cells(screen.getByRole('row', { name: /Urlaubsanspruch 2026/ }))).toEqual(['24 Tage', '25 Tage', '+1 Tag']);
+    expect(cells(screen.getByRole('row', { name: /Urlaubsanspruch 2027/ }))).toEqual(['24 Tage', '30 Tage', '+6 Tage']);
   });
 
   it('breite Tabelle scrollt auf dem Handy quer statt abgeschnitten zu werden', () => {

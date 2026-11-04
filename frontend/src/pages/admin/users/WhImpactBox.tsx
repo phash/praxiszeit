@@ -160,11 +160,19 @@ export default function WhImpactBox({ preview, plannedPresence = false }: {
             </tr>
             <tr>
               {/* Die Urlaubszahlen gehören zum Jahr des Wirkungszeitraums. */}
-              <th scope="row" className="pr-2 text-left font-medium">{`Urlaub ${vacationYear}`}</th>
+              <th scope="row" className="pr-2 text-left font-medium">{`Urlaub verbraucht ${vacationYear}`}</th>
               <td className="whitespace-nowrap pl-2 text-right">{formatDayCount(preview.vacation_days_before)}</td>
               <td className="whitespace-nowrap pl-2 text-right">{formatDayCount(preview.vacation_days_after)}</td>
               <td className="whitespace-nowrap pl-2 text-right font-medium">{signedDays(vacationDelta)}</td>
             </tr>
+            {(preview.vacation_entitlement ?? []).map((e) => (
+              <tr key={e.year}>
+                <th scope="row" className="pr-2 text-left font-medium">{`Urlaubsanspruch ${e.year}`}</th>
+                <td className="whitespace-nowrap pl-2 text-right">{formatDayCount(e.before)}</td>
+                <td className="whitespace-nowrap pl-2 text-right">{formatDayCount(e.after)}</td>
+                <td className="whitespace-nowrap pl-2 text-right font-medium">{signedDays(round2(e.after - e.before))}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

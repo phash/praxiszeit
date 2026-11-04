@@ -646,7 +646,8 @@ export default function WorkingHoursModal({
   const vacationDelta = shown ? round2(shown.vacation_days_after - shown.vacation_days_before) : 0;
   // Abschluss-Review #431, Fund 2: eine reine Saldo-/Urlaubswirkung (z. B. ein
   // wegfallender Wochentag ohne umgeschriebene Abwesenheits-Stunde) zählt mit.
-  const affectsBalance = !!shown && !blockedReason && (overtimeDelta !== 0 || vacationDelta !== 0);
+  const entitlementChanged = !!shown && (shown.vacation_entitlement ?? []).some((e) => e.before !== e.after);
+  const affectsBalance = !!shown && !blockedReason && (overtimeDelta !== 0 || vacationDelta !== 0 || entitlementChanged);
   // 9.4 ERGÄNZT die Auslöser aus 1.17.0/#431, nimmt keinen weg.
   const needsConfirmation = affectsEntries || affectsBookedAbsences || affectsBalance;
   // Review Task 19 (Fund 4): Option 1 sperrt „Speichern", bis ihre eigene

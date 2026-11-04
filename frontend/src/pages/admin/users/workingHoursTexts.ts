@@ -2,7 +2,7 @@
 // Wochenstunden" — an EINER Stelle, damit Dialog, Verkürzungs-Kasten und
 // Lösch-Dialog wortgleich bleiben. Die Grundtyp-SCHLÜSSEL sind eingefroren
 // (Backend `reclamp_audit.REASON_TYPES`), die Oberfläche zeigt nur die Beschriftungen.
-import { formatDayCount, formatHoursHM } from '../../../utils/formatters';
+import { formatDayCount, formatDayNumber, formatHoursHM } from '../../../utils/formatters';
 import type { ContractTerms, WorkingHoursChangePreview } from './workingHoursTypes';
 
 export const LEGAL_HINT =
@@ -231,6 +231,13 @@ export function shorteningHeadlines(p: WorkingHoursChangePreview): string[] {
     const n = (p.absence_credit_reductions ?? []).length;
     out.push(`${n === 1 ? '1 Abwesenheits-Gutschrift sinkt' : `${n} Abwesenheits-Gutschriften sinken`} stärker als das `
       + 'Tagessoll (Arbeit und Gutschrift am selben Tag)');
+  }
+  if (reasons.includes('vacation_entitlement')) {
+    for (const e of p.vacation_entitlement ?? []) {
+      if (e.after < e.before) {
+        out.push(`Der Urlaubsanspruch ${e.year} sinkt von ${formatDayNumber(e.before)} auf ${formatDayNumber(e.after)} Tage`);
+      }
+    }
   }
   return out;
 }

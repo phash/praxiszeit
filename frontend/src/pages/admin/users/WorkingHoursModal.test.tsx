@@ -700,7 +700,7 @@ describe('#431: Modus-Umschalter, Tagesplan und erweiterte Vorschau', () => {
     // period_start — ohne Jahreszahl liest der Admin sie als "dieses Jahr".
     mockPreview({ period_start: '2025-11-01', period_end: '2025-12-31', vacation_days_before: 18, vacation_days_after: 19 });
     renderModal();
-    expect(await screen.findByText(/Urlaub 2025/)).toBeInTheDocument();
+    expect(await screen.findByText(/Urlaub verbraucht 2025/)).toBeInTheDocument();
   });
 
   it('erklärt einen unveränderten Saldo bei einem Wirkungsdatum in der Zukunft', async () => {
@@ -830,12 +830,33 @@ describe('Abschluss-Review #431, Fund 2: Vorschau erscheint auch bei reiner Sald
     await flushDebounce();
 
     const box = await screen.findByRole('status');
-    expect(within(box).getByText(/Urlaub 2026/)).toBeInTheDocument();
+    expect(within(box).getByText(/Urlaub verbraucht 2026/)).toBeInTheDocument();
     expect(within(box).getByText('12 Tage')).toBeInTheDocument();
     expect(within(box).getByText('11 Tage')).toBeInTheDocument();
     // Nicht als „betrifft gebuchte Abwesenheiten" überschreiben — es sind null.
     expect(within(box).queryByText(/Betrifft bereits gebuchte Abwesenheiten/)).not.toBeInTheDocument();
     expect(within(box).queryByText(/Rückwirkende Änderung/)).not.toBeInTheDocument();
+  });
+
+  // Review Focus 3: eine reine Anspruchsänderung (Saldo und verbrauchter Urlaub gleich) zeigt die Box.
+  it('shows the impact box for a pure entitlement change', async () => {
+    mockPreview({
+      is_retroactive: false,
+      period_start: '2026-09-01',
+      period_end: '2026-09-30',
+      overtime_before: 12.5, overtime_after: 12.5,
+      vacation_days_before: 12, vacation_days_after: 12,
+      affected_absences: 0,
+      vacation_entitlement: [{ year: 2026, before: 24, after: 25 }, { year: 2027, before: 24, after: 25 }],
+    });
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '24' } });
+    await flushDebounce();
+    await screen.findByRole('status');
+    expect(screen.getByRole('row', { name: /Urlaubsanspruch 2026/ })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ })).toBeInTheDocument();
   });
 
   it('verlangt für diese Auswirkung dieselbe ausdrückliche Bestätigung', async () => {
@@ -1862,6 +1883,16 @@ describe('Löschen einer Arbeitszeit-Änderung (Spec 9.7/P13)', () => {
     const dialog = await openDelete();
     expect(await within(dialog).findByText('Die früheste Änderung verankert den davor gültigen Wert.')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Löschen' })).toBeDisabled();
+  });
+
+  it('delete panel shows entitlement before → after', async () => {
+    deletePreviewMock.mockResolvedValue(previewResponse({
+      ...QUIET,
+      vacation_entitlement: [{ year: 2026, before: 30, after: 24 }, { year: 2027, before: 30, after: 24 }],
+    }));
+    const dialog = await openDelete();
+    const row = await within(dialog).findByRole('row', { name: /Urlaubsanspruch 2026/ });
+    expect(within(row).getAllByRole('cell').map((c) => c.textContent)).toEqual(['30 Tage', '24 Tage', '−6 Tage']);
   });
 
   it('Verkürzung: Standard „auf vorherigen Stand zurücksetzen" sendet reset_body unverändert, Vorschau mit demselben Body', async () => {
