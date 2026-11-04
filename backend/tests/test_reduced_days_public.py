@@ -137,3 +137,13 @@ def test_clock_status_label_none_on_weekend(db, test_user, monkeypatch):
     sat = dt.date(2026, 2, 21)
     _reduced(db, d=sat)
     assert _status(db, test_user, monkeypatch, sat)["today_special_day_label"] is None
+
+
+def test_clock_status_label_none_without_hour_tracking(db, test_user, monkeypatch):
+    """F026: ohne Soll heute (Tag ohne Stundenzählung) keine Verkürzt-Beschriftung."""
+    _reduced(db)
+    test_user.track_hours = False
+    db.commit()
+    body = _status(db, test_user, monkeypatch, MONDAY)
+    assert body["today_target_hours"] == 0.0
+    assert body["today_special_day_label"] is None

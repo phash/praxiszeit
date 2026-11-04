@@ -200,3 +200,16 @@ def test_track_hours_off_whole_month_has_no_milog_account(db, minijob_user):
             use_fixed_monthly_target=False)
     assert milog_service.milog_50_check(db, minijob_user, 2026, 3, monthly_actual=Decimal("100")) is None
     assert milog_service.milog_50_check(db, minijob_user, 2026, 4, monthly_actual=Decimal("100")) is not None
+
+
+def test_push_warning_gate_uses_entry_month_not_today(db, minijob_user, monkeypatch):
+    """F024/F075/F118: die Push-Warnungen (clock_out, Anlegen, Bearbeiten) gaten
+    auf den Monatsvertrag des EINTRAGS — ein Oktober-Eintrag, im November nach
+    Kontoende bearbeitet, warnt weiter für Oktober."""
+    from app.routers import time_entries as te
+    add_row(db, minijob_user, date(2026, 11, 1), weekly_hours=10, vacation_days=Decimal("30"),
+            track_hours=True, milog_working_time_account=False, agreed_monthly_hours=None,
+            use_fixed_monthly_target=False)
+    monkeypatch.setattr(te, "_today_local", lambda: date(2026, 11, 15))
+    assert te._milog_account_in_month(db, minijob_user, date(2026, 10, 5)) is True
+    assert te._milog_account_in_month(db, minijob_user, date(2026, 11, 5)) is False

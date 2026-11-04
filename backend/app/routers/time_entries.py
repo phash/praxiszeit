@@ -10,7 +10,7 @@ from app.models import (
     User, TimeEntry, UserRole, TimeEntryAuditLog,
     ChangeRequest, ChangeRequestType, ChangeRequestStatus,
 )
-from app.services import settings_service, milog_service, calculation_service, presence_service
+from app.services import settings_service, milog_service, calculation_service, presence_service, special_days_service
 from app.middleware.auth import get_current_user
 from app.schemas.time_entry import (
     TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse,
@@ -209,12 +209,12 @@ def _assert_within_employment_window(user: User, d: date) -> None:
         raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
 
 
-def _milog_account_today(db: Session, user: User) -> bool:
-    """Teil A (Task 11): #377-Push-Warnungen nur, wenn der Monatsvertrag von heute
-    ein MiLoG-Arbeitszeitkonto führt (nie das Live-Feld der User-Zeile). Die
-    Prüfungen selbst gaten zusätzlich auf den Monat des Eintrags."""
-    today = _today_local()
-    return calculation_service.month_contract(db, user, today.year, today.month).milog_working_time_account
+def _milog_account_in_month(db: Session, user: User, d: date) -> bool:
+    """Teil A (Task 11): #377-Push-Warnungen nur, wenn der Monatsvertrag des
+    EINTRAGS-Monats ein MiLoG-Arbeitszeitkonto führt (nie das Live-Feld der
+    User-Zeile, nie der Monat von heute — ein nachträglich bearbeiteter Eintrag
+    eines Kontomonats warnt auch, wenn das Konto inzwischen beendet ist)."""
+    return calculation_service.month_contract(db, user, d.year, d.month).milog_working_time_account
 
 
 def _clock_in_start_taken_detail(start: time) -> str:
@@ -373,18 +373,12 @@ def _today_target_hours(db: Session, user: User, today: date) -> float:
     return float(calculation_service.get_day_presence_target(db, user, today))
 
 
-def _today_special_day_label(db: Session, user: User, today: date) -> Optional[str]:
-    """Teil B: Beschriftung eines verkürzten Tages (None am Wochenende/Feiertag)."""
-    from app.models.public_holiday import PublicHoliday
-    from app.services import special_days_service
-
-    if today.weekday() >= 5:
-        return None
-    is_holiday = db.query(PublicHoliday.id).filter(
-        PublicHoliday.date == today,
-        PublicHoliday.tenant_id == user.tenant_id,
-    ).first() is not None
-    if is_holiday:
+def _today_special_day_label(db: Session, user: User, today: date, target_hours: float) -> Optional[str]:
+    """Teil B: Beschriftung eines verkürzten Tages — nur, wenn die Person heute
+    ein Präsenz-Soll hat (``target_hours`` aus :func:`_today_target_hours`). Das
+    deckt Wochenende, Feiertag, Beschäftigungsfenster, Tag ohne Stundenzählung,
+    freien Wochentag und ganztägige Abwesenheit ab — ohne eigene Abfragen."""
+    if target_hours <= 0:
         return None
     cfg = special_days_service.get_special_day_config(db, user.tenant_id, today.year)
     return special_days_service.day_label(today, cfg)
@@ -467,7 +461,7 @@ def get_clock_status(
 
     closed_minutes = _toblockless_workday_net_minutes(db, current_user, today)
     target_hours = _today_target_hours(db, current_user, today)
-    special_day_label = _today_special_day_label(db, current_user, today)
+    special_day_label = _today_special_day_label(db, current_user, today, target_hours)
     # Spec 2026-10-08 (11.1): in JEDEM Zweig — auch nach dem Stale-Auto-Close
     # (``open_entry`` ist dann None → Mandanten-Puffer) und gerade im nicht
     # eingestempelten Zustand (Dashboard-Status in der Lücke, E69).
@@ -913,8 +907,8 @@ def clock_out(
     # #377 § 2 Abs. 2 MiLoG: weiche Warnung, wenn die Konto-Plusstunden dieses
     # Monats (month-to-date, inkl. des eben geschlossenen Eintrags) 50 % der
     # vereinbarten Monatszeit reißen. Unabhängig von `exempt` (keine ArbZG-§18-Frage).
-    # Teil A (Task 11): Gate aus dem Monatsvertrag von heute.
-    if _milog_account_today(db, current_user):
+    # Teil A (Task 11): Gate aus dem Monatsvertrag des Eintrags-Monats.
+    if _milog_account_in_month(db, current_user, open_entry.date):
         _m = milog_service.milog_50_check(
             db, current_user, open_entry.date.year, open_entry.date.month, up_to_date=open_entry.date)
         if _m:
@@ -1262,8 +1256,8 @@ def create_time_entry(
 
     # #377 § 2 Abs. 2 MiLoG: manuell buchende Minijobber erreichen clock_out nie —
     # daher auch hier die weiche 50-%-Warnung (month-to-date inkl. dieses Eintrags).
-    # Teil A (Task 11): Gate aus dem Monatsvertrag von heute.
-    if _milog_account_today(db, current_user):
+    # Teil A (Task 11): Gate aus dem Monatsvertrag des Eintrags-Monats.
+    if _milog_account_in_month(db, current_user, entry.date):
         _m = milog_service.milog_50_check(
             db, current_user, entry.date.year, entry.date.month, up_to_date=entry.date)
         if _m:
@@ -1847,7 +1841,8 @@ def update_time_entry(
     # #377 § 2 Abs. 2 MiLoG: auch beim Bearbeiten (verändert die Monatssumme).
     # Nur bei Selbst-Bearbeitung — die Warnung gilt dem Eintrags-Eigentümer, nicht
     # einem (evtl. selbst geflaggten) fremd-bearbeitenden Akteur.
-    if entry.user_id == current_user.id and _milog_account_today(db, current_user):
+    # Teil A (Task 11): Gate aus dem Monatsvertrag des Eintrags-Monats.
+    if entry.user_id == current_user.id and _milog_account_in_month(db, current_user, entry.date):
         _m = milog_service.milog_50_check(
             db, current_user, entry.date.year, entry.date.month, up_to_date=entry.date)
         if _m:
