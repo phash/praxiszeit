@@ -117,12 +117,19 @@ def test_users_overview_matches_per_user_compute(db, default_tenant):
         assert row.vacation.used_days == expected["used_days"]
 
 
-def test_users_overview_preload_constant_query_count(db, default_tenant):
+def test_users_overview_preload_constant_query_count(db, default_tenant, monkeypatch):
     """#204: die Feiertags- und WorkingHoursChange-Queries sind KONSTANT (je 1
-    Preload) — unabhängig von der User-Zahl. Der eigentliche N+1-Beweis."""
+    Preload) — unabhängig von der User-Zahl. Der eigentliche N+1-Beweis.
+
+    Teil A (Task 12): auch eine Fix-Modus-MiLoG-Person mit zwei Verlaufszeilen
+    (50-%-Prüfung, Aging, Monatsüberschreitung, Fix-Gutschrift) und eine Person
+    mit ``track_hours``-Wechsel mitten im Jahr lösen ihren Vertrag nur über den
+    EINEN Preload auf."""
     from sqlalchemy import event
     from app.routers.admin_users import users_overview
     from tests.conftest import engine
+    from tests.wh_change_helpers import add_row, entry, freeze
+    freeze(monkeypatch, date(2026, 11, 4))
     admin = User(username="adm", email="adm@x.de", password_hash="x", first_name="A",
                  last_name="D", role="admin", weekly_hours=Decimal("40"), vacation_days=30,
                  work_days_per_week=5, is_active=True, tenant_id=DEFAULT_TENANT_ID)
@@ -154,3 +161,32 @@ def test_users_overview_preload_constant_query_count(db, default_tenant):
     assert len(rows) == 6  # admin + 5
     assert counts["holidays"] == 1, counts  # 1 Preload statt 6×
     assert counts["wh"] == 1, counts        # 1 Preload statt 6×
+
+    # Teil A (Task 12): Vertragsauflösung der MiLoG-/Wechsel-Personen nur über
+    # den Preload. (Der Fix-Modus fragt Feiertage weiter je Monat ab — #377 2b,
+    # außerhalb dieser Prüfung; gezählt wird hier die Verlaufstabelle.)
+    minijob = dict(milog_working_time_account=True, use_fixed_monthly_target=True, track_hours=True)
+    mj = User(username="mj", email="mj@x.de", password_hash="x", first_name="M", last_name="J",
+              role="employee", weekly_hours=Decimal("10"), vacation_days=30, work_days_per_week=5,
+              is_active=True, tenant_id=DEFAULT_TENANT_ID, agreed_monthly_hours=Decimal("45"), **minijob)
+    db.add(mj); db.commit(); db.refresh(mj)
+    add_row(db, mj, date(2026, 1, 1), weekly_hours=10, agreed_monthly_hours=Decimal("43.3"), **minijob)
+    add_row(db, mj, date(2026, 7, 1), weekly_hours=10, agreed_monthly_hours=Decimal("45"), **minijob)
+    entry(db, mj, date(2026, 11, 2), time(8, 0), time(20, 0), grace=None)   # Plus im laufenden Monat
+    tw = User(username="tw", email="tw@x.de", password_hash="x", first_name="T", last_name="W",
+              role="employee", weekly_hours=Decimal("40"), vacation_days=30, work_days_per_week=5,
+              is_active=True, tenant_id=DEFAULT_TENANT_ID, track_hours=False)
+    db.add(tw); db.commit(); db.refresh(tw)
+    add_row(db, tw, date(2026, 1, 1), weekly_hours=40, track_hours=True)
+    add_row(db, tw, date(2026, 6, 1), weekly_hours=40, track_hours=False)
+
+    counts.update(holidays=0, wh=0)
+    event.listen(engine, "before_cursor_execute", _count)
+    try:
+        rows = users_overview(db=db, current_user=admin, year=2026)
+    finally:
+        event.remove(engine, "before_cursor_execute", _count)
+    assert len(rows) == 8  # admin + 5 + Minijob + Wechsel
+    assert counts["wh"] == 1, counts        # 1 Preload statt je Monat/Helfer
+    by_name = {r.last_name: r for r in rows}
+    assert by_name["W"].track_hours is False      # Snapshot von heute (ab 01.06. aus)

@@ -47,34 +47,38 @@ def agreed_monthly_hours(db, user, ref_date: date, wh_changes=None) -> Decimal:
 
 
 def account_hours_in_month(db, user, year: int, month: int, up_to_date: date = None,
-                           monthly_actual=None) -> Decimal:
+                           monthly_actual=None, wh_changes=None) -> Decimal:
     """Auf das Konto eingestellte Plusstunden des Monats = max(0, Ist − vereinbarte
     Monatszeit). FLACHE Basis (Spec § 7.1). `monthly_actual` (falls vorberechnet)
-    spart den zusätzlichen get_monthly_actual-Pass in den Hot-Loops."""
+    spart den zusätzlichen get_monthly_actual-Pass in den Hot-Loops; ``wh_changes``
+    (Preload der Verlaufszeilen, Teil A) die Vertrags-Queries."""
     if monthly_actual is None:
-        monthly_actual = calculation_service.get_monthly_actual(db, user, year, month, up_to_date=up_to_date)
-    agreed = agreed_monthly_hours(db, user, date(year, month, 1))
+        monthly_actual = calculation_service.get_monthly_actual(db, user, year, month, up_to_date=up_to_date,
+                                                                wh_changes=wh_changes)
+    agreed = agreed_monthly_hours(db, user, date(year, month, 1), wh_changes)
     surplus = Decimal(str(monthly_actual)) - agreed
     return surplus if surplus > 0 else Decimal("0")
 
 
 def milog_50_check(db, user, year: int, month: int, up_to_date: date = None,
-                   monthly_actual=None):
+                   monthly_actual=None, wh_changes=None):
     """None, wenn Flag aus / kein Stundentracking / keine sinnvolle Vertragszeit /
     Konto-Plusstunden ≤ 50 % der vereinbarten Monatszeit. Sonst
     {account_hours, cap, agreed_monthly, caveat}."""
     # Teil A (Task 11): beide Flags aus DEMSELBEN Monatsvertrag.
-    mc = calculation_service.month_contract(db, user, year, month)
+    if wh_changes is None:  # Teil A (Task 12): einmal laden, an alle Helfer reichen
+        wh_changes = calculation_service._user_wh_changes(db, user)
+    mc = calculation_service.month_contract(db, user, year, month, wh_changes)
     if not mc.milog_working_time_account or not mc.track_hours:
         return None
-    agreed = agreed_monthly_hours(db, user, date(year, month, 1))
+    agreed = agreed_monthly_hours(db, user, date(year, month, 1), wh_changes)
     if agreed <= 0:
         # Ein Arbeitszeitkonto mit 0 vereinbarten Monatsstunden hat keine
         # sinnvolle 50-%-Grenze — sonst würde jede Plusstunde warnen.
         return None
     cap = agreed / 2
     account = account_hours_in_month(db, user, year, month, up_to_date=up_to_date,
-                                     monthly_actual=monthly_actual)
+                                     monthly_actual=monthly_actual, wh_changes=wh_changes)
     if account > cap:
         return {"account_hours": float(account), "cap": float(cap),
                 "agreed_monthly": float(agreed), "caveat": _WAGE_CAVEAT}
@@ -90,7 +94,8 @@ def milog_50_warning_text(chk: dict) -> str:
     )
 
 
-def monthly_exceeded_check(db, user, year: int, month: int, up_to_date: date = None):
+def monthly_exceeded_check(db, user, year: int, month: int, up_to_date: date = None,
+                           wh_changes=None):
     """#377 Baustein 2b: weiche Plausibilitäts-Warnung, wenn das Monats-Ist
     (inkl. Gutschriften) die vereinbarte Monatsarbeitszeit eines Fix-Modus-MA
     übersteigt. None, wenn der Modus aus ist / kein Stundentracking / keine
@@ -107,14 +112,17 @@ def monthly_exceeded_check(db, user, year: int, month: int, up_to_date: date = N
     Monatsvertrags auf — das ist KEINE zusätzliche Einschränkung, sondern deckt
     sich mit der Invariante."""
     # Teil A (Task 11): Modus, Stundenzählung und Zahl aus dem Monatsvertrag.
-    mc = calculation_service.month_contract(db, user, year, month)
+    if wh_changes is None:  # Teil A (Task 12): einmal laden, an alle Helfer reichen
+        wh_changes = calculation_service._user_wh_changes(db, user)
+    mc = calculation_service.month_contract(db, user, year, month, wh_changes)
     if not mc.use_fixed_monthly_target or not mc.track_hours:
         return None
     agreed = mc.agreed_monthly_hours
     if not agreed:
         return None
     agreed = Decimal(str(agreed))
-    actual = calculation_service.get_monthly_actual(db, user, year, month, up_to_date=up_to_date)
+    actual = calculation_service.get_monthly_actual(db, user, year, month, up_to_date=up_to_date,
+                                                    wh_changes=wh_changes)
     if actual > agreed:
         return {"month_actual": float(actual), "agreed": float(agreed), "year": year, "month": month}
     return None
@@ -127,7 +135,7 @@ def monthly_exceeded_warning_text(chk: dict) -> str:
             f"({chk['agreed']:.1f}h). Bitte prüfen (sofern zur Mindestlohnhöhe vergütet).")
 
 
-def settlement_aging(db, user, as_of: date, detailed=None):
+def settlement_aging(db, user, as_of: date, detailed=None, wh_changes=None):
     """12-Monats-Ausgleichsfrist (§ 2 Abs. 2 S. 2 MiLoG). FIFO über die Monats-
     Deltas (Ist − Soll) des Kontos: Plus = Einzahlung (monatsstamped), Minus =
     Ausgleich (verbraucht älteste zuerst; ein Über-Defizit wird als laufender
@@ -142,8 +150,10 @@ def settlement_aging(db, user, as_of: date, detailed=None):
 
     Teil A (Task 11): Flag und Stundenzählung je MONAT laut Monatsvertrag — None,
     wenn der Monat von ``as_of`` kein Arbeitszeitkonto hat; das FIFO nimmt nur
-    Monate mit Konto auf (Monate ohne Konto zahlen weder ein noch aus)."""
-    wh_changes = calculation_service._user_wh_changes(db, user)
+    Monate mit Konto auf (Monate ohne Konto zahlen weder ein noch aus).
+    ``wh_changes`` = optionaler Preload der Verlaufszeilen (Task 12)."""
+    if wh_changes is None:
+        wh_changes = calculation_service._user_wh_changes(db, user)
 
     def _account_month(y: int, m: int) -> bool:
         mc = calculation_service.month_contract(db, user, y, m, wh_changes)
@@ -161,7 +171,7 @@ def settlement_aging(db, user, as_of: date, detailed=None):
         # that eats the FIFO seed and silently drops MILOG_SETTLEMENT_DUE.
         cutoff = calculation_service.get_soll_cutoff_date(db, user, today=as_of)
         detailed = calculation_service.get_overtime_history_detailed(
-            db, user, as_of.year, as_of.month, cutoff_date=cutoff
+            db, user, as_of.year, as_of.month, cutoff_date=cutoff, wh_changes=wh_changes
         )
     if not detailed:
         return None

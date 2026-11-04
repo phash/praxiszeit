@@ -82,14 +82,16 @@ def _earliest_change(
     return change
 
 
-def _contract_fields(holder) -> dict:
-    """Die fuenf Vertragsfelder aus einer Verlaufszeile ODER der User-Zeile."""
+def _contract_fields(row: WorkingHoursChange) -> dict:
+    """Die fuenf Vertragsfelder aus einer Verlaufszeile. Den Rückfall auf die
+    User-Zeile (keine Verlaufszeile) liest allein ``get_schedule_for_date`` —
+    dort sieht ihn der Wächter ``test_no_live_contract_field_read``."""
     return dict(
-        vacation_days=Decimal(str(holder.vacation_days)),
-        track_hours=bool(holder.track_hours),
-        milog_working_time_account=bool(holder.milog_working_time_account),
-        agreed_monthly_hours=_dec_or_none(holder.agreed_monthly_hours),
-        use_fixed_monthly_target=bool(holder.use_fixed_monthly_target),
+        vacation_days=Decimal(str(row.vacation_days)),
+        track_hours=bool(row.track_hours),
+        milog_working_time_account=bool(row.milog_working_time_account),
+        agreed_monthly_hours=_dec_or_none(row.agreed_monthly_hours),
+        use_fixed_monthly_target=bool(row.use_fixed_monthly_target),
     )
 
 
@@ -171,7 +173,16 @@ def get_schedule_for_date(
             **_contract_fields(change),
         )
     first = _earliest_change(db, user, wh_changes)
-    contract = _contract_fields(first if first is not None else user)
+    if first is not None:
+        contract = _contract_fields(first)
+    else:
+        contract = dict(
+            vacation_days=Decimal(str(user.vacation_days)),
+            track_hours=bool(user.track_hours),
+            milog_working_time_account=bool(user.milog_working_time_account),
+            agreed_monthly_hours=_dec_or_none(user.agreed_monthly_hours),
+            use_fixed_monthly_target=bool(user.use_fixed_monthly_target),
+        )
     # Kein Eintrag → aktuelle User-Felder. Dies ist die EINZIGE Stelle im Code,
     # die user.weekly_hours / user.hours_* / user.work_days_per_week /
     # user.work_blocks sowie die fuenf Vertragsfelder (vacation_days, track_hours,
@@ -1410,7 +1421,7 @@ def fixed_day_covered_hours(planned: Decimal, day_absences, worked: Decimal,
 
 
 def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include_holidays,
-                                from_date=None):
+                                from_date=None, wh_changes=None):
     """Gemeinsame Schleife: Σ geplante Stunden für Tage mit einem passenden
     ganztägigen Absence-Typ (bzw. Feiertag, wenn include_holidays), im Fenster,
     ≥ from_date (falls gesetzt) und ≤ up_to_date.
@@ -1466,10 +1477,9 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
         worked_by_date[e.date] = worked_by_date.get(e.date, Decimal('0')) + e.net_hours
     # #431: EIN Preload für die ganze Monatsschleife statt einer Query je Tag —
     # _fixed_planned_hours löst den Vertrags-Snapshot jetzt pro Datum auf.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-    ).order_by(WorkingHoursChange.effective_from).all()
+    # Teil A (Task 12): ein übergebener Preload (users-overview) wird genutzt.
+    if wh_changes is None:
+        wh_changes = _user_wh_changes(db, user)
     total = Decimal('0')
     for day in range(1, days_in_month + 1):
         d = date(year, month, day)
@@ -1495,27 +1505,35 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
 
 
 def fixed_month_credit(db: Session, user: User, year: int, month: int, up_to_date: date = None,
-                        from_date: date = None) -> Decimal:
+                        from_date: date = None,
+                        wh_changes: Optional[List[WorkingHoursChange]] = None) -> Decimal:
     """#377 Baustein 2b: geplante Stunden, die BEZAHLTE Fehltage (Feiertag +
     VACATION/PAID_LEAVE) dem Ist gutschreiben. SICK/TRAINING NICHT (Doppelguard).
     ``from_date`` (Review-Medium): optionale Untergrenze für Range-genaue Aufrufe
     — None (Default) = ganzer Monat, unverändertes Verhalten."""
-    if not month_contract(db, user, year, month).use_fixed_monthly_target:  # Teil A: je Monat
+    if wh_changes is None:
+        wh_changes = _user_wh_changes(db, user)
+    if not month_contract(db, user, year, month, wh_changes).use_fixed_monthly_target:  # Teil A: je Monat
         return Decimal('0')
     return _fixed_month_absence_hours(db, user, year, month, _FIXED_PAID_CREDIT_TYPES,
-                                      up_to_date, include_holidays=True, from_date=from_date)
+                                      up_to_date, include_holidays=True, from_date=from_date,
+                                      wh_changes=wh_changes)
 
 
 def fixed_month_unpaid_reduction(db: Session, user: User, year: int, month: int, up_to_date: date = None,
-                                  from_date: date = None) -> Decimal:
+                                  from_date: date = None,
+                                  wh_changes: Optional[List[WorkingHoursChange]] = None) -> Decimal:
     """#377 Baustein 2b: geplante Stunden UNBEZAHLTER Fehltage (OTHER), die das
     feste Monats-Soll mindern (statt Ist+). ``from_date`` (Review-Medium):
     optionale Untergrenze für Range-genaue Aufrufe — None (Default) = ganzer
     Monat, unverändertes Verhalten."""
-    if not month_contract(db, user, year, month).use_fixed_monthly_target:  # Teil A: je Monat
+    if wh_changes is None:
+        wh_changes = _user_wh_changes(db, user)
+    if not month_contract(db, user, year, month, wh_changes).use_fixed_monthly_target:  # Teil A: je Monat
         return Decimal('0')
     return _fixed_month_absence_hours(db, user, year, month, _FIXED_UNPAID_TYPES,
-                                      up_to_date, include_holidays=False, from_date=from_date)
+                                      up_to_date, include_holidays=False, from_date=from_date,
+                                      wh_changes=wh_changes)
 
 
 def get_working_days_in_month(db: Session, year: int, month: int) -> int:
@@ -1987,7 +2005,8 @@ def future_freizeitausgleich_impact(
 
 
 def get_range_target(
-    db: Session, user: User, start: date, end: date, up_to_date: date = None
+    db: Session, user: User, start: date, end: date, up_to_date: date = None,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
 ) -> Decimal:
     """Soll hours for an arbitrary inclusive ``[start, end]`` range.
 
@@ -2012,7 +2031,9 @@ def get_range_target(
     # Preload the user's WorkingHoursChange rows ONCE and resolve the per-day
     # weekly hours in memory (avoids one SELECT per day — N+1 — for a multi-day
     # range; mirrors get_overtime_account). F-026: tenant-scoped.
-    wh_changes = _user_wh_changes(db, user)
+    # Teil A (Task 12): ein übergebener Preload (users-overview) wird genutzt.
+    if wh_changes is None:
+        wh_changes = _user_wh_changes(db, user)
 
     # #377 Baustein 2b: fester Monats-Soll-Modus — statt der Per-Tag-Summe die
     # (pro-rata + unpaid-geminderten) festen Monats-Solls über die Range summieren.
@@ -2060,7 +2081,7 @@ def get_range_target(
         # Wochenbericht −0,65 h). Mehr als das ganze Soll kann eine
         # unbezahlte Freistellung nie streichen.
         mt = max(Decimal('0'), mt - fixed_month_unpaid_reduction(
-            db, user, y, m, from_date=month_start, up_to_date=month_end))
+            db, user, y, m, from_date=month_start, up_to_date=month_end, wh_changes=wh_changes))
         total_fixed += mt
     return total_fixed.quantize(Decimal('0.01'))
 
@@ -2133,7 +2154,8 @@ def _range_target_by_day(
 
 
 def get_range_actual(
-    db: Session, user: User, start: date, end: date, up_to_date: date = None
+    db: Session, user: User, start: date, end: date, up_to_date: date = None,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
 ) -> Decimal:
     """Ist hours worked in an arbitrary inclusive ``[start, end]`` range.
 
@@ -2171,7 +2193,8 @@ def get_range_actual(
     # :func:`credit_day_weight`. Ohne solche Abwesenheit im Zeitraum ist der
     # Kontext leer und es entsteht keine zusaetzliche Query.
     credit_holidays, credit_cfgs = _credited_day_context(db, user, credited_absences)
-    wh_changes = _user_wh_changes(db, user)
+    if wh_changes is None:  # Teil A (Task 12): Preload nutzen, sonst einmal laden
+        wh_changes = _user_wh_changes(db, user)
     credited_hours = sum((Decimal(str(a.hours))
                           * _credit_weight(db, user, a.date, credit_holidays, credit_cfgs.get(a.date.year),
                                            wh_changes=wh_changes)
@@ -2195,13 +2218,15 @@ def get_range_actual(
         month_start = max(first, start)
         month_end = min(last, end if up_to_date is None else min(end, up_to_date))
         if month_end >= month_start:
-            fixed_credit += fixed_month_credit(db, user, y, m, from_date=month_start, up_to_date=month_end)
+            fixed_credit += fixed_month_credit(db, user, y, m, from_date=month_start, up_to_date=month_end,
+                                               wh_changes=wh_changes)
 
     return (Decimal(str(total)) + credited_hours + fixed_credit).quantize(Decimal('0.01'))
 
 
 def get_monthly_target(
-    db: Session, user: User, year: int, month: int, up_to_date: date = None
+    db: Session, user: User, year: int, month: int, up_to_date: date = None,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
 ) -> Decimal:
     """
     Calculate monthly target hours (thin wrapper over :func:`get_range_target`).
@@ -2213,12 +2238,14 @@ def get_monthly_target(
     """
     _, last_day = monthrange(year, month)
     return get_range_target(
-        db, user, date(year, month, 1), date(year, month, last_day), up_to_date=up_to_date
+        db, user, date(year, month, 1), date(year, month, last_day), up_to_date=up_to_date,
+        wh_changes=wh_changes,
     )
 
 
 def get_monthly_actual(
-    db: Session, user: User, year: int, month: int, up_to_date: date = None
+    db: Session, user: User, year: int, month: int, up_to_date: date = None,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
 ) -> Decimal:
     """
     Calculate actual hours worked in a month (thin wrapper over
@@ -2227,7 +2254,8 @@ def get_monthly_actual(
     """
     _, last_day = monthrange(year, month)
     return get_range_actual(
-        db, user, date(year, month, 1), date(year, month, last_day), up_to_date=up_to_date
+        db, user, date(year, month, 1), date(year, month, last_day), up_to_date=up_to_date,
+        wh_changes=wh_changes,
     )
 
 
@@ -2674,7 +2702,8 @@ class MonthlyOvertime(NamedTuple):
 
 
 def get_overtime_history_detailed(
-    db: Session, user: User, up_to_year: int, up_to_month: int, cutoff_date: date = None
+    db: Session, user: User, up_to_year: int, up_to_month: int, cutoff_date: date = None,
+    wh_changes: Optional[List[WorkingHoursChange]] = None,
 ) -> Dict[tuple, "MonthlyOvertime"]:
     """Soll/Ist/Konto NACH jedem Monat (Start..up_to) in EINEM Pass.
 
@@ -2700,11 +2729,11 @@ def get_overtime_history_detailed(
     Teil A (Task 8): Stundenzählung je TAG laut Snapshot — Zeiteinträge und
     Gutschrift Krank/Fortbildung an Tagen ohne Stundenzählung zählen 0, das
     Soll ist dort 0 (zentraler Schalter). Wer nie Stunden zählt → ``{}``.
+
+    Teil A (Task 12): ``wh_changes`` = optionaler Preload (users-overview).
     """
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
-    ).order_by(WorkingHoursChange.effective_from).all()
+    if wh_changes is None:
+        wh_changes = _user_wh_changes(db, user)
     if not _ever_tracks_hours(db, user, wh_changes):
         return {}
     tracked_on = _tracked_day_predicate(db, user, wh_changes)
@@ -2832,8 +2861,10 @@ def get_overtime_history_detailed(
         # gegen das jeweilige Monatsende.
         # Teil A (Task 11): Modus je Monat laut Monatsvertrag, nicht je Person.
         if month_contract(db, user, cy, cm, wh_changes).fixed_mode:
-            monthly_target = get_monthly_target(db, user, cy, cm, up_to_date=cutoff_date)
-            monthly_actual = get_monthly_actual(db, user, cy, cm, up_to_date=cutoff_date)
+            monthly_target = get_monthly_target(db, user, cy, cm, up_to_date=cutoff_date,
+                                                wh_changes=wh_changes)
+            monthly_actual = get_monthly_actual(db, user, cy, cm, up_to_date=cutoff_date,
+                                                wh_changes=wh_changes)
             total_balance += (monthly_actual - monthly_target)
             history[(cy, cm)] = MonthlyOvertime(
                 target=monthly_target.quantize(Decimal('0.01')),
@@ -2986,8 +3017,8 @@ def get_ytd_summary(
     fixed_target = Decimal('0')
     fixed_actual = Decimal('0')
     for m in sorted(fixed_months):
-        fixed_target += get_monthly_target(db, user, year, m, up_to_date=end)
-        fixed_actual += get_monthly_actual(db, user, year, m, up_to_date=end)
+        fixed_target += get_monthly_target(db, user, year, m, up_to_date=end, wh_changes=wh_changes)
+        fixed_actual += get_monthly_actual(db, user, year, m, up_to_date=end, wh_changes=wh_changes)
     if fixed_months and len(fixed_months) == end.month:
         total_target = fixed_target
         total_actual = fixed_actual

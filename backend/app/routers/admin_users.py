@@ -695,20 +695,22 @@ def users_overview(
             # Phantom-Defizit, das im FIFO die älteste (überfällige) Einlage
             # aufzehrt und die MILOG_SETTLEMENT_DUE-Warnung unterdrückt.
             _detailed = calculation_service.get_overtime_history_detailed(
-                db, u, _t.year, _t.month, cutoff_date=cutoff
+                db, u, _t.year, _t.month, cutoff_date=cutoff, wh_changes=_uwh
             )
             if _detailed:
                 _cur = _detailed.get((_t.year, _t.month))
                 _actual = _cur.actual if _cur is not None else 0.0
-                _chk = milog_service.milog_50_check(db, u, _t.year, _t.month, monthly_actual=_actual)
+                _chk = milog_service.milog_50_check(db, u, _t.year, _t.month, monthly_actual=_actual,
+                                                    wh_changes=_uwh)
                 if _chk:
                     _milog_w.append(milog_service.milog_50_warning_text(_chk))
-                _aging = milog_service.settlement_aging(db, u, _t, detailed=_detailed)
+                _aging = milog_service.settlement_aging(db, u, _t, detailed=_detailed, wh_changes=_uwh)
                 if _aging and (_aging["overdue"] or _aging["due_soon"] or _aging.get("incomplete")):
                     _milog_w.append(milog_service.settlement_warning_text(_aging))
             # #377 Baustein 2b: weiche Plausibilitäts-Warnung für Fix-Modus-MA
             # (gleicher Saldo-Stichtag wie oben, #313-Parität zum MA-Dashboard).
-            _exceeded = milog_service.monthly_exceeded_check(db, u, _t.year, _t.month, up_to_date=cutoff)
+            _exceeded = milog_service.monthly_exceeded_check(db, u, _t.year, _t.month, up_to_date=cutoff,
+                                                             wh_changes=_uwh)
             if _exceeded:
                 _milog_w.append(milog_service.monthly_exceeded_warning_text(_exceeded))
         result.append(AdminUserOverview(
