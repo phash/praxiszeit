@@ -982,7 +982,22 @@ def retarget_absence_hours(
         # quantisiert). Sonst meldete ein Halbtag bei ungeradem Cent-Tagessoll
         # (7,25 h → 3,625) eine Schein-Klemmung, weil round(…, 2) = 3,62 < 3,625.
         # Ohne Klemmung byte-gleich zum Bestand (quantize, ROUND_HALF_EVEN).
-        new_hours_f = float(Decimal(str((target / 2) if a.half_day else target)).quantize(Decimal('0.01')))
+        #
+        # Ausnahme Betriebsferien (Smoke-Fund 1.22.0): Zeilen mit ``closure_id``
+        # bucht ``company_closures._create_closure_absences`` an einem
+        # verkürzten Tag bzw. ``half_day``-Sondertag mit
+        # ``special_day_target(...)`` (``half_day=False``). Die Rückrechnung
+        # folgt für diese Zeilen derselben Regel — sonst zog sie den 24.12.
+        # einer Schließung von 4 h auf das volle Tagessoll, und Rückrechnung und
+        # Neuspeichern der Schließung widersprachen sich. ``free``-Tage bucht
+        # die Schließung nie; dort bleibt die Konvention der Direktbuchungen.
+        # ``target`` selbst bleibt ungewichtet (F1-Klemmung, 9.5 (c)).
+        stored_target = target
+        if a.closure_id is not None and target > 0:
+            cfg = special_cfgs.get(d.year) or {}
+            if special_days_service.special_day_mode(d, cfg) != special_days_service.MODE_FREE:
+                stored_target = special_days_service.special_day_target(d, target, cfg)
+        new_hours_f = float(Decimal(str((stored_target / 2) if a.half_day else stored_target)).quantize(Decimal('0.01')))
         old_hours_f = float(a.hours)
         f1_clamped = False
         credit_reduction = False

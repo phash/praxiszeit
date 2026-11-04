@@ -1518,6 +1518,15 @@ Tagessoll; der Faktor lebt auf der **Leseseite**: `_day_soll_contribution` fürs
 > **immer** vom neu berechneten ab, sodass die Gleichheitsprüfung bei **jedem** Lauf ansprang
 > — die Rückrechnung war an diesen Tagen nicht idempotent.
 
+**Ausnahme Betriebsferien (seit 1.22.0).** Zeilen mit `closure_id` bucht
+`company_closures._create_closure_absences` an einem `half_day`-Sondertag bzw. verkürzten Tag
+mit `special_days_service.special_day_target(...)` (0,5 × Tagessoll bzw. `min(Tagessoll, X)`,
+`half_day=False`, Verbrauch 0,5 Tag). Die Rückrechnung zieht diese Zeilen auf denselben Wert —
+bis 1.21.1 setzte sie sie auf das ungewichtete Tagessoll (4 h → 8 h), was Urlaubstage und Saldo
+nicht berührte, aber die Stundenangaben der Exporte und des klassischen Jahresberichts verfälschte
+und beim Neuspeichern der Schließung wieder umkippte. Direktbuchungen bleiben beim ungewichteten
+Tagessoll; `free`-Tage bucht die Schließung nie.
+
 **Misch-Tage (F1-Klemmung, seit 1.20.0).** Bleiben an einem Abwesenheitstag geschlossene
 Zeiteinträge stehen, setzt die Rückrechnung `hours` nicht auf das volle Tagessoll, sondern auf den
 nicht gearbeiteten Rest — dieselbe Regel wie beim Buchen (`calculation_service.f1_clamp_hours`, auch
