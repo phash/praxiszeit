@@ -205,3 +205,113 @@ def test_put_user_without_contract_fields_ok(db, test_user, client):
     })
     assert r.status_code == 200, r.text
     assert r.json()["first_name"] == "Erika"
+
+
+# --- Fix-Welle B: Monatserster an Nachbarzeilen, Korrektur der Basis --------
+
+from tests.wh_change_helpers import add_row, reclamp_logs, RETRO_REASON  # noqa: E402
+from app.services import reclamp_audit  # noqa: E402
+
+MJ_OFF = dict(vacation_days=Decimal("30"), track_hours=True, milog_working_time_account=False,
+              agreed_monthly_hours=None, use_fixed_monthly_target=False)
+MJ_ON = dict(MJ_OFF, milog_working_time_account=True)
+
+
+def test_insert_before_mid_month_row_creating_a_switch_is_422(db, test_user, client):
+    """F005: die Zeile 20.06. trägt MiLoG aus; eine neue Zeile 01.05. mit MiLoG an
+    machte den 20.06. zum Wechsel mitten im Monat."""
+    add_row(db, test_user, date(2026, 3, 15), weekly_hours=40, **MJ_OFF)
+    add_row(db, test_user, date(2026, 6, 20), weekly_hours=30, **MJ_OFF)
+    r = client.post(url(test_user), json={"effective_from": "2026-05-01", "weekly_hours": 40,
+                                          "work_days_per_week": 5, "milog_working_time_account": True})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == MONTH_START
+    assert len(rows_of(db, test_user)) == 2
+
+
+def test_delete_merging_into_mid_month_switch_is_422(db, test_user, client):
+    """F005: Löschen der Zeile 01.05. macht den 20.06. (MiLoG an, geerbt) zum
+    Wechsel aus → an mitten im Monat — Löschen und Lösch-Vorschau lehnen ab."""
+    add_row(db, test_user, date(2026, 3, 1), weekly_hours=40, **MJ_OFF)
+    mid = add_row(db, test_user, date(2026, 5, 1), weekly_hours=40, **MJ_ON)
+    add_row(db, test_user, date(2026, 6, 20), weekly_hours=30, **MJ_ON)
+    preview = client.post(f"{url(test_user)}/{mid.id}/delete-preview")
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["blocked_reason"] == MONTH_START
+    r = client.delete(f"{url(test_user)}/{mid.id}")
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == MONTH_START
+    assert len(rows_of(db, test_user)) == 3
+
+
+def test_correcting_mid_month_baseline_minijob_for_all_years_ok(db, test_user, client):
+    """F018 (Spec A4): die einzige Zeile liegt am 15.03. und beginnt den Verlauf
+    (keine Buchung davor) — ihre Minijob-Felder sind für alle Jahre korrigierbar."""
+    add_row(db, test_user, date(2026, 3, 15), weekly_hours=40, **MJ_OFF)
+    r = client.post(url(test_user), json={"effective_from": "2026-03-15", "weekly_hours": 40,
+                                          "work_days_per_week": 5, "milog_working_time_account": True})
+    assert r.status_code == 201, r.text
+    rows = rows_of(db, test_user)
+    assert len(rows) == 1 and rows[0].milog_working_time_account is True
+
+
+def test_correcting_mid_month_baseline_with_gap_row_still_422(db, test_user, client):
+    """F018: gibt es Tage davor (erster Arbeitstag), entstünde eine Lückenzeile mit
+    dem alten Wert — dann bleibt es ein Wechsel mitten im Monat."""
+    test_user.first_work_day = date(2026, 1, 1)
+    db.commit()
+    add_row(db, test_user, date(2026, 3, 15), weekly_hours=40, **MJ_OFF)
+    r = client.post(url(test_user), json={"effective_from": "2026-03-15", "weekly_hours": 40,
+                                          "work_days_per_week": 5, "milog_working_time_account": True})
+    assert r.status_code == 422, r.text
+
+
+def test_correcting_earliest_row_freezes_gap_with_old_values_and_logs_old_row(db, test_user, client):
+    """F004/F117: die Lückenzeile vor der korrigierten frühesten Zeile trägt den
+    BISHER aufgelösten Vertrag (alter Anspruch, alte Stunden), nicht eine Mischung.
+    F022/F105: die Sammelzeile nennt die Korrektur; ``old_note`` hält den
+    vollständigen vorherigen Stand samt alter Notiz."""
+    test_user.first_work_day = date(2026, 1, 1)
+    test_user.weekly_hours = 30
+    test_user.vacation_days = 24
+    db.commit()
+    add_row(db, test_user, date(2026, 1, 12), weekly_hours=30, note="Basis alt",
+            **dict(MJ_OFF, vacation_days=Decimal("24")))
+    r = client.post(url(test_user), json={"effective_from": "2026-01-12", "weekly_hours": 40,
+                                          "work_days_per_week": 5, "vacation_days": 30, **RETRO_REASON})
+    assert r.status_code == 201, r.text
+    gap, corrected = rows_of(db, test_user)
+    assert gap.effective_from == date(2026, 1, 1)
+    assert gap.vacation_days == Decimal("24") and Decimal(str(gap.weekly_hours)) == Decimal("30")
+    assert corrected.vacation_days == Decimal("30") and Decimal(str(corrected.weekly_hours)) == Decimal("40")
+    summary = reclamp_logs(db, test_user, summary=True)[-1]
+    assert reclamp_audit.REPLACED_MARK in summary.new_note
+    assert summary.old_note.startswith("Ersetzte Verlaufszeile ab 12.01.2026: ")
+    assert "Urlaub 24" in summary.old_note and "Notiz: Basis alt" in summary.old_note
+    assert reclamp_audit.parse_summary_note(summary.new_note).effective_from == date(2026, 1, 12)
+
+
+def test_contract_rule_wins_over_reset_conflict(db, test_user, client):
+    """F123: verletzt ein Reset-Body zugleich eine Vertragsregel, meldet das
+    Anlegen die Regel (400) — nicht den Reset-Konflikt (409)."""
+    add_row(db, test_user, date(2026, 1, 1), weekly_hours=40, **MJ_OFF)
+    row = add_row(db, test_user, date(2026, 6, 1), weekly_hours=30, **MJ_OFF)
+    r = client.post(url(test_user), json={
+        "effective_from": "2026-07-01", "weekly_hours": 35, "work_days_per_week": 5,
+        "reset_of_change_id": str(row.id), "use_fixed_monthly_target": True})
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == FIXED_AGREED
+
+
+def test_offered_reset_after_minijob_change_starts_on_a_first_and_saves(db, test_user, client):
+    """F017: die Zeile 01.10. schaltete MiLoG an (und senkte die Stunden). Ihr
+    Löschen verkürzt; die angebotene Rücksetzung liegt auf einem Monatsersten
+    (sonst 422 beim Speichern) und lässt sich speichern."""
+    add_row(db, test_user, date(2026, 1, 1), weekly_hours=40, **MJ_OFF)
+    row = add_row(db, test_user, date(2026, 10, 1), weekly_hours=30, **MJ_ON)
+    preview = client.post(f"{url(test_user)}/{row.id}/delete-preview").json()
+    assert preview["is_shortening"] is True, preview
+    reset = preview["reset_body"]
+    assert reset is not None and reset["effective_from"] == "2026-12-01"
+    r = client.post(url(test_user), json=reset)
+    assert r.status_code == 201, r.text

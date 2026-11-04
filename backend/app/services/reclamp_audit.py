@@ -61,6 +61,7 @@ _HEAD = re.compile(
     r"Δ ([+-]\d+) Min, Saldo Δ ([+-]\d+) Min"
 )
 _RESET = re.compile(r" · Rücksetzung der Änderung ab (\d{2}\.\d{2}\.\d{4}) · ")
+REPLACED_MARK = "Korrektur der frühesten Verlaufszeile"
 _GRUND = " · Grund: "
 _VERTRAG = " · Vertrag: "
 
@@ -157,6 +158,19 @@ def _contract_terms(schedule) -> tuple:
     )
 
 
+def replaced_row_text(effective_from: date, schedule, note: Optional[str]) -> str:
+    """F022/F105: der VOLLSTÄNDIGE Stand einer an Ort und Stelle ersetzten
+    Verlaufszeile (Vertrag, alle fünf Vertragsbedingungen, bisherige Notiz) —
+    ``old_note`` der Sammelzeile. Die Zeile behält id und ``created_at``; ohne
+    diesen Text wäre ihr vorheriger Inhalt nirgends mehr nachzulesen. „·" in
+    der Notiz wird zu „-", damit der Text nie einen festen Baustein vortäuscht."""
+    text = (f"Ersetzte Verlaufszeile ab {effective_from:%d.%m.%Y}: "
+            f"{contract_text(schedule, compact=True)} · {' · '.join(_contract_terms(schedule))}")
+    if note:
+        text += f" · Notiz: {note.replace('·', '-')}"
+    return text
+
+
 def contract_pair(old, new) -> tuple:
     """Teil A, Task 7 — „vorher"/„nachher" der Sammelzeile nach „Vertrag:":
     :func:`contract_text` (``compact``) und jede Vertragsbedingung, die sich
@@ -181,8 +195,14 @@ def _sign(value: int) -> str:
 def summary_note(*, effective_from: date, deleted: bool, count: int, delta_minutes: int,
                  saldo_delta_minutes: int, skipped: dict, grace: int, credit_reductions: int,
                  reset_of: Optional[date], shortening: bool, reason_type: Optional[str],
-                 reason_text_value: Optional[str], contract_before: str, contract_after: str) -> str:
+                 reason_text_value: Optional[str], contract_before: str, contract_after: str,
+                 replaced: bool = False) -> str:
     """Spec 10.2 — die Sammelzeile (genau eine je Anlegen/Löschen, P20).
+
+    ``replaced``: die Änderung hat die früheste Verlaufszeile an Ort und Stelle
+    ersetzt (Spec A4) — fester Baustein :data:`REPLACED_MARK`; der vollständige
+    vorherige Stand steht in ``old_note`` der Sammelzeile
+    (:func:`replaced_row_text`).
 
     ``skipped`` zählt je ``ReclampSkip.reason``; ein Grund ohne Wort in
     :data:`SKIP_LABELS` scheitert laut (sonst fiele er still aus der Aufzählung,
@@ -205,6 +225,8 @@ def summary_note(*, effective_from: date, deleted: bool, count: int, delta_minut
         parts.append(f"{credit_reductions} {noun} gesenkt")
     if reset_of is not None:
         parts.append(f"Rücksetzung der Änderung ab {reset_of:%d.%m.%Y}")
+    if replaced:
+        parts.append(REPLACED_MARK)
     if shortening:
         parts.append("Verkürzung")
     if shortening and reason_type:

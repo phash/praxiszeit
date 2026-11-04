@@ -362,6 +362,7 @@ class TestTexts:
             target_delta=Decimal("0"), credited_delta=Decimal("0"), saldo_delta=Decimal("0"),
             open_day_saldo_delta=Decimal("0"), shortening_reasons=[], shortening_closed_years=[],
             earliest_lossless_date=TODAY, earliest_lossless_note=None, months=[], arbzg={}, entries_before={},
+            entitlement={}, entitlement_preview_years=(), entitlement_lost_years=(),
         )
         base.update(overrides)
         return svc.ChangeImpact(**base)
@@ -397,6 +398,25 @@ class TestTexts:
                          earliest_lossless_note=note)
         assert svc.protection_error(n, None, deleting=False, reset_offered=False).endswith(f"– oder abbrechen: {note}")
 
+    def test_entitlement_texts_follow_run_change(self):
+        """F071/F122: ``criteria_text`` nennt genau die Jahre aus
+        ``entitlement_lost_years`` (kein zweites „heute"); ein Datum mitten im
+        Jahr sagt, dass der Anspruch dann anteilig sinkt."""
+        ent = {2025: (Decimal("30"), Decimal("24")), 2026: (Decimal("30"), Decimal("24")),
+               2027: (Decimal("30"), Decimal("24"))}
+        a = self._impact(reclamp=self._reclamp(0), shortening_reasons=["vacation_entitlement"],
+                         entitlement=ent, entitlement_lost_years=(2025,))
+        text = svc.protection_error(a, None, deleting=False, reset_offered=False)
+        assert "(Urlaubsanspruch 2025 30 → 24 Tage)" in text
+        assert "2026 30" not in text
+        assert text.endswith("ab dem 08.10.2026 wirksam werden lassen (der Urlaubsanspruch 2026 sinkt dann "
+                             "anteilig).")
+
+    def test_entitlement_out_uses_explicit_years(self):
+        ent = {2024: (Decimal("1"), Decimal("1")), 2026: (Decimal("30"), Decimal("24")),
+               2027: (Decimal("30"), Decimal("30"))}
+        assert [r["year"] for r in svc.entitlement_out(ent, (2026, 2027))] == [2026, 2027]
+
     def test_reason_rules(self):
         a = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"])
         assert svc.protection_error(a, WorkingHoursChangeDelete(**RETRO_REASON), deleting=False,
@@ -407,18 +427,17 @@ class TestTexts:
         assert svc.protection_error(a, no_hook, deleting=False, reset_offered=False).startswith("Rückwirkende Verkürzung")
         assert svc.protection_error(self._impact(), None, deleting=False, reset_offered=False) is None
 
-    def test_milog_warnings(self, test_user):
+    def test_milog_warnings(self):
         # Teil A (Task 11): die Kennzeichen kommen aus dem Snapshot am Wirkungsdatum.
         from types import SimpleNamespace
         plain = SimpleNamespace(milog_working_time_account=False, agreed_monthly_hours=None)
         agreed = SimpleNamespace(milog_working_time_account=False, agreed_monthly_hours=Decimal("43"))
         shortening = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"], new_schedule=plain)
-        assert svc.milog_warnings(test_user, shortening) == [svc.MILOG_GENERAL_WARNING]
-        test_user.agreed_monthly_hours = 43.0     # die User-Zeile allein zählt nicht mehr
-        assert svc.milog_warnings(test_user, shortening) == [svc.MILOG_GENERAL_WARNING]
+        assert svc.milog_warnings(shortening) == [svc.MILOG_GENERAL_WARNING]
+        assert svc.milog_warnings(shortening) == [svc.MILOG_GENERAL_WARNING]
         shortening = self._impact(reclamp=self._reclamp(1), shortening_reasons=["entries"], new_schedule=agreed)
-        assert svc.milog_warnings(test_user, shortening) == [svc.MILOG_ACCOUNT_WARNING, svc.MILOG_GENERAL_WARNING]
-        assert svc.milog_warnings(test_user, self._impact()) == []
+        assert svc.milog_warnings(shortening) == [svc.MILOG_ACCOUNT_WARNING, svc.MILOG_GENERAL_WARNING]
+        assert svc.milog_warnings(self._impact()) == []
 
 
 def test_reset_body_for_every_kind_of_predecessor():

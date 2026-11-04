@@ -76,9 +76,14 @@ class ChangeImpact(NamedTuple):
     arbzg: dict
     entries_before: dict           # id → transiente Kopie „vorher" (Protokoll 10.1)
     # Teil A, Task 7: Jahr → (Anspruch vorher, nachher), ``vacation_entitlement_days``
-    # (ohne Übertrag) für {Wirkungsjahr, Folgejahr} ∪ Wirkungsjahr…heute. Mit
-    # Vorgabewert, damit bestehende Konstruktionen (Tests) gültig bleiben.
-    entitlement: Optional[dict] = None
+    # (ohne Übertrag) für {Wirkungsjahr, Folgejahr} ∪ Wirkungsjahr…heute.
+    entitlement: dict
+    # Die Jahre der Vorschau (Wirkungsjahr, Folgejahr) — ausdrücklich, nicht „die
+    # beiden kleinsten Schlüssel" von ``entitlement`` (F072).
+    entitlement_preview_years: tuple
+    # Jahre, deren Anspruch rückwirkend sinkt — DIE eine Entscheidung aus
+    # ``run_change`` (mit dessen „heute"), ``criteria_text`` liest sie (F071).
+    entitlement_lost_years: tuple
 
     @property
     def is_shortening(self) -> bool:
@@ -175,6 +180,17 @@ def _entitlements(db: Session, user: User, years) -> Dict[int, Decimal]:
     """Anspruch je Jahr — der Verlauf wird EINMAL geladen (F-026), nicht je Jahr."""
     rows = calculation_service.user_wh_changes(db, user)  # F-026
     return {y: calculation_service.vacation_entitlement_days(db, user, y, wh_changes=rows) for y in years}
+
+
+_MINIJOB_FIELDS = ("milog_working_time_account", "agreed_monthly_hours", "use_fixed_monthly_target")
+
+
+def _minijob_changed(old, new) -> bool:
+    """Unterscheiden sich zwei Snapshots in einem Minijob-Feld?"""
+    def norm(value):
+        return value if value is None or isinstance(value, bool) else Decimal(str(value))
+
+    return any(norm(getattr(old, f)) != norm(getattr(new, f)) for f in _MINIJOB_FIELDS)
 
 
 def _next_change(db: Session, user: User, effective_from: date) -> Optional[WorkingHoursChange]:
@@ -332,6 +348,11 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
         if open_loses or (today_counts and today_delta < 0) or open_day_delta < 0:
             candidates.append(tomorrow)                                                   # A heute / H (P1)
         earliest = max(candidates)
+        if _minijob_changed(old_schedule, new_schedule) and earliest.day != 1:
+            # F017: Minijob-Felder wechseln nur zum Monatsersten — ein Datum
+            # mitten im Monat bekäme beim Speichern 422 (auch der Reset-Body).
+            earliest = (date(earliest.year + 1, 1, 1) if earliest.month == 12
+                        else date(earliest.year, earliest.month + 1, 1))
         nxt = _next_change(db, user, effective_from)
         if nxt is not None and earliest >= nxt.effective_from:                            # P25
             note = P25_NOTE.format(date=nxt.effective_from.strftime("%d.%m.%Y"))
@@ -369,6 +390,8 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
         },
         entries_before=before,
         entitlement={y: (ent_before[y], ent_after[y]) for y in ent_years},
+        entitlement_preview_years=(effective_from.year, effective_from.year + 1),
+        entitlement_lost_years=tuple(ent_lost),
     )
 
 
@@ -381,7 +404,7 @@ def _change_out(c) -> dict:
     }
 
 
-def milog_warnings(user, impact: ChangeImpact) -> List[str]:
+def milog_warnings(impact: ChangeImpact) -> List[str]:
     """Spec 9.5/P26: nur bei einer Verkürzung — Konto-/Monatszeit-Satz bei
     ``milog_working_time_account`` oder ``agreed_monthly_hours``, der allgemeine
     Mindestlohnsatz bei JEDER (Minijobber ohne Kennzeichen, Risiko 9).
@@ -398,7 +421,7 @@ def milog_warnings(user, impact: ChangeImpact) -> List[str]:
     return out
 
 
-def preview_fields(impact: ChangeImpact, user) -> dict:
+def preview_fields(impact: ChangeImpact) -> dict:
     """Spec 11.3: die neuen Vorschau-Felder aus EINEM flush/Rollback-Lauf."""
     changed = impact.reclamp.changed
     return {
@@ -430,25 +453,25 @@ def preview_fields(impact: ChangeImpact, user) -> dict:
              "new_hours": float(a.new_hours)} for a in impact.credit_reductions],
         "stale_entries_closed": impact.stale_closed,
         "arbzg_findings": impact.arbzg,
-        "milog_warning": milog_warnings(user, impact),
+        "milog_warning": milog_warnings(impact),
         "affected_absences": len(impact.absences),
-        "vacation_entitlement": entitlement_out(impact.entitlement or {}),
+        "vacation_entitlement": entitlement_out(impact.entitlement, impact.entitlement_preview_years),
     }
 
 
-def entitlement_out(entitlement: dict) -> List[dict]:
-    """Spec A4 Vorschau: Anspruch bisher → neu für Wirkungsjahr und Folgejahr —
-    die beiden kleinsten Schlüssel von ``ChangeImpact.entitlement``
-    (:func:`entitlement_years` beginnt immer mit ihnen)."""
+def entitlement_out(entitlement: dict, years) -> List[dict]:
+    """Spec A4 Vorschau: Anspruch bisher → neu für die übergebenen Jahre
+    (Wirkungsjahr und Folgejahr, ``ChangeImpact.entitlement_preview_years``)."""
     return [{"year": y, "before": float(entitlement[y][0]), "after": float(entitlement[y][1])}
-            for y in sorted(entitlement)[:2]]
+            for y in years]
 
 
 def entitlement_unchanged_out(db: Session, user: User, effective_from: date) -> List[dict]:
     """Vorschau ohne Lauf (Snapshot unverändert oder blockiert): bisher == neu
     aus EINER Berechnung je Jahr."""
-    current = _entitlements(db, user, [effective_from.year, effective_from.year + 1])
-    return entitlement_out({y: (v, v) for y, v in current.items()})
+    years = (effective_from.year, effective_from.year + 1)
+    current = _entitlements(db, user, years)
+    return entitlement_out({y: (v, v) for y, v in current.items()}, years)
 
 
 def _hm(hours) -> str:
@@ -481,13 +504,12 @@ def criteria_text(impact: ChangeImpact) -> str:
         n = len(impact.credit_reductions)
         parts.append("1 Abwesenheits-Gutschrift sinkt" if n == 1 else f"{n} Abwesenheits-Gutschriften sinken")
     if SHORTENING_VACATION_ENTITLEMENT in impact.shortening_reasons:
-        # Nur die Jahre, deren Anspruch rückwirkend sinkt (Wirkungsjahr … heute) —
-        # das Folgejahr der Vorschau kann in der Zukunft liegen und zählt dann nicht.
-        today = timezone_service.today_local()
-        for y, (old, new) in sorted((impact.entitlement or {}).items()):
-            if y <= today.year and new < old:
-                parts.append(f"Urlaubsanspruch {y} {reclamp_audit.format_days_de(old)} → "
-                             f"{reclamp_audit.format_days_de(new)} Tage")
+        # Nur die Jahre, deren Anspruch rückwirkend sinkt — dieselbe Menge, die
+        # ``run_change`` klassifiziert hat (kein zweites „heute", F071/F122).
+        for y in impact.entitlement_lost_years:
+            old, new = impact.entitlement[y]
+            parts.append(f"Urlaubsanspruch {y} {reclamp_audit.format_days_de(old)} → "
+                         f"{reclamp_audit.format_days_de(new)} Tage")
     return "; ".join(parts)
 
 
@@ -513,8 +535,15 @@ def protection_error(impact: ChangeImpact, reason, *, deleting: bool, reset_offe
                         f"auf den vorherigen Stand zurücksetzen.")
         else:
             head = f"Rückwirkende Verkürzung ({crit}): {_ASK}"
-            if impact.earliest_lossless_date is not None:
-                return f"{head} – oder die Änderung ab dem {impact.earliest_lossless_date:%d.%m.%Y} wirksam werden lassen."
+            earliest = impact.earliest_lossless_date
+            if earliest is not None:
+                text = f"{head} – oder die Änderung ab dem {earliest:%d.%m.%Y} wirksam werden lassen"
+                if (SHORTENING_VACATION_ENTITLEMENT in impact.shortening_reasons
+                        and (earliest.month, earliest.day) != (1, 1)):
+                    # F122: auch ab diesem Datum sinkt der Anspruch des Jahres —
+                    # nur nicht rückwirkend, sondern anteilig für den Rest.
+                    text += f" (der Urlaubsanspruch {earliest.year} sinkt dann anteilig)"
+                return f"{text}."
         if impact.earliest_lossless_note:
             return f"{head} – oder abbrechen: {impact.earliest_lossless_note}"
         return f"{head} – oder abbrechen."
