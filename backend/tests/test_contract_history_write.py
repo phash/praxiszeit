@@ -15,8 +15,9 @@ from app.models import TimeEntry, User, WorkingHoursChange
 from app.services import calculation_service as cs
 from app.services import wh_change_service, work_blocks_service
 from tests.conftest import DEFAULT_TENANT_ID
-from tests.wh_change_helpers import ANNA_WEEK, RETRO_REASON, add_row, admin_client, freeze, t
-from tests.test_endpoints import test_app
+from tests.wh_change_helpers import (
+    ANNA_WEEK, RETRO_REASON, add_row, contract_client_fixture, changes_url as url, rows_of, explicit_contract, freeze, t,
+)
 
 TODAY = date(2026, 11, 3)
 CONTRACT = ("vacation_days", "track_hours", "milog_working_time_account",
@@ -24,31 +25,7 @@ CONTRACT = ("vacation_days", "track_hours", "milog_working_time_account",
 NOT_NULL = ("vacation_days", "track_hours", "milog_working_time_account", "use_fixed_monthly_target")
 
 
-@pytest.fixture
-def client(db, test_admin, monkeypatch):
-    freeze(monkeypatch, TODAY)
-    yield admin_client(db, test_admin)
-    test_app.dependency_overrides.clear()
-
-
-def url(user) -> str:
-    return f"/api/admin/users/{user.id}/working-hours-changes"
-
-
-def rows_of(db, user) -> list:
-    db.expire_all()
-    return db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == DEFAULT_TENANT_ID,
-    ).order_by(WorkingHoursChange.effective_from).all()
-
-
-def explicit_contract(**overrides) -> dict:
-    """Alle fünf Felder ausdrücklich — Zeilen, die der Test-Listener nicht füllt."""
-    values = dict(vacation_days=Decimal("24"), track_hours=True, milog_working_time_account=False,
-                  agreed_monthly_hours=None, use_fixed_monthly_target=False)
-    values.update(overrides)
-    return values
+client = pytest.fixture(name="client")(contract_client_fixture)
 
 
 def schedule(*, blocks=None, block_pauses=None, **contract) -> cs.Schedule:

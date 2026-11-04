@@ -5,11 +5,16 @@ Vertragsbedingungen (``reclamp_audit.contract_pair``)."""
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from app.models import YearCarryover
 from app.services import reclamp_audit
 from tests.conftest import DEFAULT_TENANT_ID
-from tests.test_contract_history_write import client, rows_of, url, explicit_contract  # noqa: F401
-from tests.wh_change_helpers import add_row, reclamp_logs
+from tests.wh_change_helpers import (
+    contract_client_fixture, changes_url as url, rows_of, add_row, explicit_contract, reclamp_logs,
+)
+
+client = pytest.fixture(name="client")(contract_client_fixture)
 
 BASE = date(2020, 1, 1)
 
@@ -64,6 +69,21 @@ def test_delete_preview_shows_entitlement_back(db, test_user, client):
     assert d.json()["vacation_entitlement"] == [{"year": 2026, "before": 25.0, "after": 24.0},
                                                 {"year": 2027, "before": 30.0, "after": 24.0}]
     assert len(rows_of(db, test_user)) == 2                 # Vorschau löscht nie
+    # F032: das Löschen einer RÜCKWIRKENDEN Erhöhung senkt den Anspruch → Verkürzung.
+    assert d.json()["is_shortening"] is True
+    assert "vacation_entitlement" in d.json()["shortening_reasons"]
+    # Ohne Grund 400, Zeile und users.vacation_days bleiben.
+    refused = client.request("DELETE", f"{url(test_user)}/{change_id}")
+    assert refused.status_code == 400, refused.text
+    assert len(rows_of(db, test_user)) == 2
+    db.expire_all()
+    assert test_user.vacation_days == 30
+    # Mit Grund geht das Löschen durch.
+    ok = client.request("DELETE", f"{url(test_user)}/{change_id}", json={
+        "retroactive_reason_type": "erfassungsfehler", "retroactive_reason_text": "Anspruch war falsch erfasst",
+        "wage_risk_confirmed": True})
+    assert ok.status_code in (200, 204), ok.text
+    assert len(rows_of(db, test_user)) == 1
 
 
 def test_retroactive_entitlement_decrease_is_shortening(db, test_user, client):

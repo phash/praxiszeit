@@ -4,11 +4,16 @@ Zeilen bleibt „existiert bereits"."""
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from app.models import WorkingHoursChange
 from app.services import calculation_service as cs
 from app.services import reclamp_audit
-from tests.test_contract_history_write import client, rows_of, url, explicit_contract, TODAY  # noqa: F401
-from tests.wh_change_helpers import add_row, reclamp_logs
+from tests.wh_change_helpers import (
+    CONTRACT_TODAY as TODAY, contract_client_fixture, changes_url as url, rows_of, add_row, explicit_contract, reclamp_logs,
+)
+
+client = pytest.fixture(name="client")(contract_client_fixture)
 
 BASE = date(2020, 1, 1)
 LATER = date(2026, 11, 1)

@@ -13,10 +13,8 @@ from decimal import Decimal
 
 import pytest
 
-from app.models import WorkingHoursChange
-from tests.conftest import DEFAULT_TENANT_ID
-from tests.wh_change_helpers import admin_client, freeze
-from tests.test_endpoints import test_app
+from app.models import User
+from tests.wh_change_helpers import contract_client_fixture, changes_url as url, rows_of, freeze
 
 TODAY = date(2026, 11, 3)
 MONTH_START = "Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten."
@@ -30,27 +28,11 @@ PUT_LOCK = (
 )
 
 
-@pytest.fixture
-def client(db, test_admin, monkeypatch):
-    freeze(monkeypatch, TODAY)
-    yield admin_client(db, test_admin)
-    test_app.dependency_overrides.clear()
-
-
-def url(user) -> str:
-    return f"/api/admin/users/{user.id}/working-hours-changes"
+client = pytest.fixture(name="client")(contract_client_fixture)
 
 
 def same_hours(user) -> dict:
     return {"weekly_hours": float(user.weekly_hours), "work_days_per_week": int(user.work_days_per_week)}
-
-
-def rows_of(db, user) -> list:
-    db.expire_all()
-    return db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == DEFAULT_TENANT_ID,
-    ).order_by(WorkingHoursChange.effective_from).all()
 
 
 @pytest.fixture
@@ -81,6 +63,16 @@ def test_each_minijob_field_mid_month_is_422(db, test_user, client, field, value
     r = client.post(url(test_user), json={"effective_from": "2027-01-15", field: value, **same_hours(test_user)})
     assert r.status_code == 422, r.text
     assert r.json()["detail"] == MONTH_START
+
+
+def test_fixed_mode_switch_mid_month_is_422(db, fixed_person, client):
+    """F033: auch ``use_fixed_monthly_target`` gilt nur zum Monatsersten. Die
+    Voraussetzungen bleiben gültig (kein Konto-Verlust), also 422 und nicht 400."""
+    r = client.post(url(fixed_person), json={"effective_from": "2027-01-15", "weekly_hours": 10,
+                                             "work_days_per_week": 5, "use_fixed_monthly_target": False})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"] == MONTH_START
+    assert rows_of(db, fixed_person) == []
 
 
 def test_minijob_field_change_on_1st_ok(db, test_user, client):
@@ -185,16 +177,17 @@ def test_explicit_null_agreed_still_means_derived(db, test_user, client):
 
 # --- PUT-Sperre --------------------------------------------------------------
 
-@pytest.mark.parametrize("field,value", [("vacation_days", 30), ("track_hours", False),
+@pytest.mark.parametrize("field,value", [("vacation_days", 17.5), ("track_hours", False),
                                          ("milog_working_time_account", True), ("agreed_monthly_hours", 45),
                                          ("use_fixed_monthly_target", True)])
 def test_put_user_rejects_historised_contract_field(db, test_user, client, field, value):
     before = getattr(test_user, field)
+    assert before != value, "Vorbedingung: der Wert unterscheidet sich vom Fixture"   # F034
     r = client.put(f"/api/admin/users/{test_user.id}", json={field: value})
     assert r.status_code == 400, r.text
     assert r.json()["detail"] == PUT_LOCK
     db.expire_all()
-    assert getattr(test_user, field) == before
+    assert getattr(db.get(User, test_user.id), field) == before
 
 
 def test_put_user_without_contract_fields_ok(db, test_user, client):

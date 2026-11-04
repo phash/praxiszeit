@@ -93,6 +93,7 @@ def test_track_hours_on_from_june_retroactive(db, test_user, client):   # Spec A
     e = entry(db, u, ENTRY_DAY, t(7), t(13))
     vac = absence(db, u, ABSENCE_DAY, AbsenceType.VACATION, hours=0.0)
     may_before = cs.get_monthly_balance(db, u, 2026, 5)
+    june_before = cs.get_monthly_balance(db, u, 2026, 6)
 
     r = client.post(url(u), json=body(True))
     assert r.status_code == 201, r.text
@@ -101,6 +102,12 @@ def test_track_hours_on_from_june_retroactive(db, test_user, client):   # Spec A
     assert _entry_state(db, e) == (t(7, 45), t(12, 15), t(7), t(13), 0)
     db.expire_all()
     assert cs.get_monthly_balance(db, u, 2026, 5) == may_before
+    # Saldo Juni neu: Soll (22 Werktage − 1 Urlaubstag) × 4 h, Ist = gekappter Eintrag 4,5 h.
+    june_after = cs.get_monthly_balance(db, u, 2026, 6)
+    assert june_after != june_before
+    assert cs.get_monthly_target(db, u, 2026, 6) == Decimal("84")
+    assert cs.get_monthly_actual(db, u, 2026, 6) == Decimal("4.5")
+    assert june_after == Decimal("4.5") - Decimal("84")
     assert reclamp_logs(db, u, summary=True)
 
 
@@ -251,3 +258,65 @@ def test_always_untracked_person_hours_change_touches_nothing(db, test_user, cli
     assert db.query(TimeEntryAuditLog).filter(
         TimeEntryAuditLog.user_id == u.id, TimeEntryAuditLog.source == "wh_change").count() == 0
     assert reclamp_logs(db, u, summary=False) == []
+
+
+def _row_count(db, u) -> int:
+    db.expire_all()
+    return db.query(WorkingHoursChange).filter(WorkingHoursChange.user_id == u.id).count()
+
+
+def test_retroactive_switch_on_without_reason_is_400_and_previewed_as_shortening(db, test_user, client):
+    """F031: die Schutzpaket-Pflicht gilt auch für reine Vertragsänderungen. Das
+    Einschalten ab 01.06. kappt den Eintrag und hebt das Soll → Verkürzung → 400
+    ohne Grund, nichts geschrieben; die Vorschau meldet sie."""
+    u = test_user
+    _set_mode(db, u, False)
+    e = entry(db, u, ENTRY_DAY, t(7), t(13))
+    rows = _row_count(db, u)
+    plain = {"effective_from": EFF.isoformat(), "blocks": WEEK, "track_hours": True}
+
+    p = client.post(url(u) + "/preview", json=plain)
+    assert p.status_code == 200, p.text
+    assert p.json()["is_shortening"] is True
+    assert {"entries", "saldo"} & set(p.json()["shortening_reasons"])
+
+    r = client.post(url(u), json=plain)
+    assert r.status_code == 400, r.text
+    assert "Rückwirkende Verkürzung" in r.json()["detail"]
+    assert _row_count(db, u) == rows
+    assert _entry_state(db, e) == (t(7), t(13), None, None, 0)
+
+
+def test_retroactive_switch_off_is_never_a_shortening(db, test_user, client):
+    """F031 (Gegenprobe): Ausschalten hebt das Soll auf und entkappt — der Saldo
+    sinkt nie, also verlangt die Änderung keinen Grund (und das Löschen verlangt
+    ihn, s. u.). Die Gutschrift der Krankheit fällt mit dem Soll auf 0."""
+    u = test_user
+    _set_mode(db, u, True)
+    sick = absence(db, u, ABSENCE_DAY, AbsenceType.SICK, hours=4.0)
+    plain = {"effective_from": EFF.isoformat(), "blocks": WEEK, "track_hours": False}
+
+    p = client.post(url(u) + "/preview", json=plain)
+    assert p.status_code == 200, p.text
+    assert p.json()["is_shortening"] is False
+
+    r = client.post(url(u), json=plain)
+    assert r.status_code == 201, r.text
+    assert _hours(db, sick) == 0.0
+
+
+def test_delete_of_switch_off_without_reason_is_400(db, test_user, client):
+    """F031 (DELETE): das Löschen der Ausschaltung führt die Stundenzählung wieder
+    ein und kappt rückwirkend — ohne Grund 400, die Zeile bleibt."""
+    u = test_user
+    _set_mode(db, u, True)
+    e = entry(db, u, ENTRY_DAY, t(7), t(13), raw_start=t(7), raw_end=t(13))
+    r = client.post(url(u), json=body(False))
+    assert r.status_code == 201, r.text
+    rows = _row_count(db, u)
+    before = _entry_state(db, e)
+
+    resp = client.request("DELETE", f"{url(u)}/{r.json()['id']}")
+    assert resp.status_code == 400, resp.text
+    assert _row_count(db, u) == rows
+    assert _entry_state(db, e) == before
