@@ -246,7 +246,7 @@ export default function AdminDashboard() {
   const handleDeleteYearClosing = () => {
     confirm({
       title: `Jahresabschluss ${currentYear} löschen`,
-      message: `Alle Übernahmen (Überstunden + Resturlaub) für ${currentYear + 1}, die durch den Jahresabschluss ${currentYear} erzeugt wurden, werden unwiderruflich gelöscht.\n\nDies betrifft alle Mitarbeiter. Manuelle Übernahmen für ${currentYear + 1} gehen ebenfalls verloren.\n\nWirklich löschen?`,
+      message: `Alle Übernahmen (Überstunden + Resturlaub) für ${currentYear + 1}, die durch den Jahresabschluss ${currentYear} erzeugt wurden, werden unwiderruflich gelöscht.\n\nDies betrifft alle Mitarbeiter. Von Hand eingetragene Übernahmen für ${currentYear + 1} bleiben erhalten.\n\nWirklich löschen?`,
       confirmLabel: 'Jahresabschluss löschen',
       variant: 'danger',
       onConfirm: async () => {

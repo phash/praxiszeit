@@ -5,7 +5,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useAuthStore } from '../../../stores/authStore';
 import PasswordInput from '../../../components/PasswordInput';
 import { getErrorMessage } from '../../../utils/errorMessage';
-import { parseHours, deHoursExact, formatDayPlan } from '../../../utils/formatters';
+import { parseHours, deHoursExact, formatDayPlan, formatDayNumber } from '../../../utils/formatters';
 import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../../../utils/calendarColors';
 import {
   deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, isLegacyWeek, validateWeekBlocks,
@@ -243,6 +243,13 @@ export default function UserForm({
   const effectiveWorkDays = createBlocksActive
     ? createDerived.workDays
     : (editUser ? shownWorkDays : formData.work_days_per_week);
+  // Teil A (Task 15): Vertragsfelder beim Bearbeiten = Snapshot von heute,
+  // Rückfall auf die User-Zeile (identischer Stand ohne Verlaufszeilen).
+  const shownVacationDays = todaySchedule?.vacation_days ?? editUser?.vacation_days ?? formData.vacation_days;
+  const shownTrackHours = todaySchedule?.track_hours ?? editUser?.track_hours ?? true;
+  const shownMilog = todaySchedule?.milog_working_time_account ?? editUser?.milog_working_time_account ?? false;
+  const shownAgreedMonthly = todaySchedule?.agreed_monthly_hours ?? editUser?.agreed_monthly_hours ?? null;
+  const shownFixedTarget = todaySchedule?.use_fixed_monthly_target ?? editUser?.use_fixed_monthly_target ?? false;
   const suggestedVacation = effectiveWorkDays > 0 ? Math.round(30 * effectiveWorkDays / 5) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -299,6 +306,10 @@ export default function UserForm({
         const {
           password, weekly_hours, use_daily_schedule, work_days_per_week,
           hours_monday, hours_tuesday, hours_wednesday, hours_thursday, hours_friday,
+          // Teil A (Task 15): die fünf Vertragsfelder gehören ebenfalls nie in den
+          // PUT (400, Schreibweg = „Arbeitszeit anpassen…" mit Wirkungsdatum).
+          vacation_days, track_hours, milog_working_time_account,
+          agreed_monthly_hours, use_fixed_monthly_target,
           ...rest
         } = payload;
         const updateData = rest;
@@ -619,21 +630,41 @@ export default function UserForm({
           </div>
           {/* Teil A (Task 13): Urlaubsanspruch, Stundenzählung und Minijob-Felder
               teilt sich das Formular mit dem Dialog „Arbeitszeit ändern". */}
-          <ContractTermsFields
-            value={{
-              vacation_days: formData.vacation_days,
-              track_hours: formData.track_hours,
-              milog_working_time_account: formData.milog_working_time_account,
-              agreed_monthly_hours: formData.agreed_monthly_hours,
-              use_fixed_monthly_target: formData.use_fixed_monthly_target,
-            }}
-            onChange={(terms) => setFormData((prev) => ({ ...prev, ...terms }))}
-            mode="create"
-            suggestion={suggestedVacation}
-            idPrefix=""
-            weeklyHours={effectiveWeeklyHours}
-            workDays={effectiveWorkDays}
-          />
+          {editUser ? (
+            // Teil A (Task 15): beim Bearbeiten nur Anzeige des heute gültigen
+            // Vertragsstands (`schedule_today`); Schreibweg ist der Dialog.
+            <div id="f-contract-terms" data-testid="contract-terms-readonly" className="md:col-span-2">
+              <span className="block text-sm font-medium text-gray-700 mb-1">Urlaub und Abrechnung</span>
+              <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900 space-y-1">
+                <p>{`${formatDayNumber(shownVacationDays)} Tage/Jahr`}</p>
+                <p>{shownTrackHours ? 'Stundenzählung aktiv' : 'ohne Stundenzählung'}</p>
+                {shownMilog && (
+                  <p>
+                    MiLoG-Arbeitszeitkonto aktiv
+                    {shownAgreedMonthly != null && `. Vereinbarte Monatsarbeitszeit: ${formatDayNumber(shownAgreedMonthly)} h`}
+                    {shownFixedTarget && '. Festes Monats-Soll'}
+                  </p>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-gray-400">Ändern über „Arbeitszeit anpassen…“</p>
+            </div>
+          ) : (
+            <ContractTermsFields
+              value={{
+                vacation_days: formData.vacation_days,
+                track_hours: formData.track_hours,
+                milog_working_time_account: formData.milog_working_time_account,
+                agreed_monthly_hours: formData.agreed_monthly_hours,
+                use_fixed_monthly_target: formData.use_fixed_monthly_target,
+              }}
+              onChange={(terms) => setFormData((prev) => ({ ...prev, ...terms }))}
+              mode="create"
+              suggestion={suggestedVacation}
+              idPrefix=""
+              weeklyHours={effectiveWeeklyHours}
+              workDays={effectiveWorkDays}
+            />
+          )}
           <div>
             <label htmlFor="f-child-sick" className="block text-sm font-medium text-gray-700 mb-1">
               Kind-krank-Tage/Jahr (§45 SGB V)
