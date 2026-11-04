@@ -23,12 +23,17 @@ from sqlalchemy.orm import Session
 
 from app.models import TimeEntry, User, WorkingHoursChange
 from app.services import (
-    calculation_service, presence_service, timezone_service, work_blocks_service, work_window_service,
+    calculation_service, presence_service, reclamp_audit, timezone_service, work_blocks_service,
+    work_window_service,
 )
 
 SHORTENING_ENTRIES = "entries"
 SHORTENING_SALDO = "saldo"
 SHORTENING_ABSENCE_CREDIT = "absence_credit"
+# Teil A, Task 7: eine RÜCKWIRKENDE Senkung des Urlaubsanspruchs eines Jahres
+# (Wirkungsdatum < heute); ab heute/künftig bleibt der erworbene Anteil durch die
+# anteilige Rechnung erhalten und ist keine Verkürzung.
+SHORTENING_VACATION_ENTITLEMENT = "vacation_entitlement"
 
 P25_NOTE = "Die Änderung liegt vollständig vor der Änderung ab {date}; nur rückwirkend mit Begründung oder abbrechen."
 MILOG_ACCOUNT_WARNING = (
@@ -70,6 +75,10 @@ class ChangeImpact(NamedTuple):
     months: list
     arbzg: dict
     entries_before: dict           # id → transiente Kopie „vorher" (Protokoll 10.1)
+    # Teil A, Task 7: Jahr → (Anspruch vorher, nachher), ``vacation_entitlement_days``
+    # (ohne Übertrag) für {Wirkungsjahr, Folgejahr} ∪ Wirkungsjahr…heute. Mit
+    # Vorgabewert, damit bestehende Konstruktionen (Tests) gültig bleiben.
+    entitlement: Optional[dict] = None
 
     @property
     def is_shortening(self) -> bool:
@@ -155,6 +164,22 @@ def _credited_minutes(e) -> int:
     return presence_service.credited_minutes([e])
 
 
+def entitlement_years(effective_from: date, today: date) -> list:
+    """Teil A, Task 7: die Jahre, deren Anspruch ``run_change`` vergleicht —
+    {Wirkungsjahr, Folgejahr} (Vorschau) ∪ Wirkungsjahr … heute (Klassifikation)."""
+    return sorted({effective_from.year, effective_from.year + 1}
+                  | set(range(effective_from.year, today.year + 1)))
+
+
+def _entitlements(db: Session, user: User, years) -> Dict[int, Decimal]:
+    """Anspruch je Jahr — der Verlauf wird EINMAL geladen (F-026), nicht je Jahr."""
+    rows = db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
+    ).all()
+    return {y: calculation_service.vacation_entitlement_days(db, user, y, wh_changes=rows) for y in years}
+
+
 def _next_change(db: Session, user: User, effective_from: date) -> Optional[WorkingHoursChange]:
     return db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
@@ -221,6 +246,8 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
     old_full = calculation_service.absence_full_targets(db, user, window.start, window.end)
     old_today_blocks = work_window_service.credit_blocks(db, user, today) if open_today else None
     before = {e.id: _snapshot(e) for e in presence_service.closed_entries(db, user, window.start, window.end)}
+    ent_years = entitlement_years(effective_from, today)
+    ent_before = _entitlements(db, user, ent_years)
 
     # Schritt 4
     apply()
@@ -251,6 +278,9 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
             db, user, window.start, window.end, old_full_target_by_date=old_full)
 
     # Schritt 7
+    ent_after = _entitlements(db, user, ent_years)
+    ent_lost = ([y for y in range(effective_from.year, today.year + 1) if ent_after[y] < ent_before[y]]
+                if effective_from < today else [])
     saldo_after = _saldo_by_year(db, user, window.start, window.end, cutoff)
     years = sorted(set(saldo_before) | set(saldo_after))
     zero = (_ZERO, _ZERO)
@@ -276,8 +306,10 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
         reasons.append(SHORTENING_SALDO)
     if reductions:
         reasons.append(SHORTENING_ABSENCE_CREDIT)
+    if ent_lost:
+        reasons.append(SHORTENING_VACATION_ENTITLEMENT)
     loss_years = ({c.date.year for c in losing} | {a.date.year for a in reductions}
-                  | {y for y, d in saldo_by_year.items() if d < 0})
+                  | {y for y, d in saldo_by_year.items() if d < 0} | set(ent_lost))
     if open_loses or open_day_delta < 0:
         loss_years.add(today.year)
 
@@ -329,6 +361,7 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
             "weeks_over_48_presence": presence[1],
         },
         entries_before=before,
+        entitlement={y: (ent_before[y], ent_after[y]) for y in ent_years},
     )
 
 
@@ -388,7 +421,23 @@ def preview_fields(impact: ChangeImpact, user) -> dict:
         "arbzg_findings": impact.arbzg,
         "milog_warning": milog_warnings(user, impact),
         "affected_absences": len(impact.absences),
+        "vacation_entitlement": entitlement_out(impact.entitlement or {}),
     }
+
+
+def entitlement_out(entitlement: dict) -> List[dict]:
+    """Spec A4 Vorschau: Anspruch bisher → neu für Wirkungsjahr und Folgejahr —
+    die beiden kleinsten Schlüssel von ``ChangeImpact.entitlement``
+    (:func:`entitlement_years` beginnt immer mit ihnen)."""
+    return [{"year": y, "before": float(entitlement[y][0]), "after": float(entitlement[y][1])}
+            for y in sorted(entitlement)[:2]]
+
+
+def entitlement_unchanged_out(db: Session, user: User, effective_from: date) -> List[dict]:
+    """Vorschau ohne Lauf (Snapshot unverändert oder blockiert): bisher == neu
+    aus EINER Berechnung je Jahr."""
+    current = _entitlements(db, user, [effective_from.year, effective_from.year + 1])
+    return entitlement_out({y: (v, v) for y, v in current.items()})
 
 
 def _hm(hours) -> str:
@@ -420,6 +469,14 @@ def criteria_text(impact: ChangeImpact) -> str:
     if SHORTENING_ABSENCE_CREDIT in impact.shortening_reasons:
         n = len(impact.credit_reductions)
         parts.append("1 Abwesenheits-Gutschrift sinkt" if n == 1 else f"{n} Abwesenheits-Gutschriften sinken")
+    if SHORTENING_VACATION_ENTITLEMENT in impact.shortening_reasons:
+        # Nur die Jahre, deren Anspruch rückwirkend sinkt (Wirkungsjahr … heute) —
+        # das Folgejahr der Vorschau kann in der Zukunft liegen und zählt dann nicht.
+        today = timezone_service.today_local()
+        for y, (old, new) in sorted((impact.entitlement or {}).items()):
+            if y <= today.year and new < old:
+                parts.append(f"Urlaubsanspruch {y} {reclamp_audit.format_days_de(old)} → "
+                             f"{reclamp_audit.format_days_de(new)} Tage")
     return "; ".join(parts)
 
 

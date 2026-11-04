@@ -15,7 +15,7 @@ from app.models import TimeEntry, User, WorkingHoursChange
 from app.services import calculation_service as cs
 from app.services import wh_change_service, work_blocks_service
 from tests.conftest import DEFAULT_TENANT_ID
-from tests.wh_change_helpers import ANNA_WEEK, add_row, admin_client, freeze, t
+from tests.wh_change_helpers import ANNA_WEEK, RETRO_REASON, add_row, admin_client, freeze, t
 from tests.test_endpoints import test_app
 
 TODAY = date(2026, 11, 3)
@@ -170,7 +170,9 @@ def test_reset_matches_compares_contract_fields(db, test_user, client):
     body = wh_change_service.reset_body(pred, date(2026, 7, 1), target.id)
     stale = client.post(url(test_user), json={**body, "vacation_days": 30})
     assert stale.status_code == 409, stale.text
-    ok = client.post(url(test_user), json=body)
+    # Task 7: die Rücksetzung ab 01.07. (< heute) senkt den Anspruch 2026
+    # rückwirkend (30 → 24) — Verkürzungsgrund ``vacation_entitlement``.
+    ok = client.post(url(test_user), json={**body, **RETRO_REASON})
     assert ok.status_code == 201, ok.text
     assert rows_of(db, test_user)[-1].vacation_days == Decimal("24.0")
 
@@ -182,7 +184,8 @@ def test_delete_restores_mirror(db, test_user, client):
     test_user.vacation_days = 30
     test_user.track_hours = False
     db.commit()
-    r = client.delete(f"{url(test_user)}/{young.id}")
+    # Task 7: das Löschen senkt den Anspruch 2026 rückwirkend — mit Schutzpaket.
+    r = client.request("DELETE", f"{url(test_user)}/{young.id}", json=RETRO_REASON)
     assert r.status_code == 204, r.text
     user = db.get(User, test_user.id)
     assert float(user.vacation_days) == 24.0
@@ -197,7 +200,9 @@ def test_write_paths_set_all_five_without_test_listener(db, test_user, test_admi
     db.add(TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=test_user.id, date=date(2026, 2, 2),
                      start_time=t(8), end_time=t(12), break_minutes=0))
     db.commit()
-    r = client.post(url(test_user), json={"effective_from": "2026-11-01", "weekly_hours": 40, "vacation_days": 28})
+    # Task 7: 30 → 28 ab 01.11. (< heute) senkt den Anspruch 2026 rückwirkend.
+    r = client.post(url(test_user), json={"effective_from": "2026-11-01", "weekly_hours": 40, "vacation_days": 28,
+                                          **RETRO_REASON})
     assert r.status_code == 201, r.text
     created_id = r.json()["id"]
     assert len(rows_of(db, test_user)) == 2
@@ -220,7 +225,7 @@ def test_write_paths_set_all_five_without_test_listener(db, test_user, test_admi
     reset_id = r.json()["id"]
 
     # Löschen (jüngste Zeile) — Spiegel zurück auf die vorherige.
-    r = client.delete(f"{url(test_user)}/{reset_id}")
+    r = client.request("DELETE", f"{url(test_user)}/{reset_id}", json=RETRO_REASON)
     assert r.status_code == 204, r.text
 
     rows = rows_of(db, test_user) + rows_of(db, other)

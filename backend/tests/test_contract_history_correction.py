@@ -4,12 +4,11 @@ Zeilen bleibt „existiert bereits"."""
 from datetime import date
 from decimal import Decimal
 
-import pytest
-
 from app.models import WorkingHoursChange
 from app.services import calculation_service as cs
+from app.services import reclamp_audit
 from tests.test_contract_history_write import client, rows_of, url, explicit_contract, TODAY  # noqa: F401
-from tests.wh_change_helpers import add_row
+from tests.wh_change_helpers import add_row, reclamp_logs
 
 BASE = date(2020, 1, 1)
 LATER = date(2026, 11, 1)
@@ -55,7 +54,6 @@ def test_preview_at_earliest_row_has_no_blocked_reason(db, test_user, client):
     assert float(rows_of(db, test_user)[0].vacation_days) == 24.0
 
 
-@pytest.mark.xfail(strict=True, reason="Task 7: Verkürzungsgrund vacation_entitlement")
 def test_correction_writes_summary_row_and_requires_reason_when_shortening(db, test_user, client):
     _history(db, test_user)
     no_reason = client.post(url(test_user), json=body("2020-01-01", vacation_days=20))
@@ -64,3 +62,6 @@ def test_correction_writes_summary_row_and_requires_reason_when_shortening(db, t
         "2020-01-01", vacation_days=20, retroactive_reason_type="erfassungsfehler",
         retroactive_reason_text="Anspruch falsch erfasst", wage_risk_confirmed=True))
     assert ok.status_code == 201, ok.text
+    assert "Urlaubsanspruch 2020 24 → 20 Tage" in no_reason.json()["detail"]
+    parsed = reclamp_audit.parse_summary_note(reclamp_logs(db, test_user, summary=True)[-1].new_note)
+    assert parsed.effective_from == BASE and parsed.shortening and parsed.reason_type == "erfassungsfehler"

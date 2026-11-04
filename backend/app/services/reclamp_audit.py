@@ -15,6 +15,7 @@ nur durch die schließende Klammer — Test in ``test_reclamp_audit.py``.
 """
 import re
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from typing import List, NamedTuple, Optional
 
 from app.services import calculation_service, timezone_service, work_blocks_service
@@ -134,6 +135,42 @@ def contract_text(schedule, *, compact: bool, previous=None) -> str:
         return base
     window = work_blocks_service.blocks_text(parsed.blocks, parsed.pauses, compact=compact)
     return f"{base} · {window} (nur Kappung)"
+
+
+def format_days_de(value) -> str:
+    """Tageszahl in deutscher Schreibweise ohne belanglose Nachkommanull —
+    „24", „24,5", „13,1". DIE eine Formatierung für die Urlaubsanspruchs-Texte
+    (``wh_change_service.criteria_text`` und :func:`contract_pair`)."""
+    text = format(Decimal(str(value)).normalize(), "f")
+    return text.replace(".", ",")
+
+
+def _contract_terms(schedule) -> tuple:
+    """Die fünf Vertragsbedingungen (Teil A) als Textbausteine, in fester Reihenfolge."""
+    agreed = schedule.agreed_monthly_hours
+    return (
+        f"Urlaub {format_days_de(schedule.vacation_days)}",
+        "mit Stundenzählung" if schedule.track_hours else "ohne Stundenzählung",
+        "MiLoG-Konto an" if schedule.milog_working_time_account else "MiLoG-Konto aus",
+        "Monatsstunden abgeleitet" if agreed is None else f"Monatsstunden {format_hours_de(agreed)}",
+        "festes Monats-Soll an" if schedule.use_fixed_monthly_target else "festes Monats-Soll aus",
+    )
+
+
+def contract_pair(old, new) -> tuple:
+    """Teil A, Task 7 — „vorher"/„nachher" der Sammelzeile nach „Vertrag:":
+    :func:`contract_text` (``compact``) und jede Vertragsbedingung, die sich
+    zwischen ``old`` und ``new`` unterscheidet, auf BEIDEN Seiten mit „ · "
+    angehängt (Urlaub, Stundenzählung, MiLoG-Konto, Monatsstunden, festes
+    Monats-Soll). Unveränderte Bedingungen erscheinen nicht — eine reine
+    Stundenänderung schreibt den bisherigen Wortlaut. Der Teil nach „Vertrag:"
+    wird nie geparst; ``contract_text`` (Dashboard-Hinweis) bleibt unverändert."""
+    before, after = contract_text(old, compact=True), contract_text(new, compact=True)
+    for a, b in zip(_contract_terms(old), _contract_terms(new)):
+        if a != b:
+            before += f" · {a}"
+            after += f" · {b}"
+    return before, after
 
 
 def _sign(value: int) -> str:

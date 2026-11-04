@@ -1967,6 +1967,9 @@ def _log_reclamp(db: Session, *, user: User, admin: User, impact, effective_from
     (row_hash, #121), kein Bulk-UPDATE; die Vorschau ruft das nie (10.3)."""
     shortening = impact.is_shortening
     changed = impact.reclamp.changed
+    # Teil A, Task 7: geänderte Vertragsbedingungen (Urlaub, Stundenzählung,
+    # Minijob) nach „Vertrag:" — nie geparst, ``contract_text`` bleibt der Hinweis.
+    contract_before, contract_after = reclamp_audit.contract_pair(impact.old_schedule, impact.new_schedule)
     entries = {}
     if changed:
         entries = {e.id: e for e in db.query(TimeEntry).filter(
@@ -1998,8 +2001,7 @@ def _log_reclamp(db: Session, *, user: User, admin: User, impact, effective_from
             skipped=dict(Counter(s.reason for s in impact.reclamp.skipped)),
             grace=impact.grace, credit_reductions=len(impact.credit_reductions), reset_of=reset_of,
             shortening=shortening, reason_type=reason_type, reason_text_value=reason_text,
-            contract_before=reclamp_audit.contract_text(impact.old_schedule, compact=True),
-            contract_after=reclamp_audit.contract_text(impact.new_schedule, compact=True),
+            contract_before=contract_before, contract_after=contract_after,
         ),
         tenant_id=user.tenant_id,
     ))
@@ -2442,6 +2444,7 @@ def preview_working_hours_change(
     else:
         overtime_before, vacation_before = _preview_account(db, user, today, cutoff, vacation_year)
         overtime_after, vacation_after = overtime_before, vacation_before
+        fields["vacation_entitlement"] = wh_change_service.entitlement_unchanged_out(db, user, effective_from)
 
     # closed_years: ALLE im Zeitraum berührten abgeschlossenen Jahre;
     # closed_year_warning der fertige Text für das früheste.
@@ -2617,6 +2620,7 @@ def delete_preview_working_hours_change(
     else:
         overtime_before, vacation_before = _preview_account(db, user, today, cutoff, vacation_year)
         overtime_after, vacation_after = overtime_before, vacation_before
+        fields["vacation_entitlement"] = wh_change_service.entitlement_unchanged_out(db, user, effective_from)
     closed_years = calculation_service.closed_years_in_range(
         db, current_user.tenant_id, range(window.start.year, window.end.year + 1))
     day_targets_current = _week_day_targets(user, effective_from, current_schedule)

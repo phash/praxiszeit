@@ -310,6 +310,14 @@ class AbsenceCreditReductionOut(BaseModel):
     new_hours: float
 
 
+class VacationEntitlementOut(BaseModel):
+    """Teil A, Task 7 (Spec A4): Urlaubsanspruch eines Jahres ohne Übertrag
+    (``calculation_service.vacation_entitlement_days``) bisher → nach der Änderung."""
+    year: int
+    before: float
+    after: float
+
+
 class ArbzgFindingsOut(BaseModel):
     """Spec 11.3/P22: geänderte ArbZG-Befunde im Wirkungsbereich."""
     days_over_10_credited_before: int = 0
@@ -423,7 +431,8 @@ class WorkingHoursChangePreview(BaseModel):
     not_extendable_count: int = 0
     not_extendable_entries: List[TimeEntryChangeOut] = Field(default_factory=list)
     is_shortening: bool = False
-    shortening_reasons: List[Literal["entries", "saldo", "absence_credit"]] = Field(default_factory=list)
+    shortening_reasons: List[Literal["entries", "saldo", "absence_credit", "vacation_entitlement"]] = Field(
+        default_factory=list)
     shortening_closed_years: List[int] = Field(default_factory=list)
     earliest_lossless_date: Optional[date] = None
     earliest_lossless_note: Optional[str] = None
@@ -438,5 +447,8 @@ class WorkingHoursChangePreview(BaseModel):
     reset_body: Optional[dict] = None
     stale_entries_closed: int = 0
     arbzg_findings: ArbzgFindingsOut = Field(default_factory=ArbzgFindingsOut)
+    # Teil A, Task 7: Anspruch für Wirkungsjahr und Folgejahr, in BEIDEN Vorschauen;
+    # ohne Lauf (Snapshot unverändert, blockiert) ist bisher == neu.
+    vacation_entitlement: List[VacationEntitlementOut] = Field(default_factory=list)
     milog_warning: List[str] = Field(default_factory=list)
     block_break_notices: List[str] = Field(default_factory=list)

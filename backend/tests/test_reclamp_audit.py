@@ -18,7 +18,7 @@ from tests.work_blocks_fixtures import block_week, legacy_week
 EFF = date(2026, 9, 1)
 
 
-def _schedule(*, week=None, weekly=Decimal("40"), daily=None, work_days=5):
+def _schedule(*, week=None, weekly=Decimal("40"), daily=None, work_days=5, **contract):
     parsed = work_blocks_service.parse_week_blocks(week) if week else None
     return calculation_service.Schedule(
         weekly_hours=weekly,
@@ -27,8 +27,8 @@ def _schedule(*, week=None, weekly=Decimal("40"), daily=None, work_days=5):
         work_days_per_week=work_days,
         blocks=parsed.blocks if parsed else None,
         block_pauses=parsed.pauses if parsed else None,
-        vacation_days=Decimal("30"), track_hours=True, milog_working_time_account=False,
-        agreed_monthly_hours=None, use_fixed_monthly_target=False,
+        **{**dict(vacation_days=Decimal("30"), track_hours=True, milog_working_time_account=False,
+                  agreed_monthly_hours=None, use_fixed_monthly_target=False), **contract},
     )
 
 
@@ -105,6 +105,56 @@ class TestContractText:
                                 previous=_schedule(weekly=Decimal("40"))) == "8,0 h/Woche auf 1 Arbeitstag"
         assert ra.contract_text(new, compact=True, previous=_schedule(weekly=Decimal("20"), work_days=4)) == (
             "25,0 h/Woche (gleichmäßig, 5 Tage)")
+
+
+class TestFormatDaysDe:
+    @pytest.mark.parametrize("value, text", [
+        (Decimal("24"), "24"), (Decimal("24.0"), "24"), (Decimal("24.5"), "24,5"), (Decimal("13.10"), "13,1"),
+        (Decimal("0"), "0"), (Decimal("0.0"), "0"), (30, "30"), (24.5, "24,5"), (Decimal("40"), "40"),
+    ])
+    def test_german_decimals_without_trailing_zero(self, value, text):
+        assert ra.format_days_de(value) == text
+
+
+class TestContractPair:
+    """Teil A, Task 7: die Sammelzeile nennt geänderte Vertragsbedingungen —
+    nur die, die sich unterscheiden, auf BEIDEN Seiten, in fester Reihenfolge."""
+
+    def test_unchanged_terms_add_nothing(self):
+        old, new = _schedule(weekly=Decimal("20")), _schedule(weekly=Decimal("25"))
+        assert ra.contract_pair(old, new) == (ra.contract_text(old, compact=True),
+                                              ra.contract_text(new, compact=True))
+
+    def test_vacation_only(self):
+        old = _schedule(work_days=4, vacation_days=Decimal("24"))
+        new = _schedule(vacation_days=Decimal("30"))
+        assert ra.contract_pair(old, new) == ("40,0 h/Woche (gleichmäßig, 4 Tage) · Urlaub 24",
+                                              "40,0 h/Woche (gleichmäßig, 5 Tage) · Urlaub 30")
+        assert ra.contract_pair(_schedule(vacation_days=Decimal("24.5")), _schedule())[0].endswith(" · Urlaub 24,5")
+
+    def test_all_terms_in_order(self):
+        old = _schedule(vacation_days=Decimal("24"), track_hours=True, milog_working_time_account=False,
+                        agreed_monthly_hours=None, use_fixed_monthly_target=False)
+        new = _schedule(vacation_days=Decimal("30"), track_hours=False, milog_working_time_account=True,
+                        agreed_monthly_hours=Decimal("43.3"), use_fixed_monthly_target=True)
+        base = "40,0 h/Woche (gleichmäßig, 5 Tage)"
+        assert ra.contract_pair(old, new) == (
+            f"{base} · Urlaub 24 · mit Stundenzählung · MiLoG-Konto aus · Monatsstunden abgeleitet"
+            " · festes Monats-Soll aus",
+            f"{base} · Urlaub 30 · ohne Stundenzählung · MiLoG-Konto an · Monatsstunden 43,3"
+            " · festes Monats-Soll an",
+        )
+
+    def test_summary_with_pair_still_parses(self):
+        before, after = ra.contract_pair(_schedule(vacation_days=Decimal("24"), track_hours=True),
+                                         _schedule(vacation_days=Decimal("20"), track_hours=False))
+        for shortening, reason in ((False, None), (True, "sonstiges")):
+            note = _summary(contract_before=before, contract_after=after, shortening=shortening,
+                            reason_type=reason)
+            parsed = ra.parse_summary_note(note)
+            assert parsed == ra.SummaryNote(EFF, False, 3, -135, 105, shortening, reason, None)
+            assert note.endswith(f"Vertrag: {before} → {after}")
+            assert not _audit_note_is_health_sensitive(TimeEntryAuditLog(old_note=None, new_note=note))
 
 
 class TestSummaryNote:
