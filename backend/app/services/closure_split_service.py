@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure, WorkingHoursChange
+from app.models import User, Absence, AbsenceType, PublicHoliday, CompanyClosure
 from app.services import calculation_service, settings_service, special_days_service
 
 
@@ -39,7 +39,8 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
     (otherwise legacy all-VACATION). Days without hour tracking (track_hours=False
     laut Snapshot, Teil A: per day) have no overtime account: they stay VACATION
     and consume the budget by day; tracked days take part in the split. An
-    employee without any tracked closure day of the year is left untouched.
+    employee without any tracked closure day of the year gets VACATION on every
+    closure day (rows left on OVERTIME from a tracked period flip back, F003).
     F-026: every query is tenant-scoped. ``current_user`` is accepted for call-
     site compatibility but unused (everything keys off ``tenant_id``).
     """
@@ -89,12 +90,7 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
     # unten) — bei 30 MA × 10 Schließtagen bisher bis zu 300 zusätzliche
     # Queries je Re-Split, der aus vielen Urlaubs-Schreibpfaden ausgelöst wird
     # (#314). Muster wie ``admin_users.users_overview``/``company_closures``.
-    wh_by_user: dict = {}
-    for _c in db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id.in_(list(by_user.keys())),
-        WorkingHoursChange.tenant_id == tenant_id,  # F-026
-    ).order_by(WorkingHoursChange.effective_from).all():
-        wh_by_user.setdefault(_c.user_id, []).append(_c)
+    wh_by_user = calculation_service.wh_changes_by_user(db, tenant_id, by_user.keys())  # F-026
 
     # Free special days (24./31.12.) that cost a vacation day this year — same
     # source get_vacation_account uses, so the budget bookkeeping matches.
@@ -131,9 +127,13 @@ def resplit_year_closures(db: Session, tenant_id, year: int, current_user: User 
         def _tracked(d: date, _e=employee, _wh=emp_wh) -> bool:
             return calculation_service.tracks_hours_on(db, _e, d, _wh)
 
-        # Ohne einen einzigen gezählten Schließtag: kein Überstundenkonto → legacy
-        # VACATION, nichts anfassen (wie bisher für track_hours=False).
+        # Ohne einen einzigen gezählten Schließtag: kein Überstundenkonto → alle
+        # Schließtage sind VACATION (wie bisher für track_hours=False). Zeilen, die
+        # noch aus einer Zeit MIT Stundenzählung auf OVERTIME stehen (rückwirkende
+        # Umstellung), kippen zurück (F003); VACATION-Zeilen bleiben unverändert.
         if not any(_tracked(a.date) for a in absences):
+            for a in absences:
+                a.type = AbsenceType.VACATION
             continue
 
         # Gross annual budget (pro-rata + carryover), independent of bookings.

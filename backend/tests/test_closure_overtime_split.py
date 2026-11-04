@@ -686,3 +686,26 @@ class TestClosureRangeBound:
         })
         assert r.status_code == 400, r.text
         assert "maximal ein Jahr" in r.json()["detail"]
+
+
+class TestClosureResplitRetroUntracked:
+    def test_retro_untracked_year_turns_overtime_back_to_vacation(self, db, default_tenant, admin_client):
+        """F003: Schließtage, die als OVERTIME gesplittet wurden, solange die
+        Person Stunden zählte, werden nach rückwirkendem ``track_hours=False``
+        für das ganze Jahr beim nächsten Re-Split wieder VACATION (ohne
+        Überstundenkonto gibt es keinen Überstundenausgleich)."""
+        from app.models import WorkingHoursChange
+        from app.services import closure_split_service
+        emp = _make_user(db, "e_retro", vacation_days=0)
+        _set_toggle(db, True)
+        c = _create_closure(admin_client)
+        assert _types(db, emp, c["id"]) == [AbsenceType.OVERTIME] * 4
+        db.add(WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID, effective_from=date(2025, 1, 1),
+            weekly_hours=40, use_daily_schedule=False, work_days_per_week=5,
+            vacation_days=0, track_hours=False, milog_working_time_account=False,
+            use_fixed_monthly_target=False))
+        db.commit()
+        closure_split_service.resplit_year_closures(db, DEFAULT_TENANT_ID, 2025)
+        db.commit()
+        assert _types(db, emp, c["id"]) == [AbsenceType.VACATION] * 4
