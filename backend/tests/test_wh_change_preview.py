@@ -271,6 +271,12 @@ class TestBlockedReasons:
 
     def test_duplicate_date_is_blocked(self, client, db, test_user):
         eff = _last_monday()
+        # Teil A Task 6: nur die früheste Zeile ist ersetzbar — für „belegt"
+        # braucht es eine frühere Zeile.
+        db.add(WorkingHoursChange(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=eff - timedelta(days=60), weekly_hours=Decimal("40.0"),
+        ))
         db.add(WorkingHoursChange(
             user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
             effective_from=eff, weekly_hours=Decimal("30.0"),
@@ -295,6 +301,12 @@ class TestBlockedReasons:
         das ohne den Fix affected_absences == 2 statt 0 liefern.
         """
         eff = _last_monday()
+        # Teil A Task 6: nur die früheste Zeile ist ersetzbar — für „belegt"
+        # braucht es eine frühere Zeile.
+        db.add(WorkingHoursChange(
+            user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=eff - timedelta(days=60), weekly_hours=Decimal("40.0"),
+        ))
         db.add(WorkingHoursChange(
             user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID,
             effective_from=eff, weekly_hours=Decimal("30.0"),

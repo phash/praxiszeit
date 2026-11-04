@@ -1814,8 +1814,38 @@ def _freeze_gap_before(db: Session, user: User, tenant_id, first_row: date, cove
         db.add(_frozen_row(user, tenant_id, coverage, current))
 
 
+def _earliest_row(db: Session, user: User, tenant_id) -> Optional[WorkingHoursChange]:
+    """Früheste Verlaufszeile der Person (None ohne Verlauf)."""
+    return db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == tenant_id,  # F-026
+    ).order_by(WorkingHoursChange.effective_from).first()
+
+
+def _row_on_date(db: Session, user: User, tenant_id, effective_from: date) -> Optional[WorkingHoursChange]:
+    return db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.user_id == user.id,
+        WorkingHoursChange.tenant_id == tenant_id,  # F-026
+        WorkingHoursChange.effective_from == effective_from,
+    ).first()
+
+
+def _correction_target(db: Session, user: User, tenant_id, effective_from: date):
+    """(replace, blocked): liegt auf dem Datum eine Zeile, ist sie nur dann
+    ersetzbar, wenn sie die früheste ist (Korrektur der Basis); sonst gilt
+    „Datum schon belegt"."""
+    existing = _row_on_date(db, user, tenant_id, effective_from)
+    if existing is None:
+        return None, None
+    earliest = _earliest_row(db, user, tenant_id)
+    if earliest is not None and earliest.id == existing.id:
+        return existing, None
+    return None, f"Eine Stundenänderung für den {effective_from.strftime('%d.%m.%Y')} existiert bereits"
+
+
 def _insert_change_rows(db: Session, user: User, current_user: User, change_data: WorkingHoursChangeCreate,
-                        norm, new_blocks, new_pauses) -> WorkingHoursChange:
+                        norm, new_blocks, new_pauses,
+                        replace: Optional[WorkingHoursChange] = None) -> WorkingHoursChange:
     """Spec 9.3 Schritt 4 — Basis-Zeile bzw. Lückenzeile, neue Zeile, flush. Die
     Logik ist die bisherige von ``create_working_hours_change``; neu sind die
     Blöcke und die Lückenzeile. Den Spiegel der User-Zeile (E9) macht der
@@ -1846,6 +1876,26 @@ def _insert_change_rows(db: Session, user: User, current_user: User, change_data
       Spiegel wählt, steht erst nach Schritt 10 fest, und eine Zeile mit dem
       bereits gültigen Snapshot ändert keine Rechnung."""
     tenant_id = current_user.tenant_id
+    if replace is not None:
+        # Korrektur der frühesten Zeile: Snapshot an Ort und Stelle überschreiben
+        # (id und effective_from bleiben), erst DANN die Lücke davor einfrieren.
+        replace.weekly_hours = norm.weekly_hours
+        replace.use_daily_schedule = norm.use_daily_schedule
+        (replace.hours_monday, replace.hours_tuesday, replace.hours_wednesday,
+         replace.hours_thursday, replace.hours_friday) = norm.day_hours
+        replace.work_days_per_week = norm.work_days_per_week
+        replace.blocks = work_blocks_service.week_blocks_to_json(new_blocks, new_pauses)
+        replace.vacation_days = norm.vacation_days
+        replace.track_hours = norm.track_hours
+        replace.milog_working_time_account = norm.milog_working_time_account
+        replace.agreed_monthly_hours = norm.agreed_monthly_hours
+        replace.use_fixed_monthly_target = norm.use_fixed_monthly_target
+        replace.note = change_data.note
+        db.flush()
+        _freeze_gap_before(db, user, tenant_id, replace.effective_from,
+                           _soll_coverage_start(db, user, tenant_id))
+        db.flush()
+        return replace
     oldest_row = db.query(func.min(WorkingHoursChange.effective_from)).filter(
         WorkingHoursChange.user_id == user.id,
         WorkingHoursChange.tenant_id == tenant_id,  # F-026
@@ -1985,15 +2035,9 @@ def create_working_hours_change(
     # gerade committeten Gegenseite (E9: User-Zeile ≠ jüngste Zeile ≤ heute).
     _lock_and_reload(db, current_user, user)
 
-    if db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-        WorkingHoursChange.effective_from == change_data.effective_from,
-    ).first():
-        raise HTTPException(
-            status_code=400,
-            detail=f"Eine Stundenänderung für den {change_data.effective_from.strftime('%d.%m.%Y')} existiert bereits",
-        )
+    replace_row, taken = _correction_target(db, user, current_user.tenant_id, change_data.effective_from)
+    if taken:
+        raise HTTPException(status_code=400, detail=taken)
 
     reset = _reset_target(db, user, current_user, change_data)
     reset_row, reset_schedule = reset if reset else (None, None)
@@ -2013,7 +2057,8 @@ def create_working_hours_change(
     created = {}
 
     def _apply():
-        created["row"] = _insert_change_rows(db, user, current_user, change_data, norm, new_blocks, new_pauses)
+        created["row"] = _insert_change_rows(db, user, current_user, change_data, norm, new_blocks, new_pauses,
+                                             replace=replace_row)
 
     impact = wh_change_service.run_change(
         db, user, admin_id=current_user.id, effective_from=change_data.effective_from, apply=_apply)
@@ -2348,12 +2393,9 @@ def preview_working_hours_change(
     # Zeilen mit identischem ``effective_from`` — die Auflösung wählte dann
     # reproduzierbar die BESTEHENDE, gerechnet würde gegen den falschen Vertrag.
     blocked_reason = input_error
-    if not blocked_reason and db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-        WorkingHoursChange.effective_from == effective_from,
-    ).first():
-        blocked_reason = f"Eine Stundenänderung für den {effective_from.strftime('%d.%m.%Y')} existiert bereits"
+    replace_row = None
+    if not blocked_reason:
+        replace_row, blocked_reason = _correction_target(db, user, current_user.tenant_id, effective_from)
 
     # Kurzschluss „Snapshot unverändert" (Review-Fund 1, Fix-Runde 1) — der
     # häufigste Fall (der Dialog ist vorbefüllt) und fachlich exakt: eine Zeile
@@ -2389,7 +2431,7 @@ def preview_working_hours_change(
             impact = wh_change_service.run_change(
                 db, user, admin_id=current_user.id, effective_from=effective_from,
                 apply=lambda: _insert_change_rows(db, user, current_user, change_data, norm,
-                                                  new_blocks, new_pauses),
+                                                  new_blocks, new_pauses, replace=replace_row),
                 after_close=lambda: before.append(_preview_account(db, user, today, cutoff, vacation_year)),
             )
             overtime_before, vacation_before = before[0]

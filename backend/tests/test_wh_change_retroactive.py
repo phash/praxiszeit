@@ -649,6 +649,12 @@ class TestStillRejectedCases:
         admin = _admin(db, "wh_dup_admin")
         emp = _make_user(db, "wh_dup_emp", weekly_hours=40.0)
         mon = _last_monday()
+        # Teil A Task 6: nur die FRÜHESTE Zeile ist ersetzbar — das Datum
+        # bleibt belegt, sobald eine frühere Zeile existiert.
+        db.add(WorkingHoursChange(
+            user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
+            effective_from=mon - timedelta(days=60), weekly_hours=Decimal("40.0"),
+        ))
         db.add(WorkingHoursChange(
             user_id=emp.id, tenant_id=DEFAULT_TENANT_ID,
             effective_from=mon, weekly_hours=Decimal("30.0"),
@@ -665,13 +671,13 @@ class TestStillRejectedCases:
         assert exc.value.status_code == 400
         assert "existiert bereits" in exc.value.detail
 
-        # Nur die eine (vorbestehende) Zeile — kein zweiter Insert, keine
+        # Nur die zwei vorbestehenden Zeilen — kein dritter Insert, keine
         # Rückrechnung ausgelöst.
         rows = db.query(WorkingHoursChange).filter(
             WorkingHoursChange.user_id == emp.id
-        ).all()
-        assert len(rows) == 1
-        assert float(rows[0].weekly_hours) == 30.0
+        ).order_by(WorkingHoursChange.effective_from).all()
+        assert len(rows) == 2
+        assert float(rows[1].weekly_hours) == 30.0
         db.refresh(a)
         assert float(a.hours) == 8.0
 
