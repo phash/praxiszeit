@@ -173,10 +173,7 @@ def entitlement_years(effective_from: date, today: date) -> list:
 
 def _entitlements(db: Session, user: User, years) -> Dict[int, Decimal]:
     """Anspruch je Jahr — der Verlauf wird EINMAL geladen (F-026), nicht je Jahr."""
-    rows = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-    ).all()
+    rows = calculation_service.user_wh_changes(db, user)  # F-026
     return {y: calculation_service.vacation_entitlement_days(db, user, y, wh_changes=rows) for y in years}
 
 

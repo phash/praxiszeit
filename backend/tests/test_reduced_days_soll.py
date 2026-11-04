@@ -162,3 +162,21 @@ def test_future_freizeitausgleich_on_reduced_day(db, test_user):
     assert calculation_service.future_freizeitausgleich_impact(
         db, test_user, cutoff_date=date(2026, 11, 2), today=date(2026, 11, 3)
     ) == Decimal("4.00")
+
+
+def test_sick_credit_on_reduced_day_is_exact_no_negative_zero(db, default_tenant):
+    """F014: ``min(t, X) ÷ t`` ist periodisch (3,75 ÷ 11,93). Die Gutschrift
+    eines Kranktags am verkürzten Tag trifft das Soll exakt — kein ``-0.00``."""
+    u = _mk(db, username="t1193", email="t1193@t.l", weekly_hours=Decimal("59.65"))
+    _reduce(db, RM, "3.75")
+    sick = Absence(user_id=u.id, tenant_id=DEFAULT_TENANT_ID, date=RM,
+                   type=AbsenceType.SICK, hours=Decimal("11.93"))
+    db.add(sick)
+    db.commit()
+    cfg = special_days_service.get_special_day_config(db, DEFAULT_TENANT_ID, 2026)
+    credit = calculation_service.credited_absence_hours(
+        [sick], RM, set(), cfg, daily_target=Decimal("11.93"))
+    assert credit == Decimal("3.75")
+    soll = special_days_service.special_day_target(RM, Decimal("11.93"), cfg)
+    assert str((credit - soll).quantize(Decimal("0.01"))) == "0.00"
+    assert calculation_service.get_range_actual(db, u, RM, RM) == Decimal("3.75")

@@ -18,7 +18,7 @@ from typing import Any, NamedTuple, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import TimeEntry, WorkingHoursChange
+from app.models import TimeEntry
 from app.models.system_setting import SystemSetting
 from app.services import calculation_service
 
@@ -865,10 +865,7 @@ def reclamp_time_entries(db: Session, user, start: date, end: date, weekdays: se
     # stehen (``grace_minutes=None``, E79): an einem Tag ohne Stundenzählung
     # wirkt der gespeicherte Puffer nicht.
 
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-    ).all()
+    wh_changes = calculation_service.user_wh_changes(db, user)  # F-026
     soll_free = _soll_free_dates(db, user.tenant_id, start, end)
     planned_start = {e.id: e.start_time for e in entries}
     same_day: dict = {}
@@ -986,12 +983,7 @@ def stale_clamp_entries(db: Session, tenant_id, dates) -> list:
             User.id.in_({e.user_id for e in entries}),
         ).all()
     }
-    wh_by_user: dict = {}
-    for c in db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.tenant_id == tenant_id,  # F-026
-        WorkingHoursChange.user_id.in_(set(users)),
-    ).all():
-        wh_by_user.setdefault(c.user_id, []).append(c)
+    wh_by_user = calculation_service.wh_changes_by_user(db, tenant_id, set(users))  # F-026
     soll_free = _soll_free_dates(db, tenant_id, min(dates), max(dates))
     stale = []
     for e in entries:

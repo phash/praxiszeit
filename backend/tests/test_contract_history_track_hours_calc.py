@@ -134,3 +134,60 @@ def test_always_tracked_and_always_untracked_unchanged(db, test_user):
     add_row(db, test_user, date(2026, 1, 1), weekly_hours=40, track_hours=False)
     add_row(db, test_user, date(2026, 2, 1), weekly_hours=40, track_hours=False)
     assert _snapshot(db, test_user) == untracked_without_rows
+
+
+# --- Fix-Welle F001: Ist folgt der Stundenzählung des Tages (Parität zum Konto) ---
+
+def test_monthly_actual_matches_history_in_untracked_month(db, test_user):
+    """F001: ``get_monthly_actual`` zählt Tage ohne Stundenzählung nicht —
+    gleich ``get_overtime_history_detailed()[m].actual`` (Docstring-Invariante
+    von ``MonthlyOvertime``), sonst Saldo +Ist gegen Soll 0."""
+    _seed_entries(db, test_user)
+    add_row(db, test_user, date(2026, 1, 1), weekly_hours=40, track_hours=True)
+    _switch_off_from_july(db, test_user)
+    history = cs.get_overtime_history_detailed(db, test_user, 2026, 9)
+    for m in range(1, 10):
+        assert cs.get_monthly_actual(db, test_user, 2026, m) == history[(2026, m)].actual
+    assert cs.get_monthly_actual(db, test_user, 2026, 8) == Decimal("0.00")
+    assert cs.get_monthly_balance(db, test_user, 2026, 8) == Decimal("0.00")
+
+
+def test_monthly_actual_mid_month_switch_parity(db, test_user):
+    """F001: Umstellung mitten im Monat — nur die Tage MIT Stundenzählung zählen."""
+    _seed_entries(db, test_user)
+    add_row(db, test_user, date(2026, 1, 1), weekly_hours=40, track_hours=True)
+    add_row(db, test_user, date(2026, 7, 15), weekly_hours=40, track_hours=False)
+    sick = Absence(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 7, 20),
+                   type=AbsenceType.SICK, hours=8, half_day=False)
+    db.add(sick)
+    db.commit()
+    history = cs.get_overtime_history_detailed(db, test_user, 2026, 7)
+    tracked_july = [d for d in _weekdays(date(2026, 7, 1), date(2026, 7, 14))]
+    assert cs.get_monthly_actual(db, test_user, 2026, 7) == history[(2026, 7)].actual
+    assert cs.get_monthly_actual(db, test_user, 2026, 7) == Decimal(9 * len(tracked_july))
+
+
+def test_never_tracked_person_keeps_actual_hours(db, test_user):
+    """F001: Wer NIE Stunden zählt, behält den alten Ist-Pfad (bitgleich) —
+    die Stempelzeit bleibt im Ist, ob mit oder ohne Verlaufszeilen."""
+    _seed_entries(db, test_user, end=date(2026, 3, 31))
+    test_user.track_hours = False
+    db.commit()
+    march = list(_weekdays(date(2026, 3, 1), date(2026, 3, 31)))
+    without_rows = cs.get_monthly_actual(db, test_user, 2026, 3)
+    assert without_rows == Decimal(9 * len(march)).quantize(Decimal("0.01"))
+    add_row(db, test_user, date(2026, 1, 1), weekly_hours=40, track_hours=False)
+    assert cs.get_monthly_actual(db, test_user, 2026, 3) == without_rows
+
+
+def test_never_tracked_target_is_bare_zero(db, test_user):
+    """F119/F900: Soll einer Person ohne Stundenzählung ist ``Decimal('0')`` wie
+    vor Teil A (nicht ``0.00``) — Bitgleichheit der Rohwerte."""
+    test_user.track_hours = False
+    db.commit()
+    assert str(cs.get_monthly_target(db, test_user, 2026, 3)) == "0"
+    assert str(cs.get_gross_monthly_target(db, test_user, 2026, 3)) == "0"
+    assert str(cs.get_range_target(db, test_user, date(2026, 3, 2), date(2026, 3, 6))) == "0"
+    add_row(db, test_user, date(2026, 1, 1), weekly_hours=40, track_hours=False)
+    assert str(cs.get_monthly_target(db, test_user, 2026, 3)) == "0"
+    assert str(cs.get_gross_monthly_target(db, test_user, 2026, 3)) == "0"

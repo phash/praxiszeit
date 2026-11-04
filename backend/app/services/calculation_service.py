@@ -250,12 +250,31 @@ def month_contract(
     )
 
 
-def _user_wh_changes(db: Session, user: User) -> List[WorkingHoursChange]:
-    """EIN Preload der Verlaufszeilen (F-026), Muster der Hot-Loops."""
+def user_wh_changes(db: Session, user: User) -> List[WorkingHoursChange]:
+    """EIN Preload der Verlaufszeilen einer Person (F-026), aufsteigend nach
+    ``effective_from`` — DIE Stelle fuer den Einzelpersonen-Preload."""
     return db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
         WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
     ).order_by(WorkingHoursChange.effective_from).all()
+
+
+
+
+def wh_changes_by_user(db: Session, tenant_id, user_ids) -> Dict:
+    """EIN Preload der Verlaufszeilen mehrerer Personen (F-026):
+    ``{user_id: [WorkingHoursChange, …]}`` aufsteigend nach ``effective_from``;
+    Personen ohne Zeile fehlen im Dict (Aufrufer: ``.get(uid, [])``)."""
+    by_user: Dict = {}
+    ids = list(user_ids)
+    if not ids:
+        return by_user
+    for row in db.query(WorkingHoursChange).filter(
+        WorkingHoursChange.tenant_id == tenant_id,  # F-026
+        WorkingHoursChange.user_id.in_(ids),
+    ).order_by(WorkingHoursChange.effective_from).all():
+        by_user.setdefault(row.user_id, []).append(row)
+    return by_user
 
 
 def _months_between(start: date, end: date):
@@ -282,22 +301,25 @@ def tracks_hours_in_range(
     am ``start`` oder der einer Zeile, die im Zeitraum wirksam wird. Damit genuegt
     ein Blick auf diese Zeilen — keine Schleife je Tag, eine Query ohne Preload."""
     if wh_changes is None:
-        wh_changes = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == user.id,
-            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-        ).all()
+        wh_changes = user_wh_changes(db, user)
     if tracks_hours_on(db, user, start, wh_changes):
         return True
     return any(start < c.effective_from <= end and bool(c.track_hours) for c in wh_changes)
 
 
+# Ohne Verlaufszeile (``wh_changes=[]``) liest der Resolver die User-Zeile —
+# unabhaengig vom Datum; dieser Wert ist nur ein Platzhalter fuer den Aufruf.
+_ANY_DATE = date(2000, 1, 1)
+
+
 def _track_hours_values(db: Session, user: User, wh_changes: List[WorkingHoursChange]) -> set:
     """Alle ``track_hours``-Werte, die der Snapshot der Person je annehmen kann:
     die der Verlaufszeilen (vor der ersten Zeile gelten deren Werte), ohne Zeile
-    der der User-Zeile — Aufloesungsregel Teil A, ueber den Resolver gelesen."""
+    der der User-Zeile — Aufloesungsregel Teil A, ueber den Resolver gelesen
+    (ohne Verlaufszeile haengt das Ergebnis nicht vom Datum ab)."""
     if wh_changes:
         return {bool(c.track_hours) for c in wh_changes}
-    return {tracks_hours_on(db, user, date(2000, 1, 1), wh_changes=[])}
+    return {get_schedule_for_date(db, user, _ANY_DATE, wh_changes=[]).track_hours}
 
 
 def _ever_tracks_hours(db: Session, user: User, wh_changes: List[WorkingHoursChange]) -> bool:
@@ -310,13 +332,17 @@ def _tracked_day_predicate(
     db: Session,
     user: User,
     wh_changes: List[WorkingHoursChange],
+    values: Optional[set] = None,
 ):
     """Teil A, Task 8: ``d -> bool`` „zaehlt die Person an ``d`` Stunden?" fuer die
     Konto-Schleifen, mit dem vorhandenen Preload ``wh_changes`` (keine Query je Tag).
+    ``values`` = bereits berechnetes :func:`_track_hours_values` (spart die
+    zweite Berechnung neben :func:`_ever_tracks_hours`).
 
     Ist die Person durchgehend im selben Modus, liefert die Funktion eine
     Konstante: der Regelfall bleibt ohne Mehraufwand und bitgleich."""
-    values = _track_hours_values(db, user, wh_changes)
+    if values is None:
+        values = _track_hours_values(db, user, wh_changes)
     if values == {True}:
         return lambda d: True
     if values == {False}:
@@ -499,15 +525,7 @@ def weekly_hours_segments(
         return []
 
     if wh_changes is None:
-        wh_changes = (
-            db.query(WorkingHoursChange)
-            .filter(
-                WorkingHoursChange.user_id == user.id,
-                WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-            )
-            .order_by(WorkingHoursChange.effective_from)
-            .all()
-        )
+        wh_changes = user_wh_changes(db, user)  # F-026
 
     boundaries = [start]
     for change in sorted(wh_changes, key=lambda c: c.effective_from):
@@ -852,10 +870,7 @@ def retarget_absence_hours(
     # Begruendung an ``target`` in der Schleife (Fund A): der Faktor gehoert auf
     # die Leseseite, nicht in den gespeicherten Wert. Geladen wird sie unten nur
     # fuer das Gewicht der F1-Klemmung (Spec 9.6, Gutschrifts-Einheiten).
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-    ).order_by(WorkingHoursChange.effective_from).all()
+    wh_changes = user_wh_changes(db, user)  # F-026
 
     absences = db.query(Absence).filter(
         Absence.user_id == user.id,
@@ -1011,10 +1026,7 @@ def absence_full_targets(db: Session, user: User, start: date, end: date) -> Dic
     das Kriterium 9.5 (c)."""
     if start > end:
         return {}
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-    ).all()
+    wh_changes = user_wh_changes(db, user)  # F-026
     dates = {
         row[0] for row in db.query(Absence.date).filter(
             Absence.user_id == user.id,
@@ -1045,10 +1057,7 @@ def track_hours_by_date(db: Session, user: User, start: date, end: date) -> Dict
     Wert aufgefüllt hat), Altbestand auf 0 und verlangte einen Grund."""
     if start > end:
         return {}
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-    ).all()
+    wh_changes = user_wh_changes(db, user)  # F-026
     dates = {
         row[0] for row in db.query(Absence.date).filter(
             Absence.user_id == user.id,
@@ -1479,7 +1488,7 @@ def _fixed_month_absence_hours(db, user, year, month, types, up_to_date, include
     # _fixed_planned_hours löst den Vertrags-Snapshot jetzt pro Datum auf.
     # Teil A (Task 12): ein übergebener Preload (users-overview) wird genutzt.
     if wh_changes is None:
-        wh_changes = _user_wh_changes(db, user)
+        wh_changes = user_wh_changes(db, user)
     total = Decimal('0')
     for day in range(1, days_in_month + 1):
         d = date(year, month, day)
@@ -1512,7 +1521,7 @@ def fixed_month_credit(db: Session, user: User, year: int, month: int, up_to_dat
     ``from_date`` (Review-Medium): optionale Untergrenze für Range-genaue Aufrufe
     — None (Default) = ganzer Monat, unverändertes Verhalten."""
     if wh_changes is None:
-        wh_changes = _user_wh_changes(db, user)
+        wh_changes = user_wh_changes(db, user)
     if not month_contract(db, user, year, month, wh_changes).use_fixed_monthly_target:  # Teil A: je Monat
         return Decimal('0')
     return _fixed_month_absence_hours(db, user, year, month, _FIXED_PAID_CREDIT_TYPES,
@@ -1528,7 +1537,7 @@ def fixed_month_unpaid_reduction(db: Session, user: User, year: int, month: int,
     optionale Untergrenze für Range-genaue Aufrufe — None (Default) = ganzer
     Monat, unverändertes Verhalten."""
     if wh_changes is None:
-        wh_changes = _user_wh_changes(db, user)
+        wh_changes = user_wh_changes(db, user)
     if not month_contract(db, user, year, month, wh_changes).use_fixed_monthly_target:  # Teil A: je Monat
         return Decimal('0')
     return _fixed_month_absence_hours(db, user, year, month, _FIXED_UNPAID_TYPES,
@@ -1675,6 +1684,21 @@ def _credit_weight(db: Session, user: User, d: date, holiday_dates: set,
     return credit_day_weight(d, holiday_dates, special_cfg, daily_target=daily_target)
 
 
+# Gewichte, deren Produkt mit ``hours`` exakt ist (alles außer verkürzten Tagen).
+_EXACT_CREDIT_WEIGHTS = (Decimal('0'), Decimal('0.5'), Decimal('1'))
+
+
+def _weighted_credit(hours, weight: Decimal) -> Decimal:
+    """``hours × weight`` einer Ist-Gutschrift. An einem verkürzten Tag ist das
+    Gewicht ``min(t, X) ÷ t`` periodisch (3,75 ÷ 11,93) — das Produkt lag dann
+    1e-27 unter dem Soll und ergab ``-0,00`` im Saldo (F014). Dort wird auf
+    0,01 h gerundet; alle anderen Gewichte bleiben exakt und bitgleich."""
+    product = Decimal(str(hours)) * weight
+    if weight in _EXACT_CREDIT_WEIGHTS:
+        return product
+    return product.quantize(Decimal('0.01'))
+
+
 def credited_absence_hours(day_absences, d: date, holiday_dates: set,
                            special_cfg: Optional[dict] = None, *,
                            daily_target: Optional[Decimal] = None) -> Decimal:
@@ -1699,7 +1723,8 @@ def credited_absence_hours(day_absences, d: date, holiday_dates: set,
     )
     if not hours:
         return Decimal('0')
-    return hours * credit_day_weight(d, holiday_dates, special_cfg, daily_target=daily_target)
+    return _weighted_credit(hours, credit_day_weight(d, holiday_dates, special_cfg,
+                                                     daily_target=daily_target))
 
 
 def _credited_day_context(db: Session, user: User, credited_absences: List[Absence]):
@@ -1967,10 +1992,7 @@ def future_freizeitausgleich_impact(
             PublicHoliday.date <= year_end,
         ).all()
     }
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,
-    ).order_by(WorkingHoursChange.effective_from).all()
+    wh_changes = user_wh_changes(db, user)  # F-026
     special_cfg = special_days_service.get_special_day_config(db, user.tenant_id, today.year)
 
     total = Decimal('0')
@@ -2033,7 +2055,11 @@ def get_range_target(
     # range; mirrors get_overtime_account). F-026: tenant-scoped.
     # Teil A (Task 12): ein übergebener Preload (users-overview) wird genutzt.
     if wh_changes is None:
-        wh_changes = _user_wh_changes(db, user)
+        wh_changes = user_wh_changes(db, user)
+    # Wer an keinem Tag Stunden zaehlt, bekommt wie vor Teil A das blanke
+    # ``Decimal('0')`` (nicht ``0.00`` — Bitgleichheit der Rohwerte, F900).
+    if not _ever_tracks_hours(db, user, wh_changes):
+        return Decimal('0')
 
     # #377 Baustein 2b: fester Monats-Soll-Modus — statt der Per-Tag-Summe die
     # (pro-rata + unpaid-geminderten) festen Monats-Solls über die Range summieren.
@@ -2166,6 +2192,19 @@ def get_range_actual(
     if end < start:
         return Decimal('0')
 
+    if wh_changes is None:  # Teil A (Task 12): Preload nutzen, sonst einmal laden
+        wh_changes = user_wh_changes(db, user)
+    # F001: Ist zaehlt nur an Tagen MIT Stundenzaehlung (Snapshot des Tages) —
+    # dieselbe Regel wie Konto/Verlauf/YTD, sonst Saldo +Ist gegen Soll 0.
+    # Wer NIE Stunden zaehlt, behaelt den alten, ungefilterten Pfad (bitgleich;
+    # dort blenden die Berichte die Stundenspalten aus).
+    values = _track_hours_values(db, user, wh_changes)
+    if True in values:
+        tracked_on = _tracked_day_predicate(db, user, wh_changes, values)
+    else:
+        def tracked_on(_d):
+            return True
+
     # F-033: sargable date range. The Python-level Decimal sum is kept because
     # the SQL @expression for net_hours relies on Postgres EXTRACT(EPOCH ...)
     # semantics that do not port to the SQLite test suite.
@@ -2179,7 +2218,8 @@ def get_range_actual(
     # contribute neither Soll nor Ist, otherwise the balance shows phantom overtime.
     total = sum((entry.net_hours for entry in entries
                  if _within_employment_window(user, entry.date)
-                 and (up_to_date is None or entry.date <= up_to_date)), start=Decimal('0'))
+                 and (up_to_date is None or entry.date <= up_to_date)
+                 and tracked_on(entry.date)), start=Decimal('0'))
 
     # Training and sick hours count as actual worked hours (außer Haus / §3 EntgFG).
     credited_absences = db.query(Absence).filter(
@@ -2189,18 +2229,18 @@ def get_range_actual(
         date_in_range(Absence.date, start, end),
     ).all()
     # Audit 2026-07-31 (Fund K): die Gutschrift folgt der Soll-Struktur des Tages
-    # — Wochenende/Feiertag 0, Sondertag mit dem #146-Faktor. Siehe
-    # :func:`credit_day_weight`. Ohne solche Abwesenheit im Zeitraum ist der
+    # — Wochenende/Feiertag 0, Sondertag/verkürzter Tag über ``special_day_target``.
+    # Siehe :func:`credit_day_weight`. Ohne solche Abwesenheit im Zeitraum ist der
     # Kontext leer und es entsteht keine zusaetzliche Query.
     credit_holidays, credit_cfgs = _credited_day_context(db, user, credited_absences)
-    if wh_changes is None:  # Teil A (Task 12): Preload nutzen, sonst einmal laden
-        wh_changes = _user_wh_changes(db, user)
-    credited_hours = sum((Decimal(str(a.hours))
-                          * _credit_weight(db, user, a.date, credit_holidays, credit_cfgs.get(a.date.year),
-                                           wh_changes=wh_changes)
+    credited_hours = sum((_weighted_credit(a.hours,
+                                           _credit_weight(db, user, a.date, credit_holidays,
+                                                          credit_cfgs.get(a.date.year),
+                                                          wh_changes=wh_changes))
                           for a in credited_absences
                           if _within_employment_window(user, a.date)
-                          and (up_to_date is None or a.date <= up_to_date)), Decimal('0'))
+                          and (up_to_date is None or a.date <= up_to_date)
+                          and tracked_on(a.date)), Decimal('0'))
 
     # #377 Baustein 2b: fester Monats-Soll-Modus — Feiertage/VACATION/PAID_LEAVE
     # auf geplanten Tagen schreiben dem Ist die geplanten Stunden gut (statt
@@ -2272,16 +2312,16 @@ def get_gross_monthly_target(db: Session, user: User, year: int, month: int) -> 
     Teil A (Task 8): days without hours tracking contribute 0 through
     :func:`get_daily_target_for_date` (snapshot of the day).
     """
+    # #431: EIN Preload für die Monatsschleife (Muster wie get_range_target).
+    wh_changes = user_wh_changes(db, user)
+    # Nie Stunden gezählt → ``Decimal('0')`` wie vor Teil A (F900).
+    if not _ever_tracks_hours(db, user, wh_changes):
+        return Decimal('0')
     holiday_dates = {h.date for h in db.query(PublicHoliday).filter(
         date_in_month(PublicHoliday.date, year, month),
         PublicHoliday.tenant_id == user.tenant_id,
     ).all()}
     special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
-    # #431: EIN Preload für die Monatsschleife (Muster wie get_range_target).
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-    ).order_by(WorkingHoursChange.effective_from).all()
 
     _, last_day = monthrange(year, month)
     gross = Decimal('0')
@@ -2396,13 +2436,11 @@ def get_overtime_accounts(
     # F-027: routed through get_weekly_hours_for_date() with in-memory path
     # to satisfy the CLAUDE.md invariant "never read user.weekly_hours
     # directly" without paying the per-day DB-query cost.
-    wh_changes = db.query(WorkingHoursChange).filter(
-        WorkingHoursChange.user_id == user.id,
-        WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
-    ).order_by(WorkingHoursChange.effective_from).all()
-    tracked_on = _tracked_day_predicate(db, user, wh_changes)
-    if not _ever_tracks_hours(db, user, wh_changes):
+    wh_changes = user_wh_changes(db, user)
+    track_values = _track_hours_values(db, user, wh_changes)
+    if True not in track_values:  # nie Stunden gezählt
         return [Decimal('0.00') for _ in points]
+    tracked_on = _tracked_day_predicate(db, user, wh_changes, track_values)
 
     # --- determine starting point per point ---
     # The most recent carryover at or before up_to_year (one query for all points).
@@ -2546,8 +2584,10 @@ def get_overtime_accounts(
         # nur für den Bulk-Fetch-Query-Bound gedacht).
         # Teil A (Task 11): Modus je Monat laut Monatsvertrag, nicht je Person.
         if month_contract(db, user, current_year, current_month, wh_changes).fixed_mode:
-            monthly_target = get_monthly_target(db, user, current_year, current_month, up_to_date=cutoff_date)
-            monthly_actual = get_monthly_actual(db, user, current_year, current_month, up_to_date=cutoff_date)
+            monthly_target = get_monthly_target(db, user, current_year, current_month,
+                                                up_to_date=cutoff_date, wh_changes=wh_changes)
+            monthly_actual = get_monthly_actual(db, user, current_year, current_month,
+                                                up_to_date=cutoff_date, wh_changes=wh_changes)
             delta = monthly_actual - monthly_target
             month_deltas[cache_key] = delta
             return delta
@@ -2563,12 +2603,13 @@ def get_overtime_accounts(
             if cutoff_date is not None and ca.date > cutoff_date:  # #313
                 continue
             # Audit 2026-07-31 (Fund K): die Gutschrift folgt der Soll-Struktur des
-            # Tages (Wochenende/Feiertag 0, Sondertag mit dem #146-Faktor).
+            # Tages (Wochenende/Feiertag 0, Sondertag/verkürzter Tag über
+            # ``special_day_target``).
             weight = _credit_weight(db, user, ca.date, holiday_dates,
                                     _special_day_config(ca.date.year), wh_changes=wh_changes)
             if weight <= 0:
                 continue
-            monthly_actual = monthly_actual + Decimal(str(ca.hours)) * weight
+            monthly_actual = monthly_actual + _weighted_credit(ca.hours, weight)
 
         # Monthly target (mirrors get_monthly_target logic)
         cfg = _special_day_config(current_year)
@@ -2733,10 +2774,11 @@ def get_overtime_history_detailed(
     Teil A (Task 12): ``wh_changes`` = optionaler Preload (users-overview).
     """
     if wh_changes is None:
-        wh_changes = _user_wh_changes(db, user)
-    if not _ever_tracks_hours(db, user, wh_changes):
+        wh_changes = user_wh_changes(db, user)
+    track_values = _track_hours_values(db, user, wh_changes)
+    if True not in track_values:  # nie Stunden gezählt
         return {}
-    tracked_on = _tracked_day_predicate(db, user, wh_changes)
+    tracked_on = _tracked_day_predicate(db, user, wh_changes, track_values)
 
     up_to_date = date(up_to_year, up_to_month, monthrange(up_to_year, up_to_month)[1])
 
@@ -2825,7 +2867,7 @@ def get_overtime_history_detailed(
         if weight <= 0:
             continue
         k = (ca.date.year, ca.date.month)
-        actual_by_month[k] = actual_by_month.get(k, Decimal('0')) + Decimal(str(ca.hours)) * weight
+        actual_by_month[k] = actual_by_month.get(k, Decimal('0')) + _weighted_credit(ca.hours, weight)
 
     # Fix #1: half-day-aware map (full day → skip, half day → halve Soll).
     absence_half_map = _soll_reducing_absence_half_map(db.query(Absence).filter(
@@ -2976,13 +3018,11 @@ def get_ytd_summary(
     # F-027: routed through get_weekly_hours_for_date() with in-memory path.
     # #204: use the passed-in list if given (users-overview preload).
     if wh_changes is None:
-        wh_changes = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == user.id,
-            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026 belt-and-suspenders
-        ).order_by(WorkingHoursChange.effective_from).all()
-    if not _ever_tracks_hours(db, user, wh_changes):
+        wh_changes = user_wh_changes(db, user)
+    track_values = _track_hours_values(db, user, wh_changes)
+    if True not in track_values:  # nie Stunden gezählt
         return {"target_hours": 0.0, "actual_hours": 0.0, "overtime": 0.0}
-    tracked_on = _tracked_day_predicate(db, user, wh_changes)
+    tracked_on = _tracked_day_predicate(db, user, wh_changes, track_values)
 
     today = today_local()
     if year is None:
@@ -3019,25 +3059,8 @@ def get_ytd_summary(
     for m in sorted(fixed_months):
         fixed_target += get_monthly_target(db, user, year, m, up_to_date=end, wh_changes=wh_changes)
         fixed_actual += get_monthly_actual(db, user, year, m, up_to_date=end, wh_changes=wh_changes)
-    if fixed_months and len(fixed_months) == end.month:
-        total_target = fixed_target
-        total_actual = fixed_actual
-
-        carryover = db.query(YearCarryover).filter(
-            YearCarryover.tenant_id == user.tenant_id,  # F-026
-            YearCarryover.user_id == user.id,
-            YearCarryover.year == year,
-        ).first()
-        carryover_hours = Decimal(str(carryover.overtime_hours)) if carryover else Decimal('0')
-
-        overtime = total_actual - total_target + carryover_hours
-
-        return {
-            "target_hours": float(total_target.quantize(Decimal('0.01'))),
-            "actual_hours": float(total_actual.quantize(Decimal('0.01'))),
-            "overtime": float(overtime.quantize(Decimal('0.01'))),
-            "carryover_hours": float(carryover_hours.quantize(Decimal('0.01'))),
-        }
+    # Sind alle Monate fest, laeuft die Tagesschleife unten leer (jeder Monat
+    # steht in ``fixed_months``) — EIN Uebertrags-/Rueckgabeblock fuer beide Faelle.
 
     # Fetch holidays in range (#204: use the preloaded tenant+year set if given).
     if holidays is not None:
@@ -3114,11 +3137,11 @@ def get_ytd_summary(
         Absence.type.in_([AbsenceType.TRAINING, AbsenceType.SICK]),
     ).all()
     # Audit 2026-07-31 (Fund K): die Gutschrift folgt der Soll-Struktur des Tages
-    # (Wochenende/Feiertag 0, Sondertag mit dem #146-Faktor) — dieselbe
-    # ``holiday_dates``/``special_day_config``-Quelle wie die Soll-Schleife oben.
-    total_actual += sum((Decimal(str(a.hours))
-                         * _credit_weight(db, user, a.date, holiday_dates, special_day_config,
-                                          wh_changes=wh_changes)
+    # (Wochenende/Feiertag 0, Sondertag/verkürzter Tag über ``special_day_target``)
+    # — dieselbe ``holiday_dates``/``special_day_config``-Quelle wie die Soll-Schleife oben.
+    total_actual += sum((_weighted_credit(a.hours,
+                                          _credit_weight(db, user, a.date, holiday_dates,
+                                                         special_day_config, wh_changes=wh_changes))
                          for a in credited_absences
                          if _within_employment_window(user, a.date)
                          and a.date.month not in fixed_months
@@ -3181,10 +3204,7 @@ def absence_days(db: Session, user: User, absences: list,
     (:func:`counts_vacation_by_day_only` laut Snapshot); die Verlaufszeilen
     werden einmal geladen, falls der Aufrufer sie nicht mitgibt."""
     if wh_changes is None and absences:
-        wh_changes = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == user.id,
-            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-        ).order_by(WorkingHoursChange.effective_from).all()
+        wh_changes = user_wh_changes(db, user)  # F-026
     total = Decimal('0')
     # #394: Halbtags-Sondertag (24./31.12.) → ein Absenz-Tag darauf zählt 0,5
     # (halber Arbeitstag). Config lazy je Jahr (Liste kann jahresübergreifend sein).
@@ -3405,10 +3425,7 @@ def vacation_entitlement_days(
     if window_start > window_end:
         return Decimal('0')
     if wh_changes is None:
-        wh_changes = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == user.id,
-            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-        ).all()
+        wh_changes = user_wh_changes(db, user)  # F-026
 
     def value_on(d: date) -> Decimal:
         return get_schedule_for_date(db, user, d, wh_changes=wh_changes).vacation_days
@@ -3487,10 +3504,7 @@ def get_vacation_account(
     # Kontos (Stundenfelder, Sentinel ``track_hours``) folgt dem Snapshot am
     # Stichtag, der Verbrauch zählt jeden Tag in SEINEM Modus.
     if wh_changes is None:
-        wh_changes = db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.user_id == user.id,
-            WorkingHoursChange.tenant_id == user.tenant_id,  # F-026
-        ).order_by(WorkingHoursChange.effective_from).all()
+        wh_changes = user_wh_changes(db, user)  # F-026
     ref_tracked = tracks_hours_on(db, user, _vacation_reference_date(user, year), wh_changes)
     daily_target = _vacation_reference_daily_target(db, user, year, wh_changes)
 

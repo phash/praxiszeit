@@ -437,13 +437,8 @@ def get_team_missing_bookings(
     # Teil A: Stundenzählung laut Snapshot von heute statt SQL-Filter auf die
     # User-Zeile (die zukunftsdatierte Zeilen erst beim nächsten Schreiben
     # spiegelt). EIN Preload der Verlaufszeilen für alle Personen.
-    wh_by_user: dict = {}
-    if users:
-        for row in db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.tenant_id == current_user.tenant_id,  # F-026
-            WorkingHoursChange.user_id.in_([u.id for u in users]),
-        ).all():
-            wh_by_user.setdefault(row.user_id, []).append(row)
+    wh_by_user = calculation_service.wh_changes_by_user(
+        db, current_user.tenant_id, [u.id for u in users])  # F-026
 
     results = []
     for user in users:

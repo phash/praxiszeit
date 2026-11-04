@@ -67,7 +67,7 @@ def milog_50_check(db, user, year: int, month: int, up_to_date: date = None,
     {account_hours, cap, agreed_monthly, caveat}."""
     # Teil A (Task 11): beide Flags aus DEMSELBEN Monatsvertrag.
     if wh_changes is None:  # Teil A (Task 12): einmal laden, an alle Helfer reichen
-        wh_changes = calculation_service._user_wh_changes(db, user)
+        wh_changes = calculation_service.user_wh_changes(db, user)
     mc = calculation_service.month_contract(db, user, year, month, wh_changes)
     if not mc.milog_working_time_account or not mc.track_hours:
         return None
@@ -113,7 +113,7 @@ def monthly_exceeded_check(db, user, year: int, month: int, up_to_date: date = N
     sich mit der Invariante."""
     # Teil A (Task 11): Modus, Stundenzählung und Zahl aus dem Monatsvertrag.
     if wh_changes is None:  # Teil A (Task 12): einmal laden, an alle Helfer reichen
-        wh_changes = calculation_service._user_wh_changes(db, user)
+        wh_changes = calculation_service.user_wh_changes(db, user)
     mc = calculation_service.month_contract(db, user, year, month, wh_changes)
     if not mc.use_fixed_monthly_target or not mc.track_hours:
         return None
@@ -153,7 +153,7 @@ def settlement_aging(db, user, as_of: date, detailed=None, wh_changes=None):
     Monate mit Konto auf (Monate ohne Konto zahlen weder ein noch aus).
     ``wh_changes`` = optionaler Preload der Verlaufszeilen (Task 12)."""
     if wh_changes is None:
-        wh_changes = calculation_service._user_wh_changes(db, user)
+        wh_changes = calculation_service.user_wh_changes(db, user)
 
     def _account_month(y: int, m: int) -> bool:
         mc = calculation_service.month_contract(db, user, y, m, wh_changes)

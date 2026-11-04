@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from calendar import monthrange
 from urllib.parse import quote
 from app.database import get_db
-from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
+from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
 from app.models.public_holiday import PublicHoliday
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences, WeeklyHoursChangeInPeriod
@@ -42,14 +42,7 @@ def _get_active_visible_users(db: Session, tenant_id) -> list:
 def _wh_changes_by_user(db: Session, tenant_id, users: list) -> dict:
     """Teil A: EIN Preload der Verlaufszeilen aller Berichtspersonen (F-026) —
     ``track_hours`` des Zeitraums kommt aus dem Snapshot, nicht der User-Zeile."""
-    by_user: dict = {}
-    if users:
-        for row in db.query(WorkingHoursChange).filter(
-            WorkingHoursChange.tenant_id == tenant_id,  # F-026
-            WorkingHoursChange.user_id.in_([u.id for u in users]),
-        ).all():
-            by_user.setdefault(row.user_id, []).append(row)
-    return by_user
+    return calculation_service.wh_changes_by_user(db, tenant_id, [u.id for u in users])
 
 
 @router.get("/monthly", response_model=List[EmployeeMonthlyReport])
@@ -117,8 +110,11 @@ def get_monthly_report(
             db, user, date(year, month_num, 1), date(year, month_num, monthrange(year, month_num)[1]),
             wh_by_user.get(user.id, []),
         )
-        target = calculation_service.get_monthly_target(db, user, year, month_num, up_to_date=cutoff)
-        actual = calculation_service.get_monthly_actual(db, user, year, month_num, up_to_date=cutoff)
+        wh = wh_by_user.get(user.id, [])
+        target = calculation_service.get_monthly_target(db, user, year, month_num, up_to_date=cutoff,
+                                                        wh_changes=wh)
+        actual = calculation_service.get_monthly_actual(db, user, year, month_num, up_to_date=cutoff,
+                                                        wh_changes=wh)
         # #150: target/actual sind bereits berechnet — get_monthly_balance würde
         # beide pro User redundant neu laden. Identisch zu dessen (actual-target).quantize.
         balance = (actual - target).quantize(Decimal('0.01'))
