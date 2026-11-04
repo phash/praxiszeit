@@ -11,6 +11,9 @@ import AbsenceReasonsManager from '../../components/AbsenceReasonsManager';
 import { useSystemStore } from '../../stores/systemStore';
 import { showResponseWarning } from '../../utils/arbzgWarnings';
 import { formatIsoDateDe } from '../../utils/formatters';
+import {
+  DEFAULT_MAX_HOURS, MAX_HOURS_ERROR, MAX_MAX_HOURS, MIN_MAX_HOURS, isValidMaxHours, parseMaxHoursInput,
+} from '../../utils/specialDays';
 import ReducedDaysCard from '../../components/ReducedDaysCard';
 
 // #371: Wochentag-Labels (Index 0=Mo … 6=So) für den Schichtplaner-Wochentag-Picker.
@@ -71,6 +74,18 @@ const SPECIAL_DAY_MODE_LABELS: Record<SpecialDayMode, string> = {
   max_hours: 'Verkürzt auf X Stunden',
 };
 
+type SpecialDayKey = 'dec24' | 'dec31';
+const SPECIAL_DAY_KEYS: SpecialDayKey[] = ['dec24', 'dec31'];
+const EMPTY_HOURS_INPUT: Record<SpecialDayKey, string> = {
+  dec24: String(DEFAULT_MAX_HOURS), dec31: String(DEFAULT_MAX_HOURS),
+};
+function hoursInputOf(cfg: SpecialDaysConfig): Record<SpecialDayKey, string> {
+  return {
+    dec24: String(cfg.special_day_dec24_max_hours ?? DEFAULT_MAX_HOURS),
+    dec31: String(cfg.special_day_dec31_max_hours ?? DEFAULT_MAX_HOURS),
+  };
+}
+
 // F091: eine Stelle für DD.MM.YYYY (auch ReducedDaysCard).
 const formatGermanDate = formatIsoDateDe;
 
@@ -96,6 +111,10 @@ export default function Settings() {
   // #146: special days (24./31.12.)
   const [specialDays, setSpecialDays] = useState<SpecialDaysConfig | null>(null);
   const [originalSpecialDays, setOriginalSpecialDays] = useState<SpecialDaysConfig | null>(null);
+  // F098/F131: die Stunden-Eingaben bleiben Text — ein geleertes Feld ist ein
+  // ungültiger Entwurf, nie ein still gesendetes ''.
+  const [hoursInput, setHoursInput] = useState<Record<SpecialDayKey, string>>(EMPTY_HOURS_INPUT);
+  const [originalHoursInput, setOriginalHoursInput] = useState<Record<SpecialDayKey, string>>(EMPTY_HOURS_INPUT);
   const [savingSpecialDays, setSavingSpecialDays] = useState(false);
 
   // #157 Typ-Farben
@@ -216,6 +235,9 @@ export default function Settings() {
       // #146: special days (24./31.12.)
       setSpecialDays(specialDaysRes.data);
       setOriginalSpecialDays(specialDaysRes.data);
+      const loadedHours = hoursInputOf(specialDaysRes.data);
+      setHoursInput(loadedHours);
+      setOriginalHoursInput(loadedHours);
 
       // #144 Break-exception approval
       const breakSetting = settingsRes.data.find((s) => s.key === 'break_exception_requires_approval');
@@ -339,19 +361,30 @@ export default function Settings() {
     }
   };
 
+  // F098: Speichern nur mit gültigen Stunden für jeden Tag im Modus `max_hours`.
+  const specialHoursValid = !specialDays || SPECIAL_DAY_KEYS.every((key) => (
+    specialDays[`special_day_${key}_mode`] !== 'max_hours'
+    || isValidMaxHours(parseMaxHoursInput(hoursInput[key]))
+  ));
+
   const saveSpecialDays = async () => {
-    if (!specialDays) return;
+    if (!specialDays || !specialHoursValid) return;
     setSavingSpecialDays(true);
     try {
-      // Persist all six keys; backend validates mode + bool.
-      // Stunden VOR den Modi, damit der Modus sofort mit gültigen Stunden greift.
-      const responses = [
-        await apiClient.put('/admin/settings/special_day_dec24_max_hours', {
-          value: String(specialDays.special_day_dec24_max_hours ?? 4),
-        }),
-        await apiClient.put('/admin/settings/special_day_dec31_max_hours', {
-          value: String(specialDays.special_day_dec31_max_hours ?? 4),
-        }),
+      // Bis zu sechs Schlüssel; Backend prüft Modus, Stunden und Bool.
+      // Stunden VOR den Modi, damit der Modus sofort mit gültigen Stunden greift —
+      // und nur für einen Tag im Modus `max_hours` (F098/F131: ein verborgenes,
+      // geleertes Feld brach sonst das ganze Speichern ab). Ungültige Stunden
+      // erreichen diese Stelle nicht: Speichern ist dann gesperrt.
+      const responses = [];
+      for (const key of SPECIAL_DAY_KEYS) {
+        if (specialDays[`special_day_${key}_mode`] === 'max_hours') {
+          responses.push(await apiClient.put(`/admin/settings/special_day_${key}_max_hours`, {
+            value: String(parseMaxHoursInput(hoursInput[key])),
+          }));
+        }
+      }
+      responses.push(
         await apiClient.put('/admin/settings/special_day_dec24_mode', {
           value: specialDays.special_day_dec24_mode,
         }),
@@ -364,8 +397,9 @@ export default function Settings() {
         await apiClient.put('/admin/settings/special_day_dec31_counts_as_vacation', {
           value: String(specialDays.special_day_dec31_counts_as_vacation),
         }),
-      ];
+      );
       setOriginalSpecialDays(specialDays);
+      setOriginalHoursInput(hoursInput);
       toast.success('Sondertage (24./31.12.) gespeichert.');
       // Gesamtreview: die Einstellung wirkt in jedem Jahr — betrifft sie ein
       // abgeschlossenes Jahr, liefert jeder PUT denselben Jahresabschluss-
@@ -382,7 +416,7 @@ export default function Settings() {
     } catch (err) {
       toast.error(getErrorMessage(err));
       // Re-sync from server so the UI reflects which keys actually persisted
-      // (the four PUTs are not atomic).
+      // (the up to six PUTs are not atomic).
       void loadSettings();
     } finally {
       setSavingSpecialDays(false);
@@ -922,7 +956,7 @@ const saveYearEndProjection = async () => {
               const vacField = `special_day_${key}_counts_as_vacation` as keyof SpecialDaysConfig;
               const mode = specialDays[modeField] as SpecialDayMode;
               const countsAsVacation = specialDays[vacField] as boolean;
-              const hoursField = `special_day_${key}_max_hours` as 'special_day_dec24_max_hours';
+              const hoursValid = isValidMaxHours(parseMaxHoursInput(hoursInput[key]));
               return (
                 <div key={key} className="flex flex-wrap items-end gap-4 p-4 bg-gray-50 rounded-lg">
                   <div className="min-w-[12rem]">
@@ -965,17 +999,19 @@ const saveYearEndProjection = async () => {
                         id={`special-${key}-hours`}
                         type="number"
                         step="0.25"
-                        min="0.25"
-                        max="12"
-                        value={specialDays[hoursField] ?? 4}
-                        onChange={(e) =>
-                          setSpecialDays({
-                            ...specialDays,
-                            [hoursField]: e.target.value === '' ? ('' as unknown as number) : Number(e.target.value),
-                          })
-                        }
+                        min={MIN_MAX_HOURS}
+                        max={MAX_MAX_HOURS}
+                        value={hoursInput[key]}
+                        aria-invalid={!hoursValid}
+                        aria-describedby={hoursValid ? undefined : `special-${key}-hours-error`}
+                        onChange={(e) => setHoursInput({ ...hoursInput, [key]: e.target.value })}
                         className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
                       />
+                      {!hoursValid && (
+                        <p id={`special-${key}-hours-error`} role="alert" className="mt-1 text-xs text-red-600">
+                          {MAX_HOURS_ERROR}
+                        </p>
+                      )}
                     </div>
                   )}
                   {mode === 'free' && (
@@ -1010,7 +1046,9 @@ const saveYearEndProjection = async () => {
                 onClick={saveSpecialDays}
                 disabled={
                   savingSpecialDays ||
-                  JSON.stringify(specialDays) === JSON.stringify(originalSpecialDays)
+                  !specialHoursValid ||
+                  (JSON.stringify(specialDays) === JSON.stringify(originalSpecialDays)
+                    && JSON.stringify(hoursInput) === JSON.stringify(originalHoursInput))
                 }
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
