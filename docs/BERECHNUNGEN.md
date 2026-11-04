@@ -647,7 +647,7 @@ budget_hours = budget_days × Tagessoll
   Beispiel (Kundenfall 2026): 24 × 10/12 + 30 × 2/12 = 20,0 + 5,0 = 25,0 Tage;  2027: 30
   ```
 
-  Ein Jahr mit genau **einem** ganzjährigen Abschnitt bleibt ungerundet (wie bisher). Vor der
+  Ein Jahr mit genau **einem** Abschnitt bleibt es bei der bisherigen Pro-rata-Rechnung, ungerundet. Vor der
   ersten Zeile gelten die Werte der ersten Zeile; ohne Zeile die der Benutzerzeile. Der
   einzige Schreibweg ist der Dialog „Arbeitszeit anpassen…“ (Abschnitt „Urlaub und
   Abrechnung“, Feld „Urlaubsanspruch pro Jahr ab diesem Datum“); die Vorschau zeigt
@@ -932,7 +932,7 @@ Opt-in je MA: `User.milog_working_time_account = true`. Vergleichsgröße ist di
 **vereinbarte Monatszeit** — flach, **nicht** das schwankende Tages-Soll:
 
 ```
-agreed_monthly = User.agreed_monthly_hours              (Baustein 2a, §10.4, falls gesetzt)
+agreed_monthly = agreed_monthly_hours des Monats laut Snapshot (Baustein 2a, §10.4, falls gesetzt)
                  sonst  get_weekly_hours_for_date(...) × 13/3   (52 Wochen / 12 Monate)
 
 Konto-Plusstunden = max(0, Monats-Ist − agreed_monthly)
@@ -979,7 +979,7 @@ Beide Warnungen tragen den Hinweis „sofern die Stunden zur Mindestlohnhöhe ve
 
 ### 10.4 Baustein 2a — Vereinbarte Monatszeit direkt hinterlegen
 
-`User.agreed_monthly_hours` (optional): überschreibt die aus `weekly_hours` abgeleitete
+`agreed_monthly_hours` (optional, seit Migration 075 je Monat im Vertrags-Snapshot, `milog_service.agreed_monthly_hours`): überschreibt die aus `weekly_hours` abgeleitete
 flache 13/3-Monatszeit für die 50-%-Prüfung (§10.2) exakt. Ohne gesetzten Wert bleibt die
 Ableitung aus den Wochenstunden aktiv.
 
@@ -1004,10 +1004,9 @@ Arbeitszeit-Änderung und gelten **ab deren Datum**:
 
 ### 10.5 Baustein 2b — Festes Monats-Soll (`use_fixed_monthly_target`)
 
-Opt-in je MA (`User.use_fixed_monthly_target = true`), setzt zwingend `agreed_monthly_hours
+Opt-in je MA (`use_fixed_monthly_target = true` im Snapshot, je Monat über `month_contract`), setzt zwingend `agreed_monthly_hours
 > 0` **und** `track_hours = true` **und** `milog_working_time_account = true` voraus
-(Schema-Guard bei Anlage **und** Änderung — ein isoliertes Deaktivieren des Konto-Flags bei
-aktivem Fixmodus wird mit `400` blockiert). **Für alle anderen MA ändert sich nichts**
+(geprüft am Snapshot der neuen Arbeitszeit-Änderung, `400`; `PUT /admin/users/{id}` lehnt die fünf Vertragsfelder mit `400` ab — ein isoliertes Deaktivieren des Konto-Flags bei aktivem Fixmodus wird ebenfalls blockiert). **Für alle anderen MA ändert sich nichts**
 (byte-identisches Verhalten — der Modus ist rein opt-in).
 
 **Monats-Soll wird FEST statt aus Tagen summiert:**
