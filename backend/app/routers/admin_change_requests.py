@@ -63,7 +63,7 @@ def _vacation_day_contribution(db, user, d, half_day) -> float:
     # exakt wie get_vacation_account/absence_days (zentraler Helper).
     _cfg = special_days_service.get_special_day_config(db, user.tenant_id, d.year)
     weight = float(half_special_day_weight(d, _cfg))
-    if counts_vacation_by_day_only(user):  # #191, Gesamtreview B11
+    if counts_vacation_by_day_only(db, user, d):  # #191, Gesamtreview B11; Teil A: je Tag
         return (0.5 if half_day else 1.0) * weight
     dt = get_daily_target_for_date(user, d, get_schedule_for_date(db, user, d))
     if dt <= 0:
