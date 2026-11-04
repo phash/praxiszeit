@@ -221,8 +221,8 @@ def get_overtime_account(
     # oben bereits berechnet (mit cutoff = month-to-date).
     milog_warnings: list[str] = []
     # Teil A (Task 11): beide Flags aus dem Monatsvertrag des laufenden Monats.
-    _mc = calculation_service.month_contract(db, current_user, now.year, now.month)
-    if _mc.milog_working_time_account and _mc.track_hours:
+    # F002: Stundenzählung an irgendeinem Tag des Monats (``month_has_account``).
+    if milog_service.month_has_account(db, current_user, now.year, now.month):
         _actual = current_month_detail.actual if current_month_detail is not None else Decimal('0.00')
         _chk = milog_service.milog_50_check(db, current_user, now.year, now.month, monthly_actual=_actual)
         if _chk:

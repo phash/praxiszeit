@@ -167,3 +167,36 @@ def test_users_overview_milog_gate_uses_today_snapshot(_db_session, employee_use
         assert rows[str(admin_user.id)]["milog_warnings"] == []
     finally:
         endpoints_app.dependency_overrides.clear()
+
+
+def test_track_hours_switched_on_mid_month_counts_month_for_milog(db, minijob_user):
+    """F002: ``track_hours`` darf mitten im Monat wechseln (nur die Minijob-Felder
+    gelten ab dem 1.). Ein Monat mit IRGENDEINEM Tag mit Stundenzählung hat ein
+    Arbeitszeitkonto — sonst fehlte die März-Einzahlung im FIFO."""
+    row = db.query(cs.WorkingHoursChange).filter_by(user_id=minijob_user.id).one()
+    row.use_fixed_monthly_target = False
+    row.track_hours = False
+    db.commit()
+    add_row(db, minijob_user, date(2026, 3, 16), weekly_hours=10, vacation_days=Decimal("30"),
+            track_hours=True, milog_working_time_account=True, agreed_monthly_hours=Decimal("43.3"),
+            use_fixed_monthly_target=False)
+    assert milog_service.milog_50_check(db, minijob_user, 2026, 3, monthly_actual=Decimal("100")) is not None
+    detailed = {(2026, 3): _MO(0, 10), (2026, 4): _MO(0, 0)}
+    res = milog_service.settlement_aging(db, minijob_user, date(2026, 4, 15), detailed=detailed)
+    assert (res["oldest_year"], res["oldest_month"]) == (2026, 3)
+    assert abs(res["hours"] - 10.0) < 0.01
+
+
+def test_track_hours_off_whole_month_has_no_milog_account(db, minijob_user):
+    """F002 (Gegenprobe): ein Monat ganz ohne Stundenzählung hat kein Konto."""
+    row = db.query(cs.WorkingHoursChange).filter_by(user_id=minijob_user.id).one()
+    row.use_fixed_monthly_target = False
+    db.commit()
+    add_row(db, minijob_user, date(2026, 3, 1), weekly_hours=10, vacation_days=Decimal("30"),
+            track_hours=False, milog_working_time_account=True, agreed_monthly_hours=Decimal("43.3"),
+            use_fixed_monthly_target=False)
+    add_row(db, minijob_user, date(2026, 4, 1), weekly_hours=10, vacation_days=Decimal("30"),
+            track_hours=True, milog_working_time_account=True, agreed_monthly_hours=Decimal("43.3"),
+            use_fixed_monthly_target=False)
+    assert milog_service.milog_50_check(db, minijob_user, 2026, 3, monthly_actual=Decimal("100")) is None
+    assert milog_service.milog_50_check(db, minijob_user, 2026, 4, monthly_actual=Decimal("100")) is not None

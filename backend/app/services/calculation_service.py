@@ -219,7 +219,9 @@ def tracks_hours_on(
 class MonthContract(NamedTuple):
     """Teil A, Task 11: die Minijob-Felder (und ``track_hours``) eines MONATS —
     Snapshot am Monatsersten. Minijob-Felder ändern sich nur zum Monatsersten
-    (Schreibregel), deshalb gilt der Wert des 1. für den ganzen Monat."""
+    (Schreibregel), deshalb gilt der Wert des 1. für den ganzen Monat.
+    ``track_hours`` darf dagegen an jedem Tag wechseln: „hat der Monat ein
+    Arbeitszeitkonto?" fragt :func:`tracks_hours_in_range` (F002), nicht dieses Feld."""
 
     track_hours: bool
     milog_working_time_account: bool
