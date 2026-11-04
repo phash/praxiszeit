@@ -2215,6 +2215,22 @@ describe('Gesamtreview 1.20 Fund 14: Block-Editor bei fester Monatsarbeitszeit',
     expect(screen.getByText(/Bei fester Monatsarbeitszeit sind diese Werte geplante Anwesenheit/)).toBeInTheDocument();
   });
 
+  it('F051/F092: folgt dem Vertrag im Formular, nicht der Prop', async () => {
+    mockHistory([ANNA_ROW], QUIET);
+    renderModal({
+      ...ANNA_PROPS, fixedMonthlyTarget: false,
+      currentContract: {
+        vacation_days: 18, track_hours: true, milog_working_time_account: true,
+        agreed_monthly_hours: 60, use_fixed_monthly_target: false,
+      },
+    });
+    await screen.findByText(/Ab 01\.03\.2026 bis heute/);
+    expect(screen.getByTestId('wh-blocks-day-0')).toHaveTextContent('Tagessoll 7:00 h');
+    fireEvent.click(document.getElementById('wh-use_fixed_monthly_target')!);
+    expect(screen.getByTestId('wh-blocks-day-0')).toHaveTextContent('geplant 7:00 h');
+    expect(screen.getByText(/Bei fester Monatsarbeitszeit sind diese Werte geplante Anwesenheit/)).toBeInTheDocument();
+  });
+
   it('Kontrolle: ohne feste Monatsarbeitszeit „Tagessoll"', async () => {
     mockHistory([ANNA_ROW], QUIET);
     renderModal(ANNA_PROPS);

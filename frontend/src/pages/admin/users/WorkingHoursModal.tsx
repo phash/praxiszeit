@@ -41,8 +41,10 @@ interface WorkingHoursModalProps {
   // (`schedule_today`) — Rückfall wie die Stunden-Props. Ohne sie gelten
   // `trackHours`/`fixedMonthlyTarget` und 30 Tage.
   currentContract?: ContractTerms;
-  // Gesamtreview 1.20 (Fund 14): feste Monatsarbeitszeit (#377 2b) — die Werte
-  // des Block-Editors sind dann geplante Anwesenheit, kein Tages-/Wochensoll.
+  // Gesamtreview 1.20 (Fund 14): feste Monatsarbeitszeit (#377 2b) — nur noch
+  // RÜCKFALL für `currentContract.use_fixed_monthly_target` (ältere Aufrufer).
+  // Die Beschriftung „geplante Anwesenheit" folgt dem Vertrag des Formulars
+  // bzw. der Zeile, die nach dem Löschen gilt (F051/F092), nie dieser Prop.
   fixedMonthlyTarget?: boolean;
   // 1.21 Teamübersicht: in der Übersicht gezogene Blöcke als Entwurf (Block-Modus)
   // und das dort gewählte Datum als Vorgabe für „Gültig ab". Gespeichert wird
@@ -448,6 +450,9 @@ export default function WorkingHoursModal({
   };
   // Stundenzählung des FORMULARS (nicht mehr die Prop) steuert Block-Modus und Texte.
   const formTrackHours = contract.track_hours;
+  // F051/F092: „geplante Anwesenheit" statt Tages-/Wochensoll, sobald die NEUE
+  // Zeile ein festes Monats-Soll hat — der Vertrag im Formular, nicht die Prop.
+  const plannedPresence = contract.use_fixed_monthly_target && contract.track_hours;
   const entitlementInvalid = !entitlementValid(contract.vacation_days);
   // Ein leerer oder unzulässiger Anspruch geht nie als `null` hinaus (422) —
   // er fehlt im Body, und Speichern bleibt mit Hinweis gesperrt.
@@ -903,7 +908,7 @@ export default function WorkingHoursModal({
                         value={formData.blocks}
                         onChange={(blocks) => setFormData((prev) => ({ ...prev, blocks }))}
                         idPrefix="wh-blocks"
-                        plannedPresence={fixedMonthlyTarget}
+                        plannedPresence={plannedPresence}
                       />
                     ) : formData.mode === 'days' ? (
                       // Handy: zwei Spalten statt fünf gequetschter Felder.
@@ -1114,7 +1119,7 @@ export default function WorkingHoursModal({
                                     : 'Ändert Überstunden oder Urlaubsverbrauch'}:{' '}
                             {formatDate(shown.period_start)} – {formatDate(shown.period_end)}
                           </p>
-                          {!blockedReason && <WhImpactBox preview={shown} plannedPresence={fixedMonthlyTarget} />}
+                          {!blockedReason && <WhImpactBox preview={shown} plannedPresence={plannedPresence} />}
                           {balanceUnchangedAhead && (
                             <p className="text-amber-800 mt-1">
                               Saldo und Urlaub stehen auf dem Stand von heute — die Änderung
@@ -1199,7 +1204,13 @@ export default function WorkingHoursModal({
                     change={deleting}
                     onCancel={cancelDelete}
                     onDone={finishDelete}
-                    plannedPresence={fixedMonthlyTarget}
+                    // F051: nach dem Löschen gilt der Vertrag der Vorgängerzeile.
+                    plannedPresence={(() => {
+                      const after = scheduleAt(
+                        hoursChanges.filter((c) => c.id !== deleting.id), deleting.effective_from, propsSchedule,
+                      ).contract;
+                      return after.use_fixed_monthly_target && after.track_hours;
+                    })()}
                   />
                 )}
                 {hoursChanges.length === 0 ? (
@@ -1265,7 +1276,7 @@ export default function WorkingHoursModal({
                   Arbeitsblöcken", auch über einen Moduswechsel hinweg. Bei „Nach Arbeitsblöcken" ist das
                   Tagessoll die Gesamtzeit der Blöcke minus der Pause innerhalb der Blöcke; erfasste Zeit
                   wird an den Blockrändern mit dem Puffer gekappt.
-                  {fixedMonthlyTarget && (
+                  {plannedPresence && (
                     <>
                       {' '}Bei fester Monatsarbeitszeit sind diese Werte geplante Anwesenheit; das Monats-Soll
                       bleibt die vereinbarte Monatsarbeitszeit.
