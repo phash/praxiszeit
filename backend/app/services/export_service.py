@@ -821,7 +821,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
         # Per-day target using the historical contract snapshot (#431)
         schedule = calculation_service.get_schedule_for_date(db, user, current_date, wh_changes=wh_changes)
         daily_target = calculation_service.get_daily_target_for_date(user, current_date, schedule)
-        # #146: apply the special-day factor (only the working-day branch below
+        # #146: Sondertag-/Verkürzungsregel ``special_day_target`` (only the working-day branch below
         # consumes daily_target; the weekend/holiday/absence branches hardcode 0).
         raw_daily_target = daily_target  # unweighted snapshot target (credit weight)
         daily_target = special_days_service.special_day_target(current_date, raw_daily_target, special_day_config)

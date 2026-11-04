@@ -31,7 +31,7 @@ from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
     get_schedule_for_date, get_daily_target_for_date, get_vacation_account,
     counts_vacation_by_day_only, child_sick_cap, child_sick_days_used, half_special_day_weight,
-    f1_clamp_for_day,
+    f1_clamp_for_day, user_wh_changes,
 )
 from app.services import (
     credit_override_service, presence_service, settings_service, special_days_service,
@@ -63,9 +63,11 @@ def _vacation_day_contribution(db, user, d, half_day) -> float:
     # exakt wie get_vacation_account/absence_days (zentraler Helper).
     _cfg = special_days_service.get_special_day_config(db, user.tenant_id, d.year)
     weight = float(half_special_day_weight(d, _cfg))
-    if counts_vacation_by_day_only(db, user, d):  # #191, Gesamtreview B11; Teil A: je Tag
+    # EIN Preload der Verlaufszeilen fuer Modus und Tagessoll (statt zweier Aufloesungen).
+    wh_changes = user_wh_changes(db, user)
+    if counts_vacation_by_day_only(db, user, d, wh_changes):  # #191, Gesamtreview B11; Teil A: je Tag
         return (0.5 if half_day else 1.0) * weight
-    dt = get_daily_target_for_date(user, d, get_schedule_for_date(db, user, d))
+    dt = get_daily_target_for_date(user, d, get_schedule_for_date(db, user, d, wh_changes))
     if dt <= 0:
         return 0.0
     return (0.5 if half_day else 1.0) * weight

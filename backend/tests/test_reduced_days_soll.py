@@ -180,3 +180,14 @@ def test_sick_credit_on_reduced_day_is_exact_no_negative_zero(db, default_tenant
     soll = special_days_service.special_day_target(RM, Decimal("11.93"), cfg)
     assert str((credit - soll).quantize(Decimal("0.01"))) == "0.00"
     assert calculation_service.get_range_actual(db, u, RM, RM) == Decimal("3.75")
+
+
+@pytest.mark.parametrize("mode,expected", [("half_day", "4"), ("free", "8"), ("working_day", "8")])
+def test_fixed_planned_hours_other_modes_unchanged(db, fixed_user, mode, expected):
+    """F058/F082: ``_fixed_planned_hours`` nutzt ``special_day_target``; ``half_day``
+    halbiert, ``free`` behält bewusst die vollen Planstunden (wie vor Teil B)."""
+    db.add(SystemSetting(key="special_day_dec24_mode", value=mode, description="x",
+                         tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    cfg = special_days_service.get_special_day_config(db, DEFAULT_TENANT_ID, 2026)
+    assert calculation_service._fixed_planned_hours(db, fixed_user, D24, cfg) == Decimal(expected)
