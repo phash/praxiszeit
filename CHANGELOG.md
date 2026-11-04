@@ -2,28 +2,143 @@
 
 ## [1.22.0] - 2026-11-04
 
-### ✨ Neu
+Minor-Release mit zwei großen Neuerungen: **verkürzte Tage** (z. B. Heiligabend
+und Silvester nur bis 12 Uhr) und ein **Vertragsverlauf** für Urlaubsanspruch,
+Stundenzählung und Minijob-Einstellungen. Update aus 1.21.x ohne
+Zwischenschritte. **Enthält zwei Datenbank-Migrationen** (`074_reduced_days`,
+`075_contract_history`). Sie legen eine neue Tabelle an und übernehmen die
+heutigen Werte jeder Person in ihren Arbeitszeit-Verlauf — Salden,
+Urlaubskonten und Exporte aller bestehenden Daten bleiben unverändert (geprüft
+gegen eine echte Praxis-Datenbank). **Vor dem Update ein Backup ziehen**
+(`UPDATE.md`).
 
-- **Verkürzte Tage.** Das Tagessoll lässt sich für einzelne Tage begrenzen: Soll = die kleinere Zahl aus normalem Tagessoll und der eingetragenen Höchststundenzahl (X). Unter *Einstellungen → „Sondertage (24./31.12.)“* gibt es dafür die vierte Betriebsart **„Verkürzt auf X Stunden“** (Feld „Höchstens (Stunden)“, 0,25–12 in Schritten von 0,25, Standard 4); neue Karte **„Verkürzte Tage“** für beliebige weitere Tage wie Rosenmontag (Datum, Bezeichnung, Höchststunden; der 24./31.12. läuft nur über die Sondertage-Einstellung). Ein Feiertag geht vor, am Wochenende hat der Tag keine Wirkung, Urlaub kostet 0,5 Tage, die Gutschrift für Krank/Fortbildung wiegt `min(Tagessoll, X) ÷ Tagessoll`, Betriebsferien buchen das verkürzte Soll; das feste Monats-Soll (Minijob) bleibt unverändert. Angerechnet wird weiter die gestempelte Zeit, sie wird nicht auf X gekappt. Kalender und Stempelkarte zeigen „verkürzter Tag (max. 4 h)“. Neue Endpunkte `/api/admin/reduced-days` und `GET /api/reduced-days?year=` (angemeldet, nicht im öffentlichen `/api/settings`); Migration 074 legt nur die Tabelle `reduced_days` an und ändert keine bestehenden Werte.
-- **Vertragsverlauf: Urlaubsanspruch, Stundenzählung und Minijob-Einstellungen gelten ab Datum.** Diese fünf Werte (Urlaubsanspruch, „Stundenzählung aktiv“, MiLoG-Arbeitszeitkonto, vereinbarte Monatszeit, festes Monats-Soll) stehen jetzt in jeder Arbeitszeit-Änderung und wirken ab deren Datum (Migration 075, aus dem heutigen Stand rückgefüllt; kein bisheriges Ergebnis ändert sich). Der Dialog „Arbeitszeit anpassen…“ hat dafür den Abschnitt **„Urlaub und Abrechnung“** mit dem Feld „Urlaubsanspruch pro Jahr ab diesem Datum“ und einem Vorschlag (alter Anspruch × neue Arbeitstage ÷ alte Arbeitstage, gerundet auf 0,1) samt „Vorschlag übernehmen (N)“. Wechselt der Anspruch im Jahr, wird jeder Abschnitt anteilig nach Monaten gerechnet (24 × 10/12 + 30 × 2/12 = 25,0 für 2026, 30 ab 2027). Die Vorschau zeigt „Urlaubsanspruch {Jahr}“ vorher → nachher und „Urlaub verbraucht {Jahr}“. Stundenzählung gilt je Tag, Minijob-Einstellungen je Monat; ein rückwirkender Wechsel kappt bzw. entkappt Einträge neu und rechnet Abwesenheiten nur an Tagen nach, an denen der Wert kippt. Das Bearbeiten-Formular zeigt die Werte nur noch an. Eine Korrektur an der frühesten Zeile ersetzt diese Zeile an Ort und Stelle. Der Jahresabschluss schließt auch Personen ohne Stundenzählung ein (der Vermerk „offen (#191)“ entfällt).
+### ✨ Verkürzte Tage
 
-### ⚠️ Verhaltensänderung
+Für einzelne Tage lässt sich das Soll auf eine Höchststundenzahl begrenzen —
+„wer an dem Tag Dienst hat, arbeitet höchstens X Stunden“.
 
-- **Änderung der 24./31.12.-Einstellung bucht Betriebsferien automatisch neu.** Bisher musste man betroffene Betriebsferien nach einer Änderung von Hand erneut speichern, sonst blieben die gebuchten Abwesenheiten auf dem alten Stand. Jetzt bucht PraxisZeit die betroffenen Betriebsferien beim Speichern der Sondertage-Einstellung und bei jeder Änderung eines verkürzten Tages selbst neu (nur aktive Teilnehmende an Tagen ohne Zeiteintrag; andere Zeilen bleiben stehen). In **abgeschlossenen Jahren** wird nichts neu gebucht, dort erscheint nur der Hinweis auf den veralteten Übertrag.
-- **Urlaubsanspruch, Stundenzählung und Minijob-Einstellungen ändern sich nur noch über „Arbeitszeit anpassen…“.** `PUT /api/admin/users/{id}` lehnt `vacation_days`, `track_hours`, `milog_working_time_account`, `agreed_monthly_hours` und `use_fixed_monthly_target` mit 400 ab (`POST` beim Anlegen darf sie weiter setzen); das Bearbeiten-Formular zeigt sie nur an.
-- **Minijob-Einstellungen gelten immer ab dem Monatsersten.** Eine Änderung mit anderem Datum wird mit 422 „Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten.“ abgelehnt.
-- **Löschen oder Zurücksetzen einer rückwirkenden Anspruchs-Erhöhung braucht einen Grund.** Sinkt dadurch der Urlaubsanspruch des laufenden oder eines vergangenen Jahres, ist das eine Verkürzung (Grund, Begründung, Bestätigung).
-- **Mitarbeitende, die die Stundenzählung wechseln: kein Ist an Tagen ohne Stundenzählung.** Monatsbericht, Datei-Exporte und Journal zählten bisher bei Personen, deren Stundenzählung an- oder abgeschaltet wurde, gestempelte Zeit und Krank-/Fortbildungs-Gutschriften auch an Tagen ohne Stundenzählung mit. Jetzt zählt dort kein Ist, und die Tagesspalte „Differenz“ ist 0 (Netto und Stempel bleiben sichtbar). Wer nie Stundenzählung hatte, bleibt unverändert.
-- **Das MiLoG-Arbeitszeitkonto gilt je Monat nur mit Stundenzählung im Monat** (50-%-Prüfung, Monatsgrenze, 12-Monats-Frist, auch beim Buchen im Eintragsmonat statt im heutigen Monat).
-- **Korrektur der frühesten Verlaufszeile reicht nicht mehr in frühere Tage.** Die Tage vor der Zeile behalten ihren bisherigen Vertrag; die Lücke wird vorher als eigene Zeile festgehalten (Protokoll: „Korrektur der frühesten Verlaufszeile“).
-- **Minijob-Wechsel durch eine spätere Zeile mitten im Monat wird abgelehnt.** Würde das Anlegen oder Löschen einer Zeile bewirken, dass die nächste Zeile mitten im Monat andere Minijob-Werte erbt, antwortet PraxisZeit mit 422; die spätere Zeile ist vorher anzugleichen. Beginnt die Zeile den Verlauf ohne Lücke, gilt die Monatsersten-Regel nicht.
-- **Betriebsferien am verkürzten Tag behalten ihre Stunden bei einer Arbeitszeit-Änderung.** Die Betriebsferien buchen am 24./31.12. (halber Feiertag oder „Verkürzt auf X Stunden“) und an eigenen verkürzten Tagen das verkürzte Tagessoll (z. B. 4 h). Eine spätere Arbeitszeit-Änderung zog diese Zeile bisher auf das volle Tagessoll (8 h) hoch – beim halben Feiertag schon seit 1.18.1. Urlaubstage und Saldo blieben richtig, aber die Stundenangabe in Exporten („Urlaub (8.0h)“) und im klassischen Jahresbericht (Urlaubsstunden, bereinigtes Soll) war falsch, und ein Neuspeichern der Betriebsferien setzte den Wert wieder zurück. Jetzt rechnet die Rückrechnung Betriebsferien-Zeilen nach derselben Regel wie die Buchung (`special_day_target`); direkt gebuchte Abwesenheiten tragen weiter das volle Tagessoll. Bereits hochgezogene Zeilen korrigiert ein Neuspeichern der Betriebsferien.
-- **Neu-Aufteilen der Betriebsferien (Überstundenabbau nach Urlaub):** Personen ohne Stundenzählung an allen Schließtagen bekommen dort wieder `VACATION`.
-- **Wochenübersicht zeigt nur Wochen mit Stundenzählung.** Fehlende Buchungen meldet sie je Tag mit Stundenzählung; wer nie Stundenzählung hat, erscheint dort nicht.
-- **Stundenvorbelegung im Abwesenheitsformular** (`GET /api/absences/daily-target`) berücksichtigt jetzt Halbtag, Frei und verkürzten Tag (0,5×, 0, min(Tagessoll, X) statt des vollen Tagessolls).
-- **Urlaubsanspruch und Minijob-Werte werden auf 0,1 gerundet** (Dialog und Anlegen); eine vereinbarte Monatszeit, die auf 0 rundet, wird mit 422 abgelehnt. Die fünf Vertragsfelder stehen auch in den DSGVO-/§16-Exporten, und Benutzer-Antworten (`/me`) zeigen den heute gültigen Stand.
-- **Verkürzte Tage:** Datum nur 2000–2100; die Stempelkarte zeigt das Label nur an Tagen mit Soll.
-- **Alte Rücksetz-Anfragen können 409 liefern.** Eine vor dem Update im Browser zwischengespeicherte Rücksetz-Anfrage (`reset_body`) kennt die neuen Felder nicht und kann mit 409 abgelehnt werden; Seite neu laden und erneut öffnen.
+- **Heiligabend und Silvester:** Unter *Einstellungen → „Sondertage (24./31.12.)“*
+  gibt es neben „normaler Arbeitstag“, „halber Feiertag“ und „frei“ die neue
+  Einstellung **„Verkürzt auf X Stunden“** (Feld „Höchstens (Stunden)“,
+  0,25–12 Stunden in Viertelstunden, Vorgabe 4).
+- **Eigene Tage:** Die neue Karte **„Verkürzte Tage“** auf derselben Seite nimmt
+  beliebige weitere Tage auf, z. B. Rosenmontag (Datum, Bezeichnung,
+  Höchststunden).
+- **So wird gerechnet:** Das Tagessoll ist die kleinere Zahl aus dem normalen
+  Tagessoll und X. Wer an dem Tag ohnehin weniger Soll hat, behält es; wer an
+  dem Tag nicht arbeitet, hat weiter kein Soll. Ein Feiertag geht vor, am
+  Wochenende hat der Tag keine Wirkung. Gestempelte Zeit wird voll angerechnet
+  — wer länger bleibt, baut Überstunden auf.
+- **Urlaub** an einem verkürzten Tag kostet einen halben Tag, **Krankheit und
+  Fortbildung** werden mit dem verkürzten Soll gutgeschrieben, **Betriebsferien**
+  buchen das verkürzte Soll. Das feste Monats-Soll für Minijobs bleibt
+  unverändert.
+- **Anzeige:** Kalender und Stempelkarte zeigen „verkürzter Tag (max. 4 h)“.
+- **Betriebsferien werden automatisch neu gebucht**, sobald Sie einen
+  verkürzten Tag oder die 24./31.12.-Einstellung ändern (siehe „Geändertes
+  Verhalten“).
+
+### ✨ Vertragsverlauf: Urlaubsanspruch, Stundenzählung und Minijob ab Datum
+
+Urlaubsanspruch, „Stundenzählung aktiv“, MiLoG-Arbeitszeitkonto, vereinbarte
+Monatszeit und festes Monats-Soll gelten jetzt — wie die Wochenstunden — **ab
+einem Datum**. Frühere Monate rechnen weiter mit dem alten Stand.
+
+- **Ein Ort zum Ändern:** Der Dialog **„Arbeitszeit anpassen…“** hat den neuen
+  Abschnitt **„Urlaub und Abrechnung“** mit „Urlaubsanspruch pro Jahr ab
+  diesem Datum“, der Stundenzählung und den Minijob-Einstellungen. Im Formular
+  „Benutzer bearbeiten“ werden die Werte nur noch angezeigt (beim Anlegen
+  bleiben sie dort eingebbar).
+- **Vorschlag für den Urlaubsanspruch:** Ändern sich die Arbeitstage, schlägt
+  der Dialog den passenden Anspruch vor (alter Anspruch × neue Arbeitstage ÷
+  alte Arbeitstage, z. B. 24 Tage bei 4 Tagen → 30 bei 5 Tagen). Der Wert ist
+  überschreibbar; „Vorschlag übernehmen (30)“ holt ihn zurück.
+- **Anteilig im Wechseljahr:** Wechselt der Anspruch während des Jahres, zählt
+  jeder Abschnitt nach Monaten. Beispiel: 24 Tage bis Oktober, 30 ab November
+  → 2026 = 24 × 10/12 + 30 × 2/12 = **25 Tage**, ab 2027 **30 Tage**.
+- **Vorschau:** Die Auswirkungen zeigen jetzt „Urlaubsanspruch {Jahr}“ vorher →
+  nachher für das betroffene und das folgende Jahr (die bisherige Zeile heißt
+  „Urlaub verbraucht {Jahr}“).
+- **Stundenzählung ab Datum:** Wird die Stundenzählung ab einem Datum an- oder
+  ausgeschaltet, gilt das genau ab diesem Tag; rückwirkend rechnet PraxisZeit
+  die betroffenen Tage neu (Zeiteinträge und Abwesenheiten — mit Vorschau,
+  Begründung und Protokoll wie jede rückwirkende Änderung).
+- **Minijob-Einstellungen ab Monatsanfang:** MiLoG-Konto, vereinbarte
+  Monatszeit und festes Monats-Soll wirken je Monat.
+- **Korrektur der ersten Zeile:** Eine Änderung genau zum Datum der frühesten
+  Verlaufszeile korrigiert diese Zeile, statt mit „Datum schon belegt“
+  abzulehnen.
+
+### ⚠️ Geändertes Verhalten
+
+- **Urlaubsanspruch, Stundenzählung und Minijob-Einstellungen ändern Sie nur
+  noch über „Arbeitszeit anpassen…“.** Die Schnittstelle
+  `PUT /api/admin/users/{id}` lehnt diese fünf Felder mit 400 ab.
+- **Minijob-Einstellungen gelten immer ab dem Monatsersten.** Ein anderes Datum
+  wird abgelehnt: „Änderungen an Minijob-Einstellungen gelten immer ab dem
+  Monatsersten.“ Das gilt auch, wenn eine spätere Verlaufszeile dadurch mitten
+  im Monat andere Minijob-Werte erben würde.
+- **Rückwirkend sinkender Urlaubsanspruch braucht eine Begründung** — wie jede
+  rückwirkende Verkürzung (Grund, Begründung, Bestätigung). Das gilt auch, wenn
+  Sie eine frühere Erhöhung des Anspruchs löschen oder zurücksetzen.
+- **Betriebsferien werden automatisch neu gebucht**, wenn Sie die
+  24./31.12.-Einstellung oder einen verkürzten Tag ändern (bisher: von Hand
+  erneut speichern). Neu gebucht werden nur aktive Teilnehmende an Tagen ohne
+  Zeiteintrag; in abgeschlossenen Jahren wird nichts geändert, dort erscheint
+  nur der Hinweis auf den veralteten Übertrag.
+- **Personen, deren Stundenzählung wechselt:** Monatsbericht, Exporte und
+  Journal zählen an Tagen ohne Stundenzählung kein Ist mehr; die Tagesspalte
+  „Differenz“ ist dort 0, Netto und Stempel bleiben sichtbar. Wer nie
+  Stundenzählung hatte, sieht keine Änderung.
+- **MiLoG-Prüfungen** (50-%-Grenze, Monatsgrenze, 12-Monats-Frist) richten sich
+  nach dem Monat des Eintrags und gelten nur für Monate mit MiLoG-Konto und
+  Stundenzählung.
+- **Wochenübersicht** meldet fehlende Buchungen nur an Tagen mit
+  Stundenzählung.
+- **Rundung:** Urlaubsanspruch und vereinbarte Monatszeit werden auf eine
+  Nachkommastelle gerundet.
+
+### 🐛 Fehlerbehebungen
+
+- **Betriebsferien am halben Feiertag (24./31.12.) behalten ihre Stunden.** Eine
+  spätere Arbeitszeit-Änderung zog den gebuchten Betriebsferien-Tag auf das
+  volle Tagessoll hoch (z. B. 4 → 8 Stunden; seit 1.18.1). Urlaubstage und
+  Saldo waren richtig, die Stundenangabe in Exporten („Urlaub (8.0h)“) und im
+  klassischen Jahresbericht aber falsch. **Bestehende Zeilen korrigiert ein
+  erneutes Speichern der betroffenen Betriebsferien.**
+- **Stundenvorschlag im Abwesenheitsformular** berücksichtigt jetzt halben
+  Feiertag, freien Sondertag und verkürzten Tag.
+- **Benutzerliste und Dashboard** zeigen Stundenzählung und Minijob-Status nach
+  dem heute gültigen Vertragsstand.
+- **DSGVO-Auskunft und §16-Notfallexport** enthalten die fünf neuen
+  Vertragsfelder.
+- **Benutzerübersicht** lädt für Minijob-Mitarbeitende deutlich schneller (eine
+  statt bis zu 82 Abfragen der Vertragshistorie je Aufruf).
+
+### 🔧 Update-Hinweise und Technik
+
+- **Nach dem Update** einmal die Betriebsferien speichern, die über den
+  24./31.12. gehen, falls die Sondertage auf „halber Feiertag“ stehen (siehe
+  Fehlerbehebung oben).
+- **Urlaubsanspruch nachträglich korrigieren:** Wurde ein Wechsel der
+  Arbeitstage bisher per Hand im Übertrag ausgeglichen, tragen Sie die
+  Änderung jetzt im Dialog „Arbeitszeit anpassen…“ mit dem richtigen
+  Gültig-ab-Datum ein und nehmen den Handausgleich zurück.
+- **Nach dem Update Seite neu laden:** Ein vor dem Update im Browser geöffneter
+  Arbeitszeit-Dialog kann beim Zurücksetzen mit „Der vorherige Stand hat sich
+  inzwischen geändert“ (409) abbrechen.
+- **Neue Schnittstellen:** `/api/admin/reduced-days` (Verwaltung) und
+  `GET /api/reduced-days?year=` (angemeldet). Verkürzte Tage stehen bewusst
+  **nicht** im öffentlichen `/api/settings`. `/time-entries/clock-status`
+  liefert zusätzlich `today_special_day_label`.
+- **Migrationen:** `074_reduced_days` (Tabelle `reduced_days` mit
+  Mandanten-Schutz), `075_contract_history` (fünf Spalten in
+  `working_hours_changes`, aus `users` befüllt). Bitgleichheit geprüft mit
+  `tools/migration-075/probe_075.py`.
+- **Getestet:** Update 1.21.1 → 1.22.0 mit Docker-Paket, nativer Installation
+  und im Windows-Emulator (Update, Neuinstallation, Neustart); Backend 4574,
+  PostgreSQL 91, Frontend 1067 Tests grün; Installationsprüfung auf 5
+  Linux-Distributionen.
 
 ## [1.21.1] - 2026-11-02
 
