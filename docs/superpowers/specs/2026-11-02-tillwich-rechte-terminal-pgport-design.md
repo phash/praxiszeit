@@ -1,7 +1,7 @@
 # Erweiterte Rechte, Stempel-Terminal und PostgreSQL-Port (Windows)
 
-**Stand:** 2026-11-02 · **Anlass:** Kundenanfrage Dr. Tillwich (Praxis Horb, Mails vom 01.11.2026), zweiter Kunde mit dem Wunsch nach einer Zwischenrolle (#190 wurde im Juni 2026 abgelehnt).
-**Grundlage:** Code-Erfassung vom 2026-11-02 (Workflow `wf_039a4c87-d52`, nur lesend; Zeilenangaben beziehen sich auf master @ 1bffd77).
+**Stand:** 2026-11-05 (Überarbeitung: Pausen-Schalter, Basis 1.22.0) · **Anlass:** Kundenanfrage Dr. Tillwich (Praxis Horb, Mails vom 01.11.2026), zweiter Kunde mit dem Wunsch nach einer Zwischenrolle (#190 wurde im Juni 2026 abgelehnt).
+**Grundlage:** Code-Erfassung vom 2026-11-02 (Workflow `wf_039a4c87-d52`, nur lesend; Zeilenangaben beziehen sich auf master @ 1bffd77 = 1.21.0). Seit 1.22.0 (Migrationen 074/075) können Zeilenangaben verschoben sein; jeder Umsetzungsplan prüft sie gegen den aktuellen master.
 
 Kennzeichnung: **[Manuel]** = von Manuel entschieden, **[Kunde]** = Wunsch von Dr. Tillwich, **[Claude]** = Entscheidung von Claude, beim Lesen prüfen. Ohne Kennzeichnung = Folge aus Code oder CLAUDE.md-Regel.
 
@@ -11,7 +11,7 @@ Kennzeichnung: **[Manuel]** = von Manuel entschieden, **[Kunde]** = Wunsch von D
 
 Kleine Praxen wollen einzelne Verwaltungsaufgaben an eine Mitarbeiterin abgeben (typisch: die MFA, die den Dienstplan macht), ohne ihr Vollzugriff zu geben. Außerdem wollen sie am Praxis-PC schnell stempeln, ohne dass sich jede Person mit Benutzername und Passwort anmeldet.
 
-Beides ist **optional**. Der Praxisinhaber schaltet es auf der **Einstellungsseite in der App** ein **[Manuel]**. **Standard ist aus; dann verhält sich PraxisZeit exakt wie heute [Manuel].**
+Beides ist **optional**, ebenso die gestempelten Pausen (Teil B'). Der Praxisinhaber schaltet jede der drei Funktionen einzeln auf der **Einstellungsseite in der App** (Menü „Einstellungen“ der Verwaltung) ein **[Manuel]**. **Standard ist aus; dann verhält sich PraxisZeit exakt wie heute [Manuel].**
 
 Der dritte Teil (PostgreSQL-Port) ist kein Kundenwunsch, sondern ein Fehler, der beim Prüfen der Kundenfrage auffiel: Unter Windows ist der Datenbank-Port 5432 fest eingebaut, und ein fremder PostgreSQL auf 5432 wird für den eigenen gehalten.
 
@@ -20,7 +20,7 @@ Der dritte Teil (PostgreSQL-Port) ist kein Kundenwunsch, sondern ein Fehler, der
 **Ziele**
 - Teil A: Der Inhaber vergibt einzelnen Mitarbeitenden Einzelrechte aus einer festen Liste. Vorlage „Dienstplanung“ setzt mehrere auf einmal.
 - Teil B: Freigegebene Geräte zeigen eine Stempel-Seite. Mitarbeitende stempeln dort per PIN ein und aus und beginnen/beenden die Pause.
-- Teil B': Pause am laufenden Eintrag mit gestempelten Intervallen, auch im normalen StampWidget, für alle Kunden **[Manuel]**.
+- Teil B': Pause am laufenden Eintrag mit gestempelten Intervallen, im normalen StampWidget und am Terminal; eigener Schalter in den Einstellungen, Standard aus **[Manuel, 2026-11-05]**.
 - Teil C: PostgreSQL-Port unter Windows einstellbar; fremder PostgreSQL wird erkannt statt verwechselt.
 
 **Nicht-Ziele**
@@ -44,12 +44,12 @@ Drei unabhängige Teile, je eigener Branch/PR, in dieser Reihenfolge **[Claude]*
 | Teil | Inhalt | Grobaufwand |
 |---|---|---|
 | C | PostgreSQL-Port Windows | 2–4 Tage |
-| B | Stempel-Terminal + Pausen-Intervalle am laufenden Eintrag | 2–2,5 Wochen |
+| B | Stempel-Terminal + Pausen-Intervalle am laufenden Eintrag (zwei Schalter) | 2–2,5 Wochen |
 | A | Erweiterte Rechte (inkl. Vorarbeit A0) | 2–3 Wochen |
 
-C zuerst, weil klein und ein echter Fehler. B vor A, weil B den Recht „PIN neu vergeben“ aus A nicht braucht (bis A kommt, vergibt nur der Admin PINs) und weil die Pause-Funktion allen Kunden nützt. Jeder Teil ist für sich auslieferbar.
+C zuerst, weil klein und ein echter Fehler. B vor A, weil B das Recht „PIN neu vergeben“ aus A nicht braucht (bis A kommt, vergibt nur der Admin PINs) und weil die Pause-Funktion allen Kunden angeboten werden kann. Jeder Teil ist für sich auslieferbar.
 
-Migrationen ab **074** (Head ist 073), Revision-ID ≤ 32 Zeichen.
+Migrationen ab **076** (Head ist 075 seit 1.22.0), Revision-ID ≤ 32 Zeichen.
 
 ---
 
@@ -83,8 +83,9 @@ Migrationen ab **074** (Head ist 073), Revision-ID ≤ 32 Zeichen.
 
 ### 5.1 Schalter
 - Mandanten-Einstellung `stamp_terminal_enabled`, Standard **aus** [Manuel]. Checkliste der bestehenden Schalter (Muster `shift_planning_enabled`): `admin_settings._ALLOWED_SETTINGS` + `_BOOL_SETTINGS`, Router-Gate mit 404 (`require_…_enabled`), `main.system_info` + Leak-Guard `test_deployment_mode.py`, `systemStore.isStampTerminalEnabled()` (`=== true`), Karte in `Settings.tsx`, E2E `OWNED_SETTINGS` oder `e2e/tests/tenant-settings/` + Negativ-Spec „aus → 404“.
-- Aus = Terminal-Seite und `/api/terminal/*` antworten 404; PIN-Felder im Profil und in der Benutzerverwaltung sind ausgeblendet. **Die Pause-Funktion (5.6) hängt NICHT an diesem Schalter**, siehe dort.
+- Aus = Terminal-Seite und `/api/terminal/*` antworten 404; PIN-Felder im Profil und in der Benutzerverwaltung sind ausgeblendet. **Die Pause-Funktion (5.6) hat einen eigenen Schalter**, siehe dort; beide sind unabhängig kombinierbar.
 - Schalterwechsel schreibt eine Zeile in `security_events` (neu, heute protokolliert `PUT /admin/settings` nichts) **[Claude]**.
+- **Alle Schalter dieses Dokuments** (`stamp_terminal_enabled`, `pause_intervals_enabled`, `extended_permissions_enabled`) stehen auf der Admin-Seite „Einstellungen“ (`Settings.tsx`), jeder als eigene Karte mit kurzer Erklärung **[Manuel, 2026-11-05]**. Der Datenbank-Port (Teil C) ist kein Schalter und bleibt in `praxiszeit.conf` (4.2 Nr. 1).
 
 ### 5.2 Geräte
 - Neue Tabelle `terminal_devices` (`id`, `tenant_id` NOT NULL, `name`, `token_hash`, `created_by` FK users, `created_at`, `last_seen_at`, `revoked_at`, Zähler für Fehlversuche), RLS ENABLE+FORCE + `tenant_isolation` (Muster Migration 071), F-026-Filter, Grant für `praxiszeit_app`, `purge_user` (created_by auf handelnden Admin umhängen).
@@ -95,7 +96,7 @@ Migrationen ab **074** (Head ist 073), Revision-ID ≤ 32 Zeichen.
 - Einrichten/Sperren → `security_events` (`terminal_device_enabled`/`terminal_device_revoked`).
 
 ### 5.3 PIN
-- Neue Spalten an `users`: `pin_hash`, `pin_set_at` (Migration 074 bzw. Folge-Nummer). Hash wie Passwort (`auth_service.hash_password`).
+- Neue Spalten an `users`: `pin_hash`, `pin_set_at` (Migration ab 076). Hash wie Passwort (`auth_service.hash_password`).
 - **Identifikation: erst Namen antippen, dann PIN [Manuel].** PIN 4–6 Ziffern, selbst gewählt oder vom Admin vergeben, muss **nicht** mandantenweit eindeutig sein. Triviale PINs (`0000`, `1234`, Geburtsjahr-artige 19xx/20xx) werden abgelehnt [Claude].
 - Eigene PIN: im Profil „Stempel-PIN festlegen/ändern“, nur nach Passwort-Eingabe (wie 2FA-Einrichtung, F1), damit ein Access-Token allein keine PIN setzen kann [Claude].
 - PIN vergeben: der Admin in der Benutzerverwaltung („Neue Stempel-PIN“), später auch Personen mit dem Recht „PIN neu vergeben“ (Teil A). Die PIN wird einmal angezeigt, danach nie wieder lesbar [Kunde: Einsehen geht nicht, Neu-Vergeben schon]. Jede Vergabe → `security_events` (`terminal_pin_reset`, actor `user:<id>`).
@@ -107,7 +108,7 @@ Migrationen ab **074** (Head ist 073), Revision-ID ≤ 32 Zeichen.
 - Route `/terminal` außerhalb von `ProtectedRoute` und `Layout`, ohne `authStore`, Vollbild, große Tasten.
 - Startbildschirm: Kacheln mit den Namen der aktiven Mitarbeitenden des Mandanten, die eine PIN haben (`GET /api/terminal/people`, nur Anzeigename + ID, sortiert; mit Suche/Buchstabenleiste ab ca. 20 Personen) [Manuel: Namen antippen]. Status (wer ist da) wird auf den Kacheln **nicht** angezeigt [Claude, Datenschutz].
 - Name antippen → Zahlenfeld → `POST /api/terminal/identify` (Geräte-Cookie + Personen-ID + PIN) → Antwort: Vorname/Name, Status (ausgestempelt / eingestempelt seit HH:MM / in Pause seit HH:MM) und ein **kurzlebiges Vorgangs-Token** (z. B. 60 s, nur für diese Person, nur Stempelaktionen) **[Claude]**.
-- Knöpfe je nach Status: „Einstempeln“, „Pause beginnen“, „Pause beenden“, „Ausstempeln“.
+- Knöpfe je nach Status: „Einstempeln“, „Pause beginnen“, „Pause beenden“, „Ausstempeln“. „Pause beginnen“ nur bei eingeschaltetem `pause_intervals_enabled`; sonst wie heute nur Ein/Aus mit Pausenfeld beim Ausstempeln.
 - Anzeige **nur** Name, Status, Uhrzeit der Aktion und Warnungen. Kein Saldo, kein Journal, keine Abwesenheiten [Claude, aus Datenschutz].
 - Nach jeder Aktion und nach ca. 10 s ohne Eingabe zurück zu den Namenskacheln; das Vorgangs-Token verfällt.
 - Warnungen (§ 5 Ruhezeit, Kappung, MiLoG …) werden wie im StampWidget angezeigt (`showArbzgWarnings`-Texte), aber nur für die gerade identifizierte Person.
@@ -124,7 +125,10 @@ Migrationen ab **074** (Head ist 073), Revision-ID ≤ 32 Zeichen.
 - **Gerät im Protokoll:** neue, **nicht gehashte** Spalte `time_entry_audit_logs.terminal_device_id` (nullable FK, `ON DELETE SET NULL`). `_HASHED_FIELDS` in `core/audit_integrity.py` bleibt unverändert (CLAUDE.md: keine neue gehashte Spalte, `verify-integrity`) [Claude].
 
 ### 5.6 Pause am laufenden Eintrag (Teil B')
-- Gilt **für alle Kunden**, unabhängig von beiden Schaltern [Manuel]: neue Knöpfe „Pause beginnen“/„Pause beenden“ auch im StampWidget. **Bewusste Ausnahme vom Anti-Ziel „Standard wie bisher“**: Der Knopf ist neu sichtbar; wer ihn nicht nutzt, stempelt und rechnet exakt wie heute (Pause beim Ausstempeln eintippen bleibt).
+- **Eigener Schalter `pause_intervals_enabled`, Standard aus [Manuel, 2026-11-05]** (ersetzt die Entscheidung vom 02.11. „für alle Kunden“). Unabhängig von `stamp_terminal_enabled`. Schalter-Checkliste wie 5.1 (`_ALLOWED_SETTINGS` + `_BOOL_SETTINGS`, Karte in `Settings.tsx`, `security_events`). Weil das StampWidget aller Mitarbeitenden ihn kennen muss, gehört er wie `break_exception_allowed` in `main.system_info` (Default `false`, nie 500; Leak-Guard `test_deployment_mode.py`) und `systemStore.isPauseIntervalsEnabled()` (`=== true`) [Claude].
+- **Aus (Standard):** keine Pause-Knöpfe im StampWidget und am Terminal; `POST …/pause-start` → 404 (Muster `require_shift_planning_enabled`). Stempeln, Rechnen und § 4 exakt wie heute.
+- **An:** Knöpfe „Pause beginnen“/„Pause beenden“ im StampWidget (und am Terminal, wenn dort an). Pause beim Ausstempeln eintippen bleibt zusätzlich möglich.
+- **Ausschalten mit vorhandenen Daten [Claude]:** Gespeicherte `pause_intervals` bleiben und wirken weiter (Netto, § 4-Abschnittsregel), damit sich abgeschlossene Tage nicht nachträglich ändern. Eine beim Ausschalten **laufende** Pause bleibt beendbar: `pause-end` und Ausstempeln funktionieren unabhängig vom Schalter, damit niemand in der Pause festhängt; nur `pause-start` ist gesperrt. Anzeigen (Journal, Detail) zeigen vorhandene Intervalle unabhängig vom Schalter.
 - **Pausen als Intervalle [Manuel]:** neue Spalte `time_entries.pause_intervals` (JSON-Liste `[{"start": "HH:MM", "end": "HH:MM"|null}]`, `none_as_null=True`, nur als ganzer Wert neu zuweisen wie `work_blocks`); ein Eintrag ohne `end` = laufende Pause (höchstens einer). NULL = keine gestempelten Pausen = heutiges Verhalten.
 - `POST …/pause-start`: nur bei offenem Eintrag von heute ohne laufende Pause; hängt `{start: jetzt}` an (auf Minute). Ankersperre zuerst. Protokollzeile.
 - `POST …/pause-end`: setzt `end = jetzt` am laufenden Intervall und berechnet `break_minutes` neu (s. u.). Protokollzeile.
@@ -139,10 +143,10 @@ Migrationen ab **074** (Head ist 073), Revision-ID ≤ 32 Zeichen.
 - Die Lücke zwischen Blöcken (`uncredited_minutes`) und `break_minutes` bleiben getrennte Größen wie heute.
 
 ### 5.7 Tests
-- Backend: Pausen-Intervalle (Überschneidung mit Lücke/Hülle zählt nicht doppelt, § 4 nur Abschnitte ≥ 15 min, manuelles Ändern setzt NULL, Paritätstest grün); Schalter aus → 404 an allen Terminal-Routen; Gerät gesperrt/fremder Mandant → abgewiesen; PIN falsch → Zähler/Sperre/`security_events`; Terminal-Ein-/Ausstempeln läuft durch dieselben Prüfungen (je ein Test für Ankersperre, Kappung, § 4-Ablehnung bleibt offen, § 5-Warnung, Beschäftigungsfenster); Protokoll mit Gerät; Pause (beginnen/beenden/ausstempeln während Pause/Auto-Close/§ 4 mit gesammelter Pause); Refactoring: komplette bestehende Suite unverändert grün.
+- Backend: Pausen-Schalter (aus → `pause-start` 404, Antworten/Rechnung bitgleich zu heute; ausschalten während laufender Pause → `pause-end` und Ausstempeln gehen; gespeicherte Intervalle wirken weiter); Pausen-Intervalle (Überschneidung mit Lücke/Hülle zählt nicht doppelt, § 4 nur Abschnitte ≥ 15 min, manuelles Ändern setzt NULL, Paritätstest grün); Schalter aus → 404 an allen Terminal-Routen; Gerät gesperrt/fremder Mandant → abgewiesen; PIN falsch → Zähler/Sperre/`security_events`; Terminal-Ein-/Ausstempeln läuft durch dieselben Prüfungen (je ein Test für Ankersperre, Kappung, § 4-Ablehnung bleibt offen, § 5-Warnung, Beschäftigungsfenster); Protokoll mit Gerät; Pause (beginnen/beenden/ausstempeln während Pause/Auto-Close/§ 4 mit gesammelter Pause); Refactoring: komplette bestehende Suite unverändert grün.
 - Postgres: Ankersperre-Reihenfolge (`test_write_path_locks.py`-Muster), RLS für `terminal_devices` (`test_tenant_rls.py`), Cross-Tenant (`test_cross_tenant_api.py`).
-- Frontend: Terminal-Seite (Rücksprung nach Zeitablauf, nur Name/Status), StampWidget-Pause, `runningCreditedMinutes`-Zwilling.
-- E2E: Gerät einrichten → PIN vergeben → am Terminal ein/Pause/aus → Eintrag im Journal; Schalter aus → 404.
+- Frontend: Terminal-Seite (Rücksprung nach Zeitablauf, nur Name/Status), StampWidget-Pause (Knöpfe nur bei Schalter an), `runningCreditedMinutes`-Zwilling.
+- E2E: Gerät einrichten → PIN vergeben → am Terminal ein/Pause/aus → Eintrag im Journal; Schalter aus → 404. Beide Schalter sind mandantenweit → Specs nach `e2e/tests/tenant-settings/` (Projekt mit `workers: 1`), Wert im `finally` zurückschreiben.
 
 ---
 
@@ -234,8 +238,9 @@ Ohne `view_health_data` sieht eine delegierte Person „abwesend“ statt Typ/Gr
 
 ## 8. Rückfragen und Entscheidungen
 
-Alle geklärt am 2026-11-02 [Manuel]:
+Geklärt am 2026-11-02 und 2026-11-05 [Manuel]:
 1. Terminal-Identifikation: Namen antippen, dann PIN (5.3/5.4).
 2. Gestempelte Pausen als Intervalle, § 4 nur Abschnitte ≥ 15 min, kein Doppelabzug (5.6).
 3. `create_employees` mit vollem Formular (6.3).
-4. Pause-Knopf für alle Kunden (5.6).
+4. ~~Pause-Knopf für alle Kunden~~ → ersetzt am 2026-11-05: Pausen-Intervalle über eigenen Schalter `pause_intervals_enabled` in den Einstellungen, Standard aus (5.6).
+5. Alle Schalter (Terminal, Pausen, Rechte) auf der Admin-Seite „Einstellungen“ (2026-11-05). Spec damit freigegeben; Umsetzung in der Reihenfolge C → B → A.
