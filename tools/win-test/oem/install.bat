@@ -426,5 +426,19 @@ set "SP="
 findstr /C:"STDERR_LEAK" "%TEMP%\pz-sp-ohne.txt" >nul
 if errorlevel 1 ( >> "%RES%" echo STDERR_LEAK_OHNE_2NUL=0 ) else ( >> "%RES%" echo STDERR_LEAK_OHNE_2NUL=1 )
 >> "%RES%" echo STDERR_PROBE_OHNE_2NUL_!SP!
+REM Korrigierte Form (setup.bat/uninstall.bat seit Fix-Runde 1): "2>nul" ohne
+REM Caret INNERHALB des aeusseren Anfuehrungszeichenpaars. Erwartet: kein Leck,
+REM ARGS ohne "2>nul".
+set "SP="
+(for /f "usebackq delims=" %%p in (`""%PROBE_PY%" "C:\pz-harness\stderr-probe.py" 2>nul"`) do set "SP=%%p") > "%TEMP%\pz-sp-neu.txt" 2>&1
+findstr /C:"STDERR_LEAK" "%TEMP%\pz-sp-neu.txt" >nul
+if errorlevel 1 ( >> "%RES%" echo STDERR_LEAK_NEUE_FORM=0 ) else ( >> "%RES%" echo STDERR_LEAK_NEUE_FORM=1 )
+>> "%RES%" echo STDERR_PROBE_NEUE_FORM_!SP!
+REM Genau die Portzeile aus uninstall.bat gegen die echte Installation.
+set "DIR=C:\PraxisZeit"
+set "UDB="
+for /f "usebackq delims=" %%p in (`""%DIR%\bin\python\python.exe" "%DIR%\praxiszeit-server.py" print-db-port 2>nul"`) do set "UDB=%%p"
+>> "%RES%" echo DB_PORT_UNINSTALL_FORM=!UDB!
+del /f /q "%TEMP%\pz-sp-neu.txt" 2>nul
 del /f /q "%TEMP%\pz-sp-mit.txt" "%TEMP%\pz-sp-ohne.txt" 2>nul
 goto :eof
