@@ -22,6 +22,7 @@ import argparse
 import logging
 import os
 import platform
+import re
 import secrets
 import shlex
 import shutil
@@ -740,6 +741,68 @@ def _dump_pg_startup_log() -> bool:
             logger.error(f"PostgreSQL log ({name}):\n{log_file.read_text(errors='replace')[-2000:]}")
             return True
     return False
+
+
+PG_CONF_MANAGED_HEADER = "# PraxisZeit configuration"
+
+
+def sync_managed_pg_port(conf_path: Path, port: int) -> bool:
+    """Set ``port`` in the PraxisZeit-managed block of postgresql.conf.
+
+    Pure file edit; returns True only if the file content changed. Lines before
+    the managed header (initdb's ``#port = 5432``) are never touched. Line
+    endings and encoding are preserved (bytes round trip).
+    """
+    raw = conf_path.read_bytes()
+    text = raw.decode("utf-8", errors="surrogateescape")
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(nl)
+    new_line = f"port = {port}"
+    header_idx = next(
+        (i for i, ln in enumerate(lines) if ln.strip() == PG_CONF_MANAGED_HEADER), None
+    )
+    if header_idx is None:
+        if port == 5432:
+            return False
+        tail = "" if (not text or text.endswith("\n")) else nl
+        new_text = f"{text}{tail}{nl}{PG_CONF_MANAGED_HEADER}{nl}{new_line}{nl}"
+    else:
+        port_re = re.compile(r"^\s*port\s*=")
+        port_idx = next(
+            (i for i in range(header_idx + 1, len(lines)) if port_re.match(lines[i])), None
+        )
+        if port_idx is None:
+            lines.insert(header_idx + 1, new_line)
+        elif lines[port_idx] == new_line:
+            return False
+        else:
+            lines[port_idx] = new_line
+        new_text = nl.join(lines)
+    if new_text == text:
+        return False
+    conf_path.write_bytes(new_text.encode("utf-8", errors="surrogateescape"))
+    return True
+
+
+def apply_pg_port() -> bool:
+    """Windows: bring an existing cluster's postgresql.conf in line with pg_port().
+
+    A running cluster keeps its old port until restarted, so the service is
+    stopped unconditionally when the port changed (pg_stop() would only act on
+    a cluster that is "own" on the NEW port, i.e. never here).
+    """
+    if not IS_WINDOWS:
+        return False
+    conf = PG_DATA / "postgresql.conf"
+    if not conf.exists():
+        return False
+    port = pg_port()
+    if not sync_managed_pg_port(conf, port):
+        return False
+    logger.info(f"PostgreSQL-Port in postgresql.conf auf {port} gesetzt")
+    if _win_service_exists(PG_SERVICE_NAME):
+        subprocess.run(["net", "stop", PG_SERVICE_NAME], capture_output=True, text=True)
+    return True
 
 
 def pg_start():
@@ -2266,6 +2329,7 @@ def cmd_start(args):
         pg_init(config, su_password)
 
     # 2. Start PostgreSQL
+    apply_pg_port()
     pg_start()
 
     # 3. Setup database if needed (first run or missing credentials)
@@ -2439,6 +2503,11 @@ def cmd_init(args):
 def cmd_print_db_port(args):
     """Nur den Datenbank-Port ausgeben (fuer .bat-Skripte); sonst nichts auf stdout."""
     print(pg_port())
+
+
+def cmd_sync_db_port(args):
+    """postgresql.conf an den konfigurierten Port angleichen; nichts auf stdout."""
+    apply_pg_port()
 
 
 def cmd_harden_permissions(args):
@@ -3073,6 +3142,10 @@ def main():
         "print-db-port",
         help="Datenbank-Port ausgeben (einzige Zeile auf stdout)",
     ).set_defaults(func=cmd_print_db_port)
+    subparsers.add_parser(
+        "sync-db-port",
+        help="postgresql.conf an [database] port angleichen (Windows)",
+    ).set_defaults(func=cmd_sync_db_port)
     subparsers.add_parser(
         "harden-permissions",
         help="Windows: Zugriffsrechte des Installationsverzeichnisses einschraenken",

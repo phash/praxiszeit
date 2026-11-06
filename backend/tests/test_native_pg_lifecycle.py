@@ -673,6 +673,32 @@ class TestCmdStartBranching:
         assert (data / srv.PG_CLUSTER_MARKER).is_file(), "marker must be backfilled"
 
 
+    def test_cmd_start_branching_unaffected(self, srv, tmp_path, monkeypatch):
+        """Windows + default config: the port sync never stops the PG service."""
+        self._make_paths(
+            srv, tmp_path, monkeypatch, populate=True, marker=True, creds=True,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        (srv.PG_DATA / "postgresql.conf").write_text(
+            "\n# PraxisZeit configuration\nport = 5432\n", encoding="utf-8"
+        )
+        runs = []
+        import types
+
+        def _run(argv, *a, **kw):
+            runs.append([str(x) for x in argv])
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(srv.subprocess, "run", _run)
+
+        with pytest.raises(RuntimeError, match="STOP_BEFORE_UVICORN"):
+            srv.cmd_start(None)
+
+        assert calls["pg_start"] == 1
+        assert not [r for r in runs if r[:2] == ["net", "stop"]]
+
+
 # --- #425: Klartext-Passwort in der Konfiguration entwerten -----------------
 
 # Der Schluessel wird aus Teilen gebaut, damit im Quelltext nie die

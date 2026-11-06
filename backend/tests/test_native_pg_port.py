@@ -320,3 +320,117 @@ class TestClusterOwnership:
         monkeypatch.setattr(srv, "IS_WINDOWS", False)
         self._fake(srv, monkeypatch, isready=2)
         assert srv.pg_cluster_state() == "down"
+
+
+_INITDB_HEAD = "#port = 5432\t\t\t\t# (change requires restart)\n#max_connections = 100\n"
+_MANAGED = (
+    "\n# PraxisZeit configuration\nlisten_addresses = 'localhost'\n"
+    "port = 5432\nmax_connections = 50\n"
+)
+
+
+class TestManagedConfPortSync:
+    @staticmethod
+    def _conf(tmp_path, text, crlf=False):
+        p = tmp_path / "postgresql.conf"
+        data = text.replace("\n", "\r\n") if crlf else text
+        p.write_bytes(data.encode("utf-8"))
+        return p
+
+    def test_sync_is_noop_for_default_conf(self, srv, tmp_path):
+        p = self._conf(tmp_path, _INITDB_HEAD + _MANAGED)
+        before = p.read_bytes()
+        assert srv.sync_managed_pg_port(p, 5432) is False
+        assert p.read_bytes() == before
+
+    def test_sync_rewrites_only_managed_line(self, srv, tmp_path):
+        p = self._conf(tmp_path, _INITDB_HEAD + _MANAGED)
+        assert srv.sync_managed_pg_port(p, 5433) is True
+        assert p.read_text(encoding="utf-8") == (_INITDB_HEAD + _MANAGED).replace(
+            "\nport = 5432\n", "\nport = 5433\n"
+        )
+
+    def test_sync_is_idempotent(self, srv, tmp_path):
+        p = self._conf(tmp_path, _INITDB_HEAD + _MANAGED)
+        assert srv.sync_managed_pg_port(p, 5433) is True
+        after = p.read_bytes()
+        assert srv.sync_managed_pg_port(p, 5433) is False
+        assert p.read_bytes() == after
+
+    def test_sync_keeps_crlf(self, srv, tmp_path):
+        p = self._conf(tmp_path, _INITDB_HEAD + _MANAGED, crlf=True)
+        assert srv.sync_managed_pg_port(p, 5433) is True
+        data = p.read_bytes()
+        assert b"port = 5433\r\n" in data
+        assert data.count(b"\n") == data.count(b"\r\n")
+
+    def test_sync_inserts_line_when_header_has_no_port(self, srv, tmp_path):
+        p = self._conf(tmp_path, _INITDB_HEAD + "\n# PraxisZeit configuration\nfoo = 1\n")
+        assert srv.sync_managed_pg_port(p, 5433) is True
+        assert "# PraxisZeit configuration\nport = 5433\nfoo = 1\n" in p.read_text(
+            encoding="utf-8"
+        )
+
+    def test_sync_appends_block_when_header_missing(self, srv, tmp_path):
+        p = self._conf(tmp_path, _INITDB_HEAD)
+        assert srv.sync_managed_pg_port(p, 5433) is True
+        assert p.read_text(encoding="utf-8") == (
+            _INITDB_HEAD + "\n# PraxisZeit configuration\nport = 5433\n"
+        )
+        q = tmp_path / "other.conf"
+        q.write_bytes(_INITDB_HEAD.encode())
+        assert srv.sync_managed_pg_port(q, 5432) is False
+        assert q.read_bytes() == _INITDB_HEAD.encode()
+
+    def test_changed_port_stops_running_service_before_start(self, srv, tmp_path, monkeypatch):
+        import types
+        pg_data = tmp_path / "db"
+        pg_data.mkdir()
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        (pg_data / "postgresql.conf").write_bytes((_INITDB_HEAD + _MANAGED).encode())
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "PG_DATA", pg_data)
+        monkeypatch.setattr(srv, "LOG_DIR", log_dir)
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        monkeypatch.setattr(srv, "_win_grant_networkservice", lambda *a, **kw: None)
+        monkeypatch.setattr(srv, "_win_service_exists", lambda name: True)
+        monkeypatch.setattr(srv.time, "sleep", lambda s: None)
+        calls = []
+
+        def _run(argv, *a, **kw):
+            argv = [str(x) for x in argv]
+            calls.append(argv)
+            rc = 2 if Path(argv[0]).name.startswith("pg_isready") else 0
+            return types.SimpleNamespace(returncode=rc, stdout="", stderr="")
+
+        monkeypatch.setattr(srv.subprocess, "run", _run)
+        assert srv.apply_pg_port() is True
+        with pytest.raises(SystemExit):
+            srv.pg_start()  # nothing ever answers -> gives up after the net start
+        stop = calls.index(["net", "stop", "PraxisZeit-PostgreSQL"])
+        start = calls.index(["net", "start", "PraxisZeit-PostgreSQL"])
+        assert stop < start
+        assert "port = 5433" in (pg_data / "postgresql.conf").read_text(encoding="utf-8")
+
+    def test_default_port_does_not_stop_service(self, srv, tmp_path, monkeypatch):
+        pg_data = tmp_path / "db"
+        pg_data.mkdir()
+        (pg_data / "postgresql.conf").write_bytes((_INITDB_HEAD + _MANAGED).encode())
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "PG_DATA", pg_data)
+        monkeypatch.setattr(srv, "load_config", lambda: {})
+        monkeypatch.setattr(srv, "_win_service_exists", lambda name: True)
+        calls = []
+        monkeypatch.setattr(srv.subprocess, "run", lambda argv, *a, **kw: calls.append(argv))
+        assert srv.apply_pg_port() is False
+        assert calls == []
+
+    def test_unix_is_noop(self, srv, tmp_path, monkeypatch):
+        pg_data = tmp_path / "db"
+        pg_data.mkdir()
+        (pg_data / "postgresql.conf").write_bytes((_INITDB_HEAD + _MANAGED).encode())
+        monkeypatch.setattr(srv, "IS_WINDOWS", False)
+        monkeypatch.setattr(srv, "PG_DATA", pg_data)
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        assert srv.apply_pg_port() is False
