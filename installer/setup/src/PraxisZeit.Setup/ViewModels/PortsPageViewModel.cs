@@ -1,5 +1,6 @@
 using System.Net.NetworkInformation;
 using CommunityToolkit.Mvvm.ComponentModel;
+using PraxisZeit.Setup.Core.Services;
 
 namespace PraxisZeit.Setup.ViewModels;
 
@@ -26,6 +27,13 @@ public sealed partial class PortsPageViewModel : WizardPageBase
     /// True = User hat einen HTTP-Redirect-Port gesetzt (>0). Default ja —
     /// wenn der User ihn auf 0 setzt, wird kein Redirect-Listener gestartet.
     /// </summary>
+    /// <summary>PostgreSQL-Port (nur Windows). Default 5432.</summary>
+    [ObservableProperty]
+    public partial int DbPort { get; set; } = PraxisZeitConfigWriter.DefaultDbPort;
+
+    /// <summary>Die Karte "Datenbank-Port" gibt es nur unter Windows.</summary>
+    public bool IsDbPortVisible => OperatingSystem.IsWindows();
+
     [ObservableProperty]
     public partial bool EnableHttpRedirect { get; set; } = true;
 
@@ -45,6 +53,7 @@ public sealed partial class PortsPageViewModel : WizardPageBase
 
     partial void OnHttpsPortChanged(int value) => Validate();
     partial void OnHttpRedirectPortChanged(int value) => Validate();
+    partial void OnDbPortChanged(int value) => Validate();
     partial void OnEnableHttpRedirectChanged(bool value) => Validate();
 
     /// <summary>
@@ -70,6 +79,16 @@ public sealed partial class PortsPageViewModel : WizardPageBase
         else if (EnableHttpRedirect && HttpRedirectPort == HttpsPort)
         {
             ValidationMessage = "HTTPS-Port und HTTP-Redirect-Port duerfen nicht identisch sein.";
+            CanGoNext = false;
+        }
+        else if (IsDbPortVisible && DbPort is < 1024 or > 65535)
+        {
+            ValidationMessage = PraxisZeitConfigWriter.DbPortRangeMessage;
+            CanGoNext = false;
+        }
+        else if (IsDbPortVisible && (DbPort == HttpsPort || (EnableHttpRedirect && DbPort == HttpRedirectPort)))
+        {
+            ValidationMessage = PraxisZeitConfigWriter.DbPortConflictMessage;
             CanGoNext = false;
         }
         else
@@ -100,21 +119,30 @@ public sealed partial class PortsPageViewModel : WizardPageBase
                 .GetActiveTcpListeners();
             var bound = listeners.Select(l => l.Port).ToHashSet();
 
-            var conflicts = new List<string>();
-            if (bound.Contains(HttpsPort))
+            var labelled = new Dictionary<string, int>
             {
-                conflicts.Add($"HTTPS-Port {HttpsPort}");
-            }
-            if (EnableHttpRedirect && bound.Contains(HttpRedirectPort))
+                [$"HTTPS-Port {HttpsPort}"] = HttpsPort,
+            };
+            if (EnableHttpRedirect)
             {
-                conflicts.Add($"HTTP-Redirect-Port {HttpRedirectPort}");
+                labelled[$"HTTP-Redirect-Port {HttpRedirectPort}"] = HttpRedirectPort;
             }
+            var conflicts = PortConflictChecker.Conflicts(labelled, bound);
 
             PortConflictWarning = conflicts.Count == 0
                 ? null
                 : $"Achtung: {string.Join(" und ", conflicts)} ist bereits belegt. "
                   + "Beim Service-Start kann es zu Bind-Fehlern kommen — prüfen Sie laufende "
                   + "Webserver (IIS, nginx, Apache) oder wählen Sie andere Ports.";
+
+            if (IsDbPortVisible && bound.Contains(DbPort))
+            {
+                var dbWarning = $"Achtung: Datenbank-Port {DbPort} ist bereits belegt – vermutlich läuft hier "
+                                + "schon ein anderer PostgreSQL. Wählen Sie einen freien Port, z. B. 5433.";
+                PortConflictWarning = PortConflictWarning is null
+                    ? dbWarning
+                    : PortConflictWarning + "\n" + dbWarning;
+            }
         }
         catch
         {

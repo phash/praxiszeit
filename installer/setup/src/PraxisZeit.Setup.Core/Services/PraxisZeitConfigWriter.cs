@@ -31,6 +31,10 @@ public sealed record PraxisZeitConfigValues
     /// abzuschalten (manche Kunden wollen keine Port-80-Bindung).</summary>
     public int HttpRedirectPort { get; init; } = 80;
 
+    /// <summary>PostgreSQL-Port (nur Windows wirksam). Default 5432; wird nur
+    /// bei abweichendem Wert als <c>[database] port</c> geschrieben.</summary>
+    public int DbPort { get; init; } = 5432;
+
     /// <summary>JWT-Text der Lizenz (komplette EdDSA-signierte Token-Zeile).
     /// Null = Demo-Modus aktiv (siehe <see cref="DemoDays"/>).</summary>
     public string? LicenseToken { get; init; }
@@ -70,6 +74,10 @@ public static class PraxisZeitConfigWriter
     };
 
     public const int MinPasswordLength = 12;
+
+    public const int DefaultDbPort = 5432;
+    public const string DbPortRangeMessage = "Datenbank-Port muss zwischen 1024 und 65535 liegen.";
+    public const string DbPortConflictMessage = "Datenbank-Port darf nicht gleich dem HTTPS- oder HTTP-Port sein.";
 
     /// <summary>
     /// Validiert die User-Eingaben gegen die gleichen Regeln, die das
@@ -114,6 +122,14 @@ public static class PraxisZeitConfigWriter
         {
             return "HTTP-Redirect-Port und HTTPS-Port duerfen nicht identisch sein.";
         }
+        if (values.DbPort is < 1024 or > 65535)
+        {
+            return DbPortRangeMessage;
+        }
+        if (values.DbPort == values.HttpsPort || values.DbPort == values.HttpRedirectPort)
+        {
+            return DbPortConflictMessage;
+        }
         return null;
     }
 
@@ -141,6 +157,10 @@ public static class PraxisZeitConfigWriter
 
         sb.AppendLine("[database]");
         sb.AppendLine("data_dir = \"data/db\"");
+        if (values.DbPort != DefaultDbPort)
+        {
+            sb.AppendLine($"port = {values.DbPort}");
+        }
         sb.AppendLine("superuser = \"praxiszeit\"");
         sb.AppendLine("app_user = \"praxiszeit_app\"");
         sb.AppendLine();

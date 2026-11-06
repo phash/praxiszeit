@@ -63,7 +63,7 @@ PG Windows-Installer direkt: `https://get.enterprisedb.com/postgresql/postgresql
 Ab 1.4.0-alpha.1 (`7f10a4a`) gibt es zusätzlich einen GUI-Installer unter `installer/setup/`:
 ```bash
 cd installer/setup
-dotnet test                                    # 114 Tests (xunit + FluentAssertions)
+dotnet test                                    # 132 Tests (xunit + FluentAssertions)
 dotnet build                                   # baut alle 3 Projekte (.NET 10)
 dotnet publish src/PraxisZeit.Setup \
     -c Release -r win-x64 --self-contained \
