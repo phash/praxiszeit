@@ -30,7 +30,7 @@ import {
   CreditCard,
   Play,
   Timer,
-  Coffee,
+  Heart,
   Rocket,
   Database,
   CalendarClock,
@@ -416,13 +416,13 @@ export default function Layout() {
             )}
           </p>
           <a
-            href="https://buymeacoffee.com/phash"
+            href="https://paypal.me/mroedig"
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-1 flex items-center justify-center gap-1.5 text-xs text-gray-400 hover:text-primary transition-colors"
+            className="mt-1 flex items-center justify-center gap-1.5 text-xs text-center text-gray-400 hover:text-primary transition-colors"
           >
-            <Coffee size={13} />
-            Buy me a coffee
+            <Heart size={13} className="shrink-0" aria-hidden="true" />
+            Unterstützen Sie die Entwicklung mit einer Spende
           </a>
         </div>
       </aside>
