@@ -812,6 +812,17 @@ function Step-StartService {
     Write-Log 'Starte PraxisZeit-Service...'
     if ($DryRun) { Start-Sleep -Seconds 1; Set-StepStatus 'start' 'ok'; return $true }
     Invoke-InstallDirAcl
+    # Exit-Code 78 = Konfigurationsfehler (z.B. ungueltiger Datenbank-Port):
+    # NSSM beendet den Dienst dann, statt ihn endlos neu zu starten. Idempotent,
+    # auch fuer Installationen, die vor dieser Version angelegt wurden.
+    $nssm = Join-Path $InstallDir 'nssm.exe'
+    if (Test-Path $nssm) {
+        try {
+            & $nssm set PraxisZeit AppExit 78 Exit 2>&1 | Out-Null
+        } catch {
+            Write-Log "WARNUNG: nssm set AppExit 78 Exit fehlgeschlagen: $_"
+        }
+    }
     try {
         Start-Service -Name 'PraxisZeit' -ErrorAction Stop
         $svc = Get-Service -Name 'PraxisZeit'

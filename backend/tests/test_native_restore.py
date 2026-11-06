@@ -754,3 +754,21 @@ def test_restore_bat_revisionspruefung_ohne_migrationen_lehnt_ab(tmp_path):
     result = _run_bat_revision_check(tmp_path, ["073_work_blocks"], empty)
     assert result.returncode != 0
     assert "Traceback" not in result.stderr
+
+
+# --- Windows: Datenbank-Port (Teil C) ----------------------------------------
+
+def test_restore_bat_reads_db_port_from_server_script():
+    text = _bat_text()
+    assert "print-db-port" in text
+    assert 'SET "DB_PORT=' in text
+    args = next(line for line in _bat_lines() if line.startswith('SET "PSQL_ARGS='))
+    assert "-h localhost" in args and "-p %DB_PORT%" in args and "5432" not in args, args
+
+
+def test_restore_bat_syncs_port_before_cluster_start():
+    lines = _bat_lines()
+    sync = next(i for i, line in enumerate(lines) if "sync-db-port" in line and '"%PYTHON%"' in line)
+    start = next(i for i, line in enumerate(lines)
+                 if line.startswith('"%PG_CTL%"') and " start" in line)
+    assert sync < start

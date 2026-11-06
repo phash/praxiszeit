@@ -90,6 +90,14 @@ if defined SYSTEM_PG_BASE (
 )
 :pg_detect_done
 
+REM Datenbank-Port aus config\praxiszeit.conf, solange Python schon da ist,
+REM sonst 5432. Vor dem Block gesetzt, weil DB_PORT im Block sonst beim
+REM Parsen expandiert wird.
+SET "DB_PORT=5432"
+if exist "%PYTHON%" if exist "%DIR%praxiszeit-server.py" (
+    for /f "usebackq delims=" %%p in (`"%PYTHON%" "%DIR%praxiszeit-server.py" print-db-port 2^>nul`) do SET "DB_PORT=%%p"
+)
+
 if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
     echo PostgreSQL bereits installiert, ueberspringe...
 ) else if exist "%PG_INSTALLER%" (
@@ -113,6 +121,8 @@ if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
     REM ist idempotent und systemweit.
     REM Hinweis: keine Klammern in diesen REM-Zeilen - unbalancierte Klammern in
     REM einem ()-Block beenden den Block vorzeitig.
+    REM Der Port gilt nur fuer den EDB-Installer. Dessen Dienst wird gleich danach
+    REM entfernt, die echte Port-Behandlung passiert beim Dienststart.
     for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "-join ((48..57)+(65..90)+(97..122)|Get-Random -Count 32|ForEach-Object {[char]$_})"`) do (
         "%PG_INSTALLER%" ^
             --mode unattended ^
@@ -120,7 +130,7 @@ if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (
             --prefix "%PG_INSTALL_DIR%" ^
             --datadir "%PG_DATA_DIR%" ^
             --superpassword "%%P" ^
-            --serverport 5432 ^
+            --serverport %DB_PORT% ^
             --disable-components stackbuilder,pgAdmin ^
             --servicename "PraxisZeit-PostgreSQL" ^
             --install_runtimes 1

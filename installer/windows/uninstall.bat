@@ -19,6 +19,12 @@ SET "PG_CTL=%DIR%\bin\postgresql\bin\pg_ctl.exe"
 SET "PG_DATA=%DIR%\data\db"
 SET "NSSM=%DIR%\nssm.exe"
 SET "BACKUP_DIR=%USERPROFILE%\Desktop"
+REM Datenbank-Port aus config\praxiszeit.conf, Standard 5432. Scheitert Python,
+REM bleibt es bei 5432 - die Deinstallation darf daran nicht abbrechen.
+SET "DB_PORT=5432"
+if exist "%DIR%\bin\python\python.exe" if exist "%DIR%\praxiszeit-server.py" (
+    for /f "usebackq delims=" %%p in (`"%DIR%\bin\python\python.exe" "%DIR%\praxiszeit-server.py" print-db-port 2^>nul`) do SET "DB_PORT=%%p"
+)
 
 REM --- Administratorrechte: bei Bedarf selbst elevieren ---
 REM Apps & Features startet die UninstallString u.U. OHNE Elevation; wir starten
@@ -75,7 +81,7 @@ SET "BACKUP_FILE=%BACKUP_DIR%\praxiszeit-backup-%date:~6,4%%date:~3,2%%date:~0,2
 REM -w PFLICHT: ohne haengt pg_dump headless an der Passwort-Abfrage (stderr ist
 REM unterdrueckt). Der PraxisZeit-Cluster hat KEINEN postgres-Superuser -> der
 REM frueher Fallback haette nur gehangen, daher entfernt.
-"%PG_DUMP%" -w -U praxiszeit -d praxiszeit -f "%BACKUP_FILE%" 2>nul
+"%PG_DUMP%" -w -h localhost -p %DB_PORT% -U praxiszeit -d praxiszeit -f "%BACKUP_FILE%" 2>nul
 
 if exist "%BACKUP_FILE%" goto :backup_ok
 

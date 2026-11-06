@@ -434,3 +434,31 @@ class TestManagedConfPortSync:
         monkeypatch.setattr(srv, "PG_DATA", pg_data)
         monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
         assert srv.apply_pg_port() is False
+
+
+_WIN = Path(__file__).resolve().parents[2] / "installer" / "windows"
+
+
+def _win_text(name: str) -> str:
+    raw = (_WIN / name).read_bytes()
+    assert b"\n" not in raw.replace(b"\r\n", b""), f"{name} braucht CRLF"
+    return raw.decode("utf-8")
+
+
+class TestWindowsScripts:
+    def test_uninstall_dump_uses_db_port(self):
+        text = _win_text("uninstall.bat")
+        dump = next(line for line in text.split("\r\n") if line.startswith('"%PG_DUMP%"'))
+        assert "-p %DB_PORT%" in dump and "-h localhost" in dump, dump
+        assert 'SET "DB_PORT=5432"' in text  # fallback if Python fails
+
+    def test_install_service_sets_appexit_78(self):
+        assert "AppExit 78 Exit" in _win_text("install-service.bat")
+
+    def test_update_wizard_sets_appexit_78(self):
+        assert "AppExit 78 Exit" in _win_text("update-wizard.ps1")
+
+    def test_setup_bat_serverport_not_hardcoded(self):
+        text = _win_text("setup.bat")
+        assert "--serverport 5432" not in text
+        assert "--serverport %DB_PORT%" in text
