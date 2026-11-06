@@ -302,18 +302,61 @@ def _check_pg_launchable(returncode: int, exe: str) -> None:
     raise PgRuntimeMissingError(msg)
 
 
-def pg_is_running() -> bool:
-    """Check whether *our* bundled PostgreSQL cluster is accepting connections.
+def _foreign_pg_message(port: int) -> str:
+    """Nutzertext, wenn ein fremdes PostgreSQL unseren Port belegt (eine Quelle)."""
+    return (
+        f"Port {port} ist von einem anderen PostgreSQL belegt. In config\\praxiszeit.conf "
+        "unter [database] einen freien Port eintragen (z. B. 5433) und den Dienst neu starten."
+    )
+
+
+def _pid_file_port() -> str | None:
+    """Port aus Zeile 4 von ``PG_DATA/postmaster.pid``; None, wenn nicht lesbar."""
+    try:
+        lines = (PG_DATA / "postmaster.pid").read_text(
+            encoding="utf-8", errors="replace"
+        ).splitlines()
+    except OSError:
+        return None
+    if len(lines) < 4:
+        return None
+    return lines[3].strip()
+
+
+def _win_own_cluster_running() -> bool:
+    """Windows: laeuft UNSER Cluster (aus PG_DATA) auf UNSEREM Port?
+
+    ``pg_ctl status -D`` statt ``os.kill(pid, 0)`` (unter Windows kein
+    Lebenszeichen-Test). Zusaetzlich muss der Port im ``postmaster.pid`` zum
+    konfigurierten passen — sonst antwortet auf unserem Port ein anderer Server.
+    """
+    try:
+        result = subprocess.run(
+            [str(pg_cmd("pg_ctl")), "status", "-D", str(PG_DATA)],
+            capture_output=True, timeout=10, env=pg_env(),
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+    if result.returncode != 0:
+        return False
+    return _pid_file_port() == str(pg_port())
+
+
+def pg_cluster_state() -> str:
+    """``"own"``, ``"foreign"`` oder ``"down"`` fuer den PraxisZeit-Port.
 
     Unix: probe the bundled unix-socket directory (DATA_DIR/run), NEVER TCP
     localhost:5432. A foreign system PostgreSQL already listening on :5432 must
     not be mistaken for our cluster (#174) — otherwise pg_start() returns early
     ("already running") and our own socket-only cluster is never started, and
     pg_setup_database then runs psql against the wrong/absent server and crashes
-    before .db-credentials is written → permanent crash-loop.
+    before .db-credentials is written → permanent crash-loop. The socket dir is
+    already proof of ownership, so the state is only ``"own"`` or ``"down"``.
 
     Windows has no unix sockets; there the bundled cluster runs as its own
-    NetworkService TCP service on localhost:5432, so the TCP probe is correct.
+    NetworkService TCP service on localhost:pg_port(). Something answering
+    there is only ``"own"`` if ``pg_ctl status -D PG_DATA`` succeeds and
+    ``postmaster.pid`` names our port; otherwise it is ``"foreign"``.
     """
     if IS_WINDOWS:
         host = "localhost"
@@ -324,9 +367,20 @@ def pg_is_running() -> bool:
             [str(pg_cmd("pg_isready")), "-h", host, "-p", str(pg_port())],
             capture_output=True, timeout=5, env=pg_env(),
         )
-        return result.returncode == 0
+        answers = result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
+        answers = False
+    if not answers:
+        return "down"
+    if not IS_WINDOWS:
+        return "own"
+    return "own" if _win_own_cluster_running() else "foreign"
+
+
+def pg_is_running() -> bool:
+    """Check whether *our* bundled PostgreSQL cluster is accepting connections
+    (see :func:`pg_cluster_state`)."""
+    return pg_cluster_state() == "own"
 
 
 def _database_url(user: str, password: str, db: str) -> str:
@@ -698,9 +752,12 @@ def pg_start():
     Unix: started directly via ``pg_ctl start`` (the systemd unit already runs
     PraxisZeit under an unprivileged account, so the child process is fine).
     """
-    if pg_is_running():
+    state = pg_cluster_state()
+    if state == "own":
         logger.info("PostgreSQL is already running")
         return
+    if state == "foreign":
+        raise ForeignPostgresError(_foreign_pg_message(pg_port()))
 
     logger.info("Starting PostgreSQL...")
 
@@ -725,9 +782,12 @@ def pg_start():
         # 60s statt 30s: auf manchen Windows-Maschinen ist der PG-Start langsam
         # (AV/ASLR, "could not reserve shared memory region"-Retries).
         for i in range(60):
-            if pg_is_running():
+            state = pg_cluster_state()
+            if state == "own":
                 logger.info("PostgreSQL started successfully (Windows service)")
                 return
+            if state == "foreign":
+                raise ForeignPostgresError(_foreign_pg_message(pg_port()))
             time.sleep(1)
         logger.error("PostgreSQL service failed to start within 60 seconds")
         if not _dump_pg_startup_log():
@@ -764,8 +824,8 @@ def pg_start():
 
 
 def pg_stop():
-    """Stop PostgreSQL gracefully."""
-    if not pg_is_running():
+    """Stop PostgreSQL gracefully — only our own cluster, never a foreign one."""
+    if pg_cluster_state() != "own":
         logger.info("PostgreSQL is not running")
         return
 
@@ -2079,6 +2139,31 @@ def _restore_pending_major_upgrade():
 
 # --- Main Commands ---
 
+def _watchdog_foreign_exit(message: str) -> None:
+    """Fremder Server auf unserem Port: sauber beenden, ohne Neustart-Zyklus."""
+    logger.error(message)
+    uvicorn_stop()
+    _remove_pid()
+    sys.exit(EXIT_CONFIG_ERROR)
+
+
+def _watchdog_check_pg() -> None:
+    """PostgreSQL-Pruefung der Watchdog-Schleife in cmd_start.
+
+    ``"down"`` → unseren Cluster neu starten; ``"foreign"`` → beenden (Exit 78),
+    nie gegen einen fremden Server weiterlaufen oder ihn stoppen.
+    """
+    state = pg_cluster_state()
+    if state == "foreign":
+        _watchdog_foreign_exit(_foreign_pg_message(pg_port()))
+    elif state == "down":
+        logger.error("PostgreSQL is not responding, restarting...")
+        try:
+            pg_start()
+        except ForeignPostgresError as e:
+            _watchdog_foreign_exit(str(e))
+
+
 def cmd_start(args):
     """Start PraxisZeit (PostgreSQL + uvicorn)."""
     config = load_config()
@@ -2268,9 +2353,7 @@ def cmd_start(args):
             uvicorn_start(config)
 
         # Check if PostgreSQL is still alive
-        if not pg_is_running():
-            logger.error("PostgreSQL is not responding, restarting...")
-            pg_start()
+        _watchdog_check_pg()
 
     # Shutdown
     logger.info("Shutting down PraxisZeit...")

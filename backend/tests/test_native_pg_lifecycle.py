@@ -339,10 +339,14 @@ class TestForeignPgIsolation:
     """
 
     def _capture_run(self, srv, monkeypatch):
-        captured = {}
+        # Windows pg_is_running() runs pg_isready and then pg_ctl status; keep
+        # the pg_isready probe as "argv" and every call in "calls".
+        captured = {"calls": []}
 
         def _run(argv, *a, **kw):
-            captured["argv"] = list(argv)
+            captured["calls"].append(list(argv))
+            if "pg_isready" in Path(str(argv[0])).name:
+                captured["argv"] = list(argv)
             from unittest.mock import MagicMock
             m = MagicMock()
             m.returncode = 0

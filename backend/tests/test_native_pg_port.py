@@ -98,7 +98,9 @@ class TestClientsUsePort:
         captured = {}
 
         def _run(argv, *a, **kw):
-            captured["argv"] = list(argv)
+            # Windows also runs pg_ctl status afterwards; keep the pg_isready call.
+            if "pg_isready" in Path(str(argv[0])).name:
+                captured["argv"] = list(argv)
             from unittest.mock import MagicMock
             m = MagicMock()
             m.returncode = 0
@@ -136,3 +138,185 @@ class TestClientsUsePort:
         assert "localhost:" not in srv._database_url("u", "pw", "db")
         monkeypatch.setenv("PGPORT", "9999")
         assert "PGPORT" not in srv.pg_env()
+
+
+_FOREIGN_5433 = (
+    "Port 5433 ist von einem anderen PostgreSQL belegt. In config\\praxiszeit.conf "
+    "unter [database] einen freien Port eintragen (z. B. 5433) und den Dienst neu starten."
+)
+
+
+class TestClusterOwnership:
+    """Windows: a foreign PostgreSQL answering on our port is never our cluster."""
+
+    @pytest.fixture(autouse=True)
+    def _win(self, srv, tmp_path, monkeypatch):
+        pg_data = tmp_path / "db"
+        pg_data.mkdir()
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "PG_DATA", pg_data)
+        monkeypatch.setattr(srv, "DATA_DIR", tmp_path)
+        monkeypatch.setattr(srv, "LOG_DIR", log_dir)
+        monkeypatch.setattr(srv, "load_config", lambda: {})
+        monkeypatch.setattr(srv, "_win_grant_networkservice", lambda *a, **kw: None)
+        monkeypatch.setattr(srv, "_win_service_exists", lambda name: True)
+        monkeypatch.setattr(srv.time, "sleep", lambda s: None)
+        self.pg_data = pg_data
+
+    def _fake(self, srv, monkeypatch, isready, status=0):
+        calls = []
+
+        def _run(argv, *a, **kw):
+            import types
+            argv = [str(x) for x in argv]
+            calls.append(argv)
+            name = Path(argv[0]).name
+            rc = 0
+            if name.startswith("pg_isready"):
+                rc = isready
+            elif name.startswith("pg_ctl") and "status" in argv:
+                rc = status
+            return types.SimpleNamespace(returncode=rc, stdout="", stderr="")
+
+        monkeypatch.setattr(srv.subprocess, "run", _run)
+        return calls
+
+    def _pid_file(self, port_line):
+        (self.pg_data / "postmaster.pid").write_text(
+            f"1234\n{self.pg_data}\n1700000000\n{port_line}\n\nlocalhost\n", encoding="utf-8"
+        )
+
+    def test_down_when_nothing_answers(self, srv, monkeypatch):
+        self._fake(srv, monkeypatch, isready=2)
+        assert srv.pg_cluster_state() == "down"
+        assert srv.pg_is_running() is False
+
+    def test_own_cluster_on_default_port_is_running(self, srv, monkeypatch):
+        self._fake(srv, monkeypatch, isready=0, status=0)
+        self._pid_file("5432")
+        assert srv.pg_cluster_state() == "own"
+        assert srv.pg_is_running() is True
+
+    def test_foreign_when_pid_file_missing(self, srv, monkeypatch):
+        self._fake(srv, monkeypatch, isready=0, status=3)
+        assert srv.pg_cluster_state() == "foreign"
+        assert srv.pg_is_running() is False
+
+    def test_foreign_when_status_ok_but_pid_file_missing(self, srv, monkeypatch):
+        self._fake(srv, monkeypatch, isready=0, status=0)
+        assert srv.pg_cluster_state() == "foreign"
+
+    def test_foreign_when_pid_file_garbled(self, srv, monkeypatch):
+        self._fake(srv, monkeypatch, isready=0, status=0)
+        (self.pg_data / "postmaster.pid").write_bytes(b"\xff\xfe\x00garbage")
+        assert srv.pg_cluster_state() == "foreign"
+
+    def test_foreign_when_pid_file_has_other_port(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        self._fake(srv, monkeypatch, isready=0, status=0)
+        self._pid_file("5432")
+        assert srv.pg_cluster_state() == "foreign"
+
+    def test_pg_ctl_status_argv(self, srv, monkeypatch):
+        calls = self._fake(srv, monkeypatch, isready=0, status=0)
+        self._pid_file("5432")
+        srv.pg_cluster_state()
+        status_calls = [c for c in calls if "status" in c]
+        assert status_calls == [
+            [str(srv.pg_cmd("pg_ctl")), "status", "-D", str(self.pg_data)]
+        ]
+
+    def test_pg_start_raises_foreign_with_message(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        calls = self._fake(srv, monkeypatch, isready=0, status=3)
+        with pytest.raises(srv.ForeignPostgresError) as e:
+            srv.pg_start()
+        assert str(e.value) == _FOREIGN_5433
+        assert not any(c[:2] == ["net", "start"] for c in calls), calls
+
+    def test_pg_start_poll_loop_raises_when_state_turns_foreign(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        states = iter(["down", "foreign"])
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: next(states))
+        self._fake(srv, monkeypatch, isready=2)
+        with pytest.raises(srv.ForeignPostgresError) as e:
+            srv.pg_start()
+        assert str(e.value) == _FOREIGN_5433
+
+    def test_main_exits_78_on_foreign(self, srv, monkeypatch, caplog):
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        self._fake(srv, monkeypatch, isready=0, status=3)
+        monkeypatch.setattr(srv, "cmd_backup", lambda args: srv.pg_start())
+        monkeypatch.setattr(sys, "argv", ["x", "backup"])
+        with caplog.at_level("ERROR"), pytest.raises(SystemExit) as e:
+            srv.main()
+        assert e.value.code == 78
+        assert _FOREIGN_5433 in caplog.text
+
+    def test_watchdog_exits_on_foreign_server(self, srv, monkeypatch, caplog):
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "foreign")
+        called = []
+        monkeypatch.setattr(srv, "pg_start", lambda: called.append("pg_start"))
+        monkeypatch.setattr(srv, "uvicorn_stop", lambda: called.append("uvicorn_stop"))
+        monkeypatch.setattr(srv, "_remove_pid", lambda: called.append("_remove_pid"))
+        with caplog.at_level("ERROR"), pytest.raises(SystemExit) as e:
+            srv._watchdog_check_pg()
+        assert e.value.code == 78
+        assert "pg_start" not in called
+        assert called == ["uvicorn_stop", "_remove_pid"]
+        assert _FOREIGN_5433 in caplog.text
+
+    def test_watchdog_restarts_own_cluster_when_down(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "down")
+        called = []
+        monkeypatch.setattr(srv, "pg_start", lambda: called.append("pg_start"))
+        srv._watchdog_check_pg()
+        assert called == ["pg_start"]
+
+    def test_watchdog_exits_when_restart_meets_foreign_server(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "down")
+        called = []
+
+        def _start():
+            raise srv.ForeignPostgresError(srv._foreign_pg_message(5433))
+
+        monkeypatch.setattr(srv, "pg_start", _start)
+        monkeypatch.setattr(srv, "uvicorn_stop", lambda: called.append("uvicorn_stop"))
+        monkeypatch.setattr(srv, "_remove_pid", lambda: called.append("_remove_pid"))
+        with pytest.raises(SystemExit) as e:
+            srv._watchdog_check_pg()
+        assert e.value.code == 78
+        assert called == ["uvicorn_stop", "_remove_pid"]
+
+    def test_watchdog_does_nothing_when_own(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "own")
+        called = []
+        monkeypatch.setattr(srv, "pg_start", lambda: called.append("pg_start"))
+        srv._watchdog_check_pg()
+        assert called == []
+
+    def test_pg_stop_ignores_foreign_server(self, srv, monkeypatch):
+        calls = self._fake(srv, monkeypatch, isready=0, status=3)
+        srv.pg_stop()
+        assert not any(c[:2] == ["net", "stop"] for c in calls), calls
+
+    def test_pg_stop_stops_own_cluster(self, srv, monkeypatch):
+        calls = self._fake(srv, monkeypatch, isready=0, status=0)
+        self._pid_file("5432")
+        srv.pg_stop()
+        assert any(c[:2] == ["net", "stop"] for c in calls), calls
+
+    def test_unix_semantics_unchanged(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "IS_WINDOWS", False)
+        calls = self._fake(srv, monkeypatch, isready=0, status=3)
+        assert srv.pg_cluster_state() == "own"
+        assert srv.pg_is_running() is True
+        assert not any("status" in c for c in calls), calls
+
+    def test_unix_down(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "IS_WINDOWS", False)
+        self._fake(srv, monkeypatch, isready=2)
+        assert srv.pg_cluster_state() == "down"
