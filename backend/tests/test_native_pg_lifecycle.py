@@ -582,6 +582,7 @@ class TestCmdStartBranching:
         monkeypatch.setattr(srv, "_win_service_exists", lambda name: False)
         monkeypatch.setattr(srv, "pg_load_credentials", _pg_load_credentials)
         monkeypatch.setattr(srv, "pg_cluster_state", lambda: "down")
+        monkeypatch.setattr(srv.time, "sleep", lambda s: None)
         # cmd_start's later steps spawn uvicorn and run Alembic. Stub everything
         # past the lifecycle section so the test stays hermetic and aborts the
         # moment cmd_start tries to leave the section under test.
@@ -626,6 +627,38 @@ class TestCmdStartBranching:
         assert calls["pg_init"] == 1
         assert calls["pg_start"] == 1
         assert calls["pg_setup_database"] == 1
+
+    def test_transient_foreign_at_startup_is_rechecked_and_proceeds(self, srv, tmp_path, monkeypatch):
+        """One false "foreign" (pg_ctl status timeout, locked postmaster.pid)
+        must not abort the start: re-check once after ~2 s."""
+        self._make_paths(
+            srv, tmp_path, monkeypatch, populate=False, marker=False, creds=False,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        states = iter(["foreign", "down"])
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: next(states))
+        slept = []
+        monkeypatch.setattr(srv.time, "sleep", lambda s: slept.append(s))
+
+        with pytest.raises(RuntimeError, match="STOP_BEFORE_UVICORN"):
+            srv.cmd_start(None)
+
+        assert slept == [srv.FOREIGN_RECHECK_SECONDS]
+        assert calls["pg_init"] == 1
+
+    def test_confirmed_foreign_at_startup_raises(self, srv, tmp_path, monkeypatch):
+        data, _ = self._make_paths(
+            srv, tmp_path, monkeypatch, populate=False, marker=False, creds=False,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        states = iter(["foreign", "foreign"])
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: next(states))
+
+        with pytest.raises(srv.ForeignPostgresError):
+            srv.cmd_start(None)
+
+        assert calls["pg_init"] == 0
+        assert list(data.iterdir()) == []
 
     def test_foreign_server_never_quarantines_unmarked_data(self, srv, tmp_path, monkeypatch):
         """A foreign server on the port must not trigger the quarantine of an

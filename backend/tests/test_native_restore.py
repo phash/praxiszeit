@@ -677,7 +677,9 @@ def test_restore_bat_ersetzt_die_datenbank_erst_nach_dem_einspielen():
 def test_restore_bat_startet_den_dienst_nur_nach_erfolg():
     blocks = _bat_blocks()
     main = blocks[""]
-    starts = [i for i, line in enumerate(main) if line.lower().startswith("net start praxiszeit")]
+    # Der Anwendungsdienst "PraxisZeit" - nicht der Datenbankdienst
+    # "PraxisZeit-PostgreSQL", den das Script vor dem Einspielen startet.
+    starts = [i for i, line in enumerate(main) if line.lower().split()[:3] == ["net", "start", "praxiszeit"]]
     assert len(starts) == 1, main
     grants = next(i for i, line in enumerate(main) if "init-db-user.sql" in line)
     assert grants < starts[0]
@@ -780,6 +782,20 @@ def test_restore_bat_syncs_port_before_cluster_start():
     start = next(i for i, line in enumerate(lines)
                  if line.startswith('"%PG_CTL%"') and " start" in line)
     assert sync < start
+
+
+def test_restore_bat_starts_pg_service_after_port_sync():
+    """Windows 11: sync-db-port stops PraxisZeit-PostgreSQL after a port change,
+    and the script's own pg_ctl start fails as administrator ("Access is
+    denied"). The service must be started again before the first psql."""
+    lines = _bat_lines()
+    sync = next(i for i, line in enumerate(lines) if "sync-db-port" in line and '"%PYTHON%"' in line)
+    svc = next(i for i, line in enumerate(lines) if line.startswith("net start PraxisZeit-PostgreSQL"))
+    start = next(i for i, line in enumerate(lines)
+                 if line.startswith('"%PG_CTL%"') and " start" in line)
+    first_psql = next(i for i, line in enumerate(lines) if line.startswith('"%PSQL%"'))
+    assert sync < svc < start < first_psql
+    assert lines[svc].rstrip().endswith(">nul 2>&1"), lines[svc]
 
 
 def test_restore_bat_sets_psql_args_after_db_port():

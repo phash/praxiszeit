@@ -127,6 +127,13 @@ SET "PSQL_ARGS=-X -w -q -v ON_ERROR_STOP=1 -U praxiszeit -h localhost -p %DB_POR
 echo Datenbank-Port: %DB_PORT%
 echo.
 echo Starte PostgreSQL...
+REM Unter Windows laeuft der Cluster als eigener Dienst (NetworkService).
+REM sync-db-port haelt ihn nach einem Portwechsel an, und pg_ctl start
+REM scheitert als Administrator ("Zugriff verweigert", Rechte von data\db).
+REM Deshalb zuerst den Dienst starten; laeuft er schon, meldet net start nur
+REM einen Fehler, der hier nichts bedeutet. pg_ctl bleibt als Rueckfall.
+net start PraxisZeit-PostgreSQL >nul 2>&1
+echo Starte PostgreSQL...
 "%PG_CTL%" -D "%PG_DATA%" -l "%DIR%\logs\pg-restore.log" start
 timeout /t 5 /nobreak >nul
 echo.

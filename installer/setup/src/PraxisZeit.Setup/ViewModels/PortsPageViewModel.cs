@@ -27,15 +27,15 @@ public sealed partial class PortsPageViewModel : WizardPageBase
     /// True = User hat einen HTTP-Redirect-Port gesetzt (>0). Default ja —
     /// wenn der User ihn auf 0 setzt, wird kein Redirect-Listener gestartet.
     /// </summary>
+    [ObservableProperty]
+    public partial bool EnableHttpRedirect { get; set; } = true;
+
     /// <summary>PostgreSQL-Port (nur Windows). Default 5432.</summary>
     [ObservableProperty]
     public partial int DbPort { get; set; } = PraxisZeitConfigWriter.DefaultDbPort;
 
     /// <summary>Die Karte "Datenbank-Port" gibt es nur unter Windows.</summary>
     public bool IsDbPortVisible => OperatingSystem.IsWindows();
-
-    [ObservableProperty]
-    public partial bool EnableHttpRedirect { get; set; } = true;
 
     [ObservableProperty]
     public partial string? ValidationMessage { get; set; }
@@ -137,8 +137,11 @@ public sealed partial class PortsPageViewModel : WizardPageBase
 
             if (IsDbPortVisible && bound.Contains(DbPort))
             {
-                var dbWarning = $"Achtung: Datenbank-Port {DbPort} ist bereits belegt – vermutlich läuft hier "
-                                + "schon ein anderer PostgreSQL. Wählen Sie einen freien Port, z. B. 5433.";
+                // Bei einer Reparatur/einem Update ist das meist PraxisZeit selbst -
+                // dann bleibt der Port, wie er ist.
+                var dbWarning = $"Achtung: Datenbank-Port {DbPort} ist bereits belegt – sofern das nicht "
+                                + "PraxisZeit selbst ist (Reparatur/Update), läuft hier schon ein anderer "
+                                + "PostgreSQL. Dann einen freien Port wählen, z. B. 5433.";
                 PortConflictWarning = PortConflictWarning is null
                     ? dbWarning
                     : PortConflictWarning + "\n" + dbWarning;

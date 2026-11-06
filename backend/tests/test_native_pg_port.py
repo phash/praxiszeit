@@ -65,6 +65,49 @@ class TestPgPortPlatform:
         monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
         assert srv.pg_port() == 5432
 
+    def test_unix_never_reads_the_conf(self, srv, monkeypatch):
+        """Behaviour before Teil C: a malformed conf must not surface through
+        pg_port() on Linux/macOS."""
+        monkeypatch.setattr(srv, "IS_WINDOWS", False)
+
+        def _boom():
+            raise RuntimeError("conf must not be read on Unix")
+
+        monkeypatch.setattr(srv, "load_config", _boom)
+        assert srv.pg_port() == 5432
+
+    def test_unix_warns_once_about_an_ignored_entry(self, srv, monkeypatch, caplog):
+        monkeypatch.setattr(srv, "IS_WINDOWS", False)
+        monkeypatch.setattr(srv, "_pg_port_ignored_warned", False)
+        with caplog.at_level("WARNING"):
+            srv.warn_ignored_pg_port({"database": {"port": 5433}})
+            srv.warn_ignored_pg_port({"database": {"port": 5433}})
+        assert caplog.text.count("[database] port wird auf dieser Plattform ignoriert") == 1
+
+    def test_windows_does_not_warn_about_the_entry(self, srv, monkeypatch, caplog):
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "_pg_port_ignored_warned", False)
+        with caplog.at_level("WARNING"):
+            srv.warn_ignored_pg_port({"database": {"port": 5433}})
+        assert "ignoriert" not in caplog.text
+
+    def test_cmd_start_warns_from_the_loaded_config(self):
+        src = _SERVER_PATH.read_text(encoding="utf-8")
+        body = src[src.index("def cmd_start(args):"):src.index("def cmd_stop(args):")]
+        assert "warn_ignored_pg_port(config)" in body
+
+
+class TestBomWarningOnce:
+    def test_bom_warning_once_per_process(self, srv, tmp_path, monkeypatch, caplog):
+        conf = tmp_path / "praxiszeit.conf"
+        conf.write_bytes(b"\xef\xbb\xbf[database]\nport = 5433\n")
+        monkeypatch.setattr(srv, "CONFIG_FILE", conf)
+        monkeypatch.setattr(srv, "_bom_warned", False)
+        with caplog.at_level("WARNING"):
+            assert srv.load_config() == {"database": {"port": 5433}}
+            assert srv.load_config() == {"database": {"port": 5433}}
+        assert caplog.text.count("UTF-8 BOM") == 1
+
 
 class TestPgPortMemoized:
     """The watchdog calls pg_port() every 5 s; an edited conf must not switch
@@ -199,6 +242,7 @@ class TestClusterOwnership:
         monkeypatch.setattr(srv, "_win_grant_networkservice", lambda *a, **kw: None)
         monkeypatch.setattr(srv, "_win_service_exists", lambda name: True)
         monkeypatch.setattr(srv.time, "sleep", lambda s: None)
+        monkeypatch.setattr(srv, "_watchdog_foreign_streak", 0)
         self.pg_data = pg_data
 
     def _fake(self, srv, monkeypatch, isready, status=0):
@@ -274,7 +318,7 @@ class TestClusterOwnership:
 
     def test_pg_start_poll_loop_raises_when_state_turns_foreign(self, srv, monkeypatch):
         monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
-        states = iter(["down", "foreign"])
+        states = iter(["down", "foreign", "foreign"])
         monkeypatch.setattr(srv, "pg_cluster_state", lambda: next(states))
         self._fake(srv, monkeypatch, isready=2)
         with pytest.raises(srv.ForeignPostgresError) as e:
@@ -291,19 +335,60 @@ class TestClusterOwnership:
         assert e.value.code == 78
         assert _FOREIGN_5433 in caplog.text
 
-    def test_watchdog_exits_on_foreign_server(self, srv, monkeypatch, caplog):
-        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
-        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "foreign")
+    def _watch(self, srv, monkeypatch, states):
+        seq = iter(states)
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: next(seq))
         called = []
         monkeypatch.setattr(srv, "pg_start", lambda: called.append("pg_start"))
         monkeypatch.setattr(srv, "uvicorn_stop", lambda: called.append("uvicorn_stop"))
         monkeypatch.setattr(srv, "_remove_pid", lambda: called.append("_remove_pid"))
+        return called
+
+    def test_watchdog_exits_after_three_foreign_checks(self, srv, monkeypatch, caplog):
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        called = self._watch(srv, monkeypatch, ["foreign"] * 3)
+        srv._watchdog_check_pg()
+        srv._watchdog_check_pg()
+        assert called == []
         with caplog.at_level("ERROR"), pytest.raises(SystemExit) as e:
             srv._watchdog_check_pg()
         assert e.value.code == 78
         assert "pg_start" not in called
         assert called == ["uvicorn_stop", "_remove_pid"]
         assert _FOREIGN_5433 in caplog.text
+
+    def test_watchdog_single_foreign_then_own_keeps_running(self, srv, monkeypatch):
+        """A transient false "foreign" (pg_ctl status timeout, postmaster.pid
+        briefly locked by a virus scanner) must not end the service for good."""
+        called = self._watch(srv, monkeypatch, ["foreign", "own", "foreign", "foreign", "own"])
+        for _ in range(5):
+            srv._watchdog_check_pg()
+        assert called == []
+
+    def test_watchdog_down_resets_the_foreign_streak(self, srv, monkeypatch):
+        called = self._watch(srv, monkeypatch, ["foreign", "foreign", "down", "foreign", "foreign"])
+        for _ in range(5):
+            srv._watchdog_check_pg()
+        assert called == ["pg_start"]
+
+    def test_pg_start_rechecks_a_foreign_verdict_once(self, srv, monkeypatch):
+        states = iter(["foreign", "own"])
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: next(states))
+        slept = []
+        monkeypatch.setattr(srv.time, "sleep", lambda s: slept.append(s))
+        calls = self._fake(srv, monkeypatch, isready=0)
+        srv.pg_start()
+        assert slept == [srv.FOREIGN_RECHECK_SECONDS]
+        assert srv.FOREIGN_RECHECK_SECONDS == 2
+        assert not any(c[:2] == ["net", "start"] for c in calls), calls
+
+    def test_pg_start_raises_when_foreign_is_confirmed(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        states = iter(["foreign", "foreign"])
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: next(states))
+        with pytest.raises(srv.ForeignPostgresError) as e:
+            srv.pg_start()
+        assert str(e.value) == _FOREIGN_5433
 
     def test_watchdog_restarts_own_cluster_when_down(self, srv, monkeypatch):
         monkeypatch.setattr(srv, "pg_cluster_state", lambda: "down")
@@ -392,6 +477,22 @@ class TestManagedConfPortSync:
         after = p.read_bytes()
         assert srv.sync_managed_pg_port(p, 5433) is False
         assert p.read_bytes() == after
+
+    def test_sync_writes_atomically(self, srv, tmp_path, monkeypatch):
+        p = self._conf(tmp_path, "port = 5432\n")
+        replaced = []
+        real_replace = srv.os.replace
+
+        def _replace(src, dst):
+            replaced.append((Path(src), Path(dst)))
+            real_replace(src, dst)
+
+        monkeypatch.setattr(srv.os, "replace", _replace)
+        assert srv.sync_managed_pg_port(p, 5433) is True
+        assert len(replaced) == 1
+        src, dst = replaced[0]
+        assert dst == p and src.parent == p.parent and src != p
+        assert sorted(x.name for x in tmp_path.iterdir()) == [p.name]
 
     def test_sync_keeps_crlf(self, srv, tmp_path):
         p = self._conf(tmp_path, _INITDB_HEAD + _MANAGED, crlf=True)
