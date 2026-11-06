@@ -515,7 +515,7 @@ Wenn die Genehmigungspflicht aktiviert ist, landen Urlaubsanträge von Mitarbeit
 
 **Admin-Navigation → Anträge** (Seitentitel: „Abwesenheitsanträge")
 
-Oben auf der Seite befindet sich ein Toggle **„Urlaubsanträge genehmigungspflichtig"**:
+Oben auf der Seite befindet sich ein Toggle **„Abwesenheitsanträge genehmigungspflichtig"**:
 
 | Toggle | Verhalten |
 |--------|-----------|

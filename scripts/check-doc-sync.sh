@@ -798,6 +798,10 @@ group_beschriftung() {
            frontend/src/components/DocViewer.tsx frontend/src/constants/helpContent.tsx; do
     forbid "$f" 'Neuer Mitarbeiter:in'
   done
+  # #535: Schalter auf Admin → Anträge (pages/admin/VacationApprovals.tsx).
+  need_code_label frontend/src/pages/admin/VacationApprovals.tsx 'Abwesenheitsanträge genehmigungspflichtig'
+  need docs/handbuch/HANDBUCH-ADMIN.md '„Abwesenheitsanträge genehmigungspflichtig"'
+  forbid docs/handbuch/HANDBUCH-ADMIN.md 'Urlaubsanträge genehmigungspflichtig'
 }
 
 # Begriffe, die mehrere Flächen teilen (Review Task 6, 2. Runde): „ohne

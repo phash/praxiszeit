@@ -314,18 +314,18 @@ export default function Layout() {
                   <Link
                     key={item.path}
                     to={item.path}
-                    className={`flex items-center justify-between px-4 py-3 rounded-lg transition-colors ${
+                    className={`flex items-center justify-between gap-2 px-4 py-3 rounded-lg transition-colors ${
                       active
                         ? 'bg-primary text-white'
                         : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-3 min-w-0">
                       <Icon size={20} />
                       <span className="font-medium">{item.label}</span>
                     </div>
                     {item.badge > 0 && (
-                      <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold rounded-full ${
+                      <span className={`inline-flex shrink-0 items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold rounded-full ${
                         active ? 'bg-white text-primary' : 'bg-red-500 text-white'
                       }`}>
                         {item.badge}
