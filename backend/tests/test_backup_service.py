@@ -261,3 +261,13 @@ def test_stored_forbidden_location_is_ignored(db, default_tenant, tmp_path, monk
     db.commit()
     monkeypatch.setenv("PRAXISZEIT_BACKUP_DIR", str(tmp_path / "data"))
     assert bs.get_backup_dir(db) == tmp_path / "data"
+
+
+def test_pg_dump_conn_uses_url_port_on_native_windows_url(monkeypatch):
+    # Guard: backup follows the port in the migrations URL (native Windows, #port).
+    scheme = "postgresql" + "://"
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", scheme + "su:pw@localhost:5433/praxiszeit")
+    args = bs._pg_dump_conn()
+    flat = [str(a) for a in args[0]] if args and isinstance(args[0], (list, tuple)) else [str(a) for a in args]
+    assert flat[flat.index("-h") + 1] == "localhost"
+    assert flat[flat.index("-p") + 1] == "5433"

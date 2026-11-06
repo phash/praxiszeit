@@ -369,6 +369,7 @@ class TestForeignPgIsolation:
     def test_pg_is_running_windows_uses_tcp_localhost(self, srv, monkeypatch):
         # Windows has no unix sockets; the bundled cluster runs as a TCP service.
         monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "load_config", lambda: {})
         captured = self._capture_run(srv, monkeypatch)
 
         srv.pg_is_running()
@@ -391,6 +392,7 @@ class TestForeignPgIsolation:
 
     def test_database_url_windows_uses_tcp(self, srv, monkeypatch):
         monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "load_config", lambda: {})
 
         url = srv._database_url("praxiszeit_app", "pw", "praxiszeit")
 

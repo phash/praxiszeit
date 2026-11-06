@@ -244,6 +244,10 @@ def pg_env() -> dict:
     pg_lib = str(BIN_DIR / "postgresql" / "lib")
     if IS_WINDOWS:
         env["PATH"] = f"{pg_lib};{env.get('PATH', '')}"
+        # Hart setzen: ein vererbtes PGHOST/PGPORT darf psql/pg_dump nie auf
+        # einen fremden Cluster lenken; unser Port steht in [database] port.
+        env["PGHOST"] = "localhost"
+        env["PGPORT"] = str(pg_port())
     else:
         existing = env.get("LD_LIBRARY_PATH", "")
         env["LD_LIBRARY_PATH"] = f"{pg_lib}:{existing}" if existing else pg_lib
@@ -317,7 +321,7 @@ def pg_is_running() -> bool:
         host = str(DATA_DIR / "run")
     try:
         result = subprocess.run(
-            [str(pg_cmd("pg_isready")), "-h", host, "-p", "5432"],
+            [str(pg_cmd("pg_isready")), "-h", host, "-p", str(pg_port())],
             capture_output=True, timeout=5, env=pg_env(),
         )
         return result.returncode == 0
@@ -347,7 +351,7 @@ def _database_url(user: str, password: str, db: str) -> str:
     # an operator-supplied password containing a space or '+').
     cred = f"{quote(user, safe='')}:{quote(password, safe='')}"
     if IS_WINDOWS:
-        return f"postgresql://{cred}@localhost:5432/{db}"
+        return f"postgresql://{cred}@localhost:{pg_port()}/{db}"
     sock = quote_plus(str(DATA_DIR / "run"))
     return f"postgresql://{cred}@/{db}?host={sock}"
 
@@ -451,7 +455,7 @@ def pg_init(config: dict, su_password: str):
             # cluster (#174). Clients connect via the unix socket in
             # DATA_DIR/run (see unix_socket_directories below + _database_url).
             f.write("listen_addresses = ''\n")
-        f.write("port = 5432\n")
+        f.write(f"port = {pg_port()}\n")
         f.write("max_connections = 50\n")
         f.write("shared_buffers = 128MB\n")
         f.write("log_destination = 'stderr'\n")
