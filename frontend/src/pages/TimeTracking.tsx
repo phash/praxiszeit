@@ -723,11 +723,10 @@ export default function TimeTracking() {
           <div className="flex items-center gap-2 shrink-0">
             {!isAdmin && (
               <Button
-                variant="secondary"
+                variant="warning"
                 size="md"
                 onClick={openCreateChangeRequest}
                 title="Antrag für vergangenen Tag stellen"
-                className="bg-amber-500 hover:bg-amber-600 text-white focus:ring-amber-400"
               >
                 {/* #502-Review: der Datums-Hinweis im Formular verweist auf
                     diesen Knopf über seine Beschriftung — sie steht deshalb auf

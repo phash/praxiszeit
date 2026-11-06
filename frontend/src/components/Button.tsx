@@ -1,7 +1,7 @@
 import { ButtonHTMLAttributes, ReactNode } from 'react';
 import { LucideIcon } from 'lucide-react';
 
-type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
+type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'warning';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -33,6 +33,9 @@ const Button = ({
     secondary: 'bg-muted text-text-primary hover:bg-gray-200 focus:ring-gray-400',
     danger: 'bg-danger text-white hover:bg-red-700 focus:ring-red-500',
     ghost: 'bg-transparent text-text-primary hover:bg-muted focus:ring-gray-400',
+    // #533: Farben einer Variante nie per className überschreiben — Tailwind v4
+    // entscheidet nach CSS-Reihenfolge, nicht nach Reihenfolge im class-Attribut.
+    warning: 'bg-amber-500 text-white hover:bg-amber-600 focus:ring-amber-400',
   };
 
   const sizeStyles = {

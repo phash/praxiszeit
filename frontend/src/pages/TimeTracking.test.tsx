@@ -371,6 +371,18 @@ describe('<TimeTracking /> Datum beim Bearbeiten (#502)', () => {
     }
   });
 
+  it('färbt den Knopf „Antrag" ohne widersprüchliche Farbklassen (#533)', async () => {
+    // Tailwind v4 entscheidet bei gleicher Spezifität nach CSS-Reihenfolge:
+    // bg-muted der Variante „secondary" schlug das per className gesetzte
+    // bg-amber-500, text-white blieb — weiße Schrift auf Grau.
+    mockEntries([]);
+    renderPage();
+    const button = await screen.findByRole('button', { name: 'Antrag' });
+    expect(button.className).toMatch(/(^|\s)bg-amber-500(\s|$)/);
+    expect(button.className).not.toMatch(/(^|\s)bg-muted(\s|$)/);
+    expect(button.className).not.toMatch(/(^|\s)text-text-primary(\s|$)/);
+  });
+
   it('schickt beim Speichern weiterhin das heutige Datum mit', async () => {
     mockEntries([closedEntry]);
     renderPage();

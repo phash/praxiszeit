@@ -50,16 +50,23 @@ test.describe('#377 Minijob MiLoG — UI', () => {
       await adminPage.goto('/admin/users');
       await openEditor();
 
-      const checkbox = adminPage.getByLabel(/Arbeitszeitkonto/i);
+      // Seit 1.22.0 (Vertragsverlauf) ändert man das Arbeitszeitkonto einer
+      // bestehenden Person nur über „Arbeitszeit anpassen…“ (Abschnitt
+      // „Urlaub und Abrechnung“), nicht mehr direkt im Bearbeiten-Formular.
+      await adminPage.getByRole('button', { name: 'Arbeitszeit anpassen…' }).click();
+      const dialog = adminPage.getByRole('dialog', { name: /Wochenstunden/i });
+      await expect(dialog).toBeVisible({ timeout: 5000 });
+
+      const checkbox = dialog.getByLabel(/Arbeitszeitkonto/i);
       await expect(checkbox).toBeVisible();
       await expect(checkbox).not.toBeChecked();
 
       await checkbox.check();
       await expect(checkbox).toBeChecked();
       // Infozeile erscheint mit aktuellem Mindestlohn + abgeleitetem Konto-Cap
-      await expect(adminPage.getByText(/Aktueller Mindestlohn/)).toBeVisible();
-      await expect(adminPage.getByText(/13\.90 €\/h/)).toBeVisible();
-      await expect(adminPage.getByText(/max\. Konto/)).toBeVisible();
+      await expect(dialog.getByText(/Aktueller Mindestlohn/)).toBeVisible();
+      await expect(dialog.getByText(/13\.90 €\/h/)).toBeVisible();
+      await expect(dialog.getByText(/max\. Konto/)).toBeVisible();
       // Speichern + Persistenz sind backend-/API-seitig abgedeckt
       // (test_userlist_carries_milog…, minijob-milog.spec.ts) — hier der reine
       // UI-Pfad (Checkbox + abgeleitete Infozeile).

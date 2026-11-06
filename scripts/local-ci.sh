@@ -298,11 +298,17 @@ else
     # with the code under test. Same fix as the backend suite (-e TZ=...).
     # -------------------------------------------------------------------
     step "E2E tests (playwright)"
+    # The browser image must match @playwright/test in e2e/package-lock.json,
+    # otherwise every test dies at browserType.launch ("Executable doesn't
+    # exist"). A hard pin (v1.58.2) went stale with the #513 bump to 1.64.1.
+    pw_version="$(grep -A1 '"node_modules/@playwright/test"' e2e/package-lock.json \
+        | sed -n 's/.*"version": "\([0-9.]*\)".*/\1/p')"
+    [ -n "$pw_version" ] || fail "Cannot read the @playwright/test version from e2e/package-lock.json"
     if docker run --rm \
            -v "$(pwd)/e2e":/app -w /app \
            -e TZ=Europe/Berlin \
            --network host \
-           mcr.microsoft.com/playwright:v1.58.2-jammy \
+           "mcr.microsoft.com/playwright:v${pw_version}-jammy" \
            sh -c "npm install --silent && npx playwright test --reporter=line" 2>&1 | tail -15; then
         ok "E2E tests passed"
     else
