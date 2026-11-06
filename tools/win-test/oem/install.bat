@@ -17,6 +17,8 @@ REM dann per update-wizard.ps1 -Headless auf share\tree aktualisieren.
 REM MODE=foreignpg: wie fresh, aber ein fremdes PostgreSQL belegt Port 5432.
 REM Der Dienst muss mit dem Standard-Port mit Exit 78 stehen bleiben, mit
 REM [database] port = 5433 hochkommen; danach Sicherung + restore-backup.bat.
+REM MODE=portchange: wie fresh, danach [database] port = 5433 bei laufendem
+REM Dienst und sofort restore-backup.bat (Portwechsel im Restore-Pfad).
 set "MODE=fresh"
 if exist "\\host.lan\Data\mode.txt" for /f "usebackq delims=" %%m in ("\\host.lan\Data\mode.txt") do set "MODE=%%m"
 set "SRC=\\host.lan\Data\tree"
@@ -164,6 +166,7 @@ REM ============================================================
 >> "%RES%" echo ===INSTALLDIR_ACL_ALT_BEGIN===
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\install-acl-check.ps1" -InstallDir "C:\PraxisZeit" >> "%RES%" 2>&1
 >> "%RES%" echo ===INSTALLDIR_ACL_ALT_END===
+call :nssm_appexit NSSM_APPEXIT_78_VOR_UPDATE
 >> "%RES%" echo [Update] update-wizard.ps1 -Headless aus dem neuen Paket ...
 robocopy "\\host.lan\Data\tree" "C:\PZNew" /E /R:2 /W:2 /NFL /NDL /NJH /NJS >nul
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\PZNew\update-wizard.ps1" -InstallDir "C:\PraxisZeit" -Headless >> "%RES%" 2>&1
@@ -182,6 +185,7 @@ for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" -X POST https://localhost/a
 sc query PraxisZeit | findstr STATE >> "%RES%" 2>&1
 call :read_db_port
 call :own_check OWN_DETECTED_NACH_UPDATE
+call :nssm_appexit NSSM_APPEXIT_78_NACH_UPDATE
 REM Ohne [database] port darf der neue Code postgresql.conf nicht anfassen.
 call :pgconf_md5 PGCONF_MD5_NACH_UPDATE
 if "!PGCONF_MD5!"=="!PGCONF_MD5_NACH_UPDATE!" ( >> "%RES%" echo PGCONF_UNVERAENDERT=ja ) else ( >> "%RES%" echo PGCONF_UNVERAENDERT=nein )
@@ -197,7 +201,37 @@ REM ============================================================
 set PYTHONUTF8=1
 "C:\PraxisZeit\bin\python\python.exe" "C:\PraxisZeit\praxiszeit-server.py" backup >> "%RES%" 2>&1
 >> "%RES%" echo BACKUP_EXIT=!errorlevel!
-if /i not "!MODE!"=="foreignpg" goto :after_restore
+if /i "!MODE!"=="foreignpg" goto :restore_foreign
+if /i "!MODE!"=="portchange" goto :restore_portchange
+goto :after_restore
+:restore_foreign
+REM ============================================================
+REM foreignpg: restore-backup.bat muss den konfigurierten Port nehmen. Auf
+REM 5432 saesse der Fremdserver (ohne Rolle praxiszeit) - jeder psql-Schritt
+REM dort scheiterte.
+REM ============================================================
+>> "%RES%" echo [Fremd-PG] restore-backup.bat mit der neuesten Sicherung ...
+call :run_restore RESTORE_EXIT NACH_RESTORE
+REM 0 = der Fremdserver nimmt auf 5432 weiter Verbindungen an (pg_isready).
+"C:\PraxisZeit\bin\postgresql\bin\pg_isready.exe" -h localhost -p 5432 >nul 2>&1
+>> "%RES%" echo FOREIGN_PG_STILL_ON_5432=!errorlevel!
+goto :after_restore
+:restore_portchange
+REM ============================================================
+REM portchange: Port in der conf aendern, OHNE den Dienst neu zu starten, und
+REM dann restore-backup.bat. sync-db-port haelt dabei PraxisZeit-PostgreSQL an
+REM (Portwechsel); das Script muss ihn selbst wieder starten - sein pg_ctl
+REM start scheitert als Administrator (Zugriff verweigert auf data\db).
+REM ============================================================
+>> "%RES%" echo [Portwechsel] [database] port = 5433 eintragen, Dienst laeuft weiter ...
+powershell -NoProfile -Command "$p='C:\PraxisZeit\config\praxiszeit.conf'; $o=foreach($l in (Get-Content $p)){ $l; if($l -match '^\[database\]\s*$'){ 'port = 5433' } }; Set-Content $p $o -Encoding utf8" >> "%RES%" 2>&1
+findstr /B /C:"port = " "C:\PraxisZeit\config\praxiszeit.conf" >> "%RES%" 2>&1
+sc query PraxisZeit | findstr STATE >> "%RES%" 2>&1
+call :run_restore RESTORE_NACH_PORTWECHSEL_EXIT NACH_PORTWECHSEL
+call :read_db_port
+>> "%RES%" echo DB_PORT_NACH_PORTWECHSEL=!DB_PORT!
+call :pgconf_md5 PGCONF_MD5_NACH_PORTWECHSEL
+:after_restore
 REM ============================================================
 REM foreignpg: restore-backup.bat muss den konfigurierten Port nehmen. Auf
 REM 5432 saesse der Fremdserver (ohne Rolle praxiszeit) - jeder psql-Schritt
@@ -387,6 +421,36 @@ powershell -NoProfile -Command "Get-Content 'C:\PraxisZeit\logs\service-stderr.l
 >> "%RES%" echo --- logs\praxiszeit.log
 powershell -NoProfile -Command "Get-Content 'C:\PraxisZeit\logs\praxiszeit.log' -Tail 40 -ErrorAction SilentlyContinue" >> "%RES%" 2>&1
 >> "%RES%" echo ===LOGS_%~1_END===
+goto :eof
+
+:run_restore
+REM %1 = Schluessel fuer den Exitcode, %2 = Suffix der Folge-Schluessel.
+REM Bestaetigung "LOESCHEN" kommt aus einer Datei; pause liest dort nur noch
+REM das Dateiende und haelt nicht an.
+set "LATEST_BACKUP="
+for /f "delims=" %%b in ('dir /b /o-d "C:\PraxisZeit\data\backups\*.sql.gz" 2^>nul') do if not defined LATEST_BACKUP set "LATEST_BACKUP=C:\PraxisZeit\data\backups\%%b"
+>> "%RES%" echo RESTORE_BACKUP_FILE=!LATEST_BACKUP!
+> "%TEMP%\pz-confirm.txt" echo LOESCHEN
+set "PRAXISZEIT_INSTALL_DIR=C:\PraxisZeit"
+call "C:\PraxisZeit\restore-backup.bat" "!LATEST_BACKUP!" < "%TEMP%\pz-confirm.txt" >> "%RES%" 2>&1
+>> "%RES%" echo %~1=!errorlevel!
+del /f /q "%TEMP%\pz-confirm.txt" 2>nul
+set "HCR=000"
+for /l %%i in (1,1,36) do (
+    for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" https://localhost/api/health') do set "HCR=%%c"
+    if "!HCR!"=="200" goto :run_restore_up
+    timeout /t 10 /nobreak >nul
+)
+:run_restore_up
+>> "%RES%" echo HEALTH_HTTP_%~2=!HCR!
+for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" -X POST https://localhost/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"!PWKEY!\":\"!ADMPW!\"}"') do >> "%RES%" echo LOGIN_HTTP_%~2=%%c
+if not "!HCR!"=="200" call :dump_logs %~2
+call :own_check OWN_DETECTED_%~2
+goto :eof
+
+:nssm_appexit
+REM %1 = Schluessel. NSSM schreibt UTF-16; PowerShell entfernt die Nullbytes.
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$o = & 'C:\PraxisZeit\nssm.exe' get PraxisZeit AppExit 78 2>&1; (($o -join ' ') -replace [char]0, '').Trim()"`) do >> "%RES%" echo %~1=%%a
 goto :eof
 
 :own_check
