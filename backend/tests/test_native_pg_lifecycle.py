@@ -43,6 +43,14 @@ def srv():
     return module
 
 
+@pytest.fixture(autouse=True)
+def _fresh_pg_port(srv):
+    """pg_port() is memoized per process; every test starts uncached."""
+    srv.pg_port.cache_clear()
+    yield
+    srv.pg_port.cache_clear()
+
+
 # --- Cluster marker / "is this our cluster" ----------------------------------
 
 class TestClusterMarker:
@@ -573,12 +581,67 @@ class TestCmdStartBranching:
         monkeypatch.setattr(srv, "_win_pg_unregister", _win_unregister)
         monkeypatch.setattr(srv, "_win_service_exists", lambda name: False)
         monkeypatch.setattr(srv, "pg_load_credentials", _pg_load_credentials)
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "down")
         # cmd_start's later steps spawn uvicorn and run Alembic. Stub everything
         # past the lifecycle section so the test stays hermetic and aborts the
         # moment cmd_start tries to leave the section under test.
         monkeypatch.setattr(srv, "run_migrations", _stop_signal)
         monkeypatch.setattr(srv, "uvicorn_start", _stop_signal)
         return calls
+
+    def test_foreign_server_on_fresh_pgdata_aborts_before_init(self, srv, tmp_path, monkeypatch):
+        """Windows emulator 2026-11-06: initdb + marker ran BEFORE pg_start
+        noticed the foreign server, .db-credentials never got written, and the
+        next start (after entering a free port) looped on fail_no_credentials."""
+        data, config_dir = self._make_paths(
+            srv, tmp_path, monkeypatch, populate=False, marker=False, creds=False,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "foreign")
+
+        with pytest.raises(srv.ForeignPostgresError, match="Port 5432 ist von einem anderen PostgreSQL belegt"):
+            srv.cmd_start(None)
+
+        assert calls["pg_init"] == 0
+        assert calls["pg_start"] == 0
+        assert calls["quarantine"] == 0
+        assert not (data / srv.PG_CLUSTER_MARKER).exists()
+        assert list(data.iterdir()) == []
+
+    def test_second_start_after_foreign_abort_initialises(self, srv, tmp_path, monkeypatch):
+        """After the user enters a free port, the next start takes the normal
+        init path (no fail_no_credentials)."""
+        self._make_paths(
+            srv, tmp_path, monkeypatch, populate=False, marker=False, creds=False,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "foreign")
+        with pytest.raises(srv.ForeignPostgresError):
+            srv.cmd_start(None)
+
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "down")
+        with pytest.raises(RuntimeError, match="STOP_BEFORE_UVICORN"):
+            srv.cmd_start(None)
+
+        assert calls["pg_init"] == 1
+        assert calls["pg_start"] == 1
+        assert calls["pg_setup_database"] == 1
+
+    def test_foreign_server_never_quarantines_unmarked_data(self, srv, tmp_path, monkeypatch):
+        """A foreign server on the port must not trigger the quarantine of an
+        unmarked data directory either - abort first, touch nothing."""
+        data, _ = self._make_paths(
+            srv, tmp_path, monkeypatch, populate=True, marker=False, creds=False,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "foreign")
+
+        with pytest.raises(srv.ForeignPostgresError):
+            srv.cmd_start(None)
+
+        assert calls["quarantine"] == 0
+        assert calls["pg_init"] == 0
+        assert (data / "PG_VERSION").exists()
 
     def test_scenario_a_empty_pgdata_initialises(self, srv, tmp_path, monkeypatch):
         """A: empty PGDATA → init + setup + start."""

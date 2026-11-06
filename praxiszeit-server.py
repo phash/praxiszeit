@@ -19,6 +19,7 @@ Usage:
 """
 
 import argparse
+import functools
 import logging
 import os
 import platform
@@ -209,8 +210,16 @@ def parse_pg_port(config: dict) -> int:
     return port
 
 
+@functools.lru_cache(maxsize=None)
 def pg_port() -> int:
-    """Port der PraxisZeit-eigenen Datenbank. Nur unter Windows konfigurierbar."""
+    """Port der PraxisZeit-eigenen Datenbank. Nur unter Windows konfigurierbar.
+
+    Einmal je Prozess gelesen: der Waechter in cmd_start fragt alle 5 s, eine
+    im laufenden Betrieb geaenderte conf darf den Port nicht mitten im Lauf
+    umstellen - die Meldung verlangt ausdruecklich einen Dienstneustart.
+    Ein ungueltiger Eintrag wird nicht gemerkt (lru_cache speichert keine
+    Ausnahmen). Tests setzen den Wert mit ``pg_port.cache_clear()`` zurueck.
+    """
     global _pg_port_ignored_warned
     config = load_config()
     if not IS_WINDOWS:
@@ -2257,6 +2266,15 @@ def cmd_start(args):
     _restrict_unix_data_dirs()
 
     # 1. Initialize PostgreSQL if needed
+    # Fremder Server auf unserem Port? Dann VOR jeder Entscheidung abbrechen
+    # (Exit 78). Sonst legt pg_init Cluster + Marker an, pg_start bricht erst
+    # danach ab, .db-credentials entsteht nie - und der naechste Start mit
+    # freiem Port endet dauerhaft in fail_no_credentials (Windows-Emulator
+    # 2026-11-06). Ebenso darf kein unmarkiertes PG_DATA in Quarantaene
+    # wandern, solange der Port gar nicht uns gehoert. Unter Unix ist der
+    # Zustand nie "foreign" (Socket-Verzeichnis = Eigentumsnachweis).
+    if pg_cluster_state() == "foreign":
+        raise ForeignPostgresError(_foreign_pg_message(pg_port()))
     creds_file = CONFIG_DIR / ".db-credentials"
     pg_data_populated = PG_DATA.exists() and any(PG_DATA.iterdir())
     action = _decide_pg_init_action(

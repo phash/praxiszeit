@@ -95,7 +95,7 @@ REM sonst 5432. Vor dem Block gesetzt, weil DB_PORT im Block sonst beim
 REM Parsen expandiert wird.
 SET "DB_PORT=5432"
 if exist "%PYTHON%" if exist "%DIR%praxiszeit-server.py" (
-    for /f "usebackq delims=" %%p in (`""%PYTHON%" "%DIR%praxiszeit-server.py" print-db-port 2^>nul"`) do SET "DB_PORT=%%p"
+    for /f "usebackq delims=" %%p in (`""%PYTHON%" "%DIR%praxiszeit-server.py" print-db-port 2>nul"`) do SET "DB_PORT=%%p"
 )
 
 if exist "%PG_INSTALL_DIR%\bin\pg_ctl.exe" (

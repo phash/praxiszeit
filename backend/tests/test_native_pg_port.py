@@ -26,6 +26,14 @@ def srv():
     return module
 
 
+@pytest.fixture(autouse=True)
+def _fresh_pg_port(srv):
+    """pg_port() is memoized per process; every test starts uncached."""
+    srv.pg_port.cache_clear()
+    yield
+    srv.pg_port.cache_clear()
+
+
 class TestParsePgPort:
     def test_missing_entry_is_default(self, srv):
         assert srv.parse_pg_port({}) == 5432
@@ -56,6 +64,34 @@ class TestPgPortPlatform:
         monkeypatch.setattr(srv, "IS_WINDOWS", False)
         monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
         assert srv.pg_port() == 5432
+
+
+class TestPgPortMemoized:
+    """The watchdog calls pg_port() every 5 s; an edited conf must not switch
+    the port of a running service (the message asks for a restart)."""
+
+    def test_value_is_fixed_at_first_call(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        assert srv.pg_port() == 5433
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5434}})
+        assert srv.pg_port() == 5433
+
+    def test_cache_clear_rereads(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        assert srv.pg_port() == 5433
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5434}})
+        srv.pg_port.cache_clear()
+        assert srv.pg_port() == 5434
+
+    def test_invalid_entry_is_not_cached(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": "abc"}})
+        with pytest.raises(srv.PgConfigError):
+            srv.pg_port()
+        monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
+        assert srv.pg_port() == 5433
 
 
 class TestPrintDbPortCli:
@@ -467,4 +503,9 @@ class TestWindowsScripts:
         # cmd strips the first and last quote of a for /f command with >2 quotes
         for name in ("uninstall.bat", "setup.bat"):
             line = next(l for l in _win_text(name).split("\r\n") if "print-db-port" in l and "for /f" in l)
-            assert '(`""%' in line and 'print-db-port 2^>nul"`)' in line, line
+            assert '(`""%' in line and 'print-db-port 2>nul"`)' in line, line
+            # Real cmd.exe (Windows 11 emulator, 2026-11-06): a caret inside the
+            # outer quote pair stays literal, the program then receives the
+            # argument "2>nul" and argparse rejects it.
+            command = line[line.index("(`") + 2:line.index("`)")]
+            assert "2^>nul" not in command, line

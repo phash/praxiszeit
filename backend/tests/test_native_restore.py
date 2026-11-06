@@ -64,6 +64,14 @@ def srv():
     return module
 
 
+@pytest.fixture(autouse=True)
+def _fresh_pg_port(srv):
+    """pg_port() is memoized per process; every test starts uncached."""
+    srv.pg_port.cache_clear()
+    yield
+    srv.pg_port.cache_clear()
+
+
 class FakeCluster:
     """``psql`` der gebuendelten Installation: Datenbanken als Woerterbuch."""
 
