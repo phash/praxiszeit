@@ -201,7 +201,7 @@ PY
 | `PGCONF_UNVERAENDERT` | nur `update`: `ja` — ohne `[database] port` fasst der neue Code `data\db\postgresql.conf` nicht an (MD5 vorher/nachher in `PGCONF_MD5*`) |
 | `NEUER_PORT_CODE` | nur `update`: `ja` (bei gleicher Versionsnummer der einzige Beleg, dass das neue Paket installiert ist) |
 | `FOREIGN_DETECTED` / `FOREIGN_SERVICE_STAYS_STOPPED` | nur `foreignpg`: `1` / `1` — Meldung im `service-stderr.log`, NSSM startet nicht neu |
-| `CLUSTER_MARKER_NACH_NEGATIVPROBE` / `CREDENTIALS_NACH_NEGATIVPROBE` | nur `foreignpg`: was der abgebrochene Erststart hinterlässt. Ein Marker ohne Zugangsdaten kann der nächste Start nicht übernehmen (`.db-credentials is missing …`) — erwartet ist, dass beides zusammenpasst |
+| `CLUSTER_MARKER_NACH_NEGATIVPROBE` / `CREDENTIALS_NACH_NEGATIVPROBE` | nur `foreignpg`: was der abgebrochene Erststart hinterlässt. Ein Marker ohne Zugangsdaten kann der nächste Start nicht übernehmen (`.db-credentials is missing …`) — erwartet ist `0` / `0` (der Abbruch kommt vor jeder Cluster-Anlage, es bleibt nichts zurück) |
 | `===LOGS_<Anlass>_BEGIN===` | letzte 40 Zeilen von `logs\service-stderr.log` und `logs\praxiszeit.log` — nach der Negativprobe und immer, wenn `HEALTH_HTTP` nicht `200` ist |
 | `RESTORE_EXIT` | nur `foreignpg`: `0`, danach `HEALTH_HTTP_NACH_RESTORE` / `LOGIN_HTTP_NACH_RESTORE` = `200` |
 | `FOREIGN_PG_STILL_ON_5432` | nur `foreignpg`: `0` (`pg_isready`-Exitcode: der Fremdserver läuft nach Install, Sicherung und Restore weiter) |

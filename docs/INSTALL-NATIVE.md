@@ -182,6 +182,12 @@ port = 443
 ssl_cert = "config/ssl/cert.pem"    # Leer = kein SSL
 ssl_key = "config/ssl/key.pem"
 
+[database]
+# Nur Windows: Port des PraxisZeit-PostgreSQL (Standard 5432, erlaubt 1024-65535).
+# Nur eintragen, wenn auf dem Rechner schon ein anderer PostgreSQL auf 5432 laeuft.
+# Aenderung wirkt nach Neustart des Dienstes.
+# port = 5433
+
 [practice]
 name = "Praxis Dr. Mueller"
 address = "Musterstr. 1, 80000 Muenchen"
@@ -365,6 +371,7 @@ praxiszeit-X.Y.Z-SHA256SUMS.txt
 | PostgreSQL startet nicht | Logs pruefen: `logs/postgresql-startup.log` |
 | Backend startet nicht | Linux: `journalctl -u praxiszeit -n 50` / Windows: `logs\service-stderr.log` / macOS: `logs/stderr.log` |
 | Port belegt | Anderen Port in `praxiszeit.conf` setzen |
+| Windows: „Port 5432 ist von einem anderen PostgreSQL belegt“ (Dienst bleibt gestoppt) | Ein fremder PostgreSQL belegt den Port. In `config\praxiszeit.conf` unter `[database]` einen freien Port eintragen (z. B. `port = 5433`) und den Dienst neu starten. Die Meldung steht in `logs\service-stderr.log` (Ausdruck: „Port {port} ist von einem anderen PostgreSQL belegt“) |
 | Keine Berechtigung | Linux: `sudo chown -R praxiszeit:praxiszeit /opt/praxiszeit` |
 | Migration fehlgeschlagen | Process Manager manuell starten, Fehlerausgabe lesen |
 | Windows: setup.bat schlaegt fehl | Als Administrator ausfuehren, Internetverbindung pruefen |

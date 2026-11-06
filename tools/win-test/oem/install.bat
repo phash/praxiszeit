@@ -256,7 +256,8 @@ REM Original zurueckkopieren.
 REM ============================================================
 >> "%RES%" echo.
 >> "%RES%" echo [10/11] ACL-Nachweis auf dem Neuanlage-Zweig von setup.bat ...
-REM foreignpg: der Dienst liest die conf alle 5 s neu. Ohne conf gilt Port 5432,
+REM foreignpg: der Dienst liest den Port nur einmal beim Prozessstart. Ohne conf
+REM gilt beim naechsten Start Port 5432,
 REM dort sitzt der Fremdserver - der Waechter wuerde mit Exit 78 aussteigen.
 REM Deshalb hier anhalten; die Gegenprobe unten startet ihn wieder.
 if /i "!MODE!"=="foreignpg" net stop PraxisZeit >> "%RES%" 2>&1

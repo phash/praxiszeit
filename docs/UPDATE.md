@@ -301,7 +301,7 @@ update-wizard.bat
 Der Update-Wizard (`installer/windows/update-wizard.ps1`) stoppt den Dienst,
 spielt Code + Python-Abhängigkeiten ein (pip-Bootstrap gegen stale Pakete),
 installiert bei Bedarf die VC++-Runtime nach und startet den Dienst neu.
-Konfiguration und Datenbank bleiben erhalten. Details + Stolperfallen:
+Konfiguration und Datenbank bleiben erhalten. Der Wizard setzt für den Dienst außerdem `AppExit 78 Exit`. Beim ersten Start der neuen Version kann die `port =`-Zeile in `data\db\postgresql.conf` auf den konfigurierten Port gesetzt werden (ohne `[database] port` bleibt 5432 unverändert) — dazu ist nichts zu tun. Details + Stolperfallen:
 [NATIVE-WINDOWS-PITFALLS.md](NATIVE-WINDOWS-PITFALLS.md).
 
 ### Update-Hinweis in der App

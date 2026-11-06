@@ -570,7 +570,7 @@ LicenseReadOnlyMiddleware: blockt POST/PUT/PATCH/DELETE (Login + Export bleiben 
 | Punkt | Schwere | Status / Maßnahme |
 |-------|---------|-------------------|
 | **`BETA_MODE=True`** im Auslieferungsstand | Hoch | Vor erstem Paid-Release auf `False` (Build-Script warnt) |
-| Native: Fremd-PostgreSQL auf `:5432` (#174) | Mittel | Bootstrap-Check verwechselt Fremd-PG; nur dedizierte Hosts unterstützt |
+| Native: Fremd-PostgreSQL auf `:5432` (#174) | Niedrig | Unix: socket-only. Windows: erkannt (`pg_cluster_state`, Exit 78, keine Neustart-Schleife) und der Port über `[database] port` einstellbar |
 | Native: Rolling-Distros libxml2 ≥2.14 (#177) | Mittel | theseus-PG braucht `libxml2.so.2`; Fail-Fast vorhanden, Bundle-Fix offen |
 | Carryover für `track_hours=False` (#191) | Niedrig | Jahresabschluss-Übertrag für Mitarbeitende ohne Stundenzählung offen |
 | Employment-Window-Filter an 6 Stellen | Niedrig | Tech-Debt: gemeinsamer Per-Tag-Helper statt 6 Filterstellen |
