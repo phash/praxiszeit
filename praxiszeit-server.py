@@ -173,6 +173,57 @@ def get_config_value(config: dict, section: str, key: str, default=None):
     return config.get(section, {}).get(key, default)
 
 
+# --- PostgreSQL-Port (eine Quelle) ---
+
+DEFAULT_PG_PORT = 5432
+EXIT_CONFIG_ERROR = 78  # NSSM: AppExit 78 Exit (kein Neustart-Zyklus bei Konfigurationsfehler)
+_PG_PORT_MIN = 1024
+_PG_PORT_MAX = 65535
+_pg_port_ignored_warned = False
+
+
+class PgConfigError(Exception):
+    """Konfigurationsfehler; die Meldung ist Nutzertext und wird von main() ausgegeben."""
+
+
+class ForeignPostgresError(PgConfigError):
+    """Der konfigurierte Port wird von einem fremden PostgreSQL belegt."""
+
+
+def parse_pg_port(config: dict) -> int:
+    """``[database] port`` pruefen (rein, unabhaengig von der Plattform)."""
+    raw = get_config_value(config, "database", "port", None)
+    if raw is None:
+        return DEFAULT_PG_PORT
+    port = None
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        port = raw
+    elif isinstance(raw, str) and raw.strip().isdigit():
+        port = int(raw.strip())
+    if port is None or not (_PG_PORT_MIN <= port <= _PG_PORT_MAX):
+        raise PgConfigError(
+            f"Ungültiger Datenbank-Port in config\\praxiszeit.conf ([database] port = {raw}): "
+            f"erlaubt sind ganze Zahlen von {_PG_PORT_MIN} bis {_PG_PORT_MAX}."
+        )
+    return port
+
+
+def pg_port() -> int:
+    """Port der PraxisZeit-eigenen Datenbank. Nur unter Windows konfigurierbar."""
+    global _pg_port_ignored_warned
+    config = load_config()
+    if not IS_WINDOWS:
+        if (get_config_value(config, "database", "port", None) is not None
+                and not _pg_port_ignored_warned):
+            _pg_port_ignored_warned = True
+            logger.warning(
+                "[database] port wird auf dieser Plattform ignoriert "
+                "(Unix-Socket, Port %d).", DEFAULT_PG_PORT,
+            )
+        return DEFAULT_PG_PORT
+    return parse_pg_port(config)
+
+
 # --- PostgreSQL Management ---
 
 def pg_cmd(cmd: str) -> Path:
@@ -2298,6 +2349,11 @@ def cmd_init(args):
     pg_stop()
 
 
+def cmd_print_db_port(args):
+    """Nur den Datenbank-Port ausgeben (fuer .bat-Skripte); sonst nichts auf stdout."""
+    print(pg_port())
+
+
 def cmd_harden_permissions(args):
     """Windows: restrict the access rights of the install directory.
 
@@ -2927,6 +2983,10 @@ def main():
     subparsers.add_parser("init", help="First-time database initialization").set_defaults(func=cmd_init)
     subparsers.add_parser("backup", help="Create database backup").set_defaults(func=cmd_backup)
     subparsers.add_parser(
+        "print-db-port",
+        help="Datenbank-Port ausgeben (einzige Zeile auf stdout)",
+    ).set_defaults(func=cmd_print_db_port)
+    subparsers.add_parser(
         "harden-permissions",
         help="Windows: Zugriffsrechte des Installationsverzeichnisses einschraenken",
     ).set_defaults(func=cmd_harden_permissions)
@@ -2966,6 +3026,9 @@ def main():
         # failure site. Exit cleanly (no traceback) so the service log shows the
         # fix to apply, not a confusing Python stack trace on every restart.
         sys.exit(1)
+    except PgConfigError as e:
+        logger.error(str(e))
+        sys.exit(EXIT_CONFIG_ERROR)
 
 
 if __name__ == "__main__":
