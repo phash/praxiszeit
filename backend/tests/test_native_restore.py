@@ -772,3 +772,12 @@ def test_restore_bat_syncs_port_before_cluster_start():
     start = next(i for i, line in enumerate(lines)
                  if line.startswith('"%PG_CTL%"') and " start" in line)
     assert sync < start
+
+
+def test_restore_bat_sets_psql_args_after_db_port():
+    lines = _bat_lines()
+    port = next(i for i, line in enumerate(lines) if line.startswith('for /f') and "print-db-port" in line)
+    args = next(i for i, line in enumerate(lines) if line.startswith('SET "PSQL_ARGS='))
+    assert port < args
+    assert lines[port].count('(`""%PYTHON%"') == 1, lines[port]
+    assert 'SET "DB_PORT="' in lines[:port]

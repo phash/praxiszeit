@@ -21,10 +21,11 @@ SET "NSSM=%DIR%\nssm.exe"
 SET "BACKUP_DIR=%USERPROFILE%\Desktop"
 REM Datenbank-Port aus config\praxiszeit.conf, Standard 5432. Scheitert Python,
 REM bleibt es bei 5432 - die Deinstallation darf daran nicht abbrechen.
-SET "DB_PORT=5432"
+SET "DB_PORT="
 if exist "%DIR%\bin\python\python.exe" if exist "%DIR%\praxiszeit-server.py" (
-    for /f "usebackq delims=" %%p in (`"%DIR%\bin\python\python.exe" "%DIR%\praxiszeit-server.py" print-db-port 2^>nul`) do SET "DB_PORT=%%p"
+    for /f "usebackq delims=" %%p in (`""%DIR%\bin\python\python.exe" "%DIR%\praxiszeit-server.py" print-db-port 2^>nul"`) do SET "DB_PORT=%%p"
 )
+if not defined DB_PORT SET "DB_PORT=5432"
 
 REM --- Administratorrechte: bei Bedarf selbst elevieren ---
 REM Apps & Features startet die UninstallString u.U. OHNE Elevation; wir starten

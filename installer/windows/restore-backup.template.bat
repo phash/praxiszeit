@@ -60,10 +60,7 @@ SET "PG_CTL=%DIR%\bin\postgresql\bin\pg_ctl.exe"
 SET "PG_DATA=%DIR%\data\db"
 SET "RESTORE_DB=praxiszeit_restore"
 REM Der Datenbank-Port kommt aus config\praxiszeit.conf [database] port, Standard
-REM 5432. DB_PORT wird in Schritt 3 gesetzt, vor dem ersten psql-Aufruf.
-REM psql: -X ohne psqlrc, -w nie nach einem Passwort fragen, ON_ERROR_STOP
-REM bricht beim ersten Fehler ab - ohne meldet psql trotz Fehlern Erfolg.
-SET "PSQL_ARGS=-X -w -q -v ON_ERROR_STOP=1 -U praxiszeit -h localhost -p %DB_PORT%"
+REM 5432. DB_PORT wird in Schritt 3 gesetzt, PSQL_ARGS danach.
 REM Die DROP-IF-EXISTS-Zeilen des Dumps melden in der frischen Datenbank je
 REM Objekt einen NOTICE. Fehler zeigt psql weiter an.
 SET "PGOPTIONS=-c client_min_messages=warning"
@@ -120,8 +117,13 @@ REM der Server erreichbar ist, zeigt der erste psql-Aufruf.
 echo Pruefe den Datenbank-Port...
 "%PYTHON%" "%DIR%\praxiszeit-server.py" sync-db-port
 if errorlevel 1 goto :port_konfiguration
-for /f "usebackq delims=" %%p in (`"%PYTHON%" "%DIR%\praxiszeit-server.py" print-db-port`) do SET "DB_PORT=%%p"
+SET "DB_PORT="
+for /f "usebackq delims=" %%p in (`""%PYTHON%" "%DIR%\praxiszeit-server.py" print-db-port"`) do SET "DB_PORT=%%p"
 if not defined DB_PORT goto :port_konfiguration
+REM psql: -X ohne psqlrc, -w nie nach einem Passwort fragen, ON_ERROR_STOP
+REM bricht beim ersten Fehler ab - ohne meldet psql trotz Fehlern Erfolg.
+REM Erst hier gesetzt, weil DB_PORT vorher nicht bekannt ist.
+SET "PSQL_ARGS=-X -w -q -v ON_ERROR_STOP=1 -U praxiszeit -h localhost -p %DB_PORT%"
 echo Datenbank-Port: %DB_PORT%
 echo.
 echo Starte PostgreSQL...

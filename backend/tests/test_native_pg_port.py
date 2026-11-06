@@ -462,3 +462,9 @@ class TestWindowsScripts:
         text = _win_text("setup.bat")
         assert "--serverport 5432" not in text
         assert "--serverport %DB_PORT%" in text
+
+    def test_port_read_uses_outer_quote_pair(self):
+        # cmd strips the first and last quote of a for /f command with >2 quotes
+        for name in ("uninstall.bat", "setup.bat"):
+            line = next(l for l in _win_text(name).split("\r\n") if "print-db-port" in l and "for /f" in l)
+            assert '(`""%' in line and 'print-db-port 2^>nul"`)' in line, line
