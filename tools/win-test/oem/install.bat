@@ -232,35 +232,6 @@ call :read_db_port
 >> "%RES%" echo DB_PORT_NACH_PORTWECHSEL=!DB_PORT!
 call :pgconf_md5 PGCONF_MD5_NACH_PORTWECHSEL
 :after_restore
-REM ============================================================
-REM foreignpg: restore-backup.bat muss den konfigurierten Port nehmen. Auf
-REM 5432 saesse der Fremdserver (ohne Rolle praxiszeit) - jeder psql-Schritt
-REM dort scheiterte. Bestaetigung "LOESCHEN" kommt aus einer Datei; pause
-REM liest dort nur noch das Dateiende und haelt nicht an.
-REM ============================================================
->> "%RES%" echo [Fremd-PG] restore-backup.bat mit der neuesten Sicherung ...
-set "LATEST_BACKUP="
-for /f "delims=" %%b in ('dir /b /o-d "C:\PraxisZeit\data\backups\*.sql.gz" 2^>nul') do if not defined LATEST_BACKUP set "LATEST_BACKUP=C:\PraxisZeit\data\backups\%%b"
->> "%RES%" echo RESTORE_BACKUP_FILE=!LATEST_BACKUP!
-> "%TEMP%\pz-confirm.txt" echo LOESCHEN
-set "PRAXISZEIT_INSTALL_DIR=C:\PraxisZeit"
-call "C:\PraxisZeit\restore-backup.bat" "!LATEST_BACKUP!" < "%TEMP%\pz-confirm.txt" >> "%RES%" 2>&1
->> "%RES%" echo RESTORE_EXIT=!errorlevel!
-del /f /q "%TEMP%\pz-confirm.txt" 2>nul
-set "HCR=000"
-for /l %%i in (1,1,36) do (
-    for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" https://localhost/api/health') do set "HCR=%%c"
-    if "!HCR!"=="200" goto :verified_restore
-    timeout /t 10 /nobreak >nul
-)
-:verified_restore
->> "%RES%" echo HEALTH_HTTP_NACH_RESTORE=!HCR!
-for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" -X POST https://localhost/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"!PWKEY!\":\"!ADMPW!\"}"') do >> "%RES%" echo LOGIN_HTTP_NACH_RESTORE=%%c
-call :own_check OWN_DETECTED_NACH_RESTORE
-REM 0 = der Fremdserver nimmt auf 5432 weiter Verbindungen an (pg_isready).
-"C:\PraxisZeit\bin\postgresql\bin\pg_isready.exe" -h localhost -p 5432 >nul 2>&1
->> "%RES%" echo FOREIGN_PG_STILL_ON_5432=!errorlevel!
-:after_restore
 >> "%RES%" echo ===INSTALLDIR_ACL_BEGIN===
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\install-acl-check.ps1" -InstallDir "C:\PraxisZeit" >> "%RES%" 2>&1
 >> "%RES%" echo ===INSTALLDIR_ACL_END===
