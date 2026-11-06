@@ -258,6 +258,16 @@ ein System-Python-User-Site) + Import-Verify (Build **und** `setup.bat`).
 
 ---
 
+## 13. Fremder PostgreSQL auf 5432
+
+**Symptom:** Auf dem Rechner laeuft schon ein PostgreSQL (z. B. von einer Praxissoftware) auf Port 5432. Frueher hielt PraxisZeit ihn fuer den eigenen Cluster und scheiterte mit wirren Fehlern (Passwort, fehlender Cluster).
+
+**Loesung (neu):** `praxiszeit-server.py` unterscheidet eigenen und fremden Server (`pg_cluster_state()`: `pg_isready` antwortet, `pg_ctl status -D data\db` = 0 und `postmaster.pid` nennt den konfigurierten Port). Ein Fremdserver beendet den Start mit Exit 78 und der Meldung "Port {port} ist von einem anderen PostgreSQL belegt. In config\praxiszeit.conf unter [database] einen freien Port eintragen (z. B. 5433) und den Dienst neu starten." - noch vor jeder Cluster-Anlage. NSSM startet bei Exit 78 nicht neu (`AppExit 78 Exit`). Der Port steht in `config\praxiszeit.conf` unter `[database] port`, wird nur beim Prozessstart gelesen und beim Start in `data\db\postgresql.conf` nachgezogen.
+
+**Stolperfalle:** Ein Reparieren ueber den GUI-Installer schreibt die conf neu und setzt den Datenbank-Port auf den Wert des Feldes zurueck - den Port dort erneut eintragen.
+
+---
+
 ## Checkliste fuer zukuenftige Native Windows Deployments
 
 - [ ] `praxiszeit.conf` korrekt ausgefuellt (admin, security, practice)
@@ -267,6 +277,6 @@ ein System-Python-User-Site) + Import-Verify (Build **und** `setup.bat`).
 - [ ] Nach `net start PraxisZeit`: Logs pruefen auf "Application startup complete"
 - [ ] Kein "Generated SECRET_KEY" bei Folgestarts (muss "Generated and saved" nur beim ersten Mal)
 - [ ] Backup-Restore: `restore-backup.bat` nutzt `pause` → fuer Automation anpassen
-- [ ] PostgreSQL-Port 5432 ist nur auf localhost gebunden (sicher)
+- [ ] PostgreSQL-Port (5432 oder `[database] port`) ist nur auf localhost gebunden (sicher)
 - [ ] API-Endpoints testen: `POST /api/time-entries` darf nicht 405 geben
 - [ ] VC++ Runtime vorhanden (`setup.bat --install_runtimes 1` erledigt das automatisch; sonst `initdb.exe` Exit `0xC0000135`, siehe #11)

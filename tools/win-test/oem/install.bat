@@ -14,6 +14,11 @@ set "RES=\\host.lan\Data\install-result.txt"
 REM MODE=fresh (Vorgabe): Erstinstallation des Pakets aus share\tree.
 REM MODE=update: zuerst das Vorgaengerpaket aus share\tree-old installieren,
 REM dann per update-wizard.ps1 -Headless auf share\tree aktualisieren.
+REM MODE=foreignpg: wie fresh, aber ein fremdes PostgreSQL belegt Port 5432.
+REM Der Dienst muss mit dem Standard-Port mit Exit 78 stehen bleiben, mit
+REM [database] port = 5433 hochkommen; danach Sicherung + restore-backup.bat.
+REM MODE=portchange: wie fresh, danach [database] port = 5433 bei laufendem
+REM Dienst und sofort restore-backup.bat (Portwechsel im Restore-Pfad).
 set "MODE=fresh"
 if exist "\\host.lan\Data\mode.txt" for /f "usebackq delims=" %%m in ("\\host.lan\Data\mode.txt") do set "MODE=%%m"
 set "SRC=\\host.lan\Data\tree"
@@ -52,11 +57,60 @@ powershell -NoProfile -Command "(Get-Content 'config\praxiszeit.conf.example') -
 set PRAXISZEIT_NONINTERACTIVE=1
 call setup.bat >> "%RES%" 2>&1
 
+if /i not "!MODE!"=="foreignpg" goto :after_foreign_setup
+REM ============================================================
+REM foreignpg: ein fremdes PostgreSQL auf Port 5432, wie auf einem Rechner,
+REM auf dem schon eine andere Anwendung ihre Datenbank betreibt. Gebaut mit
+REM den gebuendelten Binaries - die gibt es erst nach setup.bat (EDB-
+REM Installer), deshalb hier und nicht davor. setup.bat laeuft damit noch
+REM ohne belegten Port; der Fremdserver trifft erst den Dienststart.
+REM ============================================================
+>> "%RES%" echo [Fremd-PG] Wegwerf-Cluster C:\foreignpg auf Port 5432 anlegen und starten ...
+set "PGBIN=C:\PraxisZeit\bin\postgresql\bin"
+"%PGBIN%\initdb.exe" -D C:\foreignpg -U postgres -A trust -E UTF8 > C:\pz-harness\foreign-initdb.log 2>&1
+>> "%RES%" echo FOREIGN_INITDB_EXIT=!errorlevel!
+"%PGBIN%\pg_ctl.exe" -D C:\foreignpg -l C:\pz-harness\foreignpg.log -o "-p 5432" -w start > C:\pz-harness\foreign-start.log 2>&1
+>> "%RES%" echo FOREIGN_START_EXIT=!errorlevel!
+type C:\pz-harness\foreign-start.log >> "%RES%" 2>&1
+"%PGBIN%\pg_isready.exe" -h localhost -p 5432 >> "%RES%" 2>&1
+>> "%RES%" echo FOREIGN_PG_READY_5432=!errorlevel!
+:after_foreign_setup
+
 >> "%RES%" echo [4/11] install-service.bat (NSSM) ...
 call install-service.bat >> "%RES%" 2>&1
 
 >> "%RES%" echo [5/11] net start PraxisZeit ...
 net start PraxisZeit >> "%RES%" 2>&1
+
+if /i not "!MODE!"=="foreignpg" goto :after_foreign_check
+REM Negativprobe: mit dem Standard-Port 5432 muss der Dienst den fremden
+REM Server erkennen, die Meldung nach logs\service-stderr.log schreiben und
+REM mit Exit 78 stehen bleiben (NSSM AppExit 78 Exit - kein Neustart-Zyklus).
+>> "%RES%" echo [Fremd-PG] Dienst mit Standard-Port: Exit 78 erwartet ...
+for /l %%i in (1,1,36) do (
+    timeout /t 5 /nobreak >nul
+    sc query PraxisZeit | findstr /C:"STOPPED" >nul && goto :foreign_stopped
+)
+:foreign_stopped
+sc query PraxisZeit | findstr /C:"STATE" /C:"EXIT_CODE" >> "%RES%" 2>&1
+findstr /C:"ist von einem anderen PostgreSQL belegt" "C:\PraxisZeit\logs\service-stderr.log" >> "%RES%" 2>&1
+if errorlevel 1 ( >> "%RES%" echo FOREIGN_DETECTED=0 ) else ( >> "%RES%" echo FOREIGN_DETECTED=1 )
+REM Bleibt er wirklich stehen? 30 s spaeter darf NSSM ihn nicht neu gestartet haben.
+timeout /t 30 /nobreak >nul
+sc query PraxisZeit | findstr /C:"STOPPED" >nul && (>> "%RES%" echo FOREIGN_SERVICE_STAYS_STOPPED=1) || (>> "%RES%" echo FOREIGN_SERVICE_STAYS_STOPPED=0)
+"%PGBIN%\pg_isready.exe" -h localhost -p 5432 >nul 2>&1
+>> "%RES%" echo FOREIGN_PG_READY_NACH_NEGATIVPROBE=!errorlevel!
+REM Was hat der abgebrochene Erststart hinterlassen? Ein angelegter Cluster
+REM (Marker) ohne config\.db-credentials kann der naechste Start nicht mehr
+REM uebernehmen.
+if exist "C:\PraxisZeit\data\db\.praxiszeit-cluster" ( >> "%RES%" echo CLUSTER_MARKER_NACH_NEGATIVPROBE=1 ) else ( >> "%RES%" echo CLUSTER_MARKER_NACH_NEGATIVPROBE=0 )
+if exist "C:\PraxisZeit\config\.db-credentials" ( >> "%RES%" echo CREDENTIALS_NACH_NEGATIVPROBE=1 ) else ( >> "%RES%" echo CREDENTIALS_NACH_NEGATIVPROBE=0 )
+call :dump_logs NEGATIVPROBE
+>> "%RES%" echo [Fremd-PG] [database] port = 5433 eintragen und Dienst erneut starten ...
+powershell -NoProfile -Command "$p='C:\PraxisZeit\config\praxiszeit.conf'; $o=foreach($l in (Get-Content $p)){ $l; if($l -match '^\[database\]\s*$'){ 'port = 5433' } }; Set-Content $p $o -Encoding utf8" >> "%RES%" 2>&1
+findstr /B /C:"port = " "C:\PraxisZeit\config\praxiszeit.conf" >> "%RES%" 2>&1
+net start PraxisZeit >> "%RES%" 2>&1
+:after_foreign_check
 
 >> "%RES%" echo [6/11] Verifiziere HTTP (bis zu 6 min auf die App warten) ...
 set "HC=000"
@@ -67,6 +121,7 @@ for /l %%i in (1,1,36) do (
 )
 :verified
 >> "%RES%" echo HEALTH_HTTP=!HC!
+if not "!HC!"=="200" call :dump_logs HEALTH
 curl -k -s https://localhost/api/health >> "%RES%" 2>&1
 >> "%RES%" echo.
 for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" -X POST https://localhost/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"!PWKEY!\":\"!ADMPW!\"}"') do >> "%RES%" echo LOGIN_HTTP=%%c
@@ -83,17 +138,22 @@ REM psql bekommt sie ueber eine temporaere pgpass-Datei statt ueber eine
 REM Umgebungsvariable - so steht in diesem Skript an keiner Stelle eine
 REM Zuweisung, die wie ein hinterlegtes Kennwort aussieht. Die Datei wird
 REM unmittelbar danach geloescht.
+REM Der Port kommt aus der Installation selbst (print-db-port). Die
+REM Vorgaengerversion im update-Lauf kennt den Befehl nicht - dann 5432.
+call :read_db_port
 set "PGPASSFILE=%TEMP%\pz-pgpass.conf"
 del /f /q "%PGPASSFILE%" 2>nul
-for /f "usebackq tokens=1,* delims==" %%a in (`findstr /B "SUPERUSER_PASSWORD=" "C:\PraxisZeit\config\.db-credentials"`) do >> "%PGPASSFILE%" echo 127.0.0.1:5432:praxiszeit:praxiszeit:%%b
+for /f "usebackq tokens=1,* delims==" %%a in (`findstr /B "SUPERUSER_PASSWORD=" "C:\PraxisZeit\config\.db-credentials"`) do >> "%PGPASSFILE%" echo 127.0.0.1:%DB_PORT%:praxiszeit:praxiszeit:%%b
 if not exist "%PGPASSFILE%" ( >> "%RES%" echo ALEMBIC_VERSION=NO_DB_CREDENTIALS ) else (
-    "C:\PraxisZeit\bin\postgresql\bin\psql.exe" -w -h 127.0.0.1 -p 5432 -U praxiszeit -d praxiszeit -tAc "SELECT version_num FROM alembic_version" > "%TEMP%\alembic.txt" 2>&1
+    "C:\PraxisZeit\bin\postgresql\bin\psql.exe" -w -h 127.0.0.1 -p %DB_PORT% -U praxiszeit -d praxiszeit -tAc "SELECT version_num FROM alembic_version" > "%TEMP%\alembic.txt" 2>&1
     for /f "usebackq delims=" %%v in ("%TEMP%\alembic.txt") do >> "%RES%" echo ALEMBIC_VERSION=%%v
 )
 del /f /q "%PGPASSFILE%" 2>nul
 set "PGPASSFILE="
 sc query PraxisZeit | findstr STATE >> "%RES%" 2>&1
 "C:\PraxisZeit\bin\postgresql\bin\psql.exe" --version >> "%RES%" 2>&1
+call :own_check OWN_DETECTED
+call :pgconf_md5 PGCONF_MD5
 
 if /i not "!MODE!"=="update" goto :after_update
 REM ============================================================
@@ -106,11 +166,13 @@ REM ============================================================
 >> "%RES%" echo ===INSTALLDIR_ACL_ALT_BEGIN===
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\install-acl-check.ps1" -InstallDir "C:\PraxisZeit" >> "%RES%" 2>&1
 >> "%RES%" echo ===INSTALLDIR_ACL_ALT_END===
+call :nssm_appexit NSSM_APPEXIT_78_VOR_UPDATE
 >> "%RES%" echo [Update] update-wizard.ps1 -Headless aus dem neuen Paket ...
 robocopy "\\host.lan\Data\tree" "C:\PZNew" /E /R:2 /W:2 /NFL /NDL /NJH /NJS >nul
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\PZNew\update-wizard.ps1" -InstallDir "C:\PraxisZeit" -Headless >> "%RES%" 2>&1
 >> "%RES%" echo UPDATE_EXIT=!errorlevel!
 findstr /C:"harden-permissions" "C:\PraxisZeit\praxiszeit-server.py" >nul && (>> "%RES%" echo NEUER_CODE=ja) || (>> "%RES%" echo NEUER_CODE=nein)
+findstr /C:"print-db-port" "C:\PraxisZeit\praxiszeit-server.py" >nul && (>> "%RES%" echo NEUER_PORT_CODE=ja) || (>> "%RES%" echo NEUER_PORT_CODE=nein)
 set "HCU=000"
 for /l %%i in (1,1,36) do (
     for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" https://localhost/api/health') do set "HCU=%%c"
@@ -121,6 +183,12 @@ for /l %%i in (1,1,36) do (
 >> "%RES%" echo HEALTH_HTTP_NACH_UPDATE=!HCU!
 for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" -X POST https://localhost/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"!PWKEY!\":\"!ADMPW!\"}"') do >> "%RES%" echo LOGIN_HTTP_NACH_UPDATE=%%c
 sc query PraxisZeit | findstr STATE >> "%RES%" 2>&1
+call :read_db_port
+call :own_check OWN_DETECTED_NACH_UPDATE
+call :nssm_appexit NSSM_APPEXIT_78_NACH_UPDATE
+REM Ohne [database] port darf der neue Code postgresql.conf nicht anfassen.
+call :pgconf_md5 PGCONF_MD5_NACH_UPDATE
+if "!PGCONF_MD5!"=="!PGCONF_MD5_NACH_UPDATE!" ( >> "%RES%" echo PGCONF_UNVERAENDERT=ja ) else ( >> "%RES%" echo PGCONF_UNVERAENDERT=nein )
 :after_update
 
 REM ============================================================
@@ -133,6 +201,37 @@ REM ============================================================
 set PYTHONUTF8=1
 "C:\PraxisZeit\bin\python\python.exe" "C:\PraxisZeit\praxiszeit-server.py" backup >> "%RES%" 2>&1
 >> "%RES%" echo BACKUP_EXIT=!errorlevel!
+if /i "!MODE!"=="foreignpg" goto :restore_foreign
+if /i "!MODE!"=="portchange" goto :restore_portchange
+goto :after_restore
+:restore_foreign
+REM ============================================================
+REM foreignpg: restore-backup.bat muss den konfigurierten Port nehmen. Auf
+REM 5432 saesse der Fremdserver (ohne Rolle praxiszeit) - jeder psql-Schritt
+REM dort scheiterte.
+REM ============================================================
+>> "%RES%" echo [Fremd-PG] restore-backup.bat mit der neuesten Sicherung ...
+call :run_restore RESTORE_EXIT NACH_RESTORE
+REM 0 = der Fremdserver nimmt auf 5432 weiter Verbindungen an (pg_isready).
+"C:\PraxisZeit\bin\postgresql\bin\pg_isready.exe" -h localhost -p 5432 >nul 2>&1
+>> "%RES%" echo FOREIGN_PG_STILL_ON_5432=!errorlevel!
+goto :after_restore
+:restore_portchange
+REM ============================================================
+REM portchange: Port in der conf aendern, OHNE den Dienst neu zu starten, und
+REM dann restore-backup.bat. sync-db-port haelt dabei PraxisZeit-PostgreSQL an
+REM (Portwechsel); das Script muss ihn selbst wieder starten - sein pg_ctl
+REM start scheitert als Administrator (Zugriff verweigert auf data\db).
+REM ============================================================
+>> "%RES%" echo [Portwechsel] [database] port = 5433 eintragen, Dienst laeuft weiter ...
+powershell -NoProfile -Command "$p='C:\PraxisZeit\config\praxiszeit.conf'; $o=foreach($l in (Get-Content $p)){ $l; if($l -match '^\[database\]\s*$'){ 'port = 5433' } }; Set-Content $p $o -Encoding utf8" >> "%RES%" 2>&1
+findstr /B /C:"port = " "C:\PraxisZeit\config\praxiszeit.conf" >> "%RES%" 2>&1
+sc query PraxisZeit | findstr STATE >> "%RES%" 2>&1
+call :run_restore RESTORE_NACH_PORTWECHSEL_EXIT NACH_PORTWECHSEL
+call :read_db_port
+>> "%RES%" echo DB_PORT_NACH_PORTWECHSEL=!DB_PORT!
+call :pgconf_md5 PGCONF_MD5_NACH_PORTWECHSEL
+:after_restore
 >> "%RES%" echo ===INSTALLDIR_ACL_BEGIN===
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\install-acl-check.ps1" -InstallDir "C:\PraxisZeit" >> "%RES%" 2>&1
 >> "%RES%" echo ===INSTALLDIR_ACL_END===
@@ -162,6 +261,11 @@ REM Original zurueckkopieren.
 REM ============================================================
 >> "%RES%" echo.
 >> "%RES%" echo [10/11] ACL-Nachweis auf dem Neuanlage-Zweig von setup.bat ...
+REM foreignpg: der Dienst liest den Port nur einmal beim Prozessstart. Ohne conf
+REM gilt beim naechsten Start Port 5432,
+REM dort sitzt der Fremdserver - der Waechter wuerde mit Exit 78 aussteigen.
+REM Deshalb hier anhalten; die Gegenprobe unten startet ihn wieder.
+if /i "!MODE!"=="foreignpg" net stop PraxisZeit >> "%RES%" 2>&1
 copy /Y "C:\PraxisZeit\config\praxiszeit.conf" "%TEMP%\praxiszeit.conf.bak" >nul
 del /f /q "C:\PraxisZeit\config\praxiszeit.conf"
 cd /d C:\PraxisZeit
@@ -247,6 +351,7 @@ if errorlevel 1 (
     >> "%RES%" echo REBOOT=UEBERSPRUNGEN ^(geplante Aufgabe nicht angelegt^)
     goto :done
 )
+call :stderr_probe
 >> "%RES%" echo REBOOT=JETZT %date% %time%
 shutdown /r /t 15 /c "PraxisZeit-Test: Neustart"
 endlocal
@@ -257,3 +362,119 @@ exit /b 0
 >> "%RES%" echo Ende: %date% %time%
 >> "%RES%" echo ===== DONE =====
 endlocal
+exit /b 0
+
+REM ============================================================
+REM Unterprogramme
+REM ============================================================
+
+:read_db_port
+REM DB_PORT aus der Installation (praxiszeit-server.py print-db-port), sonst 5432.
+REM Bewusst OHNE "2^>nul" in der Klammer: auf echtem cmd.exe kommt das als
+REM Argument "2>nul" beim Programm an (siehe :stderr_probe), print-db-port
+REM scheitert dann an argparse und DB_PORT bliebe leer.
+set "DB_PORT="
+for /f "usebackq delims=" %%p in (`""C:\PraxisZeit\bin\python\python.exe" "C:\PraxisZeit\praxiszeit-server.py" print-db-port"`) do set "DB_PORT=%%p"
+if not defined DB_PORT (
+    set "DB_PORT=5432"
+    >> "%RES%" echo DB_PORT=5432 ^(Rueckfall: print-db-port nicht verfuegbar^)
+) else (
+    >> "%RES%" echo DB_PORT=!DB_PORT!
+)
+goto :eof
+
+:dump_logs
+REM %1 = Anlass. Letzte Zeilen der Dienst-Logs ins Ergebnis - ohne sie ist ein
+REM gescheiterter Start von aussen nicht zu erklaeren.
+>> "%RES%" echo ===LOGS_%~1_BEGIN===
+>> "%RES%" echo --- logs\service-stderr.log
+powershell -NoProfile -Command "Get-Content 'C:\PraxisZeit\logs\service-stderr.log' -Tail 40 -ErrorAction SilentlyContinue" >> "%RES%" 2>&1
+>> "%RES%" echo --- logs\praxiszeit.log
+powershell -NoProfile -Command "Get-Content 'C:\PraxisZeit\logs\praxiszeit.log' -Tail 40 -ErrorAction SilentlyContinue" >> "%RES%" 2>&1
+>> "%RES%" echo ===LOGS_%~1_END===
+goto :eof
+
+:run_restore
+REM %1 = Schluessel fuer den Exitcode, %2 = Suffix der Folge-Schluessel.
+REM Bestaetigung "LOESCHEN" kommt aus einer Datei; pause liest dort nur noch
+REM das Dateiende und haelt nicht an.
+set "LATEST_BACKUP="
+for /f "delims=" %%b in ('dir /b /o-d "C:\PraxisZeit\data\backups\*.sql.gz" 2^>nul') do if not defined LATEST_BACKUP set "LATEST_BACKUP=C:\PraxisZeit\data\backups\%%b"
+>> "%RES%" echo RESTORE_BACKUP_FILE=!LATEST_BACKUP!
+> "%TEMP%\pz-confirm.txt" echo LOESCHEN
+set "PRAXISZEIT_INSTALL_DIR=C:\PraxisZeit"
+call "C:\PraxisZeit\restore-backup.bat" "!LATEST_BACKUP!" < "%TEMP%\pz-confirm.txt" >> "%RES%" 2>&1
+>> "%RES%" echo %~1=!errorlevel!
+del /f /q "%TEMP%\pz-confirm.txt" 2>nul
+set "HCR=000"
+for /l %%i in (1,1,36) do (
+    for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" https://localhost/api/health') do set "HCR=%%c"
+    if "!HCR!"=="200" goto :run_restore_up
+    timeout /t 10 /nobreak >nul
+)
+:run_restore_up
+>> "%RES%" echo HEALTH_HTTP_%~2=!HCR!
+for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" -X POST https://localhost/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"!PWKEY!\":\"!ADMPW!\"}"') do >> "%RES%" echo LOGIN_HTTP_%~2=%%c
+if not "!HCR!"=="200" call :dump_logs %~2
+call :own_check OWN_DETECTED_%~2
+goto :eof
+
+:nssm_appexit
+REM %1 = Schluessel. NSSM schreibt UTF-16; PowerShell entfernt die Nullbytes.
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$o = & 'C:\PraxisZeit\nssm.exe' get PraxisZeit AppExit 78 2>&1; (($o -join ' ') -replace [char]0, '').Trim()"`) do >> "%RES%" echo %~1=%%a
+goto :eof
+
+:own_check
+REM %1 = Ergebnisschluessel. praxiszeit-server.py status meldet "PostgreSQL:
+REM running" nur, wenn der Cluster auf dem Port als UNSER Cluster erkannt wird
+REM (pg_ctl status -D data\db + Port aus postmaster.pid) - aus der erhoehten
+REM Harness-Shell, unter den gehaerteten Ordnerrechten.
+"C:\PraxisZeit\bin\python\python.exe" "C:\PraxisZeit\praxiszeit-server.py" status > "%TEMP%\pz-status.txt" 2>&1
+type "%TEMP%\pz-status.txt" >> "%RES%" 2>&1
+findstr /C:"PostgreSQL: running" "%TEMP%\pz-status.txt" >nul
+if errorlevel 1 ( >> "%RES%" echo %~1=0 ) else ( >> "%RES%" echo %~1=1 )
+del /f /q "%TEMP%\pz-status.txt" 2>nul
+goto :eof
+
+:pgconf_md5
+REM %1 = Schluessel; setzt die gleichnamige Variable und schreibt die port-Zeilen mit.
+set "%~1="
+for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "(Get-FileHash 'C:\PraxisZeit\data\db\postgresql.conf' -Algorithm MD5).Hash"`) do set "%~1=%%h"
+>> "%RES%" echo %~1=!%~1!
+findstr /R /C:"^port" /C:"^#port" "C:\PraxisZeit\data\db\postgresql.conf" >> "%RES%" 2>&1
+goto :eof
+
+:stderr_probe
+REM Unterdrueckt "2^>nul" in der gequoteten for-/f-Zeile (setup.bat,
+REM uninstall.bat) auf echtem cmd.exe die Fehlerausgabe? Gleiche Form; ein
+REM Python-Einzeiler schreibt STDERR_LEAK nach stderr und seine Argumente
+REM (STDERR_PROBE_*_ARGS=[...]) nach stdout. Gegenprobe ohne "2^>nul": dort
+REM MUSS STDERR_LEAK ankommen, sonst beweist die erste Zeile nichts.
+> "C:\pz-harness\stderr-probe.py" echo import sys; sys.stderr.write("STDERR_LEAK\n"); print("ARGS=" + repr(sys.argv[1:]))
+set "PROBE_PY=C:\PraxisZeit\bin\python\python.exe"
+set "SP="
+(for /f "usebackq delims=" %%p in (`""%PROBE_PY%" "C:\pz-harness\stderr-probe.py" 2^>nul"`) do set "SP=%%p") > "%TEMP%\pz-sp-mit.txt" 2>&1
+findstr /C:"STDERR_LEAK" "%TEMP%\pz-sp-mit.txt" >nul
+if errorlevel 1 ( >> "%RES%" echo STDERR_LEAK_MIT_2NUL=0 ) else ( >> "%RES%" echo STDERR_LEAK_MIT_2NUL=1 )
+>> "%RES%" echo STDERR_PROBE_MIT_2NUL_!SP!
+set "SP="
+(for /f "usebackq delims=" %%p in (`""%PROBE_PY%" "C:\pz-harness\stderr-probe.py""`) do set "SP=%%p") > "%TEMP%\pz-sp-ohne.txt" 2>&1
+findstr /C:"STDERR_LEAK" "%TEMP%\pz-sp-ohne.txt" >nul
+if errorlevel 1 ( >> "%RES%" echo STDERR_LEAK_OHNE_2NUL=0 ) else ( >> "%RES%" echo STDERR_LEAK_OHNE_2NUL=1 )
+>> "%RES%" echo STDERR_PROBE_OHNE_2NUL_!SP!
+REM Korrigierte Form (setup.bat/uninstall.bat seit Fix-Runde 1): "2>nul" ohne
+REM Caret INNERHALB des aeusseren Anfuehrungszeichenpaars. Erwartet: kein Leck,
+REM ARGS ohne "2>nul".
+set "SP="
+(for /f "usebackq delims=" %%p in (`""%PROBE_PY%" "C:\pz-harness\stderr-probe.py" 2>nul"`) do set "SP=%%p") > "%TEMP%\pz-sp-neu.txt" 2>&1
+findstr /C:"STDERR_LEAK" "%TEMP%\pz-sp-neu.txt" >nul
+if errorlevel 1 ( >> "%RES%" echo STDERR_LEAK_NEUE_FORM=0 ) else ( >> "%RES%" echo STDERR_LEAK_NEUE_FORM=1 )
+>> "%RES%" echo STDERR_PROBE_NEUE_FORM_!SP!
+REM Genau die Portzeile aus uninstall.bat gegen die echte Installation.
+set "DIR=C:\PraxisZeit"
+set "UDB="
+for /f "usebackq delims=" %%p in (`""%DIR%\bin\python\python.exe" "%DIR%\praxiszeit-server.py" print-db-port 2>nul"`) do set "UDB=%%p"
+>> "%RES%" echo DB_PORT_UNINSTALL_FORM=!UDB!
+del /f /q "%TEMP%\pz-sp-neu.txt" 2>nul
+del /f /q "%TEMP%\pz-sp-mit.txt" "%TEMP%\pz-sp-ohne.txt" 2>nul
+goto :eof

@@ -59,9 +59,8 @@ SET "PSQL=%DIR%\bin\postgresql\bin\psql.exe"
 SET "PG_CTL=%DIR%\bin\postgresql\bin\pg_ctl.exe"
 SET "PG_DATA=%DIR%\data\db"
 SET "RESTORE_DB=praxiszeit_restore"
-REM psql: -X ohne psqlrc, -w nie nach einem Passwort fragen, ON_ERROR_STOP
-REM bricht beim ersten Fehler ab - ohne meldet psql trotz Fehlern Erfolg.
-SET "PSQL_ARGS=-X -w -q -v ON_ERROR_STOP=1 -U praxiszeit -p 5432"
+REM Der Datenbank-Port kommt aus config\praxiszeit.conf [database] port, Standard
+REM 5432. DB_PORT wird in Schritt 3 gesetzt, PSQL_ARGS danach.
 REM Die DROP-IF-EXISTS-Zeilen des Dumps melden in der frischen Datenbank je
 REM Objekt einen NOTICE. Fehler zeigt psql weiter an.
 SET "PGOPTIONS=-c client_min_messages=warning"
@@ -115,6 +114,25 @@ echo.
 REM --- Schritt 3: PostgreSQL starten ---
 REM Laeuft PostgreSQL schon als eigener Dienst, meldet pg_ctl das nur - ob
 REM der Server erreichbar ist, zeigt der erste psql-Aufruf.
+echo Pruefe den Datenbank-Port...
+"%PYTHON%" "%DIR%\praxiszeit-server.py" sync-db-port
+if errorlevel 1 goto :port_konfiguration
+SET "DB_PORT="
+for /f "usebackq delims=" %%p in (`""%PYTHON%" "%DIR%\praxiszeit-server.py" print-db-port"`) do SET "DB_PORT=%%p"
+if not defined DB_PORT goto :port_konfiguration
+REM psql: -X ohne psqlrc, -w nie nach einem Passwort fragen, ON_ERROR_STOP
+REM bricht beim ersten Fehler ab - ohne meldet psql trotz Fehlern Erfolg.
+REM Erst hier gesetzt, weil DB_PORT vorher nicht bekannt ist.
+SET "PSQL_ARGS=-X -w -q -v ON_ERROR_STOP=1 -U praxiszeit -h localhost -p %DB_PORT%"
+echo Datenbank-Port: %DB_PORT%
+echo.
+echo Starte PostgreSQL...
+REM Unter Windows laeuft der Cluster als eigener Dienst (NetworkService).
+REM sync-db-port haelt ihn nach einem Portwechsel an, und pg_ctl start
+REM scheitert als Administrator ("Zugriff verweigert", Rechte von data\db).
+REM Deshalb zuerst den Dienst starten; laeuft er schon, meldet net start nur
+REM einen Fehler, der hier nichts bedeutet. pg_ctl bleibt als Rueckfall.
+net start PraxisZeit-PostgreSQL >nul 2>&1
 echo Starte PostgreSQL...
 "%PG_CTL%" -D "%PG_DATA%" -l "%DIR%\logs\pg-restore.log" start
 timeout /t 5 /nobreak >nul
@@ -197,6 +215,18 @@ echo.
 echo FEHLER: Das Backup enthaelt keine PraxisZeit-Datenbank - die Tabelle
 echo alembic_version fehlt oder ist leer.
 goto :bestand_unveraendert
+
+:port_konfiguration
+del "%BACKUP_DUMP%" 2>nul
+echo.
+echo FEHLER: Der Datenbank-Port ist ungueltig oder konnte nicht gelesen werden.
+echo In config\praxiszeit.conf unter [database] port eine ganze Zahl von 1024
+echo bis 65535 eintragen oder den Eintrag entfernen. Es wurde nichts veraendert,
+echo die Datenbank ist unveraendert. Der Dienst wurde NICHT gestartet;
+echo nach Pruefung wieder starten mit: net start PraxisZeit
+echo.
+pause
+exit /b 1
 
 :bestand_unveraendert
 del "%REV_FILE%" 2>nul

@@ -430,6 +430,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             HttpsPort = _ports.HttpsPort,
             HttpRedirectPort = _ports.EffectiveHttpRedirectPort,
+            DbPort = _ports.DbPort,
         };
     }
 

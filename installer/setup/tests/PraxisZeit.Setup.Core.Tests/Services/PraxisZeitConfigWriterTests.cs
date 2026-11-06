@@ -343,4 +343,56 @@ public sealed class PraxisZeitConfigWriterTests : IDisposable
         var act = () => PraxisZeitConfigWriter.WriteLicenseFileAsync(configDir, "");
         await act.Should().ThrowAsync<ArgumentException>();
     }
+
+    // --------------------- DB-Port ---------------------
+
+    private static string Section(string content, string name)
+    {
+        var start = content.IndexOf($"[{name}]", StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0);
+        var end = content.IndexOf("\n[", start + 1, StringComparison.Ordinal);
+        return end < 0 ? content[start..] : content[start..end];
+    }
+
+    [Fact]
+    public void Serialize_omits_db_port_at_default()
+    {
+        var content = PraxisZeitConfigWriter.Serialize(ValidValues());
+        Section(content, "database").Should().NotContain("port =");
+    }
+
+    [Fact]
+    public void Serialize_writes_custom_db_port_in_database_section()
+    {
+        var content = PraxisZeitConfigWriter.Serialize(ValidValues() with { DbPort = 5433 });
+        Section(content, "database").Should().Contain("port = 5433");
+        Section(content, "server").Should().NotContain("5433");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1023)]
+    [InlineData(65536)]
+    public void ValidateValues_rejects_db_port_out_of_range(int port)
+    {
+        var values = ValidValues() with { DbPort = port };
+        PraxisZeitConfigWriter.ValidateValues(values)
+            .Should().Be("Datenbank-Port muss zwischen 1024 und 65535 liegen.");
+    }
+
+    [Fact]
+    public void ValidateValues_rejects_db_port_equal_to_https()
+    {
+        var values = ValidValues() with { HttpsPort = 8443, HttpRedirectPort = 0, DbPort = 8443 };
+        PraxisZeitConfigWriter.ValidateValues(values)
+            .Should().Be("Datenbank-Port darf nicht gleich dem HTTPS- oder HTTP-Port sein.");
+    }
+
+    [Fact]
+    public void ValidateValues_rejects_db_port_equal_to_http_redirect()
+    {
+        var values = ValidValues() with { HttpsPort = 8443, HttpRedirectPort = 8080, DbPort = 8080 };
+        PraxisZeitConfigWriter.ValidateValues(values)
+            .Should().Be("Datenbank-Port darf nicht gleich dem HTTPS- oder HTTP-Port sein.");
+    }
 }

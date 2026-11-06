@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### ✨ Neu
+
+- **Datenbank-Port unter Windows einstellbar.** Läuft auf dem Rechner schon ein anderer PostgreSQL auf Port 5432, kann PraxisZeit mit einem eigenen Port arbeiten: in `config\praxiszeit.conf` unter `[database]` die Zeile `port = 5433` (erlaubt 1024–65535, ohne Eintrag 5432) und den Dienst neu starten. Der GUI-Installer hat dafür auf der Seite „Ports“ das Feld „Datenbank-Port (nur Windows)“ samt Warnung bei belegtem Port. Auf Linux und macOS gibt es weiterhin nur den Socket; ein Eintrag wird dort mit einer Warnung ignoriert.
+- **Fremder PostgreSQL wird erkannt.** Belegt ein anderer Server den Port, beendet sich PraxisZeit mit der Meldung „Port … ist von einem anderen PostgreSQL belegt. In config\praxiszeit.conf unter [database] einen freien Port eintragen …“, bevor etwas angelegt wird. Der Windows-Dienst startet dann nicht endlos neu (`AppExit 78 Exit`; der Update-Wizard setzt es auch für bestehende Installationen).
+- `restore-backup.bat`, die Sicherung in `uninstall.bat` und `setup.bat` verwenden den konfigurierten Port; neue Befehle `praxiszeit-server.py print-db-port` und `sync-db-port`.
+
+### ⚠️ Hinweis
+
+- Ein **Reparieren** über den GUI-Installer schreibt `praxiszeit.conf` neu und setzt den Datenbank-Port damit auf den Wert des Feldes zurück — den Port dort erneut eintragen.
+- Beim ersten Start nach einem Port-Wechsel wird die `port =`-Zeile in `data\db\postgresql.conf` angepasst; läuft der PostgreSQL-Dienst, wird er dafür kurz gestoppt.
+
 ## [1.22.0] - 2026-11-04
 
 Minor-Release mit zwei großen Neuerungen: **verkürzte Tage** (z. B. Heiligabend

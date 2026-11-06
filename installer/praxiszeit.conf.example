@@ -16,6 +16,9 @@ ssl_key = "config/ssl/key.pem"
 data_dir = "data/db"
 superuser = "praxiszeit"
 app_user = "praxiszeit_app"
+# Nur Windows: Port der PraxisZeit-eigenen Datenbank (Standard 5432).
+# Nur ändern, wenn auf dem Rechner bereits ein anderer PostgreSQL läuft.
+# port = 5433
 
 [practice]
 # Praxis-Informationen (erscheinen in Exporten)

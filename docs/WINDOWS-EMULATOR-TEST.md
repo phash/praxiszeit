@@ -13,14 +13,26 @@ kommt aus dem EDB-Installer statt aus den theseus-Tarbällen, und die
 Rechte-Härtung auf `praxiszeit.conf` und `ssl/key.pem` existiert nur dort.
 Unit-Tests und `validate-release.sh` sehen davon nichts.
 
-Es gibt zwei Läufe, gewählt über `share/mode.txt`:
+Es gibt vier Läufe, gewählt über `share/mode.txt`:
 
 - `fresh` (Vorgabe, Datei fehlt oder leer): **Erstinstallation** des Pakets aus `share/tree`.
 - `update`: zuerst das **Vorgängerpaket** aus `share/tree-old` installieren, dann
   mit `update-wizard.ps1 -Headless` aus dem neuen Paket aktualisieren — derselbe
   Weg, den der GUI-Installer im Update-Modus nimmt.
+- `foreignpg`: wie `fresh`, aber ein **fremdes PostgreSQL belegt Port 5432**
+  (Wegwerf-Cluster `C:\foreignpg` aus den gebündelten Binaries, nach `setup.bat`
+  angelegt — vorher gibt es die Binaries noch nicht). Der Dienst muss mit dem
+  Standard-Port mit Exit 78 stehen bleiben und die Meldung „… ist von einem
+  anderen PostgreSQL belegt …" nach `logs\service-stderr.log` schreiben; danach
+  trägt der Lauf `[database] port = 5433` ein, startet neu und spielt eine
+  Sicherung mit `restore-backup.bat` zurück. Der Fremdserver muss dabei
+  unangetastet weiterlaufen.
+- `portchange`: wie `fresh`, danach `[database] port = 5433` bei **laufendem**
+  Dienst eintragen und sofort `restore-backup.bat` — der Restore muss den
+  Portwechsel selbst nachziehen (`sync-db-port` hält „PraxisZeit-PostgreSQL“ an,
+  das Script startet ihn wieder) und den Dienst auf 5433 hochbringen.
 
-Beide Läufe enden mit einem **echten Neustart der VM**; danach prüft eine
+Alle Läufe enden mit einem **echten Neustart der VM**; danach prüft eine
 geplante Aufgabe Dienst, Anmeldung und Rechte noch einmal.
 
 ---
@@ -52,7 +64,7 @@ tools/win-test/
     ├── run-probe.ps1        legt ein Standardkonto an und startet damit nonadmin-probe.ps1
     ├── nonadmin-probe.ps1   versucht als Standardkonto zu schreiben und zu lesen
     ├── post-reboot.bat      Nachprüfung nach dem Neustart (geplante Aufgabe)
-    ├── mode.txt            ← fresh | update (nicht im Repo)
+    ├── mode.txt            ← fresh | update | foreignpg | portchange (nicht im Repo)
     ├── tree-old/           ← Vorgängerpaket für den Update-Lauf (nicht im Repo)
     ├── admin-password.txt  ← Admin-Kennwort der Test-VM (nicht im Repo)
     ├── tree/               ← hier wird das Release-Paket entpackt (nicht im Repo)
@@ -92,6 +104,10 @@ echo fresh > share/mode.txt
 #   rm -rf share/tree-old && mkdir -p share/tree-old
 #   unzip -q praxiszeit-<vorgänger>-windows-x64.zip -d share/tree-old
 #   echo update > share/mode.txt
+# … oder Fremd-PostgreSQL-Lauf (Paket aus share/tree, kein Vorgänger nötig)
+#   echo foreignpg > share/mode.txt
+# … oder Portwechsel im Restore-Pfad
+#   echo portchange > share/mode.txt
 ```
 
 ⚠️ `build-release.sh` überschreibt `dist/praxiszeit-<version>-windows-x64.zip`,
@@ -122,9 +138,13 @@ Schritt und schreibt das ins Ergebnis.
 ## Lauf starten
 
 ```bash
-docker compose down -v     # PFLICHT vor jedem erneuten Lauf
-docker compose up -d
+docker compose -p pz-wintest down -v     # PFLICHT vor jedem erneuten Lauf
+docker compose -p pz-wintest up -d
 ```
+
+`-p pz-wintest`: andere Projekte auf derselben Maschine haben ebenfalls ein
+Verzeichnis `win-test` — ohne eigenen Projektnamen teilen sie sich Container und
+Volume.
 
 ⚠️ **Das `-v` ist nicht optional.** `install.bat` läuft nur auf einer frisch
 eingerichteten Windows-Installation. Bleibt das alte Volume liegen, startet die
@@ -163,7 +183,8 @@ t = open('share/install-result.txt', encoding='utf-8', errors='replace').read()
 keys = ['PAKET_VERSION','HEALTH_HTTP','LOGIN_HTTP','ALEMBIC','psql (','VERDICT',
         'Setup abgeschlossen','deployment_mode','FEHLER','STATE','===== ',
         'PROBE','BACKUP_EXIT','LAST_BOOT','REBOOT','UPDATE_EXIT','NEUER_CODE',
-        'INSTALLDIR']
+        'INSTALLDIR','DB_PORT','OWN_DETECTED','FOREIGN','RESTORE','PGCONF',
+        'STDERR_LEAK','NEUER_PORT_CODE','NSSM_APPEXIT','PORTWECHSEL']
 for line in t.splitlines():
     l = line.strip()
     if l and any(k in l for k in keys):
@@ -181,6 +202,18 @@ PY
 | `LOGIN_HTTP` | `200` — echte Anmeldung, nicht nur ein erreichbarer Port |
 | `SYSTEM_INFO_RAW` | `"version":"<version>"` passend zu `PAKET_VERSION` |
 | `ALEMBIC_VERSION` | der aktuelle Migrations-Kopf (z. B. `073_work_blocks`) |
+| `DB_PORT` | `5432` (`fresh`/`update`; im `update` vor dem Update mit „Rückfall", der Vorgänger kennt `print-db-port` nicht) bzw. `5433` (`foreignpg`) |
+| `OWN_DETECTED` (auch `_NACH_UPDATE`, `_NACH_RESTORE`, `_NACH_REBOOT`) | `1` — `praxiszeit-server.py status` erkennt den eigenen Cluster als eigenen (`pg_ctl status -D data\db` + Port aus `postmaster.pid`, aus der erhöhten Harness-Shell unter den gehärteten Ordnerrechten) |
+| `PGCONF_UNVERAENDERT` | nur `update`: `ja` — ohne `[database] port` fasst der neue Code `data\db\postgresql.conf` nicht an (MD5 vorher/nachher in `PGCONF_MD5*`) |
+| `NEUER_PORT_CODE` | nur `update`: `ja` (bei gleicher Versionsnummer der einzige Beleg, dass das neue Paket installiert ist) |
+| `FOREIGN_DETECTED` / `FOREIGN_SERVICE_STAYS_STOPPED` | nur `foreignpg`: `1` / `1` — Meldung im `service-stderr.log`, NSSM startet nicht neu |
+| `CLUSTER_MARKER_NACH_NEGATIVPROBE` / `CREDENTIALS_NACH_NEGATIVPROBE` | nur `foreignpg`: was der abgebrochene Erststart hinterlässt. Ein Marker ohne Zugangsdaten kann der nächste Start nicht übernehmen (`.db-credentials is missing …`) — erwartet ist `0` / `0` (der Abbruch kommt vor jeder Cluster-Anlage, es bleibt nichts zurück) |
+| `===LOGS_<Anlass>_BEGIN===` | letzte 40 Zeilen von `logs\service-stderr.log` und `logs\praxiszeit.log` — nach der Negativprobe und immer, wenn `HEALTH_HTTP` nicht `200` ist |
+| `RESTORE_EXIT` | nur `foreignpg`: `0`, danach `HEALTH_HTTP_NACH_RESTORE` / `LOGIN_HTTP_NACH_RESTORE` = `200` |
+| `RESTORE_NACH_PORTWECHSEL_EXIT` | nur `portchange`: `0`, danach `HEALTH_HTTP_NACH_PORTWECHSEL` / `LOGIN_HTTP_NACH_PORTWECHSEL` = `200`, `DB_PORT_NACH_PORTWECHSEL=5433`, `OWN_DETECTED_NACH_PORTWECHSEL=1` |
+| `NSSM_APPEXIT_78_NACH_UPDATE` | nur `update`: `Exit` — der Update-Wizard hat `AppExit 78 Exit` gesetzt (`_VOR_UPDATE` zeigt den Stand der Vorgängerversion) |
+| `FOREIGN_PG_STILL_ON_5432` | nur `foreignpg`: `0` (`pg_isready`-Exitcode: der Fremdserver läuft nach Install, Sicherung und Restore weiter) |
+| `STDERR_LEAK_MIT_2NUL` / `STDERR_LEAK_OHNE_2NUL`, `STDERR_PROBE_*_ARGS` | **Messwert, keine Erwartung.** Prüft, ob `2^>nul` in der gequoteten `for /f`-Zeile (Form aus `setup.bat`/`uninstall.bat`) stderr unterdrückt. Befund Windows 11 (2026-11-06): `1` / `1` — cmd.exe reicht `2>nul` als **Argument** an das Programm weiter, statt umzuleiten (`setup.bat` meldet im selben Lauf `praxiszeit-server.py: error: unrecognized arguments: 2>nul`). `print-db-port` scheiterte in dieser Form; `setup.bat`/`uninstall.bat` nutzen seitdem `2>nul` ohne Caret innerhalb des äußeren Anführungszeichenpaars. Dafür erwartet: `STDERR_LEAK_NEUE_FORM=0`, `STDERR_PROBE_NEUE_FORM_ARGS=[]` und `DB_PORT_UNINSTALL_FORM` = konfigurierter Port (exakte Portzeile aus `uninstall.bat`) |
 | `psql (PostgreSQL)` | `18.6` — der gepinnte Stand, siehe `PG_WINDOWS_SHA256` |
 | `STATE` | `4  RUNNING` |
 | `HEALTH_HTTP_NACH_NEUSTART` / `LOGIN_HTTP_NACH_NEUSTART` | beide `200` (Dienst-Neustart) |
@@ -243,15 +276,18 @@ Vorgänger.
 2. `config\praxiszeit.conf` aus der Vorlage schreiben — das Admin-Passwort kommt aus `share/admin-password.txt` (fehlt die Datei, bricht der Lauf mit `FEHLER:` ab, statt still mit einem leeren Kennwort weiterzumachen)
 3. `setup.bat` (PostgreSQL 18 + Python-Abhängigkeiten), unbeaufsichtigt über `PRAXISZEIT_NONINTERACTIVE=1`
 4. `install-service.bat` (NSSM-Dienst, Firewall-Regel, Backup-Aufgabe)
-5. `net start PraxisZeit`
+5. `net start PraxisZeit` — im `foreignpg`-Lauf davor der Fremdserver auf 5432,
+   danach die Negativprobe (Exit 78), `[database] port = 5433` und ein zweiter Start
 6. bis zu 6 Minuten auf `GET /api/health` warten, dann `POST /api/auth/login`
 7. `/api/system/info` abholen (Version, Modus, Beta-Kennzeichen)
 8. `alembic_version` und `psql --version` direkt aus der mitgelieferten Datenbank
+   (Port über `praxiszeit-server.py print-db-port`), `status` → `OWN_DETECTED`
 
    Zwischen Schritt 8 und 9: im `update`-Lauf zuerst die Messung des Altstands
    (`INSTALLDIR_ACL_ALT`) und das Update (`UPDATE_EXIT`, `NEUER_CODE`, Anmeldung
-   danach); in beiden Läufen dann Sicherung anlegen (`BACKUP_EXIT`), Rechte des
-   ganzen Ordners messen (`INSTALLDIR_ACL`) und die Probe als Standardkonto
+   danach); in allen Läufen dann Sicherung anlegen (`BACKUP_EXIT`) — im
+   `foreignpg`-Lauf gleich danach `restore-backup.bat` mit dieser Sicherung
+   (`RESTORE_EXIT`, `FOREIGN_PG_STILL_ON_5432`) —, Rechte des ganzen Ordners messen (`INSTALLDIR_ACL`) und die Probe als Standardkonto
    (`PROBE_BEGIN`).
 
 9. Rechte-Nachweis auf den Bestandsdateien
@@ -294,7 +330,7 @@ und Probe noch einmal und schreibt erst dann `===== DONE =====`.
 ## Aufräumen
 
 ```bash
-docker compose down -v
+docker compose -p pz-wintest down -v
 rm -rf share/tree
 ```
 

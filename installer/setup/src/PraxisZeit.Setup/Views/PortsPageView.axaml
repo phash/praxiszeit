@@ -85,6 +85,30 @@
                 </StackPanel>
             </Border>
 
+            <!-- Datenbank-Port (nur Windows) -->
+            <Border Classes="card" IsVisible="{Binding IsDbPortVisible}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Datenbank-Port (nur Windows)"
+                               FontSize="11"
+                               FontWeight="Medium"
+                               LetterSpacing="0.4"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                    <Grid ColumnDefinitions="200,*" ColumnSpacing="14">
+                        <NumericUpDown Grid.Column="0"
+                                       Value="{Binding DbPort, Mode=TwoWay}"
+                                       Minimum="1024" Maximum="65535"
+                                       Increment="1"
+                                       FormatString="0"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="Nur ändern, wenn auf diesem Rechner bereits ein anderer PostgreSQL läuft (z. B. 5433)."
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
             <!-- Port-Konflikt-Warnung -->
             <Border IsVisible="{Binding HasPortConflictWarning}"
                     Background="#0FF59E0B"

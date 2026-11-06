@@ -19,9 +19,11 @@ Usage:
 """
 
 import argparse
+import functools
 import logging
 import os
 import platform
+import re
 import secrets
 import shlex
 import shutil
@@ -119,6 +121,9 @@ logger.addHandler(_console_handler)
 
 # --- Configuration ---
 
+_bom_warned = False
+
+
 def load_config() -> dict:
     """Load configuration from praxiszeit.conf (TOML).
 
@@ -143,14 +148,18 @@ def load_config() -> dict:
     with open(CONFIG_FILE, "rb") as f:
         content = f.read()
 
-    # UTF-8 BOM entfernen (Notepad-Fallstrick)
+    # UTF-8 BOM entfernen (Notepad-Fallstrick). Gemeldet wird einmal je
+    # Prozess - load_config laeuft beim Start mehrfach (u. a. pg_port()).
+    global _bom_warned
     if content.startswith(b"\xef\xbb\xbf"):
         content = content[3:]
-        logger.warning(
-            "praxiszeit.conf enthielt UTF-8 BOM (vermutlich mit Notepad "
-            "gespeichert) - wurde beim Laden entfernt. Bitte mit einem "
-            "BOM-losen Editor neu speichern."
-        )
+        if not _bom_warned:
+            _bom_warned = True
+            logger.warning(
+                "praxiszeit.conf enthielt UTF-8 BOM (vermutlich mit Notepad "
+                "gespeichert) - wurde beim Laden entfernt. Bitte mit einem "
+                "BOM-losen Editor neu speichern."
+            )
 
     try:
         return tomllib.loads(content.decode("utf-8"))
@@ -173,6 +182,72 @@ def get_config_value(config: dict, section: str, key: str, default=None):
     return config.get(section, {}).get(key, default)
 
 
+# --- PostgreSQL-Port (eine Quelle) ---
+
+DEFAULT_PG_PORT = 5432
+EXIT_CONFIG_ERROR = 78  # NSSM: AppExit 78 Exit (kein Neustart-Zyklus bei Konfigurationsfehler)
+_PG_PORT_MIN = 1024
+_PG_PORT_MAX = 65535
+_pg_port_ignored_warned = False
+
+
+class PgConfigError(Exception):
+    """Konfigurationsfehler; die Meldung ist Nutzertext und wird von main() ausgegeben."""
+
+
+class ForeignPostgresError(PgConfigError):
+    """Der konfigurierte Port wird von einem fremden PostgreSQL belegt."""
+
+
+def parse_pg_port(config: dict) -> int:
+    """``[database] port`` pruefen (rein, unabhaengig von der Plattform)."""
+    raw = get_config_value(config, "database", "port", None)
+    if raw is None:
+        return DEFAULT_PG_PORT
+    port = None
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        port = raw
+    elif isinstance(raw, str) and raw.strip().isdigit():
+        port = int(raw.strip())
+    if port is None or not (_PG_PORT_MIN <= port <= _PG_PORT_MAX):
+        raise PgConfigError(
+            f"Ungültiger Datenbank-Port in config\\praxiszeit.conf ([database] port = {raw}): "
+            f"erlaubt sind ganze Zahlen von {_PG_PORT_MIN} bis {_PG_PORT_MAX}."
+        )
+    return port
+
+
+@functools.lru_cache(maxsize=None)
+def pg_port() -> int:
+    """Port der PraxisZeit-eigenen Datenbank. Nur unter Windows konfigurierbar.
+
+    Einmal je Prozess gelesen: der Waechter in cmd_start fragt alle 5 s, eine
+    im laufenden Betrieb geaenderte conf darf den Port nicht mitten im Lauf
+    umstellen - die Meldung verlangt ausdruecklich einen Dienstneustart.
+    Ein ungueltiger Eintrag wird nicht gemerkt (lru_cache speichert keine
+    Ausnahmen). Tests setzen den Wert mit ``pg_port.cache_clear()`` zurueck.
+    """
+    if not IS_WINDOWS:
+        # Wie vor Teil C: unter Linux/macOS liest der Port die conf gar nicht
+        # (Unix-Socket, fest 5432). Den Hinweis auf einen ignorierten Eintrag
+        # gibt cmd_start aus der ohnehin geladenen conf (warn_ignored_pg_port).
+        return DEFAULT_PG_PORT
+    return parse_pg_port(load_config())
+
+
+def warn_ignored_pg_port(config: dict) -> None:
+    """Linux/macOS: einmal melden, dass ``[database] port`` ignoriert wird."""
+    global _pg_port_ignored_warned
+    if IS_WINDOWS or _pg_port_ignored_warned:
+        return
+    if get_config_value(config, "database", "port", None) is not None:
+        _pg_port_ignored_warned = True
+        logger.warning(
+            "[database] port wird auf dieser Plattform ignoriert "
+            "(Unix-Socket, Port %d).", DEFAULT_PG_PORT,
+        )
+
+
 # --- PostgreSQL Management ---
 
 def pg_cmd(cmd: str) -> Path:
@@ -193,6 +268,10 @@ def pg_env() -> dict:
     pg_lib = str(BIN_DIR / "postgresql" / "lib")
     if IS_WINDOWS:
         env["PATH"] = f"{pg_lib};{env.get('PATH', '')}"
+        # Hart setzen: ein vererbtes PGHOST/PGPORT darf psql/pg_dump nie auf
+        # einen fremden Cluster lenken; unser Port steht in [database] port.
+        env["PGHOST"] = "localhost"
+        env["PGPORT"] = str(pg_port())
     else:
         existing = env.get("LD_LIBRARY_PATH", "")
         env["LD_LIBRARY_PATH"] = f"{pg_lib}:{existing}" if existing else pg_lib
@@ -247,18 +326,61 @@ def _check_pg_launchable(returncode: int, exe: str) -> None:
     raise PgRuntimeMissingError(msg)
 
 
-def pg_is_running() -> bool:
-    """Check whether *our* bundled PostgreSQL cluster is accepting connections.
+def _foreign_pg_message(port: int) -> str:
+    """Nutzertext, wenn ein fremdes PostgreSQL unseren Port belegt (eine Quelle)."""
+    return (
+        f"Port {port} ist von einem anderen PostgreSQL belegt. In config\\praxiszeit.conf "
+        "unter [database] einen freien Port eintragen (z. B. 5433) und den Dienst neu starten."
+    )
+
+
+def _pid_file_port() -> str | None:
+    """Port aus Zeile 4 von ``PG_DATA/postmaster.pid``; None, wenn nicht lesbar."""
+    try:
+        lines = (PG_DATA / "postmaster.pid").read_text(
+            encoding="utf-8", errors="replace"
+        ).splitlines()
+    except OSError:
+        return None
+    if len(lines) < 4:
+        return None
+    return lines[3].strip()
+
+
+def _win_own_cluster_running() -> bool:
+    """Windows: laeuft UNSER Cluster (aus PG_DATA) auf UNSEREM Port?
+
+    ``pg_ctl status -D`` statt ``os.kill(pid, 0)`` (unter Windows kein
+    Lebenszeichen-Test). Zusaetzlich muss der Port im ``postmaster.pid`` zum
+    konfigurierten passen — sonst antwortet auf unserem Port ein anderer Server.
+    """
+    try:
+        result = subprocess.run(
+            [str(pg_cmd("pg_ctl")), "status", "-D", str(PG_DATA)],
+            capture_output=True, timeout=10, env=pg_env(),
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+    if result.returncode != 0:
+        return False
+    return _pid_file_port() == str(pg_port())
+
+
+def pg_cluster_state() -> str:
+    """``"own"``, ``"foreign"`` oder ``"down"`` fuer den PraxisZeit-Port.
 
     Unix: probe the bundled unix-socket directory (DATA_DIR/run), NEVER TCP
-    localhost:5432. A foreign system PostgreSQL already listening on :5432 must
+    localhost. A foreign system PostgreSQL already listening on :5432 must
     not be mistaken for our cluster (#174) — otherwise pg_start() returns early
     ("already running") and our own socket-only cluster is never started, and
     pg_setup_database then runs psql against the wrong/absent server and crashes
-    before .db-credentials is written → permanent crash-loop.
+    before .db-credentials is written → permanent crash-loop. The socket dir is
+    already proof of ownership, so the state is only ``"own"`` or ``"down"``.
 
     Windows has no unix sockets; there the bundled cluster runs as its own
-    NetworkService TCP service on localhost:5432, so the TCP probe is correct.
+    NetworkService TCP service on localhost:pg_port(). Something answering
+    there is only ``"own"`` if ``pg_ctl status -D PG_DATA`` succeeds and
+    ``postmaster.pid`` names our port; otherwise it is ``"foreign"``.
     """
     if IS_WINDOWS:
         host = "localhost"
@@ -266,12 +388,38 @@ def pg_is_running() -> bool:
         host = str(DATA_DIR / "run")
     try:
         result = subprocess.run(
-            [str(pg_cmd("pg_isready")), "-h", host, "-p", "5432"],
+            [str(pg_cmd("pg_isready")), "-h", host, "-p", str(pg_port())],
             capture_output=True, timeout=5, env=pg_env(),
         )
-        return result.returncode == 0
+        answers = result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
+        answers = False
+    if not answers:
+        return "down"
+    if not IS_WINDOWS:
+        return "own"
+    return "own" if _win_own_cluster_running() else "foreign"
+
+
+FOREIGN_RECHECK_SECONDS = 2
+
+
+def _pg_cluster_state_confirmed() -> str:
+    """Wie :func:`pg_cluster_state`, ein ``"foreign"`` wird nach kurzer Pause
+    einmal nachgeprueft. Ein einzelnes falsches "foreign" (pg_ctl status
+    laeuft in die Zeitgrenze, postmaster.pid kurz vom Virenscanner gesperrt)
+    darf den Dienst nicht mit Exit 78 dauerhaft beenden."""
+    state = pg_cluster_state()
+    if state == "foreign":
+        time.sleep(FOREIGN_RECHECK_SECONDS)
+        state = pg_cluster_state()
+    return state
+
+
+def pg_is_running() -> bool:
+    """Check whether *our* bundled PostgreSQL cluster is accepting connections
+    (see :func:`pg_cluster_state`)."""
+    return pg_cluster_state() == "own"
 
 
 def _database_url(user: str, password: str, db: str) -> str:
@@ -279,12 +427,13 @@ def _database_url(user: str, password: str, db: str) -> str:
 
     Unix: the cluster is socket-only (``listen_addresses = ''``), so we connect
     via the bundled unix-socket directory (DATA_DIR/run) — never TCP
-    localhost:5432, which on a host with a foreign system PostgreSQL would
+    localhost, which on a host with a foreign system PostgreSQL would
     silently hit the wrong server (#174). libpq/psycopg2 take the socket
     directory as the ``host`` query parameter.
 
     Windows has no unix sockets; the cluster runs as a TCP service, so the URL
-    keeps the historic localhost:5432 form (unchanged behaviour).
+    points at ``localhost:<pg_port()>`` - the port from ``[database] port`` in
+    praxiszeit.conf, 5432 without an entry.
     """
     from urllib.parse import quote, quote_plus
     # Build the userinfo (user:password) as a separate token so the source
@@ -296,7 +445,7 @@ def _database_url(user: str, password: str, db: str) -> str:
     # an operator-supplied password containing a space or '+').
     cred = f"{quote(user, safe='')}:{quote(password, safe='')}"
     if IS_WINDOWS:
-        return f"postgresql://{cred}@localhost:5432/{db}"
+        return f"postgresql://{cred}@localhost:{pg_port()}/{db}"
     sock = quote_plus(str(DATA_DIR / "run"))
     return f"postgresql://{cred}@/{db}?host={sock}"
 
@@ -400,7 +549,7 @@ def pg_init(config: dict, su_password: str):
             # cluster (#174). Clients connect via the unix socket in
             # DATA_DIR/run (see unix_socket_directories below + _database_url).
             f.write("listen_addresses = ''\n")
-        f.write("port = 5432\n")
+        f.write(f"port = {pg_port()}\n")
         f.write("max_connections = 50\n")
         f.write("shared_buffers = 128MB\n")
         f.write("log_destination = 'stderr'\n")
@@ -633,6 +782,77 @@ def _dump_pg_startup_log() -> bool:
     return False
 
 
+PG_CONF_MANAGED_HEADER = "# PraxisZeit configuration"
+
+
+def sync_managed_pg_port(conf_path: Path, port: int) -> bool:
+    """Set ``port`` in the PraxisZeit-managed block of postgresql.conf.
+
+    Pure file edit; returns True only if the file content changed. Lines before
+    the managed header (initdb's ``#port = 5432``) are never touched. Line
+    endings and encoding are preserved (bytes round trip).
+    """
+    raw = conf_path.read_bytes()
+    text = raw.decode("utf-8", errors="surrogateescape")
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(nl)
+    new_line = f"port = {port}"
+    header_idx = next(
+        (i for i, ln in enumerate(lines) if ln.strip() == PG_CONF_MANAGED_HEADER), None
+    )
+    if header_idx is None:
+        if port == 5432:
+            return False
+        tail = "" if (not text or text.endswith("\n")) else nl
+        new_text = f"{text}{tail}{nl}{PG_CONF_MANAGED_HEADER}{nl}{new_line}{nl}"
+    else:
+        port_re = re.compile(r"^\s*port\s*=")
+        port_idx = next(
+            (i for i in range(header_idx + 1, len(lines)) if port_re.match(lines[i])), None
+        )
+        if port_idx is None:
+            lines.insert(header_idx + 1, new_line)
+        elif lines[port_idx] == new_line:
+            return False
+        else:
+            lines[port_idx] = new_line
+        new_text = nl.join(lines)
+    if new_text == text:
+        return False
+    # Atomar: Temp-Datei im selben Ordner, dann os.replace - ein Abbruch
+    # mitten im Schreiben (Stromausfall, voller Datentraeger) laesst nie eine
+    # halbe postgresql.conf zurueck, mit der der Cluster nicht mehr startet.
+    tmp = conf_path.with_name(conf_path.name + ".pz-tmp")
+    try:
+        tmp.write_bytes(new_text.encode("utf-8", errors="surrogateescape"))
+        os.replace(tmp, conf_path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return True
+
+
+def apply_pg_port() -> bool:
+    """Windows: bring an existing cluster's postgresql.conf in line with pg_port().
+
+    A running cluster keeps its old port until restarted, so the service is
+    stopped unconditionally when the port changed (pg_stop() would only act on
+    a cluster that is "own" on the NEW port, i.e. never here).
+    """
+    if not IS_WINDOWS:
+        return False
+    conf = PG_DATA / "postgresql.conf"
+    if not conf.exists():
+        return False
+    port = pg_port()
+    if not sync_managed_pg_port(conf, port):
+        return False
+    logger.info(f"PostgreSQL-Port in postgresql.conf auf {port} gesetzt")
+    if _win_service_exists(PG_SERVICE_NAME):
+        subprocess.run(["net", "stop", PG_SERVICE_NAME], capture_output=True, text=True)
+    return True
+
+
 def pg_start():
     """Start PostgreSQL.
 
@@ -643,9 +863,12 @@ def pg_start():
     Unix: started directly via ``pg_ctl start`` (the systemd unit already runs
     PraxisZeit under an unprivileged account, so the child process is fine).
     """
-    if pg_is_running():
+    state = _pg_cluster_state_confirmed()
+    if state == "own":
         logger.info("PostgreSQL is already running")
         return
+    if state == "foreign":
+        raise ForeignPostgresError(_foreign_pg_message(pg_port()))
 
     logger.info("Starting PostgreSQL...")
 
@@ -670,9 +893,12 @@ def pg_start():
         # 60s statt 30s: auf manchen Windows-Maschinen ist der PG-Start langsam
         # (AV/ASLR, "could not reserve shared memory region"-Retries).
         for i in range(60):
-            if pg_is_running():
+            state = _pg_cluster_state_confirmed()
+            if state == "own":
                 logger.info("PostgreSQL started successfully (Windows service)")
                 return
+            if state == "foreign":
+                raise ForeignPostgresError(_foreign_pg_message(pg_port()))
             time.sleep(1)
         logger.error("PostgreSQL service failed to start within 60 seconds")
         if not _dump_pg_startup_log():
@@ -709,8 +935,8 @@ def pg_start():
 
 
 def pg_stop():
-    """Stop PostgreSQL gracefully."""
-    if not pg_is_running():
+    """Stop PostgreSQL gracefully — only our own cluster, never a foreign one."""
+    if pg_cluster_state() != "own":
         logger.info("PostgreSQL is not running")
         return
 
@@ -2024,9 +2250,52 @@ def _restore_pending_major_upgrade():
 
 # --- Main Commands ---
 
+def _watchdog_foreign_exit(message: str) -> None:
+    """Fremder Server auf unserem Port: sauber beenden, ohne Neustart-Zyklus."""
+    logger.error(message)
+    uvicorn_stop()
+    _remove_pid()
+    sys.exit(EXIT_CONFIG_ERROR)
+
+
+WATCHDOG_FOREIGN_LIMIT = 3
+_watchdog_foreign_streak = 0
+
+
+def _watchdog_check_pg() -> None:
+    """PostgreSQL-Pruefung der Watchdog-Schleife in cmd_start.
+
+    ``"down"`` → unseren Cluster neu starten; ``"foreign"`` → beenden (Exit 78),
+    nie gegen einen fremden Server weiterlaufen oder ihn stoppen. Beendet wird
+    erst, wenn "foreign" bei WATCHDOG_FOREIGN_LIMIT Pruefungen in Folge
+    herauskommt: Exit 78 ist endgueltig (NSSM AppExit 78 Exit), ein einzelner
+    Messfehler darf die Praxis nicht ohne Zeiterfassung lassen.
+    """
+    global _watchdog_foreign_streak
+    state = pg_cluster_state()
+    if state == "foreign":
+        _watchdog_foreign_streak += 1
+        if _watchdog_foreign_streak >= WATCHDOG_FOREIGN_LIMIT:
+            _watchdog_foreign_exit(_foreign_pg_message(pg_port()))
+        logger.warning(
+            "PostgreSQL-Port %s: Pruefung meldet einen fremden Server "
+            "(%s von %s) - erneute Pruefung beim naechsten Durchlauf.",
+            pg_port(), _watchdog_foreign_streak, WATCHDOG_FOREIGN_LIMIT,
+        )
+        return
+    _watchdog_foreign_streak = 0
+    if state == "down":
+        logger.error("PostgreSQL is not responding, restarting...")
+        try:
+            pg_start()
+        except ForeignPostgresError as e:
+            _watchdog_foreign_exit(str(e))
+
+
 def cmd_start(args):
     """Start PraxisZeit (PostgreSQL + uvicorn)."""
     config = load_config()
+    warn_ignored_pg_port(config)
 
     logger.info("=" * 60)
     logger.info("PraxisZeit starting...")
@@ -2054,6 +2323,15 @@ def cmd_start(args):
     _restrict_unix_data_dirs()
 
     # 1. Initialize PostgreSQL if needed
+    # Fremder Server auf unserem Port? Dann VOR jeder Entscheidung abbrechen
+    # (Exit 78). Sonst legt pg_init Cluster + Marker an, pg_start bricht erst
+    # danach ab, .db-credentials entsteht nie - und der naechste Start mit
+    # freiem Port endet dauerhaft in fail_no_credentials (Windows-Emulator
+    # 2026-11-06). Ebenso darf kein unmarkiertes PG_DATA in Quarantaene
+    # wandern, solange der Port gar nicht uns gehoert. Unter Unix ist der
+    # Zustand nie "foreign" (Socket-Verzeichnis = Eigentumsnachweis).
+    if _pg_cluster_state_confirmed() == "foreign":
+        raise ForeignPostgresError(_foreign_pg_message(pg_port()))
     creds_file = CONFIG_DIR / ".db-credentials"
     pg_data_populated = PG_DATA.exists() and any(PG_DATA.iterdir())
     action = _decide_pg_init_action(
@@ -2126,6 +2404,7 @@ def cmd_start(args):
         pg_init(config, su_password)
 
     # 2. Start PostgreSQL
+    apply_pg_port()
     pg_start()
 
     # 3. Setup database if needed (first run or missing credentials)
@@ -2213,9 +2492,7 @@ def cmd_start(args):
             uvicorn_start(config)
 
         # Check if PostgreSQL is still alive
-        if not pg_is_running():
-            logger.error("PostgreSQL is not responding, restarting...")
-            pg_start()
+        _watchdog_check_pg()
 
     # Shutdown
     logger.info("Shutting down PraxisZeit...")
@@ -2296,6 +2573,16 @@ def cmd_init(args):
     run_migrations(config)
     logger.info("Initialization complete. Run 'praxiszeit-server start' to start the application.")
     pg_stop()
+
+
+def cmd_print_db_port(args):
+    """Nur den Datenbank-Port ausgeben (fuer .bat-Skripte); sonst nichts auf stdout."""
+    print(pg_port())
+
+
+def cmd_sync_db_port(args):
+    """postgresql.conf an den konfigurierten Port angleichen; nichts auf stdout."""
+    apply_pg_port()
 
 
 def cmd_harden_permissions(args):
@@ -2927,6 +3214,14 @@ def main():
     subparsers.add_parser("init", help="First-time database initialization").set_defaults(func=cmd_init)
     subparsers.add_parser("backup", help="Create database backup").set_defaults(func=cmd_backup)
     subparsers.add_parser(
+        "print-db-port",
+        help="Datenbank-Port ausgeben (einzige Zeile auf stdout)",
+    ).set_defaults(func=cmd_print_db_port)
+    subparsers.add_parser(
+        "sync-db-port",
+        help="postgresql.conf an [database] port angleichen (Windows)",
+    ).set_defaults(func=cmd_sync_db_port)
+    subparsers.add_parser(
         "harden-permissions",
         help="Windows: Zugriffsrechte des Installationsverzeichnisses einschraenken",
     ).set_defaults(func=cmd_harden_permissions)
@@ -2966,6 +3261,9 @@ def main():
         # failure site. Exit cleanly (no traceback) so the service log shows the
         # fix to apply, not a confusing Python stack trace on every restart.
         sys.exit(1)
+    except PgConfigError as e:
+        logger.error(str(e))
+        sys.exit(EXIT_CONFIG_ERROR)
 
 
 if __name__ == "__main__":

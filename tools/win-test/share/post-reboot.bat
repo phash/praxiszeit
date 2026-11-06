@@ -28,10 +28,23 @@ for /l %%i in (1,1,60) do (
 for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" -X POST https://localhost/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"!PWKEY!\":\"!ADMPW!\"}"') do >> "%RES%" echo LOGIN_HTTP_NACH_REBOOT=%%c
 sc query PraxisZeit | findstr STATE >> "%RES%" 2>&1
 
+REM Port aus der Installation selbst ([database] port, Standard 5432).
+REM Ohne "2^>nul" in der Klammer - cmd.exe reicht es als Argument durch.
+set "DB_PORT="
+for /f "usebackq delims=" %%p in (`""C:\PraxisZeit\bin\python\python.exe" "C:\PraxisZeit\praxiszeit-server.py" print-db-port"`) do set "DB_PORT=%%p"
+if not defined DB_PORT set "DB_PORT=5432"
+>> "%RES%" echo DB_PORT_NACH_REBOOT=!DB_PORT!
+REM Eigener Cluster als eigener erkannt (pg_ctl status -D data\db + postmaster.pid)?
+"C:\PraxisZeit\bin\python\python.exe" "C:\PraxisZeit\praxiszeit-server.py" status > "%TEMP%\pz-status.txt" 2>&1
+type "%TEMP%\pz-status.txt" >> "%RES%" 2>&1
+findstr /C:"PostgreSQL: running" "%TEMP%\pz-status.txt" >nul
+if errorlevel 1 ( >> "%RES%" echo OWN_DETECTED_NACH_REBOOT=0 ) else ( >> "%RES%" echo OWN_DETECTED_NACH_REBOOT=1 )
+del /f /q "%TEMP%\pz-status.txt" 2>nul
+
 set "PGPASSFILE=%TEMP%\pz-pgpass.conf"
 del /f /q "%PGPASSFILE%" 2>nul
-for /f "usebackq tokens=1,* delims==" %%a in (`findstr /B "SUPERUSER_PASSWORD=" "C:\PraxisZeit\config\.db-credentials"`) do >> "%PGPASSFILE%" echo 127.0.0.1:5432:praxiszeit:praxiszeit:%%b
-"C:\PraxisZeit\bin\postgresql\bin\psql.exe" -w -h 127.0.0.1 -p 5432 -U praxiszeit -d praxiszeit -tAc "SELECT 'ALEMBIC_VERSION_NACH_REBOOT=' || version_num FROM alembic_version" >> "%RES%" 2>&1
+for /f "usebackq tokens=1,* delims==" %%a in (`findstr /B "SUPERUSER_PASSWORD=" "C:\PraxisZeit\config\.db-credentials"`) do >> "%PGPASSFILE%" echo 127.0.0.1:%DB_PORT%:praxiszeit:praxiszeit:%%b
+"C:\PraxisZeit\bin\postgresql\bin\psql.exe" -w -h 127.0.0.1 -p %DB_PORT% -U praxiszeit -d praxiszeit -tAc "SELECT 'ALEMBIC_VERSION_NACH_REBOOT=' || version_num FROM alembic_version" >> "%RES%" 2>&1
 del /f /q "%PGPASSFILE%" 2>nul
 set "PGPASSFILE="
 

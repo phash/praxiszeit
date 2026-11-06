@@ -43,6 +43,14 @@ def srv():
     return module
 
 
+@pytest.fixture(autouse=True)
+def _fresh_pg_port(srv):
+    """pg_port() is memoized per process; every test starts uncached."""
+    srv.pg_port.cache_clear()
+    yield
+    srv.pg_port.cache_clear()
+
+
 # --- Cluster marker / "is this our cluster" ----------------------------------
 
 class TestClusterMarker:
@@ -339,10 +347,14 @@ class TestForeignPgIsolation:
     """
 
     def _capture_run(self, srv, monkeypatch):
-        captured = {}
+        # Windows pg_is_running() runs pg_isready and then pg_ctl status; keep
+        # the pg_isready probe as "argv" and every call in "calls".
+        captured = {"calls": []}
 
         def _run(argv, *a, **kw):
-            captured["argv"] = list(argv)
+            captured["calls"].append(list(argv))
+            if "pg_isready" in Path(str(argv[0])).name:
+                captured["argv"] = list(argv)
             from unittest.mock import MagicMock
             m = MagicMock()
             m.returncode = 0
@@ -369,6 +381,7 @@ class TestForeignPgIsolation:
     def test_pg_is_running_windows_uses_tcp_localhost(self, srv, monkeypatch):
         # Windows has no unix sockets; the bundled cluster runs as a TCP service.
         monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "load_config", lambda: {})
         captured = self._capture_run(srv, monkeypatch)
 
         srv.pg_is_running()
@@ -391,6 +404,7 @@ class TestForeignPgIsolation:
 
     def test_database_url_windows_uses_tcp(self, srv, monkeypatch):
         monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "load_config", lambda: {})
 
         url = srv._database_url("praxiszeit_app", "pw", "praxiszeit")
 
@@ -567,12 +581,100 @@ class TestCmdStartBranching:
         monkeypatch.setattr(srv, "_win_pg_unregister", _win_unregister)
         monkeypatch.setattr(srv, "_win_service_exists", lambda name: False)
         monkeypatch.setattr(srv, "pg_load_credentials", _pg_load_credentials)
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "down")
+        monkeypatch.setattr(srv.time, "sleep", lambda s: None)
         # cmd_start's later steps spawn uvicorn and run Alembic. Stub everything
         # past the lifecycle section so the test stays hermetic and aborts the
         # moment cmd_start tries to leave the section under test.
         monkeypatch.setattr(srv, "run_migrations", _stop_signal)
         monkeypatch.setattr(srv, "uvicorn_start", _stop_signal)
         return calls
+
+    def test_foreign_server_on_fresh_pgdata_aborts_before_init(self, srv, tmp_path, monkeypatch):
+        """Windows emulator 2026-11-06: initdb + marker ran BEFORE pg_start
+        noticed the foreign server, .db-credentials never got written, and the
+        next start (after entering a free port) looped on fail_no_credentials."""
+        data, config_dir = self._make_paths(
+            srv, tmp_path, monkeypatch, populate=False, marker=False, creds=False,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "foreign")
+
+        with pytest.raises(srv.ForeignPostgresError, match="Port 5432 ist von einem anderen PostgreSQL belegt"):
+            srv.cmd_start(None)
+
+        assert calls["pg_init"] == 0
+        assert calls["pg_start"] == 0
+        assert calls["quarantine"] == 0
+        assert not (data / srv.PG_CLUSTER_MARKER).exists()
+        assert list(data.iterdir()) == []
+
+    def test_second_start_after_foreign_abort_initialises(self, srv, tmp_path, monkeypatch):
+        """After the user enters a free port, the next start takes the normal
+        init path (no fail_no_credentials)."""
+        self._make_paths(
+            srv, tmp_path, monkeypatch, populate=False, marker=False, creds=False,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "foreign")
+        with pytest.raises(srv.ForeignPostgresError):
+            srv.cmd_start(None)
+
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "down")
+        with pytest.raises(RuntimeError, match="STOP_BEFORE_UVICORN"):
+            srv.cmd_start(None)
+
+        assert calls["pg_init"] == 1
+        assert calls["pg_start"] == 1
+        assert calls["pg_setup_database"] == 1
+
+    def test_transient_foreign_at_startup_is_rechecked_and_proceeds(self, srv, tmp_path, monkeypatch):
+        """One false "foreign" (pg_ctl status timeout, locked postmaster.pid)
+        must not abort the start: re-check once after ~2 s."""
+        self._make_paths(
+            srv, tmp_path, monkeypatch, populate=False, marker=False, creds=False,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        states = iter(["foreign", "down"])
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: next(states))
+        slept = []
+        monkeypatch.setattr(srv.time, "sleep", lambda s: slept.append(s))
+
+        with pytest.raises(RuntimeError, match="STOP_BEFORE_UVICORN"):
+            srv.cmd_start(None)
+
+        assert slept == [srv.FOREIGN_RECHECK_SECONDS]
+        assert calls["pg_init"] == 1
+
+    def test_confirmed_foreign_at_startup_raises(self, srv, tmp_path, monkeypatch):
+        data, _ = self._make_paths(
+            srv, tmp_path, monkeypatch, populate=False, marker=False, creds=False,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        states = iter(["foreign", "foreign"])
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: next(states))
+
+        with pytest.raises(srv.ForeignPostgresError):
+            srv.cmd_start(None)
+
+        assert calls["pg_init"] == 0
+        assert list(data.iterdir()) == []
+
+    def test_foreign_server_never_quarantines_unmarked_data(self, srv, tmp_path, monkeypatch):
+        """A foreign server on the port must not trigger the quarantine of an
+        unmarked data directory either - abort first, touch nothing."""
+        data, _ = self._make_paths(
+            srv, tmp_path, monkeypatch, populate=True, marker=False, creds=False,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "foreign")
+
+        with pytest.raises(srv.ForeignPostgresError):
+            srv.cmd_start(None)
+
+        assert calls["quarantine"] == 0
+        assert calls["pg_init"] == 0
+        assert (data / "PG_VERSION").exists()
 
     def test_scenario_a_empty_pgdata_initialises(self, srv, tmp_path, monkeypatch):
         """A: empty PGDATA → init + setup + start."""
@@ -665,6 +767,32 @@ class TestCmdStartBranching:
         assert calls["pg_start"] == 1
         # Marker must now be on disk so the next start sees scenario B.
         assert (data / srv.PG_CLUSTER_MARKER).is_file(), "marker must be backfilled"
+
+
+    def test_cmd_start_branching_unaffected(self, srv, tmp_path, monkeypatch):
+        """Windows + default config: the port sync never stops the PG service."""
+        self._make_paths(
+            srv, tmp_path, monkeypatch, populate=True, marker=True, creds=True,
+        )
+        calls = self._record_calls(srv, monkeypatch)
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        (srv.PG_DATA / "postgresql.conf").write_text(
+            "\n# PraxisZeit configuration\nport = 5432\n", encoding="utf-8"
+        )
+        runs = []
+        import types
+
+        def _run(argv, *a, **kw):
+            runs.append([str(x) for x in argv])
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(srv.subprocess, "run", _run)
+
+        with pytest.raises(RuntimeError, match="STOP_BEFORE_UVICORN"):
+            srv.cmd_start(None)
+
+        assert calls["pg_start"] == 1
+        assert not [r for r in runs if r[:2] == ["net", "stop"]]
 
 
 # --- #425: Klartext-Passwort in der Konfiguration entwerten -----------------

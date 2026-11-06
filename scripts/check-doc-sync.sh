@@ -1329,6 +1329,14 @@ group_vertragsverlauf() {
   forbid CLAUDE.md 'für untracked noch offen'
 }
 
+# Datenbank-Port unter Windows ([database] port): Meldung bei fremdem PostgreSQL
+# steht im Code, die Doku zitiert sie.
+group_db_port() {
+  need praxiszeit-server.py 'ist von einem anderen PostgreSQL belegt'
+  need docs/INSTALL-NATIVE.md 'ist von einem anderen PostgreSQL belegt'
+  need docs/setup-windows.md '[database]'
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {

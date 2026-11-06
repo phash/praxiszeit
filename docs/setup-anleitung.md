@@ -80,7 +80,7 @@ PraxisZeit ist eine **Arbeitszeiterfassung speziell für Arzt- und Therapie-Prax
 |---|---|---|
 | 80 (HTTP) | optional, Browser im LAN ohne SSL | Firewall öffnen |
 | 443 (HTTPS) | empfohlen, verschlüsselter Zugriff | Firewall öffnen |
-| 5432 | PostgreSQL (intern) | **NICHT** nach außen öffnen |
+| 5432 (Windows: oder `[database] port`) | PostgreSQL (intern) | **NICHT** nach außen öffnen |
 
 ---
 
@@ -433,6 +433,7 @@ ssl_key  = "config/ssl/key.pem"
 
 [database]
 data_dir = "data/db"
+# port = 5433                        # nur Windows, Standard 5432 (Dienst-Neustart nötig)
 superuser = "praxiszeit"             # Superuser für Migrationen
 app_user = "praxiszeit_app"          # RLS-User für Runtime
 
@@ -796,7 +797,7 @@ C:\PraxisZeit\                    (Windows)
 
 - **Niemals** den `SECRET_KEY` oder DB-Passwörter aus `.env`/`praxiszeit.conf` committen
 - **Niemals** `ENVIRONMENT=development` in Produktion lassen — Swagger-Docs werden sonst exponiert, Weak-Password-Check wird zur Warnung statt Hard-Failure
-- PostgreSQL-Port (5432) **niemals** nach außen öffnen
+- PostgreSQL-Port (5432 bzw. der unter `[database] port` gesetzte, nur Windows) **niemals** nach außen öffnen
 - Bei externer DB: `sslmode=require` oder `sslmode=verify-full` zwingend
 - Admin-Passwort beim Erststart sofort ändern
 - Bei Personalwechsel: alte Accounts deaktivieren, nicht löschen (Audit-Trail!)

@@ -59,13 +59,15 @@ Diese Anleitung deckt **nur Windows** ab und führt Schritt für Schritt vom her
 
 > Wer kein PostgreSQL hat, muss nichts vorbereiten — der Installer bringt alles mit.
 
+**Läuft auf dem Rechner schon ein anderer PostgreSQL auf Port 5432?** Dann vergibt man für PraxisZeit einen eigenen Port: im GUI-Installer auf der Seite „Ports“ das Feld „Datenbank-Port (nur Windows)“ (z. B. 5433), nachträglich in `config\praxiszeit.conf` unter `[database]` die Zeile `port = 5433` und den Dienst neu starten. Ohne Eintrag gilt 5432. Ein fremder Server auf dem Port wird erkannt: Der Dienst bleibt mit der Meldung „Port … ist von einem anderen PostgreSQL belegt“ gestoppt (`logs\service-stderr.log`), es wird nichts angelegt oder verändert.
+
 ### Netzwerk-Ports
 
 | Port | Wofür | Aktion |
 |---|---|---|
 | 443 | HTTPS-Browserzugriff (empfohlen) | Firewall wird von `install-service.bat` automatisch geöffnet |
 | 80 | HTTP, falls bewusst ohne SSL | Manuell freigeben (siehe Schritt 13) |
-| 5432 | PostgreSQL (intern) | **Niemals** nach außen öffnen |
+| 5432 oder `[database] port` | PostgreSQL (intern) | **Niemals** nach außen öffnen |
 
 ---
 

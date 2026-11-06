@@ -35,6 +35,9 @@ echo Installing PraxisZeit service...
 "%NSSM%" set PraxisZeit Start SERVICE_AUTO_START
 "%NSSM%" set PraxisZeit AppStdout "%INSTALL_DIR%\logs\service-stdout.log"
 "%NSSM%" set PraxisZeit AppStderr "%INSTALL_DIR%\logs\service-stderr.log"
+REM Exit-Code 78 = Konfigurationsfehler (z.B. ungueltiger Datenbank-Port): NSSM
+REM soll den Dienst dann beenden statt ihn endlos neu zu starten.
+"%NSSM%" set PraxisZeit AppExit 78 Exit
 "%NSSM%" set PraxisZeit AppRotateFiles 1
 "%NSSM%" set PraxisZeit AppRotateBytes 10485760
 REM PYTHONUNBUFFERED: ohne das puffert Python stdout/stderr, und Startup-Fehler

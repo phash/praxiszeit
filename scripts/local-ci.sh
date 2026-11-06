@@ -171,7 +171,8 @@ if docker run --rm --user "$(id -u):$(id -g)" \
        python -m pytest tests/test_native_pg_lifecycle.py \
          tests/test_491_deploy_pull.py tests/test_482_macho_deps.py \
          tests/test_frontend_dockerignore.py tests/test_docker_restore.py \
-         tests/test_native_restore.py \
+         tests/test_native_restore.py tests/test_native_pg_port.py \
+         tests/test_native_security_hardening.py \
          -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Native PG lifecycle verified"
 else
