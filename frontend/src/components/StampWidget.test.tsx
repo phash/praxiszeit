@@ -32,7 +32,7 @@ const S4 =
   'Aktuelle Netto-Arbeitszeit: 9h 11min, Gesamtpause: 0 Minuten.';
 const DISABLED = ' Die Ausnahme „Pflicht-Pause war nicht möglich“ ist in dieser Praxis abgeschaltet – bitte die Pause erfassen.';
 
-/** "HH:MM:00" für jetzt minus `minutes` (Tagesgrenze egal: die Prüfung rechnet über Mitternacht). */
+/** "HH:MM:00" für jetzt minus `minutes` (Uhr im beforeEach auf 20:00 gestellt). */
 function startedAgo(minutes: number): string {
   const d = new Date(Date.now() - minutes * 60_000);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:00`;
@@ -64,6 +64,15 @@ beforeEach(() => {
   postMock.mockReset();
   Object.values(toast).forEach((f) => f.mockReset());
   useSystemStore.setState({ info: { deployment_mode: 'onprem', version: '' }, isLoaded: true });
+  // #540 (A1-16): die Vorprüfung rechnet Ende vor Beginn nicht mehr als Folgetag
+  // (keine Dienste über Mitternacht) — „vor 7 h eingestempelt" braucht also eine
+  // Uhrzeit nach 07:00. Nur `Date` gefälscht (Di 02.06.2026, 20:00), Timer echt.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(2026, 5, 2, 20, 0));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('<StampWidget /> §4 über den ganzen Tag (#499)', () => {
@@ -115,12 +124,12 @@ describe('<StampWidget /> §4 über den ganzen Tag (#499)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
     fireEvent.change(await screen.findByPlaceholderText(/Notfall, keine Vertretung/), {
-      target: { value: 'Notfall' },
+      target: { value: 'Notfall ohne Vertretung' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
 
     await waitFor(() => expect(postMock).toHaveBeenCalledTimes(2));
-    expect(postMock.mock.calls[1][1]).toMatchObject({ break_waiver_reason: 'Notfall' });
+    expect(postMock.mock.calls[1][1]).toMatchObject({ break_waiver_reason: 'Notfall ohne Vertretung' });
   });
 });
 
@@ -244,5 +253,75 @@ describe('<StampWidget /> §4-Begründung beschriftet (Gesamtreview Fund 19)', (
     fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
     const field = await screen.findByLabelText(NAME);
     expect(field.tagName).toBe('TEXTAREA');
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Audit 2026-11-07 (#538 A1-02, #540 A1-04/A1-05/A1-11/A2-7)
+// ---------------------------------------------------------------------------
+describe('<StampWidget /> Audit 2026-11-07', () => {
+  function statusWith(extra: Record<string, unknown>) {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') return Promise.resolve({ data: { is_clocked_in: false, ...extra } });
+      return Promise.resolve({ data: [] });
+    });
+  }
+
+  it('zeigt die Überschneidungs-Sperre beim Einstempeln am Widget (nicht nur als Toast)', async () => {
+    statusWith({});
+    const detail = 'Überschneidung mit dem Eintrag 08:00–15:00 am 02.06.2026: Zeiteinträge einer Person dürfen sich nicht überschneiden. Bitte die Zeiten anpassen oder den vorhandenen Eintrag bearbeiten.';
+    postMock.mockRejectedValueOnce({ response: { status: 409, data: { detail } } });
+    render(<StampWidget />);
+    fireEvent.click(await screen.findByRole('button', { name: /Einstempeln/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(detail);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('bietet für einen automatisch geschlossenen Eintrag den vorbelegten Antrag an (A2-7)', async () => {
+    statusWith({
+      auto_closed_entries: [{
+        id: 'te-auto', date: '2026-06-01', start_time: '08:00:00', end_time: '23:59:00', break_minutes: 0,
+        auto_closed: true, warnings: ['AUTO_CLOSED: Ihr offener Eintrag vom 01.06.2026 (ab 08:00) wurde automatisch geschlossen.'],
+      }],
+    });
+    render(<StampWidget />);
+    expect(await screen.findByText(/Ihr Eintrag vom 01\.06\.2026 \(ab 08:00\) wurde/)).toBeInTheDocument();
+    expect(screen.getByText(/^Ihr offener Eintrag vom 01\.06\.2026/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Arbeitsende per Antrag nachtragen' }));
+    const dialog = await screen.findByRole('dialog');
+    expect((dialog.querySelector('#cr-end') as HTMLInputElement).value).toBe('');
+    expect((dialog.querySelector('#cr-reason') as HTMLTextAreaElement).value).toMatch(/Ausstempeln vergessen/);
+  });
+
+  it('meldet ein Ausstempeln am Folgetag nicht als Erfolg (A2-7)', async () => {
+    clockedInSince(startedAgo(30)); // kurz → keine §4-Vorprüfung im Browser
+    postMock.mockResolvedValueOnce({ data: { auto_closed: true, warnings: ['AUTO_CLOSED: …'] } });
+    await openBreakDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
+    await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('lehnt eine zu kurze Begründung im Dialog ab, ohne zu senden (A1-05)', async () => {
+    clockedInSince(startedAgo(5));
+    rejectWith(S4);
+    await openBreakDialog();
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
+    fireEvent.change(await screen.findByPlaceholderText(/Notfall, keine Vertretung/), { target: { value: 'Notfall' } });
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
+    expect(await screen.findByText(/in mindestens 10 Zeichen/)).toBeInTheDocument();
+    expect(postMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fragt am Sonntag beim Ausstempeln nach dem §10-Grund und schickt ihn mit (A1-11)', async () => {
+    vi.setSystemTime(new Date(2026, 5, 7, 12, 0)); // Sonntag
+    clockedInSince('09:00:00');
+    postMock.mockResolvedValueOnce({ data: { warnings: [] } });
+    await openBreakDialog();
+    fireEvent.change(await screen.findByLabelText(/Ausnahmegrund \(§10 ArbZG\)/), { target: { value: 'Notdienst' } });
+    fireEvent.click(screen.getByRole('button', { name: /Jetzt ausstempeln/ }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ sunday_exception_reason: 'Notdienst' });
   });
 });

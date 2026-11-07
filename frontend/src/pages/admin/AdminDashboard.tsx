@@ -17,6 +17,7 @@ import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import { showArbzgWarnings } from '../../utils/arbzgWarnings';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import UpdateBanner from '../../components/UpdateBanner';
+import AutoClosedEntriesCard from '../../components/AutoClosedEntriesCard';
 // Geteilt mit dem Änderungsprotokoll (`admin/AuditLog.tsx`) — dieselben
 // Audit-Zeilen, dieselbe Darstellung.
 import AuditValues from '../../components/AuditValues';
@@ -580,6 +581,9 @@ export default function AdminDashboard() {
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Admin-Dashboard</h1>
 
       <UpdateBanner />
+
+      {/* #540 (A1-04): automatisch geschlossene Einträge ohne tatsächliches Ende */}
+      <AutoClosedEntriesCard />
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

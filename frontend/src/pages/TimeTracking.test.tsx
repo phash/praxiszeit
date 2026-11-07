@@ -838,3 +838,84 @@ describe('<TimeTracking /> Blöcke des Zieldatums (Gesamtreview B6)', () => {
     expect(getMock.mock.calls.some(([u]) => String(u).startsWith('/time-entries/day-blocks'))).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Audit 2026-11-07 (#538 A1-02, #540 A1-05/A1-12)
+// ---------------------------------------------------------------------------
+describe('<TimeTracking /> Überschneidung, Begründung, Pausen-Vorschlag (Audit 2026-11-07)', () => {
+  const morning = { ...closedEntry, id: 'te-m', start_time: '06:00:00', end_time: '06:30:00', break_minutes: 0, net_hours: 0.5 };
+
+  async function openNew() {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Neuer Eintrag/ }));
+  }
+
+  function setTimes(start: string, end: string, brk = '0') {
+    fireEvent.change(screen.getByLabelText('Von'), { target: { value: start } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: end } });
+    fireEvent.change(screen.getByLabelText('Pause (Min.)'), { target: { value: brk } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+  }
+
+  it('zeigt eine Überschneidung mit dem Hinweis des Servers am Formular, ohne zu senden', async () => {
+    mockEntries([{ ...closedEntry, start_time: '08:00:00', end_time: '12:00:00', break_minutes: 0 }]);
+    await openNew();
+    setTimes('11:00', '13:00');
+    expect(await screen.findByText(/^Überschneidung mit dem Eintrag 08:00–12:00 am /)).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('erlaubt aneinanderstoßende Einträge', async () => {
+    mockEntries([{ ...closedEntry, start_time: '08:00:00', end_time: '12:00:00', break_minutes: 0 }]);
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    await openNew();
+    setTimes('12:00', '13:00');
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+  });
+
+  it('zeigt die 409-Sperre des Servers am Formular (nicht nur als Toast)', async () => {
+    mockEntries([]);
+    const detail = 'Überschneidung mit dem laufenden Eintrag ab 07:00 am 02.06.2026: Zeiteinträge einer Person dürfen sich nicht überschneiden. Bitte die Zeiten anpassen oder den vorhandenen Eintrag bearbeiten.';
+    postMock.mockRejectedValue({ response: { status: 409, data: { detail } } });
+    await openNew();
+    setTimes('09:00', '10:00');
+    expect(await screen.findByText(detail)).toBeInTheDocument();
+  });
+
+  it('verlangt für die §4-Ausnahme mindestens 10 Zeichen', async () => {
+    useSystemStore.setState({ info: { deployment_mode: 'onprem', version: '' }, isLoaded: true });
+    mockEntries([]);
+    await openNew();
+    setTimes('08:00', '15:00');
+    fireEvent.click(await screen.findByLabelText('Pflicht-Pause war nicht möglich'));
+    fireEvent.change(screen.getByLabelText(/Begründung/), { target: { value: 'Notfall' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    expect(await screen.findByText(/in mindestens 10 Zeichen/)).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('setzt keine stille Pause, sondern schlägt 30 Min. vor (A1-12)', async () => {
+    mockEntries([morning]);  // 06:00–06:30 + Abstand 30 Min. deckt §4 für den Tag
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    await openNew();
+    setTimes('07:00', '14:00');
+    expect(await screen.findByText(/länger als 6 Stunden und hat keine Pause/)).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '30 Min. Pause eintragen' }));
+    expect((screen.getByLabelText('Pause (Min.)') as HTMLInputElement).value).toBe('30');
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ start_time: '07:00', end_time: '14:00', break_minutes: 30 });
+  });
+
+  it('speichert nach ausdrücklicher Bestätigung ohne Pause (A1-12)', async () => {
+    mockEntries([morning]);
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    await openNew();
+    setTimes('07:00', '14:00');
+    fireEvent.click(await screen.findByRole('button', { name: /ohne Pause speichern/ }));
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ break_minutes: 0 });
+  });
+});

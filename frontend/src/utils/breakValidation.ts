@@ -53,12 +53,12 @@ export function computeBreakError(
   if (exempt) return null;
 
   const start = toMinutes(startTime);
-  let end = toMinutes(endTime);
-  // Review R3: a shift crossing midnight (e.g. 22:00 → 06:00) has end < start as
-  // minutes-since-midnight. Without this the block duration goes negative and
-  // the whole §4 break check silently never fires (a night/on-call clock-out
-  // bypassed the gate). Treat end < start as the following day.
-  if (end < start) end += 24 * 60;
+  // #540 (A1-16): Ende ≤ Beginn ist kein Folgetag — der Server lehnt es an
+  // jedem Schreibweg ab (Dienste über Mitternacht gibt es nicht, Handbuch), und
+  // `_net_minutes` rechnet dann 0. Bis dahin las das Formular 22:00 → 06:00 als
+  // 8 h und meldete „OK" bzw. einen §4-Hinweis für etwas, das der Server mit
+  // „Endzeit muss nach Startzeit liegen" zurückweist. Wie im Backend: 0 Minuten.
+  const end = Math.max(toMinutes(endTime), start);
 
   // Combine the new entry with the other closed entries on the same day, then
   // decide everything on the AGGREGATE — never on the single new entry alone.

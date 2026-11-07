@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { submitWithBreakWaiver } from './breakWaiverRetry';
+import {
+  BREAK_WAIVER_MIN_LENGTH, BREAK_WAIVER_TOO_SHORT_HINT, breakWaiverReasonError, isBreakWaiverTooShort, submitWithBreakWaiver,
+} from './breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
 
 // #499: der Retry mit Begründung darf nur angeboten werden, wenn der Mandant die
@@ -22,14 +24,14 @@ describe('submitWithBreakWaiver', () => {
   });
 
   it('fragt bei erlaubter Ausnahme nach einer Begründung und wiederholt den Aufruf', async () => {
-    promptSpy.mockReturnValue('Notfall');
+    promptSpy.mockReturnValue('Notfall ohne Vertretung');
     const submit = vi.fn()
       .mockRejectedValueOnce(apiError(S4))
       .mockResolvedValueOnce('ok');
 
     await expect(submitWithBreakWaiver(submit, { allowed: true })).resolves.toBe('ok');
     expect(promptSpy).toHaveBeenCalledTimes(1);
-    expect(submit).toHaveBeenLastCalledWith({ break_waiver_reason: 'Notfall' });
+    expect(submit).toHaveBeenLastCalledWith({ break_waiver_reason: 'Notfall ohne Vertretung' });
   });
 
   // P18, Entschieden 2026-10-11 (Produktinhaber): ein eingereichtes 23:59 gilt
@@ -38,7 +40,7 @@ describe('submitWithBreakWaiver', () => {
   // tragen exakt das Ende des Formulars (das WIRKSAME Ende), ergänzt wird nur
   // die Begründung.
   it('ergänzt beim Wiederholen nur die Begründung — das Ende bleibt das des Formulars', async () => {
-    promptSpy.mockReturnValue('Notfall');
+    promptSpy.mockReturnValue('Notfall ohne Vertretung');
     const put = vi.fn()
       .mockRejectedValueOnce(apiError(S4))
       .mockResolvedValueOnce('ok');
@@ -47,7 +49,7 @@ describe('submitWithBreakWaiver', () => {
     await submitWithBreakWaiver((extra) => put('/admin/time-entries/e1', { ...base, ...extra }), { allowed: true });
     expect(put.mock.calls.map((c) => c[1])).toEqual([
       base,
-      { ...base, break_waiver_reason: 'Notfall' },
+      { ...base, break_waiver_reason: 'Notfall ohne Vertretung' },
     ]);
   });
 
@@ -79,5 +81,36 @@ describe('submitWithBreakWaiver', () => {
 
     await expect(submitWithBreakWaiver(submit, { allowed: true })).rejects.toBe(err);
     expect(promptSpy).not.toHaveBeenCalled();
+  });
+
+  // #540 (A1-05): eine zu kurze Begründung lehnt der Server ab — erneut fragen.
+  it('fragt bei zu kurzer Begründung erneut und sendet erst die ausreichende', async () => {
+    promptSpy.mockReturnValueOnce('Notfall').mockReturnValueOnce('Notfall ohne Vertretung');
+    const submit = vi.fn().mockRejectedValueOnce(apiError(S4)).mockResolvedValueOnce('ok');
+    await expect(submitWithBreakWaiver(submit, { allowed: true })).resolves.toBe('ok');
+    expect(promptSpy).toHaveBeenCalledTimes(2);
+    expect(String(promptSpy.mock.calls[1][0])).toContain(BREAK_WAIVER_TOO_SHORT_HINT);
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(submit).toHaveBeenLastCalledWith({ break_waiver_reason: 'Notfall ohne Vertretung' });
+  });
+});
+
+// #540 (A1-05): Zwilling von break_validation_service (gleiche Grenze, gleicher Text).
+describe('Mindestlänge der §4-Begründung', () => {
+  it('10 Zeichen nach trim', () => {
+    expect(BREAK_WAIVER_MIN_LENGTH).toBe(10);
+    expect(isBreakWaiverTooShort('x')).toBe(true);
+    expect(isBreakWaiverTooShort('  ' + 'a'.repeat(9) + '  ')).toBe(true);
+    expect(isBreakWaiverTooShort('a'.repeat(10))).toBe(false);
+    expect(isBreakWaiverTooShort('')).toBe(false);
+  });
+
+  it('wortgleicher Hinweis wie der Server', () => {
+    expect(BREAK_WAIVER_TOO_SHORT_HINT).toBe(
+      'Die Begründung ist zu kurz – bitte in mindestens 10 Zeichen angeben, warum die Pflicht-Pause nicht möglich war.',
+    );
+    expect(breakWaiverReasonError('')).toMatch(/Bitte begründen/);
+    expect(breakWaiverReasonError('kurz')).toBe(BREAK_WAIVER_TOO_SHORT_HINT);
+    expect(breakWaiverReasonError('ausreichend lang')).toBeNull();
   });
 });

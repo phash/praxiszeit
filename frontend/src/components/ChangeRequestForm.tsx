@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
 import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
-import { isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
+import { breakWaiverReasonError, isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
 import { editableEnd } from '../utils/workBlocks';
 
@@ -39,6 +39,12 @@ interface Props {
   requestType: 'create' | 'update' | 'delete';
   /** Spec P21: „Anrechnung beantragen" — Zeiten = Rohstempel; die Verwaltung genehmigt mit oder ohne Anerkennen. */
   requestCredit?: boolean;
+  /**
+   * #540 (A2-7): Antrag aus der Stempeluhr für einen automatisch geschlossenen
+   * Eintrag — das tatsächliche Ende ist Pflicht (Feld leer vorbelegt), die
+   * Begründung vorbelegt.
+   */
+  actualEndRequired?: boolean;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -63,7 +69,10 @@ function lacksActualEnd(entry: TimeEntry, proposedEnd: string): boolean {
   return !end || (!!entry.end_time && entry.end_time.substring(0, 5) === end);
 }
 
-export default function ChangeRequestForm({ entry, requestType, requestCredit = false, onClose, onSuccess }: Props) {
+/** #540 (A2-7): vorbelegte Begründung des Antrags aus der Stempeluhr. */
+export const AUTO_CLOSED_REQUEST_REASON = 'Ausstempeln vergessen – tatsächliches Arbeitsende nachgetragen.';
+
+export default function ChangeRequestForm({ entry, requestType, requestCredit = false, actualEndRequired = false, onClose, onSuccess }: Props) {
   // P21: die gestempelten (Roh-)Zeiten vorbelegen. Ein automatisch geschlossener
   // Eintrag hat kein echtes Ende (P18) — das Feld bleibt leer und ist Pflicht.
   // Erkannt über `auto_closed`, nie über „Rohende leer": ein verschobener
@@ -72,16 +81,17 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
   // (Entschieden 2026-10-11). Der gewöhnliche Antrag belegt das WIRKSAME Ende vor.
   const creditStart = entry?.raw_start_time ?? entry?.start_time ?? null;
   const creditEnd = entry?.auto_closed ? '' : (entry?.raw_end_time ?? entry?.end_time ?? '');
-  const needsActualEnd = requestCredit && !!entry?.auto_closed;
+  const askActualEnd = actualEndRequired && !!entry?.auto_closed;
+  const needsActualEnd = (requestCredit || actualEndRequired) && !!entry?.auto_closed;
   const [formData, setFormData] = useState({
     proposed_date: entry?.date || '',
-    proposed_start_time: (requestCredit ? creditStart : entry?.start_time)?.substring(0, 5) || '08:00',
-    proposed_end_time: requestCredit
+    proposed_start_time: (requestCredit || askActualEnd ? creditStart : entry?.start_time)?.substring(0, 5) || '08:00',
+    proposed_end_time: requestCredit || askActualEnd
       ? creditEnd.substring(0, 5)
       : (entry ? editableEnd(entry) : null) || '17:00',
     proposed_break_minutes: entry?.break_minutes ?? 0,
     proposed_note: entry?.note || '',
-    reason: '',
+    reason: askActualEnd ? AUTO_CLOSED_REQUEST_REASON : '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -110,8 +120,10 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
       setError('Der Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende angeben.');
       return;
     }
-    if (showWaiver && !breakWaiverReason.trim()) {
-      setError('Bitte begründen Sie, warum die Pflicht-Pause nicht möglich war.');
+    // #540 (A1-05): Pflicht und Mindestlänge wie der Server.
+    const waiverError = showWaiver ? breakWaiverReasonError(breakWaiverReason) : null;
+    if (waiverError) {
+      setError(waiverError);
       return;
     }
 
@@ -224,6 +236,13 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
                 <ArrowRight className="text-gray-400" size={20} />
                 <span className="text-xs text-gray-400 ml-1">Neue Werte</span>
               </div>
+            </div>
+          )}
+
+          {askActualEnd && !requestCredit && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+              Der Eintrag wurde automatisch geschlossen, weil das Ausstempeln fehlte. Bitte tragen Sie
+              das tatsächliche Arbeitsende (und die Pause) ein – die Verwaltung prüft den Antrag.
             </div>
           )}
 

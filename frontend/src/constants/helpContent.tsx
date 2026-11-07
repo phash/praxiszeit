@@ -52,7 +52,7 @@ export const helpContent: Record<string, HelpEntry> = {
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
             <li>Klicken Sie auf <span className="font-medium">„+ Neuer Eintrag"</span> (Mitarbeitende: nur für heute; einen vergangenen Tag beantragen Sie über <span className="font-medium">„Antrag"</span>)</li>
             <li>„Von" und „Bis" eintragen (sind Arbeitszeit-Blöcke für Sie hinterlegt, sind die Felder daraus vorbelegt)</li>
-            <li>Pause in Minuten eingeben – Pflicht bei mehr als 6 Stunden (siehe unten); eine Lücke zwischen Ihren Arbeitszeit-Blöcken zählt als Pause</li>
+            <li>Pause in Minuten eingeben – Pflicht bei mehr als 6 Stunden (siehe unten); eine Lücke zwischen Ihren Arbeitszeit-Blöcken zählt als Pause. Ohne Pause schlägt das Formular 30 Min. vor („30 Min. Pause eintragen" oder „Keine Pause gemacht – ohne Pause speichern")</li>
             <li>Optional: Notiz hinzufügen</li>
             <li>Auf <span className="font-medium">„Speichern"</span> klicken</li>
           </ol>
@@ -62,7 +62,12 @@ export const helpContent: Record<string, HelpEntry> = {
           <div className="text-sm bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
             <p className="text-amber-800">⚠️ <span className="font-medium">6–9 Stunden Arbeit</span> → mind. 30 Min. Pause</p>
             <p className="text-amber-800">⚠️ <span className="font-medium">Über 9 Stunden Arbeit</span> → mind. 45 Min. Pause</p>
+            <p className="text-amber-800">Begründung „Pflicht-Pause war nicht möglich": mindestens 10 Zeichen</p>
           </div>
+        </section>
+        <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Keine Überschneidungen</h3>
+          <p className="text-sm text-gray-600">Einträge eines Tages dürfen sich nicht überschneiden (Stempelzeiten, ein laufender Eintrag bis jetzt) – der Hinweis nennt den vorhandenen Eintrag. Aneinanderstoßend (12:00 Ende, 12:00 Beginn) ist erlaubt. Das Ende darf nicht in der Zukunft liegen. Keine Dienste über Mitternacht (ein Eintrag endet spätestens 23:59).</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Tagesgrenze (§3 ArbZG)</h3>
@@ -179,6 +184,7 @@ export const helpContent: Record<string, HelpEntry> = {
           <h3 className="font-semibold text-gray-800 mb-2">Schnellzugriff</h3>
           <ul className="space-y-1 text-sm text-gray-600">
             <li>Klick auf eine Zeile → Detailansicht (Zeiteinträge, Abwesenheiten, Änderungsprotokoll); dort Einträge anlegen und nicht angerechnete Zeit mit „Anerkennen" anrechnen</li>
+            <li>Karte „Automatisch geschlossene Einträge – Ende fehlt": vergessenes Ausstempeln mit §3/§4-Befunden – tatsächliches Ende im Monatsjournal eintragen oder den Antrag der Person prüfen</li>
             <li>Links in der Sidebar führen zu allen Admin-Bereichen</li>
           </ul>
         </section>
