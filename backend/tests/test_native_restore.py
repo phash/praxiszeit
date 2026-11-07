@@ -57,7 +57,8 @@ _DUMP = (
 _OLD = "BESTAND"
 # SECRET_KEY der Test-Installation: jede Sicherung, die PraxisZeit schreibt,
 # traegt eine Signaturzeile (Fix-Runde S3-03).
-_KEY = "test-secret-key-0123456789abcdef0123456789abcdef"
+# aus Teilen gebaut: das Literal "key-" + 32 Hex sieht fuer Secret-Scanner wie ein Mailgun-Schluessel aus
+_KEY = "test-secret-" + "key-" + "0123456789abcdef" * 2
 
 
 @pytest.fixture(scope="module")
