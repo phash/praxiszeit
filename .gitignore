@@ -87,3 +87,8 @@ feedback/
 # Local-only tooling & test scaffolds (never commit)
 .claude/
 .win-test/
+
+# SQLite-Testdatenbank der Backend-Suite (conftest.py), samt WAL-Dateien
+backend/test.db
+backend/test.db-shm
+backend/test.db-wal
