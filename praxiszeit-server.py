@@ -1222,10 +1222,15 @@ def _open_restricted(file_path: Path):
 #                        pg_start). Logs contain user names — not for Users.
 #   <install>\config     no inheritance; SYSTEM + Administrators Full.
 #
-# No /T and no owner changes: changing a directory's DACL makes Windows
-# re-propagate the inheritable entries to every child that inherits, and /T
-# would also walk into bin\postgresql when setup.bat made it a junction to a
-# system PostgreSQL.
+# No /T: changing a directory's DACL makes Windows re-propagate the
+# inheritable entries to every child that inherits, and /T would also walk
+# into bin\postgresql when setup.bat made it a junction to a system
+# PostgreSQL. Each of these directories gets Administrators as OWNER
+# (Audit 2026-11-07 S3-01): an owner always has WRITE_DAC, so a local account
+# that created C:\PraxisZeit before the installation could otherwise grant
+# itself Full Control again at any time. The recursive owner/ACL reset of the
+# program parts and the check against the package manifest happen before the
+# first python.exe start, in installer/windows/secure-install.ps1.
 _SID_SYSTEM = "*S-1-5-18"
 _SID_ADMINISTRATORS = "*S-1-5-32-544"
 _SID_USERS = "*S-1-5-32-545"
@@ -1239,7 +1244,8 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
     """The icacls argument lists for :func:`_harden_install_dir`.
 
     Pure / side-effect free so it can be unit-tested without icacls. One entry
-    per directory, root first; each entry has ``grants`` (must ALL succeed),
+    per directory, root first; each entry has ``owner`` (``/setowner``
+    Administrators, best-effort, first), ``grants`` (must ALL succeed),
     ``removes`` (best-effort, a missing SID is no error) and ``protect`` (the
     ``/inheritance:r`` call, only run after all grants succeeded — the other
     way round a directory could end up with no entry at all and the service
@@ -1256,11 +1262,15 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
     def protect(path: Path) -> list[str]:
         return ["icacls", str(path), "/inheritance:r"]
 
+    def owner(path: Path) -> list[str]:
+        return ["icacls", str(path), "/setowner", _SID_ADMINISTRATORS]
+
     full = "(OI)(CI)F"
     private_removes = (_SID_USERS, _SID_AUTHENTICATED_USERS, _SID_EVERYONE)
     return [
         {
             "path": base_dir,
+            "owner": owner(base_dir),
             "grants": [
                 grant(base_dir, _SID_SYSTEM, full),
                 grant(base_dir, _SID_ADMINISTRATORS, full),
@@ -1275,6 +1285,7 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
         },
         {
             "path": data_dir,
+            "owner": owner(data_dir),
             "grants": [
                 grant(data_dir, _SID_SYSTEM, full),
                 grant(data_dir, _SID_ADMINISTRATORS, full),
@@ -1285,6 +1296,7 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
         },
         {
             "path": log_dir,
+            "owner": owner(log_dir),
             "grants": [
                 grant(log_dir, _SID_SYSTEM, full),
                 grant(log_dir, _SID_ADMINISTRATORS, full),
@@ -1295,6 +1307,7 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
         },
         {
             "path": config_dir,
+            "owner": owner(config_dir),
             "grants": [
                 grant(config_dir, _SID_SYSTEM, full),
                 grant(config_dir, _SID_ADMINISTRATORS, full),
@@ -1345,6 +1358,9 @@ def _harden_install_dir() -> bool:
         directory.mkdir(parents=True, exist_ok=True)
     all_ok = True
     for step in _build_install_acl_plan(BASE_DIR, DATA_DIR, LOG_DIR, CONFIG_DIR):
+        # Owner first, best-effort: a failure is logged, the grants still run.
+        if not _run_icacls(step["owner"]):
+            all_ok = False
         if not all(_run_icacls(cmd) for cmd in step["grants"]):
             logger.warning(
                 f"Access rights on {step['path']} not restricted (a grant failed); "
@@ -1553,6 +1569,79 @@ def pg_load_credentials():
             creds[key.strip()] = value.strip()
 
     return creds.get("SUPERUSER_PASSWORD"), creds.get("APP_PASSWORD")
+
+
+# --- Backup-Rolle fuer den Webprozess (Audit 2026-11-07 S3-13) ---
+#
+# Die Datensicherung in der Weboberflaeche (#213) lief mit der Superuser-
+# Verbindung DATABASE_URL_MIGRATIONS aus der Umgebung von uvicorn. Jede
+# Code-Ausfuehrung, jedes Dateilesen (/proc/self/environ) oder Umgebungs-Leck
+# im Webprozess hiess damit: Superuser, RLS wirkungslos, COPY ... TO PROGRAM.
+# Nativ laufen die Migrationen im Prozessmanager VOR dem uvicorn-Start; uvicorn
+# braucht den Superuser also nicht. Er bekommt stattdessen eine eigene Rolle,
+# die nur lesen kann: pg_read_all_data (SELECT auf alles) + BYPASSRLS (pg_dump
+# schaltet row_security ab und bricht sonst an den RLS-Tabellen ab), kein
+# Superuser, kein Schreibrecht, keine Server-Dateizugriffe.
+BACKUP_ROLE = "praxiszeit_backup"
+
+
+def _read_credentials_file() -> dict:
+    creds_file = CONFIG_DIR / ".db-credentials"
+    creds = {}
+    if creds_file.is_file():
+        for line in creds_file.read_text().strip().split("\n"):
+            if "=" in line:
+                key, value = line.split("=", 1)
+                creds[key.strip()] = value.strip()
+    return creds
+
+
+def _backup_role_password() -> str:
+    """BACKUP_PASSWORD aus .db-credentials; beim ersten Mal erzeugt und dort
+    (Rechte vor dem Inhalt, :func:`_open_restricted`) dazugeschrieben."""
+    creds = _read_credentials_file()
+    password = creds.get("BACKUP_PASSWORD")
+    if password:
+        return password
+    password = secrets.token_hex(32)
+    creds["BACKUP_PASSWORD"] = password
+    with _open_restricted(CONFIG_DIR / ".db-credentials") as handle:
+        handle.write("".join(f"{k}={v}\n" for k, v in creds.items()).encode("utf-8"))
+    return password
+
+
+def ensure_backup_role(config: dict, su_password: str) -> str | None:
+    """Backup-Rolle anlegen bzw. angleichen; liefert die Verbindungs-URL.
+
+    Idempotent, bei jedem Start. Scheitert es, bekommt der Webprozess KEINE
+    Datenbank-Verbindung fuer Sicherungen (None) - nie ersatzweise den
+    Superuser. Die naechtliche Sicherung des Prozessmanagers (``backup``)
+    ist davon nicht betroffen."""
+    superuser = _validate_pg_identifier(
+        get_config_value(config, "database", "superuser", "praxiszeit"))
+    try:
+        password = _backup_role_password()
+        sql = (
+            "DO $$ BEGIN\n"
+            f"  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{BACKUP_ROLE}') THEN\n"
+            f"    CREATE ROLE {BACKUP_ROLE} LOGIN;\n"
+            "  END IF;\n"
+            "END $$;\n"
+            f"ALTER ROLE {BACKUP_ROLE} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
+            f"NOREPLICATION BYPASSRLS PASSWORD '{_escape_pg_password(password)}';\n"
+            f"GRANT pg_read_all_data TO {BACKUP_ROLE};\n"
+            f"GRANT CONNECT ON DATABASE praxiszeit TO {BACKUP_ROLE};\n"
+        )
+        _psql_script(superuser, "praxiszeit", sql, {**pg_env(), "PGPASSWORD": su_password})
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = getattr(exc, "stderr", "") or exc
+        logger.error(
+            "Backup-Rolle %s nicht eingerichtet (%s) - Sicherungen aus der "
+            "Weboberflaeche sind bis zum naechsten Start nicht moeglich; die "
+            "naechtliche Sicherung des Dienstes laeuft weiter.", BACKUP_ROLE, detail,
+        )
+        return None
+    return _database_url(BACKUP_ROLE, password, "praxiszeit")
 
 
 # --- Alembic Migrations ---
@@ -2067,6 +2156,9 @@ def uvicorn_start(config: dict):
 
     # Set SERVE_FRONTEND=true for native mode
     env = os.environ.copy()
+    # S3-13: die Superuser-Verbindung bleibt im Prozessmanager (Migrationen
+    # laufen vorher dort); der Webprozess sichert ueber DATABASE_URL_BACKUP.
+    env.pop("DATABASE_URL_MIGRATIONS", None)
     env["SERVE_FRONTEND"] = "true"
     env["PYTHONUTF8"] = "1"  # Avoid cp1252 encoding errors on Windows
     # Native install: frontend lives at app/frontend/ (no dist/ subfolder)
@@ -2540,6 +2632,14 @@ def cmd_start(args):
 
     # 4. Run migrations
     run_migrations(config)
+
+    # 4a. Eigene, nur lesende Rolle fuer die Sicherung aus der Weboberflaeche
+    # (S3-13); uvicorn bekommt den Superuser nicht mehr (uvicorn_start).
+    backup_url = ensure_backup_role(config, su_password)
+    if backup_url:
+        os.environ["DATABASE_URL_BACKUP"] = backup_url
+    else:
+        os.environ.pop("DATABASE_URL_BACKUP", None)
 
     # 5. Start uvicorn
     uvicorn_start(config)

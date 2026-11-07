@@ -107,16 +107,39 @@ public sealed class ScriptRunner
         string payloadDir,
         IProgress<RunnerEvent> sink,
         PraxisZeitConfigValues? configValues = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool requireEmptyTarget = false)
     {
         // ---- Schritt 1: Payload kopieren ----
         sink.Report(new RunnerStepEvent("copy", RunnerStepStatus.Running));
         sink.Report(new RunnerLogEvent($"Kopiere Installationsdateien nach {installDir}..."));
         sink.Report(new RunnerProgressEvent(5));
 
+        // S3-01: Neuinstallation nur in einen neuen/leeren Ordner (der Assistent
+        // sperrt das schon auf der Ordner-Seite; hier die zweite Sicherung).
+        if (requireEmptyTarget && InstallDirGuard.FreshTargetProblem(installDir) is { } problem)
+        {
+            sink.Report(new RunnerStepEvent("copy", RunnerStepStatus.Fail));
+            sink.Report(new RunnerLogEvent($"FEHLER: {problem}"));
+            sink.Report(new RunnerDoneEvent(false));
+            return false;
+        }
+
         try
         {
             Directory.CreateDirectory(installDir);
+            // S3-01: Rechte VOR dem ersten kopierten Byte - sonst erbt der Ordner
+            // "Authentifizierte Benutzer: Aendern" von C:\ und jedes Konto koennte
+            // python.exe tauschen, bevor setup.bat die Rechte setzt.
+            if (!await HardenInstallRootAsync(installDir, sink, ct).ConfigureAwait(false))
+            {
+                sink.Report(new RunnerStepEvent("copy", RunnerStepStatus.Fail));
+                sink.Report(new RunnerLogEvent(
+                    "FEHLER: Die Zugriffsrechte des Installationsordners liessen sich nicht "
+                    + "einschraenken - Installation abgebrochen."));
+                sink.Report(new RunnerDoneEvent(false));
+                return false;
+            }
             CopyDirectoryRecursive(payloadDir, installDir, ct);
             sink.Report(new RunnerStepEvent("copy", RunnerStepStatus.Ok));
             sink.Report(new RunnerProgressEvent(20));
@@ -310,6 +333,42 @@ public sealed class ScriptRunner
 
         await process.WaitForExitAsync(ct).ConfigureAwait(false);
         return process.ExitCode;
+    }
+
+    private static async Task<bool> HardenInstallRootAsync(
+        string installDir,
+        IProgress<RunnerEvent> sink,
+        CancellationToken ct)
+    {
+        foreach (var command in InstallDirGuard.RootHardeningCommands(installDir))
+        {
+            var psi = new ProcessStartInfo(command[0])
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            foreach (var arg in command.Skip(1))
+            {
+                psi.ArgumentList.Add(arg);
+            }
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return false;
+            }
+            var stdout = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+            var stderr = await process.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+            await process.WaitForExitAsync(ct).ConfigureAwait(false);
+            if (process.ExitCode != 0 && InstallDirGuard.IsMandatory(command))
+            {
+                sink.Report(new RunnerLogEvent(
+                    $"icacls {string.Join(' ', command.Skip(2))}: Exit {process.ExitCode} {stdout.Trim()} {stderr.Trim()}"));
+                return false;
+            }
+        }
+        return true;
     }
 
     private static async Task<int> RunNetCommandAsync(

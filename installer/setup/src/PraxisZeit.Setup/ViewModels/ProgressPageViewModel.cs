@@ -79,7 +79,7 @@ public sealed partial class ProgressPageViewModel : WizardPageBase
             Steps.Add(new StepItem { Id = "backup", Title = "2. Datenbank-Backup erstellen" });
             Steps.Add(new StepItem { Id = "stop",   Title = "3. PraxisZeit-Service stoppen" });
             Steps.Add(new StepItem { Id = "copy",   Title = "4. Dateien aktualisieren" });
-            Steps.Add(new StepItem { Id = "pip",    Title = "5. Python-Dependencies prüfen" });
+            Steps.Add(new StepItem { Id = "pip",    Title = "5. Installation und Python-Dependencies prüfen" });
             Steps.Add(new StepItem { Id = "start",  Title = "6. Service starten" });
             Steps.Add(new StepItem { Id = "task",   Title = "7. Backup-Task registrieren" });
         }

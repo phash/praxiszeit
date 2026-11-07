@@ -1,8 +1,8 @@
 """#213 — DB-Backup-Verwaltung (manuell + geplant), nativ UND Docker.
 
-Eine einheitliche Implementierung fuer beide Deployment-Arten: pg_dump laeuft mit
-der **Superuser**-Verbindung ``DATABASE_URL_MIGRATIONS`` (die der Backend-Prozess
-in beiden Modi ohnehin kennt — nativ via praxiszeit-server.py, Docker via compose).
+Eine einheitliche Implementierung fuer beide Deployment-Arten: pg_dump laeuft nativ
+mit der nur lesenden Rolle ``praxiszeit_backup`` (``DATABASE_URL_BACKUP``, von
+praxiszeit-server.py angelegt, S3-13), unter Docker mit ``DATABASE_URL_MIGRATIONS``.
 Format ist Plain-SQL + gzip mit ``--clean --if-exists`` -> der Restore ist mit
 ``gunzip -c <datei>.sql.gz | psql`` idempotent in eine bereits befuellte DB
 einspielbar (philvdb-Feedback #213: kein manuelles Leeren noetig, Restore war
@@ -436,6 +436,15 @@ def _pg_dump_bin() -> str:
     return os.environ.get("PRAXISZEIT_PG_DUMP", "").strip() or "pg_dump"
 
 
+def _backup_db_url() -> str:
+    """Verbindung fuer pg_dump: nativ die nur lesende Rolle ``praxiszeit_backup``
+    (``DATABASE_URL_BACKUP``, Audit 2026-11-07 S3-13 - der Webprozess kennt den
+    Superuser dort nicht mehr), Docker weiterhin ``DATABASE_URL_MIGRATIONS``
+    (der Backend-Container fuehrt seine Migrationen selbst aus)."""
+    return (os.environ.get("DATABASE_URL_BACKUP", "").strip()
+            or os.environ.get("DATABASE_URL_MIGRATIONS", "").strip())
+
+
 def _pg_dump_conn() -> Optional[tuple]:
     """Parst DATABASE_URL_MIGRATIONS in pg_dump-Verbindungsargumente + Passwort.
 
@@ -446,7 +455,7 @@ def _pg_dump_conn() -> Optional[tuple]:
     Behandelt die native Socket-Form `postgresql://u:p@/db?host=/run/sock`.
     Gibt (conn_args, password|None) zurueck oder None, wenn keine URL gesetzt ist.
     """
-    raw = os.environ.get("DATABASE_URL_MIGRATIONS", "").strip()
+    raw = _backup_db_url()
     if not raw:
         return None
     raw = re.sub(r"^postgresql\+[a-z0-9]+://", "postgresql://", raw)
@@ -468,7 +477,7 @@ def _pg_dump_conn() -> Optional[tuple]:
 
 def _pg_require_auth() -> Optional[str]:
     """``require_auth`` aus DATABASE_URL_MIGRATIONS (nativ Windows gesetzt)."""
-    raw = os.environ.get("DATABASE_URL_MIGRATIONS", "").strip()
+    raw = _backup_db_url()
     if not raw:
         return None
     from urllib.parse import urlparse, parse_qs
@@ -486,8 +495,8 @@ def create_backup(db: Session) -> BackupFile:
     conn = _pg_dump_conn()
     if not conn:
         raise BackupError(
-            "DATABASE_URL_MIGRATIONS ist nicht gesetzt — ohne Superuser-Verbindung "
-            "kann kein vollstaendiges Backup erstellt werden."
+            "Keine Datenbank-Verbindung fuer Sicherungen (DATABASE_URL_BACKUP bzw. "
+            "DATABASE_URL_MIGRATIONS ist nicht gesetzt) — Details im Protokoll des Dienstes."
         )
     conn_args, password = conn
 
