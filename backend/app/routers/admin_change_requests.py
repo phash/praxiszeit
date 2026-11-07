@@ -39,6 +39,8 @@ from app.services import (
 )
 from app.services.closure_split_service import rebook_freed_closure_days, resplit_year_closures
 from app.models.time_entry_audit_log import TimeEntryAuditLog
+from app.services import entry_guard_service
+from app.routers import time_entries as _te
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -516,6 +518,36 @@ def review_change_request(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Ein Zeiteintrag mit diesem Datum und dieser Startzeit existiert bereits.",
                 )
+            # #538 (A1-02): keine Überschneidung mit einem anderen Eintrag des
+            # Zieltags — dieselbe Anwesenheit, die der Schreibzweig unten
+            # speichert (Rohstempel; ein automatisch geschlossener Eintrag ohne
+            # tatsächliches Ende behält sein wirksames Ende). Ein UPDATE, das die
+            # Anwesenheit nicht ändert, prüft nicht (Bestand bleibt genehmigbar).
+            # Vor der Statusänderung (die Sammel-Genehmigung meldet den Antrag).
+            if _dup_r.eff_end is not None:
+                _now = _te._now_local()
+                _stays_auto = bool(
+                    entry is not None and entry.auto_closed
+                    and not (_proposed_end is not None
+                             and work_window_service.end_is_correction(_proposed_end, entry.end_time))
+                )
+                _ps, _pe = entry_guard_service.presence_bounds(
+                    _dup_r.eff_start, _dup_r.raw_start, _dup_r.eff_end, _dup_r.raw_end,
+                    auto_closed=_stays_auto,
+                )
+                _cand = entry_guard_service.interval(
+                    _ps, _pe, on=cr.proposed_date, today=_now.date(), now=_now.time(),
+                )
+                _unchanged = False
+                if entry is not None:
+                    _b_day, _b_int = entry_guard_service.snapshot(entry, today=_now.date(), now=_now.time())
+                    _unchanged = _b_day == cr.proposed_date and (_b_int.start, _b_int.end) == (_cand.start, _cand.end)
+                if not _unchanged:
+                    entry_guard_service.assert_no_overlap(
+                        db, tenant_id=cr.tenant_id, user_id=cr.user_id, day=cr.proposed_date,
+                        candidate=_cand, today=_now.date(), now=_now.time(),
+                        exclude_ids=(entry.id if entry is not None else None,),
+                    )
 
         # C-1: Re-validate §3 (daily hard cap) and §4 (breaks) against the
         # CURRENT DB state before materialising a CREATE/UPDATE. The CR was

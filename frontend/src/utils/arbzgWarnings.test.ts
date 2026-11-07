@@ -195,3 +195,13 @@ describe('Gesamtreview 1.20 (B1): §4 nach „Anerkennen" (Spec 13.3 Schritt 6, 
     expect(toast.warning.mock.calls[0][0]).not.toBe('BREAK_WARNING');
   });
 });
+
+describe('#538/#540: AUTO_CLOSED und ENTRY_OVERLAP', () => {
+  it('zeigt den Servertext ohne Code', () => {
+    const toast = mockToast();
+    const auto = 'Ihr offener Eintrag vom 05.11.2026 (ab 08:00) wurde automatisch geschlossen – angerechnet bis 23:59.';
+    const overlap = 'Überschneidung mit dem Eintrag 10:00–11:00 am 05.11.2026: …';
+    showArbzgWarnings(toast, [`AUTO_CLOSED: ${auto}`, `ENTRY_OVERLAP: ${overlap}`]);
+    expect(toast.warning.mock.calls.map((c: unknown[]) => c[0])).toEqual([auto, overlap]);
+  });
+});

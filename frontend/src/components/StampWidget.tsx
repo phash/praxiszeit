@@ -7,10 +7,27 @@ import { trackHoursToday } from '../utils/contractToday';
 import { getErrorMessage } from '../utils/errorMessage';
 import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { computeBreakError } from '../utils/breakValidation';
-import { isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
+import { breakWaiverReasonError, isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
 import { gapSegments, hullClamp } from '../utils/workBlocks';
+import { stripWarningCode } from '../utils/arbzgWarnings';
+import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
+import ChangeRequestForm from './ChangeRequestForm';
 import type { TimeBlock } from '../types/workBlocks';
+
+/** #540 (A1-04/A2-7): automatisch geschlossener Eintrag ohne tatsächliches Ende. */
+interface AutoClosedEntry {
+  id: string;
+  date: string;
+  start_time: string;
+  end_time: string | null;
+  break_minutes: number;
+  note?: string;
+  raw_start_time?: string | null;
+  raw_end_time?: string | null;
+  auto_closed?: boolean | null;
+  warnings?: string[];
+}
 
 interface ClockStatus {
   is_clocked_in: boolean;
@@ -24,6 +41,16 @@ interface ClockStatus {
   blocks_today?: TimeBlock[];
   blockless_workday?: boolean; // Werktag ohne Blöcke → nichts angerechnet
   grace_minutes?: number;
+  auto_closed_entries?: AutoClosedEntry[];
+}
+
+function localIso(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatDE(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}.${m}.${y}`;
 }
 
 // Zugänglicher Name des §4-Begründungsfelds (beide Varianten).
@@ -58,6 +85,13 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
   // #499: Die Praxis kann die Ausnahme „Pflicht-Pause war nicht möglich"
   // abschalten — dann bleibt nur, die Pause nachzutragen.
   const breakExceptionAllowed = useSystemStore((s) => s.isBreakExceptionAllowed());
+  // #538 (A1-02): Sperre beim Einstempeln (Überschneidung) am Widget zeigen.
+  const [clockInError, setClockInError] = useState<string | null>(null);
+  // #540 (A1-11): §10-Ausnahmegrund beim Ausstempeln an Sonn-/Feiertagen.
+  const [sundayReason, setSundayReason] = useState('');
+  const showSundayReason = useSundayOrHoliday(localIso(new Date()), null, showBreakInput);
+  // #540 (A2-7): Antrag für das tatsächliche Ende eines automatisch geschlossenen Eintrags.
+  const [crEntry, setCrEntry] = useState<AutoClosedEntry | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -87,6 +121,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
   const handleClockIn = async () => {
     if (acting) return;  // synchroner Doppelklick-Schutz (setActing ist async, disabled greift zu spät)
     setActing(true);
+    setClockInError(null);
     try {
       const res = await apiClient.post('/time-entries/clock-in', {});
       toast.success('Erfolgreich eingestempelt');
@@ -104,7 +139,13 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
         onSuccess?.();
       }
     } catch (err: any) {
-      toast.error(getErrorMessage(err, 'Fehler beim Einstempeln'));
+      const msg = getErrorMessage(err, 'Fehler beim Einstempeln');
+      if (err?.response?.status === 409) {
+        // #538: Überschneidung / belegter Beginn — Hinweis am Widget, nicht nur als Toast.
+        setClockInError(msg);
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setActing(false);
     }
@@ -135,6 +176,11 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
     // Server und lehnt seit #499 mit 400 ab — die Meldung landet unten im
     // selben Dialog (catch).
     const waiver = breakExceptionAllowed ? breakWaiverReason.trim() : '';
+    // #540 (A1-05): eine begonnene, aber zu kurze Begründung lehnt der Server ab.
+    if (waiver && breakWaiverReasonError(waiver)) {
+      setBreakWarn(`${breakWarn ?? ''} ${breakWaiverReasonError(waiver)}`.trim());
+      return;
+    }
     const st = status?.current_entry?.start_time;
     if (st && !user?.exempt_from_arbzg) {
       const startHHMM = st.includes('T') ? st.split('T')[1].substring(0, 5) : st.substring(0, 5);
@@ -160,13 +206,23 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
       const res = await apiClient.post('/time-entries/clock-out', {
         break_minutes: breakMinutes,
         break_waiver_reason: waiver || undefined,
+        sunday_exception_reason: showSundayReason && sundayReason.trim() ? sundayReason.trim() : undefined,
       });
-      toast.success('Erfolgreich ausgestempelt');
+      // #540 (A2-7): war der offene Eintrag von einem früheren Tag, schließt der
+      // Server ihn automatisch und vermerkt den Ausstempelversuch — das ist kein
+      // normales Ausstempeln; der Hinweis (Warnung) und der Antrags-Knopf unten
+      // führen weiter.
+      if (res.data?.auto_closed) {
+        toast.warning('Der offene Eintrag eines früheren Tages wurde automatisch geschlossen.');
+      } else {
+        toast.success('Erfolgreich ausgestempelt');
+      }
       showArbzgWarnings(toast, res.data?.warnings);
       setShowBreakInput(false);
       setBreakMinutes(0);
       setBreakWarn(null);
       setBreakWaiverReason('');
+      setSundayReason('');
       await fetchStatus();
       if (variant === 'sheet') {
         setShowSuccess(true);
@@ -204,7 +260,69 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
     setBreakMinutes(0);
     setBreakWarn(null);
     setBreakWaiverReason('');
+    setSundayReason('');
   };
+
+  // #540 (A1-11): Feld für den §10-Grund im Ausstempel-Dialog (Sonn-/Feiertag).
+  const sundayReasonField = showSundayReason ? (
+    <div className="mt-3 text-left">
+      <label htmlFor="stamp-sunday-reason" className="block text-sm text-text-secondary mb-1">
+        Ausnahmegrund (§10 ArbZG) – Sonn-/Feiertagsarbeit
+      </label>
+      <input
+        id="stamp-sunday-reason"
+        type="text"
+        value={sundayReason}
+        maxLength={2000}
+        onChange={(e) => setSundayReason(e.target.value)}
+        placeholder="z. B. Notdienst, Patientenversorgung"
+        className="w-full border border-amber-300 rounded-xl px-3 py-2 text-sm bg-amber-50 focus:ring-2 focus:ring-amber-400"
+      />
+    </div>
+  ) : null;
+
+  // #538 / #540: Hinweise, die das Widget selbst trägt (nicht nur als Toast).
+  const autoClosed = status?.auto_closed_entries?.[0] ?? null;
+  const notices = (
+    <>
+      {clockInError && (
+        <div role="alert" className="mt-3 text-left bg-red-50 border border-red-200 rounded-xl p-3">
+          <p className="text-sm text-red-800">{clockInError}</p>
+        </div>
+      )}
+      {autoClosed && (
+        <div role="status" className="mt-3 text-left bg-amber-50 border border-amber-200 rounded-xl p-3">
+          <p className="text-sm text-amber-900">
+            Ihr Eintrag vom {formatDE(autoClosed.date)} (ab {(autoClosed.raw_start_time || autoClosed.start_time).substring(0, 5)}) wurde
+            automatisch geschlossen, weil das Ausstempeln fehlte. Bitte tragen Sie das tatsächliche Arbeitsende nach.
+          </p>
+          {autoClosed.warnings?.[0] && (
+            <p className="text-xs text-amber-800 mt-1">{stripWarningCode(autoClosed.warnings[0])}</p>
+          )}
+          <button
+            type="button"
+            onClick={() => setCrEntry(autoClosed)}
+            className="mt-2 px-3 py-1.5 text-sm rounded-lg bg-amber-600 text-white hover:bg-amber-700"
+          >
+            Arbeitsende per Antrag nachtragen
+          </button>
+        </div>
+      )}
+      {crEntry && (
+        <ChangeRequestForm
+          entry={crEntry}
+          requestType="update"
+          actualEndRequired
+          onClose={() => setCrEntry(null)}
+          onSuccess={() => {
+            setCrEntry(null);
+            toast.success('Änderungsantrag eingereicht');
+            fetchStatus();
+          }}
+        />
+      )}
+    </>
+  );
 
   const formatElapsed = (minutes: number) => {
     const h = Math.floor(minutes / 60);
@@ -301,6 +419,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
                 )}
               </div>
             )}
+            {sundayReasonField}
             <button onClick={cancelClockOut} className="text-sm text-text-secondary hover:text-text-primary mt-2 transition">
               Abbrechen
             </button>
@@ -327,6 +446,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
             Einstempeln
           </button>
         )}
+        {notices}
       </div>
     );
   }
@@ -396,6 +516,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
                 )}
               </div>
             )}
+            {sundayReasonField}
           </div>
         )}
 
@@ -420,6 +541,7 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
           </button>
         )}
       </div>
+      {notices}
     </div>
   );
 }

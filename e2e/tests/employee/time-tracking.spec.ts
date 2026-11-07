@@ -1,5 +1,5 @@
 import { test, expect } from '../../fixtures/base.fixture';
-import { today, daysAgo, previousWeekday } from '../../helpers/date.helper';
+import { today, daysAgo, previousWeekday, pastSlotToday } from '../../helpers/date.helper';
 
 test.describe('Employee Time Tracking', () => {
   test.beforeEach(async ({ employeePage }) => {
@@ -8,13 +8,16 @@ test.describe('Employee Time Tracking', () => {
   });
 
   test('create time entry', async ({ employeePage }) => {
+    // #540 (A1-09): das Ende darf nicht in der Zukunft liegen → Spanne, die schon vorbei ist.
+    const slot = pastSlotToday(180);
+    test.skip(!slot, 'braucht 3 h vergangene Zeit am heutigen Tag');
     // Click "Neuer Eintrag" to show the form
     await employeePage.getByRole('button', { name: 'Neuer Eintrag' }).click();
 
     // Fill the form
     await employeePage.locator('#tt-date').fill(today());
-    await employeePage.locator('#start-time').fill('09:00');
-    await employeePage.locator('#end-time').fill('12:00');
+    await employeePage.locator('#start-time').fill(slot!.start);
+    await employeePage.locator('#end-time').fill(slot!.end);
     await employeePage.locator('#break-minutes').fill('0');
 
     // Submit
@@ -26,16 +29,18 @@ test.describe('Employee Time Tracking', () => {
     ).toBeVisible({ timeout: 10000 });
 
     // Verify the entry appears in the table (use .first() since desktop+mobile views may both show it)
-    await expect(employeePage.getByText('09:00').first()).toBeVisible();
+    await expect(employeePage.getByText(slot!.start).first()).toBeVisible();
   });
 
   test('edit time entry', async ({ employeePage, testEmployee, createTimeEntry }) => {
     // Create an entry for today (must be today since is_editable = date == today)
-    // Use unique times that don't overlap with other tests' entries (create: 09-12, 8h: 06-15)
+    // #540 (A1-09): Spanne, die schon vorbei ist (das Ende darf nicht in der Zukunft liegen).
+    const slot = pastSlotToday(120);
+    test.skip(!slot, 'braucht 2 h vergangene Zeit am heutigen Tag');
     await createTimeEntry(testEmployee.id, {
       date: today(),
-      start_time: '16:00',
-      end_time: '18:00',
+      start_time: slot!.start,
+      end_time: slot!.end,
       break_minutes: 0,
     });
 
@@ -43,7 +48,7 @@ test.describe('Employee Time Tracking', () => {
     await employeePage.waitForLoadState('networkidle');
 
     // Wait for entries to appear in the table
-    await expect(employeePage.getByText('16:00').first()).toBeVisible({ timeout: 10000 });
+    await expect(employeePage.getByText(slot!.start).first()).toBeVisible({ timeout: 10000 });
 
     // Find and click the edit button for our entry (desktop view)
     const editButton = employeePage.locator('button[aria-label*="bearbeiten"]').first();
@@ -54,8 +59,8 @@ test.describe('Employee Time Tracking', () => {
     await expect(employeePage.getByText('Eintrag bearbeiten').last()).toBeVisible({ timeout: 5000 });
 
     // Verify form is pre-filled with entry data
-    await expect(employeePage.locator('#start-time')).toHaveValue('16:00');
-    await expect(employeePage.locator('#end-time')).toHaveValue('18:00');
+    await expect(employeePage.locator('#start-time')).toHaveValue(slot!.start);
+    await expect(employeePage.locator('#end-time')).toHaveValue(slot!.end);
 
     // Note: Due to a backend Pydantic v2 schema bug where the 'date' field name
     // shadows the datetime.date import (causing none_required validation error on PUT),
@@ -66,11 +71,13 @@ test.describe('Employee Time Tracking', () => {
   });
 
   test('delete time entry', async ({ employeePage, testEmployee, createTimeEntry }) => {
-    // Create an entry for today via fixture
+    // Create an entry for today via fixture (#540 A1-09: Ende nicht in der Zukunft)
+    const slot = pastSlotToday(60);
+    test.skip(!slot, 'braucht 1 h vergangene Zeit am heutigen Tag');
     await createTimeEntry(testEmployee.id, {
       date: today(),
-      start_time: '14:00',
-      end_time: '15:00',
+      start_time: slot!.start,
+      end_time: slot!.end,
       break_minutes: 0,
     });
 
@@ -118,11 +125,14 @@ test.describe('Employee Time Tracking', () => {
   });
 
   test('ArbZG section 3 warning over 8h', async ({ employeePage }) => {
+    // #540 (A1-09): 9 h, die schon vorbei sind (Ende nicht in der Zukunft).
+    const slot = pastSlotToday(540);
+    test.skip(!slot, 'braucht 9 h vergangene Zeit am heutigen Tag');
     await employeePage.getByRole('button', { name: 'Neuer Eintrag' }).click();
 
     await employeePage.locator('#tt-date').fill(today());
-    await employeePage.locator('#start-time').fill('06:00');
-    await employeePage.locator('#end-time').fill('15:00');
+    await employeePage.locator('#start-time').fill(slot!.start);
+    await employeePage.locator('#end-time').fill(slot!.end);
     await employeePage.locator('#break-minutes').fill('30');
     await employeePage.getByRole('button', { name: 'Speichern' }).click();
 

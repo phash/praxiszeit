@@ -37,6 +37,9 @@ from tests.conftest import (
 )
 from tests.work_blocks_fixtures import legacy_week
 
+# #540 (A1-09): Einträge von heute mit festen Uhrzeiten — Uhr auf 23:58.
+pytestmark = pytest.mark.usefixtures("late_now")
+
 
 # ---------------------------------------------------------------------------
 # Test app
@@ -228,7 +231,7 @@ class TestChangeRequestBreakWaiver:
         """§3-10h-Cap bleibt hart, auch MIT §4-Ausnahme (422, nicht 201)."""
         resp = employee_client.post(
             "/api/change-requests/",
-            json={**_CR_OVER_6H, "proposed_end_time": "19:00", "break_waiver_reason": "egal"},
+            json={**_CR_OVER_6H, "proposed_end_time": "19:00", "break_waiver_reason": "egal, ist ja zu lang"},
         )
         assert resp.status_code == 422, resp.text
 
@@ -384,7 +387,9 @@ class TestBreakWaiverWithApproval:
         monkeypatch.setattr(te, "_today_local", lambda: monday)
         monkeypatch.setattr(
             te, "_now_local",
-            lambda: dt.datetime(2026, 6, 1, 12, 0, tzinfo=te.LOCAL_TZ),
+            # #540 (A1-09): nach dem Ende 17:30 — ein Ende in der Zukunft lehnt
+            # der Server ab.
+            lambda: dt.datetime(2026, 6, 1, 18, 0, tzinfo=te.LOCAL_TZ),
         )
         employee.track_hours = True
         employee.work_blocks = legacy_week(mon=("08:00", "16:00"))  # grace=15 → Fenster [07:45, 16:15]
@@ -570,7 +575,7 @@ class TestBreakWaiverUpdate:
         entry = _make_today_entry(db, employee, break_minutes=45)
         resp = employee_client.put(
             f"/api/time-entries/{entry.id}",
-            json={"break_minutes": 0, "break_waiver_reason": "Notfall"},
+            json={"break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung"},
         )
         assert resp.status_code == 202, resp.text
         # Original-Eintrag NICHT verändert
@@ -582,7 +587,7 @@ class TestBreakWaiverUpdate:
         assert cr.status == ChangeRequestStatus.PENDING
         assert cr.request_type == ChangeRequestType.UPDATE
         assert str(cr.time_entry_id) == str(entry.id)
-        assert cr.break_waiver_reason == "Notfall"
+        assert cr.break_waiver_reason == "Notfall ohne Vertretung"
         assert cr.proposed_break_minutes == 0
         assert cr.original_break_minutes == 45
 
@@ -1126,7 +1131,7 @@ class TestWaiverAntragTraegtParagraph10Grund:
         entry = _make_today_entry(db, employee, break_minutes=45)
         resp = employee_client.put(
             f"/api/time-entries/{entry.id}",
-            json={"break_minutes": 0, "break_waiver_reason": "Notfall",
+            json={"break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung",
                   "sunday_exception_reason": "Notdienst"},
         )
         assert resp.status_code == 202, resp.text

@@ -282,7 +282,7 @@ def k_http(_db_session, employee_user):
     invalidate_holiday_cache()
 
 
-def _today(monkeypatch, d, hh=10):
+def _today(monkeypatch, d, hh=23):  # #540 (A1-09): kein Ende in der Zukunft
     monkeypatch.setattr(te, "_today_local", lambda: d)
     monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(d.year, d.month, d.day, hh, 0))
     monkeypatch.setattr(te_schema, "today_local", lambda: d)

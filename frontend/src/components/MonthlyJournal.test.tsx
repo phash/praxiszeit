@@ -922,3 +922,20 @@ describe('<MonthlyJournal /> Hinweiszeilen in der Von–Bis-Spalte brechen um (F
     expect(span.closest('td')!.className).toContain('whitespace-nowrap');
   });
 });
+
+// #538 (A1-02): die Überschneidungs-Sperre des Servers bleibt am Journal stehen.
+describe('<MonthlyJournal /> Überschneidung (Audit 2026-11-07)', () => {
+  it('zeigt die 409-Sperre als Hinweis im Journal, nicht nur als Toast', async () => {
+    mockJournal([{ ...validDay, time_entries: [{ id: 'e1', start_time: '08:00', end_time: '12:00', break_minutes: 0, net_hours: 4 }] }]);
+    const detail = 'Überschneidung mit dem Eintrag 08:00–12:00 am 01.06.2026: Zeiteinträge einer Person dürfen sich nicht überschneiden. Bitte die Zeiten anpassen oder den vorhandenen Eintrag bearbeiten.';
+    postMock.mockRejectedValue({ response: { status: 409, data: { detail } } });
+    const { container } = render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('Weiteren Eintrag hinzufügen'));
+    const [von, bis] = Array.from(container.querySelectorAll('input[type="time"]'));
+    fireEvent.change(von, { target: { value: '11:00' } });
+    fireEvent.change(bis, { target: { value: '13:00' } });
+    fireEvent.click(screen.getByTitle('Hinzufügen'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(detail);
+    expect(toastError).toHaveBeenCalledWith(detail);
+  });
+});

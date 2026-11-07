@@ -16,7 +16,7 @@ from app.routers.time_entries import (
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
 )
 from app.services.arbzg_utils import is_night_work
-from app.services import credit_override_service, work_window_service
+from app.services import credit_override_service, entry_guard_service, work_window_service
 # #219: single shared CR-enricher (was duplicated per-item here vs the batch in
 # admin_helpers). _enrich_cr_response wraps the batch _enrich_cr_responses([cr]).
 from app.routers.admin_helpers import (
@@ -386,6 +386,37 @@ def create_change_request(
             db, current_user, data.proposed_date, _in_start, _in_end, _cr_grace,
             credit_override=_override,
         )
+    # #538 (A1-02): ein Antrag, der eine Überschneidung erzeugen würde, wird
+    # schon beim Stellen abgelehnt (die Genehmigung prüft erneut) — gleiche
+    # Anwesenheit wie dort, ein UPDATE ohne Änderung der Anwesenheit prüft nicht.
+    if _cr_clamp is not None and _cr_clamp.eff_end is not None:
+        _now = now_local()
+        _stays_auto = bool(
+            entry is not None and entry.auto_closed
+            and not work_window_service.end_is_correction(data.proposed_end_time, entry.end_time)
+        )
+        _ps, _pe = entry_guard_service.presence_bounds(
+            _cr_clamp.eff_start, _cr_clamp.raw_start, _cr_clamp.eff_end, _cr_clamp.raw_end,
+            auto_closed=_stays_auto,
+        )
+        _cand = entry_guard_service.interval(_ps, _pe, on=data.proposed_date, today=_now.date(), now=_now.time())
+        _unchanged = False
+        if entry is not None:
+            _b_day, _b_int = entry_guard_service.snapshot(entry, today=_now.date(), now=_now.time())
+            _unchanged = _b_day == data.proposed_date and (_b_int.start, _b_int.end) == (_cand.start, _cand.end)
+        if not _unchanged:
+            entry_guard_service.assert_no_overlap(
+                db, tenant_id=current_user.tenant_id, user_id=current_user.id, day=data.proposed_date,
+                candidate=_cand, today=_now.date(), now=_now.time(),
+                exclude_ids=(entry.id if entry is not None else None,),
+            )
+        # #540 (A1-09): Pause kürzer als die beantragte Spanne.
+        _se = entry_guard_service.break_span_error(
+            data.proposed_start_time, data.proposed_end_time,
+            work_window_service.effective_break_minutes(data.proposed_break_minutes, entry),
+        )
+        if _se:
+            raise HTTPException(status_code=400, detail=_se)
     _chk_start = _cr_clamp.eff_start if _cr_clamp else data.proposed_start_time
     _chk_end = _cr_clamp.eff_end if _cr_clamp else data.proposed_end_time
     _chk_unc = _cr_clamp.uncredited_minutes if _cr_clamp else 0

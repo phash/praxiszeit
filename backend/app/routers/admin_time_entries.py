@@ -19,7 +19,12 @@ from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_DAILY_HOURS_WARN, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
     BREAK_WAIVER_SOURCE, _assert_within_employment_window,
+    auto_close_findings, uncorrected_auto_closed,
 )
+from app.routers import time_entries as _te
+from app.schemas.time_entry import AutoClosedEntryResponse
+from app.services import entry_guard_service
+from app.services.holiday_service import is_holiday
 from app.services.arbzg_utils import is_night_work
 from app.services import credit_override_service, presence_service, work_window_service
 from app.routers.absences import _MASKED_ABSENCE_TYPES
@@ -68,6 +73,55 @@ def _audit_note_is_health_sensitive(log: TimeEntryAuditLog) -> bool:
 
 
 # ── Admin Time Entry Management ─────────────────────────────────────────
+
+def _sunday_holiday_warnings(db: Session, tenant_id, d, reason) -> list[str]:
+    """#540 (A1-11): Sonn-/Feiertagsarbeit auch auf den Verwaltungswegen melden
+    (bis dahin nur in den Mitarbeiterpfaden). Mit eingetragenem §10-Grund
+    bleibt es bei der Feststellung ohne Aufforderung."""
+    out: list[str] = []
+    suffix = "" if reason else " – bitte Ausnahmegrund (§10 ArbZG) angeben"
+    if d.weekday() == 6:
+        out.append(f"SUNDAY_WORK: Sonntagsarbeit eingetragen (§9 ArbZG){suffix}.")
+    if is_holiday(db, d, tenant_id=tenant_id):
+        out.append(f"HOLIDAY_WORK: Feiertagsarbeit eingetragen (§9 ArbZG){suffix}.")
+    return out
+
+
+@router.get("/time-entries/auto-closed", response_model=List[AutoClosedEntryResponse])
+def list_auto_closed_entries(
+    days: int = Query(90, ge=1, le=730),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#540 (A1-04): automatisch geschlossene Einträge, deren tatsächliches Ende
+    noch fehlt — mit den §3/§4-Befunden (live gerechnet) und dem Kennzeichen,
+    ob schon ein Änderungsantrag läuft. Nur lesend; der Ausweg ist die
+    Korrektur des Endes (Monatsjournal) bzw. die Genehmigung des Antrags."""
+    from datetime import timedelta
+    today = _te._today_local()
+    rows = uncorrected_auto_closed(
+        db, tenant_id=current_user.tenant_id,
+        since=today - timedelta(days=days), until=today, limit=200,
+    )
+    users = {
+        u.id: u for u in db.query(User).filter(
+            User.tenant_id == current_user.tenant_id,  # F-026
+            User.id.in_({e.user_id for e, _ in rows}),
+        ).all()
+    } if rows else {}
+    out = []
+    for e, has_pending in rows:
+        owner = users.get(e.user_id)
+        out.append(AutoClosedEntryResponse(
+            id=e.id, user_id=e.user_id,
+            user_name=f"{owner.first_name} {owner.last_name}" if owner else "",
+            date=e.date, start_time=e.raw_start_time or e.start_time, end_time=e.end_time,
+            net_hours=float(e.net_hours),
+            findings=auto_close_findings(db, owner, e) if owner else [],
+            pending_change_request=has_pending,
+        ))
+    return out
+
 
 @router.post("/users/{user_id}/time-entries", response_model=TimeEntryResponse, status_code=status.HTTP_201_CREATED)
 def admin_create_time_entry(
@@ -122,6 +176,23 @@ def admin_create_time_entry(
             status_code=status.HTTP_409_CONFLICT,
             detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum",
         )
+
+    # #540 (A1-09) / #538 (A1-02): dieselben Plausibilitäts- und
+    # Überschneidungsprüfungen wie in ``create_time_entry`` (Person des Eintrags).
+    _now = _te._now_local()
+    _plaus = (
+        entry_guard_service.future_end_error(entry_data.date, entry_data.end_time, today=_now.date(), now=_now)
+        or entry_guard_service.break_span_error(entry_data.start_time, entry_data.end_time, entry_data.break_minutes)
+    )
+    if _plaus:
+        raise HTTPException(status_code=400, detail=_plaus)
+    entry_guard_service.assert_no_overlap(
+        db, tenant_id=current_user.tenant_id, user_id=user.id, day=entry_data.date,
+        candidate=entry_guard_service.interval(
+            entry_data.start_time, entry_data.end_time, on=entry_data.date,
+            today=_now.date(), now=_now.time()),
+        today=_now.date(), now=_now.time(),
+    )
 
     admin_create_warnings: list[str] = []
     # #462: Die Kappung darf nicht stumm passieren — genau der Fall, den der
@@ -184,6 +255,12 @@ def admin_create_time_entry(
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
             admin_create_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §3 ArbZG)")
+
+        # #540 (A1-11): §9/§10 wie die übrigen Schreibwege — ohne Grund mit
+        # Hinweis auf den fehlenden Ausnahmegrund.
+        admin_create_warnings.extend(_sunday_holiday_warnings(
+            db, current_user.tenant_id, entry_data.date, entry_data.sunday_exception_reason,
+        ))
 
         # SS6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (
@@ -265,6 +342,9 @@ def admin_update_time_entry(
     )
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+    # #538 (A1-02): Anwesenheit vor der Bearbeitung (unverändert → keine Prüfung).
+    _now = _te._now_local()
+    _before_presence = entry_guard_service.snapshot(entry, today=_now.date(), now=_now.time())
 
     # Get user for SS18 exempt check and night worker warning.
     # F-026: expliziter Tenant-Filter zusätzlich zu RLS (belt-and-suspenders).
@@ -362,6 +442,18 @@ def admin_update_time_entry(
     )
     if _order_error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_order_error)
+    # #540 (A1-09): kein NEUES Ende in der Zukunft (heute); Pause kürzer als die
+    # Spanne der Eingabe — wie die MA-Route.
+    if entry_data.end_time is not None and entry_data.end_time not in (entry.end_time, entry.raw_end_time):
+        _fe = entry_guard_service.future_end_error(update_date, entry_data.end_time, today=_now.date(), now=_now)
+        if _fe:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_fe)
+    if (update_end_time is not None and entry.end_time is not None
+            and (entry_data.break_minutes is not None or entry_data.start_time is not None
+                 or entry_data.end_time is not None)):
+        _se = entry_guard_service.break_span_error(update_start_time, update_end_time, update_break_minutes)
+        if _se:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_se)
 
     # #201: Clamp start/end to the affected employee's soll window.
     # Use `affected_user` (the employee whose entry this is), NOT current_user (admin).
@@ -399,6 +491,36 @@ def admin_update_time_entry(
     # MA-Route und Antragsgenehmigung).
     _end_corrected = entry.auto_closed and entry_data.end_time is not None \
         and work_window_service.end_is_correction(entry_data.end_time, entry.end_time)
+
+    # #538 (A1-02): Überschneidung mit einem anderen Eintrag des Tages — mit der
+    # Anwesenheit, die unten gespeichert wird (Rohstempel; ohne tatsächliches
+    # Ende bleibt beim automatisch geschlossenen Eintrag das wirksame Ende).
+    # Vor §3/§4 (deren Zahlen bei einer Überschneidung nichts aussagen) und vor
+    # jedem Schreiben; unveränderte Anwesenheit prüft nicht (Bestand bleibt
+    # bearbeitbar).
+    _ws = entry_data.start_time is not None or entry_data.date is not None
+    _we = entry_data.end_time is not None or entry_data.date is not None
+    _p_start = (raw_start or eff_start) if _ws else (entry.raw_start_time or entry.start_time)
+    _new_end = eff_end if _we else entry.end_time
+    if _new_end is None:
+        _p_end = None
+    elif entry.auto_closed and not _end_corrected:
+        _p_end = _new_end
+    else:
+        _p_end = (raw_end or eff_end) if _we else work_window_service.presence_end(entry)
+    _cand = entry_guard_service.interval(
+        _p_start, _p_end, on=update_date, today=_now.date(), now=_now.time(),
+    )
+    _b_day, _b_int = _before_presence
+    _same_presence = _b_day == update_date and (
+        (_b_int.start, _b_int.end, _b_int.running) == (_cand.start, _cand.end, _cand.running)
+        or (_b_int.running and _cand.running and _b_int.start == _cand.start)
+    )
+    if not _same_presence:
+        entry_guard_service.assert_no_overlap(
+            db, tenant_id=current_user.tenant_id, user_id=entry.user_id, day=update_date,
+            candidate=_cand, today=_now.date(), now=_now.time(), exclude_ids=(entry.id,),
+        )
 
     admin_update_warnings: list[str] = []
     # #462: wie im Anlege-Pfad — eine stille Aenderung fremder Arbeitszeit ist
@@ -529,6 +651,14 @@ def admin_update_time_entry(
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
             admin_update_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §3 ArbZG)")
+
+        # #540 (A1-11): §9/§10 wie beim Anlegen.
+        admin_update_warnings.extend(_sunday_holiday_warnings(
+            db, current_user.tenant_id, update_date,
+            entry_data.sunday_exception_reason
+            if "sunday_exception_reason" in entry_data.model_fields_set
+            else entry.sunday_exception_reason,
+        ))
 
         # SS6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (

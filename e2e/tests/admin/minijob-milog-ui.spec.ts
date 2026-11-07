@@ -1,5 +1,5 @@
 import { test, expect } from '../../fixtures/base.fixture';
-import { today } from '../../helpers/date.helper';
+import { pastSlotToday, today } from '../../helpers/date.helper';
 
 /**
  * #377 Minijob / § 2 Abs. 2 MiLoG — browser-driven UI tests der neuen Funktionen:
@@ -20,7 +20,14 @@ import { today } from '../../helpers/date.helper';
  * 2,17 h; ein Tag mit 8,5 h netto ergibt 4,17 h Konto-Plusstunden).
  */
 const MILOG_WEEKLY_HOURS = 1;
-const MILOG_DAY = { start_time: '08:00', end_time: '17:00', break_minutes: 30 }; // 8,5 h netto
+// #540 (A1-09): das Ende eines heutigen Eintrags darf nicht in der Zukunft liegen —
+// 7:30 h, die schon vorbei sind, mit 30 Min. Pause = 7 h netto (reißt die 50-%-Grenze
+// bei 1 h/Woche: 7 − 4,33 = 2,67 h > 2,17 h). Zu früh am Tag → übersprungen.
+function milogDay() {
+  const slot = pastSlotToday(450);
+  test.skip(!slot, 'braucht 7:30 h vergangene Zeit am heutigen Tag');
+  return { start_time: slot!.start, end_time: slot!.end, break_minutes: 30 };
+}
 
 test.describe('#377 Minijob MiLoG — UI', () => {
   test('Einstellungen zeigen die Mindestlohn-Karte', async ({ adminPage }) => {
@@ -85,7 +92,7 @@ test.describe('#377 Minijob MiLoG — UI', () => {
     const empId = created.id;
     try {
       const e = await adminApi.post(`/admin/users/${empId}/time-entries`, {
-        date: today(), ...MILOG_DAY,
+        date: today(), ...milogDay(),
       });
       entryIds.push(e.id);
       expect(entryIds.length, 'setup: der Tageseintrag muss angelegt sein').toBe(1);

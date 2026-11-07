@@ -113,10 +113,10 @@ def test_preview_auto_pause_counts_the_gap_between_rows(db, test_user):
 
 
 def test_preview_auto_pause_rest_goes_to_the_longest_row(db, test_user):
-    """07:00–13:30 + 14:00–20:30 (je 6:30 h, Abstand 30): Tag 13 h → 45 Min Bedarf,
-    30 gedeckt → Rest 15 an der ersten der beiden gleich langen Zeilen. Je Zeile
-    waren es 30 + 30 = 60 Min."""
-    rows = parse_xls(_xls((_mon(7), _mon(13, 30)), (_mon(14), _mon(20, 30))), test_user.id, db)
+    """07:00–11:45 + 12:15–17:00 (je 4:45 h, Abstand 30): Tag 9:30 h → 45 Min
+    Bedarf, 30 gedeckt → Rest 15 an der ersten der beiden gleich langen Zeilen.
+    (#540 A1-07: bis dahin 2 × 6:30 h — ein Tag über 10 h wird nicht mehr übernommen.)"""
+    rows = parse_xls(_xls((_mon(7), _mon(11, 45)), (_mon(12, 15), _mon(17))), test_user.id, db)
     assert [r.break_minutes for r in rows] == [15, 0]
 
 
@@ -153,7 +153,7 @@ def test_confirm_does_not_take_the_break_from_the_client(db, test_user, test_adm
 def test_confirm_matches_the_preview(db, test_user, test_admin):
     """Unveränderte Vorschau → dieselben Pausen in der Datenbank, das Protokoll
     nennt die gespeicherte Pause."""
-    xls = _xls((_mon(7), _mon(13, 30)), (_mon(14), _mon(20, 30)))
+    xls = _xls((_mon(7), _mon(11, 45)), (_mon(12, 15), _mon(17)))  # #540: ≤ 10 h
     preview = parse_xls(xls, test_user.id, db)
     _run(db, test_user, test_admin, preview)
     stored = db.query(TimeEntry).order_by(TimeEntry.start_time).all()
@@ -364,18 +364,19 @@ def test_skipped_row_replaces_no_entry(db, test_user, test_admin):
     „überschreiben". Die Vorschau rechnete ihn trotzdem als ersetzt: Zeile
     12:00–18:00 mit Pause 0 und ohne §3/§4, obwohl der gespeicherte Tag 12 h hat;
     ``/confirm`` meldete dann „Pause an den Tag angepasst (0 → 45 Min)"."""
+    # #540 (A1-07): Zeile 12:00–15:00 statt bis 18:00 — ein Tag über 10 h wird
+    # seitdem gar nicht übernommen (eigener Test in test_audit_1107_lane_b_xls).
     _entry(db, test_user, time(6), time(12))
-    rows = parse_xls(_xls((_mon(6), _mon(5)), (_mon(12), _mon(18))), test_user.id, db)
-    assert rows[1].break_minutes == 45
-    assert any(w.startswith("§3 ArbZG: Tages-Netto-Arbeitszeit 11.2h") for w in _hard(rows[1])), \
-        rows[1].arbzg_warnings
+    rows = parse_xls(_xls((_mon(6), _mon(5)), (_mon(12), _mon(15))), test_user.id, db)
+    assert rows[1].break_minutes == 30
+    assert not any("übersprungen" in w for w in rows[1].arbzg_warnings), rows[1].arbzg_warnings
 
     result = _run(db, test_user, test_admin, rows, overwrite=True)
     assert (result.imported, result.overwritten, result.skipped) == (1, 0, 1)
     assert not any("Pause an den Tag angepasst" in w for w in result.warnings), result.warnings
     stored = db.query(TimeEntry).order_by(TimeEntry.start_time).all()
     assert [(e.start_time, e.end_time, e.break_minutes) for e in stored] == [
-        (time(6), time(12), 0), (time(12), time(18), 45),
+        (time(6), time(12), 0), (time(12), time(15), 30),
     ]
 
 

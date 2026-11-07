@@ -28,10 +28,13 @@ Beim **Ausstempeln** Feld **Pause (Min.)** ausfüllen → **Jetzt ausstempeln**.
 - Bei **mehr als 6 h** verlangt das Gesetz eine Pause (§4 ArbZG).
 - Reicht die Pause nicht → gelber Hinweis. Zwei Wege:
   1. **Pause nachtragen** (Minuten korrigieren), oder
-  2. **kurz begründen**, warum keine Pause möglich war (z. B. „Notfall, keine Vertretung") → **dokumentierte Ausnahme**
+  2. **begründen** (mind. 10 Zeichen), warum keine Pause möglich war (z. B. „Notfall, keine Vertretung") → **dokumentierte Ausnahme** (mit Genehmigungspflicht der Praxis: ausgestempelt, Ausnahme nur beantragt)
 - Erst danach ist das Ausstempeln fertig (flüchtiger Hinweis reicht nicht mehr).
 - Gezählt wird der **ganze Tag**: aus- und gleich wieder einstempeln ist keine Pause (erst ab **15 Min.** Unterbrechung).
 - Kein Begründungsfeld? Dann hat die Praxis die Ausnahme abgeschaltet → Pause eintragen.
+- Sonn-/Feiertag: beim Ausstempeln **Ausnahmegrund (§10 ArbZG)** eintragen.
+- Ausstempeln vergessen? Der Eintrag wird automatisch geschlossen; die Stempeluhr bietet **Arbeitsende per Antrag nachtragen** an.
+- Einträge eines Tages dürfen sich **nicht überschneiden**; das Ende darf nicht in der Zukunft liegen. Keine Dienste über Mitternacht.
 - Mit **Arbeitszeit-Blöcken**: Eine Pause, die Sie in der Lücke zwischen zwei Blöcken gemacht haben, nicht zusätzlich eintragen (→ „Arbeitszeit-Blöcke" unten).
 
 ### Neuen Zeiteintrag erstellen

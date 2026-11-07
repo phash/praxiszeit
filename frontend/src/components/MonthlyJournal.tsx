@@ -204,6 +204,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const fixedMode = data?.use_fixed_monthly_target === true;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // #538 (A1-02): Überschneidungs-Sperre des Servers bleibt am Journal stehen
+  // (nicht nur als Toast), bis zur nächsten Bearbeitung.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [editingDate, setEditingDate] = useState<string | null>(null);
@@ -303,6 +306,13 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     });
   }
 
+  function noteSaveError(err: unknown) {
+    const msg = getErrorMessage(err, 'Fehler beim Speichern');
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    setSaveError(status === 409 && msg.startsWith('Überschneidung') ? msg : null);
+    toast.error(msg);
+  }
+
   function cancelEdit() {
     setEditingDate(null);
     setEditingEntryId(null);
@@ -349,10 +359,11 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         showArbzgWarnings(toast, collectAbsenceWarnings(res.data));
       }
       toast.success('Eintrag hinzugefügt');
+      setSaveError(null);
       cancelEdit();
       setReloadKey(k => k + 1);
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Fehler beim Speichern'));
+      noteSaveError(err);
     } finally {
       setSaving(false);
     }
@@ -469,10 +480,11 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         showArbzgWarnings(toast, collectAbsenceWarnings(res.data));
       }
       toast.success('Gespeichert');
+      setSaveError(null);
       cancelEdit();
       setReloadKey(k => k + 1);
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Fehler beim Speichern'));
+      noteSaveError(err);
       // (3) Wahrheitsstand herstellen: der Bildschirm darf nach einem
       // Fehlschlag keinen Stand mehr zeigen, den es so nicht (mehr) gibt.
       cancelEdit();
@@ -724,6 +736,11 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
 
       {loading && <LoadingSpinner />}
       {error && <p className="text-red-600">{error}</p>}
+      {saveError && (
+        <div role="alert" className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+          {saveError}
+        </div>
+      )}
 
       {data && !loading && (
         <>
