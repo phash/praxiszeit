@@ -23,6 +23,8 @@ param(
 #   2. Eigentuemer Administratoren fuer den ganzen Baum; Programmteile (bin,
 #      app, Dateien der Wurzel) auf die geerbten Rechte zuruecksetzen - explizite
 #      Eintraege, die jemand an einzelne Dateien gehaengt hat, verschwinden.
+#      data, logs, config: eigene DACL aus der Positivliste, Inhalte auf die
+#      geerbten Rechte zurueck (ausser einem initialisierten data\db).
 #      Ein bin\postgresql, das setup.bat als Verknuepfung auf ein System-
 #      PostgreSQL angelegt hat, wird nicht betreten.
 #   3. Abgleich mit bin\payload-manifest.txt (beim Bauen erzeugt): jede Datei
@@ -144,13 +146,33 @@ foreach ($entry in Get-ChildItem -LiteralPath $root -Force) {
         } else {
             # data, config, logs: Eigentuemer fuer den Baum, die eigene DACL
             # genau aus der Positivliste (wie praxiszeit-server.py
-            # harden-permissions danach) - Unterordner wie data\db behalten
-            # ihre expliziten Eintraege fuer den PostgreSQL-Dienst.
+            # harden-permissions danach); die Inhalte siehe unten.
             Invoke-Icacls @($p, '/setowner', $SidAdmins, '/T', '/C', '/Q')
             switch ($entry.Name) {
                 'data' { Set-ExactDacl $p $SddlData @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-20') }
                 'logs' { Set-ExactDacl $p $SddlLogs @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-20') }
                 'config' { Set-ExactDacl $p $SddlConfig @('S-1-5-18', 'S-1-5-32-544') }
+            }
+            # Final-Review (S3-01-Rest): Inhalte auf die geerbten Rechte
+            # zuruecksetzen. Wer data\backups (oder ein leeres data\db) vor der
+            # Installation mit geschuetzter DACL und eigenem Eintrag anlegt,
+            # behielte sonst Lesezugriff auf jede naechtliche Sicherung bzw.
+            # Schreibzugriff auf postgresql.conf. Ausnahme: ein schon
+            # initialisiertes data\db (PG_VERSION) behaelt seine Eintraege fuer
+            # den PostgreSQL-Dienst. Vertrauliche Dateien (config\*.conf,
+            # key.pem, license.key) haertet setup.bat bzw. der Dienststart danach
+            # wieder eigens.
+            if ($entry.Name -in @('data', 'logs', 'config')) {
+                foreach ($child in Get-ChildItem -LiteralPath $p -Force) {
+                    if (Test-ReparsePoint $child.FullName) { continue }
+                    if ($entry.Name -eq 'data' -and $child.Name -eq 'db' -and
+                        (Test-Path -LiteralPath (Join-Path $child.FullName 'PG_VERSION'))) { continue }
+                    if ($child.PSIsContainer) {
+                        Invoke-Icacls @($child.FullName, '/reset', '/T', '/C', '/Q')
+                    } else {
+                        Invoke-Icacls @($child.FullName, '/reset', '/C', '/Q')
+                    }
+                }
             }
         }
     } else {

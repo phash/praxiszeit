@@ -682,6 +682,25 @@ def test_secure_install_ps1_replaces_foreign_entries_on_the_root():
         assert f"'{name}' {{ Set-ExactDacl $p $Sddl{name.capitalize()} " in code
 
 
+def test_secure_install_ps1_resets_the_contents_of_data_logs_config():
+    """Final-Review (S3-01-Rest): data, logs und config bekamen nur auf dem Ordner
+    selbst eine exakte DACL - ein vorab angelegtes data\\backups mit eigenem
+    Eintrag behielt Lesezugriff auf jede Sicherung, ein leeres data\\db
+    Schreibzugriff auf postgresql.conf. Die Inhalte gehen auf die geerbten
+    Rechte zurueck, nur ein initialisiertes data\\db (PG_VERSION) nicht."""
+    code = _code_lines(_read("installer/windows/secure-install.ps1").decode("ascii"), "#")
+    exact = code.index("'config' { Set-ExactDacl $p $SddlConfig")
+    block = code[exact:code.index("if ($SkipManifest)")]
+    assert "if ($entry.Name -in @('data', 'logs', 'config'))" in block
+    assert "Get-ChildItem -LiteralPath $p -Force" in block
+    assert "Invoke-Icacls @($child.FullName, '/reset', '/T', '/C', '/Q')" in block
+    assert "Invoke-Icacls @($child.FullName, '/reset', '/C', '/Q')" in block
+    assert "$child.Name -eq 'db'" in block and "'PG_VERSION'" in block
+    assert "Test-ReparsePoint $child.FullName" in block
+    # Mandatory: ein gescheitertes Zuruecksetzen bricht ab (Exit 1), kein $false
+    assert "'/reset', '/T', '/C', '/Q') $false" not in block
+
+
 def test_setup_bat_secures_install_dir_before_any_python():
     raw = _read("installer/windows/setup.bat")
     assert _crlf_only(raw)
