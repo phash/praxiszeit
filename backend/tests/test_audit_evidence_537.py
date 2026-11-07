@@ -63,6 +63,13 @@ def _audit(db, user, admin, **kw):
     return row
 
 
+def _set_legacy_cutoff(db, when):
+    """Wie Migration 076: feste Grenze fuer Altbestand ohne Pruefsumme."""
+    db.add(SystemSetting(key=audit_chain_service.LEGACY_CUTOFF_KEY, tenant_id=DEFAULT_TENANT_ID,
+                         value=audit_integrity.canonical_timestamp(when)))
+    db.commit()
+
+
 def _make_legacy_v2(db, row):
     """Eine Zeile so zuruecksetzen, wie Migration 076 Altbestand vorfindet:
     v2-Hash ueber die Fremdschluessel, Kopien wie der Backfill."""
@@ -223,6 +230,7 @@ class TestVerifyAndChain:
         assert result["tampered"] == 1 and not result["intact"]
 
     def test_genuine_legacy_unhashed_row_is_not_tampered(self, db, test_user, test_admin):
+        _set_legacy_cutoff(db, datetime(2026, 2, 1, tzinfo=timezone.utc))
         old = _audit(db, test_user, test_admin)
         old.row_hash = None
         old.hash_version = None
@@ -723,3 +731,38 @@ class TestDeleteAfterConcurrentSeal:
         db.commit()
         result = audit_chain_service.verify_tenant(db, DEFAULT_TENANT_ID)
         assert result["missing_links"] == 0 and result["intact"], result
+
+
+# ── Review-Runde 2: Altbestandsgrenze steht fest (Migration 076) ─────────────
+
+class TestFixedLegacyCutoff:
+    def test_cutoff_does_not_follow_the_oldest_hashed_row(self, db, test_user, test_admin):
+        """Frueher: Grenze = MIN(created_at) der gehashten Zeilen. Fallen die
+        aeltesten gehashten Zeilen weg (Aufbewahrungsfrist, Endloeschung),
+        rueckte die Grenze nach hinten und eine ungehashte Zeile dazwischen
+        galt als Altbestand."""
+        t0 = datetime(2026, 3, 1, tzinfo=timezone.utc)
+        _set_legacy_cutoff(db, t0)
+        hashed = _audit(db, test_user, test_admin)
+        hashed.created_at = t0 + timedelta(days=10)
+        hashed.row_hash = audit_integrity.compute_row_hash(hashed)
+        late = _audit(db, test_user, test_admin)
+        late.row_hash = None
+        late.hash_version = None
+        late.created_at = t0 + timedelta(days=5)
+        db.commit()
+        res = audit_chain_service.verify_tenant(db, DEFAULT_TENANT_ID)
+        assert str(late.id) in res["tampered_ids"] and not res["intact"], res
+        assert str(hashed.id) not in res["tampered_ids"]
+
+    def test_without_recorded_cutoff_no_unhashed_row_is_legacy(self, db, test_user, test_admin):
+        """Mandant ohne festgehaltene Grenze (nach 076 angelegt oder Grenze
+        entfernt): eine ungehashte Zeile kann es dort nicht legitim geben."""
+        hashed = _audit(db, test_user, test_admin)
+        old = _audit(db, test_user, test_admin)
+        old.row_hash = None
+        old.hash_version = None
+        old.created_at = hashed.created_at - timedelta(days=400)
+        db.commit()
+        res = audit_chain_service.verify_tenant(db, DEFAULT_TENANT_ID)
+        assert res["legacy_unhashed"] == 0 and str(old.id) in res["tampered_ids"], res

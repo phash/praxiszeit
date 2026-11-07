@@ -18,7 +18,11 @@
   (Migrationsrolle) UPDATE und DELETE und laesst nur gehashte Neuzeilen zu; die
   App-Rolle verliert zusaetzlich die Rechte UPDATE/DELETE. Die drei erlaubten
   Aenderungen (Notiz-Scrub nach Art. 17, Versiegeln, Loeschen versiegelter
-  Zeilen) laufen ueber SECURITY-DEFINER-Funktionen mit festem Zuschnitt.
+  Zeilen) laufen ueber SECURITY-DEFINER-Funktionen mit festem Zuschnitt. Das
+  Kettenende (``system_settings.audit_chain_head``) bewegt nur
+  ``pz_audit_set_head`` — auf das hoechste versiegelte Glied, nie zurueck; die
+  Grenze fuer Altbestand ohne Pruefsumme (``audit_legacy_cutoff``) haelt diese
+  Migration je Mandant fest. Beide Zeilen kann die App-Rolle nicht schreiben.
 * A2-3: die Rohstempel (``raw_start_time``/``raw_end_time``), das Ende der
   Anwesenheit und die nicht angerechneten Minuten stehen je Zeile vorher/nachher.
 * A2-8: ``changed_by`` wird nullable mit ``ON DELETE SET NULL`` — die
@@ -170,18 +174,85 @@ BEGIN
 END $$;
 """
 
+# Art.-17-Scrub: eine Notiz darf nur geleert, unveraendert gelassen oder
+# anonymisiert werden — d. h. aus der alten entstehen, indem Teile durch die
+# Kennzeichnung ``[anonymisiert]`` bzw. das Pseudonym ``deleted_<8 hex>``
+# ersetzt werden (``admin_users._scrub_audit_log_notes``,
+# ``lifecycle_service.anonymize_tenant``). Freier Text wird abgelehnt
+# (Review-Runde 2, 2026-11-07). Pruefung ohne regulaeren Ausdruck aus
+# Nutzertext: die festen Stuecke der neuen Notiz muessen in der alten in
+# derselben Reihenfolge stehen, an jeder Kennzeichnung mindestens ein Zeichen
+# dazwischen (frueheste Fundstelle je Stueck — fuer dieses Muster vollstaendig).
+SCRUB_OK_FUNCTION = r"""
+CREATE OR REPLACE FUNCTION pz_audit_scrub_ok(p_old text, p_new text) RETURNS boolean
+LANGUAGE plpgsql IMMUTABLE SET search_path = public, pg_temp AS $$
+DECLARE
+    parts text[];
+    n integer;
+    pos integer;
+    k integer;
+    seg text;
+    hit integer;
+BEGIN
+    IF p_new IS NULL OR p_new IS NOT DISTINCT FROM p_old THEN
+        RETURN true;
+    END IF;
+    IF p_old IS NULL THEN
+        RETURN false;
+    END IF;
+    parts := regexp_split_to_array(p_new, '\[anonymisiert\]|deleted_[0-9a-f]{8}');
+    n := array_length(parts, 1);
+    IF n < 2 OR left(p_old, length(parts[1])) <> parts[1] THEN
+        RETURN false;
+    END IF;
+    pos := length(parts[1]) + 1;          -- erstes noch nicht zugeordnetes Zeichen
+    FOR k IN 2 .. n - 1 LOOP
+        seg := parts[k];
+        IF seg = '' THEN
+            pos := pos + 1;
+            CONTINUE;
+        END IF;
+        hit := strpos(substr(p_old, pos + 1), seg);
+        IF hit = 0 THEN
+            RETURN false;
+        END IF;
+        pos := pos + hit + length(seg);
+    END LOOP;
+    RETURN length(p_old) - length(parts[n]) >= pos
+       AND right(p_old, length(parts[n])) = parts[n];
+END $$;
+"""
+
+# Pruefsumme: eine gehashte Zeile behaelt eine (die App rechnet sie ueber die
+# neuen Notizen neu), eine ungehashte bleibt ungehasht — sonst liesse sich eine
+# Zeile zu "Altbestand" herabstufen oder eine Altzeile mit frei gewaehltem
+# Inhalt reinwaschen. hash_version aendert die Funktion nie.
 NOTES_FUNCTION = """
 CREATE OR REPLACE FUNCTION pz_audit_set_notes(p_id uuid, p_old_note text, p_new_note text, p_row_hash text)
 RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+    r record;
 BEGIN
-    UPDATE time_entry_audit_logs t
-       SET old_note = p_old_note, new_note = p_new_note, row_hash = p_row_hash
+    SELECT t.old_note, t.new_note, t.row_hash INTO r
+      FROM time_entry_audit_logs t
      WHERE t.id = p_id
-       AND pz_audit_tenant_ok(t.tenant_id);
+       AND pz_audit_tenant_ok(t.tenant_id)
+       FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'pz_audit_set_notes: Zeile % nicht gefunden', p_id;
     END IF;
+    IF (r.row_hash IS NULL) <> (p_row_hash IS NULL) THEN
+        RAISE EXCEPTION 'pz_audit_set_notes: Pruefsumme darf weder entfernt noch neu gesetzt werden'
+            USING ERRCODE = '42501';
+    END IF;
+    IF NOT pz_audit_scrub_ok(r.old_note, p_old_note) OR NOT pz_audit_scrub_ok(r.new_note, p_new_note) THEN
+        RAISE EXCEPTION 'pz_audit_set_notes: Notizen nur leeren oder durch Anonymisierung ersetzen'
+            USING ERRCODE = '42501';
+    END IF;
+    UPDATE time_entry_audit_logs t
+       SET old_note = p_old_note, new_note = p_new_note, row_hash = p_row_hash
+     WHERE t.id = p_id;
 END $$;
 """
 
@@ -214,16 +285,33 @@ BEGIN
 END $$;
 """
 
-# Kettenende in system_settings: die App-Rolle darf es fortschreiben (UPDATE
-# des Werts), aber nicht loeschen und nicht umbenennen — sonst fiele das
-# Abschneiden der letzten Glieder nicht mehr auf. Eigentuemerin/Superuser (und
-# die Fremdschluessel-Kaskade beim Loeschen eines Mandanten) duerfen.
+# Kettenende und Altbestandsgrenze in system_settings: die App-Rolle darf
+# beide weder anlegen, aendern, loeschen noch umbenennen (Review-Runde 2,
+# 2026-11-07 — vorher durfte sie den Wert des Kettenendes frei schreiben, also
+# einen aelteren Kopf zurueckspielen oder ihn hochsetzen, um pz_audit_delete
+# mehr Glieder freizugeben). Das Kettenende bewegt nur pz_audit_set_head (laeuft
+# als Eigentuemerin), die Grenze setzt allein diese Migration.
+# Eigentuemerin/Superuser (Wartung, Wiederherstellung, Fremdschluessel-Kaskade
+# beim Loeschen eines Mandanten) duerfen.
 HEAD_GUARD_FUNCTION = """
 CREATE OR REPLACE FUNCTION pz_audit_head_guard() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
     tbl_owner oid;
+    hit boolean := false;
 BEGIN
+    IF TG_OP <> 'INSERT' THEN
+        hit := OLD.key IN ('audit_chain_head', 'audit_legacy_cutoff');
+    END IF;
+    IF TG_OP <> 'DELETE' AND NOT hit THEN
+        hit := NEW.key IN ('audit_chain_head', 'audit_legacy_cutoff');
+    END IF;
+    IF NOT hit THEN
+        IF TG_OP = 'DELETE' THEN
+            RETURN OLD;
+        END IF;
+        RETURN NEW;
+    END IF;
     SELECT relowner INTO tbl_owner FROM pg_class WHERE oid = TG_RELID;
     IF pg_has_role(current_user, tbl_owner, 'MEMBER')
        OR COALESCE((SELECT rolsuper FROM pg_roles WHERE rolname = current_user), false) THEN
@@ -232,16 +320,85 @@ BEGIN
         END IF;
         RETURN NEW;
     END IF;
-    IF TG_OP = 'DELETE' THEN
-        RAISE EXCEPTION 'system_settings: Kettenende des Aenderungsprotokolls darf nicht geloescht werden'
-            USING ERRCODE = '42501';
-    END IF;
-    IF NEW.key IS DISTINCT FROM OLD.key OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
-        RAISE EXCEPTION 'system_settings: Kettenende des Aenderungsprotokolls darf nicht umbenannt werden'
-            USING ERRCODE = '42501';
-    END IF;
-    RETURN NEW;
+    RAISE EXCEPTION 'system_settings: Kettenende/Altbestandsgrenze des Aenderungsprotokolls (%) nur ueber die Protokollfunktionen', TG_OP
+        USING ERRCODE = '42501';
 END $$;
+"""
+
+# Kettenende setzen: nur auf das hoechste versiegelte Glied (Position UND
+# Hash — so kann es niemand ueber die Kette hinaus hochsetzen) und nie zurueck.
+# Einzige Ausnahme: "Kettenende neu setzen" der Verwaltung (p_reanchor) mit
+# einer noch losen, gehashten Vermerk-Zeile ``audit_chain_reanchored`` — die
+# wird gleich danach versiegelt und belegt das Zuruecksetzen dauerhaft. Das
+# Siegel (dritter Teil) prueft die App, der Schluessel liegt ausserhalb der DB.
+SET_HEAD_FUNCTION = """
+CREATE OR REPLACE FUNCTION pz_audit_set_head(p_tenant uuid, p_value text, p_reanchor boolean)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+    v_seq bigint;
+    v_hash text;
+    v_top bigint;
+    v_top_hash text;
+    v_old text;
+    v_old_seq bigint;
+BEGIN
+    IF NOT pz_audit_tenant_ok(p_tenant) THEN
+        RAISE EXCEPTION 'pz_audit_set_head: fremder Mandant';
+    END IF;
+    IF p_value IS NULL OR p_value !~ '^[0-9]{1,18}:[0-9a-f]*:[0-9a-f]+$' THEN
+        RAISE EXCEPTION 'pz_audit_set_head: ungueltiger Wert';
+    END IF;
+    v_seq := split_part(p_value, ':', 1)::bigint;
+    v_hash := split_part(p_value, ':', 2);
+    SELECT chain_seq, COALESCE(chain_hash, '') INTO v_top, v_top_hash
+      FROM time_entry_audit_logs
+     WHERE tenant_id = p_tenant AND chain_seq IS NOT NULL
+     ORDER BY chain_seq DESC LIMIT 1;
+    IF v_seq <> COALESCE(v_top, 0) OR v_hash <> COALESCE(v_top_hash, '') THEN
+        RAISE EXCEPTION 'pz_audit_set_head: Kettenende nur auf das hoechste versiegelte Glied (%)',
+            COALESCE(v_top, 0) USING ERRCODE = '42501';
+    END IF;
+    SELECT value INTO v_old FROM system_settings
+     WHERE key = 'audit_chain_head' AND tenant_id = p_tenant
+       FOR UPDATE;
+    IF NOT FOUND THEN
+        INSERT INTO system_settings (key, tenant_id, value, description)
+        VALUES ('audit_chain_head', p_tenant, p_value,
+                'Aenderungsprotokoll: letztes Kettenglied (#537)');
+        RETURN;
+    END IF;
+    IF v_old ~ '^[0-9]{1,18}:[0-9a-f]*:[0-9a-f]+$' THEN
+        v_old_seq := split_part(v_old, ':', 1)::bigint;
+        IF v_seq < v_old_seq AND NOT (
+            p_reanchor AND EXISTS (
+                SELECT 1 FROM time_entry_audit_logs
+                 WHERE tenant_id = p_tenant AND chain_seq IS NULL
+                   AND action = 'audit_chain_reanchored' AND row_hash IS NOT NULL)) THEN
+            RAISE EXCEPTION 'pz_audit_set_head: Kettenende darf nicht zurueckgesetzt werden (% -> %)',
+                v_old_seq, v_seq USING ERRCODE = '42501';
+        END IF;
+    END IF;
+    UPDATE system_settings SET value = p_value, updated_at = now()
+     WHERE key = 'audit_chain_head' AND tenant_id = p_tenant;
+END $$;
+"""
+
+# Feste Grenze fuer Altbestand ohne Pruefsumme (Review-Runde 2): je Mandant
+# der Zeitpunkt der aeltesten gehashten Zeile bei Migration 076, ohne gehashte
+# Zeile der Migrationszeitpunkt. Eine ungehashte Zeile, die juenger ist, hat
+# jemand herabgestuft. Vorher rechnete die Pruefung MIN(created_at) jedes Mal
+# neu — fielen die aeltesten gehashten Zeilen weg (Aufbewahrungsfrist,
+# Endloeschung), rueckte die Grenze nach hinten. Format = canonical_timestamp.
+LEGACY_CUTOFF_SQL = """
+INSERT INTO system_settings (key, tenant_id, value, description)
+SELECT 'audit_legacy_cutoff', t.id,
+       to_char(COALESCE((SELECT min(a.created_at) FROM time_entry_audit_logs a
+                          WHERE a.tenant_id = t.id AND a.row_hash IS NOT NULL), now())
+               AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24\\:MI\\:SS.US'),
+       'Aenderungsprotokoll: Grenze fuer Altbestand ohne Pruefsumme (#537)'
+  FROM tenants t
+ON CONFLICT (key, tenant_id) DO NOTHING
 """
 
 # Funktionen: EXECUTE nicht fuer PUBLIC (PostgreSQL-Vorgabe), nur fuer die
@@ -249,6 +406,8 @@ END $$;
 _AUDIT_FUNCTIONS = (
     "pz_audit_seal(uuid[], bigint[], text[], text[])",
     "pz_audit_set_notes(uuid, text, text, text)",
+    "pz_audit_set_head(uuid, text, boolean)",
+    "pz_audit_scrub_ok(text, text)",
     "pz_audit_delete(uuid[])",
     "pz_audit_tenant_ok(uuid)",
     "pz_audit_head_seq(uuid)",
@@ -352,12 +511,13 @@ def upgrade() -> None:
             "CREATE TRIGGER pz_audit_guard_write BEFORE INSERT OR UPDATE OR DELETE "
             "ON time_entry_audit_logs FOR EACH ROW EXECUTE FUNCTION pz_audit_guard()"
         ))
-        for fn in (TENANT_OK_FUNCTION, HEAD_SEQ_FUNCTION, SEAL_FUNCTION, NOTES_FUNCTION,
-                   DELETE_FUNCTION, HEAD_GUARD_FUNCTION):
+        for fn in (TENANT_OK_FUNCTION, HEAD_SEQ_FUNCTION, SEAL_FUNCTION, SCRUB_OK_FUNCTION,
+                   NOTES_FUNCTION, DELETE_FUNCTION, HEAD_GUARD_FUNCTION, SET_HEAD_FUNCTION):
             conn.execute(sa.text(fn))
+        conn.execute(sa.text(LEGACY_CUTOFF_SQL))
         conn.execute(sa.text(
-            "CREATE TRIGGER pz_audit_head_guard_write BEFORE UPDATE OR DELETE ON system_settings "
-            "FOR EACH ROW WHEN (OLD.key = 'audit_chain_head') EXECUTE FUNCTION pz_audit_head_guard()"
+            "CREATE TRIGGER pz_audit_head_guard_write BEFORE INSERT OR UPDATE OR DELETE "
+            "ON system_settings FOR EACH ROW EXECUTE FUNCTION pz_audit_head_guard()"
         ))
         conn.execute(sa.text(REVOKE_BLOCK))
         conn.execute(sa.text(EXECUTE_BLOCK))
@@ -376,6 +536,8 @@ def downgrade() -> None:
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_guard()"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_seal(uuid[], bigint[], text[], text[])"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_set_notes(uuid, text, text, text)"))
+        conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_scrub_ok(text, text)"))
+        conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_set_head(uuid, text, boolean)"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_delete(uuid[])"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_tenant_ok(uuid)"))
         conn.execute(sa.text("DROP TRIGGER IF EXISTS pz_audit_head_guard_write ON system_settings"))
@@ -384,7 +546,8 @@ def downgrade() -> None:
         # Kettenende gehoert zu den Spalten, die hier wegfallen
         conn.execute(sa.text("SET LOCAL app.is_superadmin = 'true'"))
         conn.execute(sa.text(
-            "DELETE FROM system_settings WHERE key IN ('audit_chain_head', 'audit_integrity_last_check')"
+            "DELETE FROM system_settings WHERE key IN ('audit_chain_head', 'audit_integrity_last_check', "
+            "'audit_legacy_cutoff')"
         ))
         conn.execute(sa.text(
             "DO $$ BEGIN IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'praxiszeit_app') THEN "

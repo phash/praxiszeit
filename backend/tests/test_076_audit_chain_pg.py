@@ -280,7 +280,8 @@ def _head_seq(engine):
 
 def test_head_row_cannot_be_deleted_or_renamed_by_app_role(env):
     """Review-Runde: ohne Kettenende fiele das Abschneiden der letzten Glieder
-    nicht auf — die App-Rolle darf es fortschreiben, aber nicht entfernen."""
+    nicht auf — die App-Rolle darf es nicht entfernen; fortgeschrieben wird es
+    ueber pz_audit_set_head."""
     from app.services import audit_chain_service
     url, engine, app_url, role = env
     eng, s = _app_session(app_url)
@@ -400,3 +401,169 @@ def test_downgrade_and_upgrade_again(env):
             "SELECT count(*) FROM pg_trigger WHERE tgname = 'pz_audit_guard_write'")).scalar() == 1
         assert conn.execute(text(
             "SELECT count(*) FROM pg_trigger WHERE tgname = 'pz_audit_head_guard_write'")).scalar() == 1
+
+
+# ── Review-Runde 2 (2026-11-07): Kettenende, Notiz-Scrub, Altbestandsgrenze ──
+
+def _head_value(engine):
+    with engine.connect() as conn:
+        conn.execute(text("SET app.is_superadmin = 'true'"))
+        return conn.execute(text(
+            "SELECT value FROM system_settings WHERE key = 'audit_chain_head' AND tenant_id = :t"),
+            {"t": TENANT}).scalar()
+
+
+def _make_other_tenant(engine):
+    with engine.begin() as conn:
+        conn.execute(text("SET LOCAL app.is_superadmin = 'true'"))
+        conn.execute(text(
+            "INSERT INTO tenants (id, name, slug, is_active, mode, plan, subscription_status) "
+            "VALUES (:t, 'Andere', 'andere076', true, 'multi', 'trial', 'active') "
+            "ON CONFLICT (id) DO NOTHING"), {"t": OTHER_TENANT})
+
+
+def test_app_role_cannot_write_head_directly(env):
+    """Das Kettenende bewegt nur pz_audit_set_head — ein direktes UPDATE der
+    App-Rolle (z. B. Rueckspielen eines aelteren Kopfs oder Hochsetzen, um
+    pz_audit_delete mehr Glieder freizugeben) wird abgelehnt."""
+    from app.services import audit_chain_service
+    url, engine, app_url, role = env
+    eng, s = _app_session(app_url)
+    try:
+        for _ in range(2):
+            _insert_hashed(s)
+        audit_chain_service.seal_chain(s, uuid.UUID(TENANT))
+        s.commit()
+        value = _head_value(engine)
+        msg = _expect_denied(s, "UPDATE system_settings SET value = :v WHERE key = 'audit_chain_head'",
+                             {"v": "999:" + value.split(":", 1)[1]})
+        assert "Kettenende" in msg
+        _expect_denied(s, "UPDATE system_settings SET value = value WHERE key = 'audit_chain_head'")
+        # Einfuegen (Mandant ohne Kopf) / Umbenennen einer anderen Zeile
+        _make_other_tenant(engine)
+        eng2, o = _app_session(app_url, tenant=OTHER_TENANT)
+        try:
+            msg = _expect_denied(o, "INSERT INTO system_settings (key, tenant_id, value) "
+                                    "VALUES ('audit_chain_head', :t, '0::00')", {"t": OTHER_TENANT})
+            assert "Kettenende" in msg
+        finally:
+            o.close()
+            eng2.dispose()
+        s.execute(text("INSERT INTO system_settings (key, tenant_id, value) VALUES ('y076', :t, '1')"),
+                  {"t": TENANT})
+        s.commit()
+        msg = _expect_denied(s, "UPDATE system_settings SET key = 'audit_chain_head' WHERE key = 'y076'")
+        assert "Kettenende" in msg
+        assert _head_value(engine) == value
+    finally:
+        s.close()
+        eng.dispose()
+
+
+def test_set_head_only_to_the_current_top_link(env):
+    """pz_audit_set_head: nur auf das hoechste versiegelte Glied, nie zurueck."""
+    from app.services import audit_chain_service
+    url, engine, app_url, role = env
+    eng, s = _app_session(app_url)
+    try:
+        for _ in range(3):
+            _insert_hashed(s)
+        audit_chain_service.seal_chain(s, uuid.UUID(TENANT))
+        s.commit()
+        seq, h, _mac = _head_value(engine).split(":")
+        seq = int(seq)
+        # weiter hinaus, als Glieder existieren → abgelehnt
+        _expect_denied(s, "SELECT pz_audit_set_head(:t, :v, false)",
+                       {"t": TENANT, "v": f"{seq + 50}:{h}:00"})
+        # falscher Hash fuer das hoechste Glied → abgelehnt
+        _expect_denied(s, "SELECT pz_audit_set_head(:t, :v, false)",
+                       {"t": TENANT, "v": f"{seq}:{'0' * 64}:00"})
+        # Glied loeschen (legitim), dann den Kopf zurueckdrehen → abgelehnt
+        top = s.execute(text(
+            "SELECT id FROM time_entry_audit_logs WHERE tenant_id = :t AND chain_seq = :q"),
+            {"t": TENANT, "q": seq}).scalar()
+        prev_hash = s.execute(text(
+            "SELECT chain_hash FROM time_entry_audit_logs WHERE tenant_id = :t AND chain_seq = :q"),
+            {"t": TENANT, "q": seq - 1}).scalar()
+        s.execute(text("SELECT pz_audit_delete(ARRAY[CAST(:i AS uuid)])"), {"i": str(top)})
+        s.commit()
+        msg = _expect_denied(s, "SELECT pz_audit_set_head(:t, :v, false)",
+                             {"t": TENANT, "v": f"{seq - 1}:{prev_hash}:00"})
+        assert "zurueck" in msg
+        # auch "Neu setzen" ohne Vermerk-Zeile darf nicht zurueck
+        _expect_denied(s, "SELECT pz_audit_set_head(:t, :v, true)",
+                       {"t": TENANT, "v": f"{seq - 1}:{prev_hash}:00"})
+        assert int(_head_value(engine).split(":")[0]) == seq
+        # die Pruefung sieht die Loeschung ohne Vermerk
+        result = audit_chain_service.verify_tenant(s, uuid.UUID(TENANT))
+        assert not result["intact"] and seq in result["missing_seqs"], result
+    finally:
+        s.close()
+        eng.dispose()
+
+
+def test_set_notes_cannot_strip_hash_or_write_free_text(env):
+    from app.services import audit_chain_service
+    url, engine, app_url, role = env
+    eng, s = _app_session(app_url)
+    try:
+        row = _insert_hashed(s, new_note="Vertretung fuer maria@x.de", old_note="alt")
+        rid = str(row.id)
+        stored = row.row_hash
+        # Pruefsumme entfernen (Herabstufung zu "Altbestand") → abgelehnt
+        msg = _expect_denied(s, "SELECT pz_audit_set_notes(CAST(:i AS uuid), NULL, NULL, NULL)", {"i": rid})
+        assert "Pruefsumme" in msg
+        # freier Text statt Scrub → abgelehnt
+        msg = _expect_denied(s, "SELECT pz_audit_set_notes(CAST(:i AS uuid), 'alt', 'umgeschrieben', :h)",
+                             {"i": rid, "h": stored})
+        assert "Anonymisierung" in msg
+        # Teil-Ersetzung durch die Kennzeichnung, Pseudonym, Leeren: erlaubt
+        audit_chain_service.set_notes(s, row, "alt", "Vertretung fuer [anonymisiert]")
+        s.commit()
+        audit_chain_service.set_notes(s, row, "deleted_0a1b2c3d", "Vertretung fuer [anonymisiert]")
+        s.commit()
+        audit_chain_service.set_notes(s, row, None, None)
+        s.commit()
+        # ungehashte Altzeile bekommt keinen (frei gewaehlten) Hash
+        msg = _expect_denied(s, "SELECT pz_audit_set_notes(CAST(:i AS uuid), NULL, NULL, 'ab')",
+                             {"i": LEGACY})
+        assert "Pruefsumme" in msg
+    finally:
+        s.close()
+        eng.dispose()
+
+
+def test_legacy_cutoff_is_fixed_at_migration(env):
+    """Die Grenze fuer Altbestand ohne Pruefsumme steht ab 076 fest in
+    system_settings (nicht MIN(created_at) der gehashten Zeilen) — und die
+    App-Rolle kann sie weder aendern, loeschen noch anlegen."""
+    url, engine, app_url, role = env
+    with engine.connect() as conn:
+        conn.execute(text("SET app.is_superadmin = 'true'"))
+        cutoff = conn.execute(text(
+            "SELECT value FROM system_settings WHERE key = 'audit_legacy_cutoff' AND tenant_id = :t"),
+            {"t": TENANT}).scalar()
+        legacy_at = conn.execute(text(
+            "SELECT created_at FROM time_entry_audit_logs WHERE id = :i"), {"i": LEGACY}).scalar()
+    from app.core import audit_integrity
+    assert cutoff is not None and cutoff >= audit_integrity.canonical_timestamp(legacy_at)
+    eng, s = _app_session(app_url)
+    try:
+        s.commit()  # Mandanten-Kontext festschreiben (ein Rollback nimmt ihn sonst zurueck)
+        assert s.execute(text("SELECT count(*) FROM system_settings "
+                              "WHERE key = 'audit_legacy_cutoff'")).scalar() == 1
+        _expect_denied(s, "UPDATE system_settings SET value = '2999-01-01T00:00:00.000000' "
+                          "WHERE key = 'audit_legacy_cutoff'")
+        _expect_denied(s, "DELETE FROM system_settings WHERE key = 'audit_legacy_cutoff'")
+    finally:
+        s.close()
+        eng.dispose()
+    _make_other_tenant(engine)
+    eng, o = _app_session(app_url, tenant=OTHER_TENANT)
+    try:
+        msg = _expect_denied(o, "INSERT INTO system_settings (key, tenant_id, value) "
+                                "VALUES ('audit_legacy_cutoff', :t, '2999-01-01')", {"t": OTHER_TENANT})
+        assert "Altbestandsgrenze" in msg
+    finally:
+        o.close()
+        eng.dispose()

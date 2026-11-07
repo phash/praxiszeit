@@ -32,7 +32,7 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from sqlalchemy import func, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 PURGE_ACTION = "audit_rows_purged"
 HEAD_SETTING_KEY = "audit_chain_head"
 LAST_CHECK_SETTING_KEY = "audit_integrity_last_check"
+LEGACY_CUTOFF_KEY = "audit_legacy_cutoff"   # Migration 076: feste Grenze fuer Altbestand
 REANCHOR_ACTION = "audit_chain_reanchored"   # < 40 Zeichen (varchar(40))
 REANCHOR_SOURCE = "audit_reanchor"
 _SEAL_BATCH = 500
@@ -109,11 +110,22 @@ def _read_head(db: Session, tenant_id):
         return (-1, "", "")  # zerstoert → Siegel passt nie
 
 
-def _write_head(db: Session, tenant_id, seq: int, chain_hash: str) -> None:
+def _write_head(db: Session, tenant_id, seq: int, chain_hash: str, *, reanchor: bool = False) -> None:
+    """Kettenende fortschreiben. Auf PostgreSQL nur ueber ``pz_audit_set_head``
+    (die App-Rolle darf die Zeile nicht direkt schreiben, Migration 076): nur
+    auf das hoechste versiegelte Glied, nie zurueck — ausser beim bewussten
+    Neusetzen (``reanchor``) mit noch loser Vermerk-Zeile."""
     value = f"{seq}:{chain_hash}:{_head_mac(tenant_id, seq, chain_hash)}"
     row = db.query(SystemSetting).filter(
         SystemSetting.key == HEAD_SETTING_KEY, SystemSetting.tenant_id == tenant_id,
     ).first()
+    if _is_pg(db):
+        db.flush()
+        db.execute(text("SELECT pz_audit_set_head(CAST(:t AS uuid), :v, :r)"),
+                   {"t": str(tenant_id), "v": value, "r": reanchor})
+        if row is not None:
+            set_committed_value(row, "value", value)
+        return
     if row is None:
         db.add(SystemSetting(key=HEAD_SETTING_KEY, tenant_id=tenant_id, value=value,
                              description="Änderungsprotokoll: letztes Kettenglied (#537)"))
@@ -343,13 +355,24 @@ def _is_legacy_entry_row(row) -> bool:
     return entry_gone or cr_gone
 
 
+_CUTOFF_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}$")
+
+
+def read_legacy_cutoff(db: Session, tenant_id) -> str | None:
+    """Feste Grenze fuer Altbestand ohne Pruefsumme (``canonical_timestamp``),
+    von Migration 076 je Mandant festgehalten — nie aus ``created_at``
+    abgeleitet (Review-Runde 2). Die App-Rolle kann sie nicht schreiben
+    (Trigger ``pz_audit_head_guard``). ``None`` = keine (gueltige) Grenze."""
+    value = db.query(SystemSetting.value).filter(
+        SystemSetting.key == LEGACY_CUTOFF_KEY, SystemSetting.tenant_id == tenant_id,
+    ).scalar()
+    return value if value and _CUTOFF_RE.match(value) else None
+
+
 def verify_tenant(db: Session, tenant_id) -> dict:
     """Prueft das Protokoll eines Mandanten. ``intact`` = keine manipulierte Zeile,
     kein unerklaertes fehlendes Kettenglied, Kopf stimmt."""
-    first_hashed_at = db.query(func.min(TimeEntryAuditLog.created_at)).filter(
-        TimeEntryAuditLog.tenant_id == tenant_id,  # F-026
-        TimeEntryAuditLog.row_hash.isnot(None),
-    ).scalar()
+    legacy_cutoff = read_legacy_cutoff(db, tenant_id)
 
     checked = ok = tampered = legacy = legacy_deleted = unsealed = reanchored = 0
     tampered_ids: list[str] = []
@@ -381,10 +404,12 @@ def verify_tenant(db: Session, tenant_id) -> dict:
             else:
                 _bad(row)
         elif not row.row_hash:
-            # A2-2: eine ungehashte Zeile, die JUENGER ist als die erste gehashte,
-            # ist kein Altbestand — jemand hat die Pruefsumme entfernt.
-            if first_hashed_at is not None and row.created_at is not None and \
-                    audit_integrity.canonical_timestamp(row.created_at) > audit_integrity.canonical_timestamp(first_hashed_at):
+            # A2-2: eine ungehashte Zeile, die JUENGER ist als die bei Migration
+            # 076 festgehaltene Grenze, ist kein Altbestand — jemand hat die
+            # Pruefsumme entfernt. Ohne Grenze (Mandant nach 076 angelegt oder
+            # Grenze entfernt) gibt es keinen legitimen Altbestand.
+            if legacy_cutoff is None or row.created_at is None or \
+                    audit_integrity.canonical_timestamp(row.created_at) > legacy_cutoff:
                 _bad(row)
             else:
                 legacy += 1
@@ -539,7 +564,8 @@ def reanchor_chain(db: Session, tenant_id, *, changed_by, reason: str) -> dict:
                   f"entfernt wurden, ist nicht mehr feststellbar. Grund: {reason}"),
         tenant_id=tenant_id,
     ))
-    _write_head(db, tenant_id, top_seq, top_hash)
+    db.flush()  # Vermerk-Zeile muss stehen: pz_audit_set_head erlaubt nur mit ihr ein Zuruecksetzen
+    _write_head(db, tenant_id, top_seq, top_hash, reanchor=True)
     db.flush()
     seal_chain(db, tenant_id)
     db.add(SecurityEvent(
