@@ -377,6 +377,44 @@ function Lock-TreeTopDown([string]$Dir) {
     Write-TreeFindings $Dir $links $hard $odd
 }
 
+function Find-TreeFindings([string]$Dir) {
+    # Emulator-Test Release 1.23.0: Nur lesen, nichts aendern - VOR Schritt 1.
+    # Schon das Sperren der Wurzel (vererbbare Eintraege) schreibt die geerbten
+    # Rechte aller Dateien darunter neu; ein harter Link teilt seine Rechte mit
+    # einer Datei ausserhalb, deren Rechte sich so aenderten, bevor
+    # Lock-TreeTopDown den Link fand. Deshalb bei einer Erstinstallation (kein
+    # PraxisZeit-Dienst fuer den Ordner) zuerst den ganzen Baum ohne Aenderung
+    # auf Verknuepfungen, harte Links und auffaellige Namen pruefen (Exit 2).
+    # Restrisiko: ein Link, der zwischen dieser Pruefung und Schritt 1 entsteht.
+    $links = New-Object System.Collections.Generic.List[string]
+    $hard = New-Object System.Collections.Generic.List[string]
+    $odd = New-Object System.Collections.Generic.List[string]
+    $stack = New-Object System.Collections.Generic.Stack[string]
+    $stack.Push($Dir)
+    while ($stack.Count -gt 0) {
+        $d = $stack.Pop()
+        try {
+            $items = @(Get-ChildItem -LiteralPath $d -Force -ErrorAction Stop)
+        } catch {
+            Write-Output "FEHLER: $d laesst sich nicht auflisten und damit nicht pruefen - $_"
+            exit 1
+        }
+        foreach ($item in $items) {
+            if (Test-OddName $item.Name) { $odd.Add($item.FullName); continue }
+            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                $links.Add($item.FullName)
+                continue
+            }
+            if ($item.PSIsContainer) {
+                $stack.Push($item.FullName)
+            } elseif ([PzFileLinks]::Count($item.FullName) -ne 1) {
+                $hard.Add($item.FullName)
+            }
+        }
+    }
+    Write-TreeFindings $Dir $links $hard $odd
+}
+
 function Assert-SingleFile([string]$Path) {
     # Einzelne Datei (Wurzel, bin\): Name und harte Links wie Lock-TreeTopDown.
     $none = New-Object System.Collections.Generic.List[string]
@@ -459,6 +497,8 @@ if (($null -ne (Get-EntryNoFollow $pgDirPre)) -and -not $evidence) {
     Write-Output '(oder in einen neuen, leeren Ordner installieren).'
     exit 2
 }
+# Erstinstallation: Baum vor jeder Aenderung nur lesend pruefen (siehe dort).
+if (-not $evidence) { Find-TreeFindings $root }
 # data\db bleibt nur stehen, wenn es samt Inhalt schon nur dem Dienst gehoert -
 # geprueft, solange die Eigentuemer noch die alten sind.
 $dbServiceOnly = (Test-Path -LiteralPath $dbDir) -and (Test-ServiceOnlyAcl $dbDir)

@@ -817,6 +817,24 @@ def test_secure_install_ps1_refuses_a_preexisting_bin_postgresql_without_install
     assert setup.index("secure-install.ps1") < setup.index('--prefix "%PG_INSTALL_DIR%"')
 
 
+def test_secure_install_ps1_scans_a_fresh_tree_read_only_before_step_1():
+    """Windows emulator run (release 1.23.0): a hard link under a pre-created
+    folder was found (exit 2), but locking the root had already rewritten the
+    inherited ACEs of every file below - including the linked file outside.
+    Without install evidence the whole tree is now scanned read-only first."""
+    code = _ps1_code()
+    raw = _read("installer/windows/secure-install.ps1").decode("ascii")
+    step0 = raw[raw.index("# --- 0. Vorab"):raw.index("# --- 1. Wurzel ---")]
+    assert "if (-not $evidence) { Find-TreeFindings $root }" in step0
+    fn = _ps1_function(code, "Find-TreeFindings")
+    assert "icacls" not in fn.lower() and "SetAccessControl" not in fn
+    assert "[PzFileLinks]::Count($item.FullName) -ne 1" in fn
+    assert "Test-OddName $item.Name" in fn
+    assert "Write-TreeFindings $Dir $links $hard $odd" in fn
+    main = code[code.index("try {\n    $root = (Resolve-Path"):]
+    assert main.index("Find-TreeFindings $root") < main.index("'/setowner'")
+
+
 def test_secure_install_ps1_locks_each_subtree_top_down_before_recursing():
     """Audit rounds 4+5: ``icacls /setowner|/reset /T`` follows junctions and
     symbolic links. A one-shot check before the recursive calls left a window:

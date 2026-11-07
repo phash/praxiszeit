@@ -109,6 +109,7 @@ Eine kritische Prüfung von PraxisZeit (Arbeitszeitgesetz-Regeln, §-16-Nachweis
 ### 🔧 Release-Prüfung 1.23.0
 
 - **Windows: vorab angelegtes `bin\postgresql` sperrt die Erstinstallation.** setup.bat legt diesen Ordner erst nach der Ordnerprüfung an. Lag er schon da (Ordner oder Verknüpfung) und ist noch kein PraxisZeit-Dienst für den Ordner eingerichtet, hätte setup.bat die PostgreSQL-Installation übersprungen und fremde Programmdateien als Datenbankdienst gestartet. Jetzt bricht `secure-install.ps1` mit Exit 2 ab; Updates bestehender Installationen sind nicht betroffen.
+- **Windows-Erstinstallation prüft den Ordner zuerst nur lesend** auf Verknüpfungen, harte Links und Namen mit Leerzeichen oder Punkt am Ende. Im Emulator-Test wurde ein harter Link zwar gefunden (Exit 2), die Rechte der verlinkten Datei außerhalb des Ordners hatten sich durch das Sperren der Wurzel aber schon geändert.
 - `setup.bat` wertet den Exit-Code der Ordnerprüfung genau aus: jeder Wert außer 0 bricht ab, auch ein negativer.
 - `uninstall.bat`: fehlte `config\.db-credentials`, brach die Deinstallation immer ab, auch wenn die Frage „Trotzdem OHNE Backup deinstallieren?“ mit „j“ beantwortet wurde.
 - Die Antwort von „Einstempeln“ kennzeichnet Sonn- und Feiertage jetzt wie „Ausstempeln“ und der Stempelstatus (`is_sunday_or_holiday`); vorher stand dort immer „nein“.
