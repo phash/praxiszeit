@@ -60,6 +60,69 @@ def exception_frames(exc: BaseException) -> str:
     return f"{frames}{exception_summary(exc)}"
 
 
+def _is_db_exception(exc: Optional[BaseException]) -> bool:
+    """Datenbankfehler (SQLAlchemy ``DBAPIError`` oder Treiberfehler mit
+    ``pgcode``) irgendwo in der Kette ``exc → __cause__/__context__``."""
+    from sqlalchemy.exc import DBAPIError
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, DBAPIError) or hasattr(exc, "pgcode"):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+class DBErrorRedactionFilter(logging.Filter):
+    """Audit 2026-11-07 (S2-1) Fix-Runde: Datenbankfehler in Container-Log und
+    ``logs/praxiszeit.log`` ohne Werte.
+
+    Eine an uvicorn weitergereichte Ausnahme („Exception in ASGI application")
+    und Log-Aufrufe mit der Ausnahme als Argument schrieben ``str(exc)`` —
+    bei einem ``DBAPIError`` PostgreSQLs ``DETAIL: Key (…)=(…)``. Der Filter
+    ersetzt den Traceback-Text durch ``exception_frames`` (Stapel + Typ,
+    SQLSTATE, Bedingung) und Ausnahme-Argumente durch ``exception_summary``.
+    Andere Ausnahmen bleiben unveraendert. Haengt an den HANDLERN
+    (``install_db_error_redaction``) — ein Logger-Filter saehe weitergereichte
+    Records von Kind-Loggern nicht."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        exc = record.exc_info[1] if record.exc_info else None
+        if exc is not None and _is_db_exception(exc):
+            record.exc_text = "Traceback (most recent call last):\n" + exception_frames(exc)
+        if isinstance(record.msg, BaseException) and _is_db_exception(record.msg):
+            record.msg = exception_summary(record.msg)
+        if record.args:
+            if isinstance(record.args, tuple):
+                record.args = tuple(
+                    exception_summary(a) if isinstance(a, BaseException) and _is_db_exception(a) else a
+                    for a in record.args
+                )
+            elif isinstance(record.args, dict):
+                record.args = {
+                    k: exception_summary(v) if isinstance(v, BaseException) and _is_db_exception(v) else v
+                    for k, v in record.args.items()
+                }
+        return True
+
+
+_REDACTION_LOGGERS = ("", "uvicorn", "uvicorn.error", "uvicorn.access", "fastapi", "app")
+
+
+def install_db_error_redaction(logger_names=_REDACTION_LOGGERS) -> int:
+    """Haengt ``DBErrorRedactionFilter`` an jeden Handler der genannten Logger
+    (idempotent). uvicorn richtet seine Handler vor dem Import der App ein,
+    ``app.main`` ruft das deshalb beim Import auf. Gibt die Zahl neu
+    versehener Handler zurueck."""
+    added = 0
+    for name in logger_names:
+        for handler in logging.getLogger(name).handlers:
+            if not any(isinstance(f, DBErrorRedactionFilter) for f in handler.filters):
+                handler.addFilter(DBErrorRedactionFilter())
+                added += 1
+    return added
+
+
 def _scrub_path(path: Optional[str]) -> Optional[str]:
     """M-DSG4: strip resource UUIDs from request paths before they are stored.
 

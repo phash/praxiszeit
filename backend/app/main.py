@@ -545,6 +545,10 @@ _db_error_handler = DBErrorHandler(SessionLocal)
 _db_error_handler.setFormatter(logging.Formatter('%(message)s'))
 logging.getLogger('uvicorn.error').addHandler(_db_error_handler)
 logging.getLogger('fastapi').addHandler(_db_error_handler)
+# Audit 2026-11-07 (S2-1) Fix-Runde: Datenbankfehler ohne Werte auch im
+# Container-Log / logs/praxiszeit.log (uvicorn-Handler stehen beim Import schon).
+from app.services.error_log_service import install_db_error_redaction  # noqa: E402
+install_db_error_redaction()
 
 # Register routers
 app.include_router(auth.router)

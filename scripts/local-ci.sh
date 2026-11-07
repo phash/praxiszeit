@@ -87,6 +87,7 @@ if docker compose exec -T -e TZ=Europe/Berlin backend pytest tests/ -q --tb=shor
        --ignore=tests/test_reclamp_concurrency.py \
        --ignore=tests/test_handbuch_seed_pg.py \
        --ignore=tests/test_year_closing_lock_pg.py \
+       --ignore=tests/test_pg_log_privacy_pg.py \
        --ignore=tests/test_concurrency.py </dev/null 2>&1 | tail -5; then
     ok "Backend tests passed"
 else
@@ -117,8 +118,9 @@ fi
 # Unique-Index — + 7 Handbuch-Seed unter RLS, Gesamtreview 1.20 B9 — + 1
 # year-closing advisory lock, 1.21.1 — + 1 migration-074 round trip + 2 RLS
 # reduced_days + 1 purge, Teil B — + 2 migration-075, Teil A: round trip with
-# backfill, backfill as non-superuser owner under FORCE RLS); the 18
-# cross-tenant tests run inside step 1. Same eleven files as the Actions step
+# backfill, backfill as non-superuser owner under FORCE RLS — + 3 PG log
+# privacy, audit 2026-11-07 S2-1); the 18
+# cross-tenant tests run inside step 1. Same twelve files as the Actions step
 # "Cross-tenant RLS + Art.17 purge + Race-Tests (real Postgres)".
 step "Backend Postgres integration (RLS + concurrency + Art.17 purge)"
 if docker compose exec -T -e TZ=Europe/Berlin backend pytest \
@@ -128,6 +130,7 @@ if docker compose exec -T -e TZ=Europe/Berlin backend pytest \
        tests/test_reclamp_concurrency.py tests/test_handbuch_seed_pg.py \
        tests/test_year_closing_lock_pg.py tests/test_074_reduced_days_pg.py \
        tests/test_075_contract_history_pg.py \
+       tests/test_pg_log_privacy_pg.py \
        -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Postgres integration verified"
 else

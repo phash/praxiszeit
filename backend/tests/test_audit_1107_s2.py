@@ -117,6 +117,80 @@ def test_db_error_handler_stores_no_exception_text(monkeypatch):
     assert "2027-05-25" not in (captured["traceback_str"] or "")
 
 
+# ── S2-1 Fix-Runde: Container-Log, PG-Bestandscluster ────────────────
+
+
+def _capture_logger(name):
+    import io
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+    logger = logging.getLogger(name)
+    logger.addHandler(handler)
+    logger.propagate = False
+    return logger, handler, stream
+
+
+def test_reraised_db_error_reaches_container_log_without_values():
+    logger, handler, stream = _capture_logger("uvicorn.error.s21probe")
+    try:
+        assert els.install_db_error_redaction(("uvicorn.error.s21probe",)) == 1
+        assert els.install_db_error_redaction(("uvicorn.error.s21probe",)) == 0  # idempotent
+        exc = _integrity_error()
+        logger.error("Exception in ASGI application", exc_info=(type(exc), exc, exc.__traceback__))
+        logger.error("Fehler beim Speichern: %s", exc)
+        out = stream.getvalue()
+        for value in ("Krank Rücken", "2027-05-25", "SICK", "DETAIL", "[parameters"):
+            assert value not in out, out
+        assert "SQLSTATE 23505" in out
+        assert "Traceback (most recent call last)" in out
+        assert "test_audit_1107_s2.py" in out  # Stapel bleibt für die Fehlersuche
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate = True
+
+
+def test_non_db_exceptions_stay_unchanged():
+    logger, handler, stream = _capture_logger("uvicorn.error.s21plain")
+    try:
+        els.install_db_error_redaction(("uvicorn.error.s21plain",))
+        try:
+            raise ValueError("ungueltiger Monat 13")
+        except ValueError:
+            logger.exception("Probe")
+        assert "ungueltiger Monat 13" in stream.getvalue()
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate = True
+
+
+def test_main_installs_redaction_on_uvicorn_handlers():
+    import importlib.util
+    import app.main as main
+    src = importlib.util.find_spec("app.main").origin
+    text = open(src, encoding="utf-8").read()
+    assert "install_db_error_redaction()" in text
+    assert hasattr(main, "install_db_error_redaction")
+
+
+def test_pg_log_privacy_is_noop_on_sqlite():
+    from sqlalchemy import create_engine
+    from app.core.pg_log_privacy import apply_log_privacy_settings
+    eng = create_engine("sqlite://")
+    with eng.begin() as c:
+        assert apply_log_privacy_settings(c) is False
+
+
+def test_env_py_applies_log_privacy_after_migrations():
+    """Bestandscluster (nativ): jeder Migrationslauf setzt die Werte per
+    ALTER DATABASE (Beleg gegen PG: ``test_pg_log_privacy_pg.py``)."""
+    from pathlib import Path
+    env_py = (Path(__file__).resolve().parents[1] / "alembic" / "env.py").read_text(encoding="utf-8")
+    online = env_py[env_py.index("def run_migrations_online"):]
+    assert online.index("context.run_migrations()") < online.index(
+        "apply_log_privacy_settings(connection)")
+
+
 # ── S2-2 ─────────────────────────────────────────────────────────────
 
 
