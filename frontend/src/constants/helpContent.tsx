@@ -298,6 +298,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Änderungen an Zeiteinträgen und Abwesenheiten – Spalte „Quelle": Manuell (von Hand angelegt oder geändert – durch die Verwaltung oder in der Zeiterfassung; wer, steht unter „Geändert von"), Ausstempeln, Automatisch geschlossen, Antrag, Import, Pausen-Verzicht, Stundenänderung, Neukappung (Arbeitszeit-Änderung), Anrechnung anerkannt u. a.</li>
             <li>Zugriffe auf Gesundheitsdaten, Exporte und DSGVO-Vorgänge (Anonymisieren, Endgültig löschen)</li>
             <li>Überträge, Jahresabschluss, Einstellungen, Feiertage und verkürzte Tage – jeweils alter und neuer Wert</li>
+            <li>§ 18 ArbZG, Nachtarbeit sowie erster/letzter Arbeitstag einer Person (Benutzerangabe geändert)</li>
             <li>Bei Zeiteinträgen neben der angerechneten auch die tatsächlich gestempelte Zeit („gestempelt …"), auch bei Löschungen</li>
             <li>Karte „Konto-Vorgänge": Konten angelegt/umbenannt, Deaktivieren, Reaktivieren, Rollenwechsel, von der Verwaltung gesetzte Passwörter, Zwei-Faktor im Profil ein-/abgeschaltet oder durch die Verwaltung zurückgesetzt, falsche Zwei-Faktor-Codes, Datenbank-Sicherungen sowie Notfall-Vorgänge per Kommandozeile (Passwort zurückgesetzt, Zwei-Faktor abgeschaltet)</li>
           </ul>

@@ -21,7 +21,7 @@ Eine kritische Prüfung von PraxisZeit (Arbeitszeitgesetz-Regeln, §-16-Nachweis
 - **Protokoll nur anfügbar, Löschungen erkennbar.** Das Datenbankkonto der Anwendung darf Protokollzeilen weder ändern noch löschen; die Zeilen werden jede Nacht (03:15 Uhr) zu einer Kette versiegelt. Fehlende oder veränderte Glieder und ein abgeschnittenes Ende fallen bei der Prüfung auf.
 - **Prüfung jede Nacht und auf Knopfdruck:** Karte „Prüfung des Änderungsprotokolls“ im Änderungsprotokoll; eine Abweichung erscheint unter „Konto-Vorgänge“ und im Fehler-Monitoring.
 - **Kettenende fehlt → gesperrt mit Hinweis.** PraxisZeit legt ein fehlendes oder ungültiges Kettenende nicht still neu an. Bis es nach Klärung über „Kettenende neu setzen…“ mit Begründung neu gesetzt ist (die Begründung steht danach dauerhaft im Protokoll), sind endgültiges Löschen von Personen und das automatische Entfernen alter Zeilen gesperrt.
-- **Neu im Protokoll:** manuelle Überträge, Jahresabschluss anlegen/löschen (je Person), geänderte Einstellungen (z. B. der Puffer), eigene Feiertage und verkürzte Tage – jeweils mit altem und neuem Wert.
+- **Neu im Protokoll:** manuelle Überträge, Jahresabschluss anlegen/löschen (je Person), geänderte Einstellungen (z. B. der Puffer), eigene Feiertage, verkürzte Tage sowie Änderungen an § 18 ArbZG, Nachtarbeit und Beschäftigungszeitraum einer Person (A1-17) – jeweils mit altem und neuem Wert.
 - **Endgültige Löschung (Art. 17) schreibt keine Urheberschaft mehr um:** Zeilen, die die gelöschte Person an fremden Einträgen geändert hat, zeigen „Gelöschte Person“ statt der löschenden Verwaltung.
 - **Grenze:** Ein Datenbank-Superuser kann noch nicht versiegelte Zeilen des laufenden Tages entfernen; versiegelte Zeilen nicht unbemerkt.
 

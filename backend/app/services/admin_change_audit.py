@@ -26,10 +26,23 @@ ACTION_CARRYOVER_SET = "carryover_set"
 ACTION_CARRYOVER_DELETE = "carryover_delete"
 ACTION_SETTING_CHANGE = "setting_change"
 ACTION_HOLIDAY_CHANGE = "holiday_change"
+ACTION_USER_FIELD_CHANGE = "user_field_change"
 SOURCE_CARRYOVER = "carryover"          # manueller Uebertrag
 SOURCE_YEAR_CLOSING = "year_closing"    # Jahresabschluss anlegen/loeschen
 SOURCE_SETTINGS = "settings"
 SOURCE_HOLIDAYS = "holidays"
+SOURCE_USER_ADMIN = "user_admin"        # Benutzerverwaltung (PUT /admin/users)
+
+# A1-17: Felder der Benutzerverwaltung, die ArbZG-Auswertungen oder das
+# Beschaeftigungsfenster steuern. § 18 nimmt eine Person aus allen
+# ArbZG-Berichten heraus (auch rueckwirkend), das Fenster filtert Soll und Ist
+# — wer das wann umstellte, muss nachweisbar sein.
+USER_TRACKED_FIELDS = {
+    "exempt_from_arbzg": "Ausgenommen nach § 18 ArbZG",
+    "is_night_worker": "Nachtarbeitnehmer (§ 6 ArbZG)",
+    "first_work_day": "Erster Arbeitstag",
+    "last_work_day": "Letzter Arbeitstag",
+}
 
 
 def _num(value, digits: int) -> str:
@@ -110,3 +123,32 @@ def log_holiday(db: Session, *, current_user, before, after) -> None:
         old_text=holiday_text(*before) if before else None,
         new_text=holiday_text(*after) if after else None,
     )
+
+
+def _user_field_value(value) -> str:
+    if value is None:
+        return "nicht gesetzt"
+    if isinstance(value, bool):
+        return "ja" if value else "nein"
+    if hasattr(value, "strftime"):
+        return value.strftime("%d.%m.%Y")
+    return str(value)
+
+
+def log_user_fields(db: Session, *, current_user, user, update_data: dict) -> None:
+    """A1-17: je geaendertem Feld aus ``USER_TRACKED_FIELDS`` eine Zeile im
+    Aenderungsprotokoll der Person (alt → neu, handelnder Verwalter).
+    VOR dem Zuweisen aufrufen: ``user`` traegt noch die alten Werte."""
+    for field, label in USER_TRACKED_FIELDS.items():
+        if field not in update_data:
+            continue
+        old, new = getattr(user, field, None), update_data[field]
+        if old == new:
+            continue
+        log_change(
+            db, tenant_id=user.tenant_id, user_id=user.id,
+            changed_by=current_user.id, action=ACTION_USER_FIELD_CHANGE,
+            source=SOURCE_USER_ADMIN,
+            old_text=f"{label}: {_user_field_value(old)}",
+            new_text=f"{label}: {_user_field_value(new)}",
+        )

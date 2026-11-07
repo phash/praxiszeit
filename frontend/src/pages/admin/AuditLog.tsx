@@ -80,6 +80,7 @@ const actionLabels: Record<string, string> = {
   setting_change: 'Einstellung geändert',
   holiday_change: 'Feiertag geändert',
   reduced_day_change: 'Verkürzter Tag geändert',
+  user_field_change: 'Benutzerangabe geändert',
   audit_rows_purged: 'Protokollzeilen entfernt',
   audit_chain_reanchored: 'Kettenende neu gesetzt',
 };
@@ -105,6 +106,7 @@ const actionColors: Record<string, string> = {
   setting_change: 'bg-blue-100 text-blue-800',
   holiday_change: 'bg-blue-100 text-blue-800',
   reduced_day_change: 'bg-blue-100 text-blue-800',
+  user_field_change: 'bg-blue-100 text-blue-800',
   audit_rows_purged: 'bg-red-100 text-red-800',
   audit_chain_reanchored: 'bg-red-100 text-red-800',
 };

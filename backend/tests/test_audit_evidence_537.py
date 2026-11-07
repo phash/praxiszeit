@@ -417,6 +417,35 @@ class TestAdminChangeAudit:
         assert all(row.new_note is None and "Übertrag 2026" in row.old_note for row in deleted)
         assert db.query(YearCarryover).count() == 0
 
+    def test_arbzg_relevant_user_fields_logged(self, admin_client, db, test_user, test_admin):
+        """A1-17: § 18 nimmt die Person aus allen ArbZG-Berichten — die
+        Umstellung (wie Nachtarbeit und Beschaeftigungsfenster) braucht eine
+        dauerhafte Spur mit altem/neuem Wert und handelnder Person."""
+        test_user.exempt_from_arbzg = False
+        test_user.is_night_worker = False
+        db.commit()
+        r = admin_client.put(f"/api/admin/users/{test_user.id}", json={
+            "exempt_from_arbzg": True, "is_night_worker": True,
+            "first_work_day": "2024-02-01", "last_work_day": "2027-12-31",
+            "first_name": test_user.first_name,
+        })
+        assert r.status_code == 200, r.text
+        rows = {row.old_note.split(":")[0]: row for row in self._rows(db, "user_field_change")}
+        assert set(rows) == {"Ausgenommen nach § 18 ArbZG", "Nachtarbeitnehmer (§ 6 ArbZG)",
+                             "Erster Arbeitstag", "Letzter Arbeitstag"}
+        exempt = rows["Ausgenommen nach § 18 ArbZG"]
+        assert exempt.old_note == "Ausgenommen nach § 18 ArbZG: nein"
+        assert exempt.new_note == "Ausgenommen nach § 18 ArbZG: ja"
+        assert exempt.user_id == test_user.id and exempt.changed_by == test_admin.id
+        assert exempt.source == "user_admin" and exempt.time_entry_id is None
+        assert rows["Erster Arbeitstag"].new_note == "Erster Arbeitstag: 01.02.2024"
+        assert audit_integrity.verify_row(exempt)
+        # Unveraendert zurueckgeschickt = keine weitere Zeile.
+        r = admin_client.put(f"/api/admin/users/{test_user.id}",
+                             json={"exempt_from_arbzg": True, "last_work_day": "2027-12-31"})
+        assert r.status_code == 200, r.text
+        assert len(self._rows(db, "user_field_change")) == 4
+
     def test_setting_change_logged(self, admin_client, db, test_admin):
         r = admin_client.put("/api/admin/settings/work_window_grace_minutes", json={"value": "10"})
         assert r.status_code == 200, r.text

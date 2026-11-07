@@ -26,4 +26,9 @@ describe('AUDIT_SOURCE_LABELS (Spec 2026-10-08, 10.3)', () => {
     expect(AUDIT_SOURCE_LABELS.clock_out).toBe('Ausstempeln');
     expect(AUDIT_SOURCE_LABELS.auto_close).toBe('Automatisch geschlossen');
   });
+
+  // A1-17: § 18 / Nachtarbeit / Beschäftigungsfenster aus der Benutzerverwaltung
+  it('kennt die Benutzerverwaltung', () => {
+    expect(AUDIT_SOURCE_LABELS.user_admin).toBe('Benutzerverwaltung');
+  });
 });

@@ -39,7 +39,7 @@ from app.schemas.working_hours_change import (
 )
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
 from app.services import (
-    absence_retarget_audit, auth_service, calculation_service, lifecycle_service, milog_service,
+    absence_retarget_audit, admin_change_audit, auth_service, calculation_service, lifecycle_service, milog_service,
     reclamp_audit, settings_service, wh_change_service, work_blocks_service, work_window_service,
 )
 # #448: gleiche Single Source of Truth wie absences.py/admin_vacations.py/
@@ -1518,6 +1518,11 @@ def update_user(
         'username' in update_data and update_data['username'] is not None
         and update_data['username'].lower() != (user.username or '').lower()
     )
+
+    # A1-17: § 18, Nachtarbeit und Beschaeftigungsfenster nachweisbar aendern
+    # (gleiche Transaktion; vor dem Zuweisen, damit die alten Werte lesbar sind).
+    admin_change_audit.log_user_fields(db, current_user=current_user, user=user,
+                                       update_data=update_data)
 
     for field, value in update_data.items():
         setattr(user, field, value)

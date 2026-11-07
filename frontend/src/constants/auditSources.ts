@@ -27,4 +27,6 @@ export const AUDIT_SOURCE_LABELS: Record<string, string> = {
   settings: 'Einstellungen',
   holidays: 'Feiertage',
   retention: 'Aufbewahrungsfrist',
+  // A1-17: § 18, Nachtarbeit und Beschäftigungsfenster in der Benutzerverwaltung
+  user_admin: 'Benutzerverwaltung',
 };
