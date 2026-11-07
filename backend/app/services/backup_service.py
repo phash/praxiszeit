@@ -111,6 +111,152 @@ def _forbidden_backup_roots() -> list[Path]:
     return roots
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
+_WIN_DRIVE_REMOTE = 4  # GetDriveTypeW: DRIVE_REMOTE (Netzlaufwerk)
+
+
+def _win_drive_type(path: str) -> int:
+    """GetDriveTypeW für das Laufwerk von ``path`` (nur Windows aufgerufen)."""
+    import ctypes  # noqa: PLC0415 — nur unter Windows
+
+    import ntpath  # noqa: PLC0415
+
+    drive = ntpath.splitdrive(path)[0]
+    return int(ctypes.windll.kernel32.GetDriveTypeW(drive + "\\"))  # type: ignore[attr-defined]
+
+
+def _win_public_roots() -> list[str]:
+    """Ordner, die unter Windows jedes lokale Konto lesen kann (Kleinbuchstaben,
+    ohne abschließenden Trenner)."""
+    sysdrive = os.environ.get("SystemDrive", "C:")
+    sysroot = os.environ.get("SystemRoot", sysdrive + "\\Windows")
+    roots = {
+        os.environ.get("PUBLIC", "") or sysdrive + "\\Users\\Public",
+        sysdrive + "\\Users\\Public",
+        sysdrive + "\\Users\\Default",
+        sysroot,
+        sysdrive + "\\Temp",
+    }
+    return sorted({r.rstrip("\\/").lower() for r in roots if r})
+
+
+UNC_LOCATION_DETAIL = (
+    "Dieser Backup-Ort ist nicht erlaubt: Netzwerkpfade (\\\\Server\\Freigabe) und "
+    "Netzlaufwerke sind gesperrt. Die Sicherungen enthalten Gesundheitsdaten und "
+    "bleiben auf diesem Rechner; für eine Kopie außer Haus siehe die Anleitung "
+    "zur Datensicherung."
+)
+PUBLIC_LOCATION_DETAIL = (
+    "Dieser Backup-Ort ist nicht erlaubt: der Ordner ist für alle Konten dieses "
+    "Rechners lesbar (z. B. C:\\Users\\Public) oder ein Systemordner. Bitte einen "
+    "eigenen Ordner wählen, z. B. das Standard-Verzeichnis data\\backups."
+)
+DRIVE_ROOT_LOCATION_DETAIL = (
+    "Dieser Backup-Ort ist nicht erlaubt: bitte nicht direkt das Stammverzeichnis "
+    "eines Laufwerks wählen, sondern einen Ordner darin."
+)
+
+
+def location_rejection_reason(loc: str) -> Optional[str]:
+    """Grund, warum ``loc`` als Backup-Ort gesperrt ist, sonst None.
+
+    Audit 2026-11-07 S3-04: nativ läuft der Dienst unter Windows als SYSTEM.
+    Ein UNC-Pfad ließe ihn sofort eine SMB-Verbindung zu einem fremden Rechner
+    aufbauen (Anmeldung mit dem Computerkonto), ein öffentlicher Ordner machte
+    jeden Dump für alle lesbar. Die rein textuellen Prüfungen laufen VOR jedem
+    Dateisystemzugriff (realpath/exists würden den Server bereits kontaktieren).
+    """
+    raw = (loc or "").strip()
+    if raw.startswith(("\\\\", "//")):  # UNC, \\?\ und \\.\ (auf jedem System)
+        return UNC_LOCATION_DETAIL
+    if _is_windows():
+        import ntpath  # noqa: PLC0415 — Windows-Pfadregeln auch im Linux-Test
+
+        drive = ntpath.splitdrive(raw)[0]
+        if not drive or len(drive) != 2 or drive[1] != ":":
+            return UNC_LOCATION_DETAIL
+        try:
+            if _win_drive_type(raw) == _WIN_DRIVE_REMOTE:
+                return UNC_LOCATION_DETAIL
+        except (OSError, AttributeError, ValueError):
+            return UNC_LOCATION_DETAIL
+        norm = ntpath.normpath(raw).rstrip("\\/").lower()
+        for root in _win_public_roots():
+            if norm == root or norm.startswith(root + "\\"):
+                return PUBLIC_LOCATION_DETAIL
+    if _is_forbidden_location(raw):
+        return FORBIDDEN_LOCATION_DETAIL
+    try:
+        real = Path(os.path.realpath(raw))
+    except (OSError, ValueError):
+        return FORBIDDEN_LOCATION_DETAIL
+    if real.parent == real:
+        return DRIVE_ROOT_LOCATION_DETAIL
+    return None
+
+
+# SIDs statt Namen (deutsches vs. englisches Windows), wie praxiszeit-server.py.
+_WIN_SID_SYSTEM = "*S-1-5-18"
+_WIN_SID_ADMINISTRATORS = "*S-1-5-32-544"
+_WIN_SIDS_REMOVED = ("*S-1-5-32-545", "*S-1-5-11", "*S-1-1-0")  # Benutzer, Auth. Benutzer, Jeder
+
+
+def _win_restrict_dir_commands(path: Path) -> list[list[str]]:
+    """icacls-Aufrufe: nur SYSTEM + Administratoren, Vererbung gekappt (S2-4).
+
+    Erst die Grants, dann die Entfernungen, zuletzt ``/inheritance:r`` — sonst
+    könnte der Ordner kurz ohne jeden Eintrag dastehen."""
+    p = str(path)
+    return [
+        ["icacls", p, "/grant:r", f"{_WIN_SID_SYSTEM}:(OI)(CI)F"],
+        ["icacls", p, "/grant:r", f"{_WIN_SID_ADMINISTRATORS}:(OI)(CI)F"],
+        *[["icacls", p, "/remove:g", sid] for sid in _WIN_SIDS_REMOVED],
+        ["icacls", p, "/inheritance:r"],
+    ]
+
+
+def restrict_backup_dir_acl(path: Path) -> bool:
+    """Windows: Rechte des Backup-Ordners auf SYSTEM + Administratoren einschränken.
+
+    ``os.open(..., 0o600)`` wirkt unter Windows nicht; ohne das erbte jeder Dump
+    die Rechte des gewählten Ordners (S2-4). No-op (True) außerhalb von Windows.
+    Neue Dateien im Ordner erben danach nur noch diese Einträge."""
+    if not _is_windows():
+        return True
+    cmds = _win_restrict_dir_commands(path)
+    grants, removes, protect = cmds[:2], cmds[2:-1], cmds[-1]
+    for cmd in grants:
+        if not _run_icacls(cmd):
+            return False
+    for cmd in removes:
+        _run_icacls(cmd)  # ein nicht vorhandener Eintrag ist kein Fehler
+    return _run_icacls(protect)
+
+
+def _run_icacls(cmd: list[str]) -> bool:
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, errors="replace")
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning("icacls %s fehlgeschlagen: %s", " ".join(cmd[2:]), e)
+        return False
+    if result.returncode != 0:
+        logger.warning(
+            "icacls %s auf %s fehlgeschlagen (rc=%s): %s", " ".join(cmd[2:]), cmd[1],
+            result.returncode, (result.stdout or result.stderr or "").strip(),
+        )
+        return False
+    return True
+
+
+ACL_FAILED_DETAIL = (
+    "Die Zugriffsrechte des Backup-Ordners konnten nicht auf SYSTEM und "
+    "Administratoren eingeschränkt werden. Bitte einen anderen Ordner wählen."
+)
+
+
 def _is_forbidden_location(loc: str) -> bool:
     """True, wenn ``loc`` (Symlinks und ``..`` aufgelöst) in einem gesperrten
     Verzeichnis liegt oder es selbst ist."""
@@ -139,10 +285,11 @@ def get_backup_dir(db: Session) -> Path:
     ``update_config``) in einem gesperrten Verzeichnis liegt, wird ignoriert."""
     override = (settings_service.get_setting(db, SETTING_LOCATION, tenant_id=DEFAULT_TENANT_ID) or "").strip()
     if override:
-        if not _is_forbidden_location(override):
+        if location_rejection_reason(override) is None:
             return Path(override)
         logger.warning(
-            "Backup-Ort %r liegt im Web-/Programmverzeichnis und wird ignoriert", override
+            "Backup-Ort %r ist gesperrt (Web-/Programmverzeichnis, Netzwerkpfad oder "
+            "öffentlicher Ordner) und wird ignoriert", override
         )
     env_dir = os.environ.get("PRAXISZEIT_BACKUP_DIR", "").strip()
     if env_dir:
@@ -184,8 +331,9 @@ def update_config(
         _set_setting(db, SETTING_RETENTION_DAYS, str(max(1, int(retention_days))))
     if location is not None:
         loc = location.strip()
-        if loc and _is_forbidden_location(loc):
-            raise BackupError(FORBIDDEN_LOCATION_DETAIL)
+        reason = location_rejection_reason(loc) if loc else None
+        if reason:
+            raise BackupError(reason)
         if loc:
             # Schreibprobe (Review 2026-06-23): einen nicht beschreibbaren Pfad
             # ablehnen, statt ihn still zu speichern und erst beim naechsten Backup
@@ -203,6 +351,9 @@ def update_config(
                             "bitte den Pfad manuell anlegen."
                         )
                     probe_dir.mkdir(exist_ok=True)
+                # Windows: Rechte VOR dem ersten Byte einschränken (S2-4).
+                if not restrict_backup_dir_acl(probe_dir):
+                    raise BackupError(ACL_FAILED_DETAIL)
                 probe = probe_dir / ".praxiszeit-write-test"
                 probe.write_text("ok")
                 probe.unlink()
@@ -315,6 +466,17 @@ def _pg_dump_conn() -> Optional[tuple]:
     return args, password
 
 
+def _pg_require_auth() -> Optional[str]:
+    """``require_auth`` aus DATABASE_URL_MIGRATIONS (nativ Windows gesetzt)."""
+    raw = os.environ.get("DATABASE_URL_MIGRATIONS", "").strip()
+    if not raw:
+        return None
+    from urllib.parse import urlparse, parse_qs
+    qs = parse_qs(urlparse(raw).query)
+    value = (qs.get("require_auth", [None])[0] or "").strip()
+    return value or None
+
+
 class BackupError(RuntimeError):
     pass
 
@@ -334,6 +496,10 @@ def create_backup(db: Session) -> BackupFile:
         backup_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         raise BackupError(f"Backup-Verzeichnis nicht beschreibbar: {e}") from e
+    # Windows: jeder Dump erbt die Rechte des Ordners (0o600 wirkt dort nicht).
+    # Kein Dump in einen Ordner, dessen Rechte sich nicht einschränken lassen.
+    if not restrict_backup_dir_acl(backup_dir):
+        raise BackupError(ACL_FAILED_DETAIL)
 
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
     backup_file = backup_dir / f"praxiszeit_{timestamp}.sql.gz"
@@ -346,6 +512,11 @@ def create_backup(db: Session) -> BackupFile:
     env = os.environ.copy()
     if password:
         env["PGPASSWORD"] = password
+    require_auth = _pg_require_auth()
+    if require_auth:
+        # S3-07: pg_dump darf das Passwort nur per SCRAM preisgeben, nie im
+        # Klartext an einen Server, der sich an den freien Port gehängt hat.
+        env["PGREQUIREAUTH"] = require_auth
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     except FileNotFoundError as e:
