@@ -230,7 +230,7 @@ function Test-InstallEvidence([string]$Root) {
         } catch {
             continue
         }
-        if ($img -and $img.IndexOf($Root + '\', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
+        if ($img -and $img.Replace('/', '\').IndexOf($Root + '\', [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
     }
     return $false
 }

@@ -787,7 +787,7 @@ def test_secure_install_ps1_decides_trust_before_any_owner_change():
     ev = _ps1_function(code, "Test-InstallEvidence")
     assert "@('PraxisZeit-PostgreSQL', 'PraxisZeit')" in ev
     assert "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\$svc" in ev and "ImagePath" in ev
-    assert "IndexOf($Root + '\\', [System.StringComparison]::OrdinalIgnoreCase)" in ev
+    assert "$img.Replace('/', '\\').IndexOf($Root + '\\', [System.StringComparison]::OrdinalIgnoreCase)" in ev
 
 
 def test_secure_install_ps1_locks_each_subtree_top_down_before_recursing():
