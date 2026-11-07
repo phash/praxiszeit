@@ -37,6 +37,10 @@ BEGIN
     IF to_regclass('public.audit_log_tombstones') IS NOT NULL THEN
         REVOKE ALL ON audit_log_tombstones FROM praxiszeit_app;
     END IF;
+    -- Jede je vergebene Protokoll-id (Review-Runde 5): ebenso nur die Eigentuemerin.
+    IF to_regclass('public.audit_log_ids') IS NOT NULL THEN
+        REVOKE ALL ON audit_log_ids FROM praxiszeit_app;
+    END IF;
 END
 $$;
 
@@ -54,7 +58,8 @@ BEGIN
         'pz_audit_head_seq(uuid)',
         'pz_audit_set_head(uuid, text, boolean)',
         'pz_audit_scrub_ok(text, text)',
-        'pz_audit_tombstoned(uuid)'
+        'pz_audit_tombstoned(uuid)',
+        'pz_audit_claim_id(uuid, uuid)'
     ] LOOP
         IF to_regprocedure(f) IS NOT NULL THEN
             -- ohne Prozent-Platzhalter: Tests reichen die Datei durch psycopg

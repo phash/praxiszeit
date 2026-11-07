@@ -173,11 +173,18 @@ def test_init_db_user_sql_revokes_again(env):
     sql = (BACKEND / "init-db-user.sql").read_text().replace("praxiszeit_app", role)
     sql = sql.replace("GRANT CONNECT ON DATABASE praxiszeit", "-- ")
     with engine.begin() as conn:
+        # wie die Default-Privilegien beim Anlegen: auch die Eigentuemer-Tabellen
+        conn.exec_driver_sql(f'GRANT ALL ON audit_log_ids, audit_log_tombstones TO "{role}"')
         conn.exec_driver_sql(sql)
         privs = {p for (p,) in conn.execute(text(
             "SELECT privilege_type FROM information_schema.role_table_grants "
             "WHERE table_name = 'time_entry_audit_logs' AND grantee = :r"), {"r": role})}
+        owner_only = {p for (p,) in conn.execute(text(
+            "SELECT privilege_type FROM information_schema.role_table_grants "
+            "WHERE table_name IN ('audit_log_ids', 'audit_log_tombstones') AND grantee = :r"),
+            {"r": role})}
     assert "UPDATE" not in privs and "DELETE" not in privs
+    assert owner_only == set()
 
 
 def test_entry_and_author_deletion_keep_hash(env):
@@ -393,6 +400,8 @@ def test_downgrade_and_upgrade_again(env):
         assert "entry_ref" not in cols and "chain_seq" not in cols
         assert conn.execute(text(
             "SELECT count(*) FROM pg_proc WHERE proname LIKE 'pz_audit_%'")).scalar() == 0
+        assert conn.execute(text(
+            "SELECT to_regclass('public.audit_log_ids') IS NULL")).scalar() is True
         assert conn.execute(text(
             "SELECT count(*) FROM pg_trigger WHERE tgname = 'pz_audit_head_guard_write'")).scalar() == 0
     _alembic(url, "upgrade", HEAD_REV)
@@ -656,6 +665,101 @@ def test_purged_row_cannot_be_reinserted(env):
         eng.dispose()
 
 
+# ── Review-Runde 5: "eine id kehrt nie zurueck" haengt am Primaerschluessel ──
+
+def test_reinsert_racing_an_uncommitted_delete_is_refused(env):
+    """Zwei Verbindungen der App-Rolle: A loescht eine versiegelte Zeile ueber
+    pz_audit_delete (noch ohne Commit), B fuegt dieselbe Zeile wieder ein. Der
+    Grabstein-Blick in pz_audit_guard sah A's offenen Grabstein nicht, B wartete
+    nur am Primaerschluessel und kam nach A's Commit durch. Jetzt scheitert B an
+    der schon vergebenen id (audit_log_ids) - auch nach A's Commit."""
+    import threading
+    from app.services import audit_chain_service as acs
+    url, engine, app_url, role = env
+    eng_a, a = _app_session(app_url)
+    eng_b, b = _app_session(app_url)
+    try:
+        row_id = str(_insert_hashed(a).id)
+        acs.seal_chain(a, uuid.UUID(TENANT))
+        a.commit()
+        copy = dict(a.execute(text("SELECT * FROM time_entry_audit_logs WHERE id = :i"),
+                              {"i": row_id}).mappings().one())
+        b.commit()  # Mandanten-Kontext von B festschreiben
+        cols = [k for k in copy if k not in ("chain_seq", "chain_prev", "chain_hash")]
+        deleted = a.execute(text("SELECT pz_audit_delete(ARRAY[CAST(:i AS uuid)])"),
+                            {"i": row_id}).scalar()
+        assert deleted == 1  # A haelt die Loeschung offen
+
+        result = {}
+
+        def reinsert():
+            try:
+                b.execute(text(f"INSERT INTO time_entry_audit_logs ({', '.join(cols)}) VALUES "
+                               f"({', '.join(':' + c for c in cols)})"), {c: copy[c] for c in cols})
+                b.commit()
+                result["ok"] = True
+            except DBAPIError as exc:
+                b.rollback()
+                result["error"] = str(exc)
+
+        worker = threading.Thread(target=reinsert)
+        worker.start()
+        worker.join(timeout=2)  # vorher: B blockiert hier am Primaerschluessel
+        a.commit()
+        worker.join(timeout=30)
+        assert not worker.is_alive()
+        assert "error" in result, "geloeschte Zeile kam zurueck"
+        assert "nicht zurueckkehren" in result["error"]
+        with engine.connect() as conn:
+            conn.execute(text("SET app.is_superadmin = 'true'"))
+            assert conn.execute(text("SELECT count(*) FROM time_entry_audit_logs WHERE id = :i"),
+                                {"i": row_id}).scalar() == 0
+    finally:
+        a.close()
+        b.close()
+        eng_a.dispose()
+        eng_b.dispose()
+
+
+def test_audit_ids_are_backfilled_owner_only_and_claimed_only_by_the_trigger(env):
+    """audit_log_ids: Altbestand steht nach der Migration drin, Zeilen der
+    Eigentuemerin werden mit vergeben, die App-Rolle hat keine Rechte auf die
+    Tabelle und kann pz_audit_claim_id nicht direkt (ausserhalb des Triggers)
+    aufrufen - sonst belegte sie fremde ids vorab."""
+    from app.models import TimeEntryAuditLog
+    url, engine, app_url, role = env
+    owner = sessionmaker(bind=engine)()
+    try:
+        owner.execute(text("SET LOCAL app.is_superadmin = 'true'"))
+        assert owner.execute(text("SELECT count(*) FROM audit_log_ids WHERE id = :i"),
+                             {"i": LEGACY}).scalar() == 1
+        mine = TimeEntryAuditLog(tenant_id=uuid.UUID(TENANT), user_id=uuid.UUID(ADM),
+                                 changed_by=uuid.UUID(ADM), action="update", source="manual")
+        owner.add(mine)
+        owner.flush()
+        assert owner.execute(text("SELECT tenant_id FROM audit_log_ids WHERE id = :i"),
+                             {"i": str(mine.id)}).scalar() == uuid.UUID(TENANT)
+        owner.commit()
+    finally:
+        owner.close()
+    eng, s = _app_session(app_url)
+    try:
+        s.commit()
+        _expect_denied(s, "SELECT count(*) FROM audit_log_ids")
+        _expect_denied(s, "DELETE FROM audit_log_ids")
+        msg = _expect_denied(s, "SELECT pz_audit_claim_id(gen_random_uuid(), :t)", {"t": TENANT})
+        assert "nur ueber den Protokoll-Trigger" in msg
+        with engine.connect() as conn:
+            privs = {p for (p,) in conn.execute(text(
+                "SELECT privilege_type FROM information_schema.role_table_grants "
+                "WHERE table_name = 'audit_log_ids' AND grantee = :r"), {"r": role})}
+        assert privs == set()
+        _insert_hashed(s)  # der normale Weg vergibt die id selbst
+    finally:
+        s.close()
+        eng.dispose()
+
+
 def test_app_role_rows_need_a_present_created_at(env):
     """created_at steht in der Pruefsumme; eine kopierte alte Zeile (neue id,
     alter Zeitpunkt) wird schon beim Einfuegen abgelehnt."""
@@ -757,3 +861,4 @@ def test_restore_routine_check_matches_a_real_migrated_database(env):
     assert "Funktion public.pz_audit_tenant_ok (Inhalt weicht von der Migration ab)" in got
     assert "Funktion public.boese (legt keine Migration an)" in got
     assert "Sicht public.v076" in got
+

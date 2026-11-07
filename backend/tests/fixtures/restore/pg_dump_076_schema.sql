@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict NtlyCEezhhP7J9v87eOKdCgshiLY97mlDoPmjeD3foFZWJsj5kGWkdA3XK3K2ON
+\restrict SgZtr7I2mhqxWXjZwJKHxRDi9JP12VoFnIvsQbl1iNNzoGiLhmRtA1h6QZcb58k
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -45,6 +45,7 @@ DROP POLICY IF EXISTS tenant_isolation ON public.error_logs;
 DROP POLICY IF EXISTS tenant_isolation ON public.company_closures;
 DROP POLICY IF EXISTS tenant_isolation ON public.change_requests;
 DROP POLICY IF EXISTS tenant_isolation ON public.audit_log_tombstones;
+DROP POLICY IF EXISTS tenant_isolation ON public.audit_log_ids;
 DROP POLICY IF EXISTS tenant_isolation ON public.absences;
 DROP POLICY IF EXISTS tenant_isolation ON public.absence_reasons;
 ALTER TABLE IF EXISTS ONLY public.year_carryovers DROP CONSTRAINT IF EXISTS year_carryovers_user_id_fkey;
@@ -103,6 +104,7 @@ ALTER TABLE IF EXISTS ONLY public.change_requests DROP CONSTRAINT IF EXISTS chan
 ALTER TABLE IF EXISTS ONLY public.change_requests DROP CONSTRAINT IF EXISTS change_requests_reviewed_by_fkey;
 ALTER TABLE IF EXISTS ONLY public.change_requests DROP CONSTRAINT IF EXISTS change_requests_proposed_reason_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.audit_log_tombstones DROP CONSTRAINT IF EXISTS audit_log_tombstones_tenant_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.audit_log_ids DROP CONSTRAINT IF EXISTS audit_log_ids_tenant_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.absences DROP CONSTRAINT IF EXISTS absences_user_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.absences DROP CONSTRAINT IF EXISTS absences_reason_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.absence_reasons DROP CONSTRAINT IF EXISTS absence_reasons_tenant_id_fkey;
@@ -232,6 +234,7 @@ ALTER TABLE IF EXISTS ONLY public.error_logs DROP CONSTRAINT IF EXISTS error_log
 ALTER TABLE IF EXISTS ONLY public.company_closures DROP CONSTRAINT IF EXISTS company_closures_pkey;
 ALTER TABLE IF EXISTS ONLY public.change_requests DROP CONSTRAINT IF EXISTS change_requests_pkey;
 ALTER TABLE IF EXISTS ONLY public.audit_log_tombstones DROP CONSTRAINT IF EXISTS audit_log_tombstones_pkey;
+ALTER TABLE IF EXISTS ONLY public.audit_log_ids DROP CONSTRAINT IF EXISTS audit_log_ids_pkey;
 ALTER TABLE IF EXISTS ONLY public.alembic_version DROP CONSTRAINT IF EXISTS alembic_version_pkc;
 ALTER TABLE IF EXISTS ONLY public.absences DROP CONSTRAINT IF EXISTS absences_pkey;
 ALTER TABLE IF EXISTS ONLY public.absence_reasons DROP CONSTRAINT IF EXISTS absence_reasons_pkey;
@@ -261,6 +264,7 @@ DROP TABLE IF EXISTS public.error_logs;
 DROP TABLE IF EXISTS public.company_closures;
 DROP TABLE IF EXISTS public.change_requests;
 DROP TABLE IF EXISTS public.audit_log_tombstones;
+DROP TABLE IF EXISTS public.audit_log_ids;
 DROP TABLE IF EXISTS public.alembic_version;
 DROP TABLE IF EXISTS public.absences;
 DROP TABLE IF EXISTS public.absence_reasons;
@@ -274,6 +278,7 @@ DROP FUNCTION IF EXISTS public.pz_audit_head_seq(p_tenant uuid);
 DROP FUNCTION IF EXISTS public.pz_audit_head_guard();
 DROP FUNCTION IF EXISTS public.pz_audit_guard();
 DROP FUNCTION IF EXISTS public.pz_audit_delete(p_ids uuid[]);
+DROP FUNCTION IF EXISTS public.pz_audit_claim_id(p_id uuid, p_tenant uuid);
 DROP TYPE IF EXISTS public.userrole;
 DROP TYPE IF EXISTS public.changerequesttype;
 DROP TYPE IF EXISTS public.changerequeststatus;
@@ -333,6 +338,27 @@ CREATE TYPE public.userrole AS ENUM (
 ALTER TYPE public.userrole OWNER TO praxiszeit;
 
 --
+-- Name: pz_audit_claim_id(uuid, uuid); Type: FUNCTION; Schema: public; Owner: praxiszeit
+--
+
+CREATE FUNCTION public.pz_audit_claim_id(p_id uuid, p_tenant uuid) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    IF pg_trigger_depth() < 1 THEN
+        RAISE EXCEPTION 'pz_audit_claim_id: nur ueber den Protokoll-Trigger'
+            USING ERRCODE = '42501';
+    END IF;
+    INSERT INTO audit_log_ids (id, tenant_id) VALUES (p_id, p_tenant)
+        ON CONFLICT (id) DO NOTHING;
+    RETURN FOUND;
+END $$;
+
+
+ALTER FUNCTION public.pz_audit_claim_id(p_id uuid, p_tenant uuid) OWNER TO praxiszeit;
+
+--
 -- Name: pz_audit_delete(uuid[]); Type: FUNCTION; Schema: public; Owner: praxiszeit
 --
 
@@ -388,6 +414,10 @@ BEGIN
         IF TG_OP = 'DELETE' THEN
             RETURN OLD;
         END IF;
+        IF TG_OP = 'INSERT' THEN
+            -- auch Zeilen der Eigentuemerin bekommen ihre id fest vergeben
+            PERFORM pz_audit_claim_id(NEW.id, NEW.tenant_id);
+        END IF;
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
@@ -398,6 +428,16 @@ BEGIN
         -- Zuruecksetzen erlaubt, oder eine nach Art. 17 entfernte Zeile.
         IF pz_audit_tombstoned(NEW.id) THEN
             RAISE EXCEPTION 'time_entry_audit_logs: geloeschte Zeile % darf nicht zurueckkehren', NEW.id
+                USING ERRCODE = '42501';
+        END IF;
+        -- Review-Runde 5: der Grabstein allein ist ein Blick auf den Stand bei
+        -- Beginn dieser Anweisung - ein paralleles pz_audit_delete derselben id
+        -- (noch nicht festgeschrieben) sieht er nicht, das Einfuegen wartete nur
+        -- am Primaerschluessel und gelaenge nach dessen Commit. Die id-Vergabe
+        -- haengt am Primaerschluessel von audit_log_ids: eine schon (auch
+        -- parallel) vergebene id scheitert hier, ohne Fenster.
+        IF NOT pz_audit_claim_id(NEW.id, NEW.tenant_id) THEN
+            RAISE EXCEPTION 'time_entry_audit_logs: Zeilen-id % war schon vergeben, eine geloeschte Zeile darf nicht zurueckkehren', NEW.id
                 USING ERRCODE = '42501';
         END IF;
         -- created_at steht in der Pruefsumme: eine kopierte alte Zeile traegt
@@ -772,6 +812,18 @@ CREATE TABLE public.alembic_version (
 
 
 ALTER TABLE public.alembic_version OWNER TO praxiszeit;
+
+--
+-- Name: audit_log_ids; Type: TABLE; Schema: public; Owner: praxiszeit
+--
+
+CREATE TABLE public.audit_log_ids (
+    id uuid NOT NULL,
+    tenant_id uuid NOT NULL
+);
+
+
+ALTER TABLE public.audit_log_ids OWNER TO praxiszeit;
 
 --
 -- Name: audit_log_tombstones; Type: TABLE; Schema: public; Owner: praxiszeit
@@ -1460,6 +1512,14 @@ COPY public.alembic_version (version_num) FROM stdin;
 
 
 --
+-- Data for Name: audit_log_ids; Type: TABLE DATA; Schema: public; Owner: praxiszeit
+--
+
+COPY public.audit_log_ids (id, tenant_id) FROM stdin;
+\.
+
+
+--
 -- Data for Name: audit_log_tombstones; Type: TABLE DATA; Schema: public; Owner: praxiszeit
 --
 
@@ -1689,6 +1749,14 @@ ALTER TABLE ONLY public.absences
 
 ALTER TABLE ONLY public.alembic_version
     ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
+
+
+--
+-- Name: audit_log_ids audit_log_ids_pkey; Type: CONSTRAINT; Schema: public; Owner: praxiszeit
+--
+
+ALTER TABLE ONLY public.audit_log_ids
+    ADD CONSTRAINT audit_log_ids_pkey PRIMARY KEY (id);
 
 
 --
@@ -2642,6 +2710,14 @@ ALTER TABLE ONLY public.absences
 
 
 --
+-- Name: audit_log_ids audit_log_ids_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: praxiszeit
+--
+
+ALTER TABLE ONLY public.audit_log_ids
+    ADD CONSTRAINT audit_log_ids_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
 -- Name: audit_log_tombstones audit_log_tombstones_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: praxiszeit
 --
 
@@ -3102,6 +3178,12 @@ ALTER TABLE public.absence_reasons ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.absences ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: audit_log_ids; Type: ROW SECURITY; Schema: public; Owner: praxiszeit
+--
+
+ALTER TABLE public.audit_log_ids ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: audit_log_tombstones; Type: ROW SECURITY; Schema: public; Owner: praxiszeit
 --
 
@@ -3215,6 +3297,13 @@ CREATE POLICY tenant_isolation ON public.absence_reasons USING (((current_settin
 --
 
 CREATE POLICY tenant_isolation ON public.absences USING (((current_setting('app.is_superadmin'::text, true) = 'true'::text) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid))) WITH CHECK (((current_setting('app.is_superadmin'::text, true) = 'true'::text) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid)));
+
+
+--
+-- Name: audit_log_ids tenant_isolation; Type: POLICY; Schema: public; Owner: praxiszeit
+--
+
+CREATE POLICY tenant_isolation ON public.audit_log_ids USING (((current_setting('app.is_superadmin'::text, true) = 'true'::text) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid)));
 
 
 --
@@ -3458,6 +3547,14 @@ ALTER TABLE public.year_carryovers ENABLE ROW LEVEL SECURITY;
 --
 
 GRANT USAGE ON SCHEMA public TO praxiszeit_app;
+
+
+--
+-- Name: FUNCTION pz_audit_claim_id(p_id uuid, p_tenant uuid); Type: ACL; Schema: public; Owner: praxiszeit
+--
+
+REVOKE ALL ON FUNCTION public.pz_audit_claim_id(p_id uuid, p_tenant uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.pz_audit_claim_id(p_id uuid, p_tenant uuid) TO praxiszeit_app;
 
 
 --
@@ -3738,5 +3835,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE praxiszeit IN SCHEMA public GRANT SELECT,INSER
 -- PostgreSQL database dump complete
 --
 
-\unrestrict NtlyCEezhhP7J9v87eOKdCgshiLY97mlDoPmjeD3foFZWJsj5kGWkdA3XK3K2ON
+\unrestrict SgZtr7I2mhqxWXjZwJKHxRDi9JP12VoFnIvsQbl1iNNzoGiLhmRtA1h6QZcb58k
 

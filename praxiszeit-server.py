@@ -3497,7 +3497,8 @@ _DUMP_PG_CATALOG_CALL_RE = re.compile(r"\bPG_CATALOG\s*\.\s*[A-Z_][A-Z0-9_$]*\s*
 # (Migration 076: pz_audit_guard/pz_audit_head_guard lesen pg_class/pg_roles,
 # fragen pg_has_role, Suchpfad 'public', 'pg_temp'). Jeder andere pg_*-Name im
 # Rumpf - Katalog, Admin- oder Dateifunktion - wird abgelehnt.
-_DUMP_BODY_PG_NAMES_OK = {"PG_CATALOG", "PG_CLASS", "PG_ROLES", "PG_HAS_ROLE", "PG_TEMP"}
+_DUMP_BODY_PG_NAMES_OK = {"PG_CATALOG", "PG_CLASS", "PG_ROLES", "PG_HAS_ROLE", "PG_TEMP",
+                          "PG_TRIGGER_DEPTH"}
 _DUMP_BODY_PG_NAME_RE = re.compile(r"\bPG_[A-Z0-9_]+\b")
 # Runde 3: Anweisungen, die im Rumpf selbst wieder Code anlegen oder
 # ausfuehren - deren innere Literale liest diese Pruefung nicht mehr.

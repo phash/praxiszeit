@@ -24,8 +24,10 @@
   Grenze fuer Altbestand ohne Pruefsumme (``audit_legacy_cutoff``) haelt diese
   Migration je Mandant fest. Beide Zeilen kann die App-Rolle nicht schreiben.
   Jede geloeschte Zeilen-id landet in ``audit_log_tombstones`` (nur
-  Eigentuemerin) und darf nie wieder eingefuegt werden; neue Zeilen der
-  App-Rolle muessen einen gegenwaertigen ``created_at`` tragen.
+  Eigentuemerin) und darf nie wieder eingefuegt werden — erzwungen ueber den
+  Primaerschluessel von ``audit_log_ids`` (jede je eingefuegte Zeilen-id, nur
+  Eigentuemerin, nie geloescht); neue Zeilen der App-Rolle muessen einen
+  gegenwaertigen ``created_at`` tragen.
 * A2-3: die Rohstempel (``raw_start_time``/``raw_end_time``), das Ende der
   Anwesenheit und die nicht angerechneten Minuten stehen je Zeile vorher/nachher.
 * A2-8: ``changed_by`` wird nullable mit ``ON DELETE SET NULL`` — die
@@ -76,6 +78,10 @@ BEGIN
         IF TG_OP = 'DELETE' THEN
             RETURN OLD;
         END IF;
+        IF TG_OP = 'INSERT' THEN
+            -- auch Zeilen der Eigentuemerin bekommen ihre id fest vergeben
+            PERFORM pz_audit_claim_id(NEW.id, NEW.tenant_id);
+        END IF;
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
@@ -86,6 +92,16 @@ BEGIN
         -- Zuruecksetzen erlaubt, oder eine nach Art. 17 entfernte Zeile.
         IF pz_audit_tombstoned(NEW.id) THEN
             RAISE EXCEPTION 'time_entry_audit_logs: geloeschte Zeile % darf nicht zurueckkehren', NEW.id
+                USING ERRCODE = '42501';
+        END IF;
+        -- Review-Runde 5: der Grabstein allein ist ein Blick auf den Stand bei
+        -- Beginn dieser Anweisung - ein paralleles pz_audit_delete derselben id
+        -- (noch nicht festgeschrieben) sieht er nicht, das Einfuegen wartete nur
+        -- am Primaerschluessel und gelaenge nach dessen Commit. Die id-Vergabe
+        -- haengt am Primaerschluessel von audit_log_ids: eine schon (auch
+        -- parallel) vergebene id scheitert hier, ohne Fenster.
+        IF NOT pz_audit_claim_id(NEW.id, NEW.tenant_id) THEN
+            RAISE EXCEPTION 'time_entry_audit_logs: Zeilen-id % war schon vergeben, eine geloeschte Zeile darf nicht zurueckkehren', NEW.id
                 USING ERRCODE = '42501';
         END IF;
         -- created_at steht in der Pruefsumme: eine kopierte alte Zeile traegt
@@ -149,6 +165,51 @@ USING (
 );
 """
 
+# Jede je eingefuegte Zeilen-id (Review-Runde 5): der Primaerschluessel
+# erzwingt "eine id kehrt nie zurueck" auch gegen ein paralleles
+# pz_audit_delete (der Grabstein-Blick in pz_audit_guard sieht dessen noch
+# offenen Grabstein nicht). Nie geloescht (ausser mit dem Mandanten), nur die
+# Eigentuemerin hat Rechte, RLS ohne FORCE wie bei den Grabsteinen.
+AUDIT_IDS_TABLE = """
+CREATE TABLE audit_log_ids (
+    id uuid PRIMARY KEY,
+    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE
+);
+ALTER TABLE audit_log_ids ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON audit_log_ids
+USING (
+    current_setting('app.is_superadmin', true) = 'true'
+    OR tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
+);
+"""
+
+# Vergibt eine id (true) oder meldet sie als schon vergeben (false). ON
+# CONFLICT wartet auf eine parallele, noch offene Vergabe derselben id und
+# meldet nach deren Commit false. Nur aus pz_audit_guard heraus (Trigger-
+# Tiefe > 0) - direkt aufgerufen koennte die App-Rolle sonst fremde ids
+# vorab belegen.
+CLAIM_ID_FUNCTION = """
+CREATE OR REPLACE FUNCTION pz_audit_claim_id(p_id uuid, p_tenant uuid) RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+    IF pg_trigger_depth() < 1 THEN
+        RAISE EXCEPTION 'pz_audit_claim_id: nur ueber den Protokoll-Trigger'
+            USING ERRCODE = '42501';
+    END IF;
+    INSERT INTO audit_log_ids (id, tenant_id) VALUES (p_id, p_tenant)
+        ON CONFLICT (id) DO NOTHING;
+    RETURN FOUND;
+END $$;
+"""
+
+AUDIT_IDS_BACKFILL_SQL = """
+INSERT INTO audit_log_ids (id, tenant_id)
+SELECT id, tenant_id FROM time_entry_audit_logs
+UNION
+SELECT id, tenant_id FROM audit_log_tombstones
+ON CONFLICT (id) DO NOTHING
+"""
+
 TOMBSTONED_FUNCTION = """
 CREATE OR REPLACE FUNCTION pz_audit_tombstoned(p_id uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -159,23 +220,25 @@ $$;
 # Rechte an den Grabsteinen jedem Konto ausser der Eigentuemerin entziehen —
 # auch die Default-Privilegien aus init-db-user.sql (ALTER DEFAULT PRIVILEGES)
 # haben der App-Rolle beim Anlegen SELECT/INSERT/UPDATE/DELETE gegeben.
-TOMBSTONE_REVOKE_BLOCK = """
+_OWNER_ONLY_REVOKE = """
 DO $$
 DECLARE
     r record;
 BEGIN
-    EXECUTE 'REVOKE ALL ON audit_log_tombstones FROM PUBLIC';
+    EXECUTE 'REVOKE ALL ON {t} FROM PUBLIC';
     FOR r IN
         SELECT DISTINCT a.grantee
           FROM pg_class c, aclexplode(c.relacl) a
-         WHERE c.oid = 'public.audit_log_tombstones'::regclass
+         WHERE c.oid = 'public.{t}'::regclass
            AND a.grantee <> c.relowner
            AND a.grantee <> 0
     LOOP
-        EXECUTE format('REVOKE ALL ON audit_log_tombstones FROM %s', r.grantee::regrole);
+        EXECUTE format('REVOKE ALL ON {t} FROM %s', r.grantee::regrole);
     END LOOP;
 END $$;
 """
+TOMBSTONE_REVOKE_BLOCK = _OWNER_ONLY_REVOKE.replace("{t}", "audit_log_tombstones")
+AUDIT_IDS_REVOKE_BLOCK = _OWNER_ONLY_REVOKE.replace("{t}", "audit_log_ids")
 
 # Gesiegeltes Kettenende (``system_settings.audit_chain_head``, Wert
 # ``seq:hash:siegel``) — hier nur die Position, das Siegel prueft die App
@@ -495,6 +558,7 @@ _AUDIT_FUNCTIONS = (
     "pz_audit_tenant_ok(uuid)",
     "pz_audit_head_seq(uuid)",
     "pz_audit_tombstoned(uuid)",
+    "pz_audit_claim_id(uuid, uuid)",
 )
 EXECUTE_BLOCK = """
 DO $$
@@ -593,6 +657,10 @@ def upgrade() -> None:
         conn.execute(sa.text(TOMBSTONE_TABLE))
         conn.execute(sa.text(TOMBSTONE_REVOKE_BLOCK))
         conn.execute(sa.text(TOMBSTONED_FUNCTION))
+        conn.execute(sa.text(AUDIT_IDS_TABLE))
+        conn.execute(sa.text(AUDIT_IDS_REVOKE_BLOCK))
+        conn.execute(sa.text(CLAIM_ID_FUNCTION))
+        conn.execute(sa.text(AUDIT_IDS_BACKFILL_SQL))
         conn.execute(sa.text(GUARD_FUNCTION))
         conn.execute(sa.text(
             "CREATE TRIGGER pz_audit_guard_write BEFORE INSERT OR UPDATE OR DELETE "
@@ -631,6 +699,8 @@ def downgrade() -> None:
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_head_guard()"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_head_seq(uuid)"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_tombstoned(uuid)"))
+        conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_claim_id(uuid, uuid)"))
+        conn.execute(sa.text("DROP TABLE IF EXISTS audit_log_ids"))
         conn.execute(sa.text("DROP TABLE IF EXISTS audit_log_tombstones"))
         # Kettenende gehoert zu den Spalten, die hier wegfallen
         conn.execute(sa.text("SET LOCAL app.is_superadmin = 'true'"))
