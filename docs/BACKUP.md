@@ -25,6 +25,66 @@ Varianten (Native **und** Docker), ohne Kommandozeile:
 > die **Docker**-Variante. Der **manuelle** Trigger + die Liste funktionieren auf
 > beiden.
 
+> **Speicherort (Audit 2026-11-07):** Netzwerkpfade (`\\Server\Freigabe`),
+> Netzlaufwerke, für alle Konten lesbare Ordner (z. B. `C:\Users\Public`),
+> Systemordner und das Stammverzeichnis eines Laufwerks lehnt die Oberfläche ab.
+> Unter Windows erhält der gewählte Ordner beim Speichern die Rechte
+> „nur SYSTEM und Administratoren“; lässt sich das nicht einrichten, wird der
+> Ordner nicht übernommen. Eine Kopie außer Haus gehört nicht auf eine
+> Netzwerkfreigabe des Dienstes, sondern verschlüsselt auf ein externes Medium
+> (siehe [Sicherheit der Sicherungen](#sicherheit-der-sicherungen)).
+
+## Sicherheit der Sicherungen
+
+Eine Sicherung ist die **vollständige Datenbank im Klartext** (gzip ist keine
+Verschlüsselung): alle Mitarbeitenden, Arbeitszeiten, Krankheits- und andere
+Abwesenheitstage (Gesundheitsdaten nach Art. 9 DSGVO), Passwort-Hashes und die
+verschlüsselten 2FA-Geheimnisse. PraxisZeit verschlüsselt die Dumps selbst
+**nicht** — das ist ein bewusst dokumentiertes Restrisiko des Vor-Ort-Betriebs.
+Deshalb:
+
+- **Auf dem Server** liegen die Dumps nur für den Dienst lesbar (Linux/macOS
+  `0600`, Windows nur SYSTEM und Administratoren, die Docker-Skripte
+  `backup.sh`/`backup-db.sh` ebenfalls `0600`).
+- **Kopie außer Haus nur verschlüsselt**, z. B.
+  - Windows: 7-Zip-Archiv mit *AES-256* und *Dateinamen verschlüsseln*, oder ein
+    mit BitLocker To Go verschlüsselter USB-Datenträger;
+  - Linux/macOS: `gpg --symmetric --cipher-algo AES256 praxiszeit_<ts>.sql.gz`
+    oder `age -p -o praxiszeit_<ts>.sql.gz.age praxiszeit_<ts>.sql.gz`;
+  - ein verschlüsseltes Laufwerk (LUKS, FileVault, BitLocker).
+  Das Passwort getrennt vom Datenträger aufbewahren (Passwort-Safe, Tresor).
+- **Heruntergeladene Sicherungen** (Liste → Herunterladen) landen im
+  Download-Ordner des Admin-PCs. Dort nach dem Verschlüsseln/Wegspeichern
+  löschen — der PC ist meist nicht verschlüsselt und wird von mehreren
+  Personen benutzt.
+- **Nur eigene Sicherungen einspielen.** Eine Datei aus fremder Quelle
+  („Ihre Sicherung vom alten PC“, Mail eines „Technikers“) kann Befehle
+  enthalten. Die Wiederherstellung (`restore`, `restore-backup.bat`,
+  `restore.sh`) lehnt psql-Befehle, die `pg_dump` nie schreibt, ab und
+  schaltet psql in den eingeschränkten Modus — eine vertrauenswürdige Quelle
+  ersetzt das nicht.
+
+### Den Schlüssel `SECRET_KEY` mitsichern (einmalig, getrennt)
+
+Die Datenbanksicherung allein reicht für einen **neuen Rechner** nicht: mit dem
+Schlüssel `SECRET_KEY` sind die 2FA-Geheimnisse verschlüsselt und die
+Prüfsummen des Änderungsprotokolls (§ 16 ArbZG, „Integrität prüfen“) gebildet.
+Ohne den alten Schlüssel muss jede Person 2FA neu einrichten, und die
+Integritätsprüfung meldet alle Protokollzeilen als verändert.
+
+| Variante | Wo liegt der Schlüssel? |
+|----------|--------------------------|
+| Native (Linux/macOS/Windows) | `config/.secret-key` (bzw. `[security] secret_key` in `config/praxiszeit.conf`, falls dort gesetzt) |
+| Docker | `SECRET_KEY` in der `.env` |
+
+Den Schlüssel **einmal** (und nach jeder Änderung) zusammen mit
+`config/praxiszeit.conf` bzw. `.env` **verschlüsselt und getrennt** von den
+Dumps aufbewahren — etwa im Passwort-Safe der Praxis. Er gehört bewusst **nicht**
+in jede Sicherungsdatei: wer Dump und Schlüssel zusammen hat, könnte sich mit
+dem Schlüssel zusätzlich gültige Anmelde-Token ausstellen. Bei einer
+Wiederherstellung auf einem neuen Rechner die alte `config/.secret-key` (bzw.
+den alten `SECRET_KEY` in der `.env`) **vor dem ersten Start** zurücklegen.
+
 ## Automatisches Backup — pro Variante
 
 | Variante | Automatisch? | Wie / wann | Ablage |
@@ -146,7 +206,7 @@ beim Start des Dienstes). Danach die Ausgabe der Migrationen in
 > PostgreSQL selbst starten, und `pg_ctl` verweigert das als root. Die
 > Backup-Datei muss für das Dienstkonto lesbar sein — eine Datei von außerhalb
 > zuerst nach `data/backups/` kopieren und dem Dienstkonto geben
-> (`chown praxiszeit:praxiszeit …`, macOS `_praxiszeit:staff`).
+> (`chown praxiszeit:praxiszeit …`, macOS `_praxiszeit:_praxiszeit`).
 >
 > Bis 1.19 stand hier ein `gunzip -c … | psql` bei **laufendem** Dienst. Das
 > ließ den Dienst gegen den Stand des Backups weiterarbeiten (nach dem Update auf
@@ -165,8 +225,18 @@ restore-backup.bat data\backups\<datei>.sql.gz
 Zwischendatenbank ein (Abbruch beim ersten Fehler) und ersetzt die bisherige
 Datenbank erst danach. Scheitert ein Schritt — auch bei einem Backup einer
 **neueren** Version —, bleibt die bisherige Datenbank unverändert, der Dienst
-bleibt aus, und das Script endet mit einer FEHLER-Meldung statt „Restore abgeschlossen!“. Liegt PraxisZeit nicht unter `C:\praxiszeit`,
-vorher `set PRAXISZEIT_INSTALL_DIR=<ordner>` setzen.
+bleibt aus, und das Script endet mit einer FEHLER-Meldung statt „Restore abgeschlossen!“. Es arbeitet im
+Ordner, in dem es liegt (ein anderer Ordner über
+`set PRAXISZEIT_INSTALL_DIR=<ordner>`), auch mit Leerzeichen im Pfad. Die
+entpackte Datei liegt während des Vorgangs in `data\` (nur SYSTEM und
+Administratoren) und wird auch nach einem abgebrochenen Lauf beim nächsten
+Aufruf entfernt.
+
+> **Deinstallation (Windows):** `uninstall.bat` legt eine geprüfte Sicherung auf
+> den Desktop (Abbruch, wenn `pg_dump` scheitert oder die Schlusszeile fehlt —
+> dann wird nichts gelöscht) und verschiebt die automatischen Sicherungen aus
+> `data\backups` nach `Desktop\PraxisZeit-Sicherungen-<Datum>`, bevor der
+> Installationsordner entfernt wird.
 
 ### Docker
 
@@ -204,7 +274,8 @@ docker compose start backend
 
 - [ ] Automatisches Backup aktiv (Native: ja ab Installation; **Docker: in der Admin-Oberfläche *Datensicherung* aktivieren** oder Host-Cron)
 - [ ] Aufbewahrung deckt **mind. 2 Jahre** ab (`retention_days` erhöhen oder Jahresarchive extern)
-- [ ] Backup-Ziel liegt **nicht nur** auf demselben Server (externe Kopie)
+- [ ] Backup-Ziel liegt **nicht nur** auf demselben Server (externe Kopie, **verschlüsselt**)
+- [ ] `SECRET_KEY` (`config/.secret-key` bzw. `.env`) einmal getrennt und verschlüsselt aufbewahrt
 - [ ] Restore regelmäßig testen
 - [ ] Vor jedem **Update** zusätzlich ein Backup ziehen → [UPDATE.md](UPDATE.md)
 

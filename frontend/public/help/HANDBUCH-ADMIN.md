@@ -1224,7 +1224,11 @@ Unter **Admin → Datensicherung** (ab Version 1.9.0) verwalten Sie Backups ohne
 
 **Wo:** Docker im Volume `praxiszeit_backups`, native im `data/backups/`-Verzeichnis.
 
+**Speicherort:** Netzwerkpfade (`\\Server\Freigabe`), Netzlaufwerke, für alle Konten lesbare Ordner (z. B. `C:\Users\Public`), Systemordner und Laufwerkswurzeln werden abgelehnt. Unter Windows bekommt der gewählte Ordner die Rechte „nur SYSTEM und Administratoren“.
+
 **§16 ArbZG:** Zeitaufzeichnungen mindestens **2 Jahre** aufbewahren — Aufbewahrungsdauer entsprechend setzen, eine Kopie **außerhalb** des Servers vorhalten und vor jedem Update zusätzlich sichern.
+
+**Sicherungen sind nicht verschlüsselt:** Sie enthalten die ganze Datenbank einschließlich Krankheitstagen. Eine Kopie außer Haus nur verschlüsselt ablegen (z. B. 7-Zip mit AES-256, BitLocker-USB-Stick), heruntergeladene Dateien danach aus dem Download-Ordner löschen und nur eigene Sicherungen einspielen. Für einen neuen Rechner zusätzlich den Schlüssel `SECRET_KEY` (`config/.secret-key` bzw. `.env`) einmal getrennt und verschlüsselt aufbewahren — ohne ihn müssen alle die Zwei-Faktor-Anmeldung neu einrichten.
 
 > **Native:** Die *geplante* Sicherung läuft weiterhin über den OS-Timer (systemd/launchd/Task); der *manuelle* Trigger und die Liste funktionieren überall.
 

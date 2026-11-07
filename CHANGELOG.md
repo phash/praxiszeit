@@ -8,6 +8,18 @@
 - **Fremder PostgreSQL wird erkannt.** Belegt ein anderer Server den Port, beendet sich PraxisZeit mit der Meldung „Port … ist von einem anderen PostgreSQL belegt. In config\praxiszeit.conf unter [database] einen freien Port eintragen …“, bevor etwas angelegt wird. Der Windows-Dienst startet dann nicht endlos neu (`AppExit 78 Exit`; der Update-Wizard setzt es auch für bestehende Installationen).
 - `restore-backup.bat`, die Sicherung in `uninstall.bat` und `setup.bat` verwenden den konfigurierten Port; neue Befehle `praxiszeit-server.py print-db-port` und `sync-db-port`.
 
+### 🔒 Sicherheit: Installation, Sicherung, Lieferkette (Audit 2026-11-07, #545/#546)
+
+- **Windows-Installationsordner:** Eine Neuinstallation ist nur noch in einen neuen oder leeren Ordner möglich (gesperrt mit Hinweis). Vor dem ersten Start von `python.exe` setzt `secure-install.ps1` Eigentümer und Rechte und gleicht `bin\` und `app\` mit dem Paketinhalt ab — fremde Dateien (z. B. eine vorab abgelegte `.pth`-Datei) sperren Setup und Update. Das Update spiegelt `bin\python` und `app`.
+- **Keine Downloads beim Kunden mehr:** `setup.bat` und der Update-Assistent installieren nichts mehr per pip; die Abhängigkeiten kommen mit geprüften Prüfsummen im Paket (`requirements.lock`, `--require-hashes`). Alle Downloads des Release-Builds sind per SHA256 gepinnt.
+- **Wiederherstellung:** Sicherungen mit psql-Befehlen, die `pg_dump` nie schreibt (z. B. `\!`), werden abgelehnt; psql läuft beim Einspielen im eingeschränkten Modus (`restore`, `restore-backup.bat`, `restore.sh`). `restore-backup.bat` arbeitet im eigenen Ordner (auch mit Leerzeichen im Pfad) und entpackt nach `data\` statt `%TEMP%`.
+- **Deinstallation (Windows):** gelöscht wird erst nach einer geprüften Sicherung (Exit-Code + Schlusszeile); die automatischen Sicherungen aus `data\backups` wandern auf den Desktop.
+- **Backup-Ort:** Netzwerkpfade, Netzlaufwerke, öffentliche Ordner und Laufwerkswurzeln werden abgelehnt; unter Windows bekommt der Ordner die Rechte „nur SYSTEM und Administratoren“. Die Sicherung aus der Weboberfläche läuft nativ mit einer nur lesenden Datenbankrolle statt mit dem Superuser.
+- **Datenbank unter Windows** nur noch mit SCRAM-Anmeldung; ein hängendes `pg_ctl status` beendet den Dienst nicht mehr endgültig (Exit 78 nur bei nachgewiesenem fremdem Server). Weitere `port =`-Zeilen in `postgresql.conf`/`postgresql.auto.conf` werden auskommentiert.
+- **Docker:** Sicherungsskripte schreiben `0600`; Ports nur auf IPv4 veröffentlicht; Backend-Basis-Image per Digest gepinnt.
+- **macOS:** eigene Dienstgruppe `_praxiszeit` statt `staff`, launchd mit `umask 077`. **Linux-Update** (PG-Major): Passwort nicht mehr in der Prozessliste.
+- **Doku:** `BACKUP.md` beschreibt, wie Sicherungen verschlüsselt außer Haus gelagert werden und dass `SECRET_KEY` einmal getrennt gesichert werden muss.
+
 ### ⚠️ Hinweis
 
 - Ein **Reparieren** über den GUI-Installer schreibt `praxiszeit.conf` neu und setzt den Datenbank-Port damit auf den Wert des Feldes zurück — den Port dort erneut eintragen.
