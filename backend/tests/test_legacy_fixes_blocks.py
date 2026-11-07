@@ -175,7 +175,7 @@ def test_p28_waiver_request_snapshots_uncredited(_db_session, employee_user, emp
     monkeypatch.setattr(te, "_today_local", lambda: MON)
     monkeypatch.setattr(te, "_now_local", lambda: dt.datetime(2026, 6, 1, 19, 0))
     resp = employee_client.put(f"/api/time-entries/{e.id}",
-                               json={"break_minutes": 0, "break_waiver_reason": "Notfall"})
+                               json={"break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung"})
     assert resp.status_code == 202, resp.text
     assert _db_session.query(ChangeRequest).one().original_uncredited_minutes == 150
 

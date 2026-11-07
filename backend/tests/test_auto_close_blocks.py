@@ -230,7 +230,7 @@ def test_waiver_cr_without_end_keeps_flag(_db_session, employee_user, admin_clie
     # Nur Notiz + Ausnahmegrund; §4 (9:15 h ohne Pause) verlangt die Ausnahme,
     # der Mandant die Genehmigung → 202 + Antrag.
     resp = admin_client.put(f"/api/time-entries/{e.id}", json={
-        "note": "nachgetragen", "break_waiver_reason": "Notfall"})
+        "note": "nachgetragen", "break_waiver_reason": "Notfall ohne Vertretung"})
     assert resp.status_code == 202, resp.text
     cr = _db_session.query(ChangeRequest).filter(ChangeRequest.time_entry_id == e.id).one()
     # Der Antrag behauptet kein Ende 23:59, das niemand eingetragen hat.

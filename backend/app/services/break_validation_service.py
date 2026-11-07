@@ -25,6 +25,24 @@ BREAK_EXCEPTION_DISABLED_HINT = (
 )
 
 
+# #540 (A1-05): eine §4-Ausnahme braucht eine nachvollziehbare Begründung —
+# ein einzelnes Zeichen hob die harte Sperre (#499) bis dahin auf. Mindestlänge
+# nach ``strip()``; Frontend-Zwilling ``utils/breakWaiverRetry.ts``
+# (``BREAK_WAIVER_MIN_LENGTH`` / ``BREAK_WAIVER_TOO_SHORT_HINT``, wortgleich).
+BREAK_WAIVER_MIN_LENGTH = 10
+
+BREAK_WAIVER_TOO_SHORT_HINT = (
+    f"Die Begründung ist zu kurz – bitte in mindestens {BREAK_WAIVER_MIN_LENGTH} "
+    "Zeichen angeben, warum die Pflicht-Pause nicht möglich war."
+)
+
+
+def waiver_reason_too_short(waiver_reason: Optional[str]) -> bool:
+    """Begründung vorhanden, aber kürzer als ``BREAK_WAIVER_MIN_LENGTH``."""
+    text = (waiver_reason or "").strip()
+    return bool(text) and len(text) < BREAK_WAIVER_MIN_LENGTH
+
+
 def is_break_exception_allowed(db: Session, tenant_id) -> bool:
     """#499: darf ein §4-Verstoß per dokumentierter Begründung erfasst werden?"""
     return settings_service.get_bool_setting(
@@ -38,8 +56,8 @@ def break_waiver_rejection(
     """#499: entscheidet einheitlich für ALLE Schreibpfade, ob ein §4-Verstoß
     (``break_error``) per Ausnahme durchgelassen wird.
 
-    Liefert ``None``, wenn die Ausnahme greift (Begründung vorhanden UND der
-    Mandant erlaubt Ausnahmen) — sonst den Text für die 400-Antwort. Ist die
+    Liefert ``None``, wenn die Ausnahme greift (Begründung mit mindestens
+    ``BREAK_WAIVER_MIN_LENGTH`` Zeichen UND der Mandant erlaubt Ausnahmen) — sonst den Text für die 400-Antwort. Ist die
     Ausnahme abgeschaltet, nennt der Text das ausdrücklich, damit die
     Oberfläche nicht erneut nach einer Begründung fragt.
     """
@@ -47,6 +65,9 @@ def break_waiver_rejection(
         return f"{break_error} {BREAK_EXCEPTION_DISABLED_HINT}"
     if not (waiver_reason or "").strip():
         return break_error
+    # #540 (A1-05): Mindestlänge an ALLEN Schreibpfaden (eine Stelle).
+    if waiver_reason_too_short(waiver_reason):
+        return f"{break_error} {BREAK_WAIVER_TOO_SHORT_HINT}"
     return None
 
 

@@ -93,8 +93,8 @@ def test_unchanged_edit_with_a_reason_still_documents_the_exception(
     Ausnahme wird wie bisher dokumentiert (Warnung ``BREAK_WAIVER``, Protokoll)."""
     e = _recognized(_db_session, employee_user, end=time(16, 30))
     r = admin_client.put(f"{route}/{e.id}", json={"note": "geprüft",
-                                                  "break_waiver_reason": "Notfall"})
+                                                  "break_waiver_reason": "Notfall ohne Vertretung"})
     assert r.status_code == 200, r.text
     assert any(w.startswith("BREAK_WAIVER") for w in r.json()["warnings"]), r.json()["warnings"]
     _db_session.refresh(e)
-    assert e.break_waiver_reason == "Notfall"
+    assert e.break_waiver_reason == "Notfall ohne Vertretung"

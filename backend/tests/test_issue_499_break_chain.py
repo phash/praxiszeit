@@ -37,6 +37,9 @@ from app.services.break_validation_service import validate_daily_break
 from app.services.timezone_service import today_local
 from tests.conftest import DEFAULT_TENANT_ID, engine, TestingSessionLocal
 
+# #540 (A1-09): Einträge von heute mit festen Uhrzeiten — Uhr auf 23:58.
+pytestmark = pytest.mark.usefixtures("late_now")
+
 
 def _create_test_app() -> FastAPI:
     from app.routers import (
@@ -330,10 +333,10 @@ class TestBreakExceptionSetting:
     def test_default_an_ausnahme_wirkt(self, db, employee, client_as):
         """Ohne Zeile in system_settings bleibt das bisherige Verhalten (Ausnahme erlaubt)."""
         resp = client_as(employee).post("/api/time-entries/", json={
-            "date": today_local().isoformat(), **_OVER_6H, "break_waiver_reason": "Notfall",
+            "date": today_local().isoformat(), **_OVER_6H, "break_waiver_reason": "Notfall ohne Vertretung",
         })
         assert resp.status_code == 201, resp.text
-        assert resp.json()["break_waiver_reason"] == "Notfall"
+        assert resp.json()["break_waiver_reason"] == "Notfall ohne Vertretung"
 
 
 class TestBreakExceptionDisabled:
@@ -342,7 +345,7 @@ class TestBreakExceptionDisabled:
     def test_ma_anlegen_mit_begruendung_400(self, db, employee, client_as):
         _disable_waiver(db)
         resp = client_as(employee).post("/api/time-entries/", json={
-            "date": today_local().isoformat(), **_OVER_6H, "break_waiver_reason": "Notfall",
+            "date": today_local().isoformat(), **_OVER_6H, "break_waiver_reason": "Notfall ohne Vertretung",
         })
         assert resp.status_code == 400, resp.text
         assert "abgeschaltet" in resp.json()["detail"]
@@ -352,7 +355,7 @@ class TestBreakExceptionDisabled:
         _disable_waiver(db)
         _setting(db, "break_exception_requires_approval", "true")
         resp = client_as(employee).post("/api/time-entries/", json={
-            "date": today_local().isoformat(), **_OVER_6H, "break_waiver_reason": "Notfall",
+            "date": today_local().isoformat(), **_OVER_6H, "break_waiver_reason": "Notfall ohne Vertretung",
         })
         assert resp.status_code == 400, resp.text
         assert db.query(ChangeRequest).count() == 0
@@ -369,7 +372,7 @@ class TestBreakExceptionDisabled:
         _disable_waiver(db)
         e = _entry(db, employee, today_local(), time(8, 0), time(15, 30), brk=30)
         resp = client_as(employee).put(f"/api/time-entries/{e.id}", json={
-            "break_minutes": 0, "break_waiver_reason": "Notfall",
+            "break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung",
         })
         assert resp.status_code == 400, resp.text
         assert "abgeschaltet" in resp.json()["detail"]
@@ -381,7 +384,7 @@ class TestBreakExceptionDisabled:
         today = _freeze_now(monkeypatch, 15, 30)
         open_entry = _entry(db, employee, today, time(8, 0), None)
         resp = client_as(employee).post("/api/time-entries/clock-out", json={
-            "break_minutes": 0, "break_waiver_reason": "Notfall",
+            "break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung",
         })
         assert resp.status_code == 400, resp.text
         assert "abgeschaltet" in resp.json()["detail"]
@@ -392,7 +395,7 @@ class TestBreakExceptionDisabled:
         _disable_waiver(db)
         d = today_local() - timedelta(days=1)
         resp = client_as(admin).post(f"/api/admin/users/{employee.id}/time-entries", json={
-            "date": d.isoformat(), **_OVER_6H, "break_waiver_reason": "Notfall",
+            "date": d.isoformat(), **_OVER_6H, "break_waiver_reason": "Notfall ohne Vertretung",
         })
         assert resp.status_code == 400, resp.text
         assert "abgeschaltet" in resp.json()["detail"]
@@ -402,7 +405,7 @@ class TestBreakExceptionDisabled:
         d = today_local() - timedelta(days=1)
         e = _entry(db, employee, d, time(8, 0), time(15, 30), brk=30)
         resp = client_as(admin).put(f"/api/admin/time-entries/{e.id}", json={
-            "break_minutes": 0, "break_waiver_reason": "Notfall",
+            "break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung",
         })
         assert resp.status_code == 400, resp.text
         assert "abgeschaltet" in resp.json()["detail"]
@@ -416,7 +419,7 @@ class TestBreakExceptionDisabled:
             "request_type": "create", "proposed_date": d.isoformat(),
             "proposed_start_time": "08:00", "proposed_end_time": "15:46",
             "proposed_break_minutes": 0, "reason": "Korrektur",
-            "break_waiver_reason": "Notfall",
+            "break_waiver_reason": "Notfall ohne Vertretung",
         })
         assert resp.status_code == 400, resp.text
         assert "abgeschaltet" in resp.json()["detail"]
@@ -433,7 +436,7 @@ class TestBreakExceptionDisabled:
             request_type=ChangeRequestType.CREATE, entry_kind="time_entry",
             status=ChangeRequestStatus.PENDING, proposed_date=d,
             proposed_start_time=time(8, 0), proposed_end_time=time(15, 46),
-            proposed_break_minutes=0, reason="Notfall", break_waiver_reason="Notfall",
+            proposed_break_minutes=0, reason="Notfall ohne Vertretung", break_waiver_reason="Notfall ohne Vertretung",
         )
         db.add(cr)
         db.commit()
@@ -477,18 +480,14 @@ class TestSystemInfoExposesSwitch:
 # Review-Nachzug zu #499
 # ---------------------------------------------------------------------------
 
-class TestClockOutIgnoresApprovalRequirement:
-    """Review F1: Das Ausstempeln kennt die Genehmigungspflicht bewusst nicht.
+class TestClockOutHonoursApprovalRequirement:
+    """#540 (A1-06, ersetzt Review F1 zu #499): Auch beim Ausstempeln gilt die
+    Genehmigungspflicht. Der Eintrag wird geschlossen (§16 ArbZG: die Zeit ist
+    geleistet, nie eingestempelt hängen lassen) — die Ausnahme ist aber nur
+    BEANTRAGT: ein offener UPDATE-Antrag mit den unveränderten Zeiten und der
+    Begründung; am Eintrag steht sie erst nach der Genehmigung."""
 
-    Der Eintrag MUSS geschlossen werden (§16 ArbZG: die Zeit ist geleistet);
-    eine zulässige Begründung wird sofort wirksam und steht im
-    Änderungsprotokoll (Quelle ``break_waiver``). Ein Antrag entsteht nicht —
-    die Genehmigungspflicht gilt für manuelle Erfassung, Bearbeitung und
-    Anträge. Der Test hält das fest, damit eine Änderung bewusst geschieht und
-    Handbuch/Einstellungen-Karte mitgezogen werden.
-    """
-
-    def test_begruendung_wirkt_sofort_trotz_genehmigungspflicht(
+    def test_ausnahme_wird_beantragt_eintrag_geschlossen(
         self, db, employee, client_as, monkeypatch,
     ):
         from app.models import TimeEntryAuditLog
@@ -498,19 +497,35 @@ class TestClockOutIgnoresApprovalRequirement:
         open_entry = _open_after(db, employee, today, time(8, 49), time(13, 59), time(13, 59))
 
         resp = client_as(employee).post("/api/time-entries/clock-out", json={
-            "break_minutes": 0, "break_waiver_reason": "Notfall",
+            "break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung",
         })
 
         assert resp.status_code == 200, resp.text
+        assert any(w.startswith("BREAK_WAIVER_PENDING:") for w in resp.json()["warnings"])
         db.expire_all()
         e = db.get(TimeEntry, open_entry.id)
         assert e.end_time == time(18, 0)
-        assert e.break_waiver_reason == "Notfall"
-        assert db.query(ChangeRequest).count() == 0
+        assert e.break_waiver_reason is None
+        cr = db.query(ChangeRequest).one()
+        assert (cr.request_type.value, cr.status.value, cr.time_entry_id) == ("update", "pending", e.id)
+        assert cr.break_waiver_reason == "Notfall ohne Vertretung"
+        assert (cr.proposed_start_time, cr.proposed_end_time, cr.proposed_break_minutes) == (
+            e.start_time, e.end_time, 0)
         assert db.query(TimeEntryAuditLog).filter(
             TimeEntryAuditLog.time_entry_id == open_entry.id,
             TimeEntryAuditLog.source == "break_waiver",
-        ).count() == 1
+        ).count() == 0
+
+    def test_ohne_genehmigungspflicht_wirkt_sofort(self, db, employee, client_as, monkeypatch):
+        today = _freeze_now(monkeypatch, 18, 0)
+        open_entry = _open_after(db, employee, today, time(8, 49), time(13, 59), time(13, 59))
+        resp = client_as(employee).post("/api/time-entries/clock-out", json={
+            "break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung",
+        })
+        assert resp.status_code == 200, resp.text
+        db.expire_all()
+        assert db.get(TimeEntry, open_entry.id).break_waiver_reason == "Notfall ohne Vertretung"
+        assert db.query(ChangeRequest).count() == 0
 
 
 class TestOwnWaiverRequestAfterSwitchOff:
@@ -529,7 +544,7 @@ class TestOwnWaiverRequestAfterSwitchOff:
             request_type=ChangeRequestType.CREATE, entry_kind="time_entry",
             status=ChangeRequestStatus.PENDING, proposed_date=d,
             proposed_start_time=time(12, 0), proposed_end_time=time(15, 0),
-            proposed_break_minutes=0, reason="Nachtrag", break_waiver_reason="Notfall",
+            proposed_break_minutes=0, reason="Nachtrag", break_waiver_reason="Notfall ohne Vertretung",
         )
         db.add(cr)
         db.commit()
@@ -597,7 +612,7 @@ class TestWaiverOnlyStoredWhenNeeded:
             "request_type": "create", "proposed_date": d.isoformat(),
             "proposed_start_time": "12:00", "proposed_end_time": "15:00",
             "proposed_break_minutes": 0, "reason": "vergessen",
-            "break_waiver_reason": "Notfall",
+            "break_waiver_reason": "Notfall ohne Vertretung",
         })
 
         assert resp.status_code == 201, resp.text
@@ -612,11 +627,11 @@ class TestWaiverOnlyStoredWhenNeeded:
             "request_type": "create", "proposed_date": d.isoformat(),
             "proposed_start_time": "12:00", "proposed_end_time": "15:00",
             "proposed_break_minutes": 0, "reason": "vergessen",
-            "break_waiver_reason": "Notfall",
+            "break_waiver_reason": "Notfall ohne Vertretung",
         })
 
         assert resp.status_code == 201, resp.text
-        assert db.query(ChangeRequest).one().break_waiver_reason == "Notfall"
+        assert db.query(ChangeRequest).one().break_waiver_reason == "Notfall ohne Vertretung"
 
     def test_genehmigung_prueft_spaeteren_tagesverstoss(self, db, employee, admin, client_as):
         """Antrag war beim Stellen §4-konform (Begründung überflüssig); bis zur
@@ -626,7 +641,7 @@ class TestWaiverOnlyStoredWhenNeeded:
             "request_type": "create", "proposed_date": d.isoformat(),
             "proposed_start_time": "12:00", "proposed_end_time": "15:00",
             "proposed_break_minutes": 0, "reason": "vergessen",
-            "break_waiver_reason": "Notfall",
+            "break_waiver_reason": "Notfall ohne Vertretung",
         })
         assert resp.status_code == 201, resp.text
         cr_id = resp.json()["id"]

@@ -14,8 +14,8 @@ from pydantic import BaseModel, computed_field
 from app.models import TimeEntry, TimeEntryAuditLog, User
 from app.schemas.validators import MinuteTime
 from app.services.arbzg_utils import is_night_work
-from app.services import presence_service, work_window_service
-from app.services.timezone_service import today_local
+from app.services import entry_guard_service, presence_service, work_window_service
+from app.services.timezone_service import hours_between, now_local, today_local
 from app.services.break_validation_service import (
     BreakBlock, break_block_for_entry, break_block_for_new, daily_break_figures,
 )
@@ -216,6 +216,42 @@ def break_shortfall_skip_reason(missing_minutes: int) -> str:
     )
 
 
+def daily_limit_skip_reason(net_minutes: int) -> str:
+    """#540 (A1-07): Grund, warum der Import einen Tag nicht übernimmt — die
+    angerechnete Tagesarbeitszeit (nach der Automatik-Pause, mit dem stehenden
+    Bestand) überschreitet die Höchstgrenze des § 3 ArbZG. Alle anderen
+    Schreibwege sperren dort hart (422); der Import übernimmt den Tag deshalb
+    nicht, statt nur zu warnen. Ohne Schlusspunkt."""
+    return (
+        f"die Tagesarbeitszeit beträgt {net_minutes // 60}:{net_minutes % 60:02d} h und "
+        f"überschreitet die Höchstgrenze von 10 h nach § 3 ArbZG. Bitte den Tag von Hand erfassen"
+    )
+
+
+def overlap_skip_reason(other: "entry_guard_service.Interval") -> str:
+    """#538 (A1-02): Grund, warum der Import eine Zeile überspringt — sie
+    überschneidet einen stehenden Eintrag oder eine frühere Zeile desselben Tages."""
+    if other.running:
+        what = f"dem laufenden Eintrag ab {entry_guard_service._hhmm(other.start)}"
+    else:
+        what = (f"dem Eintrag {entry_guard_service._hhmm(other.start)}–"
+                f"{entry_guard_service._hhmm(other.end)}")
+    return f"die Zeile überschneidet sich mit {what} (Zeiteinträge einer Person dürfen sich nicht überschneiden)"
+
+
+def _entry_net_minutes(start: time, end: time, deduct: int, brk: int) -> int:
+    """Netto in ganzen Minuten wie ``time_entries._net_minutes`` (§3-Summe)."""
+    return max(0, (end.hour * 60 + end.minute) - (start.hour * 60 + start.minute) - int(deduct or 0) - int(brk or 0))
+
+
+def _row_interval(row) -> "entry_guard_service.Interval":
+    """Anwesenheit einer Datei-Zeile (Rohstempel, sonst die gekappte Zeit)."""
+    return entry_guard_service.Interval(
+        entry_guard_service._m(row.r.raw_start or row.r.eff_start),
+        entry_guard_service._m(row.r.raw_end or row.r.eff_end),
+    )
+
+
 NIGHT_WORKER_MAX_NET_HOURS = 8.0  # §6 Abs. 2 ArbZG: Nachtarbeitnehmer
 
 
@@ -303,8 +339,8 @@ def _check_arbzg(
         warnings.append("§6 ArbZG: Nachtarbeit (>2h in der Nachtzeit 23:00–06:00)")
 
     if prev_end_dt is not None:
-        curr_start_dt = datetime.combine(entry_date, rest_start or start)
-        rest_hours = (curr_start_dt - prev_end_dt).total_seconds() / 3600.0
+        # #540 (A1-10): über UTC, wie ``clock_in`` und ``rest_time_service``.
+        rest_hours = hours_between(prev_end_dt.date(), prev_end_dt.time(), entry_date, rest_start or start)
         if rest_hours < MIN_REST_HOURS:
             warnings.append(
                 f"§5 ArbZG: Ruhezeit {rest_hours:.1f}h unterschreitet das 11h-Minimum "
@@ -313,7 +349,7 @@ def _check_arbzg(
 
     if next_rest is not None:
         day_end_dt, next_start_dt = next_rest
-        rest_hours = (next_start_dt - day_end_dt).total_seconds() / 3600.0
+        rest_hours = hours_between(day_end_dt.date(), day_end_dt.time(), next_start_dt.date(), next_start_dt.time())
         if rest_hours < MIN_REST_HOURS:
             warnings.append(
                 f"§5 ArbZG: Ruhezeit {rest_hours:.1f}h unterschreitet das 11h-Minimum "
@@ -404,6 +440,7 @@ def _row_counts(row) -> bool:
     return (
         getattr(row, "outside", None) is None
         and getattr(row, "day_skip", None) is None
+        and getattr(row, "overlap", None) is None
         and row.file_end > row.file_start
     )
 
@@ -480,6 +517,45 @@ def _rest_reference(db: Session, user_id, tenant_id, rows: list, kept_by_date: d
                 datetime.combine(prev, day_end[prev]), datetime.combine(nxt, day_start[nxt]),
             )
     return reference, {d: day_start.get(d) for d in rows_by_date}, following
+
+
+def _mark_overlaps(db: Session, user_id, tenant_id, rows: list, rows_by_date: dict,
+                   replaced_ids: set) -> bool:
+    """#538 (A1-02): Vorschau — markiert Zeilen, die eine stehende Anwesenheit
+    (Bestand, der nicht ersetzt wird, auch laufend) oder eine frühere gültige
+    Zeile desselben Tages überschneiden (``row.overlap``). Rückgabe: ob eine
+    Zeile neu markiert wurde. Dieselbe Regel wie /confirm
+    (``entry_guard_service``, Reihenfolge der Datei)."""
+    now = now_local()
+    changed = False
+    for d, idxs in rows_by_date.items():
+        taken = [
+            entry_guard_service.entry_interval(e, today=now.date(), now=now.time())
+            for e in db.query(TimeEntry).filter(
+                TimeEntry.user_id == user_id,
+                TimeEntry.tenant_id == tenant_id,  # F-026
+                TimeEntry.date == d,
+            ).all()
+            if e.id not in replaced_ids
+        ]
+        # Frühere Zeilen der Datei mit ihrem Beginn: eine Zeile mit demselben
+        # angerechneten Beginn ersetzt bei /confirm den eben angelegten Eintrag
+        # (``_find_existing_entry``) — das ist keine Überschneidung.
+        file_rows: dict = {}
+        for i in idxs:
+            row = rows[i]
+            if not _row_counts(row):
+                continue
+            cand = _row_interval(row)
+            file_rows.pop(row.r.eff_start, None)
+            others = taken + list(file_rows.values())
+            other = next((t for t in others if entry_guard_service.overlaps(cand, t)), None)
+            if other is not None:
+                row.overlap = overlap_skip_reason(other)
+                changed = True
+            else:
+                file_rows[row.r.eff_start] = cand
+    return changed
 
 
 def parse_xls(
@@ -577,6 +653,12 @@ def parse_xls(
         for i, row in enumerate(rows):
             rows_by_date.setdefault(row.date, []).append(i)
         kept_by_date = _kept_entries(db, user_id, user_tenant, rows_by_date, replaced_ids)
+        # #538 (A1-02): eine Zeile, die einen stehenden Eintrag (auch einen
+        # laufenden) oder eine frühere Zeile desselben Tages überschneidet,
+        # übernimmt /confirm nicht. Danach neu rechnen — sie ersetzt dann auch
+        # keinen Bestand mehr.
+        if _mark_overlaps(db, user_id, user_tenant, rows, rows_by_date, replaced_ids):
+            continue
         kept_blocks = {
             d: [break_block_for_entry(db, user, e) for e in kept_by_date.get(d, [])]
             for d in rows_by_date
@@ -600,6 +682,24 @@ def parse_xls(
             )
             if missing:
                 reason = break_shortfall_skip_reason(missing)
+                for i in valid:
+                    rows[i].day_skip = reason
+                    rows[i].break_min = 0
+                newly_skipped = True
+                continue
+            # #540 (A1-07): § 3 hart wie an allen anderen Schreibwegen — die
+            # angerechnete Tagessumme (stehender Bestand + Zeilen mit ihrer
+            # Tages-Pause) über 10 h übernimmt /confirm nicht.
+            day_net = sum(
+                _entry_net_minutes(e.start_time, e.end_time, e.uncredited_minutes, e.break_minutes)
+                for e in kept_by_date.get(d, [])
+            ) + sum(
+                _entry_net_minutes(rows[i].r.eff_start, rows[i].r.eff_end,
+                                   rows[i].r.uncredited_minutes, rows[i].break_min)
+                for i in valid
+            )
+            if day_net > MAX_DAILY_NET_HOURS * 60:
+                reason = daily_limit_skip_reason(day_net)
                 for i in valid:
                     rows[i].day_skip = reason
                     rows[i].break_min = 0
@@ -638,7 +738,10 @@ def parse_xls(
         # Zeile — die Vorschau sagt das, und nur das (jede weitere Meldung gälte
         # einem Eintrag, den es nie geben wird). Sie zählt für keinen Tag und
         # trifft keinen Bestand (``_read_rows``: ``existing`` None).
-        skip_reason = row.outside if row.outside is not None else getattr(row, "day_skip", None)
+        skip_reason = (
+            row.outside if row.outside is not None
+            else getattr(row, "overlap", None) or getattr(row, "day_skip", None)
+        )
         if skip_reason is not None:
             entries.append(ImportedEntry(
                 date=entry_date,
@@ -832,7 +935,8 @@ def _apply_day_breaks(db: Session, user, user_id, tenant_id, day: date,
     eingeht.
 
     Rückgabe: (Ergebnis-Hinweise je Eintrag, dessen Pause von der Vorschau
-    abweicht; §4-Fehlbetrag in Minuten). Die Vorschau rechnet jeden Konflikt als
+    abweicht; §4-Fehlbetrag in Minuten; angerechnete Tagesminuten über der
+    §3-Höchstgrenze, sonst 0 — #540 A1-07). Die Vorschau rechnet jeden Konflikt als
     überschrieben; ohne „überschreiben" bleibt der Bestand stehen und zählt hier
     mit — die Pause ändert sich dann, ohne dass es jemand sähe (Review-Nachzug
     B4). Ebenso nach einer Zwischenänderung oder bei einer doppelten Zeile der
@@ -859,7 +963,23 @@ def _apply_day_breaks(db: Session, user, user_id, tenant_id, day: date,
             [(*row, b) for row, b in zip(day_rows, breaks)], kept,
         )
         if missing:
-            return [], missing
+            return [], missing, 0
+        # #540 (A1-07): § 3 serverseitig, nie aus Client-Text — wie die Vorschau.
+        day_net = sum(
+            _entry_net_minutes(e.start_time, e.end_time, e.uncredited_minutes, e.break_minutes)
+            for e in db.query(TimeEntry).filter(
+                TimeEntry.user_id == user_id,
+                TimeEntry.tenant_id == tenant_id,  # F-026
+                TimeEntry.date == day,
+                TimeEntry.end_time.isnot(None),
+            ).all()
+            if e.id not in written
+        ) + sum(
+            _entry_net_minutes(e.start_time, e.end_time, e.uncredited_minutes, b)
+            for (e, _, _), b in zip(items, breaks)
+        )
+        if day_net > MAX_DAILY_NET_HOURS * 60:
+            return [], 0, day_net
     notes = []
     for (e, _, shown), minutes in zip(items, breaks):
         e.break_minutes = minutes
@@ -873,7 +993,7 @@ def _apply_day_breaks(db: Session, user, user_id, tenant_id, day: date,
     for log, e in logs:
         log.new_break_minutes = e.break_minutes
         db.add(log)
-    return notes, 0
+    return notes, 0, 0
 
 
 # Spalten, die ``/confirm`` an einem überschriebenen Eintrag setzt — für die
@@ -899,6 +1019,43 @@ def _undo_day(db: Session, undo: list) -> None:
             for field, value in snapshot.items():
                 setattr(entry, field, value)
         db.flush()
+
+
+def _confirm_day_warnings(db: Session, user, day: date, written: list) -> list[str]:
+    """#540 (A1-07): weiche Hinweise des Ergebnisses, serverseitig — §6
+    Nachtarbeit je geschriebenem Eintrag und §5 Ruhezeit zum letzten Arbeitstag
+    davor (Rohstempel bzw. ``presence_end``, wie ``rest_time_service``). §3/§4
+    sperren den Tag vorher (``_apply_day_breaks``). §18 → keine."""
+    if user is None or getattr(user, "exempt_from_arbzg", False) or not written:
+        return []
+    out: list[str] = []
+    prefix = day.strftime('%d.%m.%Y')
+    for e in written:
+        if is_night_work(e.start_time, e.end_time):
+            out.append(f"{prefix}: §6 ArbZG: Nachtarbeit (>2h in der Nachtzeit 23:00–06:00)")
+    prev = db.query(TimeEntry).filter(
+        TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
+        TimeEntry.end_time.isnot(None),
+        TimeEntry.date < day,
+    ).order_by(TimeEntry.date.desc()).first()
+    if prev is not None:
+        prev_end = max(
+            work_window_service.presence_end(e) for e in db.query(TimeEntry).filter(
+                TimeEntry.user_id == user.id,
+                TimeEntry.tenant_id == user.tenant_id,  # F-026
+                TimeEntry.end_time.isnot(None),
+                TimeEntry.date == prev.date,
+            ).all()
+        )
+        first_start = min(e.raw_start_time or e.start_time for e in written)
+        rest = hours_between(prev.date, prev_end, day, first_start)
+        if rest < MIN_REST_HOURS:
+            out.append(
+                f"{prefix}: §5 ArbZG: Ruhezeit {rest:.1f}h unterschreitet das 11h-Minimum "
+                f"(vorheriger Eintrag endete {prev.date.strftime('%d.%m.%Y')} {prev_end.strftime('%H:%M')})"
+            )
+    return out
 
 
 def execute_import(
@@ -1096,23 +1253,43 @@ def _execute_import_inner(
                 # rechnet der Server sie (je Tag, unten).
                 segs = []
 
-            for w in entry.arbzg_warnings:
-                day_warnings.append(f"{entry.date.strftime('%d.%m.%Y')}: {w}")
+            # #540 (A1-07): die Vorschau-Warnungen des Clients werden nicht mehr
+            # übernommen — das Ergebnis meldet nur, was der Server selbst prüft
+            # (§3/§4 sperren den Tag, §5/§6 als Hinweis, ``_confirm_day_warnings``).
+
+            if existing and not overwrite:
+                skipped += 1
+                continue
+            if existing and eff_start != existing.start_time and _start_taken(
+                db, user_id, tenant_id, entry.date, eff_start, existing.id,
+            ):
+                skipped += 1
+                all_warnings.append(
+                    f"{entry.date.strftime('%d.%m.%Y')}: übersprungen — ein anderer "
+                    f"Eintrag beginnt bereits um {eff_start.strftime('%H:%M')}."
+                )
+                continue
+            # #538 (A1-02): keine Überschneidung mit einem anderen Eintrag des
+            # Tages (auch einer früheren Zeile derselben Datei, schon geschrieben).
+            _cand = entry_guard_service.Interval(
+                entry_guard_service._m(raw_start or eff_start),
+                entry_guard_service._m(raw_end or eff_end),
+            )
+            _now = now_local()
+            _other = entry_guard_service.find_overlap(
+                db, tenant_id=tenant_id, user_id=user_id, day=entry.date, candidate=_cand,
+                today=_now.date(), now=_now.time(),
+                exclude_ids=(existing.id if existing is not None else None,),
+            )
+            if _other is not None:
+                skipped += 1
+                all_warnings.append(
+                    f"{entry.date.strftime('%d.%m.%Y')} {file_start.strftime('%H:%M')}: "
+                    f"übersprungen — {overlap_skip_reason(_other)}."
+                )
+                continue
 
             if existing:
-                if not overwrite:
-                    skipped += 1
-                    continue
-                if eff_start != existing.start_time and _start_taken(
-                    db, user_id, tenant_id, entry.date, eff_start, existing.id,
-                ):
-                    skipped += 1
-                    all_warnings.append(
-                        f"{entry.date.strftime('%d.%m.%Y')}: übersprungen — ein anderer "
-                        f"Eintrag beginnt bereits um {eff_start.strftime('%H:%M')}."
-                    )
-                    continue
-
                 undo.append(("overwrite", existing, {
                     f: getattr(existing, f) for f in _OVERWRITE_FIELDS
                 }))
@@ -1189,21 +1366,20 @@ def _execute_import_inner(
             logs.append((log, target))
 
         if written:
-            notes, missing = _apply_day_breaks(
+            notes, missing, over = _apply_day_breaks(
                 db, target_user, user_id, tenant_id, day, written, logs,
                 exempt=bool(getattr(target_user, "exempt_from_arbzg", False)),
             )
-            if missing:
+            if missing or over:
                 # Der Tag bleibt, wie er war: keine der Zeilen wird übernommen,
                 # ihre Vorschau-Hinweise entfallen (sie gälten Einträgen, die es
                 # nicht gibt).
                 _undo_day(db, undo)
                 skipped += day_imported + day_overwritten
-                all_warnings.append(
-                    f"{day.strftime('%d.%m.%Y')}: übersprungen — "
-                    f"{break_shortfall_skip_reason(missing)}."
-                )
+                reason = break_shortfall_skip_reason(missing) if missing else daily_limit_skip_reason(over)
+                all_warnings.append(f"{day.strftime('%d.%m.%Y')}: übersprungen — {reason}.")
                 continue
+            day_warnings.extend(_confirm_day_warnings(db, target_user, day, [e for e, _, _ in written.values()]))
             all_warnings.extend(day_warnings)
             all_warnings.extend(notes)
             imported += day_imported

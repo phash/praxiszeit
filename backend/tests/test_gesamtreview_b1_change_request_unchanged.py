@@ -121,15 +121,15 @@ def test_unchanged_request_with_a_reason_still_documents_the_exception(
     """Kontrolle: kommt eine Begründung mit, bleibt §4 eine Prüfung — die
     Ausnahme wird am Antrag gespeichert und bei der Genehmigung dokumentiert."""
     e = _recognized(_db_session, employee_user, end=time(16, 30))
-    r = _request(employee_client, e, end="16:30", break_waiver_reason="Notfall")
+    r = _request(employee_client, e, end="16:30", break_waiver_reason="Notfall ohne Vertretung")
     assert r.status_code == 201, r.text
     cr = _db_session.query(ChangeRequest).one()
-    assert cr.break_waiver_reason == "Notfall"
+    assert cr.break_waiver_reason == "Notfall ohne Vertretung"
     _switch_to(admin_user)
     r = _approve(employee_client, cr)
     assert r.status_code == 200, r.text
     _db_session.refresh(e)
-    assert (e.break_waiver_reason, e.note, e.credit_override) == ("Notfall", "Hausbesuch", True)
+    assert (e.break_waiver_reason, e.note, e.credit_override) == ("Notfall ohne Vertretung", "Hausbesuch", True)
 
 
 # ── Genehmigen ──────────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ def test_approval_after_the_exception_was_switched_off(_db_session, employee_use
     Genehmigung §4 weiter — 422 mit dem Hinweis auf den abgeschalteten Schalter."""
     e = _recognized(_db_session, employee_user, end=time(16, 30))
     cr = _stored_cr(_db_session, employee_user, e, end=time(16, 30),
-                    break_waiver_reason="Notfall")
+                    break_waiver_reason="Notfall ohne Vertretung")
     _db_session.add(SystemSetting(key="break_exception_allowed", tenant_id=DEFAULT_TENANT_ID,
                                   value="false", description="break_exception_allowed"))
     _db_session.commit()

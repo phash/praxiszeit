@@ -129,7 +129,7 @@ def test_waiver_edit_writes_one_row_with_waiver_source(
 
     r = employee_client.put(f"/api/time-entries/{e.id}", json={
         "date": MON.isoformat(), "start_time": "08:00", "end_time": "15:00",
-        "break_minutes": 0, "break_waiver_reason": "Notfall",
+        "break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung",
     })
 
     assert r.status_code == 200, r.text
@@ -148,7 +148,7 @@ def test_edit_filed_as_request_writes_no_row(
 
     r = employee_client.put(f"/api/time-entries/{e.id}", json={
         "date": MON.isoformat(), "start_time": "08:00", "end_time": "15:00",
-        "break_minutes": 0, "break_waiver_reason": "Notfall",
+        "break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung",
     })
 
     assert r.status_code == 202, r.text
@@ -178,7 +178,7 @@ def test_employee_create_with_waiver_writes_one_row(
 ):
     r = employee_client.post("/api/time-entries/", json={
         "date": MON.isoformat(), "start_time": "08:00", "end_time": "15:00",
-        "break_minutes": 0, "break_waiver_reason": "Notfall",
+        "break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung",
     })
 
     assert r.status_code == 201, r.text

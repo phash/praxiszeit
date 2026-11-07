@@ -164,6 +164,22 @@ def no_contract_fill():
         event.listen(_WHC, "before_insert", _fill_contract_from_user)
 
 
+@pytest.fixture
+def late_now(monkeypatch):
+    """#540 (A1-09): manuelle Einträge für HEUTE dürfen nicht in der Zukunft
+    enden. Tests, die mit dem echten Datum und festen Uhrzeiten (08:00–15:00)
+    anlegen, wären sonst von der Uhrzeit des Testlaufs abhängig — dieser
+    Fixture stellt die Uhr der Zeiterfassung auf heute 23:58 (Datum
+    unverändert). Ein späteres ``monkeypatch.setattr(te, "_now_local", …)``
+    im Test gewinnt."""
+    from datetime import datetime as _dt
+    import app.routers.time_entries as _te_mod
+    from app.services.timezone_service import LOCAL_TZ, today_local
+    d = today_local()
+    monkeypatch.setattr(_te_mod, "_now_local", lambda: _dt(d.year, d.month, d.day, 23, 58, tzinfo=LOCAL_TZ))
+    return d
+
+
 @pytest.fixture(scope="function")
 def db():
     """Create a fresh database for each test."""

@@ -515,7 +515,7 @@ def test_clock_out_emits_milog_for_flagged_user(db, admin, employee, monkeypatch
     app.dependency_overrides.clear()
 
 
-def test_update_time_entry_emits_milog_for_flagged_user(db, admin, employee, monkeypatch):
+def test_update_time_entry_emits_milog_for_flagged_user(db, admin, employee, monkeypatch, late_now):
     from app.services.timezone_service import today_local
     employee.milog_working_time_account = True
     db.commit()

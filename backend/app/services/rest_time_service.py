@@ -6,6 +6,7 @@ German law requires minimum 11 hours of rest between two working days.
 from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
+from app.services.timezone_service import hours_between
 from app.services.date_filters import date_in_year, date_in_month
 from app.services import work_window_service
 from app.models import User, TimeEntry
@@ -92,10 +93,10 @@ def check_rest_time_violations(
         prev_date = sorted_days[i - 1]
         curr_date = sorted_days[i]
 
-        prev_end = datetime.combine(prev_date, day_last_end[prev_date])
-        curr_start = datetime.combine(curr_date, day_first_start[curr_date])
-
-        rest_hours = (curr_start - prev_end).total_seconds() / 3600
+        # #540 (A1-10): über UTC — über die Zeitumstellung ±1 h richtig.
+        rest_hours = hours_between(
+            prev_date, day_last_end[prev_date], curr_date, day_first_start[curr_date],
+        )
 
         if rest_hours < min_rest_hours:
             violations.append({
