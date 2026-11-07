@@ -1,0 +1,7 @@
+# Werkzeug zum Bauen der einzigen Abhaengigkeit ohne Wheel auf PyPI (odfpy 1.4.1,
+# nur als Quellarchiv). Die nativen Pakete installieren es VOR requirements.lock
+# und bauen odfpy dann mit --no-build-isolation: bei der ueblichen
+# Build-Isolation holt pip setuptools ungeprueft (ohne Hash) von PyPI
+# (Audit 2026-11-07 S3-05). Lock: backend/requirements-build.lock
+# (bash tools/lock-requirements.sh).
+setuptools>=78.1.1,<81

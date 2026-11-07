@@ -31,10 +31,29 @@ PYTHON_VERSION="3.13.18"
 # gebauten Artefakt gegenmessen:
 #   build/release-<ver>/linux/bin/python/bin/python3 -c "import ssl; print(ssl.OPENSSL_VERSION)"
 PYTHON_STANDALONE_TAG="20261026"
+# Audit 2026-11-07 S3-05: SHA256 jedes der vier Interpreter-Archive, gegen die
+# SHA256SUMS des python-build-standalone-Releases abgeglichen. Beim Anheben von
+# PYTHON_VERSION/PYTHON_STANDALONE_TAG mitziehen:
+#   curl -fsSL https://github.com/astral-sh/python-build-standalone/releases/download/<tag>/SHA256SUMS \
+#     | grep -E 'cpython-<ver>\+<tag>-.*-install_only.tar.gz'
+# Der Build prueft jedes Archiv - auch einen Cache-Treffer - und bricht bei
+# Abweichung ab; ohne Pin kaeme ein veraenderter Interpreter in alle vier
+# nativen Kundenpakete.
+PYTHON_LINUX_SHA256="126343c54daff4068efc1ac269518d0cc202d57857794948103dd1454e8881be"
+PYTHON_WINDOWS_SHA256="ebe90cc1dce2dd2d7afa1f0aa9b6c269c7c0174aeabdc6a801381602b7283424"
+PYTHON_MACOS_X64_SHA256="708be9e7df297f68bdae589ea9e62a621db5abe7708f79e851c41410347452d1"
+PYTHON_MACOS_ARM64_SHA256="e5af2fde6a937a0e0c795a0c595c4efb70578d57463a2657c819992b9b9acbac"
 # theseus-rs/postgresql-binaries — manylinux-Build, portable bis glibc 2.34
 # (Ubuntu 22.04, Debian 12, RHEL 9 und neuer). Releases:
 #   https://github.com/theseus-rs/postgresql-binaries/releases
 POSTGRESQL_VERSION="18.6.0"
+# SHA256 der theseus-Archive, hier fest eingetragen (S3-05): die .sha256-Datei
+# neben dem Archiv stammt vom selben Server und schuetzt nur gegen kaputte
+# Downloads, nicht gegen ein ausgetauschtes Release. Beim PG-Bump mitziehen
+# (Wert aus der .sha256 des neuen Releases, einmal gegengeprueft).
+PG_LINUX_SHA256="bb3d09f876b2383e25a8c9ce09e32d185a03656a23d074f5195542b1b1b3ca61"
+PG_MACOS_X64_SHA256="f8918fbe747e0d79bda58ad8f8afcf23ac384b847ff3af18856f0825ba54b031"
+PG_MACOS_ARM64_SHA256="a257bcdb8aa3301a13d6a5bcec48f8c9517045b7cbae71e50788b2615539e95b"
 # EDB-Format (für Legacy-Fallback, falls jemals wieder verfügbar)
 POSTGRESQL_EDB_SUFFIX="1"
 # Windows-PG: der EDB-Installer (.exe) wird per direktem Link geladen UND
@@ -261,15 +280,29 @@ NSSM_URL="https://web.archive.org/web/2024/https://nssm.cc/release/nssm-${NSSM_V
 # Hash pinnen und nach dem Download (auch bei Cache-Hit) verifizieren.
 NSSM_SHA256="727d1e42275c605e0f04aba98095c38a8e1e46def453cdffce42869428aa6743"
 
-# pip bootstrap
-GET_PIP_URL="https://bootstrap.pypa.io/get-pip.py"
+# KEIN get-pip.py mehr (S3-05): python-build-standalone bringt pip bereits mit
+# (bin/python/.../site-packages/pip), und beim Kunden wird nichts mehr per pip
+# installiert. get-pip.py war ungepinnt und lud beim Windows-Update die jeweils
+# neueste pip-Version als Administrator von PyPI.
 
 # Microsoft Visual C++ Redistributable (x64). Die EDB-PG-18-Binaries sind
 # MSVC-gebaut und linken vcruntime140*.dll. Wird ins Windows-Paket gebuendelt,
 # damit der Update-Pfad (update-wizard.ps1 -> Step-VcRedist) die Runtime
 # idempotent sicherstellen kann — der EDB-Installer (--install_runtimes 1) deckt
 # nur die Erstinstallation ab, nicht das In-Place-Update (1.5.4, Pitfall #11).
-VC_REDIST_URL="https://aka.ms/vs/17/release/vc_redist.x64.exe"
+# Versionierte Download-URL (das aka.ms-Kuerzel leitet hierhin weiter und
+# zeigt nach jedem MSVC-Update auf eine andere Datei) + gepinnte SHA256 (S3-05):
+# vc_redist laeuft beim Kunden als Administrator (update-wizard Step-VcRedist).
+# Neue Version: `curl -sIL https://aka.ms/vs/17/release/vc_redist.x64.exe`
+# nennt die URL, ihr vorletztes Segment ist die SHA256 (Grossbuchstaben).
+VC_REDIST_URL="https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe"
+VC_REDIST_SHA256="cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b"
+
+# rockylinux:9 liefert libxml2.so.2 fuer das Linux-Paket (#177) - per Digest
+# gepinnt (S3-05), damit ein neu getaggtes Image nicht still eine andere
+# Bibliothek ins Kundenpaket bringt. Anheben:
+#   docker buildx imagetools inspect rockylinux:9 | sed -n 's/^Digest: *//p'
+ROCKYLINUX_IMAGE="rockylinux:9@sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed6892889657e5ddaaa6"
 
 # =============================================================================
 # Hilfsfunktionen
@@ -295,46 +328,29 @@ download() {
     info "OK: ${name} ($(du -h "$target" | cut -f1))"
 }
 
-# Download + SHA256-Verify. Wenn die .sha256-Datei verfügbar ist, wird der
-# heruntergeladene Tarball gegen sie geprüft. Cache wird invalidiert wenn
-# der Hash nicht stimmt.
-download_with_sha() {
+# Download mit FEST EINGETRAGENER SHA256 (S3-05). Prueft auch einen Cache-
+# Treffer; bei Abweichung wird die Datei geloescht und der Build bricht ab.
+download_pinned() {
     local url="$1"
-    local sha_url="$2"
-    local target="$3"
+    local target="$2"
+    local expected="$3"
     local name="$(basename "$target")"
 
-    download "$url" "$target" || return 1
-
-    if [ -n "$sha_url" ]; then
-        local sha_target="${target}.sha256"
-        # --skip-download + bereits gecachte, nicht-leere .sha256 → gegen den
-        # Cache-Sidecar prüfen statt neu zu laden (flaky GitHub-Release-CDN gibt
-        # sporadisch 504 auf die .sha256-URL, was sonst den Build abbricht UND
-        # den gecachten Blob löscht — obwohl beides lokal längst verifiziert ist).
-        if { [ "$SKIP_DOWNLOAD" = true ] && [ -s "${sha_target}" ]; } || curl -fsSL -o "${sha_target}" "$sha_url" 2>/dev/null; then
-            local expected
-            expected=$(awk '{print $1}' "${sha_target}")
-            local actual
-            actual=$(sha256sum "$target" | awk '{print $1}')
-            if [ "$expected" != "$actual" ]; then
-                error "SHA256 mismatch fuer ${name}:"
-                error "  expected: ${expected}"
-                error "  actual:   ${actual}"
-                rm -f "$target" "$sha_target"
-                return 1
-            fi
-            info "SHA256 verifiziert: ${name}"
-        else
-            # Hart abbrechen statt warn(): ohne .sha256 lässt sich die Integrität
-            # nicht garantieren -> ein gecachter partieller/fremder Tarball würde
-            # sonst ungeprüft ins Release wandern (genau der Fehlermodus, den der
-            # Pin verhindern soll).
-            error "Keine .sha256-Datei fuer ${name} (Quelle: ${sha_url}) — Integrität nicht prüfbar, Abbruch."
-            rm -f "$target"
-            return 1
-        fi
+    if [ -z "$expected" ]; then
+        error "Keine SHA256 fuer ${name} eingetragen — Abbruch."
+        return 1
     fi
+    download "$url" "$target" || return 1
+    local actual
+    actual=$(sha256sum "$target" | awk '{print $1}')
+    if [ "$actual" != "$expected" ]; then
+        error "SHA256 stimmt nicht fuer ${name}:"
+        error "  erwartet: ${expected}"
+        error "  erhalten: ${actual}"
+        rm -f "$target"
+        return 1
+    fi
+    info "SHA256 verifiziert (Pin): ${name}"
 }
 
 # Glibc-Symbol-Check: verifiziert dass kein Binary Symbole verlangt, die
@@ -472,6 +488,10 @@ fi
 cp "${REPO_DIR}/backend/alembic.ini" "${BUILD_DIR}/common/app/backend/"
 cp "${REPO_DIR}/backend/init-db-user.sql" "${BUILD_DIR}/common/app/backend/"
 cp "${REPO_DIR}/backend/requirements.txt" "${BUILD_DIR}/common/app/backend/"
+# S3-05: installiert wird ausschliesslich aus der Lock-Datei mit Pruefsummen
+# (pip --require-hashes). Erzeugt mit tools/lock-requirements.sh.
+cp "${REPO_DIR}/backend/requirements.lock" "${BUILD_DIR}/common/app/backend/"
+cp "${REPO_DIR}/backend/requirements-build.lock" "${BUILD_DIR}/common/app/backend/"
 
 mkdir -p "${BUILD_DIR}/common/app/frontend"
 cp -r "${REPO_DIR}/frontend/dist/"* "${BUILD_DIR}/common/app/frontend/"
@@ -489,9 +509,10 @@ info "App-Dateien: $(du -sh "${BUILD_DIR}/common" | cut -f1)"
 step "3 — Binaries herunterladen"
 
 if [ "$BUILD_LINUX" = true ]; then
-    download "$PYTHON_LINUX_URL"  "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-linux-x64.tar.gz"
-    if ! download_with_sha "$PG_LINUX_URL" "$PG_LINUX_SHA_URL" \
-                           "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-linux-x64.tar.gz"; then
+    download_pinned "$PYTHON_LINUX_URL" "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-linux-x64.tar.gz" \
+        "$PYTHON_LINUX_SHA256" || exit 1
+    if ! download_pinned "$PG_LINUX_URL" "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-linux-x64.tar.gz" \
+                         "$PG_LINUX_SHA256"; then
         error "PostgreSQL-Tarball konnte nicht heruntergeladen werden."
         error "Primärquelle (theseus-rs): $PG_LINUX_URL"
         error ""
@@ -508,20 +529,13 @@ if [ "$BUILD_LINUX" = true ]; then
 fi
 
 if [ "$BUILD_WINDOWS" = true ]; then
-    download "$PYTHON_WINDOWS_URL" "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-windows-x64.tar.gz"
-    download "$NSSM_URL"           "${CACHE_DIR}/nssm.zip"
+    download_pinned "$PYTHON_WINDOWS_URL" "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-windows-x64.tar.gz" \
+        "$PYTHON_WINDOWS_SHA256" || exit 1
     # nssm.zip gegen den gepinnten Hash pruefen — auch bei --skip-download/Cache-
-    # Hit, da das eingebettete nssm.exe direkt aus dieser Datei stammt.
-    _nssm_actual=$(sha256sum "${CACHE_DIR}/nssm.zip" | awk '{print $1}')
-    if [ "$_nssm_actual" != "$NSSM_SHA256" ]; then
-        error "nssm.zip SHA256 stimmt nicht: erwartet ${NSSM_SHA256}, ist ${_nssm_actual}"
-        error "  (web.archive.org-Quelle moeglicherweise veraendert — Build abgebrochen)"
-        rm -f "${CACHE_DIR}/nssm.zip"
-        exit 1
-    fi
-    info "nssm.zip SHA256 verifiziert"
-    download "$GET_PIP_URL"        "${CACHE_DIR}/get-pip.py"
-    download "$VC_REDIST_URL"      "${CACHE_DIR}/vc_redist.x64.exe"
+    # Hit, da das eingebettete nssm.exe direkt aus dieser Datei stammt
+    # (web.archive.org ist keine inhaltsadressierte Quelle).
+    download_pinned "$NSSM_URL" "${CACHE_DIR}/nssm.zip" "$NSSM_SHA256" || exit 1
+    download_pinned "$VC_REDIST_URL" "${CACHE_DIR}/vc_redist.x64.exe" "$VC_REDIST_SHA256" || exit 1
 
     # PostgreSQL Windows: EDB-Installer per direktem Link laden + SHA256-pinnen.
     # KEIN ungeprüfter ~/Downloads-Griff mehr — der bundelte je nach Maschine
@@ -555,22 +569,23 @@ if [ "$BUILD_WINDOWS" = true ]; then
 fi
 
 if [ "$BUILD_MACOS" = true ]; then
-    download "$PYTHON_MACOS_X64_URL"   "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-macos-x64.tar.gz"
-    download "$PYTHON_MACOS_ARM64_URL" "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-macos-arm64.tar.gz"
-    download "$GET_PIP_URL"            "${CACHE_DIR}/get-pip.py"
+    download_pinned "$PYTHON_MACOS_X64_URL" "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-macos-x64.tar.gz" \
+        "$PYTHON_MACOS_X64_SHA256" || exit 1
+    download_pinned "$PYTHON_MACOS_ARM64_URL" "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-macos-arm64.tar.gz" \
+        "$PYTHON_MACOS_ARM64_SHA256" || exit 1
 
     # PG Tarballs (theseus-rs) — analog zum Linux-Pfad mit SHA256-Verify.
     # Frueher: einfaches download(), Hash wurde nicht geprueft → ein gescheiterter
     # Download oder ein MITM haetten kommentarlos ein kaputtes Archiv in den
     # Build geschoben (1.5.0-Bug-Kontext). Jetzt: SHA256 enforced.
-    if ! download_with_sha "$PG_MACOS_X64_URL" "$PG_MACOS_X64_SHA_URL" \
-                           "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-macos-x64.tar.gz"; then
+    if ! download_pinned "$PG_MACOS_X64_URL" "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-macos-x64.tar.gz" \
+                         "$PG_MACOS_X64_SHA256"; then
         error "PostgreSQL-Tarball (macOS x64) konnte nicht heruntergeladen werden."
         error "Quelle (theseus-rs): $PG_MACOS_X64_URL"
         exit 1
     fi
-    if ! download_with_sha "$PG_MACOS_ARM64_URL" "$PG_MACOS_ARM64_SHA_URL" \
-                           "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-macos-arm64.tar.gz"; then
+    if ! download_pinned "$PG_MACOS_ARM64_URL" "${CACHE_DIR}/postgresql-${POSTGRESQL_VERSION}-macos-arm64.tar.gz" \
+                         "$PG_MACOS_ARM64_SHA256"; then
         error "PostgreSQL-Tarball (macOS arm64) konnte nicht heruntergeladen werden."
         error "Quelle (theseus-rs): $PG_MACOS_ARM64_URL"
         exit 1
@@ -604,10 +619,26 @@ if [ "$BUILD_LINUX" = true ]; then
     tar xzf "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-linux-x64.tar.gz" \
         -C "${LINUX_DIR}/bin/python" --strip-components=1
 
-    info "Installiere pip-Dependencies..."
-    "${LINUX_DIR}/bin/python/bin/python3" -m pip install -q \
+    info "Installiere pip-Dependencies (requirements.lock, --require-hashes)..."
+    # S3-05: nur exakt gepinnte Versionen mit gepruefter Pruefsumme; pipefail
+    # sorgt dafuer, dass ein Hash-Fehler den Build abbricht (frueher schluckte
+    # `| tail -3` jeden pip-Fehler).
+    # Schritt 1: setuptools (gehasht) - baut gleich odfpy, das als einzige
+    # Abhaengigkeit kein Wheel hat. --no-build-isolation in Schritt 2, weil pip
+    # die Build-Umgebung sonst ungeprueft von PyPI fuellt.
+    "${LINUX_DIR}/bin/python/bin/python3" -m pip install -q --no-input \
+        --require-hashes --only-binary :all: \
         --target="${LINUX_DIR}/bin/python/lib/python${PYTHON_VERSION%.*}/site-packages" \
-        -r "${LINUX_DIR}/app/backend/requirements.txt" 2>&1 | tail -3
+        -r "${LINUX_DIR}/app/backend/requirements-build.lock" 2>&1 | tail -3
+    "${LINUX_DIR}/bin/python/bin/python3" -m pip install -q --no-input \
+        --require-hashes --only-binary :all: --no-binary odfpy --no-build-isolation \
+        --target="${LINUX_DIR}/bin/python/lib/python${PYTHON_VERSION%.*}/site-packages" \
+        -r "${LINUX_DIR}/app/backend/requirements.lock" 2>&1 | tail -3
+    if ! "${LINUX_DIR}/bin/python/bin/python3" -s -c \
+        "import alembic, uvicorn, fastapi, sqlalchemy, psycopg2, cryptography" 2>/dev/null; then
+        error "Linux-Bundle: pip-Dependencies fehlen nach der Installation (Import-Check fehlgeschlagen)"
+        exit 1
+    fi
 
     info "PostgreSQL (Linux x64) — theseus-rs ${POSTGRESQL_VERSION}..."
     mkdir -p "${LINUX_DIR}/bin/postgresql"
@@ -637,7 +668,7 @@ if [ "$BUILD_LINUX" = true ]; then
     # LD_LIBRARY_PATH-Prepend findet -> Native-Install wird distro-unabhaengig.
     if command -v docker &>/dev/null; then
         info "Buendle libxml2.so.2 (Rolling-Distro-Support, #177)..."
-        if docker run --rm rockylinux:9 sh -c \
+        if docker run --rm "${ROCKYLINUX_IMAGE}" sh -c \
                 'dnf install -y -q libxml2 >/dev/null 2>&1 && cat "$(readlink -f /usr/lib64/libxml2.so.2)"' \
                 > "${LINUX_DIR}/bin/postgresql/lib/libxml2.so.2" 2>/dev/null \
            && [ -s "${LINUX_DIR}/bin/postgresql/lib/libxml2.so.2" ]; then
@@ -685,6 +716,10 @@ if [ "$BUILD_WINDOWS" = true ]; then
     cp "${REPO_DIR}/installer/windows/backup.bat" "${WIN_DIR}/"
     cp "${REPO_DIR}/installer/windows/update-wizard.bat" "${WIN_DIR}/"
     cp "${REPO_DIR}/installer/windows/update-wizard.ps1" "${WIN_DIR}/"
+    # S3-01: sichert den Installationsordner VOR dem ersten python.exe-Aufruf
+    # (setup.bat Schritt 0, update-wizard.ps1) und gleicht ihn mit
+    # bin/payload-manifest.txt ab (unten erzeugt).
+    cp "${REPO_DIR}/installer/windows/secure-install.ps1" "${WIN_DIR}/"
     # restore-backup.bat aus dem Template ausliefern (BACKUP.md/UPDATE.md verweisen
     # darauf). Das Template defaultet INSTALL_DIR auf C:\praxiszeit -> direkt nutzbar.
     cp "${REPO_DIR}/installer/windows/restore-backup.template.bat" "${WIN_DIR}/restore-backup.bat"
@@ -694,8 +729,6 @@ if [ "$BUILD_WINDOWS" = true ]; then
     tar xzf "${CACHE_DIR}/python-${PYTHON_VERSION}+${PYTHON_STANDALONE_TAG}-windows-x64.tar.gz" \
         -C "${WIN_DIR}/bin/python" --strip-components=1
 
-    cp "${CACHE_DIR}/get-pip.py" "${WIN_DIR}/bin/python/"
-
     # pip-Dependencies VORAB ins Windows-Bundle installieren (wie beim Linux-Paket).
     # Frueher wurden sie erst beim Kunden-Install via setup.bat nachgeladen — das
     # ist netz-/timing-abhaengig und schlug fehl (Dienst fand alembic/uvicorn nicht
@@ -703,10 +736,14 @@ if [ "$BUILD_WINDOWS" = true ]; then
     # Paket -> der Install braucht KEINEN PyPI-Download mehr.
     # PYTHONNOUSERSITE: das gebuendelte Python nicht das User-Site eines evtl. auf
     # der Build-Maschine installierten System-Python 3.13 sehen lassen.
-    info "Installiere pip-Dependencies ins Windows-Bundle (vorab, kein Kunden-Download)..."
-    PYTHONNOUSERSITE=1 PYTHONUTF8=1 "${WIN_DIR}/bin/python/python.exe" -m pip install -q \
-        --no-warn-script-location \
-        -r "${WIN_DIR}/app/backend/requirements.txt" 2>&1 | tail -3
+    info "Installiere pip-Dependencies ins Windows-Bundle (requirements.lock, --require-hashes)..."
+    PYTHONNOUSERSITE=1 PYTHONUTF8=1 "${WIN_DIR}/bin/python/python.exe" -m pip install -q --no-input \
+        --no-warn-script-location --require-hashes --only-binary :all: \
+        -r "${WIN_DIR}/app/backend/requirements-build.lock" 2>&1 | tail -3
+    PYTHONNOUSERSITE=1 PYTHONUTF8=1 "${WIN_DIR}/bin/python/python.exe" -m pip install -q --no-input \
+        --no-warn-script-location --require-hashes --only-binary :all: --no-binary odfpy \
+        --no-build-isolation \
+        -r "${WIN_DIR}/app/backend/requirements.lock" 2>&1 | tail -3
     if ! PYTHONNOUSERSITE=1 "${WIN_DIR}/bin/python/python.exe" -s -c \
         "import alembic, uvicorn, fastapi, sqlalchemy, psycopg2, cryptography" 2>/dev/null; then
         error "Windows-Bundle: pip-Dependencies fehlen nach der Installation (Import-Check fehlgeschlagen)"
@@ -773,6 +810,17 @@ PTHEOF
         echo -e "${RED}[ERROR]${NC} setup.bat ohne CRLF — Windows-cmd bricht an Labels ab (#286)." >&2
         exit 1
     fi
+
+    # S3-01: Liste aller Dateien unter bin/ und app/, wie sie das Paket liefert.
+    # secure-install.ps1 sperrt die Installation, wenn dort beim Kunden eine
+    # Datei liegt, die nicht in dieser Liste steht (z. B. eine vorab platzierte
+    # .pth-Datei oder DLL). Als LETZTER Schritt vor dem Packen erzeugt;
+    # bin/postgresql installiert setup.bat erst beim Kunden.
+    (cd "${WIN_DIR}" && find bin app -type f ! -path 'bin/postgresql/*' | LC_ALL=C sort) \
+        > "${WIN_DIR}/bin/payload-manifest.txt"
+    echo "bin/payload-manifest.txt" >> "${WIN_DIR}/bin/payload-manifest.txt"
+    perl -0777 -i -pe 's/\r?\n/\r\n/g' "${WIN_DIR}/bin/payload-manifest.txt"
+    info "payload-manifest.txt: $(wc -l < "${WIN_DIR}/bin/payload-manifest.txt") Dateien"
 
     # ========================================================================
     # Phase 5b: Avalonia GUI-Installer (setup.exe) mit eingebettetem Payload
@@ -917,9 +965,9 @@ if [ "$BUILD_MACOS" = true ]; then
         mkdir -p "${mac_dir}/bin/python"
         tar xzf "${python_tar}" -C "${mac_dir}/bin/python" --strip-components=1
 
-        # get-pip.py + requirements.txt mitliefern
-        # pip install passiert beim Kunden (Cross-Platform von Linux nicht moeglich)
-        cp "${CACHE_DIR}/get-pip.py" "${mac_dir}/bin/python/"
+        # pip install passiert beim Kunden (Cross-Platform von Linux nicht
+        # moeglich) - mit dem pip des Interpreters, ausschliesslich aus
+        # app/backend/requirements.lock mit --require-hashes (S3-05).
 
         info "PostgreSQL (macOS ${arch}) — theseus-rs ${POSTGRESQL_VERSION}..."
         mkdir -p "${mac_dir}/bin/postgresql"

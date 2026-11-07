@@ -421,15 +421,27 @@ if [ -f "${OLD_PGDATA}/PG_VERSION" ] && [ -x "${NEW_POSTGRES}" ] && [ -f "${INST
         if ! sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" "${OLD_PGBIN}/pg_ctl" -D "${OLD_PGDATA}" -w -t 60 start; then
             error "PG-Upgrade: alter Cluster ließ sich nicht starten — Abbruch (Daten unangetastet)."; exit 1
         fi
+        # Audit 2026-11-07 S3-11: das Superuser-Passwort NIE in eine argv
+        # (frueher `sudo ... env PGPASSWORD=...` -> fuer die ganze Dauer des Dumps
+        # per `ps -ef` fuer jedes lokale Konto lesbar). Stattdessen eine
+        # Passwortdatei (0600, Dienstkonto) in data/run; in der argv steht nur
+        # ihr Pfad. Sie wird nach dem Dump in jedem Fall entfernt.
+        PGPASS_FILE="${RUN_DIR}/.pgpass-upgrade"
+        _pw_escaped=$(printf '%s' "${SU_PW}" | sed -e 's/\\/\\\\/g' -e 's/:/\\:/g')
+        ( umask 077; printf '*:*:*:praxiszeit:%s\n' "${_pw_escaped}" > "${PGPASS_FILE}" )
+        chown "${SERVICE_USER}:${SERVICE_USER}" "${PGPASS_FILE}"
         # set -o pipefail im sh -c: sonst maskiert ein erfolgreiches gzip einen
         # mittendrin abgebrochenen pg_dump (partieller, aber valider .gz = Daten-
-        # verlust). Bricht jetzt hart ab, wenn pg_dump scheitert.
-        if ! sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" PGPASSWORD="${SU_PW}" \
-                sh -c "set -o pipefail; '${OLD_PGBIN}/pg_dump' -w --clean --if-exists -h '${RUN_DIR}' -U praxiszeit -d praxiszeit | gzip > '${DUMP_FILE}'"; then
+        # verlust). Bricht jetzt hart ab, wenn pg_dump scheitert. umask 077: der
+        # Dump ist ab dem ersten Byte nur fuer das Dienstkonto lesbar.
+        if ! sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" PGPASSFILE="${PGPASS_FILE}" \
+                sh -c "set -o pipefail; umask 077; '${OLD_PGBIN}/pg_dump' -w --clean --if-exists -h '${RUN_DIR}' -U praxiszeit -d praxiszeit | gzip > '${DUMP_FILE}'"; then
+            rm -f "${PGPASS_FILE}"
             sudo -u "${SERVICE_USER}" env LD_LIBRARY_PATH="${OLD_PGLIB}" "${OLD_PGBIN}/pg_ctl" -D "${OLD_PGDATA}" -w stop 2>/dev/null || true
             rm -f "${DUMP_FILE}"
             error "PG-Upgrade: pg_dump fehlgeschlagen — Abbruch (Daten unangetastet)."; exit 1
         fi
+        rm -f "${PGPASS_FILE}"
         # Plausibilitaet: ein echter Dump ist nie winzig (selbst leere DB > 1 KB).
         DUMP_SIZE=$(stat -c%s "${DUMP_FILE}" 2>/dev/null || echo 0)
         if [ "${DUMP_SIZE}" -lt 1024 ]; then
