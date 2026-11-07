@@ -322,7 +322,8 @@ def test_windows_path_without_drive_letter_refused(_as_windows):
 
 def test_windows_local_folder_allowed(_as_windows):
     assert bs.location_rejection_reason("D:\\PraxisZeit-Sicherung") is None
-    assert bs.location_rejection_reason("C:\\Users\\Publicity\\x") is None
+    assert bs.location_rejection_reason("C:\\Usersicherung\\x") is None
+    assert bs.location_rejection_reason("C:\\ProgramDataBackup\\x") is None
 
 
 def test_drive_root_refused(db, default_tenant):
@@ -380,7 +381,8 @@ def test_windows_location_refused_when_acl_cannot_be_set(db, default_tenant, tmp
 
 
 def test_windows_create_backup_restricts_dir_and_aborts_without_acl(db, default_tenant, tmp_path, monkeypatch):
-    _use_tmp_dir(db, tmp_path)
+    # Standard-Verzeichnis der Installation (data/backups): Rechte werden gesetzt.
+    monkeypatch.setenv("PRAXISZEIT_BACKUP_DIR", str(tmp_path))
     monkeypatch.setattr(bs, "_is_windows", lambda: True)
     monkeypatch.setattr(bs, "location_rejection_reason", lambda loc: None)
     monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", host="localhost", port=5433))
@@ -391,6 +393,90 @@ def test_windows_create_backup_restricts_dir_and_aborts_without_acl(db, default_
     _capture_icacls(monkeypatch, fail_on=lambda c: "/inheritance:r" in c)
     with pytest.raises(bs.BackupError, match="Zugriffsrechte"):
         bs.create_backup(db)
+
+
+# --- Fix-Runde S3-04: bestehende Ordner werden geprüft, nie umgeschrieben ---
+
+_PRIVATE_REPORT = (
+    "OWNER S-1-5-32-544\nPROTECTED True\nRULE S-1-5-18 Allow\nRULE S-1-5-32-544 Allow\n"
+)
+
+
+def _capture_windows_tools(monkeypatch, report=_PRIVATE_REPORT):
+    import types
+    calls = []
+
+    def _run(cmd, *a, **k):
+        calls.append({"cmd": list(cmd), "env": k.get("env") or {}})
+        out = report if cmd[0].lower().endswith("powershell.exe") else ""
+        return types.SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+    monkeypatch.setattr(bs.subprocess, "run", _run)
+    return calls
+
+
+def test_existing_folder_is_checked_not_rewritten(db, default_tenant, tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    monkeypatch.setattr(bs, "location_rejection_reason", lambda loc: None)
+    monkeypatch.delenv("PRAXISZEIT_BACKUP_DIR", raising=False)
+    existing = tmp_path / "Scans"
+    existing.mkdir()
+    calls = _capture_windows_tools(monkeypatch, report=(
+        "OWNER S-1-5-21-1-2-3-1001\nPROTECTED False\nRULE S-1-5-32-545 Allow\n"))
+    with pytest.raises(bs.BackupError, match="ändert die Rechte bestehender Ordner nicht"):
+        bs.update_config(db, location=str(existing))
+    assert not [c for c in calls if c["cmd"][0] == "icacls"], calls  # nie icacls
+    (check,) = calls
+    assert check["env"]["PZ_ACL_PATH"] == str(existing)
+    assert str(existing) not in " ".join(check["cmd"])  # Pfad nur über die Umgebung
+    assert bs.settings_service.get_setting(
+        db, bs.SETTING_LOCATION, tenant_id=bs.DEFAULT_TENANT_ID) in (None, "")
+
+
+def test_existing_private_folder_is_accepted_without_icacls(db, default_tenant, tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    monkeypatch.setattr(bs, "location_rejection_reason", lambda loc: None)
+    monkeypatch.delenv("PRAXISZEIT_BACKUP_DIR", raising=False)
+    existing = tmp_path / "Sicherung"
+    existing.mkdir()
+    calls = _capture_windows_tools(monkeypatch)
+    bs.update_config(db, location=str(existing))
+    assert not [c for c in calls if c["cmd"][0] == "icacls"], calls
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", host="localhost", port=5433))
+    monkeypatch.setattr(bs.subprocess, "Popen", lambda *a, **k: _FakePopen(b"SELECT 1;"))
+    calls.clear()
+    bs.create_backup(db)  # bestehender Ordner: wieder nur geprüft
+    assert not [c for c in calls if c["cmd"][0] == "icacls"], calls
+
+
+@pytest.mark.parametrize("report", [
+    "",                                                                # nicht lesbar
+    "OWNER S-1-5-32-544\nPROTECTED False\nRULE S-1-5-18 Allow\n",     # erbt
+    "OWNER S-1-5-21-9-9-9-1001\nPROTECTED True\nRULE S-1-5-18 Allow\n",  # fremder Eigentümer
+    "OWNER S-1-5-32-544\nPROTECTED True\nRULE S-1-5-11 Allow\n",       # Auth. Benutzer
+    "OWNER S-1-5-32-544\nPROTECTED True\nRULE S-1-1-0 Allow\n",        # Jeder
+])
+def test_acl_report_too_open(report):
+    assert bs.win_acl_report_is_private(report) is False
+
+
+def test_acl_report_private_ignores_deny_rules():
+    assert bs.win_acl_report_is_private(_PRIVATE_REPORT + "RULE S-1-1-0 Deny\n") is True
+
+
+@pytest.mark.parametrize("loc", [
+    "C:\\ProgramData\\x",
+    "C:\\Program Files\\Praxis",
+    "C:\\Program Files (x86)\\y",
+    "C:\\Users\\Empfang\\Documents\\Sicherung",
+    "C:\\Users",
+])
+def test_windows_system_and_profile_folders_refused(_as_windows, monkeypatch, loc):
+    monkeypatch.delenv("ProgramData", raising=False)
+    monkeypatch.delenv("ProgramFiles", raising=False)
+    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+    monkeypatch.delenv("ProgramW6432", raising=False)
+    assert bs.location_rejection_reason(loc) == bs.PUBLIC_LOCATION_DETAIL
 
 
 def test_restrict_acl_is_noop_off_windows(tmp_path, monkeypatch):

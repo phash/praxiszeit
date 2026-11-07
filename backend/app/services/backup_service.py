@@ -135,12 +135,36 @@ def _win_public_roots() -> list[str]:
     sysroot = os.environ.get("SystemRoot", sysdrive + "\\Windows")
     roots = {
         os.environ.get("PUBLIC", "") or sysdrive + "\\Users\\Public",
-        sysdrive + "\\Users\\Public",
-        sysdrive + "\\Users\\Default",
+        # Fix-Runde (S3-04): das ganze Profil-Verzeichnis. Der Dienst läuft als
+        # SYSTEM und hat kein eigenes Profil darunter - jeder Ordner dort gehört
+        # einem Konto dieses Rechners (oder ist für alle lesbar).
+        sysdrive + "\\Users",
         sysroot,
         sysdrive + "\\Temp",
+        # Systemordner anderer Programme: ihre Rechte ändert PraxisZeit nicht.
+        os.environ.get("ProgramData", "") or sysdrive + "\\ProgramData",
+        os.environ.get("ProgramFiles", "") or sysdrive + "\\Program Files",
+        os.environ.get("ProgramFiles(x86)", "") or sysdrive + "\\Program Files (x86)",
+        os.environ.get("ProgramW6432", ""),
     }
     return sorted({r.rstrip("\\/").lower() for r in roots if r})
+
+
+def _default_backup_dir() -> Optional[Path]:
+    """Das Standard-Verzeichnis der Installation (nativ ``data/backups`` aus
+    ``PRAXISZEIT_BACKUP_DIR``), sonst None."""
+    env_dir = os.environ.get("PRAXISZEIT_BACKUP_DIR", "").strip()
+    return Path(env_dir) if env_dir else None
+
+
+def _is_default_backup_dir(path: Path) -> bool:
+    default = _default_backup_dir()
+    if default is None:
+        return False
+    try:
+        return os.path.normcase(os.path.abspath(path)) == os.path.normcase(os.path.abspath(default))
+    except (OSError, ValueError):
+        return False
 
 
 UNC_LOCATION_DETAIL = (
@@ -184,8 +208,10 @@ def location_rejection_reason(loc: str) -> Optional[str]:
         except (OSError, AttributeError, ValueError):
             return UNC_LOCATION_DETAIL
         norm = ntpath.normpath(raw).rstrip("\\/").lower()
+        default = _default_backup_dir()
+        is_default = default is not None and norm == ntpath.normpath(str(default)).rstrip("\\/").lower()
         for root in _win_public_roots():
-            if norm == root or norm.startswith(root + "\\"):
+            if not is_default and (norm == root or norm.startswith(root + "\\")):
                 return PUBLIC_LOCATION_DETAIL
     if _is_forbidden_location(raw):
         return FORBIDDEN_LOCATION_DETAIL
@@ -234,6 +260,95 @@ def restrict_backup_dir_acl(path: Path) -> bool:
     for cmd in removes:
         _run_icacls(cmd)  # ein nicht vorhandener Eintrag ist kein Fehler
     return _run_icacls(protect)
+
+
+# Fix-Runde (S3-04): Rechte nur an Ordnern ändern, die PraxisZeit selbst
+# angelegt hat (oder am Standard-Verzeichnis der Installation). Ein BESTEHENDER
+# Ordner, den ein Admin in der Weboberfläche einträgt, wird nur geprüft: der
+# Dienst läuft als SYSTEM, ein /inheritance:r + /remove auf einem fremden Baum
+# (D:\\Praxis\\Scans, ein Profil, ProgramData) sperrte alle Konten und andere
+# Programme aus - eine Wirkung auf Betriebssystem-Ebene aus einer Web-Rolle.
+_WIN_ALLOWED_DIR_SIDS = frozenset({"S-1-5-18", "S-1-5-32-544"})  # SYSTEM, Administratoren
+
+_WIN_ACL_REPORT_SCRIPT = (
+    "$ErrorActionPreference='Stop';"
+    "$a=Get-Acl -LiteralPath $env:PZ_ACL_PATH;"
+    "'OWNER '+$a.GetOwner([System.Security.Principal.SecurityIdentifier]).Value;"
+    "'PROTECTED '+$a.AreAccessRulesProtected;"
+    "foreach($r in $a.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]))"
+    "{'RULE '+$r.IdentityReference.Value+' '+$r.AccessControlType}"
+)
+
+
+def _win_acl_report(path: Path) -> Optional[str]:
+    """Eigentümer, Vererbung und Einträge des Ordners als Text (SIDs), None bei
+    Fehler. Der Pfad geht über die Umgebung, nie in den Befehlstext."""
+    sysroot = os.environ.get("SystemRoot", "C:\\Windows")
+    ps = os.path.join(sysroot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    try:
+        result = subprocess.run(
+            [ps, "-NoProfile", "-NonInteractive", "-Command", _WIN_ACL_REPORT_SCRIPT],
+            capture_output=True, text=True, errors="replace", timeout=60,
+            env={**os.environ, "PZ_ACL_PATH": str(path)},
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning("Rechte von %s nicht lesbar: %s", path, e)
+        return None
+    if result.returncode != 0:
+        logger.warning("Rechte von %s nicht lesbar (rc=%s): %s", path, result.returncode,
+                       (result.stderr or result.stdout or "").strip())
+        return None
+    return result.stdout
+
+
+def win_acl_report_is_private(report: Optional[str]) -> bool:
+    """True, wenn nur SYSTEM/Administratoren Zugriff haben, sie Eigentümer sind
+    und keine Rechte vom übergeordneten Ordner geerbt werden."""
+    if not report:
+        return False
+    owner = None
+    protected = False
+    for line in report.splitlines():
+        parts = line.strip().split()
+        if not parts:
+            continue
+        if parts[0] == "OWNER" and len(parts) == 2:
+            owner = parts[1]
+        elif parts[0] == "PROTECTED" and len(parts) == 2:
+            protected = parts[1].lower() == "true"
+        elif parts[0] == "RULE" and len(parts) == 3:
+            if parts[2] == "Allow" and parts[1] not in _WIN_ALLOWED_DIR_SIDS:
+                return False
+    return protected and owner in _WIN_ALLOWED_DIR_SIDS
+
+
+EXISTING_DIR_ACL_DETAIL = (
+    "Dieser Ordner existiert bereits und ist nicht nur für SYSTEM und Administratoren "
+    "zugänglich (oder erbt Rechte vom übergeordneten Ordner). PraxisZeit ändert die "
+    "Rechte bestehender Ordner nicht. Bitte einen NEUEN Ordnernamen eintragen - "
+    "PraxisZeit legt ihn dann mit passenden Rechten an."
+)
+
+
+def _existing_dir_is_private(path: Path) -> bool:
+    """Windows: Rechte eines bestehenden Ordners prüfen (nie ändern).
+    Außerhalb von Windows True (dort schützt 0600 jede Datei)."""
+    if not _is_windows():
+        return True
+    return win_acl_report_is_private(_win_acl_report(path))
+
+
+def secure_backup_dir(path: Path, *, created: bool) -> None:
+    """Rechte des Backup-Ordners vor dem ersten Byte sicherstellen.
+
+    Selbst angelegt oder Standard-Verzeichnis der Installation → einschränken;
+    bestehender, vom Admin gewählter Ordner → nur prüfen. Wirft BackupError."""
+    if created or _is_default_backup_dir(path):
+        if not restrict_backup_dir_acl(path):
+            raise BackupError(ACL_FAILED_DETAIL)
+        return
+    if not _existing_dir_is_private(path):
+        raise BackupError(EXISTING_DIR_ACL_DETAIL)
 
 
 def _run_icacls(cmd: list[str]) -> bool:
@@ -344,16 +459,18 @@ def update_config(
                 # beliebige Verzeichnisbäume auf dem Host anlegen lassen (Review:
                 # Privilege-Surface auf Native-Installs). Das übergeordnete
                 # Verzeichnis muss existieren; nur das letzte Segment wird angelegt.
+                created = False
                 if not probe_dir.exists():
                     if not probe_dir.parent.is_dir():
                         raise BackupError(
                             f"Übergeordnetes Verzeichnis von '{loc}' existiert nicht — "
                             "bitte den Pfad manuell anlegen."
                         )
-                    probe_dir.mkdir(exist_ok=True)
-                # Windows: Rechte VOR dem ersten Byte einschränken (S2-4).
-                if not restrict_backup_dir_acl(probe_dir):
-                    raise BackupError(ACL_FAILED_DETAIL)
+                    probe_dir.mkdir()
+                    created = True
+                # Windows: Rechte VOR dem ersten Byte (S2-4) - eingeschränkt nur
+                # an einem eben angelegten Ordner, ein bestehender wird geprüft.
+                secure_backup_dir(probe_dir, created=created)
                 probe = probe_dir / ".praxiszeit-write-test"
                 probe.write_text("ok")
                 probe.unlink()
@@ -501,14 +618,15 @@ def create_backup(db: Session) -> BackupFile:
     conn_args, password = conn
 
     backup_dir = get_backup_dir(db)
+    created = not backup_dir.exists()
     try:
         backup_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         raise BackupError(f"Backup-Verzeichnis nicht beschreibbar: {e}") from e
     # Windows: jeder Dump erbt die Rechte des Ordners (0o600 wirkt dort nicht).
-    # Kein Dump in einen Ordner, dessen Rechte sich nicht einschränken lassen.
-    if not restrict_backup_dir_acl(backup_dir):
-        raise BackupError(ACL_FAILED_DETAIL)
+    # Kein Dump in einen Ordner, der für andere Konten lesbar ist; Rechte
+    # geändert werden nur an selbst angelegten Ordnern und am Standard-Ordner.
+    secure_backup_dir(backup_dir, created=created)
 
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
     backup_file = backup_dir / f"praxiszeit_{timestamp}.sql.gz"
