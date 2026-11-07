@@ -317,7 +317,7 @@ def export_tenant_arbzg_data(
 
 @router.get("/tenants-overview")
 def tenants_overview(
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=100_000),  # S2-2
     per_page: int = Query(25, ge=1, le=200),
     status_filter: str | None = Query(None, pattern="^(active|trial|past_due|suspended|canceled)$"),
     db: Session = Depends(get_db),

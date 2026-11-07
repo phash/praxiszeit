@@ -52,7 +52,7 @@ def get_pending_vacation_request_count(
 def list_all_vacation_requests(
     request_status: Optional[str] = Query(None, alias="status"),
     user_id: Optional[str] = Query(None),
-    skip: int = 0,
+    skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),

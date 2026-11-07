@@ -158,7 +158,7 @@ def list_all_change_requests(
     user_id: Optional[str] = Query(None, description="Filter by user"),
     date_from: Optional[date] = Query(None, description="Filter: created_at >= date_from"),
     date_to: Optional[date] = Query(None, description="Filter: created_at <= date_to"),
-    skip: int = 0,
+    skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
