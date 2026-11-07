@@ -673,7 +673,7 @@ def test_secure_install_ps1_replaces_foreign_entries_on_the_root():
     code = _code_lines(text, "#")
     exact = code.index("Set-ExactDacl $root $SddlRoot @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-32-545', 'S-1-5-20')")
     assert code.index("Invoke-Icacls @($root, '/inheritance:r')") < exact
-    assert exact < code.index("'/reset'")
+    assert exact < code.index("'/reset'", code.index("$pgIsLink = Test-ReparsePoint $pgDir"))
     fn = code[code.index("function Set-ExactDacl"):code.index("function Test-ReparsePoint")]
     assert "SetSecurityDescriptorSddlForm($Sddl, 'Access')" in fn
     assert "AreAccessRulesProtected" in fn and "exit 1" in fn
@@ -682,17 +682,28 @@ def test_secure_install_ps1_replaces_foreign_entries_on_the_root():
         assert f"'{name}' {{ Set-ExactDacl $p $Sddl{name.capitalize()} " in code
 
 
+def _ps1_code() -> str:
+    return _code_lines(_read("installer/windows/secure-install.ps1").decode("ascii"), "#")
+
+
+def _ps1_function(code: str, name: str) -> str:
+    fn = code[code.index(f"function {name}"):]
+    return fn[:fn.index("\n}\n") + 3]
+
+
+def _contents_block(code: str) -> str:
+    start = code.index("'config' { Set-ExactDacl $p $SddlConfig")
+    return code[start:code.index("if ($SkipManifest)")]
+
+
 def test_secure_install_ps1_resets_the_contents_of_data_logs_config():
     """Final-Review (S3-01-Rest): data, logs und config bekamen nur auf dem Ordner
     selbst eine exakte DACL - ein vorab angelegtes data\\backups mit eigenem
     Eintrag behielt Lesezugriff auf jede Sicherung, ein leeres data\\db
     Schreibzugriff auf postgresql.conf. Die Inhalte gehen auf die geerbten
     Rechte zurueck."""
-    code = _code_lines(_read("installer/windows/secure-install.ps1").decode("ascii"), "#")
-    exact = code.index("'config' { Set-ExactDacl $p $SddlConfig")
-    block = code[exact:code.index("if ($SkipManifest)")]
-    assert "if ($entry.Name -in @('data', 'logs', 'config'))" in block
-    assert "Get-ChildItem -LiteralPath $p -Force" in block
+    block = _contents_block(_ps1_code())
+    assert "foreach ($child in Get-ChildItem -LiteralPath $p -Force)" in block
     assert "Invoke-Icacls @($child.FullName, '/reset', '/T', '/C', '/Q')" in block
     assert "Invoke-Icacls @($child.FullName, '/reset', '/C', '/Q')" in block
     assert "Test-ReparsePoint $child.FullName" in block
@@ -702,20 +713,20 @@ def test_secure_install_ps1_resets_the_contents_of_data_logs_config():
 
 def test_secure_install_ps1_never_trusts_a_pg_version_file(srv):
     """Audit round 4: an initialised data\\db (PG_VERSION) used to be exempt from
-    the reset. Anyone able to write there could plant PG_VERSION and keep their
-    own entries on postgresql.conf. data\\db is now left alone only if it and
-    everything below it is owned by, and grants access only to, SYSTEM,
-    Administrators and the PostgreSQL service account; otherwise it is reset
-    and gets back exactly the service entry pg_start grants."""
-    code = _code_lines(_read("installer/windows/secure-install.ps1").decode("ascii"), "#")
+    the reset. data\\db is now left alone only if it and everything below it is
+    owned by, and grants access only to, SYSTEM, Administrators and the
+    PostgreSQL service account; otherwise it is reset and gets back exactly the
+    service entry pg_start grants."""
+    code = _ps1_code()
     assert "PG_VERSION" not in code
 
-    fn = code[code.index("function Test-ServiceOnlyAcl"):code.index("function Assert-NoReparsePointBelow")]
+    fn = _ps1_function(code, "Test-ServiceOnlyAcl")
     assert "$okSids = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-20')" in fn
     assert "$okSids -notcontains $acl.GetOwner($sidType).Value) { return $false }" in fn
     assert "foreach ($rule in $acl.GetAccessRules($true, $true, $sidType))" in fn
     assert "$okSids -notcontains $rule.IdentityReference.Value) { return $false }" in fn
     assert "-band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return $false }" in fn
+    assert "if (Test-OddName $c.Name) { return $false }" in fn  # Runde 5
     # the whole tree, not only data\\db itself; any error -> not trusted
     assert "Get-ChildItem -LiteralPath $item.FullName -Force -ErrorAction Stop" in fn
     assert "$items.Push($c)" in fn
@@ -724,11 +735,10 @@ def test_secure_install_ps1_never_trusts_a_pg_version_file(srv):
     assert catch.split("}", 2)[1].strip() == "catch {\n        return $false"
     assert "Write-Output" not in fn  # its pipeline output is the verdict
 
-    block = code[code.index("if ($entry.Name -in @('data', 'logs', 'config'))"):
-                 code.index("if ($SkipManifest)")]
+    block = _contents_block(code)
     assert ("$isDb = ($entry.Name -eq 'data' -and $child.Name -eq 'db' -and $child.PSIsContainer)"
             in block)
-    assert "if ($isDb -and (Test-ServiceOnlyAcl $child.FullName)) { continue }" in block
+    assert "if ($isDb -and $dbServiceOnly) { continue }" in block
     reset = block.index("Invoke-Icacls @($child.FullName, '/reset', '/T', '/C', '/Q')")
     grant_line = ("Invoke-Icacls @($child.FullName, '/grant', "
                   "\"${SidNetworkService}:(OI)(CI)F\", '/T', '/C', '/Q')")
@@ -742,41 +752,118 @@ def test_secure_install_ps1_never_trusts_a_pg_version_file(srv):
     assert "$SidNetworkService = '*S-1-5-20'" in code
 
 
-def _indent(line: str) -> int:
-    return len(line) - len(line.lstrip(" "))
+def test_secure_install_ps1_decides_trust_before_any_owner_change():
+    """Audit round 5: the owner check of data\\db ran after ``icacls data
+    /setowner Administrators /T`` - every owner it saw was already
+    Administrators, so it could never fail. Trust is now decided before the
+    first /setowner: the service-only verdict for data\\db, and the origin of
+    files in data\\db and config (owner SYSTEM, Administrators, the database
+    service or a local administrator). Files of unproven origin stop the
+    install (exit 2) unless a PraxisZeit service registered for this folder
+    proves an earlier elevated install."""
+    code = _ps1_code()
+    raw = _read("installer/windows/secure-install.ps1").decode("ascii")
+    step0 = raw[raw.index("# --- 0. Vorab"):raw.index("# --- 1. Wurzel ---")]
+    assert "$untrusted = @(Get-UntrustedFiles $dbDir @()) + @(Get-UntrustedFiles $configDir @('praxiszeit.conf.example'))" in step0
+    assert "$evidence = Test-InstallEvidence $root" in step0
+    assert "if ($untrusted.Count -gt 0 -and -not $evidence) {" in step0
+    assert step0.index("if ($untrusted.Count -gt 0 -and -not $evidence) {") < step0.index("exit 2")
+    assert "$dbServiceOnly = (Test-Path -LiteralPath $dbDir) -and (Test-ServiceOnlyAcl $dbDir)" in step0
+    # nothing before step 0 changes owners or rights
+    main = code[code.index("try {\n    $root = (Resolve-Path"):]
+    assert main.index("Get-UntrustedFiles $dbDir") < main.index("'/setowner'")
+    assert main.index("Test-ServiceOnlyAcl $dbDir") < main.index("'/setowner'")
+    assert "Test-ServiceOnlyAcl $child.FullName" not in code  # no late (post-setowner) check
+
+    fn = _ps1_function(code, "Get-UntrustedFiles")
+    assert "$trusted = Get-TrustedOwnerSids" in fn
+    assert "$item.GetAccessControl('Owner').GetOwner($sidType).Value" in fn
+    assert "if ($trusted -notcontains $owner)" in fn
+    assert "(Verknuepfung)" in fn and "(nicht lesbar)" in fn and "Test-OddName $c.Name" in fn
+    sids = _ps1_function(code, "Get-TrustedOwnerSids")
+    assert "@('S-1-5-18', 'S-1-5-32-544', 'S-1-5-20')" in sids
+    assert "Get-LocalGroupMember -SID 'S-1-5-32-544'" in sids
+    assert "WindowsIdentity]::GetCurrent().User.Value" in sids
+    ev = _ps1_function(code, "Test-InstallEvidence")
+    assert "@('PraxisZeit-PostgreSQL', 'PraxisZeit')" in ev
+    assert "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\$svc" in ev and "ImagePath" in ev
+    assert "IndexOf($Root + '\\', [System.StringComparison]::OrdinalIgnoreCase)" in ev
 
 
-def test_secure_install_ps1_checks_every_recursive_icacls_for_reparse_points():
-    """Audit round 4: ``icacls /setowner|/reset /T`` follows junctions and
-    symbolic links below the first level. Every subtree handed to icacls with
-    /T is walked first - at every depth, never entering a reparse point - and
-    the install is refused (exit 2) if one exists."""
-    code = _code_lines(_read("installer/windows/secure-install.ps1").decode("ascii"), "#")
-    fn = code[code.index("function Assert-NoReparsePointBelow"):]
-    fn = fn[:fn.index("\n}\n") + 3]
+def test_secure_install_ps1_locks_each_subtree_top_down_before_recursing():
+    """Audit rounds 4+5: ``icacls /setowner|/reset /T`` follows junctions and
+    symbolic links. A one-shot check before the recursive calls left a window:
+    an account with an explicit ACE on a subfolder could create a link after
+    the check. Every subtree is now locked top-down first - per directory owner
+    + reset WITHOUT /T, then list it - refusing links, multi-link files and
+    names ending in a space or dot (exit 2); only then run the /T calls."""
+    code = _ps1_code()
     assert "-Recurse" not in code  # PS 5.1 -Recurse follows directory links itself
-    assert "Get-ChildItem -LiteralPath $d -Force -ErrorAction Stop" in fn
+    assert "Assert-NoReparsePointBelow" not in code
+    fn = _ps1_function(code, "Lock-TreeTopDown")
+    lock = fn.index("Invoke-Icacls @($d, '/setowner', $SidAdmins, '/C', '/Q')")
+    reset = fn.index("Invoke-Icacls @($d, '/reset', '/C', '/Q')")
+    listing = fn.index("Get-ChildItem -LiteralPath $d -Force -ErrorAction Stop")
+    assert lock < reset < listing  # lock before looking
+    assert "'/T'" not in fn
+    assert fn.index("if (-not (Test-DirLocked $d)) {") < lock
+    assert "if (Test-OddName $item.Name) { $odd.Add($item.FullName); continue }" in fn
     check = fn.index("-band [System.IO.FileAttributes]::ReparsePoint")
-    assert check < fn.index("$found.Add($item.FullName)") < fn.index("continue") \
-        < fn.index("if ($item.PSIsContainer) { $stack.Push($item.FullName) }")
-    assert "exit 2" in fn and "exit 1" in fn  # found / not listable
-    assert fn.count("return") == 0  # statement, never assigned (messages would vanish)
+    assert check < fn.index("$links.Add($item.FullName)") < fn.index("$stack.Push($item.FullName)")
+    assert "elseif ([PzFileLinks]::Count($item.FullName) -ne 1) {" in fn
+    assert "exit 1" in fn and "Write-TreeFindings $Dir $links $hard $odd" in fn
+    findings = _ps1_function(code, "Write-TreeFindings")
+    assert findings.count("exit 2") == 1
+    locked = _ps1_function(code, "Test-DirLocked")
+    assert "-ne 'S-1-5-32-544') { return $false }" in locked
+    assert "AreAccessRulesProtected) { return $false }" in locked
+    assert "if (-not $rule.IsInherited) { return $false }" in locked
+    assert "Test-OddName" in code and "return ($Name -match '[ .]$')" in _ps1_function(code, "Test-OddName")
+    # hard-link count: FILE_READ_ATTRIBUTES, no reparse following, \\?\ paths
+    raw = _read("installer/windows/secure-install.ps1").decode("ascii")
+    assert "GetFileInformationByHandle" in raw and "CreateFileW(p, 0x80, 7, IntPtr.Zero, 3, 0x02200000" in raw
+    assert '@"\\\\?\\"' in raw
+    add = raw.index("Add-Type -Language CSharp -TypeDefinition $PzFileLinksCode -ErrorAction Stop")
+    assert "exit 1" in raw[add:add + 300]
 
     lines = code.splitlines()
-    required = {"$sub.FullName": "$sub.FullName", "$p": "$p", "$child.FullName": "$p"}
     recursive = [i for i, line in enumerate(lines)
                  if "Invoke-Icacls @(" in line and "'/T'" in line]
-    assert len(recursive) >= 6
+    assert len(recursive) >= 7
     for i in recursive:
         target = lines[i].split("Invoke-Icacls @(", 1)[1].split(",", 1)[0].strip()
-        assert target in required, lines[i]
         j = i - 1
-        while not lines[j].strip().startswith("Assert-NoReparsePointBelow "):
-            # the check must sit in the same branch, not in a sibling one
-            assert not (lines[j].strip().startswith("}") and "else" in lines[j]
-                        and _indent(lines[j]) < _indent(lines[i])), (lines[i], lines[j])
+        while not lines[j].strip().startswith("Lock-TreeTopDown "):
+            # the lock must sit in the same branch, not in a sibling one
+            assert not (lines[j].strip().startswith("}") and _indent(lines[j]) < _indent(lines[i])), \
+                (lines[i], lines[j])
             j -= 1
-        assert lines[j].strip() == f"Assert-NoReparsePointBelow {required[target]}", lines[i]
+        assert lines[j].strip() == f"Lock-TreeTopDown {target}", lines[i]
+    # single files get the same name/hard-link check before icacls
+    singles = [i for i, line in enumerate(lines)
+               if "Invoke-Icacls @(" in line and "'/setowner'" in line and "'/T'" not in line
+               and "$d," not in line and "$root," not in line]
+    for i in singles:
+        target = lines[i].split("Invoke-Icacls @(", 1)[1].split(",", 1)[0].strip()
+        if target == "$p" and "'bin'" in lines[i - 1] + lines[i - 2]:
+            continue  # bin itself: its entries follow one by one
+        prev = [lines[k].strip() for k in range(i - 3, i)]
+        assert f"Assert-SingleFile {target}" in prev or target == "$p", lines[i]
+
+
+def test_secure_install_ps1_refuses_links_at_the_first_level():
+    """A junction data -> elsewhere (or data\\backups -> elsewhere) placed the
+    database or the backups outside the secured folder; it used to be skipped."""
+    code = _ps1_code()
+    step2 = code[code.index("$pgIsLink = Test-ReparsePoint $pgDir"):code.index("if ($SkipManifest)")]
+    root_check = step2.index("if (Test-ReparsePoint $p) {")
+    assert "exit 2" in step2[root_check:root_check + 400]
+    child_check = step2.index("if (Test-ReparsePoint $child.FullName) {")
+    assert "exit 2" in step2[child_check:child_check + 400]
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
 
 
 def test_setup_bat_secures_install_dir_before_any_python():
