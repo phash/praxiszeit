@@ -32,6 +32,11 @@ BEGIN
     IF to_regclass('public.time_entry_audit_logs') IS NOT NULL THEN
         REVOKE UPDATE, DELETE, TRUNCATE ON time_entry_audit_logs FROM praxiszeit_app;
     END IF;
+    -- Grabsteine geloeschter Protokollzeilen (Review-Runde 3): nur die
+    -- Eigentuemerin; die App-Rolle darf sie weder lesen noch schreiben.
+    IF to_regclass('public.audit_log_tombstones') IS NOT NULL THEN
+        REVOKE ALL ON audit_log_tombstones FROM praxiszeit_app;
+    END IF;
 END
 $$;
 
@@ -46,7 +51,10 @@ BEGIN
         'pz_audit_set_notes(uuid, text, text, text)',
         'pz_audit_delete(uuid[])',
         'pz_audit_tenant_ok(uuid)',
-        'pz_audit_head_seq(uuid)'
+        'pz_audit_head_seq(uuid)',
+        'pz_audit_set_head(uuid, text, boolean)',
+        'pz_audit_scrub_ok(text, text)',
+        'pz_audit_tombstoned(uuid)'
     ] LOOP
         IF to_regprocedure(f) IS NOT NULL THEN
             -- ohne Prozent-Platzhalter: Tests reichen die Datei durch psycopg

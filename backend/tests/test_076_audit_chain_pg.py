@@ -567,3 +567,151 @@ def test_legacy_cutoff_is_fixed_at_migration(env):
     finally:
         o.close()
         eng.dispose()
+
+
+# ── Review-Runde 3 (2026-11-07): geloeschte Zeilen kehren nie zurueck ──
+
+def _reanchor_then_more_rows(s, engine):
+    """Kette mit 3 Gliedern, Kettenende-Siegel gebrochen, Verwaltung setzt neu
+    (echter Vermerk), dann zwei belastende Zeilen. Liefert den alten Kopf."""
+    from app.services import audit_chain_service as acs
+    t = uuid.UUID(TENANT)
+    for _ in range(3):
+        _insert_hashed(s)
+    acs.seal_chain(s, t)
+    s.commit()
+    old_head = _head_value(engine)
+    seq, h, _mac = old_head.split(":")
+    s.execute(text("SELECT pz_audit_set_head(:t, :v, false)"), {"t": TENANT, "v": f"{seq}:{h}:00"})
+    s.commit()
+    acs.reanchor_chain(s, t, changed_by=uuid.UUID(ADM), reason="Pruefung")
+    for _ in range(2):
+        _insert_hashed(s, new_note="belastend")
+    acs.seal_chain(s, t)
+    s.commit()
+    assert acs.verify_tenant(s, t)["intact"]
+    return old_head, int(seq)
+
+
+def test_replayed_reanchor_marker_cannot_rewind_the_head(env):
+    """Angriff aus dem Review: alle Glieder hinter einem alten Kopf ueber
+    pz_audit_delete entfernen (darunter den echten Vermerk), den Vermerk Byte
+    fuer Byte wieder einfuegen und den alten Kopf zurueckspielen. Vorher galt die
+    Kette danach als intakt, die belastenden Zeilen waren spurlos weg. Jetzt
+    scheitert das Wiedereinfuegen an den Grabsteinen."""
+    from app.services import audit_chain_service as acs
+    url, engine, app_url, role = env
+    eng, s = _app_session(app_url)
+    try:
+        old_head, seq = _reanchor_then_more_rows(s, engine)
+        rows = s.execute(text(
+            "SELECT * FROM time_entry_audit_logs WHERE tenant_id = :t AND chain_seq > :q "
+            "ORDER BY chain_seq"), {"t": TENANT, "q": seq}).mappings().all()
+        marker = [dict(r) for r in rows if r["action"] == "audit_chain_reanchored"][0]
+        s.execute(text("SELECT pz_audit_delete(CAST(:ids AS uuid[]))"),
+                  {"ids": [str(r["id"]) for r in rows]})
+        s.commit()
+        cols = [k for k in marker if k not in ("chain_seq", "chain_prev", "chain_hash")]
+        msg = _expect_denied(s, f"INSERT INTO time_entry_audit_logs ({', '.join(cols)}) VALUES "
+                                f"({', '.join(':' + c for c in cols)})", {c: marker[c] for c in cols})
+        assert "nicht zurueckkehren" in msg
+        # ohne Vermerk darf der Kopf nicht zurueck
+        msg = _expect_denied(s, "SELECT pz_audit_set_head(:t, :v, true)", {"t": TENANT, "v": old_head})
+        assert "zurueck" in msg
+        # die Loeschung ohne Vermerk bleibt sichtbar
+        result = acs.verify_tenant(s, uuid.UUID(TENANT))
+        assert not result["intact"] and result["missing_links"] > 0, result
+    finally:
+        s.close()
+        eng.dispose()
+
+
+def test_purged_row_cannot_be_reinserted(env):
+    """Auch eine legitim (Art. 17, Aufbewahrungsfrist) entfernte Zeile kehrt
+    nicht mit gueltigem Hash zurueck."""
+    from app.services import audit_chain_service as acs
+    url, engine, app_url, role = env
+    eng, s = _app_session(app_url)
+    try:
+        row = _insert_hashed(s, new_note="Art. 17")
+        copy = dict(s.execute(text("SELECT * FROM time_entry_audit_logs WHERE id = :i"),
+                              {"i": str(row.id)}).mappings().one())
+        acs.delete_rows(s, [row], tenant_id=uuid.UUID(TENANT), user_id=uuid.UUID(EMP),
+                        changed_by=uuid.UUID(ADM), source="dsgvo", reason="Test")
+        s.commit()
+        cols = [k for k in copy if k not in ("chain_seq", "chain_prev", "chain_hash")]
+        msg = _expect_denied(s, f"INSERT INTO time_entry_audit_logs ({', '.join(cols)}) VALUES "
+                                f"({', '.join(':' + c for c in cols)})", {c: copy[c] for c in cols})
+        assert "nicht zurueckkehren" in msg
+        # die Grabsteine sind fuer die App-Rolle unsichtbar und unveraenderlich
+        _expect_denied(s, "SELECT count(*) FROM audit_log_tombstones")
+        _expect_denied(s, "DELETE FROM audit_log_tombstones")
+        with engine.connect() as conn:
+            privs = {p for (p,) in conn.execute(text(
+                "SELECT privilege_type FROM information_schema.role_table_grants "
+                "WHERE table_name = 'audit_log_tombstones' AND grantee = :r"), {"r": role})}
+        assert privs == set()
+    finally:
+        s.close()
+        eng.dispose()
+
+
+def test_app_role_rows_need_a_present_created_at(env):
+    """created_at steht in der Pruefsumme; eine kopierte alte Zeile (neue id,
+    alter Zeitpunkt) wird schon beim Einfuegen abgelehnt."""
+    from datetime import datetime, timedelta, timezone
+    url, engine, app_url, role = env
+    eng, s = _app_session(app_url)
+    try:
+        s.commit()  # Mandanten-Kontext festschreiben (der Rollback nimmt ihn sonst zurueck)
+        old = datetime.now(timezone.utc) - timedelta(days=1)
+        msg = _expect_denied(s, (
+            "INSERT INTO time_entry_audit_logs (id, tenant_id, user_id, changed_by, action, source, "
+            "created_at, row_hash, hash_version) VALUES (gen_random_uuid(), :t, :u, :a, 'update', "
+            "'manual', :c, 'x', 3)"), {"t": TENANT, "u": EMP, "a": ADM, "c": old})
+        assert "Gegenwart" in msg
+        _insert_hashed(s)  # normaler Weg (created_at beim Flush) geht
+    finally:
+        s.close()
+        eng.dispose()
+
+
+def test_set_head_reanchor_ignores_a_marker_from_an_earlier_transaction(env):
+    """Zweite Verteidigungslinie: das Zuruecksetzen gilt nur mit einem Vermerk
+    aus derselben Transaktion — ein alter loser Vermerk (hier von der
+    Eigentuemerin mit altem Zeitpunkt angelegt) reicht nicht."""
+    from datetime import datetime, timedelta, timezone
+    from app.models import TimeEntryAuditLog
+    from app.services import audit_chain_service as acs
+    url, engine, app_url, role = env
+    eng, s = _app_session(app_url)
+    try:
+        for _ in range(3):
+            _insert_hashed(s)
+        acs.seal_chain(s, uuid.UUID(TENANT))
+        s.commit()
+        seq, _h, _mac = _head_value(engine).split(":")
+        seq = int(seq)
+        top = s.execute(text("SELECT id FROM time_entry_audit_logs WHERE tenant_id = :t "
+                             "AND chain_seq = :q"), {"t": TENANT, "q": seq}).scalar()
+        prev_hash = s.execute(text("SELECT chain_hash FROM time_entry_audit_logs WHERE "
+                                   "tenant_id = :t AND chain_seq = :q"),
+                              {"t": TENANT, "q": seq - 1}).scalar()
+        s.execute(text("SELECT pz_audit_delete(ARRAY[CAST(:i AS uuid)])"), {"i": str(top)})
+        s.commit()
+        owner = sessionmaker(bind=engine)()
+        try:
+            owner.execute(text("SET LOCAL app.is_superadmin = 'true'"))
+            owner.add(TimeEntryAuditLog(
+                tenant_id=uuid.UUID(TENANT), user_id=uuid.UUID(ADM), changed_by=uuid.UUID(ADM),
+                action="audit_chain_reanchored", source="audit_reanchor", new_note="alt",
+                created_at=datetime.now(timezone.utc) - timedelta(hours=2)))
+            owner.commit()
+        finally:
+            owner.close()
+        msg = _expect_denied(s, "SELECT pz_audit_set_head(:t, :v, true)",
+                             {"t": TENANT, "v": f"{seq - 1}:{prev_hash}:00"})
+        assert "zurueck" in msg
+    finally:
+        s.close()
+        eng.dispose()

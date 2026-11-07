@@ -23,6 +23,9 @@
   ``pz_audit_set_head`` — auf das hoechste versiegelte Glied, nie zurueck; die
   Grenze fuer Altbestand ohne Pruefsumme (``audit_legacy_cutoff``) haelt diese
   Migration je Mandant fest. Beide Zeilen kann die App-Rolle nicht schreiben.
+  Jede geloeschte Zeilen-id landet in ``audit_log_tombstones`` (nur
+  Eigentuemerin) und darf nie wieder eingefuegt werden; neue Zeilen der
+  App-Rolle muessen einen gegenwaertigen ``created_at`` tragen.
 * A2-3: die Rohstempel (``raw_start_time``/``raw_end_time``), das Ende der
   Anwesenheit und die nicht angerechneten Minuten stehen je Zeile vorher/nachher.
 * A2-8: ``changed_by`` wird nullable mit ``ON DELETE SET NULL`` — die
@@ -76,6 +79,24 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
+        -- Review-Runde 3: eine geloeschte Zeile kehrt nie zurueck. Sonst liesse
+        -- sich eine echte Zeile (gueltiger row_hash, er bindet die id) nach
+        -- pz_audit_delete Byte fuer Byte wieder einfuegen — etwa ein alter
+        -- Vermerk "Kettenende neu gesetzt", der pz_audit_set_head ein
+        -- Zuruecksetzen erlaubt, oder eine nach Art. 17 entfernte Zeile.
+        IF pz_audit_tombstoned(NEW.id) THEN
+            RAISE EXCEPTION 'time_entry_audit_logs: geloeschte Zeile % darf nicht zurueckkehren', NEW.id
+                USING ERRCODE = '42501';
+        END IF;
+        -- created_at steht in der Pruefsumme: eine kopierte alte Zeile traegt
+        -- ihren alten Zeitpunkt und faellt hier heraus. Spielraum fuer lange
+        -- Transaktionen und Uhrabweichung zwischen App und Datenbank.
+        IF NEW.created_at IS NULL
+           OR NEW.created_at < transaction_timestamp() - interval '10 minutes'
+           OR NEW.created_at > clock_timestamp() + interval '10 minutes' THEN
+            RAISE EXCEPTION 'time_entry_audit_logs: Anlagezeitpunkt % liegt nicht in der Gegenwart', NEW.created_at
+                USING ERRCODE = '42501';
+        END IF;
         IF NEW.row_hash IS NULL OR NEW.hash_version IS NULL THEN
             RAISE EXCEPTION 'time_entry_audit_logs: Zeile ohne Pruefsumme abgelehnt'
                 USING ERRCODE = '42501';
@@ -107,6 +128,53 @@ LANGUAGE sql STABLE AS $$
         OR p_tenant = NULLIF(current_setting('app.tenant_id', true), '')::uuid
         OR COALESCE((SELECT rolsuper FROM pg_roles WHERE rolname = session_user), false)
 $$;
+"""
+
+# Grabsteine (Review-Runde 3): jede ueber pz_audit_delete entfernte Zeilen-id.
+# Nur die Eigentuemerin liest und schreibt die Tabelle (keine Rechte fuer die
+# App-Rolle, RLS ohne FORCE — die Eigentuemerin darf nicht von Sitzungs-
+# einstellungen abhaengen, die die App-Rolle selbst setzt). pz_audit_guard
+# fragt sie ueber pz_audit_tombstoned (SECURITY DEFINER) ab.
+TOMBSTONE_TABLE = """
+CREATE TABLE audit_log_tombstones (
+    id uuid PRIMARY KEY,
+    tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    deleted_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE audit_log_tombstones ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON audit_log_tombstones
+USING (
+    current_setting('app.is_superadmin', true) = 'true'
+    OR tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid
+);
+"""
+
+TOMBSTONED_FUNCTION = """
+CREATE OR REPLACE FUNCTION pz_audit_tombstoned(p_id uuid) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+    SELECT EXISTS (SELECT 1 FROM audit_log_tombstones WHERE id = p_id)
+$$;
+"""
+
+# Rechte an den Grabsteinen jedem Konto ausser der Eigentuemerin entziehen —
+# auch die Default-Privilegien aus init-db-user.sql (ALTER DEFAULT PRIVILEGES)
+# haben der App-Rolle beim Anlegen SELECT/INSERT/UPDATE/DELETE gegeben.
+TOMBSTONE_REVOKE_BLOCK = """
+DO $$
+DECLARE
+    r record;
+BEGIN
+    EXECUTE 'REVOKE ALL ON audit_log_tombstones FROM PUBLIC';
+    FOR r IN
+        SELECT DISTINCT a.grantee
+          FROM pg_class c, aclexplode(c.relacl) a
+         WHERE c.oid = 'public.audit_log_tombstones'::regclass
+           AND a.grantee <> c.relowner
+           AND a.grantee <> 0
+    LOOP
+        EXECUTE format('REVOKE ALL ON audit_log_tombstones FROM %s', r.grantee::regrole);
+    END LOOP;
+END $$;
 """
 
 # Gesiegeltes Kettenende (``system_settings.audit_chain_head``, Wert
@@ -277,10 +345,19 @@ BEGIN
                        OR t.chain_seq > pz_audit_head_seq(t.tenant_id))) THEN
         RAISE EXCEPTION 'pz_audit_delete: nur Zeilen bis zum gesiegelten Kettenende duerfen geloescht werden';
     END IF;
-    DELETE FROM time_entry_audit_logs t
-     WHERE t.id = ANY(p_ids)
-       AND pz_audit_tenant_ok(t.tenant_id);
-    GET DIAGNOSTICS n = ROW_COUNT;
+    -- Jede geloeschte id bekommt einen Grabstein: pz_audit_guard laesst sie
+    -- nie wieder einfuegen (Review-Runde 3).
+    WITH d AS (
+        DELETE FROM time_entry_audit_logs t
+         WHERE t.id = ANY(p_ids)
+           AND pz_audit_tenant_ok(t.tenant_id)
+        RETURNING t.id, t.tenant_id
+    ), g AS (
+        INSERT INTO audit_log_tombstones (id, tenant_id)
+        SELECT d.id, d.tenant_id FROM d
+        ON CONFLICT (id) DO NOTHING
+    )
+    SELECT count(*) INTO n FROM d;
     RETURN n;
 END $$;
 """
@@ -328,8 +405,10 @@ END $$;
 # Kettenende setzen: nur auf das hoechste versiegelte Glied (Position UND
 # Hash — so kann es niemand ueber die Kette hinaus hochsetzen) und nie zurueck.
 # Einzige Ausnahme: "Kettenende neu setzen" der Verwaltung (p_reanchor) mit
-# einer noch losen, gehashten Vermerk-Zeile ``audit_chain_reanchored`` — die
-# wird gleich danach versiegelt und belegt das Zuruecksetzen dauerhaft. Das
+# einer noch losen, gehashten Vermerk-Zeile ``audit_chain_reanchored`` aus
+# derselben Transaktion — die wird gleich danach versiegelt und belegt das
+# Zuruecksetzen dauerhaft. Ein alter Vermerk zaehlt nicht: geloeschte Zeilen
+# kehren nie zurueck (Grabsteine), und der Anlagezeitpunkt muss frisch sein. Das
 # Siegel (dritter Teil) prueft die App, der Schluessel liegt ausserhalb der DB.
 SET_HEAD_FUNCTION = """
 CREATE OR REPLACE FUNCTION pz_audit_set_head(p_tenant uuid, p_value text, p_reanchor boolean)
@@ -374,7 +453,11 @@ BEGIN
             p_reanchor AND EXISTS (
                 SELECT 1 FROM time_entry_audit_logs
                  WHERE tenant_id = p_tenant AND chain_seq IS NULL
-                   AND action = 'audit_chain_reanchored' AND row_hash IS NOT NULL)) THEN
+                   AND action = 'audit_chain_reanchored' AND row_hash IS NOT NULL
+                   -- nur ein Vermerk aus DIESEM Vorgang (Review-Runde 3): ein
+                   -- alter, wieder eingefuegter Vermerk oeffnete sonst das
+                   -- Zuruecksetzen beliebig oft
+                   AND created_at >= transaction_timestamp() - interval '1 minute')) THEN
             RAISE EXCEPTION 'pz_audit_set_head: Kettenende darf nicht zurueckgesetzt werden (% -> %)',
                 v_old_seq, v_seq USING ERRCODE = '42501';
         END IF;
@@ -411,6 +494,7 @@ _AUDIT_FUNCTIONS = (
     "pz_audit_delete(uuid[])",
     "pz_audit_tenant_ok(uuid)",
     "pz_audit_head_seq(uuid)",
+    "pz_audit_tombstoned(uuid)",
 )
 EXECUTE_BLOCK = """
 DO $$
@@ -506,6 +590,9 @@ def upgrade() -> None:
         )
 
     if is_pg:
+        conn.execute(sa.text(TOMBSTONE_TABLE))
+        conn.execute(sa.text(TOMBSTONE_REVOKE_BLOCK))
+        conn.execute(sa.text(TOMBSTONED_FUNCTION))
         conn.execute(sa.text(GUARD_FUNCTION))
         conn.execute(sa.text(
             "CREATE TRIGGER pz_audit_guard_write BEFORE INSERT OR UPDATE OR DELETE "
@@ -543,6 +630,8 @@ def downgrade() -> None:
         conn.execute(sa.text("DROP TRIGGER IF EXISTS pz_audit_head_guard_write ON system_settings"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_head_guard()"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_head_seq(uuid)"))
+        conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_tombstoned(uuid)"))
+        conn.execute(sa.text("DROP TABLE IF EXISTS audit_log_tombstones"))
         # Kettenende gehoert zu den Spalten, die hier wegfallen
         conn.execute(sa.text("SET LOCAL app.is_superadmin = 'true'"))
         conn.execute(sa.text(
