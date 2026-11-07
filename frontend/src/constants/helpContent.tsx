@@ -105,6 +105,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Optional: Notiz</li>
             <li>Speichern</li>
           </ol>
+          <p className="text-sm text-gray-600 mt-2">Vergangene Tage nur per Antrag: Zeiterfassung → Journal, in der Zeile des Tages „Antrag".</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Abwesenheitstypen</h3>
@@ -122,7 +123,7 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Eintrag löschen</h3>
-          <p className="text-sm text-gray-600">Unten in der Liste „Meine Abwesenheiten" auf „Löschen" klicken (Smartphone: Papierkorb-Symbol).</p>
+          <p className="text-sm text-gray-600">Unten in der Liste „Meine Abwesenheiten" auf „Löschen" klicken (Smartphone: Papierkorb-Symbol). Vergangene Tage: „per Antrag" (Lösch-Antrag im Journal); Einträge der Verwaltung ändert die Verwaltung.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Zeiträume</h3>
@@ -298,7 +299,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Zugriffe auf Gesundheitsdaten, Exporte und DSGVO-Vorgänge (Anonymisieren, Endgültig löschen)</li>
             <li>Überträge, Jahresabschluss, Einstellungen, Feiertage und verkürzte Tage – jeweils alter und neuer Wert</li>
             <li>Bei Zeiteinträgen neben der angerechneten auch die tatsächlich gestempelte Zeit („gestempelt …"), auch bei Löschungen</li>
-            <li>Karte „Konto-Vorgänge": Deaktivieren, Reaktivieren, Rollenwechsel, von der Verwaltung gesetzte Passwörter, Zwei-Faktor im Profil ein-/abgeschaltet sowie Notfall-Vorgänge per Kommandozeile (Passwort zurückgesetzt, Zwei-Faktor abgeschaltet)</li>
+            <li>Karte „Konto-Vorgänge": Konten angelegt/umbenannt, Deaktivieren, Reaktivieren, Rollenwechsel, von der Verwaltung gesetzte Passwörter, Zwei-Faktor im Profil ein-/abgeschaltet oder durch die Verwaltung zurückgesetzt, falsche Zwei-Faktor-Codes, Datenbank-Sicherungen sowie Notfall-Vorgänge per Kommandozeile (Passwort zurückgesetzt, Zwei-Faktor abgeschaltet)</li>
           </ul>
         </section>
         <section>

@@ -560,3 +560,32 @@ class TestUserDirectory:
         for rid, name in rev_ids:
             assert str(rid) in body["user_directory"]
             assert body["user_directory"][str(rid)] == f"{name} Test"
+
+
+class TestAuditRowsAboutOthers:
+    """Audit 2026-11-07 (S2-3, Art. 15 Abs. 4 DSGVO): Zeilen, die die
+    exportierende Person über ANDERE geschrieben hat, nur als Vorgang ohne
+    Daten der anderen Person."""
+
+    def test_rows_about_colleagues_are_reduced(self, db, alice, bob, alice_client):
+        alice_id, bob_id, tid = alice.id, bob.id, alice.tenant_id
+        db.add(TimeEntryAuditLog(
+            tenant_id=tid, user_id=bob_id, changed_by=alice_id, action="update",
+            source="wh_change", old_date=date(2026, 3, 16),
+            old_note="Krank 8,0 h", new_note="Krank 4,0 h — Arbeitszeit-Änderung ab 15.03.2026",
+        ))
+        db.add(TimeEntryAuditLog(
+            tenant_id=tid, user_id=alice_id, changed_by=alice_id, action="create",
+            source="manual", new_note="eigene Notiz",
+        ))
+        db.commit()
+        body = json.loads(alice_client.get("/api/me/data-export").content)
+        raw = json.dumps(body, ensure_ascii=False)
+        assert "Krank 4,0 h" not in raw and "Krank 8,0 h" not in raw
+        assert str(bob_id) not in raw
+        other = [a for a in body["audit_logs"] if a.get("about_other_person")]
+        assert len(other) == 1
+        assert other[0]["action"] == "update" and other[0]["source"] == "wh_change"
+        assert "old_note" not in other[0] and "user_id" not in other[0]
+        own = [a for a in body["audit_logs"] if not a.get("about_other_person")]
+        assert own and own[0]["new_note"] == "eigene Notiz"

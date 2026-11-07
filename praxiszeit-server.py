@@ -559,6 +559,9 @@ def pg_init(config: dict, su_password: str):
         f.write("log_filename = 'postgresql.log'\n")
         f.write("log_rotation_age = 1d\n")
         f.write("log_rotation_size = 10MB\n")
+        # Audit 2026-11-07 (S2-1): keine Statement-Werte/DETAIL im Server-Log.
+        f.write("log_min_error_statement = panic\n")
+        f.write("log_error_verbosity = terse\n")
         # Extension libraries path (for bundled PostgreSQL)
         pg_lib = str(BIN_DIR / "postgresql" / "lib").replace("\\", "/")
         f.write(f"dynamic_library_path = '{pg_lib}'\n")

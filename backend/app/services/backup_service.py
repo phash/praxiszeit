@@ -22,6 +22,7 @@ import logging
 import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -319,6 +320,12 @@ class BackupError(RuntimeError):
     pass
 
 
+# S2-6: Grenzen fuer den pg_dump-Lauf.
+_PG_DUMP_LOCK_WAIT = "300s"        # max. Warten auf eine Tabellensperre
+_PG_DUMP_EXIT_TIMEOUT = 120        # s zwischen Ende von stdout und Prozessende
+_PG_DUMP_STDERR_TAIL = 4000        # Bytes der Fehlermeldung in der BackupError
+
+
 def create_backup(db: Session) -> BackupFile:
     """Erzeugt ein komprimiertes Plain-SQL-Backup. Wirft BackupError bei Fehlern."""
     conn = _pg_dump_conn()
@@ -342,13 +349,22 @@ def create_backup(db: Session) -> BackupFile:
     # '-w': nie nach Passwort fragen (Passwort kommt via PGPASSWORD ins env, NICHT
     # in die argv) -> fail fast statt Haenger im Dienst-Kontext. '--clean
     # --if-exists' -> idempotenter Restore.
-    cmd = [_pg_dump_bin(), "-w", "--clean", "--if-exists", *conn_args]
+    # Audit 2026-11-07 (S2-6): '--lock-wait-timeout' -> eine fremde Tabellensperre
+    # laesst den (geplanten) Lauf nicht endlos haengen.
+    cmd = [_pg_dump_bin(), "-w", "--clean", "--if-exists",
+           f"--lock-wait-timeout={_PG_DUMP_LOCK_WAIT}", *conn_args]
     env = os.environ.copy()
     if password:
         env["PGPASSWORD"] = password
+    # Audit 2026-11-07 (S2-6): stderr in eine temporaere DATEI statt in eine
+    # Pipe. Mit zwei Pipes las der Elternprozess nur stdout bis zum Ende —
+    # schrieb pg_dump vorher mehr als den Pipe-Puffer (~64 KB) an Warnungen nach
+    # stderr, blockierten beide Prozesse fuer immer (Deadlock).
+    errfile = tempfile.TemporaryFile()
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errfile, env=env)
     except FileNotFoundError as e:
+        errfile.close()
         raise BackupError(
             f"pg_dump nicht gefunden ({_pg_dump_bin()}). Im Docker-Image fehlt "
             f"postgresql-client; nativ muss PRAXISZEIT_PG_DUMP gesetzt sein."
@@ -373,10 +389,15 @@ def create_backup(db: Session) -> BackupFile:
         if proc.stdout:
             proc.stdout.close()
 
-    stderr = proc.stderr.read().decode("utf-8", "replace") if proc.stderr else ""
-    if proc.stderr:
-        proc.stderr.close()
-    rc = proc.wait()
+    try:
+        rc = proc.wait(timeout=_PG_DUMP_EXIT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        rc = proc.wait()
+    errfile.seek(0)
+    # Nur das Ende — eine Fehlermeldung steht am Schluss, Warnungen davor.
+    stderr = errfile.read()[-_PG_DUMP_STDERR_TAIL:].decode("utf-8", "replace")
+    errfile.close()
 
     if write_error is not None or rc != 0 or not backup_file.exists() or backup_file.stat().st_size == 0:
         # Truncated/leeres Backup nie als "fertig" stehen lassen.

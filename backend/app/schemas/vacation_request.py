@@ -18,7 +18,7 @@ class VacationRequestCreate(BaseModel):
     # numeric(5,2)-Spalte → HTTP 500 statt 422, und `hours: -8` legte einen Antrag
     # an, den die Genehmigung unverändert als negative Absence-Stunden buchte.
     hours: float = Field(..., ge=0, le=24)
-    note: Optional[str] = None
+    note: Optional[str] = Field(None, max_length=2000)  # Audit 2026-11-07 (S2-2)
     absence_type: Optional[str] = "vacation"
     half_day: bool = False  # #167: halber Urlaubstag
 
@@ -57,7 +57,7 @@ class VacationRequestUpdate(BaseModel):
     date: Optional[_date_type] = None
     end_date: Optional[_date_type] = None
     hours: Optional[float] = Field(None, ge=0, le=24)
-    note: Optional[str] = None
+    note: Optional[str] = Field(None, max_length=2000)  # S2-2
     absence_type: Optional[str] = None
     # Release-Review 1.18.2: half_day war hier bisher nicht führbar (extra="forbid"
     # → 422). Die Flagge blieb beim Umbau auf einen Zeitraum still gesetzt, und die
@@ -74,7 +74,7 @@ class VacationRequestUpdate(BaseModel):
 
 class VacationRequestReview(BaseModel):
     action: Literal["approve", "reject"]
-    rejection_reason: Optional[str] = None
+    rejection_reason: Optional[str] = Field(None, max_length=2000)  # S2-2
 
 
 class VacationRequestResponse(BaseModel):

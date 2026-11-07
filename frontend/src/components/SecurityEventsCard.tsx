@@ -33,6 +33,17 @@ const EVENT_LABELS: Record<string, string> = {
   totp_disabled: 'Zwei-Faktor im Profil abgeschaltet',
   audit_integrity_failed: 'Änderungsprotokoll: Prüfung fehlgeschlagen',
   audit_chain_reanchored: 'Änderungsprotokoll: Kettenende neu gesetzt',
+  // Audit 2026-11-07 (#543)
+  user_created: 'Konto angelegt',
+  username_changed: 'Benutzername geändert',
+  totp_failed: 'Falscher Zwei-Faktor-Code',
+  totp_locked: 'Zwei-Faktor-Anmeldung gesperrt (zu viele falsche Codes)',
+  password_check_lockout: 'Zu viele falsche Passworteingaben – abgemeldet',
+  totp_reset_by_admin: 'Zwei-Faktor durch Verwaltung zurückgesetzt',
+  backup_created: 'Sicherung erstellt',
+  backup_downloaded: 'Sicherung heruntergeladen',
+  backup_deleted: 'Sicherung gelöscht',
+  backup_config_changed: 'Sicherungs-Einstellungen geändert',
 };
 
 function formatWhen(iso: string): string {
@@ -63,7 +74,7 @@ export default function SecurityEventsCard() {
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Konto-Vorgänge</h2>
           <p className="text-xs text-gray-500">
-            Deaktivieren, Reaktivieren, Rollen- und Passwortänderungen – wer hat wann was getan.
+            Konten, Rollen, Passwörter, Zwei-Faktor und Datenbank-Sicherungen – wer hat wann was getan.
           </p>
         </div>
       </div>

@@ -844,7 +844,7 @@ def list_audit_log(
         description="Return only real change actions (create/update/delete), "
         "excluding access/system events such as DSGVO read-access markers (#284).",
     ),
-    skip: int = 0,
+    skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),

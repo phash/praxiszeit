@@ -21,9 +21,17 @@ class _FakePopen:
     def __init__(self, payload=b"-- PraxisZeit dump\nSELECT 1;\n", rc=0, stderr=b""):
         self.stdout = io.BytesIO(payload)
         self.stderr = io.BytesIO(stderr)
+        self._stderr_bytes = stderr
         self._rc = rc
 
-    def wait(self):
+    def attach(self, kwargs):
+        # S2-6: create_backup reicht eine Datei als stderr herein.
+        target = kwargs.get("stderr")
+        if hasattr(target, "write"):
+            target.write(self._stderr_bytes)
+        return self
+
+    def wait(self, timeout=None):
         return self._rc
 
 
@@ -109,7 +117,10 @@ def test_delete_and_download_404(admin_client):
     assert client.delete(f"/api/admin/backups/{f.name}").status_code == 204
     # nicht vorhanden -> 404
     assert client.delete("/api/admin/backups/praxiszeit_20990101_000000.sql.gz").status_code == 404
-    assert client.get("/api/admin/backups/praxiszeit_20990101_000000.sql.gz/download").status_code == 404
+    # Audit 2026-11-07 (S1-02): Download per POST mit Passwort; der Test-Admin
+    # hat kein gültiges Passwort → die Rückfrage scheitert vor der Dateisuche.
+    assert client.post("/api/admin/backups/praxiszeit_20990101_000000.sql.gz/download",
+                       json={"password": "x"}).status_code == 400
 
 
 def test_config_write_probe_rejects_unwritable(admin_client):

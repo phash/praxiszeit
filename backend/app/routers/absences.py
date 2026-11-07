@@ -30,13 +30,27 @@ CREDIT_OVERRIDE_ABSENCE_DETAIL = (
     "Am {day} gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."
 )
 
-# Security-Review 2026-10-26: Mitarbeitende ersetzen über ``create_absence``
-# keine Zeiteinträge VERGANGENER Tage — die sind für sie nur per
-# Änderungsantrag änderbar (das Monatsjournal stellt dafür einen
-# Abwesenheits-Antrag, dessen Genehmigung die Einträge des Tages löscht).
-PAST_DAY_ENTRIES_ABSENCE_DETAIL = (
-    "Am {day} gibt es bereits Zeiteinträge – eine Abwesenheit für einen "
-    "vergangenen Tag mit Zeiteinträgen bitte per Änderungsantrag im Journal stellen."
+# Audit 2026-11-07 (S1-01, #542): für Mitarbeitende gilt bei Abwesenheiten
+# dieselbe Regel wie bei Zeiteinträgen — vergangene Tage nur per
+# Änderungsantrag (Journal, „Antrag"), weder Anlegen (Zeitraum: Beginn in der
+# Vergangenheit) noch Löschen. Vorher war eine nachträglich selbst gebuchte
+# Fortbildung angerechnete Arbeitszeit ohne Freigabe, und ein von der
+# Verwaltung gebuchter Urlaubstag ließ sich löschen und als Fortbildung neu
+# buchen (Urlaubskonto +1). Ersetzt die engere Regel der Security-Review
+# 2026-10-26 (nur Tage mit Zeiteinträgen). Wortlaut in HANDBUCH-MITARBEITER 4.1
+# und DocViewer (Doku-Gate check-doc-sync.sh).
+PAST_DAY_ABSENCE_DETAIL = "Für vergangene Tage bitte einen Änderungsantrag stellen."
+# S1-01: Tage eines abgeschlossenen Jahres (Jahresabschluss, ``YearCarryover``
+# Y+1 mit ``source='year_closing'``) ändern Mitarbeitende nie selbst — der
+# eingefrorene Übertrag passte sonst nicht mehr zu den Buchungen.
+CLOSED_YEAR_ABSENCE_DETAIL = (
+    "Das Jahr {year} ist bereits abgeschlossen – bitte an die Verwaltung wenden."
+)
+# S1-01: eine Abwesenheit, die jemand anders (die Verwaltung) gebucht hat,
+# löschen Mitarbeitende nie selbst — erkannt an der Buchungszeile im
+# Änderungsprotokoll (``_booked_by_someone_else``).
+FOREIGN_ABSENCE_DELETE_DETAIL = (
+    "Diese Abwesenheit hat die Verwaltung eingetragen – bitte an die Verwaltung wenden."
 )
 
 # Release-Review 1.20.1: Löschsperren für Mitarbeitende in ``delete_absence``
@@ -100,7 +114,7 @@ def list_absences(
     request: Request,
     year: Optional[int] = Query(None, ge=2000, le=2100, description="Filter by year"),
     user_id: Optional[str] = Query(None, description="Filter by user ID (admin only)"),
-    skip: int = 0,
+    skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -439,6 +453,12 @@ def create_absence(
             detail="Enddatum darf nicht vor dem Startdatum liegen"
         )
 
+    # Audit 2026-11-07 (S1-01): Mitarbeitende buchen vergangene Tage nur per
+    # Änderungsantrag, Tage abgeschlossener Jahre gar nicht selbst. VOR jeder
+    # Sperre und jedem Schreiben; Admins unverändert.
+    if current_user.role != UserRole.ADMIN:
+        _assert_employee_may_book_range(db, current_user, start_date, end_date)
+
     # Arbeitszeitraum-Prüfung (I2)
     if target_user.first_work_day and start_date < target_user.first_work_day:
         raise HTTPException(
@@ -619,27 +639,6 @@ def create_absence(
                     day=recognized_day[0].strftime('%d.%m.%Y')),
             )
 
-    # Security-Review 2026-10-26: ohne ``keep_time_entries`` löscht diese
-    # Buchung unten die Zeiteinträge der gebuchten Tage. Für Mitarbeitende sind
-    # Einträge vergangener Tage gesperrt (nur per Änderungsantrag) — dieser Pfad
-    # war ein Löschweg daran vorbei. Abwesenheiten für vergangene Tage OHNE
-    # Einträge (Krankmeldung für gestern) bleiben direkt buchbar, ebenso mit
-    # ``keep_time_entries`` (nichts wird gelöscht). VOR der ersten Schreib-
-    # operation; nach der 409-Sperre oben (anerkannter Eintrag, eigener Text).
-    if current_user.role != UserRole.ADMIN and not absence_data.keep_time_entries:
-        past_dates = [d for d in booked_dates if d < today_local()]
-        past_entry_day = db.query(TimeEntry.date).filter(
-            TimeEntry.user_id == target_user.id,
-            TimeEntry.tenant_id == current_user.tenant_id,  # F-026
-            TimeEntry.date.in_(past_dates),
-        ).order_by(TimeEntry.date).first() if past_dates else None
-        if past_entry_day:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=PAST_DAY_ENTRIES_ABSENCE_DETAIL.format(
-                    day=past_entry_day[0].strftime('%d.%m.%Y')),
-            )
-
     # For vacation, check remaining vacation days (per year for cross-year ranges).
     # Die User-Zeile ist oben bereits per with_for_update gesperrt (BUG-3 +
     # ABBA-Fix) -> Budget-Check + Insert sind pro MA serialisiert.
@@ -808,6 +807,23 @@ def create_absence(
         )
         db.add(absence)
         created_absences.append(absence)
+        # Audit 2026-11-07 (S1-01): die Buchung selbst ins Änderungsprotokoll
+        # (Art. 5 Abs. 2 DSGVO, §16 ArbZG) — wer gebucht hat, entscheidet beim
+        # Löschen durch Mitarbeitende (``_booked_by_someone_else``). Format wie
+        # die Antragsgenehmigung (``admin_change_requests``), maskiert über
+        # ``admin_time_entries._SENSITIVE_NOTE_TOKENS``.
+        db.add(TimeEntryAuditLog(
+            time_entry_id=None,
+            user_id=target_user.id,
+            changed_by=current_user.id,
+            action="create",
+            new_date=date,
+            new_start_time=absence_data.start_time,
+            new_end_time=absence_data.end_time,
+            new_note=f"absence:{absence_data.type.value}:{float(hours_for_day)}h",
+            source="manual",
+            tenant_id=current_user.tenant_id,
+        ))
 
     # Audit 2026-07-31 (A2): letzte Verteidigungslinie. Die Existenz-Sonde oben
     # laeuft unter der Anker-Sperre, aber eine parallele Sitzung kann ihre Zeile
@@ -880,6 +896,54 @@ def create_absence(
     return created_absences
 
 
+def _first_closed_year(db: Session, tenant_id, start: date, end: date) -> Optional[int]:
+    """Erstes Jahr im Bereich ``start..end`` mit Jahresabschluss (EINE
+    Definition: ``calculation_service.closed_years_in_range``), sonst None."""
+    closed = calculation_service.closed_years_in_range(
+        db, tenant_id, range(start.year, end.year + 1))
+    return closed[0] if closed else None
+
+
+def _assert_employee_may_book_range(db: Session, current_user: User, start: date, end: date) -> None:
+    """S1-01: 409, wenn Mitarbeitende diesen Zeitraum nicht selbst buchen dürfen
+    (Beginn vor heute → Änderungsantrag; Jahr abgeschlossen → Verwaltung)."""
+    closed_year = _first_closed_year(db, current_user.tenant_id, start, end)
+    if closed_year is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=CLOSED_YEAR_ABSENCE_DETAIL.format(year=closed_year),
+        )
+    if start < today_local():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PAST_DAY_ABSENCE_DETAIL)
+
+
+def _booked_by_someone_else(db: Session, absence: Absence) -> bool:
+    """S1-01: hat jemand anders als die Person selbst diese Abwesenheit gebucht?
+
+    ``absences`` trägt (noch) keinen ``created_by``. Die Buchung steht aber im
+    Änderungsprotokoll: ``create_absence`` und die Antragsgenehmigung schreiben
+    je gebuchtem Tag eine Zeile ``action='create'``, ``new_date`` = Tag,
+    ``new_note`` = ``absence:<typ>:…``. Maßgeblich ist die JÜNGSTE solche Zeile
+    des Tages (je Person und Tag gibt es höchstens eine Abwesenheit). Fehlt sie
+    (Bestand vor 1.22.1, Betriebsferien, Urlaubsantrag — die beiden letzten sind
+    in ``_assert_employee_may_delete_absence`` eigens gesperrt), gilt die Zeile
+    als selbst gebucht."""
+    row = (
+        db.query(TimeEntryAuditLog.changed_by)
+        .filter(
+            TimeEntryAuditLog.tenant_id == absence.tenant_id,  # F-026
+            TimeEntryAuditLog.user_id == absence.user_id,
+            TimeEntryAuditLog.time_entry_id.is_(None),
+            TimeEntryAuditLog.action == "create",
+            TimeEntryAuditLog.new_date == absence.date,
+            TimeEntryAuditLog.new_note.like(f"absence:{absence.type.value}:%"),
+        )
+        .order_by(TimeEntryAuditLog.created_at.desc())
+        .first()
+    )
+    return row is not None and row[0] is not None and row[0] != absence.user_id
+
+
 def _assert_employee_may_delete_absence(db: Session, current_user: User, absence: Absence) -> None:
     """409, wenn Mitarbeitende diese eigene Abwesenheit nicht selbst löschen dürfen.
 
@@ -889,6 +953,9 @@ def _assert_employee_may_delete_absence(db: Session, current_user: User, absence
       (``date..end_date``; Abwesenheiten tragen keinen Fremdschlüssel auf den
       Antrag, deshalb Abgleich über User + Datum + Status) →
       ``APPROVED_VACATION_DELETE_DETAIL``.
+    - S1-01: Tag in einem abgeschlossenen Jahr → ``CLOSED_YEAR_ABSENCE_DETAIL``;
+      vergangener Tag → ``PAST_DAY_ABSENCE_DETAIL`` (Änderungsantrag); von
+      jemand anderem gebucht → ``FOREIGN_ABSENCE_DELETE_DETAIL``.
     """
     if absence.closure_id is not None:
         raise HTTPException(status_code=409, detail=CLOSURE_ABSENCE_DELETE_DETAIL)
@@ -909,6 +976,15 @@ def _assert_employee_may_delete_absence(db: Session, current_user: User, absence
     ).first()
     if covered is not None:
         raise HTTPException(status_code=409, detail=APPROVED_VACATION_DELETE_DETAIL)
+    # Audit 2026-11-07 (S1-01): abgeschlossenes Jahr, vergangener Tag, fremde Buchung.
+    abs_end = absence.end_date or absence.date
+    closed_year = _first_closed_year(db, current_user.tenant_id, absence.date, abs_end)
+    if closed_year is not None:
+        raise HTTPException(status_code=409, detail=CLOSED_YEAR_ABSENCE_DETAIL.format(year=closed_year))
+    if absence.date < today_local():
+        raise HTTPException(status_code=409, detail=PAST_DAY_ABSENCE_DETAIL)
+    if _booked_by_someone_else(db, absence):
+        raise HTTPException(status_code=409, detail=FOREIGN_ABSENCE_DELETE_DETAIL)
 
 
 @router.delete("/{absence_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -112,6 +112,18 @@ Das initiale Admin-Passwort **nach dem ersten Login** in der Benutzerverwaltung
 Monitoring (Prometheus/Grafana) läuft mit — wer es nicht braucht, kann
 `docker compose stop prometheus grafana` ausführen.
 
+**Hinter einem eigenen Reverse-Proxy auf dem Host** (Caddy, Traefik, nginx):
+Der Container sieht dann alle Anfragen von der Gateway-Adresse des
+Docker-Netzes. Alle Rechner teilen sich eine Adresse, und die Anmelde-Sperre
+„5 Fehlversuche je Rechner“ trifft alle Rechner zugleich. Damit sie je Rechner
+greift, muss der Proxy die echte Adresse weiterreichen (`X-Forwarded-For`) und
+`frontend/nginx.conf` sie übernehmen: die vorbereiteten Zeilen
+`set_real_ip_from <proxy-netz>;` und `real_ip_header X-Forwarded-For;`
+einkommentieren (nur das Netz des Proxys eintragen, nie `0.0.0.0/0`, sonst kann
+jeder seine Adresse fälschen) und das Frontend neu bauen. Browser, in denen sich
+ein Konto schon einmal angemeldet hat, sperrt die Anmelde-Sperre seit 1.22.1
+ohnehin nicht mehr aus.
+
 ---
 
 ## Verwaltung

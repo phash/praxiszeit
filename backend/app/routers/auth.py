@@ -6,7 +6,7 @@ from app.core.limiter import limiter, _get_real_ip
 from app.core.db_errors import _CONTROL_CHARS
 from app.core import totp_crypto
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime, timedelta, timezone
@@ -23,7 +23,8 @@ from app.models import (
 )
 from app.models.tenant import Tenant
 from app.models.security_event import (
-    EVENT_TOTP_DISABLED_SELF, EVENT_TOTP_ENABLED, SecurityEvent,
+    EVENT_PASSWORD_CHECK_LOCKOUT, EVENT_TOTP_DISABLED_SELF, EVENT_TOTP_ENABLED,
+    EVENT_TOTP_FAILED, EVENT_TOTP_LOCKED, SecurityEvent,
 )
 from app.services.timezone_service import now_local
 
@@ -79,6 +80,35 @@ _LOCKOUT_ATTEMPTS = 5
 _GLOBAL_LOCKOUT_ATTEMPTS = 50
 _LOCKOUT_WINDOW = timedelta(minutes=15)
 
+# Audit 2026-11-07 (S1-07): Geraete-Cookie. Wer sich in diesem Browser schon
+# einmal erfolgreich angemeldet hat, kommt auch dann noch zur Passwortpruefung,
+# wenn fremde Fehlversuche den Namen gesperrt haben (Sperre je Name ODER je
+# Name+IP hinter einem gemeinsamen Proxy) — sonst sperrten 50 falsche Passwoerter
+# fuer ``admin`` die einzige Verwaltung aus. Der Browser bekommt dafuer ein
+# eigenes, kleines Fehlversuchs-Budget (``("dev", nonce)``, 5 je 15 min); die
+# Brute-Force-Grenze fuer alle anderen bleibt. OWASP „Device Cookies".
+_DEVICE_COOKIE = "pz_device"
+_DEVICE_COOKIE_PATH = "/api/auth/login"
+_DEVICE_COOKIE_MAX_AGE = 180 * 24 * 3600
+
+# Audit 2026-11-07 (S1-04): eigene, PERSISTENTE Obergrenze fuer falsche 2FA-Codes
+# je Konto (zaehlt ``security_events``-Zeilen ``totp_failed``, ueberlebt also
+# einen Neustart). Erreichbar nur mit gueltigem Passwort.
+_TOTP_FAILURE_LIMIT = 10
+_TOTP_FAILURE_WINDOW = timedelta(hours=1)
+
+ACCOUNT_LOCKED_DETAIL = "Konto vorübergehend gesperrt. Bitte in 15 Minuten erneut versuchen."
+TOTP_LOCKED_DETAIL = (
+    "Zu viele falsche 2FA-Codes – die Anmeldung mit diesem Konto ist für eine "
+    "Stunde gesperrt. Bitte später erneut versuchen oder an die Verwaltung wenden."
+)
+# S1-06: Passwort-Rueckfrage in offener Sitzung (Passwort aendern, 2FA,
+# Sicherungs-Download, 2FA-Ruecksetzen) — gleiche Zaehler wie der Login.
+PASSWORD_CHECK_LOCKED_DETAIL = (
+    "Zu viele falsche Passworteingaben – aus Sicherheitsgründen wurden Sie "
+    "abgemeldet. Bitte in 15 Minuten erneut anmelden."
+)
+
 from app.schemas.user import (
     LoginRequest, LoginResponse, RefreshResponse, UserResponse, UserListResponse,
     ChangePasswordRequest, UpdateCalendarColorRequest,
@@ -125,7 +155,14 @@ def _lockout_keys(username_lower: str, client_ip: str) -> tuple[tuple, tuple]:
     return ("ip", username_lower, client_ip), ("user", username_lower)
 
 
-def _record_failed_login(username_lower: str, client_ip: str, now: datetime) -> None:
+def _stepup_key(user) -> tuple:
+    """Fehlversuchs-Budget der Passwort-Rueckfrage in einer offenen Sitzung
+    (je Konto, unabhaengig von IP und Login-Zaehlern)."""
+    return ("stepup", str(user.id))
+
+
+def _record_failed_login(username_lower: str, client_ip: str, now: datetime,
+                         extra_keys: tuple = ()) -> None:
     """F-039: Append a failed attempt and maintain LRU ordering.
 
     The OrderedDict pops the oldest entry in O(1) once the cap is hit. The
@@ -133,7 +170,7 @@ def _record_failed_login(username_lower: str, client_ip: str, now: datetime) -> 
     usernames can't evict their lockout record. Both the per-(name, IP) and the
     per-name counter are updated.
     """
-    for key in _lockout_keys(username_lower, client_ip):
+    for key in (*_lockout_keys(username_lower, client_ip), *extra_keys):
         attempts = _failed_logins.get(key)
         if attempts is None:
             _failed_logins[key] = [now]
@@ -154,6 +191,141 @@ def _recent_attempts(key: tuple, now: datetime) -> int:
     else:
         _failed_logins.pop(key, None)
     return len(attempts)
+
+
+def _device_signature(payload: str) -> str:
+    return hmac.new(
+        settings.SECRET_KEY.encode("utf-8"), f"device:{payload}".encode("utf-8"), hashlib.sha256
+    ).hexdigest()[:32]
+
+
+def _issue_device_token(user_id) -> str:
+    """S1-07: ``<user_id>.<nonce>.<hmac>`` — nur der Server kann es ausstellen."""
+    payload = f"{user_id}.{secrets.token_urlsafe(16)}"
+    return f"{payload}.{_device_signature(payload)}"
+
+
+def _parse_device_token(token: Optional[str]) -> Optional[tuple[str, str]]:
+    """(user_id, nonce) eines gueltig signierten Geraete-Cookies, sonst None."""
+    if not token or token.count(".") != 2:
+        return None
+    user_id, nonce, sig = token.split(".")
+    if not hmac.compare_digest(sig, _device_signature(f"{user_id}.{nonce}")):
+        return None
+    return user_id, nonce
+
+
+def _set_device_cookie(response: Response, user_id) -> None:
+    response.set_cookie(
+        key=_DEVICE_COOKIE,
+        value=_issue_device_token(user_id),
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+        max_age=_DEVICE_COOKIE_MAX_AGE,
+        path=_DEVICE_COOKIE_PATH,
+    )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _totp_failures_recent(db: Session, user: User) -> int:
+    """S1-04: falsche 2FA-Codes des Kontos in der letzten Stunde (persistent)."""
+    since = _utcnow() - _TOTP_FAILURE_WINDOW
+    q = db.query(func.count(SecurityEvent.id)).filter(
+        SecurityEvent.subject_user_id == user.id,
+        SecurityEvent.event == EVENT_TOTP_FAILED,
+        SecurityEvent.created_at >= since,
+    )
+    q = q.filter(SecurityEvent.tenant_id == user.tenant_id) if user.tenant_id else \
+        q.filter(SecurityEvent.tenant_id.is_(None))
+    return q.scalar() or 0
+
+
+def _record_totp_failure(db: Session, user: User, actor: str, where: str) -> None:
+    """S1-04: ``totp_failed`` (und beim Erreichen der Obergrenze einmal
+    ``totp_locked``) nach ``security_events`` — sofort committed, die Anfrage
+    endet danach mit einem Fehler."""
+    db.add(SecurityEvent(
+        tenant_id=user.tenant_id, event=EVENT_TOTP_FAILED, subject_user_id=user.id,
+        actor=actor, detail=f"Falscher 2FA-Code ({where})", created_at=_utcnow(),
+    ))
+    db.flush()
+    if _totp_failures_recent(db, user) == _TOTP_FAILURE_LIMIT:
+        db.add(SecurityEvent(
+            tenant_id=user.tenant_id, event=EVENT_TOTP_LOCKED, subject_user_id=user.id,
+            actor=actor, created_at=_utcnow(),
+            detail=f"{_TOTP_FAILURE_LIMIT} falsche 2FA-Codes in einer Stunde – Anmeldung gesperrt",
+        ))
+        security_logger.warning("AUTH totp_locked user=%s", _safe_log_text(user.username))
+    db.commit()
+
+
+def claim_totp_counter(db: Session, user: User, counter: int) -> bool:
+    """S1-05: den angenommenen TOTP-Zaehler ATOMAR festschreiben.
+
+    Ein bedingtes ``UPDATE … WHERE last_totp_counter IS NULL OR < :c``: zwei
+    gleichzeitige Anmeldungen mit demselben abgefangenen Code lasen frueher
+    beide den alten Zaehler und bekamen beide Tokens. Jetzt gewinnt genau eine
+    (PostgreSQL prueft die Bedingung nach dem Warten auf die Zeilensperre neu);
+    die andere bekommt 0 Zeilen → False."""
+    updated = (
+        db.query(User)
+        .filter(
+            User.id == user.id,
+            or_(User.last_totp_counter.is_(None), User.last_totp_counter < counter),
+        )
+        .update({User.last_totp_counter: counter}, synchronize_session=False)
+    )
+    if not updated:
+        return False
+    from sqlalchemy.orm.attributes import set_committed_value
+    set_committed_value(user, "last_totp_counter", counter)
+    return True
+
+
+def confirm_current_password(db: Session, request: Request, user: User, password: str,
+                             purpose: str, wrong_detail: str = "Passwort ist falsch") -> None:
+    """S1-06: Passwort-Rueckfrage in einer offenen Sitzung.
+
+    Laeuft ueber DIESELBEN Zaehler wie der Login (je Name+IP und je Name):
+    gesperrt → 429; falsch → Fehlversuch zaehlen, 400 ``wrong_detail``. Erreicht
+    ein Client die Grenze, endet die Sitzung (``token_version + 1``) mit einer
+    ``security_events``-Zeile — ein gestohlenes Access-Token wird so nicht zum
+    Passwort-Orakel ohne Sperre. ``purpose`` landet im Protokoll."""
+    username_lower = (user.username or "").lower()
+    client_ip = _get_real_ip(request)
+    now = datetime.now(timezone.utc)
+    # Fix-Runde: die Sitzung ist bereits angemeldet — sie prueft gegen ihr
+    # EIGENES Budget je Konto (``_stepup_key``), nicht gegen die Login-Zaehler
+    # je Name/Name+IP. Sonst sperrten 50 anonyme Fehlversuche fuer ``admin``
+    # (oder 5 hinter einem gemeinsamen Proxy) auch Passwort aendern, 2FA,
+    # Sicherungs-Download und 2FA-Ruecksetzen der echten Verwaltung — mit der
+    # falschen Meldung „abgemeldet". Fehlversuche zaehlen weiter AUCH in die
+    # Login-Zaehler (Brute-Force-Grenze fuer die Anmeldung bleibt).
+    stepup_key = _stepup_key(user)
+    if _recent_attempts(stepup_key, now) >= _LOCKOUT_ATTEMPTS:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail=PASSWORD_CHECK_LOCKED_DETAIL)
+    if auth_service.verify_password(password or "", user.password_hash):
+        return
+    _record_failed_login(username_lower, client_ip, now, extra_keys=(stepup_key,))
+    security_logger.warning(
+        "AUTH password_check_failed user=%s purpose=%s",
+        _safe_log_text(username_lower), _safe_log_text(purpose, 40),
+    )
+    if _recent_attempts(stepup_key, now) >= _LOCKOUT_ATTEMPTS:
+        _revoke_sessions(db, user)
+        _log_self_security_event(
+            db, user, EVENT_PASSWORD_CHECK_LOCKOUT,
+            f"{purpose}: {_LOCKOUT_ATTEMPTS} falsche Passworteingaben – Sitzungen beendet",
+        )
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail=PASSWORD_CHECK_LOCKED_DETAIL)
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=wrong_detail)
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -251,19 +423,29 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     ip_key, user_key = _lockout_keys(username_lower, client_ip)
     ip_attempts = _recent_attempts(ip_key, now)
     user_attempts = _recent_attempts(user_key, now)
+    # S1-07: Geraete-Cookie eines frueheren erfolgreichen Logins in diesem Browser.
+    device = _parse_device_token(request.cookies.get(_DEVICE_COOKIE))
+    device_keys: tuple = (("dev", device[1]),) if device else ()
+    device_bypass = False
 
     if ip_attempts >= _LOCKOUT_ATTEMPTS or user_attempts >= _GLOBAL_LOCKOUT_ATTEMPTS:
-        # Whether the name exists is unknown here → redacted form.
-        security_logger.warning(
-            "AUTH account_locked user=%s scope=%s attempts=%d",
-            _redact_username(username_lower),
-            "ip" if ip_attempts >= _LOCKOUT_ATTEMPTS else "global",
-            max(ip_attempts, user_attempts),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Konto vorübergehend gesperrt. Bitte in 15 Minuten erneut versuchen."
-        )
+        if device and _recent_attempts(device_keys[0], now) < _LOCKOUT_ATTEMPTS:
+            # Bekannter Browser: trotz fremder Fehlversuche zur Passwortpruefung,
+            # mit eigenem kleinem Budget. Passt das Cookie nicht zum Konto,
+            # gilt unten wieder die Sperre.
+            device_bypass = True
+        else:
+            # Whether the name exists is unknown here → redacted form.
+            security_logger.warning(
+                "AUTH account_locked user=%s scope=%s attempts=%d",
+                _redact_username(username_lower),
+                "ip" if ip_attempts >= _LOCKOUT_ATTEMPTS else "global",
+                max(ip_attempts, user_attempts),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=ACCOUNT_LOCKED_DETAIL,
+            )
 
     # Login needs to see all users across tenants (no tenant context yet)
     set_superadmin_context(db)
@@ -282,7 +464,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         # Equalise timing (dummy verify), record the failure and log the
         # ambiguity for ops — but never reveal which/that accounts exist.
         auth_service.verify_password(login_data.password, _DUMMY_BCRYPT_HASH)
-        _record_failed_login(username_lower, client_ip, now)
+        _record_failed_login(username_lower, client_ip, now, device_keys)
         security_logger.warning(
             "AUTH login_ambiguous user=%s active_matches=%d",
             _safe_log_text(username_lower), len(active_matches),
@@ -293,12 +475,20 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         )
     user = active_matches[0] if active_matches else (matching_users[0] if matching_users else None)
 
+    if device_bypass and (user is None or str(user.id) != device[0]):
+        # Das Geraete-Cookie gehoert zu einem anderen Konto: die Sperre gilt.
+        # Gleiche Antwort wie oben, verraet also nicht, ob der Name existiert.
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=ACCOUNT_LOCKED_DETAIL,
+        )
+
     if not user or not user.is_active:
         # F-040: Run a dummy bcrypt verify so the response time does not
         # reveal whether the user exists. The dummy hash is generated at
         # module load time from a random string (see _DUMMY_BCRYPT_HASH).
         auth_service.verify_password(login_data.password, _DUMMY_BCRYPT_HASH)
-        _record_failed_login(username_lower, client_ip, now)
+        _record_failed_login(username_lower, client_ip, now, device_keys)
         # M-001 (DSGVO Art. 5 Abs. 1 lit. f/c): do NOT distinguish a deactivated
         # account from a non-existent one in the security log. A distinct
         # reason=inactive_user would let anyone with log access infer that a
@@ -317,7 +507,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         )
 
     if not auth_service.verify_password(login_data.password, user.password_hash):
-        _record_failed_login(username_lower, client_ip, now)
+        _record_failed_login(username_lower, client_ip, now, device_keys)
         security_logger.warning(
             "AUTH login_failed user=%s reason=%s", _safe_log_text(username_lower), "bad_password",
         )
@@ -354,13 +544,27 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
                 detail="TOTP-Code erforderlich",
                 headers={"X-Requires-TOTP": "true"},
             )
+        # S1-04: persistente Obergrenze je Konto (security_events), VOR der Pruefung.
+        if _totp_failures_recent(db, user) >= _TOTP_FAILURE_LIMIT:
+            security_logger.warning(
+                "AUTH login_failed user=%s reason=%s", _safe_log_text(username_lower), "totp_locked",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=TOTP_LOCKED_DETAIL,
+            )
         stored_secret = user.totp_secret
         plain_secret = totp_crypto.decrypt_secret(stored_secret)
         accepted_counter = auth_service.verify_totp_with_counter(
             plain_secret, login_data.totp_code, user.last_totp_counter
         )
+        # S1-05: Zaehler atomar beanspruchen — ein parallel schon verbrauchter
+        # Code zaehlt wie ein falscher.
+        if accepted_counter is not None and not claim_totp_counter(db, user, accepted_counter):
+            accepted_counter = None
         if accepted_counter is None:
-            _record_failed_login(username_lower, client_ip, now)
+            _record_failed_login(username_lower, client_ip, now, device_keys)
+            _record_totp_failure(db, user, f"login:{_safe_log_text(client_ip, 64)}", "Anmeldung")
             security_logger.warning(
                 "AUTH login_failed user=%s reason=%s", _safe_log_text(username_lower), "bad_totp",
             )
@@ -368,7 +572,6 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Ungültiger TOTP-Code",
             )
-        user.last_totp_counter = accepted_counter
         # DSGVO Art. 32: Bestands-Klartext-Secret bei erfolgreichem Login auf
         # Fernet-Verschlüsselung migrieren (analog bcrypt-Rehash-on-login).
         # M-2: kein zweites Decrypt — decrypt_secret gibt Legacy-Klartext unverändert
@@ -382,6 +585,9 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     # deliberately NOT reset: otherwise every successful login of the real user
     # would hand a distributed attacker a fresh budget of 50 attempts.
     _failed_logins.pop(ip_key, None)
+    # Nach einer durch Fehlversuche beendeten Sitzung beginnt die neue
+    # Anmeldung mit frischem Rueckfrage-Budget (das Passwort ist ja bewiesen).
+    _failed_logins.pop(_stepup_key(user), None)
 
     tenant_id_str = str(user.tenant_id) if user.tenant_id else None
     access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version, tenant_id_str)
@@ -391,6 +597,17 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     _set_refresh_cookie(response, refresh_token)
     # F-024: issue a fresh CSRF double-submit token
     _set_csrf_cookie(response)
+    # S1-07: dieser Browser gilt ab jetzt als bekanntes Geraet des Kontos.
+    _set_device_cookie(response, user.id)
+    if device_bypass:
+        _failed_logins.pop(device_keys[0], None)
+        security_logger.warning(
+            "AUTH login_success_despite_lock user=%s", _safe_log_text(username_lower),
+        )
+    # S1-08: abgelaufene „Login als"-Sitzungen dieses Kontos schliessen.
+    from app.routers.impersonation import close_expired_impersonation_sessions
+    if close_expired_impersonation_sessions(db, user.tenant_id, impersonator_id=user.id):
+        db.commit()
 
     security_logger.info("AUTH login_success user=%s", _safe_log_text(username_lower))
 
@@ -612,15 +829,9 @@ def change_password(
     Change password for the current authenticated user.
     Requires current password verification.
     """
-    if not auth_service.verify_password(password_data.current_password, current_user.password_hash):
-        security_logger.warning(
-            "AUTH password_change_failed user=%s reason=%s",
-            _safe_log_text(current_user.username), "wrong_current_password",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Aktuelles Passwort ist falsch"
-        )
+    # S1-06: gleiche Sperre und Zaehler wie der Login.
+    confirm_current_password(db, request, current_user, password_data.current_password,
+                             purpose="Passwort ändern", wrong_detail="Aktuelles Passwort ist falsch")
 
     new_password_hash = auth_service.hash_password(password_data.new_password)
     current_user.password_hash = new_password_hash
@@ -928,15 +1139,9 @@ def totp_setup(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=TOTP_ALREADY_ENABLED_DETAIL,
         )
-    if not auth_service.verify_password(setup_data.password, current_user.password_hash):
-        security_logger.warning(
-            "AUTH totp_setup_failed user=%s reason=%s",
-            _safe_log_text(current_user.username), "wrong_password",
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Passwort ist falsch"
-        )
+    # S1-06: gleiche Sperre und Zaehler wie der Login.
+    confirm_current_password(db, request, current_user, setup_data.password,
+                             purpose="2FA einrichten")
 
     secret = auth_service.generate_totp_secret()
     current_user.totp_secret = totp_crypto.encrypt_secret(secret)
@@ -980,13 +1185,15 @@ def totp_verify(
     accepted_counter = auth_service.verify_totp_with_counter(
         totp_crypto.decrypt_secret(current_user.totp_secret), verify_data.code, current_user.last_totp_counter
     )
+    # S1-05: atomar beanspruchen (wie /login).
+    if accepted_counter is not None and not claim_totp_counter(db, current_user, accepted_counter):
+        accepted_counter = None
     if accepted_counter is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Ungültiger TOTP-Code. Bitte prüfen Sie Ihre Authenticator-App."
         )
 
-    current_user.last_totp_counter = accepted_counter
     was_enabled = bool(current_user.totp_enabled)
     current_user.totp_enabled = True
     if not was_enabled:
@@ -1011,21 +1218,27 @@ def totp_disable(
     Sicherheits-Review 2026-10: additionally requires a valid CURRENT code
     (replay-safe, same verifier as /login) — the password alone (shoulder-
     surfed, reused) must not remove the second factor from an open session.
-    Writes a ``security_events`` row. Lost device: no self-service path; the
-    CLI ``praxiszeit-server.py reset-admin-password --disable-2fa`` (native)
+    Writes a ``security_events`` row. Lost device: no self-service path; an
+    admin resets it (``POST /api/admin/users/{id}/totp-reset``, S1-09), for an
+    admin account the CLI ``praxiszeit-server.py reset-admin-password --disable-2fa`` (native)
     resets it.
     """
-    if not auth_service.verify_password(disable_data.password, current_user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Passwort ist falsch"
-        )
+    # S1-06: gleiche Sperre und Zaehler wie der Login.
+    confirm_current_password(db, request, current_user, disable_data.password,
+                             purpose="2FA abschalten")
     if current_user.totp_enabled and current_user.totp_secret:
+        # S1-04: dieselbe persistente Obergrenze wie die Anmeldung.
+        if _totp_failures_recent(db, current_user) >= _TOTP_FAILURE_LIMIT:
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                                detail=TOTP_LOCKED_DETAIL)
         accepted_counter = auth_service.verify_totp_with_counter(
             totp_crypto.decrypt_secret(current_user.totp_secret),
             disable_data.code,
             current_user.last_totp_counter,
         )
+        # S1-05: atomar beanspruchen (wie /login).
+        if accepted_counter is not None and not claim_totp_counter(db, current_user, accepted_counter):
+            accepted_counter = None
         if accepted_counter is None:
             # Release-Review 1.20.2: a code already consumed at login is still
             # shown by the app — tell the user to wait for the next one instead
@@ -1039,6 +1252,8 @@ def totp_disable(
                 "AUTH totp_disable_failed user=%s reason=%s",
                 _safe_log_text(current_user.username), "replayed_totp" if replayed else "bad_totp",
             )
+            if not replayed:
+                _record_totp_failure(db, current_user, f"user:{current_user.id}", "2FA abschalten")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(

@@ -27,6 +27,102 @@ def _scrub_pii(text: str) -> str:
     return text
 
 
+def exception_summary(exc: BaseException) -> str:
+    """Audit 2026-11-07 (S2-1): Meldung einer unbehandelten Ausnahme fuer
+    ``error_logs`` — nur Typ und, bei Datenbankfehlern, SQLSTATE und Name der
+    verletzten Bedingung. Nie ``str(exc)``: das enthielt bei einem
+    ``DBAPIError`` das Statement mit allen Werten und PostgreSQLs
+    ``DETAIL: Key (…)=(…)``, bei anderen Ausnahmen beliebige Eingaben."""
+    name = type(exc).__name__
+    orig = getattr(exc, "orig", None)
+    if orig is None:
+        return name
+    parts = []
+    code = getattr(orig, "pgcode", None)
+    if code:
+        parts.append(f"SQLSTATE {code}")
+    diag = getattr(orig, "diag", None)
+    constraint = getattr(diag, "constraint_name", None) if diag is not None else None
+    if constraint:
+        parts.append(f"constraint {constraint}")
+    table = getattr(diag, "table_name", None) if diag is not None else None
+    if table:
+        parts.append(f"table {table}")
+    inner = type(orig).__name__
+    return f"{name} ({inner}{': ' + ', '.join(parts) if parts else ''})"
+
+
+def exception_frames(exc: BaseException) -> str:
+    """S2-1: Stapel der Ausnahme OHNE ihre Meldung (Dateien, Zeilen, Code) plus
+    ``exception_summary`` — ``traceback.format_exc()`` haengt die volle
+    Meldung (mit Werten) an."""
+    frames = "".join(traceback.format_tb(exc.__traceback__))
+    return f"{frames}{exception_summary(exc)}"
+
+
+def _is_db_exception(exc: Optional[BaseException]) -> bool:
+    """Datenbankfehler (SQLAlchemy ``DBAPIError`` oder Treiberfehler mit
+    ``pgcode``) irgendwo in der Kette ``exc → __cause__/__context__``."""
+    from sqlalchemy.exc import DBAPIError
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, DBAPIError) or hasattr(exc, "pgcode"):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+class DBErrorRedactionFilter(logging.Filter):
+    """Audit 2026-11-07 (S2-1) Fix-Runde: Datenbankfehler in Container-Log und
+    ``logs/praxiszeit.log`` ohne Werte.
+
+    Eine an uvicorn weitergereichte Ausnahme („Exception in ASGI application")
+    und Log-Aufrufe mit der Ausnahme als Argument schrieben ``str(exc)`` —
+    bei einem ``DBAPIError`` PostgreSQLs ``DETAIL: Key (…)=(…)``. Der Filter
+    ersetzt den Traceback-Text durch ``exception_frames`` (Stapel + Typ,
+    SQLSTATE, Bedingung) und Ausnahme-Argumente durch ``exception_summary``.
+    Andere Ausnahmen bleiben unveraendert. Haengt an den HANDLERN
+    (``install_db_error_redaction``) — ein Logger-Filter saehe weitergereichte
+    Records von Kind-Loggern nicht."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        exc = record.exc_info[1] if record.exc_info else None
+        if exc is not None and _is_db_exception(exc):
+            record.exc_text = "Traceback (most recent call last):\n" + exception_frames(exc)
+        if isinstance(record.msg, BaseException) and _is_db_exception(record.msg):
+            record.msg = exception_summary(record.msg)
+        if record.args:
+            if isinstance(record.args, tuple):
+                record.args = tuple(
+                    exception_summary(a) if isinstance(a, BaseException) and _is_db_exception(a) else a
+                    for a in record.args
+                )
+            elif isinstance(record.args, dict):
+                record.args = {
+                    k: exception_summary(v) if isinstance(v, BaseException) and _is_db_exception(v) else v
+                    for k, v in record.args.items()
+                }
+        return True
+
+
+_REDACTION_LOGGERS = ("", "uvicorn", "uvicorn.error", "uvicorn.access", "fastapi", "app")
+
+
+def install_db_error_redaction(logger_names=_REDACTION_LOGGERS) -> int:
+    """Haengt ``DBErrorRedactionFilter`` an jeden Handler der genannten Logger
+    (idempotent). uvicorn richtet seine Handler vor dem Import der App ein,
+    ``app.main`` ruft das deshalb beim Import auf. Gibt die Zahl neu
+    versehener Handler zurueck."""
+    added = 0
+    for name in logger_names:
+        for handler in logging.getLogger(name).handlers:
+            if not any(isinstance(f, DBErrorRedactionFilter) for f in handler.filters):
+                handler.addFilter(DBErrorRedactionFilter())
+                added += 1
+    return added
+
+
 def _scrub_path(path: Optional[str]) -> Optional[str]:
     """M-DSG4: strip resource UUIDs from request paths before they are stored.
 
@@ -314,8 +410,10 @@ class DBErrorHandler(logging.Handler):
             db: Session = self._factory()
             set_superadmin_context(db)  # RLS: see all errors for dedup
             tb = None
-            if record.exc_info:
-                tb = ''.join(traceback.format_exception(*record.exc_info))
+            if record.exc_info and record.exc_info[1] is not None:
+                # Audit 2026-11-07 (S2-1): Stapel ohne Ausnahme-Meldung (die trug
+                # bei Datenbankfehlern Statement-Werte und PG-DETAIL).
+                tb = exception_frames(record.exc_info[1])
                 # VULN-012: limit traceback size before storing
                 if tb and len(tb) > 2000:
                     tb = tb[:2000] + '\n... [truncated]'
@@ -324,7 +422,9 @@ class DBErrorHandler(logging.Handler):
                 db=db,
                 level=level,
                 logger_name=record.name,
-                message=self.format(record),
+                # S2-1: nur die Meldung selbst — ``self.format`` haengt bei
+                # ``exc_info`` den vollen Traceback samt Ausnahme-Text an.
+                message=record.getMessage(),
                 traceback_str=tb,
             )
         except Exception:

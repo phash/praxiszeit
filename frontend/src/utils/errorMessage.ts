@@ -36,3 +36,32 @@ export function getErrorMessage(error: any, fallback: string = 'Ein Fehler ist a
   }
   return fallback;
 }
+
+/**
+ * Audit 2026-11-07 (S1-02): Fehlermeldung einer Anfrage mit
+ * `responseType: 'blob'` (z. B. Sicherungs-Download). Axios liefert dann auch
+ * die JSON-Fehlerantwort als Blob — `getErrorMessage` sähe nur den Rückfalltext
+ * („Download fehlgeschlagen“ statt „Passwort ist falsch“).
+ */
+export async function getBlobErrorMessage(error: any, fallback: string = 'Ein Fehler ist aufgetreten'): Promise<string> {
+  const data = error?.response?.data;
+  if (typeof Blob !== 'undefined' && data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await readBlobText(data));
+      return getErrorMessage({ response: { status: error?.response?.status, data: parsed } }, fallback);
+    } catch {
+      return getErrorMessage({ response: { status: error?.response?.status } }, fallback);
+    }
+  }
+  return getErrorMessage(error, fallback);
+}
+
+function readBlobText(blob: Blob): Promise<string> {
+  if (typeof blob.text === 'function') return blob.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  });
+}

@@ -8,6 +8,11 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
+    # Audit 2026-11-07 (S2-1, Art. 9 DSGVO): die Werte eines gescheiterten
+    # Statements (Namen, Notizen, Abwesenheitstyp, Antragsbegruendung) stehen
+    # sonst als ``[parameters: …]`` in jeder DBAPIError-Meldung — und damit in
+    # ``error_logs``, im Container-Log und in ``logs/praxiszeit.log``.
+    hide_parameters=True,
 )
 
 # Create session factory

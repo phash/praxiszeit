@@ -15,12 +15,18 @@ class ChangeRequestCreate(BaseModel):
     # Gesamtreview 1.20 (B1): minutengenau wie jeder Schreibweg (``MinuteTime``).
     proposed_start_time: Optional[MinuteTime] = None
     proposed_end_time: Optional[MinuteTime] = None
-    proposed_break_minutes: Optional[int] = Field(None, ge=0)
-    proposed_note: Optional[str] = None
-    proposed_absence_type: Optional[str] = None
-    proposed_absence_hours: Optional[float] = None
+    # Audit 2026-11-07 (S2-2): Obergrenzen — ohne sie lief ein Riesenwert bis
+    # in die DB (Integer/Numeric(4,2) → SQLSTATE 22003 → HTTP 500, Zeile im
+    # Fehler-Monitoring und Werte im PG-Log). 422 statt 500.
+    proposed_break_minutes: Optional[int] = Field(None, ge=0, le=1440)
+    proposed_note: Optional[str] = Field(None, max_length=2000)
+    # Fix-Runde: Grenze = Spalte ``change_requests.proposed_absence_type`` (String(20)).
+    # Der Loesch-Antrag speichert den Wert ohne AbsenceType-Pruefung; 21+ Zeichen
+    # waeren auf PG SQLSTATE 22001 → HTTP 500 gewesen.
+    proposed_absence_type: Optional[str] = Field(None, max_length=20)
+    proposed_absence_hours: Optional[float] = Field(None, ge=0, le=24)
     reason_id: Optional[UUID] = None  # #312: custom absence reason (overrides type via its behaviour)
-    reason: str = Field(..., min_length=1)
+    reason: str = Field(..., min_length=1, max_length=2000)
     # SEC-D: cap length to prevent storage DoS via unbounded free text.
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG
     proposed_sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # #485 §10 ArbZG
@@ -31,7 +37,7 @@ class ChangeRequestCreate(BaseModel):
 
 class ChangeRequestReview(BaseModel):
     action: str  # "approve" or "reject"
-    rejection_reason: Optional[str] = None
+    rejection_reason: Optional[str] = Field(None, max_length=2000)  # S2-2
     # Spec 2026-10-08 P21 / 13.3: None = Wert des Antrags (request_credit_override);
     # True auch für „genehmigen und anerkennen" eines gewöhnlichen UPDATE-Antrags.
     grant_credit_override: Optional[bool] = None
@@ -40,7 +46,7 @@ class ChangeRequestReview(BaseModel):
 class ChangeRequestBulkReview(BaseModel):
     request_ids: List[UUID] = Field(..., min_length=1, max_length=200)
     action: str  # "approve" or "reject"
-    rejection_reason: Optional[str] = None
+    rejection_reason: Optional[str] = Field(None, max_length=2000)  # S2-2
 
 
 class ChangeRequestBulkReviewItemResult(BaseModel):

@@ -200,7 +200,11 @@ class TestTotp:
         assert "bereits verwendet" not in r.json()["detail"]
         db.refresh(test_user)
         assert test_user.totp_enabled is True
-        assert db.query(SecurityEvent).count() == 0
+        # Audit 2026-11-07 (S1-04): der falsche Code steht als ``totp_failed``
+        # im Protokoll, abgeschaltet wurde nichts.
+        assert db.query(SecurityEvent).filter(
+            SecurityEvent.event == EVENT_TOTP_DISABLED_SELF).count() == 0
+        assert db.query(SecurityEvent).filter(SecurityEvent.event == "totp_failed").count() == 1
 
     def test_disable_with_password_and_code_logs_security_event(self, db, test_user):
         secret = _enable_totp(db, test_user)
