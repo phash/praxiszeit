@@ -271,7 +271,11 @@ def test_classic_yearly_report_neutralizes_a_formula_like_tenant_name(db, defaul
     default_tenant.slug = "formel-praxis"
     db.commit()
 
-    assert _classic_a1(db) == '\'=HYPERLINK("http://example.invalid","Praxis")'
+    # S2-7: kein sichtbares Apostroph mehr — die Zelle ist eine Textzelle mit
+    # quotePrefix (Formelschutz über den Zelltyp, export_service.harden_text_cells).
+    cell = _classic_cell(db, 1)
+    assert cell.value == '=HYPERLINK("http://example.invalid","Praxis")'
+    assert (cell.data_type, cell.quotePrefix) == ("s", True)
 
 
 # ─── Vierte Fläche: die Anschrift im klassischen Jahresbericht (Zelle B1) ─
@@ -339,7 +343,21 @@ def test_classic_yearly_report_neutralizes_a_formula_like_address(db, default_te
     default_tenant.billing_address = {"street": "=1+1", "zip": "12345", "city": "Musterstadt"}
     db.commit()
 
-    assert _classic_b1(db) == "'=1+1, 12345 Musterstadt"
+    cell = _classic_cell(db, 2)  # S2-7: Textzelle statt sichtbarem Apostroph
+    assert cell.value == "=1+1, 12345 Musterstadt"
+    assert (cell.data_type, cell.quotePrefix) == ("s", True)
+
+
+def _classic_cell(db, column):
+    """Zelle in Zeile 1 des klassischen Jahresberichts, voll geladen (Zelltyp + Stil)."""
+    from app.services.export_service import generate_yearly_report_classic
+    from openpyxl import load_workbook
+    from tests.conftest import DEFAULT_TENANT_ID
+
+    out = generate_yearly_report_classic(db, 2026, tenant_id=DEFAULT_TENANT_ID)
+    out.seek(0)
+    wb = load_workbook(out)
+    return wb[wb.sheetnames[0]].cell(row=1, column=column)
 
 
 def _tenant_with_address(name="Praxis am Markt", slug="praxis-am-markt", **address):

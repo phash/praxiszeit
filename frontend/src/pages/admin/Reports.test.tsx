@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import Reports from './Reports';
 
 // Spec 2026-10-08, 8.1 / P22: neben dem angerechneten 24-Wochen-Durchschnitt
@@ -7,6 +7,7 @@ import Reports from './Reports';
 
 const getMock = vi.fn();
 vi.mock('../../api/client', () => ({ default: { get: (...a: unknown[]) => getMock(...a) } }));
+vi.mock('../../utils/downloadBlob', () => ({ downloadBlob: vi.fn() }));
 vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
 }));
@@ -31,7 +32,7 @@ describe('<Reports /> 24-Wochen-Durchschnitt (Spec 8.1, P22)', () => {
     render(<Reports />);
     fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
     const table = await screen.findByRole('table', { name: '24-Wochen-Durchschnitt' });
-    expect(within(table).getByText('Anwesenheit laut Stempel (Ø / Tag)')).toBeInTheDocument();
+    expect(within(table).getByText('Anwesenheit laut Stempel (Ø / Werktag)')).toBeInTheDocument();
     expect(within(table).getByText('7:45')).toBeInTheDocument();
     expect(within(table).getByText('11:00')).toBeInTheDocument();
     expect(within(table).getByText('22:00')).toBeInTheDocument();
@@ -99,7 +100,7 @@ describe('<Reports /> 24-Wochen-Durchschnitt (Spec 8.1, P22)', () => {
     render(<Reports />);
     fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
     const table = await screen.findByRole('table', { name: '24-Wochen-Durchschnitt' });
-    expect(within(table).getByText('keine Soll-Arbeitstage')).toBeInTheDocument();
+    expect(within(table).getByText('keine Werktage im Zeitraum')).toBeInTheDocument();
     expect(within(table).queryByText('✓ Konform')).not.toBeInTheDocument();
     expect(within(table).queryByText('0:00')).not.toBeInTheDocument();
     expect(within(table).getAllByText('–')).toHaveLength(2);
@@ -219,5 +220,132 @@ describe('<Reports /> 24-Wochen-Durchschnitt: Zeitraum und Leerzustand (Fund 22)
     fireEvent.change(screen.getByLabelText('Stichtag'), { target: { value: '2026-06-30' } });
     expect(screen.queryByRole('table', { name: '24-Wochen-Durchschnitt' })).not.toBeInTheDocument();
     expect(screen.queryByText('29.10.2025 – 15.04.2026')).not.toBeInTheDocument();
+  });
+});
+
+// Audit 2026-11-07 (#539): Ersatzruhetag, Nachtarbeit je Monat, §3/§4-Auswertung,
+// ausgeblendete Mitarbeitende.
+function card(heading: string): HTMLElement {
+  return screen.getByRole('heading', { name: heading }).closest('.bg-white') as HTMLElement;
+}
+
+describe('<Reports /> ArbZG-Auswertungen (Audit 2026-11-07)', () => {
+  it('Ersatzruhetage: Verstöße mit Datum, laufende Fristen getrennt (A1-01)', async () => {
+    getMock.mockResolvedValue({
+      data: {
+        year: 2026, total_violations: 1, total_open: 1, non_compliant_count: 1, hidden_with_data_count: 0,
+        employees: [{
+          user_id: 'u1', first_name: 'Anna', last_name: 'Meier', sunday_holiday_days_worked: 3,
+          violations: [{ date: '2026-10-04', type: 'sunday', window_weeks: 2, deadline: '2026-10-18' }],
+          violation_count: 1,
+          open: [{ date: '2026-11-01', type: 'sunday', window_weeks: 2, deadline: '2026-11-15' }],
+          open_count: 1, compliant: false,
+        }],
+      },
+    });
+    render(<Reports />);
+    const c = card('Ersatzruhetage §11 ArbZG');
+    expect(within(c).getByText(/sonst gearbeitet hätte/)).toBeInTheDocument();
+    // Parität mit _REST_DAY_GRANTING_ABSENCES (OTHER, OVERTIME, PAID_LEAVE) und Handbuch.
+    expect(within(c).getByText(/„Sonstiges“ \(oder „Überstundenausgleich“ bzw\. „Bez\. Freistellung“\)/)).toBeInTheDocument();
+    fireEvent.click(within(c).getByRole('button', { name: /Prüfen/ }));
+    expect(await within(c).findByText('04.10.2026 (So)')).toBeInTheDocument();
+    expect(within(c).getByText('01.11.2026 bis 15.11.2026')).toBeInTheDocument();
+    expect(within(c).getByText('Frist läuft')).toBeInTheDocument();
+  });
+
+  it('Nachtarbeit: Monatsdurchschnitt und fehlendes Kennzeichen (A1-14)', async () => {
+    getMock.mockResolvedValue({
+      data: {
+        year: 2026, nachtarbeitnehmer_threshold: 48, nachtarbeitnehmer_count: 1, hidden_with_data_count: 0,
+        employees: [{
+          user_id: 'u1', first_name: 'Nina', last_name: 'Nacht', night_work_days: 50,
+          is_nachtarbeitnehmer: true, nachtarbeitnehmer_threshold: 48, by_month: [],
+          flag_missing: true, monthly_violation_count: 1,
+          monthly: [{ month: 9, workdays: 6, total_hours: 50, average_daily_hours: 8.33,
+            presence_hours: 50, presence_average: 8.33, compliant: false }],
+        }],
+      },
+    });
+    render(<Reports />);
+    const c = card('Nachtarbeit §6 ArbZG');
+    fireEvent.click(within(c).getByRole('button', { name: /Auswerten/ }));
+    const table = await within(c).findByRole('table', { name: 'Monatsdurchschnitt Nachtarbeitnehmer' });
+    expect(within(table).getByText('September')).toBeInTheDocument();
+    expect(within(table).getAllByText('8:20')).toHaveLength(2);
+    expect(within(table).getByText('✗ Verstoß')).toBeInTheDocument();
+    expect(within(c).getByText(/Kennzeichen „Nachtarbeitnehmer“ beim Benutzer noch nicht gesetzt/)).toBeInTheDocument();
+  });
+
+  it('Nachtarbeit: Monat ohne Werktag ohne Urteil (Fix-Runde)', async () => {
+    getMock.mockResolvedValue({
+      data: {
+        year: 2026, nachtarbeitnehmer_threshold: 48, nachtarbeitnehmer_count: 0, hidden_with_data_count: 0,
+        employees: [{
+          user_id: 'u2', first_name: 'Sonja', last_name: 'Sonntag', night_work_days: 1,
+          is_nachtarbeitnehmer: false, nachtarbeitnehmer_threshold: 48, by_month: [],
+          flag_missing: false, monthly_violation_count: 0,
+          monthly: [{ month: 9, workdays: 0, total_hours: 6, average_daily_hours: 0,
+            presence_hours: 6, presence_average: 0, compliant: null }],
+        }],
+      },
+    });
+    render(<Reports />);
+    const c = card('Nachtarbeit §6 ArbZG');
+    fireEvent.click(within(c).getByRole('button', { name: /Auswerten/ }));
+    const table = await within(c).findByRole('table', { name: 'Monatsdurchschnitt Nachtarbeitnehmer' });
+    expect(within(table).getByText('kein Werktag')).toBeInTheDocument();
+    expect(within(table).queryByText('✓ Konform')).not.toBeInTheDocument();
+    expect(within(table).queryByText('✗ Verstoß')).not.toBeInTheDocument();
+  });
+
+  it('§3/§4: Tage über 10 h, Wochen über 48 h und Pausenausnahmen mit Begründung (A1-08)', async () => {
+    getMock.mockResolvedValue({
+      data: {
+        year: 2026, month: 10, total_days_over_10h: 1, total_weeks_over_48h: 1, total_break_exceptions: 1,
+        hidden_with_data_count: 0,
+        employees: [{
+          user_id: 'u1', first_name: 'Anna', last_name: 'Meier',
+          days_over_10h: [{ date: '2026-10-05', presence_hours: 12, credited_hours: 7.5, auto_closed: false }],
+          weeks_over_48h: [{ iso_week: '2026-W41', presence_hours: 56 }],
+          break_exceptions: [{ date: '2026-10-13', start_time: '07:00', end_time: '14:00', break_minutes: 0,
+            reason: 'Notfall, keine Pause möglich' }],
+        }],
+      },
+    });
+    render(<Reports />);
+    fireEvent.change(screen.getByLabelText('Monat (optional)', { selector: '#limits-month' }), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Höchstarbeitszeit und Pausenausnahmen prüfen' }));
+    const c = card('Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG');
+    fireEvent.click(await within(c).findByText(/Anna Meier – 1 Tag\(e\) > 10 h/));
+    expect(within(c).getByText('12:00 h')).toBeInTheDocument();
+    expect(within(c).getByText('7:30 h')).toBeInTheDocument();
+    expect(within(c).getByText(/KW 41\/2026: 56:00 h/)).toBeInTheDocument();
+    expect(within(c).getByText('Notfall, keine Pause möglich')).toBeInTheDocument();
+    expect(getMock).toHaveBeenCalledWith('/admin/reports/arbzg-limits?year=' + new Date().getFullYear() + '&month=10');
+  });
+
+  it('ausgeblendete Mitarbeitende: Hinweis und Schalter für die Auswertungen (A2-6)', async () => {
+    getMock.mockResolvedValue({
+      data: { window_start: '2025-10-29', window_end: '2026-04-15', non_compliant_count: 0, employees: [],
+        hidden_with_data_count: 2 },
+    });
+    render(<Reports />);
+    fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
+    expect(await screen.findByText(/2 ausgeblendete Mitarbeitende mit Einträgen/)).toBeInTheDocument();
+    fireEvent.click(document.getElementById('report-hidden') as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
+    expect(getMock).toHaveBeenLastCalledWith(expect.stringMatching(/24-week-average\?end_date=.*&include_hidden=true$/));
+  });
+
+  it('Exporte: Ausgeblendete nur auf Wunsch (A2-6)', async () => {
+    getMock.mockResolvedValue({ data: new Blob(['x']) });
+    render(<Reports />);
+    fireEvent.click(screen.getByRole('button', { name: 'Excel (.xlsx)' }));
+    expect(getMock).toHaveBeenLastCalledWith(expect.not.stringContaining('include_hidden'), expect.anything());
+    fireEvent.click(document.getElementById('export-hidden-month') as HTMLElement);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Excel (.xlsx)' })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Excel (.xlsx)' }));
+    expect(getMock).toHaveBeenLastCalledWith(expect.stringContaining('&include_hidden=true'), expect.anything());
   });
 });

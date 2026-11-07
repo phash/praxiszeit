@@ -156,7 +156,12 @@ class TestFormulaInjection:
                 if isinstance(val, str) and "HYPERLINK" in val:
                     target = val
         assert target is not None, "note payload not found in sheet"
-        assert target.startswith("'"), f"formula not neutralized: {target!r}"
+        # S2-7: kein sichtbares Apostroph; die Zelle ist Text mit quotePrefix.
+        assert target == entry.note
+        result.seek(0)
+        full = load_workbook(result)  # read_only kennt keinen Zellstil
+        cell = next(c for w in full.worksheets for r in w.iter_rows() for c in r if c.value == entry.note)
+        assert (cell.data_type, cell.quotePrefix) == ("s", True)
 
 
 class TestClassicReportSaldo:

@@ -236,7 +236,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li><span className="font-medium text-gray-700">Jahresreport Classic:</span> 12 Monate kompakt je Mitarbeiter:in, als Excel (Monate als Spalten) oder ODS (eine Zeile je Monat).</li>
             <li><span className="font-medium text-gray-700">Jahresreport Detailliert:</span> 365 Tage pro MA, für Steuerberater, als Excel oder ODS.</li>
           </ul>
-          <p className="mt-2 text-sm text-gray-600">Monatsreport und Jahresreport Detailliert: letzte Spalte der Tageszeilen „Nicht angerechnet (Min)" – gestempelte, nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken. „Netto" ist die angerechnete Zeit. Der Jahresreport Classic (nur Monatswerte, keine Tageszeilen) hat diese Spalte nicht.</p>
+          <p className="mt-2 text-sm text-gray-600">Monatsreport und Jahresreport Detailliert: Spalte „Nicht angerechnet (Min)" – gestempelte, nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken –, dahinter „Gestempelt (Von–Bis)", „Anwesenheit laut Stempel (Std)" und „Pausenausnahme (§4 ArbZG)". „Netto" ist die angerechnete Zeit. Der Jahresreport Classic (nur Monatswerte, keine Tageszeilen) hat diese Spalten nicht.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">ArbZG-Berichte</h3>
@@ -244,7 +244,8 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>📋 <span className="font-medium">Ruhezeitverstöße (§5):</span> MA unter 11h Ruhezeit</li>
             <li>📋 <span className="font-medium">Sonntagsarbeit (§11):</span> Freie Sonntage + Ersatzruhetage</li>
             <li>📋 <span className="font-medium">Nachtarbeit (§6):</span> Nachtarbeitnehmer-Tracking</li>
-            <li>📋 <span className="font-medium">24-Wochen-Durchschnitt (§3):</span> Ø angerechnet / Tag und Anwesenheit laut Stempel</li>
+            <li>📋 <span className="font-medium">24-Wochen-Durchschnitt (§3):</span> Ø angerechnet / Werktag und Anwesenheit laut Stempel</li>
+            <li>📋 <span className="font-medium">Höchstarbeitszeit und Pausenausnahmen (§3/§4):</span> Tage &gt; 10 h, Wochen &gt; 48 h, Pausenausnahmen mit Begründung</li>
           </ul>
         </section>
         <section>

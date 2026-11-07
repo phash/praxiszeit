@@ -129,12 +129,15 @@ def test_ods_yearly_sum_rows(db, month):
 
 def test_pdf_last_column(db, month, monkeypatch):
     header, rows = _pdf_main_table(db, monkeypatch)
-    assert len(header) == 12
-    assert header[-1] == "Nicht angerechnet (Min)"
+    # A2-4: „Gestempelt (Anwesenheit)" ist seit dem Audit 2026-11-07 die 13.
+    # Spalte — „Nicht angerechnet" bleibt die 12.
+    assert len(header) == 13
+    assert header[11] == "Nicht angerechnet (Min)"
+    assert header[12] == "Gestempelt (Anwesenheit)"
     assert header.index("Unterbr. (Min)") == 5, "Spalte 6 bleibt die Unterbrechung"
-    assert rows[K7_DAY][-1] == "240"
-    assert rows[K15_DAY][-1] == "150"
-    assert rows[EMPTY_DAY][-1] == ""
+    assert rows[K7_DAY][11] == "240"
+    assert rows[K15_DAY][11] == "150"
+    assert rows[EMPTY_DAY][11] == ""
 
 
 def test_day_credit_minutes_helper():
@@ -185,8 +188,9 @@ def test_pdf_header_two_lines_and_width_267mm(db, month, monkeypatch):
     export_service.generate_monthly_report_pdf(db, YEAR, MONTH, tenant_id=DEFAULT_TENANT_ID)
     data, widths = next((d, w) for d, w in captured
                         if d and getattr(d[0][0], "text", None) == "Datum")
-    assert len(widths) == 12
+    assert len(widths) == 13  # A2-4: + „Gestempelt (Anwesenheit)"
     assert sum(widths) == pytest.approx(267 * mm)
-    head = data[0][-1]
-    head.wrap(widths[-1] - 6, 1000)  # LEFT-/RIGHTPADDING je 3 pt
-    assert len(head.blPara.lines) == 2
+    for col in (11, 12):  # „Nicht angerechnet" und „Gestempelt" je zweizeilig
+        head = data[0][col]
+        head.wrap(widths[col] - 6, 1000)  # LEFT-/RIGHTPADDING je 3 pt
+        assert len(head.blPara.lines) == 2
