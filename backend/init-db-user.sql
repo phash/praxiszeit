@@ -58,8 +58,7 @@ BEGIN
         'pz_audit_head_seq(uuid)',
         'pz_audit_set_head(uuid, text, boolean)',
         'pz_audit_scrub_ok(text, text)',
-        'pz_audit_tombstoned(uuid)',
-        'pz_audit_claim_id(uuid, uuid)'
+        'pz_audit_tombstoned(uuid)'
     ] LOOP
         IF to_regprocedure(f) IS NOT NULL THEN
             -- ohne Prozent-Platzhalter: Tests reichen die Datei durch psycopg
@@ -67,5 +66,23 @@ BEGIN
             EXECUTE 'GRANT EXECUTE ON FUNCTION ' || f || ' TO praxiszeit_app';
         END IF;
     END LOOP;
+END
+$$;
+
+-- #537 (Migration 076, Review-Runde 7): die Triggerfunktion, die jede
+-- Protokoll-id fest vergibt, gehoert nur dem Trigger. EXECUTE braucht nur
+-- CREATE TRIGGER - ohne das Recht kann die App-Rolle sie nicht an eine eigene
+-- (temporaere) Tabelle haengen. Die WHEN-Bedingung der Vergabe-Trigger laeuft
+-- als schreibendes Konto und braucht EXECUTE - ausdruecklich vergeben, falls
+-- eine Wiederherstellung die PUBLIC-Vorgabe entzogen hat.
+DO $$
+BEGIN
+    IF to_regprocedure('pz_audit_claim()') IS NOT NULL THEN
+        REVOKE ALL ON FUNCTION pz_audit_claim() FROM PUBLIC;
+        REVOKE ALL ON FUNCTION pz_audit_claim() FROM praxiszeit_app;
+    END IF;
+    IF to_regprocedure('pz_audit_writer_is_owner()') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION pz_audit_writer_is_owner() TO praxiszeit_app;
+    END IF;
 END
 $$;

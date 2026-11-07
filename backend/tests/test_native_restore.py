@@ -99,6 +99,7 @@ class FakeCluster:
         # Ausgabe des RLS-Vergleichsskripts (Runde 6)
         self.rls_deparsed = {"expected": [], "found": []}
         self.rls_scripts: list[str] = []
+        self.fail_acl_reset = False
 
     def __call__(self, cmd, **kw):
         if Path(cmd[0]).name != "psql":
@@ -156,6 +157,11 @@ class FakeCluster:
                 self._role_sql(sql)
             elif sql.startswith("GRANT CREATE ON SCHEMA public"):
                 self.events.append(f"grantload:{db}")
+            elif sql.startswith("DO $pz_acl$"):
+                # Rechte der Zwischendatenbank zuruecksetzen (Runde 7)
+                self.events.append(f"aclreset:{db}")
+                if self.fail_acl_reset:
+                    return subprocess.CompletedProcess(cmd, 1, "", "ERROR:  revoke failed\n")
             elif sql.startswith("REASSIGN OWNED"):
                 self.events.append(f"reassign:{db}")
             elif sql.startswith("DROP OWNED"):
@@ -1540,6 +1546,7 @@ def test_unverifizierte_sicherung_wird_als_eingeschraenkte_rolle_geladen(srv, in
         "load:praxiszeit_restore",
         "revision:praxiszeit_restore",
         "routines:praxiszeit_restore",
+        "aclreset:praxiszeit_restore",
         "reassign:praxiszeit_restore",
         "droprole:praxiszeit_restore_load",
         "drop:praxiszeit",
@@ -1607,11 +1614,12 @@ def test_erwartete_funktionen_entsprechen_einem_echten_pg_dump(srv):
     functions, triggers = srv.expected_db_routines(_VERSIONS, "076_audit_chain")
     fx_functions, fx_triggers = _fixture_routines(srv)
     assert set(functions) == set(fx_functions) and "pz_audit_tombstoned" in functions
-    assert "pz_audit_claim_id" in functions
+    # Review-Runde 7: keine aufrufbare Vergabefunktion mehr, nur der Trigger
+    assert "pz_audit_claim" in functions and "pz_audit_claim_id" not in functions
     for name, (lang, secdef, _config, src) in functions.items():
         assert (secdef, src) == fx_functions[name], name
         assert lang in ("sql", "plpgsql"), name
-    assert triggers == fx_triggers and len(triggers) == 2
+    assert triggers == fx_triggers and len(triggers) == 4
     # vor 076 legt keine Migration Funktionen oder Trigger an
     assert srv.expected_db_routines(_VERSIONS, "075_contract_history") == ({}, {})
 
@@ -1899,3 +1907,111 @@ def test_signierte_sicherung_braucht_keinen_funktionsabgleich(srv, inst):
                                           "secdef": False, "config": "", "src": "SELECT 1"})
     code, _ = _restore(srv, _dump(inst), cluster)
     assert code == 0 and "routines:praxiszeit_restore" not in cluster.events
+
+
+# --- Review-Runde 7: Rechte, Tabellen, Vererbung ------------------------------
+
+def test_signierte_sicherung_behaelt_ihre_rechte(srv, inst):
+    cluster = FakeCluster()
+    code, _ = _restore(srv, _dump(inst), cluster)
+    assert code == 0 and "aclreset:praxiszeit_restore" not in cluster.events
+
+
+def test_unverifizierte_sicherung_verliert_jedes_fremde_recht_vor_der_uebergabe(srv, inst):
+    """Ein ``GRANT TRUNCATE ... TO PUBLIC`` der Sicherung ginge durch die
+    Pruefliste und ueberlebte REASSIGN/DROP OWNED. Die Rechte werden nach dem
+    Abgleich und VOR der Uebergabe an den Superuser zurueckgesetzt,
+    init-db-user.sql vergibt danach die der Anwendung neu."""
+    body = "GRANT TRUNCATE ON TABLE public.time_entry_audit_logs TO PUBLIC;\n"
+    path = inst / "x.sql"
+    path.write_text(_HEAD + body + _TAIL, encoding="utf-8")
+    srv.validate_restore_dump(path, strip_ownership=True)  # Pruefliste allein laesst es durch
+    cluster = FakeCluster()
+    code, _ = _restore(srv, _dump(inst, _HEAD + body + _TAIL, key=None), cluster,
+                       force_unverified=True)
+    assert code == 0
+    ev = cluster.events
+    assert ev.index("routines:praxiszeit_restore") < ev.index("aclreset:praxiszeit_restore") \
+        < ev.index("reassign:praxiszeit_restore") < ev.index("grants:praxiszeit")
+    reset = next(c for c in cluster.calls if any(a.startswith("DO $pz_acl$") for a in c))
+    assert reset[reset.index("-d") + 1] == "praxiszeit_restore"
+    assert reset[reset.index("-U") + 1] == "praxiszeit"  # Superuser, nicht die Ladrolle
+
+
+def test_scheitert_das_ruecksetzen_der_rechte_bleibt_der_bestand(srv, inst, caplog):
+    cluster = FakeCluster()
+    cluster.fail_acl_reset = True
+    with caplog.at_level(logging.ERROR, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst, key=None), cluster, force_unverified=True)
+    assert code == 1
+    assert "Rechte der eingespielten Sicherung" in caplog.text
+    assert cluster.dbs["praxiszeit"] == _OLD
+    assert "reassign:praxiszeit_restore" not in cluster.events
+    assert not any(e.startswith("rename:") for e in cluster.events)
+
+
+def test_rechte_ruecksetzung_erfasst_tabellen_spalten_sequenzen_und_funktionen(srv):
+    sql = srv._RESTORE_ACL_RESET_SQL
+    for needle in ("aclexplode(c.relacl)", "aclexplode(t.attacl)", "aclexplode(p.proacl)",
+                   "a.grantee <> c.relowner", "a.grantee <> p.proowner", "'PUBLIC'",
+                   "'SEQUENCE'", "CASCADE", "n.nspname = 'public'"):
+        assert needle in sql, needle
+
+
+def test_erwartete_tabellen_entsprechen_einem_echten_pg_dump(srv):
+    text = _FIXTURE_DUMP.read_text(encoding="utf-8")
+    dumped = set(re.findall(r"^CREATE TABLE public\.(\w+) ", text, re.M))
+    tables = srv.expected_db_tables(_VERSIONS, "076_audit_chain")
+    assert tables | {"alembic_version"} == dumped
+    assert {"audit_log_ids", "audit_log_tombstones", "users"} <= tables
+    assert "audit_log_ids" not in srv.expected_db_tables(_VERSIONS, "075_contract_history")
+
+
+def test_tabellenabgleich_findet_fremde_tabellen_vererbung_und_partitionen(srv):
+    expected = srv.expected_db_tables(_VERSIONS, "076_audit_chain")
+    ok = {"tables": [{"schema": "public", "name": n, "kind": "r"}
+                     for n in sorted(expected | {"alembic_version"})], "inherits": []}
+    assert srv.check_restored_tables(ok, expected) == []
+    # fehlende Tabellen schwaechen nichts
+    assert srv.check_restored_tables({"tables": [], "inherits": []}, expected) == []
+    bad = {"tables": ok["tables"] + [
+        {"schema": "public", "name": "audit_shadow", "kind": "r"},
+        {"schema": "public", "name": "users_part", "kind": "p"},
+        {"schema": "public", "name": "remote", "kind": "f"},
+    ], "inherits": [{"child": "table public.audit_shadow",
+                     "parent": "table public.time_entry_audit_logs"}]}
+    got = srv.check_restored_tables(bad, expected)
+    assert "Tabelle public.audit_shadow (legt keine Migration an)" in got
+    assert any(p.startswith("Tabelle public.users_part (partitionierte") for p in got)
+    assert any(p.startswith("Tabelle public.remote (partitionierte") for p in got)
+    assert ("Vererbung/Partition: table public.audit_shadow haengt an table "
+            "public.time_entry_audit_logs (legt keine Migration an)") in got
+    assert len(got) == 4
+
+
+def test_unverifizierte_sicherung_mit_kindtabelle_wird_nicht_uebernommen(srv, inst, caplog,
+                                                                     monkeypatch):
+    """``CREATE TABLE audit_shadow () INHERITS (time_entry_audit_logs)`` -
+    die Pruefliste laesst es durch, das Kind haette weder Trigger noch RLS."""
+    body = ("CREATE TABLE public.audit_shadow () INHERITS (public.time_entry_audit_logs);\n")
+    path = inst / "x.sql"
+    path.write_text(_HEAD + body + _TAIL, encoding="utf-8")
+    srv.validate_restore_dump(path, strip_ownership=True)
+    monkeypatch.setattr(srv, "BACKEND_DIR", _REPO / "backend")
+    cluster = FakeCluster(revision="076_audit_chain")
+    functions, triggers = srv.expected_db_routines(_VERSIONS, "076_audit_chain")
+    cluster.routines = _found(functions, triggers, tables=[
+        {"name": "time_entry_audit_logs", "schema": "public", "rls": False, "force": False,
+         "kind": "r"},
+        {"name": "audit_shadow", "schema": "public", "rls": False, "force": False, "kind": "r"},
+    ], inherits=[{"child": "table public.audit_shadow",
+                  "parent": "table public.time_entry_audit_logs"}])
+    cluster.rls_deparsed = {"expected": [], "found": []}
+    with caplog.at_level(logging.ERROR, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst, _HEAD + body + _TAIL, key=None), cluster,
+                           force_unverified=True)
+    assert code == 1
+    assert "public.audit_shadow" in caplog.text and "Vererbung/Partition" in caplog.text
+    assert "reassign:praxiszeit_restore" not in cluster.events
+    assert cluster.dbs["praxiszeit"] == _OLD
+

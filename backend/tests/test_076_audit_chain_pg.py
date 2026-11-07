@@ -724,8 +724,8 @@ def test_reinsert_racing_an_uncommitted_delete_is_refused(env):
 def test_audit_ids_are_backfilled_owner_only_and_claimed_only_by_the_trigger(env):
     """audit_log_ids: Altbestand steht nach der Migration drin, Zeilen der
     Eigentuemerin werden mit vergeben, die App-Rolle hat keine Rechte auf die
-    Tabelle und kann pz_audit_claim_id nicht direkt (ausserhalb des Triggers)
-    aufrufen - sonst belegte sie fremde ids vorab."""
+    Tabelle und keine Funktion, ueber die sie direkt eine id vergeben
+    koennte - sonst belegte sie fremde ids vorab."""
     from app.models import TimeEntryAuditLog
     url, engine, app_url, role = env
     owner = sessionmaker(bind=engine)()
@@ -747,8 +747,7 @@ def test_audit_ids_are_backfilled_owner_only_and_claimed_only_by_the_trigger(env
         s.commit()
         _expect_denied(s, "SELECT count(*) FROM audit_log_ids")
         _expect_denied(s, "DELETE FROM audit_log_ids")
-        msg = _expect_denied(s, "SELECT pz_audit_claim_id(gen_random_uuid(), :t)", {"t": TENANT})
-        assert "nur ueber den Protokoll-Trigger" in msg
+        _expect_denied(s, "SELECT pz_audit_claim()")
         with engine.connect() as conn:
             privs = {p for (p,) in conn.execute(text(
                 "SELECT privilege_type FROM information_schema.role_table_grants "
@@ -758,6 +757,90 @@ def test_audit_ids_are_backfilled_owner_only_and_claimed_only_by_the_trigger(env
     finally:
         s.close()
         eng.dispose()
+
+
+def test_app_role_cannot_claim_ids_through_a_trigger_on_its_own_temp_table(env):
+    """Review-Runde 7: die App-Rolle hat TEMP auf der Datenbank. Eine
+    SECURITY-DEFINER-Vergabefunktion, die nur ``pg_trigger_depth() > 0``
+    prueft, liess sich aus einem Trigger auf einer eigenen temporaeren Tabelle
+    heraus aufrufen - fremde ids (auch anderer Mandanten) vorab belegen und
+    abfragen, ob eine id schon vergeben war. Die Vergabe ist jetzt selbst eine
+    Triggerfunktion ohne EXECUTE fuer die App-Rolle, und sie verweigert jede
+    andere Tabelle als time_entry_audit_logs."""
+    url, engine, app_url, role = env
+    victim = str(uuid.uuid4())
+    eng, s = _app_session(app_url, tenant=OTHER_TENANT)
+    try:
+        s.commit()
+        assert s.execute(text(
+            "SELECT has_database_privilege(current_user, current_database(), 'TEMP')")).scalar()
+        s.execute(text("CREATE TEMP TABLE claim_t (id uuid, tenant_id uuid, res boolean)"))
+        s.commit()
+        # 1) frueherer Weg: eine Hilfsfunktion aus einem eigenen Trigger heraus
+        _expect_denied(s, (
+            "CREATE FUNCTION pg_temp.claim_f() RETURNS trigger LANGUAGE plpgsql AS $$ "
+            "BEGIN NEW.res := public.pz_audit_claim_id(NEW.id, NEW.tenant_id); RETURN NEW; "
+            "END $$; "
+            "CREATE TRIGGER claim_tr BEFORE INSERT ON claim_t FOR EACH ROW "
+            "EXECUTE FUNCTION pg_temp.claim_f(); "
+            "INSERT INTO claim_t VALUES (CAST(:v AS uuid), CAST(:t AS uuid), NULL)"),
+            {"v": victim, "t": TENANT})
+        # 2) die Vergabe-Triggerfunktion selbst an die eigene Tabelle haengen
+        msg = _expect_denied(s, (
+            "CREATE TRIGGER claim_tr2 BEFORE INSERT ON claim_t FOR EACH ROW "
+            "EXECUTE FUNCTION public.pz_audit_claim('writer')"))
+        assert "permission denied" in msg
+    finally:
+        s.close()
+        eng.dispose()
+    # 3) selbst wer sie anhaengen darf (Eigentuemerin), vergibt so nichts
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE claim_owner_t (id uuid, tenant_id uuid)"))
+        conn.execute(text(
+            "CREATE TRIGGER claim_tr3 BEFORE INSERT ON claim_owner_t FOR EACH ROW "
+            "EXECUTE FUNCTION pz_audit_claim('owner')"))
+    with engine.connect() as conn:
+        with pytest.raises(DBAPIError) as exc:
+            conn.execute(text("INSERT INTO claim_owner_t VALUES (CAST(:v AS uuid), :t)"),
+                         {"v": victim, "t": TENANT})
+        assert "nur als Protokoll-Trigger" in str(exc.value)
+        conn.rollback()
+        conn.execute(text("SET app.is_superadmin = 'true'"))
+        assert conn.execute(text("SELECT count(*) FROM audit_log_ids WHERE id = :v"),
+                            {"v": victim}).scalar() == 0
+        privs = conn.execute(text(
+            "SELECT has_function_privilege(:r, 'pz_audit_claim()', 'EXECUTE'), "
+            "has_function_privilege('public', 'pz_audit_claim()', 'EXECUTE')"),
+            {"r": role}).one()
+        assert tuple(privs) == (False, False)
+    # 4) der normale Weg vergibt die id weiter, eine vergebene id scheitert
+    eng, s = _app_session(app_url)
+    try:
+        row = _insert_hashed(s)
+        copy = dict(s.execute(text("SELECT * FROM time_entry_audit_logs WHERE id = :i"),
+                              {"i": str(row.id)}).mappings().one())
+    finally:
+        s.close()
+        eng.dispose()
+    with engine.begin() as conn:
+        # Eigentuemerin loescht direkt (ohne Grabstein) - die id bleibt vergeben
+        conn.execute(text("SET LOCAL app.is_superadmin = 'true'"))
+        conn.execute(text("DELETE FROM time_entry_audit_logs WHERE id = :i"), {"i": str(row.id)})
+    eng, s = _app_session(app_url)
+    try:
+        s.commit()
+        cols = [k for k in copy if k not in ("chain_seq", "chain_prev", "chain_hash")]
+        msg = _expect_denied(s, f"INSERT INTO time_entry_audit_logs ({', '.join(cols)}) VALUES "
+                                f"({', '.join(':' + c for c in cols)})", {c: copy[c] for c in cols})
+        assert "war schon vergeben" in msg
+    finally:
+        s.close()
+        eng.dispose()
+    # die Eigentuemerin (vertraut) darf eine vergebene id wieder einfuegen
+    with engine.begin() as conn:
+        conn.execute(text("SET LOCAL app.is_superadmin = 'true'"))
+        conn.execute(text(f"INSERT INTO time_entry_audit_logs ({', '.join(cols)}) VALUES "
+                          f"({', '.join(':' + c for c in cols)})"), {c: copy[c] for c in cols})
 
 
 def test_app_role_rows_need_a_present_created_at(env):
@@ -916,3 +999,102 @@ def test_restore_trigger_and_rls_check_matches_a_real_migrated_database(env):
     assert "Erweiterung pgcrypto (legt keine Migration an)" in got
     # ihre Funktionen (Schema public) nimmt der Abgleich nicht mehr aus
     assert "Funktion public.digest (legt keine Migration an)" in got
+
+
+# ── Wiederherstellung (Review-Runde 7): Rechte, Tabellen, Vererbung ──
+
+def test_restore_privilege_reset_removes_every_foreign_grant(env):
+    """Eine unverifizierte Sicherung gibt PUBLIC TRUNCATE auf das
+    Aenderungsprotokoll (TRUNCATE feuert keinen Zeilentrigger, umgeht RLS),
+    ALL auf audit_log_ids/-tombstones, ein Spaltenrecht und EXECUTE auf eine
+    Protokollfunktion. Nach der Ruecksetzung (_RESTORE_ACL_RESET_SQL, laeuft als
+    Superuser in der Zwischendatenbank) und den Rechten aus init-db-user.sql
+    kann die App-Rolle nichts davon."""
+    srv = _server_module()
+    url, engine, app_url, role = env
+    with engine.begin() as conn:
+        conn.exec_driver_sql("GRANT TRUNCATE ON TABLE time_entry_audit_logs TO PUBLIC")
+        conn.exec_driver_sql("GRANT ALL ON TABLE audit_log_ids TO PUBLIC")
+        conn.exec_driver_sql(f'GRANT ALL ON TABLE audit_log_tombstones TO "{role}" WITH GRANT OPTION')
+        conn.exec_driver_sql(f'GRANT UPDATE (note) ON TABLE time_entries TO "{role}"')
+        conn.exec_driver_sql("GRANT EXECUTE ON FUNCTION pz_audit_claim() TO PUBLIC")
+    eng, s = _app_session(app_url)
+    try:
+        s.commit()
+        assert s.execute(text(
+            "SELECT has_table_privilege('time_entry_audit_logs', 'TRUNCATE')")).scalar()
+    finally:
+        s.close()
+        eng.dispose()
+    with engine.begin() as conn:
+        conn.exec_driver_sql(srv._RESTORE_ACL_RESET_SQL.replace("%", "%%"))
+        leftover = conn.exec_driver_sql(
+            "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, "
+            "aclexplode(c.relacl) a WHERE n.nspname = 'public' AND a.grantee <> c.relowner "
+            "UNION ALL SELECT p.proname FROM pg_proc p JOIN pg_namespace n "
+            "ON n.oid = p.pronamespace, aclexplode(p.proacl) a "
+            "WHERE n.nspname = 'public' AND a.grantee <> p.proowner "
+            "UNION ALL SELECT c.relname FROM pg_attribute t JOIN pg_class c ON c.oid = t.attrelid "
+            "JOIN pg_namespace n ON n.oid = c.relnamespace, aclexplode(t.attacl) a "
+            "WHERE n.nspname = 'public'").fetchall()
+        assert leftover == []
+        # was init-db-user.sql danach vergibt (die Rolle heisst hier anders)
+        sql = (BACKEND / "init-db-user.sql").read_text(encoding="utf-8").replace(
+            "praxiszeit_app", role).replace("DATABASE praxiszeit", f"DATABASE {make_url(url).database}")
+        conn.exec_driver_sql(sql.replace("%", "%%"))
+    eng, s = _app_session(app_url)
+    try:
+        s.commit()
+        row = s.execute(text(
+            "SELECT has_table_privilege('time_entry_audit_logs', 'TRUNCATE'), "
+            "has_table_privilege('time_entry_audit_logs', 'INSERT'), "
+            "has_table_privilege('audit_log_ids', 'SELECT'), "
+            "has_table_privilege('audit_log_tombstones', 'SELECT'), "
+            "has_function_privilege('pz_audit_claim()', 'EXECUTE'), "
+            "has_function_privilege('pz_audit_delete(uuid[])', 'EXECUTE'), "
+            "has_function_privilege('pz_audit_writer_is_owner()', 'EXECUTE')")).one()
+        assert tuple(row) == (False, True, False, False, False, True, True)
+        _expect_denied(s, "TRUNCATE time_entry_audit_logs")
+        _insert_hashed(s)  # der normale Weg geht weiter
+    finally:
+        s.close()
+        eng.dispose()
+
+
+def test_restore_table_check_refuses_inheritance_partitions_and_unknown_tables(env):
+    """Review-Runde 7: eine Kindtabelle (INHERITS / ALTER TABLE ... INHERIT)
+    oder Partition haette weder Trigger noch RLS, init-db-user.sql gaebe der
+    App-Rolle trotzdem Schreibrechte, und ihre Zeilen erscheinen in der
+    Elterntabelle. Die frisch migrierte Datenbank ist sauber; jede solche
+    Struktur faellt auf."""
+    import json
+    srv = _server_module()
+    url, engine, app_url, role = env
+    expected = srv.expected_db_tables(BACKEND / "alembic" / "versions", HEAD_REV)
+
+    def problems():
+        with engine.connect() as conn:
+            raw = conn.exec_driver_sql(srv._ROUTINE_CATALOG_SQL.replace("%", "%%")).scalar()
+        found = raw if isinstance(raw, dict) else json.loads(raw)
+        return srv.check_restored_tables(found, expected)
+
+    assert problems() == []
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE audit_shadow () INHERITS (time_entry_audit_logs)")
+        conn.exec_driver_sql("CREATE TABLE users_like (LIKE users)")
+        conn.exec_driver_sql("ALTER TABLE users_like INHERIT users")
+        conn.exec_driver_sql(
+            "CREATE TABLE parted (id int, tenant_id uuid) PARTITION BY LIST (tenant_id)")
+        conn.exec_driver_sql("CREATE TABLE parted_one (id int, tenant_id uuid)")
+        conn.exec_driver_sql(
+            f"ALTER TABLE parted ATTACH PARTITION parted_one FOR VALUES IN ('{TENANT}')")
+    got = problems()
+    assert ("Vererbung/Partition: table public.audit_shadow haengt an table "
+            "public.time_entry_audit_logs (legt keine Migration an)") in got
+    assert ("Vererbung/Partition: table public.users_like haengt an table public.users "
+            "(legt keine Migration an)") in got
+    assert ("Vererbung/Partition: table public.parted_one haengt an table public.parted "
+            "(legt keine Migration an)") in got
+    assert "Tabelle public.audit_shadow (legt keine Migration an)" in got
+    assert any(p.startswith("Tabelle public.parted (partitionierte") for p in got)

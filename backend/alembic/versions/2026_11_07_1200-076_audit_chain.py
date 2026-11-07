@@ -78,10 +78,8 @@ BEGIN
         IF TG_OP = 'DELETE' THEN
             RETURN OLD;
         END IF;
-        IF TG_OP = 'INSERT' THEN
-            -- auch Zeilen der Eigentuemerin bekommen ihre id fest vergeben
-            PERFORM pz_audit_claim_id(NEW.id, NEW.tenant_id);
-        END IF;
+        -- auch Zeilen der Eigentuemerin bekommen ihre id fest vergeben
+        -- (Trigger pz_audit_id_claim_owner, laesst eine vergebene id durch)
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
@@ -96,14 +94,9 @@ BEGIN
         END IF;
         -- Review-Runde 5: der Grabstein allein ist ein Blick auf den Stand bei
         -- Beginn dieser Anweisung - ein paralleles pz_audit_delete derselben id
-        -- (noch nicht festgeschrieben) sieht er nicht, das Einfuegen wartete nur
-        -- am Primaerschluessel und gelaenge nach dessen Commit. Die id-Vergabe
-        -- haengt am Primaerschluessel von audit_log_ids: eine schon (auch
-        -- parallel) vergebene id scheitert hier, ohne Fenster.
-        IF NOT pz_audit_claim_id(NEW.id, NEW.tenant_id) THEN
-            RAISE EXCEPTION 'time_entry_audit_logs: Zeilen-id % war schon vergeben, eine geloeschte Zeile darf nicht zurueckkehren', NEW.id
-                USING ERRCODE = '42501';
-        END IF;
+        -- (noch nicht festgeschrieben) sieht er nicht. Die id-Vergabe am
+        -- Primaerschluessel von audit_log_ids (Trigger pz_audit_id_claim_writer
+        -- nach diesem) laesst eine schon (auch parallel) vergebene id scheitern.
         -- created_at steht in der Pruefsumme: eine kopierte alte Zeile traegt
         -- ihren alten Zeitpunkt und faellt hier heraus. Spielraum fuer lange
         -- Transaktionen und Uhrabweichung zwischen App und Datenbank.
@@ -183,24 +176,57 @@ USING (
 );
 """
 
-# Vergibt eine id (true) oder meldet sie als schon vergeben (false). ON
-# CONFLICT wartet auf eine parallele, noch offene Vergabe derselben id und
-# meldet nach deren Commit false. Nur aus pz_audit_guard heraus (Trigger-
-# Tiefe > 0) - direkt aufgerufen koennte die App-Rolle sonst fremde ids
-# vorab belegen.
-CLAIM_ID_FUNCTION = """
-CREATE OR REPLACE FUNCTION pz_audit_claim_id(p_id uuid, p_tenant uuid) RETURNS boolean
+# Vergibt die id jeder neuen Protokollzeile (Review-Runde 5) - als eigener
+# SECURITY-DEFINER-Trigger (Review-Runde 7): die App-Rolle hat keine Rechte an
+# audit_log_ids, und eine aufrufbare Hilfsfunktion liesse sich aus einem
+# Trigger auf einer eigenen temporaeren Tabelle heraus missbrauchen (fremde
+# ids vorab belegen, Existenz fremder ids abfragen). Eine Triggerfunktion ist
+# nicht direkt aufrufbar; EXECUTE (nur fuer CREATE TRIGGER noetig) hat niemand
+# ausser der Eigentuemerin, und sie verweigert jede andere Tabelle als
+# time_entry_audit_logs. ON CONFLICT wartet auf eine parallele, noch offene
+# Vergabe derselben id. Argument 'owner' (Schreiberin ist Eigentuemerin oder
+# Superuser, vertraut - sie darf auch direkt loeschen): eine schon vergebene
+# id geht durch; sonst wird sie abgelehnt.
+CLAIM_FUNCTION = """
+CREATE OR REPLACE FUNCTION pz_audit_claim() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-    IF pg_trigger_depth() < 1 THEN
-        RAISE EXCEPTION 'pz_audit_claim_id: nur ueber den Protokoll-Trigger'
+    IF TG_RELID IS DISTINCT FROM 'public.time_entry_audit_logs'::regclass
+       OR TG_OP <> 'INSERT' OR TG_LEVEL <> 'ROW' OR TG_WHEN <> 'BEFORE' THEN
+        RAISE EXCEPTION 'pz_audit_claim: nur als Protokoll-Trigger'
             USING ERRCODE = '42501';
     END IF;
-    INSERT INTO audit_log_ids (id, tenant_id) VALUES (p_id, p_tenant)
+    INSERT INTO audit_log_ids (id, tenant_id) VALUES (NEW.id, NEW.tenant_id)
         ON CONFLICT (id) DO NOTHING;
-    RETURN FOUND;
+    IF NOT FOUND AND TG_ARGV[0] IS DISTINCT FROM 'owner' THEN
+        RAISE EXCEPTION 'time_entry_audit_logs: Zeilen-id % war schon vergeben, eine geloeschte Zeile darf nicht zurueckkehren', NEW.id
+            USING ERRCODE = '42501';
+    END IF;
+    RETURN NEW;
 END $$;
 """
+
+# Wer schreibt? Wertet die WHEN-Bedingung der beiden Vergabe-Trigger aus -
+# als aufrufendes Konto (current_user), anders als die SECURITY-DEFINER-
+# Funktion pz_audit_claim, die nur noch die Eigentuemerin saehe.
+WRITER_IS_OWNER_FUNCTION = """
+CREATE OR REPLACE FUNCTION pz_audit_writer_is_owner() RETURNS boolean
+LANGUAGE sql STABLE SET search_path = pg_catalog, pg_temp AS $$
+    SELECT pg_has_role(current_user,
+                       (SELECT relowner FROM pg_class
+                         WHERE oid = 'public.time_entry_audit_logs'::regclass), 'MEMBER')
+        OR COALESCE((SELECT rolsuper FROM pg_roles WHERE rolname = current_user), false)
+$$;
+"""
+# Schreibweise wie pg_get_triggerdef (Abgleich der Wiederherstellung)
+CLAIM_TRIGGERS = (
+    "CREATE TRIGGER pz_audit_id_claim_owner BEFORE INSERT ON time_entry_audit_logs "
+    "FOR EACH ROW WHEN (pz_audit_writer_is_owner()) EXECUTE FUNCTION pz_audit_claim('owner')",
+    "CREATE TRIGGER pz_audit_id_claim_writer BEFORE INSERT ON time_entry_audit_logs "
+    "FOR EACH ROW WHEN ((NOT pz_audit_writer_is_owner())) "
+    "EXECUTE FUNCTION pz_audit_claim('writer')",
+)
+CLAIM_REVOKE = "REVOKE ALL ON FUNCTION pz_audit_claim() FROM PUBLIC"
 
 AUDIT_IDS_BACKFILL_SQL = """
 INSERT INTO audit_log_ids (id, tenant_id)
@@ -558,7 +584,6 @@ _AUDIT_FUNCTIONS = (
     "pz_audit_tenant_ok(uuid)",
     "pz_audit_head_seq(uuid)",
     "pz_audit_tombstoned(uuid)",
-    "pz_audit_claim_id(uuid, uuid)",
 )
 EXECUTE_BLOCK = """
 DO $$
@@ -659,13 +684,18 @@ def upgrade() -> None:
         conn.execute(sa.text(TOMBSTONED_FUNCTION))
         conn.execute(sa.text(AUDIT_IDS_TABLE))
         conn.execute(sa.text(AUDIT_IDS_REVOKE_BLOCK))
-        conn.execute(sa.text(CLAIM_ID_FUNCTION))
         conn.execute(sa.text(AUDIT_IDS_BACKFILL_SQL))
         conn.execute(sa.text(GUARD_FUNCTION))
         conn.execute(sa.text(
             "CREATE TRIGGER pz_audit_guard_write BEFORE INSERT OR UPDATE OR DELETE "
             "ON time_entry_audit_logs FOR EACH ROW EXECUTE FUNCTION pz_audit_guard()"
         ))
+        # nach pz_audit_guard_write (Trigger feuern in Namensreihenfolge)
+        conn.execute(sa.text(CLAIM_FUNCTION))
+        conn.execute(sa.text(CLAIM_REVOKE))
+        conn.execute(sa.text(WRITER_IS_OWNER_FUNCTION))
+        for trigger_sql in CLAIM_TRIGGERS:
+            conn.execute(sa.text(trigger_sql))
         for fn in (TENANT_OK_FUNCTION, HEAD_SEQ_FUNCTION, SEAL_FUNCTION, SCRUB_OK_FUNCTION,
                    NOTES_FUNCTION, DELETE_FUNCTION, HEAD_GUARD_FUNCTION, SET_HEAD_FUNCTION):
             conn.execute(sa.text(fn))
@@ -687,6 +717,10 @@ def downgrade() -> None:
     conn = op.get_bind()
     is_pg = conn.dialect.name == "postgresql"
     if is_pg:
+        conn.execute(sa.text("DROP TRIGGER IF EXISTS pz_audit_id_claim_owner ON time_entry_audit_logs"))
+        conn.execute(sa.text("DROP TRIGGER IF EXISTS pz_audit_id_claim_writer ON time_entry_audit_logs"))
+        conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_claim()"))
+        conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_writer_is_owner()"))
         conn.execute(sa.text("DROP TRIGGER IF EXISTS pz_audit_guard_write ON time_entry_audit_logs"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_guard()"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_seal(uuid[], bigint[], text[], text[])"))
@@ -699,7 +733,6 @@ def downgrade() -> None:
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_head_guard()"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_head_seq(uuid)"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_tombstoned(uuid)"))
-        conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_claim_id(uuid, uuid)"))
         conn.execute(sa.text("DROP TABLE IF EXISTS audit_log_ids"))
         conn.execute(sa.text("DROP TABLE IF EXISTS audit_log_tombstones"))
         # Kettenende gehoert zu den Spalten, die hier wegfallen

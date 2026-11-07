@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict SgZtr7I2mhqxWXjZwJKHxRDi9JP12VoFnIvsQbl1iNNzoGiLhmRtA1h6QZcb58k
+\restrict B1WiWmb7QwTUeEFX9N3iOmgsu96Q0bboOzdgVbQm15MVgOcV1H1vWPF7YCNNPbY
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -108,6 +108,8 @@ ALTER TABLE IF EXISTS ONLY public.audit_log_ids DROP CONSTRAINT IF EXISTS audit_
 ALTER TABLE IF EXISTS ONLY public.absences DROP CONSTRAINT IF EXISTS absences_user_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.absences DROP CONSTRAINT IF EXISTS absences_reason_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.absence_reasons DROP CONSTRAINT IF EXISTS absence_reasons_tenant_id_fkey;
+DROP TRIGGER IF EXISTS pz_audit_id_claim_writer ON public.time_entry_audit_logs;
+DROP TRIGGER IF EXISTS pz_audit_id_claim_owner ON public.time_entry_audit_logs;
 DROP TRIGGER IF EXISTS pz_audit_head_guard_write ON public.system_settings;
 DROP TRIGGER IF EXISTS pz_audit_guard_write ON public.time_entry_audit_logs;
 DROP INDEX IF EXISTS public.uq_audit_tenant_chain_seq;
@@ -268,6 +270,7 @@ DROP TABLE IF EXISTS public.audit_log_ids;
 DROP TABLE IF EXISTS public.alembic_version;
 DROP TABLE IF EXISTS public.absences;
 DROP TABLE IF EXISTS public.absence_reasons;
+DROP FUNCTION IF EXISTS public.pz_audit_writer_is_owner();
 DROP FUNCTION IF EXISTS public.pz_audit_tombstoned(p_id uuid);
 DROP FUNCTION IF EXISTS public.pz_audit_tenant_ok(p_tenant uuid);
 DROP FUNCTION IF EXISTS public.pz_audit_set_notes(p_id uuid, p_old_note text, p_new_note text, p_row_hash text);
@@ -278,7 +281,7 @@ DROP FUNCTION IF EXISTS public.pz_audit_head_seq(p_tenant uuid);
 DROP FUNCTION IF EXISTS public.pz_audit_head_guard();
 DROP FUNCTION IF EXISTS public.pz_audit_guard();
 DROP FUNCTION IF EXISTS public.pz_audit_delete(p_ids uuid[]);
-DROP FUNCTION IF EXISTS public.pz_audit_claim_id(p_id uuid, p_tenant uuid);
+DROP FUNCTION IF EXISTS public.pz_audit_claim();
 DROP TYPE IF EXISTS public.userrole;
 DROP TYPE IF EXISTS public.changerequesttype;
 DROP TYPE IF EXISTS public.changerequeststatus;
@@ -338,25 +341,30 @@ CREATE TYPE public.userrole AS ENUM (
 ALTER TYPE public.userrole OWNER TO praxiszeit;
 
 --
--- Name: pz_audit_claim_id(uuid, uuid); Type: FUNCTION; Schema: public; Owner: praxiszeit
+-- Name: pz_audit_claim(); Type: FUNCTION; Schema: public; Owner: praxiszeit
 --
 
-CREATE FUNCTION public.pz_audit_claim_id(p_id uuid, p_tenant uuid) RETURNS boolean
+CREATE FUNCTION public.pz_audit_claim() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 BEGIN
-    IF pg_trigger_depth() < 1 THEN
-        RAISE EXCEPTION 'pz_audit_claim_id: nur ueber den Protokoll-Trigger'
+    IF TG_RELID IS DISTINCT FROM 'public.time_entry_audit_logs'::regclass
+       OR TG_OP <> 'INSERT' OR TG_LEVEL <> 'ROW' OR TG_WHEN <> 'BEFORE' THEN
+        RAISE EXCEPTION 'pz_audit_claim: nur als Protokoll-Trigger'
             USING ERRCODE = '42501';
     END IF;
-    INSERT INTO audit_log_ids (id, tenant_id) VALUES (p_id, p_tenant)
+    INSERT INTO audit_log_ids (id, tenant_id) VALUES (NEW.id, NEW.tenant_id)
         ON CONFLICT (id) DO NOTHING;
-    RETURN FOUND;
+    IF NOT FOUND AND TG_ARGV[0] IS DISTINCT FROM 'owner' THEN
+        RAISE EXCEPTION 'time_entry_audit_logs: Zeilen-id % war schon vergeben, eine geloeschte Zeile darf nicht zurueckkehren', NEW.id
+            USING ERRCODE = '42501';
+    END IF;
+    RETURN NEW;
 END $$;
 
 
-ALTER FUNCTION public.pz_audit_claim_id(p_id uuid, p_tenant uuid) OWNER TO praxiszeit;
+ALTER FUNCTION public.pz_audit_claim() OWNER TO praxiszeit;
 
 --
 -- Name: pz_audit_delete(uuid[]); Type: FUNCTION; Schema: public; Owner: praxiszeit
@@ -414,10 +422,8 @@ BEGIN
         IF TG_OP = 'DELETE' THEN
             RETURN OLD;
         END IF;
-        IF TG_OP = 'INSERT' THEN
-            -- auch Zeilen der Eigentuemerin bekommen ihre id fest vergeben
-            PERFORM pz_audit_claim_id(NEW.id, NEW.tenant_id);
-        END IF;
+        -- auch Zeilen der Eigentuemerin bekommen ihre id fest vergeben
+        -- (Trigger pz_audit_id_claim_owner, laesst eine vergebene id durch)
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
@@ -432,14 +438,9 @@ BEGIN
         END IF;
         -- Review-Runde 5: der Grabstein allein ist ein Blick auf den Stand bei
         -- Beginn dieser Anweisung - ein paralleles pz_audit_delete derselben id
-        -- (noch nicht festgeschrieben) sieht er nicht, das Einfuegen wartete nur
-        -- am Primaerschluessel und gelaenge nach dessen Commit. Die id-Vergabe
-        -- haengt am Primaerschluessel von audit_log_ids: eine schon (auch
-        -- parallel) vergebene id scheitert hier, ohne Fenster.
-        IF NOT pz_audit_claim_id(NEW.id, NEW.tenant_id) THEN
-            RAISE EXCEPTION 'time_entry_audit_logs: Zeilen-id % war schon vergeben, eine geloeschte Zeile darf nicht zurueckkehren', NEW.id
-                USING ERRCODE = '42501';
-        END IF;
+        -- (noch nicht festgeschrieben) sieht er nicht. Die id-Vergabe am
+        -- Primaerschluessel von audit_log_ids (Trigger pz_audit_id_claim_writer
+        -- nach diesem) laesst eine schon (auch parallel) vergebene id scheitern.
         -- created_at steht in der Pruefsumme: eine kopierte alte Zeile traegt
         -- ihren alten Zeitpunkt und faellt hier heraus. Spielraum fuer lange
         -- Transaktionen und Uhrabweichung zwischen App und Datenbank.
@@ -749,6 +750,23 @@ $$;
 
 
 ALTER FUNCTION public.pz_audit_tombstoned(p_id uuid) OWNER TO praxiszeit;
+
+--
+-- Name: pz_audit_writer_is_owner(); Type: FUNCTION; Schema: public; Owner: praxiszeit
+--
+
+CREATE FUNCTION public.pz_audit_writer_is_owner() RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+    SELECT pg_has_role(current_user,
+                       (SELECT relowner FROM pg_class
+                         WHERE oid = 'public.time_entry_audit_logs'::regclass), 'MEMBER')
+        OR COALESCE((SELECT rolsuper FROM pg_roles WHERE rolname = current_user), false)
+$$;
+
+
+ALTER FUNCTION public.pz_audit_writer_is_owner() OWNER TO praxiszeit;
 
 SET default_tablespace = '';
 
@@ -2686,6 +2704,20 @@ CREATE TRIGGER pz_audit_head_guard_write BEFORE INSERT OR DELETE OR UPDATE ON pu
 
 
 --
+-- Name: time_entry_audit_logs pz_audit_id_claim_owner; Type: TRIGGER; Schema: public; Owner: praxiszeit
+--
+
+CREATE TRIGGER pz_audit_id_claim_owner BEFORE INSERT ON public.time_entry_audit_logs FOR EACH ROW WHEN (public.pz_audit_writer_is_owner()) EXECUTE FUNCTION public.pz_audit_claim('owner');
+
+
+--
+-- Name: time_entry_audit_logs pz_audit_id_claim_writer; Type: TRIGGER; Schema: public; Owner: praxiszeit
+--
+
+CREATE TRIGGER pz_audit_id_claim_writer BEFORE INSERT ON public.time_entry_audit_logs FOR EACH ROW WHEN ((NOT public.pz_audit_writer_is_owner())) EXECUTE FUNCTION public.pz_audit_claim('writer');
+
+
+--
 -- Name: absence_reasons absence_reasons_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: praxiszeit
 --
 
@@ -3550,11 +3582,10 @@ GRANT USAGE ON SCHEMA public TO praxiszeit_app;
 
 
 --
--- Name: FUNCTION pz_audit_claim_id(p_id uuid, p_tenant uuid); Type: ACL; Schema: public; Owner: praxiszeit
+-- Name: FUNCTION pz_audit_claim(); Type: ACL; Schema: public; Owner: praxiszeit
 --
 
-REVOKE ALL ON FUNCTION public.pz_audit_claim_id(p_id uuid, p_tenant uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.pz_audit_claim_id(p_id uuid, p_tenant uuid) TO praxiszeit_app;
+REVOKE ALL ON FUNCTION public.pz_audit_claim() FROM PUBLIC;
 
 
 --
@@ -3619,6 +3650,13 @@ GRANT ALL ON FUNCTION public.pz_audit_tenant_ok(p_tenant uuid) TO praxiszeit_app
 
 REVOKE ALL ON FUNCTION public.pz_audit_tombstoned(p_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.pz_audit_tombstoned(p_id uuid) TO praxiszeit_app;
+
+
+--
+-- Name: FUNCTION pz_audit_writer_is_owner(); Type: ACL; Schema: public; Owner: praxiszeit
+--
+
+GRANT ALL ON FUNCTION public.pz_audit_writer_is_owner() TO praxiszeit_app;
 
 
 --
@@ -3835,5 +3873,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE praxiszeit IN SCHEMA public GRANT SELECT,INSER
 -- PostgreSQL database dump complete
 --
 
-\unrestrict SgZtr7I2mhqxWXjZwJKHxRDi9JP12VoFnIvsQbl1iNNzoGiLhmRtA1h6QZcb58k
+\unrestrict B1WiWmb7QwTUeEFX9N3iOmgsu96Q0bboOzdgVbQm15MVgOcV1H1vWPF7YCNNPbY
 

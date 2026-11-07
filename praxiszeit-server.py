@@ -3501,8 +3501,7 @@ _DUMP_PG_CATALOG_CALL_RE = re.compile(r"\bPG_CATALOG\s*\.\s*[A-Z_][A-Z0-9_$]*\s*
 # (Migration 076: pz_audit_guard/pz_audit_head_guard lesen pg_class/pg_roles,
 # fragen pg_has_role, Suchpfad 'public', 'pg_temp'). Jeder andere pg_*-Name im
 # Rumpf - Katalog, Admin- oder Dateifunktion - wird abgelehnt.
-_DUMP_BODY_PG_NAMES_OK = {"PG_CATALOG", "PG_CLASS", "PG_ROLES", "PG_HAS_ROLE", "PG_TEMP",
-                          "PG_TRIGGER_DEPTH"}
+_DUMP_BODY_PG_NAMES_OK = {"PG_CATALOG", "PG_CLASS", "PG_ROLES", "PG_HAS_ROLE", "PG_TEMP"}
 _DUMP_BODY_PG_NAME_RE = re.compile(r"\bPG_[A-Z0-9_]+\b")
 # Runde 3: Anweisungen, die im Rumpf selbst wieder Code anlegen oder
 # ausfuehren - deren innere Literale liest diese Pruefung nicht mehr.
@@ -4248,6 +4247,9 @@ def normalize_trigger_def(sql: str):
     (fehlt es: STATEMENT), alles weitere (WHEN, DEFERRABLE, REFERENCING, FROM)
     woertlich, Funktion samt Argumenten. ``None``, wenn es keine ist."""
     text = " ".join(sql.replace('"', "").split()).rstrip(";").strip().upper()
+    # pg_dump qualifiziert auch Funktionen in WHEN (search_path ''); Objekte
+    # der Migrationen liegen alle in public
+    text = re.sub(r"\bPUBLIC\.", "", text)
     m = _TRIGGER_DEF_RE.match(text)
     if not m:
         return None
@@ -4307,6 +4309,77 @@ def expected_db_routines(versions_dir: Path, revision: str) -> tuple[dict, dict]
                 else:
                     triggers.pop((m.group(1).lower(), m.group(2).lower()), None)
     return functions, triggers
+
+
+# Tabellen der Migrationen (Review-Runde 7): ``op.create_table``/
+# ``op.drop_table``/``op.rename_table`` in ``upgrade()`` und CREATE/DROP TABLE
+# in den ausgefuehrten SQL-Texten. Eine Tabelle, die keine Migration anlegt,
+# eine Vererbung (INHERITS, ALTER TABLE ... INHERIT) oder Partition
+# (ATTACH PARTITION) wuerde sonst nach dem Einspielen von init-db-user.sql
+# mit App-Rechten bedient - ohne Trigger und ohne Zeilenschutz, und Zeilen
+# einer Kindtabelle erscheinen in der Elterntabelle.
+_SQL_TABLE_STMT_RE = re.compile(
+    r"\bCREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?(\w+)"
+    r"|\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:public\.)?(\w+)", re.I)
+_TABLES_WITHOUT_MIGRATION = {"alembic_version"}
+
+
+def expected_db_tables(versions_dir: Path, revision: str) -> set:
+    """Namen der Tabellen im Schema public nach den Migrationen bis ``revision``."""
+    import ast
+    tables: set = set()
+    for path in _migration_chain(versions_dir, revision):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, ValueError):
+            continue
+        upgrade = next((n for n in tree.body
+                        if isinstance(n, ast.FunctionDef) and n.name == "upgrade"), None)
+        calls = []
+        for node in ast.walk(upgrade) if upgrade else ():
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                    and node.func.attr in ("create_table", "drop_table", "rename_table") \
+                    and isinstance(node.func.value, ast.Name) and node.func.value.id == "op":
+                calls.append(node)
+        for node in sorted(calls, key=lambda n: (n.lineno, n.col_offset)):
+            names = [a.value.lower() for a in node.args[:2]
+                     if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+            if not names:
+                continue
+            if node.func.attr == "create_table":
+                tables.add(names[0])
+            elif node.func.attr == "drop_table":
+                tables.discard(names[0])
+            elif len(names) == 2:
+                tables.discard(names[0])
+                tables.add(names[1])
+        for sql in _migration_upgrade_sql(path):
+            for m in _SQL_TABLE_STMT_RE.finditer(sql):
+                if m.group(1):
+                    tables.add(m.group(1).lower())
+                else:
+                    tables.discard(m.group(2).lower())
+    return tables
+
+
+def check_restored_tables(found: dict, expected_tables: set) -> list[str]:
+    """Abweichungen der eingespielten Tabellen (``found``, Ergebnis von
+    :data:`_ROUTINE_CATALOG_SQL`) von den Migrationen - leer = in Ordnung.
+    Fehlende Tabellen sind kein Befund (sie schwaechen nichts)."""
+    problems: list[str] = []
+    allowed = set(expected_tables) | _TABLES_WITHOUT_MIGRATION
+    for t in found.get("tables") or []:
+        label = f"Tabelle {t.get('schema')}.{t.get('name')}"
+        if t.get("schema") != "public":
+            problems.append(f"{label} (unerwartet)")
+        elif (t.get("kind") or "r") != "r":
+            problems.append(f"{label} (partitionierte oder Fremdtabelle - legt keine Migration an)")
+        elif (t.get("name") or "").lower() not in allowed:
+            problems.append(f"{label} (legt keine Migration an)")
+    for i in found.get("inherits") or []:
+        problems.append(f"Vererbung/Partition: {i.get('child')} haengt an {i.get('parent')} "
+                        "(legt keine Migration an)")
+    return problems
 
 
 # Zeilenschutz (RLS) der Migrationen (Review-Runde 6): je Tabelle ENABLE,
@@ -4450,11 +4523,20 @@ SELECT json_build_object(
      WHERE NOT t.tgisinternal), '[]'::json),
   'tables', COALESCE((SELECT json_agg(json_build_object(
         'name', c.relname, 'schema', n.nspname, 'rls', c.relrowsecurity,
-        'force', c.relforcerowsecurity))
+        'force', c.relforcerowsecurity, 'kind', c.relkind::text))
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-     WHERE c.relkind IN ('r', 'p')
+     WHERE c.relkind IN ('r', 'p', 'f')
        AND n.nspname NOT IN ('pg_catalog', 'information_schema')
        AND n.nspname NOT LIKE 'pg\\_toast%'), '[]'::json),
+  'inherits', COALESCE((SELECT json_agg(json_build_object(
+        'child', 'table ' || n.nspname || '.' || c.relname,
+        'parent', 'table ' || pn.nspname || '.' || pc.relname))
+      FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_class pc ON pc.oid = i.inhparent
+      JOIN pg_namespace pn ON pn.oid = pc.relnamespace
+     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+        OR pn.nspname NOT IN ('pg_catalog', 'information_schema')), '[]'::json),
   'other', COALESCE((SELECT json_agg(x) FROM (
       SELECT 'Sicht ' || n.nspname || '.' || c.relname AS x
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -4569,6 +4651,7 @@ def _assert_routines_match_migrations(superuser: str, env: dict, revision: str,
                 "Der Zeilenschutz der eingespielten Sicherung liess sich nicht pruefen:\n"
                 f"{_psql_error_tail(result)}")
     problems += check_restored_rls(found.get("tables") or [], expected_rls, deparsed, order)
+    problems += check_restored_tables(found, expected_db_tables(versions_dir, revision))
     if problems:
         shown = "\n".join(f"  - {p}" for p in problems[:20])
         more = f"\n  ... und {len(problems) - 20} weitere" if len(problems) > 20 else ""
@@ -4578,6 +4661,63 @@ def _assert_routines_match_migrations(superuser: str, env: dict, revision: str,
             f"{revision} nicht anlegen. Sie liefen nach dem Einspielen mit den Rechten des "
             "Datenbank-Superusers (oder schwaechten die Mandantentrennung) und werden "
             f"deshalb nicht uebernommen:\n{shown}{more}")
+
+
+# Rechte (Review-Runde 7): waehrend des eingeschraenkten Ladens gehoert der
+# Ladrolle jede Tabelle - ein GRANT der Sicherung (etwa TRUNCATE auf das
+# Aenderungsprotokoll an PUBLIC; TRUNCATE feuert keinen Zeilentrigger und
+# umgeht RLS) ginge durch, und REASSIGN/DROP OWNED behalten ihn. Deshalb
+# fallen nach dem Abgleich ALLE Rechte an Tabellen, Sequenzen, Spalten und
+# Funktionen im Schema public weg, die nicht der Eigentuemerin selbst gelten;
+# init-db-user.sql vergibt danach genau die Rechte der Anwendungsrolle neu.
+# Nichts aus der Sicherung wird dabei ausgefuehrt (Katalog lesen, REVOKE).
+_RESTORE_ACL_RESET_SQL = """DO $pz_acl$
+DECLARE
+    r record;
+BEGIN
+    FOR r IN
+        SELECT DISTINCT c.oid::regclass::text AS obj, c.relkind,
+               CASE WHEN a.grantee = 0 THEN 'PUBLIC'
+                    ELSE quote_ident(pg_get_userbyid(a.grantee)) END AS who
+          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN LATERAL aclexplode(c.relacl) a
+         WHERE n.nspname = 'public' AND a.grantee <> c.relowner
+        UNION
+        SELECT DISTINCT c.oid::regclass::text, c.relkind,
+               CASE WHEN a.grantee = 0 THEN 'PUBLIC'
+                    ELSE quote_ident(pg_get_userbyid(a.grantee)) END
+          FROM pg_attribute t JOIN pg_class c ON c.oid = t.attrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN LATERAL aclexplode(t.attacl) a
+         WHERE n.nspname = 'public' AND a.grantee <> c.relowner
+    LOOP
+        EXECUTE format('REVOKE ALL ON %s %s FROM %s CASCADE',
+                       CASE WHEN r.relkind = 'S' THEN 'SEQUENCE' ELSE 'TABLE' END, r.obj, r.who);
+    END LOOP;
+    FOR r IN
+        SELECT DISTINCT p.oid::regprocedure::text AS obj, p.prokind,
+               CASE WHEN a.grantee = 0 THEN 'PUBLIC'
+                    ELSE quote_ident(pg_get_userbyid(a.grantee)) END AS who
+          FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          CROSS JOIN LATERAL aclexplode(p.proacl) a
+         WHERE n.nspname = 'public' AND a.grantee <> p.proowner
+    LOOP
+        EXECUTE format('REVOKE ALL ON %s %s FROM %s CASCADE',
+                       CASE WHEN r.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END,
+                       r.obj, r.who);
+    END LOOP;
+END $pz_acl$"""
+
+
+def _reset_restored_privileges(superuser: str, env: dict) -> None:
+    """Unverifizierte Sicherung: Rechte der Zwischendatenbank auf die der
+    Eigentuemerin zuruecksetzen (:data:`_RESTORE_ACL_RESET_SQL`). Wirft
+    :class:`RestoreError`."""
+    result = _restore_psql(superuser, env, RESTORE_DB_NAME, "-c", _RESTORE_ACL_RESET_SQL)
+    if result.returncode != 0:
+        raise RestoreError(
+            "Die Rechte der eingespielten Sicherung liessen sich nicht zuruecksetzen:\n"
+            f"{_psql_error_tail(result)}")
 
 
 def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set,
@@ -4664,6 +4804,7 @@ def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set,
         revision = _restored_revision(superuser, env, known)
         if restricted:
             _assert_routines_match_migrations(superuser, env, revision)
+            _reset_restored_privileges(superuser, env)
     except BaseException:
         if restricted:
             # Erst die Zwischendatenbank weg - sonst gingen ihre (abgelehnten)
