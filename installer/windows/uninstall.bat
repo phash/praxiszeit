@@ -47,16 +47,7 @@ echo WARNUNG: Dies entfernt PraxisZeit vollstaendig!
 echo Ein Datenbank-Backup wird auf dem Desktop gespeichert.
 echo.
 set /p CONFIRM="Fortfahren? (j/n): "
-if /i not "%CONFIRM%"=="j" goto :keep_failed
-echo.
-echo FEHLER: Die automatischen Sicherungen aus %DIR%\data\backups liessen
-echo sich nicht nach %KEEP_DIR% verschieben. Das Installationsverzeichnis wird
-echo NICHT entfernt - bitte den Ordner data\backups von Hand sichern und
-echo %DIR% danach selbst loeschen.
-pause
-exit /b 1
-
-:cancelled
+if /i not "%CONFIRM%"=="j" goto :cancelled
 
 REM ============================================================
 REM Schritt 1: Datenbank-Backup
@@ -209,6 +200,15 @@ echo.
 pause
 start /b "" cmd /c "%CLEANUP_BAT%"
 exit
+
+:keep_failed
+echo.
+echo FEHLER: Die automatischen Sicherungen aus %DIR%\data\backups liessen
+echo sich nicht nach %KEEP_DIR% verschieben. Das Installationsverzeichnis wird
+echo NICHT entfernt - bitte den Ordner data\backups von Hand sichern und
+echo %DIR% danach selbst loeschen.
+pause
+exit /b 1
 
 :cancelled
 echo Abgebrochen.

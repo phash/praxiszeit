@@ -577,6 +577,12 @@ class TestRestrictUnixDataDirsAtStart:
 
 # --- Audit 2026-11-07 S3-01: Installationsordner VOR dem ersten python.exe -----
 
+def _code_lines(text: str, comment: str) -> str:
+    """Nur ausfuehrbare Zeilen (Kommentare erklaeren den alten Weg)."""
+    return "\n".join(line for line in text.splitlines()
+                     if not line.strip().upper().startswith(comment.upper()))
+
+
 def _crlf_only(raw: bytes) -> bool:
     return b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b"")
 
@@ -614,7 +620,7 @@ def test_setup_bat_secures_install_dir_before_any_python():
 
 def test_setup_bat_never_installs_from_the_internet():
     """S3-05: kein get-pip.py, kein ``pip install`` als Administrator."""
-    text = _read("installer/windows/setup.bat").decode("ascii")
+    text = _code_lines(_read("installer/windows/setup.bat").decode("ascii"), "REM")
     assert "get-pip" not in text
     assert "pip install" not in text
     assert 'import alembic, uvicorn, fastapi, sqlalchemy, psycopg2' in text
@@ -652,7 +658,7 @@ def test_secure_install_ps1_ships_with_the_windows_package():
 # --- Audit 2026-11-07 S3-11 / S3-12 --------------------------------------------
 
 def test_install_sh_never_puts_the_superuser_password_into_argv():
-    text = _read("installer/linux/install.sh").decode("utf-8")
+    text = _code_lines(_read("installer/linux/install.sh").decode("utf-8"), "#")
     for line in text.splitlines():
         if "sudo" in line:
             assert "PGPASSWORD=" not in line, line
@@ -662,7 +668,7 @@ def test_install_sh_never_puts_the_superuser_password_into_argv():
 
 
 def test_macos_service_has_its_own_group_and_umask():
-    text = _read("installer/macos/install.sh").decode("utf-8")
+    text = _code_lines(_read("installer/macos/install.sh").decode("utf-8"), "#")
     assert ":staff" not in text
     assert "PrimaryGroupID 20" not in text
     assert 'chown -R _praxiszeit:_praxiszeit "${INSTALL_DIR}"' in text
@@ -723,7 +729,7 @@ def test_release_build_pins_the_rockylinux_image_by_digest():
 
 
 def test_macos_installer_installs_only_hashed_wheels():
-    text = _read("installer/macos/install.sh").decode("utf-8")
+    text = _code_lines(_read("installer/macos/install.sh").decode("utf-8"), "#")
     assert "get-pip" not in text
     lines = text.splitlines()
     installs = [i for i, line in enumerate(lines) if "-m pip install" in line]
