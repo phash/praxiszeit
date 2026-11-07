@@ -1,8 +1,9 @@
 """#213 — DB-Backup-Verwaltung (manuell + geplant), nativ UND Docker.
 
 Eine einheitliche Implementierung fuer beide Deployment-Arten: pg_dump laeuft nativ
-mit der nur lesenden Rolle ``praxiszeit_backup`` (``DATABASE_URL_BACKUP``, von
-praxiszeit-server.py angelegt, S3-13), unter Docker mit ``DATABASE_URL_MIGRATIONS``.
+mit der nur lesenden Rolle ``praxiszeit_backup`` (``DATABASE_URL_BACKUP``, S3-13) —
+nativ von praxiszeit-server.py angelegt, unter Docker von ``docker-start.sh``
+(``app.core.backup_role``); uvicorn kennt den Superuser in beiden Fällen nicht.
 Format ist Plain-SQL + gzip mit ``--clean --if-exists`` -> der Restore ist mit
 ``gunzip -c <datei>.sql.gz | psql`` idempotent in eine bereits befuellte DB
 einspielbar (philvdb-Feedback #213: kein manuelles Leeren noetig, Restore war
@@ -554,10 +555,10 @@ def _pg_dump_bin() -> str:
 
 
 def _backup_db_url() -> str:
-    """Verbindung fuer pg_dump: nativ die nur lesende Rolle ``praxiszeit_backup``
+    """Verbindung fuer pg_dump: die nur lesende Rolle ``praxiszeit_backup``
     (``DATABASE_URL_BACKUP``, Audit 2026-11-07 S3-13 - der Webprozess kennt den
-    Superuser dort nicht mehr), Docker weiterhin ``DATABASE_URL_MIGRATIONS``
-    (der Backend-Container fuehrt seine Migrationen selbst aus)."""
+    Superuser weder nativ noch unter Docker). ``DATABASE_URL_MIGRATIONS`` nur
+    noch als Rueckfall fuer Aufrufe ausserhalb von uvicorn (Tests, Werkzeuge)."""
     return (os.environ.get("DATABASE_URL_BACKUP", "").strip()
             or os.environ.get("DATABASE_URL_MIGRATIONS", "").strip())
 
@@ -653,6 +654,12 @@ def create_backup(db: Session) -> BackupFile:
         ) from e
 
     write_error: Optional[OSError] = None
+    # Signaturzeile am Ende (Fix-Runde S3-03): ein Restore spielt eine Datei
+    # ohne passende Signatur nur mit --force-unverified ein.
+    from app.config import settings
+    from app.core.backup_mac import BackupMac
+
+    signer = BackupMac(settings.SECRET_KEY)
     try:
         # DSGVO Art. 32: das Backup enthält personenbezogene Daten -> ATOMAR nur
         # Owner-lesbar anlegen (os.open mit 0o600), nicht erst gzip.open(umask 0644)
@@ -665,6 +672,8 @@ def create_backup(db: Session) -> BackupFile:
                 if not chunk:
                     break
                 gz.write(chunk)
+                signer.update(chunk)
+            gz.write(signer.trailer())
     except OSError as e:  # z. B. Platte voll
         write_error = e
     finally:

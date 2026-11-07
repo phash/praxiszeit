@@ -29,6 +29,19 @@ if docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec -T db \
     pg_dump -U praxiszeit --clean --if-exists praxiszeit \
     | gzip > "${BACKUP_FILE}"; then
 
+    # Signaturzeile anhaengen (Audit 2026-11-07, Fix-Runde S3-03), wie
+    # tools/docker/backup.sh: restore.sh verlangt sonst --force-unverified.
+    SIG_TMP="$(mktemp "${BACKUP_DIR}/.signatur.XXXXXX")"
+    if gunzip -c "${BACKUP_FILE}" \
+            | docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec -T backend \
+                python -m app.core.backup_mac sign > "${SIG_TMP}" \
+            && [ -s "${SIG_TMP}" ]; then
+        gzip -c < "${SIG_TMP}" >> "${BACKUP_FILE}"
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNUNG: Sicherung nicht signiert (Backend nicht erreichbar)" >&2
+    fi
+    rm -f "${SIG_TMP}"
+
     SIZE=$(du -h "${BACKUP_FILE}" | cut -f1)
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Backup erstellt: ${BACKUP_FILE} (${SIZE})"
 else

@@ -54,6 +54,9 @@ _DUMP = (
     "--\n-- PostgreSQL database dump complete\n--\n\n\\unrestrict abc\n\n"
 )
 _OLD = "BESTAND"
+# SECRET_KEY der Test-Installation: jede Sicherung, die PraxisZeit schreibt,
+# traegt eine Signaturzeile (Fix-Runde S3-03).
+_KEY = "test-secret-key-0123456789abcdef0123456789abcdef"
 
 
 @pytest.fixture(scope="module")
@@ -161,7 +164,8 @@ def inst(srv, tmp_path, monkeypatch):
     monkeypatch.setattr(srv, "BACKEND_DIR", backend)
     monkeypatch.setattr(srv, "IS_WINDOWS", False)
     monkeypatch.setattr(srv, "IS_MACOS", False)
-    monkeypatch.setattr(srv, "load_config", lambda: {})
+    monkeypatch.setattr(srv, "load_config", lambda: {"security": {"secret_key": _KEY}})
+    monkeypatch.setattr(srv, "CONFIG_DIR", tmp_path / "config")
     monkeypatch.setattr(srv, "pg_load_credentials", lambda: ("su-pw", "app-pw"))
     monkeypatch.setattr(srv, "_running_as_root", lambda: False)
     monkeypatch.setattr(srv, "_install_owner", lambda: "dienstkonto")
@@ -177,20 +181,32 @@ def _loaded(text: str) -> str:
     return rest
 
 
+def _signed(text: str, key: str = _KEY) -> str:
+    """Wie ``backup`` die Sicherung schreibt: Signaturzeile am Ende."""
+    spec = importlib.util.spec_from_file_location("praxiszeit_server_sign", _SERVER_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    signer = module.BackupMac(key)
+    signer.update(text.encode("utf-8"))
+    return text + signer.trailer().decode("ascii")
+
+
 _DUMP_LOADED = "".join(
-    line for line in _DUMP.splitlines(keepends=True)
+    line for line in _signed(_DUMP).splitlines(keepends=True)
     if not line.startswith(("\\restrict ", "\\unrestrict "))
 )
 
 
-def _dump(inst: Path, text: str = _DUMP, name: str = "praxiszeit_20261017_120000.sql.gz") -> Path:
+def _dump(inst: Path, text: str = _DUMP, name: str = "praxiszeit_20261017_120000.sql.gz",
+          *, key: str | None = _KEY) -> Path:
     path = inst / "data" / "backups" / name
     with gzip.open(path, "wt", encoding="utf-8") as fh:
-        fh.write(text)
+        fh.write(_signed(text, key) if key else text)
     return path
 
 
-def _restore(srv, file: Path, cluster: FakeCluster, *, pg_running=True, caplog=None):
+def _restore(srv, file: Path, cluster: FakeCluster, *, pg_running=True, caplog=None,
+             force_unverified=False):
     state = {"running": pg_running, "started": 0, "stopped": 0}
 
     def _start():
@@ -207,7 +223,7 @@ def _restore(srv, file: Path, cluster: FakeCluster, *, pg_running=True, caplog=N
          patch.object(srv, "pg_stop", side_effect=_stop), \
          patch.object(srv.subprocess, "run", side_effect=cluster):
         try:
-            srv.cmd_restore(argparse.Namespace(file=str(file)))
+            srv.cmd_restore(argparse.Namespace(file=str(file), force_unverified=force_unverified))
         except SystemExit as exc:
             code = exc.code
     return code, state
@@ -660,7 +676,8 @@ def test_restore_bat_prueft_jeden_schritt():
     for i in commands:
         assert "%PSQL_ARGS%" in main[i] or main[i].startswith('"%PYTHON%"'), main[i]
         follow = next(line for line in main[i + 1:] if line and not line.upper().startswith("REM"))
-        assert follow.lower().startswith("if errorlevel 1"), (main[i], follow)
+        # prepare-restore-dump prueft zuerst "errorlevel 2" (Signatur), dann 1
+        assert follow.lower().startswith(("if errorlevel 1", "if errorlevel 2")), (main[i], follow)
     args = next(line for line in main if line.startswith('SET "PSQL_ARGS='))
     assert "-v ON_ERROR_STOP=1" in args and "-w" in args.split(), args
 
@@ -886,7 +903,7 @@ def test_echter_dump_mit_copy_daten_und_literalen_geht_durch(srv, tmp_path):
         "    AS $_$\nBEGIN\n  RETURN '\\! auch kein Befehl';\nEND;\n$_$;\n"
         "CREATE POLICY p ON public.t USING ((a = current_setting('app.x'::text, true)));\n"
         "/* block \\! kommentar /* verschachtelt */ */\n"
-        "SELECT E'\\'\\\\';\n"
+        "COMMENT ON COLUMN public.t.a IS E'\\'\\\\';\n"
         "COPY public.t (a, b) FROM stdin;\n"
         "\\N\t\\\\! Daten mit Backslash\n"
         "\\! sieht aus wie ein Befehl, ist aber eine Datenzeile\n"
@@ -905,8 +922,8 @@ def test_copy_ohne_ende_wird_abgelehnt(srv, tmp_path):
 
 def test_prepare_setzt_eigenen_restrict_schluessel(srv, tmp_path):
     p = tmp_path / "d.sql"
-    p.write_text(_HEAD + "CREATE TABLE t ();\n" + _TAIL, encoding="utf-8")
-    srv.prepare_restore_dump(p)
+    p.write_text(_signed(_HEAD + "CREATE TABLE t ();\n" + _TAIL), encoding="utf-8")
+    srv.prepare_restore_dump(p, secret_key=_KEY)
     first = p.read_text(encoding="utf-8").split("\n", 1)[0]
     text = p.read_text(encoding="utf-8")
     assert re.fullmatch(r"\\restrict [0-9a-f]{48}", first)
@@ -917,17 +934,17 @@ def test_prepare_setzt_eigenen_restrict_schluessel(srv, tmp_path):
     assert "CREATE TABLE t ();" in text and "dump complete" in text
     assert oct(p.stat().st_mode & 0o777) == oct(0o600)
     p2 = tmp_path / "e.sql"
-    p2.write_text(_HEAD + _TAIL, encoding="utf-8")
-    srv.prepare_restore_dump(p2)
+    p2.write_text(_signed(_HEAD + _TAIL), encoding="utf-8")
+    srv.prepare_restore_dump(p2, secret_key=_KEY)
     assert p2.read_text(encoding="utf-8").split("\n", 1)[0] != first  # je Restore neu
 
 
 def test_prepare_laesst_abgelehnten_dump_unveraendert(srv, tmp_path):
     p = tmp_path / "d.sql"
-    original = _HEAD + "\\! calc\n" + _TAIL
+    original = _signed(_HEAD + "\\! calc\n" + _TAIL)
     p.write_text(original, encoding="utf-8")
     with pytest.raises(srv.RestoreError):
-        srv.prepare_restore_dump(p)
+        srv.prepare_restore_dump(p, secret_key=_KEY)
     assert p.read_text(encoding="utf-8") == original
     assert sorted(x.name for x in tmp_path.iterdir()) == ["d.sql"]
 
@@ -943,15 +960,16 @@ def test_restore_lehnt_praeparierten_dump_vor_jeder_aenderung_ab(srv, inst, capl
     assert not list((inst / "data").glob(".restore-*"))
 
 
-def test_prepare_restore_dump_unterbefehl(srv, tmp_path, capsys):
+def test_prepare_restore_dump_unterbefehl(srv, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(srv, "load_config", lambda: {"security": {"secret_key": _KEY}})
     p = tmp_path / "d.sql"
-    p.write_text(_HEAD + "\\! calc\n" + _TAIL, encoding="utf-8")
+    p.write_text(_signed(_HEAD + "\\! calc\n" + _TAIL), encoding="utf-8")
     with pytest.raises(SystemExit) as e:
-        srv.cmd_prepare_restore_dump(argparse.Namespace(file=str(p)))
+        srv.cmd_prepare_restore_dump(argparse.Namespace(file=str(p), force_unverified=False))
     assert e.value.code == 1
     assert "FEHLER:" in capsys.readouterr().err
-    p.write_text(_HEAD + _TAIL, encoding="utf-8")
-    srv.cmd_prepare_restore_dump(argparse.Namespace(file=str(p)))
+    p.write_text(_signed(_HEAD + _TAIL), encoding="utf-8")
+    srv.cmd_prepare_restore_dump(argparse.Namespace(file=str(p), force_unverified=False))
     assert p.read_text(encoding="utf-8").startswith("\\restrict ")
 
 
@@ -959,7 +977,7 @@ def test_prepare_restore_dump_unterbefehl(srv, tmp_path, capsys):
 
 def test_restore_bat_prueft_den_dump_vor_dem_einspielen():
     text = _bat_text()
-    prep = text.index('praxiszeit-server.py" prepare-restore-dump "%BACKUP_DUMP%"')
+    prep = text.index('praxiszeit-server.py" prepare-restore-dump %PREP_FLAGS% "%BACKUP_DUMP%"')
     assert text.index("PostgreSQL database dump complete") < prep
     assert prep < text.index("net stop PraxisZeit")
     assert prep < text.index('-d %RESTORE_DB% -f "%BACKUP_DUMP%"')
@@ -1040,3 +1058,214 @@ def test_uninstall_bat_scram_und_leerzeichenpfad():
     assert text.index("PGREQUIREAUTH") < text.index('"%PG_DUMP%"')
     assert 'for /f "usebackq tokens=1,* delims==" %%a in ("%CREDS_FILE%") do (' in text
     assert "in (%CREDS_FILE%)" not in text
+
+
+# --- Fix-Runde S3-03: Signatur der Sicherung + engere Pruefung ----------------
+
+def test_restore_lehnt_unsignierte_sicherung_vor_jeder_aenderung_ab(srv, inst, caplog):
+    cluster = FakeCluster()
+    with caplog.at_level(logging.ERROR, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst, key=None), cluster)
+    assert code == 1
+    assert cluster.calls == []
+    assert cluster.dbs["praxiszeit"] == _OLD
+    assert "keine PraxisZeit-Signatur" in caplog.text and "--force-unverified" in caplog.text
+    assert not list((inst / "data").glob(".restore-*"))
+
+
+def test_restore_lehnt_fremd_signierte_sicherung_ab(srv, inst, caplog):
+    cluster = FakeCluster()
+    with caplog.at_level(logging.ERROR, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst, key="anderer-schluessel"), cluster)
+    assert code == 1 and cluster.calls == []
+    assert "passt nicht" in caplog.text
+
+
+def test_restore_lehnt_veraenderte_sicherung_ab(srv, inst, caplog):
+    path = inst / "data" / "backups" / "praxiszeit_20261017_120000.sql.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as fh:
+        fh.write(_signed(_DUMP).replace("CREATE TABLE users ();", "CREATE TABLE boese ();"))
+    cluster = FakeCluster()
+    with caplog.at_level(logging.ERROR, logger="praxiszeit"):
+        code, _ = _restore(srv, path, cluster)
+    assert code == 1 and cluster.calls == []
+    assert "passt nicht" in caplog.text
+
+
+def test_restore_ohne_secret_key_lehnt_ab(srv, inst, caplog, monkeypatch):
+    monkeypatch.setattr(srv, "load_config", lambda: {})
+    cluster = FakeCluster()
+    with caplog.at_level(logging.ERROR, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst), cluster)
+    assert code == 1 and cluster.calls == []
+    assert "SECRET_KEY" in caplog.text
+
+
+def test_restore_liest_den_schluessel_aus_secret_key_datei(srv, inst, monkeypatch):
+    monkeypatch.setattr(srv, "load_config", lambda: {})
+    (inst / "config").mkdir()
+    (inst / "config" / ".secret-key").write_text(_KEY + "\n")
+    cluster = FakeCluster()
+    code, _ = _restore(srv, _dump(inst), cluster)
+    assert code == 0
+    assert _loaded(cluster.dbs["praxiszeit"]) == _DUMP_LOADED
+
+
+def test_restore_force_unverified_spielt_unsignierte_sicherung_mit_warnung_ein(srv, inst, caplog):
+    cluster = FakeCluster()
+    with caplog.at_level(logging.WARNING, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst, key=None), cluster, force_unverified=True)
+    assert code == 0
+    assert "--force-unverified" in caplog.text
+    assert _loaded(cluster.dbs["praxiszeit"]).startswith("--\n-- PostgreSQL database dump")
+
+
+def test_force_unverified_prueft_trotzdem_auf_fremde_befehle(srv, inst, caplog):
+    cluster = FakeCluster()
+    with caplog.at_level(logging.ERROR, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst, _HEAD + "DO $$BEGIN NULL; END$$;\n" + _TAIL, key=None),
+                           cluster, force_unverified=True)
+    assert code == 1 and cluster.calls == []
+    assert "pg_dump nie" in caplog.text
+
+
+def test_parser_kennt_force_unverified(srv, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(srv, "cmd_restore", lambda a: seen.setdefault("restore", a))
+    monkeypatch.setattr(srv, "cmd_prepare_restore_dump", lambda a: seen.setdefault("prep", a))
+    monkeypatch.setattr(sys, "argv", ["x", "restore", "/tmp/b.sql.gz", "--force-unverified"])
+    srv.main()
+    monkeypatch.setattr(sys, "argv", ["x", "prepare-restore-dump", "/tmp/b.sql"])
+    srv.main()
+    assert seen["restore"].force_unverified is True
+    assert seen["prep"].force_unverified is False
+
+
+def test_prepare_unterbefehl_exit_2_fuer_unsignierte_sicherung(srv, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(srv, "load_config", lambda: {"security": {"secret_key": _KEY}})
+    p = tmp_path / "d.sql"
+    p.write_text(_HEAD + _TAIL, encoding="utf-8")
+    with pytest.raises(SystemExit) as e:
+        srv.cmd_prepare_restore_dump(argparse.Namespace(file=str(p), force_unverified=False))
+    assert e.value.code == 2
+    assert "--force-unverified" in capsys.readouterr().err
+    assert p.read_text(encoding="utf-8") == _HEAD + _TAIL
+    srv.cmd_prepare_restore_dump(argparse.Namespace(file=str(p), force_unverified=True))
+    assert p.read_text(encoding="utf-8").startswith("\\restrict ")
+
+
+def test_restore_bat_erklaert_force_unverified():
+    text = _bat_text()
+    assert 'if /i "%~2"=="--force-unverified" SET "PREP_FLAGS=--force-unverified"' in text
+    prep = text.index('prepare-restore-dump %PREP_FLAGS% "%BACKUP_DUMP%"')
+    after = text[prep:prep + 200]
+    assert after.index("if errorlevel 2 goto :backup_unsigniert") < after.index(
+        "if errorlevel 1 goto :backup_abgelehnt")
+    block = _bat_blocks()["backup_unsigniert"]
+    assert 'del "%BACKUP_DUMP%" 2>nul' in block and "exit /b 1" in block
+    assert any("--force-unverified" in line for line in block)
+
+
+def test_native_backup_wird_signiert(srv, inst, monkeypatch):
+    import io
+    monkeypatch.setattr(srv, "BACKUP_DIR", inst / "data" / "backups")
+    payload = (_DUMP).encode("utf-8")
+
+    class _P:
+        def __init__(self, *a, **k):
+            self.stdout = io.BytesIO(payload)
+            self.returncode = 0
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(srv.subprocess, "Popen", _P)
+    monkeypatch.setattr(srv, "pg_cmd", lambda name: Path("/x") / name)
+    path = srv.create_backup({"security": {"secret_key": _KEY}})
+    with gzip.open(path, "rb") as fh:
+        assert srv.verify_backup_mac(fh, _KEY) == "ok"
+    with gzip.open(path, "rb") as fh:
+        assert fh.read().startswith(payload)
+    # ... und restore nimmt sie ohne --force-unverified
+    cluster = FakeCluster()
+    code, _ = _restore(srv, path, cluster)
+    assert code == 0
+    assert _loaded(cluster.dbs["praxiszeit"]) == _DUMP_LOADED
+
+
+_DANGEROUS = [
+    # (a) COPY-Zeile mit weiteren Anweisungen dahinter: kein Datenmodus.
+    "COPY t (a) FROM stdin; CREATE ROLE evil SUPERUSER; COPY u FROM stdin;\n",
+    "COPY public.t (a) FROM stdin;x\n\\.\n",
+    "COPY t FROM '/etc/passwd';\n",
+    # (b)/(c) DO-Block mit dynamischem SQL
+    "DO $$BEGIN EXECUTE 'COPY (SELECT 1) TO PROGRAM ''id > /tmp/pwn'''; END$$;\n",
+    "DO $x$BEGIN EXECUTE 'ALTER ROLE praxiszeit_app BYPASSRLS'; END$x$;\n",
+    "do\n$$ begin null; end $$;\n",
+    "CALL boese();\n",
+    # (d) Server-Dateien / Large Objects
+    "SELECT lo_export(16384, '/tmp/x');\n",
+    "SELECT pg_catalog.lo_import('/etc/shadow');\n",
+    "CREATE TABLE t (a text CHECK (pg_read_file('/etc/passwd') IS NOT NULL));\n",
+    "CREATE TABLE t (a text DEFAULT \"lo_export\"(1, '/tmp/x'));\n",
+    "CREATE INDEX i ON t ((query_to_xml('select 1', true, true, '')));\n",
+    # standard_conforming_strings / Sitzung
+    "SET standard_conforming_strings = off;\n",
+    "SET standard_conforming_strings TO 'off';\n",
+    "SELECT pg_catalog.set_config('standard_conforming_strings', 'off', false);\n",
+    "SET client_encoding = 'SJIS';\n",
+    "SET LOCAL standard_conforming_strings = off;\n",
+    "SET ROLE praxiszeit;\n",
+    "SET SESSION AUTHORIZATION praxiszeit;\n",
+    "SET session_preload_libraries = 'x';\n",
+    "RESET ALL;\n",
+    "SELECT 1;\n",
+    # Rollen / Cluster
+    "GRANT praxiszeit TO praxiszeit_app;\n",
+    "GRANT pg_execute_server_program TO praxiszeit_app;\n",
+    "GRANT \"x ON y\" TO praxiszeit_app;\n",
+    "ALTER DATABASE praxiszeit SET search_path = evil;\n",
+    "CREATE TABLESPACE x LOCATION '/tmp';\n",
+    "CREATE SERVER s FOREIGN DATA WRAPPER postgres_fdw;\n",
+    "CREATE USER MAPPING FOR praxiszeit SERVER s;\n",
+    "CREATE EXTENSION plpython3u;\n",
+    "CREATE EXTENSION IF NOT EXISTS adminpack;\n",
+    # Funktionen
+    "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$BEGIN EXECUTE 'x'; END$$;\n",
+    "CREATE FUNCTION f() RETURNS void LANGUAGE sql AS 'ALTER ROLE praxiszeit_app SUPERUSER';\n",
+    "CREATE FUNCTION f() RETURNS void LANGUAGE plpython3u AS $$import os$$;\n",
+    "CREATE OR REPLACE FUNCTION f() RETURNS int LANGUAGE plpgsql AS "
+    "$_$BEGIN PERFORM lo_export(1,'/x'); RETURN 1; END$_$;\n",
+]
+
+
+@pytest.mark.parametrize("body", _DANGEROUS)
+def test_dump_mit_gefaehrlicher_anweisung_wird_abgelehnt(srv, tmp_path, body):
+    with pytest.raises(srv.RestoreError, match="pg_dump nie|psql-Befehl|gehoert nicht"):
+        _check(srv, tmp_path, body)
+
+
+@pytest.mark.parametrize("body", [
+    "COPY public.\"order\" (id, \"from\", \"a;b\") FROM stdin;\n1\t2\t3\n\\.\n",
+    "COPY public.t FROM stdin;\n\\.\n",
+    "SET search_path = public, pg_catalog;\n",
+    "SET default_tablespace = '';\n",
+    "SET client_encoding = 'UTF8';\n",
+    "SELECT pg_catalog.set_config('search_path', '', false);\n",
+    "SELECT pg_catalog.setval('public.t_id_seq', 42, true);\n",
+    "CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;\n",
+    "GRANT SELECT ON TABLE public.t TO praxiszeit_app;\n",
+    "REVOKE ALL ON SCHEMA public FROM PUBLIC;\n",
+    "CREATE FUNCTION public.f() RETURNS text LANGUAGE plpgsql AS $$BEGIN RETURN 'x'; END$$;\n",
+    "INSERT INTO t VALUES (1) ON CONFLICT DO NOTHING;\n",
+    "CREATE TABLE \"x ON y\" (a int);\n",
+])
+def test_dump_mit_ueblichen_anweisungen_geht_durch(srv, tmp_path, body):
+    _check(srv, tmp_path, body)  # wirft nicht
+
+
+def test_dump_endet_mitten_in_einer_anweisung(srv, tmp_path):
+    p = tmp_path / "d.sql"
+    p.write_text(_HEAD + "COMMENT ON TABLE t IS 'offen\n", encoding="utf-8")
+    with pytest.raises(srv.RestoreError, match="mitten in einer Anweisung"):
+        srv.validate_restore_dump(p)

@@ -2393,6 +2393,12 @@ def create_backup(config: dict):
 
     import gzip
     write_error = None
+    # Signaturzeile am Ende (Fix-Runde S3-03): restore spielt eine Datei ohne
+    # passende Signatur nur mit --force-unverified ein.
+    secret_key = _installation_secret_key(config)
+    signer = BackupMac(secret_key) if secret_key else None
+    if signer is None:
+        logger.warning("Kein SECRET_KEY gefunden - die Sicherung wird nicht signiert.")
     try:
         # 0600 from the first byte (not open() + umask 022 -> world-readable
         # 0644 dump with every employee's data). On Windows the mode only
@@ -2406,6 +2412,10 @@ def create_backup(config: dict):
                     if not chunk:
                         break
                     gz.write(chunk)
+                    if signer is not None:
+                        signer.update(chunk)
+                if signer is not None:
+                    gz.write(signer.trailer())
     except OSError as e:  # z. B. Platte voll waehrend des Schreibens
         write_error = e
     finally:
@@ -2881,10 +2891,18 @@ def cmd_sync_db_port(args):
 
 
 def cmd_prepare_restore_dump(args):
-    """restore-backup.bat: entpackten Dump pruefen und mit eigenem \\restrict
-    versehen. Fehler als eine Zeile auf stderr, Exit 1 (die .bat bricht ab)."""
+    """restore-backup.bat: Signatur und entpackten Dump pruefen und mit eigenem
+    \\restrict versehen. Fehler als eine Zeile auf stderr: Exit 2 = Signatur
+    fehlt oder passt nicht, Exit 1 = Dump abgelehnt (die .bat bricht ab)."""
     try:
-        prepare_restore_dump(Path(args.file))
+        prepare_restore_dump(
+            Path(args.file), secret_key=_installation_secret_key(load_config()),
+            force_unverified=getattr(args, "force_unverified", False),
+        )
+    except UnverifiedBackupError as exc:
+        # Exit 2: restore-backup.bat erklaert --force-unverified.
+        print(f"FEHLER: {exc}", file=sys.stderr)
+        sys.exit(2)
     except RestoreError as exc:
         print(f"FEHLER: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -3219,35 +3237,200 @@ def _process_manager_running() -> bool:
     return True
 
 
+# --- Restore: Signatur der Sicherung (Audit 2026-11-07, Fix-Runde S3-03) ------
+#
+# Eingespielt wird als PostgreSQL-Superuser. Eine Liste verbotener Anweisungen
+# (unten) kann eine praeparierte "Sicherung vom alten Rechner" nie vollstaendig
+# ausschliessen - ein DO-Block mit EXECUTE, eine Funktion in einem CHECK, ...
+# Deshalb traegt jede Sicherung, die PraxisZeit schreibt (``backup``, die
+# Datensicherung der Weboberflaeche, Docker ``backup.sh``), als letzte Zeile
+#
+#     -- praxiszeit-backup-hmac-v1 <HMAC-SHA256>
+#
+# ueber alle Bytes davor, mit einem aus dem SECRET_KEY abgeleiteten Schluessel.
+# Ohne passende Signatur spielt ``restore`` (und restore-backup.bat) die Datei
+# nur mit ausdruecklichem ``--force-unverified`` ein. Dieselbe Rechnung steht
+# in backend/app/core/backup_mac.py (test_backup_mac.py haelt beide gleich).
+# Als Nicht-Superuser einzuspielen geht nicht: die Tabellen gehoeren der
+# Superuser-Rolle (Migrationen, RLS-Ausnahme des Eigentuemers), der Dump setzt
+# ``OWNER TO`` auf sie, und die Zwischendatenbank wird per DROP/RENAME getauscht.
+BACKUP_MAC_LABEL = b"praxiszeit-backup-hmac-v1"
+_BACKUP_MAC_MARKER = b"-- " + BACKUP_MAC_LABEL + b" "
+_BACKUP_MAC_LINE_RE = re.compile(rb"^-- praxiszeit-backup-hmac-v1 ([0-9a-f]{64})$")
+_BACKUP_MAC_HOLDBACK = 256
+
+
+def _backup_mac_key(secret_key: str) -> bytes:
+    import hashlib
+    import hmac
+    return hmac.new(secret_key.encode("utf-8"), BACKUP_MAC_LABEL, hashlib.sha256).digest()
+
+
+class BackupMac:
+    """Signatur beim Schreiben mitrechnen (wie app.core.backup_mac.BackupMac)."""
+
+    def __init__(self, secret_key: str):
+        import hashlib
+        import hmac
+        self._mac = hmac.new(_backup_mac_key(secret_key), digestmod=hashlib.sha256)
+        self._last = b"\n"
+
+    def update(self, data: bytes) -> None:
+        if data:
+            self._mac.update(data)
+            self._last = data[-1:]
+
+    def trailer(self) -> bytes:
+        prefix = b""
+        if self._last != b"\n":
+            prefix = b"\n"
+            self._mac.update(prefix)
+            self._last = b"\n"
+        return prefix + _BACKUP_MAC_MARKER + self._mac.hexdigest().encode("ascii") + b"\n"
+
+
+def verify_backup_mac(stream, secret_key: str) -> str:
+    """``ok``, ``missing`` (keine Signaturzeile) oder ``mismatch``."""
+    import hashlib
+    import hmac
+    mac = hmac.new(_backup_mac_key(secret_key), digestmod=hashlib.sha256)
+    tail = b""
+    while True:
+        chunk = stream.read(1024 * 1024)
+        if not chunk:
+            break
+        data = tail + chunk
+        if len(data) > _BACKUP_MAC_HOLDBACK:
+            mac.update(data[:-_BACKUP_MAC_HOLDBACK])
+            tail = data[-_BACKUP_MAC_HOLDBACK:]
+        else:
+            tail = data
+    if not tail.endswith(b"\n"):
+        return "missing"
+    cut = tail.rfind(b"\n", 0, len(tail) - 1)
+    match = _BACKUP_MAC_LINE_RE.match(tail[cut + 1:-1].rstrip(b"\r"))
+    if not match:
+        return "missing"
+    mac.update(tail[:cut + 1])
+    if hmac.compare_digest(mac.hexdigest().encode("ascii"), match.group(1)):
+        return "ok"
+    return "mismatch"
+
+
+def _installation_secret_key(config: dict) -> str | None:
+    """Der SECRET_KEY dieser Installation, ohne einen neuen zu erzeugen
+    (:func:`resolve_secret_key` mit ``persist=False`` wuerfelte sonst einen
+    Wegwerf-Schluessel, mit dem keine Signatur je passt)."""
+    sk = get_config_value(config, "security", "secret_key")
+    if sk:
+        return str(sk)
+    sk_file = CONFIG_DIR / ".secret-key"
+    try:
+        value = sk_file.read_text().strip()
+    except OSError:
+        return None
+    return value or None
+
+
+class UnverifiedBackupError(RuntimeError):
+    """Die Sicherung traegt keine passende PraxisZeit-Signatur."""
+
+
+UNVERIFIED_HINT = (
+    "Nur wenn die Datei sicher aus der eigenen PraxisZeit-Installation stammt "
+    "(z. B. eine Sicherung vom alten Rechner mit anderem SECRET_KEY): den Aufruf "
+    "mit --force-unverified wiederholen. Die Datei wird dann trotzdem auf "
+    "Befehle geprueft, die pg_dump nie schreibt."
+)
+
+
+def _unverified_reason(status: str) -> str:
+    if status == "missing":
+        return ("Die Sicherung traegt keine PraxisZeit-Signatur (erstellt mit einer aelteren "
+                "Version, beim Deinstallieren oder von Hand) - ob sie veraendert wurde, "
+                "laesst sich nicht pruefen.")
+    if status == "mismatch":
+        return ("Die Signatur der Sicherung passt nicht: die Datei wurde veraendert oder "
+                "stammt aus einer anderen Installation (anderer SECRET_KEY).")
+    return ("Diese Installation hat keinen SECRET_KEY (config/praxiszeit.conf bzw. "
+            "config/.secret-key) - die Signatur der Sicherung laesst sich nicht pruefen.")
+
+
 # --- Restore: nur Dumps einspielen, wie pg_dump sie schreibt (Audit 2026-11-07 S3-03)
 #
-# psql fuehrt Backslash-Befehle im Dump aus (``\! cmd``, ``\o |cmd``,
-# ``\copy ... program``) — und zwar ueberall in einer Zeile ausserhalb von
-# Zeichenketten, nicht nur am Zeilenanfang. Eingespielt wird als Superuser,
-# unter Windows sogar als Administrator. Eine praeparierte "Sicherung vom alten
-# Rechner" (USB-Stick, Mail eines "Technikers") liefe sonst mit diesen Rechten.
-# pg_dump 18 schreibt genau zwei Backslash-Befehle: ``\restrict <schluessel>``
-# am Anfang und ``\unrestrict <schluessel>`` am Ende (seit 17.6/18.0). Alles
-# andere ausserhalb der COPY-Daten wird abgelehnt, ebenso SQL, das aus einer
-# Datenbanksicherung nie kommen kann (Rollen, ALTER SYSTEM, COPY ... PROGRAM,
-# Event-Trigger, C-Funktionen). Das ersetzt keine vertrauenswuerdige Quelle,
-# schliesst aber die Shell-Ausfuehrung aus.
+# Zweite Linie hinter der Signatur. psql fuehrt Backslash-Befehle im Dump aus
+# (``\! cmd``, ``\o |cmd``, ``\copy ... program``) - und zwar ueberall in einer
+# Zeile ausserhalb von Zeichenketten, nicht nur am Zeilenanfang. Eingespielt
+# wird als Superuser, unter Windows sogar als Administrator. pg_dump 18 schreibt
+# genau zwei Backslash-Befehle: ``\restrict <schluessel>`` am Anfang und
+# ``\unrestrict <schluessel>`` am Ende (seit 17.6/18.0). Alles andere ausserhalb
+# der COPY-Daten wird abgelehnt, ebenso SQL, das pg_dump fuer eine PraxisZeit-
+# Datenbank nie schreibt: Rollen und Rollen-Mitgliedschaften, ALTER SYSTEM/
+# DATABASE, COPY ausser der genauen pg_dump-Form, DO/CALL, SET ausser den
+# Sitzungsparametern von pg_dump (standard_conforming_strings nur ``on`` - der
+# Lexer liest Backslashes in '...' woertlich), SELECT ausser set_config/setval,
+# Server-Datei- und Programmzugriffe, Funktionen ausser sql/plpgsql ohne
+# dynamisches SQL.
 _DUMP_ALLOWED_META_RE = re.compile(rb"^\s*\\(restrict|unrestrict)\s+[A-Za-z0-9]+\s*$")
-_DUMP_COPY_START_RE = re.compile(rb"^COPY\s.+\sFROM\s+stdin;\s*$")
+# Genau die Form, die pg_dump schreibt: ``COPY schema.tabelle (spalte, ...) FROM
+# stdin;`` und nichts danach (Fix-Runde: ``COPY t FROM stdin; CREATE ROLE ...``
+# in EINER Zeile darf den Lexer nicht in den Datenmodus schicken).
+_DUMP_IDENT = rb'(?:[a-z_][a-z0-9_$]*|"(?:[^"\r\n]|"")+")'
+_DUMP_COPY_START_RE = re.compile(
+    rb"^COPY (?:" + _DUMP_IDENT + rb"\.)?" + _DUMP_IDENT
+    + rb"(?: \(" + _DUMP_IDENT + rb"(?:, " + _DUMP_IDENT + rb")*\))? FROM stdin;\r?$"
+)
 _DUMP_FORBIDDEN_STATEMENTS = (
     (re.compile(r"^(CREATE|ALTER|DROP)\s+(ROLE|USER|GROUP)\b"), "Rollen anlegen oder aendern"),
-    (re.compile(r"^ALTER\s+SYSTEM\b"), "ALTER SYSTEM"),
+    (re.compile(r"^(GRANT|REVOKE)\b(?!.*\bON\b)"), "Rollen-Mitgliedschaft"),
+    (re.compile(r"^ALTER\s+(SYSTEM|DATABASE)\b"), "ALTER SYSTEM/DATABASE"),
     (re.compile(r"^(CREATE|ALTER)\s+EVENT\s+TRIGGER\b"), "Event-Trigger"),
-    (re.compile(r"^COPY\b.*\bPROGRAM\b"), "COPY ... PROGRAM"),
-    (re.compile(r"^LOAD\b"), "LOAD"),
-    (re.compile(r"^CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE)\b.*\bLANGUAGE\s+\"?(C|INTERNAL)\b"),
-     "Funktion in C"),
+    (re.compile(r"^COPY\b"), "COPY ausserhalb der pg_dump-Form"),
+    (re.compile(r"^(DO|CALL|LOAD|RESET)\b"), "DO/CALL/LOAD/RESET"),
+    (re.compile(r"^(CREATE|ALTER)\s+(OR\s+REPLACE\s+)?(TRUSTED\s+)?(PROCEDURAL\s+)?LANGUAGE\b"),
+     "Prozedurale Sprache"),
+    (re.compile(r"^(CREATE|ALTER)\s+(SERVER|FOREIGN|SUBSCRIPTION|PUBLICATION|TABLESPACE)\b"),
+     "Server, Abo oder Tablespace"),
+    (re.compile(r"^SECURITY\s+LABEL\b"), "SECURITY LABEL"),
+)
+# Funktionen, die Server-Dateien/-Programme erreichen, Rechte/Sitzung aendern
+# oder einen SQL-Text ausfuehren - in Ausdruecken (CHECK, DEFAULT, Index) wie
+# in Funktionsrumpfen.
+_DUMP_FORBIDDEN_CALLS_RE = re.compile(
+    r"\b(LO_\w+|LOWRITE|LOREAD|PG_READ_\w+|PG_WRITE_\w+|PG_FILE_\w+|PG_LS_\w+|PG_STAT_FILE|"
+    r"DBLINK\w*|SET_CONFIG|PG_RELOAD_CONF|PG_TERMINATE_BACKEND|PG_CANCEL_BACKEND|"
+    r"PG_ROTATE_LOGFILE|PG_PROMOTE|PG_SWITCH_WAL|PG_EXECUTE_SERVER_PROGRAM|"
+    r"QUERY_TO_XML\w*|CURSOR_TO_XML\w*|TABLE_TO_XML\w*|SCHEMA_TO_XML\w*|DATABASE_TO_XML\w*|"
+    r"TS_STAT|TS_REWRITE)\s*\("
+)
+# Was ein Funktionsrumpf (Literal) nicht enthalten darf: dynamisches SQL und
+# Anweisungen, die oben verboten sind.
+_DUMP_FORBIDDEN_BODY_RE = re.compile(
+    r"\b(EXECUTE|COPY|LOAD|CALL|ALTER\s+(ROLE|USER|GROUP|SYSTEM|DATABASE)|"
+    r"(CREATE|DROP)\s+(ROLE|USER|GROUP)|GRANT|REVOKE|SET\s+(ROLE|SESSION)|RESET|DO\s*[$'])"
+)
+_DUMP_FUNCTION_RE = re.compile(r"^CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE|AGGREGATE)\b")
+_DUMP_FUNCTION_LANG_RE = re.compile(r"\bLANGUAGE\s+\"?([A-Z0-9_]+)")
+_DUMP_EXTENSIONS_OK = {"PLPGSQL", "PGCRYPTO", "UUID-OSSP", "\"UUID-OSSP\"", "PG_TRGM",
+                       "BTREE_GIST", "BTREE_GIN", "CITEXT"}
+# Sitzungsparameter, die pg_dump 9.x-18 am Anfang setzt.
+_DUMP_SET_PARAMS = {
+    "STATEMENT_TIMEOUT", "LOCK_TIMEOUT", "IDLE_IN_TRANSACTION_SESSION_TIMEOUT",
+    "TRANSACTION_TIMEOUT", "CLIENT_ENCODING", "STANDARD_CONFORMING_STRINGS",
+    "CHECK_FUNCTION_BODIES", "XMLOPTION", "CLIENT_MIN_MESSAGES", "ROW_SECURITY",
+    "DEFAULT_TABLESPACE", "DEFAULT_TABLE_ACCESS_METHOD", "DEFAULT_WITH_OIDS", "SEARCH_PATH",
+}
+_DUMP_SET_RE = re.compile(r"^SET\s+([A-Z_]+)\s*(?:=|\bTO\b)\s*(.*)$")
+_DUMP_SELECT_OK = (
+    re.compile(r"^SELECT pg_catalog\.set_config\('search_path', '', false\)$"),
+    re.compile(r"^SELECT pg_catalog\.setval\('[A-Za-z0-9_.\"]+', \d+, (true|false)\)$"),
 )
 
 
 class _DumpScanner:
     """Kleiner psql-Lexer: findet Backslash-Befehle ausserhalb von
-    Zeichenketten/Kommentaren und die Anfaenge der SQL-Anweisungen."""
+    Zeichenketten/Kommentaren und die SQL-Anweisungen - je Anweisung den Text
+    ohne Literale (``stmt``) und den vollen Text (``raw``)."""
 
     _DOLLAR_RE = re.compile(rb"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 
@@ -3256,19 +3439,26 @@ class _DumpScanner:
         self.dollar_tag = b""
         self.block_depth = 0
         self.stmt = bytearray()   # Text der laufenden Anweisung ausserhalb von Literalen
+        self.raw = bytearray()    # derselbe Text samt Literalen (ohne Kommentare)
 
     @staticmethod
     def _ident_char(ch: bytes) -> bool:
         """Zeichen, mit dem ein psql-Bezeichner weitergehen kann."""
         return bool(ch) and (ch.isalnum() or ch in (b"_", b"$") or ch[0] >= 0x80)
 
-    def feed(self, line: bytes, lineno: int) -> tuple[bool, list[str]]:
+    def _done(self, done: list) -> None:
+        done.append((self.stmt.decode("utf-8", "replace"), self.raw.decode("utf-8", "replace")))
+        self.stmt.clear()
+        self.raw.clear()
+
+    def feed(self, line: bytes, lineno: int) -> tuple[bool, list[tuple[str, str]]]:
         """Eine Zeile (ohne Zeilenende). Liefert (copy_beginnt, fertige_anweisungen)."""
-        done: list[str] = []
+        done: list[tuple[str, str]] = []
         at_stmt_start = self.state == "normal" and not self.stmt.strip()
         if at_stmt_start and _DUMP_COPY_START_RE.match(line):
             self.stmt.clear()
-            return True, [line.decode("utf-8", "replace")]
+            self.raw.clear()
+            return True, done
         i, n = 0, len(line)
         while i < n:
             c = line[i:i + 1]
@@ -3294,10 +3484,13 @@ class _DumpScanner:
                     prev2 = line[i - 2:i - 1] if i > 1 else b""
                     estring = prev in (b"E", b"e") and not self._ident_char(prev2)
                     self.state = "estring" if estring else "squote"
+                    self.raw += c
                     i += 1
                     continue
                 if c == b'"':
                     self.state = "dquote"
+                    self.stmt += c
+                    self.raw += c
                     i += 1
                     continue
                 if c == b"$":
@@ -3305,34 +3498,43 @@ class _DumpScanner:
                     prev = line[i - 1:i] if i else b""
                     if m and not self._ident_char(prev):
                         self.state, self.dollar_tag = "dollar", m.group(0)
+                        self.raw += m.group(0)
                         i = m.end()
                         continue
                 if c == b";":
-                    done.append(self.stmt.decode("utf-8", "replace"))
-                    self.stmt.clear()
+                    self._done(done)
                     i += 1
                     continue
                 self.stmt += c
+                self.raw += c
                 i += 1
             elif self.state in ("squote", "estring"):
                 if self.state == "estring" and c == b"\\":
+                    self.raw += line[i:i + 2]
                     i += 2
                     continue
+                self.raw += c
                 if c == b"'":
                     if line[i + 1:i + 2] == b"'":
+                        self.raw += b"'"
                         i += 2
                         continue
                     self.state = "normal"
                 i += 1
             elif self.state == "dquote":
+                # Bezeichner gehoeren zum Anweisungstext (sie sind kein Literal).
+                self.stmt += c
+                self.raw += c
                 if c == b'"':
                     self.state = "normal"
                 i += 1
             elif self.state == "dollar":
                 if line.startswith(self.dollar_tag, i):
+                    self.raw += self.dollar_tag
                     i += len(self.dollar_tag)
                     self.state = "normal"
                     continue
+                self.raw += c
                 i += 1
             else:  # block comment (verschachtelbar)
                 if line.startswith(b"/*", i):
@@ -3348,18 +3550,66 @@ class _DumpScanner:
                 i += 1
         if self.state == "normal":
             self.stmt += b" "
+            self.raw += b" "
+        elif self.state != "block":
+            self.raw += b"\n"
         return False, done
 
 
-def _check_dump_statement(stmt: str, lineno: int) -> None:
-    text = " ".join(stmt.split()).upper()
+def _forbidden_statement(label: str, lineno: int) -> RestoreError:
+    return RestoreError(
+        f"Zeile {lineno}: die Sicherung enthaelt eine Anweisung, die pg_dump nie "
+        f"schreibt ({label}). Die Datei wurde veraendert oder stammt nicht aus "
+        "PraxisZeit — sie wird nicht eingespielt."
+    )
+
+
+_DUMP_QUOTED_IDENT_RE = re.compile(r'"(?:[^"]|"")*"')
+
+
+def _check_dump_statement(stmt: str, raw: str, lineno: int) -> None:
+    upper = " ".join(stmt.split()).upper()
+    full = " ".join(raw.split())
+    if not upper:
+        return
+    # Schluesselwoerter nur ausserhalb von Bezeichnern ("x ON y" ist kein ON);
+    # Aufrufe auch in Anfuehrungszeichen ("lo_export"(...) ist lo_export).
+    text = _DUMP_QUOTED_IDENT_RE.sub('"?"', upper)
+    calls = upper.replace('"', "")
     for pattern, label in _DUMP_FORBIDDEN_STATEMENTS:
         if pattern.match(text):
-            raise RestoreError(
-                f"Zeile {lineno}: die Sicherung enthaelt eine Anweisung, die pg_dump nie "
-                f"schreibt ({label}). Die Datei wurde veraendert oder stammt nicht aus "
-                "PraxisZeit — sie wird nicht eingespielt."
-            )
+            raise _forbidden_statement(label, lineno)
+    if text.startswith("SELECT"):
+        if not any(p.match(full) for p in _DUMP_SELECT_OK):
+            raise _forbidden_statement("SELECT ausser set_config/setval", lineno)
+        return
+    m = _DUMP_SET_RE.match(text)
+    if text.startswith("SET"):
+        if not m or m.group(1) not in _DUMP_SET_PARAMS:
+            raise _forbidden_statement(f"SET {(m.group(1) if m else text[4:30]).lower()}", lineno)
+        value = full.split("=", 1)[-1] if "=" in full else full.upper().split(" TO ", 1)[-1]
+        value = value.strip().strip("'").strip().upper()
+        if m.group(1) == "STANDARD_CONFORMING_STRINGS" and value != "ON":
+            raise _forbidden_statement("standard_conforming_strings ungleich on", lineno)
+        if m.group(1) == "CLIENT_ENCODING" and value not in ("UTF8", "UTF-8"):
+            raise _forbidden_statement("client_encoding ungleich UTF8", lineno)
+        return
+    if text.startswith("CREATE EXTENSION"):
+        words = upper.split()
+        name = words[5] if words[2:5] == ["IF", "NOT", "EXISTS"] and len(words) > 5 else (
+            words[2] if len(words) > 2 else "")
+        if name not in _DUMP_EXTENSIONS_OK:
+            raise _forbidden_statement(f"Erweiterung {name.lower()}", lineno)
+    if _DUMP_FORBIDDEN_CALLS_RE.search(calls):
+        raise _forbidden_statement("Server-Datei-, Programm- oder Rechtezugriff", lineno)
+    if _DUMP_FUNCTION_RE.match(text):
+        lang = _DUMP_FUNCTION_LANG_RE.search(upper)
+        if lang and lang.group(1) not in ("SQL", "PLPGSQL"):
+            raise _forbidden_statement(f"Funktion in {lang.group(1).lower()}", lineno)
+        body = full.upper().replace('"', "")
+        if _DUMP_FORBIDDEN_BODY_RE.search(body) or _DUMP_FORBIDDEN_CALLS_RE.search(body):
+            raise _forbidden_statement("Funktion mit dynamischem SQL oder Rechte-/Dateizugriff",
+                                       lineno)
 
 
 def validate_restore_dump(sql: Path, out=None) -> None:
@@ -3384,25 +3634,44 @@ def validate_restore_dump(sql: Path, out=None) -> None:
             is_meta = (scanner.state == "normal" and not scanner.stmt.strip()
                        and _DUMP_ALLOWED_META_RE.match(line) is not None)
             copy_starts, statements = scanner.feed(line, lineno)
-            for stmt in statements:
-                _check_dump_statement(stmt, lineno)
+            for stmt, full in statements:
+                _check_dump_statement(stmt, full, lineno)
             in_copy = copy_starts
             if out is not None and not is_meta:
                 out.write(raw)
     if in_copy:
         raise RestoreError("Die Sicherung endet mitten in den Tabellendaten (COPY ohne Ende).")
+    if scanner.state != "normal" or scanner.stmt.strip():
+        # Eine offene Zeichenkette oder Anweisung am Dateiende: psql liefe in
+        # einen anderen Zustand als dieser Lexer.
+        raise RestoreError("Die Sicherung endet mitten in einer Anweisung.")
 
 
-def prepare_restore_dump(sql: Path) -> None:
-    """Dump pruefen und mit EIGENEM ``\\restrict``-Schluessel versehen (S3-03).
+def prepare_restore_dump(sql: Path, *, secret_key: str | None = None,
+                         force_unverified: bool = False) -> None:
+    """Signatur pruefen, Dump pruefen, mit EIGENEM ``\\restrict``-Schluessel
+    versehen (S3-03).
 
+    Ohne passende Signatur (:func:`verify_backup_mac`) bricht das mit
+    :class:`UnverifiedBackupError` ab, ausser ``force_unverified`` ist gesetzt.
     Die Pruefung (:func:`validate_restore_dump`) nennt den Grund verstaendlich;
-    die harte Grenze zieht psql selbst: ein zufaelliger Schluessel je Restore
-    in der ersten Zeile schaltet psql in den eingeschraenkten Modus, in dem
-    jeder Backslash-Befehl ausser ``\\unrestrict <schluessel>`` abgelehnt wird
-    - ON_ERROR_STOP bricht dann ab. Die eigenen restrict-Zeilen des Dumps
-    entfallen (ein zweites ``\\restrict`` waere ein Fehler). Die Datei wird an
-    Ort und Stelle ersetzt (gleiche Rechte, gleiches Verzeichnis)."""
+    die harte Grenze fuer Backslash-Befehle zieht psql selbst: ein zufaelliger
+    Schluessel je Restore in der ersten Zeile schaltet psql in den
+    eingeschraenkten Modus, in dem jeder Backslash-Befehl ausser
+    ``\\unrestrict <schluessel>`` abgelehnt wird - ON_ERROR_STOP bricht dann ab.
+    Die eigenen restrict-Zeilen des Dumps entfallen (ein zweites ``\\restrict``
+    waere ein Fehler). Die Datei wird an Ort und Stelle ersetzt (gleiche Rechte,
+    gleiches Verzeichnis)."""
+    if secret_key:
+        with open(sql, "rb") as fh:
+            status = verify_backup_mac(fh, secret_key)
+    else:
+        status = "nokey"
+    if status != "ok":
+        if not force_unverified:
+            raise UnverifiedBackupError(f"{_unverified_reason(status)} {UNVERIFIED_HINT}")
+        logger.warning(
+            "%s Eingespielt wird trotzdem (--force-unverified).", _unverified_reason(status))
     tmp = sql.with_name(sql.name + ".pz-tmp")
     try:
         # Rechte vor dem Inhalt: die Kopie liegt neben dem Original (data/,
@@ -3417,7 +3686,8 @@ def prepare_restore_dump(sql: Path) -> None:
             tmp.unlink()
 
 
-def _unpack_dump(src: Path) -> Path:
+def _unpack_dump(src: Path, *, secret_key: str | None = None,
+                 force_unverified: bool = False) -> Path:
     """Backup neben die Datenbank entpacken und auf Vollstaendigkeit pruefen.
 
     Die entpackte Datei enthaelt personenbezogene Daten im Klartext → nur fuer
@@ -3452,7 +3722,7 @@ def _unpack_dump(src: Path) -> Path:
             "wurde abgebrochen."
         )
     try:
-        prepare_restore_dump(tmp_path)
+        prepare_restore_dump(tmp_path, secret_key=secret_key, force_unverified=force_unverified)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
@@ -3617,8 +3887,9 @@ def cmd_restore(args):
         get_config_value(config, "database", "superuser", "praxiszeit")
     )
     try:
-        sql = _unpack_dump(dump)
-    except RestoreError as exc:
+        sql = _unpack_dump(dump, secret_key=_installation_secret_key(config),
+                           force_unverified=getattr(args, "force_unverified", False))
+    except (RestoreError, UnverifiedBackupError) as exc:
         logger.error("%s Die Datenbank ist unveraendert.", exc)
         sys.exit(1)
 
@@ -3741,6 +4012,8 @@ def main():
         help="Entpackten Dump pruefen und fuer psql absichern (restore-backup.bat, S3-03)",
     )
     prep.add_argument("file", help="Entpackte .sql-Datei (wird an Ort und Stelle ersetzt)")
+    prep.add_argument("--force-unverified", action="store_true",
+                      help="Auch ohne passende PraxisZeit-Signatur einspielen")
     prep.set_defaults(func=cmd_prepare_restore_dump)
 
     # Gesamtreview 1.20: Gegenstueck zu restore-backup.bat fuer Linux/macOS.
@@ -3750,6 +4023,11 @@ def main():
         help="Backup (praxiszeit_*.sql.gz) einspielen — Linux/macOS, Dienst vorher anhalten",
     )
     p_restore.add_argument("file", help="Pfad zum Backup (praxiszeit_<zeitstempel>.sql.gz)")
+    p_restore.add_argument(
+        "--force-unverified", action="store_true",
+        help="Auch ein Backup ohne passende PraxisZeit-Signatur einspielen (z. B. vom alten "
+             "Rechner mit anderem SECRET_KEY) - nur, wenn die Datei sicher von dort stammt",
+    )
     p_restore.set_defaults(func=cmd_restore)
 
     # #425: der einzige Weg zurueck bei verlorenem Admin-Passwort. Das Passwort

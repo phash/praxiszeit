@@ -27,10 +27,16 @@ Varianten (Native **und** Docker), ohne Kommandozeile:
 
 > **Speicherort (Audit 2026-11-07):** Netzwerkpfade (`\\Server\Freigabe`),
 > Netzlaufwerke, für alle Konten lesbare Ordner (z. B. `C:\Users\Public`),
-> Systemordner und das Stammverzeichnis eines Laufwerks lehnt die Oberfläche ab.
-> Unter Windows erhält der gewählte Ordner beim Speichern die Rechte
-> „nur SYSTEM und Administratoren“; lässt sich das nicht einrichten, wird der
-> Ordner nicht übernommen. Eine Kopie außer Haus gehört nicht auf eine
+> Systemordner und das Stammverzeichnis eines Laufwerks lehnt die Oberfläche ab;
+> unter Windows außerdem alles unter `C:\Users` (Benutzerprofile),
+> `C:\ProgramData` und `C:\Program Files`. Unter Windows gilt: einen **neuen**
+> Ordner (noch nicht vorhanden, der übergeordnete schon) legt PraxisZeit selbst
+> an und gibt ihm die Rechte „nur SYSTEM und Administratoren“. Einen
+> **bestehenden** Ordner ändert PraxisZeit nicht — er wird nur übernommen, wenn
+> er schon so eingeschränkt ist (Eigentümer SYSTEM oder Administratoren, keine
+> geerbten Rechte); sonst erscheint ein Hinweis, einen neuen Ordnernamen
+> einzutragen. Lassen sich die Rechte nicht einrichten, wird der Ordner nicht
+> übernommen. Eine Kopie außer Haus gehört nicht auf eine
 > Netzwerkfreigabe des Dienstes, sondern verschlüsselt auf ein externes Medium
 > (siehe [Sicherheit der Sicherungen](#sicherheit-der-sicherungen)).
 
@@ -59,10 +65,39 @@ Deshalb:
   Personen benutzt.
 - **Nur eigene Sicherungen einspielen.** Eine Datei aus fremder Quelle
   („Ihre Sicherung vom alten PC“, Mail eines „Technikers“) kann Befehle
-  enthalten. Die Wiederherstellung (`restore`, `restore-backup.bat`,
-  `restore.sh`) lehnt psql-Befehle, die `pg_dump` nie schreibt, ab und
-  schaltet psql in den eingeschränkten Modus — eine vertrauenswürdige Quelle
-  ersetzt das nicht.
+  enthalten, die beim Einspielen mit vollen Datenbankrechten laufen. Deshalb
+  sind die Sicherungen **signiert** (siehe unten), und die Wiederherstellung
+  lehnt zusätzlich psql-Befehle und SQL ab, die `pg_dump` für PraxisZeit nie
+  schreibt.
+
+### Signatur der Sicherungen
+
+Jede Sicherung, die PraxisZeit schreibt (Admin-Oberfläche, nächtliche
+Sicherung, `praxiszeit-server.py backup`, Docker `backup.sh`/`backup-db.sh`),
+endet mit einer Kommentarzeile `-- praxiszeit-backup-hmac-v1 <Prüfwert>`: ein
+HMAC-SHA256 über den ganzen Dump, gebildet mit einem aus dem `SECRET_KEY` der
+Installation abgeleiteten Schlüssel. Für `psql` ist die Zeile ein Kommentar, die
+Datei bleibt ein normaler Dump.
+
+`restore`, `restore-backup.bat` und `restore.sh` spielen nur eine Sicherung mit
+**passender** Signatur ein. Ohne Signatur (Sicherung einer älteren Version, die
+Sicherung von `uninstall.bat`, ein von Hand erstellter Dump) oder mit einer
+Signatur eines anderen `SECRET_KEY` (anderer Rechner) brechen sie ab, **bevor**
+etwas verändert wird. Stammt die Datei sicher aus der eigenen Installation,
+den Aufruf mit `--force-unverified` wiederholen — die Prüfung auf fremde
+Befehle läuft trotzdem:
+
+```bash
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore <datei>.sql.gz --force-unverified
+bash restore.sh backups/<datei>.sql.gz --force-unverified          # Docker
+```
+
+```bat
+restore-backup.bat data\backups\<datei>.sql.gz --force-unverified
+```
+
+Für den Umzug auf einen neuen Rechner deshalb am besten zuerst den alten
+`SECRET_KEY` zurücklegen (nächster Abschnitt) — dann passt die Signatur.
 
 ### Den Schlüssel `SECRET_KEY` mitsichern (einmalig, getrennt)
 
@@ -83,7 +118,8 @@ Dumps aufbewahren — etwa im Passwort-Safe der Praxis. Er gehört bewusst **nic
 in jede Sicherungsdatei: wer Dump und Schlüssel zusammen hat, könnte sich mit
 dem Schlüssel zusätzlich gültige Anmelde-Token ausstellen. Bei einer
 Wiederherstellung auf einem neuen Rechner die alte `config/.secret-key` (bzw.
-den alten `SECRET_KEY` in der `.env`) **vor dem ersten Start** zurücklegen.
+den alten `SECRET_KEY` in der `.env`) **vor dem ersten Start** zurücklegen —
+dann prüft die Wiederherstellung auch die Signatur der alten Sicherungen.
 
 ## Automatisches Backup — pro Variante
 
@@ -236,7 +272,10 @@ Aufruf entfernt.
 > den Desktop (Abbruch, wenn `pg_dump` scheitert oder die Schlusszeile fehlt —
 > dann wird nichts gelöscht) und verschiebt die automatischen Sicherungen aus
 > `data\backups` nach `Desktop\PraxisZeit-Sicherungen-<Datum>`, bevor der
-> Installationsordner entfernt wird.
+> Installationsordner entfernt wird. Die Desktop-Sicherung ist ein
+> **unkomprimierter, unsignierter** Dump: zum Einspielen mit gzip packen und
+> `restore-backup.bat <datei>.sql.gz --force-unverified` verwenden; die
+> automatischen Sicherungen sind signiert (passend zum alten `SECRET_KEY`).
 
 ### Docker
 
@@ -247,7 +286,9 @@ Mit dem mitgelieferten Script (empfohlen), aus dem Verzeichnis neben der
 bash restore.sh backups/praxiszeit_<ts>.sql.gz
 ```
 
-Das Script prüft das Backup auf Vollständigkeit, hält das Backend an, legt die
+Das Script prüft das Backup auf Vollständigkeit und auf die
+[Signatur](#signatur-der-sicherungen) (im Backend-Container mit dessen
+`SECRET_KEY`; ohne passende Signatur nur mit `--force-unverified`), hält das Backend an, legt die
 Datenbank frisch an, spielt das Backup ein und startet das Backend wieder. Erst
 dieser Start hebt ein Backup einer älteren Version per Migration auf den Stand der
 installierten Version – Migrationen laufen nur beim Start des Backend-Containers,

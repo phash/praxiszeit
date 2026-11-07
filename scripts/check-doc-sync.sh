@@ -1215,6 +1215,19 @@ group_restore() {
   need "$f" '<code>praxiszeit-server.py restore &lt;datei&gt;</code>'
   need "$f" '<code>restore-backup.bat &lt;datei&gt;</code>'
   forbid "$f" 'idempotent wiederherstellbar'
+  # Signatur der Sicherungen (Audit 2026-11-07, Fix-Runde S3-03): ohne
+  # passende Signatur nur mit --force-unverified.
+  need praxiszeit-server.py '"--force-unverified", action="store_true"'
+  need tools/docker/restore.sh '--force-unverified) FORCE_UNVERIFIED=1 ;;'
+  need installer/windows/restore-backup.template.bat 'if /i "%~2"=="--force-unverified"'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'nur mit dem Zusatz `--force-unverified`'
+  need "$f" 'nur mit dem Zusatz <code>--force-unverified</code>'
+  need docs/BACKUP.md '### Signatur der Sicherungen'
+  # Backup-Ort (Fix-Runde S3-04): bestehende Ordner werden nicht umgeschrieben.
+  need backend/app/services/backup_service.py 'raise BackupError(EXISTING_DIR_ACL_DETAIL)'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Die Rechte eines **bestehenden** Ordners ändert PraxisZeit nicht'
+  need "$f" 'Die Rechte eines <strong>bestehenden</strong> Ordners ändert PraxisZeit nicht'
+  forbid "$f" 'Unter Windows bekommt der gewählte Ordner die Rechte'
   f=README.md
   need "$f" 'bash tools/docker/restore.sh'
   forbid "$f" 'idempotent dank'

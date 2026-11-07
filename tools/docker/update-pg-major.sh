@@ -49,7 +49,7 @@ echo "    Backup: $BK (vollständig)"
 # Ab hier wird gleich das alte Volume entfernt. Schlägt danach IRGENDETWAS fehl
 # (z. B. ein Port-Konflikt beim `up`, ein Build-Fehler), sind die Daten NICHT
 # verloren — sie liegen im verifizierten Backup. Diese Falle weist den Weg.
-trap '_rc=$?; if [ "$_rc" != 0 ]; then echo "" >&2; echo "ABBRUCH (Exit $_rc). Deine Daten sind sicher im Backup: ${BK}" >&2; echo "Nach Behebung der Ursache manuell wiederherstellen:" >&2; echo "  cd \"$COMPOSE_DIR\" && docker compose up -d db && bash \"$SCRIPT_DIR/restore.sh\" \"${BK}\" && docker compose up -d" >&2; fi' EXIT
+trap '_rc=$?; if [ "$_rc" != 0 ]; then echo "" >&2; echo "ABBRUCH (Exit $_rc). Deine Daten sind sicher im Backup: ${BK}" >&2; echo "Nach Behebung der Ursache manuell wiederherstellen:" >&2; echo "  cd \"$COMPOSE_DIR\" && docker compose up -d db && bash \"$SCRIPT_DIR/restore.sh\" \"${BK}\" --force-unverified && docker compose up -d" >&2; fi' EXIT
 
 echo "==> 2/5  Exaktes DB-Volume ermitteln (vor dem Stop)..."
 VOL="$(docker compose ps -q db | xargs -r docker inspect \
@@ -88,7 +88,11 @@ echo "==> 5/5  Restore in den frischen Cluster..."
 # gehoben. Ein `docker compose up -d backend` an dieser Stelle war ein No-op
 # (Backend lief schon): „Fertig“ stand da, waehrend das Schema auf dem Stand des
 # Dumps blieb (Gesamtreview 1.20).
-bash "$SCRIPT_DIR/restore.sh" "$BK"
+# --force-unverified: den Dump hat dieses Skript eben selbst geschrieben. Lief
+# noch ein Backend einer Version ohne Sicherungs-Signatur, ist er unsigniert
+# (Audit 2026-11-07, Fix-Runde S3-03) - restore.sh lehnte ihn sonst ab, nachdem
+# das alte Volume schon entfernt ist.
+bash "$SCRIPT_DIR/restore.sh" "$BK" --force-unverified
 trap - EXIT   # Erfolg — Abbruch-Falle entschaerfen
 
 echo ""

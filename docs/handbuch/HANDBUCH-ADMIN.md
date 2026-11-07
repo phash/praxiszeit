@@ -1224,7 +1224,7 @@ Unter **Admin → Datensicherung** (ab Version 1.9.0) verwalten Sie Backups ohne
 
 **Wo:** Docker im Volume `praxiszeit_backups`, native im `data/backups/`-Verzeichnis.
 
-**Speicherort:** Netzwerkpfade (`\\Server\Freigabe`), Netzlaufwerke, für alle Konten lesbare Ordner (z. B. `C:\Users\Public`), Systemordner und Laufwerkswurzeln werden abgelehnt. Unter Windows bekommt der gewählte Ordner die Rechte „nur SYSTEM und Administratoren“.
+**Speicherort:** Netzwerkpfade (`\\Server\Freigabe`), Netzlaufwerke, für alle Konten lesbare Ordner (z. B. `C:\Users\Public`), Systemordner und Laufwerkswurzeln werden abgelehnt, unter Windows auch alles unter `C:\Users`, `C:\ProgramData` und `C:\Program Files`. Unter Windows am besten einen **neuen** Ordnernamen eintragen: PraxisZeit legt ihn an und gibt ihm die Rechte „nur SYSTEM und Administratoren“. Die Rechte eines **bestehenden** Ordners ändert PraxisZeit nicht — ist er für andere Konten zugänglich, erscheint ein Hinweis.
 
 **§16 ArbZG:** Zeitaufzeichnungen mindestens **2 Jahre** aufbewahren — Aufbewahrungsdauer entsprechend setzen, eine Kopie **außerhalb** des Servers vorhalten und vor jedem Update zusätzlich sichern.
 
@@ -1232,7 +1232,7 @@ Unter **Admin → Datensicherung** (ab Version 1.9.0) verwalten Sie Backups ohne
 
 > **Native:** Die *geplante* Sicherung läuft weiterhin über den OS-Timer (systemd/launchd/Task); der *manuelle* Trigger und die Liste funktionieren überall.
 
-**Wiederherstellung:** im Docker-Betrieb mit `bash restore.sh <datei>` neben der `docker-compose.yml`. Das Script legt die Datenbank frisch an, spielt die Sicherung ein und startet das Backend neu – erst dieser Start hebt eine Sicherung einer älteren Version per Migration auf den Stand der installierten Version. Native unter Linux und macOS den Dienst anhalten, die Sicherung mit `praxiszeit-server.py restore <datei>` einspielen und den Dienst wieder starten – auch hier migriert erst dieser Start; scheitert das Einspielen, bleibt die bisherige Datenbank unverändert. Unter Windows `restore-backup.bat <datei>`. Alle Kommandozeilen-Varianten: siehe [`docs/BACKUP.md`](../BACKUP.md).
+**Wiederherstellung:** im Docker-Betrieb mit `bash restore.sh <datei>` neben der `docker-compose.yml`. Das Script legt die Datenbank frisch an, spielt die Sicherung ein und startet das Backend neu – erst dieser Start hebt eine Sicherung einer älteren Version per Migration auf den Stand der installierten Version. Native unter Linux und macOS den Dienst anhalten, die Sicherung mit `praxiszeit-server.py restore <datei>` einspielen und den Dienst wieder starten – auch hier migriert erst dieser Start; scheitert das Einspielen, bleibt die bisherige Datenbank unverändert. Unter Windows `restore-backup.bat <datei>`. Eingespielt wird nur eine Sicherung mit passender **Signatur** (PraxisZeit signiert jede Sicherung mit dem `SECRET_KEY` der Installation); eine Sicherung einer älteren Version oder vom alten Rechner nur mit dem Zusatz `--force-unverified` — und nur, wenn sie sicher aus der eigenen Praxis stammt. Alle Kommandozeilen-Varianten: siehe [`docs/BACKUP.md`](../BACKUP.md).
 
 ---
 

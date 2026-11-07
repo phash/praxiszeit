@@ -50,6 +50,19 @@ if docker compose exec -T db pg_dump -U "$PG_USER" --clean --if-exists "$PG_DB" 
         rm -f "$OUT"
         exit 1
     fi
+    # Signaturzeile anhaengen (Audit 2026-11-07, Fix-Runde S3-03): HMAC mit dem
+    # SECRET_KEY des Backend-Containers ueber den entpackten Dump, als zweites
+    # gzip-Mitglied (gunzip -c liefert Dump + Kommentarzeile). restore.sh spielt
+    # eine Sicherung ohne passende Signatur nur mit --force-unverified ein.
+    SIG_TMP="$(mktemp "${BACKUP_DIR}/.signatur.XXXXXX")"
+    if gunzip -c "$OUT" | docker compose exec -T backend python -m app.core.backup_mac sign > "$SIG_TMP" \
+            && [ -s "$SIG_TMP" ]; then
+        gzip -c < "$SIG_TMP" >> "$OUT"
+    else
+        echo "WARNUNG: Die Sicherung konnte nicht signiert werden (Backend nicht erreichbar" >&2
+        echo "oder aeltere Version). restore.sh verlangt fuer sie --force-unverified." >&2
+    fi
+    rm -f "$SIG_TMP"
     echo "Backup erstellt: ${OUT} ($(du -h "$OUT" | cut -f1))"
 else
     echo "FEHLER: Backup fehlgeschlagen." >&2

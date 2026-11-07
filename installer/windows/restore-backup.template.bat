@@ -4,7 +4,12 @@ setlocal DisableDelayedExpansion
 REM ============================================================
 REM PraxisZeit Backup Restore Template
 REM
-REM Usage: restore-backup.bat <backup-file.sql.gz>
+REM Usage: restore-backup.bat <backup-file.sql.gz> [--force-unverified]
+REM
+REM Audit 2026-11-07 (Fix-Runde S3-03): eingespielt wird nur eine Sicherung
+REM mit passender PraxisZeit-Signatur (letzte Zeile, HMAC mit dem SECRET_KEY
+REM dieser Installation). Eine Sicherung ohne Signatur (aeltere Version,
+REM uninstall.bat) oder von einem anderen Rechner nur mit --force-unverified.
 REM
 REM F-025: No hardcoded passwords. Credentials are read from
 REM config\.db-credentials which is created by praxiszeit-server.py on
@@ -31,7 +36,7 @@ echo ==============================================
 echo.
 
 if "%~1"=="" (
-    echo Usage: %~nx0 ^<backup-file.sql.gz^>
+    echo Usage: %~nx0 ^<backup-file.sql.gz^> [--force-unverified]
     echo.
     echo Example: %~nx0 C:\Backup\praxiszeit_20260411_120000.sql.gz
     pause
@@ -39,6 +44,8 @@ if "%~1"=="" (
 )
 
 SET "BACKUP_GZ=%~1"
+SET "PREP_FLAGS="
+if /i "%~2"=="--force-unverified" SET "PREP_FLAGS=--force-unverified"
 if not exist "%BACKUP_GZ%" (
     echo FEHLER: Backup-Datei nicht gefunden:
     echo   %BACKUP_GZ%
@@ -122,7 +129,9 @@ REM Nur einspielen, was pg_dump selbst schreibt (S3-03): psql fuehrt
 REM Backslash-Befehle aus dem Dump aus - hier mit Administratorrechten. Der
 REM Unterbefehl lehnt jeden anderen psql-Befehl ab und setzt einen eigenen
 REM \restrict-Schluessel, dann verweigert psql selbst jeden weiteren.
-"%PYTHON%" "%DIR%\praxiszeit-server.py" prepare-restore-dump "%BACKUP_DUMP%"
+REM Zuerst die Signatur (Exit 2 = fehlt oder passt nicht).
+"%PYTHON%" "%DIR%\praxiszeit-server.py" prepare-restore-dump %PREP_FLAGS% "%BACKUP_DUMP%"
+if errorlevel 2 goto :backup_unsigniert
 if errorlevel 1 goto :backup_abgelehnt
 echo OK.
 echo.
@@ -228,6 +237,18 @@ echo.
 echo FEHLER: Das Backup ist unvollstaendig oder kein lesbares gzip-Archiv -
 echo die Schlusszeile von pg_dump fehlt, etwa weil die Kopie abgebrochen ist.
 echo Es wurde nichts veraendert.
+echo.
+pause
+exit /b 1
+
+:backup_unsigniert
+del "%BACKUP_DUMP%" 2>nul
+echo.
+echo FEHLER: Die Sicherung traegt keine passende PraxisZeit-Signatur - siehe
+echo Meldung oben. Es wurde nichts veraendert.
+echo Nur wenn die Datei sicher aus Ihrer eigenen PraxisZeit-Installation stammt
+echo - etwa eine Sicherung vom alten Rechner -, erneut aufrufen mit:
+echo   %~nx0 "%BACKUP_GZ%" --force-unverified
 echo.
 pause
 exit /b 1

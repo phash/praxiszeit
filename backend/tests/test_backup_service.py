@@ -4,6 +4,7 @@ create_backup wird mit gemocktem subprocess.Popen getestet (kein echtes pg_dump 
 der SQLite-Suite); die Fehlerpfade (kein Superuser-URL, pg_dump fehlt) laufen echt.
 """
 import gzip
+import re
 import io
 import os
 import time
@@ -149,7 +150,18 @@ def test_create_backup_success_writes_gzipped_sql(db, default_tenant, tmp_path, 
     assert path.exists() and result.size_bytes > 0
     assert result.filename.startswith("praxiszeit_") and result.filename.endswith(".sql.gz")
     with gzip.open(path, "rb") as gz:
-        assert gz.read() == sql  # plain-SQL, einfach gunzip-bar (Restore-Pfad)
+        content = gz.read()
+    # plain-SQL, einfach gunzip-bar (Restore-Pfad); am Ende die Signaturzeile
+    # (Fix-Runde S3-03), für psql ein Kommentar.
+    assert content.startswith(sql)
+    trailer = content[len(sql):]
+    assert re.fullmatch(rb"-- praxiszeit-backup-hmac-v1 [0-9a-f]{64}\n", trailer), trailer
+    from app.config import settings
+    from app.core import backup_mac
+    with gzip.open(path, "rb") as gz:
+        assert backup_mac.verify_stream(gz, settings.SECRET_KEY) == backup_mac.OK
+    with gzip.open(path, "rb") as gz:
+        assert backup_mac.verify_stream(gz, "anderer-schluessel") == backup_mac.MISMATCH
 
 
 def test_create_backup_password_not_in_argv(db, default_tenant, tmp_path, monkeypatch):
