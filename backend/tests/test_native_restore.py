@@ -2015,3 +2015,33 @@ def test_unverifizierte_sicherung_mit_kindtabelle_wird_nicht_uebernommen(srv, in
     assert "reassign:praxiszeit_restore" not in cluster.events
     assert cluster.dbs["praxiszeit"] == _OLD
 
+
+
+def test_namen_mit_grossbuchstaben_oder_doppelt_werden_abgelehnt(srv):
+    """Review-Runde 7: die Abgleiche falten Namen klein. Eine Tabelle
+    "Users" (mit RLS) neben users (ohne RLS) verdeckte sonst die echte Zeile;
+    dasselbe fuer Trigger, Funktionen und Richtlinien."""
+    expected = srv.expected_db_tables(_VERSIONS, "076_audit_chain")
+    ok = {"tables": [{"schema": "public", "name": n, "kind": "r"}
+                     for n in sorted(expected | {"alembic_version"})],
+          "functions": [{"schema": "public", "name": "pz_audit_guard"}],
+          "triggers": [{"schema": "public", "name": "pz_audit_guard_write",
+                        "table": "time_entry_audit_logs"}],
+          "policies": [{"table": "users", "name": "tenant_isolation"}]}
+    assert srv.check_restored_identifiers(ok) == []
+    shadow = {**ok, "tables": ok["tables"] + [{"schema": "public", "name": "Users", "kind": "r"}]}
+    got = srv.check_restored_identifiers(shadow)
+    assert any("Users" in p for p in got)
+    # auch die Tabellenpruefung selbst laesst "Users" nicht mehr als users durch
+    assert any("Users" in p for p in srv.check_restored_tables(
+        {"tables": shadow["tables"], "inherits": []}, expected))
+    trig = {**ok, "triggers": ok["triggers"] + [
+        {"schema": "public", "name": "PZ_AUDIT_GUARD_WRITE", "table": "time_entry_audit_logs"}]}
+    assert any("PZ_AUDIT_GUARD_WRITE" in p for p in srv.check_restored_identifiers(trig))
+    trig_tab = {**ok, "triggers": [{"schema": "public", "name": "pz_audit_guard_write",
+                                    "table": "Time_Entry_Audit_Logs"}]}
+    assert srv.check_restored_identifiers(trig_tab)
+    func = {**ok, "functions": ok["functions"] + [{"schema": "public", "name": "Pz_Audit_Guard"}]}
+    assert srv.check_restored_identifiers(func)
+    pol = {**ok, "policies": [{"table": "users", "name": "Tenant_Isolation"}]}
+    assert srv.check_restored_identifiers(pol)

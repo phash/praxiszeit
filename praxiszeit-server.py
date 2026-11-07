@@ -4362,6 +4362,47 @@ def expected_db_tables(versions_dir: Path, revision: str) -> set:
     return tables
 
 
+_PLAIN_IDENTIFIER_RE = re.compile(r"[a-z_][a-z0-9_]*\Z")
+
+
+def check_restored_identifiers(found: dict) -> list[str]:
+    """Namen der eingespielten Tabellen, Funktionen, Trigger und Richtlinien
+    (Review-Runde 7) - leer = in Ordnung. Die Migrationen legen nur schlichte
+    Namen in Kleinschreibung an (``[a-z_][a-z0-9_]*``). Die uebrigen Abgleiche
+    vergleichen Namen ohne Anfuehrungszeichen; ein ``"Users"`` neben ``users``
+    oder ein Trigger ``"PZ_AUDIT_GUARD_WRITE"`` koennte dort die echte Zeile
+    verdecken. Solche Namen und doppelte Namen lehnt diese Pruefung ab."""
+    problems: list[str] = []
+
+    def plain(kind: str, name, where: str = "") -> None:
+        if not isinstance(name, str) or not _PLAIN_IDENTIFIER_RE.match(name):
+            problems.append(f"{kind} {name!r}{where} (Name, den keine Migration anlegt)")
+
+    seen_tables: set = set()
+    for t in found.get("tables") or []:
+        plain("Tabelle", t.get("name"))
+        key = (t.get("schema"), (t.get("name") or "").lower())
+        if key in seen_tables:
+            problems.append(f"Tabelle {t.get('name')!r} (doppelt)")
+        seen_tables.add(key)
+    for f in found.get("functions") or []:
+        plain("Funktion", f.get("name"))
+    seen_triggers: set = set()
+    for t in found.get("triggers") or []:
+        plain("Trigger", t.get("name"), f" auf {t.get('table')!r}")
+        plain("Tabelle", t.get("table"), f" des Triggers {t.get('name')!r}")
+        key = ((t.get("name") or "").lower(), (t.get("table") or "").lower())
+        if key in seen_triggers:
+            problems.append(f"Trigger {t.get('name')!r} auf {t.get('table')!r} (doppelt)")
+        seen_triggers.add(key)
+    for p in found.get("policies") or []:
+        if str(p.get("table") or "").startswith("pz_rls_"):
+            continue  # Vergleichskopien der Migrations-Policies, keine Sicherungsdaten
+        plain("Richtlinie", p.get("name"), f" auf {p.get('table')!r}")
+        plain("Tabelle", p.get("table"), f" der Richtlinie {p.get('name')!r}")
+    return problems
+
+
 def check_restored_tables(found: dict, expected_tables: set) -> list[str]:
     """Abweichungen der eingespielten Tabellen (``found``, Ergebnis von
     :data:`_ROUTINE_CATALOG_SQL`) von den Migrationen - leer = in Ordnung.
@@ -4374,7 +4415,7 @@ def check_restored_tables(found: dict, expected_tables: set) -> list[str]:
             problems.append(f"{label} (unerwartet)")
         elif (t.get("kind") or "r") != "r":
             problems.append(f"{label} (partitionierte oder Fremdtabelle - legt keine Migration an)")
-        elif (t.get("name") or "").lower() not in allowed:
+        elif (t.get("name") or "") not in allowed:
             problems.append(f"{label} (legt keine Migration an)")
     for i in found.get("inherits") or []:
         problems.append(f"Vererbung/Partition: {i.get('child')} haengt an {i.get('parent')} "
@@ -4652,6 +4693,8 @@ def _assert_routines_match_migrations(superuser: str, env: dict, revision: str,
                 f"{_psql_error_tail(result)}")
     problems += check_restored_rls(found.get("tables") or [], expected_rls, deparsed, order)
     problems += check_restored_tables(found, expected_db_tables(versions_dir, revision))
+    problems += check_restored_identifiers(
+        {**found, "policies": (deparsed or {}).get("found") or []})
     if problems:
         shown = "\n".join(f"  - {p}" for p in problems[:20])
         more = f"\n  ... und {len(problems) - 20} weitere" if len(problems) > 20 else ""
