@@ -687,7 +687,7 @@ def test_secure_install_ps1_resets_the_contents_of_data_logs_config():
     selbst eine exakte DACL - ein vorab angelegtes data\\backups mit eigenem
     Eintrag behielt Lesezugriff auf jede Sicherung, ein leeres data\\db
     Schreibzugriff auf postgresql.conf. Die Inhalte gehen auf die geerbten
-    Rechte zurueck, nur ein initialisiertes data\\db (PG_VERSION) nicht."""
+    Rechte zurueck."""
     code = _code_lines(_read("installer/windows/secure-install.ps1").decode("ascii"), "#")
     exact = code.index("'config' { Set-ExactDacl $p $SddlConfig")
     block = code[exact:code.index("if ($SkipManifest)")]
@@ -695,10 +695,88 @@ def test_secure_install_ps1_resets_the_contents_of_data_logs_config():
     assert "Get-ChildItem -LiteralPath $p -Force" in block
     assert "Invoke-Icacls @($child.FullName, '/reset', '/T', '/C', '/Q')" in block
     assert "Invoke-Icacls @($child.FullName, '/reset', '/C', '/Q')" in block
-    assert "$child.Name -eq 'db'" in block and "'PG_VERSION'" in block
     assert "Test-ReparsePoint $child.FullName" in block
     # Mandatory: ein gescheitertes Zuruecksetzen bricht ab (Exit 1), kein $false
     assert "'/reset', '/T', '/C', '/Q') $false" not in block
+
+
+def test_secure_install_ps1_never_trusts_a_pg_version_file(srv):
+    """Audit round 4: an initialised data\\db (PG_VERSION) used to be exempt from
+    the reset. Anyone able to write there could plant PG_VERSION and keep their
+    own entries on postgresql.conf. data\\db is now left alone only if it and
+    everything below it is owned by, and grants access only to, SYSTEM,
+    Administrators and the PostgreSQL service account; otherwise it is reset
+    and gets back exactly the service entry pg_start grants."""
+    code = _code_lines(_read("installer/windows/secure-install.ps1").decode("ascii"), "#")
+    assert "PG_VERSION" not in code
+
+    fn = code[code.index("function Test-ServiceOnlyAcl"):code.index("function Assert-NoReparsePointBelow")]
+    assert "$okSids = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-20')" in fn
+    assert "$okSids -notcontains $acl.GetOwner($sidType).Value) { return $false }" in fn
+    assert "foreach ($rule in $acl.GetAccessRules($true, $true, $sidType))" in fn
+    assert "$okSids -notcontains $rule.IdentityReference.Value) { return $false }" in fn
+    assert "-band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return $false }" in fn
+    # the whole tree, not only data\\db itself; any error -> not trusted
+    assert "Get-ChildItem -LiteralPath $item.FullName -Force -ErrorAction Stop" in fn
+    assert "$items.Push($c)" in fn
+    assert fn.rstrip().endswith("return $true\n}")
+    catch = fn[fn.index("} catch {"):]
+    assert catch.split("}", 2)[1].strip() == "catch {\n        return $false"
+    assert "Write-Output" not in fn  # its pipeline output is the verdict
+
+    block = code[code.index("if ($entry.Name -in @('data', 'logs', 'config'))"):
+                 code.index("if ($SkipManifest)")]
+    assert ("$isDb = ($entry.Name -eq 'data' -and $child.Name -eq 'db' -and $child.PSIsContainer)"
+            in block)
+    assert "if ($isDb -and (Test-ServiceOnlyAcl $child.FullName)) { continue }" in block
+    reset = block.index("Invoke-Icacls @($child.FullName, '/reset', '/T', '/C', '/Q')")
+    grant_line = ("Invoke-Icacls @($child.FullName, '/grant', "
+                  "\"${SidNetworkService}:(OI)(CI)F\", '/T', '/C', '/Q')")
+    grant = block.index(grant_line)
+    assert reset < grant
+    gate = block.rindex("\n", 0, grant)
+    assert block[block.rindex("\n", 0, gate) + 1:gate].strip() == "if ($isDb) {"
+    # same ACE as praxiszeit-server.py grants the PostgreSQL service account
+    server = srv._build_icacls_grant_args(Path("C:/x/data/db"), "F")
+    assert server[2] == "/grant" and server[3] == "*S-1-5-20:(OI)(CI)F" and "/T" in server
+    assert "$SidNetworkService = '*S-1-5-20'" in code
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def test_secure_install_ps1_checks_every_recursive_icacls_for_reparse_points():
+    """Audit round 4: ``icacls /setowner|/reset /T`` follows junctions and
+    symbolic links below the first level. Every subtree handed to icacls with
+    /T is walked first - at every depth, never entering a reparse point - and
+    the install is refused (exit 2) if one exists."""
+    code = _code_lines(_read("installer/windows/secure-install.ps1").decode("ascii"), "#")
+    fn = code[code.index("function Assert-NoReparsePointBelow"):]
+    fn = fn[:fn.index("\n}\n") + 3]
+    assert "-Recurse" not in code  # PS 5.1 -Recurse follows directory links itself
+    assert "Get-ChildItem -LiteralPath $d -Force -ErrorAction Stop" in fn
+    check = fn.index("-band [System.IO.FileAttributes]::ReparsePoint")
+    assert check < fn.index("$found.Add($item.FullName)") < fn.index("continue") \
+        < fn.index("if ($item.PSIsContainer) { $stack.Push($item.FullName) }")
+    assert "exit 2" in fn and "exit 1" in fn  # found / not listable
+    assert fn.count("return") == 0  # statement, never assigned (messages would vanish)
+
+    lines = code.splitlines()
+    required = {"$sub.FullName": "$sub.FullName", "$p": "$p", "$child.FullName": "$p"}
+    recursive = [i for i, line in enumerate(lines)
+                 if "Invoke-Icacls @(" in line and "'/T'" in line]
+    assert len(recursive) >= 6
+    for i in recursive:
+        target = lines[i].split("Invoke-Icacls @(", 1)[1].split(",", 1)[0].strip()
+        assert target in required, lines[i]
+        j = i - 1
+        while not lines[j].strip().startswith("Assert-NoReparsePointBelow "):
+            # the check must sit in the same branch, not in a sibling one
+            assert not (lines[j].strip().startswith("}") and "else" in lines[j]
+                        and _indent(lines[j]) < _indent(lines[i])), (lines[i], lines[j])
+            j -= 1
+        assert lines[j].strip() == f"Assert-NoReparsePointBelow {required[target]}", lines[i]
 
 
 def test_setup_bat_secures_install_dir_before_any_python():

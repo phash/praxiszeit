@@ -24,15 +24,21 @@ param(
 #      app, Dateien der Wurzel) auf die geerbten Rechte zuruecksetzen - explizite
 #      Eintraege, die jemand an einzelne Dateien gehaengt hat, verschwinden.
 #      data, logs, config: eigene DACL aus der Positivliste, Inhalte auf die
-#      geerbten Rechte zurueck (ausser einem initialisierten data\db).
+#      geerbten Rechte zurueck. data\db bleibt nur unangetastet, wenn es samt
+#      Inhalt schon ausschliesslich SYSTEM, Administratoren und dem
+#      PostgreSQL-Dienst (NetworkService) gehoert und nur ihnen Rechte gibt;
+#      sonst wird es zurueckgesetzt und bekommt den Dienst-Eintrag neu.
 #      Ein bin\postgresql, das setup.bat als Verknuepfung auf ein System-
-#      PostgreSQL angelegt hat, wird nicht betreten.
+#      PostgreSQL angelegt hat, wird nicht betreten. Jede andere Verknuepfung
+#      (Junction, symbolischer Link) in einem Teilbaum, den icacls mit /T
+#      bearbeitet, sperrt die Installation (Exit 2) - icacls /T folgt ihnen.
 #   3. Abgleich mit bin\payload-manifest.txt (beim Bauen erzeugt): jede Datei
 #      unter bin\ und app\, die nicht zum Paket gehoert, sperrt die Installation
 #      mit Hinweis (Exit 2). Zwischengespeicherte .pyc in __pycache__, die nicht
 #      im Paket stehen, werden geloescht - Python erzeugt sie neu.
 #
-# Exit 0 = gesichert, 1 = Rechte nicht setzbar, 2 = fremde Dateien gefunden.
+# Exit 0 = gesichert, 1 = Rechte nicht setzbar, 2 = fremde Dateien oder
+# Verknuepfungen gefunden.
 # ============================================================
 
 # 'Continue': unter Windows PowerShell 5.1 macht 'Stop' jede stderr-Zeile eines
@@ -97,6 +103,87 @@ function Test-ReparsePoint([string]$Path) {
     return (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
 }
 
+function Test-ServiceOnlyAcl([string]$Dir) {
+    # Audit-Runde 4: $true nur, wenn $Dir und ALLES darin einem von SYSTEM,
+    # Administratoren, NetworkService (PostgreSQL-Dienst) gehoert und
+    # ausschliesslich Eintraege fuer diese drei Konten traegt (geerbt oder
+    # explizit) - so wie pg_init/pg_start das Datenverzeichnis hinterlassen.
+    # Dann hat kein anderes Konto Zugriff, ein Zuruecksetzen waere nur ein
+    # Risiko fuer den laufenden Datenbankdienst (Update-Assistent: der Dienst
+    # laeuft beim ersten Aufruf noch). Ganzer Baum, nicht nur der Ordner: eine
+    # geschuetzte DACL an data\db\postgresql.conf reichte sonst. Verknuepfung,
+    # nicht lesbarer Eintrag oder Fehler = $false (dann wird zurueckgesetzt).
+    # Frueher genuegte eine Datei PG_VERSION - die kann jeder anlegen, der
+    # dort schreiben darf. Nur $true/$false in die Pipeline.
+    $okSids = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-20')
+    $sidType = [System.Security.Principal.SecurityIdentifier]
+    $sections = [System.Security.AccessControl.AccessControlSections]'Access, Owner'
+    try {
+        $top = Get-Item -LiteralPath $Dir -Force -ErrorAction Stop
+        $items = New-Object System.Collections.Generic.Stack[object]
+        $items.Push($top)
+        while ($items.Count -gt 0) {
+            $item = $items.Pop()
+            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return $false }
+            $acl = $item.GetAccessControl($sections)
+            if ($okSids -notcontains $acl.GetOwner($sidType).Value) { return $false }
+            foreach ($rule in $acl.GetAccessRules($true, $true, $sidType)) {
+                if ($okSids -notcontains $rule.IdentityReference.Value) { return $false }
+            }
+            if ($item.PSIsContainer) {
+                foreach ($c in @(Get-ChildItem -LiteralPath $item.FullName -Force -ErrorAction Stop)) {
+                    $items.Push($c)
+                }
+            }
+        }
+    } catch {
+        return $false
+    }
+    return $true
+}
+
+function Assert-NoReparsePointBelow([string]$Dir) {
+    # Audit-Runde 4: "icacls /setowner|/reset /T" folgt Junctions und
+    # symbolischen Links unterhalb der ersten Ebene - eine vorab angelegte
+    # Junction data\backups\x -> C:\Windows\System32 haette dort Eigentuemer
+    # und Rechte umgeschrieben. Deshalb VOR jedem /T den ganzen Teilbaum
+    # selbst ablaufen: in jeder Tiefe Attributes -band ReparsePoint pruefen,
+    # eine Verknuepfung nie betreten, sondern melden und sperren (Exit 2).
+    # Iterativ statt Get-ChildItem -Recurse: das folgt unter Windows
+    # PowerShell 5.1 Verzeichnis-Verknuepfungen selbst. Ein Ordner, der sich
+    # nicht auflisten laesst, ist ungeprueft und sperrt ebenfalls (Exit 1).
+    # Aufruf als Anweisung, nie zuweisen: die Meldungen gehen sonst verloren.
+    $found = New-Object System.Collections.Generic.List[string]
+    $stack = New-Object System.Collections.Generic.Stack[string]
+    $stack.Push($Dir)
+    while ($stack.Count -gt 0) {
+        $d = $stack.Pop()
+        try {
+            $items = @(Get-ChildItem -LiteralPath $d -Force -ErrorAction Stop)
+        } catch {
+            Write-Output "FEHLER: $d laesst sich nicht auflisten und damit nicht auf Verknuepfungen pruefen - $_"
+            exit 1
+        }
+        foreach ($item in $items) {
+            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                $found.Add($item.FullName)
+                continue
+            }
+            if ($item.PSIsContainer) { $stack.Push($item.FullName) }
+        }
+    }
+    if ($found.Count -gt 0) {
+        Write-Output "FEHLER: Unter $Dir liegen Verknuepfungen (Junction oder symbolischer Link)."
+        Write-Output 'Beim Zuruecksetzen der Rechte wuerde ihnen gefolgt und Eigentuemer und Rechte'
+        Write-Output 'ausserhalb des Installationsordners geaendert. Die Installation ist gesperrt,'
+        Write-Output 'bis diese Verknuepfungen entfernt sind (oder in einen neuen, leeren Ordner'
+        Write-Output 'installieren):'
+        foreach ($f in ($found | Select-Object -First 50)) { Write-Output "  $f" }
+        if ($found.Count -gt 50) { Write-Output "  ... und $($found.Count - 50) weitere" }
+        exit 2
+    }
+}
+
 try {
     $root = (Resolve-Path -LiteralPath $InstallDir -ErrorAction Stop).ProviderPath.TrimEnd('\')
 } catch {
@@ -133,6 +220,7 @@ foreach ($entry in Get-ChildItem -LiteralPath $root -Force) {
                 if ($sub.FullName -eq $pgDir -and $pgIsLink) { continue }
                 if (Test-ReparsePoint $sub.FullName) { continue }
                 if ($sub.PSIsContainer) {
+                    Assert-NoReparsePointBelow $sub.FullName
                     Invoke-Icacls @($sub.FullName, '/setowner', $SidAdmins, '/T', '/C', '/Q')
                     Invoke-Icacls @($sub.FullName, '/reset', '/T', '/C', '/Q')
                 } else {
@@ -141,12 +229,16 @@ foreach ($entry in Get-ChildItem -LiteralPath $root -Force) {
                 }
             }
         } elseif ($entry.Name -eq 'app') {
+            Assert-NoReparsePointBelow $p
             Invoke-Icacls @($p, '/setowner', $SidAdmins, '/T', '/C', '/Q')
             Invoke-Icacls @($p, '/reset', '/T', '/C', '/Q')
         } else {
             # data, config, logs: Eigentuemer fuer den Baum, die eigene DACL
             # genau aus der Positivliste (wie praxiszeit-server.py
-            # harden-permissions danach); die Inhalte siehe unten.
+            # harden-permissions danach); die Inhalte siehe unten. Erst den
+            # Teilbaum auf Verknuepfungen pruefen (deckt auch das /reset /T
+            # der Inhalte unten ab).
+            Assert-NoReparsePointBelow $p
             Invoke-Icacls @($p, '/setowner', $SidAdmins, '/T', '/C', '/Q')
             switch ($entry.Name) {
                 'data' { Set-ExactDacl $p $SddlData @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-20') }
@@ -157,18 +249,27 @@ foreach ($entry in Get-ChildItem -LiteralPath $root -Force) {
             # zuruecksetzen. Wer data\backups (oder ein leeres data\db) vor der
             # Installation mit geschuetzter DACL und eigenem Eintrag anlegt,
             # behielte sonst Lesezugriff auf jede naechtliche Sicherung bzw.
-            # Schreibzugriff auf postgresql.conf. Ausnahme: ein schon
-            # initialisiertes data\db (PG_VERSION) behaelt seine Eintraege fuer
-            # den PostgreSQL-Dienst. Vertrauliche Dateien (config\*.conf,
-            # key.pem, license.key) haertet setup.bat bzw. der Dienststart danach
-            # wieder eigens.
+            # Schreibzugriff auf postgresql.conf. data\db bleibt nur stehen,
+            # wenn es samt Inhalt schon nur dem Dienst gehoert
+            # (Test-ServiceOnlyAcl; frueher reichte eine Datei PG_VERSION, die
+            # jeder mit Schreibrecht anlegen konnte - Audit-Runde 4). Sonst wird
+            # es zurueckgesetzt und bekommt wieder genau den Eintrag fuer den
+            # PostgreSQL-Dienst - NetworkService Vollzugriff (OI)(CI), dieselbe
+            # icacls-Zeile wie praxiszeit-server.py _build_icacls_grant_args
+            # bei pg_init/pg_start. Vertrauliche
+            # Dateien (config\*.conf, key.pem, license.key) haertet setup.bat
+            # bzw. der Dienststart danach wieder eigens.
             if ($entry.Name -in @('data', 'logs', 'config')) {
                 foreach ($child in Get-ChildItem -LiteralPath $p -Force) {
                     if (Test-ReparsePoint $child.FullName) { continue }
-                    if ($entry.Name -eq 'data' -and $child.Name -eq 'db' -and
-                        (Test-Path -LiteralPath (Join-Path $child.FullName 'PG_VERSION'))) { continue }
+                    $isDb = ($entry.Name -eq 'data' -and $child.Name -eq 'db' -and $child.PSIsContainer)
+                    if ($isDb -and (Test-ServiceOnlyAcl $child.FullName)) { continue }
                     if ($child.PSIsContainer) {
+                        if ($isDb) { Write-Output "HINWEIS: $($child.FullName) trug Rechte anderer Konten - wird zurueckgesetzt." }
                         Invoke-Icacls @($child.FullName, '/reset', '/T', '/C', '/Q')
+                        if ($isDb) {
+                            Invoke-Icacls @($child.FullName, '/grant', "${SidNetworkService}:(OI)(CI)F", '/T', '/C', '/Q')
+                        }
                     } else {
                         Invoke-Icacls @($child.FullName, '/reset', '/C', '/Q')
                     }
