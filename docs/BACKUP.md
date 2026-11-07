@@ -84,8 +84,16 @@ Datei bleibt ein normaler Dump.
 Sicherung von `uninstall.bat`, ein von Hand erstellter Dump) oder mit einer
 Signatur eines anderen `SECRET_KEY` (anderer Rechner) brechen sie ab, **bevor**
 etwas verändert wird. Stammt die Datei sicher aus der eigenen Installation,
-den Aufruf mit `--force-unverified` wiederholen — die Prüfung auf fremde
-Befehle läuft trotzdem:
+den Aufruf mit `--force-unverified` wiederholen. Nativ (`restore`,
+`restore-backup.bat`) läuft die Prüfung auf fremde Befehle trotzdem: abgelehnt
+werden psql-Befehle, Rollen und Rollen-Mitgliedschaften, Daten-Anweisungen
+außerhalb von `COPY` (pg_dump schreibt Daten nur als `COPY`) und jeder Zugriff
+auf Systemkataloge wie `pg_authid` außerhalb der Funktionsrümpfe sowie jeder
+schreibende Zugriff darauf in einem Funktionsrumpf. **`restore.sh` (Docker)
+prüft die Anweisungen nicht** — dort sperrt nur der eigene `\restrict`-Schlüssel
+die psql-Befehle; eine erzwungene Sicherung läuft sonst ungeprüft als
+Datenbank-Superuser. Mit `--force-unverified` unter Docker also nur Dateien
+einspielen, die nachweislich von der eigenen Installation stammen:
 
 ```bash
 sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore <datei>.sql.gz --force-unverified

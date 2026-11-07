@@ -488,6 +488,8 @@ def test_restore_force_unverified_loads_an_unsigned_dump_with_warning(tmp_path):
                                args=("--force-unverified",))
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "WARNUNG" in proc.stderr and "--force-unverified" in proc.stderr
+    # Final-Review (S3-03): die fehlende Anweisungspruefung wird genannt
+    assert "prueft die SQL-Anweisungen der Datei nicht" in proc.stderr
     _restore_idx(calls)
 
 

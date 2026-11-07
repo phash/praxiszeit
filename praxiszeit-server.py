@@ -3343,7 +3343,8 @@ UNVERIFIED_HINT = (
     "Nur wenn die Datei sicher aus der eigenen PraxisZeit-Installation stammt "
     "(z. B. eine Sicherung vom alten Rechner mit anderem SECRET_KEY): den Aufruf "
     "mit --force-unverified wiederholen. Die Datei wird dann trotzdem auf "
-    "Befehle geprueft, die pg_dump nie schreibt."
+    "Befehle geprueft, die pg_dump nie schreibt (psql-Befehle, Rollen, "
+    "Daten-Anweisungen ausserhalb von COPY, Zugriffe auf Systemkataloge)."
 )
 
 
@@ -3395,6 +3396,13 @@ _DUMP_FORBIDDEN_STATEMENTS = (
     (re.compile(r"^(CREATE|ALTER)\s+(SERVER|FOREIGN|SUBSCRIPTION|PUBLICATION|TABLESPACE)\b"),
      "Server, Abo oder Tablespace"),
     (re.compile(r"^SECURITY\s+LABEL\b"), "SECURITY LABEL"),
+    # Final-Review (S3-03-Rest): pg_dump schreibt Daten nur als COPY - jede
+    # Daten-Anweisung (auch eine CTE oder EXPLAIN ANALYZE davor) ist fremd.
+    # ``UPDATE pg_catalog.pg_authid SET rolsuper = true`` kaeme sonst durch und
+    # ueberlebte als clusterweiter Katalog den Datenbanktausch.
+    (re.compile(r"^(INSERT|UPDATE|DELETE|TRUNCATE|MERGE|WITH|VALUES|TABLE|EXPLAIN|PREPARE|"
+                r"EXECUTE|IMPORT|LOCK)\b"),
+     "Daten-Anweisung ausserhalb von COPY"),
 )
 # Funktionen, die Server-Dateien/-Programme erreichen, Rechte/Sitzung aendern
 # oder einen SQL-Text ausfuehren - in Ausdruecken (CHECK, DEFAULT, Index) wie
@@ -3411,6 +3419,20 @@ _DUMP_FORBIDDEN_CALLS_RE = re.compile(
 _DUMP_FORBIDDEN_BODY_RE = re.compile(
     r"\b(EXECUTE|COPY|LOAD|CALL|ALTER\s+(ROLE|USER|GROUP|SYSTEM|DATABASE)|"
     r"(CREATE|DROP)\s+(ROLE|USER|GROUP)|GRANT|REVOKE|SET\s+(ROLE|SESSION)|RESET|DO\s*[$'])"
+)
+# Final-Review (S3-03-Rest): Systemkataloge (pg_authid, pg_auth_members, ...)
+# kommen in Anweisungen von pg_dump ausserhalb von Literalen nicht vor - nur
+# Funktionsaufrufe (pg_catalog.setval(...)), das Schema pg_catalog selbst und
+# die Rolle pg_database_owner. Erweiterungsnamen (pg_trgm) stehen in CREATE/
+# COMMENT ON EXTENSION und sind dort eigens geprueft.
+_DUMP_CATALOG_REF_RE = re.compile(
+    r"\bPG_(?!CATALOG\b|DATABASE_OWNER\b)[A-Z0-9_]+\b(?!\s*\()")
+# Schreibende Anweisung auf einen Systemkatalog in einem Funktionsrumpf. Die
+# eigenen Trigger von PraxisZeit LESEN pg_class/pg_roles - erlaubt.
+_DUMP_CATALOG_WRITE_RE = re.compile(
+    r"\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE(\s+TABLE)?|MERGE\s+INTO|"
+    r"ALTER\s+TABLE(\s+IF\s+EXISTS)?|LOCK(\s+TABLE)?|COPY)\s+(ONLY\s+)?"
+    r"(PG_CATALOG\s*\.\s*)?PG_[A-Z0-9_]+"
 )
 _DUMP_FUNCTION_RE = re.compile(r"^CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE|AGGREGATE)\b")
 _DUMP_FUNCTION_LANG_RE = re.compile(r"\bLANGUAGE\s+\"?([A-Z0-9_]+)")
@@ -3605,6 +3627,9 @@ def _check_dump_statement(stmt: str, raw: str, lineno: int) -> None:
             raise _forbidden_statement(f"Erweiterung {name.lower()}", lineno)
     if _DUMP_FORBIDDEN_CALLS_RE.search(calls):
         raise _forbidden_statement("Server-Datei-, Programm- oder Rechtezugriff", lineno)
+    if (not re.match(r"^(CREATE|ALTER|DROP|COMMENT ON) EXTENSION\b", text)
+            and _DUMP_CATALOG_REF_RE.search(calls)):
+        raise _forbidden_statement("Zugriff auf einen Systemkatalog", lineno)
     if _DUMP_FUNCTION_RE.match(text):
         lang = _DUMP_FUNCTION_LANG_RE.search(upper)
         if lang and lang.group(1) not in ("SQL", "PLPGSQL"):
@@ -3613,6 +3638,78 @@ def _check_dump_statement(stmt: str, raw: str, lineno: int) -> None:
         if _DUMP_FORBIDDEN_BODY_RE.search(body) or _DUMP_FORBIDDEN_CALLS_RE.search(body):
             raise _forbidden_statement("Funktion mit dynamischem SQL oder Rechte-/Dateizugriff",
                                        lineno)
+        # Rumpf zusaetzlich als SQL lesen (ohne seine Kommentare und inneren
+        # Literale): ``UPDATE /**/ pg_authid`` oder ein ``'--'`` davor duerfen
+        # die Pruefung nicht aushebeln.
+        for code in [body] + _function_body_code(raw, lineno):
+            if _DUMP_CATALOG_WRITE_RE.search(code):
+                raise _forbidden_statement("Funktion schreibt in einen Systemkatalog", lineno)
+
+
+def _literal_contents(raw: str) -> list[str]:
+    """Inhalte der Zeichenketten-Literale einer Anweisung ('..', E'..', $tag$..$tag$)
+    - die Rumpf-Kandidaten einer CREATE FUNCTION."""
+    found, i, n = [], 0, len(raw)
+    dollar = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
+    while i < n:
+        c = raw[i]
+        if c == '"':
+            j = raw.find('"', i + 1)
+            while j != -1 and raw[j + 1:j + 2] == '"':
+                j = raw.find('"', j + 2)
+            i = n if j == -1 else j + 1
+            continue
+        if c == "'":
+            estring = (i > 0 and raw[i - 1] in "Ee"
+                       and not (i > 1 and (raw[i - 2].isalnum() or raw[i - 2] in "_$")))
+            buf, j = [], i + 1
+            while j < n:
+                if estring and raw[j] == "\\":
+                    buf.append(raw[j + 1:j + 2])
+                    j += 2
+                    continue
+                if raw[j] == "'":
+                    if raw[j + 1:j + 2] == "'":
+                        buf.append("'")
+                        j += 2
+                        continue
+                    break
+                buf.append(raw[j])
+                j += 1
+            found.append("".join(buf))
+            i = j + 1
+            continue
+        if c == "$" and not (i > 0 and (raw[i - 1].isalnum() or raw[i - 1] in "_$")):
+            m = dollar.match(raw, i)
+            if m:
+                end = raw.find(m.group(0), m.end())
+                end = n if end == -1 else end
+                found.append(raw[m.end():end])
+                i = end + len(m.group(0))
+                continue
+        i += 1
+    return found
+
+
+def _function_body_code(raw: str, lineno: int) -> list[str]:
+    """Je Literal der Funktion der SQL-Text ohne Kommentare und innere Literale
+    (gleicher Lexer wie fuer den Dump), gross, ohne Anfuehrungszeichen, mit
+    zusammengezogenem Leerraum."""
+    codes = []
+    for content in _literal_contents(raw):
+        scanner = _DumpScanner()
+        parts = []
+        for line in content.encode("utf-8", "replace").split(b"\n"):
+            try:
+                _copy, stmts = scanner.feed(line.rstrip(b"\r"), lineno)
+            except RestoreError:
+                # Ein Backslash ausserhalb von Zeichenketten ist in SQL/plpgsql
+                # ohnehin ungueltig - der Rumpf wird so nie geschrieben.
+                raise _forbidden_statement("Funktion mit unlesbarem Rumpf", lineno)
+            parts.extend(stmt for stmt, _full in stmts)
+        parts.append(scanner.stmt.decode("utf-8", "replace"))
+        codes.append(" ".join(" ; ".join(parts).split()).upper().replace('"', ""))
+    return codes
 
 
 def validate_restore_dump(sql: Path, out=None) -> None:

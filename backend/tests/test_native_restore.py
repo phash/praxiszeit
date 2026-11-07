@@ -891,6 +891,26 @@ def test_dump_mit_psql_befehl_wird_abgelehnt(srv, tmp_path, body):
     "CREATE EVENT TRIGGER t ON ddl_command_start EXECUTE FUNCTION f();\n",
     "CREATE FUNCTION f() RETURNS int AS '/tmp/x.so', 'f' LANGUAGE C;\n",
     "LOAD '/tmp/x.so';\n",
+    # Final-Review (S3-03-Rest): Daten-Anweisungen und Katalog-Schreibzugriffe
+    # kamen auf dem --force-unverified-Weg durch (pg_authid ist clusterweit und
+    # ueberlebt den Datenbanktausch).
+    "UPDATE pg_catalog.pg_authid SET rolsuper=true, rolbypassrls=true WHERE rolname='praxiszeit_app';\n",
+    "INSERT INTO pg_catalog.pg_auth_members (roleid, member, grantor) VALUES (10, 16384, 10);\n",
+    "CREATE FUNCTION f() RETURNS void LANGUAGE sql AS "
+    "'UPDATE pg_catalog.pg_authid SET rolsuper=true; SELECT 1';\n",
+    "CREATE FUNCTION f() RETURNS void LANGUAGE sql AS $$UPDATE /**/ pg_authid SET rolsuper=true$$;\n",
+    "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS "
+    "$$BEGIN PERFORM '--'; UPDATE /*x*/ pg_authid SET rolsuper=true; END$$;\n",
+    "CREATE FUNCTION f() RETURNS void LANGUAGE sql AS $$UPDATE --x\n pg_authid SET rolsuper=true$$;\n",
+    "CREATE FUNCTION f() RETURNS int LANGUAGE sql BEGIN ATOMIC "
+    "UPDATE pg_catalog.pg_authid SET rolsuper=true; SELECT 1; END;\n",
+    "WITH x AS (UPDATE public.users SET role='admin' RETURNING 1) SELECT 1;\n",
+    "DELETE FROM public.users;\n",
+    "INSERT INTO t VALUES (1) ON CONFLICT DO NOTHING;\n",
+    "TRUNCATE public.time_entry_audit_logs;\n",
+    "EXPLAIN ANALYZE UPDATE pg_authid SET rolsuper=true;\n",
+    "CREATE RULE r AS ON INSERT TO public.t DO ALSO UPDATE pg_catalog.pg_authid SET rolsuper=true;\n",
+    'ALTER TABLE pg_catalog."pg_authid" OWNER TO praxiszeit_app;\n',
 ])
 def test_dump_mit_fremder_anweisung_wird_abgelehnt(srv, tmp_path, body):
     with pytest.raises(srv.RestoreError, match="pg_dump nie"):
@@ -911,6 +931,25 @@ def test_echter_dump_mit_copy_daten_und_literalen_geht_durch(srv, tmp_path):
         "\\! sieht aus wie ein Befehl, ist aber eine Datenzeile\n"
         "\\.\n"
         "SELECT pg_catalog.setval('public.t_id_seq', 1, false);\n"
+    )
+    _check(srv, tmp_path, body)  # wirft nicht
+
+
+def test_lesende_katalogabfrage_im_trigger_und_erweiterung_gehen_durch(srv, tmp_path):
+    """Gegenprobe: die Trigger von PraxisZeit (Migration 076, RLS-Wächter) LESEN
+    pg_class/pg_roles im Rumpf, und pg_dump schreibt pg_trgm als Erweiterung —
+    beides bleibt erlaubt."""
+    body = (
+        "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;\n"
+        "COMMENT ON EXTENSION pg_trgm IS 'text similarity';\n"
+        "CREATE FUNCTION public.pz_audit_guard() RETURNS trigger\n    LANGUAGE plpgsql\n"
+        "    SET search_path TO 'public', 'pg_temp'\n    AS $$\nDECLARE tbl_owner oid;\nBEGIN\n"
+        "    SELECT relowner INTO tbl_owner FROM pg_class WHERE oid = TG_RELID;\n"
+        "    IF pg_has_role(current_user, tbl_owner, 'MEMBER')\n"
+        "       OR COALESCE((SELECT rolsuper FROM pg_roles WHERE rolname = current_user), false) THEN\n"
+        "        IF TG_OP = 'UPDATE' THEN RETURN NEW; END IF;\n    END IF;\n"
+        "    RAISE EXCEPTION 'nur anfuegbar';\nEND;\n$$;\n"
+        "-- Name: SCHEMA public; Type: ACL; Schema: -; Owner: pg_database_owner\n"
     )
     _check(srv, tmp_path, body)  # wirft nicht
 
@@ -1259,7 +1298,9 @@ def test_dump_mit_gefaehrlicher_anweisung_wird_abgelehnt(srv, tmp_path, body):
     "GRANT SELECT ON TABLE public.t TO praxiszeit_app;\n",
     "REVOKE ALL ON SCHEMA public FROM PUBLIC;\n",
     "CREATE FUNCTION public.f() RETURNS text LANGUAGE plpgsql AS $$BEGIN RETURN 'x'; END$$;\n",
-    "INSERT INTO t VALUES (1) ON CONFLICT DO NOTHING;\n",
+    # Final-Review (S3-03-Rest): INSERT ist nicht mehr dabei - alle Sicherungswege
+    # (backup, uninstall.bat, install.sh, Docker) rufen pg_dump ohne --inserts
+    # auf, Daten kommen nur als COPY.
     "CREATE TABLE \"x ON y\" (a int);\n",
 ])
 def test_dump_mit_ueblichen_anweisungen_geht_durch(srv, tmp_path, body):

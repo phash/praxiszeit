@@ -99,6 +99,9 @@ if [ "$_mac_rc" != 0 ]; then
         exit 1
     fi
     echo "WARNUNG: $_why Eingespielt wird trotzdem (--force-unverified)." >&2
+    # Final-Review (S3-03): anders als nativ (praxiszeit-server.py) gibt es hier
+    # keine Anweisungspruefung - nur der \restrict-Schluessel sperrt psql-Befehle.
+    echo "WARNUNG: restore.sh prueft die SQL-Anweisungen der Datei nicht; sie laufen als Datenbank-Superuser." >&2
 fi
 
 PG_USER="$(grep -E '^POSTGRES_USER=' .env | head -1 | cut -d= -f2-)"
