@@ -256,6 +256,10 @@ def pg_cmd(cmd: str) -> Path:
     return PG_BIN / f"{cmd}{suffix}"
 
 
+# Windows connects over TCP (localhost:<port>); see _database_url / pg_env.
+PG_REQUIRE_AUTH = "scram-sha-256"
+
+
 def pg_env() -> dict:
     """Environment for PG subprocesses with bundled libs on the loader path.
 
@@ -272,6 +276,8 @@ def pg_env() -> dict:
         # einen fremden Cluster lenken; unser Port steht in [database] port.
         env["PGHOST"] = "localhost"
         env["PGPORT"] = str(pg_port())
+        # psql/pg_dump/pg_isready ueber TCP: nur SCRAM, nie Klartext (S3-07).
+        env["PGREQUIREAUTH"] = PG_REQUIRE_AUTH
     else:
         existing = env.get("LD_LIBRARY_PATH", "")
         env["LD_LIBRARY_PATH"] = f"{pg_lib}:{existing}" if existing else pg_lib
@@ -465,7 +471,13 @@ def _database_url(user: str, password: str, db: str) -> str:
     # an operator-supplied password containing a space or '+').
     cred = f"{quote(user, safe='')}:{quote(password, safe='')}"
     if IS_WINDOWS:
-        return f"postgresql://{cred}@localhost:{pg_port()}/{db}"
+        # require_auth (Audit 2026-11-07 S3-07): libpq gibt das Passwort nur per
+        # SCRAM heraus. Ohne das beantwortet es die Klartext-Passwort-Anfrage
+        # eines Servers, den ein lokales Konto an den freien Port gehaengt hat
+        # (PG abgestuerzt), mit dem Passwort im Klartext. libpq >= 16 noetig;
+        # psycopg2-binary 2.9.13 (cp313-win_amd64) bringt libpq 17 mit.
+        return (f"postgresql://{cred}@localhost:{pg_port()}/{db}"
+                f"?require_auth={PG_REQUIRE_AUTH}")
     sock = quote_plus(str(DATA_DIR / "run"))
     return f"postgresql://{cred}@/{db}?host={sock}"
 
@@ -2667,6 +2679,19 @@ def cmd_sync_db_port(args):
     apply_pg_port()
 
 
+def cmd_prepare_restore_dump(args):
+    """restore-backup.bat: entpackten Dump pruefen und mit eigenem \\restrict
+    versehen. Fehler als eine Zeile auf stderr, Exit 1 (die .bat bricht ab)."""
+    try:
+        prepare_restore_dump(Path(args.file))
+    except RestoreError as exc:
+        print(f"FEHLER: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as exc:
+        print(f"FEHLER: {args.file} nicht lesbar: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_harden_permissions(args):
     """Windows: restrict the access rights of the install directory.
 
@@ -2993,6 +3018,204 @@ def _process_manager_running() -> bool:
     return True
 
 
+# --- Restore: nur Dumps einspielen, wie pg_dump sie schreibt (Audit 2026-11-07 S3-03)
+#
+# psql fuehrt Backslash-Befehle im Dump aus (``\! cmd``, ``\o |cmd``,
+# ``\copy ... program``) — und zwar ueberall in einer Zeile ausserhalb von
+# Zeichenketten, nicht nur am Zeilenanfang. Eingespielt wird als Superuser,
+# unter Windows sogar als Administrator. Eine praeparierte "Sicherung vom alten
+# Rechner" (USB-Stick, Mail eines "Technikers") liefe sonst mit diesen Rechten.
+# pg_dump 18 schreibt genau zwei Backslash-Befehle: ``\restrict <schluessel>``
+# am Anfang und ``\unrestrict <schluessel>`` am Ende (seit 17.6/18.0). Alles
+# andere ausserhalb der COPY-Daten wird abgelehnt, ebenso SQL, das aus einer
+# Datenbanksicherung nie kommen kann (Rollen, ALTER SYSTEM, COPY ... PROGRAM,
+# Event-Trigger, C-Funktionen). Das ersetzt keine vertrauenswuerdige Quelle,
+# schliesst aber die Shell-Ausfuehrung aus.
+_DUMP_ALLOWED_META_RE = re.compile(rb"^\s*\\(restrict|unrestrict)\s+[A-Za-z0-9]+\s*$")
+_DUMP_COPY_START_RE = re.compile(rb"^COPY\s.+\sFROM\s+stdin;\s*$")
+_DUMP_FORBIDDEN_STATEMENTS = (
+    (re.compile(r"^(CREATE|ALTER|DROP)\s+(ROLE|USER|GROUP)\b"), "Rollen anlegen oder aendern"),
+    (re.compile(r"^ALTER\s+SYSTEM\b"), "ALTER SYSTEM"),
+    (re.compile(r"^(CREATE|ALTER)\s+EVENT\s+TRIGGER\b"), "Event-Trigger"),
+    (re.compile(r"^COPY\b.*\bPROGRAM\b"), "COPY ... PROGRAM"),
+    (re.compile(r"^LOAD\b"), "LOAD"),
+    (re.compile(r"^CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE)\b.*\bLANGUAGE\s+\"?(C|INTERNAL)\b"),
+     "Funktion in C"),
+)
+
+
+class _DumpScanner:
+    """Kleiner psql-Lexer: findet Backslash-Befehle ausserhalb von
+    Zeichenketten/Kommentaren und die Anfaenge der SQL-Anweisungen."""
+
+    _DOLLAR_RE = re.compile(rb"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
+
+    def __init__(self):
+        self.state = "normal"     # normal | squote | estring | dquote | dollar | block
+        self.dollar_tag = b""
+        self.block_depth = 0
+        self.stmt = bytearray()   # Text der laufenden Anweisung ausserhalb von Literalen
+
+    @staticmethod
+    def _ident_char(ch: bytes) -> bool:
+        """Zeichen, mit dem ein psql-Bezeichner weitergehen kann."""
+        return bool(ch) and (ch.isalnum() or ch in (b"_", b"$") or ch[0] >= 0x80)
+
+    def feed(self, line: bytes, lineno: int) -> tuple[bool, list[str]]:
+        """Eine Zeile (ohne Zeilenende). Liefert (copy_beginnt, fertige_anweisungen)."""
+        done: list[str] = []
+        at_stmt_start = self.state == "normal" and not self.stmt.strip()
+        if at_stmt_start and _DUMP_COPY_START_RE.match(line):
+            self.stmt.clear()
+            return True, [line.decode("utf-8", "replace")]
+        i, n = 0, len(line)
+        while i < n:
+            c = line[i:i + 1]
+            if self.state == "normal":
+                if c == b"\\":
+                    if at_stmt_start and _DUMP_ALLOWED_META_RE.match(line) and not self.stmt.strip():
+                        return False, done
+                    raise RestoreError(
+                        f"Zeile {lineno}: psql-Befehl '{line.decode('utf-8', 'replace').strip()[:60]}' "
+                        "gehoert nicht in eine PraxisZeit-Sicherung. Die Datei wurde veraendert oder "
+                        "stammt nicht aus PraxisZeit — sie wird nicht eingespielt."
+                    )
+                if line.startswith(b"--", i):
+                    break
+                if line.startswith(b"/*", i):
+                    self.state, self.block_depth = "block", 1
+                    i += 2
+                    continue
+                if c == b"'":
+                    # E'...' (Backslash-Escapes) nur, wenn das E allein steht -
+                    # "xe'..'" ist fuer psql Bezeichner + normale Zeichenkette.
+                    prev = line[i - 1:i] if i else b""
+                    prev2 = line[i - 2:i - 1] if i > 1 else b""
+                    estring = prev in (b"E", b"e") and not self._ident_char(prev2)
+                    self.state = "estring" if estring else "squote"
+                    i += 1
+                    continue
+                if c == b'"':
+                    self.state = "dquote"
+                    i += 1
+                    continue
+                if c == b"$":
+                    m = self._DOLLAR_RE.match(line, i)
+                    prev = line[i - 1:i] if i else b""
+                    if m and not self._ident_char(prev):
+                        self.state, self.dollar_tag = "dollar", m.group(0)
+                        i = m.end()
+                        continue
+                if c == b";":
+                    done.append(self.stmt.decode("utf-8", "replace"))
+                    self.stmt.clear()
+                    i += 1
+                    continue
+                self.stmt += c
+                i += 1
+            elif self.state in ("squote", "estring"):
+                if self.state == "estring" and c == b"\\":
+                    i += 2
+                    continue
+                if c == b"'":
+                    if line[i + 1:i + 2] == b"'":
+                        i += 2
+                        continue
+                    self.state = "normal"
+                i += 1
+            elif self.state == "dquote":
+                if c == b'"':
+                    self.state = "normal"
+                i += 1
+            elif self.state == "dollar":
+                if line.startswith(self.dollar_tag, i):
+                    i += len(self.dollar_tag)
+                    self.state = "normal"
+                    continue
+                i += 1
+            else:  # block comment (verschachtelbar)
+                if line.startswith(b"/*", i):
+                    self.block_depth += 1
+                    i += 2
+                    continue
+                if line.startswith(b"*/", i):
+                    self.block_depth -= 1
+                    i += 2
+                    if self.block_depth == 0:
+                        self.state = "normal"
+                    continue
+                i += 1
+        if self.state == "normal":
+            self.stmt += b" "
+        return False, done
+
+
+def _check_dump_statement(stmt: str, lineno: int) -> None:
+    text = " ".join(stmt.split()).upper()
+    for pattern, label in _DUMP_FORBIDDEN_STATEMENTS:
+        if pattern.match(text):
+            raise RestoreError(
+                f"Zeile {lineno}: die Sicherung enthaelt eine Anweisung, die pg_dump nie "
+                f"schreibt ({label}). Die Datei wurde veraendert oder stammt nicht aus "
+                "PraxisZeit — sie wird nicht eingespielt."
+            )
+
+
+def validate_restore_dump(sql: Path, out=None) -> None:
+    """Prueft einen entpackten Plain-SQL-Dump vor dem Einspielen (S3-03).
+
+    Wirft :class:`RestoreError`, wenn ausserhalb der COPY-Daten ein anderer
+    psql-Befehl als ``\\restrict``/``\\unrestrict`` steht oder eine Anweisung,
+    die aus ``pg_dump`` einer PraxisZeit-Datenbank nie kommt. Mit ``out``
+    (Binaerdatei) wird der Dump dabei ohne seine eigenen restrict-Zeilen
+    dorthin kopiert (siehe :func:`prepare_restore_dump`)."""
+    scanner = _DumpScanner()
+    in_copy = False
+    with open(sql, "rb") as fh:
+        for lineno, raw in enumerate(fh, start=1):
+            line = raw.rstrip(b"\n").rstrip(b"\r")
+            if in_copy:
+                if line == b"\\.":
+                    in_copy = False
+                if out is not None:
+                    out.write(raw)
+                continue
+            is_meta = (scanner.state == "normal" and not scanner.stmt.strip()
+                       and _DUMP_ALLOWED_META_RE.match(line) is not None)
+            copy_starts, statements = scanner.feed(line, lineno)
+            for stmt in statements:
+                _check_dump_statement(stmt, lineno)
+            in_copy = copy_starts
+            if out is not None and not is_meta:
+                out.write(raw)
+    if in_copy:
+        raise RestoreError("Die Sicherung endet mitten in den Tabellendaten (COPY ohne Ende).")
+
+
+def prepare_restore_dump(sql: Path) -> None:
+    """Dump pruefen und mit EIGENEM ``\\restrict``-Schluessel versehen (S3-03).
+
+    Die Pruefung (:func:`validate_restore_dump`) nennt den Grund verstaendlich;
+    die harte Grenze zieht psql selbst: ein zufaelliger Schluessel je Restore
+    in der ersten Zeile schaltet psql in den eingeschraenkten Modus, in dem
+    jeder Backslash-Befehl ausser ``\\unrestrict <schluessel>`` abgelehnt wird
+    - ON_ERROR_STOP bricht dann ab. Die eigenen restrict-Zeilen des Dumps
+    entfallen (ein zweites ``\\restrict`` waere ein Fehler). Die Datei wird an
+    Ort und Stelle ersetzt (gleiche Rechte, gleiches Verzeichnis)."""
+    tmp = sql.with_name(sql.name + ".pz-tmp")
+    try:
+        # Rechte vor dem Inhalt: die Kopie liegt neben dem Original (data/,
+        # nur Dienstkonto bzw. SYSTEM/Administratoren) und bekommt 0600.
+        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as out:
+            out.write(b"\\restrict " + secrets.token_hex(24).encode("ascii") + b"\n")
+            validate_restore_dump(sql, out)
+        os.replace(tmp, sql)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
 def _unpack_dump(src: Path) -> Path:
     """Backup neben die Datenbank entpacken und auf Vollstaendigkeit pruefen.
 
@@ -3027,6 +3250,11 @@ def _unpack_dump(src: Path) -> Path:
             f"'{src}' ist unvollstaendig (die Schlusszeile von pg_dump fehlt) — der Dump "
             "wurde abgebrochen."
         )
+    try:
+        prepare_restore_dump(tmp_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
     return tmp_path
 
 
@@ -3307,6 +3535,12 @@ def main():
         "harden-permissions",
         help="Windows: Zugriffsrechte des Installationsverzeichnisses einschraenken",
     ).set_defaults(func=cmd_harden_permissions)
+    prep = subparsers.add_parser(
+        "prepare-restore-dump",
+        help="Entpackten Dump pruefen und fuer psql absichern (restore-backup.bat, S3-03)",
+    )
+    prep.add_argument("file", help="Entpackte .sql-Datei (wird an Ort und Stelle ersetzt)")
+    prep.set_defaults(func=cmd_prepare_restore_dump)
 
     # Gesamtreview 1.20: Gegenstueck zu restore-backup.bat fuer Linux/macOS.
     # Bei angehaltenem Dienst; migriert wird beim naechsten Dienststart.

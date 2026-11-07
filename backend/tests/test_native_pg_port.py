@@ -164,7 +164,21 @@ class TestClientsUsePort:
         assert (
             srv._database_url("praxiszeit_app", "pw", "praxiszeit")
             == "postgresql://praxiszeit_app:pw@localhost:5433/praxiszeit"
+            "?require_auth=scram-sha-256"
         )
+
+    def test_pg_env_windows_requires_scram(self, srv, monkeypatch):
+        """S3-07: psql/pg_dump/pg_isready never answer a cleartext-password
+        request of a server that took over the free port."""
+        monkeypatch.setenv("PGREQUIREAUTH", "password")
+        assert srv.pg_env()["PGREQUIREAUTH"] == "scram-sha-256"
+
+    def test_require_auth_survives_sqlalchemy_url_parsing(self, srv):
+        from sqlalchemy.engine import make_url
+        url = make_url(srv._database_url("praxiszeit_app", "p w+%", "praxiszeit"))
+        assert url.query == {"require_auth": "scram-sha-256"}
+        assert url.password == "p w+%"
+        assert url.port == 5433
 
     def test_pg_env_windows_overrides_inherited_host_and_port(self, srv, monkeypatch):
         monkeypatch.setenv("PGPORT", "9999")

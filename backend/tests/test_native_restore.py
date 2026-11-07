@@ -169,6 +169,20 @@ def inst(srv, tmp_path, monkeypatch):
     return tmp_path
 
 
+def _loaded(text: str) -> str:
+    """Was psql bekommt (S3-03): eigene ``\\restrict``-Zeile mit Zufallsschluessel
+    vorn, die restrict-Zeilen des Dumps entfernt - sonst unveraendert."""
+    first, rest = text.split("\n", 1)
+    assert re.fullmatch(r"\\restrict [0-9a-f]{48}", first), first
+    return rest
+
+
+_DUMP_LOADED = "".join(
+    line for line in _DUMP.splitlines(keepends=True)
+    if not line.startswith(("\\restrict ", "\\unrestrict "))
+)
+
+
 def _dump(inst: Path, text: str = _DUMP, name: str = "praxiszeit_20261017_120000.sql.gz") -> Path:
     path = inst / "data" / "backups" / name
     with gzip.open(path, "wt", encoding="utf-8") as fh:
@@ -205,7 +219,8 @@ def test_restore_ersetzt_die_datenbank_durch_das_backup(srv, inst):
     cluster = FakeCluster()
     code, _ = _restore(srv, _dump(inst), cluster)
     assert code == 0
-    assert cluster.dbs == {"postgres": "", "praxiszeit": _DUMP}
+    assert set(cluster.dbs) == {"postgres", "praxiszeit"}
+    assert _loaded(cluster.dbs["praxiszeit"]) == _DUMP_LOADED
 
 
 def test_restore_spielt_erst_in_eine_zwischendatenbank_ein(srv, inst):
@@ -257,7 +272,7 @@ def test_relativer_pfad_gilt_ab_dem_aufrufverzeichnis(srv, inst, monkeypatch):
     cluster = FakeCluster()
     code, _ = _restore(srv, Path(dump.name), cluster)
     assert code == 0
-    assert cluster.dbs["praxiszeit"] == _DUMP
+    assert _loaded(cluster.dbs["praxiszeit"]) == _DUMP_LOADED
 
 
 def test_meldet_dienststart_und_migration(srv, inst, caplog):
@@ -382,7 +397,7 @@ def test_scheitert_die_umbenennung_bleiben_die_daten_erhalten(srv, inst, caplog)
     with caplog.at_level(logging.ERROR, logger="praxiszeit"):
         code, _ = _restore(srv, _dump(inst), cluster)
     assert code == 1
-    assert cluster.dbs.get("praxiszeit_restore") == _DUMP
+    assert _loaded(cluster.dbs.get("praxiszeit_restore")) == _DUMP_LOADED
     assert "praxiszeit_restore" in caplog.text
 
 
@@ -392,7 +407,7 @@ def test_unterbrochener_tausch_raeumt_die_eingespielten_daten_nicht_weg(srv, ins
     cluster = FakeCluster(interrupt_rename=True)
     with pytest.raises(KeyboardInterrupt):
         _restore(srv, _dump(inst), cluster, pg_running=False)
-    assert cluster.dbs.get("praxiszeit_restore") == _DUMP
+    assert _loaded(cluster.dbs.get("praxiszeit_restore")) == _DUMP_LOADED
     assert "drop:praxiszeit_restore" not in cluster.events[2:], cluster.events
 
 
@@ -805,3 +820,136 @@ def test_restore_bat_sets_psql_args_after_db_port():
     assert port < args
     assert lines[port].count('(`""%PYTHON%"') == 1, lines[port]
     assert 'SET "DB_PORT="' in lines[:port]
+
+
+# --- Audit 2026-11-07 S3-03: nur Dumps einspielen, wie pg_dump sie schreibt ---
+#
+# psql fuehrt Backslash-Befehle aus dem Dump aus (\! cmd, \o |cmd, \copy ...
+# program) - als Superuser, unter Windows als Administrator. Gepruefter Weg:
+# Lexer-Pruefung mit verstaendlicher Meldung + eigener \restrict-Schluessel
+# in der ersten Zeile (psql lehnt dann jeden weiteren Backslash-Befehl ab).
+
+_HEAD = "--\n-- PostgreSQL database dump\n--\n\\restrict abc\nSET standard_conforming_strings = on;\n"
+_TAIL = "--\n-- PostgreSQL database dump complete\n--\n\n\\unrestrict abc\n\n"
+
+
+def _check(srv, tmp_path, body: str):
+    p = tmp_path / "d.sql"
+    p.write_text(_HEAD + body + _TAIL, encoding="utf-8")
+    srv.validate_restore_dump(p)
+
+
+@pytest.mark.parametrize("body", [
+    "\\! calc.exe\n",
+    "   \\! calc.exe\n",
+    "SELECT 1; \\! calc.exe\n",
+    "SELECT 1 \\g |calc\n",
+    "\\o |powershell -c x\n",
+    "\\copy users to program 'x'\n",
+    "\\connect postgres\n",
+    "\\set ON_ERROR_STOP 0\n",
+    "\\restrict abc extra\n",
+    # Bezeichner + normale Zeichenkette (keine E-Zeichenkette): psql schliesst
+    # am zweiten Hochkomma, danach steht der Befehl ausserhalb der Kette.
+    "SELECT xe'\\'; \\! calc --'\n",
+    # foo$$ ist ein Bezeichner, keine Dollar-Quote.
+    "SELECT foo$$; \\! calc\n",
+    "COMMENT ON TABLE t IS 'a';\n\\! calc\n",
+    "CREATE TABLE t (\n  a text -- kommentar\n);\n\\! calc\n",
+])
+def test_dump_mit_psql_befehl_wird_abgelehnt(srv, tmp_path, body):
+    with pytest.raises(srv.RestoreError, match="psql-Befehl|gehoert nicht"):
+        _check(srv, tmp_path, body)
+
+
+@pytest.mark.parametrize("body", [
+    "CREATE ROLE boese SUPERUSER;\n",
+    "ALTER ROLE praxiszeit_app BYPASSRLS;\n",
+    "alter\n  role praxiszeit_app bypassrls;\n",
+    "ALTER SYSTEM SET archive_command = 'calc';\n",
+    "COPY users TO PROGRAM 'calc';\n",
+    "copy (select 1) to program 'calc';\n",
+    "CREATE EVENT TRIGGER t ON ddl_command_start EXECUTE FUNCTION f();\n",
+    "CREATE FUNCTION f() RETURNS int AS '/tmp/x.so', 'f' LANGUAGE C;\n",
+    "LOAD '/tmp/x.so';\n",
+])
+def test_dump_mit_fremder_anweisung_wird_abgelehnt(srv, tmp_path, body):
+    with pytest.raises(srv.RestoreError, match="pg_dump nie"):
+        _check(srv, tmp_path, body)
+
+
+def test_echter_dump_mit_copy_daten_und_literalen_geht_durch(srv, tmp_path):
+    body = (
+        "CREATE TABLE public.t (a text, b text);\n"
+        "COMMENT ON TABLE public.t IS 'Pfad C:\\Daten\\x; \\! kein Befehl';\n"
+        "CREATE FUNCTION public.f() RETURNS text\n    LANGUAGE plpgsql\n"
+        "    AS $_$\nBEGIN\n  RETURN '\\! auch kein Befehl';\nEND;\n$_$;\n"
+        "CREATE POLICY p ON public.t USING ((a = current_setting('app.x'::text, true)));\n"
+        "/* block \\! kommentar /* verschachtelt */ */\n"
+        "SELECT E'\\'\\\\';\n"
+        "COPY public.t (a, b) FROM stdin;\n"
+        "\\N\t\\\\! Daten mit Backslash\n"
+        "\\! sieht aus wie ein Befehl, ist aber eine Datenzeile\n"
+        "\\.\n"
+        "SELECT pg_catalog.setval('public.t_id_seq', 1, false);\n"
+    )
+    _check(srv, tmp_path, body)  # wirft nicht
+
+
+def test_copy_ohne_ende_wird_abgelehnt(srv, tmp_path):
+    p = tmp_path / "d.sql"
+    p.write_text(_HEAD + "COPY public.t (a) FROM stdin;\nx\n", encoding="utf-8")
+    with pytest.raises(srv.RestoreError, match="COPY"):
+        srv.validate_restore_dump(p)
+
+
+def test_prepare_setzt_eigenen_restrict_schluessel(srv, tmp_path):
+    p = tmp_path / "d.sql"
+    p.write_text(_HEAD + "CREATE TABLE t ();\n" + _TAIL, encoding="utf-8")
+    srv.prepare_restore_dump(p)
+    first = p.read_text(encoding="utf-8").split("\n", 1)[0]
+    text = p.read_text(encoding="utf-8")
+    assert re.fullmatch(r"\\restrict [0-9a-f]{48}", first)
+    # Die eigenen restrict-Zeilen des Dumps sind weg (ein zweites \restrict
+    # waere im eingeschraenkten Modus ein Fehler), der Rest ist unveraendert.
+    assert "\\restrict abc" not in text and "\\unrestrict abc" not in text
+    assert text.count("\\restrict ") == 1
+    assert "CREATE TABLE t ();" in text and "dump complete" in text
+    assert oct(p.stat().st_mode & 0o777) == oct(0o600)
+    p2 = tmp_path / "e.sql"
+    p2.write_text(_HEAD + _TAIL, encoding="utf-8")
+    srv.prepare_restore_dump(p2)
+    assert p2.read_text(encoding="utf-8").split("\n", 1)[0] != first  # je Restore neu
+
+
+def test_prepare_laesst_abgelehnten_dump_unveraendert(srv, tmp_path):
+    p = tmp_path / "d.sql"
+    original = _HEAD + "\\! calc\n" + _TAIL
+    p.write_text(original, encoding="utf-8")
+    with pytest.raises(srv.RestoreError):
+        srv.prepare_restore_dump(p)
+    assert p.read_text(encoding="utf-8") == original
+    assert sorted(x.name for x in tmp_path.iterdir()) == ["d.sql"]
+
+
+def test_restore_lehnt_praeparierten_dump_vor_jeder_aenderung_ab(srv, inst, caplog):
+    cluster = FakeCluster()
+    with caplog.at_level(logging.ERROR, logger="praxiszeit"):
+        code, state = _restore(srv, _dump(inst, _HEAD + "\\! rm -rf /\n" + _TAIL), cluster)
+    assert code == 1
+    assert cluster.calls == []  # kein psql-Aufruf
+    assert cluster.dbs["praxiszeit"] == _OLD
+    assert "psql-Befehl" in caplog.text
+    assert not list((inst / "data").glob(".restore-*"))
+
+
+def test_prepare_restore_dump_unterbefehl(srv, tmp_path, capsys):
+    p = tmp_path / "d.sql"
+    p.write_text(_HEAD + "\\! calc\n" + _TAIL, encoding="utf-8")
+    with pytest.raises(SystemExit) as e:
+        srv.cmd_prepare_restore_dump(argparse.Namespace(file=str(p)))
+    assert e.value.code == 1
+    assert "FEHLER:" in capsys.readouterr().err
+    p.write_text(_HEAD + _TAIL, encoding="utf-8")
+    srv.cmd_prepare_restore_dump(argparse.Namespace(file=str(p)))
+    assert p.read_text(encoding="utf-8").startswith("\\restrict ")
