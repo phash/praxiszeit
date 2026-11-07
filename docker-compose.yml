@@ -84,7 +84,11 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "80:80"
+      # Nur IPv4 veroeffentlichen (Audit 2026-11-07 S3-14): auf "[::]:80"
+      # nimmt Docker ohne ip6tables den Userland-Proxy, nginx sieht dann statt
+      # der Internet-Adresse das Bridge-Gateway 172.x.0.1 - und die
+      # Freigabeliste von /grafana/ (172.16.0.0/12) liesse jeden durch.
+      - "0.0.0.0:80:80"
     depends_on:
       backend:
         condition: service_healthy
