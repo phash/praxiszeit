@@ -28,6 +28,18 @@ from tests.conftest import (
     TestingSessionLocal,
 )
 
+
+def _freeze_evening(monkeypatch):
+    """Heute 18:00 — seit A1-09 lehnt der Server ein Ende von HEUTE nach der
+    aktuellen Uhrzeit ab; ohne das scheiterten diese Tests jeden Vormittag."""
+    from tests.wh_change_helpers import freeze
+    import app.routers.time_entries as te
+    from app.services import timezone_service
+    d = today_local()
+    freeze(monkeypatch, d, time(18, 0))
+    monkeypatch.setattr(te, "_now_local",
+                        lambda: datetime.combine(d, time(18, 0), tzinfo=timezone_service.LOCAL_TZ))
+
 # ---------------------------------------------------------------------------
 # Build a lightweight test app that includes all production routers but
 # skips the production lifespan (which requires PostgreSQL, Prometheus, etc.)
@@ -489,8 +501,9 @@ class TestTimeEntryList:
 class TestTimeEntryCreate:
     """POST /api/time-entries"""
 
-    def test_create_valid_entry(self, employee_client):
+    def test_create_valid_entry(self, employee_client, monkeypatch):
         """Prüft dass ein gueltiger Zeiteintrag mit 201 angelegt wird — Kernfunktion."""
+        _freeze_evening(monkeypatch)
         today = today_local().isoformat()
         resp = employee_client.post("/api/time-entries/", json={
             "date": today,
