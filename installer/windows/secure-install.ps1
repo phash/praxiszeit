@@ -110,9 +110,24 @@ function Set-ExactDacl([string]$Path, [string]$Sddl, [string[]]$Allowed) {
     }
 }
 
+function Get-EntryNoFollow([string]$Path) {
+    # Eintrag ueber das Auflisten des Elternordners suchen - folgt keiner
+    # Verknuepfung, findet also auch eine Junction mit nicht vorhandenem Ziel
+    # (Test-Path folgt ihr und meldet $false). $null = nicht vorhanden.
+    $parent = Split-Path -Parent $Path
+    $leaf = Split-Path -Leaf $Path
+    if (-not [System.IO.Directory]::Exists($parent)) { return $null }
+    foreach ($e in [System.IO.Directory]::GetFileSystemEntries($parent)) {
+        if ([string]::Equals((Split-Path -Leaf $e), $leaf, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return (New-Object System.IO.DirectoryInfo($e))
+        }
+    }
+    return $null
+}
+
 function Test-ReparsePoint([string]$Path) {
-    if (-not (Test-Path -LiteralPath $Path)) { return $false }
-    $item = Get-Item -LiteralPath $Path -Force
+    $item = Get-EntryNoFollow $Path
+    if ($null -eq $item) { return $false }
     return (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
 }
 
@@ -418,9 +433,10 @@ if ($untrusted.Count -gt 0 -and -not $evidence) {
 # belegt kein PraxisZeit-Dienst eine fruehere Installation, hat es jemand anders
 # angelegt: setup.bat ueberspraenge dann die PostgreSQL-Installation (pg_ctl.exe
 # vorhanden) und der Datenbankdienst liefe mit fremden Programmdateien als
-# NetworkService/SYSTEM. Release-Review 1.23.0 (HIGH).
+# NetworkService/SYSTEM. Release-Review 1.23.0 (HIGH). Gesucht wird ohne einer
+# Verknuepfung zu folgen: auch eine Junction mit (noch) fehlendem Ziel zaehlt.
 $pgDirPre = Join-Path $root 'bin\postgresql'
-if ((Test-Path -LiteralPath $pgDirPre) -and -not $evidence) {
+if (($null -ne (Get-EntryNoFollow $pgDirPre)) -and -not $evidence) {
     Write-Output "FEHLER: $pgDirPre ist schon vorhanden, aber kein PraxisZeit-Dienst ist fuer diesen"
     Write-Output 'Ordner eingerichtet. Die PostgreSQL-Programmdateien legt erst setup.bat an - ein'
     Write-Output 'vorab angelegter Ordner (oder eine Verknuepfung) wuerde sonst als Datenbank-'

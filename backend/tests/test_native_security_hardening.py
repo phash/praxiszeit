@@ -800,7 +800,9 @@ def test_secure_install_ps1_refuses_a_preexisting_bin_postgresql_without_install
     raw = _read("installer/windows/secure-install.ps1").decode("ascii")
     step0 = raw[raw.index("# --- 0. Vorab"):raw.index("# --- 1. Wurzel ---")]
     assert "$pgDirPre = Join-Path $root 'bin\\postgresql'" in step0
-    guard = "if ((Test-Path -LiteralPath $pgDirPre) -and -not $evidence) {"
+    # found by listing bin\\ - Test-Path follows a junction and reports a
+    # dangling one as missing
+    guard = "if (($null -ne (Get-EntryNoFollow $pgDirPre)) -and -not $evidence) {"
     assert guard in step0
     assert step0.index("$evidence = Test-InstallEvidence $root") < step0.index(guard)
     assert "exit 2" in step0[step0.index(guard):step0.index(guard) + 900]

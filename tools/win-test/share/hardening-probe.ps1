@@ -232,6 +232,22 @@ New-Item -ItemType Directory -Path "$r\bin\postgresql\bin" -Force | Out-Null
 Set-Content -LiteralPath "$r\bin\postgresql\bin\pg_ctl.exe" -Value 'x'
 $res = Invoke-Secure $r -SkipManifest
 Report 'I2_PG_ORDNER_VORAB' $res (($res.Exit -eq 2) -and ($res.Out -match 'bin\\postgresql ist schon vorhanden'))
+# I3/I4: Junction mit nicht vorhandenem Ziel (Test-Path folgt ihr und meldet
+#    "fehlt") - als bin\postgresql und als data\db. Erwartung: Exit 2.
+$r = New-Case 'I3'
+New-Item -ItemType Directory -Path "$r\bin" -Force | Out-Null
+New-Item -ItemType Directory -Path "$base\gone3" -Force | Out-Null
+New-Item -ItemType Junction -Path "$r\bin\postgresql" -Target "$base\gone3" | Out-Null
+Remove-Item -LiteralPath "$base\gone3" -Force
+$res = Invoke-Secure $r -SkipManifest
+Report 'I3_PG_JUNCTION_TOT' $res (($res.Exit -eq 2) -and ($res.Out -match 'bin\\postgresql ist schon vorhanden'))
+$r = New-Case 'I4'
+New-Item -ItemType Directory -Path "$r\data" -Force | Out-Null
+New-Item -ItemType Directory -Path "$base\gone4" -Force | Out-Null
+New-Item -ItemType Junction -Path "$r\data\db" -Target "$base\gone4" | Out-Null
+Remove-Item -LiteralPath "$base\gone4" -Force
+$res = Invoke-Secure $r -SkipManifest
+Report 'I4_DB_JUNCTION_TOT' $res ($res.Exit -eq 2)
 
 # ---------------------------------------------------------------------
 # J: echtes setup.bat aus dem Paket mit Junction unter data\backups
