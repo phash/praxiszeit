@@ -323,7 +323,21 @@ group_code() {
   # (xls_import_service.break_shortfall_skip_reason, f-String-Stücke).
   need_code 'f"die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht "'
   need_code 'f"abziehen (es fehlen {missing_minutes} Min). Bitte den Tag von Hand erfassen"'
-  need_code 'f"{break_shortfall_skip_reason(missing)}."'
+  need_code 'reason = break_shortfall_skip_reason(missing) if missing else daily_limit_skip_reason(over)'
+  # Audit 2026-11-07 (#538/#540): Wortlaute, die die Handbücher zitieren.
+  need_code 'f"die Tagesarbeitszeit beträgt {net_minutes // 60}:{net_minutes % 60:02d} h und "'
+  need_code 'f"überschreitet die Höchstgrenze von 10 h nach § 3 ArbZG. Bitte den Tag von Hand erfassen"'
+  need_code 'return f"die Zeile überschneidet sich mit {what} (Zeiteinträge einer Person dürfen sich nicht überschneiden)"'
+  need_code "f\"Überschneidung mit {what} am {day.strftime('%d.%m.%Y')}: Zeiteinträge \""
+  need_code '"Die Begründung ist zu kurz – bitte in mindestens {BREAK_WAIVER_MIN_LENGTH} "'
+  need_code '"Das Ende liegt in der Zukunft. Bitte nur bereits geleistete Arbeitszeit "'
+  need_code 'f"{AUTO_CLOSE_NOTE_MARK} Nicht ausgestempelt – automatisch geschlossen, "'
+  need_code 'f" Ausstempelversuch am {attempted_end.strftime('"'"'%d.%m.%Y'"'"')} "'
+  need_code 'Dieser Eintrag ist länger als 6 Stunden und hat keine Pause.'
+  need_code_label frontend/src/components/StampWidget.tsx 'Arbeitsende per Antrag nachtragen'
+  need_code_label frontend/src/pages/TimeTracking.tsx '30 Min. Pause eintragen'
+  need_code_label frontend/src/pages/TimeTracking.tsx 'Keine Pause gemacht – ohne Pause speichern'
+  need_code 'Automatisch geschlossene Einträge – Ende fehlt'
   need_code ': übersprungen — {outside}."'
   need_code "return f\"Datum liegt nach dem letzten Arbeitstag ({last.strftime('%d.%m.%Y')})\""
   # Ultrareview 1.20 (Fund 2): XLS-Zeilen mit Datum in der Zukunft.
@@ -514,7 +528,7 @@ group_admin_rest() {
   # Gesamtreview 1.20: die Ergebnisliste heißt wie die Vorschau (#462) „Hinweise"
   # — sie trägt auch die Gründe übersprungener Zeilen, keine ArbZG-Warnungen allein.
   need "$f" 'das Ergebnis unter den Hinweisen (*„29.09.2026: übersprungen'
-  need "$f" 'und darunter die **Hinweise** – die ArbZG-Warnungen,'
+  need "$f" 'und darunter die **Hinweise** – Ruhezeit (§ 5) und Nachtarbeit (§ 6), die der Server bei der Bestätigung selbst prüft,'
   forbid "$f" 'sowie die ArbZG-Warnungen (einschließlich'
   need_code "weitere Gründe bei den Hinweisen)."
   need_code_label frontend/src/pages/admin/ImportXls.tsx '{result.warnings.length} Hinweis(e)'

@@ -51,7 +51,7 @@ Je MA und Wochentag (Mo–Fr) bis zu **3 Blöcke** „von–bis" + **„Pause in
 - Beispiel: Blöcke 08–12 + 15–18, Puffer 15, gestempelt 08:00–18:00 ohne Pause → **7:30 h** angerechnet (08:00–12:15 + 14:45–18:00), 2:30 h nicht; die Stempel bleiben gespeichert (§16).
 - **Werktag ohne Block** (bei MA mit Blöcken) = **0 h** angerechnet (Stempel bleibt gespeichert), bis **„Anerkennen“** bzw. **„Genehmigen und anerkennen“**; übernommene Arbeitszeit-Fenster ausgenommen (Tag ohne Fenster bleibt ungekappt).
 - **Kein Block → keine Kappung:** Wochenende, Feiertage, „freie" Sondertage („halber Feiertag" und verkürzter Tag behalten die Blöcke); MA ohne Stundenzählung; **anerkannte** Einträge. §18-MA werden trotzdem gekappt. Greift an allen Schreibwegen (Stempeln, manuell, Admin-Korrektur, Antrag, XLS-Import). Feiertag/Bundesland/Sondertag **nachträglich** geändert → bestehende Einträge dieser Tage werden nur genannt, nicht neu berechnet: öffnen + unverändert speichern (fehlt dann die gesetzliche Pause, z. B. bei über die Blocklücke durchgestempeltem Dienst: Pause ergänzen).
-- **Auto-Close** (vergessenes Ausstempeln, 23:59) rechnet nur bis zum letzten Block + Puffer an („automatisch geschlossen"), an einem Werktag ohne Block 0 h; bis 23:59 nur, wo nichts gekappt wird (keine Blöcke hinterlegt, Wochenende/Feiertag, ohne Stundenzählung); tatsächliches Ende nachtragen (MA per Änderungsantrag) – auch ein echtes Ende 23:59 ist eintragbar (wird gekappt wie jedes Ende, bis 23:59 angerechnet erst nach „Anerkennen").
+- **Auto-Close** (vergessenes Ausstempeln, 23:59) prüft §3/§4 (Vermerk in der Notiz, Hinweis an MA, Dashboard-Karte „Automatisch geschlossene Einträge – Ende fehlt") und rechnet nur bis zum letzten Block + Puffer an („automatisch geschlossen"), an einem Werktag ohne Block 0 h; bis 23:59 nur, wo nichts gekappt wird (keine Blöcke hinterlegt, Wochenende/Feiertag, ohne Stundenzählung); tatsächliches Ende nachtragen (MA per Änderungsantrag) – auch ein echtes Ende 23:59 ist eintragbar (wird gekappt wie jedes Ende, bis 23:59 angerechnet erst nach „Anerkennen").
 - **Pausen:** Lücke ab 15 Min. (nach Abzug des Puffers) zählt für §4 als Pause; Pause eingetragen **und** über die Lücke durchgestempelt → beides abgezogen (Hinweis „Pause in der Lücke wird zusätzlich abgezogen: …").
 - **Sichtbar:** Zusatzzeile am Eintrag („… 2:30 h zwischen den Blöcken nicht angerechnet"), Journal-Summe „Anwesenheit nicht angerechnet", Export-Spalte „Nicht angerechnet (Min)" (letzte Spalte).
 - **Anerkennen** (Admin-Dashboard-Detail, Monatsjournal): ganze gestempelte Zeit zählt, dauerhaft (keine Rücknahme), protokolliert („Anrechnung anerkannt"); offener Eintrag erst nach dem Ausstempeln, automatisch geschlossener erst mit tatsächlichem Ende. MA beantragen das per **„Anrechnung beantragen"**.
@@ -235,12 +235,16 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 - **An** (Standard): Begründung wird angeboten (Ausstempeln, Zeiterfassung, Anträge, Admin-Korrektur)
 - **Aus**: kein Begründungsfeld mehr; der Server lehnt Ausnahmen ab (auch von Admins) – ein Tag über 6/9 h lässt sich nur mit eingetragener Pause speichern. Offene Ausnahme-Anträge gelten dann als Anträge ohne Ausnahme: Genehmigen klappt nur, wenn die Pause des Tages jetzt reicht (sonst ablehnen → mit Pause neu stellen). Bestehende Ausnahmen bleiben.
 
-**„Genehmigung erforderlich"** (nur bei erlaubter Ausnahme; gilt für Ausnahmen, die MA in der Zeiterfassung beim Anlegen/Bearbeiten begründen):
+Begründung: **mindestens 10 Zeichen** (überall).
+
+**„Genehmigung erforderlich"** (nur bei erlaubter Ausnahme; gilt für Ausnahmen, die MA in der Zeiterfassung beim Anlegen/Bearbeiten **und beim Ausstempeln** begründen):
 - **Aus** (Standard): Eintrag sofort wirksam, Abweichung als Warnung
-- **Ein**: Eintrag erst nach Admin-Genehmigung wirksam
-- **Ausstempeln:** Begründung wirkt **immer sofort** (Eintrag muss geschlossen werden, §16) → im Änderungsprotokoll prüfen (Quelle „break_waiver"). Keine Ausnahme beim Ausstempeln gewünscht → Ausnahme ganz abschalten.
+- **Ein**: Ausnahme erst nach Admin-Genehmigung wirksam
+- **Ausstempeln:** Eintrag wird sofort mit der echten Ausstempelzeit geschlossen (§16), die Ausnahme ist nur **beantragt** (Änderungsantrag mit unveränderten Zeiten) – genehmigen → Ausnahme am Eintrag, ablehnen → Eintrag bleibt ohne Ausnahme. Keine Ausnahme beim Ausstempeln gewünscht → Ausnahme ganz abschalten.
 - **Nur Notiz geändert** (Datum, Zeiten, Pause gleich): keine neue Ausnahme – sofort gespeichert, dokumentierte Begründung bleibt (auch bei Genehmigungspflicht/abgeschalteter Ausnahme)
 > **4-Augen:** Eigene Pflicht-Pause-Ausnahme **nie selbst genehmigen** – muss ein anderer Admin prüfen.
+
+**Überschneidungen** (gleiche Person, gleicher Tag, gestempelte Zeiten) sind an allen Erfassungswegen gesperrt (Hinweis nennt den Eintrag; XLS-Import überspringt die Zeile, Ausstempeln meldet nur). **Ende in der Zukunft** (heute) und Pause ≥ Eintragslänge: gesperrt. **XLS-Import:** Tag über 10 h wird übersprungen (§3). **Keine Dienste über Mitternacht** (Erfassung und Prüfung je Kalendertag).
 
 ---
 
