@@ -30,6 +30,9 @@ EVENT_ADMIN_SET_PASSWORD = "admin_set_password"
 # Sicherheits-Review 2026-10: Selbstbedienung am zweiten Faktor (Profil).
 EVENT_TOTP_ENABLED = "totp_enabled"
 EVENT_TOTP_DISABLED_SELF = "totp_disabled"
+# #537: Pruefung des Aenderungsprotokolls (audit_chain_service).
+EVENT_AUDIT_INTEGRITY_FAILED = "audit_integrity_failed"
+EVENT_AUDIT_CHAIN_REANCHORED = "audit_chain_reanchored"
 
 
 class SecurityEvent(Base):

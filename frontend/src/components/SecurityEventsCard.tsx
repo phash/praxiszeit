@@ -32,6 +32,7 @@ const EVENT_LABELS: Record<string, string> = {
   totp_enabled: 'Zwei-Faktor im Profil eingeschaltet',
   totp_disabled: 'Zwei-Faktor im Profil abgeschaltet',
   audit_integrity_failed: 'Änderungsprotokoll: Prüfung fehlgeschlagen',
+  audit_chain_reanchored: 'Änderungsprotokoll: Kettenende neu gesetzt',
 };
 
 function formatWhen(iso: string): string {

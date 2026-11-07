@@ -1140,11 +1140,18 @@ def purge_user(
         TimeEntryAuditLog.user_id == user.id,
         TimeEntryAuditLog.tenant_id == current_user.tenant_id,
     ).all()
-    audit_chain_service.delete_rows(
-        db, own_rows, tenant_id=current_user.tenant_id, user_id=current_user.id,
-        changed_by=current_user.id, source="dsgvo",
-        reason=f"Endlöschung von User-ID {user_id} (Art. 17 DSGVO)",
-    )
+    try:
+        audit_chain_service.delete_rows(
+            db, own_rows, tenant_id=current_user.tenant_id, user_id=current_user.id,
+            changed_by=current_user.id, source="dsgvo",
+            reason=f"Endlöschung von User-ID {user_id} (Art. 17 DSGVO)",
+        )
+    except audit_chain_service.AuditChainBroken as exc:
+        # Kettenende fehlt/ungueltig: Loeschen gesperrt, bis die Verwaltung den
+        # Befund klaert (sonst verschwaende er mit den Zeilen). Wirft vor dem
+        # ersten Schreibschritt der Protokollzeilen.
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
     db.flush()
 
     # Audit after cleaning up the user's logs (use admin's own ID since target will be deleted)

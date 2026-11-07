@@ -7,8 +7,9 @@ tatsaechliche Arbeitszeit nirgends mehr belegt (§ 16 Abs. 2 ArbZG, EuGH
 C-55/18: aufzuzeichnen ist die Arbeitszeit, nicht die bezahlte Zeit).
 
 Statt die ~40 Stellen, die Protokollzeilen bauen, einzeln anzupassen (und die
-Aufrufsignaturen von ``_create_audit_log`` & Co. zu aendern), fuellt dieser
-Listener die Stempelspalten zentral beim Flush:
+Aufrufsignaturen von ``_create_audit_log`` & Co. zu aendern), haelt dieser
+Listener den Stand beim Hinzufuegen der Protokollzeile (``session.add``) fest
+und fuellt die Stempelspalten beim Flush (in Reihenfolge des Hinzufuegens):
 
 * ``new_*`` = aktueller Stand des Zeiteintrags (nur wenn die Zeile einen
   Nachher-Stand traegt, also nicht bei Loeschungen),
@@ -108,38 +109,77 @@ def _apply(log, side: str, values: dict) -> None:
             setattr(log, attr, value)
 
 
-def _fill(session, log) -> None:
+_SNAP_ATTR = "_pz_stamp_snap"   # am Protokollobjekt: (Vorher-Stand, Nachher-Stand)
+_ORDER = "pz_audit_add_order"    # Zaehler: Reihenfolge des Hinzufuegens
+
+
+def _entry_id_of(log):
     entry_id = log.time_entry_id or log.entry_ref
     if entry_id is None:
-        return
+        return None
     if not isinstance(entry_id, uuid.UUID):
         try:
             entry_id = uuid.UUID(str(entry_id))
         except ValueError:
-            return
+            return None
+    return entry_id
+
+
+def _take_snapshot(session, log) -> bool:
+    """Haelt Vorher-/Nachher-Stand des Eintrags fest — zum Zeitpunkt, an dem die
+    Protokollzeile gebaut wird (``session.add``), nicht erst beim Flush: in
+    einem Flush mit zwei Zeilen zum selben Eintrag (XLS-Import mit doppelter
+    Dateizeile, Zeile vor weiteren Aenderungen) traegt sonst jede den Endstand
+    (Review-Runde 2026-11-07). False = Eintrag (noch) nicht greifbar."""
+    entry_id = _entry_id_of(log)
+    if entry_id is None:
+        return False
     entry = _find_entry(session, entry_id)
     state = session.info.setdefault(_STATE, {})
+    old = state.get(entry_id)
+    if old is None and entry is not None and entry not in session.new:
+        old = _snapshot(_committed_values(entry))
+    new = None
+    if entry is not None and entry not in session.deleted:
+        new = _snapshot({f: getattr(entry, f, None) for f in _FIELDS})
+    if old is None and new is None:
+        return False
+    setattr(log, _SNAP_ATTR, (old, new))
+    if new is not None and _has_side(log, "new"):
+        # Naechste Protokollzeile desselben Eintrags: ihr Vorher ist dieses Nachher.
+        state[entry_id] = new
+    return True
 
-    if _has_side(log, "old"):
-        snap = state.get(entry_id)
-        if snap is None and entry is not None and entry not in session.new:
-            snap = _snapshot(_committed_values(entry))
-        if snap is not None:
-            _apply(log, "old", _stamp_values(snap))
 
-    if _has_side(log, "new") and entry is not None and entry not in session.deleted:
-        current = _snapshot({f: getattr(entry, f, None) for f in _FIELDS})
-        _apply(log, "new", _stamp_values(current))
-        # Naechste Protokollzeile desselben Eintrags in dieser Transaktion:
-        # ihr Vorher ist dieses Nachher.
-        state[entry_id] = current
+def _fill(session, log) -> None:
+    snaps = getattr(log, _SNAP_ATTR, None)
+    if snaps is None:
+        # Ohne Stand beim Hinzufuegen (Eintrag noch ohne id): jetzt festhalten.
+        if not _take_snapshot(session, log):
+            return
+        snaps = getattr(log, _SNAP_ATTR)
+    old, new = snaps
+    if old is not None and _has_side(log, "old"):
+        _apply(log, "old", _stamp_values(old))
+    if new is not None and _has_side(log, "new"):
+        _apply(log, "new", _stamp_values(new))
+
+
+@event.listens_for(Session, "transient_to_pending")
+def _on_audit_added(session, instance):
+    if isinstance(instance, TimeEntryAuditLog):
+        order = session.info.get(_ORDER, 0) + 1
+        session.info[_ORDER] = order
+        instance._pz_add_order = order
+        _take_snapshot(session, instance)
 
 
 @event.listens_for(Session, "before_flush")
 def _fill_audit_stamps(session, flush_context, instances):
-    for obj in list(session.new):
-        if isinstance(obj, TimeEntryAuditLog):
-            _fill(session, obj)
+    logs = [o for o in session.new if isinstance(o, TimeEntryAuditLog)]
+    logs.sort(key=lambda o: getattr(o, "_pz_add_order", 0))
+    for obj in logs:
+        _fill(session, obj)
 
 
 @event.listens_for(Session, "after_flush")
@@ -155,3 +195,4 @@ def _forget_state(session, transaction):
     if transaction.parent is None:
         session.info.pop(_STATE, None)
         session.info.pop(_DIRTY, None)
+        session.info.pop(_ORDER, None)

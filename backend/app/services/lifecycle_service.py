@@ -197,12 +197,22 @@ def purge_expired_vacation_audit_logs(db: Session) -> int:
         groups.setdefault((row.tenant_id, row.user_id), []).append(row)
     deleted = 0
     from app.services import audit_chain_service
+    blocked: set = set()
     for (tenant_id, user_id), group in groups.items():
-        deleted += audit_chain_service.delete_rows(
-            db, group, tenant_id=tenant_id, user_id=user_id, changed_by=None,
-            source="retention",
-            reason=f"Aufbewahrungsfrist {VACATION_AUDIT_RETENTION_DAYS} Tage (Art. 5 Abs. 1 lit. e DSGVO)",
-        )
+        if tenant_id in blocked:
+            continue
+        try:
+            deleted += audit_chain_service.delete_rows(
+                db, group, tenant_id=tenant_id, user_id=user_id, changed_by=None,
+                source="retention",
+                reason=f"Aufbewahrungsfrist {VACATION_AUDIT_RETENTION_DAYS} Tage (Art. 5 Abs. 1 lit. e DSGVO)",
+            )
+        except audit_chain_service.AuditChainBroken as exc:
+            # Kettenende des Mandanten stimmt nicht: nichts loeschen (der
+            # Befund bleibt sichtbar), andere Mandanten laufen weiter. Die
+            # Pruefung wirft vor jedem Schreibschritt — die Transaktion ist heil.
+            blocked.add(tenant_id)
+            logger.error("retention purge skipped for tenant %s: %s", tenant_id, exc)
     if deleted:
         db.commit()
     return int(deleted or 0)

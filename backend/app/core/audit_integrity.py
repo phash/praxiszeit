@@ -163,11 +163,23 @@ def verify_row(audit) -> bool:
     return hmac.compare_digest(audit.row_hash, compute_row_hash(audit))
 
 
-def compute_chain_hash(tenant_id, seq: int, row_id, prev: str) -> str:
-    """Kettenglied: bindet Mandant, Position, Zeilen-id und das vorige Glied.
-    Bewusst NICHT der Inhalt — der steht im row_hash, und ein legitimer
-    Notiz-Scrub (Art. 17) soll die Kette nicht brechen."""
-    msg = f"{tenant_id}\n{int(seq)}\n{row_id}\n{prev or ''}".encode("utf-8")
+def compute_chain_hash(tenant_id, seq: int, row_id, prev: str, hash_version=None) -> str:
+    """Kettenglied: bindet Mandant, Position, Zeilen-id, das vorige Glied und die
+    Hash-Version der Zeile. Bewusst NICHT der Inhalt — der steht im row_hash,
+    und ein legitimer Notiz-Scrub (Art. 17) soll die Kette nicht brechen.
+
+    Die Version steht drin, damit eine versiegelte v3-Zeile nicht zum
+    "Altbestand ohne Pruefsumme" herabgestuft werden kann (``row_hash`` und
+    ``hash_version`` auf NULL, ``created_at`` zurueckdatiert): das bricht ihr
+    Kettenglied (Review-Runde 2026-11-07)."""
+    version = "N" if hash_version is None else str(int(hash_version))
+    msg = f"{tenant_id}\n{int(seq)}\n{row_id}\n{prev or ''}\nv{version}".encode("utf-8")
+    return hmac.new(_derive(_HKDF_INFO_CHAIN), msg, hashlib.sha256).hexdigest()
+
+
+def compute_head_mac(tenant_id, seq: int, chain_hash: str) -> str:
+    """Siegel des Kettenendes (``system_settings.audit_chain_head``)."""
+    msg = f"head\n{tenant_id}\n{int(seq)}\n{chain_hash or ''}".encode("utf-8")
     return hmac.new(_derive(_HKDF_INFO_CHAIN), msg, hashlib.sha256).hexdigest()
 
 
@@ -176,5 +188,6 @@ def verify_chain_link(audit) -> bool:
         return False
     return hmac.compare_digest(
         audit.chain_hash,
-        compute_chain_hash(audit.tenant_id, audit.chain_seq, audit.id, audit.chain_prev),
+        compute_chain_hash(audit.tenant_id, audit.chain_seq, audit.id, audit.chain_prev,
+                           getattr(audit, "hash_version", None)),
     )

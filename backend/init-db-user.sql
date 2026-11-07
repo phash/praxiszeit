@@ -34,3 +34,25 @@ BEGIN
     END IF;
 END
 $$;
+
+-- #537 (Migration 076): die Protokollfunktionen nur fuer die App-Rolle
+-- ausfuehrbar, nicht fuer PUBLIC (PostgreSQL-Vorgabe beim Anlegen).
+DO $$
+DECLARE
+    f text;
+BEGIN
+    FOREACH f IN ARRAY ARRAY[
+        'pz_audit_seal(uuid[], bigint[], text[], text[])',
+        'pz_audit_set_notes(uuid, text, text, text)',
+        'pz_audit_delete(uuid[])',
+        'pz_audit_tenant_ok(uuid)',
+        'pz_audit_head_seq(uuid)'
+    ] LOOP
+        IF to_regprocedure(f) IS NOT NULL THEN
+            -- ohne Prozent-Platzhalter: Tests reichen die Datei durch psycopg
+            EXECUTE 'REVOKE EXECUTE ON FUNCTION ' || f || ' FROM PUBLIC';
+            EXECUTE 'GRANT EXECUTE ON FUNCTION ' || f || ' TO praxiszeit_app';
+        END IF;
+    END LOOP;
+END
+$$;

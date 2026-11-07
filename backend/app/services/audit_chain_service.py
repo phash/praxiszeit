@@ -38,13 +38,15 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core import audit_integrity
 from app.models import SecurityEvent, SystemSetting, Tenant, TimeEntryAuditLog
+from app.models.security_event import EVENT_AUDIT_CHAIN_REANCHORED, EVENT_AUDIT_INTEGRITY_FAILED  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
 PURGE_ACTION = "audit_rows_purged"
 HEAD_SETTING_KEY = "audit_chain_head"
 LAST_CHECK_SETTING_KEY = "audit_integrity_last_check"
-EVENT_AUDIT_INTEGRITY_FAILED = "audit_integrity_failed"
+REANCHOR_ACTION = "audit_chain_reanchored"   # < 40 Zeichen (varchar(40))
+REANCHOR_SOURCE = "audit_reanchor"
 _SEAL_BATCH = 500
 _MARKER_RE = re.compile(r"Kettenglieder ([0-9,\-]+)")
 # Aktionen, deren Zeilen an einem Zeiteintrag hingen (Altbestand, A2-1).
@@ -70,9 +72,28 @@ def _lock_chain(db: Session, tenant_id) -> None:
 # ── Kettenkopf ──────────────────────────────────────────────────────────────
 # Der Kopf (letztes Glied) steht gesiegelt in ``system_settings``: ohne ihn
 # fiele das Abschneiden der letzten Glieder nicht auf (keine Luecke dahinter).
+# Fehlt er oder stimmt er nicht, obwohl versiegelte Glieder existieren, wird er
+# NIE stillschweigend neu angelegt — sonst loeschte der naechste Lauf den Befund
+# (Review-Runde 2026-11-07). Versiegeln und Loeschen sind dann gesperrt, bis die
+# Verwaltung das Kettenende bewusst neu setzt (``reanchor_chain``, mit Grund und
+# gehashtem Vermerk). Auf PostgreSQL kann die App-Rolle die Kopfzeile zudem
+# weder loeschen noch umbenennen (Trigger ``pz_audit_head_guard``, Migration 076).
+
+
+class AuditChainBroken(Exception):
+    """Kettenende fehlt oder ist ungueltig, obwohl versiegelte Glieder existieren."""
+
+    def __init__(self, problem: str):
+        self.problem = problem
+        super().__init__(
+            f"Das Änderungsprotokoll meldet eine Abweichung: Kettenende {problem}. "
+            "Löschen und Versiegeln von Protokollzeilen sind gesperrt, bis die Abweichung "
+            "geklärt ist — siehe Änderungsprotokoll → „Prüfung des Änderungsprotokolls“."
+        )
+
 
 def _head_mac(tenant_id, seq: int, chain_hash: str) -> str:
-    return audit_integrity.compute_chain_hash(tenant_id, seq, "head", chain_hash)
+    return audit_integrity.compute_head_mac(tenant_id, seq, chain_hash)
 
 
 def _read_head(db: Session, tenant_id):
@@ -82,10 +103,10 @@ def _read_head(db: Session, tenant_id):
     if row is None:
         return None
     try:
-        seq_s, chain_hash, mac = row.value.split(":")
+        seq_s, chain_hash, mac = (row.value or "").split(":")
         return int(seq_s), chain_hash, mac
     except ValueError:
-        return (-1, "", "")  # zerstoert → beim Pruefen als Manipulation gemeldet
+        return (-1, "", "")  # zerstoert → Siegel passt nie
 
 
 def _write_head(db: Session, tenant_id, seq: int, chain_hash: str) -> None:
@@ -100,19 +121,45 @@ def _write_head(db: Session, tenant_id, seq: int, chain_hash: str) -> None:
         row.value = value
 
 
-# ── Versiegeln ──────────────────────────────────────────────────────────────
-
-def seal_chain(db: Session, tenant_id) -> int:
-    """Versiegelt alle noch losen Zeilen des Mandanten (Reihenfolge: Anlage).
-    Gibt die Zahl neu versiegelter Zeilen zurueck. Committet nicht."""
-    _lock_chain(db, tenant_id)
-    db.flush()
-    head = _read_head(db, tenant_id)
+def _chain_top(db: Session, tenant_id) -> tuple:
     last = db.query(TimeEntryAuditLog.chain_seq, TimeEntryAuditLog.chain_hash).filter(
         TimeEntryAuditLog.tenant_id == tenant_id,  # F-026
         TimeEntryAuditLog.chain_seq.isnot(None),
     ).order_by(TimeEntryAuditLog.chain_seq.desc()).first()
-    seq, prev = (last.chain_seq, last.chain_hash) if last else (0, "")
+    return (last.chain_seq, last.chain_hash or "") if last else (0, "")
+
+
+def head_problem(db: Session, tenant_id, top: tuple | None = None) -> str | None:
+    """``None`` = Kettenende in Ordnung (oder noch nichts versiegelt), sonst ein
+    kurzer Befund. ``top`` = (hoechstes vorhandenes Glied, dessen Hash)."""
+    top_seq, top_hash = top if top is not None else _chain_top(db, tenant_id)
+    head = _read_head(db, tenant_id)
+    if head is None:
+        return "fehlt" if top_seq > 0 else None
+    h_seq, h_hash, h_mac = head
+    if h_seq < 0 or not hmac.compare_digest(h_mac or "", _head_mac(tenant_id, h_seq, h_hash)):
+        return "ungültig (Siegel passt nicht)"
+    if h_seq < top_seq:
+        return f"zeigt auf Glied {h_seq}, vorhanden sind Glieder bis {top_seq}"
+    if h_seq == top_seq and top_seq > 0 and h_hash != top_hash:
+        return f"passt nicht zu Glied {top_seq}"
+    return None
+
+
+# ── Versiegeln ──────────────────────────────────────────────────────────────
+
+def seal_chain(db: Session, tenant_id) -> int:
+    """Versiegelt alle noch losen Zeilen des Mandanten (Reihenfolge: Anlage).
+    Gibt die Zahl neu versiegelter Zeilen zurueck. Committet nicht.
+    Wirft ``AuditChainBroken``, wenn das Kettenende nicht stimmt."""
+    _lock_chain(db, tenant_id)
+    db.flush()
+    top = _chain_top(db, tenant_id)
+    problem = head_problem(db, tenant_id, top)
+    if problem is not None:
+        raise AuditChainBroken(problem)
+    seq, prev = top
+    head = _read_head(db, tenant_id)
     if head is not None and head[0] > seq:
         seq, prev = head[0], head[1]  # letztes Glied legitim entfernt
 
@@ -138,7 +185,7 @@ def seal_chain(db: Session, tenant_id) -> int:
 
     for row in rows:
         seq += 1
-        chain_hash = audit_integrity.compute_chain_hash(tenant_id, seq, row.id, prev)
+        chain_hash = audit_integrity.compute_chain_hash(tenant_id, seq, row.id, prev, row.hash_version)
         if pg:
             for attr, value in (("chain_seq", seq), ("chain_prev", prev), ("chain_hash", chain_hash)):
                 set_committed_value(row, attr, value)
@@ -249,16 +296,34 @@ def delete_rows(db: Session, rows, *, tenant_id, user_id, changed_by, source: st
 
 # ── Pruefung ────────────────────────────────────────────────────────────────
 
+# Quellen, deren Zeilen eine Antrags-id tragen (Genehmigung eines
+# Aenderungsantrags; ``admin_change_requests``).
+_CR_SOURCES = ("change_request", "break_waiver", "credit_override")
+
+
 def _is_legacy_entry_row(row) -> bool:
-    """Altbestand (v2), dessen Zeiteintrag schon VOR Migration 076 geloescht
-    wurde: der Fremdschluessel ist genullt, eine Kopie gab es nie — die Zeile
-    ist nicht pruefbar (A2-1), aber auch kein Beleg fuer eine Manipulation."""
-    return (
-        row.hash_version is None
-        and row.time_entry_id is None and row.entry_ref is None
+    """Altbestand (v2), dessen Verweis schon VOR Migration 076 genullt wurde
+    (``ON DELETE SET NULL``): eine Kopie gab es nie, die Pruefsumme ist nicht
+    nachrechenbar (A2-1) — aber auch kein Beleg fuer eine Manipulation.
+
+    * Zeiteintrag geloescht: ``time_entry_id``/``entry_ref`` leer bei einer
+      Eintragszeile mit Zeiten.
+    * Aenderungsantrag geloescht: ``change_request_id``/``change_request_ref``
+      leer bei einer Zeile aus einer Antragsgenehmigung (Review-Runde
+      2026-11-07; vor dem Sperr-Fix in ``change_requests.withdraw`` konnte ein
+      gerade genehmigter Antrag noch geloescht werden)."""
+    if row.hash_version is not None:
+        return False
+    entry_gone = (
+        row.time_entry_id is None and row.entry_ref is None
         and row.action in _ENTRY_ACTIONS
         and (row.old_start_time is not None or row.new_start_time is not None)
     )
+    cr_gone = (
+        row.change_request_id is None and row.change_request_ref is None
+        and row.source in _CR_SOURCES
+    )
+    return entry_gone or cr_gone
 
 
 def verify_tenant(db: Session, tenant_id) -> dict:
@@ -269,7 +334,7 @@ def verify_tenant(db: Session, tenant_id) -> dict:
         TimeEntryAuditLog.row_hash.isnot(None),
     ).scalar()
 
-    checked = ok = tampered = legacy = legacy_deleted = unsealed = 0
+    checked = ok = tampered = legacy = legacy_deleted = unsealed = reanchored = 0
     tampered_ids: list[str] = []
     legacy_deleted_ids: list[str] = []
     links: dict[int, tuple] = {}
@@ -324,6 +389,8 @@ def verify_tenant(db: Session, tenant_id) -> dict:
             links[row.chain_seq] = (row.chain_prev or "", row.chain_hash)
         if content_ok and row.action == PURGE_ACTION:
             purged |= parse_marker_seqs(row.new_note)
+        if content_ok and row.action == REANCHOR_ACTION:
+            reanchored += 1
 
     broken_links = 0
     for seq, (prev, _h) in links.items():
@@ -333,17 +400,12 @@ def verify_tenant(db: Session, tenant_id) -> dict:
         elif before is not None and before[1] != prev:
             broken_links += 1
 
-    head = _read_head(db, tenant_id)
     top = max(links) if links else 0
-    head_ok = True
-    if head is not None:
-        h_seq, h_hash, h_mac = head
-        head_ok = hmac.compare_digest(h_mac or "", _head_mac(tenant_id, h_seq, h_hash)) and h_seq >= top
-        if head_ok and h_seq in links:
-            head_ok = links[h_seq][1] == h_hash
-        top = max(top, h_seq)
-    elif links:
-        head_ok = False  # versiegelt, aber Kopf fehlt
+    problem = head_problem(db, tenant_id, (top, links[top][1] if links else ""))
+    head_ok = problem is None
+    head = _read_head(db, tenant_id)
+    if head_ok and head is not None:
+        top = max(top, head[0])  # legitim entfernte letzte Glieder
     missing = [s for s in range(1, top + 1) if s not in links and s not in purged]
 
     return {
@@ -357,6 +419,8 @@ def verify_tenant(db: Session, tenant_id) -> dict:
         "missing_links": len(missing),
         "broken_links": broken_links,
         "head_ok": head_ok,
+        "head_problem": problem,
+        "reanchored": reanchored,
         "intact": tampered == 0 and not missing and broken_links == 0 and head_ok,
         "tampered_ids": tampered_ids,
         "missing_seqs": missing[:100],
@@ -371,6 +435,7 @@ def _store_last_check(db: Session, tenant_id, result: dict, at: datetime) -> Non
         "checked": result["checked"],
         "tampered": result["tampered"],
         "missing_links": result["missing_links"],
+        "head_ok": result["head_ok"],
     })
     row = db.query(SystemSetting).filter(
         SystemSetting.key == LAST_CHECK_SETTING_KEY, SystemSetting.tenant_id == tenant_id,
@@ -399,16 +464,21 @@ def failure_detail(result: dict) -> str:
         f"Änderungsprotokoll: {result['tampered']} veränderte Zeile(n), "
         f"{result['missing_links']} fehlende Kettenglied(er), "
         f"{result['broken_links']} gebrochene Verknüpfung(en)"
-        + ("" if result["head_ok"] else ", Kettenende passt nicht")
+        + ("" if result["head_ok"] else f", Kettenende {result.get('head_problem') or 'passt nicht'}")
         + f" — von {result['checked']} geprüften Zeilen."
     )
 
 
 def check_tenant(db: Session, tenant_id, *, actor: str, record_failure: bool) -> dict:
-    """Versiegeln + pruefen + Ergebnis ablegen; bei Abweichung (``record_failure``)
-    ein ``security_events``-Vorgang und ein ``error_logs``-Eintrag. Committet."""
-    seal_chain(db, tenant_id)
+    """Pruefen + versiegeln + Ergebnis ablegen; bei Abweichung (``record_failure``)
+    ein ``security_events``-Vorgang und ein ``error_logs``-Eintrag. Committet.
+
+    Erst pruefen, dann versiegeln: Versiegeln vor der Pruefung koennte einen
+    Befund am Kettenende ueberschreiben. Stimmt das Kettenende nicht, wird
+    nicht versiegelt (``seal_chain`` verweigert es ohnehin)."""
     result = verify_tenant(db, tenant_id)
+    if result["head_ok"] and seal_chain(db, tenant_id):
+        result = verify_tenant(db, tenant_id)
     now = datetime.now(timezone.utc)
     _store_last_check(db, tenant_id, result, now)
     if not result["intact"] and record_failure:
@@ -426,6 +496,41 @@ def check_tenant(db: Session, tenant_id, *, actor: str, record_failure: bool) ->
             db.rollback()
             logger.exception("audit integrity: error_logs-Eintrag fehlgeschlagen")
     return result
+
+
+def reanchor_chain(db: Session, tenant_id, *, changed_by, reason: str) -> dict:
+    """Setzt ein fehlendes oder ungueltiges Kettenende bewusst neu (Verwaltung,
+    nach Klaerung). Hinterlaesst eine gehashte, sofort versiegelte Vermerk-Zeile
+    mit Befund und Grund und einen ``security_events``-Vorgang — das Neusetzen
+    selbst bleibt damit dauerhaft belegt. Was zwischen dem alten Kettenende und
+    dem letzten vorhandenen Glied fehlte, ist nicht mehr feststellbar; das steht
+    im Vermerk. Wirft ``ValueError``, wenn das Kettenende stimmt. Committet."""
+    _lock_chain(db, tenant_id)
+    db.flush()
+    top_seq, top_hash = _chain_top(db, tenant_id)
+    problem = head_problem(db, tenant_id, (top_seq, top_hash))
+    if problem is None:
+        raise ValueError("Das Kettenende ist in Ordnung — es gibt nichts neu zu setzen.")
+    db.add(TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=changed_by,
+        changed_by=changed_by,
+        action=REANCHOR_ACTION,
+        source=REANCHOR_SOURCE,
+        old_note=f"Kettenende {problem}",
+        new_note=(f"Kettenende neu gesetzt auf Glied {top_seq}; ob dahinter Zeilen "
+                  f"entfernt wurden, ist nicht mehr feststellbar. Grund: {reason}"),
+        tenant_id=tenant_id,
+    ))
+    _write_head(db, tenant_id, top_seq, top_hash)
+    db.flush()
+    seal_chain(db, tenant_id)
+    db.add(SecurityEvent(
+        tenant_id=tenant_id, event=EVENT_AUDIT_CHAIN_REANCHORED,
+        actor=f"user:{changed_by}", detail=f"Kettenende {problem} — neu gesetzt auf Glied {top_seq}",
+    ))
+    db.commit()
+    return check_tenant(db, tenant_id, actor=f"user:{changed_by}", record_failure=True)
 
 
 def run_daily_check(db: Session) -> int:

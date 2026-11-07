@@ -272,6 +272,117 @@ def test_functions_respect_tenant_and_seal_once(env):
         eng.dispose()
 
 
+def _head_seq(engine):
+    with engine.connect() as conn:
+        conn.execute(text("SET app.is_superadmin = 'true'"))
+        return conn.execute(text("SELECT pz_audit_head_seq(:t)"), {"t": TENANT}).scalar()
+
+
+def test_head_row_cannot_be_deleted_or_renamed_by_app_role(env):
+    """Review-Runde: ohne Kettenende fiele das Abschneiden der letzten Glieder
+    nicht auf — die App-Rolle darf es fortschreiben, aber nicht entfernen."""
+    from app.services import audit_chain_service
+    url, engine, app_url, role = env
+    eng, s = _app_session(app_url)
+    try:
+        _insert_hashed(s)
+        audit_chain_service.seal_chain(s, uuid.UUID(TENANT))
+        s.commit()
+        msg = _expect_denied(s, "DELETE FROM system_settings WHERE key = 'audit_chain_head'")
+        assert "Kettenende" in msg
+        _expect_denied(s, "UPDATE system_settings SET key = 'weg' WHERE key = 'audit_chain_head'")
+        # Fortschreiben (naechstes Versiegeln) geht weiter
+        _insert_hashed(s)
+        assert audit_chain_service.seal_chain(s, uuid.UUID(TENANT)) == 1
+        s.commit()
+        # andere Einstellungen bleiben loeschbar
+        s.execute(text("INSERT INTO system_settings (key, tenant_id, value) VALUES ('x076', :t, '1')"),
+                  {"t": TENANT})
+        s.execute(text("DELETE FROM system_settings WHERE key = 'x076'"))
+        s.commit()
+    finally:
+        s.close()
+        eng.dispose()
+
+
+def test_seal_then_delete_of_fresh_row_is_refused(env):
+    """Frische Zeile selbst versiegeln und gleich loeschen: Versiegeln nur
+    lueckenlos ab dem Kettenende, Loeschen nur bis zum Kettenende."""
+    from app.services import audit_chain_service
+    url, engine, app_url, role = env
+    eng, s = _app_session(app_url)
+    try:
+        _insert_hashed(s)
+        audit_chain_service.seal_chain(s, uuid.UUID(TENANT))
+        s.commit()
+        head = _head_seq(engine)
+        fresh = _insert_hashed(s)
+        # Luecke lassen → abgelehnt
+        msg = _expect_denied(s, "SELECT pz_audit_seal(ARRAY[CAST(:i AS uuid)], ARRAY[CAST(:q AS bigint)], "
+                                "ARRAY[''], ARRAY['x'])", {"i": str(fresh.id), "q": head + 5})
+        assert "lueckenlos" in msg
+        # lueckenlos mit Unsinns-Hash: geht, aber loeschen nicht (hinter dem Kettenende)
+        s.execute(text("SELECT pz_audit_seal(ARRAY[CAST(:i AS uuid)], ARRAY[CAST(:q AS bigint)], "
+                       "ARRAY[''], ARRAY['x'])"), {"i": str(fresh.id), "q": head + 1})
+        s.commit()
+        msg = _expect_denied(s, "SELECT pz_audit_delete(ARRAY[CAST(:i AS uuid)])", {"i": str(fresh.id)})
+        assert "Kettenende" in msg
+        # und die Pruefung sieht das falsche Glied
+        result = audit_chain_service.verify_tenant(s, uuid.UUID(TENANT))
+        assert str(fresh.id) in result["tampered_ids"]
+    finally:
+        s.close()
+        eng.dispose()
+
+
+def test_delete_refused_without_head(env):
+    from app.services import audit_chain_service
+    url, engine, app_url, role = env
+    eng, s = _app_session(app_url)
+    try:
+        row = _insert_hashed(s)
+        audit_chain_service.seal_chain(s, uuid.UUID(TENANT))
+        s.commit()
+        with engine.begin() as conn:  # Eigentuemerin darf (Wartung)
+            conn.execute(text("SET LOCAL app.is_superadmin = 'true'"))
+            conn.execute(text("DELETE FROM system_settings WHERE key = 'audit_chain_head'"))
+        _expect_denied(s, "SELECT pz_audit_delete(ARRAY[CAST(:i AS uuid)])", {"i": str(row.id)})
+        with pytest.raises(audit_chain_service.AuditChainBroken):
+            audit_chain_service.seal_chain(s, uuid.UUID(TENANT))
+        s.rollback()
+    finally:
+        s.close()
+        eng.dispose()
+
+
+def test_functions_not_executable_by_public(env):
+    url, engine, app_url, role = env
+    other = f"pz076_x_{uuid.uuid4().hex[:8]}"
+    with engine.begin() as conn:
+        conn.execute(text(f'CREATE ROLE "{other}" NOLOGIN'))
+    try:
+        with engine.connect() as conn:
+            for fn in ("pz_audit_seal(uuid[], bigint[], text[], text[])", "pz_audit_delete(uuid[])",
+                       "pz_audit_set_notes(uuid, text, text, text)", "pz_audit_head_seq(uuid)"):
+                assert conn.execute(text("SELECT has_function_privilege(:r, :f, 'EXECUTE')"),
+                                    {"r": role, "f": fn}).scalar(), fn
+                assert not conn.execute(text("SELECT has_function_privilege(:r, :f, 'EXECUTE')"),
+                                        {"r": other, "f": fn}).scalar(), fn
+        # init-db-user.sql (Wiederherstellung) laesst es so
+        sql = (BACKEND / "init-db-user.sql").read_text().replace("praxiszeit_app", role)
+        sql = sql.replace("GRANT CONNECT ON DATABASE praxiszeit", "-- ")
+        with engine.begin() as conn:
+            conn.exec_driver_sql(sql)
+        with engine.connect() as conn:
+            assert conn.execute(text("SELECT has_function_privilege(:r, 'pz_audit_delete(uuid[])', 'EXECUTE')"),
+                                {"r": role}).scalar()
+            assert not conn.execute(text("SELECT has_function_privilege(:r, 'pz_audit_delete(uuid[])', 'EXECUTE')"),
+                                    {"r": other}).scalar()
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text(f'DROP ROLE IF EXISTS "{other}"'))
+
+
 def test_downgrade_and_upgrade_again(env):
     url, engine, app_url, role = env
     _alembic(url, "downgrade", BASE_REV)
@@ -281,7 +392,11 @@ def test_downgrade_and_upgrade_again(env):
         assert "entry_ref" not in cols and "chain_seq" not in cols
         assert conn.execute(text(
             "SELECT count(*) FROM pg_proc WHERE proname LIKE 'pz_audit_%'")).scalar() == 0
+        assert conn.execute(text(
+            "SELECT count(*) FROM pg_trigger WHERE tgname = 'pz_audit_head_guard_write'")).scalar() == 0
     _alembic(url, "upgrade", HEAD_REV)
     with engine.connect() as conn:
         assert conn.execute(text(
             "SELECT count(*) FROM pg_trigger WHERE tgname = 'pz_audit_guard_write'")).scalar() == 1
+        assert conn.execute(text(
+            "SELECT count(*) FROM pg_trigger WHERE tgname = 'pz_audit_head_guard_write'")).scalar() == 1

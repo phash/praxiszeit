@@ -475,3 +475,189 @@ class TestIntegrityCheckRuns:
         assert db.query(SecurityEvent).count() == 0
         assert db.query(SystemSetting).filter(
             SystemSetting.key == audit_chain_service.HEAD_SETTING_KEY).count() == 1
+
+
+# ── Review-Runde 2026-11-07: Kettenende, Herabstufung, Stempelreihenfolge ────
+
+def _drop_head(db):
+    db.query(SystemSetting).filter(
+        SystemSetting.key == audit_chain_service.HEAD_SETTING_KEY,
+        SystemSetting.tenant_id == DEFAULT_TENANT_ID,
+    ).delete()
+    db.commit()
+
+
+def _sealed(db, user, admin, n=3):
+    rows = [_audit(db, user, admin) for _ in range(n)]
+    audit_chain_service.seal_chain(db, DEFAULT_TENANT_ID)
+    db.commit()
+    return rows
+
+
+class TestChainHeadNeverRecreated:
+    def test_cut_tail_and_deleted_head_stays_detected(self, db, test_user, test_admin):
+        """Letztes Glied + Kettenende geloescht, danach eine neue Zeile: die
+        Pruefung meldet das Kettenende — auch beim zweiten Lauf (kein Heilen)."""
+        rows = _sealed(db, test_user, test_admin)
+        db.delete(rows[2])
+        db.commit()
+        _drop_head(db)
+        _audit(db, test_user, test_admin)
+        for _ in range(2):
+            res = audit_chain_service.check_tenant(db, DEFAULT_TENANT_ID, actor="t", record_failure=False)
+            assert not res["intact"] and not res["head_ok"], res
+            assert res["head_problem"] == "fehlt"
+        assert db.query(SystemSetting).filter(
+            SystemSetting.key == audit_chain_service.HEAD_SETTING_KEY).count() == 0
+        with pytest.raises(audit_chain_service.AuditChainBroken):
+            audit_chain_service.seal_chain(db, DEFAULT_TENANT_ID)
+
+    def test_destroyed_head_blocks_seal_and_delete(self, db, test_user, test_admin):
+        rows = _sealed(db, test_user, test_admin)
+        head = db.query(SystemSetting).filter(
+            SystemSetting.key == audit_chain_service.HEAD_SETTING_KEY).one()
+        head.value = "kaputt"
+        db.commit()
+        res = audit_chain_service.verify_tenant(db, DEFAULT_TENANT_ID)
+        assert not res["head_ok"] and "ungültig" in res["head_problem"]
+        with pytest.raises(audit_chain_service.AuditChainBroken):
+            audit_chain_service.delete_rows(
+                db, [rows[0]], tenant_id=DEFAULT_TENANT_ID, user_id=test_admin.id,
+                changed_by=test_admin.id, source="dsgvo", reason="Test")
+        db.rollback()
+        assert db.get(TimeEntryAuditLog, rows[0].id) is not None
+
+    def test_replayed_older_head_is_detected(self, db, test_user, test_admin):
+        _sealed(db, test_user, test_admin, n=2)
+        old_value = db.query(SystemSetting).filter(
+            SystemSetting.key == audit_chain_service.HEAD_SETTING_KEY).one().value
+        _audit(db, test_user, test_admin)
+        audit_chain_service.seal_chain(db, DEFAULT_TENANT_ID)
+        db.commit()
+        db.query(SystemSetting).filter(
+            SystemSetting.key == audit_chain_service.HEAD_SETTING_KEY).one().value = old_value
+        db.commit()
+        res = audit_chain_service.verify_tenant(db, DEFAULT_TENANT_ID)
+        assert not res["head_ok"] and "Glied 2" in res["head_problem"]
+
+    def test_purge_user_is_blocked_with_hint(self, admin_client, db, test_admin):
+        u = User(username="weg2", email="weg2@x.de", password_hash="x", first_name="W",
+                 last_name="P", role=UserRole.EMPLOYEE, weekly_hours=40, vacation_days=30,
+                 work_days_per_week=5, is_active=False, tenant_id=DEFAULT_TENANT_ID)
+        db.add(u)
+        db.commit()
+        _audit(db, u, u)
+        audit_chain_service.seal_chain(db, DEFAULT_TENANT_ID)
+        db.commit()
+        _drop_head(db)
+        r = admin_client.delete(f"/api/admin/users/{u.id}/purge")
+        assert r.status_code == 409, r.text
+        assert "Kettenende fehlt" in r.json()["detail"]
+        db.expire_all()
+        assert db.get(User, u.id) is not None
+
+    def test_retention_skips_tenant_with_broken_head(self, db, test_user, test_admin):
+        from app.services.lifecycle_service import purge_expired_vacation_audit_logs
+        old = _audit(db, test_user, test_admin, source="absence_creation", action="delete")
+        old.created_at = datetime.now(timezone.utc) - timedelta(days=731)
+        old.row_hash = audit_integrity.compute_row_hash(old)
+        db.commit()
+        audit_chain_service.seal_chain(db, DEFAULT_TENANT_ID)
+        db.commit()
+        _drop_head(db)
+        assert purge_expired_vacation_audit_logs(db) == 0
+        assert db.get(TimeEntryAuditLog, old.id) is not None
+
+    def test_reanchor_documents_and_unblocks(self, admin_client, db, test_user, test_admin):
+        rows = _sealed(db, test_user, test_admin)
+        db.delete(rows[2])
+        db.commit()
+        _drop_head(db)
+        r = admin_client.post("/api/admin/audit/reanchor", json={"reason": "kurz"})
+        assert r.status_code == 422
+        r = admin_client.post("/api/admin/audit/reanchor",
+                              json={"reason": "Datensicherung vom 06.11. geprüft"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["intact"] and body["head_ok"] and body["reanchored"] == 1, body
+        assert body["last_check"]["head_ok"] is True
+        marker = db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.action == audit_chain_service.REANCHOR_ACTION).one()
+        assert marker.chain_seq is not None and audit_integrity.verify_row(marker)
+        assert "fehlt" in marker.old_note and "Datensicherung" in marker.new_note
+        assert db.query(SecurityEvent).filter(
+            SecurityEvent.event == "audit_chain_reanchored").count() == 1
+        # Danach geht das Loeschen wieder
+        assert audit_chain_service.delete_rows(
+            db, [rows[0]], tenant_id=DEFAULT_TENANT_ID, user_id=test_admin.id,
+            changed_by=test_admin.id, source="dsgvo", reason="Test") == 1
+        # Kettenende in Ordnung → nichts neu zu setzen
+        r = admin_client.post("/api/admin/audit/reanchor",
+                              json={"reason": "noch einmal, ohne Befund"})
+        assert r.status_code == 400
+
+
+class TestNoDowngradeToLegacy:
+    def test_sealed_v3_row_downgraded_to_legacy_is_tampered(self, db, test_user, test_admin):
+        """Superuser: row_hash + hash_version auf NULL, created_at vor die erste
+        gehashte Zeile → frueher "Altbestand", jetzt bricht das Kettenglied."""
+        early = _audit(db, test_user, test_admin)
+        rows = _sealed(db, test_user, test_admin, n=2)
+        victim = rows[1]
+        victim.row_hash = None
+        victim.hash_version = None
+        victim.new_note = "umgeschrieben"
+        victim.created_at = early.created_at - timedelta(days=30)
+        db.commit()
+        res = audit_chain_service.verify_tenant(db, DEFAULT_TENANT_ID)
+        assert str(victim.id) in res["tampered_ids"] and not res["intact"]
+
+    def test_link_binds_hash_version(self):
+        a = audit_integrity.compute_chain_hash("t", 1, "r", "", 3)
+        assert a != audit_integrity.compute_chain_hash("t", 1, "r", "", None)
+
+
+class TestLegacyChangeRequestRow:
+    def test_v2_row_of_deleted_change_request_is_legacy(self, db, test_user, test_admin):
+        import uuid as _uuid
+        e = _entry(db, test_user)
+        row = _audit(db, test_user, test_admin, source="change_request", time_entry_id=e.id)
+        # v2-Hash ueber eine Antrags-id, die schon VOR 076 genullt wurde: der
+        # Backfill fand NULL vor, die Kopie blieb leer.
+        row.change_request_id = _uuid.uuid4()
+        _make_legacy_v2(db, row)
+        row.change_request_id = None
+        row.change_request_ref = None
+        db.commit()
+        res = audit_chain_service.verify_tenant(db, DEFAULT_TENANT_ID)
+        assert res["tampered"] == 0 and res["legacy_entry_deleted"] == 1, res
+
+    def test_tampered_v2_row_without_cr_source_stays_tampered(self, db, test_user, test_admin):
+        e = _entry(db, test_user)
+        row = _audit(db, test_user, test_admin, source="manual", time_entry_id=e.id)
+        _make_legacy_v2(db, row)
+        row.new_note = "geaendert"
+        db.commit()
+        assert audit_chain_service.verify_tenant(db, DEFAULT_TENANT_ID)["tampered"] == 1
+
+
+class TestStampsAtConstruction:
+    def test_two_rows_same_entry_one_flush_keep_intermediate_state(self, db, test_user, test_admin):
+        """Zwei Protokollzeilen zum selben Eintrag in EINEM Flush: jede traegt
+        den Stand, als sie gebaut wurde (nicht den Endstand)."""
+        e = _entry(db, test_user)
+        eid = e.id
+        db.expire_all()
+        e = db.query(TimeEntry).filter(TimeEntry.id == eid).one()
+        snap = {"date": e.date, "start_time": e.start_time, "end_time": e.end_time,
+                "break_minutes": e.break_minutes, "note": e.note}
+        e.raw_end_time = time(19, 0)
+        _create_audit_log(db, e.id, test_user.id, test_admin.id, action="update",
+                          old_entry=snap, new_entry=e, tenant_id=DEFAULT_TENANT_ID)
+        e.raw_end_time = time(20, 0)
+        _create_audit_log(db, e.id, test_user.id, test_admin.id, action="update",
+                          old_entry=snap, new_entry=e, tenant_id=DEFAULT_TENANT_ID)
+        db.commit()
+        rows = db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.entry_ref == eid).all()
+        pairs = sorted((r.old_raw_end_time, r.new_raw_end_time) for r in rows)
+        assert pairs == [(time(18, 0), time(19, 0)), (time(19, 0), time(20, 0))]

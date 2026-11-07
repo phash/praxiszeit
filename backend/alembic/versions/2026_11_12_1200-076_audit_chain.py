@@ -105,22 +105,66 @@ LANGUAGE sql STABLE AS $$
 $$;
 """
 
+# Gesiegeltes Kettenende (``system_settings.audit_chain_head``, Wert
+# ``seq:hash:siegel``) — hier nur die Position, das Siegel prueft die App
+# (Schluessel liegt ausserhalb der Datenbank). NULL = kein Kopf, -1 = zerstoert.
+HEAD_SEQ_FUNCTION = """
+CREATE OR REPLACE FUNCTION pz_audit_head_seq(p_tenant uuid) RETURNS bigint
+LANGUAGE sql STABLE SET search_path = public, pg_temp AS $$
+    SELECT CASE WHEN value ~ '^[0-9]{1,18}:[0-9a-f]*:[0-9a-f]+$'
+                THEN split_part(value, ':', 1)::bigint ELSE -1 END
+      FROM system_settings
+     WHERE key = 'audit_chain_head' AND tenant_id = p_tenant
+$$;
+"""
+
+# Versiegeln nur lueckenlos ab dem aktuellen Kettenende (Review-Runde
+# 2026-11-07): sonst koennte die App-Rolle eine frische Zeile mit beliebiger
+# Position versiegeln und gleich wieder loeschen.
 SEAL_FUNCTION = """
 CREATE OR REPLACE FUNCTION pz_audit_seal(p_ids uuid[], p_seqs bigint[], p_prevs text[], p_hashes text[])
 RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
     n integer;
+    v_cnt integer := COALESCE(array_length(p_ids, 1), 0);
+    v_tenant uuid;
+    v_head bigint;
+    v_start bigint;
 BEGIN
+    IF v_cnt = 0 THEN
+        RETURN 0;
+    END IF;
+    IF COALESCE(array_length(p_seqs, 1), 0) <> v_cnt OR COALESCE(array_length(p_prevs, 1), 0) <> v_cnt
+       OR COALESCE(array_length(p_hashes, 1), 0) <> v_cnt THEN
+        RAISE EXCEPTION 'pz_audit_seal: Listen ungleich lang';
+    END IF;
+    IF (SELECT count(DISTINCT tenant_id) FROM time_entry_audit_logs WHERE id = ANY(p_ids)) <> 1 THEN
+        RAISE EXCEPTION 'pz_audit_seal: Zeilen genau eines Mandanten erwartet';
+    END IF;
+    SELECT tenant_id INTO v_tenant FROM time_entry_audit_logs WHERE id = ANY(p_ids) LIMIT 1;
+    IF NOT pz_audit_tenant_ok(v_tenant) THEN
+        RAISE EXCEPTION 'pz_audit_seal: fremder Mandant';
+    END IF;
+    v_head := pz_audit_head_seq(v_tenant);
+    IF v_head < 0 THEN
+        RAISE EXCEPTION 'pz_audit_seal: Kettenende zerstoert';
+    END IF;
+    SELECT GREATEST(COALESCE(max(chain_seq), 0), COALESCE(v_head, 0)) + 1 INTO v_start
+      FROM time_entry_audit_logs WHERE tenant_id = v_tenant;
+    IF EXISTS (SELECT 1 FROM unnest(p_seqs) WITH ORDINALITY AS u(s, i)
+                WHERE u.s IS DISTINCT FROM v_start + u.i - 1) THEN
+        RAISE EXCEPTION 'pz_audit_seal: Kettenglieder muessen lueckenlos bei % anschliessen', v_start;
+    END IF;
     UPDATE time_entry_audit_logs t
        SET chain_seq = s.seq, chain_prev = s.prev, chain_hash = s.h
       FROM unnest(p_ids, p_seqs, p_prevs, p_hashes) AS s(id, seq, prev, h)
      WHERE t.id = s.id
        AND t.chain_seq IS NULL
-       AND pz_audit_tenant_ok(t.tenant_id);
+       AND t.tenant_id = v_tenant;
     GET DIAGNOSTICS n = ROW_COUNT;
-    IF n <> COALESCE(array_length(p_ids, 1), 0) THEN
-        RAISE EXCEPTION 'pz_audit_seal: % von % Zeilen versiegelt', n, COALESCE(array_length(p_ids, 1), 0);
+    IF n <> v_cnt THEN
+        RAISE EXCEPTION 'pz_audit_seal: % von % Zeilen versiegelt', n, v_cnt;
     END IF;
     RETURN n;
 END $$;
@@ -141,6 +185,10 @@ BEGIN
 END $$;
 """
 
+# Loeschen nur versiegelter Zeilen BIS zum gesiegelten Kettenende: ohne
+# Kettenende (oder mit zerstoertem) wird nichts geloescht. Die App-Rolle kann
+# das Kettenende weder loeschen noch umbenennen (pz_audit_head_guard); ein
+# gefaelschtes Kettenende verraet das Siegel.
 DELETE_FUNCTION = """
 CREATE OR REPLACE FUNCTION pz_audit_delete(p_ids uuid[])
 RETURNS integer
@@ -152,6 +200,12 @@ BEGIN
                 WHERE id = ANY(p_ids) AND chain_seq IS NULL) THEN
         RAISE EXCEPTION 'pz_audit_delete: nur versiegelte Zeilen duerfen geloescht werden';
     END IF;
+    IF EXISTS (SELECT 1 FROM time_entry_audit_logs t
+                WHERE t.id = ANY(p_ids)
+                  AND (pz_audit_head_seq(t.tenant_id) IS NULL
+                       OR t.chain_seq > pz_audit_head_seq(t.tenant_id))) THEN
+        RAISE EXCEPTION 'pz_audit_delete: nur Zeilen bis zum gesiegelten Kettenende duerfen geloescht werden';
+    END IF;
     DELETE FROM time_entry_audit_logs t
      WHERE t.id = ANY(p_ids)
        AND pz_audit_tenant_ok(t.tenant_id);
@@ -159,6 +213,67 @@ BEGIN
     RETURN n;
 END $$;
 """
+
+# Kettenende in system_settings: die App-Rolle darf es fortschreiben (UPDATE
+# des Werts), aber nicht loeschen und nicht umbenennen — sonst fiele das
+# Abschneiden der letzten Glieder nicht mehr auf. Eigentuemerin/Superuser (und
+# die Fremdschluessel-Kaskade beim Loeschen eines Mandanten) duerfen.
+HEAD_GUARD_FUNCTION = """
+CREATE OR REPLACE FUNCTION pz_audit_head_guard() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    tbl_owner oid;
+BEGIN
+    SELECT relowner INTO tbl_owner FROM pg_class WHERE oid = TG_RELID;
+    IF pg_has_role(current_user, tbl_owner, 'MEMBER')
+       OR COALESCE((SELECT rolsuper FROM pg_roles WHERE rolname = current_user), false) THEN
+        IF TG_OP = 'DELETE' THEN
+            RETURN OLD;
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'system_settings: Kettenende des Aenderungsprotokolls darf nicht geloescht werden'
+            USING ERRCODE = '42501';
+    END IF;
+    IF NEW.key IS DISTINCT FROM OLD.key OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
+        RAISE EXCEPTION 'system_settings: Kettenende des Aenderungsprotokolls darf nicht umbenannt werden'
+            USING ERRCODE = '42501';
+    END IF;
+    RETURN NEW;
+END $$;
+"""
+
+# Funktionen: EXECUTE nicht fuer PUBLIC (PostgreSQL-Vorgabe), nur fuer die
+# Konten, die das Protokoll schreiben (Recht INSERT — die App-Rolle).
+_AUDIT_FUNCTIONS = (
+    "pz_audit_seal(uuid[], bigint[], text[], text[])",
+    "pz_audit_set_notes(uuid, text, text, text)",
+    "pz_audit_delete(uuid[])",
+    "pz_audit_tenant_ok(uuid)",
+    "pz_audit_head_seq(uuid)",
+)
+EXECUTE_BLOCK = """
+DO $$
+DECLARE
+    r record;
+    f text;
+BEGIN
+    FOREACH f IN ARRAY ARRAY[%s] LOOP
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION %%s FROM PUBLIC', f);
+        FOR r IN
+            SELECT DISTINCT a.grantee
+              FROM pg_class c, aclexplode(c.relacl) a
+             WHERE c.oid = 'public.time_entry_audit_logs'::regclass
+               AND a.privilege_type = 'INSERT'
+               AND a.grantee <> c.relowner
+               AND a.grantee <> 0
+        LOOP
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %%s TO %%s', f, r.grantee::regrole);
+        END LOOP;
+    END LOOP;
+END $$;
+""" % ", ".join(f"'{f}'" for f in _AUDIT_FUNCTIONS)
 
 # Rechte UPDATE/DELETE jedem Konto ausser der Eigentuemerin entziehen (auch
 # PUBLIC). Die Rolle der App heisst je Installation anders (APP_DB_USER bzw.
@@ -237,9 +352,15 @@ def upgrade() -> None:
             "CREATE TRIGGER pz_audit_guard_write BEFORE INSERT OR UPDATE OR DELETE "
             "ON time_entry_audit_logs FOR EACH ROW EXECUTE FUNCTION pz_audit_guard()"
         ))
-        for fn in (TENANT_OK_FUNCTION, SEAL_FUNCTION, NOTES_FUNCTION, DELETE_FUNCTION):
+        for fn in (TENANT_OK_FUNCTION, HEAD_SEQ_FUNCTION, SEAL_FUNCTION, NOTES_FUNCTION,
+                   DELETE_FUNCTION, HEAD_GUARD_FUNCTION):
             conn.execute(sa.text(fn))
+        conn.execute(sa.text(
+            "CREATE TRIGGER pz_audit_head_guard_write BEFORE UPDATE OR DELETE ON system_settings "
+            "FOR EACH ROW WHEN (OLD.key = 'audit_chain_head') EXECUTE FUNCTION pz_audit_head_guard()"
+        ))
         conn.execute(sa.text(REVOKE_BLOCK))
+        conn.execute(sa.text(EXECUTE_BLOCK))
 
     try:
         print(f"076: {count} Protokollzeilen mit festen Verweisen versehen")
@@ -257,6 +378,14 @@ def downgrade() -> None:
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_set_notes(uuid, text, text, text)"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_delete(uuid[])"))
         conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_tenant_ok(uuid)"))
+        conn.execute(sa.text("DROP TRIGGER IF EXISTS pz_audit_head_guard_write ON system_settings"))
+        conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_head_guard()"))
+        conn.execute(sa.text("DROP FUNCTION IF EXISTS pz_audit_head_seq(uuid)"))
+        # Kettenende gehoert zu den Spalten, die hier wegfallen
+        conn.execute(sa.text("SET LOCAL app.is_superadmin = 'true'"))
+        conn.execute(sa.text(
+            "DELETE FROM system_settings WHERE key IN ('audit_chain_head', 'audit_integrity_last_check')"
+        ))
         conn.execute(sa.text(
             "DO $$ BEGIN IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'praxiszeit_app') THEN "
             "GRANT UPDATE, DELETE ON time_entry_audit_logs TO praxiszeit_app; END IF; END $$;"

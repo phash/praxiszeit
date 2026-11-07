@@ -301,7 +301,7 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Rechtliche Bedeutung</h3>
           <div className="text-sm bg-blue-50 border border-blue-200 rounded-sm p-2 text-blue-700">
-            Das Audit-Log dient als Nachweis für Änderungen gemäß §16 ArbZG. PraxisZeit kann Zeilen nur anfügen; jede Zeile trägt eine Prüfsumme, und die Karte „Prüfung des Änderungsprotokolls" (jede Nacht automatisch, „Jetzt prüfen") erkennt Zeilen, die außerhalb von PraxisZeit verändert oder entfernt wurden.
+            Das Audit-Log dient als Nachweis für Änderungen gemäß §16 ArbZG. PraxisZeit kann Zeilen nur anfügen; jede Zeile trägt eine Prüfsumme, und die Karte „Prüfung des Änderungsprotokolls" (jede Nacht automatisch, „Jetzt prüfen") erkennt Zeilen, die außerhalb von PraxisZeit verändert oder entfernt wurden. Fehlt das Kettenende, sind Löschungen gesperrt, bis es mit Grund neu gesetzt wird.
           </div>
         </section>
       </div>

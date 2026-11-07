@@ -58,4 +58,25 @@ describe('<AuditIntegrityCard />', () => {
     render(<AuditIntegrityCard />);
     expect(await screen.findByText('Noch keine Prüfung gelaufen.')).toBeInTheDocument();
   });
+
+  it('Kettenende kaputt: Neusetzen nur mit Grund (Review-Runde #537)', async () => {
+    getMock.mockResolvedValue({ data: { last_check: { checked_at: '2026-11-07T02:15:00Z', intact: false, checked: 3, tampered: 0, missing_links: 0, head_ok: false } } });
+    postMock.mockResolvedValue({ data: { ...ok, reanchored: 1 } });
+    render(<AuditIntegrityCard />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Kettenende neu setzen…' }));
+    const submit = screen.getByRole('button', { name: 'Kettenende neu setzen' });
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/Grund/), { target: { value: 'Wiederherstellung geprüft' } });
+    fireEvent.click(submit);
+    expect(await screen.findByText(/schon einmal neu gesetzt/)).toBeInTheDocument();
+    expect(postMock).toHaveBeenCalledWith('/admin/audit/reanchor', { reason: 'Wiederherstellung geprüft' });
+    expect(screen.queryByRole('button', { name: 'Kettenende neu setzen…' })).not.toBeInTheDocument();
+  });
+
+  it('intaktes Kettenende: kein Knopf zum Neusetzen', async () => {
+    getMock.mockResolvedValue({ data: { last_check: { checked_at: '2026-11-07T02:15:00Z', intact: true, checked: 3, tampered: 0, missing_links: 0, head_ok: true } } });
+    render(<AuditIntegrityCard />);
+    expect(await screen.findByText(/in Ordnung/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Kettenende neu setzen…' })).not.toBeInTheDocument();
+  });
 });

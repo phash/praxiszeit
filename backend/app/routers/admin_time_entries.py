@@ -1,6 +1,7 @@
 """Admin sub-router: Admin Time Entry CRUD + Audit Log."""
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month
 from sqlalchemy import extract, or_, and_
@@ -872,6 +873,37 @@ def check_audit_integrity(
     result = audit_chain_service.check_tenant(
         db, current_user.tenant_id, actor=f"user:{current_user.id}", record_failure=True,
     )
+    result["last_check"] = audit_chain_service.read_last_check(db, current_user.tenant_id)
+    return result
+
+
+class AuditReanchorRequest(BaseModel):
+    reason: str = Field(..., min_length=10, max_length=300)
+
+
+@router.post("/audit/reanchor")
+def reanchor_audit_chain(
+    body: AuditReanchorRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#537 (Review-Runde): Kettenende neu setzen, nachdem die Pruefung ein
+    fehlendes oder ungueltiges Kettenende gemeldet hat. Bis dahin sind
+    Versiegeln und Loeschen von Protokollzeilen gesperrt. Das Neusetzen
+    hinterlaesst eine gehashte Vermerk-Zeile mit Grund und einen
+    Konto-Vorgang; 400, wenn das Kettenende stimmt."""
+    from app.services import audit_chain_service
+
+    reason = body.reason.strip()
+    if len(reason) < 10:
+        raise HTTPException(status_code=422, detail="Bitte einen Grund mit mindestens 10 Zeichen angeben.")
+    try:
+        result = audit_chain_service.reanchor_chain(
+            db, current_user.tenant_id, changed_by=current_user.id, reason=reason,
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
     result["last_check"] = audit_chain_service.read_last_check(db, current_user.tenant_id)
     return result
 
