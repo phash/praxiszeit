@@ -191,10 +191,12 @@ def _signed(text: str, key: str = _KEY) -> str:
     return text + signer.trailer().decode("ascii")
 
 
+# Nur mit Repo berechnen: ohne praxiszeit-server.py (Backend-Container) ist das
+# Modul per ``pytestmark`` uebersprungen, die Sammlung darf aber nicht scheitern.
 _DUMP_LOADED = "".join(
     line for line in _signed(_DUMP).splitlines(keepends=True)
     if not line.startswith(("\\restrict ", "\\unrestrict "))
-)
+) if _SERVER_PATH.exists() else ""
 
 
 def _dump(inst: Path, text: str = _DUMP, name: str = "praxiszeit_20261017_120000.sql.gz",
