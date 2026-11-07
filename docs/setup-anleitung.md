@@ -681,7 +681,7 @@ cd ~/praxiszeit
 git pull
 docker compose down
 docker compose pull db                 # PostgreSQL-18-Patchstand (`up` zieht ihn nie neu)
-docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
+docker compose build --pull            # Frontend-Basis-Image neu (Backend-Basis per Digest fest)
 # Ohne SSL:
 docker compose up -d
 # Mit SSL:

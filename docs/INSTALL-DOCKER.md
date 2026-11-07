@@ -64,7 +64,7 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 Updates: `git pull && docker compose pull db && docker compose build --pull && docker compose up -d`
 (bei aktivem SSL-Overlay beide `-f`-Dateien angeben). `pull db` holt den neuesten
 PostgreSQL-18-Patchstand — `up` allein nimmt das bereits vorhandene Image;
-`build --pull` zieht ebenso die Basis-Images von Backend und Frontend neu.
+`build --pull` zieht das Basis-Image des Frontends neu. Die Basis des Backends ist per Digest festgelegt (`backend/Dockerfile`, Lieferkette): ihre Debian-Sicherheitsupdates kommen nur mit einer PraxisZeit-Version, die den Digest bewusst anhebt.
 
 ---
 

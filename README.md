@@ -357,7 +357,7 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 ```bash
 git pull
 docker compose pull db                 # PostgreSQL-18-Patchstand (`up` zieht ihn nie neu)
-docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
+docker compose build --pull            # Frontend-Basis-Image neu (Backend-Basis per Digest fest)
 docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d
 ```
 

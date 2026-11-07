@@ -127,9 +127,10 @@ cp "$ALT/ssl/key.pem"  ssl/key.pem  2>/dev/null || true
 # Datenbank-Image auf den neuesten 18.x-Patchstand holen (Sicherheitsupdates —
 # `up` allein nimmt sonst das bereits vorhandene, ältere Image):
 docker compose pull db
-# Basis-Images der selbst gebauten Dienste ebenfalls neu ziehen (Debian/Alpine-
-# Sicherheitsupdates erscheinen unter demselben Tag — `--build` allein nimmt
-# die lokal vorhandenen):
+# Basis-Image des Frontends ebenfalls neu ziehen (Alpine-Sicherheitsupdates
+# erscheinen unter demselben Tag — `--build` allein nimmt das lokal vorhandene).
+# Die Backend-Basis ist per Digest festgelegt (backend/Dockerfile): ihre
+# Debian-Updates kommen nur mit einer PraxisZeit-Version, die den Digest anhebt.
 docker compose build --pull
 # HTTP:
 docker compose up -d
@@ -203,7 +204,7 @@ cd praxiszeit
 git pull
 docker compose down
 docker compose pull db                 # PostgreSQL-18-Patchstand
-docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
+docker compose build --pull            # Frontend-Basis-Image neu (Backend-Basis per Digest fest)
 docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d   # oder ohne -f … für HTTP
 ```
 
@@ -359,9 +360,17 @@ neuen Version das Backup einspielen, **dann** den Anwendungsordner `app/` beisei
 und **danach** die alte Version installieren – deren Start findet den Stand des
 Backups vor.
 
+Das Backup von vor dem Update hat noch die **alte** Version geschrieben (etwa die
+nächtliche Sicherung). Stammt sie aus der Zeit vor den signierten Sicherungen, trägt
+es keine Signatur, und `restore` bricht mit „keine PraxisZeit-Signatur“ ab. Da die
+Datei aus der eigenen Installation stammt, steht in den Befehlen unten deshalb
+`--force-unverified` – bei einem signierten Backup schadet der Zusatz nicht
+(Hintergrund: [BACKUP.md](BACKUP.md)). Unter Windows spielt das `restore-backup.bat`
+der alten Version ein (siehe unten); es prüft das von ihr geschriebene Backup selbst.
+
 ```bash
 sudo systemctl stop praxiszeit
-sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<backup-vor-dem-update>.sql.gz
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<backup-vor-dem-update>.sql.gz --force-unverified
 sudo mv /opt/praxiszeit/app /opt/praxiszeit/app.neu-$(date +%F)
 # danach das alte Paket wie unter „Native → Linux“ installieren (legt app/ neu an und startet den Dienst)
 ```
@@ -369,7 +378,7 @@ sudo mv /opt/praxiszeit/app /opt/praxiszeit/app.neu-$(date +%F)
 ```bash
 # macOS: Ordner /usr/local/praxiszeit, Dienstkonto _praxiszeit, launchd
 sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist
-sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore /usr/local/praxiszeit/data/backups/<backup-vor-dem-update>.sql.gz
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore /usr/local/praxiszeit/data/backups/<backup-vor-dem-update>.sql.gz --force-unverified
 sudo mv /usr/local/praxiszeit/app /usr/local/praxiszeit/app.neu-$(date +%F)
 # danach das alte Paket wie unter „Native → macOS“ installieren (lädt den Dienst am Ende)
 ```

@@ -1130,7 +1130,7 @@ Deshalb den Projektnamen der alten Installation in die .env uebernehmen:
     grep -q '^COMPOSE_PROJECT_NAME=' .env || echo "COMPOSE_PROJECT_NAME=<alter-projektname>" >> .env
     docker compose config | grep -E '^name:|_postgres_data'   # muss den alten Namen zeigen
     docker compose pull db                          # PostgreSQL-18-Patchstand (Sicherheitsupdates)
-    docker compose build --pull                     # frische Basis-Images (Debian/Alpine-Sicherheitsupdates)
+    docker compose build --pull                     # Frontend-Basis-Image neu (Backend-Basis per Digest fest, kommt mit dem Update)
     docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d   # nur HTTP: docker compose up -d
     docker compose exec -T db psql -U praxiszeit -d praxiszeit -tAc 'SELECT count(*) FROM users'
     # NUR falls die Daten trotz richtigem Projektnamen fehlen (count = 1):
