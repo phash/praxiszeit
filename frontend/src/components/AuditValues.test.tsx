@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import AuditValues, { auditPillText, formatAuditNote } from './AuditValues';
+import AuditValues, { auditPillText, formatAuditNote, stampedText } from './AuditValues';
 
 describe('formatAuditNote', () => {
   it('übersetzt den internen Abwesenheits-Marker in deutschen Klartext', () => {
@@ -90,5 +90,25 @@ describe('AuditValues — Protokollzeilen der Anerkennung (Spec 10.3)', () => {
       note="angerechnet 12:00 h — von der Verwaltung anerkannt" />);
     expect(screen.getByText('angerechnet 12:00 h — von der Verwaltung anerkannt')).toBeInTheDocument();
     expect(screen.getByText('07:00 - 19:00')).toBeInTheDocument();
+  });
+});
+
+describe('stampedText (#537, tatsächliche Stempel)', () => {
+  it('nennt die gestempelte Zeit, wenn sie von der angerechneten abweicht', () => {
+    expect(stampedText('07:45:00', '16:15:00', '06:00:00', '18:00:00')).toBe('gestempelt 06:00 - 18:00');
+  });
+
+  it('bleibt leer ohne Rohstempel oder bei gleicher Spanne', () => {
+    expect(stampedText('08:00:00', '16:00:00', null, null)).toBe('');
+    expect(stampedText('08:00:00', '16:00:00', '08:00:00', '16:00:00')).toBe('');
+  });
+
+  it('ergänzt eine fehlende Seite aus der angerechneten Zeit', () => {
+    expect(stampedText('17:00:00', '17:00:00', null, '20:00:00')).toBe('gestempelt 17:00 - 20:00');
+  });
+
+  it('zeigt die Zeile in der Tabellenzelle', () => {
+    render(<AuditValues date="2026-03-02" start="07:45:00" end="16:15:00" rawStart="06:00:00" presenceEnd="18:00:00" />);
+    expect(screen.getByText('gestempelt 06:00 - 18:00')).toBeInTheDocument();
   });
 });

@@ -1649,7 +1649,7 @@ export default function AdminDashboard() {
                                   {log.action === 'create' ? 'Erstellt' : log.action === 'update' ? 'Geändert' : log.action === 'delete' ? 'Gelöscht' : log.action}
                                 </span>
                                 <span className="text-gray-500">
-                                  {format(new Date(log.created_at), 'dd.MM. HH:mm')} | {log.changed_by_first_name} {log.changed_by_last_name}
+                                  {format(new Date(log.created_at), 'dd.MM. HH:mm')} | {log.changed_by === null && !log.changed_by_first_name && !log.changed_by_last_name ? 'Gelöschte Person' : `${log.changed_by_first_name ?? ''} ${log.changed_by_last_name ?? ''}`}
                                   {/* Gesamtreview PR2 (Fund 6): dieselben Quellen-Labels wie
                                       `admin/AuditLog.tsx`; „manual" (von Hand angelegt oder
                                       geändert — wer, steht direkt davor) bleibt ohne Zusatz,
@@ -1670,11 +1670,13 @@ export default function AdminDashboard() {
                               <AuditValues
                                 prefix="Alt" className="text-gray-400 mt-1"
                                 date={log.old_date} start={log.old_start_time} end={log.old_end_time}
+                                rawStart={log.old_raw_start_time} presenceEnd={log.old_presence_end_time}
                                 breakMinutes={log.old_break_minutes} note={log.old_note}
                               />
                               <AuditValues
                                 prefix="Neu" className="text-gray-600"
                                 date={log.new_date} start={log.new_start_time} end={log.new_end_time}
+                                rawStart={log.new_raw_start_time} presenceEnd={log.new_presence_end_time}
                                 breakMinutes={log.new_break_minutes} note={log.new_note}
                               />
                             </div>

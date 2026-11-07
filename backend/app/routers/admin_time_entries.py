@@ -842,42 +842,46 @@ def verify_audit_integrity(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """#121: Tamper-Evidence-Check aller Audit-Rows des Tenants.
+    """#121/#537: Tamper-Evidence-Check aller Audit-Rows des Tenants (nur lesend).
 
-    Berechnet pro Row den HMAC neu (Schluessel aus SECRET_KEY abgeleitet) und
-    vergleicht ihn mit dem gespeicherten ``row_hash``. Eine nachtraegliche
-    Manipulation einer Audit-Row (z. B. via SQL-Injection an anderer Stelle)
-    bricht den Hash -> ``tampered``. Vor dem Feature geschriebene Rows ohne Hash
-    sind ``legacy_unhashed`` (nicht verifizierbar, NICHT als Manipulation
-    gewertet). ``intact`` ist true, wenn keine gehashte Row manipuliert wurde.
+    Prueft je Zeile die Pruefsumme (v2-Altbestand gegen die festen Verweise aus
+    Migration 076, v3 inkl. ``created_at`` und Rohstempel), die Kettenglieder,
+    Luecken in der Kette (eine geloeschte Zeile ohne Vermerk) und das gesiegelte
+    Kettenende. Eine ungehashte Zeile, die juenger ist als die erste gehashte,
+    gilt als manipuliert (A2-2). Altbestand ohne Hash (``legacy_unhashed``) und
+    Altbestand eines vor 076 geloeschten Eintrags (``legacy_entry_deleted``)
+    werden getrennt gezaehlt und brechen ``intact`` nicht.
     """
-    from app.core import audit_integrity
+    from app.services import audit_chain_service
 
-    checked = ok = tampered = legacy = 0
-    tampered_ids: list[str] = []
-    # F-026: explizit auf den Tenant scopen (zusaetzlich zu RLS). yield_per haelt
-    # den Speicher bei sehr grossen Audit-Tabellen klein.
-    rows = (
-        db.query(TimeEntryAuditLog)
-        .filter(TimeEntryAuditLog.tenant_id == current_user.tenant_id)
-        .yield_per(500)
+    # F-026: explizit auf den Tenant gescoped (im Service, zusaetzlich zu RLS).
+    return audit_chain_service.verify_tenant(db, current_user.tenant_id)
+
+
+@router.post("/audit/verify-integrity")
+def check_audit_integrity(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#537 (A2-12): Pruefung auf Knopfdruck (Karte im Aenderungsprotokoll) —
+    versiegelt erst die neuen Zeilen, prueft dann und legt das Ergebnis als
+    „letzte Pruefung" ab. Abweichungen landen wie beim taeglichen Lauf in den
+    Konto-Vorgaengen und in der Fehlerueberwachung."""
+    from app.services import audit_chain_service
+
+    result = audit_chain_service.check_tenant(
+        db, current_user.tenant_id, actor=f"user:{current_user.id}", record_failure=True,
     )
-    for row in rows:
-        checked += 1
-        if not row.row_hash:
-            legacy += 1
-        elif audit_integrity.verify_row(row):
-            ok += 1
-        else:
-            tampered += 1
-            if len(tampered_ids) < 100:  # Antwort begrenzen
-                tampered_ids.append(str(row.id))
+    result["last_check"] = audit_chain_service.read_last_check(db, current_user.tenant_id)
+    return result
 
-    return {
-        "checked": checked,
-        "ok": ok,
-        "tampered": tampered,
-        "legacy_unhashed": legacy,
-        "intact": tampered == 0,
-        "tampered_ids": tampered_ids,
-    }
+
+@router.get("/audit/integrity-status")
+def audit_integrity_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#537 (A2-12): Ergebnis der letzten Pruefung (taeglich oder per Knopf)."""
+    from app.services import audit_chain_service
+
+    return {"last_check": audit_chain_service.read_last_check(db, current_user.tenant_id)}
