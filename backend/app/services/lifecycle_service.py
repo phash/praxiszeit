@@ -819,7 +819,14 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
         "reason_names": reason_names,
         "vacation_requests": [_vacation_request_dict(v) for v in own_vacation_requests],
         "change_requests": [_change_request_dict(c) for c in own_change_requests],
-        "audit_logs": [_audit_log_dict(a) for a in own_audit_logs],
+        # Audit 2026-11-07 (S2-3, Art. 15 Abs. 4 DSGVO): Zeilen ueber ANDERE
+        # Personen (z. B. Korrekturen einer Admin an Eintraegen von Kolleginnen,
+        # Rueckrechnung „Krank 8,0 h → 4,0 h") nur als „was ich getan habe" —
+        # ohne betroffene Person, Zeiten und Notizen.
+        "audit_logs": [
+            _audit_log_dict(a) if a.user_id == user.id else _audit_log_dict_about_other(a)
+            for a in own_audit_logs
+        ],
         # MS-06: eigene Schichteinteilungen + Einweisungen (leer, wenn Feature aus).
         "shift_assignments": own_shift_assignments_data,
         "qualifications": own_qualifications_data,
@@ -984,6 +991,21 @@ def _change_request_dict(c: ChangeRequest) -> dict[str, Any]:
         "reviewed_at": c.reviewed_at.isoformat() if getattr(c, "reviewed_at", None) else None,
         "rejection_reason": getattr(c, "rejection_reason", None),
         "created_at": c.created_at.isoformat() if c.created_at else None,
+    }
+
+
+def _audit_log_dict_about_other(a: TimeEntryAuditLog) -> dict[str, Any]:
+    """S2-3: eine Protokollzeile, die die exportierende Person ueber eine
+    ANDERE Person geschrieben hat — nur Vorgang, Quelle und Zeitpunkt. Die Daten
+    der anderen Person (Zeiten, Notizen mit Abwesenheitstyp, ihre Kennung)
+    gehoeren nicht in die Auskunft der exportierenden Person."""
+    return {
+        "id": str(a.id),
+        "action": a.action,
+        "source": a.source,
+        "changed_by": str(a.changed_by) if a.changed_by else None,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+        "about_other_person": True,
     }
 
 
