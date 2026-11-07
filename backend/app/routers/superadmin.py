@@ -178,7 +178,7 @@ def _audit_dict(log: TimeEntryAuditLog) -> dict:
         "id": str(log.id),
         "time_entry_id": str(log.time_entry_id) if log.time_entry_id else None,
         "user_id": str(log.user_id),
-        "changed_by": str(log.changed_by),
+        "changed_by": str(log.changed_by) if log.changed_by else None,
         "action": log.action,
         "source": log.source,
         "created_at": _iso(log.created_at),
@@ -192,6 +192,13 @@ def _audit_dict(log: TimeEntryAuditLog) -> dict:
         "new_end_time": _iso(log.new_end_time),
         "new_break_minutes": log.new_break_minutes,
         "new_note": log.new_note,
+        # #537 (A2-3): tatsaechliche Stempel neben den angerechneten Zeiten
+        **{
+            f"{side}_{name}": (_iso(getattr(log, f"{side}_{name}")) if name != "uncredited_minutes"
+                               else getattr(log, f"{side}_{name}"))
+            for side in ("old", "new")
+            for name in ("raw_start_time", "raw_end_time", "presence_end_time", "uncredited_minutes")
+        },
     }
 
 

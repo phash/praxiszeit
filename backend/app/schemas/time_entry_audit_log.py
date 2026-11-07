@@ -8,7 +8,8 @@ class AuditLogResponse(BaseModel):
     id: UUID
     time_entry_id: Optional[UUID] = None
     user_id: UUID
-    changed_by: UUID
+    # #537 (A2-8): NULL = Urheber endgeloescht (Art. 17), Zeile bleibt.
+    changed_by: Optional[UUID] = None
     action: str
 
     old_date: Optional[date] = None
@@ -22,6 +23,16 @@ class AuditLogResponse(BaseModel):
     new_end_time: Optional[time] = None
     new_break_minutes: Optional[int] = None
     new_note: Optional[str] = None
+
+    # #537 (A2-3): die tatsaechlichen Stempel neben den angerechneten Zeiten.
+    old_raw_start_time: Optional[time] = None
+    old_raw_end_time: Optional[time] = None
+    old_presence_end_time: Optional[time] = None
+    old_uncredited_minutes: Optional[int] = None
+    new_raw_start_time: Optional[time] = None
+    new_raw_end_time: Optional[time] = None
+    new_presence_end_time: Optional[time] = None
+    new_uncredited_minutes: Optional[int] = None
 
     source: str
     change_request_id: Optional[UUID] = None

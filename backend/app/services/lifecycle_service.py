@@ -176,14 +176,33 @@ def purge_expired_vacation_audit_logs(db: Session) -> int:
     record-retention obligation and must outlive this purge.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=VACATION_AUDIT_RETENTION_DAYS)
-    deleted = (
+    # #537: das App-Konto darf Protokollzeilen nicht mehr direkt loeschen. Je
+    # Mandant und betroffener Person ueber audit_chain_service.delete_rows
+    # (versiegeln, pz_audit_delete, gehashter Vermerk mit den entfernten
+    # Kettengliedern) — die Pruefung sieht sonst eine unerklaerte Luecke.
+    # Die Frist laeuft ab ``created_at`` der Protokollzeile, also bei
+    # ``absence_creation`` (Loeschbeleg eines durch eine Abwesenheit ersetzten
+    # Zeiteintrags, A2-13) ab dem Loeschtag — der Beleg ueberlebt den
+    # Eintragstag damit immer um mindestens 730 Tage.
+    rows = (
         db.query(TimeEntryAuditLog)
         .filter(
             TimeEntryAuditLog.source.in_(VACATION_AUDIT_SOURCES),
             TimeEntryAuditLog.created_at < cutoff,
         )
-        .delete(synchronize_session=False)
+        .all()
     )
+    groups: dict = {}
+    for row in rows:
+        groups.setdefault((row.tenant_id, row.user_id), []).append(row)
+    deleted = 0
+    from app.services import audit_chain_service
+    for (tenant_id, user_id), group in groups.items():
+        deleted += audit_chain_service.delete_rows(
+            db, group, tenant_id=tenant_id, user_id=user_id, changed_by=None,
+            source="retention",
+            reason=f"Aufbewahrungsfrist {VACATION_AUDIT_RETENTION_DAYS} Tage (Art. 5 Abs. 1 lit. e DSGVO)",
+        )
     if deleted:
         db.commit()
     return int(deleted or 0)
@@ -403,15 +422,15 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
     # ``verify-integrity`` meldete danach jede dieser legitimen Zeilen als
     # manipuliert. Nur Zeilen MIT Notiz werden angefasst, alle anderen behalten
     # ihren Hash unveraendert.
-    from app.core import audit_integrity
+    # #537: seit Migration 076 nur noch ueber pz_audit_set_notes (das App-Konto
+    # darf Protokollzeilen nicht aendern).
+    from app.services import audit_chain_service
     for row in db.query(TimeEntryAuditLog).filter(
         TimeEntryAuditLog.tenant_id == tenant.id,
         (TimeEntryAuditLog.old_note.isnot(None))
         | (TimeEntryAuditLog.new_note.isnot(None)),
     ).all():
-        row.old_note = None
-        row.new_note = None
-        row.row_hash = audit_integrity.compute_row_hash(row)
+        audit_chain_service.set_notes(db, row, None, None)
 
     tenant.name = "[gelöscht]"
     # #435: der Slug wird beim Signup aus dem Praxisnamen abgeleitet
@@ -1011,4 +1030,11 @@ def _audit_log_dict(a: TimeEntryAuditLog) -> dict[str, Any]:
         "new_end_time": str(a.new_end_time) if a.new_end_time else None,
         "new_break_minutes": a.new_break_minutes,
         "new_note": a.new_note,
+        # #537 (A2-3): tatsaechliche Stempel neben den angerechneten Zeiten
+        **{
+            f"{side}_{name}": (str(getattr(a, f"{side}_{name}")) if getattr(a, f"{side}_{name}") is not None else None)
+            if name != "uncredited_minutes" else getattr(a, f"{side}_{name}")
+            for side in ("old", "new")
+            for name in ("raw_start_time", "raw_end_time", "presence_end_time", "uncredited_minutes")
+        },
     }

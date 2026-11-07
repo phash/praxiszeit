@@ -22,3 +22,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO praxiszei
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO praxiszeit_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO praxiszeit_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO praxiszeit_app;
+
+-- #537 (Migration 076): das Aenderungsprotokoll ist fuer die App-Rolle nur
+-- anfuegbar. Laeuft dieses Skript erneut (Wiederherstellung, CI), vergibt die
+-- Zeile oben UPDATE/DELETE wieder — hier sofort zurueck. Der Trigger
+-- pz_audit_guard verweigert beides ohnehin; das hier haelt die Rechteliste ehrlich.
+DO $$
+BEGIN
+    IF to_regclass('public.time_entry_audit_logs') IS NOT NULL THEN
+        REVOKE UPDATE, DELETE, TRUNCATE ON time_entry_audit_logs FROM praxiszeit_app;
+    END IF;
+END
+$$;

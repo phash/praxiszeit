@@ -74,6 +74,7 @@ jobs:
             --ignore=tests/test_073_migration_pg.py \
             --ignore=tests/test_074_reduced_days_pg.py \
             --ignore=tests/test_075_contract_history_pg.py \
+            --ignore=tests/test_076_audit_chain_pg.py \
             --ignore=tests/test_net_hours_parity_pg.py \
             --ignore=tests/test_reclamp_concurrency.py \
             --ignore=tests/test_handbuch_seed_pg.py \
@@ -120,5 +121,5 @@ jobs:
             tests/test_073_migration_pg.py tests/test_net_hours_parity_pg.py \
             tests/test_reclamp_concurrency.py tests/test_handbuch_seed_pg.py \
             tests/test_year_closing_lock_pg.py tests/test_074_reduced_days_pg.py \
-            tests/test_075_contract_history_pg.py \
+            tests/test_075_contract_history_pg.py tests/test_076_audit_chain_pg.py \
             -p no:asyncio -v

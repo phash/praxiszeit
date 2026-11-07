@@ -75,7 +75,7 @@ def test_id_is_bound_into_hash(db, test_user, test_admin):
     a = _make_audit(db, test_user, test_admin)
     import uuid
     h_other_id = audit_integrity.compute_row_hash(
-        type("X", (), {**{f: getattr(a, f) for f in audit_integrity._HASHED_FIELDS}, "id": uuid.uuid4()})()
+        type("X", (), {**{f: getattr(a, f) for f in audit_integrity._HASHED_FIELDS_V3}, "id": uuid.uuid4()})()
     )
     assert h_other_id != a.row_hash
 
