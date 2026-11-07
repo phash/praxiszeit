@@ -22,7 +22,6 @@ import os
 import sys
 import logging
 import uuid
-import traceback
 from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
@@ -663,13 +662,15 @@ async def capture_errors_middleware(request: Request, call_next):
             from app.services.error_log_service import log_error
             from app.database import set_superadmin_context as _set_sa
             _set_sa(db)  # Error logging needs to bypass RLS
-            tb = traceback.format_exc()
+            from app.services.error_log_service import exception_frames, exception_summary
+            # Audit 2026-11-07 (S2-1): nur Typ + SQLSTATE/Bedingung und der Stapel
+            # ohne Meldung — ``str(exc)`` trug Statement-Werte und PG-DETAIL.
             log_error(
                 db=db,
                 level='critical',
                 logger_name='http',
-                message=str(exc),
-                traceback_str=tb,  # truncation applied inside log_error
+                message=exception_summary(exc),
+                traceback_str=exception_frames(exc),  # truncation applied inside log_error
                 path=request.url.path,
                 method=request.method,
                 status_code=500,

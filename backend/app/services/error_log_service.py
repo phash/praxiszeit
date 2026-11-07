@@ -27,6 +27,39 @@ def _scrub_pii(text: str) -> str:
     return text
 
 
+def exception_summary(exc: BaseException) -> str:
+    """Audit 2026-11-07 (S2-1): Meldung einer unbehandelten Ausnahme fuer
+    ``error_logs`` — nur Typ und, bei Datenbankfehlern, SQLSTATE und Name der
+    verletzten Bedingung. Nie ``str(exc)``: das enthielt bei einem
+    ``DBAPIError`` das Statement mit allen Werten und PostgreSQLs
+    ``DETAIL: Key (…)=(…)``, bei anderen Ausnahmen beliebige Eingaben."""
+    name = type(exc).__name__
+    orig = getattr(exc, "orig", None)
+    if orig is None:
+        return name
+    parts = []
+    code = getattr(orig, "pgcode", None)
+    if code:
+        parts.append(f"SQLSTATE {code}")
+    diag = getattr(orig, "diag", None)
+    constraint = getattr(diag, "constraint_name", None) if diag is not None else None
+    if constraint:
+        parts.append(f"constraint {constraint}")
+    table = getattr(diag, "table_name", None) if diag is not None else None
+    if table:
+        parts.append(f"table {table}")
+    inner = type(orig).__name__
+    return f"{name} ({inner}{': ' + ', '.join(parts) if parts else ''})"
+
+
+def exception_frames(exc: BaseException) -> str:
+    """S2-1: Stapel der Ausnahme OHNE ihre Meldung (Dateien, Zeilen, Code) plus
+    ``exception_summary`` — ``traceback.format_exc()`` haengt die volle
+    Meldung (mit Werten) an."""
+    frames = "".join(traceback.format_tb(exc.__traceback__))
+    return f"{frames}{exception_summary(exc)}"
+
+
 def _scrub_path(path: Optional[str]) -> Optional[str]:
     """M-DSG4: strip resource UUIDs from request paths before they are stored.
 
@@ -314,8 +347,10 @@ class DBErrorHandler(logging.Handler):
             db: Session = self._factory()
             set_superadmin_context(db)  # RLS: see all errors for dedup
             tb = None
-            if record.exc_info:
-                tb = ''.join(traceback.format_exception(*record.exc_info))
+            if record.exc_info and record.exc_info[1] is not None:
+                # Audit 2026-11-07 (S2-1): Stapel ohne Ausnahme-Meldung (die trug
+                # bei Datenbankfehlern Statement-Werte und PG-DETAIL).
+                tb = exception_frames(record.exc_info[1])
                 # VULN-012: limit traceback size before storing
                 if tb and len(tb) > 2000:
                     tb = tb[:2000] + '\n... [truncated]'
@@ -324,7 +359,9 @@ class DBErrorHandler(logging.Handler):
                 db=db,
                 level=level,
                 logger_name=record.name,
-                message=self.format(record),
+                # S2-1: nur die Meldung selbst — ``self.format`` haengt bei
+                # ``exc_info`` den vollen Traceback samt Ausnahme-Text an.
+                message=record.getMessage(),
                 traceback_str=tb,
             )
         except Exception:

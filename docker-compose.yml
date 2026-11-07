@@ -6,6 +6,10 @@
 services:
   db:
     image: postgres:18-alpine
+    # Audit 2026-11-07 (S2-1, Art. 9 DSGVO): psycopg2 bindet clientseitig — das
+    # Server-Log schrieb jedes gescheiterte Statement MIT allen Werten
+    # (log_min_error_statement=error) und PostgreSQLs DETAIL (Schluesselwerte).
+    command: ["postgres", "-c", "log_min_error_statement=panic", "-c", "log_error_verbosity=terse"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

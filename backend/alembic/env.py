@@ -71,6 +71,8 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # Audit 2026-11-07 (S2-1): keine Werte in Fehlermeldungen (wie app.database).
+        hide_parameters=True,
     )
 
     with connectable.connect() as connection:
