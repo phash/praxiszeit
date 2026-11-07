@@ -593,16 +593,19 @@ bin\python\python.exe praxiszeit-server.py backup
 ### 9.3 Backups (Docker)
 
 ```bash
-# Manuell
-docker compose exec db pg_dump -U praxiszeit praxiszeit \
-  | gzip > ~/backups/praxiszeit_$(date +%Y%m%d).sql.gz
+# Manuell (signiert; Docker-Paket: bash backup.sh neben der docker-compose.yml)
+cd ~/praxiszeit
+bash tools/docker/backup.sh       # -> ~/praxiszeit/backups/praxiszeit_<ts>.sql.gz
 
 # Täglich per Cron (2:00 Uhr, 730-Tage-Rotation für § 16)
-mkdir -p ~/backups
 crontab -e
 # Zeile anhängen:
-0 2 * * * cd ~/praxiszeit && docker compose exec -T db pg_dump -U praxiszeit praxiszeit | gzip > ~/backups/praxiszeit_$(date +\%Y\%m\%d).sql.gz && find ~/backups -name "praxiszeit_*.sql.gz" -mtime +730 -delete
+0 2 * * * bash ~/praxiszeit/tools/docker/backup.sh && find ~/praxiszeit/backups -name "praxiszeit_*.sql.gz" -mtime +730 -delete
 ```
+
+Das Script braucht laufende `db`- und `backend`-Dienste; das Backend signiert die
+Sicherung. Ein von Hand gezogenes `pg_dump | gzip` ist unsigniert und lässt sich nur
+mit `--force-unverified` einspielen ([BACKUP.md – Signatur](BACKUP.md#signatur-der-sicherungen)).
 
 ### 9.4 Wiederherstellung
 
@@ -623,11 +626,17 @@ Einzelheiten: [BACKUP.md → Restore → Native](BACKUP.md#restore-wiederherstel
 **Docker:** mit dem mitgelieferten Script (neben der `docker-compose.yml`; im
 git-Checkout `bash tools/docker/restore.sh …`):
 ```bash
-bash restore.sh ~/backups/praxiszeit_20260214.sql.gz
+bash restore.sh backups/praxiszeit_20260214_020000.sql.gz
 ```
 Das Script hält das Backend an, legt die Datenbank frisch an, spielt das Backup
 ein und startet das Backend wieder — erst dieser Start migriert ein Backup einer
 älteren Version. Einzelheiten: [BACKUP.md → Restore → Docker](BACKUP.md#restore-wiederherstellung).
+
+**Sicherungen ohne passende Signatur** (von 1.22.0 oder älter, von einem anderen Rechner oder
+von Hand gezogen) weisen `restore`, `restore-backup.bat` und `restore.sh` ab. Stammt
+die Datei sicher aus der eigenen Installation, den Aufruf mit `--force-unverified`
+wiederholen, z. B. `bash restore.sh backups/<datei>.sql.gz --force-unverified`
+([BACKUP.md – Signatur](BACKUP.md#signatur-der-sicherungen)).
 
 ### 9.5 Compliance-Checkliste
 

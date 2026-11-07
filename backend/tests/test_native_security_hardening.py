@@ -790,6 +790,26 @@ def test_secure_install_ps1_decides_trust_before_any_owner_change():
     assert "$img.Replace('/', '\\').IndexOf($Root + '\\', [System.StringComparison]::OrdinalIgnoreCase)" in ev
 
 
+def test_secure_install_ps1_refuses_a_preexisting_bin_postgresql_without_install():
+    """Release review 1.23.0 (HIGH): setup.bat skips the PostgreSQL install when
+    bin\\postgresql\\bin\\pg_ctl.exe already exists, and the manifest check
+    skips bin\\postgresql. A folder or junction someone created there before
+    the first install would become the database program run by the service.
+    setup.bat creates bin\\postgresql only AFTER secure-install.ps1, so without
+    a PraxisZeit service for this folder an existing one stops the install."""
+    raw = _read("installer/windows/secure-install.ps1").decode("ascii")
+    step0 = raw[raw.index("# --- 0. Vorab"):raw.index("# --- 1. Wurzel ---")]
+    assert "$pgDirPre = Join-Path $root 'bin\\postgresql'" in step0
+    guard = "if ((Test-Path -LiteralPath $pgDirPre) -and -not $evidence) {"
+    assert guard in step0
+    assert step0.index("$evidence = Test-InstallEvidence $root") < step0.index(guard)
+    assert "exit 2" in step0[step0.index(guard):step0.index(guard) + 900]
+    # setup.bat still calls secure-install.ps1 before it creates bin\\postgresql
+    setup = _read("installer/windows/setup.bat").decode("ascii", "replace")
+    assert setup.index("secure-install.ps1") < setup.index('mklink /J "%PG_INSTALL_DIR%"')
+    assert setup.index("secure-install.ps1") < setup.index('--prefix "%PG_INSTALL_DIR%"')
+
+
 def test_secure_install_ps1_locks_each_subtree_top_down_before_recursing():
     """Audit rounds 4+5: ``icacls /setowner|/reset /T`` follows junctions and
     symbolic links. A one-shot check before the recursive calls left a window:
@@ -873,8 +893,10 @@ def test_setup_bat_secures_install_dir_before_any_python():
     secure = text.index('secure-install.ps1" -InstallDir "%DIR%."')
     assert secure < text.index('"%PYTHON%"')
     after = text[secure:secure + 200]
-    assert "if errorlevel 2 goto :fremde_dateien" in after
-    assert "if errorlevel 1 goto :rechte_fehler" in after
+    assert 'set "SEC_RC=%errorlevel%"' in after
+    assert 'if "%SEC_RC%"=="2" goto :fremde_dateien' in after
+    # any other non-zero code (also negative ones) stops the setup
+    assert 'if not "%SEC_RC%"=="0" goto :rechte_fehler' in after
     for label in (":fremde_dateien", ":rechte_fehler"):
         block = text[text.index("\r\n" + label + "\r\n"):]
         block = block[:block.index("exit /b 1")]

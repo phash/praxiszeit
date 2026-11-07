@@ -54,21 +54,29 @@ hinweg erhalten — der `docker compose down`/`up`-Zyklus löscht sie **nicht**
 > #213-Backups im `praxiszeit_backups`-Volume bleiben), startet den frischen
 > PG18-Stack und spielt den Dump wieder ein. Manuell:
 > `bash backup.sh` → `docker compose down` → `docker volume rm <projekt>_postgres_data`
-> → neuen Stack `up -d --build` → `bash restore.sh backups/praxiszeit_<ts>.sql.gz`.
+> → neuen Stack `up -d --build` → `bash restore.sh backups/praxiszeit_<ts>.sql.gz --force-unverified`
+> (die alte Version signiert ihre Sicherung noch nicht; der Helper setzt den Zusatz selbst).
 > Verifiziert (PG16→18, Daten byte-genau identisch + Login). Spätere 1.10.x-Updates
 > bleiben wieder normale In-Place-Updates.
 
 ### 1. Backup
 
 ```bash
-# Im Ordner der LAUFENDEN (alten) Installation ausführen.
-# Default-User/-DB = praxiszeit (eigene Werte ggf. aus der .env ablesen).
-# --clean --if-exists + gzip → exakt so zurückspielbar wie unter „Rollback".
-docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit | gzip > backup-$(date +%F).sql.gz
+# Im Ordner der LAUFENDEN (alten) Installation ausführen, der Stack muss laufen.
+bash backup.sh                 # git-Checkout: bash tools/docker/backup.sh
 ```
 
-> Die `$POSTGRES_USER`/`$POSTGRES_DB` aus der `.env` sind **nur im Container** gesetzt,
-> nicht in deiner Host-Shell — deshalb oben die festen Default-Namen `praxiszeit`.
+`backup.sh` liest Datenbank und Benutzer aus der `.env` und schreibt die Sicherung
+nach `backups/praxiszeit_<JJJJMMTT_HHMMSS>.sql.gz` im Ordner der alten Installation
+(git-Checkout: `backups/` im Repo-Root). Den ausgegebenen Dateinamen notieren — die
+folgenden Schritte nennen ihn `backups/praxiszeit_<ts>.sql.gz`.
+
+> **Signatur:** Ab 1.23.0 signiert `backup.sh` die Sicherung, und `restore.sh` spielt
+> nur signierte Sicherungen ohne Weiteres ein. Läuft noch **1.22.0 oder älter**, schreibt
+> das `backup.sh` dieser Version eine Sicherung **ohne** Signatur; die neue Version spielt
+> sie nur mit `--force-unverified` ein (siehe unten). Ein von Hand gezogenes
+> `pg_dump | gzip` ist ebenfalls unsigniert. Hintergrund:
+> [BACKUP.md – Signatur](BACKUP.md#signatur-der-sicherungen).
 
 ### 2a. Mit Docker-Paket (Tarball/ZIP, ohne git)
 
@@ -152,8 +160,13 @@ cd "$NEU" && docker compose down                     # OHNE -v
 docker volume ls | grep postgres_data                # richtiges <projekt>_postgres_data suchen
 # COMPOSE_PROJECT_NAME in .env auf dieses <projekt> korrigieren, dann Schritt 4 wiederholen.
 # Notfalls: Stack starten und das Backup aus Schritt 1 einspielen:
-#   bash restore.sh /pfad/zu/backup-JJJJ-MM-TT.sql.gz
+#   bash restore.sh "$ALT/backups/praxiszeit_<ts>.sql.gz" --force-unverified
 ```
+
+`--force-unverified` ist nötig, wenn die alte Version 1.22.0 oder älter war: deren
+Sicherung trägt keine Signatur, und `restore.sh` bräche sonst ab, ohne die Datenbank
+anzufassen. Die Datei stammt aus der eigenen Installation; bei einer signierten
+Sicherung schadet der Zusatz nicht.
 
 Das versehentlich angelegte, leere Volume lässt sich danach mit
 `docker volume rm <falsches-projekt>_postgres_data` entfernen — **nur** nach
@@ -185,7 +198,7 @@ Prüfung, dass es wirklich das leere ist.
 > nutzt — sobald der Projektname übereinstimmt — dieselben Volumes und startet die
 > alte Version gegen die bereits aktualisierte Datenbank. Nach erfolgreichem
 > Update löschen oder umbenennen (vorher die `backups/`-Dateien **und** das
-> Update-Backup `backup-<datum>.sql.gz` aus Schritt 1 sichern — es liegt im alten Ordner).
+> Update-Backup `backups/praxiszeit_<ts>.sql.gz` aus Schritt 1 sichern — es liegt im alten Ordner).
 
 ### 2b. Aus dem Quellcode (nur mit git-Zugriff)
 

@@ -68,13 +68,17 @@ if exist "%CREDS_FILE%" (
 REM F-025: no fallback to a hardcoded password. If the credentials file is
 REM missing the DB is either uninitialized or corrupted — abort the backup
 REM step and let the user decide.
-if not defined PGPASSWORD (
-    echo WARNUNG: %CREDS_FILE% fehlt oder enthaelt kein SUPERUSER_PASSWORD.
-    echo Ohne Credentials kann kein Backup erstellt werden.
-    set /p CONT="Trotzdem OHNE Backup deinstallieren? (j/n): "
-    if /i not "%CONT%"=="j" goto :cancelled
-    goto :remove_services
-)
+REM Abfrage ausserhalb eines Klammerblocks: dort wuerde %CONT% schon beim
+REM Einlesen des Blocks ersetzt (vor set /p) - die Antwort "j" kam nie an
+REM (Release-Review 1.23.0).
+if defined PGPASSWORD goto :have_creds
+echo WARNUNG: %CREDS_FILE% fehlt oder enthaelt kein SUPERUSER_PASSWORD.
+echo Ohne Credentials kann kein Backup erstellt werden.
+set "CONT="
+set /p CONT="Trotzdem OHNE Backup deinstallieren? (j/n): "
+if /i not "%CONT%"=="j" goto :cancelled
+goto :remove_services
+:have_creds
 
 REM Pruefen ob PostgreSQL laeuft, ggf. starten
 "%PG_CTL%" -D "%PG_DATA%" status >nul 2>&1

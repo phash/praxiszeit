@@ -166,7 +166,7 @@ dann prüft die Wiederherstellung auch die Signatur der alten Sicherungen.
 | **Native Linux** | ✅ ja | systemd-Timer `praxiszeit-backup.timer`, täglich **02:00** | `<install>/data/backups/` |
 | **Native Windows** | ✅ ja | Scheduled Task `PraxisZeit-Backup`, täglich **03:00** (ruft `backup.bat`) | `C:\PraxisZeit\data\backups\` |
 | **Native macOS** | ✅ ja | launchd `de.praxiszeit.backup.plist`, täglich **03:00** | `/usr/local/praxiszeit/data/backups/` |
-| **Docker** | ✅ optional | In-App **Datensicherung** aktivieren (täglich), oder Host-Cron (s. u.) | Volume `praxiszeit_backups` bzw. wohin Sie den Dump schreiben |
+| **Docker** | ✅ optional | In-App **Datensicherung** aktivieren (täglich), oder Host-Cron mit `backup.sh` (s. u.) | Volume `praxiszeit_backups` bzw. `./backups/` neben der `docker-compose.yml` |
 
 > **Native:** Das Backup ruft intern `praxiszeit-server.py backup`. Der Dienst
 > muss dafür **nicht** gestoppt werden (Online-Dump, Plain-SQL `pg_dump` + gzip).
@@ -218,25 +218,31 @@ s. o.). Auf der Kommandozeile gibt es im Docker-Bundle das geprüfte Script
 `docker-compose.yml`/`​.env` ausführen:
 
 ```bash
-bash backup.sh                       # -> ./backups/praxiszeit_<ts>.sql.gz
+bash backup.sh                       # -> ./backups/praxiszeit_<ts>.sql.gz (signiert)
 ```
 
-Oder direkt aus dem `db`-Container (Dienst läuft weiter) — **mit gzip**, damit der
-Restore mit `gunzip -c | psql` zusammenpasst:
+Ab 1.23.0 [signiert](#signatur-der-sicherungen) `backup.sh` die Sicherung; dafür
+muss neben dem `db`- auch der `backend`-Dienst laufen. Ist das Backend nicht
+erreichbar, entsteht die Sicherung trotzdem, aber ohne Signatur (Warnung in der
+Ausgabe), und `restore.sh` verlangt für sie `--force-unverified`.
+
+Ein von Hand gezogener Dump aus dem `db`-Container geht ebenfalls, ist aber
+**unsigniert** — `restore.sh` spielt ihn nur mit `--force-unverified` ein, und
+dann laufen seine Anweisungen ungeprüft als Datenbank-Superuser:
 
 ```bash
 docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit \
     | gzip > backup-$(date +%F).sql.gz
 ```
 
-**Automatisieren per Host-Cron** (empfohlen, da Docker kein Auto-Backup hat) —
-täglich 02:00 + 30-Tage-Rotation:
+**Automatisieren per Host-Cron** (Alternative zur In-App-Datensicherung) —
+täglich 02:00 + 30-Tage-Rotation. `backup.sh` wechselt selbst in seinen Ordner und
+schreibt nach `backups/` daneben (git-Checkout: `tools/docker/backup.sh`, Ablage
+`backups/` im Repo-Root):
 
 ```cron
-0 2 * * * cd /pfad/zu/praxiszeit && docker compose exec -T db pg_dump --clean --if-exists -U praxiszeit praxiszeit | gzip > ~/praxiszeit-backups/pz_$(date +\%F).sql.gz && find ~/praxiszeit-backups -name 'pz_*.sql.gz' -mtime +30 -delete
+0 2 * * * bash /pfad/zu/praxiszeit/backup.sh && find /pfad/zu/praxiszeit/backups -name 'praxiszeit_*.sql.gz' -mtime +30 -delete
 ```
-
-(Backup-Verzeichnis vorher anlegen: `mkdir -p ~/praxiszeit-backups`.)
 
 ---
 
@@ -314,6 +320,12 @@ Aufruf entfernt.
 > **unkomprimierter, unsignierter** Dump: zum Einspielen mit gzip packen und
 > `restore-backup.bat <datei>.sql.gz --force-unverified` verwenden; die
 > automatischen Sicherungen sind signiert (passend zum alten `SECRET_KEY`).
+> Packen geht ohne Zusatzprogramm mit dem mitgelieferten Python — im
+> Installationsordner (erzeugt `<datei>.sql.gz` neben der Datei):
+>
+> ```bat
+> bin\python\python.exe -c "import gzip,shutil,sys; shutil.copyfileobj(open(sys.argv[1],'rb'), gzip.open(sys.argv[1]+'.gz','wb'))" <datei>.sql
+> ```
 
 ### Docker
 
@@ -333,6 +345,15 @@ installierten Version – Migrationen laufen nur beim Start des Backend-Containe
 und `docker compose up -d backend` startet ein schon laufendes Backend **nicht**
 neu. Das Script meldet sich erst, wenn das Backend wieder gesund ist; danach die
 Ausgabe der Migrationen lesen (`docker compose logs backend`).
+
+Eine Sicherung ohne Signatur (von 1.22.0 oder älter, von Hand gezogen) spielt das
+Script nur mit `--force-unverified` ein — und dann ungeprüft als Datenbank-Superuser
+(siehe [Signatur](#signatur-der-sicherungen)), also nur mit Dateien der eigenen
+Installation:
+
+```bash
+bash restore.sh backups/praxiszeit_<ts>.sql.gz --force-unverified
+```
 
 Oder von Hand — nur für ein Backup **derselben** Version und mit angehaltenem
 Backend. Die Dumps sind mit `--clean --if-exists` erzeugt: vorhandene Objekte, die

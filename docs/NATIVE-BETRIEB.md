@@ -62,6 +62,13 @@ sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxis
 sudo systemctl start praxiszeit
 ```
 
+Ab 1.23.0 spielt `restore` (wie `restore-backup.bat`) nur eine Sicherung mit passender Signatur `-- praxiszeit-backup-hmac-v1` ein; eine Sicherung von vor 1.23.0 oder von einem anderen Rechner (anderer `SECRET_KEY`) nur mit `--force-unverified` — dann lädt sie die Rolle `praxiszeit_restore_load` ohne Superuser-Rechte, siehe [BACKUP.md → Signatur](BACKUP.md#signatur-der-sicherungen):
+
+```
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore <datei>.sql.gz --force-unverified
+restore-backup.bat data\backups\<datei>.sql.gz --force-unverified      :: Windows
+```
+
 Bis 1.19 dokumentierte `BACKUP.md` nativ nur `gunzip | psql` bei **laufendem** Dienst — ohne `ON_ERROR_STOP`, ohne frische Datenbank, ohne Neustart. Nativ laufen Migrationen aber nur in `cmd_start`/`cmd_init` (`run_migrations`): ein Backup einer älteren Version ließ den laufenden Prozess gegen dessen Schema arbeiten (1.19.3-Backup in 1.20: `alembic_version` 072, Login HTTP 500, `/api/health` weiter „healthy“), ein 1.18-Backup (069) in eine 073-Datenbank brach an `users_pkey`/`tenants_pkey` ab (`security_events` u. a. hängen daran), und `psql` meldete trotz 12 `ERROR`-Zeilen Exit 0. Beides auf einer echten 1.19.3-/1.18.2-Native-Installation nachgestellt.
 
 - **Dienst muss stehen** (`_process_manager_running()` über `data/praxiszeit.pid`; eine PID, die das Konto nicht signalisieren darf, gilt als laufend) — sonst Abbruch, bevor irgendetwas angefasst wird. Kein automatisches Anhalten: das braucht root, PostgreSQL starten darf root nicht.

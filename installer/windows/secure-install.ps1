@@ -413,6 +413,21 @@ if ($untrusted.Count -gt 0 -and -not $evidence) {
     if ($untrusted.Count -gt 50) { Write-Output "  ... und $($untrusted.Count - 50) weitere" }
     exit 2
 }
+# bin\postgresql legt erst setup.bat an (EDB-Installer, Kopie oder Verknuepfung
+# auf ein System-PostgreSQL) - immer NACH diesem Skript. Liegt es schon da und
+# belegt kein PraxisZeit-Dienst eine fruehere Installation, hat es jemand anders
+# angelegt: setup.bat ueberspraenge dann die PostgreSQL-Installation (pg_ctl.exe
+# vorhanden) und der Datenbankdienst liefe mit fremden Programmdateien als
+# NetworkService/SYSTEM. Release-Review 1.23.0 (HIGH).
+$pgDirPre = Join-Path $root 'bin\postgresql'
+if ((Test-Path -LiteralPath $pgDirPre) -and -not $evidence) {
+    Write-Output "FEHLER: $pgDirPre ist schon vorhanden, aber kein PraxisZeit-Dienst ist fuer diesen"
+    Write-Output 'Ordner eingerichtet. Die PostgreSQL-Programmdateien legt erst setup.bat an - ein'
+    Write-Output 'vorab angelegter Ordner (oder eine Verknuepfung) wuerde sonst als Datenbank-'
+    Write-Output 'programm uebernommen. Die Installation ist gesperrt, bis der Ordner entfernt ist'
+    Write-Output '(oder in einen neuen, leeren Ordner installieren).'
+    exit 2
+}
 # data\db bleibt nur stehen, wenn es samt Inhalt schon nur dem Dienst gehoert -
 # geprueft, solange die Eigentuemer noch die alten sind.
 $dbServiceOnly = (Test-Path -LiteralPath $dbDir) -and (Test-ServiceOnlyAcl $dbDir)

@@ -121,7 +121,7 @@ greift, muss der Proxy die echte Adresse weiterreichen (`X-Forwarded-For`) und
 `set_real_ip_from <proxy-netz>;` und `real_ip_header X-Forwarded-For;`
 einkommentieren (nur das Netz des Proxys eintragen, nie `0.0.0.0/0`, sonst kann
 jeder seine Adresse fälschen) und das Frontend neu bauen. Browser, in denen sich
-ein Konto schon einmal angemeldet hat, sperrt die Anmelde-Sperre seit 1.22.1
+ein Konto schon einmal angemeldet hat, sperrt die Anmelde-Sperre seit 1.23.0
 ohnehin nicht mehr aus.
 
 ---
@@ -157,16 +157,19 @@ compose down -v` und vor Updates** sichern.
 oder einen täglichen Zeitplan + Aufbewahrung konfigurieren. Die Sicherungen landen
 im Volume `praxiszeit_backups` und lassen sich dort herunterladen.
 
-**Kommandozeile** (gzip, damit der Restore mit `gunzip -c | psql` zusammenpasst):
+**Kommandozeile:** das geprüfte Script neben der `docker-compose.yml` (im
+git-Checkout `bash tools/docker/backup.sh`):
 
 ```bash
-docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit \
-    | gzip > backup-$(date +%F).sql.gz
+bash backup.sh                    # -> ./backups/praxiszeit_<ts>.sql.gz (signiert)
+bash restore.sh backups/praxiszeit_<ts>.sql.gz
 ```
 
-Im Docker-Bundle gibt es dafür auch die geprüften Scripts `bash backup.sh` /
-`bash restore.sh` (neben der `docker-compose.yml`). Restore + Details:
-[BACKUP.md](BACKUP.md).
+Ab 1.23.0 tragen die Sicherungen eine Signatur, und `restore.sh` spielt nur
+signierte Sicherungen ohne Weiteres ein. Ein von Hand gezogenes
+`pg_dump | gzip` oder eine Sicherung von 1.22.0 oder älter ist unsigniert und geht
+nur mit `--force-unverified` (dann ungeprüft als Datenbank-Superuser — nur Dateien
+der eigenen Installation). Restore + Details: [BACKUP.md](BACKUP.md#signatur-der-sicherungen).
 
 §16 ArbZG verlangt eine Aufbewahrung von mindestens 2 Jahren. Die Volumes
 `postgres_data` + `praxiszeit_backups` daher **niemals ungesichert löschen**.

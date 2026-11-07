@@ -833,9 +833,12 @@ def clock_in(
     db.commit()
     db.refresh(entry)
 
-    response = TimeEntryResponse.model_validate(entry)
+    # Dieselben berechneten Felder wie /clock-status und /clock-out
+    # (is_sunday_or_holiday stand hier vorher fest auf False).
+    response = _enrich_response(
+        TimeEntryResponse.model_validate(entry), entry, current_user, db, clock_in_warnings,
+    )
     response.is_editable = True
-    response.warnings = clock_in_warnings
     return response
 
 

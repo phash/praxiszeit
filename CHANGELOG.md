@@ -9,6 +9,7 @@
 - **Datenbank-Port unter Windows einstellbar.** Läuft auf dem Rechner schon ein anderer PostgreSQL auf Port 5432, kann PraxisZeit mit einem eigenen Port arbeiten: in `config\praxiszeit.conf` unter `[database]` die Zeile `port = 5433` (erlaubt 1024–65535, ohne Eintrag 5432) und den Dienst neu starten. Der GUI-Installer hat dafür auf der Seite „Ports“ das Feld „Datenbank-Port (nur Windows)“ samt Warnung bei belegtem Port. Auf Linux und macOS gibt es weiterhin nur den Socket; ein Eintrag wird dort mit einer Warnung ignoriert.
 - **Fremder PostgreSQL wird erkannt.** Belegt ein anderer Server den Port, beendet sich PraxisZeit mit der Meldung „Port … ist von einem anderen PostgreSQL belegt. In config\praxiszeit.conf unter [database] einen freien Port eintragen …“, bevor etwas angelegt wird. Der Windows-Dienst startet dann nicht endlos neu (`AppExit 78 Exit`; der Update-Wizard setzt es auch für bestehende Installationen).
 - `restore-backup.bat`, die Sicherung in `uninstall.bat` und `setup.bat` verwenden den konfigurierten Port; neue Befehle `praxiszeit-server.py print-db-port` und `sync-db-port`.
+- **Spenden-Link:** Der Link „Unterstützen Sie die Entwicklung mit einer Spende“ unter der Versionsangabe in der Seitenleiste führt jetzt zu PayPal statt zu „Buy me a Coffee“ (#532).
 
 ### 🔒 Prüfung 2026-11-07: Arbeitszeitgesetz, Nachweise, Sicherheit
 
@@ -43,7 +44,7 @@ Eine kritische Prüfung von PraxisZeit (Arbeitszeitgesetz-Regeln, §-16-Nachweis
 
 #### ArbZG-Prüfungen an allen Erfassungswegen (#540)
 
-- **Automatisch geschlossene Einträge** (Ausstempeln vergessen) werden nach §§ 3 und 4 geprüft und tragen einen Vermerk in der Notiz. Mitarbeitende sehen an der Stempeluhr einen Hinweis mit vorbelegtem Antrag „Arbeitsende nachtragen“, die Verwaltung eine Dashboard-Karte „Automatisch geschlossene Einträge – Ende fehlt“, bis das tatsächliche Ende eingetragen ist. Ein Ausstempeln am nächsten Morgen schließt den Eintrag und hält den Ausstempelversuch fest, statt mit einem Fehler abzubrechen.
+- **Automatisch geschlossene Einträge** (Ausstempeln vergessen) werden nach §§ 3 und 4 geprüft und tragen einen Vermerk in der Notiz. Mitarbeitende sehen an der Stempeluhr einen Hinweis mit der Schaltfläche „Arbeitsende per Antrag nachtragen“ (vorbelegter Änderungsantrag), die Verwaltung eine Dashboard-Karte „Automatisch geschlossene Einträge – Ende fehlt“, bis das tatsächliche Ende eingetragen ist. Ein Ausstempeln am nächsten Morgen schließt den Eintrag und hält den Ausstempelversuch fest, statt mit einem Fehler abzubrechen.
 - **Pausenausnahme:** die Begründung braucht mindestens 10 Zeichen (bisher genügte ein Zeichen). Ist „Pausenausnahme muss genehmigt werden“ eingeschaltet, gilt das jetzt auch beim Ausstempeln: der Eintrag wird mit dem echten Ende geschlossen, die Ausnahme als Antrag gestellt. Eine eigene Ausnahme darf ein Admin nie selbst genehmigen; in einer Praxis mit nur einem Admin lässt sich ein solcher Antrag deshalb nur ablehnen (die Meldung sagt das), der Tag steht dann in der Auswertung unter „Pause zu kurz“.
 - **XLS-Import:** Tage mit mehr als 10 h angerechneter Zeit werden nicht übernommen; der Server prüft selbst und übernimmt keine Warnungen mehr vom Browser.
 - **Ende in der Zukunft** (heute, später als jetzt) und eine Pause, die so lang ist wie der ganze Eintrag, werden abgelehnt.
@@ -99,8 +100,25 @@ Eine kritische Prüfung von PraxisZeit (Arbeitszeitgesetz-Regeln, §-16-Nachweis
 - **Offen:** ein eigener Signaturschlüssel für Update-Pakete braucht einen neuen Offline-Schlüssel und Änderungen am Update-Server – folgt separat.
 - Das Backend-Basis-Image ist per Digest gepinnt; Debian-Sicherheitsupdates kommen damit nur noch mit einem bewussten Digest-Wechsel.
 
+### 🐛 Fehlerbehebungen (Oberfläche, #536)
+
+- Die Schaltfläche „Antrag“ in der Zeiterfassung war weiße Schrift auf Grau und kaum lesbar; sie ist jetzt bernsteinfarben (#533).
+- Admin-Seitenleiste: der Zähler klebt nicht mehr am Menüpunkt „Änderungsanträge“ (#534).
+- Das Admin-Handbuch nennt den Schalter so wie die App: „Abwesenheitsanträge genehmigungspflichtig“ (#535).
+
+### 🔧 Release-Prüfung 1.23.0
+
+- **Windows: vorab angelegtes `bin\postgresql` sperrt die Erstinstallation.** setup.bat legt diesen Ordner erst nach der Ordnerprüfung an. Lag er schon da (Ordner oder Verknüpfung) und ist noch kein PraxisZeit-Dienst für den Ordner eingerichtet, hätte setup.bat die PostgreSQL-Installation übersprungen und fremde Programmdateien als Datenbankdienst gestartet. Jetzt bricht `secure-install.ps1` mit Exit 2 ab; Updates bestehender Installationen sind nicht betroffen.
+- `setup.bat` wertet den Exit-Code der Ordnerprüfung genau aus: jeder Wert außer 0 bricht ab, auch ein negativer.
+- `uninstall.bat`: fehlte `config\.db-credentials`, brach die Deinstallation immer ab, auch wenn die Frage „Trotzdem OHNE Backup deinstallieren?“ mit „j“ beantwortet wurde.
+- Die Antwort von „Einstempeln“ kennzeichnet Sonn- und Feiertage jetzt wie „Ausstempeln“ und der Stempelstatus (`is_sunday_or_holiday`); vorher stand dort immer „nein“.
+
 ### ⚠️ Hinweis
 
+- **Sicherungen von vor 1.23.0 sind unsigniert** – auch die, die Sie direkt vor dem Update ziehen, solange noch die alte Version läuft. `praxiszeit-server.py restore`, `restore-backup.bat` und das Docker-`restore.sh` spielen sie nur mit dem Zusatz `--force-unverified` ein (unter Docker dann ungeprüft als Datenbank-Superuser) – nur mit Dateien der eigenen Installation. Hintergrund: [BACKUP.md → Signatur](docs/BACKUP.md#signatur-der-sicherungen).
+- **SMTP prüft das Zertifikat jetzt immer.** Bei `MAIL_STARTTLS=true` (Standard) prüft der Mailversand Zertifikat und Hostnamen des Mailservers gegen die Zertifizierungsstellen des Systems; eine Option zum Abschalten gibt es nicht. Ein Mailserver mit selbst signiertem Zertifikat oder einem Zertifikat nur für eine IP-Adresse nimmt keine Mails mehr an (Fehler im Log `mail_service: failed to send …`). `MAIL_HOST` auf den Namen setzen, auf den das Zertifikat ausgestellt ist, oder ein gültiges Zertifikat einspielen. Betroffen sind die Mails über `MAIL_HOST` (Registrierung/Bestätigung).
+- **Docker veröffentlicht die Ports nur noch über IPv4** (`"0.0.0.0:80:80"`, mit SSL `"0.0.0.0:443:443"`). Zugriff über IPv6 braucht einen vorgeschalteten Reverse-Proxy. Wer eigene Ports aus der alten `docker-compose.yml` oder einer `docker-compose.override.yml` übernimmt, behält das Präfix bei (z. B. `"0.0.0.0:8095:80"`).
+- **Windows-Setup und -Update brechen bei fremden Inhalten ab** (Ordnerprüfung mit Exit 2, Meldung „Setup gesperrt …“ bzw. im Update-Protokoll): bei Dateien unter `bin\` oder `app\`, die nicht zum Paket gehören, bei Verknüpfungen (Junction, symbolischer Link), Dateien mit mehreren harten Links, Namen mit Leerzeichen oder Punkt am Ende sowie bei Dateien in `data\db` oder `config`, die weder einem Administrator, SYSTEM noch dem Datenbankdienst gehören. Die aufgelisteten Einträge entfernen und erneut ausführen – oder in einen neuen, leeren Ordner installieren.
 - Ein **Reparieren** über den GUI-Installer schreibt `praxiszeit.conf` neu und setzt den Datenbank-Port damit auf den Wert des Feldes zurück — den Port dort erneut eintragen.
 - Beim ersten Start nach einem Port-Wechsel wird die `port =`-Zeile in `data\db\postgresql.conf` angepasst; läuft der PostgreSQL-Dienst, wird er dafür kurz gestoppt.
 

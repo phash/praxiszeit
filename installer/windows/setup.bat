@@ -37,10 +37,13 @@ REM .pth-Datei in site-packages oder eine DLL neben python.exe). Deshalb zuerst
 REM nur mit Windows-Bordmitteln: Eigentuemer Administratoren, Vererbung von C:\
 REM weg, explizite Rechte an Programmdateien zurueckgesetzt, und jede Datei
 REM unter bin\ und app\, die nicht zum Paket gehoert, sperrt das Setup.
+REM Exit-Code genau vergleichen: "if errorlevel N" faengt nur Werte >= N, ein
+REM negativer Code (PowerShell-Absturz) liefe sonst ungesichert weiter.
 echo Sichere den Installationsordner ab...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%DIR%secure-install.ps1" -InstallDir "%DIR%."
-if errorlevel 2 goto :fremde_dateien
-if errorlevel 1 goto :rechte_fehler
+set "SEC_RC=%errorlevel%"
+if "%SEC_RC%"=="2" goto :fremde_dateien
+if not "%SEC_RC%"=="0" goto :rechte_fehler
 
 REM --- Verzeichnisse erstellen ---
 if not exist "%DIR%data\db" mkdir "%DIR%data\db"
