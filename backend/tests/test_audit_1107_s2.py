@@ -157,6 +157,21 @@ def test_change_request_overflow_is_422_not_500(_db_session, employee_client):
     assert r.status_code == 422, r.text
 
 
+def test_delete_cr_absence_type_longer_than_column_is_422(_db_session, employee_client):
+    """Fix-Runde: Spalte ``proposed_absence_type`` ist String(20); der
+    Lösch-Antrag speichert den Wert ungeprüft → auf PG 22001 → 500."""
+    import uuid
+    r = employee_client.post("/api/change-requests/", json={
+        "request_type": "delete", "entry_kind": "absence", "absence_id": str(uuid.uuid4()),
+        "proposed_absence_type": "x" * 21, "reason": "probe"})
+    assert r.status_code == 422, r.text
+    from app.models.change_request import ChangeRequest
+    from app.schemas.change_request import ChangeRequestCreate
+    col = ChangeRequest.__table__.c.proposed_absence_type.type.length
+    field = ChangeRequestCreate.model_fields["proposed_absence_type"]
+    assert [m.max_length for m in field.metadata if hasattr(m, "max_length")] == [col]
+
+
 def test_list_offset_bounds_are_422(_db_session, employee_client):
     # Negativer oder riesiger OFFSET war auf PostgreSQL ein DB-Fehler (500).
     for skip in (-1, 10 ** 12):

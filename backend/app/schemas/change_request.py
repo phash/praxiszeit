@@ -20,7 +20,10 @@ class ChangeRequestCreate(BaseModel):
     # Fehler-Monitoring und Werte im PG-Log). 422 statt 500.
     proposed_break_minutes: Optional[int] = Field(None, ge=0, le=1440)
     proposed_note: Optional[str] = Field(None, max_length=2000)
-    proposed_absence_type: Optional[str] = Field(None, max_length=40)
+    # Fix-Runde: Grenze = Spalte ``change_requests.proposed_absence_type`` (String(20)).
+    # Der Loesch-Antrag speichert den Wert ohne AbsenceType-Pruefung; 21+ Zeichen
+    # waeren auf PG SQLSTATE 22001 → HTTP 500 gewesen.
+    proposed_absence_type: Optional[str] = Field(None, max_length=20)
     proposed_absence_hours: Optional[float] = Field(None, ge=0, le=24)
     reason_id: Optional[UUID] = None  # #312: custom absence reason (overrides type via its behaviour)
     reason: str = Field(..., min_length=1, max_length=2000)
