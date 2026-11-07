@@ -284,14 +284,70 @@ class TestClusterOwnership:
         assert srv.pg_cluster_state() == "foreign"
         assert srv.pg_is_running() is False
 
-    def test_foreign_when_status_ok_but_pid_file_missing(self, srv, monkeypatch):
+    # Audit 2026-11-07 S3-08: only verified evidence is "foreign". pg_ctl said
+    # "running" (exit 0) but postmaster.pid could not be read (virus scanner
+    # lock) or is garbled -> "unknown", never exit 78.
+    def test_unknown_when_status_ok_but_pid_file_missing(self, srv, monkeypatch):
         self._fake(srv, monkeypatch, isready=0, status=0)
-        assert srv.pg_cluster_state() == "foreign"
+        assert srv.pg_cluster_state() == "unknown"
 
-    def test_foreign_when_pid_file_garbled(self, srv, monkeypatch):
+    def test_unknown_when_pid_file_garbled(self, srv, monkeypatch):
         self._fake(srv, monkeypatch, isready=0, status=0)
         (self.pg_data / "postmaster.pid").write_bytes(b"\xff\xfe\x00garbage")
-        assert srv.pg_cluster_state() == "foreign"
+        assert srv.pg_cluster_state() == "unknown"
+
+    def test_unknown_when_pg_ctl_status_times_out(self, srv, monkeypatch):
+        import types
+
+        def _run(argv, *a, **kw):
+            name = Path(str(argv[0])).name
+            if name.startswith("pg_ctl"):
+                raise srv.subprocess.TimeoutExpired(argv, kw.get("timeout", 10))
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(srv.subprocess, "run", _run)
+        self._pid_file("5432")
+        assert srv.pg_cluster_state() == "unknown"
+        assert srv.pg_is_running() is False
+
+    def test_unknown_when_pg_ctl_cannot_launch(self, srv, monkeypatch):
+        import types
+
+        def _run(argv, *a, **kw):
+            if Path(str(argv[0])).name.startswith("pg_ctl"):
+                raise PermissionError("Zugriff verweigert")
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(srv.subprocess, "run", _run)
+        assert srv.pg_cluster_state() == "unknown"
+
+    def test_unknown_when_data_dir_not_accessible(self, srv, monkeypatch):
+        self._fake(srv, monkeypatch, isready=0, status=4)
+        assert srv.pg_cluster_state() == "unknown"
+
+    def test_confirmed_state_retries_unknown(self, srv, monkeypatch):
+        states = iter(["unknown", "unknown", "own"])
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: next(states))
+        assert srv._pg_cluster_state_confirmed() == "own"
+
+    def test_confirmed_state_gives_up_as_unknown_not_foreign(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "unknown")
+        assert srv._pg_cluster_state_confirmed() == "unknown"
+
+    def test_pg_start_never_raises_foreign_on_unknown(self, srv, monkeypatch):
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "unknown")
+        calls = self._fake(srv, monkeypatch, isready=0)
+        monkeypatch.setattr(srv, "pg_cluster_state", lambda: "unknown")
+        with pytest.raises(SystemExit) as e:
+            srv.pg_start()
+        assert e.value.code == 1  # NSSM restarts on 1, never the final 78
+        assert any(c[:2] == ["net", "start"] for c in calls), calls
+
+    def test_watchdog_unknown_neither_restarts_nor_exits(self, srv, monkeypatch):
+        called = self._watch(srv, monkeypatch, ["foreign", "foreign", "unknown"] * 3)
+        for _ in range(9):
+            srv._watchdog_check_pg()
+        assert called == []
 
     def test_foreign_when_pid_file_has_other_port(self, srv, monkeypatch):
         monkeypatch.setattr(srv, "load_config", lambda: {"database": {"port": 5433}})
@@ -518,6 +574,56 @@ class TestManagedConfPortSync:
         q.write_bytes(_INITDB_HEAD.encode())
         assert srv.sync_managed_pg_port(q, 5432) is False
         assert q.read_bytes() == _INITDB_HEAD.encode()
+
+    # Audit 2026-11-07 S3-15: PostgreSQL takes the LAST active port line.
+    def test_sync_disables_hand_added_port_after_managed_block(self, srv, tmp_path):
+        p = self._conf(tmp_path, _INITDB_HEAD + _MANAGED + "port = 6000\n")
+        assert srv.sync_managed_pg_port(p, 5433) is True
+        text = p.read_text(encoding="utf-8")
+        active = [ln for ln in text.splitlines() if srv._PG_PORT_LINE_RE.match(ln)]
+        assert active == ["port = 5433"]
+        assert srv.PG_PORT_DISABLED_PREFIX + "port = 6000" in text
+        # initdb's commented default stays untouched
+        assert text.startswith("#port = 5432\t")
+
+    def test_sync_disables_stray_port_even_on_default_port(self, srv, tmp_path):
+        p = self._conf(tmp_path, _INITDB_HEAD + _MANAGED + "port = 6000\n")
+        assert srv.sync_managed_pg_port(p, 5432) is True
+        active = [ln for ln in p.read_text(encoding="utf-8").splitlines()
+                  if srv._PG_PORT_LINE_RE.match(ln)]
+        assert active == ["port = 5432"]
+
+    def test_sync_disables_port_before_header_without_block(self, srv, tmp_path):
+        p = self._conf(tmp_path, "port = 6000\n")
+        assert srv.sync_managed_pg_port(p, 5432) is True
+        assert p.read_text(encoding="utf-8") == srv.PG_PORT_DISABLED_PREFIX + "port = 6000\n"
+        assert srv.sync_managed_pg_port(p, 5432) is False
+
+    def test_sync_stray_port_keeps_crlf(self, srv, tmp_path):
+        p = self._conf(tmp_path, _INITDB_HEAD + _MANAGED + "port = 6000\n", crlf=True)
+        assert srv.sync_managed_pg_port(p, 5433) is True
+        data = p.read_bytes()
+        assert data.count(b"\n") == data.count(b"\r\n")
+
+    def test_auto_conf_port_is_neutralized(self, srv, tmp_path):
+        auto = tmp_path / "postgresql.auto.conf"
+        auto.write_bytes(b"# Do not edit this file manually!\nport = '6000'\n")
+        assert srv.neutralize_auto_conf_port(auto) is True
+        text = auto.read_text(encoding="utf-8")
+        assert not [ln for ln in text.splitlines() if srv._PG_PORT_LINE_RE.match(ln)]
+        assert srv.neutralize_auto_conf_port(auto) is False
+        assert srv.neutralize_auto_conf_port(tmp_path / "missing.conf") is False
+
+    def test_apply_pg_port_reports_change_from_auto_conf(self, srv, tmp_path, monkeypatch):
+        pg_data = tmp_path / "db"
+        pg_data.mkdir()
+        (pg_data / "postgresql.conf").write_bytes((_INITDB_HEAD + _MANAGED).encode())
+        (pg_data / "postgresql.auto.conf").write_bytes(b"port = '6000'\n")
+        monkeypatch.setattr(srv, "IS_WINDOWS", True)
+        monkeypatch.setattr(srv, "PG_DATA", pg_data)
+        monkeypatch.setattr(srv, "load_config", lambda: {})
+        monkeypatch.setattr(srv, "_win_service_exists", lambda name: False)
+        assert srv.apply_pg_port() is True
 
     def test_changed_port_stops_running_service_before_start(self, srv, tmp_path, monkeypatch):
         import types

@@ -347,27 +347,40 @@ def _pid_file_port() -> str | None:
     return lines[3].strip()
 
 
-def _win_own_cluster_running() -> bool:
-    """Windows: laeuft UNSER Cluster (aus PG_DATA) auf UNSEREM Port?
+def _win_own_cluster_status() -> str:
+    """Windows: is the server on OUR port OUR cluster (from PG_DATA)?
 
-    ``pg_ctl status -D`` statt ``os.kill(pid, 0)`` (unter Windows kein
-    Lebenszeichen-Test). Zusaetzlich muss der Port im ``postmaster.pid`` zum
-    konfigurierten passen — sonst antwortet auf unserem Port ein anderer Server.
+    ``"own"``, ``"foreign"`` or ``"unknown"``. ``pg_ctl status -D`` instead of
+    ``os.kill(pid, 0)`` (no liveness test on Windows); the port in
+    ``postmaster.pid`` must also match the configured one.
+
+    Only VERIFIED evidence counts as ``"foreign"`` (Audit 2026-11-07 S3-08):
+    ``pg_ctl status`` exit 3 (no postmaster of OUR data directory runs) while
+    something answers on the port, or a ``postmaster.pid`` naming a different
+    port. A ``pg_ctl status`` running into its time limit (boot under virus
+    scanner load), a launch error, an unreadable data directory (exit 4) or a
+    locked ``postmaster.pid`` is ``"unknown"`` — exit 78 is final (NSSM
+    ``AppExit 78 Exit``), a measuring error must never end time recording.
     """
     try:
         result = subprocess.run(
             [str(pg_cmd("pg_ctl")), "status", "-D", str(PG_DATA)],
             capture_output=True, timeout=10, env=pg_env(),
         )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
+    except (subprocess.TimeoutExpired, OSError):
+        return "unknown"
+    if result.returncode == 3:
+        return "foreign"
     if result.returncode != 0:
-        return False
-    return _pid_file_port() == str(pg_port())
+        return "unknown"
+    pid_port = _pid_file_port()
+    if pid_port is None:
+        return "unknown"
+    return "own" if pid_port == str(pg_port()) else "foreign"
 
 
 def pg_cluster_state() -> str:
-    """``"own"``, ``"foreign"`` oder ``"down"`` fuer den PraxisZeit-Port.
+    """``"own"``, ``"foreign"``, ``"down"`` or ``"unknown"`` for our port.
 
     Unix: probe the bundled unix-socket directory (DATA_DIR/run), NEVER TCP
     localhost. A foreign system PostgreSQL already listening on :5432 must
@@ -379,8 +392,8 @@ def pg_cluster_state() -> str:
 
     Windows has no unix sockets; there the bundled cluster runs as its own
     NetworkService TCP service on localhost:pg_port(). Something answering
-    there is only ``"own"`` if ``pg_ctl status -D PG_DATA`` succeeds and
-    ``postmaster.pid`` names our port; otherwise it is ``"foreign"``.
+    there is ``"own"``/``"foreign"``/``"unknown"`` per
+    :func:`_win_own_cluster_status`.
     """
     if IS_WINDOWS:
         host = "localhost"
@@ -398,19 +411,26 @@ def pg_cluster_state() -> str:
         return "down"
     if not IS_WINDOWS:
         return "own"
-    return "own" if _win_own_cluster_running() else "foreign"
+    return _win_own_cluster_status()
 
 
 FOREIGN_RECHECK_SECONDS = 2
+UNKNOWN_RECHECKS = 3
 
 
 def _pg_cluster_state_confirmed() -> str:
     """Wie :func:`pg_cluster_state`, ein ``"foreign"`` wird nach kurzer Pause
-    einmal nachgeprueft. Ein einzelnes falsches "foreign" (pg_ctl status
-    laeuft in die Zeitgrenze, postmaster.pid kurz vom Virenscanner gesperrt)
-    darf den Dienst nicht mit Exit 78 dauerhaft beenden."""
+    einmal nachgeprueft, ein ``"unknown"`` bis zu UNKNOWN_RECHECKS-mal. Ein
+    einzelnes falsches "foreign" (postmaster.pid kurz vom Virenscanner
+    gesperrt) darf den Dienst nicht mit Exit 78 dauerhaft beenden; ein
+    bleibendes "unknown" fuehrt nie zu Exit 78 (S3-08)."""
     state = pg_cluster_state()
     if state == "foreign":
+        time.sleep(FOREIGN_RECHECK_SECONDS)
+        state = pg_cluster_state()
+    tries = 0
+    while state == "unknown" and tries < UNKNOWN_RECHECKS:
+        tries += 1
         time.sleep(FOREIGN_RECHECK_SECONDS)
         state = pg_cluster_state()
     return state
@@ -785,40 +805,15 @@ def _dump_pg_startup_log() -> bool:
 PG_CONF_MANAGED_HEADER = "# PraxisZeit configuration"
 
 
-def sync_managed_pg_port(conf_path: Path, port: int) -> bool:
-    """Set ``port`` in the PraxisZeit-managed block of postgresql.conf.
+_PG_PORT_LINE_RE = re.compile(r"^\s*port\s*=")
+PG_PORT_DISABLED_PREFIX = "# deaktiviert von PraxisZeit ([database] port gilt): "
 
-    Pure file edit; returns True only if the file content changed. Lines before
-    the managed header (initdb's ``#port = 5432``) are never touched. Line
-    endings and encoding are preserved (bytes round trip).
-    """
-    raw = conf_path.read_bytes()
-    text = raw.decode("utf-8", errors="surrogateescape")
-    nl = "\r\n" if "\r\n" in text else "\n"
-    lines = text.split(nl)
-    new_line = f"port = {port}"
-    header_idx = next(
-        (i for i, ln in enumerate(lines) if ln.strip() == PG_CONF_MANAGED_HEADER), None
-    )
-    if header_idx is None:
-        if port == 5432:
-            return False
-        tail = "" if (not text or text.endswith("\n")) else nl
-        new_text = f"{text}{tail}{nl}{PG_CONF_MANAGED_HEADER}{nl}{new_line}{nl}"
-    else:
-        port_re = re.compile(r"^\s*port\s*=")
-        port_idx = next(
-            (i for i in range(header_idx + 1, len(lines)) if port_re.match(lines[i])), None
-        )
-        if port_idx is None:
-            lines.insert(header_idx + 1, new_line)
-        elif lines[port_idx] == new_line:
-            return False
-        else:
-            lines[port_idx] = new_line
-        new_text = nl.join(lines)
-    if new_text == text:
-        return False
+
+def _disable_port_line(line: str) -> str:
+    return PG_PORT_DISABLED_PREFIX + line.strip()
+
+
+def _write_conf_atomically(conf_path: Path, new_text: str) -> None:
     # Atomar: Temp-Datei im selben Ordner, dann os.replace - ein Abbruch
     # mitten im Schreiben (Stromausfall, voller Datentraeger) laesst nie eine
     # halbe postgresql.conf zurueck, mit der der Cluster nicht mehr startet.
@@ -829,7 +824,83 @@ def sync_managed_pg_port(conf_path: Path, port: int) -> bool:
     finally:
         if tmp.exists():
             tmp.unlink()
+
+
+def sync_managed_pg_port(conf_path: Path, port: int) -> bool:
+    """Set ``port`` in the PraxisZeit-managed block of postgresql.conf.
+
+    Pure file edit; returns True only if the file content changed. Line
+    endings and encoding are preserved (bytes round trip).
+
+    PostgreSQL takes the LAST ``port =`` line of the file. So besides the
+    managed line every other active ``port =`` line (a hand edit before or
+    after the managed block, Audit 2026-11-07 S3-15) is commented out —
+    otherwise the cluster listens on a port PraxisZeit does not know, looks
+    "down" or "foreign" and the service start loops. initdb's commented
+    ``#port = 5432`` is not an active line and stays as it is.
+    """
+    raw = conf_path.read_bytes()
+    text = raw.decode("utf-8", errors="surrogateescape")
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(nl)
+    new_line = f"port = {port}"
+    header_idx = next(
+        (i for i, ln in enumerate(lines) if ln.strip() == PG_CONF_MANAGED_HEADER), None
+    )
+    managed_idx = None
+    if header_idx is not None:
+        managed_idx = next(
+            (i for i in range(header_idx + 1, len(lines))
+             if _PG_PORT_LINE_RE.match(lines[i])), None
+        )
+    for i, ln in enumerate(lines):
+        if i != managed_idx and _PG_PORT_LINE_RE.match(ln):
+            lines[i] = _disable_port_line(ln)
+    if header_idx is None:
+        body = nl.join(lines)
+        if port == 5432:
+            new_text = body
+        else:
+            tail = "" if (not body or body.endswith("\n")) else nl
+            new_text = f"{body}{tail}{nl}{PG_CONF_MANAGED_HEADER}{nl}{new_line}{nl}"
+    else:
+        if managed_idx is None:
+            lines.insert(header_idx + 1, new_line)
+        else:
+            lines[managed_idx] = new_line
+        new_text = nl.join(lines)
+    if new_text == text:
+        return False
+    _write_conf_atomically(conf_path, new_text)
     return True
+
+
+def neutralize_auto_conf_port(auto_conf: Path) -> bool:
+    """Comment out a ``port`` set by ``ALTER SYSTEM`` (postgresql.auto.conf).
+
+    postgresql.auto.conf is read AFTER postgresql.conf, so a port there beats
+    the managed line (S3-15). Same effect as ``ALTER SYSTEM RESET port``;
+    only called while the cluster is stopped or about to be restarted.
+    Returns True if the file changed (and logs a warning then).
+    """
+    if not auto_conf.exists():
+        return False
+    raw = auto_conf.read_bytes()
+    text = raw.decode("utf-8", errors="surrogateescape")
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(nl)
+    changed = False
+    for i, ln in enumerate(lines):
+        if _PG_PORT_LINE_RE.match(ln):
+            logger.warning(
+                f"postgresql.auto.conf setzt '{ln.strip()}' (ALTER SYSTEM) - "
+                "auskommentiert, es gilt [database] port aus praxiszeit.conf."
+            )
+            lines[i] = _disable_port_line(ln)
+            changed = True
+    if changed:
+        _write_conf_atomically(auto_conf, nl.join(lines))
+    return changed
 
 
 def apply_pg_port() -> bool:
@@ -845,7 +916,10 @@ def apply_pg_port() -> bool:
     if not conf.exists():
         return False
     port = pg_port()
-    if not sync_managed_pg_port(conf, port):
+    changed = sync_managed_pg_port(conf, port)
+    if neutralize_auto_conf_port(PG_DATA / "postgresql.auto.conf"):
+        changed = True
+    if not changed:
         return False
     logger.info(f"PostgreSQL-Port in postgresql.conf auf {port} gesetzt")
     if _win_service_exists(PG_SERVICE_NAME):
@@ -2284,6 +2358,14 @@ def _watchdog_check_pg() -> None:
         )
         return
     _watchdog_foreign_streak = 0
+    if state == "unknown":
+        # pg_ctl status lief in die Zeitgrenze o. ae. (S3-08): weder neu
+        # starten noch beenden, beim naechsten Durchlauf erneut pruefen.
+        logger.warning(
+            "PostgreSQL-Port %s: Zustand nicht feststellbar (pg_ctl status) - "
+            "erneute Pruefung beim naechsten Durchlauf.", pg_port(),
+        )
+        return
     if state == "down":
         logger.error("PostgreSQL is not responding, restarting...")
         try:
