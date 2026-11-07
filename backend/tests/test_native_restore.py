@@ -90,6 +90,8 @@ class FakeCluster:
         self.events: list[str] = []
         self.envs: list[dict] = []
         self.load_mode = None
+        self.roles: set[str] = set()
+        self.role_sql: list[str] = []
 
     def __call__(self, cmd, **kw):
         if Path(cmd[0]).name != "psql":
@@ -100,6 +102,13 @@ class FakeCluster:
         if db not in self.dbs:
             return subprocess.CompletedProcess(cmd, 2, "", f'FATAL: database "{db}" does not exist')
         out = []
+        if "-f" in cmd and cmd[cmd.index("-f") + 1] == "-":
+            # Skript ueber stdin (Ladrolle mit Passwort, Runde 3).
+            for sql in (kw.get("input") or "").split(";\n"):
+                sql = sql.strip()
+                if sql:
+                    self._role_sql(sql)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
         if "-f" in cmd:
             path = Path(cmd[cmd.index("-f") + 1])
             if path.name == "init-db-user.sql":
@@ -131,6 +140,12 @@ class FakeCluster:
                 if self.fail_rename:
                     return subprocess.CompletedProcess(cmd, 1, "", "ERROR:  rename failed\n")
                 self.dbs[names[1]] = self.dbs.pop(names[0])
+            elif sql.startswith(("CREATE ROLE", "DROP ROLE")):
+                self._role_sql(sql)
+            elif sql.startswith("REASSIGN OWNED"):
+                self.events.append(f"reassign:{db}")
+            elif sql.startswith("DROP OWNED"):
+                pass
             elif "alembic_version" in sql:
                 self.events.append(f"revision:{db}")
                 if not self.has_alembic:
@@ -143,6 +158,18 @@ class FakeCluster:
             else:
                 raise AssertionError(f"unerwartetes SQL: {sql}")
         return subprocess.CompletedProcess(cmd, 0, "".join(out), "")
+
+    def _role_sql(self, sql: str) -> None:
+        name = re.findall(r'"([^"]+)"', sql)[0]
+        if sql.startswith("CREATE ROLE"):
+            self.role_sql.append(sql)
+            self.events.append(f"createrole:{name}")
+            self.roles.add(name)
+        elif sql.startswith("DROP ROLE"):
+            self.events.append(f"droprole:{name}")
+            self.roles.discard(name)
+        else:
+            raise AssertionError(f"unerwartetes SQL: {sql}")
 
 
 @pytest.fixture
@@ -1312,3 +1339,174 @@ def test_dump_endet_mitten_in_einer_anweisung(srv, tmp_path):
     p.write_text(_HEAD + "COMMENT ON TABLE t IS 'offen\n", encoding="utf-8")
     with pytest.raises(srv.RestoreError, match="mitten in einer Anweisung"):
         srv.validate_restore_dump(p)
+
+
+# --- Audit 2026-11-07, Runde 3: Umgehungen des Validators auf --force-unverified ---
+#
+# Jeder Eintrag kam vor dieser Runde durch validate_restore_dump. Die Liste
+# bleibt Verteidigung in der Tiefe; die eigentliche Grenze ist das Einspielen
+# unverifizierter Sicherungen als Rolle OHNE Superuser-Rechte (unten).
+
+_BYPASSES_ROUND3 = [
+    # (1) Unicode-Bezeichner/-Zeichenketten verstecken Katalognamen.
+    'ALTER TABLE pg_catalog.U&"pg\\005fauthid" OWNER TO praxiszeit_app;\n',
+    "CREATE TABLE public.t (a text DEFAULT u&'\\0041');\n",
+    # (2) pg_*-Name mit Klammer dahinter (Spaltenliste oder Aufruf) galt als
+    #     erlaubter Funktionsaufruf; CREATE RULE ganz.
+    "CREATE RULE r AS ON INSERT TO public.t DO ALSO INSERT INTO pg_catalog.pg_auth_members "
+    "(roleid, member, grantor) VALUES (10, 16384, 10);\n",
+    "CREATE RULE r AS ON SELECT TO public.t DO INSTEAD SELECT 1;\n",
+    "CREATE TABLE public.t (a text DEFAULT pg_create_restore_point('x'));\n",
+    "CREATE INDEX i ON public.t ((pg_catalog.binary_upgrade_set_next_pg_type_oid(1)));\n",
+    # (3) E-Zeichenkette mit Backslash im Funktionsrumpf: p\x67 ist pg.
+    "CREATE FUNCTION public.f() RETURNS void LANGUAGE sql AS "
+    "E'UPDATE p\\x67_authid SET rolsuper = true';\n",
+    "CREATE FUNCTION public.f() RETURNS text LANGUAGE plpgsql AS "
+    "$$BEGIN RETURN E'a\\nb'; END$$;\n",
+    # (4) Verschachtelte Anweisungen im Rumpf (innere Literale prueft niemand).
+    "CREATE FUNCTION public.f() RETURNS void LANGUAGE plpgsql AS $$BEGIN "
+    "CREATE FUNCTION public.g() RETURNS void LANGUAGE sql AS 'UPDATE /**/ pg_authid SET rolsuper = true'; "
+    "END$$;\n",
+    "CREATE FUNCTION public.f() RETURNS void LANGUAGE plpgsql AS $$BEGIN "
+    "CREATE OR REPLACE FUNCTION public.g() RETURNS void LANGUAGE sql AS 'SELECT 1'; END$$;\n",
+    "CREATE FUNCTION public.f() RETURNS void LANGUAGE plpgsql AS $$BEGIN "
+    "ALTER FUNCTION public.g() SECURITY DEFINER; END$$;\n",
+    "CREATE FUNCTION public.f() RETURNS void LANGUAGE plpgsql AS $$BEGIN "
+    "CREATE TRIGGER t AFTER INSERT ON public.t FOR EACH ROW EXECUTE FUNCTION public.g(); END$$;\n",
+    "CREATE FUNCTION public.f() RETURNS void LANGUAGE plpgsql AS $$BEGIN "
+    "CREATE RULE r AS ON INSERT TO public.t DO ALSO NOTHING; END$$;\n",
+    "CREATE FUNCTION public.f() RETURNS void LANGUAGE plpgsql AS $$BEGIN "
+    "DO LANGUAGE plpgsql 'BEGIN NULL; END'; END$$;\n",
+    # Weitere Funde dieser Runde: Kommentar bzw. Literal klebte Woerter
+    # zusammen (ALTER/**/ROLE las sich als ALTERROLE) ...
+    "ALTER/**/ROLE praxiszeit_app SUPERUSER;\n",
+    "CREATE FUNCTION public.system(cstring) RETURNS int "
+    "AS'/lib/x86_64-linux-gnu/libc.so.6'LANGUAGE c STRICT;\n",
+    # ... die Sprache als Zeichenkette oder direkt in Anfuehrungszeichen ...
+    "CREATE FUNCTION public.system(cstring) RETURNS int "
+    "AS '/lib/x86_64-linux-gnu/libc.so.6', 'system' STRICT LANGUAGE 'c';\n",
+    "CREATE FUNCTION public.system(cstring) RETURNS int "
+    "AS '/lib/x86_64-linux-gnu/libc.so.6', 'system' LANGUAGE\"c\" STRICT;\n",
+    # ... eine Dollar-Quote mit Nicht-ASCII-Marke (psql kennt sie, der Lexer
+    # nicht) versteckte die Anweisung dazwischen in einer Schein-Zeichenkette ...
+    "COMMENT ON TABLE public.t IS $\u00e4$'$\u00e4$; ALTER ROLE praxiszeit_app SUPERUSER; "
+    "COMMENT ON TABLE public.t IS $\u00e4$'$\u00e4$;\n",
+    # ... und BEGIN ATOMIC: psql liest den Rumpf als EINE Anweisung, der Lexer
+    # trennte an jedem Semikolon.
+    "CREATE FUNCTION public.f() RETURNS int LANGUAGE sql BEGIN ATOMIC "
+    "INSERT INTO public.t VALUES (1); END;\n",
+]
+
+
+@pytest.mark.parametrize("body", _BYPASSES_ROUND3)
+def test_runde3_umgehung_wird_abgelehnt(srv, tmp_path, body):
+    with pytest.raises(srv.RestoreError, match="pg_dump nie"):
+        _check(srv, tmp_path, body)
+
+
+def test_funktionsrumpf_mit_on_conflict_do_nothing_geht_durch(srv, tmp_path):
+    """DO ist im Rumpf nur als eigener Block verboten, nicht in ON CONFLICT."""
+    _check(srv, tmp_path,
+           "CREATE FUNCTION public.f() RETURNS void LANGUAGE plpgsql AS $$BEGIN "
+           "INSERT INTO public.t VALUES (1) ON CONFLICT (id) DO NOTHING; END$$;\n")
+
+
+_FIXTURE_DUMP = Path(__file__).resolve().parent / "fixtures" / "restore" / "pg_dump_076_schema.sql"
+
+
+def test_echter_pg_dump_der_aktuellen_datenbank_geht_durch(srv, tmp_path):
+    """Gegenprobe: echte Ausgabe von pg_dump 18.6 einer PraxisZeit-Datenbank auf
+    Stand 076 (Schema samt RLS-Policies, Grants, den Protokollfunktionen und
+    -Triggern aus Migration 076, alembic_version; ohne Personendaten)."""
+    text = _FIXTURE_DUMP.read_text(encoding="utf-8")
+    assert "\\restrict " in text and "pz_audit_guard" in text and "076_audit_chain" in text
+    p = tmp_path / "d.sql"
+    p.write_text(text, encoding="utf-8")
+    srv.validate_restore_dump(p)  # wirft nicht
+
+
+# --- Grenze: unverifizierte Sicherung als Rolle ohne Superuser-Rechte laden ---
+
+def test_prepare_laesst_eigentuemer_nur_beim_eingeschraenkten_laden_weg(srv, tmp_path):
+    """Die Ladrolle kann ``OWNER TO praxiszeit`` nicht ausfuehren; die Objekte
+    gehoeren ihr und werden danach per REASSIGN OWNED uebertragen."""
+    text = _FIXTURE_DUMP.read_text(encoding="utf-8")
+    p = tmp_path / "d.sql"
+    p.write_text(text, encoding="utf-8")
+    assert srv.prepare_restore_dump(p, secret_key=_KEY, force_unverified=True,
+                                    restricted_load=True) is False
+    out = p.read_text(encoding="utf-8")
+    assert " OWNER TO " not in out
+    assert "ALTER DEFAULT PRIVILEGES FOR ROLE" not in out
+    assert "CREATE FUNCTION public.pz_audit_guard()" in out and "076_audit_chain" in out
+    # Sonst bleibt alles gleich (nur die eigenen restrict-Zeilen sind ersetzt).
+    kept = [line for line in text.splitlines()
+            if " OWNER TO " not in line and not line.startswith(("\\restrict", "\\unrestrict",
+                                                                 "ALTER DEFAULT PRIVILEGES FOR"))]
+    assert out.splitlines()[1:] == kept
+    # Signiert: unveraendert, verifiziert.
+    p2 = tmp_path / "e.sql"
+    p2.write_text(_signed(_HEAD + "ALTER TABLE public.t OWNER TO praxiszeit;\n" + _TAIL),
+                  encoding="utf-8")
+    assert srv.prepare_restore_dump(p2, secret_key=_KEY, restricted_load=True) is True
+    assert "ALTER TABLE public.t OWNER TO praxiszeit;" in p2.read_text(encoding="utf-8")
+
+
+def test_eigentuemerzeile_mit_zweiter_anweisung_bleibt_stehen(srv, tmp_path):
+    p = tmp_path / "d.sql"
+    body = "ALTER TABLE public.t OWNER TO praxiszeit; CREATE TABLE public.u ();\n"
+    p.write_text(_HEAD + body + _TAIL, encoding="utf-8")
+    srv.prepare_restore_dump(p, secret_key=_KEY, force_unverified=True, restricted_load=True)
+    assert body in p.read_text(encoding="utf-8")
+
+
+def test_unverifizierte_sicherung_wird_als_eingeschraenkte_rolle_geladen(srv, inst):
+    cluster = FakeCluster()
+    code, _ = _restore(srv, _dump(inst, _HEAD + "ALTER TABLE public.t OWNER TO praxiszeit;\n"
+                                  + _TAIL, key=None), cluster, force_unverified=True)
+    assert code == 0
+    load = next(c for c in cluster.calls if "-f" in c and c[c.index("-f") + 1] not in ("-",)
+                and not c[-1].endswith("init-db-user.sql"))
+    assert load[load.index("-U") + 1] == srv.RESTORE_LOAD_ROLE
+    load_env = cluster.envs[cluster.calls.index(load)]
+    assert load_env["PGPASSWORD"] != "su-pw" and len(load_env["PGPASSWORD"]) >= 32
+    # Passwort nie in einer Befehlszeile (Prozessliste), nur ueber stdin.
+    assert all(load_env["PGPASSWORD"] not in arg for c in cluster.calls for arg in c)
+    assert cluster.role_sql and "NOSUPERUSER" in cluster.role_sql[0]
+    assert "NOCREATEROLE" in cluster.role_sql[0] and "NOBYPASSRLS" in cluster.role_sql[0]
+    assert cluster.events == [
+        "drop:praxiszeit_restore",
+        "droprole:praxiszeit_restore_load",
+        "createrole:praxiszeit_restore_load",
+        "create:praxiszeit_restore",
+        "load:praxiszeit_restore",
+        "reassign:praxiszeit_restore",
+        "droprole:praxiszeit_restore_load",
+        "revision:praxiszeit_restore",
+        "drop:praxiszeit",
+        "rename:praxiszeit_restore->praxiszeit",
+        "grants:praxiszeit",
+    ]
+    create = next(c for c in cluster.calls if any("CREATE DATABASE" in a for a in c))
+    assert any(f'OWNER "{srv.RESTORE_LOAD_ROLE}"' in a for a in create)
+    assert "OWNER TO" not in cluster.dbs["praxiszeit"]
+
+
+def test_signierte_sicherung_wird_weiter_als_superuser_geladen(srv, inst):
+    cluster = FakeCluster()
+    code, _ = _restore(srv, _dump(inst), cluster)
+    assert code == 0
+    load = next(c for c in cluster.calls if "-f" in c and not c[-1].endswith("init-db-user.sql"))
+    assert load[load.index("-U") + 1] == "praxiszeit"
+    assert cluster.role_sql == []
+
+
+def test_ladrolle_wird_auch_nach_fehler_entfernt(srv, inst, caplog):
+    cluster = FakeCluster(fail_load=True)
+    with caplog.at_level(logging.ERROR, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst, key=None), cluster, force_unverified=True)
+    assert code == 1
+    assert cluster.dbs["praxiszeit"] == _OLD
+    after_load = cluster.events[cluster.events.index("load:praxiszeit_restore"):]
+    assert "droprole:praxiszeit_restore_load" in after_load
+    assert cluster.roles == set()

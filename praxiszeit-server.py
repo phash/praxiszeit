@@ -3176,6 +3176,10 @@ def _invalidate_admin_password_in_config():
 # die bisherige Datenbank erst, wenn das Einspielen gelungen ist und das Backup
 # von einer Version stammt, die diese Installation kennt.
 RESTORE_DB_NAME = DB_NAME + "_restore"
+# Rolle, als die eine UNVERIFIZIERTE Sicherung (--force-unverified) geladen
+# wird - ohne Superuser-, CREATEROLE-, CREATEDB-, BYPASSRLS-Recht und ohne
+# Mitgliedschaften (Audit 2026-11-07, Runde 3). Nur fuer die Dauer des Ladens.
+RESTORE_LOAD_ROLE = DB_NAME + "_restore_load"
 
 # Schlusszeile eines vollstaendigen Plain-SQL-Dumps. pg_dump 18 haengt danach
 # noch ``\unrestrict <token>`` an — deshalb die letzten Kilobytes, nicht die
@@ -3254,9 +3258,13 @@ def _process_manager_running() -> bool:
 # Ohne passende Signatur spielt ``restore`` (und restore-backup.bat) die Datei
 # nur mit ausdruecklichem ``--force-unverified`` ein. Dieselbe Rechnung steht
 # in backend/app/core/backup_mac.py (test_backup_mac.py haelt beide gleich).
-# Als Nicht-Superuser einzuspielen geht nicht: die Tabellen gehoeren der
-# Superuser-Rolle (Migrationen, RLS-Ausnahme des Eigentuemers), der Dump setzt
-# ``OWNER TO`` auf sie, und die Zwischendatenbank wird per DROP/RENAME getauscht.
+# Signierte Sicherungen laedt ``restore`` als Superuser. UNVERIFIZIERTE
+# (--force-unverified) laedt es seit Runde 3 als eigene Rolle ohne
+# Superuser-Rechte (RESTORE_LOAD_ROLE, _load_into_restore_db): die Eigentuemer-
+# Zeilen des Dumps entfallen, danach uebertraegt REASSIGN OWNED alles an den
+# Superuser (Eigentuemer der Tabellen bleibt er wegen Migrationen und der
+# RLS-Ausnahme des Eigentuemers). restore-backup.bat (Windows) laedt noch als
+# Superuser - dort bleibt die Pruefliste die einzige Linie.
 BACKUP_MAC_LABEL = b"praxiszeit-backup-hmac-v1"
 _BACKUP_MAC_MARKER = b"-- " + BACKUP_MAC_LABEL + b" "
 _BACKUP_MAC_LINE_RE = re.compile(rb"^-- praxiszeit-backup-hmac-v1 ([0-9a-f]{64})$")
@@ -3396,6 +3404,9 @@ _DUMP_FORBIDDEN_STATEMENTS = (
     (re.compile(r"^(CREATE|ALTER)\s+(SERVER|FOREIGN|SUBSCRIPTION|PUBLICATION|TABLESPACE)\b"),
      "Server, Abo oder Tablespace"),
     (re.compile(r"^SECURITY\s+LABEL\b"), "SECURITY LABEL"),
+    # Runde 3: eine Regel schreibt bei jedem Zugriff auf die Tabelle eine
+    # zweite Anweisung mit - pg_dump schreibt fuer PraxisZeit keine.
+    (re.compile(r"^CREATE\s+(OR\s+REPLACE\s+)?RULE\b"), "CREATE RULE"),
     # Final-Review (S3-03-Rest): pg_dump schreibt Daten nur als COPY - jede
     # Daten-Anweisung (auch eine CTE oder EXPLAIN ANALYZE davor) ist fremd.
     # ``UPDATE pg_catalog.pg_authid SET rolsuper = true`` kaeme sonst durch und
@@ -3425,8 +3436,30 @@ _DUMP_FORBIDDEN_BODY_RE = re.compile(
 # Funktionsaufrufe (pg_catalog.setval(...)), das Schema pg_catalog selbst und
 # die Rolle pg_database_owner. Erweiterungsnamen (pg_trgm) stehen in CREATE/
 # COMMENT ON EXTENSION und sind dort eigens geprueft.
+#
+# Runde 3: auch ``pg_xxx (`` (Spaltenliste oder Aufruf) - die Ausnahme fuer
+# "Funktionsaufrufe" liess ``INSERT INTO pg_auth_members (roleid, ...)`` und
+# beliebige pg_*-Funktionen in DEFAULT/CHECK/Index durch. pg_dump schreibt
+# ausserhalb von Literalen keinen pg_*-Aufruf; set_config/setval stehen nur in
+# den genauen SELECT-Zeilen (_DUMP_SELECT_OK).
 _DUMP_CATALOG_REF_RE = re.compile(
-    r"\bPG_(?!CATALOG\b|DATABASE_OWNER\b)[A-Z0-9_]+\b(?!\s*\()")
+    r"\bPG_(?!CATALOG\b|DATABASE_OWNER\b)[A-Z0-9_]+\b")
+# Aufruf einer Funktion aus pg_catalog ausserhalb der SELECT-Zeilen von pg_dump
+# (dort: pg_catalog.set_config/pg_catalog.setval). pg_dump qualifiziert
+# eingebaute Funktionen sonst nie (pg_catalog liegt immer im Suchpfad).
+_DUMP_PG_CATALOG_CALL_RE = re.compile(r"\bPG_CATALOG\s*\.\s*[A-Z_][A-Z0-9_$]*\s*\(")
+# pg_*-Namen, die die eigenen Funktionsrumpfe von PraxisZeit verwenden
+# (Migration 076: pz_audit_guard/pz_audit_head_guard lesen pg_class/pg_roles,
+# fragen pg_has_role, Suchpfad 'public', 'pg_temp'). Jeder andere pg_*-Name im
+# Rumpf - Katalog, Admin- oder Dateifunktion - wird abgelehnt.
+_DUMP_BODY_PG_NAMES_OK = {"PG_CATALOG", "PG_CLASS", "PG_ROLES", "PG_HAS_ROLE", "PG_TEMP"}
+_DUMP_BODY_PG_NAME_RE = re.compile(r"\bPG_[A-Z0-9_]+\b")
+# Runde 3: Anweisungen, die im Rumpf selbst wieder Code anlegen oder
+# ausfuehren - deren innere Literale liest diese Pruefung nicht mehr.
+_DUMP_BODY_NESTED_RE = re.compile(
+    r"\b(CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE|AGGREGATE|RULE|"
+    r"(CONSTRAINT\s+|EVENT\s+)?TRIGGER)|ALTER\s+(FUNCTION|PROCEDURE|ROUTINE|TRIGGER|RULE)|"
+    r"EXECUTE)\b|\bDO\b(?!\s+(NOTHING|UPDATE)\b)")  # ON CONFLICT ... DO NOTHING/UPDATE bleibt
 # Schreibende Anweisung auf einen Systemkatalog in einem Funktionsrumpf. Die
 # eigenen Trigger von PraxisZeit LESEN pg_class/pg_roles - erlaubt.
 _DUMP_CATALOG_WRITE_RE = re.compile(
@@ -3435,7 +3468,7 @@ _DUMP_CATALOG_WRITE_RE = re.compile(
     r"(PG_CATALOG\s*\.\s*)?PG_[A-Z0-9_]+"
 )
 _DUMP_FUNCTION_RE = re.compile(r"^CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE|AGGREGATE)\b")
-_DUMP_FUNCTION_LANG_RE = re.compile(r"\bLANGUAGE\s+\"?([A-Z0-9_]+)")
+_DUMP_FUNCTION_LANG_RE = re.compile(r"\bLANGUAGE\s*\"?([A-Z0-9_]+)")
 _DUMP_EXTENSIONS_OK = {"PLPGSQL", "PGCRYPTO", "UUID-OSSP", "\"UUID-OSSP\"", "PG_TRGM",
                        "BTREE_GIST", "BTREE_GIN", "CITEXT"}
 # Sitzungsparameter, die pg_dump 9.x-18 am Anfang setzt.
@@ -3457,7 +3490,9 @@ class _DumpScanner:
     Zeichenketten/Kommentaren und die SQL-Anweisungen - je Anweisung den Text
     ohne Literale (``stmt``) und den vollen Text (``raw``)."""
 
-    _DOLLAR_RE = re.compile(rb"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
+    # Wie psqlscan.l: die Marke darf Nicht-ASCII-Bytes enthalten (Runde 3 -
+    # ``$ä$`` war fuer psql eine Dollar-Quote, fuer diesen Lexer nicht).
+    _DOLLAR_RE = re.compile(rb"\$([A-Za-z\x80-\xff_][A-Za-z\x80-\xff_0-9]*)?\$")
 
     def __init__(self):
         self.state = "normal"     # normal | squote | estring | dquote | dollar | block
@@ -3465,6 +3500,9 @@ class _DumpScanner:
         self.block_depth = 0
         self.stmt = bytearray()   # Text der laufenden Anweisung ausserhalb von Literalen
         self.raw = bytearray()    # derselbe Text samt Literalen (ohne Kommentare)
+        # Runde 3: eine E-Zeichenkette mit Backslash (\x67, \147, \u0067 ...)
+        # - in Funktionsrumpfen abgelehnt, statt die Escapes nachzubauen.
+        self.estring_backslash = False
 
     @staticmethod
     def _ident_char(ch: bytes) -> bool:
@@ -3499,7 +3537,11 @@ class _DumpScanner:
                 if line.startswith(b"--", i):
                     break
                 if line.startswith(b"/*", i):
+                    # Runde 3: fuer PostgreSQL trennt ein Kommentar wie
+                    # Leerraum - ``ALTER/**/ROLE`` ist ALTER ROLE.
                     self.state, self.block_depth = "block", 1
+                    self.stmt += b" "
+                    self.raw += b" "
                     i += 2
                     continue
                 if c == b"'":
@@ -3509,6 +3551,9 @@ class _DumpScanner:
                     prev2 = line[i - 2:i - 1] if i > 1 else b""
                     estring = prev in (b"E", b"e") and not self._ident_char(prev2)
                     self.state = "estring" if estring else "squote"
+                    # Runde 3: ein Literal trennt wie Leerraum (``AS'x'LANGUAGE c``
+                    # ist ... LANGUAGE c, nicht "ASLANGUAGE").
+                    self.stmt += b" "
                     self.raw += c
                     i += 1
                     continue
@@ -3523,6 +3568,7 @@ class _DumpScanner:
                     prev = line[i - 1:i] if i else b""
                     if m and not self._ident_char(prev):
                         self.state, self.dollar_tag = "dollar", m.group(0)
+                        self.stmt += b" "
                         self.raw += m.group(0)
                         i = m.end()
                         continue
@@ -3535,6 +3581,7 @@ class _DumpScanner:
                 i += 1
             elif self.state in ("squote", "estring"):
                 if self.state == "estring" and c == b"\\":
+                    self.estring_backslash = True
                     self.raw += line[i:i + 2]
                     i += 2
                     continue
@@ -3545,6 +3592,7 @@ class _DumpScanner:
                         i += 2
                         continue
                     self.state = "normal"
+                    self.stmt += b" "
                 i += 1
             elif self.state == "dquote":
                 # Bezeichner gehoeren zum Anweisungstext (sie sind kein Literal).
@@ -3558,6 +3606,7 @@ class _DumpScanner:
                     self.raw += self.dollar_tag
                     i += len(self.dollar_tag)
                     self.state = "normal"
+                    self.stmt += b" "
                     continue
                 self.raw += c
                 i += 1
@@ -3571,6 +3620,8 @@ class _DumpScanner:
                     i += 2
                     if self.block_depth == 0:
                         self.state = "normal"
+                        self.stmt += b" "
+                        self.raw += b" "
                     continue
                 i += 1
         if self.state == "normal":
@@ -3590,6 +3641,7 @@ def _forbidden_statement(label: str, lineno: int) -> RestoreError:
 
 
 _DUMP_QUOTED_IDENT_RE = re.compile(r'"(?:[^"]|"")*"')
+_DUMP_UNICODE_LITERAL_RE = re.compile(r"[Uu]&[\"']")
 
 
 def _check_dump_statement(stmt: str, raw: str, lineno: int) -> None:
@@ -3597,6 +3649,10 @@ def _check_dump_statement(stmt: str, raw: str, lineno: int) -> None:
     full = " ".join(raw.split())
     if not upper:
         return
+    # Runde 3: U&"..." / U&'...' (Unicode-Escapes) schreibt pg_dump nie - sie
+    # versteckten Katalognamen (U&"pg\005fauthid") vor jeder Pruefung hier.
+    if _DUMP_UNICODE_LITERAL_RE.search(raw):
+        raise _forbidden_statement("U&-Bezeichner oder -Zeichenkette", lineno)
     # Schluesselwoerter nur ausserhalb von Bezeichnern ("x ON y" ist kein ON);
     # Aufrufe auch in Anfuehrungszeichen ("lo_export"(...) ist lo_export).
     text = _DUMP_QUOTED_IDENT_RE.sub('"?"', upper)
@@ -3630,10 +3686,21 @@ def _check_dump_statement(stmt: str, raw: str, lineno: int) -> None:
     if (not re.match(r"^(CREATE|ALTER|DROP|COMMENT ON) EXTENSION\b", text)
             and _DUMP_CATALOG_REF_RE.search(calls)):
         raise _forbidden_statement("Zugriff auf einen Systemkatalog", lineno)
+    if _DUMP_PG_CATALOG_CALL_RE.search(calls):
+        raise _forbidden_statement("Funktionsaufruf aus pg_catalog", lineno)
     if _DUMP_FUNCTION_RE.match(text):
+        # Runde 3: genau EIN ``LANGUAGE sql|plpgsql`` als Schluesselwort. Fehlt
+        # es oder steht die Sprache als Zeichenkette da (``LANGUAGE 'c'``), ist
+        # es keine Funktion, wie pg_dump sie fuer PraxisZeit schreibt.
         lang = _DUMP_FUNCTION_LANG_RE.search(upper)
-        if lang and lang.group(1) not in ("SQL", "PLPGSQL"):
-            raise _forbidden_statement(f"Funktion in {lang.group(1).lower()}", lineno)
+        if (len(re.findall(r"\bLANGUAGE\b", text)) != 1 or not lang
+                or lang.group(1) not in ("SQL", "PLPGSQL")):
+            name = lang.group(1).lower() if lang else "unbekannter Sprache"
+            raise _forbidden_statement(f"Funktion in {name}", lineno)
+        # BEGIN ATOMIC: psql liest den Rumpf bis END als eine Anweisung, dieser
+        # Lexer trennte am ersten Semikolon.
+        if re.search(r"\bBEGIN\s+ATOMIC\b", text):
+            raise _forbidden_statement("Funktion mit BEGIN ATOMIC", lineno)
         body = full.upper().replace('"', "")
         if _DUMP_FORBIDDEN_BODY_RE.search(body) or _DUMP_FORBIDDEN_CALLS_RE.search(body):
             raise _forbidden_statement("Funktion mit dynamischem SQL oder Rechte-/Dateizugriff",
@@ -3641,9 +3708,26 @@ def _check_dump_statement(stmt: str, raw: str, lineno: int) -> None:
         # Rumpf zusaetzlich als SQL lesen (ohne seine Kommentare und inneren
         # Literale): ``UPDATE /**/ pg_authid`` oder ein ``'--'`` davor duerfen
         # die Pruefung nicht aushebeln.
-        for code in [body] + _function_body_code(raw, lineno):
+        codes = _function_body_code(raw, lineno)
+        for code in [body] + codes:
             if _DUMP_CATALOG_WRITE_RE.search(code):
                 raise _forbidden_statement("Funktion schreibt in einen Systemkatalog", lineno)
+        for code in codes:
+            # Runde 3: kein Code, der wieder Code anlegt oder ausfuehrt (dessen
+            # innere Literale prueft niemand), nur die pg_*-Namen der eigenen
+            # Rumpfe, keine qualifizierten pg_catalog-Aufrufe.
+            if _DUMP_BODY_NESTED_RE.search(code):
+                raise _forbidden_statement(
+                    "Funktion legt im Rumpf Code an oder fuehrt ihn aus", lineno)
+            foreign = set(_DUMP_BODY_PG_NAME_RE.findall(code)) - _DUMP_BODY_PG_NAMES_OK
+            if foreign or _DUMP_PG_CATALOG_CALL_RE.search(code):
+                raise _forbidden_statement(
+                    f"Funktion nutzt {', '.join(sorted(foreign)).lower() or 'pg_catalog'}",
+                    lineno)
+
+
+class _BackslashInEString(Exception):
+    """E-Zeichenkette mit Backslash in einer CREATE FUNCTION (Runde 3)."""
 
 
 def _literal_contents(raw: str) -> list[str]:
@@ -3665,9 +3749,9 @@ def _literal_contents(raw: str) -> list[str]:
             buf, j = [], i + 1
             while j < n:
                 if estring and raw[j] == "\\":
-                    buf.append(raw[j + 1:j + 2])
-                    j += 2
-                    continue
+                    # Runde 3: Escapes (\x67, \147, \u0067) nicht nachbauen -
+                    # pg_dump schreibt Funktionsrumpfe als $$...$$.
+                    raise _BackslashInEString()
                 if raw[j] == "'":
                     if raw[j + 1:j + 2] == "'":
                         buf.append("'")
@@ -3696,7 +3780,11 @@ def _function_body_code(raw: str, lineno: int) -> list[str]:
     (gleicher Lexer wie fuer den Dump), gross, ohne Anfuehrungszeichen, mit
     zusammengezogenem Leerraum."""
     codes = []
-    for content in _literal_contents(raw):
+    try:
+        contents = _literal_contents(raw)
+    except _BackslashInEString:
+        raise _forbidden_statement("Funktion mit E-Zeichenkette samt Backslash", lineno)
+    for content in contents:
         scanner = _DumpScanner()
         parts = []
         for line in content.encode("utf-8", "replace").split(b"\n"):
@@ -3707,19 +3795,32 @@ def _function_body_code(raw: str, lineno: int) -> list[str]:
                 # ohnehin ungueltig - der Rumpf wird so nie geschrieben.
                 raise _forbidden_statement("Funktion mit unlesbarem Rumpf", lineno)
             parts.extend(stmt for stmt, _full in stmts)
+        if scanner.estring_backslash:
+            raise _forbidden_statement("Funktion mit E-Zeichenkette samt Backslash", lineno)
         parts.append(scanner.stmt.decode("utf-8", "replace"))
         codes.append(" ".join(" ; ".join(parts).split()).upper().replace('"', ""))
     return codes
 
 
-def validate_restore_dump(sql: Path, out=None) -> None:
+# Eigentuemer-Anweisungen, wie pg_dump sie je Objekt in EINE Zeile schreibt -
+# beim eingeschraenkten Laden weggelassen (die Ladrolle darf Objekte keiner
+# anderen Rolle zuweisen; REASSIGN OWNED uebertraegt sie danach).
+_DUMP_OWNER_LINE_RE = re.compile(
+    rb"^ALTER [A-Z][A-Z ]* .+ OWNER TO (?:[a-z_][a-z0-9_$]*|\"(?:[^\"\r\n]|\"\")+\");\r?$")
+_DUMP_DEFAULT_ACL_LINE_RE = re.compile(rb"^ALTER DEFAULT PRIVILEGES FOR ROLE .+;\r?$")
+
+
+def validate_restore_dump(sql: Path, out=None, *, strip_ownership: bool = False) -> None:
     """Prueft einen entpackten Plain-SQL-Dump vor dem Einspielen (S3-03).
 
     Wirft :class:`RestoreError`, wenn ausserhalb der COPY-Daten ein anderer
     psql-Befehl als ``\\restrict``/``\\unrestrict`` steht oder eine Anweisung,
     die aus ``pg_dump`` einer PraxisZeit-Datenbank nie kommt. Mit ``out``
     (Binaerdatei) wird der Dump dabei ohne seine eigenen restrict-Zeilen
-    dorthin kopiert (siehe :func:`prepare_restore_dump`)."""
+    dorthin kopiert (siehe :func:`prepare_restore_dump`). ``strip_ownership``
+    laesst dabei die einzeiligen ``ALTER ... OWNER TO``- und ``ALTER DEFAULT
+    PRIVILEGES FOR ROLE``-Anweisungen weg (eingeschraenktes Laden, Runde 3);
+    geprueft werden sie trotzdem."""
     scanner = _DumpScanner()
     in_copy = False
     with open(sql, "rb") as fh:
@@ -3733,11 +3834,17 @@ def validate_restore_dump(sql: Path, out=None) -> None:
                 continue
             is_meta = (scanner.state == "normal" and not scanner.stmt.strip()
                        and _DUMP_ALLOWED_META_RE.match(line) is not None)
+            at_start = scanner.state == "normal" and not scanner.stmt.strip()
             copy_starts, statements = scanner.feed(line, lineno)
             for stmt, full in statements:
                 _check_dump_statement(stmt, full, lineno)
             in_copy = copy_starts
-            if out is not None and not is_meta:
+            # Nur eine Zeile, die genau EINE vollstaendige Anweisung ist.
+            skip = (strip_ownership and at_start and len(statements) == 1
+                    and scanner.state == "normal" and not scanner.stmt.strip()
+                    and (_DUMP_OWNER_LINE_RE.match(line) is not None
+                         or _DUMP_DEFAULT_ACL_LINE_RE.match(line) is not None))
+            if out is not None and not is_meta and not skip:
                 out.write(raw)
     if in_copy:
         raise RestoreError("Die Sicherung endet mitten in den Tabellendaten (COPY ohne Ende).")
@@ -3748,7 +3855,8 @@ def validate_restore_dump(sql: Path, out=None) -> None:
 
 
 def prepare_restore_dump(sql: Path, *, secret_key: str | None = None,
-                         force_unverified: bool = False) -> None:
+                         force_unverified: bool = False,
+                         restricted_load: bool = False) -> bool:
     """Signatur pruefen, Dump pruefen, mit EIGENEM ``\\restrict``-Schluessel
     versehen (S3-03).
 
@@ -3761,7 +3869,11 @@ def prepare_restore_dump(sql: Path, *, secret_key: str | None = None,
     ``\\unrestrict <schluessel>`` abgelehnt wird - ON_ERROR_STOP bricht dann ab.
     Die eigenen restrict-Zeilen des Dumps entfallen (ein zweites ``\\restrict``
     waere ein Fehler). Die Datei wird an Ort und Stelle ersetzt (gleiche Rechte,
-    gleiches Verzeichnis)."""
+    gleiches Verzeichnis).
+
+    Liefert, ob die Signatur passt. ``restricted_load``: der Aufrufer laedt
+    eine UNVERIFIZIERTE Sicherung als :data:`RESTORE_LOAD_ROLE` - dann
+    entfallen die Eigentuemer-Zeilen (siehe :func:`validate_restore_dump`)."""
     if secret_key:
         with open(sql, "rb") as fh:
             status = verify_backup_mac(fh, secret_key)
@@ -3779,20 +3891,24 @@ def prepare_restore_dump(sql: Path, *, secret_key: str | None = None,
         fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "wb") as out:
             out.write(b"\\restrict " + secrets.token_hex(24).encode("ascii") + b"\n")
-            validate_restore_dump(sql, out)
+            validate_restore_dump(sql, out,
+                                  strip_ownership=restricted_load and status != "ok")
         os.replace(tmp, sql)
     finally:
         if tmp.exists():
             tmp.unlink()
+    return status == "ok"
 
 
 def _unpack_dump(src: Path, *, secret_key: str | None = None,
-                 force_unverified: bool = False) -> Path:
+                 force_unverified: bool = False) -> tuple[Path, bool]:
     """Backup neben die Datenbank entpacken und auf Vollstaendigkeit pruefen.
 
     Die entpackte Datei enthaelt personenbezogene Daten im Klartext → nur fuer
     das ausfuehrende Konto lesbar (``mkstemp`` legt sie mit 0600 an), und sie
-    wird bei jedem Fehler sofort entfernt."""
+    wird bei jedem Fehler sofort entfernt. Liefert (Datei, signatur_passt);
+    eine unverifizierte Sicherung ist fuer das Laden als
+    :data:`RESTORE_LOAD_ROLE` vorbereitet."""
     import gzip
     import tempfile
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -3822,21 +3938,25 @@ def _unpack_dump(src: Path, *, secret_key: str | None = None,
             "wurde abgebrochen."
         )
     try:
-        prepare_restore_dump(tmp_path, secret_key=secret_key, force_unverified=force_unverified)
+        verified = prepare_restore_dump(tmp_path, secret_key=secret_key,
+                                        force_unverified=force_unverified, restricted_load=True)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
-    return tmp_path
+    return tmp_path, verified
 
 
-def _restore_psql(superuser: str, env: dict, db: str, *args: str):
+def _restore_psql(superuser: str, env: dict, db: str, *args: str, input: str | None = None):
     """``psql`` gegen den eigenen Cluster: ``-X`` (keine ~/.psqlrc des
     Aufrufers), ``-w`` (nie nach einem Passwort fragen), ``ON_ERROR_STOP``
-    (beim ersten Fehler abbrechen — sonst meldet psql trotz Fehlern Exit 0)."""
+    (beim ersten Fehler abbrechen — sonst meldet psql trotz Fehlern Exit 0).
+    ``input`` geht ueber stdin (mit ``-f -``) - fuer SQL mit Passwort, das
+    nie in einer Befehlszeile (Prozessliste) stehen darf."""
+    kwargs = {"input": input} if input is not None else {}
     return subprocess.run(
         [str(pg_cmd("psql")), "-X", "-w", "-q", "-v", "ON_ERROR_STOP=1",
          "-U", superuser, "-d", db, *args],
-        env=env, capture_output=True, encoding="utf-8", errors="replace",
+        env=env, capture_output=True, encoding="utf-8", errors="replace", **kwargs,
     )
 
 
@@ -3851,27 +3971,97 @@ def _database_exists(superuser: str, env: dict, name: str) -> bool:
     return result.returncode == 0 and result.stdout.strip() == "1"
 
 
-def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set) -> str:
+def _drop_load_role(superuser: str, env: dict) -> None:
+    """Ladrolle entfernen; ihre Objekte in der Zwischendatenbank gehen vorher an
+    den Superuser (REASSIGN OWNED - auch die Datenbank selbst), Rechte, die ihr
+    noch zugewiesen sind, fallen weg (DROP OWNED)."""
+    if _database_exists(superuser, env, RESTORE_DB_NAME):
+        result = _restore_psql(
+            superuser, env, RESTORE_DB_NAME,
+            "-c", f'REASSIGN OWNED BY "{RESTORE_LOAD_ROLE}" TO "{superuser}"',
+            "-c", f'DROP OWNED BY "{RESTORE_LOAD_ROLE}"',
+        )
+        if result.returncode != 0:
+            raise RestoreError(
+                "Die eingespielten Objekte liessen sich nicht dem Datenbank-Superuser "
+                f"zuweisen:\n{_psql_error_tail(result)}")
+    result = _restore_psql(superuser, env, "postgres",
+                           "-c", f'DROP ROLE IF EXISTS "{RESTORE_LOAD_ROLE}"')
+    if result.returncode != 0:
+        raise RestoreError(
+            f"Die Ladrolle {RESTORE_LOAD_ROLE} liess sich nicht entfernen:\n"
+            f"{_psql_error_tail(result)}")
+
+
+def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set,
+                          *, restricted: bool = False) -> str:
     """Zwischendatenbank anlegen, Backup einspielen, Datenbankstand pruefen.
 
     Liefert den Datenbankstand (Alembic-Revision) des Backups. Die bisherige
     Datenbank wird hier nicht angefasst — scheitert ein Schritt
-    (:class:`RestoreError`), ist sie unveraendert."""
-    result = _restore_psql(
-        superuser, env, "postgres",
-        "-c", f'DROP DATABASE IF EXISTS "{RESTORE_DB_NAME}" WITH (FORCE)',
-        "-c", f'CREATE DATABASE "{RESTORE_DB_NAME}" OWNER "{superuser}" ENCODING \'UTF8\'',
-    )
+    (:class:`RestoreError`), ist sie unveraendert.
+
+    ``restricted`` (unverifizierte Sicherung, --force-unverified; Audit
+    2026-11-07, Runde 3): psql meldet sich dafuer als :data:`RESTORE_LOAD_ROLE`
+    an - eine eigene Login-Rolle ohne Superuser-, CREATEROLE-, CREATEDB-,
+    REPLICATION-, BYPASSRLS-Recht und ohne Mitgliedschaft, mit Zufallspasswort,
+    Eigentuemerin der Zwischendatenbank. Was die Pruefliste uebersieht
+    (Katalog schreiben, COPY ... PROGRAM, Server-Dateien, C-Funktionen,
+    Rollen aendern, Funktionen in DEFAULT/CHECK/Index waehrend des Ladens),
+    scheitert so am Server selbst. Erst danach gehen alle Objekte per
+    REASSIGN OWNED an den Superuser - wie ein Laden als Superuser, ausser den
+    Default-Privilegien, die init-db-user.sql nach dem Tausch setzt. Nicht
+    abgedeckt: der Inhalt von Funktionen, die nach der Uebergabe dem Superuser
+    gehoeren (SECURITY DEFINER) - dafuer bleibt die Pruefliste streng."""
+    statements = ["-c", f'DROP DATABASE IF EXISTS "{RESTORE_DB_NAME}" WITH (FORCE)']
+    if restricted:
+        statements += ["-c", f'DROP ROLE IF EXISTS "{RESTORE_LOAD_ROLE}"']
+    result = _restore_psql(superuser, env, "postgres", *statements)
     if result.returncode != 0:
         raise RestoreError(
             f"Die Zwischendatenbank {RESTORE_DB_NAME} liess sich nicht anlegen:\n"
             f"{_psql_error_tail(result)}"
         )
+    load_user, load_env, owner = superuser, env, superuser
+    try:
+        if restricted:
+            load_password = secrets.token_hex(24)
+            result = _restore_psql(
+                superuser, env, "postgres", "-f", "-",
+                input=(f'CREATE ROLE "{RESTORE_LOAD_ROLE}" LOGIN NOSUPERUSER NOCREATEDB '
+                       f"NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT CONNECTION LIMIT 1 "
+                       f"PASSWORD '{load_password}';\n"),
+            )
+            if result.returncode != 0:
+                raise RestoreError(
+                    f"Die Ladrolle {RESTORE_LOAD_ROLE} liess sich nicht anlegen:\n"
+                    f"{_psql_error_tail(result)}")
+            load_user, owner = RESTORE_LOAD_ROLE, RESTORE_LOAD_ROLE
+            load_env = {**env, "PGPASSWORD": load_password}
+        result = _restore_psql(
+            superuser, env, "postgres",
+            "-c", f'CREATE DATABASE "{RESTORE_DB_NAME}" OWNER "{owner}" ENCODING \'UTF8\'',
+        )
+        if result.returncode != 0:
+            raise RestoreError(
+                f"Die Zwischendatenbank {RESTORE_DB_NAME} liess sich nicht anlegen:\n"
+                f"{_psql_error_tail(result)}"
+            )
 
-    logger.info("Spiele das Backup in die Zwischendatenbank %s ein ...", RESTORE_DB_NAME)
-    result = _restore_psql(superuser, env, RESTORE_DB_NAME, "-f", str(sql))
-    if result.returncode != 0:
-        raise RestoreError(f"Einspielen fehlgeschlagen:\n{_psql_error_tail(result)}")
+        logger.info("Spiele das Backup in die Zwischendatenbank %s ein%s ...", RESTORE_DB_NAME,
+                    f" (als eingeschraenkte Rolle {RESTORE_LOAD_ROLE})" if restricted else "")
+        result = _restore_psql(load_user, load_env, RESTORE_DB_NAME, "-f", str(sql))
+        if result.returncode != 0:
+            raise RestoreError(f"Einspielen fehlgeschlagen:\n{_psql_error_tail(result)}")
+    except BaseException:
+        if restricted:
+            try:
+                _drop_load_role(superuser, env)
+            except RestoreError as exc:  # der erste Fehler ist der wichtigere
+                logger.warning("%s", exc)
+        raise
+    if restricted:
+        _drop_load_role(superuser, env)
 
     result = _restore_psql(superuser, env, RESTORE_DB_NAME, "-tA", "-c",
                            "SELECT version_num FROM alembic_version")
@@ -3987,8 +4177,8 @@ def cmd_restore(args):
         get_config_value(config, "database", "superuser", "praxiszeit")
     )
     try:
-        sql = _unpack_dump(dump, secret_key=_installation_secret_key(config),
-                           force_unverified=getattr(args, "force_unverified", False))
+        sql, verified = _unpack_dump(dump, secret_key=_installation_secret_key(config),
+                                     force_unverified=getattr(args, "force_unverified", False))
     except (RestoreError, UnverifiedBackupError) as exc:
         logger.error("%s Die Datenbank ist unveraendert.", exc)
         sys.exit(1)
@@ -4010,7 +4200,8 @@ def cmd_restore(args):
             pg_start()
             started_here = True
         try:
-            revision = _load_into_restore_db(superuser, env, sql, known)
+            revision = _load_into_restore_db(superuser, env, sql, known,
+                                             restricted=not verified)
             # Ab hier kann die bisherige Datenbank weg sein — auch wenn der
             # Tausch unterbrochen wird (Strg+C), raeumt ``finally`` die
             # Zwischendatenbank dann nur noch weg, wenn der Bestand noch steht.
