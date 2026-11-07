@@ -2,6 +2,22 @@ export function today(): string {
   return formatDate(new Date());
 }
 
+/**
+ * #540 (A1-09): Zeitspanne von HEUTE, die schon vorbei ist — der Server lehnt
+ * ein Ende in der Zukunft ab. Ende = jetzt − 2 Min. (auf volle 5 Min.
+ * abgerundet), Beginn = Ende − `minutes`. `null`, wenn heute noch nicht genug
+ * Zeit vergangen ist; der Test ruft dann `test.skip(!slot, …)`.
+ */
+export function pastSlotToday(minutes: number): { start: string; end: string } | null {
+  const now = new Date();
+  let end = now.getHours() * 60 + now.getMinutes() - 2;
+  end -= end % 5;
+  const start = end - minutes;
+  if (start < 0) return null;
+  const hm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  return { start: hm(start), end: hm(end) };
+}
+
 export function formatDate(d: Date): string {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
