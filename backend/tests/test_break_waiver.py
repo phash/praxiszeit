@@ -668,6 +668,47 @@ class TestBreakWaiverSelfApprovalForbidden:
         assert cr.status == ChangeRequestStatus.PENDING
         assert cr.reviewed_by is None
 
+    def _own_waiver_cr(self, db, admin):
+        cr = ChangeRequest(
+            user_id=admin.id, tenant_id=DEFAULT_TENANT_ID,
+            request_type=ChangeRequestType.CREATE, entry_kind="time_entry",
+            status=ChangeRequestStatus.PENDING, proposed_date=today_local(),
+            proposed_start_time=time(8, 0), proposed_end_time=time(15, 30),
+            proposed_break_minutes=0, break_waiver_reason="Eigener Notfall",
+            reason="Eigener Notfall",
+        )
+        db.add(cr)
+        db.commit()
+        return cr
+
+    def test_sole_admin_gets_reject_hint(self, db, admin, admin_client):
+        """Final-Review (A1-06-Rest): in der Einzel-Admin-Praxis bleibt die
+        Sperre hart, die Meldung nennt aber den einzigen Ausweg (ablehnen) und
+        wo der Tag danach steht — sonst blieb der Antrag ratlos offen."""
+        cr = self._own_waiver_cr(db, admin)
+        resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                 json={"action": "approve"})
+        assert resp.status_code == 403, resp.text
+        detail = resp.json()["detail"]
+        assert "selbst genehmigt" in detail
+        assert "nur ablehnen" in detail and "Pause zu kurz" in detail
+        # der Ausweg funktioniert: eigener Antrag lässt sich ablehnen
+        resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                 json={"action": "reject", "rejection_reason": "kein zweiter Admin"})
+        assert resp.status_code == 200, resp.text
+
+    def test_second_admin_no_reject_hint(self, db, admin, admin_client):
+        db.add(User(username="admin2_hint", email="admin2_hint@example.com",
+                    password_hash=auth_service.hash_password("admin123"), first_name="Zweit",
+                    last_name="Admin", role=UserRole.ADMIN, weekly_hours=40.0, vacation_days=30,
+                    work_days_per_week=5, is_active=True, tenant_id=DEFAULT_TENANT_ID))
+        db.commit()
+        cr = self._own_waiver_cr(db, admin)
+        resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                 json={"action": "approve"})
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"] == "Eigene Pflicht-Pause-Ausnahmen dürfen nicht selbst genehmigt werden."
+
     def test_admin_can_approve_other_users_waiver_cr(self, db, employee, admin):
         """Gegenprobe: ein FREMDER Waiver-CR (vom MA) darf vom Admin genehmigt
         werden — das 4-Augen-Prinzip blockiert nur Selbstgenehmigung."""

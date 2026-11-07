@@ -836,7 +836,7 @@ Soll beim Ausstempeln gar keine Ausnahme möglich sein, schalten Sie die Ausnahm
 
 Bearbeiten Mitarbeitende einen Eintrag, ohne Datum, Zeiten oder Pause zu ändern (z. B. nur die Notiz), ist das keine neue Ausnahme: Der Eintrag wird sofort gespeichert, eine schon dokumentierte Begründung bleibt unverändert stehen – auch bei Genehmigungspflicht oder abgeschalteter Ausnahme. Erst eine geänderte Begründung, Zeit oder Pause wird wieder nach § 4 geprüft.
 
-> **4-Augen-Prinzip:** Ein Admin darf seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen** – sie muss von einem anderen Admin geprüft werden.
+> **4-Augen-Prinzip:** Ein Admin darf seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen** – sie muss von einem anderen Admin geprüft werden. **Praxis mit nur einem Admin:** Dort lässt sich ein solcher eigener Antrag nur **ablehnen** (die Meldung beim Genehmigen weist darauf hin). Der Eintrag bleibt dann ohne anerkannte Ausnahme und erscheint in der Auswertung „Höchstarbeitszeit und Pausenausnahmen" unter **„Pause zu kurz"**. Wer als einziger Admin beim Ausstempeln selbst Ausnahmen braucht, schaltet „Genehmigung erforderlich" aus – dann gilt die begründete Ausnahme sofort.
 
 <a id="soll-arbeitszeit-fenster-puffer"></a>
 ### Soll-Arbeitszeit-Fenster (Puffer)
@@ -1032,7 +1032,7 @@ Wird beim **Ausstempeln**, Erfassen, Korrigieren oder Genehmigen eines Eintrags 
 
 Ob es solche Ausnahmen in Ihrer Praxis gibt und ob sie sofort wirksam werden oder zuerst genehmigt werden müssen, steuern Sie unter **Einstellungen → „Pflicht-Pause-Ausnahme"** (→ [Abschnitt 13](#pflicht-pause-ausnahme)).
 
-> **4-Augen-Prinzip:** Ist die Genehmigungspflicht aktiv, darf ein Admin seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen**. Sie muss von einer zweiten Person geprüft werden.
+> **4-Augen-Prinzip:** Ist die Genehmigungspflicht aktiv, darf ein Admin seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen**. Sie muss von einer zweiten Person geprüft werden; in einer Praxis mit nur einem Admin lässt sich ein solcher Antrag nur ablehnen.
 
 ---
 

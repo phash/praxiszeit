@@ -42,6 +42,13 @@ from app.models.time_entry_audit_log import TimeEntryAuditLog
 from app.services import entry_guard_service
 from app.routers import time_entries as _te
 
+OWN_WAIVER_SELF_APPROVAL_DETAIL = "Eigene Pflicht-Pause-Ausnahmen dürfen nicht selbst genehmigt werden."
+OWN_WAIVER_SOLE_ADMIN_HINT = (
+    "Ohne weiteren aktiven Admin lässt sich dieser Antrag nur ablehnen; der Tag "
+    "bleibt ohne anerkannte Ausnahme und erscheint in der Auswertung "
+    "„Höchstarbeitszeit und Pausenausnahmen“ unter „Pause zu kurz“."
+)
+
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 # Spec 2026-10-08 P21 / 13.3: Anerkennen bei der Genehmigung („Genehmigen und
@@ -305,11 +312,15 @@ def review_change_request(
     # nach der Neutralisierung oben), nicht die gespeicherte. Ist der Schalter
     # aus, gewährt die Genehmigung keine Ausnahme mehr (§4 wird neu geprüft) —
     # dann ist es ein gewöhnlicher Antrag, für den die A01-Regel darunter gilt.
+    # Final-Review (A1-06-Rest): bewusst auch in der Einzel-Admin-Praxis hart
+    # (strengere Seite). Dort kann der Antrag nur abgelehnt werden — die
+    # Meldung sagt das, statt den Antrag kommentarlos offen zu lassen; der Tag
+    # steht danach in /arbzg-limits unter „Pause zu kurz".
     if waiver_reason is not None and cr.user_id == current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Eigene Pflicht-Pause-Ausnahmen dürfen nicht selbst genehmigt werden.",
-        )
+        detail = OWN_WAIVER_SELF_APPROVAL_DETAIL
+        if not _tenant_has_other_active_admin(db, current_user):
+            detail = f"{detail} {OWN_WAIVER_SOLE_ADMIN_HINT}"
+        raise HTTPException(status_code=403, detail=detail)
 
     # Audit A01: 4-eyes principle for ORDINARY change-requests. An admin who is
     # also a tracked employee must not approve their OWN time-entry/absence CR —
