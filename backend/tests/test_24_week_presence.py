@@ -113,9 +113,10 @@ def test_scheduled_days_respect_employment_window(_db_session, employee_user, ad
             _add(_db_session, employee_user, d, time(7), time(17))
         d += timedelta(days=1)
     row = _row(admin_client, employee_user)
-    assert row["scheduled_work_days"] == 10
-    assert row["average_daily_hours"] == 10.0
-    assert row["presence_average"] == 10.0
+    # A1-13: Werktage Mo–Sa — 25.–30.05. (6) + 01.–05.06. (5) = 11.
+    assert row["scheduled_work_days"] == 11
+    assert row["average_daily_hours"] == round(100 / 11, 2)
+    assert row["presence_average"] == round(100 / 11, 2)
     assert row["compliant"] is False
 
 
