@@ -193,3 +193,16 @@ class TestUntrackedBookingCreatesRows:
         assert len(rows) == 3
         acc = calculation_service.get_vacation_account(db, emp, 2026)
         assert acc["used_days"] == 3.0
+
+
+import pytest as _pytest_s1_01  # noqa: E402
+
+
+@_pytest_s1_01.fixture(autouse=True)
+def _s1_01_test_dates_count_as_future(monkeypatch):
+    """Audit 2026-11-07 (S1-01): Mitarbeitende buchen und löschen Abwesenheiten
+    vergangener Tage nur per Änderungsantrag. Die festen Testdaten dieser Datei
+    prüfen andere Regeln — für ``absences`` gelten sie als künftige Tage."""
+    import datetime as _dt
+    from app.routers import absences as _absences_router
+    monkeypatch.setattr(_absences_router, "today_local", lambda: _dt.date(2020, 1, 1))
