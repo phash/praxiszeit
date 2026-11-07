@@ -289,6 +289,8 @@ export const helpContent: Record<string, HelpEntry> = {
           <ul className="space-y-1 text-sm text-gray-600">
             <li>Änderungen an Zeiteinträgen und Abwesenheiten – Spalte „Quelle": Manuell (von Hand angelegt oder geändert – durch die Verwaltung oder in der Zeiterfassung; wer, steht unter „Geändert von"), Ausstempeln, Automatisch geschlossen, Antrag, Import, Pausen-Verzicht, Stundenänderung, Neukappung (Arbeitszeit-Änderung), Anrechnung anerkannt u. a.</li>
             <li>Zugriffe auf Gesundheitsdaten, Exporte und DSGVO-Vorgänge (Anonymisieren, Endgültig löschen)</li>
+            <li>Überträge, Jahresabschluss, Einstellungen, Feiertage und verkürzte Tage – jeweils alter und neuer Wert</li>
+            <li>Bei Zeiteinträgen neben der angerechneten auch die tatsächlich gestempelte Zeit („gestempelt …"), auch bei Löschungen</li>
             <li>Karte „Konto-Vorgänge": Deaktivieren, Reaktivieren, Rollenwechsel, von der Verwaltung gesetzte Passwörter, Zwei-Faktor im Profil ein-/abgeschaltet sowie Notfall-Vorgänge per Kommandozeile (Passwort zurückgesetzt, Zwei-Faktor abgeschaltet)</li>
           </ul>
         </section>
@@ -299,7 +301,7 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Rechtliche Bedeutung</h3>
           <div className="text-sm bg-blue-50 border border-blue-200 rounded-sm p-2 text-blue-700">
-            Das Audit-Log dient als Nachweis für Änderungen gemäß §16 ArbZG. Einträge können nicht gelöscht werden.
+            Das Audit-Log dient als Nachweis für Änderungen gemäß §16 ArbZG. PraxisZeit kann Zeilen nur anfügen; jede Zeile trägt eine Prüfsumme, und die Karte „Prüfung des Änderungsprotokolls" (jede Nacht automatisch, „Jetzt prüfen") erkennt Zeilen, die außerhalb von PraxisZeit verändert oder entfernt wurden. Fehlt das Kettenende, sind Löschungen gesperrt, bis es mit Grund neu gesetzt wird.
           </div>
         </section>
       </div>

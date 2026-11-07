@@ -247,6 +247,12 @@ def update_setting(
         db.add(s)
     else:
         s.value = str(value)
+    # #537 (A2-5): dauerhafte, gehashte Spur (wer, wann, alt → neu) — der
+    # Puffer, die Pausen-Ausnahme, Sondertage usw. bewegen Ist und Saldo.
+    from app.services import admin_change_audit
+    admin_change_audit.log_setting(
+        db, current_user=current_user, key=key, old_value=old_value, new_value=s.value,
+    )
     if key in special_days_service.MODE_KEYS or key in special_days_service.MAX_HOURS_KEYS:
         # F103: Nachvollziehbarkeit wie reduced_days._log_change — Akteur
         # ``user:<id>``, nie Klarname; ohne DB-Tabelle (Spec B2).

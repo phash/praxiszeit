@@ -8,7 +8,7 @@ from app.services.timezone_service import today_local
 from app.models import User
 from app.models.public_holiday import PublicHoliday
 from app.schemas.holiday import HolidayCreate, HolidayUpdate, HolidayResponse, HolidayWriteResponse
-from app.services import calculation_service, holiday_service, work_window_service
+from app.services import admin_change_audit, calculation_service, holiday_service, work_window_service
 
 router = APIRouter(prefix="/api/holidays", tags=["holidays"])
 
@@ -90,6 +90,9 @@ def create_holiday(
         source="admin",
     )
     db.add(holiday)
+    # #537 (A2-5): ein Feiertag setzt Soll und Gutschrift des Tages auf 0.
+    admin_change_audit.log_holiday(db, current_user=current_user, before=None,
+                                   after=(holiday.date, holiday.name))
     db.commit()
     db.refresh(holiday)
 
@@ -123,6 +126,7 @@ def update_holiday(
 
     old_year = holiday.year
     old_date = holiday.date
+    old_name = holiday.name
     date_changed = False
 
     if body.name is not None:
@@ -147,6 +151,8 @@ def update_holiday(
         holiday.year = body.date.year
         date_changed = True
 
+    admin_change_audit.log_holiday(db, current_user=current_user, before=(old_date, old_name),
+                                   after=(holiday.date, holiday.name))
     db.commit()
     db.refresh(holiday)
 
@@ -180,6 +186,8 @@ def delete_holiday(
     year = holiday.year
     day = holiday.date
 
+    admin_change_audit.log_holiday(db, current_user=current_user, before=(day, holiday.name),
+                                   after=None)
     db.delete(holiday)
     db.commit()
 

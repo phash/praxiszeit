@@ -21,4 +21,10 @@ export const AUDIT_SOURCE_LABELS: Record<string, string> = {
   wh_change: 'Stundenänderung',
   wh_reclamp: 'Neukappung (Arbeitszeit-Änderung)',
   credit_override: 'Anrechnung anerkannt',
+  // #537 (A2-5): Verwaltungsänderungen und Aufbewahrung
+  carryover: 'Übertrag (manuell)',
+  year_closing: 'Jahresabschluss',
+  settings: 'Einstellungen',
+  holidays: 'Feiertage',
+  retention: 'Aufbewahrungsfrist',
 };

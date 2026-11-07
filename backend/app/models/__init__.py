@@ -69,3 +69,7 @@ __all__ = [
     "WorkstationQualification",
     "ImpersonationSession",
 ]
+
+# #537: Listener, die die Rohstempel in jede Protokollzeile eines Zeiteintrags
+# schreiben (Import nur wegen der Registrierung).
+from app.models import audit_stamps as _audit_stamps  # noqa: E402,F401

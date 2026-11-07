@@ -1,9 +1,9 @@
 """1.12.1 review regression: DSGVO Art.17 purge must clean up ALL users.id FK
 dependents without crashing.
 
-- HIGH: time_entry_audit_logs.changed_by is NOT NULL → must be reassigned to the
-  acting admin (a SET NULL raised an IntegrityError and aborted the erasure for
-  any user who had ever clocked out).
+- HIGH: time_entry_audit_logs.changed_by was NOT NULL → reassigned to the acting
+  admin. Since #537 (migration 076) it is nullable with ON DELETE SET NULL and
+  the rows keep their author reference (no rewrite of authorship, A2-8).
 - MEDIUM: company_closure.created_by / change_request.reviewed_by /
   signup_tokens.user_id have no ON DELETE rule → must be reassigned/nullified/
   deleted before db.delete(user), else Postgres FK-violates (SQLite runs FK off,
@@ -71,7 +71,15 @@ def test_purge_user_with_authored_audit_rows(admin_client, db, test_admin):
     assert r.status_code == 200, r.text  # HIGH regression: no NOT NULL IntegrityError
     db.expire_all()
     row = db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.id == oid).first()
-    assert row is not None and row.changed_by == test_admin.id
+    # #537 (A2-8): die Zeile bleibt und wird NICHT mehr auf den handelnden
+    # Verwalter umgehaengt (das schrieb die Urheberschaft um). changed_by ist
+    # ON DELETE SET NULL (PostgreSQL nullt; SQLite laeuft ohne FK), die feste
+    # Kopie changed_by_ref haelt die Kennung fuer die Pruefsumme.
+    assert row is not None
+    assert row.changed_by != test_admin.id
+    assert row.changed_by_ref == u.id
+    from app.core import audit_integrity
+    assert audit_integrity.verify_row(row)
 
 
 def test_purge_user_who_created_company_closure(admin_client, db, test_admin):
@@ -117,10 +125,11 @@ def test_purge_user_who_reviewed_change_request(admin_client, db, test_user):
     assert got is not None and got.reviewed_by is None
 
 
-def test_purge_recomputes_audit_row_hash_for_reassigned_rows(admin_client, db, test_admin):
-    """Round3 (DSGVO Art.5(2)/§16): changed_by ist Teil des #121-row_hash. Beim
-    Purge-Reassign MUSS der Hash neu berechnet werden — sonst meldet
-    verify-integrity die legitime, umgehängte Zeile als 'tampered'."""
+def test_purge_keeps_authored_rows_verifiable_without_reassign(admin_client, db, test_admin):
+    """Round3 (DSGVO Art.5(2)/§16) + #537 (A2-8): die vom Geloeschten verfassten
+    Zeilen werden nicht mehr umgehaengt (das schrieb die Urheberschaft um) —
+    die Pruefsumme laeuft ueber die feste Kopie ``changed_by_ref`` und bleibt
+    nach der Endloeschung gueltig."""
     from app.core import audit_integrity
     u = _deactivated_user(db, "editor_hash")
     row = TimeEntryAuditLog(
@@ -130,13 +139,14 @@ def test_purge_recomputes_audit_row_hash_for_reassigned_rows(admin_client, db, t
     db.add(row)
     db.commit()
     rid = row.id
-    assert audit_integrity.verify_row(row) is True  # vor Purge: Hash über changed_by=u.id
+    assert audit_integrity.verify_row(row) is True
     assert admin_client.delete(f"/api/admin/users/{u.id}/purge").status_code == 200
     db.expire_all()
-    reassigned = db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.id == rid).first()
-    assert reassigned is not None and reassigned.changed_by == test_admin.id
-    # Mit Hash-Recompute bleibt die Integritätskette intakt (ohne Fix: tampered).
-    assert audit_integrity.verify_row(reassigned) is True
+    kept = db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.id == rid).first()
+    assert kept is not None and kept.changed_by != test_admin.id
+    kept.changed_by = None  # was PostgreSQL per ON DELETE SET NULL tut
+    db.commit()
+    assert audit_integrity.verify_row(kept) is True
 
 
 def test_purge_user_with_impersonation_sessions(admin_client, db, test_admin):

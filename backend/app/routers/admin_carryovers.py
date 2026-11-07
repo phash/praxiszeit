@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models import User, YearCarryover
 from app.middleware.auth import require_admin
 from app.schemas.year_carryover import YearCarryoverCreate, YearCarryoverResponse
-from app.services import calculation_service
+from app.services import admin_change_audit, calculation_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -90,6 +90,9 @@ def upsert_carryover(
         YearCarryover.year == year,
     ).first()
 
+    # #537 (A2-5): Vorher-Stand fuer die Protokollzeile.
+    before = admin_change_audit.carryover_state(carryover)
+
     if carryover:
         carryover.overtime_hours = data.overtime_hours
         carryover.vacation_days = data.vacation_days
@@ -107,6 +110,12 @@ def upsert_carryover(
         )
         db.add(carryover)
 
+    admin_change_audit.log_carryover(
+        db, carryover_user_id=user.id, tenant_id=current_user.tenant_id,
+        changed_by=current_user.id, year=year, before=before,
+        after=admin_change_audit.carryover_state(carryover),
+        source=admin_change_audit.SOURCE_CARRYOVER,
+    )
     db.commit()
     db.refresh(carryover)
     return carryover
@@ -197,7 +206,10 @@ def create_year_closing(
         User.tenant_id == current_user.tenant_id,
     ).all()
 
-    results = calculation_service.create_year_closing(db, year, users)
+    # #537 (A2-5): je Person eine Protokollzeile (Uebertrag vorher/nachher).
+    results = calculation_service.create_year_closing(
+        db, year, users, changed_by=current_user.id,
+    )
 
     return {
         "year": year,
@@ -222,11 +234,21 @@ def delete_year_closing(
     next_year = year + 1
     # Fix #7: remove ONLY the carryovers this year-closing created — manual
     # carryovers (source='manual', entered via upsert_carryover) must survive.
-    deleted = db.query(YearCarryover).filter(
+    rows = db.query(YearCarryover).filter(
         YearCarryover.year == next_year,
         YearCarryover.tenant_id == current_user.tenant_id,
         YearCarryover.source == "year_closing",
-    ).delete(synchronize_session=False)
+    ).all()
+    # #537 (A2-5): je geloeschtem Uebertrag eine Protokollzeile.
+    for row in rows:
+        admin_change_audit.log_carryover(
+            db, carryover_user_id=row.user_id, tenant_id=current_user.tenant_id,
+            changed_by=current_user.id, year=next_year,
+            before=admin_change_audit.carryover_state(row), after=None,
+            source=admin_change_audit.SOURCE_YEAR_CLOSING,
+        )
+        db.delete(row)
+    deleted = len(rows)
 
     if deleted == 0:
         raise HTTPException(status_code=404, detail=f"Kein Jahresabschluss für {year} gefunden")

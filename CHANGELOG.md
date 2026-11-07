@@ -8,6 +8,17 @@
 - **Fremder PostgreSQL wird erkannt.** Belegt ein anderer Server den Port, beendet sich PraxisZeit mit der Meldung „Port … ist von einem anderen PostgreSQL belegt. In config\praxiszeit.conf unter [database] einen freien Port eintragen …“, bevor etwas angelegt wird. Der Windows-Dienst startet dann nicht endlos neu (`AppExit 78 Exit`; der Update-Wizard setzt es auch für bestehende Installationen).
 - `restore-backup.bat`, die Sicherung in `uninstall.bat` und `setup.bat` verwenden den konfigurierten Port; neue Befehle `praxiszeit-server.py print-db-port` und `sync-db-port`.
 
+### 🔒 Änderungsprotokoll als Beweismittel (#537, Audit 2026-11-07)
+
+**Enthält die Datenbank-Migration `076_audit_chain`.**
+
+- **Tatsächliche Stempel im Protokoll.** Jede Zeile zu einem Zeiteintrag nennt neben der angerechneten Zeit auch den Rohbeginn, das Rohende, das Ende der Anwesenheit und die nicht angerechneten Minuten – auch beim Löschen. Bisher war die tatsächliche Arbeitszeit nach dem Löschen eines gekappten Eintrags nirgends mehr belegt.
+- **Löschen eines Eintrags meldet keine Manipulation mehr.** Die Prüfsumme lief über den Verweis auf den Eintrag, den die Datenbank beim Löschen leert – jede Löschung ergab dauerhaft „manipuliert“. Neue Prüfsumme (Version 3) über feste Verweise, `created_at` und die Stempel; Altbestand bleibt prüfbar.
+- **Protokoll nur anfügbar, Löschungen erkennbar.** Das Konto der Anwendung darf Protokollzeilen weder ändern noch löschen (Trigger + entzogene Rechte); die Zeilen werden jede Nacht zu einer Kette versiegelt. Eine Zeile ohne Prüfsumme, die jünger ist als die erste gehashte, gilt als manipuliert.
+- **Prüfung jede Nacht und auf Knopfdruck:** Karte „Prüfung des Änderungsprotokolls“ im Änderungsprotokoll; eine Abweichung erscheint unter „Konto-Vorgänge“ und im Fehler-Monitoring.
+- **Neu im Protokoll:** manuelle Überträge, Jahresabschluss anlegen/löschen (je Person), geänderte Einstellungen (z. B. der Puffer), eigene Feiertage und verkürzte Tage – mit altem und neuem Wert.
+- **Endgültige Löschung (Art. 17) schreibt keine Urheberschaft mehr um:** Zeilen, die die gelöschte Person an fremden Einträgen geändert hat, zeigen „Gelöschte Person“ statt der löschenden Verwaltung.
+
 ### ⚠️ Hinweis
 
 - Ein **Reparieren** über den GUI-Installer schreibt `praxiszeit.conf` neu und setzt den Datenbank-Port damit auf den Wert des Feldes zurück — den Port dort erneut eintragen.

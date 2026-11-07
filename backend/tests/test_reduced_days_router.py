@@ -141,8 +141,11 @@ def _booking_set(db):
 
 
 def _audit_count(db):
+    """Neubuchungs-Zeilen — ohne die eigene Protokollzeile des verkürzten Tags
+    (``reduced_day_change``, #537)."""
     db.expire_all()
-    return db.query(TimeEntryAuditLog).count()
+    return db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.action != "reduced_day_change").count()
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +288,8 @@ def test_create_resaves_existing_closure(client, db, employee):
     assert float(used_before) - float(used_after) == pytest.approx(0.5)
 
     db.expire_all()
-    audits = db.query(TimeEntryAuditLog).all()
+    audits = db.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.action != "reduced_day_change").all()
     assert len(audits) == audits_before + 1
     assert any(REBOOK_REASON in (a.old_note or "") for a in audits)
 

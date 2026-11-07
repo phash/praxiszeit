@@ -9,6 +9,7 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 // dieselben Audit-Zeilen und dürfen sich nicht auseinanderentwickeln.
 import AuditValues, { auditPillText, formatAuditNote } from '../../components/AuditValues';
 import SecurityEventsCard from '../../components/SecurityEventsCard';
+import AuditIntegrityCard from '../../components/AuditIntegrityCard';
 import { AUDIT_SOURCE_LABELS as sourceLabels } from '../../constants/auditSources';
 
 interface AuditEntry {
@@ -17,7 +18,7 @@ interface AuditEntry {
   user_id: string;
   user_first_name?: string;
   user_last_name?: string;
-  changed_by: string;
+  changed_by: string | null; // #537: null = Urheber endgültig gelöscht (Art. 17)
   changed_by_first_name?: string;
   changed_by_last_name?: string;
   action: string;
@@ -31,8 +32,23 @@ interface AuditEntry {
   new_end_time?: string;
   new_break_minutes?: number;
   new_note?: string;
+  // #537 (A2-3): tatsächliche Stempel
+  old_raw_start_time?: string | null;
+  old_presence_end_time?: string | null;
+  new_raw_start_time?: string | null;
+  new_presence_end_time?: string | null;
   source: string;
   created_at: string;
+}
+
+/** #537 (A2-8): ein endgültig gelöschter Urheber bleibt als solcher erkennbar. */
+function changedByName(entry: AuditEntry, order: 'last-first' | 'first-last'): string {
+  if (entry.changed_by === null && !entry.changed_by_first_name && !entry.changed_by_last_name) {
+    return 'Gelöschte Person';
+  }
+  return order === 'last-first'
+    ? `${entry.changed_by_last_name ?? ''}, ${entry.changed_by_first_name ?? ''}`
+    : `${entry.changed_by_first_name ?? ''} ${entry.changed_by_last_name ?? ''}`;
 }
 
 interface UserOption {
@@ -58,6 +74,14 @@ const actionLabels: Record<string, string> = {
   dsgvo_anonymize: 'Anonymisiert (Art. 17)',
   dsgvo_purge: 'Endgültig gelöscht (Art. 17)',
   license_readonly_mode_entered: 'Lizenz: Read-Only aktiviert',
+  // #537 (A2-5): Verwaltungsänderungen mit Wirkung auf Ist, Saldo oder Urlaub
+  carryover_set: 'Übertrag gesetzt',
+  carryover_delete: 'Übertrag gelöscht',
+  setting_change: 'Einstellung geändert',
+  holiday_change: 'Feiertag geändert',
+  reduced_day_change: 'Verkürzter Tag geändert',
+  audit_rows_purged: 'Protokollzeilen entfernt',
+  audit_chain_reanchored: 'Kettenende neu gesetzt',
 };
 
 const actionColors: Record<string, string> = {
@@ -76,6 +100,13 @@ const actionColors: Record<string, string> = {
   self_data_export: 'bg-gray-100 text-gray-700',
   arbzg_superadmin_export: 'bg-amber-100 text-amber-800',
   license_readonly_mode_entered: 'bg-amber-100 text-amber-800',
+  carryover_set: 'bg-blue-100 text-blue-800',
+  carryover_delete: 'bg-red-100 text-red-800',
+  setting_change: 'bg-blue-100 text-blue-800',
+  holiday_change: 'bg-blue-100 text-blue-800',
+  reduced_day_change: 'bg-blue-100 text-blue-800',
+  audit_rows_purged: 'bg-red-100 text-red-800',
+  audit_chain_reanchored: 'bg-red-100 text-red-800',
 };
 
 export default function AuditLog() {
@@ -197,7 +228,7 @@ export default function AuditLog() {
                       {entry.user_last_name}, {entry.user_first_name}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900">
-                      {entry.changed_by_last_name}, {entry.changed_by_first_name}
+                      {changedByName(entry, 'last-first')}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       <span className={`px-2 py-1 rounded-sm text-xs font-medium ${actionColors[entry.action] || ''}`}>
@@ -212,6 +243,8 @@ export default function AuditLog() {
                         date={entry.old_date}
                         start={entry.old_start_time}
                         end={entry.old_end_time}
+                        rawStart={entry.old_raw_start_time}
+                        presenceEnd={entry.old_presence_end_time}
                         breakMinutes={entry.old_break_minutes}
                         note={entry.old_note}
                       />
@@ -221,6 +254,8 @@ export default function AuditLog() {
                         date={entry.new_date}
                         start={entry.new_start_time}
                         end={entry.new_end_time}
+                        rawStart={entry.new_raw_start_time}
+                        presenceEnd={entry.new_presence_end_time}
                         breakMinutes={entry.new_break_minutes}
                         note={entry.new_note}
                       />
@@ -253,7 +288,7 @@ export default function AuditLog() {
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
-                    {format(new Date(entry.created_at), 'dd.MM.yyyy HH:mm')} | von {entry.changed_by_first_name} {entry.changed_by_last_name} | {sourceLabels[entry.source] || entry.source}
+                    {format(new Date(entry.created_at), 'dd.MM.yyyy HH:mm')} | von {changedByName(entry, 'first-last')} | {sourceLabels[entry.source] || entry.source}
                   </div>
                   {/* Datums-Pillen. Der Pfeil steht für „von → nach" und darf
                       deshalb NUR erscheinen, wenn sich die beiden Seiten
@@ -309,6 +344,9 @@ export default function AuditLog() {
           </div>
         )}
       </div>
+
+      {/* #537 (A2-12): Prüfsummen und Kette des Protokolls */}
+      <AuditIntegrityCard />
 
       {/* #489: Kontovorgänge (security_events) */}
       <SecurityEventsCard />

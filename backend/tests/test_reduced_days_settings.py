@@ -18,6 +18,12 @@ D24 = date(2026, 12, 24)
 INVALID_MSG = "Die Stundenzahl muss zwischen 0,25 und 12 liegen (in Schritten von 0,25)."
 
 
+def _rebook_audits(db):
+    """Protokollzeilen einer Neubuchung — ohne die Zeile, die seit #537 jede
+    geaenderte Einstellung selbst bekommt (``setting_change``)."""
+    return db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.action != "setting_change").count()
+
+
 @pytest.fixture
 def client(db, test_admin):
     from app.routers import admin_settings, company_closures
@@ -96,14 +102,14 @@ def test_hours_change_resaves_closure(client, db, employee):
 
 def test_hours_change_while_mode_working_day_noop(client, db, employee):
     _closure(client)
-    audits = db.query(TimeEntryAuditLog).count()
+    audits = _rebook_audits(db)
     before = {(a.user_id, a.date, float(a.hours)) for a in db.query(Absence).all()}
     res = _put(client, "special_day_dec24_max_hours", "2")
     assert res.status_code == 200
     assert not res.json().get("warning")
     db.expire_all()
     assert {(a.user_id, a.date, float(a.hours)) for a in db.query(Absence).all()} == before
-    assert db.query(TimeEntryAuditLog).count() == audits
+    assert _rebook_audits(db) == audits
 
 
 def test_half_day_to_working_day_resaves(client, db, employee):
@@ -133,12 +139,12 @@ def test_other_setting_key_does_not_rebook(client, db, employee):
     _put(client, "special_day_dec24_mode", "max_hours")
     _closure(client)
     db.expire_all()
-    audits = db.query(TimeEntryAuditLog).count()
+    audits = _rebook_audits(db)
     before = _hours(db, employee, D24)
     r = _put(client, "closure_overtime_after_vacation", "false")
     assert r.status_code == 200, r.text
     db.expire_all()
-    assert db.query(TimeEntryAuditLog).count() == audits
+    assert _rebook_audits(db) == audits
     assert _hours(db, employee, D24) == before
 
 

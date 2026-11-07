@@ -900,7 +900,7 @@ def _scrub_audit_log_notes(
 
     Gibt die Zahl der geaenderten Zeilen zurueck. F-026: tenant-gefiltert.
     """
-    from app.core import audit_integrity
+    from app.services import audit_chain_service
 
     needles = [n for n in (old_email, old_username) if n]
     conditions = [TimeEntryAuditLog.user_id == user_id]
@@ -935,9 +935,10 @@ def _scrub_audit_log_notes(
             new_old, new_new = _mask(row.old_note), _mask(row.new_note)
         if new_old == row.old_note and new_new == row.new_note:
             continue  # nichts zu tun → Hash bleibt unangetastet
-        row.old_note = new_old
-        row.new_note = new_new
-        row.row_hash = audit_integrity.compute_row_hash(row)
+        # #537: das App-Konto darf Protokollzeilen nicht mehr aendern —
+        # der Scrub laeuft ueber pz_audit_set_notes (Hash nur neu, wenn die
+        # Zeile vorher stimmte).
+        audit_chain_service.set_notes(db, row, new_old, new_new)
         touched += 1
     return touched
 
@@ -1125,32 +1126,33 @@ def purge_user(
             )
 
     # Remove FK dependencies before deleting user.
-    # changed_by is NOT NULL (migration 008) → we must NOT SET NULL (that raises a
-    # NOT NULL IntegrityError and aborts the whole Art.17 erasure for any user who
-    # has ever clocked out, since each clock_out writes an audit row with
-    # changed_by = the employee's own id). Reassign other users' audit rows to the
-    # acting admin instead — preserves the audit trail.
-    # F-026: explicit tenant_id filter on every bulk op (CLAUDE.md rule —
-    # RLS is belt-and-suspenders but the filter must be present in the query).
-    # Delete the purged user's OWN audit log entries first (user_id == user.id).
-    db.query(TimeEntryAuditLog).filter(
+    # #537 (Migration 076): das App-Konto darf Protokollzeilen nicht mehr
+    # loeschen oder aendern. Die EIGENEN Zeilen der Person (user_id) gehen ueber
+    # audit_chain_service.delete_rows (versiegeln, pz_audit_delete, gehashter
+    # Vermerk mit den entfernten Kettengliedern — sonst sähe die Prüfung eine
+    # unerklärte Lücke). Zeilen, die sie an ANDEREN verfasst hat (changed_by),
+    # bleiben unverändert: changed_by ist ON DELETE SET NULL und steht nicht in
+    # der Prüfsumme (die hält die feste Kopie changed_by_ref). Vorher wurden sie
+    # auf den handelnden Verwalter umgehängt und die Urheberschaft damit
+    # umgeschrieben (A2-8). F-026: tenant-gefiltert.
+    from app.services import audit_chain_service
+    own_rows = db.query(TimeEntryAuditLog).filter(
         TimeEntryAuditLog.user_id == user.id,
         TimeEntryAuditLog.tenant_id == current_user.tenant_id,
-    ).delete(synchronize_session=False)
+    ).all()
+    try:
+        audit_chain_service.delete_rows(
+            db, own_rows, tenant_id=current_user.tenant_id, user_id=current_user.id,
+            changed_by=current_user.id, source="dsgvo",
+            reason=f"Endlöschung von User-ID {user_id} (Art. 17 DSGVO)",
+        )
+    except audit_chain_service.AuditChainBroken as exc:
+        # Kettenende fehlt/ungueltig: Loeschen gesperrt, bis die Verwaltung den
+        # Befund klaert (sonst verschwaende er mit den Zeilen). Wirft vor dem
+        # ersten Schreibschritt der Protokollzeilen.
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
     db.flush()
-    # Reassign the REMAINING rows this user authored on OTHER employees to the
-    # acting admin. changed_by is part of the #121 tamper-evidence row_hash — a
-    # bulk UPDATE bypasses the before_insert hook and leaves the stored hash stale,
-    # so verify-integrity would wrongly flag these legitimate rows as 'tampered'
-    # after every Art.17 purge of an editing admin. Load as ORM objects and
-    # recompute the hash. SQLite-Tests fangen das NICHT (kein verify-after-purge).
-    from app.core import audit_integrity
-    for row in db.query(TimeEntryAuditLog).filter(
-        TimeEntryAuditLog.changed_by == user.id,
-        TimeEntryAuditLog.tenant_id == current_user.tenant_id,
-    ).all():
-        row.changed_by = current_user.id
-        row.row_hash = audit_integrity.compute_row_hash(row)
 
     # Audit after cleaning up the user's logs (use admin's own ID since target will be deleted)
     log = TimeEntryAuditLog(
