@@ -99,8 +99,10 @@ Diese Liste ist nur die zweite Linie. **Nativ (`restore` unter Linux/macOS,
 `restore-backup.bat` unter Windows) lädt eine unverifizierte Sicherung als
 eigene, kurzlebige Datenbankrolle
 `praxiszeit_restore_load` ohne Superuser-Rechte** (kein `CREATEROLE`,
-`CREATEDB`, `BYPASSRLS`, keine Mitgliedschaft, Zufallspasswort, Eigentümerin
-nur der Zwischendatenbank). Was die Liste übersieht — Systemkataloge
+`CREATEDB`, `BYPASSRLS`, keine Mitgliedschaft, Zufallspasswort, darf nur im
+Schema `public` der Zwischendatenbank Objekte anlegen; die Datenbank selbst
+gehört dem Superuser und entsteht aus `template0`, Erweiterungen kann die
+Rolle nicht anlegen). Was die Liste übersieht — Systemkataloge
 schreiben, `COPY … PROGRAM`, Server-Dateien lesen, C-Funktionen anlegen,
 Rollen ändern, Funktionen, die beim Laden in einem Index oder `CHECK` laufen —
 lehnt dann der Server selbst ab. Die `OWNER TO`-Zeilen des Dumps entfallen
@@ -109,9 +111,13 @@ entfernt die Rolle. Das Ergebnis ist dasselbe wie beim Laden als Superuser
 (die Standardrechte setzt `init-db-user.sql` danach wie immer). **Vor der
 Übertragung müssen Funktionen und Trigger genau denen entsprechen, die die
 Migrationen dieser Installation bis zum Datenbankstand der Sicherung anlegen**
-(gleicher Inhalt, gleiche Sprache, `SECURITY DEFINER` und Einstellungen; keine
-Sichten, Regeln oder Ereignis-Trigger) — sonst liefe eine Funktion, die die
-Liste übersieht, danach mit den Rechten des Superusers. Weicht etwas ab, bricht
+(gleicher Inhalt, gleiche Sprache, `SECURITY DEFINER` und Einstellungen;
+Trigger mit gleichem Zeitpunkt, gleichen Ereignissen und Spalten, `WHEN` und
+`FOR EACH ROW`; keine Sichten, Regeln oder Ereignis-Trigger; als Erweiterung
+nur `plpgsql` in Standardform), **und jede Tabelle mit Zeilenschutz muss ihn
+mit `FORCE` und genau den Policies der Migrationen haben** — sonst liefe eine
+Funktion, die die Liste übersieht, danach mit den Rechten des Superusers, oder
+die Mandantentrennung wäre still geschwächt. Weicht etwas ab, bricht
 der Vorgang mit der Liste der Abweichungen ab; die bisherige Datenbank bleibt
 unverändert. **`restore.sh` (Docker)
 prüft die Anweisungen nicht** — dort sperrt nur der eigene `\restrict`-Schlüssel

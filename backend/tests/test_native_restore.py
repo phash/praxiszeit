@@ -93,8 +93,12 @@ class FakeCluster:
         self.load_mode = None
         self.roles: set[str] = set()
         self.role_sql: list[str] = []
-        # Katalog der Zwischendatenbank fuer den Funktionsabgleich (Runde 4)
-        self.routines = {"functions": [], "triggers": [], "other": []}
+        # Katalog der Zwischendatenbank fuer den Funktionsabgleich (Runde 4/6)
+        self.routines = {"functions": [], "triggers": [], "other": [], "extensions": [],
+                         "tables": []}
+        # Ausgabe des RLS-Vergleichsskripts (Runde 6)
+        self.rls_deparsed = {"expected": [], "found": []}
+        self.rls_scripts: list[str] = []
 
     def __call__(self, cmd, **kw):
         if Path(cmd[0]).name != "psql":
@@ -106,6 +110,11 @@ class FakeCluster:
             return subprocess.CompletedProcess(cmd, 2, "", f'FATAL: database "{db}" does not exist')
         out = []
         if "-f" in cmd and cmd[cmd.index("-f") + 1] == "-":
+            if "pz_rls_" in (kw.get("input") or ""):
+                # RLS-Vergleichsskript (Runde 6)
+                self.events.append(f"rls:{db}")
+                self.rls_scripts.append(kw["input"])
+                return subprocess.CompletedProcess(cmd, 0, json.dumps(self.rls_deparsed) + "\n", "")
             # Skript ueber stdin (Ladrolle mit Passwort, Runde 3).
             for sql in (kw.get("input") or "").split(";\n"):
                 sql = sql.strip()
@@ -145,6 +154,8 @@ class FakeCluster:
                 self.dbs[names[1]] = self.dbs.pop(names[0])
             elif sql.startswith(("CREATE ROLE", "DROP ROLE")):
                 self._role_sql(sql)
+            elif sql.startswith("GRANT CREATE ON SCHEMA public"):
+                self.events.append(f"grantload:{db}")
             elif sql.startswith("REASSIGN OWNED"):
                 self.events.append(f"reassign:{db}")
             elif sql.startswith("DROP OWNED"):
@@ -1525,6 +1536,7 @@ def test_unverifizierte_sicherung_wird_als_eingeschraenkte_rolle_geladen(srv, in
         "droprole:praxiszeit_restore_load",
         "createrole:praxiszeit_restore_load",
         "create:praxiszeit_restore",
+        "grantload:praxiszeit_restore",
         "load:praxiszeit_restore",
         "revision:praxiszeit_restore",
         "routines:praxiszeit_restore",
@@ -1535,7 +1547,11 @@ def test_unverifizierte_sicherung_wird_als_eingeschraenkte_rolle_geladen(srv, in
         "grants:praxiszeit",
     ]
     create = next(c for c in cluster.calls if any("CREATE DATABASE" in a for a in c))
-    assert any(f'OWNER "{srv.RESTORE_LOAD_ROLE}"' in a for a in create)
+    # Review-Runde 6: nie der Ladrolle - Superuser, template0, nur CREATE im Schema
+    assert any('OWNER "praxiszeit" TEMPLATE template0' in a for a in create)
+    assert not any(srv.RESTORE_LOAD_ROLE in a for a in create)
+    grant = next(c for c in cluster.calls if any(a.startswith("GRANT CREATE ON SCHEMA") for a in c))
+    assert grant[grant.index("-d") + 1] == "praxiszeit_restore"
     assert "OWNER TO" not in cluster.dbs["praxiszeit"]
 
 
@@ -1568,44 +1584,76 @@ def test_ladrolle_wird_auch_nach_fehler_entfernt(srv, inst, caplog):
 _VERSIONS = _REPO / "backend" / "alembic" / "versions"
 
 
-def _fixture_routines() -> tuple[dict, set]:
+def _fixture_routines(srv) -> tuple[dict, dict]:
     text = _FIXTURE_DUMP.read_text(encoding="utf-8")
     functions = {}
     # pg_dump waehlt $_$, wenn der Rumpf ein $ enthaelt
     for m in re.finditer(r"^CREATE FUNCTION public\.(\w+)\([^\n]*\n(.*?)AS (\$\w*\$)(.*?)\3;$",
                          text, re.S | re.M):
         functions[m.group(1)] = ("SECURITY DEFINER" in m.group(2), m.group(4))
-    triggers = {(m.group(1), m.group(2), m.group(3)) for m in re.finditer(
-        r"^CREATE TRIGGER (\w+) .*? ON public\.(\w+) .*?EXECUTE FUNCTION public\.(\w+)\(\);$",
-        text, re.M)}
+    # pg_dump schreibt Trigger in der Form von pg_get_triggerdef
+    triggers = {}
+    for m in re.finditer(r"^CREATE TRIGGER .*;$", text, re.M):
+        name, table, norm = srv.normalize_trigger_def(m.group(0))
+        triggers[(name, table)] = norm
     return functions, triggers
 
 
 def test_erwartete_funktionen_entsprechen_einem_echten_pg_dump(srv):
     """Was aus dem Quelltext der Migrationen gelesen wird, ist Zeichen fuer
     Zeichen das, was PostgreSQL speichert und pg_dump schreibt (Rumpf,
-    SECURITY DEFINER, Trigger) - geprueft am echten pg_dump 18.6 auf Stand 076."""
+    SECURITY DEFINER, Trigger samt Definition) - geprueft am echten pg_dump
+    18.6 auf Stand 076."""
     functions, triggers = srv.expected_db_routines(_VERSIONS, "076_audit_chain")
-    fx_functions, fx_triggers = _fixture_routines()
+    fx_functions, fx_triggers = _fixture_routines(srv)
     assert set(functions) == set(fx_functions) and "pz_audit_tombstoned" in functions
+    assert "pz_audit_claim_id" in functions
     for name, (lang, secdef, _config, src) in functions.items():
         assert (secdef, src) == fx_functions[name], name
         assert lang in ("sql", "plpgsql"), name
     assert triggers == fx_triggers and len(triggers) == 2
     # vor 076 legt keine Migration Funktionen oder Trigger an
-    assert srv.expected_db_routines(_VERSIONS, "075_contract_history") == ({}, set())
+    assert srv.expected_db_routines(_VERSIONS, "075_contract_history") == ({}, {})
 
 
-def _found(functions: dict, triggers: set, **extra) -> dict:
+def test_erwarteter_zeilenschutz_entspricht_einem_echten_pg_dump(srv):
+    """ENABLE/FORCE ROW LEVEL SECURITY und die Policy-Namen, die aus den
+    Migrationen (Schleifen ueber Tabellenlisten, f-Strings, Konstanten)
+    gelesen werden, sind genau die des echten pg_dump auf Stand 076."""
+    rls = srv.expected_db_rls(_VERSIONS, "076_audit_chain")
+    text = _FIXTURE_DUMP.read_text(encoding="utf-8")
+    enabled = set(re.findall(r"^ALTER TABLE public\.(\w+) ENABLE ROW LEVEL SECURITY;$", text, re.M))
+    forced = set(re.findall(r"^ALTER TABLE (?:ONLY )?public\.(\w+) FORCE ROW LEVEL SECURITY;$",
+                            text, re.M))
+    policies = set(re.findall(r"^CREATE POLICY (\w+) ON public\.(\w+) ", text, re.M))
+    assert {t for t, v in rls.items() if v["enable"]} == enabled
+    assert {t for t, v in rls.items() if v["force"]} == forced
+    assert {(p, t) for t, v in rls.items() for p in v["policies"]} == policies
+    assert "audit_log_ids" in enabled and "audit_log_ids" not in forced
+    assert len(enabled) >= 29
+
+
+def _found(functions: dict, triggers: dict, **extra) -> dict:
     return {
         "functions": [{"schema": "public", "name": n, "lang": lang, "secdef": secdef,
                        "config": config, "src": src}
                       for n, (lang, secdef, config, src) in functions.items()],
-        "triggers": [{"schema": "public", "name": t, "table": tbl, "function": fn, "enabled": "O"}
-                     for t, tbl, fn in triggers],
+        "triggers": [{"schema": "public", "name": t, "table": tbl, "function": "x", "enabled": "O",
+                      "def": _pg_triggerdef(t, norm)}
+                     for (t, tbl), norm in triggers.items()],
         "other": [],
+        "extensions": [{"name": "plpgsql", "owner_super": True, "members": [
+            "function plpgsql_call_handler()", "function plpgsql_inline_handler(internal)",
+            "function plpgsql_validator(oid)", "language plpgsql"]}],
         **extra,
     }
+
+
+def _pg_triggerdef(name: str, norm: str) -> str:
+    """Normalform zurueck in die Form von pg_get_triggerdef."""
+    rest = norm.split(" ", 1)[1]  # ohne "TRIGGER"
+    timing, rest = rest.split(" ", 1)
+    return f"CREATE TRIGGER {name} {timing} {rest}".replace(" ON ", " ON public.", 1)
 
 
 def test_funktionsabgleich_findet_jede_abweichung(srv):
@@ -1647,12 +1695,183 @@ def test_funktionsabgleich_findet_jede_abweichung(srv):
 
     def foreign_trigger(found):
         found["triggers"].append({"schema": "public", "name": "t", "table": "users",
-                                  "function": "pz_audit_guard", "enabled": "O"})
+                                  "function": "pz_audit_guard", "enabled": "O",
+                                  "def": "CREATE TRIGGER t BEFORE INSERT ON public.users FOR EACH "
+                                         "ROW EXECUTE FUNCTION pz_audit_guard()"})
     assert problems(foreign_trigger) == ["Trigger t auf public.users (unerwartet)"]
 
     def view(found):
         found["other"] = ["Sicht public.v"]
     assert problems(view) == ["Sicht public.v"]
+
+
+_GUARD_DEF = ("CREATE TRIGGER pz_audit_guard_write BEFORE INSERT OR DELETE OR UPDATE ON "
+              "public.time_entry_audit_logs FOR EACH ROW EXECUTE FUNCTION pz_audit_guard()")
+
+
+@pytest.mark.parametrize("tampered", [
+    # Runde 6: gleicher Name, Tabelle, Funktion - aber wirkungslos gemacht
+    _GUARD_DEF.replace("BEFORE", "AFTER"),                       # zu spaet: Zeile schon geschrieben
+    _GUARD_DEF.replace("INSERT OR DELETE OR UPDATE", "INSERT"),  # UPDATE/DELETE unbewacht
+    _GUARD_DEF.replace("FOR EACH ROW", "FOR EACH STATEMENT"),    # NEW/OLD fehlen, nie RAISE
+    _GUARD_DEF.replace("UPDATE ON", "UPDATE OF note ON"),        # nur eine Spalte bewacht
+    _GUARD_DEF.replace(" EXECUTE", " WHEN ((pg_trigger_depth() > 5)) EXECUTE"),  # nie
+    _GUARD_DEF.replace("CREATE TRIGGER", "CREATE CONSTRAINT TRIGGER").replace(
+        "BEFORE", "AFTER").replace(" FOR EACH", " DEFERRABLE INITIALLY DEFERRED FOR EACH"),
+])
+def test_trigger_mit_veraenderter_definition_wird_erkannt(srv, tampered):
+    functions, triggers = srv.expected_db_routines(_VERSIONS, "076_audit_chain")
+    found = _found(functions, triggers)
+    guard = next(t for t in found["triggers"] if t["name"] == "pz_audit_guard_write")
+    assert srv.normalize_trigger_def(guard["def"]) == srv.normalize_trigger_def(_GUARD_DEF)
+    guard["def"] = tampered
+    assert srv.check_restored_routines(found, functions, triggers) == [
+        "Trigger pz_audit_guard_write auf time_entry_audit_logs (Definition weicht von der "
+        "Migration ab)"]
+
+
+def test_trigger_normalform_ist_unabhaengig_von_schreibweise(srv):
+    a = srv.normalize_trigger_def(
+        "CREATE TRIGGER t BEFORE INSERT OR UPDATE OR DELETE ON x FOR ROW EXECUTE PROCEDURE f()")
+    b = srv.normalize_trigger_def(
+        'CREATE TRIGGER t BEFORE INSERT OR DELETE OR UPDATE ON public."x" FOR EACH ROW '
+        "EXECUTE FUNCTION public.f()")
+    assert a == b
+    assert srv.normalize_trigger_def("CREATE TABLE t (a int)") is None
+
+
+@pytest.mark.parametrize("ext, problem", [
+    # Runde 6: Funktionen einer Erweiterung (pg_depend 'e') nahm der Abgleich
+    # frueher pauschal aus - ALTER EXTENSION ... ADD FUNCTION versteckte so
+    # eine eigene Funktion, REASSIGN OWNED gab sie dem Superuser.
+    ({"name": "pgcrypto", "owner_super": True, "members": []},
+     "Erweiterung pgcrypto (legt keine Migration an)"),
+    ({"name": "plpgsql", "owner_super": False, "members": [
+        "function plpgsql_call_handler()", "function plpgsql_inline_handler(internal)",
+        "function plpgsql_validator(oid)", "language plpgsql"]},
+     "Erweiterung plpgsql gehoert nicht dem Datenbank-Superuser"),
+    ({"name": "plpgsql", "owner_super": True, "members": [
+        "function plpgsql_call_handler()", "function plpgsql_inline_handler(internal)",
+        "function plpgsql_validator(oid)", "language plpgsql", "function boese()"]},
+     "Erweiterung plpgsql (Bestandteile weichen vom Standard ab)"),
+])
+def test_erweiterungen_werden_gegen_den_standard_geprueft(srv, ext, problem):
+    functions, triggers = srv.expected_db_routines(_VERSIONS, "076_audit_chain")
+    found = _found(functions, triggers, extensions=[ext])
+    assert srv.check_restored_routines(found, functions, triggers) == [problem]
+
+
+def test_erweiterungsfunktion_ausserhalb_pg_catalog_wird_geprueft(srv):
+    """Der Katalog nimmt Erweiterungs-Funktionen nicht mehr aus (kein deptype-
+    'e'-Filter): eine per ALTER EXTENSION ADD versteckte Funktion in public
+    taucht im Abgleich auf."""
+    assert "deptype = 'e')), '[]'" not in srv._ROUTINE_CATALOG_SQL
+    assert "AND NOT EXISTS (SELECT 1 FROM pg_depend" not in srv._ROUTINE_CATALOG_SQL
+
+
+@pytest.mark.parametrize("body", [
+    "ALTER EXTENSION plpgsql ADD FUNCTION public.boese();\n",
+    "ALTER EXTENSION pg_trgm UPDATE;\n",
+])
+def test_alter_extension_wird_immer_abgelehnt(srv, tmp_path, body):
+    with pytest.raises(srv.RestoreError, match="ALTER EXTENSION"):
+        _check(srv, tmp_path, body)
+
+
+@pytest.mark.parametrize("body", [
+    "CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;\n",
+    "CREATE EXTENSION pg_trgm;\n",
+    "CREATE EXTENSION plpgsql;\n",
+    "COMMENT ON EXTENSION plpgsql IS 'x';\n",
+    "DROP EXTENSION IF EXISTS plpgsql;\n",
+])
+def test_unverifizierte_sicherung_bringt_keine_erweiterung_mit(srv, tmp_path, body):
+    p = tmp_path / "d.sql"
+    p.write_text(_HEAD + body + _TAIL, encoding="utf-8")
+    with pytest.raises(srv.RestoreError, match="Erweiterung in einer unverifizierten"):
+        srv.prepare_restore_dump(p, secret_key=_KEY, force_unverified=True, restricted_load=True)
+
+
+def test_unverifizierte_sicherung_darf_plpgsql_noop_und_signierte_erweiterungen(srv, tmp_path):
+    p = tmp_path / "d.sql"
+    p.write_text(_HEAD + "CREATE EXTENSION IF NOT EXISTS plpgsql WITH SCHEMA pg_catalog;\n"
+                 + _TAIL, encoding="utf-8")
+    assert srv.prepare_restore_dump(p, secret_key=_KEY, force_unverified=True,
+                                    restricted_load=True) is False
+    p2 = tmp_path / "e.sql"
+    p2.write_text(_signed(_HEAD + "CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;\n"
+                          + _TAIL), encoding="utf-8")
+    assert srv.prepare_restore_dump(p2, secret_key=_KEY, restricted_load=True) is True
+
+
+# --- Review-Runde 6: Zeilenschutz (RLS) einer unverifizierten Sicherung ------
+
+_POL = {"name": "tenant_isolation", "cmd": "*", "permissive": True, "roles": ["public"],
+        "qual": "((current_setting('app.is_superadmin'::text, true) = 'true'::text) OR "
+                "(tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid))",
+        "check": None}
+
+
+def _rls_case(srv, **table):
+    rls = srv.expected_db_rls(_VERSIONS, "076_audit_chain")
+    tables = [{"name": "absences", "schema": "public", "rls": True, "force": True, **table}]
+    script, order = srv.rls_deparse_sql(rls, {"absences"})
+    assert order == ["absences"] and "LIKE public.\"absences\"" in script
+    assert "CREATE POLICY \"tenant_isolation\" ON pg_temp.pz_rls_0" in script
+    assert script.startswith("BEGIN;") and script.rstrip().endswith("ROLLBACK;")
+    return rls, tables, order
+
+
+def test_rls_abgleich_findet_jede_abweichung(srv):
+    rls, tables, order = _rls_case(srv)
+    same = {"expected": [{**_POL, "table": "pz_rls_0"}], "found": [{**_POL, "table": "absences"}]}
+    assert srv.check_restored_rls(tables, rls, same, order) == []
+
+    off = [{**tables[0], "rls": False}]
+    assert srv.check_restored_rls(off, rls, same, order) == [
+        "Tabelle public.absences: Zeilenschutz (RLS) ist abgeschaltet"]
+    no_force = [{**tables[0], "force": False}]
+    assert srv.check_restored_rls(no_force, rls, same, order) == [
+        "Tabelle public.absences: FORCE ROW LEVEL SECURITY fehlt"]
+    mismatch = "Tabelle public.absences: Zeilenschutz-Regeln (Policies) weichen von den Migrationen ab"
+    for found in (
+        [{**_POL, "table": "absences", "qual": "true"}],                       # alles offen
+        [{**_POL, "table": "absences"}, {**_POL, "table": "absences", "name": "x", "qual": "true"}],
+        [{**_POL, "table": "absences", "cmd": "r"}],                           # nur SELECT bewacht
+        [{**_POL, "table": "absences", "roles": ["praxiszeit"]}],              # App-Rolle frei
+        [],                                                                    # Policy fehlt
+    ):
+        assert srv.check_restored_rls(tables, rls, {**same, "found": found}, order) == [mismatch]
+    # fehlende Tabelle schwaecht nichts - kein Befund hier
+    assert srv.check_restored_rls([], rls, None, []) == []
+
+
+def test_unverifizierte_sicherung_mit_offener_policy_wird_nicht_uebernommen(srv, inst, caplog,
+                                                                         monkeypatch):
+    # echte Migrationen (Stand 076) statt der Stummel des Installationsordners
+    monkeypatch.setattr(srv, "BACKEND_DIR", _REPO / "backend")
+    cluster = FakeCluster(revision="076_audit_chain")
+    functions, triggers = srv.expected_db_routines(_VERSIONS, "076_audit_chain")
+    cluster.routines = _found(functions, triggers, tables=[
+        {"name": "absences", "schema": "public", "rls": True, "force": True}])
+    cluster.rls_deparsed = {"expected": [{**_POL, "table": "pz_rls_0"}],
+                            "found": [{**_POL, "table": "absences", "qual": "true"}]}
+    with caplog.at_level(logging.ERROR, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst, key=None), cluster, force_unverified=True)
+    assert code == 1
+    assert "public.absences: Zeilenschutz-Regeln" in caplog.text
+    assert cluster.events.index("rls:praxiszeit_restore") > cluster.events.index(
+        "routines:praxiszeit_restore")
+    assert "reassign:praxiszeit_restore" not in cluster.events
+    assert cluster.dbs["praxiszeit"] == _OLD
+    # dieselbe Sicherung mit unveraenderter Policy geht durch
+    ok = FakeCluster(revision="076_audit_chain")
+    ok.routines = cluster.routines
+    ok.rls_deparsed = {"expected": [{**_POL, "table": "pz_rls_0"}],
+                       "found": [{**_POL, "table": "absences"}]}
+    code, _ = _restore(srv, _dump(inst, key=None, name="praxiszeit_20261017_120001.sql.gz"),
+                       ok, force_unverified=True)
+    assert code == 0 and "rls:praxiszeit_restore" in ok.events
 
 
 def test_unverifizierte_sicherung_mit_fremder_funktion_wird_nicht_uebernommen(srv, inst, caplog):

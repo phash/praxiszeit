@@ -862,3 +862,57 @@ def test_restore_routine_check_matches_a_real_migrated_database(env):
     assert "Funktion public.boese (legt keine Migration an)" in got
     assert "Sicht public.v076" in got
 
+
+def test_restore_trigger_and_rls_check_matches_a_real_migrated_database(env):
+    """Review-Runde 6: Trigger-Definitionen (pg_get_triggerdef) und Zeilenschutz
+    einer frisch migrierten Datenbank entsprechen genau dem, was
+    ``expected_db_routines``/``expected_db_rls`` aus den Migrationen lesen -
+    die Policies verglichen per pg_get_expr auf temporaeren LIKE-Kopien. Ein
+    nach hinten verlegter Trigger, abgeschaltetes FORCE, eine offene Policy und
+    eine Erweiterung fallen auf."""
+    import json
+    srv = _server_module()
+    url, engine, app_url, role = env
+    versions = BACKEND / "alembic" / "versions"
+    functions, triggers = srv.expected_db_routines(versions, HEAD_REV)
+    rls = srv.expected_db_rls(versions, HEAD_REV)
+
+    def problems():
+        with engine.connect() as conn:
+            raw = conn.exec_driver_sql(srv._ROUTINE_CATALOG_SQL.replace("%", "%%")).scalar()
+            found = raw if isinstance(raw, dict) else json.loads(raw)
+            tables = {t["name"] for t in found["tables"] if t["schema"] == "public"}
+            script, order = srv.rls_deparse_sql(rls, tables)
+            statements = [st for st in script.split(";\n") if st.strip()]
+            assert statements[0] == "BEGIN" and statements[-1] == "ROLLBACK"
+            for st in statements[1:-2]:
+                conn.exec_driver_sql(st.replace("%", "%%"))
+            raw = conn.exec_driver_sql(statements[-2].replace("%", "%%")).scalar()
+            conn.rollback()
+        deparsed = raw if isinstance(raw, dict) else json.loads(raw)
+        return (srv.check_restored_routines(found, functions, triggers)
+                + srv.check_restored_rls(found["tables"], rls, deparsed, order))
+
+    assert problems() == []
+    with engine.begin() as conn:
+        conn.exec_driver_sql("DROP TRIGGER pz_audit_guard_write ON time_entry_audit_logs")
+        conn.exec_driver_sql(
+            "CREATE TRIGGER pz_audit_guard_write AFTER INSERT OR UPDATE OR DELETE "
+            "ON time_entry_audit_logs FOR EACH ROW EXECUTE FUNCTION pz_audit_guard()")
+        conn.exec_driver_sql("ALTER TABLE absences NO FORCE ROW LEVEL SECURITY")
+        conn.exec_driver_sql("ALTER TABLE users DISABLE ROW LEVEL SECURITY")
+        conn.exec_driver_sql("CREATE POLICY wide_open ON time_entries USING (true)")
+        conn.exec_driver_sql("ALTER POLICY tenant_isolation ON tenants USING (true)")
+        conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+    got = problems()
+    assert ("Trigger pz_audit_guard_write auf time_entry_audit_logs (Definition weicht von der "
+            "Migration ab)") in got
+    assert "Tabelle public.absences: FORCE ROW LEVEL SECURITY fehlt" in got
+    assert "Tabelle public.users: Zeilenschutz (RLS) ist abgeschaltet" in got
+    assert ("Tabelle public.time_entries: Zeilenschutz-Regeln (Policies) weichen von den "
+            "Migrationen ab") in got
+    assert ("Tabelle public.tenants: Zeilenschutz-Regeln (Policies) weichen von den "
+            "Migrationen ab") in got
+    assert "Erweiterung pgcrypto (legt keine Migration an)" in got
+    # ihre Funktionen (Schema public) nimmt der Abgleich nicht mehr aus
+    assert "Funktion public.digest (legt keine Migration an)" in got

@@ -3442,6 +3442,10 @@ _DUMP_FORBIDDEN_STATEMENTS = (
     (re.compile(r"^(GRANT|REVOKE)\b(?!.*\bON\b)"), "Rollen-Mitgliedschaft"),
     (re.compile(r"^ALTER\s+(SYSTEM|DATABASE)\b"), "ALTER SYSTEM/DATABASE"),
     (re.compile(r"^(CREATE|ALTER)\s+EVENT\s+TRIGGER\b"), "Event-Trigger"),
+    # Review-Runde 6: ALTER EXTENSION ... ADD FUNCTION machte eine eigene
+    # Funktion zum Bestandteil einer Erweiterung - pg_dump schreibt das nur im
+    # Binary-Upgrade-Modus, nie in eine Sicherung.
+    (re.compile(r"^ALTER\s+EXTENSION\b"), "ALTER EXTENSION"),
     (re.compile(r"^COPY\b"), "COPY ausserhalb der pg_dump-Form"),
     (re.compile(r"^(DO|CALL|LOAD|RESET)\b"), "DO/CALL/LOAD/RESET"),
     (re.compile(r"^(CREATE|ALTER)\s+(OR\s+REPLACE\s+)?(TRUSTED\s+)?(PROCEDURAL\s+)?LANGUAGE\b"),
@@ -3690,7 +3694,7 @@ _DUMP_QUOTED_IDENT_RE = re.compile(r'"(?:[^"]|"")*"')
 _DUMP_UNICODE_LITERAL_RE = re.compile(r"[Uu]&[\"']")
 
 
-def _check_dump_statement(stmt: str, raw: str, lineno: int) -> None:
+def _check_dump_statement(stmt: str, raw: str, lineno: int, *, unverified: bool = False) -> None:
     upper = " ".join(stmt.split()).upper()
     full = " ".join(raw.split())
     if not upper:
@@ -3727,6 +3731,16 @@ def _check_dump_statement(stmt: str, raw: str, lineno: int) -> None:
             words[2] if len(words) > 2 else "")
         if name not in _DUMP_EXTENSIONS_OK:
             raise _forbidden_statement(f"Erweiterung {name.lower()}", lineno)
+    # Review-Runde 6: eine unverifizierte Sicherung bringt keine Erweiterung mit.
+    # Keine Migration legt eine an; plpgsql ist in jeder Datenbank schon da
+    # (template0), ``CREATE EXTENSION IF NOT EXISTS plpgsql`` aelterer pg_dump
+    # bleibt als No-op erlaubt. Alles andere - auch DROP/COMMENT ON EXTENSION -
+    # haette Funktionen ausserhalb des Funktionsabgleichs gebracht.
+    if unverified and re.match(r"^(CREATE|DROP|COMMENT ON) EXTENSION\b", text):
+        words = upper.split()
+        if not (words[:5] == ["CREATE", "EXTENSION", "IF", "NOT", "EXISTS"]
+                and len(words) > 5 and words[5] == "PLPGSQL"):
+            raise _forbidden_statement("Erweiterung in einer unverifizierten Sicherung", lineno)
     if _DUMP_FORBIDDEN_CALLS_RE.search(calls):
         raise _forbidden_statement("Server-Datei-, Programm- oder Rechtezugriff", lineno)
     if (not re.match(r"^(CREATE|ALTER|DROP|COMMENT ON) EXTENSION\b", text)
@@ -3866,7 +3880,9 @@ def validate_restore_dump(sql: Path, out=None, *, strip_ownership: bool = False)
     dorthin kopiert (siehe :func:`prepare_restore_dump`). ``strip_ownership``
     laesst dabei die einzeiligen ``ALTER ... OWNER TO``- und ``ALTER DEFAULT
     PRIVILEGES FOR ROLE``-Anweisungen weg (eingeschraenktes Laden, Runde 3);
-    geprueft werden sie trotzdem."""
+    geprueft werden sie trotzdem. Es steht fuer eine UNVERIFIZIERTE Sicherung:
+    dann ist auch keine Erweiterung erlaubt (ausser dem No-op fuer plpgsql,
+    Review-Runde 6)."""
     scanner = _DumpScanner()
     in_copy = False
     with open(sql, "rb") as fh:
@@ -3883,7 +3899,7 @@ def validate_restore_dump(sql: Path, out=None, *, strip_ownership: bool = False)
             at_start = scanner.state == "normal" and not scanner.stmt.strip()
             copy_starts, statements = scanner.feed(line, lineno)
             for stmt, full in statements:
-                _check_dump_statement(stmt, full, lineno)
+                _check_dump_statement(stmt, full, lineno, unverified=strip_ownership)
             in_copy = copy_starts
             # Nur eine Zeile, die genau EINE vollstaendige Anweisung ist.
             skip = (strip_ownership and at_start and len(statements) == 1
@@ -4019,7 +4035,7 @@ def _database_exists(superuser: str, env: dict, name: str) -> bool:
 
 def _drop_load_role(superuser: str, env: dict) -> None:
     """Ladrolle entfernen; ihre Objekte in der Zwischendatenbank gehen vorher an
-    den Superuser (REASSIGN OWNED - auch die Datenbank selbst), Rechte, die ihr
+    den Superuser (REASSIGN OWNED), Rechte, die ihr
     noch zugewiesen sind, fallen weg (DROP OWNED)."""
     if _database_exists(superuser, env, RESTORE_DB_NAME):
         result = _restore_psql(
@@ -4056,11 +4072,6 @@ _MIG_FUNCTION_RE = re.compile(
     r"RETURNS\s+(.*?)\bAS\s+\$\$(.*?)\$\$", re.S | re.I)
 _MIG_DROP_FUNCTION_RE = re.compile(
     r"DROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?(?:public\.)?(\w+)", re.I)
-_MIG_TRIGGER_RE = re.compile(
-    r"CREATE\s+TRIGGER\s+(\w+)\s.*?\bON\s+(?:public\.)?(\w+)\s.*?"
-    r"EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+(?:public\.)?(\w+)", re.S | re.I)
-_MIG_DROP_TRIGGER_RE = re.compile(
-    r"DROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?(\w+)\s+ON\s+(?:public\.)?(\w+)", re.I)
 
 
 def _migration_chain(versions_dir: Path, revision: str) -> list[Path]:
@@ -4092,14 +4103,179 @@ def _migration_chain(versions_dir: Path, revision: str) -> list[Path]:
     return order
 
 
-def expected_db_routines(versions_dir: Path, revision: str) -> tuple[dict, set]:
+class _MigUnknown(Exception):
+    """Ausdruck einer Migration, den :func:`_migration_upgrade_sql` nicht auswertet."""
+
+
+def _mig_eval(node, env: dict):
+    """Ausdruck einer Migration auswerten - nur Literale, Namen, Listen, ``+``,
+    f-Strings und wenige reine Aufrufe (``sa.text``, ``reversed``, ``str.replace``)."""
+    import ast
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id in env:
+            return env[node.id]
+        raise _MigUnknown(node.id)
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return [_mig_eval(e, env) for e in node.elts]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _mig_eval(node.left, env) + _mig_eval(node.right, env)
+    if isinstance(node, ast.JoinedStr):
+        parts = []
+        for v in node.values:
+            if isinstance(v, ast.Constant):
+                parts.append(str(v.value))
+            elif isinstance(v, ast.FormattedValue) and v.format_spec is None and v.conversion == -1:
+                parts.append(str(_mig_eval(v.value, env)))
+            else:
+                raise _MigUnknown("f-string")
+        return "".join(parts)
+    if isinstance(node, ast.Call) and not node.keywords:
+        args = [_mig_eval(a, env) for a in node.args]
+        func = node.func
+        if isinstance(func, ast.Name) and func.id in ("reversed", "list", "tuple", "sorted") \
+                and len(args) == 1:
+            return list({"reversed": reversed, "sorted": sorted}.get(func.id, list)(args[0]))
+        if isinstance(func, ast.Attribute):
+            if func.attr == "text" and len(args) == 1 and isinstance(args[0], str):
+                return args[0]  # sa.text(...)
+            if func.attr in ("replace", "join", "strip") and isinstance(func.value, (ast.Constant, ast.Name)):
+                obj = _mig_eval(func.value, env)
+                if isinstance(obj, str):
+                    return getattr(obj, func.attr)(*args)
+    raise _MigUnknown(type(node).__name__)
+
+
+def _migration_upgrade_sql(path: Path) -> list[str]:
+    """SQL-Texte, die ``upgrade()`` einer Migration ausfuehrt (``op.execute``,
+    ``conn.execute(sa.text(...))``), in Ausfuehrungsreihenfolge - Schleifen
+    ueber Tabellenlisten und f-Strings ausgewertet, ``if``-Zweige beide,
+    Hilfsfunktionen des Moduls mit ihren Argumenten. Was sich nicht auswerten
+    laesst, faellt still weg (der Abgleich prueft dann weniger, nie mehr)."""
+    import ast
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (SyntaxError, ValueError):
+        return []
+    consts: dict = {}
+    funcs: dict = {}
+    for node in tree.body:
+        target = value = None
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target, value = node.targets[0], node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            target, value = node.target, node.value
+        elif isinstance(node, ast.FunctionDef):
+            funcs[node.name] = node
+        if isinstance(target, ast.Name):
+            try:
+                consts[target.id] = _mig_eval(value, consts)
+            except _MigUnknown:
+                consts.pop(target.id, None)
+    out: list[str] = []
+
+    def record(call, env, depth):
+        if not isinstance(call, ast.Call):
+            return
+        func = call.func
+        if isinstance(func, ast.Attribute) and func.attr in ("execute", "exec_driver_sql") \
+                and call.args:
+            try:
+                sql = _mig_eval(call.args[0], env)
+            except _MigUnknown:
+                return
+            if isinstance(sql, str):
+                out.append(sql)
+        elif isinstance(func, ast.Name) and func.id in funcs and depth < 5:
+            fn = funcs[func.id]
+            local = dict(consts)
+            for param, arg in zip(fn.args.args, call.args):
+                try:
+                    local[param.arg] = _mig_eval(arg, env)
+                except _MigUnknown:
+                    pass
+            run(fn.body, local, depth + 1)
+
+    def run(body, env, depth):
+        for stmt in body:
+            if isinstance(stmt, ast.Expr):
+                record(stmt.value, env, depth)
+            elif isinstance(stmt, (ast.Assign, ast.AnnAssign)):
+                record(stmt.value, env, depth)
+                target = stmt.targets[0] if isinstance(stmt, ast.Assign) else stmt.target
+                if isinstance(target, ast.Name) and stmt.value is not None:
+                    try:
+                        env[target.id] = _mig_eval(stmt.value, env)
+                    except _MigUnknown:
+                        env.pop(target.id, None)
+            elif isinstance(stmt, ast.For) and isinstance(stmt.target, ast.Name):
+                try:
+                    items = _mig_eval(stmt.iter, env)
+                except _MigUnknown:
+                    continue
+                for item in items:
+                    env[stmt.target.id] = item
+                    run(stmt.body, env, depth)
+            elif isinstance(stmt, ast.If):
+                run(stmt.body, env, depth)
+                run(stmt.orelse, env, depth)
+            elif isinstance(stmt, ast.With):
+                run(stmt.body, env, depth)
+            elif isinstance(stmt, ast.Try):
+                run(stmt.body, env, depth)
+                run(stmt.finalbody, env, depth)
+
+    if "upgrade" in funcs:
+        run(funcs["upgrade"].body, dict(consts), 0)
+    return out
+
+
+_TRIGGER_STMT_RE = re.compile(
+    r"CREATE\s+(?:CONSTRAINT\s+)?TRIGGER\s+.*?EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+[\w.\"]+\s*"
+    r"\([^)]*\)", re.S | re.I)
+_DROP_TRIGGER_STMT_RE = re.compile(
+    r"DROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?(\w+)\s+ON\s+(?:public\.)?(\w+)", re.I)
+_TRIGGER_DEF_RE = re.compile(
+    r"^CREATE (CONSTRAINT )?TRIGGER (\w+) (BEFORE|AFTER|INSTEAD OF) (.+?) ON (?:PUBLIC\.)?(\w+)"
+    r"( .*?)? EXECUTE (?:FUNCTION|PROCEDURE) (?:PUBLIC\.)?(\w+) ?\((.*)\)$")
+
+
+def normalize_trigger_def(sql: str):
+    """(Name, Tabelle, Normalform) einer CREATE-TRIGGER-Anweisung - aus der
+    Migration wie aus ``pg_get_triggerdef``: Zeitpunkt, Ereignisse (sortiert,
+    ``UPDATE OF`` mit sortierten Spalten), Tabelle, ``FOR EACH ROW|STATEMENT``
+    (fehlt es: STATEMENT), alles weitere (WHEN, DEFERRABLE, REFERENCING, FROM)
+    woertlich, Funktion samt Argumenten. ``None``, wenn es keine ist."""
+    text = " ".join(sql.replace('"', "").split()).rstrip(";").strip().upper()
+    m = _TRIGGER_DEF_RE.match(text)
+    if not m:
+        return None
+    constraint, name, timing, events, table, middle, fn, args = m.groups()
+    evs = []
+    for ev in re.split(r"\s+OR\s+", events.strip()):
+        if ev.startswith("UPDATE OF "):
+            ev = "UPDATE OF " + ",".join(sorted(c.strip() for c in ev[10:].split(",")))
+        evs.append(ev)
+    mid = re.sub(r"\bFOR (?:EACH )?(ROW|STATEMENT)\b", r"FOR EACH \1", (middle or "").strip())
+    if not re.search(r"\bFOR EACH (ROW|STATEMENT)\b", mid):
+        mid = (mid + " FOR EACH STATEMENT").strip()
+    norm = " ".join(filter(None, [
+        "CONSTRAINT TRIGGER" if constraint else "TRIGGER", timing, " OR ".join(sorted(evs)),
+        "ON", table, mid, "EXECUTE FUNCTION", f"{fn}({' '.join(args.split())})"]))
+    return name.lower(), table.lower(), norm
+
+
+def expected_db_routines(versions_dir: Path, revision: str) -> tuple[dict, dict]:
     """(Funktionen, Trigger), die die Migrationen bis ``revision`` anlegen.
 
     Funktionen: Name -> (Sprache, SECURITY DEFINER, Einstellungen, Rumpf);
-    Trigger: {(Name, Tabelle, Funktion)}. Eine spaetere Migration ersetzt eine
+    Trigger (Review-Runde 6): (Name, Tabelle) -> Normalform der Definition
+    (:func:`normalize_trigger_def` - Zeitpunkt, Ereignisse, Spalten, WHEN,
+    FOR EACH ROW, DEFERRABLE, Funktion). Eine spaetere Migration ersetzt eine
     fruehere Fassung, ein DROP im Upgrade-Teil nimmt sie heraus."""
     functions: dict = {}
-    triggers: set = set()
+    triggers: dict = {}
     for path in _migration_chain(versions_dir, revision):
         text = path.read_text(encoding="utf-8").split("\ndef downgrade", 1)[0]
         events = []
@@ -4107,10 +4283,6 @@ def expected_db_routines(versions_dir: Path, revision: str) -> tuple[dict, set]:
             events.append((m.start(), "fn", m))
         for m in _MIG_DROP_FUNCTION_RE.finditer(text):
             events.append((m.start(), "dropfn", m))
-        for m in _MIG_TRIGGER_RE.finditer(text):
-            events.append((m.start(), "tg", m))
-        for m in _MIG_DROP_TRIGGER_RE.finditer(text):
-            events.append((m.start(), "droptg", m))
         for _pos, kind, m in sorted(events, key=lambda e: e[0]):
             if kind == "fn":
                 header = " ".join(m.group(2).split())
@@ -4122,14 +4294,135 @@ def expected_db_routines(versions_dir: Path, revision: str) -> tuple[dict, set]:
                     (f"{config.group(1).lower()}={config.group(2)}" if config else ""),
                     m.group(3),
                 )
-            elif kind == "dropfn":
-                functions.pop(m.group(1).lower(), None)
-            elif kind == "tg":
-                triggers.add((m.group(1).lower(), m.group(2).lower(), m.group(3).lower()))
             else:
-                triggers = {t for t in triggers
-                            if (t[0], t[1]) != (m.group(1).lower(), m.group(2).lower())}
+                functions.pop(m.group(1).lower(), None)
+        for sql in _migration_upgrade_sql(path):
+            found = [(m.start(), "tg", m) for m in _TRIGGER_STMT_RE.finditer(sql)]
+            found += [(m.start(), "droptg", m) for m in _DROP_TRIGGER_STMT_RE.finditer(sql)]
+            for _pos, kind, m in sorted(found, key=lambda e: e[0]):
+                if kind == "tg":
+                    parsed = normalize_trigger_def(m.group(0))
+                    if parsed:
+                        triggers[(parsed[0], parsed[1])] = parsed[2]
+                else:
+                    triggers.pop((m.group(1).lower(), m.group(2).lower()), None)
     return functions, triggers
+
+
+# Zeilenschutz (RLS) der Migrationen (Review-Runde 6): je Tabelle ENABLE,
+# FORCE und die Policies (CREATE-POLICY-Text), aus den ausgefuehrten
+# SQL-Texten von upgrade(). Die Ausdruecke vergleicht PostgreSQL selbst: die
+# Policy der Migration wird auf einer temporaeren Kopie der Tabelle angelegt
+# und beide Fassungen per pg_get_expr verglichen (:func:`rls_deparse_sql`).
+_RLS_STMT_RE = re.compile(
+    r"ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?(?:public\.)?(\w+)\s+"
+    r"(ENABLE|DISABLE|FORCE|NO\s+FORCE)\s+ROW\s+LEVEL\s+SECURITY"
+    r"|CREATE\s+POLICY\s+(\w+)\s+ON\s+(?:public\.)?(\w+)\b([^;]*)"
+    r"|DROP\s+POLICY\s+(?:IF\s+EXISTS\s+)?(\w+)\s+ON\s+(?:public\.)?(\w+)"
+    r"|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:public\.)?(\w+)", re.I | re.S)
+
+
+def expected_db_rls(versions_dir: Path, revision: str) -> dict:
+    """Tabelle -> {"enable", "force", "policies": {Name: CREATE-POLICY-Rest}}
+    nach den Migrationen bis ``revision``."""
+    tables: dict = {}
+
+    def entry(name: str) -> dict:
+        return tables.setdefault(name.lower(),
+                                 {"enable": False, "force": False, "policies": {}})
+
+    for path in _migration_chain(versions_dir, revision):
+        for sql in _migration_upgrade_sql(path):
+            for m in _RLS_STMT_RE.finditer(sql):
+                if m.group(1):
+                    action = " ".join(m.group(2).upper().split())
+                    t = entry(m.group(1))
+                    if action in ("ENABLE", "DISABLE"):
+                        t["enable"] = action == "ENABLE"
+                    else:
+                        t["force"] = action == "FORCE"
+                elif m.group(3):
+                    entry(m.group(4))["policies"][m.group(3).lower()] = m.group(5).strip()
+                elif m.group(6):
+                    entry(m.group(7))["policies"].pop(m.group(6).lower(), None)
+                else:
+                    tables.pop(m.group(8).lower(), None)
+    return {name: t for name, t in tables.items() if t["enable"] or t["force"] or t["policies"]}
+
+
+_POLICY_JSON_SQL = """COALESCE((SELECT json_agg(json_build_object(
+    'table', c.relname, 'name', p.polname, 'cmd', p.polcmd::text, 'permissive', p.polpermissive,
+    'roles', ARRAY(SELECT CASE WHEN r = 0 THEN 'public' ELSE pg_get_userbyid(r)::text END
+                     FROM unnest(p.polroles) r ORDER BY 1),
+    'qual', pg_get_expr(p.polqual, p.polrelid), 'check', pg_get_expr(p.polwithcheck, p.polrelid))
+    ORDER BY c.relname, p.polname)
+  FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+ WHERE {where}), '[]'::json)"""
+
+
+def rls_deparse_sql(expected_rls: dict, tables: set) -> tuple[str, list[str]]:
+    """Skript (laeuft als Superuser in der Zwischendatenbank, ROLLBACK am
+    Ende): je erwarteter Tabelle eine temporaere Kopie (``LIKE``) mit den
+    Policies der Migrationen, dann die Policies beider Fassungen per
+    ``pg_get_expr`` in derselben Sitzung (gleicher search_path, gleiche
+    Ausgabeform). Liefert (Skript, Tabellen in Reihenfolge der Kopien
+    ``pz_rls_<n>``); leer, wenn nichts zu vergleichen ist."""
+    order: list[str] = []
+    lines = ["BEGIN;", "SET LOCAL search_path = pg_catalog, pg_temp;"]
+    for table in sorted(expected_rls):
+        exp = expected_rls[table]
+        if not exp["enable"] or table not in tables or not re.fullmatch(r"\w+", table):
+            continue
+        idx = len(order)
+        order.append(table)
+        lines.append(f'CREATE TEMP TABLE pz_rls_{idx} (LIKE public."{table}");')
+        for name, rest in sorted(exp["policies"].items()):
+            lines.append(f'CREATE POLICY "{name}" ON pg_temp.pz_rls_{idx} {rest};')
+    if not order:
+        return "", []
+    temp = _POLICY_JSON_SQL.format(where="c.relpersistence = 't' AND c.relname LIKE 'pz\\_rls\\_%'")
+    names = ", ".join(f"'{t}'" for t in order)
+    real = _POLICY_JSON_SQL.format(where=f"n.nspname = 'public' AND c.relname IN ({names})")
+    lines.append(f"SELECT json_build_object('expected', {temp}, 'found', {real});")
+    lines.append("ROLLBACK;")
+    return "\n".join(lines) + "\n", order
+
+
+def _policy_key(p: dict) -> tuple:
+    return (p.get("name"), p.get("cmd"), bool(p.get("permissive")), tuple(p.get("roles") or ()),
+            p.get("qual"), p.get("check"))
+
+
+def check_restored_rls(found_tables: list, expected_rls: dict, deparsed: dict | None,
+                       order: list[str]) -> list[str]:
+    """Abweichungen des Zeilenschutzes der eingespielten Tabellen von den
+    Migrationen - leer = in Ordnung. Fehlende Tabellen sind kein Befund hier
+    (sie schwaechen nichts); eine Tabelle, die RLS haben muss, muss es mit
+    FORCE (wo verlangt) und genau den Policies der Migrationen haben."""
+    problems: list[str] = []
+    tables = {t["name"].lower(): t for t in found_tables or [] if t.get("schema") == "public"}
+    want: dict = {t: set() for t in order}
+    got: dict = {t: set() for t in order}
+    for p in (deparsed or {}).get("expected") or []:
+        rel = p.get("table") or ""
+        if rel.startswith("pz_rls_") and rel[7:].isdigit() and int(rel[7:]) < len(order):
+            want[order[int(rel[7:])]].add(_policy_key(p))
+    for p in (deparsed or {}).get("found") or []:
+        if (p.get("table") or "").lower() in got:
+            got[p["table"].lower()].add(_policy_key(p))
+    for name in sorted(expected_rls):
+        exp = expected_rls[name]
+        if not exp["enable"] or name not in tables:
+            continue
+        t = tables[name]
+        if not t.get("rls"):
+            problems.append(f"Tabelle public.{name}: Zeilenschutz (RLS) ist abgeschaltet")
+        if exp["force"] and not t.get("force"):
+            problems.append(f"Tabelle public.{name}: FORCE ROW LEVEL SECURITY fehlt")
+        if name not in want or want[name] != got[name]:
+            problems.append(f"Tabelle public.{name}: Zeilenschutz-Regeln (Policies) weichen "
+                            "von den Migrationen ab")
+    return problems
 
 
 _ROUTINE_CATALOG_SQL = """
@@ -4140,15 +4433,28 @@ SELECT json_build_object(
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
       JOIN pg_language l ON l.oid = p.prolang
      WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-       AND n.nspname NOT LIKE 'pg\\_toast%'
-       AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass
-                         AND d.objid = p.oid AND d.deptype = 'e')), '[]'::json),
+       AND n.nspname NOT LIKE 'pg\\_toast%'), '[]'::json),
+  'extensions', COALESCE((SELECT json_agg(json_build_object(
+        'name', e.extname, 'owner_super', r.rolsuper,
+        'members', COALESCE((SELECT json_agg(m.x ORDER BY m.x) FROM (
+            SELECT pg_describe_object(d.classid, d.objid, d.objsubid) AS x
+              FROM pg_depend d
+             WHERE d.refclassid = 'pg_extension'::regclass AND d.refobjid = e.oid
+               AND d.deptype = 'e') m), '[]'::json)))
+      FROM pg_extension e JOIN pg_roles r ON r.oid = e.extowner), '[]'::json),
   'triggers', COALESCE((SELECT json_agg(json_build_object(
         'name', t.tgname, 'table', c.relname, 'schema', n.nspname,
-        'function', p.proname, 'enabled', t.tgenabled))
+        'function', p.proname, 'enabled', t.tgenabled, 'def', pg_get_triggerdef(t.oid)))
       FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
       JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_proc p ON p.oid = t.tgfoid
      WHERE NOT t.tgisinternal), '[]'::json),
+  'tables', COALESCE((SELECT json_agg(json_build_object(
+        'name', c.relname, 'schema', n.nspname, 'rls', c.relrowsecurity,
+        'force', c.relforcerowsecurity))
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE c.relkind IN ('r', 'p')
+       AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+       AND n.nspname NOT LIKE 'pg\\_toast%'), '[]'::json),
   'other', COALESCE((SELECT json_agg(x) FROM (
       SELECT 'Sicht ' || n.nspname || '.' || c.relname AS x
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -4163,11 +4469,36 @@ SELECT json_build_object(
 )
 """
 
+# Erweiterungen (Review-Runde 6): die Zwischendatenbank entsteht aus template0
+# und gehoert dem Superuser, die Ladrolle kann keine Erweiterung anlegen (kein
+# CREATE auf der Datenbank) und die Pruefliste laesst in einer unverifizierten
+# Sicherung nur ``CREATE EXTENSION IF NOT EXISTS plpgsql`` zu (ein No-op). Was
+# danach an Erweiterungen da ist, muss genau plpgsql mit seinen
+# Standard-Bestandteilen sein und dem Superuser gehoeren - Funktionen einer
+# Erweiterung prueft der Funktionsabgleich sonst nicht (pg_catalog).
+_STOCK_EXTENSION_MEMBERS = {
+    "plpgsql": {
+        "function plpgsql_call_handler()",
+        "function plpgsql_inline_handler(internal)",
+        "function plpgsql_validator(oid)",
+        "language plpgsql",
+    },
+}
 
-def check_restored_routines(found: dict, functions: dict, triggers: set) -> list[str]:
-    """Abweichungen der eingespielten Funktionen/Trigger (``found``, Ergebnis von
-    :data:`_ROUTINE_CATALOG_SQL`) von den erwarteten - leer = in Ordnung."""
+
+def check_restored_routines(found: dict, functions: dict, triggers: dict) -> list[str]:
+    """Abweichungen der eingespielten Funktionen/Trigger/Erweiterungen
+    (``found``, Ergebnis von :data:`_ROUTINE_CATALOG_SQL`) von den erwarteten -
+    leer = in Ordnung."""
     problems: list[str] = list(found.get("other") or [])
+    for e in found.get("extensions") or []:
+        stock = _STOCK_EXTENSION_MEMBERS.get(e.get("name"))
+        if stock is None:
+            problems.append(f"Erweiterung {e.get('name')} (legt keine Migration an)")
+        elif not e.get("owner_super"):
+            problems.append(f"Erweiterung {e['name']} gehoert nicht dem Datenbank-Superuser")
+        elif set(e.get("members") or []) != stock:
+            problems.append(f"Erweiterung {e['name']} (Bestandteile weichen vom Standard ab)")
     seen: dict = {}
     for f in found.get("functions") or []:
         name = f["name"].lower()
@@ -4189,22 +4520,28 @@ def check_restored_routines(found: dict, functions: dict, triggers: set) -> list
         problems.append(f"Funktion public.{name} fehlt")
     got_triggers = set()
     for t in found.get("triggers") or []:
-        key = (t["name"].lower(), t["table"].lower(), t["function"].lower())
+        key = (t["name"].lower(), t["table"].lower())
+        parsed = normalize_trigger_def(t.get("def") or "")
         if t["schema"] != "public" or key not in triggers:
             problems.append(f"Trigger {t['name']} auf {t['schema']}.{t['table']} (unerwartet)")
+        elif parsed is None or (parsed[0], parsed[1]) != key or parsed[2] != triggers[key]:
+            problems.append(f"Trigger {t['name']} auf {t['table']} (Definition weicht von der "
+                            "Migration ab)")
         elif t["enabled"] != "O":
             problems.append(f"Trigger {t['name']} auf {t['table']} ist abgeschaltet")
         got_triggers.add(key)
-    for name, table, _fn in sorted(triggers - got_triggers):
+    for name, table in sorted(set(triggers) - got_triggers):
         problems.append(f"Trigger {name} auf {table} fehlt")
     return problems
 
 
 def _assert_routines_match_migrations(superuser: str, env: dict, revision: str,
                                       versions_dir: Path | None = None) -> None:
-    """Unverifizierte Sicherung: Funktionen/Trigger der Zwischendatenbank gegen
-    die Migrationen bis ``revision`` abgleichen (nur Katalogabfragen, nichts aus
-    der Sicherung wird ausgefuehrt). Wirft :class:`RestoreError`."""
+    """Unverifizierte Sicherung: Funktionen, Trigger, Erweiterungen und
+    Zeilenschutz der Zwischendatenbank gegen die Migrationen bis ``revision``
+    abgleichen (Katalogabfragen und ein zurueckgerolltes Vergleichsskript aus
+    den Migrationen - nichts aus der Sicherung wird ausgefuehrt). Wirft
+    :class:`RestoreError`."""
     versions_dir = versions_dir or BACKEND_DIR / "alembic" / "versions"
     functions, triggers = expected_db_routines(versions_dir, revision)
     result = _restore_psql(superuser, env, RESTORE_DB_NAME, "-tA", "-c", _ROUTINE_CATALOG_SQL)
@@ -4217,14 +4554,30 @@ def _assert_routines_match_migrations(superuser: str, env: dict, revision: str,
             "Die Funktionen der eingespielten Sicherung liessen sich nicht pruefen:\n"
             f"{_psql_error_tail(result)}")
     problems = check_restored_routines(found, functions, triggers)
+    expected_rls = expected_db_rls(versions_dir, revision)
+    tables = {t["name"].lower() for t in found.get("tables") or [] if t.get("schema") == "public"}
+    script, order = rls_deparse_sql(expected_rls, tables)
+    deparsed = None
+    if script:
+        result = _restore_psql(superuser, env, RESTORE_DB_NAME, "-tA", "-f", "-", input=script)
+        try:
+            deparsed = json.loads((result.stdout or "").strip() or "null")
+        except ValueError:
+            deparsed = None
+        if result.returncode != 0 or not isinstance(deparsed, dict):
+            raise RestoreError(
+                "Der Zeilenschutz der eingespielten Sicherung liess sich nicht pruefen:\n"
+                f"{_psql_error_tail(result)}")
+    problems += check_restored_rls(found.get("tables") or [], expected_rls, deparsed, order)
     if problems:
         shown = "\n".join(f"  - {p}" for p in problems[:20])
         more = f"\n  ... und {len(problems) - 20} weitere" if len(problems) > 20 else ""
         raise RestoreError(
-            "Die unverifizierte Sicherung enthaelt Funktionen oder Trigger, die die "
-            f"Migrationen dieser Installation fuer Datenbankstand {revision} nicht anlegen. "
-            "Sie liefen nach dem Einspielen mit den Rechten des Datenbank-Superusers und "
-            f"werden deshalb nicht uebernommen:\n{shown}{more}")
+            "Die unverifizierte Sicherung enthaelt Funktionen, Trigger, Erweiterungen oder "
+            "Zeilenschutz-Regeln, die die Migrationen dieser Installation fuer Datenbankstand "
+            f"{revision} nicht anlegen. Sie liefen nach dem Einspielen mit den Rechten des "
+            "Datenbank-Superusers (oder schwaechten die Mandantentrennung) und werden "
+            f"deshalb nicht uebernommen:\n{shown}{more}")
 
 
 def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set,
@@ -4239,15 +4592,17 @@ def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set,
     2026-11-07, Runde 3): psql meldet sich dafuer als :data:`RESTORE_LOAD_ROLE`
     an - eine eigene Login-Rolle ohne Superuser-, CREATEROLE-, CREATEDB-,
     REPLICATION-, BYPASSRLS-Recht und ohne Mitgliedschaft, mit Zufallspasswort,
-    Eigentuemerin der Zwischendatenbank. Was die Pruefliste uebersieht
+    nur mit CREATE im Schema public (die Zwischendatenbank gehoert dem
+    Superuser und entsteht aus template0, Review-Runde 6). Was die Pruefliste uebersieht
     (Katalog schreiben, COPY ... PROGRAM, Server-Dateien, C-Funktionen,
     Rollen aendern, Funktionen in DEFAULT/CHECK/Index waehrend des Ladens),
     scheitert so am Server selbst. Erst danach gehen alle Objekte per
     REASSIGN OWNED an den Superuser - wie ein Laden als Superuser, ausser den
     Default-Privilegien, die init-db-user.sql nach dem Tausch setzt. Vor der
-    Uebergabe muessen Funktionen und Trigger genau denen der Migrationen bis
-    zum Datenbankstand der Sicherung entsprechen
-    (:func:`_assert_routines_match_migrations`, Review-Runde 4) - sonst liefe
+    Uebergabe muessen Funktionen, Trigger (samt Definition), Erweiterungen und
+    der Zeilenschutz genau denen der Migrationen bis zum Datenbankstand der
+    Sicherung entsprechen (:func:`_assert_routines_match_migrations`,
+    Review-Runden 4 und 6) - sonst liefe
     eine von der Pruefliste uebersehene Funktion danach mit Superuser-Rechten."""
     statements = ["-c", f'DROP DATABASE IF EXISTS "{RESTORE_DB_NAME}" WITH (FORCE)']
     if restricted:
@@ -4258,7 +4613,7 @@ def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set,
             f"Die Zwischendatenbank {RESTORE_DB_NAME} liess sich nicht anlegen:\n"
             f"{_psql_error_tail(result)}"
         )
-    load_user, load_env, owner = superuser, env, superuser
+    load_user, load_env = superuser, env
     try:
         if restricted:
             load_password = secrets.token_hex(24)
@@ -4272,17 +4627,32 @@ def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set,
                 raise RestoreError(
                     f"Die Ladrolle {RESTORE_LOAD_ROLE} liess sich nicht anlegen:\n"
                     f"{_psql_error_tail(result)}")
-            load_user, owner = RESTORE_LOAD_ROLE, RESTORE_LOAD_ROLE
+            load_user = RESTORE_LOAD_ROLE
             load_env = {**env, "PGPASSWORD": load_password}
+        # Review-Runde 6: die Zwischendatenbank gehoert immer dem Superuser
+        # und entsteht aus template0 (nur plpgsql, keine Erweiterung aus
+        # template1). Die Ladrolle bekommt nur CREATE im Schema public - kein
+        # CREATE auf der Datenbank, also auch keine (trusted) Erweiterung und
+        # kein eigenes Schema.
         result = _restore_psql(
             superuser, env, "postgres",
-            "-c", f'CREATE DATABASE "{RESTORE_DB_NAME}" OWNER "{owner}" ENCODING \'UTF8\'',
+            "-c", f'CREATE DATABASE "{RESTORE_DB_NAME}" OWNER "{superuser}" TEMPLATE template0 '
+                  f"ENCODING 'UTF8'",
         )
         if result.returncode != 0:
             raise RestoreError(
                 f"Die Zwischendatenbank {RESTORE_DB_NAME} liess sich nicht anlegen:\n"
                 f"{_psql_error_tail(result)}"
             )
+        if restricted:
+            result = _restore_psql(
+                superuser, env, RESTORE_DB_NAME,
+                "-c", f'GRANT CREATE ON SCHEMA public TO "{RESTORE_LOAD_ROLE}"',
+            )
+            if result.returncode != 0:
+                raise RestoreError(
+                    f"Die Ladrolle {RESTORE_LOAD_ROLE} liess sich nicht berechtigen:\n"
+                    f"{_psql_error_tail(result)}")
 
         logger.info("Spiele das Backup in die Zwischendatenbank %s ein%s ...", RESTORE_DB_NAME,
                     f" (als eingeschraenkte Rolle {RESTORE_LOAD_ROLE})" if restricted else "")
