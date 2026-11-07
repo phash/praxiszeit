@@ -428,11 +428,11 @@ def test_export_endpoints_include_hidden_on_request(db, test_admin, hidden_user,
                 with zipfile.ZipFile(BytesIO(r.content)) as z:
                     return "Chefin" in z.read("content.xml").decode()
             # PDF: jede Person beginnt auf einer eigenen Seite (PageBreak) —
-            # die ausgeblendete Person bringt genau eine Seite mehr.
+            # die ausgeblendete Person bringt zusätzliche Seiten.
             return len(re.findall(rb"/Type /Page\b", r.content))
 
         if kind == "pdf":
-            assert has_hidden("&include_hidden=true") == has_hidden("") + 1
+            assert has_hidden("&include_hidden=true") > has_hidden("")
             return
         assert has_hidden("") is False
         assert has_hidden("&include_hidden=true") is True

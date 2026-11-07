@@ -32,7 +32,7 @@ describe('<Reports /> 24-Wochen-Durchschnitt (Spec 8.1, P22)', () => {
     render(<Reports />);
     fireEvent.click(screen.getByRole('button', { name: '24-Wochen-Durchschnitt prüfen' }));
     const table = await screen.findByRole('table', { name: '24-Wochen-Durchschnitt' });
-    expect(within(table).getByText('Anwesenheit laut Stempel (Ø / Tag)')).toBeInTheDocument();
+    expect(within(table).getByText('Anwesenheit laut Stempel (Ø / Werktag)')).toBeInTheDocument();
     expect(within(table).getByText('7:45')).toBeInTheDocument();
     expect(within(table).getByText('11:00')).toBeInTheDocument();
     expect(within(table).getByText('22:00')).toBeInTheDocument();

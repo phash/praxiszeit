@@ -181,7 +181,7 @@ def test_reports_include_departed_and_hidden_on_request(db, test_admin):
         (reports.get_sunday_summary, {"year": 2026}),
         (reports.get_night_work_summary, {"year": 2026}),
         (reports.get_24_week_averaging_period, {"end_date": date(2026, 10, 31)}),
-        (reports.get_arbzg_limits, {"year": 2026}),
+        (reports.get_arbzg_limits, {"year": 2026, "month": None}),
     ):
         rep = fn(db=db, current_user=test_admin, **kw)
         assert rep["hidden_with_data_count"] == 1, fn.__name__
@@ -270,7 +270,7 @@ def test_night_worker_flag_missing_and_no_monthly_for_others(db, test_user, test
 # --- A1-08: Tage > 10 h, Wochen > 48 h, Pausenausnahmen ----------------------------
 
 def test_arbzg_limits_lists_days_weeks_and_break_exceptions(db, test_user, test_admin):
-    # Mo: angerechnet 7,5 h, laut Stempel 12 h (gekappt) → Tag > 10 h
+    # Mo: angerechnet 8 h (10,5 h − 150 Min. Lücke), laut Stempel 12 h → Tag > 10 h
     _te(db, test_user, date(2026, 10, 5), time(7, 45), time(18, 15), raw_start_time=time(7),
         raw_end_time=time(19), uncredited_minutes=150)
     # Di–Fr je 10 h, Sa 4 h → Woche 12 + 40 + 4 = 56 h laut Stempel
@@ -283,7 +283,7 @@ def test_arbzg_limits_lists_days_weeks_and_break_exceptions(db, test_user, test_
     rep = reports.get_arbzg_limits(year=2026, month=10, db=db, current_user=test_admin)
     row = _row(rep, test_user)
     assert row["days_over_10h"] == [
-        {"date": "2026-10-05", "presence_hours": 12.0, "credited_hours": 7.5, "auto_closed": False}]
+        {"date": "2026-10-05", "presence_hours": 12.0, "credited_hours": 8.0, "auto_closed": False}]
     assert row["weeks_over_48h"] == [{"iso_week": "2026-W41", "presence_hours": 56.0}]
     assert row["break_exceptions"] == [{
         "date": "2026-10-13", "start_time": "07:00", "end_time": "14:00", "break_minutes": 0,
