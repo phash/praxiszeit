@@ -156,7 +156,7 @@ test.describe('Admin Time Entries', () => {
 
     // Navigate to audit log
     await adminPage.goto('/admin/audit-log');
-    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll' })).toBeVisible();
+    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll', exact: true })).toBeVisible();
     await adminPage.waitForLoadState('networkidle');
 
     // Der Test heißt "audit log records admin action" — dann muss er auch DIESE

@@ -3,7 +3,7 @@ import { test, expect } from '../../fixtures/base.fixture';
 test.describe('Admin Audit Log', () => {
   test('page loads with heading and filters', async ({ adminPage }) => {
     await adminPage.goto('/admin/audit-log');
-    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll' })).toBeVisible();
+    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll', exact: true })).toBeVisible();
 
     // Check that the user filter dropdown exists
     const userFilter = adminPage.locator('select').filter({ hasText: 'Alle Mitarbeitende' });
@@ -22,7 +22,7 @@ test.describe('Admin Audit Log', () => {
 
   test('month navigation works', async ({ adminPage }) => {
     await adminPage.goto('/admin/audit-log');
-    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll' })).toBeVisible();
+    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll', exact: true })).toBeVisible();
 
     // Get the MonthSelector display text
     const monthDisplay = adminPage.locator('.min-w-\\[180px\\]');
@@ -45,7 +45,7 @@ test.describe('Admin Audit Log', () => {
 
   test('user filter dropdown works', async ({ adminPage }) => {
     await adminPage.goto('/admin/audit-log');
-    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll' })).toBeVisible();
+    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll', exact: true })).toBeVisible();
     await adminPage.waitForLoadState('networkidle');
 
     // Find the user filter select
@@ -67,13 +67,13 @@ test.describe('Admin Audit Log', () => {
         await adminPage.waitForLoadState('networkidle');
 
         // Page should still be functional
-        await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll' })).toBeVisible();
+        await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll', exact: true })).toBeVisible();
       }
     }
 
     // Switch back to all
     await userFilter.selectOption('');
     await adminPage.waitForLoadState('networkidle');
-    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll' })).toBeVisible();
+    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll', exact: true })).toBeVisible();
   });
 });
