@@ -155,6 +155,12 @@ def _lockout_keys(username_lower: str, client_ip: str) -> tuple[tuple, tuple]:
     return ("ip", username_lower, client_ip), ("user", username_lower)
 
 
+def _stepup_key(user) -> tuple:
+    """Fehlversuchs-Budget der Passwort-Rueckfrage in einer offenen Sitzung
+    (je Konto, unabhaengig von IP und Login-Zaehlern)."""
+    return ("stepup", str(user.id))
+
+
 def _record_failed_login(username_lower: str, client_ip: str, now: datetime,
                          extra_keys: tuple = ()) -> None:
     """F-039: Append a failed attempt and maintain LRU ordering.
@@ -292,19 +298,25 @@ def confirm_current_password(db: Session, request: Request, user: User, password
     username_lower = (user.username or "").lower()
     client_ip = _get_real_ip(request)
     now = datetime.now(timezone.utc)
-    ip_key, user_key = _lockout_keys(username_lower, client_ip)
-    if (_recent_attempts(ip_key, now) >= _LOCKOUT_ATTEMPTS
-            or _recent_attempts(user_key, now) >= _GLOBAL_LOCKOUT_ATTEMPTS):
+    # Fix-Runde: die Sitzung ist bereits angemeldet — sie prueft gegen ihr
+    # EIGENES Budget je Konto (``_stepup_key``), nicht gegen die Login-Zaehler
+    # je Name/Name+IP. Sonst sperrten 50 anonyme Fehlversuche fuer ``admin``
+    # (oder 5 hinter einem gemeinsamen Proxy) auch Passwort aendern, 2FA,
+    # Sicherungs-Download und 2FA-Ruecksetzen der echten Verwaltung — mit der
+    # falschen Meldung „abgemeldet". Fehlversuche zaehlen weiter AUCH in die
+    # Login-Zaehler (Brute-Force-Grenze fuer die Anmeldung bleibt).
+    stepup_key = _stepup_key(user)
+    if _recent_attempts(stepup_key, now) >= _LOCKOUT_ATTEMPTS:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                             detail=PASSWORD_CHECK_LOCKED_DETAIL)
     if auth_service.verify_password(password or "", user.password_hash):
         return
-    _record_failed_login(username_lower, client_ip, now)
+    _record_failed_login(username_lower, client_ip, now, extra_keys=(stepup_key,))
     security_logger.warning(
         "AUTH password_check_failed user=%s purpose=%s",
         _safe_log_text(username_lower), _safe_log_text(purpose, 40),
     )
-    if _recent_attempts(ip_key, now) >= _LOCKOUT_ATTEMPTS:
+    if _recent_attempts(stepup_key, now) >= _LOCKOUT_ATTEMPTS:
         _revoke_sessions(db, user)
         _log_self_security_event(
             db, user, EVENT_PASSWORD_CHECK_LOCKOUT,
@@ -573,6 +585,9 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     # deliberately NOT reset: otherwise every successful login of the real user
     # would hand a distributed attacker a fresh budget of 50 attempts.
     _failed_logins.pop(ip_key, None)
+    # Nach einer durch Fehlversuche beendeten Sitzung beginnt die neue
+    # Anmeldung mit frischem Rueckfrage-Budget (das Passwort ist ja bewiesen).
+    _failed_logins.pop(_stepup_key(user), None)
 
     tenant_id_str = str(user.tenant_id) if user.tenant_id else None
     access_token = auth_service.create_access_token(str(user.id), user.role.value, user.token_version, tenant_id_str)

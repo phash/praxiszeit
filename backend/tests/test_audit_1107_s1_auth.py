@@ -269,6 +269,34 @@ class TestPasswordStepUp:
         assert _login(raw_client, "10.5.0.2", "testuser", "falsch").status_code == 401
         assert _login(raw_client, "10.5.0.2", "testuser", USER_PW).status_code == 429
 
+    # Fix-Runde (Review): anonyme Fehlversuche sperren die Rückfrage nicht.
+    def test_anonymous_flood_does_not_block_step_up(self, raw_client, db, test_user):
+        # 50 falsche Logins von vielen IPs (globale Namens-Grenze) plus 5 von
+        # derselben Proxy-IP, von der auch die echte Sitzung kommt.
+        for i in range(auth_router._GLOBAL_LOCKOUT_ATTEMPTS):
+            _login(raw_client, f"10.9.{i // 250}.{i % 250}", "testuser", "falsch")
+        for _ in range(auth_router._LOCKOUT_ATTEMPTS):
+            _login(raw_client, "172.17.0.1", "testuser", "falsch")
+        assert _login(raw_client, "172.17.0.1", "testuser", USER_PW).status_code == 429
+        c = _client_as(db, test_user)
+        with patch("app.routers.auth._get_real_ip", return_value="172.17.0.1"), \
+             patch.object(auth_router.limiter, "enabled", False):
+            r = c.post("/api/auth/change-password",
+                       json={"current_password": USER_PW, "new_password": "NeuesPasswort2026x"})
+        assert r.status_code == 200, r.text
+        assert _events(db, se.EVENT_PASSWORD_CHECK_LOCKOUT) == []
+
+    def test_step_up_budget_is_per_account_not_per_ip(self, db, test_user):
+        c = _client_as(db, test_user)
+        with patch.object(auth_router.limiter, "enabled", False):
+            codes = []
+            for i in range(auth_router._LOCKOUT_ATTEMPTS):
+                with patch("app.routers.auth._get_real_ip", return_value=f"10.6.0.{i}"):
+                    codes.append(c.post("/api/auth/totp/setup",
+                                        json={"password": "falsch"}).status_code)
+        assert codes[-1] == 429  # IP-Wechsel umgeht die Grenze nicht
+        assert len(_events(db, se.EVENT_PASSWORD_CHECK_LOCKOUT)) == 1
+
 
 # ── S1-08: „Login als"-Sitzungen ─────────────────────────────────────
 
