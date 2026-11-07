@@ -199,26 +199,41 @@ def _device_signature(payload: str) -> str:
     ).hexdigest()[:32]
 
 
-def _issue_device_token(user_id) -> str:
-    """S1-07: ``<user_id>.<nonce>.<hmac>`` — nur der Server kann es ausstellen."""
-    payload = f"{user_id}.{secrets.token_urlsafe(16)}"
+def _issue_device_token(user_id, token_version: int) -> str:
+    """S1-07: ``<user_id>.<token_version>.<nonce>.<hmac>`` — nur der Server kann
+    es ausstellen.
+
+    Final-Review: ``token_version`` steht im signierten Teil. Passwortwechsel,
+    gesetztes Passwort, zurueckgesetzte Zwei-Faktor-Anmeldung und „Sitzungen
+    beenden" erhoehen sie — ein gestohlenes Cookie verliert damit seine
+    Sonderrolle bei der Sperre, statt 180 Tage weiterzuwirken."""
+    payload = f"{user_id}.{int(token_version or 0)}.{secrets.token_urlsafe(16)}"
     return f"{payload}.{_device_signature(payload)}"
 
 
-def _parse_device_token(token: Optional[str]) -> Optional[tuple[str, str]]:
-    """(user_id, nonce) eines gueltig signierten Geraete-Cookies, sonst None."""
-    if not token or token.count(".") != 2:
+def _parse_device_token(token: Optional[str]) -> Optional[tuple[str, int, str]]:
+    """(user_id, token_version, nonce) eines gueltig signierten Geraete-Cookies,
+    sonst None (auch fuer die dreiteilige Form vor dem Final-Review)."""
+    if not token or token.count(".") != 3:
         return None
-    user_id, nonce, sig = token.split(".")
-    if not hmac.compare_digest(sig, _device_signature(f"{user_id}.{nonce}")):
+    user_id, version, nonce, sig = token.split(".")
+    if not version.isdigit():
         return None
-    return user_id, nonce
+    if not hmac.compare_digest(sig, _device_signature(f"{user_id}.{version}.{nonce}")):
+        return None
+    return user_id, int(version), nonce
 
 
-def _set_device_cookie(response: Response, user_id) -> None:
+def _device_matches(device: Optional[tuple[str, int, str]], user) -> bool:
+    """Gehoert das Geraete-Cookie zu diesem Konto im aktuellen Stand?"""
+    return (device is not None and user is not None and str(user.id) == device[0]
+            and int(user.token_version or 0) == device[1])
+
+
+def _set_device_cookie(response: Response, user) -> None:
     response.set_cookie(
         key=_DEVICE_COOKIE,
-        value=_issue_device_token(user_id),
+        value=_issue_device_token(user.id, user.token_version),
         httponly=True,
         secure=settings.COOKIE_SECURE,
         samesite=settings.COOKIE_SAMESITE,
@@ -425,7 +440,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     user_attempts = _recent_attempts(user_key, now)
     # S1-07: Geraete-Cookie eines frueheren erfolgreichen Logins in diesem Browser.
     device = _parse_device_token(request.cookies.get(_DEVICE_COOKIE))
-    device_keys: tuple = (("dev", device[1]),) if device else ()
+    device_keys: tuple = (("dev", device[2]),) if device else ()
     device_bypass = False
 
     if ip_attempts >= _LOCKOUT_ATTEMPTS or user_attempts >= _GLOBAL_LOCKOUT_ATTEMPTS:
@@ -475,8 +490,9 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         )
     user = active_matches[0] if active_matches else (matching_users[0] if matching_users else None)
 
-    if device_bypass and (user is None or str(user.id) != device[0]):
-        # Das Geraete-Cookie gehoert zu einem anderen Konto: die Sperre gilt.
+    if device_bypass and not _device_matches(device, user):
+        # Das Geraete-Cookie gehoert zu einem anderen Konto oder stammt aus der
+        # Zeit vor einem Passwortwechsel/Sitzungsende: die Sperre gilt.
         # Gleiche Antwort wie oben, verraet also nicht, ob der Name existiert.
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -598,7 +614,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     # F-024: issue a fresh CSRF double-submit token
     _set_csrf_cookie(response)
     # S1-07: dieser Browser gilt ab jetzt als bekanntes Geraet des Kontos.
-    _set_device_cookie(response, user.id)
+    _set_device_cookie(response, user)
     if device_bypass:
         _failed_logins.pop(device_keys[0], None)
         security_logger.warning(

@@ -146,9 +146,34 @@ class TestDeviceCookie:
 
     def test_forged_device_cookie_is_ignored(self, raw_client, test_user):
         self._flood(raw_client, "testuser")
-        forged = f"{test_user.id}.abc.{'0' * 32}"
+        forged = f"{test_user.id}.0.abc.{'0' * 32}"
         assert _login(raw_client, "10.0.0.5", "testuser", USER_PW,
                       device=forged).status_code == 429
+
+    def test_device_cookie_ends_with_the_sessions(self, raw_client, db, test_user):
+        """Final-Review (S1-07): Passwortwechsel, gesetztes Passwort, 2FA-Reset
+        und „Sitzungen beenden" erhoehen token_version — ein vorher gestohlenes
+        Geraete-Cookie umgeht die Sperre danach nicht mehr (bisher 180 Tage)."""
+        device = _device_cookie(_login(raw_client, "10.0.0.5", "testuser", USER_PW))
+        assert device.count(".") == 3
+        test_user.token_version = (test_user.token_version or 0) + 1
+        db.commit()
+        self._flood(raw_client, "testuser")
+        assert _login(raw_client, "10.0.0.5", "testuser", USER_PW,
+                      device=device).status_code == 429
+        # Der neue Stand gibt ein neues Cookie aus, das wieder durchkommt.
+        auth_router._failed_logins.clear()
+        fresh = _device_cookie(_login(raw_client, "10.0.0.5", "testuser", USER_PW))
+        self._flood(raw_client, "testuser")
+        assert _login(raw_client, "10.0.0.5", "testuser", USER_PW,
+                      device=fresh).status_code == 200
+
+    def test_old_three_part_cookie_is_ignored(self, raw_client, test_user):
+        payload = f"{test_user.id}.abc"
+        old = f"{payload}.{auth_router._device_signature(payload)}"
+        self._flood(raw_client, "testuser")
+        assert _login(raw_client, "10.0.0.5", "testuser", USER_PW,
+                      device=old).status_code == 429
 
 
 # ── S1-04 / S1-05: 2FA ───────────────────────────────────────────────

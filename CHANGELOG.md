@@ -66,7 +66,7 @@ Eine kritische Prüfung von PraxisZeit (Arbeitszeitgesetz-Regeln, §-16-Nachweis
 - **Sicherungen herunterladen** nur nach Bestätigung mit dem eigenen Passwort. Erstellen, Herunterladen, Löschen und geänderte Sicherungs-Einstellungen stehen unter „Konto-Vorgänge“, ebenso angelegte und umbenannte Konten.
 - **Zwei-Faktor:** nach 10 falschen Codes in einer Stunde ist die Anmeldung für das Konto gesperrt (übersteht einen Neustart); ein Code gilt nur einmal, auch bei zwei gleichzeitigen Anmeldungen. Die Verwaltung kann die Zwei-Faktor-Anmeldung einer Person zurücksetzen (Schild-Symbol in der Benutzerliste, mit Passwort-Bestätigung).
 - **Passwort-Rückfragen** (Passwort ändern, 2FA einrichten/abschalten, Sicherung herunterladen) zählen als Fehlversuche; nach dem fünften werden alle Sitzungen beendet.
-- **Anmeldesperre:** ein Browser, mit dem man sich schon einmal erfolgreich angemeldet hat, kann sich auch während einer Sperre durch fremde Fehlversuche weiter anmelden.
+- **Anmeldesperre:** ein Browser, mit dem man sich schon einmal erfolgreich angemeldet hat, kann sich auch während einer Sperre durch fremde Fehlversuche weiter anmelden. Nach einem Passwortwechsel, einem von der Verwaltung gesetzten Passwort, einer zurückgesetzten Zwei-Faktor-Anmeldung oder „Sitzungen beenden" gilt das nicht mehr, bis man sich erneut erfolgreich angemeldet hat.
 - **Impersonation:** abgelaufene Sitzungen erscheinen als beendet.
 
 #### Datenschutz und Eingaben (#544)
