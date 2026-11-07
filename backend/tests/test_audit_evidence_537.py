@@ -661,3 +661,36 @@ class TestStampsAtConstruction:
         rows = db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.entry_ref == eid).all()
         pairs = sorted((r.old_raw_end_time, r.new_raw_end_time) for r in rows)
         assert pairs == [(time(18, 0), time(19, 0)), (time(19, 0), time(20, 0))]
+
+
+class TestDeleteAfterConcurrentSeal:
+    """Integration 2026-11-07: zwei Endlöschungen parallel. Die zweite hatte ihre
+    Zeile geladen, bevor die erste versiegelte; ihr Objekt trug noch
+    ``chain_seq = None``, der Vermerk nannte kein Kettenglied („Kettenglieder
+    entfernt“) und die Prüfung meldete danach ein fehlendes Glied."""
+
+    def test_marker_names_link_sealed_by_another_session(self, db, test_user, test_admin):
+        from tests.conftest import TestingSessionLocal
+
+        rows = [_audit(db, test_user, test_admin) for _ in range(3)]
+        assert [r.chain_seq for r in rows] == [None, None, None]  # geladen, lose
+
+        other = TestingSessionLocal()
+        try:
+            audit_chain_service.seal_chain(other, DEFAULT_TENANT_ID)
+            other.commit()
+        finally:
+            other.close()
+
+        audit_chain_service.delete_rows(
+            db, [rows[1]], tenant_id=DEFAULT_TENANT_ID, user_id=test_admin.id,
+            changed_by=test_admin.id, source="dsgvo", reason="Test",
+        )
+        db.commit()
+        marker = db.query(TimeEntryAuditLog).filter(
+            TimeEntryAuditLog.action == audit_chain_service.PURGE_ACTION).one()
+        assert "Kettenglieder 2 entfernt" in marker.new_note, marker.new_note
+        audit_chain_service.seal_chain(db, DEFAULT_TENANT_ID)
+        db.commit()
+        result = audit_chain_service.verify_tenant(db, DEFAULT_TENANT_ID)
+        assert result["missing_links"] == 0 and result["intact"], result

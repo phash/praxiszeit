@@ -268,7 +268,24 @@ def delete_rows(db: Session, rows, *, tenant_id, user_id, changed_by, source: st
     if not rows:
         return 0
     seal_chain(db, tenant_id)
-    seqs = [r.chain_seq for r in rows]
+    # Kettenglieder aus der DATENBANK lesen, nicht von den Objekten: hat eine
+    # andere Sitzung (parallele Endloeschung, naechtliche Pruefung) die Zeilen
+    # versiegelt, nachdem dieser Aufruf sie geladen hatte, tragen die Objekte
+    # noch ``chain_seq = None`` und der Vermerk nennte kein Glied. Nach
+    # ``_lock_chain`` in ``seal_chain`` ist der gelesene Stand verbindlich.
+    ids = [r.id for r in rows]
+    seq_by_id = dict(db.query(TimeEntryAuditLog.id, TimeEntryAuditLog.chain_seq).filter(
+        TimeEntryAuditLog.tenant_id == tenant_id,  # F-026
+        TimeEntryAuditLog.id.in_(ids),
+    ).all())
+    # Zeilen, die eine andere Sitzung inzwischen selbst entfernt hat, fehlen hier
+    # und gehoeren nicht in diesen Vermerk.
+    rows = [r for r in rows if r.id in seq_by_id]
+    if not rows:
+        return 0
+    seqs = [seq_by_id[r.id] for r in rows]
+    if any(s is None for s in seqs):  # seal_chain versiegelt unter der Sperre alles
+        raise RuntimeError("Zu loeschende Protokollzeile ist nach dem Versiegeln noch lose")
     if _is_pg(db):
         deleted = db.execute(
             text("SELECT pz_audit_delete(CAST(:ids AS uuid[]))"),
