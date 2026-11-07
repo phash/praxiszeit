@@ -32,6 +32,16 @@ function Test-Path-Acl([string]$path, [bool]$private) {
     }
     $acl = Get-Acl -LiteralPath $path
     $bad = @()
+    # Audit 2026-11-07 S3-01: ein Eigentuemer hat immer WRITE_DAC - Programmteile
+    # und private Ordner muessen SYSTEM oder Administratoren gehoeren (Dumps darf
+    # der Dienst als SYSTEM anlegen).
+    $ownerSid = try {
+        (New-Object System.Security.Principal.NTAccount($acl.Owner)).Translate([System.Security.Principal.SecurityIdentifier]).Value
+    } catch { $acl.Owner }
+    Write-Output "  OWNER=$ownerSid ($($acl.Owner))"
+    if ($ownerSid -ne 'S-1-5-18' -and $ownerSid -ne 'S-1-5-32-544') {
+        $bad += "Eigentuemer $ownerSid ($($acl.Owner))"
+    }
     foreach ($ace in $acl.Access) {
         $sid = try {
             $ace.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value

@@ -154,6 +154,14 @@ public sealed partial class InstallLocationPageViewModel : WizardPageBase
             ValidationMessage = null;
             CanGoNext = false;
         }
+        else if (IntentMode == InstallMode.FreshInstall
+                 && InstallDirGuard.FreshTargetProblem(InstallPath) is { } problem)
+        {
+            // S3-01: Neuinstallation nur in einen neuen oder leeren Ordner -
+            // gesperrt mit Hinweis, bis ein anderer Ordner gewaehlt ist.
+            ValidationMessage = problem;
+            CanGoNext = false;
+        }
         else
         {
             ValidationMessage = null;

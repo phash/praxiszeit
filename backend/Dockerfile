@@ -1,8 +1,11 @@
-# F-061: base image pinned to a specific patch release (not :3.12 or
-# :3.12-slim). Bumping happens deliberately via Renovate/Dependabot, not
-# via `docker pull`. Matched digest from Docker Hub:
-#   python:3.12.16-slim-bookworm
-#   sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
+# F-061 / Audit 2026-11-07 S3-05: base image pinned to a patch release AND
+# its manifest-list digest (multi-arch index), so `docker build --pull` gets
+# exactly this image and a re-tagged upstream image never enters the build
+# unnoticed. Bumping (also for Debian security updates of the same tag) is a
+# deliberate change of BOTH stages below:
+#   docker buildx imagetools inspect python:3.12.16-slim-bookworm | sed -n 's/^Digest: *//p'
+# Digest as of 2026-11-07:
+#   sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
 #
 # F-038: Multi-stage build.
 #
@@ -17,7 +20,7 @@
 # postgresql-client. It was only needed at build time for compiling
 # psycopg2 from source (not done since we use -binary).
 
-FROM python:3.12.16-slim-bookworm AS builder
+FROM python:3.12.16-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df AS builder
 
 WORKDIR /build
 
@@ -35,7 +38,7 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 
 # ─────────────────────────────────────────────────────────────────────────
-FROM python:3.12.16-slim-bookworm AS runtime
+FROM python:3.12.16-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df AS runtime
 
 WORKDIR /app
 
@@ -72,5 +75,6 @@ RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser \
     && chown -R appuser:appuser /app
 USER appuser
 
-# Run migrations and start server
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='172.16.0.0/12,10.0.0.0/8,192.168.0.0/16'"]
+# Run migrations, set up the read-only backup role, start uvicorn WITHOUT the
+# superuser URL (docker-start.sh, Audit 2026-11-07 S3-13).
+CMD ["sh", "/app/docker-start.sh"]

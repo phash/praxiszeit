@@ -36,23 +36,11 @@ public interface IPlatform
     /// <summary>Stoppt den PraxisZeit-Service und wartet bis <see cref="ServiceStatus.Stopped"/>.</summary>
     Task StopServiceAsync(CancellationToken ct = default);
 
-    /// <summary>Registriert den PraxisZeit-Service mit dem angegebenen Binary-Pfad.</summary>
-    Task InstallServiceAsync(string executablePath, string[] arguments, string workingDirectory, CancellationToken ct = default);
-
-    /// <summary>Entfernt den PraxisZeit-Service (inkl. aller Platform-spezifischen Artefakte).</summary>
-    Task UninstallServiceAsync(CancellationToken ct = default);
-
-    /// <summary>Oeffnet den angegebenen TCP-Port in der Host-Firewall.</summary>
-    Task OpenFirewallAsync(int port, CancellationToken ct = default);
-
-    /// <summary>Entfernt die Firewall-Regel.</summary>
-    Task CloseFirewallAsync(int port, CancellationToken ct = default);
-
-    /// <summary>Registriert einen taeglichen Backup-Job (Windows Scheduled Task / Linux cron / macOS launchd).</summary>
-    Task ScheduleDailyBackupAsync(string backupCommand, TimeOnly dailyAt, CancellationToken ct = default);
-
-    /// <summary>Entfernt den Backup-Scheduled-Task.</summary>
-    Task UnscheduleDailyBackupAsync(CancellationToken ct = default);
+    // Audit 2026-11-07 S3-17: Service-Registrierung, Firewall und Backup-Task
+    // laufen ausschliesslich ueber install-service.bat / update-wizard.ps1
+    // (NSSM AppExit 78, PYTHONNOUSERSITE, AppEnvironmentExtra, Backup als
+    // SYSTEM). Die frueheren, nie aufgerufenen C#-Gegenstuecke ohne diese
+    // Haertung wurden entfernt - nicht wieder einfuehren, sondern die .bat nutzen.
 }
 
 public enum ServiceStatus

@@ -297,7 +297,7 @@ function Show-ProgressPage {
         @{ Id='stop';     Text='3. PraxisZeit-Service stoppen' },
         @{ Id='copy';     Text='4. Dateien aktualisieren' },
         @{ Id='vcredist'; Text='5. VC++ Runtime sicherstellen' },
-        @{ Id='pip';      Text='6. Python-Dependencies pruefen' },
+        @{ Id='pip';      Text='6. Installation und Python-Dependencies pruefen' },
         @{ Id='start';    Text='7. Service starten' },
         @{ Id='task';     Text='8. Scheduled Task registrieren' }
     )
@@ -488,6 +488,14 @@ function Step-ACLFix {
 
     $found = 0
     $warned = $false
+    # S3-01: Eigentuemer und Rechte der BESTEHENDEN Installation, bevor
+    # Step-Backup dort python.exe startet (ohne Paketabgleich - die alten
+    # Dateien stammen aus der Vorversion). Nicht fatal, wie der Rest des Schritts.
+    $secRc = Invoke-SecureInstall $InstallDir -SkipManifest
+    if ($secRc -ne 0) {
+        Write-Log "WARNUNG: Installationsordner nicht vollstaendig abgesichert (Exit $secRc)."
+        $warned = $true
+    }
     try {
         foreach ($rel in $script:SecretFiles) {
             $path = Join-Path $InstallDir $rel
@@ -553,7 +561,11 @@ function Step-Backup {
         $quotedServer = if ($server -match '\s') { "`"$server`"" } else { $server }
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $python
-        $psi.Arguments = "$quotedServer backup"
+        # -I -S: kein site-packages, keine .pth/sitecustomize, keine PYTHON*-
+        # Variablen - "backup" braucht nur die Standardbibliothek, und die
+        # Dateien der Vorversion sind hier noch nicht abgeglichen (S3-01).
+        # -X utf8 ersetzt das unter -I ignorierte PYTHONUTF8.
+        $psi.Arguments = "-I -S -X utf8 $quotedServer backup"
         $psi.WorkingDirectory = $InstallDir
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
@@ -585,88 +597,85 @@ function Step-Backup {
     }
 }
 
+function Invoke-SecureInstall([string]$Dir, [switch]$SkipManifest) {
+    # Audit 2026-11-07 S3-01: Eigentuemer + Rechte des Installationsordners
+    # und (ohne -SkipManifest) Abgleich mit bin\payload-manifest.txt - nur
+    # Windows-Bordmittel, VOR jedem python.exe-Aufruf aus dem Ordner. Das
+    # Skript stammt aus dem Update-Paket (frisch, nicht aus der Installation).
+    # Rueckgabe: Exit-Code (0 ok, 1 Rechte, 2 fremde Dateien).
+    $script = Join-Path $WizardDirResolved 'secure-install.ps1'
+    if (-not (Test-Path $script)) {
+        Write-Log "FEHLER: secure-install.ps1 fehlt im Update-Paket ($script)."
+        return 1
+    }
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script, '-InstallDir', $Dir)
+        if ($SkipManifest) { $psArgs += '-SkipManifest' }
+        $out = & powershell.exe @psArgs 2>&1
+        $rc = $LASTEXITCODE
+        foreach ($line in $out) { if ("$line".Trim()) { Write-Log "  $line" } }
+        return $rc
+    } catch {
+        Write-Log "FEHLER beim Absichern des Installationsordners: $_"
+        return 1
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+}
+
 function Step-PipInstall {
+    # Frueher: get-pip.py --force-reinstall + "pip install -r requirements.txt"
+    # als Administrator - holte die jeweils neueste pip-Version ungeprueft von
+    # PyPI (Audit 2026-11-07 S3-05). Die Abhaengigkeiten kommen jetzt mit
+    # gepruefter Pruefsumme im Paket (requirements.lock, --require-hashes beim
+    # Bauen); bin\python und app werden beim Kopieren gespiegelt, alte Dateien
+    # bleiben also nicht liegen. Hier nur noch: Installationsordner absichern
+    # und abgleichen (S3-01), dann pruefen, dass die Kern-Module importierbar sind.
     Set-StepStatus 'pip' 'running'
-    Write-Log 'Installiere/aktualisiere Python-Dependencies (idempotent)...'
+    Write-Log 'Pruefe Installation und Python-Dependencies (ohne Download)...'
     if ($DryRun) { Start-Sleep -Seconds 1; Set-StepStatus 'pip' 'ok'; return $true }
 
+    $rc = Invoke-SecureInstall $InstallDir
+    if ($rc -eq 2) {
+        Write-Log 'FEHLER: Im Installationsordner liegen Dateien, die nicht zu PraxisZeit gehoeren (Liste oben).'
+        Write-Log 'Der Dienst wird NICHT gestartet. Dateien entfernen und das Update erneut ausfuehren.'
+        Set-StepStatus 'pip' 'fail'
+        return $false
+    }
+    if ($rc -ne 0) {
+        Write-Log 'FEHLER: Zugriffsrechte des Installationsordners nicht setzbar - Dienst wird NICHT gestartet.'
+        Set-StepStatus 'pip' 'fail'
+        return $false
+    }
+
     $python = Join-Path $InstallDir 'bin\python\python.exe'
-    $req = Join-Path $InstallDir 'app\backend\requirements.txt'
     if (-not (Test-Path $python)) {
-        Write-Log "WARNUNG: Python nicht gefunden - pip install uebersprungen"
-        Set-StepStatus 'pip' 'warn'
-        return $true
+        Write-Log "FEHLER: Python nicht gefunden ($python)"
+        Set-StepStatus 'pip' 'fail'
+        return $false
     }
-    if (-not (Test-Path $req)) {
-        Write-Log "WARNUNG: requirements.txt nicht gefunden - pip install uebersprungen"
-        Set-StepStatus 'pip' 'warn'
-        return $true
-    }
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
-        $env:PYTHONUTF8 = '1'
-
-        # F-056 (1.3.6): pip selbst vorher bootstrappen. Robocopy merged
-        # bin/python/Lib/site-packages/ ohne Purge — Resultat beim Kunden
-        # war ein Mix aus alten + neuen pip._vendor.resolvelib-Files, der
-        # mit `ImportError: cannot import name 'RequirementInformation'
-        # from pip._vendor.resolvelib.structs` gecrasht ist. get-pip.py
-        # --force-reinstall baut pip sauber neu, damit das egal ist.
-        $getPip = Join-Path $InstallDir 'bin\python\get-pip.py'
-        if (Test-Path $getPip) {
-            Write-Log 'Bootstrap pip (get-pip.py --force-reinstall)...'
-            $quotedGetPip = if ($getPip -match '\s') { "`"$getPip`"" } else { $getPip }
-            $psiBoot = New-Object System.Diagnostics.ProcessStartInfo
-            $psiBoot.FileName = $python
-            $psiBoot.Arguments = "$quotedGetPip --force-reinstall --no-warn-script-location --quiet"
-            $psiBoot.WorkingDirectory = $InstallDir
-            $psiBoot.UseShellExecute = $false
-            $psiBoot.RedirectStandardOutput = $true
-            $psiBoot.RedirectStandardError = $true
-            $psiBoot.CreateNoWindow = $true
-            $procBoot = [System.Diagnostics.Process]::Start($psiBoot)
-            $bootStderr = $procBoot.StandardError.ReadToEnd()
-            $procBoot.WaitForExit()
-            if ($procBoot.ExitCode -ne 0) {
-                Write-Log "WARNUNG: pip-Bootstrap exit=$($procBoot.ExitCode)"
-                foreach ($line in ($bootStderr -split "`r?`n")) {
-                    if ($line.Trim()) { Write-Log "  $line" }
-                }
-            } else {
-                Write-Log 'pip neu installiert'
-            }
-        } else {
-            Write-Log 'WARNUNG: get-pip.py nicht gefunden - pip-Bootstrap uebersprungen'
-        }
-
-        $quotedReq = if ($req -match '\s') { "`"$req`"" } else { $req }
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $python
-        $psi.Arguments = "-m pip install --quiet -r $quotedReq"
-        $psi.WorkingDirectory = $InstallDir
-        $psi.UseShellExecute = $false
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $psi.CreateNoWindow = $true
-        $proc = [System.Diagnostics.Process]::Start($psi)
-        $stdout = $proc.StandardOutput.ReadToEnd()
-        $stderr = $proc.StandardError.ReadToEnd()
-        $proc.WaitForExit()
-        $rc = $proc.ExitCode
-        if ($rc -eq 0) {
-            Write-Log 'Python-Dependencies aktuell'
+        $env:PYTHONNOUSERSITE = '1'
+        $out = & $python '-s' '-c' 'import alembic, uvicorn, fastapi, sqlalchemy, psycopg2' 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Log 'Python-Dependencies vollstaendig'
             Set-StepStatus 'pip' 'ok'
             return $true
         }
-        Write-Log "FEHLER: pip install exit=$rc"
-        foreach ($line in ($stderr -split "`r?`n")) {
-            if ($line.Trim()) { Write-Log "  $line" }
-        }
+        Write-Log "FEHLER: Import-Check fehlgeschlagen (Exit $LASTEXITCODE) - das Update-Paket ist unvollstaendig."
+        foreach ($line in $out) { if ("$line".Trim()) { Write-Log "  $line" } }
         Set-StepStatus 'pip' 'fail'
         return $false
     } catch {
-        Write-Log "FEHLER bei pip install: $_"
+        Write-Log "FEHLER beim Import-Check: $_"
         Set-StepStatus 'pip' 'fail'
         return $false
+    } finally {
+        $ErrorActionPreference = $prevEap
     }
 }
 
@@ -702,6 +711,24 @@ function Step-CopyFiles {
     Write-Log 'Kopiere neue Dateien (robocopy mit Excludes)...'
     if ($DryRun) { Start-Sleep -Seconds 2; Set-StepStatus 'copy' 'ok'; return $true }
     try {
+        # bin\python und app werden GESPIEGELT (/MIR): Dateien der Vorversion,
+        # die das neue Paket nicht mehr hat, verschwinden. Frueher blieben sie
+        # liegen (F-056: halb alte, halb neue pip-Dateien) - und der Abgleich
+        # mit dem Paketinhalt (secure-install.ps1, S3-01) wuerde sie zu Recht
+        # als fremd melden. In beiden Ordnern liegen keine Daten.
+        foreach ($sub in @('bin\python', 'app')) {
+            $src = Join-Path $WizardDirResolved $sub
+            if (-not (Test-Path $src)) { continue }
+            $dst = Join-Path $InstallDir $sub
+            Write-Log "  robocopy /MIR $src -> $dst"
+            $mOut = & robocopy.exe $src $dst '/MIR' '/NFL' '/NDL' '/NJH' '/NJS' '/NC' '/NS' '/R:2' '/W:2' 2>&1
+            if ($LASTEXITCODE -ge 8) {
+                Write-Log "FEHLER: robocopy /MIR $sub exit=$LASTEXITCODE"
+                foreach ($line in $mOut) { Write-Log "  $line" }
+                Set-StepStatus 'copy' 'fail'
+                return $false
+            }
+        }
         $rcArgs = @(
             $WizardDirResolved,
             $InstallDir,
@@ -709,6 +736,7 @@ function Step-CopyFiles {
             '/NFL', '/NDL', '/NJH', '/NJS', '/NC', '/NS',
             '/R:2', '/W:2',
             '/XD', 'data', 'logs', 'ssl',
+            (Join-Path $WizardDirResolved 'bin\python'), (Join-Path $WizardDirResolved 'app'),
             # cert.pem/key.pem zusaetzlich ausschliessen: das SSL-Cert liegt in
             # config\ssl\ (vom /XD 'ssl' NICHT erfasst, da nur Top-Level), sonst
             # ueberschreibt ein Paket-Platzhalter das echte Cert des Betreibers.
@@ -895,9 +923,8 @@ function Invoke-Update {
     $ok5 = Step-PipInstall;    Update-Progress 80
     if (-not $ok5) {
         Write-Log ''
-        Write-Log 'pip install fehlgeschlagen - Service wird nicht starten koennen.'
-        Write-Log 'Manuell nachholen mit:'
-        Write-Log "  $InstallDir\bin\python\python.exe -m pip install -r $InstallDir\app\backend\requirements.txt"
+        Write-Log 'Pruefung der Installation fehlgeschlagen - der Service wird bewusst NICHT gestartet.'
+        Write-Log 'Ursache oben im Protokoll; danach das Update erneut ausfuehren.'
         return $false
     }
     $ok6 = Step-StartService;  Update-Progress 92

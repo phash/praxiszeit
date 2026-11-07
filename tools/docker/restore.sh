@@ -5,7 +5,13 @@
 # praxiszeit_<ts>.sql.gz wieder ein.
 # Erwartet, dass es NEBEN der docker-compose.yml + .env liegt (Docker-Bundle).
 #
-#   bash restore.sh backups/praxiszeit_<ts>.sql.gz
+#   bash restore.sh backups/praxiszeit_<ts>.sql.gz [--force-unverified]
+#
+# Audit 2026-11-07 (Fix-Runde S3-03): eingespielt wird nur eine Sicherung mit
+# passender PraxisZeit-Signatur (letzte Zeile, HMAC mit dem SECRET_KEY aus der
+# .env). Ohne Signatur (aeltere Version) oder mit fremdem SECRET_KEY nur mit
+# --force-unverified - und nur, wenn die Datei sicher aus der eigenen
+# Installation stammt.
 #
 # Typischer Update-Ablauf:
 #   1. In der ALTEN Version:  bash backup.sh
@@ -33,6 +39,12 @@ set -euo pipefail
 
 # $FILE relativ zum AUFRUF-Verzeichnis absolut machen, BEVOR das cwd wechselt.
 FILE="${1:-}"
+FORCE_UNVERIFIED=""
+case "${2:-}" in
+    "") ;;
+    --force-unverified) FORCE_UNVERIFIED=1 ;;
+    *) echo "Aufruf: bash restore.sh <pfad/zu/praxiszeit_*.sql.gz> [--force-unverified]" >&2; exit 1 ;;
+esac
 case "$FILE" in /*|"") ;; *) FILE="$(pwd)/$FILE" ;; esac
 
 # Bundle: docker-compose.yml + .env liegen NEBEN diesem Skript. Git-Checkout:
@@ -60,6 +72,33 @@ fi
 if [ ! -f .env ]; then
     echo "FEHLER: .env nicht gefunden — zuerst 'bash generate-secrets.sh' ausfuehren." >&2
     exit 1
+fi
+
+# Signatur pruefen, BEVOR etwas veraendert wird - im Backend-Container mit
+# dessen SECRET_KEY (laeuft er nicht, in einem Wegwerf-Container desselben
+# Images). Exit 0 = passt, 3 = keine Signatur, 4 = passt nicht.
+if [ -n "$(docker compose ps -q backend 2>/dev/null </dev/null || true)" ]; then
+    _mac_cmd=(docker compose exec -T backend)
+else
+    _mac_cmd=(docker compose run --rm --no-deps -T backend)
+fi
+set +e
+gunzip -c "$FILE" | "${_mac_cmd[@]}" python -m app.core.backup_mac verify
+_mac_rc=$?
+set -e
+if [ "$_mac_rc" != 0 ]; then
+    case "$_mac_rc" in
+        3) _why="Die Sicherung traegt keine PraxisZeit-Signatur (aeltere Version oder von Hand erstellt)." ;;
+        4) _why="Die Signatur passt nicht: die Datei wurde veraendert oder stammt aus einer anderen Installation (anderer SECRET_KEY)." ;;
+        *) _why="Die Signatur liess sich nicht pruefen (Backend-Image nicht startbar, Exit ${_mac_rc})." ;;
+    esac
+    if [ -z "$FORCE_UNVERIFIED" ]; then
+        echo "FEHLER: $_why Datenbank unangetastet." >&2
+        echo "Nur wenn die Datei sicher aus der eigenen PraxisZeit-Installation stammt:" >&2
+        echo "  bash restore.sh \"$FILE\" --force-unverified" >&2
+        exit 1
+    fi
+    echo "WARNUNG: $_why Eingespielt wird trotzdem (--force-unverified)." >&2
 fi
 
 PG_USER="$(grep -E '^POSTGRES_USER=' .env | head -1 | cut -d= -f2-)"
@@ -93,7 +132,17 @@ echo "Spiele '${FILE}' in Datenbank '${PG_DB}' (User '${PG_USER}') ein ..."
 # meldet psql trotz Fehlern Exit 0 -> ein kaputter Restore sähe erfolgreich aus).
 # Die DROP … IF EXISTS aus --clean --if-exists erzeugen keine Fehler.
 # -q: ohne die hunderten Statuszeilen (SET, COPY, GRANT …) — Fehler erscheinen weiter.
-gunzip -c "$FILE" | docker compose exec -T db psql -q -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB"
+# Audit 2026-11-07 S3-03: psql fuehrt Backslash-Befehle aus dem Dump aus (\! cmd,
+# \o |cmd) - als Superuser im db-Container. Ein eigener, zufaelliger
+# \restrict-Schluessel in der ersten Zeile schaltet psql in den eingeschraenkten
+# Modus: jeder weitere Backslash-Befehl ist ein Fehler, ON_ERROR_STOP bricht ab.
+# Die eigenen restrict-Zeilen von pg_dump 18 entfallen (ein zweites \restrict
+# waere ebenfalls ein Fehler).
+RESTRICT_KEY="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+{
+    printf '\\restrict %s\n' "$RESTRICT_KEY"
+    gunzip -c "$FILE" | { grep -v -E '^\\(restrict|unrestrict) [A-Za-z0-9]+$' || true; }
+} | docker compose exec -T db psql -q -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB"
 
 # GRANT CONNECT ON DATABASE steht nicht im Dump (gehoert zur Datenbank, nicht zu
 # ihrem Inhalt) — dieselben Rechte wie bei der Erstinitialisierung erneut setzen.

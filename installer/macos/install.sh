@@ -191,11 +191,18 @@ if [ ! -f "$PYTHON" ]; then
     exit 1
 fi
 
-info "Installiere Python-Dependencies..."
-if [ -f "${SCRIPT_DIR}/bin/python/get-pip.py" ]; then
-    "$PYTHON" "${SCRIPT_DIR}/bin/python/get-pip.py" --quiet 2>/dev/null || true
-fi
-"$PYTHON" -m pip install --quiet -r "${SCRIPT_DIR}/app/backend/requirements.txt"
+info "Installiere Python-Dependencies (gepruefte Pruefsummen)..."
+# Audit 2026-11-07 S3-05: nur die exakt gepinnten Versionen aus
+# requirements.lock, jede mit ihrer SHA256 (--require-hashes), nur fertige
+# Wheels (kein Bauen aus Quellen). pip kommt mit dem gebuendelten Interpreter;
+# das fruehere get-pip.py (ungepinnt, neueste Version von PyPI) entfaellt.
+# Zuerst setuptools (gehasht): damit wird odfpy gebaut, das als einziges Paket
+# kein Wheel hat - ohne Build-Isolation, die pip sonst ungeprueft fuellt.
+"$PYTHON" -m pip install --quiet --no-input --require-hashes --only-binary :all: \
+    -r "${SCRIPT_DIR}/app/backend/requirements-build.lock"
+"$PYTHON" -m pip install --quiet --no-input --require-hashes --only-binary :all: \
+    --no-binary odfpy --no-build-isolation \
+    -r "${SCRIPT_DIR}/app/backend/requirements.lock"
 
 # --- Dateien kopieren ---
 
@@ -299,17 +306,40 @@ unset ADMIN_PASSWORD ADMIN_PASSWORD2 ADMIN_PASSWORD_ESC
 
 # --- Service-User ---
 
+# Audit 2026-11-07 S3-12: eigene Gruppe _praxiszeit statt staff (GID 20).
+# Unter macOS ist jedes Standardkonto in staff - mit staff als Gruppe waeren
+# logs/ und data/ (0750) fuer jedes Mac-Konto lesbar gewesen.
+if ! dscl . -read /Groups/_praxiszeit &>/dev/null; then
+    info "Erstelle Service-Gruppe _praxiszeit..."
+    USED_GIDS=$(dscl . -list /Groups PrimaryGroupID | awk '{print $2}')
+    PZ_GID=""
+    # Freie System-GID (unter 500, nicht sichtbar im Anmeldefenster). Here-String
+    # statt Pipe: `echo | grep -q` scheitert unter pipefail an SIGPIPE.
+    for g in $(seq 400 499); do
+        if ! grep -qx "$g" <<<"$USED_GIDS"; then PZ_GID="$g"; break; fi
+    done
+    if [ -z "$PZ_GID" ]; then
+        error "Keine freie Gruppen-ID zwischen 400 und 499 gefunden."
+        exit 1
+    fi
+    dscl . -create /Groups/_praxiszeit
+    dscl . -create /Groups/_praxiszeit PrimaryGroupID "$PZ_GID"
+    dscl . -create /Groups/_praxiszeit RealName "PraxisZeit"
+fi
+PZ_GID=$(dscl . -read /Groups/_praxiszeit PrimaryGroupID | awk '{print $2}')
+
 if ! dscl . -read /Users/_praxiszeit &>/dev/null 2>&1; then
     info "Erstelle Service-User _praxiszeit..."
     LAST_UID=$(dscl . -list /Users UniqueID | awk '{print $2}' | sort -n | tail -1)
     NEXT_UID=$((LAST_UID + 1))
     dscl . -create /Users/_praxiszeit
     dscl . -create /Users/_praxiszeit UniqueID "$NEXT_UID"
-    dscl . -create /Users/_praxiszeit PrimaryGroupID 20
     dscl . -create /Users/_praxiszeit UserShell /usr/bin/false
     dscl . -create /Users/_praxiszeit NFSHomeDirectory "${INSTALL_DIR}"
 fi
-chown -R _praxiszeit:staff "${INSTALL_DIR}"
+# Auch fuer bestehende Installationen (bisher PrimaryGroupID 20 = staff).
+dscl . -create /Users/_praxiszeit PrimaryGroupID "$PZ_GID"
+chown -R _praxiszeit:_praxiszeit "${INSTALL_DIR}"
 
 # --- launchd Service ---
 
@@ -331,6 +361,11 @@ cat > /Library/LaunchDaemons/de.praxiszeit.server.plist << PLISTEOF
     <string>${INSTALL_DIR}</string>
     <key>UserName</key>
     <string>_praxiszeit</string>
+    <key>GroupName</key>
+    <string>_praxiszeit</string>
+    <!-- S3-12: umask 077 (dezimal 63) - launchd legt stdout.log/stderr.log sonst 0644 an -->
+    <key>Umask</key>
+    <integer>63</integer>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -377,6 +412,10 @@ cat > /Library/LaunchDaemons/de.praxiszeit.backup.plist << BKPLISTEOF
     <string>${INSTALL_DIR}</string>
     <key>UserName</key>
     <string>_praxiszeit</string>
+    <key>GroupName</key>
+    <string>_praxiszeit</string>
+    <key>Umask</key>
+    <integer>63</integer>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key><integer>3</integer>

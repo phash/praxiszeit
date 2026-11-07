@@ -8,16 +8,92 @@
 - **Fremder PostgreSQL wird erkannt.** Belegt ein anderer Server den Port, beendet sich PraxisZeit mit der Meldung „Port … ist von einem anderen PostgreSQL belegt. In config\praxiszeit.conf unter [database] einen freien Port eintragen …“, bevor etwas angelegt wird. Der Windows-Dienst startet dann nicht endlos neu (`AppExit 78 Exit`; der Update-Wizard setzt es auch für bestehende Installationen).
 - `restore-backup.bat`, die Sicherung in `uninstall.bat` und `setup.bat` verwenden den konfigurierten Port; neue Befehle `praxiszeit-server.py print-db-port` und `sync-db-port`.
 
-### 🔒 Änderungsprotokoll als Beweismittel (#537, Audit 2026-11-07)
+### 🔒 Prüfung 2026-11-07: Arbeitszeitgesetz, Nachweise, Sicherheit
 
-**Enthält die Datenbank-Migration `076_audit_chain`.**
+Eine kritische Prüfung von PraxisZeit (Arbeitszeitgesetz-Regeln, §-16-Nachweise, Anmeldung und Rechte, Eingaben und Datenschutz, native Installation) hat Fehler und Lücken gefunden. Alle Funde sind behoben oder unten ausdrücklich als Grenze genannt.
 
-- **Tatsächliche Stempel im Protokoll.** Jede Zeile zu einem Zeiteintrag nennt neben der angerechneten Zeit auch den Rohbeginn, das Rohende, das Ende der Anwesenheit und die nicht angerechneten Minuten – auch beim Löschen. Bisher war die tatsächliche Arbeitszeit nach dem Löschen eines gekappten Eintrags nirgends mehr belegt.
-- **Löschen eines Eintrags meldet keine Manipulation mehr.** Die Prüfsumme lief über den Verweis auf den Eintrag, den die Datenbank beim Löschen leert – jede Löschung ergab dauerhaft „manipuliert“. Neue Prüfsumme (Version 3) über feste Verweise, `created_at` und die Stempel; Altbestand bleibt prüfbar.
-- **Protokoll nur anfügbar, Löschungen erkennbar.** Das Konto der Anwendung darf Protokollzeilen weder ändern noch löschen (Trigger + entzogene Rechte); die Zeilen werden jede Nacht zu einer Kette versiegelt. Eine Zeile ohne Prüfsumme, die jünger ist als die erste gehashte, gilt als manipuliert.
+**Enthält die Datenbank-Migration `076_audit_chain`.** Vor dem Update wie immer eine Sicherung anlegen.
+
+#### Änderungsprotokoll als Beweismittel (#537)
+
+- **Tatsächliche Stempel im Protokoll.** Jede Zeile zu einem Zeiteintrag nennt neben der angerechneten Zeit auch den Rohbeginn, das Rohende, das Ende der Anwesenheit und die nicht angerechneten Minuten – auch beim Löschen („gestempelt 06:00 – 18:00“). Bisher war die tatsächliche Arbeitszeit nach dem Löschen eines gekappten Eintrags nirgends mehr belegt.
+- **Löschen eines Eintrags meldet keine Manipulation mehr.** Die Prüfsumme lief über den Verweis auf den Eintrag, den die Datenbank beim Löschen leert – jede Löschung ergab dauerhaft „manipuliert“. Neue Prüfsumme (Version 3) über feste Verweise, Zeitpunkt und Stempel; Altbestand bleibt prüfbar (Zeilen zu Einträgen, die schon vor dem Update gelöscht wurden, werden getrennt als „Altbestand“ gezählt).
+- **Protokoll nur anfügbar, Löschungen erkennbar.** Das Datenbankkonto der Anwendung darf Protokollzeilen weder ändern noch löschen; die Zeilen werden jede Nacht (03:15 Uhr) zu einer Kette versiegelt. Fehlende oder veränderte Glieder und ein abgeschnittenes Ende fallen bei der Prüfung auf.
 - **Prüfung jede Nacht und auf Knopfdruck:** Karte „Prüfung des Änderungsprotokolls“ im Änderungsprotokoll; eine Abweichung erscheint unter „Konto-Vorgänge“ und im Fehler-Monitoring.
-- **Neu im Protokoll:** manuelle Überträge, Jahresabschluss anlegen/löschen (je Person), geänderte Einstellungen (z. B. der Puffer), eigene Feiertage und verkürzte Tage – mit altem und neuem Wert.
+- **Kettenende fehlt → gesperrt mit Hinweis.** PraxisZeit legt ein fehlendes oder ungültiges Kettenende nicht still neu an. Bis es nach Klärung über „Kettenende neu setzen…“ mit Begründung neu gesetzt ist (die Begründung steht danach dauerhaft im Protokoll), sind endgültiges Löschen von Personen und das automatische Entfernen alter Zeilen gesperrt.
+- **Neu im Protokoll:** manuelle Überträge, Jahresabschluss anlegen/löschen (je Person), geänderte Einstellungen (z. B. der Puffer), eigene Feiertage und verkürzte Tage – jeweils mit altem und neuem Wert.
 - **Endgültige Löschung (Art. 17) schreibt keine Urheberschaft mehr um:** Zeilen, die die gelöschte Person an fremden Einträgen geändert hat, zeigen „Gelöschte Person“ statt der löschenden Verwaltung.
+- **Grenze:** Ein Datenbank-Superuser kann noch nicht versiegelte Zeilen des laufenden Tages entfernen; versiegelte Zeilen nicht unbemerkt.
+
+#### Überschneidende Zeiteinträge werden abgelehnt (#538)
+
+- Zwei Einträge derselben Person, die sich am selben Tag überschneiden, wurden bisher angenommen und doppelt angerechnet. Jetzt lehnen Einstempeln, Erfassen und Bearbeiten (Mitarbeitende und Verwaltung), Änderungsanträge samt Genehmigung und der XLS-Import (Zeile wird übersprungen) das mit einem Hinweis ab, der den kollidierenden Eintrag nennt. Direkt aneinander anschließende Einträge bleiben erlaubt.
+- Bestehende Überschneidungen bleiben bearbeitbar, solange die Zeiten gleich bleiben. Das Ausstempeln sperrt nie (sonst bliebe man eingestempelt), es meldet die Überschneidung nur.
+
+#### ArbZG-Berichte (#539)
+
+- **§ 11 Ersatzruhetag:** Als Ersatzruhetag zählt nur noch ein vergangener freier Tag Mo–Sa, an dem die Person sonst gearbeitet hätte – nicht ein ohnehin freier Samstag, kein Feiertag, kein Urlaub und keine Krankheit. Jeder Ruhetag gleicht genau einen Sonn- oder Feiertagseinsatz aus. Einsätze mit noch laufender Frist stehen unter „Frist läuft“ statt unter den Verstößen. Bisher wurden echte Verstöße als eingehalten gemeldet.
+- **Neu: „Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG“** – Tage über 10 h und Wochen über 48 h laut Stempel sowie alle Pflicht-Pause-Ausnahmen mit Begründung, rückblickend für einen Monat.
+- **24-Wochen-Durchschnitt (§ 3):** geteilt wird durch Werktage Mo–Sa (ohne Feiertage und ohne Tage mit Urlaub, Krankheit, Fortbildung oder Freistellung), nicht mehr durch die Soll-Arbeitstage. Teilzeitkräfte mit wenigen langen Tagen wurden bisher zu streng bewertet.
+- **§ 6 Nachtarbeit:** für Nachtarbeitnehmer zusätzlich der Monatsdurchschnitt je Werktag; Hinweis, wenn jemand nach den Zahlen als Nachtarbeitnehmer gilt, das Kennzeichen aber fehlt.
+- **Ausgeschiedene und ausgeblendete Mitarbeitende:** Ausgeschiedene mit Einträgen im Zeitraum erscheinen in allen ArbZG-Berichten, ausgeblendete nur mit dem neuen Schalter „Ausgeblendete Mitarbeitende einbeziehen“ (sonst ein Hinweis mit ihrer Anzahl). Der §-5-Bericht zeigte bisher Ausgeblendete immer und Ausgeschiedene nie.
+
+#### ArbZG-Prüfungen an allen Erfassungswegen (#540)
+
+- **Automatisch geschlossene Einträge** (Ausstempeln vergessen) werden nach §§ 3 und 4 geprüft und tragen einen Vermerk in der Notiz. Mitarbeitende sehen an der Stempeluhr einen Hinweis mit vorbelegtem Antrag „Arbeitsende nachtragen“, die Verwaltung eine Dashboard-Karte „Automatisch geschlossene Einträge – Ende fehlt“, bis das tatsächliche Ende eingetragen ist. Ein Ausstempeln am nächsten Morgen schließt den Eintrag und hält den Ausstempelversuch fest, statt mit einem Fehler abzubrechen.
+- **Pausenausnahme:** die Begründung braucht mindestens 10 Zeichen (bisher genügte ein Zeichen). Ist „Pausenausnahme muss genehmigt werden“ eingeschaltet, gilt das jetzt auch beim Ausstempeln: der Eintrag wird mit dem echten Ende geschlossen, die Ausnahme als Antrag gestellt.
+- **XLS-Import:** Tage mit mehr als 10 h angerechneter Zeit werden nicht übernommen; der Server prüft selbst und übernimmt keine Warnungen mehr vom Browser.
+- **Ende in der Zukunft** (heute, später als jetzt) und eine Pause, die so lang ist wie der ganze Eintrag, werden abgelehnt.
+- **Sommerzeit:** Ruhezeiten (§ 5) über die Zeitumstellung werden in echten Stunden gerechnet (bisher ±1 h falsch).
+- **§-10-Grund** kann beim Ausstempeln an Sonn- und Feiertagen angegeben werden; Verwaltungseinträge an diesen Tagen erhalten einen Hinweis.
+- **Keine stille Pause mehr:** die Zeiterfassung trägt die fehlende Pause nicht mehr selbst ein, sondern schlägt sie sichtbar vor („30 Min. Pause eintragen“ / „Keine Pause gemacht – ohne Pause speichern“).
+- **Grenze: keine Dienste über Mitternacht.** Erfassung und Prüfung nach §§ 3–6 laufen je Kalendertag; ein Eintrag endet spätestens um 23:59. Nachtdienste über Mitternacht werden nicht unterstützt – das steht jetzt ausdrücklich in den Handbüchern.
+
+#### §-16-Exporte mit tatsächlichen Stempelzeiten (#541)
+
+- XLSX und ODS (Monat und Jahres-Mitarbeiterblatt) haben drei neue Spalten am Ende: „Gestempelt (Von–Bis)“, „Anwesenheit laut Stempel (Std)“ (über 10 h hervorgehoben) und „Pausenausnahme (§4 ArbZG)“. Das PDF hat die Spalte „Gestempelt (Anwesenheit)“ und nennt die Pausenausnahme in der Bemerkung. Die Spalten 1–13 bleiben unverändert – eigene Auswertungen laufen weiter.
+- Alle Exporte haben den Schalter „Ausgeblendete Mitarbeitende einbeziehen“; Ausgeschiedene mit Daten im Zeitraum sind immer dabei.
+- **Kennzeichen „Nachtarbeitnehmer“** erscheint in allen Exporten einheitlich nur mit „Krankheitsdaten einschließen“ (bisher je nach Export unterschiedlich).
+- Texte, die mit `=`, `+`, `-` oder `@` beginnen, erscheinen wieder wörtlich (ohne vorangestelltes Apostroph); den Schutz vor Formeln übernimmt jetzt der Zelltyp.
+
+#### Abwesenheiten vergangener Tage nur per Änderungsantrag (#542)
+
+- Mitarbeitende können Abwesenheiten für vergangene Tage nicht mehr selbst eintragen oder löschen, sondern stellen einen Änderungsantrag im Journal. Löschen geht nur ab heute und nur für selbst eingetragene Abwesenheiten; Tage in abgeschlossenen Jahren sind gesperrt. Die Verwaltung ist nicht betroffen.
+- **Grenze:** Ob eine Abwesenheit von jemand anderem eingetragen wurde, erkennt PraxisZeit erst für Buchungen ab diesem Update. Ältere Abwesenheiten gelten als selbst eingetragen.
+
+#### Konten, Zwei-Faktor und Sicherungen (#543)
+
+- **Sicherungen herunterladen** nur nach Bestätigung mit dem eigenen Passwort. Erstellen, Herunterladen, Löschen und geänderte Sicherungs-Einstellungen stehen unter „Konto-Vorgänge“, ebenso angelegte und umbenannte Konten.
+- **Zwei-Faktor:** nach 10 falschen Codes in einer Stunde ist die Anmeldung für das Konto gesperrt (übersteht einen Neustart); ein Code gilt nur einmal, auch bei zwei gleichzeitigen Anmeldungen. Die Verwaltung kann die Zwei-Faktor-Anmeldung einer Person zurücksetzen (Schild-Symbol in der Benutzerliste, mit Passwort-Bestätigung).
+- **Passwort-Rückfragen** (Passwort ändern, 2FA einrichten/abschalten, Sicherung herunterladen) zählen als Fehlversuche; nach dem fünften werden alle Sitzungen beendet.
+- **Anmeldesperre:** ein Browser, mit dem man sich schon einmal erfolgreich angemeldet hat, kann sich auch während einer Sperre durch fremde Fehlversuche weiter anmelden.
+- **Impersonation:** abgelaufene Sitzungen erscheinen als beendet.
+
+#### Datenschutz und Eingaben (#544)
+
+- **Keine Werte mehr in Fehlerprotokollen:** Fehlermeldungen der Datenbank landen ohne die eingegebenen Werte im Fehler-Monitoring, im Dienstprotokoll und im PostgreSQL-Protokoll (gilt nach dem Update auch für bestehende Installationen).
+- **Obergrenzen** für Pausen, Stunden, Freitexte und Seitenzahlen: zu große Werte ergeben eine verständliche Ablehnung statt eines Serverfehlers.
+- **Eigener Datenexport (Art. 15) der Verwaltung** enthält keine Inhalte zu Kolleginnen und Kollegen mehr.
+- **Sicherung** hängt nicht mehr, wenn `pg_dump` viele Warnungen schreibt; E-Mail-Versand prüft das Zertifikat des Mailservers; die Sperre für `/api/metrics` in nginx greift jetzt.
+- **Akzeptiert:** `/api/system/info` zeigt die Version weiter ohne Anmeldung (dokumentierter Smoke-Test). Sicherungen sind nicht verschlüsselt – `BACKUP.md` und das Handbuch beschreiben, wie man sie verschlüsselt außer Haus lagert.
+
+#### Native Installation und Betrieb (#545)
+
+- **Windows-Installationsordner:** eine Neuinstallation ist nur noch in einen neuen oder leeren Ordner möglich (gesperrt mit Hinweis). Vor dem ersten Start von `python.exe` werden Eigentümer und Rechte des Ordners exakt gesetzt und `bin\` und `app\` mit dem Paketinhalt abgeglichen – fremde Dateien sperren Setup und Update.
+- **Sicherungen sind signiert.** Jede Sicherung trägt eine Signatur, die aus dem `SECRET_KEY` der Installation abgeleitet ist. `restore`, `restore-backup.bat` und `restore.sh` spielen nur passend signierte Sicherungen ein; eine Sicherung einer älteren Version oder von einem anderen Rechner nur mit `--force-unverified`. Zusätzlich werden psql-Befehle abgelehnt, die `pg_dump` nie schreibt, und psql läuft im eingeschränkten Modus.
+- **Deinstallation (Windows):** gelöscht wird erst nach einer geprüften Sicherung; die automatischen Sicherungen wandern auf den Desktop.
+- **Speicherort der Sicherungen:** Netzwerkpfade, Netzlaufwerke, öffentliche Ordner, Systemordner und Laufwerkswurzeln werden abgelehnt. Unter Windows bekommt ein neu angelegter Ordner die Rechte „nur SYSTEM und Administratoren“; ein bestehender Ordner, der für andere Konten zugänglich ist, wird abgelehnt (Hinweis – bitte einen neuen Ordnernamen eintragen).
+- **Sicherung aus der Weboberfläche** läuft mit einer nur lesenden Datenbankrolle statt mit dem Superuser (nativ und Docker).
+- **Datenbank unter Windows** nur noch mit SCRAM-Anmeldung; ein hängendes `pg_ctl status` beendet den Dienst nicht mehr endgültig.
+- **Docker:** Sicherungsskripte schreiben `0600`; Ports nur auf IPv4 veröffentlicht. **macOS:** eigene Dienstgruppe `_praxiszeit`. **Linux-Update** (PG-Major): Passwort nicht mehr in der Prozessliste.
+- **`SECRET_KEY` getrennt sichern** – `BACKUP.md` beschreibt, wo er liegt und warum er nicht in die Sicherung gehört.
+
+#### Lieferkette (#546)
+
+- Alle Downloads des Release-Builds (Python, PostgreSQL, VC-Redist, NSSM) sind per SHA256 gepinnt; die Python-Abhängigkeiten kommen aus einer Sperrdatei mit Prüfsummen (`requirements.lock`, `--require-hashes`). `setup.bat` und der Update-Assistent laden beim Kunden nichts mehr aus dem Internet.
+- Das signierte Update-Manifest kann ein Ablaufdatum tragen; abgelaufene Manifeste werden abgelehnt.
+- **Offen:** ein eigener Signaturschlüssel für Update-Pakete braucht einen neuen Offline-Schlüssel und Änderungen am Update-Server – folgt separat.
+- Das Backend-Basis-Image ist per Digest gepinnt; Debian-Sicherheitsupdates kommen damit nur noch mit einem bewussten Digest-Wechsel.
 
 ### ⚠️ Hinweis
 

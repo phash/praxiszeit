@@ -408,7 +408,11 @@ class TestForeignPgIsolation:
 
         url = srv._database_url("praxiszeit_app", "pw", "praxiszeit")
 
-        assert url == "postgresql://praxiszeit_app:pw@localhost:5432/praxiszeit"
+        # S3-07 (Audit 2026-11-07): TCP-Verbindung nur mit SCRAM
+        assert url == (
+            "postgresql://praxiszeit_app:pw@localhost:5432/praxiszeit"
+            "?require_auth=scram-sha-256"
+        )
 
     def test_pg_init_unix_is_socket_only(self, srv, tmp_path, monkeypatch):
         monkeypatch.setattr(srv, "IS_WINDOWS", False)

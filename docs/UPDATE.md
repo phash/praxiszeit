@@ -299,8 +299,17 @@ update-wizard.bat
 ```
 
 Der Update-Wizard (`installer/windows/update-wizard.ps1`) stoppt den Dienst,
-spielt Code + Python-Abhängigkeiten ein (pip-Bootstrap gegen stale Pakete),
-installiert bei Bedarf die VC++-Runtime nach und startet den Dienst neu.
+sichert den Installationsordner ab (Eigentümer und Zugriffsrechte,
+`secure-install.ps1`), legt ein Backup an und spielt dann das neue Paket ein:
+`app` und `bin\python` werden **gespiegelt** (`robocopy /MIR` — Dateien der
+Vorversion, die das neue Paket nicht mehr hat, verschwinden), der Rest wird
+darüber kopiert. Es wird **nichts aus dem Internet geladen** und kein `pip`
+ausgeführt: die Python-Abhängigkeiten liegen fertig im Paket (`bin\python`).
+Danach gleicht `secure-install.ps1` `bin\` und `app\` mit der Paketliste
+`bin\payload-manifest.txt` ab. Liegt dort eine Datei, die nicht zum Paket gehört
+(Exit 2), startet der Wizard den Dienst **nicht** und nennt die Dateien — erst
+entfernen, dann den Wizard erneut ausführen. Anschließend installiert er bei
+Bedarf die VC++-Runtime nach und startet den Dienst neu.
 Konfiguration und Datenbank bleiben erhalten. Der Wizard setzt für den Dienst außerdem `AppExit 78 Exit`. Beim ersten Start der neuen Version kann die `port =`-Zeile in `data\db\postgresql.conf` auf den konfigurierten Port gesetzt werden (ohne `[database] port` bleibt 5432 unverändert) — dazu ist nichts zu tun. Details + Stolperfallen:
 [NATIVE-WINDOWS-PITFALLS.md](NATIVE-WINDOWS-PITFALLS.md).
 
@@ -384,8 +393,10 @@ revision“), und vor 1.20.0 kennt der Prozessmanager kein `restore`.
 
 Windows (Administrator-Eingabeaufforderung) in dieser Reihenfolge: Dienst anhalten,
 den Ordner `app` umbenennen, das alte Paket mit **dessen** `update-wizard.bat`
-einspielen und **danach** mit `restore-backup.bat` das Backup einspielen. Der
-Update-Wizard mischt ebenfalls nur darüber (robocopy ohne Löschen). Der Dienststart
+einspielen und **danach** mit `restore-backup.bat` das Backup einspielen. Die
+Update-Wizards bis 1.22.x mischen nur darüber (robocopy ohne Löschen); neuere
+spiegeln `app` und `bin\python` (`/MIR`) — das Umbenennen schadet dann nicht und
+bleibt für den Rückweg auf eine ältere Version nötig. Der Dienststart
 am Ende des Wizards kann scheitern – die alte Version kennt den Datenbankstand der
 neueren nicht; `restore-backup.bat` hält den Dienst an, spielt das Backup ein und
 startet ihn wieder. Andersherum ginge es nicht: das Script startet den Dienst am Ende,

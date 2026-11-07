@@ -377,7 +377,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     [SupportedOSPlatform("windows")]
     private Task<bool> RunFreshOnWindowsAsync(string installDir, string payloadDir, IProgress<RunnerEvent> sink, PraxisZeitConfigValues? configValues) =>
-        _scriptRunner.RunFreshInstallAsync(installDir, payloadDir, sink, configValues);
+        _scriptRunner.RunFreshInstallAsync(installDir, payloadDir, sink, configValues,
+            requireEmptyTarget: _welcome.Mode == InstallMode.FreshInstall);
 
     /// <summary>
     /// Legt optional eine Desktop-Verknüpfung und/oder einen Startmenü-Eintrag

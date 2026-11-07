@@ -256,6 +256,10 @@ def pg_cmd(cmd: str) -> Path:
     return PG_BIN / f"{cmd}{suffix}"
 
 
+# Windows connects over TCP (localhost:<port>); see _database_url / pg_env.
+PG_REQUIRE_AUTH = "scram-sha-256"
+
+
 def pg_env() -> dict:
     """Environment for PG subprocesses with bundled libs on the loader path.
 
@@ -272,6 +276,8 @@ def pg_env() -> dict:
         # einen fremden Cluster lenken; unser Port steht in [database] port.
         env["PGHOST"] = "localhost"
         env["PGPORT"] = str(pg_port())
+        # psql/pg_dump/pg_isready ueber TCP: nur SCRAM, nie Klartext (S3-07).
+        env["PGREQUIREAUTH"] = PG_REQUIRE_AUTH
     else:
         existing = env.get("LD_LIBRARY_PATH", "")
         env["LD_LIBRARY_PATH"] = f"{pg_lib}:{existing}" if existing else pg_lib
@@ -347,27 +353,40 @@ def _pid_file_port() -> str | None:
     return lines[3].strip()
 
 
-def _win_own_cluster_running() -> bool:
-    """Windows: laeuft UNSER Cluster (aus PG_DATA) auf UNSEREM Port?
+def _win_own_cluster_status() -> str:
+    """Windows: is the server on OUR port OUR cluster (from PG_DATA)?
 
-    ``pg_ctl status -D`` statt ``os.kill(pid, 0)`` (unter Windows kein
-    Lebenszeichen-Test). Zusaetzlich muss der Port im ``postmaster.pid`` zum
-    konfigurierten passen — sonst antwortet auf unserem Port ein anderer Server.
+    ``"own"``, ``"foreign"`` or ``"unknown"``. ``pg_ctl status -D`` instead of
+    ``os.kill(pid, 0)`` (no liveness test on Windows); the port in
+    ``postmaster.pid`` must also match the configured one.
+
+    Only VERIFIED evidence counts as ``"foreign"`` (Audit 2026-11-07 S3-08):
+    ``pg_ctl status`` exit 3 (no postmaster of OUR data directory runs) while
+    something answers on the port, or a ``postmaster.pid`` naming a different
+    port. A ``pg_ctl status`` running into its time limit (boot under virus
+    scanner load), a launch error, an unreadable data directory (exit 4) or a
+    locked ``postmaster.pid`` is ``"unknown"`` — exit 78 is final (NSSM
+    ``AppExit 78 Exit``), a measuring error must never end time recording.
     """
     try:
         result = subprocess.run(
             [str(pg_cmd("pg_ctl")), "status", "-D", str(PG_DATA)],
             capture_output=True, timeout=10, env=pg_env(),
         )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
+    except (subprocess.TimeoutExpired, OSError):
+        return "unknown"
+    if result.returncode == 3:
+        return "foreign"
     if result.returncode != 0:
-        return False
-    return _pid_file_port() == str(pg_port())
+        return "unknown"
+    pid_port = _pid_file_port()
+    if pid_port is None:
+        return "unknown"
+    return "own" if pid_port == str(pg_port()) else "foreign"
 
 
 def pg_cluster_state() -> str:
-    """``"own"``, ``"foreign"`` oder ``"down"`` fuer den PraxisZeit-Port.
+    """``"own"``, ``"foreign"``, ``"down"`` or ``"unknown"`` for our port.
 
     Unix: probe the bundled unix-socket directory (DATA_DIR/run), NEVER TCP
     localhost. A foreign system PostgreSQL already listening on :5432 must
@@ -379,8 +398,8 @@ def pg_cluster_state() -> str:
 
     Windows has no unix sockets; there the bundled cluster runs as its own
     NetworkService TCP service on localhost:pg_port(). Something answering
-    there is only ``"own"`` if ``pg_ctl status -D PG_DATA`` succeeds and
-    ``postmaster.pid`` names our port; otherwise it is ``"foreign"``.
+    there is ``"own"``/``"foreign"``/``"unknown"`` per
+    :func:`_win_own_cluster_status`.
     """
     if IS_WINDOWS:
         host = "localhost"
@@ -398,19 +417,27 @@ def pg_cluster_state() -> str:
         return "down"
     if not IS_WINDOWS:
         return "own"
-    return "own" if _win_own_cluster_running() else "foreign"
+    return _win_own_cluster_status()
 
 
 FOREIGN_RECHECK_SECONDS = 2
+PG_START_TIMEOUT_SECONDS = 60
+UNKNOWN_RECHECKS = 3
 
 
 def _pg_cluster_state_confirmed() -> str:
     """Wie :func:`pg_cluster_state`, ein ``"foreign"`` wird nach kurzer Pause
-    einmal nachgeprueft. Ein einzelnes falsches "foreign" (pg_ctl status
-    laeuft in die Zeitgrenze, postmaster.pid kurz vom Virenscanner gesperrt)
-    darf den Dienst nicht mit Exit 78 dauerhaft beenden."""
+    einmal nachgeprueft, ein ``"unknown"`` bis zu UNKNOWN_RECHECKS-mal. Ein
+    einzelnes falsches "foreign" (postmaster.pid kurz vom Virenscanner
+    gesperrt) darf den Dienst nicht mit Exit 78 dauerhaft beenden; ein
+    bleibendes "unknown" fuehrt nie zu Exit 78 (S3-08)."""
     state = pg_cluster_state()
     if state == "foreign":
+        time.sleep(FOREIGN_RECHECK_SECONDS)
+        state = pg_cluster_state()
+    tries = 0
+    while state == "unknown" and tries < UNKNOWN_RECHECKS:
+        tries += 1
         time.sleep(FOREIGN_RECHECK_SECONDS)
         state = pg_cluster_state()
     return state
@@ -445,7 +472,13 @@ def _database_url(user: str, password: str, db: str) -> str:
     # an operator-supplied password containing a space or '+').
     cred = f"{quote(user, safe='')}:{quote(password, safe='')}"
     if IS_WINDOWS:
-        return f"postgresql://{cred}@localhost:{pg_port()}/{db}"
+        # require_auth (Audit 2026-11-07 S3-07): libpq gibt das Passwort nur per
+        # SCRAM heraus. Ohne das beantwortet es die Klartext-Passwort-Anfrage
+        # eines Servers, den ein lokales Konto an den freien Port gehaengt hat
+        # (PG abgestuerzt), mit dem Passwort im Klartext. libpq >= 16 noetig;
+        # psycopg2-binary 2.9.13 (cp313-win_amd64) bringt libpq 17 mit.
+        return (f"postgresql://{cred}@localhost:{pg_port()}/{db}"
+                f"?require_auth={PG_REQUIRE_AUTH}")
     sock = quote_plus(str(DATA_DIR / "run"))
     return f"postgresql://{cred}@/{db}?host={sock}"
 
@@ -788,40 +821,18 @@ def _dump_pg_startup_log() -> bool:
 PG_CONF_MANAGED_HEADER = "# PraxisZeit configuration"
 
 
-def sync_managed_pg_port(conf_path: Path, port: int) -> bool:
-    """Set ``port`` in the PraxisZeit-managed block of postgresql.conf.
+# PostgreSQL liest Parameternamen ohne Ruecksicht auf Gross-/Kleinschreibung,
+# und das "=" ist optional ("port 6000", "PORT = 6000"). Jede dieser Formen
+# schlaegt die verwaltete Zeile, wenn sie spaeter in der Datei steht (S3-15).
+_PG_PORT_LINE_RE = re.compile(r"^\s*port(?:\s*=|\s+)", re.IGNORECASE)
+PG_PORT_DISABLED_PREFIX = "# deaktiviert von PraxisZeit ([database] port gilt): "
 
-    Pure file edit; returns True only if the file content changed. Lines before
-    the managed header (initdb's ``#port = 5432``) are never touched. Line
-    endings and encoding are preserved (bytes round trip).
-    """
-    raw = conf_path.read_bytes()
-    text = raw.decode("utf-8", errors="surrogateescape")
-    nl = "\r\n" if "\r\n" in text else "\n"
-    lines = text.split(nl)
-    new_line = f"port = {port}"
-    header_idx = next(
-        (i for i, ln in enumerate(lines) if ln.strip() == PG_CONF_MANAGED_HEADER), None
-    )
-    if header_idx is None:
-        if port == 5432:
-            return False
-        tail = "" if (not text or text.endswith("\n")) else nl
-        new_text = f"{text}{tail}{nl}{PG_CONF_MANAGED_HEADER}{nl}{new_line}{nl}"
-    else:
-        port_re = re.compile(r"^\s*port\s*=")
-        port_idx = next(
-            (i for i in range(header_idx + 1, len(lines)) if port_re.match(lines[i])), None
-        )
-        if port_idx is None:
-            lines.insert(header_idx + 1, new_line)
-        elif lines[port_idx] == new_line:
-            return False
-        else:
-            lines[port_idx] = new_line
-        new_text = nl.join(lines)
-    if new_text == text:
-        return False
+
+def _disable_port_line(line: str) -> str:
+    return PG_PORT_DISABLED_PREFIX + line.strip()
+
+
+def _write_conf_atomically(conf_path: Path, new_text: str) -> None:
     # Atomar: Temp-Datei im selben Ordner, dann os.replace - ein Abbruch
     # mitten im Schreiben (Stromausfall, voller Datentraeger) laesst nie eine
     # halbe postgresql.conf zurueck, mit der der Cluster nicht mehr startet.
@@ -832,7 +843,83 @@ def sync_managed_pg_port(conf_path: Path, port: int) -> bool:
     finally:
         if tmp.exists():
             tmp.unlink()
+
+
+def sync_managed_pg_port(conf_path: Path, port: int) -> bool:
+    """Set ``port`` in the PraxisZeit-managed block of postgresql.conf.
+
+    Pure file edit; returns True only if the file content changed. Line
+    endings and encoding are preserved (bytes round trip).
+
+    PostgreSQL takes the LAST ``port =`` line of the file. So besides the
+    managed line every other active ``port =`` line (a hand edit before or
+    after the managed block, Audit 2026-11-07 S3-15) is commented out —
+    otherwise the cluster listens on a port PraxisZeit does not know, looks
+    "down" or "foreign" and the service start loops. initdb's commented
+    ``#port = 5432`` is not an active line and stays as it is.
+    """
+    raw = conf_path.read_bytes()
+    text = raw.decode("utf-8", errors="surrogateescape")
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(nl)
+    new_line = f"port = {port}"
+    header_idx = next(
+        (i for i, ln in enumerate(lines) if ln.strip() == PG_CONF_MANAGED_HEADER), None
+    )
+    managed_idx = None
+    if header_idx is not None:
+        managed_idx = next(
+            (i for i in range(header_idx + 1, len(lines))
+             if _PG_PORT_LINE_RE.match(lines[i])), None
+        )
+    for i, ln in enumerate(lines):
+        if i != managed_idx and _PG_PORT_LINE_RE.match(ln):
+            lines[i] = _disable_port_line(ln)
+    if header_idx is None:
+        body = nl.join(lines)
+        if port == 5432:
+            new_text = body
+        else:
+            tail = "" if (not body or body.endswith("\n")) else nl
+            new_text = f"{body}{tail}{nl}{PG_CONF_MANAGED_HEADER}{nl}{new_line}{nl}"
+    else:
+        if managed_idx is None:
+            lines.insert(header_idx + 1, new_line)
+        else:
+            lines[managed_idx] = new_line
+        new_text = nl.join(lines)
+    if new_text == text:
+        return False
+    _write_conf_atomically(conf_path, new_text)
     return True
+
+
+def neutralize_auto_conf_port(auto_conf: Path) -> bool:
+    """Comment out a ``port`` set by ``ALTER SYSTEM`` (postgresql.auto.conf).
+
+    postgresql.auto.conf is read AFTER postgresql.conf, so a port there beats
+    the managed line (S3-15). Same effect as ``ALTER SYSTEM RESET port``;
+    only called while the cluster is stopped or about to be restarted.
+    Returns True if the file changed (and logs a warning then).
+    """
+    if not auto_conf.exists():
+        return False
+    raw = auto_conf.read_bytes()
+    text = raw.decode("utf-8", errors="surrogateescape")
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(nl)
+    changed = False
+    for i, ln in enumerate(lines):
+        if _PG_PORT_LINE_RE.match(ln):
+            logger.warning(
+                f"postgresql.auto.conf setzt '{ln.strip()}' (ALTER SYSTEM) - "
+                "auskommentiert, es gilt [database] port aus praxiszeit.conf."
+            )
+            lines[i] = _disable_port_line(ln)
+            changed = True
+    if changed:
+        _write_conf_atomically(auto_conf, nl.join(lines))
+    return changed
 
 
 def apply_pg_port() -> bool:
@@ -848,7 +935,10 @@ def apply_pg_port() -> bool:
     if not conf.exists():
         return False
     port = pg_port()
-    if not sync_managed_pg_port(conf, port):
+    changed = sync_managed_pg_port(conf, port)
+    if neutralize_auto_conf_port(PG_DATA / "postgresql.auto.conf"):
+        changed = True
+    if not changed:
         return False
     logger.info(f"PostgreSQL-Port in postgresql.conf auf {port} gesetzt")
     if _win_service_exists(PG_SERVICE_NAME):
@@ -895,15 +985,25 @@ def pg_start():
             _win_pg_register_and_start()
         # 60s statt 30s: auf manchen Windows-Maschinen ist der PG-Start langsam
         # (AV/ASLR, "could not reserve shared memory region"-Retries).
-        for i in range(60):
-            state = _pg_cluster_state_confirmed()
+        # Nach Uhrzeit begrenzt, nicht nach Durchlaeufen: ein bleibendes
+        # "unknown" (pg_ctl status laeuft je Aufruf bis zum Timeout) hielte die
+        # Schleife sonst bis zu einer Dreiviertelstunde fest, ohne Zeiterfassung
+        # und ohne dass NSSM neu startet. Je Durchlauf EINE Pruefung; nur ein
+        # "foreign" wird einmal nachgeprueft (wie _pg_cluster_state_confirmed).
+        deadline = time.monotonic() + PG_START_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            state = pg_cluster_state()
+            if state == "foreign":
+                time.sleep(FOREIGN_RECHECK_SECONDS)
+                state = pg_cluster_state()
             if state == "own":
                 logger.info("PostgreSQL started successfully (Windows service)")
                 return
             if state == "foreign":
                 raise ForeignPostgresError(_foreign_pg_message(pg_port()))
             time.sleep(1)
-        logger.error("PostgreSQL service failed to start within 60 seconds")
+        logger.error(
+            f"PostgreSQL service failed to start within {PG_START_TIMEOUT_SECONDS} seconds")
         if not _dump_pg_startup_log():
             # No server log at all => postgres.exe almost certainly never ran
             # (the service start failed before any logging). On a fresh Windows
@@ -1139,10 +1239,15 @@ def _open_restricted(file_path: Path):
 #                        pg_start). Logs contain user names — not for Users.
 #   <install>\config     no inheritance; SYSTEM + Administrators Full.
 #
-# No /T and no owner changes: changing a directory's DACL makes Windows
-# re-propagate the inheritable entries to every child that inherits, and /T
-# would also walk into bin\postgresql when setup.bat made it a junction to a
-# system PostgreSQL.
+# No /T: changing a directory's DACL makes Windows re-propagate the
+# inheritable entries to every child that inherits, and /T would also walk
+# into bin\postgresql when setup.bat made it a junction to a system
+# PostgreSQL. Each of these directories gets Administrators as OWNER
+# (Audit 2026-11-07 S3-01): an owner always has WRITE_DAC, so a local account
+# that created C:\PraxisZeit before the installation could otherwise grant
+# itself Full Control again at any time. The recursive owner/ACL reset of the
+# program parts and the check against the package manifest happen before the
+# first python.exe start, in installer/windows/secure-install.ps1.
 _SID_SYSTEM = "*S-1-5-18"
 _SID_ADMINISTRATORS = "*S-1-5-32-544"
 _SID_USERS = "*S-1-5-32-545"
@@ -1151,16 +1256,74 @@ _SID_EVERYONE = "*S-1-1-0"
 _SID_NETWORK_SERVICE = "*S-1-5-20"
 
 
+# Fix-Runde (S3-01): /grant:r und /remove:g erfassen nur die genannten SIDs.
+# Ein expliziter Eintrag fuer ein beliebiges anderes Konto ("icacls
+# C:\PraxisZeit /grant empfang:(OI)(CI)F" vor der Installation) ueberlebte
+# und vererbte sich nach dem /reset auf bin\ und app\ - python.exe tauschbar,
+# Ausfuehrung als SYSTEM. Deshalb wird zuletzt die GANZE DACL aus einer
+# Positivliste gesetzt (SDDL, "P" = keine Vererbung) und danach nachgeprueft.
+# Dieselben Zeichenketten stehen in installer/windows/secure-install.ps1 und
+# InstallDirGuard.cs (Test: test_exact_dacl_sddl_is_identical_everywhere).
+# 0x1200a9 = Lesen/Ausfuehren (icacls RX), 0x1301bf = Aendern (icacls M).
+WIN_SDDL_ROOT = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)(A;OICI;0x1200a9;;;NS)"
+WIN_SDDL_DATA = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x1200a9;;;NS)"
+WIN_SDDL_LOGS = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1301bf;;;NS)"
+WIN_SDDL_CONFIG = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+_SDDL_SID_ALIASES = {"SY": "S-1-5-18", "BA": "S-1-5-32-544", "BU": "S-1-5-32-545",
+                     "NS": "S-1-5-20"}
+
+
+def _ps_single_quoted(value: str) -> str:
+    """PowerShell-Literal in einfachen Anfuehrungszeichen. PowerShell wertet
+    auch die typografischen Varianten (U+2018..U+201B) als Hochkomma."""
+    out = []
+    for ch in value:
+        out.append(ch * 2 if ch in "'\u2018\u2019\u201a\u201b" else ch)
+    return "'" + "".join(out) + "'"
+
+
+def _sddl_allowed_sids(sddl: str) -> list[str]:
+    return sorted({_SDDL_SID_ALIASES[a] for a in re.findall(r";;;([A-Z]{2})\)", sddl)})
+
+
+def _exact_dacl_command(path: Path, sddl: str) -> list[str]:
+    """Windows PowerShell 5.1: DACL von ``path`` genau auf ``sddl`` setzen und
+    nachpruefen (Exit 3, wenn danach noch ein anderer Eintrag steht oder die
+    Vererbung noch aktiv ist). Nur der DACL-Abschnitt wird geschrieben."""
+    allowed = ",".join(f"'{sid}'" for sid in _sddl_allowed_sids(sddl))
+    script = (
+        "$ErrorActionPreference='Stop';"
+        f"$p={_ps_single_quoted(str(path))};"
+        "$s=New-Object System.Security.AccessControl.DirectorySecurity;"
+        f"$s.SetSecurityDescriptorSddlForm('{sddl}','Access');"
+        "[System.IO.Directory]::SetAccessControl($p,$s);"
+        f"$allowed=@({allowed});"
+        "$a=[System.IO.Directory]::GetAccessControl($p);"
+        "if(-not $a.AreAccessRulesProtected){Write-Output 'Vererbung noch aktiv';exit 3};"
+        "$bad=@($a.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])"
+        "|Where-Object{$allowed -notcontains $_.IdentityReference.Value}"
+        "|ForEach-Object{$_.IdentityReference.Value});"
+        "if($bad.Count -gt 0){Write-Output ('Fremde Eintraege: '+($bad -join ', '));exit 3}"
+    )
+    sysroot = os.environ.get("SystemRoot", "C:\\Windows")
+    ps = str(Path(sysroot) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe")
+    return [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-Command", script]
+
+
 def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
                             config_dir: Path) -> list[dict]:
     """The icacls argument lists for :func:`_harden_install_dir`.
 
     Pure / side-effect free so it can be unit-tested without icacls. One entry
-    per directory, root first; each entry has ``grants`` (must ALL succeed),
-    ``removes`` (best-effort, a missing SID is no error) and ``protect`` (the
+    per directory, root first; each entry has ``owner`` (``/setowner``
+    Administrators, best-effort, first), ``grants`` (must ALL succeed),
+    ``removes`` (best-effort, a missing SID is no error), ``protect`` (the
     ``/inheritance:r`` call, only run after all grants succeeded — the other
     way round a directory could end up with no entry at all and the service
-    could not read its own files).
+    could not read its own files) and ``exact`` (PowerShell: the whole DACL
+    from an allow list, then re-checked — removes explicit entries of any
+    other SID, fix round S3-01).
     """
     def grant(path: Path, sid: str, perms: str) -> list[str]:
         # /grant:r replaces earlier EXPLICIT entries of this SID (e.g. a
@@ -1173,11 +1336,15 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
     def protect(path: Path) -> list[str]:
         return ["icacls", str(path), "/inheritance:r"]
 
+    def owner(path: Path) -> list[str]:
+        return ["icacls", str(path), "/setowner", _SID_ADMINISTRATORS]
+
     full = "(OI)(CI)F"
     private_removes = (_SID_USERS, _SID_AUTHENTICATED_USERS, _SID_EVERYONE)
     return [
         {
             "path": base_dir,
+            "owner": owner(base_dir),
             "grants": [
                 grant(base_dir, _SID_SYSTEM, full),
                 grant(base_dir, _SID_ADMINISTRATORS, full),
@@ -1189,9 +1356,11 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
             "removes": [remove(base_dir, sid)
                         for sid in (_SID_AUTHENTICATED_USERS, _SID_EVERYONE)],
             "protect": protect(base_dir),
+            "exact": _exact_dacl_command(base_dir, WIN_SDDL_ROOT),
         },
         {
             "path": data_dir,
+            "owner": owner(data_dir),
             "grants": [
                 grant(data_dir, _SID_SYSTEM, full),
                 grant(data_dir, _SID_ADMINISTRATORS, full),
@@ -1199,9 +1368,11 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
             ],
             "removes": [remove(data_dir, sid) for sid in private_removes],
             "protect": protect(data_dir),
+            "exact": _exact_dacl_command(data_dir, WIN_SDDL_DATA),
         },
         {
             "path": log_dir,
+            "owner": owner(log_dir),
             "grants": [
                 grant(log_dir, _SID_SYSTEM, full),
                 grant(log_dir, _SID_ADMINISTRATORS, full),
@@ -1209,15 +1380,18 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
             ],
             "removes": [remove(log_dir, sid) for sid in private_removes],
             "protect": protect(log_dir),
+            "exact": _exact_dacl_command(log_dir, WIN_SDDL_LOGS),
         },
         {
             "path": config_dir,
+            "owner": owner(config_dir),
             "grants": [
                 grant(config_dir, _SID_SYSTEM, full),
                 grant(config_dir, _SID_ADMINISTRATORS, full),
             ],
             "removes": [remove(config_dir, sid) for sid in private_removes],
             "protect": protect(config_dir),
+            "exact": _exact_dacl_command(config_dir, WIN_SDDL_CONFIG),
         },
     ]
 
@@ -1262,6 +1436,9 @@ def _harden_install_dir() -> bool:
         directory.mkdir(parents=True, exist_ok=True)
     all_ok = True
     for step in _build_install_acl_plan(BASE_DIR, DATA_DIR, LOG_DIR, CONFIG_DIR):
+        # Owner first, best-effort: a failure is logged, the grants still run.
+        if not _run_icacls(step["owner"]):
+            all_ok = False
         if not all(_run_icacls(cmd) for cmd in step["grants"]):
             logger.warning(
                 f"Access rights on {step['path']} not restricted (a grant failed); "
@@ -1272,6 +1449,14 @@ def _harden_install_dir() -> bool:
         for cmd in step["removes"]:
             _run_icacls(cmd)
         if not _run_icacls(step["protect"]):
+            all_ok = False
+            continue
+        # Zuletzt die ganze DACL aus der Positivliste (fremde SIDs fallen weg).
+        if not _run_icacls(step["exact"]):
+            logger.warning(
+                f"Access rights on {step['path']}: entries of other accounts could not "
+                "be removed - retried at the next start."
+            )
             all_ok = False
     return all_ok
 
@@ -1470,6 +1655,97 @@ def pg_load_credentials():
             creds[key.strip()] = value.strip()
 
     return creds.get("SUPERUSER_PASSWORD"), creds.get("APP_PASSWORD")
+
+
+# --- Backup-Rolle fuer den Webprozess (Audit 2026-11-07 S3-13) ---
+#
+# Die Datensicherung in der Weboberflaeche (#213) lief mit der Superuser-
+# Verbindung DATABASE_URL_MIGRATIONS aus der Umgebung von uvicorn. Jede
+# Code-Ausfuehrung, jedes Dateilesen (/proc/self/environ) oder Umgebungs-Leck
+# im Webprozess hiess damit: Superuser, RLS wirkungslos, COPY ... TO PROGRAM.
+# Nativ laufen die Migrationen im Prozessmanager VOR dem uvicorn-Start; uvicorn
+# braucht den Superuser also nicht. Er bekommt stattdessen eine eigene Rolle,
+# die nur lesen kann: pg_read_all_data (SELECT auf alles) + BYPASSRLS (pg_dump
+# schaltet row_security ab und bricht sonst an den RLS-Tabellen ab), kein
+# Superuser, kein Schreibrecht, keine Server-Dateizugriffe.
+BACKUP_ROLE = "praxiszeit_backup"
+
+
+def _read_credentials_file() -> dict:
+    creds_file = CONFIG_DIR / ".db-credentials"
+    creds = {}
+    if creds_file.is_file():
+        for line in creds_file.read_text().strip().split("\n"):
+            if "=" in line:
+                key, value = line.split("=", 1)
+                creds[key.strip()] = value.strip()
+    return creds
+
+
+def _backup_role_password() -> str:
+    """BACKUP_PASSWORD aus .db-credentials; beim ersten Mal erzeugt und dort
+    (Rechte vor dem Inhalt, :func:`_open_restricted`) dazugeschrieben."""
+    creds = _read_credentials_file()
+    password = creds.get("BACKUP_PASSWORD")
+    if password:
+        return password
+    password = secrets.token_hex(32)
+    creds_file = CONFIG_DIR / ".db-credentials"
+    # Atomar ersetzen (Fix-Runde): die Datei traegt SUPERUSER_PASSWORD und
+    # APP_PASSWORD. _open_restricted kuerzt erst und schreibt dann - ein
+    # Absturz, Stromausfall oder voller Datentraeger dazwischen liesse beim
+    # ersten Start nach dem Update eine LEERE Datei zurueck, und der Cluster
+    # waere nicht mehr erreichbar. Deshalb: bisheriger Inhalt unveraendert
+    # (auch Zeilen ohne key=value) + neue Zeile in eine Temp-Datei mit den
+    # engen Rechten, fsync, dann os.replace ueber das Original.
+    old = creds_file.read_bytes() if creds_file.is_file() else b""
+    if old and not old.endswith(b"\n"):
+        old += b"\n"
+    tmp = creds_file.with_name(creds_file.name + ".pz-tmp")
+    try:
+        with _open_restricted(tmp) as handle:
+            handle.write(old + f"BACKUP_PASSWORD={password}\n".encode("utf-8"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, creds_file)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return password
+
+
+def ensure_backup_role(config: dict, su_password: str) -> str | None:
+    """Backup-Rolle anlegen bzw. angleichen; liefert die Verbindungs-URL.
+
+    Idempotent, bei jedem Start. Scheitert es, bekommt der Webprozess KEINE
+    Datenbank-Verbindung fuer Sicherungen (None) - nie ersatzweise den
+    Superuser. Die naechtliche Sicherung des Prozessmanagers (``backup``)
+    ist davon nicht betroffen."""
+    superuser = _validate_pg_identifier(
+        get_config_value(config, "database", "superuser", "praxiszeit"))
+    try:
+        password = _backup_role_password()
+        sql = (
+            "DO $$ BEGIN\n"
+            f"  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{BACKUP_ROLE}') THEN\n"
+            f"    CREATE ROLE {BACKUP_ROLE} LOGIN;\n"
+            "  END IF;\n"
+            "END $$;\n"
+            f"ALTER ROLE {BACKUP_ROLE} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
+            f"NOREPLICATION BYPASSRLS PASSWORD '{_escape_pg_password(password)}';\n"
+            f"GRANT pg_read_all_data TO {BACKUP_ROLE};\n"
+            f"GRANT CONNECT ON DATABASE praxiszeit TO {BACKUP_ROLE};\n"
+        )
+        _psql_script(superuser, "praxiszeit", sql, {**pg_env(), "PGPASSWORD": su_password})
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = getattr(exc, "stderr", "") or exc
+        logger.error(
+            "Backup-Rolle %s nicht eingerichtet (%s) - Sicherungen aus der "
+            "Weboberflaeche sind bis zum naechsten Start nicht moeglich; die "
+            "naechtliche Sicherung des Dienstes laeuft weiter.", BACKUP_ROLE, detail,
+        )
+        return None
+    return _database_url(BACKUP_ROLE, password, "praxiszeit")
 
 
 # --- Alembic Migrations ---
@@ -1984,6 +2260,9 @@ def uvicorn_start(config: dict):
 
     # Set SERVE_FRONTEND=true for native mode
     env = os.environ.copy()
+    # S3-13: die Superuser-Verbindung bleibt im Prozessmanager (Migrationen
+    # laufen vorher dort); der Webprozess sichert ueber DATABASE_URL_BACKUP.
+    env.pop("DATABASE_URL_MIGRATIONS", None)
     env["SERVE_FRONTEND"] = "true"
     env["PYTHONUTF8"] = "1"  # Avoid cp1252 encoding errors on Windows
     # Native install: frontend lives at app/frontend/ (no dist/ subfolder)
@@ -2117,6 +2396,12 @@ def create_backup(config: dict):
 
     import gzip
     write_error = None
+    # Signaturzeile am Ende (Fix-Runde S3-03): restore spielt eine Datei ohne
+    # passende Signatur nur mit --force-unverified ein.
+    secret_key = _installation_secret_key(config)
+    signer = BackupMac(secret_key) if secret_key else None
+    if signer is None:
+        logger.warning("Kein SECRET_KEY gefunden - die Sicherung wird nicht signiert.")
     try:
         # 0600 from the first byte (not open() + umask 022 -> world-readable
         # 0644 dump with every employee's data). On Windows the mode only
@@ -2130,6 +2415,10 @@ def create_backup(config: dict):
                     if not chunk:
                         break
                     gz.write(chunk)
+                    if signer is not None:
+                        signer.update(chunk)
+                if signer is not None:
+                    gz.write(signer.trailer())
     except OSError as e:  # z. B. Platte voll waehrend des Schreibens
         write_error = e
     finally:
@@ -2287,6 +2576,14 @@ def _watchdog_check_pg() -> None:
         )
         return
     _watchdog_foreign_streak = 0
+    if state == "unknown":
+        # pg_ctl status lief in die Zeitgrenze o. ae. (S3-08): weder neu
+        # starten noch beenden, beim naechsten Durchlauf erneut pruefen.
+        logger.warning(
+            "PostgreSQL-Port %s: Zustand nicht feststellbar (pg_ctl status) - "
+            "erneute Pruefung beim naechsten Durchlauf.", pg_port(),
+        )
+        return
     if state == "down":
         logger.error("PostgreSQL is not responding, restarting...")
         try:
@@ -2450,6 +2747,14 @@ def cmd_start(args):
     # 4. Run migrations
     run_migrations(config)
 
+    # 4a. Eigene, nur lesende Rolle fuer die Sicherung aus der Weboberflaeche
+    # (S3-13); uvicorn bekommt den Superuser nicht mehr (uvicorn_start).
+    backup_url = ensure_backup_role(config, su_password)
+    if backup_url:
+        os.environ["DATABASE_URL_BACKUP"] = backup_url
+    else:
+        os.environ.pop("DATABASE_URL_BACKUP", None)
+
     # 5. Start uvicorn
     uvicorn_start(config)
 
@@ -2586,6 +2891,27 @@ def cmd_print_db_port(args):
 def cmd_sync_db_port(args):
     """postgresql.conf an den konfigurierten Port angleichen; nichts auf stdout."""
     apply_pg_port()
+
+
+def cmd_prepare_restore_dump(args):
+    """restore-backup.bat: Signatur und entpackten Dump pruefen und mit eigenem
+    \\restrict versehen. Fehler als eine Zeile auf stderr: Exit 2 = Signatur
+    fehlt oder passt nicht, Exit 1 = Dump abgelehnt (die .bat bricht ab)."""
+    try:
+        prepare_restore_dump(
+            Path(args.file), secret_key=_installation_secret_key(load_config()),
+            force_unverified=getattr(args, "force_unverified", False),
+        )
+    except UnverifiedBackupError as exc:
+        # Exit 2: restore-backup.bat erklaert --force-unverified.
+        print(f"FEHLER: {exc}", file=sys.stderr)
+        sys.exit(2)
+    except RestoreError as exc:
+        print(f"FEHLER: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as exc:
+        print(f"FEHLER: {args.file} nicht lesbar: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_harden_permissions(args):
@@ -2914,7 +3240,457 @@ def _process_manager_running() -> bool:
     return True
 
 
-def _unpack_dump(src: Path) -> Path:
+# --- Restore: Signatur der Sicherung (Audit 2026-11-07, Fix-Runde S3-03) ------
+#
+# Eingespielt wird als PostgreSQL-Superuser. Eine Liste verbotener Anweisungen
+# (unten) kann eine praeparierte "Sicherung vom alten Rechner" nie vollstaendig
+# ausschliessen - ein DO-Block mit EXECUTE, eine Funktion in einem CHECK, ...
+# Deshalb traegt jede Sicherung, die PraxisZeit schreibt (``backup``, die
+# Datensicherung der Weboberflaeche, Docker ``backup.sh``), als letzte Zeile
+#
+#     -- praxiszeit-backup-hmac-v1 <HMAC-SHA256>
+#
+# ueber alle Bytes davor, mit einem aus dem SECRET_KEY abgeleiteten Schluessel.
+# Ohne passende Signatur spielt ``restore`` (und restore-backup.bat) die Datei
+# nur mit ausdruecklichem ``--force-unverified`` ein. Dieselbe Rechnung steht
+# in backend/app/core/backup_mac.py (test_backup_mac.py haelt beide gleich).
+# Als Nicht-Superuser einzuspielen geht nicht: die Tabellen gehoeren der
+# Superuser-Rolle (Migrationen, RLS-Ausnahme des Eigentuemers), der Dump setzt
+# ``OWNER TO`` auf sie, und die Zwischendatenbank wird per DROP/RENAME getauscht.
+BACKUP_MAC_LABEL = b"praxiszeit-backup-hmac-v1"
+_BACKUP_MAC_MARKER = b"-- " + BACKUP_MAC_LABEL + b" "
+_BACKUP_MAC_LINE_RE = re.compile(rb"^-- praxiszeit-backup-hmac-v1 ([0-9a-f]{64})$")
+_BACKUP_MAC_HOLDBACK = 256
+
+
+def _backup_mac_key(secret_key: str) -> bytes:
+    import hashlib
+    import hmac
+    return hmac.new(secret_key.encode("utf-8"), BACKUP_MAC_LABEL, hashlib.sha256).digest()
+
+
+class BackupMac:
+    """Signatur beim Schreiben mitrechnen (wie app.core.backup_mac.BackupMac)."""
+
+    def __init__(self, secret_key: str):
+        import hashlib
+        import hmac
+        self._mac = hmac.new(_backup_mac_key(secret_key), digestmod=hashlib.sha256)
+        self._last = b"\n"
+
+    def update(self, data: bytes) -> None:
+        if data:
+            self._mac.update(data)
+            self._last = data[-1:]
+
+    def trailer(self) -> bytes:
+        prefix = b""
+        if self._last != b"\n":
+            prefix = b"\n"
+            self._mac.update(prefix)
+            self._last = b"\n"
+        return prefix + _BACKUP_MAC_MARKER + self._mac.hexdigest().encode("ascii") + b"\n"
+
+
+def verify_backup_mac(stream, secret_key: str) -> str:
+    """``ok``, ``missing`` (keine Signaturzeile) oder ``mismatch``."""
+    import hashlib
+    import hmac
+    mac = hmac.new(_backup_mac_key(secret_key), digestmod=hashlib.sha256)
+    tail = b""
+    while True:
+        chunk = stream.read(1024 * 1024)
+        if not chunk:
+            break
+        data = tail + chunk
+        if len(data) > _BACKUP_MAC_HOLDBACK:
+            mac.update(data[:-_BACKUP_MAC_HOLDBACK])
+            tail = data[-_BACKUP_MAC_HOLDBACK:]
+        else:
+            tail = data
+    if not tail.endswith(b"\n"):
+        return "missing"
+    cut = tail.rfind(b"\n", 0, len(tail) - 1)
+    match = _BACKUP_MAC_LINE_RE.match(tail[cut + 1:-1].rstrip(b"\r"))
+    if not match:
+        return "missing"
+    mac.update(tail[:cut + 1])
+    if hmac.compare_digest(mac.hexdigest().encode("ascii"), match.group(1)):
+        return "ok"
+    return "mismatch"
+
+
+def _installation_secret_key(config: dict) -> str | None:
+    """Der SECRET_KEY dieser Installation, ohne einen neuen zu erzeugen
+    (:func:`resolve_secret_key` mit ``persist=False`` wuerfelte sonst einen
+    Wegwerf-Schluessel, mit dem keine Signatur je passt)."""
+    sk = get_config_value(config, "security", "secret_key")
+    if sk:
+        return str(sk)
+    sk_file = CONFIG_DIR / ".secret-key"
+    try:
+        value = sk_file.read_text().strip()
+    except OSError:
+        return None
+    return value or None
+
+
+class UnverifiedBackupError(RuntimeError):
+    """Die Sicherung traegt keine passende PraxisZeit-Signatur."""
+
+
+UNVERIFIED_HINT = (
+    "Nur wenn die Datei sicher aus der eigenen PraxisZeit-Installation stammt "
+    "(z. B. eine Sicherung vom alten Rechner mit anderem SECRET_KEY): den Aufruf "
+    "mit --force-unverified wiederholen. Die Datei wird dann trotzdem auf "
+    "Befehle geprueft, die pg_dump nie schreibt."
+)
+
+
+def _unverified_reason(status: str) -> str:
+    if status == "missing":
+        return ("Die Sicherung traegt keine PraxisZeit-Signatur (erstellt mit einer aelteren "
+                "Version, beim Deinstallieren oder von Hand) - ob sie veraendert wurde, "
+                "laesst sich nicht pruefen.")
+    if status == "mismatch":
+        return ("Die Signatur der Sicherung passt nicht: die Datei wurde veraendert oder "
+                "stammt aus einer anderen Installation (anderer SECRET_KEY).")
+    return ("Diese Installation hat keinen SECRET_KEY (config/praxiszeit.conf bzw. "
+            "config/.secret-key) - die Signatur der Sicherung laesst sich nicht pruefen.")
+
+
+# --- Restore: nur Dumps einspielen, wie pg_dump sie schreibt (Audit 2026-11-07 S3-03)
+#
+# Zweite Linie hinter der Signatur. psql fuehrt Backslash-Befehle im Dump aus
+# (``\! cmd``, ``\o |cmd``, ``\copy ... program``) - und zwar ueberall in einer
+# Zeile ausserhalb von Zeichenketten, nicht nur am Zeilenanfang. Eingespielt
+# wird als Superuser, unter Windows sogar als Administrator. pg_dump 18 schreibt
+# genau zwei Backslash-Befehle: ``\restrict <schluessel>`` am Anfang und
+# ``\unrestrict <schluessel>`` am Ende (seit 17.6/18.0). Alles andere ausserhalb
+# der COPY-Daten wird abgelehnt, ebenso SQL, das pg_dump fuer eine PraxisZeit-
+# Datenbank nie schreibt: Rollen und Rollen-Mitgliedschaften, ALTER SYSTEM/
+# DATABASE, COPY ausser der genauen pg_dump-Form, DO/CALL, SET ausser den
+# Sitzungsparametern von pg_dump (standard_conforming_strings nur ``on`` - der
+# Lexer liest Backslashes in '...' woertlich), SELECT ausser set_config/setval,
+# Server-Datei- und Programmzugriffe, Funktionen ausser sql/plpgsql ohne
+# dynamisches SQL.
+_DUMP_ALLOWED_META_RE = re.compile(rb"^\s*\\(restrict|unrestrict)\s+[A-Za-z0-9]+\s*$")
+# Genau die Form, die pg_dump schreibt: ``COPY schema.tabelle (spalte, ...) FROM
+# stdin;`` und nichts danach (Fix-Runde: ``COPY t FROM stdin; CREATE ROLE ...``
+# in EINER Zeile darf den Lexer nicht in den Datenmodus schicken).
+_DUMP_IDENT = rb'(?:[a-z_][a-z0-9_$]*|"(?:[^"\r\n]|"")+")'
+_DUMP_COPY_START_RE = re.compile(
+    rb"^COPY (?:" + _DUMP_IDENT + rb"\.)?" + _DUMP_IDENT
+    + rb"(?: \(" + _DUMP_IDENT + rb"(?:, " + _DUMP_IDENT + rb")*\))? FROM stdin;\r?$"
+)
+_DUMP_FORBIDDEN_STATEMENTS = (
+    (re.compile(r"^(CREATE|ALTER|DROP)\s+(ROLE|USER|GROUP)\b"), "Rollen anlegen oder aendern"),
+    (re.compile(r"^(GRANT|REVOKE)\b(?!.*\bON\b)"), "Rollen-Mitgliedschaft"),
+    (re.compile(r"^ALTER\s+(SYSTEM|DATABASE)\b"), "ALTER SYSTEM/DATABASE"),
+    (re.compile(r"^(CREATE|ALTER)\s+EVENT\s+TRIGGER\b"), "Event-Trigger"),
+    (re.compile(r"^COPY\b"), "COPY ausserhalb der pg_dump-Form"),
+    (re.compile(r"^(DO|CALL|LOAD|RESET)\b"), "DO/CALL/LOAD/RESET"),
+    (re.compile(r"^(CREATE|ALTER)\s+(OR\s+REPLACE\s+)?(TRUSTED\s+)?(PROCEDURAL\s+)?LANGUAGE\b"),
+     "Prozedurale Sprache"),
+    (re.compile(r"^(CREATE|ALTER)\s+(SERVER|FOREIGN|SUBSCRIPTION|PUBLICATION|TABLESPACE)\b"),
+     "Server, Abo oder Tablespace"),
+    (re.compile(r"^SECURITY\s+LABEL\b"), "SECURITY LABEL"),
+)
+# Funktionen, die Server-Dateien/-Programme erreichen, Rechte/Sitzung aendern
+# oder einen SQL-Text ausfuehren - in Ausdruecken (CHECK, DEFAULT, Index) wie
+# in Funktionsrumpfen.
+_DUMP_FORBIDDEN_CALLS_RE = re.compile(
+    r"\b(LO_\w+|LOWRITE|LOREAD|PG_READ_\w+|PG_WRITE_\w+|PG_FILE_\w+|PG_LS_\w+|PG_STAT_FILE|"
+    r"DBLINK\w*|SET_CONFIG|PG_RELOAD_CONF|PG_TERMINATE_BACKEND|PG_CANCEL_BACKEND|"
+    r"PG_ROTATE_LOGFILE|PG_PROMOTE|PG_SWITCH_WAL|PG_EXECUTE_SERVER_PROGRAM|"
+    r"QUERY_TO_XML\w*|CURSOR_TO_XML\w*|TABLE_TO_XML\w*|SCHEMA_TO_XML\w*|DATABASE_TO_XML\w*|"
+    r"TS_STAT|TS_REWRITE)\s*\("
+)
+# Was ein Funktionsrumpf (Literal) nicht enthalten darf: dynamisches SQL und
+# Anweisungen, die oben verboten sind.
+_DUMP_FORBIDDEN_BODY_RE = re.compile(
+    r"\b(EXECUTE|COPY|LOAD|CALL|ALTER\s+(ROLE|USER|GROUP|SYSTEM|DATABASE)|"
+    r"(CREATE|DROP)\s+(ROLE|USER|GROUP)|GRANT|REVOKE|SET\s+(ROLE|SESSION)|RESET|DO\s*[$'])"
+)
+_DUMP_FUNCTION_RE = re.compile(r"^CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE|AGGREGATE)\b")
+_DUMP_FUNCTION_LANG_RE = re.compile(r"\bLANGUAGE\s+\"?([A-Z0-9_]+)")
+_DUMP_EXTENSIONS_OK = {"PLPGSQL", "PGCRYPTO", "UUID-OSSP", "\"UUID-OSSP\"", "PG_TRGM",
+                       "BTREE_GIST", "BTREE_GIN", "CITEXT"}
+# Sitzungsparameter, die pg_dump 9.x-18 am Anfang setzt.
+_DUMP_SET_PARAMS = {
+    "STATEMENT_TIMEOUT", "LOCK_TIMEOUT", "IDLE_IN_TRANSACTION_SESSION_TIMEOUT",
+    "TRANSACTION_TIMEOUT", "CLIENT_ENCODING", "STANDARD_CONFORMING_STRINGS",
+    "CHECK_FUNCTION_BODIES", "XMLOPTION", "CLIENT_MIN_MESSAGES", "ROW_SECURITY",
+    "DEFAULT_TABLESPACE", "DEFAULT_TABLE_ACCESS_METHOD", "DEFAULT_WITH_OIDS", "SEARCH_PATH",
+}
+_DUMP_SET_RE = re.compile(r"^SET\s+([A-Z_]+)\s*(?:=|\bTO\b)\s*(.*)$")
+_DUMP_SELECT_OK = (
+    re.compile(r"^SELECT pg_catalog\.set_config\('search_path', '', false\)$"),
+    re.compile(r"^SELECT pg_catalog\.setval\('[A-Za-z0-9_.\"]+', \d+, (true|false)\)$"),
+)
+
+
+class _DumpScanner:
+    """Kleiner psql-Lexer: findet Backslash-Befehle ausserhalb von
+    Zeichenketten/Kommentaren und die SQL-Anweisungen - je Anweisung den Text
+    ohne Literale (``stmt``) und den vollen Text (``raw``)."""
+
+    _DOLLAR_RE = re.compile(rb"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
+
+    def __init__(self):
+        self.state = "normal"     # normal | squote | estring | dquote | dollar | block
+        self.dollar_tag = b""
+        self.block_depth = 0
+        self.stmt = bytearray()   # Text der laufenden Anweisung ausserhalb von Literalen
+        self.raw = bytearray()    # derselbe Text samt Literalen (ohne Kommentare)
+
+    @staticmethod
+    def _ident_char(ch: bytes) -> bool:
+        """Zeichen, mit dem ein psql-Bezeichner weitergehen kann."""
+        return bool(ch) and (ch.isalnum() or ch in (b"_", b"$") or ch[0] >= 0x80)
+
+    def _done(self, done: list) -> None:
+        done.append((self.stmt.decode("utf-8", "replace"), self.raw.decode("utf-8", "replace")))
+        self.stmt.clear()
+        self.raw.clear()
+
+    def feed(self, line: bytes, lineno: int) -> tuple[bool, list[tuple[str, str]]]:
+        """Eine Zeile (ohne Zeilenende). Liefert (copy_beginnt, fertige_anweisungen)."""
+        done: list[tuple[str, str]] = []
+        at_stmt_start = self.state == "normal" and not self.stmt.strip()
+        if at_stmt_start and _DUMP_COPY_START_RE.match(line):
+            self.stmt.clear()
+            self.raw.clear()
+            return True, done
+        i, n = 0, len(line)
+        while i < n:
+            c = line[i:i + 1]
+            if self.state == "normal":
+                if c == b"\\":
+                    if at_stmt_start and _DUMP_ALLOWED_META_RE.match(line) and not self.stmt.strip():
+                        return False, done
+                    raise RestoreError(
+                        f"Zeile {lineno}: psql-Befehl '{line.decode('utf-8', 'replace').strip()[:60]}' "
+                        "gehoert nicht in eine PraxisZeit-Sicherung. Die Datei wurde veraendert oder "
+                        "stammt nicht aus PraxisZeit — sie wird nicht eingespielt."
+                    )
+                if line.startswith(b"--", i):
+                    break
+                if line.startswith(b"/*", i):
+                    self.state, self.block_depth = "block", 1
+                    i += 2
+                    continue
+                if c == b"'":
+                    # E'...' (Backslash-Escapes) nur, wenn das E allein steht -
+                    # "xe'..'" ist fuer psql Bezeichner + normale Zeichenkette.
+                    prev = line[i - 1:i] if i else b""
+                    prev2 = line[i - 2:i - 1] if i > 1 else b""
+                    estring = prev in (b"E", b"e") and not self._ident_char(prev2)
+                    self.state = "estring" if estring else "squote"
+                    self.raw += c
+                    i += 1
+                    continue
+                if c == b'"':
+                    self.state = "dquote"
+                    self.stmt += c
+                    self.raw += c
+                    i += 1
+                    continue
+                if c == b"$":
+                    m = self._DOLLAR_RE.match(line, i)
+                    prev = line[i - 1:i] if i else b""
+                    if m and not self._ident_char(prev):
+                        self.state, self.dollar_tag = "dollar", m.group(0)
+                        self.raw += m.group(0)
+                        i = m.end()
+                        continue
+                if c == b";":
+                    self._done(done)
+                    i += 1
+                    continue
+                self.stmt += c
+                self.raw += c
+                i += 1
+            elif self.state in ("squote", "estring"):
+                if self.state == "estring" and c == b"\\":
+                    self.raw += line[i:i + 2]
+                    i += 2
+                    continue
+                self.raw += c
+                if c == b"'":
+                    if line[i + 1:i + 2] == b"'":
+                        self.raw += b"'"
+                        i += 2
+                        continue
+                    self.state = "normal"
+                i += 1
+            elif self.state == "dquote":
+                # Bezeichner gehoeren zum Anweisungstext (sie sind kein Literal).
+                self.stmt += c
+                self.raw += c
+                if c == b'"':
+                    self.state = "normal"
+                i += 1
+            elif self.state == "dollar":
+                if line.startswith(self.dollar_tag, i):
+                    self.raw += self.dollar_tag
+                    i += len(self.dollar_tag)
+                    self.state = "normal"
+                    continue
+                self.raw += c
+                i += 1
+            else:  # block comment (verschachtelbar)
+                if line.startswith(b"/*", i):
+                    self.block_depth += 1
+                    i += 2
+                    continue
+                if line.startswith(b"*/", i):
+                    self.block_depth -= 1
+                    i += 2
+                    if self.block_depth == 0:
+                        self.state = "normal"
+                    continue
+                i += 1
+        if self.state == "normal":
+            self.stmt += b" "
+            self.raw += b" "
+        elif self.state != "block":
+            self.raw += b"\n"
+        return False, done
+
+
+def _forbidden_statement(label: str, lineno: int) -> RestoreError:
+    return RestoreError(
+        f"Zeile {lineno}: die Sicherung enthaelt eine Anweisung, die pg_dump nie "
+        f"schreibt ({label}). Die Datei wurde veraendert oder stammt nicht aus "
+        "PraxisZeit — sie wird nicht eingespielt."
+    )
+
+
+_DUMP_QUOTED_IDENT_RE = re.compile(r'"(?:[^"]|"")*"')
+
+
+def _check_dump_statement(stmt: str, raw: str, lineno: int) -> None:
+    upper = " ".join(stmt.split()).upper()
+    full = " ".join(raw.split())
+    if not upper:
+        return
+    # Schluesselwoerter nur ausserhalb von Bezeichnern ("x ON y" ist kein ON);
+    # Aufrufe auch in Anfuehrungszeichen ("lo_export"(...) ist lo_export).
+    text = _DUMP_QUOTED_IDENT_RE.sub('"?"', upper)
+    calls = upper.replace('"', "")
+    for pattern, label in _DUMP_FORBIDDEN_STATEMENTS:
+        if pattern.match(text):
+            raise _forbidden_statement(label, lineno)
+    if text.startswith("SELECT"):
+        if not any(p.match(full) for p in _DUMP_SELECT_OK):
+            raise _forbidden_statement("SELECT ausser set_config/setval", lineno)
+        return
+    m = _DUMP_SET_RE.match(text)
+    if text.startswith("SET"):
+        if not m or m.group(1) not in _DUMP_SET_PARAMS:
+            raise _forbidden_statement(f"SET {(m.group(1) if m else text[4:30]).lower()}", lineno)
+        value = full.split("=", 1)[-1] if "=" in full else full.upper().split(" TO ", 1)[-1]
+        value = value.strip().strip("'").strip().upper()
+        if m.group(1) == "STANDARD_CONFORMING_STRINGS" and value != "ON":
+            raise _forbidden_statement("standard_conforming_strings ungleich on", lineno)
+        if m.group(1) == "CLIENT_ENCODING" and value not in ("UTF8", "UTF-8"):
+            raise _forbidden_statement("client_encoding ungleich UTF8", lineno)
+        return
+    if text.startswith("CREATE EXTENSION"):
+        words = upper.split()
+        name = words[5] if words[2:5] == ["IF", "NOT", "EXISTS"] and len(words) > 5 else (
+            words[2] if len(words) > 2 else "")
+        if name not in _DUMP_EXTENSIONS_OK:
+            raise _forbidden_statement(f"Erweiterung {name.lower()}", lineno)
+    if _DUMP_FORBIDDEN_CALLS_RE.search(calls):
+        raise _forbidden_statement("Server-Datei-, Programm- oder Rechtezugriff", lineno)
+    if _DUMP_FUNCTION_RE.match(text):
+        lang = _DUMP_FUNCTION_LANG_RE.search(upper)
+        if lang and lang.group(1) not in ("SQL", "PLPGSQL"):
+            raise _forbidden_statement(f"Funktion in {lang.group(1).lower()}", lineno)
+        body = full.upper().replace('"', "")
+        if _DUMP_FORBIDDEN_BODY_RE.search(body) or _DUMP_FORBIDDEN_CALLS_RE.search(body):
+            raise _forbidden_statement("Funktion mit dynamischem SQL oder Rechte-/Dateizugriff",
+                                       lineno)
+
+
+def validate_restore_dump(sql: Path, out=None) -> None:
+    """Prueft einen entpackten Plain-SQL-Dump vor dem Einspielen (S3-03).
+
+    Wirft :class:`RestoreError`, wenn ausserhalb der COPY-Daten ein anderer
+    psql-Befehl als ``\\restrict``/``\\unrestrict`` steht oder eine Anweisung,
+    die aus ``pg_dump`` einer PraxisZeit-Datenbank nie kommt. Mit ``out``
+    (Binaerdatei) wird der Dump dabei ohne seine eigenen restrict-Zeilen
+    dorthin kopiert (siehe :func:`prepare_restore_dump`)."""
+    scanner = _DumpScanner()
+    in_copy = False
+    with open(sql, "rb") as fh:
+        for lineno, raw in enumerate(fh, start=1):
+            line = raw.rstrip(b"\n").rstrip(b"\r")
+            if in_copy:
+                if line == b"\\.":
+                    in_copy = False
+                if out is not None:
+                    out.write(raw)
+                continue
+            is_meta = (scanner.state == "normal" and not scanner.stmt.strip()
+                       and _DUMP_ALLOWED_META_RE.match(line) is not None)
+            copy_starts, statements = scanner.feed(line, lineno)
+            for stmt, full in statements:
+                _check_dump_statement(stmt, full, lineno)
+            in_copy = copy_starts
+            if out is not None and not is_meta:
+                out.write(raw)
+    if in_copy:
+        raise RestoreError("Die Sicherung endet mitten in den Tabellendaten (COPY ohne Ende).")
+    if scanner.state != "normal" or scanner.stmt.strip():
+        # Eine offene Zeichenkette oder Anweisung am Dateiende: psql liefe in
+        # einen anderen Zustand als dieser Lexer.
+        raise RestoreError("Die Sicherung endet mitten in einer Anweisung.")
+
+
+def prepare_restore_dump(sql: Path, *, secret_key: str | None = None,
+                         force_unverified: bool = False) -> None:
+    """Signatur pruefen, Dump pruefen, mit EIGENEM ``\\restrict``-Schluessel
+    versehen (S3-03).
+
+    Ohne passende Signatur (:func:`verify_backup_mac`) bricht das mit
+    :class:`UnverifiedBackupError` ab, ausser ``force_unverified`` ist gesetzt.
+    Die Pruefung (:func:`validate_restore_dump`) nennt den Grund verstaendlich;
+    die harte Grenze fuer Backslash-Befehle zieht psql selbst: ein zufaelliger
+    Schluessel je Restore in der ersten Zeile schaltet psql in den
+    eingeschraenkten Modus, in dem jeder Backslash-Befehl ausser
+    ``\\unrestrict <schluessel>`` abgelehnt wird - ON_ERROR_STOP bricht dann ab.
+    Die eigenen restrict-Zeilen des Dumps entfallen (ein zweites ``\\restrict``
+    waere ein Fehler). Die Datei wird an Ort und Stelle ersetzt (gleiche Rechte,
+    gleiches Verzeichnis)."""
+    if secret_key:
+        with open(sql, "rb") as fh:
+            status = verify_backup_mac(fh, secret_key)
+    else:
+        status = "nokey"
+    if status != "ok":
+        if not force_unverified:
+            raise UnverifiedBackupError(f"{_unverified_reason(status)} {UNVERIFIED_HINT}")
+        logger.warning(
+            "%s Eingespielt wird trotzdem (--force-unverified).", _unverified_reason(status))
+    tmp = sql.with_name(sql.name + ".pz-tmp")
+    try:
+        # Rechte vor dem Inhalt: die Kopie liegt neben dem Original (data/,
+        # nur Dienstkonto bzw. SYSTEM/Administratoren) und bekommt 0600.
+        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as out:
+            out.write(b"\\restrict " + secrets.token_hex(24).encode("ascii") + b"\n")
+            validate_restore_dump(sql, out)
+        os.replace(tmp, sql)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def _unpack_dump(src: Path, *, secret_key: str | None = None,
+                 force_unverified: bool = False) -> Path:
     """Backup neben die Datenbank entpacken und auf Vollstaendigkeit pruefen.
 
     Die entpackte Datei enthaelt personenbezogene Daten im Klartext → nur fuer
@@ -2948,6 +3724,11 @@ def _unpack_dump(src: Path) -> Path:
             f"'{src}' ist unvollstaendig (die Schlusszeile von pg_dump fehlt) — der Dump "
             "wurde abgebrochen."
         )
+    try:
+        prepare_restore_dump(tmp_path, secret_key=secret_key, force_unverified=force_unverified)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
     return tmp_path
 
 
@@ -3109,8 +3890,9 @@ def cmd_restore(args):
         get_config_value(config, "database", "superuser", "praxiszeit")
     )
     try:
-        sql = _unpack_dump(dump)
-    except RestoreError as exc:
+        sql = _unpack_dump(dump, secret_key=_installation_secret_key(config),
+                           force_unverified=getattr(args, "force_unverified", False))
+    except (RestoreError, UnverifiedBackupError) as exc:
         logger.error("%s Die Datenbank ist unveraendert.", exc)
         sys.exit(1)
 
@@ -3228,6 +4010,14 @@ def main():
         "harden-permissions",
         help="Windows: Zugriffsrechte des Installationsverzeichnisses einschraenken",
     ).set_defaults(func=cmd_harden_permissions)
+    prep = subparsers.add_parser(
+        "prepare-restore-dump",
+        help="Entpackten Dump pruefen und fuer psql absichern (restore-backup.bat, S3-03)",
+    )
+    prep.add_argument("file", help="Entpackte .sql-Datei (wird an Ort und Stelle ersetzt)")
+    prep.add_argument("--force-unverified", action="store_true",
+                      help="Auch ohne passende PraxisZeit-Signatur einspielen")
+    prep.set_defaults(func=cmd_prepare_restore_dump)
 
     # Gesamtreview 1.20: Gegenstueck zu restore-backup.bat fuer Linux/macOS.
     # Bei angehaltenem Dienst; migriert wird beim naechsten Dienststart.
@@ -3236,6 +4026,11 @@ def main():
         help="Backup (praxiszeit_*.sql.gz) einspielen — Linux/macOS, Dienst vorher anhalten",
     )
     p_restore.add_argument("file", help="Pfad zum Backup (praxiszeit_<zeitstempel>.sql.gz)")
+    p_restore.add_argument(
+        "--force-unverified", action="store_true",
+        help="Auch ein Backup ohne passende PraxisZeit-Signatur einspielen (z. B. vom alten "
+             "Rechner mit anderem SECRET_KEY) - nur, wenn die Datei sicher von dort stammt",
+    )
     p_restore.set_defaults(func=cmd_restore)
 
     # #425: der einzige Weg zurueck bei verlorenem Admin-Passwort. Das Passwort

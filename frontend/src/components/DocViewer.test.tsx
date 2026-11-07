@@ -417,4 +417,13 @@ describe('Datensicherung: Wiederherstellung wie im Admin-Handbuch', () => {
     expect(t).toContain('erst dieser Start');
     expect(t).toContain('docs/BACKUP.md');
   });
+
+  // Audit 2026-11-07, Fix-Runde: signierte Sicherungen und Backup-Ort.
+  it('nennt die Signatur, --force-unverified und dass bestehende Ordner unverändert bleiben', () => {
+    const t = section();
+    expect(t).toContain('Signatur');
+    expect(t).toContain('--force-unverified');
+    expect(t).toContain('ändert PraxisZeit nicht');
+    expect(t).not.toContain('bekommt der gewählte Ordner die Rechte');
+  });
 });

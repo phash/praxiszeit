@@ -27,6 +27,21 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+REM ============================================================
+REM Schritt 0: Installationsordner absichern - VOR jedem python.exe-Aufruf
+REM ============================================================
+REM Audit 2026-11-07 S3-01: Unter C:\ duerfen normale Konten Ordner anlegen.
+REM Wer den Ordner vorher angelegt hat, ist Eigentuemer und kann Dateien
+REM hineinlegen, die der als SYSTEM laufende Dienst ausfuehrt (etwa eine
+REM .pth-Datei in site-packages oder eine DLL neben python.exe). Deshalb zuerst
+REM nur mit Windows-Bordmitteln: Eigentuemer Administratoren, Vererbung von C:\
+REM weg, explizite Rechte an Programmdateien zurueckgesetzt, und jede Datei
+REM unter bin\ und app\, die nicht zum Paket gehoert, sperrt das Setup.
+echo Sichere den Installationsordner ab...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DIR%secure-install.ps1" -InstallDir "%DIR%."
+if errorlevel 2 goto :fremde_dateien
+if errorlevel 1 goto :rechte_fehler
+
 REM --- Verzeichnisse erstellen ---
 if not exist "%DIR%data\db" mkdir "%DIR%data\db"
 if not exist "%DIR%data\backups" mkdir "%DIR%data\backups"
@@ -195,38 +210,20 @@ if exist "%DIR%bin\python\fix-pth.py" (
 
 REM PYTHONNOUSERSITE: das gebuendelte Python (Version-passend zu einem evtl.
 REM auf dem Rechner installierten System-Python) wuerde sonst dessen
-REM User-Site (%APPDATA%\Python\PythonXY\site-packages) sehen. pip wertet dort
-REM bereits vorhandene Pakete als "erfuellt" und installiert NICHTS ins Bundle
-REM -> der als LocalSystem laufende Dienst (ohne dieses User-Site) findet die
-REM Dependencies dann nicht. Mit PYTHONNOUSERSITE=1 installiert pip garantiert
-REM ins gebuendelte site-packages.
+REM User-Site (%APPDATA%\Python\PythonXY\site-packages) sehen.
 set "PYTHONNOUSERSITE=1"
 
-echo Installiere pip...
-if exist "%DIR%bin\python\get-pip.py" (
-    "%PYTHON%" "%DIR%bin\python\get-pip.py" --quiet 2>nul
-)
-
-echo Installiere Python-Abhaengigkeiten (kann einige Minuten dauern)...
-"%PYTHON%" -m pip install --quiet -r "%DIR%app\backend\requirements.txt"
-
-if %errorlevel% neq 0 (
-    echo.
-    echo FEHLER: Python-Abhaengigkeiten konnten nicht installiert werden.
-    echo Stellen Sie sicher, dass eine Internetverbindung besteht.
-    if not defined PRAXISZEIT_NONINTERACTIVE pause
-    exit /b 1
-)
-
-REM Verifizieren, dass die Kern-Module wirklich importierbar sind. Die Deps sind
-REM im Release bereits vorgebuendelt (build-release.sh); dieser Check faengt einen
-REM kaputten Zustand sichtbar ab, BEVOR der Dienst startet (statt spaeter still an
-REM der Migration zu scheitern -> ERR_CONNECTION_REFUSED). -s = User-Site ignorieren.
+REM Keine Installation aus dem Internet (Audit 2026-11-07 S3-05): die
+REM Abhaengigkeiten sind beim Bauen mit gepruefter Pruefsumme (requirements.lock,
+REM --require-hashes) ins Paket gekommen. Frueher luden get-pip.py und
+REM "pip install -r requirements.txt" hier als Administrator ungeprueft die
+REM jeweils neueste Version von PyPI. Hier wird nur geprueft, dass die
+REM Kern-Module importierbar sind. -s = User-Site ignorieren.
 "%PYTHON%" -s -c "import alembic, uvicorn, fastapi, sqlalchemy, psycopg2" 2>nul
 if %errorlevel% neq 0 (
     echo.
-    echo FEHLER: Python-Abhaengigkeiten fehlen im Bundle ^(Import-Check fehlgeschlagen^).
-    echo Internetverbindung pruefen und Setup erneut ausfuehren.
+    echo FEHLER: Python-Abhaengigkeiten fehlen im Paket ^(Import-Check fehlgeschlagen^).
+    echo Das Paket ist unvollstaendig - bitte erneut herunterladen und entpacken.
     if not defined PRAXISZEIT_NONINTERACTIVE pause
     exit /b 1
 )
@@ -297,6 +294,21 @@ echo.
 
 if not defined PRAXISZEIT_NONINTERACTIVE pause
 goto :eof
+
+:fremde_dateien
+echo.
+echo FEHLER: Setup gesperrt - im Installationsordner liegen Dateien, die nicht
+echo zu PraxisZeit gehoeren ^(Liste oben^). Bitte entfernen oder PraxisZeit in
+echo einen neuen, leeren Ordner installieren.
+if not defined PRAXISZEIT_NONINTERACTIVE pause
+exit /b 1
+
+:rechte_fehler
+echo.
+echo FEHLER: Die Zugriffsrechte des Installationsordners liessen sich nicht
+echo einschraenken ^(Meldung oben^). Setup abgebrochen.
+if not defined PRAXISZEIT_NONINTERACTIVE pause
+exit /b 1
 
 REM ============================================================
 REM Subroutinen

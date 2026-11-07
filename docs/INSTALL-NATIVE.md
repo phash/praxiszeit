@@ -431,7 +431,7 @@ sudo systemctl start praxiszeit
 # macOS (Dienstkonto _praxiszeit, Ordner /usr/local/praxiszeit, launchd statt systemd)
 sudo cp /pfad/zum/backup/.db-credentials /usr/local/praxiszeit/config/.db-credentials
 sudo chmod 600 /usr/local/praxiszeit/config/.db-credentials
-sudo chown _praxiszeit:staff /usr/local/praxiszeit/config/.db-credentials
+sudo chown _praxiszeit:_praxiszeit /usr/local/praxiszeit/config/.db-credentials
 sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist 2>/dev/null
 sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist
 ```
@@ -591,8 +591,9 @@ glibc-Symbole > 2.34 verlangt (`check_glibc_compat`).
   `LC_RPATH`, aber **ohne** `--prune`. Stand 20261001/CPython 3.13.16: je
   Architektur 10 Mach-O-Dateien, alle sauber (`/usr/lib`, `/System/Library`,
   `@rpath` über `@executable_path/../lib` bzw. `@loader_path/../..`). Die
-  Pakete, die `get-pip.py` erst beim Kunden installiert, sind dabei noch nicht
-  im Paket und werden nicht geprüft.
+  Pakete, die `install.sh` erst beim Kunden aus `requirements.lock` installiert
+  (`--require-hashes`, nur Wheels), sind dabei noch nicht im Paket und werden
+  nicht geprüft.
 
 **⚠️ macOS-CI-Gap:** `validate-macos.yml` läuft auf dem **privaten** Repo **nicht**
 (alle Runs hängen dauerhaft `queued` — keine macOS-Runner-Minuten). 1.8.1–1.8.7
