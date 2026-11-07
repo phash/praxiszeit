@@ -57,14 +57,24 @@ def test_neutralize_strips_illegal_control_chars():
     assert neutralize_spreadsheet_formula(f"a{CTRL}b") == "ab"
 
 
-def test_neutralize_keeps_formula_semantics():
-    assert neutralize_spreadsheet_formula("=1+1") == "'=1+1"
-    assert neutralize_spreadsheet_formula("\t=x") == "'\t=x"
-    # Steuerzeichen vor einer Formel: erst entfernen, dann neutralisieren
-    assert neutralize_spreadsheet_formula("\x01=HYPERLINK()") == "'=HYPERLINK()"
+def test_neutralize_keeps_text_and_strips_control_chars():
+    """S2-7: der Formelschutz liegt im Zelltyp — der Text bleibt wortgleich."""
+    assert neutralize_spreadsheet_formula("=1+1") == "=1+1"
+    assert neutralize_spreadsheet_formula("- Termin") == "- Termin"
+    # Steuerzeichen vor einer Formel: werden entfernt, der Rest bleibt
+    assert neutralize_spreadsheet_formula("\x01=HYPERLINK()") == "=HYPERLINK()"
     assert neutralize_spreadsheet_formula("Zeile1\nZeile2") == "Zeile1\nZeile2"
     assert neutralize_spreadsheet_formula(42) == 42
     assert neutralize_spreadsheet_formula(None) is None
+
+
+def test_formula_prefixed_for_untyped_sinks():
+    """Für untypisierte Senken (CSV) bleibt das Apostroph — nur bei echten Formelzeichen."""
+    from app.services.export_service import formula_prefixed
+    assert formula_prefixed("=1+1") == "'=1+1"
+    assert formula_prefixed("\t=x") == "'\t=x"
+    assert formula_prefixed("\x01=HYPERLINK()") == "'=HYPERLINK()"
+    assert formula_prefixed("Termin") == "Termin"
 
 
 def test_safe_sheet_title_rules():
@@ -112,7 +122,7 @@ def _xlsx_text(buf):
 def test_xlsx_monthly_with_hostile_text(db, hostile_users):
     wb, text = _xlsx_text(export_service.generate_monthly_report(db, 2026, 1))
     assert "Notizmit Steuerzeichen" in text
-    assert "'=HYPERLINK" in text
+    assert '=HYPERLINK("x")' in text and "'=HYPERLINK" not in text  # S2-7
     names = wb.sheetnames
     assert len(names) == len(set(n.lower() for n in names)) >= 2
     assert all(not set(n) & set("\\/*?:[]") for n in names)

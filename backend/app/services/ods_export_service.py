@@ -27,6 +27,8 @@ from app.services.export_service import (
     format_weekly_hours_history,  # #415
     day_work_blocks,  # #498
     day_credit_minutes, NOT_CREDITED_HEADER,  # Spec 2026-10-08, 15.1
+    night_worker_export_value,  # A2-11
+    day_stamps, presence_hours_value, STAMPED_HEADER, PRESENCE_HEADER, BREAK_WAIVER_HEADER,  # A2-4
 )
 
 
@@ -136,6 +138,19 @@ def _entry_remark(day_entries, is_sunday, is_holiday):
     return " | ".join(parts)
 
 
+def _stamp_cells(tr, stamps, bold_style) -> None:
+    """A2-4: Spalten 14–16 einer Tageszeile — Rohstempel, Anwesenheit laut Stempel
+    (über 10 h fett, das ODS kennt keine Farben), Begründung der § 4-Ausnahme.
+    Parität zu ``export_service._write_stamp_columns``."""
+    tr.addElement(_str_cell(stamps.spans))
+    presence = presence_hours_value(stamps.presence_minutes)
+    if presence is None:
+        tr.addElement(_empty_cell())
+    else:
+        tr.addElement(_float_cell(presence, style=bold_style if stamps.over_limit else None))
+    tr.addElement(_str_cell(stamps.break_waiver))
+
+
 def _empty_cell() -> TableCell:
     return TableCell(valuetype="string")
 
@@ -161,7 +176,7 @@ def _save(doc: OpenDocumentSpreadsheet) -> BytesIO:
     return buf
 
 
-def _get_active_users(db: Session, tenant_id=None, period=None) -> List[User]:
+def _get_active_users(db: Session, tenant_id=None, period=None, include_hidden: bool = False) -> List[User]:
     """Mitarbeiter für den Export. F-026: expliziter Tenant-Filter zusätzlich zu RLS.
 
     Release-Review 1.16.0: mit ``period`` (start, end) delegiert die Auswahl an
@@ -170,7 +185,7 @@ def _get_active_users(db: Session, tenant_id=None, period=None) -> List[User]:
     Aufrufer ohne Zeitraumbezug unverändert funktionieren.
     """
     if period is not None:
-        return export_users(db, tenant_id, period[0], period[1])
+        return export_users(db, tenant_id, period[0], period[1], include_hidden=include_hidden)  # A2-6
     q = db.query(User).filter(User.is_active == True, User.is_hidden == False)
     if tenant_id is not None:
         q = q.filter(User.tenant_id == tenant_id)
@@ -181,14 +196,15 @@ def _get_active_users(db: Session, tenant_id=None, period=None) -> List[User]:
 # Monthly report
 # ---------------------------------------------------------------------------
 
-def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
+def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False, tenant_id=None, include_hidden: bool = False) -> BytesIO:
     """One sheet per employee, daily rows with target/actual/diff.
     DSGVO F-003: sick absences are masked when include_health_data=False (default).
     F-026: pass tenant_id for belt-and-suspenders explicit filter."""
     doc, bold, normal = _doc_with_styles()
 
     users = _get_active_users(db, tenant_id, period=(
-        date(year, month, 1), date(year, month, monthrange(year, month)[1])))
+        date(year, month, 1), date(year, month, monthrange(year, month)[1])),
+        include_hidden=include_hidden)  # A2-6
     for user in users:
         _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data)
 
@@ -231,10 +247,8 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
     meta2.addElement(_str_cell("Ja" if user.exempt_from_arbzg else "Nein"))
     meta2.addElement(_empty_cell())
     meta2.addElement(_str_cell("Nachtarbeitnehmer (§6 Abs. 2 ArbZG):", style=bold))
-    # DSGVO F-006: is_night_worker ist gesundheitsnah (§6 ArbZG-Pflichtunter-
-    # suchungen) — nur bei include_health_data zeigen, sonst maskieren (analog
-    # zum XLS-Export in export_service.py).
-    meta2.addElement(_str_cell(("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"))
+    # DSGVO F-006 / A2-11: EINE Regel für alle Exporter (export_service.night_worker_export_value).
+    meta2.addElement(_str_cell(night_worker_export_value(user, include_health_data)))
     table.addElement(meta2)
 
     table.addElement(TableRow())  # Blank separator
@@ -245,6 +259,8 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         # #498: angehängt, nie eingeschoben (Parität zu XLSX).
         "Unterbrechung (Min)", "Zeiteinträge",
         NOT_CREDITED_HEADER,  # Spec 2026-10-08, 15.1: Spalte 13
+        # A2-4: tatsächliche Stempel + § 4-Ausnahme, angehängt (Parität zu XLSX).
+        STAMPED_HEADER, PRESENCE_HEADER, BREAK_WAIVER_HEADER,
     ]
     table.addElement(_header_row(headers, bold))
 
@@ -419,6 +435,8 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
         # Spec 15.1: Spalte 13 — Lücke + Hülle (P19).
         _credit = day_credit_minutes(day_entries)
         tr.addElement(_int_cell(_credit.not_credited) if _credit.not_credited is not None else _empty_cell())
+        # A2-4: Spalten 14–16 (Parität zu XLSX).
+        _stamp_cells(tr, day_stamps(day_entries), bold)
         month_not_credited += _credit.not_credited or 0
 
         total_target += target
@@ -472,13 +490,14 @@ def _monthly_sheet(doc, db, user, year, month, bold, normal, include_health_data
 # Yearly detailed report
 # ---------------------------------------------------------------------------
 
-def generate_yearly_report(db: Session, year: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
+def generate_yearly_report(db: Session, year: int, include_health_data: bool = False, tenant_id=None, include_hidden: bool = False) -> BytesIO:
     """Overview + absences overview + one detail sheet per employee (365 days).
     DSGVO F-003: sick/health data masked unless include_health_data=True.
     F-026: pass tenant_id for belt-and-suspenders explicit filter."""
     doc, bold, normal = _doc_with_styles()
 
-    users = _get_active_users(db, tenant_id, period=(date(year, 1, 1), date(year, 12, 31)))
+    users = _get_active_users(db, tenant_id, period=(date(year, 1, 1), date(year, 12, 31)),
+                              include_hidden=include_hidden)  # A2-6
     _yearly_overview_sheet(doc, db, users, year, bold, include_health_data)
     _absences_overview_sheet(doc, db, users, year, bold, include_health_data)
     for user in users:
@@ -616,8 +635,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
     meta1.addElement(_str_cell("Ja" if user.exempt_from_arbzg else "Nein"))
     meta1.addElement(_empty_cell())
     meta1.addElement(_str_cell("Nachtarbeitnehmer (§6 Abs. 2 ArbZG):", style=bold))
-    # DSGVO F-006: is_night_worker nur bei include_health_data zeigen (s. _monthly_sheet).
-    meta1.addElement(_str_cell(("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"))
+    # DSGVO F-006 / A2-11: s. export_service.night_worker_export_value.
+    meta1.addElement(_str_cell(night_worker_export_value(user, include_health_data)))
     # #415: Wochenstunden zum Jahresbeginn + Änderungen im Jahr
     _wh_segments = calculation_service.weekly_hours_segments(
         db, user, date(year, 1, 1), date(year, 12, 31), wh_changes=wh_changes
@@ -637,6 +656,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         # #498: angehängt, nie eingeschoben (Parität zu XLSX).
         "Unterbrechung (Min)", "Zeiteinträge",
         NOT_CREDITED_HEADER,  # Spec 2026-10-08, 15.1: Spalte 13
+        # A2-4: tatsächliche Stempel + § 4-Ausnahme, angehängt (Parität zu XLSX).
+        STAMPED_HEADER, PRESENCE_HEADER, BREAK_WAIVER_HEADER,
     ]
     table.addElement(_header_row(headers, bold))
 
@@ -790,6 +811,8 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
         # Spec 15.1: Spalte 13 (s. Monatsblatt).
         _credit = day_credit_minutes(day_entries)
         tr.addElement(_int_cell(_credit.not_credited) if _credit.not_credited is not None else _empty_cell())
+        # A2-4: Spalten 14–16 (Parität zu XLSX).
+        _stamp_cells(tr, day_stamps(day_entries), bold)
         year_not_credited += _credit.not_credited or 0
 
         table.addElement(tr)
@@ -815,13 +838,14 @@ def _yearly_employee_sheet(doc, db, user, year, bold, include_health_data: bool 
 # Yearly classic report (compact – one row per month)
 # ---------------------------------------------------------------------------
 
-def generate_yearly_report_classic(db: Session, year: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
+def generate_yearly_report_classic(db: Session, year: int, include_health_data: bool = False, tenant_id=None, include_hidden: bool = False) -> BytesIO:
     """One sheet per employee, 12 rows (one per month).
     DSGVO F-003: sick/health data masked unless include_health_data=True.
     F-026: pass tenant_id for belt-and-suspenders explicit filter."""
     doc, bold, normal = _doc_with_styles()
 
-    users = _get_active_users(db, tenant_id, period=(date(year, 1, 1), date(year, 12, 31)))
+    users = _get_active_users(db, tenant_id, period=(date(year, 1, 1), date(year, 12, 31)),
+                              include_hidden=include_hidden)  # A2-6
     for user in users:
         _classic_sheet(doc, db, user, year, bold, include_health_data)
 
@@ -844,8 +868,8 @@ def _classic_sheet(doc, db, user, year, bold, include_health_data: bool = False)
     flags_tr.addElement(_str_cell("Ja" if user.exempt_from_arbzg else "Nein"))
     flags_tr.addElement(_empty_cell())
     flags_tr.addElement(_str_cell("Nachtarbeitnehmer (§6 Abs. 2 ArbZG):", style=bold))
-    # DSGVO F-006: is_night_worker nur bei include_health_data zeigen (s. _monthly_sheet).
-    flags_tr.addElement(_str_cell(("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"))
+    # DSGVO F-006 / A2-11: s. export_service.night_worker_export_value.
+    flags_tr.addElement(_str_cell(night_worker_export_value(user, include_health_data)))
     table.addElement(flags_tr)
     table.addElement(TableRow())  # blank
 

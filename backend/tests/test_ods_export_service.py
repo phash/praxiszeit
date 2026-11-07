@@ -257,16 +257,23 @@ class TestFormulaInjection:
     admin opens the ODS export."""
 
     def test_str_cell_neutralizes_formula_equals(self):
+        """S2-7: Textzelle (office:value-type="string"), keine table:formula — der
+        Text bleibt ohne sichtbares Apostroph."""
         from odf.teletype import extractText
         from app.services.ods_export_service import _str_cell
         cell = _str_cell('=cmd|/c calc')
-        assert extractText(cell).startswith("'"), "leading = not neutralized"
+        assert extractText(cell) == '=cmd|/c calc'
+        assert cell.getAttribute("valuetype") == "string"
+        assert not cell.getAttribute("formula")
 
     def test_str_cell_neutralizes_at_and_plus_and_minus(self):
         from odf.teletype import extractText
         from app.services.ods_export_service import _str_cell
         for payload in ('@SUM(A1)', '+1+1', '-2-2'):
-            assert extractText(_str_cell(payload)).startswith("'"), payload
+            cell = _str_cell(payload)
+            assert extractText(cell) == payload
+            assert cell.getAttribute("valuetype") == "string", payload
+            assert not cell.getAttribute("formula"), payload
 
     def test_str_cell_leaves_safe_text_untouched(self):
         from odf.teletype import extractText
