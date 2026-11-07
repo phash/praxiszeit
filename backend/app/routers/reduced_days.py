@@ -60,6 +60,26 @@ def _reject_special_day_date(d: date) -> None:
         raise HTTPException(status_code=400, detail=SPECIAL_DAY_DATE_DETAIL)
 
 
+def _audit_change(db: Session, current_user: User, before=None, after=None) -> None:
+    """#537 (A2-5): dauerhafte, gehashte Spur im Aenderungsprotokoll (vor dem
+    Commit, gleiche Transaktion) — ein verkuerzter Tag deckelt das Soll."""
+    from app.services import admin_change_audit
+
+    def _fmt(row):
+        if row is None:
+            return None
+        return f"Verkürzter Tag {row[0].strftime('%d.%m.%Y')}: höchstens {row[1]} h"
+
+    if before == after:
+        return
+    admin_change_audit.log_change(
+        db, tenant_id=current_user.tenant_id, user_id=current_user.id,
+        changed_by=current_user.id, action="reduced_day_change",
+        source=admin_change_audit.SOURCE_SETTINGS,
+        old_text=_fmt(before), new_text=_fmt(after),
+    )
+
+
 def _log_change(action: str, current_user: User, before=None, after=None) -> None:
     """Nachvollziehbarkeit: wer hat welchen verkürzten Tag angelegt, geändert
     oder gelöscht (Akteur ``user:<id>``, nie Klarname; Datum und Stunden alt/neu)."""
@@ -164,6 +184,7 @@ def create_reduced_day(
         db, current_user, {},
         special_days_service.reduced_day_states([(body.date, body.max_hours)]),
     )
+    _audit_change(db, current_user, after=(row.date, row.max_hours))
     db.commit()
     db.refresh(row)
     _log_change("created", current_user, after=(row.date, row.max_hours))
@@ -194,6 +215,7 @@ def update_reduced_day(
         db, current_user, before,
         special_days_service.reduced_day_states([(body.date, body.max_hours)]),
     )
+    _audit_change(db, current_user, before=old_row, after=(row.date, row.max_hours))
     db.commit()
     db.refresh(row)
     _log_change("updated", current_user, before=old_row, after=(row.date, row.max_hours))
@@ -213,6 +235,7 @@ def delete_reduced_day(
     db.flush()
 
     warning = _apply_change(db, current_user, before, {})
+    _audit_change(db, current_user, before=old_row)
     db.commit()
     _log_change("deleted", current_user, before=old_row)
     # Fix #5: wie holidays.delete_holiday — abgeschlossenes Jahr → 200 + {"warning"}.
