@@ -294,6 +294,49 @@ def test_arbzg_limits_lists_days_weeks_and_break_exceptions(db, test_user, test_
     assert reports.get_arbzg_limits(year=2026, month=9, db=db, current_user=test_admin)["employees"] == []
 
 
+def test_arbzg_limits_lists_break_shortfalls_without_exception(db, test_user, test_admin):
+    """Final-Review: ein § 4-Fehlbetrag ohne anerkannte Ausnahme (Ausstempeln
+    mit offener/abgelehnter Beantragung, automatisch geschlossen, anerkannt)
+    war im Bericht unsichtbar."""
+    from app.models import ChangeRequest, ChangeRequestStatus, ChangeRequestType
+
+    pending = TimeEntry(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 10, 5),
+                        start_time=time(7), end_time=time(17), break_minutes=0)
+    db.add(pending)
+    _te(db, test_user, date(2026, 10, 6), time(8), time(15), break_minutes=0, auto_closed=True)
+    _te(db, test_user, date(2026, 10, 7), time(8), time(15), break_minutes=0, credit_override=True)
+    # gedeckt: 30 Min Pause bei 7 h — kein Befund
+    _te(db, test_user, date(2026, 10, 8), time(8), time(15, 30), break_minutes=30)
+    # anerkannte Ausnahme — steht unter break_exceptions, nicht hier
+    _te(db, test_user, date(2026, 10, 9), time(8), time(15), break_waiver_reason="Notfall im Wartezimmer")
+    # geteilter Dienst: Abstand 60 Min zählt als Pause — kein Befund
+    _te(db, test_user, date(2026, 10, 12), time(7), time(11))
+    _te(db, test_user, date(2026, 10, 12), time(12), time(16))
+    db.flush()
+    db.add(ChangeRequest(
+        user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, request_type=ChangeRequestType.UPDATE,
+        entry_kind="time_entry", status=ChangeRequestStatus.PENDING, time_entry_id=pending.id,
+        proposed_date=pending.date, proposed_start_time=pending.start_time,
+        proposed_end_time=pending.end_time, proposed_break_minutes=0,
+        reason="Keine Pause möglich", break_waiver_reason="Keine Pause möglich"))
+    db.commit()
+    rep = reports.get_arbzg_limits(year=2026, month=10, db=db, current_user=test_admin)
+    row = _row(rep, test_user)
+    assert row["break_shortfalls"] == [
+        {"date": "2026-10-05", "worked_hours": 10.0, "break_minutes": 0, "required_minutes": 45,
+         "shortfall_minutes": 45, "auto_closed": False, "credit_override": False,
+         "waiver_request": "pending"},
+        {"date": "2026-10-06", "worked_hours": 7.0, "break_minutes": 0, "required_minutes": 30,
+         "shortfall_minutes": 30, "auto_closed": True, "credit_override": False,
+         "waiver_request": None},
+        {"date": "2026-10-07", "worked_hours": 7.0, "break_minutes": 0, "required_minutes": 30,
+         "shortfall_minutes": 30, "auto_closed": False, "credit_override": True,
+         "waiver_request": None},
+    ]
+    assert rep["total_break_shortfalls"] == 3
+    assert [b["date"] for b in row["break_exceptions"]] == ["2026-10-09"]
+
+
 def test_arbzg_limits_week_crossing_month_counts_whole_week(db, test_user, test_admin):
     """Eine Woche über den Monatswechsel zählt mit ALLEN Tagen."""
     for d in (date(2026, 9, 28), date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1), date(2026, 10, 2)):
@@ -306,7 +349,7 @@ def test_arbzg_limits_week_crossing_month_counts_whole_week(db, test_user, test_
 def test_arbzg_limits_skips_exempt_and_quiet_employees(db, test_user, test_admin):
     boss = _mk_user(db, "leitung", exempt_from_arbzg=True)
     _te(db, boss, date(2026, 10, 5), time(6), time(20))
-    _te(db, test_user, date(2026, 10, 5))
+    _te(db, test_user, date(2026, 10, 5), break_minutes=30)
     db.commit()
     assert reports.get_arbzg_limits(year=2026, month=None, db=db, current_user=test_admin)["employees"] == []
 

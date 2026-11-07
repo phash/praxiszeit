@@ -303,13 +303,15 @@ describe('<Reports /> ArbZG-Auswertungen (Audit 2026-11-07)', () => {
     getMock.mockResolvedValue({
       data: {
         year: 2026, month: 10, total_days_over_10h: 1, total_weeks_over_48h: 1, total_break_exceptions: 1,
-        hidden_with_data_count: 0,
+        total_break_shortfalls: 1, hidden_with_data_count: 0,
         employees: [{
           user_id: 'u1', first_name: 'Anna', last_name: 'Meier',
           days_over_10h: [{ date: '2026-10-05', presence_hours: 12, credited_hours: 7.5, auto_closed: false }],
           weeks_over_48h: [{ iso_week: '2026-W41', presence_hours: 56 }],
           break_exceptions: [{ date: '2026-10-13', start_time: '07:00', end_time: '14:00', break_minutes: 0,
             reason: 'Notfall, keine Pause möglich' }],
+          break_shortfalls: [{ date: '2026-10-20', worked_hours: 10, break_minutes: 0, required_minutes: 45,
+            shortfall_minutes: 45, auto_closed: false, credit_override: false, waiver_request: 'rejected' }],
         }],
       },
     });
@@ -322,6 +324,12 @@ describe('<Reports /> ArbZG-Auswertungen (Audit 2026-11-07)', () => {
     expect(within(c).getByText('7:30 h')).toBeInTheDocument();
     expect(within(c).getByText(/KW 41\/2026: 56:00 h/)).toBeInTheDocument();
     expect(within(c).getByText('Notfall, keine Pause möglich')).toBeInTheDocument();
+    // § 4-Fehlbetrag ohne anerkannte Ausnahme (Final-Review)
+    const short = within(c).getByRole('table', { name: 'Zu kurze Pausen Anna Meier' });
+    expect(within(short).getByText('20.10.2026')).toBeInTheDocument();
+    expect(within(short).getByText('0 von 45 Min.')).toBeInTheDocument();
+    expect(within(short).getByText('Ausnahme abgelehnt')).toBeInTheDocument();
+    expect(within(c).getByText(/1 Tag\(e\) mit zu kurzer Pause/)).toBeInTheDocument();
     expect(getMock).toHaveBeenCalledWith('/admin/reports/arbzg-limits?year=' + new Date().getFullYear() + '&month=10');
   });
 

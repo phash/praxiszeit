@@ -117,6 +117,12 @@ interface LimitsEmployee {
   days_over_10h: { date: string; presence_hours: number; credited_hours: number; auto_closed: boolean }[];
   weeks_over_48h: { iso_week: string; presence_hours: number }[];
   break_exceptions: { date: string; start_time: string; end_time: string | null; break_minutes: number; reason: string }[];
+  // § 4-Fehlbetrag ohne anerkannte Ausnahme (Ausnahme beantragt/abgelehnt, automatisch geschlossen, anerkannt).
+  break_shortfalls: {
+    date: string; worked_hours: number; break_minutes: number; required_minutes: number;
+    shortfall_minutes: number; auto_closed: boolean; credit_override: boolean;
+    waiver_request: 'pending' | 'rejected' | null;
+  }[];
 }
 
 interface LimitsReport extends HiddenCount {
@@ -126,6 +132,20 @@ interface LimitsReport extends HiddenCount {
   total_days_over_10h: number;
   total_weeks_over_48h: number;
   total_break_exceptions: number;
+  total_break_shortfalls: number;
+}
+
+const WAIVER_REQUEST_LABELS: Record<string, string> = {
+  pending: 'Ausnahme beantragt, noch offen',
+  rejected: 'Ausnahme abgelehnt',
+};
+
+function shortfallNote(b: LimitsEmployee['break_shortfalls'][number]): string {
+  const notes: string[] = [];
+  if (b.waiver_request) notes.push(WAIVER_REQUEST_LABELS[b.waiver_request]);
+  if (b.auto_closed) notes.push('automatisch geschlossen');
+  if (b.credit_override) notes.push('anerkannt');
+  return notes.join(', ');
 }
 
 // Spec 2026-10-08, 8.1 / P22: 24-Wochen-Durchschnitt (§3 ArbZG) mit einem
@@ -1239,10 +1259,11 @@ export default function Reports() {
               <span>Tage &gt; 10 h: <strong>{limitsReport.total_days_over_10h}</strong></span>
               <span>Wochen &gt; 48 h: <strong>{limitsReport.total_weeks_over_48h}</strong></span>
               <span>Pausenausnahmen: <strong>{limitsReport.total_break_exceptions}</strong></span>
+              <span>Pause zu kurz: <strong>{limitsReport.total_break_shortfalls}</strong></span>
             </div>
             {limitsReport.employees.length === 0 ? (
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-green-800">
-                ✓ Keine Tage über 10 h, keine Wochen über 48 h und keine Pausenausnahmen
+                ✓ Keine Tage über 10 h, keine Wochen über 48 h, keine Pausenausnahmen und keine zu kurzen Pausen
               </div>
             ) : (
               <div className="space-y-3">
@@ -1253,7 +1274,7 @@ export default function Reports() {
                       className="w-full px-4 py-3 bg-red-50 flex items-center justify-between hover:bg-red-100 transition"
                     >
                       <span className="font-medium text-red-900">
-                        {emp.first_name} {emp.last_name} – {emp.days_over_10h.length} Tag(e) &gt; 10 h, {emp.weeks_over_48h.length} Woche(n) &gt; 48 h, {emp.break_exceptions.length} Pausenausnahme(n)
+                        {emp.first_name} {emp.last_name} – {emp.days_over_10h.length} Tag(e) &gt; 10 h, {emp.weeks_over_48h.length} Woche(n) &gt; 48 h, {emp.break_exceptions.length} Pausenausnahme(n), {emp.break_shortfalls.length} Tag(e) mit zu kurzer Pause
                       </span>
                       {expandedLimits[emp.user_id] ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </button>
@@ -1302,6 +1323,30 @@ export default function Reports() {
                                   <td className="px-3 py-1">{b.start_time}–{b.end_time ?? 'offen'}</td>
                                   <td className="px-3 py-1 text-right">{b.break_minutes} Min.</td>
                                   <td className="px-3 py-1 text-gray-700">{b.reason}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                        {emp.break_shortfalls.length > 0 && (
+                          <table aria-label={`Zu kurze Pausen ${emp.first_name} ${emp.last_name}`} className="w-full">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-3 py-1 text-left text-xs text-gray-500 uppercase">Tag (Pause zu kurz, § 4)</th>
+                                <th className="px-3 py-1 text-right text-xs text-gray-500 uppercase">Arbeitszeit</th>
+                                <th className="px-3 py-1 text-right text-xs text-gray-500 uppercase">Pause</th>
+                                <th className="px-3 py-1 text-right text-xs text-gray-500 uppercase">Fehlt</th>
+                                <th className="px-3 py-1 text-left text-xs text-gray-500 uppercase">Hinweis</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {emp.break_shortfalls.map((b) => (
+                                <tr key={b.date}>
+                                  <td className="px-3 py-1">{isoDateDe(b.date)}</td>
+                                  <td className="px-3 py-1 text-right">{formatHoursHM(b.worked_hours)} h</td>
+                                  <td className="px-3 py-1 text-right">{b.break_minutes} von {b.required_minutes} Min.</td>
+                                  <td className="px-3 py-1 text-right text-red-700 font-medium">{b.shortfall_minutes} Min.</td>
+                                  <td className="px-3 py-1 text-gray-700">{shortfallNote(b)}</td>
                                 </tr>
                               ))}
                             </tbody>

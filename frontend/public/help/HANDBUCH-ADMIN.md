@@ -1015,6 +1015,7 @@ Die Auswertung **„Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG"** list
 - **Tage über 10 Stunden** – je Tag die Anwesenheit laut Stempel (abzüglich Pausen) und daneben die angerechnete Zeit; ein Tag erscheint, wenn einer der beiden Werte 10 Stunden übersteigt (genau 10:00 Stunden nicht). Solche Tage entstehen z. B. beim Live-Ausstempeln (dort nur Warnung), durch automatisch geschlossene Einträge (gekennzeichnet) oder durch Anerkennen.
 - **Wochen über 48 Stunden** laut Stempel (Kalenderwoche Mo–So, auch über einen Monatswechsel mit allen Tagen der Woche).
 - **Pausenausnahmen** – jeder Eintrag mit dokumentierter Pflicht-Pause-Ausnahme mit Zeit, erfasster Pause und Begründung.
+- **Pause zu kurz** – Tage, an denen die Pause nach § 4 über alle Einträge des Tages nicht reicht und keine Ausnahme anerkannt ist, mit Arbeitszeit, gemachter und nötiger Pause und dem Fehlbetrag. Das kommt vor, wenn beim Ausstempeln eine Ausnahme beantragt wurde und die Genehmigung noch offen ist oder abgelehnt wurde (Hinweis „Ausnahme beantragt, noch offen" bzw. „Ausnahme abgelehnt"), bei automatisch geschlossenen und bei anerkannten Einträgen. Bis Version 1.22.0 stand ein solcher Tag nur im Antragsverlauf.
 
 Es erscheinen nur Mitarbeitende mit mindestens einem Befund; ein Klick auf die Zeile zeigt die Einzelheiten. Die tatsächlichen Stempel und die Begründungen stehen zusätzlich in den Monats- und Jahresexporten (→ [Abschnitt 6](#6-berichte-und-exporte)).
 

@@ -14,7 +14,7 @@ from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
 from app.models.public_holiday import PublicHoliday
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences, WeeklyHoursChangeInPeriod
-from app.services import calculation_service, export_service, holiday_service, ods_export_service, rest_time_service, work_window_service
+from app.services import break_validation_service, calculation_service, export_service, holiday_service, ods_export_service, rest_time_service, work_window_service
 from app.services.timezone_service import now_local, today_local
 from app.services.arbzg_utils import is_night_work
 import calendar
@@ -1362,6 +1362,60 @@ def get_24_week_averaging_period(
     }
 
 
+def _break_shortfall_days(db: Session, tenant_id, user, entries, start: date, end: date) -> list:
+    """Final-Review (A1-08-Nachzug): Tage mit § 4-Fehlbetrag OHNE anerkannte
+    Pausenausnahme.
+
+    § 4 ist an allen Schreibpfaden eine Sperre (#499) — ein Fehlbetrag entsteht
+    trotzdem beim Ausstempeln mit beantragter (noch offener oder abgelehnter)
+    Ausnahme, beim automatischen Schließen und beim Anerkennen. Bisher stand er
+    dann nur im Antragsverlauf oder im Toast von damals. Gerechnet wird wie
+    ``validate_daily_break`` über alle geschlossenen Einträge des Tages
+    (``break_block_for_entry`` + ``daily_break_figures``); Tage, an denen ein
+    Eintrag eine Ausnahme trägt, stehen schon unter ``break_exceptions``."""
+    from app.models import ChangeRequest
+
+    by_day: dict = {}
+    for e in entries:
+        if start <= e.date <= end and e.end_time is not None:
+            by_day.setdefault(e.date, []).append(e)
+    found = []
+    for d in sorted(by_day):
+        day_entries = by_day[d]
+        if any((e.break_waiver_reason or "").strip() for e in day_entries):
+            continue
+        blocks = [break_validation_service.break_block_for_entry(db, user, e) for e in day_entries]
+        worked, covered = break_validation_service.daily_break_figures(blocks)
+        required = 45 if worked > 540 else 30 if worked > 360 else 0
+        if covered >= required:
+            continue
+        requests = (
+            db.query(ChangeRequest.status)
+            .filter(
+                ChangeRequest.tenant_id == tenant_id,  # F-026
+                ChangeRequest.time_entry_id.in_([e.id for e in day_entries]),
+                ChangeRequest.break_waiver_reason.isnot(None),
+            )
+            .all()
+        )
+        statuses = {getattr(r.status, "value", r.status) for r in requests}
+        waiver_request = (
+            "pending" if "pending" in statuses
+            else "rejected" if "rejected" in statuses else None
+        )
+        found.append({
+            "date": d.isoformat(),
+            "worked_hours": round(worked / 60.0, 2),
+            "break_minutes": int(covered),
+            "required_minutes": required,
+            "shortfall_minutes": int(required - covered),
+            "auto_closed": any(getattr(e, "auto_closed", False) for e in day_entries),
+            "credit_override": any(getattr(e, "credit_override", False) for e in day_entries),
+            "waiver_request": waiver_request,
+        })
+    return found
+
+
 DAILY_LIMIT_MINUTES = 600   # § 3 ArbZG: höchstens 10 h am Werktag
 WEEKLY_LIMIT_MINUTES = 2880  # 48 h je Kalenderwoche (§ 3: 6 Werktage × 8 h)
 
@@ -1386,6 +1440,8 @@ def get_arbzg_limits(
     ein Tag zählt, wenn eine von beiden 10 h übersteigt. Wochen = ISO-Kalender-
     wochen (Mo–So), die den Zeitraum berühren, mit ALLEN ihren Tagen.
     Pausenausnahmen = Einträge mit ``break_waiver_reason`` (Text wie erfasst).
+    Pausen-Fehlbeträge = Tage mit § 4-Fehlbetrag ohne Ausnahme
+    (``_break_shortfall_days``).
     § 18-befreite Personen erscheinen nicht; aufgeführt werden nur Personen mit
     mindestens einem Befund."""
     if month:
@@ -1456,7 +1512,9 @@ def get_arbzg_limits(
             if start <= e.date <= end and (e.break_waiver_reason or "").strip()
         ]
 
-        if days_over or weeks_over or exceptions:
+        shortfalls = _break_shortfall_days(db, current_user.tenant_id, user, entries, start, end)
+
+        if days_over or weeks_over or exceptions or shortfalls:
             result.append({
                 "user_id": str(user.id),
                 "first_name": user.first_name,
@@ -1464,6 +1522,7 @@ def get_arbzg_limits(
                 "days_over_10h": days_over,
                 "weeks_over_48h": weeks_over,
                 "break_exceptions": exceptions,
+                "break_shortfalls": shortfalls,
             })
 
     return {
@@ -1473,5 +1532,6 @@ def get_arbzg_limits(
         "total_days_over_10h": sum(len(r["days_over_10h"]) for r in result),
         "total_weeks_over_48h": sum(len(r["weeks_over_48h"]) for r in result),
         "total_break_exceptions": sum(len(r["break_exceptions"]) for r in result),
+        "total_break_shortfalls": sum(len(r["break_shortfalls"]) for r in result),
         "hidden_with_data_count": hidden,
     }

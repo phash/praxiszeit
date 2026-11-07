@@ -246,7 +246,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>📋 <span className="font-medium">Sonntagsarbeit (§11):</span> Freie Sonntage + Ersatzruhetage</li>
             <li>📋 <span className="font-medium">Nachtarbeit (§6):</span> Nachtarbeitnehmer-Tracking</li>
             <li>📋 <span className="font-medium">24-Wochen-Durchschnitt (§3):</span> Ø angerechnet / Werktag und Anwesenheit laut Stempel</li>
-            <li>📋 <span className="font-medium">Höchstarbeitszeit und Pausenausnahmen (§3/§4):</span> Tage &gt; 10 h, Wochen &gt; 48 h, Pausenausnahmen mit Begründung</li>
+            <li>📋 <span className="font-medium">Höchstarbeitszeit und Pausenausnahmen (§3/§4):</span> Tage &gt; 10 h, Wochen &gt; 48 h, Pausenausnahmen mit Begründung, Tage mit zu kurzer Pause ohne anerkannte Ausnahme</li>
           </ul>
         </section>
         <section>
