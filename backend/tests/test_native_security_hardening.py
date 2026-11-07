@@ -806,6 +806,11 @@ def test_secure_install_ps1_refuses_a_preexisting_bin_postgresql_without_install
     assert guard in step0
     assert step0.index("$evidence = Test-InstallEvidence $root") < step0.index(guard)
     assert "exit 2" in step0[step0.index(guard):step0.index(guard) + 900]
+    # the lookup fails closed: only a missing parent means "absent"
+    fn = _ps1_function(_ps1_code(), "Get-EntryNoFollow")
+    assert "catch [System.IO.FileNotFoundException], [System.IO.DirectoryNotFoundException] {" in fn
+    assert fn.count("exit 1") == 2
+    assert "Test-Path" not in fn
     # setup.bat still calls secure-install.ps1 before it creates bin\\postgresql
     setup = _read("installer/windows/setup.bat").decode("ascii", "replace")
     assert setup.index("secure-install.ps1") < setup.index('mklink /J "%PG_INSTALL_DIR%"')

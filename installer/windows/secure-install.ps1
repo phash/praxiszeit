@@ -116,8 +116,23 @@ function Get-EntryNoFollow([string]$Path) {
     # (Test-Path folgt ihr und meldet $false). $null = nicht vorhanden.
     $parent = Split-Path -Parent $Path
     $leaf = Split-Path -Leaf $Path
-    if (-not [System.IO.Directory]::Exists($parent)) { return $null }
-    foreach ($e in [System.IO.Directory]::GetFileSystemEntries($parent)) {
+    # Fail closed: nur "Elternordner gibt es nicht" heisst "nicht vorhanden";
+    # jeder andere Fehler (keine Rechte, E/A) bricht ab (Exit 1, ungeprueft).
+    try {
+        [void][System.IO.File]::GetAttributes($parent)
+    } catch [System.IO.FileNotFoundException], [System.IO.DirectoryNotFoundException] {
+        return $null
+    } catch {
+        Write-Output "FEHLER: $parent laesst sich nicht pruefen - $_"
+        exit 1
+    }
+    try {
+        $entries = [System.IO.Directory]::GetFileSystemEntries($parent)
+    } catch {
+        Write-Output "FEHLER: $parent laesst sich nicht auflisten und damit nicht pruefen - $_"
+        exit 1
+    }
+    foreach ($e in $entries) {
         if ([string]::Equals((Split-Path -Leaf $e), $leaf, [System.StringComparison]::OrdinalIgnoreCase)) {
             return (New-Object System.IO.DirectoryInfo($e))
         }
