@@ -276,11 +276,13 @@ weniger Anwesenheit).
 
 **Nenner der Durchschnitte (§ 3 Satz 2, § 6 Abs. 2 ArbZG, Audit 2026-11-07 A1-13):**
 `reports.averaging_workdays` = Werktage Mo–Sa des Zeitraums, ohne Feiertage, ohne Tage mit
-`VACATION`/`OTHER`/`PAID_LEAVE`, nur im Beschäftigungsfenster — unabhängig vom Vertrag. Krank,
-Fortbildung und Freizeitausgleich bleiben Werktage. Vorher Mo–Fr mit Tagessoll > 0, während
+`VACATION`/`SICK`/`TRAINING`/`OTHER`/`PAID_LEAVE`, nur im Beschäftigungsfenster — unabhängig vom
+Vertrag. Urlaub und Krankheit bleiben nach Art. 16 lit. b RL 2003/88/EG neutral (als 0-h-Werktag
+verdünnten sie den Schnitt); Fortbildung ebenso, weil sie nicht als Zeiteintrag im Zähler steht.
+Nur der Freizeitausgleich (`OVERTIME`) bleibt ein 0-h-Werktag — er ist der Ausgleich selbst. Vorher Mo–Fr mit Tagessoll > 0, während
 Samstagsarbeit im Zähler stand (45 h in 5 Tagen = Ø 9 h statt 7,5 h; Teilzeit 3 × 10 h = Ø 10 h
 statt 5 h). Derselbe Nenner speist den Monatsdurchschnitt für Nachtarbeitnehmer im §6-Bericht
-(Ø ≤ 8 h je Werktag im Kalendermonat).
+(Ø ≤ 8 h je Werktag im Kalendermonat; nur vergangene Monate mit Einträgen, ohne Werktag kein Urteil).
 
 **§11 Ersatzruhetag (A1-01):** Ein Tag zählt als Ersatzruhetag, wenn er Mo–Sa liegt, vorbei ist
 (vor heute), kein Feiertag, im Beschäftigungsfenster, ohne Zeiteintrag, ohne Abwesenheit außer
@@ -392,8 +394,9 @@ zeigt bewusst nur die **angerechnete Arbeitszeit der Zeiteinträge** (Σ `net_ho
 Gutschrift; außerhalb des Beschäftigungsfensters 0), die Abwesenheit steht in der Spalte
 daneben. „Angerechnet" heißt: bei Arbeitszeit-Blöcken (§4.1) die gekappte Zeit nach Abzug
 der Lücke — Von/Bis kommen aus `start_time`/`end_time`, Netto aus `net_hours` (mit
-`uncredited_minutes`), die Rohstempel `raw_*` stehen in keiner Datei. „Stempelzeit" oder
-„tatsächlich erfasst" wäre deshalb die falsche Beschreibung.
+`uncredited_minutes`). „Stempelzeit" oder „tatsächlich erfasst" wäre deshalb die falsche
+Beschreibung — die tatsächlichen Stempel (`raw_*`) stehen seit Audit 2026-11-07 (A2-4) in der
+angehängten Spalte „Gestempelt (Von–Bis)" (PDF: „Gestempelt (Anwesenheit)").
 
 Die **Per-Tag-Spalte „Differenz"/„Diff."** ist dagegen eine Saldo-Aussage und rechnet seit
 #497 `Netto + Gutschrift − Soll`, mit der Gutschrift aus

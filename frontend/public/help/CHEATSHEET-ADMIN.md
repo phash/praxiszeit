@@ -272,7 +272,7 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 | **§6 Nachtarbeit** | MA mit ≥ 48 Nachtarbeitstagen/Jahr; Monats-Ø je Werktag für Nachtarbeitnehmer | Arbeitsmed. Untersuchung anbieten; Monats-Ø > 8 h |
 | **§11 Sonntagsarbeit** | Sonntage pro MA (Ziel: max. 37/Jahr) | Dienstplanung anpassen |
 | **§11 Ersatzruhetag** | Verstöße mit Datum, laufende Fristen; nur ein sonst gearbeiteter, freier Tag zählt (kein ohnehin freier Samstag), je Einsatz ein Ruhetag | Ausgleich: Sonntag 2 Wo / Feiertag 8 Wo, als „Sonstiges" eintragen |
-| **§3 24-Wochen-Durchschnitt** | Ø je Werktag (Mo–Sa ohne Feiertage/Urlaub) | Ø > 8 h |
+| **§3 24-Wochen-Durchschnitt** | Ø je Werktag (Mo–Sa ohne Feiertage/Urlaub/Krankheit/Fortbildung/Freistellung) | Ø > 8 h |
 | **§3/§4 Höchstarbeitszeit und Pausenausnahmen** | Tage > 10 h, Wochen > 48 h (laut Stempel), Pausenausnahmen mit Begründung | Ursachen klären, dokumentieren |
 
 Ausgeschiedene mit Einträgen im Zeitraum erscheinen immer, Ausgeblendete nur mit „Ausgeblendete Mitarbeitende einbeziehen".

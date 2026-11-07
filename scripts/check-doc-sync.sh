@@ -511,6 +511,11 @@ group_admin_rest() {
   # Audit 2026-11-07 A2-4: tatsächliche Stempel in den Exporten (Code: export_service.day_stamps).
   need "$f" '**Gestempelt (Von–Bis)** listet jeden Zeiteintrag'
   forbid "$f" 'Nicht angerechnet (Min)** (letzte Spalte, ab 1.20.0)'
+  # Fix-Runde Audit 2026-11-07: Rohstempel stehen seit A2-4 in den Exporten,
+  # Krankheit/Fortbildung sind im Durchschnitts-Nenner neutral (A1-13).
+  forbid "$f" 'Rohstempel stehen weiterhin nicht in den Exportdateien'
+  forbid "$f" 'Krankheits-, Fortbildungs- und Überstundenausgleichstage bleiben Werktage'
+  need "$f" 'Urlaubs- und Krankheitszeiten verdünnen den Durchschnitt nicht'
   need "$f" 'Von 07:45, Bis 18:15, Netto 8,00, Nicht angerechnet 240'
   need "$f" 'inkl. Unterbrechung, Zeiteinträge und Nicht angerechnet'
   need "$f" 'Genehmigen und anerkennen'
@@ -865,6 +870,10 @@ group_begriffe() {
 # Stundenzählung" ist nicht „leitende Angestellte" (siehe group_begriffe).
 group_berechnungen() {
   local b=docs/BERECHNUNGEN.md
+  # Fix-Runde Audit 2026-11-07 (A2-4, A1-13).
+  forbid "$b" 'die Rohstempel `raw_*` stehen in keiner Datei'
+  forbid "$b" 'Fortbildung und Freizeitausgleich bleiben Werktage'
+  need "$b" '`VACATION`/`SICK`/`TRAINING`/`OTHER`/`PAID_LEAVE`'
   local g=docs/GLOSSAR.md
   need "$b" 'App-Version 1.20.0'
   need "$b" '| `work_blocks` |'
@@ -1057,6 +1066,8 @@ group_claude() {
   need "$f" 'Spalte 13 „Nicht angerechnet (Min)“, dahinter 14 „Gestempelt (Von–Bis)“'
   need "$f" 'Spalte 16 ist die letzte'
   forbid "$f" 'Spalte 13 „Nicht angerechnet (Min)“ ist die letzte'
+  forbid "$f" 'Rohstempel in keiner Datei'
+  forbid "$f" 'ohne Feiertag/`VACATION`/`OTHER`/`PAID_LEAVE`'
   forbid "$f" 'Füllungen/Zellverbindungen reichen bis Spalte M'
   forbid "$f" '12 „Arbeitsblöcke“'
   forbid "$f" 'Füllungen/Zellverbindungen reichen bis Spalte L'

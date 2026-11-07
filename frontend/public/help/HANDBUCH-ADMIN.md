@@ -273,7 +273,7 @@ Nicht angerechnete Zeit ist nie still. Unter der Uhrzeit eines Eintrags steht im
 
 > **Jugendliche:** Für Jugendliche gelten strengere Pausen- und Schichtzeitregeln (§§ 11, 12 JArbSchG: 30 Min Pause ab 4,5 h, 60 Min ab 6 h, höchstens 4,5 h ohne Pause, Schichtzeit inklusive Lücke höchstens 10 h); PraxisZeit prüft diese nicht.
 
-**Bekannte Grenze:** Arbeit in der Lücke bleibt in der angerechneten Zeit unsichtbar, bis sie anerkannt wird. Die Nachtarbeits-Erkennung (§ 6 ArbZG) rechnet weiter mit den gespeicherten (gekappten) Zeiten; eine Erkennung auf den Rohstempeln folgt separat. Rohstempel stehen weiterhin nicht in den Exportdateien.
+**Bekannte Grenze:** Arbeit in der Lücke bleibt in der angerechneten Zeit unsichtbar, bis sie anerkannt wird. Die Nachtarbeits-Erkennung (§ 6 ArbZG) rechnet weiter mit den gespeicherten (gekappten) Zeiten; eine Erkennung auf den Rohstempeln folgt separat. In den Exportdateien bleiben Von/Bis/Netto die angerechneten Werte; die tatsächlichen Stempel stehen in der Spalte **„Gestempelt (Von–Bis)"** (PDF: „Gestempelt (Anwesenheit)").
 
 > **Rechtlicher Hinweis:** Die Nichtanrechnung von Zeit vor, nach und zwischen den Blöcken ist eine **Anrechnungsregel des Betriebs**, keine gesetzliche Vorgabe. Der erhaltene Rohstempel dokumentiert gemäß § 16 ArbZG die tatsächliche Anwesenheit.
 
@@ -923,7 +923,7 @@ Nachtarbeitnehmer (> 48 Nachtarbeitstage/Jahr, 23–6 Uhr) haben eine reduzierte
 **Was der Bericht zeigt:**
 - Mitarbeiter mit 48+ Nachtarbeitstagen im gewählten Jahr
 - Anzahl der Nachtarbeitstage und 8h-Warnungen
-- **Monatsdurchschnitt für Nachtarbeitnehmer (§ 6 Abs. 2 ArbZG):** für Personen mit gesetztem Kennzeichen „Nachtarbeitnehmer" oder mit mindestens 48 Nachtarbeitstagen je Kalendermonat die Arbeitszeit im Durchschnitt je Werktag (Mo–Sa ohne Feiertage und Urlaubstage), angerechnet und laut Stempel. Über 8 Stunden steht „✗ Verstoß" – länger als 8 Stunden am Tag darf ein Nachtarbeitnehmer nur arbeiten, wenn der Monatsdurchschnitt 8 Stunden nicht übersteigt.
+- **Monatsdurchschnitt für Nachtarbeitnehmer (§ 6 Abs. 2 ArbZG):** für Personen mit gesetztem Kennzeichen „Nachtarbeitnehmer" oder mit mindestens 48 Nachtarbeitstagen im Jahr je Kalendermonat die Arbeitszeit im Durchschnitt je Werktag (Werktage wie beim [24-Wochen-Durchschnitt](#24-wochen-durchschnitt)), angerechnet und laut Stempel. Es erscheinen nur vergangene Monate mit Arbeit; ein Monat, in dem nur an Sonn- oder Feiertagen gearbeitet wurde, steht mit „kein Werktag" ohne Urteil. Über 8 Stunden steht „✗ Verstoß" – länger als 8 Stunden am Tag darf ein Nachtarbeitnehmer nur arbeiten, wenn der Monatsdurchschnitt 8 Stunden nicht übersteigt.
 - Hinweis **„Kennzeichen „Nachtarbeitnehmer" beim Benutzer noch nicht gesetzt"**, wenn jemand laut Zählung Nachtarbeitnehmer ist, das Kennzeichen (das die 8-Stunden-Warnung beim Erfassen auslöst) aber fehlt. PraxisZeit setzt es nicht selbst – bitte in der Benutzerverwaltung setzen.
 
 **Handlungsbedarf:**
@@ -961,7 +961,9 @@ Ein ohnehin freier Samstag einer Fünf-Tage-Kraft gleicht also **nichts** aus. J
 - Je Mitarbeiter:in die gearbeiteten Sonn- und Feiertage, die **Verstöße** mit Datum (Frist abgelaufen, kein Ersatzruhetag) und unter **„Frist läuft"** die Einsätze, deren Frist noch nicht vorbei ist, mit Fristende
 
 **Handlungsbedarf:**
-- Gewährte Ersatzruhetage als Abwesenheit (Typ: Sonstiges) eintragen
+- Gewährte Ersatzruhetage als Abwesenheit (Typ: Sonstiges, Überstundenausgleich oder Bez. Freistellung) eintragen
+
+Für einen Einsatz Ende Dezember sucht der Bericht den Ruhetag bis ins Folgejahr. Sind dessen Feiertage noch nicht angelegt, rechnet er mit den gesetzlichen Feiertagen des eingestellten Bundeslands – der Neujahrstag gilt also nie als Ersatzruhetag.
 
 ---
 
@@ -981,7 +983,7 @@ Eine **8-Stunden-Warnung** weist bereits ab Überschreiten der Regelgrenze auf d
 
 Über 24 Wochen darf die Arbeitszeit im Durchschnitt 8 Stunden je Werktag nicht überschreiten. Die Auswertung **„24-Wochen-Durchschnitt §3 ArbZG"** auf der Berichte-Seite prüft das für die 24 Wochen bis zum gewählten **Stichtag** (Standard: heute) – je Mitarbeiter:in mit den Spalten „Ø angerechnet / Werktag", „Anwesenheit laut Stempel (Ø / Werktag)", „Angerechnet gesamt", „Anwesenheit laut Stempel gesamt", „Wochen > 48 h laut Stempel", „Tage > 8 h" und „Status". Über der Tabelle stehen der ausgewertete **Zeitraum** (z. B. „29.10.2025 – 15.04.2026") und, falls jemand die Grenze überschreitet, die Zahl der nicht konformen Mitarbeitenden; ein neuer Stichtag verwirft das alte Ergebnis bis zum nächsten „Prüfen".
 
-- **„Ø angerechnet / Werktag"** und der **Status** („✓ Konform" / „✗ Verstoß") rechnen mit der angerechneten Zeit, geteilt durch die **Werktage** des Zeitraums: Montag bis Samstag ohne Feiertage, ohne Urlaub, „Sonstiges" und bezahlte Freistellung, nur im Beschäftigungszeitraum – so rechnet das Gesetz („werktäglich"), auch für Teilzeitkräfte (drei Tage à 10 Stunden ergeben Ø 5 Stunden je Werktag). Krankheits-, Fortbildungs- und Überstundenausgleichstage bleiben Werktage. „Tage > 8 h" zählt Tage mit mehr als 8 Stunden angerechneter Zeit.
+- **„Ø angerechnet / Werktag"** und der **Status** („✓ Konform" / „✗ Verstoß") rechnen mit der angerechneten Zeit, geteilt durch die **Werktage** des Zeitraums: Montag bis Samstag ohne Feiertage und ohne Tage mit Urlaub, Krankheit, Fortbildung, „Sonstiges" oder bezahlter Freistellung, nur im Beschäftigungszeitraum – so rechnet das Gesetz („werktäglich"), auch für Teilzeitkräfte (drei Tage à 10 Stunden ergeben Ø 5 Stunden je Werktag). Urlaubs- und Krankheitszeiten verdünnen den Durchschnitt nicht (Art. 16 EU-Arbeitszeitrichtlinie). Überstundenausgleichstage bleiben Werktage – sie sind der Ausgleich. „Tage > 8 h" zählt Tage mit mehr als 8 Stunden angerechneter Zeit.
 - **„Anwesenheit laut Stempel"** (ab 1.20.0) ist die gestempelte Zeit abzüglich erfasster Pausen. Sie ändert sich nicht, wenn die Anrechnung später neu berechnet wird (Ausnahme: ein automatisch geschlossener Eintrag – für ihn zählt die Anwesenheit nur bis zum angerechneten Ende), und die Grenze gilt für die tatsächliche Arbeitszeit. Liegt ihr Durchschnitt über 8 Stunden, ist der Wert rot hervorgehoben; steht als Status trotzdem „✓ Konform", erscheint darunter zusätzlich „laut Stempel Ø > 8 h". „Wochen > 48 h laut Stempel" nennt die Zahl solcher Kalenderwochen mit Woche und Wert, z. B. „1 (KW 14/2026: 50:00 h)".
 - Hat eine Person im Zeitraum **keinen Werktag** (z. B. ganz außerhalb des Beschäftigungszeitraums), steht als Status „keine Werktage im Zeitraum" – ohne Durchschnitt und ohne Urteil. § 18-befreite Mitarbeitende erscheinen nicht.
 
