@@ -358,11 +358,17 @@ def test_stored_unc_location_is_ignored(db, default_tenant, tmp_path, monkeypatc
     assert bs.get_backup_dir(db) == tmp_path / "data"
 
 
-def _capture_icacls(monkeypatch, fail_on=None):
+def _capture_icacls(monkeypatch, fail_on=None, report=None):
+    """Nimmt die icacls-Aufrufe auf. PowerShell (exakte DACL, Nachprüfung)
+    antwortet mit einem privaten Bericht — ``report`` überschreibt ihn."""
     import types
     calls = []
 
     def _run(cmd, *a, **k):
+        if cmd[0].lower().endswith("powershell.exe"):
+            out = _PRIVATE_REPORT if report is None else report
+            rc = 1 if fail_on and fail_on(cmd) else 0
+            return types.SimpleNamespace(returncode=rc, stdout=out, stderr="")
         calls.append(list(cmd))
         rc = 1 if fail_on and fail_on(cmd) else 0
         return types.SimpleNamespace(returncode=rc, stdout="", stderr="")
@@ -497,6 +503,87 @@ def test_windows_system_and_profile_folders_refused(_as_windows, monkeypatch, lo
     monkeypatch.delenv("ProgramFiles(x86)", raising=False)
     monkeypatch.delenv("ProgramW6432", raising=False)
     assert bs.location_rejection_reason(loc) == bs.PUBLIC_LOCATION_DETAIL
+
+
+def test_restrict_acl_sets_owner_exact_dacl_and_rechecks(tmp_path, monkeypatch):
+    """Final-Review (S3): Eigentümer Administratoren zuerst, danach die ganze
+    DACL aus der Positivliste und eine Nachprüfung. Ein vorab angelegter Ordner
+    mit eigenem Eintrag eines Kontos überlebte /grant:r + /remove:g, und ein
+    fremder Eigentümer durfte die Rechte zurückdrehen."""
+    import types
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    seen = []
+
+    def _run(cmd, *a, **k):
+        seen.append((list(cmd), (k.get("env") or {}).get("PZ_ACL_PATH")))
+        out = _PRIVATE_REPORT if cmd[0].lower().endswith("powershell.exe") else ""
+        return types.SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+    monkeypatch.setattr(bs.subprocess, "run", _run)
+    assert bs.restrict_backup_dir_acl(tmp_path) is True
+    cmds = [c for c, _env in seen]
+    assert cmds[0] == ["icacls", str(tmp_path), "/setowner", "*S-1-5-32-544"]
+    exact = next(i for i, c in enumerate(cmds) if "SetSecurityDescriptorSddlForm" in c[-1])
+    assert cmds.index(["icacls", str(tmp_path), "/inheritance:r"]) < exact
+    assert "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)" in cmds[exact][-1]
+    assert str(tmp_path) not in cmds[exact][-1] and seen[exact][1] == str(tmp_path)
+    assert "Get-Acl" in cmds[exact + 1][-1]  # Nachprüfung zuletzt
+
+
+@pytest.mark.parametrize("report", [
+    "OWNER S-1-5-21-9-9-9-1001\nPROTECTED True\nRULE S-1-5-18 Allow\nRULE S-1-5-32-544 Allow\n",
+    _PRIVATE_REPORT + "RULE S-1-5-21-9-9-9-1001 Allow\n",
+])
+def test_restrict_acl_fails_when_recheck_is_not_private(tmp_path, monkeypatch, report):
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    _capture_icacls(monkeypatch, report=report)
+    assert bs.restrict_backup_dir_acl(tmp_path) is False
+
+
+def test_restrict_acl_fails_when_exact_dacl_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    _capture_icacls(monkeypatch, fail_on=lambda c: "SetSecurityDescriptorSddlForm" in c[-1])
+    assert bs.restrict_backup_dir_acl(tmp_path) is False
+
+
+def test_make_dir_treats_a_concurrently_created_folder_as_existing(tmp_path, monkeypatch):
+    """Final-Review (S3): legt ein anderes Konto den Ordner zwischen Prüfung
+    und Anlegen an, gilt er als bestehend (wird geprüft, nicht umgeschrieben)."""
+    target = tmp_path / "sicherung"
+    real_mkdir = bs.Path.mkdir
+
+    def _racing_mkdir(self, *a, **k):
+        if self == target and not k.get("exist_ok"):
+            real_mkdir(self)  # das andere Konto war schneller
+        return real_mkdir(self, *a, **k)
+
+    monkeypatch.setattr(bs.Path, "mkdir", _racing_mkdir)
+    assert bs._make_dir(target) is False
+    assert bs._make_dir(tmp_path / "neu") is True
+    assert bs._make_dir(tmp_path / "neu") is False
+
+
+def test_create_backup_checks_a_concurrently_created_folder(db, default_tenant, tmp_path, monkeypatch):
+    """Nicht-Standard-Ort, im Fenster von fremder Hand angelegt: nur prüfen,
+    nie icacls."""
+    target = tmp_path / "sicherung"
+    monkeypatch.setattr(bs, "get_backup_dir", lambda _db: target)
+    monkeypatch.setattr(bs, "_is_default_backup_dir", lambda p: False)
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", host="localhost", port=5433))
+    real_mkdir = bs.Path.mkdir
+
+    def _racing_mkdir(self, *a, **k):
+        if self == target and not k.get("exist_ok"):
+            real_mkdir(self)
+        return real_mkdir(self, *a, **k)
+
+    monkeypatch.setattr(bs.Path, "mkdir", _racing_mkdir)
+    calls = _capture_icacls(monkeypatch, report=(
+        "OWNER S-1-5-21-9-9-9-1001\nPROTECTED True\nRULE S-1-5-21-9-9-9-1001 Allow\n"))
+    with pytest.raises(bs.BackupError, match="ändert die Rechte bestehender Ordner nicht"):
+        bs.create_backup(db)
+    assert calls == []
 
 
 def test_restrict_acl_is_noop_off_windows(tmp_path, monkeypatch):

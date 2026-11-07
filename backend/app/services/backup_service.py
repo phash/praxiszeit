@@ -233,12 +233,16 @@ _WIN_SIDS_REMOVED = ("*S-1-5-32-545", "*S-1-5-11", "*S-1-1-0")  # Benutzer, Auth
 
 
 def _win_restrict_dir_commands(path: Path) -> list[list[str]]:
-    """icacls-Aufrufe: nur SYSTEM + Administratoren, Vererbung gekappt (S2-4).
+    """icacls-Aufrufe: Eigentümer Administratoren, nur SYSTEM + Administratoren,
+    Vererbung gekappt (S2-4).
 
-    Erst die Grants, dann die Entfernungen, zuletzt ``/inheritance:r`` — sonst
-    könnte der Ordner kurz ohne jeden Eintrag dastehen."""
+    Zuerst der Eigentümer (Final-Review S3: wer den Ordner angelegt hat, bliebe
+    sonst Eigentümer und dürfte die Rechte jederzeit zurückdrehen), dann die
+    Grants, dann die Entfernungen, zuletzt ``/inheritance:r`` — sonst könnte der
+    Ordner kurz ohne jeden Eintrag dastehen."""
     p = str(path)
     return [
+        ["icacls", p, "/setowner", _WIN_SID_ADMINISTRATORS],
         ["icacls", p, "/grant:r", f"{_WIN_SID_SYSTEM}:(OI)(CI)F"],
         ["icacls", p, "/grant:r", f"{_WIN_SID_ADMINISTRATORS}:(OI)(CI)F"],
         *[["icacls", p, "/remove:g", sid] for sid in _WIN_SIDS_REMOVED],
@@ -255,13 +259,25 @@ def restrict_backup_dir_acl(path: Path) -> bool:
     if not _is_windows():
         return True
     cmds = _win_restrict_dir_commands(path)
-    grants, removes, protect = cmds[:2], cmds[2:-1], cmds[-1]
-    for cmd in grants:
+    owner, grants, removes, protect = cmds[0], cmds[1:3], cmds[3:-1], cmds[-1]
+    for cmd in (owner, *grants):
         if not _run_icacls(cmd):
             return False
     for cmd in removes:
         _run_icacls(cmd)  # ein nicht vorhandener Eintrag ist kein Fehler
-    return _run_icacls(protect)
+    if not _run_icacls(protect):
+        return False
+    # Final-Review (S3-01/S3-04-Rest): /grant:r und /remove:g erfassen nur die
+    # genannten SIDs — ein expliziter Eintrag eines anderen Kontos (vor der
+    # Installation an data\backups gehängt) überlebte sonst und vererbte sich
+    # auf jeden Dump. Deshalb die ganze DACL aus der Positivliste und danach
+    # nachprüfen (Eigentümer, Vererbung, Einträge).
+    if not _win_set_exact_dacl(path):
+        return False
+    if not win_acl_report_is_private(_win_acl_report(path)):
+        logger.warning("Rechte von %s sind nach dem Einschränken nicht privat", path)
+        return False
+    return True
 
 
 # Fix-Runde (S3-04): Rechte nur an Ordnern ändern, die PraxisZeit selbst
@@ -271,6 +287,42 @@ def restrict_backup_dir_acl(path: Path) -> bool:
 # (D:\\Praxis\\Scans, ein Profil, ProgramData) sperrte alle Konten und andere
 # Programme aus - eine Wirkung auf Betriebssystem-Ebene aus einer Web-Rolle.
 _WIN_ALLOWED_DIR_SIDS = frozenset({"S-1-5-18", "S-1-5-32-544"})  # SYSTEM, Administratoren
+
+# Ganze DACL: SYSTEM + Administratoren Vollzugriff, vererbbar, geschützt
+# (gleiche Form wie WIN_SDDL_CONFIG in praxiszeit-server.py).
+_WIN_BACKUP_DIR_SDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+_WIN_EXACT_DACL_SCRIPT = (
+    "$ErrorActionPreference='Stop';"
+    "$s=New-Object System.Security.AccessControl.DirectorySecurity;"
+    f"$s.SetSecurityDescriptorSddlForm('{_WIN_BACKUP_DIR_SDDL}','Access');"
+    "[System.IO.Directory]::SetAccessControl($env:PZ_ACL_PATH,$s)"
+)
+
+
+def _powershell_bin() -> str:
+    sysroot = os.environ.get("SystemRoot", "C:\\Windows")
+    return os.path.join(sysroot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+
+
+def _win_set_exact_dacl(path: Path) -> bool:
+    """DACL des Ordners genau auf ``_WIN_BACKUP_DIR_SDDL`` setzen. Der Pfad geht
+    über die Umgebung, nie in den Befehlstext."""
+    try:
+        result = subprocess.run(
+            [_powershell_bin(), "-NoProfile", "-NonInteractive", "-Command",
+             _WIN_EXACT_DACL_SCRIPT],
+            capture_output=True, text=True, errors="replace", timeout=60,
+            env={**os.environ, "PZ_ACL_PATH": str(path)},
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning("Rechte von %s nicht setzbar: %s", path, e)
+        return False
+    if result.returncode != 0:
+        logger.warning("Rechte von %s nicht setzbar (rc=%s): %s", path, result.returncode,
+                       (result.stderr or result.stdout or "").strip())
+        return False
+    return True
+
 
 _WIN_ACL_REPORT_SCRIPT = (
     "$ErrorActionPreference='Stop';"
@@ -285,11 +337,10 @@ _WIN_ACL_REPORT_SCRIPT = (
 def _win_acl_report(path: Path) -> Optional[str]:
     """Eigentümer, Vererbung und Einträge des Ordners als Text (SIDs), None bei
     Fehler. Der Pfad geht über die Umgebung, nie in den Befehlstext."""
-    sysroot = os.environ.get("SystemRoot", "C:\\Windows")
-    ps = os.path.join(sysroot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
     try:
         result = subprocess.run(
-            [ps, "-NoProfile", "-NonInteractive", "-Command", _WIN_ACL_REPORT_SCRIPT],
+            [_powershell_bin(), "-NoProfile", "-NonInteractive", "-Command",
+             _WIN_ACL_REPORT_SCRIPT],
             capture_output=True, text=True, errors="replace", timeout=60,
             env={**os.environ, "PZ_ACL_PATH": str(path)},
         )
@@ -468,8 +519,11 @@ def update_config(
                             f"Übergeordnetes Verzeichnis von '{loc}' existiert nicht — "
                             "bitte den Pfad manuell anlegen."
                         )
-                    probe_dir.mkdir()
-                    created = True
+                    try:
+                        probe_dir.mkdir()  # ohne exist_ok: siehe _make_dir
+                        created = True
+                    except FileExistsError:
+                        created = False
                 # Windows: Rechte VOR dem ersten Byte (S2-4) - eingeschränkt nur
                 # an einem eben angelegten Ordner, ein bestehender wird geprüft.
                 secure_backup_dir(probe_dir, created=created)
@@ -615,6 +669,26 @@ _PG_DUMP_EXIT_TIMEOUT = 120        # s zwischen Ende von stdout und Prozessende
 _PG_DUMP_STDERR_TAIL = 4000        # Bytes der Fehlermeldung in der BackupError
 
 
+def _make_dir(path: Path) -> bool:
+    """Ordner anlegen; True nur, wenn DIESER Aufruf ihn angelegt hat.
+
+    Final-Review (S3): ``exists()`` und danach ``mkdir(exist_ok=True)`` hielten
+    einen Ordner, den ein anderes Konto im Fenster dazwischen anlegte, für
+    selbst angelegt — seine Rechte wurden umgeschrieben statt geprüft. Das
+    letzte Segment wird deshalb ohne ``exist_ok`` angelegt: existiert es, gilt
+    es als bestehender Ordner."""
+    if path.is_dir():
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.mkdir()
+    except FileExistsError:
+        if not path.is_dir():
+            raise
+        return False
+    return True
+
+
 def create_backup(db: Session) -> BackupFile:
     """Erzeugt ein komprimiertes Plain-SQL-Backup. Wirft BackupError bei Fehlern."""
     conn = _pg_dump_conn()
@@ -626,9 +700,8 @@ def create_backup(db: Session) -> BackupFile:
     conn_args, password = conn
 
     backup_dir = get_backup_dir(db)
-    created = not backup_dir.exists()
     try:
-        backup_dir.mkdir(parents=True, exist_ok=True)
+        created = _make_dir(backup_dir)
     except OSError as e:
         raise BackupError(f"Backup-Verzeichnis nicht beschreibbar: {e}") from e
     # Windows: jeder Dump erbt die Rechte des Ordners (0o600 wirkt dort nicht).
