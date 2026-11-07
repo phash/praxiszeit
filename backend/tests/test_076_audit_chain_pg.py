@@ -715,3 +715,45 @@ def test_set_head_reanchor_ignores_a_marker_from_an_earlier_transaction(env):
     finally:
         s.close()
         eng.dispose()
+
+
+# ── Wiederherstellung (Review-Runde 4): Funktionsabgleich gegen echtes PG ──
+
+def _server_module():
+    import importlib.util
+    path = BACKEND.parent / "praxiszeit-server.py"
+    if not path.exists():
+        pytest.skip("praxiszeit-server.py fehlt (nur Backend gemountet)")
+    spec = importlib.util.spec_from_file_location("praxiszeit_server_076", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_restore_routine_check_matches_a_real_migrated_database(env):
+    """Der Katalog einer frisch migrierten Datenbank (Stand 076) entspricht
+    genau dem, was ``expected_db_routines`` aus den Migrationen liest -
+    inklusive der Speicherform von ``SET search_path`` (proconfig). Eine
+    veraenderte Funktion, eine fremde Funktion und eine Sicht fallen auf."""
+    import json
+    srv = _server_module()
+    url, engine, app_url, role = env
+    expected = srv.expected_db_routines(BACKEND / "alembic" / "versions", HEAD_REV)
+
+    def problems():
+        with engine.connect() as conn:
+            raw = conn.exec_driver_sql(srv._ROUTINE_CATALOG_SQL.replace("%", "%%")).scalar()
+        found = raw if isinstance(raw, dict) else json.loads(raw)
+        return srv.check_restored_routines(found, *expected)
+
+    assert problems() == []
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE OR REPLACE FUNCTION pz_audit_tenant_ok(p_tenant uuid) RETURNS boolean "
+            "LANGUAGE sql STABLE AS $$ SELECT true $$")
+        conn.exec_driver_sql("CREATE FUNCTION boese() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$")
+        conn.exec_driver_sql("CREATE VIEW v076 AS SELECT 1 AS x")
+    got = problems()
+    assert "Funktion public.pz_audit_tenant_ok (Inhalt weicht von der Migration ab)" in got
+    assert "Funktion public.boese (legt keine Migration an)" in got
+    assert "Sicht public.v076" in got

@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import importlib.util
+import json
 import logging
 import os
 import re
@@ -92,6 +93,8 @@ class FakeCluster:
         self.load_mode = None
         self.roles: set[str] = set()
         self.role_sql: list[str] = []
+        # Katalog der Zwischendatenbank fuer den Funktionsabgleich (Runde 4)
+        self.routines = {"functions": [], "triggers": [], "other": []}
 
     def __call__(self, cmd, **kw):
         if Path(cmd[0]).name != "psql":
@@ -152,6 +155,9 @@ class FakeCluster:
                     return subprocess.CompletedProcess(
                         cmd, 1, "", 'ERROR:  relation "alembic_version" does not exist\n')
                 out.append(f"{self.revision}\n")
+            elif "pg_proc" in sql:
+                self.events.append(f"routines:{db}")
+                out.append(json.dumps(self.routines) + "\n")
             elif "pg_database" in sql:
                 name = re.search(r"datname = '([^']+)'", sql).group(1)
                 out.append("1\n" if name in self.dbs else "")
@@ -365,11 +371,27 @@ def test_migration_heads_folgen_der_kette(srv, tmp_path):
 
 
 def test_migration_head_der_installation_ist_die_juengste_migration(srv):
+    """Der Head ist das letzte Glied der Kette von der ersten Migration an - in
+    KETTEN-Reihenfolge, nicht nach Dateinamen: die Datumsvorsilbe sortiert nicht
+    immer wie die Kette (075 ist auf den 10.11. datiert, 076 auf den 7.11.)."""
     versions = _REPO / "backend" / "alembic" / "versions"
-    newest = sorted(p for p in versions.glob("*.py") if p.name != "__init__.py")[-1]
-    revision = re.search(r"""^revision[^=\n]*=\s*['"]([^'"]+)""",
-                         newest.read_text(encoding="utf-8"), re.M).group(1)
-    assert srv.migration_heads(versions) == {revision}
+    rev_re = re.compile(r"""^revision[^=\n]*=\s*['"]([^'"]+)""", re.M)
+    down_re = re.compile(r"^down_revision\b[^=\n]*=(.*)$", re.M)
+    children: dict = {}
+    files = [p for p in versions.glob("*.py") if p.name != "__init__.py"]
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        rev = rev_re.search(text).group(1)
+        parents = re.findall(r"""['"]([^'"]+)['"]""", down_re.search(text).group(1))
+        for parent in parents or [None]:
+            children.setdefault(parent, []).append(rev)
+    chain, current = [], None
+    while current in children:
+        assert len(children[current]) == 1, (current, children[current])  # keine Verzweigung
+        current = children[current][0]
+        chain.append(current)
+    assert len(chain) == len(files)  # jede Datei liegt auf der Kette
+    assert srv.migration_heads(versions) == {chain[-1]}
 
 
 def test_macos_nennt_launchctl(srv, inst, caplog, monkeypatch):
@@ -705,8 +727,11 @@ def test_restore_bat_prueft_jeden_schritt():
     for i in commands:
         assert "%PSQL_ARGS%" in main[i] or main[i].startswith('"%PYTHON%"'), main[i]
         follow = next(line for line in main[i + 1:] if line and not line.upper().startswith("REM"))
-        # prepare-restore-dump prueft zuerst "errorlevel 2" (Signatur), dann 1
-        assert follow.lower().startswith(("if errorlevel 1", "if errorlevel 2")), (main[i], follow)
+        if "prepare-restore-dump" in main[i]:
+            # Exit 0/4 weiter, 2 = Signatur, alles andere = abgelehnt (Runde 4)
+            assert follow == 'SET "PREP_RC=%ERRORLEVEL%"', (main[i], follow)
+            continue
+        assert follow.lower().startswith("if errorlevel 1"), (main[i], follow)
     args = next(line for line in main if line.startswith('SET "PSQL_ARGS='))
     assert "-v ON_ERROR_STOP=1" in args and "-w" in args.split(), args
 
@@ -725,14 +750,16 @@ def test_restore_bat_prueft_das_backup_vor_jeder_aenderung():
 def test_restore_bat_ersetzt_die_datenbank_erst_nach_dem_einspielen():
     text = _bat_text()
     assert 'SET "RESTORE_DB=praxiszeit_restore"' in text
-    create = text.index("CREATE DATABASE %RESTORE_DB%")
-    load = text.index('-d %RESTORE_DB% -f "%BACKUP_DUMP%"')
-    check = text.index("FROM alembic_version")
+    # Anlegen, Einspielen und Standpruefung macht load-restore-db (Runde 4)
+    load = text.index('praxiszeit-server.py" load-restore-db %LOAD_FLAGS% "%BACKUP_DUMP%"')
+    assert text[load:load + 200].split("\r\n")[1] == "if errorlevel 1 goto :bestand_unveraendert"
     drop = text.index("DROP DATABASE IF EXISTS praxiszeit WITH (FORCE)")
     rename = text.index("ALTER DATABASE %RESTORE_DB% RENAME TO praxiszeit")
     grants = text.index("init-db-user.sql")
-    assert create < load < check < drop < rename < grants
+    assert load < drop < rename < grants
     assert "DROP DATABASE IF EXISTS praxiszeit;" not in text
+    # nie mehr selbst als Superuser einspielen
+    assert '-f "%BACKUP_DUMP%"' not in text
 
 
 def test_restore_bat_startet_den_dienst_nur_nach_erfolg():
@@ -758,73 +785,91 @@ def test_restore_bat_startet_den_dienst_nur_nach_erfolg():
         assert ends and (ends[-1] == "exit /b 1" or ends[-1].startswith("goto :")), (label, block)
 
 
-# Gesamtreview 1.20, Runde 3: die .bat pruefte nur, ob alembic_version Zeilen
-# hat. Ein Backup einer NEUEREN Version lief durch: DROP der bisherigen
-# Datenbank, RENAME, ``net start`` — und der Dienst brach an „Can't locate
-# revision“ ab, der Bestand war schon weg. ``restore`` lehnt das vor dem Tausch
-# ab (``_load_into_restore_db``); die .bat jetzt ebenso, ueber denselben
-# Revisionsvergleich mit ``app\backend\alembic\versions``. Die Pruefung laeuft
-# im gebuendelten Python — die Tests fuehren genau diesen Code aus.
+# Gesamtreview 1.20, Runde 3: ein Backup einer NEUEREN Version lief durch die
+# .bat (DROP, RENAME, ``net start`` - und der Dienst brach an „Can't locate
+# revision“ ab). Review-Runde 4: die .bat spielt ueber ``load-restore-db`` ein,
+# also ueber denselben Code wie ``restore`` (``_load_into_restore_db``):
+# Standpruefung vor dem Tausch, unverifizierte Sicherungen als Ladrolle ohne
+# Superuser-Rechte, Funktionen und Trigger gegen die Migrationen.
 
-def _bat_revision_check() -> tuple[str, str]:
-    """(Python-Code, Argumente) der Revisionspruefung aus der .bat."""
-    line = next(line for line in _bat_lines()
-                if line.startswith('"%PYTHON%"') and "alembic" in line)
-    code, args = line[len('"%PYTHON%" -c "'):].split('" ', 1)
-    return code, args
-
-
-def _run_bat_revision_check(tmp_path: Path, revisions: list[str], versions: Path):
-    code, _ = _bat_revision_check()
-    # In der .bat stuende %% fuer ein %; der Code soll gar keins brauchen.
-    assert "%" not in code and '"' not in code, code
-    rev_file = tmp_path / "rev.txt"
-    rev_file.write_text("".join(f"{r}\n" for r in revisions), encoding="utf-8")
-    return subprocess.run([sys.executable, "-I", "-c", code, str(rev_file), str(versions)],
-                          capture_output=True, encoding="utf-8")
+def _load_cmd(srv, cluster, file: Path, *, restricted: bool, capsys):
+    code = 0
+    with patch.object(srv.subprocess, "run", side_effect=cluster):
+        try:
+            srv.cmd_load_restore_db(argparse.Namespace(file=str(file), restricted=restricted))
+        except SystemExit as exc:
+            code = exc.code
+    return code, capsys.readouterr()
 
 
-def test_restore_bat_lehnt_ein_backup_einer_neueren_version_vor_dem_tausch_ab():
+def test_restore_bat_laedt_unverifiziert_als_ladrolle(srv, inst, capsys):
+    """Exit 4 von prepare-restore-dump --restricted-load setzt --restricted."""
     text = _bat_text()
-    read = text.index("SELECT version_num FROM alembic_version")
-    code, args = _bat_revision_check()
-    check = text.index(code)
-    assert text.index('-d %RESTORE_DB% -f "%BACKUP_DUMP%"') < read < check
-    assert check < text.index("DROP DATABASE IF EXISTS praxiszeit WITH (FORCE)")
-    assert args.strip() == '"%REV_FILE%" "%DIR%\\app\\backend\\alembic\\versions"', args
+    prep = text.index('prepare-restore-dump %PREP_FLAGS% --restricted-load "%BACKUP_DUMP%"')
+    block = text[prep:text.index("echo OK.", prep)]
+    assert 'if "%PREP_RC%"=="4" SET "LOAD_FLAGS=--restricted"' in block
+    assert 'if "%PREP_RC%"=="2" goto :backup_unsigniert' in block
+    assert 'if not "%PREP_RC%"=="0" if not "%PREP_RC%"=="4" goto :backup_abgelehnt' in block
+    assert block.index('SET "LOAD_FLAGS="') < block.index('"%PREP_RC%"=="4"')
+    dump = inst / "data" / "d.sql"
+    dump.write_text(_HEAD + "ALTER TABLE public.t OWNER TO praxiszeit;\n" + _TAIL, encoding="utf-8")
+    # unsigniert + --force-unverified -> Exit 4, Eigentuemer-Zeilen entfernt
+    with pytest.raises(SystemExit) as exc:
+        srv.cmd_prepare_restore_dump(argparse.Namespace(
+            file=str(dump), force_unverified=True, restricted_load=True))
+    assert exc.value.code == srv.PREPARE_EXIT_UNVERIFIED == 4
+    assert " OWNER TO " not in dump.read_text(encoding="utf-8")
+    cluster = FakeCluster(revision="073_work_blocks")
+    code, out = _load_cmd(srv, cluster, dump, restricted=True, capsys=capsys)
+    assert code == 0 and out.out.strip() == "073_work_blocks"
+    load = next(c for c in cluster.calls if "-f" in c and c[c.index("-f") + 1] == str(dump))
+    assert load[load.index("-U") + 1] == srv.RESTORE_LOAD_ROLE
+    assert "routines:praxiszeit_restore" in cluster.events
+    assert cluster.roles == set() and cluster.dbs["praxiszeit"] == _OLD  # kein Tausch hier
+    # signiert: Exit 0, als Superuser
+    signed = inst / "data" / "e.sql"
+    signed.write_text(_signed(_HEAD + _TAIL), encoding="utf-8")
+    srv.cmd_prepare_restore_dump(argparse.Namespace(
+        file=str(signed), force_unverified=True, restricted_load=True))
+    cluster = FakeCluster(revision="073_work_blocks")
+    code, _ = _load_cmd(srv, cluster, signed, restricted=False, capsys=capsys)
+    assert code == 0 and cluster.role_sql == []
+    assert "routines:praxiszeit_restore" not in cluster.events
 
 
-def test_restore_bat_revisionspruefung_kennt_die_staende_der_installation(tmp_path):
-    versions = _REPO / "backend" / "alembic" / "versions"
-    result = _run_bat_revision_check(tmp_path, ["073_work_blocks"], versions)
-    assert result.returncode == 0, result.stderr
-    result = _run_bat_revision_check(tmp_path, ["001"], versions)
-    assert result.returncode == 0, result.stderr
+def test_restore_bat_lehnt_ein_backup_einer_neueren_version_vor_dem_tausch_ab(srv, inst, capsys):
+    dump = inst / "data" / "d.sql"
+    dump.write_text(_HEAD + _TAIL, encoding="utf-8")
+    cluster = FakeCluster(revision="074_aus_der_zukunft")
+    code, out = _load_cmd(srv, cluster, dump, restricted=False, capsys=capsys)
+    assert code == 1
+    fehler = [line for line in out.err.splitlines() if line.startswith("FEHLER: ")]
+    assert fehler and "074_aus_der_zukunft" in fehler[0] and "neueren PraxisZeit-Version" in fehler[0]
+    assert cluster.dbs["praxiszeit"] == _OLD
 
 
-def test_restore_bat_revisionspruefung_wie_restore(srv, tmp_path):
-    # Dieselbe Menge wie known_migration_revisions — jede Revision geht durch.
-    versions = _REPO / "backend" / "alembic" / "versions"
-    known = sorted(srv.known_migration_revisions(versions))
-    result = _run_bat_revision_check(tmp_path, known, versions)
-    assert result.returncode == 0, result.stderr
+def test_restore_bat_ohne_alembic_version_lehnt_ab(srv, inst, capsys):
+    dump = inst / "data" / "d.sql"
+    dump.write_text(_HEAD + _TAIL, encoding="utf-8")
+    code, out = _load_cmd(srv, FakeCluster(has_alembic=False), dump, restricted=True, capsys=capsys)
+    assert code == 1 and "keine PraxisZeit-Datenbank" in out.err
 
 
-def test_restore_bat_revisionspruefung_lehnt_unbekannten_stand_ab(tmp_path):
-    versions = _REPO / "backend" / "alembic" / "versions"
-    result = _run_bat_revision_check(tmp_path, ["074_aus_der_zukunft"], versions)
-    assert result.returncode != 0
-    assert "074_aus_der_zukunft" in result.stderr
-    assert "neueren PraxisZeit-Version" in result.stderr
-    assert "Traceback" not in result.stderr
+def test_restore_bat_ohne_migrationen_lehnt_ab(srv, inst, capsys):
+    for p in (inst / "app" / "backend" / "alembic" / "versions").glob("x_*.py"):
+        p.unlink()
+    dump = inst / "data" / "d.sql"
+    dump.write_text(_HEAD + _TAIL, encoding="utf-8")
+    code, out = _load_cmd(srv, FakeCluster(), dump, restricted=False, capsys=capsys)
+    assert code == 1 and "Installation unvollstaendig" in out.err
 
 
-def test_restore_bat_revisionspruefung_ohne_migrationen_lehnt_ab(tmp_path):
-    empty = tmp_path / "versions"
-    empty.mkdir()
-    result = _run_bat_revision_check(tmp_path, ["073_work_blocks"], empty)
-    assert result.returncode != 0
-    assert "Traceback" not in result.stderr
+def test_parser_kennt_load_restore_db(srv, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(srv, "cmd_load_restore_db", lambda a: seen.setdefault("load", a))
+    monkeypatch.setattr(sys, "argv", ["x", "load-restore-db", "--restricted", "/tmp/b.sql"])
+    srv.main()
+    assert seen["load"].restricted is True and seen["load"].file == "/tmp/b.sql"
 
 
 # --- Windows: Datenbank-Port (Teil C) ----------------------------------------
@@ -1045,11 +1090,12 @@ def test_prepare_restore_dump_unterbefehl(srv, tmp_path, capsys, monkeypatch):
 
 def test_restore_bat_prueft_den_dump_vor_dem_einspielen():
     text = _bat_text()
-    prep = text.index('praxiszeit-server.py" prepare-restore-dump %PREP_FLAGS% "%BACKUP_DUMP%"')
+    prep = text.index('praxiszeit-server.py" prepare-restore-dump %PREP_FLAGS% --restricted-load '
+                      '"%BACKUP_DUMP%"')
     assert text.index("PostgreSQL database dump complete") < prep
     assert prep < text.index("net stop PraxisZeit")
-    assert prep < text.index('-d %RESTORE_DB% -f "%BACKUP_DUMP%"')
-    assert "if errorlevel 1 goto :backup_abgelehnt" in text[prep:prep + 200]
+    assert prep < text.index('load-restore-db %LOAD_FLAGS% "%BACKUP_DUMP%"')
+    assert 'goto :backup_abgelehnt' in text[prep:prep + 400]
     block = _bat_blocks()["backup_abgelehnt"]
     assert 'del "%BACKUP_DUMP%" 2>nul' in block and "exit /b 1" in block
 
@@ -1225,10 +1271,10 @@ def test_prepare_unterbefehl_exit_2_fuer_unsignierte_sicherung(srv, tmp_path, ca
 def test_restore_bat_erklaert_force_unverified():
     text = _bat_text()
     assert 'if /i "%~2"=="--force-unverified" SET "PREP_FLAGS=--force-unverified"' in text
-    prep = text.index('prepare-restore-dump %PREP_FLAGS% "%BACKUP_DUMP%"')
-    after = text[prep:prep + 200]
-    assert after.index("if errorlevel 2 goto :backup_unsigniert") < after.index(
-        "if errorlevel 1 goto :backup_abgelehnt")
+    prep = text.index('prepare-restore-dump %PREP_FLAGS% --restricted-load "%BACKUP_DUMP%"')
+    after = text[prep:prep + 400]
+    assert after.index('if "%PREP_RC%"=="2" goto :backup_unsigniert') < after.index(
+        "goto :backup_abgelehnt")
     block = _bat_blocks()["backup_unsigniert"]
     assert 'del "%BACKUP_DUMP%" 2>nul' in block and "exit /b 1" in block
     assert any("--force-unverified" in line for line in block)
@@ -1480,9 +1526,10 @@ def test_unverifizierte_sicherung_wird_als_eingeschraenkte_rolle_geladen(srv, in
         "createrole:praxiszeit_restore_load",
         "create:praxiszeit_restore",
         "load:praxiszeit_restore",
+        "revision:praxiszeit_restore",
+        "routines:praxiszeit_restore",
         "reassign:praxiszeit_restore",
         "droprole:praxiszeit_restore_load",
-        "revision:praxiszeit_restore",
         "drop:praxiszeit",
         "rename:praxiszeit_restore->praxiszeit",
         "grants:praxiszeit",
@@ -1510,3 +1557,126 @@ def test_ladrolle_wird_auch_nach_fehler_entfernt(srv, inst, caplog):
     after_load = cluster.events[cluster.events.index("load:praxiszeit_restore"):]
     assert "droprole:praxiszeit_restore_load" in after_load
     assert cluster.roles == set()
+
+
+# --- Review-Runde 4: Funktionen/Trigger einer unverifizierten Sicherung -------
+# Nach REASSIGN OWNED gehoeren alle Objekte dem Superuser - eine Funktion, die
+# die Pruefliste uebersieht, liefe danach als Trigger oder SECURITY DEFINER mit
+# Superuser-Rechten. Deshalb muessen Funktionen und Trigger genau denen der
+# Migrationen bis zum Datenbankstand der Sicherung entsprechen.
+
+_VERSIONS = _REPO / "backend" / "alembic" / "versions"
+
+
+def _fixture_routines() -> tuple[dict, set]:
+    text = _FIXTURE_DUMP.read_text(encoding="utf-8")
+    functions = {}
+    # pg_dump waehlt $_$, wenn der Rumpf ein $ enthaelt
+    for m in re.finditer(r"^CREATE FUNCTION public\.(\w+)\([^\n]*\n(.*?)AS (\$\w*\$)(.*?)\3;$",
+                         text, re.S | re.M):
+        functions[m.group(1)] = ("SECURITY DEFINER" in m.group(2), m.group(4))
+    triggers = {(m.group(1), m.group(2), m.group(3)) for m in re.finditer(
+        r"^CREATE TRIGGER (\w+) .*? ON public\.(\w+) .*?EXECUTE FUNCTION public\.(\w+)\(\);$",
+        text, re.M)}
+    return functions, triggers
+
+
+def test_erwartete_funktionen_entsprechen_einem_echten_pg_dump(srv):
+    """Was aus dem Quelltext der Migrationen gelesen wird, ist Zeichen fuer
+    Zeichen das, was PostgreSQL speichert und pg_dump schreibt (Rumpf,
+    SECURITY DEFINER, Trigger) - geprueft am echten pg_dump 18.6 auf Stand 076."""
+    functions, triggers = srv.expected_db_routines(_VERSIONS, "076_audit_chain")
+    fx_functions, fx_triggers = _fixture_routines()
+    assert set(functions) == set(fx_functions) and "pz_audit_tombstoned" in functions
+    for name, (lang, secdef, _config, src) in functions.items():
+        assert (secdef, src) == fx_functions[name], name
+        assert lang in ("sql", "plpgsql"), name
+    assert triggers == fx_triggers and len(triggers) == 2
+    # vor 076 legt keine Migration Funktionen oder Trigger an
+    assert srv.expected_db_routines(_VERSIONS, "075_contract_history") == ({}, set())
+
+
+def _found(functions: dict, triggers: set, **extra) -> dict:
+    return {
+        "functions": [{"schema": "public", "name": n, "lang": lang, "secdef": secdef,
+                       "config": config, "src": src}
+                      for n, (lang, secdef, config, src) in functions.items()],
+        "triggers": [{"schema": "public", "name": t, "table": tbl, "function": fn, "enabled": "O"}
+                     for t, tbl, fn in triggers],
+        "other": [],
+        **extra,
+    }
+
+
+def test_funktionsabgleich_findet_jede_abweichung(srv):
+    functions, triggers = srv.expected_db_routines(_VERSIONS, "076_audit_chain")
+    assert srv.check_restored_routines(_found(functions, triggers), functions, triggers) == []
+
+    def problems(mutate):
+        found = _found(functions, triggers)
+        mutate(found)
+        return srv.check_restored_routines(found, functions, triggers)
+
+    def tamper(found):
+        f = next(f for f in found["functions"] if f["name"] == "pz_audit_guard")
+        f["src"] = f["src"].replace("RETURN NEW;", "PERFORM 1; RETURN NEW;", 1)
+    assert problems(tamper) == ["Funktion public.pz_audit_guard (Inhalt weicht von der Migration ab)"]
+
+    def extra(found):
+        found["functions"].append({"schema": "public", "name": "boese", "lang": "plpgsql",
+                                   "secdef": True, "config": "", "src": "BEGIN END"})
+    assert problems(extra) == ["Funktion public.boese (legt keine Migration an)"]
+
+    def secdef(found):
+        f = next(f for f in found["functions"] if f["name"] == "pz_audit_head_guard")
+        f["secdef"] = True
+    assert "SECURITY DEFINER" in problems(secdef)[0]
+
+    def other_schema(found):
+        found["functions"].append({"schema": "extra", "name": "pz_audit_guard", "lang": "plpgsql",
+                                   "secdef": False, "config": "", "src": "x"})
+    assert problems(other_schema) == ["Funktion extra.pz_audit_guard (unerwartet)"]
+
+    def missing(found):
+        found["functions"] = [f for f in found["functions"] if f["name"] != "pz_audit_tombstoned"]
+    assert problems(missing) == ["Funktion public.pz_audit_tombstoned fehlt"]
+
+    def disabled(found):
+        found["triggers"][0]["enabled"] = "D"
+    assert "abgeschaltet" in problems(disabled)[0]
+
+    def foreign_trigger(found):
+        found["triggers"].append({"schema": "public", "name": "t", "table": "users",
+                                  "function": "pz_audit_guard", "enabled": "O"})
+    assert problems(foreign_trigger) == ["Trigger t auf public.users (unerwartet)"]
+
+    def view(found):
+        found["other"] = ["Sicht public.v"]
+    assert problems(view) == ["Sicht public.v"]
+
+
+def test_unverifizierte_sicherung_mit_fremder_funktion_wird_nicht_uebernommen(srv, inst, caplog):
+    cluster = FakeCluster()
+    cluster.routines["functions"].append({"schema": "public", "name": "boese", "lang": "plpgsql",
+                                          "secdef": True, "config": "", "src": "BEGIN END"})
+    with caplog.at_level(logging.ERROR, logger="praxiszeit"):
+        code, _ = _restore(srv, _dump(inst, key=None), cluster, force_unverified=True)
+    assert code == 1
+    assert "public.boese" in caplog.text and "Superuser" in caplog.text
+    assert cluster.dbs["praxiszeit"] == _OLD
+    after = cluster.events[cluster.events.index("routines:praxiszeit_restore"):]
+    # Zwischendatenbank weg, BEVOR die Ladrolle (und damit ihre Objekte) geht -
+    # nie REASSIGN der abgelehnten Objekte an den Superuser.
+    assert after[1] == "drop:praxiszeit_restore"
+    assert "reassign:praxiszeit_restore" not in after
+    assert "droprole:praxiszeit_restore_load" in after
+    assert not any(e.startswith("rename:") for e in cluster.events)
+    assert cluster.roles == set()
+
+
+def test_signierte_sicherung_braucht_keinen_funktionsabgleich(srv, inst):
+    cluster = FakeCluster()
+    cluster.routines["functions"].append({"schema": "public", "name": "egal", "lang": "sql",
+                                          "secdef": False, "config": "", "src": "SELECT 1"})
+    code, _ = _restore(srv, _dump(inst), cluster)
+    assert code == 0 and "routines:praxiszeit_restore" not in cluster.events

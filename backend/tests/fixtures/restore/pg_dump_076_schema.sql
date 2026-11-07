@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 9gSZjbOM7POeiMdUJfB0DoGJhalPscbbZj0H4RmKkHmxFKNb0AchXEjb9GbVnu0
+\restrict NtlyCEezhhP7J9v87eOKdCgshiLY97mlDoPmjeD3foFZWJsj5kGWkdA3XK3K2ON
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -19,6 +19,265 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+DROP POLICY IF EXISTS tenant_isolation ON public.year_carryovers;
+DROP POLICY IF EXISTS tenant_isolation ON public.workstations;
+DROP POLICY IF EXISTS tenant_isolation ON public.workstation_qualifications;
+DROP POLICY IF EXISTS tenant_isolation ON public.working_hours_changes;
+DROP POLICY IF EXISTS tenant_isolation ON public.vacation_requests;
+DROP POLICY IF EXISTS tenant_isolation ON public.users;
+DROP POLICY IF EXISTS tenant_isolation ON public.time_entry_audit_logs;
+DROP POLICY IF EXISTS tenant_isolation ON public.time_entries;
+DROP POLICY IF EXISTS tenant_isolation ON public.tenants;
+DROP POLICY IF EXISTS tenant_isolation ON public.tenant_invoices;
+DROP POLICY IF EXISTS tenant_isolation ON public.system_settings;
+DROP POLICY IF EXISTS tenant_isolation ON public.stripe_events;
+DROP POLICY IF EXISTS tenant_isolation ON public.signup_tokens;
+DROP POLICY IF EXISTS tenant_isolation ON public.signup_audit_log;
+DROP POLICY IF EXISTS tenant_isolation ON public.shift_slots;
+DROP POLICY IF EXISTS tenant_isolation ON public.shift_plans;
+DROP POLICY IF EXISTS tenant_isolation ON public.shift_assignments;
+DROP POLICY IF EXISTS tenant_isolation ON public.security_events;
+DROP POLICY IF EXISTS tenant_isolation ON public.reduced_days;
+DROP POLICY IF EXISTS tenant_isolation ON public.public_holidays;
+DROP POLICY IF EXISTS tenant_isolation ON public.locations;
+DROP POLICY IF EXISTS tenant_isolation ON public.impersonation_sessions;
+DROP POLICY IF EXISTS tenant_isolation ON public.error_logs;
+DROP POLICY IF EXISTS tenant_isolation ON public.company_closures;
+DROP POLICY IF EXISTS tenant_isolation ON public.change_requests;
+DROP POLICY IF EXISTS tenant_isolation ON public.audit_log_tombstones;
+DROP POLICY IF EXISTS tenant_isolation ON public.absences;
+DROP POLICY IF EXISTS tenant_isolation ON public.absence_reasons;
+ALTER TABLE IF EXISTS ONLY public.year_carryovers DROP CONSTRAINT IF EXISTS year_carryovers_user_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.workstations DROP CONSTRAINT IF EXISTS workstations_tenant_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.workstations DROP CONSTRAINT IF EXISTS workstations_location_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.workstation_qualifications DROP CONSTRAINT IF EXISTS workstation_qualifications_workstation_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.workstation_qualifications DROP CONSTRAINT IF EXISTS workstation_qualifications_user_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.workstation_qualifications DROP CONSTRAINT IF EXISTS workstation_qualifications_tenant_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.working_hours_changes DROP CONSTRAINT IF EXISTS working_hours_changes_user_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.vacation_requests DROP CONSTRAINT IF EXISTS vacation_requests_user_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.vacation_requests DROP CONSTRAINT IF EXISTS vacation_requests_reviewed_by_fkey;
+ALTER TABLE IF EXISTS ONLY public.vacation_requests DROP CONSTRAINT IF EXISTS vacation_requests_last_modified_by_fkey;
+ALTER TABLE IF EXISTS ONLY public.time_entry_audit_logs DROP CONSTRAINT IF EXISTS time_entry_audit_logs_user_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.time_entry_audit_logs DROP CONSTRAINT IF EXISTS time_entry_audit_logs_time_entry_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.time_entry_audit_logs DROP CONSTRAINT IF EXISTS time_entry_audit_logs_changed_by_fkey;
+ALTER TABLE IF EXISTS ONLY public.time_entry_audit_logs DROP CONSTRAINT IF EXISTS time_entry_audit_logs_change_request_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.time_entries DROP CONSTRAINT IF EXISTS time_entries_user_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.shift_slots DROP CONSTRAINT IF EXISTS shift_slots_workstation_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.shift_slots DROP CONSTRAINT IF EXISTS shift_slots_tenant_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.shift_slots DROP CONSTRAINT IF EXISTS shift_slots_shift_plan_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.shift_plans DROP CONSTRAINT IF EXISTS shift_plans_tenant_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.shift_plans DROP CONSTRAINT IF EXISTS shift_plans_created_by_fkey;
+ALTER TABLE IF EXISTS ONLY public.shift_assignments DROP CONSTRAINT IF EXISTS shift_assignments_user_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.shift_assignments DROP CONSTRAINT IF EXISTS shift_assignments_tenant_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.shift_assignments DROP CONSTRAINT IF EXISTS shift_assignments_shift_slot_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.security_events DROP CONSTRAINT IF EXISTS security_events_tenant_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.security_events DROP CONSTRAINT IF EXISTS security_events_subject_user_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.reduced_days DROP CONSTRAINT IF EXISTS reduced_days_tenant_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.reduced_days DROP CONSTRAINT IF EXISTS reduced_days_created_by_fkey;
+ALTER TABLE IF EXISTS ONLY public.locations DROP CONSTRAINT IF EXISTS locations_tenant_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.impersonation_sessions DROP CONSTRAINT IF EXISTS impersonation_sessions_tenant_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.impersonation_sessions DROP CONSTRAINT IF EXISTS impersonation_sessions_target_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.impersonation_sessions DROP CONSTRAINT IF EXISTS impersonation_sessions_impersonator_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.year_carryovers DROP CONSTRAINT IF EXISTS fk_year_carryovers_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.working_hours_changes DROP CONSTRAINT IF EXISTS fk_working_hours_changes_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.vacation_requests DROP CONSTRAINT IF EXISTS fk_vacation_requests_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.users DROP CONSTRAINT IF EXISTS fk_users_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.time_entry_audit_logs DROP CONSTRAINT IF EXISTS fk_time_entry_audit_logs_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.time_entries DROP CONSTRAINT IF EXISTS fk_time_entries_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.tenant_invoices DROP CONSTRAINT IF EXISTS fk_tenant_invoices_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.system_settings DROP CONSTRAINT IF EXISTS fk_system_settings_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.signup_tokens DROP CONSTRAINT IF EXISTS fk_signup_tokens_user_id;
+ALTER TABLE IF EXISTS ONLY public.signup_tokens DROP CONSTRAINT IF EXISTS fk_signup_tokens_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.public_holidays DROP CONSTRAINT IF EXISTS fk_public_holidays_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.error_logs DROP CONSTRAINT IF EXISTS fk_error_logs_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.company_closures DROP CONSTRAINT IF EXISTS fk_company_closures_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.change_requests DROP CONSTRAINT IF EXISTS fk_change_requests_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.change_requests DROP CONSTRAINT IF EXISTS fk_change_requests_absence_id;
+ALTER TABLE IF EXISTS ONLY public.absences DROP CONSTRAINT IF EXISTS fk_absences_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.absences DROP CONSTRAINT IF EXISTS fk_absences_closure_id;
+ALTER TABLE IF EXISTS ONLY public.error_logs DROP CONSTRAINT IF EXISTS error_logs_user_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.error_logs DROP CONSTRAINT IF EXISTS error_logs_resolved_by_fkey;
+ALTER TABLE IF EXISTS ONLY public.company_closures DROP CONSTRAINT IF EXISTS company_closures_created_by_fkey;
+ALTER TABLE IF EXISTS ONLY public.change_requests DROP CONSTRAINT IF EXISTS change_requests_user_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.change_requests DROP CONSTRAINT IF EXISTS change_requests_time_entry_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.change_requests DROP CONSTRAINT IF EXISTS change_requests_reviewed_by_fkey;
+ALTER TABLE IF EXISTS ONLY public.change_requests DROP CONSTRAINT IF EXISTS change_requests_proposed_reason_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.audit_log_tombstones DROP CONSTRAINT IF EXISTS audit_log_tombstones_tenant_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.absences DROP CONSTRAINT IF EXISTS absences_user_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.absences DROP CONSTRAINT IF EXISTS absences_reason_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.absence_reasons DROP CONSTRAINT IF EXISTS absence_reasons_tenant_id_fkey;
+DROP TRIGGER IF EXISTS pz_audit_head_guard_write ON public.system_settings;
+DROP TRIGGER IF EXISTS pz_audit_guard_write ON public.time_entry_audit_logs;
+DROP INDEX IF EXISTS public.uq_audit_tenant_chain_seq;
+DROP INDEX IF EXISTS public.ix_year_carryovers_user_id;
+DROP INDEX IF EXISTS public.ix_year_carryovers_tenant_id;
+DROP INDEX IF EXISTS public.ix_workstations_tenant_id;
+DROP INDEX IF EXISTS public.ix_workstations_location_id;
+DROP INDEX IF EXISTS public.ix_workstation_qualifications_workstation_id;
+DROP INDEX IF EXISTS public.ix_workstation_qualifications_user_id;
+DROP INDEX IF EXISTS public.ix_workstation_qualifications_tenant_id;
+DROP INDEX IF EXISTS public.ix_working_hours_changes_user_id;
+DROP INDEX IF EXISTS public.ix_working_hours_changes_tenant_id;
+DROP INDEX IF EXISTS public.ix_working_hours_changes_effective_from;
+DROP INDEX IF EXISTS public.ix_wh_changes_user_effective_from;
+DROP INDEX IF EXISTS public.ix_vacation_requests_user_id;
+DROP INDEX IF EXISTS public.ix_vacation_requests_tenant_id;
+DROP INDEX IF EXISTS public.ix_vacation_requests_status;
+DROP INDEX IF EXISTS public.ix_vacation_requests_date;
+DROP INDEX IF EXISTS public.ix_users_tenant_id;
+DROP INDEX IF EXISTS public.ix_users_email;
+DROP INDEX IF EXISTS public.ix_time_entry_audit_logs_user_id;
+DROP INDEX IF EXISTS public.ix_time_entry_audit_logs_time_entry_id;
+DROP INDEX IF EXISTS public.ix_time_entry_audit_logs_tenant_id;
+DROP INDEX IF EXISTS public.ix_time_entry_audit_logs_entry_ref;
+DROP INDEX IF EXISTS public.ix_time_entry_audit_logs_changed_by;
+DROP INDEX IF EXISTS public.ix_time_entries_user_id;
+DROP INDEX IF EXISTS public.ix_time_entries_tenant_user_date;
+DROP INDEX IF EXISTS public.ix_time_entries_tenant_id;
+DROP INDEX IF EXISTS public.ix_time_entries_date;
+DROP INDEX IF EXISTS public.ix_tenant_invoices_tenant_id;
+DROP INDEX IF EXISTS public.ix_tenant_invoices_created_at;
+DROP INDEX IF EXISTS public.ix_system_settings_tenant_id;
+DROP INDEX IF EXISTS public.ix_stripe_events_tenant_id;
+DROP INDEX IF EXISTS public.ix_stripe_events_processed_at;
+DROP INDEX IF EXISTS public.ix_stripe_events_event_type;
+DROP INDEX IF EXISTS public.ix_signup_tokens_user_id;
+DROP INDEX IF EXISTS public.ix_signup_tokens_tenant_id;
+DROP INDEX IF EXISTS public.ix_signup_tokens_expires_at;
+DROP INDEX IF EXISTS public.ix_signup_audit_log_tenant_id;
+DROP INDEX IF EXISTS public.ix_signup_audit_log_email;
+DROP INDEX IF EXISTS public.ix_signup_audit_log_created_at;
+DROP INDEX IF EXISTS public.ix_shift_slots_workstation_id;
+DROP INDEX IF EXISTS public.ix_shift_slots_tenant_id;
+DROP INDEX IF EXISTS public.ix_shift_slots_shift_plan_id;
+DROP INDEX IF EXISTS public.ix_shift_slots_plan_weekday;
+DROP INDEX IF EXISTS public.ix_shift_plans_tenant_id;
+DROP INDEX IF EXISTS public.ix_shift_assignments_user_id;
+DROP INDEX IF EXISTS public.ix_shift_assignments_tenant_id;
+DROP INDEX IF EXISTS public.ix_shift_assignments_shift_slot_id;
+DROP INDEX IF EXISTS public.ix_security_events_tenant_id;
+DROP INDEX IF EXISTS public.ix_security_events_event;
+DROP INDEX IF EXISTS public.ix_security_events_created_at;
+DROP INDEX IF EXISTS public.ix_public_holidays_year;
+DROP INDEX IF EXISTS public.ix_public_holidays_tenant_id;
+DROP INDEX IF EXISTS public.ix_public_holidays_date;
+DROP INDEX IF EXISTS public.ix_locations_tenant_id;
+DROP INDEX IF EXISTS public.ix_impersonation_sessions_tenant_started;
+DROP INDEX IF EXISTS public.ix_impersonation_sessions_tenant_id;
+DROP INDEX IF EXISTS public.ix_impersonation_sessions_target_id;
+DROP INDEX IF EXISTS public.ix_impersonation_sessions_impersonator_id;
+DROP INDEX IF EXISTS public.ix_error_logs_tenant_id;
+DROP INDEX IF EXISTS public.ix_error_logs_status;
+DROP INDEX IF EXISTS public.ix_error_logs_level;
+DROP INDEX IF EXISTS public.ix_error_logs_last_seen;
+DROP INDEX IF EXISTS public.ix_error_logs_fingerprint;
+DROP INDEX IF EXISTS public.ix_company_closures_tenant_id;
+DROP INDEX IF EXISTS public.ix_company_closures_start_date;
+DROP INDEX IF EXISTS public.ix_company_closures_end_date;
+DROP INDEX IF EXISTS public.ix_change_requests_user_id;
+DROP INDEX IF EXISTS public.ix_change_requests_time_entry_id;
+DROP INDEX IF EXISTS public.ix_change_requests_tenant_id;
+DROP INDEX IF EXISTS public.ix_change_requests_status;
+DROP INDEX IF EXISTS public.ix_change_requests_proposed_reason_id;
+DROP INDEX IF EXISTS public.ix_change_requests_absence_id;
+DROP INDEX IF EXISTS public.ix_absences_user_id;
+DROP INDEX IF EXISTS public.ix_absences_tenant_user_date;
+DROP INDEX IF EXISTS public.ix_absences_tenant_id;
+DROP INDEX IF EXISTS public.ix_absences_reason_id;
+DROP INDEX IF EXISTS public.ix_absences_end_date;
+DROP INDEX IF EXISTS public.ix_absences_date;
+DROP INDEX IF EXISTS public.ix_absences_closure_id;
+DROP INDEX IF EXISTS public.ix_absence_reasons_tenant_id;
+ALTER TABLE IF EXISTS ONLY public.year_carryovers DROP CONSTRAINT IF EXISTS year_carryovers_pkey;
+ALTER TABLE IF EXISTS ONLY public.workstations DROP CONSTRAINT IF EXISTS workstations_pkey;
+ALTER TABLE IF EXISTS ONLY public.workstation_qualifications DROP CONSTRAINT IF EXISTS workstation_qualifications_pkey;
+ALTER TABLE IF EXISTS ONLY public.working_hours_changes DROP CONSTRAINT IF EXISTS working_hours_changes_pkey;
+ALTER TABLE IF EXISTS ONLY public.vacation_requests DROP CONSTRAINT IF EXISTS vacation_requests_pkey;
+ALTER TABLE IF EXISTS ONLY public.users DROP CONSTRAINT IF EXISTS users_pkey;
+ALTER TABLE IF EXISTS ONLY public.tenants DROP CONSTRAINT IF EXISTS uq_tenants_stripe_subscription_id;
+ALTER TABLE IF EXISTS ONLY public.tenants DROP CONSTRAINT IF EXISTS uq_tenants_stripe_customer_id;
+ALTER TABLE IF EXISTS ONLY public.year_carryovers DROP CONSTRAINT IF EXISTS uq_tenant_year_carryover_user_year;
+ALTER TABLE IF EXISTS ONLY public.workstations DROP CONSTRAINT IF EXISTS uq_tenant_workstation_name;
+ALTER TABLE IF EXISTS ONLY public.users DROP CONSTRAINT IF EXISTS uq_tenant_username;
+ALTER TABLE IF EXISTS ONLY public.workstation_qualifications DROP CONSTRAINT IF EXISTS uq_tenant_user_workstation;
+ALTER TABLE IF EXISTS ONLY public.absences DROP CONSTRAINT IF EXISTS uq_tenant_user_date_type;
+ALTER TABLE IF EXISTS ONLY public.time_entries DROP CONSTRAINT IF EXISTS uq_tenant_user_date_start;
+ALTER TABLE IF EXISTS ONLY public.shift_assignments DROP CONSTRAINT IF EXISTS uq_tenant_slot_user;
+ALTER TABLE IF EXISTS ONLY public.shift_plans DROP CONSTRAINT IF EXISTS uq_tenant_shift_plan_name;
+ALTER TABLE IF EXISTS ONLY public.locations DROP CONSTRAINT IF EXISTS uq_tenant_location_name;
+ALTER TABLE IF EXISTS ONLY public.public_holidays DROP CONSTRAINT IF EXISTS uq_tenant_holiday_date;
+ALTER TABLE IF EXISTS ONLY public.reduced_days DROP CONSTRAINT IF EXISTS uq_reduced_days_tenant_date;
+ALTER TABLE IF EXISTS ONLY public.absence_reasons DROP CONSTRAINT IF EXISTS uq_absence_reason_tenant_name;
+ALTER TABLE IF EXISTS ONLY public.time_entry_audit_logs DROP CONSTRAINT IF EXISTS time_entry_audit_logs_pkey;
+ALTER TABLE IF EXISTS ONLY public.time_entries DROP CONSTRAINT IF EXISTS time_entries_pkey;
+ALTER TABLE IF EXISTS ONLY public.tenants DROP CONSTRAINT IF EXISTS tenants_slug_key;
+ALTER TABLE IF EXISTS ONLY public.tenants DROP CONSTRAINT IF EXISTS tenants_pkey;
+ALTER TABLE IF EXISTS ONLY public.tenant_invoices DROP CONSTRAINT IF EXISTS tenant_invoices_stripe_invoice_id_key;
+ALTER TABLE IF EXISTS ONLY public.tenant_invoices DROP CONSTRAINT IF EXISTS tenant_invoices_pkey;
+ALTER TABLE IF EXISTS ONLY public.system_settings DROP CONSTRAINT IF EXISTS system_settings_pkey;
+ALTER TABLE IF EXISTS ONLY public.stripe_events DROP CONSTRAINT IF EXISTS stripe_events_pkey;
+ALTER TABLE IF EXISTS ONLY public.stripe_events DROP CONSTRAINT IF EXISTS stripe_events_event_id_key;
+ALTER TABLE IF EXISTS ONLY public.signup_tokens DROP CONSTRAINT IF EXISTS signup_tokens_token_hash_key;
+ALTER TABLE IF EXISTS ONLY public.signup_tokens DROP CONSTRAINT IF EXISTS signup_tokens_pkey;
+ALTER TABLE IF EXISTS ONLY public.signup_audit_log DROP CONSTRAINT IF EXISTS signup_audit_log_pkey;
+ALTER TABLE IF EXISTS ONLY public.shift_slots DROP CONSTRAINT IF EXISTS shift_slots_pkey;
+ALTER TABLE IF EXISTS ONLY public.shift_plans DROP CONSTRAINT IF EXISTS shift_plans_pkey;
+ALTER TABLE IF EXISTS ONLY public.shift_assignments DROP CONSTRAINT IF EXISTS shift_assignments_pkey;
+ALTER TABLE IF EXISTS ONLY public.security_events DROP CONSTRAINT IF EXISTS security_events_pkey;
+ALTER TABLE IF EXISTS ONLY public.reduced_days DROP CONSTRAINT IF EXISTS reduced_days_pkey;
+ALTER TABLE IF EXISTS ONLY public.public_holidays DROP CONSTRAINT IF EXISTS public_holidays_pkey;
+ALTER TABLE IF EXISTS ONLY public.locations DROP CONSTRAINT IF EXISTS locations_pkey;
+ALTER TABLE IF EXISTS ONLY public.impersonation_sessions DROP CONSTRAINT IF EXISTS impersonation_sessions_pkey;
+ALTER TABLE IF EXISTS ONLY public.error_logs DROP CONSTRAINT IF EXISTS error_logs_pkey;
+ALTER TABLE IF EXISTS ONLY public.company_closures DROP CONSTRAINT IF EXISTS company_closures_pkey;
+ALTER TABLE IF EXISTS ONLY public.change_requests DROP CONSTRAINT IF EXISTS change_requests_pkey;
+ALTER TABLE IF EXISTS ONLY public.audit_log_tombstones DROP CONSTRAINT IF EXISTS audit_log_tombstones_pkey;
+ALTER TABLE IF EXISTS ONLY public.alembic_version DROP CONSTRAINT IF EXISTS alembic_version_pkc;
+ALTER TABLE IF EXISTS ONLY public.absences DROP CONSTRAINT IF EXISTS absences_pkey;
+ALTER TABLE IF EXISTS ONLY public.absence_reasons DROP CONSTRAINT IF EXISTS absence_reasons_pkey;
+DROP TABLE IF EXISTS public.year_carryovers;
+DROP TABLE IF EXISTS public.workstations;
+DROP TABLE IF EXISTS public.workstation_qualifications;
+DROP TABLE IF EXISTS public.working_hours_changes;
+DROP TABLE IF EXISTS public.vacation_requests;
+DROP TABLE IF EXISTS public.users;
+DROP TABLE IF EXISTS public.time_entry_audit_logs;
+DROP TABLE IF EXISTS public.time_entries;
+DROP TABLE IF EXISTS public.tenants;
+DROP TABLE IF EXISTS public.tenant_invoices;
+DROP TABLE IF EXISTS public.system_settings;
+DROP TABLE IF EXISTS public.stripe_events;
+DROP TABLE IF EXISTS public.signup_tokens;
+DROP TABLE IF EXISTS public.signup_audit_log;
+DROP TABLE IF EXISTS public.shift_slots;
+DROP TABLE IF EXISTS public.shift_plans;
+DROP TABLE IF EXISTS public.shift_assignments;
+DROP TABLE IF EXISTS public.security_events;
+DROP TABLE IF EXISTS public.reduced_days;
+DROP TABLE IF EXISTS public.public_holidays;
+DROP TABLE IF EXISTS public.locations;
+DROP TABLE IF EXISTS public.impersonation_sessions;
+DROP TABLE IF EXISTS public.error_logs;
+DROP TABLE IF EXISTS public.company_closures;
+DROP TABLE IF EXISTS public.change_requests;
+DROP TABLE IF EXISTS public.audit_log_tombstones;
+DROP TABLE IF EXISTS public.alembic_version;
+DROP TABLE IF EXISTS public.absences;
+DROP TABLE IF EXISTS public.absence_reasons;
+DROP FUNCTION IF EXISTS public.pz_audit_tombstoned(p_id uuid);
+DROP FUNCTION IF EXISTS public.pz_audit_tenant_ok(p_tenant uuid);
+DROP FUNCTION IF EXISTS public.pz_audit_set_notes(p_id uuid, p_old_note text, p_new_note text, p_row_hash text);
+DROP FUNCTION IF EXISTS public.pz_audit_set_head(p_tenant uuid, p_value text, p_reanchor boolean);
+DROP FUNCTION IF EXISTS public.pz_audit_seal(p_ids uuid[], p_seqs bigint[], p_prevs text[], p_hashes text[]);
+DROP FUNCTION IF EXISTS public.pz_audit_scrub_ok(p_old text, p_new text);
+DROP FUNCTION IF EXISTS public.pz_audit_head_seq(p_tenant uuid);
+DROP FUNCTION IF EXISTS public.pz_audit_head_guard();
+DROP FUNCTION IF EXISTS public.pz_audit_guard();
+DROP FUNCTION IF EXISTS public.pz_audit_delete(p_ids uuid[]);
+DROP TYPE IF EXISTS public.userrole;
+DROP TYPE IF EXISTS public.changerequesttype;
+DROP TYPE IF EXISTS public.changerequeststatus;
+DROP TYPE IF EXISTS public.absencetype;
 --
 -- Name: absencetype; Type: TYPE; Schema: public; Owner: praxiszeit
 --
@@ -94,10 +353,19 @@ BEGIN
                        OR t.chain_seq > pz_audit_head_seq(t.tenant_id))) THEN
         RAISE EXCEPTION 'pz_audit_delete: nur Zeilen bis zum gesiegelten Kettenende duerfen geloescht werden';
     END IF;
-    DELETE FROM time_entry_audit_logs t
-     WHERE t.id = ANY(p_ids)
-       AND pz_audit_tenant_ok(t.tenant_id);
-    GET DIAGNOSTICS n = ROW_COUNT;
+    -- Jede geloeschte id bekommt einen Grabstein: pz_audit_guard laesst sie
+    -- nie wieder einfuegen (Review-Runde 3).
+    WITH d AS (
+        DELETE FROM time_entry_audit_logs t
+         WHERE t.id = ANY(p_ids)
+           AND pz_audit_tenant_ok(t.tenant_id)
+        RETURNING t.id, t.tenant_id
+    ), g AS (
+        INSERT INTO audit_log_tombstones (id, tenant_id)
+        SELECT d.id, d.tenant_id FROM d
+        ON CONFLICT (id) DO NOTHING
+    )
+    SELECT count(*) INTO n FROM d;
     RETURN n;
 END $$;
 
@@ -123,6 +391,24 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
+        -- Review-Runde 3: eine geloeschte Zeile kehrt nie zurueck. Sonst liesse
+        -- sich eine echte Zeile (gueltiger row_hash, er bindet die id) nach
+        -- pz_audit_delete Byte fuer Byte wieder einfuegen — etwa ein alter
+        -- Vermerk "Kettenende neu gesetzt", der pz_audit_set_head ein
+        -- Zuruecksetzen erlaubt, oder eine nach Art. 17 entfernte Zeile.
+        IF pz_audit_tombstoned(NEW.id) THEN
+            RAISE EXCEPTION 'time_entry_audit_logs: geloeschte Zeile % darf nicht zurueckkehren', NEW.id
+                USING ERRCODE = '42501';
+        END IF;
+        -- created_at steht in der Pruefsumme: eine kopierte alte Zeile traegt
+        -- ihren alten Zeitpunkt und faellt hier heraus. Spielraum fuer lange
+        -- Transaktionen und Uhrabweichung zwischen App und Datenbank.
+        IF NEW.created_at IS NULL
+           OR NEW.created_at < transaction_timestamp() - interval '10 minutes'
+           OR NEW.created_at > clock_timestamp() + interval '10 minutes' THEN
+            RAISE EXCEPTION 'time_entry_audit_logs: Anlagezeitpunkt % liegt nicht in der Gegenwart', NEW.created_at
+                USING ERRCODE = '42501';
+        END IF;
         IF NEW.row_hash IS NULL OR NEW.hash_version IS NULL THEN
             RAISE EXCEPTION 'time_entry_audit_logs: Zeile ohne Pruefsumme abgelehnt'
                 USING ERRCODE = '42501';
@@ -149,7 +435,20 @@ CREATE FUNCTION public.pz_audit_head_guard() RETURNS trigger
     AS $$
 DECLARE
     tbl_owner oid;
+    hit boolean := false;
 BEGIN
+    IF TG_OP <> 'INSERT' THEN
+        hit := OLD.key IN ('audit_chain_head', 'audit_legacy_cutoff');
+    END IF;
+    IF TG_OP <> 'DELETE' AND NOT hit THEN
+        hit := NEW.key IN ('audit_chain_head', 'audit_legacy_cutoff');
+    END IF;
+    IF NOT hit THEN
+        IF TG_OP = 'DELETE' THEN
+            RETURN OLD;
+        END IF;
+        RETURN NEW;
+    END IF;
     SELECT relowner INTO tbl_owner FROM pg_class WHERE oid = TG_RELID;
     IF pg_has_role(current_user, tbl_owner, 'MEMBER')
        OR COALESCE((SELECT rolsuper FROM pg_roles WHERE rolname = current_user), false) THEN
@@ -158,15 +457,8 @@ BEGIN
         END IF;
         RETURN NEW;
     END IF;
-    IF TG_OP = 'DELETE' THEN
-        RAISE EXCEPTION 'system_settings: Kettenende des Aenderungsprotokolls darf nicht geloescht werden'
-            USING ERRCODE = '42501';
-    END IF;
-    IF NEW.key IS DISTINCT FROM OLD.key OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id THEN
-        RAISE EXCEPTION 'system_settings: Kettenende des Aenderungsprotokolls darf nicht umbenannt werden'
-            USING ERRCODE = '42501';
-    END IF;
-    RETURN NEW;
+    RAISE EXCEPTION 'system_settings: Kettenende/Altbestandsgrenze des Aenderungsprotokolls (%) nur ueber die Protokollfunktionen', TG_OP
+        USING ERRCODE = '42501';
 END $$;
 
 
@@ -188,6 +480,53 @@ $_$;
 
 
 ALTER FUNCTION public.pz_audit_head_seq(p_tenant uuid) OWNER TO praxiszeit;
+
+--
+-- Name: pz_audit_scrub_ok(text, text); Type: FUNCTION; Schema: public; Owner: praxiszeit
+--
+
+CREATE FUNCTION public.pz_audit_scrub_ok(p_old text, p_new text) RETURNS boolean
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    parts text[];
+    n integer;
+    pos integer;
+    k integer;
+    seg text;
+    hit integer;
+BEGIN
+    IF p_new IS NULL OR p_new IS NOT DISTINCT FROM p_old THEN
+        RETURN true;
+    END IF;
+    IF p_old IS NULL THEN
+        RETURN false;
+    END IF;
+    parts := regexp_split_to_array(p_new, '\[anonymisiert\]|deleted_[0-9a-f]{8}');
+    n := array_length(parts, 1);
+    IF n < 2 OR left(p_old, length(parts[1])) <> parts[1] THEN
+        RETURN false;
+    END IF;
+    pos := length(parts[1]) + 1;          -- erstes noch nicht zugeordnetes Zeichen
+    FOR k IN 2 .. n - 1 LOOP
+        seg := parts[k];
+        IF seg = '' THEN
+            pos := pos + 1;
+            CONTINUE;
+        END IF;
+        hit := strpos(substr(p_old, pos + 1), seg);
+        IF hit = 0 THEN
+            RETURN false;
+        END IF;
+        pos := pos + hit + length(seg);
+    END LOOP;
+    RETURN length(p_old) - length(parts[n]) >= pos
+       AND right(p_old, length(parts[n])) = parts[n];
+END $$;
+
+
+ALTER FUNCTION public.pz_audit_scrub_ok(p_old text, p_new text) OWNER TO praxiszeit;
 
 --
 -- Name: pz_audit_seal(uuid[], bigint[], text[], text[]); Type: FUNCTION; Schema: public; Owner: praxiszeit
@@ -245,6 +584,69 @@ END $$;
 ALTER FUNCTION public.pz_audit_seal(p_ids uuid[], p_seqs bigint[], p_prevs text[], p_hashes text[]) OWNER TO praxiszeit;
 
 --
+-- Name: pz_audit_set_head(uuid, text, boolean); Type: FUNCTION; Schema: public; Owner: praxiszeit
+--
+
+CREATE FUNCTION public.pz_audit_set_head(p_tenant uuid, p_value text, p_reanchor boolean) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+    v_seq bigint;
+    v_hash text;
+    v_top bigint;
+    v_top_hash text;
+    v_old text;
+    v_old_seq bigint;
+BEGIN
+    IF NOT pz_audit_tenant_ok(p_tenant) THEN
+        RAISE EXCEPTION 'pz_audit_set_head: fremder Mandant';
+    END IF;
+    IF p_value IS NULL OR p_value !~ '^[0-9]{1,18}:[0-9a-f]*:[0-9a-f]+$' THEN
+        RAISE EXCEPTION 'pz_audit_set_head: ungueltiger Wert';
+    END IF;
+    v_seq := split_part(p_value, ':', 1)::bigint;
+    v_hash := split_part(p_value, ':', 2);
+    SELECT chain_seq, COALESCE(chain_hash, '') INTO v_top, v_top_hash
+      FROM time_entry_audit_logs
+     WHERE tenant_id = p_tenant AND chain_seq IS NOT NULL
+     ORDER BY chain_seq DESC LIMIT 1;
+    IF v_seq <> COALESCE(v_top, 0) OR v_hash <> COALESCE(v_top_hash, '') THEN
+        RAISE EXCEPTION 'pz_audit_set_head: Kettenende nur auf das hoechste versiegelte Glied (%)',
+            COALESCE(v_top, 0) USING ERRCODE = '42501';
+    END IF;
+    SELECT value INTO v_old FROM system_settings
+     WHERE key = 'audit_chain_head' AND tenant_id = p_tenant
+       FOR UPDATE;
+    IF NOT FOUND THEN
+        INSERT INTO system_settings (key, tenant_id, value, description)
+        VALUES ('audit_chain_head', p_tenant, p_value,
+                'Aenderungsprotokoll: letztes Kettenglied (#537)');
+        RETURN;
+    END IF;
+    IF v_old ~ '^[0-9]{1,18}:[0-9a-f]*:[0-9a-f]+$' THEN
+        v_old_seq := split_part(v_old, ':', 1)::bigint;
+        IF v_seq < v_old_seq AND NOT (
+            p_reanchor AND EXISTS (
+                SELECT 1 FROM time_entry_audit_logs
+                 WHERE tenant_id = p_tenant AND chain_seq IS NULL
+                   AND action = 'audit_chain_reanchored' AND row_hash IS NOT NULL
+                   -- nur ein Vermerk aus DIESEM Vorgang (Review-Runde 3): ein
+                   -- alter, wieder eingefuegter Vermerk oeffnete sonst das
+                   -- Zuruecksetzen beliebig oft
+                   AND created_at >= transaction_timestamp() - interval '1 minute')) THEN
+            RAISE EXCEPTION 'pz_audit_set_head: Kettenende darf nicht zurueckgesetzt werden (% -> %)',
+                v_old_seq, v_seq USING ERRCODE = '42501';
+        END IF;
+    END IF;
+    UPDATE system_settings SET value = p_value, updated_at = now()
+     WHERE key = 'audit_chain_head' AND tenant_id = p_tenant;
+END $_$;
+
+
+ALTER FUNCTION public.pz_audit_set_head(p_tenant uuid, p_value text, p_reanchor boolean) OWNER TO praxiszeit;
+
+--
 -- Name: pz_audit_set_notes(uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: praxiszeit
 --
 
@@ -252,14 +654,28 @@ CREATE FUNCTION public.pz_audit_set_notes(p_id uuid, p_old_note text, p_new_note
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
+DECLARE
+    r record;
 BEGIN
-    UPDATE time_entry_audit_logs t
-       SET old_note = p_old_note, new_note = p_new_note, row_hash = p_row_hash
+    SELECT t.old_note, t.new_note, t.row_hash INTO r
+      FROM time_entry_audit_logs t
      WHERE t.id = p_id
-       AND pz_audit_tenant_ok(t.tenant_id);
+       AND pz_audit_tenant_ok(t.tenant_id)
+       FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'pz_audit_set_notes: Zeile % nicht gefunden', p_id;
     END IF;
+    IF (r.row_hash IS NULL) <> (p_row_hash IS NULL) THEN
+        RAISE EXCEPTION 'pz_audit_set_notes: Pruefsumme darf weder entfernt noch neu gesetzt werden'
+            USING ERRCODE = '42501';
+    END IF;
+    IF NOT pz_audit_scrub_ok(r.old_note, p_old_note) OR NOT pz_audit_scrub_ok(r.new_note, p_new_note) THEN
+        RAISE EXCEPTION 'pz_audit_set_notes: Notizen nur leeren oder durch Anonymisierung ersetzen'
+            USING ERRCODE = '42501';
+    END IF;
+    UPDATE time_entry_audit_logs t
+       SET old_note = p_old_note, new_note = p_new_note, row_hash = p_row_hash
+     WHERE t.id = p_id;
 END $$;
 
 
@@ -279,6 +695,20 @@ $$;
 
 
 ALTER FUNCTION public.pz_audit_tenant_ok(p_tenant uuid) OWNER TO praxiszeit;
+
+--
+-- Name: pz_audit_tombstoned(uuid); Type: FUNCTION; Schema: public; Owner: praxiszeit
+--
+
+CREATE FUNCTION public.pz_audit_tombstoned(p_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT EXISTS (SELECT 1 FROM audit_log_tombstones WHERE id = p_id)
+$$;
+
+
+ALTER FUNCTION public.pz_audit_tombstoned(p_id uuid) OWNER TO praxiszeit;
 
 SET default_tablespace = '';
 
@@ -342,6 +772,19 @@ CREATE TABLE public.alembic_version (
 
 
 ALTER TABLE public.alembic_version OWNER TO praxiszeit;
+
+--
+-- Name: audit_log_tombstones; Type: TABLE; Schema: public; Owner: praxiszeit
+--
+
+CREATE TABLE public.audit_log_tombstones (
+    id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
+    deleted_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.audit_log_tombstones OWNER TO praxiszeit;
 
 --
 -- Name: change_requests; Type: TABLE; Schema: public; Owner: praxiszeit
@@ -909,7 +1352,7 @@ CREATE TABLE public.working_hours_changes (
     id uuid NOT NULL,
     user_id uuid NOT NULL,
     effective_from date NOT NULL,
-    weekly_hours numeric(4,1) NOT NULL,
+    weekly_hours numeric(4,2) NOT NULL,
     note character varying(500),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     tenant_id uuid NOT NULL,
@@ -1013,6 +1456,14 @@ COPY public.absences (id, user_id, date, type, hours, note, created_at, end_date
 
 COPY public.alembic_version (version_num) FROM stdin;
 076_audit_chain
+\.
+
+
+--
+-- Data for Name: audit_log_tombstones; Type: TABLE DATA; Schema: public; Owner: praxiszeit
+--
+
+COPY public.audit_log_tombstones (id, tenant_id, deleted_at) FROM stdin;
 \.
 
 
@@ -1238,6 +1689,14 @@ ALTER TABLE ONLY public.absences
 
 ALTER TABLE ONLY public.alembic_version
     ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
+
+
+--
+-- Name: audit_log_tombstones audit_log_tombstones_pkey; Type: CONSTRAINT; Schema: public; Owner: praxiszeit
+--
+
+ALTER TABLE ONLY public.audit_log_tombstones
+    ADD CONSTRAINT audit_log_tombstones_pkey PRIMARY KEY (id);
 
 
 --
@@ -1795,13 +2254,6 @@ CREATE INDEX ix_public_holidays_year ON public.public_holidays USING btree (year
 
 
 --
--- Name: ix_reduced_days_tenant_id; Type: INDEX; Schema: public; Owner: praxiszeit
---
-
-CREATE INDEX ix_reduced_days_tenant_id ON public.reduced_days USING btree (tenant_id);
-
-
---
 -- Name: ix_security_events_created_at; Type: INDEX; Schema: public; Owner: praxiszeit
 --
 
@@ -2075,13 +2527,6 @@ CREATE INDEX ix_wh_changes_user_effective_from ON public.working_hours_changes U
 
 
 --
--- Name: ix_whc_user_effective_from; Type: INDEX; Schema: public; Owner: praxiszeit
---
-
-CREATE INDEX ix_whc_user_effective_from ON public.working_hours_changes USING btree (user_id, effective_from);
-
-
---
 -- Name: ix_working_hours_changes_effective_from; Type: INDEX; Schema: public; Owner: praxiszeit
 --
 
@@ -2169,7 +2614,7 @@ CREATE TRIGGER pz_audit_guard_write BEFORE INSERT OR DELETE OR UPDATE ON public.
 -- Name: system_settings pz_audit_head_guard_write; Type: TRIGGER; Schema: public; Owner: praxiszeit
 --
 
-CREATE TRIGGER pz_audit_head_guard_write BEFORE DELETE OR UPDATE ON public.system_settings FOR EACH ROW WHEN (((old.key)::text = 'audit_chain_head'::text)) EXECUTE FUNCTION public.pz_audit_head_guard();
+CREATE TRIGGER pz_audit_head_guard_write BEFORE INSERT OR DELETE OR UPDATE ON public.system_settings FOR EACH ROW EXECUTE FUNCTION public.pz_audit_head_guard();
 
 
 --
@@ -2194,6 +2639,14 @@ ALTER TABLE ONLY public.absences
 
 ALTER TABLE ONLY public.absences
     ADD CONSTRAINT absences_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: audit_log_tombstones audit_log_tombstones_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: praxiszeit
+--
+
+ALTER TABLE ONLY public.audit_log_tombstones
+    ADD CONSTRAINT audit_log_tombstones_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
 
 
 --
@@ -2649,6 +3102,12 @@ ALTER TABLE public.absence_reasons ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.absences ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: audit_log_tombstones; Type: ROW SECURITY; Schema: public; Owner: praxiszeit
+--
+
+ALTER TABLE public.audit_log_tombstones ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: change_requests; Type: ROW SECURITY; Schema: public; Owner: praxiszeit
 --
 
@@ -2756,6 +3215,13 @@ CREATE POLICY tenant_isolation ON public.absence_reasons USING (((current_settin
 --
 
 CREATE POLICY tenant_isolation ON public.absences USING (((current_setting('app.is_superadmin'::text, true) = 'true'::text) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid))) WITH CHECK (((current_setting('app.is_superadmin'::text, true) = 'true'::text) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid)));
+
+
+--
+-- Name: audit_log_tombstones tenant_isolation; Type: POLICY; Schema: public; Owner: praxiszeit
+--
+
+CREATE POLICY tenant_isolation ON public.audit_log_tombstones USING (((current_setting('app.is_superadmin'::text, true) = 'true'::text) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::uuid)));
 
 
 --
@@ -3011,11 +3477,27 @@ GRANT ALL ON FUNCTION public.pz_audit_head_seq(p_tenant uuid) TO praxiszeit_app;
 
 
 --
+-- Name: FUNCTION pz_audit_scrub_ok(p_old text, p_new text); Type: ACL; Schema: public; Owner: praxiszeit
+--
+
+REVOKE ALL ON FUNCTION public.pz_audit_scrub_ok(p_old text, p_new text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.pz_audit_scrub_ok(p_old text, p_new text) TO praxiszeit_app;
+
+
+--
 -- Name: FUNCTION pz_audit_seal(p_ids uuid[], p_seqs bigint[], p_prevs text[], p_hashes text[]); Type: ACL; Schema: public; Owner: praxiszeit
 --
 
 REVOKE ALL ON FUNCTION public.pz_audit_seal(p_ids uuid[], p_seqs bigint[], p_prevs text[], p_hashes text[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.pz_audit_seal(p_ids uuid[], p_seqs bigint[], p_prevs text[], p_hashes text[]) TO praxiszeit_app;
+
+
+--
+-- Name: FUNCTION pz_audit_set_head(p_tenant uuid, p_value text, p_reanchor boolean); Type: ACL; Schema: public; Owner: praxiszeit
+--
+
+REVOKE ALL ON FUNCTION public.pz_audit_set_head(p_tenant uuid, p_value text, p_reanchor boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.pz_audit_set_head(p_tenant uuid, p_value text, p_reanchor boolean) TO praxiszeit_app;
 
 
 --
@@ -3032,6 +3514,14 @@ GRANT ALL ON FUNCTION public.pz_audit_set_notes(p_id uuid, p_old_note text, p_ne
 
 REVOKE ALL ON FUNCTION public.pz_audit_tenant_ok(p_tenant uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.pz_audit_tenant_ok(p_tenant uuid) TO praxiszeit_app;
+
+
+--
+-- Name: FUNCTION pz_audit_tombstoned(p_id uuid); Type: ACL; Schema: public; Owner: praxiszeit
+--
+
+REVOKE ALL ON FUNCTION public.pz_audit_tombstoned(p_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.pz_audit_tombstoned(p_id uuid) TO praxiszeit_app;
 
 
 --
@@ -3248,5 +3738,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE praxiszeit IN SCHEMA public GRANT SELECT,INSER
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 9gSZjbOM7POeiMdUJfB0DoGJhalPscbbZj0H4RmKkHmxFKNb0AchXEjb9GbVnu0
+\unrestrict NtlyCEezhhP7J9v87eOKdCgshiLY97mlDoPmjeD3foFZWJsj5kGWkdA3XK3K2ON
 

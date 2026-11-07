@@ -95,21 +95,25 @@ Funktionsrümpfe mit dynamischem oder verschachteltem Code (`EXECUTE`, `DO`,
 `CREATE FUNCTION/TRIGGER/RULE`), mit E-Zeichenketten samt Backslash oder mit
 anderen `pg_*`-Namen als denen der eigenen Protokollfunktionen.
 
-Diese Liste ist nur die zweite Linie. **Nativ unter Linux/macOS (`restore`)
-lädt eine unverifizierte Sicherung als eigene, kurzlebige Datenbankrolle
+Diese Liste ist nur die zweite Linie. **Nativ (`restore` unter Linux/macOS,
+`restore-backup.bat` unter Windows) lädt eine unverifizierte Sicherung als
+eigene, kurzlebige Datenbankrolle
 `praxiszeit_restore_load` ohne Superuser-Rechte** (kein `CREATEROLE`,
 `CREATEDB`, `BYPASSRLS`, keine Mitgliedschaft, Zufallspasswort, Eigentümerin
 nur der Zwischendatenbank). Was die Liste übersieht — Systemkataloge
 schreiben, `COPY … PROGRAM`, Server-Dateien lesen, C-Funktionen anlegen,
 Rollen ändern, Funktionen, die beim Laden in einem Index oder `CHECK` laufen —
 lehnt dann der Server selbst ab. Die `OWNER TO`-Zeilen des Dumps entfallen
-dabei; danach überträgt `restore` alle Objekte an den Datenbank-Superuser und
+dabei; danach überträgt PraxisZeit alle Objekte an den Datenbank-Superuser und
 entfernt die Rolle. Das Ergebnis ist dasselbe wie beim Laden als Superuser
-(die Standardrechte setzt `init-db-user.sql` danach wie immer). Funktionen,
-die nach der Übertragung dem Superuser gehören (`SECURITY DEFINER`), prüft
-weiter nur die Liste. **`restore-backup.bat` (Windows) lädt auch eine
-unverifizierte Sicherung noch als Superuser** — dort ist die Liste die
-einzige Linie. **`restore.sh` (Docker)
+(die Standardrechte setzt `init-db-user.sql` danach wie immer). **Vor der
+Übertragung müssen Funktionen und Trigger genau denen entsprechen, die die
+Migrationen dieser Installation bis zum Datenbankstand der Sicherung anlegen**
+(gleicher Inhalt, gleiche Sprache, `SECURITY DEFINER` und Einstellungen; keine
+Sichten, Regeln oder Ereignis-Trigger) — sonst liefe eine Funktion, die die
+Liste übersieht, danach mit den Rechten des Superusers. Weicht etwas ab, bricht
+der Vorgang mit der Liste der Abweichungen ab; die bisherige Datenbank bleibt
+unverändert. **`restore.sh` (Docker)
 prüft die Anweisungen nicht** — dort sperrt nur der eigene `\restrict`-Schlüssel
 die psql-Befehle; eine erzwungene Sicherung läuft sonst ungeprüft als
 Datenbank-Superuser. Mit `--force-unverified` unter Docker also nur Dateien

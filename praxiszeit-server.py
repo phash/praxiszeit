@@ -20,6 +20,7 @@ Usage:
 
 import argparse
 import functools
+import json
 import logging
 import os
 import platform
@@ -2893,14 +2894,25 @@ def cmd_sync_db_port(args):
     apply_pg_port()
 
 
+# Exit-Code von prepare-restore-dump --restricted-load fuer eine unverifizierte
+# (mit --force-unverified zugelassene) Sicherung: restore-backup.bat laedt sie
+# dann ueber load-restore-db --restricted (Review-Runde 4).
+PREPARE_EXIT_UNVERIFIED = 4
+
+
 def cmd_prepare_restore_dump(args):
     """restore-backup.bat: Signatur und entpackten Dump pruefen und mit eigenem
     \\restrict versehen. Fehler als eine Zeile auf stderr: Exit 2 = Signatur
-    fehlt oder passt nicht, Exit 1 = Dump abgelehnt (die .bat bricht ab)."""
+    fehlt oder passt nicht, Exit 1 = Dump abgelehnt (die .bat bricht ab).
+    ``--restricted-load``: eine unverifizierte Sicherung wird fuer das Laden
+    als :data:`RESTORE_LOAD_ROLE` vorbereitet (ohne Eigentuemer-Zeilen) und
+    meldet Exit :data:`PREPARE_EXIT_UNVERIFIED`."""
+    restricted = getattr(args, "restricted_load", False)
     try:
-        prepare_restore_dump(
+        verified = prepare_restore_dump(
             Path(args.file), secret_key=_installation_secret_key(load_config()),
             force_unverified=getattr(args, "force_unverified", False),
+            restricted_load=restricted,
         )
     except UnverifiedBackupError as exc:
         # Exit 2: restore-backup.bat erklaert --force-unverified.
@@ -2912,6 +2924,39 @@ def cmd_prepare_restore_dump(args):
     except OSError as exc:
         print(f"FEHLER: {args.file} nicht lesbar: {exc}", file=sys.stderr)
         sys.exit(1)
+    if restricted and not verified:
+        sys.exit(PREPARE_EXIT_UNVERIFIED)
+
+
+def cmd_load_restore_db(args):
+    """restore-backup.bat Schritt 4 (Review-Runde 4): vorbereiteten Dump in die
+    Zwischendatenbank einspielen - derselbe Weg wie ``restore`` unter Linux und
+    macOS (:func:`_load_into_restore_db`). ``--restricted``: unverifizierte
+    Sicherung als :data:`RESTORE_LOAD_ROLE` laden, Funktionen und Trigger gegen
+    die Migrationen abgleichen. Die bisherige Datenbank bleibt unangetastet.
+    Fehler als Meldung auf stderr, Exit 1."""
+    config = load_config()
+    su_password, _ = pg_load_credentials()
+    if not su_password:
+        print("FEHLER: Keine Datenbank-Zugangsdaten gefunden (config/.db-credentials fehlt).",
+              file=sys.stderr)
+        sys.exit(1)
+    known = known_migration_revisions()
+    if not known:
+        print(f"FEHLER: Keine Migrationen unter {BACKEND_DIR / 'alembic' / 'versions'} "
+              "gefunden - Installation unvollstaendig.", file=sys.stderr)
+        sys.exit(1)
+    superuser = _validate_pg_identifier(
+        get_config_value(config, "database", "superuser", "praxiszeit"))
+    env = {**pg_env(), "PGPASSWORD": su_password,
+           "PGOPTIONS": "-c client_min_messages=warning"}
+    try:
+        revision = _load_into_restore_db(superuser, env, Path(args.file), known,
+                                         restricted=getattr(args, "restricted", False))
+    except RestoreError as exc:
+        print(f"FEHLER: {exc}", file=sys.stderr)
+        sys.exit(1)
+    print(revision)
 
 
 def cmd_harden_permissions(args):
@@ -3993,6 +4038,194 @@ def _drop_load_role(superuser: str, env: dict) -> None:
             f"{_psql_error_tail(result)}")
 
 
+# --- Ausfuehrbare Objekte einer unverifizierten Sicherung (Review-Runde 4) ---
+# Nach REASSIGN OWNED gehoeren alle Objekte dem Superuser. Eine Funktion
+# (Trigger, SECURITY DEFINER), die die Pruefliste uebersieht, liefe danach bei
+# jedem Zugriff der App oder einer Migration mit Superuser-Rechten. Deshalb
+# muessen Funktionen und Trigger einer unverifizierten Sicherung GENAU denen
+# entsprechen, die die Migrationen dieser Installation bis zum Datenbankstand
+# der Sicherung anlegen (gleicher Rumpf, gleiche Sprache, SECURITY DEFINER und
+# Einstellungen); Sichten, Regeln und Ereignis-Trigger legt PraxisZeit nie an.
+# Gelesen wird der Quelltext der Migrationen (ohne Alembic zu importieren,
+# wie known_migration_revisions), je Datei nur der Teil vor ``def downgrade``.
+_MIG_REV_RE = re.compile(r"""^revision(?:\s*:\s*str)?\s*=\s*['"]([^'"]+)['"]""", re.M)
+_MIG_DOWN_RE = re.compile(r"^down_revision\b[^=\n]*=(.*)$", re.M)
+_MIG_FUNCTION_RE = re.compile(
+    r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?(\w+)\s*\([^)]*\)\s*"
+    r"RETURNS\s+(.*?)\bAS\s+\$\$(.*?)\$\$", re.S | re.I)
+_MIG_DROP_FUNCTION_RE = re.compile(
+    r"DROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?(?:public\.)?(\w+)", re.I)
+_MIG_TRIGGER_RE = re.compile(
+    r"CREATE\s+TRIGGER\s+(\w+)\s.*?\bON\s+(?:public\.)?(\w+)\s.*?"
+    r"EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+(?:public\.)?(\w+)", re.S | re.I)
+_MIG_DROP_TRIGGER_RE = re.compile(
+    r"DROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?(\w+)\s+ON\s+(?:public\.)?(\w+)", re.I)
+
+
+def _migration_chain(versions_dir: Path, revision: str) -> list[Path]:
+    """Migrationsdateien von der ersten bis ``revision`` in Ketten-Reihenfolge."""
+    by_rev: dict[str, tuple[Path, list[str]]] = {}
+    for path in versions_dir.glob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        rev = _MIG_REV_RE.search(text)
+        if not rev:
+            continue
+        down = _MIG_DOWN_RE.search(text)
+        parents = re.findall(r"""['"]([^'"]+)['"]""", down.group(1)) if down else []
+        by_rev[rev.group(1)] = (path, parents)
+    order: list[Path] = []
+    seen: set[str] = set()
+
+    def visit(rev: str) -> None:
+        if rev in seen:
+            return
+        seen.add(rev)
+        if rev not in by_rev:
+            raise RestoreError(f"Migration {rev} fehlt in dieser Installation.")
+        path, parents = by_rev[rev]
+        for parent in parents:
+            visit(parent)
+        order.append(path)
+
+    visit(revision)
+    return order
+
+
+def expected_db_routines(versions_dir: Path, revision: str) -> tuple[dict, set]:
+    """(Funktionen, Trigger), die die Migrationen bis ``revision`` anlegen.
+
+    Funktionen: Name -> (Sprache, SECURITY DEFINER, Einstellungen, Rumpf);
+    Trigger: {(Name, Tabelle, Funktion)}. Eine spaetere Migration ersetzt eine
+    fruehere Fassung, ein DROP im Upgrade-Teil nimmt sie heraus."""
+    functions: dict = {}
+    triggers: set = set()
+    for path in _migration_chain(versions_dir, revision):
+        text = path.read_text(encoding="utf-8").split("\ndef downgrade", 1)[0]
+        events = []
+        for m in _MIG_FUNCTION_RE.finditer(text):
+            events.append((m.start(), "fn", m))
+        for m in _MIG_DROP_FUNCTION_RE.finditer(text):
+            events.append((m.start(), "dropfn", m))
+        for m in _MIG_TRIGGER_RE.finditer(text):
+            events.append((m.start(), "tg", m))
+        for m in _MIG_DROP_TRIGGER_RE.finditer(text):
+            events.append((m.start(), "droptg", m))
+        for _pos, kind, m in sorted(events, key=lambda e: e[0]):
+            if kind == "fn":
+                header = " ".join(m.group(2).split())
+                lang = re.search(r"\bLANGUAGE\s+(\w+)", header, re.I)
+                config = re.search(r"\bSET\s+(\w+)\s*(?:=|TO)\s*(.+?)\s*$", header, re.I)
+                functions[m.group(1).lower()] = (
+                    (lang.group(1).lower() if lang else ""),
+                    bool(re.search(r"\bSECURITY\s+DEFINER\b", header, re.I)),
+                    (f"{config.group(1).lower()}={config.group(2)}" if config else ""),
+                    m.group(3),
+                )
+            elif kind == "dropfn":
+                functions.pop(m.group(1).lower(), None)
+            elif kind == "tg":
+                triggers.add((m.group(1).lower(), m.group(2).lower(), m.group(3).lower()))
+            else:
+                triggers = {t for t in triggers
+                            if (t[0], t[1]) != (m.group(1).lower(), m.group(2).lower())}
+    return functions, triggers
+
+
+_ROUTINE_CATALOG_SQL = """
+SELECT json_build_object(
+  'functions', COALESCE((SELECT json_agg(json_build_object(
+        'schema', n.nspname, 'name', p.proname, 'lang', l.lanname, 'secdef', p.prosecdef,
+        'config', COALESCE(array_to_string(p.proconfig, ','), ''), 'src', p.prosrc))
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      JOIN pg_language l ON l.oid = p.prolang
+     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+       AND n.nspname NOT LIKE 'pg\\_toast%'
+       AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass
+                         AND d.objid = p.oid AND d.deptype = 'e')), '[]'::json),
+  'triggers', COALESCE((SELECT json_agg(json_build_object(
+        'name', t.tgname, 'table', c.relname, 'schema', n.nspname,
+        'function', p.proname, 'enabled', t.tgenabled))
+      FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_proc p ON p.oid = t.tgfoid
+     WHERE NOT t.tgisinternal), '[]'::json),
+  'other', COALESCE((SELECT json_agg(x) FROM (
+      SELECT 'Sicht ' || n.nspname || '.' || c.relname AS x
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE c.relkind IN ('v', 'm')
+         AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+      UNION ALL
+      SELECT 'Regel ' || r.rulename FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE r.rulename <> '_RETURN' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+      UNION ALL
+      SELECT 'Ereignis-Trigger ' || evtname FROM pg_event_trigger) s), '[]'::json)
+)
+"""
+
+
+def check_restored_routines(found: dict, functions: dict, triggers: set) -> list[str]:
+    """Abweichungen der eingespielten Funktionen/Trigger (``found``, Ergebnis von
+    :data:`_ROUTINE_CATALOG_SQL`) von den erwarteten - leer = in Ordnung."""
+    problems: list[str] = list(found.get("other") or [])
+    seen: dict = {}
+    for f in found.get("functions") or []:
+        name = f["name"].lower()
+        label = f"Funktion {f['schema']}.{f['name']}"
+        if f["schema"] != "public" or name in seen:
+            problems.append(f"{label} (unerwartet)")
+            continue
+        seen[name] = True
+        want = functions.get(name)
+        if want is None:
+            problems.append(f"{label} (legt keine Migration an)")
+            continue
+        lang, secdef, config, src = want
+        if f["lang"] != lang or bool(f["secdef"]) != secdef or f["config"] != config:
+            problems.append(f"{label} (Sprache, SECURITY DEFINER oder Einstellungen weichen ab)")
+        elif f["src"] != src:
+            problems.append(f"{label} (Inhalt weicht von der Migration ab)")
+    for name in sorted(set(functions) - set(seen)):
+        problems.append(f"Funktion public.{name} fehlt")
+    got_triggers = set()
+    for t in found.get("triggers") or []:
+        key = (t["name"].lower(), t["table"].lower(), t["function"].lower())
+        if t["schema"] != "public" or key not in triggers:
+            problems.append(f"Trigger {t['name']} auf {t['schema']}.{t['table']} (unerwartet)")
+        elif t["enabled"] != "O":
+            problems.append(f"Trigger {t['name']} auf {t['table']} ist abgeschaltet")
+        got_triggers.add(key)
+    for name, table, _fn in sorted(triggers - got_triggers):
+        problems.append(f"Trigger {name} auf {table} fehlt")
+    return problems
+
+
+def _assert_routines_match_migrations(superuser: str, env: dict, revision: str,
+                                      versions_dir: Path | None = None) -> None:
+    """Unverifizierte Sicherung: Funktionen/Trigger der Zwischendatenbank gegen
+    die Migrationen bis ``revision`` abgleichen (nur Katalogabfragen, nichts aus
+    der Sicherung wird ausgefuehrt). Wirft :class:`RestoreError`."""
+    versions_dir = versions_dir or BACKEND_DIR / "alembic" / "versions"
+    functions, triggers = expected_db_routines(versions_dir, revision)
+    result = _restore_psql(superuser, env, RESTORE_DB_NAME, "-tA", "-c", _ROUTINE_CATALOG_SQL)
+    try:
+        found = json.loads(result.stdout or "")
+    except ValueError:
+        found = None
+    if result.returncode != 0 or not isinstance(found, dict):
+        raise RestoreError(
+            "Die Funktionen der eingespielten Sicherung liessen sich nicht pruefen:\n"
+            f"{_psql_error_tail(result)}")
+    problems = check_restored_routines(found, functions, triggers)
+    if problems:
+        shown = "\n".join(f"  - {p}" for p in problems[:20])
+        more = f"\n  ... und {len(problems) - 20} weitere" if len(problems) > 20 else ""
+        raise RestoreError(
+            "Die unverifizierte Sicherung enthaelt Funktionen oder Trigger, die die "
+            f"Migrationen dieser Installation fuer Datenbankstand {revision} nicht anlegen. "
+            "Sie liefen nach dem Einspielen mit den Rechten des Datenbank-Superusers und "
+            f"werden deshalb nicht uebernommen:\n{shown}{more}")
+
+
 def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set,
                           *, restricted: bool = False) -> str:
     """Zwischendatenbank anlegen, Backup einspielen, Datenbankstand pruefen.
@@ -4010,9 +4243,11 @@ def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set,
     Rollen aendern, Funktionen in DEFAULT/CHECK/Index waehrend des Ladens),
     scheitert so am Server selbst. Erst danach gehen alle Objekte per
     REASSIGN OWNED an den Superuser - wie ein Laden als Superuser, ausser den
-    Default-Privilegien, die init-db-user.sql nach dem Tausch setzt. Nicht
-    abgedeckt: der Inhalt von Funktionen, die nach der Uebergabe dem Superuser
-    gehoeren (SECURITY DEFINER) - dafuer bleibt die Pruefliste streng."""
+    Default-Privilegien, die init-db-user.sql nach dem Tausch setzt. Vor der
+    Uebergabe muessen Funktionen und Trigger genau denen der Migrationen bis
+    zum Datenbankstand der Sicherung entsprechen
+    (:func:`_assert_routines_match_migrations`, Review-Runde 4) - sonst liefe
+    eine von der Pruefliste uebersehene Funktion danach mit Superuser-Rechten."""
     statements = ["-c", f'DROP DATABASE IF EXISTS "{RESTORE_DB_NAME}" WITH (FORCE)']
     if restricted:
         statements += ["-c", f'DROP ROLE IF EXISTS "{RESTORE_LOAD_ROLE}"']
@@ -4053,8 +4288,17 @@ def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set,
         result = _restore_psql(load_user, load_env, RESTORE_DB_NAME, "-f", str(sql))
         if result.returncode != 0:
             raise RestoreError(f"Einspielen fehlgeschlagen:\n{_psql_error_tail(result)}")
+        # Stand und (unverifiziert) Funktionen pruefen, SOLANGE die Objekte noch
+        # der Ladrolle gehoeren: erst danach uebernimmt sie der Superuser.
+        revision = _restored_revision(superuser, env, known)
+        if restricted:
+            _assert_routines_match_migrations(superuser, env, revision)
     except BaseException:
         if restricted:
+            # Erst die Zwischendatenbank weg - sonst gingen ihre (abgelehnten)
+            # Objekte beim Entfernen der Ladrolle an den Superuser.
+            _restore_psql(superuser, env, "postgres",
+                          "-c", f'DROP DATABASE IF EXISTS "{RESTORE_DB_NAME}" WITH (FORCE)')
             try:
                 _drop_load_role(superuser, env)
             except RestoreError as exc:  # der erste Fehler ist der wichtigere
@@ -4062,7 +4306,12 @@ def _load_into_restore_db(superuser: str, env: dict, sql: Path, known: set,
         raise
     if restricted:
         _drop_load_role(superuser, env)
+    return revision
 
+
+def _restored_revision(superuser: str, env: dict, known: set) -> str:
+    """Datenbankstand der Zwischendatenbank; muss eine Migration dieser
+    Installation sein. Wirft :class:`RestoreError`."""
     result = _restore_psql(superuser, env, RESTORE_DB_NAME, "-tA", "-c",
                            "SELECT version_num FROM alembic_version")
     revisions = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
@@ -4305,7 +4554,19 @@ def main():
     prep.add_argument("file", help="Entpackte .sql-Datei (wird an Ort und Stelle ersetzt)")
     prep.add_argument("--force-unverified", action="store_true",
                       help="Auch ohne passende PraxisZeit-Signatur einspielen")
+    prep.add_argument("--restricted-load", action="store_true",
+                      help="Unverifizierte Sicherung fuer load-restore-db --restricted "
+                           f"vorbereiten (Exit {PREPARE_EXIT_UNVERIFIED})")
     prep.set_defaults(func=cmd_prepare_restore_dump)
+
+    p_load = subparsers.add_parser(
+        "load-restore-db",
+        help="Vorbereiteten Dump in die Zwischendatenbank einspielen (restore-backup.bat)",
+    )
+    p_load.add_argument("file", help="Mit prepare-restore-dump vorbereitete .sql-Datei")
+    p_load.add_argument("--restricted", action="store_true",
+                        help="Unverifizierte Sicherung als Rolle ohne Superuser-Rechte laden")
+    p_load.set_defaults(func=cmd_load_restore_db)
 
     # Gesamtreview 1.20: Gegenstueck zu restore-backup.bat fuer Linux/macOS.
     # Bei angehaltenem Dienst; migriert wird beim naechsten Dienststart.

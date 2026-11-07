@@ -129,10 +129,17 @@ REM Nur einspielen, was pg_dump selbst schreibt (S3-03): psql fuehrt
 REM Backslash-Befehle aus dem Dump aus - hier mit Administratorrechten. Der
 REM Unterbefehl lehnt jeden anderen psql-Befehl ab und setzt einen eigenen
 REM \restrict-Schluessel, dann verweigert psql selbst jeden weiteren.
-REM Zuerst die Signatur (Exit 2 = fehlt oder passt nicht).
-"%PYTHON%" "%DIR%\praxiszeit-server.py" prepare-restore-dump %PREP_FLAGS% "%BACKUP_DUMP%"
-if errorlevel 2 goto :backup_unsigniert
-if errorlevel 1 goto :backup_abgelehnt
+REM Zuerst die Signatur (Exit 2 = fehlt oder passt nicht). Exit 4 = ohne
+REM passende Signatur mit --force-unverified zugelassen: dann laedt Schritt 4
+REM sie als eigene Rolle ohne Superuser-Rechte (Review-Runde 4, wie restore
+REM unter Linux und macOS) und gleicht Funktionen und Trigger mit den
+REM Migrationen ab.
+"%PYTHON%" "%DIR%\praxiszeit-server.py" prepare-restore-dump %PREP_FLAGS% --restricted-load "%BACKUP_DUMP%"
+SET "PREP_RC=%ERRORLEVEL%"
+SET "LOAD_FLAGS="
+if "%PREP_RC%"=="4" SET "LOAD_FLAGS=--restricted"
+if "%PREP_RC%"=="2" goto :backup_unsigniert
+if not "%PREP_RC%"=="0" if not "%PREP_RC%"=="4" goto :backup_abgelehnt
 echo OK.
 echo.
 
@@ -170,25 +177,16 @@ timeout /t 5 /nobreak >nul
 echo.
 
 REM --- Schritt 4: in die Zwischendatenbank einspielen ---
-REM Die bisherige Datenbank bleibt dabei unangetastet.
+REM Die bisherige Datenbank bleibt dabei unangetastet. praxiszeit-server.py
+REM legt die Zwischendatenbank an, spielt ein (unverifiziert: als eigene
+REM Ladrolle ohne Superuser-Rechte mit Zufallspasswort, danach REASSIGN OWNED
+REM und DROP ROLE) und prueft den Datenbankstand: ohne alembic_version ist es
+REM kein PraxisZeit-Backup, ein Stand einer NEUEREN Version fiele beim
+REM Dienststart an "Can't locate revision" - beides bricht hier ab, vor dem
+REM Tausch.
 echo Spiele das Backup in die Zwischendatenbank %RESTORE_DB% ein...
-"%PSQL%" %PSQL_ARGS% -d postgres -c "DROP DATABASE IF EXISTS %RESTORE_DB% WITH (FORCE)" -c "CREATE DATABASE %RESTORE_DB% OWNER praxiszeit ENCODING 'UTF8'"
+"%PYTHON%" "%DIR%\praxiszeit-server.py" load-restore-db %LOAD_FLAGS% "%BACKUP_DUMP%"
 if errorlevel 1 goto :bestand_unveraendert
-"%PSQL%" %PSQL_ARGS% -d %RESTORE_DB% -f "%BACKUP_DUMP%"
-if errorlevel 1 goto :bestand_unveraendert
-REM Ohne alembic_version ist es kein PraxisZeit-Backup.
-"%PSQL%" %PSQL_ARGS% -d %RESTORE_DB% -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM alembic_version) THEN RAISE EXCEPTION 'Tabelle alembic_version ist leer'; END IF; END $$"
-if errorlevel 1 goto :kein_praxiszeit_backup
-REM Ein Backup einer NEUEREN Version liesse sich einspielen, der Dienststart
-REM fiele aber an "Can't locate revision" - mit bereits ersetztem Bestand.
-REM Deshalb hier, vor dem Tausch: jeder Datenbankstand des Backups muss eine
-REM Migration dieser Installation sein (wie known_migration_revisions in
-REM praxiszeit-server.py, ohne Alembic zu importieren).
-"%PSQL%" %PSQL_ARGS% -d %RESTORE_DB% -tA -c "SELECT version_num FROM alembic_version" -o "%REV_FILE%"
-if errorlevel 1 goto :kein_praxiszeit_backup
-"%PYTHON%" -c "import re,sys,pathlib;sys.excepthook=lambda t,v,b:print(t.__name__+': '+str(v),file=sys.stderr);f,d=sys.argv[1:3];p=re.compile(r'^revision(?:\s*:\s*str)?\s*=\s*[\x27\x22]([^\x27\x22]+)[\x27\x22]',re.M);k={r for x in pathlib.Path(d).glob('*.py') for r in p.findall(x.read_text(encoding='utf-8'))};k or sys.exit('Keine Migrationen unter '+d+' gefunden - Installation unvollstaendig.');u=[r for r in (l.strip() for l in open(f,encoding='utf-8')) if r and r not in k];u and sys.exit('Das Backup stammt aus einer neueren PraxisZeit-Version (Datenbankstand '+', '.join(u)+'), diese Installation kennt diesen Stand nicht. Zuerst auf die Version aktualisieren, die das Backup erzeugt hat.')" "%REV_FILE%" "%DIR%\app\backend\alembic\versions"
-if errorlevel 1 goto :bestand_unveraendert
-del "%REV_FILE%" 2>nul
 echo OK.
 echo.
 
