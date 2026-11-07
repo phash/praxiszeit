@@ -249,7 +249,7 @@ Minuten (`eff_start − raw_start`, `raw_end − eff_end`); beim Auto-Close zäh
 Jede Seite endet an der gestempelten Spanne: wer 05:00 ein- und 06:00 wieder ausstempelt (beides
 vor der Hülle 07:45), hat 60 Minuten nicht angerechnet, nicht 165.
 Diese Zahl steht unter dem Eintrag, im Monatsjournal („Anwesenheit nicht angerechnet") und in der
-letzten Exportspalte „Nicht angerechnet (Min)".
+Exportspalte „Nicht angerechnet (Min)".
 
 **Anerkennen** (`credit_override = true`, `POST /admin/time-entries/{id}/credit-override`): Der
 Eintrag bekommt seine Rohstempel als wirksame Zeiten, `uncredited_minutes` = 0, und wird von keiner
@@ -267,12 +267,28 @@ Hinweise auf der Anwesenheit laut Stempel (`presence_minutes` = `(raw_end or end
 gegriffen hat (`presence_service`); `BREAK_IN_GAP`, wenn Pause **und** Lücke am selben Eintrag
 abgezogen werden. §5 rechnet gegen die Rohstempel; beim automatisch geschlossenen Eintrag ab dem
 wirksamen Ende (`work_window_service.presence_end`, 23:59 ist kein Stempel, P18). Die
-24-Wochen-Auswertung (§3 ArbZG, Admin → Berichte) zeigt neben dem Durchschnitt der angerechneten Zeit je Arbeitstag zusätzlich die
+24-Wochen-Auswertung (§3 ArbZG, Admin → Berichte) zeigt neben dem Durchschnitt der angerechneten Zeit je Werktag zusätzlich die
 „Anwesenheit laut Stempel" (Σ `presence_minutes`, `presence_hours`/`presence_average` und je
 Kalenderwoche `presence_weeks`); diesen Wert ändert keine Neukappung – außer bei automatisch
 geschlossenen Einträgen: ihre Anwesenheit zählt bis zum wirksamen Ende, und das verschiebt eine
 Neukappung mit (Auto-Close 08:00–18:15, neue Hülle bis 17:15 → Ende 17:15, Rohende 18:15, 60 Min
 weniger Anwesenheit).
+
+**Nenner der Durchschnitte (§ 3 Satz 2, § 6 Abs. 2 ArbZG, Audit 2026-11-07 A1-13):**
+`reports.averaging_workdays` = Werktage Mo–Sa des Zeitraums, ohne Feiertage, ohne Tage mit
+`VACATION`/`OTHER`/`PAID_LEAVE`, nur im Beschäftigungsfenster — unabhängig vom Vertrag. Krank,
+Fortbildung und Freizeitausgleich bleiben Werktage. Vorher Mo–Fr mit Tagessoll > 0, während
+Samstagsarbeit im Zähler stand (45 h in 5 Tagen = Ø 9 h statt 7,5 h; Teilzeit 3 × 10 h = Ø 10 h
+statt 5 h). Derselbe Nenner speist den Monatsdurchschnitt für Nachtarbeitnehmer im §6-Bericht
+(Ø ≤ 8 h je Werktag im Kalendermonat).
+
+**§11 Ersatzruhetag (A1-01):** Ein Tag zählt als Ersatzruhetag, wenn er Mo–Sa liegt, vorbei ist
+(vor heute), kein Feiertag, im Beschäftigungsfenster, ohne Zeiteintrag, ohne Abwesenheit außer
+`OTHER`/`OVERTIME`/`PAID_LEAVE` (so wird ein gewährter Ruhetag eingetragen) — und die Person sonst
+gearbeitet hätte: Tagessoll > 0 laut Snapshot oder an diesem Wochentag in mindestens 2 der 4
+Vorwochen gearbeitet. Jeder Ruhetag gleicht genau einen Sonn-/Feiertagseinsatz aus (Zuteilung je
+Ruhetag an den offenen Einsatz mit der frühesten Frist); Einsätze aus den letzten 8 Wochen des
+Vorjahres verbrauchen mit. Frist noch nicht vorbei → „Frist läuft", sonst Verstoß.
 
 ### 4.2 Gutgeschriebene Abwesenheiten
 
@@ -402,13 +418,29 @@ sichtbar). Die Zeilenregel steht an `export_service.day_credit_minutes`. Spalte 
 **Zeiteinträge** des Tages („07:42–12:02, 14:15–16:30"), nicht die Arbeitszeit-Blöcke des
 Vertrags.
 
-Seit 1.20.0 hängt jede Datei als letzte Spalte **„Nicht angerechnet (Min)"** an (XLSX/ODS Spalte 13,
+Seit 1.20.0 hängt jede Datei die Spalte **„Nicht angerechnet (Min)"** an (XLSX/ODS Spalte 13,
 PDF 12. Spalte, Kopf zweizeilig „Nicht angerechnet (Min)"): Σ `not_credited_minutes` der Einträge
 des Tages in ganzen Minuten, Summenzeile = Σ Monat (XLSX/ODS „Nicht angerechnet (Min) Monat:", im
 Jahres-Mitarbeiterblatt „… Jahr:"; PDF „Nicht angerechnet (Min):"). In der Zeilenregel steht
 bewusst **nicht** „− Nicht angerechnet": die Spalte enthält zusätzlich die an der Hülle
 abgeschnittenen Minuten, die in Von/Bis schon fehlen. Beispiel Hülle und Lücke (§4.1):
 18:15 − 07:45 = 10:30 h; − 150 Min = 8:00 h = Netto; die Spalte zeigt 240.
+
+**Tatsächliche Stempel (Audit 2026-11-07 A2-4, `export_service.day_stamps`):** XLSX/ODS hängen in
+Monat und Jahres-Mitarbeiterblatt die Spalten 14 „Gestempelt (Von–Bis)" (je Eintrag
+`raw_start_time or start_time` bis `work_window_service.presence_end`, beim Auto-Close das
+wirksame Ende mit „(automatisch geschlossen)"), 15 „Anwesenheit laut Stempel (Std)"
+(Σ `presence_minutes`, über 10 h markiert: XLSX rot, ODS fett) und 16 „Pausenausnahme (§4 ArbZG)"
+(`break_waiver_reason`) an; das PDF die 13. Spalte „Gestempelt (Anwesenheit)" und
+„§4-Ausnahme: …" in der Bemerkung. Von/Bis bleiben die angerechneten Zeiten.
+
+**Maskierung in den Datei-Exporten (A2-11/S2-12):** ohne „Krankheitsdaten einschließen" zeigen alle
+drei Exporter `SICK` und jede Abwesenheit mit eigenem Grund (`reason_id`) als „Abwesenheit"
+(Notiz entfällt) und das Kennzeichen „Nachtarbeitnehmer (§6 Abs. 2)" als „–"
+(`export_service._absence_export_label`, `night_worker_export_value`). `OTHER` und `PAID_LEAVE`
+bleiben bewusst im Klartext (Produktentscheidung: die Dateien bekommt nur die Verwaltung, die die
+Art der Freistellung für Lohn und Saldo braucht; die Kollegen-Feeds maskieren sie). Nachtarbeitstage
+je Tag bleiben sichtbar (Arbeitszeit, kein Status).
 
 ---
 

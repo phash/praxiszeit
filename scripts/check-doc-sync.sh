@@ -284,12 +284,20 @@ group_code() {
   # Überschrift der Auswertung; zwei Kommentare in Reports.tsx tragen denselben
   # Wortlaut.
   need_code_label frontend/src/pages/admin/Reports.tsx "24-Wochen-Durchschnitt §3 ArbZG"
-  need_code "Ø angerechnet / Tag"
-  need_code "Anwesenheit laut Stempel (Ø / Tag)"
+  need_code "Ø angerechnet / Werktag"
+  need_code "Anwesenheit laut Stempel (Ø / Werktag)"
   need_code "Anwesenheit laut Stempel gesamt"
   need_code "Wochen &gt; 48 h laut Stempel"
   need_code "laut Stempel Ø &gt; 8 h"
-  need_code_label frontend/src/pages/admin/Reports.tsx "keine Soll-Arbeitstage"
+  need_code_label frontend/src/pages/admin/Reports.tsx "keine Werktage im Zeitraum"
+  # Audit 2026-11-07: neue Exportspalten (A2-4) und Berichte (A1-08, A2-6) — Handbuch zitiert sie.
+  need_code 'STAMPED_HEADER = "Gestempelt (Von–Bis)"'
+  need_code 'PRESENCE_HEADER = "Anwesenheit laut Stempel (Std)"'
+  need_code 'BREAK_WAIVER_HEADER = "Pausenausnahme (§4 ArbZG)"'
+  need_code 'AUTO_CLOSED_MARK = "automatisch geschlossen"'
+  need_code_label frontend/src/pages/admin/Reports.tsx "Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG"
+  need_code_label frontend/src/pages/admin/Reports.tsx "Ausgeblendete Mitarbeitende einbeziehen"
+  need_code_label frontend/src/pages/admin/Reports.tsx "Frist läuft"
   need_code "Anrechnung später neu berechnet wird, und die Grenze gilt für die tatsächliche Arbeitszeit."
   # Sammelzeile der Abwesenheits-Rückrechnung (admin_users._log_wh_change_retarget,
   # Review Task 4): Quelle „wh_change", Anlegen und Löschen.
@@ -499,7 +507,10 @@ group_admin_rest() {
   need "$f" 'Rechenstand der Software (Version 1.20.0)'
   need "$f" 'Netto-Spalte; unter der Uhrzeit steht bei gekappten Einträgen'
   need "$f" 'Unterbrechung (Min)** und **Zeiteinträge**'
-  need "$f" 'Nicht angerechnet (Min)** (letzte Spalte, ab 1.20.0)'
+  need "$f" 'Nicht angerechnet (Min)** (13. Spalte, ab 1.20.0)'
+  # Audit 2026-11-07 A2-4: tatsächliche Stempel in den Exporten (Code: export_service.day_stamps).
+  need "$f" '**Gestempelt (Von–Bis)** listet jeden Zeiteintrag'
+  forbid "$f" 'Nicht angerechnet (Min)** (letzte Spalte, ab 1.20.0)'
   need "$f" 'Von 07:45, Bis 18:15, Netto 8,00, Nicht angerechnet 240'
   need "$f" 'inkl. Unterbrechung, Zeiteinträge und Nicht angerechnet'
   need "$f" 'Genehmigen und anerkennen'
@@ -564,7 +575,9 @@ group_admin_rest() {
   # 24-Wochen-Auswertung (PR2 Task 9 + Reviews): bis 1.19.3 nicht dokumentiert.
   need "$f" '### §3 ArbZG – 24-Wochen-Durchschnitt'
   need "$f" '„laut Stempel Ø > 8 h"'
-  need "$f" '„keine Soll-Arbeitstage"'
+  need "$f" '„keine Werktage im Zeitraum"'
+  need "$f" '### §3/§4 ArbZG – Höchstarbeitszeit und Pausenausnahmen'
+  forbid "$f" '„keine Soll-Arbeitstage"'
   need "$f" 'die Grenze gilt für die tatsächliche Arbeitszeit'
   # Review Task 4: §9 erklärt auch die wh_change-Sammelzeile (Code:
   # admin_users._log_wh_change_retarget, Spec 10.3).
@@ -1041,7 +1054,10 @@ group_claude() {
   need "$f" 'zusammen höchstens 500 Zeichen'
   # #498-Spalte und Spalte 13
   need "$f" '12 „Zeiteinträge“'
-  need "$f" 'Spalte 13 „Nicht angerechnet (Min)“ ist die letzte'
+  need "$f" 'Spalte 13 „Nicht angerechnet (Min)“, dahinter 14 „Gestempelt (Von–Bis)“'
+  need "$f" 'Spalte 16 ist die letzte'
+  forbid "$f" 'Spalte 13 „Nicht angerechnet (Min)“ ist die letzte'
+  forbid "$f" 'Füllungen/Zellverbindungen reichen bis Spalte M'
   forbid "$f" '12 „Arbeitsblöcke“'
   forbid "$f" 'Füllungen/Zellverbindungen reichen bis Spalte L'
   forbid "$f" 'Krank 4,0 h — Wochenstunden-Änderung ab 15.03.2026'

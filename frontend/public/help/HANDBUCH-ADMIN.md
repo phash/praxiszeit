@@ -465,15 +465,16 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 
 - **Inhalt:** Tägliche Zeiteinträge aller Mitarbeiter im gewählten Monat
 - **Format:** Excel (.xlsx), ODS (.ods) oder PDF (.pdf)
-- **Spalten je Tag:** Datum, Wochentag, Von, Bis, Pause (Min), Netto (Std), Soll (Std), Differenz, Abwesenheit, Bemerkung – in Excel und ODS zusätzlich **Unterbrechung (Min)** und **Zeiteinträge**, als letzte Spalte in Excel, ODS und PDF **Nicht angerechnet (Min)** (alle hinten angehängt; die übrigen Spalten stehen unverändert an ihrem Platz, damit bestehende Auswertungen weiter funktionieren)
+- **Spalten je Tag:** Datum, Wochentag, Von, Bis, Pause (Min), Netto (Std), Soll (Std), Differenz, Abwesenheit, Bemerkung – in Excel und ODS zusätzlich **Unterbrechung (Min)** und **Zeiteinträge**, dann in Excel, ODS und PDF **Nicht angerechnet (Min)** und dahinter die tatsächlichen Stempel: in Excel und ODS **Gestempelt (Von–Bis)**, **Anwesenheit laut Stempel (Std)** und **Pausenausnahme (§4 ArbZG)**, im PDF die Spalte **Gestempelt (Anwesenheit)** (alle hinten angehängt; die übrigen Spalten stehen unverändert an ihrem Platz, damit bestehende Auswertungen weiter funktionieren)
 - **Zusammenfassung pro Mitarbeiter:** Soll-/Ist-Stunden, Saldo Monat, Überstunden kumuliert, Urlaub, Nachtarbeitstage
 
 **So lesen Sie eine Tageszeile:**
 
-- **Netto (Std)** ist die **angerechnete Arbeitszeit** der Zeiteinträge des Tages. Hat die Person [Arbeitszeit-Blöcke](#arbeitszeit-bloecke), ist das die Zeit nach der Kappung: „Von"/„Bis" zeigen die vor dem ersten bzw. nach dem letzten Block gekürzten Zeiten, und Zeit zwischen den Blöcken ist von Netto abgezogen; der ursprüngliche Stempel bleibt in PraxisZeit gespeichert (Monatsjournal, Admin-Dashboard), steht aber nicht in der Datei. An einem Krank- oder Fortbildungstag ohne Zeiteintrag steht hier 0, außerhalb des Beschäftigungszeitraums ebenfalls (die Stempel bleiben dort sichtbar).
+- **Netto (Std)** ist die **angerechnete Arbeitszeit** der Zeiteinträge des Tages. Hat die Person [Arbeitszeit-Blöcke](#arbeitszeit-bloecke), ist das die Zeit nach der Kappung: „Von"/„Bis" zeigen die vor dem ersten bzw. nach dem letzten Block gekürzten Zeiten, und Zeit zwischen den Blöcken ist von Netto abgezogen; der ursprüngliche Stempel steht in der Spalte „Gestempelt (Von–Bis)" (siehe unten). An einem Krank- oder Fortbildungstag ohne Zeiteintrag steht hier 0, außerhalb des Beschäftigungszeitraums ebenfalls (die Stempel bleiben dort sichtbar).
 - **Differenz** ist der Saldo des Tages: Netto **plus Gutschrift für Krankheit/Fortbildung** minus Soll. Ein Krank- oder Fortbildungstag ist damit **±0** – das Soll bleibt stehen, die Stunden aus der Spalte „Abwesenheit" werden gutgeschrieben. Die Summe der Spalte entspricht dem „Saldo Monat" der Zusammenfassung. **Ausnahme:** Mitarbeitende mit fester Monatsarbeitszeit (Minijob-Modus, → [Abschnitt 13](#13-einstellungen)) – dort ist das Monats-Soll fest und nicht die Summe der Tage; verbindlich ist dann nur die Zusammenfassung.
 - **Geteilte Dienste** (mehrere Zeiteinträge an einem Tag, z. B. 07:45–12:00 und 14:15–17:00): In Excel/ODS zeigen „Von"/„Bis" den Rahmen des Tages (erster Beginn, letztes Ende), **Unterbrechung (Min)** die Zeit zwischen den Einträgen und **Zeiteinträge** die einzelnen Einträge („07:45–12:00, 14:15–17:00"). Damit geht die Zeile auf: Bis − Von − Pause − Unterbrechung = Netto – solange nichts zwischen zwei Arbeitszeit-Blöcken gestempelt wurde; sonst ist Netto zusätzlich um diese nicht angerechnete Lückenzeit kleiner. **Ausnahmen:** Überschneiden sich zwei Einträge, zählt Netto die Überschneidung doppelt – die Spalte „Zeiteinträge" zeigt sie; läuft ein Eintrag des Tages noch (nicht ausgestempelt), fehlt seine Zeit in Netto und in „Bis"; außerhalb des Beschäftigungszeitraums ist Netto 0. Im **PDF** stehen die Einträge in „Von"/„Bis" untereinander, die Unterbrechung in einer eigenen Spalte direkt neben der Pause.
-- **Nicht angerechnet (Min)** (letzte Spalte, ab 1.20.0) nennt je Tag die gestempelte, aber nicht angerechnete Zeit in Minuten: die Zeit zwischen den Arbeitszeit-Blöcken **und** die vor dem ersten bzw. nach dem letzten Block abgeschnittene Zeit, die in „Von"/„Bis" schon fehlt. Beispiel: gestempelt 07:00–19:00 bei Blöcken 08:00–12:00 + 15:00–18:00 und 15 Minuten Puffer → Von 07:45, Bis 18:15, Netto 8,00, Nicht angerechnet 240 (davon 150 zwischen den Blöcken). Die Abendzeit eines automatisch auf 23:59 geschlossenen Eintrags zählt nicht mit (23:59 ist kein echter Stempel); ein anerkannter Eintrag hat hier 0. Die Zusammenfassung nennt die Summe des Monats, der Jahresreport Detailliert je Mitarbeiter die Summe des Jahres.
+- **Nicht angerechnet (Min)** (13. Spalte, ab 1.20.0) nennt je Tag die gestempelte, aber nicht angerechnete Zeit in Minuten: die Zeit zwischen den Arbeitszeit-Blöcken **und** die vor dem ersten bzw. nach dem letzten Block abgeschnittene Zeit, die in „Von"/„Bis" schon fehlt. Beispiel: gestempelt 07:00–19:00 bei Blöcken 08:00–12:00 + 15:00–18:00 und 15 Minuten Puffer → Von 07:45, Bis 18:15, Netto 8,00, Nicht angerechnet 240 (davon 150 zwischen den Blöcken). Die Abendzeit eines automatisch auf 23:59 geschlossenen Eintrags zählt nicht mit (23:59 ist kein echter Stempel); ein anerkannter Eintrag hat hier 0. Die Zusammenfassung nennt die Summe des Monats, der Jahresreport Detailliert je Mitarbeiter die Summe des Jahres.
+- **Gestempelt (Von–Bis)** listet jeden Zeiteintrag des Tages mit der tatsächlich gestempelten Zeit, z. B. „07:00–19:00" – auch wenn „Von"/„Bis" wegen der Arbeitszeit-Blöcke 07:45–18:15 zeigen. Bei einem automatisch geschlossenen Eintrag steht das angerechnete Ende mit dem Zusatz „(automatisch geschlossen)", denn 23:59 ist kein echter Stempel. **Anwesenheit laut Stempel (Std)** ist die gestempelte Zeit abzüglich erfasster Pausen (wie im 24-Wochen-Bericht); mehr als 10 Stunden sind in Excel rot, in ODS fett hervorgehoben. **Pausenausnahme (§4 ArbZG)** nennt die Begründung, wenn an diesem Tag eine Pflicht-Pause-Ausnahme erfasst wurde. Im **PDF** stehen Stempel und Anwesenheit in der Spalte „Gestempelt (Anwesenheit)", die Begründung der Pausenausnahme in der Bemerkung („§4-Ausnahme: …").
 
 **Verwendung:** Gehaltsabrechnung, monatliche Kontrolle, Dokumentation
 
@@ -488,7 +489,7 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 ### Jahresreport Detailliert
 
 - **Format:** Excel (.xlsx) oder ODS (.ods)
-- **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter – mit denselben Tagesspalten wie der Monatsreport (inkl. Unterbrechung, Zeiteinträge und Nicht angerechnet; die Differenz enthält die Gutschrift für Krankheit/Fortbildung)
+- **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter – mit denselben Tagesspalten wie der Monatsreport (inkl. Unterbrechung, Zeiteinträge und Nicht angerechnet sowie Gestempelt, Anwesenheit laut Stempel und Pausenausnahme; die Differenz enthält die Gutschrift für Krankheit/Fortbildung)
 - **Hinweis:** Generierungszeit 3–5 Sekunden
 
 **Verwendung:** Detaillierte Jahresauswertung, Steuerberater, Betriebsprüfung
@@ -499,9 +500,10 @@ Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle akti
 
 1. Wählen Sie den **Berichtstyp**
 2. Wählen Sie **Monat** oder **Jahr**
-3. Optional: **„Krankheitsdaten einschließen" (Art. 9 DSGVO)** – nimmt Krankheitsstunden bzw. -tage in den Export auf. Krankheitsdaten sind besondere Kategorien personenbezogener Daten (Art. 9 DSGVO); jeder Export mit dieser Option wird im **Änderungsprotokoll** vermerkt.
-4. Klicken Sie auf das gewünschte Format – **Excel (.xlsx)**, **ODS (.ods)** oder (beim Monatsreport) **PDF (.pdf)**
-5. Die Datei wird automatisch heruntergeladen
+3. Optional: **„Krankheitsdaten einschließen" (Art. 9 DSGVO)** – nimmt Krankheitsstunden bzw. -tage in den Export auf. Krankheitsdaten sind besondere Kategorien personenbezogener Daten (Art. 9 DSGVO); jeder Export mit dieser Option wird im **Änderungsprotokoll** vermerkt. Ohne diese Option steht im Export „Abwesenheit" statt „Krank" (ebenso bei eigenen Abwesenheitsgründen, die Notiz entfällt), und das Kennzeichen „Nachtarbeitnehmer (§6 Abs. 2 ArbZG)" im Kopf jedes Blatts zeigt „–" – in allen Dateiformaten gleich. „Sonstiges"/„unbezahlt frei" und „Bez. Freistellung" stehen immer im Klartext; die einzelnen Nachtarbeitstage ebenfalls.
+4. Optional: **„Ausgeblendete Mitarbeitende einbeziehen"** – nimmt auch Personen auf, die Sie in der Benutzerverwaltung ausgeblendet haben (z. B. die Praxisinhaberin, wenn sie stempelt). Ohne diese Option fehlen sie im Export. Ausgeschiedene (inaktive) Mitarbeitende sind immer enthalten, wenn sie im Zeitraum Einträge oder Abwesenheiten haben.
+5. Klicken Sie auf das gewünschte Format – **Excel (.xlsx)**, **ODS (.ods)** oder (beim Monatsreport) **PDF (.pdf)**
+6. Die Datei wird automatisch heruntergeladen
 
 > **Rechtlicher Hinweis (§16 ArbZG):** Exportieren Sie regelmäßig (mindestens jährlich) und sichern Sie die Dateien sicher für **2 Jahre**.
 
@@ -890,6 +892,8 @@ PraxisZeit überwacht automatisch die Einhaltung des Arbeitszeitgesetzes.
 
 Die ArbZG-spezifischen Auswertungen finden Sie auf der **Berichte-Seite** weiter unten.
 
+**Wer erscheint?** Alle aktiven Mitarbeitenden und ausgeschiedene (inaktive), die im ausgewerteten Zeitraum Einträge oder Abwesenheiten haben – eine im November ausgeschiedene Person fehlt also nicht in der Auswertung des Jahres. Ausgeblendete Mitarbeitende erscheinen nur mit dem Schalter **„Ausgeblendete Mitarbeitende einbeziehen"** über den Auswertungen; fehlen welche mit Einträgen, nennt jede Auswertung ihre Zahl. § 18-befreite Mitarbeitende erscheinen nicht.
+
 ---
 
 ### §5 ArbZG – Ruhezeitverstöße
@@ -919,6 +923,8 @@ Nachtarbeitnehmer (> 48 Nachtarbeitstage/Jahr, 23–6 Uhr) haben eine reduzierte
 **Was der Bericht zeigt:**
 - Mitarbeiter mit 48+ Nachtarbeitstagen im gewählten Jahr
 - Anzahl der Nachtarbeitstage und 8h-Warnungen
+- **Monatsdurchschnitt für Nachtarbeitnehmer (§ 6 Abs. 2 ArbZG):** für Personen mit gesetztem Kennzeichen „Nachtarbeitnehmer" oder mit mindestens 48 Nachtarbeitstagen je Kalendermonat die Arbeitszeit im Durchschnitt je Werktag (Mo–Sa ohne Feiertage und Urlaubstage), angerechnet und laut Stempel. Über 8 Stunden steht „✗ Verstoß" – länger als 8 Stunden am Tag darf ein Nachtarbeitnehmer nur arbeiten, wenn der Monatsdurchschnitt 8 Stunden nicht übersteigt.
+- Hinweis **„Kennzeichen „Nachtarbeitnehmer" beim Benutzer noch nicht gesetzt"**, wenn jemand laut Zählung Nachtarbeitnehmer ist, das Kennzeichen (das die 8-Stunden-Warnung beim Erfassen auslöst) aber fehlt. PraxisZeit setzt es nicht selbst – bitte in der Benutzerverwaltung setzen.
 
 **Handlungsbedarf:**
 - Regelmäßige arbeitsmedizinische Untersuchung anbieten (§ 6 Abs. 3 ArbZG)
@@ -944,9 +950,15 @@ Arbeitnehmer müssen mindestens **15 Sonntage pro Jahr** beschäftigungsfrei hab
 Bei Sonntagsarbeit: Ersatzruhetag innerhalb von **2 Wochen**.
 Bei Feiertagsarbeit: Ersatzruhetag innerhalb von **8 Wochen**.
 
+**Was als Ersatzruhetag zählt:** ein Tag von Montag bis Samstag, an dem die Person **sonst gearbeitet hätte** und der frei war:
+- sonst Arbeitstag = laut Arbeitszeit ein Tag mit Soll-Stunden, oder ein Wochentag, an dem die Person in mindestens 2 der 4 Wochen davor gearbeitet hat (z. B. ohne Stundenzählung oder jeder zweite Samstag);
+- frei = kein Zeiteintrag, kein Feiertag, kein Urlaub, keine Krankheit, keine Fortbildung; eine Abwesenheit „Sonstiges", „Überstundenausgleich" oder „Bez. Freistellung" zählt als gewährter Ruhetag;
+- nur vergangene Tage im Beschäftigungszeitraum.
+
+Ein ohnehin freier Samstag einer Fünf-Tage-Kraft gleicht also **nichts** aus. Jeder Ruhetag gleicht genau **einen** Sonn- oder Feiertagseinsatz aus – zwei Sonntage hintereinander brauchen zwei Ruhetage. Einsätze aus den letzten 8 Wochen des Vorjahres verbrauchen Ruhetage im Januar mit.
+
 **Was der Bericht zeigt:**
-- Alle Sonntagseinsätze ohne dokumentierten Ersatzruhetag
-- Frist und Status (innerhalb Frist / Frist abgelaufen)
+- Je Mitarbeiter:in die gearbeiteten Sonn- und Feiertage, die **Verstöße** mit Datum (Frist abgelaufen, kein Ersatzruhetag) und unter **„Frist läuft"** die Einsätze, deren Frist noch nicht vorbei ist, mit Fristende
 
 **Handlungsbedarf:**
 - Gewährte Ersatzruhetage als Abwesenheit (Typ: Sonstiges) eintragen
@@ -967,11 +979,23 @@ Eine **8-Stunden-Warnung** weist bereits ab Überschreiten der Regelgrenze auf d
 <a id="24-wochen-durchschnitt"></a>
 ### §3 ArbZG – 24-Wochen-Durchschnitt
 
-Über 24 Wochen darf die Arbeitszeit im Durchschnitt 8 Stunden je Arbeitstag nicht überschreiten. Die Auswertung **„24-Wochen-Durchschnitt §3 ArbZG"** auf der Berichte-Seite prüft das für die 24 Wochen bis zum gewählten **Stichtag** (Standard: heute) – je Mitarbeiter:in mit den Spalten „Ø angerechnet / Tag", „Anwesenheit laut Stempel (Ø / Tag)", „Angerechnet gesamt", „Anwesenheit laut Stempel gesamt", „Wochen > 48 h laut Stempel", „Tage > 8 h" und „Status". Über der Tabelle stehen der ausgewertete **Zeitraum** (z. B. „29.10.2025 – 15.04.2026") und, falls jemand die Grenze überschreitet, die Zahl der nicht konformen Mitarbeitenden; ein neuer Stichtag verwirft das alte Ergebnis bis zum nächsten „Prüfen".
+Über 24 Wochen darf die Arbeitszeit im Durchschnitt 8 Stunden je Werktag nicht überschreiten. Die Auswertung **„24-Wochen-Durchschnitt §3 ArbZG"** auf der Berichte-Seite prüft das für die 24 Wochen bis zum gewählten **Stichtag** (Standard: heute) – je Mitarbeiter:in mit den Spalten „Ø angerechnet / Werktag", „Anwesenheit laut Stempel (Ø / Werktag)", „Angerechnet gesamt", „Anwesenheit laut Stempel gesamt", „Wochen > 48 h laut Stempel", „Tage > 8 h" und „Status". Über der Tabelle stehen der ausgewertete **Zeitraum** (z. B. „29.10.2025 – 15.04.2026") und, falls jemand die Grenze überschreitet, die Zahl der nicht konformen Mitarbeitenden; ein neuer Stichtag verwirft das alte Ergebnis bis zum nächsten „Prüfen".
 
-- **„Ø angerechnet / Tag"** und der **Status** („✓ Konform" / „✗ Verstoß") rechnen mit der angerechneten Zeit, geteilt durch die Soll-Arbeitstage des Zeitraums (ohne Feiertage, Urlaub und andere soll-freie Abwesenheiten, nur im Beschäftigungszeitraum). „Tage > 8 h" zählt Tage mit mehr als 8 Stunden angerechneter Zeit.
+- **„Ø angerechnet / Werktag"** und der **Status** („✓ Konform" / „✗ Verstoß") rechnen mit der angerechneten Zeit, geteilt durch die **Werktage** des Zeitraums: Montag bis Samstag ohne Feiertage, ohne Urlaub, „Sonstiges" und bezahlte Freistellung, nur im Beschäftigungszeitraum – so rechnet das Gesetz („werktäglich"), auch für Teilzeitkräfte (drei Tage à 10 Stunden ergeben Ø 5 Stunden je Werktag). Krankheits-, Fortbildungs- und Überstundenausgleichstage bleiben Werktage. „Tage > 8 h" zählt Tage mit mehr als 8 Stunden angerechneter Zeit.
 - **„Anwesenheit laut Stempel"** (ab 1.20.0) ist die gestempelte Zeit abzüglich erfasster Pausen. Sie ändert sich nicht, wenn die Anrechnung später neu berechnet wird (Ausnahme: ein automatisch geschlossener Eintrag – für ihn zählt die Anwesenheit nur bis zum angerechneten Ende), und die Grenze gilt für die tatsächliche Arbeitszeit. Liegt ihr Durchschnitt über 8 Stunden, ist der Wert rot hervorgehoben; steht als Status trotzdem „✓ Konform", erscheint darunter zusätzlich „laut Stempel Ø > 8 h". „Wochen > 48 h laut Stempel" nennt die Zahl solcher Kalenderwochen mit Woche und Wert, z. B. „1 (KW 14/2026: 50:00 h)".
-- Hat eine Person im Zeitraum **keine Soll-Arbeitstage** (z. B. ohne Stundenzählung), steht als Status „keine Soll-Arbeitstage" – ohne Durchschnitt und ohne Urteil. § 18-befreite Mitarbeitende erscheinen nicht.
+- Hat eine Person im Zeitraum **keinen Werktag** (z. B. ganz außerhalb des Beschäftigungszeitraums), steht als Status „keine Werktage im Zeitraum" – ohne Durchschnitt und ohne Urteil. § 18-befreite Mitarbeitende erscheinen nicht.
+
+---
+
+### §3/§4 ArbZG – Höchstarbeitszeit und Pausenausnahmen
+
+Die Auswertung **„Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG"** listet für ein Jahr oder einen Monat nachträglich:
+
+- **Tage über 10 Stunden** – je Tag die Anwesenheit laut Stempel (abzüglich Pausen) und daneben die angerechnete Zeit; ein Tag erscheint, wenn einer der beiden Werte 10 Stunden übersteigt (genau 10:00 Stunden nicht). Solche Tage entstehen z. B. beim Live-Ausstempeln (dort nur Warnung), durch automatisch geschlossene Einträge (gekennzeichnet) oder durch Anerkennen.
+- **Wochen über 48 Stunden** laut Stempel (Kalenderwoche Mo–So, auch über einen Monatswechsel mit allen Tagen der Woche).
+- **Pausenausnahmen** – jeder Eintrag mit dokumentierter Pflicht-Pause-Ausnahme mit Zeit, erfasster Pause und Begründung.
+
+Es erscheinen nur Mitarbeitende mit mindestens einem Befund; ein Klick auf die Zeile zeigt die Einzelheiten. Die tatsächlichen Stempel und die Begründungen stehen zusätzlich in den Monats- und Jahresexporten (→ [Abschnitt 6](#6-berichte-und-exporte)).
 
 ---
 
