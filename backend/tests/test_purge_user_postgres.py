@@ -187,6 +187,7 @@ def _wipe(engine):
         "absences", "time_entries", "working_hours_changes", "year_carryovers",
         "company_closures", "signup_tokens", "impersonation_sessions",
         "security_events", "reduced_days",
+        "system_settings",  # #537: gesiegeltes Kettenende (audit_chain_head)
     ]
     with engine.connect() as conn:
         for table in order:

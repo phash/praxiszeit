@@ -18,13 +18,13 @@ D24 = date(2026, 12, 24)
 INVALID_MSG = "Die Stundenzahl muss zwischen 0,25 und 12 liegen (in Schritten von 0,25)."
 
 
-@pytest.fixture
-
 def _rebook_audits(db):
     """Protokollzeilen einer Neubuchung — ohne die Zeile, die seit #537 jede
     geaenderte Einstellung selbst bekommt (``setting_change``)."""
     return db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.action != "setting_change").count()
 
+
+@pytest.fixture
 def client(db, test_admin):
     from app.routers import admin_settings, company_closures
 
