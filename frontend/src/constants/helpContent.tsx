@@ -100,6 +100,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Optional: Notiz</li>
             <li>Speichern</li>
           </ol>
+          <p className="text-sm text-gray-600 mt-2">Vergangene Tage nur per Antrag: Zeiterfassung → Journal, in der Zeile des Tages „Antrag".</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Abwesenheitstypen</h3>
@@ -117,7 +118,7 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Eintrag löschen</h3>
-          <p className="text-sm text-gray-600">Unten in der Liste „Meine Abwesenheiten" auf „Löschen" klicken (Smartphone: Papierkorb-Symbol).</p>
+          <p className="text-sm text-gray-600">Unten in der Liste „Meine Abwesenheiten" auf „Löschen" klicken (Smartphone: Papierkorb-Symbol). Vergangene Tage: „per Antrag" (Lösch-Antrag im Journal); Einträge der Verwaltung ändert die Verwaltung.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Zeiträume</h3>

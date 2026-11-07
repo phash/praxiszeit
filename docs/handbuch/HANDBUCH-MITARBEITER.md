@@ -366,7 +366,7 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 
 > **Tag mit anerkanntem Zeiteintrag:** Liegt an einem der zu buchenden Tage ein Zeiteintrag, den die Verwaltung anerkannt hat (→ [Abschnitt 3.3](#33-arbeitszeit-blöcke-und-anrechnung)), lehnt PraxisZeit die Buchung ab und nennt den Tag, z. B. *„Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."* Die Verwaltung trägt die Abwesenheit für diesen Tag ein. Die übrigen Tage können Sie getrennt buchen.
 
-> **Vergangener Tag mit Zeiteinträgen:** Liegen an einem vergangenen Tag bereits Zeiteinträge, können Sie dort hier keine Abwesenheit buchen – PraxisZeit würde dabei Ihre Einträge löschen, und Einträge vergangener Tage ändern Sie nur per Antrag. Sie erhalten z. B. *„Am 05.10.2026 gibt es bereits Zeiteinträge – eine Abwesenheit für einen vergangenen Tag mit Zeiteinträgen bitte per Änderungsantrag im Journal stellen."* Wählen Sie im **Journal** in der Zeile des Tages den Abwesenheitstyp und stellen Sie den Antrag (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)). Vergangene Tage **ohne** Zeiteintrag (z. B. eine Krankmeldung für gestern) buchen Sie weiterhin direkt hier.
+> **Vergangene Tage nur per Antrag:** Eine Abwesenheit für einen vergangenen Tag (bei einem Zeitraum: Beginn vor heute) buchen Sie hier nicht selbst – wie bei Zeiteinträgen gilt: vergangene Tage nur per Antrag. Liegt das Datum in der Vergangenheit, ist **Speichern** gesperrt und das Formular zeigt *„Für vergangene Tage bitte einen Änderungsantrag stellen."* Wählen Sie im **Journal** in der Zeile des Tages auf **„Antrag"** den Abwesenheitstyp und stellen Sie den Antrag (→ [Abschnitt 3.5](#35-korrekturantrag-stellen)), z. B. für eine Krankmeldung von gestern. Heute und künftige Tage buchen Sie weiterhin direkt hier. Tage eines Jahres, für das die Verwaltung den Jahresabschluss gemacht hat, ändert nur die Verwaltung (*„Das Jahr 2026 ist bereits abgeschlossen – bitte an die Verwaltung wenden."*).
 
 **Abwesenheitstypen:**
 
@@ -417,7 +417,7 @@ Neben dem Zeitraum steht, wie viele **Tage** der Antrag kostet. Gezählt werden 
 
 In der Listenansicht Ihrer Abwesenheiten befindet sich der Button **Löschen**. Bestätigen Sie die Löschung im Dialogfenster.
 
-> Nicht selbst löschen können Sie **Betriebsferien-Tage** (die ändert nur die Verwaltung) und **Urlaub**, der aus einem genehmigten Urlaubsantrag stammt oder bei eingeschalteter Genehmigungspflicht gebucht ist. Für diese Zeilen fehlt der Löschen-Button. Einen genehmigten Antrag ziehen Sie unter **„Meine Anträge"** zurück, solange der Urlaub noch nicht begonnen hat; danach stellen Sie einen Änderungsantrag oder wenden sich an die Verwaltung.
+> Nicht selbst löschen können Sie **Betriebsferien-Tage** (die ändert nur die Verwaltung), **Urlaub**, der aus einem genehmigten Urlaubsantrag stammt oder bei eingeschalteter Genehmigungspflicht gebucht ist, und Abwesenheiten an **vergangenen Tagen** – dort steht statt des Buttons der Link **„per Antrag"**: Stellen Sie im Journal einen Lösch-Antrag. Ebenfalls nicht selbst löschen können Sie eine Abwesenheit, die **die Verwaltung für Sie eingetragen** hat (*„Diese Abwesenheit hat die Verwaltung eingetragen – bitte an die Verwaltung wenden."*), und Tage eines abgeschlossenen Jahres. Einen genehmigten Antrag ziehen Sie unter **„Meine Anträge"** zurück, solange der Urlaub noch nicht begonnen hat; danach stellen Sie einen Änderungsantrag oder wenden sich an die Verwaltung.
 
 ---
 
