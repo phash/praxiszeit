@@ -283,7 +283,7 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 
 ## Audit-Log & Monitoring
 
-**Änderungsprotokoll:** Alle Aktionen lückenlos protokolliert → Betriebsprüfungsnachweis · Arbeitszeit-Änderungen: „Neukappung (Arbeitszeit-Änderung)" je Eintrag + Sammelzeile · Anerkennungen: „Anrechnung anerkannt"
+**Änderungsprotokoll:** Änderungen an Einträgen, Abwesenheiten, Überträgen, Jahresabschluss, Einstellungen und Feiertagen → Betriebsprüfungsnachweis · tatsächliche Stempel neben der angerechneten Zeit („gestempelt 06:00 - 18:00") · Arbeitszeit-Änderungen: „Neukappung (Arbeitszeit-Änderung)" je Eintrag + Sammelzeile · Anerkennungen: „Anrechnung anerkannt" · Karte „Prüfung des Änderungsprotokolls": nächtliche Prüfung + „Jetzt prüfen" (Abweichung → Konto-Vorgänge + Fehler-Monitoring)
 **Fehler-Monitoring:** Technische Fehler → bei wiederkehrenden Fehlern IT kontaktieren oder GitHub Issue öffnen
 
 ---

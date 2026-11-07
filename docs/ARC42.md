@@ -20,7 +20,7 @@ PraxisZeit ist ein webbasiertes Zeiterfassungssystem für Arztpraxen und kleine 
 - **Antragsworkflows**: Änderungsanträge auf Zeit-/Abwesenheitseinträge, optionaler Urlaubsgenehmigungs-Workflow (4-Augen-Prinzip)
 - **Auswertungen**: Soll/Ist-Vergleich, Überstundenkonto (monatlich/JTD), Urlaubskonto (tagebasiert), Monats-/Jahresberichte
 - **Export**: Excel (XLSX), OpenDocument (ODS) und PDF für die Lohnbuchhaltung
-- **Compliance (ArbZG)**: Echtzeit-Ruhezeitwarnung (§5), Pausenpflicht (§4), Nachtarbeit (§6), Sonntagsarbeit (§9), Ausgleichsruhe (§11), revisionssichere Audit-Logs (§16)
+- **Compliance (ArbZG)**: Echtzeit-Ruhezeitwarnung (§5), Pausenpflicht (§4), Nachtarbeit (§6), Sonntagsarbeit (§9), Ausgleichsruhe (§11), manipulationserkennendes Änderungsprotokoll (§16; Prüfsumme je Zeile, versiegelte Kette, App-Konto nur anfügend — kein revisionssicheres Archiv im Sinne einer WORM-Ablage)
 - **Compliance (DSGVO)**: Auskunft/Export (Art. 15/20), Berichtigung (Art. 16), Löschung/Anonymisierung (Art. 17), Verarbeitungsverzeichnis, AVV
 - **Betrieb**: Benutzerverwaltung, Betriebsferien, Feiertage je Bundesland, Jahresabschluss/Carryover, Fehler-Monitoring, In-App-Updates
 - **Mehrmandantenfähigkeit**: Multi-Tenant-Betrieb (SaaS) mit echter Datenisolation per PostgreSQL Row-Level-Security; alternativ Single-Tenant-On-Premise
@@ -488,14 +488,19 @@ LicenseReadOnlyMiddleware: blockt POST/PUT/PATCH/DELETE (Login + Export bleiben 
 - `BETA_MODE=True` (Default) gated den kompletten Lizenz-Block; Frontend zeigt BETA-Badge. Fehler → Read-Only, nie Crash.
 
 ### 8.4 Datenbankmigrationen
-- **Alembic**, aktuell **73 Migrationen** (`001`…`073`, `version_num varchar(32)`-Limit beachten).
-- Wichtig: `…027` RLS-Umbau · `044` Audit-Logs · `042` paid_leave/Betriebsferien · `046` Halbtage · `047` receives_closures · `048` Arbeitszeit-Fenster · `067` Vertrags-Snapshot (#431) · `073` Arbeitszeit-Blöcke (Fenster-Spalten entfallen).
+- **Alembic**, aktuell **76 Migrationen** (`001`…`076`, `version_num varchar(32)`-Limit beachten).
+- Wichtig: `…027` RLS-Umbau · `044` Audit-Logs · `042` paid_leave/Betriebsferien · `046` Halbtage · `047` receives_closures · `048` Arbeitszeit-Fenster · `067` Vertrags-Snapshot (#431) · `073` Arbeitszeit-Blöcke (Fenster-Spalten entfallen) · `076` Änderungsprotokoll nur anfügbar, Kette, Rohstempel (#537).
 - Migrationen auf Host erstellen + committen **vor** Container-Rebuild; gegen Prod-DB-Kopie testen.
 
 ### 8.5 ArbZG-Compliance
 - **§5 Ruhezeit** (11h, Echtzeit-Warnung beim Einstempeln), **§4 Pausen** (>6h → ≥30 min), **§6 Nachtarbeit**, **§9 Sonntag** (`sunday_exception_reason`), **Arbeitszeit-Blöcke** (Kappung vor, nach und zwischen den Blöcken; Rohstempel `raw_start/end_time` erhalten; weiche Anwesenheits-Hinweise `PRESENCE_*`).
 - Dedizierte Admin-Reports: Ruhezeit-Verstöße, Sonntags-Summary, Nachtarbeit, Ausgleichsruhe, 24-Wochen-Durchschnitt.
-- **§16 Aufbewahrung**: revisionssichere `time_entry_audit_logs` (`source`/`action` je `varchar(40)`).
+- **§16 Änderungsprotokoll** `time_entry_audit_logs` (`source`/`action` je `varchar(40)`), Stand #537 (Migration 076). Was gilt — und was nicht:
+  - **Inhalt:** je Zeile HMAC `row_hash` (Schlüssel aus `SECRET_KEY`, liegt nicht in der DB) über Inhalt, `created_at`, Rohstempel (`raw_start/end`, Anwesenheitsende, nicht angerechnete Minuten) und feste Kopien der Fremdschlüssel (`entry_ref`, `changed_by_ref`, `change_request_ref`). Eine Änderung ohne Schlüssel fällt bei der Prüfung auf.
+  - **Löschung:** die Zeilen eines Mandanten werden täglich zu einer Kette versiegelt (`chain_seq`/`chain_hash`, gesiegeltes Kettenende in `system_settings`). Eine entfernte versiegelte Zeile hinterlässt eine Lücke; legitime Löschungen (Art. 17, Aufbewahrungsfrist) schreiben einen gehashten Vermerk mit den entfernten Gliedern.
+  - **Rechte:** das App-Konto `praxiszeit_app` darf die Tabelle nur lesen und anfügen (Trigger `pz_audit_guard` + entzogene Rechte); Scrub, Versiegeln und Löschen versiegelter Zeilen laufen über SECURITY-DEFINER-Funktionen.
+  - **Prüfung:** täglich 03:15 und per Knopf (Änderungsprotokoll → „Prüfung des Änderungsprotokolls"); Abweichung → `security_events` (`audit_integrity_failed`) + `error_logs`.
+  - **Grenzen:** wer Datenbank-Superuser ist, kann Trigger abschalten und Zeilen ändern — erkannt wird das, verhindert nicht. Zeilen, die noch nicht versiegelt sind (bis zu einem Tag), sind nur durch die Rechte geschützt; das Abschneiden der Kette samt Rückspielen eines älteren Kettenendes ist nicht erkennbar. Altbestand vor 076 ohne Prüfsumme bzw. mit vor 076 gelöschtem Eintrag ist nicht prüfbar und wird getrennt gemeldet. `time_entries` selbst trägt keine Prüfsumme; eine direkte Änderung am Eintrag ohne Protokollzeile erkennt die Prüfung nicht. Ein Wechsel von `SECRET_KEY` macht alle Prüfsummen unprüfbar.
 
 ### 8.6 DSGVO
 - Betroffenenrechte: Auskunft/Export (Art. 15/20), Berichtigung (Art. 16), Löschung/Anonymisierung (Art. 17, Löschkandidaten), Verarbeitungs-/Consent-Audit (`signup_audit_logs`, überlebt Tenant-Löschung), AVV-PDF.
@@ -503,7 +508,7 @@ LicenseReadOnlyMiddleware: blockt POST/PUT/PATCH/DELETE (Login + Export bleiben 
 - Strukturiertes Error-Logging mit PII-Scrubbing + 90-Tage-Purge.
 
 ### 8.7 Scheduler (autonom)
-- APScheduler startet im Lifespan (deaktiviert unter pytest). On-Prem: Vacation-Audit-Purge, Error-Log-Cleanup (03:00), geplantes Backup (stündlich :30); nur SaaS zusätzlich Tenant-Suspend/-Deletion und Billing-Suspends (seit 1.20.3). Jobs nutzen `set_superadmin_context`.
+- APScheduler startet im Lifespan (deaktiviert unter pytest). On-Prem: Vacation-Audit-Purge, Error-Log-Cleanup (03:00), Prüfung des Änderungsprotokolls (03:15, #537), geplantes Backup (stündlich :30); nur SaaS zusätzlich Tenant-Suspend/-Deletion und Billing-Suspends (seit 1.20.3). Jobs nutzen `set_superadmin_context`.
 
 ### 8.8 Sicherheits-Querschnitt
 - Middleware-Stack: CORS → CSRF (Double-Submit) → License-Read-Only → GZip → RequestSizeLimit (2 MB) → SecurityHeaders (CSP, X-Frame-Options, HSTS).

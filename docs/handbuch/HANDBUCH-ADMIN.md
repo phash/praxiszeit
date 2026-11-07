@@ -588,7 +588,7 @@ Mitarbeiter können Korrekturanträge stellen, wenn Zeiteinträge nachträglich 
 
 ## 9. Änderungsprotokoll (Audit-Log)
 
-Das Audit-Log protokolliert alle Aktionen im System vollständig und unveränderlich.
+Das Audit-Log protokolliert die Änderungen an Zeiteinträgen, Abwesenheiten und Verwaltungseinstellungen. Jede Zeile trägt eine Prüfsumme, die Zeilen werden jede Nacht zu einer Kette versiegelt, und PraxisZeit selbst kann Zeilen nur anfügen, nie ändern oder löschen. Eine nachträgliche Veränderung oder Entfernung außerhalb von PraxisZeit (z. B. direkt in der Datenbank) wird dadurch **erkannt** – verhindern kann sie nur der Schutz des Servers (→ [Prüfung des Änderungsprotokolls](#prüfung-des-änderungsprotokolls)).
 
 ![Audit-Log](screenshots/22-admin-auditlog.png)
 
@@ -604,8 +604,23 @@ Das Audit-Log protokolliert alle Aktionen im System vollständig und unveränder
 | **Arbeitszeit-Änderungen** | Je Änderung und je Löschung eine Sammelzeile (Wirkungsdatum, neu berechnete Einträge, Differenz der angerechneten Zeit, Saldo-Differenz, Puffer, Grund, Vertrag alt → neu) und je neu berechnetem Eintrag eine Zeile mit alten und neuen Zeiten (Quelle „wh_reclamp", Anzeige „Neukappung (Arbeitszeit-Änderung)"); sind Abwesenheiten betroffen, zusätzlich eine Sammelzeile ohne Datum (z. B. „Arbeitszeit-Änderung zum 2026-09-01: 2 Abwesenheit(en) im Zeitraum 2026-09-01–2026-10-09 auf neues Tagessoll nachgezogen", beim Löschen „… auf den davor gültigen Wert zurückgerechnet") und je nachgezogener Abwesenheit eine Zeile mit altem/neuem Stundenwert (beide Quelle „wh_change", Anzeige „Stundenänderung"). Alle Zeilen stehen im Monat, in dem die Änderung gespeichert wurde. |
 | **Anerkennungen** | Anerkannte Einträge mit vorher und nachher angerechneter Zeit (Quelle „credit_override", Anzeige „Anrechnung anerkannt"); steht am selben Tag eine Abwesenheit, zusätzlich je angeglichener Abwesenheit eine Zeile ohne Zeiten, nur mit Datum und altem/neuem Stundenwert (z. B. „Krank 5,25 h" → „Krank 4,0 h — an die anerkannte Arbeitszeit des Tages angeglichen", ebenfalls Anzeige „Anrechnung anerkannt") |
 | **Pflicht-Pause-Ausnahmen** | Erfasste § 4-Ausnahmen samt Begründung (Quelle „break_waiver") |
+| **Überträge und Jahresabschluss** | Manuell gesetzte Überträge („Übertrag gesetzt", Quelle „Übertrag (manuell)") sowie je Person der Übertrag beim Anlegen und Löschen eines Jahresabschlusses (Quelle „Jahresabschluss"), jeweils mit Überstunden und Urlaubstagen vorher → nachher, z. B. „Übertrag 2027: Überstunden 40,00 h, Urlaub 3,0 Tage (manuell)" |
+| **Einstellungen, Feiertage, verkürzte Tage** | Jede geänderte Einstellung mit altem und neuem Wert (z. B. „work_window_grace_minutes = 15" → „= 10", Anzeige „Einstellung geändert"), eigene Feiertage („Feiertag geändert") und verkürzte Tage („Verkürzter Tag geändert"); die Zeile steht bei der Person, die geändert hat |
 
 **Anlegen und Bearbeiten in der Zeiterfassung:** Auch wer einen Eintrag über die **Zeiterfassung** anlegt oder ändert – Mitarbeitende am selben Tag, Admins an ihren eigenen Einträgen jedes Tages –, hinterlässt eine Zeile mit alten und neuen Werten; „Geändert von" nennt die handelnde Person. Bis Version 1.19.3 entstand dort nur bei einer Pflicht-Pause-Ausnahme eine Zeile; korrigierte eine Admin einen eigenen Eintrag eines vergangenen Tages, blieb das ohne Spur. Löschen und Ausstempeln wurden schon vorher protokolliert. Die Spalte **„Quelle"** zeigt bei solchen Zeilen – wie bei Korrekturen durch die Verwaltung – „Manuell" (mit Pflicht-Pause-Ausnahme „Pausen-Verzicht"), beim Ausstempeln „Ausstempeln" und bei einem automatisch geschlossenen Eintrag „Automatisch geschlossen". Bis Version 1.19.3 stand statt „Manuell" dort „Admin", auch wenn Mitarbeitende selbst gehandelt hatten; wer gehandelt hat, nennt immer „Geändert von".
+
+**Tatsächliche Stempel:** Zeilen zu Zeiteinträgen nennen neben der angerechneten Zeit auch die tatsächlich gestempelte, sobald beide abweichen (z. B. „07:45 - 16:15" und darunter „gestempelt 06:00 - 18:00") – auch bei einer Löschung. Bis Version 1.22.0 stand nur die angerechnete Zeit im Protokoll; nach dem Löschen eines gekappten Eintrags war die tatsächliche Arbeitszeit dort nicht mehr belegt.
+
+**Gelöschte Person:** Wird eine Person endgültig gelöscht (Art. 17 DSGVO), bleiben die Zeilen, die sie an Einträgen **anderer** geändert hat, stehen; „Geändert von" zeigt dann *„Gelöschte Person"*. Bis Version 1.22.0 wurden solche Zeilen auf die löschende Verwaltung umgeschrieben. Ihre **eigenen** Zeilen entfernt die Löschung; an ihrer Stelle steht eine Zeile **„Protokollzeilen entfernt"**, die die entfernten Kettenglieder nennt. Dasselbe gilt für Antragszeilen, die nach 730 Tagen automatisch entfernt werden (Quelle „Aufbewahrungsfrist").
+
+### Prüfung des Änderungsprotokolls
+
+Unter der Tabelle steht die Karte **„Prüfung des Änderungsprotokolls"**. PraxisZeit prüft jede Nacht (03:15 Uhr) jede Zeile gegen ihre Prüfsumme, versiegelt die neuen Zeilen zur Kette und prüft, ob Glieder fehlen. Die Karte zeigt das Ergebnis der letzten Prüfung; **„Jetzt prüfen"** prüft sofort.
+
+- **„In Ordnung"**: keine Zeile verändert, keine entfernt. Ältere Zeilen ohne prüfbare Prüfsumme (Altbestand aus der Zeit vor der Prüfsumme bzw. Zeilen eines vor dem Update gelöschten Eintrags) werden nur gezählt.
+- **„Abweichung gefunden"**: Zeilen wurden außerhalb von PraxisZeit verändert oder entfernt. Der Vorgang steht zusätzlich unter **„Konto-Vorgänge"** (*„Änderungsprotokoll: Prüfung fehlgeschlagen"*) und im **Fehler-Monitoring**. Bewahren Sie die Datensicherungen auf und informieren Sie den Support.
+
+Die Prüfsummen hängen am geheimen Schlüssel des Servers (`SECRET_KEY`). Geht er verloren (z. B. Neuinstallation ohne die Datei `config/.secret-key`), lassen sich die Prüfsummen nicht mehr prüfen.
 
 ### Konto-Vorgänge
 
@@ -618,7 +633,7 @@ Unter der Tabelle der Zeiteintrags-Änderungen steht die Liste **„Konto-Vorgä
 
 Die Liste **„Konto-Vorgänge"** ist nicht gefiltert, sie zeigt die neuesten 200 Vorgänge. Fehlgeschlagene Anmeldungen stehen nicht im Änderungsprotokoll, sondern im Protokoll des Servers (`AUTH login_failed …`, → [Abschnitt 20](#20-admin-passwort-verloren)).
 
-> **Rechtlicher Hinweis:** Das Audit-Log erfüllt die Anforderungen einer unveränderlichen Aufzeichnung gem. § 16 ArbZG und kann bei Betriebsprüfungen als Nachweis dienen.
+> **Rechtlicher Hinweis:** Das Audit-Log dokumentiert Änderungen an der Arbeitszeitaufzeichnung nach § 16 Abs. 2 ArbZG und kann bei Betriebsprüfungen als Nachweis dienen. Es macht nachträgliche Veränderungen erkennbar; ein revisionssicheres Archiv (unveränderbarer Speicher) ersetzt es nicht.
 
 ---
 
