@@ -10,6 +10,10 @@
 # Format: gzip-komprimierter Plain-SQL-Dump (NICHT pg_dump -Fc — das waere doppelt
 # komprimiert und liesse sich nicht wie dokumentiert per gunzip|psql einspielen).
 set -euo pipefail
+# Audit 2026-11-07 S3-06: die Dumps enthalten alle Personal- und Krankheitsdaten
+# (Art. 9 DSGVO). Mit der ueblichen umask 022 waeren sie und der Ordner fuer
+# jedes lokale Konto des Docker-Hosts lesbar. Ab hier entsteht alles 0600/0700.
+umask 077
 
 # Bundle: docker-compose.yml + .env liegen NEBEN diesem Skript. Git-Checkout:
 # das Skript liegt in tools/docker/, docker-compose.yml + .env im Repo-Root.
@@ -30,6 +34,9 @@ PG_DB="${PG_DB:-praxiszeit}"
 
 BACKUP_DIR="./backups"
 mkdir -p "$BACKUP_DIR"
+# Bestand aus aelteren Versionen (0755/0644) nachziehen.
+chmod 700 "$BACKUP_DIR"
+find "$BACKUP_DIR" -maxdepth 1 -type f -name 'praxiszeit_*.sql.gz' -exec chmod 600 {} +
 OUT="${BACKUP_DIR}/praxiszeit_$(date +%Y%m%d_%H%M%S).sql.gz"
 
 echo "Sichere Datenbank '${PG_DB}' (User '${PG_USER}') ..."

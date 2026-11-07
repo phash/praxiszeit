@@ -10,8 +10,9 @@ REM F-025: No hardcoded passwords. Credentials are read from
 REM config\.db-credentials which is created by praxiszeit-server.py on
 REM first run with restricted file-system permissions.
 REM
-REM Edit INSTALL_DIR below to match your installation path, or pass it
-REM via the PRAXISZEIT_INSTALL_DIR environment variable.
+REM Das Script liegt im Installationsordner und nimmt ihn als Standard
+REM (%~dp0). Ein anderer Ordner ueber die Umgebungsvariable
+REM PRAXISZEIT_INSTALL_DIR.
 REM
 REM Gesamtreview 1.20: Das Backup wird VOR jeder Aenderung entpackt und auf
 REM die Schlusszeile von pg_dump geprueft. Eingespielt wird zuerst in eine
@@ -45,15 +46,25 @@ if not exist "%BACKUP_GZ%" (
     exit /b 1
 )
 
-REM Installation directory (edit if non-default)
+REM Installationsordner: der Ordner dieses Scripts (Audit 2026-11-07 S3-09,
+REM frueher fest C:\praxiszeit), sonst PRAXISZEIT_INSTALL_DIR.
 if defined PRAXISZEIT_INSTALL_DIR (
     SET "DIR=%PRAXISZEIT_INSTALL_DIR%"
 ) else (
-    SET "DIR=C:\praxiszeit"
+    SET "DIR=%~dp0."
 )
 
-SET "BACKUP_DUMP=%TEMP%\praxiszeit-restore.sql"
-SET "REV_FILE=%TEMP%\praxiszeit-restore-revision.txt"
+REM Der entpackte Dump ist die ganze Datenbank im Klartext. Er liegt in data\
+REM (nur SYSTEM und Administratoren, wie unter Linux), nicht in %TEMP% - ein
+REM mit Strg+C abgebrochener Lauf liess ihn dort sonst liegen (S3-10). Reste
+REM eines abgebrochenen Laufs, auch aus %TEMP% von aelteren Versionen, werden
+REM zuerst entfernt.
+SET "BACKUP_DUMP=%DIR%\data\.restore-praxiszeit.sql"
+SET "REV_FILE=%DIR%\data\.restore-revision.txt"
+del "%BACKUP_DUMP%" 2>nul
+del "%REV_FILE%" 2>nul
+del "%TEMP%\praxiszeit-restore.sql" 2>nul
+del "%TEMP%\praxiszeit-restore-revision.txt" 2>nul
 SET "PYTHON=%DIR%\bin\python\python.exe"
 SET "PSQL=%DIR%\bin\postgresql\bin\psql.exe"
 SET "PG_CTL=%DIR%\bin\postgresql\bin\pg_ctl.exe"
@@ -64,6 +75,9 @@ REM 5432. DB_PORT wird in Schritt 3 gesetzt, PSQL_ARGS danach.
 REM Die DROP-IF-EXISTS-Zeilen des Dumps melden in der frischen Datenbank je
 REM Objekt einen NOTICE. Fehler zeigt psql weiter an.
 SET "PGOPTIONS=-c client_min_messages=warning"
+REM psql spricht TCP mit localhost: das Passwort nur per SCRAM preisgeben, nie
+REM im Klartext an einen Server, der sich an den freien Port gehaengt hat (S3-07).
+SET "PGREQUIREAUTH=scram-sha-256"
 
 REM --- Credentials laden (F-025: kein Fallback) ---
 SET "CREDS_FILE=%DIR%\config\.db-credentials"
@@ -73,7 +87,9 @@ if not exist "%CREDS_FILE%" (
     pause
     exit /b 1
 )
-for /f "tokens=1,* delims==" %%a in (%CREDS_FILE%) do (
+REM usebackq + Anfuehrungszeichen: sonst liest for /f bei einem Pfad mit
+REM Leerzeichen (C:\Program Files\...) zwei Dateinamen (S3-09).
+for /f "usebackq tokens=1,* delims==" %%a in ("%CREDS_FILE%") do (
     if "%%a"=="SUPERUSER_PASSWORD" SET "PGPASSWORD=%%b"
 )
 if not defined PGPASSWORD (
@@ -102,6 +118,12 @@ REM Ein Fehler erscheint als eine Zeile statt als Python-Traceback.
 echo Entpacke und pruefe Backup...
 "%PYTHON%" -c "import gzip,os,shutil,sys;sys.excepthook=lambda t,v,b:print(t.__name__+': '+str(v),file=sys.stderr);s,d=sys.argv[1:3];i=gzip.open(s,'rb');o=open(d,'wb');shutil.copyfileobj(i,o,1048576);o.close();i.close();f=open(d,'rb');f.seek(max(0,os.path.getsize(d)-4096));t=f.read();f.close();sys.exit(0 if b'PostgreSQL database dump complete' in t else 3)" "%BACKUP_GZ%" "%BACKUP_DUMP%"
 if errorlevel 1 goto :backup_unbrauchbar
+REM Nur einspielen, was pg_dump selbst schreibt (S3-03): psql fuehrt
+REM Backslash-Befehle aus dem Dump aus - hier mit Administratorrechten. Der
+REM Unterbefehl lehnt jeden anderen psql-Befehl ab und setzt einen eigenen
+REM \restrict-Schluessel, dann verweigert psql selbst jeden weiteren.
+"%PYTHON%" "%DIR%\praxiszeit-server.py" prepare-restore-dump "%BACKUP_DUMP%"
+if errorlevel 1 goto :backup_abgelehnt
 echo OK.
 echo.
 
@@ -206,6 +228,16 @@ echo.
 echo FEHLER: Das Backup ist unvollstaendig oder kein lesbares gzip-Archiv -
 echo die Schlusszeile von pg_dump fehlt, etwa weil die Kopie abgebrochen ist.
 echo Es wurde nichts veraendert.
+echo.
+pause
+exit /b 1
+
+:backup_abgelehnt
+del "%BACKUP_DUMP%" 2>nul
+echo.
+echo FEHLER: Das Backup enthaelt Befehle, die pg_dump nie schreibt - siehe
+echo Meldung oben. Die Datei wurde veraendert oder stammt nicht aus PraxisZeit
+echo und wird nicht eingespielt. Es wurde nichts veraendert.
 echo.
 pause
 exit /b 1

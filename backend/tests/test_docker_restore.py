@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import gzip
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -168,7 +169,10 @@ def test_restore_restarts_the_running_backend_so_migrations_run(tmp_path):
     assert stop < restore < start, calls
     # Das No-op von frueher darf nicht mehr der „Neustart“ sein.
     assert not any("up -d backend" in line for line in calls), calls
-    assert (tmp_path / "restored.sql").read_text(encoding="utf-8") == _COMPLETE_DUMP
+    restored = (tmp_path / "restored.sql").read_text(encoding="utf-8")
+    first, rest = restored.split("\n", 1)
+    assert re.fullmatch(r"\\restrict [0-9a-f]{48}", first), first  # S3-03
+    assert rest == _COMPLETE_DUMP.replace("\\unrestrict abc\n", "")
 
 
 def test_restore_loads_the_dump_into_a_fresh_database(tmp_path):
@@ -360,3 +364,68 @@ def test_docker_readme_points_to_the_migration_output():
     assert "docker compose logs backend" in section, section
     assert "*** HINWEIS (Migration 073) ***" in section, section
     assert "UPDATE.md" in section, section
+
+
+# --- Audit 2026-11-07 S3-03: psql im db-Container fuehrt keine Backslash-Befehle aus
+
+
+def test_restore_puts_its_own_restrict_key_in_front(tmp_path):
+    evil = "\\restrict abc\n\\! id > /tmp/pwned\n" + _COMPLETE_DUMP
+    proc, calls = _run_restore(tmp_path, dump=_dump(tmp_path, evil))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    restored = (tmp_path / "restored.sql").read_text(encoding="utf-8").split("\n")
+    assert re.fullmatch(r"\\restrict [0-9a-f]{48}", restored[0]), restored[0]
+    # psql bekommt den fremden Befehl - im eingeschraenkten Modus ist er ein Fehler.
+    assert "\\! id > /tmp/pwned" in restored
+    assert "\\restrict abc" not in restored and "\\unrestrict abc" not in restored
+
+
+def test_restore_uses_a_new_key_each_time(tmp_path):
+    keys = []
+    for n in range(2):
+        sub = tmp_path / str(n)
+        sub.mkdir()
+        proc, _ = _run_restore(sub, dump=_dump(sub))
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        keys.append((sub / "restored.sql").read_text(encoding="utf-8").split("\n", 1)[0])
+    assert keys[0] != keys[1]
+
+
+# --- Audit 2026-11-07 S3-06: Docker-Backups nur fuer den Eigentuemer lesbar
+
+
+def _run_with_umask_022(cmd, env):
+    return subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60,
+                          stdin=subprocess.DEVNULL, preexec_fn=lambda: os.umask(0o022))
+
+
+def test_backup_sh_writes_private_dumps_even_with_umask_022(tmp_path):
+    bundle = _bundle(tmp_path)
+    old = bundle / "backups"
+    old.mkdir(mode=0o755)
+    os.chmod(old, 0o755)
+    legacy = old / "praxiszeit_20250101_000000.sql.gz"
+    legacy.write_bytes(b"x")
+    os.chmod(legacy, 0o644)
+    proc = _run_with_umask_022(["bash", str(bundle / "backup.sh")], _env(tmp_path))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    dumps = sorted(old.glob("praxiszeit_*.sql.gz"))
+    assert len(dumps) == 2
+    assert stat.S_IMODE(old.stat().st_mode) == 0o700
+    for d in dumps:
+        assert stat.S_IMODE(d.stat().st_mode) == 0o600, d
+
+
+def test_backup_db_sh_writes_private_dumps_even_with_umask_022(tmp_path):
+    bundle = _bundle(tmp_path)
+    target = tmp_path / "backup"
+    script = _REPO / "scripts" / "backup-db.sh"
+    proc = _run_with_umask_022(
+        ["bash", str(script)],
+        _env(tmp_path, PRAXISZEIT_BACKUP_DIR=str(target), PRAXISZEIT_PROJECT_DIR=str(bundle)),
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    dumps = list(target.glob("praxiszeit_*.sql.gz"))
+    assert len(dumps) == 1
+    assert stat.S_IMODE(target.stat().st_mode) == 0o700
+    assert stat.S_IMODE(dumps[0].stat().st_mode) == 0o600

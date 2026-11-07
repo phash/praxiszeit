@@ -953,3 +953,90 @@ def test_prepare_restore_dump_unterbefehl(srv, tmp_path, capsys):
     p.write_text(_HEAD + _TAIL, encoding="utf-8")
     srv.cmd_prepare_restore_dump(argparse.Namespace(file=str(p)))
     assert p.read_text(encoding="utf-8").startswith("\\restrict ")
+
+
+# --- Audit 2026-11-07: restore-backup.bat (S3-03, S3-07, S3-09, S3-10) -------
+
+def test_restore_bat_prueft_den_dump_vor_dem_einspielen():
+    text = _bat_text()
+    prep = text.index('praxiszeit-server.py" prepare-restore-dump "%BACKUP_DUMP%"')
+    assert text.index("PostgreSQL database dump complete") < prep
+    assert prep < text.index("net stop PraxisZeit")
+    assert prep < text.index('-d %RESTORE_DB% -f "%BACKUP_DUMP%"')
+    assert "if errorlevel 1 goto :backup_abgelehnt" in text[prep:prep + 200]
+    block = _bat_blocks()["backup_abgelehnt"]
+    assert 'del "%BACKUP_DUMP%" 2>nul' in block and "exit /b 1" in block
+
+
+def test_restore_bat_verlangt_scram_vor_dem_ersten_psql():
+    text = _bat_text()
+    assert 'SET "PGREQUIREAUTH=scram-sha-256"' in text
+    assert text.index('SET "PGREQUIREAUTH=scram-sha-256"') < text.index('"%PSQL%"')
+
+
+def test_restore_bat_liest_zugangsdaten_auch_mit_leerzeichen_im_pfad():
+    lines = [line for line in _bat_lines() if line.strip().lower().startswith("for /f")]
+    creds = [line for line in lines if "CREDS_FILE" in line]
+    assert creds == ['for /f "usebackq tokens=1,* delims==" %%a in ("%CREDS_FILE%") do (']
+
+
+def test_restore_bat_nimmt_den_eigenen_ordner_als_standard():
+    text = _bat_text()
+    assert 'SET "DIR=%~dp0."' in text
+    assert 'SET "DIR=C:\\praxiszeit"' not in text
+
+
+def test_restore_bat_entpackt_nach_data_und_raeumt_reste_weg():
+    text = _bat_text()
+    assert 'SET "BACKUP_DUMP=%DIR%\\data\\.restore-praxiszeit.sql"' in text
+    assert 'SET "REV_FILE=%DIR%\\data\\.restore-revision.txt"' in text
+    # kein Klartext-Dump mehr in %TEMP% - nur noch das Wegraeumen alter Reste
+    temp_refs = [line for line in _bat_lines()
+                 if "%TEMP%" in line and not line.upper().startswith("REM")]
+    assert temp_refs and all(line.startswith("del ") for line in temp_refs), temp_refs
+    leftover = text.index('del "%BACKUP_DUMP%" 2>nul')
+    assert leftover < text.index("Entpacke und pruefe Backup")
+
+
+# --- Audit 2026-11-07 S3-02: uninstall.bat loescht nichts ohne geprueftes Backup
+
+_UNINSTALL = _REPO / "installer" / "windows" / "uninstall.bat"
+
+
+def _uninstall_text() -> str:
+    return _UNINSTALL.read_bytes().decode("utf-8")
+
+
+def test_uninstall_bat_hat_durchgehend_crlf():
+    raw = _UNINSTALL.read_bytes()
+    assert b"\n" not in raw.replace(b"\r\n", b""), "uninstall.bat braucht CRLF"
+
+
+def test_uninstall_bat_prueft_exitcode_und_schlusszeile():
+    text = _uninstall_text()
+    dump = text.index('"%PG_DUMP%"')
+    ok = text.index("\r\n:backup_ok\r\n")
+    between = text[dump:ok]
+    assert "if errorlevel 1 goto :backup_failed" in between
+    assert 'findstr /c:"PostgreSQL database dump complete" "%BACKUP_FILE%"' in between
+    assert "if exist \"%BACKUP_FILE%\" goto :backup_ok" not in text
+    failed = text[text.index("\r\n:backup_failed\r\n"):ok]
+    assert 'del "%BACKUP_FILE%"' in failed  # keine halbe Datei als "Backup"
+    assert "2>nul" not in text[dump:text.index("\r\n", dump)]  # Grund wird angezeigt
+
+
+def test_uninstall_bat_rettet_die_automatischen_sicherungen_vor_dem_loeschen():
+    text = _uninstall_text()
+    move = text.index('robocopy "%DIR%\\data\\backups" "%KEEP_DIR%" /E /MOVE')
+    assert "if errorlevel 8 goto :keep_failed" in text[move:move + 200]
+    assert move < text.index('echo rd /s /q "%DIR%"')
+    keep_failed = text[text.index("\r\n:keep_failed\r\n"):text.index("\r\n:cancelled\r\n")]
+    assert "exit /b 1" in keep_failed and "CLEANUP_BAT" not in keep_failed
+
+
+def test_uninstall_bat_scram_und_leerzeichenpfad():
+    text = _uninstall_text()
+    assert 'SET "PGREQUIREAUTH=scram-sha-256"' in text
+    assert text.index("PGREQUIREAUTH") < text.index('"%PG_DUMP%"')
+    assert 'for /f "usebackq tokens=1,* delims==" %%a in ("%CREDS_FILE%") do (' in text
+    assert "in (%CREDS_FILE%)" not in text

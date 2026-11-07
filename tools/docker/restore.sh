@@ -93,7 +93,17 @@ echo "Spiele '${FILE}' in Datenbank '${PG_DB}' (User '${PG_USER}') ein ..."
 # meldet psql trotz Fehlern Exit 0 -> ein kaputter Restore sähe erfolgreich aus).
 # Die DROP … IF EXISTS aus --clean --if-exists erzeugen keine Fehler.
 # -q: ohne die hunderten Statuszeilen (SET, COPY, GRANT …) — Fehler erscheinen weiter.
-gunzip -c "$FILE" | docker compose exec -T db psql -q -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB"
+# Audit 2026-11-07 S3-03: psql fuehrt Backslash-Befehle aus dem Dump aus (\! cmd,
+# \o |cmd) - als Superuser im db-Container. Ein eigener, zufaelliger
+# \restrict-Schluessel in der ersten Zeile schaltet psql in den eingeschraenkten
+# Modus: jeder weitere Backslash-Befehl ist ein Fehler, ON_ERROR_STOP bricht ab.
+# Die eigenen restrict-Zeilen von pg_dump 18 entfallen (ein zweites \restrict
+# waere ebenfalls ein Fehler).
+RESTRICT_KEY="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+{
+    printf '\\restrict %s\n' "$RESTRICT_KEY"
+    gunzip -c "$FILE" | { grep -v -E '^\\(restrict|unrestrict) [A-Za-z0-9]+$' || true; }
+} | docker compose exec -T db psql -q -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB"
 
 # GRANT CONNECT ON DATABASE steht nicht im Dump (gehoert zur Datenbank, nicht zu
 # ihrem Inhalt) — dieselben Rechte wie bei der Erstinitialisierung erneut setzen.
