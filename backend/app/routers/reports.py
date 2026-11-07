@@ -14,7 +14,7 @@ from app.models import User, Absence, AbsenceType, TimeEntry, TimeEntryAuditLog
 from app.models.public_holiday import PublicHoliday
 from app.middleware.auth import require_admin
 from app.schemas.reports import EmployeeMonthlyReport, EmployeeYearlyAbsences, WeeklyHoursChangeInPeriod
-from app.services import calculation_service, export_service, ods_export_service, rest_time_service, work_window_service
+from app.services import calculation_service, export_service, holiday_service, ods_export_service, rest_time_service, work_window_service
 from app.services.timezone_service import now_local, today_local
 from app.services.arbzg_utils import is_night_work
 import calendar
@@ -775,9 +775,18 @@ def _holiday_dates(db: Session, tenant_id, start: date, end: date) -> set:
 
 
 # Abwesenheiten, die einen Werktag aus dem Durchschnitts-Nenner nehmen (§ 3/§ 6):
-# Urlaub, Sonstiges/unbezahlt, bezahlte Freistellung. Krank/Fortbildung/
-# Freizeitausgleich bleiben Werktage (Spiegel von get_monthly_target, M-ARB2).
-_NEUTRAL_ABSENCE_TYPES = (AbsenceType.VACATION, AbsenceType.OTHER, AbsenceType.PAID_LEAVE)
+# Urlaub, Krankheit, Fortbildung, Sonstiges/unbezahlt, bezahlte Freistellung —
+# jede ganztägige Abwesenheit außer dem Freizeitausgleich. Art. 16 lit. b
+# RL 2003/88/EG: Urlaubs- und Krankheitszeiten bleiben bei der Berechnung des
+# Durchschnitts unberücksichtigt; als 0-h-Werktag verdünnten sie den Schnitt
+# (Fix-Runde Audit 2026-11-07: 2 Wochen krank + 10-h-Tage sonst ergaben „konform").
+# Fortbildung steht nicht als Zeiteintrag im Zähler — als 0-h-Werktag hätte sie
+# denselben Effekt. Der Freizeitausgleich (OVERTIME) bleibt ein Werktag mit 0 h:
+# er IST der Ausgleich, den § 3 Satz 2 verlangt.
+_NEUTRAL_ABSENCE_TYPES = (
+    AbsenceType.VACATION, AbsenceType.SICK, AbsenceType.TRAINING,
+    AbsenceType.OTHER, AbsenceType.PAID_LEAVE,
+)
 
 
 def _neutral_absence_dates(db: Session, user, start: date, end: date) -> set:
@@ -796,7 +805,9 @@ def _neutral_absence_dates(db: Session, user, start: date, end: date) -> set:
 def averaging_workdays(user, start: date, end: date, holiday_dates: set, neutral_absence_dates: set) -> int:
     """A1-13 (Audit 2026-11-07): Nenner der Durchschnitte nach § 3 Satz 2 und
     § 6 Abs. 2 ArbZG = WERKTAGE (Mo–Sa) im Zeitraum, ohne Feiertage, ohne Tage
-    mit Urlaub/Sonstiges/bezahlter Freistellung und nur im Beschäftigungszeitraum.
+    mit ganztägiger Abwesenheit außer Freizeitausgleich (``_NEUTRAL_ABSENCE_TYPES``:
+    Urlaub, Krankheit, Fortbildung, Sonstiges, bezahlte Freistellung) und nur im
+    Beschäftigungszeitraum.
 
     Bis dahin zählte der Nenner nur Mo–Fr mit Soll > 0, während Samstagsarbeit
     im Zähler stand: 45 h in 5 Tagen ergaben Ø 9 h („Verstoß"), gesetzlich sind
@@ -938,6 +949,24 @@ def get_night_work_summary(
     von Hand.
     """
     year_start, year_end = date(year, 1, 1), date(year, 12, 31)
+    today = today_local()
+    # Fix-Runde (VVZ: „JSON-Reportzugriffe werden protokolliert"): die Antwort
+    # trägt das gesundheitsnahe Kennzeichen ``is_night_worker`` (und
+    # ``flag_missing``) je Person — die Dateien zeigen es nur mit
+    # „Krankheitsdaten einschließen" (night_worker_export_value). Der Bericht
+    # braucht es für die Monatsauswertung (§ 6 Abs. 2) und die Hinweise; deshalb
+    # vermerkt jeder Abruf einen health_data_read wie die anderen Art.-9-Berichte.
+    # Nur flushen — Commit erst, wenn der Bericht fehlerfrei gebaut ist (L-2).
+    db.add(TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=current_user.id,
+        changed_by=current_user.id,
+        action="health_data_read",
+        source="dsgvo",
+        new_note=f"Nachtarbeitsbericht {year} (inkl. Kennzeichen Nachtarbeitnehmer) gelesen von Admin: {current_user.username}",
+        tenant_id=current_user.tenant_id,
+    ))
+    db.flush()
     users, hidden = _arbzg_users(db, current_user.tenant_id, year_start, year_end, include_hidden)
     holiday_dates = _holiday_dates(db, current_user.tenant_id, year_start, year_end)
     result = []
@@ -976,9 +1005,11 @@ def get_night_work_summary(
             for m in range(1, 13):
                 m_start, m_end = date(year, m, 1), date(year, m, monthrange(year, m)[1])
                 m_entries = [e for e in entries if m_start <= e.date <= m_end]
-                workdays = averaging_workdays(user, m_start, m_end, holiday_dates, neutral)
-                if not m_entries and workdays == 0:
+                # Fix-Runde: nur Monate mit Arbeit, nie künftige — eine Zeile
+                # „0 h ✓ Konform" für Dezember liest sich wie ein Nachweis.
+                if not m_entries or m_start > today:
                     continue
+                workdays = averaging_workdays(user, m_start, m_end, holiday_dates, neutral)
                 credited = sum(float(e.net_hours or 0) for e in m_entries)
                 presence = sum(work_window_service.presence_minutes(e) for e in m_entries) / 60.0
                 avg = credited / workdays if workdays else 0.0
@@ -990,7 +1021,9 @@ def get_night_work_summary(
                     "average_daily_hours": round(avg, 2),
                     "presence_hours": round(presence, 2),
                     "presence_average": round(presence_avg, 2),
-                    "compliant": avg <= NIGHT_WORKER_MONTHLY_LIMIT,
+                    # Arbeit nur an Sonn-/Feiertagen o. Ä. (kein Werktag im
+                    # Nenner): kein Urteil statt „konform" mit Ø 0.
+                    "compliant": (avg <= NIGHT_WORKER_MONTHLY_LIMIT) if workdays else None,
                 })
 
         result.append({
@@ -1004,9 +1037,10 @@ def get_night_work_summary(
             "is_night_worker_flag": bool(user.is_night_worker),
             "flag_missing": is_nachtarbeitnehmer and not user.is_night_worker,
             "monthly": monthly,
-            "monthly_violation_count": sum(1 for r in monthly if not r["compliant"]),
+            "monthly_violation_count": sum(1 for r in monthly if r["compliant"] is False),
         })
 
+    db.commit()  # L-2: Bericht gebaut -> health_data_read festschreiben
     return {
         "year": year,
         "nachtarbeitnehmer_threshold": threshold,
@@ -1029,6 +1063,32 @@ _REST_DAY_GRANTING_ABSENCES = {AbsenceType.OTHER, AbsenceType.OVERTIME, AbsenceT
 # 2 der 4 Vorwochen gearbeitet (z. B. ohne Stundenzählung, oder jeder 2. Samstag).
 _PATTERN_WEEKS = 4
 _PATTERN_MIN_WEEKS = 2
+
+
+def _unsynced_next_year_holidays(db: Session, tenant_id, year: int, range_end: date) -> set:
+    """Fix-Runde (Audit 2026-11-07): die Ruhetags-Suche eines Dezember-Einsatzes
+    reicht bis zu 8 Wochen ins Folgejahr. Hat der Mandant dessen Feiertage noch
+    nicht (``sync_current_and_next_year`` lief noch nicht), galt der 1. Januar
+    als freier Werktag und damit als Ersatzruhetag — ein falsches „ausgeglichen".
+    Dann rechnet der Bericht die gesetzlichen Feiertage des Bundeslands für das
+    Folgejahr selbst (``holiday_service._german_holidays``, ohne zu speichern).
+    Sobald für das Folgejahr irgendeine Feiertagszeile existiert, gilt sie."""
+    next_year = year + 1
+    if range_end.year < next_year:
+        return set()
+    has_rows = db.query(PublicHoliday.id).filter(
+        PublicHoliday.tenant_id == tenant_id,  # F-026
+        PublicHoliday.year == next_year,
+    ).first() is not None
+    if has_rows:
+        return set()
+    try:
+        state = holiday_service.get_holiday_state(db, tenant_id=tenant_id)
+        computed = holiday_service._german_holidays(state, next_year)
+    except ValueError:
+        logger.warning("Feiertage %d für Ersatzruhetag-Bericht nicht berechenbar (Bundesland unbekannt)", next_year)
+        return set()
+    return {d for d in computed.keys() if date(next_year, 1, 1) <= d <= range_end}
 
 
 @router.get("/compensatory-rest")
@@ -1076,6 +1136,7 @@ def get_compensatory_rest(
     range_end = year_end + timedelta(days=_HOLIDAY_WINDOW_DAYS)
     data_start = consumer_start - timedelta(weeks=_PATTERN_WEEKS)
     holiday_dates = _holiday_dates(db, current_user.tenant_id, data_start, range_end)
+    holiday_dates |= _unsynced_next_year_holidays(db, current_user.tenant_id, year, range_end)
     wh_by_user = calculation_service.wh_changes_by_user(db, current_user.tenant_id, [u.id for u in users])
     result = []
 
@@ -1194,8 +1255,8 @@ def get_24_week_averaging_period(
     to the allowed budget (8h × Werktage).
 
     A1-13 (Audit 2026-11-07): ``scheduled_work_days`` (Name aus Kompatibilität)
-    sind die WERKTAGE Mo–Sa des Fensters ohne Feiertage, ohne Urlaub/Sonstiges/
-    bezahlte Freistellung, nur im Beschäftigungszeitraum
+    sind die WERKTAGE Mo–Sa des Fensters ohne Feiertage, ohne ganztägige
+    Abwesenheit außer Freizeitausgleich, nur im Beschäftigungszeitraum
     (``averaging_workdays``). Vorher Mo–Fr mit Soll > 0 (M-ARB2) — der Nenner
     passte nicht zum Zähler (Samstagsarbeit) und nicht zum Gesetz
     („werktäglich"), Teilzeitkräfte mit drei langen Tagen standen fälschlich als
@@ -1250,9 +1311,9 @@ def get_24_week_averaging_period(
             for key, minutes in sorted(presence_by_week.items())
         ]
 
-        # A1-13: Werktage (Mo–Sa) ohne Feiertage und ohne Urlaub/Sonstiges/
-        # bezahlte Freistellung; Krank/Fortbildung/Freizeitausgleich bleiben
-        # Werktage (Mirror get_monthly_target). #193: nur im Beschäftigungsfenster —
+        # A1-13: Werktage (Mo–Sa) ohne Feiertage und ohne ganztägige Abwesenheit
+        # außer Freizeitausgleich (_NEUTRAL_ABSENCE_TYPES, Art. 16 lit. b
+        # RL 2003/88/EG). #193: nur im Beschäftigungsfenster —
         # Tage vor Eintritt / nach Austritt dürfen den Durchschnitt einer
         # Neueinstellung nicht verdünnen.
         scheduled_days = averaging_workdays(

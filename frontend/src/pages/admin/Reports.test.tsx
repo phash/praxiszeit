@@ -246,6 +246,8 @@ describe('<Reports /> ArbZG-Auswertungen (Audit 2026-11-07)', () => {
     render(<Reports />);
     const c = card('Ersatzruhetage §11 ArbZG');
     expect(within(c).getByText(/sonst gearbeitet hätte/)).toBeInTheDocument();
+    // Parität mit _REST_DAY_GRANTING_ABSENCES (OTHER, OVERTIME, PAID_LEAVE) und Handbuch.
+    expect(within(c).getByText(/„Sonstiges“ \(oder „Überstundenausgleich“ bzw\. „Bez\. Freistellung“\)/)).toBeInTheDocument();
     fireEvent.click(within(c).getByRole('button', { name: /Prüfen/ }));
     expect(await within(c).findByText('04.10.2026 (So)')).toBeInTheDocument();
     expect(within(c).getByText('01.11.2026 bis 15.11.2026')).toBeInTheDocument();
@@ -273,6 +275,28 @@ describe('<Reports /> ArbZG-Auswertungen (Audit 2026-11-07)', () => {
     expect(within(table).getAllByText('8:20')).toHaveLength(2);
     expect(within(table).getByText('✗ Verstoß')).toBeInTheDocument();
     expect(within(c).getByText(/Kennzeichen „Nachtarbeitnehmer“ beim Benutzer noch nicht gesetzt/)).toBeInTheDocument();
+  });
+
+  it('Nachtarbeit: Monat ohne Werktag ohne Urteil (Fix-Runde)', async () => {
+    getMock.mockResolvedValue({
+      data: {
+        year: 2026, nachtarbeitnehmer_threshold: 48, nachtarbeitnehmer_count: 0, hidden_with_data_count: 0,
+        employees: [{
+          user_id: 'u2', first_name: 'Sonja', last_name: 'Sonntag', night_work_days: 1,
+          is_nachtarbeitnehmer: false, nachtarbeitnehmer_threshold: 48, by_month: [],
+          flag_missing: false, monthly_violation_count: 0,
+          monthly: [{ month: 9, workdays: 0, total_hours: 6, average_daily_hours: 0,
+            presence_hours: 6, presence_average: 0, compliant: null }],
+        }],
+      },
+    });
+    render(<Reports />);
+    const c = card('Nachtarbeit §6 ArbZG');
+    fireEvent.click(within(c).getByRole('button', { name: /Auswerten/ }));
+    const table = await within(c).findByRole('table', { name: 'Monatsdurchschnitt Nachtarbeitnehmer' });
+    expect(within(table).getByText('kein Werktag')).toBeInTheDocument();
+    expect(within(table).queryByText('✓ Konform')).not.toBeInTheDocument();
+    expect(within(table).queryByText('✗ Verstoß')).not.toBeInTheDocument();
   });
 
   it('§3/§4: Tage über 10 h, Wochen über 48 h und Pausenausnahmen mit Begründung (A1-08)', async () => {

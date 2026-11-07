@@ -70,7 +70,8 @@ interface NightWorkMonth {
   average_daily_hours: number;
   presence_hours: number;
   presence_average: number;
-  compliant: boolean;
+  /** null = kein Werktag im Monat (nur Sonn-/Feiertagsarbeit) — kein Urteil. */
+  compliant: boolean | null;
 }
 
 interface NightWorkSummary extends HiddenCount {
@@ -951,7 +952,8 @@ export default function Reports() {
                 <h3 className="text-sm font-semibold text-gray-900 mb-1">Monatsdurchschnitt für Nachtarbeitnehmer (§ 6 Abs. 2 ArbZG)</h3>
                 <p className="text-xs text-gray-600 mb-2">
                   Über 8 Stunden darf die Arbeitszeit nur verlängert werden, wenn im Kalendermonat im Durchschnitt 8 Stunden
-                  je Werktag (Mo–Sa ohne Feiertage und Urlaubstage) nicht überschritten werden.
+                  je Werktag (Mo–Sa ohne Feiertage und ohne Tage mit Urlaub, Krankheit, Fortbildung oder Freistellung) nicht
+                  überschritten werden. Es erscheinen nur vergangene Monate mit Arbeit.
                 </p>
                 <div className="overflow-x-auto">
                   <table aria-label="Monatsdurchschnitt Nachtarbeitnehmer" className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
@@ -967,7 +969,7 @@ export default function Reports() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {nightSummary.employees.flatMap((emp) => (emp.monthly ?? []).map((m) => (
-                        <tr key={`${emp.user_id}-${m.month}`} className={!m.compliant ? 'bg-red-50' : ''}>
+                        <tr key={`${emp.user_id}-${m.month}`} className={m.compliant === false ? 'bg-red-50' : ''}>
                           <td className="px-4 py-2 text-gray-900">{emp.first_name} {emp.last_name}</td>
                           <td className="px-4 py-2 text-gray-700">{MONTH_NAMES_DE[m.month - 1]}</td>
                           <td className="px-4 py-2 text-right text-gray-700">{m.workdays}</td>
@@ -976,9 +978,11 @@ export default function Reports() {
                             {m.workdays ? formatHoursHM(m.presence_average) : '–'}
                           </td>
                           <td className="px-4 py-2 text-center">
-                            {m.compliant
-                              ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
-                              : <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>}
+                            {m.compliant === null
+                              ? <span className="text-xs text-gray-500">kein Werktag</span>
+                              : m.compliant
+                                ? <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-800">✓ Konform</span>
+                                : <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-800">✗ Verstoß</span>}
                           </td>
                         </tr>
                       )))}
@@ -1001,7 +1005,7 @@ export default function Reports() {
           Nach <strong>Sonntagsarbeit</strong>: Ersatzruhetag innerhalb <strong>2 Wochen</strong>. Nach <strong>Feiertagsarbeit</strong>: Ersatzruhetag innerhalb <strong>8 Wochen</strong>.
           Als Ersatzruhetag zählt nur ein Tag (Mo–Sa), an dem die Person sonst gearbeitet hätte und der frei war –
           ohne Zeiteintrag, kein Feiertag, kein Urlaub und keine Krankheit. Ein gewährter Ersatzruhetag wird als
-          Abwesenheit „Sonstiges“ (oder Überstundenausgleich) eingetragen. Ein Ruhetag gleicht genau einen Einsatz aus.
+          Abwesenheit „Sonstiges“ (oder „Überstundenausgleich“ bzw. „Bez. Freistellung“) eingetragen. Ein Ruhetag gleicht genau einen Einsatz aus.
         </p>
         <div className="flex flex-wrap items-end gap-4 mb-4">
           <div>
@@ -1084,8 +1088,8 @@ export default function Reports() {
         </div>
         <p className="text-sm text-gray-600 mb-4">
           Über 24 Wochen darf die Arbeitszeit im Durchschnitt <strong>8 Stunden je Werktag</strong> nicht
-          überschreiten. Werktage sind Montag bis Samstag ohne Feiertage und ohne Urlaubs- und andere freigestellte
-          Tage, nur im Beschäftigungszeitraum – auch für Teilzeitkräfte. „Ø angerechnet“ und der Status rechnen mit der angerechneten Zeit. Daneben steht die{' '}
+          überschreiten. Werktage sind Montag bis Samstag ohne Feiertage und ohne Tage mit Urlaub, Krankheit,
+          Fortbildung oder Freistellung (Überstundenausgleich zählt mit), nur im Beschäftigungszeitraum – auch für Teilzeitkräfte. „Ø angerechnet“ und der Status rechnen mit der angerechneten Zeit. Daneben steht die{' '}
           <strong>Anwesenheit laut Stempel</strong> (abzüglich erfasster Pausen): Sie ändert sich nicht, wenn die
           Anrechnung später neu berechnet wird, und die Grenze gilt für die tatsächliche Arbeitszeit.
         </p>

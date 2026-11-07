@@ -309,3 +309,85 @@ def test_arbzg_limits_skips_exempt_and_quiet_employees(db, test_user, test_admin
     _te(db, test_user, date(2026, 10, 5))
     db.commit()
     assert reports.get_arbzg_limits(year=2026, month=None, db=db, current_user=test_admin)["employees"] == []
+
+
+# --- Fix-Runde (Review der Lane LC) -----------------------------------------------
+
+def test_24_week_sick_and_training_days_stay_neutral(db, test_user, test_admin):
+    """Art. 16 lit. b RL 2003/88/EG: Krankheit (und Fortbildung, die nicht als
+    Zeiteintrag im Zähler steht) verdünnen den Schnitt nicht. Woche 1 krank bzw.
+    Fortbildung, Woche 2 Mo–Sa je 10 h: 60 h / 7 Werktage (Sa 10.10. + 6) = Ø 8,57 h
+    → Verstoß. Vorher 60 h / 12 = Ø 5 h „konform"."""
+    test_user.first_work_day = date(2026, 10, 5)
+    db.commit()
+    for i in range(5):
+        db.add(Absence(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 10, 5) + timedelta(days=i),
+                       type=AbsenceType.TRAINING if i == 4 else AbsenceType.SICK, hours=8))
+    _week(db, test_user, date(2026, 10, 12), days=6, start=time(7), end=time(17))
+    db.commit()
+    row = _row(reports.get_24_week_averaging_period(end_date=date(2026, 10, 17), db=db, current_user=test_admin), test_user)
+    assert row["scheduled_work_days"] == 7
+    assert row["average_daily_hours"] == round(60 / 7, 2)
+    assert row["compliant"] is False
+
+
+def test_24_week_overtime_compensation_stays_a_workday(db, test_user, test_admin):
+    """Freizeitausgleich ist der Ausgleich selbst — er bleibt ein 0-h-Werktag."""
+    test_user.first_work_day = date(2026, 10, 5)
+    db.commit()
+    db.add(Absence(user_id=test_user.id, tenant_id=DEFAULT_TENANT_ID, date=date(2026, 10, 5),
+                   type=AbsenceType.OVERTIME, hours=8))
+    db.commit()
+    row = _row(reports.get_24_week_averaging_period(end_date=date(2026, 10, 10), db=db, current_user=test_admin), test_user)
+    assert row["scheduled_work_days"] == 6
+
+
+def test_night_monthly_skips_empty_and_future_months_and_judges_no_workday_as_none(db, test_user, test_admin):
+    test_user.is_night_worker = True
+    db.commit()
+    _te(db, test_user, date(2026, 9, 8), start=time(3), end=time(11))
+    db.add(PublicHoliday(date=date(2026, 10, 3), name="Tag der Deutschen Einheit", year=2026, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    row = _row(reports.get_night_work_summary(year=2026, db=db, current_user=test_admin), test_user)
+    # Nur September hat Arbeit; Oktober (ohne Eintrag) und Dezember (Zukunft) fehlen.
+    assert [m["month"] for m in row["monthly"]] == [9]
+
+    # Person nur am Sonntag 06.09. beschäftigt und dort im Einsatz: 0 Werktage → kein Urteil.
+    sun = _mk_user(db, "sonntagsdienst", is_night_worker=True,
+                   first_work_day=date(2026, 9, 6), last_work_day=date(2026, 9, 6))
+    _te(db, sun, date(2026, 9, 6), start=time(2), end=time(8))
+    db.commit()
+    srow = _row(reports.get_night_work_summary(year=2026, db=db, current_user=test_admin), sun)
+    assert srow["monthly"][0]["workdays"] == 0
+    assert srow["monthly"][0]["compliant"] is None
+    assert srow["monthly_violation_count"] == 0
+
+
+def test_night_work_summary_logs_health_data_read(db, test_admin):
+    from app.models import TimeEntryAuditLog
+    before = db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.action == "health_data_read").count()
+    reports.get_night_work_summary(year=2026, db=db, current_user=test_admin)
+    rows = db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.action == "health_data_read").all()
+    assert len(rows) == before + 1
+    assert "Nachtarbeitsbericht 2026" in rows[-1].new_note
+    assert rows[-1].tenant_id == test_admin.tenant_id
+
+
+def test_unsynced_next_year_new_year_is_no_rest_day(db, test_user, test_admin):
+    """So 28.12.2025 gearbeitet, Mo–Mi und Fr gearbeitet, Do 01.01.2026 frei. Ohne
+    Feiertagszeilen für 2026 galt der Neujahrstag als Ersatzruhetag. Mit den
+    berechneten Feiertagen ist er keiner → Verstoß (Frist 11.01.)."""
+    for d in (date(2025, 12, 29), date(2025, 12, 30), date(2025, 12, 31), date(2026, 1, 2)):
+        _te(db, test_user, d)
+    _te(db, test_user, date(2025, 12, 28))
+    _week(db, test_user, date(2026, 1, 5))
+    db.add(PublicHoliday(date=date(2025, 12, 25), name="1. Weihnachtstag", year=2025, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    row = _row(reports.get_compensatory_rest(year=2025, db=db, current_user=test_admin), test_user)
+    assert [v["date"] for v in row["violations"]] == ["2025-12-28"]
+
+    # Sind die Feiertage 2026 synchronisiert (hier ohne Neujahr), gelten sie.
+    db.add(PublicHoliday(date=date(2026, 4, 3), name="Karfreitag", year=2026, tenant_id=DEFAULT_TENANT_ID))
+    db.commit()
+    row = _row(reports.get_compensatory_rest(year=2025, db=db, current_user=test_admin), test_user)
+    assert row["compensated"][0]["rest_day"] == "2026-01-01"
