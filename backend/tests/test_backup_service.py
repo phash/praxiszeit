@@ -131,9 +131,17 @@ class _FakePopen:
     def __init__(self, payload: bytes, rc: int = 0, stderr: bytes = b""):
         self.stdout = io.BytesIO(payload)
         self.stderr = io.BytesIO(stderr)
+        self._stderr_bytes = stderr
         self._rc = rc
 
-    def wait(self):
+    def attach(self, kwargs):
+        # S2-6: create_backup reicht eine Datei als stderr herein.
+        target = kwargs.get("stderr")
+        if hasattr(target, "write"):
+            target.write(self._stderr_bytes)
+        return self
+
+    def wait(self, timeout=None):
         return self._rc
 
 
@@ -191,7 +199,7 @@ def test_create_backup_pg_dump_failure_removes_partial(db, default_tenant, tmp_p
     monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", host="db"))
     monkeypatch.setattr(
         bs.subprocess, "Popen",
-        lambda *a, **k: _FakePopen(b"", rc=1, stderr=b"FATAL: auth failed"),
+        lambda *a, **k: _FakePopen(b"", rc=1, stderr=b"FATAL: auth failed").attach(k),
     )
     with pytest.raises(bs.BackupError, match="auth failed"):
         bs.create_backup(db)
