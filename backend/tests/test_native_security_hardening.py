@@ -19,6 +19,7 @@ import ast
 import importlib.util
 import os
 import stat
+import re
 import sys
 import types
 from pathlib import Path
@@ -321,11 +322,18 @@ class TestInstallAclPlan:
         for step in plan:
             assert step["protect"][2:] == ["/inheritance:r"]
 
-    def test_no_recursive_or_owner_switches(self, plan):
+    def test_no_recursive_switches(self, plan):
         # /T would walk into a bin\postgresql junction (system PostgreSQL).
         for step in plan:
-            for cmd in step["grants"] + step["removes"] + [step["protect"]]:
-                assert "/T" not in cmd and "/setowner" not in cmd
+            for cmd in [step["owner"]] + step["grants"] + step["removes"] + [step["protect"]]:
+                assert "/T" not in cmd
+
+    def test_every_dir_gets_administrators_as_owner(self, plan):
+        """Audit 2026-11-07 S3-01: an owner always has WRITE_DAC. A local
+        account that created C:\\PraxisZeit beforehand stays owner otherwise
+        and can grant itself Full Control again at any time."""
+        for step in plan:
+            assert step["owner"] == ["icacls", str(step["path"]), "/setowner", "*S-1-5-32-544"]
 
     def test_root_users_read_execute_only(self, plan):
         root = plan[0]
@@ -382,8 +390,23 @@ class TestHardenInstallDirRunner:
             assert (base / d).is_dir()
         for target in (base, base / "data", base / "logs", base / "config"):
             mine = [c for c in calls if c[1] == str(target)]
+            assert mine[0][2:] == ["/setowner", "*S-1-5-32-544"]  # owner first
             assert mine[-1][2:] == ["/inheritance:r"]
             assert any(c[2] == "/grant:r" for c in mine)
+
+    def test_failed_owner_change_still_hardens_but_reports(self, srv, tmp_path, monkeypatch):
+        base = self._wire(srv, tmp_path, monkeypatch)
+        calls = []
+
+        def _run(cmd, *a, **kw):
+            calls.append(list(cmd))
+            if cmd[2] == "/setowner":
+                return types.SimpleNamespace(returncode=5, stdout="", stderr="Zugriff verweigert")
+            return _ok()
+
+        monkeypatch.setattr(srv.subprocess, "run", _run)
+        assert srv._harden_install_dir() is False
+        assert ["icacls", str(base), "/inheritance:r"] in calls
 
     def test_failed_grant_never_strips_inheritance(self, srv, tmp_path, monkeypatch):
         base = self._wire(srv, tmp_path, monkeypatch)
@@ -483,11 +506,12 @@ def test_update_wizard_hardens_install_dir_and_stays_crlf():
     assert b"harden-permissions" in raw
 
 
+# LinuxPlatform.cs schrieb frueher ebenfalls eine Unit; die nie aufgerufene
+# Registrierung ist entfernt (Audit 2026-11-07 S3-17).
 @pytest.mark.parametrize("rel", [
     "installer/linux/praxiszeit.service",
     "installer/linux/install.sh",
     "installer/linux/install-local.sh",
-    "installer/setup/src/PraxisZeit.Setup.Core/Platform/LinuxPlatform.cs",
 ])
 def test_every_service_unit_sets_umask(rel):
     text = _read(rel).decode("utf-8")
@@ -549,3 +573,240 @@ class TestRestrictUnixDataDirsAtStart:
         src = Path(srv.__file__).read_text(encoding="utf-8")
         body = src.split("def cmd_start(", 1)[1].split("\ndef ", 1)[0]
         assert "_restrict_unix_data_dirs()" in body
+
+
+# --- Audit 2026-11-07 S3-01: Installationsordner VOR dem ersten python.exe -----
+
+def _crlf_only(raw: bytes) -> bool:
+    return b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b"")
+
+
+def test_secure_install_ps1_is_crlf_ascii_and_sid_based():
+    raw = _read("installer/windows/secure-install.ps1")
+    assert _crlf_only(raw)
+    text = raw.decode("ascii")  # PowerShell 5.1 liest UTF-8 ohne BOM als ANSI
+    assert "/setowner" in text and "$SidAdmins" in text
+    assert "'/inheritance:r'" in text
+    assert "/reset" in text
+    assert "payload-manifest.txt" in text
+    assert "exit 2" in text  # fremde Dateien sperren mit Hinweis
+    # nur SIDs, nie lokalisierte Gruppennamen
+    for name in ("Administratoren", "Administrators", "Benutzer\'", "Everyone", "Jeder"):
+        assert f"'{name}'" not in text
+    # eine Verknuepfung bin\postgresql (System-PostgreSQL) wird nicht betreten
+    assert "ReparsePoint" in text
+
+
+def test_setup_bat_secures_install_dir_before_any_python():
+    raw = _read("installer/windows/setup.bat")
+    assert _crlf_only(raw)
+    text = raw.decode("ascii")
+    secure = text.index('secure-install.ps1" -InstallDir "%DIR%."')
+    assert secure < text.index('"%PYTHON%"')
+    after = text[secure:secure + 200]
+    assert "if errorlevel 2 goto :fremde_dateien" in after
+    assert "if errorlevel 1 goto :rechte_fehler" in after
+    for label in (":fremde_dateien", ":rechte_fehler"):
+        block = text[text.index("\r\n" + label + "\r\n"):]
+        block = block[:block.index("exit /b 1")]
+        assert "net start" not in block
+
+
+def test_setup_bat_never_installs_from_the_internet():
+    """S3-05: kein get-pip.py, kein ``pip install`` als Administrator."""
+    text = _read("installer/windows/setup.bat").decode("ascii")
+    assert "get-pip" not in text
+    assert "pip install" not in text
+    assert 'import alembic, uvicorn, fastapi, sqlalchemy, psycopg2' in text
+
+
+def test_update_wizard_secures_and_checks_before_python():
+    raw = _read("installer/windows/update-wizard.ps1")
+    assert _crlf_only(raw)
+    text = raw.decode("utf-8")
+    assert "get-pip" not in text.replace("get-pip.py --force-reinstall + ", "")
+    assert "pip install --" not in text and "-m pip install" not in text
+    # bestehende Installation: Rechte/Eigentuemer vor dem Backup (python.exe)
+    acl = text.index("function Step-ACLFix")
+    assert "Invoke-SecureInstall $InstallDir -SkipManifest" in text[acl:text.index("function Step-Backup")]
+    # das Backup laeuft isoliert (keine .pth/sitecustomize aus der Vorversion)
+    assert '"-I -S -X utf8 $quotedServer backup"' in text
+    # nach dem Kopieren: Abgleich mit dem Paket, Fehler -> Dienst bleibt aus
+    pip = text[text.index("function Step-PipInstall"):text.index("function Step-StopService")]
+    assert "Invoke-SecureInstall $InstallDir\r\n" in pip
+    assert pip.index("Invoke-SecureInstall") < pip.index("$python")
+    upd = text[text.index("function Invoke-Update"):]
+    ok5 = upd.index("if (-not $ok5)")
+    assert "Step-StartService" not in upd[ok5:upd.index("}", ok5)]
+    # Programmteile gespiegelt, damit keine Dateien der Vorversion liegen bleiben
+    assert "foreach ($sub in @('bin\\python', 'app'))" in text
+    assert "'/MIR'" in text
+
+
+def test_secure_install_ps1_ships_with_the_windows_package():
+    text = _read("tools/build-release.sh").decode("utf-8")
+    assert 'installer/windows/secure-install.ps1" "${WIN_DIR}/"' in text
+    assert "payload-manifest.txt" in text
+
+
+# --- Audit 2026-11-07 S3-11 / S3-12 --------------------------------------------
+
+def test_install_sh_never_puts_the_superuser_password_into_argv():
+    text = _read("installer/linux/install.sh").decode("utf-8")
+    for line in text.splitlines():
+        if "sudo" in line:
+            assert "PGPASSWORD=" not in line, line
+    assert 'PGPASSFILE="${PGPASS_FILE}"' in text
+    assert "( umask 077; printf" in text
+    assert text.count('rm -f "${PGPASS_FILE}"') >= 2  # Erfolg und Fehler
+
+
+def test_macos_service_has_its_own_group_and_umask():
+    text = _read("installer/macos/install.sh").decode("utf-8")
+    assert ":staff" not in text
+    assert "PrimaryGroupID 20" not in text
+    assert 'chown -R _praxiszeit:_praxiszeit "${INSTALL_DIR}"' in text
+    assert 'dscl . -create /Users/_praxiszeit PrimaryGroupID "$PZ_GID"' in text
+    # beide launchd-Plists: eigene Gruppe + umask 077 (dezimal 63)
+    assert text.count("<key>Umask</key>\n    <integer>63</integer>") == 2
+    assert text.count("<key>GroupName</key>\n    <string>_praxiszeit</string>") == 2
+    # kein `echo | grep -q` unter pipefail (SIGPIPE)
+    assert 'grep -qx "$g" <<<"$USED_GIDS"' in text
+
+
+# --- Audit 2026-11-07 S3-05: Lieferkette des Release-Builds ---------------------
+
+def _build_sh() -> str:
+    return _read("tools/build-release.sh").decode("utf-8")
+
+
+def test_every_download_in_the_release_build_is_pinned():
+    text = _build_sh()
+    body = text[text.index("download_pinned() {"):]
+    body = body[body.index("\n}\n") + 3:]  # Rest nach der Funktionsdefinition
+    raw_downloads = [line for line in body.splitlines()
+                     if re.match(r"\s*download\s", line) or "curl " in line and " -o " in line]
+    # einziger roher curl: der EDB-Windows-Installer, direkt danach SHA-geprueft
+    assert all("PG_WINDOWS_URL" in line for line in raw_downloads), raw_downloads
+    for var in ("PYTHON_LINUX_SHA256", "PYTHON_WINDOWS_SHA256", "PYTHON_MACOS_X64_SHA256",
+                "PYTHON_MACOS_ARM64_SHA256", "PG_LINUX_SHA256", "PG_MACOS_X64_SHA256",
+                "PG_MACOS_ARM64_SHA256", "VC_REDIST_SHA256", "NSSM_SHA256"):
+        assert re.search(rf'^{var}="[0-9a-f]{{64}}"', text, re.M), var
+        assert f'"${var}"' in text, f"{var} wird nicht geprueft"
+    assert "aka.ms" not in text.split("VC_REDIST_URL=", 1)[1].split("\n", 1)[0]
+    assert "get-pip" not in text.replace("KEIN get-pip.py", "").replace("get-pip.py war", "")
+
+
+def test_release_build_installs_only_hashed_wheels_from_the_lock():
+    text = _build_sh()
+    lines = text.splitlines()
+    installs = [i for i, line in enumerate(lines) if "-m pip install" in line]
+    assert len(installs) == 4, installs  # Linux + Windows, je Build-Werkzeug + Abhaengigkeiten
+    for i in installs:
+        block = "\n".join(lines[i:i + 5])
+        block = block[:block.find("2>&1")]
+        assert "--require-hashes" in block and "--only-binary :all:" in block, block
+        assert "requirements.txt" not in block, block
+        if "requirements-build.lock" not in block:
+            # odfpy (nur Quellarchiv) ohne Build-Isolation mit dem gehashten setuptools
+            assert "requirements.lock" in block and "--no-build-isolation" in block, block
+            assert "--no-binary odfpy" in block, block
+    assert 'cp "${REPO_DIR}/backend/requirements.lock"' in text
+    assert 'cp "${REPO_DIR}/backend/requirements-build.lock"' in text
+
+
+def test_release_build_pins_the_rockylinux_image_by_digest():
+    text = _build_sh()
+    assert re.search(r'^ROCKYLINUX_IMAGE="rockylinux:9@sha256:[0-9a-f]{64}"', text, re.M)
+    assert "docker run --rm rockylinux" not in text
+    assert 'docker run --rm "${ROCKYLINUX_IMAGE}"' in text
+
+
+def test_macos_installer_installs_only_hashed_wheels():
+    text = _read("installer/macos/install.sh").decode("utf-8")
+    assert "get-pip" not in text
+    lines = text.splitlines()
+    installs = [i for i, line in enumerate(lines) if "-m pip install" in line]
+    assert len(installs) == 2, installs
+    blocks = ["\n".join(lines[i:i + 3]) for i in installs]
+    assert all("--require-hashes" in b and "--only-binary :all:" in b for b in blocks), blocks
+    assert "requirements-build.lock" in blocks[0]
+    assert "requirements.lock" in blocks[1] and "--no-build-isolation" in blocks[1]
+    assert "requirements.txt" not in "\n".join(blocks)
+
+
+def test_backend_dockerfile_pins_the_base_image_by_digest():
+    text = _read("backend/Dockerfile").decode("utf-8")
+    froms = [line for line in text.splitlines() if line.startswith("FROM ")]
+    assert froms and all(re.match(r"FROM python:[0-9.]+-slim-bookworm@sha256:[0-9a-f]{64}( AS \w+)?$", f)
+                         for f in froms), froms
+
+
+
+# --- Audit 2026-11-07 S3-13: der Webprozess bekommt den Superuser nicht --------
+
+class TestBackupRole:
+    def _wire(self, srv, tmp_path, monkeypatch, creds="SUPERUSER_PASSWORD=su\nAPP_PASSWORD=app\n"):
+        cfg = tmp_path / "config"
+        cfg.mkdir()
+        (cfg / ".db-credentials").write_text(creds)
+        monkeypatch.setattr(srv, "CONFIG_DIR", cfg)
+        monkeypatch.setattr(srv, "IS_WINDOWS", False)
+        monkeypatch.setattr(srv, "DATA_DIR", tmp_path / "data")
+        return cfg
+
+    def test_creates_read_only_role_and_keeps_existing_credentials(self, srv, tmp_path, monkeypatch):
+        cfg = self._wire(srv, tmp_path, monkeypatch)
+        calls = []
+        monkeypatch.setattr(srv.subprocess, "run",
+                            lambda cmd, *a, **kw: calls.append((list(cmd), kw)) or _ok())
+        url = srv.ensure_backup_role({}, "su")
+        creds = srv._read_credentials_file()
+        assert creds["SUPERUSER_PASSWORD"] == "su" and creds["APP_PASSWORD"] == "app"
+        assert len(creds["BACKUP_PASSWORD"]) == 64
+        assert srv.pg_load_credentials() == ("su", "app")
+        scheme = "postgresql" + "://"
+        assert url.startswith(scheme + "praxiszeit_backup:" + creds["BACKUP_PASSWORD"] + "@")
+        (cmd, kw), = calls
+        sql = kw["input"]
+        assert "-f" in cmd and cmd[cmd.index("-f") + 1] == "-"  # Passwort ueber stdin
+        assert all(creds["BACKUP_PASSWORD"] not in a for a in cmd)
+        assert "NOSUPERUSER" in sql and "BYPASSRLS" in sql and "NOCREATEROLE" in sql
+        assert "GRANT pg_read_all_data TO praxiszeit_backup" in sql
+        assert "pg_write" not in sql and "SUPERUSER " not in sql.replace("NOSUPERUSER", "")
+        assert kw["env"]["PGPASSWORD"] == "su"
+        if os.name != "nt":
+            assert stat.S_IMODE((cfg / ".db-credentials").stat().st_mode) == 0o600
+
+    def test_password_is_stable_across_starts(self, srv, tmp_path, monkeypatch):
+        self._wire(srv, tmp_path, monkeypatch)
+        monkeypatch.setattr(srv.subprocess, "run", lambda *a, **kw: _ok())
+        first = srv.ensure_backup_role({}, "su")
+        assert srv.ensure_backup_role({}, "su") == first
+
+    def test_failure_never_falls_back_to_superuser(self, srv, tmp_path, monkeypatch, caplog):
+        self._wire(srv, tmp_path, monkeypatch)
+
+        def _run(cmd, *a, **kw):
+            raise srv.subprocess.CalledProcessError(1, cmd, stderr="ERROR: boom")
+
+        monkeypatch.setattr(srv.subprocess, "run", _run)
+        assert srv.ensure_backup_role({}, "su") is None
+        assert "Backup-Rolle" in caplog.text
+
+    def test_uvicorn_env_has_no_superuser_url(self, srv, tmp_path, monkeypatch):
+        captured = {}
+
+        def _popen(cmd, *a, **kw):
+            captured["env"] = kw.get("env") or {}
+            raise RuntimeError("stop here")
+
+        scheme = "postgresql" + "://"
+        monkeypatch.setenv("DATABASE_URL_MIGRATIONS", scheme + "su" + ":pw@/praxiszeit")
+        monkeypatch.setenv("DATABASE_URL_BACKUP", scheme + "praxiszeit_backup" + ":pw@/praxiszeit")
+        monkeypatch.setattr(srv.subprocess, "Popen", _popen)
+        monkeypatch.setattr(srv, "port_is_occupied", lambda *a, **k: False)
+        with pytest.raises(RuntimeError, match="stop here"):
+            srv.uvicorn_start({})
+        assert "DATABASE_URL_MIGRATIONS" not in captured["env"]
+        assert captured["env"]["DATABASE_URL_BACKUP"].startswith(scheme + "praxiszeit_backup")

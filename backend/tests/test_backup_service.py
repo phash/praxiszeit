@@ -18,6 +18,7 @@ def _clear_backup_env(monkeypatch):
     monkeypatch.delenv("PRAXISZEIT_BACKUP_DIR", raising=False)
     monkeypatch.delenv("PRAXISZEIT_PG_DUMP", raising=False)
     monkeypatch.delenv("DATABASE_URL_MIGRATIONS", raising=False)
+    monkeypatch.delenv("DATABASE_URL_BACKUP", raising=False)
 
 
 def _use_tmp_dir(db, tmp_path):
@@ -424,3 +425,24 @@ def test_create_backup_without_require_auth_sets_nothing(db, default_tenant, tmp
                         lambda cmd, **k: captured.update(env=k.get("env", {})) or _FakePopen(b"x"))
     bs.create_backup(db)
     assert "PGREQUIREAUTH" not in captured["env"]
+
+
+# --- Audit 2026-11-07 S3-13: nativ nur lesende Backup-Rolle statt Superuser ---
+
+def test_backup_url_is_preferred_over_superuser_url(db, default_tenant, tmp_path, monkeypatch):
+    _use_tmp_dir(db, tmp_path)
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("praxiszeit", "su-pw", host="db"))
+    monkeypatch.setenv("DATABASE_URL_BACKUP", _migr_url("praxiszeit_backup", "bk-pw", host="db"))
+    captured = {}
+    monkeypatch.setattr(bs.subprocess, "Popen",
+                        lambda cmd, **k: captured.update(cmd=cmd, env=k.get("env", {})) or _FakePopen(b"x"))
+    bs.create_backup(db)
+    assert captured["cmd"][captured["cmd"].index("-U") + 1] == "praxiszeit_backup"
+    assert captured["env"]["PGPASSWORD"] == "bk-pw"
+
+
+def test_backup_url_alone_is_enough(db, default_tenant, tmp_path, monkeypatch):
+    _use_tmp_dir(db, tmp_path)
+    monkeypatch.setenv("DATABASE_URL_BACKUP", _migr_url("praxiszeit_backup", "bk-pw", host="db"))
+    monkeypatch.setattr(bs.subprocess, "Popen", lambda *a, **k: _FakePopen(b"SELECT 1;"))
+    assert bs.create_backup(db).size_bytes > 0
