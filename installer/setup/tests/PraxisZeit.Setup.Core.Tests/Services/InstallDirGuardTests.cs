@@ -97,6 +97,36 @@ public class InstallDirGuardTests : IDisposable
     }
 
     [Fact]
+    public void Root_exact_dacl_replaces_every_foreign_entry()
+    {
+        // Fix-Runde S3-01: ein expliziter Eintrag fuer ein fremdes Konto
+        // (z. B. "icacls C:\PraxisZeit /grant empfang:(OI)(CI)F") ueberlebt
+        // /grant:r + /remove:g - deshalb die ganze DACL aus der Positivliste.
+        var cmd = InstallDirGuard.RootExactDaclCommand(@"C:\PraxisZeit");
+
+        cmd[0].Should().EndWith(@"System32\WindowsPowerShell\v1.0\powershell.exe");
+        cmd.Should().Contain("-NoProfile").And.Contain("-Command");
+        var script = cmd[^1];
+        script.Should().Contain($"SetSecurityDescriptorSddlForm('{InstallDirGuard.RootSddl}','Access')");
+        script.Should().Contain("[System.IO.Directory]::SetAccessControl($p,$s)");
+        script.Should().Contain("AreAccessRulesProtected").And.Contain("exit 3");
+        script.Should().Contain("$p='C:\\PraxisZeit';");
+        InstallDirGuard.RootSddl.Should().StartWith("D:P(");
+        // nur SYSTEM, Administratoren, Benutzer, NetworkService
+        System.Text.RegularExpressions.Regex.Matches(InstallDirGuard.RootSddl, @";;;([A-Z]{2})\)")
+            .Select(m => m.Groups[1].Value).Should().BeEquivalentTo(["SY", "BA", "BU", "NS"]);
+        InstallDirGuard.IsMandatory(cmd).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(@"C:\Pra'xis", "'C:\\Pra''xis'")]
+    [InlineData("C:\\Pra\u2019xis", "'C:\\Pra\u2019\u2019xis'")]
+    public void Install_path_is_quoted_for_powershell(string path, string expected)
+    {
+        InstallDirGuard.PsSingleQuoted(path).Should().Be(expected);
+    }
+
+    [Fact]
     public void Remove_failures_are_not_fatal_but_grants_are()
     {
         foreach (var c in InstallDirGuard.RootHardeningCommands(@"C:\PraxisZeit"))

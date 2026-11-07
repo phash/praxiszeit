@@ -356,6 +356,37 @@ class TestInstallAclPlan:
                        for c in step["grants"])
         assert {c[3] for c in step["removes"]} == {"*S-1-5-32-545", "*S-1-5-11", "*S-1-1-0"}
 
+    def test_exact_dacl_allows_only_the_intended_sids(self, srv, plan):
+        """Fix round S3-01: the final step sets the WHOLE DACL (protected, no
+        inheritance) - any other SID disappears - and re-checks the result."""
+        expected = {
+            "PraxisZeit": {"SY", "BA", "BU", "NS"},
+            "data": {"SY", "BA", "NS"},
+            "logs": {"SY", "BA", "NS"},
+            "config": {"SY", "BA"},
+        }
+        for step in plan:
+            cmd = step["exact"]
+            script = cmd[-1]
+            sddl = re.search(r"SetSecurityDescriptorSddlForm\('([^']+)','Access'\)", script).group(1)
+            assert sddl.startswith("D:P(")
+            assert set(re.findall(r";;;([A-Z]{2})\)", sddl)) == expected[Path(step["path"]).name]
+            assert "AreAccessRulesProtected" in script and "exit 3" in script
+            assert "GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])" in script
+            assert cmd[0].endswith("powershell.exe") and "-NoProfile" in cmd
+
+    def test_exact_dacl_quotes_the_path_for_powershell(self, srv):
+        cmd = srv._exact_dacl_command(Path("C:/Pra'x\u2019is"), srv.WIN_SDDL_CONFIG)
+        assert "$p='C:/Pra''x\u2019\u2019is';" in cmd[-1]
+
+    def test_exact_dacl_sddl_is_identical_everywhere(self, srv):
+        ps1 = _read("installer/windows/secure-install.ps1").decode("ascii")
+        guard = _read("installer/setup/src/PraxisZeit.Setup.Core/Services/InstallDirGuard.cs").decode("utf-8")
+        for name, value in (("Root", srv.WIN_SDDL_ROOT), ("Data", srv.WIN_SDDL_DATA),
+                            ("Logs", srv.WIN_SDDL_LOGS), ("Config", srv.WIN_SDDL_CONFIG)):
+            assert f"$Sddl{name} = '{value}'" in ps1
+        assert f'"{srv.WIN_SDDL_ROOT}"' in guard
+
     def test_postgres_service_account_keeps_what_it_needs(self, plan):
         ns = "*S-1-5-20:"
         root = {c[3] for c in plan[0]["grants"]}
@@ -424,6 +455,38 @@ class TestHardenInstallDirRunner:
         assert ["icacls", str(base / "data"), "/inheritance:r"] not in data_calls
         # the other directories are still hardened
         assert ["icacls", str(base / "logs"), "/inheritance:r"] in calls
+
+    def _ps_calls(self, calls):
+        return [c for c in calls if c[0].lower().endswith("powershell.exe")]
+
+    def test_exact_dacl_runs_last_for_every_directory(self, srv, tmp_path, monkeypatch):
+        """Fix round S3-01: a foreign explicit ACE (icacls /grant empfang:F on
+        the pre-created root) is not covered by /grant:r + /remove:g of known
+        SIDs. The whole DACL is replaced from an allow list after /inheritance:r."""
+        base = self._wire(srv, tmp_path, monkeypatch)
+        calls = []
+        monkeypatch.setattr(srv.subprocess, "run",
+                            lambda cmd, *a, **kw: calls.append(list(cmd)) or _ok())
+        assert srv._harden_install_dir() is True
+        ps = self._ps_calls(calls)
+        assert len(ps) == 4
+        for target, sddl in ((base, srv.WIN_SDDL_ROOT), (base / "data", srv.WIN_SDDL_DATA),
+                             (base / "logs", srv.WIN_SDDL_LOGS), (base / "config", srv.WIN_SDDL_CONFIG)):
+            cmd = srv._exact_dacl_command(target, sddl)
+            assert cmd in calls
+            assert calls.index(cmd) > calls.index(["icacls", str(target), "/inheritance:r"])
+
+    def test_foreign_entry_left_behind_fails_the_hardening(self, srv, tmp_path, monkeypatch):
+        self._wire(srv, tmp_path, monkeypatch)
+
+        def _run(cmd, *a, **kw):
+            if cmd[0].lower().endswith("powershell.exe"):  # verification: exit 3
+                return types.SimpleNamespace(returncode=3, stdout="Fremde Eintraege: S-1-5-21-1-2-3-1001",
+                                             stderr="")
+            return _ok()
+
+        monkeypatch.setattr(srv.subprocess, "run", _run)
+        assert srv._harden_install_dir() is False
 
     def test_drive_root_is_never_touched(self, srv, monkeypatch):
         monkeypatch.setattr(srv, "IS_WINDOWS", True)
@@ -603,6 +666,22 @@ def test_secure_install_ps1_is_crlf_ascii_and_sid_based():
     assert "ReparsePoint" in text
 
 
+def test_secure_install_ps1_replaces_foreign_entries_on_the_root():
+    """Fix round S3-01: after the icacls grants the root DACL is rebuilt from
+    an allow list and verified, before bin\\ and app\\ inherit it (/reset)."""
+    text = _read("installer/windows/secure-install.ps1").decode("ascii")
+    code = _code_lines(text, "#")
+    exact = code.index("Set-ExactDacl $root $SddlRoot @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-32-545', 'S-1-5-20')")
+    assert code.index("Invoke-Icacls @($root, '/inheritance:r')") < exact
+    assert exact < code.index("'/reset'")
+    fn = code[code.index("function Set-ExactDacl"):code.index("function Test-ReparsePoint")]
+    assert "SetSecurityDescriptorSddlForm($Sddl, 'Access')" in fn
+    assert "AreAccessRulesProtected" in fn and "exit 1" in fn
+    assert "GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])" in fn
+    for name in ("data", "logs", "config"):
+        assert f"'{name}' {{ Set-ExactDacl $p $Sddl{name.capitalize()} " in code
+
+
 def test_setup_bat_secures_install_dir_before_any_python():
     raw = _read("installer/windows/setup.bat")
     assert _crlf_only(raw)
@@ -647,6 +726,19 @@ def test_update_wizard_secures_and_checks_before_python():
     # Programmteile gespiegelt, damit keine Dateien der Vorversion liegen bleiben
     assert "foreach ($sub in @('bin\\python', 'app'))" in text
     assert "'/MIR'" in text
+
+
+def test_update_md_describes_the_current_windows_wizard():
+    """Fix round (doc sync): UPDATE.md must not promise a pip bootstrap or a
+    merge-only copy any more - the wizard mirrors app/bin\\python, downloads
+    nothing and keeps the service off after a manifest mismatch (exit 2)."""
+    text = _read("docs/UPDATE.md").decode("utf-8")
+    win = text[text.index("### Windows"):text.index("### Update-Hinweis in der App")]
+    assert "pip-Bootstrap" not in win
+    assert "/MIR" in win and "payload-manifest.txt" in win and "Exit 2" in win
+    assert "nichts aus dem Internet" in win
+    rollback = text[text.index("Windows (Administrator-Eingabeaufforderung)"):]
+    assert "bis 1.22.x mischen nur darüber" in rollback and "/MIR" in rollback
 
 
 def test_secure_install_ps1_ships_with_the_windows_package():
@@ -789,6 +881,35 @@ class TestBackupRole:
         monkeypatch.setattr(srv.subprocess, "run", lambda *a, **kw: _ok())
         first = srv.ensure_backup_role({}, "su")
         assert srv.ensure_backup_role({}, "su") == first
+
+    def test_interrupted_write_keeps_the_old_credentials(self, srv, tmp_path, monkeypatch):
+        """Fix round: SUPERUSER_PASSWORD/APP_PASSWORD must survive a crash or a
+        full disk while BACKUP_PASSWORD is added (temp file + os.replace)."""
+        original = "SUPERUSER_PASSWORD=su\nAPP_PASSWORD=app\n# Notiz ohne Gleichheitszeichen\n"
+        cfg = self._wire(srv, tmp_path, monkeypatch, creds=original)
+
+        def _boom(src, dst):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(srv.os, "replace", _boom)
+        with pytest.raises(OSError):
+            srv._backup_role_password()
+        assert (cfg / ".db-credentials").read_text() == original
+        assert sorted(p.name for p in cfg.iterdir()) == [".db-credentials"]
+
+    def test_added_password_keeps_every_existing_line(self, srv, tmp_path, monkeypatch):
+        original = "SUPERUSER_PASSWORD=su\nAPP_PASSWORD=app\n# Notiz ohne Gleichheitszeichen"
+        cfg = self._wire(srv, tmp_path, monkeypatch, creds=original)
+        replaced = []
+        real_replace = srv.os.replace
+        monkeypatch.setattr(srv.os, "replace",
+                            lambda a, b: replaced.append((Path(a).name, Path(b).name)) or real_replace(a, b))
+        password = srv._backup_role_password()
+        assert replaced == [(".db-credentials.pz-tmp", ".db-credentials")]
+        text = (cfg / ".db-credentials").read_text()
+        assert text == original + "\nBACKUP_PASSWORD=" + password + "\n"
+        if os.name != "nt":
+            assert stat.S_IMODE((cfg / ".db-credentials").stat().st_mode) == 0o600
 
     def test_failure_never_falls_back_to_superuser(self, srv, tmp_path, monkeypatch, caplog):
         self._wire(srv, tmp_path, monkeypatch)

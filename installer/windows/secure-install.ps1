@@ -17,7 +17,9 @@ param(
 # oder eine DLL neben python.exe.
 #
 #   1. Wurzel: Eigentuemer Administratoren, SYSTEM/Administratoren Vollzugriff,
-#      Benutzer und NetworkService nur Lesen/Ausfuehren, Vererbung von C:\ weg.
+#      Benutzer und NetworkService nur Lesen/Ausfuehren, Vererbung von C:\ weg;
+#      zuletzt die ganze DACL aus der Positivliste ($SddlRoot) - Eintraege
+#      fremder Konten verschwinden, das Ergebnis wird nachgeprueft.
 #   2. Eigentuemer Administratoren fuer den ganzen Baum; Programmteile (bin,
 #      app, Dateien der Wurzel) auf die geerbten Rechte zuruecksetzen - explizite
 #      Eintraege, die jemand an einzelne Dateien gehaengt hat, verschwinden.
@@ -41,6 +43,16 @@ $SidUsers = '*S-1-5-32-545'
 $SidAuthUsers = '*S-1-5-11'
 $SidEveryone = '*S-1-1-0'
 $SidNetworkService = '*S-1-5-20'
+# Ganze DACL aus einer Positivliste (Fix-Runde S3-01): /grant:r und /remove:g
+# erfassen nur die genannten SIDs - ein expliziter Eintrag fuer irgendein
+# anderes Konto (vor der Installation mit "icacls /grant" angelegt) ueberlebte
+# sonst und vererbte sich mit /reset auf bin\ und app\. Gleiche Zeichenketten
+# wie praxiszeit-server.py (WIN_SDDL_*) und InstallDirGuard.cs.
+# 0x1200a9 = Lesen/Ausfuehren, 0x1301bf = Aendern; "P" = keine Vererbung.
+$SddlRoot = 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)(A;OICI;0x1200a9;;;NS)'
+$SddlData = 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x1200a9;;;NS)'
+$SddlLogs = 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1301bf;;;NS)'
+$SddlConfig = 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)'
 
 function Invoke-Icacls([string[]]$IcaclsArgs, [bool]$Mandatory = $true) {
     $out = & icacls.exe @IcaclsArgs 2>&1
@@ -49,6 +61,31 @@ function Invoke-Icacls([string[]]$IcaclsArgs, [bool]$Mandatory = $true) {
             Write-Output "FEHLER: icacls $($IcaclsArgs -join ' ') - Exit $LASTEXITCODE - $out"
             exit 1
         }
+    }
+}
+
+function Set-ExactDacl([string]$Path, [string]$Sddl, [string[]]$Allowed) {
+    # Nur der DACL-Abschnitt wird geschrieben (Eigentuemer setzt icacls).
+    # Danach nachpruefen: ein anderer Eintrag oder noch aktive Vererbung = Exit 1.
+    try {
+        $sec = New-Object System.Security.AccessControl.DirectorySecurity
+        $sec.SetSecurityDescriptorSddlForm($Sddl, 'Access')
+        [System.IO.Directory]::SetAccessControl($Path, $sec)
+        $acl = [System.IO.Directory]::GetAccessControl($Path)
+    } catch {
+        Write-Output "FEHLER: Rechte von $Path liessen sich nicht setzen - $_"
+        exit 1
+    }
+    if (-not $acl.AreAccessRulesProtected) {
+        Write-Output "FEHLER: $Path erbt noch Rechte vom uebergeordneten Ordner."
+        exit 1
+    }
+    $bad = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) |
+        Where-Object { $Allowed -notcontains $_.IdentityReference.Value } |
+        ForEach-Object { $_.IdentityReference.Value })
+    if ($bad.Count -gt 0) {
+        Write-Output "FEHLER: Auf $Path stehen noch Rechte fremder Konten: $($bad -join ', ')"
+        exit 1
     }
 }
 
@@ -78,6 +115,7 @@ Invoke-Icacls @($root, '/grant:r', "${SidNetworkService}:(OI)(CI)RX")
 Invoke-Icacls @($root, '/remove:g', $SidAuthUsers) $false
 Invoke-Icacls @($root, '/remove:g', $SidEveryone) $false
 Invoke-Icacls @($root, '/inheritance:r')
+Set-ExactDacl $root $SddlRoot @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-32-545', 'S-1-5-20')
 
 # --- 2. Eigentuemer + Programmteile ---
 $pgDir = Join-Path $root 'bin\postgresql'
@@ -104,9 +142,16 @@ foreach ($entry in Get-ChildItem -LiteralPath $root -Force) {
             Invoke-Icacls @($p, '/setowner', $SidAdmins, '/T', '/C', '/Q')
             Invoke-Icacls @($p, '/reset', '/T', '/C', '/Q')
         } else {
-            # data, config, logs: nur Eigentuemer; ihre eigenen, engeren Rechte
-            # setzt praxiszeit-server.py harden-permissions danach.
+            # data, config, logs: Eigentuemer fuer den Baum, die eigene DACL
+            # genau aus der Positivliste (wie praxiszeit-server.py
+            # harden-permissions danach) - Unterordner wie data\db behalten
+            # ihre expliziten Eintraege fuer den PostgreSQL-Dienst.
             Invoke-Icacls @($p, '/setowner', $SidAdmins, '/T', '/C', '/Q')
+            switch ($entry.Name) {
+                'data' { Set-ExactDacl $p $SddlData @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-20') }
+                'logs' { Set-ExactDacl $p $SddlLogs @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-20') }
+                'config' { Set-ExactDacl $p $SddlConfig @('S-1-5-18', 'S-1-5-32-544') }
+            }
         }
     } else {
         Invoke-Icacls @($p, '/setowner', $SidAdmins, '/C', '/Q')

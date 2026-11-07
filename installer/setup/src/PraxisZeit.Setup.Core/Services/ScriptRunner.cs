@@ -340,7 +340,11 @@ public sealed class ScriptRunner
         IProgress<RunnerEvent> sink,
         CancellationToken ct)
     {
-        foreach (var command in InstallDirGuard.RootHardeningCommands(installDir))
+        // Zuletzt die ganze DACL aus der Positivliste (Fix-Runde S3-01): fremde
+        // explizite Eintraege, die icacls /grant:r nicht erfasst, fallen weg.
+        var commands = InstallDirGuard.RootHardeningCommands(installDir)
+            .Append(InstallDirGuard.RootExactDaclCommand(installDir));
+        foreach (var command in commands)
         {
             var psi = new ProcessStartInfo(command[0])
             {

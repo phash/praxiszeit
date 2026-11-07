@@ -357,6 +357,30 @@ class TestClusterOwnership:
         assert e.value.code == 1  # NSSM restarts on 1, never the final 78
         assert any(c[:2] == ["net", "start"] for c in calls), calls
 
+    def test_pg_start_wait_is_bounded_by_wall_clock(self, srv, monkeypatch):
+        """Fix round: a persistent "unknown" (each pg_ctl status call runs into
+        its timeout) must not hold pg_start for ~48 minutes - the wait loop is
+        bounded by time, one state check per step, then exit 1 (NSSM restart)."""
+        clock = {"t": 1000.0}
+        checks = []
+
+        def _state():
+            checks.append(clock["t"])
+            clock["t"] += 12  # 10 s pg_ctl timeout + overhead per check
+            return "unknown"
+
+        self._fake(srv, monkeypatch, isready=0)
+        monkeypatch.setattr(srv, "pg_cluster_state", _state)
+        monkeypatch.setattr(srv.time, "monotonic", lambda: clock["t"])
+        monkeypatch.setattr(srv.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s))
+        start = clock["t"]
+        with pytest.raises(SystemExit) as e:
+            srv.pg_start()
+        assert e.value.code == 1
+        # initial confirmed check (1 + 3 unknown retries) + loop bounded by 60 s
+        assert clock["t"] - start < 60 + 4 * 14 + 13 + 1, clock["t"] - start
+        assert len(checks) <= 4 + 6
+
     def test_watchdog_unknown_neither_restarts_nor_exits(self, srv, monkeypatch):
         called = self._watch(srv, monkeypatch, ["foreign", "foreign", "unknown"] * 3)
         for _ in range(9):
@@ -599,6 +623,28 @@ class TestManagedConfPortSync:
         assert srv.PG_PORT_DISABLED_PREFIX + "port = 6000" in text
         # initdb's commented default stays untouched
         assert text.startswith("#port = 5432\t")
+
+    # Fix round: postgresql.conf parameter names are case-insensitive and the
+    # "=" is optional - these forms beat the managed line just as well.
+    @pytest.mark.parametrize("stray", ["port 6000", "PORT = 6000", "Port=6000", "  port\t6000"])
+    def test_sync_disables_stray_port_in_every_valid_form(self, srv, tmp_path, stray):
+        p = self._conf(tmp_path, _INITDB_HEAD + _MANAGED + stray + "\n")
+        assert srv.sync_managed_pg_port(p, 5433) is True
+        lines = p.read_text(encoding="utf-8").splitlines()
+        active = [ln for ln in lines if srv._PG_PORT_LINE_RE.match(ln)]
+        assert active == ["port = 5433"]
+        assert srv.PG_PORT_DISABLED_PREFIX + stray.strip() in lines
+
+    @pytest.mark.parametrize("other", ["portable = 1", "#port = 6000", "ports = 1", "report = 1"])
+    def test_port_regex_ignores_other_parameters(self, srv, other):
+        assert not srv._PG_PORT_LINE_RE.match(other)
+
+    def test_auto_conf_port_without_equals_is_neutralized(self, srv, tmp_path):
+        auto = tmp_path / "postgresql.auto.conf"
+        auto.write_bytes(b"PORT '6000'\n")
+        assert srv.neutralize_auto_conf_port(auto) is True
+        assert not [ln for ln in auto.read_text(encoding="utf-8").splitlines()
+                    if srv._PG_PORT_LINE_RE.match(ln)]
 
     def test_sync_disables_stray_port_even_on_default_port(self, srv, tmp_path):
         p = self._conf(tmp_path, _INITDB_HEAD + _MANAGED + "port = 6000\n")

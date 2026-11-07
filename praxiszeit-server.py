@@ -421,6 +421,7 @@ def pg_cluster_state() -> str:
 
 
 FOREIGN_RECHECK_SECONDS = 2
+PG_START_TIMEOUT_SECONDS = 60
 UNKNOWN_RECHECKS = 3
 
 
@@ -817,7 +818,10 @@ def _dump_pg_startup_log() -> bool:
 PG_CONF_MANAGED_HEADER = "# PraxisZeit configuration"
 
 
-_PG_PORT_LINE_RE = re.compile(r"^\s*port\s*=")
+# PostgreSQL liest Parameternamen ohne Ruecksicht auf Gross-/Kleinschreibung,
+# und das "=" ist optional ("port 6000", "PORT = 6000"). Jede dieser Formen
+# schlaegt die verwaltete Zeile, wenn sie spaeter in der Datei steht (S3-15).
+_PG_PORT_LINE_RE = re.compile(r"^\s*port(?:\s*=|\s+)", re.IGNORECASE)
 PG_PORT_DISABLED_PREFIX = "# deaktiviert von PraxisZeit ([database] port gilt): "
 
 
@@ -978,15 +982,25 @@ def pg_start():
             _win_pg_register_and_start()
         # 60s statt 30s: auf manchen Windows-Maschinen ist der PG-Start langsam
         # (AV/ASLR, "could not reserve shared memory region"-Retries).
-        for i in range(60):
-            state = _pg_cluster_state_confirmed()
+        # Nach Uhrzeit begrenzt, nicht nach Durchlaeufen: ein bleibendes
+        # "unknown" (pg_ctl status laeuft je Aufruf bis zum Timeout) hielte die
+        # Schleife sonst bis zu einer Dreiviertelstunde fest, ohne Zeiterfassung
+        # und ohne dass NSSM neu startet. Je Durchlauf EINE Pruefung; nur ein
+        # "foreign" wird einmal nachgeprueft (wie _pg_cluster_state_confirmed).
+        deadline = time.monotonic() + PG_START_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            state = pg_cluster_state()
+            if state == "foreign":
+                time.sleep(FOREIGN_RECHECK_SECONDS)
+                state = pg_cluster_state()
             if state == "own":
                 logger.info("PostgreSQL started successfully (Windows service)")
                 return
             if state == "foreign":
                 raise ForeignPostgresError(_foreign_pg_message(pg_port()))
             time.sleep(1)
-        logger.error("PostgreSQL service failed to start within 60 seconds")
+        logger.error(
+            f"PostgreSQL service failed to start within {PG_START_TIMEOUT_SECONDS} seconds")
         if not _dump_pg_startup_log():
             # No server log at all => postgres.exe almost certainly never ran
             # (the service start failed before any logging). On a fresh Windows
@@ -1239,6 +1253,61 @@ _SID_EVERYONE = "*S-1-1-0"
 _SID_NETWORK_SERVICE = "*S-1-5-20"
 
 
+# Fix-Runde (S3-01): /grant:r und /remove:g erfassen nur die genannten SIDs.
+# Ein expliziter Eintrag fuer ein beliebiges anderes Konto ("icacls
+# C:\PraxisZeit /grant empfang:(OI)(CI)F" vor der Installation) ueberlebte
+# und vererbte sich nach dem /reset auf bin\ und app\ - python.exe tauschbar,
+# Ausfuehrung als SYSTEM. Deshalb wird zuletzt die GANZE DACL aus einer
+# Positivliste gesetzt (SDDL, "P" = keine Vererbung) und danach nachgeprueft.
+# Dieselben Zeichenketten stehen in installer/windows/secure-install.ps1 und
+# InstallDirGuard.cs (Test: test_exact_dacl_sddl_is_identical_everywhere).
+# 0x1200a9 = Lesen/Ausfuehren (icacls RX), 0x1301bf = Aendern (icacls M).
+WIN_SDDL_ROOT = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)(A;OICI;0x1200a9;;;NS)"
+WIN_SDDL_DATA = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x1200a9;;;NS)"
+WIN_SDDL_LOGS = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1301bf;;;NS)"
+WIN_SDDL_CONFIG = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+_SDDL_SID_ALIASES = {"SY": "S-1-5-18", "BA": "S-1-5-32-544", "BU": "S-1-5-32-545",
+                     "NS": "S-1-5-20"}
+
+
+def _ps_single_quoted(value: str) -> str:
+    """PowerShell-Literal in einfachen Anfuehrungszeichen. PowerShell wertet
+    auch die typografischen Varianten (U+2018..U+201B) als Hochkomma."""
+    out = []
+    for ch in value:
+        out.append(ch * 2 if ch in "'\u2018\u2019\u201a\u201b" else ch)
+    return "'" + "".join(out) + "'"
+
+
+def _sddl_allowed_sids(sddl: str) -> list[str]:
+    return sorted({_SDDL_SID_ALIASES[a] for a in re.findall(r";;;([A-Z]{2})\)", sddl)})
+
+
+def _exact_dacl_command(path: Path, sddl: str) -> list[str]:
+    """Windows PowerShell 5.1: DACL von ``path`` genau auf ``sddl`` setzen und
+    nachpruefen (Exit 3, wenn danach noch ein anderer Eintrag steht oder die
+    Vererbung noch aktiv ist). Nur der DACL-Abschnitt wird geschrieben."""
+    allowed = ",".join(f"'{sid}'" for sid in _sddl_allowed_sids(sddl))
+    script = (
+        "$ErrorActionPreference='Stop';"
+        f"$p={_ps_single_quoted(str(path))};"
+        "$s=New-Object System.Security.AccessControl.DirectorySecurity;"
+        f"$s.SetSecurityDescriptorSddlForm('{sddl}','Access');"
+        "[System.IO.Directory]::SetAccessControl($p,$s);"
+        f"$allowed=@({allowed});"
+        "$a=[System.IO.Directory]::GetAccessControl($p);"
+        "if(-not $a.AreAccessRulesProtected){Write-Output 'Vererbung noch aktiv';exit 3};"
+        "$bad=@($a.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])"
+        "|Where-Object{$allowed -notcontains $_.IdentityReference.Value}"
+        "|ForEach-Object{$_.IdentityReference.Value});"
+        "if($bad.Count -gt 0){Write-Output ('Fremde Eintraege: '+($bad -join ', '));exit 3}"
+    )
+    sysroot = os.environ.get("SystemRoot", "C:\\Windows")
+    ps = str(Path(sysroot) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe")
+    return [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-Command", script]
+
+
 def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
                             config_dir: Path) -> list[dict]:
     """The icacls argument lists for :func:`_harden_install_dir`.
@@ -1246,10 +1315,12 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
     Pure / side-effect free so it can be unit-tested without icacls. One entry
     per directory, root first; each entry has ``owner`` (``/setowner``
     Administrators, best-effort, first), ``grants`` (must ALL succeed),
-    ``removes`` (best-effort, a missing SID is no error) and ``protect`` (the
+    ``removes`` (best-effort, a missing SID is no error), ``protect`` (the
     ``/inheritance:r`` call, only run after all grants succeeded — the other
     way round a directory could end up with no entry at all and the service
-    could not read its own files).
+    could not read its own files) and ``exact`` (PowerShell: the whole DACL
+    from an allow list, then re-checked — removes explicit entries of any
+    other SID, fix round S3-01).
     """
     def grant(path: Path, sid: str, perms: str) -> list[str]:
         # /grant:r replaces earlier EXPLICIT entries of this SID (e.g. a
@@ -1282,6 +1353,7 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
             "removes": [remove(base_dir, sid)
                         for sid in (_SID_AUTHENTICATED_USERS, _SID_EVERYONE)],
             "protect": protect(base_dir),
+            "exact": _exact_dacl_command(base_dir, WIN_SDDL_ROOT),
         },
         {
             "path": data_dir,
@@ -1293,6 +1365,7 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
             ],
             "removes": [remove(data_dir, sid) for sid in private_removes],
             "protect": protect(data_dir),
+            "exact": _exact_dacl_command(data_dir, WIN_SDDL_DATA),
         },
         {
             "path": log_dir,
@@ -1304,6 +1377,7 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
             ],
             "removes": [remove(log_dir, sid) for sid in private_removes],
             "protect": protect(log_dir),
+            "exact": _exact_dacl_command(log_dir, WIN_SDDL_LOGS),
         },
         {
             "path": config_dir,
@@ -1314,6 +1388,7 @@ def _build_install_acl_plan(base_dir: Path, data_dir: Path, log_dir: Path,
             ],
             "removes": [remove(config_dir, sid) for sid in private_removes],
             "protect": protect(config_dir),
+            "exact": _exact_dacl_command(config_dir, WIN_SDDL_CONFIG),
         },
     ]
 
@@ -1371,6 +1446,14 @@ def _harden_install_dir() -> bool:
         for cmd in step["removes"]:
             _run_icacls(cmd)
         if not _run_icacls(step["protect"]):
+            all_ok = False
+            continue
+        # Zuletzt die ganze DACL aus der Positivliste (fremde SIDs fallen weg).
+        if not _run_icacls(step["exact"]):
+            logger.warning(
+                f"Access rights on {step['path']}: entries of other accounts could not "
+                "be removed - retried at the next start."
+            )
             all_ok = False
     return all_ok
 
@@ -1604,9 +1687,27 @@ def _backup_role_password() -> str:
     if password:
         return password
     password = secrets.token_hex(32)
-    creds["BACKUP_PASSWORD"] = password
-    with _open_restricted(CONFIG_DIR / ".db-credentials") as handle:
-        handle.write("".join(f"{k}={v}\n" for k, v in creds.items()).encode("utf-8"))
+    creds_file = CONFIG_DIR / ".db-credentials"
+    # Atomar ersetzen (Fix-Runde): die Datei traegt SUPERUSER_PASSWORD und
+    # APP_PASSWORD. _open_restricted kuerzt erst und schreibt dann - ein
+    # Absturz, Stromausfall oder voller Datentraeger dazwischen liesse beim
+    # ersten Start nach dem Update eine LEERE Datei zurueck, und der Cluster
+    # waere nicht mehr erreichbar. Deshalb: bisheriger Inhalt unveraendert
+    # (auch Zeilen ohne key=value) + neue Zeile in eine Temp-Datei mit den
+    # engen Rechten, fsync, dann os.replace ueber das Original.
+    old = creds_file.read_bytes() if creds_file.is_file() else b""
+    if old and not old.endswith(b"\n"):
+        old += b"\n"
+    tmp = creds_file.with_name(creds_file.name + ".pz-tmp")
+    try:
+        with _open_restricted(tmp) as handle:
+            handle.write(old + f"BACKUP_PASSWORD={password}\n".encode("utf-8"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, creds_file)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
     return password
 
 

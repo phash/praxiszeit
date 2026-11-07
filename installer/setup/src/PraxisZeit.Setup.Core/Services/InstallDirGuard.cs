@@ -12,8 +12,9 @@ namespace PraxisZeit.Setup.Core.Services;
 /// (<see cref="FreshTargetProblem"/>, Hinweis im Assistenten).</item>
 /// <item>Der Ordner wird VOR dem Kopieren gehaertet
 /// (<see cref="RootHardeningCommands"/>): Eigentuemer Administratoren, nur
-/// SYSTEM/Administratoren schreiben, Vererbung von <c>C:\</c> gekappt - in
-/// den Sekunden zwischen Kopieren und setup.bat kann niemand Dateien tauschen.</item>
+/// SYSTEM/Administratoren schreiben, Vererbung von <c>C:\</c> gekappt, zuletzt
+/// die ganze DACL aus einer Positivliste (<see cref="RootExactDaclCommand"/>) -
+/// in den Sekunden zwischen Kopieren und setup.bat kann niemand Dateien tauschen.</item>
 /// </list>
 /// </summary>
 public static class InstallDirGuard
@@ -86,6 +87,69 @@ public static class InstallDirGuard
         ["icacls", installDir, "/remove:g", SidEveryone],
         ["icacls", installDir, "/inheritance:r"],
     ];
+
+    /// <summary>
+    /// DACL der Wurzel als SDDL (Positivliste, <c>P</c> = keine Vererbung).
+    /// Identisch mit <c>WIN_SDDL_ROOT</c> in <c>praxiszeit-server.py</c> und
+    /// <c>$SddlRoot</c> in <c>secure-install.ps1</c>.
+    /// </summary>
+    public const string RootSddl =
+        "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)(A;OICI;0x1200a9;;;NS)";
+
+    private static readonly string[] RootAllowedSids = ["S-1-5-18", "S-1-5-20", "S-1-5-32-544", "S-1-5-32-545"];
+
+    /// <summary>
+    /// Fix-Runde S3-01: <c>/grant:r</c> und <c>/remove:g</c> erfassen nur die
+    /// genannten SIDs. Ein expliziter Eintrag fuer ein anderes Konto, das den
+    /// (leeren) Ordner vorher angelegt und sich Vollzugriff gegeben hat,
+    /// ueberlebte sonst und vererbte sich auf jede kopierte Datei. Dieser
+    /// Aufruf (Windows PowerShell 5.1) setzt die GANZE DACL aus
+    /// <see cref="RootSddl"/> und prueft danach nach: bleibt ein fremder
+    /// Eintrag oder die Vererbung, endet er mit Exit 3 - die Installation
+    /// bricht ab. Nur der DACL-Abschnitt wird geschrieben.
+    /// </summary>
+    public static string[] RootExactDaclCommand(string installDir)
+    {
+        var allowed = string.Join(",", RootAllowedSids.Select(sid => $"'{sid}'"));
+        var script =
+            "$ErrorActionPreference='Stop';"
+            + $"$p={PsSingleQuoted(installDir)};"
+            + "$s=New-Object System.Security.AccessControl.DirectorySecurity;"
+            + $"$s.SetSecurityDescriptorSddlForm('{RootSddl}','Access');"
+            + "[System.IO.Directory]::SetAccessControl($p,$s);"
+            + $"$allowed=@({allowed});"
+            + "$a=[System.IO.Directory]::GetAccessControl($p);"
+            + "if(-not $a.AreAccessRulesProtected){Write-Output 'Vererbung noch aktiv';exit 3};"
+            + "$bad=@($a.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])"
+            + "|Where-Object{$allowed -notcontains $_.IdentityReference.Value}"
+            + "|ForEach-Object{$_.IdentityReference.Value});"
+            + "if($bad.Count -gt 0){Write-Output ('Fremde Eintraege: '+($bad -join ', '));exit 3}";
+        var sysRoot = Environment.GetEnvironmentVariable("SystemRoot");
+        if (string.IsNullOrEmpty(sysRoot))
+        {
+            sysRoot = @"C:\Windows";
+        }
+        var powershell = sysRoot.TrimEnd('\\') + @"\System32\WindowsPowerShell\v1.0\powershell.exe";
+        return [powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script];
+    }
+
+    /// <summary>
+    /// PowerShell-Literal in einfachen Anfuehrungszeichen; PowerShell wertet
+    /// auch U+2018..U+201B als Hochkomma, alle werden verdoppelt.
+    /// </summary>
+    public static string PsSingleQuoted(string value)
+    {
+        var sb = new System.Text.StringBuilder("'");
+        foreach (var ch in value)
+        {
+            sb.Append(ch);
+            if (ch is '\'' or '\u2018' or '\u2019' or '\u201a' or '\u201b')
+            {
+                sb.Append(ch);
+            }
+        }
+        return sb.Append('\'').ToString();
+    }
 
     /// <summary>
     /// True fuer die Aufrufe, deren Scheitern die Installation abbricht
