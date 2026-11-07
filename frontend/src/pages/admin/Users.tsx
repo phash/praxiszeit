@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../api/client';
 import { stripWarningCode } from '../../utils/arbzgWarnings';
-import { Plus, Edit2, Key, UserX, UserCheck, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus, BookOpen, ArrowLeftRight, LogIn } from 'lucide-react';
+import { Plus, Edit2, Key, UserX, UserCheck, X, Clock, Trash2, ArrowUp, ArrowDown, Search, Eye, EyeOff, UserMinus, BookOpen, ArrowLeftRight, LogIn, ShieldOff } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
@@ -12,6 +12,7 @@ import Badge from '../../components/Badge';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { deHoursExact, formatHoursHM } from '../../utils/formatters';
 import SetPasswordModal from './users/SetPasswordModal';
+import PasswordConfirmDialog from '../../components/PasswordConfirmDialog';
 import CarryoverModal from './users/CarryoverModal';
 import WorkingHoursModal from './users/WorkingHoursModal';
 import { contractToday } from './users/workingHoursTexts';
@@ -64,6 +65,10 @@ export default function Users() {
   const navigate = useNavigate();
   const toast = useToast();
   const startImpersonation = useAuthStore((s) => s.startImpersonation);
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  // Audit 2026-11-07 (S1-09): Zwei-Faktor einer anderen Person zurücksetzen
+  // (verlorenes Handy) — nur nach Passwort-Rückfrage.
+  const [totpResetUser, setTotpResetUser] = useState<User | null>(null);
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [vacationInfo, setVacationInfo] = useState<Record<string, VacationInfo>>({});
@@ -210,6 +215,20 @@ export default function Users() {
   const displayBlocks = freshEditingUser ? (freshEditingUser.work_blocks_today ?? null) : undefined;
   // F010: dieselbe Bauart für die fünf Vertragsfelder (Teil A).
   const displayContract = freshEditingUser ? contractToday(freshEditingUser) : undefined;
+
+  const handleTotpReset = async (password: string): Promise<boolean> => {
+    if (!totpResetUser) return false;
+    try {
+      await apiClient.post(`/admin/users/${totpResetUser.id}/totp-reset`, { password });
+      toast.success(`Zwei-Faktor für ${totpResetUser.first_name} ${totpResetUser.last_name} zurückgesetzt`);
+      setTotpResetUser(null);
+      fetchUsers();
+      return true;
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Zurücksetzen fehlgeschlagen'));
+      return false;
+    }
+  };
 
   const handleSetPassword = (userId: string, name: string) => {
     setSetPasswordModal({ userId, userName: name });
@@ -725,6 +744,16 @@ export default function Users() {
                       >
                         <Key size={16} />
                       </button>
+                      {user.totp_enabled && user.id !== currentUserId && (
+                        <button
+                          onClick={() => setTotpResetUser(user)}
+                          className="text-orange-600 hover:text-orange-800"
+                          title="Zwei-Faktor zurücksetzen"
+                          aria-label={`Zwei-Faktor für ${user.first_name} ${user.last_name} zurücksetzen`}
+                        >
+                          <ShieldOff size={16} />
+                        </button>
+                      )}
                       {user.is_active ? (
                         <button
                           onClick={() => handleDeactivate(user.id, `${user.first_name} ${user.last_name}`)}
@@ -909,6 +938,16 @@ export default function Users() {
                     >
                       <Key size={16} />
                     </button>
+                    {user.totp_enabled && user.id !== currentUserId && (
+                      <button
+                        onClick={() => setTotpResetUser(user)}
+                        className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+                        aria-label={`Zwei-Faktor für ${user.first_name} ${user.last_name} zurücksetzen`}
+                        title="Zwei-Faktor zurücksetzen"
+                      >
+                        <ShieldOff size={16} />
+                      </button>
+                    )}
                     {user.is_active ? (
                       <button
                         onClick={() => handleDeactivate(user.id, `${user.first_name} ${user.last_name}`)}
@@ -1004,6 +1043,15 @@ export default function Users() {
           onChanged={fetchUsers}
         />
       )}
+
+      <PasswordConfirmDialog
+        isOpen={totpResetUser !== null}
+        title="Zwei-Faktor zurücksetzen"
+        message={totpResetUser ? `Die Zwei-Faktor-Anmeldung von ${totpResetUser.first_name} ${totpResetUser.last_name} wird abgeschaltet (z. B. Handy verloren). Die Person wird abgemeldet, meldet sich danach nur mit dem Passwort an und richtet Zwei-Faktor im Profil neu ein. Der Vorgang wird unter „Konto-Vorgänge“ protokolliert.` : ''}
+        confirmLabel="Zurücksetzen"
+        onSubmit={handleTotpReset}
+        onCancel={() => setTotpResetUser(null)}
+      />
 
       {/* Set Password Modal */}
       {setPasswordModal && (

@@ -25,8 +25,53 @@ from app.middleware.auth import get_current_user, require_admin
 from app.schemas.user import UserListResponse
 from app.services import auth_service
 from app.services.timezone_service import now_local
+from app.config import settings
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/api/admin", tags=["impersonation"])
+
+
+def impersonation_token_lifetime() -> timedelta:
+    """Ein Impersonation-Token lebt so lange wie ein Access-Token und wird nie
+    erneuert (``create_access_token``)."""
+    return timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+
+
+def _aware(dt: datetime) -> datetime:
+    # SQLite liefert naive UTC-Werte, PostgreSQL timestamptz.
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def effective_ended_at(session: ImpersonationSession, now: datetime | None = None):
+    """Audit 2026-11-07 (S1-08): Ende einer Sitzung fuer das Protokoll — das
+    gespeicherte Ende oder, wenn der Tab einfach geschlossen wurde, der Ablauf
+    des Tokens (spaetestens dann war der Zugriff vorbei). Offen nur, solange das
+    Token noch gilt."""
+    expiry = _aware(session.started_at) + impersonation_token_lifetime()
+    if session.ended_at is not None:
+        return min(_aware(session.ended_at), expiry)
+    now = now or datetime.now(timezone.utc)
+    return expiry if now >= expiry else None
+
+
+def close_expired_impersonation_sessions(db: Session, tenant_id, impersonator_id=None) -> int:
+    """S1-08: offene Sitzungen mit abgelaufenem Token schliessen
+    (``ended_at`` = Ablauf des Tokens). Aufgerufen beim naechsten Login des
+    Admins. Mandantenfilter Pflicht (F-026; der Login laeuft im
+    Superadmin-Kontext). Rueckgabe: Anzahl geschlossener Zeilen."""
+    now = datetime.now(timezone.utc)
+    q = db.query(ImpersonationSession).filter(ImpersonationSession.ended_at.is_(None))
+    q = q.filter(ImpersonationSession.tenant_id == tenant_id) if tenant_id is not None else \
+        q.filter(ImpersonationSession.tenant_id.is_(None))
+    if impersonator_id is not None:
+        q = q.filter(ImpersonationSession.impersonator_id == impersonator_id)
+    closed = 0
+    for session in q.all():
+        end = effective_ended_at(session, now)
+        if end is not None:
+            session.ended_at = end
+            closed += 1
+    return closed
 
 
 def _decode_bearer(request: Request) -> dict | None:
@@ -123,7 +168,8 @@ def list_impersonation_sessions(
             "impersonator_name": f"{a.first_name} {a.last_name}".strip() or a.username,
             "target_name": f"{t.first_name} {t.last_name}".strip() or t.username,
             "started_at": s.started_at,
-            "ended_at": s.ended_at,
+            # S1-08: Tab geschlossen → Ende = Ablauf des Tokens (ohne Schreiben im GET).
+            "ended_at": effective_ended_at(s),
         }
         for s, a, t in rows
     ]

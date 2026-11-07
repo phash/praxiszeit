@@ -4,7 +4,8 @@ import { downloadBlob } from '../../utils/downloadBlob';
 import { Database, Download, Trash2, Play, Save, Clock, HardDrive } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
-import { getErrorMessage } from '../../utils/errorMessage';
+import { getBlobErrorMessage, getErrorMessage } from '../../utils/errorMessage';
+import PasswordConfirmDialog from '../../components/PasswordConfirmDialog';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
@@ -34,6 +35,8 @@ export default function Backups() {
   const [creating, setCreating] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
+  // Audit 2026-11-07 (S1-02): Download nur nach Passwort-Rückfrage.
+  const [downloadPrompt, setDownloadPrompt] = useState<string | null>(null);
   const [backups, setBackups] = useState<BackupFile[]>([]);
   const [config, setConfig] = useState<BackupConfig>({
     enabled: false, hour: 2, retention_days: 30, location: '',
@@ -87,13 +90,18 @@ export default function Backups() {
     }
   };
 
-  const handleDownload = async (filename: string) => {
+  const handleDownload = async (filename: string, password: string): Promise<boolean> => {
     setDownloadingFile(filename);
     try {
-      const res = await apiClient.get(`/admin/backups/${filename}/download`, { responseType: 'blob' });
+      const res = await apiClient.post(
+        `/admin/backups/${filename}/download`, { password }, { responseType: 'blob' },
+      );
       downloadBlob(res.data, filename, 'application/gzip');
+      setDownloadPrompt(null);
+      return true;
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Download fehlgeschlagen'));
+      toast.error(await getBlobErrorMessage(error, 'Download fehlgeschlagen'));
+      return false;
     } finally {
       setDownloadingFile(null);
     }
@@ -223,7 +231,7 @@ export default function Backups() {
                   <td className="py-2">{new Date(b.created_at).toLocaleString('de-DE')}</td>
                   <td className="py-2 text-right space-x-2 whitespace-nowrap">
                     <button
-                      onClick={() => handleDownload(b.filename)}
+                      onClick={() => setDownloadPrompt(b.filename)}
                       disabled={downloadingFile === b.filename}
                       className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Herunterladen"
@@ -245,6 +253,14 @@ export default function Backups() {
         )}
       </div>
 
+      <PasswordConfirmDialog
+        isOpen={downloadPrompt !== null}
+        title="Sicherung herunterladen"
+        message={`Die Datei „${downloadPrompt ?? ''}“ enthält die gesamte Datenbank mit allen Gesundheitsdaten. Bitte bestätigen Sie den Download mit Ihrem Passwort. Der Download wird unter „Konto-Vorgänge“ protokolliert.`}
+        confirmLabel="Herunterladen"
+        onSubmit={(pw) => (downloadPrompt ? handleDownload(downloadPrompt, pw) : Promise.resolve(false))}
+        onCancel={() => setDownloadPrompt(null)}
+      />
       <ConfirmDialog
         isOpen={confirmState.isOpen}
         title={confirmState.title}

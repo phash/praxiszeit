@@ -4,7 +4,7 @@ import copy
 import logging
 import uuid
 from collections import Counter
-from fastapi import APIRouter, Body, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -18,6 +18,9 @@ from app.database import get_db
 from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, VacationRequest, TimeEntryAuditLog, UserRole, PublicHoliday, YearCarryover
 from app.models.security_event import (
     EVENT_ADMIN_SET_PASSWORD,
+    EVENT_TOTP_RESET_BY_ADMIN,
+    EVENT_USER_CREATED,
+    EVENT_USERNAME_CHANGED,
     EVENT_USER_DEACTIVATED,
     EVENT_USER_REACTIVATED,
     EVENT_USER_ROLE_CHANGED,
@@ -29,7 +32,7 @@ from app.routers.admin_helpers import (
 )
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
+from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse, PasswordConfirmation
 from app.schemas.working_hours_change import (
     EFFECTIVE_FROM_RANGE_DETAIL, WorkingHoursChangeCreate, WorkingHoursChangeDelete, WorkingHoursChangePreview,
     WorkingHoursChangeResponse, effective_from_plausible,
@@ -651,7 +654,7 @@ def _log_account_event(db: Session, current_user: User, event: str, subject: Use
 def list_users(
     include_inactive: bool = False,
     include_hidden: bool = False,
-    skip: int = 0,
+    skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -1370,6 +1373,11 @@ def create_user(
     )
 
     db.add(new_user)
+    db.flush()
+    # Audit 2026-11-07 (S1-03): jedes neue Konto — auch ein zweites Admin-Konto,
+    # der bequemste Weg zu einem dauerhaften Zugang — steht im Sicherheitsprotokoll.
+    _log_account_event(db, current_user, EVENT_USER_CREATED, new_user,
+                       detail=f"Konto angelegt, Rolle {_role_label(new_user.role)}")
     db.commit()
     db.refresh(new_user)
 
@@ -1502,8 +1510,19 @@ def update_user(
         and not user.receives_company_closures
     )
 
+    # S1-03: Umbenennen des Anmeldenamens protokollieren (ohne die Namen selbst:
+    # die Zeile ueberlebt eine Anonymisierung).
+    username_changed = (
+        'username' in update_data and update_data['username'] is not None
+        and update_data['username'].lower() != (user.username or '').lower()
+    )
+
     for field, value in update_data.items():
         setattr(user, field, value)
+
+    if username_changed:
+        _log_account_event(db, current_user, EVENT_USERNAME_CHANGED, user,
+                           detail="Benutzername geändert")
 
     if role_changed:
         user.token_version = (user.token_version or 0) + 1
@@ -1554,6 +1573,51 @@ def set_password(
     db.commit()
 
     return {"message": f"Passwort für {user.first_name} {user.last_name} wurde gesetzt"}
+
+
+TOTP_RESET_SELF_DETAIL = (
+    "Die eigene Zwei-Faktor-Anmeldung bitte unter „Profil“ abschalten "
+    "(mit Passwort und aktuellem Code)."
+)
+TOTP_RESET_NOT_ENABLED_DETAIL = "Für dieses Konto ist keine Zwei-Faktor-Anmeldung eingerichtet."
+
+
+@router.post("/users/{user_id}/totp-reset", response_model=UserResponse)
+def reset_user_totp(
+    user_id: str,
+    body: PasswordConfirmation,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Audit 2026-11-07 (S1-09): Zwei-Faktor einer anderen Person zuruecksetzen
+    (verlorenes Handy). Bisher ging das nur per Kommandozeile auf dem Server —
+    bis dahin konnte die Person nicht stempeln (Luecke im §16-Nachweis).
+
+    Verlangt das Passwort der handelnden Verwaltung (gleiche Sperre wie der
+    Login), schreibt ``totp_reset_by_admin`` nach ``security_events`` und
+    beendet alle Sitzungen der Person (``token_version + 1``). Die Person meldet
+    sich danach nur mit Passwort an und richtet 2FA im Profil neu ein."""
+    from app.routers.auth import confirm_current_password
+    user = _get_user_in_tenant(db, user_id, current_user)
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail=TOTP_RESET_SELF_DETAIL)
+    confirm_current_password(db, request, current_user, body.password,
+                             purpose="2FA zurücksetzen")
+    # Zustand erst nach der Sperre lesen (#491 API-2).
+    _lock_and_reload(db, current_user, user)
+    if not user.totp_enabled and not user.totp_secret:
+        raise HTTPException(status_code=400, detail=TOTP_RESET_NOT_ENABLED_DETAIL)
+    user.totp_enabled = False
+    user.totp_secret = None
+    user.last_totp_counter = None
+    user.token_version = (user.token_version or 0) + 1
+    _log_account_event(db, current_user, EVENT_TOTP_RESET_BY_ADMIN, user,
+                       detail="Zwei-Faktor durch die Verwaltung zurückgesetzt")
+    db.commit()
+    db.refresh(user)
+    calculation_service.attach_work_blocks_today(db, [user], today_local())
+    return user
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1656,6 +1720,9 @@ def list_security_events(
             return names.get(actor[len("user:"):], "unbekanntes Konto")
         if actor.startswith("cli:"):
             return f"Kommandozeile ({actor[len('cli:'):]})"
+        if actor.startswith("login:"):
+            # S1-04: falscher 2FA-Code bei der Anmeldung — Absender-IP.
+            return f"Anmeldeversuch ({actor[len('login:'):]})"
         return actor
 
     return [

@@ -385,6 +385,12 @@ class RefreshResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class PasswordConfirmation(BaseModel):
+    """Audit 2026-11-07 (S1-02/S1-09): Passwort-Rueckfrage der handelnden
+    Person (Sicherungs-Download, 2FA einer anderen Person zuruecksetzen)."""
+    password: str = Field(..., min_length=1, max_length=200)
+
+
 class AdminSetPassword(BaseModel):
     password: str = Field(..., min_length=10)
 

@@ -30,6 +30,17 @@ EVENT_ADMIN_SET_PASSWORD = "admin_set_password"
 # Sicherheits-Review 2026-10: Selbstbedienung am zweiten Faktor (Profil).
 EVENT_TOTP_ENABLED = "totp_enabled"
 EVENT_TOTP_DISABLED_SELF = "totp_disabled"
+# Audit 2026-11-07 (#543): Konten, Anmeldung und Datenbank-Sicherungen.
+EVENT_USER_CREATED = "user_created"                  # S1-03, detail nennt die Rolle
+EVENT_USERNAME_CHANGED = "username_changed"          # S1-03
+EVENT_TOTP_FAILED = "totp_failed"                    # S1-04, falscher 2FA-Code
+EVENT_TOTP_LOCKED = "totp_locked"                    # S1-04, Obergrenze erreicht
+EVENT_PASSWORD_CHECK_LOCKOUT = "password_check_lockout"  # S1-06, Sitzungen beendet
+EVENT_TOTP_RESET_BY_ADMIN = "totp_reset_by_admin"    # S1-09
+EVENT_BACKUP_CREATED = "backup_created"              # S1-02
+EVENT_BACKUP_DOWNLOADED = "backup_downloaded"        # S1-02
+EVENT_BACKUP_DELETED = "backup_deleted"              # S1-02
+EVENT_BACKUP_CONFIG_CHANGED = "backup_config_changed"  # S1-02
 
 
 class SecurityEvent(Base):
