@@ -491,6 +491,8 @@ def test_create_time_entry_emits_milog_for_flagged_user(db, admin, employee, mon
     monkeypatch.setattr("app.services.milog_service.milog_50_check",
                         lambda *a, **k: {"account_hours": 20.0, "cap": 16.5,
                                          "agreed_monthly": 33.0, "caveat": "x"})
+    from tests.test_endpoints import _freeze_evening
+    _freeze_evening(monkeypatch)  # Ende 12:00 von heute darf nicht in der Zukunft liegen
     client = _client_as(db, employee, admin)
     today = today_local().isoformat()
     r = client.post("/api/time-entries/", json={
@@ -515,7 +517,7 @@ def test_clock_out_emits_milog_for_flagged_user(db, admin, employee, monkeypatch
     app.dependency_overrides.clear()
 
 
-def test_update_time_entry_emits_milog_for_flagged_user(db, admin, employee, monkeypatch):
+def test_update_time_entry_emits_milog_for_flagged_user(db, admin, employee, monkeypatch, late_now):
     from app.services.timezone_service import today_local
     employee.milog_working_time_account = True
     db.commit()

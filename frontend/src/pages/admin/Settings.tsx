@@ -1135,11 +1135,12 @@ const saveYearEndProjection = async () => {
         {breakExceptionAllowed && (
         <>
         <p className="text-sm text-gray-500 mb-4">
-          Wenn die Genehmigung aktiviert ist, wird ein solcher Eintrag erst nach Admin-Genehmigung wirksam
-          (4-Augen-Prinzip); andernfalls wird er sofort gespeichert und die Abweichung als Warnung sowie im
+          Wenn die Genehmigung aktiviert ist, wird eine solche Ausnahme erst nach Admin-Genehmigung wirksam
+          (4-Augen-Prinzip); andernfalls wird sie sofort gespeichert und die Abweichung als Warnung sowie im
           Änderungsprotokoll dokumentiert. Das gilt für Einträge, die Mitarbeiter in der Zeiterfassung
-          anlegen oder bearbeiten. Beim Ausstempeln wirkt eine Begründung immer sofort, weil der Eintrag
-          geschlossen werden muss (§16 ArbZG) – diese Ausnahmen prüfen Sie im Änderungsprotokoll.
+          anlegen oder bearbeiten, und für das Ausstempeln: Dort wird der Eintrag sofort mit der echten
+          Ausstempelzeit geschlossen (§16 ArbZG), die Ausnahme aber nur als Antrag zur Genehmigung gestellt.
+          Eine Begründung braucht mindestens 10 Zeichen.
         </p>
         <div className="flex items-center justify-between max-w-sm">
           <label htmlFor="break-approval-toggle" className="text-sm font-medium text-gray-700">

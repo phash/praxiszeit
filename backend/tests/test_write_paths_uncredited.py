@@ -60,7 +60,7 @@ def test_clock_out_k2b(_db_session, employee_user, employee_client, monkeypatch)
 
 def test_employee_create_k21(_db_session, employee_user, employee_client, monkeypatch):
     _blocks(_db_session, employee_user)
-    _today(monkeypatch)
+    _today(monkeypatch, 19, 0)  # #540 (A1-09): das Ende 18:00 liegt nicht in der Zukunft
     resp = employee_client.post("/api/time-entries/", json={
         "date": MON.isoformat(), "start_time": "08:00", "end_time": "18:00", "break_minutes": 45})
     assert resp.status_code == 201, resp.text

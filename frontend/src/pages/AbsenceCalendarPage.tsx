@@ -21,6 +21,10 @@ import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 import VacationRequestEditModal from '../components/VacationRequestEditModal';
+import { Link } from 'react-router-dom';
+import {
+  CHANGE_REQUEST_JOURNAL_PATH, PAST_DAY_ABSENCE_HINT, mayBookAbsenceDirectly, mayDeleteAbsenceByDate,
+} from '../utils/absenceRules';
 
 interface VacationRequest {
   id: string;
@@ -234,6 +238,13 @@ export default function AbsenceCalendarPage() {
     }
   };
 
+  // Audit 2026-11-07 (S1-01): ein vergangener Beginn geht für Mitarbeitende nur
+  // per Änderungsantrag (Server: 409 ``PAST_DAY_ABSENCE_DETAIL``). Der Weg über
+  // einen Urlaubsantrag (Genehmigungspflicht) bleibt davon unberührt.
+  const goesToRequestFlow = !formData.reasonId && formData.type !== 'sick' && vacationApprovalRequired;
+  const pastDayBlocked = !goesToRequestFlow
+    && !mayBookAbsenceDirectly(currentUser?.role === 'admin', formData.date, format(new Date(), 'yyyy-MM-dd'));
+
   const doSubmit = async (refundVacation: boolean) => {
     if (submitting) return;
     setSubmitting(true);
@@ -289,6 +300,10 @@ export default function AbsenceCalendarPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (pastDayBlocked) {
+      toast.error(PAST_DAY_ABSENCE_HINT);
+      return;
+    }
     // If sick leave: check for overlapping vacation entries
     if (formData.type === 'sick') {
       const startDate = formData.date;
@@ -317,6 +332,8 @@ export default function AbsenceCalendarPage() {
   const canDeleteAbsence = (absence: Absence): boolean => {
     if (currentUser?.role === 'admin') return true;
     if (absence.closure_id) return false;
+    // Audit 2026-11-07 (S1-01): vergangene Tage nur per Änderungsantrag.
+    if (!mayDeleteAbsenceByDate(false, absence.date, format(new Date(), 'yyyy-MM-dd'))) return false;
     if (absence.type === 'vacation' && vacationApprovalRequired) return false;
     // Anträge buchen auch Fortbildung, Überstundenausgleich, Sonstiges (absence_type).
     return !myVacationRequests.some(
@@ -686,7 +703,7 @@ export default function AbsenceCalendarPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={submitting || pastDayBlocked}
                     className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Speichern
@@ -694,6 +711,17 @@ export default function AbsenceCalendarPage() {
                 </div>
               )}
             </div>
+
+            {pastDayBlocked && (
+              <div role="status" className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+                {PAST_DAY_ABSENCE_HINT}{' '}
+                Das geht in der{' '}
+                <Link to={CHANGE_REQUEST_JOURNAL_PATH} className="underline font-medium">
+                  Zeiterfassung → Journal
+                </Link>
+                : in der Zeile des Tages auf „Antrag“ klicken.
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Notiz</label>
@@ -711,7 +739,7 @@ export default function AbsenceCalendarPage() {
               <div>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || pastDayBlocked}
                   className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Speichern
@@ -1106,14 +1134,23 @@ export default function AbsenceCalendarPage() {
                     <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
                     <td className="px-6 py-4 text-sm text-gray-500">{absence.note || '-'}</td>
                     <td className="px-6 py-4 text-right text-sm">
-                      {canDeleteAbsence(absence) && (
+                      {canDeleteAbsence(absence) ? (
                         <button
                           onClick={() => handleDelete(absence.id)}
                           className="text-red-600 hover:text-red-800"
                         >
                           Löschen
                         </button>
-                      )}
+                      ) : currentUser?.role !== 'admin'
+                        && !mayDeleteAbsenceByDate(false, absence.date, format(new Date(), 'yyyy-MM-dd')) ? (
+                        <Link
+                          to={CHANGE_REQUEST_JOURNAL_PATH}
+                          className="text-gray-500 hover:text-gray-700 underline"
+                          title={PAST_DAY_ABSENCE_HINT}
+                        >
+                          per Antrag
+                        </Link>
+                      ) : null}
                     </td>
                   </tr>
                 ))

@@ -430,18 +430,29 @@ def test_execute_import_audit_log_for_overwrite(db, test_user, test_admin):
     assert update_logs[0].new_note == "neu"
 
 
-def test_execute_import_returns_arbzg_warnings(db, test_user, test_admin):
-    """Prüft dass ArbZG-Warnungen im Import-Ergebnis zurueckgegeben werden.
-    Pause wie in der Vorschau (5:30 h → 0) — eine abweichende Pause nennt das
-    Ergebnis zusätzlich als Anpassung (Review-Nachzug B4)."""
+def test_execute_import_does_not_echo_client_warnings(db, test_user, test_admin):
+    """#540 (A1-07): /confirm übernimmt die Vorschau-Warnungen des Clients nicht
+    mehr (sie waren frei einsetzbar oder leer) — das Ergebnis meldet nur, was der
+    Server selbst prüft. Pause wie in der Vorschau (5:30 h → 0)."""
     entries = [ImportedEntry(date=date(2026, 1, 12), start_time=time(7, 15),
                              end_time=time(12, 45), break_minutes=0, note=None,
                              has_conflict=False, arbzg_warnings=["§3 ArbZG: Test-Warnung"])]
     result = execute_import(test_user.id, entries, overwrite=False, db=db,
                             changed_by_id=test_admin.id, filename="test.xls",
                             tenant_id=DEFAULT_TENANT_ID)
-    assert len(result.warnings) == 1
-    assert "§3" in result.warnings[0]
+    assert result.imported == 1
+    assert result.warnings == []
+
+
+def test_execute_import_reports_server_side_night_work(db, test_user, test_admin):
+    """#540 (A1-07): §6-Hinweis vom Server, auch ohne Client-Warnung."""
+    entries = [ImportedEntry(date=date(2026, 1, 12), start_time=time(0, 0),
+                             end_time=time(3, 0), break_minutes=0, note=None,
+                             has_conflict=False, arbzg_warnings=[])]
+    result = execute_import(test_user.id, entries, overwrite=False, db=db,
+                            changed_by_id=test_admin.id, filename="test.xls",
+                            tenant_id=DEFAULT_TENANT_ID)
+    assert result.warnings == ["12.01.2026: §6 ArbZG: Nachtarbeit (>2h in der Nachtzeit 23:00–06:00)"]
 
 
 # ── work_window clamp im XLS-Import ─────────────────────────────────────────
@@ -552,10 +563,14 @@ def test_parse_xls_db_entry_plus_import_same_day_day_break_and_s3(db, test_user)
     ]
     entries = parse_xls(_make_xls_bytes(rows), test_user.id, db)
     assert len(entries) == 1
-    assert entries[0].break_minutes == 45
+    # #540 (A1-07): 5 h + 6 h − 45 Min. Pause = 10:15 h > 10 h → der Tag wird nicht
+    # übernommen (wie die harte §3-Sperre der übrigen Schreibwege), statt nur zu warnen.
     warnings = entries[0].arbzg_warnings
-    assert any(w.startswith("§3 ArbZG: Tages-Netto-Arbeitszeit") for w in warnings), warnings
-    assert not any(w.startswith("§4 ArbZG: Tages-Netto-Arbeitszeit") for w in warnings), warnings
+    assert warnings == [
+        "Wird übersprungen — die Tagesarbeitszeit beträgt 10:15 h und überschreitet die "
+        "Höchstgrenze von 10 h nach § 3 ArbZG. Bitte den Tag von Hand erfassen."
+    ], warnings
+    assert entries[0].break_minutes == 0
 
 
 def test_parse_xls_reports_clamp_as_row_warning(db, test_user):

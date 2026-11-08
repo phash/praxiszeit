@@ -176,14 +176,43 @@ def purge_expired_vacation_audit_logs(db: Session) -> int:
     record-retention obligation and must outlive this purge.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=VACATION_AUDIT_RETENTION_DAYS)
-    deleted = (
+    # #537: das App-Konto darf Protokollzeilen nicht mehr direkt loeschen. Je
+    # Mandant und betroffener Person ueber audit_chain_service.delete_rows
+    # (versiegeln, pz_audit_delete, gehashter Vermerk mit den entfernten
+    # Kettengliedern) — die Pruefung sieht sonst eine unerklaerte Luecke.
+    # Die Frist laeuft ab ``created_at`` der Protokollzeile, also bei
+    # ``absence_creation`` (Loeschbeleg eines durch eine Abwesenheit ersetzten
+    # Zeiteintrags, A2-13) ab dem Loeschtag — der Beleg ueberlebt den
+    # Eintragstag damit immer um mindestens 730 Tage.
+    rows = (
         db.query(TimeEntryAuditLog)
         .filter(
             TimeEntryAuditLog.source.in_(VACATION_AUDIT_SOURCES),
             TimeEntryAuditLog.created_at < cutoff,
         )
-        .delete(synchronize_session=False)
+        .all()
     )
+    groups: dict = {}
+    for row in rows:
+        groups.setdefault((row.tenant_id, row.user_id), []).append(row)
+    deleted = 0
+    from app.services import audit_chain_service
+    blocked: set = set()
+    for (tenant_id, user_id), group in groups.items():
+        if tenant_id in blocked:
+            continue
+        try:
+            deleted += audit_chain_service.delete_rows(
+                db, group, tenant_id=tenant_id, user_id=user_id, changed_by=None,
+                source="retention",
+                reason=f"Aufbewahrungsfrist {VACATION_AUDIT_RETENTION_DAYS} Tage (Art. 5 Abs. 1 lit. e DSGVO)",
+            )
+        except audit_chain_service.AuditChainBroken as exc:
+            # Kettenende des Mandanten stimmt nicht: nichts loeschen (der
+            # Befund bleibt sichtbar), andere Mandanten laufen weiter. Die
+            # Pruefung wirft vor jedem Schreibschritt — die Transaktion ist heil.
+            blocked.add(tenant_id)
+            logger.error("retention purge skipped for tenant %s: %s", tenant_id, exc)
     if deleted:
         db.commit()
     return int(deleted or 0)
@@ -403,15 +432,15 @@ def anonymize_tenant(db: Session, tenant: Tenant, *, commit: bool = True) -> Non
     # ``verify-integrity`` meldete danach jede dieser legitimen Zeilen als
     # manipuliert. Nur Zeilen MIT Notiz werden angefasst, alle anderen behalten
     # ihren Hash unveraendert.
-    from app.core import audit_integrity
+    # #537: seit Migration 076 nur noch ueber pz_audit_set_notes (das App-Konto
+    # darf Protokollzeilen nicht aendern).
+    from app.services import audit_chain_service
     for row in db.query(TimeEntryAuditLog).filter(
         TimeEntryAuditLog.tenant_id == tenant.id,
         (TimeEntryAuditLog.old_note.isnot(None))
         | (TimeEntryAuditLog.new_note.isnot(None)),
     ).all():
-        row.old_note = None
-        row.new_note = None
-        row.row_hash = audit_integrity.compute_row_hash(row)
+        audit_chain_service.set_notes(db, row, None, None)
 
     tenant.name = "[gelöscht]"
     # #435: der Slug wird beim Signup aus dem Praxisnamen abgeleitet
@@ -819,7 +848,14 @@ def build_self_export_payload(db: Session, user: User) -> dict[str, Any]:
         "reason_names": reason_names,
         "vacation_requests": [_vacation_request_dict(v) for v in own_vacation_requests],
         "change_requests": [_change_request_dict(c) for c in own_change_requests],
-        "audit_logs": [_audit_log_dict(a) for a in own_audit_logs],
+        # Audit 2026-11-07 (S2-3, Art. 15 Abs. 4 DSGVO): Zeilen ueber ANDERE
+        # Personen (z. B. Korrekturen einer Admin an Eintraegen von Kolleginnen,
+        # Rueckrechnung „Krank 8,0 h → 4,0 h") nur als „was ich getan habe" —
+        # ohne betroffene Person, Zeiten und Notizen.
+        "audit_logs": [
+            _audit_log_dict(a) if a.user_id == user.id else _audit_log_dict_about_other(a)
+            for a in own_audit_logs
+        ],
         # MS-06: eigene Schichteinteilungen + Einweisungen (leer, wenn Feature aus).
         "shift_assignments": own_shift_assignments_data,
         "qualifications": own_qualifications_data,
@@ -987,6 +1023,21 @@ def _change_request_dict(c: ChangeRequest) -> dict[str, Any]:
     }
 
 
+def _audit_log_dict_about_other(a: TimeEntryAuditLog) -> dict[str, Any]:
+    """S2-3: eine Protokollzeile, die die exportierende Person ueber eine
+    ANDERE Person geschrieben hat — nur Vorgang, Quelle und Zeitpunkt. Die Daten
+    der anderen Person (Zeiten, Notizen mit Abwesenheitstyp, ihre Kennung)
+    gehoeren nicht in die Auskunft der exportierenden Person."""
+    return {
+        "id": str(a.id),
+        "action": a.action,
+        "source": a.source,
+        "changed_by": str(a.changed_by) if a.changed_by else None,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+        "about_other_person": True,
+    }
+
+
 def _audit_log_dict(a: TimeEntryAuditLog) -> dict[str, Any]:
     # DSGVO Art. 15: vollstaendige Auskunft umfasst Aenderungshistorie. Ohne
     # old_*/new_* sieht der MA nur "es gab eine Aenderung" aber nicht WAS
@@ -1011,4 +1062,11 @@ def _audit_log_dict(a: TimeEntryAuditLog) -> dict[str, Any]:
         "new_end_time": str(a.new_end_time) if a.new_end_time else None,
         "new_break_minutes": a.new_break_minutes,
         "new_note": a.new_note,
+        # #537 (A2-3): tatsaechliche Stempel neben den angerechneten Zeiten
+        **{
+            f"{side}_{name}": (str(getattr(a, f"{side}_{name}")) if getattr(a, f"{side}_{name}") is not None else None)
+            if name != "uncredited_minutes" else getattr(a, f"{side}_{name}")
+            for side in ("old", "new")
+            for name in ("raw_start_time", "raw_end_time", "presence_end_time", "uncredited_minutes")
+        },
     }

@@ -390,3 +390,16 @@ describe('<AdminChangeRequests /> Anrechnung beantragen (Spec P21, P3)', () => {
     expect(screen.queryByText('Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.')).not.toBeInTheDocument();
   });
 });
+
+// #538 (A1-02): eine 409-Sperre der Genehmigung bleibt am Antrag stehen.
+describe('<AdminChangeRequests /> Sperre der Genehmigung (Audit 2026-11-07)', () => {
+  it('zeigt die Überschneidung am Antrag, nicht nur als Toast', async () => {
+    mockApi([pendingCr]);
+    const detail = 'Überschneidung mit dem Eintrag 10:00–12:00 am 07.06.2026: Zeiteinträge einer Person dürfen sich nicht überschneiden. Bitte die Zeiten anpassen oder den vorhandenen Eintrag bearbeiten.';
+    postMock.mockRejectedValue({ response: { status: 409, data: { detail } } });
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Genehmigen' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(detail);
+    expect(toast.error).toHaveBeenCalledWith(detail);
+  });
+});

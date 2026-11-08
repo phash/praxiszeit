@@ -2,14 +2,124 @@
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-11-07
+
 ### ✨ Neu
 
 - **Datenbank-Port unter Windows einstellbar.** Läuft auf dem Rechner schon ein anderer PostgreSQL auf Port 5432, kann PraxisZeit mit einem eigenen Port arbeiten: in `config\praxiszeit.conf` unter `[database]` die Zeile `port = 5433` (erlaubt 1024–65535, ohne Eintrag 5432) und den Dienst neu starten. Der GUI-Installer hat dafür auf der Seite „Ports“ das Feld „Datenbank-Port (nur Windows)“ samt Warnung bei belegtem Port. Auf Linux und macOS gibt es weiterhin nur den Socket; ein Eintrag wird dort mit einer Warnung ignoriert.
 - **Fremder PostgreSQL wird erkannt.** Belegt ein anderer Server den Port, beendet sich PraxisZeit mit der Meldung „Port … ist von einem anderen PostgreSQL belegt. In config\praxiszeit.conf unter [database] einen freien Port eintragen …“, bevor etwas angelegt wird. Der Windows-Dienst startet dann nicht endlos neu (`AppExit 78 Exit`; der Update-Wizard setzt es auch für bestehende Installationen).
 - `restore-backup.bat`, die Sicherung in `uninstall.bat` und `setup.bat` verwenden den konfigurierten Port; neue Befehle `praxiszeit-server.py print-db-port` und `sync-db-port`.
+- **Spenden-Link:** Der Link „Unterstützen Sie die Entwicklung mit einer Spende“ unter der Versionsangabe in der Seitenleiste führt jetzt zu PayPal statt zu „Buy me a Coffee“ (#532).
+
+### 🔒 Prüfung 2026-11-07: Arbeitszeitgesetz, Nachweise, Sicherheit
+
+Eine kritische Prüfung von PraxisZeit (Arbeitszeitgesetz-Regeln, §-16-Nachweise, Anmeldung und Rechte, Eingaben und Datenschutz, native Installation) hat Fehler und Lücken gefunden. Alle Funde sind behoben oder unten ausdrücklich als Grenze genannt.
+
+**Enthält die Datenbank-Migration `076_audit_chain`.** Vor dem Update wie immer eine Sicherung anlegen.
+
+#### Änderungsprotokoll als Beweismittel (#537)
+
+- **Tatsächliche Stempel im Protokoll.** Jede Zeile zu einem Zeiteintrag nennt neben der angerechneten Zeit auch den Rohbeginn, das Rohende, das Ende der Anwesenheit und die nicht angerechneten Minuten – auch beim Löschen („gestempelt 06:00 – 18:00“). Bisher war die tatsächliche Arbeitszeit nach dem Löschen eines gekappten Eintrags nirgends mehr belegt.
+- **Löschen eines Eintrags meldet keine Manipulation mehr.** Die Prüfsumme lief über den Verweis auf den Eintrag, den die Datenbank beim Löschen leert – jede Löschung ergab dauerhaft „manipuliert“. Neue Prüfsumme (Version 3) über feste Verweise, Zeitpunkt und Stempel; Altbestand bleibt prüfbar (Zeilen zu Einträgen, die schon vor dem Update gelöscht wurden, werden getrennt als „Altbestand“ gezählt).
+- **Protokoll nur anfügbar, Löschungen erkennbar.** Das Datenbankkonto der Anwendung darf Protokollzeilen weder ändern noch löschen; die Zeilen werden jede Nacht (03:15 Uhr) zu einer Kette versiegelt. Fehlende oder veränderte Glieder und ein abgeschnittenes Ende fallen bei der Prüfung auf.
+- **Prüfung jede Nacht und auf Knopfdruck:** Karte „Prüfung des Änderungsprotokolls“ im Änderungsprotokoll; eine Abweichung erscheint unter „Konto-Vorgänge“ und im Fehler-Monitoring.
+- **Kettenende fehlt → gesperrt mit Hinweis.** PraxisZeit legt ein fehlendes oder ungültiges Kettenende nicht still neu an. Bis es nach Klärung über „Kettenende neu setzen…“ mit Begründung neu gesetzt ist (die Begründung steht danach dauerhaft im Protokoll), sind endgültiges Löschen von Personen und das automatische Entfernen alter Zeilen gesperrt.
+- **Kettenende und Altbestand fest.** Das Datenbankkonto der Anwendung kann das Kettenende nicht mehr direkt schreiben – es rückt nur beim Versiegeln auf das letzte Glied vor und nie zurück (Ausnahme: „Kettenende neu setzen…“ mit dauerhaftem Vermerk). Eine gelöschte Protokollzeile lässt sich nicht wieder einfügen – auch nicht ein alter Vermerk „Kettenende neu gesetzt“, mit dem sich sonst das Kettenende erneut zurücksetzen und das Entfernen neuerer Zeilen verdecken ließ; das gilt auch, wenn das Wiedereinfügen genau während der Löschung läuft (jede je vergebene Zeilen-id steht dauerhaft in einer eigenen Tabelle mit Primärschlüssel). Notizen im Protokoll lassen sich nur noch leeren oder anonymisieren, nicht umschreiben, und eine Zeile verliert dabei nie ihre Prüfsumme. Welche Zeilen ohne Prüfsumme als Altbestand gelten, hält das Update je Praxis fest, statt es bei jeder Prüfung neu zu bestimmen. Die Vergabe der Zeilen-ids läuft allein im Datenbank-Trigger; das Konto der Anwendung kann keine ids (auch fremder Mandanten) vorab belegen oder abfragen.
+- **Neu im Protokoll:** manuelle Überträge, Jahresabschluss anlegen/löschen (je Person), geänderte Einstellungen (z. B. der Puffer), eigene Feiertage, verkürzte Tage sowie Änderungen an § 18 ArbZG, Nachtarbeit und Beschäftigungszeitraum einer Person (A1-17) – jeweils mit altem und neuem Wert.
+- **Endgültige Löschung (Art. 17) schreibt keine Urheberschaft mehr um:** Zeilen, die die gelöschte Person an fremden Einträgen geändert hat, zeigen „Gelöschte Person“ statt der löschenden Verwaltung.
+- **Grenze:** Ein Datenbank-Superuser kann noch nicht versiegelte Zeilen des laufenden Tages entfernen; versiegelte Zeilen nicht unbemerkt.
+
+#### Überschneidende Zeiteinträge werden abgelehnt (#538)
+
+- Zwei Einträge derselben Person, die sich am selben Tag überschneiden, wurden bisher angenommen und doppelt angerechnet. Jetzt lehnen Einstempeln, Erfassen und Bearbeiten (Mitarbeitende und Verwaltung), Änderungsanträge samt Genehmigung und der XLS-Import (Zeile wird übersprungen) das mit einem Hinweis ab, der den kollidierenden Eintrag nennt. Direkt aneinander anschließende Einträge bleiben erlaubt.
+- Bestehende Überschneidungen bleiben bearbeitbar, solange die Zeiten gleich bleiben. Das Ausstempeln sperrt nie (sonst bliebe man eingestempelt), es meldet die Überschneidung nur.
+
+#### ArbZG-Berichte (#539)
+
+- **§ 11 Ersatzruhetag:** Als Ersatzruhetag zählt nur noch ein vergangener freier Tag Mo–Sa, an dem die Person sonst gearbeitet hätte – nicht ein ohnehin freier Samstag, kein Feiertag, kein Urlaub und keine Krankheit. Jeder Ruhetag gleicht genau einen Sonn- oder Feiertagseinsatz aus. Einsätze mit noch laufender Frist stehen unter „Frist läuft“ statt unter den Verstößen. Bisher wurden echte Verstöße als eingehalten gemeldet.
+- **Neu: „Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG“** – Tage über 10 h und Wochen über 48 h laut Stempel sowie alle Pflicht-Pause-Ausnahmen mit Begründung und Tage mit zu kurzer Pause ohne anerkannte Ausnahme (z. B. Ausnahme beim Ausstempeln beantragt, aber offen oder abgelehnt), rückblickend für einen Monat.
+- **24-Wochen-Durchschnitt (§ 3):** geteilt wird durch Werktage Mo–Sa (ohne Feiertage und ohne Tage mit Urlaub, Krankheit, Fortbildung oder Freistellung), nicht mehr durch die Soll-Arbeitstage. Teilzeitkräfte mit wenigen langen Tagen wurden bisher zu streng bewertet.
+- **§ 6 Nachtarbeit:** für Nachtarbeitnehmer zusätzlich der Monatsdurchschnitt je Werktag; Hinweis, wenn jemand nach den Zahlen als Nachtarbeitnehmer gilt, das Kennzeichen aber fehlt.
+- **Ausgeschiedene und ausgeblendete Mitarbeitende:** Ausgeschiedene mit Einträgen im Zeitraum erscheinen in allen ArbZG-Berichten, ausgeblendete nur mit dem neuen Schalter „Ausgeblendete Mitarbeitende einbeziehen“ (sonst ein Hinweis mit ihrer Anzahl). Der §-5-Bericht zeigte bisher Ausgeblendete immer und Ausgeschiedene nie.
+
+#### ArbZG-Prüfungen an allen Erfassungswegen (#540)
+
+- **Automatisch geschlossene Einträge** (Ausstempeln vergessen) werden nach §§ 3 und 4 geprüft und tragen einen Vermerk in der Notiz. Mitarbeitende sehen an der Stempeluhr einen Hinweis mit der Schaltfläche „Arbeitsende per Antrag nachtragen“ (vorbelegter Änderungsantrag), die Verwaltung eine Dashboard-Karte „Automatisch geschlossene Einträge – Ende fehlt“, bis das tatsächliche Ende eingetragen ist. Ein Ausstempeln am nächsten Morgen schließt den Eintrag und hält den Ausstempelversuch fest, statt mit einem Fehler abzubrechen.
+- **Pausenausnahme:** die Begründung braucht mindestens 10 Zeichen (bisher genügte ein Zeichen). Ist „Pausenausnahme muss genehmigt werden“ eingeschaltet, gilt das jetzt auch beim Ausstempeln: der Eintrag wird mit dem echten Ende geschlossen, die Ausnahme als Antrag gestellt. Eine eigene Ausnahme darf ein Admin nie selbst genehmigen; in einer Praxis mit nur einem Admin lässt sich ein solcher Antrag deshalb nur ablehnen (die Meldung sagt das), der Tag steht dann in der Auswertung unter „Pause zu kurz“.
+- **XLS-Import:** Tage mit mehr als 10 h angerechneter Zeit werden nicht übernommen; der Server prüft selbst und übernimmt keine Warnungen mehr vom Browser.
+- **Ende in der Zukunft** (heute, später als jetzt) und eine Pause, die so lang ist wie der ganze Eintrag, werden abgelehnt.
+- **Sommerzeit:** Ruhezeiten (§ 5) über die Zeitumstellung werden in echten Stunden gerechnet (bisher ±1 h falsch).
+- **§-10-Grund** kann beim Ausstempeln an Sonn- und Feiertagen angegeben werden; Verwaltungseinträge an diesen Tagen erhalten einen Hinweis.
+- **Keine stille Pause mehr:** die Zeiterfassung trägt die fehlende Pause nicht mehr selbst ein, sondern schlägt sie sichtbar vor („30 Min. Pause eintragen“ / „Keine Pause gemacht – ohne Pause speichern“).
+- **Grenze: keine Dienste über Mitternacht.** Erfassung und Prüfung nach §§ 3–6 laufen je Kalendertag; ein Eintrag endet spätestens um 23:59. Nachtdienste über Mitternacht werden nicht unterstützt – das steht jetzt ausdrücklich in den Handbüchern.
+
+#### §-16-Exporte mit tatsächlichen Stempelzeiten (#541)
+
+- XLSX und ODS (Monat und Jahres-Mitarbeiterblatt) haben drei neue Spalten am Ende: „Gestempelt (Von–Bis)“, „Anwesenheit laut Stempel (Std)“ (über 10 h hervorgehoben) und „Pausenausnahme (§4 ArbZG)“. Das PDF hat die Spalte „Gestempelt (Anwesenheit)“ und nennt die Pausenausnahme in der Bemerkung. Die Spalten 1–13 bleiben unverändert – eigene Auswertungen laufen weiter.
+- Alle Exporte haben den Schalter „Ausgeblendete Mitarbeitende einbeziehen“; Ausgeschiedene mit Daten im Zeitraum sind immer dabei.
+- **Kennzeichen „Nachtarbeitnehmer“** erscheint in allen Exporten einheitlich nur mit „Krankheitsdaten einschließen“ (bisher je nach Export unterschiedlich).
+- Texte, die mit `=`, `+`, `-` oder `@` beginnen, erscheinen wieder wörtlich (ohne vorangestelltes Apostroph); den Schutz vor Formeln übernimmt jetzt der Zelltyp.
+
+#### Abwesenheiten vergangener Tage nur per Änderungsantrag (#542)
+
+- Mitarbeitende können Abwesenheiten für vergangene Tage nicht mehr selbst eintragen oder löschen, sondern stellen einen Änderungsantrag im Journal. Löschen geht nur ab heute und nur für selbst eingetragene Abwesenheiten; Tage in abgeschlossenen Jahren sind gesperrt. Die Verwaltung ist nicht betroffen.
+- **Grenze:** Ob eine Abwesenheit von jemand anderem eingetragen wurde, erkennt PraxisZeit erst für Buchungen ab diesem Update. Ältere Abwesenheiten gelten als selbst eingetragen.
+
+#### Konten, Zwei-Faktor und Sicherungen (#543)
+
+- **Sicherungen herunterladen** nur nach Bestätigung mit dem eigenen Passwort. Erstellen, Herunterladen, Löschen und geänderte Sicherungs-Einstellungen stehen unter „Konto-Vorgänge“, ebenso angelegte und umbenannte Konten.
+- **Zwei-Faktor:** nach 10 falschen Codes in einer Stunde ist die Anmeldung für das Konto gesperrt (übersteht einen Neustart); ein Code gilt nur einmal, auch bei zwei gleichzeitigen Anmeldungen. Die Verwaltung kann die Zwei-Faktor-Anmeldung einer Person zurücksetzen (Schild-Symbol in der Benutzerliste, mit Passwort-Bestätigung).
+- **Passwort-Rückfragen** (Passwort ändern, 2FA einrichten/abschalten, Sicherung herunterladen) zählen als Fehlversuche; nach dem fünften werden alle Sitzungen beendet.
+- **Anmeldesperre:** ein Browser, mit dem man sich schon einmal erfolgreich angemeldet hat, kann sich auch während einer Sperre durch fremde Fehlversuche weiter anmelden. Nach einem Passwortwechsel, einem von der Verwaltung gesetzten Passwort, einer zurückgesetzten Zwei-Faktor-Anmeldung oder „Sitzungen beenden" gilt das nicht mehr, bis man sich erneut erfolgreich angemeldet hat.
+- **Impersonation:** abgelaufene Sitzungen erscheinen als beendet.
+
+#### Datenschutz und Eingaben (#544)
+
+- **Keine Werte mehr in Fehlerprotokollen:** Fehlermeldungen der Datenbank landen ohne die eingegebenen Werte im Fehler-Monitoring, im Dienstprotokoll und im PostgreSQL-Protokoll (gilt nach dem Update auch für bestehende Installationen).
+- **Obergrenzen** für Pausen, Stunden, Freitexte und Seitenzahlen: zu große Werte ergeben eine verständliche Ablehnung statt eines Serverfehlers.
+- **Eigener Datenexport (Art. 15) der Verwaltung** enthält keine Inhalte zu Kolleginnen und Kollegen mehr.
+- **Sicherung** hängt nicht mehr, wenn `pg_dump` viele Warnungen schreibt; E-Mail-Versand prüft das Zertifikat des Mailservers; die Sperre für `/api/metrics` in nginx greift jetzt.
+- **Akzeptiert:** `/api/system/info` zeigt die Version weiter ohne Anmeldung (dokumentierter Smoke-Test). Sicherungen sind nicht verschlüsselt – `BACKUP.md` und das Handbuch beschreiben, wie man sie verschlüsselt außer Haus lagert.
+
+#### Native Installation und Betrieb (#545)
+
+- **Windows-Installationsordner:** eine Neuinstallation ist nur noch in einen neuen oder leeren Ordner möglich (gesperrt mit Hinweis). Vor dem ersten Start von `python.exe` werden Eigentümer und Rechte des Ordners exakt gesetzt und `bin\` und `app\` mit dem Paketinhalt abgeglichen – fremde Dateien sperren Setup und Update. Die Inhalte von `data`, `logs` und `config` gehen dabei auf die geerbten Rechte zurück (`data\db` bleibt nur unverändert, wenn es samt Inhalt ausschließlich SYSTEM, Administratoren und dem Datenbankdienst gehört und nur ihnen Zugriff gibt – sonst wird es zurückgesetzt und bekommt den Zugriff des Datenbankdienstes neu; eine dort abgelegte `PG_VERSION` erschleicht keine Ausnahme mehr) – ein vorab angelegtes `data\backups` mit eigenem Zugriffseintrag behält so keinen Lesezugriff auf die Sicherungen. Liegt in einem dieser Teilbäume (oder unter `bin\`/`app\`) eine Verknüpfung (Junction, symbolischer Link), eine Datei mit mehreren harten Links oder ein Eintrag, dessen Name mit Leerzeichen oder Punkt endet, sperrt das Setup mit Hinweis, statt beim Zurücksetzen der Rechte Rechte außerhalb des Installationsordners zu ändern. Jeder Teilbaum wird dafür zuerst Ordner für Ordner gesperrt und erst dann geprüft und rekursiv zurückgesetzt – ein Konto mit eigenem Zugriff auf einen Unterordner kann zwischen Prüfung und Zurücksetzen keine Verknüpfung mehr anlegen. Liegen in `data\db` oder `config` schon Dateien, die weder einem Administrator, SYSTEM noch dem Datenbankdienst gehören, und ist für den Ordner kein PraxisZeit-Dienst eingerichtet, sperrt das Setup ebenfalls (eine vorab angelegte Datenbank oder Konfiguration würde sonst übernommen); geprüft wird das, bevor sich ein Eigentümer ändert. Der Sicherungsordner bekommt zudem Administratoren als Eigentümer und eine exakt gesetzte, nachgeprüfte Rechteliste.
+- **Sicherungen sind signiert.** Jede Sicherung trägt eine Signatur, die aus dem `SECRET_KEY` der Installation abgeleitet ist. `restore`, `restore-backup.bat` und `restore.sh` spielen nur passend signierte Sicherungen ein; eine Sicherung einer älteren Version oder von einem anderen Rechner nur mit `--force-unverified`. Zusätzlich lehnen `restore` und `restore-backup.bat` – auch mit `--force-unverified` – psql-Befehle und Anweisungen ab, die `pg_dump` nie schreibt (Rollen, Daten-Anweisungen außerhalb von `COPY`, Zugriffe auf Systemkataloge wie `pg_authid`), und psql läuft im eingeschränkten Modus. `restore.sh` (Docker) sperrt nur die psql-Befehle und prüft die Anweisungen nicht; mit `--force-unverified` nennt es das ausdrücklich.
+- **Unverifizierte Sicherungen werden ohne Superuser-Rechte geladen (Linux, macOS, Windows).** Mit `--force-unverified` meldet sich psql als kurzlebige Rolle `praxiszeit_restore_load` an (kein Superuser, kein `CREATEROLE`/`CREATEDB`/`BYPASSRLS`, keine Mitgliedschaft); Systemkataloge schreiben, `COPY … PROGRAM`, Server-Dateien und C-Funktionen scheitern damit am Server, nicht erst an der Prüfliste. Danach gehen alle Objekte an den Datenbank-Superuser, die Rolle wird entfernt; das Ergebnis gleicht einem Laden als Superuser (gegen einen echten Dump nachgeprüft). `restore-backup.bat` (Windows) lädt seit Runde 4 genauso (über `praxiszeit-server.py load-restore-db`). Die Zwischendatenbank gehört dabei immer dem Superuser (aus `template0`), die Ladrolle darf nur Objekte im Schema `public` anlegen – keine Erweiterung. Vor der Übergabe an den Superuser müssen Funktionen und Trigger genau denen der Migrationen bis zum Datenbankstand der Sicherung entsprechen (Trigger samt Zeitpunkt, Ereignissen, Spalten, `WHEN` und `FOR EACH ROW`; keine Sichten, Regeln, Ereignis-Trigger; als Erweiterung nur `plpgsql` mit seinen Standard-Bestandteilen), und jede Tabelle mit Zeilenschutz muss ihn mit `FORCE` und genau den Policies der Migrationen haben – sonst liefe eine übersehene Funktion danach mit Superuser-Rechten oder die Mandantentrennung wäre still geschwächt; bei einer Abweichung bricht der Vorgang ab, die bisherige Datenbank bleibt. Die Prüfliste selbst ist strenger: `U&"…"`, `CREATE RULE`, `pg_*`-Namen außerhalb der eigenen Protokollfunktionen, Funktionen ohne `LANGUAGE sql|plpgsql`, `BEGIN ATOMIC`, verschachtelter Code und E-Zeichenketten mit Backslash im Funktionsrumpf sowie Wörter, die erst ein Kommentar oder eine Zeichenkette trennte (`ALTER/**/ROLE`), werden abgelehnt; ebenso `ALTER EXTENSION` und in einer unverifizierten Sicherung jede Erweiterung außer dem No-op `CREATE EXTENSION IF NOT EXISTS plpgsql`. Seit Runde 7 darf eine unverifizierte Sicherung außerdem nur die Tabellen der Migrationen enthalten – keine Vererbung (`INHERITS`), keine Partition, keine Fremdtabelle; eine Kindtabelle hätte weder Trigger noch Zeilenschutz gehabt. Und alle Rechte, die sie an Tabellen, Spalten, Sequenzen oder Funktionen vergibt (etwa `TRUNCATE` auf das Änderungsprotokoll für `PUBLIC`), fallen vor der Übergabe weg; die Rechte der Anwendung setzt `init-db-user.sql` danach neu.
+- **Deinstallation (Windows):** gelöscht wird erst nach einer geprüften Sicherung; die automatischen Sicherungen wandern auf den Desktop.
+- **Speicherort der Sicherungen:** Netzwerkpfade, Netzlaufwerke, öffentliche Ordner, Systemordner und Laufwerkswurzeln werden abgelehnt. Unter Windows bekommt ein neu angelegter Ordner die Rechte „nur SYSTEM und Administratoren“; ein bestehender Ordner, der für andere Konten zugänglich ist, wird abgelehnt (Hinweis – bitte einen neuen Ordnernamen eintragen).
+- **Sicherung aus der Weboberfläche** läuft mit einer nur lesenden Datenbankrolle statt mit dem Superuser (nativ und Docker).
+- **Datenbank unter Windows** nur noch mit SCRAM-Anmeldung; ein hängendes `pg_ctl status` beendet den Dienst nicht mehr endgültig.
+- **Docker:** Sicherungsskripte schreiben `0600`; Ports nur auf IPv4 veröffentlicht. **macOS:** eigene Dienstgruppe `_praxiszeit`. **Linux-Update** (PG-Major): Passwort nicht mehr in der Prozessliste.
+- **`SECRET_KEY` getrennt sichern** – `BACKUP.md` beschreibt, wo er liegt und warum er nicht in die Sicherung gehört.
+
+#### Lieferkette (#546)
+
+- Alle Downloads des Release-Builds (Python, PostgreSQL, VC-Redist, NSSM) sind per SHA256 gepinnt; die Python-Abhängigkeiten kommen aus einer Sperrdatei mit Prüfsummen (`requirements.lock`, `--require-hashes`). `setup.bat` und der Update-Assistent laden beim Kunden nichts mehr aus dem Internet.
+- Das signierte Update-Manifest kann ein Ablaufdatum tragen; abgelaufene Manifeste werden abgelehnt.
+- **Offen:** ein eigener Signaturschlüssel für Update-Pakete braucht einen neuen Offline-Schlüssel und Änderungen am Update-Server – folgt separat.
+- Das Backend-Basis-Image ist per Digest gepinnt; Debian-Sicherheitsupdates kommen damit nur noch mit einem bewussten Digest-Wechsel.
+
+### 🐛 Fehlerbehebungen (Oberfläche, #536)
+
+- Die Schaltfläche „Antrag“ in der Zeiterfassung war weiße Schrift auf Grau und kaum lesbar; sie ist jetzt bernsteinfarben (#533).
+- Admin-Seitenleiste: der Zähler klebt nicht mehr am Menüpunkt „Änderungsanträge“ (#534).
+- Das Admin-Handbuch nennt den Schalter so wie die App: „Abwesenheitsanträge genehmigungspflichtig“ (#535).
+
+### 🔧 Release-Prüfung 1.23.0
+
+- **Windows: vorab angelegtes `bin\postgresql` sperrt die Erstinstallation.** setup.bat legt diesen Ordner erst nach der Ordnerprüfung an. Lag er schon da (Ordner oder Verknüpfung) und ist noch kein PraxisZeit-Dienst für den Ordner eingerichtet, hätte setup.bat die PostgreSQL-Installation übersprungen und fremde Programmdateien als Datenbankdienst gestartet. Jetzt bricht `secure-install.ps1` mit Exit 2 ab; Updates bestehender Installationen sind nicht betroffen.
+- **Windows-Erstinstallation prüft den Ordner zuerst nur lesend** auf Verknüpfungen, harte Links und Namen mit Leerzeichen oder Punkt am Ende. Im Emulator-Test wurde ein harter Link zwar gefunden (Exit 2), die Rechte der verlinkten Datei außerhalb des Ordners hatten sich durch das Sperren der Wurzel aber schon geändert.
+- `setup.bat` wertet den Exit-Code der Ordnerprüfung genau aus: jeder Wert außer 0 bricht ab, auch ein negativer.
+- `uninstall.bat`: fehlte `config\.db-credentials`, brach die Deinstallation immer ab, auch wenn die Frage „Trotzdem OHNE Backup deinstallieren?“ mit „j“ beantwortet wurde.
+- Die Antwort von „Einstempeln“ kennzeichnet Sonn- und Feiertage jetzt wie „Ausstempeln“ und der Stempelstatus (`is_sunday_or_holiday`); vorher stand dort immer „nein“.
 
 ### ⚠️ Hinweis
 
+- **Sicherungen von vor 1.23.0 sind unsigniert** – auch die, die Sie direkt vor dem Update ziehen, solange noch die alte Version läuft. `praxiszeit-server.py restore`, `restore-backup.bat` und das Docker-`restore.sh` spielen sie nur mit dem Zusatz `--force-unverified` ein (unter Docker dann ungeprüft als Datenbank-Superuser) – nur mit Dateien der eigenen Installation. Hintergrund: [BACKUP.md → Signatur](docs/BACKUP.md#signatur-der-sicherungen).
+- **SMTP prüft das Zertifikat jetzt immer.** Bei `MAIL_STARTTLS=true` (Standard) prüft der Mailversand Zertifikat und Hostnamen des Mailservers gegen die Zertifizierungsstellen des Systems; eine Option zum Abschalten gibt es nicht. Ein Mailserver mit selbst signiertem Zertifikat oder einem Zertifikat nur für eine IP-Adresse nimmt keine Mails mehr an (Fehler im Log `mail_service: failed to send …`). `MAIL_HOST` auf den Namen setzen, auf den das Zertifikat ausgestellt ist, oder ein gültiges Zertifikat einspielen. Betroffen sind die Mails über `MAIL_HOST` (Registrierung/Bestätigung).
+- **Docker veröffentlicht die Ports nur noch über IPv4** (`"0.0.0.0:80:80"`, mit SSL `"0.0.0.0:443:443"`). Zugriff über IPv6 braucht einen vorgeschalteten Reverse-Proxy. Wer eigene Ports aus der alten `docker-compose.yml` oder einer `docker-compose.override.yml` übernimmt, behält das Präfix bei (z. B. `"0.0.0.0:8095:80"`).
+- **Windows-Setup und -Update brechen bei fremden Inhalten ab** (Ordnerprüfung mit Exit 2, Meldung „Setup gesperrt …“ bzw. im Update-Protokoll): bei Dateien unter `bin\` oder `app\`, die nicht zum Paket gehören, bei Verknüpfungen (Junction, symbolischer Link), Dateien mit mehreren harten Links, Namen mit Leerzeichen oder Punkt am Ende sowie bei Dateien in `data\db` oder `config`, die weder einem Administrator, SYSTEM noch dem Datenbankdienst gehören. Die aufgelisteten Einträge entfernen und erneut ausführen – oder in einen neuen, leeren Ordner installieren.
 - Ein **Reparieren** über den GUI-Installer schreibt `praxiszeit.conf` neu und setzt den Datenbank-Port damit auf den Wert des Feldes zurück — den Port dort erneut eintragen.
 - Beim ersten Start nach einem Port-Wechsel wird die `port =`-Zeile in `data\db\postgresql.conf` angepasst; läuft der PostgreSQL-Dienst, wird er dafür kurz gestoppt.
 

@@ -37,6 +37,9 @@ from tests.conftest import (
 )
 from tests.work_blocks_fixtures import legacy_week
 
+# #540 (A1-09): Einträge von heute mit festen Uhrzeiten — Uhr auf 23:58.
+pytestmark = pytest.mark.usefixtures("late_now")
+
 
 # ---------------------------------------------------------------------------
 # Test app
@@ -228,7 +231,7 @@ class TestChangeRequestBreakWaiver:
         """§3-10h-Cap bleibt hart, auch MIT §4-Ausnahme (422, nicht 201)."""
         resp = employee_client.post(
             "/api/change-requests/",
-            json={**_CR_OVER_6H, "proposed_end_time": "19:00", "break_waiver_reason": "egal"},
+            json={**_CR_OVER_6H, "proposed_end_time": "19:00", "break_waiver_reason": "egal, ist ja zu lang"},
         )
         assert resp.status_code == 422, resp.text
 
@@ -384,7 +387,9 @@ class TestBreakWaiverWithApproval:
         monkeypatch.setattr(te, "_today_local", lambda: monday)
         monkeypatch.setattr(
             te, "_now_local",
-            lambda: dt.datetime(2026, 6, 1, 12, 0, tzinfo=te.LOCAL_TZ),
+            # #540 (A1-09): nach dem Ende 17:30 — ein Ende in der Zukunft lehnt
+            # der Server ab.
+            lambda: dt.datetime(2026, 6, 1, 18, 0, tzinfo=te.LOCAL_TZ),
         )
         employee.track_hours = True
         employee.work_blocks = legacy_week(mon=("08:00", "16:00"))  # grace=15 → Fenster [07:45, 16:15]
@@ -570,7 +575,7 @@ class TestBreakWaiverUpdate:
         entry = _make_today_entry(db, employee, break_minutes=45)
         resp = employee_client.put(
             f"/api/time-entries/{entry.id}",
-            json={"break_minutes": 0, "break_waiver_reason": "Notfall"},
+            json={"break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung"},
         )
         assert resp.status_code == 202, resp.text
         # Original-Eintrag NICHT verändert
@@ -582,7 +587,7 @@ class TestBreakWaiverUpdate:
         assert cr.status == ChangeRequestStatus.PENDING
         assert cr.request_type == ChangeRequestType.UPDATE
         assert str(cr.time_entry_id) == str(entry.id)
-        assert cr.break_waiver_reason == "Notfall"
+        assert cr.break_waiver_reason == "Notfall ohne Vertretung"
         assert cr.proposed_break_minutes == 0
         assert cr.original_break_minutes == 45
 
@@ -662,6 +667,47 @@ class TestBreakWaiverSelfApprovalForbidden:
         cr = db.query(ChangeRequest).filter(ChangeRequest.id == uuid.UUID(cr_id)).one()
         assert cr.status == ChangeRequestStatus.PENDING
         assert cr.reviewed_by is None
+
+    def _own_waiver_cr(self, db, admin):
+        cr = ChangeRequest(
+            user_id=admin.id, tenant_id=DEFAULT_TENANT_ID,
+            request_type=ChangeRequestType.CREATE, entry_kind="time_entry",
+            status=ChangeRequestStatus.PENDING, proposed_date=today_local(),
+            proposed_start_time=time(8, 0), proposed_end_time=time(15, 30),
+            proposed_break_minutes=0, break_waiver_reason="Eigener Notfall",
+            reason="Eigener Notfall",
+        )
+        db.add(cr)
+        db.commit()
+        return cr
+
+    def test_sole_admin_gets_reject_hint(self, db, admin, admin_client):
+        """Final-Review (A1-06-Rest): in der Einzel-Admin-Praxis bleibt die
+        Sperre hart, die Meldung nennt aber den einzigen Ausweg (ablehnen) und
+        wo der Tag danach steht — sonst blieb der Antrag ratlos offen."""
+        cr = self._own_waiver_cr(db, admin)
+        resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                 json={"action": "approve"})
+        assert resp.status_code == 403, resp.text
+        detail = resp.json()["detail"]
+        assert "selbst genehmigt" in detail
+        assert "nur ablehnen" in detail and "Pause zu kurz" in detail
+        # der Ausweg funktioniert: eigener Antrag lässt sich ablehnen
+        resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                 json={"action": "reject", "rejection_reason": "kein zweiter Admin"})
+        assert resp.status_code == 200, resp.text
+
+    def test_second_admin_no_reject_hint(self, db, admin, admin_client):
+        db.add(User(username="admin2_hint", email="admin2_hint@example.com",
+                    password_hash=auth_service.hash_password("admin123"), first_name="Zweit",
+                    last_name="Admin", role=UserRole.ADMIN, weekly_hours=40.0, vacation_days=30,
+                    work_days_per_week=5, is_active=True, tenant_id=DEFAULT_TENANT_ID))
+        db.commit()
+        cr = self._own_waiver_cr(db, admin)
+        resp = admin_client.post(f"/api/admin/change-requests/{cr.id}/review",
+                                 json={"action": "approve"})
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"] == "Eigene Pflicht-Pause-Ausnahmen dürfen nicht selbst genehmigt werden."
 
     def test_admin_can_approve_other_users_waiver_cr(self, db, employee, admin):
         """Gegenprobe: ein FREMDER Waiver-CR (vom MA) darf vom Admin genehmigt
@@ -1126,7 +1172,7 @@ class TestWaiverAntragTraegtParagraph10Grund:
         entry = _make_today_entry(db, employee, break_minutes=45)
         resp = employee_client.put(
             f"/api/time-entries/{entry.id}",
-            json={"break_minutes": 0, "break_waiver_reason": "Notfall",
+            json={"break_minutes": 0, "break_waiver_reason": "Notfall ohne Vertretung",
                   "sunday_exception_reason": "Notdienst"},
         )
         assert resp.status_code == 202, resp.text

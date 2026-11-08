@@ -1,5 +1,5 @@
 import { test, expect } from '../../fixtures/base.fixture';
-import { today, todayDisplay } from '../../helpers/date.helper';
+import { pastSlotToday, today, todayDisplay } from '../../helpers/date.helper';
 
 test.describe('Admin Time Entries', () => {
   test('create entry for employee via admin dashboard', async ({ adminPage, testEmployee }) => {
@@ -29,10 +29,13 @@ test.describe('Admin Time Entries', () => {
     // zu. Heute liegt zudem immer im Anzeigemonat des Modals (siehe
     // todayDisplay()).
     const date = today();
+    // #540 (A1-09): das Ende eines heutigen Eintrags darf nicht in der Zukunft liegen.
+    const slot = pastSlotToday(120);
+    test.skip(!slot, 'braucht 2 h vergangene Zeit am heutigen Tag');
     await dialog.getByLabel('Datum').fill(date);
-    await dialog.getByLabel('Von (Uhrzeit)').fill('09:00');
-    await dialog.getByLabel('Bis (Uhrzeit)').fill('17:00');
-    await dialog.getByLabel('Pause in Minuten').fill('30');
+    await dialog.getByLabel('Von (Uhrzeit)').fill(slot!.start);
+    await dialog.getByLabel('Bis (Uhrzeit)').fill(slot!.end);
+    await dialog.getByLabel('Pause in Minuten').fill('0');
 
     // Save
     await dialog.getByRole('button', { name: 'Speichern' }).click();
@@ -59,10 +62,13 @@ test.describe('Admin Time Entries', () => {
   test('edit entry via admin dashboard', async ({ adminPage, testEmployee, createTimeEntry }) => {
     // Create entry via API
     const date = today();
+    // #540 (A1-09): Spanne, die schon vorbei ist.
+    const slot = pastSlotToday(240);
+    test.skip(!slot, 'braucht vergangene Zeit am heutigen Tag');
     await createTimeEntry(testEmployee.id, {
       date,
-      start_time: '10:00',
-      end_time: '14:00',
+      start_time: slot!.start,
+      end_time: slot!.end,
       break_minutes: 0,
     });
 
@@ -95,10 +101,13 @@ test.describe('Admin Time Entries', () => {
   test('delete entry via admin dashboard', async ({ adminPage, testEmployee, createTimeEntry }) => {
     // Create entry via API
     const date = today();
+    // #540 (A1-09): Spanne, die schon vorbei ist.
+    const slot = pastSlotToday(60);
+    test.skip(!slot, 'braucht vergangene Zeit am heutigen Tag');
     await createTimeEntry(testEmployee.id, {
       date,
-      start_time: '15:00',
-      end_time: '16:00',
+      start_time: slot!.start,
+      end_time: slot!.end,
       break_minutes: 0,
     });
 
@@ -135,16 +144,19 @@ test.describe('Admin Time Entries', () => {
   test('audit log records admin action', async ({ adminPage, testEmployee, createTimeEntry }) => {
     // Create an entry via API (this should generate an audit log entry)
     const date = today();
+    // #540 (A1-09): Spanne, die schon vorbei ist.
+    const slot = pastSlotToday(240);
+    test.skip(!slot, 'braucht vergangene Zeit am heutigen Tag');
     await createTimeEntry(testEmployee.id, {
       date,
-      start_time: '08:00',
-      end_time: '12:00',
+      start_time: slot!.start,
+      end_time: slot!.end,
       break_minutes: 0,
     });
 
     // Navigate to audit log
     await adminPage.goto('/admin/audit-log');
-    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll' })).toBeVisible();
+    await expect(adminPage.getByRole('heading', { name: 'Änderungsprotokoll', exact: true })).toBeVisible();
     await adminPage.waitForLoadState('networkidle');
 
     // Der Test heißt "audit log records admin action" — dann muss er auch DIESE

@@ -1180,7 +1180,10 @@ class TestErrorCaptureMiddleware:
                 )
                 assert row is not None, "Kein error_logs-Eintrag geschrieben"
                 assert row.status_code == 500
-                assert marker in row.message
+                # Audit 2026-11-07 (S2-1): nur der Ausnahmetyp, nie ihr Text
+                # (der trug bei Datenbankfehlern Statement-Werte).
+                assert row.message == "RuntimeError"
+                assert marker not in (row.message + (row.traceback or ""))
             finally:
                 session.close()
         finally:

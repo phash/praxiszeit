@@ -52,7 +52,7 @@ export const helpContent: Record<string, HelpEntry> = {
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
             <li>Klicken Sie auf <span className="font-medium">„+ Neuer Eintrag"</span> (Mitarbeitende: nur für heute; einen vergangenen Tag beantragen Sie über <span className="font-medium">„Antrag"</span>)</li>
             <li>„Von" und „Bis" eintragen (sind Arbeitszeit-Blöcke für Sie hinterlegt, sind die Felder daraus vorbelegt)</li>
-            <li>Pause in Minuten eingeben – Pflicht bei mehr als 6 Stunden (siehe unten); eine Lücke zwischen Ihren Arbeitszeit-Blöcken zählt als Pause</li>
+            <li>Pause in Minuten eingeben – Pflicht bei mehr als 6 Stunden (siehe unten); eine Lücke zwischen Ihren Arbeitszeit-Blöcken zählt als Pause. Ohne Pause schlägt das Formular 30 Min. vor („30 Min. Pause eintragen" oder „Keine Pause gemacht – ohne Pause speichern")</li>
             <li>Optional: Notiz hinzufügen</li>
             <li>Auf <span className="font-medium">„Speichern"</span> klicken</li>
           </ol>
@@ -62,7 +62,12 @@ export const helpContent: Record<string, HelpEntry> = {
           <div className="text-sm bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
             <p className="text-amber-800">⚠️ <span className="font-medium">6–9 Stunden Arbeit</span> → mind. 30 Min. Pause</p>
             <p className="text-amber-800">⚠️ <span className="font-medium">Über 9 Stunden Arbeit</span> → mind. 45 Min. Pause</p>
+            <p className="text-amber-800">Begründung „Pflicht-Pause war nicht möglich": mindestens 10 Zeichen</p>
           </div>
+        </section>
+        <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Keine Überschneidungen</h3>
+          <p className="text-sm text-gray-600">Einträge eines Tages dürfen sich nicht überschneiden (Stempelzeiten, ein laufender Eintrag bis jetzt) – der Hinweis nennt den vorhandenen Eintrag. Aneinanderstoßend (12:00 Ende, 12:00 Beginn) ist erlaubt. Das Ende darf nicht in der Zukunft liegen. Keine Dienste über Mitternacht (ein Eintrag endet spätestens 23:59).</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Tagesgrenze (§3 ArbZG)</h3>
@@ -100,6 +105,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Optional: Notiz</li>
             <li>Speichern</li>
           </ol>
+          <p className="text-sm text-gray-600 mt-2">Vergangene Tage nur per Antrag: Zeiterfassung → Journal, in der Zeile des Tages „Antrag".</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Abwesenheitstypen</h3>
@@ -117,7 +123,7 @@ export const helpContent: Record<string, HelpEntry> = {
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Eintrag löschen</h3>
-          <p className="text-sm text-gray-600">Unten in der Liste „Meine Abwesenheiten" auf „Löschen" klicken (Smartphone: Papierkorb-Symbol).</p>
+          <p className="text-sm text-gray-600">Unten in der Liste „Meine Abwesenheiten" auf „Löschen" klicken (Smartphone: Papierkorb-Symbol). Vergangene Tage: „per Antrag" (Lösch-Antrag im Journal); Einträge der Verwaltung ändert die Verwaltung.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Zeiträume</h3>
@@ -179,6 +185,7 @@ export const helpContent: Record<string, HelpEntry> = {
           <h3 className="font-semibold text-gray-800 mb-2">Schnellzugriff</h3>
           <ul className="space-y-1 text-sm text-gray-600">
             <li>Klick auf eine Zeile → Detailansicht (Zeiteinträge, Abwesenheiten, Änderungsprotokoll); dort Einträge anlegen und nicht angerechnete Zeit mit „Anerkennen" anrechnen</li>
+            <li>Karte „Automatisch geschlossene Einträge – Ende fehlt": vergessenes Ausstempeln mit §3/§4-Befunden – tatsächliches Ende im Monatsjournal eintragen oder den Antrag der Person prüfen</li>
             <li>Links in der Sidebar führen zu allen Admin-Bereichen</li>
           </ul>
         </section>
@@ -230,7 +237,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li><span className="font-medium text-gray-700">Jahresreport Classic:</span> 12 Monate kompakt je Mitarbeiter:in, als Excel (Monate als Spalten) oder ODS (eine Zeile je Monat).</li>
             <li><span className="font-medium text-gray-700">Jahresreport Detailliert:</span> 365 Tage pro MA, für Steuerberater, als Excel oder ODS.</li>
           </ul>
-          <p className="mt-2 text-sm text-gray-600">Monatsreport und Jahresreport Detailliert: letzte Spalte der Tageszeilen „Nicht angerechnet (Min)" – gestempelte, nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken. „Netto" ist die angerechnete Zeit. Der Jahresreport Classic (nur Monatswerte, keine Tageszeilen) hat diese Spalte nicht.</p>
+          <p className="mt-2 text-sm text-gray-600">Monatsreport und Jahresreport Detailliert: Spalte „Nicht angerechnet (Min)" – gestempelte, nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken –, dahinter „Gestempelt (Von–Bis)", „Anwesenheit laut Stempel (Std)" und „Pausenausnahme (§4 ArbZG)". „Netto" ist die angerechnete Zeit. Der Jahresreport Classic (nur Monatswerte, keine Tageszeilen) hat diese Spalten nicht.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">ArbZG-Berichte</h3>
@@ -238,7 +245,8 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>📋 <span className="font-medium">Ruhezeitverstöße (§5):</span> MA unter 11h Ruhezeit</li>
             <li>📋 <span className="font-medium">Sonntagsarbeit (§11):</span> Freie Sonntage + Ersatzruhetage</li>
             <li>📋 <span className="font-medium">Nachtarbeit (§6):</span> Nachtarbeitnehmer-Tracking</li>
-            <li>📋 <span className="font-medium">24-Wochen-Durchschnitt (§3):</span> Ø angerechnet / Tag und Anwesenheit laut Stempel</li>
+            <li>📋 <span className="font-medium">24-Wochen-Durchschnitt (§3):</span> Ø angerechnet / Werktag und Anwesenheit laut Stempel</li>
+            <li>📋 <span className="font-medium">Höchstarbeitszeit und Pausenausnahmen (§3/§4):</span> Tage &gt; 10 h, Wochen &gt; 48 h, Pausenausnahmen mit Begründung, Tage mit zu kurzer Pause ohne anerkannte Ausnahme</li>
           </ul>
         </section>
         <section>
@@ -289,7 +297,10 @@ export const helpContent: Record<string, HelpEntry> = {
           <ul className="space-y-1 text-sm text-gray-600">
             <li>Änderungen an Zeiteinträgen und Abwesenheiten – Spalte „Quelle": Manuell (von Hand angelegt oder geändert – durch die Verwaltung oder in der Zeiterfassung; wer, steht unter „Geändert von"), Ausstempeln, Automatisch geschlossen, Antrag, Import, Pausen-Verzicht, Stundenänderung, Neukappung (Arbeitszeit-Änderung), Anrechnung anerkannt u. a.</li>
             <li>Zugriffe auf Gesundheitsdaten, Exporte und DSGVO-Vorgänge (Anonymisieren, Endgültig löschen)</li>
-            <li>Karte „Konto-Vorgänge": Deaktivieren, Reaktivieren, Rollenwechsel, von der Verwaltung gesetzte Passwörter, Zwei-Faktor im Profil ein-/abgeschaltet sowie Notfall-Vorgänge per Kommandozeile (Passwort zurückgesetzt, Zwei-Faktor abgeschaltet)</li>
+            <li>Überträge, Jahresabschluss, Einstellungen, Feiertage und verkürzte Tage – jeweils alter und neuer Wert</li>
+            <li>§ 18 ArbZG, Nachtarbeit sowie erster/letzter Arbeitstag einer Person (Benutzerangabe geändert)</li>
+            <li>Bei Zeiteinträgen neben der angerechneten auch die tatsächlich gestempelte Zeit („gestempelt …"), auch bei Löschungen</li>
+            <li>Karte „Konto-Vorgänge": Konten angelegt/umbenannt, Deaktivieren, Reaktivieren, Rollenwechsel, von der Verwaltung gesetzte Passwörter, Zwei-Faktor im Profil ein-/abgeschaltet oder durch die Verwaltung zurückgesetzt, falsche Zwei-Faktor-Codes, Datenbank-Sicherungen sowie Notfall-Vorgänge per Kommandozeile (Passwort zurückgesetzt, Zwei-Faktor abgeschaltet)</li>
           </ul>
         </section>
         <section>
@@ -299,7 +310,7 @@ export const helpContent: Record<string, HelpEntry> = {
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Rechtliche Bedeutung</h3>
           <div className="text-sm bg-blue-50 border border-blue-200 rounded-sm p-2 text-blue-700">
-            Das Audit-Log dient als Nachweis für Änderungen gemäß §16 ArbZG. Einträge können nicht gelöscht werden.
+            Das Audit-Log dient als Nachweis für Änderungen gemäß §16 ArbZG. PraxisZeit kann Zeilen nur anfügen; jede Zeile trägt eine Prüfsumme, und die Karte „Prüfung des Änderungsprotokolls" (jede Nacht automatisch, „Jetzt prüfen") erkennt Zeilen, die außerhalb von PraxisZeit verändert oder entfernt wurden. Fehlt das Kettenende, sind Löschungen gesperrt, bis es mit Grund neu gesetzt wird.
           </div>
         </section>
       </div>

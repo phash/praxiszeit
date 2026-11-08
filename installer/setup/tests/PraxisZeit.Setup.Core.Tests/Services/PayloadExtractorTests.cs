@@ -128,3 +128,74 @@ public class PayloadExtractorTests : IDisposable
         await act.Should().ThrowAsync<FileNotFoundException>();
     }
 }
+
+public class ZipPathGuardTests
+{
+    private static readonly string Root = Path.Combine(Path.GetTempPath(), "pz-zipguard", "install");
+
+    [Theory]
+    [InlineData("../evil.txt")]
+    [InlineData("..\\evil.txt")]
+    [InlineData("app/../../evil.txt")]
+    [InlineData("app\\..\\..\\Windows\\System32\\x.dll")]
+    [InlineData("/etc/passwd")]
+    [InlineData("C:/Windows/System32/x.dll")]
+    [InlineData("C:x.dll")]
+    public void ResolveEntryPath_rejects_entries_outside_the_target(string entry)
+    {
+        var act = () => ZipPathGuard.ResolveEntryPath(Root, entry);
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [Fact]
+    public void ResolveEntryPath_rejects_sibling_with_common_prefix()
+    {
+        // "install-evil" beginnt wie "install" - der Vergleich braucht den Trenner.
+        var act = () => ZipPathGuard.ResolveEntryPath(Root, "../install-evil/x.txt");
+        act.Should().Throw<InvalidDataException>();
+    }
+
+    [Theory]
+    [InlineData("praxiszeit-server.py")]
+    [InlineData("app/backend/main.py")]
+    [InlineData("bin/python/./python.exe")]
+    [InlineData("app/x/../y.txt")]
+    public void ResolveEntryPath_keeps_regular_entries_below_the_target(string entry)
+    {
+        var full = ZipPathGuard.ResolveEntryPath(Root, entry);
+        full.Should().StartWith(Path.GetFullPath(Root) + Path.DirectorySeparatorChar);
+    }
+}
+
+public class PayloadExtractorZipSlipTests : IDisposable
+{
+    private readonly string _tempDir = Path.Combine(Path.GetTempPath(), $"praxiszeit-zipslip-{Guid.NewGuid():N}");
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_tempDir))
+        {
+            Directory.Delete(_tempDir, recursive: true);
+        }
+        GC.SuppressFinalize(this);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_refuses_zip_slip_and_writes_nothing_outside()
+    {
+        Directory.CreateDirectory(_tempDir);
+        var zipPath = Path.Combine(_tempDir, "evil.zip");
+        using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+        {
+            var entry = zip.CreateEntry("../outside.txt");
+            using var writer = new StreamWriter(entry.Open());
+            writer.Write("pwned");
+        }
+        var target = Path.Combine(_tempDir, "install");
+
+        var act = () => new PayloadExtractor().ExtractAsync(zipPath, target, isUpdate: false);
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+        File.Exists(Path.Combine(_tempDir, "outside.txt")).Should().BeFalse();
+    }
+}

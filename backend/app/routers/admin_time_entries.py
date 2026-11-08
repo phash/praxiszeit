@@ -1,6 +1,7 @@
 """Admin sub-router: Admin Time Entry CRUD + Audit Log."""
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.services.date_filters import date_in_year, date_in_month
 from sqlalchemy import extract, or_, and_
@@ -18,7 +19,12 @@ from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_DAILY_HOURS_WARN, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
     BREAK_WAIVER_SOURCE, _assert_within_employment_window,
+    auto_close_findings, uncorrected_auto_closed,
 )
+from app.routers import time_entries as _te
+from app.schemas.time_entry import AutoClosedEntryResponse
+from app.services import entry_guard_service
+from app.services.holiday_service import is_holiday
 from app.services.arbzg_utils import is_night_work
 from app.services import credit_override_service, presence_service, work_window_service
 from app.routers.absences import _MASKED_ABSENCE_TYPES
@@ -67,6 +73,55 @@ def _audit_note_is_health_sensitive(log: TimeEntryAuditLog) -> bool:
 
 
 # ── Admin Time Entry Management ─────────────────────────────────────────
+
+def _sunday_holiday_warnings(db: Session, tenant_id, d, reason) -> list[str]:
+    """#540 (A1-11): Sonn-/Feiertagsarbeit auch auf den Verwaltungswegen melden
+    (bis dahin nur in den Mitarbeiterpfaden). Mit eingetragenem §10-Grund
+    bleibt es bei der Feststellung ohne Aufforderung."""
+    out: list[str] = []
+    suffix = "" if reason else " – bitte Ausnahmegrund (§10 ArbZG) angeben"
+    if d.weekday() == 6:
+        out.append(f"SUNDAY_WORK: Sonntagsarbeit eingetragen (§9 ArbZG){suffix}.")
+    if is_holiday(db, d, tenant_id=tenant_id):
+        out.append(f"HOLIDAY_WORK: Feiertagsarbeit eingetragen (§9 ArbZG){suffix}.")
+    return out
+
+
+@router.get("/time-entries/auto-closed", response_model=List[AutoClosedEntryResponse])
+def list_auto_closed_entries(
+    days: int = Query(90, ge=1, le=730),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#540 (A1-04): automatisch geschlossene Einträge, deren tatsächliches Ende
+    noch fehlt — mit den §3/§4-Befunden (live gerechnet) und dem Kennzeichen,
+    ob schon ein Änderungsantrag läuft. Nur lesend; der Ausweg ist die
+    Korrektur des Endes (Monatsjournal) bzw. die Genehmigung des Antrags."""
+    from datetime import timedelta
+    today = _te._today_local()
+    rows = uncorrected_auto_closed(
+        db, tenant_id=current_user.tenant_id,
+        since=today - timedelta(days=days), until=today, limit=200,
+    )
+    users = {
+        u.id: u for u in db.query(User).filter(
+            User.tenant_id == current_user.tenant_id,  # F-026
+            User.id.in_({e.user_id for e, _ in rows}),
+        ).all()
+    } if rows else {}
+    out = []
+    for e, has_pending in rows:
+        owner = users.get(e.user_id)
+        out.append(AutoClosedEntryResponse(
+            id=e.id, user_id=e.user_id,
+            user_name=f"{owner.first_name} {owner.last_name}" if owner else "",
+            date=e.date, start_time=e.raw_start_time or e.start_time, end_time=e.end_time,
+            net_hours=float(e.net_hours),
+            findings=auto_close_findings(db, owner, e) if owner else [],
+            pending_change_request=has_pending,
+        ))
+    return out
+
 
 @router.post("/users/{user_id}/time-entries", response_model=TimeEntryResponse, status_code=status.HTTP_201_CREATED)
 def admin_create_time_entry(
@@ -121,6 +176,23 @@ def admin_create_time_entry(
             status_code=status.HTTP_409_CONFLICT,
             detail="Es existiert bereits ein Eintrag mit dieser Startzeit an diesem Datum",
         )
+
+    # #540 (A1-09) / #538 (A1-02): dieselben Plausibilitäts- und
+    # Überschneidungsprüfungen wie in ``create_time_entry`` (Person des Eintrags).
+    _now = _te._now_local()
+    _plaus = (
+        entry_guard_service.future_end_error(entry_data.date, entry_data.end_time, today=_now.date(), now=_now)
+        or entry_guard_service.break_span_error(entry_data.start_time, entry_data.end_time, entry_data.break_minutes)
+    )
+    if _plaus:
+        raise HTTPException(status_code=400, detail=_plaus)
+    entry_guard_service.assert_no_overlap(
+        db, tenant_id=current_user.tenant_id, user_id=user.id, day=entry_data.date,
+        candidate=entry_guard_service.interval(
+            entry_data.start_time, entry_data.end_time, on=entry_data.date,
+            today=_now.date(), now=_now.time()),
+        today=_now.date(), now=_now.time(),
+    )
 
     admin_create_warnings: list[str] = []
     # #462: Die Kappung darf nicht stumm passieren — genau der Fall, den der
@@ -183,6 +255,12 @@ def admin_create_time_entry(
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
             admin_create_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §3 ArbZG)")
+
+        # #540 (A1-11): §9/§10 wie die übrigen Schreibwege — ohne Grund mit
+        # Hinweis auf den fehlenden Ausnahmegrund.
+        admin_create_warnings.extend(_sunday_holiday_warnings(
+            db, current_user.tenant_id, entry_data.date, entry_data.sunday_exception_reason,
+        ))
 
         # SS6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (
@@ -264,6 +342,9 @@ def admin_update_time_entry(
     )
     if not entry:
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden")
+    # #538 (A1-02): Anwesenheit vor der Bearbeitung (unverändert → keine Prüfung).
+    _now = _te._now_local()
+    _before_presence = entry_guard_service.snapshot(entry, today=_now.date(), now=_now.time())
 
     # Get user for SS18 exempt check and night worker warning.
     # F-026: expliziter Tenant-Filter zusätzlich zu RLS (belt-and-suspenders).
@@ -361,6 +442,18 @@ def admin_update_time_entry(
     )
     if _order_error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_order_error)
+    # #540 (A1-09): kein NEUES Ende in der Zukunft (heute); Pause kürzer als die
+    # Spanne der Eingabe — wie die MA-Route.
+    if entry_data.end_time is not None and entry_data.end_time not in (entry.end_time, entry.raw_end_time):
+        _fe = entry_guard_service.future_end_error(update_date, entry_data.end_time, today=_now.date(), now=_now)
+        if _fe:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_fe)
+    if (update_end_time is not None and entry.end_time is not None
+            and (entry_data.break_minutes is not None or entry_data.start_time is not None
+                 or entry_data.end_time is not None)):
+        _se = entry_guard_service.break_span_error(update_start_time, update_end_time, update_break_minutes)
+        if _se:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_se)
 
     # #201: Clamp start/end to the affected employee's soll window.
     # Use `affected_user` (the employee whose entry this is), NOT current_user (admin).
@@ -398,6 +491,36 @@ def admin_update_time_entry(
     # MA-Route und Antragsgenehmigung).
     _end_corrected = entry.auto_closed and entry_data.end_time is not None \
         and work_window_service.end_is_correction(entry_data.end_time, entry.end_time)
+
+    # #538 (A1-02): Überschneidung mit einem anderen Eintrag des Tages — mit der
+    # Anwesenheit, die unten gespeichert wird (Rohstempel; ohne tatsächliches
+    # Ende bleibt beim automatisch geschlossenen Eintrag das wirksame Ende).
+    # Vor §3/§4 (deren Zahlen bei einer Überschneidung nichts aussagen) und vor
+    # jedem Schreiben; unveränderte Anwesenheit prüft nicht (Bestand bleibt
+    # bearbeitbar).
+    _ws = entry_data.start_time is not None or entry_data.date is not None
+    _we = entry_data.end_time is not None or entry_data.date is not None
+    _p_start = (raw_start or eff_start) if _ws else (entry.raw_start_time or entry.start_time)
+    _new_end = eff_end if _we else entry.end_time
+    if _new_end is None:
+        _p_end = None
+    elif entry.auto_closed and not _end_corrected:
+        _p_end = _new_end
+    else:
+        _p_end = (raw_end or eff_end) if _we else work_window_service.presence_end(entry)
+    _cand = entry_guard_service.interval(
+        _p_start, _p_end, on=update_date, today=_now.date(), now=_now.time(),
+    )
+    _b_day, _b_int = _before_presence
+    _same_presence = _b_day == update_date and (
+        (_b_int.start, _b_int.end, _b_int.running) == (_cand.start, _cand.end, _cand.running)
+        or (_b_int.running and _cand.running and _b_int.start == _cand.start)
+    )
+    if not _same_presence:
+        entry_guard_service.assert_no_overlap(
+            db, tenant_id=current_user.tenant_id, user_id=entry.user_id, day=update_date,
+            candidate=_cand, today=_now.date(), now=_now.time(), exclude_ids=(entry.id,),
+        )
 
     admin_update_warnings: list[str] = []
     # #462: wie im Anlege-Pfad — eine stille Aenderung fremder Arbeitszeit ist
@@ -528,6 +651,14 @@ def admin_update_time_entry(
         )
         if weekly_hours > MAX_WEEKLY_HOURS_WARN:
             admin_update_warnings.append(f"WEEKLY_HOURS_WARNING: Wochenarbeitszeit beträgt {weekly_hours:.1f}h (>{MAX_WEEKLY_HOURS_WARN}h, §3 ArbZG)")
+
+        # #540 (A1-11): §9/§10 wie beim Anlegen.
+        admin_update_warnings.extend(_sunday_holiday_warnings(
+            db, current_user.tenant_id, update_date,
+            entry_data.sunday_exception_reason
+            if "sunday_exception_reason" in entry_data.model_fields_set
+            else entry.sunday_exception_reason,
+        ))
 
         # SS6 Abs. 2 ArbZG: Warnung für Nachtarbeitnehmer
         if (
@@ -713,7 +844,7 @@ def list_audit_log(
         description="Return only real change actions (create/update/delete), "
         "excluding access/system events such as DSGVO read-access markers (#284).",
     ),
-    skip: int = 0,
+    skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
@@ -842,42 +973,77 @@ def verify_audit_integrity(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """#121: Tamper-Evidence-Check aller Audit-Rows des Tenants.
+    """#121/#537: Tamper-Evidence-Check aller Audit-Rows des Tenants (nur lesend).
 
-    Berechnet pro Row den HMAC neu (Schluessel aus SECRET_KEY abgeleitet) und
-    vergleicht ihn mit dem gespeicherten ``row_hash``. Eine nachtraegliche
-    Manipulation einer Audit-Row (z. B. via SQL-Injection an anderer Stelle)
-    bricht den Hash -> ``tampered``. Vor dem Feature geschriebene Rows ohne Hash
-    sind ``legacy_unhashed`` (nicht verifizierbar, NICHT als Manipulation
-    gewertet). ``intact`` ist true, wenn keine gehashte Row manipuliert wurde.
+    Prueft je Zeile die Pruefsumme (v2-Altbestand gegen die festen Verweise aus
+    Migration 076, v3 inkl. ``created_at`` und Rohstempel), die Kettenglieder,
+    Luecken in der Kette (eine geloeschte Zeile ohne Vermerk) und das gesiegelte
+    Kettenende. Eine ungehashte Zeile, die juenger ist als die erste gehashte,
+    gilt als manipuliert (A2-2). Altbestand ohne Hash (``legacy_unhashed``) und
+    Altbestand eines vor 076 geloeschten Eintrags (``legacy_entry_deleted``)
+    werden getrennt gezaehlt und brechen ``intact`` nicht.
     """
-    from app.core import audit_integrity
+    from app.services import audit_chain_service
 
-    checked = ok = tampered = legacy = 0
-    tampered_ids: list[str] = []
-    # F-026: explizit auf den Tenant scopen (zusaetzlich zu RLS). yield_per haelt
-    # den Speicher bei sehr grossen Audit-Tabellen klein.
-    rows = (
-        db.query(TimeEntryAuditLog)
-        .filter(TimeEntryAuditLog.tenant_id == current_user.tenant_id)
-        .yield_per(500)
+    # F-026: explizit auf den Tenant gescoped (im Service, zusaetzlich zu RLS).
+    return audit_chain_service.verify_tenant(db, current_user.tenant_id)
+
+
+@router.post("/audit/verify-integrity")
+def check_audit_integrity(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#537 (A2-12): Pruefung auf Knopfdruck (Karte im Aenderungsprotokoll) —
+    versiegelt erst die neuen Zeilen, prueft dann und legt das Ergebnis als
+    „letzte Pruefung" ab. Abweichungen landen wie beim taeglichen Lauf in den
+    Konto-Vorgaengen und in der Fehlerueberwachung."""
+    from app.services import audit_chain_service
+
+    result = audit_chain_service.check_tenant(
+        db, current_user.tenant_id, actor=f"user:{current_user.id}", record_failure=True,
     )
-    for row in rows:
-        checked += 1
-        if not row.row_hash:
-            legacy += 1
-        elif audit_integrity.verify_row(row):
-            ok += 1
-        else:
-            tampered += 1
-            if len(tampered_ids) < 100:  # Antwort begrenzen
-                tampered_ids.append(str(row.id))
+    result["last_check"] = audit_chain_service.read_last_check(db, current_user.tenant_id)
+    return result
 
-    return {
-        "checked": checked,
-        "ok": ok,
-        "tampered": tampered,
-        "legacy_unhashed": legacy,
-        "intact": tampered == 0,
-        "tampered_ids": tampered_ids,
-    }
+
+class AuditReanchorRequest(BaseModel):
+    reason: str = Field(..., min_length=10, max_length=300)
+
+
+@router.post("/audit/reanchor")
+def reanchor_audit_chain(
+    body: AuditReanchorRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#537 (Review-Runde): Kettenende neu setzen, nachdem die Pruefung ein
+    fehlendes oder ungueltiges Kettenende gemeldet hat. Bis dahin sind
+    Versiegeln und Loeschen von Protokollzeilen gesperrt. Das Neusetzen
+    hinterlaesst eine gehashte Vermerk-Zeile mit Grund und einen
+    Konto-Vorgang; 400, wenn das Kettenende stimmt."""
+    from app.services import audit_chain_service
+
+    reason = body.reason.strip()
+    if len(reason) < 10:
+        raise HTTPException(status_code=422, detail="Bitte einen Grund mit mindestens 10 Zeichen angeben.")
+    try:
+        result = audit_chain_service.reanchor_chain(
+            db, current_user.tenant_id, changed_by=current_user.id, reason=reason,
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    result["last_check"] = audit_chain_service.read_last_check(db, current_user.tenant_id)
+    return result
+
+
+@router.get("/audit/integrity-status")
+def audit_integrity_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """#537 (A2-12): Ergebnis der letzten Pruefung (taeglich oder per Knopf)."""
+    from app.services import audit_chain_service
+
+    return {"last_check": audit_chain_service.read_last_check(db, current_user.tenant_id)}

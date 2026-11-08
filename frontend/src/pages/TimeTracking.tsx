@@ -20,7 +20,8 @@ import EmptyState from '../components/EmptyState';
 import { getErrorMessage, formatHoursHM } from '../utils/errorMessage';
 import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { computeBreakError } from '../utils/breakValidation';
-import { BREAK_EXCEPTION_DISABLED_HINT } from '../utils/breakWaiverRetry';
+import { BREAK_EXCEPTION_DISABLED_HINT, breakWaiverReasonError } from '../utils/breakWaiverRetry';
+import { entryInterval, findOverlap, interval as presenceInterval, overlapMessage } from '../utils/entryOverlap';
 import { useSystemStore } from '../stores/systemStore';
 import { useUIStore } from '../stores/uiStore';
 import { RawStampNote } from '../components/RawStampNote';
@@ -208,6 +209,10 @@ export default function TimeTracking() {
     break_time?: string;
     break_waiver_reason?: string;
   }>({});
+  // #540 (A1-12): Pausen-Vorschlag statt stiller Automatik — die Person
+  // entscheidet (30 Min. eintragen oder bewusst ohne Pause speichern).
+  const [breakSuggestion, setBreakSuggestion] = useState(false);
+  const [noBreakConfirmed, setNoBreakConfirmed] = useState(false);
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   const [weekOffset, setWeekOffset] = useState(0);
 
@@ -399,21 +404,32 @@ export default function TimeTracking() {
       newErrors.end_time = 'Endzeit muss nach Startzeit liegen';
     }
 
-    // Check for overlapping entries on the same day (skip open entries)
+    // Same-day closed entries (für §4 unten; offene Einträge zählen dort nicht).
     const sameDay = entries.filter(
       (entry) => entry.date === formData.date && entry.id !== editingId && entry.end_time
     );
 
-    const newStart = formData.start_time;
-    const newEnd = formData.end_time;
-
-    for (const entry of sameDay) {
-      const existingStart = entry.start_time.substring(0, 5);
-      const existingEnd = entry.end_time!.substring(0, 5);
-
-      if (newStart < existingEnd && newEnd > existingStart) {
-        newErrors.overlap = `Überschneidung mit bestehendem Eintrag (${existingStart} - ${existingEnd})`;
-        break;
+    // #538 (A1-02): Überschneidung wie der Server (`entry_guard_service`) —
+    // Anwesenheit laut Stempel, laufende Einträge bis jetzt, Anstoßen erlaubt.
+    // Beim Bearbeiten nur, wenn sich die Anwesenheit ändert (Bestand bleibt
+    // bearbeitbar); die zurückgeschickte angerechnete Zeit gilt als der Rohstempel.
+    {
+      const nowD = new Date();
+      const nowHHMM = `${String(nowD.getHours()).padStart(2, '0')}:${String(nowD.getMinutes()).padStart(2, '0')}`;
+      const todayStr = format(nowD, 'yyyy-MM-dd');
+      const editingEntry = editingId ? entries.find((x) => x.id === editingId) : undefined;
+      const echoStart = editingEntry && formData.start_time === editingEntry.start_time.substring(0, 5)
+        ? (editingEntry.raw_start_time || editingEntry.start_time) : formData.start_time;
+      const echoEnd = editingEntry?.end_time && formData.end_time === editingEntry.end_time.substring(0, 5)
+        ? (editingEntry.auto_closed ? editingEntry.end_time : (editingEntry.raw_end_time || editingEntry.end_time))
+        : formData.end_time;
+      const cand = presenceInterval(echoStart, echoEnd || null, { onDate: formData.date, today: todayStr, now: nowHHMM });
+      const before = editingEntry ? entryInterval(editingEntry, { today: todayStr, now: nowHHMM }) : null;
+      const unchanged = !!editingEntry && editingEntry.date === formData.date && !!before
+        && before.start === cand.start && (before.end === cand.end || (before.running && cand.running));
+      if (!unchanged) {
+        const other = findOverlap(entries, cand, { date: formData.date, today: todayStr, now: nowHHMM, excludeId: editingId });
+        if (other) newErrors.overlap = overlapMessage(other, formData.date);
       }
     }
 
@@ -483,9 +499,9 @@ export default function TimeTracking() {
       } else if (breakWaiverChecked) {
         // #144: the user opted to document an exception → the §4 block is
         // lifted, but the reason is mandatory (backend enforces this too).
-        if (!breakWaiverReason.trim()) {
-          newErrors.break_waiver_reason = 'Bitte begründen Sie, warum die Pflicht-Pause nicht möglich war.';
-        }
+        // #540 (A1-05): Pflicht und Mindestlänge wie der Server.
+        const reasonError = breakWaiverReasonError(breakWaiverReason);
+        if (reasonError) newErrors.break_waiver_reason = reasonError;
       } else {
         // Still show the §4 hint, but don't treat it as a hard block on its
         // own — surface it so the user sees the "Pause nicht möglich" option.
@@ -507,17 +523,19 @@ export default function TimeTracking() {
     if (submitting) return;
     setSubmitting(true);
 
-    // Smart break default: auto-set 30 min when creating entry >6h with no break —
-    // Spec 8.4 (E45): nicht, wenn eine Lücke zwischen den Arbeitsblöcken §4 schon
-    // deckt (sonst würde die Pause zusätzlich zur Lücke abgezogen).
+    // #540 (A1-12): bis dahin setzte das Formular bei einem neuen Eintrag über
+    // 6 h ohne Pause still 30 Min. ein — im §16-Beleg stand dann eine Pause, die
+    // niemand angegeben hat (und die einen §4-Verstoß verdecken konnte). Jetzt
+    // ein sichtbarer Vorschlag: „30 Min. eintragen" oder bewusst „ohne Pause
+    // speichern". Nicht, wenn eine Lücke zwischen den Arbeitsblöcken §4 schon
+    // deckt (Spec 8.4, E45), und nicht mit dokumentierter Ausnahme.
     let submitData: typeof formData & { break_waiver_reason?: string } = { ...formData };
-    // Gesamtreview B6: mit den Blöcken des Formular-Datums; unbekannt → keine
-    // Automatik (der Server entscheidet, statt eine Pause zusätzlich zu einer
-    // Lücke abzuziehen, die das Formular nicht kennt).
+    // Gesamtreview B6: mit den Blöcken des Formular-Datums; unbekannt → kein
+    // Vorschlag (der Server entscheidet).
     const autoDay = formDayBlocks();
-    if (!editingId && submitData.break_minutes === 0 && autoDay) {
-      // Gesamtreview PR2 (Fund 13): angerechnet = gekappt (Hülle) minus Lücke —
-      // eine Pause für Stempelzeit außerhalb der Hülle kostete angerechnete Zeit.
+    const waiverActive = breakExceptionAllowed && breakWaiverChecked;
+    if (!editingId && submitData.break_minutes === 0 && autoDay && !waiverActive && !noBreakConfirmed) {
+      // Gesamtreview PR2 (Fund 13): angerechnet = gekappt (Hülle) minus Lücke.
       const span = hullClamp(
         autoDay.blocks, autoDay.grace, submitData.start_time, submitData.end_time, autoDay.blockless);
       const gross = hhmmToMinutes(span.end) - hhmmToMinutes(span.start);
@@ -525,7 +543,9 @@ export default function TimeTracking() {
       const credited = gross - segs.reduce((a, b) => a + b, 0);
       const covered = segs.filter((s) => s >= 15).reduce((a, b) => a + b, 0);
       if (credited > 360 && covered < 30) {
-        submitData = { ...submitData, break_minutes: 30 };
+        setBreakSuggestion(true);
+        setSubmitting(false);
+        return;
       }
     }
 
@@ -577,7 +597,13 @@ export default function TimeTracking() {
       fetchEntries();
       resetForm();
     } catch (error: any) {
-      toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
+      const msg = getErrorMessage(error, 'Fehler beim Speichern');
+      if (error?.response?.status === 409 && msg.startsWith('Überschneidung')) {
+        // #538 (A1-02): Sperre mit Hinweis am Formular (nicht nur als Toast).
+        setErrors((prev) => ({ ...prev, overlap: msg }));
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -660,6 +686,8 @@ export default function TimeTracking() {
     setErrors({});
     setBreakWaiverChecked(false);
     setBreakWaiverReason('');
+    setBreakSuggestion(false);
+    setNoBreakConfirmed(false);
   };
 
   const totalNet = entries.reduce((sum, entry) => sum + entry.net_hours, 0);
@@ -821,6 +849,37 @@ export default function TimeTracking() {
           {errors.break_time && (
             <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg" role="alert">
               <p className="text-sm text-amber-800 font-medium">{errors.break_time}</p>
+            </div>
+          )}
+          {breakSuggestion && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg" role="alert">
+              <p className="text-sm text-amber-900 font-medium">
+                Dieser Eintrag ist länger als 6 Stunden und hat keine Pause. Bei mehr als 6 Stunden
+                Arbeitszeit sind mindestens 30 Minuten Pause vorgeschrieben (§ 4 ArbZG). Bitte tragen
+                Sie die tatsächliche Pause ein.
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormData((f) => ({ ...f, break_minutes: 30 }));
+                    setBreakSuggestion(false);
+                  }}
+                  className="px-3 py-1.5 text-sm rounded-lg bg-amber-600 text-white hover:bg-amber-700"
+                >
+                  30 Min. Pause eintragen
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNoBreakConfirmed(true);
+                    setBreakSuggestion(false);
+                  }}
+                  className="px-3 py-1.5 text-sm rounded-lg border border-amber-400 text-amber-900 hover:bg-amber-100"
+                >
+                  Keine Pause gemacht – ohne Pause speichern
+                </button>
+              </div>
             </div>
           )}
 

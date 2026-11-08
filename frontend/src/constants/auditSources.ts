@@ -21,4 +21,12 @@ export const AUDIT_SOURCE_LABELS: Record<string, string> = {
   wh_change: 'Stundenänderung',
   wh_reclamp: 'Neukappung (Arbeitszeit-Änderung)',
   credit_override: 'Anrechnung anerkannt',
+  // #537 (A2-5): Verwaltungsänderungen und Aufbewahrung
+  carryover: 'Übertrag (manuell)',
+  year_closing: 'Jahresabschluss',
+  settings: 'Einstellungen',
+  holidays: 'Feiertage',
+  retention: 'Aufbewahrungsfrist',
+  // A1-17: § 18, Nachtarbeit und Beschäftigungsfenster in der Benutzerverwaltung
+  user_admin: 'Benutzerverwaltung',
 };

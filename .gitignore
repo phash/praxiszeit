@@ -55,6 +55,9 @@ ssl/*.pem
 *.sqlite
 *.sqlite3
 *.sql
+# Ausnahme: echte pg_dump-Ausgabe OHNE Daten (nur Schema + alembic_version) als
+# Pruefgrundlage fuer den Restore-Validator (test_native_restore.py).
+!backend/tests/fixtures/restore/*.sql
 *.sql.gz
 *.dump
 
@@ -87,3 +90,8 @@ feedback/
 # Local-only tooling & test scaffolds (never commit)
 .claude/
 .win-test/
+
+# SQLite-Testdatenbank der Backend-Suite (conftest.py), samt WAL-Dateien
+backend/test.db
+backend/test.db-shm
+backend/test.db-wal

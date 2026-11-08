@@ -284,12 +284,20 @@ group_code() {
   # Überschrift der Auswertung; zwei Kommentare in Reports.tsx tragen denselben
   # Wortlaut.
   need_code_label frontend/src/pages/admin/Reports.tsx "24-Wochen-Durchschnitt §3 ArbZG"
-  need_code "Ø angerechnet / Tag"
-  need_code "Anwesenheit laut Stempel (Ø / Tag)"
+  need_code "Ø angerechnet / Werktag"
+  need_code "Anwesenheit laut Stempel (Ø / Werktag)"
   need_code "Anwesenheit laut Stempel gesamt"
   need_code "Wochen &gt; 48 h laut Stempel"
   need_code "laut Stempel Ø &gt; 8 h"
-  need_code_label frontend/src/pages/admin/Reports.tsx "keine Soll-Arbeitstage"
+  need_code_label frontend/src/pages/admin/Reports.tsx "keine Werktage im Zeitraum"
+  # Audit 2026-11-07: neue Exportspalten (A2-4) und Berichte (A1-08, A2-6) — Handbuch zitiert sie.
+  need_code 'STAMPED_HEADER = "Gestempelt (Von–Bis)"'
+  need_code 'PRESENCE_HEADER = "Anwesenheit laut Stempel (Std)"'
+  need_code 'BREAK_WAIVER_HEADER = "Pausenausnahme (§4 ArbZG)"'
+  need_code 'AUTO_CLOSED_MARK = "automatisch geschlossen"'
+  need_code_label frontend/src/pages/admin/Reports.tsx "Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG"
+  need_code_label frontend/src/pages/admin/Reports.tsx "Ausgeblendete Mitarbeitende einbeziehen"
+  need_code_label frontend/src/pages/admin/Reports.tsx "Frist läuft"
   need_code "Anrechnung später neu berechnet wird, und die Grenze gilt für die tatsächliche Arbeitszeit."
   # Sammelzeile der Abwesenheits-Rückrechnung (admin_users._log_wh_change_retarget,
   # Review Task 4): Quelle „wh_change", Anlegen und Löschen.
@@ -323,7 +331,21 @@ group_code() {
   # (xls_import_service.break_shortfall_skip_reason, f-String-Stücke).
   need_code 'f"die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht "'
   need_code 'f"abziehen (es fehlen {missing_minutes} Min). Bitte den Tag von Hand erfassen"'
-  need_code 'f"{break_shortfall_skip_reason(missing)}."'
+  need_code 'reason = break_shortfall_skip_reason(missing) if missing else daily_limit_skip_reason(over)'
+  # Audit 2026-11-07 (#538/#540): Wortlaute, die die Handbücher zitieren.
+  need_code 'f"die Tagesarbeitszeit beträgt {net_minutes // 60}:{net_minutes % 60:02d} h und "'
+  need_code 'f"überschreitet die Höchstgrenze von 10 h nach § 3 ArbZG. Bitte den Tag von Hand erfassen"'
+  need_code 'return f"die Zeile überschneidet sich mit {what} (Zeiteinträge einer Person dürfen sich nicht überschneiden)"'
+  need_code "f\"Überschneidung mit {what} am {day.strftime('%d.%m.%Y')}: Zeiteinträge \""
+  need_code '"Die Begründung ist zu kurz – bitte in mindestens {BREAK_WAIVER_MIN_LENGTH} "'
+  need_code '"Das Ende liegt in der Zukunft. Bitte nur bereits geleistete Arbeitszeit "'
+  need_code 'f"{AUTO_CLOSE_NOTE_MARK} Nicht ausgestempelt – automatisch geschlossen, "'
+  need_code 'f" Ausstempelversuch am {attempted_end.strftime('"'"'%d.%m.%Y'"'"')} "'
+  need_code 'Dieser Eintrag ist länger als 6 Stunden und hat keine Pause.'
+  need_code_label frontend/src/components/StampWidget.tsx 'Arbeitsende per Antrag nachtragen'
+  need_code_label frontend/src/pages/TimeTracking.tsx '30 Min. Pause eintragen'
+  need_code_label frontend/src/pages/TimeTracking.tsx 'Keine Pause gemacht – ohne Pause speichern'
+  need_code 'Automatisch geschlossene Einträge – Ende fehlt'
   need_code ': übersprungen — {outside}."'
   need_code "return f\"Datum liegt nach dem letzten Arbeitstag ({last.strftime('%d.%m.%Y')})\""
   # Ultrareview 1.20 (Fund 2): XLS-Zeilen mit Datum in der Zukunft.
@@ -499,7 +521,15 @@ group_admin_rest() {
   need "$f" 'Rechenstand der Software (Version 1.20.0)'
   need "$f" 'Netto-Spalte; unter der Uhrzeit steht bei gekappten Einträgen'
   need "$f" 'Unterbrechung (Min)** und **Zeiteinträge**'
-  need "$f" 'Nicht angerechnet (Min)** (letzte Spalte, ab 1.20.0)'
+  need "$f" 'Nicht angerechnet (Min)** (13. Spalte, ab 1.20.0)'
+  # Audit 2026-11-07 A2-4: tatsächliche Stempel in den Exporten (Code: export_service.day_stamps).
+  need "$f" '**Gestempelt (Von–Bis)** listet jeden Zeiteintrag'
+  forbid "$f" 'Nicht angerechnet (Min)** (letzte Spalte, ab 1.20.0)'
+  # Fix-Runde Audit 2026-11-07: Rohstempel stehen seit A2-4 in den Exporten,
+  # Krankheit/Fortbildung sind im Durchschnitts-Nenner neutral (A1-13).
+  forbid "$f" 'Rohstempel stehen weiterhin nicht in den Exportdateien'
+  forbid "$f" 'Krankheits-, Fortbildungs- und Überstundenausgleichstage bleiben Werktage'
+  need "$f" 'Urlaubs- und Krankheitszeiten verdünnen den Durchschnitt nicht'
   need "$f" 'Von 07:45, Bis 18:15, Netto 8,00, Nicht angerechnet 240'
   need "$f" 'inkl. Unterbrechung, Zeiteinträge und Nicht angerechnet'
   need "$f" 'Genehmigen und anerkennen'
@@ -514,7 +544,7 @@ group_admin_rest() {
   # Gesamtreview 1.20: die Ergebnisliste heißt wie die Vorschau (#462) „Hinweise"
   # — sie trägt auch die Gründe übersprungener Zeilen, keine ArbZG-Warnungen allein.
   need "$f" 'das Ergebnis unter den Hinweisen (*„29.09.2026: übersprungen'
-  need "$f" 'und darunter die **Hinweise** – die ArbZG-Warnungen,'
+  need "$f" 'und darunter die **Hinweise** – Ruhezeit (§ 5) und Nachtarbeit (§ 6), die der Server bei der Bestätigung selbst prüft,'
   forbid "$f" 'sowie die ArbZG-Warnungen (einschließlich'
   need_code "weitere Gründe bei den Hinweisen)."
   need_code_label frontend/src/pages/admin/ImportXls.tsx '{result.warnings.length} Hinweis(e)'
@@ -564,7 +594,9 @@ group_admin_rest() {
   # 24-Wochen-Auswertung (PR2 Task 9 + Reviews): bis 1.19.3 nicht dokumentiert.
   need "$f" '### §3 ArbZG – 24-Wochen-Durchschnitt'
   need "$f" '„laut Stempel Ø > 8 h"'
-  need "$f" '„keine Soll-Arbeitstage"'
+  need "$f" '„keine Werktage im Zeitraum"'
+  need "$f" '### §3/§4 ArbZG – Höchstarbeitszeit und Pausenausnahmen'
+  forbid "$f" '„keine Soll-Arbeitstage"'
   need "$f" 'die Grenze gilt für die tatsächliche Arbeitszeit'
   # Review Task 4: §9 erklärt auch die wh_change-Sammelzeile (Code:
   # admin_users._log_wh_change_retarget, Spec 10.3).
@@ -852,6 +884,10 @@ group_begriffe() {
 # Stundenzählung" ist nicht „leitende Angestellte" (siehe group_begriffe).
 group_berechnungen() {
   local b=docs/BERECHNUNGEN.md
+  # Fix-Runde Audit 2026-11-07 (A2-4, A1-13).
+  forbid "$b" 'die Rohstempel `raw_*` stehen in keiner Datei'
+  forbid "$b" 'Fortbildung und Freizeitausgleich bleiben Werktage'
+  need "$b" '`VACATION`/`SICK`/`TRAINING`/`OTHER`/`PAID_LEAVE`'
   local g=docs/GLOSSAR.md
   need "$b" 'App-Version 1.20.0'
   need "$b" '| `work_blocks` |'
@@ -1041,7 +1077,12 @@ group_claude() {
   need "$f" 'zusammen höchstens 500 Zeichen'
   # #498-Spalte und Spalte 13
   need "$f" '12 „Zeiteinträge“'
-  need "$f" 'Spalte 13 „Nicht angerechnet (Min)“ ist die letzte'
+  need "$f" 'Spalte 13 „Nicht angerechnet (Min)“, dahinter 14 „Gestempelt (Von–Bis)“'
+  need "$f" 'Spalte 16 ist die letzte'
+  forbid "$f" 'Spalte 13 „Nicht angerechnet (Min)“ ist die letzte'
+  forbid "$f" 'Rohstempel in keiner Datei'
+  forbid "$f" 'ohne Feiertag/`VACATION`/`OTHER`/`PAID_LEAVE`'
+  forbid "$f" 'Füllungen/Zellverbindungen reichen bis Spalte M'
   forbid "$f" '12 „Arbeitsblöcke“'
   forbid "$f" 'Füllungen/Zellverbindungen reichen bis Spalte L'
   forbid "$f" 'Krank 4,0 h — Wochenstunden-Änderung ab 15.03.2026'
@@ -1215,6 +1256,19 @@ group_restore() {
   need "$f" '<code>praxiszeit-server.py restore &lt;datei&gt;</code>'
   need "$f" '<code>restore-backup.bat &lt;datei&gt;</code>'
   forbid "$f" 'idempotent wiederherstellbar'
+  # Signatur der Sicherungen (Audit 2026-11-07, Fix-Runde S3-03): ohne
+  # passende Signatur nur mit --force-unverified.
+  need praxiszeit-server.py '"--force-unverified", action="store_true"'
+  need tools/docker/restore.sh '--force-unverified) FORCE_UNVERIFIED=1 ;;'
+  need installer/windows/restore-backup.template.bat 'if /i "%~2"=="--force-unverified"'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'nur mit dem Zusatz `--force-unverified`'
+  need "$f" 'nur mit dem Zusatz <code>--force-unverified</code>'
+  need docs/BACKUP.md '### Signatur der Sicherungen'
+  # Backup-Ort (Fix-Runde S3-04): bestehende Ordner werden nicht umgeschrieben.
+  need backend/app/services/backup_service.py 'raise BackupError(EXISTING_DIR_ACL_DETAIL)'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Die Rechte eines **bestehenden** Ordners ändert PraxisZeit nicht'
+  need "$f" 'Die Rechte eines <strong>bestehenden</strong> Ordners ändert PraxisZeit nicht'
+  forbid "$f" 'Unter Windows bekommt der gewählte Ordner die Rechte'
   f=README.md
   need "$f" 'bash tools/docker/restore.sh'
   forbid "$f" 'idempotent dank'

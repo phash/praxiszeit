@@ -39,3 +39,55 @@ def test_update_info_update_available_rejects_older():
     newer = UpdateInfo(latest_version="9.9.9", download_url="", changelog="",
                        size_mb=0, checksum_sha256="", critical=False)
     assert newer.to_dict()["update_available"] is True
+
+
+# --- Audit 2026-11-07 S3-18: mitsigniertes Ablaufdatum gegen Freeze/Replay ---
+
+from datetime import datetime, timezone  # noqa: E402
+
+import pytest  # noqa: E402
+
+from app.core import updater  # noqa: E402
+
+_NOW = datetime(2026, 11, 7, 12, 0, tzinfo=timezone.utc)
+
+
+def test_manifest_without_expires_still_accepted():
+    updater._check_manifest_expiry({"latest": "1.0.0"}, now=_NOW)
+
+
+@pytest.mark.parametrize("expires", ["2026-11-08T00:00:00Z", "2026-11-07T14:00:00+01:00"])
+def test_manifest_valid_until_expiry(expires):
+    updater._check_manifest_expiry({"expires": expires}, now=_NOW)
+
+
+@pytest.mark.parametrize("expires", [
+    "2026-11-01T00:00:00Z",      # abgelaufen (wiedereingespielt)
+    "2026-11-08T00:00:00",       # ohne Zeitzone
+    "naechste Woche",            # unlesbar
+    1767225600,                  # kein String
+])
+def test_expired_or_broken_expiry_is_rejected(expires):
+    with pytest.raises(ValueError):
+        updater._check_manifest_expiry({"expires": expires}, now=_NOW)
+
+
+def test_check_for_updates_rejects_expired_manifest(monkeypatch):
+    import io
+    import json
+
+    body = json.dumps({"latest": "99.0.0", "download_url": "https://updates.mr-development.de/x.zip",
+                       "expires": "2020-01-01T00:00:00Z", "signature": "x"}).encode()
+
+    class _Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", lambda *a, **k: _Resp(body))
+    monkeypatch.setattr(updater, "_verify_manifest_signature", lambda m: None)
+    assert updater.check_for_updates("https://updates.mr-development.de") is None
+    monkeypatch.setattr(updater, "_check_manifest_expiry", lambda m: None)
+    assert updater.check_for_updates("https://updates.mr-development.de") is not None

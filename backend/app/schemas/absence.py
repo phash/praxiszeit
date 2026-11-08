@@ -14,7 +14,7 @@ class AbsenceBase(BaseModel):
     hours: float = Field(..., ge=0, le=24)  # Hours per day
     start_time: Optional[time] = None  # NULL = ganzer Tag
     end_time: Optional[time] = None    # NULL = ganzer Tag
-    note: Optional[str] = None
+    note: Optional[str] = Field(None, max_length=2000)  # Audit 2026-11-07 (S2-2)
 
 
 class AbsenceCreate(AbsenceBase):

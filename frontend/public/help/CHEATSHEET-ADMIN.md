@@ -51,7 +51,7 @@ Je MA und Wochentag (Mo–Fr) bis zu **3 Blöcke** „von–bis" + **„Pause in
 - Beispiel: Blöcke 08–12 + 15–18, Puffer 15, gestempelt 08:00–18:00 ohne Pause → **7:30 h** angerechnet (08:00–12:15 + 14:45–18:00), 2:30 h nicht; die Stempel bleiben gespeichert (§16).
 - **Werktag ohne Block** (bei MA mit Blöcken) = **0 h** angerechnet (Stempel bleibt gespeichert), bis **„Anerkennen“** bzw. **„Genehmigen und anerkennen“**; übernommene Arbeitszeit-Fenster ausgenommen (Tag ohne Fenster bleibt ungekappt).
 - **Kein Block → keine Kappung:** Wochenende, Feiertage, „freie" Sondertage („halber Feiertag" und verkürzter Tag behalten die Blöcke); MA ohne Stundenzählung; **anerkannte** Einträge. §18-MA werden trotzdem gekappt. Greift an allen Schreibwegen (Stempeln, manuell, Admin-Korrektur, Antrag, XLS-Import). Feiertag/Bundesland/Sondertag **nachträglich** geändert → bestehende Einträge dieser Tage werden nur genannt, nicht neu berechnet: öffnen + unverändert speichern (fehlt dann die gesetzliche Pause, z. B. bei über die Blocklücke durchgestempeltem Dienst: Pause ergänzen).
-- **Auto-Close** (vergessenes Ausstempeln, 23:59) rechnet nur bis zum letzten Block + Puffer an („automatisch geschlossen"), an einem Werktag ohne Block 0 h; bis 23:59 nur, wo nichts gekappt wird (keine Blöcke hinterlegt, Wochenende/Feiertag, ohne Stundenzählung); tatsächliches Ende nachtragen (MA per Änderungsantrag) – auch ein echtes Ende 23:59 ist eintragbar (wird gekappt wie jedes Ende, bis 23:59 angerechnet erst nach „Anerkennen").
+- **Auto-Close** (vergessenes Ausstempeln, 23:59) prüft §3/§4 (Vermerk in der Notiz, Hinweis an MA, Dashboard-Karte „Automatisch geschlossene Einträge – Ende fehlt") und rechnet nur bis zum letzten Block + Puffer an („automatisch geschlossen"), an einem Werktag ohne Block 0 h; bis 23:59 nur, wo nichts gekappt wird (keine Blöcke hinterlegt, Wochenende/Feiertag, ohne Stundenzählung); tatsächliches Ende nachtragen (MA per Änderungsantrag) – auch ein echtes Ende 23:59 ist eintragbar (wird gekappt wie jedes Ende, bis 23:59 angerechnet erst nach „Anerkennen").
 - **Pausen:** Lücke ab 15 Min. (nach Abzug des Puffers) zählt für §4 als Pause; Pause eingetragen **und** über die Lücke durchgestempelt → beides abgezogen (Hinweis „Pause in der Lücke wird zusätzlich abgezogen: …").
 - **Sichtbar:** Zusatzzeile am Eintrag („… 2:30 h zwischen den Blöcken nicht angerechnet"), Journal-Summe „Anwesenheit nicht angerechnet", Export-Spalte „Nicht angerechnet (Min)" (letzte Spalte).
 - **Anerkennen** (Admin-Dashboard-Detail, Monatsjournal): ganze gestempelte Zeit zählt, dauerhaft (keine Rücknahme), protokolliert („Anrechnung anerkannt"); offener Eintrag erst nach dem Ausstempeln, automatisch geschlossener erst mit tatsächlichem Ende. MA beantragen das per **„Anrechnung beantragen"**.
@@ -110,9 +110,10 @@ Klick auf Pfeil → Detailansicht des Mitarbeiters
 | **Jahresreport Detailliert** | 365 Tage, ~5s | Excel (.xlsx) + ODS (.ods) |
 
 **Exportieren:** Berichte → Typ & Zeitraum wählen → Format klicken (**PDF nur beim Monatsreport**)
-**Krankheitsdaten:** Checkbox „Krankheitsdaten einschließen" (Art. 9 DSGVO) → nimmt Krank-Daten auf, jeder solche Export wird protokolliert
+**Krankheitsdaten:** Checkbox „Krankheitsdaten einschließen" (Art. 9 DSGVO) → nimmt Krank-Daten und das Kennzeichen „Nachtarbeitnehmer" auf, jeder solche Export wird protokolliert
+**Ausgeblendete:** Checkbox „Ausgeblendete Mitarbeitende einbeziehen" → auch in der Benutzerliste ausgeblendete Personen (Ausgeschiedene mit Einträgen sind immer dabei)
 **Aufbewahrungspflicht: 2 Jahre** (§16 ArbZG)
-**Tagesspalten (Monatsreport und Jahresreport Detailliert, Excel/ODS):** hinten angehängt „Unterbrechung (Min)", „Zeiteinträge" und – auch im PDF – als letzte Spalte „Nicht angerechnet (Min)" (Lücke + vor/nach den Blöcken abgeschnittene Zeit); „Netto (Std)" ist die angerechnete Zeit; der Jahresreport Classic (nur Monatswerte, keine Tageszeilen) hat diese Spalten nicht
+**Tagesspalten (Monatsreport und Jahresreport Detailliert, Excel/ODS):** hinten angehängt „Unterbrechung (Min)", „Zeiteinträge", – auch im PDF – „Nicht angerechnet (Min)" (Lücke + vor/nach den Blöcken abgeschnittene Zeit) und die tatsächlichen Stempel „Gestempelt (Von–Bis)", „Anwesenheit laut Stempel (Std)" (> 10 h hervorgehoben), „Pausenausnahme (§4 ArbZG)" (PDF: Spalte „Gestempelt (Anwesenheit)", Begründung in der Bemerkung); „Netto (Std)" ist die angerechnete Zeit; der Jahresreport Classic (nur Monatswerte, keine Tageszeilen) hat diese Spalten nicht
 
 ---
 
@@ -235,12 +236,16 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 - **An** (Standard): Begründung wird angeboten (Ausstempeln, Zeiterfassung, Anträge, Admin-Korrektur)
 - **Aus**: kein Begründungsfeld mehr; der Server lehnt Ausnahmen ab (auch von Admins) – ein Tag über 6/9 h lässt sich nur mit eingetragener Pause speichern. Offene Ausnahme-Anträge gelten dann als Anträge ohne Ausnahme: Genehmigen klappt nur, wenn die Pause des Tages jetzt reicht (sonst ablehnen → mit Pause neu stellen). Bestehende Ausnahmen bleiben.
 
-**„Genehmigung erforderlich"** (nur bei erlaubter Ausnahme; gilt für Ausnahmen, die MA in der Zeiterfassung beim Anlegen/Bearbeiten begründen):
+Begründung: **mindestens 10 Zeichen** (überall).
+
+**„Genehmigung erforderlich"** (nur bei erlaubter Ausnahme; gilt für Ausnahmen, die MA in der Zeiterfassung beim Anlegen/Bearbeiten **und beim Ausstempeln** begründen):
 - **Aus** (Standard): Eintrag sofort wirksam, Abweichung als Warnung
-- **Ein**: Eintrag erst nach Admin-Genehmigung wirksam
-- **Ausstempeln:** Begründung wirkt **immer sofort** (Eintrag muss geschlossen werden, §16) → im Änderungsprotokoll prüfen (Quelle „break_waiver"). Keine Ausnahme beim Ausstempeln gewünscht → Ausnahme ganz abschalten.
+- **Ein**: Ausnahme erst nach Admin-Genehmigung wirksam
+- **Ausstempeln:** Eintrag wird sofort mit der echten Ausstempelzeit geschlossen (§16), die Ausnahme ist nur **beantragt** (Änderungsantrag mit unveränderten Zeiten) – genehmigen → Ausnahme am Eintrag, ablehnen → Eintrag bleibt ohne Ausnahme. Keine Ausnahme beim Ausstempeln gewünscht → Ausnahme ganz abschalten.
 - **Nur Notiz geändert** (Datum, Zeiten, Pause gleich): keine neue Ausnahme – sofort gespeichert, dokumentierte Begründung bleibt (auch bei Genehmigungspflicht/abgeschalteter Ausnahme)
 > **4-Augen:** Eigene Pflicht-Pause-Ausnahme **nie selbst genehmigen** – muss ein anderer Admin prüfen.
+
+**Überschneidungen** (gleiche Person, gleicher Tag, gestempelte Zeiten) sind an allen Erfassungswegen gesperrt (Hinweis nennt den Eintrag; XLS-Import überspringt die Zeile, Ausstempeln meldet nur). **Ende in der Zukunft** (heute) und Pause ≥ Eintragslänge: gesperrt. **XLS-Import:** Tag über 10 h wird übersprungen (§3). **Keine Dienste über Mitternacht** (Erfassung und Prüfung je Kalendertag).
 
 ---
 
@@ -268,9 +273,13 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 | Bericht | Inhalt | Handlungsbedarf bei |
 |---------|--------|-------------------|
 | **§5 Ruhezeitverstöße** | Fälle < 11h Ruhezeit | Sofort! Ursachen beseitigen |
-| **§6 Nachtarbeit** | MA mit ≥ 48 Nachtarbeitstagen/Jahr | Arbeitsmed. Untersuchung anbieten |
+| **§6 Nachtarbeit** | MA mit ≥ 48 Nachtarbeitstagen/Jahr; Monats-Ø je Werktag für Nachtarbeitnehmer | Arbeitsmed. Untersuchung anbieten; Monats-Ø > 8 h |
 | **§11 Sonntagsarbeit** | Sonntage pro MA (Ziel: max. 37/Jahr) | Dienstplanung anpassen |
-| **§11 Ersatzruhetag** | Offene Ersatzruhetag-Pflichten | Ausgleich: Sonntag 2 Wo / Feiertag 8 Wo |
+| **§11 Ersatzruhetag** | Verstöße mit Datum, laufende Fristen; nur ein sonst gearbeiteter, freier Tag zählt (kein ohnehin freier Samstag), je Einsatz ein Ruhetag | Ausgleich: Sonntag 2 Wo / Feiertag 8 Wo, als „Sonstiges" eintragen |
+| **§3 24-Wochen-Durchschnitt** | Ø je Werktag (Mo–Sa ohne Feiertage/Urlaub/Krankheit/Fortbildung/Freistellung) | Ø > 8 h |
+| **§3/§4 Höchstarbeitszeit und Pausenausnahmen** | Tage > 10 h, Wochen > 48 h (laut Stempel), Pausenausnahmen mit Begründung, Tage mit zu kurzer Pause ohne anerkannte Ausnahme | Ursachen klären, dokumentieren |
+
+Ausgeschiedene mit Einträgen im Zeitraum erscheinen immer, Ausgeblendete nur mit „Ausgeblendete Mitarbeitende einbeziehen".
 
 ---
 
@@ -283,7 +292,7 @@ Pause nicht eingehalten? Statt Blockade → Eintrag mit **Pflicht-Begründung** 
 
 ## Audit-Log & Monitoring
 
-**Änderungsprotokoll:** Alle Aktionen lückenlos protokolliert → Betriebsprüfungsnachweis · Arbeitszeit-Änderungen: „Neukappung (Arbeitszeit-Änderung)" je Eintrag + Sammelzeile · Anerkennungen: „Anrechnung anerkannt"
+**Änderungsprotokoll:** Änderungen an Einträgen, Abwesenheiten, Überträgen, Jahresabschluss, Einstellungen und Feiertagen → Betriebsprüfungsnachweis · tatsächliche Stempel neben der angerechneten Zeit („gestempelt 06:00 - 18:00") · Arbeitszeit-Änderungen: „Neukappung (Arbeitszeit-Änderung)" je Eintrag + Sammelzeile · Anerkennungen: „Anrechnung anerkannt" · Karte „Prüfung des Änderungsprotokolls": nächtliche Prüfung + „Jetzt prüfen" (Abweichung → Konto-Vorgänge + Fehler-Monitoring)
 **Fehler-Monitoring:** Technische Fehler → bei wiederkehrenden Fehlern IT kontaktieren oder GitHub Issue öffnen
 
 ---

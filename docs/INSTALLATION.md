@@ -261,7 +261,7 @@ cd ~/praxiszeit
 docker compose down
 git pull
 docker compose pull db                 # PostgreSQL-18-Patchstand (`up` zieht ihn nie neu)
-docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
+docker compose build --pull            # Frontend-Basis-Image neu (Backend-Basis per Digest fest)
 # Ohne SSL:
 docker compose up -d
 # Mit SSL:
@@ -278,30 +278,37 @@ Details & alle Pfade (Docker, Native, Windows): **[UPDATE.md](UPDATE.md)**.
 ### Manuelles Backup
 ```bash
 cd ~/praxiszeit
-# --clean --if-exists + gzip → sauber zurückspielbar (s. „Backup wiederherstellen").
-docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit | gzip > backup_$(date +%Y%m%d).sql.gz
+bash tools/docker/backup.sh    # -> ~/praxiszeit/backups/praxiszeit_<ts>.sql.gz (signiert)
 ```
+
+Das Script braucht laufende `db`- und `backend`-Dienste (das Backend signiert die
+Sicherung, siehe [BACKUP.md – Signatur](BACKUP.md#signatur-der-sicherungen)). Ein von
+Hand gezogenes `pg_dump | gzip` ist unsigniert und lässt sich nur mit
+`--force-unverified` wieder einspielen.
 
 ### Automatisches taegliches Backup (Cron)
 ```bash
 # Crontab oeffnen
 crontab -e
 
-# Diese Zeile hinzufuegen (Backup taeglich um 2:00 Uhr):
-0 2 * * * cd ~/praxiszeit && docker compose exec -T db pg_dump --clean --if-exists -U praxiszeit praxiszeit | gzip > ~/backups/praxiszeit_$(date +\%Y\%m\%d).sql.gz && find ~/backups -name "praxiszeit_*.sql.gz" -mtime +30 -delete
+# Diese Zeile hinzufuegen (Backup taeglich um 2:00 Uhr, 30 Tage aufbewahren):
+0 2 * * * bash ~/praxiszeit/tools/docker/backup.sh && find ~/praxiszeit/backups -name "praxiszeit_*.sql.gz" -mtime +30 -delete
 ```
 
-Backup-Ordner vorher anlegen:
-```bash
-mkdir -p ~/backups
-```
+Alternativ in der App unter **Admin → Datensicherung** einen täglichen Zeitplan
+einrichten.
 
 ### Backup wiederherstellen
 ```bash
 cd ~/praxiszeit
-bash tools/docker/restore.sh backup_20260214.sql.gz
+bash tools/docker/restore.sh backups/praxiszeit_<ts>.sql.gz
 docker compose logs backend    # Ausgabe der Migrationen lesen
 ```
+
+Eine Sicherung ohne Signatur (von 1.22.0 oder älter oder von Hand gezogen) spielt
+das Script nur mit `--force-unverified` ein — und nur dann, wenn sie sicher aus der
+eigenen Installation stammt (sie läuft dann ungeprüft als Datenbank-Superuser):
+`bash tools/docker/restore.sh <datei>.sql.gz --force-unverified`.
 
 Das Script hält das Backend an, legt die Datenbank frisch an, spielt das Backup ein
 und startet das Backend wieder. Erst dieser Start hebt ein Backup einer älteren

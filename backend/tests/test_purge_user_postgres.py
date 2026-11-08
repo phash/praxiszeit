@@ -29,11 +29,10 @@ Was diese Datei tut
 2. ``TestEndloeschung`` legt einen Nutzer mit Daten in **allen** dieser
    Tabellen an und loescht ihn ueber die echte Endpunktfunktion.
 3. ``TestProtokollIntegritaet`` prueft, dass die Pruefsumme des
-   Aenderungsprotokolls danach noch stimmt. Beim Umhaengen der vom Geloeschten
-   verfassten Zeilen auf den handelnden Verwalter ist ``changed_by`` Teil des
-   ``row_hash`` (#121): geschieht das per Massen-UPDATE statt ueber die
-   Objektschicht, bleibt der gespeicherte Hash stehen und die
-   Integritaetspruefung meldet legitime Zeilen anschliessend als manipuliert.
+   Aenderungsprotokolls danach noch stimmt. Seit #537 (Migration 076) bleiben
+   die vom Geloeschten verfassten Zeilen bei ihm (``changed_by`` wird per
+   ON DELETE SET NULL geleert, die Pruefsumme laeuft ueber ``changed_by_ref``),
+   seine eigenen Zeilen gehen mit Vermerk ueber ``audit_chain_service``.
 
 Wo diese Tests laufen
 =====================
@@ -188,6 +187,7 @@ def _wipe(engine):
         "absences", "time_entries", "working_hours_changes", "year_carryovers",
         "company_closures", "signup_tokens", "impersonation_sessions",
         "security_events", "reduced_days",
+        "system_settings",  # #537: gesiegeltes Kettenende (audit_chain_head)
     ]
     with engine.connect() as conn:
         for table in order:
@@ -503,10 +503,9 @@ class TestEndloeschung:
 class TestProtokollIntegritaet:
 
     def test_umgehaengte_zeilen_bleiben_unbeanstandet(self, welt):
-        """``changed_by`` geht in den ``row_hash`` (#121) ein. Wird es per
-        Massen-UPDATE umgehaengt, umgeht das den Hash-Hook, der gespeicherte
-        Hash wird ungueltig — und ``verify-integrity`` meldet die Zeile nach
-        JEDER Endloeschung als manipuliert. Ein falscher Manipulationsalarm im
+        """Nach der Endloeschung darf ``verify-integrity`` keine legitime Zeile
+        als manipuliert melden (#121; seit #537 nullt PostgreSQL ``changed_by``,
+        die Pruefsumme laeuft ueber ``changed_by_ref``). Ein falscher Manipulationsalarm im
         §16-Nachweis ist schlimmer als kein Alarm."""
         db, victim, admin = welt
         admin_users.purge_user(str(VICTIM_ID), db=db, current_user=admin)
@@ -520,14 +519,29 @@ class TestProtokollIntegritaet:
                        if not audit_integrity.verify_row(r)]
         assert not beanstandet, f"faelschlich als manipuliert gemeldet: {beanstandet}"
 
-    def test_verfasste_zeile_haengt_am_handelnden_verwalter(self, welt):
+    def test_verfasste_zeile_behaelt_ihren_urheber(self, welt):
+        """#537 (A2-8): die vom Geloeschten an FREMDEN Eintraegen verfasste Zeile
+        wird nicht mehr auf den handelnden Verwalter umgehaengt (das schrieb die
+        Urheberschaft um). PostgreSQL nullt ``changed_by`` (ON DELETE SET NULL),
+        die feste Kopie ``changed_by_ref`` haelt die Pruefsumme gueltig."""
         db, victim, admin = welt
         admin_users.purge_user(str(VICTIM_ID), db=db, current_user=admin)
         db.expire_all()
         row = db.query(TimeEntryAuditLog).filter(
             TimeEntryAuditLog.new_note == "vom Geloeschten verfasst").one()
-        assert row.changed_by == ADMIN_ID
+        assert row.changed_by is None
+        assert row.changed_by_ref == VICTIM_ID
         assert audit_integrity.verify_row(row)
+
+    def test_entfernte_glieder_sind_vermerkt(self, welt):
+        """#537: die eigenen Zeilen gehen ueber ``delete_rows`` — der Vermerk
+        nennt die Kettenglieder, die Pruefung bleibt intakt."""
+        from app.services import audit_chain_service
+        db, victim, admin = welt
+        admin_users.purge_user(str(VICTIM_ID), db=db, current_user=admin)
+        db.commit()
+        result = audit_chain_service.verify_tenant(db, TENANT_ID)
+        assert result["tampered"] == 0 and result["missing_links"] == 0, result
 
     def test_eigene_protokollzeilen_des_geloeschten_sind_entfernt(self, welt):
         db, victim, admin = welt

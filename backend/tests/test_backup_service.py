@@ -4,6 +4,7 @@ create_backup wird mit gemocktem subprocess.Popen getestet (kein echtes pg_dump 
 der SQLite-Suite); die Fehlerpfade (kein Superuser-URL, pg_dump fehlt) laufen echt.
 """
 import gzip
+import re
 import io
 import os
 import time
@@ -18,6 +19,7 @@ def _clear_backup_env(monkeypatch):
     monkeypatch.delenv("PRAXISZEIT_BACKUP_DIR", raising=False)
     monkeypatch.delenv("PRAXISZEIT_PG_DUMP", raising=False)
     monkeypatch.delenv("DATABASE_URL_MIGRATIONS", raising=False)
+    monkeypatch.delenv("DATABASE_URL_BACKUP", raising=False)
 
 
 def _use_tmp_dir(db, tmp_path):
@@ -131,9 +133,17 @@ class _FakePopen:
     def __init__(self, payload: bytes, rc: int = 0, stderr: bytes = b""):
         self.stdout = io.BytesIO(payload)
         self.stderr = io.BytesIO(stderr)
+        self._stderr_bytes = stderr
         self._rc = rc
 
-    def wait(self):
+    def attach(self, kwargs):
+        # S2-6: create_backup reicht eine Datei als stderr herein.
+        target = kwargs.get("stderr")
+        if hasattr(target, "write"):
+            target.write(self._stderr_bytes)
+        return self
+
+    def wait(self, timeout=None):
         return self._rc
 
 
@@ -148,7 +158,18 @@ def test_create_backup_success_writes_gzipped_sql(db, default_tenant, tmp_path, 
     assert path.exists() and result.size_bytes > 0
     assert result.filename.startswith("praxiszeit_") and result.filename.endswith(".sql.gz")
     with gzip.open(path, "rb") as gz:
-        assert gz.read() == sql  # plain-SQL, einfach gunzip-bar (Restore-Pfad)
+        content = gz.read()
+    # plain-SQL, einfach gunzip-bar (Restore-Pfad); am Ende die Signaturzeile
+    # (Fix-Runde S3-03), für psql ein Kommentar.
+    assert content.startswith(sql)
+    trailer = content[len(sql):]
+    assert re.fullmatch(rb"-- praxiszeit-backup-hmac-v1 [0-9a-f]{64}\n", trailer), trailer
+    from app.config import settings
+    from app.core import backup_mac
+    with gzip.open(path, "rb") as gz:
+        assert backup_mac.verify_stream(gz, settings.SECRET_KEY) == backup_mac.OK
+    with gzip.open(path, "rb") as gz:
+        assert backup_mac.verify_stream(gz, "anderer-schluessel") == backup_mac.MISMATCH
 
 
 def test_create_backup_password_not_in_argv(db, default_tenant, tmp_path, monkeypatch):
@@ -191,7 +212,7 @@ def test_create_backup_pg_dump_failure_removes_partial(db, default_tenant, tmp_p
     monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", host="db"))
     monkeypatch.setattr(
         bs.subprocess, "Popen",
-        lambda *a, **k: _FakePopen(b"", rc=1, stderr=b"FATAL: auth failed"),
+        lambda *a, **k: _FakePopen(b"", rc=1, stderr=b"FATAL: auth failed").attach(k),
     )
     with pytest.raises(bs.BackupError, match="auth failed"):
         bs.create_backup(db)
@@ -271,3 +292,350 @@ def test_pg_dump_conn_uses_url_port_on_native_windows_url(monkeypatch):
     flat = [str(a) for a in args[0]] if args and isinstance(args[0], (list, tuple)) else [str(a) for a in args]
     assert flat[flat.index("-h") + 1] == "localhost"
     assert flat[flat.index("-p") + 1] == "5433"
+
+
+# --- Audit 2026-11-07 S3-04 / S2-4: Netzwerkpfade, öffentliche Ordner, ACL ---
+
+@pytest.mark.parametrize("loc", [
+    "\\\\angreifer\\freigabe\\x",
+    "\\\\?\\C:\\PraxisZeit\\backups",
+    "\\\\.\\pipe\\x",
+    "//angreifer/freigabe/x",
+])
+def test_unc_location_refused_before_any_filesystem_access(db, default_tenant, monkeypatch, loc):
+    touched = []
+    monkeypatch.setattr(bs.os.path, "realpath", lambda p: touched.append(p) or p)
+    monkeypatch.setattr(bs.Path, "exists", lambda self: touched.append(str(self)) or False)
+    with pytest.raises(bs.BackupError, match="Netzwerkpfade"):
+        bs.update_config(db, location=loc)
+    assert touched == []  # SMB-Verbindung (NTLM-Coercion) darf nie entstehen
+
+
+@pytest.fixture
+def _as_windows(monkeypatch):
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    monkeypatch.setattr(bs, "_win_drive_type", lambda p: 3)  # DRIVE_FIXED
+    monkeypatch.setenv("SystemDrive", "C:")
+    monkeypatch.setenv("SystemRoot", "C:\\Windows")
+    monkeypatch.setenv("PUBLIC", "C:\\Users\\Public")
+
+
+@pytest.mark.parametrize("loc", [
+    "C:\\Users\\Public\\Sicherung",
+    "c:\\users\\public",
+    "C:\\Users\\Default\\x",
+    "C:\\Windows\\Temp\\pz",
+])
+def test_windows_public_folders_refused(_as_windows, loc):
+    assert bs.location_rejection_reason(loc) == bs.PUBLIC_LOCATION_DETAIL
+
+
+def test_windows_mapped_network_drive_refused(_as_windows, monkeypatch):
+    monkeypatch.setattr(bs, "_win_drive_type", lambda p: bs._WIN_DRIVE_REMOTE)
+    assert bs.location_rejection_reason("Z:\\Sicherungen") == bs.UNC_LOCATION_DETAIL
+
+
+def test_windows_path_without_drive_letter_refused(_as_windows):
+    assert bs.location_rejection_reason("\\Sicherungen") == bs.UNC_LOCATION_DETAIL
+    assert bs.location_rejection_reason("relativ\\x") == bs.UNC_LOCATION_DETAIL
+
+
+def test_windows_local_folder_allowed(_as_windows):
+    assert bs.location_rejection_reason("D:\\PraxisZeit-Sicherung") is None
+    assert bs.location_rejection_reason("C:\\Usersicherung\\x") is None
+    assert bs.location_rejection_reason("C:\\ProgramDataBackup\\x") is None
+
+
+def test_drive_root_refused(db, default_tenant):
+    with pytest.raises(bs.BackupError, match="Stammverzeichnis"):
+        bs.update_config(db, location="/")
+
+
+def test_stored_unc_location_is_ignored(db, default_tenant, tmp_path, monkeypatch):
+    bs._set_setting(db, bs.SETTING_LOCATION, "\\\\angreifer\\freigabe")
+    db.commit()
+    monkeypatch.setenv("PRAXISZEIT_BACKUP_DIR", str(tmp_path / "data"))
+    assert bs.get_backup_dir(db) == tmp_path / "data"
+
+
+def _capture_icacls(monkeypatch, fail_on=None, report=None):
+    """Nimmt die icacls-Aufrufe auf. PowerShell (exakte DACL, Nachprüfung)
+    antwortet mit einem privaten Bericht — ``report`` überschreibt ihn."""
+    import types
+    calls = []
+
+    def _run(cmd, *a, **k):
+        if cmd[0].lower().endswith("powershell.exe"):
+            out = _PRIVATE_REPORT if report is None else report
+            rc = 1 if fail_on and fail_on(cmd) else 0
+            return types.SimpleNamespace(returncode=rc, stdout=out, stderr="")
+        calls.append(list(cmd))
+        rc = 1 if fail_on and fail_on(cmd) else 0
+        return types.SimpleNamespace(returncode=rc, stdout="", stderr="")
+
+    monkeypatch.setattr(bs.subprocess, "run", _run)
+    return calls
+
+
+def test_windows_location_gets_restricted_acl_before_first_byte(db, default_tenant, tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    monkeypatch.setattr(bs, "location_rejection_reason", lambda loc: None)
+    calls = _capture_icacls(monkeypatch)
+    target = tmp_path / "sicherung"
+    seen_probe = []
+    real_write = bs.Path.write_text
+
+    def _write(self, *a, **k):
+        seen_probe.append(len(calls))
+        return real_write(self, *a, **k)
+
+    monkeypatch.setattr(bs.Path, "write_text", _write)
+    bs.update_config(db, location=str(target))
+    assert calls == bs._win_restrict_dir_commands(target)
+    assert calls[-1][-1] == "/inheritance:r"
+    assert {"*S-1-5-32-545", "*S-1-5-11", "*S-1-1-0"} <= {c[-1] for c in calls if "/remove:g" in c}
+    assert seen_probe == [len(calls)]  # Rechte stehen, bevor die Schreibprobe schreibt
+
+
+def test_windows_location_refused_when_acl_cannot_be_set(db, default_tenant, tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    monkeypatch.setattr(bs, "location_rejection_reason", lambda loc: None)
+    _capture_icacls(monkeypatch, fail_on=lambda c: "/grant:r" in c)
+    with pytest.raises(bs.BackupError, match="Zugriffsrechte"):
+        bs.update_config(db, location=str(tmp_path / "sicherung"))
+    assert bs.settings_service.get_setting(db, bs.SETTING_LOCATION, tenant_id=bs.DEFAULT_TENANT_ID) in (None, "")
+
+
+def test_windows_create_backup_restricts_dir_and_aborts_without_acl(db, default_tenant, tmp_path, monkeypatch):
+    # Standard-Verzeichnis der Installation (data/backups): Rechte werden gesetzt.
+    monkeypatch.setenv("PRAXISZEIT_BACKUP_DIR", str(tmp_path))
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    monkeypatch.setattr(bs, "location_rejection_reason", lambda loc: None)
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", host="localhost", port=5433))
+    monkeypatch.setattr(bs.subprocess, "Popen", lambda *a, **k: _FakePopen(b"SELECT 1;"))
+    calls = _capture_icacls(monkeypatch)
+    bs.create_backup(db)
+    assert calls == bs._win_restrict_dir_commands(tmp_path)
+    _capture_icacls(monkeypatch, fail_on=lambda c: "/inheritance:r" in c)
+    with pytest.raises(bs.BackupError, match="Zugriffsrechte"):
+        bs.create_backup(db)
+
+
+# --- Fix-Runde S3-04: bestehende Ordner werden geprüft, nie umgeschrieben ---
+
+_PRIVATE_REPORT = (
+    "OWNER S-1-5-32-544\nPROTECTED True\nRULE S-1-5-18 Allow\nRULE S-1-5-32-544 Allow\n"
+)
+
+
+def _capture_windows_tools(monkeypatch, report=_PRIVATE_REPORT):
+    import types
+    calls = []
+
+    def _run(cmd, *a, **k):
+        calls.append({"cmd": list(cmd), "env": k.get("env") or {}})
+        out = report if cmd[0].lower().endswith("powershell.exe") else ""
+        return types.SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+    monkeypatch.setattr(bs.subprocess, "run", _run)
+    return calls
+
+
+def test_existing_folder_is_checked_not_rewritten(db, default_tenant, tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    monkeypatch.setattr(bs, "location_rejection_reason", lambda loc: None)
+    monkeypatch.delenv("PRAXISZEIT_BACKUP_DIR", raising=False)
+    existing = tmp_path / "Scans"
+    existing.mkdir()
+    calls = _capture_windows_tools(monkeypatch, report=(
+        "OWNER S-1-5-21-1-2-3-1001\nPROTECTED False\nRULE S-1-5-32-545 Allow\n"))
+    with pytest.raises(bs.BackupError, match="ändert die Rechte bestehender Ordner nicht"):
+        bs.update_config(db, location=str(existing))
+    assert not [c for c in calls if c["cmd"][0] == "icacls"], calls  # nie icacls
+    (check,) = calls
+    assert check["env"]["PZ_ACL_PATH"] == str(existing)
+    assert str(existing) not in " ".join(check["cmd"])  # Pfad nur über die Umgebung
+    assert bs.settings_service.get_setting(
+        db, bs.SETTING_LOCATION, tenant_id=bs.DEFAULT_TENANT_ID) in (None, "")
+
+
+def test_existing_private_folder_is_accepted_without_icacls(db, default_tenant, tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    monkeypatch.setattr(bs, "location_rejection_reason", lambda loc: None)
+    monkeypatch.delenv("PRAXISZEIT_BACKUP_DIR", raising=False)
+    existing = tmp_path / "Sicherung"
+    existing.mkdir()
+    calls = _capture_windows_tools(monkeypatch)
+    bs.update_config(db, location=str(existing))
+    assert not [c for c in calls if c["cmd"][0] == "icacls"], calls
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", host="localhost", port=5433))
+    monkeypatch.setattr(bs.subprocess, "Popen", lambda *a, **k: _FakePopen(b"SELECT 1;"))
+    calls.clear()
+    bs.create_backup(db)  # bestehender Ordner: wieder nur geprüft
+    assert not [c for c in calls if c["cmd"][0] == "icacls"], calls
+
+
+@pytest.mark.parametrize("report", [
+    "",                                                                # nicht lesbar
+    "OWNER S-1-5-32-544\nPROTECTED False\nRULE S-1-5-18 Allow\n",     # erbt
+    "OWNER S-1-5-21-9-9-9-1001\nPROTECTED True\nRULE S-1-5-18 Allow\n",  # fremder Eigentümer
+    "OWNER S-1-5-32-544\nPROTECTED True\nRULE S-1-5-11 Allow\n",       # Auth. Benutzer
+    "OWNER S-1-5-32-544\nPROTECTED True\nRULE S-1-1-0 Allow\n",        # Jeder
+])
+def test_acl_report_too_open(report):
+    assert bs.win_acl_report_is_private(report) is False
+
+
+def test_acl_report_private_ignores_deny_rules():
+    assert bs.win_acl_report_is_private(_PRIVATE_REPORT + "RULE S-1-1-0 Deny\n") is True
+
+
+@pytest.mark.parametrize("loc", [
+    "C:\\ProgramData\\x",
+    "C:\\Program Files\\Praxis",
+    "C:\\Program Files (x86)\\y",
+    "C:\\Users\\Empfang\\Documents\\Sicherung",
+    "C:\\Users",
+])
+def test_windows_system_and_profile_folders_refused(_as_windows, monkeypatch, loc):
+    monkeypatch.delenv("ProgramData", raising=False)
+    monkeypatch.delenv("ProgramFiles", raising=False)
+    monkeypatch.delenv("ProgramFiles(x86)", raising=False)
+    monkeypatch.delenv("ProgramW6432", raising=False)
+    assert bs.location_rejection_reason(loc) == bs.PUBLIC_LOCATION_DETAIL
+
+
+def test_restrict_acl_sets_owner_exact_dacl_and_rechecks(tmp_path, monkeypatch):
+    """Final-Review (S3): Eigentümer Administratoren zuerst, danach die ganze
+    DACL aus der Positivliste und eine Nachprüfung. Ein vorab angelegter Ordner
+    mit eigenem Eintrag eines Kontos überlebte /grant:r + /remove:g, und ein
+    fremder Eigentümer durfte die Rechte zurückdrehen."""
+    import types
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    seen = []
+
+    def _run(cmd, *a, **k):
+        seen.append((list(cmd), (k.get("env") or {}).get("PZ_ACL_PATH")))
+        out = _PRIVATE_REPORT if cmd[0].lower().endswith("powershell.exe") else ""
+        return types.SimpleNamespace(returncode=0, stdout=out, stderr="")
+
+    monkeypatch.setattr(bs.subprocess, "run", _run)
+    assert bs.restrict_backup_dir_acl(tmp_path) is True
+    cmds = [c for c, _env in seen]
+    assert cmds[0] == ["icacls", str(tmp_path), "/setowner", "*S-1-5-32-544"]
+    exact = next(i for i, c in enumerate(cmds) if "SetSecurityDescriptorSddlForm" in c[-1])
+    assert cmds.index(["icacls", str(tmp_path), "/inheritance:r"]) < exact
+    assert "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)" in cmds[exact][-1]
+    assert str(tmp_path) not in cmds[exact][-1] and seen[exact][1] == str(tmp_path)
+    assert "Get-Acl" in cmds[exact + 1][-1]  # Nachprüfung zuletzt
+
+
+@pytest.mark.parametrize("report", [
+    "OWNER S-1-5-21-9-9-9-1001\nPROTECTED True\nRULE S-1-5-18 Allow\nRULE S-1-5-32-544 Allow\n",
+    _PRIVATE_REPORT + "RULE S-1-5-21-9-9-9-1001 Allow\n",
+])
+def test_restrict_acl_fails_when_recheck_is_not_private(tmp_path, monkeypatch, report):
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    _capture_icacls(monkeypatch, report=report)
+    assert bs.restrict_backup_dir_acl(tmp_path) is False
+
+
+def test_restrict_acl_fails_when_exact_dacl_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    _capture_icacls(monkeypatch, fail_on=lambda c: "SetSecurityDescriptorSddlForm" in c[-1])
+    assert bs.restrict_backup_dir_acl(tmp_path) is False
+
+
+def test_make_dir_treats_a_concurrently_created_folder_as_existing(tmp_path, monkeypatch):
+    """Final-Review (S3): legt ein anderes Konto den Ordner zwischen Prüfung
+    und Anlegen an, gilt er als bestehend (wird geprüft, nicht umgeschrieben)."""
+    target = tmp_path / "sicherung"
+    real_mkdir = bs.Path.mkdir
+
+    def _racing_mkdir(self, *a, **k):
+        if self == target and not k.get("exist_ok"):
+            real_mkdir(self)  # das andere Konto war schneller
+        return real_mkdir(self, *a, **k)
+
+    monkeypatch.setattr(bs.Path, "mkdir", _racing_mkdir)
+    assert bs._make_dir(target) is False
+    assert bs._make_dir(tmp_path / "neu") is True
+    assert bs._make_dir(tmp_path / "neu") is False
+
+
+def test_create_backup_checks_a_concurrently_created_folder(db, default_tenant, tmp_path, monkeypatch):
+    """Nicht-Standard-Ort, im Fenster von fremder Hand angelegt: nur prüfen,
+    nie icacls."""
+    target = tmp_path / "sicherung"
+    monkeypatch.setattr(bs, "get_backup_dir", lambda _db: target)
+    monkeypatch.setattr(bs, "_is_default_backup_dir", lambda p: False)
+    monkeypatch.setattr(bs, "_is_windows", lambda: True)
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", host="localhost", port=5433))
+    real_mkdir = bs.Path.mkdir
+
+    def _racing_mkdir(self, *a, **k):
+        if self == target and not k.get("exist_ok"):
+            real_mkdir(self)
+        return real_mkdir(self, *a, **k)
+
+    monkeypatch.setattr(bs.Path, "mkdir", _racing_mkdir)
+    calls = _capture_icacls(monkeypatch, report=(
+        "OWNER S-1-5-21-9-9-9-1001\nPROTECTED True\nRULE S-1-5-21-9-9-9-1001 Allow\n"))
+    with pytest.raises(bs.BackupError, match="ändert die Rechte bestehender Ordner nicht"):
+        bs.create_backup(db)
+    assert calls == []
+
+
+def test_restrict_acl_is_noop_off_windows(tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "_is_windows", lambda: False)
+    calls = _capture_icacls(monkeypatch)
+    assert bs.restrict_backup_dir_acl(tmp_path) is True
+    assert calls == []
+
+
+# --- Audit 2026-11-07 S3-07: pg_dump nur mit SCRAM ---
+
+def test_create_backup_requires_scram_when_url_says_so(db, default_tenant, tmp_path, monkeypatch):
+    _use_tmp_dir(db, tmp_path)
+    monkeypatch.setenv(
+        "DATABASE_URL_MIGRATIONS",
+        _migr_url("su", "pw", host="localhost", port=5433) + "?require_auth=scram-sha-256",
+    )
+    captured = {}
+    monkeypatch.setattr(bs.subprocess, "Popen",
+                        lambda cmd, **k: captured.update(cmd=cmd, env=k.get("env", {})) or _FakePopen(b"x"))
+    bs.create_backup(db)
+    assert captured["env"].get("PGREQUIREAUTH") == "scram-sha-256"
+    assert captured["cmd"][-2:] == ["-d", "praxiszeit"]
+
+
+def test_create_backup_without_require_auth_sets_nothing(db, default_tenant, tmp_path, monkeypatch):
+    _use_tmp_dir(db, tmp_path)
+    monkeypatch.delenv("PGREQUIREAUTH", raising=False)
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("su", "pw", host="db"))
+    captured = {}
+    monkeypatch.setattr(bs.subprocess, "Popen",
+                        lambda cmd, **k: captured.update(env=k.get("env", {})) or _FakePopen(b"x"))
+    bs.create_backup(db)
+    assert "PGREQUIREAUTH" not in captured["env"]
+
+
+# --- Audit 2026-11-07 S3-13: nativ nur lesende Backup-Rolle statt Superuser ---
+
+def test_backup_url_is_preferred_over_superuser_url(db, default_tenant, tmp_path, monkeypatch):
+    _use_tmp_dir(db, tmp_path)
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", _migr_url("praxiszeit", "su-pw", host="db"))
+    monkeypatch.setenv("DATABASE_URL_BACKUP", _migr_url("praxiszeit_backup", "bk-pw", host="db"))
+    captured = {}
+    monkeypatch.setattr(bs.subprocess, "Popen",
+                        lambda cmd, **k: captured.update(cmd=cmd, env=k.get("env", {})) or _FakePopen(b"x"))
+    bs.create_backup(db)
+    assert captured["cmd"][captured["cmd"].index("-U") + 1] == "praxiszeit_backup"
+    assert captured["env"]["PGPASSWORD"] == "bk-pw"
+
+
+def test_backup_url_alone_is_enough(db, default_tenant, tmp_path, monkeypatch):
+    _use_tmp_dir(db, tmp_path)
+    monkeypatch.setenv("DATABASE_URL_BACKUP", _migr_url("praxiszeit_backup", "bk-pw", host="db"))
+    monkeypatch.setattr(bs.subprocess, "Popen", lambda *a, **k: _FakePopen(b"SELECT 1;"))
+    assert bs.create_backup(db).size_bytes > 0

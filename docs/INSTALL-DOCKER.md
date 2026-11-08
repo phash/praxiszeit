@@ -64,7 +64,7 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
 Updates: `git pull && docker compose pull db && docker compose build --pull && docker compose up -d`
 (bei aktivem SSL-Overlay beide `-f`-Dateien angeben). `pull db` holt den neuesten
 PostgreSQL-18-Patchstand — `up` allein nimmt das bereits vorhandene Image;
-`build --pull` zieht ebenso die Basis-Images von Backend und Frontend neu.
+`build --pull` zieht das Basis-Image des Frontends neu. Die Basis des Backends ist per Digest festgelegt (`backend/Dockerfile`, Lieferkette): ihre Debian-Sicherheitsupdates kommen nur mit einer PraxisZeit-Version, die den Digest bewusst anhebt.
 
 ---
 
@@ -112,6 +112,18 @@ Das initiale Admin-Passwort **nach dem ersten Login** in der Benutzerverwaltung
 Monitoring (Prometheus/Grafana) läuft mit — wer es nicht braucht, kann
 `docker compose stop prometheus grafana` ausführen.
 
+**Hinter einem eigenen Reverse-Proxy auf dem Host** (Caddy, Traefik, nginx):
+Der Container sieht dann alle Anfragen von der Gateway-Adresse des
+Docker-Netzes. Alle Rechner teilen sich eine Adresse, und die Anmelde-Sperre
+„5 Fehlversuche je Rechner“ trifft alle Rechner zugleich. Damit sie je Rechner
+greift, muss der Proxy die echte Adresse weiterreichen (`X-Forwarded-For`) und
+`frontend/nginx.conf` sie übernehmen: die vorbereiteten Zeilen
+`set_real_ip_from <proxy-netz>;` und `real_ip_header X-Forwarded-For;`
+einkommentieren (nur das Netz des Proxys eintragen, nie `0.0.0.0/0`, sonst kann
+jeder seine Adresse fälschen) und das Frontend neu bauen. Browser, in denen sich
+ein Konto schon einmal angemeldet hat, sperrt die Anmelde-Sperre seit 1.23.0
+ohnehin nicht mehr aus.
+
 ---
 
 ## Verwaltung
@@ -145,16 +157,19 @@ compose down -v` und vor Updates** sichern.
 oder einen täglichen Zeitplan + Aufbewahrung konfigurieren. Die Sicherungen landen
 im Volume `praxiszeit_backups` und lassen sich dort herunterladen.
 
-**Kommandozeile** (gzip, damit der Restore mit `gunzip -c | psql` zusammenpasst):
+**Kommandozeile:** das geprüfte Script neben der `docker-compose.yml` (im
+git-Checkout `bash tools/docker/backup.sh`):
 
 ```bash
-docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit \
-    | gzip > backup-$(date +%F).sql.gz
+bash backup.sh                    # -> ./backups/praxiszeit_<ts>.sql.gz (signiert)
+bash restore.sh backups/praxiszeit_<ts>.sql.gz
 ```
 
-Im Docker-Bundle gibt es dafür auch die geprüften Scripts `bash backup.sh` /
-`bash restore.sh` (neben der `docker-compose.yml`). Restore + Details:
-[BACKUP.md](BACKUP.md).
+Ab 1.23.0 tragen die Sicherungen eine Signatur, und `restore.sh` spielt nur
+signierte Sicherungen ohne Weiteres ein. Ein von Hand gezogenes
+`pg_dump | gzip` oder eine Sicherung von 1.22.0 oder älter ist unsigniert und geht
+nur mit `--force-unverified` (dann ungeprüft als Datenbank-Superuser — nur Dateien
+der eigenen Installation). Restore + Details: [BACKUP.md](BACKUP.md#signatur-der-sicherungen).
 
 §16 ArbZG verlangt eine Aufbewahrung von mindestens 2 Jahren. Die Volumes
 `postgres_data` + `praxiszeit_backups` daher **niemals ungesichert löschen**.

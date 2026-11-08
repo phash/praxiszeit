@@ -51,13 +51,14 @@ def test_start_scheduler_registers_daily_cron_jobs():
     assert sched is not None
     try:
         jobs = sched.get_jobs()
-        assert len(jobs) == 3
+        assert len(jobs) == 4
 
         job_ids = {j.id for j in jobs}
         assert job_ids == {
             scheduler_service.JOB_VACATION_AUDIT_PURGE,
             scheduler_service.JOB_CLEANUP_OLD_ERRORS,
             scheduler_service.JOB_SCHEDULED_BACKUP,
+            scheduler_service.JOB_AUDIT_INTEGRITY_CHECK,  # #537
         }
 
         # The four lifecycle jobs are daily crons at the documented time. The
@@ -68,6 +69,13 @@ def test_start_scheduler_registers_daily_cron_jobs():
                 fields = {f.name: str(f) for f in job.trigger.fields}
                 assert fields["minute"] == "30"
                 assert fields["hour"] == "*"
+                continue
+            if job.id == scheduler_service.JOB_AUDIT_INTEGRITY_CHECK:
+                # #537: nach dem Aufbewahrungs-Lauf, damit dessen Vermerke
+                # in derselben Nacht versiegelt werden.
+                fields = {f.name: str(f) for f in job.trigger.fields}
+                assert fields["hour"] == str(scheduler_service.DAILY_HOUR)
+                assert fields["minute"] == str(scheduler_service.DAILY_MINUTE + 15)
                 continue
             fields = {f.name: str(f) for f in job.trigger.fields}
             assert fields["hour"] == str(scheduler_service.DAILY_HOUR)
@@ -84,7 +92,7 @@ def test_start_scheduler_is_idempotent():
 
     try:
         assert first is second
-        assert len(first.get_jobs()) == 3
+        assert len(first.get_jobs()) == 4
     finally:
         first.shutdown(wait=False)
 

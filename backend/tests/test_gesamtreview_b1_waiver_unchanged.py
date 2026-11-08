@@ -41,7 +41,7 @@ def _waived(db, user):
     dokumentiert — so speichert das Ausstempeln mit Begründung."""
     e = TimeEntry(tenant_id=DEFAULT_TENANT_ID, user_id=user.id, date=MON, start_time=time(7),
                   end_time=time(16, 30), break_minutes=0, uncredited_minutes=0, note="alt",
-                  break_waiver_reason="Notfall")
+                  break_waiver_reason="Notfall ohne Vertretung")
     db.add(e)
     db.commit()
     return e
@@ -61,10 +61,10 @@ def test_note_with_prefilled_reason_and_approval_is_saved_directly(
     _setting(_db_session, "break_exception_requires_approval", "true")
     e = _waived(_db_session, employee_user)
     r = employee_client.put(f"/api/time-entries/{e.id}",
-                            json={**FORM, "note": "neu", "break_waiver_reason": "Notfall"})
+                            json={**FORM, "note": "neu", "break_waiver_reason": "Notfall ohne Vertretung"})
     assert r.status_code == 200, r.text
     _db_session.refresh(e)
-    assert (e.note, e.break_waiver_reason) == ("neu", "Notfall")
+    assert (e.note, e.break_waiver_reason) == ("neu", "Notfall ohne Vertretung")
     assert _crs(_db_session, employee_user) == 0
     # Keine erneute Dokumentation derselben Ausnahme.
     assert not any(w.startswith("BREAK_WAIVER") for w in r.json()["warnings"])
@@ -77,10 +77,10 @@ def test_note_with_prefilled_reason_when_exception_is_switched_off(
     _setting(_db_session, "break_exception_allowed", "false")
     e = _waived(_db_session, employee_user)
     r = employee_client.put(f"/api/time-entries/{e.id}",
-                            json={**FORM, "note": "neu", "break_waiver_reason": "Notfall"})
+                            json={**FORM, "note": "neu", "break_waiver_reason": "Notfall ohne Vertretung"})
     assert r.status_code == 200, r.text
     _db_session.refresh(e)
-    assert (e.note, e.break_waiver_reason) == ("neu", "Notfall")
+    assert (e.note, e.break_waiver_reason) == ("neu", "Notfall ohne Vertretung")
 
 
 @pytest.mark.parametrize("reason", ["", None], ids=["leer", "null"])
@@ -92,7 +92,7 @@ def test_unchanged_times_keep_the_documented_exception(
                             json={**FORM, "note": "neu", "break_waiver_reason": reason})
     assert r.status_code == 200, r.text
     _db_session.refresh(e)
-    assert (e.note, e.break_waiver_reason) == ("neu", "Notfall")
+    assert (e.note, e.break_waiver_reason) == ("neu", "Notfall ohne Vertretung")
 
 
 def test_changed_reason_still_goes_through_approval(
@@ -105,7 +105,7 @@ def test_changed_reason_still_goes_through_approval(
     assert r.status_code == 202, r.text
     _db_session.expire_all()
     e = _db_session.get(TimeEntry, e.id)
-    assert (e.note, e.break_waiver_reason) == ("alt", "Notfall")
+    assert (e.note, e.break_waiver_reason) == ("alt", "Notfall ohne Vertretung")
     assert _crs(_db_session, employee_user) == 1
 
 
@@ -116,7 +116,7 @@ def test_changed_break_with_same_reason_still_goes_through_approval(
     e = _waived(_db_session, employee_user)
     r = employee_client.put(f"/api/time-entries/{e.id}",
                             json={**FORM, "break_minutes": 15, "note": "neu",
-                                  "break_waiver_reason": "Notfall"})
+                                  "break_waiver_reason": "Notfall ohne Vertretung"})
     assert r.status_code == 202, r.text
     _db_session.expire_all()
     e = _db_session.get(TimeEntry, e.id)
@@ -131,19 +131,19 @@ def test_admin_route_same_reason_is_no_new_exception(_db_session, employee_user,
     _setting(_db_session, "break_exception_allowed", "false")
     e = _waived(_db_session, employee_user)
     r = admin_client.put(f"/api/admin/time-entries/{e.id}",
-                         json={**FORM, "note": "neu", "break_waiver_reason": "Notfall"})
+                         json={**FORM, "note": "neu", "break_waiver_reason": "Notfall ohne Vertretung"})
     assert r.status_code == 200, r.text
     assert not any(w.startswith("BREAK_WAIVER") for w in r.json()["warnings"])
     _db_session.refresh(e)
-    assert (e.note, e.break_waiver_reason) == ("neu", "Notfall")
+    assert (e.note, e.break_waiver_reason) == ("neu", "Notfall ohne Vertretung")
 
 
 def test_admin_route_changed_reason_is_documented(_db_session, employee_user, admin_client):
     """Kontrolle: eine neue Begründung dokumentiert die Ausnahme wie bisher."""
     e = _waived(_db_session, employee_user)
     r = admin_client.put(f"/api/admin/time-entries/{e.id}",
-                         json={**FORM, "note": "neu", "break_waiver_reason": "Notfall 2"})
+                         json={**FORM, "note": "neu", "break_waiver_reason": "Notfall ohne Vertretung 2"})
     assert r.status_code == 200, r.text
     assert any(w.startswith("BREAK_WAIVER") for w in r.json()["warnings"])
     _db_session.refresh(e)
-    assert e.break_waiver_reason == "Notfall 2"
+    assert e.break_waiver_reason == "Notfall ohne Vertretung 2"

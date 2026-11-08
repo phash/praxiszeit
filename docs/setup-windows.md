@@ -543,14 +543,14 @@ net stop PraxisZeit
 powershell -Command "Expand-Archive C:\Users\<USER>\Downloads\praxiszeit-1.4.x-windows-x64.zip C:\Temp\pz-update -Force"
 
 :: 4. Selektiv kopieren — nur app\, bin\, *.py, *.bat, requirements; config\ und data\ NIE überschreiben
-robocopy C:\Temp\pz-update\app  C:\PraxisZeit\app  /MIR
-robocopy C:\Temp\pz-update\bin  C:\PraxisZeit\bin  /MIR /XD bin\postgresql bin\python\Lib\site-packages
-robocopy C:\Temp\pz-update      C:\PraxisZeit       *.py *.bat /XF setup.bat
-copy /Y C:\Temp\pz-update\app\backend\requirements.txt C:\PraxisZeit\app\backend\requirements.txt
+robocopy C:\Temp\pz-update\app         C:\PraxisZeit\app         /MIR
+robocopy C:\Temp\pz-update\bin\python  C:\PraxisZeit\bin\python  /MIR
+robocopy C:\Temp\pz-update\bin         C:\PraxisZeit\bin         /XD postgresql python
+robocopy C:\Temp\pz-update             C:\PraxisZeit             *.py *.bat *.ps1 /XF setup.bat
 
-:: 5. Python-Abhängigkeiten neu installieren (pip wird hierfür frisch gebootet — siehe F-056)
-bin\python\python.exe bin\python\get-pip.py --force-reinstall
-bin\python\python.exe -m pip install --quiet -r app\backend\requirements.txt
+:: 5. Installationsordner absichern und mit dem Paket abgleichen (vor jedem python.exe!)
+::    Die Python-Abhaengigkeiten liegen gepruft im Paket - kein pip, kein Download.
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\PraxisZeit\secure-install.ps1 -InstallDir C:\PraxisZeit
 
 :: 6. Dienst wieder starten — Migrationen laufen automatisch beim ersten Start
 net start PraxisZeit

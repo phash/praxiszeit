@@ -169,6 +169,15 @@ export function showArbzgWarnings(
         // Spec 8.4: Pause und nicht angerechnete Lücke am selben Eintrag.
         toast.warning(detail ?? 'Pause in der Lücke wird zusätzlich abgezogen – lag die Pause in der Lücke, bitte die Pause auf 0 setzen.');
         break;
+      case 'AUTO_CLOSED':
+        // #540 (A1-04/A2-7): offener Eintrag eines früheren Tages automatisch
+        // geschlossen — Text vom Server (Datum, §3/§4-Befunde, Ausweg Antrag).
+        toast.warning(detail ?? 'Ein offener Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende per Änderungsantrag nachtragen.');
+        break;
+      case 'ENTRY_OVERLAP':
+        // #538 (A1-02): Überschneidung beim Ausstempeln (dort keine Sperre).
+        toast.warning(detail ?? 'Dieser Eintrag überschneidet sich mit einem anderen Eintrag des Tages.');
+        break;
       default:
         toast.warning(raw);
     }

@@ -183,3 +183,16 @@ def test_budget_check_skips_zero_hour_days(db, default_tenant):
     assert r.status_code == 201, f"Expected 201, got {r.status_code}: {r.text}"
     # Only Mon and Wed are booked (Tue skipped — 0h scheduled)
     assert _used(db, u) == 2.0
+
+
+import pytest as _pytest_s1_01  # noqa: E402
+
+
+@_pytest_s1_01.fixture(autouse=True)
+def _s1_01_test_dates_count_as_future(monkeypatch):
+    """Audit 2026-11-07 (S1-01): Mitarbeitende buchen und löschen Abwesenheiten
+    vergangener Tage nur per Änderungsantrag. Die festen Testdaten dieser Datei
+    prüfen andere Regeln — für ``absences`` gelten sie als künftige Tage."""
+    import datetime as _dt
+    from app.routers import absences as _absences_router
+    monkeypatch.setattr(_absences_router, "today_local", lambda: _dt.date(2020, 1, 1))

@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
 import { test } from '../../fixtures/base.fixture';
-import { currentMonth, today } from '../../helpers/date.helper';
+import { currentMonth, pastSlotToday, today } from '../../helpers/date.helper';
 
 /**
  * #377 Minijob / § 2 Abs. 2 MiLoG: Mindestlohn-Ausgabe + weiche 50-%-Warnung.
@@ -32,13 +32,20 @@ import { currentMonth, today } from '../../helpers/date.helper';
  *    frühere "Werktage seit dem Monatsersten"-Aufbau war an den ersten ~6 Werktagen
  *    jedes Monats garantiert leer.
  * 4. Damit EIN Tag reicht, ist die Vertragsbasis winzig: 1 h/Woche → vereinbarte
- *    Monatszeit = 1 × 13/3 = 4,33 h, Grenze = 2,17 h. Ein Tag mit 8,5 h netto ergibt
- *    Konto-Plusstunden 8,5 − 4,33 = 4,17 h > 2,17 h. (Die Mehrtages-Akkumulation
+ *    Monatszeit = 1 × 13/3 = 4,33 h, Grenze = 2,17 h. Ein Tag mit 7 h netto ergibt
+ *    Konto-Plusstunden 7 − 4,33 = 2,67 h > 2,17 h. (Die Mehrtages-Akkumulation
  *    selbst ist reine Summenarithmetik und im Backend unit-getestet,
  *    `backend/tests/test_milog.py` — hier geht es um die echte Verdrahtung.)
  */
 const MILOG_WEEKLY_HOURS = 1;          // → 4,33 h vereinbart, Grenze 2,17 h
-const MILOG_DAY = { start_time: '08:00', end_time: '17:00', break_minutes: 30 }; // 8,5 h netto
+// #540 (A1-09): das Ende eines heutigen Eintrags darf nicht in der Zukunft liegen —
+// 7:30 h, die schon vorbei sind, mit 30 Min. Pause = 7 h netto (reißt die 50-%-Grenze
+// bei 1 h/Woche: 7 − 4,33 = 2,67 h > 2,17 h). Zu früh am Tag → übersprungen.
+function milogDay() {
+  const slot = pastSlotToday(450);
+  test.skip(!slot, 'braucht 7:30 h vergangene Zeit am heutigen Tag');
+  return { start_time: slot!.start, end_time: slot!.end, break_minutes: 30 };
+}
 
 test.describe('#377 Minijob MiLoG', () => {
   test('system_info exposes the minimum wage', async ({ adminApi }) => {
@@ -61,11 +68,11 @@ test.describe('#377 Minijob MiLoG', () => {
       });
       empId = created.id;
 
-      // EIN Tag heute mit 8,5 h netto (30-Min-Pause erfüllt §4 ArbZG) → Konto
-      // 8,5 − 4,33 = 4,17 h > Grenze 2,17 h. Der Eintrag zieht zugleich den
+      // EIN Tag heute mit 7 h netto (30-Min-Pause erfüllt §4 ArbZG) → Konto
+      // 7 − 4,33 = 2,67 h > Grenze 2,17 h. Der Eintrag zieht zugleich den
       // Saldo-Stichtag auf heute, zählt also garantiert mit (siehe MILOG_SETUP).
       const e = await adminApi.post(`/admin/users/${empId}/time-entries`, {
-        date: today(), ...MILOG_DAY,
+        date: today(), ...milogDay(),
       });
       entryIds.push(e.id);
       expect(entryIds.length, 'setup: der Tageseintrag muss angelegt sein').toBe(1);

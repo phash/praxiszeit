@@ -5,17 +5,14 @@ using System.Runtime.Versioning;
 namespace PraxisZeit.Setup.Core.Platform;
 
 /// <summary>
-/// macOS-Implementierung via launchd-Plists + launchctl. Firewall via
-/// <c>pfctl</c> (falls noetig — LAN-Deployments brauchen das meistens
-/// nicht). Elevation via <c>geteuid() == 0</c>.
+/// macOS-Implementierung (launchctl: Status, Start, Stop). Elevation via
+/// <c>geteuid() == 0</c>. Dienst-Registrierung macht installer/macos/install.sh.
 /// </summary>
 [SupportedOSPlatform("macos")]
 public sealed class MacOsPlatform : IPlatform
 {
     private const string PlistLabel = "de.praxiszeit.server";
     private const string PlistPath = "/Library/LaunchDaemons/de.praxiszeit.server.plist";
-    private const string BackupPlistLabel = "de.praxiszeit.backup";
-    private const string BackupPlistPath = "/Library/LaunchDaemons/de.praxiszeit.backup.plist";
 
     [DllImport("libc", EntryPoint = "geteuid")]
     private static extern uint geteuid();
@@ -74,126 +71,6 @@ public sealed class MacOsPlatform : IPlatform
             .ConfigureAwait(false);
         await RunProcessAsync("launchctl", ["unload", "-w", PlistPath], ct, ignoreExitCode: true)
             .ConfigureAwait(false);
-    }
-
-    public async Task InstallServiceAsync(
-        string executablePath,
-        string[] arguments,
-        string workingDirectory,
-        CancellationToken ct = default)
-    {
-        var programArgsXml = new System.Text.StringBuilder();
-        programArgsXml.AppendLine($"      <string>{executablePath}</string>");
-        foreach (var arg in arguments)
-        {
-            programArgsXml.AppendLine($"      <string>{System.Security.SecurityElement.Escape(arg)}</string>");
-        }
-
-        var plist = $"""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0">
-            <dict>
-              <key>Label</key>
-              <string>{PlistLabel}</string>
-              <key>ProgramArguments</key>
-              <array>
-            {programArgsXml}
-              </array>
-              <key>WorkingDirectory</key>
-              <string>{workingDirectory}</string>
-              <key>RunAtLoad</key>
-              <true/>
-              <key>KeepAlive</key>
-              <true/>
-              <key>StandardOutPath</key>
-              <string>{workingDirectory}/logs/service-stdout.log</string>
-              <key>StandardErrorPath</key>
-              <string>{workingDirectory}/logs/service-stderr.log</string>
-              <key>EnvironmentVariables</key>
-              <dict>
-                <key>PYTHONUTF8</key>
-                <string>1</string>
-              </dict>
-              <key>UserName</key>
-              <string>praxiszeit</string>
-              <key>GroupName</key>
-              <string>praxiszeit</string>
-            </dict>
-            </plist>
-            """;
-
-        await File.WriteAllTextAsync(PlistPath, plist, ct).ConfigureAwait(false);
-        await RunProcessAsync("chmod", ["644", PlistPath], ct).ConfigureAwait(false);
-        await RunProcessAsync("chown", ["root:wheel", PlistPath], ct).ConfigureAwait(false);
-    }
-
-    public async Task UninstallServiceAsync(CancellationToken ct = default)
-    {
-        await StopServiceAsync(ct).ConfigureAwait(false);
-        if (File.Exists(PlistPath))
-        {
-            File.Delete(PlistPath);
-        }
-    }
-
-    public Task OpenFirewallAsync(int port, CancellationToken ct = default)
-    {
-        // macOS Application Firewall ist per-App, nicht per-Port. Fuer
-        // Server-Usecase ist pfctl zustaendig, aber LAN-Deployments
-        // brauchen das typischerweise nicht. Skippen.
-        return Task.CompletedTask;
-    }
-
-    public Task CloseFirewallAsync(int port, CancellationToken ct = default) => Task.CompletedTask;
-
-    public async Task ScheduleDailyBackupAsync(
-        string backupCommand,
-        TimeOnly dailyAt,
-        CancellationToken ct = default)
-    {
-        // launchd StartCalendarInterval als zweites Plist
-        var plist = $"""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0">
-            <dict>
-              <key>Label</key>
-              <string>{BackupPlistLabel}</string>
-              <key>ProgramArguments</key>
-              <array>
-                <string>/bin/sh</string>
-                <string>-c</string>
-                <string>{System.Security.SecurityElement.Escape(backupCommand)}</string>
-              </array>
-              <key>StartCalendarInterval</key>
-              <dict>
-                <key>Hour</key>
-                <integer>{dailyAt.Hour}</integer>
-                <key>Minute</key>
-                <integer>{dailyAt.Minute}</integer>
-              </dict>
-              <key>UserName</key>
-              <string>praxiszeit</string>
-            </dict>
-            </plist>
-            """;
-
-        await File.WriteAllTextAsync(BackupPlistPath, plist, ct).ConfigureAwait(false);
-        await RunProcessAsync("chmod", ["644", BackupPlistPath], ct).ConfigureAwait(false);
-        await RunProcessAsync("chown", ["root:wheel", BackupPlistPath], ct).ConfigureAwait(false);
-        await RunProcessAsync("launchctl", ["load", "-w", BackupPlistPath], ct, ignoreExitCode: true)
-            .ConfigureAwait(false);
-    }
-
-    public async Task UnscheduleDailyBackupAsync(CancellationToken ct = default)
-    {
-        await RunProcessAsync("launchctl", ["unload", "-w", BackupPlistPath], ct, ignoreExitCode: true)
-            .ConfigureAwait(false);
-        if (File.Exists(BackupPlistPath))
-        {
-            File.Delete(BackupPlistPath);
-        }
     }
 
     private static async Task<int> RunProcessAsync(

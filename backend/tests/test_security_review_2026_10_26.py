@@ -5,7 +5,8 @@
    (b) ``/journal/me`` maskiert unter Impersonation Gesundheitsdaten (Art. 9),
    (c) ``/me/data-export`` ist unter Impersonation gesperrt (403).
 2. Mitarbeitende löschen über ``POST /absences`` keine Zeiteinträge vergangener
-   Tage (Änderungsantrag).
+   Tage (Änderungsantrag; seit Audit 2026-11-07 S1-01 buchen sie vergangene
+   Tage gar nicht mehr direkt).
 3. Ein CREATE-Änderungsantrag trägt keine ``time_entry_id``; die Anreicherung
    zeigt nur Einträge der antragstellenden Person.
 4. ``admin_delete_time_entry`` nimmt zuerst die Ankersperre (P5).
@@ -150,30 +151,32 @@ def test_employee_past_absence_does_not_delete_entries(
     e = _entry(_db_session, employee_user, MON, time(8), time(12))
     r = employee_client.post("/api/absences/", json={
         "date": MON.isoformat(), "type": "sick", "hours": 8})
-    assert r.status_code == 400, r.text
-    assert "Änderungsantrag" in r.json()["detail"]
-    assert "01.06.2026" in r.json()["detail"]
+    # Audit 2026-11-07 (S1-01): vergangene Tage für Mitarbeitende nur per Antrag.
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == absences_router.PAST_DAY_ABSENCE_DETAIL
     _db_session.expire_all()
     assert _db_session.get(TimeEntry, e.id) is not None
     assert _db_session.query(Absence).count() == 0
 
 
-def test_employee_past_absence_without_entries_still_allowed(
+def test_employee_past_absence_without_entries_needs_request(
         _db_session, employee_user, employee_client, monkeypatch):
-    """Krankmeldung für gestern ohne Einträge bleibt direkt buchbar."""
+    """S1-01 ersetzt die Ausnahme „Krankmeldung für gestern": auch ein
+    vergangener Tag ohne Einträge geht nur per Änderungsantrag."""
     monkeypatch.setattr(absences_router, "today_local", lambda: MON + timedelta(days=7))
     r = employee_client.post("/api/absences/", json={
         "date": MON.isoformat(), "type": "sick", "hours": 8})
-    assert r.status_code == 201, r.text
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"] == absences_router.PAST_DAY_ABSENCE_DETAIL
 
 
-def test_employee_past_absence_keeping_entries_allowed(
+def test_employee_past_absence_keeping_entries_needs_request(
         _db_session, employee_user, employee_client, monkeypatch):
     monkeypatch.setattr(absences_router, "today_local", lambda: MON + timedelta(days=7))
     e = _entry(_db_session, employee_user, MON, time(8), time(12))
     r = employee_client.post("/api/absences/", json={
         "date": MON.isoformat(), "type": "sick", "hours": 8, "keep_time_entries": True})
-    assert r.status_code == 201, r.text
+    assert r.status_code == 409, r.text
     _db_session.expire_all()
     assert _db_session.get(TimeEntry, e.id) is not None
 

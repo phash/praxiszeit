@@ -55,7 +55,8 @@ public sealed class PayloadExtractor
             }
 
             var relativePath = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
-            var destPath = Path.Combine(targetDirectory, relativePath);
+            // S3-16: kein Eintrag darf aus dem Zielverzeichnis hinausfuehren.
+            var destPath = ZipPathGuard.ResolveEntryPath(targetDirectory, entry.FullName);
 
             if (isUpdate && ShouldSkipOnUpdate(relativePath))
             {

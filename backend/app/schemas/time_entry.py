@@ -27,8 +27,8 @@ class TimeEntryBase(BaseModel):
     # Gesamtreview 1.20 (B1): Sekunden fallen beim Eingang weg (``MinuteTime``).
     start_time: MinuteTime
     end_time: MinuteTime
-    break_minutes: int = Field(default=0, ge=0)
-    note: Optional[str] = None
+    break_minutes: int = Field(default=0, ge=0, le=1440)  # S2-2: Obergrenze (Integer-Spalte)
+    note: Optional[str] = Field(None, max_length=2000)  # S2-2
     sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # §10 ArbZG (#485: begrenzt)
     # #144 §4 ArbZG: justification when a mandatory break was not possible.
     # Submitted by the client to waive the break-validation block for
@@ -64,8 +64,8 @@ class TimeEntryUpdate(BaseModel):
     date: Optional[date_type] = None
     start_time: Optional[MinuteTime] = None
     end_time: Optional[MinuteTime] = None
-    break_minutes: Optional[int] = Field(None, ge=0)
-    note: Optional[str] = None
+    break_minutes: Optional[int] = Field(None, ge=0, le=1440)  # S2-2
+    note: Optional[str] = Field(None, max_length=2000)  # S2-2
     sunday_exception_reason: Optional[str] = Field(None, max_length=2000)  # §10 ArbZG (#485: begrenzt)
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)  # #144 §4 ArbZG (SEC-D: bounded)
 
@@ -171,20 +171,46 @@ class TimeEntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AutoClosedEntryResponse(BaseModel):
+    """#540 (A1-04): Zeile der Verwaltungsliste „automatisch geschlossen, Ende
+    fehlt" (``GET /api/admin/time-entries/auto-closed``)."""
+    id: UUID
+    user_id: UUID
+    user_name: str
+    date: date_type
+    start_time: time          # gestempelter Beginn (Rohstempel)
+    end_time: Optional[time]  # wirksames Ende des Auto-Close
+    net_hours: float
+    findings: List[str] = []  # §3/§4-Befunde (live)
+    pending_change_request: bool = False
+
+    @field_serializer('id', 'user_id')
+    def serialize_uuid(self, value: UUID) -> str:
+        return str(value)
+
+
 # --- Clock-in/out schemas ---
 
 class ClockInRequest(BaseModel):
-    note: Optional[str] = None
+    note: Optional[str] = Field(None, max_length=2000)  # S2-2
 
 
 class ClockOutRequest(BaseModel):
-    break_minutes: int = Field(default=0, ge=0)
-    note: Optional[str] = None
+    break_minutes: int = Field(default=0, ge=0, le=1440)  # S2-2
+    note: Optional[str] = Field(None, max_length=2000)  # S2-2
     # M-ARB1: document a §4 break deviation captured during clock-out, mirroring
     # the create/CR paths (#144). #499: ohne ausreichende Pause UND ohne
     # (zulässige) Begründung lehnt der Server das Ausstempeln mit 400 ab — der
     # Eintrag bleibt offen, bis Pause oder Begründung mitkommt.
     break_waiver_reason: Optional[str] = Field(None, max_length=2000)
+    # #540 (A1-11): §10-Ausnahmegrund beim Ausstempeln an Sonn-/Feiertagen —
+    # bis dahin forderte der Hinweis einen Grund, für den es hier kein Feld gab.
+    sunday_exception_reason: Optional[str] = Field(None, max_length=2000)
+
+    @field_validator('sunday_exception_reason')
+    @classmethod
+    def _sunday_reason(cls, v):
+        return _normalize_sunday_reason(v)
 
 
 class ClockBlock(BaseModel):
@@ -209,6 +235,11 @@ class DayBlocksResponse(BaseModel):
 
 class ClockStatusResponse(BaseModel):
     is_clocked_in: bool
+    # #540 (A1-04/A2-7): eigene automatisch geschlossene Einträge, deren
+    # tatsächliches Ende noch fehlt (ohne offenen Antrag) — die Stempeluhr
+    # bietet dafür den vorbelegten Änderungsantrag an. ``warnings`` trägt den
+    # Hinweis ``AUTO_CLOSED`` samt §3/§4-Befunden.
+    auto_closed_entries: List[TimeEntryResponse] = []
     current_entry: Optional[TimeEntryResponse] = None
     # Laufzeit (brutto) NUR des offenen Eintrags — Timer der Stempeluhr.
     elapsed_minutes: Optional[int] = None

@@ -20,12 +20,21 @@ from app.services.date_filters import date_in_year, date_in_month, date_in_year_
 from app.config import settings
 
 
-# M-SEC1: spreadsheet formula / CSV injection guard. A cell whose text starts
-# with one of these characters is prefixed with an apostrophe so Excel /
-# LibreOffice treat it as literal text and never evaluate it as a formula.
-# Employee free-text (note, sunday_exception_reason) and user names flow into
-# the §16 export which an admin then opens — without this, a note like
-# ``=HYPERLINK(...)`` or a DDE payload would execute on their workstation.
+# M-SEC1: spreadsheet formula / CSV injection guard. Employee free-text (note,
+# sunday_exception_reason, break_waiver_reason) and user names flow into the
+# §16 export which an admin then opens — a note like ``=HYPERLINK(...)`` or a
+# DDE payload must never execute on their workstation.
+#
+# S2-7 (Audit 2026-11-07): the guard is the TYPED text cell, not a visible
+# apostrophe. Bis dahin stand vor jeder Notiz, die mit „-" begann („- Termin"),
+# und vor jedem solchen Namen ein sichtbares ``'`` im Rechtsbeleg. Jetzt:
+# XLSX — ``harden_text_cells`` (über ``save_workbook``, DIE Speicherstelle aller
+# drei Excel-Exporte) schreibt jede Zelle, deren Text mit einem dieser Zeichen
+# beginnt, als Textzelle (``data_type='s'``) mit ``quotePrefix`` — Excel und
+# LibreOffice zeigen den Text ohne Apostroph und werten ihn auch nach dem
+# Bearbeiten nicht als Formel. ODS — ``ods_export_service._str_cell`` schreibt
+# ``office:value-type="string"``; eine Formel wäre dort ein eigenes Attribut
+# ``table:formula``, das kein Export setzt.
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
@@ -128,24 +137,148 @@ def day_credit_minutes(day_entries) -> DayCredit:
     )
 
 
-def neutralize_spreadsheet_formula(value):
-    """Return ``value`` safe for a spreadsheet text cell.
+# A2-4 (Audit 2026-11-07): angehängte Spalten 14–16 der Tageszeilen (XLSX/ODS,
+# Monat + Jahres-Mitarbeiterblatt). Neue Spalten nur HINTER der letzten.
+STAMPED_HEADER = "Gestempelt (Von–Bis)"
+PRESENCE_HEADER = "Anwesenheit laut Stempel (Std)"
+BREAK_WAIVER_HEADER = "Pausenausnahme (§4 ArbZG)"
+PDF_STAMPED_HEADER = "Gestempelt\n(Anwesenheit)"
+EXPORT_LAST_COLUMN = 16  # Füllungen/Zellverbindungen der Tageszeilen reichen bis hier (Spalte P)
+EXPORT_LAST_COLUMN_LETTER = "P"
+PRESENCE_LIMIT_MINUTES = 600  # § 3 ArbZG: mehr als 10 h Anwesenheit am Tag wird markiert
+AUTO_CLOSED_MARK = "automatisch geschlossen"
 
-    1. Steuerzeichen, die XML 1.0 nicht erlaubt (\\x00-\\x08, \\x0b, \\x0c,
-       \\x0e-\\x1f), werden entfernt — openpyxl bricht sonst mit
-       ``IllegalCharacterError`` ab, und ein einziges solches Zeichen in einer
-       Notiz oder im eigenen Namen legt den Export der ganzen Praxis lahm
-       (HTTP 500); im ODS wäre es ungültiges XML (Sicherheits-Review 2026-10).
-    2. Danach (damit ``"\\x01=..."`` nicht an der Prüfung vorbeirutscht) bekommt
-       ein Wert, der als Formel gelesen werden könnte, ein führendes Apostroph.
+
+class DayStamps(NamedTuple):
+    spans: str                        # „06:00–18:00, 19:00–20:00"; "" ohne Eintrag
+    presence_minutes: Optional[int]   # Σ presence_minutes; None ohne Eintrag
+    over_limit: bool                  # Anwesenheit > 10 h (§ 3 ArbZG)
+    break_waiver: str                 # Begründung(en) der Pausenausnahme, " | "-verbunden
+
+
+def _stamp_span(entry) -> str:
+    """Tatsächliche Stempelzeit eines Eintrags: Rohbeginn bis Anwesenheitsende
+    (``work_window_service.presence_end`` — DIE Regel, auch für § 5). Beim
+    automatisch geschlossenen Eintrag ist das Rohende kein Stempel (P18); dort
+    steht das wirksame Ende mit dem Vermerk „automatisch geschlossen"."""
+    start = entry.raw_start_time or entry.start_time
+    end = work_window_service.presence_end(entry)
+    text = f"{start.strftime('%H:%M')}–{end.strftime('%H:%M') if end is not None else 'offen'}"
+    if getattr(entry, "auto_closed", False) and end is not None:
+        text += f" ({AUTO_CLOSED_MARK})"
+    return text
+
+
+def day_stamps(day_entries) -> DayStamps:
+    """A2-4: was die Person tatsächlich gestempelt hat — für die §16-Dateien.
+
+    „Von"/„Bis" der Tageszeile sind die ANGERECHNETEN Zeiten (nach der Kappung
+    an den Arbeitszeit-Blöcken); ohne diese Spalten stand in keiner Datei, wann
+    jemand wirklich kam und ging, und ein Tag mit 11:30 h Anwesenheit sah aus
+    wie ein 8-h-Tag (§ 16 Abs. 2 ArbZG, EuGH C-55/18). Spalte 14 listet JEDEN
+    Eintrag mit Rohstempel (auch bei nur einem Eintrag), Spalte 15 die
+    Anwesenheit laut Stempel (``work_window_service.presence_minutes``, wie im
+    24-Wochen-Bericht; Markierung über 10 h), Spalte 16 die Begründung einer
+    § 4-Pausenausnahme (``break_waiver_reason``, Nutzertext → Aufrufer
+    neutralisiert)."""
+    if not day_entries:
+        return DayStamps("", None, False, "")
+    ordered = sorted(day_entries, key=lambda e: (e.raw_start_time or e.start_time))
+    minutes = sum(work_window_service.presence_minutes(e) for e in ordered)
+    waivers = []
+    for e in ordered:
+        reason = (getattr(e, "break_waiver_reason", None) or "").strip()
+        if reason and reason not in waivers:
+            waivers.append(reason)
+    return DayStamps(
+        ", ".join(_stamp_span(e) for e in ordered),
+        minutes,
+        minutes > PRESENCE_LIMIT_MINUTES,
+        " | ".join(waivers),
+    )
+
+
+def _write_stamp_columns(sheet, row: int, stamps: "DayStamps") -> None:
+    """A2-4: XLSX-Spalten 14–16 einer Tageszeile (Monat + Jahres-Mitarbeiterblatt)."""
+    if stamps.spans:
+        sheet.cell(row=row, column=14).value = stamps.spans
+    presence = presence_hours_value(stamps.presence_minutes)
+    if presence is not None:
+        cell = sheet.cell(row=row, column=15)
+        cell.value = presence
+        cell.number_format = '0.00'
+        if stamps.over_limit:
+            cell.font = Font(bold=True, color="8B0000")
+    if stamps.break_waiver:
+        sheet.cell(row=row, column=16).value = neutralize_spreadsheet_formula(stamps.break_waiver)
+
+
+def _hm_minutes(minutes: Optional[int]) -> str:
+    """Minuten als H:MM (PDF-Spalte „Gestempelt (Anwesenheit)")."""
+    minutes = int(minutes or 0)
+    return f"{minutes // 60}:{minutes % 60:02d}"
+
+
+def presence_hours_value(minutes: Optional[int]) -> Optional[float]:
+    """Anwesenheit in Stunden für die Zelle (2 Nachkommastellen); None ohne Eintrag."""
+    return None if minutes is None else round(minutes / 60.0, 2)
+
+
+def neutralize_spreadsheet_formula(value):
+    """Return ``value`` safe for a TYPED spreadsheet text cell.
+
+    Steuerzeichen, die XML 1.0 nicht erlaubt (\\x00-\\x08, \\x0b, \\x0c,
+    \\x0e-\\x1f), werden entfernt — openpyxl bricht sonst mit
+    ``IllegalCharacterError`` ab, und ein einziges solches Zeichen in einer
+    Notiz oder im eigenen Namen legt den Export der ganzen Praxis lahm
+    (HTTP 500); im ODS wäre es ungültiges XML (Sicherheits-Review 2026-10).
+
+    Den Formelschutz leistet seit S2-7 der Zelltyp (``harden_text_cells`` bzw.
+    ``ods_export_service._str_cell``), nicht mehr ein vorangestelltes ``'`` —
+    der Text bleibt wortgleich. Wer diesen Text in eine UNTYPISIERTE Senke
+    schreibt (CSV), braucht ``formula_prefixed``.
 
     Non-strings are returned unchanged."""
     if not isinstance(value, str):
         return value
-    value = ILLEGAL_CHARACTERS_RE.sub("", value)
-    if value and value[0] in _FORMULA_PREFIXES:
+    return ILLEGAL_CHARACTERS_RE.sub("", value)
+
+
+def looks_like_formula(value) -> bool:
+    """True, wenn eine Tabellenkalkulation den Text als Formel lesen könnte."""
+    return isinstance(value, str) and value[:1] in _FORMULA_PREFIXES
+
+
+def formula_prefixed(value):
+    """Für untypisierte Text-Senken (CSV): Steuerzeichen raus und — nur wenn der
+    Text wirklich mit ``= + - @``, Tab oder CR beginnt — ein führendes ``'``."""
+    value = neutralize_spreadsheet_formula(value)
+    if looks_like_formula(value):
         return "'" + value
     return value
+
+
+def harden_text_cells(wb: Workbook) -> None:
+    """S2-7: DIE Formelsperre der XLSX-Exporte. Jede Zelle, die openpyxl als
+    Formel speichern würde (``data_type == 'f'``, also Text ab ``=``) oder deren
+    Text mit einem Formelzeichen beginnt, wird Textzelle mit ``quotePrefix``.
+    Kein Export schreibt absichtlich Formeln — deshalb gilt das für JEDE Zelle,
+    auch für eine, an der ``neutralize_spreadsheet_formula`` vergessen wurde."""
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.data_type == 'f' or looks_like_formula(cell.value):
+                    cell.data_type = 's'
+                    cell.quotePrefix = True
+
+
+def save_workbook(wb: Workbook) -> BytesIO:
+    """Speichert einen Export-Workbook — immer über ``harden_text_cells``."""
+    harden_text_cells(wb)
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
 
 
 # Excel/openpyxl: Blattnamen max. 31 Zeichen, ohne ``\ / * ? : [ ]``, nicht mit
@@ -182,7 +315,22 @@ def safe_sheet_title(raw, existing=()) -> str:
         n += 1
 
 
-def export_users(db, tenant_id, period_start: date, period_end: date) -> List[User]:
+def _users_with_data_subqueries(db, tenant_id, period_start: date, period_end: date):
+    """(Zeiteintrags-, Abwesenheits-)Subqueries der Personen mit Daten im Zeitraum (F-026)."""
+    te = db.query(TimeEntry.user_id).filter(
+        TimeEntry.date >= period_start, TimeEntry.date <= period_end
+    )
+    ab = db.query(Absence.user_id).filter(
+        Absence.date >= period_start, Absence.date <= period_end
+    )
+    if tenant_id is not None:
+        te = te.filter(TimeEntry.tenant_id == tenant_id)
+        ab = ab.filter(Absence.tenant_id == tenant_id)
+    return te.scalar_subquery(), ab.scalar_subquery()
+
+
+def export_users(db, tenant_id, period_start: date, period_end: date,
+                 include_hidden: bool = False) -> List[User]:
     """Mitarbeiter, die in einen §16-Beleg für ``[period_start, period_end]`` gehören.
 
     Release-Review 1.16.0: die Exporte filterten hart auf ``is_active == True``.
@@ -193,31 +341,48 @@ def export_users(db, tenant_id, period_start: date, period_end: date) -> List[Us
     fehlten damit die Nachweise, ohne dass irgendwo ein Hinweis erschien.
 
     Deshalb: aktive Mitarbeiter wie bisher, PLUS inaktive, die im Zeitraum
-    tatsächlich Daten haben (Zeiteintrag oder Abwesenheit). Ausgeblendete
-    (``is_hidden``) bleiben ausgeblendet — das ist eine bewusste Sichtbarkeits-
-    entscheidung des Admins, keine Ausscheidens-Markierung. Ein Zeitraum ohne
+    tatsächlich Daten haben (Zeiteintrag oder Abwesenheit). Ein Zeitraum ohne
     Daten des Ausgeschiedenen erzeugt weiterhin kein leeres Blatt.
+
+    Ausgeblendete (``is_hidden``) bleiben standardmäßig draußen — eine bewusste
+    Sichtbarkeitsentscheidung des Admins wie in der Benutzerliste
+    („Ausgeblendete anzeigen"). A2-6 (Audit 2026-11-07): stempelt eine
+    ausgeblendete Person (z. B. die Praxisinhaberin), fehlte ihr §16-Beleg ohne
+    jeden Ausweg — ``include_hidden=True`` nimmt sie auf (Export-Checkbox
+    „Ausgeblendete Mitarbeitende einbeziehen", ArbZG-Berichte); dieselbe Regel
+    aktiv/ausgeschieden gilt dann auch für sie. Wie viele Ausgeblendete mit
+    Daten fehlen, sagt ``hidden_users_with_data_count``.
+
+    Auch die ArbZG-Berichte (§§ 3–6, 11, ``routers/reports.py``) wählen ihre
+    Personen über diese Funktion.
     """
-    base = db.query(User).filter(User.is_hidden == False)  # noqa: E712
+    base = db.query(User)
+    if not include_hidden:
+        base = base.filter(User.is_hidden == False)  # noqa: E712
     if tenant_id is not None:
         base = base.filter(User.tenant_id == tenant_id)
 
-    te = db.query(TimeEntry.user_id).filter(
-        TimeEntry.date >= period_start, TimeEntry.date <= period_end
-    )
-    ab = db.query(Absence.user_id).filter(
-        Absence.date >= period_start, Absence.date <= period_end
-    )
-    if tenant_id is not None:
-        te = te.filter(TimeEntry.tenant_id == tenant_id)
-        ab = ab.filter(Absence.tenant_id == tenant_id)
+    te, ab = _users_with_data_subqueries(db, tenant_id, period_start, period_end)
 
     users = base.filter(User.is_active == True).all()  # noqa: E712
     users += base.filter(
         User.is_active == False,  # noqa: E712
-        or_(User.id.in_(te.scalar_subquery()), User.id.in_(ab.scalar_subquery())),
+        or_(User.id.in_(te), User.id.in_(ab)),
     ).all()
     return sorted(users, key=lambda u: ((u.last_name or "").lower(), (u.first_name or "").lower()))
+
+
+def hidden_users_with_data_count(db, tenant_id, period_start: date, period_end: date) -> int:
+    """A2-6: ausgeblendete Personen mit Zeiteintrag oder Abwesenheit im Zeitraum —
+    die Berichte nennen die Zahl, damit niemand still aus der Auswertung fällt."""
+    te, ab = _users_with_data_subqueries(db, tenant_id, period_start, period_end)
+    q = db.query(User.id).filter(
+        User.is_hidden == True,  # noqa: E712
+        or_(User.id.in_(te), User.id.in_(ab)),
+    )
+    if tenant_id is not None:
+        q = q.filter(User.tenant_id == tenant_id)
+    return q.count()
 
 
 def absence_day_target(db, user, d, day_absences, holiday_dates, special_cfg,
@@ -555,7 +720,7 @@ def escape_pdf_text(value):
     return _xml_escape(str(value))
 
 
-def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
+def generate_monthly_report(db: Session, year: int, month: int, include_health_data: bool = False, tenant_id=None, include_hidden: bool = False) -> BytesIO:
     """
     Generate Excel report for all employees for a given month.
     Creates one sheet per employee.
@@ -576,17 +741,13 @@ def generate_monthly_report(db: Session, year: int, month: int, include_health_d
 
     # Get all active, non-hidden employees (F-026: explicit tenant filter on top of RLS)
     users = export_users(db, tenant_id, date(year, month, 1),
-                         date(year, month, monthrange(year, month)[1]))
+                         date(year, month, monthrange(year, month)[1]),
+                         include_hidden=include_hidden)  # A2-6
 
     for user in users:
         _create_employee_sheet(wb, db, user, year, month, include_health_data)
 
-    # Save to BytesIO
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    return output
+    return save_workbook(wb)  # S2-7: Formelsperre über den Zelltyp
 
 
 def _load_reason_names(db: Session, tenant_id) -> dict:
@@ -604,6 +765,17 @@ def _absence_export_label(absence, type_map: dict, reason_names: dict, include_h
     hidden) unless health data is explicitly included — a custom reason can be
     health-sensitive (e.g. "Reha"). Otherwise a custom reason shows its own
     name; built-in types use the German type label.
+
+    A2-11/S2-12 (Audit 2026-11-07) — Produktentscheidung, bewusst so: die
+    Datei-Exporte maskieren NUR Krank und eigene Gründe. ``OTHER`` („Sonstiges"/
+    „unbezahlt frei") und ``PAID_LEAVE`` stehen im Klartext, anders als in den
+    Kollegen-Feeds (``_MASKED_ABSENCE_TYPES`` = {SICK, OTHER, PAID_LEAVE}): die
+    Exporte bekommt nur die Verwaltung, die die Art der Freistellung für Lohn
+    und Saldo braucht, die Kollegen-Feeds sieht das ganze Team. Kind-krank
+    (§ 45 SGB V) läuft über einen eigenen Grund (``reason_id``) und wird damit
+    maskiert. EINE Stelle für alle drei Exporter (XLSX, ODS, PDF) und das
+    Monatsjournal (``_absence_export_label``-Parität) — nicht je Datei abweichen.
+    Doku: docs/BERECHNUNGEN.md („Maskierung in den Datei-Exporten").
     """
     if (absence.type.value == "sick" and not include_health_data) or \
        (absence.reason_id is not None and not include_health_data):
@@ -611,6 +783,23 @@ def _absence_export_label(absence, type_map: dict, reason_names: dict, include_h
     if absence.reason_id is not None:
         return reason_names.get(str(absence.reason_id)) or type_map.get(absence.type.value, absence.type.value), True
     return type_map.get(absence.type.value, absence.type.value), True
+
+
+def night_worker_export_value(user, include_health_data: bool) -> str:
+    """A2-11: DIE Regel für das Kennzeichen „Nachtarbeitnehmer (§ 6 Abs. 2)" in
+    allen Datei-Exporten (XLSX Monat/Jahr/klassisch, ODS ebenso, PDF-Kopfzeile).
+
+    DSGVO F-006 / DSFA: das Kennzeichen ist gesundheitsnah (es löst die
+    arbeitsmedizinische Untersuchung nach § 6 Abs. 3 aus) und erscheint deshalb
+    nur mit „Krankheitsdaten einschließen"; sonst „–". Bis zum Audit 2026-11-07
+    zeigten der XLSX-Monatsreport und das PDF es immer, die übrigen Dateien
+    maskierten es — dieselbe Auskunft hing vom Dateiformat ab. Die einzelnen
+    Nachtarbeitstage („Nachtarbeit (§6 ArbZG)" in der Tageszeile, Summe
+    „Nachtarbeitstage") bleiben immer sichtbar: sie sind Arbeitszeit, kein
+    Status. Für die Aufsicht exportiert die Verwaltung mit Freigabe."""
+    if not include_health_data:
+        return "–"
+    return "Ja" if user.is_night_worker else "Nein"
 
 
 def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, month: int, include_health_data: bool = False):
@@ -631,6 +820,8 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     - Unterbrechung (Min)   (#498, angehängt)
     - Zeiteinträge          (#498, angehängt)
     - Nicht angerechnet (Min) (Spec 2026-10-08, angehängt)
+    - Gestempelt (Von–Bis), Anwesenheit laut Stempel (Std),
+      Pausenausnahme (§4 ArbZG)   (A2-4, angehängt)
     """
     sheet = wb.create_sheet(title=safe_sheet_title(f"{user.last_name} {user.first_name}", wb.sheetnames))
 
@@ -672,14 +863,16 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     sheet.cell(row=2, column=2).value = "Ja" if user.exempt_from_arbzg else "Nein"
     sheet.cell(row=2, column=4).value = "Nachtarbeitnehmer (§6 Abs. 2 ArbZG):"
     sheet.cell(row=2, column=4).font = Font(bold=True)
-    sheet.cell(row=2, column=5).value = "Ja" if user.is_night_worker else "Nein"
+    sheet.cell(row=2, column=5).value = night_worker_export_value(user, include_health_data)  # A2-11
     # Row 3: blank separator
 
     # Row 4: Column headers
     # #498: Spalten 11/12 ANGEHÄNGT, nie eingeschoben — Kundenauswertungen lesen
     # die Spalten 1–10 positionsweise. Spec 2026-10-08, 15.1: Spalte 13 ebenso.
     headers = ["Datum", "Wochentag", "Von", "Bis", "Pause (Min)", "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
-               "Unterbrechung (Min)", "Zeiteinträge", NOT_CREDITED_HEADER]
+               "Unterbrechung (Min)", "Zeiteinträge", NOT_CREDITED_HEADER,
+               # A2-4: tatsächliche Stempel + § 4-Ausnahme, angehängt (Spalten 14–16).
+               STAMPED_HEADER, PRESENCE_HEADER, BREAK_WAIVER_HEADER]
     for col_num, header in enumerate(headers, 1):
         cell = sheet.cell(row=4, column=col_num)
         cell.value = header
@@ -802,6 +995,8 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             _credit = day_credit_minutes(day_entries)
             sheet.cell(row=row, column=13).value = _credit.not_credited
             month_not_credited += _credit.not_credited
+            # A2-4: Spalten 14–16 — Rohstempel, Anwesenheit (> 10 h rot), § 4-Ausnahme.
+            _write_stamp_columns(sheet, row, day_stamps(day_entries))
             # Bemerkung (col 10): §10-Ausnahmegrund hat Vorrang, dann entry.note
             bemerkung_parts = []
             for e in day_entries:
@@ -841,7 +1036,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
             sheet.cell(row=row, column=9).value = neutralize_spreadsheet_formula(abw)
-            for col in range(1, 14):
+            for col in range(1, EXPORT_LAST_COLUMN + 1):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
         elif is_holiday:
             target = Decimal('0.00')
@@ -854,7 +1049,7 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
                 abw += " | Nachtarbeit (§6 ArbZG)"
             sheet.cell(row=row, column=9).value = neutralize_spreadsheet_formula(abw)
             # col 10 (Bemerkung) bereits oben gesetzt – NICHT mit holiday.name überschreiben
-            for col in range(1, 14):
+            for col in range(1, EXPORT_LAST_COLUMN + 1):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
@@ -1026,9 +1221,12 @@ def _create_employee_sheet(wb: Workbook, db: Session, user: User, year: int, mon
     sheet.column_dimensions['K'].width = 14
     sheet.column_dimensions['L'].width = 26
     sheet.column_dimensions['M'].width = 16
+    sheet.column_dimensions['N'].width = 26  # A2-4
+    sheet.column_dimensions['O'].width = 16
+    sheet.column_dimensions['P'].width = 35
 
 
-def generate_yearly_report(db: Session, year: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
+def generate_yearly_report(db: Session, year: int, include_health_data: bool = False, tenant_id=None, include_hidden: bool = False) -> BytesIO:
     """
     Generate Excel report for all employees for a given year.
     Creates:
@@ -1049,7 +1247,8 @@ def generate_yearly_report(db: Session, year: int, include_health_data: bool = F
     wb.remove(wb.active)
 
     # Get all active, non-hidden employees (F-026: explicit tenant filter on top of RLS)
-    users = export_users(db, tenant_id, date(year, 1, 1), date(year, 12, 31))
+    users = export_users(db, tenant_id, date(year, 1, 1), date(year, 12, 31),
+                         include_hidden=include_hidden)  # A2-6
 
     # Create overview sheet
     _create_yearly_overview_sheet(wb, db, users, year, include_health_data)
@@ -1061,12 +1260,7 @@ def generate_yearly_report(db: Session, year: int, include_health_data: bool = F
     for user in users:
         _create_employee_yearly_sheet(wb, db, user, year, include_health_data)
 
-    # Save to BytesIO
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    return output
+    return save_workbook(wb)  # S2-7: Formelsperre über den Zelltyp
 
 
 def _create_yearly_overview_sheet(wb: Workbook, db: Session, users: List[User], year: int, include_health_data: bool = False):
@@ -1283,16 +1477,15 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     # Title
     sheet.cell(row=1, column=1).value = neutralize_spreadsheet_formula(f"{user.first_name} {user.last_name} - Jahresreport {year}")
     sheet.cell(row=1, column=1).font = Font(bold=True, size=14)
-    sheet.merge_cells('A1:M1')  # #498 + Spec 2026-10-08: inkl. der angehängten Spalten 11–13
+    sheet.merge_cells(f'A1:{EXPORT_LAST_COLUMN_LETTER}1')  # #498, Spec 2026-10-08, A2-4: inkl. der angehängten Spalten 11–16
 
     # Row 2: ArbZG-relevante Mitarbeiter-Flags (§16 ArbZG Aufzeichnungspflicht)
     sheet.cell(row=2, column=1).value = "§18 ArbZG-befreit:"
     sheet.cell(row=2, column=1).font = Font(bold=True)
     sheet.cell(row=2, column=2).value = "Ja" if user.exempt_from_arbzg else "Nein"
-    # DSGVO F-006: is_night_worker is health-adjacent data – only show when include_health_data=True
     sheet.cell(row=2, column=4).value = "Nachtarbeitnehmer (§6 Abs. 2 ArbZG):"
     sheet.cell(row=2, column=4).font = Font(bold=True)
-    sheet.cell(row=2, column=5).value = ("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"
+    sheet.cell(row=2, column=5).value = night_worker_export_value(user, include_health_data)  # A2-11
 
     # #415: Wochenstunden zum Jahresbeginn + Änderungen im Jahr
     _wh_segments = calculation_service.weekly_hours_segments(
@@ -1309,7 +1502,9 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     # #498: Spalten 11/12 ANGEHÄNGT, nie eingeschoben — Kundenauswertungen lesen
     # die Spalten 1–10 positionsweise. Spec 2026-10-08, 15.1: Spalte 13 ebenso.
     headers = ["Datum", "Wochentag", "Von", "Bis", "Pause (Min)", "Netto (Std)", "Soll (Std)", "Differenz", "Abwesenheit", "Bemerkung",
-               "Unterbrechung (Min)", "Zeiteinträge", NOT_CREDITED_HEADER]
+               "Unterbrechung (Min)", "Zeiteinträge", NOT_CREDITED_HEADER,
+               # A2-4: tatsächliche Stempel + § 4-Ausnahme, angehängt (Spalten 14–16).
+               STAMPED_HEADER, PRESENCE_HEADER, BREAK_WAIVER_HEADER]
     for col_num, header in enumerate(headers, 1):
         cell = sheet.cell(row=3, column=col_num)
         cell.value = header
@@ -1378,7 +1573,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             sheet.cell(row=row, column=1).value = month_names[current_month - 1]
             sheet.cell(row=row, column=1).font = Font(bold=True, size=12)
             sheet.cell(row=row, column=1).fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
-            sheet.merge_cells(f'A{row}:M{row}')  # inkl. Spalte 13 (Spec 2026-10-08)
+            sheet.merge_cells(f'A{row}:{EXPORT_LAST_COLUMN_LETTER}{row}')  # inkl. Spalten 13–16 (Spec 2026-10-08, A2-4)
             row += 1
 
         weekday = current_date.weekday()
@@ -1437,6 +1632,8 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             _credit = day_credit_minutes(day_entries)
             sheet.cell(row=row, column=13).value = _credit.not_credited
             year_not_credited += _credit.not_credited
+            # A2-4: Spalten 14–16 — Rohstempel, Anwesenheit (> 10 h rot), § 4-Ausnahme.
+            _write_stamp_columns(sheet, row, day_stamps(day_entries))
             # Bemerkung (col 10): §10-Ausnahmegrund hat Vorrang, dann entry.note
             bemerkung_parts = []
             for e in day_entries:
@@ -1473,7 +1670,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
             sheet.cell(row=row, column=9).value = neutralize_spreadsheet_formula(abw)
-            for col in range(1, 14):
+            for col in range(1, EXPORT_LAST_COLUMN + 1):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
         elif is_holiday:
             target = Decimal('0.00')
@@ -1485,7 +1682,7 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
             if is_night_wrk:
                 abw += " | Nachtarbeit (§6 ArbZG)"
             sheet.cell(row=row, column=9).value = neutralize_spreadsheet_formula(abw)
-            for col in range(1, 14):
+            for col in range(1, EXPORT_LAST_COLUMN + 1):
                 sheet.cell(row=row, column=col).fill = PatternFill(start_color="FFFFCC", end_color="FFFFCC", fill_type="solid")
         elif day_absences:
             # Release-Review 1.16.0: zentrale Soll-Quelle statt pauschal 0.
@@ -1637,9 +1834,12 @@ def _create_employee_yearly_sheet(wb: Workbook, db: Session, user: User, year: i
     sheet.column_dimensions['K'].width = 14
     sheet.column_dimensions['L'].width = 26
     sheet.column_dimensions['M'].width = 16
+    sheet.column_dimensions['N'].width = 26  # A2-4
+    sheet.column_dimensions['O'].width = 16
+    sheet.column_dimensions['P'].width = 35
 
 
-def generate_yearly_report_classic(db: Session, year: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
+def generate_yearly_report_classic(db: Session, year: int, include_health_data: bool = False, tenant_id=None, include_hidden: bool = False) -> BytesIO:
     """
     Generate classic yearly report (compact format with months as columns).
     Creates one sheet per employee.
@@ -1657,17 +1857,13 @@ def generate_yearly_report_classic(db: Session, year: int, include_health_data: 
     wb.remove(wb.active)
 
     # Get all active, non-hidden employees (F-026: explicit tenant filter on top of RLS)
-    users = export_users(db, tenant_id, date(year, 1, 1), date(year, 12, 31))
+    users = export_users(db, tenant_id, date(year, 1, 1), date(year, 12, 31),
+                         include_hidden=include_hidden)  # A2-6
 
     for user in users:
         _create_employee_classic_sheet(wb, db, user, year, include_health_data)
 
-    # Save to BytesIO
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    return output
+    return save_workbook(wb)  # S2-7: Formelsperre über den Zelltyp
 
 
 def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: int, include_health_data: bool = False):
@@ -1730,7 +1926,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
     # DSGVO F-006: protect health-adjacent is_night_worker
     sheet.cell(row=2, column=15).value = "Nachtarbeitnehmer (§6 Abs. 2):"
     sheet.cell(row=2, column=15).font = bold_font
-    sheet.cell(row=2, column=16).value = ("Ja" if user.is_night_worker else "Nein") if include_health_data else "–"
+    sheet.cell(row=2, column=16).value = night_worker_export_value(user, include_health_data)  # A2-11
 
     # Row 4: Month headers (columns 3-14 for Jan-Dec)
     sheet.cell(row=4, column=2).value = "Übertrag"
@@ -1988,7 +2184,7 @@ def _create_employee_classic_sheet(wb: Workbook, db: Session, user: User, year: 
 # PDF Export (reportlab)
 # ---------------------------------------------------------------------------
 
-def generate_monthly_report_pdf(db: Session, year: int, month: int, include_health_data: bool = False, tenant_id=None) -> BytesIO:
+def generate_monthly_report_pdf(db: Session, year: int, month: int, include_health_data: bool = False, tenant_id=None, include_hidden: bool = False) -> BytesIO:
     """
     Generate PDF monthly report for all employees.
     One page per employee, landscape A4.
@@ -2065,7 +2261,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
 
     # F-026: explicit tenant filter (belt-and-suspenders on top of RLS)
     users = export_users(db, tenant_id, date(year, month, 1),
-                         date(year, month, monthrange(year, month)[1]))
+                         date(year, month, monthrange(year, month)[1]),
+                         include_hidden=include_hidden)  # A2-6
 
     # Landscape A4: 297mm − 30mm margins = 267mm usable
     # #498: + „Unterbr. (Min)" direkt neben „Pause" (15 mm, aus Abwesenheit/
@@ -2077,7 +2274,12 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
     # Unterbrechung. 24 mm ist die kleinste Breite, bei der „Nicht angerechnet"
     # (Helvetica-Bold 7 pt + 2×3 pt Innenabstand) in EINE Zeile passt und der
     # Kopf zweizeilig bleibt; bei 18 mm brach reportlab ihn dreizeilig um.
-    col_widths = [22*mm, 10*mm, 13*mm, 13*mm, 15*mm, 15*mm, 16*mm, 14*mm, 16*mm, 55*mm, 54*mm, 24*mm]
+    # A2-4 (Audit 2026-11-07): 13. Spalte „Gestempelt (Anwesenheit)" — Rohstempel
+    # je Eintrag und die Anwesenheit laut Stempel (über 10 h rot), 22 mm, je 11 mm
+    # aus Abwesenheit/Bemerkung. Die Begründung einer § 4-Pausenausnahme steht im
+    # PDF in „Bemerkung" („§4-Ausnahme: …", wie der §10-Grund) — XLSX/ODS führen
+    # sie als eigene Spalte 16.
+    col_widths = [22*mm, 10*mm, 13*mm, 13*mm, 15*mm, 15*mm, 16*mm, 14*mm, 16*mm, 44*mm, 43*mm, 24*mm, 22*mm]
     weekday_names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
     absence_type_map = ABSENCE_TYPE_LABELS_DE
 
@@ -2107,7 +2309,9 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
 
         # ── Employee meta ──
         arbzg_flag = " | \u00a718-befreit" if user.exempt_from_arbzg else ""
-        night_flag = " | Nachtarbeitnehmer (\u00a76)" if user.is_night_worker else ""
+        # A2-11: Status nur mit „Krankheitsdaten einschließen" — dieselbe Regel wie
+        # XLSX/ODS (night_worker_export_value). Ohne Freigabe entfällt der Zusatz.
+        night_flag = " | Nachtarbeitnehmer (\u00a76)" if (include_health_data and user.is_night_worker) else ""
         # #415: Wochenstunden zum Monatsbeginn + \u00c4nderungen im Monat.
         _wh_segments = calculation_service.weekly_hours_segments(
             db, user, date(year, month, 1), date(year, month, monthrange(year, month)[1]), wh_changes=wh_changes
@@ -2162,7 +2366,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
         special_day_config = special_days_service.get_special_day_config(db, user.tenant_id, year)
 
         # ── Build table ──
-        headers = ['Datum', 'WT', 'Von', 'Bis', 'Pause\n(Min)', 'Unterbr.\n(Min)', 'Netto\n(Std)', 'Soll\n(Std)', 'Diff.', 'Abwesenheit', 'Bemerkung', PDF_NOT_CREDITED_HEADER]
+        headers = ['Datum', 'WT', 'Von', 'Bis', 'Pause\n(Min)', 'Unterbr.\n(Min)', 'Netto\n(Std)', 'Soll\n(Std)', 'Diff.', 'Abwesenheit', 'Bemerkung', PDF_NOT_CREDITED_HEADER, PDF_STAMPED_HEADER]
         table_data = [[Paragraph(h, ParagraphStyle('hdr', fontName='Helvetica-Bold', fontSize=7,
                                                     leading=9, alignment=TA_CENTER))
                        for h in headers]]
@@ -2231,8 +2435,17 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                     if e.note:
                         bem_parts.append(e.note)
                 bem = " | ".join(bem_parts)
+                # A2-4: Rohstempel + Anwesenheit (13. Spalte), § 4-Ausnahme in „Bemerkung".
+                _stamps = day_stamps(day_entries)
+                waiver_bem = f"\u00a74-Ausnahme: {_stamps.break_waiver}" if _stamps.break_waiver else ''
+                bem = " | ".join(p for p in (waiver_bem, bem) if p)
+                _presence = f"= {_hm_minutes(_stamps.presence_minutes)} h"
+                if _stamps.over_limit:
+                    _presence = f"<font color='#8B0000'><b>{_presence}</b></font>"
+                stamped = '<br/>'.join(
+                    [escape_pdf_text(sp) for sp in _stamps.spans.split(", ")] + [_presence])
             else:
-                von = bis = pause_str = gap_str = bem = nc_str = ''
+                von = bis = pause_str = gap_str = bem = nc_str = stamped = waiver_bem = ''
                 netto_val = 0.0
                 net = Decimal('0.00')
 
@@ -2278,7 +2491,8 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                         note_parts.append(absence.note)
                     abw_parts.append(f"{type_name} ({float(absence.hours):.1f}h)")
                 abw = " | ".join(abw_parts)
-                bem = " | ".join(note_parts)  # ersetzt evtl. Eintrags-Bemerkung wie zuvor
+                # ersetzt evtl. Eintrags-Bemerkung wie zuvor — die § 4-Ausnahme bleibt (A2-4)
+                bem = " | ".join(p for p in [waiver_bem] + note_parts if p)
                 bg = None
             else:
                 target = daily_target
@@ -2314,6 +2528,7 @@ def generate_monthly_report_pdf(db: Session, year: int, month: int, include_heal
                 Paragraph(escape_pdf_text(abw), s_normal),
                 Paragraph(escape_pdf_text(bem), s_normal),
                 Paragraph(nc_str, s_center),
+                Paragraph(stamped, s_center),  # A2-4: bereits escaped (Zeiten + Vermerk)
             ]
             table_data.append(row)
             if bg:

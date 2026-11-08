@@ -3972,7 +3972,7 @@ def stale_year_closing_warning(db: Session, tenant_id, years) -> Optional[str]:
     return closed_year_warning_text(closed_years_in_range(db, tenant_id, years))
 
 
-def create_year_closing(db: Session, year: int, users: list) -> list:
+def create_year_closing(db: Session, year: int, users: list, changed_by=None) -> list:
     """
     Create year-end closing for all given users.
 
@@ -3984,6 +3984,8 @@ def create_year_closing(db: Session, year: int, users: list) -> list:
         db: Database session
         year: The year being closed (carryovers are created for year+1)
         users: List of User objects
+        changed_by: handelnder Verwalter — gesetzt, schreibt je Person eine
+            Protokollzeile mit dem Uebertrag vorher/nachher (#537, A2-5)
 
     Returns:
         List of dicts with user info and carryover values
@@ -4005,6 +4007,10 @@ def create_year_closing(db: Session, year: int, users: list) -> list:
             YearCarryover.tenant_id == user.tenant_id,
             YearCarryover.year == next_year,
         ).first()
+        before = None
+        if changed_by is not None:
+            from app.services import admin_change_audit
+            before = admin_change_audit.carryover_state(carryover)
 
         if carryover:
             carryover.overtime_hours = overtime_balance
@@ -4022,6 +4028,14 @@ def create_year_closing(db: Session, year: int, users: list) -> list:
                 source="year_closing",  # Fix #7
             )
             db.add(carryover)
+
+        if changed_by is not None:
+            admin_change_audit.log_carryover(
+                db, carryover_user_id=user.id, tenant_id=user.tenant_id,
+                changed_by=changed_by, year=next_year, before=before,
+                after=admin_change_audit.carryover_state(carryover),
+                source=admin_change_audit.SOURCE_YEAR_CLOSING,
+            )
 
         results.append({
             "user_id": str(user.id),

@@ -248,6 +248,9 @@ export default function AdminChangeRequests() {
   // Review 2026-06-23: synchroner Doppelklick-Schutz (Einzel-Approve/Reject; der
   // Bulk-Pfad ist via bulkProcessing bereits geschützt).
   const actionLock = useRef(false);
+  // #538 (A1-02): eine Sperre der Genehmigung (z. B. Überschneidung mit einem
+  // inzwischen angelegten Eintrag) bleibt am Antrag stehen, nicht nur als Toast.
+  const [approveErrors, setApproveErrors] = useState<Record<string, string>>({});
 
   const handleApprove = async (id: string, grant?: boolean) => {
     if (actionLock.current) return;
@@ -262,9 +265,12 @@ export default function AdminChangeRequests() {
       // ArbZG-Warnungen der Genehmigung anzeigen (§3 >48h/Woche, §6 Nacht) —
       // analog zu den MA-Pfaden (StampWidget/TimeTracking); bisher verworfen.
       showArbzgWarnings(toast, response.data?.warnings);
+      setApproveErrors(({ [id]: _done, ...rest }) => rest);
       fetchRequests();
     } catch (error: any) {
-      toast.error(getErrorMessage(error, 'Fehler beim Genehmigen'));
+      const msg = getErrorMessage(error, 'Fehler beim Genehmigen');
+      if (error?.response?.status === 409) setApproveErrors((prev) => ({ ...prev, [id]: msg }));
+      toast.error(msg);
     } finally {
       actionLock.current = false;
     }
@@ -679,6 +685,12 @@ export default function AdminChangeRequests() {
                   <span className="font-medium text-gray-700">Begründung: </span>
                   <span className="text-gray-600">{cr.reason}</span>
                 </div>
+
+                {approveErrors[cr.id] && cr.status === 'pending' && (
+                  <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                    {approveErrors[cr.id]}
+                  </div>
+                )}
 
                 {/* Rejection reason */}
                 {cr.status === 'rejected' && cr.rejection_reason && (

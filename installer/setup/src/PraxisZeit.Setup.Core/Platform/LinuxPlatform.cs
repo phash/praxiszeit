@@ -5,15 +5,14 @@ using System.Runtime.Versioning;
 namespace PraxisZeit.Setup.Core.Platform;
 
 /// <summary>
-/// Linux-Implementierung via systemd Unit Files + cron.d. Firewall via
-/// Tool-Detection (firewalld / ufw). Elevation via <c>geteuid() == 0</c>.
+/// Linux-Implementierung (systemd: Status, Start, Stop). Elevation via
+/// <c>geteuid() == 0</c>. Dienst-Registrierung macht installer/linux/install.sh.
 /// </summary>
 [SupportedOSPlatform("linux")]
 public sealed class LinuxPlatform : IPlatform
 {
     private const string ServiceName = "praxiszeit";
     private const string UnitFile = "/etc/systemd/system/praxiszeit.service";
-    private const string CronFile = "/etc/cron.d/praxiszeit-backup";
 
     [DllImport("libc", EntryPoint = "geteuid")]
     private static extern uint geteuid();
@@ -84,119 +83,6 @@ public sealed class LinuxPlatform : IPlatform
             }
             await Task.Delay(1000, ct).ConfigureAwait(false);
         }
-    }
-
-    public async Task InstallServiceAsync(
-        string executablePath,
-        string[] arguments,
-        string workingDirectory,
-        CancellationToken ct = default)
-    {
-        var execStart = arguments.Length == 0
-            ? executablePath
-            : $"{executablePath} {string.Join(' ', arguments)}";
-
-        var unit = $"""
-            [Unit]
-            Description=PraxisZeit Zeiterfassung
-            After=network.target postgresql.service
-
-            [Service]
-            Type=simple
-            User=praxiszeit
-            Group=praxiszeit
-            WorkingDirectory={workingDirectory}
-            ExecStart={execStart}
-            Restart=on-failure
-            RestartSec=5
-            UMask=0077
-            StandardOutput=append:{workingDirectory}/logs/service-stdout.log
-            StandardError=append:{workingDirectory}/logs/service-stderr.log
-            Environment=PYTHONUTF8=1
-
-            [Install]
-            WantedBy=multi-user.target
-            """;
-
-        await File.WriteAllTextAsync(UnitFile, unit, ct).ConfigureAwait(false);
-        await RunProcessAsync("systemctl", ["daemon-reload"], ct).ConfigureAwait(false);
-        await RunProcessAsync("systemctl", ["enable", ServiceName], ct).ConfigureAwait(false);
-    }
-
-    public async Task UninstallServiceAsync(CancellationToken ct = default)
-    {
-        await StopServiceAsync(ct).ConfigureAwait(false);
-        await RunProcessAsync("systemctl", ["disable", ServiceName], ct, ignoreExitCode: true)
-            .ConfigureAwait(false);
-        if (File.Exists(UnitFile))
-        {
-            File.Delete(UnitFile);
-        }
-        await RunProcessAsync("systemctl", ["daemon-reload"], ct, ignoreExitCode: true)
-            .ConfigureAwait(false);
-    }
-
-    public async Task OpenFirewallAsync(int port, CancellationToken ct = default)
-    {
-        if (await CommandExistsAsync("firewall-cmd", ct).ConfigureAwait(false))
-        {
-            await RunProcessAsync(
-                "firewall-cmd", ["--permanent", $"--add-port={port}/tcp"], ct).ConfigureAwait(false);
-            await RunProcessAsync("firewall-cmd", ["--reload"], ct).ConfigureAwait(false);
-            return;
-        }
-
-        if (await CommandExistsAsync("ufw", ct).ConfigureAwait(false))
-        {
-            await RunProcessAsync("ufw", ["allow", $"{port}/tcp"], ct).ConfigureAwait(false);
-            return;
-        }
-
-        // Kein passendes Tool - no-op, Admin macht manuell
-    }
-
-    public async Task CloseFirewallAsync(int port, CancellationToken ct = default)
-    {
-        if (await CommandExistsAsync("firewall-cmd", ct).ConfigureAwait(false))
-        {
-            await RunProcessAsync(
-                "firewall-cmd", ["--permanent", $"--remove-port={port}/tcp"], ct, ignoreExitCode: true)
-                .ConfigureAwait(false);
-            await RunProcessAsync("firewall-cmd", ["--reload"], ct, ignoreExitCode: true)
-                .ConfigureAwait(false);
-            return;
-        }
-
-        if (await CommandExistsAsync("ufw", ct).ConfigureAwait(false))
-        {
-            await RunProcessAsync(
-                "ufw", ["delete", "allow", $"{port}/tcp"], ct, ignoreExitCode: true)
-                .ConfigureAwait(false);
-        }
-    }
-
-    public async Task ScheduleDailyBackupAsync(
-        string backupCommand,
-        TimeOnly dailyAt,
-        CancellationToken ct = default)
-    {
-        var cronLine = $"{dailyAt.Minute} {dailyAt.Hour} * * * praxiszeit {backupCommand}\n";
-        await File.WriteAllTextAsync(CronFile, cronLine, ct).ConfigureAwait(false);
-    }
-
-    public Task UnscheduleDailyBackupAsync(CancellationToken ct = default)
-    {
-        if (File.Exists(CronFile))
-        {
-            File.Delete(CronFile);
-        }
-        return Task.CompletedTask;
-    }
-
-    private static async Task<bool> CommandExistsAsync(string command, CancellationToken ct)
-    {
-        var exit = await RunProcessAsync("which", [command], ct, ignoreExitCode: true).ConfigureAwait(false);
-        return exit == 0;
     }
 
     private static async Task<int> RunProcessAsync(

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import gzip
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -48,6 +49,12 @@ pytestmark = pytest.mark.skipif(
 _DOCKER_STUB = r"""#!/usr/bin/env bash
 echo "docker $*" >> "$STUB_DIR/calls.log"
 args=" $* "
+# Signatur der Sicherung (Fix-Runde S3-03): das echte Modul mit dem Schluessel
+# des "Backend-Containers".
+if [[ "$args" == *" python -m app.core.backup_mac "* ]]; then
+  verb="${@: -1}"
+  exec env SECRET_KEY="$STUB_SECRET_KEY" python3 "$BACKEND_DIR/app/core/backup_mac.py" "$verb"
+fi
 if [[ "$args" == *" exec -T db psql "* ]]; then
   # Ohne -c/-f liest psql den Dump von stdin = das eigentliche Einspielen.
   if [[ "$args" != *" -c "* && "$args" != *" -f "* ]]; then
@@ -113,20 +120,33 @@ def _bundle(tmp_path: Path) -> Path:
     return bundle
 
 
+_STUB_SECRET_KEY = "stub-secret-key-0123456789abcdef"
+
+
 def _env(tmp_path: Path, **extra: str) -> dict:
     return {
         **os.environ,
         "PATH": f"{tmp_path / 'stubs'}:{os.environ['PATH']}",
         "STUB_DIR": str(tmp_path),
         "RESTORE_WAIT_SECONDS": "6",
+        "STUB_SECRET_KEY": _STUB_SECRET_KEY,
+        "BACKEND_DIR": str(_REPO / "backend"),
         **extra,
     }
 
 
-def _dump(tmp_path: Path, text: str = _COMPLETE_DUMP) -> Path:
+def _signed(text: str, key: str = _STUB_SECRET_KEY) -> bytes:
+    from app.core.backup_mac import BackupMac
+    signer = BackupMac(key)
+    signer.update(text.encode("utf-8"))
+    return text.encode("utf-8") + signer.trailer()
+
+
+def _dump(tmp_path: Path, text: str = _COMPLETE_DUMP, *, key: str | None = _STUB_SECRET_KEY) -> Path:
+    """Wie backup.sh sie schreibt: mit Signaturzeile (``key=None``: ohne)."""
     path = tmp_path / "praxiszeit_20261017_120000.sql.gz"
-    with gzip.open(path, "wt", encoding="utf-8") as fh:
-        fh.write(text)
+    with gzip.open(path, "wb") as fh:
+        fh.write(_signed(text, key) if key else text.encode("utf-8"))
     return path
 
 
@@ -135,11 +155,11 @@ def _calls(tmp_path: Path) -> list[str]:
     return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
 
 
-def _run_restore(tmp_path: Path, dump: Path | None = None, **extra: str):
+def _run_restore(tmp_path: Path, dump: Path | None = None, args: tuple = (), **extra: str):
     bundle = _bundle(tmp_path)
     dump = dump or _dump(tmp_path)
     proc = subprocess.run(
-        ["bash", str(bundle / "restore.sh"), str(dump)],
+        ["bash", str(bundle / "restore.sh"), str(dump), *args],
         env=_env(tmp_path, **extra), capture_output=True, text=True, timeout=60,
         stdin=subprocess.DEVNULL,
     )
@@ -168,7 +188,12 @@ def test_restore_restarts_the_running_backend_so_migrations_run(tmp_path):
     assert stop < restore < start, calls
     # Das No-op von frueher darf nicht mehr der „Neustart“ sein.
     assert not any("up -d backend" in line for line in calls), calls
-    assert (tmp_path / "restored.sql").read_text(encoding="utf-8") == _COMPLETE_DUMP
+    restored = (tmp_path / "restored.sql").read_text(encoding="utf-8")
+    first, rest = restored.split("\n", 1)
+    assert re.fullmatch(r"\\restrict [0-9a-f]{48}", first), first  # S3-03
+    assert rest.startswith(_COMPLETE_DUMP.replace("\\unrestrict abc\n", ""))
+    assert re.fullmatch(r"-- praxiszeit-backup-hmac-v1 [0-9a-f]{64}\n",
+                        rest[len(_COMPLETE_DUMP) - len("\\unrestrict abc\n"):])
 
 
 def test_restore_loads_the_dump_into_a_fresh_database(tmp_path):
@@ -360,3 +385,173 @@ def test_docker_readme_points_to_the_migration_output():
     assert "docker compose logs backend" in section, section
     assert "*** HINWEIS (Migration 073) ***" in section, section
     assert "UPDATE.md" in section, section
+
+
+# --- Audit 2026-11-07 S3-03: psql im db-Container fuehrt keine Backslash-Befehle aus
+
+
+def test_restore_puts_its_own_restrict_key_in_front(tmp_path):
+    evil = "\\restrict abc\n\\! id > /tmp/pwned\n" + _COMPLETE_DUMP
+    proc, calls = _run_restore(tmp_path, dump=_dump(tmp_path, evil))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    restored = (tmp_path / "restored.sql").read_text(encoding="utf-8").split("\n")
+    assert re.fullmatch(r"\\restrict [0-9a-f]{48}", restored[0]), restored[0]
+    # psql bekommt den fremden Befehl - im eingeschraenkten Modus ist er ein Fehler.
+    assert "\\! id > /tmp/pwned" in restored
+    assert "\\restrict abc" not in restored and "\\unrestrict abc" not in restored
+
+
+def test_restore_uses_a_new_key_each_time(tmp_path):
+    keys = []
+    for n in range(2):
+        sub = tmp_path / str(n)
+        sub.mkdir()
+        proc, _ = _run_restore(sub, dump=_dump(sub))
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        keys.append((sub / "restored.sql").read_text(encoding="utf-8").split("\n", 1)[0])
+    assert keys[0] != keys[1]
+
+
+# --- Audit 2026-11-07 S3-06: Docker-Backups nur fuer den Eigentuemer lesbar
+
+
+def _run_with_umask_022(cmd, env):
+    return subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60,
+                          stdin=subprocess.DEVNULL, preexec_fn=lambda: os.umask(0o022))
+
+
+def test_backup_sh_writes_private_dumps_even_with_umask_022(tmp_path):
+    bundle = _bundle(tmp_path)
+    old = bundle / "backups"
+    old.mkdir(mode=0o755)
+    os.chmod(old, 0o755)
+    legacy = old / "praxiszeit_20250101_000000.sql.gz"
+    legacy.write_bytes(b"x")
+    os.chmod(legacy, 0o644)
+    proc = _run_with_umask_022(["bash", str(bundle / "backup.sh")], _env(tmp_path))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    dumps = sorted(old.glob("praxiszeit_*.sql.gz"))
+    assert len(dumps) == 2
+    assert stat.S_IMODE(old.stat().st_mode) == 0o700
+    for d in dumps:
+        assert stat.S_IMODE(d.stat().st_mode) == 0o600, d
+
+
+def test_backup_db_sh_writes_private_dumps_even_with_umask_022(tmp_path):
+    bundle = _bundle(tmp_path)
+    target = tmp_path / "backup"
+    script = _REPO / "scripts" / "backup-db.sh"
+    proc = _run_with_umask_022(
+        ["bash", str(script)],
+        _env(tmp_path, PRAXISZEIT_BACKUP_DIR=str(target), PRAXISZEIT_PROJECT_DIR=str(bundle)),
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    dumps = list(target.glob("praxiszeit_*.sql.gz"))
+    assert len(dumps) == 1
+    assert stat.S_IMODE(target.stat().st_mode) == 0o700
+    assert stat.S_IMODE(dumps[0].stat().st_mode) == 0o600
+
+
+# --- Fix-Runde S3-03: nur signierte Sicherungen, sonst --force-unverified ----
+
+def _nothing_touched(calls):
+    return not any("stop backend" in line or "DROP DATABASE" in line or " db psql " in line
+                   for line in calls)
+
+
+def test_restore_refuses_an_unsigned_dump_before_touching_anything(tmp_path):
+    proc, calls = _run_restore(tmp_path, dump=_dump(tmp_path, key=None))
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert _nothing_touched(calls), calls
+    assert "keine PraxisZeit-Signatur" in proc.stderr
+    assert "--force-unverified" in proc.stderr
+
+
+def test_restore_refuses_a_dump_signed_with_another_key(tmp_path):
+    proc, calls = _run_restore(tmp_path, dump=_dump(tmp_path, key="anderer-schluessel"))
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert _nothing_touched(calls), calls
+    assert "passt nicht" in proc.stderr
+
+
+def test_restore_refuses_a_modified_signed_dump(tmp_path):
+    path = tmp_path / "praxiszeit_20261017_120000.sql.gz"
+    signed = _signed(_COMPLETE_DUMP).replace(b"SELECT 1;", b"SELECT 2;")
+    with gzip.open(path, "wb") as fh:
+        fh.write(signed)
+    proc, calls = _run_restore(tmp_path, dump=path)
+    assert proc.returncode != 0 and _nothing_touched(calls), proc.stdout + proc.stderr
+
+
+def test_restore_force_unverified_loads_an_unsigned_dump_with_warning(tmp_path):
+    proc, calls = _run_restore(tmp_path, dump=_dump(tmp_path, key=None),
+                               args=("--force-unverified",))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "WARNUNG" in proc.stderr and "--force-unverified" in proc.stderr
+    # Final-Review (S3-03): die fehlende Anweisungspruefung wird genannt
+    assert "prueft die SQL-Anweisungen der Datei nicht" in proc.stderr
+    _restore_idx(calls)
+
+
+def test_restore_checks_the_signature_before_stopping_the_backend(tmp_path):
+    proc, calls = _run_restore(tmp_path)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    verify = _idx(calls, "exec -T backend python -m app.core.backup_mac verify")
+    assert verify < _idx(calls, "compose stop backend"), calls
+
+
+def test_restore_checks_the_signature_in_a_throwaway_container_without_backend(tmp_path):
+    proc, calls = _run_restore(tmp_path, NO_BACKEND="1")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    _idx(calls, "run --rm --no-deps -T backend python -m app.core.backup_mac verify")
+
+
+def test_restore_rejects_an_unknown_option(tmp_path):
+    proc, calls = _run_restore(tmp_path, args=("--egal",))
+    assert proc.returncode != 0 and _nothing_touched(calls)
+
+
+def test_backup_sh_signs_the_dump(tmp_path):
+    from app.core import backup_mac
+    bundle = _bundle(tmp_path)
+    proc = subprocess.run(["bash", str(bundle / "backup.sh")], env=_env(tmp_path),
+                          capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    (dump,) = (bundle / "backups").glob("praxiszeit_*.sql.gz")
+    with gzip.open(dump, "rb") as fh:
+        assert backup_mac.verify_stream(fh, _STUB_SECRET_KEY) == backup_mac.OK
+    assert not list((bundle / "backups").glob(".signatur.*"))
+    # und restore.sh nimmt sie ohne --force-unverified
+    proc2 = subprocess.run(["bash", str(bundle / "restore.sh"), str(dump)], env=_env(tmp_path),
+                           capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    assert proc2.returncode == 0, proc2.stdout + proc2.stderr
+
+
+def test_backup_db_sh_signs_the_dump(tmp_path):
+    from app.core import backup_mac
+    bundle = _bundle(tmp_path)
+    target = tmp_path / "backup"
+    proc = subprocess.run(
+        ["bash", str(_REPO / "scripts" / "backup-db.sh")],
+        env=_env(tmp_path, PRAXISZEIT_BACKUP_DIR=str(target), PRAXISZEIT_PROJECT_DIR=str(bundle)),
+        capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    (dump,) = target.glob("praxiszeit_*.sql.gz")
+    with gzip.open(dump, "rb") as fh:
+        assert backup_mac.verify_stream(fh, _STUB_SECRET_KEY) == backup_mac.OK
+
+
+def test_backup_sh_keeps_an_unsigned_dump_when_signing_fails(tmp_path):
+    bundle = _bundle(tmp_path)
+    proc = subprocess.run(["bash", str(bundle / "backup.sh")],
+                          env=_env(tmp_path, STUB_SECRET_KEY=""),  # Modul: SECRET_KEY fehlt
+                          capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "nicht signiert" in proc.stderr
+    assert len(list((bundle / "backups").glob("praxiszeit_*.sql.gz"))) == 1
+
+
+def test_update_pg_major_restores_its_own_fresh_dump_even_unsigned():
+    text = (_TOOLS / "update-pg-major.sh").read_text(encoding="utf-8")
+    assert 'bash "$SCRIPT_DIR/restore.sh" "$BK" --force-unverified' in text

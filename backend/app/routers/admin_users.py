@@ -4,7 +4,7 @@ import copy
 import logging
 import uuid
 from collections import Counter
-from fastapi import APIRouter, Body, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -18,6 +18,9 @@ from app.database import get_db
 from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, VacationRequest, TimeEntryAuditLog, UserRole, PublicHoliday, YearCarryover
 from app.models.security_event import (
     EVENT_ADMIN_SET_PASSWORD,
+    EVENT_TOTP_RESET_BY_ADMIN,
+    EVENT_USER_CREATED,
+    EVENT_USERNAME_CHANGED,
     EVENT_USER_DEACTIVATED,
     EVENT_USER_REACTIVATED,
     EVENT_USER_ROLE_CHANGED,
@@ -29,14 +32,14 @@ from app.routers.admin_helpers import (
 )
 from app.services.date_filters import date_in_year
 from app.middleware.auth import require_admin
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse
+from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserCreateResponse, AdminSetPassword, UserListResponse, PasswordConfirmation
 from app.schemas.working_hours_change import (
     EFFECTIVE_FROM_RANGE_DETAIL, WorkingHoursChangeCreate, WorkingHoursChangeDelete, WorkingHoursChangePreview,
     WorkingHoursChangeResponse, effective_from_plausible,
 )
 from app.schemas.reports import AdminUserOverview, VacationAccount, YtdOvertime
 from app.services import (
-    absence_retarget_audit, auth_service, calculation_service, lifecycle_service, milog_service,
+    absence_retarget_audit, admin_change_audit, auth_service, calculation_service, lifecycle_service, milog_service,
     reclamp_audit, settings_service, wh_change_service, work_blocks_service, work_window_service,
 )
 # #448: gleiche Single Source of Truth wie absences.py/admin_vacations.py/
@@ -651,7 +654,7 @@ def _log_account_event(db: Session, current_user: User, event: str, subject: Use
 def list_users(
     include_inactive: bool = False,
     include_hidden: bool = False,
-    skip: int = 0,
+    skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -900,7 +903,7 @@ def _scrub_audit_log_notes(
 
     Gibt die Zahl der geaenderten Zeilen zurueck. F-026: tenant-gefiltert.
     """
-    from app.core import audit_integrity
+    from app.services import audit_chain_service
 
     needles = [n for n in (old_email, old_username) if n]
     conditions = [TimeEntryAuditLog.user_id == user_id]
@@ -935,9 +938,10 @@ def _scrub_audit_log_notes(
             new_old, new_new = _mask(row.old_note), _mask(row.new_note)
         if new_old == row.old_note and new_new == row.new_note:
             continue  # nichts zu tun → Hash bleibt unangetastet
-        row.old_note = new_old
-        row.new_note = new_new
-        row.row_hash = audit_integrity.compute_row_hash(row)
+        # #537: das App-Konto darf Protokollzeilen nicht mehr aendern —
+        # der Scrub laeuft ueber pz_audit_set_notes (Hash nur neu, wenn die
+        # Zeile vorher stimmte).
+        audit_chain_service.set_notes(db, row, new_old, new_new)
         touched += 1
     return touched
 
@@ -1125,32 +1129,33 @@ def purge_user(
             )
 
     # Remove FK dependencies before deleting user.
-    # changed_by is NOT NULL (migration 008) → we must NOT SET NULL (that raises a
-    # NOT NULL IntegrityError and aborts the whole Art.17 erasure for any user who
-    # has ever clocked out, since each clock_out writes an audit row with
-    # changed_by = the employee's own id). Reassign other users' audit rows to the
-    # acting admin instead — preserves the audit trail.
-    # F-026: explicit tenant_id filter on every bulk op (CLAUDE.md rule —
-    # RLS is belt-and-suspenders but the filter must be present in the query).
-    # Delete the purged user's OWN audit log entries first (user_id == user.id).
-    db.query(TimeEntryAuditLog).filter(
+    # #537 (Migration 076): das App-Konto darf Protokollzeilen nicht mehr
+    # loeschen oder aendern. Die EIGENEN Zeilen der Person (user_id) gehen ueber
+    # audit_chain_service.delete_rows (versiegeln, pz_audit_delete, gehashter
+    # Vermerk mit den entfernten Kettengliedern — sonst sähe die Prüfung eine
+    # unerklärte Lücke). Zeilen, die sie an ANDEREN verfasst hat (changed_by),
+    # bleiben unverändert: changed_by ist ON DELETE SET NULL und steht nicht in
+    # der Prüfsumme (die hält die feste Kopie changed_by_ref). Vorher wurden sie
+    # auf den handelnden Verwalter umgehängt und die Urheberschaft damit
+    # umgeschrieben (A2-8). F-026: tenant-gefiltert.
+    from app.services import audit_chain_service
+    own_rows = db.query(TimeEntryAuditLog).filter(
         TimeEntryAuditLog.user_id == user.id,
         TimeEntryAuditLog.tenant_id == current_user.tenant_id,
-    ).delete(synchronize_session=False)
+    ).all()
+    try:
+        audit_chain_service.delete_rows(
+            db, own_rows, tenant_id=current_user.tenant_id, user_id=current_user.id,
+            changed_by=current_user.id, source="dsgvo",
+            reason=f"Endlöschung von User-ID {user_id} (Art. 17 DSGVO)",
+        )
+    except audit_chain_service.AuditChainBroken as exc:
+        # Kettenende fehlt/ungueltig: Loeschen gesperrt, bis die Verwaltung den
+        # Befund klaert (sonst verschwaende er mit den Zeilen). Wirft vor dem
+        # ersten Schreibschritt der Protokollzeilen.
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
     db.flush()
-    # Reassign the REMAINING rows this user authored on OTHER employees to the
-    # acting admin. changed_by is part of the #121 tamper-evidence row_hash — a
-    # bulk UPDATE bypasses the before_insert hook and leaves the stored hash stale,
-    # so verify-integrity would wrongly flag these legitimate rows as 'tampered'
-    # after every Art.17 purge of an editing admin. Load as ORM objects and
-    # recompute the hash. SQLite-Tests fangen das NICHT (kein verify-after-purge).
-    from app.core import audit_integrity
-    for row in db.query(TimeEntryAuditLog).filter(
-        TimeEntryAuditLog.changed_by == user.id,
-        TimeEntryAuditLog.tenant_id == current_user.tenant_id,
-    ).all():
-        row.changed_by = current_user.id
-        row.row_hash = audit_integrity.compute_row_hash(row)
 
     # Audit after cleaning up the user's logs (use admin's own ID since target will be deleted)
     log = TimeEntryAuditLog(
@@ -1370,6 +1375,11 @@ def create_user(
     )
 
     db.add(new_user)
+    db.flush()
+    # Audit 2026-11-07 (S1-03): jedes neue Konto — auch ein zweites Admin-Konto,
+    # der bequemste Weg zu einem dauerhaften Zugang — steht im Sicherheitsprotokoll.
+    _log_account_event(db, current_user, EVENT_USER_CREATED, new_user,
+                       detail=f"Konto angelegt, Rolle {_role_label(new_user.role)}")
     db.commit()
     db.refresh(new_user)
 
@@ -1502,8 +1512,24 @@ def update_user(
         and not user.receives_company_closures
     )
 
+    # S1-03: Umbenennen des Anmeldenamens protokollieren (ohne die Namen selbst:
+    # die Zeile ueberlebt eine Anonymisierung).
+    username_changed = (
+        'username' in update_data and update_data['username'] is not None
+        and update_data['username'].lower() != (user.username or '').lower()
+    )
+
+    # A1-17: § 18, Nachtarbeit und Beschaeftigungsfenster nachweisbar aendern
+    # (gleiche Transaktion; vor dem Zuweisen, damit die alten Werte lesbar sind).
+    admin_change_audit.log_user_fields(db, current_user=current_user, user=user,
+                                       update_data=update_data)
+
     for field, value in update_data.items():
         setattr(user, field, value)
+
+    if username_changed:
+        _log_account_event(db, current_user, EVENT_USERNAME_CHANGED, user,
+                           detail="Benutzername geändert")
 
     if role_changed:
         user.token_version = (user.token_version or 0) + 1
@@ -1554,6 +1580,51 @@ def set_password(
     db.commit()
 
     return {"message": f"Passwort für {user.first_name} {user.last_name} wurde gesetzt"}
+
+
+TOTP_RESET_SELF_DETAIL = (
+    "Die eigene Zwei-Faktor-Anmeldung bitte unter „Profil“ abschalten "
+    "(mit Passwort und aktuellem Code)."
+)
+TOTP_RESET_NOT_ENABLED_DETAIL = "Für dieses Konto ist keine Zwei-Faktor-Anmeldung eingerichtet."
+
+
+@router.post("/users/{user_id}/totp-reset", response_model=UserResponse)
+def reset_user_totp(
+    user_id: str,
+    body: PasswordConfirmation,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Audit 2026-11-07 (S1-09): Zwei-Faktor einer anderen Person zuruecksetzen
+    (verlorenes Handy). Bisher ging das nur per Kommandozeile auf dem Server —
+    bis dahin konnte die Person nicht stempeln (Luecke im §16-Nachweis).
+
+    Verlangt das Passwort der handelnden Verwaltung (gleiche Sperre wie der
+    Login), schreibt ``totp_reset_by_admin`` nach ``security_events`` und
+    beendet alle Sitzungen der Person (``token_version + 1``). Die Person meldet
+    sich danach nur mit Passwort an und richtet 2FA im Profil neu ein."""
+    from app.routers.auth import confirm_current_password
+    user = _get_user_in_tenant(db, user_id, current_user)
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail=TOTP_RESET_SELF_DETAIL)
+    confirm_current_password(db, request, current_user, body.password,
+                             purpose="2FA zurücksetzen")
+    # Zustand erst nach der Sperre lesen (#491 API-2).
+    _lock_and_reload(db, current_user, user)
+    if not user.totp_enabled and not user.totp_secret:
+        raise HTTPException(status_code=400, detail=TOTP_RESET_NOT_ENABLED_DETAIL)
+    user.totp_enabled = False
+    user.totp_secret = None
+    user.last_totp_counter = None
+    user.token_version = (user.token_version or 0) + 1
+    _log_account_event(db, current_user, EVENT_TOTP_RESET_BY_ADMIN, user,
+                       detail="Zwei-Faktor durch die Verwaltung zurückgesetzt")
+    db.commit()
+    db.refresh(user)
+    calculation_service.attach_work_blocks_today(db, [user], today_local())
+    return user
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1656,6 +1727,9 @@ def list_security_events(
             return names.get(actor[len("user:"):], "unbekanntes Konto")
         if actor.startswith("cli:"):
             return f"Kommandozeile ({actor[len('cli:'):]})"
+        if actor.startswith("login:"):
+            # S1-04: falscher 2FA-Code bei der Anmeldung — Absender-IP.
+            return f"Anmeldeversuch ({actor[len('login:'):]})"
         return actor
 
     return [

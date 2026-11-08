@@ -32,7 +32,7 @@ from app.core.license import _PUBLIC_KEY_PEM  # reuse the same trust root
 logger = logging.getLogger(__name__)
 
 # Current application version
-APP_VERSION = "1.22.0"
+APP_VERSION = "1.23.0"
 
 # F-036: Allowed update-server host prefixes. The download URL returned by
 # the server is refused unless its host matches one of these. Prevents a
@@ -97,6 +97,36 @@ def _verify_manifest_signature(manifest: dict) -> None:
         key.verify(signature, payload)
     except InvalidSignature as exc:
         raise ValueError("Update manifest signature verification failed") from exc
+
+
+def _check_manifest_expiry(manifest: dict, now: Optional[datetime] = None) -> None:
+    """Audit 2026-11-07 S3-18: ein mitsigniertes ``expires`` (ISO 8601, mit
+    Zeitzone) begrenzt, wie lange ein Manifest gilt.
+
+    Ohne Ablauf koennte ein Angreifer im Netz ein altes, gueltig signiertes
+    Manifest ("aktuell ist X") wieder einspielen und so ein neueres, kritisches
+    Update verbergen (Freeze). ``expires`` ist Teil des signierten Inhalts (alle
+    Felder ausser ``signature``). Fehlt es, gilt das Manifest wie bisher - der
+    Update-Server liefert es noch nicht (pzweb); ein vorhandenes, aber
+    unlesbares oder abgelaufenes ``expires`` fuehrt zur Ablehnung.
+
+    Raises ``ValueError``.
+    """
+    expires = manifest.get("expires")
+    if expires is None:
+        return
+    if not isinstance(expires, str):
+        raise ValueError("Update manifest 'expires' is not a string")
+    try:
+        when = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"Update manifest 'expires' unreadable: {expires!r}") from exc
+    if when.tzinfo is None:
+        raise ValueError("Update manifest 'expires' has no time zone")
+    if (now or datetime.now(timezone.utc)) > when:
+        raise ValueError(
+            f"Update manifest expired at {expires} (stale or replayed manifest)"
+        )
 
 
 def _verify_download_host(download_url: str) -> None:
@@ -201,6 +231,7 @@ def check_for_updates(server_url: str, license_id: str = "") -> Optional[UpdateI
     # signature from the trusted key.
     try:
         _verify_manifest_signature(data)
+        _check_manifest_expiry(data)
     except ValueError as e:
         logger.warning(f"Update manifest rejected: {e}")
         _cached_update = None

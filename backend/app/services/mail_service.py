@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import smtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
@@ -71,7 +72,9 @@ class MailService:
             with smtplib.SMTP(self.host, self.port, timeout=10) as smtp:
                 smtp.ehlo()
                 if self.starttls:
-                    smtp.starttls()
+                    # Audit 2026-11-07 (S2-8): ohne Kontext nimmt smtplib einen
+                    # Kontext OHNE Zertifikats- und Namenspruefung (CERT_NONE).
+                    smtp.starttls(context=ssl.create_default_context())
                     smtp.ehlo()
                 if self.user and self.password:
                     smtp.login(self.user, self.password)

@@ -28,6 +28,18 @@ from tests.conftest import (
     TestingSessionLocal,
 )
 
+
+def _freeze_evening(monkeypatch):
+    """Heute 18:00 — seit A1-09 lehnt der Server ein Ende von HEUTE nach der
+    aktuellen Uhrzeit ab; ohne das scheiterten diese Tests jeden Vormittag."""
+    from tests.wh_change_helpers import freeze
+    import app.routers.time_entries as te
+    from app.services import timezone_service
+    d = today_local()
+    freeze(monkeypatch, d, time(18, 0))
+    monkeypatch.setattr(te, "_now_local",
+                        lambda: datetime.combine(d, time(18, 0), tzinfo=timezone_service.LOCAL_TZ))
+
 # ---------------------------------------------------------------------------
 # Build a lightweight test app that includes all production routers but
 # skips the production lifespan (which requires PostgreSQL, Prometheus, etc.)
@@ -489,8 +501,9 @@ class TestTimeEntryList:
 class TestTimeEntryCreate:
     """POST /api/time-entries"""
 
-    def test_create_valid_entry(self, employee_client):
+    def test_create_valid_entry(self, employee_client, monkeypatch):
         """Prüft dass ein gueltiger Zeiteintrag mit 201 angelegt wird — Kernfunktion."""
+        _freeze_evening(monkeypatch)
         today = today_local().isoformat()
         resp = employee_client.post("/api/time-entries/", json={
             "date": today,
@@ -526,7 +539,7 @@ class TestTimeEntryCreate:
 class TestTimeEntryUpdateWarning:
     """PUT /api/time-entries/{id} — §3-Warnung darf NICHT fälschlich feuern (#252)."""
 
-    def test_update_under_8h_no_daily_warning(self, employee_client):
+    def test_update_under_8h_no_daily_warning(self, employee_client, late_now):
         """#252: Ein Eintrag <8h, der bearbeitet wird (weiter <8h), darf KEINE
         DAILY_HOURS_WARNING auslösen. Bug: die Warn-Berechnung lief NACH dem commit
         mit exclude_entry_id=None -> der bereits gespeicherte Eintrag wurde doppelt
@@ -903,8 +916,12 @@ class TestClockEndpoints:
         stale_id = stale.id
 
         resp = employee_client.post("/api/time-entries/clock-out", json={"break_minutes": 0})
-        assert resp.status_code == 400
-        assert "früheren Tag" in resp.json()["detail"]
+        # #540 (A2-7): kein nacktes 400 mehr — die Antwort ist der automatisch
+        # geschlossene Eintrag samt Hinweis (Ausweg: Änderungsantrag).
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["id"] == str(stale_id) and body["auto_closed"] is True
+        assert any(w.startswith("AUTO_CLOSED:") for w in body["warnings"]), body["warnings"]
 
         # The stale entry must now be closed (auto-close committed), not open.
         _db_session.expire_all()

@@ -55,10 +55,13 @@ journalctl -u praxiszeit -f          # Live-Logs
 
 ```
 1. praxiszeit-X.Y.Z-windows-x64.zip entpacken nach C:\PraxisZeit\
+   - Ziel muss ein neuer oder leerer Ordner sein
 
 2. setup.bat als Administrator ausfuehren
+   - Schraenkt die Zugriffsrechte des Ordners ein und gleicht ihn mit dem
+     Paketinhalt ab (fremde Dateien sperren das Setup, siehe Fehlerbehebung)
    - Installiert PostgreSQL (silent, kein GUI)
-   - Installiert Python-Dependencies (braucht einmalig Internet)
+   - Prueft die mitgelieferten Python-Abhaengigkeiten (kein Internet noetig)
 
 3. config\praxiszeit.conf.example nach config\praxiszeit.conf kopieren
    - Praxis-Name, Admin-Email, Admin-Passwort anpassen
@@ -308,6 +311,20 @@ migriert ein Backup einer älteren Version. Windows: `restore-backup.bat <datei>
 im Installationsordner (als Administrator). Einzelheiten:
 [BACKUP.md → Restore](BACKUP.md#restore-wiederherstellung).
 
+Ab 1.23.0 spielen `restore` und `restore-backup.bat` nur Sicherungen mit passender
+Signatur ein. Eine Sicherung von vor 1.23.0 oder von einem anderen Rechner (anderer
+`SECRET_KEY`) weisen sie ab, ohne etwas zu verändern; stammt die Datei sicher aus der
+eigenen Installation, mit `--force-unverified` wiederholen
+([BACKUP.md → Signatur](BACKUP.md#signatur-der-sicherungen)):
+
+```bash
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<datei>.sql.gz --force-unverified
+```
+
+```bat
+restore-backup.bat data\backups\<datei>.sql.gz --force-unverified
+```
+
 ---
 
 ## Lizenzierung
@@ -374,7 +391,9 @@ praxiszeit-X.Y.Z-SHA256SUMS.txt
 | Windows: „Port 5432 ist von einem anderen PostgreSQL belegt“ (Dienst bleibt gestoppt) | Ein fremder PostgreSQL belegt den Port. In `config\praxiszeit.conf` unter `[database]` einen freien Port eintragen (z. B. `port = 5433`) und den Dienst neu starten. Die Meldung steht in `logs\service-stderr.log` (Ausdruck: „Port {port} ist von einem anderen PostgreSQL belegt“) |
 | Keine Berechtigung | Linux: `sudo chown -R praxiszeit:praxiszeit /opt/praxiszeit` |
 | Migration fehlgeschlagen | Process Manager manuell starten, Fehlerausgabe lesen |
-| Windows: setup.bat schlaegt fehl | Als Administrator ausfuehren, Internetverbindung pruefen |
+| Windows: setup.bat schlaegt fehl | Als Administrator ausfuehren. Meldet es „Python-Abhaengigkeiten fehlen im Paket“, ist das Paket unvollstaendig – neu herunterladen und entpacken (eine Internetverbindung braucht das Setup nicht) |
+| Windows: „Setup gesperrt – im Installationsordner liegen Dateien, die nicht zu PraxisZeit gehoeren“ | Die darueber aufgelisteten Eintraege entfernen und `setup.bat` erneut ausfuehren, oder PraxisZeit in einen neuen, leeren Ordner entpacken. Gesperrt wird bei Dateien unter `bin\` oder `app\`, die nicht zum Paket gehoeren, bei Verknuepfungen (Junction, symbolischer Link), Dateien mit mehreren harten Links, Namen, die mit Leerzeichen oder Punkt enden, und bei Dateien in `data\db` oder `config`, die weder einem Administrator, SYSTEM noch dem Datenbankdienst gehoeren |
+| Windows: „Die Zugriffsrechte des Installationsordners liessen sich nicht einschraenken“ | Die Meldung darueber nennt den Ordner bzw. den `icacls`-Fehler. Als Administrator ausfuehren; liegt der Ordner auf einem Netzlaufwerk oder einem Laufwerk ohne NTFS-Rechte, auf ein lokales NTFS-Laufwerk (z. B. `C:\PraxisZeit`) installieren |
 | macOS: PostgreSQL startet nicht | PG ist gebuendelt (theseus), keine Extra-Installation noetig — Logs pruefen: `logs/postgresql-startup.log` |
 | `.db-credentials` fehlt, Dienst startet nicht | Siehe Abschnitt "Disaster Recovery" unten |
 
@@ -431,7 +450,7 @@ sudo systemctl start praxiszeit
 # macOS (Dienstkonto _praxiszeit, Ordner /usr/local/praxiszeit, launchd statt systemd)
 sudo cp /pfad/zum/backup/.db-credentials /usr/local/praxiszeit/config/.db-credentials
 sudo chmod 600 /usr/local/praxiszeit/config/.db-credentials
-sudo chown _praxiszeit:staff /usr/local/praxiszeit/config/.db-credentials
+sudo chown _praxiszeit:_praxiszeit /usr/local/praxiszeit/config/.db-credentials
 sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist 2>/dev/null
 sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist
 ```
@@ -478,14 +497,26 @@ sudo systemctl start praxiszeit
 bin/postgresql/bin/psql -w -U praxiszeit -h /opt/praxiszeit/data/run -d praxiszeit -f /root/praxiszeit-rescue.sql
 ```
 
-Windows-Aequivalent:
+Windows-Aequivalent (Eingabeaufforderung als Administrator). Der Cluster lauscht
+auf dem Port aus `config\praxiszeit.conf` (`[database] port`, nicht zwingend 5432) —
+`print-db-port` gibt ihn aus. `-w` verhindert ein Aufhaengen an der Passwortabfrage;
+das Passwort kommt aus `PGPASSWORD`: fuer den Dump das alte Superuser-Passwort (der
+Cluster ist scram-gehaertet), fuer das Zurueckspielen der Wert `SUPERUSER_PASSWORD=`
+aus der beim Neustart neu angelegten `config\.db-credentials`:
 ```cmd
 cd C:\PraxisZeit
-bin\postgresql\bin\pg_dumpall.exe -U praxiszeit -h localhost > C:\praxiszeit-rescue.sql
+bin\python\python.exe praxiszeit-server.py print-db-port
+:: ausgegebenen Port unten fuer <port> einsetzen
+set "PGPASSWORD=<altes Superuser-Passwort>"
+bin\postgresql\bin\pg_dumpall.exe -w -U praxiszeit -h localhost -p <port> > C:\praxiszeit-rescue.sql
 net stop PraxisZeit
 rd /s /q data\db
 net start PraxisZeit
-bin\postgresql\bin\psql.exe -U praxiszeit -h localhost -f C:\praxiszeit-rescue.sql
+:: SUPERUSER_PASSWORD aus der neuen config\.db-credentials:
+type config\.db-credentials
+set "PGPASSWORD=<Wert von SUPERUSER_PASSWORD>"
+bin\postgresql\bin\psql.exe -w -U praxiszeit -h localhost -p <port> -d praxiszeit -f C:\praxiszeit-rescue.sql
+set PGPASSWORD=
 ```
 
 ### Recovery-Pfad C: Quarantaene (kein Dump moeglich)
@@ -591,8 +622,9 @@ glibc-Symbole > 2.34 verlangt (`check_glibc_compat`).
   `LC_RPATH`, aber **ohne** `--prune`. Stand 20261001/CPython 3.13.16: je
   Architektur 10 Mach-O-Dateien, alle sauber (`/usr/lib`, `/System/Library`,
   `@rpath` über `@executable_path/../lib` bzw. `@loader_path/../..`). Die
-  Pakete, die `get-pip.py` erst beim Kunden installiert, sind dabei noch nicht
-  im Paket und werden nicht geprüft.
+  Pakete, die `install.sh` erst beim Kunden aus `requirements.lock` installiert
+  (`--require-hashes`, nur Wheels), sind dabei noch nicht im Paket und werden
+  nicht geprüft.
 
 **⚠️ macOS-CI-Gap:** `validate-macos.yml` läuft auf dem **privaten** Repo **nicht**
 (alle Runs hängen dauerhaft `queued` — keine macOS-Runner-Minuten). 1.8.1–1.8.7

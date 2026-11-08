@@ -6,6 +6,7 @@ German law requires minimum 11 hours of rest between two working days.
 from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
+from app.services.timezone_service import hours_between
 from app.services.date_filters import date_in_year, date_in_month
 from app.services import work_window_service
 from app.models import User, TimeEntry
@@ -92,10 +93,10 @@ def check_rest_time_violations(
         prev_date = sorted_days[i - 1]
         curr_date = sorted_days[i]
 
-        prev_end = datetime.combine(prev_date, day_last_end[prev_date])
-        curr_start = datetime.combine(curr_date, day_first_start[curr_date])
-
-        rest_hours = (curr_start - prev_end).total_seconds() / 3600
+        # #540 (A1-10): über UTC — über die Zeitumstellung ±1 h richtig.
+        rest_hours = hours_between(
+            prev_date, day_last_end[prev_date], curr_date, day_first_start[curr_date],
+        )
 
         if rest_hours < min_rest_hours:
             violations.append({
@@ -117,24 +118,28 @@ def check_all_users_violations(
     month: Optional[int] = None,
     min_rest_hours: Optional[float] = None,
     tenant_id=None,
+    users: Optional[List[User]] = None,
 ) -> List[Dict]:
     """
-    Check rest time violations for all active employees.
+    Check rest time violations for the given employees (default: all active).
+
+    A2-6 (Audit 2026-11-07): der Bericht übergibt ``users`` aus
+    ``export_service.export_users`` — auch Ausgeschiedene mit Einträgen im
+    Zeitraum, Ausgeblendete nur auf Wunsch. Vorher fielen Ausgeschiedene aus
+    der Vorjahres-Auswertung.
 
     Returns list of violations grouped by employee.
     """
-    from app.models import UserRole
+    if users is None:
+        # F-026: zusaetzlich explizit auf den Tenant scopen (belt-and-suspenders ueber RLS).
+        user_query = db.query(User).filter(User.is_active == True)  # noqa: E712
+        if tenant_id is not None:
+            user_query = user_query.filter(User.tenant_id == tenant_id)
+        users = user_query.all()
     # H-1 (Review 2026-06-23): §18 ArbZG — exempt_from_arbzg-MA (leitende
     # Angestellte) gehoeren NICHT in den Ruhezeit-Report (der Echtzeit-Check beim
-    # Einstempeln schliesst sie bereits aus). F-026: zusaetzlich explizit auf den
-    # Tenant scopen (belt-and-suspenders ueber RLS).
-    user_query = db.query(User).filter(
-        User.is_active == True,
-        User.exempt_from_arbzg == False,
-    )
-    if tenant_id is not None:
-        user_query = user_query.filter(User.tenant_id == tenant_id)
-    users = user_query.all()
+    # Einstempeln schliesst sie bereits aus).
+    users = [u for u in users if not u.exempt_from_arbzg]
 
     all_violations = []
     for user in users:

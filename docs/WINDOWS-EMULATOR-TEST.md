@@ -63,6 +63,7 @@ tools/win-test/
     ├── install-acl-check.ps1  Rechte des ganzen Installationsordners (Programmteile / private Ordner)
     ├── run-probe.ps1        legt ein Standardkonto an und startet damit nonadmin-probe.ps1
     ├── nonadmin-probe.ps1   versucht als Standardkonto zu schreiben und zu lesen
+    ├── hardening-probe.ps1  Negativfälle von secure-install.ps1 in Wegwerf-Ordnern (C:\hp)
     ├── post-reboot.bat      Nachprüfung nach dem Neustart (geplante Aufgabe)
     ├── mode.txt            ← fresh | update | foreignpg | portchange (nicht im Repo)
     ├── tree-old/           ← Vorgängerpaket für den Update-Lauf (nicht im Repo)
@@ -191,6 +192,24 @@ for line in t.splitlines():
         print(' ', l[:170])
 PY
 ```
+
+### Härtungs-Sonde (`hardening-probe.ps1`)
+
+Läuft in jedem Modus nach der Standardkonto-Sonde, zwischen `===HARDENING_BEGIN===`
+und `===HARDENING_END===`, und fasst `C:\PraxisZeit` nicht an: jeder Fall baut einen
+eigenen Ordner unter `C:\hp` und ruft `secure-install.ps1` aus der Installation auf.
+Je Fall stehen `HP_<FALL>_EXIT` und `HP_<FALL>_VERDICT` (OK/FEHLER, bei FEHLER die
+ersten Ausgabezeilen mit `|` davor) im Ergebnis, am Ende `HP_FAILS=<anzahl>`.
+Abgedeckt: fremdes `data\db` bzw. fremde Datei in `config` ohne Dienst (Exit 2,
+nichts verschoben), Benutzerrechte an `data\db` und geschützte `postgresql.conf`
+(Zurücksetzen mit HINWEIS) samt Gegenprobe, Junctions in Tiefe ≥ 2 unter `data`,
+`app`, `bin`, `logs`, `mklink /D`, harte Links, Namen mit Punkt/Leerzeichen am Ende,
+ein nicht lesbarer Ordner, vorab angelegtes `bin\postgresql` (Junction, Ordner,
+tote Junction) und tote Junction als `data\db`, `setup.bat` mit Junction (bricht bei
+„Setup gesperrt“ ab), ein sauberes Paket (Exit 0) und eine fremde Datei unter `app`.
+Bei Verknüpfungen und harten Links prüft der Fall zusätzlich, dass sich Eigentümer
+und Rechte des Ziels außerhalb (`C:\hp-victim`) nicht geändert haben.
+Bestanden: `HP_FAILS=0`.
 
 ### Bestanden ist ein Lauf, wenn
 

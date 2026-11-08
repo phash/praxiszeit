@@ -54,21 +54,29 @@ hinweg erhalten — der `docker compose down`/`up`-Zyklus löscht sie **nicht**
 > #213-Backups im `praxiszeit_backups`-Volume bleiben), startet den frischen
 > PG18-Stack und spielt den Dump wieder ein. Manuell:
 > `bash backup.sh` → `docker compose down` → `docker volume rm <projekt>_postgres_data`
-> → neuen Stack `up -d --build` → `bash restore.sh backups/praxiszeit_<ts>.sql.gz`.
+> → neuen Stack `up -d --build` → `bash restore.sh backups/praxiszeit_<ts>.sql.gz --force-unverified`
+> (die alte Version signiert ihre Sicherung noch nicht; der Helper setzt den Zusatz selbst).
 > Verifiziert (PG16→18, Daten byte-genau identisch + Login). Spätere 1.10.x-Updates
 > bleiben wieder normale In-Place-Updates.
 
 ### 1. Backup
 
 ```bash
-# Im Ordner der LAUFENDEN (alten) Installation ausführen.
-# Default-User/-DB = praxiszeit (eigene Werte ggf. aus der .env ablesen).
-# --clean --if-exists + gzip → exakt so zurückspielbar wie unter „Rollback".
-docker compose exec -T db pg_dump -U praxiszeit --clean --if-exists praxiszeit | gzip > backup-$(date +%F).sql.gz
+# Im Ordner der LAUFENDEN (alten) Installation ausführen, der Stack muss laufen.
+bash backup.sh                 # git-Checkout: bash tools/docker/backup.sh
 ```
 
-> Die `$POSTGRES_USER`/`$POSTGRES_DB` aus der `.env` sind **nur im Container** gesetzt,
-> nicht in deiner Host-Shell — deshalb oben die festen Default-Namen `praxiszeit`.
+`backup.sh` liest Datenbank und Benutzer aus der `.env` und schreibt die Sicherung
+nach `backups/praxiszeit_<JJJJMMTT_HHMMSS>.sql.gz` im Ordner der alten Installation
+(git-Checkout: `backups/` im Repo-Root). Den ausgegebenen Dateinamen notieren — die
+folgenden Schritte nennen ihn `backups/praxiszeit_<ts>.sql.gz`.
+
+> **Signatur:** Ab 1.23.0 signiert `backup.sh` die Sicherung, und `restore.sh` spielt
+> nur signierte Sicherungen ohne Weiteres ein. Läuft noch **1.22.0 oder älter**, schreibt
+> das `backup.sh` dieser Version eine Sicherung **ohne** Signatur; die neue Version spielt
+> sie nur mit `--force-unverified` ein (siehe unten). Ein von Hand gezogenes
+> `pg_dump | gzip` ist ebenfalls unsigniert. Hintergrund:
+> [BACKUP.md – Signatur](BACKUP.md#signatur-der-sicherungen).
 
 ### 2a. Mit Docker-Paket (Tarball/ZIP, ohne git)
 
@@ -127,9 +135,10 @@ cp "$ALT/ssl/key.pem"  ssl/key.pem  2>/dev/null || true
 # Datenbank-Image auf den neuesten 18.x-Patchstand holen (Sicherheitsupdates —
 # `up` allein nimmt sonst das bereits vorhandene, ältere Image):
 docker compose pull db
-# Basis-Images der selbst gebauten Dienste ebenfalls neu ziehen (Debian/Alpine-
-# Sicherheitsupdates erscheinen unter demselben Tag — `--build` allein nimmt
-# die lokal vorhandenen):
+# Basis-Image des Frontends ebenfalls neu ziehen (Alpine-Sicherheitsupdates
+# erscheinen unter demselben Tag — `--build` allein nimmt das lokal vorhandene).
+# Die Backend-Basis ist per Digest festgelegt (backend/Dockerfile): ihre
+# Debian-Updates kommen nur mit einer PraxisZeit-Version, die den Digest anhebt.
 docker compose build --pull
 # HTTP:
 docker compose up -d
@@ -151,8 +160,13 @@ cd "$NEU" && docker compose down                     # OHNE -v
 docker volume ls | grep postgres_data                # richtiges <projekt>_postgres_data suchen
 # COMPOSE_PROJECT_NAME in .env auf dieses <projekt> korrigieren, dann Schritt 4 wiederholen.
 # Notfalls: Stack starten und das Backup aus Schritt 1 einspielen:
-#   bash restore.sh /pfad/zu/backup-JJJJ-MM-TT.sql.gz
+#   bash restore.sh "$ALT/backups/praxiszeit_<ts>.sql.gz" --force-unverified
 ```
+
+`--force-unverified` ist nötig, wenn die alte Version 1.22.0 oder älter war: deren
+Sicherung trägt keine Signatur, und `restore.sh` bräche sonst ab, ohne die Datenbank
+anzufassen. Die Datei stammt aus der eigenen Installation; bei einer signierten
+Sicherung schadet der Zusatz nicht.
 
 Das versehentlich angelegte, leere Volume lässt sich danach mit
 `docker volume rm <falsches-projekt>_postgres_data` entfernen — **nur** nach
@@ -184,7 +198,7 @@ Prüfung, dass es wirklich das leere ist.
 > nutzt — sobald der Projektname übereinstimmt — dieselben Volumes und startet die
 > alte Version gegen die bereits aktualisierte Datenbank. Nach erfolgreichem
 > Update löschen oder umbenennen (vorher die `backups/`-Dateien **und** das
-> Update-Backup `backup-<datum>.sql.gz` aus Schritt 1 sichern — es liegt im alten Ordner).
+> Update-Backup `backups/praxiszeit_<ts>.sql.gz` aus Schritt 1 sichern — es liegt im alten Ordner).
 
 ### 2b. Aus dem Quellcode (nur mit git-Zugriff)
 
@@ -203,7 +217,7 @@ cd praxiszeit
 git pull
 docker compose down
 docker compose pull db                 # PostgreSQL-18-Patchstand
-docker compose build --pull            # frische Basis-Images (Sicherheitsupdates)
+docker compose build --pull            # Frontend-Basis-Image neu (Backend-Basis per Digest fest)
 docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d   # oder ohne -f … für HTTP
 ```
 
@@ -299,8 +313,17 @@ update-wizard.bat
 ```
 
 Der Update-Wizard (`installer/windows/update-wizard.ps1`) stoppt den Dienst,
-spielt Code + Python-Abhängigkeiten ein (pip-Bootstrap gegen stale Pakete),
-installiert bei Bedarf die VC++-Runtime nach und startet den Dienst neu.
+sichert den Installationsordner ab (Eigentümer und Zugriffsrechte,
+`secure-install.ps1`), legt ein Backup an und spielt dann das neue Paket ein:
+`app` und `bin\python` werden **gespiegelt** (`robocopy /MIR` — Dateien der
+Vorversion, die das neue Paket nicht mehr hat, verschwinden), der Rest wird
+darüber kopiert. Es wird **nichts aus dem Internet geladen** und kein `pip`
+ausgeführt: die Python-Abhängigkeiten liegen fertig im Paket (`bin\python`).
+Danach gleicht `secure-install.ps1` `bin\` und `app\` mit der Paketliste
+`bin\payload-manifest.txt` ab. Liegt dort eine Datei, die nicht zum Paket gehört
+(Exit 2), startet der Wizard den Dienst **nicht** und nennt die Dateien — erst
+entfernen, dann den Wizard erneut ausführen. Anschließend installiert er bei
+Bedarf die VC++-Runtime nach und startet den Dienst neu.
 Konfiguration und Datenbank bleiben erhalten. Der Wizard setzt für den Dienst außerdem `AppExit 78 Exit`. Beim ersten Start der neuen Version kann die `port =`-Zeile in `data\db\postgresql.conf` auf den konfigurierten Port gesetzt werden (ohne `[database] port` bleibt 5432 unverändert) — dazu ist nichts zu tun. Details + Stolperfallen:
 [NATIVE-WINDOWS-PITFALLS.md](NATIVE-WINDOWS-PITFALLS.md).
 
@@ -350,9 +373,17 @@ neuen Version das Backup einspielen, **dann** den Anwendungsordner `app/` beisei
 und **danach** die alte Version installieren – deren Start findet den Stand des
 Backups vor.
 
+Das Backup von vor dem Update hat noch die **alte** Version geschrieben (etwa die
+nächtliche Sicherung). Stammt sie aus der Zeit vor den signierten Sicherungen, trägt
+es keine Signatur, und `restore` bricht mit „keine PraxisZeit-Signatur“ ab. Da die
+Datei aus der eigenen Installation stammt, steht in den Befehlen unten deshalb
+`--force-unverified` – bei einem signierten Backup schadet der Zusatz nicht
+(Hintergrund: [BACKUP.md](BACKUP.md)). Unter Windows spielt das `restore-backup.bat`
+der alten Version ein (siehe unten); es prüft das von ihr geschriebene Backup selbst.
+
 ```bash
 sudo systemctl stop praxiszeit
-sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<backup-vor-dem-update>.sql.gz
+sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<backup-vor-dem-update>.sql.gz --force-unverified
 sudo mv /opt/praxiszeit/app /opt/praxiszeit/app.neu-$(date +%F)
 # danach das alte Paket wie unter „Native → Linux“ installieren (legt app/ neu an und startet den Dienst)
 ```
@@ -360,7 +391,7 @@ sudo mv /opt/praxiszeit/app /opt/praxiszeit/app.neu-$(date +%F)
 ```bash
 # macOS: Ordner /usr/local/praxiszeit, Dienstkonto _praxiszeit, launchd
 sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist
-sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore /usr/local/praxiszeit/data/backups/<backup-vor-dem-update>.sql.gz
+sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore /usr/local/praxiszeit/data/backups/<backup-vor-dem-update>.sql.gz --force-unverified
 sudo mv /usr/local/praxiszeit/app /usr/local/praxiszeit/app.neu-$(date +%F)
 # danach das alte Paket wie unter „Native → macOS“ installieren (lädt den Dienst am Ende)
 ```
@@ -384,8 +415,10 @@ revision“), und vor 1.20.0 kennt der Prozessmanager kein `restore`.
 
 Windows (Administrator-Eingabeaufforderung) in dieser Reihenfolge: Dienst anhalten,
 den Ordner `app` umbenennen, das alte Paket mit **dessen** `update-wizard.bat`
-einspielen und **danach** mit `restore-backup.bat` das Backup einspielen. Der
-Update-Wizard mischt ebenfalls nur darüber (robocopy ohne Löschen). Der Dienststart
+einspielen und **danach** mit `restore-backup.bat` das Backup einspielen. Die
+Update-Wizards bis 1.22.x mischen nur darüber (robocopy ohne Löschen); neuere
+spiegeln `app` und `bin\python` (`/MIR`) — das Umbenennen schadet dann nicht und
+bleibt für den Rückweg auf eine ältere Version nötig. Der Dienststart
 am Ende des Wizards kann scheitern – die alte Version kennt den Datenbankstand der
 neueren nicht; `restore-backup.bat` hält den Dienst an, spielt das Backup ein und
 startet ihn wieder. Andersherum ginge es nicht: das Script startet den Dienst am Ende,

@@ -68,6 +68,23 @@ def _run_vacation_audit_purge() -> None:
         db.close()
 
 
+def _run_audit_integrity_check() -> None:
+    """#537 (A2-12): Aenderungsprotokoll taeglich versiegeln und pruefen. Eine
+    Abweichung landet als ``audit_integrity_failed`` in ``security_events``
+    (Konto-Vorgaenge) und in ``error_logs`` (Fehlerueberwachung)."""
+    from app.services.audit_chain_service import run_daily_check
+    db = SessionLocal()
+    try:
+        set_superadmin_context(db)
+        failed = run_daily_check(db)
+        if failed:
+            logger.error("scheduler: audit integrity check failed for %d tenant(s)", failed)
+    except Exception:  # noqa: BLE001
+        logger.exception("scheduler: audit integrity check failed")
+    finally:
+        db.close()
+
+
 def _run_apply_scheduled_suspends() -> None:
     from app.services.lifecycle_service import apply_scheduled_suspends
     db = SessionLocal()
@@ -198,6 +215,7 @@ JOB_APPLY_SCHEDULED_SUSPENDS = "apply_scheduled_suspends"
 JOB_APPLY_SCHEDULED_DELETIONS = "apply_scheduled_deletions"
 JOB_CLEANUP_OLD_ERRORS = "cleanup_old_errors"
 JOB_SCHEDULED_BACKUP = "scheduled_backup"  # #213
+JOB_AUDIT_INTEGRITY_CHECK = "audit_integrity_check"  # #537
 JOB_SUSPEND_EXPIRED_TRIALS = "suspend_expired_trials"  # Fix #4 (saas only)
 JOB_SUSPEND_CANCELED_AFTER_GRACE = "suspend_canceled_after_grace"  # Fix #4 (saas only)
 
@@ -264,6 +282,18 @@ def start_scheduler(app: FastAPI):  # noqa: ARG001  (kept for future use)
         trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE),
         id=JOB_CLEANUP_OLD_ERRORS,
         name="DSGVO Art.5(1)(e): purge resolved/ignored error-log rows >90d",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    scheduler.add_job(
+        _run_audit_integrity_check,
+        # 03:15 — nach dem Aufbewahrungs-Lauf um 03:00 (dessen Loeschvermerke
+        # sollen in derselben Nacht versiegelt werden).
+        trigger=CronTrigger(hour=DAILY_HOUR, minute=DAILY_MINUTE + 15),
+        id=JOB_AUDIT_INTEGRITY_CHECK,
+        name="#537: Änderungsprotokoll versiegeln und prüfen",
         replace_existing=True,
         coalesce=True,
         max_instances=1,

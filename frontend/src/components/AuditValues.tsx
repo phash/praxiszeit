@@ -80,10 +80,33 @@ export function auditPillText(date?: string, start?: string, end?: string): stri
   return [date, times].filter(Boolean).join(' ');
 }
 
+/**
+ * #537 (A2-3): die tatsächlichen Stempel neben den angerechneten Zeiten.
+ * Seit Migration 076 trägt jede Protokollzeile eines Zeiteintrags den
+ * Rohbeginn und das Ende der Anwesenheit. Angezeigt nur, wenn sie von der
+ * angerechneten Spanne abweichen (sonst wäre es dieselbe Angabe doppelt).
+ * Leerstring = nichts anzeigen.
+ */
+export function stampedText(
+  start?: string | null,
+  end?: string | null,
+  rawStart?: string | null,
+  presenceEnd?: string | null,
+): string {
+  const actualStart = (rawStart || start || '').substring(0, 5);
+  const actualEnd = (presenceEnd || end || '').substring(0, 5);
+  if (!rawStart && !presenceEnd) return '';
+  if (actualStart === (start || '').substring(0, 5) && actualEnd === (end || '').substring(0, 5)) return '';
+  return `gestempelt ${actualStart} - ${actualEnd}`.trim();
+}
+
 interface AuditValuesProps {
   date?: string;
   start?: string;
   end?: string;
+  /** #537: Rohbeginn und Ende der Anwesenheit (optional). */
+  rawStart?: string | null;
+  presenceEnd?: string | null;
   breakMinutes?: number | null;
   note?: string | null;
   /**
@@ -96,11 +119,12 @@ interface AuditValuesProps {
 }
 
 export default function AuditValues({
-  date, start, end, breakMinutes, note, prefix, className,
+  date, start, end, rawStart, presenceEnd, breakMinutes, note, prefix, className,
 }: AuditValuesProps) {
   const times = start || end
     ? `${start?.substring(0, 5) ?? ''} - ${end?.substring(0, 5) ?? ''}`.trim()
     : null;
+  const stamped = stampedText(start, end, rawStart, presenceEnd) || null;
   const text = formatAuditNote(note);
   const hasBreak = breakMinutes !== null && breakMinutes !== undefined;
   const empty = !date && !times && !hasBreak && !text;
@@ -109,7 +133,7 @@ export default function AuditValues({
     // Im Modal gibt es für eine leere Seite keinen Platzhalter — die Zeile
     // entfällt einfach (Verhalten wie bisher).
     if (empty) return null;
-    const head = [date, times, hasBreak ? `P:${breakMinutes}min` : null]
+    const head = [date, times, stamped ? `(${stamped})` : null, hasBreak ? `P:${breakMinutes}min` : null]
       .filter(Boolean).join(' ');
     return (
       <p className={`${className ?? ''} break-words`.trim()}>
@@ -123,6 +147,7 @@ export default function AuditValues({
     <div>
       {date && <p>{date}</p>}
       {times && <p>{times}</p>}
+      {stamped && <p className="text-gray-500">{stamped}</p>}
       {hasBreak && <p>Pause: {breakMinutes} min</p>}
       {text && <p className="text-gray-500 break-words">{text}</p>}
     </div>

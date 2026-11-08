@@ -31,7 +31,7 @@ robocopy "!SRC!" "C:\PraxisZeit" /E /R:2 /W:2 /NFL /NDL /NJH /NJS >nul
 if not exist "C:\PraxisZeit\setup.bat" ( >> "%RES%" echo FEHLER: Kopie unvollstaendig & goto :done )
 copy /Y "\\host.lan\Data\acl-check.ps1" "C:\acl-check.ps1" >nul
 mkdir "C:\pz-harness" 2>nul
-for %%f in (install-acl-check.ps1 run-probe.ps1 nonadmin-probe.ps1 post-reboot.bat) do copy /Y "\\host.lan\Data\%%f" "C:\pz-harness\%%f" >nul
+for %%f in (install-acl-check.ps1 run-probe.ps1 nonadmin-probe.ps1 hardening-probe.ps1 post-reboot.bat) do copy /Y "\\host.lan\Data\%%f" "C:\pz-harness\%%f" >nul
 cd /d C:\PraxisZeit
 set "PKGVER="
 for /f "usebackq tokens=2 delims==" %%v in (`findstr /B "APP_VERSION" "C:\PraxisZeit\app\backend\app\core\updater.py"`) do set "PKGVER=%%v"
@@ -238,6 +238,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\install-acl-c
 >> "%RES%" echo ===PROBE_BEGIN===
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\run-probe.ps1" -InstallDir "C:\PraxisZeit" >> "%RES%" 2>&1
 >> "%RES%" echo ===PROBE_END===
+REM Haertung (Audit 2026-11-07 S3-01): Negativfaelle von secure-install.ps1
+REM in Wegwerf-Ordnern unter C:\hp - die echte Installation bleibt unberuehrt.
+>> "%RES%" echo ===HARDENING_BEGIN===
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\hardening-probe.ps1" -SecureInstall "C:\PraxisZeit\secure-install.ps1" -PackageTree "\\host.lan\Data\tree" >> "%RES%" 2>&1
+>> "%RES%" echo ===HARDENING_END===
 
 REM ============================================================
 REM ACL-Nachweis: die beiden vertraulichen Dateien duerfen KEINE

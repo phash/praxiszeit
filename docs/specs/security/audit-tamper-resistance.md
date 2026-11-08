@@ -1,11 +1,32 @@
 # Audit-Log Tamper-Resistance — Design-Spec
 
 **Issue:** [#121](https://github.com/phash/praxiszeit/issues/121)
-**Status:** **v1 umgesetzt** (per-Row-HMAC) · Hash-CHAIN aufgeschoben
+**Status:** **v2 umgesetzt** (#537: Prüfsumme v3, versiegelte Kette, App-Konto nur anfügend)
 **Autor:** Claude Opus 4.7 (Design) · Opus 4.8 (v1-Umsetzung)
 **Datum:** 24. Mai 2026 (Design) · 22. Juni 2026 (v1)
 
 ---
+
+## Umgesetzt (v2, #537, Migration 076) — Stand nach dem Audit 2026-11-07
+
+Das Audit (A2-1/A2-2/A2-8) fand drei Löcher in v1: die Prüfsumme deckte den
+Fremdschlüssel `time_entry_id` ab, den PostgreSQL beim Löschen eines Eintrags
+nullt (jede Löschung → „manipuliert"); eine Zeile mit `row_hash = NULL` galt
+als Altbestand; das App-Konto durfte Zeilen ändern und löschen. v2:
+
+| Aspekt | v2 |
+|---|---|
+| Prüfsumme | `hash_version = 3`: über feste Kopien `entry_ref`/`changed_by_ref`/`change_request_ref` (nie genullt), `created_at` (UTC, Mikrosekunden) und die Rohstempel; Fremdschlüssel müssen NULL oder gleich der Kopie sein. Altbestand (v2) wird gegen die Kopien aus dem Backfill geprüft. |
+| NULL-Prüfsumme | der Listener kippt den Insert statt `NULL` zu schreiben; PG-Trigger lehnt ungehashte Zeilen der App-Rolle ab; ungehashte Zeile jünger als die erste gehashte = manipuliert |
+| Löschungs-Erkennung | Kette je Mandant, **beim Versiegeln** (täglich 03:15 + vor jeder Prüfung/Löschung) statt beim Insert — keine Serialisierung der Schreibpfade, kein Deadlock-Risiko; gesiegeltes Kettenende in `system_settings`; legitime Löschung = gehashter Vermerk mit den entfernten Gliedern |
+| Rechte | Option A ohne zweiten Pool: Trigger `pz_audit_guard` (nur Eigentümerin/Superuser dürfen UPDATE/DELETE) + entzogene Rechte; Scrub/Versiegeln/Löschen über SECURITY-DEFINER-Funktionen `pz_audit_set_notes`/`pz_audit_seal`/`pz_audit_delete` |
+| Verify | `GET` (lesend), `POST` (versiegeln + prüfen + ablegen), täglicher Lauf, Admin-Karte, Meldung über `security_events` + `error_logs` |
+
+**Grenzen (bewusst):** unversiegelte Zeilen (≤ 1 Tag) schützt nur das Recht;
+ein Superuser kann Trigger abschalten (erkannt wird die Änderung, nicht
+verhindert); Abschneiden der Kette plus Rückspielen eines älteren gesiegelten
+Kettenendes ist nicht erkennbar; Altbestand eines vor 076 gelöschten Eintrags
+bleibt unprüfbar (`legacy_entry_deleted`).
 
 ## Umgesetzt (v1) — was wirklich shipped
 

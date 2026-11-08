@@ -28,10 +28,13 @@ Beim **Ausstempeln** Feld **Pause (Min.)** ausfüllen → **Jetzt ausstempeln**.
 - Bei **mehr als 6 h** verlangt das Gesetz eine Pause (§4 ArbZG).
 - Reicht die Pause nicht → gelber Hinweis. Zwei Wege:
   1. **Pause nachtragen** (Minuten korrigieren), oder
-  2. **kurz begründen**, warum keine Pause möglich war (z. B. „Notfall, keine Vertretung") → **dokumentierte Ausnahme**
+  2. **begründen** (mind. 10 Zeichen), warum keine Pause möglich war (z. B. „Notfall, keine Vertretung") → **dokumentierte Ausnahme** (mit Genehmigungspflicht der Praxis: ausgestempelt, Ausnahme nur beantragt)
 - Erst danach ist das Ausstempeln fertig (flüchtiger Hinweis reicht nicht mehr).
 - Gezählt wird der **ganze Tag**: aus- und gleich wieder einstempeln ist keine Pause (erst ab **15 Min.** Unterbrechung).
 - Kein Begründungsfeld? Dann hat die Praxis die Ausnahme abgeschaltet → Pause eintragen.
+- Sonn-/Feiertag: beim Ausstempeln **Ausnahmegrund (§10 ArbZG)** eintragen.
+- Ausstempeln vergessen? Der Eintrag wird automatisch geschlossen; die Stempeluhr bietet **Arbeitsende per Antrag nachtragen** an.
+- Einträge eines Tages dürfen sich **nicht überschneiden**; das Ende darf nicht in der Zukunft liegen. Keine Dienste über Mitternacht.
 - Mit **Arbeitszeit-Blöcken**: Eine Pause, die Sie in der Lücke zwischen zwei Blöcken gemacht haben, nicht zusätzlich eintragen (→ „Arbeitszeit-Blöcke" unten).
 
 ### Neuen Zeiteintrag erstellen
@@ -122,7 +125,9 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 
 > **Eigene Gründe:** Richtet Ihre Praxis weitere Gründe ein (z. B. „Schule"), erscheinen sie bei „Typ wählen" unter **„Eigene Gründe"**.
 
-**Löschen:** Kalender-Eintrag anklicken → Löschen-Symbol
+**Vergangener Tag:** nur per Antrag (Journal → **Antrag** in der Zeile des Tages) – *„Für vergangene Tage bitte einen Änderungsantrag stellen."*
+
+**Löschen:** Kalender-Eintrag anklicken → Löschen-Symbol (nur ab heute und nur selbst eingetragene; vergangene Tage per Lösch-Antrag)
 
 ### Sondertage 24./31.12.
 Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, sind diese im Kalender markiert (z. B. „Heiligabend (frei)" / „Silvester (½ Tag)") – wie ein Feiertag. **„verkürzter Tag (max. 4 h)"** = Soll an dem Tag höchstens so viele Stunden; Urlaub kostet einen halben Tag.

@@ -61,3 +61,25 @@ describe('U4 (Audit 2026-07-31): rate-limit (429) handling', () => {
     expect(getErrorMessage(err)).toBe('Etwas ist schiefgelaufen');
   });
 });
+
+describe('getBlobErrorMessage (S1-02)', () => {
+  it('liest die JSON-Fehlermeldung aus einer Blob-Antwort', async () => {
+    const { getBlobErrorMessage } = await import('./errorMessage');
+    const blob = new Blob([JSON.stringify({ detail: 'Passwort ist falsch' })], { type: 'application/json' });
+    const msg = await getBlobErrorMessage({ response: { status: 400, data: blob } }, 'Download fehlgeschlagen');
+    expect(msg).toBe('Passwort ist falsch');
+  });
+
+  it('fällt bei unlesbarem Blob auf den Rückfalltext zurück', async () => {
+    const { getBlobErrorMessage } = await import('./errorMessage');
+    const blob = new Blob(['kein json']);
+    const msg = await getBlobErrorMessage({ response: { status: 500, data: blob } }, 'Download fehlgeschlagen');
+    expect(msg).toBe('Download fehlgeschlagen');
+  });
+
+  it('verhält sich ohne Blob wie getErrorMessage', async () => {
+    const { getBlobErrorMessage } = await import('./errorMessage');
+    const msg = await getBlobErrorMessage({ response: { status: 400, data: { detail: 'x' } } }, 'y');
+    expect(msg).toBe('x');
+  });
+});

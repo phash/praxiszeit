@@ -71,6 +71,8 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # Audit 2026-11-07 (S2-1): keine Werte in Fehlermeldungen (wie app.database).
+        hide_parameters=True,
     )
 
     with connectable.connect() as connection:
@@ -82,6 +84,11 @@ def run_migrations_online() -> None:
 
         with context.begin_transaction():
             context.run_migrations()
+            # Audit 2026-11-07 (S2-1): Statement-/DETAIL-Logging auch auf
+            # nativen Bestandsclustern aus (deren postgresql.conf bleibt beim
+            # Update unangetastet). Bei jedem Lauf, idempotent.
+            from app.core.pg_log_privacy import apply_log_privacy_settings
+            apply_log_privacy_settings(connection)
 
 
 if context.is_offline_mode():

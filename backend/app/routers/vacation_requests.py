@@ -362,7 +362,7 @@ def list_my_vacation_requests(
     request: Request,
     year: Optional[int] = Query(None, ge=2000, le=2100),
     status: Optional[str] = Query(None),
-    skip: int = 0,
+    skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

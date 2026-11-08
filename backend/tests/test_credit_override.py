@@ -742,3 +742,16 @@ def test_approval_reports_presence_warnings(_db_session, employee_user, admin_cl
     r = _review(admin_client, cr)
     assert r.status_code == 200, r.text
     assert {"WORK_WINDOW_CLAMPED", "PRESENCE_BREAK"} <= set(_codes(r))
+
+
+import pytest as _pytest_s1_01  # noqa: E402
+
+
+@_pytest_s1_01.fixture(autouse=True)
+def _s1_01_test_dates_count_as_future(monkeypatch):
+    """Audit 2026-11-07 (S1-01): Mitarbeitende buchen und löschen Abwesenheiten
+    vergangener Tage nur per Änderungsantrag. Die festen Testdaten dieser Datei
+    prüfen andere Regeln — für ``absences`` gelten sie als künftige Tage."""
+    import datetime as _dt
+    from app.routers import absences as _absences_router
+    monkeypatch.setattr(_absences_router, "today_local", lambda: _dt.date(2020, 1, 1))

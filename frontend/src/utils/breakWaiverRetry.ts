@@ -9,6 +9,32 @@ export const BREAK_EXCEPTION_DISABLED_HINT =
   'Die Ausnahme „Pflicht-Pause war nicht möglich“ ist in dieser Praxis abgeschaltet – bitte die Pause erfassen.';
 
 /**
+ * #540 (A1-05): Mindestlänge der Begründung einer §4-Ausnahme (nach `trim()`).
+ * Zwilling von `BREAK_WAIVER_MIN_LENGTH` / `BREAK_WAIVER_TOO_SHORT_HINT` in
+ * `break_validation_service.py` — gleiche Zahl, wortgleicher Hinweis.
+ */
+export const BREAK_WAIVER_MIN_LENGTH = 10;
+
+export const BREAK_WAIVER_TOO_SHORT_HINT =
+  `Die Begründung ist zu kurz – bitte in mindestens ${BREAK_WAIVER_MIN_LENGTH} Zeichen angeben, warum die Pflicht-Pause nicht möglich war.`;
+
+/** Begründung vorhanden, aber kürzer als `BREAK_WAIVER_MIN_LENGTH` (wie `waiver_reason_too_short`). */
+export function isBreakWaiverTooShort(reason: string | null | undefined): boolean {
+  const text = (reason ?? '').trim();
+  return text.length > 0 && text.length < BREAK_WAIVER_MIN_LENGTH;
+}
+
+/**
+ * Fehlermeldung des Begründungsfelds oder `null`: leer → Pflichtfeld-Hinweis,
+ * zu kurz → `BREAK_WAIVER_TOO_SHORT_HINT`.
+ */
+export function breakWaiverReasonError(reason: string | null | undefined): string | null {
+  if (!(reason ?? '').trim()) return 'Bitte begründen Sie, warum die Pflicht-Pause nicht möglich war.';
+  if (isBreakWaiverTooShort(reason)) return BREAK_WAIVER_TOO_SHORT_HINT;
+  return null;
+}
+
+/**
  * #499: Meldet der Server, dass die Ausnahme „Pflicht-Pause war nicht möglich"
  * in dieser Praxis abgeschaltet ist? Dann darf keine Oberfläche mehr nach einer
  * Begründung fragen — sie würde ohnehin abgelehnt. Dient als Rückfall, falls
@@ -42,12 +68,17 @@ export async function submitWithBreakWaiver<T = void>(
   } catch (err) {
     const msg = getErrorMessage(err, '');
     if (!allowed || !msg.includes('Pause') || isBreakExceptionDisabledMessage(msg)) throw err;
-    const reason = window.prompt(
+    let prompt =
       `${msg}\n\nWenn die Pflicht-Pause (§4 ArbZG) nachweislich nicht möglich war, ` +
-        'begründen Sie dies hier – die Abweichung wird dokumentiert. ' +
-        'Abbrechen lässt den Eintrag unverändert.',
-    );
-    if (!reason || !reason.trim()) throw err;
-    return await submit({ break_waiver_reason: reason.trim() });
+      `begründen Sie dies hier (mindestens ${BREAK_WAIVER_MIN_LENGTH} Zeichen) – die Abweichung wird dokumentiert. ` +
+      'Abbrechen lässt den Eintrag unverändert.';
+    // #540 (A1-05): eine zu kurze Begründung lehnt der Server ab — gleich
+    // erneut fragen statt einen sicheren Fehlschlag zu senden.
+    for (;;) {
+      const reason = window.prompt(prompt);
+      if (!reason || !reason.trim()) throw err;
+      if (!isBreakWaiverTooShort(reason)) return await submit({ break_waiver_reason: reason.trim() });
+      prompt = `${BREAK_WAIVER_TOO_SHORT_HINT}\n\n${prompt}`;
+    }
   }
 }

@@ -11,7 +11,8 @@ class AbsenceReasonCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     color: Optional[str] = None  # #RRGGBB — validated in the router (→ 400)
     base_behavior: AbsenceReasonBehavior
-    sort_order: int = 0
+    # Audit 2026-11-07 (S2-2): Integer-Spalte — ohne Grenze 500 statt 422.
+    sort_order: int = Field(0, ge=0, le=100000)
     tracks_child_sick_limit: bool = False  # #376 §45 SGB V: zählt gegen das Kind-krank-Jahreslimit
 
 
@@ -19,7 +20,7 @@ class AbsenceReasonUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=80)
     color: Optional[str] = None
     is_active: Optional[bool] = None
-    sort_order: Optional[int] = None
+    sort_order: Optional[int] = Field(None, ge=0, le=100000)  # S2-2
     # base_behavior is intentionally NOT updatable (v1 lock): changing it would
     # make existing absences inconsistent with their stored ``type``.
 
