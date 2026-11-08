@@ -148,10 +148,11 @@ jobs:
           echo "OK: postgres + initdb laufen auf macos-15-intel (Intel x86_64)"
 
   validate-macos-arm64:
-    name: macOS 14 (Apple Silicon arm64)
-    # macos-14 ist der aelteste noch verfuegbare arm64-Runner und gibt uns
-    # breite SDK-Kompatibilitaet. Hoehere Versionen (macos-15/26) als Bonus.
-    runs-on: macos-14
+    name: macOS 15 (Apple Silicon arm64)
+    # macos-14 hat GitHub im November 2026 abgeschaltet ("The configuration
+    # 'macos-14-arm64-us-default' is not supported", Release 1.23.0); macos-15
+    # ist jetzt der aelteste verfuegbare arm64-Runner.
+    runs-on: macos-15
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -250,4 +251,4 @@ jobs:
             -U pgtest \
             -E UTF8 \
             --locale=C
-          echo "OK: postgres + initdb laufen auf macos-14 (Apple Silicon arm64)"
+          echo "OK: postgres + initdb laufen auf macos-15 (Apple Silicon arm64)"

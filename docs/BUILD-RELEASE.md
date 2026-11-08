@@ -13,7 +13,7 @@ bash tools/build-release.sh --windows-only --skip-download   # Rebuild mit Cache
 bash tools/build-release.sh --docker-only      # Nur Docker-Bundle (compose + Build-Kontext)
 bash tools/validate-release.sh                 # Linux-Tarball: Docker-Smoke gegen 4 Distros
 # macOS-Validierung läuft als GitHub-Actions-Workflow (validate-macos.yml)
-# auf macos-15-intel + macos-14 — manuell triggerbar via gh workflow run.
+# auf macos-15-intel + macos-15 (arm64) — manuell triggerbar via gh workflow run.
 ```
 
 **Build-Release-Frontend + Host-Node:** `build-release.sh` ruft intern `npm run build` (Schritt 3) — bricht mit Host-Node ≥26. Frontend vorher mit `docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine sh -c "npm run build"` bauen und dann mit `--skip-frontend` releasen (`dist/` muss existieren).
