@@ -961,3 +961,30 @@ describe('E-Mail-Platzhalter (P1.5)', () => {
     expect(email.placeholder).not.toMatch(/example\.de/);
   });
 });
+
+// P4.4: individuelle Verfallsfrist Resturlaub (users.vacation_carryover_deadline).
+describe('UserForm: Verfallsdatum Resturlaub je Person (P4.4)', () => {
+  it('zeigt beim Bearbeiten das gespeicherte Datum (kein Edit-Reset auf leer)', () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2027-06-30' } });
+    expect(screen.getByLabelText(/Resturlaub verfällt am/)).toHaveValue('2027-06-30');
+  });
+
+  it('schickt Änderung und Leeren (null = Standard 31.03.) im PUT', async () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2027-06-30' } });
+    fireEvent.change(screen.getByLabelText(/Resturlaub verfällt am/), { target: { value: '2027-09-30' } });
+    fireEvent.submit(document.querySelector('form')!);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1].vacation_carryover_deadline).toBe('2027-09-30');
+
+    putMock.mockClear();
+    fireEvent.change(screen.getByLabelText(/Resturlaub verfällt am/), { target: { value: '' } });
+    fireEvent.submit(document.querySelector('form')!);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1].vacation_carryover_deadline).toBeNull();
+  });
+
+  it('beim Anlegen gibt es das Feld nicht (Backend-UserCreate kennt es nicht)', () => {
+    renderForm();
+    expect(screen.queryByLabelText(/Resturlaub verfällt am/)).not.toBeInTheDocument();
+  });
+});

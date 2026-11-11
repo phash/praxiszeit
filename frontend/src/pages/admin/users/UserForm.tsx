@@ -98,6 +98,7 @@ export default function UserForm({
     last_work_day: '',
     department: '',
     child_sick_days_per_year: null as number | null, // #376 §45 SGB V; null = Tenant-Default
+    vacation_carryover_deadline: '', // P4.4: individuelle Verfallsfrist Resturlaub (ISO-Datum), leer = 31.03. Folgejahr
     use_daily_schedule: false,
     hours_monday: 8,
     hours_tuesday: 8,
@@ -140,6 +141,7 @@ export default function UserForm({
         last_work_day: editUser.last_work_day || '',
         department: editUser.department || '',
         child_sick_days_per_year: editUser.child_sick_days_per_year ?? null, // #376
+        vacation_carryover_deadline: editUser.vacation_carryover_deadline || '', // P4.4
         use_daily_schedule: editUser.use_daily_schedule ?? false,
         hours_monday: editUser.hours_monday ?? 8,
         hours_tuesday: editUser.hours_tuesday ?? 8,
@@ -274,7 +276,7 @@ export default function UserForm({
     try {
       // #158/#383: overtime_carryover + vacation_carryover are NOT user fields —
       // they go to the carryover endpoint separately. Keep them out of the payload.
-      const { overtime_carryover, vacation_carryover, ...userFields } = formData;
+      const { overtime_carryover, vacation_carryover, vacation_carryover_deadline, ...userFields } = formData;
       const payload = {
         ...userFields,
         first_work_day: formData.first_work_day || null,
@@ -326,7 +328,8 @@ export default function UserForm({
           agreed_monthly_hours, use_fixed_monthly_target,
           ...rest
         } = payload;
-        const updateData = rest;
+        // P4.4: nur beim Bearbeiten (UserCreate kennt das Feld nicht); leer → null = Standard.
+        const updateData = { ...rest, vacation_carryover_deadline: vacation_carryover_deadline || null };
         await apiClient.put(`/admin/users/${editUser.id}`, updateData);
         // #158/#383: nur schreiben, wenn (a) die Felder erfolgreich für EIN Jahr
         // geladen sind (loadedCarryoverYear !== null) — sonst würde ein Ladefehler
@@ -700,6 +703,21 @@ export default function UserForm({
             />
             <p className="mt-1 text-xs text-gray-400">Leer = Standardwert aus den Einstellungen.</p>
           </div>
+          {editUser && (
+            <div>
+              <label htmlFor="f-carryover-deadline" className="block text-sm font-medium text-gray-700 mb-1">
+                Resturlaub verfällt am
+              </label>
+              <input
+                id="f-carryover-deadline"
+                type="date"
+                value={formData.vacation_carryover_deadline}
+                onChange={(e) => setFormData({ ...formData, vacation_carryover_deadline: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+              />
+              <p className="mt-1 text-xs text-gray-400">Leer = 31.03. des Folgejahres.</p>
+            </div>
+          )}
           {effTrackHours && (
             <div>
               <label htmlFor="f-overtime-carryover" className="block text-sm font-medium text-gray-700 mb-1">
