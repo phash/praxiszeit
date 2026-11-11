@@ -2798,9 +2798,9 @@ export const praxisleitung: Handbook = {
             { n: 2, text: 'Haken bei [[Tägliche automatische Sicherung aktivieren]], wenn PraxisZeit täglich selbst sichern soll. Ein Hinweis unter dem Haken sagt, dass die folgenden Einstellungen für die Docker-Installation gelten und native Installationen über das Betriebssystem sichern.' },
             { n: 3, text: '**Uhrzeit (Stunde, 0–23), nur Docker:** lokale Zeit (Europe/Berlin); die Sicherung läuft um HH:30. Das gilt für die Docker-Installation; nativ sichert der Timer des Betriebssystems (Linux 02:00, Windows und macOS 03:00).' },
             { n: 4, text: '**Aufbewahrung (Tage), nur Docker:** ältere Sicherungen löscht PraxisZeit automatisch. Für § 16 ArbZG sind mindestens 2 Jahre (730 Tage) nötig; die Seite schlägt zunächst 30 Tage vor. Nativ gilt stattdessen retention_days im Abschnitt [backup] der Datei config/praxiszeit.conf (Standard 31 Tage). Sonst zusätzlich Jahresarchive außerhalb des Servers ablegen.' },
-            { n: 5, text: '**Speicherort (optional, nur Docker):** leer bedeutet Standardverzeichnis. Der Pfad muss für den Dienst beschreibbar sein.' },
+            { n: 5, text: '**Speicherort (optional, nur Docker):** leer bedeutet Standardverzeichnis. Tragen Sie einen **absoluten Pfad** ein (relative Pfade lehnt PraxisZeit ab); er muss für den Dienst beschreibbar sein. Zum Zurücksetzen auf das Standardverzeichnis leeren Sie das Feld und speichern.' },
             { n: 6, text: 'Klicken Sie auf [[Einstellungen speichern]]. Erst dann gelten Uhrzeit, Aufbewahrung und Speicherort, und zwar nur in der Docker-Installation; nativ steuert der Timer des Betriebssystems die geplante Sicherung.' },
-            { n: 7, text: 'Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.' },
+            { n: 7, text: 'Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Ist die neueste Sicherung älter als 36 Stunden, erscheint oben ein Hinweis: Prüfen Sie dann den Zeitplan oder sichern Sie sofort. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.' },
           ],
         },
         {

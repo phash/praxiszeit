@@ -181,8 +181,8 @@ export default function Backups() {
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
           <span>
             Die letzte Sicherung ist älter als {STALE_BACKUP_HOURS} Stunden
-            ({new Date(newest as number).toLocaleString('de-DE')}). Bitte prüfen Sie den Zeitplan
-            oder sichern Sie jetzt.
+            ({new Date(newest as number).toLocaleString('de-DE')}). Wenn Sie automatisch sichern
+            lassen, prüfen Sie bitte den Zeitplan; andernfalls sichern Sie jetzt.
           </span>
         </div>
       )}
