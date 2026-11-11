@@ -24,6 +24,12 @@ from app.routers.admin_helpers import (
 )
 from app.routers.absences import _MASKED_ABSENCE_TYPES
 
+
+# P1 (Handbuch-Funde 2026-11-11): Lösch-Antrag für einen Betriebsferien-Tag.
+CLOSURE_ABSENCE_CR_DETAIL = (
+    "Betriebsferien-Tage ändert nur die Verwaltung – bitte an die Verwaltung wenden."
+)
+
 router = APIRouter(prefix="/api/change-requests", tags=["change-requests"])
 
 _MASKED_TYPE_VALUES = {t.value for t in _MASKED_ABSENCE_TYPES}
@@ -164,6 +170,10 @@ def create_change_request(
         if data.request_type == "delete" and absence:
             if absence.date >= today_local():
                 raise HTTPException(status_code=400, detail="Heutige Einträge können direkt gelöscht werden")
+            # P1 (Handbuch-Funde): Betriebsferien-Tage ändert nur die Verwaltung —
+            # wie ``absences.delete_absence`` (CLOSURE_ABSENCE_DELETE_DETAIL).
+            if absence.closure_id is not None:
+                raise HTTPException(status_code=400, detail=CLOSURE_ABSENCE_CR_DETAIL)
 
         # Check for duplicate pending absence requests
         if data.request_type == "create" and data.proposed_date:
