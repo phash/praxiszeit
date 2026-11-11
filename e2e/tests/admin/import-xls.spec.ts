@@ -138,7 +138,7 @@ test.describe('Admin XLS Import', () => {
     // Step 2: Vorschau. Scope to <main> + first() so the Hilfe-Sidebar's
     // ArbZG/Berichte tables don't trip strict-mode.
     await expect(adminPage.getByRole('heading', { name: 'Vorschau' })).toBeVisible({ timeout: 20000 });
-    await expect(adminPage.getByText('Einträge gefunden')).toBeVisible();
+    await expect(adminPage.getByText(/Eintr(ag|äge) gefunden/)).toBeVisible();
     await expect(adminPage.locator('main table').first()).toBeVisible();
 
     await adminPage.getByRole('button', { name: /Import bestätigen/ }).click();

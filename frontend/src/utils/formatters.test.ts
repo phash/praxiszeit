@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount, formatDayNumber, formatDecimalDe, formatMonthYearDe } from './formatters';
+import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount, formatDayNumber, formatDecimalDe, formatMonthYearDe, pluralDe } from './formatters';
 
 describe('formatHoursHM', () => {
   it('formats whole hours', () => {
@@ -423,5 +423,13 @@ describe('formatMonthYearDe (P1.3)', () => {
   it('gibt ungültige Eingaben unverändert zurück', () => {
     expect(formatMonthYearDe('kaputt')).toBe('kaputt');
     expect(formatMonthYearDe('2026-13')).toBe('2026-13');
+  });
+});
+
+describe('pluralDe (P4.2)', () => {
+  it('Einzahl nur bei genau 1', () => {
+    expect(pluralDe(1, 'Eintrag', 'Einträge')).toBe('1 Eintrag');
+    expect(pluralDe(0, 'Eintrag', 'Einträge')).toBe('0 Einträge');
+    expect(pluralDe(2, 'Konflikt', 'Konflikte')).toBe('2 Konflikte');
   });
 });

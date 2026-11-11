@@ -178,6 +178,14 @@ export function formatDayCount(days: number): string {
 }
 
 /**
+ * P4.2: Zähler mit Einzahl nur bei genau 1 — pluralDe(1, 'Eintrag', 'Einträge')
+ * → '1 Eintrag', pluralDe(3, …) → '3 Einträge'.
+ */
+export function pluralDe(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
+/**
  * F069/F089/F100: DIE eine Dezimalzahl-Formatierung ohne Einheit — höchstens
  * zwei Nachkommastellen, keine Nullen am Ende, deutsches Komma ('30', '13,1',
  * '4,25'). `formatDayNumber` (Tage) und `specialDays.formatMaxHoursDe`

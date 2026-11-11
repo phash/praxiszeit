@@ -21,7 +21,7 @@ const IMPORT_UPLOAD: PrepareStep[] = [
 const IMPORT_PREVIEW: PrepareStep[] = [
   ...IMPORT_UPLOAD,
   { click: { css: "main button:has-text('Datei analysieren')" } },
-  { waitFor: { css: "main >> text=/Einträge gefunden/" } },
+  { waitFor: { css: "main >> text=/Eintr(ag|äge) gefunden/" } },
 ];
 
 /** Rückwirkende Änderung für Sarah: Montag-Nachmittag endet ab Stichtag − 14 Tage um 15:30. Nur Vorschau, nie speichern. */
@@ -850,7 +850,7 @@ const shots: ShotDef[] = [
       { n: 2, id: 'zurueck', locator: { css: "main button:has-text('Zurück')" }, badge: 'left' },
       { n: 3, id: 'bestaetigen', locator: { css: "main button:has-text('Import bestätigen')" }, badge: 'right' },
     ],
-    alt: 'Import, Ende der Vorschau: Haken „Konflikte überschreiben (1 Einträge)“ und die Knöpfe „Zurück“ und „Import bestätigen“ unter der Tabelle der gefundenen Einträge',
+    alt: 'Import, Ende der Vorschau: Haken „Konflikte überschreiben (1 Eintrag)“ und die Knöpfe „Zurück“ und „Import bestätigen“ unter der Tabelle der gefundenen Einträge',
   },
 ];
 
