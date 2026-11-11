@@ -59,7 +59,7 @@ const shots: ShotDef[] = [
     markers: [
       { n: 1, id: 'urlaubskonto', locator: { role: 'heading', name: 'Urlaubskonto', exact: true }, badge: 'top' },
     ],
-    alt: 'Dashboard-Kachel Urlaubskonto mit Anspruch, genommenen Urlaubstagen und Resturlaub in Tagen',
+    alt: 'Dashboard-Kachel Urlaubskonto mit Budget, genommenen Urlaubstagen und Resturlaub in Tagen',
   },
 ];
 
@@ -68,7 +68,7 @@ export const soRechnet: Handbook = {
   title: 'So rechnet PraxisZeit',
   lead:
     'Wie aus Stempelzeiten, Verträgen und Abwesenheiten Soll, Ist, Saldo und Urlaubskonto werden. ' +
-    'Jedes Thema beginnt mit einem Satz, zeigt ein Bild und rechnet ein Beispiel vor; alle Zahlen sind mit der echten Berechnung geprüft.',
+    'Jedes Thema beginnt mit einem Satz, zeigt ein Bild und rechnet ein Beispiel vor; die Rechenbeispiele sind mit der echten Berechnung geprüft. PraxisZeit rechnet, was eingestellt und vereinbart ist; ob etwas rechtlich zulässig ist, regeln Gesetz, Arbeitsvertrag und Betriebsvereinbarung. Das Handbuch ersetzt keine Rechtsberatung.',
   chapters: [
     {
       id: 'grundbegriffe',
@@ -99,7 +99,7 @@ export const soRechnet: Handbook = {
           shot: 'sr-journal',
           steps: [
             { n: 1, text: 'Der Reiter [[Journal]] zeigt jeden Tag des Monats mit Art, Von–Bis, Pause, Ist und Soll.' },
-            { n: 2, text: 'In der Spalte [[Saldo]] steht je Tag Ist minus Soll; am Monatsende ergibt die Summe den Monatssaldo.' },
+            { n: 2, text: 'In der Spalte [[Saldo]] steht je Tag Ist minus Soll; am Monatsende ergibt die Summe der Tages-Differenzen in der Regel den Monatssaldo.' },
           ],
         },
         { kind: 'prose', text:
@@ -127,7 +127,7 @@ export const soRechnet: Handbook = {
         { kind: 'prose', text:
             'Am Wochenende ist das Tagessoll immer 0. Geteilt wird durch die Zahl der Arbeitstage Ihres Vertrags, nicht fest durch 5: 24 Stunden an 3 Tagen ergeben 8 Stunden pro Tag, nicht 4,8. Bei Arbeitszeit-Blöcken ergibt sich das Tagessoll aus der Summe der Blöcke minus der Pause innerhalb der Blöcke.' },
         { kind: 'tip', tone: 'info', text:
-            'Ändert sich Ihr Vertrag mitten im Jahr, rechnet jeder Tag mit dem Vertrag, der an diesem Tag galt. Alte Monate bleiben deshalb unverändert.' },
+            'Jeder Tag rechnet mit dem Vertrag, der an diesem Tag galt. Gilt eine Änderung erst ab einem späteren Datum, bleiben frühere Tage unverändert. Tragen Sie sie rückwirkend ein, rechnet PraxisZeit gebuchte Abwesenheiten und Kappungen ab dem Wirkungsdatum neu; Tage davor bleiben unverändert.' },
         { kind: 'prose', text:
             '[Technische Details](https://github.com/phash/praxiszeit/blob/master/docs/BERECHNUNGEN.md#3-tagessoll-daily-target): die genauen Formeln und weitere Fälle.' },
       ],
@@ -150,7 +150,7 @@ export const soRechnet: Handbook = {
         { kind: 'prose', text:
             'Das Ist eines Zeiteintrags wird auf zwei Nachkommastellen gerundet, deshalb ergibt 4:05 h hier 4,08 h. Ein offener Eintrag ohne Ende zählt noch 0 h. Zusätzlich zählen Krank und Fortbildung als Ist (siehe [Abwesenheiten](#abwesenheiten)).' },
         { kind: 'tip', tone: 'info', text:
-            'Die Ruhepausen nach § 4 ArbZG prüft PraxisZeit je Tag. Aneinandergereihte Zeiteinträge eines Tages zählen dafür zusammen.' },
+            'Die Ruhepausen nach § 4 ArbZG prüft PraxisZeit je Tag; aneinandergereihte Zeiteinträge eines Tages zählen dafür zusammen. Die Lage der Pause prüft PraxisZeit nicht.' },
         { kind: 'prose', text:
             '[Technische Details](https://github.com/phash/praxiszeit/blob/master/docs/BERECHNUNGEN.md#4-ist-stunden-net_hours): die genauen Formeln und weitere Fälle.' },
       ],
@@ -160,7 +160,7 @@ export const soRechnet: Handbook = {
       title: 'Arbeitszeit-Blöcke und Kappung',
       blocks: [
         { kind: 'prose', text:
-            'Arbeitszeit-Blöcke legen fest, wann Zeit angerechnet wird: Was vor dem ersten Block und nach dem letzten Block jenseits des Puffers liegt, fällt weg, und die Zeit zwischen den Blöcken zählt nicht.' },
+            'Arbeitszeit-Blöcke legen fest, wann Zeit angerechnet wird: Was jenseits des Puffers vor dem ersten und nach dem letzten Block liegt, wird nicht angerechnet, und die Lücke zwischen zwei Blöcken, an beiden Rändern um den Puffer verkürzt, zählt nicht.' },
         { kind: 'diagram', diagram: 'tag-zeitstrahl', caption:
             'Beispiel: Blöcke 08:00–12:00 und 15:00–16:00, Puffer 15 min, Hülle 07:45–16:15. Zeiteintrag 07:30–12:10: angerechnet ab 07:45, das Ende liegt noch im Puffer, Ist 4:25 h. Zeiteintrag 13:00–16:30: der Beginn in der Lücke bleibt, die Lücke (105 min) zählt nicht, das Ende wird auf 16:15 gekappt, Ist 1:30 h.' },
         {
@@ -177,11 +177,11 @@ export const soRechnet: Handbook = {
           ],
         },
         { kind: 'prose', text:
-            'Die Tabelle rechnet mit den Blöcken Montag 08:00–12:00 und 15:00–18:00 und 15 min Puffer; die Hülle reicht dann von 07:45 bis 18:15. Der Werktag ohne Block ist ein Dienstag, an dem der Vertrag keinen Block vorsieht.' },
+            'Die Tabelle rechnet mit den Blöcken Montag 08:00–12:00 und 15:00–18:00 (anders als im Bild) und 15 min Puffer; die Hülle reicht dann von 07:45 bis 18:15. Der Werktag ohne Block ist ein Dienstag, an dem der Vertrag keinen Block vorsieht.' },
         { kind: 'prose', text:
             '**Puffer:** Vor dem ersten und nach dem letzten Block gilt ein Puffer, Standard 15 Minuten. **Hülle:** erster Block minus Puffer bis letzter Block plus Puffer; was außerhalb liegt, wird auf die Hülle verschoben, ganz außerhalb zählt 0 h. **Lücke:** die Zeit zwischen zwei Blöcken, an beiden Rändern um den Puffer verkürzt; ist sie höchstens doppelt so lang wie der Puffer, verschwindet sie. Ihre gestempelten Zeiten bleiben gespeichert.' },
         { kind: 'tip', tone: 'warn', text:
-            'Ein Werktag, an dem Ihr Vertrag keinen Block vorsieht, zählt 0 h, bis die Verwaltung die Zeit anerkennt. Keine Kappung gibt es an Wochenenden, an Feiertagen, an freien Sondertagen und für Mitarbeitende ohne Stundenzählung.' },
+            'Die Kappung ist die Voreinstellung der Anrechnung, keine Aussage darüber, was Arbeitszeit ist: Tatsächlich angeordnete oder geduldete Arbeit ist Arbeitszeit, die Praxisleitung sollte sie anerkennen. Ein Werktag, an dem Ihr Vertrag keinen Block vorsieht, zählt 0 h, bis die Zeit anerkannt wird. Die gestempelten Zeiten bleiben immer gespeichert. Keine Kappung gibt es an Wochenenden, an Feiertagen, an freien Sondertagen, für Mitarbeitende ohne Stundenzählung und bei Arbeitszeiten, die aus einer älteren Version stammen (ein Block je Tag ohne Pause): Dort bleibt ein Tag ohne Fenster ungekappt.' },
         { kind: 'prose', text:
             '[Technische Details](https://github.com/phash/praxiszeit/blob/master/docs/BERECHNUNGEN.md#41-arbeitszeit-blöcke-und-kappung): die genauen Formeln und weitere Fälle.' },
       ],
@@ -191,7 +191,7 @@ export const soRechnet: Handbook = {
       title: 'Monatssoll und Saldo „bis heute“',
       blocks: [
         { kind: 'prose', text:
-            'Der Monatssaldo ist Ist minus Soll; das Überstundenkonto addiert die Monatssalden, und die Anzeige rechnet bis zum letzten abgeschlossenen Arbeitstag.' },
+            'Der Monatssaldo ist Ist minus Soll; das Überstundenkonto addiert die Monatssalden, und die Anzeige rechnet bis heute, wenn heute schon ausgestempelt wurde, sonst bis gestern.' },
         { kind: 'diagram', diagram: 'saldo-monat', caption:
             'Beispiel: Januar und Februar entsprechen den Rechenbeispielen unten, März und April sind frei gewählte Beispielwerte. Die Linie ist das Überstundenkonto.' },
         {
@@ -211,8 +211,8 @@ export const soRechnet: Handbook = {
           kind: 'table',
           head: ['Situation', 'Stichtag'],
           rows: [
-            ['Heute (11.03.) ist bereits ausgestempelt', '11.03.'],
-            ['Heute (11.03.) ist noch nicht ausgestempelt', '10.03.'],
+            ['Beispiel: Heute (11.03.) ist bereits ausgestempelt', '11.03.'],
+            ['Beispiel: Heute (11.03.) ist noch nicht ausgestempelt', '10.03.'],
           ],
         },
         {
@@ -259,12 +259,12 @@ export const soRechnet: Handbook = {
             ['Krank', '8,00 h', '8,00 h', '±0,00 h', '0 Tage', 'Soll bleibt, die Stunden zählen als Ist'],
             ['Fortbildung', '8,00 h', '8,00 h', '±0,00 h', '0 Tage', 'Soll bleibt, die Stunden zählen als Ist'],
             ['Bezahlte Freistellung', '0,00 h', '0,00 h', '±0,00 h', '0 Tage', 'Soll sinkt, kein Urlaubstag'],
-            ['Sonstiges (auch unbezahlt entschuldigt)', '0,00 h', '0,00 h', '±0,00 h', '0 Tage', 'Soll sinkt, kein Urlaubstag, Lohn gekürzt'],
+            ['Sonstiges (auch unbezahlt entschuldigt)', '0,00 h', '0,00 h', '±0,00 h', '0 Tage', 'Soll sinkt, kein Urlaubstag; ob die Zeit bezahlt wird, regelt der Vertrag'],
             ['Überstundenausgleich', '8,00 h', '0,00 h', '−8,00 h', '0 Tage', 'Soll bleibt, Ist ist 0: das Überstundenkonto sinkt'],
           ],
         },
         { kind: 'prose', text:
-            'Gebucht werden bei jeder Art außer Überstundenausgleich die Stunden des Tagessolls. Krank und Fortbildung zählen nur dort als Ist, wo auch ein Soll steht: An Wochenenden und Feiertagen gibt es keine Gutschrift, an einem halben Feiertag die Hälfte. Der Überstundenausgleich ist die einzige Art, die das Überstundenkonto senkt.' },
+            'Gebucht werden bei jeder Art außer Überstundenausgleich die Stunden des Tagessolls. Krank und Fortbildung zählen nur dort als Ist, wo auch ein Soll steht: An Wochenenden und Feiertagen gibt es keine Gutschrift, an einem halben Feiertag die Hälfte. Unter den Abwesenheitsarten senkt nur der Überstundenausgleich das Überstundenkonto; im Modus mit festem Monats-Soll (siehe [Minijob](#minijob)) gelten eigene Regeln.' },
         { kind: 'prose', text:
             '[Technische Details](https://github.com/phash/praxiszeit/blob/master/docs/BERECHNUNGEN.md#6-abwesenheits-typen-matrix): die genauen Formeln und weitere Fälle.' },
       ],
@@ -283,15 +283,15 @@ export const soRechnet: Handbook = {
           rows: [
             ['Beispiel Vollzeit, ohne Übertrag', '30 Tage Anspruch − 4 Tage genommen', 'Rest 26 Tage'],
             ['Beispiel mit Übertrag (wie im Diagramm)', '30 Tage Anspruch + 2 Tage Übertrag = 32 Tage Budget − 4 Tage genommen', 'Rest 28 Tage'],
-            ['Anspruch bei 3 Arbeitstagen pro Woche', '30 × 3 ÷ 5', '18 Tage'],
+            ['Vorschlag beim Anlegen einer Person mit 3 Arbeitstagen pro Woche (überschreibbar)', '30 × 3 ÷ 5', '18 Tage'],
             ['Urlaub am 24.12. als „halber Feiertag“', 'Tagesprinzip: halber Tag', '0,5 Tage'],
-            ['Eintritt am 15.04., Anspruch 30 Tage', '30 × (8 + 16/30) ÷ 12', '21,3 Tage'],
+            ['Beispiel: Eintritt am 15.04., Anspruch 30 Tage', '30 × (8 + 16/30) ÷ 12, also 8 volle Monate plus 16 von 30 Tagen im April', '21,3 Tage'],
             ['Frist für den Resturlaub aus 2026 (Standard)', '31. März des Folgejahres', '31.03.2027'],
             ['Teilzeit Mo–Mi, eine ganze Urlaubswoche (Mo–Fr)', 'nur Tage mit Soll zählen', '3 Tage'],
           ],
         },
         { kind: 'prose', text:
-            'Ein Urlaubstag kostet einen Tag, egal wie lang der Tag laut Vertrag ist; ein Halbtag kostet 0,5. Wochenenden, Feiertage und Tage ohne Soll kosten nichts. Der Resturlaub eines Jahres sollte bis zur Frist genommen sein; Ihre Praxisleitung kann für einzelne Personen eine andere Frist hinterlegen.' },
+            'Ein Urlaubstag kostet einen Tag, egal wie lang der Tag laut Vertrag ist; ein Halbtag kostet 0,5. Wochenenden, Feiertage und Tage ohne Soll kosten nichts. 30 Tage Anspruch sind ein Beispiel für einen vertraglichen Anspruch. Die Eintritts-Rechnung ist die taggenaue Regel von PraxisZeit; gesetzliche und vertragliche Regeln können abweichen. Die Praxisleitung kann für einzelne Personen eine andere Frist hinterlegen. **Frist:** Das ist die Voreinstellung von PraxisZeit. Ob Resturlaub tatsächlich verfällt, setzt nach § 7 Abs. 3 BUrlG voraus, dass die Praxis ihre Mitarbeitenden rechtzeitig auf den drohenden Verfall hingewiesen und zum Urlaubnehmen aufgefordert hat; die Warnung in PraxisZeit ersetzt diesen Hinweis nicht.' },
         {
           kind: 'task',
           id: 'urlaubskonto-dashboard',
@@ -299,7 +299,7 @@ export const soRechnet: Handbook = {
           intro: 'Das [[Dashboard]] zeigt Ihr Urlaubskonto.',
           shot: 'sr-urlaubskonto',
           steps: [
-            { n: 1, text: '[[Urlaubskonto]]: Anspruch, genommene Tage und Resturlaub in Tagen.' },
+            { n: 1, text: '[[Urlaubskonto]]: Budget (Anspruch plus Übertrag), genommene Tage und Resturlaub in Tagen.' },
           ],
         },
         { kind: 'prose', text:
@@ -311,16 +311,16 @@ export const soRechnet: Handbook = {
       title: 'Betriebsferien',
       blocks: [
         { kind: 'prose', text:
-            'Betriebsferien bucht PraxisZeit für alle Teilnehmenden automatisch als Urlaub; mit der Einstellung „Überzählige Betriebsferien als Überstundenabbau“ folgt auf den letzten Urlaubstag der Überstundenausgleich.' },
+            'Betriebsferien bucht PraxisZeit für alle Teilnehmenden automatisch als Urlaub oder als bezahlte Freistellung; mit der Einstellung „Überzählige Betriebsferien als Überstundenabbau“ folgt bei Mitarbeitenden mit Stundenzählung auf den letzten Urlaubstag der Überstundenausgleich.' },
         { kind: 'diagram', diagram: 'betriebsferien-split', caption:
             'Beispiel: 3 Tage Resturlaub vor einer Schließung von Montag bis Freitag, Einstellung eingeschaltet. Die Tage werden der Reihe nach gebucht.' },
         {
           kind: 'table',
-          head: ['Tag', 'Resturlaub vorher', 'Buchung', 'Resturlaub nachher'],
+          head: ['Tag', 'Urlaubsbudget vorher (nach Abzug des übrigen Urlaubs im Jahr)', 'Buchung', 'Urlaubsbudget nachher'],
           rows: [
             ['Mo', '3 Tage', 'Urlaub', '2 Tage'],
-            ['Di', '2 Tage', 'Urlaub', '1 Tage'],
-            ['Mi', '1 Tage', 'Urlaub', '0 Tage'],
+            ['Di', '2 Tage', 'Urlaub', '1 Tag'],
+            ['Mi', '1 Tag', 'Urlaub', '0 Tage'],
             ['Do', '0 Tage', 'Überstundenausgleich', '0 Tage'],
             ['Fr', '0 Tage', 'Überstundenausgleich', '0 Tage'],
           ],
@@ -334,7 +334,9 @@ export const soRechnet: Handbook = {
           ],
         },
         { kind: 'prose', text:
-            'Gebucht wird nicht an Wochenenden, Feiertagen, Tagen ohne Tagessoll, freien Sondertagen, Tagen außerhalb Ihrer Beschäftigung und Tagen, an denen schon eine andere Abwesenheit steht. Die Einstellung ist standardmäßig aus; schalten Sie sie ein, müssen die Betriebsferien einmal erneut gespeichert werden, damit die Tage neu aufgeteilt werden. Wer die Schließung als bezahlte Freistellung buchen lässt, verbraucht keinen Urlaub.' },
+            'Gebucht wird nicht an Wochenenden, Feiertagen, Tagen ohne Tagessoll, freien Sondertagen, Tagen außerhalb Ihrer Beschäftigung und Tagen, an denen schon eine andere Abwesenheit steht. Die Einstellung ist standardmäßig aus; schalten Sie sie ein, müssen die Betriebsferien einmal erneut gespeichert werden, damit die Tage neu aufgeteilt werden. Wer die Schließung als bezahlte Freistellung buchen lässt, verbraucht keinen Urlaub. Die Aufteilung gilt nur für Mitarbeitende mit Stundenzählung; alle anderen bekommen immer Urlaub.' },
+        { kind: 'tip', tone: 'warn', text:
+            'PraxisZeit bucht, was eingestellt ist. Ob ein Vorgriff auf künftigen Urlaub (Minus-Urlaub) oder ein Überstundenabbau zulässig ist, regeln Arbeitsvertrag und Betriebsvereinbarung; bei einseitig angeordneten Betriebsferien trägt die Praxis grundsätzlich das Vergütungsrisiko (§ 615 BGB). Im Zweifel fragen Sie eine Fachanwältin oder einen Fachanwalt für Arbeitsrecht.' },
         { kind: 'prose', text:
             '[Technische Details](https://github.com/phash/praxiszeit/blob/master/docs/BERECHNUNGEN.md#94-betriebsferien-über-jahresurlaub-hinaus--überstundenausgleich-314): die genauen Formeln und weitere Fälle.' },
       ],
@@ -351,8 +353,8 @@ export const soRechnet: Handbook = {
           rows: [
             ['Arbeitstag', '8,00 h', '1 Tag'],
             ['Halbtag (halber Feiertag)', '4,00 h', '0,5 Tage'],
-            ['Frei, als Urlaub gewertet', '0,00 h', 'Kein Urlaubstag nötig, 1 Tag wird automatisch abgezogen'],
-            ['Frei, als bezahlte Freistellung gewertet', '0,00 h', 'Kein Urlaubstag nötig, 0 Tage werden abgezogen'],
+            ['Frei, als Urlaub gewertet', '0,00 h', 'Kein Urlaub zu buchen; 1 Tag wird automatisch vom Urlaubskonto abgezogen'],
+            ['Frei, als bezahlte Freistellung gewertet', '0,00 h', 'Kein Urlaub zu buchen; 0 Tage werden abgezogen'],
             ['Verkürzt auf 4 Stunden', '4,00 h', '0,5 Tage'],
           ],
         },
@@ -364,7 +366,7 @@ export const soRechnet: Handbook = {
           ],
         },
         { kind: 'prose', text:
-            'Bei „Verkürzt auf X Stunden“ gilt das Tagessoll als Höchstgrenze: Wer an dem Tag ohnehin weniger Soll hat, behält es, bei 3 h Tagessoll und einer Grenze von 4 Stunden bleibt es bei 3,00 h. Dieselbe Regel gilt für Tage, die Sie unter [[Verkürzte Tage]] in den Einstellungen eintragen, zum Beispiel Rosenmontag. Ein Feiertag geht vor, am Wochenende wirkt ein verkürzter Tag nicht.' },
+            'Bei „Verkürzt auf X Stunden“ gilt das Tagessoll als Höchstgrenze: Wer an dem Tag ohnehin weniger Soll hat, behält es, bei 3 h Tagessoll und einer Grenze von 4 Stunden bleibt es bei 3,00 h. Dieselbe Regel gilt für Tage, die Sie unter [[Verkürzte Tage]] in den Einstellungen eintragen, zum Beispiel Rosenmontag. Ein Feiertag geht vor, am Wochenende wirkt ein verkürzter Tag nicht. Ob ein betriebsfreier Tag auf den Urlaub angerechnet werden darf, regeln Arbeitsvertrag und Betriebsübung.' },
         { kind: 'tip', tone: 'info', text:
             'Ändern Sie einen verkürzten Tag oder die Einstellung für den 24./31.12., bucht PraxisZeit die betroffenen Betriebsferien neu. In bereits abgeschlossenen Jahren erscheint nur ein Hinweis.' },
         { kind: 'prose', text:
@@ -376,12 +378,12 @@ export const soRechnet: Handbook = {
       title: 'Minijob und Mindestlohn',
       blocks: [
         { kind: 'prose', text:
-            'Für Minijobs mit Arbeitszeitkonto warnt PraxisZeit weich, wenn die Plusstunden eines Monats die Hälfte der vereinbarten Monatszeit übersteigen oder Guthaben älter als zwölf Monate wird.' },
+            'Für Minijobs mit Arbeitszeitkonto warnt PraxisZeit nur, ohne zu sperren, wenn die Plusstunden eines Monats die Hälfte der vereinbarten Monatszeit übersteigen oder Guthaben älter als zwölf Monate wird.' },
         {
           kind: 'table',
           head: ['Fall', 'Rechnung', 'Ergebnis'],
           rows: [
-            ['10 h pro Woche vereinbart, 66 h erfasst', 'Monatszeit 10 × 13 ÷ 3 = 43,33 h; Grenze 21,67 h; Plusstunden 66 − 43,33 = 22,67 h', 'Warnung'],
+            ['Beispiel: 10 h pro Woche vereinbart, 66 h erfasst', 'Monatszeit 10 × 13 ÷ 3 = 43,33 h; Grenze 21,67 h; Plusstunden 66 − 43,33 = 22,67 h', 'Warnung'],
           ],
         },
         {
@@ -393,7 +395,7 @@ export const soRechnet: Handbook = {
           ],
         },
         { kind: 'prose', text:
-            'Die vereinbarte Monatszeit ist, wenn nichts anderes hinterlegt ist, die Wochenstundenzahl mal 13 geteilt durch 3. Die Warnungen blockieren nie das Stempeln oder Buchen und gelten, sofern die Stunden zur Mindestlohnhöhe vergütet werden; PraxisZeit speichert keine Lohndaten. Mit festem Monats-Soll gilt die vereinbarte Monatszeit als Soll des Monats.' },
+            'Die vereinbarte Monatszeit ist, wenn nichts anderes hinterlegt ist, die Wochenstundenzahl mal 13 geteilt durch 3. Die Warnungen blockieren nie das Stempeln oder Buchen und gelten, sofern die Stunden zur Mindestlohnhöhe vergütet werden; PraxisZeit speichert keine Lohndaten und zeigt den Mindestlohn nur zur Information an. Mit festem Monats-Soll gilt die vereinbarte Monatszeit als Soll des Monats.' },
         { kind: 'prose', text:
             '[Technische Details](https://github.com/phash/praxiszeit/blob/master/docs/BERECHNUNGEN.md#10-minijob--milog-arbeitszeitkonto): die genauen Formeln und weitere Fälle.' },
       ],
@@ -403,7 +405,7 @@ export const soRechnet: Handbook = {
       title: 'Jahresabschluss',
       blocks: [
         { kind: 'prose', text:
-            'Der Jahresabschluss friert Ihren Überstundensaldo und Ihren Resturlaub zum 31.12. als Übertrag ins Folgejahr ein, und ein erneuter Abschluss überschreibt ihn.' },
+            'Der Jahresabschluss friert Ihren Überstundensaldo und Ihren Resturlaub zum 31.12. als Übertrag ins Folgejahr ein, und ein erneuter Abschluss überschreibt ihn, auch von Hand angepasste Überträge.' },
         { kind: 'prose', text:
             'Beispiel: Vollzeit mit 30 Tagen Anspruch, im Dezember 2025 eine Stunde Mehrarbeit und 4 genommene Urlaubstage.' },
         {

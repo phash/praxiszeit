@@ -68,7 +68,6 @@ def check(case_id: str, **actual):
     case = CASES[case_id]
     spec = case["values"]
     assert set(spec) == set(actual), f"{case_id}: Schlüssel {sorted(spec)} != {sorted(actual)}"
-    row = " | ".join(case["row"]) if case.get("row") else None
     for key, got in actual.items():
         exp = spec[key]
         if isinstance(got, (int, float, Decimal)):
@@ -77,8 +76,9 @@ def check(case_id: str, **actual):
             assert _text_number(exp["text"]) == pytest.approx(exp["v"], abs=0.0051), f"{case_id}.{key} Text/Zahl"
         else:
             assert got == exp["v"], f"{case_id}.{key}: {got!r} != {exp['v']!r}"
-        if row is not None:
-            assert exp["text"] in row, f"{case_id}.{key}: {exp['text']!r} fehlt in der Zeile {row!r}"
+        if case.get("row"):
+            cell = case["row"][exp["col"]]  # spaltengenau: der Text steht in SEINER Spalte
+            assert exp["text"] in cell, f"{case_id}.{key}: {exp['text']!r} fehlt in Spalte {exp['col']} ({cell!r})"
 
 
 # ---------------------------------------------------------------------------
@@ -371,10 +371,13 @@ def test_urlaubskonto_mit_uebertrag_diagramm(db, default_tenant, holidays_clean)
 
 
 def test_urlaub_anspruch_nach_arbeitstagen(db, default_tenant):
-    assert 30 * 3 / 5 == 18  # Empfehlung 30 × Arbeitstage ÷ 5
-    u = _user(db, weekly=24.0, days=3, vacation=18)
+    """Der Vorschlag beim Anlegen (User.suggested_vacation_days, 30 × Arbeitstage ÷ 5) ist überschreibbar;
+    das Konto rechnet danach mit dem eingetragenen Anspruch."""
+    u = _user(db, weekly=24.0, days=3, vacation=0)
+    u.vacation_days = u.suggested_vacation_days
+    db.commit()
     acct = calculation_service.get_vacation_account(db, u, 2026)
-    check("urlaub-anspruch-3-tage", entitlement=30 * 3 / 5, budget=acct["budget_days"])
+    check("urlaub-anspruch-3-tage", entitlement=u.suggested_vacation_days, budget=acct["budget_days"])
 
 
 def test_urlaub_halbtags_sondertag(db, default_tenant, holidays_clean):

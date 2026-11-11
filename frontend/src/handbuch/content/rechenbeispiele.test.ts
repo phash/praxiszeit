@@ -12,7 +12,7 @@ import data from './rechenbeispiele.json';
  * Fall mit dem echten Berechnungscode nach, hier werden Tabellen (so-rechnet.ts) und Diagramm-Konstanten
  * (diagrams/values.ts) dagegen geprüft.
  */
-type Val = { v: number | string; text: string };
+type Val = { v: number | string; text: string; col?: number };
 interface Case { id: string; topic?: string; section?: string; row?: string[]; diagram?: string; values: Record<string, Val> }
 const cases = (data as unknown as { cases: Case[] }).cases;
 const byId = new Map(cases.map((c) => [c.id, c]));
@@ -83,6 +83,11 @@ describe('so-rechnet tables match rechenbeispiele.json', () => {
       return !ch || !tables(ch).some((t) => t.rows.some((r) => same(r, c.row!)));
     }).map((c) => c.id);
     expect(missing).toEqual([]);
+  });
+  it('jeder Wert steht in der Tabellenzelle seiner Spalte', () => {
+    const bad = cases.filter((c) => c.row).flatMap((c) =>
+      Object.entries(c.values).filter(([, v]) => v.col === undefined || !c.row![v.col].includes(v.text)).map(([k]) => `${c.id}.${k}`));
+    expect(bad).toEqual([]);
   });
   it('jeder Anzeigetext eines Falls steht im Text seines Kapitels', () => {
     const missing = cases.flatMap((c) => {
