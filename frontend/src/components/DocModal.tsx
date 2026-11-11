@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, X } from 'lucide-react';
 import { DocViewerContent, type DocTab } from './DocViewer';
+import HandbookPage from '../handbuch/components/HandbookPage';
+import { HANDBOOKS } from '../handbuch/content';
+import { COMIC_SCENES } from '../handbuch/comics/scenes';
+import { DIAGRAMS } from '../handbuch/diagrams';
+import manifest from '../handbuch/manifest.json';
+import type { Manifest } from '../handbuch/types';
+import '../handbuch/handbuch.css';
 import { lockBodyScroll, unlockBodyScroll } from '../utils/bodyScrollLock';
 
 interface DocModalProps {
@@ -12,7 +19,7 @@ interface DocModalProps {
 function getDownloadUrl(tab: DocTab): string {
   return tab === 'cheatsheet'
     ? '/help/CHEATSHEET-MITARBEITER.md'
-    : '/help/HANDBUCH-MITARBEITER.md';
+    : '/help/HANDBUCH-MITARBEITER.md'; // Download-Spiegel bleibt bis zur Ablösung des Textbuchs
 }
 
 export function DocModal({ open, onClose, initialTab = 'cheatsheet' }: DocModalProps) {
@@ -124,6 +131,17 @@ export function DocModal({ open, onClose, initialTab = 'cheatsheet' }: DocModalP
             isAdmin={false}
             initialTab={initialTab}
             onTabChange={setActiveTab}
+            handbuch={
+              <HandbookPage
+                handbook={HANDBOOKS.mitarbeitende}
+                manifest={manifest as Manifest}
+                imgBase="/help/img"
+                linkBase="/help"
+                variant="narrow"
+                comics={COMIC_SCENES}
+                diagrams={DIAGRAMS}
+              />
+            }
           />
         </div>
       </div>

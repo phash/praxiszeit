@@ -14,10 +14,8 @@ function getDownloadUrl(isAdmin: boolean, tab: DocTab): string {
   if (tab === 'schnellstart') {
     return '/help/SCHNELLSTART.md';
   }
-  if (tab === 'cheatsheet') {
-    return isAdmin ? '/help/CHEATSHEET-ADMIN.md' : '/help/CHEATSHEET-MITARBEITER.md';
-  }
-  return isAdmin ? '/help/HANDBUCH-ADMIN.md' : '/help/HANDBUCH-MITARBEITER.md';
+  // Das Handbuch selbst liegt unter /help; der Drawer bietet nur noch Kurzformen.
+  return isAdmin ? '/help/CHEATSHEET-ADMIN.md' : '/help/CHEATSHEET-MITARBEITER.md';
 }
 
 export function DocDrawer({ open, onClose, isAdmin, initialTab = 'cheatsheet' }: DocDrawerProps) {
@@ -85,7 +83,7 @@ export function DocDrawer({ open, onClose, isAdmin, initialTab = 'cheatsheet' }:
   }, [open]);
 
   const downloadUrl = getDownloadUrl(isAdmin, activeTab);
-  const title = isAdmin ? 'Admin-Handbuch' : 'Mitarbeiter-Handbuch';
+  const title = activeTab === 'schnellstart' ? 'Schnellstart' : 'Cheat-Sheet';
 
   return (
     <>

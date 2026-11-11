@@ -727,9 +727,11 @@ interface DocViewerContentProps {
   isAdmin: boolean;
   initialTab?: DocTab;
   onTabChange?: (tab: DocTab) => void;
+  /** Inhalt des Reiters „Handbuch“; ohne ihn entfällt der Reiter (Drawer: Handbuch liegt unter /help). */
+  handbuch?: ReactNode;
 }
 
-export function DocViewerContent({ isAdmin, initialTab = 'cheatsheet', onTabChange }: DocViewerContentProps) {
+export function DocViewerContent({ isAdmin, initialTab = 'cheatsheet', onTabChange, handbuch }: DocViewerContentProps) {
   const [activeTab, setActiveTab] = useState<DocTab>(initialTab);
 
   function handleTab(tab: DocTab) {
@@ -741,7 +743,7 @@ export function DocViewerContent({ isAdmin, initialTab = 'cheatsheet', onTabChan
     <div className="flex flex-col h-full">
       {/* Tab bar — Schnellstart nur für Admins */}
       <div className="border-b border-gray-200 px-4 flex gap-6 shrink-0">
-        {((isAdmin ? ['schnellstart', 'cheatsheet', 'handbuch'] : ['cheatsheet', 'handbuch']) as DocTab[]).map((tab) => (
+        {((isAdmin ? ['schnellstart', 'cheatsheet'] : ['cheatsheet']).concat(handbuch ? ['handbuch'] : []) as DocTab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => handleTab(tab)}
@@ -762,7 +764,7 @@ export function DocViewerContent({ isAdmin, initialTab = 'cheatsheet', onTabChan
           ? <SchnellstartAdmin />
           : activeTab === 'cheatsheet'
           ? (isAdmin ? <CheatsheetAdmin /> : <CheatsheetMitarbeiter />)
-          : <Accordion items={isAdmin ? handbuchAdminSections : handbuchMitarbeiterSections} />
+          : handbuch
         }
       </div>
     </div>
