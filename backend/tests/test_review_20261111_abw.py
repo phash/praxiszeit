@@ -67,6 +67,22 @@ def test_overtime_absence_zero_hours_rejected(employee_user, employee_client, mo
     assert r.json()["detail"] == absences_router.OVERTIME_HOURS_DETAIL
 
 
+def test_overtime_reason_zero_hours_rejected(_db_session, employee_user, employee_client,
+                                             monkeypatch):
+    # abw-12 (Nachtrag): eigener Grund mit base_behavior=overtime_comp wirkt wie Typ OVERTIME.
+    from app.models import AbsenceReason
+    reason = AbsenceReason(tenant_id=DEFAULT_TENANT_ID, name="Freizeitausgleich",
+                           base_behavior="overtime_comp", is_active=True)
+    _db_session.add(reason)
+    _db_session.commit()
+    _freeze(monkeypatch)
+    r = employee_client.post("/api/absences/", json={
+        "date": FUTURE.isoformat(), "type": "other", "hours": 0,
+        "reason_id": str(reason.id)})
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == absences_router.OVERTIME_HOURS_DETAIL
+
+
 def test_overtime_request_zero_hours_rejected(employee_user, employee_client, approval_on,
                                               monkeypatch):
     _freeze(monkeypatch)
