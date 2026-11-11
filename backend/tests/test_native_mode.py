@@ -261,8 +261,7 @@ class TestLicenseValidation:
         license_file.write_text(token)
 
         # Patch the public key and configured flag
-        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]), \
-             patch.object(lic, "_PUBLIC_KEY_CONFIGURED", True):
+        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]):
             info = lic.validate_license(license_file)
 
         assert info.customer_id == "test-praxis"
@@ -282,8 +281,7 @@ class TestLicenseValidation:
         license_file = tmp_path / "license.key"
         license_file.write_text(token)
 
-        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]), \
-             patch.object(lic, "_PUBLIC_KEY_CONFIGURED", True):
+        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]):
             with pytest.raises(lic.LicenseExpiredError):
                 lic.validate_license(license_file)
 
@@ -298,8 +296,7 @@ class TestLicenseValidation:
         license_file = tmp_path / "license.key"
         license_file.write_text(token)
 
-        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]), \
-             patch.object(lic, "_PUBLIC_KEY_CONFIGURED", True):
+        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]):
             # license.py raises the German message ("Signatur") — the code is
             # intentionally German-facing; assert against the real string.
             with pytest.raises(lic.LicenseError, match="Signatur"):
@@ -341,8 +338,7 @@ class TestLicenseValidation:
         license_file = tmp_path / "license.key"
         license_file.write_text(token)
 
-        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]), \
-             patch.object(lic, "_PUBLIC_KEY_CONFIGURED", True):
+        with patch.object(lic, "_PUBLIC_KEYS_PEM", [keypair["public_pem"]]):
             info = lic.validate_license_quiet(license_file)
 
         assert info is not None
@@ -373,20 +369,6 @@ class TestLicenseValidation:
         )
         assert expired_info.days_until_expiry == 0
         assert expired_info.is_expired
-
-    def test_read_only_guard(self):
-        """Prüft dass require_writable bei Read-Only-Modus 403 wirft — abgelaufene Lizenz."""
-        import app.core.license as lic
-        from fastapi import HTTPException
-
-        lic.set_license_state(None, read_only=True)
-        with pytest.raises(HTTPException) as exc_info:
-            lic.require_writable()
-        assert exc_info.value.status_code == 403
-
-        lic.set_license_state(None, read_only=False)
-        # Should not raise
-        lic.require_writable()
 
     def test_employee_limit_check(self):
         """Prüft dass check_employee_limit bei Ueberschreitung des Lizenzlimits 403 wirft."""

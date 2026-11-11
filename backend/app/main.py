@@ -636,53 +636,59 @@ def _tenant_from_request(request: Request) -> Optional[str]:
     return None
 
 
-@app.middleware("http")
-async def capture_errors_middleware(request: Request, call_next):
-    """Capture 5xx errors and log them to the error_logs table."""
+def _capture_error_row(request: Request, *, level: str, message: str, status_code: int,
+                       traceback_str: Optional[str] = None) -> None:
+    """auth-11: schreibt eine ``error_logs``-Zeile und wirft NIE — fällt die
+    Protokollierung aus (z. B. DB nicht erreichbar), darf daraus weder eine
+    fertige 5xx-Antwort (``/api/health`` 503) noch der Originalfehler verdrängt
+    werden; es bleibt bei einer Warnung im Log."""
     try:
-        response = await call_next(request)
-        if response.status_code >= 500:
-            db = SessionLocal()
-            try:
-                from app.services.error_log_service import log_error
-                from app.database import set_superadmin_context as _set_sa
-                _set_sa(db)  # Error logging needs to bypass RLS
-                log_error(
-                    db=db,
-                    level='error',
-                    logger_name='http',
-                    message=f"HTTP {response.status_code} {request.method} {request.url.path}",
-                    path=request.url.path,
-                    method=request.method,
-                    status_code=response.status_code,
-                    tenant_id=_tenant_from_request(request),
-                )
-            finally:
-                db.close()
-        return response
-    except Exception as exc:
         db = SessionLocal()
         try:
             from app.services.error_log_service import log_error
             from app.database import set_superadmin_context as _set_sa
             _set_sa(db)  # Error logging needs to bypass RLS
-            from app.services.error_log_service import exception_frames, exception_summary
-            # Audit 2026-11-07 (S2-1): nur Typ + SQLSTATE/Bedingung und der Stapel
-            # ohne Meldung — ``str(exc)`` trug Statement-Werte und PG-DETAIL.
+            kwargs = {"traceback_str": traceback_str} if traceback_str is not None else {}
             log_error(
                 db=db,
-                level='critical',
+                level=level,
                 logger_name='http',
-                message=exception_summary(exc),
-                traceback_str=exception_frames(exc),  # truncation applied inside log_error
+                message=message,
                 path=request.url.path,
                 method=request.method,
-                status_code=500,
+                status_code=status_code,
                 tenant_id=_tenant_from_request(request),
+                **kwargs,
             )
         finally:
             db.close()
+    except Exception as log_exc:  # noqa: BLE001 — Protokollierung darf nie durchschlagen
+        logging.getLogger(__name__).warning(
+            "error_log write failed (%s) for %s %s", type(log_exc).__name__,
+            request.method, request.url.path,
+        )
+
+
+@app.middleware("http")
+async def capture_errors_middleware(request: Request, call_next):
+    """Capture 5xx errors and log them to the error_logs table."""
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        from app.services.error_log_service import exception_frames, exception_summary
+        # Audit 2026-11-07 (S2-1): nur Typ + SQLSTATE/Bedingung und der Stapel
+        # ohne Meldung — ``str(exc)`` trug Statement-Werte und PG-DETAIL.
+        _capture_error_row(
+            request, level='critical', message=exception_summary(exc),
+            traceback_str=exception_frames(exc), status_code=500,
+        )
         raise
+    if response.status_code >= 500:
+        _capture_error_row(
+            request, level='error', status_code=response.status_code,
+            message=f"HTTP {response.status_code} {request.method} {request.url.path}",
+        )
+    return response
 
 
 # Root endpoint: only register when NOT serving frontend (Docker mode)

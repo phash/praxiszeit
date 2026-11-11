@@ -139,6 +139,12 @@ class UpdateProfileRequest(BaseModel):
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
     email: Optional[str] = Field(None, max_length=255)
 
+    @field_validator('first_name', 'last_name', mode='before')
+    @classmethod
+    def strip_name(cls, v):
+        # auth-15: reine Leerzeichen sind kein Name (min_length greift sonst nach dem strip nicht).
+        return v.strip() if isinstance(v, str) else v
+
     @field_validator('email', mode='before')
     @classmethod
     def validate_email_format(cls, v):
@@ -1220,10 +1226,17 @@ def totp_verify(
     return _user_response(db, current_user)
 
 
-@router.delete("/totp/disable", response_model=UserResponse)
+class TotpDisableResponse(UserResponse):
+    """auth-01: wie ``change_password`` bringt die Antwort ein frisches
+    Access-Token mit — die eigene Sitzung bleibt nach dem Versionssprung gültig."""
+    access_token: Optional[str] = None
+
+
+@router.delete("/totp/disable", response_model=TotpDisableResponse)
 @limiter.limit("3/minute")
 def totp_disable(
     request: Request,
+    response: Response,
     disable_data: TotpDisableRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -1292,4 +1305,16 @@ def totp_disable(
     current_user.token_version = (current_user.token_version or 0) + 1
     db.commit()
     db.refresh(current_user)
-    return _user_response(db, current_user)
+    # auth-01: eigene Sitzung mit neuer token_version weiterführen (Access-Token,
+    # Refresh- und CSRF-Cookie), sonst meldet der nächste Aufruf 401 + Logout.
+    tenant_id_str = str(current_user.tenant_id) if current_user.tenant_id else None
+    new_access_token = auth_service.create_access_token(
+        str(current_user.id), current_user.role.value, current_user.token_version, tenant_id_str
+    )
+    _set_refresh_cookie(response, auth_service.create_refresh_token(
+        str(current_user.id), current_user.token_version, tenant_id_str
+    ))
+    _set_csrf_cookie(response)
+    data = _user_response(db, current_user).model_dump()
+    data["access_token"] = new_access_token
+    return data

@@ -162,11 +162,17 @@ def update_setting(
 
     # #376: validate child_sick_days_default as a non-negative integer
     if key == "child_sick_days_default":
+        # auth-16: ganze Zahl 0–366, deutscher Text ohne Schlüsselname, normalisiert gespeichert.
         try:
-            if int(value) < 0:
+            number = int(str(value).strip())
+            if not 0 <= number <= 366:
                 raise ValueError
         except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="child_sick_days_default muss eine nicht-negative Zahl sein")
+            raise HTTPException(
+                status_code=400,
+                detail="Der Kind-krank-Anspruch muss eine ganze Zahl zwischen 0 und 366 Tagen sein.",
+            )
+        value = str(number)
 
     # #371: validate + normalise shift_planning_weekdays (CSV of 0..6, 0=Mo).
     # At least one day; unique; stored sorted/deduped. Reject garbage with 400
@@ -179,12 +185,12 @@ def update_setting(
             try:
                 n = int(p)
             except ValueError:
-                raise HTTPException(status_code=400, detail="shift_planning_weekdays: nur Zahlen 0–6 (0=Montag) erlaubt")
+                raise HTTPException(status_code=400, detail="Wochentage: nur Zahlen von 0 (Montag) bis 6 (Sonntag) erlaubt.")
             if not 0 <= n <= 6:
-                raise HTTPException(status_code=400, detail="shift_planning_weekdays: Werte müssen zwischen 0 (Montag) und 6 (Sonntag) liegen")
+                raise HTTPException(status_code=400, detail="Wochentage: Werte müssen zwischen 0 (Montag) und 6 (Sonntag) liegen.")
             days.append(n)
         if not days:
-            raise HTTPException(status_code=400, detail="shift_planning_weekdays: mindestens ein Wochentag muss aktiv sein")
+            raise HTTPException(status_code=400, detail="Es muss mindestens ein Wochentag aktiv sein.")
         value = ",".join(str(n) for n in sorted(set(days)))
 
     # Validate holiday_state against supported states
@@ -274,11 +280,14 @@ def update_setting(
             changed_years = holiday_service.resync_state(
                 db, str(value), tenant_id=current_user.tenant_id
             )  # commitet am Ende
-        except Exception as e:
+        except Exception:
+            # auth-05: resync_state rollt zurück — die Einstellung ist NICHT gespeichert;
+            # Ausnahmetext (SQL/Interna) bleibt im Log, nie in der Antwort.
             db.rollback()
+            logger.exception("holiday_state resync failed (tenant %s)", current_user.tenant_id)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Einstellung gespeichert, aber Feiertage konnten nicht synchronisiert werden: {e}"
+                detail="Das Bundesland konnte nicht geändert werden. Es wurde nichts gespeichert. Bitte versuchen Sie es erneut."
             )
         # Fix #5: geänderte Feiertage in einem abgeschlossenen Jahr machen dessen
         # Übertrag veraltet — melden, nie automatisch neu berechnen.

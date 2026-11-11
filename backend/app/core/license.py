@@ -48,8 +48,6 @@ MCowBQYDK2VwAyEAB5ZiJro6fDM8M5BupMCdTWjVIFkPn+hsNYHNlajzIyY=
 -----END PUBLIC KEY-----""",
 ]
 
-_PUBLIC_KEY_CONFIGURED = True
-
 # Backward-compat: updater.py nutzt diesen Namen als Trust-Root für die
 # Update-Manifest-Signatur. Manifeste werden live vom Update-Server mit dem
 # AKTUELLEN privaten Schlüssel signiert → der erste (neueste) Key ist korrekt.
@@ -152,12 +150,6 @@ def validate_license(license_path: Path) -> LicenseInfo:
     if not license_token:
         raise LicenseError("Lizenzdatei ist leer")
 
-    if not _PUBLIC_KEY_CONFIGURED:
-        raise LicenseError(
-            "License public key not configured. "
-            "Generate a keypair with: python tools/license-generator.py generate-keypair"
-        )
-
     try:
         payload = _decode_with_any_key(
             license_token,
@@ -210,7 +202,7 @@ def validate_license_quiet(license_path: Path) -> Optional[LicenseInfo]:
         return None
 
     license_token = license_path.read_text(encoding="utf-8-sig").strip()
-    if not license_token or not _PUBLIC_KEY_CONFIGURED:
+    if not license_token:
         return None
 
     try:
@@ -252,26 +244,6 @@ def set_license_state(license_info: Optional[LicenseInfo], read_only: bool = Fal
     global _current_license, _license_read_only
     _current_license = license_info
     _license_read_only = read_only
-
-
-def require_writable():
-    """
-    FastAPI dependency that raises 403 while the license is in read-only mode.
-
-    NOT attached to any route as a ``Depends`` — write enforcement is done
-    globally by ``LicenseReadOnlyMiddleware`` (see ``app/middleware/license.py``),
-    which covers every write endpoint by default instead of relying on each
-    new one remembering to add this dependency. Kept as a small, directly
-    testable unit (see ``test_read_only_guard`` in ``test_native_mode.py``)
-    for the read-only-state check itself.
-    """
-    from fastapi import HTTPException
-    if _license_read_only:
-        raise HTTPException(
-            status_code=403,
-            detail="Lizenz abgelaufen. Die Anwendung befindet sich im Nur-Lese-Modus. "
-                   "Bitte erneuern Sie Ihre Lizenz.",
-        )
 
 
 def check_employee_limit(current_count: int):
