@@ -40,6 +40,19 @@ export function computeCrop(
     if (!b) throw new Error(`Ausschnitt '${kind}': keine Box fuer ${kind}`);
     return clampToViewport(b, viewport);
   }
+  if ('mainTo' in kind) {
+    // Breite und Oberkante des Hauptbereichs, unten bei der Unterkante des untersten Markers + pad
+    if (!boxes.main) throw new Error("Ausschnitt mainTo: keine Box fuer main");
+    if (kind.mainTo.length === 0) throw new Error('Ausschnitt mainTo: keine Marker angegeben');
+    let bottom = -Infinity;
+    for (const id of kind.mainTo) {
+      const b = boxes.markers[id];
+      if (!b) throw new Error(`Ausschnitt mainTo: unbekannter Marker '${id}'`);
+      bottom = Math.max(bottom, b.y + b.h);
+    }
+    const m = boxes.main;
+    return clampToViewport({ x: m.x, y: m.y, w: m.w, h: bottom + kind.pad - m.y }, viewport);
+  }
   if (kind.around.length === 0) throw new Error('Ausschnitt around: keine Marker angegeben');
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
   for (const id of kind.around) {

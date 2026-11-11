@@ -21,6 +21,12 @@ describe('expandDateTokens', () => {
     expect(workdayBefore('2026-11-02', 1)).toBe('2026-10-30'); // Mo -> Fr
   });
 
+  it('{{montag+Nd}} = erster Montag ab Stichtag + N Tagen (Spiegel des Seeds)', () => {
+    expect(expandDateTokens('{{montag+35d}}', st)).toBe('2026-12-07'); // 02.12. (Mi) -> Mo
+    expect(expandDateTokens('{{montag+35d}}', '2026-10-26')).toBe('2026-11-30'); // 30.11. ist selbst Montag
+    expect(expandDateTokens('{{montag+35d}}', '2026-10-25')).toBe('2026-11-30'); // 29.11. (So) -> Mo
+  });
+
   it('lässt Text ohne Platzhalter unverändert und ersetzt mehrere', () => {
     expect(expandDateTokens('08:00', st)).toBe('08:00');
     expect(expandDateTokens('{{stichtag}} bis {{stichtag+1d}}', st)).toBe('2026-10-28 bis 2026-10-29');

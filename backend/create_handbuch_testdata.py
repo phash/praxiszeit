@@ -104,6 +104,37 @@ SARAH_OLD_BLOCKS = [
     {"blocks": [{"start": "08:00", "end": "12:00"}], "pause_minutes": 0} for _ in range(5)
 ]
 
+# Zukünftige Arbeitszeit-Blöcke (Aufnahme „Arbeitszeiten im Team“, Ruling R31): je Person ein
+# Vertrags-Snapshot ab dem ersten Montag ≥ Stichtag + 35 Tage. Das Tagessoll entspricht den
+# HEUTE gültigen Wochenstunden; vor dem Datum ändert sich keine Rechnung. Nicht Petra: ihr
+# Vertragsverlauf ist Aufnahmegegenstand (pl-vertragsverlauf, pl-bearbeiten).
+TEAM_BLOCKS_LEAD_DAYS = 35
+
+
+def _blk(*spans, pause=0):
+    return {"blocks": [{"start": a, "end": b} for a, b in spans], "pause_minutes": pause}
+
+
+_NONE = {"blocks": [], "pause_minutes": 0}
+# Thomas 38,5 h: Mo–Do 8 h (07:30–12:30 + 14:00–17:00), Fr 6,5 h (07:30–14:00)
+THOMAS_FUTURE_BLOCKS = [_blk(("07:30", "12:30"), ("14:00", "17:00")) for _ in range(4)] + [
+    _blk(("07:30", "14:00"))]
+# Maria 40 h: Mo–Fr 8 h (07:30–12:00 + 13:00–16:30)
+MARIA_FUTURE_BLOCKS = [_blk(("07:30", "12:00"), ("13:00", "16:30")) for _ in range(5)]
+# Julia 10 h (Minijob): Di und Do 08:00–13:00
+JULIA_FUTURE_BLOCKS = [_NONE, _blk(("08:00", "13:00")), _NONE, _blk(("08:00", "13:00")), _NONE]
+FUTURE_TEAM_BLOCKS = {
+    "thomas": THOMAS_FUTURE_BLOCKS, "maria": MARIA_FUTURE_BLOCKS, "julia": JULIA_FUTURE_BLOCKS,
+}
+
+
+def team_blocks_effective(stichtag: date) -> date:
+    """Erster Montag ≥ Stichtag + 35 Tage. Spiegel: ``{{montag+35d}}`` in
+    frontend/src/handbuch/dates.ts."""
+    d = stichtag + timedelta(days=TEAM_BLOCKS_LEAD_DAYS)
+    return d + timedelta(days=(7 - d.weekday()) % 7)
+
+
 # ── Personas ──────────────────────────────────────────────────────────────────
 # ``day_hours`` = Tagesplan (Mo–Fr); None = gleichmäßig auf work_days_per_week.
 EMPLOYEES = [
@@ -428,6 +459,23 @@ def create_contract_history(db, users: list, stichtag: date) -> None:
                              created_at=_berlin(month_start - timedelta(days=6), 11, 20)))
         petra.vacation_days = new_days  # User-Zeile spiegelt die jüngste Zeile
         print(f"  ✓ Petra: Urlaubsanspruch 16 → 18 ab {month_start}")
+
+    effective = team_blocks_effective(stichtag)
+    for name, blocks in FUTURE_TEAM_BLOCKS.items():
+        user = by_name.get(name)
+        if not user:
+            continue
+        emp = next(e for e in EMPLOYEES if e["username"] == name)
+        # Ausgangsvertrag wie ihn die App beim ersten Eintrag einfriert, dann die künftige Zeile
+        db.add(_snapshot_row(user, base_from, weekly_hours=emp["weekly_hours"],
+                             work_days=emp["work_days_per_week"], vacation_days=user.vacation_days,
+                             day_hours=emp.get("day_hours"), note="Ausgangsvertrag",
+                             created_at=_berlin(base_from, 9, 10)))
+        db.add(_snapshot_row(user, effective, weekly_hours=None, work_days=None,
+                             vacation_days=user.vacation_days, blocks=blocks,
+                             note="Feste Arbeitszeiten eingeführt",
+                             created_at=_berlin(stichtag - timedelta(days=3), 15, 30)))
+        print(f"  ✓ {user.first_name}: Arbeitszeit-Blöcke ab {effective}")
     db.commit()
 
 

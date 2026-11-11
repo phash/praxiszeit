@@ -877,7 +877,7 @@ def test_contract_history_and_vacation_request_have_realistic_timestamps(full_te
         return rows, vrs
 
     rows, vrs = _read(app_engine, collect)
-    assert len(rows) == 4
+    assert len(rows) == 10  # Sarah 2, Petra 2, Thomas/Maria/Julia je 2 (Ausgangsvertrag + künftige Blöcke)
     for eff, note, created in rows:
         c = created.astimezone(berlin).date()
         assert c < STICHTAG
@@ -906,3 +906,40 @@ def test_seed_absences_are_never_legacy_rows(full_tenant, app_engine, monkeypatc
     legacy, total = _read(app_engine, count)
     assert total > 0
     assert legacy == 0
+
+
+def test_team_blocks_are_future_snapshots_with_unchanged_soll(full_tenant, app_engine, monkeypatch):
+    """R31: Thomas, Maria und Julia haben eine ZUKÜNFTIGE Zeile mit Arbeitszeit-Blöcken
+    (erster Montag >= Stichtag + 35 Tage). Das Soll am Stichtag und die Wochenstunden
+    der neuen Zeile gleichen den heute gültigen; Petra bekommt keine."""
+    from decimal import Decimal
+    from app.models.working_hours_change import WorkingHoursChange
+    from app.services import calculation_service
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+    effective = seed.team_blocks_effective(STICHTAG)
+    assert effective.weekday() == 0
+    assert seed.team_blocks_effective(date(2026, 10, 28)) == date(2026, 12, 7)  # wie {{montag+35d}} in dates.test.ts
+    assert effective >= STICHTAG + timedelta(days=35) and effective < STICHTAG + timedelta(days=42)
+
+    def collect(db):
+        users = {u.username: u for u in db.query(User).filter(User.tenant_id == TENANT_ID)}
+        out = {}
+        for name, u in users.items():
+            rows = db.query(WorkingHoursChange).filter(
+                WorkingHoursChange.tenant_id == TENANT_ID, WorkingHoursChange.user_id == u.id,
+                WorkingHoursChange.effective_from > STICHTAG).all()
+            now = calculation_service.get_schedule_for_date(db, u, STICHTAG)
+            future = calculation_service.get_schedule_for_date(db, u, effective)
+            out[name] = (
+                [(r.effective_from, r.blocks is not None) for r in rows],
+                Decimal(str(now.weekly_hours)), Decimal(str(future.weekly_hours)), Decimal(str(u.weekly_hours)),
+            )
+        return out
+
+    r = _read(app_engine, collect)
+    for name in ("thomas", "maria", "julia"):
+        rows, now_h, future_h, user_h = r[name]
+        assert rows == [(effective, True)], name
+        assert now_h == user_h == future_h, (name, now_h, future_h, user_h)
+    assert r["petra"][0] == [] and r["sarah"][0] == []

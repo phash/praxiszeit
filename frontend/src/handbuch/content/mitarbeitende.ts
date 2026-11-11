@@ -424,7 +424,9 @@ const shots: ShotDef[] = [
     persona: 'maria',
     viewport: 'desktop',
     route: '/profile',
-    crop: 'main',
+    // „Meine Arbeitszeit“ ist mit dem künftigen Verlaufseintrag höher: bis „Weitere Einstellungen“ scrollen
+    prepare: [{ scrollTo: { role: 'button', name: 'Weitere Einstellungen', exact: true, within: 'main' } }],
+    crop: { around: ['bearbeiten', 'weitere'], pad: 40 },
     markers: [
       { n: 1, id: 'bearbeiten', locator: { role: 'button', name: 'Bearbeiten', exact: true, within: 'main' }, badge: 'top' },
       { n: 2, id: 'passwort', locator: { role: 'button', name: 'Ändern', exact: true, within: 'main' }, badge: 'top' },

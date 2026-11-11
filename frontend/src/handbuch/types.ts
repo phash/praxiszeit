@@ -18,7 +18,7 @@ export type PrepareStep =
 export interface MarkerDef { n: number; id: string; locator: LocatorSpec; badge?: 'left' | 'corner' | 'right' | 'top' }
 export interface ShotDef {
   id: string; persona: Persona; viewport: 'desktop' | 'mobile'; route: string;
-  prepare?: PrepareStep[]; crop?: 'full' | 'main' | 'dialog' | { around: string[]; pad: number };
+  prepare?: PrepareStep[]; crop?: 'full' | 'main' | 'dialog' | { around: string[]; pad: number } | { mainTo: string[]; pad: number };
   markers: MarkerDef[]; alt: string; settings?: Record<string, boolean | string | number>;
 }
 export interface Step { n?: number; text: Inline }

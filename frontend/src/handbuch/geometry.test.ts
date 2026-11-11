@@ -4,6 +4,15 @@ import { assertSingleVisible, boxInside, computeCrop, markerBadgePosition, padde
 const VP = { w: 1440, h: 900 };
 
 describe('computeCrop', () => {
+  it('mainTo: Breite des Hauptbereichs, unten am untersten Marker plus pad', () => {
+    const crop = computeCrop({ mainTo: ['a', 'b'], pad: 20 }, VP, {
+      main: { x: 256, y: 0, w: 1184, h: 900 },
+      markers: { a: { x: 300, y: 50, w: 10, h: 10 }, b: { x: 400, y: 300, w: 10, h: 40 } },
+    });
+    expect(crop).toEqual({ x: 256, y: 0, w: 1184, h: 360 });
+    expect(() => computeCrop({ mainTo: ['x'], pad: 0 }, VP, { main: { x: 0, y: 0, w: 1, h: 1 }, markers: {} })).toThrow(/x/);
+  });
+
   it('main crop equals main box clamped to viewport', () => {
     const crop = computeCrop('main', VP, { main: { x: 256, y: -10, w: 1300, h: 1200 }, markers: {} });
     expect(crop).toEqual({ x: 256, y: 0, w: 1184, h: 900 });

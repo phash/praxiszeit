@@ -24,19 +24,19 @@ export const BROSCHUERE_SHOTS: BroschuereShot[] = [
   },
   {
     section: 'uebersicht',
-    caption: 'Das Dashboard einer Mitarbeiterin: Stempelkarte, Monatssaldo, Überstundenkonto und Urlaubskonto.',
+    caption: 'Das Dashboard einer Mitarbeiterin: Monatssaldo, Überstundenkonto und Urlaubskonto auf einen Blick.',
     shot: {
       id: 'br-uebersicht',
-      persona: 'maria',
+      persona: 'sarah',
       viewport: 'desktop',
       route: '/',
       crop: 'main',
       markers: [
-        { n: 1, id: 'stempelkarte', locator: { role: 'button', name: 'Ausstempeln', exact: true, within: 'main' }, badge: 'left' },
+        { n: 1, id: 'monatssaldo', locator: { role: 'heading', name: 'Monatssaldo', exact: true }, badge: 'top' },
         { n: 2, id: 'ueberstunden', locator: { role: 'heading', name: 'Überstundenkonto', exact: true }, badge: 'top' },
         { n: 3, id: 'urlaubskonto', locator: { role: 'heading', name: 'Urlaubskonto', exact: true }, badge: 'top' },
       ],
-      alt: 'Dashboard einer Mitarbeiterin mit Stempelkarte, Monatssaldo, Überstundenkonto und Urlaubskonto in Kacheln',
+      alt: 'Dashboard einer Mitarbeiterin mit laufender Stempelkarte und den Kacheln Monatssaldo, Überstundenkonto und Urlaubskonto mit Pluswerten',
     },
   },
   {
@@ -47,26 +47,32 @@ export const BROSCHUERE_SHOTS: BroschuereShot[] = [
       persona: 'admin',
       viewport: 'desktop',
       route: '/admin/team-schedule',
-      crop: 'main',
+      // Stand = erster Montag ab Stichtag + 35 Tagen: dort beginnen die Arbeitszeit-Blöcke aller Demo-Personen (Seed `team_blocks_effective`)
+      prepare: [
+        { fill: { label: 'Stand am', within: 'main' }, value: '{{montag+35d}}' },
+        { waitFor: { text: 'Meyer, Julia', within: 'main' } },
+      ],
+      crop: { mainTo: ['julia'], pad: 32 },
       markers: [
         { n: 1, id: 'stand-am', locator: { label: 'Stand am', within: 'main' }, badge: 'left' },
         { n: 2, id: 'besetzung', locator: { css: 'main >> text=Besetzung >> visible=true' }, badge: 'right' },
-        { n: 3, id: 'sarah', locator: { css: "main >> text='Klein, Sarah'" }, badge: 'right' },
+        { n: 3, id: 'julia', locator: { css: "main >> text='Meyer, Julia'" }, badge: 'right' },
       ],
-      alt: 'Übersicht „Arbeitszeiten im Team“ mit den Arbeitszeit-Blöcken aller Mitarbeitenden als Balken von Montag bis Freitag und der Besetzungszeile',
+      alt: 'Übersicht „Arbeitszeiten im Team“ mit den Arbeitszeit-Blöcken der Mitarbeitenden als Balken von Montag bis Freitag und der Besetzungszeile darüber',
     },
   },
   {
     section: 'urlaub',
-    caption: 'Der Abwesenheitskalender des Teams: Urlaub, Fortbildung und Feiertage im Monat.',
+    caption: 'Der Abwesenheitskalender des Teams: Feiertage und Abwesenheiten auf einen Blick, jede Person mit Kürzel und Kalenderfarbe.',
     shot: {
       id: 'br-urlaub',
       persona: 'maria',
       viewport: 'desktop',
       route: '/absences',
+      prepare: [{ click: { role: 'button', name: 'Nächster Monat', exact: true, within: 'main' } }],
       crop: 'main',
       markers: [],
-      alt: 'Abwesenheitskalender des Teams im Monat mit farbigen Kreisen für Urlaub und Fortbildung sowie beschrifteten Feiertagen',
+      alt: 'Abwesenheitskalender des Teams im November mit farbigen Kürzeln der abwesenden Personen an den Tagen der Teamklausur und dem beschrifteten Feiertag Allerheiligen',
     },
   },
   {
