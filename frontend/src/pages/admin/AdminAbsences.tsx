@@ -496,31 +496,32 @@ export default function AdminAbsences() {
                 <p>Keine Betriebsferien eingetragen</p>
               </div>
             ) : (
-              <table className="w-full">
+              <div className="overflow-x-auto">
+<table className="w-full min-w-[560px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bezeichnung</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Zeitraum</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Verrechnung</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Betroffene MA</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Aktion</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bezeichnung</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Zeitraum</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Verrechnung</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Betroffene MA</th>
+                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Aktion</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {closures.map(closure => (
                     <tr key={closure.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{closure.name}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
+                      <td className="px-3 sm:px-6 py-4 text-sm font-medium text-gray-900">{closure.name}</td>
+                      <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">
                         {format(new Date(closure.start_date + 'T00:00:00'), 'dd.MM.yyyy')} –{' '}
                         {format(new Date(closure.end_date + 'T00:00:00'), 'dd.MM.yyyy')}
                       </td>
-                      <td className="px-6 py-4 text-sm">
+                      <td className="px-3 sm:px-6 py-4 text-sm">
                         <span className={`px-2 py-1 rounded-sm text-xs ${closure.counts_as_vacation ? typeColors.vacation : typeColors.paid_leave}`}>
                           {closure.counts_as_vacation ? 'Urlaub' : 'Bezahlte Freistellung'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{closure.affected_employees} Mitarbeiter</td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">{closure.affected_employees} Mitarbeiter</td>
+                      <td className="px-3 sm:px-6 py-4 text-right">
                         <div className="flex items-center justify-end space-x-1">
                           <button
                             onClick={() => handleEditClosure(closure)}
@@ -542,6 +543,7 @@ export default function AdminAbsences() {
                   ))}
                 </tbody>
               </table>
+</div>
             )}
           </div>
         </>
@@ -750,30 +752,31 @@ export default function AdminAbsences() {
           {filteredAbsences.length === 0 ? (
             <div className="p-6 text-center text-gray-500">Keine Abwesenheiten in diesem Monat</div>
           ) : (
-            <table className="w-full">
+            <div className="overflow-x-auto">
+<table className="w-full min-w-[560px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Datum</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Typ</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stunden</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notiz</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Aktion</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Datum</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Typ</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stunden</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notiz</th>
+                  <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Aktion</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredAbsences.map(absence => (
                   <tr key={absence.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm text-gray-900">
+                    <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">
                       {formatAbsenceDay(absence.date, true)}
                     </td>
-                    <td className="px-6 py-4 text-sm">
+                    <td className="px-3 sm:px-6 py-4 text-sm">
                       <span className={`px-2 py-1 rounded-sm text-xs ${typeColors[absence.type]}`}>
                         {absenceLabel(absence)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
-                    <td className="px-6 py-4 text-sm text-gray-500">{absence.note || '–'}</td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
+                    <td className="px-3 sm:px-6 py-4 text-sm text-gray-500">{absence.note || '–'}</td>
+                    <td className="px-3 sm:px-6 py-4 text-right">
                       <button
                         onClick={() => handleDelete(absence.id, selectedEmployee)}
                         className="p-1.5 text-red-600 hover:bg-red-50 rounded-sm transition"
@@ -786,6 +789,7 @@ export default function AdminAbsences() {
                 ))}
               </tbody>
             </table>
+</div>
           )}
         </div>
       ) : (
@@ -830,28 +834,29 @@ export default function AdminAbsences() {
 
                 {isExpanded && empAbsences.length > 0 && (
                   <div className="border-t border-gray-200">
-                    <table className="w-full">
+                    <div className="overflow-x-auto">
+<table className="w-full min-w-[560px]">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Datum</th>
-                          <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Typ</th>
-                          <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Std.</th>
-                          <th className="px-6 py-2 text-right text-xs font-medium text-gray-500 uppercase">Aktion</th>
+                          <th className="px-3 sm:px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Datum</th>
+                          <th className="px-3 sm:px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Typ</th>
+                          <th className="px-3 sm:px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Std.</th>
+                          <th className="px-3 sm:px-6 py-2 text-right text-xs font-medium text-gray-500 uppercase">Aktion</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {empAbsences.map(absence => (
                           <tr key={absence.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-3 text-sm text-gray-900">
+                            <td className="px-3 sm:px-6 py-3 text-sm text-gray-900">
                               {formatAbsenceDay(absence.date, true)}
                             </td>
-                            <td className="px-6 py-3 text-sm">
+                            <td className="px-3 sm:px-6 py-3 text-sm">
                               <span className={`px-2 py-0.5 rounded-sm text-xs ${typeColors[absence.type]}`}>
                                 {absenceLabel(absence)}
                               </span>
                             </td>
-                            <td className="px-6 py-3 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
-                            <td className="px-6 py-3 text-right">
+                            <td className="px-3 sm:px-6 py-3 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
+                            <td className="px-3 sm:px-6 py-3 text-right">
                               <button
                                 onClick={() => handleDelete(absence.id, emp.id)}
                                 className="p-1 text-red-600 hover:bg-red-50 rounded-sm transition"
@@ -864,6 +869,7 @@ export default function AdminAbsences() {
                         ))}
                       </tbody>
                     </table>
+</div>
                   </div>
                 )}
               </div>

@@ -9,6 +9,8 @@ import ChangeRequests from './ChangeRequests';
 import { Plus, Edit2, Trash2, Save, X, Lock, FileEdit } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import DialogFocusTrap from '../components/DialogFocusTrap';
 import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
 import { useAuthStore } from '../stores/authStore';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -190,6 +192,8 @@ export default function TimeTracking() {
 
   // Form state
   const [showForm, setShowForm] = useState(false);
+  // ui-17: ab md steht das Formular als normaler Seitenblock, nur darunter ist es ein modales Bottom-Sheet.
+  const isDesktop = useMediaQuery('(min-width: 768px)');
   const [editingId, setEditingId] = useState<string | null>(null);
   // U2 (Audit 2026-07-31): der bearbeitete Eintrag laeuft noch (kein Ende).
   // „Bis" bleibt dann leer und optional, und der PUT laesst das Feld weg.
@@ -830,10 +834,20 @@ export default function TimeTracking() {
             onClick={resetForm}
             aria-hidden="true"
           />
+          <DialogFocusTrap
+            active={!isDesktop}
+            focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: false, returnFocusOnDeactivate: true, fallbackFocus: '#main-content' }}
+          >
           <div
-            role="dialog"
-            aria-modal="true"
+            role={isDesktop ? 'region' : 'dialog'}
+            aria-modal={isDesktop ? undefined : 'true'}
             aria-label={editingId ? 'Eintrag bearbeiten' : 'Neuer Zeiteintrag'}
+            onKeyDown={(e) => {
+              if (!isDesktop && e.key === 'Escape') {
+                e.stopPropagation();
+                resetForm();
+              }
+            }}
             className="bg-white fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl shadow-2xl border-t border-gray-200 md:static md:rounded-xl md:shadow-xs md:border md:p-6 md:mb-6"
             style={{ animation: 'slideUpSheet 0.25s ease-out' }}
           >
@@ -1105,6 +1119,7 @@ export default function TimeTracking() {
               </Button>
             </div>
           </div>
+          </DialogFocusTrap>
         </>
       )}
 

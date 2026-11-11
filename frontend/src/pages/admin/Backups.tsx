@@ -278,7 +278,8 @@ export default function Backups() {
         {backups.length === 0 ? (
           <p className="text-sm text-gray-500">Noch keine Sicherungen vorhanden.</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+<table className="w-full text-sm">
             <thead>
               <tr className="text-left text-gray-500 border-b">
                 <th className="py-2">Datei</th>
@@ -290,7 +291,7 @@ export default function Backups() {
             <tbody>
               {backups.map((b) => (
                 <tr key={b.filename} className="border-b last:border-0">
-                  <td className="py-2 font-mono text-xs">{b.filename}</td>
+                  <td className="py-2 pr-2 font-mono text-xs break-all">{b.filename}</td>
                   <td className="py-2">{formatBytes(b.size_bytes)}</td>
                   <td className="py-2">{new Date(b.created_at).toLocaleString('de-DE')}</td>
                   <td className="py-2 text-right space-x-2 whitespace-nowrap">
@@ -316,6 +317,7 @@ export default function Backups() {
               ))}
             </tbody>
           </table>
+</div>
         )}
       </div>
 
