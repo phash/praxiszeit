@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ToastProvider } from '../../../contexts/ToastContext';
 import { useSystemStore } from '../../../stores/systemStore';
 import UserForm from './UserForm';
@@ -1006,6 +1006,30 @@ describe('UserForm: Verfallsdatum ist ein festes Datum (P4.4, R28)', () => {
     renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2999-03-31' } });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/Resturlaub verfällt am/), { target: { value: '' } });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+describe('UserForm: Vergangenheits-Warnung nutzt das lokale Datum (P4.4, R28 Runde 2)', () => {
+  const oldTz = process.env.TZ;
+  beforeEach(() => {
+    process.env.TZ = 'Europe/Berlin';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // 23:30 UTC = 00:30 am 12.11. in Berlin: UTC-Datum ist noch der 11.11.
+    vi.setSystemTime(new Date('2026-11-11T23:30:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    if (oldTz === undefined) delete process.env.TZ; else process.env.TZ = oldTz;
+  });
+
+  it('warnt bei einem Datum von „gestern“ (lokal), obwohl es in UTC noch heute ist', () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2026-11-11' } });
+    expect(screen.getByRole('status')).toHaveTextContent(/liegt in der Vergangenheit/);
+  });
+
+  it('warnt nicht bei dem lokalen heutigen Datum', () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2026-11-12' } });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

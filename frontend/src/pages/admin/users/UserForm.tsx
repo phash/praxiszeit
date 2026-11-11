@@ -15,6 +15,7 @@ import ContractTermsFields from './ContractTermsFields';
 import type { ContractTerms } from './workingHoursTypes';
 import { BLOCKS_WITHOUT_EFFECT, LEGACY_WITHOUT_EFFECT } from './workingHoursTexts';
 
+import { format } from 'date-fns';
 import type { User } from '../../../types/user';
 import type { WeekBlocks } from '../../../types/workBlocks';
 
@@ -719,7 +720,7 @@ export default function UserForm({
                 Gilt als festes Datum für alle Jahre; leer = 31.03. des Folgejahres. Nach Ablauf bitte anpassen oder leeren.
               </p>
               {formData.vacation_carryover_deadline &&
-                formData.vacation_carryover_deadline < new Date().toISOString().slice(0, 10) && (
+                formData.vacation_carryover_deadline < format(new Date(), 'yyyy-MM-dd') && (
                   <p role="status" className="mt-1 text-xs text-amber-700">
                     Dieses Datum liegt in der Vergangenheit — der Resturlaub gälte damit schon als verfallen. Bitte anpassen oder leeren.
                   </p>
