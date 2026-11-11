@@ -5,7 +5,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useAuthStore } from '../../../stores/authStore';
 import PasswordInput from '../../../components/PasswordInput';
 import { getErrorMessage } from '../../../utils/errorMessage';
-import { parseHours, deHoursExact, formatDayPlan, formatDayNumber, formatDecimalDe } from '../../../utils/formatters';
+import { parseHours, deHoursExact, formatDayPlan, formatDayNumber, formatDecimalDe, formatFixedDe } from '../../../utils/formatters';
 import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../../../utils/calendarColors';
 import {
   deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, isLegacyWeek, validateWeekBlocks,
@@ -963,7 +963,7 @@ export default function UserForm({
                         );
                       })}
                       <div className="col-span-5 text-xs text-gray-500 mt-1">
-                        Summe: {(formData.hours_monday + formData.hours_tuesday + formData.hours_wednesday + formData.hours_thursday + formData.hours_friday).toFixed(1)}h/Woche
+                        Summe: {formatFixedDe((formData.hours_monday + formData.hours_tuesday + formData.hours_wednesday + formData.hours_thursday + formData.hours_friday), 1)}h/Woche
                         {formData.weekly_hours > 0 && (formData.hours_monday + formData.hours_tuesday + formData.hours_wednesday + formData.hours_thursday + formData.hours_friday) !== formData.weekly_hours && (
                           <span className="text-amber-600 ml-2">
                             (Gesamtwochenstunden: {formData.weekly_hours}h – bitte anpassen!)

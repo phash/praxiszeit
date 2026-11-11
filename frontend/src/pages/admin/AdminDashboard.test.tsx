@@ -461,3 +461,14 @@ describe('AdminDashboard Monatsname (P1.3)', () => {
     expect(within(dialog).getByText('Oktober 2026 - Details')).toBeInTheDocument();
   });
 });
+
+// P4.3: Jahresübersicht — Tage mit deutschem Komma, nie „10.0 Tage".
+describe('AdminDashboard Jahresübersicht: Tage mit Komma (P4.3)', () => {
+  it('zeigt Tageszahlen mit Komma', async () => {
+    mockEndpoints([yearlyRow('u2', 'Aura', 'Haiser', 3.5, false)]);
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    await screen.findAllByText(/Haiser/);
+    expect((await screen.findAllByText('10,0 Tage')).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/\d\.\d Tage/)).toHaveLength(0);
+  });
+});

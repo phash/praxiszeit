@@ -186,6 +186,15 @@ export function pluralDe(n: number, singular: string, plural: string): string {
 }
 
 /**
+ * P4.3: feste Nachkommastellen mit deutschem Komma — formatFixedDe(13.9, 2)
+ * → '13,90', formatFixedDe(2, 1) → '2,0'. Ersatz für `toFixed(n)` in
+ * Anzeige-Strings (`toFixed` schreibt den englischen Dezimalpunkt).
+ */
+export function formatFixedDe(n: number, digits = 1): string {
+  return n.toFixed(digits).replace('.', ',');
+}
+
+/**
  * F069/F089/F100: DIE eine Dezimalzahl-Formatierung ohne Einheit — höchstens
  * zwei Nachkommastellen, keine Nullen am Ende, deutsches Komma ('30', '13,1',
  * '4,25'). `formatDayNumber` (Tage) und `specialDays.formatMaxHoursDe`

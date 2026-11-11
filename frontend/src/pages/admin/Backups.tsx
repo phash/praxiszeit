@@ -8,6 +8,7 @@ import { getBlobErrorMessage, getErrorMessage } from '../../utils/errorMessage';
 import PasswordConfirmDialog from '../../components/PasswordConfirmDialog';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { formatFixedDe } from '../../utils/formatters';
 
 interface BackupFile {
   filename: string;
@@ -24,8 +25,8 @@ interface BackupConfig {
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  if (n < 1024 * 1024) return `${formatFixedDe(n / 1024, 1)} KB`;
+  return `${formatFixedDe(n / (1024 * 1024), 1)} MB`;
 }
 
 export default function Backups() {

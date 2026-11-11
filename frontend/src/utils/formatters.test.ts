@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount, formatDayNumber, formatDecimalDe, formatMonthYearDe, pluralDe } from './formatters';
+import { formatHoursHM, formatHoursHMText, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount, formatDayNumber, formatDecimalDe, formatMonthYearDe, pluralDe, formatFixedDe } from './formatters';
 
 describe('formatHoursHM', () => {
   it('formats whole hours', () => {
@@ -431,5 +431,14 @@ describe('pluralDe (P4.2)', () => {
     expect(pluralDe(1, 'Eintrag', 'Einträge')).toBe('1 Eintrag');
     expect(pluralDe(0, 'Eintrag', 'Einträge')).toBe('0 Einträge');
     expect(pluralDe(2, 'Konflikt', 'Konflikte')).toBe('2 Konflikte');
+  });
+});
+
+describe('formatFixedDe (P4.3)', () => {
+  it('feste Nachkommastellen mit deutschem Komma', () => {
+    expect(formatFixedDe(13.9, 2)).toBe('13,90');
+    expect(formatFixedDe(2, 1)).toBe('2,0');
+    expect(formatFixedDe(25, 1)).toBe('25,0');
+    expect(formatFixedDe(-0.5, 1)).toBe('-0,5');
   });
 });

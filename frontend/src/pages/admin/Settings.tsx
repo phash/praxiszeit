@@ -10,7 +10,7 @@ import { useTypeColorsStore, pickTextColor } from '../../stores/typeColorsStore'
 import AbsenceReasonsManager from '../../components/AbsenceReasonsManager';
 import { useSystemStore } from '../../stores/systemStore';
 import { showResponseWarning } from '../../utils/arbzgWarnings';
-import { formatIsoDateDe } from '../../utils/formatters';
+import { formatIsoDateDe, formatFixedDe } from '../../utils/formatters';
 import {
   DEFAULT_MAX_HOURS, MAX_HOURS_ERROR, MAX_MAX_HOURS, MIN_MAX_HOURS, isValidMaxHours, parseMaxHoursInput,
 } from '../../utils/specialDays';
@@ -1565,11 +1565,11 @@ const saveYearEndProjection = async () => {
         {minWage ? (
           <p className="text-sm text-gray-600">
             {/* #382: guard against a truthy-but-malformed minimum_wage (no numeric current). */}
-            Aktuell <strong>{typeof minWage.current === 'number' ? minWage.current.toFixed(2) : '—'} €/h</strong> (seit{' '}
+            Aktuell <strong>{typeof minWage.current === 'number' ? formatFixedDe(minWage.current, 2) : '—'} €/h</strong> (seit{' '}
             {new Date(minWage.since).toLocaleDateString('de-DE')}).
             {minWage.next && typeof minWage.next.value === 'number' && (
               <> Ab {new Date(minWage.next.from).toLocaleDateString('de-DE')}:{' '}
-                <strong>{minWage.next.value.toFixed(2)} €/h</strong>.</>
+                <strong>{formatFixedDe(minWage.next.value, 2)} €/h</strong>.</>
             )}
           </p>
         ) : (

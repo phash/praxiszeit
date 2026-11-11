@@ -4,6 +4,7 @@ import apiClient from '../../../api/client';
 import { Save, X } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { getErrorMessage } from '../../../utils/errorMessage';
+import { formatFixedDe } from '../../../utils/formatters';
 
 interface YearCarryover {
   id: string;
@@ -185,9 +186,9 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
                     >
                       <td className="py-1.5 pr-4 font-medium">{c.year}</td>
                       <td className={`py-1.5 pr-4 ${c.overtime_hours >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {c.overtime_hours >= 0 ? '+' : ''}{c.overtime_hours.toFixed(1)}h
+                        {c.overtime_hours >= 0 ? '+' : ''}{formatFixedDe(c.overtime_hours, 1)}h
                       </td>
-                      <td className="py-1.5">{c.vacation_days.toFixed(1)} Tage</td>
+                      <td className="py-1.5">{formatFixedDe(c.vacation_days, 1)} Tage</td>
                     </tr>
                   ))}
                 </tbody>

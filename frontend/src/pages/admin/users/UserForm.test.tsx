@@ -50,7 +50,7 @@ describe('#377 UserForm MiLoG checkbox', () => {
     renderForm();
     fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/i));
     // Default weekly_hours 40 → Monatszeit ≈ 173.3 h → Cap ≈ 86.7 h; Mindestlohn 13,90
-    expect(screen.getByText(/13\.90 €\/h/)).toBeInTheDocument();
+    expect(screen.getByText(/13,90 €\/h/)).toBeInTheDocument();
     expect(screen.getByText(/max\. Konto/)).toBeInTheDocument();
   });
 
@@ -757,8 +757,8 @@ describe('Spec 2026-10-08 (12.2): Anlegen mit Arbeitszeit-Blöcken', () => {
     expect(screen.getByText(/6 Tage \(basierend auf 1 Arbeitstagen\/Woche\)/)).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/i));
     // 6,5 h × 13/3 ≈ 28,2 h
-    expect(screen.getByText(/aus den Wochenstunden \(≈ 28\.2 h\)/)).toBeInTheDocument();
-    expect(document.getElementById('f-agreed-monthly')).toHaveAttribute('placeholder', 'aus Wochenstunden ≈ 28.2');
+    expect(screen.getByText(/aus den Wochenstunden \(≈ 28,2 h\)/)).toBeInTheDocument();
+    expect(document.getElementById('f-agreed-monthly')).toHaveAttribute('placeholder', 'aus Wochenstunden ≈ 28,2');
     fireEvent.click(screen.getByLabelText(/Feste Monatsarbeitszeit/));
     // Die Blöcke hinterlegen die geplante Anwesenheit bereits.
     expect(screen.queryByText(/Empfehlung bei fester Monatsarbeitszeit/)).not.toBeInTheDocument();

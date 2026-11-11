@@ -11,7 +11,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 import WeekSelector, { isoWeekMonday, weekLabel } from '../../components/WeekSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { deHoursExact, formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount, formatMonthYearDe } from '../../utils/formatters';
+import { deHoursExact, formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount, formatMonthYearDe, formatFixedDe } from '../../utils/formatters';
 import type { WeeklyHoursChangeInPeriod } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import { showArbzgWarnings } from '../../utils/arbzgWarnings';
@@ -894,12 +894,12 @@ export default function AdminDashboard() {
                         )}
                       </td>
                     )}
-                    <td className="px-6 py-4 text-sm text-gray-900">{emp.vacation_used_days.toFixed(1)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">{formatFixedDe(emp.vacation_used_days, 1)}</td>
                     {/* data-testid: die Krank-Spalte wird per E2E auf die DSGVO-Maskierung
                         geprüft. Über die Spaltenposition war das zweimal brüchig — zuletzt,
                         als 1.16.0 die Spalte "Jahresende (proj.)" ergänzte, die für
                         Mitarbeitende ohne künftigen Freizeitausgleich ebenfalls "—" rendert. */}
-                    <td data-testid="sick-days-cell" className="px-6 py-4 text-sm text-gray-900">{showHealthData ? emp.sick_days.toFixed(1) : '—'}</td>
+                    <td data-testid="sick-days-cell" className="px-6 py-4 text-sm text-gray-900">{showHealthData ? formatFixedDe(emp.sick_days, 1) : '—'}</td>
                     <td className="px-6 py-4 text-right">
                       <ChevronRight size={20} className="text-gray-400 inline" />
                     </td>
@@ -980,11 +980,11 @@ export default function AdminDashboard() {
                     <div className="flex items-center space-x-4">
                       <div>
                         <span className="text-gray-500">Urlaub:</span>
-                        <span className="font-medium ml-1">{emp.vacation_used_days.toFixed(1)} Tage</span>
+                        <span className="font-medium ml-1">{formatFixedDe(emp.vacation_used_days, 1)} Tage</span>
                       </div>
                       <div>
                         <span className="text-gray-500">Krank:</span>
-                        <span className="font-medium ml-1">{showHealthData ? `${emp.sick_days.toFixed(1)} Tage` : '—'}</span>
+                        <span className="font-medium ml-1">{showHealthData ? `${formatFixedDe(emp.sick_days, 1)} Tage` : '—'}</span>
                       </div>
                     </div>
                   </div>
@@ -1146,7 +1146,7 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-6 py-4 text-right text-sm">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {emp.vacation_days.toFixed(1)} Tage
+                          {formatFixedDe(emp.vacation_days, 1)} Tage
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right text-sm">
@@ -1157,22 +1157,22 @@ export default function AdminDashboard() {
                             ? 'bg-yellow-100 text-yellow-800'
                             : 'bg-red-100 text-red-800'
                         }`}>
-                          {emp.remaining_vacation_days.toFixed(1)} Tage
+                          {formatFixedDe(emp.remaining_vacation_days, 1)} Tage
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right text-sm">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          {showHealthData ? `${emp.sick_days.toFixed(1)} Tage` : '—'}
+                          {showHealthData ? `${formatFixedDe(emp.sick_days, 1)} Tage` : '—'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right text-sm">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          {emp.training_days.toFixed(1)} Tage
+                          {formatFixedDe(emp.training_days, 1)} Tage
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right text-sm">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                          {emp.overtime_comp_days?.toFixed(1) ?? '0.0'} Tage
+                          {formatFixedDe(emp.overtime_comp_days ?? 0, 1)} Tage
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right text-sm">
@@ -1183,7 +1183,7 @@ export default function AdminDashboard() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">
-                        {emp.total_days.toFixed(1)} Tage
+                        {formatFixedDe(emp.total_days, 1)} Tage
                       </td>
                     </tr>
                   ))
@@ -1211,7 +1211,7 @@ export default function AdminDashboard() {
                         {emp.last_name}, {emp.first_name}
                       </p>
                       <span className="text-sm font-bold text-gray-900">
-                        {emp.total_days.toFixed(1)} Tage
+                        {formatFixedDe(emp.total_days, 1)} Tage
                       </span>
                     </div>
 
@@ -1223,7 +1223,7 @@ export default function AdminDashboard() {
                           <span className="text-sm text-gray-600">Urlaub</span>
                         </div>
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {emp.vacation_days.toFixed(1)} Tage
+                          {formatFixedDe(emp.vacation_days, 1)} Tage
                         </span>
                       </div>
 
@@ -1239,7 +1239,7 @@ export default function AdminDashboard() {
                             ? 'bg-yellow-100 text-yellow-800'
                             : 'bg-red-100 text-red-800'
                         }`}>
-                          {emp.remaining_vacation_days.toFixed(1)} Tage
+                          {formatFixedDe(emp.remaining_vacation_days, 1)} Tage
                         </span>
                       </div>
 
@@ -1249,7 +1249,7 @@ export default function AdminDashboard() {
                           <span className="text-sm text-gray-600">Krank</span>
                         </div>
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          {showHealthData ? `${emp.sick_days.toFixed(1)} Tage` : '—'}
+                          {showHealthData ? `${formatFixedDe(emp.sick_days, 1)} Tage` : '—'}
                         </span>
                       </div>
 
@@ -1259,7 +1259,7 @@ export default function AdminDashboard() {
                           <span className="text-sm text-gray-600">Fortbildung</span>
                         </div>
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          {emp.training_days.toFixed(1)} Tage
+                          {formatFixedDe(emp.training_days, 1)} Tage
                         </span>
                       </div>
 
@@ -1269,7 +1269,7 @@ export default function AdminDashboard() {
                           <span className="text-sm text-gray-600">ÜStd.-Ausgleich</span>
                         </div>
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                          {emp.overtime_comp_days?.toFixed(1) ?? '0.0'} Tage
+                          {formatFixedDe(emp.overtime_comp_days ?? 0, 1)} Tage
                         </span>
                       </div>
 

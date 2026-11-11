@@ -1,5 +1,5 @@
 import { useSystemStore } from '../../../stores/systemStore';
-import { formatDayNumber } from '../../../utils/formatters';
+import { formatDayNumber, formatFixedDe } from '../../../utils/formatters';
 import { MAX_VACATION_DAYS } from './workingHoursTypes';
 import type { ContractTerms } from './workingHoursTypes';
 
@@ -139,7 +139,7 @@ export default function ContractTermsFields({
               placeholder={
                 value.use_fixed_monthly_target
                   ? 'Pflichtfeld – festes Monats-Soll'
-                  : `aus Wochenstunden ≈ ${derivedMonthly.toFixed(1)}`
+                  : `aus Wochenstunden ≈ ${formatFixedDe(derivedMonthly, 1)}`
               }
               value={value.agreed_monthly_hours ?? ''}
               onChange={(e) => set({
@@ -157,11 +157,11 @@ export default function ContractTermsFields({
               return (
                 <p className="mt-1 text-xs text-amber-800">
                   {minWage && typeof minWage.current === 'number'
-                    ? `Aktueller Mindestlohn: ${minWage.current.toFixed(2)} €/h (seit ${new Date(minWage.since).toLocaleDateString('de-DE')}). `
+                    ? `Aktueller Mindestlohn: ${formatFixedDe(minWage.current, 2)} €/h (seit ${new Date(minWage.since).toLocaleDateString('de-DE')}). `
                     : ''}
-                  Leer = automatisch aus den Wochenstunden (≈ {derivedMonthly.toFixed(1)} h).
-                  Vereinbarte Monatszeit {value.agreed_monthly_hours != null ? '' : '≈ '}{monthly.toFixed(1)} h
-                  → max. Konto ≈ {(monthly / 2).toFixed(1)} h/Monat (50 %, § 2 Abs. 2 MiLoG). Warnung ist weich
+                  Leer = automatisch aus den Wochenstunden (≈ {formatFixedDe(derivedMonthly, 1)} h).
+                  Vereinbarte Monatszeit {value.agreed_monthly_hours != null ? '' : '≈ '}{formatFixedDe(monthly, 1)} h
+                  → max. Konto ≈ {formatFixedDe((monthly / 2), 1)} h/Monat (50 %, § 2 Abs. 2 MiLoG). Warnung ist weich
                   (nicht blockierend), sofern zur Mindestlohnhöhe vergütet. Keine Verdienst-/603-€-Prüfung.
                 </p>
               );
