@@ -21,7 +21,7 @@ type Token =
 
 /** Erlaubte Link-Ziele: #anker, /route (nicht //), handbuch:<id>..., http(s)://. */
 export function isAllowedHref(href: string): boolean {
-  return /^#/.test(href) || /^\/(?!\/)/.test(href) || /^handbuch:/.test(href) || /^https?:\/\//i.test(href);
+  return /^#/.test(href) || (/^\/(?!\/)/.test(href) && !href.includes('\\')) || /^handbuch:/.test(href) || /^https?:\/\//i.test(href);
 }
 
 const TOKEN_RE = /\*\*(.+?)\*\*|\[\[(.+?)\]\]|\[([^\]]+)\]\(([^)\s]+)\)/g;
