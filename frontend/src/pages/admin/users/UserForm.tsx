@@ -457,7 +457,7 @@ export default function UserForm({
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-              placeholder="name@example.de"
+              placeholder="name@praxis.example"
             />
           </div>
           {!editUser && (

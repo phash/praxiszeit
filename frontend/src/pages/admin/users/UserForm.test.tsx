@@ -952,3 +952,12 @@ describe('Bearbeiten: Anzeige aus schedule_today, keine Empfehlung/MiLoG-Schätz
     expect(screen.getByText('Stundenzählung aktiv')).toBeInTheDocument();
   });
 });
+
+describe('E-Mail-Platzhalter (P1.5)', () => {
+  it('nennt keine echte Domain, sondern eine reservierte Beispiel-TLD (RFC 2606)', () => {
+    renderForm();
+    const email = screen.getByLabelText(/E-Mail/) as HTMLInputElement;
+    expect(email.placeholder).toBe('name@praxis.example');
+    expect(email.placeholder).not.toMatch(/example\.de/);
+  });
+});
