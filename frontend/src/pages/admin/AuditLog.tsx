@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import apiClient from '../../api/client';
-import { ScrollText, ArrowRight } from 'lucide-react';
+import { ScrollText } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import MonthSelector from '../../components/MonthSelector';
 import LoadingSpinner from '../../components/LoadingSpinner';
 // Geteilt mit dem Detail-Modal des Admin-Dashboards — beide Ansichten rendern
 // dieselben Audit-Zeilen und dürfen sich nicht auseinanderentwickeln.
-import AuditValues, { auditPillText, formatAuditNote } from '../../components/AuditValues';
+import AuditValues from '../../components/AuditValues';
 import SecurityEventsCard from '../../components/SecurityEventsCard';
 import AuditIntegrityCard from '../../components/AuditIntegrityCard';
 import { AUDIT_SOURCE_LABELS as sourceLabels } from '../../constants/auditSources';
@@ -55,6 +55,8 @@ interface UserOption {
   id: string;
   first_name: string;
   last_name: string;
+  is_active?: boolean;
+  is_hidden?: boolean;
 }
 
 const actionLabels: Record<string, string> = {
@@ -120,18 +122,29 @@ export default function AuditLog() {
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [filterUserId, setFilterUserId] = useState('');
   const [users, setUsers] = useState<UserOption[]>([]);
+  // ops-08: nur die jüngste Anfrage darf die Liste setzen; der Cursor für „Ältere laden"
+  // kommt aus einem Ref statt aus der Closure.
+  const requestId = useRef(0);
+  const entriesRef = useRef<AuditEntry[]>([]);
 
   useEffect(() => {
     fetchUsers();
   }, []);
 
   useEffect(() => {
+    // Filterwechsel: alte Seite verwerfen, bevor die neue da ist.
+    entriesRef.current = [];
+    setHasMore(false);
+    setLoadingMore(false);
     fetchAuditLog();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMonth, filterUserId]);
 
   const fetchUsers = async () => {
     try {
-      const response = await apiClient.get('/admin/users');
+      // ops-09: auch ausgeschiedene und ausgeblendete Personen — ihr Protokoll ist
+      // gerade bei Prüfungen gefragt.
+      const response = await apiClient.get('/admin/users?include_inactive=true&include_hidden=true&limit=500');
       setUsers(response.data);
     } catch (error) {
       toast.error('Fehler beim Laden der Benutzerliste');
@@ -143,6 +156,7 @@ export default function AuditLog() {
   // ältesten Einträge stillschweigend abgeschnitten.
   const AUDIT_PAGE_SIZE = 100;
   const fetchAuditLog = async (append = false) => {
+    const myId = ++requestId.current;
     if (append) setLoadingMore(true);
     else setLoading(true);
     try {
@@ -150,22 +164,28 @@ export default function AuditLog() {
       params.set('month', currentMonth);
       if (filterUserId) params.set('user_id', filterUserId);
       params.set('limit', String(AUDIT_PAGE_SIZE));
-      if (append && entries.length > 0) {
+      const current = entriesRef.current;
+      if (append && current.length > 0) {
         // ADM-12: Komposit-Cursor (created_at, id) — id als Tiebreaker, da created_at
         // bei Bulk-Inserts mehrfach identisch sein kann (sonst werden Zeilen übersprungen).
-        const last = entries[entries.length - 1];
+        const last = current[current.length - 1];
         params.set('before', last.created_at);
         params.set('before_id', last.id);
       }
       const response = await apiClient.get(`/admin/audit-log?${params.toString()}`);
+      if (myId !== requestId.current) return; // veraltete Antwort verwerfen
       const data: AuditEntry[] = response.data;
-      setEntries(append ? [...entries, ...data] : data);
+      entriesRef.current = append ? [...current, ...data] : data;
+      setEntries(entriesRef.current);
       setHasMore(data.length === AUDIT_PAGE_SIZE);
     } catch (error) {
+      if (myId !== requestId.current) return;
       toast.error('Fehler beim Laden des Audit-Logs');
     } finally {
-      if (append) setLoadingMore(false);
-      else setLoading(false);
+      if (myId === requestId.current) {
+        if (append) setLoadingMore(false);
+        else setLoading(false);
+      }
     }
   };
 
@@ -185,11 +205,22 @@ export default function AuditLog() {
           className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary text-sm"
         >
           <option value="">Alle Mitarbeitende</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.last_name}, {u.first_name}
-            </option>
-          ))}
+          <optgroup label="Aktive Mitarbeitende">
+            {users.filter((u) => u.is_active !== false).map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.last_name}, {u.first_name}{u.is_hidden ? ' (ausgeblendet)' : ''}
+              </option>
+            ))}
+          </optgroup>
+          {users.some((u) => u.is_active === false) && (
+            <optgroup label="Ausgeschiedene Mitarbeitende">
+              {users.filter((u) => u.is_active === false).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.last_name}, {u.first_name} (ausgeschieden)
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
       </div>
 
@@ -292,41 +323,34 @@ export default function AuditLog() {
                   <div className="text-xs text-gray-500">
                     {format(new Date(entry.created_at), 'dd.MM.yyyy HH:mm')} | von {changedByName(entry, 'first-last')} | {sourceLabels[entry.source] || entry.source}
                   </div>
-                  {/* Datums-Pillen. Der Pfeil steht für „von → nach" und darf
-                      deshalb NUR erscheinen, wenn sich die beiden Seiten
-                      tatsächlich unterscheiden: die Zeilen der
-                      Stundenrückrechnung tragen bewusst auf beiden Seiten
-                      DASSELBE Datum (die Rückrechnung verschiebt nie den Tag) —
-                      ein Pfeil dazwischen behauptete eine Verschiebung, die es
-                      nicht gab. `auditPillText` lässt zudem den hängenden
-                      Bindestrich weg, wenn es gar keine Zeiten gibt. */}
-                  {(() => {
-                    const oldPill = auditPillText(entry.old_date, entry.old_start_time, entry.old_end_time);
-                    const newPill = auditPillText(entry.new_date, entry.new_start_time, entry.new_end_time);
-                    if (!oldPill && !newPill) return null;
-                    const identical = Boolean(oldPill) && oldPill === newPill;
-                    return (
-                      <div className="flex items-center space-x-2 text-xs">
-                        {oldPill && (
-                          <span className="bg-gray-100 px-2 py-1 rounded-sm">{oldPill}</span>
-                        )}
-                        {!identical && oldPill && newPill && <ArrowRight size={12} className="text-gray-400" />}
-                        {!identical && newPill && (
-                          <span className="bg-amber-100 px-2 py-1 rounded-sm">{newPill}</span>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  {/* Freitext (u. a. die Stundenänderungs-Zeilen, die nur hier
-                      ihren Inhalt tragen) — auf der Karte unter den Datums-Pillen.
-                      Marker wie `absence:sick:8.0h` werden dabei in Klartext
-                      übersetzt (formatAuditNote). */}
-                  {(entry.old_note || entry.new_note) && (
-                    <div className="text-xs text-gray-500 break-words">
-                      {entry.old_note && <p>{formatAuditNote(entry.old_note)}</p>}
-                      {entry.new_note && <p>{formatAuditNote(entry.new_note)}</p>}
+                  {/* ops-10: dieselben Werte wie die Desktop-Tabelle (Pause, tatsächliche
+                      Stempel, Anwesenheitsende, Freitext) — AuditValues ist die eine Quelle. */}
+                  <div className="space-y-2 text-xs text-gray-600">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase text-gray-400">Alte Werte</p>
+                      <AuditValues
+                        date={entry.old_date}
+                        start={entry.old_start_time}
+                        end={entry.old_end_time}
+                        rawStart={entry.old_raw_start_time}
+                        presenceEnd={entry.old_presence_end_time}
+                        breakMinutes={entry.old_break_minutes}
+                        note={entry.old_note}
+                      />
                     </div>
-                  )}
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase text-gray-400">Neue Werte</p>
+                      <AuditValues
+                        date={entry.new_date}
+                        start={entry.new_start_time}
+                        end={entry.new_end_time}
+                        rawStart={entry.new_raw_start_time}
+                        presenceEnd={entry.new_presence_end_time}
+                        breakMinutes={entry.new_break_minutes}
+                        note={entry.new_note}
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
