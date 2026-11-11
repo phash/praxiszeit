@@ -996,14 +996,13 @@ const shots: ShotDef[] = [
     crop: 'main',
     markers: [
       { n: 1, id: 'neuer-plan', locator: { css: "xpath=//main//label[normalize-space()='Neuer Plan']/.." }, badge: 'left' },
-      // Die Werkzeugleiste läuft bei 1440 px über den Kartenrand hinaus (Papierkorb außerhalb): nur Knöpfe im Fenster markieren.
+      // Die Werkzeugleiste bricht bei Platzmangel um; markiert werden nur die Knöpfe, die der Text erklärt.
       { n: 2, id: 'aktiv', locator: { css: "main button:text-matches('^(Aktiv schalten|Deaktivieren)$')" }, badge: 'left' },
       { n: 3, id: 'bearbeiten', locator: { role: 'button', name: 'Bearbeiten', exact: true, within: 'main' }, badge: 'top' },
       { n: 4, id: 'pdf', locator: { role: 'button', name: 'PDF', exact: true, within: 'main' }, badge: 'top' },
       { n: 5, id: 'woche-tag', locator: { css: "xpath=//main//button[normalize-space()='Woche']/.." }, badge: 'left' },
-      { n: 6, id: 'mitarbeiter', locator: { role: 'heading', name: 'Mitarbeiter', exact: true, within: 'main' }, badge: 'corner' },
     ],
-    alt: 'Schichtplanung, Plan „Wochenplan Praxis“: Werkzeugleiste mit Deaktivieren, Slot, Automatisch füllen, Bearbeiten, PDF und Duplizieren, darunter das Wochenraster und rechts die Mitarbeitenden',
+    alt: 'Schichtplanung, Plan „Wochenplan Praxis“: Werkzeugleiste mit Deaktivieren, Slot, Automatisch füllen, Bearbeiten, PDF und Duplizieren, darunter das Wochenraster',
   },
   {
     id: 'pl-schicht-slot',
@@ -2540,7 +2539,7 @@ export const praxisleitung: Handbook = {
           scene: 'protokoll',
           text:
             'Das **Änderungsprotokoll** hält fest, wer wann an Zeiteinträgen, Abwesenheiten und Verwaltungseinstellungen etwas geändert hat. Es dient als Nachweis nach § 16 Abs. 2 ArbZG. ' +
-            'Im laufenden Betrieb wird das Protokoll nur ergänzt; jede Zeile trägt eine Prüfsumme. Entfernt werden Zeilen nur beim endgültigen Löschen einer Person (Art. 17 DSGVO, selbst protokolliert) und durch die Aufbewahrungsfrist: Protokollzeilen zu Anträgen werden nach 730 Tagen gelöscht. Bei der Anonymisierung einer Person wird Klartext in Notizen ersetzt. Daneben zeigen **Konto-Vorgänge** die sicherheitsrelevanten Handlungen und das **Fehler-Monitoring** technische Störungen.',
+            'Im laufenden Betrieb wird das Protokoll nur ergänzt; jede Zeile trägt eine Prüfsumme. Entfernt werden Zeilen nur beim endgültigen Löschen einer Person (Art. 17 DSGVO, selbst protokolliert) und durch die Aufbewahrungsfrist: Protokollzeilen zu Anträgen werden nach 730 Tagen gelöscht und hinterlassen je betroffener Person einen Vermerk (Quelle „Aufbewahrungsfrist“) mit den entfernten Kettengliedern. Bei der Anonymisierung einer Person wird Klartext in Notizen ersetzt. Daneben zeigen **Konto-Vorgänge** die sicherheitsrelevanten Handlungen und das **Fehler-Monitoring** technische Störungen.',
         },
         {
           kind: 'task',
@@ -2644,7 +2643,7 @@ export const praxisleitung: Handbook = {
           intro: 'Klicken Sie in der Navigation auf [[Fehler-Monitoring]]. Die Seite zeigt technische Fehler, die im Betrieb aufgetreten sind.',
           shot: 'pl-fehler-monitoring',
           steps: [
-            { n: 1, text: '[[Aktualisieren]] lädt die Liste und die Zähler neu. Liegen Fehler vor, zeigen Zähler oben die Anzahl je Status (open, ignored, resolved).' },
+            { n: 1, text: '[[Aktualisieren]] lädt die Liste und die Zähler neu. Liegen Fehler vor, zeigen Zähler oben die Anzahl je Status (Offen, Ignoriert, Behoben).' },
             { n: 2, text: 'Die Reiter [[Alle]], [[Offen]], [[Ignoriert]] und [[Behoben]] filtern die Liste. Am Reiter „Offen“ steht die Zahl der offenen Fehler, sobald es welche gibt.' },
             { n: 3, text: 'Die Liste zeigt jeden Fehler als eigene Karte. Gibt es keinen, steht hier „Keine Fehler gefunden“, wie im Bild.' },
           ],
@@ -2706,7 +2705,7 @@ export const praxisleitung: Handbook = {
           shot: 'pl-datensicherung',
           steps: [
             { n: 1, text: '[[Jetzt sichern]] erstellt sofort eine vollständige Sicherung. Sie erscheint danach in der Liste.' },
-            { n: 2, text: 'Haken bei [[Tägliche automatische Sicherung aktivieren]], wenn PraxisZeit täglich selbst sichern soll.' },
+            { n: 2, text: 'Haken bei [[Tägliche automatische Sicherung aktivieren]], wenn PraxisZeit täglich selbst sichern soll. Ein Hinweis unter dem Haken sagt, dass die folgenden Einstellungen für die Docker-Installation gelten und native Installationen über das Betriebssystem sichern.' },
             { n: 3, text: '**Uhrzeit (Stunde, 0–23), nur Docker:** lokale Zeit (Europe/Berlin); die Sicherung läuft um HH:30. Das gilt für die Docker-Installation; nativ sichert der Timer des Betriebssystems (Linux 02:00, Windows und macOS 03:00).' },
             { n: 4, text: '**Aufbewahrung (Tage), nur Docker:** ältere Sicherungen löscht PraxisZeit automatisch. Für § 16 ArbZG sind mindestens 2 Jahre (730 Tage) nötig; die Seite schlägt zunächst 30 Tage vor. Nativ gilt stattdessen retention_days im Abschnitt [backup] der Datei config/praxiszeit.conf (Standard 31 Tage). Sonst zusätzlich Jahresarchive außerhalb des Servers ablegen.' },
             { n: 5, text: '**Speicherort (optional, nur Docker):** leer bedeutet Standardverzeichnis. Der Pfad muss für den Dienst beschreibbar sein.' },
@@ -2867,8 +2866,13 @@ export const praxisleitung: Handbook = {
             { n: 3, text: '[[Bearbeiten]] öffnet die Plan-Einstellungen mit Name, Zeitraum und Freigabe, siehe [Plan freigeben](#schicht-plan-einstellungen).' },
             { n: 4, text: '[[PDF]] erzeugt einen Aushang im Querformat mit einer Tabelle Arbeitsplatz × Wochentag, zum Aushängen am Schwarzen Brett.' },
             { n: 5, text: 'Der Umschalter [[Woche]] / [[Tag]] wechselt zwischen der Wochenansicht und einem einzelnen Wochentag in voller Breite; das ist beim Einrichten übersichtlich. Im Raster ziehen Sie einen Slot per Drag & Drop auf einen anderen Tag oder eine andere Uhrzeit (15-Minuten-Raster); ein Klick auf eine freie Fläche legt einen Slot an, ein Klick auf einen Slot bearbeitet ihn.' },
-            { n: 6, text: 'Rechts stehen die **Mitarbeitenden**. Ziehen Sie eine Person auf einen Slot, um sie zuzuweisen. Unter jedem Namen zeigt die **Auslastung** die zugewiesenen Schichtstunden zur Wochenarbeitszeit, zum Beispiel „15,25 / 17 h“: grün bei ±30 Minuten, gelb bei ±1 Stunde, sonst rot.' },
           ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Unter dem Raster (bei sehr breitem Fenster daneben) stehen die **Mitarbeitenden**. Ziehen Sie eine Person auf einen Slot, um sie zuzuweisen. Unter jedem Namen zeigt die **Auslastung** die zugewiesenen Schichtstunden zur Wochenarbeitszeit, zum Beispiel „15,25 / 17 h“: grün bei ±30 Minuten, gelb bei ±1 Stunde, sonst rot.',
         },
         {
           kind: 'table',
