@@ -55,6 +55,13 @@
 - **Eigene Abwesenheitsgründe: Eingabefelder mit sichtbarem Rahmen.** „Bezeichnung“ und „Verhalten“ in den Einstellungen (und die Vorschau-Auswahl der Schichtplanung) hatten keinen erkennbaren Rahmen.
 - **Einzahl beim XLS-Import:** „1 Eintrag gefunden“, „1 Konflikt“, „1 Hinweis“, „(1 Eintrag)“ statt „1 Einträge“ usw.
 - **Dezimalkomma statt Punkt in Anzeigen:** gesetzlicher Mindestlohn („13,90 €/h“), Kind-krank-Anzeige („2,0/15“), Urlaubstage in Benutzerliste und Jahresübersicht („3,0 Tage“), Übertrags-Dialog, Datensicherungen, Rechnungen. Gespeichert wird weiterhin unverändert.
+- **Änderungsanträge: Nachtrag trotz offenem Abwesenheitsantrag, mehrere Schichten pro Tag.** Ein offener Abwesenheitsantrag blockiert keinen Zeiteintrags-Nachtrag desselben Tages mehr (vorher falsche Meldung „für diesen Eintrag“); zwei Nachträge mit unterschiedlicher Startzeit am selben Vortag sind möglich. Ein Doppelklick auf „Antrag stellen“ erzeugt keine zwei offenen Anträge mehr.
+- **Änderungsanträge für Abwesenheiten: Prüfung schon beim Stellen.** Ein Datum außerhalb des Beschäftigungszeitraums und das „Umbuchen“ einer heutigen oder künftigen Abwesenheit werden beim Stellen abgelehnt statt erst bei der Genehmigung; ein Antrag auf eine inzwischen zur Betriebsferien-Zeile gewordene Abwesenheit wird bei der Genehmigung mit 400 abgelehnt.
+- **Änderungsprotokoll der Genehmigung zeigt Pause und Notiz korrekt.** Lässt ein Antrag Pause oder Notiz offen, behält der Eintrag den Wert, und das Protokoll hält ihn jetzt fest statt „leer“.
+- **Änderungsantrag mit Typwechsel entfernt den alten Abwesenheitsgrund.** Wechselt der Typ ohne neuen Grund, bleibt kein nicht mehr passender Grund (Kind-krank-Zählung, Ausblendung für Kollegen) am Eintrag.
+- **Verwaltung sieht den beantragten Abwesenheitsgrund.** Die Antragsliste nennt Grund-Namen (z. B. „Kind krank“) vor der Genehmigung.
+- **Antragsliste der Verwaltung: Zeitraumfilter in Ortszeit, Limit unter 1 wird mit 422 abgelehnt.** Anträge um Mitternacht am Monatsersten/-letzten landen im richtigen Zeitraum; `limit=-1` führte zu einem 500.
+- **Sammelgenehmigung bricht bei einem unerwarteten Fehler nicht mehr ab.** Der betroffene Antrag erscheint als fehlgeschlagen, die übrigen werden weiter bearbeitet; ein Fehler beim Neuaufteilen der Betriebsferien nach der Genehmigung meldet die bereits erteilte Genehmigung nicht mehr als Fehler.
 
 ## [1.23.0] - 2026-11-07
 

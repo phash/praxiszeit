@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
-from app.models import User, UserRole, ChangeRequest, TimeEntry, TimeEntryAuditLog, WorkingHoursChange
+from app.models import User, UserRole, ChangeRequest, TimeEntry, TimeEntryAuditLog, WorkingHoursChange, AbsenceReason
 from app.models.vacation_request import VacationRequest
 from app.schemas.change_request import ChangeRequestResponse
 from app.schemas.time_entry_audit_log import AuditLogResponse
@@ -279,10 +279,19 @@ def _enrich_cr_responses(crs: list, db: Session) -> list[ChangeRequestResponse]:
             TimeEntry.id.in_(entry_ids), TimeEntry.tenant_id.in_(tenant_ids),
         ).all()
     } if entry_ids else {}
+    # antrag-18: Namen der beantragten Abwesenheitsgründe — EIN Query, F-026.
+    reason_ids = {cr.proposed_reason_id for cr in crs if cr.proposed_reason_id}
+    reason_names = {
+        r.id: r.name for r in db.query(AbsenceReason).filter(
+            AbsenceReason.id.in_(reason_ids), AbsenceReason.tenant_id.in_(tenant_ids),
+        ).all()
+    } if reason_ids else {}
 
     results = []
     for cr in crs:
         response = ChangeRequestResponse.model_validate(cr)
+        if cr.proposed_reason_id:
+            response.proposed_reason_label = reason_names.get(cr.proposed_reason_id)
         target = entries.get(cr.time_entry_id)
         # Security-Review 2026-10-26: nur ein Eintrag der antragstellenden
         # Person — ein Altbestand-CREATE mit fremder ``time_entry_id`` darf

@@ -85,6 +85,10 @@ class ChangeRequestResponse(BaseModel):
 
     proposed_absence_type: Optional[str] = None
     proposed_absence_hours: Optional[float] = None
+    # antrag-18: beantragter eigener Abwesenheitsgrund (#312) — Id + Name, damit die
+    # Verwaltung ihn vor der Genehmigung sieht (Kind-krank-Kontingent, Maskierung).
+    proposed_reason_id: Optional[UUID] = None
+    proposed_reason_label: Optional[str] = None
 
     original_date: Optional[date] = None
     original_start_time: Optional[time] = None
