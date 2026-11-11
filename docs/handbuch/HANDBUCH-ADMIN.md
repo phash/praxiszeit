@@ -794,9 +794,9 @@ Auf dem `Admin-Dashboard` unterhalb der Monatsübersicht steht die **Jahresüber
 
 Wählen Sie in der Jahresübersicht das Jahr und klicken Sie auf `Jahresabschluss`. Es öffnet sich ein Bestätigungsdialog; erst Ihre Bestätigung löst den Abschluss aus.
 
-![Bestätigungsdialog „Jahresabschluss 2026“: Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter werden als Übernahme in 2027 gespeichert, bestehende Übernahmen werden überschrieben; Knöpfe Abbrechen und Jahresabschluss erstellen](img/pl-jahresabschluss-dialog.webp)
+![Bestätigungsdialog „Jahresabschluss 2026“: Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter werden als Übernahme in 2027 gespeichert, Warnung, dass das Jahr noch nicht zu Ende ist, bestehende Übernahmen werden überschrieben; Knöpfe Abbrechen und Jahresabschluss erstellen](img/pl-jahresabschluss-dialog.webp)
 
-1. Lesen Sie den Text: Überstunden-Saldo und Resturlaub aller **aktiven** Mitarbeitenden werden berechnet und als Übernahme ins Folgejahr gespeichert. **Bestehende Übernahmen für das Folgejahr werden überschrieben.**
+1. Lesen Sie den Text: Überstunden-Saldo und Resturlaub aller **aktiven** Mitarbeitenden werden berechnet und als Übernahme ins Folgejahr gespeichert. **Bestehende Übernahmen für das Folgejahr werden überschrieben.** Der Dialog nennt, wie viele davon von Hand eingetragen wurden. Beim **laufenden Jahr** warnt er zusätzlich, dass das Jahr noch nicht zu Ende ist: Das Soll der verbleibenden Monate würde ohne Ist eingefroren. Schließen Sie ein Jahr deshalb erst nach seinem Ende ab; ein künftiges Jahr lässt sich gar nicht abschließen.
 2. Mit `Abbrechen` geschieht nichts.
 3. Mit `Jahresabschluss erstellen` bestätigen Sie. Die Meldung nennt, wie viele Mitarbeitende nach dem Folgejahr übernommen wurden.
 

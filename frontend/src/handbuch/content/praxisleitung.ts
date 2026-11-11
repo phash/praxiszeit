@@ -785,7 +785,7 @@ const shots: ShotDef[] = [
       { n: 2, id: 'abbrechen', locator: { css: "[role='alertdialog'] button:text-is('Abbrechen')" }, badge: 'top' },
       { n: 3, id: 'bestaetigen', locator: { css: "[role='alertdialog'] button:text-is('Jahresabschluss erstellen')" }, badge: 'top' },
     ],
-    alt: 'Bestätigungsdialog „Jahresabschluss 2026“: Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter werden als Übernahme in 2027 gespeichert, bestehende Übernahmen werden überschrieben; Knöpfe Abbrechen und Jahresabschluss erstellen',
+    alt: 'Bestätigungsdialog „Jahresabschluss 2026“: Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter werden als Übernahme in 2027 gespeichert, Warnung, dass das Jahr noch nicht zu Ende ist, bestehende Übernahmen werden überschrieben; Knöpfe Abbrechen und Jahresabschluss erstellen',
   },
   {
     id: 'pl-uebernahme',
@@ -2449,7 +2449,7 @@ export const praxisleitung: Handbook = {
           intro: 'Wählen Sie in der Jahresübersicht das Jahr und klicken Sie auf [[Jahresabschluss]]. Es öffnet sich ein Bestätigungsdialog; erst Ihre Bestätigung löst den Abschluss aus.',
           shot: 'pl-jahresabschluss-dialog',
           steps: [
-            { n: 1, text: 'Lesen Sie den Text: Überstunden-Saldo und Resturlaub aller **aktiven** Mitarbeitenden werden berechnet und als Übernahme ins Folgejahr gespeichert. **Bestehende Übernahmen für das Folgejahr werden überschrieben.**' },
+            { n: 1, text: 'Lesen Sie den Text: Überstunden-Saldo und Resturlaub aller **aktiven** Mitarbeitenden werden berechnet und als Übernahme ins Folgejahr gespeichert. **Bestehende Übernahmen für das Folgejahr werden überschrieben.** Der Dialog nennt, wie viele davon von Hand eingetragen wurden. Beim **laufenden Jahr** warnt er zusätzlich, dass das Jahr noch nicht zu Ende ist: Das Soll der verbleibenden Monate würde ohne Ist eingefroren. Schließen Sie ein Jahr deshalb erst nach seinem Ende ab; ein künftiges Jahr lässt sich gar nicht abschließen.' },
             { n: 2, text: 'Mit [[Abbrechen]] geschieht nichts.' },
             { n: 3, text: 'Mit [[Jahresabschluss erstellen]] bestätigen Sie. Die Meldung nennt, wie viele Mitarbeitende nach dem Folgejahr übernommen wurden.' },
           ],

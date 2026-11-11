@@ -10,6 +10,8 @@
 
 ### 🐛 Behoben (Funde beim Schreiben der Handbücher)
 
+- **Jahresabschluss nur noch für abgelaufene Jahre ohne Rückfrage.** Ein künftiges Jahr wird abgelehnt; das laufende Jahr lässt sich nur nach ausdrücklicher Bestätigung abschließen (der Dialog warnt, dass das Soll der verbleibenden Monate ohne Ist eingefroren würde). Der Dialog nennt außerdem, wie viele von Hand eingetragene Übernahmen für das Folgejahr überschrieben werden. Das Admin-Dashboard öffnet auch ohne Browser-Speicher (privates Fenster).
+
 **Enthält die Datenbank-Migration `077_legacy_half_day`.** Vor dem Update wie immer eine Sicherung anlegen.
 
 - **Teamübersicht „Arbeitszeiten im Team“: keine abgeschnittenen Beschriftungen mehr.** Schmale Balken zeigten Zeiten wie „13–16:3C“ oder ein einzelnes „15“. Jetzt zeigt der Balken je nach Breite die volle Kurzzeit, nur den Beginn oder nichts; die volle Zeit steht immer im Hover-Text und für Screenreader.

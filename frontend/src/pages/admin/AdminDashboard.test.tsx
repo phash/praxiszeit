@@ -472,3 +472,40 @@ describe('AdminDashboard Jahresübersicht: Tage mit Komma (P4.3)', () => {
     expect(screen.queryAllByText(/\d\.\d Tage/)).toHaveLength(0);
   });
 });
+
+// calc-01 (R35): der Dialog holt vorab die Fakten und warnt beim laufenden Jahr.
+describe('AdminDashboard Jahresabschluss-Dialog (calc-01)', () => {
+  it('holt die Vorschau, warnt beim laufenden Jahr, nennt manuelle Übernahmen und bestätigt', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith('/admin/year-closing/2026/preview')) {
+        return Promise.resolve({ data: { year: 2026, next_year: 2027, is_open_year: true, manual_carryover_count: 2 } });
+      }
+      if (url.startsWith('/admin/reports/yearly-absences')) return Promise.resolve({ data: [] });
+      if (url.startsWith('/admin/reports/')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: null });
+    });
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Jahresabschluss 2026 erstellen'));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toMatch(/2026 ist noch nicht zu Ende/);
+    expect(dialog.textContent).toMatch(/2 Übernahmen von Hand/);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Jahresabschluss erstellen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
+      '/admin/year-closing/2026', null, { params: { confirm_open_year: true } },
+    ));
+  });
+});
+
+// calc-09: localStorage darf das erste Rendern nicht kippen.
+describe('AdminDashboard ohne Speicherzugriff (calc-09)', () => {
+  it('rendert trotz werfendem localStorage', async () => {
+    mockEndpoints([]);
+    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+    try {
+      render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+      expect(await screen.findByText('Jahresübersicht')).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

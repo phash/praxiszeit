@@ -7,6 +7,7 @@ import { trackHoursToday, vacationDaysToday } from '../../utils/contractToday';
 import { Users, Clock, TrendingUp, X, Calendar, FileText, ChevronRight, Mail, Briefcase, ArrowUp, ArrowDown, Search, Plus, Trash2, Save, ScrollText, BookCheck } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
+import { yearClosingMessage } from '../../utils/yearClosingTexts';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 import WeekSelector, { isoWeekMonday, weekLabel } from '../../components/WeekSelector';
@@ -92,6 +93,15 @@ interface UserDetails {
   schedule_today?: { track_hours?: boolean | null; vacation_days?: number | null } | null;
 }
 
+// calc-09: gesperrter Speicher (privates Fenster, blockierte Site-Daten) darf nicht werfen.
+function readViewMode(): 'month' | 'week' {
+  try {
+    return localStorage.getItem('adminDashboardViewMode') === 'week' ? 'week' : 'month';
+  } catch {
+    return 'month';
+  }
+}
+
 export default function AdminDashboard() {
   const [report, setReport] = useState<EmployeeReport[]>([]);
   // #159: leitende MA (§18) verzerren den Schnitt — standardmäßig aus dem Ø ausschließen.
@@ -145,14 +155,12 @@ export default function AdminDashboard() {
   // kein Monatsanfangs-Minus) oder 'monatsende' (voller Monat).
   const [sollBasis, setSollBasis] = useState<'bis_heute' | 'monatsende'>('bis_heute');
   // #329: Monat ↔ Woche umschalten. Auswahl persistiert pro Browser-User.
-  const [viewMode, setViewMode] = useState<'month' | 'week'>(
-    () => (localStorage.getItem('adminDashboardViewMode') as 'month' | 'week') || 'month',
-  );
+  const [viewMode, setViewMode] = useState<'month' | 'week'>(readViewMode);
   const [currentWeek, setCurrentWeek] = useState<string>(() => isoWeekMonday());
 
   const changeViewMode = (mode: 'month' | 'week') => {
     setViewMode(mode);
-    localStorage.setItem('adminDashboardViewMode', mode);
+    try { localStorage.setItem('adminDashboardViewMode', mode); } catch { /* Speicher gesperrt: nur Komfort */ }
   };
 
   // Bei Wochenwechsel auch den Monat mitführen, damit die Mitarbeiter-Detailansicht
@@ -228,17 +236,33 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleYearClosing = () => {
+  const handleYearClosing = async () => {
+    const year = currentYear;
+    let isOpenYear = false;
+    let manualCount = 0;
+    try {
+      // calc-01: Vorab-Fakten (laufendes Jahr, manuelle Übernahmen) für den Dialog.
+      const pre = await apiClient.get(`/admin/year-closing/${year}/preview`);
+      isOpenYear = pre.data?.is_open_year === true;
+      manualCount = Number(pre.data?.manual_carryover_count) || 0;
+    } catch (error: any) {
+      toast.error(getErrorMessage(error, 'Jahresabschluss nicht möglich'));
+      return;
+    }
     confirm({
-      title: `Jahresabschluss ${currentYear}`,
-      message: `Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter werden berechnet und als Übernahme in ${currentYear + 1} gespeichert. Bestehende Übernahmen für ${currentYear + 1} werden überschrieben.\n\nFortfahren?`,
+      title: `Jahresabschluss ${year}`,
+      message: yearClosingMessage(year, isOpenYear, manualCount),
       confirmLabel: 'Jahresabschluss erstellen',
       variant: 'warning',
       onConfirm: async () => {
         try {
-          const res = await apiClient.post(`/admin/year-closing/${currentYear}`);
+          const res = await apiClient.post(
+            `/admin/year-closing/${year}`,
+            null,
+            isOpenYear ? { params: { confirm_open_year: true } } : undefined,
+          );
           const count = res.data.employees?.length || 0;
-          toast.success(`Jahresabschluss ${currentYear} erstellt: ${count} Mitarbeiter übernommen nach ${currentYear + 1}`);
+          toast.success(`Jahresabschluss ${year} erstellt: ${count} Mitarbeiter übernommen nach ${year + 1}`);
           fetchYearlyAbsences();
         } catch (error: any) {
           toast.error(getErrorMessage(error, 'Fehler beim Jahresabschluss'));
