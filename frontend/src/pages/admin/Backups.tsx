@@ -165,6 +165,12 @@ export default function Backups() {
           />
           <span>Tägliche automatische Sicherung aktivieren</span>
         </label>
+        <p className="text-xs text-gray-500" data-testid="backup-schedule-hint">
+          Gilt für die <strong>Docker</strong>-Installation. Eine <strong>native</strong> Installation sichert
+          über den Zeitplan des Betriebssystems (Linux täglich 02:00, Windows und macOS täglich 03:00,
+          Aufbewahrung 31 Tage laut <span className="font-mono">praxiszeit.conf</span>); Uhrzeit und
+          Aufbewahrung unten wirken dort nicht.
+        </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Uhrzeit (Stunde, 0–23)</label>
@@ -173,7 +179,7 @@ export default function Backups() {
               onChange={(e) => setConfig({ ...config, hour: Number(e.target.value) })}
               className="w-full border rounded px-3 py-2"
             />
-            <p className="text-xs text-gray-500 mt-1">Lokale Zeit (Europe/Berlin), Sicherung läuft um HH:30.</p>
+            <p className="text-xs text-gray-500 mt-1">Nur Docker: lokale Zeit (Europe/Berlin), Sicherung läuft um HH:30.</p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Aufbewahrung (Tage)</label>
