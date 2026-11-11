@@ -67,6 +67,9 @@
 - **Monatsjournal: Lösch-Antrag über das Antragsformular mit eigener Begründung** (statt der festen Begründung „Eintrag fehlerhaft erfasst“); der Antrag im Journal bietet bei einem § 4-Pausenfehler die dokumentierte Ausnahme an.
 - **Antragsformular: Pausenausnahme nur dort angeboten, wo sie hilft.** Bei „Pause ist so lang wie der Eintrag“ erscheint kein Begründungsfeld mehr; das Datum ist auf vergangene Tage begrenzt, das Pausenfeld lässt sich leeren, Fehlermeldungen werden Screenreadern angesagt.
 
+### 🐛 Behoben (Review 2026-11-11: Benutzerverwaltung)
+- **Benutzerliste: vollständig, ehrlich und sicher bedienbar** (user-06/07/13/14/15/21). Die Liste fordert bis zu 500 Konten an (vorher stilles Kürzen auf 100); fällt die Urlaubs-/Überstundenübersicht aus, steht dort „Erneut laden“ statt endlosem „Lädt…“; schnelles Umschalten von „Inaktive anzeigen“ lässt keine alte Antwort mehr die Liste überschreiben; „Bearbeiten“ scrollt zum Formular und fragt vor dem Wechsel auf eine andere Person nach; „Passwort setzen“ und „Deaktivieren“ fehlen in der eigenen Zeile; Jahr und Fristen rechnen nach Berliner Datum.
+
 ## [1.23.0] - 2026-11-07
 
 ### ✨ Neu
