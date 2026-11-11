@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import apiClient from '../api/client';
+
+vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
 import { useSystemStore, DEFAULT_SHIFT_WEEKDAYS } from './systemStore';
 
 function setInfo(partial: Record<string, unknown>) {
@@ -73,5 +76,27 @@ describe('systemStore.isBreakExceptionAllowed (#499)', () => {
     expect(useSystemStore.getState().isBreakExceptionAllowed()).toBe(false);
     setInfo({ break_exception_allowed: true });
     expect(useSystemStore.getState().isBreakExceptionAllowed()).toBe(true);
+  });
+});
+
+describe('systemStore.fetch (auth-09)', () => {
+  beforeEach(() => {
+    useSystemStore.setState({ info: null, isLoaded: false });
+    (apiClient.get as any).mockReset();
+  });
+
+  it('keeps the loaded state when a reload fails', async () => {
+    setInfo({ shift_planning_enabled: true, onboarding_enabled: true });
+    (apiClient.get as any).mockRejectedValueOnce(new Error('offline'));
+    await useSystemStore.getState().fetch();
+    expect(useSystemStore.getState().isShiftPlanningEnabled()).toBe(true);
+    expect(useSystemStore.getState().isLoaded).toBe(true);
+  });
+
+  it('falls back to defaults only when nothing was loaded yet', async () => {
+    (apiClient.get as any).mockRejectedValueOnce(new Error('offline'));
+    await useSystemStore.getState().fetch();
+    expect(useSystemStore.getState().info?.shift_planning_enabled).toBe(false);
+    expect(useSystemStore.getState().isLoaded).toBe(true);
   });
 });

@@ -61,9 +61,11 @@ function ProtectedRoute({
 }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
+  const location = useLocation();
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    // auth-06: Rücksprungziel mitgeben, damit die Anmeldung dort weitermacht.
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
   if (requiredRole && user?.role !== requiredRole) {

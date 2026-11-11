@@ -133,7 +133,9 @@ describe('401 response interceptor', () => {
 
   it('dispatches auth:session-expired and clears the token when refresh fails', async () => {
     setAccessToken('stale');
-    vi.spyOn(axios, 'post').mockRejectedValue(new Error('refresh denied'));
+    vi.spyOn(axios, 'post').mockRejectedValue(
+      Object.assign(new Error('refresh denied'), { response: { status: 401 } }),
+    );
     const onExpired = vi.fn();
     window.addEventListener('auth:session-expired', onExpired);
 
@@ -142,6 +144,24 @@ describe('401 response interceptor', () => {
     await expect(apiClient.get('/data')).rejects.toBeTruthy();
     expect(onExpired).toHaveBeenCalledTimes(1);
     expect(getAccessToken()).toBeNull();
+    window.removeEventListener('auth:session-expired', onExpired);
+  });
+
+  it.each([
+    ['network error', new Error('Network Error')],
+    ['502 during deploy', Object.assign(new Error('bad gateway'), { response: { status: 502 } })],
+    ['429 rate limit', Object.assign(new Error('too many'), { response: { status: 429 } })],
+  ])('auth-04: keeps the session when the refresh fails transiently (%s)', async (_n, failure) => {
+    setAccessToken('still-valid-cookie');
+    vi.spyOn(axios, 'post').mockRejectedValue(failure);
+    const onExpired = vi.fn();
+    window.addEventListener('auth:session-expired', onExpired);
+
+    apiClient.defaults.adapter = (config) => reply(config, 401);
+
+    await expect(apiClient.get('/data')).rejects.toBeTruthy();
+    expect(onExpired).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe('still-valid-cookie');
     window.removeEventListener('auth:session-expired', onExpired);
   });
 
@@ -248,8 +268,17 @@ describe('tryRefreshSession', () => {
 
   it('returns null and clears the token on failure', async () => {
     setAccessToken('stale');
-    vi.spyOn(axios, 'post').mockRejectedValue(new Error('no cookie'));
+    vi.spyOn(axios, 'post').mockRejectedValue(
+      Object.assign(new Error('no cookie'), { response: { status: 401 } }),
+    );
     await expect(tryRefreshSession()).resolves.toBeNull();
     expect(getAccessToken()).toBeNull();
+  });
+
+  it('auth-04: rethrows a transient failure and keeps the token', async () => {
+    setAccessToken('keep');
+    vi.spyOn(axios, 'post').mockRejectedValue(new Error('Network Error'));
+    await expect(tryRefreshSession()).rejects.toThrow('Network Error');
+    expect(getAccessToken()).toBe('keep');
   });
 });

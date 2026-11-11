@@ -52,6 +52,12 @@ export const useSystemStore = create<SystemState>((set, get) => ({
       const { data } = await apiClient.get<SystemInfo>('/system/info');
       set({ info: data, isLoaded: true });
     } catch {
+      // auth-09: ein gescheiterter Neuladeversuch (z. B. nach dem Speichern einer
+      // Einstellung) darf einen gültigen Stand nicht mit dem Fallback überschreiben.
+      if (get().info !== null) {
+        set({ isLoaded: true });
+        return;
+      }
       // onboarding_enabled: false im Fehler-Fallback — laesst sich die Einstellung
       // nicht laden, NICHT die Tour zeigen (sonst erschiene sie trotz Admin-
       // Deaktivierung, weil ein fehlendes Feld als "an" gilt).

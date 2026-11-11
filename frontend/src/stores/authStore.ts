@@ -201,7 +201,15 @@ export const useAuthStore = create<AuthState>()(
           return;
         }
 
-        const token = await tryRefreshSession();
+        let token: string | null;
+        try {
+          token = await tryRefreshSession();
+        } catch {
+          // auth-04: Netzfehler/5xx/429 — gespeicherte Anmeldung behalten, die
+          // Oberfläche freigeben; der nächste 401 versucht den Refresh erneut.
+          set({ isHydrating: false });
+          return;
+        }
         if (!token) {
           // Refresh cookie gone/expired → wipe persisted user
           set({ user: null, isAuthenticated: false, isHydrating: false });

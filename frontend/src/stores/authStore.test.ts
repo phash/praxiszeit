@@ -148,6 +148,18 @@ describe('hydrate', () => {
     expect(s.isHydrating).toBe(false);
     expect(get).not.toHaveBeenCalled(); // no profile fetch after failed refresh
   });
+
+  it('auth-04: keeps the persisted user when the refresh fails transiently', async () => {
+    useAuthStore.setState({ user: USER as any, isAuthenticated: true, isHydrating: true });
+    mockTryRefresh.mockRejectedValueOnce(new Error('Network Error'));
+
+    await useAuthStore.getState().hydrate();
+
+    const s = useAuthStore.getState();
+    expect(s.user).not.toBeNull();
+    expect(s.isAuthenticated).toBe(true);
+    expect(s.isHydrating).toBe(false);
+  });
 });
 
 describe('impersonation (#370)', () => {
