@@ -342,7 +342,7 @@ export default function TimeTracking() {
   // can share the same loader without racing against unmount.
   const fetchEntriesWithCancel = async (cancelRef: { cancelled: boolean }) => {
     try {
-      const response = await apiClient.get(`/time-entries?month=${currentMonth}`);
+      const response = await apiClient.get(`/time-entries?month=${currentMonth}&limit=500`);
       if (cancelRef.cancelled) return;
       setEntries(response.data);
     } catch (error) {
@@ -646,11 +646,20 @@ export default function TimeTracking() {
           await apiClient.delete(`/time-entries/${id}`);
           toast.success('Zeiteintrag erfolgreich gelöscht');
           fetchEntries();
-        } catch (error) {
-          toast.error('Fehler beim Löschen');
+        } catch (error: any) {
+          // zeit-08: Serverbegründung zeigen (409 anerkannt → Änderungsantrag, 404 …).
+          toast.error(getErrorMessage(error, 'Fehler beim Löschen'));
+          if (error?.response?.status === 404) fetchEntries();
         }
       },
     });
+  };
+
+  // zeit-01: „Neuer Eintrag“ startet immer mit sauberem Zustand — ein früheres
+  // Bearbeiten darf nicht als editingId überleben (sonst PUT auf den alten Eintrag).
+  const openNewEntryForm = () => {
+    resetForm();
+    setShowForm(true);
   };
 
   const openChangeRequest = (entry: TimeEntry, type: 'update' | 'delete', requestCredit = false) => {
@@ -768,7 +777,7 @@ export default function TimeTracking() {
               variant={showForm ? 'ghost' : 'primary'}
               size="md"
               icon={showForm ? X : Plus}
-              onClick={() => setShowForm(!showForm)}
+              onClick={() => (showForm ? resetForm() : openNewEntryForm())}
               // P1.2: unter sm ist die Beschriftung ausgeblendet — der Name muss
               // trotzdem am Knopf stehen (Bildschirmleser, Sprachsteuerung).
               aria-label={showForm ? 'Abbrechen' : 'Neuer Eintrag'}
@@ -952,15 +961,10 @@ export default function TimeTracking() {
                 type="date"
                 value={formData.date}
                 onChange={(e) => {
-                  const newDate = e.target.value;
-                  const targetHours = getDailyTargetHours(user, newDate);
-                  // U2: beim laufenden Eintrag KEIN Ende nachziehen — sonst
-                  // kaeme die erfundene Endzeit ueber den Umweg des Datums
-                  // zurueck.
-                  const newEndTime = (targetHours > 0 && !editingOpenEntry)
-                    ? addHoursToTime(formData.start_time, targetHours)
-                    : formData.end_time;
-                  setFormData({ ...formData, date: newDate, end_time: newEndTime });
+                  // zeit-02: das Ende bleibt beim Datumswechsel UNVERÄNDERT — vorher
+                  // überschrieb es die gestempelte Zeit (Bearbeiten) bzw. die
+                  // Blockvorbelegung, gerechnet aus dem Live-Soll der User-Zeile.
+                  setFormData({ ...formData, date: e.target.value });
                   setErrors({});
                 }}
                 required

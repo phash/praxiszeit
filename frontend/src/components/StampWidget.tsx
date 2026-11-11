@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { LogIn, LogOut, Play, Square, Check } from 'lucide-react';
 import apiClient from '../api/client';
 import { useToast } from '../contexts/ToastContext';
@@ -9,6 +9,7 @@ import { showArbzgWarnings } from '../utils/arbzgWarnings';
 import { computeBreakError } from '../utils/breakValidation';
 import { breakWaiverReasonError, isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
+import { useUIStore } from '../stores/uiStore';
 import { gapSegments, hullClamp } from '../utils/workBlocks';
 import { stripWarningCode } from '../utils/arbzgWarnings';
 import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
@@ -76,6 +77,10 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  // zeit-04: Anzeige aus Zeitstempel ableiten, nicht per Tick hochzählen
+  // (Hintergrund-Tabs drosseln Timer).
+  const elapsedBase = useRef({ minutes: 0, at: Date.now() });
+  const stampVersion = useUIStore((s) => s.stampVersion);
   const [showBreakInput, setShowBreakInput] = useState(false);
   const [breakMinutes, setBreakMinutes] = useState(0);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -97,7 +102,9 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
     try {
       const res = await apiClient.get('/time-entries/clock-status');
       setStatus(res.data);
-      setElapsed(res.data.elapsed_minutes ?? 0);
+      const base = res.data.elapsed_minutes ?? 0;
+      elapsedBase.current = { minutes: base, at: Date.now() };
+      setElapsed(base);
     } catch {
       // Silently fail - widget is non-critical
     } finally {
@@ -105,15 +112,27 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
     }
   }, []);
 
+  // zeit-03: beim Mount, nach Stempeln auf anderer Seite/Gerät-Wechsel
+  // (stampVersion) und bei Rückkehr in den Tab neu laden.
   useEffect(() => {
     fetchStatus();
+  }, [fetchStatus, stampVersion]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchStatus();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, [fetchStatus]);
 
   // Live elapsed timer
   useEffect(() => {
     if (!status?.is_clocked_in) return;
     const interval = setInterval(() => {
-      setElapsed((prev) => prev + (variant === 'sheet' ? 1 / 60 : 1));
+      const { minutes, at } = elapsedBase.current;
+      const diff = (Date.now() - at) / 60_000;
+      setElapsed(variant === 'sheet' ? minutes + diff : minutes + Math.floor(diff));
     }, variant === 'sheet' ? 1000 : 60_000);
     return () => clearInterval(interval);
   }, [status?.is_clocked_in, variant]);
@@ -145,6 +164,8 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
         setClockInError(msg);
       } else {
         toast.error(msg);
+        // zeit-03: Zustandsfehler (z. B. „Bereits eingestempelt“) → Status neu laden.
+        if (err?.response?.status === 400) void fetchStatus();
       }
     } finally {
       setActing(false);
@@ -245,6 +266,9 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
         notifyStillClockedIn(msg);
       } else {
         toast.error(msg);
+        // zeit-03: Zustandsfehler (z. B. „Kein offener Eintrag“) → Status neu laden.
+        const code = err?.response?.status;
+        if (code === 400 || code === 404 || code === 409) void fetchStatus();
       }
     } finally {
       setActing(false);

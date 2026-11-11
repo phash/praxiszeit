@@ -325,3 +325,40 @@ describe('<StampWidget /> Audit 2026-11-07', () => {
     expect(postMock.mock.calls[0][1]).toMatchObject({ sunday_exception_reason: 'Notdienst' });
   });
 });
+
+describe('<StampWidget /> Review 2026-11-11', () => {
+  it('zeit-03: nach 400 „Bereits eingestempelt“ wird der Status neu geladen', async () => {
+    let clocked = false;
+    getMock.mockImplementation((url: string) => {
+      if (url === '/time-entries/clock-status') {
+        return Promise.resolve({ data: clocked
+          ? { is_clocked_in: true, current_entry: { id: 'x', start_time: startedAgo(5) }, elapsed_minutes: 5 }
+          : { is_clocked_in: false } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    render(<StampWidget />);
+    const btn = await screen.findByRole('button', { name: /Einstempeln/ });
+    clocked = true; // anderes Gerät hat eingestempelt
+    rejectWith('Bereits eingestempelt');
+    fireEvent.click(btn);
+    expect(await screen.findByRole('button', { name: /Ausstempeln/ })).toBeInTheDocument();
+  });
+
+  it('zeit-04: die Anzeige folgt der Uhr, nicht der Zahl der Ticks', async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date(2026, 5, 2, 20, 0));
+    clockedInSince('17:00:00');
+    getMock.mockImplementation((url: string) =>
+      Promise.resolve({ data: url === '/time-entries/clock-status'
+        ? { is_clocked_in: true, current_entry: { id: 'x', start_time: '17:00:00' }, elapsed_minutes: 60 } : {} }));
+    render(<StampWidget />);
+    await screen.findByText('1h 00min');
+    // Hintergrund-Tab: Uhr springt 2 h, es kommt nur EIN Tick.
+    vi.setSystemTime(new Date(2026, 5, 2, 22, 0));
+    vi.advanceTimersByTime(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(await screen.findByText('3h 01min')).toBeInTheDocument();
+  });
+});
