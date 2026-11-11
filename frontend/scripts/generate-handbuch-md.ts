@@ -52,7 +52,12 @@ export function findOrphans(outs: Output[], root: string): string[] {
   const dir = join(root, 'docs/handbuch/img');
   if (!existsSync(dir)) return [];
   const wanted = new Set(outs.filter((o) => o.copyFrom).map((o) => o.path));
-  return readdirSync(dir).map((f) => join(dir, f)).filter((p) => !wanted.has(p)).sort();
+  if (wanted.size === 0) return []; // leerer Ausgabesatz: nie alles loeschen
+  return readdirSync(dir)
+    .filter((f) => /\.(webp|png)$/i.test(f))
+    .map((f) => join(dir, f))
+    .filter((p) => !wanted.has(p))
+    .sort();
 }
 
 function main(): number {

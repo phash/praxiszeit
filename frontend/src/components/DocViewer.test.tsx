@@ -5,11 +5,13 @@ import {
   CheatsheetAdmin,
   CheatsheetMitarbeiter,
   SchnellstartAdmin,
-  handbuchAdminSections,
-  handbuchMitarbeiterSections,
-  type AccordionItem,
 } from './DocViewer';
 import { getFallbackHelp, helpContent } from '../constants/helpContent';
+import HandbookPage from '../handbuch/components/HandbookPage';
+import { HANDBOOKS } from '../handbuch/content/index';
+import { FORBIDDEN_TERMS } from '../handbuch/content/forbiddenTerms';
+import manifestJson from '../handbuch/manifest.json';
+import type { HandbookId, Manifest } from '../handbuch/types';
 
 // Sichtbarer Text einer Doku-Fläche, Leerraum zusammengefasst.
 function textOf(node: ReactNode): string {
@@ -19,58 +21,40 @@ function textOf(node: ReactNode): string {
   return text;
 }
 
-function sectionsText(items: AccordionItem[]): string {
+// Sichtbarer Text eines Handbuchs (Inhalt unter frontend/src/handbuch), wie ihn
+// die Hilfeseite zeigt. Die Pflichtwörter dieser Datei gelten seit der Umstellung
+// auf das grafische Handbuch dem Inhalt, nicht mehr DocViewer.tsx.
+function handbookText(id: HandbookId): string {
   return textOf(
-    items.map((item) => (
-      <section key={item.title}>
-        <h2>{item.title}</h2>
-        {item.content}
-      </section>
-    )),
+    <HandbookPage
+      handbook={HANDBOOKS[id]}
+      manifest={manifestJson as Manifest}
+      imgBase="/help/img"
+      linkBase="/help"
+      variant="wide"
+    />,
   );
 }
 
-// Bedienung und Begriffe, die es seit 1.20.0 nicht mehr gibt (Spec E58, 12.2, 15.1).
-const VERALTET = [
-  'Wochenstunden anpassen…',
-  'Wochenstunden & Tagesplan',
-  'Soll-Beginn und Soll-Ende hinterlegen',
-  'Soll-Beginn/-Ende je Wochentag',
-  'erfassten Blöcke',
-  'aller Blöcke des Tages',
-  'vergessener Nachmittagsblock',
-  'Fehlende Blöcke',
-  'Spalte „Arbeitsblöcke"',
-  'Änderung beantragen',
-  // Über den Plan hinaus (Reviews der Markdown-Tasks 2–6): der Bereich im
-  // Bearbeiten-Formular heißt „Arbeitszeit heute" (ohne Doppelpunkt), der
-  // Anlegen-Knopf „Neue:r Mitarbeiter:in", und die Erwachsenen-Grenzen gelten
-  // auch für Jugendliche – nur §§ 11, 12 JArbSchG prüft PraxisZeit nicht.
-  'Arbeitszeit heute: …',
-  'Neuer Benutzer',
-  'prüft PraxisZeit nichts davon',
-  // Review Task 8: gestempelte Einträge heißen nie „Block" (Begriffsregel des
-  // Plans), und „Nicht angerechnet (Min)" führen nur die Tageszeilen von
-  // Monatsreport und Jahresreport Detailliert – der Jahresreport Classic nicht.
-  'durchgehender Block',
-  'Spalte aller Formate',
-];
+// Bedienung und Begriffe, die es seit 1.20.0 nicht mehr gibt (Spec E58, 12.2, 15.1):
+// Quelle ist handbuch/content/forbiddenTerms.ts (dort auch gegen den Inhalt geprüft).
+const VERALTET = FORBIDDEN_TERMS;
 
 function expectNoStaleTerms(text: string) {
   for (const stale of VERALTET) expect(text).not.toContain(stale);
 }
 
 describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
-  it('Admin-Handbuch beschreibt Dialog, Blöcke, Schutzpaket und Rechtshinweise', () => {
-    const text = sectionsText(handbuchAdminSections);
+  it('Praxisleitungs-Handbuch beschreibt Dialog, Blöcke, Schutzpaket und Anerkennen', () => {
+    const text = handbookText('praxisleitung');
     for (const expected of [
-      '3. Arbeitszeit-Blöcke, Rückwirkung & Anerkennen',
-      '15. Admin-Passwort verloren',
+      'Admin-Passwort',
+      'reset-admin-password',
       'Arbeitszeit anpassen…',
       'Arbeitszeit & Wochenstunden',
       'Nach Arbeitsblöcken',
       'Pause innerhalb der Blöcke',
-      'Tagessoll = Summe der Blockdauern − Pause innerhalb der Blöcke',
+      'Tagessoll = Summe der Blöcke minus diese Pause',
       '08:00–12:15 und 14:45–18:00 = 7:30 h',
       'Anerkennen',
       'Anrechnung anerkannt',
@@ -81,76 +65,40 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       'Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit.',
       'Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)',
       'Mit der beschäftigten Person vereinbart',
-      '[Erfassungsfehler korrigiert]',
-      'auf den vorherigen Stand zurücksetzen',
-      'Eine Änderung des Puffers wirkt auf neue Einträge.',
-      'Nichtanrechnung ersetzt keine Vergütungsentscheidung.',
-      '§ 87 Abs. 1 Nr. 2 BetrVG',
-      'PraxisZeit prüft das nicht.',
-      'Für Jugendliche gelten strengere Pausen- und Schichtzeitregeln',
-      'Details in Abschnitt 9',
-      // Löschen nur an der jüngsten Zeile, 409 bei einer Zwischenzeile,
-      // begrenztes Notizfeld (PR3), echtes Ende 23:59 (V1/P18), P23/P24.
+      'auf den vorherigen Stand zurück',
+      'Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn',
+      'Nichtanrechnung ersetzt keine Vergütungsentscheidung',
+      'Rückwirkend ab … mit Neuberechnung',
       'nur an der jüngsten Zeile',
-      'Rückwirkend löschen mit Neuberechnung',
-      'Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden.',
-      'Notiz und Begründung zusammen höchstens 500 Zeichen.',
-      'Auch ein tatsächliches Ende um 23:59',
-      'vorher automatisch geschlossen',
-      'beendet die Blöcke ab dem Wirkungsdatum',
-      'Unterbrechung (Min) und Zeiteinträge',
+      'Unterbrechung (Min), Zeiteinträge',
       'Anwesenheit laut Stempel',
       // Puffer-Wortlaut wie Settings.tsx (Spec 16.1/12.3): Bestand ohne
       // gespeicherten Puffer nimmt beim Bearbeiten den aktuellen (grace_for_entry).
-      'Einträge aus der Zeit vor Version 1.20.0 tragen keinen gespeicherten Puffer und werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt.',
-      // Review Task 8: der XLS-Import zeigt die Kappung schon in der Vorschau
-      // (HANDBUCH-ADMIN.md Abschnitt 3/12, ImportXls.tsx).
-      'XLS-Import – dort schon in der Vorschau sichtbar',
-      // Gesamtreview PR4/V1: Grenzfall P18 – ein eingetragenes Ende genau auf
-      // dem wirksamen Ende bleibt Echo (end_is_correction, lacks_actual_end).
-      'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)',
-      // Gesamtreview 1.20 (Fund 6/25 und 14) wie HANDBUCH-ADMIN.md: das
-      // Bearbeiten-Formular zeigt den heute gültigen Stand und mit Blöcken den
-      // Modus „Nach Arbeitsblöcken"; bei fester Monatsarbeitszeit beschriftet
-      // der Block-Editor die Werte als „geplant".
-      'zeigen den heute gültigen Stand – auch nach dem Wirkungsdatum einer zukunftsdatierten Änderung',
-      'gelten heute Arbeitszeit-Blöcke, heißt der Modus „Nach Arbeitsblöcken"',
-      'bei fester Monatsarbeitszeit steht „geplant" statt „Tagessoll" bzw. „Wochensoll"',
-      'die Auswirkung nennt sie „Geplante Anwesenheit je Wochentag"',
+      'Einträge aus der Zeit vor Version 1.20.0 tragen keinen gespeicherten Puffer',
+      // XLS-Import zeigt die Kappung schon in der Vorschau (ImportXls.tsx).
+      'Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit',
+      'Werktag ohne Block = 0 Stunden',
     ]) {
       expect(text).toContain(expected);
     }
     expectNoStaleTerms(text);
   });
 
-  it('Mitarbeiter-Handbuch erklärt nicht angerechnete Zeit, Antrag und Profilkarte', () => {
-    const text = sectionsText(handbuchMitarbeiterSections);
+  it('Mitarbeitenden-Handbuch erklärt nicht angerechnete Zeit, Antrag und Profilkarte', () => {
+    const text = handbookText('mitarbeitende');
     for (const expected of [
-      '5. Arbeitszeit-Blöcke & Anrechnung',
       '2:30 h zwischen den Blöcken nicht angerechnet',
       'Anrechnung beantragen',
       'Anerkannter Eintrag – Änderung per Änderungsantrag oder über die Verwaltung',
-      'erst nach Arbeitsende',
-      'Pause zwischen den Arbeitsblöcken',
       'Meine Arbeitszeit',
-      'Ihre Arbeitszeit wurde ab 01.09.2026 geändert',
       'Nicht angerechnet heißt nicht unbezahlt',
-      // Dashboard-Hinweis wie im Code (reclamp_audit.notice_text), Datum
-      // beim Bearbeiten gesperrt (#502), echtes Ende 23:59 (V1/P18).
+      // Dashboard-Hinweis (reclamp_audit.notice_text), Datum beim Bearbeiten
+      // gesperrt (#502), Werktag ohne Block = 0 h (1.21).
       'Hinweis zu Ihrer Arbeitszeit',
-      '(neu: 40,0 h/Woche auf 4 Arbeitstage)',
-      'Das Datum bleibt beim Bearbeiten fest.',
-      'Auch ein tatsächliches Ende um 23:59',
-      // Gesamtreview PR4/V1: beide Grenzfälle P18 (wirksames Ende 23:59 bzw.
-      // genau das angerechnete Ende) wie HANDBUCH-MITARBEITER.md Abschnitt 3.3,
-      // und der 409 der Abwesenheitsbuchung an einem anerkannten Tag
-      // (absences.create_absence, CREDIT_OVERRIDE_ABSENCE_DETAIL — eigener Text
-      // seit Gesamtreview 1.20 B1).
-      // 1.21: auf einem Werktag ohne Block zieht der Auto-Close auf 0 h zusammen —
-      // 23:59 bleibt nur, wo nichts gekappt wird.
-      'Ist das angerechnete Ende bereits 23:59 – nur dort, wo nichts gekappt wird: Sie haben keine Arbeitszeit-Blöcke, es ist Wochenende oder Feiertag, oder Ihre Stunden werden nicht gezählt –, bleibt die Kennzeichnung „automatisch geschlossen" stehen; angerechnet wird dann ohnehin bis 23:59.',
-      'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)',
-      'gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden.',
+      'Beim Bearbeiten bleibt das Datum fest.',
+      'Es darf nicht in der Zukunft liegen',
+      'Werktag ohne Block = freier Tag',
+      'Arbeitsende per Antrag nachtragen',
     ]) {
       expect(text).toContain(expected);
     }
@@ -158,14 +106,12 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
   });
 
   it('Vertragsverlauf: Urlaubsanspruch, Stundenzählung und Minijob gelten ab Datum (Teil A)', () => {
-    const handbuch = sectionsText(handbuchAdminSections);
+    const handbuch = handbookText('praxisleitung');
     for (const expected of [
       'Urlaub und Abrechnung',
       'Urlaubsanspruch pro Jahr ab diesem Datum',
-      'Vorschlag übernehmen (N)',
+      'Vorschlag übernehmen',
       'Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten.',
-      'Urlaubsanspruch {Jahr}',
-      'Urlaub verbraucht {Jahr}',
     ]) {
       expect(handbuch).toContain(expected);
     }
@@ -173,12 +119,12 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
     expect(textOf(<SchnellstartAdmin />)).toContain('Urlaubsanspruch pro Jahr ab diesem Datum');
   });
 
-  it('Mitarbeiter-Handbuch: Name und E-Mail ändert man im Profil selbst (Gesamtreview 1.20)', () => {
+  it('Mitarbeitenden-Handbuch: Name und E-Mail ändert man im Profil selbst (Gesamtreview 1.20)', () => {
     // Profile.tsx zeigt „Bearbeiten" für jede Rolle (PUT /auth/profile, Art. 16
     // DSGVO) — nur Arbeitszeit, Rolle und Urlaubsanspruch legt die Verwaltung fest.
-    const text = sectionsText(handbuchMitarbeiterSections);
+    const text = handbookText('mitarbeitende');
     expect(text).not.toContain('Persönliche Daten wie Name und Wochenstunden können nur vom Administrator geändert werden');
-    expect(text).toContain('Vorname, Nachname und E-Mail-Adresse ändern Sie selbst über „Bearbeiten" neben Ihrem Namen');
+    expect(text).toContain('Vorname, Nachname und E-Mail ändern');
   });
 
   it('Kurzanleitungen und Schnellstart nennen Knopf, Modus und Anrechnung', () => {
@@ -396,31 +342,25 @@ describe('Kontexthilfe entspricht der Oberfläche (Gesamtreview B6)', () => {
   });
 });
 
-// Gesamtreview 1.20 (migration-native): das Admin-Handbuch (§19) nennt seit dem
-// Docker-Restore-Fix restore.sh bzw. praxiszeit-server.py restore — die In-App-
-// Fassung versprach weiter einen „idempotenten" Restore dank --clean --if-exists.
+// Gesamtreview 1.20 (migration-native): das Praxisleitungs-Handbuch nennt seit dem
+// Docker-Restore-Fix restore.sh bzw. praxiszeit-server.py restore — die frühere
+// In-App-Fassung versprach einen „idempotenten" Restore dank --clean --if-exists.
 // Genau das stimmte nicht: ein älteres Backup bricht an Tabellen ab, die erst
 // eine neuere Version angelegt hat, und ohne Neustart migriert nichts.
-describe('Datensicherung: Wiederherstellung wie im Admin-Handbuch', () => {
-  const section = () => {
-    const item = handbuchAdminSections.find((s) => s.title.startsWith('13. Datensicherung'));
-    expect(item).toBeDefined();
-    return textOf(item!.content);
-  };
-
+describe('Datensicherung: Wiederherstellung wie im Praxisleitungs-Handbuch', () => {
   it('nennt Script, nativen Befehl und den Neustart statt „idempotent"', () => {
-    const t = section();
+    const t = handbookText('praxisleitung');
     expect(t).not.toContain('idempotent');
-    expect(t).toContain('bash restore.sh <datei>');
-    expect(t).toContain('praxiszeit-server.py restore <datei>');
-    expect(t).toContain('restore-backup.bat <datei>');
+    expect(t).toContain('bash restore.sh');
+    expect(t).toContain('praxiszeit-server.py restore');
+    expect(t).toContain('restore-backup.bat');
     expect(t).toContain('erst dieser Start');
     expect(t).toContain('docs/BACKUP.md');
   });
 
   // Audit 2026-11-07, Fix-Runde: signierte Sicherungen und Backup-Ort.
   it('nennt die Signatur, --force-unverified und dass bestehende Ordner unverändert bleiben', () => {
-    const t = section();
+    const t = handbookText('praxisleitung');
     expect(t).toContain('Signatur');
     expect(t).toContain('--force-unverified');
     expect(t).toContain('ändert PraxisZeit nicht');

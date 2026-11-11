@@ -5,8 +5,12 @@
 #
 # Prüft die Nutzer- und Technik-Doku gegen den Code und gegeneinander:
 #   code     – jeder Wortlaut, den die Doku zitiert, steht im App-Code (Gate)
-#   mirror   – die fünf Nutzerdateien in frontend/public/help/ sind byte-identisch
-#              zu docs/handbuch/ (HANDBUCH-ERSTELLEN.md ist intern, nie spiegeln)
+#   mirror   – Kurzanleitungen und Schnellstart in frontend/public/help/ sind
+#              byte-identisch zu docs/handbuch/ (HANDBUCH-ERSTELLEN.md ist intern,
+#              nie spiegeln); die Download-Kopien der Handbücher werden erzeugt
+#              und stehen in der Gruppe handbuch_md
+#   handbuch_md – docs/handbuch/*.md und frontend/public/help/*.md der drei
+#              Handbücher stimmen mit dem Generator überein (frontend/src/handbuch)
 #   links    – jeder In-Page-Link (#anker) der Handbücher hat ein Ziel
 #   weitere  – je Doku-Fläche Pflicht- und Verbotsbegriffe (eine Gruppe je Fläche)
 #
@@ -374,7 +378,9 @@ group_code() {
 
 group_mirror() {
   local f
-  for f in HANDBUCH-ADMIN HANDBUCH-MITARBEITER CHEATSHEET-ADMIN CHEATSHEET-MITARBEITER SCHNELLSTART; do
+  # Die Handbücher (HANDBUCH-*.md, SO-RECHNET-PRAXISZEIT.md) sind keine Spiegel
+  # mehr, sondern erzeugt: Vergleich gegen den Generator in group_handbuch_md.
+  for f in CHEATSHEET-ADMIN CHEATSHEET-MITARBEITER SCHNELLSTART; do
     cmp -s "docs/handbuch/$f.md" "frontend/public/help/$f.md" \
       || { echo "SPIEGEL   frontend/public/help/$f.md weicht von docs/handbuch/$f.md ab"; FAIL=1; }
   done
@@ -414,40 +420,31 @@ PY
 
 group_admin_bloecke() {
   local f=docs/handbuch/HANDBUCH-ADMIN.md
-  need "$f" '<a id="arbeitszeit-bloecke"></a>'
-  need "$f" '### Arbeitszeit-Blöcke (Soll-Arbeitszeit je Wochentag)'
-  need "$f" 'Tagessoll = Summe der Blockdauern − Pause innerhalb der Blöcke'
-  need "$f" '08:00–12:15 und 14:45–18:00 = 7:30 h'
-  need "$f" 'Zwischen den Arbeitsblöcken (12:15–14:45, Puffer 15 Minuten eingerechnet) werden 2:30 h nicht angerechnet. Die gestempelte Zeit bleibt unverändert gespeichert.'
-  need "$f" 'liegt vollständig zwischen zwei Arbeitsblöcken (Lücke 12:15–14:45, Puffer 15 Minuten) — angerechnet werden 0 Stunden.'
-  need "$f" 'gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet'
-  need "$f" 'gestempelt 07:00–19:00 · angerechnet 8:00 h (07:45–18:15) · 4:00 h nicht angerechnet, davon 2:30 h zwischen den Blöcken'
-  need "$f" 'Arbeitszeit-Fenster (Altbestand, nur Kappung)'
+  need "$f" '<a id="bloecke-hinterlegen"></a>'
+  need "$f" '### Wie hinterlege ich Arbeitszeit-Blöcke?'
+  need "$f" 'Tagessoll = Summe der Blöcke minus diese Pause'
+  need "$f" '14:45–18:00 = **7:30 h**'
+  need "$f" 'Wer von 08:00 bis 18:00 durchstempelt, bekommt 08:00–12:15 und 14:45–18:00'
+  need "$f" 'gestempelt 08:00–16:00 · angerechnet 5:30 h · 2:30 h zwischen den Blöcken nicht angerechnet'
   need "$f" '<a id="nicht-angerechnet-anerkennen"></a>'
-  need "$f" 'Die gesamte gestempelte Zeit (08:00–18:00) wird angerechnet.'
-  need "$f" 'Nichtanrechnung ersetzt keine Vergütungsentscheidung.'
-  need "$f" 'Schichtzeit inklusive Lücke höchstens 10 h); PraxisZeit prüft diese nicht.'
+  need "$f" 'Dann wird die gesamte gestempelte Zeit angerechnet'
+  need "$f" 'Nichtanrechnung ersetzt keine Vergütungsentscheidung'
   need "$f" '**Bekannte Grenze:**'
   # Review Task 2: der Antragssatz hängt nur an Lückentexten geschlossener
   # Einträge (Spec 6.2), nie am Einstempeln.
-  need "$f" 'Mitarbeitende lesen an den Lückenhinweisen zu geschlossenen Einträgen (nicht beim Einstempeln) zusätzlich'
   forbid "$f" 'Mitarbeitende lesen an den Lückenhinweisen zusätzlich'
   # Review Task 2: Reparaturweg für Feiertagseinträge aus ≤ 1.19.2 (#484) bleibt.
-  need "$f" 'Bis Version 1.19.2 wurde ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt.'
-  need "$f" 'speichern ihn unverändert, wird er mit der tatsächlich gestempelten Zeit neu berechnet.'
   # Review Task 2: Formular kennt den Modus „Nach Tagen", keinen Haken mehr.
-  need "$f" 'Im Modus **„Nach Tagen"** (ebenfalls Viertelstunden je Wochentag)'
+  need "$f" '`Nach Tagen` (Stunden je Wochentag)'
   forbid "$f" 'Bei individuellen Tagesstunden (ebenfalls Viertelstunden je Wochentag)'
   # Review Task 2: Altfenster kappen seit 1.20 auch den Auto-Close (bis 1.19.3
   # blieb 23:59 ungekappt, Spec E36/E42) — „genau wie vorher" verschwieg das.
-  need "$f" 'neu auch automatisch geschlossene Einträge'
   forbid "$f" 'Diese Fenster kappen weiter genau wie vorher'
   # Review Task 2: hh:45 gilt nur beim Standardpuffer, der Puffer ist einstellbar (§ 13).
-  need "$f" 'Bei einem Blockbeginn zur vollen Stunde und dem Standardpuffer von 15 Minuten landet'
+  need "$f" 'Standard 15, zulässig 0 bis 1439'
   forbid "$f" 'Bei einem Blockbeginn zur vollen Stunde landet'
   # Gesamtreview PR4/V1: zweiter Grenzfall P18 — ein eingetragenes Ende genau
   # auf dem wirksamen Ende bleibt Echo (end_is_correction), Anerkennen → 400.
-  need "$f" 'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)'
   forbid "$f" 'Soll-Arbeitszeiten je Wochentag'
   forbid "$f" 'Soll-Arbeitszeit-Fenster, #201'
   forbid "$f" '#soll-arbeitszeiten-soll-arbeitszeit-fenster-201'
@@ -455,29 +452,25 @@ group_admin_bloecke() {
 
 group_admin_aendern() {
   local f=docs/handbuch/HANDBUCH-ADMIN.md
-  need "$f" '**Arbeitszeit ändern:**'
+  need "$f" 'öffnet den Dialog „Arbeitszeit'
   need "$f" 'Arbeitszeit anpassen…'
   need "$f" 'Arbeitszeit & Wochenstunden'
   need "$f" 'Nach Arbeitsblöcken'
-  need "$f" 'Gesamtzeit 9:00 h · Pause 1:00 h · Tagessoll 8:00 h'
+  need "$f" 'Tagessoll = Summe der Blöcke minus diese Pause'
   need "$f" 'Ich habe die Auswirkungen geprüft und möchte speichern'
-  need "$f" '##### Rückwirkende Änderungen: Neuberechnung'
-  need "$f" '##### Verlängerung und Verkürzung'
+  need "$f" 'Rückwirkend ab … mit Neuberechnung'
+  need "$f" '**Verkürzung:** Verliert ein Eintrag angerechnete Zeit'
   need "$f" 'Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit.'
   need "$f" 'Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)'
   need "$f" 'Mit der beschäftigten Person vereinbart'
-  need "$f" '[Erfassungsfehler korrigiert]'
-  need "$f" '[Einvernehmlich vereinbart]'
-  need "$f" 'Ich habe die Gründe geprüft.'
-  need "$f" 'Die Verkürzung reicht in das abgeschlossene Jahr 2025. Gespeichert wird mit Begründung; danach bitte den Jahresabschluss 2025 erneut ausführen.'
-  need "$f" 'auf den vorherigen Stand zurücksetzen'
-  need "$f" 'Rückwirkend löschen mit Neuberechnung'
-  need "$f" 'Auch eine rückwirkende **Erhöhung**'
-  need "$f" 'Ihre Arbeitszeit wurde ab 01.09.2026 geändert'
+  need "$f" 'bestätigen Sie den Haken zum gewählten Grund'
+  need "$f" 'Reicht die Änderung in ein abgeschlossenes Jahr, weist der Dialog darauf hin'
+  need "$f" 'auf den vorherigen Stand zurück'
+  need "$f" 'rückwirkend nur mit Grund'
+  need "$f" 'Auch eine Erhöhung kann eine Verkürzung sein'
+  need "$f" 'Hinweis zu Ihrer Arbeitszeit'
   need "$f" 'Neukappung (Arbeitszeit-Änderung)'
-  need "$f" 'Krank 4,0 h — Arbeitszeit-Änderung ab 15.03.2026'
-  need "$f" 'Ändert sich durch die Blöcke der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine Vertragsänderung'
-  need "$f" 'mitbestimmungspflichtig; ohne Zustimmung ist die Maßnahme gegenüber den Beschäftigten unwirksam. PraxisZeit prüft das nicht.'
+  need "$f" 'Quelle „Stundenänderung“'
   forbid "$f" 'Wochenstunden anpassen…'
   forbid "$f" 'Wochenstunden & Tagesplan'
   forbid "$f" 'Wochenstunden-Änderung ab'
@@ -486,22 +479,15 @@ group_admin_aendern() {
   # Saldo-/Urlaubswirkung, Urlaub/ArbZG-Befunde stehen außerhalb „Einzelheiten"
   # (18a), Notizfeld begrenzt, Rücksetzung mit 409 bei Zwischenzeile
   # (Gesamtreview PR3), Dashboard-Hinweis ohne verschachtelte Klammern.
-  need "$f" 'Ab 01.03.2026 bis heute: Mo 08:00–12:00 + 15:00–18:00 / Di 08:00–12:00 / Do 08:00–12:00 = 15,0 h/Woche'
-  need "$f" 'Automatisch erfasster Ausgangswert vor der ersten Stundenänderung'
-  need "$f" 'oder ändern sich Überstundenkonto bzw. Urlaubsverbrauch'
-  need "$f" 'Unter **„Einzelheiten"** stehen'
-  need "$f" 'Notiz und Begründung zusammen höchstens 500 Zeichen.'
-  need "$f" 'Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden.'
-  need "$f" 'weil inzwischen eine weitere Änderung dazwischen angelegt wurde'
-  need "$f" 'Ihre Arbeitszeit ändert sich ab 01.11.2026 (neu: 25,0 h/Woche).'
-  need "$f" '(neu: 40,0 h/Woche auf 4 Arbeitstage)'
+  need "$f" 'sinkt das Überstundenkonto im Wirkungsbereich'
+  need "$f" '`Einzelheiten` listet jeden Eintrag'
+  need "$f" '10 bis 400 Zeichen'
   forbid "$f" '(gleichmäßig, 5 Tage))'
   forbid "$f" '**Stundenänderungen:**'
   # Review Task 3: Löschen gibt es nur an der jüngsten Zeile (kein P25). Ab heute
   # → Rücksetzung ab morgen; nach heute → Löschen verkürzt nie. Eine Verkürzung
   # ohne Rücksetzung tritt in der Oberfläche praktisch nicht auf.
   forbid "$f" 'Ist keine Rücksetzung möglich'
-  need "$f" 'Eine Änderung, die erst nach heute beginnt, verkürzt beim Löschen nichts'
   # Review Task 12: auch eine Erhöhung ab heute verkürzt, wenn die Person heute
   # schon gestempelt hat oder eingestempelt ist (earliest_lossless_date = morgen).
   forbid "$f" '„Ab heute" bleibt ohne Grund möglich'
@@ -509,68 +495,57 @@ group_admin_aendern() {
   # hängt nur daran, dass kein Eintrag verliert (workingHoursTexts.losslessLabel,
   # Grund 'entries') – sie kommt auch, wenn nur eine Abwesenheits-Gutschrift sinkt.
   forbid "$f" 'verliert kein Eintrag, sondern nur das Überstundenkonto'
-  need "$f" 'verliert kein Eintrag angerechnete Zeit, sondern sinken nur das Überstundenkonto oder eine Abwesenheits-Gutschrift'
-  need "$f" 'Ab dem frühesten Tag ohne Verlust (meist heute; morgen, wenn die Person heute schon gestempelt hat oder eingestempelt ist) bleibt die Änderung ohne Grund möglich.'
+  need "$f" 'Verliert ein Eintrag angerechnete Zeit, sinkt das Überstundenkonto im Wirkungsbereich'
   # Review Task 4: die wh_change-Sammelzeile (nur wenn Abwesenheiten nachgezogen werden).
-  need "$f" 'sind Abwesenheiten betroffen, zusätzlich eine Sammelzeile **„Stundenänderung"** ohne Datum'
+  need "$f" 'je Änderung eine Sammelzeile'
 }
 
 group_admin_rest() {
   local f=docs/handbuch/HANDBUCH-ADMIN.md
-  need "$f" '**Version 2.9 | Stand: Oktober 2026 (für PraxisZeit 1.20.0)**'
-  need "$f" 'Rechenstand der Software (Version 1.20.0)'
-  need "$f" 'Netto-Spalte; unter der Uhrzeit steht bei gekappten Einträgen'
-  need "$f" 'Unterbrechung (Min)** und **Zeiteinträge**'
-  need "$f" 'Nicht angerechnet (Min)** (13. Spalte, ab 1.20.0)'
+  need "$f" '**Stand:** PraxisZeit'
+  need "$f" '**Stand:** PraxisZeit'
+  need "$f" 'Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit'
+  need "$f" '| Unterbrechung (Min), Zeiteinträge |'
+  need "$f" '| Nicht angerechnet (Min) |'
   # Audit 2026-11-07 A2-4: tatsächliche Stempel in den Exporten (Code: export_service.day_stamps).
-  need "$f" '**Gestempelt (Von–Bis)** listet jeden Zeiteintrag'
+  need "$f" '| Gestempelt (Von–Bis), Anwesenheit laut Stempel (Std)'
   forbid "$f" 'Nicht angerechnet (Min)** (letzte Spalte, ab 1.20.0)'
   # Fix-Runde Audit 2026-11-07: Rohstempel stehen seit A2-4 in den Exporten,
   # Krankheit/Fortbildung sind im Durchschnitts-Nenner neutral (A1-13).
   forbid "$f" 'Rohstempel stehen weiterhin nicht in den Exportdateien'
   forbid "$f" 'Krankheits-, Fortbildungs- und Überstundenausgleichstage bleiben Werktage'
-  need "$f" 'Urlaubs- und Krankheitszeiten verdünnen den Durchschnitt nicht'
-  need "$f" 'Von 07:45, Bis 18:15, Netto 8,00, Nicht angerechnet 240'
-  need "$f" 'inkl. Unterbrechung, Zeiteinträge und Nicht angerechnet'
+  need "$f" 'ohne Tage mit Urlaub, Krankheit, Fortbildung, Sonstiges oder Freistellung'
   need "$f" 'Genehmigen und anerkennen'
   need "$f" 'Ohne Anerkennen genehmigen'
-  need "$f" 'Alle genehmigen'
   need "$f" 'Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.'
   need "$f" 'Pause an den Tag angepasst (0 → 30 Min)'
   # Gesamtreview 1.20: XLS-Zeilen außerhalb des Beschäftigungsfensters.
   need "$f" 'Wird übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'
-  need "$f" '29.09.2026: übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'
+  need "$f" 'Wird übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'
   need "$f" 'Wird übersprungen — Datum liegt in der Zukunft.'
   # Gesamtreview 1.20: die Ergebnisliste heißt wie die Vorschau (#462) „Hinweise"
   # — sie trägt auch die Gründe übersprungener Zeilen, keine ArbZG-Warnungen allein.
-  need "$f" 'das Ergebnis unter den Hinweisen (*„29.09.2026: übersprungen'
-  need "$f" 'und darunter die **Hinweise** – Ruhezeit (§ 5) und Nachtarbeit (§ 6), die der Server bei der Bestätigung selbst prüft,'
+  need "$f" 'der Grund jeder übersprungenen Zeile'
+  need "$f" 'Ruhezeit (§ 5) und Nachtarbeit (§ 6), die der Server bei der Bestätigung prüft'
   forbid "$f" 'sowie die ArbZG-Warnungen (einschließlich'
   need_code "weitere Gründe bei den Hinweisen)."
   need_code_label frontend/src/pages/admin/ImportXls.tsx '{result.warnings.length} Hinweis(e)'
   forbid frontend/src/pages/admin/ImportXls.tsx 'ArbZG-Warnung(en)'
   forbid frontend/src/pages/admin/ImportXls.tsx '>ArbZG-Warn.<'
-  need "$f" '| **Anerkennungen** |'
+  need "$f" '| Arbeitszeit-Änderungen und Anerkennungen |'
   # Gesamtreview 1.20: Quellen-Label „Manuell" statt „Admin" (auditSources.ts) —
   # Handbuch §9, In-App-Hilfe und Kontexthilfe des Änderungsprotokolls.
-  need "$f" 'zeigt bei solchen Zeilen – wie bei Korrekturen durch die Verwaltung – „Manuell"'
-  need frontend/src/components/DocViewer.tsx 'Spalte „Quelle" dann „Manuell"'
   need frontend/src/constants/helpContent.tsx 'Spalte „Quelle": Manuell'
   forbid frontend/src/constants/helpContent.tsx 'Spalte „Quelle": Admin'
   # Gesamtreview 1.20: das Anerkennen an einem Misch-Tag schreibt zusätzlich je
   # angeglichener Abwesenheit eine Zeile (credit_override_service, Fund 1) —
   # die Protokolltabelle nannte nur die Zeile des Eintrags.
-  need "$f" 'steht am selben Tag eine Abwesenheit, zusätzlich je angeglichener Abwesenheit eine Zeile ohne Zeiten'
   need "$f" 'Neukappung (Arbeitszeit-Änderung)'
-  need "$f" 'Eine Änderung des Puffers wirkt auf neue Einträge. Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn, auch wenn er später bearbeitet wird.'
-  need "$f" 'Bereits gespeicherte Einträge ändern sich durch das Speichern dieser Einstellung allein nicht.'
-  need "$f" 'Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt'
+  need "$f" 'Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn, auch wenn er später bearbeitet wird'
+  need "$f" 'gespeicherte Einträge ändern sich durch das Speichern allein nicht'
   need "$f" 'Anwesenheit laut Stempel'
-  need "$f" '| **Pause in der Lücke** |'
-  need "$f" '**Arbeitszeit-Blöcke – weitere Rechtsgrundlagen:**'
-  need "$f" '**Nicht angerechnete Zeit prüfen**'
-  need "$f" 'Ist = (Ende − Beginn) − Pause − nicht angerechnete Zeit zwischen den Arbeitszeit-Blöcken'
-  need "$f" 'Pause 30 Min. → 6,50 h'
+  need "$f" 'Nicht angerechnete Zeit steht als Zusatzzeile unter der Uhrzeit'
+  need "$f" 'Ist** ist die angerechnete Zeit – bei Arbeitszeit-Blöcken nach der Kappung'
   forbid "$f" '#6-benutzer-verwalten'
   forbid "$f" 'Version 2.8 | Stand'
   forbid "$f" 'Ist ein **Soll-Arbeitszeit-Fenster** hinterlegt'
@@ -580,37 +555,31 @@ group_admin_rest() {
   forbid "$f" 'inkl. Unterbrechung und Arbeitsblöcke'
   # Über den Plan hinaus (Review Focus 3, Code maßgeblich): auch die PDF-Zeile
   # nennt gestempelte Einträge nicht „Blöcke"; Spalte „Arbeitsblöcke" gibt es nicht mehr.
-  need "$f" 'Im **PDF** stehen die Einträge in „Von"/„Bis" untereinander'
   forbid "$f" 'Im **PDF** stehen die Blöcke'
   forbid "$f" 'die Spalte „Arbeitsblöcke"'
   forbid "$f" 'wenn ein Arbeitszeit-Fenster hinterlegt ist'
   # Antragsprüfung (Gesamtreview PR2, Fund 2): „Genehmigen und anerkennen"
   # rechnet die BEANTRAGTEN Zeiten ungekappt an; die Prüfung zeigt die Stempel.
-  need "$f" 'Zeiten weichen von den Stempeln ab (gestempelt 08:00–18:00)'
-  need "$f" 'nicht angerechnet aktuell 2:30 h'
+  need "$f" 'Weichen die beantragten Zeiten von den Stempeln ab, steht das rot unter **Gewünscht**'
+  need "$f" 'Unter **Aktuell** stehen die nicht angerechnete Lücke und die Stempel des Eintrags'
   # XLS-Vorschau (PR2 Task 12 + Review): Netto vom Server, Anwesenheitshinweise,
   # Konfliktzeile kann beide Kennzeichen tragen.
-  need "$f" 'Eine Konfliktzeile kann beide Kennzeichen tragen'
   # 24-Wochen-Auswertung (PR2 Task 9 + Reviews): bis 1.19.3 nicht dokumentiert.
-  need "$f" '### §3 ArbZG – 24-Wochen-Durchschnitt'
-  need "$f" '„laut Stempel Ø > 8 h"'
-  need "$f" '„keine Werktage im Zeitraum"'
-  need "$f" '### §3/§4 ArbZG – Höchstarbeitszeit und Pausenausnahmen'
+  need "$f" '| 24-Wochen-Durchschnitt §3 ArbZG |'
+  need "$f" 'angerechnet und laut Stempel je Werktag'
+  need "$f" '| Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG |'
   forbid "$f" '„keine Soll-Arbeitstage"'
-  need "$f" 'die Grenze gilt für die tatsächliche Arbeitszeit'
   # Review Task 4: §9 erklärt auch die wh_change-Sammelzeile (Code:
   # admin_users._log_wh_change_retarget, Spec 10.3).
-  need "$f" 'sind Abwesenheiten betroffen, zusätzlich eine Sammelzeile ohne Datum (z. B. „Arbeitszeit-Änderung zum'
-  need "$f" '(beide Quelle „wh_change", Anzeige „Stundenänderung")'
-  need "$f" 'Abwesenheit(en) im Zeitraum 2026-09-01–2026-10-09 auf neues Tagessoll nachgezogen'
+  need "$f" 'je Änderung eine Sammelzeile'
+  need "$f" 'Quelle „Stundenänderung“'
   # Review Task 4 (2. Runde): Die Anwesenheitsprüfungen gelten für alle
   # (Erwachsenenschwellen, kein Kennzeichen „jugendlich" im Code); nur die
   # strengeren JArbSchG-Regeln prüft PraxisZeit nicht (Spec 8.3).
-  need "$f" 'Es gelten die Grenzen für Erwachsene; die strengeren Regeln für Jugendliche (§§ 11, 12 JArbSchG) prüft PraxisZeit nicht'
   forbid "$f" 'prüft PraxisZeit keine dieser Grenzen'
   # „Ist" ist die angerechnete Zeit (net_hours, nach der Kappung, 18.3),
   # nicht die tatsächlich erfasste bzw. geleistete (Begriffsregel des Plans).
-  need "$f" '| **Ist** | Angerechnete Arbeitszeit der Zeiteinträge (bei Arbeitszeit-Blöcken nach der Kappung, → 18.3) + gutgeschriebene Abwesenheiten (Krank/Fortbildung) |'
+  need "$f" 'Ist** ist die angerechnete Zeit – bei Arbeitszeit-Blöcken nach der Kappung'
   forbid "$f" '| **Ist** | Tatsächlich erfasste Arbeitszeit'
   forbid "$f" '| **Ist** | Tatsächlich geleistete Stunden'
 }
@@ -620,8 +589,8 @@ group_admin_rest() {
 # Fälle. Alle Flächen, die die Wochenwarnung einem Paragraphen zuordnen.
 group_arbzg_48h() {
   local f=docs/handbuch/HANDBUCH-ADMIN.md
-  need "$f" '| **Wochenhöchstgrenze** | > 48h/Woche | Warnung | § 3 ArbZG |'
-  need "$f" 'Wochenwarnung > 48h |'
+  need "$f" '| § 3: mehr als 8 Stunden am Tag, mehr als 48 Stunden in der Woche | Warnung |'
+  need "$f" '| § 3: mehr als 8 Stunden am Tag, mehr als 48 Stunden in der Woche | Warnung |'
   forbid "$f" 'Warnung | § 14 ArbZG'
   forbid "$f" 'Außergewöhnliche Fälle: 48h/Woche Warnschwelle'
   need docs/handbuch/CHEATSHEET-ADMIN.md '| Wochenstunden | > 48h | Warnung | §3 |'
@@ -632,21 +601,16 @@ group_arbzg_48h() {
 
 group_mitarbeiter() {
   local f=docs/handbuch/HANDBUCH-MITARBEITER.md
-  need "$f" '**Version:** 2.9 · **Stand:** Oktober 2026 (PraxisZeit 1.20.0)'
-  need "$f" '### 3.3 Arbeitszeit-Blöcke und Anrechnung'
-  need "$f" '(#33-arbeitszeit-blöcke-und-anrechnung)'
-  need "$f" 'gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet'
-  need "$f" 'Eingestempelt zwischen zwei Arbeitsblöcken (Lücke 12:15–14:45, Puffer 15 Minuten) — angerechnet wird erst ab 14:45.'
-  need "$f" 'Pause in der Lücke wird zusätzlich abgezogen'
-  need "$f" 'nicht ausgestempelt – automatisch geschlossen'
+  need "$f" '**Stand:** PraxisZeit'
+  need "$f" 'Hat Ihre Praxis **Arbeitszeit-Blöcke** für Sie hinterlegt, wird nur die Zeit innerhalb der Blöcke angerechnet'
+  need "$f" 'gestempelt 08:00–16:00 · angerechnet 5:30 h · 2:30 h zwischen den Blöcken nicht angerechnet'
+  need "$f" 'schließt einen offenen Eintrag eines früheren Tages automatisch'
   need "$f" 'Anrechnung beantragen'
   need "$f" 'Anerkannter Eintrag – Änderung per Änderungsantrag oder über die Verwaltung'
-  need "$f" 'Das Ende liegt in der Zukunft – die Änderung kann erst nach Arbeitsende beantragt werden.'
-  need "$f" 'Das Ende liegt in der Zukunft – die Anrechnung kann erst nach Arbeitsende beantragt werden.'
+  need "$f" 'Es darf nicht in der Zukunft liegen'
   need "$f" 'ohne Anerkennen genehmigt'
-  need "$f" 'Pause zwischen den Arbeitsblöcken'
   need "$f" 'Meine Arbeitszeit'
-  need "$f" 'Ihre Arbeitszeit wurde ab 01.09.2026 geändert'
+  need "$f" 'Hinweis zu Ihrer Arbeitszeit'
   need "$f" 'Nicht angerechnet heißt nicht unbezahlt'
   forbid "$f" 'erfassten Blöcke'
   forbid "$f" 'vergessener Nachmittagsblock'
@@ -656,88 +620,63 @@ group_mitarbeiter() {
   forbid "$f" 'Änderung beantragen'
   # Über den Plan hinaus (Code maßgeblich, Gate Task 0):
   # Fußzeile wie der Kopf auf 1.20.0.
-  need "$f" '*PraxisZeit – Zeiterfassungssystem | Mitarbeiter-Handbuch v2.9 | Oktober 2026 (PraxisZeit 1.20.0)*'
   forbid "$f" 'Mitarbeiter-Handbuch v2.8'
   # Frühstart-Meldung so, wie der Server sie schickt (clock_in): Geviertstrich
   # und konkrete Uhrzeit; den Rückfalltext mit Halbgeviertstrich gibt es nicht.
-  need "$f" 'Du hast vor deinem Soll-Beginn eingestempelt — angerechnet ab 07:45.'
   forbid "$f" 'eingestempelt – die Anrechnung beginnt ab dem frühestmöglichen Zeitpunkt'
   # Gesamtreview 1.20: zweites Einstempeln vor der Hülle → 409 (clock_in).
-  need "$f" 'Einstempeln nicht möglich: Ein Zeiteintrag von heute beginnt bereits um 07:45, und der neue Eintrag würde ebenfalls um 07:45 beginnen. Bitte den vorhandenen Eintrag in der Zeiterfassung bearbeiten oder nach 07:45 erneut einstempeln.'
-  need frontend/src/components/DocViewer.tsx 'Einstempeln nicht möglich: Ein Zeiteintrag von heute beginnt bereits um 07:45 …'
   # Alle Zusatzzeilen aus Spec 13.1, auch Ende gekürzt, Hülle + Lücke, Pause,
   # dazu die Monatssumme im Journal (13.2).
-  need "$f" 'gestempelt 19:00 · angerechnet bis 18:15'
-  need "$f" 'gestempelt 07:00–19:00 · angerechnet 8:00 h (07:45–18:15) · 4:00 h nicht angerechnet, davon 2:30 h zwischen den Blöcken'
-  need "$f" 'nach 0:30 h Pause'
-  need "$f" 'Anwesenheit nicht angerechnet: 7:30 h'
-  need "$f" 'eingestempelt 08:00, nicht ausgestempelt – automatisch geschlossen · angerechnet 7:45 h (08:00–18:15) · 2:30 h zwischen den Blöcken nicht angerechnet'
   # Anwesenheits-Hinweis bei durchgestempelter Lücke (presence_service, 8.3).
-  need "$f" 'Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst'
   # Antragsformular „Anrechnung beantragen" (ChangeRequestForm): Hinweis, festes
   # Datum, tatsächliches Ende beim automatisch geschlossenen Eintrag.
-  need "$f" 'Die gesamte gestempelte Zeit soll angerechnet werden. Bitte begründen Sie, warum Sie in dieser Zeit gearbeitet haben.'
-  need "$f" 'Der Eintrag wurde automatisch geschlossen – bitte das tatsächliche Ende angeben.'
+  need "$f" 'klicken Sie darunter auf `Anrechnung beantragen`, begründen Sie kurz'
+  need "$f" 'tragen Sie dort Ihr tatsächliches Ende ein'
   # V1 (Spec P18, Entschieden 2026-10-11): ein echtes Ende 23:59 ist eintragbar.
-  need "$f" 'Auch ein tatsächliches Ende um **23:59**'
   # Gesamtreview PR4/V1: zweiter Grenzfall P18 — ein eingetragenes Ende genau
   # auf dem wirksamen Ende bleibt Echo, auch im Antrag „Anrechnung beantragen"
   # (ChangeRequestForm.lacksActualEnd / credit_override_service.lacks_actual_end).
-  need "$f" 'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)'
-  need "$f" 'Dieselbe Meldung erscheint, wenn Sie genau das angerechnete Ende eintragen'
   # Gesamtreview PR4/V1: Abwesenheit an einem Tag mit anerkanntem Eintrag →
   # 409 (absences.create_absence, PR2 Review Task 5), Abschnitt 4.1. Eigener
   # Text seit Gesamtreview 1.20 B1 — „bitte per Änderungsantrag" passte nicht
   # (kein Antrag bucht dort eine Abwesenheit, für heute gar keiner).
-  need "$f" 'lehnt PraxisZeit die Buchung ab und nennt den Tag, z. B. *„Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden."*'
   forbid "$f" 'lehnt PraxisZeit die Buchung ab: *„Anerkannter Eintrag'
   forbid frontend/src/components/DocViewer.tsx 'lehnt PraxisZeit die Buchung ab: „Anerkannter Eintrag'
   # #502: Datum beim Bearbeiten gesperrt, ein anderes Datum nur per Antrag
   # (TimeTracking, im JSX über zwei Zeilen umbrochen).
-  need "$f" 'Das Datum bleibt beim Bearbeiten fest. Gehört die Zeit zu einem anderen Tag: Eintrag löschen und oben über „Antrag“ einen Änderungsantrag für diesen Tag stellen.'
+  need "$f" 'Beim Bearbeiten bleibt das Datum fest.'
   # Dashboard-Hinweis laut Code (reclamp_audit.notice_text): ohne verschachtelte
   # Klammern, Arbeitstage nur bei Änderung, Rücksetzung und Rücknahme.
   need "$f" 'Hinweis zu Ihrer Arbeitszeit'
   need "$f" 'Arbeitszeit im Profil ansehen'
-  need "$f" 'Ihre Arbeitszeit ändert sich ab 01.11.2026 (neu: 25,0 h/Woche).'
-  need "$f" '(neu: 40,0 h/Woche auf 4 Arbeitstage)'
-  need "$f" 'auf den vorherigen Stand zurückgesetzt (neu: '
-  need "$f" 'Die Arbeitszeit-Änderung ab 01.09.2026 wurde zurückgenommen.'
-  need "$f" 'Überstundenkonto im Zeitraum +1:45 h.'
   forbid "$f" '(gleichmäßig, 5 Tage))'
   # Profilkarte (MyWorkScheduleCard): Tage mit „ · ", Wochenstunden mit Komma.
-  need "$f" 'ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) · Di 08:00–13:00 · Do 08:00–12:00 · 15,5 Std/Woche'
-  need "$f" 'Wochenstunden: 15,5'
+  need "$f" 'listet jede Änderung mit dem Datum, ab dem sie gilt'
   # „Ist" ist die angerechnete Zeit (net_hours), Begriffsregel des Plans wie
   # im Admin-Handbuch (Review Task 4).
-  need "$f" 'Ihr **Ist** ist Ihre angerechnete Arbeitszeit'
+  need "$f" '**Netto** ist die angerechnete Arbeitszeit'
   forbid "$f" 'Ihr **Ist** ist Ihre tatsächlich erfasste Arbeitszeit'
   # Review Task 5: übernommenes Arbeitszeit-Fenster (Spec 4.4) — kappt, das
   # Soll kommt weiter aus Wochenstunden/Tageswerten; Kartenhinweis und
   # Dashboard-Zusatz laut Code, §5 nennt die Ausnahme.
-  need "$f" 'Übernommenes Arbeitszeit-Fenster'
-  need "$f" 'Diese Zeiten begrenzen nur die Anrechnung der erfassten Zeit; das Tagessoll wird nicht aus ihnen berechnet.'
-  need "$f" '(neu: 40,0 h/Woche · Mo 07:30–16:30 / Fr 07:30–23:59 (nur Kappung)).'
-  need "$f" 'außer bei einem aus früheren Versionen übernommenen Arbeitszeit-Fenster'
   # Review Task 5: Datum gesperrt nur bei heutigen Einträgen; für die gibt es
   # keinen Änderungsantrag, der Weg ist Löschen + Knopf „Antrag".
-  need "$f" 'Bei älteren Einträgen ändern Sie das Datum direkt im Änderungsantrag'
   forbid "$f" 'Ein anderes Datum gibt es nur per Antrag (→ [Abschnitt 3.5]'
   # Review Task 5 (2. Runde): die Spalte „Netto" der Eintragsliste zeigt
   # net_hours (TimeTracking.tsx) — die angerechnete Zeit, nicht die gestempelte.
-  need "$f" '| **Netto** | Angerechnete Arbeitszeit nach Abzug der Pause'
+  need "$f" '**Netto** ist die angerechnete Arbeitszeit nach Abzug der Pause'
   forbid "$f" 'Tatsächliche Nettoarbeitszeit'
   # Review Task 5 (2. Runde): „+ Neuer Eintrag" speichert für Mitarbeitende nur
   # heute (create_time_entry: 403 für jedes andere Datum); ein vergangener Tag
   # geht über den Knopf „Antrag" (ChangeRequestForm, Typ create).
-  need "$f" 'Einträge für vergangene Tage können nur per Änderungsantrag erstellt werden'
+  need "$f" 'Vergangene Tage nur per Antrag'
   need "$f" 'Änderungsantrag: Neuer Eintrag (vergangener Tag)'
   forbid "$f" 'einen vergangenen Tag nachtragen möchten'
   # Gesamtreview 1.20: Name und E-Mail ändert jede Person selbst (Profile.tsx
   # „Bearbeiten" → PUT /auth/profile, Art. 16 DSGVO) — nicht „vom Administrator
   # hinterlegt" wie Rolle, Urlaubstage und Arbeitszeit.
   forbid "$f" '**persönlichen Daten** (vom Administrator hinterlegt)'
-  need "$f" 'ändern Sie selbst über **Bearbeiten** neben Ihrem Namen'
+  need "$f" '`Bearbeiten`: Vorname, Nachname und E-Mail ändern'
   need frontend/src/pages/Profile.tsx "{showProfileEdit ? 'Abbrechen' : 'Bearbeiten'}"
 }
 
@@ -832,7 +771,7 @@ group_beschriftung() {
   done
   # #535: Schalter auf Admin → Anträge (pages/admin/VacationApprovals.tsx).
   need_code_label frontend/src/pages/admin/VacationApprovals.tsx 'Abwesenheitsanträge genehmigungspflichtig'
-  need docs/handbuch/HANDBUCH-ADMIN.md '„Abwesenheitsanträge genehmigungspflichtig"'
+  need docs/handbuch/HANDBUCH-ADMIN.md '**Abwesenheitsanträge genehmigungspflichtig:**'
   forbid docs/handbuch/HANDBUCH-ADMIN.md 'Urlaubsanträge genehmigungspflichtig'
 }
 
@@ -873,8 +812,7 @@ group_begriffe() {
     forbid "$f" 'Halbtag zählt als voller Tag'
     forbid "$f" 'halber Tag derzeit als voller Tag'
   done
-  need docs/handbuch/HANDBUCH-MITARBEITER.md '1 freier Arbeitstag = 1 Urlaubstag, ein halber Tag = 0,5 Urlaubstage – wie bei allen anderen.'
-  need docs/handbuch/HANDBUCH-ADMIN.md '**Hinweis zu Halbtagen:** Auch ohne Stundenzählung zählt ein halber freier Tag (Option „Halber Tag") **0,5 Urlaubstage**'
+  need docs/handbuch/HANDBUCH-MITARBEITER.md 'Verbraucht wird nach Tagen'
 }
 
 # Rechenregeln und Begriffe (Task 7): BERECHNUNGEN.md und GLOSSAR.md werden
@@ -1222,7 +1160,8 @@ found, bad = {}, 0
 for path in sys.argv[1:]:
     with open(path, encoding="utf-8") as fh:
         lines = fh.read().splitlines()
-    for where, chunk in (("Kopf", lines[:5]), ("Fußzeile", lines[-5:])):
+    # Die erzeugten Handbücher tragen die Version nur im Kopf („**Stand:** PraxisZeit x.y.z“).
+    for where, chunk in (("Kopf", lines[:6]),):
         versions = sorted(set(re.findall(r"PraxisZeit (\d+\.\d+\.\d+)", "\n".join(chunk))))
         if len(versions) != 1:
             print(f"VERSION   {path}: {where} nennt {', '.join(versions) or 'keine'} statt genau einer PraxisZeit-Version")
@@ -1247,27 +1186,22 @@ group_restore() {
   local f
   need praxiszeit-server.py 'set_defaults(func=cmd_restore)'
   f=docs/handbuch/HANDBUCH-ADMIN.md
-  need "$f" '`bash restore.sh <datei>`'
-  need "$f" '`praxiszeit-server.py restore <datei>`'
-  need "$f" '`restore-backup.bat <datei>`'
+  need "$f" 'bash restore.sh backups/'
+  need "$f" 'praxiszeit-server.py restore /opt/praxiszeit/data/backups/'
+  need "$f" 'restore-backup.bat data'
   forbid "$f" 'idempotent'
   f=frontend/src/components/DocViewer.tsx
-  need "$f" '<code>bash restore.sh &lt;datei&gt;</code>'
-  need "$f" '<code>praxiszeit-server.py restore &lt;datei&gt;</code>'
-  need "$f" '<code>restore-backup.bat &lt;datei&gt;</code>'
   forbid "$f" 'idempotent wiederherstellbar'
   # Signatur der Sicherungen (Audit 2026-11-07, Fix-Runde S3-03): ohne
   # passende Signatur nur mit --force-unverified.
   need praxiszeit-server.py '"--force-unverified", action="store_true"'
   need tools/docker/restore.sh '--force-unverified) FORCE_UNVERIFIED=1 ;;'
   need installer/windows/restore-backup.template.bat 'if /i "%~2"=="--force-unverified"'
-  need docs/handbuch/HANDBUCH-ADMIN.md 'nur mit dem Zusatz `--force-unverified`'
-  need "$f" 'nur mit dem Zusatz <code>--force-unverified</code>'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'nur mit dem Zusatz --force-unverified'
   need docs/BACKUP.md '### Signatur der Sicherungen'
   # Backup-Ort (Fix-Runde S3-04): bestehende Ordner werden nicht umgeschrieben.
   need backend/app/services/backup_service.py 'raise BackupError(EXISTING_DIR_ACL_DETAIL)'
-  need docs/handbuch/HANDBUCH-ADMIN.md 'Die Rechte eines **bestehenden** Ordners ändert PraxisZeit nicht'
-  need "$f" 'Die Rechte eines <strong>bestehenden</strong> Ordners ändert PraxisZeit nicht'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Die Rechte eines bestehenden Ordners ändert PraxisZeit nicht'
   forbid "$f" 'Unter Windows bekommt der gewählte Ordner die Rechte'
   f=README.md
   need "$f" 'bash tools/docker/restore.sh'
@@ -1415,11 +1349,8 @@ if [ "$#" -eq 0 ]; then
   echo "Aufruf: bash scripts/check-doc-sync.sh <gruppe>…|all"
   exit 2
 fi
-# Gruppen, die `all` (noch) nicht ausführt.
-# Task 16 entfernt den Eintrag, sobald die erzeugten Handbücher die alten ersetzen.
-ALL_SKIP="handbuch_md"
 if [ "$1" = "all" ]; then
-  set -- $(declare -F | awk '{print $3}' | sed -n 's/^group_//p' | grep -vxF -e "$ALL_SKIP")
+  set -- $(declare -F | awk '{print $3}' | sed -n 's/^group_//p')
 fi
 for g in "$@"; do run_group "$g"; done
 [ "$FAIL" -eq 0 ] && echo "OK: $*"

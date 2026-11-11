@@ -1,37 +1,38 @@
 # Leitfaden: Handbücher und Cheat-Sheets erstellen
 
-**Zweck:** Dieses Dokument beschreibt den Prozess und die Standards für die Erstellung und Aktualisierung der PraxisZeit-Nutzerdokumentation.
+**Zweck:** Dieses Dokument beschreibt den Prozess und die Standards für die Erstellung und Aktualisierung der PraxisZeit-Nutzerdokumentation. Es ist intern und wird nie nach `frontend/public/help/` gespiegelt.
 
 ---
 
 ## Übersicht der Dokumentationsdateien
 
-| Datei | Zielgruppe | Format | Zweck |
-|-------|-----------|--------|-------|
-| `HANDBUCH-MITARBEITER.md` | Mitarbeiter | Markdown | Vollständiges Referenzdokument |
-| `CHEATSHEET-MITARBEITER.md` | Mitarbeiter | Markdown | Kompakte Kurzreferenz (1–2 Seiten) |
-| `HANDBUCH-ADMIN.md` | Administratoren | Markdown | Vollständiges Referenzdokument |
-| `CHEATSHEET-ADMIN.md` | Administratoren | Markdown | Kompakte Kurzreferenz (1–2 Seiten) |
+Die beiden **Handbücher** und **„So rechnet PraxisZeit“** sind das grafische Handbuch: Der Inhalt liegt als reine Daten in `frontend/src/handbuch/`, die Markdown-Dateien werden daraus **erzeugt** (nie von Hand bearbeiten, sie tragen oben den Hinweis „Erzeugt aus frontend/src/handbuch“). Cheat-Sheets und Schnellstart bleiben von Hand geschriebenes Markdown.
+
+| Datei | Zielgruppe | Entsteht | Zweck |
+|-------|-----------|----------|-------|
+| `HANDBUCH-MITARBEITER.md` | Mitarbeitende | erzeugt | Handbuch mit Bildern, je Aufgabe eine Frage |
+| `HANDBUCH-ADMIN.md` | Praxisleitung | erzeugt | Handbuch mit Bildern, je Aufgabe eine Frage |
+| `SO-RECHNET-PRAXISZEIT.md` | alle | erzeugt | Soll, Ist, Saldo und Urlaub mit Rechenbeispielen |
+| `CHEATSHEET-MITARBEITER.md` | Mitarbeitende | von Hand | Kompakte Kurzreferenz (1–2 Seiten) |
+| `CHEATSHEET-ADMIN.md` | Praxisleitung | von Hand | Kompakte Kurzreferenz (1–2 Seiten) |
+| `SCHNELLSTART.md` | Praxisleitung | von Hand | Von der Installation zur laufenden Zeiterfassung |
 
 **Pfade:**
-- Quelldateien: `docs/handbuch/*.md`
-- Screenshots: `docs/handbuch/screenshots/`
-- Downloadbar in der App: `frontend/public/help/*.md`
-- PDF-Dateien: keine im Repo — bei Bedarf erzeugen (siehe [Schritt 7](#7-pdf-dateien-bei-bedarf-erzeugen))
-
-**Wichtig:** Nach jeder Änderung an den Quelldateien müssen die Dateien nach `frontend/public/help/` synchronisiert werden (siehe [Schritt 5: Synchronisieren](#5-dateien-synchronisieren)).
+- Inhalt (Quelle der Handbücher): `frontend/src/handbuch/content/` (`mitarbeitende.ts`, `praxisleitung.ts`, `so-rechnet.ts`, `rechenbeispiele.json`), Aufnahmedefinitionen als `shots` im jeweiligen Inhalt
+- Bilder: `frontend/public/help/img/*.webp` (aufgenommen), `frontend/src/handbuch/manifest.json` (Maße und Markierungsboxen je Bild)
+- Erzeugte Markdown-Dateien: `docs/handbuch/*.md` (Bildlinks `img/…`, Kopie unter `docs/handbuch/img/`) und `frontend/public/help/*.md` (Download-Kopie, Bildlinks `/help/img/…`)
+- Von Hand: `CHEATSHEET-*.md`, `SCHNELLSTART.md` in `docs/handbuch/` und byte-identisch in `frontend/public/help/`
+- PDF-Dateien: keine im Repo — bei Bedarf erzeugen (siehe [Schritt 6](#6-pdf-dateien-bei-bedarf-erzeugen))
 
 ---
 
 ## Wann muss die Dokumentation aktualisiert werden?
 
-Aktualisierung notwendig bei:
-
-- **UI-Änderungen:** Neue Seiten, geänderte Button-Bezeichnungen, neue Features, verschobene Navigationspunkte
-- **Feature-Entfernung:** Veraltete Abschnitte löschen
+- **UI-Änderungen:** Neue Seiten, geänderte Button-Bezeichnungen, neue Features, verschobene Navigationspunkte → Inhalt anpassen **und die betroffenen Bilder neu aufnehmen**
+- **Feature-Entfernung:** Veraltete Aufgaben und Bilder löschen
 - **Neue ArbZG-Prüfungen:** Gesetzliche Änderungen, neue Compliance-Reports
 - **Formularänderungen:** Neue oder entfernte Pflichtfelder
-- **Versionswechsel:** Bei jeder Minor- oder Major-Version
+- **Versionswechsel:** Der Kopf der erzeugten Handbücher nennt `**Stand:** PraxisZeit <Version>` aus `frontend/package.json`; nach dem Versionssprung `npm run handbuch:md` ausführen
 
 ---
 
@@ -43,148 +44,69 @@ Aktualisierung notwendig bei:
 git checkout -b docs/handbuch-update-YYYY-MM-DD
 ```
 
-### 2. Screenshots aktualisieren
+### 2. Inhalt ändern
 
-Screenshots werden mit **Playwright** automatisiert aufgenommen. Die App muss lokal laufen:
-
-```bash
-docker-compose up -d
-```
-
-Demo-Daten und Aufnahme (Musterpraxis, Januar/Februar 2026; Sarah Klein ist die Demo-Person mit Arbeitszeit-Blöcken 08:00–12:00 + 15:00–16:00 und zwei über die Mittagslücke durchgestempelten Montagen):
-
-```bash
-docker compose cp backend/create_handbuch_testdata.py backend:/app/create_handbuch_testdata.py
-docker compose exec -T backend python create_handbuch_testdata.py </dev/null
-cd e2e && npx --yes tsx capture-handbook-screenshots.ts
-```
-
-Das Seed-Skript läuft nur gegen PostgreSQL und setzt das Admin-Passwort auf `Admin2026!` (Mitarbeitende: `Mitarbeiter2026!`). Die E2E-Tests erwarten `Admin2025!` – danach zurücksetzen: `docker compose exec backend python -m app.cli.reset_admin_password` (Vorgabe-Konto `admin`; fragt das neue Passwort zweimal verdeckt ab und braucht dafür ein Terminal, deshalb ohne `-T`; der Vorgang wird in `security_events` protokolliert). Außerdem benennt das Seed-Skript den Admin in „Andreas Werner" (`admin@musterpraxis.de`) um; das bleibt nach dem Zurücksetzen so und spielt für die E2E-Tests keine Rolle. Das Aufnahmeskript nimmt alle Bilder neu auf (git meldet danach meist deutlich mehr Bilder als geändert, als inhaltlich neu sind). Zuerst die inhaltlich neuen Bilder mit `git add docs/handbuch/screenshots/<datei>.png` vormerken, danach den Rest mit `git restore docs/handbuch/screenshots/` verwerfen – in umgekehrter Reihenfolge verwirft `git restore` auch die gewollten Bilder.
-
-#### Mitarbeiter-Screenshots (als Employee einloggen oder als Admin mit Employee-Sicht)
-
-| Datei | URL | Beschreibung |
-|-------|-----|-------------|
-| `01-ma-login.png` | `/login` | Login-Seite |
-| `02-ma-dashboard.png` | `/` | Dashboard (Mitarbeiter) |
-| `03-ma-zeiterfassung.png` | `/time-tracking` | Zeiterfassung – Einträge-Tab |
-| `04-ma-zeiteintrag-formular.png` | `/time-tracking` | Formular nach Klick auf „+ Neuer Eintrag" |
-| `05-ma-abwesenheiten.png` | `/absences` | Abwesenheiten – Listenansicht |
-| `06-ma-abwesenheiten-kalender.png` | `/absences` | Abwesenheiten – Kalenderansicht |
-| `07-ma-abwesenheit-formular.png` | `/absences` | Formular „+ Abwesenheit eintragen" |
-| `08-ma-korrekturantraege.png` | `/time-tracking` (Tab: Anträge) | Änderungsanträge-Tab leer |
-| `09-ma-korrekturantrag-modal.png` | `/time-tracking` | Modal nach Klick auf „Änderungsantrag" bei gesperrtem Eintrag |
-| `10-ma-profil.png` | `/profile` | Profilseite (persönliche Daten, Karte „Meine Arbeitszeit") |
-| `11-ma-mobile-dashboard.png` | `/` | Mobil (390px) – Dashboard |
-| `12-ma-mobile-zeiterfassung.png` | `/time-tracking` | Mobil (390px) – Zeiterfassung |
-| `13-ma-mobile-menu.png` | beliebig | Mobil (390px) – Hamburger-Menü offen |
-
-#### Admin-Screenshots (als Admin einloggen)
-
-| Datei | URL | Beschreibung |
-|-------|-----|-------------|
-| `14-admin-dashboard.png` | `/admin` | Admin-Dashboard mit Teamübersicht |
-| `15-admin-benutzer.png` | `/admin/users` | Benutzerliste |
-| `16-admin-benutzer-formular.png` | `/admin/users` | Formular „Neue:r Mitarbeiter:in", Modus „Nach Arbeitsblöcken" (Block-Editor mit Beispielwoche) |
-| `17-admin-benutzer-bearbeiten.png` | `/admin/users` | Bearbeiten-Formular der Demo-Person mit Arbeitszeit-Blöcken (Sarah Klein, „Arbeitszeit heute: …") |
-| `18-admin-abwesenheitskalender.png` | `/admin/absences` | Abwesenheitskalender Admin |
-| `19-admin-berichte.png` | `/admin/reports` | Berichte & Export |
-| `20-admin-korrekturantraege.png` | `/admin/change-requests` | Korrekturanträge-Liste |
-| `21-admin-korrekturantrag-details.png` | `/admin/change-requests` | Detailansicht eines Antrags |
-| `22-admin-auditlog.png` | `/admin/audit-log` | Audit-Log |
-| `23-admin-fehlermonitoring.png` | `/admin/errors` | Fehler-Monitoring |
-| `24-admin-betriebsferien.png` | `/admin/absences` (Tab: Betriebsferien) | Betriebsferien-Tab |
-| `25-admin-arbzg-berichte.png` | `/admin/reports` (nach unten scrollen) | ArbZG-Compliance-Reports |
-
-#### Screenshots mit Playwright MCP aufnehmen (empfohlen)
-
-Wenn Playwright-MCP verfügbar ist:
-
-```
-1. mcp__plugin_playwright_playwright__browser_navigate → URL aufrufen
-2. mcp__plugin_playwright_playwright__browser_take_screenshot → {
-     filename: "E:\\...\\screenshots\\XX-name.png",
-     fullPage: true,
-     type: "png"
-   }
-3. Für mobile (390px): mcp__plugin_playwright_playwright__browser_resize zuerst
-```
-
-#### Screenshots manuell aufnehmen
-
-Alternativ mit dem Playwright-CLI:
-
-```bash
-cd e2e
-npx playwright screenshot --viewport-size 1280,800 http://localhost/admin docs/handbuch/screenshots/14-admin-dashboard.png
-```
-
-### 3. Markdown-Dateien bearbeiten
+Texte und Schritte stehen in `frontend/src/handbuch/content/*.ts`; Typen und Regeln in `frontend/src/handbuch/types.ts` und `validate.ts`.
 
 **Schreibstil:**
-- Klare, präzise Sprache (kein Fachjargon ohne Erklärung)
-- Imperativ für Handlungsanweisungen: „Klicken Sie auf ...", „Geben Sie ... ein"
-- Nummerierte Listen für Schritt-für-Schritt-Anleitungen
-- Tabellen für strukturierte Informationen (Felder, Status, Optionen)
-- Gesetzeslinks immer als Markdown-Links: `[§ 3 ArbZG](https://www.gesetze-im-internet.de/arbzg/__3.html)`
+- Klare, präzise Sprache, **Sie-Form**, Begriffe laut `docs/GLOSSAR.md` („Arbeitszeit-Block“ = Vertrag, „Zeiteintrag“ = Stempel, „Mitarbeitende ohne Stundenzählung“)
+- UI-Beschriftungen wortgleich zur App
+- Jede Aufgabe beginnt mit einer Frage („Wie trage ich …?“) und nennt nummerierte Schritte
+- Der Inhalt erfindet nichts: jede fachliche Aussage stammt aus der Doku (`docs/BERECHNUNGEN.md`, Glossar) oder dem App-Verhalten
+- Gesetzeslinks als Markdown-Links, Berechnungen mit Link nach `docs/BERECHNUNGEN.md`
+- Veraltete Begriffe stehen in `frontend/src/handbuch/content/forbiddenTerms.ts` und dürfen im Inhalt nicht vorkommen (`content.test.ts`)
 
-**Screenshot-Referenz:**
-```markdown
-![Beschreibung](screenshots/XX-name.png)
-```
+Jedes Bild ist ein **Shot** (Persona, Seite, Markierungen mit Locator und Nummer, Alt-Text mit mindestens 40 Zeichen). Jede Markierungsnummer im Bild hat genau einen Schritt mit derselben Nummer und umgekehrt (`validate.ts`).
 
-**Handbuch-Struktur:**
-1. Versionskopf (Version, Stand, System, Zugangsdaten)
-2. Inhaltsverzeichnis mit Ankerlinks
-3. Abschnitte mit H2-Überschriften (##)
-4. Unterabschnitte mit H3 (###)
-5. Footer (Version, Stand)
+### 3. Bilder aufnehmen
 
-**Cheat-Sheet-Struktur:**
-1. H1-Titel
-2. Abschnitte mit H2-Überschriften (##)
-3. Kompakt: Max. 2–3 Zeilen pro Punkt, Tabellen bevorzugen
-4. Kontaktblock am Ende (für Ausdruck)
-5. Footer mit Gesetzeslink
-
-### 4. Versionsnummer und Datum aktualisieren
-
-Im Handbuch:
-```markdown
-**Version:** 2.1 · **Stand:** April 2026
-```
-
-Im Footer:
-```markdown
-*PraxisZeit – Handbuch v2.1 | April 2026*
-```
-
-### 5. Dateien synchronisieren
-
-Nach jeder Änderung an den Quelldateien:
+Screenshots entstehen **nur** aus der Wegwerf-Instanz (Compose-Projekt `pzhandbuch`, Port 8099, Fantasie-Demodaten „Praxis am Lindenplatz“), nie aus der Dev-Datenbank:
 
 ```bash
-cp docs/handbuch/HANDBUCH-MITARBEITER.md frontend/public/help/HANDBUCH-MITARBEITER.md
-cp docs/handbuch/CHEATSHEET-MITARBEITER.md frontend/public/help/CHEATSHEET-MITARBEITER.md
-cp docs/handbuch/HANDBUCH-ADMIN.md frontend/public/help/HANDBUCH-ADMIN.md
-cp docs/handbuch/CHEATSHEET-ADMIN.md frontend/public/help/CHEATSHEET-ADMIN.md
+bash e2e/handbuch/run.sh all        # Instanz bauen, Demodaten einspielen, Serveruhr auf den Stichtag stellen
+cd e2e && npx tsx handbuch/capture.ts              # alle Shots
+cd e2e && npx tsx handbuch/capture.ts --only <shotId,…>   # nur einzelne
+bash e2e/handbuch/run.sh down       # Instanz samt Volumes entfernen
 ```
 
-### 6. Help.tsx inline-Content aktualisieren
+- Ein Locator muss beim Aufnehmen genau **ein sichtbares** Element treffen, sonst bricht die Aufnahme ab (geschrieben wird erst, wenn alle Shots gelungen sind).
+- Aufnahmen: Desktop 1440×900 und mobil 390×844, zweifache Pixeldichte, WebP.
+- **Kontaktseite ansehen:** `capture.ts` schreibt `e2e/handbuch/contact-sheet.html` und `contact-sheet.png` (lokal, gitignored): jedes Bild im Ausschnitt mit seinen Markierungen. Vor dem Commit durchsehen: schneiden Markierungsrahmen Beschriftungen ab, stimmen Nummern, ist kein Name oder Konto aus der echten Praxis zu sehen.
+- Nach der Aufnahme sind `frontend/public/help/img/*.webp` und `frontend/src/handbuch/manifest.json` neu; beides committen. `capture.ts` nimmt alle gewählten Bilder neu auf (git meldet danach meist mehr geänderte Bilder, als inhaltlich neu sind) — unveränderte per `git restore` verwerfen, nachdem die gewollten mit `git add` vorgemerkt sind.
 
-Die Hilfe-Seite (`frontend/src/pages/Help.tsx`) enthält zwei Arten von Inhalten:
+Die Demodaten bringt `backend/create_handbuch_testdata.py` mit (Admin „Dr. Andrea Werner“, Benutzer `admin`). Die Instanz ist wegwerfbar; das Passwort steht in `e2e/handbuch/capture.ts`.
 
-1. **CheatsheetMitarbeiter / CheatsheetAdmin** – Inline React-Komponenten (werden direkt in der App angezeigt)
-2. **handbuchMitarbeiterSections / handbuchAdminSections** – Accordion-Abschnitte für das Handbuch
+### 4. Markdown erzeugen
 
-Diese müssen **manuell** aktualisiert werden, wenn sich der Inhalt der Markdown-Dateien ändert:
-- Neue Abschnitte als `AccordionItem` hinzufügen
-- Geänderte Abläufe in den Cheatsheet-Sektionen anpassen
-- Neue Navigationspunkte in der Login/Navigation-Sektion aktualisieren
+```bash
+cd frontend && npm run handbuch:md
+```
 
-### 7. PDF-Dateien bei Bedarf erzeugen
+schreibt `docs/handbuch/HANDBUCH-MITARBEITER.md`, `HANDBUCH-ADMIN.md`, `SO-RECHNET-PRAXISZEIT.md`, die Download-Kopien in `frontend/public/help/` und die Bilder nach `docs/handbuch/img/` (nicht mehr gebrauchte Bilder dort werden entfernt). `npm run handbuch:md -- --check` vergleicht nur und endet mit Exit 1, wenn etwas abweicht — das tut auch die Gruppe `handbuch_md` des Doku-Abgleichs.
 
-Im Repo liegen bewusst **keine** PDF-Abzüge der Handbücher (auch nicht unter `frontend/public/`). Ein PDF neben der Markdown-Quelle veraltet mit der nächsten Änderung unbemerkt: die früheren `frontend/public/docs/*.pdf` standen bis 1.20.0 auf dem Stand Februar 2026, ohne Arbeitszeit-Blöcke, und waren trotzdem öffentlich abrufbar. `bash scripts/check-doc-sync.sh pdf` schlägt fehl, sobald wieder ein solches PDF eingecheckt wird.
+### 5. Von Hand gepflegte Dateien synchronisieren
+
+Cheat-Sheets und Schnellstart nach jeder Änderung nach `frontend/public/help/` kopieren (Gruppe `mirror` prüft Byte-Gleichheit):
+
+```bash
+cp docs/handbuch/CHEATSHEET-MITARBEITER.md frontend/public/help/CHEATSHEET-MITARBEITER.md
+cp docs/handbuch/CHEATSHEET-ADMIN.md frontend/public/help/CHEATSHEET-ADMIN.md
+cp docs/handbuch/SCHNELLSTART.md frontend/public/help/SCHNELLSTART.md
+```
+
+Die In-App-Kurzanleitungen (`CheatsheetMitarbeiter`, `CheatsheetAdmin`) und der `SchnellstartAdmin` in `frontend/src/components/DocViewer.tsx` sowie die Kontexthilfe `frontend/src/constants/helpContent.tsx` pflegen Sie bei Änderungen mit. Das Handbuch selbst zeigt die App unter `/help` direkt aus dem Inhalt (`frontend/src/pages/Help.tsx`, `HandbookPage`); die Kontexthilfe verlinkt in die Kapitel.
+
+**Fünf weitere Flächen**, die bei Handbuchänderungen mitgezogen werden: `docs/BERECHNUNGEN.md` + `docs/GLOSSAR.md`, die pzweb-Kopie (Anleitungsseiten im Webshop-Repo; Abgleich per `scripts/sync-handbuch-to-pzweb.sh`), die Kontexthilfe, die Kurzanleitungen und der Schnellstart.
+
+Danach den gesamten Abgleich laufen lassen:
+
+```bash
+bash scripts/check-doc-sync.sh all
+```
+
+### 6. PDF-Dateien bei Bedarf erzeugen
+
+Im Repo liegen bewusst **keine** PDF-Abzüge der Handbücher (auch nicht unter `frontend/public/`). Ein PDF neben der Markdown-Quelle veraltet mit der nächsten Änderung unbemerkt. `bash scripts/check-doc-sync.sh pdf` schlägt fehl, sobald wieder ein solches PDF eingecheckt wird.
 
 Wer ein PDF braucht (z. B. zum Versenden), erzeugt es aus dem aktuellen Markdown-Stand und legt es außerhalb des Repos ab:
 
@@ -197,11 +119,11 @@ pandoc docs/handbuch/HANDBUCH-MITARBEITER.md \
 
 In der App laden Nutzer die Handbücher als Markdown aus `frontend/public/help/` herunter.
 
-### 8. Committen und pushen
+### 7. Committen und pushen
 
 ```bash
-git add docs/handbuch/ frontend/public/help/ frontend/src/pages/Help.tsx
-git commit -m "docs: Handbücher und Cheatsheets aktualisieren (vX.Y, März 2026)"
+git add frontend/src/handbuch/ frontend/public/help/ docs/handbuch/ frontend/src/components/DocViewer.tsx
+git commit -m "docs: Handbuch aktualisieren (vX.Y)"
 git push origin docs/handbuch-update-YYYY-MM-DD
 ```
 
@@ -213,11 +135,11 @@ Dann Pull Request erstellen für Review.
 
 ### Was gehört ins Handbuch?
 
-- Vollständige Schritt-für-Schritt-Anleitungen für alle Funktionen
-- Erklärungen aller Felder und Optionen
+- Je Funktion eine Aufgabe mit Frage, Schritten und — wo es hilft — einem Bild mit nummerierten Markierungen
+- Erklärungen aller Felder und Optionen, die man zum Ausführen der Aufgabe braucht
 - Rechtliche Hintergründe (ArbZG-Paragraphen) mit Links
 - FAQ-Abschnitt
-- Screenshots für alle wichtigen Seiten und Formulare
+- Hinweise („Achtung“, „Gut zu wissen“) für Stolperstellen
 
 ### Was gehört ins Cheat-Sheet?
 
@@ -228,27 +150,20 @@ Dann Pull Request erstellen für Review.
 - Kontaktblock zum Ausfüllen (für Ausdruck)
 - Maximal 2 DIN-A4-Seiten
 
-### Was gehört in Help.tsx?
-
-- Kurzversion des Cheat-Sheets (inline, ohne Download nötig)
-- Accordion-Abschnitte für die wichtigsten Handbuch-Kapitel
-- Download-Links für die vollständigen Markdown-Dateien
-
 ---
 
 ## Qualitätssicherung
 
 Vor dem Commit prüfen:
 
-- [ ] Alle Screenshot-Referenzen existieren als Dateien in `screenshots/`
-- [ ] Alle URLs und Navigationspfade stimmen mit der aktuellen App überein
-- [ ] Button-Bezeichnungen stimmen mit den aktuellen Labels überein
-- [ ] Version und Datum in Kopf und Footer aktualisiert
-- [ ] Dateien nach `frontend/public/help/` synchronisiert
-- [ ] Help.tsx auf Konsistenz mit Markdown geprüft
+- [ ] `cd frontend && npx vitest run --pool=threads --maxWorkers=2` grün (`content.test.ts` prüft Verbotswörter, Markierung ↔ Schritt, Alt-Texte)
+- [ ] Kontaktseite durchgesehen, keine echten Namen, keine abgeschnittenen Beschriftungen
+- [ ] `npm run handbuch:md` ausgeführt, Ergebnis committet
+- [ ] `bash scripts/check-doc-sync.sh all` grün
+- [ ] Alle URLs und Navigationspfade stimmen mit der aktuellen App überein, Button-Bezeichnungen wortgleich
+- [ ] Cheat-Sheets/Schnellstart nach `frontend/public/help/` kopiert
 - [ ] Gesetzeslinks funktionieren
-- [ ] Markdown rendert fehlerfrei (z. B. mit VS Code Preview)
 
 ---
 
-*Zuletzt aktualisiert: März 2026*
+*Zuletzt aktualisiert: November 2026 (grafisches Handbuch)*
