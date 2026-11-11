@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { render, fireEvent } from '@testing-library/react';
 import HandbookPage from './HandbookPage';
+import ShotFigure from './ShotFigure';
 import type { Handbook, Manifest } from '../types';
 
 const handbook: Handbook = {
@@ -49,6 +50,14 @@ describe('HandbookPage', () => {
     const html = renderToString(<HandbookPage {...props} />);
     expect(html).toMatch(/<foreignObject[^>]*><img [^>]*loading="lazy"[^>]*src="\/help\/img\/s1\.webp"|<foreignObject[^>]*><img [^>]*src="\/help\/img\/s1\.webp"[^>]*loading="lazy"/);
     expect(html).not.toContain('<image');
+  });
+
+  it('ShotFigure with eager loads immediately (brochure/print)', () => {
+    const html = renderToString(
+      <ShotFigure shotId="s1" def={handbook.shots[0]} m={manifest.s1} imgBase="/help/img" eager />,
+    );
+    expect(html).toContain('loading="eager"');
+    expect(html).not.toContain('loading="lazy"');
   });
 
   it('renders via renderToString without effects', () => {

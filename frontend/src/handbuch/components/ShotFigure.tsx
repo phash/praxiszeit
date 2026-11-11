@@ -7,12 +7,14 @@ export interface ShotFigureProps {
   m: ManifestShot;
   imgBase: string;
   active?: number | null;
+  /** Sofort laden (Broschüre: wird gedruckt/als PDF gespeichert, wenige kleine Bilder). Sonst lazy. */
+  eager?: boolean;
 }
 
 /** Markergroesse ist auf diese Breite (CSS px) bezogen und skaliert mit dem Ausschnitt. */
 export const MARKER_REF_WIDTH = 700;
 
-export default function ShotFigure({ shotId, def, m, imgBase, active = null }: ShotFigureProps) {
+export default function ShotFigure({ shotId, def, m, imgBase, active = null, eager = false }: ShotFigureProps) {
   const src = `${imgBase}/${m.file}`;
   const { x, y, w, h } = m.crop;
   const k = w / MARKER_REF_WIDTH;
@@ -38,7 +40,7 @@ export default function ShotFigure({ shotId, def, m, imgBase, active = null }: S
             alt=""
             width={m.width}
             height={m.height}
-            loading="lazy"
+            loading={eager ? 'eager' : 'lazy'}
             decoding="async"
             className="block h-auto max-w-none"
           />
