@@ -595,9 +595,9 @@
     },
     "markers": {
       "saldo": {
-        "x": 1203.1,
+        "x": 1192.7,
         "y": 297,
-        "w": 139.9,
+        "w": 138.3,
         "h": 32
       },
       "tab": {
@@ -626,6 +626,27 @@
         "y": 163,
         "w": 40,
         "h": 40
+      }
+    }
+  },
+  "ma-loeschung-beantragen": {
+    "file": "ma-loeschung-beantragen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 722,
+      "y": 205,
+      "w": 718,
+      "h": 695
+    },
+    "markers": {
+      "knopf": {
+        "x": 1242,
+        "y": 725,
+        "w": 141,
+        "h": 20
       }
     }
   },
@@ -959,6 +980,51 @@
       }
     }
   },
+  "pl-abwesenheit-eintragen": {
+    "file": "pl-abwesenheit-eintragen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 215,
+      "y": 115,
+      "w": 1225,
+      "h": 655
+    },
+    "markers": {
+      "datum": {
+        "x": 313,
+        "y": 500,
+        "w": 255.5,
+        "h": 42
+      },
+      "mitarbeiter": {
+        "x": 305,
+        "y": 205,
+        "w": 794,
+        "h": 41
+      },
+      "speichern": {
+        "x": 313,
+        "y": 640,
+        "w": 1070,
+        "h": 40
+      },
+      "typ": {
+        "x": 584.5,
+        "y": 500,
+        "w": 255.5,
+        "h": 41
+      },
+      "zeitraum": {
+        "x": 313,
+        "y": 356,
+        "w": 1070,
+        "h": 44
+      }
+    }
+  },
   "pl-admin-dashboard": {
     "file": "pl-admin-dashboard.webp",
     "width": 1440,
@@ -1067,6 +1133,78 @@
         "y": 807,
         "w": 230,
         "h": 36
+      }
+    }
+  },
+  "pl-arbzg-24wochen": {
+    "file": "pl-arbzg-24wochen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 223,
+      "y": 338,
+      "w": 1217,
+      "h": 562
+    },
+    "markers": {
+      "pruefen": {
+        "x": 499,
+        "y": 430,
+        "w": 105,
+        "h": 40
+      },
+      "stichtag": {
+        "x": 313,
+        "y": 428,
+        "w": 170,
+        "h": 42
+      },
+      "tabelle": {
+        "x": 313,
+        "y": 518,
+        "w": 1070,
+        "h": 379
+      }
+    }
+  },
+  "pl-arbzg-hoechstarbeitszeit": {
+    "file": "pl-arbzg-hoechstarbeitszeit.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 223,
+      "y": 373,
+      "w": 1217,
+      "h": 411
+    },
+    "markers": {
+      "ausnahmen": {
+        "x": 330,
+        "y": 642,
+        "w": 1036,
+        "h": 52
+      },
+      "filter": {
+        "x": 313,
+        "y": 463,
+        "w": 1070,
+        "h": 66
+      },
+      "person": {
+        "x": 314,
+        "y": 578,
+        "w": 1068,
+        "h": 48
+      },
+      "zahlen": {
+        "x": 313,
+        "y": 545,
+        "w": 1070,
+        "h": 20
       }
     }
   },
@@ -1214,6 +1352,99 @@
       }
     }
   },
+  "pl-betriebsferien": {
+    "file": "pl-betriebsferien.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 223,
+      "y": 203,
+      "w": 1217,
+      "h": 492
+    },
+    "markers": {
+      "bezeichnung": {
+        "x": 313,
+        "y": 293,
+        "w": 1070,
+        "h": 42
+      },
+      "erstellen": {
+        "x": 313,
+        "y": 565,
+        "w": 1070,
+        "h": 40
+      },
+      "verrechnung": {
+        "x": 313,
+        "y": 461,
+        "w": 1070,
+        "h": 88
+      },
+      "zeitraum": {
+        "x": 313,
+        "y": 351,
+        "w": 1070,
+        "h": 66
+      }
+    }
+  },
+  "pl-betriebsferien-liste": {
+    "file": "pl-betriebsferien-liste.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 199,
+      "y": 154,
+      "w": 1241,
+      "h": 281
+    },
+    "markers": {
+      "aktionen": {
+        "x": 1236.9,
+        "y": 284.5,
+        "w": 170.1,
+        "h": 60.5
+      },
+      "tabelle": {
+        "x": 289,
+        "y": 244,
+        "w": 1118,
+        "h": 40.5
+      }
+    }
+  },
+  "pl-betriebsferien-urlaub": {
+    "file": "pl-betriebsferien-urlaub.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 242,
+      "y": 568,
+      "w": 524,
+      "h": 220
+    },
+    "markers": {
+      "schalter": {
+        "x": 652,
+        "y": 638,
+        "w": 44,
+        "h": 24
+      },
+      "speichern": {
+        "x": 312,
+        "y": 678,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
   "pl-bloecke": {
     "file": "pl-bloecke.webp",
     "width": 1440,
@@ -1307,6 +1538,39 @@
       }
     }
   },
+  "pl-jahresreport": {
+    "file": "pl-jahresreport.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 231,
+      "y": 48,
+      "w": 852,
+      "h": 642
+    },
+    "markers": {
+      "classic": {
+        "x": 321,
+        "y": 300,
+        "w": 328,
+        "h": 300
+      },
+      "detailliert": {
+        "x": 665,
+        "y": 300,
+        "w": 328,
+        "h": 300
+      },
+      "jahr": {
+        "x": 321,
+        "y": 138,
+        "w": 672,
+        "h": 50
+      }
+    }
+  },
   "pl-korrekturantrag": {
     "file": "pl-korrekturantrag.webp",
     "width": 1440,
@@ -1376,6 +1640,45 @@
         "y": 549,
         "w": 130,
         "h": 28
+      }
+    }
+  },
+  "pl-monatsreport": {
+    "file": "pl-monatsreport.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 231,
+      "y": 211,
+      "w": 852,
+      "h": 318
+    },
+    "markers": {
+      "ausgeblendete": {
+        "x": 321,
+        "y": 419,
+        "w": 672,
+        "h": 20
+      },
+      "formate": {
+        "x": 859.4,
+        "y": 279,
+        "w": 133.6,
+        "h": 72
+      },
+      "krankheit": {
+        "x": 321,
+        "y": 367,
+        "w": 672,
+        "h": 20
+      },
+      "monat": {
+        "x": 321,
+        "y": 301,
+        "w": 206,
+        "h": 50
       }
     }
   },
@@ -1496,6 +1799,39 @@
       }
     }
   },
+  "pl-pflicht-pause": {
+    "file": "pl-pflicht-pause.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 242,
+      "y": 514,
+      "w": 524,
+      "h": 364
+    },
+    "markers": {
+      "erlauben": {
+        "x": 653.8,
+        "y": 584,
+        "w": 42.2,
+        "h": 24
+      },
+      "genehmigung": {
+        "x": 652,
+        "y": 728,
+        "w": 44,
+        "h": 24
+      },
+      "speichern": {
+        "x": 312,
+        "y": 768,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
   "pl-rueckwirkend": {
     "file": "pl-rueckwirkend.webp",
     "width": 1440,
@@ -1571,6 +1907,39 @@
         "y": 251,
         "w": 306,
         "h": 36
+      }
+    }
+  },
+  "pl-sondertage": {
+    "file": "pl-sondertage.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 242,
+      "y": 546,
+      "w": 792,
+      "h": 354
+    },
+    "markers": {
+      "anrechnung": {
+        "x": 765,
+        "y": 729,
+        "w": 199,
+        "h": 41
+      },
+      "modus": {
+        "x": 536,
+        "y": 616,
+        "w": 213,
+        "h": 41
+      },
+      "speichern": {
+        "x": 312,
+        "y": 802,
+        "w": 130,
+        "h": 40
       }
     }
   },
@@ -1664,6 +2033,39 @@
         "y": 156,
         "w": 44,
         "h": 24
+      }
+    }
+  },
+  "pl-verkuerzte-tage": {
+    "file": "pl-verkuerzte-tage.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 222,
+      "y": 339,
+      "w": 1218,
+      "h": 466
+    },
+    "markers": {
+      "eingabe": {
+        "x": 312,
+        "y": 542,
+        "w": 1072,
+        "h": 66
+      },
+      "jahr": {
+        "x": 1299,
+        "y": 429,
+        "w": 85,
+        "h": 41
+      },
+      "zeile": {
+        "x": 312,
+        "y": 660.5,
+        "w": 1072,
+        "h": 54.5
       }
     }
   },

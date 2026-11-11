@@ -1,7 +1,7 @@
 import type { Handbook, PrepareStep, ShotDef } from '../types';
 
 /**
- * Handbuch für die Praxisleitung (Kapitel 1–5; Task 9b ergänzt 6–9).
+ * Handbuch für die Praxisleitung (Kapitel 1–9; Task 10 ergänzt 10–17).
  * Quelle: docs/handbuch/HANDBUCH-ADMIN.md, docs/handbuch/SCHNELLSTART.md und die
  * Seiten in frontend/src/pages/admin. Reine Daten (R5). Aufgaben-IDs sind
  * Sprungmarken der Kontexthilfe – nicht umbenennen.
@@ -17,9 +17,9 @@ const RETRO_PREPARE: PrepareStep[] = [
   { waitFor: { label: 'Mo Block 2 bis', within: 'dialog' } },
   { fill: { label: 'Gültig ab', within: 'dialog' }, value: '{{stichtag-14d}}' },
   { fill: { label: 'Mo Block 2 bis', within: 'dialog' }, value: '15:30' },
-  // erst die Vorschau abwarten, sonst setzt ihre Antwort die Wahl zurück; das Label selbst nimmt den Klick nicht an
+  // erst die Vorschau abwarten, dann die Option über ihren Text wählen (wie ein Mensch)
   { waitFor: { css: "[role='dialog'] >> text=/verlieren angerechnete Zeit/" } },
-  { click: { css: "[role='dialog'] label:has-text('mit Neuberechnung') input" } },
+  { click: { css: "[role='dialog'] label:has-text('mit Neuberechnung') > span" } },
   { waitFor: { css: "[role='dialog'] >> text=/^Rückwirkende Änderung:/" } },
   { fill: { css: '#wh-short-reason-text' }, value: 'Der Montagnachmittag war seit der Aufstockung falsch hinterlegt (vereinbart: bis 15:30 Uhr).' },
 ];
@@ -373,6 +373,212 @@ const shots: ShotDef[] = [
       { n: 3, id: 'sammel', locator: { css: "main button:has-text('genehmigen, davon')" }, badge: 'top' },
     ],
     alt: 'Zwei offene Änderungsanträge ausgewählt („2 ausgewählt“); oben der Knopf „2 genehmigen, davon 1 mit Anerkennen“',
+  },
+
+  // ── 6. Abwesenheiten & Betriebsferien ────────────────────────────────────
+  {
+    id: 'pl-abwesenheit-eintragen',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/absences',
+    prepare: [
+      { click: { css: "main div.rounded-xl:has(span:text-is('Sarah Klein')) button:text-is('+ Eintragen')" } },
+      { waitFor: { css: "main >> text=/^Abwesenheit eintragen für Sarah Klein/" } },
+      { fill: { css: "main form input[type='date']" }, value: '{{stichtag+7d}}' },
+    ],
+    crop: { around: ['mitarbeiter', 'speichern'], pad: 90 },
+    markers: [
+      { n: 1, id: 'mitarbeiter', locator: { css: '#absence-employee-filter' }, badge: 'left' },
+      { n: 2, id: 'zeitraum', locator: { css: "main form label[for='isDateRange'] >> xpath=.." }, badge: 'left' },
+      { n: 3, id: 'datum', locator: { css: "main form input[type='date']" }, badge: 'left' },
+      { n: 4, id: 'typ', locator: { css: 'main form select' }, badge: 'top' },
+      { n: 5, id: 'speichern', locator: { css: "main form button[type='submit']" }, badge: 'left' },
+    ],
+    alt: 'Seite „Abwesenheiten verwalten“: Mitarbeiterin Sarah Klein gewählt, darunter das Formular „Abwesenheit eintragen“ mit Datum, Typ Urlaub, Stunden und Speichern',
+  },
+  {
+    id: 'pl-betriebsferien',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/absences',
+    prepare: [
+      { click: { role: 'button', name: 'Betriebsferien', exact: true, within: 'main' } },
+      { click: { role: 'button', name: 'Betriebsferien erstellen', exact: true, within: 'main' } },
+      { fill: { css: "main form input[type='text']" }, value: 'Umbau Empfang' },
+      { fill: { css: "main form input[type='date'] >> nth=0" }, value: '{{stichtag+35d}}' },
+      { fill: { css: "main form input[type='date'] >> nth=1" }, value: '{{stichtag+37d}}' },
+    ],
+    crop: { around: ['bezeichnung', 'erstellen'], pad: 90 },
+    markers: [
+      { n: 1, id: 'bezeichnung', locator: { css: "main form input[type='text']" }, badge: 'left' },
+      { n: 2, id: 'zeitraum', locator: { css: "main form div.grid:has(input[type='date'])" }, badge: 'left' },
+      { n: 3, id: 'verrechnung', locator: { css: "main form label:has-text('Als Urlaub werten') >> xpath=.." }, badge: 'left' },
+      { n: 4, id: 'erstellen', locator: { css: "main form button[type='submit']" }, badge: 'left' },
+    ],
+    alt: 'Formular „Betriebsferien erstellen“ mit Bezeichnung „Umbau Empfang“, Von und Bis, der Verrechnung „Als Urlaub werten“ oder „Bezahlte Freistellung“ und dem Knopf zum Erstellen',
+  },
+  {
+    id: 'pl-betriebsferien-liste',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/absences',
+    prepare: [{ click: { role: 'button', name: 'Betriebsferien', exact: true, within: 'main' } }],
+    crop: { around: ['tabelle', 'aktionen'], pad: 90 },
+    markers: [
+      { n: 1, id: 'tabelle', locator: { css: "main table:has(th:text-is('Betroffene MA')) thead" }, badge: 'left' },
+      { n: 2, id: 'aktionen', locator: { css: "main table:has(th:text-is('Betroffene MA')) tbody tr >> td >> nth=-1" }, badge: 'left' },
+    ],
+    alt: 'Tabelle der Betriebsferien: „Teamklausur“ mit Zeitraum, Verrechnung Urlaub, Zahl der betroffenen Mitarbeitenden und in der Spalte Aktion den Symbolen Bearbeiten und Löschen',
+  },
+  {
+    id: 'pl-betriebsferien-urlaub',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    prepare: [{ scrollTo: { role: 'heading', name: 'Betriebsferien & Urlaub', exact: true } }],
+    crop: { around: ['schalter', 'speichern'], pad: 70 },
+    markers: [
+      { n: 1, id: 'schalter', locator: { css: '#closure-overtime-toggle' }, badge: 'right' },
+      {
+        n: 2,
+        id: 'speichern',
+        locator: { css: "xpath=//main//button[@id='closure-overtime-toggle']/following::button[1]" },
+        badge: 'right',
+      },
+    ],
+    alt: 'Einstellungen, Abschnitt „Betriebsferien & Urlaub“: Erklärtext, Hinweis zum erneuten Speichern und der Schalter „Überzählige Betriebsferien als Überstundenabbau“',
+  },
+
+  // ── 7. Sondertage & verkürzte Tage ───────────────────────────────────────
+  {
+    id: 'pl-sondertage',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    // Beispiel: 24.12. Halbtag (Seed), 31.12. frei als Urlaub – nur für die Aufnahme gesetzt, danach zurückgestellt
+    settings: { special_day_dec31_mode: 'free', special_day_dec31_counts_as_vacation: 'true' },
+    prepare: [{ scrollTo: { role: 'heading', name: 'Sondertage (24./31.12.)', exact: true } }],
+    crop: { around: ['modus', 'anrechnung', 'speichern'], pad: 70 },
+    markers: [
+      { n: 1, id: 'modus', locator: { css: '#special-dec24-mode' }, badge: 'right' },
+      { n: 2, id: 'anrechnung', locator: { css: '#special-dec31-vacation' }, badge: 'right' },
+      {
+        n: 3,
+        id: 'speichern',
+        locator: { css: "xpath=//main//select[@id='special-dec31-vacation']/following::button[1]" },
+        badge: 'right',
+      },
+    ],
+    alt: 'Einstellungen, Abschnitt „Sondertage (24./31.12.)“: 24.12. im Modus Halbtag, 31.12. im Modus Frei mit der Anrechnung Urlaub, darunter Speichern',
+  },
+  {
+    id: 'pl-verkuerzte-tage',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    prepare: [
+      { scrollTo: { role: 'heading', name: 'Verkürzte Tage', exact: true } },
+      { fill: { css: '#reduced-new-date' }, value: '{{stichtag+16d}}' },
+      { fill: { css: '#reduced-new-label' }, value: 'Betriebsausflug' },
+      { fill: { css: '#reduced-new-hours' }, value: '5' },
+    ],
+    crop: { around: ['jahr', 'zeile'], pad: 90 },
+    markers: [
+      { n: 1, id: 'jahr', locator: { css: '#reduced-days-year' }, badge: 'left' },
+      { n: 2, id: 'eingabe', locator: { css: "xpath=//*[@id='reduced-new-date']/ancestor::div[contains(@class,'items-end')][1]" }, badge: 'left' },
+      { n: 3, id: 'zeile', locator: { css: "main tr:has-text('Brückentag')" }, badge: 'left' },
+    ],
+    alt: 'Einstellungen, Abschnitt „Verkürzte Tage“: Eingabe Datum, Bezeichnung „Betriebsausflug“ und Höchstens 5 Stunden, darunter der eingetragene Brückentag mit höchstens 4 Stunden',
+  },
+
+  // ── 8. Berichte & Exporte ────────────────────────────────────────────────
+  {
+    id: 'pl-monatsreport',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/reports',
+    crop: { around: ['monat', 'ausgeblendete'], pad: 90 },
+    markers: [
+      { n: 1, id: 'monat', locator: { css: "main input[type='month']" }, badge: 'left' },
+      { n: 2, id: 'krankheit', locator: { css: "main label:has-text('Krankheitsdaten einschließen (Art. 9 DSGVO)')" }, badge: 'left' },
+      { n: 3, id: 'ausgeblendete', locator: { css: "label[for='export-hidden-month']" }, badge: 'left' },
+      { n: 4, id: 'formate', locator: { role: 'button', name: 'PDF (.pdf)', exact: true, within: 'main' }, badge: 'right' },
+    ],
+    alt: 'Berichte & Export, Monatsreport: Monat auswählen, Knöpfe Excel, ODS und PDF, darunter „Krankheitsdaten einschließen“ und „Ausgeblendete Mitarbeitende einbeziehen“',
+  },
+  {
+    id: 'pl-jahresreport',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/reports',
+    prepare: [{ scrollTo: { css: "main div.rounded-lg:has(> h3:has-text('Detailliertes Format'))" } }],
+    crop: { around: ['jahr', 'detailliert'], pad: 90 },
+    markers: [
+      { n: 1, id: 'jahr', locator: { css: "xpath=//main//label[normalize-space()='Jahr auswählen']/following-sibling::input[1]" }, badge: 'left' },
+      { n: 2, id: 'classic', locator: { css: "main div.rounded-lg:has(> h3:has-text('Classic Format'))" }, badge: 'left' },
+      { n: 3, id: 'detailliert', locator: { css: "main div.rounded-lg:has(> h3:has-text('Detailliertes Format'))" }, badge: 'right' },
+    ],
+    alt: 'Berichte & Export, Jahresreport: Jahr auswählen und die beiden Formate „Classic“ und „Detailliert“ mit je einem Knopf für Excel und ODS',
+  },
+
+  // ── 9. ArbZG-Prüfung & §4-Ausnahme ───────────────────────────────────────
+  {
+    id: 'pl-arbzg-24wochen',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/reports',
+    prepare: [
+      { click: { role: 'button', name: '24-Wochen-Durchschnitt prüfen', exact: true } },
+      { waitFor: { role: 'table', name: '24-Wochen-Durchschnitt', exact: true } },
+      { scrollTo: { role: 'table', name: '24-Wochen-Durchschnitt', exact: true } },
+    ],
+    crop: { around: ['stichtag', 'tabelle'], pad: 90 },
+    markers: [
+      { n: 1, id: 'stichtag', locator: { css: '#avg-end-date' }, badge: 'left' },
+      { n: 2, id: 'pruefen', locator: { role: 'button', name: '24-Wochen-Durchschnitt prüfen', exact: true }, badge: 'right' },
+      { n: 3, id: 'tabelle', locator: { role: 'table', name: '24-Wochen-Durchschnitt', exact: true }, badge: 'left' },
+    ],
+    alt: 'Auswertung „24-Wochen-Durchschnitt §3 ArbZG“ zum Stichtag: je Person Durchschnitt angerechnet und laut Stempel je Werktag, Summen, Wochen über 48 Stunden, Tage über 8 Stunden und Status',
+  },
+  {
+    id: 'pl-arbzg-hoechstarbeitszeit',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/reports',
+    prepare: [
+      { click: { role: 'button', name: 'Höchstarbeitszeit und Pausenausnahmen prüfen', exact: true } },
+      { waitFor: { css: "main button:has-text('Pausenausnahme(n)')" } },
+      { click: { css: "main button:has-text('Pausenausnahme(n)')" } },
+      { waitFor: { role: 'table', name: 'Pausenausnahmen Thomas Bauer', exact: true } },
+      { scrollTo: { role: 'table', name: 'Pausenausnahmen Thomas Bauer', exact: true } },
+    ],
+    crop: { around: ['filter', 'ausnahmen'], pad: 90 },
+    markers: [
+      { n: 1, id: 'filter', locator: { css: "xpath=//*[@id='limits-year']/ancestor::div[contains(@class,'items-end')][1]" }, badge: 'left' },
+      { n: 2, id: 'zahlen', locator: { css: "main div.flex:has(> span:has-text('Pause zu kurz:'))" }, badge: 'left' },
+      { n: 3, id: 'person', locator: { css: "main button:has-text('Pausenausnahme(n)')" }, badge: 'left' },
+      { n: 4, id: 'ausnahmen', locator: { role: 'table', name: 'Pausenausnahmen Thomas Bauer', exact: true }, badge: 'left' },
+    ],
+    alt: 'Auswertung „Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG“: Zähler je Befund und aufgeklappt eine dokumentierte Pausenausnahme von Thomas Bauer mit Zeit, Pause und Begründung',
+  },
+  {
+    id: 'pl-pflicht-pause',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    prepare: [{ scrollTo: { role: 'heading', name: 'Pflicht-Pause-Ausnahme', exact: true } }],
+    crop: { around: ['erlauben', 'speichern'], pad: 70 },
+    markers: [
+      { n: 1, id: 'erlauben', locator: { css: '#break-exception-allowed-toggle' }, badge: 'right' },
+      { n: 2, id: 'genehmigung', locator: { css: '#break-approval-toggle' }, badge: 'right' },
+      {
+        n: 3,
+        id: 'speichern',
+        locator: { css: "xpath=//main//button[@id='break-approval-toggle']/following::button[1]" },
+        badge: 'right',
+      },
+    ],
+    alt: 'Einstellungen, Abschnitt „Pflicht-Pause-Ausnahme“: Schalter „Ausnahme Pflicht-Pause war nicht möglich erlauben“ und „Genehmigung erforderlich“ mit Erklärtext und Speichern',
   },
 ];
 
@@ -776,7 +982,7 @@ export const praxisleitung: Handbook = {
           steps: [
             { n: 1, text: '**Überschrift:** der Anlass und der Wirkungsbereich, z. B. „Rückwirkende Änderung: 14.10.2026 – …“. Darunter Puffer, geänderte Tage und das Tagessoll je Wochentag vorher → nachher.' },
             { n: 2, text: '**Zeiteinträge:** wie viele neu berechnet werden, je Monat mit der angerechneten Zeit vorher → nachher; übersprungene mit Grund. Danach die Zahl der Abwesenheiten, deren Stunden umgestellt werden.' },
-            { n: 3, text: '**Tabelle:** Soll im Zeitraum, angerechnete Zeit, Überstunden und Urlaub – jeweils bisher, neu und Differenz.' },
+            { n: 3, text: '**Tabelle** mit den Spalten bisher, neu und Δ: **Überstunden** und **Urlaub verbraucht** (bei geändertem Anspruch auch **Urlaubsanspruch**) mit allen drei Werten; für **Soll im Zeitraum** und **Angerechnet** steht nur die Differenz Δ.' },
             { n: 4, text: '[[Einzelheiten]] listet jeden Eintrag mit seinen Zeiten vorher → nachher.' },
             { n: 5, text: 'Setzen Sie den Haken [[Ich habe die Auswirkungen geprüft und möchte speichern]] und klicken Sie auf [[Speichern]]. PraxisZeit meldet danach, wie viele Einträge neu berechnet wurden.' },
           ],
@@ -948,6 +1154,379 @@ export const praxisleitung: Handbook = {
           text:
             'Einen Anrechnungsantrag ohne Anerkennen zu genehmigen geht nur einzeln. Hinweise wie bei der Einzel-Genehmigung (Kappung, Wochen- oder Nachtarbeitszeit) ' +
             'erscheinen auch hier, jeweils mit dem Namen der Person. Prüfen Sie Anträge zeitnah, damit die Salden aktuell bleiben.',
+        },
+      ],
+    },
+
+    // ── 6 ───────────────────────────────────────────────────────────────────
+    {
+      id: 'abwesenheiten-betriebsferien',
+      title: 'Abwesenheiten & Betriebsferien',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'urlaub',
+          text:
+            'Unter **Abwesenheiten** im Bereich Administration tragen Sie Urlaub, Krankheit oder Fortbildung für eine Person ein. ' +
+            '**Betriebsferien** schließen die ganze Praxis – PraxisZeit bucht die Tage für alle Teilnehmenden auf einmal.',
+        },
+        {
+          kind: 'task',
+          id: 'abwesenheit-fuer-person',
+          title: 'Wie trage ich eine Abwesenheit für eine Person ein?',
+          intro:
+            'Klicken Sie in der Navigation unter Administration auf [[Abwesenheiten]]. Die Seite heißt „Abwesenheiten verwalten“; ' +
+            'der Tab [[Mitarbeiter-Abwesenheiten]] listet alle Personen mit ihren Abwesenheiten im gewählten Monat.',
+          shot: 'pl-abwesenheit-eintragen',
+          steps: [
+            { n: 1, text: 'Wählen Sie unter **Mitarbeiter** die Person – oder klicken Sie in der Liste bei ihr auf [[+ Eintragen]]. Oben rechts steht dann [[Abwesenheit eintragen]].' },
+            { n: 2, text: 'Mehrere Tage? Setzen Sie den Haken bei [[Zeitraum (mehrere Tage)]]. Für einen einzelnen Tag gibt es [[Halber Tag (zählt als 0,5 Tag)]] – nicht bei Krank und Überstundenausgleich.' },
+            { n: 3, text: 'Wählen Sie das **Datum** – beim Zeitraum **Von** und **Bis**. Anders als die Mitarbeitenden tragen Sie auch vergangene Tage direkt ein.' },
+            { n: 4, text: '**Typ:** Urlaub, Krank, Fortbildung (außer Haus), Überstundenausgleich, Bezahlte Freistellung (kein Urlaubsabzug), Sonstiges – oder unter „Eigene Gründe“ ein Grund Ihrer Praxis.' },
+            { text: '**Stunden:** Gebucht wird immer das Tagessoll des Tages; nur beim Überstundenausgleich zählt der eingetragene Wert – er geht vom Überstundenkonto ab.' },
+            { n: 5, text: 'Klicken Sie auf [[Speichern]].' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Nur an Arbeitstagen:** Wochenenden, Feiertage, als „frei“ eingestellte Sondertage und Tage ohne geplante Arbeitszeit (freie Wochentage, 0 Wochenstunden etwa in der Elternzeit) bleiben ausgenommen; ' +
+            'bei Mitarbeitenden ohne Stundenzählung zählt jeder Werktag. Zeiteinträge der eingetragenen Tage werden ersetzt, Einträge an ausgenommenen Tagen bleiben stehen. ' +
+            'Liegt im Zeitraum kein einziger Tag mit geplanter Arbeitszeit, lehnt PraxisZeit die Buchung ab.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Löschen:** Ohne gewählte Person klappt ein Klick auf den Namen die Abwesenheiten auf; der Papierkorb löscht eine. ' +
+            'Mitarbeitende beantragen die Löschung einer vergangenen Abwesenheit mit [[Löschung beantragen]] – der Antrag kommt als **Löschung** unter [[Änderungsanträge]] zu Ihnen. ' +
+            'Betriebsferien-Tage ändert nur die Verwaltung.',
+        },
+        {
+          kind: 'task',
+          id: 'betriebsferien-anlegen',
+          title: 'Wie lege ich Betriebsferien an?',
+          intro: 'Wechseln Sie auf derselben Seite zum Tab [[Betriebsferien]] und klicken Sie oben rechts auf [[Betriebsferien erstellen]].',
+          shot: 'pl-betriebsferien',
+          steps: [
+            { n: 1, text: '**Bezeichnung**, z. B. „Weihnachtsschließzeit 2026“.' },
+            { n: 2, text: '**Von** und **Bis**: der Zeitraum der Schließung.' },
+            { n: 3, text: '**Verrechnung:** [[Als Urlaub werten]] (Standard) zieht jeden gebuchten Schließtag vom Urlaubskonto ab – 1 Tag je Arbeitstag. [[Bezahlte Freistellung]] wirkt wie ein Feiertag: kein Urlaubsabzug, das Überstundenkonto bleibt unberührt.' },
+            { n: 4, text: 'Klicken Sie auf [[Betriebsferien erstellen & Urlaub eintragen]]. Jede teilnehmende Person bekommt für jeden ihrer Arbeitstage im Zeitraum eine Abwesenheit; vorhandene Zeiteinträge dieser Tage werden ersetzt (im Änderungsprotokoll dokumentiert).' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Wer bekommt die Tage?** Alle aktiven Mitarbeitenden mit dem Haken **Nimmt an Betriebsferien teil** (Standard) – unabhängig von der Rolle. ' +
+            'Kein Eintrag entsteht an Wochenenden, Feiertagen, „frei“ eingestellten Sondertagen, Tagen ohne geplante Arbeitszeit, außerhalb des Beschäftigungszeitraums ' +
+            'und an Tagen mit einer anderen Abwesenheit. Fällt diese später weg, bucht PraxisZeit den Schließtag nach – außer es steht inzwischen ein Zeiteintrag am Tag. ' +
+            'Setzen Sie den Haken nachträglich, trägt PraxisZeit die laufenden und künftigen Betriebsferien automatisch nach.',
+        },
+        {
+          kind: 'task',
+          id: 'betriebsferien-aendern',
+          title: 'Wie ändere oder lösche ich Betriebsferien?',
+          intro: 'Unter dem Tab [[Betriebsferien]] stehen alle Schließungen als Tabelle.',
+          shot: 'pl-betriebsferien-liste',
+          steps: [
+            { n: 1, text: 'Je Schließung: Bezeichnung, Zeitraum, Verrechnung und unter **Betroffene MA**, für wie viele Personen Tage gebucht sind.' },
+            { n: 2, text: 'In der Spalte **Aktion**: **Bearbeiten** (Stift) – Ändern Sie den Zeitraum, bekommen neu hinzukommende Arbeitstage einen Eintrag und entfallene werden entfernt; eine umgestellte Verrechnung ändert den Typ der Einträge. Abweichende Einträge einzelner Personen bleiben unberührt. Speichern mit [[Änderungen speichern]]. **Löschen** (Papierkorb) – Die Abwesenheiten werden bei allen Personen entfernt.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Abgeschlossenes Jahr:** Ändert das Anlegen, Speichern oder Löschen Buchungen in einem Jahr mit Jahresabschluss, meldet PraxisZeit z. B. ' +
+            '„Jahresabschluss 2026 bereits erfolgt — Carryover 2027 ist nun veraltet, bitte Jahresabschluss erneut ausführen.“ Der Übertrag ändert sich nicht von selbst: ' +
+            'Prüfen und korrigieren Sie ihn oder führen Sie den Jahresabschluss erneut aus (dabei werden von Hand korrigierte Überträge überschrieben). Reines Umbenennen löst den Hinweis nicht aus.',
+        },
+        {
+          kind: 'task',
+          id: 'betriebsferien-ueberstundenabbau',
+          title: 'Die Betriebsferien sind länger als der Resturlaub – was passiert?',
+          intro: 'Das steuert ein Schalter unter [[Einstellungen]] → **Betriebsferien & Urlaub**. Er gilt nur für Betriebsferien, die als Urlaub zählen.',
+          shot: 'pl-betriebsferien-urlaub',
+          steps: [
+            {
+              n: 1,
+              text:
+                '**Überzählige Betriebsferien als Überstundenabbau** – aus (Standard): Alle Schließtage zählen als Urlaub, reicht der Resturlaub nicht, entstehen Minus-Urlaubstage. ' +
+                'An: Erst wird der Urlaub aufgezehrt, die übrigen Tage bucht PraxisZeit als Überstundenausgleich – das Überstundenkonto darf dabei ins Minus gehen.',
+            },
+            { n: 2, text: 'Klicken Sie auf [[Speichern]].' },
+            { text: 'Der Schalter wirkt beim Anlegen und erneuten Speichern. Bereits eingetragene Betriebsferien öffnen Sie einmal und speichern sie erneut – dann rechnet PraxisZeit sie nach derselben Regel neu.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Pflichturlaub darf ins Minus:** Betriebsferien werden zwingend gebucht, auch über das Urlaubsbudget hinaus – anders als ein Urlaubsantrag oder eine direkte Buchung, die PraxisZeit bei fehlendem Resturlaub ablehnt. ' +
+            'Mit eingeschaltetem Schalter verteilt PraxisZeit den Urlaub nach Datum (frühere Schließung zuerst); privater Urlaub im selben Jahr geht immer vor.',
+        },
+      ],
+    },
+
+    // ── 7 ───────────────────────────────────────────────────────────────────
+    {
+      id: 'sondertage-verkuerzte-tage',
+      title: 'Sondertage & verkürzte Tage',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'sondertage',
+          text:
+            'Heiligabend und Silvester sind keine gesetzlichen Feiertage. Ob dort voll, halb oder gar nicht gearbeitet wird, legen Sie selbst fest – ' +
+            'ebenso einzelne **verkürzte Tage** wie Rosenmontag oder einen Betriebsausflug.',
+        },
+        {
+          kind: 'task',
+          id: 'sondertage-einstellen',
+          title: 'Wie stelle ich den 24. und 31.12. ein?',
+          intro: 'Klicken Sie auf [[Einstellungen]] und scrollen Sie zum Abschnitt **Sondertage (24./31.12.)**. Beide Tage stellen Sie getrennt ein.',
+          shot: 'pl-sondertage',
+          steps: [
+            { n: 1, text: '**Modus** je Tag: [[Arbeitstag]] (Standard), [[Halbtag]], [[Frei]] oder [[Verkürzt auf X Stunden]]. Bei „Verkürzt“ erscheint daneben **Höchstens (Stunden)**: 0,25 bis 12 Stunden in Schritten von 0,25.' },
+            { n: 2, text: '**Anrechnung** (nur bei „Frei“): [[Urlaub]] zieht den freien Tag vom Urlaubskonto ab, [[Bezahlte Freistellung]] nicht – wie ein Feiertag.' },
+            { n: 3, text: 'Klicken Sie auf [[Speichern]]. Der Knopf wird erst aktiv, wenn Sie etwas geändert haben.' },
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['Modus', 'Tagessoll', 'Ein Urlaubstag an diesem Tag kostet'],
+          rows: [
+            ['Arbeitstag', 'volles Tagessoll', '1 Tag'],
+            ['Halbtag', 'halbes Tagessoll', '0,5 Tage'],
+            ['Frei', '0, wie ein Feiertag', 'mit Anrechnung „Urlaub“ zieht der Tag selbst 1 Urlaubstag ab; mit „Bezahlte Freistellung“ nichts'],
+            ['Verkürzt auf X Stunden', 'die kleinere Zahl aus Tagessoll und X', '0,5 Tage'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Die Einstellung gilt für **alle Jahre**, auch zurückliegende. Betroffene Betriebsferien bucht PraxisZeit beim Speichern selbst neu; ' +
+            'ändert sich ein Jahr mit Jahresabschluss, erscheint dort nur der Hinweis auf den veralteten Übertrag. ' +
+            'Wechselt ein Tag zwischen „Frei“ und Arbeitstag bzw. Halbtag, nennt PraxisZeit bestehende Zeiteinträge dieses Tages, deren Anrechnung sich ändern müsste – unverändert neu speichern berechnet sie neu.',
+        },
+        {
+          kind: 'task',
+          id: 'verkuerzte-tage',
+          title: 'Wie verkürze ich einen einzelnen Tag, z. B. Rosenmontag?',
+          intro: 'Unter [[Einstellungen]] → **Verkürzte Tage**, direkt unter den Sondertagen.',
+          shot: 'pl-verkuerzte-tage',
+          steps: [
+            { n: 1, text: 'Wählen Sie oben rechts das **Jahr**.' },
+            { n: 2, text: 'Tragen Sie in der Eingabezeile das **Datum** des Tages ein (für den 24. und 31.12. nimmt PraxisZeit keinen Eintrag an – dafür gibt es die Sondertage), eine **Bezeichnung** wie „Rosenmontag“ oder „Betriebsausflug“ und **Höchstens (Stunden)**: 0,25 bis 12, in Schritten von 0,25. Klicken Sie auf [[Hinzufügen]]. Je Datum gibt es genau einen Eintrag.' },
+            { n: 3, text: 'Eingetragene Tage stehen darunter. Ein Klick auf die Bezeichnung macht sie änderbar, ebenso die Stunden; danach erscheint [[Speichern]]. [[Löschen]] entfernt den Tag.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**So wirkt ein verkürzter Tag:** Das Soll ist die kleinere Zahl aus Tagessoll und Höchstwert – wer ohnehin weniger Soll hat, behält es. Ein Feiertag geht vor, am Wochenende wirkt der Tag nicht. ' +
+            'Urlaub kostet 0,5 Tage; Krank und Fortbildung zählen anteilig (8 h Soll, höchstens 4 h → 4 h Soll und 4 h Gutschrift, Saldo 0). ' +
+            'Angerechnet wird weiter die gestempelte Zeit, sie wird nicht auf den Höchstwert gekappt; die Arbeitszeit-Blöcke bleiben unverändert.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Mitarbeitende sehen den Tag im Kalender als „Brückentag: verkürzter Tag (max. 4 h)“ und auf der Stempelkarte als „verkürzter Tag (max. 4 h)“. ' +
+            'Auch jede Änderung hier bucht betroffene Betriebsferien neu; in abgeschlossenen Jahren erscheint nur der Hinweis.',
+        },
+      ],
+    },
+
+    // ── 8 ───────────────────────────────────────────────────────────────────
+    {
+      id: 'berichte-exporte',
+      title: 'Berichte & Exporte',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'nachweise',
+          text:
+            'Für Lohnbuchhaltung, Steuerberatung und Betriebsprüfung exportieren Sie Monats- und Jahresberichte als Excel, ODS oder PDF. ' +
+            'Die Dateien sind Ihr Nachweis nach § 16 ArbZG.',
+        },
+        {
+          kind: 'task',
+          id: 'monatsreport-exportieren',
+          title: 'Wie exportiere ich den Monatsreport?',
+          intro: 'Klicken Sie in der Navigation auf [[Berichte]]. Die Seite heißt „Berichte & Export“; oben steht **Monatsreport exportieren**.',
+          shot: 'pl-monatsreport',
+          steps: [
+            { n: 1, text: 'Wählen Sie unter **Monat auswählen** den Monat.' },
+            { n: 2, text: 'Optional: [[Krankheitsdaten einschließen (Art. 9 DSGVO)]]. Ohne den Haken steht im Export „Abwesenheit“ statt „Krank“.' },
+            { n: 3, text: 'Optional: [[Ausgeblendete Mitarbeitende einbeziehen]] – etwa die Praxisinhaberin, wenn sie stempelt. Ausgeschiedene sind immer enthalten, wenn sie im Zeitraum Einträge oder Abwesenheiten haben.' },
+            { n: 4, text: 'Klicken Sie auf das Format – die Markierung sitzt am Knopf [[PDF (.pdf)]], daneben stehen [[Excel (.xlsx)]] und [[ODS (.ods)]]. Die Datei wird heruntergeladen – je Person ein Blatt mit allen Tagen und einer Zusammenfassung.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Krankheitsdaten (Art. 9 DSGVO)** sind besondere Kategorien personenbezogener Daten; jeder Export mit dem Haken wird im Änderungsprotokoll vermerkt. ' +
+            'Ohne den Haken steht auch bei eigenen Abwesenheitsgründen „Abwesenheit“ (die Notiz entfällt), und das Kennzeichen „Nachtarbeitnehmer“ im Kopf jedes Blatts zeigt „–“. ' +
+            '„Sonstiges“/„unbezahlt frei“ und „Bez. Freistellung“ stehen immer im Klartext.',
+        },
+        {
+          kind: 'table',
+          head: ['Spalte (Tageszeile)', 'Bedeutung'],
+          rows: [
+            ['Von / Bis', 'Rahmen des Tages: erster Beginn, letztes Ende – bei Arbeitszeit-Blöcken die gekappten Zeiten'],
+            ['Pause (Min)', 'die erfasste Pause'],
+            ['Netto (Std)', 'die angerechnete Arbeitszeit der Zeiteinträge'],
+            ['Soll (Std)', 'das Tagessoll'],
+            ['Differenz', 'Netto plus Gutschrift für Krankheit und Fortbildung minus Soll – ein Krank- oder Fortbildungstag ist ±0; die Summe ist der „Saldo Monat“'],
+            ['Abwesenheit, Bemerkung', 'Art der Abwesenheit und Notizen'],
+            ['Unterbrechung (Min), Zeiteinträge', 'nur Excel und ODS: Zeit zwischen den Einträgen eines Tages und die Einträge einzeln, z. B. „07:45–12:00, 14:15–17:00“'],
+            ['Nicht angerechnet (Min)', 'gestempelte, aber nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken'],
+            ['Gestempelt (Von–Bis), Anwesenheit laut Stempel (Std), Pausenausnahme (§4 ArbZG)', 'die tatsächlichen Stempel, die Anwesenheit abzüglich Pausen (über 10 h hervorgehoben) und die Begründung einer Pausenausnahme; im PDF als Spalte „Gestempelt (Anwesenheit)“ und in der Bemerkung'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Neue Spalten hängt PraxisZeit immer hinten an – bestehende Auswertungen funktionieren weiter. Die **Zusammenfassung** je Person nennt Soll- und Ist-Stunden, Saldo Monat, Überstunden kumuliert, Urlaub und Nachtarbeitstage. ' +
+            'Bei fester Monatsarbeitszeit (Minijob-Modus) ist nur die Zusammenfassung verbindlich, denn das Monats-Soll ist dort nicht die Summe der Tage.',
+        },
+        {
+          kind: 'task',
+          id: 'jahresreport-exportieren',
+          title: 'Wie exportiere ich einen Jahresbericht?',
+          intro: 'Weiter unten auf derselben Seite: **Jahresreport exportieren**. Krankheitsdaten und ausgeblendete Mitarbeitende wählen Sie dort genauso.',
+          shot: 'pl-jahresreport',
+          steps: [
+            { n: 1, text: 'Tragen Sie unter **Jahr auswählen** das Jahr ein.' },
+            { n: 2, text: '**Classic Format** ([[Excel]] oder [[ODS]]): je Person ein Blatt mit den 12 Monatswerten – Soll, Ist, Saldo, Urlaub und Krankheit in Stunden, Überstunden kumuliert und Resturlaub.' },
+            { n: 3, text: '**Detailliertes Format** ([[Excel]] oder [[ODS]]): jeder Tag des Jahres je Person, mit denselben Tagesspalten wie der Monatsreport. Die Erstellung dauert einige Sekunden.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Aufbewahrung (§ 16 ArbZG):** Exportieren Sie regelmäßig, mindestens jährlich, und bewahren Sie die Dateien **2 Jahre** sicher auf. Das PDF-Format gibt es nur für den Monatsreport.',
+        },
+      ],
+    },
+
+    // ── 9 ───────────────────────────────────────────────────────────────────
+    {
+      id: 'arbzg-pruefung',
+      title: 'ArbZG-Prüfung & §4-Ausnahme',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'pause',
+          text:
+            'PraxisZeit prüft beim Erfassen das Arbeitszeitgesetz und warnt oder sperrt. Unter **Berichte** werten Sie nachträglich aus – ' +
+            'und unter **Einstellungen** legen Sie fest, ob es die Ausnahme „Pflicht-Pause war nicht möglich“ gibt.',
+        },
+        {
+          kind: 'table',
+          head: ['Auswertung unter Berichte', 'Prüft'],
+          rows: [
+            ['Ruhezeitprüfung', '§ 5: mindestens 11 Stunden Ruhezeit zwischen zwei Arbeitstagen (Mindestruhezeit einstellbar)'],
+            ['Sonntagsarbeit §11 ArbZG', 'gearbeitete und freie Sonntage – mindestens 15 Sonntage im Jahr müssen frei sein'],
+            ['Nachtarbeit §6 ArbZG', 'Nachtarbeitstage und Nachtarbeitnehmer, mit Monatsdurchschnitt je Werktag'],
+            ['Ersatzruhetage §11 ArbZG', 'Ersatzruhetag innerhalb von 2 Wochen nach Sonntags- und 8 Wochen nach Feiertagsarbeit'],
+            ['24-Wochen-Durchschnitt §3 ArbZG', 'höchstens 8 Stunden je Werktag im Schnitt über 24 Wochen'],
+            ['Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG', 'Tage über 10 Stunden, Wochen über 48 Stunden, Pausenausnahmen und zu kurze Pausen'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Wer erscheint?** Alle aktiven Mitarbeitenden und ausgeschiedene, die im Zeitraum Einträge oder Abwesenheiten haben. ' +
+            'Ausgeblendete nur mit [[Ausgeblendete Mitarbeitende einbeziehen]] über den Auswertungen; § 18-befreite Mitarbeitende erscheinen nie.',
+        },
+        {
+          kind: 'task',
+          id: 'arbzg-24-wochen',
+          title: 'Hält mein Team den 8-Stunden-Durchschnitt ein?',
+          intro: 'Auf der Seite „Berichte & Export“ im Abschnitt **24-Wochen-Durchschnitt §3 ArbZG**.',
+          shot: 'pl-arbzg-24wochen',
+          steps: [
+            { n: 1, text: '**Stichtag** (Standard heute): ausgewertet werden die 24 Wochen bis zu diesem Tag.' },
+            { n: 2, text: 'Klicken Sie auf [[Prüfen]]. Über der Tabelle stehen der Zeitraum und, falls jemand die Grenze überschreitet, die Zahl der nicht konformen Mitarbeitenden.' },
+            {
+              n: 3,
+              text:
+                '**Ø angerechnet / Werktag** und **Status** rechnen mit der angerechneten Zeit, geteilt durch die Werktage – Montag bis Samstag ohne Feiertage und ohne Tage mit Urlaub, Krankheit, Fortbildung oder Freistellung. ' +
+                '**Anwesenheit laut Stempel** ist die gestempelte Zeit abzüglich Pausen; liegt ihr Schnitt über 8 Stunden, ist sie rot hervorgehoben.',
+            },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'arbzg-hoechstarbeitszeit',
+          title: 'Wo sehe ich lange Tage und dokumentierte Pausenausnahmen?',
+          intro: 'Im Abschnitt **Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG**.',
+          shot: 'pl-arbzg-hoechstarbeitszeit',
+          steps: [
+            { n: 1, text: 'Wählen Sie das **Jahr**, optional einen **Monat**, und klicken Sie auf [[Prüfen]].' },
+            { n: 2, text: 'Die Zähler: Tage > 10 h, Wochen > 48 h, Pausenausnahmen und Pause zu kurz. Es erscheinen nur Personen mit mindestens einem Befund.' },
+            { n: 3, text: 'Ein Klick auf die Person klappt die Einzelheiten auf.' },
+            { n: 4, text: '**Pausenausnahmen:** jeder Eintrag mit dokumentierter Ausnahme mit Zeit, erfasster Pause und Begründung. **Pause zu kurz** zeigt Tage, an denen die Pause nicht reicht und keine Ausnahme anerkannt ist – etwa weil die beantragte Ausnahme noch offen ist oder abgelehnt wurde.' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'pflicht-pause-ausnahme',
+          title: 'Wie lege ich fest, ob eine fehlende Pause begründet werden darf?',
+          intro: 'Klicken Sie auf [[Einstellungen]] und scrollen Sie zum Abschnitt **Pflicht-Pause-Ausnahme**.',
+          shot: 'pl-pflicht-pause',
+          steps: [
+            {
+              n: 1,
+              text:
+                '[[Ausnahme „Pflicht-Pause war nicht möglich“ erlauben]] (Standard: an): Mitarbeitende und Admins können eine fehlende Pause begründen. ' +
+                'Aus: Die Auswahl verschwindet überall, PraxisZeit lehnt jede Ausnahme ab – auch für Admins; ein Tag über 6 bzw. 9 Stunden lässt sich nur mit eingetragener Pause speichern.',
+            },
+            {
+              n: 2,
+              text:
+                '[[Genehmigung erforderlich]] (Standard: aus): Ist er an, wird eine Ausnahme aus der Zeiterfassung erst nach Ihrer Genehmigung gespeichert (4-Augen-Prinzip). ' +
+                'Beim Ausstempeln wird der Eintrag sofort mit der echten Zeit geschlossen, die Ausnahme ist nur beantragt: Es entsteht ein Änderungsantrag mit unveränderten Zeiten und der Begründung.',
+            },
+            { n: 3, text: 'Klicken Sie auf [[Speichern]].' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**§ 4 ArbZG:** mindestens 30 Minuten Pause bei mehr als 6 Stunden, 45 Minuten bei mehr als 9 Stunden. Maßstab ist der ganze Tag; eine Unterbrechung zählt erst ab 15 Minuten als Pause. ' +
+            'Fehlt die Pause, sperrt PraxisZeit an jedem Erfassungsweg – auch beim Ausstempeln –, bis eine Pause eingetragen oder, falls erlaubt, eine Ausnahme mit mindestens 10 Zeichen begründet ist.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Beantragte Ausnahme entscheiden:** Den Antrag finden Sie unter [[Änderungsanträge]]. Genehmigt, steht die Ausnahme am Eintrag; abgelehnt, bleibt der Eintrag ohne Ausnahme und erscheint unter „Pause zu kurz“. ' +
+            'Ihre **eigene** Ausnahme genehmigt ein weiteres Admin-Konto. Gibt es nur eines, lässt sie sich nur ablehnen – brauchen Sie dann selbst Ausnahmen, schalten Sie „Genehmigung erforderlich“ aus.',
+        },
+        {
+          kind: 'table',
+          head: ['Automatische Prüfung', 'Verhalten'],
+          rows: [
+            ['§ 3: mehr als 10 Stunden am Tag', 'beim Ausstempeln Warnung (die Zeit ist geleistet), bei manueller Eingabe und im Antrag Sperre'],
+            ['§ 3: mehr als 8 Stunden am Tag, mehr als 48 Stunden in der Woche', 'Warnung'],
+            ['§ 4: Pause fehlt', 'Sperre, auch beim Ausstempeln; Ausnahme mit Begründung, sofern erlaubt'],
+            ['§ 5: weniger als 11 Stunden Ruhezeit', 'Warnung beim Einstempeln'],
+            ['§ 6: Nachtarbeitnehmer über 8 Stunden', 'Warnung'],
+            ['Arbeit an Sonn- und Feiertagen', 'Warnung; ohne Ausnahmegrund nach § 10 ArbZG fordert PraxisZeit ihn an (Feld auch beim Ausstempeln)'],
+          ],
         },
       ],
     },

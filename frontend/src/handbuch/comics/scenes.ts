@@ -11,6 +11,8 @@ import { SceneSchichtplan } from './SceneSchichtplan';
 import { SceneEinrichtung } from './SceneEinrichtung';
 import { SceneNeuImTeam } from './SceneNeuImTeam';
 import { SceneBloecke } from './SceneBloecke';
+import { SceneSondertage } from './SceneSondertage';
+import { ScenePause } from './ScenePause';
 
 /** Comic-Szenen der Broschüre, adressiert über den Schlüssel `scene` in den Handbuch-Inhalten. */
 export const COMIC_SCENES: Record<string, ComponentType> = {
@@ -26,4 +28,6 @@ export const COMIC_SCENES: Record<string, ComponentType> = {
   einrichtung: SceneEinrichtung,
   neuimteam: SceneNeuImTeam,
   bloecke: SceneBloecke,
+  sondertage: SceneSondertage,
+  pause: ScenePause,
 };
