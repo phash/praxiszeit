@@ -1,0 +1,8 @@
+# Wegwerf-Instanz fuer Handbuch-Screenshots: Datenbank mit libfaketime (R14).
+# Dieselbe Uhr-Verschiebung wie das Backend, sonst lehnt der Audit-Waechter
+# (Migration 076, pz_audit_guard) Zeilen mit created_at ausserhalb von +-10 min ab.
+ARG BASE=postgres:18-alpine
+FROM ${BASE}
+USER root
+RUN apk add --no-cache libfaketime \
+    && ln -s "$(find /usr/lib -name 'libfaketime.so.1' | head -n 1)" /usr/local/lib/libfaketime.so.1

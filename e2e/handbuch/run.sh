@@ -58,33 +58,79 @@ cmd_up() {
 
 cmd_seed() {
   [ -f "$ENV_FILE" ] || { echo "Erst 'run.sh up' ausfuehren" >&2; exit 1; }
-  local cid out stichtag
+  local cid out stichtag day
   cid="$(dc ps -q backend)"
   [ -n "$cid" ] || { echo "Backend-Container laeuft nicht" >&2; exit 1; }
+  # 1. Stichtag auf der ECHTEN Uhr berechnen (R14), noch ohne Datenbankfaelschung noetig
+  docker cp backend/create_handbuch_testdata.py "$cid:/app/create_handbuch_testdata.py"
+  if ! out="$(dc exec -T backend env -u LD_PRELOAD -u FAKETIME python create_handbuch_testdata.py --print-stichtag </dev/null 2>&1)"; then
+    printf '%s\n' "$out" >&2
+    echo "Stichtag-Berechnung fehlgeschlagen" >&2
+    exit 1
+  fi
+  stichtag="$(printf '%s\n' "$out" | tail -n 1)"
+  [[ "$stichtag" == STICHTAG=* ]] || { echo "Letzte Zeile ist kein STICHTAG=: $stichtag" >&2; exit 1; }
+  day="${stichtag#STICHTAG=}"
+  # 2. Uhr von Datenbank UND Backend auf den Stichtag stellen (beide neu erzeugt)
+  enable_faketime "$day"
+  # 3. Seed unter der gefaelschten Uhr, mit ausdruecklichem Stichtag
+  cid="$(dc ps -q backend)"
   docker cp backend/create_handbuch_testdata.py "$cid:/app/create_handbuch_testdata.py"
   # Bei Fehlschlag trotzdem die Ausgabe zeigen (set -e bricht sonst vor dem printf ab).
-  if ! out="$(dc exec -T backend env -u LD_PRELOAD -u FAKETIME python create_handbuch_testdata.py </dev/null 2>&1)"; then
+  if ! out="$(dc exec -T backend python create_handbuch_testdata.py --stichtag "$day" </dev/null 2>&1)"; then
     printf '%s\n' "$out" >&2
     echo "Seed fehlgeschlagen" >&2
     exit 1
   fi
   printf '%s\n' "$out"
-  # Letzte Zeile der Ausgabe: STICHTAG=YYYY-MM-DD
-  stichtag="$(printf '%s\n' "$out" | tail -n 1)"
-  [[ "$stichtag" == STICHTAG=* ]] || { echo "Letzte Seed-Zeile ist kein STICHTAG=: $stichtag" >&2; exit 1; }
-  printf 'BASE_URL=%s\n%s\n' "$BASE_URL" "$stichtag" > "$STATE_FILE"
-  enable_faketime "${stichtag#STICHTAG=}"
+  printf 'BASE_URL=%s\nSTICHTAG=%s\n' "$BASE_URL" "$day" > "$STATE_FILE"
+  smoke_check
 }
 
-# R12: Serveruhr = Stichtag 10:30 (laufend). Nur das Backend wird neu erzeugt.
+# R14: Serveruhr = Stichtag 10:30 Europe/Berlin (laufend) fuer Backend UND Datenbank,
+# mit derselben relativen Verschiebung (sonst lehnt der Audit-Waechter ab).
 enable_faketime() {
-  local day="$1"
-  printf 'FAKETIME="@%s 10:30:00"\n' "$day" > "$FT_ENV"
+  local day="$1" off
+  off="$(python3 - "$day" <<'PY'
+import sys, time
+from datetime import datetime
+from zoneinfo import ZoneInfo
+t = datetime.fromisoformat(sys.argv[1] + "T10:30:00").replace(tzinfo=ZoneInfo("Europe/Berlin"))
+print(int(t.timestamp() - time.time()))
+PY
+)"
+  printf 'FAKETIME=%s\n' "$off" > "$FT_ENV"
   docker build -q -f e2e/handbuch/Dockerfile.backend-faketime \
     --build-arg BASE=pzhandbuch-backend -t pzhandbuch-backend-faketime e2e/handbuch >/dev/null
-  dc up -d --no-build --no-deps --force-recreate backend
+  docker build -q -f e2e/handbuch/Dockerfile.db-faketime -t pzhandbuch-db-faketime e2e/handbuch >/dev/null
+  dc up -d --no-build --force-recreate db backend
   wait_ready || exit 1
-  echo "Serveruhr: ${day} 10:30 (libfaketime)"
+  echo "Serveruhr: ${day} 10:30 (libfaketime, Versatz ${off} s, Backend und Datenbank)"
+}
+
+# Admin-Login + PUT einer harmlosen Einstellung (Pufferzeit 15 -> 16 -> 15): jede
+# Aenderung schreibt eine Audit-Zeile, die der Waechter aus Migration 076 nur
+# annimmt, wenn Backend- und DB-Uhr zusammenpassen. Gleicher Wert schreibt keine
+# Audit-Zeile und prueft deshalb nichts. Scheitert -> Exit 1 mit Antwortkoerper.
+smoke_check() {
+  local tok code body val
+  tok="$(curl -fsS -X POST "${BASE_URL}/api/auth/login" -H 'Content-Type: application/json' \
+    -d '{"username":"admin","password":"Handbuch2026!"}' \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')" \
+    || { echo "Smoke: Admin-Login fehlgeschlagen" >&2; exit 1; }
+  body="$(mktemp)"
+  for val in 16 15; do
+    code="$(curl -sS -o "$body" -w '%{http_code}' -X PUT "${BASE_URL}/api/admin/settings/work_window_grace_minutes" \
+      -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' -d "{\"value\":\"$val\"}")"
+    if [ "$code" != "200" ]; then
+      echo "Smoke: PUT /api/admin/settings/work_window_grace_minutes=$val -> HTTP $code" >&2
+      cat "$body" >&2; echo >&2
+      rm -f "$body"
+      exit 1
+    fi
+  done
+  rm -f "$body"
+  echo "Smoke: Admin-Login und Einstellungs-PUT (16, dann 15) ok: HTTP 200"
 }
 
 cmd_down() {

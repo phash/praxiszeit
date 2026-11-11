@@ -617,3 +617,28 @@ def test_maria_vacation_has_approved_request(full_tenant, app_engine, monkeypatc
                                         for v in db.query(VacationRequest).join(User, User.id == VacationRequest.user_id)
                                         .filter(VacationRequest.tenant_id == TENANT_ID, User.username == "maria")])
     assert len(rows) == 1 and rows[0][0] == "approved" and rows[0][1] == ADMIN_ID and rows[0][3] < STICHTAG
+
+
+def test_seed_writes_every_setting_default_as_a_row(full_tenant, app_engine, monkeypatch):
+    """Jeder Schluessel aus settingsRestore.ts (SETTING_DEFAULTS) steht als Zeile
+    in system_settings; die Python-Kopie im Seed gleicht der TS-Quelle."""
+    import re
+
+    from app.models.system_setting import SystemSetting
+
+    ts = Path(__file__).resolve().parents[2] / "frontend" / "src" / "handbuch" / "settingsRestore.ts"
+    if not ts.exists():  # im Backend-Container ohne Frontend-Quellen
+        pytest.skip("frontend/src/handbuch/settingsRestore.ts nicht erreichbar")
+    block = re.search(r"SETTING_DEFAULTS[^{]*\{(.*?)\n\};", ts.read_text(encoding="utf-8"), re.S).group(1)
+    ts_defaults = dict(re.findall(r"(\w+):\s*'([^']*)'", block))
+    assert ts_defaults
+
+    seed = _load_seed()
+    assert seed.SETTING_DEFAULTS == ts_defaults
+    _run_seed(app_engine, seed, monkeypatch)
+    rows = _read(app_engine, lambda db: {s.key: s.value for s in
+                                        db.query(SystemSetting).filter(SystemSetting.tenant_id == TENANT_ID)})
+    overrides = {"special_day_dec24_mode": "half_day", "special_day_dec31_mode": "half_day",
+                 "vacation_approval_required": "true"}
+    for key, default in ts_defaults.items():
+        assert rows[key] == overrides.get(key, default), key

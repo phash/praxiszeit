@@ -1,9 +1,15 @@
 # Wird von run.sh nur eingebunden, wenn .faketime.env existiert (nach `run.sh seed`).
-# Das Backend laeuft dann mit der Uhr des Stichtags (laufend, nicht eingefroren).
+# Backend UND Datenbank laufen mit derselben relativen Uhr-Verschiebung
+# (FAKETIME="<sekunden>s": Stichtag 10:30 Europe/Berlin minus jetzt; laufende Uhr).
 services:
   backend:
     image: pzhandbuch-backend-faketime
     build: !reset null
+    environment:
+      LD_PRELOAD: /usr/local/lib/libfaketime.so.1
+      FAKETIME: ${FAKETIME}
+  db:
+    image: pzhandbuch-db-faketime
     environment:
       LD_PRELOAD: /usr/local/lib/libfaketime.so.1
       FAKETIME: ${FAKETIME}

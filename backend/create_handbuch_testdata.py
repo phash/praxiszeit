@@ -99,6 +99,29 @@ EMPLOYEES = [
     },
 ]
 
+# Gespiegelt aus frontend/src/handbuch/settingsRestore.ts (SETTING_DEFAULTS): als
+# Zeilen angelegt, damit das Zurückstellen nach einer Aufnahme nie von
+# doppelt gepflegten Defaults abhängt. Ein Test vergleicht beide Listen.
+SETTING_DEFAULTS = {
+    "break_exception_allowed": "true",
+    "break_exception_requires_approval": "false",
+    "vacation_approval_required": "false",
+    "closure_overtime_after_vacation": "false",
+    "work_window_grace_minutes": "15",
+    "onboarding_enabled": "true",
+    "shift_planning_enabled": "false",
+    "shift_planning_weekdays": "0,1,2,3,4",
+    "child_sick_days_default": "15",
+    "show_year_end_overtime_employee_dashboard": "true",
+    "show_year_end_overtime_admin_dashboard": "true",
+    "special_day_dec24_mode": "working_day",
+    "special_day_dec31_mode": "working_day",
+    "special_day_dec24_counts_as_vacation": "true",
+    "special_day_dec31_counts_as_vacation": "true",
+    "special_day_dec24_max_hours": "4",
+    "special_day_dec31_max_hours": "4",
+}
+
 HOURS_FIELDS = ("hours_monday", "hours_tuesday", "hours_wednesday", "hours_thursday", "hours_friday")
 
 
@@ -349,11 +372,14 @@ def _set_setting(db, key: str, value: str) -> None:
     else:
         # Teil des Primärschlüssels: echte UUID (Insert-Sentinel-Abgleich)
         db.add(SystemSetting(key=key, tenant_id=uuid.UUID(str(TENANT_ID)), value=value))
+    db.flush()  # Session ohne autoflush: spätere Abfrage desselben Schlüssels muss die Zeile sehen
 
 
 def create_settings_and_catalog(db, admin, stichtag: date, holiday_dates) -> date:
     """Sondertage 24./31.12. als halber Tag, Urlaubsanträge mit Genehmigung,
     eigener Abwesenheitsgrund, ein verkürzter Tag. Gibt dessen Datum zurück."""
+    for key, value in SETTING_DEFAULTS.items():  # erst die Defaults, dann die Demo-Werte
+        _set_setting(db, key, value)
     _set_setting(db, "special_day_dec24_mode", "half_day")
     _set_setting(db, "special_day_dec31_mode", "half_day")
     _set_setting(db, "vacation_approval_required", "true")
@@ -674,6 +700,8 @@ def seed_all(db, stichtag: date) -> None:
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Handbuch-Demodaten relativ zu einem Stichtag")
     parser.add_argument("--stichtag", help="YYYY-MM-DD (Standard: Mittwoch der Woche vor 14 Tagen)")
+    parser.add_argument("--print-stichtag", action="store_true",
+                        help="nur den Stichtag berechnen und als STICHTAG=... ausgeben (schreibt nichts außer fehlenden Feiertagen)")
     args = parser.parse_args(argv)
 
     db = SessionLocal()
@@ -690,6 +718,9 @@ def main(argv=None):
             stichtag = default_stichtag(today, around)
             ensure_holidays(db, data_start(stichtag), stichtag + timedelta(days=80))
 
+        if args.print_stichtag:
+            print(f"STICHTAG={stichtag}")
+            return
         print("=" * 60)
         print("PraxisZeit – Handbuch-Testdaten (Praxis am Lindenplatz)")
         print(f"Stichtag: {stichtag}  Zeitraum: {data_start(stichtag)} bis {stichtag}")
