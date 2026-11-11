@@ -24,6 +24,8 @@ interface SecurityEvent {
 const EVENT_LABELS: Record<string, string> = {
   user_deactivated: 'Konto deaktiviert',
   user_reactivated: 'Konto reaktiviert',
+  user_hidden: 'Konto ausgeblendet',
+  user_shown: 'Konto sichtbar geschaltet',
   user_role_changed: 'Rolle geändert',
   admin_set_password: 'Passwort durch Verwaltung gesetzt',
   admin_password_reset_cli: 'Passwort per Kommandozeile zurückgesetzt',

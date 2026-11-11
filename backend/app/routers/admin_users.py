@@ -1,6 +1,7 @@
 """Admin sub-router: User Management + Working Hours Changes."""
 
 import copy
+import secrets
 import logging
 import uuid
 from collections import Counter
@@ -22,8 +23,10 @@ from app.models.security_event import (
     EVENT_USER_CREATED,
     EVENT_USERNAME_CHANGED,
     EVENT_USER_DEACTIVATED,
+    EVENT_USER_HIDDEN,
     EVENT_USER_REACTIVATED,
     EVENT_USER_ROLE_CHANGED,
+    EVENT_USER_SHOWN,
     SecurityEvent,
 )
 from app.schemas.security_event import SecurityEventResponse
@@ -648,6 +651,25 @@ def _log_account_event(db: Session, current_user: User, event: str, subject: Use
     ))
 
 
+def _check_email_format(email: str) -> None:
+    """Gleiche Formatpruefung wie die Selbstaenderung im Profil (``UpdateProfileRequest``)."""
+    from email_validator import validate_email, EmailNotValidError
+    try:
+        validate_email(email, check_deliverability=False)
+    except EmailNotValidError as exc:
+        raise HTTPException(status_code=422, detail=f"Ungültiges E-Mail-Format: {exc}")
+
+
+ANONYMIZED_USERNAME_PREFIX = "deleted_"
+ANONYMIZED_REACTIVATE_DETAIL = "Ein anonymisiertes Konto kann nicht reaktiviert werden (Art. 17 DSGVO)."
+
+
+def _grace_days_since_deactivation(user: User) -> int:
+    """Tage seit der Deaktivierung nach dem Berliner Kalendertag — EINE Quelle
+    fuer ``anonymize_user`` und ``get_deletion_candidates`` (user-10)."""
+    return (today_local() - user.deactivated_at.date()).days
+
+
 # ── User Management ──────────────────────────────────────────────────────
 
 @router.get("/users", response_model=List[UserListResponse])
@@ -816,21 +838,32 @@ def get_deletion_candidates(
         TimeEntry.user_id.in_(user_ids),
     ).group_by(TimeEntry.user_id).all()
     last_entry_by_user = {row.user_id: row.last_date for row in last_entry_rows}
+    # user-10: ``purge_user`` rechnet die Aufbewahrungsfrist ab der juengsten
+    # Zeiterfassung ODER Abwesenheit — die Kandidatenliste muss dasselbe tun.
+    last_absence_rows = db.query(
+        Absence.user_id,
+        func.max(Absence.date).label("last_date"),
+    ).filter(
+        Absence.tenant_id == current_user.tenant_id,
+        Absence.user_id.in_(user_ids),
+    ).group_by(Absence.user_id).all()
+    last_absence_by_user = {row.user_id: row.last_date for row in last_absence_rows}
 
     today = today_local()
     result = []
 
     for user in inactive_users:
-        last_entry_date = last_entry_by_user.get(user.id)
+        _e, _a = last_entry_by_user.get(user.id), last_absence_by_user.get(user.id)
+        last_entry_date = max((d for d in (_e, _a) if d is not None), default=None)
         days_since = (today - last_entry_date).days if last_entry_date else None
-        is_anonymized = user.username.startswith("deleted_")
+        is_anonymized = user.username.startswith(ANONYMIZED_USERNAME_PREFIX)
 
         # Grace-Period-Berechnung (14 Tage nach Deaktivierung)
         grace_period_remaining = None
         grace_period_ends = None
         in_grace_period = False
         if user.deactivated_at is not None:
-            days_deactivated = (today - user.deactivated_at.date()).days
+            days_deactivated = _grace_days_since_deactivation(user)
             if days_deactivated < 14:
                 grace_period_remaining = 14 - days_deactivated
                 grace_period_ends = (user.deactivated_at + timedelta(days=14)).date().isoformat()
@@ -968,12 +1001,12 @@ def anonymize_user(
     user = _get_user_in_tenant(db, user_id, current_user)
     if user.is_active:
         raise HTTPException(status_code=400, detail="Benutzer muss zuerst deaktiviert werden (Art. 17 DSGVO)")
-    if user.username.startswith("deleted_"):
+    if user.username.startswith(ANONYMIZED_USERNAME_PREFIX):
         raise HTTPException(status_code=400, detail="Benutzer wurde bereits anonymisiert")
 
     # 14-Tage-Grace-Period: Anonymisierung erst nach Ablauf der Frist erlaubt
     if user.deactivated_at is not None:
-        days_since_deactivation = (datetime.now(timezone.utc).date() - user.deactivated_at.date()).days
+        days_since_deactivation = _grace_days_since_deactivation(user)
         if days_since_deactivation < 14:
             remaining = 14 - days_since_deactivation
             grace_end = (user.deactivated_at + timedelta(days=14)).strftime('%d.%m.%Y')
@@ -991,7 +1024,7 @@ def anonymize_user(
 
     user.first_name = "Gelöschter"
     user.last_name = "Benutzer"
-    user.username = f"deleted_{str(user.id)[:8]}"
+    user.username = f"{ANONYMIZED_USERNAME_PREFIX}{str(user.id)[:8]}"
     user.email = None
     user.calendar_color = "#9CA3AF"
     # DSGVO Art. 17: clear biometric-equivalent data and security secrets
@@ -999,6 +1032,9 @@ def anonymize_user(
     user.totp_secret = None              # TOTP-Secret enthält kryptogr. Geheimnis
     user.totp_enabled = False
     user.last_totp_counter = None
+    # Review 2026-11-11 (user-01): das alte Passwort darf nach der Anonymisierung
+    # nie wieder gelten, auch nicht ueber ein spaeteres Reaktivieren.
+    user.password_hash = auth_service.hash_password(secrets.token_urlsafe(48))
     user.department = None               # Org-Zuordnung ist PII
     # Invalidate all sessions so the deactivated account cannot be re-entered
     user.token_version = (user.token_version or 0) + 1
@@ -1462,6 +1498,15 @@ def update_user(
 
     update_data.pop('is_active', None)  # Prevent bypassing the dedicated deactivate endpoint
 
+    # Review 2026-11-11 (user-11): leere E-Mail ist NULL (wie create_user), nie ''.
+    # Das Format wird nur bei einer tatsaechlichen Aenderung geprueft — ein
+    # Altwert ohne gueltiges Format soll das Speichern anderer Felder nicht blockieren.
+    if 'email' in update_data:
+        _email = (update_data['email'] or '').strip() or None
+        update_data['email'] = _email
+        if _email and _email != user.email:
+            _check_email_format(_email)
+
     # Release-Review 1.16.0: Beschäftigungsfenster ebenfalls
     # gegen den EFFEKTIVEN Zustand prüfen, nicht nur gegen den Payload.
     # `validate_employment_order` im Schema sieht nur die mitgeschickten
@@ -1524,8 +1569,19 @@ def update_user(
     admin_change_audit.log_user_fields(db, current_user=current_user, user=user,
                                        update_data=update_data)
 
+    hidden_changed = (
+        'is_hidden' in update_data and update_data['is_hidden'] is not None
+        and bool(update_data['is_hidden']) != bool(user.is_hidden)
+    )
+
     for field, value in update_data.items():
         setattr(user, field, value)
+
+    if hidden_changed:
+        _log_account_event(
+            db, current_user, EVENT_USER_HIDDEN if user.is_hidden else EVENT_USER_SHOWN, user,
+            detail="Konto ausgeblendet" if user.is_hidden else "Konto sichtbar geschaltet",
+        )
 
     if username_changed:
         _log_account_event(db, current_user, EVENT_USERNAME_CHANGED, user,
@@ -1662,6 +1718,12 @@ def reactivate_user(user_id: str, db: Session = Depends(get_db), current_user: U
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
 
+    # Review 2026-11-11 (user-01): ein nach Art. 17 anonymisiertes Konto bleibt
+    # anonymisiert — Reaktivieren hob die Löschung praktisch auf (Lizenzplatz,
+    # Betriebsferien-Teilnahme, ggf. noch gültiges Passwort).
+    if user.username.startswith(ANONYMIZED_USERNAME_PREFIX):
+        raise HTTPException(status_code=400, detail=ANONYMIZED_REACTIVATE_DETAIL)
+
     # Seat-limit enforcement: a reactivation is logically a seat add.
     from app.models.tenant import Tenant
     from app.services.plan_enforcement import check_seat_limit
@@ -1744,12 +1806,30 @@ def list_security_events(
 
 
 @router.post("/users/{user_id}/toggle-hidden", response_model=UserResponse)
-def toggle_hidden_user(user_id: str, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
-    """Toggle the is_hidden flag for a user (admin only)."""
+def toggle_hidden_user(
+    user_id: str,
+    hidden: Optional[bool] = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Ausblenden/Einblenden einer Person (admin only).
+
+    Review 2026-11-11 (user-20): mit ``?hidden=true|false`` ein explizites Ziel
+    (zwei parallele Umschaltungen heben sich nicht mehr gegenseitig auf); ohne
+    Parameter wie bisher kippen. Der Stand wird nach der Sperre gelesen, jeder
+    tatsaechliche Wechsel steht in ``security_events``.
+    """
     # _get_user_in_tenant raises 404 itself (never returns None) — see get_user.
     user = _get_user_in_tenant(db, user_id, current_user)
+    _lock_and_reload(db, current_user, user)
 
-    user.is_hidden = not user.is_hidden
+    target = (not user.is_hidden) if hidden is None else hidden
+    if target != bool(user.is_hidden):
+        user.is_hidden = target
+        _log_account_event(
+            db, current_user, EVENT_USER_HIDDEN if target else EVENT_USER_SHOWN, user,
+            detail="Konto ausgeblendet" if target else "Konto sichtbar geschaltet",
+        )
     db.commit()
     db.refresh(user)
     return user

@@ -352,7 +352,7 @@ export default function Users() {
       variant: currentlyHidden ? 'warning' : 'danger',
       onConfirm: async () => {
         try {
-          await apiClient.post(`/admin/users/${userId}/toggle-hidden`);
+          await apiClient.post(`/admin/users/${userId}/toggle-hidden`, null, { params: { hidden: !currentlyHidden } });
           toast.success(currentlyHidden ? `${name} ist jetzt sichtbar` : `${name} ausgeblendet`);
           fetchUsers();
         } catch (error: any) {
