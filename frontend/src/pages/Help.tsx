@@ -40,8 +40,10 @@ export default function Help() {
     el?.scrollIntoView();
   }, [hash, valid, current]);
 
-  // Interne Handbuchlinks (handbuch:… -> /help/<buch>#…) per Router statt Seitenneuladen.
+  // Buchübergreifende Links (/help/<buch>#…) per Router statt Seitenneuladen. #-Links bleiben
+  // nativ (gleicher Anker zweimal springt erneut), sonstige Routen ebenfalls.
   const onInternalLink = (href: string, e: MouseEvent<HTMLAnchorElement>) => {
+    if (!href.startsWith('/help/')) return;
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     navigate(href);

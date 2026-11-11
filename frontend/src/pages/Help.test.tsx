@@ -1,9 +1,19 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Help from './Help';
 import { useAuthStore } from '../stores/authStore';
 import { HANDBOOKS } from '../handbuch/content';
+
+// Die Inhalte enthalten (noch) keine buchübergreifenden Links: Testlinks in den Lead einschleusen.
+vi.mock('../handbuch/content', async (orig) => {
+  const m = await orig<typeof import('../handbuch/content')>();
+  const mit = {
+    ...m.HANDBOOKS.mitarbeitende,
+    lead: `${m.HANDBOOKS.mitarbeitende.lead} [XBook](handbuch:so-rechnet#tagessoll) [Lokal](#zeiterfassung-stempeln-eintraege)`,
+  };
+  return { ...m, HANDBOOKS: { ...m.HANDBOOKS, mitarbeitende: mit } };
+});
 
 vi.mock('../api/client', () => ({
   default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
@@ -69,5 +79,40 @@ describe('Help page (graphic handbook)', () => {
     const id = HANDBOOKS.mitarbeitende.chapters[1].id;
     renderAt(`/help/mitarbeitende#${id}`, 'employee');
     await waitFor(() => expect(window.HTMLElement.prototype.scrollIntoView).toHaveBeenCalled());
+  });
+
+  it('cross-book /help/ link navigates in-app without a reload', async () => {
+    renderAt('/help/mitarbeitende', 'employee');
+    const a = screen.getByRole('link', { name: 'XBook' });
+    const notPrevented = fireEvent.click(a);
+    expect(notPrevented).toBe(false);
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/help/so-rechnet#tagessoll'));
+  });
+
+  it('ctrl-click on a /help/ link is not intercepted', () => {
+    renderAt('/help/mitarbeitende', 'employee');
+    const notPrevented = fireEvent.click(screen.getByRole('link', { name: 'XBook' }), { ctrlKey: true });
+    expect(notPrevented).toBe(true);
+    expect(screen.getByTestId('where').textContent).toBe('/help/mitarbeitende');
+  });
+
+  it('a #anchor link is left to the browser', () => {
+    renderAt('/help/mitarbeitende', 'employee');
+    const notPrevented = fireEvent.click(screen.getByRole('link', { name: 'Lokal' }));
+    expect(notPrevented).toBe(true);
+  });
+
+  it('switching book without hash scrolls main to the top', async () => {
+    const main = document.createElement('main');
+    main.scrollTo = vi.fn() as never;
+    document.body.appendChild(main);
+    try {
+      renderAt('/help/mitarbeitende', 'employee');
+      (main.scrollTo as ReturnType<typeof vi.fn>).mockClear();
+      fireEvent.click(tabNav().querySelectorAll('a')[1]);
+      await waitFor(() => expect(main.scrollTo).toHaveBeenCalledWith({ top: 0 }));
+    } finally {
+      main.remove();
+    }
   });
 });
