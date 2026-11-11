@@ -114,3 +114,12 @@ describe('Mindestlänge der §4-Begründung', () => {
     expect(breakWaiverReasonError('ausreichend lang')).toBeNull();
   });
 });
+
+describe('isWaivableBreakMessage (antrag-05)', () => {
+  it('erkennt §4-Meldungen, nicht den Pause-Längenfehler', async () => {
+    const { isWaivableBreakMessage } = await import('./breakWaiverRetry');
+    expect(isWaivableBreakMessage('Bei mehr als 6 Stunden Arbeitszeit ist eine Pause von mindestens 30 Minuten erforderlich (ArbZG §4).')).toBe(true);
+    expect(isWaivableBreakMessage('Die Pause (45 Min.) ist so lang wie der Eintrag oder länger (30 Min.).')).toBe(false);
+    expect(isWaivableBreakMessage('Höchstgrenze §3 ArbZG')).toBe(false);
+  });
+});

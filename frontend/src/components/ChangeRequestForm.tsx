@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { X, ArrowRight } from 'lucide-react';
 import DialogFocusTrap from './DialogFocusTrap';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
 import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
-import { breakWaiverReasonError, isBreakExceptionDisabledMessage } from '../utils/breakWaiverRetry';
+import { breakWaiverReasonError, isWaivableBreakMessage } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
 import { editableEnd } from '../utils/workBlocks';
 
@@ -89,7 +89,8 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
     proposed_end_time: requestCredit || askActualEnd
       ? creditEnd.substring(0, 5)
       : (entry ? editableEnd(entry) : null) || '17:00',
-    proposed_break_minutes: entry?.break_minutes ?? 0,
+    // antrag-15: als Text halten, damit sich das Feld leeren lässt; beim Senden geparst.
+    proposed_break_minutes: String(entry?.break_minutes ?? 0),
     proposed_note: entry?.note || '',
     reason: askActualEnd ? AUTO_CLOSED_REQUEST_REASON : '',
   });
@@ -109,6 +110,12 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
   const showSundayReason = useSundayOrHoliday(formData.proposed_date, entry, requestType !== 'delete');
   // #499: abgeschaltete Ausnahme → kein Begründungsfeld, der §4-Fehler bleibt stehen.
   const breakExceptionAllowed = useSystemStore((s) => s.isBreakExceptionAllowed());
+
+  // antrag-15: Obergrenze des Datumsfelds = gestern; Ausnahme ist ein Eintrag von
+  // heute (Anrechnung bzw. Antrag auf anerkannten Eintrag, #502): dort bleibt
+  // sein Tag wählbar.
+  const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+  const maxDate = entry && entry.date > yesterday ? entry.date : yesterday;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,7 +144,7 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
         proposed_date: requestType !== 'delete' ? formData.proposed_date : null,
         proposed_start_time: requestType !== 'delete' ? formData.proposed_start_time : null,
         proposed_end_time: requestType !== 'delete' ? formData.proposed_end_time : null,
-        proposed_break_minutes: requestType !== 'delete' ? formData.proposed_break_minutes : null,
+        proposed_break_minutes: requestType !== 'delete' ? (parseInt(formData.proposed_break_minutes, 10) || 0) : null,
         // Kennt der Aufrufer die Notiz nicht (Monatsjournal: JournalTimeEntry
         // führt sie nicht) und bleibt das Feld leer, kein '' senden — die
         // Genehmigung übernimmt jede nicht-null Notiz und löschte die gespeicherte.
@@ -157,8 +164,7 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
       if (
         !showWaiver
         && breakExceptionAllowed
-        && msg.includes('Pause')
-        && !isBreakExceptionDisabledMessage(msg)
+        && isWaivableBreakMessage(msg)
       ) {
         setShowWaiver(true);
         setError(`${msg} Wenn die Pflicht-Pause nachweislich nicht möglich war, begründen Sie dies unten und senden Sie erneut.`);
@@ -203,7 +209,7 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div role="alert" className="p-3 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm text-red-800">{error}</p>
             </div>
           )}
@@ -266,6 +272,9 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
                   value={formData.proposed_date}
                   onChange={(e) => setFormData({ ...formData, proposed_date: e.target.value })}
                   readOnly={requestCredit}
+                  // antrag-15: der Server nimmt nur vergangene Tage — nur „Anrechnung
+                  // beantragen" gilt dem (ggf. heutigen) Tag des Eintrags.
+                  max={maxDate}
                   required
                   className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500${requestCredit ? ' bg-gray-50 text-gray-600' : ''}`}
                 />
@@ -301,7 +310,7 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
                   type="number"
                   min="0"
                   value={formData.proposed_break_minutes}
-                  onChange={(e) => setFormData({ ...formData, proposed_break_minutes: parseInt(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, proposed_break_minutes: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
                 />
               </div>

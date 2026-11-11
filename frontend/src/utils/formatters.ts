@@ -1,3 +1,4 @@
+import { format } from 'date-fns';
 import type { WeekBlocks } from '../types/workBlocks';
 import { formatBlocksText, isLegacyWeek } from './workBlocks';
 
@@ -320,4 +321,24 @@ export function formatClockTime(
   fallback = '–',
 ): string {
   return value ? value.substring(0, 5) : fallback;
+}
+
+/**
+ * antrag-10: TT.MM.JJJJ aus einem ISO-Datum (Mittag statt Mitternacht, damit die
+ * Zeitzone den Tag nicht verschiebt). Fehlt das Datum oder ist es ungültig,
+ * kommt „–“ statt einer RangeError, die die ganze Seite leert.
+ */
+export function formatDateDE(iso?: string | null): string {
+  if (!iso) return '–';
+  const d = new Date(`${iso}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? '–' : format(d, 'dd.MM.yyyy');
+}
+
+/**
+ * antrag-10: Abwesenheitsstunden eines Antrags als „H:MM h“; `null` bei fehlendem
+ * Wert (Antrag mit Start-/Endzeit statt Stunden) — dann keine Zeile anzeigen.
+ */
+export function formatAbsenceHoursHM(hours?: number | null): string | null {
+  if (hours === null || hours === undefined || !Number.isFinite(hours)) return null;
+  return `${formatHoursHM(hours)} h`;
 }

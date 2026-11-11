@@ -45,6 +45,18 @@ export function isBreakExceptionDisabledMessage(msg: string): boolean {
 }
 
 /**
+ * antrag-05: Ist die Servermeldung ein §4-Pausenfehler, für den eine Ausnahme
+ * möglich ist? Alle Pausen-Meldungen enthalten „Pause“, aber „Pause so lang wie
+ * der Eintrag“ (`entry_guard_service.break_span_error`) ist ein Eingabefehler —
+ * eine Begründung hilft dort nicht, der erneute Versand scheitert gleich.
+ */
+export function isWaivableBreakMessage(msg: string): boolean {
+  return msg.includes('Pause')
+    && !msg.includes('so lang wie der Eintrag oder länger')
+    && !isBreakExceptionDisabledMessage(msg);
+}
+
+/**
  * #200: §4-Pausen-Ausnahme für Admin-Korrekturen.
  *
  * Führt `submit(extra)` aus. Schlägt es mit einem §4-Pausenfehler fehl, wird
@@ -67,7 +79,7 @@ export async function submitWithBreakWaiver<T = void>(
     return await submit({});
   } catch (err) {
     const msg = getErrorMessage(err, '');
-    if (!allowed || !msg.includes('Pause') || isBreakExceptionDisabledMessage(msg)) throw err;
+    if (!allowed || !isWaivableBreakMessage(msg)) throw err;
     let prompt =
       `${msg}\n\nWenn die Pflicht-Pause (§4 ArbZG) nachweislich nicht möglich war, ` +
       `begründen Sie dies hier (mindestens ${BREAK_WAIVER_MIN_LENGTH} Zeichen) – die Abweichung wird dokumentiert. ` +

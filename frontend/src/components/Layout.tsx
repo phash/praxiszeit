@@ -49,6 +49,7 @@ export default function Layout() {
   // button). The backend middleware is the hard guarantee; this is UX.
   const isImpersonating = useAuthStore((s) => s.isImpersonating());
   const { isStampSheetOpen, openStampSheet, closeStampSheet, notifyStampChange } = useUIStore();
+  const requestVersion = useUIStore((st) => st.requestVersion);
   const deploymentMode = useSystemStore((s) => s.info?.deployment_mode);
   const isBeta = useSystemStore((s) => s.info?.beta === true);
   const shiftPlanningEnabled = useSystemStore((s) => s.isShiftPlanningEnabled());
@@ -77,7 +78,7 @@ export default function Layout() {
     fetchCount();
     const interval = setInterval(fetchCount, 60000);
     return () => clearInterval(interval);
-  }, [user?.role]);
+  }, [user?.role, requestVersion]);
 
   // Pending vacation request count for admin badge
   useEffect(() => {
@@ -91,7 +92,7 @@ export default function Layout() {
     fetchCount();
     const interval = setInterval(fetchCount, 60000);
     return () => clearInterval(interval);
-  }, [user?.role]);
+  }, [user?.role, requestVersion]);
 
   // Clock status for FAB appearance
   useEffect(() => {

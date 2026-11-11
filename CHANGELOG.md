@@ -62,6 +62,10 @@
 - **Verwaltung sieht den beantragten Abwesenheitsgrund.** Die Antragsliste nennt Grund-Namen (z. B. „Kind krank“) vor der Genehmigung.
 - **Antragsliste der Verwaltung: Zeitraumfilter in Ortszeit, Limit unter 1 wird mit 422 abgelehnt.** Anträge um Mitternacht am Monatsersten/-letzten landen im richtigen Zeitraum; `limit=-1` führte zu einem 500.
 - **Sammelgenehmigung bricht bei einem unerwarteten Fehler nicht mehr ab.** Der betroffene Antrag erscheint als fehlgeschlagen, die übrigen werden weiter bearbeitet; ein Fehler beim Neuaufteilen der Betriebsferien nach der Genehmigung meldet die bereits erteilte Genehmigung nicht mehr als Fehler.
+- **Änderungsanträge (Verwaltung): Pausenausnahme und Abwesenheitsgrund sind vor dem Genehmigen sichtbar.** Die Antragskarte zeigt die dokumentierte Begründung der Pausenausnahme (§ 4 ArbZG) hervorgehoben und den beantragten Abwesenheitsgrund; die Sammelauswahl weist auf Anträge mit Pausenausnahme hin. Die Liste lädt über 100 Anträge per „Weitere Anträge laden“ nach, die Zahl offener Anträge kommt vom Server, Genehmigen/Ablehnen zeigen einen Ladezustand und aktualisieren das Menü-Badge sofort; ein Ladefehler zeigt eine Fehlermeldung mit „Erneut versuchen“ statt „Keine Anträge“, späte Antworten überschreiben die Liste nicht mehr.
+- **Meine Anträge / Antragskarten: Stunden als H:MM, kein „Stunden: h“, kein Absturz ohne Datum;** Leerzustand siezt („Neue Anträge stellen Sie über …“); Zurückziehen sperrt den Knopf während des Aufrufs.
+- **Monatsjournal: Lösch-Antrag über das Antragsformular mit eigener Begründung** (statt der festen Begründung „Eintrag fehlerhaft erfasst“); der Antrag im Journal bietet bei einem § 4-Pausenfehler die dokumentierte Ausnahme an.
+- **Antragsformular: Pausenausnahme nur dort angeboten, wo sie hilft.** Bei „Pause ist so lang wie der Eintrag“ erscheint kein Begründungsfeld mehr; das Datum ist auf vergangene Tage begrenzt, das Pausenfeld lässt sich leeren, Fehlermeldungen werden Screenreadern angesagt.
 
 ## [1.23.0] - 2026-11-07
 

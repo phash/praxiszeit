@@ -442,3 +442,17 @@ describe('formatFixedDe (P4.3)', () => {
     expect(formatFixedDe(-0.5, 1)).toBe('-0,5');
   });
 });
+
+describe('formatDateDE / formatAbsenceHoursHM (antrag-10)', async () => {
+  const { formatDateDE, formatAbsenceHoursHM } = await import('./formatters');
+  it('formatiert und fängt fehlende Daten ab', () => {
+    expect(formatDateDE('2026-06-01')).toBe('01.06.2026');
+    expect(formatDateDE(undefined)).toBe('–');
+    expect(formatDateDE('undefined')).toBe('–');
+  });
+  it('liefert H:MM oder null', () => {
+    expect(formatAbsenceHoursHM(7.6)).toBe('7:36 h');
+    expect(formatAbsenceHoursHM(null)).toBeNull();
+    expect(formatAbsenceHoursHM(undefined)).toBeNull();
+  });
+});

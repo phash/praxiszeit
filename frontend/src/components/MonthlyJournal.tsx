@@ -5,7 +5,8 @@ import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
 import { formatHoursHM, formatHoursHMText, parseHours } from '../utils/formatters';
-import { submitWithBreakWaiver } from '../utils/breakWaiverRetry';
+import { submitWithBreakWaiver, isWaivableBreakMessage, breakWaiverReasonError } from '../utils/breakWaiverRetry';
+import { useSystemStore } from '../stores/systemStore';
 import { showArbzgWarnings, collectAbsenceWarnings } from '../utils/arbzgWarnings';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
@@ -223,9 +224,17 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [saving, setSaving] = useState(false);
   const [submittingDate, setSubmittingDate] = useState<string | null>(null);
   const [submitReason, setSubmitReason] = useState('');
+  // antrag-07: §4-Ausnahme im Antrag — das Feld erscheint, sobald der Server einen
+  // §4-Pausenfehler meldet (wie im ChangeRequestForm); `breakWaiverMsg` = die Meldung.
+  const [breakWaiverMsg, setBreakWaiverMsg] = useState<string | null>(null);
+  const [breakWaiverReason, setBreakWaiverReason] = useState('');
+  const breakExceptionAllowed = useSystemStore((st) => st.isBreakExceptionAllowed());
   const [savingChangeRequest, setSavingChangeRequest] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   // Spec P21: „Anrechnung beantragen" aus der Mitarbeiter-Ansicht.
+  // antrag-06: Lösch-Antrag für einen Zeiteintrag — über das Antragsformular mit
+  // Pflicht-Begründung (keine erfundene Begründung).
+  const [deleteRequest, setDeleteRequest] = useState<{ day: JournalDay; entry: TimeEntryItem } | null>(null);
   const [creditRequest, setCreditRequest] = useState<{ day: JournalDay; entry: TimeEntryItem } | null>(null);
   // P1.1: Lösch-Antrag für eine eigene Abwesenheit eines vergangenen Tages.
   const [absenceDeleteRequest, setAbsenceDeleteRequest] = useState<AbsenceToDelete | null>(null);
@@ -325,6 +334,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     setEditingEntryId(null);
     setAddingDate(null);
     setSubmittingDate(null);
+    setBreakWaiverMsg(null);
+    setBreakWaiverReason('');
   }
 
   async function handleAdminAdd(dateStr: string, day?: JournalDay) {
@@ -540,12 +551,21 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     }
     setSubmittingDate(day.date);
     setSubmitReason('');
+    setBreakWaiverMsg(null);
+    setBreakWaiverReason('');
   }
 
   async function confirmEmployeeSubmit(day: JournalDay) {
     if (!submitReason.trim()) {
       toast.error('Bitte eine Begründung angeben');
       return;
+    }
+    if (breakWaiverMsg) {
+      const waiverError = breakWaiverReasonError(breakWaiverReason);
+      if (waiverError) {
+        toast.error(waiverError);
+        return;
+      }
     }
     setSavingChangeRequest(true);
     try {
@@ -567,6 +587,9 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           payload.proposed_sunday_exception_reason = editState.sundayReason.trim(); // #485
         }
         if (existing) payload.time_entry_id = existing.id;
+        if (breakWaiverMsg && breakWaiverReason.trim()) {
+          payload.break_waiver_reason = breakWaiverReason.trim();
+        }
       } else {
         // Absence CR
         payload = {
@@ -586,7 +609,12 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       cancelEdit();
       setReloadKey(k => k + 1);
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Fehler beim Einreichen'));
+      const msg = getErrorMessage(err, 'Fehler beim Einreichen');
+      if (editState.entryType === 'work' && !breakWaiverMsg && breakExceptionAllowed && isWaivableBreakMessage(msg)) {
+        setBreakWaiverMsg(msg);
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setSavingChangeRequest(false);
     }
@@ -604,26 +632,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       if (deletable.length === 1) requestAbsenceDeletion(day, deletable[0]);
       return;
     }
-    confirm({
-      title: 'Lösch-Antrag stellen',
-      message: 'Einen Lösch-Antrag für diesen Eintrag einreichen?',
-      confirmLabel: 'Antrag stellen',
-      variant: 'danger',
-      onConfirm: async () => {
-        try {
-          await apiClient.post('/change-requests/', {
-            request_type: 'delete',
-            time_entry_id: entry.id,
-            reason: 'Eintrag fehlerhaft erfasst',
-          });
-          toast.success('Lösch-Antrag eingereicht');
-          cancelEdit();
-          setReloadKey(k => k + 1);
-        } catch (err) {
-          toast.error(getErrorMessage(err, 'Fehler'));
-        }
-      },
-    });
+    setDeleteRequest({ day, entry });
   }
 
 
@@ -732,6 +741,25 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
+      {deleteRequest && (
+        <ChangeRequestForm
+          entry={{
+            id: deleteRequest.entry.id,
+            date: deleteRequest.day.date,
+            start_time: deleteRequest.entry.start_time ?? '',
+            end_time: deleteRequest.entry.end_time,
+            break_minutes: deleteRequest.entry.break_minutes,
+          }}
+          requestType="delete"
+          onClose={() => setDeleteRequest(null)}
+          onSuccess={() => {
+            setDeleteRequest(null);
+            cancelEdit();
+            toast.success('Lösch-Antrag eingereicht');
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
       {creditRequest && (
         <ChangeRequestForm
           entry={{
@@ -1180,6 +1208,19 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                       {submittingDate === day.date && !isAdminView && (
                         <tr key={`${day.date}-reason`} className="bg-blue-50">
                           <td colSpan={fixedMode ? 8 : 9} className="px-3 py-2">
+                            {breakWaiverMsg && (
+                              <div role="alert" className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900 space-y-2">
+                                <p>{breakWaiverMsg} Wenn die Pflicht-Pause nachweislich nicht möglich war, begründen Sie dies unten und senden Sie erneut.</p>
+                                <textarea
+                                  value={breakWaiverReason}
+                                  onChange={(e) => setBreakWaiverReason(e.target.value)}
+                                  aria-label="Pflicht-Pause war nicht möglich – Begründung"
+                                  rows={2}
+                                  placeholder="Pflicht-Pause war nicht möglich – Begründung (Pflicht)"
+                                  className="w-full px-2 py-1 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+                                />
+                              </div>
+                            )}
                             <div className="flex flex-wrap gap-2 items-center">
                               <input
                                 type="text"

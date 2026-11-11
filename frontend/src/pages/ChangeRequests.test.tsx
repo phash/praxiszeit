@@ -70,3 +70,46 @@ describe('<ChangeRequests /> Anrechnung beantragt (Fund 5)', () => {
     expect(screen.queryByText('ohne Anerkennen genehmigt')).not.toBeInTheDocument();
   });
 });
+
+// Review 2026-11-11 (antrag-10/11/20)
+describe('<ChangeRequests /> Review 2026-11-11', () => {
+  const absenceCr = {
+    id: 'cr2', request_type: 'create', status: 'pending', entry_kind: 'absence',
+    proposed_date: '2026-06-01', proposed_absence_type: 'training',
+    proposed_start_time: '09:00:00', proposed_end_time: '12:00:00',
+    reason: 'Fortbildung', created_at: '2026-06-02T08:00:00Z',
+  };
+
+  it('zeigt bei fehlenden Stunden keine leere „Stunden: h“-Zeile (antrag-10)', async () => {
+    mockRequests([absenceCr]);
+    render(<ChangeRequests />);
+    await screen.findByText('Fortbildung');
+    expect(screen.queryByText(/Stunden:/)).toBeNull();
+  });
+
+  it('zeigt Abwesenheitsstunden als H:MM (antrag-10)', async () => {
+    mockRequests([{ ...absenceCr, proposed_absence_hours: 7.6 }]);
+    render(<ChangeRequests />);
+    expect(await screen.findByText('7:36 h')).toBeInTheDocument();
+  });
+
+  it('stürzt ohne Datum nicht ab (antrag-10)', async () => {
+    mockRequests([{ ...absenceCr, proposed_date: undefined }]);
+    render(<ChangeRequests />);
+    expect(await screen.findByText('Fortbildung')).toBeInTheDocument();
+  });
+
+  it('zeigt bei einem Ladefehler eine Fehlermeldung statt der leeren Liste (antrag-11)', async () => {
+    getMock.mockRejectedValue(new Error('offline'));
+    render(<ChangeRequests />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('konnten nicht geladen werden');
+    expect(screen.queryByText('Keine Änderungsanträge')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Erneut versuchen' })).toBeInTheDocument();
+  });
+
+  it('siezt im Leerzustand (antrag-20)', async () => {
+    mockRequests([]);
+    render(<ChangeRequests />);
+    expect(await screen.findByText(/stellen Sie über den Button/)).toBeInTheDocument();
+  });
+});

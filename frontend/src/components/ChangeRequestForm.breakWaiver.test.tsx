@@ -60,3 +60,36 @@ describe('<ChangeRequestForm /> Pflicht-Pause-Ausnahme — Label (Gesamtreview F
     expect(field.tagName).toBe('TEXTAREA');
   });
 });
+
+// Review 2026-11-11 (antrag-05/15)
+describe('<ChangeRequestForm /> Review 2026-11-11', () => {
+  it('bietet bei „Pause so lang wie der Eintrag“ keine Ausnahme an (antrag-05)', async () => {
+    useSystemStore.setState({ info: { deployment_mode: 'onprem', version: '' }, isLoaded: true });
+    rejectOnce('Die Pause (45 Min.) ist so lang wie der Eintrag oder länger (30 Min.). Bitte die tatsächliche Pause eintragen.');
+    await submitCreate();
+    expect(await screen.findByText(/so lang wie der Eintrag/)).toBeInTheDocument();
+    expect(screen.queryByText(/Pflicht-Pause war nicht möglich – Begründung/)).not.toBeInTheDocument();
+  });
+
+  it('lässt das Pausenfeld leeren und sendet dann 0 (antrag-15)', async () => {
+    postMock.mockResolvedValue({ data: {} });
+    render(<ChangeRequestForm entry={null} requestType="create" onClose={vi.fn()} onSuccess={vi.fn()} />);
+    const pause = screen.getByLabelText('Pause (Min.)') as HTMLInputElement;
+    fireEvent.change(pause, { target: { value: '45' } });
+    fireEvent.change(pause, { target: { value: '' } });
+    expect(pause.value).toBe('');
+    fireEvent.change(screen.getByPlaceholderText('Warum ist diese Änderung notwendig?'), { target: { value: 'x' } });
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests',
+      expect.objectContaining({ proposed_break_minutes: 0 })));
+  });
+
+  it('begrenzt das Datum auf gestern und meldet Fehler per role=alert (antrag-15)', async () => {
+    rejectOnce('Änderungsanträge sind nur für vergangene Tage möglich');
+    await submitCreate();
+    expect(await screen.findByRole('alert')).toHaveTextContent('nur für vergangene Tage');
+    const max = (screen.getByLabelText('Datum') as HTMLInputElement).max;
+    expect(max).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(max < new Date().toISOString().slice(0, 10) || max === new Date(Date.now() - 864e5).toISOString().slice(0, 10)).toBe(true);
+  });
+});

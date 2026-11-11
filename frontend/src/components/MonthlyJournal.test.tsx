@@ -470,11 +470,17 @@ describe('<MonthlyJournal /> Eintragen an Wochenend-/Feiertagen (#479)', () => {
     render(<MonthlyJournal />);
     fireEvent.click(await screen.findByTitle('18:00–22:00 bearbeiten'));
     fireEvent.click(screen.getByTitle('Löschen'));
-    fireEvent.click(await screen.findByText('Antrag stellen'));
+    // antrag-06: das Antragsformular verlangt die Begründung der Person — kein
+    // erfundener Standardtext mehr.
+    fireEvent.change(await screen.findByLabelText(/Begründung/), { target: { value: 'doppelt gestempelt' } });
+    fireEvent.click(screen.getByText('Antrag stellen'));
 
-    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests/', expect.objectContaining({
-      request_type: 'delete', time_entry_id: 'e2',
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests', expect.objectContaining({
+      request_type: 'delete', time_entry_id: 'e2', reason: 'doppelt gestempelt',
     })));
+    expect(postMock).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      reason: 'Eintrag fehlerhaft erfasst',
+    }));
   });
 });
 
@@ -689,6 +695,33 @@ describe('<MonthlyJournal /> §10-Ausnahmegrund (#485)', () => {
     await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests/', expect.objectContaining({
       proposed_date: '2026-06-04',
       proposed_sunday_exception_reason: 'Notdienst',
+    })));
+  });
+
+  // antrag-07: meldet der Server einen §4-Pausenfehler, bietet der Antrag im Journal
+  // die dokumentierte Ausnahme an (wie das Antragsformular) und sendet sie mit.
+  it('Mitarbeiterin: §4-Pausenfehler blendet das Ausnahme-Feld ein und sendet den Grund', async () => {
+    mockJournal([holiday]);
+    postMock.mockRejectedValueOnce({ response: { status: 400, data: { detail:
+      'Bei mehr als 6 Stunden Arbeitszeit ist eine Pause von mindestens 30 Minuten erforderlich (ArbZG §4).' } } });
+    postMock.mockResolvedValue({ data: {} });
+    const { container } = render(<MonthlyJournal />);
+    fireEvent.click(await screen.findByTitle('Eintrag anlegen'));
+    const [von, bis] = Array.from(container.querySelectorAll('input[type="time"]'));
+    fireEvent.change(von, { target: { value: '07:00' } });
+    fireEvent.change(bis, { target: { value: '14:30' } });
+    fireEvent.change(screen.getByLabelText(label), { target: { value: 'Notdienst' } });
+    fireEvent.click(screen.getByTitle('Speichern'));
+    fireEvent.change(screen.getByPlaceholderText('Begründung eingeben (Pflicht)'), {
+      target: { value: 'Dienst nachgetragen' },
+    });
+    fireEvent.click(screen.getByText('Absenden'));
+    const waiver = await screen.findByLabelText('Pflicht-Pause war nicht möglich – Begründung');
+    fireEvent.change(waiver, { target: { value: 'Notfall, keine Vertretung da' } });
+    fireEvent.click(screen.getByText('Absenden'));
+
+    await waitFor(() => expect(postMock).toHaveBeenLastCalledWith('/change-requests/', expect.objectContaining({
+      break_waiver_reason: 'Notfall, keine Vertretung da',
     })));
   });
 

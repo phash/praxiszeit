@@ -6,7 +6,8 @@ import { useToast } from '../../contexts/ToastContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { showArbzgWarnings } from '../../utils/arbzgWarnings';
-import { formatHoursHM } from '../../utils/formatters';
+import { formatHoursHM, formatDateDE, formatAbsenceHoursHM } from '../../utils/formatters';
+import { useUIStore } from '../../stores/uiStore';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
@@ -25,6 +26,8 @@ interface ChangeRequest {
   proposed_break_minutes?: number;
   proposed_note?: string;
   proposed_sunday_exception_reason?: string | null; // #485 §10 ArbZG
+  break_waiver_reason?: string | null; // #144 §4 ArbZG — antrag-01: Verwaltung muss den Grund vor dem Genehmigen sehen
+  proposed_reason_label?: string | null; // antrag-18: eigener Abwesenheitsgrund (z. B. Kind krank)
   proposed_absence_type?: string;
   proposed_absence_hours?: number;
   original_date?: string;
@@ -180,14 +183,24 @@ function stampDeviation(cr: ChangeRequest): string | null {
     : `Zeiten weichen von den Stempeln ab (gestempelt ${start}–${end})`;
 }
 
-function formatDateDE(dateStr: string): string {
-  return format(new Date(dateStr + 'T12:00:00'), 'dd.MM.yyyy');
-}
+// antrag-08: Seitengröße der Antragsliste (Server-Standard = 100).
+const PAGE_SIZE = 100;
 
 export default function AdminChangeRequests() {
   const toast = useToast();
   const [requests, setRequests] = useState<ChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  // antrag-11: Ladefehler statt leerer Liste; späte Antworten verwerfen.
+  const [loadError, setLoadError] = useState(false);
+  const requestSeq = useRef(0);
+  // antrag-08: nachladen statt still bei 100 Zeilen abschneiden; die Zahl der
+  // offenen Anträge kommt vom Server (wie das Menü-Badge).
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pendingTotal, setPendingTotal] = useState<number | null>(null);
+  // antrag-16: sichtbarer Ladezustand der Einzel-Aktion.
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const notifyRequestChange = useUIStore((st) => st.notifyRequestChange);
   const [filter, setFilter] = useState('pending');
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -219,8 +232,17 @@ export default function AdminChangeRequests() {
     setBulkRejectMode(false);
   }, [filter, selectedUser, timeRange, customFrom, customTo]);
 
-  const fetchRequests = async () => {
-    setLoading(true);
+  const fetchPendingTotal = async () => {
+    try {
+      const res = await apiClient.get('/admin/change-requests/pending-count');
+      setPendingTotal(res.data.count);
+    } catch { /* Anzeige fällt auf die geladene Zahl zurück */ }
+  };
+
+  const fetchRequests = async (append = false) => {
+    const seq = ++requestSeq.current;
+    if (append) setLoadingMore(true); else setLoading(true);
+    setLoadError(false);
     try {
       const params = new URLSearchParams();
       if (filter) params.set('status', filter);
@@ -235,13 +257,23 @@ export default function AdminChangeRequests() {
           params.set('date_to', to);
         }
       }
-      const qs = params.toString();
-      const response = await apiClient.get(`/admin/change-requests${qs ? '?' + qs : ''}`);
-      setRequests(response.data);
+      params.set('limit', String(PAGE_SIZE));
+      if (append) params.set('skip', String(requests.length));
+      const response = await apiClient.get(`/admin/change-requests?${params.toString()}`);
+      if (seq !== requestSeq.current) return; // Filter inzwischen gewechselt
+      const rows = response.data as ChangeRequest[];
+      setRequests((prev) => (append ? [...prev, ...rows.filter((r) => !prev.some((p) => p.id === r.id))] : rows));
+      setHasMore(rows.length >= PAGE_SIZE);
+      void fetchPendingTotal();
     } catch (error) {
+      if (seq !== requestSeq.current) return;
+      setLoadError(true);
       toast.error('Fehler beim Laden der Änderungsanträge');
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   };
 
@@ -255,6 +287,7 @@ export default function AdminChangeRequests() {
   const handleApprove = async (id: string, grant?: boolean) => {
     if (actionLock.current) return;
     actionLock.current = true;
+    setBusyId(id);
     try {
       // Spec P21: ohne `grant` gilt der Antragswert (request_credit_override).
       const response = await apiClient.post(`/admin/change-requests/${id}/review`, {
@@ -266,6 +299,7 @@ export default function AdminChangeRequests() {
       // analog zu den MA-Pfaden (StampWidget/TimeTracking); bisher verworfen.
       showArbzgWarnings(toast, response.data?.warnings);
       setApproveErrors(({ [id]: _done, ...rest }) => rest);
+      notifyRequestChange();
       fetchRequests();
     } catch (error: any) {
       const msg = getErrorMessage(error, 'Fehler beim Genehmigen');
@@ -273,12 +307,14 @@ export default function AdminChangeRequests() {
       toast.error(msg);
     } finally {
       actionLock.current = false;
+      setBusyId(null);
     }
   };
 
   const handleReject = async (id: string) => {
     if (actionLock.current) return;
     actionLock.current = true;
+    setBusyId(id);
     try {
       await apiClient.post(`/admin/change-requests/${id}/review`, {
         action: 'reject',
@@ -287,11 +323,13 @@ export default function AdminChangeRequests() {
       toast.success('Antrag abgelehnt');
       setRejectingId(null);
       setRejectionReason('');
+      notifyRequestChange();
       fetchRequests();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Ablehnen'));
     } finally {
       actionLock.current = false;
+      setBusyId(null);
     }
   };
 
@@ -304,6 +342,12 @@ export default function AdminChangeRequests() {
   // dauerhaft anerkannt (P11). Der Knopf nennt sie, und vorher wird gefragt.
   const creditSelectedCount = requests.filter(
     (r) => r.status === 'pending' && selectedIds.has(r.id) && r.request_credit_override,
+  ).length;
+
+  // antrag-01: ausgewählte Anträge mit dokumentierter §4-Pausenausnahme — die
+  // Sammel-Genehmigung schreibt sie an die Einträge fest.
+  const waiverSelectedCount = requests.filter(
+    (r) => r.status === 'pending' && selectedIds.has(r.id) && !!r.break_waiver_reason,
   ).length;
 
   const startBulkApprove = () => {
@@ -376,6 +420,7 @@ export default function AdminChangeRequests() {
       setSelectedIds(new Set());
       setBulkRejectMode(false);
       setBulkRejectionReason('');
+      notifyRequestChange();
       fetchRequests();
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler bei der Sammelbearbeitung'));
@@ -399,7 +444,12 @@ export default function AdminChangeRequests() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Änderungsanträge</h1>
           {filter === 'pending' && pendingCount > 0 && (
-            <p className="text-sm text-amber-600 mt-1">{pendingCount} offene Anträge</p>
+            <p className="text-sm text-amber-600 mt-1">{pendingTotal ?? pendingCount} offene Anträge</p>
+          )}
+          {filter === '' && (
+            <p className="text-sm text-gray-500 mt-1">
+              Gezeigt werden Anträge des gewählten Zeitraums. Ältere offene Anträge finden Sie unter „Offen“.
+            </p>
           )}
         </div>
       </div>
@@ -497,7 +547,7 @@ export default function AdminChangeRequests() {
               <span>
                 {selectedIds.size > 0
                   ? `${selectedIds.size} ausgewählt`
-                  : `Alle ${pendingIds.length} auswählen`}
+                  : `Alle ${pendingIds.length}${hasMore ? ' geladenen' : ''} auswählen`}
               </span>
             </label>
 
@@ -523,6 +573,11 @@ export default function AdminChangeRequests() {
               </div>
             )}
           </div>
+          {waiverSelectedCount > 0 && !bulkRejectMode && (
+            <p role="status" className="mt-3 text-sm text-amber-800">
+              {waiverSelectedCount} der ausgewählten Anträge tragen eine Pausenausnahme (§ 4 ArbZG) – Grund in der Antragskarte prüfen.
+            </p>
+          )}
           {bulkRejectMode && (
             <div className="mt-3 space-y-2">
               <textarea
@@ -558,6 +613,16 @@ export default function AdminChangeRequests() {
         {loading ? (
           <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-8 flex justify-center">
             <LoadingSpinner text="Lade Anträge..." />
+          </div>
+        ) : loadError ? (
+          <div role="alert" className="bg-white rounded-xl shadow-xs border border-red-200 p-6 text-center">
+            <p className="text-red-800 mb-3">Die Änderungsanträge konnten nicht geladen werden.</p>
+            <button
+              onClick={() => { void fetchRequests(); }}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg transition"
+            >
+              Erneut versuchen
+            </button>
           </div>
         ) : requests.length === 0 ? (
           <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 text-center text-gray-500">
@@ -613,8 +678,8 @@ export default function AdminChangeRequests() {
                           <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Aktuell</h4>
                           <div className="text-sm space-y-1">
                             <p>Typ: <span className="font-medium">{ABSENCE_TYPE_LABELS[cr.original_absence_type as keyof typeof ABSENCE_TYPE_LABELS] || cr.original_absence_type}</span></p>
-                            <p>Datum: {format(new Date(cr.original_date + 'T12:00:00'), 'dd.MM.yyyy')}</p>
-                            <p>Stunden: <span className="font-medium">{cr.original_absence_hours}h</span></p>
+                            <p>Datum: {formatDateDE(cr.original_date)}</p>
+                            {formatAbsenceHoursHM(cr.original_absence_hours) && <p>Stunden: <span className="font-medium">{formatAbsenceHoursHM(cr.original_absence_hours)}</span></p>}
                           </div>
                         </div>
                       )}
@@ -625,8 +690,9 @@ export default function AdminChangeRequests() {
                           </h4>
                           <div className="text-sm space-y-1">
                             <p>Typ: <span className="font-medium">{ABSENCE_TYPE_LABELS[cr.proposed_absence_type as keyof typeof ABSENCE_TYPE_LABELS] || cr.proposed_absence_type}</span></p>
-                            <p>Datum: {format(new Date(cr.proposed_date + 'T12:00:00'), 'dd.MM.yyyy')}</p>
-                            <p>Stunden: <span className="font-medium">{cr.proposed_absence_hours}h</span></p>
+                            <p>Datum: {formatDateDE(cr.proposed_date)}</p>
+                            {formatAbsenceHoursHM(cr.proposed_absence_hours) && <p>Stunden: <span className="font-medium">{formatAbsenceHoursHM(cr.proposed_absence_hours)}</span></p>}
+                            {cr.proposed_reason_label && <p>Grund: <span className="font-medium">{cr.proposed_reason_label}</span></p>}
                             {cr.proposed_start_time && cr.proposed_end_time && (
                               <p>Zeit: <span className="font-medium">{cr.proposed_start_time?.substring(0, 5)} – {cr.proposed_end_time?.substring(0, 5)}</span></p>
                             )}
@@ -680,6 +746,20 @@ export default function AdminChangeRequests() {
                   </div>
                 )}
 
+                {/* antrag-01: dokumentierte §4-Pausenausnahme hervorgehoben — die
+                    Genehmigung schreibt sie am Eintrag fest. */}
+                {cr.break_waiver_reason && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-900">
+                    <span className="font-semibold">Pausenausnahme (§ 4 ArbZG): </span>
+                    {cr.break_waiver_reason}
+                  </div>
+                )}
+                {cr.entry_kind === 'absence' && cr.proposed_sunday_exception_reason && (
+                  <div className="mb-4 text-sm text-gray-700">
+                    <span className="font-medium">§10-Ausnahmegrund: </span>{cr.proposed_sunday_exception_reason}
+                  </div>
+                )}
+
                 {/* Reason */}
                 <div className="text-sm mb-4">
                   <span className="font-medium text-gray-700">Begründung: </span>
@@ -723,6 +803,7 @@ export default function AdminChangeRequests() {
                         <div className="flex space-x-2">
                           <button
                             onClick={() => handleReject(cr.id)}
+                              disabled={busyId !== null}
                             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition"
                           >
                             Ablehnen
@@ -741,13 +822,15 @@ export default function AdminChangeRequests() {
                           <>
                             <button
                               onClick={() => handleApprove(cr.id)}
-                              className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition"
+                              disabled={busyId !== null}
+                              className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm rounded-lg transition"
                             >
                               <Check size={16} />
-                              <span>Genehmigen und anerkennen</span>
+                              <span>{busyId === cr.id ? 'Wird verarbeitet…' : 'Genehmigen und anerkennen'}</span>
                             </button>
                             <button
                               onClick={() => handleApprove(cr.id, false)}
+                              disabled={busyId !== null}
                               className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm rounded-lg transition"
                             >
                               Ohne Anerkennen genehmigen
@@ -757,10 +840,11 @@ export default function AdminChangeRequests() {
                           <>
                             <button
                               onClick={() => handleApprove(cr.id)}
+                              disabled={busyId !== null}
                               className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition"
                             >
                               <Check size={16} />
-                              <span>Genehmigen</span>
+                              <span>{busyId === cr.id ? 'Wird verarbeitet…' : 'Genehmigen'}</span>
                             </button>
                             {/* P21: jeder UPDATE-Antrag auf einen Eintrag mit nicht angerechneter Zeit */}
                             {cr.entry_kind !== 'absence' && cr.request_type === 'update'
@@ -768,6 +852,7 @@ export default function AdminChangeRequests() {
                               && bringsActualEnd(cr) && (
                               <button
                                 onClick={() => handleApprove(cr.id, true)}
+                              disabled={busyId !== null}
                                 className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-800 text-sm rounded-lg transition"
                               >
                                 Genehmigen und anerkennen
@@ -777,6 +862,7 @@ export default function AdminChangeRequests() {
                         )}
                         <button
                           onClick={() => setRejectingId(cr.id)}
+                              disabled={busyId !== null}
                           className="flex items-center space-x-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm rounded-lg transition"
                         >
                           <X size={16} />
@@ -791,6 +877,17 @@ export default function AdminChangeRequests() {
           })
         )}
       </div>
+      {!loading && !loadError && hasMore && (
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => { void fetchRequests(true); }}
+            disabled={loadingMore}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 text-sm rounded-lg transition"
+          >
+            {loadingMore ? 'Lade…' : 'Weitere Anträge laden'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
