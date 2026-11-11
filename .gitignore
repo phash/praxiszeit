@@ -100,3 +100,5 @@ backend/test.db-wal
 e2e/handbuch/.env
 e2e/handbuch/.state
 e2e/handbuch/.faketime.env
+e2e/handbuch/contact-sheet.html
+e2e/handbuch/contact-sheet.png

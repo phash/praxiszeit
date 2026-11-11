@@ -1,1 +1,29 @@
-{}
+{
+  "probe-zeiterfassung": {
+    "file": "probe-zeiterfassung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "monat-zurueck": {
+        "x": 288,
+        "y": 164,
+        "w": 40,
+        "h": 40
+      },
+      "neu": {
+        "x": 1248,
+        "y": 32,
+        "w": 160,
+        "h": 40
+      }
+    }
+  }
+}

@@ -204,10 +204,12 @@ fi
 # 4b. E2E TypeScript (#503) — Playwright transpiles the specs without checking
 #     types, so stale fixture/API types only surface here. As the host user:
 #     e2e/node_modules is user-owned and npm install must not leave root files.
+#     The whole repo is mounted: e2e/handbuch/capture.ts imports the handbook
+#     types and content from frontend/src/handbuch.
 # -----------------------------------------------------------------------
 step "E2E TypeScript (tsc --noEmit)"
 if docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
-       -v "$(pwd)/e2e":/app -w /app node:20-alpine \
+       -v "$(pwd)":/repo -w /repo/e2e node:20-alpine \
        sh -c "npm install --no-audit --no-fund --silent && npx tsc --noEmit" 2>&1 | tail -5; then
     ok "E2E TypeScript clean"
 else
