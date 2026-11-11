@@ -254,6 +254,18 @@ const shots: ShotDef[] = [
     alt: 'Formular „Abwesenheit eintragen“ mit Haken bei „Halber Tag (zählt als 0,5 Tag)“ und gesperrtem Stundenfeld',
   },
   {
+    id: 'ma-loeschung-beantragen',
+    persona: 'maria',
+    viewport: 'desktop',
+    route: '/absences',
+    prepare: [{ scrollTo: { css: "main button:has-text('Löschung beantragen') >> visible=true >> nth=0" } }],
+    crop: { around: ['knopf'], pad: 520 },
+    markers: [
+      { n: 1, id: 'knopf', locator: { css: "main button:has-text('Löschung beantragen') >> visible=true >> nth=0" }, badge: 'left' },
+    ],
+    alt: 'Liste „Meine Abwesenheiten“: an vergangenen Urlaubstagen der Knopf „Löschung beantragen“, an den künftigen Betriebsferien-Tagen kein Knopf',
+  },
+  {
     id: 'ma-meine-antraege',
     persona: 'maria',
     viewport: 'desktop',
@@ -943,18 +955,26 @@ export const mitarbeitende: Handbook = {
           kind: 'task',
           id: 'abwesenheit-loeschen',
           title: 'Wie lösche ich eine eingetragene Abwesenheit?',
-          intro: 'Unter dem Kalender stehen Ihre Abwesenheiten des Jahres als Liste.',
+          intro: 'Unter dem Kalender stehen Ihre Abwesenheiten des Jahres als Liste. Was in der Spalte **Aktionen** steht, hängt vom Tag ab.',
+          shot: 'ma-loeschung-beantragen',
           steps: [
-            { n: 1, text: 'Klicken Sie in der Zeile der Abwesenheit auf [[Löschen]].' },
-            { n: 2, text: 'Bestätigen Sie im Dialog.' },
+            { text: '**Heute oder später:** Klicken Sie in der Zeile auf [[Löschen]] und bestätigen Sie im Dialog.' },
+            { n: 1, text: '**Vergangener Tag:** Dort steht [[Löschung beantragen]]. Es öffnet sich der Dialog „Änderungsantrag: Löschung beantragen“ mit der Abwesenheit.' },
+            { text: 'Geben Sie die **Begründung** an und klicken Sie auf [[Antrag stellen]]. Erst wenn die Verwaltung genehmigt, wird die Abwesenheit gelöscht; den Stand sehen Sie unter Zeiterfassung → Tab [[Anträge]].' },
           ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Im **Journal** geht es genauso: Neben der Abwesenheit eines vergangenen Tages steht der Papierkorb **Löschung beantragen**.',
         },
         {
           kind: 'tip',
           tone: 'warn',
           text:
-            'Nicht selbst löschen können Sie Betriebsferien-Tage, genehmigten Urlaub (dafür [[Urlaub stornieren]]), Abwesenheiten an vergangenen Tagen ' +
-            'und Abwesenheiten, die die Verwaltung für Sie eingetragen hat. Wenden Sie sich in diesen Fällen an Ihre Verwaltung.',
+            '**Betriebsferien-Tage** ändert nur die Verwaltung – dort steht kein Knopf. Genehmigten Urlaub, der noch nicht begonnen hat, nehmen Sie mit [[Urlaub stornieren]] unter [[Meine Anträge]] zurück. ' +
+            'Ebenfalls nicht selbst löschen können Sie Urlaub bei eingeschalteter Genehmigungspflicht, Abwesenheiten, die die Verwaltung für Sie eingetragen hat, und Tage eines abgeschlossenen Jahres – wenden Sie sich dann an Ihre Verwaltung.',
         },
         {
           kind: 'tip',
