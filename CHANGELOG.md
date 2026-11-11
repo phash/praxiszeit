@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### ✨ Neu
+
+- **Verfallsdatum des Resturlaubs je Person im Benutzerformular.** Beim Bearbeiten gibt es das Feld „Resturlaub verfällt am“ (leer = 31.03. des Folgejahres); das Dashboard der Person und die Jahresend-Warnung der Verwaltung nutzen es bereits.
+
 ### 🐛 Behoben (Funde beim Schreiben der Handbücher)
 
 **Enthält die Datenbank-Migration `077_legacy_half_day`.** Vor dem Update wie immer eine Sicherung anlegen.
@@ -13,6 +17,9 @@
 - **Admin-Dashboard nennt den Monat deutsch** („Oktober 2026“ statt „October 2026“) in der Kachel „Monat“ und im Detail-Dialog.
 - **Barrierefreiheit:** Der Plus-Knopf „Neuer Eintrag“ der Zeiterfassung hat auch am Handy einen Namen; der Schalter „Abwesenheitsanträge genehmigungspflichtig“ trägt seine Überschrift als Namen.
 - **Formular „Neue:r Benutzer:in“:** Platzhalter der E-Mail `name@praxis.example` statt einer echten fremden Domain.
+- **Eigene Abwesenheitsgründe: Eingabefelder mit sichtbarem Rahmen.** „Bezeichnung“ und „Verhalten“ in den Einstellungen (und die Vorschau-Auswahl der Schichtplanung) hatten keinen erkennbaren Rahmen.
+- **Einzahl beim XLS-Import:** „1 Eintrag gefunden“, „1 Konflikt“, „1 Hinweis“, „(1 Eintrag)“ statt „1 Einträge“ usw.
+- **Dezimalkomma statt Punkt in Anzeigen:** gesetzlicher Mindestlohn („13,90 €/h“), Kind-krank-Anzeige („2,0/15“), Urlaubstage in Benutzerliste und Jahresübersicht („3,0 Tage“), Übertrags-Dialog, Datensicherungen, Rechnungen. Gespeichert wird weiterhin unverändert.
 
 ## [1.23.0] - 2026-11-07
 

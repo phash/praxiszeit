@@ -1149,6 +1149,7 @@ export const praxisleitung: Handbook = {
             { text: '**Wochenstunden** und Arbeitstage stehen nur als Anzeige da – immer die heute gültigen Werte.' },
             { n: 1, text: '[[Arbeitszeit anpassen…]] öffnet den Dialog „Arbeitszeit & Wochenstunden“; dort ändern Sie mit Wirkungsdatum.' },
             { n: 2, text: '**Urlaub und Abrechnung:** Urlaubsanspruch, Stundenzählung und Minijob-Einstellungen, ebenfalls nur Anzeige („Ändern über „Arbeitszeit anpassen…““).' },
+            { text: '**Resturlaub verfällt am:** eine eigene Verfallsfrist für diese Person; leer gilt der 31.03. des Folgejahres. Das Datum steht im Urlaubskonto der Person und in der Jahresend-Warnung der Verwaltung.' },
           ],
         },
         {
