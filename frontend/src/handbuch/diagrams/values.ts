@@ -17,12 +17,17 @@ export const BLOCKS = [
 ] as const;
 /** Hülle = erster Block − g … letzter Block + g. */
 export const HULL = { start: BLOCKS[0].start - GRACE, end: BLOCKS[1].end + GRACE };
-/** Lücke zwischen den Blöcken, an beiden Rändern um g geschrumpft (`credit_gaps`); eine Lücke ≤ 2 × g verschwindet. */
-export const GAP_SHRUNK = (() => {
-  const gs = BLOCKS[0].end + GRACE;
-  const ge = BLOCKS[1].start - GRACE;
-  return ge > gs ? { start: gs, end: ge } : null; // wie credit_gaps: Lücke ≤ 2 × g verschwindet
-})();
+/**
+ * Lücke zwischen zwei Blöcken (Ende A, Beginn B), an beiden Rändern um `grace` geschrumpft
+ * (`credit_gaps`); eine Lücke ≤ 2 × grace verschwindet (`null`).
+ */
+export function shrinkGap(endA: number, startB: number, grace: number): { start: number; end: number } | null {
+  const start = endA + grace;
+  const end = startB - grace;
+  return end > start ? { start, end } : null;
+}
+/** Die geschrumpfte Lücke der Beispiel-Blöcke (12:00–15:00 → 12:15–14:45). */
+export const GAP_SHRUNK = shrinkGap(BLOCKS[0].end, BLOCKS[1].start, GRACE);
 
 /**
  * Kappung eines Zeiteintrags wie `work_window_service._clamp_core`: Beginn/Ende an der Hülle

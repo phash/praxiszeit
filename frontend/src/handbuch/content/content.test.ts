@@ -37,6 +37,9 @@ describe('Handbuch-Inhalte', () => {
     });
 
     it(`${h.id}: jedes Kapitel hat eine Aufgabe mit Screenshot oder steht in NO_SHOT_CHAPTERS`, () => {
+      // So rechnet PraxisZeit: je Thema Kernsatz, Beispieltabelle und (wo eines passt) Diagramm oder Screenshot,
+      // geprüft in rechenbeispiele.test.ts.
+      if (h.id === 'so-rechnet') return;
       const missing = h.chapters
         .filter((ch) => !NO_SHOT_CHAPTERS.includes(`${h.id}:${ch.id}`))
         .filter((ch) => !ch.blocks.some((b) => b.kind === 'task' && b.shot))

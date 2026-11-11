@@ -1,17 +1,13 @@
 import type { Handbook, HandbookId, ShotDef } from '../types';
 import { mitarbeitende } from './mitarbeitende';
 import { praxisleitung } from './praxisleitung';
+import { soRechnet } from './so-rechnet';
 
-/** Noch nicht geschriebene Handbuecher: leere Kapitel (der Markdown-Generator ueberspringt sie). */
-function placeholder(id: HandbookId, title: string): Handbook {
-  return { id, title, lead: '', chapters: [], shots: [] };
-}
-
-/** Die Handbuecher; Task 9b ff. fuellen die übrigen Kapitel und Platzhalter. */
+/** Die Handbuecher. */
 export const HANDBOOKS: Record<HandbookId, Handbook> = {
   mitarbeitende,
   praxisleitung,
-  'so-rechnet': placeholder('so-rechnet', 'So rechnet PraxisZeit'),
+  'so-rechnet': soRechnet,
 };
 
 /** Alle Aufnahmen aller Handbuecher. */

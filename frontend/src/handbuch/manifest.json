@@ -3103,5 +3103,107 @@
         "h": 150
       }
     }
+  },
+  "sr-admin": {
+    "file": "sr-admin.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 553.7,
+      "y": 343,
+      "w": 480,
+      "h": 247.5
+    },
+    "markers": {
+      "saldo": {
+        "x": 807.3,
+        "y": 470,
+        "w": 96.5,
+        "h": 40.5
+      },
+      "soll-basis": {
+        "x": 683.5,
+        "y": 423,
+        "w": 103,
+        "h": 30
+      }
+    }
+  },
+  "sr-dashboard": {
+    "file": "sr-dashboard.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 193,
+      "y": 149,
+      "w": 647,
+      "h": 260
+    },
+    "markers": {
+      "monatssaldo": {
+        "x": 313,
+        "y": 269,
+        "w": 84,
+        "h": 20
+      },
+      "ueberstunden": {
+        "x": 599,
+        "y": 269,
+        "w": 121,
+        "h": 20
+      }
+    }
+  },
+  "sr-journal": {
+    "file": "sr-journal.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "saldo": {
+        "x": 1192.7,
+        "y": 297,
+        "w": 138.3,
+        "h": 32
+      },
+      "tab": {
+        "x": 664,
+        "y": 96,
+        "w": 368,
+        "h": 36
+      }
+    }
+  },
+  "sr-urlaubskonto": {
+    "file": "sr-urlaubskonto.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 687.5,
+      "y": 119,
+      "w": 480,
+      "h": 320
+    },
+    "markers": {
+      "urlaubskonto": {
+        "x": 885,
+        "y": 269,
+        "w": 85,
+        "h": 20
+      }
+    }
   }
 }

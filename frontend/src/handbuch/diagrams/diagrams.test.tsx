@@ -80,4 +80,10 @@ describe('values (aus BERECHNUNGEN abgeleitet, nicht Literal gegen Literal)', ()
     const html = renderToString(createElement(DIAGRAMS['betriebsferien-split']));
     expect(html).toContain('Überzählige Betriebsferien als Überstundenabbau');
   });
+  it('shrinkGap: Lücke ≤ 2 × Puffer verschwindet (2g → null, 2g + 1 → 1 min)', () => {
+    expect(V.shrinkGap(0, 30, 15)).toBeNull();
+    expect(V.shrinkGap(0, 31, 15)).toEqual({ start: 15, end: 16 });
+    expect(V.shrinkGap(V.hm(12), V.hm(15), 15)).toEqual({ start: V.hm(12, 15), end: V.hm(14, 45) });
+    expect(V.shrinkGap(0, 20, 0)).toEqual({ start: 0, end: 20 });
+  });
 });
