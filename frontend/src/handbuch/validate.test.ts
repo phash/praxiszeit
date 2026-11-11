@@ -109,6 +109,33 @@ describe('validateHandbook', () => {
     expect(validateHandbook(h, m).some((e) => e.includes(`ungültiges Link-Ziel "${t}"`))).toBe(true);
   });
 
+  it('rejects a dangling in-book anchor', () => {
+    const { h, m } = fixture();
+    h.chapters[0].blocks.push({ kind: 'prose', text: 'Siehe [dort](#gibtsnicht).' });
+    expect(validateHandbook(h, m)).toContain('prose: Anker "#gibtsnicht" hat kein Ziel');
+  });
+
+  it('accepts an in-book anchor to a task id', () => {
+    const { h, m } = fixture();
+    h.chapters[0].blocks.push({ kind: 'prose', text: 'Siehe [dort](#zeiterfassung-nachtragen).' });
+    expect(validateHandbook(h, m)).toEqual([]);
+  });
+
+  it('checks anchors of other books when all books are given', () => {
+    const { h, m } = fixture();
+    const other: Handbook = {
+      id: 'so-rechnet', title: 'Rechnen', lead: 'x', shots: [],
+      chapters: [{ id: 'saldo', title: 'Saldo', blocks: [{ kind: 'task', id: 'saldo-sehen', title: 'T', steps: [] }] }],
+    };
+    const books = { mitarbeitende: h, 'so-rechnet': other };
+    h.chapters[0].blocks.push({ kind: 'prose', text: 'A [x](handbuch:so-rechnet#saldo), B [y](handbuch:so-rechnet#saldo-sehen), C [z](handbuch:so-rechnet).' });
+    expect(validateHandbook(h, m, books)).toEqual([]);
+    h.chapters[0].blocks.push({ kind: 'prose', text: 'D [w](handbuch:so-rechnet#weg).' });
+    expect(validateHandbook(h, m, books)).toContain('prose: Anker "#weg" fehlt im Handbuch "so-rechnet"');
+    // ohne books: keine Prüfung gegen andere Bücher
+    expect(validateHandbook(h, m)).toEqual([]);
+  });
+
   it('accepts known handbuch: link target', () => {
     const { h, m } = fixture();
     h.chapters[0].blocks.push({ kind: 'prose', text: 'Siehe [dort](handbuch:so-rechnet#a).' });

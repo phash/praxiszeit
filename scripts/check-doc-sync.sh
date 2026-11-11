@@ -445,6 +445,18 @@ group_admin_bloecke() {
   forbid "$f" 'Bei einem Blockbeginn zur vollen Stunde landet'
   # Gesamtreview PR4/V1: zweiter Grenzfall P18 — ein eingetragenes Ende genau
   # auf dem wirksamen Ende bleibt Echo (end_is_correction), Anerkennen → 400.
+  # Task C1 (1.23): Hinweise, die der Umbau auf das grafische Handbuch verlor, neu formuliert.
+  need "$f" 'Arbeitszeit-Fenster (Altbestand, nur Kappung)'
+  need "$f" 'In Arbeitszeit-Blöcke umwandeln'
+  need "$f" 'Eine Änderung in den Modi Gleichmäßig oder Nach Tagen übernimmt ein Altfenster, solange Sie es nicht entfernen.'
+  need "$f" 'Bis Version 1.19.2 wurde außerdem ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt'
+  need "$f" 'speichern ihn unverändert, wird er mit der tatsächlich gestempelten Zeit neu berechnet.'
+  need "$f" 'Das automatisch gesetzte 23:59 ist kein Stempel.'
+  need "$f" 'Auch ein tatsächliches Ende um **23:59**'
+  need "$f" 'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)'
+  need "$f" 'Schichtzeit inklusive Lücke höchstens 10 h). PraxisZeit prüft nur die Grenzen für Erwachsene, nicht diese.'
+  need "$f" 'Mitarbeitende können einen solchen Eintrag weder selbst ändern noch löschen'
+  need "$f" 'Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden.'
   forbid "$f" 'Soll-Arbeitszeiten je Wochentag'
   forbid "$f" 'Soll-Arbeitszeit-Fenster, #201'
   forbid "$f" '#soll-arbeitszeiten-soll-arbeitszeit-fenster-201'
@@ -471,6 +483,20 @@ group_admin_aendern() {
   need "$f" 'Hinweis zu Ihrer Arbeitszeit'
   need "$f" 'Neukappung (Arbeitszeit-Änderung)'
   need "$f" 'Quelle „Stundenänderung“'
+  # Task C1: Recht/Mitbestimmung, Grundtyp-Präfixe, 500-Zeichen-Regel, Rücksetzung.
+  need "$f" 'Ändert sich durch die Blöcke der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine Vertragsänderung'
+  need "$f" 'mitbestimmungspflichtig; ohne Zustimmung ist die Maßnahme gegenüber den Beschäftigten unwirksam. PraxisZeit prüft das nicht.'
+  need "$f" '\[Erfassungsfehler korrigiert\]'
+  need "$f" '\[Einvernehmlich vereinbart\]'
+  need "$f" 'Grund, Begründung und Notiz speichert PraxisZeit zusammen im Notizfeld der Änderung, höchstens 500 Zeichen'
+  need "$f" 'Notiz und Begründung zusammen höchstens 500 Zeichen.'
+  need "$f" 'Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden.'
+  need "$f" 'weil in einem zweiten Fenster eine weitere Änderung dazwischen angelegt wurde'
+  need "$f" 'Eine Änderung, die erst nach heute beginnt, verkürzt beim Löschen nichts'
+  need "$f" 'meist heute, morgen, wenn die Person heute schon gestempelt hat oder eingestempelt ist'
+  need "$f" 'enden die Arbeitszeit-Blöcke mit dieser Änderung'
+  need "$f" 'steht im Dialog „geplant“ statt „Tagessoll“ bzw. „Wochensoll“'
+  need "$f" 'heute gültigen Stand, auch nach dem Wirkungsdatum einer zukunftsdatierten Änderung'
   forbid "$f" 'Wochenstunden anpassen…'
   forbid "$f" 'Wochenstunden & Tagesplan'
   forbid "$f" 'Wochenstunden-Änderung ab'
@@ -481,7 +507,7 @@ group_admin_aendern() {
   # (Gesamtreview PR3), Dashboard-Hinweis ohne verschachtelte Klammern.
   need "$f" 'sinkt das Überstundenkonto im Wirkungsbereich'
   need "$f" '`Einzelheiten` listet jeden Eintrag'
-  need "$f" '10 bis 400 Zeichen'
+  need "$f" '**Begründung:** 10 bis 400 Zeichen.'
   forbid "$f" '(gleichmäßig, 5 Tage))'
   forbid "$f" '**Stundenänderungen:**'
   # Review Task 3: Löschen gibt es nur an der jüngsten Zeile (kein P25). Ab heute
@@ -497,13 +523,12 @@ group_admin_aendern() {
   forbid "$f" 'verliert kein Eintrag, sondern nur das Überstundenkonto'
   need "$f" 'Verliert ein Eintrag angerechnete Zeit, sinkt das Überstundenkonto im Wirkungsbereich'
   # Review Task 4: die wh_change-Sammelzeile (nur wenn Abwesenheiten nachgezogen werden).
-  need "$f" 'je Änderung eine Sammelzeile'
+  need "$f" 'eine Sammelzeile „Stundenänderung“ ohne Datum'
 }
 
 group_admin_rest() {
   local f=docs/handbuch/HANDBUCH-ADMIN.md
-  need "$f" '**Stand:** PraxisZeit'
-  need "$f" '**Stand:** PraxisZeit'
+  # Die Version im Kopf (und ihre Übereinstimmung mit frontend/package.json) prüft die Gruppe versionen.
   need "$f" 'Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit'
   need "$f" '| Unterbrechung (Min), Zeiteinträge |'
   need "$f" '| Nicht angerechnet (Min) |'
@@ -571,8 +596,13 @@ group_admin_rest() {
   forbid "$f" '„keine Soll-Arbeitstage"'
   # Review Task 4: §9 erklärt auch die wh_change-Sammelzeile (Code:
   # admin_users._log_wh_change_retarget, Spec 10.3).
-  need "$f" 'je Änderung eine Sammelzeile'
+  need "$f" 'je Änderung eine Sammelzeile (Wirkungsdatum, neu berechnete Einträge, Grund)'
+  need "$f" 'je nachgezogener Abwesenheit eine Zeile „Stundenänderung“ mit altem und neuem Stundenwert'
   need "$f" 'Quelle „Stundenänderung“'
+  # Task C1: Jugendliche, Pause und Lücke, Halbtage ohne Stundenzählung.
+  need "$f" 'Für Jugendliche gelten strengere Pausen- und Schichtzeitregeln (§§ 11, 12 JArbSchG'
+  need "$f" 'Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt'
+  need "$f" 'Pause in der Lücke wird zusätzlich abgezogen'
   # Review Task 4 (2. Runde): Die Anwesenheitsprüfungen gelten für alle
   # (Erwachsenenschwellen, kein Kennzeichen „jugendlich" im Code); nur die
   # strengeren JArbSchG-Regeln prüft PraxisZeit nicht (Spec 8.3).
@@ -601,8 +631,9 @@ group_arbzg_48h() {
 
 group_mitarbeiter() {
   local f=docs/handbuch/HANDBUCH-MITARBEITER.md
-  need "$f" '**Stand:** PraxisZeit'
+  # Version im Kopf: Gruppe versionen.
   need "$f" 'Hat Ihre Praxis **Arbeitszeit-Blöcke** für Sie hinterlegt, wird nur die Zeit innerhalb der Blöcke angerechnet'
+  need "$f" 'Diese Zeiten begrenzen nur die Anrechnung der erfassten Zeit; das Tagessoll wird nicht aus ihnen berechnet.'
   need "$f" 'gestempelt 08:00–16:00 · angerechnet 5:30 h · 2:30 h zwischen den Blöcken nicht angerechnet'
   need "$f" 'schließt einen offenen Eintrag eines früheren Tages automatisch'
   need "$f" 'Anrechnung beantragen'
@@ -612,6 +643,12 @@ group_mitarbeiter() {
   need "$f" 'Meine Arbeitszeit'
   need "$f" 'Hinweis zu Ihrer Arbeitszeit'
   need "$f" 'Nicht angerechnet heißt nicht unbezahlt'
+  # Task C1: automatisch geschlossen, Lücke und Pause, Abwesenheit über anerkanntem Eintrag.
+  need "$f" 'Auch ein tatsächliches Ende um **23:59**'
+  need "$f" 'Ebenso bleibt die Kennzeichnung, wenn Sie genau das angerechnete Ende (z. B. 18:15) eintragen'
+  need "$f" 'Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst'
+  need "$f" 'Pause in der Lücke wird zusätzlich abgezogen'
+  need "$f" 'Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden.'
   forbid "$f" 'erfassten Blöcke'
   forbid "$f" 'vergessener Nachmittagsblock'
   forbid "$f" '#33-soll-arbeitszeiten-und-anrechnung'
@@ -812,7 +849,8 @@ group_begriffe() {
     forbid "$f" 'Halbtag zählt als voller Tag'
     forbid "$f" 'halber Tag derzeit als voller Tag'
   done
-  need docs/handbuch/HANDBUCH-MITARBEITER.md 'Verbraucht wird nach Tagen'
+  need docs/handbuch/HANDBUCH-MITARBEITER.md 'Verbraucht wird nach Tagen: ein freier Arbeitstag ist ein Urlaubstag, ein halber Tag 0,5.'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Auch ohne Stundenzählung zählt ein halber freier Tag (Option „Halber Tag“) **0,5 Urlaubstage**'
 }
 
 # Rechenregeln und Begriffe (Task 7): BERECHNUNGEN.md und GLOSSAR.md werden
@@ -1168,6 +1206,12 @@ for path in sys.argv[1:]:
             bad = 1
         else:
             found[f"{path} ({where})"] = versions[0]
+with open("frontend/package.json", encoding="utf-8") as fh:
+    pkg = re.search(r'"version":\s*"([^"]+)"', fh.read()).group(1)
+for where, version in found.items():
+    if version != pkg:
+        print(f"VERSION   {where}: PraxisZeit {version}, frontend/package.json {pkg}")
+        bad = 1
 if len(set(found.values())) > 1:
     for where, version in found.items():
         print(f"VERSION   {where}: PraxisZeit {version}")

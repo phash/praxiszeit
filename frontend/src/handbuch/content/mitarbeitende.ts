@@ -672,6 +672,13 @@ export const mitarbeitende: Handbook = {
           ],
         },
         {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Wie sich Soll, Ist und Saldo zusammensetzen, steht unter ' +
+            '[So rechnet PraxisZeit: Monatssoll und Saldo „bis heute“](handbuch:so-rechnet#monatssaldo).',
+        },
+        {
           kind: 'task',
           id: 'jahresuebersicht-team',
           title: 'Wo sehe ich mein Jahr und die Abwesenheiten im Team?',
@@ -752,6 +759,16 @@ export const mitarbeitende: Handbook = {
             'Die Stempelkarte bietet dann [[Arbeitsende per Antrag nachtragen]] an – tragen Sie dort Ihr tatsächliches Ende ein.',
         },
         {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Automatisch geschlossen:** Das 23:59, das PraxisZeit dabei setzt, ist kein Stempel; angerechnet wird nur bis zum Ende Ihres letzten Blocks plus Puffer. ' +
+            'Im Antrag steht zunächst das angerechnete Ende (z. B. 18:15) – ersetzen Sie es durch Ihr tatsächliches. Auch ein tatsächliches Ende um **23:59**, z. B. nach einem Notdienst, können Sie eintragen: ' +
+            'Es gilt dann als echter Stempel und wird wie jedes Ende an Ihren Blöcken gekürzt; bis 23:59 angerechnet wird es, wenn die Verwaltung den Eintrag anerkennt. ' +
+            'Ebenso bleibt die Kennzeichnung, wenn Sie genau das angerechnete Ende (z. B. 18:15) eintragen – dann fehlt weiter das tatsächliche Ende. ' +
+            'Anerkennen kann die Verwaltung einen solchen Eintrag erst, wenn das tatsächliche Ende eingetragen ist.',
+        },
+        {
           kind: 'task',
           id: 'zeiteintraege-ansehen',
           title: 'Wo sehe ich meine Zeiteinträge?',
@@ -827,7 +844,8 @@ export const mitarbeitende: Handbook = {
           text:
             '**Nicht angerechnet heißt nicht unbezahlt.** Ob gearbeitete Zeit vergütet wird, entscheidet nicht diese Anrechnung. ' +
             'Sprechen Sie Ihre Verwaltung an oder beantragen Sie die Anrechnung. Hat Ihre Praxis gar keine Blöcke für Sie hinterlegt, ' +
-            'zählt Ihre gestempelte Zeit ganz normal.',
+            'zählt Ihre gestempelte Zeit ganz normal. ' +
+            'Mehr dazu: [So rechnet PraxisZeit: Arbeitszeit-Blöcke und Kappung](handbuch:so-rechnet#bloecke-kappung).',
         },
         {
           kind: 'tip',
@@ -837,6 +855,14 @@ export const mitarbeitende: Handbook = {
             'wird die Zeit gespeichert, aber mit **0 Stunden** angerechnet – auch ein vergessenes Ausstempeln. Haben Sie gearbeitet, ' +
             'beantragen Sie die Anrechnung über [[Anrechnung beantragen]]; angerechnet wird erst, wenn die Verwaltung den Antrag genehmigt und anerkennt oder den Eintrag anerkennt. ' +
             'Am Wochenende und an Feiertagen gelten keine Blöcke – dort wird die ganze Zeit angerechnet.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Pause und Lücke:** Die Lücke zwischen zwei Blöcken zählt für die Pausenpflicht (§ 4 ArbZG) als Pause, sobald nach Abzug des Puffers an beiden Rändern mindestens 15 Minuten übrig bleiben. Das gilt nur, wenn sie tatsächlich frei war: ' +
+            'Haben Sie ohne Pause durchgestempelt, erinnert „Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst“ daran. ' +
+            'Tragen Sie dagegen eine Pause ein, obwohl Sie über die Lücke durchgestempelt haben, wird beides abgezogen („Pause in der Lücke wird zusätzlich abgezogen: …“); lag die Pause in der Lücke, setzen Sie die Pause auf 0.',
         },
         {
           kind: 'task',
@@ -891,7 +917,8 @@ export const mitarbeitende: Handbook = {
           tone: 'info',
           text:
             '**Verkürzte Tage und Sondertage:** Ein verkürzter Tag steht im Kalender z. B. als „Brückentag: verkürzter Tag (max. 4 h)“. ' +
-            'An diesem Tag ist Ihr Tagessoll höchstens so hoch wie angegeben, Urlaub kostet einen halben Tag.',
+            'An diesem Tag ist Ihr Tagessoll höchstens so hoch wie angegeben, Urlaub kostet einen halben Tag. ' +
+            'Mehr dazu: [So rechnet PraxisZeit: Sondertage und verkürzte Tage](handbuch:so-rechnet#sondertage).',
         },
         {
           kind: 'task',
@@ -920,6 +947,13 @@ export const mitarbeitende: Handbook = {
           text:
             '**Vergangene Tage nur per Antrag:** Liegt das Datum in der Vergangenheit, ist [[Speichern]] gesperrt. ' +
             'Stellen Sie den Antrag in Zeiterfassung → [[Journal]] über das **+** in der Zeile des Tages und wählen Sie dort die Art, z. B. Krank für gestern. Das **+** steht an vergangenen Tagen ohne Eintrag und ohne Abwesenheit.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Tag mit anerkanntem Zeiteintrag:** Liegt an einem der Tage ein Zeiteintrag, den die Verwaltung anerkannt hat, lehnt PraxisZeit die Buchung ab und nennt den Tag, ' +
+            'z. B. „Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden.“ Die Verwaltung trägt die Abwesenheit für diesen Tag ein; die übrigen Tage können Sie getrennt buchen.',
         },
         {
           kind: 'task',
@@ -984,7 +1018,8 @@ export const mitarbeitende: Handbook = {
           tone: 'info',
           text:
             '**So zählt Urlaub:** Ein freier Arbeitstag ist genau 1 Urlaubstag – egal, wie viele Stunden Sie an dem Tag arbeiten würden. ' +
-            'Eine freie Woche kostet so viele Tage, wie Sie Arbeitstage pro Woche haben. **Betriebsferien** trägt PraxisZeit automatisch für Sie ein.',
+            'Eine freie Woche kostet so viele Tage, wie Sie Arbeitstage pro Woche haben. **Betriebsferien** trägt PraxisZeit automatisch für Sie ein. ' +
+            'Mehr dazu: [So rechnet PraxisZeit: Urlaubskonto](handbuch:so-rechnet#urlaubskonto) und [So rechnet PraxisZeit: Betriebsferien](handbuch:so-rechnet#betriebsferien).',
         },
       ],
     },
@@ -1249,7 +1284,9 @@ export const mitarbeitende: Handbook = {
           tone: 'info',
           text:
             'Ändert die Verwaltung Ihre Arbeitszeit, kündigt das Dashboard es 30 Tage lang an. Arbeiten Sie im Minijob mit fester Monatsarbeitszeit, ' +
-            'heißen die Tageswerte „geplant“; ohne Stundenzählung gibt es kein Tagessoll.',
+            'heißen die Tageswerte „geplant“; ohne Stundenzählung gibt es kein Tagessoll. ' +
+            '**Übernommenes Arbeitszeit-Fenster:** Hat Ihre Praxis Ihnen vor Version 1.20.0 ein Arbeitszeit-Fenster hinterlegt, gilt es weiter als ein Block je Tag, bis die Verwaltung es umstellt. ' +
+            'Die Karte vermerkt dann: „Diese Zeiten begrenzen nur die Anrechnung der erfassten Zeit; das Tagessoll wird nicht aus ihnen berechnet.“',
         },
         {
           kind: 'task',

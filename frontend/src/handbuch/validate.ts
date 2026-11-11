@@ -1,4 +1,4 @@
-import type { Block, BroschuereShot, Handbook, Inline, Manifest } from './types';
+import type { Block, BroschuereShot, Handbook, HandbookId, Inline, Manifest } from './types';
 import { HANDBOOK_IDS, parseHandbookLink, tokenize } from './inline';
 
 const MIN_ALT = 40;
@@ -17,8 +17,28 @@ function blockLabel(b: Block): string {
   return b.kind === 'task' ? `task ${b.id}` : b.kind;
 }
 
-export function validateHandbook(h: Handbook, m: Manifest): string[] {
+/** Sprungmarken eines Handbuchs: Kapitel- und Aufgaben-IDs (ohne `#`). */
+export function anchorsOf(h: Handbook): Set<string> {
+  const out = new Set<string>();
+  for (const ch of h.chapters) {
+    out.add(ch.id);
+    for (const b of ch.blocks) if (b.kind === 'task') out.add(b.id);
+  }
+  return out;
+}
+
+/**
+ * `books`: alle Handbücher, damit Links `handbuch:<id>#anker` auf andere Bücher geprüft werden
+ * (Anker = Kapitel- oder Aufgaben-ID des Ziels). Ohne `books` entfällt nur diese Prüfung;
+ * Anker im eigenen Buch (`#anker`) und die Buch-ID werden immer geprüft.
+ */
+export function validateHandbook(
+  h: Handbook,
+  m: Manifest,
+  books?: Partial<Record<HandbookId, Handbook>>,
+): string[] {
   const errors: string[] = [];
+  const ownAnchors = anchorsOf(h);
   const seen = new Set<string>();
   const shotIds = new Set<string>();
   const shotsById = new Map(h.shots.map((s) => [s.id, s]));
@@ -30,9 +50,19 @@ export function validateHandbook(h: Handbook, m: Manifest): string[] {
         continue;
       }
       if (tok.t !== 'link') continue;
+      if (tok.href.startsWith('#')) {
+        if (!ownAnchors.has(tok.href.slice(1))) errors.push(`${where}: Anker "${tok.href}" hat kein Ziel`);
+        continue;
+      }
       const hb = parseHandbookLink(tok.href);
-      if (hb && !(HANDBOOK_IDS as string[]).includes(hb.id)) {
+      if (!hb) continue;
+      if (!(HANDBOOK_IDS as string[]).includes(hb.id)) {
         errors.push(`${where}: unbekanntes Handbuch "${hb.id}" im Link`);
+        continue;
+      }
+      const target = hb.id === h.id ? h : books?.[hb.id as HandbookId];
+      if (hb.anchor && target && !anchorsOf(target).has(hb.anchor.slice(1))) {
+        errors.push(`${where}: Anker "${hb.anchor}" fehlt im Handbuch "${hb.id}"`);
       }
     }
   };

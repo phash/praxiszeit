@@ -90,6 +90,8 @@ Unter den Kacheln steht die Monatsübersicht, die neueste Zeile oben.
 2. **Saldo** je Zeile: Ist minus Soll. So fällt sofort auf, wenn in einer Woche etwas fehlt – etwa ein vergessener Eintrag.
 3. **Überstunden kum.**: der Stand Ihres Überstundenkontos am Ende des Monats bzw. der Woche.
 
+> **Gut zu wissen:** Wie sich Soll, Ist und Saldo zusammensetzen, steht unter [So rechnet PraxisZeit: Monatssoll und Saldo „bis heute“](SO-RECHNET-PRAXISZEIT.md#monatssaldo).
+
 <a id="jahresuebersicht-team"></a>
 ### Wo sehe ich mein Jahr und die Abwesenheiten im Team?
 
@@ -134,6 +136,8 @@ Klicken Sie auf der Stempelkarte auf `Ausstempeln`. Daneben erscheint das Pausen
 > **Achtung:** **Pflicht-Pause (§ 4 ArbZG):** Bei mehr als 6 Stunden am Tag mindestens 30 Minuten, bei mehr als 9 Stunden mindestens 45 Minuten. Es zählen alle Einträge des Tages zusammen; eine Unterbrechung gilt erst ab 15 Minuten als Pause. Reicht die Pause nicht, tragen Sie sie nach – oder begründen, warum sie nicht möglich war (mindestens 10 Zeichen), sofern Ihre Praxis diese Ausnahme erlaubt.
 
 > **Gut zu wissen:** **Vergessen auszustempeln?** PraxisZeit schließt einen offenen Eintrag eines früheren Tages automatisch. Die Stempelkarte bietet dann `Arbeitsende per Antrag nachtragen` an – tragen Sie dort Ihr tatsächliches Ende ein.
+
+> **Gut zu wissen:** **Automatisch geschlossen:** Das 23:59, das PraxisZeit dabei setzt, ist kein Stempel; angerechnet wird nur bis zum Ende Ihres letzten Blocks plus Puffer. Im Antrag steht zunächst das angerechnete Ende (z. B. 18:15) – ersetzen Sie es durch Ihr tatsächliches. Auch ein tatsächliches Ende um **23:59**, z. B. nach einem Notdienst, können Sie eintragen: Es gilt dann als echter Stempel und wird wie jedes Ende an Ihren Blöcken gekürzt; bis 23:59 angerechnet wird es, wenn die Verwaltung den Eintrag anerkennt. Ebenso bleibt die Kennzeichnung, wenn Sie genau das angerechnete Ende (z. B. 18:15) eintragen – dann fehlt weiter das tatsächliche Ende. Anerkennen kann die Verwaltung einen solchen Eintrag erst, wenn das tatsächliche Ende eingetragen ist.
 
 <a id="zeiteintraege-ansehen"></a>
 ### Wo sehe ich meine Zeiteinträge?
@@ -185,9 +189,11 @@ Hat Ihre Praxis **Arbeitszeit-Blöcke** für Sie hinterlegt, wird nur die Zeit i
 1. In der Zeile des Eintrags steht unter der Uhrzeit eine Zusatzzeile, z. B. „gestempelt 08:00–16:00 · angerechnet 5:30 h · 2:30 h zwischen den Blöcken nicht angerechnet“. Ihre gestempelte Zeit bleibt gespeichert.
 2. Haben Sie in dieser Zeit gearbeitet, klicken Sie darunter auf `Anrechnung beantragen`, begründen Sie kurz und senden Sie den Antrag ab. Die Verwaltung entscheidet.
 
-> **Gut zu wissen:** **Nicht angerechnet heißt nicht unbezahlt.** Ob gearbeitete Zeit vergütet wird, entscheidet nicht diese Anrechnung. Sprechen Sie Ihre Verwaltung an oder beantragen Sie die Anrechnung. Hat Ihre Praxis gar keine Blöcke für Sie hinterlegt, zählt Ihre gestempelte Zeit ganz normal.
+> **Gut zu wissen:** **Nicht angerechnet heißt nicht unbezahlt.** Ob gearbeitete Zeit vergütet wird, entscheidet nicht diese Anrechnung. Sprechen Sie Ihre Verwaltung an oder beantragen Sie die Anrechnung. Hat Ihre Praxis gar keine Blöcke für Sie hinterlegt, zählt Ihre gestempelte Zeit ganz normal. Mehr dazu: [So rechnet PraxisZeit: Arbeitszeit-Blöcke und Kappung](SO-RECHNET-PRAXISZEIT.md#bloecke-kappung).
 
 > **Achtung:** **Werktag ohne Block = freier Tag:** Sind Blöcke für Sie hinterlegt und haben Sie an einem Werktag (Mo–Fr) keinen Block, stempeln dort aber trotzdem, wird die Zeit gespeichert, aber mit **0 Stunden** angerechnet – auch ein vergessenes Ausstempeln. Haben Sie gearbeitet, beantragen Sie die Anrechnung über `Anrechnung beantragen`; angerechnet wird erst, wenn die Verwaltung den Antrag genehmigt und anerkennt oder den Eintrag anerkennt. Am Wochenende und an Feiertagen gelten keine Blöcke – dort wird die ganze Zeit angerechnet.
+
+> **Gut zu wissen:** **Pause und Lücke:** Die Lücke zwischen zwei Blöcken zählt für die Pausenpflicht (§ 4 ArbZG) als Pause, sobald nach Abzug des Puffers an beiden Rändern mindestens 15 Minuten übrig bleiben. Das gilt nur, wenn sie tatsächlich frei war: Haben Sie ohne Pause durchgestempelt, erinnert „Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst“ daran. Tragen Sie dagegen eine Pause ein, obwohl Sie über die Lücke durchgestempelt haben, wird beides abgezogen („Pause in der Lücke wird zusätzlich abgezogen: …“); lag die Pause in der Lücke, setzen Sie die Pause auf 0.
 
 <a id="journal-monat"></a>
 ### Wie sehe ich meinen Monat Tag für Tag?
@@ -217,7 +223,7 @@ Klicken Sie in der Navigation auf `Abwesenheiten`. Der Tab `Kalender` zeigt die 
 
 > **Gut zu wissen:** **Datenschutz:** Bei Kolleginnen und Kollegen sehen Sie nur Urlaub und Fortbildung mit ihrer Art. Krankheit, bezahlte Freistellung, Sonstiges und eigene Gründe der Praxis erscheinen neutral als **Abwesend**. Ihre eigenen Abwesenheiten sehen Sie immer mit der echten Art.
 
-> **Gut zu wissen:** **Verkürzte Tage und Sondertage:** Ein verkürzter Tag steht im Kalender z. B. als „Brückentag: verkürzter Tag (max. 4 h)“. An diesem Tag ist Ihr Tagessoll höchstens so hoch wie angegeben, Urlaub kostet einen halben Tag.
+> **Gut zu wissen:** **Verkürzte Tage und Sondertage:** Ein verkürzter Tag steht im Kalender z. B. als „Brückentag: verkürzter Tag (max. 4 h)“. An diesem Tag ist Ihr Tagessoll höchstens so hoch wie angegeben, Urlaub kostet einen halben Tag. Mehr dazu: [So rechnet PraxisZeit: Sondertage und verkürzte Tage](SO-RECHNET-PRAXISZEIT.md#sondertage).
 
 <a id="abwesenheit-eintragen"></a>
 ### Wie trage ich Urlaub oder eine andere Abwesenheit ein?
@@ -235,6 +241,8 @@ Klicken Sie oben rechts auf `Abwesenheit eintragen`.
 > **Gut zu wissen:** **Stunden** sind bei allen Arten außer **Überstundenausgleich** gesperrt – gebucht wird Ihr Tagessoll. Beim Überstundenausgleich zählt der eingetragene Wert und wird von Ihrem Überstundenkonto abgezogen; haben Sie einen Tagesplan, bucht das System stattdessen das Tagessoll des Tages.
 
 > **Achtung:** **Vergangene Tage nur per Antrag:** Liegt das Datum in der Vergangenheit, ist `Speichern` gesperrt. Stellen Sie den Antrag in Zeiterfassung → `Journal` über das **+** in der Zeile des Tages und wählen Sie dort die Art, z. B. Krank für gestern. Das **+** steht an vergangenen Tagen ohne Eintrag und ohne Abwesenheit.
+
+> **Achtung:** **Tag mit anerkanntem Zeiteintrag:** Liegt an einem der Tage ein Zeiteintrag, den die Verwaltung anerkannt hat, lehnt PraxisZeit die Buchung ab und nennt den Tag, z. B. „Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden.“ Die Verwaltung trägt die Abwesenheit für diesen Tag ein; die übrigen Tage können Sie getrennt buchen.
 
 <a id="halben-tag-urlaub"></a>
 ### Wie nehme ich einen halben Tag Urlaub?
@@ -275,7 +283,7 @@ Unter dem Kalender stehen Ihre Abwesenheiten des Jahres als Liste. Was in der Sp
 
 > **Achtung:** **Betriebsferien-Tage** ändert nur die Verwaltung – dort steht kein Knopf. Genehmigten Urlaub, der noch nicht begonnen hat, nehmen Sie mit `Urlaub stornieren` unter `Meine Anträge` zurück. Ebenfalls nicht selbst löschen können Sie Urlaub bei eingeschalteter Genehmigungspflicht, Abwesenheiten, die die Verwaltung für Sie eingetragen hat, und Tage eines abgeschlossenen Jahres – wenden Sie sich dann an Ihre Verwaltung.
 
-> **Gut zu wissen:** **So zählt Urlaub:** Ein freier Arbeitstag ist genau 1 Urlaubstag – egal, wie viele Stunden Sie an dem Tag arbeiten würden. Eine freie Woche kostet so viele Tage, wie Sie Arbeitstage pro Woche haben. **Betriebsferien** trägt PraxisZeit automatisch für Sie ein.
+> **Gut zu wissen:** **So zählt Urlaub:** Ein freier Arbeitstag ist genau 1 Urlaubstag – egal, wie viele Stunden Sie an dem Tag arbeiten würden. Eine freie Woche kostet so viele Tage, wie Sie Arbeitstage pro Woche haben. **Betriebsferien** trägt PraxisZeit automatisch für Sie ein. Mehr dazu: [So rechnet PraxisZeit: Urlaubskonto](SO-RECHNET-PRAXISZEIT.md#urlaubskonto) und [So rechnet PraxisZeit: Betriebsferien](SO-RECHNET-PRAXISZEIT.md#betriebsferien).
 
 <a id="antraege-korrektur-loeschung"></a>
 ## Anträge: Korrektur, Löschung, Status, zurückziehen
@@ -437,7 +445,7 @@ Klicken Sie in der Navigation auf `Profil`.
 2. Je Wochentag Ihre **Arbeitszeit-Blöcke** und Ihr **Tagessoll**, darunter Ihre **Wochenstunden**. Sind keine Blöcke hinterlegt, steht „–“ statt der Zeiten.
 3. Der **Verlauf** listet jede Änderung mit dem Datum, ab dem sie gilt.
 
-> **Gut zu wissen:** Ändert die Verwaltung Ihre Arbeitszeit, kündigt das Dashboard es 30 Tage lang an. Arbeiten Sie im Minijob mit fester Monatsarbeitszeit, heißen die Tageswerte „geplant“; ohne Stundenzählung gibt es kein Tagessoll.
+> **Gut zu wissen:** Ändert die Verwaltung Ihre Arbeitszeit, kündigt das Dashboard es 30 Tage lang an. Arbeiten Sie im Minijob mit fester Monatsarbeitszeit, heißen die Tageswerte „geplant“; ohne Stundenzählung gibt es kein Tagessoll. **Übernommenes Arbeitszeit-Fenster:** Hat Ihre Praxis Ihnen vor Version 1.20.0 ein Arbeitszeit-Fenster hinterlegt, gilt es weiter als ein Block je Tag, bis die Verwaltung es umstellt. Die Karte vermerkt dann: „Diese Zeiten begrenzen nur die Anrechnung der erfassten Zeit; das Tagessoll wird nicht aus ihnen berechnet.“
 
 <a id="passwort-aendern"></a>
 ### Wie ändere ich mein Passwort?

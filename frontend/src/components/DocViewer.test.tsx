@@ -36,6 +36,23 @@ function handbookText(id: HandbookId): string {
   );
 }
 
+// Sichtbarer Text eines einzelnen Kapitels – damit eine Prüfung nicht an einer Stelle
+// eines anderen Kapitels „erfüllt" wird.
+function chapterText(id: HandbookId, chapterId: string): string {
+  const book = HANDBOOKS[id];
+  const chapters = book.chapters.filter((c) => c.id === chapterId);
+  if (chapters.length !== 1) throw new Error(`Kapitel ${chapterId} nicht in ${id}`);
+  return textOf(
+    <HandbookPage
+      handbook={{ ...book, chapters }}
+      manifest={manifestJson as Manifest}
+      imgBase="/help/img"
+      linkBase="/help"
+      variant="wide"
+    />,
+  );
+}
+
 // Bedienung und Begriffe, die es seit 1.20.0 nicht mehr gibt (Spec E58, 12.2, 15.1):
 // Quelle ist handbuch/content/forbiddenTerms.ts (dort auch gegen den Inhalt geprüft).
 const VERALTET = FORBIDDEN_TERMS;
@@ -78,6 +95,31 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       // XLS-Import zeigt die Kappung schon in der Vorschau (ImportXls.tsx).
       'Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit',
       'Werktag ohne Block = 0 Stunden',
+      // Wiederhergestellte Hinweise (Task C1): Recht, Altfenster, Rücksetzung, Protokoll, Lücke.
+      'Ändert sich durch die Blöcke der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine Vertragsänderung',
+      'mitbestimmungspflichtig; ohne Zustimmung ist die Maßnahme gegenüber den Beschäftigten unwirksam. PraxisZeit prüft das nicht.',
+      'Für Jugendliche gelten strengere Pausen- und Schichtzeitregeln (§§ 11, 12 JArbSchG',
+      'PraxisZeit prüft nur die Grenzen für Erwachsene',
+      'Arbeitszeit-Fenster (Altbestand, nur Kappung)',
+      'Bis Version 1.19.2 wurde außerdem ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt',
+      'Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden.',
+      'Auch ein tatsächliches Ende um 23:59',
+      'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15)',
+      'Eine Änderung, die erst nach heute beginnt, verkürzt beim Löschen nichts',
+      'meist heute, morgen, wenn die Person heute schon gestempelt hat oder eingestempelt ist',
+      'Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden.',
+      'weil in einem zweiten Fenster eine weitere Änderung dazwischen angelegt wurde',
+      'Grund, Begründung und Notiz speichert PraxisZeit zusammen im Notizfeld der Änderung, höchstens 500 Zeichen',
+      'Notiz und Begründung zusammen höchstens 500 Zeichen.',
+      '[Erfassungsfehler korrigiert]',
+      '[Einvernehmlich vereinbart]',
+      'eine Sammelzeile „Stundenänderung“ ohne Datum',
+      'enden die Arbeitszeit-Blöcke mit dieser Änderung',
+      'steht im Dialog „geplant“ statt „Tagessoll“ bzw. „Wochensoll“',
+      'heute gültigen Stand, auch nach dem Wirkungsdatum einer zukunftsdatierten Änderung',
+      'Auch ohne Stundenzählung zählt ein halber freier Tag (Option „Halber Tag“) 0,5 Urlaubstage',
+      'Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt',
+      'Pause in der Lücke wird zusätzlich abgezogen',
     ]) {
       expect(text).toContain(expected);
     }
@@ -99,6 +141,13 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       'Es darf nicht in der Zukunft liegen',
       'Werktag ohne Block = freier Tag',
       'Arbeitsende per Antrag nachtragen',
+      // Wiederhergestellte Hinweise (Task C1): automatisch geschlossen, 23:59, Lücke, 409 bei Abwesenheit.
+      'Auch ein tatsächliches Ende um 23:59',
+      'Ebenso bleibt die Kennzeichnung, wenn Sie genau das angerechnete Ende (z. B. 18:15) eintragen',
+      'Anerkennen kann die Verwaltung einen solchen Eintrag erst, wenn das tatsächliche Ende eingetragen ist',
+      'Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst',
+      'Pause in der Lücke wird zusätzlich abgezogen',
+      'Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden.',
     ]) {
       expect(text).toContain(expected);
     }
@@ -349,7 +398,7 @@ describe('Kontexthilfe entspricht der Oberfläche (Gesamtreview B6)', () => {
 // eine neuere Version angelegt hat, und ohne Neustart migriert nichts.
 describe('Datensicherung: Wiederherstellung wie im Praxisleitungs-Handbuch', () => {
   it('nennt Script, nativen Befehl und den Neustart statt „idempotent"', () => {
-    const t = handbookText('praxisleitung');
+    const t = chapterText('praxisleitung', 'datensicherung');
     expect(t).not.toContain('idempotent');
     expect(t).toContain('bash restore.sh');
     expect(t).toContain('praxiszeit-server.py restore');
@@ -360,7 +409,7 @@ describe('Datensicherung: Wiederherstellung wie im Praxisleitungs-Handbuch', () 
 
   // Audit 2026-11-07, Fix-Runde: signierte Sicherungen und Backup-Ort.
   it('nennt die Signatur, --force-unverified und dass bestehende Ordner unverändert bleiben', () => {
-    const t = handbookText('praxisleitung');
+    const t = chapterText('praxisleitung', 'datensicherung');
     expect(t).toContain('Signatur');
     expect(t).toContain('--force-unverified');
     expect(t).toContain('ändert PraxisZeit nicht');

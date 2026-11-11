@@ -33,7 +33,7 @@ describe('Handbuch-Inhalte', () => {
 
   for (const h of books) {
     it(`${h.id}: validateHandbook liefert keine Fehler`, () => {
-      expect(validateHandbook(h, manifest)).toEqual([]);
+      expect(validateHandbook(h, manifest, HANDBOOKS)).toEqual([]);
     });
 
     it(`${h.id}: jedes Kapitel hat eine Aufgabe mit Screenshot oder steht in NO_SHOT_CHAPTERS`, () => {
@@ -52,6 +52,12 @@ describe('Handbuch-Inhalte', () => {
       expect(hits).toEqual([]);
     });
   }
+
+  it.each(['mitarbeitende', 'praxisleitung'] as const)('%s verweist an mehreren Stellen auf „So rechnet PraxisZeit“', (id) => {
+    // Die Ziele prüft validateHandbook (mit allen Büchern); hier nur, dass die Querverweise da sind.
+    const links = allStrings(HANDBOOKS[id]).flatMap((x) => x.match(/\(handbuch:so-rechnet#[a-z-]+\)/g) ?? []);
+    expect(links.length).toBeGreaterThanOrEqual(4);
+  });
 
   it('ALL_SHOTS enthält jede Aufnahme jedes Handbuchs genau einmal', () => {
     const ids = ALL_SHOTS.map((s) => s.id);

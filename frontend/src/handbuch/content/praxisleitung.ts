@@ -1204,7 +1204,8 @@ export const praxisleitung: Handbook = {
           tone: 'info',
           text:
             '**Ist** ist die angerechnete Zeit – bei Arbeitszeit-Blöcken nach der Kappung – samt Gutschrift für Krankheit und Fortbildung. ' +
-            'Die Einstellung „bis heute“ gilt nur für die Live-Übersichten. Datei-Exporte, Monatsjournal und Jahresabschluss rechnen immer den vollen Monat bzw. das volle Jahr.',
+            'Die Einstellung „bis heute“ gilt nur für die Live-Übersichten. Datei-Exporte, Monatsjournal und Jahresabschluss rechnen immer den vollen Monat bzw. das volle Jahr. ' +
+            'Mehr dazu: [So rechnet PraxisZeit: Monatssoll und Saldo „bis heute“](handbuch:so-rechnet#monatssaldo).',
         },
         {
           kind: 'task',
@@ -1388,7 +1389,8 @@ export const praxisleitung: Handbook = {
           tone: 'info',
           text:
             '**Anspruch wechselt im Jahr:** Dann rechnet PraxisZeit jeden Abschnitt anteilig nach Monaten. Beispiel: 16 Tage bis September, 18 Tage ab 1. Oktober ergeben ' +
-            '16 × 9/12 + 18 × 3/12 = **16,5 Tage** für das Jahr, ab dem Folgejahr 18.',
+            '16 × 9/12 + 18 × 3/12 = **16,5 Tage** für das Jahr, ab dem Folgejahr 18. ' +
+            'Mehr dazu: [So rechnet PraxisZeit: Urlaubskonto](handbuch:so-rechnet#urlaubskonto).',
         },
         {
           kind: 'tip',
@@ -1433,7 +1435,8 @@ export const praxisleitung: Handbook = {
           text:
             '**Beispiel:** Blöcke 08:00–12:00 und 15:00–18:00, Pause 0, Puffer 15 Minuten. Wer von 08:00 bis 18:00 durchstempelt, bekommt 08:00–12:15 und 14:45–18:00 = **7:30 h** angerechnet; ' +
             'die 2:30 h dazwischen werden nicht angerechnet. Die gestempelten Zeiten bleiben unverändert gespeichert (§ 16 ArbZG). ' +
-            'Eine geplante Pause erfassen Sie als „Pause innerhalb der Blöcke“, nicht als kurze Lücke – eine Lücke bis zum doppelten Puffer verschwindet ganz.',
+            'Eine geplante Pause erfassen Sie als „Pause innerhalb der Blöcke“, nicht als kurze Lücke – eine Lücke bis zum doppelten Puffer verschwindet ganz. ' +
+            'Mehr dazu: [So rechnet PraxisZeit: Arbeitszeit-Blöcke und Kappung](handbuch:so-rechnet#bloecke-kappung).',
         },
         {
           kind: 'tip',
@@ -1445,6 +1448,30 @@ export const praxisleitung: Handbook = {
             'bei § 18-befreiten Personen wird trotzdem gekappt.',
         },
         {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Anderer Modus beendet die Blöcke:** Speichern Sie mit [[Gleichmäßig]] oder [[Nach Tagen]], enden die Arbeitszeit-Blöcke mit dieser Änderung; ab dem Gültig-ab-Datum wird nicht mehr gekappt. ' +
+            'Bei **fester Monatsarbeitszeit** (Minijob) steht im Dialog „geplant“ statt „Tagessoll“ bzw. „Wochensoll“ – die Werte sind geplante Anwesenheit, kein Soll. ' +
+            'Das Bearbeiten-Formular zeigt dagegen immer den heute gültigen Stand, auch nach dem Wirkungsdatum einer zukunftsdatierten Änderung.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Arbeitszeit-Fenster (Altbestand, nur Kappung):** Das Update auf 1.20.0 hat jedes bis dahin hinterlegte Soll-Arbeitszeit-Fenster als einen Block je Tag übernommen. Es kappt weiter, ändert das Soll aber nicht. ' +
+            'Im Dialog steht es als [[Arbeitszeit-Fenster (Altbestand, nur Kappung)]] mit [[In Arbeitszeit-Blöcke umwandeln]] (Zeiten vorbefüllt; Sie tragen die Pause ein und passen Zeiten außerhalb des 5-Minuten-Rasters an, z. B. 07:37 oder 23:59; nur bei aktiver Stundenzählung) ' +
+            'und [[Fenster entfernen]] (ab dem Gültig-ab-Datum wird nicht mehr gekappt). Eine Änderung in den Modi Gleichmäßig oder Nach Tagen übernimmt ein Altfenster, solange Sie es nicht entfernen. ' +
+            'Bis Version 1.19.2 wurde außerdem ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt; solche Einträge bleiben, wie sie sind. Öffnen Sie einen im Admin-Dashboard oder Monatsjournal und speichern ihn unverändert, wird er mit der tatsächlich gestempelten Zeit neu berechnet.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Arbeitsrecht und Mitbestimmung:** Ändert sich durch die Blöcke der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine Vertragsänderung und braucht das Einverständnis der beschäftigten Person (sonst Änderungskündigung, § 2 KSchG; bei Teilzeit §§ 8, 9 TzBfG). ' +
+            'Mit Betriebsrat sind Lage, Verteilung und Pausen (§ 87 Abs. 1 Nr. 2 BetrVG) mitbestimmungspflichtig; ohne Zustimmung ist die Maßnahme gegenüber den Beschäftigten unwirksam. PraxisZeit prüft das nicht.',
+        },
+        {
           kind: 'task',
           id: 'rueckwirkend-aendern',
           title: 'Was passiert, wenn ich die Arbeitszeit rückwirkend ändere?',
@@ -1454,10 +1481,10 @@ export const praxisleitung: Handbook = {
           shot: 'pl-rueckwirkend',
           steps: [
             { n: 1, text: '**Verkürzung:** Verliert ein Eintrag angerechnete Zeit, sinkt das Überstundenkonto im Wirkungsbereich oder sinkt die Gutschrift einer Abwesenheit an einem Tag mit Arbeit stärker als das Tagessoll, erscheint dieser Kasten mit den Gründen, z. B. „2 Einträge verlieren angerechnete Zeit (zusammen 0:30 h)“.' },
-            { n: 2, text: '**Ab heute … wirksam** (Standard): Die Änderung gilt ab dem frühesten Tag, an dem nichts verloren geht. Vergangene Einträge bleiben unverändert; ein Grund ist nicht nötig.' },
+            { n: 2, text: '**Ab heute … wirksam** (Standard): Die Änderung gilt ab dem frühesten Tag, an dem nichts verloren geht – meist heute, morgen, wenn die Person heute schon gestempelt hat oder eingestempelt ist. Vergangene Einträge bleiben unverändert; ein Grund ist nicht nötig.' },
             { n: 3, text: '**Rückwirkend ab … mit Neuberechnung:** nur mit Grund, Begründung und Bestätigung.' },
             { n: 4, text: '**Grund:** „Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)“, „Mit der beschäftigten Person vereinbart“ oder „Sonstiges“.' },
-            { n: 5, text: '**Begründung:** 10 bis 400 Zeichen. Danach bestätigen Sie den Haken zum gewählten Grund.' },
+            { n: 5, text: '**Begründung:** 10 bis 400 Zeichen. Danach bestätigen Sie den Haken zum gewählten Grund. Grund, Begründung und Notiz speichert PraxisZeit zusammen im Notizfeld der Änderung, höchstens 500 Zeichen; zu lang → „Notiz und Begründung zusammen höchstens 500 Zeichen.“, Speichern bleibt gesperrt – PraxisZeit kürzt nie.' },
           ],
         },
         {
@@ -1496,14 +1523,19 @@ export const praxisleitung: Handbook = {
           tone: 'info',
           text:
             '**Änderung löschen:** Das Papierkorb-Symbol steht nur an der jüngsten Zeile des Verlaufs. Das Löschen rechnet Einträge und Abwesenheiten zurück; ' +
-            'verkürzt es, setzt PraxisZeit standardmäßig ab heute auf den vorherigen Stand zurück ([[Zurücksetzen]]) – rückwirkend nur mit Grund.',
+            'verkürzt es, setzt PraxisZeit standardmäßig ab heute auf den vorherigen Stand zurück ([[Zurücksetzen]]) – rückwirkend nur mit Grund. ' +
+            'Eine Änderung, die erst nach heute beginnt, verkürzt beim Löschen nichts; dort genügt „Löschen“. ' +
+            'Hat sich der Verlauf seit dem Öffnen geändert – etwa weil in einem zweiten Fenster eine weitere Änderung dazwischen angelegt wurde –, lehnt PraxisZeit die Rücksetzung ab, statt deren Vertrag zu überschreiben: ' +
+            '„Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden.“ Der Bereich lädt die Auswirkung dann neu.',
         },
         {
           kind: 'tip',
           tone: 'info',
           text:
             '**Wer davon erfährt:** Die Person sieht nach jeder Arbeitszeit-Änderung 30 Tage lang den Kasten „Hinweis zu Ihrer Arbeitszeit“ auf ihrem Dashboard – bei einer rückwirkenden Verkürzung mit dem Grundtyp, nie mit Ihrer Begründung. ' +
-            'Das Änderungsprotokoll hält jede Neuberechnung fest.',
+            'Das Änderungsprotokoll hält jede Neuberechnung fest: je Änderung und je Löschung eine Sammelzeile mit Wirkungsdatum, Zahl der neu berechneten Einträge, Puffer und Grund (auch ohne betroffene Einträge). ' +
+            'Den Grund trägt sie als Kürzel „[Erfassungsfehler korrigiert]“, „[Einvernehmlich vereinbart]“ bzw. „[Sonstiges]“ vor Ihrer Begründung. ' +
+            'Sind Abwesenheiten betroffen, kommen eine Sammelzeile „Stundenänderung“ ohne Datum und je nachgezogener Abwesenheit eine Zeile „Stundenänderung“ mit altem und neuem Stundenwert hinzu (z. B. „Krank 8,0 h“ → „Krank 4,0 h“).',
         },
         {
           kind: 'task',
@@ -1528,6 +1560,22 @@ export const praxisleitung: Handbook = {
             '**Anerkennen lässt sich nicht zurücknehmen.** Wurde nur ein Teil der Zeit gearbeitet, teilen oder korrigieren Sie den Eintrag besser. ' +
             'Ein offener Eintrag lässt sich erst nach dem Ausstempeln anerkennen, ein automatisch geschlossener erst, wenn das tatsächliche Ende eingetragen ist. ' +
             'Nichtanrechnung ersetzt keine Vergütungsentscheidung: angeordnete, gebilligte oder geduldete Arbeit ist zu vergüten.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Automatisch geschlossene Einträge:** Das automatisch gesetzte 23:59 ist kein Stempel. Beim Bearbeiten zeigt das Formular das angerechnete Ende (z. B. 18:15); speichern Sie es unverändert, etwa nur mit ergänzter Pause, bleibt die Kennzeichnung „automatisch geschlossen“. ' +
+            'Erst das tatsächliche Ende (Mitarbeitende per Änderungsantrag) hebt sie auf. Auch ein tatsächliches Ende um **23:59**, z. B. nach einem Notdienst, lässt sich eintragen: Es gilt dann als echter Stempel, wird wie jedes Ende gegen die Blöcke gekappt und nach dem Anerkennen bis 23:59 angerechnet. ' +
+            'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15) – auch wenn die Person tatsächlich um diese Zeit aufgehört hat.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Anerkannte Einträge sind für Mitarbeitende gesperrt:** Mitarbeitende können einen solchen Eintrag weder selbst ändern noch löschen – dafür brauchen sie einen Änderungs- oder Löschantrag. ' +
+            'Eine Abwesenheit über einem anerkannten Eintrag lehnt PraxisZeit ab und nennt den Tag: „Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden.“ ' +
+            'Die Abwesenheit für diesen Tag tragen dann Sie ein; die übrigen Tage können die Mitarbeitenden getrennt buchen.',
         },
       ],
     },
@@ -1682,7 +1730,8 @@ export const praxisleitung: Handbook = {
           text:
             '**Nur an Arbeitstagen:** Wochenenden, Feiertage, als „frei“ eingestellte Sondertage und Tage ohne geplante Arbeitszeit (freie Wochentage, 0 Wochenstunden etwa in der Elternzeit) bleiben ausgenommen; ' +
             'bei Mitarbeitenden ohne Stundenzählung zählt jeder Werktag. Zeiteinträge der eingetragenen Tage werden ersetzt, Einträge an ausgenommenen Tagen bleiben stehen. ' +
-            'Liegt im Zeitraum kein einziger Tag mit geplanter Arbeitszeit, lehnt PraxisZeit die Buchung ab.',
+            'Liegt im Zeitraum kein einziger Tag mit geplanter Arbeitszeit, lehnt PraxisZeit die Buchung ab. ' +
+            '**Halbtage:** Auch ohne Stundenzählung zählt ein halber freier Tag (Option „Halber Tag“) **0,5 Urlaubstage**.',
         },
         {
           kind: 'tip',
@@ -1755,7 +1804,8 @@ export const praxisleitung: Handbook = {
           tone: 'info',
           text:
             '**Pflichturlaub darf ins Minus:** Betriebsferien werden zwingend gebucht, auch über das Urlaubsbudget hinaus – anders als ein Urlaubsantrag oder eine direkte Buchung, die PraxisZeit bei fehlendem Resturlaub ablehnt. ' +
-            'Mit eingeschaltetem Schalter verteilt PraxisZeit den Urlaub nach Datum (frühere Schließung zuerst); privater Urlaub im selben Jahr geht immer vor.',
+            'Mit eingeschaltetem Schalter verteilt PraxisZeit den Urlaub nach Datum (frühere Schließung zuerst); privater Urlaub im selben Jahr geht immer vor. ' +
+            'Mehr dazu: [So rechnet PraxisZeit: Betriebsferien](handbuch:so-rechnet#betriebsferien).',
         },
       ],
     },
@@ -1800,7 +1850,8 @@ export const praxisleitung: Handbook = {
           text:
             'Die Einstellung gilt für **alle Jahre**, auch zurückliegende. Betroffene Betriebsferien bucht PraxisZeit beim Speichern selbst neu; ' +
             'ändert sich ein Jahr mit Jahresabschluss, erscheint dort nur der Hinweis auf den veralteten Übertrag. ' +
-            'Wechselt ein Tag zwischen „Frei“ und Arbeitstag bzw. Halbtag, nennt PraxisZeit bestehende Zeiteinträge dieses Tages, deren Anrechnung sich ändern müsste – unverändert neu speichern berechnet sie neu.',
+            'Wechselt ein Tag zwischen „Frei“ und Arbeitstag bzw. Halbtag, nennt PraxisZeit bestehende Zeiteinträge dieses Tages, deren Anrechnung sich ändern müsste – unverändert neu speichern berechnet sie neu. ' +
+            'Mehr dazu: [So rechnet PraxisZeit: Sondertage und verkürzte Tage](handbuch:so-rechnet#sondertage).',
         },
         {
           kind: 'task',
@@ -1938,6 +1989,21 @@ export const praxisleitung: Handbook = {
           text:
             '**Wer erscheint?** Alle aktiven Mitarbeitenden und ausgeschiedene, die im Zeitraum Einträge oder Abwesenheiten haben. ' +
             'Ausgeblendete nur mit [[Ausgeblendete Mitarbeitende einbeziehen]] über den Auswertungen; § 18-befreite Mitarbeitende erscheinen nie.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Jugendliche:** Für Jugendliche gelten strengere Pausen- und Schichtzeitregeln (§§ 11, 12 JArbSchG: 30 Min Pause ab 4,5 h, 60 Min ab 6 h, höchstens 4,5 h ohne Pause, Schichtzeit inklusive Lücke höchstens 10 h). ' +
+            'PraxisZeit prüft nur die Grenzen für Erwachsene, nicht diese.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Lücke zwischen Blöcken und Pause:** Bleiben von der Lücke nach Abzug des Puffers an beiden Rändern mindestens 15 Minuten, zählt sie für die Pausenpflicht (§ 4 ArbZG) als Pause – aber nur, wenn sie tatsächlich frei war. ' +
+            'Wer ohne Pause durchstempelt, bekommt den Hinweis „Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst“. ' +
+            'Wird zusätzlich eine Pause eingetragen, zieht PraxisZeit beides ab und meldet „Pause in der Lücke wird zusätzlich abgezogen: …“; lag die Pause in der Lücke, setzen Sie die Pause auf 0. Beide Hinweise blockieren nie.',
         },
         {
           kind: 'task',
@@ -2160,7 +2226,8 @@ export const praxisleitung: Handbook = {
             '**Feste Monatsarbeitszeit:** Das Monats-Soll ist jeden Monat die vereinbarte Monatsarbeitszeit – egal, ob der Monat vier oder fünf Montage hat; bei Ein- oder Austritt im Monat anteilig nach Kalendertagen. ' +
             'Die Tagesstunden heißen dann „Geplante Anwesenheit“ und bestimmen nur noch, wie viele Stunden an Feiertagen, Urlaubs- und Freistellungstagen als Ist gutgeschrieben werden. ' +
             'Unbezahlt entschuldigte Tage (Typ „Sonstiges“, z. B. Kind krank) mindern stattdessen das Monats-Soll um die geplanten Stunden. ' +
-            'Im Monatsjournal heißt die Spalte dann „Geplant“, einen Tages-Saldo gibt es nicht; **verbindlich ist die Monatsübersicht**.',
+            'Im Monatsjournal heißt die Spalte dann „Geplant“, einen Tages-Saldo gibt es nicht; **verbindlich ist die Monatsübersicht**. ' +
+            'Mehr dazu: [So rechnet PraxisZeit: Minijob und Mindestlohn](handbuch:so-rechnet#minijob).',
         },
         {
           kind: 'tip',
@@ -2328,7 +2395,8 @@ export const praxisleitung: Handbook = {
           scene: 'jahresabschluss',
           text:
             'Zum Jahreswechsel berechnet PraxisZeit für alle aktiven Mitarbeitenden den **Überstunden-Saldo zum 31.12.** und den **Resturlaub** und trägt beides als **Übernahme** ins Folgejahr ein. ' +
-            'Diesen Schritt lösen Sie selbst aus – am besten, wenn alle Anträge für das Jahr entschieden sind.',
+            'Diesen Schritt lösen Sie selbst aus – am besten, wenn alle Anträge für das Jahr entschieden sind. ' +
+            'Wie der Übertrag entsteht: [So rechnet PraxisZeit: Jahresabschluss](handbuch:so-rechnet#jahresabschluss).',
         },
         {
           kind: 'task',
