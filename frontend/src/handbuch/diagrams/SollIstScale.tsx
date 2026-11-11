@@ -1,5 +1,5 @@
 import { C, DiagramSvg, fmt } from './common';
-import { DAY_TARGET, HOLIDAYS, IST_HOURS, SALDO_HOURS, SOLL_DAYS, SOLL_HOURS, VACATION_DAYS_TAKEN, WORKDAYS } from './values';
+import { DAY_TARGET, HOLIDAYS, IST_HOURS, IST_PARTS, SALDO_HOURS, SOLL_DAYS, SOLL_HOURS, VACATION_DAYS_TAKEN, WORKDAYS } from './values';
 
 const ALT =
   'Soll und Ist eines Monats im Vergleich: 22 Werktage minus 1 Feiertag minus 4 Urlaubstage ergeben 17 Tage zu je 8 Stunden, also 136 Stunden Soll. ' +
@@ -39,7 +39,7 @@ export function SollIstScale() {
       <line x1={bx(SOLL_HOURS)} x2={bx(SOLL_HOURS)} y1={156} y2={244} stroke={C.text} strokeWidth={2} strokeDasharray="4 3" />
 
       <text x={28} y={272} fontSize={17} fill={C.text}>
-        Ist: 14 × {fmt(8)} h + 3 × {fmt(8.5)} h = {fmt(IST_HOURS)} h
+        Ist: {IST_PARTS.map((p) => `${p.days} × ${fmt(p.hours)} h`).join(' + ')} = {fmt(IST_HOURS)} h
       </text>
       <rect x={28} y={286} width={260} height={36} rx={8} fill={C.greenSoft} stroke={C.green} strokeWidth={2} />
       <text x={158} y={310} fontSize={19} fontWeight={700} textAnchor="middle" fill={C.text}>

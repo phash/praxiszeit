@@ -36,35 +36,47 @@ describe('DIAGRAMS', () => {
   });
 });
 
-describe('values (BERECHNUNGEN-Beispiele)', () => {
-  it('Tageszeitstrahl: Hülle, Lücke, Zeiteinträge nach work_window_service', () => {
-    expect(V.GRACE).toBe(15);
-    expect(V.HULL).toEqual({ start: '07:45', end: '16:15' });
-    expect(V.GAP_SHRUNK).toEqual({ start: '12:15', end: '14:45' });
+describe('values (aus BERECHNUNGEN abgeleitet, nicht Literal gegen Literal)', () => {
+  it('§4.1: Hülle 07:45–16:15, geschrumpfte Lücke 12:15–14:45 (Block ± Puffer 15)', () => {
+    expect(V.hhmm(V.HULL.start)).toBe('07:45');
+    expect(V.hhmm(V.HULL.end)).toBe('16:15');
+    expect(V.hhmm(V.GAP_SHRUNK.start)).toBe('12:15');
+    expect(V.hhmm(V.GAP_SHRUNK.end)).toBe('14:45');
+  });
+  it('§4.1 Kappung: Zeiteintrag 1 und 2', () => {
+    expect(V.hhmm(V.ENTRY_A.effStart)).toBe('07:45');
+    expect(V.hhmm(V.ENTRY_A.effEnd)).toBe('12:10');
     expect(V.ENTRY_A).toMatchObject({ credited: '4:25', creditedHours: 4.42, notCreditedMin: 15, uncreditedMin: 0 });
+    expect(V.hhmm(V.ENTRY_B.effEnd)).toBe('16:15');
     expect(V.ENTRY_B).toMatchObject({ credited: '1:30', creditedHours: 1.5, notCreditedMin: 120, uncreditedMin: 105 });
   });
-  it('Soll/Ist (13.1)', () => {
-    expect(V.SOLL_DAYS).toBe(22 - 1 - 4);
+  it('§4.1 Tabelle: Beispielzeile 08:00–18:00 bei Blöcken 08–12 + 15–18 gibt 150 min Lücke', () => {
+    // Gegenprobe der Formel gegen die dokumentierte Tabellenzeile (7,50 h)
+    const g = 15, gap = { s: 12 * 60 + g, e: 15 * 60 - g };
+    expect(gap.e - gap.s).toBe(150);
+  });
+  it('§13.1 Soll/Ist/Saldo', () => {
+    expect(V.SOLL_DAYS).toBe(17);
     expect(V.SOLL_HOURS).toBe(136);
-    expect(V.IST_HOURS).toBe(14 * 8 + 3 * 8.5);
+    expect(V.IST_HOURS).toBe(137.5);
     expect(V.SALDO_HOURS).toBe(1.5);
   });
-  it('Konto kumuliert (7.2)', () => {
+  it('§7.2 Konto kumuliert', () => {
+    expect(V.MONTHS.map((m) => m.konto)).toEqual([1.5, -6.5, -0.5, 2]);
     let k = 0;
     V.MONTHS.forEach((m) => { k += m.saldo; expect(m.konto).toBeCloseTo(k, 6); });
   });
-  it('Urlaubskonto (8.1–8.3)', () => {
-    expect(V.VAC_BUDGET).toBe(V.VAC_ENTITLEMENT + V.VAC_CARRYOVER);
-    expect(V.VAC_REMAINING).toBe(V.VAC_BUDGET - V.VAC_USED);
+  it('§8 Urlaubskonto 13.4 (+ Übertrag)', () => {
+    expect(V.VAC_BUDGET).toBe(32);
+    expect(V.VAC_REMAINING).toBe(28);
   });
-  it('Betriebsferien-Split (9.4): Urlaub solange Rest ≥ 1', () => {
-    let rest = V.CLOSURE_REST_BEFORE;
-    V.CLOSURE_DAYS.forEach((d) => {
-      const t = rest >= 1 ? 'VACATION' : 'OVERTIME';
-      expect(d.type).toBe(t);
-      if (t === 'VACATION') rest -= 1;
-      expect(d.restAfter).toBe(rest);
-    });
+  it('§9.4 Split: 3 Tage Rest, 5 Schließtage', () => {
+    expect(V.CLOSURE_DAYS.map((d) => d.type)).toEqual(['VACATION', 'VACATION', 'VACATION', 'OVERTIME', 'OVERTIME']);
+    expect(V.CLOSURE_DAYS.map((d) => d.restBefore)).toEqual([3, 2, 1, 0, 0]);
+    expect(V.CLOSURE_OVERTIME_HOURS).toBe(16);
+  });
+  it('ClosureSplit nennt die Voraussetzung (Wortlaut Settings.tsx)', () => {
+    const html = renderToString(createElement(DIAGRAMS['betriebsferien-split']));
+    expect(html).toContain('Überzählige Betriebsferien als Überstundenabbau');
   });
 });
