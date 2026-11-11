@@ -91,3 +91,61 @@ def test_check_for_updates_rejects_expired_manifest(monkeypatch):
     assert updater.check_for_updates("https://updates.mr-development.de") is None
     monkeypatch.setattr(updater, "_check_manifest_expiry", lambda m: None)
     assert updater.check_for_updates("https://updates.mr-development.de") is not None
+
+
+# --- Code-Review 2026-11-11 (ops-06, ops-19) ---
+
+def test_update_url_is_urlencoded(monkeypatch):
+    """ops-19: Sonderzeichen der Lizenz-ID verfälschen die Abfrage nicht."""
+    seen = {}
+
+    def fake_urlopen(req, *a, **k):
+        seen["url"] = req.full_url
+        raise OSError("down")
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", fake_urlopen)
+    updater.check_for_updates("https://u.example", "a&b=c+d#e f")
+    from urllib.parse import urlparse, parse_qs
+    q = parse_qs(urlparse(seen["url"]).query)
+    assert q["license_id"] == ["a&b=c+d#e f"]
+    assert set(q) == {"version", "license_id", "os"}
+
+
+def test_unreachable_server_is_reported_as_failure_not_as_current(monkeypatch):
+    """ops-06: Netzfehler ist von 'aktuell' unterscheidbar; Erfolg räumt den Fehler weg."""
+    def down(*a, **k):
+        raise OSError("down")
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", down)
+    updater._set_check_failure(None)
+    monkeypatch.setattr(updater, "_cached_update", None)
+    assert updater.check_for_updates("https://u.example") is None
+    assert updater.get_last_check_failure() is not None
+
+    import io, json
+
+    class _Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    body = json.dumps({"latest": updater.APP_VERSION}).encode()
+    monkeypatch.setattr(updater.urllib.request, "urlopen", lambda *a, **k: _Resp(body))
+    monkeypatch.setattr(updater, "_verify_manifest_signature", lambda m: None)
+    monkeypatch.setattr(updater, "_check_manifest_expiry", lambda m: None)
+    assert updater.check_for_updates("https://u.example") is None
+    assert updater.get_last_check_failure() is None
+
+
+def test_check_endpoint_flags_failed_check(monkeypatch):
+    from app.routers import admin_updates
+    monkeypatch.setattr(admin_updates.settings, "UPDATE_SERVER_URL", "https://u.example")
+    monkeypatch.setattr(admin_updates, "get_current_license", lambda: None)
+    monkeypatch.setattr(admin_updates, "check_for_updates", lambda *a, **k: None)
+    monkeypatch.setattr(admin_updates, "get_last_check_failure", lambda: "Server weg")
+    r = admin_updates.trigger_update_check(current_user=None)
+    assert r["check_failed"] is True and r["update_available"] is False
+    monkeypatch.setattr(admin_updates, "get_last_check_failure", lambda: None)
+    assert admin_updates.trigger_update_check(current_user=None)["check_failed"] is False

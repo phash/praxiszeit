@@ -5,7 +5,8 @@ Checks for available updates against a central update server.
 Updates are downloaded and applied by the Process Manager.
 
 The update flow:
-1. Backend periodically checks for updates (background task)
+1. The admin dashboard triggers a check (POST /api/admin/updates/check, once per
+   browser session; there is no background task)
 2. Admin sees notification in dashboard
 3. Admin triggers download via API
 4. Admin triggers install via API -> Process Manager handles restart
@@ -21,7 +22,7 @@ import ssl
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -192,6 +193,23 @@ class UpdateInfo:
 # --- Module state ---
 _last_check: Optional[datetime] = None
 _cached_update: Optional[UpdateInfo] = None
+# ops-06: Grund des letzten gescheiterten Laufs (None = Server wurde erreicht und
+# das Manifest angenommen). "Keine Updates" und "Server unerreichbar" sind sonst
+# nicht zu unterscheiden.
+_last_check_failure: Optional[str] = None
+
+
+def get_last_check_failure() -> Optional[str]:
+    return _last_check_failure
+
+
+def _set_check_failure(reason: Optional[str]) -> None:
+    """Merkt den Fehlerzustand; als Warnung nur beim Wechsel in den Fehlerzustand
+    (ein Dauerfehler soll das Log nicht fluten, aber sichtbar sein)."""
+    global _last_check_failure
+    if reason and not _last_check_failure:
+        logger.warning("Update-Prüfung fehlgeschlagen: %s", reason)
+    _last_check_failure = reason
 
 
 def check_for_updates(server_url: str, license_id: str = "") -> Optional[UpdateInfo]:
@@ -208,12 +226,10 @@ def check_for_updates(server_url: str, license_id: str = "") -> Optional[UpdateI
     global _last_check, _cached_update
 
     os_name = platform.system().lower()
-    url = (
-        f"{server_url.rstrip('/')}/v1/check"
-        f"?version={APP_VERSION}"
-        f"&license_id={license_id}"
-        f"&os={os_name}"
-    )
+    # ops-19: URL-kodieren, sonst verfälschen &, #, + oder Leerzeichen der Lizenz-ID
+    # die Abfrage.
+    query = urlencode({"version": APP_VERSION, "license_id": license_id, "os": os_name})
+    url = f"{server_url.rstrip('/')}/v1/check?{query}"
 
     try:
         ctx = ssl.create_default_context()
@@ -221,7 +237,7 @@ def check_for_updates(server_url: str, license_id: str = "") -> Optional[UpdateI
         with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
             data = json.loads(resp.read().decode())
     except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
-        logger.debug(f"Update check failed (non-critical): {e}")
+        _set_check_failure(f"Update-Server nicht erreichbar ({type(e).__name__}: {e})")
         _last_check = datetime.now(timezone.utc)
         return _cached_update  # Return cached result if available
 
@@ -234,8 +250,11 @@ def check_for_updates(server_url: str, license_id: str = "") -> Optional[UpdateI
         _check_manifest_expiry(data)
     except ValueError as e:
         logger.warning(f"Update manifest rejected: {e}")
+        _set_check_failure(f"Update-Manifest abgelehnt ({e})")
         _cached_update = None
         return None
+
+    _set_check_failure(None)
 
     latest = data.get("latest", APP_VERSION)
     # Audit R3 (A08 anti-rollback): only treat a STRICTLY NEWER version as an
@@ -252,6 +271,7 @@ def check_for_updates(server_url: str, license_id: str = "") -> Optional[UpdateI
         _verify_download_host(download_url)
     except ValueError as e:
         logger.warning(f"Update rejected: {e}")
+        _set_check_failure(f"Update abgelehnt ({e})")
         _cached_update = None
         return None
 

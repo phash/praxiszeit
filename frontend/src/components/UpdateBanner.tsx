@@ -3,6 +3,16 @@ import { Download, X } from 'lucide-react';
 import apiClient from '../api/client';
 import { safeHttpUrl } from '../utils/url';
 
+/** sessionStorage kann im privaten Modus/bei gesperrtem Speicher werfen (ops-07). */
+function readStore(key: string): string | null {
+  try { return sessionStorage.getItem(key); } catch { return null; }
+}
+function writeStore(key: string, value: string): void {
+  try { sessionStorage.setItem(key, value); } catch { /* ohne Speicher: kein Cache */ }
+}
+
+const NOT_CONFIGURED = 'not-configured';
+
 interface UpdateData {
   latest_version: string;
   current_version: string;
@@ -26,14 +36,15 @@ export default function UpdateBanner() {
     let cancelled = false;
     const apply = (data: any) => {
       if (!data?.update_available || !data?.update) return;
-      if (sessionStorage.getItem('pz-update-dismissed') === data.update.latest_version) return;
+      if (readStore('pz-update-dismissed') === data.update.latest_version) return;
       setInfo(data.update);
       // download_page stammt vom Update-Server → vor dem Rendern als href
       // auf ein sicheres http(s)-Schema einschränken (kein javascript:/data:).
       const safe = safeHttpUrl(data.download_page);
       if (safe) setDownloadPage(safe);
     };
-    const cached = sessionStorage.getItem('pz-update-check');
+    const cached = readStore('pz-update-check');
+    if (cached === NOT_CONFIGURED) return; // 404: kein Update-Server, nicht erneut fragen
     if (cached) {
       try { apply(JSON.parse(cached)); } catch { /* ignore */ }
       return;
@@ -42,10 +53,15 @@ export default function UpdateBanner() {
       try {
         const { data } = await apiClient.post('/admin/updates/check');
         if (cancelled) return;
-        sessionStorage.setItem('pz-update-check', JSON.stringify(data));
+        // ops-06: eine fehlgeschlagene Prüfung ("Server unerreichbar") nicht für die
+        // ganze Sitzung cachen, sonst fehlt ein offenes Update bis zum Neustart.
+        if (!data?.check_failed) writeStore('pz-update-check', JSON.stringify(data));
         apply(data);
-      } catch {
-        // 404 (kein Update-Server) oder Netzwerkfehler → kein Banner
+      } catch (err) {
+        // 404 (kein Update-Server) → für die Sitzung merken; Netzwerkfehler → kein Banner
+        if ((err as { response?: { status?: number } })?.response?.status === 404) {
+          writeStore('pz-update-check', NOT_CONFIGURED);
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -81,7 +97,7 @@ export default function UpdateBanner() {
       </div>
       <button
         onClick={() => {
-          sessionStorage.setItem('pz-update-dismissed', info.latest_version);
+          writeStore('pz-update-dismissed', info.latest_version);
           setDismissed(true);
         }}
         aria-label="Hinweis ausblenden"
