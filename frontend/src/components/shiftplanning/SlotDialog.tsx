@@ -38,6 +38,8 @@ interface SlotDialogProps {
   onCopy?: (weekdays: number[], fields: SlotInput, userIds: string[]) => Promise<void> | void;
   // #371: enabled planner weekdays (0=Mo … 6=So). Undefined → all seven.
   weekdays?: number[];
+  // ui-22: Mitarbeiterliste konnte nicht geladen werden (≠ „keine Mitarbeiter“).
+  employeesError?: boolean;
 }
 
 export default function SlotDialog({
@@ -51,6 +53,7 @@ export default function SlotDialog({
   onClose,
   onCopy,
   weekdays,
+  employeesError = false,
 }: SlotDialogProps) {
   const titleId = useId();
   // #371: restrict the weekday picker + copy targets to enabled planner days.
@@ -66,7 +69,9 @@ export default function SlotDialog({
   const [copyDays, setCopyDays] = useState<number[]>([]); // #322
   const [copying, setCopying] = useState(false);
   // #305 M2d: workstation_id -> set of qualified user_ids (for the "not trained" hint)
-  const [qualifiedByWs, setQualifiedByWs] = useState<Record<string, Set<string>>>({});
+  // ui-05: null = (noch) unbekannt → kein „nicht eingewiesen“-Hinweis, bis die Matrix geladen ist.
+  const [qualifiedByWs, setQualifiedByWs] = useState<Record<string, Set<string>> | null>(null);
+  const [qualificationsFailed, setQualificationsFailed] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -78,15 +83,24 @@ export default function SlotDialog({
       setNote(initial.note ?? '');
       setUserIds(initial.userIds);
       setCopyDays([]);
+      setQualifiedByWs(null);
+      setQualificationsFailed(false);
+      let cancelled = false;
       getQualifications()
         .then((m) => {
+          if (cancelled) return;
           const map: Record<string, Set<string>> = {};
           m.qualifications.forEach((q) => {
             (map[q.workstation_id] ??= new Set()).add(q.user_id);
           });
           setQualifiedByWs(map);
         })
-        .catch(() => setQualifiedByWs({}));
+        .catch(() => {
+          if (!cancelled) setQualificationsFailed(true);
+        });
+      return () => {
+        cancelled = true;
+      };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -94,7 +108,7 @@ export default function SlotDialog({
   if (!isOpen) return null;
 
   const isQualified = (userId: string) =>
-    !workstationId || (qualifiedByWs[workstationId]?.has(userId) ?? false);
+    !workstationId || qualifiedByWs === null || (qualifiedByWs[workstationId]?.has(userId) ?? false);
 
   const timeInvalid = end <= start;
   const noWorkstation = !workstationId;
@@ -215,7 +229,9 @@ export default function SlotDialog({
             <div>
               <span className="block text-sm font-medium text-gray-700 mb-2">Zugewiesene Mitarbeiter</span>
               <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
-                {employees.length === 0 ? (
+                {employeesError ? (
+                  <p role="alert" className="p-3 text-sm text-red-600">Mitarbeiter konnten nicht geladen werden.</p>
+                ) : employees.length === 0 ? (
                   <p className="p-3 text-sm text-gray-500">Keine Mitarbeiter verfügbar.</p>
                 ) : (
                   employees.map((emp) => (
@@ -241,6 +257,11 @@ export default function SlotDialog({
                   ))
                 )}
               </div>
+              {qualificationsFailed && (
+                <p role="status" className="mt-1 text-xs text-gray-500">
+                  Einweisungen konnten nicht geladen werden – Hinweise „nicht eingewiesen“ fehlen.
+                </p>
+              )}
               {minStaff > 0 && userIds.length < minStaff && (
                 <p className="mt-1 text-xs text-amber-600">
                   Unterbesetzt: {userIds.length}/{minStaff} zugewiesen.

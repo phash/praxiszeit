@@ -90,7 +90,7 @@ function DraggableBlock({ slot, box, onClick }: { slot: ShiftSlot; box: SlotBox;
         boxShadow: isOver ? '0 0 0 2px #2563eb inset' : undefined,
         zIndex: isDragging ? 20 : 1,
       }}
-      className="absolute rounded-md p-1 text-[11px] leading-tight text-gray-800 cursor-grab touch-none"
+      className="absolute rounded-md p-1 text-[11px] leading-tight text-gray-800 cursor-grab"
       title={box.grown ? 'Anzeige reicht über das Zeitfenster hinaus' : undefined}
       {...listeners}
       {...attributes}

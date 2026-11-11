@@ -84,6 +84,8 @@ export default function WorkstationManager({ workstations, locations, onChanged 
       onConfirm: async () => {
         try {
           await api.deleteWorkstation(ws.id);
+          // ui-14: wurde genau dieser Arbeitsplatz bearbeitet, das Formular zurücksetzen
+          if (editId === ws.id) reset();
           toast.success('Arbeitsplatz gelöscht');
           onChanged();
         } catch (err) {

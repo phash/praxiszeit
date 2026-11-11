@@ -1149,7 +1149,7 @@ Klicken Sie im Editor auf `Automatisch füllen`. Der Dialog besetzt die Slots mi
 ![Dialog „Automatisch füllen“ mit der Zielwoche, der Wahl zwischen „Alle Zuweisungen neu verteilen“ und „Nur Lücken auffüllen“ und dem Knopf „Generieren“](/help/img/pl-schicht-fuellen.webp)
 
 1. Wählen Sie die **Zielwoche**. Sie bestimmt, welche Abwesenheiten und Stunden berücksichtigt werden; der Dialog nennt darunter den Montag der Woche.
-2. Wählen Sie den **Modus**: „Alle Zuweisungen neu verteilen“ oder „Nur Lücken auffüllen (vorhandene behalten)“.
+2. Wählen Sie den **Modus**: „Nur Lücken auffüllen (vorhandene behalten)“ (voreingestellt) oder „Alle Zuweisungen neu verteilen“. Das Neuverteilen löscht die bestehenden Zuweisungen des Plans und fragt vorher nach.
 3. Klicken Sie auf `Generieren`. Das Ergebnis ist ein **Entwurf** zum Prüfen; der Plan wird dabei **nicht** aktiviert.
 
 > **Gut zu wissen:** Der Generator liest Abwesenheiten, Wochenstunden und Überstundenkonto nur und verändert daran nichts. Er setzt niemanden ein, der an dem Tag abwesend oder außerhalb seines Beschäftigungsfensters ist, und keine Person auf zwei überlappende Slots. Slots, die sich nicht besetzen lassen, bleiben offen; eine Meldung und die Unterbesetzungs-Markierung sagen es Ihnen.

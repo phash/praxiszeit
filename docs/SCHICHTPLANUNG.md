@@ -89,7 +89,7 @@ Datenverlust). Technisch: tenant-weites Setting `shift_planning_weekdays`
 - Die ausklappbare **Jahresübersicht** zeigt als Zeitstrahl, welcher Plan in welchem Zeitraum des Jahres läuft (mit „heute"-Markierung).
 
 **Auto-Generierung (automatisch füllen):**
-- **Automatisch füllen** öffnet einen Dialog: Zielwoche (für Abwesenheiten/Stunden) + Modus (**alle neu verteilen** oder **nur Lücken auffüllen**).
+- **Automatisch füllen** öffnet einen Dialog: Zielwoche (für Abwesenheiten/Stunden) + Modus (**nur Lücken auffüllen**, voreingestellt, oder **alle neu verteilen** – löscht die bestehenden Zuweisungen des Plans nach Rückfrage).
 - Der Generator besetzt die Slots greedy mit **eingewiesenen, an dem Tag nicht abwesenden** Mitarbeitenden (innerhalb ihres Beschäftigungsfensters, keine Doppelbelegung überlappender Slots), ausgewogen nach **Auslastung** und **Überstundenkonto**. Ergebnis ist ein **Entwurf** zum Review; der Plan wird **nicht** automatisch aktiv. Nicht besetzbare Slots bleiben offen (Rückmeldung im Toast + Unterbesetzungs-Markierung).
 - Liest Abwesenheiten/Stunden/Überstunden **nur lesend** — verändert nichts am Berechnungs-/ArbZG-Modell.
 

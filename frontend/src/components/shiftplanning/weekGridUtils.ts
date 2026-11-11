@@ -280,3 +280,26 @@ export function computeWeekLayout(slots: SlotLike[]): WeekLayout {
 
   return { startHour, endHour, height: maxContentBottom, hourMarks, boxes };
 }
+
+/**
+ * ui-06: neue Zeiten eines per Drag & Drop verschobenen Blocks. Bleibt die
+ * vertikale Verschiebung nach dem Einrasten 0 (reiner Tageswechsel), behält der
+ * Slot seine Zeiten — auch außerhalb des 06:00–22:00-Rasters. Bei echter
+ * Verschiebung wird auf die Rasterhülle begrenzt, die den Slot selbst
+ * einschließt (ein Slot um 05:30 darf also weiter in den Frühbereich).
+ */
+export function movedSlotTimes(
+  startTime: string,
+  endTime: string,
+  deltaYPx: number,
+): { start: number; end: number } {
+  const origStart = timeToMinutes(startTime);
+  const origEnd = timeToMinutes(endTime);
+  const duration = origEnd - origStart;
+  const deltaMin = pxDeltaToMinutes(deltaYPx);
+  if (deltaMin === 0) return { start: origStart, end: origEnd };
+  const lo = Math.min(GRID_START_HOUR * 60, origStart);
+  const hi = Math.max(GRID_END_HOUR * 60, origEnd);
+  const start = Math.max(lo, Math.min(hi - duration, snap(origStart + deltaMin)));
+  return { start, end: start + duration };
+}

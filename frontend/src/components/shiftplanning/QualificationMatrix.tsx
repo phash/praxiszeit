@@ -152,10 +152,10 @@ export default function QualificationMatrix() {
                           <input
                             type="checkbox"
                             checked={checked}
-                            disabled={saving}
+                            aria-busy={saving}
                             onChange={() => toggle(u.id, ws.id)}
                             aria-label={`${u.first_name} ${u.last_name} – ${ws.name}`}
-                            className="h-4 w-4 rounded border-gray-300 cursor-pointer disabled:cursor-wait"
+                            className="h-4 w-4 rounded border-gray-300 cursor-pointer aria-busy:cursor-wait"
                           />
                         </td>
                       );

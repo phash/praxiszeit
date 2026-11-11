@@ -3,6 +3,7 @@ import DialogFocusTrap from '../DialogFocusTrap';
 import { X, Wand2 } from 'lucide-react';
 import Button from '../Button';
 import FormInput from '../FormInput';
+import ConfirmDialog from '../ConfirmDialog';
 import { useToast } from '../../contexts/ToastContext';
 import { getErrorMessage } from '../../utils/errorMessage';
 import * as api from '../../api/shiftPlanning';
@@ -10,6 +11,8 @@ import { mondayOfWeek } from './weekGridUtils';
 
 interface Props {
   planId: string;
+  // ui-03: Zahl der vorhandenen Zuweisungen im Plan (für die Rückfrage bei „neu verteilen“).
+  assignmentCount?: number;
   onGenerated: () => void;
   onClose: () => void;
 }
@@ -24,18 +27,29 @@ function thisMonday(): string {
  * Auto-Generierung (#305 M2): wählt eine Zielwoche (für Abwesenheiten/Stunden)
  * und einen Modus; ruft den Greedy-Generator und meldet das Ergebnis.
  */
-export default function GenerateDialog({ planId, onGenerated, onClose }: Props) {
+export default function GenerateDialog({ planId, assignmentCount, onGenerated, onClose }: Props) {
   const titleId = useId();
   const toast = useToast();
   const [weekDate, setWeekDate] = useState(thisMonday());
-  const [mode, setMode] = useState<'replace' | 'fill_gaps'>('replace');
+  const [mode, setMode] = useState<'replace' | 'fill_gaps'>('fill_gaps');
   const [submitting, setSubmitting] = useState(false);
+  const [confirmReplace, setConfirmReplace] = useState(false);
 
   const monday = weekDate ? mondayOfWeek(weekDate) : '';
 
-  const run = async (e: React.FormEvent) => {
+  const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!monday || submitting) return;
+    // ui-03: „neu verteilen“ löscht alle Zuweisungen des Plans sofort → nachfragen
+    if (mode === 'replace' && assignmentCount !== 0) {
+      setConfirmReplace(true);
+      return;
+    }
+    void run();
+  };
+
+  const run = async () => {
+    setConfirmReplace(false);
     setSubmitting(true);
     try {
       const res = await api.generatePlan(planId, { target_monday: monday, mode });
@@ -65,10 +79,11 @@ export default function GenerateDialog({ planId, onGenerated, onClose }: Props) 
               <X size={20} />
             </button>
           </div>
-          <form onSubmit={run} className="p-4 space-y-4">
+          <form onSubmit={onSubmit} className="p-4 space-y-4">
             <p className="text-sm text-gray-500">
               Der Plan wird automatisch mit eingewiesenen, verfügbaren Mitarbeitenden besetzt (ausgewogen nach Auslastung
               und Überstunden). Sie können den Entwurf danach anpassen. Der Plan wird dabei <strong>nicht</strong> aktiviert.
+              Bei „Alle Zuweisungen neu verteilen“ werden <strong>bestehende Zuweisungen gelöscht</strong>.
             </p>
             <FormInput
               label="Zielwoche (für Abwesenheiten/Stunden)"
@@ -98,6 +113,19 @@ export default function GenerateDialog({ planId, onGenerated, onClose }: Props) 
               </Button>
             </div>
           </form>
+          <ConfirmDialog
+            isOpen={confirmReplace}
+            title="Alle Zuweisungen neu verteilen?"
+            message={
+              assignmentCount
+                ? `Die ${assignmentCount} vorhandenen Zuweisungen dieses Plans werden gelöscht und neu verteilt. Das lässt sich nicht rückgängig machen.`
+                : 'Alle vorhandenen Zuweisungen dieses Plans werden gelöscht und neu verteilt. Das lässt sich nicht rückgängig machen.'
+            }
+            confirmLabel="Neu verteilen"
+            variant="warning"
+            onConfirm={run}
+            onCancel={() => setConfirmReplace(false)}
+          />
         </div>
       </DialogFocusTrap>
     </div>

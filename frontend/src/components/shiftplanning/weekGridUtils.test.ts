@@ -11,6 +11,7 @@ import {
   computeWeekLayout,
   visibleWeekdays,
   estimateContentHeight,
+  movedSlotTimes,
   type SlotLike,
   GRID_START_HOUR,
   GRID_END_HOUR,
@@ -288,5 +289,29 @@ describe('visibleWeekdays (#371 configurable weekdays)', () => {
   it('falls back to Mo–Fr when the config is empty or missing', () => {
     expect(visibleWeekdays(undefined, [])).toEqual([0, 1, 2, 3, 4]);
     expect(visibleWeekdays(undefined, undefined)).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
+describe('movedSlotTimes (ui-06)', () => {
+  it('reiner Tageswechsel behält Zeiten außerhalb des Rasters (05:30–09:30)', () => {
+    expect(movedSlotTimes('05:30', '09:30', 0)).toEqual({ start: 330, end: 570 });
+  });
+  it('Slot nach 22:00 bleibt beim Tageswechsel unverändert', () => {
+    expect(movedSlotTimes('21:00', '23:00', 0)).toEqual({ start: 1260, end: 1380 });
+  });
+  it('echte Verschiebung begrenzt auf die Rasterhülle', () => {
+    // 12 Stunden nach unten ab 08:00–12:00: Ende maximal 22:00
+    expect(movedSlotTimes('08:00', '12:00', HOUR_PX * 12)).toEqual({ start: 18 * 60, end: 22 * 60 });
+    // weit nach oben: Beginn frühestens 06:00
+    expect(movedSlotTimes('08:00', '12:00', -HOUR_PX * 12)).toEqual({ start: 360, end: 600 });
+  });
+  it('Frühdienst: Verschiebung nach unten rastet normal, nach oben endet an der eigenen Hülle', () => {
+    expect(movedSlotTimes('05:30', '09:30', HOUR_PX / 2)).toEqual({ start: 360, end: 600 });
+    expect(movedSlotTimes('05:30', '09:30', -HOUR_PX / 2)).toEqual({ start: 330, end: 570 });
+  });
+  it('Dauer über 16 h liefert nie einen negativen Beginn', () => {
+    const r = movedSlotTimes('06:00', '23:00', HOUR_PX);
+    expect(r.start).toBeGreaterThanOrEqual(0);
+    expect(r.end - r.start).toBe(17 * 60);
   });
 });

@@ -3015,7 +3015,7 @@ export const praxisleitung: Handbook = {
           shot: 'pl-schicht-fuellen',
           steps: [
             { n: 1, text: 'Wählen Sie die **Zielwoche**. Sie bestimmt, welche Abwesenheiten und Stunden berücksichtigt werden; der Dialog nennt darunter den Montag der Woche.' },
-            { n: 2, text: 'Wählen Sie den **Modus**: „Alle Zuweisungen neu verteilen“ oder „Nur Lücken auffüllen (vorhandene behalten)“.' },
+            { n: 2, text: 'Wählen Sie den **Modus**: „Nur Lücken auffüllen (vorhandene behalten)“ (voreingestellt) oder „Alle Zuweisungen neu verteilen“. Das Neuverteilen löscht die bestehenden Zuweisungen des Plans und fragt vorher nach.' },
             { n: 3, text: 'Klicken Sie auf [[Generieren]]. Das Ergebnis ist ein **Entwurf** zum Prüfen; der Plan wird dabei **nicht** aktiviert.' },
           ],
         },

@@ -5,7 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import type { User } from '../../types/user';
-import { formatHoursHM, pluralDe } from '../../utils/formatters';
+import { formatHoursHM, formatIsoDateDe, pluralDe } from '../../utils/formatters';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 // ── Typen ────────────────────────────────────────────────────────────────────
@@ -57,10 +57,7 @@ function formatTime(t: string): string {
   return t.slice(0, 5); // "07:15:00" → "07:15"
 }
 
-function formatDate(d: string): string {
-  const [y, m, day] = d.split('-');
-  return `${day}.${m}.${y}`;
-}
+const formatDate = formatIsoDateDe;
 
 // ── StepIndicator ─────────────────────────────────────────────────────────────
 
