@@ -371,6 +371,20 @@ describe('<TimeTracking /> Datum beim Bearbeiten (#502)', () => {
     }
   });
 
+  it('gibt dem Plus-Knopf „Neuer Eintrag" einen Namen, der auch ohne sichtbaren Text gilt (P1.2)', async () => {
+    // Unter 640 px ist die Beschriftung `hidden sm:inline` — der Knopf zeigt nur
+    // das Plus-Symbol und hatte dann keinen zugänglichen Namen. jsdom wendet kein
+    // CSS an, deshalb prüft der Test das Attribut.
+    mockEntries([]);
+    renderPage();
+    const button = await screen.findByRole('button', { name: 'Neuer Eintrag' });
+    expect(button).toHaveAttribute('aria-label', 'Neuer Eintrag');
+    expect(button).toHaveAttribute('title', 'Neuer Eintrag');
+    fireEvent.click(button);
+    const cancel = await screen.findByRole('button', { name: 'Abbrechen' });
+    expect(cancel).toHaveAttribute('aria-label', 'Abbrechen');
+  });
+
   it('färbt den Knopf „Antrag" ohne widersprüchliche Farbklassen (#533)', async () => {
     // Tailwind v4 entscheidet bei gleicher Spezifität nach CSS-Reihenfolge:
     // bg-muted der Variante „secondary" schlug das per className gesetzte

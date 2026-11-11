@@ -769,6 +769,10 @@ export default function TimeTracking() {
               size="md"
               icon={showForm ? X : Plus}
               onClick={() => setShowForm(!showForm)}
+              // P1.2: unter sm ist die Beschriftung ausgeblendet — der Name muss
+              // trotzdem am Knopf stehen (Bildschirmleser, Sprachsteuerung).
+              aria-label={showForm ? 'Abbrechen' : 'Neuer Eintrag'}
+              title={showForm ? 'Abbrechen' : 'Neuer Eintrag'}
             >
               <span className="hidden sm:inline">{showForm ? 'Abbrechen' : 'Neuer Eintrag'}</span>
             </Button>
