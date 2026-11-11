@@ -1461,15 +1461,16 @@ export const praxisleitung: Handbook = {
           text:
             '**Arbeitszeit-Fenster (Altbestand, nur Kappung):** Das Update auf 1.20.0 hat jedes bis dahin hinterlegte Soll-Arbeitszeit-Fenster als einen Block je Tag übernommen. Es kappt weiter, ändert das Soll aber nicht. ' +
             'Im Dialog steht es als [[Arbeitszeit-Fenster (Altbestand, nur Kappung)]] mit [[In Arbeitszeit-Blöcke umwandeln]] (Zeiten vorbefüllt; Sie tragen die Pause ein und passen Zeiten außerhalb des 5-Minuten-Rasters an, z. B. 07:37 oder 23:59; nur bei aktiver Stundenzählung) ' +
-            'und [[Fenster entfernen]] (ab dem Gültig-ab-Datum wird nicht mehr gekappt). Eine Änderung in den Modi Gleichmäßig oder Nach Tagen übernimmt ein Altfenster, solange Sie es nicht entfernen. ' +
+            'und [[Fenster entfernen]] (ab dem Gültig-ab-Datum wird nicht mehr gekappt). Eine Änderung in den Modi Gleichmäßig oder Nach Tagen übernimmt ein Altfenster, solange Sie es nicht entfernen – für Altfenster gilt also nicht, dass der Moduswechsel die Blöcke beendet (siehe vorheriger Tipp). ' +
             'Bis Version 1.19.2 wurde außerdem ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt; solche Einträge bleiben, wie sie sind. Öffnen Sie einen im Admin-Dashboard oder Monatsjournal und speichern ihn unverändert, wird er mit der tatsächlich gestempelten Zeit neu berechnet.',
         },
         {
           kind: 'tip',
           tone: 'warn',
           text:
-            '**Arbeitsrecht und Mitbestimmung:** Ändert sich durch die Blöcke der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine Vertragsänderung und braucht das Einverständnis der beschäftigten Person (sonst Änderungskündigung, § 2 KSchG; bei Teilzeit §§ 8, 9 TzBfG). ' +
-            'Mit Betriebsrat sind Lage, Verteilung und Pausen (§ 87 Abs. 1 Nr. 2 BetrVG) mitbestimmungspflichtig; ohne Zustimmung ist die Maßnahme gegenüber den Beschäftigten unwirksam. PraxisZeit prüft das nicht.',
+            '**Arbeitsrecht und Mitbestimmung:** Ändert sich durch die Blöcke der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine Vertragsänderung und braucht das Einverständnis der beschäftigten Person (sonst Änderungskündigung, § 2 KSchG). Die Lage der Arbeitszeit kann der Vertrag festlegen; sonst ändern Sie sie im Rahmen des Direktionsrechts (§ 106 GewO) nach billigem Ermessen und nur für die Zukunft. Vereinbarte Arbeitszeiten sind schriftlich nachzuweisen, eine Änderung spätestens am Tag des Wirksamwerdens (§§ 2, 3 NachwG). ' +
+            'Mit Betriebsrat sind Lage, Verteilung und Pausen (§ 87 Abs. 1 Nr. 2 BetrVG) und die Kappung als technische Einrichtung (Nr. 6) mitbestimmungspflichtig; ohne Zustimmung des Betriebsrats ist die Maßnahme in der Regel unwirksam. ' +
+            'PraxisZeit prüft das nicht und ersetzt keine Rechtsberatung – im Zweifel fragen Sie eine Fachanwältin oder einen Fachanwalt für Arbeitsrecht.',
         },
         {
           kind: 'task',
@@ -1497,7 +1498,7 @@ export const praxisleitung: Handbook = {
           shot: 'pl-auswirkung',
           steps: [
             { n: 1, text: '**Überschrift:** der Anlass und der Wirkungsbereich, z. B. „Rückwirkende Änderung: 14.10.2026 – …“. Darunter Puffer, geänderte Tage und das Tagessoll je Wochentag vorher → nachher.' },
-            { n: 2, text: '**Zeiteinträge:** wie viele neu berechnet werden, je Monat mit der angerechneten Zeit vorher → nachher; übersprungene mit Grund. Danach die Zahl der Abwesenheiten, deren Stunden umgestellt werden.' },
+            { n: 2, text: '**Zeiteinträge:** wie viele neu berechnet werden, je Monat mit der angerechneten Zeit vorher → nachher; übersprungene mit Grund. Danach die Zahl der Abwesenheiten, deren Stunden umgestellt werden. Offene Einträge vergangener Tage (vergessenes Ausstempeln) schließt PraxisZeit vorher automatisch und rechnet sie danach regulär neu; beim Überstundenkonto zählen sie in der Tabelle schon unter „bisher“.' },
             { n: 3, text: '**Tabelle** mit den Spalten bisher, neu und Δ: **Überstunden** und **Urlaub verbraucht** (bei geändertem Anspruch auch **Urlaubsanspruch**) mit allen drei Werten; für **Soll im Zeitraum** und **Angerechnet** steht nur die Differenz Δ.' },
             { n: 4, text: '[[Einzelheiten]] listet jeden Eintrag mit seinen Zeiten vorher → nachher.' },
             { n: 5, text: 'Setzen Sie den Haken [[Ich habe die Auswirkungen geprüft und möchte speichern]] und klicken Sie auf [[Speichern]]. PraxisZeit meldet danach, wie viele Einträge neu berechnet wurden.' },
@@ -1523,9 +1524,9 @@ export const praxisleitung: Handbook = {
           tone: 'info',
           text:
             '**Änderung löschen:** Das Papierkorb-Symbol steht nur an der jüngsten Zeile des Verlaufs. Das Löschen rechnet Einträge und Abwesenheiten zurück; ' +
-            'verkürzt es, setzt PraxisZeit standardmäßig ab heute auf den vorherigen Stand zurück ([[Zurücksetzen]]) – rückwirkend nur mit Grund. ' +
+            'verkürzt es, setzt PraxisZeit standardmäßig ab dem frühesten Tag ohne Verlust auf den vorherigen Stand zurück ([[Zurücksetzen]]) – meist heute, morgen, wenn die Person heute schon gestempelt hat oder eingestempelt ist, bei Minijob-Einstellungen der 1. des Folgemonats; rückwirkend nur mit Grund. ' +
             'Eine Änderung, die erst nach heute beginnt, verkürzt beim Löschen nichts; dort genügt „Löschen“. ' +
-            'Hat sich der Verlauf seit dem Öffnen geändert – etwa weil in einem zweiten Fenster eine weitere Änderung dazwischen angelegt wurde –, lehnt PraxisZeit die Rücksetzung ab, statt deren Vertrag zu überschreiben: ' +
+            'Hat sich der Verlauf seit dem Öffnen geändert – etwa weil in einem zweiten Fenster eine weitere Änderung dazwischen angelegt wurde –, lehnt PraxisZeit die Rücksetzung ab, statt den Vertrag dieser Änderung zu überschreiben: ' +
             '„Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden.“ Der Bereich lädt die Auswirkung dann neu.',
         },
         {
@@ -1567,6 +1568,7 @@ export const praxisleitung: Handbook = {
           text:
             '**Automatisch geschlossene Einträge:** Das automatisch gesetzte 23:59 ist kein Stempel. Beim Bearbeiten zeigt das Formular das angerechnete Ende (z. B. 18:15); speichern Sie es unverändert, etwa nur mit ergänzter Pause, bleibt die Kennzeichnung „automatisch geschlossen“. ' +
             'Erst das tatsächliche Ende (Mitarbeitende per Änderungsantrag) hebt sie auf. Auch ein tatsächliches Ende um **23:59**, z. B. nach einem Notdienst, lässt sich eintragen: Es gilt dann als echter Stempel, wird wie jedes Ende gegen die Blöcke gekappt und nach dem Anerkennen bis 23:59 angerechnet. ' +
+            '**Ausnahmen:** Hat das automatische Schließen nichts gekappt (Person ohne Arbeitszeit-Blöcke, Wochenende oder Feiertag, ohne Stundenzählung), steht als Ende schon 23:59; ein erneut gespeichertes 23:59 lässt sich dann nicht vom automatischen Wert unterscheiden, und die Kennzeichnung bleibt. An einem Werktag ohne Block (bei Personen mit Blöcken) zählt der automatisch geschlossene Eintrag 0 h. ' +
             'Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15) – auch wenn die Person tatsächlich um diese Zeit aufgehört hat.',
         },
         {
@@ -1994,7 +1996,7 @@ export const praxisleitung: Handbook = {
           kind: 'tip',
           tone: 'warn',
           text:
-            '**Jugendliche:** Für Jugendliche gelten strengere Pausen- und Schichtzeitregeln (§§ 11, 12 JArbSchG: 30 Min Pause ab 4,5 h, 60 Min ab 6 h, höchstens 4,5 h ohne Pause, Schichtzeit inklusive Lücke höchstens 10 h). ' +
+            '**Jugendliche:** Für Jugendliche gelten strengere Pausen- und Schichtzeitregeln (§§ 11, 12 JArbSchG: 30 Min Pause bei mehr als 4,5 h, 60 Min bei mehr als 6 h, höchstens 4,5 h ohne Pause, Schichtzeit inklusive Lücke höchstens 10 h; weitere Grenzen wie §§ 8, 15 JArbSchG kommen hinzu). ' +
             'PraxisZeit prüft nur die Grenzen für Erwachsene, nicht diese.',
         },
         {

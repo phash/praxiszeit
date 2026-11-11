@@ -97,7 +97,13 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       'Werktag ohne Block = 0 Stunden',
       // Wiederhergestellte Hinweise (Task C1): Recht, Altfenster, Rücksetzung, Protokoll, Lücke.
       'Ändert sich durch die Blöcke der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine Vertragsänderung',
-      'mitbestimmungspflichtig; ohne Zustimmung ist die Maßnahme gegenüber den Beschäftigten unwirksam. PraxisZeit prüft das nicht.',
+      'die Kappung als technische Einrichtung (Nr. 6) mitbestimmungspflichtig; ohne Zustimmung des Betriebsrats ist die Maßnahme in der Regel unwirksam.',
+      '(§§ 2, 3 NachwG)',
+      'PraxisZeit prüft das nicht und ersetzt keine Rechtsberatung',
+      'Offene Einträge vergangener Tage (vergessenes Ausstempeln) schließt PraxisZeit vorher automatisch und rechnet sie danach regulär neu',
+      'bei Minijob-Einstellungen der 1. des Folgemonats',
+      'steht als Ende schon 23:59; ein erneut gespeichertes 23:59 lässt sich dann nicht vom automatischen Wert unterscheiden, und die Kennzeichnung bleibt.',
+      'An einem Werktag ohne Block (bei Personen mit Blöcken) zählt der automatisch geschlossene Eintrag 0 h.',
       'Für Jugendliche gelten strengere Pausen- und Schichtzeitregeln (§§ 11, 12 JArbSchG',
       'PraxisZeit prüft nur die Grenzen für Erwachsene',
       'Arbeitszeit-Fenster (Altbestand, nur Kappung)',
@@ -148,6 +154,8 @@ describe('In-App-Doku: Arbeitszeit-Blöcke (1.20.0)', () => {
       'Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst',
       'Pause in der Lücke wird zusätzlich abgezogen',
       'Am 05.10.2026 gibt es einen anerkannten Zeiteintrag – bitte an die Verwaltung wenden.',
+      'An einem Werktag ohne Block zählt der automatisch geschlossene Eintrag 0 h.',
+      '(§ 611a, § 612 BGB)',
     ]) {
       expect(text).toContain(expected);
     }

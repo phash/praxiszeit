@@ -765,6 +765,7 @@ export const mitarbeitende: Handbook = {
             '**Automatisch geschlossen:** Das 23:59, das PraxisZeit dabei setzt, ist kein Stempel; angerechnet wird nur bis zum Ende Ihres letzten Blocks plus Puffer. ' +
             'Im Antrag steht zunächst das angerechnete Ende (z. B. 18:15) – ersetzen Sie es durch Ihr tatsächliches. Auch ein tatsächliches Ende um **23:59**, z. B. nach einem Notdienst, können Sie eintragen: ' +
             'Es gilt dann als echter Stempel und wird wie jedes Ende an Ihren Blöcken gekürzt; bis 23:59 angerechnet wird es, wenn die Verwaltung den Eintrag anerkennt. ' +
+            '**Ausnahmen:** Hat das automatische Schließen bei Ihnen nichts gekappt (keine Arbeitszeit-Blöcke, Wochenende oder Feiertag, keine Stundenzählung), steht als Ende schon 23:59; ein erneut gespeichertes 23:59 lässt sich dann nicht vom automatischen Wert unterscheiden, und die Kennzeichnung bleibt. An einem Werktag ohne Block zählt der automatisch geschlossene Eintrag 0 h. ' +
             'Ebenso bleibt die Kennzeichnung, wenn Sie genau das angerechnete Ende (z. B. 18:15) eintragen – dann fehlt weiter das tatsächliche Ende. ' +
             'Anerkennen kann die Verwaltung einen solchen Eintrag erst, wenn das tatsächliche Ende eingetragen ist.',
         },
@@ -843,7 +844,7 @@ export const mitarbeitende: Handbook = {
           tone: 'info',
           text:
             '**Nicht angerechnet heißt nicht unbezahlt.** Ob gearbeitete Zeit vergütet wird, entscheidet nicht diese Anrechnung. ' +
-            'Sprechen Sie Ihre Verwaltung an oder beantragen Sie die Anrechnung. Hat Ihre Praxis gar keine Blöcke für Sie hinterlegt, ' +
+            'Maßgeblich ist, ob die Arbeit angeordnet, gebilligt oder geduldet war (§ 611a, § 612 BGB). Sprechen Sie Ihre Verwaltung an oder beantragen Sie die Anrechnung. Hat Ihre Praxis gar keine Blöcke für Sie hinterlegt, ' +
             'zählt Ihre gestempelte Zeit ganz normal. ' +
             'Mehr dazu: [So rechnet PraxisZeit: Arbeitszeit-Blöcke und Kappung](handbuch:so-rechnet#bloecke-kappung).',
         },
