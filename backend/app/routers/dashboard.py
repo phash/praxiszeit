@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import List, Optional
 from app.database import get_db
@@ -11,8 +11,8 @@ from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHisto
 from app.services import calculation_service, milog_service, reclamp_audit
 from app.services.calculation_service import get_schedule_for_date, get_daily_target_for_date
 from app.services.holiday_service import is_holiday
+from app.services.special_days_service import get_special_day_config, special_day_target
 from app.services.timezone_service import today_local, now_local
-from sqlalchemy import extract, and_
 from app.services.settings_service import SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD, get_bool_setting
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -97,11 +97,16 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None,
             absence_dates.add(d)
             d += timedelta(days=1)
 
+    # calc-02: freie/verkuerzte Sondertage (24./31.12., Verkuerzungen) mitrechnen —
+    # ein Tag mit Sondertag-Soll 0 ist kein Tag mit fehlender Buchung.
+    special_cfg = get_special_day_config(db, tenant_id, today.year)
+
     # Check each day using calculation_service for correct per-date targets
     d = start_date
     while d <= end_date:
         schedule = get_schedule_for_date(db, user, d, wh_changes)
-        daily_target = float(get_daily_target_for_date(user, d, schedule))
+        daily_target = float(special_day_target(
+            d, get_daily_target_for_date(user, d, schedule), special_cfg))
         is_workday = daily_target > 0
         if is_workday and d not in entry_dates and d not in absence_dates:
             if not is_holiday(db, d, tenant_id=tenant_id):

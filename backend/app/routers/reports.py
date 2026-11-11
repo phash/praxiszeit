@@ -18,6 +18,7 @@ from app.services import break_validation_service, calculation_service, export_s
 from app.services.timezone_service import now_local, today_local
 from app.services.arbzg_utils import is_night_work
 import calendar
+import math
 from app.services.date_filters import date_in_year, date_in_month, date_in_range, parse_year_month
 from app.core.limiter import limiter
 from app.services.settings_service import SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, get_bool_setting
@@ -32,16 +33,54 @@ IncludeHidden = Annotated[bool, Query(description="Ausgeblendete Mitarbeitende e
 router = APIRouter(prefix="/api/admin/reports", tags=["admin-reports"], dependencies=[Depends(require_admin)])
 
 
-def _get_active_visible_users(db: Session, tenant_id) -> list:
-    """Return all active, non-hidden users for the given tenant, ordered by name.
+def _report_users(db: Session, tenant_id, start: date, end: date) -> list:
+    """calc-13: Personen der Bildschirmberichte — dieselbe Auswahl wie die
+    §16-Dateien (``export_service.export_users``): aktive, nicht ausgeblendete
+    Mitarbeitende PLUS Ausgeschiedene mit Daten im Zeitraum. Sonst widersprechen
+    sich Bildschirm und Datei desselben Zeitraums.
 
-    F-026: explicit tenant filter (RLS is the second line of defense).
+    F-026: ``export_users`` filtert explizit nach Mandant.
     """
-    return db.query(User).filter(
-        User.tenant_id == tenant_id,
-        User.is_active == True,
-        User.is_hidden == False,
-    ).order_by(User.last_name, User.first_name).all()
+    return export_service.export_users(db, tenant_id, start, end, include_hidden=False)
+
+
+def _period_absences(db: Session, tenant_id, user, abs_type, start: date, end: date, cutoff=None) -> list:
+    """calc-07: EINE Abwesenheitsauswahl für Monats- und Wochenbericht.
+
+    Nur Tage im Beschäftigungsfenster der Person; ``cutoff`` (Saldo-Stichtag
+    bei ``soll_basis=bis_heute``) kappt nur, wenn übergeben — Urlaub zählt
+    vorgebuchte Tage als verbraucht (kein Cutoff), Krankheit nur bis zum
+    Stichtag.
+    """
+    rows = db.query(Absence).filter(
+        Absence.user_id == user.id,
+        Absence.tenant_id == tenant_id,  # F-026 belt-and-suspenders
+        Absence.type == abs_type,
+        date_in_range(Absence.date, start, end),
+    ).all()
+    rows = [a for a in rows if calculation_service._within_employment_window(user, a.date)]
+    if cutoff is not None:
+        rows = [a for a in rows if a.date <= cutoff]
+    return rows
+
+
+def _audit_health_export(db: Session, current_user: User, note: str) -> None:
+    """calc-08: EINE Stelle für das Art.-9-Exportprotokoll (``health_export``).
+
+    Nur flushen (wie die JSON-Berichte, L-2): der Eintrag wird mit
+    ``db.commit()`` NACH erfolgreicher Erzeugung (vor ``db.close()``) festgeschrieben —
+    scheitert der Export, bleibt kein „exportiert" ohne Lieferung stehen.
+    """
+    db.add(TimeEntryAuditLog(
+        time_entry_id=None,
+        user_id=current_user.id,
+        changed_by=current_user.id,
+        action="health_export",
+        source="dsgvo",
+        new_note=note,
+        tenant_id=current_user.tenant_id,
+    ))
+    db.flush()
 
 
 def _wh_changes_by_user(db: Session, tenant_id, users: list) -> dict:
@@ -98,7 +137,8 @@ def get_monthly_report(
         # health_data_read-Audit ohne tatsächlich ausgelieferte Daten stehen).
         db.flush()
 
-    users = _get_active_visible_users(db, current_user.tenant_id)
+    month_start, month_end = date(year, month_num, 1), date(year, month_num, monthrange(year, month_num)[1])
+    users = _report_users(db, current_user.tenant_id, month_start, month_end)
     wh_by_user = _wh_changes_by_user(db, current_user.tenant_id, users)
 
     show_year_end_projection = get_bool_setting(db, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, tenant_id=current_user.tenant_id, default=True, )
@@ -136,29 +176,25 @@ def get_monthly_report(
             if _future_comp > 0:
                 _projected = float(overtime) - float(_future_comp)
 
-        # Get vacation and sick hours for the month (F-033: sargable)
-        vacation_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.tenant_id == current_user.tenant_id,  # F-026 belt-and-suspenders
-            Absence.type == AbsenceType.VACATION,
-            date_in_month(Absence.date, year, month_num),
-        ).all()
+        # Get vacation and sick hours for the month (F-033: sargable).
+        vacation_absences = _period_absences(
+            db, current_user.tenant_id, user, AbsenceType.VACATION, month_start, month_end)
         vacation_hours = sum(float(a.hours) for a in vacation_absences)
 
-        sick_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.tenant_id == current_user.tenant_id,  # F-026 belt-and-suspenders
-            Absence.type == AbsenceType.SICK,
-            date_in_month(Absence.date, year, month_num),
-        ).all()
-        sick_hours = sum(float(a.hours) for a in sick_absences)
+        # calc-14: Krankheitsdaten (Art. 9) nur berechnen, wenn sie ausgeliefert werden.
+        sick_hours = 0.0
+        sick_days = 0.0
+        if include_health_data:
+            sick_absences = _period_absences(
+                db, current_user.tenant_id, user, AbsenceType.SICK, month_start, month_end, cutoff)
+            sick_hours = sum(float(a.hours) for a in sick_absences)
+            sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
 
-        # Tagesprinzip (§3 BUrlG, #156/#205): Urlaub/Krank TAGEBASIERT zählen — exakt
+        # Tagesprinzip (§3 BUrlG, #156/#205): Urlaub TAGEBASIERT zählen — exakt
         # wie get_vacation_account (voller Tag 1,0; half_day 0,5; Legacy h÷Tagessoll-
         # des-Tages; untracked rein tagebasiert). NICHT Σh ÷ Ø-Tagessoll, das driftet
         # bei ungleichmäßigem Tagesplan oder Halbtagen.
         vacation_days = float(calculation_service.absence_days(db, user, vacation_absences).quantize(Decimal('0.1')))
-        sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
 
         # Use weekly_hours valid at start of report month, not current value.
         # #415: zusätzlich die Änderungen INNERHALB des Monats mitliefern, sonst
@@ -183,8 +219,8 @@ def get_monthly_report(
             projected_year_end_overtime=_projected,
             vacation_used_hours=vacation_hours,
             vacation_used_days=vacation_days,
-            sick_hours=sick_hours if include_health_data else 0.0,
-            sick_days=sick_days if include_health_data else 0.0,
+            sick_hours=sick_hours,
+            sick_days=sick_days,
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
             track_hours=tracks,
             weekly_hours_changes=[
@@ -252,7 +288,7 @@ def get_weekly_report(
         # L-2: nur flushen — Commit erst nach erfolgreichem Aufbau (siehe /monthly).
         db.flush()
 
-    users = _get_active_visible_users(db, current_user.tenant_id)
+    users = _report_users(db, current_user.tenant_id, wk_start, wk_end)
     wh_by_user = _wh_changes_by_user(db, current_user.tenant_id, users)
 
     show_year_end_projection = get_bool_setting(db, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, tenant_id=current_user.tenant_id, default=True, )
@@ -282,33 +318,23 @@ def get_weekly_report(
             if _future_comp > 0:
                 _projected = float(overtime) - float(_future_comp)
 
-        # Urlaub/Krank in der Woche (F-033: sargable range). Bei soll_basis=bis_heute
-        # denselben Cutoff wie Soll/Ist anwenden, damit die Tage-Spalten nicht eine
-        # für die laufende Woche vorausgebuchte Abwesenheit zählen, die das (gekappte)
-        # Soll/Ist gar nicht erfasst.
-        vacation_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.tenant_id == current_user.tenant_id,  # F-026 belt-and-suspenders
-            Absence.type == AbsenceType.VACATION,
-            date_in_range(Absence.date, wk_start, wk_end),
-        ).all()
-        if cutoff is not None:
-            vacation_absences = [a for a in vacation_absences if a.date <= cutoff]
+        # Urlaub/Krank in der Woche — dieselbe Auswahl wie /monthly (calc-07):
+        # Urlaub zählt vorgebuchte Tage als verbraucht, Krankheit nur bis zum Cutoff.
+        vacation_absences = _period_absences(
+            db, current_user.tenant_id, user, AbsenceType.VACATION, wk_start, wk_end)
         vacation_hours = sum(float(a.hours) for a in vacation_absences)
 
-        sick_absences = db.query(Absence).filter(
-            Absence.user_id == user.id,
-            Absence.tenant_id == current_user.tenant_id,  # F-026 belt-and-suspenders
-            Absence.type == AbsenceType.SICK,
-            date_in_range(Absence.date, wk_start, wk_end),
-        ).all()
-        if cutoff is not None:
-            sick_absences = [a for a in sick_absences if a.date <= cutoff]
-        sick_hours = sum(float(a.hours) for a in sick_absences)
+        # calc-14: Krankheitsdaten (Art. 9) nur berechnen, wenn sie ausgeliefert werden.
+        sick_hours = 0.0
+        sick_days = 0.0
+        if include_health_data:
+            sick_absences = _period_absences(
+                db, current_user.tenant_id, user, AbsenceType.SICK, wk_start, wk_end, cutoff)
+            sick_hours = sum(float(a.hours) for a in sick_absences)
+            sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
 
-        # Tagesprinzip (§3 BUrlG, #156/#205): Urlaub/Krank tagebasiert zählen.
+        # Tagesprinzip (§3 BUrlG, #156/#205): Urlaub tagebasiert zählen.
         vacation_days = float(calculation_service.absence_days(db, user, vacation_absences).quantize(Decimal('0.1')))
-        sick_days = float(calculation_service.absence_days(db, user, sick_absences).quantize(Decimal('0.1')))
 
         # weekly_hours valid at the week's Monday (mirrors /monthly's report_date).
         # #415: Änderungen innerhalb der Woche werden mitgeliefert.
@@ -329,8 +355,8 @@ def get_weekly_report(
             projected_year_end_overtime=_projected,
             vacation_used_hours=vacation_hours,
             vacation_used_days=vacation_days,
-            sick_hours=sick_hours if include_health_data else 0.0,
-            sick_days=sick_days if include_health_data else 0.0,
+            sick_hours=sick_hours,
+            sick_days=sick_days,
             exempt_from_arbzg=bool(user.exempt_from_arbzg),
             track_hours=tracks,
             weekly_hours_changes=[
@@ -378,7 +404,7 @@ def get_yearly_absences(
         # (siehe get_monthly_report).
         db.flush()
 
-    users = _get_active_visible_users(db, current_user.tenant_id)
+    users = _report_users(db, current_user.tenant_id, date(year, 1, 1), date(year, 12, 31))
 
     results = []
     _today = today_local()  # #501: Gate der Jahresend-Warnung (Q4 des laufenden Jahres)
@@ -481,17 +507,7 @@ def export_monthly_report(
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
     if include_health_data:
-        log = TimeEntryAuditLog(
-            time_entry_id=None,
-            user_id=current_user.id,
-            changed_by=current_user.id,
-            action="health_export",
-            source="dsgvo",
-            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}",
-            tenant_id=current_user.tenant_id,
-        )
-        db.add(log)
-        db.commit()
+        _audit_health_export(db, current_user, f"Gesundheitsdaten (Art. 9 DSGVO) im Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}")
 
     # Generate Excel file
     excel_file = export_service.generate_monthly_report(db, year, month_num, include_health_data, tenant_id=current_user.tenant_id, include_hidden=include_hidden)
@@ -500,6 +516,8 @@ def export_monthly_report(
     # already fully materialised in the BytesIO, so holding a connection
     # during the client download is wasted pool capacity. Concurrent admin
     # exports would otherwise starve the default pool_size=5.
+    if include_health_data:
+        db.commit()  # calc-08: Protokoll erst nach erfolgreicher Erzeugung
     db.close()
 
     # Create filename
@@ -532,19 +550,11 @@ def export_yearly_report(
     Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged).
     """
     if include_health_data:
-        log = TimeEntryAuditLog(
-            time_entry_id=None,
-            user_id=current_user.id,
-            changed_by=current_user.id,
-            action="health_export",
-            source="dsgvo",
-            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im Jahresreport {year} exportiert – Admin: {current_user.username}",
-            tenant_id=current_user.tenant_id,
-        )
-        db.add(log)
-        db.commit()
+        _audit_health_export(db, current_user, f"Gesundheitsdaten (Art. 9 DSGVO) im Jahresreport {year} exportiert – Admin: {current_user.username}")
 
     excel_file = export_service.generate_yearly_report(db, year, include_health_data, tenant_id=current_user.tenant_id, include_hidden=include_hidden)
+    if include_health_data:
+        db.commit()  # calc-08: Protokoll erst nach erfolgreicher Erzeugung
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_{year}.xlsx"
     return StreamingResponse(
@@ -570,19 +580,11 @@ def export_yearly_report_classic(
     Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged).
     """
     if include_health_data:
-        log = TimeEntryAuditLog(
-            time_entry_id=None,
-            user_id=current_user.id,
-            changed_by=current_user.id,
-            action="health_export",
-            source="dsgvo",
-            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im Jahresreport Classic {year} exportiert – Admin: {current_user.username}",
-            tenant_id=current_user.tenant_id,
-        )
-        db.add(log)
-        db.commit()
+        _audit_health_export(db, current_user, f"Gesundheitsdaten (Art. 9 DSGVO) im Jahresreport Classic {year} exportiert – Admin: {current_user.username}")
 
     excel_file = export_service.generate_yearly_report_classic(db, year, include_health_data, tenant_id=current_user.tenant_id, include_hidden=include_hidden)
+    if include_health_data:
+        db.commit()  # calc-08: Protokoll erst nach erfolgreicher Erzeugung
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_Classic_{year}.xlsx"
     return StreamingResponse(
@@ -613,19 +615,11 @@ def export_monthly_report_ods(
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
     if include_health_data:
-        log = TimeEntryAuditLog(
-            time_entry_id=None,
-            user_id=current_user.id,
-            changed_by=current_user.id,
-            action="health_export",
-            source="dsgvo",
-            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im ODS-Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}",
-            tenant_id=current_user.tenant_id,
-        )
-        db.add(log)
-        db.commit()
+        _audit_health_export(db, current_user, f"Gesundheitsdaten (Art. 9 DSGVO) im ODS-Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}")
 
     ods_file = ods_export_service.generate_monthly_report(db, year, month_num, include_health_data, tenant_id=current_user.tenant_id, include_hidden=include_hidden)
+    if include_health_data:
+        db.commit()  # calc-08: Protokoll erst nach erfolgreicher Erzeugung
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Monatsreport_{year}_{month_num:02d}.ods"
     return StreamingResponse(
@@ -652,19 +646,11 @@ def export_monthly_report_pdf(
         raise HTTPException(status_code=400, detail="Ungültiges Monatsformat (YYYY-MM erwartet)")
 
     if include_health_data:
-        log = TimeEntryAuditLog(
-            time_entry_id=None,
-            user_id=current_user.id,
-            changed_by=current_user.id,
-            action="health_export",
-            source="dsgvo",
-            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im PDF-Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}",
-            tenant_id=current_user.tenant_id,
-        )
-        db.add(log)
-        db.commit()
+        _audit_health_export(db, current_user, f"Gesundheitsdaten (Art. 9 DSGVO) im PDF-Monatsreport {year}-{month_num:02d} exportiert – Admin: {current_user.username}")
 
     pdf_file = export_service.generate_monthly_report_pdf(db, year, month_num, include_health_data, tenant_id=current_user.tenant_id, include_hidden=include_hidden)
+    if include_health_data:
+        db.commit()  # calc-08: Protokoll erst nach erfolgreicher Erzeugung
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Monatsreport_{year}_{month_num:02d}.pdf"
     return StreamingResponse(
@@ -687,18 +673,10 @@ def export_yearly_report_ods(
     """Export yearly detailed report as ODS file.
     Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged)."""
     if include_health_data:
-        log = TimeEntryAuditLog(
-            time_entry_id=None,
-            user_id=current_user.id,
-            changed_by=current_user.id,
-            action="health_export",
-            source="dsgvo",
-            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im ODS-Jahresreport {year} exportiert – Admin: {current_user.username}",
-            tenant_id=current_user.tenant_id,
-        )
-        db.add(log)
-        db.commit()
+        _audit_health_export(db, current_user, f"Gesundheitsdaten (Art. 9 DSGVO) im ODS-Jahresreport {year} exportiert – Admin: {current_user.username}")
     ods_file = ods_export_service.generate_yearly_report(db, year, include_health_data, tenant_id=current_user.tenant_id, include_hidden=include_hidden)
+    if include_health_data:
+        db.commit()  # calc-08: Protokoll erst nach erfolgreicher Erzeugung
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_{year}.ods"
     return StreamingResponse(
@@ -721,18 +699,10 @@ def export_yearly_report_classic_ods(
     """Export yearly classic report as ODS file.
     Sick/health data (Art. 9 DSGVO) is omitted by default; pass include_health_data=true to include it (audit-logged)."""
     if include_health_data:
-        log = TimeEntryAuditLog(
-            time_entry_id=None,
-            user_id=current_user.id,
-            changed_by=current_user.id,
-            action="health_export",
-            source="dsgvo",
-            new_note=f"Gesundheitsdaten (Art. 9 DSGVO) im ODS-Jahresreport Classic {year} exportiert – Admin: {current_user.username}",
-            tenant_id=current_user.tenant_id,
-        )
-        db.add(log)
-        db.commit()
+        _audit_health_export(db, current_user, f"Gesundheitsdaten (Art. 9 DSGVO) im ODS-Jahresreport Classic {year} exportiert – Admin: {current_user.username}")
     ods_file = ods_export_service.generate_yearly_report_classic(db, year, include_health_data, tenant_id=current_user.tenant_id, include_hidden=include_hidden)
+    if include_health_data:
+        db.commit()  # calc-08: Protokoll erst nach erfolgreicher Erzeugung
     db.close()  # F-053: release pool connection before streaming
     filename = f"PraxisZeit_Jahresreport_Classic_{year}.ods"
     return StreamingResponse(
@@ -831,7 +801,7 @@ def averaging_workdays(user, start: date, end: date, holiday_dates: set, neutral
 def get_rest_time_violations(
     year: int = Query(..., ge=2000, le=2100, description="Year to check"),
     month: int = Query(None, ge=1, le=12, description="Optional month to check"),
-    min_rest_hours: float = Query(None, description="Minimum rest hours (default: 11)"),
+    min_rest_hours: float = Query(None, ge=1, le=24, description="Minimum rest hours (default: 11)"),
     include_hidden: IncludeHidden = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
@@ -852,7 +822,7 @@ def get_rest_time_violations(
     return {
         "year": year,
         "month": month,
-        "min_rest_hours": min_rest_hours or rest_time_service.DEFAULT_MIN_REST_HOURS,
+        "min_rest_hours": rest_time_service.DEFAULT_MIN_REST_HOURS if min_rest_hours is None else min_rest_hours,
         "total_violations": sum(v["violation_count"] for v in violations),
         "employees_affected": len(violations),
         "violations": violations,
@@ -875,11 +845,13 @@ def get_sunday_summary(
     import calendar
 
     # Count total Sundays in the year
-    total_sundays = sum(
-        1 for m in range(1, 13)
+    all_sundays = [
+        date(year, m, d)
+        for m in range(1, 13)
         for d in range(1, calendar.monthrange(year, m)[1] + 1)
         if date(year, m, d).weekday() == 6
-    )
+    ]
+    total_sundays = len(all_sundays)
     min_free_sundays = 15
 
     users, hidden = _arbzg_users(db, current_user.tenant_id, date(year, 1, 1), date(year, 12, 31), include_hidden)
@@ -898,11 +870,19 @@ def get_sunday_summary(
             )
             .all()
         )
+        # calc-05: nur Sonntage im Beschäftigungsfenster der Person zählen
+        # (Ein-/Austritt im Jahr); Teiljahr → Pflicht anteilig (aufgerundet).
+        window_sundays = {d for d in all_sundays if calculation_service._within_employment_window(user, d)}
         sundays_worked = {
-            e.date for e in entries if e.date.weekday() == 6
+            e.date for e in entries if e.date.weekday() == 6 and e.date in window_sundays
         }
         sundays_worked_count = len(sundays_worked)
-        free_sundays = total_sundays - sundays_worked_count
+        person_total = len(window_sundays)
+        free_sundays = person_total - sundays_worked_count
+        partial_year = person_total < total_sundays
+        person_min_free = (
+            math.ceil(min_free_sundays * person_total / total_sundays) if partial_year else min_free_sundays
+        )
 
         result.append({
             "user_id": str(user.id),
@@ -910,8 +890,10 @@ def get_sunday_summary(
             "last_name": user.last_name,
             "sundays_worked": sundays_worked_count,
             "free_sundays": free_sundays,
-            "total_sundays_in_year": total_sundays,
-            "compliant": free_sundays >= min_free_sundays,
+            "total_sundays_in_year": person_total,
+            "partial_year": partial_year,
+            "min_free_sundays": person_min_free,
+            "compliant": free_sundays >= person_min_free,
         })
 
     return {

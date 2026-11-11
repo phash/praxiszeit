@@ -10,6 +10,14 @@
 
 ### 🐛 Behoben (Funde beim Schreiben der Handbücher)
 
+- **„Buchung fehlt“ ignoriert freie Sondertage.** Ein freier 24./31.12. (Soll 0) erscheint im Dashboard und im Team-Widget nicht mehr als fehlende Buchung.
+- **Sonntagsauswertung (§ 11 ArbZG) rechnet im Beschäftigungszeitraum.** Wer im Jahr ein- oder austritt, wird nur mit den Sonntagen seines Beschäftigungszeitraums gezählt; die Pflicht freier Sonntage gilt dann anteilig (aufgerundet), die Zeile trägt den Hinweis „Teiljahr“.
+- **Ruhezeitprüfung: Mindestruhezeit 1–24 Stunden.** Ein leeres Feld oder 0 sperrt „Prüfen“ (vorher meldete die Prüfung mit 0 h „keine Verstöße“, die Antwort nannte aber 11 h); die Antwort nennt den tatsächlich geprüften Wert.
+- **Monats- und Wochenbericht zählen Urlaub und Krank gleich.** Vorgebuchter Urlaub zählt in beiden als verbraucht, Krank nur bis zum Stichtag; Abwesenheiten außerhalb des Beschäftigungszeitraums zählen nicht.
+- **Ausgeschiedene Personen mit Daten stehen auch in Monats-, Wochen- und Jahres-Abwesenheitsbericht** (wie in den Dateien desselben Zeitraums).
+- **Gesundheitsdaten-Export: Protokollzeile erst nach erfolgreicher Erzeugung.** Scheitert ein Export, bleibt kein „exportiert“ ohne Lieferung stehen.
+- **Berichte & Export:** Ergebnisse der ArbZG-Auswertungen werden beim Ändern von Jahr, Monat oder „Ausgeblendete einbeziehen“ verworfen, ein geleertes Jahresfeld sendet kein `year=NaN` mehr, und Exportfehler zeigen den Grund (z. B. zu viele Anfragen) statt „Export fehlgeschlagen“.
+
 - **Jahresabschluss nur noch für abgelaufene Jahre ohne Rückfrage.** Ein künftiges Jahr wird abgelehnt; das laufende Jahr lässt sich nur nach ausdrücklicher Bestätigung abschließen (der Dialog warnt, dass das Soll der verbleibenden Monate ohne Ist eingefroren würde). Der Dialog nennt außerdem, wie viele von Hand eingetragene Übernahmen für das Folgejahr überschrieben werden. Das Admin-Dashboard öffnet auch ohne Browser-Speicher (privates Fenster).
 
 **Enthält die Datenbank-Migration `077_legacy_half_day`.** Vor dem Update wie immer eine Sicherung anlegen.
