@@ -20,7 +20,7 @@ from app.routers.admin_helpers import (
     _enrich_vr_response as _enrich, _enrich_vr_responses, ensure_vacation_budget,
     lock_user_row,
 )
-from app.routers.absences import _MASKED_ABSENCE_TYPES
+from app.routers.absences import _MASKED_ABSENCE_TYPES, OVERTIME_HOURS_DETAIL, _assert_employee_may_book_range
 
 router = APIRouter(prefix="/api/vacation-requests", tags=["vacation-requests"])
 
@@ -39,6 +39,37 @@ def _mask_health_data(request: Request, responses: list) -> list:
         if r.absence_type in masked_values else r
         for r in responses
     ]
+
+
+
+def _assert_request_range_allowed(
+    db: Session, target_user: User, acting_user: User, start: date, end: date,
+    absence_type: Optional[str], hours: float, *, check_range: bool,
+) -> None:
+    """abw-03/abw-12: Antragsweg spiegelt die Guards von ``create_absence``.
+
+    * Überstundenausgleich ohne Stunden → 400 (``hours = 0`` buchte 0-h-Zeilen).
+    * ``check_range``: Mitarbeitende (nicht die Verwaltung) beantragen keine
+      vergangenen Tage / abgeschlossenen Jahre (S1-01 → Änderungsantrag), und
+      eine bestehende Abwesenheit im Zeitraum scheitert schon hier statt erst
+      bei der Genehmigung (409)."""
+    if (absence_type or "vacation") == "overtime" and float(hours) <= 0:
+        raise HTTPException(status_code=400, detail=OVERTIME_HOURS_DETAIL)
+    if not check_range:
+        return
+    if acting_user.role != UserRole.ADMIN:
+        _assert_employee_may_book_range(db, acting_user, start, end)
+    existing = db.query(Absence).filter(
+        Absence.tenant_id == target_user.tenant_id,  # F-026
+        Absence.user_id == target_user.id,
+        Absence.date >= start,
+        Absence.date <= end,
+    ).order_by(Absence.date).first()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Am {existing.date.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit ({existing.type.value})",
+        )
 
 
 def _load_own_vr_locked(db: Session, request_id: str, current_user: User) -> VacationRequest:
@@ -182,6 +213,10 @@ def apply_vacation_request_patch(
     if target_user.last_work_day and effective_end > target_user.last_work_day:
         raise HTTPException(status_code=400, detail="Datum liegt nach dem letzten Arbeitstag")
 
+    _assert_request_range_allowed(
+        db, target_user, acting_user, new_date, effective_end, new_absence_type, new_hours,
+        check_range=(new_date != vr.date or new_end_date != vr.end_date))
+
     other_pending = db.query(VacationRequest).filter(
         VacationRequest.id != vr.id,
         VacationRequest.user_id == target_user.id,
@@ -298,6 +333,10 @@ def create_vacation_request(
             detail="Datum liegt nach dem letzten Arbeitstag",
         )
 
+    _assert_request_range_allowed(
+        db, current_user, current_user, start_date, end_date,
+        data.absence_type, data.hours, check_range=True)
+
     # 3. reject duplicate PENDING requests that overlap this range for
     # the same user (prevents double-submission from impatient users)
     existing_pending = db.query(VacationRequest).filter(
@@ -363,7 +402,7 @@ def list_my_vacation_requests(
     year: Optional[int] = Query(None, ge=2000, le=2100),
     status: Optional[str] = Query(None),
     skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=500, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

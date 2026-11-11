@@ -713,3 +713,12 @@ class TestApproveNoCrossTypeDoubleBooking:
             Absence.user_id == employee.id, Absence.date == d,
         ).count()
         assert n == 1  # weiterhin nur die KRANK-Abwesenheit, keine Doppelbuchung
+
+
+@pytest.fixture(autouse=True)
+def _freeze_today_for_request_guard(monkeypatch):
+    """abw-03: Anträge für vergangene Tage sind für Mitarbeitende gesperrt. Diese
+    Tests prüfen Budget-/Fensterregeln an festen Kalendertagen — „heute“ auf den
+    Jahresanfang 2025 festhalten, damit sie nicht mit der Uhr altern."""
+    from app.routers import absences as _abs
+    monkeypatch.setattr(_abs, "today_local", lambda: date(2025, 1, 1))

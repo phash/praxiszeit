@@ -500,3 +500,12 @@ class TestResplitMatchesBookingClassifier:
         types = [a.type for a in _absences(db, emp)]
         assert types.count(AbsenceType.VACATION) == 2
         assert types.count(AbsenceType.OVERTIME) == 3
+
+
+@pytest.fixture(autouse=True)
+def _freeze_today_for_request_guard(monkeypatch):
+    """abw-03: Anträge für vergangene Tage sind für Mitarbeitende gesperrt. Diese
+    Tests prüfen Abfragezahl/Budget an festen Kalendertagen — „heute“ auf den
+    Jahresanfang 2025 festhalten, damit sie nicht mit der Uhr altern."""
+    from app.routers import absences as _abs
+    monkeypatch.setattr(_abs, "today_local", lambda: date(2025, 1, 1))

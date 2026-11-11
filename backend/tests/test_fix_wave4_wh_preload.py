@@ -299,3 +299,12 @@ def test_resplit_year_closures_wh_query_count_is_constant(db, default_tenant, ad
         assert [r.type for r in rows] == (
             [AbsenceType.VACATION] * 2 + [AbsenceType.OVERTIME] * 3
         )
+
+
+@pytest.fixture(autouse=True)
+def _freeze_today_for_request_guard(monkeypatch):
+    """abw-03: Anträge für vergangene Tage sind für Mitarbeitende gesperrt. Diese
+    Tests prüfen Abfragezahl/Budget an festen Kalendertagen — „heute“ auf den
+    Jahresanfang 2025 festhalten, damit sie nicht mit der Uhr altern."""
+    from app.routers import absences as _abs
+    monkeypatch.setattr(_abs, "today_local", lambda: date(2025, 1, 1))
