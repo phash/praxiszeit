@@ -817,11 +817,16 @@ export default function WorkingHoursModal({
             onDeactivate: onClose,
           }}
         >
+          {/* P1.6: tabIndex=-1 — ein Klick auf nicht fokussierbaren Inhalt (z. B. den
+              Text einer Option im Kasten „Verkürzung") lässt den Fokus im Dialog.
+              Sonst landete er auf <body>, die Fokusfalle sprang auf das zuletzt
+              fokussierte Feld zurück und scrollte dorthin — der Klick ging daneben. */}
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="hours-modal-title"
-            className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+            tabIndex={-1}
+            className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto focus:outline-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-start justify-between gap-3">
