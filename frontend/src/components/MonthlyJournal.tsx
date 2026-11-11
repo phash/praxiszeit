@@ -597,8 +597,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       // P1.1: reiner Abwesenheitstag — bisher kehrte die Funktion hier still
       // zurück. Die Löschung wird beantragt (Server 409 PAST_DAY_ABSENCE_DETAIL
       // für das direkte Löschen vergangener Tage).
-      const absence = day.absences.find((a) => !a.closure_day);
-      if (absence) requestAbsenceDeletion(day, absence);
+      // Fix-Runde 1: nur bei GENAU einer löschbaren Abwesenheit — bei mehreren
+      // wählt die Person über den Papierkorb an der jeweiligen Abwesenheit.
+      const deletable = employeeDeletableAbsences(day);
+      if (deletable.length === 1) requestAbsenceDeletion(day, deletable[0]);
       return;
     }
     confirm({
@@ -623,6 +625,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     });
   }
 
+
+  function employeeDeletableAbsences(day: JournalDay): AbsenceItem[] {
+    return day.absences.filter((a) => !a.closure_day);
+  }
 
   function requestAbsenceDeletion(day: JournalDay, absence: AbsenceItem) {
     setAbsenceDeleteRequest({ id: absence.id, date: day.date, type: absence.type, hours: absence.hours });
@@ -1023,7 +1029,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                 <X size={15} />
                               </button>
                               {(day.time_entries.length > 0
-                                || (isAdminView ? day.absences.length > 0 : day.absences.some((a) => !a.closure_day))) && (
+                                || (isAdminView ? day.absences.length > 0 : employeeDeletableAbsences(day).length === 1)) && (
                                 <button
                                   onClick={() => isAdminView ? void handleAdminDelete(day) : handleEmployeeDelete(day)}
                                   disabled={saving}

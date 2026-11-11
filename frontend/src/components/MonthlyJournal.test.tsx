@@ -978,6 +978,24 @@ describe('<MonthlyJournal /> Löschung einer vergangenen Abwesenheit beantragen 
     expect(screen.queryByTitle('Löschen')).toBeNull();
   });
 
+  it('mehrere Abwesenheiten am Tag: kein „Löschen" im Bearbeitungsmodus, Auswahl am Papierkorb je Abwesenheit', async () => {
+    mockJournal([{ ...sickDay, absences: [
+      { id: 'a1', type: 'sick', hours: 4, start_time: null, end_time: null },
+      { id: 'a2', type: 'training', hours: 4, start_time: null, end_time: null },
+    ] }]);
+    postMock.mockResolvedValue({ data: {} });
+    render(<MonthlyJournal />);
+    fireEvent.click(await screen.findByTitle('Löschung beantragen: Fortbildung'));
+    const dialog = await screen.findByRole('dialog', { name: 'Änderungsantrag: Löschung beantragen' });
+    fireEvent.change(within(dialog).getByLabelText(/Begründung/), { target: { value: 'War im Dienst' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Antrag stellen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests/', expect.objectContaining({
+      absence_id: 'a2',
+    })));
+    fireEvent.click(screen.getByTitle('Krank bearbeiten'));
+    expect(screen.queryByTitle('Löschen')).toBeNull();
+  });
+
   it('Admins löschen weiter direkt (kein Antrag)', async () => {
     mockJournal([sickDay]);
     render(<MonthlyJournal userId="u1" isAdminView />);
