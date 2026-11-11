@@ -1395,6 +1395,12 @@ group_db_port() {
   need docs/setup-windows.md '[database]'
 }
 
+# Erzeugte Handbuch-Markdowns (frontend/src/handbuch -> docs/handbuch, public/help):
+# der Generator vergleicht im --check-Modus, schreibt nichts.
+group_handbuch_md() {
+  (cd frontend && npm run -s handbuch:md -- --check) || FAIL=1
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {
@@ -1409,8 +1415,11 @@ if [ "$#" -eq 0 ]; then
   echo "Aufruf: bash scripts/check-doc-sync.sh <gruppe>…|all"
   exit 2
 fi
+# Gruppen, die `all` (noch) nicht ausführt.
+# Task 16 entfernt den Eintrag, sobald die erzeugten Handbücher die alten ersetzen.
+ALL_SKIP="handbuch_md"
 if [ "$1" = "all" ]; then
-  set -- $(declare -F | awk '{print $3}' | sed -n 's/^group_//p')
+  set -- $(declare -F | awk '{print $3}' | sed -n 's/^group_//p' | grep -vxF -e "$ALL_SKIP")
 fi
 for g in "$@"; do run_group "$g"; done
 [ "$FAIL" -eq 0 ] && echo "OK: $*"
