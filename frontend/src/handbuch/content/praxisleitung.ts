@@ -1183,7 +1183,7 @@ export const praxisleitung: Handbook = {
             { n: 2, text: 'Mehrere Tage? Setzen Sie den Haken bei [[Zeitraum (mehrere Tage)]]. Für einen einzelnen Tag gibt es [[Halber Tag (zählt als 0,5 Tag)]] – nicht bei Krank und Überstundenausgleich.' },
             { n: 3, text: 'Wählen Sie das **Datum** – beim Zeitraum **Von** und **Bis**. Anders als die Mitarbeitenden tragen Sie auch vergangene Tage direkt ein.' },
             { n: 4, text: '**Typ:** Urlaub, Krank, Fortbildung (außer Haus), Überstundenausgleich, Bezahlte Freistellung (kein Urlaubsabzug), Sonstiges – oder unter „Eigene Gründe“ ein Grund Ihrer Praxis.' },
-            { text: '**Stunden:** Das Feld bleibt ausgegraut, solange es nichts einzutragen gibt – gebucht wird immer das Tagessoll des Tages laut Vertrag („Es wird das Tagessoll laut Vertrag gebucht“). Nur beim Überstundenausgleich ist das Feld frei: Der eingetragene Wert geht vom Überstundenkonto ab.' },
+            { text: '**Stunden:** Das Feld bleibt ausgegraut, solange es nichts einzutragen gibt – gebucht wird immer das Tagessoll des Tages laut Vertrag („Es wird das Tagessoll laut Vertrag gebucht“). Nur beim Überstundenausgleich (auch als eigener Grund „Überstundenabbau“) ist das Feld frei: Der eingetragene Wert geht vom Überstundenkonto ab – bei Personen mit Tagesplan bucht das System stattdessen das Tagessoll des Tages.' },
             { n: 5, text: 'Klicken Sie auf [[Speichern]].' },
           ],
         },

@@ -234,7 +234,7 @@ const shots: ShotDef[] = [
       { n: 3, id: 'typ', locator: { css: 'main form select' }, badge: 'top' },
       { n: 4, id: 'speichern', locator: { role: 'button', name: 'Speichern', exact: true, within: 'main' }, badge: 'top' },
     ],
-    alt: 'Formular „Abwesenheit eintragen“ mit Zeitraum, Halber Tag, Datum, Typ Urlaub, Stunden und dem Knopf „Speichern“',
+    alt: 'Formular „Abwesenheit eintragen“ mit Zeitraum, Halber Tag, Datum, Typ Urlaub, ausgegrautem Stundenfeld mit Hinweis zum Tagessoll und dem Knopf „Speichern“',
   },
   {
     id: 'ma-halber-tag',
@@ -251,7 +251,7 @@ const shots: ShotDef[] = [
       { n: 2, id: 'stunden', locator: { css: 'main form input[type="number"]' }, badge: 'top' },
       { n: 3, id: 'speichern', locator: { role: 'button', name: 'Speichern', exact: true, within: 'main' }, badge: 'top' },
     ],
-    alt: 'Formular „Abwesenheit eintragen“ mit Haken bei „Halber Tag (zählt als 0,5 Tag)“ und gesperrtem Stundenfeld',
+    alt: 'Formular „Abwesenheit eintragen“ mit Haken bei „Halber Tag (zählt als 0,5 Tag)“ und ausgegrautem Stundenfeld mit dem Hinweis zum halben Tagessoll',
   },
   {
     id: 'ma-loeschung-beantragen',
@@ -901,6 +901,7 @@ export const mitarbeitende: Handbook = {
             { n: 1, text: 'Mehrere Tage? Setzen Sie den Haken bei [[Zeitraum (mehrere Tage)]]. Wochenenden, Feiertage und Ihre freien Tage werden ausgelassen.' },
             { n: 2, text: 'Wählen Sie das **Datum** – beim Zeitraum **Von** und **Bis**.' },
             { n: 3, text: 'Wählen Sie den **Typ**: Urlaub, Krank, Fortbildung (außer Haus), Überstundenausgleich, Sonstiges – oder einen eigenen Grund Ihrer Praxis.' },
+            { text: 'Das Feld **Stunden** bleibt ausgegraut: Gebucht wird Ihr Tagessoll laut Vertrag („Es wird das Tagessoll laut Vertrag gebucht“). Nur beim Überstundenausgleich können Sie es ausfüllen.' },
             { n: 4, text: 'Klicken Sie auf [[Speichern]]. Urlaubstage gehen automatisch von Ihrem Budget ab – verlangt Ihre Praxis eine Genehmigung, erst nachdem die Verwaltung den Antrag genehmigt hat.' },
           ],
         },
@@ -908,8 +909,8 @@ export const mitarbeitende: Handbook = {
           kind: 'tip',
           tone: 'info',
           text:
-            '**Stunden** sind vorausgefüllt und werden ohnehin durch Ihr Tagessoll ersetzt. Nur bei **Überstundenausgleich** zählt ' +
-            'der eingetragene Wert – er wird von Ihrem Überstundenkonto abgezogen.',
+            '**Stunden** sind bei allen Arten außer **Überstundenausgleich** gesperrt – gebucht wird Ihr Tagessoll. Beim Überstundenausgleich ' +
+            'zählt der eingetragene Wert und wird von Ihrem Überstundenkonto abgezogen; haben Sie einen Tagesplan, bucht das System stattdessen das Tagessoll des Tages.',
         },
         {
           kind: 'tip',
@@ -926,7 +927,7 @@ export const mitarbeitende: Handbook = {
           shot: 'ma-halber-tag',
           steps: [
             { n: 1, text: 'Setzen Sie den Haken bei [[Halber Tag (zählt als 0,5 Tag)]]. Er steht nur bei einem einzelnen Tag bereit, nicht bei Krank oder Überstundenausgleich.' },
-            { n: 2, text: 'Das Feld **Stunden** ist dann gesperrt: Gebucht wird automatisch das halbe Tagessoll.' },
+            { n: 2, text: 'Das Feld **Stunden** bleibt ausgegraut („Halber Tag: 0,5 × Tagessoll wird automatisch gebucht“): Gebucht wird das halbe Tagessoll.' },
             { n: 3, text: 'Wählen Sie Datum und Typ und klicken Sie auf [[Speichern]]. Vom Urlaubskonto gehen 0,5 Tage ab.' },
           ],
         },
