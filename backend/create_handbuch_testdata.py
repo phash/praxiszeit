@@ -55,9 +55,10 @@ REASON_NAME = "Fortbildung extern"
 CLOSURE_NAME = "Teamklausur"
 REDUCED_DAY_LABEL = "Brückentag"
 REDUCED_DAY_MAX_HOURS = Decimal("4.00")
-# Maria hat an diesem Werktag vor dem Stichtag vergessen zu stempeln (kein
+# Thomas hat an diesem Werktag vor dem Stichtag vergessen zu stempeln (kein
 # Eintrag) — Handbuch-Aufnahme ``ma-vergangener-tag`` füllt {{werktag-4}}.
-MARIA_FORGOTTEN_WORKDAY = 4
+# Nicht Maria: ihr Dashboard ist die Übersichtsaufnahme ohne „Buchung fehlt“ (R19).
+THOMAS_FORGOTTEN_WORKDAY = 4
 
 # Sarah: Arbeitszeit-Blöcke Mo–Do 08–12 + 15–16, Fr 08–13 (25 h)
 SARAH_BLOCKS = [
@@ -552,10 +553,6 @@ def create_time_entries_for_user(db, user: User, holiday_dates: set, start: date
             days.append(d)
         d += timedelta(days=1)
 
-    if stichtag and user.username == "maria":
-        forgotten = workday_before(stichtag, MARIA_FORGOTTEN_WORKDAY)
-        days = [x for x in days if x != forgotten]
-
     through_days = set()
     if getattr(user, "work_blocks", None):
         # Durchgestempelt über die Mittagslücke → „zwischen den Blöcken nicht angerechnet"
@@ -566,6 +563,12 @@ def create_time_entries_for_user(db, user: User, holiday_dates: set, start: date
     waiver_day = None
     if stichtag and user.username == "thomas" and len(days) >= 8:
         waiver_day = days[-6] if days[-6] not in reduced else days[-7]
+    if stichtag and user.username == "thomas":
+        # erst nach der Wahl des §4-Tages, damit dieser stabil bleibt
+        forgotten = workday_before(stichtag, THOMAS_FORGOTTEN_WORKDAY)
+        if forgotten == waiver_day:
+            waiver_day = days[days.index(forgotten) - 1]
+        days = [x for x in days if x != forgotten]
 
     grace = work_window_service.get_grace_minutes(db, TENANT_ID)
     count = 0

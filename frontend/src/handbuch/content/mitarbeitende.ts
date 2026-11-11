@@ -105,9 +105,9 @@ const shots: ShotDef[] = [
     persona: 'thomas',
     viewport: 'desktop',
     route: '/',
-    crop: { around: ['status', 'einstempeln'], pad: 56 },
+    crop: { around: ['status', 'einstempeln'], pad: 46 },
     markers: [
-      { n: 1, id: 'status', locator: { css: 'main >> text=Nicht eingestempelt >> visible=true' } },
+      { n: 1, id: 'status', locator: { css: 'main >> text=Nicht eingestempelt >> visible=true' }, badge: 'top' },
       { n: 2, id: 'einstempeln', locator: { role: 'button', name: 'Einstempeln', exact: true, within: 'main' }, badge: 'corner' },
     ],
     alt: 'Stempelkarte auf dem Dashboard mit dem Hinweis „Nicht eingestempelt“ und dem grünen Knopf „Einstempeln“',
@@ -159,12 +159,12 @@ const shots: ShotDef[] = [
   },
   {
     id: 'ma-vergangener-tag',
-    persona: 'maria',
+    persona: 'thomas',
     viewport: 'desktop',
     route: '/time-tracking',
     prepare: [
       { click: { role: 'button', name: 'Antrag', exact: true, within: 'main' } },
-      // Seed: an diesem Werktag hat Maria keinen Eintrag (MARIA_FORGOTTEN_WORKDAY)
+      // Seed: an diesem Werktag hat Thomas keinen Eintrag (THOMAS_FORGOTTEN_WORKDAY, R19)
       { fill: { label: 'Datum', within: 'dialog' }, value: '{{werktag-4}}' },
       { fill: { label: 'Bis', within: 'dialog' }, value: '16:30' },
       { fill: { label: 'Pause (Min.)', within: 'dialog' }, value: '30' },

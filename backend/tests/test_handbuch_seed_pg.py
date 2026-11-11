@@ -28,7 +28,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import uuid
-from datetime import date, time
+from datetime import date, time, timedelta
 from pathlib import Path
 
 import pytest
@@ -666,25 +666,41 @@ def test_no_entry_of_the_stichtag_ends_after_capture_time(full_tenant, app_engin
     assert sorted((r[0], r[1]) for r in rows if r[2] is None) == [("maria", time(7, 45)), ("sarah", time(8, 0))]
 
 
-def test_maria_forgot_to_stamp_on_the_fourth_workday_before(full_tenant, app_engine, monkeypatch):
-    """Aufnahme ``ma-vergangener-tag`` füllt {{werktag-4}}: an diesem Werktag hat
-    Maria weder Eintrag noch Abwesenheit (Einstempeln vergessen); die Tage
-    davor und danach sind belegt. Spiegel von dates.ts::workdayBefore."""
-    from app.models import Absence, TimeEntry
+def test_thomas_forgot_to_stamp_on_the_fourth_workday_before(full_tenant, app_engine, monkeypatch):
+    """Aufnahme ``ma-vergangener-tag`` (Persona thomas) füllt {{werktag-4}}: an
+    diesem Werktag hat Thomas weder Eintrag noch Abwesenheit (Einstempeln
+    vergessen); die Tage davor und danach sind belegt. Maria hat dagegen keinen
+    fehlenden Werktag (ihr Dashboard zeigt kein „Buchung fehlt“, R19).
+    Spiegel von dates.ts::workdayBefore."""
+    from app.models import Absence, PublicHoliday, TimeEntry
     seed = _load_seed()
     assert seed.workday_before(date(2026, 10, 28), 4) == date(2026, 10, 22)
     assert seed.workday_before(date(2026, 11, 2), 1) == date(2026, 10, 30)
     _run_seed(app_engine, seed, monkeypatch)
-    day = seed.workday_before(STICHTAG, seed.MARIA_FORGOTTEN_WORKDAY)
+    day = seed.workday_before(STICHTAG, seed.THOMAS_FORGOTTEN_WORKDAY)
 
     def collect(db):
-        maria = db.query(User).filter(User.tenant_id == TENANT_ID, User.username == "maria").one()
-        entries = {e.date for e in db.query(TimeEntry).filter(
-            TimeEntry.tenant_id == TENANT_ID, TimeEntry.user_id == maria.id)}
-        absences = {a.date for a in db.query(Absence).filter(
-            Absence.tenant_id == TENANT_ID, Absence.user_id == maria.id)}
-        return entries, absences
+        users = {u.username: u for u in db.query(User).filter(User.tenant_id == TENANT_ID)}
+        def booked(name):
+            uid = users[name].id
+            entries = {e.date for e in db.query(TimeEntry).filter(
+                TimeEntry.tenant_id == TENANT_ID, TimeEntry.user_id == uid)}
+            absences = {a.date for a in db.query(Absence).filter(
+                Absence.tenant_id == TENANT_ID, Absence.user_id == uid)}
+            return entries, absences
+        holidays = {h.date for h in db.query(PublicHoliday).filter(PublicHoliday.tenant_id == TENANT_ID)}
+        waiver = [e.date for e in db.query(TimeEntry).filter(
+            TimeEntry.tenant_id == TENANT_ID, TimeEntry.user_id == users["thomas"].id,
+            TimeEntry.break_waiver_reason.isnot(None))]
+        return booked("thomas"), booked("maria"), holidays, waiver
 
-    entries, absences = _read(app_engine, collect)
-    assert day not in entries and day not in absences
-    assert seed.workday_before(STICHTAG, 3) in entries and seed.workday_before(STICHTAG, 5) in entries
+    (t_entries, t_abs), (m_entries, m_abs), holidays, waiver = _read(app_engine, collect)
+    assert day not in t_entries and day not in t_abs
+    assert seed.workday_before(STICHTAG, 3) in t_entries and seed.workday_before(STICHTAG, 5) in t_entries
+    assert len(waiver) == 1 and waiver[0] != day  # §4-Befund bleibt erhalten
+    # Maria: jeder vergangene Werktag im Stichtagsmonat ist belegt
+    d = STICHTAG.replace(day=1)
+    while d < STICHTAG:
+        if d.weekday() < 5 and d not in holidays:
+            assert d in m_entries or d in m_abs, f"Maria ohne Buchung am {d}"
+        d += timedelta(days=1)
