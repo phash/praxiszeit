@@ -8,9 +8,13 @@ export interface ShotFigureProps {
   active?: number | null;
 }
 
+/** Markergroesse ist auf diese Breite (CSS px) bezogen und skaliert mit dem Ausschnitt. */
+export const MARKER_REF_WIDTH = 700;
+
 export default function ShotFigure({ shotId, def, m, imgBase, active = null }: ShotFigureProps) {
   const src = `${imgBase}/${m.file}`;
   const { x, y, w, h } = m.crop;
+  const k = w / MARKER_REF_WIDTH;
   return (
     <a
       href={src}
@@ -32,10 +36,10 @@ export default function ShotFigure({ shotId, def, m, imgBase, active = null }: S
           const state = active == null ? '' : active === mk.n ? ' hb-act' : ' hb-dim';
           return (
             <g key={mk.id} data-marker={mk.n} className={`hb-g${state}`}>
-              <rect className="hb-hl" x={r.x} y={r.y} width={r.w} height={r.h} rx={10} />
+              <rect className="hb-hl" x={r.x} y={r.y} width={r.w} height={r.h} rx={10 * k} strokeWidth={(active === mk.n ? 5 : 3) * k} />
               <g className="hb-mk">
-                <circle cx={r.x} cy={r.y} r={17} />
-                <text x={r.x} y={r.y}>{mk.n}</text>
+                <circle cx={r.x} cy={r.y} r={17 * k} strokeWidth={4 * k} />
+                <text x={r.x} y={r.y} fontSize={22 * k}>{mk.n}</text>
               </g>
             </g>
           );

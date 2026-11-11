@@ -11,7 +11,7 @@ export interface StepListProps {
 
 export default function StepList({ steps, opts, onActive, active = null }: StepListProps) {
   return (
-    <ol className="m-0 list-none p-0">
+    <ol role="list" className="m-0 list-none p-0">
       {steps.map((s, i) => {
         const n = s.n;
         const on = n !== undefined ? () => onActive?.(n) : undefined;

@@ -85,6 +85,24 @@ describe('HandbookPage', () => {
     expect(container.querySelector('section#ueberblick')).not.toBeNull();
     expect(container.querySelector('section#zweite')).not.toBeNull();
   });
+  it('wide variant renders each chapter/task id exactly once', () => {
+    const { container } = render(<HandbookPage {...props} />);
+    for (const id of ['zeit', 'ueberblick', 'zweite']) {
+      expect(container.querySelectorAll(`[id="${id}"]`).length).toBe(1);
+    }
+    expect(container.querySelectorAll('main').length).toBe(0);
+    const svg = container.querySelector('svg[role="img"]')!;
+    expect(svg.compareDocumentPosition(container.querySelector('ol')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+  it('marker radius doubles when crop width doubles', () => {
+    const r = (w: number) => {
+      const mf = { ...manifest, s1: { ...manifest.s1, crop: { ...manifest.s1.crop, w } } };
+      const { container } = render(<HandbookPage {...props} manifest={mf} />);
+      return Number(container.querySelector('circle')!.getAttribute('r'));
+    };
+    expect(r(1400)).toBeCloseTo(2 * r(700));
+    expect(r(700)).toBeCloseTo(17);
+  });
   it('image href uses imgBase', () => {
     const { container } = render(<HandbookPage {...props} />);
     expect(container.querySelector('image')!.getAttribute('href')).toBe('/help/img/s1.webp');

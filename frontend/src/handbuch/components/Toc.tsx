@@ -22,18 +22,20 @@ function links(chapters: Chapter[]) {
 }
 
 export default function Toc({ title, chapters, variant }: { title: string; chapters: Chapter[]; variant: 'wide' | 'narrow' }) {
-  if (variant === 'narrow') {
-    return (
-      <details className="mb-4 rounded-xl border border-slate-200 bg-white p-3 text-sm">
+  // wide: unter lg Linkliste in <details>, ab lg Seitenleiste (je eine per CSS ausgeblendet). narrow: immer <details>.
+  const wide = variant === 'wide';
+  return (
+    <>
+      <details className={`mb-4 rounded-xl border border-slate-200 bg-white p-3 text-sm ${wide ? 'lg:hidden' : ''}`}>
         <summary className="cursor-pointer font-semibold">Inhalt</summary>
         <nav aria-label="Kapitelverzeichnis" className="mt-2">{links(chapters)}</nav>
       </details>
-    );
-  }
-  return (
-    <nav aria-label="Kapitelverzeichnis" className="sticky top-5 self-start text-sm">
-      <h4 className="m-0 mb-2.5 text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</h4>
-      {links(chapters)}
-    </nav>
+      {wide && (
+        <nav aria-label="Kapitelverzeichnis (Seitenleiste)" className="sticky top-5 hidden self-start text-sm lg:block">
+          <h4 className="m-0 mb-2.5 text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</h4>
+          {links(chapters)}
+        </nav>
+      )}
+    </>
   );
 }

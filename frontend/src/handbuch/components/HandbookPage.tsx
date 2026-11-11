@@ -83,7 +83,7 @@ export default function HandbookPage({
   };
 
   const content = (
-    <main className="min-w-0">
+    <div className="min-w-0">
       <h1 className="m-0 mb-2 text-3xl font-bold">{handbook.title}</h1>
       <p className="m-0 mb-6 max-w-3xl text-lg leading-normal text-slate-700">{renderInline(handbook.lead, opts)}</p>
       {handbook.chapters.map((c) => (
@@ -92,20 +92,12 @@ export default function HandbookPage({
           {c.blocks.map((b, i) => renderBlock(b, `${c.id}-${i}`))}
         </div>
       ))}
-    </main>
+    </div>
   );
 
-  if (variant === 'narrow') {
-    return (
-      <div className="hb-root">
-        <Toc title={handbook.title} chapters={handbook.chapters} variant="narrow" />
-        {content}
-      </div>
-    );
-  }
   return (
-    <div className="hb-root grid grid-cols-[250px_minmax(0,1fr)] gap-9">
-      <Toc title={handbook.title} chapters={handbook.chapters} variant="wide" />
+    <div className={variant === 'wide' ? 'hb-root lg:grid lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-9' : 'hb-root'}>
+      <Toc title={handbook.title} chapters={handbook.chapters} variant={variant} />
       {content}
     </div>
   );
