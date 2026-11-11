@@ -216,8 +216,8 @@ const shots: ShotDef[] = [
     route: '/absences',
     crop: 'main',
     markers: [
-      { n: 1, id: 'ansicht', locator: { css: "xpath=//main//div[button[normalize-space()='Monat'] and button[normalize-space()='Jahr']]" } },
-      { n: 2, id: 'monat', locator: { role: 'button', name: 'Nächster Monat', exact: true, within: 'main' }, badge: 'right' },
+      // Monat/Jahr ohne Nummer: jede Kreislage verdeckt dort „Kalender“, die Überschrift oder den Pfeil (R20-Rahmen)
+      { n: 1, id: 'monat', locator: { role: 'button', name: 'Nächster Monat', exact: true, within: 'main' }, badge: 'right' },
     ],
     alt: 'Abwesenheitskalender des Teams im Monat: farbige Kreise mit Kürzeln, Feiertag und ein verkürzter Tag sind beschriftet',
   },
@@ -350,8 +350,8 @@ const shots: ShotDef[] = [
       { click: { role: 'button', name: 'Abgelehnt', exact: true, within: 'main' } },
       { waitFor: { text: 'Ablehnungsgrund:', within: 'main' } },
     ],
-    // pad 68: der Kreis links neben dem Ablehnungsgrund passt ganz hinein (verdeckt sonst „Begründung“)
-    crop: { around: ['filter', 'grund'], pad: 68 },
+    // pad 80: der Kreis links neben dem Rahmen des Ablehnungsgrunds (R20) passt ganz hinein (verdeckt sonst „Begründung“)
+    crop: { around: ['filter', 'grund'], pad: 80 },
     markers: [
       // Filterknopf „Abgelehnt“ (rechts daneben ist frei); das Kennzeichen „Abgelehnt“ steht dann an jeder Karte
       { n: 1, id: 'filter', locator: { role: 'button', name: 'Abgelehnt', exact: true, within: 'main' }, badge: 'right' },
@@ -483,13 +483,13 @@ const shots: ShotDef[] = [
     route: '/shift-planning',
     settings: { shift_planning_enabled: true },
     prepare: [{ waitFor: { text: '» Telefondienst bis 9:00', within: 'main' } }],
-    crop: 'full',
+    // Nur der Hauptbereich: mit Seitenleiste wäre die Schrift im Raster zu klein (Menüpunkt steht im Intro).
+    crop: 'main',
     markers: [
-      { n: 1, id: 'menue', locator: { role: 'link', name: 'Schichtplan', exact: true, within: 'nav' }, badge: 'right' },
-      { n: 2, id: 'plan', locator: { role: 'heading', name: 'Wochenplan Praxis', exact: true }, badge: 'right' },
-      { n: 3, id: 'pdf', locator: { role: 'button', name: 'PDF', exact: true, within: 'main' }, badge: 'left' },
+      { n: 1, id: 'plan', locator: { role: 'heading', name: 'Wochenplan Praxis', exact: true }, badge: 'right' },
+      { n: 2, id: 'pdf', locator: { role: 'button', name: 'PDF', exact: true, within: 'main' }, badge: 'left' },
     ],
-    alt: 'Seite Schichtplan: Wochenraster Montag bis Freitag mit den Arbeitsplätzen Anmeldung und Labor und den eingeteilten Personen',
+    alt: 'Seite Schichtplan: Plan „Wochenplan Praxis“ mit Wochenraster Montag bis Freitag mit den Arbeitsplätzen Anmeldung und Labor und den eingeteilten Personen',
   },
   {
     id: 'ma-einteilung-heute',
@@ -860,8 +860,8 @@ export const mitarbeitende: Handbook = {
             'je Person ein Kreis mit ihrem Kürzel – der Ring ist die Farbe der Person, die Mitte die Art der Abwesenheit.',
           shot: 'ma-kalender',
           steps: [
-            { n: 1, text: 'Mit [[Monat]] und [[Jahr]] wechseln Sie die Ansicht.' },
-            { n: 2, text: 'Mit den Pfeilen neben dem Monatsnamen blättern Sie weiter. Die **Legende** unter dem Kalender erklärt die Farben.' },
+            { text: 'Mit [[Monat]] und [[Jahr]] wechseln Sie die Ansicht.' },
+            { n: 1, text: 'Mit den Pfeilen neben dem Monatsnamen blättern Sie weiter. Die **Legende** unter dem Kalender erklärt die Farben.' },
           ],
         },
         {
@@ -1104,7 +1104,7 @@ export const mitarbeitende: Handbook = {
           scene: 'handy',
           text:
             'PraxisZeit läuft auch im Browser Ihres Smartphones – ohne eigene App. Auf dem schmalen Bildschirm sitzt die Navigation unten, ' +
-            'und der runde Stempel-Knopf ist immer mit dem Daumen erreichbar.',
+            'und der runde Stempel-Knopf liegt in der Mitte, gut mit dem Daumen erreichbar.',
         },
         {
           kind: 'task',
@@ -1307,11 +1307,11 @@ export const mitarbeitende: Handbook = {
           kind: 'task',
           id: 'schichtplan-ansehen',
           title: 'Wo sehe ich, wann ich wo eingeteilt bin?',
+          intro: 'Klicken Sie in der Navigation auf [[Schichtplan]].',
           shot: 'ma-schichtplan',
           steps: [
-            { n: 1, text: 'Klicken Sie in der Navigation auf [[Schichtplan]].' },
-            { n: 2, text: 'Jeder Plan steht mit seinem Namen und seiner Beschreibung über einem Wochenraster: je Tag die Arbeitsplätze mit Uhrzeit und den eingeteilten Personen. Ein **»** vor einem Text ist ein Hinweis zur Einteilung, z. B. „» Telefondienst bis 9:00“.' },
-            { n: 3, text: '[[PDF]] erstellt den angezeigten Plan als Aushang zum Ausdrucken.' },
+            { n: 1, text: 'Jeder Plan steht mit seinem Namen und seiner Beschreibung über einem Wochenraster: je Tag die Arbeitsplätze mit Uhrzeit und den eingeteilten Personen. Ein **»** vor einem Text ist ein Hinweis zur Einteilung, z. B. „» Telefondienst bis 9:00“.' },
+            { n: 2, text: '[[PDF]] erstellt den angezeigten Plan als Aushang zum Ausdrucken.' },
           ],
         },
         {
@@ -1379,7 +1379,7 @@ export const mitarbeitende: Handbook = {
           id: 'faq-datum-grau',
           title: 'Ich will das Datum eines Eintrags ändern, aber das Feld ist grau.',
           steps: [
-            { text: 'Beim Bearbeiten bleibt das Datum fest. Löschen Sie den Eintrag und beantragen Sie den richtigen Tag über [[Antrag]] – siehe [Anträge](#loeschantrag-stellen).' },
+            { text: 'Beim Bearbeiten bleibt das Datum fest. Löschen Sie den Eintrag und beantragen Sie den richtigen Tag über [[Antrag]] – siehe [Vergangenen Tag nachtragen](#vergangenen-tag-nachtragen).' },
           ],
         },
         {
@@ -1419,7 +1419,7 @@ export const mitarbeitende: Handbook = {
           id: 'faq-minus',
           title: 'Was bedeutet ein rotes Minus beim Saldo?',
           steps: [
-            { text: 'Sie haben weniger gearbeitet als Ihr Soll. Ein grüner Wert heißt: mehr als das Soll.' },
+            { text: 'Sie haben weniger gearbeitet als Ihr Soll. Ein grüner Wert heißt: mindestens das Soll.' },
           ],
         },
         {

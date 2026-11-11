@@ -112,6 +112,11 @@ describe('HandbookPage', () => {
     const circle = g.querySelector('circle')!;
     const [x, y, h] = ['x', 'y', 'height'].map((a) => Number(rect.getAttribute(a)));
     const [cx, cy, r] = ['cx', 'cy', 'r'].map((a) => Number(circle.getAttribute(a)));
+    // R20: Rahmen mit Abstand 4·k um die vermessene Box (k = 1184 / 700), Kreis aus dem Rahmen
+    const k = 1184 / 700;
+    expect(x).toBeCloseTo(600 - 4 * k);
+    expect(y).toBeCloseTo(164 - 4 * k);
+    expect(Number(rect.getAttribute('width'))).toBeCloseTo(40 + 8 * k);
     expect(cx).toBeCloseTo(x - 1.3 * r);
     expect(cy).toBeCloseTo(y + h / 2);
     expect(Number(g.querySelector('text')!.getAttribute('x'))).toBe(cx);

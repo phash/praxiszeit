@@ -713,14 +713,39 @@ def test_thomas_forgot_to_stamp_on_the_fourth_workday_before(full_tenant, app_en
 def test_seed_creates_shift_plan_visible_to_employees(full_tenant, app_engine, monkeypatch):
     """Aufnahmen ``ma-schichtplan``/``ma-einteilung-heute``: ein heute gültiger
     Plan, den Mitarbeitende sehen (``is_plan_visible_to``), Maria am Stichtag
-    eingeteilt (mit »-Hinweis), Einweisungen zu jeder Einteilung. Die Planung
-    schreibt nichts ins Rechenmodell; ein zweiter Lauf hinterlässt genau einen Plan."""
-    from app.models import ShiftAssignment, ShiftPlan, ShiftSlot, TimeEntry, Workstation, WorkstationQualification
+    eingeteilt (mit »-Hinweis), Einweisungen zu jeder Einteilung. Ein zweiter
+    Lauf hinterlässt genau einen Plan. ``create_shift_plan`` allein lässt
+    Zeiteinträge und Abwesenheiten Zeile für Zeile unverändert (Planung ist vom
+    Rechenmodell entkoppelt)."""
+    from app.models import (Absence, ShiftAssignment, ShiftPlan, ShiftSlot, TimeEntry, Workstation,
+                            WorkstationQualification)
     from app.services.shift_planning_service import is_plan_visible_to
     seed = _load_seed()
     _run_seed(app_engine, seed, monkeypatch)
-    entries_before = _read(app_engine, lambda db: db.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID).count())
     _run_seed(app_engine, seed, monkeypatch)
+
+    def fingerprint(db):
+        return (
+            sorted((str(e.id), e.date, e.start_time, e.end_time, e.break_minutes, e.uncredited_minutes)
+                   for e in db.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID)),
+            sorted((str(a.id), a.date, a.type, float(a.hours))
+                   for a in db.query(Absence).filter(Absence.tenant_id == TENANT_ID)),
+        )
+
+    before = _read(app_engine, fingerprint)
+    # Plan des Seeds entfernen und nur den Schichtplan-Schritt erneut ausführen
+    db = SessionLocal(bind=app_engine)
+    try:
+        set_superadmin_context(db)
+        db.query(ShiftPlan).filter(ShiftPlan.tenant_id == TENANT_ID).delete(synchronize_session=False)
+        db.query(Workstation).filter(Workstation.tenant_id == TENANT_ID).delete(synchronize_session=False)
+        db.commit()
+        users = db.query(User).filter(User.tenant_id == TENANT_ID).all()
+        admin = next(u for u in users if u.username == "admin")
+        seed.create_shift_plan(db, [u for u in users if u.username != "admin"], admin)
+    finally:
+        db.close()
+    assert _read(app_engine, fingerprint) == before
 
     def collect(db):
         names = {u.id: u.username for u in db.query(User).filter(User.tenant_id == TENANT_ID)}
@@ -739,7 +764,6 @@ def test_seed_creates_shift_plan_visible_to_employees(full_tenant, app_engine, m
                             if n == "maria" and s.weekday == STICHTAG.weekday()],
             "assigned": {(n, ws[s.workstation_id]) for n, s in assigns},
             "quals": quals,
-            "entries": db.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID).count(),
         }
 
     r = _read(app_engine, collect)
@@ -747,7 +771,6 @@ def test_seed_creates_shift_plan_visible_to_employees(full_tenant, app_engine, m
     assert r["ws"] == sorted(name for name, _ in seed.SHIFT_WORKSTATIONS)
     assert ("Anmeldung", "Telefondienst bis 9:00") in r["maria_today"]
     assert r["assigned"] <= r["quals"], "jede Einteilung hat eine Einweisung"
-    assert r["entries"] == entries_before
 
 
 def test_change_requests_have_realistic_timestamps(full_tenant, app_engine, monkeypatch):

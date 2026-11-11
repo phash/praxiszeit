@@ -8,9 +8,10 @@ import { ALL_SHOTS, HANDBOOKS } from './index';
 const manifest = manifestJson as unknown as Manifest;
 
 /** Kapitel ohne Screenshot (Ruling R7), z. B. Häufige Fragen. Je Eintrag eine Begründung. */
+/** Einträge als `<Handbuch-ID>:<Kapitel-ID>`. */
 const NO_SHOT_CHAPTERS: readonly string[] = [
-  // Mitarbeitende „Häufige Fragen“: kurze Antworten, jede verweist auf die Aufgabe mit Bild.
-  'haeufige-fragen',
+  // Häufige Fragen: kurze Text-Antworten; Bilder stehen in den Fachkapiteln.
+  'mitarbeitende:haeufige-fragen',
 ];
 
 /** Alle Zeichenketten eines Objekts (Texte, Titel, Alt-Texte, Locator-Namen …). */
@@ -35,7 +36,7 @@ describe('Handbuch-Inhalte', () => {
 
     it(`${h.id}: jedes Kapitel hat eine Aufgabe mit Screenshot oder steht in NO_SHOT_CHAPTERS`, () => {
       const missing = h.chapters
-        .filter((ch) => !NO_SHOT_CHAPTERS.includes(ch.id))
+        .filter((ch) => !NO_SHOT_CHAPTERS.includes(`${h.id}:${ch.id}`))
         .filter((ch) => !ch.blocks.some((b) => b.kind === 'task' && b.shot))
         .map((ch) => ch.id);
       expect(missing).toEqual([]);

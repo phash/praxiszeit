@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertSingleVisible, boxInside, computeCrop, markerBadgePosition } from './geometry';
+import { assertSingleVisible, boxInside, computeCrop, markerBadgePosition, paddedMarkerBox } from './geometry';
 
 const VP = { w: 1440, h: 900 };
 
@@ -122,5 +122,16 @@ describe('markerBadgePosition (R18)', () => {
     const c = { x: 256, y: 0, w: 1184, h: 900 };
     expect(markerBadgePosition({ x: 270, y: 10, w: 40, h: 40 }, r, c)).toEqual({ cx: 276, cy: 20 });
     expect(markerBadgePosition({ x: 1436, y: 895, w: 4, h: 5 }, r, c)).toEqual({ cx: 1420, cy: 880 });
+  });
+});
+
+describe('paddedMarkerBox (R20)', () => {
+  const crop = { x: 256, y: 0, w: 1184, h: 900 };
+  it('vergrößert die Box um 4·k nach allen Seiten', () => {
+    expect(paddedMarkerBox({ x: 400, y: 100, w: 200, h: 40 }, 2, crop)).toEqual({ x: 392, y: 92, w: 216, h: 56 });
+  });
+  it('klemmt den Rahmen in den Ausschnitt', () => {
+    expect(paddedMarkerBox({ x: 258, y: 2, w: 100, h: 40 }, 2, crop)).toEqual({ x: 256, y: 0, w: 110, h: 50 });
+    expect(paddedMarkerBox({ x: 1400, y: 880, w: 40, h: 20 }, 2, crop)).toEqual({ x: 1392, y: 872, w: 48, h: 28 });
   });
 });

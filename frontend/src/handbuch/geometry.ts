@@ -71,6 +71,24 @@ export function boxInside(inner: Box, outer: Box, tol = 0.5): boolean {
   );
 }
 
+/** Abstand des Markierungsrahmens zum vermessenen Element (R20), in Einheiten von k = Ausschnittbreite / 700. */
+export const MARKER_FRAME_PAD = 4;
+
+/**
+ * Gezeichneter Markierungsrahmen (Ruling R20): die vermessene Box um p = 4·k nach
+ * außen vergrößert, damit die Linie nie Text des Elements überdeckt; in den
+ * Ausschnitt geklemmt. Aus diesem Rahmen rechnet auch `markerBadgePosition`.
+ * Eine Regel für ShotFigure und die Kontaktseite.
+ */
+export function paddedMarkerBox(box: Box, k: number, crop: Box): Box {
+  const p = MARKER_FRAME_PAD * k;
+  const x1 = Math.max(crop.x, box.x - p);
+  const y1 = Math.max(crop.y, box.y - p);
+  const x2 = Math.min(crop.x + crop.w, box.x + box.w + p);
+  const y2 = Math.min(crop.y + crop.h, box.y + box.h + p);
+  return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
+}
+
 /** Lage des Nummernkreises zum Rahmen (Ruling R18). */
 export type BadgePlacement = 'left' | 'corner' | 'right' | 'top';
 

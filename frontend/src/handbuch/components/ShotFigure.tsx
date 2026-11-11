@@ -1,4 +1,4 @@
-import { markerBadgePosition } from '../geometry';
+import { markerBadgePosition, paddedMarkerBox } from '../geometry';
 import type { ManifestShot, ShotDef } from '../types';
 
 export interface ShotFigureProps {
@@ -32,8 +32,9 @@ export default function ShotFigure({ shotId, def, m, imgBase, active = null }: S
       >
         <image href={src} x={0} y={0} width={m.width} height={m.height} />
         {def.markers.map((mk) => {
-          const r = m.markers[mk.id];
-          if (!r) return null;
+          const box = m.markers[mk.id];
+          if (!box) return null;
+          const r = paddedMarkerBox(box, k, m.crop); // R20
           const state = active == null ? '' : active === mk.n ? ' hb-act' : ' hb-dim';
           const radius = 17 * k;
           const { cx, cy } = markerBadgePosition(r, radius, m.crop, mk.badge);
