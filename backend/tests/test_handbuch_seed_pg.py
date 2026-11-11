@@ -613,10 +613,13 @@ def test_maria_vacation_has_approved_request(full_tenant, app_engine, monkeypatc
     from app.models.vacation_request import VacationRequest
     seed = _load_seed()
     _run_seed(app_engine, seed, monkeypatch)
-    rows = _read(app_engine, lambda db: [(v.status, v.reviewed_by, v.date, v.end_date)
+    rows = _read(app_engine, lambda db: [(v.status, v.reviewed_by, v.date, v.end_date, v.created_at, v.reviewed_at)
                                         for v in db.query(VacationRequest).join(User, User.id == VacationRequest.user_id)
                                         .filter(VacationRequest.tenant_id == TENANT_ID, User.username == "maria")])
     assert len(rows) == 1 and rows[0][0] == "approved" and rows[0][1] == ADMIN_ID and rows[0][3] < STICHTAG
+    # „Meine Anträge" zeigt „Gestellt: …": vor dem Urlaub gestellt, danach genehmigt
+    created, reviewed = rows[0][4], rows[0][5]
+    assert created.date() < rows[0][2] and created < reviewed and reviewed.date() < rows[0][2]
 
 
 def test_seed_writes_every_setting_default_as_a_row(full_tenant, app_engine, monkeypatch):
@@ -642,3 +645,21 @@ def test_seed_writes_every_setting_default_as_a_row(full_tenant, app_engine, mon
                  "vacation_approval_required": "true"}
     for key, default in ts_defaults.items():
         assert rows[key] == overrides.get(key, default), key
+
+
+def test_no_entry_of_the_stichtag_ends_after_capture_time(full_tenant, app_engine, monkeypatch):
+    """Aufgenommen wird am Stichtag um 10:30: kein Eintrag dieses Tages endet
+    später (sonst zeigen die Listen Zeiten aus der Zukunft). Maria und Sarah
+    sind eingestempelt (offen), die übrigen noch nicht."""
+    from app.models import TimeEntry
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+
+    def collect(db):
+        names = {u.id: u.username for u in db.query(User).filter(User.tenant_id == TENANT_ID)}
+        return [(names[e.user_id], e.start_time, e.end_time) for e in db.query(TimeEntry).filter(
+            TimeEntry.tenant_id == TENANT_ID, TimeEntry.date == STICHTAG)]
+
+    rows = _read(app_engine, collect)
+    assert not [r for r in rows if r[2] is not None and r[2] > time(10, 30)]
+    assert sorted((r[0], r[1]) for r in rows if r[2] is None) == [("maria", time(7, 45)), ("sarah", time(8, 0))]

@@ -45,6 +45,24 @@ const CAPTURE_CSS = [
   'div.fixed.top-4.right-4 > [role="alert"]{display:none!important}',
 ].join('\n');
 
+/**
+ * Offene Dialoge. Die Dokumentations-Schublade (DocDrawer) steht geschlossen mit
+ * aria-hidden ausserhalb des Fensters im DOM und gilt fuer Playwright als sichtbar.
+ */
+const OPEN_DIALOG = '[role="dialog"]:not([aria-hidden="true"])';
+
+/** Haengt CAPTURE_CSS als <style data-handbuch-capture> in jedes Dokument. */
+const CAPTURE_INIT_SCRIPT = `(() => {
+  const add = () => {
+    const s = document.createElement('style');
+    s.setAttribute('data-handbuch-capture', '');
+    s.textContent = ${JSON.stringify(CAPTURE_CSS)};
+    document.head.appendChild(s);
+  };
+  if (document.head) add();
+  else document.addEventListener('DOMContentLoaded', add);
+})();`;
+
 // ── Hilfen ──────────────────────────────────────────────────────────────────
 
 function readState(): { baseUrl: string; stichtag: string } {
@@ -89,7 +107,7 @@ function parseArgs(argv: string[]): { only: string[] | null } {
 function scope(page: Page, within: 'main' | 'dialog' | 'nav' | undefined): Page | Locator {
   if (within === 'main') return page.locator('main');
   // Mehrere Dialoge/Navigationsleisten im DOM (Sidebar + mobile Leiste): nur die sichtbaren.
-  if (within === 'dialog') return page.locator('[role="dialog"]').filter({ visible: true });
+  if (within === 'dialog') return page.locator(OPEN_DIALOG).filter({ visible: true });
   if (within === 'nav') return page.locator('nav').filter({ visible: true });
   return page;
 }
@@ -249,7 +267,7 @@ async function calm(page: Page) {
 
 /** Lange Dialoge: Fenster strecken, bis der Dialog ganz hineinpasst (Muster shotUntil). */
 async function stretchForDialog(page: Page, shotId: string) {
-  const dlg = page.locator('[role="dialog"]').filter({ visible: true });
+  const dlg = page.locator(OPEN_DIALOG).filter({ visible: true });
   if ((await dlg.count()) !== 1) throw new Error(`${shotId}: crop 'dialog' braucht genau einen sichtbaren Dialog, gefunden ${await dlg.count()}`);
   for (let round = 0; round < 6; round++) {
     const overflow = await dlg.evaluate((el) => {
@@ -305,7 +323,7 @@ async function measure(page: Page, def: ShotDef): Promise<Measured> {
   const out: Measured = { markers };
   const main = await page.locator('main').filter({ visible: true }).first().boundingBox().catch(() => null);
   if (main) out.main = { x: main.x, y: main.y, w: main.width, h: main.height };
-  const dlg = page.locator('[role="dialog"]').filter({ visible: true });
+  const dlg = page.locator(OPEN_DIALOG).filter({ visible: true });
   if ((await dlg.count()) === 1) {
     const d = await dlg.boundingBox();
     if (d) out.dialog = { x: d.x, y: d.y, w: d.width, h: d.height };
@@ -335,16 +353,10 @@ async function newContext(browser: Browser, def: ShotDef, stichtag: string): Pro
     isMobile: def.viewport === 'mobile',
     hasTouch: def.viewport === 'mobile',
   });
-  await ctx.addInitScript((css: string) => {
-    const add = () => {
-      const s = document.createElement('style');
-      s.setAttribute('data-handbuch-capture', '');
-      s.textContent = css;
-      document.head.appendChild(s);
-    };
-    if (document.head) add();
-    else document.addEventListener('DOMContentLoaded', add);
-  }, CAPTURE_CSS);
+  // Als Zeichenkette, nicht als Funktion: tsx/esbuild umhuellt benannte
+  // Pfeilfunktionen mit `__name(...)`, das es im Browser nicht gibt — die
+  // Funktion warf dort still, und das Aufnahme-CSS fehlte in jedem Bild.
+  await ctx.addInitScript(CAPTURE_INIT_SCRIPT);
   await ctx.clock.setFixedTime(zonedInstant(stichtag, CLOCK_TIME, TZ));
   return ctx;
 }

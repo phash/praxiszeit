@@ -21,6 +21,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone, time as dt_time
 from decimal import Decimal
 import random
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, '/app')
 
@@ -44,6 +45,7 @@ random.seed(42)  # Reproduzierbar
 
 # Default tenant UUID (on-prem single-tenant bootstrap).
 TENANT_ID = "00000000-0000-0000-0000-000000000001"
+BERLIN = ZoneInfo("Europe/Berlin")
 
 PASSWORD = "Handbuch2026!"
 MAIL_DOMAIN = "praxis-lindenplatz.example"
@@ -427,12 +429,16 @@ def create_absences(db, users: list, admin, stichtag: date, holiday_dates) -> No
         for d in run:
             book(maria, d, AbsenceType.VACATION, "Kurzurlaub")
         # genehmigter Antrag dazu (vacation_approval_required=true): die
-        # Abwesenheiten oben sind das Ergebnis der Genehmigung
+        # Abwesenheiten oben sind das Ergebnis der Genehmigung. Gestellt drei
+        # Wochen vor dem Urlaub, genehmigt am Folgetag — sonst zeigt „Meine
+        # Anträge" „Gestellt: <Stichtag>" für einen längst vergangenen Urlaub.
+        asked = datetime.combine(run[0] - timedelta(days=21), dt_time(9, 12), tzinfo=BERLIN)
         db.add(VacationRequest(
             tenant_id=TENANT_ID, user_id=maria.id, date=run[0], end_date=run[-1],
             hours=_day_target(db, maria, run[0]), absence_type="vacation", half_day=False,
             note="Kurzurlaub", status=VacationRequestStatus.APPROVED.value,
-            reviewed_by=admin.id if admin else None, reviewed_at=datetime.now(timezone.utc),
+            reviewed_by=admin.id if admin else None, reviewed_at=asked + timedelta(days=1, hours=2),
+            created_at=asked, updated_at=asked + timedelta(days=1, hours=2),
         ))
     if sarah:  # Krank, 2 Tage
         d1 = prev_workday(stichtag - timedelta(days=15), holiday_dates)
@@ -546,6 +552,24 @@ def create_time_entries_for_user(db, user: User, holiday_dates: set, start: date
     grace = work_window_service.get_grace_minutes(db, TENANT_ID)
     count = 0
     for d in days:
+        if stichtag and d == stichtag and user.username != "maria":
+            # Die Aufnahme laeuft am Stichtag um 10:30 — kein Eintrag darf in der
+            # Zukunft enden. Mit Bloecken: seit Blockbeginn eingestempelt (offen,
+            # wie clock_in); sonst noch nicht eingestempelt. Maria s. u.
+            day_blocks = work_window_service.get_scheduled_blocks(db, user, d)
+            if getattr(user, "work_blocks", None) and day_blocks and day_blocks[0][0] <= 10 * 60 + 30:
+                r = work_window_service.clamp(
+                    db, user, d, _minutes_to_time(day_blocks[0][0]), None,
+                    grace, credit_override=False,
+                )
+                db.add(TimeEntry(
+                    tenant_id=TENANT_ID, user_id=user.id, date=d,
+                    start_time=r.eff_start, end_time=None, raw_start_time=r.raw_start,
+                    uncredited_minutes=r.uncredited_minutes, clamp_grace_minutes=r.grace_minutes,
+                    break_minutes=0, note="",
+                ))
+                count += 1
+            continue
         cap = reduced.get(d)
         if cap is None and is_half_special_day(d):  # halber Tag: halbes Tagessoll
             cap = _day_target(db, user, d) / 2
