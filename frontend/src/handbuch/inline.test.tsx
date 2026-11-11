@@ -34,6 +34,21 @@ describe('renderInline', () => {
   });
 });
 
+describe('unsafe and malformed markup', () => {
+  it.each(['javascript:alert1', 'data:text/html,x', '//evil.com'])('renders %s link as plain text', (h) => {
+    const out = html(`[x](${h})`);
+    expect(out).not.toContain('<a');
+    expect(out).not.toContain('href');
+    expect(inlineToMarkdown(`[x](${h})`, opts)).toBe(`[x](${h})`);
+  });
+  it('keeps unbalanced bold literal', () => {
+    expect(html('**a')).toBe('**a');
+  });
+  it('keeps empty UI pill literal', () => {
+    expect(html('[[]]')).toBe('[[]]');
+  });
+});
+
 describe('inlineToMarkdown', () => {
   it('maps markup', () => {
     expect(inlineToMarkdown('**a** [[Neuer Eintrag]]', opts)).toBe('**a** `Neuer Eintrag`');

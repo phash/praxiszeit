@@ -103,6 +103,12 @@ describe('validateHandbook', () => {
     expect(errs.some((e) => e.includes('unbekanntes Handbuch "gibtsnicht"'))).toBe(true);
   });
 
+  it.each(['javascript:alert1', 'data:text/html,x', '//evil.com'])('rejects invalid link target %s', (t) => {
+    const { h, m } = fixture();
+    h.chapters[0].blocks.push({ kind: 'prose', text: `Siehe [dort](${t}).` });
+    expect(validateHandbook(h, m).some((e) => e.includes(`ungültiges Link-Ziel "${t}"`))).toBe(true);
+  });
+
   it('accepts known handbuch: link target', () => {
     const { h, m } = fixture();
     h.chapters[0].blocks.push({ kind: 'prose', text: 'Siehe [dort](handbuch:so-rechnet#a).' });

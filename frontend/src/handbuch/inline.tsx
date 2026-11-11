@@ -16,7 +16,13 @@ type Token =
   | { t: 'text'; v: string }
   | { t: 'bold'; v: string }
   | { t: 'ui'; v: string }
-  | { t: 'link'; v: string; href: string };
+  | { t: 'link'; v: string; href: string }
+  | { t: 'badlink'; v: string; href: string; raw: string };
+
+/** Erlaubte Link-Ziele: #anker, /route (nicht //), handbuch:<id>..., http(s)://. */
+export function isAllowedHref(href: string): boolean {
+  return /^#/.test(href) || /^\/(?!\/)/.test(href) || /^handbuch:/.test(href) || /^https?:\/\//i.test(href);
+}
 
 const TOKEN_RE = /\*\*(.+?)\*\*|\[\[(.+?)\]\]|\[([^\]]+)\]\(([^)\s]+)\)/g;
 
@@ -28,7 +34,8 @@ export function tokenize(text: Inline): Token[] {
     if (idx > last) out.push({ t: 'text', v: text.slice(last, idx) });
     if (m[1] !== undefined) out.push({ t: 'bold', v: m[1] });
     else if (m[2] !== undefined) out.push({ t: 'ui', v: m[2] });
-    else out.push({ t: 'link', v: m[3], href: m[4] });
+    else if (isAllowedHref(m[4])) out.push({ t: 'link', v: m[3], href: m[4] });
+    else out.push({ t: 'badlink', v: m[3], href: m[4], raw: m[0] });
     last = idx + m[0].length;
   }
   if (last < text.length) out.push({ t: 'text', v: text.slice(last) });
@@ -58,13 +65,15 @@ export function renderInline(text: Inline, opts: InlineOpts): ReactNode {
       case 'ui':
         return <span key={i} className="hb-ui">{tok.v}</span>;
       case 'link': {
-        const external = /^https?:\/\//.test(tok.href);
+        const external = /^https?:\/\//i.test(tok.href);
         return external ? (
           <a key={i} href={tok.href} target="_blank" rel="noopener">{tok.v}</a>
         ) : (
           <a key={i} href={resolveHref(tok.href, opts)}>{tok.v}</a>
         );
       }
+      case 'badlink':
+        return <Fragment key={i}>{tok.raw}</Fragment>;
       default:
         return <Fragment key={i}>{tok.v}</Fragment>;
     }
@@ -83,6 +92,7 @@ export function inlineToMarkdown(text: Inline, _opts: InlineOpts): string {
           const target = hb ? `${MD_FILES[hb.id as HandbookId] ?? hb.id}${hb.anchor}` : tok.href;
           return `[${tok.v}](${target})`;
         }
+        case 'badlink': return tok.raw;
         default: return tok.v;
       }
     })

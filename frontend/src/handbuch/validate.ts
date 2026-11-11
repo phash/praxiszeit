@@ -24,6 +24,10 @@ export function validateHandbook(h: Handbook, m: Manifest): string[] {
 
   const checkLinks = (where: string, text: Inline) => {
     for (const tok of tokenize(text)) {
+      if (tok.t === 'badlink') {
+        errors.push(`${where}: ungültiges Link-Ziel "${tok.href}"`);
+        continue;
+      }
       if (tok.t !== 'link') continue;
       const hb = parseHandbookLink(tok.href);
       if (hb && !(HANDBOOK_IDS as string[]).includes(hb.id)) {
