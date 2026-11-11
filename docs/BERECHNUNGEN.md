@@ -1536,6 +1536,13 @@ Bewusst ausgenommen:
   rückwirkend. Bei Bedarf korrigiert die Verwaltung die Zeile von Hand, indem sie die
   Abwesenheit löscht: An einem Tag ohne Soll zählt sie ohnehin nicht als Abwesenheitstag
   (`absence_days`), neu buchen lässt sie sich dort nicht.
+  **Migration 077** trägt `half_day` für eindeutige Alt-Zeilen nach: ganztägige Typen ohne
+  Uhrzeit (nicht Überstundenausgleich), Werktag mit Stundenzählung und Tagessoll > 0 laut
+  Snapshot des Datums; `hours` = Tagessoll → `false`, = Tagessoll/2 → `true` (Toleranz
+  0,005 h). Der 24./31.12., verkürzte Tage, Zeiträume und abweichende Stunden (z. B. schon
+  gedriftete Werte) bleiben NULL und folgen weiter dieser Regel. Für die nachgetragenen Zeilen
+  ändert sich der Verbrauch nicht (1,0 bzw. 0,5 wie zuvor `hours ÷ Tagessoll`), er bleibt aber
+  bei späteren Arbeitszeit-Änderungen stehen, und die Rückrechnung zieht die Stunden mit.
 
 `half_day` halbiert die Umrechnung. Der **#146/#394-Sondertagsfaktor (24./31.12.) wird hier
 bewusst NICHT angewandt**: die Rückrechnung schreibt das **ungewichtete** Tagessoll des Tages
