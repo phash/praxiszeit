@@ -11,6 +11,8 @@
 #              und stehen in der Gruppe handbuch_md
 #   handbuch_md – docs/handbuch/*.md und frontend/public/help/*.md der drei
 #              Handbücher stimmen mit dem Generator überein (frontend/src/handbuch)
+#   handbuch_pzweb – pzweb-Kopie des Handbuch-Codes stimmt mit dem Sync-Skript
+#              überein (übersprungen ohne pzweb-Checkout mit Handbuch)
 #   links    – jeder In-Page-Link (#anker) der Handbücher hat ein Ziel
 #   weitere  – je Doku-Fläche Pflicht- und Verbotsbegriffe (eine Gruppe je Fläche)
 #
@@ -1388,6 +1390,28 @@ group_db_port() {
 # der Generator vergleicht im --check-Modus, schreibt nichts.
 group_handbuch_md() {
   (cd frontend && npm run -s handbuch:md -- --check) || FAIL=1
+}
+
+# pzweb-Kopie des Handbuch-Codes (scripts/sync-handbuch-to-pzweb.sh): das Skript
+# läuft in ein Temp-Verzeichnis, Vergleich per diff -r. Ziel = $PZWEB_DIR, sonst
+# ../pzweb. Fehlt es oder enthält es noch kein frontend/src/handbuch (z. B. pzweb
+# auf main vor dem Auslieferungs-Merge), meldet die Gruppe "übersprungen" (Exit 0,
+# CI hat kein pzweb-Checkout). Verglichen wird gegen den Stand, der ausgeliefert wird.
+group_handbuch_pzweb() {
+  local pz="${PZWEB_DIR:-../pzweb}" tmp
+  if [ ! -d "$pz" ] || [ ! -d "$pz/frontend/src/handbuch" ]; then
+    echo "handbuch_pzweb: übersprungen (kein pzweb-Checkout mit frontend/src/handbuch unter $pz)"
+    return 0
+  fi
+  tmp="$(mktemp -d)"
+  mkdir -p "$tmp/frontend/src/handbuch" "$tmp/frontend/public/handbuch/img"
+  bash scripts/sync-handbuch-to-pzweb.sh "$tmp" >/dev/null || { FAIL=1; rm -rf "$tmp"; return; }
+  if ! diff -r "$tmp/frontend/src/handbuch" "$pz/frontend/src/handbuch" \
+     || ! diff -r "$tmp/frontend/public/handbuch/img" "$pz/frontend/public/handbuch/img"; then
+    echo "ABWEICHUNG handbuch_pzweb: pzweb-Kopie veraltet -> bash scripts/sync-handbuch-to-pzweb.sh $pz"
+    FAIL=1
+  fi
+  rm -rf "$tmp"
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
