@@ -62,13 +62,18 @@ export default function AdminAbsences() {
     date: format(new Date(), 'yyyy-MM-dd'),
     end_date: '',
     type: 'vacation' as 'vacation' | 'sick' | 'training' | 'overtime' | 'other' | 'paid_leave',
-    hours: 8,
+    hours: 0, // nur bei Überstundenausgleich eingegeben; sonst bucht der Server das Tagessoll
     note: '',
     half_day: false,
   });
   // #312: optional custom absence reason (sends reason_id → backend maps the type)
   const [selectedReasonId, setSelectedReasonId] = useState<string | null>(null);
   const [reasons, setReasons] = useState<AbsenceReason[]>([]);
+
+  // Nur Überstundenausgleich behält die eingegebenen Stunden (Backend create_absence);
+  // alle anderen Typen buchen das Tagessoll laut Vertrag, nie einen Client-Wert.
+  const reasonBehavior = reasons.find(r => r.id === selectedReasonId)?.base_behavior;
+  const hoursEditable = selectedReasonId ? reasonBehavior === 'overtime_comp' : formData.type === 'overtime';
 
   useEffect(() => {
     myReasons().then(setReasons).catch(() => { /* picker just omits custom reasons */ });
@@ -232,7 +237,8 @@ export default function AdminAbsences() {
         date: formData.date,
         end_date: isDateRange && formData.end_date ? formData.end_date : null,
         type: formData.type,
-        hours: formData.hours,
+        // Server ignoriert den Wert außer bei Überstundenausgleich; Schema verlangt > 0
+        hours: hoursEditable ? formData.hours : 8,
         note: formData.note || null,
         half_day: !isDateRange && formData.half_day,
         reason_id: selectedReasonId,  // #312: backend maps the type from the reason
@@ -243,7 +249,7 @@ export default function AdminAbsences() {
       setShowForm(false);
       setIsDateRange(false);
       setSelectedReasonId(null);
-      setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: 8, note: '', half_day: false });
+      setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: 0, note: '', half_day: false });
       loadAbsences(targetId);
     } catch (error: any) {
       toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
@@ -652,21 +658,26 @@ export default function AdminAbsences() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Stunden{isDateRange && ' (pro Tag)'}</label>
+                <label htmlFor="admin-absence-hours" className="block text-sm font-medium text-gray-700 mb-1">Stunden{isDateRange && ' (pro Tag)'}</label>
                 <input
+                  id="admin-absence-hours"
                   type="number"
                   step="0.5"
-                  value={formData.hours}
+                  min="0.5"
+                  value={hoursEditable && formData.hours > 0 ? formData.hours : ''}
                   onChange={e => setFormData(p => ({ ...p, hours: parseHours(e.target.value) }))}
-                  required
-                  disabled={!isDateRange && formData.half_day}
+                  required={hoursEditable}
+                  disabled={!hoursEditable}
+                  placeholder={hoursEditable ? '' : '–'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary disabled:bg-gray-100 disabled:text-gray-400"
                 />
-                {!isDateRange && formData.half_day && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Halber Tag: 0,5 × Tagessoll wird automatisch gebucht (Stundenwert wird ignoriert)
-                  </p>
-                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  {hoursEditable
+                    ? 'Stunden, die vom Überstundenkonto abgebaut werden'
+                    : !isDateRange && formData.half_day
+                    ? 'Halber Tag: 0,5 × Tagessoll wird automatisch gebucht'
+                    : 'Es wird das Tagessoll laut Vertrag gebucht'}
+                </p>
               </div>
             </div>
 

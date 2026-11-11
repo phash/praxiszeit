@@ -84,3 +84,52 @@ describe('<AdminAbsences /> Betriebsferien: Jahresabschluss-Warnung', () => {
     expect(toast.warning).not.toHaveBeenCalled();
   });
 });
+
+// P3 (Handbuch-Grafik): Voll-Tag-Typen buchen das Tagessoll laut Vertrag (Server);
+// das Formular darf keine erfundene Zahl (8) vorbelegen. Nur OVERTIME behält Stunden.
+describe('<AdminAbsences /> Stundenfeld im Formular', () => {
+  async function openForm() {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/admin/users')
+        return Promise.resolve({
+          data: [{ id: 'u1', first_name: 'Anna', last_name: 'Test', is_active: true }],
+        });
+      return Promise.resolve({ data: [] });
+    });
+    render(<AdminAbsences />);
+    const select = await screen.findByTestId('absence-employee-filter');
+    await screen.findByRole('option', { name: 'Anna Test' });
+    fireEvent.change(select, { target: { value: 'u1' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Abwesenheit eintragen' }));
+    return screen.findByLabelText(/^Stunden/);
+  }
+
+  it('Urlaub: Feld gesperrt, leer, Hinweis auf Tagessoll', async () => {
+    const hours = (await openForm()) as HTMLInputElement;
+    expect(hours).toBeDisabled();
+    expect(hours.value).not.toBe('8');
+    expect(hours.value).toBe('');
+    expect(screen.getByText(/Tagessoll laut Vertrag/)).toBeInTheDocument();
+  });
+
+  it('Überstundenausgleich: Feld editierbar, Wert wird gesendet', async () => {
+    postMock.mockResolvedValue({ data: {} });
+    const hours = (await openForm()) as HTMLInputElement;
+    fireEvent.change(screen.getByDisplayValue('Urlaub'), { target: { value: 'overtime' } });
+    expect(hours).not.toBeDisabled();
+    expect(hours.value).toBe('');
+    fireEvent.change(hours, { target: { value: '3.5' } });
+    fireEvent.click(screen.getByRole('button', { name: "Speichern" }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ type: 'overtime', hours: 3.5, user_id: 'u1' });
+  });
+
+  it('Urlaub: sendet weiterhin einen gültigen Stundenwert (Server ignoriert ihn)', async () => {
+    postMock.mockResolvedValue({ data: {} });
+    await openForm();
+    fireEvent.click(screen.getByRole('button', { name: "Speichern" }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ type: 'vacation' });
+    expect(postMock.mock.calls[0][1].hours).toBeGreaterThan(0);
+  });
+});
