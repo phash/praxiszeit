@@ -361,7 +361,7 @@ def create_employees(db) -> list:
 # ── Vertragsverlauf ───────────────────────────────────────────────────────────
 
 def _snapshot_row(user: User, effective_from: date, *, weekly_hours, work_days, vacation_days,
-                  blocks=None, day_hours=None, note=None) -> WorkingHoursChange:
+                  blocks=None, day_hours=None, note=None, created_at=None) -> WorkingHoursChange:
     """Vollständiger Vertrags-Snapshot (wie ``admin_users._frozen_row``/Anlegen)."""
     values = {f: None for f in HOURS_FIELDS}
     use_daily = False
@@ -380,6 +380,8 @@ def _snapshot_row(user: User, effective_from: date, *, weekly_hours, work_days, 
         milog_working_time_account=user.milog_working_time_account,
         agreed_monthly_hours=None, use_fixed_monthly_target=False,
         note=note, **values,
+        # Handbuch: „Erstellt:“ im Verlauf realistisch statt der Seed-Uhr
+        **({"created_at": created_at} if created_at is not None else {}),
     )
 
 
@@ -399,10 +401,12 @@ def create_contract_history(db, users: list, stichtag: date) -> None:
             change_from += timedelta(days=7)
         db.add(_snapshot_row(sarah, base_from, weekly_hours=None, work_days=None,
                              vacation_days=sarah.vacation_days, blocks=SARAH_OLD_BLOCKS,
-                             note="Ausgangsvertrag"))
+                             note="Ausgangsvertrag", created_at=_berlin(base_from, 9, 0)))
         db.add(_snapshot_row(sarah, change_from, weekly_hours=None, work_days=None,
                              vacation_days=sarah.vacation_days, blocks=SARAH_BLOCKS,
-                             note="Aufstockung auf 25 Wochenstunden"))
+                             note="Aufstockung auf 25 Wochenstunden",
+                             # eine Woche vorher vereinbart und eingetragen
+                             created_at=_berlin(change_from - timedelta(days=7), 14, 10)))
         print(f"  ✓ Sarah: Arbeitszeit-Änderung ab {change_from}")
 
     petra = by_name.get("petra")
@@ -411,10 +415,11 @@ def create_contract_history(db, users: list, stichtag: date) -> None:
         new_days = Decimal("18.0")
         db.add(_snapshot_row(petra, base_from, weekly_hours=emp["weekly_hours"], work_days=4,
                              vacation_days=petra.vacation_days, day_hours=emp["day_hours"],
-                             note="Ausgangsvertrag"))
+                             note="Ausgangsvertrag", created_at=_berlin(base_from, 9, 5)))
         db.add(_snapshot_row(petra, month_start, weekly_hours=emp["weekly_hours"], work_days=4,
                              vacation_days=new_days, day_hours=emp["day_hours"],
-                             note="Urlaubsanspruch auf 18 Tage erhöht"))
+                             note="Urlaubsanspruch auf 18 Tage erhöht",
+                             created_at=_berlin(month_start - timedelta(days=6), 11, 20)))
         petra.vacation_days = new_days  # User-Zeile spiegelt die jüngste Zeile
         print(f"  ✓ Petra: Urlaubsanspruch 16 → 18 ab {month_start}")
     db.commit()
@@ -530,6 +535,9 @@ def create_absences(db, users: list, admin, stichtag: date, holiday_dates) -> No
             tenant_id=TENANT_ID, user_id=thomas.id, date=run[0], end_date=run[-1],
             hours=_day_target(db, thomas, run[0]), absence_type="vacation", half_day=False,
             note="Familienurlaub", status=VacationRequestStatus.PENDING.value,
+            # am Vortag des Stichtags gestellt — nicht in der Aufnahme-Minute
+            created_at=_berlin(prev_workday(stichtag - timedelta(days=1), holiday_dates), 16, 20),
+            updated_at=_berlin(prev_workday(stichtag - timedelta(days=1), holiday_dates), 16, 20),
         ))
         print(f"  ✓ Urlaubsantrag Thomas (offen) {run[0]}–{run[-1]}")
     db.commit()
@@ -671,7 +679,8 @@ def create_time_entries_for_user(db, user: User, holiday_dates: set, start: date
 # ── Korrekturanträge ──────────────────────────────────────────────────────────
 
 def _add_change_request(db, user, entry, status, prop_start, prop_end, prop_break,
-                        reason, rejection_reason=None, reviewer=None, created_at=None, reviewed_at=None):
+                        reason, rejection_reason=None, reviewer=None, created_at=None, reviewed_at=None,
+                        request_credit_override=False):
     """Legt einen UPDATE-Korrekturantrag über die Session an — mit Vorher-Bild
     wie ``change_requests.create_change_request`` und, wenn abgelehnt, mit
     Prüferin und Zeitpunkt wie ``review_change_request``.
@@ -699,6 +708,7 @@ def _add_change_request(db, user, entry, status, prop_start, prop_end, prop_brea
         original_uncredited_minutes=entry.uncredited_minutes,
         reason=reason,
         rejection_reason=rejection_reason,
+        request_credit_override=request_credit_override,
     )
     if created_at is not None:
         # Realistischer Antragszeitpunkt statt der Seed-Uhr (sonst „gestellt“ und
@@ -766,6 +776,32 @@ def create_change_requests(db, users: list, stichtag: date, reviewer=None):
                 # am Folgetag gestellt, am Tag danach abgelehnt — beides lange vor dem Stichtag
                 created_at=_berlin(_next_weekday(entry.date), 7, 58),
                 reviewed_at=_berlin(_next_weekday(_next_weekday(entry.date)), 9, 15),
+            )
+            count += 1
+
+    # Sarah: „Anrechnung beantragen“ (P21) am ÄLTEREN über die Mittagslücke
+    # durchgestempelten Tag — der neueste bleibt ohne Antrag (Aufnahme
+    # ``ma-nicht-angerechnet``). Vorbelegt sind die Stempel, wie im Formular.
+    sarah = next((u for u in users if u.username == "sarah"), None)
+    if sarah:
+        through = [
+            e for e in db.query(TimeEntry).filter(
+                TimeEntry.user_id == sarah.id,
+                TimeEntry.tenant_id == TENANT_ID,  # Superadmin-Kontext
+                TimeEntry.date < stichtag,
+                TimeEntry.end_time.isnot(None),
+                TimeEntry.uncredited_minutes > 0,
+            ).order_by(TimeEntry.date.desc()).all()
+        ]
+        if len(through) >= 2:
+            entry = through[1]
+            _add_change_request(
+                db, sarah, entry, ChangeRequestStatus.PENDING,
+                entry.raw_start_time or entry.start_time, entry.raw_end_time or entry.end_time,
+                entry.break_minutes,
+                "Über Mittag habe ich Befunde für die Nachmittagssprechstunde vorbereitet – mit Dr. Werner abgesprochen.",
+                created_at=_berlin(_next_weekday(entry.date), 7, 50),
+                request_credit_override=True,
             )
             count += 1
 

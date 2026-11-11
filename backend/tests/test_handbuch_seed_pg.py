@@ -540,7 +540,7 @@ def test_seed_creates_new_feature_objects(full_tenant, app_engine, monkeypatch):
     assert {a[0] for a in closure_days} == {"maria", "thomas", "sarah", "petra", "julia"}
     assert len(r["waiver"]) == 1 and r["waiver"][0][0] == "thomas"
     assert r["waiver"][0][2] == 6.5 and r["waiver"][0][3] == 0
-    assert r["crs"] == [("maria", "pending"), ("thomas", "rejected")]
+    assert r["crs"] == [("maria", "pending"), ("sarah", "pending"), ("thomas", "rejected")]
     c = r["contract"]
     assert c["maria"][:2] == (40.0, 5) and c["thomas"][0] == 38.5 and c["sarah"][0] == 25.0
     assert c["petra"][:2] == (20.0, 4) and c["julia"][:3] == (10.0, 2, True)
@@ -798,3 +798,75 @@ def test_change_requests_have_realistic_timestamps(full_tenant, app_engine, monk
     assert t_date < c.date() < v.date() < STICHTAG
     assert c.weekday() < 5 and v.weekday() < 5
     assert c < v < datetime.combine(STICHTAG, time(0), tzinfo=berlin)
+
+
+def test_sarah_credit_request_on_the_older_through_day(full_tenant, app_engine, monkeypatch):
+    """Praxisleitung Kap. 5: ein offener Antrag „Anrechnung beantragt“ (P21) wie
+    ihn das Formular stellt – Stempel vorbelegt, am Tag des Eintrags, an einem
+    Eintrag mit nicht angerechneter Zeit. Er hängt am älteren der über die Lücke
+    durchgestempelten Tage; der neueste bleibt antragsfrei (ma-nicht-angerechnet)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from app.models import TimeEntry
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+    berlin = ZoneInfo("Europe/Berlin")
+
+    def collect(db):
+        sarah = db.query(User).filter(User.tenant_id == TENANT_ID, User.username == "sarah").one()
+        crs = db.query(ChangeRequest).filter(
+            ChangeRequest.tenant_id == TENANT_ID, ChangeRequest.user_id == sarah.id).all()
+        through = db.query(TimeEntry).filter(
+            TimeEntry.tenant_id == TENANT_ID, TimeEntry.user_id == sarah.id,
+            TimeEntry.date < STICHTAG, TimeEntry.uncredited_minutes > 0,
+        ).order_by(TimeEntry.date.desc()).all()
+        # Rohstempel nur, wo gekappt wurde; sonst sind die Stempel die gespeicherten Zeiten
+        return crs, [(e.id, e.date, e.raw_start_time or e.start_time, e.raw_end_time or e.end_time,
+                      e.break_minutes, e.credit_override) for e in through]
+
+    crs, through = _read(app_engine, collect)
+    assert len(crs) == 1 and len(through) >= 2
+    cr = crs[0]
+    entry_id, entry_date, raw_start, raw_end, brk, override = through[1]
+    assert cr.status == ChangeRequestStatus.PENDING
+    assert cr.request_type == ChangeRequestType.UPDATE
+    assert cr.request_credit_override is True
+    assert cr.time_entry_id == entry_id and cr.time_entry_id != through[0][0]
+    assert cr.proposed_date == cr.original_date == entry_date
+    assert (cr.proposed_start_time, cr.proposed_end_time, cr.proposed_break_minutes) == (raw_start, raw_end, brk)
+    assert cr.original_uncredited_minutes and cr.original_uncredited_minutes > 0
+    assert override is False
+    assert entry_date < cr.created_at.astimezone(berlin).date() < STICHTAG
+
+
+def test_contract_history_and_vacation_request_have_realistic_timestamps(full_tenant, app_engine, monkeypatch):
+    """„Erstellt:“ im Vertragsverlauf und am offenen Urlaubsantrag liegt vor dem
+    Stichtag (nicht in der Aufnahme-Minute); Änderungen sind vor ihrem
+    Wirkungsdatum eingetragen."""
+    from zoneinfo import ZoneInfo
+    from app.models.vacation_request import VacationRequest
+    from app.models.working_hours_change import WorkingHoursChange
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+    berlin = ZoneInfo("Europe/Berlin")
+
+    def collect(db):
+        rows = [(r.effective_from, r.note, r.created_at) for r in db.query(WorkingHoursChange).filter(
+            WorkingHoursChange.tenant_id == TENANT_ID)]
+        vrs = [(v.status, v.created_at) for v in db.query(VacationRequest).filter(
+            VacationRequest.tenant_id == TENANT_ID)]
+        return rows, vrs
+
+    rows, vrs = _read(app_engine, collect)
+    assert len(rows) == 4
+    for eff, note, created in rows:
+        c = created.astimezone(berlin).date()
+        assert c < STICHTAG
+        if note == "Ausgangsvertrag":
+            assert c == eff
+        else:
+            assert c < eff
+    pending = [c for s, c in vrs if s == "pending"]
+    assert len(pending) == 1
+    p = pending[0].astimezone(berlin)
+    assert p.date() < STICHTAG and p.weekday() < 5

@@ -8,6 +8,9 @@ import { SceneAntrag } from './SceneAntrag';
 import { SceneHandy } from './SceneHandy';
 import { SceneZweiFaktor } from './SceneZweiFaktor';
 import { SceneSchichtplan } from './SceneSchichtplan';
+import { SceneEinrichtung } from './SceneEinrichtung';
+import { SceneNeuImTeam } from './SceneNeuImTeam';
+import { SceneBloecke } from './SceneBloecke';
 
 /** Comic-Szenen der Broschüre, adressiert über den Schlüssel `scene` in den Handbuch-Inhalten. */
 export const COMIC_SCENES: Record<string, ComponentType> = {
@@ -20,4 +23,7 @@ export const COMIC_SCENES: Record<string, ComponentType> = {
   handy: SceneHandy,
   zweifaktor: SceneZweiFaktor,
   schichtplan: SceneSchichtplan,
+  einrichtung: SceneEinrichtung,
+  neuimteam: SceneNeuImTeam,
+  bloecke: SceneBloecke,
 };

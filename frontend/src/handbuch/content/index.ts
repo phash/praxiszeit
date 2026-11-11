@@ -1,15 +1,16 @@
 import type { Handbook, HandbookId, ShotDef } from '../types';
 import { mitarbeitende } from './mitarbeitende';
+import { praxisleitung } from './praxisleitung';
 
 /** Noch nicht geschriebene Handbuecher: leere Kapitel (der Markdown-Generator ueberspringt sie). */
 function placeholder(id: HandbookId, title: string): Handbook {
   return { id, title, lead: '', chapters: [], shots: [] };
 }
 
-/** Die Handbuecher; Task 8b ff. fuellen die Platzhalter. */
+/** Die Handbuecher; Task 9b ff. fuellen die übrigen Kapitel und Platzhalter. */
 export const HANDBOOKS: Record<HandbookId, Handbook> = {
   mitarbeitende,
-  praxisleitung: placeholder('praxisleitung', 'Handbuch für die Praxisleitung'),
+  praxisleitung,
   'so-rechnet': placeholder('so-rechnet', 'So rechnet PraxisZeit'),
 };
 

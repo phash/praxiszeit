@@ -4,9 +4,10 @@ import { renderToString } from 'react-dom/server';
 import { COMIC_SCENES } from './scenes';
 
 describe('COMIC_SCENES', () => {
-  it('enthält die Broschüren-Szenen und die Szenen des Mitarbeiter-Handbuchs', () => {
+  it('enthält die Broschüren-Szenen und die Szenen der Handbücher', () => {
     expect(Object.keys(COMIC_SCENES).sort()).toEqual([
-      'antrag', 'handy', 'hero', 'nachweise', 'schichtplan', 'stempeln', 'uebersicht', 'urlaub', 'zweifaktor',
+      'antrag', 'bloecke', 'einrichtung', 'handy', 'hero', 'nachweise', 'neuimteam', 'schichtplan', 'stempeln',
+      'uebersicht', 'urlaub', 'zweifaktor',
     ]);
   });
 

@@ -958,5 +958,746 @@
         "h": 38
       }
     }
+  },
+  "pl-admin-dashboard": {
+    "file": "pl-admin-dashboard.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 232,
+      "y": 195,
+      "w": 1208,
+      "h": 483.5
+    },
+    "markers": {
+      "details": {
+        "x": 1333.2,
+        "y": 565.5,
+        "w": 73.8,
+        "h": 57
+      },
+      "monat": {
+        "x": 689,
+        "y": 250,
+        "w": 40,
+        "h": 40
+      },
+      "saldo": {
+        "x": 807.3,
+        "y": 468,
+        "w": 96.5,
+        "h": 40.5
+      },
+      "soll-basis": {
+        "x": 684.5,
+        "y": 423,
+        "w": 101,
+        "h": 28
+      },
+      "umschalter": {
+        "x": 288,
+        "y": 251,
+        "w": 153,
+        "h": 38
+      }
+    }
+  },
+  "pl-anerkennen": {
+    "file": "pl-anerkennen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 563.6,
+      "y": 377,
+      "w": 480,
+      "h": 166
+    },
+    "markers": {
+      "anerkennen": {
+        "x": 643.6,
+        "y": 465,
+        "w": 85,
+        "h": 22
+      },
+      "zeile": {
+        "x": 643.6,
+        "y": 433,
+        "w": 320,
+        "h": 32
+      }
+    }
+  },
+  "pl-anrechnung-beantragt": {
+    "file": "pl-anrechnung-beantragt.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 277,
+      "y": 460,
+      "w": 599,
+      "h": 431
+    },
+    "markers": {
+      "anerkennen": {
+        "x": 313,
+        "y": 807,
+        "w": 246,
+        "h": 36
+      },
+      "kennzeichen": {
+        "x": 602,
+        "y": 508,
+        "w": 146,
+        "h": 20
+      },
+      "luecke": {
+        "x": 325,
+        "y": 682,
+        "w": 503,
+        "h": 20
+      },
+      "ohne": {
+        "x": 571,
+        "y": 807,
+        "w": 230,
+        "h": 36
+      }
+    }
+  },
+  "pl-auswirkung": {
+    "file": "pl-auswirkung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 334,
+      "y": 158,
+      "w": 772,
+      "h": 468
+    },
+    "markers": {
+      "bereich": {
+        "x": 390,
+        "y": 214,
+        "w": 660,
+        "h": 20
+      },
+      "bestaetigen": {
+        "x": 390,
+        "y": 550,
+        "w": 660,
+        "h": 20
+      },
+      "eintraege": {
+        "x": 390,
+        "y": 306,
+        "w": 660,
+        "h": 20
+      },
+      "einzelheiten": {
+        "x": 390,
+        "y": 522,
+        "w": 91,
+        "h": 20
+      },
+      "tabelle": {
+        "x": 390,
+        "y": 382,
+        "w": 660,
+        "h": 136
+      }
+    }
+  },
+  "pl-bearbeiten": {
+    "file": "pl-bearbeiten.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 281,
+      "y": 343,
+      "w": 1134,
+      "h": 364
+    },
+    "markers": {
+      "anpassen": {
+        "x": 1209,
+        "y": 375,
+        "w": 174,
+        "h": 38
+      },
+      "vertrag": {
+        "x": 313,
+        "y": 561,
+        "w": 1070,
+        "h": 114
+      }
+    }
+  },
+  "pl-benutzer-aktionen": {
+    "file": "pl-benutzer-aktionen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 960,
+      "y": 519,
+      "w": 480,
+      "h": 170
+    },
+    "markers": {
+      "arbeitszeit": {
+        "x": 1355,
+        "y": 575,
+        "w": 16,
+        "h": 16
+      },
+      "bearbeiten": {
+        "x": 1327,
+        "y": 575,
+        "w": 16,
+        "h": 16
+      },
+      "deaktivieren": {
+        "x": 1339,
+        "y": 617,
+        "w": 16,
+        "h": 16
+      },
+      "journal": {
+        "x": 1327,
+        "y": 554,
+        "w": 16,
+        "h": 16
+      }
+    }
+  },
+  "pl-benutzerliste": {
+    "file": "pl-benutzerliste.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "kopf": {
+        "x": 858,
+        "y": 32,
+        "w": 550,
+        "h": 40
+      },
+      "ueberstunden": {
+        "x": 1092,
+        "y": 197,
+        "w": 130,
+        "h": 56.5
+      },
+      "urlaubskonto": {
+        "x": 927,
+        "y": 197,
+        "w": 165,
+        "h": 56.5
+      }
+    }
+  },
+  "pl-bloecke": {
+    "file": "pl-bloecke.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 321,
+      "y": 199,
+      "w": 749,
+      "h": 370.3
+    },
+    "markers": {
+      "block": {
+        "x": 662.4,
+        "y": 486.7,
+        "w": 85.7,
+        "h": 26.7
+      },
+      "gueltig-ab": {
+        "x": 377,
+        "y": 255,
+        "w": 220.7,
+        "h": 42
+      },
+      "modus": {
+        "x": 628,
+        "y": 341,
+        "w": 158,
+        "h": 20
+      },
+      "pause": {
+        "x": 950,
+        "y": 414,
+        "w": 64,
+        "h": 26
+      },
+      "plus": {
+        "x": 886.8,
+        "y": 382,
+        "w": 58,
+        "h": 28
+      }
+    }
+  },
+  "pl-bundesland": {
+    "file": "pl-bundesland.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 577,
+      "w": 642,
+      "h": 153
+    },
+    "markers": {
+      "bundesland": {
+        "x": 312,
+        "y": 633,
+        "w": 384,
+        "h": 41
+      },
+      "speichern": {
+        "x": 712,
+        "y": 634,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-fehlende-buchungen": {
+    "file": "pl-fehlende-buchungen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 264,
+      "y": 76,
+      "w": 1168,
+      "h": 130
+    },
+    "markers": {
+      "kasten": {
+        "x": 288,
+        "y": 100,
+        "w": 1120,
+        "h": 82
+      }
+    }
+  },
+  "pl-korrekturantrag": {
+    "file": "pl-korrekturantrag.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 265,
+      "y": 406,
+      "w": 776,
+      "h": 256
+    },
+    "markers": {
+      "aktuell": {
+        "x": 356,
+        "y": 454,
+        "w": 86,
+        "h": 18
+      },
+      "begruendung": {
+        "x": 399,
+        "y": 526,
+        "w": 544,
+        "h": 18
+      },
+      "genehmigen": {
+        "x": 313,
+        "y": 578,
+        "w": 138,
+        "h": 36
+      },
+      "gewuenscht": {
+        "x": 899,
+        "y": 454,
+        "w": 94,
+        "h": 18
+      }
+    }
+  },
+  "pl-mitarbeiter-details": {
+    "file": "pl-mitarbeiter-details.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 184,
+      "y": 384,
+      "w": 1072,
+      "h": 325.5
+    },
+    "markers": {
+      "aktionen": {
+        "x": 1060.1,
+        "y": 622,
+        "w": 146.9,
+        "h": 39.5
+      },
+      "kennzahlen": {
+        "x": 232,
+        "y": 432,
+        "w": 976,
+        "h": 80
+      },
+      "neuer-eintrag": {
+        "x": 1061,
+        "y": 549,
+        "w": 130,
+        "h": 28
+      }
+    }
+  },
+  "pl-navigation": {
+    "file": "pl-navigation.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 0,
+      "y": 366,
+      "w": 480,
+      "h": 346
+    },
+    "markers": {
+      "admin-dashboard": {
+        "x": 16,
+        "y": 390,
+        "w": 223,
+        "h": 48
+      },
+      "benutzerverwaltung": {
+        "x": 16,
+        "y": 442,
+        "w": 223,
+        "h": 48
+      },
+      "schnellstart": {
+        "x": 16,
+        "y": 660,
+        "w": 223,
+        "h": 28
+      },
+      "team": {
+        "x": 16,
+        "y": 494,
+        "w": 223,
+        "h": 72
+      }
+    }
+  },
+  "pl-neu-anlegen": {
+    "file": "pl-neu-anlegen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 233,
+      "y": 117,
+      "w": 1207,
+      "h": 612
+    },
+    "markers": {
+      "arbeitstage": {
+        "x": 856,
+        "y": 463,
+        "w": 527,
+        "h": 42
+      },
+      "benutzername": {
+        "x": 313,
+        "y": 197,
+        "w": 527,
+        "h": 42
+      },
+      "passwort": {
+        "x": 313,
+        "y": 279,
+        "w": 527,
+        "h": 42
+      },
+      "urlaub": {
+        "x": 313,
+        "y": 615,
+        "w": 527,
+        "h": 34
+      },
+      "wochenstunden": {
+        "x": 313,
+        "y": 463,
+        "w": 527,
+        "h": 42
+      }
+    }
+  },
+  "pl-neu-anlegen-optionen": {
+    "file": "pl-neu-anlegen-optionen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 233,
+      "y": 104,
+      "w": 1207,
+      "h": 446
+    },
+    "markers": {
+      "erster-tag": {
+        "x": 313,
+        "y": 184,
+        "w": 527,
+        "h": 42
+      },
+      "modus": {
+        "x": 330,
+        "y": 341,
+        "w": 1036,
+        "h": 44
+      },
+      "speichern": {
+        "x": 313,
+        "y": 430,
+        "w": 1070,
+        "h": 40
+      }
+    }
+  },
+  "pl-rueckwirkend": {
+    "file": "pl-rueckwirkend.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 346,
+      "y": 320,
+      "w": 748,
+      "h": 348
+    },
+    "markers": {
+      "ab-heute": {
+        "x": 414,
+        "y": 416,
+        "w": 486,
+        "h": 20
+      },
+      "begruendung": {
+        "x": 414,
+        "y": 574,
+        "w": 636,
+        "h": 50
+      },
+      "grund": {
+        "x": 414,
+        "y": 492,
+        "w": 636,
+        "h": 30
+      },
+      "rueckwirkend": {
+        "x": 414,
+        "y": 440,
+        "w": 305,
+        "h": 20
+      },
+      "verkuerzung": {
+        "x": 390,
+        "y": 364,
+        "w": 660,
+        "h": 20
+      }
+    }
+  },
+  "pl-sammel-genehmigung": {
+    "file": "pl-sammel-genehmigung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 253,
+      "y": 203,
+      "w": 1054,
+      "h": 206
+    },
+    "markers": {
+      "auswahl": {
+        "x": 301,
+        "y": 259,
+        "w": 110,
+        "h": 20
+      },
+      "karte": {
+        "x": 313,
+        "y": 345,
+        "w": 16,
+        "h": 16
+      },
+      "sammel": {
+        "x": 953,
+        "y": 251,
+        "w": 306,
+        "h": 36
+      }
+    }
+  },
+  "pl-team-arbeitszeiten": {
+    "file": "pl-team-arbeitszeiten.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "abteilung": {
+        "x": 288,
+        "y": 114,
+        "w": 49,
+        "h": 34
+      },
+      "besetzung": {
+        "x": 289,
+        "y": 218,
+        "w": 224,
+        "h": 32
+      },
+      "sarah": {
+        "x": 321,
+        "y": 401,
+        "w": 75,
+        "h": 20
+      },
+      "stand-am": {
+        "x": 1097,
+        "y": 56,
+        "w": 170,
+        "h": 42
+      }
+    }
+  },
+  "pl-team-bearbeiten": {
+    "file": "pl-team-bearbeiten.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "block": {
+        "x": 535.5,
+        "y": 527,
+        "w": 53.9,
+        "h": 32
+      },
+      "schalter": {
+        "x": 1364,
+        "y": 66,
+        "w": 44,
+        "h": 24
+      }
+    }
+  },
+  "pl-urlaubsantraege": {
+    "file": "pl-urlaubsantraege.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "aktionen": {
+        "x": 313,
+        "y": 497,
+        "w": 1070,
+        "h": 53
+      },
+      "pflicht": {
+        "x": 1343,
+        "y": 156,
+        "w": 44,
+        "h": 24
+      }
+    }
+  },
+  "pl-vertragsverlauf": {
+    "file": "pl-vertragsverlauf.webp",
+    "width": 1440,
+    "height": 1581,
+    "pxWidth": 2880,
+    "pxHeight": 3162,
+    "crop": {
+      "x": 336,
+      "y": 88,
+      "w": 768,
+      "h": 1405
+    },
+    "markers": {
+      "anspruch": {
+        "x": 390,
+        "y": 559,
+        "w": 324,
+        "h": 42
+      },
+      "speichern": {
+        "x": 725,
+        "y": 900,
+        "w": 338,
+        "h": 42
+      },
+      "verlauf": {
+        "x": 360,
+        "y": 1019,
+        "w": 720,
+        "h": 150
+      }
+    }
   }
 }
