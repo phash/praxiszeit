@@ -11,7 +11,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import MonthSelector from '../../components/MonthSelector';
 import WeekSelector, { isoWeekMonday, weekLabel } from '../../components/WeekSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { deHoursExact, formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount } from '../../utils/formatters';
+import { deHoursExact, formatHoursHM, parseHours, formatClockTime, formatWeeklyHoursChanges, formatDayCount, formatMonthYearDe } from '../../utils/formatters';
 import type { WeeklyHoursChangeInPeriod } from '../../utils/formatters';
 import { submitWithBreakWaiver } from '../../utils/breakWaiverRetry';
 import { showArbzgWarnings } from '../../utils/arbzgWarnings';
@@ -637,7 +637,7 @@ export default function AdminDashboard() {
           <p className="text-xl font-bold text-gray-900">
             {viewMode === 'week'
               ? weekLabel(currentWeek)
-              : format(new Date(currentMonth + '-01T00:00:00'), 'MMMM yyyy')}
+              : formatMonthYearDe(currentMonth)}
           </p>
         </div>
       </div>
@@ -1322,7 +1322,7 @@ export default function AdminDashboard() {
                     {selectedEmployee.last_name}, {selectedEmployee.first_name}
                   </h2>
                   <p className="text-sm opacity-90">
-                    {format(new Date(currentMonth + '-01T00:00:00'), 'MMMM yyyy')} - Details
+                    {formatMonthYearDe(currentMonth)} - Details
                   </p>
                 </div>
                 <button

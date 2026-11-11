@@ -439,3 +439,25 @@ describe('AdminDashboard Jahresabschluss löschen: Wortlaut (Teil A)', () => {
     expect(screen.queryByText(/gehen ebenfalls verloren/)).not.toBeInTheDocument();
   });
 });
+
+describe('AdminDashboard Monatsname (P1.3)', () => {
+  it('Kachel „Monat" und Detail-Kopf nennen den Monat deutsch', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith('/admin/reports/monthly')) {
+        return Promise.resolve({ data: [{
+          user_id: 'u1', first_name: 'Anna', last_name: 'Kern', weekly_hours: 40,
+          target_hours: 160, actual_hours: 160, balance: 0, overtime_cumulative: 0,
+          vacation_used_hours: 0, vacation_used_days: 0, sick_hours: 0, sick_days: 0,
+        }] });
+      }
+      if (url.startsWith('/admin/reports/')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [] });
+    });
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    expect(await screen.findByText('Oktober 2026', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.queryByText(/October/)).toBeNull();
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Details für Kern, Anna anzeigen' }))[0]);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Oktober 2026 - Details')).toBeInTheDocument();
+  });
+});
