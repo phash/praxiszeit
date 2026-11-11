@@ -436,7 +436,7 @@ const shots: ShotDef[] = [
     viewport: 'desktop',
     route: '/admin/settings',
     prepare: [{ scrollTo: { role: 'heading', name: 'Betriebsferien & Urlaub', exact: true } }],
-    crop: { around: ['schalter', 'speichern'], pad: 70 },
+    crop: 'main',
     markers: [
       { n: 1, id: 'schalter', locator: { css: '#closure-overtime-toggle' }, badge: 'right' },
       {
@@ -567,7 +567,7 @@ const shots: ShotDef[] = [
     viewport: 'desktop',
     route: '/admin/settings',
     prepare: [{ scrollTo: { role: 'heading', name: 'Pflicht-Pause-Ausnahme', exact: true } }],
-    crop: { around: ['erlauben', 'speichern'], pad: 70 },
+    crop: 'main',
     markers: [
       { n: 1, id: 'erlauben', locator: { css: '#break-exception-allowed-toggle' }, badge: 'right' },
       { n: 2, id: 'genehmigung', locator: { css: '#break-approval-toggle' }, badge: 'right' },
@@ -1199,7 +1199,7 @@ export const praxisleitung: Handbook = {
           kind: 'tip',
           tone: 'info',
           text:
-            '**Löschen:** Ohne gewählte Person klappt ein Klick auf den Namen die Abwesenheiten auf; der Papierkorb löscht eine. ' +
+            '**Löschen:** Ohne gewählte Person klappt ein Klick auf den Namen die Abwesenheiten auf; der Papierkorb ([[Löschen]]) löscht eine Abwesenheit. ' +
             'Mitarbeitende beantragen die Löschung einer vergangenen Abwesenheit mit [[Löschung beantragen]] – der Antrag kommt als **Löschung** unter [[Änderungsanträge]] zu Ihnen. ' +
             'Betriebsferien-Tage ändert nur die Verwaltung.',
         },
@@ -1233,7 +1233,7 @@ export const praxisleitung: Handbook = {
           shot: 'pl-betriebsferien-liste',
           steps: [
             { n: 1, text: 'Je Schließung: Bezeichnung, Zeitraum, Verrechnung und unter **Betroffene MA**, für wie viele Personen Tage gebucht sind.' },
-            { n: 2, text: 'In der Spalte **Aktion**: **Bearbeiten** (Stift) – Ändern Sie den Zeitraum, bekommen neu hinzukommende Arbeitstage einen Eintrag und entfallene werden entfernt; eine umgestellte Verrechnung ändert den Typ der Einträge. Abweichende Einträge einzelner Personen bleiben unberührt. Speichern mit [[Änderungen speichern]]. **Löschen** (Papierkorb) – Die Abwesenheiten werden bei allen Personen entfernt.' },
+            { n: 2, text: 'In der Spalte **Aktion**: **Bearbeiten** (Stift) – Ändern Sie den Zeitraum, bekommen neu hinzukommende Arbeitstage einen Eintrag und entfallene werden entfernt; eine umgestellte Verrechnung ändert den Typ der Einträge. Abweichende Einträge einzelner Personen bleiben unberührt. Speichern mit [[Änderungen speichern]]. Das erneute Speichern entfernt auch alte 0-Stunden-Einträge (Betriebsferien von vor 1.20.0) an Tagen ohne Soll; liegen sie in einem abgeschlossenen Jahr, prüfen Sie danach den Übertrag. **Löschen** (Papierkorb) – Die Abwesenheiten werden bei allen Personen entfernt.' },
           ],
         },
         {
@@ -1462,7 +1462,7 @@ export const praxisleitung: Handbook = {
             {
               n: 3,
               text:
-                '**Ø angerechnet / Werktag** und **Status** rechnen mit der angerechneten Zeit, geteilt durch die Werktage – Montag bis Samstag ohne Feiertage und ohne Tage mit Urlaub, Krankheit, Fortbildung oder Freistellung. ' +
+                '**Ø angerechnet / Werktag** und **Status** rechnen mit der angerechneten Zeit, geteilt durch die Werktage – Montag bis Samstag ohne Feiertage und ohne Tage mit Urlaub, Krankheit, Fortbildung, Sonstiges oder Freistellung. ' +
                 '**Anwesenheit laut Stempel** ist die gestempelte Zeit abzüglich Pausen; liegt ihr Schnitt über 8 Stunden, ist sie rot hervorgehoben.',
             },
           ],
