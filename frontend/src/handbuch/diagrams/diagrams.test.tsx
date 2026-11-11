@@ -50,10 +50,11 @@ describe('values (aus BERECHNUNGEN abgeleitet, nicht Literal gegen Literal)', ()
     expect(V.hhmm(V.ENTRY_B.effEnd)).toBe('16:15');
     expect(V.ENTRY_B).toMatchObject({ credited: '1:30', creditedHours: 1.5, notCreditedMin: 120, uncreditedMin: 105 });
   });
-  it('§4.1 Tabelle: Beispielzeile 08:00–18:00 bei Blöcken 08–12 + 15–18 gibt 150 min Lücke', () => {
-    // Gegenprobe der Formel gegen die dokumentierte Tabellenzeile (7,50 h)
-    const g = 15, gap = { s: 12 * 60 + g, e: 15 * 60 - g };
-    expect(gap.e - gap.s).toBe(150);
+  it('§4.1: Lücke ≤ 2 × Puffer verschwindet (Guard wie credit_gaps)', () => {
+    expect(V.GAP_SHRUNK).not.toBeNull();
+    expect(V.GAP_SHRUNK!.end - V.GAP_SHRUNK!.start).toBe(150); // 3 h − 2 × 15 min
+    expect(V.ENTRY_B.gapOverlap).toEqual({ start: V.hm(13), end: V.GAP_SHRUNK!.end });
+    expect(V.ENTRY_A.gapOverlap).toBeNull();
   });
   it('§13.1 Soll/Ist/Saldo', () => {
     expect(V.SOLL_DAYS).toBe(17);

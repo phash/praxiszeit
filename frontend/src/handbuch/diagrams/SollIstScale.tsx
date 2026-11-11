@@ -2,8 +2,8 @@ import { C, DiagramSvg, fmt } from './common';
 import { DAY_TARGET, HOLIDAYS, IST_HOURS, IST_PARTS, SALDO_HOURS, SOLL_DAYS, SOLL_HOURS, VACATION_DAYS_TAKEN, WORKDAYS } from './values';
 
 const ALT =
-  'Soll und Ist eines Monats im Vergleich: 22 Werktage minus 1 Feiertag minus 4 Urlaubstage ergeben 17 Tage zu je 8 Stunden, also 136 Stunden Soll. ' +
-  'Gearbeitet wurden 137,5 Stunden. Der Saldo beträgt plus 1,5 Stunden.';
+  `Soll und Ist eines Monats im Vergleich: ${WORKDAYS} Werktage minus ${HOLIDAYS} Feiertag minus ${VACATION_DAYS_TAKEN} Urlaubstage ergeben ${SOLL_DAYS} Tage zu je ${DAY_TARGET} Stunden, also ${fmt(SOLL_HOURS, 0)} Stunden Soll. ` +
+  `Gearbeitet wurden ${fmt(IST_HOURS, 1)} Stunden. Der Saldo beträgt plus ${fmt(SALDO_HOURS, 1)} Stunden.`;
 
 // Achse beginnt bei 130 h (Unterbrechung ist beschriftet), sonst wäre der Unterschied nicht zu sehen.
 const AXIS_FROM = 130;

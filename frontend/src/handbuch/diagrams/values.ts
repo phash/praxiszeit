@@ -18,7 +18,11 @@ export const BLOCKS = [
 /** Hülle = erster Block − g … letzter Block + g. */
 export const HULL = { start: BLOCKS[0].start - GRACE, end: BLOCKS[1].end + GRACE };
 /** Lücke zwischen den Blöcken, an beiden Rändern um g geschrumpft (`credit_gaps`); eine Lücke ≤ 2 × g verschwindet. */
-export const GAP_SHRUNK = { start: BLOCKS[0].end + GRACE, end: BLOCKS[1].start - GRACE };
+export const GAP_SHRUNK = (() => {
+  const gs = BLOCKS[0].end + GRACE;
+  const ge = BLOCKS[1].start - GRACE;
+  return ge > gs ? { start: gs, end: ge } : null; // wie credit_gaps: Lücke ≤ 2 × g verschwindet
+})();
 
 /**
  * Kappung eines Zeiteintrags wie `work_window_service._clamp_core`: Beginn/Ende an der Hülle
@@ -29,10 +33,13 @@ export const GAP_SHRUNK = { start: BLOCKS[0].end + GRACE, end: BLOCKS[1].start -
 export function clampEntry(start: number, end: number) {
   const effStart = Math.max(start, HULL.start);
   const effEnd = Math.min(end, HULL.end);
-  const uncreditedMin = Math.max(0, Math.min(effEnd, GAP_SHRUNK.end) - Math.max(effStart, GAP_SHRUNK.start));
+  const gs = GAP_SHRUNK ? Math.max(effStart, GAP_SHRUNK.start) : 0;
+  const ge = GAP_SHRUNK ? Math.min(effEnd, GAP_SHRUNK.end) : 0;
+  const gapOverlap = ge > gs ? { start: gs, end: ge } : null;
+  const uncreditedMin = gapOverlap ? gapOverlap.end - gapOverlap.start : 0;
   const netMin = effEnd - effStart - uncreditedMin;
   return {
-    start, end, effStart, effEnd, uncreditedMin, netMin,
+    start, end, effStart, effEnd, gapOverlap, uncreditedMin, netMin,
     credited: `${Math.floor(netMin / 60)}:${String(netMin % 60).padStart(2, '0')}`,
     creditedHours: Math.round((netMin / 60) * 100) / 100,
     notCreditedMin: uncreditedMin + (effStart - start) + (end - effEnd),
