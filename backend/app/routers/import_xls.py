@@ -106,12 +106,16 @@ def confirm_import(
     if not target_user:
         raise HTTPException(status_code=400, detail="Benutzer nicht gefunden")
 
-    return execute_import(
-        user_id=body.user_id,
-        entries=body.entries,
-        overwrite=body.overwrite,
-        db=db,
-        changed_by_id=current_admin.id,
-        filename=body.filename or "import.xls",
-        tenant_id=current_admin.tenant_id,
-    )
+    try:
+        return execute_import(
+            user_id=body.user_id,
+            entries=body.entries,
+            overwrite=body.overwrite,
+            db=db,
+            changed_by_id=current_admin.id,
+            filename=body.filename or "import.xls",
+            tenant_id=current_admin.tenant_id,
+        )
+    except ValueError as exc:
+        # execute_import meldet erwartbare Fehler als ValueError (ops-01)
+        raise HTTPException(status_code=400, detail=str(exc))

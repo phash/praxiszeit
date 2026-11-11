@@ -174,3 +174,11 @@ def test_description_too_long_returns_422(client, mock_license, monkeypatch):
     resp = client.post("/api/feedback/report", json={**VALID, "description": "x" * 4001})
     assert resp.status_code == 422
     assert rec.calls == []  # rejected before any outbound call
+
+
+def test_201_with_non_object_json_body_is_no_500(client, mock_license, monkeypatch):
+    """ops-17: pzweb/Proxy antwortet 201 mit JSON-Liste -> 200, id None, kein AttributeError."""
+    _patch_post(monkeypatch, response=httpx.Response(201, json=["x"]))
+    resp = client.post("/api/feedback/report", json=VALID)
+    assert resp.status_code == 200
+    assert resp.json()["id"] is None

@@ -128,6 +128,8 @@ def report_feedback(
             body = resp.json()
         except ValueError:
             body = {}
+        if not isinstance(body, dict):
+            body = {}
         return {"status": "received", "id": body.get("id")}
     if resp.status_code == 403:
         raise HTTPException(
