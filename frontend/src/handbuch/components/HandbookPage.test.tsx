@@ -91,7 +91,21 @@ describe('HandbookPage', () => {
         <ShotFigure shotId="s1" def={handbook.shots[0]} m={manifest.s1} imgBase="/help/img" />,
       );
       expect(container.querySelector('image')).toBeNull();
-      act(() => { window.dispatchEvent(new Event('beforeprint')); });
+      // bewusst ohne act(): der Browser druckt direkt nach dem Ereignis, das Bild muss sofort da sein
+      window.dispatchEvent(new Event('beforeprint'));
+      expect(container.querySelector('image')).not.toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('ShotFigure mounted in print media loads the image at once', () => {
+    vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q === 'print', media: q }));
+    try {
+      const { container } = render(
+        <ShotFigure shotId="s1" def={handbook.shots[0]} m={manifest.s1} imgBase="/help/img" />,
+      );
       expect(container.querySelector('image')).not.toBeNull();
     } finally {
       vi.unstubAllGlobals();
