@@ -80,20 +80,28 @@ export function renderInline(text: Inline, opts: InlineOpts): ReactNode {
   });
 }
 
-export function inlineToMarkdown(text: Inline, _opts: InlineOpts): string {
-  void _opts;
+/** Maskiert Markdown-Sonderzeichen in Klartext; `atStart`: auch Blockauslöser am Zeilenanfang. */
+export function escapeMd(v: string, atStart = false): string {
+  let out = v.replace(/[\\*_[\]<>&`|]/g, (c) => `\\${c}`);
+  if (atStart) out = out.replace(/^(\s*)(?:([#>+-])|(\d+)\.)/, (_m, ws: string, ch?: string, num?: string) => (ch ? `${ws}\\${ch}` : `${ws}${num}\\.`));
+  return out;
+}
+
+/** `table: true` = Ausgabe in einer GFM-Tabellenzelle (`|` auch im Code-Span maskieren). */
+export function inlineToMarkdown(text: Inline, opts: InlineOpts & { table?: boolean }): string {
   return tokenize(text)
-    .map((tok) => {
+    .map((tok, i) => {
+      const start = i === 0;
       switch (tok.t) {
-        case 'bold': return `**${tok.v}**`;
-        case 'ui': return `\`${tok.v}\``;
+        case 'bold': return `**${escapeMd(tok.v)}**`;
+        case 'ui': return `\`${opts.table ? tok.v.replace(/\|/g, '\\|') : tok.v}\``;
         case 'link': {
           const hb = parseHandbookLink(tok.href);
           const target = hb ? `${MD_FILES[hb.id as HandbookId] ?? hb.id}${hb.anchor}` : tok.href;
-          return `[${tok.v}](${target})`;
+          return `[${escapeMd(tok.v)}](${target})`;
         }
-        case 'badlink': return tok.raw;
-        default: return tok.v;
+        case 'badlink': return escapeMd(tok.raw, start);
+        default: return escapeMd(tok.v, start);
       }
     })
     .join('');

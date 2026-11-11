@@ -4,7 +4,7 @@
  *   npm run handbuch:md -- --check vergleicht nur (Exit 1 bei Abweichung)
  * Handbuecher ohne Kapitel werden uebersprungen (bestehende Dateien bleiben).
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HANDBOOKS } from '../src/handbuch/content/index';
@@ -39,7 +39,20 @@ export function generateAll(
 function differs(o: Output): boolean {
   if (!existsSync(o.path)) return true;
   if (o.text !== undefined) return readFileSync(o.path, 'utf-8') !== o.text;
-  return !readFileSync(o.path).equals(readFileSync(o.copyFrom!));
+  return !readFileSync(sourceOf(o)).equals(readFileSync(o.path));
+}
+
+function sourceOf(o: Output): string {
+  if (!o.copyFrom || !existsSync(o.copyFrom)) throw new Error(`Bild fehlt: ${o.copyFrom ?? o.path}`);
+  return o.copyFrom;
+}
+
+/** Dateien in docs/handbuch/img, die kein erzeugtes Handbuch mehr braucht. */
+export function findOrphans(outs: Output[], root: string): string[] {
+  const dir = join(root, 'docs/handbuch/img');
+  if (!existsSync(dir)) return [];
+  const wanted = new Set(outs.filter((o) => o.copyFrom).map((o) => o.path));
+  return readdirSync(dir).map((f) => join(dir, f)).filter((p) => !wanted.has(p)).sort();
 }
 
 function main(): number {
@@ -49,17 +62,24 @@ function main(): number {
   const version = (JSON.parse(readFileSync(join(here, '../package.json'), 'utf-8')) as { version: string }).version;
   const outs = generateAll(HANDBOOKS, manifestJson as Manifest, version, root);
   const stale = outs.filter(differs);
+  const orphans = findOrphans(outs, root);
+  const rel = (p: string) => p.replace(root + '/', '');
   if (check) {
-    for (const o of stale) console.error(`VERALTET  ${o.path.replace(root + '/', '')}`);
-    if (stale.length) console.error('Handbuch-Markdown veraltet: cd frontend && npm run handbuch:md, dann committen.');
+    for (const o of stale) console.error(`VERALTET  ${rel(o.path)}`);
+    for (const p of orphans) console.error(`VERALTET  ${rel(p)} (nicht mehr referenziert)`);
+    if (stale.length || orphans.length) console.error('Handbuch-Markdown veraltet: cd frontend && npm run handbuch:md, dann committen.');
     else console.log(`handbuch:md ok (${outs.length} Dateien)`);
-    return stale.length ? 1 : 0;
+    return stale.length || orphans.length ? 1 : 0;
   }
   for (const o of stale) {
     mkdirSync(dirname(o.path), { recursive: true });
     if (o.text !== undefined) writeFileSync(o.path, o.text);
-    else copyFileSync(o.copyFrom!, o.path);
-    console.log(`geschrieben ${o.path.replace(root + '/', '')}`);
+    else copyFileSync(sourceOf(o), o.path);
+    console.log(`geschrieben ${rel(o.path)}`);
+  }
+  for (const p of orphans) {
+    unlinkSync(p);
+    console.log(`geloescht ${rel(p)}`);
   }
   if (!outs.length) console.log('Keine Handbuecher mit Kapiteln — nichts erzeugt.');
   return 0;

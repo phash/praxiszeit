@@ -46,7 +46,7 @@ export function toMarkdown(h: Handbook, m: Manifest, target: MdTarget, version =
       case 'diagram':
         return [`*${inl(b.caption)}*`, ''];
       case 'table': {
-        const cell = (c: string) => inl(c).replace(/\|/g, '\\|');
+        const cell = (c: string) => inlineToMarkdown(c, { ...opts, table: true }).replace(/\n/g, ' ');
         return [
           `| ${b.head.map(cell).join(' | ')} |`,
           `| ${b.head.map(() => '---').join(' | ')} |`,

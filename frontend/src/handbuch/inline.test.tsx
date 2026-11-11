@@ -39,13 +39,33 @@ describe('unsafe and malformed markup', () => {
     const out = html(`[x](${h})`);
     expect(out).not.toContain('<a');
     expect(out).not.toContain('href');
-    expect(inlineToMarkdown(`[x](${h})`, opts)).toBe(`[x](${h})`);
+    expect(inlineToMarkdown(`[x](${h})`, opts)).not.toContain('[x](');
   });
   it('keeps unbalanced bold literal', () => {
     expect(html('**a')).toBe('**a');
   });
   it('keeps empty UI pill literal', () => {
     expect(html('[[]]')).toBe('[[]]');
+  });
+});
+
+describe('inlineToMarkdown escaping', () => {
+  it('escapes plain text specials', () => {
+    expect(inlineToMarkdown('a * b _c_ <b> & d', opts)).toBe('a \\* b \\_c\\_ \\<b\\> \\& d');
+  });
+  it('escapes block triggers at the start', () => {
+    expect(inlineToMarkdown('# Titel', opts)).toBe('\\# Titel');
+    expect(inlineToMarkdown('- Punkt', opts)).toBe('\\- Punkt');
+    expect(inlineToMarkdown('> Zitat', opts)).toBe('\\> Zitat');
+    expect(inlineToMarkdown('1. Eins', opts)).toBe('1\\. Eins');
+    expect(inlineToMarkdown('a # b', opts)).toBe('a # b');
+  });
+  it('escapes pipes in text, and in code spans only for tables', () => {
+    expect(inlineToMarkdown('a|b [[c|d]]', opts)).toBe('a\\|b `c|d`');
+    expect(inlineToMarkdown('a|b [[c|d]]', { ...opts, table: true })).toBe('a\\|b `c\\|d`');
+  });
+  it('keeps code span content unescaped otherwise', () => {
+    expect(inlineToMarkdown('[[a*b_c]]', opts)).toBe('`a*b_c`');
   });
 });
 

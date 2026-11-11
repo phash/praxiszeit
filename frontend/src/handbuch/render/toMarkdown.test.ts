@@ -34,7 +34,7 @@ describe('toMarkdown', () => {
     expect(md).toContain('### Einstempeln');
     expect(md).toContain('1. Öffnen Sie `Zeiterfassung`.');
     expect(md).toContain('2. Klicken Sie auf **Einstempeln**.');
-    expect(md).toContain('![Zeiterfassung mit Markierungen](img/shot-a.webp)'.replace('Zeiterfassung mit Markierungen', 'Einstempeln'));
+    expect(md).toContain('![Einstempeln](img/shot-a.webp)');
   });
 
   it('download target uses /help/img paths', () => {
@@ -48,6 +48,18 @@ describe('toMarkdown', () => {
     expect(md).toContain('[Berechnung](SO-RECHNET-PRAXISZEIT.md#saldo)');
     expect(md).toContain('> **Gut zu wissen:**');
     expect(md).toContain('> **Achtung:**');
+  });
+
+  it('escapes table cells and plain-text block triggers', () => {
+    const h2: Handbook = { ...hb, lead: '# Nicht Titel', chapters: [{ id: 'c', title: 'C', blocks: [
+      { kind: 'table', head: ['A|B', 'C'], rows: [['x [[p|q]]', '<b>']] },
+      { kind: 'prose', text: '1. kein Listenpunkt' },
+    ] }] };
+    const md = toMarkdown(h2, manifest, 'docs', '1.0.0');
+    expect(md).toContain('\\# Nicht Titel');
+    expect(md).toContain('| A\\|B | C |');
+    expect(md).toContain('| x `p\\|q` | \\<b\\> |');
+    expect(md).toContain('1\\. kein Listenpunkt');
   });
 
   it('header contains generated marker and version line', () => {
