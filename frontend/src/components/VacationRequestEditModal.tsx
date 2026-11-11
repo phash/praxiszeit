@@ -17,6 +17,7 @@ interface VacationRequest {
   hours: number;
   absence_type?: string;
   note?: string;
+  half_day?: boolean;
 }
 
 interface VacationRequestEditModalProps {
@@ -39,6 +40,7 @@ export default function VacationRequestEditModal({
   const [type, setType] = useState<string>(request.absence_type ?? 'vacation');
   const [hours, setHours] = useState<number>(Number(request.hours) || 8);
   const [note, setNote] = useState<string>(request.note ?? '');
+  const [halfDay, setHalfDay] = useState<boolean>(!!request.half_day);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -48,7 +50,16 @@ export default function VacationRequestEditModal({
     setType(request.absence_type ?? 'vacation');
     setHours(Number(request.hours) || 8);
     setNote(request.note ?? '');
+    setHalfDay(!!request.half_day);
   }, [request.id]);
+
+  // abw-06: Halbtag nur für Einzeltage (Server: „Halbe Tage sind nur für Einzeltage
+  // möglich“); Stunden zählen nur bei Überstundenausgleich — sonst bucht der Server
+  // das Tagessoll des Tages.
+  const isSingleDay = !(isDateRange && endDate && endDate !== date);
+  const showHalfDay = isSingleDay && type !== 'overtime';
+  const effectiveHalfDay = showHalfDay && halfDay;
+  const hoursApply = type === 'overtime';
 
   const endpoint =
     mode === 'admin'
@@ -68,8 +79,9 @@ export default function VacationRequestEditModal({
       if (date !== request.date) body.date = date;
       const newEndDate = isDateRange && endDate ? endDate : null;
       if (newEndDate !== (request.end_date ?? null)) body.end_date = newEndDate;
-      if (hours !== Number(request.hours)) body.hours = hours;
+      if (hoursApply && hours !== Number(request.hours)) body.hours = hours;
       if (type !== (request.absence_type ?? 'vacation')) body.absence_type = type;
+      if (effectiveHalfDay !== !!request.half_day) body.half_day = effectiveHalfDay;
       const newNote = note || null;
       if (newNote !== (request.note ?? null)) body.note = newNote;
 
@@ -172,21 +184,43 @@ export default function VacationRequestEditModal({
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Stunden {isDateRange && '(pro Tag)'}
-                </label>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  step="0.5"
-                  value={hours}
-                  onChange={(e) => setHours(parseHours(e.target.value))}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                />
-              </div>
+              {hoursApply ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Stunden {isDateRange && '(pro Tag)'}
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    step="0.5"
+                    min="0.5"
+                    value={hours}
+                    onChange={(e) => setHours(parseHours(e.target.value))}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 self-end">
+                  Gebucht wird das Tagessoll des jeweiligen Tages laut Arbeitszeit-Vertrag.
+                </p>
+              )}
             </div>
+
+            {showHalfDay && (
+              <div className="flex items-center space-x-2 p-3 bg-gray-50 rounded-lg">
+                <input
+                  id="edit-vr-halfday"
+                  type="checkbox"
+                  checked={halfDay}
+                  onChange={(e) => setHalfDay(e.target.checked)}
+                  className="w-4 h-4 text-primary border-gray-300 rounded-sm focus:ring-primary"
+                />
+                <label htmlFor="edit-vr-halfday" className="text-sm font-medium text-gray-700 cursor-pointer">
+                  Halber Tag (zählt als 0,5 Tag)
+                </label>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Notiz</label>

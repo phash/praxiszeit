@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  PAST_DAY_ABSENCE_HINT, isPastDay, mayBookAbsenceDirectly, mayDeleteAbsenceByDate,
+  PAST_DAY_ABSENCE_HINT, isPastDay, mayBookAbsenceDirectly, mayDeleteAbsenceByDate, todayBerlin,
 } from './absenceRules';
 
 const TODAY = '2026-06-10';
@@ -27,5 +27,14 @@ describe('absenceRules (S1-01)', () => {
 
   it('Hinweis ist wortgleich zur Server-Meldung', () => {
     expect(PAST_DAY_ABSENCE_HINT).toBe('Für vergangene Tage bitte einen Änderungsantrag stellen.');
+  });
+});
+
+describe('todayBerlin (abw-13)', () => {
+  it('liefert das Berliner Datum, nicht das UTC-Datum', () => {
+    // 23:30 UTC am 10.06. = 01:30 am 11.06. in Berlin (Sommerzeit)
+    expect(todayBerlin(new Date('2026-06-10T23:30:00Z'))).toBe('2026-06-11');
+    // 22:30 UTC am 10.12. = 23:30 am 10.12. in Berlin (Winterzeit)
+    expect(todayBerlin(new Date('2026-12-10T22:30:00Z'))).toBe('2026-12-10');
   });
 });

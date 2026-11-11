@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import VacationApprovals from './VacationApprovals';
 
 const getMock = vi.fn();
+const postMock = vi.fn();
 vi.mock('../../api/client', () => ({
   default: {
     get: (...args: unknown[]) => getMock(...args),
-    post: vi.fn(),
+    post: (...args: unknown[]) => postMock(...args),
     put: vi.fn(),
     delete: vi.fn(),
   },
@@ -34,6 +35,7 @@ function mockApi(requests: unknown[]) {
 
 beforeEach(() => {
   getMock.mockReset();
+  postMock.mockReset();
   Object.values(toast).forEach((f) => f.mockReset());
 });
 
@@ -61,5 +63,19 @@ describe('<VacationApprovals /> Schalter Genehmigungspflicht (P1.4)', () => {
     expect(
       await screen.findByRole('switch', { name: 'Abwesenheitsanträge genehmigungspflichtig' }),
     ).toBeInTheDocument();
+  });
+});
+
+describe('<VacationApprovals /> Ladezustand (abw-13)', () => {
+  it('Genehmigen zeigt „Wird gebucht…“ und sperrt den Knopf, bis die Antwort da ist', async () => {
+    mockApi([{ ...base, id: 'vr1', date: '2099-11-02', days: 1 }]);
+    let release: (v: unknown) => void = () => {};
+    postMock.mockReturnValue(new Promise((r) => { release = r; }));
+    render(<VacationApprovals />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Genehmigen' }));
+    const busy = await screen.findByRole('button', { name: 'Wird gebucht…' });
+    expect(busy).toBeDisabled();
+    release({ data: {} });
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Antrag genehmigt'));
   });
 });

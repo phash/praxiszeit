@@ -25,7 +25,7 @@ import AbsenceDeleteRequestDialog from '../components/AbsenceDeleteRequestDialog
 import type { AbsenceToDelete } from '../components/AbsenceDeleteRequestDialog';
 import { Link } from 'react-router-dom';
 import {
-  CHANGE_REQUEST_JOURNAL_PATH, PAST_DAY_ABSENCE_HINT, mayBookAbsenceDirectly, mayDeleteAbsenceByDate,
+  CHANGE_REQUEST_JOURNAL_PATH, PAST_DAY_ABSENCE_HINT, mayBookAbsenceDirectly, mayDeleteAbsenceByDate, todayBerlin,
 } from '../utils/absenceRules';
 
 interface VacationRequest {
@@ -35,6 +35,7 @@ interface VacationRequest {
   end_date?: string;
   hours: number;
   days?: number;
+  half_day?: boolean;
   absence_type?: string;
   note?: string;
   status: string;
@@ -74,6 +75,7 @@ interface Absence {
   hours: number;
   note?: string;
   closure_id?: string | null; // Release-Review 1.20.1: Betriebsferien-Tag
+  reason_id?: string | null; // #312: eigener Abwesenheitsgrund (Bezeichnung)
 }
 
 interface PublicHoliday {
@@ -143,6 +145,10 @@ export default function AbsenceCalendarPage() {
   });
   const [reasons, setReasons] = useState<AbsenceReason[]>([]); // #312: aktive eigene Gründe
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
+  // abw-07: Klick auf Tageszelle/Plus öffnet das Formular oberhalb des Kalenders —
+  // dorthin scrollen und das Datumsfeld fokussieren, sonst sieht man keine Reaktion.
+  const formRef = useRef<HTMLDivElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
   const [editingRequest, setEditingRequest] = useState<VacationRequest | null>(null);
   // Guards against double-submit (fast double-click would create duplicate absences/requests).
   const [submitting, setSubmitting] = useState(false);
@@ -192,6 +198,19 @@ export default function AbsenceCalendarPage() {
     fetchData();
   }, [currentMonth, currentYear, viewMode]);
 
+  useEffect(() => {
+    if (!showForm) return;
+    formRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    dateInputRef.current?.focus({ preventScroll: true });
+  }, [showForm]);
+
+  // abw-15: Jahresdaten (eigene Abwesenheiten, Feiertage) hängen nur am Jahr —
+  // ein Monatswechsel im selben Jahr lädt sie nicht erneut. Aufrufe nach einer
+  // Buchung/Löschung laden sie gezielt neu (``fetchYearData``).
+  useEffect(() => {
+    fetchYearData();
+  }, [displayedYear]);
+
   const fetchMyVacationRequests = async () => {
     try {
       const res = await apiClient.get('/vacation-requests');
@@ -204,38 +223,37 @@ export default function AbsenceCalendarPage() {
   // C-2: Out-of-order-Schutz — bei schnellem Monats-/Jahr-/View-Wechsel darf eine
   // langsamere ältere Antwort die neuere nicht überschreiben (Last-Write-Wins).
   const fetchSeq = useRef(0);
+  const yearSeq = useRef(0);
+  const fetchYearData = async () => {
+    const seq = ++yearSeq.current;
+    try {
+      const [absencesRes, holidaysRes] = await Promise.all([
+        apiClient.get(`/absences?year=${displayedYear}`),
+        apiClient.get(`/holidays?year=${displayedYear}`),
+      ]);
+      if (seq !== yearSeq.current) return;
+      setMyAbsences(absencesRes.data);
+      setHolidays(holidaysRes.data);
+    } catch {
+      if (seq === yearSeq.current) toast.error('Fehler beim Laden des Kalenders');
+    }
+  };
   const fetchData = async () => {
     const seq = ++fetchSeq.current;
     try {
-      const year = viewMode === 'month' ? parseInt(currentMonth.split('-')[0]) : currentYear;
-
       if (viewMode === 'month') {
-        const [calendarRes, absencesRes, holidaysRes] = await Promise.all([
-          apiClient.get(`/absences/calendar?month=${currentMonth}`),
-          apiClient.get(`/absences?year=${year}`),
-          apiClient.get(`/holidays?year=${year}`),
-        ]);
+        const calendarRes = await apiClient.get(`/absences/calendar?month=${currentMonth}`);
         if (seq !== fetchSeq.current) return;
         setCalendarEntries(calendarRes.data);
-        setMyAbsences(absencesRes.data);
-        setHolidays(holidaysRes.data);
       } else {
-        // Alle 12 Monate + Jahres-Absences + Feiertage in EINEM Batch laden,
-        // damit setCalendarEntries nicht vor dem finalen seq-Check passiert
-        // (sonst Mix aus altem Jahr-Kalender + neuem Jahr-Absences bei Wechsel).
-        const monthPromises = Array.from({ length: 12 }, (_, i) => {
+        // Alle 12 Monate in EINEM Batch laden, damit setCalendarEntries nicht
+        // vor dem finalen seq-Check passiert (sonst Mix aus altem und neuem Jahr).
+        const results = await Promise.all(Array.from({ length: 12 }, (_, i) => {
           const month = `${currentYear}-${String(i + 1).padStart(2, '0')}`;
           return apiClient.get(`/absences/calendar?month=${month}`);
-        });
-        const [results, absencesRes, holidaysRes] = await Promise.all([
-          Promise.all(monthPromises),
-          apiClient.get(`/absences?year=${currentYear}`),
-          apiClient.get(`/holidays?year=${currentYear}`),
-        ]);
+        }));
         if (seq !== fetchSeq.current) return;
         setCalendarEntries(results.flatMap(r => r.data));
-        setMyAbsences(absencesRes.data);
-        setHolidays(holidaysRes.data);
       }
     } catch (error) {
       if (seq === fetchSeq.current) toast.error('Fehler beim Laden des Kalenders');
@@ -244,16 +262,20 @@ export default function AbsenceCalendarPage() {
 
   // Audit 2026-11-07 (S1-01): ein vergangener Beginn geht für Mitarbeitende nur
   // per Änderungsantrag (Server: 409 ``PAST_DAY_ABSENCE_DETAIL``). Der Weg über
-  // einen Urlaubsantrag (Genehmigungspflicht) bleibt davon unberührt.
+  // einen Urlaubsantrag (Genehmigungspflicht) gilt seit abw-03 dieselbe Sperre.
   // Nur Überstundenausgleich (auch als eigener Grund) behält eingegebene Stunden; alle
   // anderen Typen bucht der Server mit dem Tagessoll laut Vertrag (create_absence).
   const hoursEditable = formData.reasonId
     ? reasons.find((r) => r.id === formData.reasonId)?.base_behavior === 'overtime_comp'
     : formData.type === 'overtime';
   const showHalfDay = !isDateRange && !hoursEditable && (!!formData.reasonId || formData.type !== 'sick');
-  const goesToRequestFlow = !formData.reasonId && formData.type !== 'sick' && vacationApprovalRequired;
-  const pastDayBlocked = !goesToRequestFlow
-    && !mayBookAbsenceDirectly(currentUser?.role === 'admin', formData.date, format(new Date(), 'yyyy-MM-dd'));
+  const isAdmin = currentUser?.role === 'admin';
+  // abw-11: Admins buchen auch bei Genehmigungspflicht direkt (Server: absences.py;
+  // ein eigener Antrag wäre nur per Vier-Augen-Prinzip durch einen zweiten Admin genehmigbar).
+  const goesToRequestFlow = !isAdmin && !formData.reasonId && formData.type !== 'sick' && vacationApprovalRequired;
+  // abw-03: die Sperre für vergangene Tage gilt seit dem Review 2026-11-11 auch im
+  // Antragsweg (Server: 409 PAST_DAY_ABSENCE_DETAIL) — keine Ausnahme mehr.
+  const pastDayBlocked = !mayBookAbsenceDirectly(isAdmin, formData.date, todayBerlin());
 
   const doSubmit = async (refundVacation: boolean) => {
     if (submitting) return;
@@ -262,7 +284,7 @@ export default function AbsenceCalendarPage() {
       // If approval required and not sick leave: create an absence request instead.
       // #312 MA-ABS-03: eigene Gründe (worked/paid_free/overtime_comp) sind nie Urlaub
       // → immer direkt buchen, nicht über den Genehmigungs-Workflow.
-      if (!formData.reasonId && formData.type !== 'sick' && vacationApprovalRequired) {
+      if (goesToRequestFlow) {
         await apiClient.post('/vacation-requests', {
           date: formData.date,
           end_date: isDateRange && formData.end_date ? formData.end_date : null,
@@ -298,6 +320,7 @@ export default function AbsenceCalendarPage() {
         : 'Abwesenheit erfolgreich eingetragen';
       toast.success(msg);
       fetchData();
+      fetchYearData();
       setShowForm(false);
       setIsDateRange(false);
       setFormData({ date: format(new Date(), 'yyyy-MM-dd'), end_date: '', type: 'vacation', hours: getHoursForDate(currentUser, format(new Date(), 'yyyy-MM-dd')) || 8, note: '', half_day: false, reasonId: undefined });
@@ -307,6 +330,13 @@ export default function AbsenceCalendarPage() {
       setSubmitting(false);
     }
   };
+
+  // abw-08: jede Zeile ist EIN Tag (``end_date`` trägt nur die Gesamtspanne der
+  // Buchung) — immer das konkrete Datum mit Wochentag; eigener Grund (#312) als Name.
+  const formatAbsenceDay = (d: string) =>
+    format(new Date(d + 'T00:00:00'), 'EEEE, dd.MM.yyyy', { locale: de });
+  const absenceLabel = (a: Absence) =>
+    (a.reason_id && reasons.find((r) => r.id === a.reason_id)?.name) || absenceTypeLabel(a.type);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -318,7 +348,20 @@ export default function AbsenceCalendarPage() {
     if (formData.type === 'sick') {
       const startDate = formData.date;
       const endDate = isDateRange && formData.end_date ? formData.end_date : formData.date;
-      const overlappingVacation = myAbsences.filter(a => {
+      // abw-10: ``myAbsences`` hält nur das angezeigte Jahr — die Jahre von Beginn
+      // und Ende der Krankmeldung ggf. nachladen, sonst fehlt der Urlaub im Nachbarjahr.
+      let knownAbsences = myAbsences;
+      const extraYears = [...new Set([startDate.slice(0, 4), endDate.slice(0, 4)])]
+        .filter((y) => y !== String(displayedYear));
+      if (extraYears.length > 0) {
+        try {
+          const extra = await Promise.all(extraYears.map((y) => apiClient.get(`/absences?year=${y}`)));
+          knownAbsences = [...myAbsences, ...extra.flatMap((r) => r.data as Absence[])];
+        } catch {
+          // Server antwortet bei Überschneidung mit 409 und Klartext
+        }
+      }
+      const overlappingVacation = knownAbsences.filter(a => {
         const absDate = a.date;
         return a.type === 'vacation' && absDate >= startDate && absDate <= endDate;
       });
@@ -374,6 +417,7 @@ export default function AbsenceCalendarPage() {
           await apiClient.delete(`/absences/${id}`);
           toast.success('Abwesenheit erfolgreich gelöscht');
           fetchData();
+          fetchYearData();
         } catch (error) {
           toast.error(getErrorMessage(error, 'Fehler beim Löschen'));
         }
@@ -527,7 +571,7 @@ export default function AbsenceCalendarPage() {
                       )}
                     </div>
                     {(() => {
-                      const todayStr = format(new Date(), 'yyyy-MM-dd');
+                      const todayStr = todayBerlin();  // abw-13: wie der Server (today_local)
                       const isPending = vr.status === 'pending';
                       const isApprovedFuture = vr.status === 'approved' && vr.date > todayStr;
                       if (!isPending && !isApprovedFuture) return null;
@@ -605,7 +649,7 @@ export default function AbsenceCalendarPage() {
 
       {/* Absence Form */}
       {showForm && (
-        <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
+        <div ref={formRef} className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
           <h3 className="text-lg font-semibold mb-4">Abwesenheit eintragen</h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Zeitraum-Checkbox */}
@@ -649,6 +693,7 @@ export default function AbsenceCalendarPage() {
                   {isDateRange ? 'Von' : 'Datum'}
                 </label>
                 <input
+                  ref={dateInputRef}
                   type="date"
                   value={formData.date}
                   onChange={(e) => setFormData({ ...formData, date: e.target.value })}
@@ -1145,17 +1190,11 @@ export default function AbsenceCalendarPage() {
                 myAbsences.map((absence) => (
                   <tr key={absence.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      {absence.end_date ? (
-                        <>
-                          {format(new Date(absence.date + 'T00:00:00'), 'dd.MM.yyyy')} - {format(new Date(absence.end_date + 'T00:00:00'), 'dd.MM.yyyy')}
-                        </>
-                      ) : (
-                        format(new Date(absence.date + 'T00:00:00'), 'dd.MM.yyyy')
-                      )}
+                      {formatAbsenceDay(absence.date)}
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <span className={`px-2 py-1 rounded-sm text-xs ${absence.type === 'absent' ? 'bg-gray-100 text-gray-800' : typeColors[absence.type]}`}>
-                        {absenceTypeLabel(absence.type)}
+                        {absenceLabel(absence)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
@@ -1197,17 +1236,11 @@ export default function AbsenceCalendarPage() {
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">
-                        {absence.end_date ? (
-                          <>
-                            {format(new Date(absence.date + 'T00:00:00'), 'dd.MM.yyyy')} - {format(new Date(absence.end_date + 'T00:00:00'), 'dd.MM.yyyy')}
-                          </>
-                        ) : (
-                          format(new Date(absence.date + 'T00:00:00'), 'dd.MM.yyyy')
-                        )}
+                        {formatAbsenceDay(absence.date)}
                       </p>
                       <div className="mt-2">
                         <Badge variant={absence.type === 'absent' ? 'default' : absence.type} size="sm">
-                          {absenceTypeLabel(absence.type)}
+                          {absenceLabel(absence)}
                         </Badge>
                       </div>
                     </div>

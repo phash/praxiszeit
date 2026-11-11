@@ -40,6 +40,7 @@ interface Absence {
   type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other' | 'paid_leave';
   hours: number;
   note?: string;
+  reason_id?: string | null;  // #312: eigener Abwesenheitsgrund (nur Bezeichnung/Farbe)
 }
 
 export default function AdminAbsences() {
@@ -82,6 +83,12 @@ export default function AdminAbsences() {
   }, []);
 
   const typeLabels = ABSENCE_TYPE_LABELS;
+  // abw-08: jede Zeile ist EIN Tag — immer das konkrete Datum (mit Wochentag),
+  // nie die Gesamtspanne der Buchung; eigener Grund (#312) als Bezeichnung.
+  const formatAbsenceDay = (d: string, withWeekday: boolean) =>
+    format(new Date(d + 'T00:00:00'), withWeekday ? 'EEEE, dd.MM.yyyy' : 'dd.MM.yyyy', { locale: de });
+  const absenceLabel = (a: Absence) =>
+    (a.reason_id && reasons.find(r => r.id === a.reason_id)?.name) || typeLabels[a.type];
   const typeColors = ABSENCE_TYPE_COLORS;
 
   // Betriebsferien state
@@ -142,8 +149,29 @@ export default function AdminAbsences() {
     setShowClosureForm(true);
   };
 
-  const handleSubmitClosure = async (e: React.FormEvent) => {
+  const handleSubmitClosure = (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+    if (editingClosureId) {
+      saveClosure();
+      return;
+    }
+    // abw-04: Anlegen ersetzt gestempelte Zeiteinträge der Teilnehmenden an den
+    // Arbeitstagen des Zeitraums (auch rückwirkend) — vorher ausdrücklich bestätigen.
+    confirm({
+      title: 'Betriebsferien anlegen',
+      message: `Zeitraum ${format(new Date(closureForm.start_date + 'T00:00:00'), 'dd.MM.yyyy')} – `
+        + `${closureForm.end_date ? format(new Date(closureForm.end_date + 'T00:00:00'), 'dd.MM.yyyy') : '?'}. `
+        + 'An den Arbeitstagen dieses Zeitraums werden die bereits gestempelten Zeiteinträge aller teilnehmenden '
+        + 'Mitarbeitenden gelöscht und durch Abwesenheitseinträge ersetzt (auch rückwirkend und anerkannte Einträge). '
+        + 'Bitte prüfen Sie den Zeitraum.',
+      confirmLabel: 'Anlegen',
+      variant: 'danger',
+      onConfirm: saveClosure,
+    });
+  };
+
+  const saveClosure = async () => {
     if (submitting) return;
     setSubmitting(true);
     try {
@@ -183,8 +211,9 @@ export default function AdminAbsences() {
           // year replies 200 + { warning } instead of the usual 204.
           showResponseWarning(toast, res.data);
           loadClosures();
-        } catch {
-          toast.error('Fehler beim Löschen');
+        } catch (error: any) {
+          // abw-09: konkrete Servergründe (409 …) statt generischer Meldung
+          toast.error(getErrorMessage(error, 'Fehler beim Löschen'));
         }
       },
     });
@@ -211,10 +240,9 @@ export default function AdminAbsences() {
       employees.map(async (emp) => {
         try {
           const res = await apiClient.get(`/absences?user_id=${emp.id}&year=${year}`);
-          result[emp.id] = res.data.filter((a: Absence) => {
-            const aMonth = a.date.substring(0, 7);
-            return aMonth === currentMonth || (a.end_date && a.end_date.substring(0, 7) >= currentMonth && a.date.substring(0, 7) <= currentMonth);
-          });
+          // abw-01: jede Zeile ist ein Einzeltag (end_date trägt nur die Gesamtspanne
+          // der Buchung) — der Monat entscheidet allein über das Tagesdatum.
+          result[emp.id] = res.data.filter((a: Absence) => a.date.startsWith(currentMonth));
         } catch {
           result[emp.id] = [];
         }
@@ -247,7 +275,7 @@ export default function AdminAbsences() {
       });
       // #376: weiche Kind-krank-Limit-Warnung (§45 SGB V), non-blocking
       showArbzgWarnings(toast, collectAbsenceWarnings(res.data));
-      toast.success('Abwesenheit erfolgreich eingetragen');
+      toast.success('Abwesenheit erfolgreich eingetragen');  // abw-05: Jahresabschluss-Hinweis steckt in warnings
       setShowForm(false);
       setIsDateRange(false);
       setSelectedReasonId(null);
@@ -263,20 +291,25 @@ export default function AdminAbsences() {
   const handleDelete = (id: string, userId: string) => {
     confirm({
       title: 'Abwesenheit löschen',
-      message: 'Möchten Sie diese Abwesenheit wirklich löschen?',
+      // abw-09: Folgen für genehmigte Anträge und Betriebsferien vorab nennen
+      message: 'Möchten Sie diese Abwesenheit wirklich löschen? Es wird nur dieser eine Tag gelöscht. '
+        + 'Ein zugehöriger genehmigter Urlaubsantrag bleibt „Genehmigt“; ein gelöschter Betriebsferien-Tag wird automatisch neu gebucht.',
       confirmLabel: 'Löschen',
       variant: 'danger',
       onConfirm: async () => {
         try {
-          await apiClient.delete(`/absences/${id}`);
+          const res = await apiClient.delete(`/absences/${id}`);
           toast.success('Abwesenheit gelöscht');
+          // abw-05: abgeschlossenes Jahr → 200 + { warning } statt 204
+          showResponseWarning(toast, res?.data);
           if (selectedEmployee) {
             loadAbsences(userId);
           } else {
             loadAllAbsences();
           }
-        } catch {
-          toast.error('Fehler beim Löschen');
+        } catch (error: any) {
+          // abw-09: konkrete Servergründe (409 …) statt generischer Meldung
+          toast.error(getErrorMessage(error, 'Fehler beim Löschen'));
         }
       },
     });
@@ -287,7 +320,7 @@ export default function AdminAbsences() {
   };
 
   const filteredAbsences = selectedEmployee
-    ? absences.filter(a => a.date.startsWith(currentMonth) || (a.end_date && a.end_date >= currentMonth + '-01' && a.date <= currentMonth + '-31'))
+    ? absences.filter(a => a.date.startsWith(currentMonth))  // abw-01: Einzeltage, s. loadAllAbsences
     : [];
 
   // #162 / Review M-C2+M-C3: department filter at component scope (so it also
@@ -731,13 +764,11 @@ export default function AdminAbsences() {
                 {filteredAbsences.map(absence => (
                   <tr key={absence.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      {absence.end_date
-                        ? `${format(new Date(absence.date + 'T00:00:00'), 'dd.MM.yyyy')} – ${format(new Date(absence.end_date + 'T00:00:00'), 'dd.MM.yyyy')}`
-                        : format(new Date(absence.date + 'T00:00:00'), 'dd.MM.yyyy, EEEE', { locale: de })}
+                      {formatAbsenceDay(absence.date, true)}
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <span className={`px-2 py-1 rounded-sm text-xs ${typeColors[absence.type]}`}>
-                        {typeLabels[absence.type]}
+                        {absenceLabel(absence)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>
@@ -812,13 +843,11 @@ export default function AdminAbsences() {
                         {empAbsences.map(absence => (
                           <tr key={absence.id} className="hover:bg-gray-50">
                             <td className="px-6 py-3 text-sm text-gray-900">
-                              {absence.end_date
-                                ? `${format(new Date(absence.date + 'T00:00:00'), 'dd.MM.')} – ${format(new Date(absence.end_date + 'T00:00:00'), 'dd.MM.yyyy')}`
-                                : format(new Date(absence.date + 'T00:00:00'), 'dd.MM.yyyy')}
+                              {formatAbsenceDay(absence.date, true)}
                             </td>
                             <td className="px-6 py-3 text-sm">
                               <span className={`px-2 py-0.5 rounded-sm text-xs ${typeColors[absence.type]}`}>
-                                {typeLabels[absence.type]}
+                                {absenceLabel(absence)}
                               </span>
                             </td>
                             <td className="px-6 py-3 text-sm text-gray-900">{formatHoursHM(absence.hours)} h</td>

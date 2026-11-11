@@ -9,6 +9,7 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import { getErrorMessage } from '../../utils/errorMessage';
 import { showResponseWarning } from '../../utils/arbzgWarnings';
 import { formatDayCount } from '../../utils/formatters';
+import { todayBerlin } from '../../utils/absenceRules';
 import { AbsenceType, ABSENCE_TYPE_LABELS, ABSENCE_TYPE_COLORS } from '../../constants/absenceTypes';
 import VacationRequestEditModal from '../../components/VacationRequestEditModal';
 
@@ -21,6 +22,7 @@ interface VacationRequest {
   end_date?: string;
   hours: number;
   days?: number;
+  half_day?: boolean;
   absence_type?: string;
   note?: string;
   status: string;
@@ -43,6 +45,8 @@ export default function VacationApprovals() {
   const [rejectionReason, setRejectionReason] = useState('');
   const [approvalRequired, setApprovalRequired] = useState<boolean | null>(null);
   const [settingLoading, setSettingLoading] = useState(false);
+  // abw-13: sichtbarer Ladezustand je Karte (das Ref sperrt nur den Doppelklick)
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [editingRequest, setEditingRequest] = useState<VacationRequest | null>(null);
 
   useEffect(() => {
@@ -104,6 +108,7 @@ export default function VacationApprovals() {
   const handleApprove = async (id: string) => {
     if (pendingIds.current.has(id)) return;
     pendingIds.current.add(id);
+    setBusyId(id);
     try {
       await apiClient.post(`/admin/vacation-requests/${id}/review`, { action: 'approve' });
       toast.success('Antrag genehmigt');
@@ -112,12 +117,14 @@ export default function VacationApprovals() {
       toast.error(getErrorMessage(error, 'Fehler beim Genehmigen'));
     } finally {
       pendingIds.current.delete(id);
+      setBusyId(null);
     }
   };
 
   const handleReject = async (id: string) => {
     if (pendingIds.current.has(id)) return;
     pendingIds.current.add(id);
+    setBusyId(id);
     try {
       await apiClient.post(`/admin/vacation-requests/${id}/review`, {
         action: 'reject',
@@ -131,6 +138,7 @@ export default function VacationApprovals() {
       toast.error(getErrorMessage(error, 'Fehler beim Ablehnen'));
     } finally {
       pendingIds.current.delete(id);
+      setBusyId(null);
     }
   };
 
@@ -158,7 +166,7 @@ export default function VacationApprovals() {
   };
 
   const pendingCount = requests.filter((r) => r.status === 'pending').length;
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const todayStr = todayBerlin();  // abw-13: wie der Server (today_local)
 
   return (
     <div>
@@ -351,9 +359,10 @@ export default function VacationApprovals() {
                         <div className="flex space-x-2">
                           <button
                             onClick={() => handleReject(vr.id)}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition"
+                            disabled={busyId === vr.id}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            Ablehnen
+                            {busyId === vr.id ? 'Wird abgelehnt…' : 'Ablehnen'}
                           </button>
                           <button
                             onClick={() => {
@@ -370,10 +379,11 @@ export default function VacationApprovals() {
                       <div className="flex space-x-3">
                         <button
                           onClick={() => handleApprove(vr.id)}
-                          className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition"
+                          disabled={busyId === vr.id}
+                          className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Check size={16} />
-                          <span>Genehmigen</span>
+                          <span>{busyId === vr.id ? 'Wird gebucht…' : 'Genehmigen'}</span>
                         </button>
                         <button
                           onClick={() => setEditingRequest(vr)}

@@ -27,3 +27,13 @@ export function mayBookAbsenceDirectly(isAdmin: boolean, startDate: string, toda
 export function mayDeleteAbsenceByDate(isAdmin: boolean, absenceDate: string, todayStr: string): boolean {
   return isAdmin || !isPastDay(absenceDate, todayStr);
 }
+
+/**
+ * Heutiges Datum (``yyyy-MM-dd``) in Europe/Berlin — wie ``today_local()`` im
+ * Backend. Das Browserdatum weicht bei fremder Zeitzone ab (abw-13); die
+ * Stornierbarkeit eines genehmigten Urlaubs entscheidet der Server nach Berliner Datum.
+ */
+export function todayBerlin(now: Date = new Date()): string {
+  // sv-SE formatiert als ``yyyy-MM-dd``.
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(now);
+}
