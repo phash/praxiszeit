@@ -30,6 +30,7 @@ from app.models import (
     User, TimeEntry, Absence, PublicHoliday, AbsenceType,
     WorkingHoursChange, ChangeRequest, CompanyClosure, ReducedDay,
     VacationRequest, SystemSetting, YearCarryover,
+    Workstation, ShiftPlan, ShiftSlot, ShiftAssignment, WorkstationQualification,
 )
 from app.models.absence import AbsenceReason
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
@@ -55,6 +56,37 @@ REASON_NAME = "Fortbildung extern"
 CLOSURE_NAME = "Teamklausur"
 REDUCED_DAY_LABEL = "Brückentag"
 REDUCED_DAY_MAX_HOURS = Decimal("4.00")
+# Schichtplan (#305): ein heute gültiger Wochenplan, sichtbar für alle Mitarbeitenden.
+# Die Planung ist vom Rechenmodell entkoppelt; sichtbar wird sie erst, wenn eine
+# Aufnahme ``shift_planning_enabled`` einschaltet (Standard aus).
+SHIFT_PLAN_NAME = "Wochenplan Praxis"
+SHIFT_PLAN_DESCRIPTION = "Gilt bis auf Weiteres. Tauschwünsche bitte an Dr. Werner."
+SHIFT_WORKSTATIONS = [  # (Name, Farbe)
+    ("Anmeldung", "#BFDBFE"),
+    ("Labor", "#BBF7D0"),
+]
+# (Arbeitsplatz, Wochentag 0=Mo, Beginn, Ende, Mindestbesetzung, Hinweis, Benutzernamen).
+# Höchstens zwei Schichten gleichzeitig je Tag, damit das Wochenraster lesbar bleibt.
+SHIFT_SLOTS = [
+    ("Anmeldung", 0, "07:45", "12:00", 1, None, ["maria"]),
+    ("Anmeldung", 1, "07:45", "12:00", 1, None, ["petra"]),
+    ("Anmeldung", 2, "07:45", "12:00", 1, "Telefondienst bis 9:00", ["maria"]),
+    ("Anmeldung", 3, "07:45", "12:00", 1, None, ["petra"]),
+    ("Anmeldung", 4, "07:45", "12:00", 1, None, ["maria"]),
+    ("Anmeldung", 0, "12:00", "16:15", 1, None, ["thomas"]),
+    ("Anmeldung", 1, "12:00", "16:15", 1, None, ["julia"]),
+    ("Anmeldung", 2, "12:00", "16:15", 1, None, ["maria"]),
+    ("Anmeldung", 3, "12:00", "16:15", 1, None, ["julia"]),
+    ("Anmeldung", 4, "12:00", "16:15", 1, None, ["thomas"]),
+    ("Labor", 0, "08:00", "12:00", 1, None, ["sarah"]),
+    ("Labor", 1, "08:00", "12:00", 1, None, ["sarah"]),
+    ("Labor", 2, "08:00", "12:00", 1, "Blutabnahmen nüchtern bis 10:00", ["sarah"]),
+    ("Labor", 3, "08:00", "12:00", 1, None, ["sarah"]),
+    ("Labor", 4, "08:00", "13:00", 1, None, ["sarah"]),
+    ("Labor", 1, "12:00", "16:15", 1, None, ["thomas"]),
+    ("Labor", 2, "12:00", "16:15", 1, None, ["thomas"]),
+    ("Labor", 3, "12:00", "16:15", 1, None, ["thomas"]),
+]
 # Thomas hat an diesem Werktag vor dem Stichtag vergessen zu stempeln (kein
 # Eintrag) — Handbuch-Aufnahme ``ma-vergangener-tag`` füllt {{werktag-4}}.
 # Nicht Maria: ihr Dashboard ist die Übersichtsaufnahme ohne „Buchung fehlt“ (R19).
@@ -249,6 +281,16 @@ def _purge_existing(db, usernames) -> None:
     # Abwesenheiten der Demo-Konten gehen unten mit den Konten)
     db.query(CompanyClosure).filter(
         CompanyClosure.tenant_id == TENANT_ID, CompanyClosure.name == CLOSURE_NAME,
+    ).delete(synchronize_session=False)
+    # Schichtplan des Seeds: Plan zuerst (Schichten und Einteilungen hängen per
+    # ON DELETE CASCADE daran), danach die Arbeitsplätze (Einweisungen CASCADE;
+    # Schichten verweisen RESTRICT und sind dann schon weg).
+    db.query(ShiftPlan).filter(
+        ShiftPlan.tenant_id == TENANT_ID, ShiftPlan.name == SHIFT_PLAN_NAME,
+    ).delete(synchronize_session=False)
+    db.query(Workstation).filter(
+        Workstation.tenant_id == TENANT_ID,
+        Workstation.name.in_([name for name, _ in SHIFT_WORKSTATIONS]),
     ).delete(synchronize_session=False)
     existing = db.query(User).filter(
         User.tenant_id == TENANT_ID, User.username.in_(list(usernames)),
@@ -629,7 +671,7 @@ def create_time_entries_for_user(db, user: User, holiday_dates: set, start: date
 # ── Korrekturanträge ──────────────────────────────────────────────────────────
 
 def _add_change_request(db, user, entry, status, prop_start, prop_end, prop_break,
-                        reason, rejection_reason=None, reviewer=None):
+                        reason, rejection_reason=None, reviewer=None, created_at=None, reviewed_at=None):
     """Legt einen UPDATE-Korrekturantrag über die Session an — mit Vorher-Bild
     wie ``change_requests.create_change_request`` und, wenn abgelehnt, mit
     Prüferin und Zeitpunkt wie ``review_change_request``.
@@ -658,10 +700,28 @@ def _add_change_request(db, user, entry, status, prop_start, prop_end, prop_brea
         reason=reason,
         rejection_reason=rejection_reason,
     )
+    if created_at is not None:
+        # Realistischer Antragszeitpunkt statt der Seed-Uhr (sonst „gestellt“ und
+        # „bearbeitet“ in derselben Minute des Stichtags).
+        cr.created_at = created_at
+        cr.updated_at = reviewed_at or created_at
     if status != ChangeRequestStatus.PENDING:
         cr.reviewed_by = reviewer.id if reviewer else None
-        cr.reviewed_at = datetime.now(timezone.utc)
+        cr.reviewed_at = reviewed_at or datetime.now(timezone.utc)
     db.add(cr)
+
+
+def _berlin(d: date, hour: int, minute: int) -> datetime:
+    """Zeitpunkt ``d hour:minute`` Europe/Berlin als UTC-Datetime."""
+    return datetime(d.year, d.month, d.day, hour, minute, tzinfo=BERLIN).astimezone(timezone.utc)
+
+
+def _next_weekday(d: date) -> date:
+    """Nächster Tag Mo–Fr nach ``d`` (Feiertage egal — nur für Antragszeitpunkte)."""
+    d += timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
 
 
 def create_change_requests(db, users: list, stichtag: date, reviewer=None):
@@ -684,6 +744,8 @@ def create_change_requests(db, users: list, stichtag: date, reviewer=None):
                 db, maria, entry, ChangeRequestStatus.PENDING,
                 dt_time(8, 0), dt_time(16, 45), 45,
                 "Hatte vergessen, mich einzustempeln – tatsächliche Arbeitszeit war 8:00–16:45 Uhr.",
+                # am Stichtag kurz nach dem Einstempeln (07:45) gestellt, vor der Aufnahme (10:30)
+                created_at=_berlin(stichtag, 8, 5),
             )
             count += 1
 
@@ -701,11 +763,60 @@ def create_change_requests(db, users: list, stichtag: date, reviewer=None):
                 "Bitte Korrektur: Ich habe von 7:30 bis 15:30 Uhr durchgearbeitet, die Pause ist entfallen.",
                 "Pausen-Nachweis fehlt. Gemäß ArbZG §4 sind bei >6h Arbeitszeit 30 Min. Pause vorgeschrieben.",
                 reviewer=reviewer,
+                # am Folgetag gestellt, am Tag danach abgelehnt — beides lange vor dem Stichtag
+                created_at=_berlin(_next_weekday(entry.date), 7, 58),
+                reviewed_at=_berlin(_next_weekday(_next_weekday(entry.date)), 9, 15),
             )
             count += 1
 
     db.commit()
     print(f"  ✓ {count} Change Requests erstellt")
+
+
+# ── Schichtplan ──────────────────────────────────────────────────────────────
+
+def create_shift_plan(db, users: list, admin) -> None:
+    """Ein heute gültiger Wochenplan wie über die Admin-Routen von
+    ``routers/shift_planning.py`` angelegt: Arbeitsplätze (``create_workstation``),
+    Plan (``create_plan`` + ``activate_plan``: ``is_active=True``), Schichten
+    (``create_slot``) und Einteilungen (``set_assignments``), dazu Einweisungen
+    (``set_user_qualifications``) für jeden eingeteilten Arbeitsplatz. Schreibt
+    nur die Planungstabellen — nie Zeiteinträge, Abwesenheiten oder Salden."""
+    by_name = {u.username: u for u in users}
+    stations = {}
+    for i, (name, color) in enumerate(SHIFT_WORKSTATIONS):
+        ws = Workstation(tenant_id=TENANT_ID, name=name, color=color, sort_order=i)
+        db.add(ws)
+        stations[name] = ws
+    db.flush()
+    plan = ShiftPlan(
+        tenant_id=TENANT_ID, name=SHIFT_PLAN_NAME, description=SHIFT_PLAN_DESCRIPTION,
+        is_active=True, visible_to_employees=False, created_by=admin.id,
+    )
+    db.add(plan)
+    db.flush()
+    qualified = set()
+    n_slots = n_assign = 0
+    for ws_name, weekday, start, end, min_staff, note, usernames in SHIFT_SLOTS:
+        slot = ShiftSlot(
+            tenant_id=TENANT_ID, shift_plan_id=plan.id, workstation_id=stations[ws_name].id,
+            weekday=weekday, start_time=dt_time.fromisoformat(start), end_time=dt_time.fromisoformat(end),
+            min_staff=min_staff, note=note,
+        )
+        db.add(slot)
+        db.flush()
+        n_slots += 1
+        for username in usernames:
+            user = by_name.get(username)
+            if user is None:
+                continue
+            db.add(ShiftAssignment(tenant_id=TENANT_ID, shift_slot_id=slot.id, user_id=user.id))
+            qualified.add((user.id, stations[ws_name].id))
+            n_assign += 1
+    for user_id, ws_id in sorted(qualified, key=str):
+        db.add(WorkstationQualification(tenant_id=TENANT_ID, user_id=user_id, workstation_id=ws_id))
+    db.commit()
+    print(f"  ✓ Schichtplan „{SHIFT_PLAN_NAME}“: {len(stations)} Arbeitsplätze, {n_slots} Schichten, {n_assign} Einteilungen")
 
 
 # ── Ablauf ────────────────────────────────────────────────────────────────────
@@ -740,6 +851,9 @@ def seed_all(db, stichtag: date) -> None:
 
     print("\n8. Korrekturanträge...")
     create_change_requests(db, users, stichtag, reviewer=admin)
+
+    print("\n9. Schichtplan...")
+    create_shift_plan(db, users, admin)
 
 
 def main(argv=None):

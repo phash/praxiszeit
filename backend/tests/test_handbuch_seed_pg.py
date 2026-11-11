@@ -74,7 +74,11 @@ def _cleanup(conn):
     tids = {"a": str(TENANT_ID), "b": str(FOREIGN_TENANT_ID)}
     # Reihenfolge nach FK-Abhängigkeit: Abwesenheiten vor Betriebsferien und
     # Abwesenheitsgründen, alles vor den Konten (created_by/user_id).
-    for table in ("change_requests", "vacation_requests", "time_entries", "absences",
+    # Schichtplan (Einteilungen/Schichten vor dem Plan, Einweisungen vor den Arbeitsplätzen;
+    # shift_plans.created_by verweist auf die Verwalterin)
+    for table in ("shift_assignments", "shift_slots", "shift_plans", "workstation_qualifications",
+                  "workstations",
+                  "change_requests", "vacation_requests", "time_entries", "absences",
                   "company_closures", "absence_reasons", "reduced_days",
                   "working_hours_changes", "system_settings", "public_holidays", "users"):
         conn.execute(text(f"DELETE FROM {table} WHERE tenant_id IN (:a, :b)"), tids)
@@ -704,3 +708,70 @@ def test_thomas_forgot_to_stamp_on_the_fourth_workday_before(full_tenant, app_en
         if d.weekday() < 5 and d not in holidays:
             assert d in m_entries or d in m_abs, f"Maria ohne Buchung am {d}"
         d += timedelta(days=1)
+
+
+def test_seed_creates_shift_plan_visible_to_employees(full_tenant, app_engine, monkeypatch):
+    """Aufnahmen ``ma-schichtplan``/``ma-einteilung-heute``: ein heute gültiger
+    Plan, den Mitarbeitende sehen (``is_plan_visible_to``), Maria am Stichtag
+    eingeteilt (mit »-Hinweis), Einweisungen zu jeder Einteilung. Die Planung
+    schreibt nichts ins Rechenmodell; ein zweiter Lauf hinterlässt genau einen Plan."""
+    from app.models import ShiftAssignment, ShiftPlan, ShiftSlot, TimeEntry, Workstation, WorkstationQualification
+    from app.services.shift_planning_service import is_plan_visible_to
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+    entries_before = _read(app_engine, lambda db: db.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID).count())
+    _run_seed(app_engine, seed, monkeypatch)
+
+    def collect(db):
+        names = {u.id: u.username for u in db.query(User).filter(User.tenant_id == TENANT_ID)}
+        plans = db.query(ShiftPlan).filter(ShiftPlan.tenant_id == TENANT_ID).all()
+        ws = {w.id: w.name for w in db.query(Workstation).filter(Workstation.tenant_id == TENANT_ID)}
+        slots = db.query(ShiftSlot).filter(ShiftSlot.tenant_id == TENANT_ID).all()
+        by_slot = {s.id: s for s in slots}
+        assigns = [(names[a.user_id], by_slot[a.shift_slot_id]) for a in
+                   db.query(ShiftAssignment).filter(ShiftAssignment.tenant_id == TENANT_ID)]
+        quals = {(names[q.user_id], ws[q.workstation_id]) for q in
+                 db.query(WorkstationQualification).filter(WorkstationQualification.tenant_id == TENANT_ID)}
+        return {
+            "plans": [(p.name, is_plan_visible_to(p, STICHTAG, False)) for p in plans],
+            "ws": sorted(ws.values()),
+            "maria_today": [(ws[s.workstation_id], s.note) for n, s in assigns
+                            if n == "maria" and s.weekday == STICHTAG.weekday()],
+            "assigned": {(n, ws[s.workstation_id]) for n, s in assigns},
+            "quals": quals,
+            "entries": db.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID).count(),
+        }
+
+    r = _read(app_engine, collect)
+    assert r["plans"] == [(seed.SHIFT_PLAN_NAME, True)]
+    assert r["ws"] == sorted(name for name, _ in seed.SHIFT_WORKSTATIONS)
+    assert ("Anmeldung", "Telefondienst bis 9:00") in r["maria_today"]
+    assert r["assigned"] <= r["quals"], "jede Einteilung hat eine Einweisung"
+    assert r["entries"] == entries_before
+
+
+def test_change_requests_have_realistic_timestamps(full_tenant, app_engine, monkeypatch):
+    """Tab „Anträge“: Marias offener Antrag ist am Stichtag vor der Aufnahme
+    (10:30) gestellt; Thomas' abgelehnter Antrag an einem Werktag nach dem
+    Eintrag gestellt und danach bearbeitet – beides vor dem Stichtag."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+    berlin = ZoneInfo("Europe/Berlin")
+
+    def collect(db):
+        names = {u.id: u.username for u in db.query(User).filter(User.tenant_id == TENANT_ID)}
+        return {names[c.user_id]: (c.original_date, c.created_at, c.reviewed_at)
+                for c in db.query(ChangeRequest).filter(ChangeRequest.tenant_id == TENANT_ID)}
+
+    r = _read(app_engine, collect)
+    m_date, m_created, m_reviewed = r["maria"]
+    assert m_reviewed is None
+    assert m_created.astimezone(berlin).date() == STICHTAG
+    assert m_created.astimezone(berlin).time() < time(10, 30)
+    t_date, t_created, t_reviewed = r["thomas"]
+    c, v = t_created.astimezone(berlin), t_reviewed.astimezone(berlin)
+    assert t_date < c.date() < v.date() < STICHTAG
+    assert c.weekday() < 5 and v.weekday() < 5
+    assert c < v < datetime.combine(STICHTAG, time(0), tzinfo=berlin)

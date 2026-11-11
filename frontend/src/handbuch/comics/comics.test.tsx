@@ -4,11 +4,13 @@ import { renderToString } from 'react-dom/server';
 import { COMIC_SCENES } from './scenes';
 
 describe('COMIC_SCENES', () => {
-  it('enthält die fünf Broschüren-Szenen', () => {
-    expect(Object.keys(COMIC_SCENES).sort()).toEqual(['hero', 'nachweise', 'stempeln', 'uebersicht', 'urlaub']);
+  it('enthält die Broschüren-Szenen und die Szenen des Mitarbeiter-Handbuchs', () => {
+    expect(Object.keys(COMIC_SCENES).sort()).toEqual([
+      'antrag', 'handy', 'hero', 'nachweise', 'schichtplan', 'stempeln', 'uebersicht', 'urlaub', 'zweifaktor',
+    ]);
   });
 
-  for (const key of ['hero', 'stempeln', 'uebersicht', 'urlaub', 'nachweise']) {
+  for (const key of Object.keys(COMIC_SCENES)) {
     it(`Szene "${key}" rendert als SVG ohne style-Attribut`, () => {
       const Scene = COMIC_SCENES[key];
       const html = renderToString(createElement(Scene));

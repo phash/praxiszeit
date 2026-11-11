@@ -8,7 +8,10 @@ import { ALL_SHOTS, HANDBOOKS } from './index';
 const manifest = manifestJson as unknown as Manifest;
 
 /** Kapitel ohne Screenshot (Ruling R7), z. B. Häufige Fragen. Je Eintrag eine Begründung. */
-const NO_SHOT_CHAPTERS: readonly string[] = [];
+const NO_SHOT_CHAPTERS: readonly string[] = [
+  // Mitarbeitende „Häufige Fragen“: kurze Antworten, jede verweist auf die Aufgabe mit Bild.
+  'haeufige-fragen',
+];
 
 /** Alle Zeichenketten eines Objekts (Texte, Titel, Alt-Texte, Locator-Namen …). */
 function allStrings(v: unknown, out: string[] = []): string[] {

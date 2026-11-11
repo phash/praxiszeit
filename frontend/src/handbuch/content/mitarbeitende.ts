@@ -1,7 +1,7 @@
 import type { Handbook, ShotDef } from '../types';
 
 /**
- * Handbuch für Mitarbeitende (Kapitel 1–4; Task 8b ergänzt 5–9).
+ * Handbuch für Mitarbeitende (Kapitel 1–9).
  * Quelle: docs/handbuch/HANDBUCH-MITARBEITER.md und die Seiten in frontend/src/pages.
  * Reine Daten (R5). Aufgaben-IDs sind Sprungmarken der Kontexthilfe – nicht umbenennen.
  */
@@ -275,6 +275,235 @@ const shots: ShotDef[] = [
     ],
     alt: 'Tab „Meine Anträge“ mit einem genehmigten Urlaubsantrag über drei Tage und dem Datum, an dem er gestellt wurde',
   },
+  // ── 5. Anträge ───────────────────────────────────────────────────────────
+  {
+    id: 'ma-antrag-knoepfe',
+    persona: 'maria',
+    viewport: 'desktop',
+    route: '/time-tracking',
+    // Ausschnitt um die Aktionen-Spalte: die kleinen Symbole bleiben groß genug zum Erkennen
+    crop: { around: ['aendern', 'loeschen'], pad: 120 },
+    markers: [
+      // Neuester gesperrter Eintrag (Liste absteigend; der heutige oben hat Stift und Papierkorb)
+      { n: 1, id: 'aendern', locator: { css: 'main >> button[aria-label^="Änderungsantrag für"] >> nth=0' }, badge: 'top' },
+      { n: 2, id: 'loeschen', locator: { css: 'main >> button[aria-label^="Löschantrag für"] >> nth=0' }, badge: 'right' },
+    ],
+    alt: 'Zeile eines gesperrten Zeiteintrags mit Schloss und den Knöpfen für Änderungsantrag und Löschantrag in der Spalte Aktionen',
+  },
+  {
+    id: 'ma-antrag-aendern',
+    persona: 'maria',
+    viewport: 'desktop',
+    route: '/time-tracking',
+    prepare: [
+      { click: { css: 'main >> button[aria-label^="Änderungsantrag für"] >> nth=0' } },
+      { fill: { label: 'Von', within: 'dialog' }, value: '08:30' },
+      { fill: { label: 'Begründung', within: 'dialog' }, value: 'Einstempeln vergessen – ich war ab 8:30 Uhr in der Praxis.' },
+    ],
+    crop: 'dialog',
+    markers: [
+      { n: 1, id: 'aktuell', locator: { role: 'heading', name: 'Aktuelle Werte', exact: true }, badge: 'top' },
+      { n: 2, id: 'von', locator: { label: 'Von', within: 'dialog' }, badge: 'top' },
+      { n: 3, id: 'begruendung', locator: { label: 'Begründung', within: 'dialog' }, badge: 'top' },
+      { n: 4, id: 'senden', locator: { role: 'button', name: 'Antrag stellen', exact: true, within: 'dialog' }, badge: 'top' },
+    ],
+    alt: 'Dialog „Änderungsantrag: Eintrag ändern“: oben die aktuellen Werte des Eintrags, darunter die neuen Werte und die ausgefüllte Begründung',
+  },
+  {
+    id: 'ma-antrag-loeschen',
+    persona: 'maria',
+    viewport: 'desktop',
+    route: '/time-tracking',
+    prepare: [
+      { click: { css: 'main >> button[aria-label^="Löschantrag für"] >> nth=0' } },
+      { fill: { label: 'Begründung', within: 'dialog' }, value: 'Eintrag versehentlich doppelt angelegt.' },
+    ],
+    crop: 'dialog',
+    markers: [
+      { n: 1, id: 'eintrag', locator: { role: 'heading', name: 'Eintrag zum Löschen', exact: true }, badge: 'top' },
+      { n: 2, id: 'begruendung', locator: { label: 'Begründung', within: 'dialog' }, badge: 'top' },
+      { n: 3, id: 'senden', locator: { role: 'button', name: 'Antrag stellen', exact: true, within: 'dialog' }, badge: 'top' },
+    ],
+    alt: 'Dialog „Änderungsantrag: Eintrag löschen“ mit dem Eintrag, der gelöscht werden soll, und einer ausgefüllten Begründung',
+  },
+  {
+    id: 'ma-antraege-status',
+    persona: 'maria',
+    viewport: 'desktop',
+    route: '/time-tracking?tab=requests',
+    prepare: [{ waitFor: { role: 'button', name: 'Zurückziehen', exact: true, within: 'main' } }],
+    crop: { around: ['tab', 'karte'], pad: 24 },
+    markers: [
+      { n: 1, id: 'tab', locator: { role: 'button', name: 'Anträge', exact: true, within: 'main' }, badge: 'top' },
+      // Kreis über der Kartenmitte: dort ist rechts neben den Filterknöpfen Platz
+      { n: 2, id: 'karte', locator: { css: "xpath=//main//div[contains(@class,'rounded-xl') and contains(@class,'p-6')][.//button[normalize-space()='Zurückziehen']]" }, badge: 'top' },
+      { n: 3, id: 'zurueckziehen', locator: { role: 'button', name: 'Zurückziehen', exact: true, within: 'main' }, badge: 'top' },
+    ],
+    alt: 'Tab „Anträge“ in der Zeiterfassung: offener Änderungsantrag mit aktuellen und gewünschten Werten, Begründung und dem Knopf „Zurückziehen“',
+  },
+  {
+    id: 'ma-antrag-abgelehnt',
+    persona: 'thomas',
+    viewport: 'desktop',
+    route: '/time-tracking?tab=requests',
+    prepare: [
+      { click: { role: 'button', name: 'Abgelehnt', exact: true, within: 'main' } },
+      { waitFor: { text: 'Ablehnungsgrund:', within: 'main' } },
+    ],
+    // pad 68: der Kreis links neben dem Ablehnungsgrund passt ganz hinein (verdeckt sonst „Begründung“)
+    crop: { around: ['filter', 'grund'], pad: 68 },
+    markers: [
+      // Filterknopf „Abgelehnt“ (rechts daneben ist frei); das Kennzeichen „Abgelehnt“ steht dann an jeder Karte
+      { n: 1, id: 'filter', locator: { role: 'button', name: 'Abgelehnt', exact: true, within: 'main' }, badge: 'right' },
+      { n: 2, id: 'grund', locator: { css: "xpath=//main//div[contains(@class,'bg-red-50')][.//text()[contains(.,'Ablehnungsgrund')]]" }, badge: 'left' },
+    ],
+    alt: 'Filter „Abgelehnt“ mit einem abgelehnten Änderungsantrag, rotem Kasten „Ablehnungsgrund“ und dem Vermerk, wer ihn wann bearbeitet hat',
+  },
+
+  // ── 6. Auf dem Handy ─────────────────────────────────────────────────────
+  {
+    id: 'ma-handy-start',
+    persona: 'maria',
+    viewport: 'mobile',
+    route: '/',
+    crop: 'full',
+    markers: [
+      { n: 1, id: 'menue', locator: { role: 'button', name: 'Menü öffnen', exact: true }, badge: 'left' },
+      { n: 2, id: 'stempel', locator: { role: 'button', name: 'Eingestempelt – Stempeluhr öffnen', exact: true }, badge: 'top' },
+      // Die ganze Leiste ist in der Mitte vom Stempel-Knopf verdeckt — Marker auf den ersten Eintrag „Home“.
+      // Ecke: am linken Bildrand liegt kein Text der Seite dahinter (über der Mitte stünde „Monatssaldo“).
+      { n: 3, id: 'leiste', locator: { role: 'link', name: 'Home', exact: true, within: 'nav' }, badge: 'corner' },
+    ],
+    alt: 'PraxisZeit auf dem Smartphone: oben das Menü, unten die Leiste mit Home, Journal, Abwes. und Profil, in der Mitte der runde Stempel-Knopf',
+  },
+  {
+    id: 'ma-handy-stempeluhr',
+    persona: 'maria',
+    viewport: 'mobile',
+    route: '/',
+    prepare: [
+      { click: { role: 'button', name: 'Eingestempelt – Stempeluhr öffnen', exact: true } },
+      { waitFor: { text: 'Arbeitszeit heute', within: 'dialog' } },
+    ],
+    crop: 'full',
+    markers: [
+      { n: 1, id: 'uhr', locator: { text: 'Arbeitszeit heute', within: 'dialog' }, badge: 'left' },
+      { n: 2, id: 'ausstempeln', locator: { role: 'button', name: 'Ausstempeln', exact: true, within: 'dialog' }, badge: 'top' },
+    ],
+    alt: 'Geöffnete Stempeluhr auf dem Smartphone mit laufender Arbeitszeit, Start 07:45, Pause und dem roten Knopf „Ausstempeln“',
+  },
+  {
+    id: 'ma-handy-zeiterfassung',
+    persona: 'maria',
+    viewport: 'mobile',
+    route: '/time-tracking',
+    crop: 'full',
+    markers: [
+      { n: 1, id: 'antrag', locator: { role: 'button', name: 'Antrag', exact: true, within: 'main' }, badge: 'left' },
+      { n: 2, id: 'neu', locator: { css: 'main >> button:has(svg.lucide-plus)' }, badge: 'top' },
+      { n: 3, id: 'aendern', locator: { css: 'main >> button:has-text("Ändern") >> visible=true >> nth=0' }, badge: 'top' },
+    ],
+    alt: 'Zeiterfassung auf dem Smartphone: oben die Knöpfe Antrag und Plus, darunter die Einträge als Karten mit Ändern und Löschen',
+  },
+
+  // ── 7. Profil ────────────────────────────────────────────────────────────
+  {
+    id: 'ma-profil',
+    persona: 'maria',
+    viewport: 'desktop',
+    route: '/profile',
+    crop: 'main',
+    markers: [
+      { n: 1, id: 'bearbeiten', locator: { role: 'button', name: 'Bearbeiten', exact: true, within: 'main' }, badge: 'top' },
+      { n: 2, id: 'passwort', locator: { role: 'button', name: 'Ändern', exact: true, within: 'main' }, badge: 'top' },
+      { n: 3, id: 'arbeitszeit', locator: { role: 'heading', name: 'Meine Arbeitszeit', exact: true }, badge: 'top' },
+      { n: 4, id: 'weitere', locator: { role: 'button', name: 'Weitere Einstellungen', exact: true, within: 'main' }, badge: 'top' },
+    ],
+    alt: 'Profilseite mit persönlichen Daten, der Karte „Passwort ändern“, „Meine Arbeitszeit“ und dem Bereich „Weitere Einstellungen“',
+  },
+  {
+    id: 'ma-meine-arbeitszeit',
+    persona: 'sarah',
+    viewport: 'desktop',
+    route: '/profile',
+    prepare: [{ scrollTo: { role: 'heading', name: 'Meine Arbeitszeit', exact: true } }],
+    crop: { around: ['karte'], pad: 16 },
+    markers: [
+      // Ecke: der Kreis liegt auf dem Uhr-Symbol, nicht auf der Überschrift
+      { n: 1, id: 'karte', locator: { css: "xpath=//main//h2[normalize-space()='Meine Arbeitszeit']/ancestor::div[contains(@class,'rounded-xl')][1]" }, badge: 'corner' },
+      // Kreise über der Listenmitte: Überschrift und „Wochenstunden“ stehen links
+      { n: 2, id: 'heute', locator: { role: 'list', name: 'Arbeitszeit heute', exact: true }, badge: 'top' },
+      { n: 3, id: 'verlauf', locator: { role: 'list', name: 'Verlauf der Arbeitszeit', exact: true }, badge: 'top' },
+    ],
+    alt: 'Karte „Meine Arbeitszeit“: Arbeitszeit-Blöcke je Wochentag mit Tagessoll, Wochenstunden und darunter der Verlauf der Änderungen',
+  },
+  {
+    id: 'ma-passwort-aendern',
+    persona: 'maria',
+    viewport: 'desktop',
+    route: '/profile',
+    prepare: [{ click: { role: 'button', name: 'Ändern', exact: true, within: 'main' } }],
+    crop: 'main',
+    markers: [
+      // Die Beschriftungen stehen links über den Feldern; Kreise über der Feldmitte verdecken sie nicht.
+      { n: 1, id: 'aktuell', locator: { css: 'main >> input[type="password"] >> nth=0' }, badge: 'top' },
+      { n: 2, id: 'neu', locator: { css: 'main >> input[type="password"] >> nth=1' }, badge: 'top' },
+      { n: 3, id: 'bestaetigen', locator: { css: 'main >> input[type="password"] >> nth=2' }, badge: 'top' },
+    ],
+    alt: 'Karte „Passwort ändern“ mit den Feldern Aktuelles Passwort, Neues Passwort und Passwort bestätigen sowie dem Knopf „Speichern“',
+  },
+  {
+    id: 'ma-2fa-einrichten',
+    persona: 'maria',
+    viewport: 'desktop',
+    route: '/profile',
+    prepare: [
+      // „Weitere Einstellungen“ ist beim Öffnen der Seite schon aufgeklappt
+      { click: { role: 'button', name: '2FA aktivieren', exact: true, within: 'main' } },
+      { fill: { css: 'main input[placeholder="Ihr aktuelles Passwort"]' }, value: 'Handbuch2026!' },
+      { click: { role: 'button', name: 'Weiter', exact: true, within: 'main' } },
+      { waitFor: { text: 'Schritt 1: Scannen Sie den QR-Code mit Ihrer Authenticator-App', within: 'main' } },
+      // Knöpfe in die Fenstermitte holen: dann stehen QR-Code bis Knöpfe ganz im Fenster
+      { scrollTo: { role: 'button', name: 'Bestätigen & 2FA aktivieren', exact: true, within: 'main' } },
+    ],
+    crop: { around: ['qr', 'code'], pad: 56 },
+    markers: [
+      { n: 1, id: 'qr', locator: { css: 'main >> svg:has(path) >> xpath=ancestor::div[contains(@class,"bg-white") and contains(@class,"p-3")][1]' }, badge: 'left' },
+      // über der Feldmitte: „Schritt 2: …“ steht links
+      { n: 2, id: 'code', locator: { css: 'main input[placeholder="000000"]' }, badge: 'top' },
+    ],
+    alt: 'Einrichtung der Zwei-Faktor-Authentifizierung: QR-Code für die Authenticator-App, Schlüssel zum Abtippen und Feld für den 6-stelligen Code',
+  },
+
+  // ── 8. Schichtplan ───────────────────────────────────────────────────────
+  {
+    id: 'ma-schichtplan',
+    persona: 'maria',
+    viewport: 'desktop',
+    route: '/shift-planning',
+    settings: { shift_planning_enabled: true },
+    prepare: [{ waitFor: { text: '» Telefondienst bis 9:00', within: 'main' } }],
+    crop: 'full',
+    markers: [
+      { n: 1, id: 'menue', locator: { role: 'link', name: 'Schichtplan', exact: true, within: 'nav' }, badge: 'right' },
+      { n: 2, id: 'plan', locator: { role: 'heading', name: 'Wochenplan Praxis', exact: true }, badge: 'right' },
+      { n: 3, id: 'pdf', locator: { role: 'button', name: 'PDF', exact: true, within: 'main' }, badge: 'left' },
+    ],
+    alt: 'Seite Schichtplan: Wochenraster Montag bis Freitag mit den Arbeitsplätzen Anmeldung und Labor und den eingeteilten Personen',
+  },
+  {
+    id: 'ma-einteilung-heute',
+    persona: 'maria',
+    viewport: 'desktop',
+    route: '/',
+    settings: { shift_planning_enabled: true },
+    prepare: [{ waitFor: { role: 'heading', name: 'Deine Einteilung heute', exact: true } }],
+    crop: { around: ['karte'], pad: 24 },
+    markers: [
+      { n: 1, id: 'karte', locator: { css: "xpath=//main//h3[normalize-space()='Deine Einteilung heute']/ancestor::div[contains(@class,'rounded-2xl')][1]" }, badge: 'corner' },
+    ],
+    alt: 'Dashboard-Karte „Deine Einteilung heute“ mit Arbeitsplatz, Uhrzeit, Planname und dem Hinweis zur Einteilung',
+  },
 ];
 
 export const mitarbeitende: Handbook = {
@@ -411,8 +640,10 @@ export const mitarbeitende: Handbook = {
           kind: 'tip',
           tone: 'warn',
           text:
-            '**Roter Kasten „Buchung fehlt“:** An einem vergangenen Werktag fehlt ein Zeiteintrag. Tragen Sie den Tag per Antrag nach – ' +
-            'siehe [Vergangenen Tag nachtragen](#vergangenen-tag-nachtragen).',
+            '**Roter Kasten „Buchung fehlt“:** Er nennt zwei Fälle. „kein Eintrag“: An einem vergangenen Arbeitstag des laufenden Monats ' +
+            'steht weder ein Zeiteintrag noch eine Abwesenheit – Feiertage und Tage ohne Tagessoll zählen nicht. Tragen Sie den Tag per Antrag nach, ' +
+            'siehe [Vergangenen Tag nachtragen](#vergangenen-tag-nachtragen). „offen seit …“: Ein Eintrag eines früheren Tages hat noch kein Ende. ' +
+            'Tragen Sie das Ende per [Änderungsantrag](#aenderungsantrag-stellen) nach.',
         },
         {
           kind: 'task',
@@ -731,6 +962,483 @@ export const mitarbeitende: Handbook = {
           text:
             '**So zählt Urlaub:** Ein freier Arbeitstag ist genau 1 Urlaubstag – egal, wie viele Stunden Sie an dem Tag arbeiten würden. ' +
             'Eine freie Woche kostet so viele Tage, wie Sie Arbeitstage pro Woche haben. **Betriebsferien** trägt PraxisZeit automatisch für Sie ein.',
+        },
+      ],
+    },
+
+    // ── 5 ───────────────────────────────────────────────────────────────────
+    {
+      id: 'antraege-korrektur-loeschung',
+      title: 'Anträge: Korrektur, Löschung, Status, zurückziehen',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'antrag',
+          text:
+            'Heutige Zeiteinträge ändern Sie selbst. Ab dem nächsten Tag ist ein Eintrag gesperrt – dann beantragen Sie die Korrektur oder Löschung, ' +
+            'und die Verwaltung entscheidet. So bleibt jede Änderung nachvollziehbar (§ 16 ArbZG).',
+        },
+        {
+          kind: 'task',
+          id: 'antrag-wann-noetig',
+          title: 'Wann brauche ich einen Antrag?',
+          intro:
+            'In Zeiterfassung → Tab [[Einträge]] zeigt die Spalte **Aktionen**, was Sie tun können: Bei heutigen Einträgen stehen Stift und Papierkorb – ' +
+            'Sie bearbeiten oder löschen selbst. Bei älteren Einträgen steht ein Schloss, daneben zwei Antragsknöpfe.',
+          shot: 'ma-antrag-knoepfe',
+          steps: [
+            { n: 1, text: '**Änderungsantrag stellen** (Blatt mit Stift): Zeiten, Pause oder Datum eines gesperrten Eintrags korrigieren.' },
+            { n: 2, text: '**Löschantrag stellen** (Papierkorb neben dem Schloss): einen gesperrten Eintrag ganz entfernen lassen.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Ganz vergessen zu stempeln? Für einen vergangenen Tag ohne Eintrag gibt es oben rechts den Knopf [[Antrag]] – ' +
+            'siehe [Vergangenen Tag nachtragen](#vergangenen-tag-nachtragen).',
+        },
+        {
+          kind: 'task',
+          id: 'aenderungsantrag-stellen',
+          title: 'Wie korrigiere ich einen älteren Eintrag?',
+          intro: 'Klicken Sie in der Zeile des Eintrags auf **Änderungsantrag stellen**. Es öffnet sich der Dialog „Änderungsantrag: Eintrag ändern“.',
+          shot: 'ma-antrag-aendern',
+          steps: [
+            { n: 1, text: '**Aktuelle Werte** zeigt, was heute gespeichert ist.' },
+            { n: 2, text: 'Darunter tragen Sie die richtigen Werte ein: **Datum**, **Von**, **Bis**, **Pause (Min.)** und bei Bedarf eine **Notiz**. Im Beispiel wird nur der Beginn korrigiert.' },
+            { n: 3, text: 'Schreiben Sie eine **Begründung** – sie ist Pflicht.' },
+            { n: 4, text: 'Klicken Sie auf [[Antrag stellen]]. Der Eintrag bleibt unverändert, bis die Verwaltung den Antrag genehmigt.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Pflicht-Pause nicht möglich? (§ 4 ArbZG)** Erfüllen die neuen Zeiten die Pausenregel nicht, erscheint das Feld ' +
+            '[[Pflicht-Pause war nicht möglich – Begründung]]. Begründen Sie dort (mindestens 10 Zeichen) und senden Sie mit ' +
+            '[[Mit dokumentierter Ausnahme senden]]. Hat Ihre Praxis diese Ausnahme abgeschaltet, fehlt das Feld – tragen Sie dann die Pause ein.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Sonn- oder Feiertag (§ 10 ArbZG):** Liegt das Datum auf einem Sonntag oder Feiertag, fragt der Antrag zusätzlich nach dem ' +
+            '[[Ausnahmegrund (§10 ArbZG)]], z. B. „Notdienst“. Er wird mit der Genehmigung am Eintrag gespeichert.',
+        },
+        {
+          kind: 'task',
+          id: 'loeschantrag-stellen',
+          title: 'Wie lasse ich einen falschen Eintrag löschen?',
+          intro: 'Klicken Sie in der Zeile des Eintrags auf **Löschantrag stellen**. Es öffnet sich der Dialog „Änderungsantrag: Eintrag löschen“.',
+          shot: 'ma-antrag-loeschen',
+          steps: [
+            { n: 1, text: '**Eintrag zum Löschen** zeigt Datum, Von, Bis und Pause des Eintrags. Prüfen Sie, ob es der richtige ist.' },
+            { n: 2, text: 'Schreiben Sie eine **Begründung**.' },
+            { n: 3, text: 'Klicken Sie auf [[Antrag stellen]]. Gelöscht wird erst, wenn die Verwaltung genehmigt.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Heutiger Eintrag am falschen Tag?** Beim Bearbeiten bleibt das Datum fest. Löschen Sie den heutigen Eintrag und beantragen Sie ' +
+            'den richtigen Tag über den Knopf [[Antrag]].',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Schloss schon heute?** Dann hat die Verwaltung die ganze gestempelte Zeit dieses Eintrags anerkannt ' +
+            '(„Anerkannter Eintrag – Änderung per Änderungsantrag oder über die Verwaltung“). Ändern oder löschen Sie ihn auch heute per Antrag.',
+        },
+        {
+          kind: 'task',
+          id: 'antrag-status',
+          title: 'Wo sehe ich, ob mein Antrag genehmigt ist – und wie ziehe ich ihn zurück?',
+          intro: 'Klicken Sie in der Zeiterfassung auf den Tab [[Anträge]]. Darunter stehen unter **Änderungsanträge** alle Ihre Anträge, der neueste oben.',
+          shot: 'ma-antraege-status',
+          steps: [
+            { n: 1, text: 'Der Tab [[Anträge]] öffnet die Liste.' },
+            { text: 'Mit [[Alle]], [[Offen]], [[Genehmigt]] und [[Abgelehnt]] filtern Sie nach Status.' },
+            { n: 2, text: 'Jeder Antrag ist eine Karte: oben Status (**Offen**, **Genehmigt** oder **Abgelehnt**), Art (**Neuer Eintrag**, **Änderung** oder **Löschung**) und wann Sie ihn gestellt haben; darunter **Aktuell** und **Gewünscht** sowie Ihre Begründung.' },
+            { n: 3, text: 'Solange ein Antrag **Offen** ist, steht rechts [[Zurückziehen]]. Bestätigen Sie im Dialog „Antrag zurückziehen“ – der Antrag verschwindet aus der Liste.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Genehmigte oder abgelehnte Anträge lassen sich nicht zurückziehen. Bei einem Antrag aus [[Anrechnung beantragen]] steht zusätzlich ' +
+            '„Anrechnung beantragt“; nach der Genehmigung „anerkannt“ oder „ohne Anerkennen genehmigt“.',
+        },
+        {
+          kind: 'task',
+          id: 'antrag-abgelehnt',
+          title: 'Mein Antrag wurde abgelehnt – warum?',
+          intro: 'Die Verwaltung gibt bei jeder Ablehnung einen Grund an.',
+          shot: 'ma-antrag-abgelehnt',
+          steps: [
+            { n: 1, text: 'Klicken Sie im Tab [[Anträge]] auf den Filter [[Abgelehnt]].' },
+            { n: 2, text: 'Der rote Kasten **Ablehnungsgrund** sagt, was fehlt. Darunter steht, wer den Antrag wann bearbeitet hat.' },
+            { text: 'Ist der Grund behoben, stellen Sie einen neuen Antrag – oder sprechen Sie die Verwaltung an.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Urlaubsanträge** stehen nicht hier, sondern unter Abwesenheiten → [[Meine Anträge]] – ' +
+            'siehe [Urlaubsantrag und Status](#urlaubsantrag-status).',
+        },
+      ],
+    },
+
+    // ── 6 ───────────────────────────────────────────────────────────────────
+    {
+      id: 'auf-dem-handy',
+      title: 'Auf dem Handy: Stempel-Knopf, untere Leiste',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'handy',
+          text:
+            'PraxisZeit läuft auch im Browser Ihres Smartphones – ohne eigene App. Auf dem schmalen Bildschirm sitzt die Navigation unten, ' +
+            'und der runde Stempel-Knopf ist immer mit dem Daumen erreichbar.',
+        },
+        {
+          kind: 'task',
+          id: 'handy-navigation',
+          title: 'Wie finde ich mich auf dem Smartphone zurecht?',
+          shot: 'ma-handy-start',
+          steps: [
+            { n: 1, text: 'Oben rechts öffnet das **Menü** (drei Striche) die ganze Navigation – auch Hilfe, Handbuch und Abmelden.' },
+            { n: 2, text: 'Der runde **Stempel-Knopf** in der Mitte der unteren Leiste öffnet die Stempeluhr. Grün mit Uhr heißt: Sie sind eingestempelt.' },
+            { n: 3, text: 'Die **untere Leiste**: [[Home]] (Dashboard), [[Journal]] (Zeiterfassung, Tab Journal), [[Abwes.]] (Abwesenheiten) und [[Profil]].' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'handy-stempeln',
+          title: 'Wie stempele ich auf dem Smartphone ein und aus?',
+          intro: 'Tippen Sie auf den runden Stempel-Knopf. Von unten fährt die Stempeluhr herein.',
+          shot: 'ma-handy-stempeluhr',
+          steps: [
+            { n: 1, text: 'Die große Uhr zeigt Ihre **Arbeitszeit heute**, darunter **Start** und **Pause**.' },
+            { n: 2, text: 'Tippen Sie auf [[Einstempeln]] bzw. [[Ausstempeln]]. Beim Ausstempeln erscheint das Feld **Pause (Minuten)** – tragen Sie Ihre Pause ein und tippen Sie auf [[Jetzt ausstempeln]].' },
+            { text: '[[Abbrechen]] schließt das Pausenfeld, das **X** oben rechts die Stempeluhr.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Es gelten dieselben Regeln wie am PC – auch die Pflicht-Pause nach § 4 ArbZG, siehe [Ausstempeln mit Pause](#ausstempeln-mit-pause). ' +
+            'Führt Ihre Praxis für Sie keine Stundenzählung, fehlt der Stempel-Knopf.',
+        },
+        {
+          kind: 'task',
+          id: 'handy-zeiterfassung',
+          title: 'Wie trage ich auf dem Smartphone Zeiten nach oder korrigiere sie?',
+          intro: 'Öffnen Sie über das Menü die **Zeiterfassung**. Die Einträge stehen dort als Karten, der neueste oben.',
+          shot: 'ma-handy-zeiterfassung',
+          steps: [
+            { n: 1, text: '[[Antrag]]: einen vergangenen Tag ohne Eintrag beantragen.' },
+            { n: 2, text: 'Das **Plus** öffnet das Formular für einen neuen Eintrag von heute. Es fährt von unten herein.' },
+            { n: 3, text: 'Bei gesperrten Einträgen (Schloss neben dem Datum) stellt [[Ändern]] einen Änderungsantrag und [[Löschen]] einen Löschantrag. Heutige Einträge haben [[Bearbeiten]] und [[Löschen]].' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'handy-qr-code',
+          title: 'Wie öffne ich PraxisZeit schnell auf dem Smartphone?',
+          intro: 'Sie müssen die Adresse nicht abtippen.',
+          steps: [
+            { n: 1, text: 'Öffnen Sie PraxisZeit am PC und klicken Sie auf der Anmeldeseite auf [[Auf dem Smartphone öffnen (QR-Code)]].' },
+            { n: 2, text: 'Scannen Sie den QR-Code mit der Kamera Ihres Smartphones. Der Browser öffnet dieselbe Anmeldeseite.' },
+            { n: 3, text: 'Melden Sie sich wie gewohnt mit Benutzername und Passwort an.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Der QR-Code öffnet nur die Seite, er meldet Sie nicht an. Ihr Smartphone muss im selben Netz sein wie der Server (meist das Praxis-WLAN). ' +
+            'Bei einem selbst ausgestellten Zertifikat bestätigen Sie die Sicherheitswarnung einmal.',
+        },
+        {
+          kind: 'task',
+          id: 'als-app-installieren',
+          title: 'Kann ich PraxisZeit wie eine App auf den Startbildschirm legen?',
+          intro: 'Ja, auf unterstützten Geräten.',
+          steps: [
+            { n: 1, text: '**Android (Chrome):** Menü des Browsers → „Zum Startbildschirm hinzufügen“.' },
+            { n: 2, text: '**iPhone (Safari):** Teilen-Symbol → „Zum Home-Bildschirm“.' },
+          ],
+        },
+      ],
+    },
+
+    // ── 7 ───────────────────────────────────────────────────────────────────
+    {
+      id: 'profil-passwort-2fa',
+      title: 'Profil, Passwort, 2FA',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'zweifaktor',
+          text:
+            'Im **Profil** stehen Ihre Daten und Ihre Arbeitszeit. Dort ändern Sie Ihr Passwort und schützen Ihr Konto auf Wunsch zusätzlich ' +
+            'mit einem Code aus einer Authenticator-App.',
+        },
+        {
+          kind: 'task',
+          id: 'profil-ueberblick',
+          title: 'Was steht in meinem Profil, und was kann ich selbst ändern?',
+          intro: 'Klicken Sie in der Navigation auf [[Profil]].',
+          shot: 'ma-profil',
+          steps: [
+            { n: 1, text: '[[Bearbeiten]]: Vorname, Nachname und E-Mail ändern und mit [[Speichern]] übernehmen. Ein Profilbild setzen Sie per Klick auf das runde Bild.' },
+            { n: 2, text: '**Passwort ändern** → [[Ändern]], siehe unten.' },
+            { n: 3, text: '**Meine Arbeitszeit**: Ihre heute gültige Arbeitszeit, siehe unten.' },
+            { n: 4, text: '**Weitere Einstellungen** (aufgeklappt): Zwei-Faktor-Authentifizierung, **Kalenderfarbe** für den Teamkalender und **Meine Daten exportieren** ([[JSON herunterladen]]).' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Benutzername, Rolle, Urlaubstage und Ihre Arbeitszeit legt die Verwaltung fest. Fehlt dort etwas oder stimmt es nicht, sprechen Sie sie an.',
+        },
+        {
+          kind: 'task',
+          id: 'meine-arbeitszeit',
+          title: 'Wo sehe ich meine Arbeitszeit und wann sie sich geändert hat?',
+          shot: 'ma-meine-arbeitszeit',
+          steps: [
+            { n: 1, text: 'Die Karte **Meine Arbeitszeit** im Profil.' },
+            { n: 2, text: 'Je Wochentag Ihre **Arbeitszeit-Blöcke** und Ihr **Tagessoll**, darunter Ihre **Wochenstunden**. Sind keine Blöcke hinterlegt, steht „–“ statt der Zeiten.' },
+            { n: 3, text: 'Der **Verlauf** listet jede Änderung mit dem Datum, ab dem sie gilt.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Ändert die Verwaltung Ihre Arbeitszeit, kündigt das Dashboard es 30 Tage lang an. Arbeiten Sie im Minijob mit fester Monatsarbeitszeit, ' +
+            'heißen die Tageswerte „geplant“; ohne Stundenzählung gibt es kein Tagessoll.',
+        },
+        {
+          kind: 'task',
+          id: 'passwort-aendern',
+          title: 'Wie ändere ich mein Passwort?',
+          intro: 'Klicken Sie in der Karte **Passwort ändern** auf [[Ändern]].',
+          shot: 'ma-passwort-aendern',
+          steps: [
+            { n: 1, text: '**Aktuelles Passwort** eingeben.' },
+            { n: 2, text: '**Neues Passwort** eingeben: mindestens 10 Zeichen, 1 Großbuchstabe, 1 Kleinbuchstabe, 1 Ziffer.' },
+            { n: 3, text: 'Unter **Passwort bestätigen** das neue Passwort wiederholen.' },
+            { text: 'Klicken Sie auf [[Speichern]].' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Nach dem Ändern bleiben Sie hier angemeldet. Alle anderen Sitzungen – etwa auf dem Smartphone – werden abgemeldet; ' +
+            'dort melden Sie sich mit dem neuen Passwort wieder an.',
+        },
+        {
+          kind: 'task',
+          id: 'zwei-faktor-einrichten',
+          title: 'Wie schütze ich mein Konto mit Zwei-Faktor-Authentifizierung (2FA)?',
+          intro:
+            'Sie brauchen eine Authenticator-App auf dem Smartphone, z. B. Google Authenticator oder Authy. ' +
+            'Im Profil unter **Weitere Einstellungen** → **Zwei-Faktor-Authentifizierung (2FA)** klicken Sie auf [[2FA aktivieren]], ' +
+            'bestätigen Ihr aktuelles Passwort und klicken auf [[Weiter]].',
+          shot: 'ma-2fa-einrichten',
+          steps: [
+            { n: 1, text: 'Scannen Sie den **QR-Code** mit Ihrer Authenticator-App. Alternativ tippen Sie den Schlüssel darunter in die App ein.' },
+            { n: 2, text: 'Geben Sie den **6-stelligen Code** ein, den die App jetzt anzeigt.' },
+            { text: 'Klicken Sie auf [[Bestätigen & 2FA aktivieren]]. Ab jetzt fragt die Anmeldung nach dem Code, siehe [Anmelden mit 2FA](#anmelden-mit-2fa).' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'zwei-faktor-ausschalten',
+          title: 'Wie schalte ich 2FA aus, z. B. vor einem Handywechsel?',
+          intro: 'Solange 2FA aktiv ist, lässt sie sich nicht neu einrichten. Schalten Sie sie erst mit dem alten Gerät aus.',
+          steps: [
+            { n: 1, text: 'Klicken Sie im Profil unter **Zwei-Faktor-Authentifizierung (2FA)** auf [[2FA deaktivieren]].' },
+            { n: 2, text: 'Geben Sie Ihr aktuelles Passwort und den aktuellen 6-stelligen Code aus der App ein.' },
+            { n: 3, text: 'Klicken Sie auf [[2FA deaktivieren]]. Danach richten Sie 2FA auf dem neuen Gerät neu ein.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Handy verloren?** Dann haben Sie keinen Code mehr. Die Verwaltung setzt Ihre 2FA zurück; danach melden Sie sich nur mit dem Passwort an ' +
+            'und richten 2FA neu ein.',
+        },
+      ],
+    },
+
+    // ── 8 ───────────────────────────────────────────────────────────────────
+    {
+      id: 'schichtplan',
+      title: 'Schichtplan (wenn eingeschaltet)',
+      blocks: [
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Nur wenn eingeschaltet:** Den Schichtplan gibt es nur, wenn Ihre Praxis die Schichtplanung nutzt. Sonst fehlt der Menüpunkt – ' +
+            'dieses Kapitel können Sie dann überspringen.',
+        },
+        {
+          kind: 'comic',
+          scene: 'schichtplan',
+          text:
+            'Der Schichtplan zeigt, wer wann an welchem Arbeitsplatz eingeteilt ist. Er ist ein reines Planungswerkzeug: ' +
+            'Ihre Zeiteinträge, Ihr Urlaub und Ihr Überstundenkonto ändern sich dadurch nicht.',
+        },
+        {
+          kind: 'task',
+          id: 'schichtplan-ansehen',
+          title: 'Wo sehe ich, wann ich wo eingeteilt bin?',
+          shot: 'ma-schichtplan',
+          steps: [
+            { n: 1, text: 'Klicken Sie in der Navigation auf [[Schichtplan]].' },
+            { n: 2, text: 'Jeder Plan steht mit seinem Namen und seiner Beschreibung über einem Wochenraster: je Tag die Arbeitsplätze mit Uhrzeit und den eingeteilten Personen. Ein **»** vor einem Text ist ein Hinweis zur Einteilung, z. B. „» Telefondienst bis 9:00“.' },
+            { n: 3, text: '[[PDF]] erstellt den angezeigten Plan als Aushang zum Ausdrucken.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Gelten heute mehrere Pläne, z. B. einer je Standort, stehen alle untereinander. Hat die Verwaltung einen Plan für später freigegeben, ' +
+            'wählen Sie ihn unter „Vorschau — freigegeben, gilt aber (noch) nicht heute:“. Er trägt dann den Hinweis ' +
+            '„Dieser Plan gilt noch nicht — er ist zur Ansicht freigegeben.“ bzw. „Dieser Plan gilt nicht mehr — er ist zur Ansicht freigegeben.“',
+        },
+        {
+          kind: 'task',
+          id: 'einteilung-heute',
+          title: 'Wo sehe ich meine Einteilung für heute?',
+          intro: 'Auf dem Dashboard, sobald Sie heute eingeteilt sind.',
+          shot: 'ma-einteilung-heute',
+          steps: [
+            { n: 1, text: 'Die Karte **Deine Einteilung heute** zeigt je Einsatz Arbeitsplatz, Uhrzeit und Plan – und den Hinweis mit **»**, falls einer gesetzt ist.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Für welche Arbeitsplätze Sie eingewiesen sind, steht im Profil unter **Meine Einweisungen**. Einteilung und Einweisungen pflegt die Verwaltung.',
+        },
+      ],
+    },
+
+    // ── 9 ───────────────────────────────────────────────────────────────────
+    {
+      id: 'haeufige-fragen',
+      title: 'Häufige Fragen',
+      blocks: [
+        {
+          kind: 'task',
+          id: 'faq-eintrag-verschwunden',
+          title: 'Ich sehe meinen gespeicherten Eintrag nicht mehr.',
+          steps: [
+            { text: 'Prüfen Sie, ob der richtige Monat angezeigt wird. Blättern Sie mit den Pfeilen neben dem Monatsnamen.' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'faq-warnung-arbeitszeit',
+          title: 'Beim Eintragen erscheint eine Warnung zur Arbeitszeit.',
+          intro: 'PraxisZeit prüft die Grenzen des Arbeitszeitgesetzes:',
+          steps: [
+            { text: '**Mehr als 8 Stunden netto:** Hinweis – zulässig, wenn es ausgeglichen wird (§ 3 ArbZG).' },
+            { text: '**Mehr als 10 Stunden netto:** beim Eintragen von Hand gesperrt; beim Ausstempeln nur eine Warnung, weil die Zeit schon geleistet ist.' },
+            { text: '**Zu kurze Pause (§ 4 ArbZG):** Speichern und Ausstempeln erst mit ausreichender Pause oder – wenn Ihre Praxis das erlaubt – mit Begründung.' },
+            { text: '**Überschneidung** mit einem anderen Eintrag desselben Tages: Speichern und Einstempeln sind gesperrt; der Hinweis nennt den Eintrag.' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'faq-angerechnet-ab',
+          title: 'Bei meinem Eintrag steht „gestempelt 07:30 · angerechnet ab 07:45“.',
+          steps: [
+            { text: 'Für diesen Wochentag sind Arbeitszeit-Blöcke hinterlegt. Vor dem ersten und nach dem letzten Block wird nur bis zum Puffer angerechnet; Ihre Stempelzeit bleibt gespeichert. Siehe [Nicht angerechnete Zeit](#nicht-angerechnete-zeit).' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'faq-datum-grau',
+          title: 'Ich will das Datum eines Eintrags ändern, aber das Feld ist grau.',
+          steps: [
+            { text: 'Beim Bearbeiten bleibt das Datum fest. Löschen Sie den Eintrag und beantragen Sie den richtigen Tag über [[Antrag]] – siehe [Anträge](#loeschantrag-stellen).' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'faq-arbeitszeit-geaendert',
+          title: 'Auf dem Dashboard steht, dass meine Arbeitszeit geändert wurde.',
+          steps: [
+            { text: 'Die Verwaltung hat Ihre Arbeitszeit geändert – Wochenstunden, Tagesplan oder Arbeitszeit-Blöcke. Der Hinweis nennt das Datum und, falls erfasste Einträge neu berechnet wurden, wie viele. Er verschwindet nach 30 Tagen; die Einzelheiten stehen unter [Meine Arbeitszeit](#meine-arbeitszeit).' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'faq-urlaubsanspruch',
+          title: 'Wie berechnet sich mein Urlaubsanspruch?',
+          steps: [
+            { text: 'Der Jahresanspruch richtet sich nach Ihren Arbeitstagen pro Woche (z. B. 5 Tage → 30 Tage, 3 Tage → 18 Tage); den genauen Wert legt die Verwaltung fest. Verbraucht wird nach Tagen: ein freier Arbeitstag ist ein Urlaubstag, ein halber Tag 0,5.' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'faq-ueberstundenausgleich',
+          title: 'Was passiert bei „Überstundenausgleich“?',
+          steps: [
+            { text: 'Sie bauen Überstunden ab. Ihr Soll für den Tag bleibt, der Tag zählt mit 0 Ist-Stunden; die Stunden, die Sie eintragen, gehen von Ihrem Überstundenkonto ab. Urlaub wird nicht abgezogen.' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'faq-keine-stunden',
+          title: 'Bei mir fehlen Monatssaldo, Überstundenkonto und Stempel-Knopf. Ist das ein Fehler?',
+          steps: [
+            { text: 'Nein. Für manche Mitarbeitende führt die Praxis keine Stundenzählung. Urlaub und Krankheit werden trotzdem nach Tagen geführt, und Abwesenheiten tragen Sie ganz normal ein.' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'faq-minus',
+          title: 'Was bedeutet ein rotes Minus beim Saldo?',
+          steps: [
+            { text: 'Sie haben weniger gearbeitet als Ihr Soll. Ein grüner Wert heißt: mehr als das Soll.' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'faq-wochenende-feiertag',
+          title: 'Wie trage ich Arbeit am Wochenende oder Feiertag ein, z. B. einen Notdienst?',
+          steps: [
+            { text: '**Am selben Tag:** stempeln Sie wie gewohnt oder legen Sie über [[Neuer Eintrag]] einen Eintrag an. An Sonn- und Feiertagen fragt das Formular nach dem **Ausnahmegrund**.' },
+            { text: '**Nachträglich:** über den Knopf [[Antrag]] oder im Journal über das **+** in der Zeile des Tages – beide fragen an Sonn- und Feiertagen nach dem [[Ausnahmegrund (§10 ArbZG)]].' },
+            { text: 'An diesen Tagen ist Ihr Soll 0 – die angerechneten Stunden erhöhen Ihren Saldo. Solche Einträge tragen in der Liste das Kennzeichen „So/FT“.' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'faq-passwort-vergessen',
+          title: 'Ich habe mein Passwort vergessen.',
+          steps: [
+            { text: 'Wenden Sie sich an Ihre Verwaltung. Sie setzt Ihr Passwort zurück.' },
+          ],
         },
       ],
     },
