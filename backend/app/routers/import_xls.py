@@ -32,6 +32,7 @@ class PreviewResponse(BaseModel):
     total: int
     conflicts: int
     arbzg_warnings: int
+    will_skip: int = 0  # ops-04: Zeilen, die /confirm überspringt
 
 
 class ConfirmRequest(BaseModel):
@@ -85,6 +86,7 @@ def preview_import(
         total=len(entries),
         conflicts=sum(1 for e in entries if e.has_conflict),
         arbzg_warnings=sum(len(e.arbzg_warnings) for e in entries),
+        will_skip=sum(1 for e in entries if e.skip_reason is not None),
     )
 
 

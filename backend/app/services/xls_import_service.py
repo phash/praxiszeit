@@ -94,6 +94,9 @@ class ImportedEntry(ImportedEntryIn):
     # Spec 7.4 (PR2): Netto der Vorschau vom Server — ImportXls.tsx rechnet nicht
     # mehr selbst. Nur Anzeige; /confirm rechnet neu (wie ``uncredited_minutes``).
     net_hours: float = 0.0
+    # ops-04: Grund, warum ``/confirm`` diese Zeile überspringt (None = wird
+    # verarbeitet). Nur Anzeige; die Vorschau nannte das bisher nur im Hinweistext.
+    skip_reason: Optional[str] = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -751,6 +754,7 @@ def parse_xls(
                 note=note,
                 has_conflict=False,
                 arbzg_warnings=[f"Wird übersprungen — {skip_reason}."],
+                skip_reason=f"{skip_reason}.",
                 raw_start_time=raw_start_t,
                 raw_end_time=raw_end_t,
                 uncredited_minutes=r.uncredited_minutes,

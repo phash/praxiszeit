@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Upload, CheckCircle, AlertTriangle, XCircle, RotateCcw } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
@@ -6,6 +6,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import type { User } from '../../types/user';
 import { formatHoursHM, pluralDe } from '../../utils/formatters';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 // ── Typen ────────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,8 @@ interface ImportedEntry {
   note: string | null;
   has_conflict: boolean;
   arbzg_warnings: string[];
+  // ops-04: gesetzt, wenn /confirm die Zeile überspringt (Text = Grund).
+  skip_reason?: string | null;
   raw_start_time?: string | null;
   raw_end_time?: string | null;
   // Spec 2026-10-08 (7.4): Netto und nicht angerechnete Zeit rechnet der Server.
@@ -32,6 +35,7 @@ interface PreviewResponse {
   total: number;
   conflicts: number;
   arbzg_warnings: number;
+  will_skip?: number;
 }
 
 interface ImportResult {
@@ -119,17 +123,23 @@ export default function ImportXls() {
   const [warningsExpanded, setWarningsExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Benutzer laden beim ersten Fokus auf das Select
+  // Benutzer beim Öffnen der Seite laden (ops-18: nicht erst beim Fokus, sonst
+  // öffnet der erste Klick ein leeres Auswahlfeld).
   const loadUsers = async () => {
     if (usersLoaded) return;
     try {
-      const res = await apiClient.get('/admin/users');
+      const res = await apiClient.get('/admin/users?limit=500');
       setUsers((res.data as User[]).filter((u) => u.is_active));
       setUsersLoaded(true);
     } catch {
       toast.error('Benutzer konnten nicht geladen werden');
     }
   };
+
+  useEffect(() => {
+    loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Schritt 1: Datei hochladen und analysieren ──────────────────────────
 
@@ -146,8 +156,8 @@ export default function ImportXls() {
       setPreview(res.data);
       setStep('preview');
     } catch (err: any) {
-      const msg = err.response?.data?.detail || 'Fehler beim Analysieren der Datei';
-      toast.error(msg);
+      // FastAPI-422 liefert detail als Array — getErrorMessage macht Text daraus (ops-05).
+      toast.error(getErrorMessage(err, 'Fehler beim Analysieren der Datei'));
     } finally {
       setIsLoading(false);
     }
@@ -168,8 +178,7 @@ export default function ImportXls() {
       setResult(res.data);
       setStep('result');
     } catch (err: any) {
-      const msg = err.response?.data?.detail || 'Fehler beim Import';
-      toast.error(msg);
+      toast.error(getErrorMessage(err, 'Fehler beim Import'));
     } finally {
       setIsLoading(false);
     }
@@ -210,10 +219,11 @@ export default function ImportXls() {
       <h2 className="text-lg font-semibold text-gray-800 mb-6">Datei hochladen</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="import-user" className="block text-sm font-medium text-gray-700 mb-1">
             Benutzer <span className="text-red-500">*</span>
           </label>
           <select
+            id="import-user"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
             value={selectedUserId}
             onChange={(e) => setSelectedUserId(e.target.value)}
@@ -229,10 +239,19 @@ export default function ImportXls() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="import-file" className="block text-sm font-medium text-gray-700 mb-1">
             XLS-Datei <span className="text-red-500">*</span>
           </label>
           <div
+            role="button"
+            tabIndex={0}
+            aria-label="XLS-Datei auswählen"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
             className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-primary transition-colors"
             onClick={() => fileInputRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
@@ -261,6 +280,9 @@ export default function ImportXls() {
             )}
             <input
               ref={fileInputRef}
+              id="import-file"
+              tabIndex={-1}
+              onClick={(e) => e.stopPropagation()}
               type="file"
               accept=".xls"
               className="hidden"
@@ -294,6 +316,11 @@ export default function ImportXls() {
 
   const renderPreview = () => {
     if (!preview) return null;
+    const skipCount = preview.entries.filter((e) => e.skip_reason).length;
+    // Der Server-Zähler enthält die Überspringen-Zeilen; sie zählen oben, nicht als Hinweis.
+    const skippedNotes = preview.entries.reduce(
+      (n, e) => n + (e.skip_reason ? e.arbzg_warnings.length : 0), 0);
+    const noteCount = Math.max(0, preview.arbzg_warnings - skippedNotes);
     return (
       <div>
         <h2 className="text-lg font-semibold text-gray-800 mb-4">Vorschau</h2>
@@ -303,18 +330,25 @@ export default function ImportXls() {
           <span className="text-gray-600">
             {pluralDe(preview.total, 'Eintrag', 'Einträge')} gefunden
           </span>
+          {skipCount > 0 && (
+            <span className="text-red-700 font-medium" data-testid="import-skip-summary">
+              {pluralDe(preview.total - skipCount, 'Eintrag wird', 'Einträge werden')} importiert,{' '}
+              {skipCount} übersprungen
+            </span>
+          )}
           {preview.conflicts > 0 && (
             <span className="text-red-600 font-medium">
               <XCircle size={14} className="inline mr-1" />
               {pluralDe(preview.conflicts, 'Konflikt', 'Konflikte')}
             </span>
           )}
-          {preview.arbzg_warnings > 0 && (
+          {noteCount > 0 && (
             <span className="text-amber-600 font-medium">
               <AlertTriangle size={14} className="inline mr-1" />
               {/* #462: Die Zeilen-Warnungen tragen seit dem Kappungs-Hinweis nicht mehr
-                  nur ArbZG-Verstoesse — das Label darf das nicht laenger behaupten. */}
-              {pluralDe(preview.arbzg_warnings, 'Hinweis', 'Hinweise')}
+                  nur ArbZG-Verstoesse — das Label darf das nicht laenger behaupten.
+                  Überspringen-Zeilen zählen oben (ops-04), nicht als Hinweis. */}
+              {pluralDe(noteCount, 'Hinweis', 'Hinweise')}
             </span>
           )}
         </div>
@@ -333,8 +367,9 @@ export default function ImportXls() {
             </thead>
             <tbody>
               {preview.entries.map((e, idx) => {
-                const hasWarning = e.arbzg_warnings.length > 0;
-                const rowBg = e.has_conflict ? 'bg-red-50' : hasWarning ? 'bg-amber-50' : '';
+                const skipped = !!e.skip_reason;
+                const hasWarning = !skipped && e.arbzg_warnings.length > 0;
+                const rowBg = skipped ? 'bg-gray-100 text-gray-500' : e.has_conflict ? 'bg-red-50' : hasWarning ? 'bg-amber-50' : '';
                 return (
                   <tr key={idx} className={`border-b border-gray-100 ${rowBg}`}>
                     <td className="px-3 py-2">{formatDate(e.date)}</td>
@@ -361,6 +396,11 @@ export default function ImportXls() {
                             <XCircle size={11} /> Konflikt
                           </span>
                         )}
+                        {skipped && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700">
+                            <XCircle size={11} /> Wird übersprungen
+                          </span>
+                        )}
                         {hasWarning && (
                           <span
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 cursor-help"
@@ -369,12 +409,21 @@ export default function ImportXls() {
                             <AlertTriangle size={11} /> Hinweis
                           </span>
                         )}
-                        {!e.has_conflict && !hasWarning && (
+                        {!e.has_conflict && !hasWarning && !skipped && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
                             <CheckCircle size={11} /> Neu
                           </span>
                         )}
                       </div>
+                      {/* Grund sichtbar im Text, nicht nur im Tooltip (Touch/Tastatur). */}
+                      {skipped && (
+                        <p className="mt-1 text-xs text-red-700" data-testid="import-skip-reason">{e.skip_reason}</p>
+                      )}
+                      {hasWarning && (
+                        <ul className="mt-1 text-xs text-amber-800 list-disc pl-4">
+                          {e.arbzg_warnings.map((w, i) => <li key={i}>{w}</li>)}
+                        </ul>
+                      )}
                     </td>
                   </tr>
                 );
