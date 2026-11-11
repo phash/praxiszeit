@@ -301,7 +301,7 @@ export default function ImportXls() {
         {/* Zusammenfassung */}
         <div className="flex flex-wrap gap-4 mb-4 text-sm">
           <span className="text-gray-600">
-            <strong>{preview.total}</strong> {preview.total === 1 ? 'Eintrag' : 'Einträge'} gefunden
+            {pluralDe(preview.total, 'Eintrag', 'Einträge')} gefunden
           </span>
           {preview.conflicts > 0 && (
             <span className="text-red-600 font-medium">

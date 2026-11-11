@@ -988,3 +988,24 @@ describe('UserForm: Verfallsdatum Resturlaub je Person (P4.4)', () => {
     expect(screen.queryByLabelText(/Resturlaub verfällt am/)).not.toBeInTheDocument();
   });
 });
+
+describe('UserForm: Verfallsdatum ist ein festes Datum (P4.4, R28)', () => {
+  it('nennt im Hinweis die absolute Geltung für alle Jahre', () => {
+    renderForm({ editUser: baseEditUser });
+    expect(screen.getByText(/Gilt als festes Datum für alle Jahre; leer = 31\.03\. des Folgejahres\. Nach Ablauf bitte anpassen oder leeren\./)).toBeInTheDocument();
+  });
+
+  it('warnt (nicht blockierend) bei einem Datum in der Vergangenheit', async () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2020-03-31' } });
+    expect(screen.getByRole('status')).toHaveTextContent(/liegt in der Vergangenheit/);
+    fireEvent.submit(document.querySelector('form')!);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+  });
+
+  it('warnt nicht bei einem Datum in der Zukunft oder leer', () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2999-03-31' } });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Resturlaub verfällt am/), { target: { value: '' } });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});

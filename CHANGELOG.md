@@ -4,7 +4,7 @@
 
 ### ✨ Neu
 
-- **Verfallsdatum des Resturlaubs je Person im Benutzerformular.** Beim Bearbeiten gibt es das Feld „Resturlaub verfällt am“ (leer = 31.03. des Folgejahres); das Dashboard der Person und die Jahresend-Warnung der Verwaltung nutzen es bereits.
+- **Verfallsdatum des Resturlaubs je Person im Benutzerformular.** Beim Bearbeiten gibt es das Feld „Resturlaub verfällt am“ (ein festes Datum für alle Jahre – nach Ablauf anpassen oder leeren; leer = 31.03. des Folgejahres; ein Datum in der Vergangenheit wird mit einem Hinweis markiert); das Dashboard der Person und die Jahresend-Warnung der Verwaltung nutzen es bereits.
 
 ### 🐛 Behoben (Funde beim Schreiben der Handbücher)
 

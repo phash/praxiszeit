@@ -701,7 +701,7 @@ export default function AdminDashboard() {
             <select
               value={sollBasis}
               onChange={(e) => setSollBasis(e.target.value as 'bis_heute' | 'monatsende')}
-              className="rounded border-gray-300 text-sm py-1"
+              className="rounded border border-gray-300 text-sm py-1"
               title="Soll nur bis zum letzten abgeschlossenen Arbeitstag oder für den vollen Zeitraum"
             >
               <option value="bis_heute">bis heute</option>

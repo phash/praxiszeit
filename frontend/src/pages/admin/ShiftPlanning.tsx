@@ -678,7 +678,7 @@ export default function AdminShiftPlanning() {
                     <select
                       value={dayWeekday}
                       onChange={(e) => setDayWeekday(Number(e.target.value))}
-                      className="rounded-lg border-gray-300 text-sm py-1"
+                      className="rounded-lg border border-gray-300 text-sm py-1"
                     >
                       {/* #371: only enabled weekdays are selectable */}
                       {planningWeekdays.map((i) => (

@@ -715,7 +715,15 @@ export default function UserForm({
                 onChange={(e) => setFormData({ ...formData, vacation_carryover_deadline: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
               />
-              <p className="mt-1 text-xs text-gray-400">Leer = 31.03. des Folgejahres.</p>
+              <p className="mt-1 text-xs text-gray-400">
+                Gilt als festes Datum für alle Jahre; leer = 31.03. des Folgejahres. Nach Ablauf bitte anpassen oder leeren.
+              </p>
+              {formData.vacation_carryover_deadline &&
+                formData.vacation_carryover_deadline < new Date().toISOString().slice(0, 10) && (
+                  <p role="status" className="mt-1 text-xs text-amber-700">
+                    Dieses Datum liegt in der Vergangenheit — der Resturlaub gälte damit schon als verfallen. Bitte anpassen oder leeren.
+                  </p>
+                )}
             </div>
           )}
           {effTrackHours && (
