@@ -1,4 +1,131 @@
 {
+  "br-nachweise": {
+    "file": "br-nachweise.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "ausgeblendete": {
+        "x": 321,
+        "y": 419,
+        "w": 672,
+        "h": 20
+      },
+      "formate": {
+        "x": 859.4,
+        "y": 279,
+        "w": 133.6,
+        "h": 72
+      },
+      "monat": {
+        "x": 321,
+        "y": 301,
+        "w": 206,
+        "h": 50
+      }
+    }
+  },
+  "br-stempeln": {
+    "file": "br-stempeln.webp",
+    "width": 390,
+    "height": 844,
+    "pxWidth": 780,
+    "pxHeight": 1688,
+    "crop": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    "markers": {}
+  },
+  "br-team": {
+    "file": "br-team.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "besetzung": {
+        "x": 289,
+        "y": 218,
+        "w": 224,
+        "h": 32
+      },
+      "sarah": {
+        "x": 321,
+        "y": 401,
+        "w": 75,
+        "h": 20
+      },
+      "stand-am": {
+        "x": 1097,
+        "y": 56,
+        "w": 170,
+        "h": 42
+      }
+    }
+  },
+  "br-uebersicht": {
+    "file": "br-uebersicht.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "stempelkarte": {
+        "x": 1160,
+        "y": 125,
+        "w": 223,
+        "h": 60
+      },
+      "ueberstunden": {
+        "x": 599,
+        "y": 269,
+        "w": 121,
+        "h": 20
+      },
+      "urlaubskonto": {
+        "x": 885,
+        "y": 269,
+        "w": 85,
+        "h": 20
+      }
+    }
+  },
+  "br-urlaub": {
+    "file": "br-urlaub.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {}
+  },
   "ma-2fa-einrichten": {
     "file": "ma-2fa-einrichten.webp",
     "width": 1440,

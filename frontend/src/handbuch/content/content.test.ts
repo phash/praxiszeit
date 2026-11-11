@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import manifestJson from '../manifest.json';
 import type { Handbook, Manifest } from '../types';
-import { validateHandbook } from '../validate';
+import { validateBroschuere, validateHandbook } from '../validate';
 import { FORBIDDEN_TERMS } from './forbiddenTerms';
-import { ALL_SHOTS, HANDBOOKS } from './index';
+import { ALL_SHOTS, BROSCHUERE_SHOTS, HANDBOOKS } from './index';
 
 const manifest = manifestJson as unknown as Manifest;
 
@@ -56,7 +56,15 @@ describe('Handbuch-Inhalte', () => {
   it('ALL_SHOTS enthält jede Aufnahme jedes Handbuchs genau einmal', () => {
     const ids = ALL_SHOTS.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.sort()).toEqual(books.flatMap((h) => h.shots.map((s) => s.id)).sort());
+    expect(ids.sort()).toEqual(
+      [...books.flatMap((h) => h.shots.map((s) => s.id)), ...BROSCHUERE_SHOTS.map((b) => b.shot.id)].sort(),
+    );
+  });
+
+  it('Broschüren-Aufnahmen bestehen validateBroschuere und tragen nur br-Ids', () => {
+    expect(validateBroschuere(BROSCHUERE_SHOTS, manifest)).toEqual([]);
+    expect(BROSCHUERE_SHOTS.filter((b) => !b.shot.id.startsWith('br-'))).toEqual([]);
+    expect(new Set(BROSCHUERE_SHOTS.map((b) => b.section)).size).toBe(BROSCHUERE_SHOTS.length);
   });
 
   it('jede Aufnahme wird von einer Aufgabe genutzt', () => {

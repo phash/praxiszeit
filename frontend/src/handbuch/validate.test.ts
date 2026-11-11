@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateHandbook } from './validate';
+import { validateBroschuere, validateHandbook } from './validate';
 import type { Handbook, Manifest } from './types';
 
 const ALT = 'Die Zeiterfassung mit dem Dialog zum Nachtragen eines Zeiteintrags in der Praxis.';
@@ -113,5 +113,45 @@ describe('validateHandbook', () => {
     const { h, m } = fixture();
     h.chapters[0].blocks.push({ kind: 'prose', text: 'Siehe [dort](handbuch:so-rechnet#a).' });
     expect(validateHandbook(h, m)).toEqual([]);
+  });
+});
+
+describe('validateBroschuere', () => {
+  const box = { x: 0, y: 0, w: 10, h: 10 };
+  const mk = (n: number) => ({ n, id: `m${n}`, locator: { text: `X${n}` } });
+  function entry(markerCount: number) {
+    const shot = {
+      id: 'br-test', persona: 'maria' as const, viewport: 'desktop' as const, route: '/',
+      markers: Array.from({ length: markerCount }, (_, i) => mk(i + 1)),
+      alt: ALT,
+    };
+    const manifest: Manifest = {
+      'br-test': {
+        file: 'br-test.webp', width: 1440, height: 900, pxWidth: 2880, pxHeight: 1800, crop: box,
+        markers: Object.fromEntries(shot.markers.map((x) => [x.id, box])),
+      },
+    };
+    return { list: [{ section: 'team' as const, shot, caption: 'Alle im Blick.' }], manifest };
+  }
+
+  it('accepts up to 3 markers', () => {
+    const { list, manifest } = entry(3);
+    expect(validateBroschuere(list, manifest)).toEqual([]);
+  });
+
+  it('rejects 4 markers', () => {
+    const { list, manifest } = entry(4);
+    expect(validateBroschuere(list, manifest).some((e) => e.includes('höchstens 3 Markierungen'))).toBe(true);
+  });
+
+  it('rejects short alt, missing manifest entry and missing marker box', () => {
+    const { list, manifest } = entry(2);
+    list[0].shot.alt = 'zu kurz';
+    delete manifest['br-test'].markers.m2;
+    expect(validateBroschuere(list, manifest)).toEqual(expect.arrayContaining([
+      expect.stringContaining('Alt-Text kürzer'),
+      expect.stringContaining('Markierung 2'),
+    ]));
+    expect(validateBroschuere(list, {})).toContain('shot br-test: fehlt im Manifest');
   });
 });

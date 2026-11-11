@@ -37,3 +37,6 @@ export interface ManifestShot {
   markers: Record<string, { x: number; y: number; w: number; h: number }>;
 }
 export type Manifest = Record<string, ManifestShot>;
+export type BroschuereSection = 'stempeln' | 'uebersicht' | 'urlaub' | 'nachweise' | 'team';
+/** Ein echter Screenshot der Broschüre (pzweb /broschuere): höchstens 3 Markierungen, keine Schritte. */
+export interface BroschuereShot { section: BroschuereSection; shot: ShotDef; caption: Inline }

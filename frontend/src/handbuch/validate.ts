@@ -1,7 +1,8 @@
-import type { Block, Handbook, Inline, Manifest } from './types';
+import type { Block, BroschuereShot, Handbook, Inline, Manifest } from './types';
 import { HANDBOOK_IDS, parseHandbookLink, tokenize } from './inline';
 
 const MIN_ALT = 40;
+const MAX_BROSCHUERE_MARKERS = 3;
 
 function inlinesOf(b: Block): Inline[] {
   switch (b.kind) {
@@ -76,6 +77,30 @@ export function validateHandbook(h: Handbook, m: Manifest): string[] {
     }
     for (const mk of s.markers) {
       if (!entry.markers[mk.id]) errors.push(`shot ${s.id}: Markierung ${mk.n} (${mk.id}) fehlt im Manifest`);
+    }
+  }
+  return errors;
+}
+
+/** Broschüren-Aufnahmen: im Manifest, höchstens 3 Markierungen, Alt-Text ausreichend lang. */
+export function validateBroschuere(list: BroschuereShot[], m: Manifest): string[] {
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  for (const { shot, caption } of list) {
+    if (seen.has(shot.id)) errors.push(`shot ${shot.id}: doppelte ID`);
+    seen.add(shot.id);
+    if (shot.markers.length > MAX_BROSCHUERE_MARKERS) {
+      errors.push(`shot ${shot.id}: höchstens ${MAX_BROSCHUERE_MARKERS} Markierungen erlaubt, ${shot.markers.length} gefunden`);
+    }
+    if (shot.alt.trim().length < MIN_ALT) errors.push(`shot ${shot.id}: Alt-Text kürzer als ${MIN_ALT} Zeichen`);
+    if (!caption.trim()) errors.push(`shot ${shot.id}: Bildunterschrift fehlt`);
+    const entry = m[shot.id];
+    if (!entry) {
+      errors.push(`shot ${shot.id}: fehlt im Manifest`);
+      continue;
+    }
+    for (const mk of shot.markers) {
+      if (!entry.markers[mk.id]) errors.push(`shot ${shot.id}: Markierung ${mk.n} (${mk.id}) fehlt im Manifest`);
     }
   }
   return errors;
