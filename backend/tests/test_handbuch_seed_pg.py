@@ -469,7 +469,8 @@ def test_seed_relative_to_stichtag(full_tenant, app_engine, monkeypatch):
     assert r["usernames"] == {"admin", "maria", "sarah", "thomas", "petra", "julia"}
     assert date(2026, 3, 10) in r["maria_dates"]
     assert r["open"] == [STICHTAG] and r["open_start"] == [time(7, 45)]
-    assert r["first_date"] >= date(2026, 2, 1) and r["last_date"] <= STICHTAG
+    # YTD-Realismus: Daten ab 1. Januar des Stichtag-Jahres, nie davor
+    assert date(2026, 1, 1) <= r["first_date"] < date(2026, 2, 1) and r["last_date"] <= STICHTAG
     assert not [d for d in r["all_dates"] if d.weekday() >= 5], "Eintrag am Wochenende"
     assert SEED_HOLIDAY not in r["all_dates"], "Eintrag am Feiertag"
     # kein Eintrag am Tag einer Abwesenheit derselben Person
@@ -562,6 +563,10 @@ def test_seed_is_rerunnable(full_tenant, app_engine, monkeypatch):
     _run_seed(app_engine, seed, monkeypatch)
     n2 = _read(app_engine, lambda db: db.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID).count())
     assert n1 == n2 > 0
+    from app.models.company_closure import CompanyClosure
+    closures = _read(app_engine, lambda db: db.query(CompanyClosure).filter(
+        CompanyClosure.tenant_id == TENANT_ID).count())
+    assert closures == 1, "Wiederholung darf keine zweite Betriebsferien-Zeile hinterlassen"
     users = _read(app_engine, lambda db: db.query(User).filter(User.tenant_id == TENANT_ID).count())
     assert users == 6
 
@@ -573,3 +578,42 @@ def test_main_prints_stichtag_as_last_line(full_tenant, app_engine, monkeypatch,
     seed.main(["--stichtag", "2026-03-11"])
     lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
     assert lines[-1] == "STICHTAG=2026-03-11"
+
+
+def test_pick_run_skips_half_day_special_days():
+    seed = _load_seed()
+    # Mo-Mi 21.-23.12. ist frei, Mo-Mi 22.-24.12. enthaelt den 24.12. -> naechster Montag
+    assert seed.pick_run(date(2026, 12, 21), 3, set()) == [date(2026, 12, 21), date(2026, 12, 22), date(2026, 12, 23)]
+    assert seed.pick_run(date(2026, 12, 22), 3, set())[0] == date(2026, 12, 28)
+    # 28.-30.12. ok, 31.12. (Do) nicht Teil einer Mo-Mi-Folge; Fuenferfolge ab 28.12. enthaelt ihn -> Januar
+    assert seed.pick_run(date(2026, 12, 28), 5, set())[0] == date(2027, 1, 4)
+
+
+def test_reduced_day_cap_applies_to_block_persona(full_tenant, app_engine, monkeypatch):
+    from decimal import Decimal
+    from app.models import TimeEntry
+    from app.models.reduced_day import ReducedDay
+
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+
+    def collect(db):
+        sarah = db.query(User).filter(User.tenant_id == TENANT_ID, User.username == "sarah").one()
+        day = db.query(ReducedDay).filter(ReducedDay.tenant_id == TENANT_ID).one()
+        rows = db.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID,
+                                          TimeEntry.user_id == sarah.id, TimeEntry.date == day.date).all()
+        return day.date, day.max_hours, sum(float(e.net_hours) for e in rows), len(rows)
+
+    d, cap, net, n = _read(app_engine, collect)
+    assert d.weekday() == 4 and cap == Decimal("4.00")  # Freitag: Block 08-13 (5 h) ueber der Obergrenze
+    assert n >= 1 and net <= 4.0 + 1e-6
+
+
+def test_maria_vacation_has_approved_request(full_tenant, app_engine, monkeypatch):
+    from app.models.vacation_request import VacationRequest
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+    rows = _read(app_engine, lambda db: [(v.status, v.reviewed_by, v.date, v.end_date)
+                                        for v in db.query(VacationRequest).join(User, User.id == VacationRequest.user_id)
+                                        .filter(VacationRequest.tenant_id == TENANT_ID, User.username == "maria")])
+    assert len(rows) == 1 and rows[0][0] == "approved" and rows[0][1] == ADMIN_ID and rows[0][3] < STICHTAG

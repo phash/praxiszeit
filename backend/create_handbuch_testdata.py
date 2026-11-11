@@ -50,7 +50,7 @@ MAIL_DOMAIN = "praxis-lindenplatz.example"
 ADMIN_EMAIL = f"admin@{MAIL_DOMAIN}"
 
 REASON_NAME = "Fortbildung extern"
-CLOSURE_NAME = "Betriebsferien Teamklausur"
+CLOSURE_NAME = "Teamklausur"
 REDUCED_DAY_LABEL = "Brückentag"
 REDUCED_DAY_MAX_HOURS = Decimal("4.00")
 
@@ -122,14 +122,27 @@ def prev_month_start(stichtag: date) -> date:
     return (stichtag.replace(day=1) - timedelta(days=1)).replace(day=1)
 
 
+def data_start(stichtag: date) -> date:
+    """Beginn der Demodaten: 1. des Vormonats, spätestens der 1. Januar des
+    Stichtag-Jahres (Jahres-/YTD-Ansichten zeigen so realistische Salden).
+    ``first_work_day`` bleibt bewusst ungesetzt (sonst anteiliger Urlaub)."""
+    return min(prev_month_start(stichtag), date(stichtag.year, 1, 1))
+
+
+def is_half_special_day(d: date) -> bool:
+    """24./31.12. — der Seed stellt beide auf ``half_day``."""
+    return (d.month, d.day) in ((12, 24), (12, 31))
+
+
 def pick_run(start: date, n: int, holiday_dates) -> list:
     """Erste Folge von ``n`` aufeinanderfolgenden Werktagen (Mo–Fr, ohne
     Feiertag) ab ``start`` — beginnt nur an einem Montag, wenn n > 1."""
     d = start
     while True:
         run = [d + timedelta(days=i) for i in range(n)]
+        # Halbtags-Sondertage (24./31.12.) nie in Buchungsfolgen
         if (n == 1 or d.weekday() == 0) and all(_is_workday(x, holiday_dates) for x in run) \
-                and run[-1].weekday() < 5:
+                and not any(is_half_special_day(x) for x in run) and run[-1].weekday() < 5:
             return run
         d += timedelta(days=1)
 
@@ -192,10 +205,16 @@ def _purge_existing(db, usernames) -> None:
     ``admin_users.purge_user``, soweit der Seed Zeilen anlegt). Für die frische
     Wegwerf-DB gedacht; Protokollzeilen (``time_entry_audit_logs``) legt der
     Seed nie an und darf sie als App-Konto auch nicht löschen."""
+    # Betriebsferien des Seeds (Abwesenheiten.closure_id ist SET NULL; die
+    # Abwesenheiten der Demo-Konten gehen unten mit den Konten)
+    db.query(CompanyClosure).filter(
+        CompanyClosure.tenant_id == TENANT_ID, CompanyClosure.name == CLOSURE_NAME,
+    ).delete(synchronize_session=False)
     existing = db.query(User).filter(
         User.tenant_id == TENANT_ID, User.username.in_(list(usernames)),
     ).all()
     if not existing:
+        db.commit()
         return
     ids = [u.id for u in existing]
     t = TENANT_ID
@@ -287,6 +306,7 @@ def create_contract_history(db, users: list, stichtag: date) -> None:
     Petra: Urlaubsanspruch ab Monatsanfang geändert (Vertragsverlauf-Felder)."""
     by_name = {u.username: u for u in users}
     prev_start = prev_month_start(stichtag)
+    base_from = data_start(stichtag)  # Ausgangsvertrag gilt ab Datenbeginn
     month_start = stichtag.replace(day=1)
 
     sarah = by_name.get("sarah")
@@ -295,7 +315,7 @@ def create_contract_history(db, users: list, stichtag: date) -> None:
         change_from -= timedelta(days=change_from.weekday())  # Montag der Woche
         if change_from <= prev_start:
             change_from += timedelta(days=7)
-        db.add(_snapshot_row(sarah, prev_start, weekly_hours=None, work_days=None,
+        db.add(_snapshot_row(sarah, base_from, weekly_hours=None, work_days=None,
                              vacation_days=sarah.vacation_days, blocks=SARAH_OLD_BLOCKS,
                              note="Ausgangsvertrag"))
         db.add(_snapshot_row(sarah, change_from, weekly_hours=None, work_days=None,
@@ -307,7 +327,7 @@ def create_contract_history(db, users: list, stichtag: date) -> None:
     if petra:
         emp = next(e for e in EMPLOYEES if e["username"] == "petra")
         new_days = Decimal("18.0")
-        db.add(_snapshot_row(petra, prev_start, weekly_hours=emp["weekly_hours"], work_days=4,
+        db.add(_snapshot_row(petra, base_from, weekly_hours=emp["weekly_hours"], work_days=4,
                              vacation_days=petra.vacation_days, day_hours=emp["day_hours"],
                              note="Ausgangsvertrag"))
         db.add(_snapshot_row(petra, month_start, weekly_hours=emp["weekly_hours"], work_days=4,
@@ -377,8 +397,17 @@ def create_absences(db, users: list, admin, stichtag: date, holiday_dates) -> No
 
     maria, thomas, sarah = by_name.get("maria"), by_name.get("thomas"), by_name.get("sarah")
     if maria:  # Urlaub vergangen, 3 Tage (Mo–Mi, drei Wochen vor dem Stichtag)
-        for d in pick_run(stichtag - timedelta(days=23), 3, holiday_dates):
+        run = pick_run(stichtag - timedelta(days=23), 3, holiday_dates)
+        for d in run:
             book(maria, d, AbsenceType.VACATION, "Kurzurlaub")
+        # genehmigter Antrag dazu (vacation_approval_required=true): die
+        # Abwesenheiten oben sind das Ergebnis der Genehmigung
+        db.add(VacationRequest(
+            tenant_id=TENANT_ID, user_id=maria.id, date=run[0], end_date=run[-1],
+            hours=_day_target(db, maria, run[0]), absence_type="vacation", half_day=False,
+            note="Kurzurlaub", status=VacationRequestStatus.APPROVED.value,
+            reviewed_by=admin.id if admin else None, reviewed_at=datetime.now(timezone.utc),
+        ))
     if sarah:  # Krank, 2 Tage
         d1 = prev_workday(stichtag - timedelta(days=15), holiday_dates)
         d2 = d1 + timedelta(days=1)
@@ -432,11 +461,15 @@ def _block_spans(db, user: User, d: date, through: bool, cap_hours):
     if cap_hours is None:
         return list(day_blocks)
     spans, credited = [], 0
+    limit = int(float(cap_hours) * 60)
     for blk in day_blocks:  # verkürzter Tag: Blöcke, bis die Obergrenze erreicht ist
-        if credited >= float(cap_hours) * 60:
+        if credited >= limit:
             break
-        spans.append(blk)
-        credited += blk[1] - blk[0]
+        s_min, e_min = blk
+        if credited + (e_min - s_min) > limit:  # letzten Block auf die Obergrenze kürzen
+            e_min = s_min + (limit - credited)
+        spans.append((s_min, e_min))
+        credited += e_min - s_min
     return spans
 
 
@@ -488,6 +521,8 @@ def create_time_entries_for_user(db, user: User, holiday_dates: set, start: date
     count = 0
     for d in days:
         cap = reduced.get(d)
+        if cap is None and is_half_special_day(d):  # halber Tag: halbes Tagessoll
+            cap = _day_target(db, user, d) / 2
         if getattr(user, "work_blocks", None):
             for s_min, e_min in _block_spans(db, user, d, d in through_days, cap):
                 r = work_window_service.clamp(
@@ -591,8 +626,8 @@ def create_change_requests(db, users: list, stichtag: date, reviewer=None):
         if entry:
             _add_change_request(
                 db, thomas, entry, ChangeRequestStatus.REJECTED,
-                dt_time(7, 30), dt_time(17, 0), 30,
-                "Bitte Korrektur: hatte durchgehend gearbeitet ohne längere Pause.",
+                dt_time(7, 30), dt_time(15, 30), 0,
+                "Bitte Korrektur: Ich habe von 7:30 bis 15:30 Uhr durchgearbeitet, die Pause ist entfallen.",
                 "Pausen-Nachweis fehlt. Gemäß ArbZG §4 sind bei >6h Arbeitszeit 30 Min. Pause vorgeschrieben.",
                 reviewer=reviewer,
             )
@@ -605,7 +640,7 @@ def create_change_requests(db, users: list, stichtag: date, reviewer=None):
 # ── Ablauf ────────────────────────────────────────────────────────────────────
 
 def seed_all(db, stichtag: date) -> None:
-    start = prev_month_start(stichtag)
+    start = data_start(stichtag)
     horizon = stichtag + timedelta(days=70)
 
     print("\n1. Admin aktualisieren...")
@@ -647,16 +682,17 @@ def main(argv=None):
     try:
         if args.stichtag:
             stichtag = date.fromisoformat(args.stichtag)
-            ensure_holidays(db, stichtag - timedelta(days=70), stichtag + timedelta(days=80))
+            ensure_holidays(db, data_start(stichtag), stichtag + timedelta(days=80))
         else:
             today = date.today()
             ensure_holidays(db, today - timedelta(days=100), today + timedelta(days=60))
             around = get_holiday_dates(db, today - timedelta(days=30), today)
             stichtag = default_stichtag(today, around)
+            ensure_holidays(db, data_start(stichtag), stichtag + timedelta(days=80))
 
         print("=" * 60)
         print("PraxisZeit – Handbuch-Testdaten (Praxis am Lindenplatz)")
-        print(f"Stichtag: {stichtag}  Zeitraum: {prev_month_start(stichtag)} bis {stichtag}")
+        print(f"Stichtag: {stichtag}  Zeitraum: {data_start(stichtag)} bis {stichtag}")
         print("=" * 60)
         seed_all(db, stichtag)
         print("\n" + "=" * 60)
