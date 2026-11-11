@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertSingleVisible, computeCrop } from './geometry';
+import { assertSingleVisible, boxInside, computeCrop, markerBadgePosition } from './geometry';
 
 const VP = { w: 1440, h: 900 };
 
@@ -74,5 +74,56 @@ describe('assertSingleVisible', () => {
 
   it('throws on 0 matches', () => {
     expect(() => assertSingleVisible(0, 0, 'x')).toThrow('x: 0 Treffer, 0 sichtbar');
+  });
+});
+
+describe('boxInside', () => {
+  it('accepts a box inside and rejects one crossing the edge', () => {
+    const crop = { x: 256, y: 0, w: 1184, h: 900 };
+    expect(boxInside({ x: 288, y: 164, w: 40, h: 40 }, crop)).toBe(true);
+    expect(boxInside({ x: 200, y: 164, w: 40, h: 40 }, crop)).toBe(false);
+    expect(boxInside({ x: 256.3, y: 0, w: 1184, h: 900 }, crop)).toBe(true); // Toleranz 0,5
+  });
+});
+
+describe('markerBadgePosition', () => {
+  const crop = { x: 0, y: 0, w: 1440, h: 900 };
+  const r = 17;
+  const outside = (p: { cx: number; cy: number }, b: { x: number; y: number; w: number; h: number }) =>
+    p.cx + r <= b.x || p.cx - r >= b.x + b.w || p.cy + r <= b.y || p.cy - r >= b.y + b.h;
+
+  it('large element keeps the badge on the top-left corner', () => {
+    expect(markerBadgePosition({ x: 300, y: 100, w: 160, h: 60 }, r, crop)).toEqual({ cx: 300, cy: 100 });
+  });
+
+  it('small element puts the badge left of the frame, vertically centred', () => {
+    const b = { x: 288, y: 164, w: 40, h: 40 };
+    const p = markerBadgePosition(b, r, crop);
+    expect(p.cy).toBe(184);
+    expect(p.cx).toBeLessThan(b.x - r);
+    expect(outside(p, b)).toBe(true);
+  });
+
+  it('small element at the left crop edge puts the badge above', () => {
+    const b = { x: 10, y: 200, w: 40, h: 40 };
+    const p = markerBadgePosition(b, r, { x: 0, y: 0, w: 600, h: 400 });
+    expect(p.cx).toBe(30);
+    expect(p.cy).toBeLessThan(200 - r);
+    expect(outside(p, b)).toBe(true);
+  });
+
+  it('badge is always clamped inside the crop', () => {
+    const c = { x: 100, y: 50, w: 600, h: 400 };
+    for (const b of [
+      { x: 100, y: 50, w: 20, h: 20 },
+      { x: 680, y: 430, w: 20, h: 20 },
+      { x: 100, y: 50, w: 300, h: 200 },
+    ]) {
+      const p = markerBadgePosition(b, r, c);
+      expect(p.cx - r).toBeGreaterThanOrEqual(c.x);
+      expect(p.cy - r).toBeGreaterThanOrEqual(c.y);
+      expect(p.cx + r).toBeLessThanOrEqual(c.x + c.w);
+      expect(p.cy + r).toBeLessThanOrEqual(c.y + c.h);
+    }
   });
 });

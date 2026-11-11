@@ -10,6 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { relative, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import { ALL_SHOTS } from '../../frontend/src/handbuch/content/index';
+import { markerBadgePosition } from '../../frontend/src/handbuch/geometry';
 import type { Manifest, ShotDef } from '../../frontend/src/handbuch/types';
 
 const ROOT = resolve(__dirname, '../..');
@@ -33,10 +34,12 @@ function figure(def: ShotDef, man: Manifest, fresh: boolean): string {
     .map((mk) => {
       const r = m.markers[mk.id];
       if (!r) return `<!-- ${esc(mk.id)} fehlt -->`;
+      // Gleiche Platzierungsregel wie ShotFigure (geometry.markerBadgePosition).
+      const { cx, cy } = markerBadgePosition(r, 17 * k, m.crop);
       return `<g>
   <rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="${8 * k}" fill="rgba(239,68,68,0.12)" stroke="#ef4444" stroke-width="${3 * k}"/>
-  <circle cx="${r.x}" cy="${r.y}" r="${17 * k}" fill="#ef4444" stroke="#fff" stroke-width="${4 * k}"/>
-  <text x="${r.x}" y="${r.y}" font-size="${22 * k}" fill="#fff" font-family="sans-serif" font-weight="700" text-anchor="middle" dominant-baseline="central">${mk.n}</text>
+  <circle cx="${cx}" cy="${cy}" r="${17 * k}" fill="#ef4444" stroke="#fff" stroke-width="${4 * k}"/>
+  <text x="${cx}" y="${cy}" font-size="${22 * k}" fill="#fff" font-family="sans-serif" font-weight="700" text-anchor="middle" dominant-baseline="central">${mk.n}</text>
 </g>`;
     })
     .join('\n');

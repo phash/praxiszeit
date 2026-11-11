@@ -1,3 +1,4 @@
+import { markerBadgePosition } from '../geometry';
 import type { ManifestShot, ShotDef } from '../types';
 
 export interface ShotFigureProps {
@@ -34,12 +35,14 @@ export default function ShotFigure({ shotId, def, m, imgBase, active = null }: S
           const r = m.markers[mk.id];
           if (!r) return null;
           const state = active == null ? '' : active === mk.n ? ' hb-act' : ' hb-dim';
+          const radius = 17 * k;
+          const { cx, cy } = markerBadgePosition(r, radius, m.crop);
           return (
             <g key={mk.id} data-marker={mk.n} className={`hb-g${state}`}>
               <rect className="hb-hl" x={r.x} y={r.y} width={r.w} height={r.h} rx={10 * k} strokeWidth={(active === mk.n ? 5 : 3) * k} />
               <g className="hb-mk">
-                <circle cx={r.x} cy={r.y} r={17 * k} strokeWidth={4 * k} />
-                <text x={r.x} y={r.y} fontSize={22 * k}>{mk.n}</text>
+                <circle cx={cx} cy={cy} r={radius} strokeWidth={4 * k} />
+                <text x={cx} y={cy} fontSize={22 * k}>{mk.n}</text>
               </g>
             </g>
           );

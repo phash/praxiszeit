@@ -60,3 +60,45 @@ export function assertSingleVisible(count: number, visible: number, ctx: string)
     );
   }
 }
+
+/** Liegt `inner` (mit Toleranz `tol` CSS px) ganz in `outer`? */
+export function boxInside(inner: Box, outer: Box, tol = 0.5): boolean {
+  return (
+    inner.x >= outer.x - tol &&
+    inner.y >= outer.y - tol &&
+    inner.x + inner.w <= outer.x + outer.w + tol &&
+    inner.y + inner.h <= outer.y + outer.h + tol
+  );
+}
+
+/**
+ * Mittelpunkt des Nummernkreises (Radius `r`) zu einer Marker-Box. Grosse
+ * Elemente: obere linke Ecke des Rahmens. Kleine Elemente (Breite oder Hoehe
+ * < 3·r) wuerde der Kreis verdecken — dann sitzt er ausserhalb: links neben
+ * dem Rahmen (vertikal mittig), sonst darueber, sonst rechts, sonst darunter.
+ * Immer so geklemmt, dass der Kreis ganz im Ausschnitt `crop` liegt.
+ * Gemeinsame Regel fuer ShotFigure und die Kontaktseite der Aufnahme.
+ */
+export function markerBadgePosition(box: Box, r: number, crop: Box, gap = r * 0.35): { cx: number; cy: number } {
+  let cx = box.x;
+  let cy = box.y;
+  if (box.w < 3 * r || box.h < 3 * r) {
+    const midX = box.x + box.w / 2;
+    const midY = box.y + box.h / 2;
+    const d = r + gap;
+    const options = [
+      { cx: box.x - d, cy: midY },
+      { cx: midX, cy: box.y - d },
+      { cx: box.x + box.w + d, cy: midY },
+      { cx: midX, cy: box.y + box.h + d },
+    ];
+    const fits = (p: { cx: number; cy: number }) =>
+      p.cx - r >= crop.x && p.cy - r >= crop.y && p.cx + r <= crop.x + crop.w && p.cy + r <= crop.y + crop.h;
+    ({ cx, cy } = options.find(fits) ?? options[0]);
+  }
+  const clamp = (v: number, lo: number, hi: number) => (hi < lo ? (lo + hi) / 2 : Math.min(Math.max(v, lo), hi));
+  return {
+    cx: clamp(cx, crop.x + r, crop.x + crop.w - r),
+    cy: clamp(cy, crop.y + r, crop.y + crop.h - r),
+  };
+}

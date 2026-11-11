@@ -18,8 +18,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import sharp from 'sharp';
 import { ALL_SHOTS } from '../../frontend/src/handbuch/content/index';
-import { assertSingleVisible, computeCrop, type Box } from '../../frontend/src/handbuch/geometry';
+import { assertSingleVisible, boxInside, computeCrop, type Box } from '../../frontend/src/handbuch/geometry';
 import type { LocatorSpec, Manifest, ManifestShot, Persona, PrepareStep, ShotDef } from '../../frontend/src/handbuch/types';
+import { planSettingsRestore } from '../../frontend/src/handbuch/settingsRestore';
 import { writeContactSheet } from './contact-sheet';
 
 const ROOT = resolve(__dirname, '../..');
@@ -146,50 +147,62 @@ type SettingsValues = Record<string, boolean | string | number>;
 /** Setzt Mandanten-Einstellungen als Admin; liefert eine Funktion, die den Vorzustand wiederherstellt. */
 export async function applySettings(baseUrl: string, settings: SettingsValues): Promise<() => Promise<void>> {
   const api = await request.newContext({ baseURL: baseUrl });
-  const res = await api.post('/api/auth/login', { data: { username: 'admin', password: PASSWORD } });
-  if (!res.ok()) throw new Error(`Admin-Login fuer Einstellungen: HTTP ${res.status()}`);
-  const token = (await res.json()).access_token as string;
-  const headers = async () => {
-    const csrf = (await api.storageState()).cookies.find((c) => c.name === 'csrf_token')?.value;
-    return { Authorization: `Bearer ${token}`, ...(csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {}) };
-  };
-  const listRes = await api.get('/api/admin/settings', { headers: await headers() });
-  if (!listRes.ok()) throw new Error(`GET /api/admin/settings: HTTP ${listRes.status()}`);
-  const before = new Map<string, string>(
-    ((await listRes.json()) as { key: string; value: string }[]).map((r) => [r.key, r.value]),
-  );
-  const put = async (key: string, value: string) => {
-    const r = await api.put(`/api/admin/settings/${encodeURIComponent(key)}`, {
-      headers: await headers(),
-      data: { value },
-    });
-    if (!r.ok()) throw new Error(`PUT /api/admin/settings/${key}: HTTP ${r.status()} ${await r.text()}`);
-  };
-  const changed: string[] = [];
+  let handedOver = false;
   try {
-    for (const [key, value] of Object.entries(settings)) {
-      await put(key, String(value));
-      changed.push(key);
-    }
-  } catch (e) {
-    await restore();
-    throw e;
-  }
-  async function restore() {
-    try {
-      for (const key of changed) {
-        const prev = before.get(key);
-        if (prev === undefined) {
-          console.warn(`  ! Einstellung ${key} hatte keinen gespeicherten Wert — bleibt gesetzt`);
-        } else {
-          await put(key, prev);
+    const res = await api.post('/api/auth/login', { data: { username: 'admin', password: PASSWORD } });
+    if (!res.ok()) throw new Error(`Admin-Login fuer Einstellungen: HTTP ${res.status()}`);
+    const token = (await res.json()).access_token as string;
+    const headers = async () => {
+      const csrf = (await api.storageState()).cookies.find((c) => c.name === 'csrf_token')?.value;
+      return { Authorization: `Bearer ${token}`, ...(csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {}) };
+    };
+    const listRes = await api.get('/api/admin/settings', { headers: await headers() });
+    if (!listRes.ok()) throw new Error(`GET /api/admin/settings: HTTP ${listRes.status()}`);
+    const stored: Record<string, string> = {};
+    for (const r of (await listRes.json()) as { key: string; value: string }[]) stored[r.key] = r.value;
+    // Vor der ersten Aenderung: Rueckstellwert je Schluessel (gespeichert oder App-Default),
+    // sonst Abbruch — nie einen Schluessel setzen, der sich nicht zuruecksetzen laesst.
+    const plan = planSettingsRestore(settings, stored);
+
+    const put = async (key: string, value: string) => {
+      const r = await api.put(`/api/admin/settings/${encodeURIComponent(key)}`, {
+        headers: await headers(),
+        data: { value },
+      });
+      if (!r.ok()) throw new Error(`PUT /api/admin/settings/${key}: HTTP ${r.status()} ${await r.text()}`);
+    };
+    // Auch der Schluessel, dessen PUT scheiterte, wird zurueckgestellt (Zustand unbekannt).
+    const touched: string[] = [];
+    const restore = async () => {
+      const errors: string[] = [];
+      try {
+        for (const key of touched) {
+          try {
+            await put(key, plan[key]);
+          } catch (e) {
+            errors.push(e instanceof Error ? e.message : String(e));
+          }
         }
+      } finally {
+        await api.dispose();
       }
-    } finally {
-      await api.dispose();
+      if (errors.length) throw new Error(`Einstellungen nicht zurueckgestellt: ${errors.join('; ')}`);
+    };
+    try {
+      for (const [key, value] of Object.entries(settings)) {
+        touched.push(key);
+        await put(key, String(value));
+      }
+    } catch (e) {
+      handedOver = true; // restore() raeumt api auf
+      await restore().catch((r) => console.error(`  ! ${r instanceof Error ? r.message : r}`));
+      throw e;
     }
+    handedOver = true;
+    return restore;
+  } finally {
+    if (!handedOver) await api.dispose();
   }
-  return restore;
 }
 
 // ── Vorbereitung ────────────────────────────────────────────────────────────
@@ -339,6 +352,8 @@ async function newContext(browser: Browser, def: ShotDef, stichtag: string): Pro
 async function captureShot(browser: Browser, def: ShotDef, baseUrl: string, stichtag: string): Promise<Captured> {
   const context = await newContext(browser, def, stichtag);
   let restore: (() => Promise<void>) | null = null;
+  let firstError: unknown;
+  let shotFailed = false;
   try {
     const page = await context.newPage();
     if ((def.persona as Persona) !== 'anon') await login(page, baseUrl, def.persona);
@@ -355,6 +370,14 @@ async function captureShot(browser: Browser, def: ShotDef, baseUrl: string, stic
     const m = await measure(page, def);
     const vp = page.viewportSize()!;
     const crop = computeCrop(def.crop, { w: vp.width, h: vp.height }, m);
+    for (const mk of def.markers) {
+      if (!boxInside(m.markers[mk.id], crop)) {
+        throw new Error(
+          `${def.id} Marker ${mk.n} (${mk.id}): liegt nicht im Ausschnitt ${JSON.stringify(roundBox(crop))} ` +
+            `(Box ${JSON.stringify(roundBox(m.markers[mk.id]))}) — crop oder scrollTo anpassen`,
+        );
+      }
+    }
     const png = await page.screenshot({ type: 'png', scale: 'device', animations: 'disabled', caret: 'hide' });
     const again = await measure(page, def);
     const moved = sameBoxes(m.markers, again.markers);
@@ -377,9 +400,25 @@ async function captureShot(browser: Browser, def: ShotDef, baseUrl: string, stic
         markers,
       },
     };
+  } catch (e) {
+    firstError = e;
+    shotFailed = true;
+    throw e;
   } finally {
-    if (restore) await restore();
-    await context.close();
+    // Jeder Schritt fuer sich: ein scheiternder restore() darf weder context.close()
+    // ueberspringen noch den urspruenglichen Fehler verdecken.
+    const cleanup: [string, () => Promise<void>][] = [];
+    if (restore) cleanup.push(['Einstellungen zuruecksetzen', restore]);
+    cleanup.push(['Kontext schliessen', () => context.close()]);
+    for (const [what, fn] of cleanup) {
+      try {
+        await fn();
+      } catch (e) {
+        if (firstError === undefined) firstError = e;
+        else console.error(`  ! ${def.id}: ${what} gescheitert: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    if (firstError !== undefined && !shotFailed) throw firstError;
   }
 }
 
