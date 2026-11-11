@@ -74,6 +74,8 @@ export default function AdminAbsences() {
   // alle anderen Typen buchen das Tagessoll laut Vertrag, nie einen Client-Wert.
   const reasonBehavior = reasons.find(r => r.id === selectedReasonId)?.base_behavior;
   const hoursEditable = selectedReasonId ? reasonBehavior === 'overtime_comp' : formData.type === 'overtime';
+  // Halber Tag: nur Einzeltag, nie bei Überstundenausgleich/Krank (wirksamer Typ, auch bei eigenem Grund)
+  const showHalfDay = !isDateRange && !hoursEditable && (!!selectedReasonId || formData.type !== 'sick');
 
   useEffect(() => {
     myReasons().then(setReasons).catch(() => { /* picker just omits custom reasons */ });
@@ -240,7 +242,7 @@ export default function AdminAbsences() {
         // Server ignoriert den Wert außer bei Überstundenausgleich; Schema verlangt > 0
         hours: hoursEditable ? formData.hours : 8,
         note: formData.note || null,
-        half_day: !isDateRange && formData.half_day,
+        half_day: showHalfDay && formData.half_day,
         reason_id: selectedReasonId,  // #312: backend maps the type from the reason
       });
       // #376: weiche Kind-krank-Limit-Warnung (§45 SGB V), non-blocking
@@ -582,7 +584,7 @@ export default function AdminAbsences() {
             </div>
 
             {/* #167: halber Tag (nur Einzeltag, nicht für Überstunden/Krank) */}
-            {!isDateRange && formData.type !== 'overtime' && formData.type !== 'sick' && (
+            {showHalfDay && (
               <div className="flex items-center space-x-2 p-3 bg-gray-50 rounded-lg">
                 <input
                   type="checkbox"
@@ -673,8 +675,8 @@ export default function AdminAbsences() {
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   {hoursEditable
-                    ? 'Stunden, die vom Überstundenkonto abgebaut werden'
-                    : !isDateRange && formData.half_day
+                    ? 'Stunden, die vom Überstundenkonto abgebaut werden – bei Tagesplan wird das Tagessoll des Tages gebucht'
+                    : showHalfDay && formData.half_day
                     ? 'Halber Tag: 0,5 × Tagessoll wird automatisch gebucht'
                     : 'Es wird das Tagessoll laut Vertrag gebucht'}
                 </p>

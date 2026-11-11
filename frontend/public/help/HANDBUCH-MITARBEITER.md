@@ -373,7 +373,7 @@ Klicken Sie auf **+ Abwesenheit eintragen**.
 2. **Zeitraum** – Aktivieren Sie diese Option für mehrere Tage; Wochenenden und Feiertage werden automatisch ausgeschlossen, ebenso Tage, an denen Sie laut Arbeitsplan nicht arbeiten (z. B. ein freier Wochentag bei Teilzeit). An solchen Tagen erfasste Arbeitszeit bleibt stehen. Liegt im Zeitraum kein einziger Tag, an dem Sie arbeiten, lehnt PraxisZeit die Buchung ab
 3. **Halber Tag** – Nur bei einzelnen Tagen wählbar (nicht bei Zeitraum, nicht bei Krank oder Überstundenausgleich); lässt den Tag nur zur Hälfte zählen (**0,5 statt 1,0 Tag**)
 4. **Typ** – Urlaub / Krank / Fortbildung / Überstundenausgleich / Sonstiges
-5. **Stunden** – Bei Urlaub, Krank, Fortbildung und Sonstigem ist das Feld vorausgefüllt und wird ohnehin durch Ihr Tagessoll ersetzt; nur bei **Überstundenausgleich** zählt der hier eingetragene Wert – er wird von Ihrem Überstundenkonto abgezogen
+5. **Stunden** – Bei Urlaub, Krank, Fortbildung und Sonstigem ist das Feld ausgegraut („Es wird das Tagessoll laut Vertrag gebucht“); nur bei **Überstundenausgleich** zählt der hier eingetragene Wert – er wird von Ihrem Überstundenkonto abgezogen (mit Tagesplan bucht das System stattdessen das Tagessoll des Tages)
 6. **Notiz** – Optional
 7. **Speichern**
 

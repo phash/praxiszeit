@@ -18,7 +18,8 @@ vi.mock('../api/client', () => ({
 vi.mock('../contexts/ToastContext', () => ({
   useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
 }));
-vi.mock('../api/absenceReasons', () => ({ myReasons: () => Promise.resolve([]) }));
+let reasonsData: unknown[] = [];
+vi.mock('../api/absenceReasons', () => ({ myReasons: () => Promise.resolve(reasonsData) }));
 const USER = {
   id: 'u1', username: 'employee', first_name: 'Max', last_name: 'Muster', role: 'employee',
   weekly_hours: 40, vacation_days: 30, track_hours: true, use_daily_schedule: false,
@@ -60,7 +61,7 @@ function mockApi({ settingsFail = false, absences = [] as unknown[] } = {}) {
   });
 }
 
-beforeEach(() => getMock.mockReset());
+beforeEach(() => { getMock.mockReset(); postMock.mockReset(); reasonsData = []; });
 
 describe('<AbsenceCalendarPage /> verkürzte Tage', () => {
   it('lädt /reduced-days für das angezeigte Jahr und zeigt das Label', async () => {
@@ -112,5 +113,51 @@ describe('<AbsenceCalendarPage /> Löschung beantragen (P1.1)', () => {
     render(<MemoryRouter><AbsenceCalendarPage /></MemoryRouter>);
     await screen.findAllByText('8:00 h');
     expect(screen.queryByRole('button', { name: /Löschung beantragen/ })).toBeNull();
+  });
+});
+
+// Voll-Tag-Typen bucht der Server mit dem Tagessoll laut Vertrag; nur
+// Überstundenausgleich (auch als eigener Grund) behält die eingegebenen Stunden.
+describe('<AbsenceCalendarPage /> Stundenfeld im Formular', () => {
+  const reason = (id: string, base_behavior: string) => ({
+    id, name: `Grund ${id}`, color: null, base_behavior, is_active: true, sort_order: 0, tracks_child_sick_limit: false,
+  });
+  async function openForm() {
+    mockApi();
+    render(<MemoryRouter><AbsenceCalendarPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Abwesenheit eintragen' }));
+    return (await screen.findByLabelText(/^Stunden/)) as HTMLInputElement;
+  }
+
+  it('Urlaub: Feld gesperrt und leer, Hinweis auf Tagessoll', async () => {
+    const hours = await openForm();
+    expect(hours).toBeDisabled();
+    expect(hours.value).toBe('');
+    expect(screen.getByText(/Tagessoll laut Vertrag/)).toBeInTheDocument();
+  });
+
+  it('Überstundenausgleich: editierbar, Wert wird gesendet, Hinweis nennt Tagesplan', async () => {
+    postMock.mockResolvedValue({ data: {} });
+    const hours = await openForm();
+    fireEvent.change(screen.getByDisplayValue('Urlaub'), { target: { value: 'overtime' } });
+    expect(hours).not.toBeDisabled();
+    expect(screen.getByText(/bei Tagesplan wird das Tagessoll des Tages gebucht/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Halber Tag/)).toBeNull();
+    fireEvent.change(hours, { target: { value: '3.5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ type: 'overtime', hours: 3.5 });
+  });
+
+  it('eigener Grund Überstundenabbau: editierbar; „bezahlt frei": gesperrt mit Halbtag', async () => {
+    reasonsData = [reason('r1', 'overtime_comp'), reason('r2', 'paid_free')];
+    const hours = await openForm();
+    await screen.findByRole('option', { name: 'Grund r1' });
+    fireEvent.change(screen.getByDisplayValue('Urlaub'), { target: { value: 'reason:r1' } });
+    expect(hours).not.toBeDisabled();
+    expect(screen.queryByLabelText(/Halber Tag/)).toBeNull();
+    fireEvent.change(screen.getByDisplayValue('Grund r1'), { target: { value: 'reason:r2' } });
+    expect(hours).toBeDisabled();
+    expect(screen.getByLabelText(/Halber Tag/)).toBeInTheDocument();
   });
 });
