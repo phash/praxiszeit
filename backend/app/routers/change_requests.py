@@ -22,13 +22,7 @@ from app.services import credit_override_service, entry_guard_service, work_wind
 from app.routers.admin_helpers import (
     _enrich_cr_response as _enrich_response, _enrich_cr_responses,
 )
-from app.routers.absences import _MASKED_ABSENCE_TYPES
-
-
-# P1 (Handbuch-Funde 2026-11-11): Lösch-Antrag für einen Betriebsferien-Tag.
-CLOSURE_ABSENCE_CR_DETAIL = (
-    "Betriebsferien-Tage ändert nur die Verwaltung – bitte an die Verwaltung wenden."
-)
+from app.routers.absences import CLOSURE_ABSENCE_DELETE_DETAIL, _MASKED_ABSENCE_TYPES
 
 router = APIRouter(prefix="/api/change-requests", tags=["change-requests"])
 
@@ -129,6 +123,12 @@ def create_change_request(
             if absence.user_id != current_user.id:
                 # #120: 404 statt 403 — kein Existenz-Leak fremder Abwesenheiten.
                 raise HTTPException(status_code=404, detail="Abwesenheit nicht gefunden")
+            # P1/P2 (Handbuch-Funde): Betriebsferien-Tage ändert nur die Verwaltung —
+            # weder Lösch- noch Änderungsantrag. Gleiche Meldung wie
+            # ``absences.delete_absence``; geprüft VOR Datum/Typ/Stunden, damit ein
+            # Betriebsferien-Tag immer diese Meldung bekommt (auch heute/Zukunft).
+            if absence.closure_id is not None:
+                raise HTTPException(status_code=400, detail=CLOSURE_ABSENCE_DELETE_DETAIL)
 
         # For CREATE/UPDATE: validate required fields
         if data.request_type in ("create", "update"):
@@ -170,10 +170,6 @@ def create_change_request(
         if data.request_type == "delete" and absence:
             if absence.date >= today_local():
                 raise HTTPException(status_code=400, detail="Heutige Einträge können direkt gelöscht werden")
-            # P1 (Handbuch-Funde): Betriebsferien-Tage ändert nur die Verwaltung —
-            # wie ``absences.delete_absence`` (CLOSURE_ABSENCE_DELETE_DETAIL).
-            if absence.closure_id is not None:
-                raise HTTPException(status_code=400, detail=CLOSURE_ABSENCE_CR_DETAIL)
 
         # Check for duplicate pending absence requests
         if data.request_type == "create" and data.proposed_date:
