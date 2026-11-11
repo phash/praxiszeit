@@ -1,7 +1,7 @@
 import type { Handbook, PrepareStep, ShotDef } from '../types';
 
 /**
- * Handbuch für die Praxisleitung (Kapitel 1–13; Task 10b ergänzt 14–17).
+ * Handbuch für die Praxisleitung (Kapitel 1–17).
  * Quelle: docs/handbuch/HANDBUCH-ADMIN.md, docs/handbuch/SCHNELLSTART.md und die
  * Seiten in frontend/src/pages/admin. Reine Daten (R5). Aufgaben-IDs sind
  * Sprungmarken der Kontexthilfe – nicht umbenennen.
@@ -851,6 +851,223 @@ const shots: ShotDef[] = [
       { n: 3, id: 'bestaetigen', locator: { css: "main button:has-text('Import bestätigen')" }, badge: 'right' },
     ],
     alt: 'Import, Ende der Vorschau: Haken „Konflikte überschreiben (1 Eintrag)“ und die Knöpfe „Zurück“ und „Import bestätigen“ unter der Tabelle der gefundenen Einträge',
+  },
+
+  // ── 14. Protokoll & Fehler-Monitoring ────────────────────────────────────
+  {
+    id: 'pl-protokoll',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/audit-log',
+    prepare: [{ waitFor: { role: 'columnheader', name: 'Quelle', exact: true } }],
+    crop: 'main',
+    markers: [
+      { n: 1, id: 'monat', locator: { css: "xpath=//main//button[@aria-label='Vorheriger Monat']/.." }, badge: 'left' },
+      { n: 2, id: 'person', locator: { css: 'main select' }, badge: 'right' },
+      { n: 3, id: 'quelle', locator: { role: 'columnheader', name: 'Quelle', exact: true }, badge: 'top' },
+      { n: 4, id: 'werte', locator: { role: 'columnheader', name: 'Alte Werte', exact: true }, badge: 'top' },
+    ],
+    alt: 'Änderungsprotokoll: Monatswähler, Auswahl der Person und die Tabelle mit Zeitpunkt, Mitarbeiter, Geändert von, Aktion, Quelle sowie alten und neuen Werten',
+  },
+  {
+    id: 'pl-protokoll-pruefung',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/audit-log',
+    prepare: [{ scrollTo: { role: 'heading', name: 'Prüfung des Änderungsprotokolls', exact: true } }],
+    crop: { around: ['jetzt-pruefen', 'ergebnis'], pad: 56 },
+    markers: [
+      { n: 1, id: 'jetzt-pruefen', locator: { role: 'button', name: 'Jetzt prüfen', exact: true }, badge: 'left' },
+      { n: 2, id: 'ergebnis', locator: { css: "xpath=//main//h2[normalize-space()='Prüfung des Änderungsprotokolls']/ancestor::div[contains(@class,'rounded-xl')][1]//p[starts-with(normalize-space(),'Letzte Prüfung') or starts-with(normalize-space(),'Noch keine Prüfung')]" }, badge: 'left' },
+    ],
+    alt: 'Karte „Prüfung des Änderungsprotokolls“ mit dem Knopf „Jetzt prüfen“ und der Zeile zum Ergebnis der letzten Prüfung',
+  },
+  {
+    id: 'pl-konto-vorgaenge',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/audit-log',
+    prepare: [{ scrollTo: { role: 'heading', name: 'Konto-Vorgänge', exact: true } }],
+    crop: { around: ['kopf', 'vorgang', 'durch'], pad: 90 },
+    markers: [
+      { n: 1, id: 'kopf', locator: { css: "xpath=//main//h2[normalize-space()='Konto-Vorgänge']/.." }, badge: 'left' },
+      // erste Zeile der Liste: die Zelle trägt die Nummer, die Spaltenköpfe bleiben frei
+      { n: 2, id: 'vorgang', locator: { css: "xpath=//main//h2[normalize-space()='Konto-Vorgänge']/ancestor::div[contains(@class,'rounded-xl')][1]//tbody/tr[1]/td[2]" }, badge: 'left' },
+      { n: 3, id: 'durch', locator: { css: "xpath=//main//h2[normalize-space()='Konto-Vorgänge']/ancestor::div[contains(@class,'rounded-xl')][1]//tbody/tr[1]/td[4]" }, badge: 'left' },
+    ],
+    alt: 'Liste „Konto-Vorgänge“ unter dem Änderungsprotokoll mit den Spalten Zeitpunkt, Vorgang, Konto, Durch und Detail',
+  },
+  {
+    id: 'pl-fehler-monitoring',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/errors',
+    crop: { around: ['aktualisieren', 'reiter', 'liste'], pad: 56 },
+    markers: [
+      { n: 1, id: 'aktualisieren', locator: { role: 'button', name: 'Aktualisieren', exact: true }, badge: 'left' },
+      { n: 2, id: 'reiter', locator: { role: 'button', name: 'Offen', exact: false, within: 'main' }, badge: 'corner' },
+      { n: 3, id: 'liste', locator: { css: 'main div.bg-green-50' }, badge: 'corner' },
+    ],
+    alt: 'Fehler-Monitoring: oben der Knopf „Aktualisieren“, darunter die Reiter Alle, Offen, Ignoriert und Behoben und der grüne Hinweis „Keine Fehler gefunden“',
+  },
+
+  // ── 15. Datensicherung ───────────────────────────────────────────────────
+  {
+    id: 'pl-datensicherung',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/backups',
+    crop: { around: ['jetzt-sichern', 'liste'], pad: 110 },
+    markers: [
+      { n: 1, id: 'jetzt-sichern', locator: { role: 'button', name: 'Jetzt sichern', exact: true }, badge: 'left' },
+      { n: 2, id: 'taeglich', locator: { label: 'Tägliche automatische Sicherung aktivieren', within: 'main' }, badge: 'left' },
+      { n: 3, id: 'uhrzeit', locator: { css: "xpath=//main//label[normalize-space()='Uhrzeit (Stunde, 0–23)']/.." }, badge: 'left' },
+      { n: 4, id: 'aufbewahrung', locator: { css: "xpath=//main//label[normalize-space()='Aufbewahrung (Tage)']/.." }, badge: 'right' },
+      { n: 5, id: 'speicherort', locator: { css: "xpath=//main//label[normalize-space()='Speicherort (optional)']/.." }, badge: 'left' },
+      { n: 6, id: 'speichern', locator: { role: 'button', name: 'Einstellungen speichern', exact: true }, badge: 'left' },
+      { n: 7, id: 'liste', locator: { css: "main h2:has-text('Vorhandene Sicherungen')" }, badge: 'left' },
+    ],
+    alt: 'Datensicherung: „Jetzt sichern“, die Einstellungen der geplanten Sicherung mit Uhrzeit, Aufbewahrung und Speicherort und darunter die Liste der vorhandenen Sicherungen',
+  },
+
+  // ── 16. Schichtplanung ───────────────────────────────────────────────────
+  {
+    id: 'pl-schicht-wochentage',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    settings: { shift_planning_enabled: true },
+    prepare: [{ scrollTo: { role: 'heading', name: 'Geplante Wochentage', exact: true } }],
+    crop: { around: ['wochentage', 'speichern-wt'], pad: 90 },
+    markers: [
+      { n: 1, id: 'wochentage', locator: { css: "xpath=//main//button[@aria-label='Montag']/.." }, badge: 'left' },
+      { n: 2, id: 'speichern-wt', locator: { role: 'button', name: 'Wochentage speichern', exact: true }, badge: 'left' },
+    ],
+    alt: 'Einstellungen, Bereich Schichtplanung: die Wochentage Montag bis Sonntag als Auswahlfelder mit dem Knopf „Wochentage speichern“',
+  },
+  {
+    id: 'pl-schicht-stammdaten',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/shift-planning',
+    settings: { shift_planning_enabled: true },
+    prepare: [
+      { click: { role: 'button', name: 'Stammdaten', exact: true } },
+      { waitFor: { role: 'heading', name: 'Arbeitsplätze', exact: true } },
+    ],
+    crop: { around: ['standort', 'bearbeiten'], pad: 90 },
+    markers: [
+      { n: 1, id: 'standort', locator: { css: "xpath=//main//label[normalize-space()='Neuer Standort']/.." }, badge: 'left' },
+      { n: 2, id: 'name', locator: { css: "xpath=//main//h3[normalize-space()='Arbeitsplätze']/..//label[starts-with(normalize-space(),'Name')]/.." }, badge: 'left' },
+      { n: 3, id: 'farbe', locator: { css: "xpath=//main//input[@aria-label='Farbe']/.." }, badge: 'left' },
+      { n: 4, id: 'hinzufuegen', locator: { css: "xpath=//main//h3[normalize-space()='Arbeitsplätze']/..//button[normalize-space()='Hinzufügen']" }, badge: 'right' },
+      { n: 5, id: 'bearbeiten', locator: { css: "xpath=(//main//h3[normalize-space()='Arbeitsplätze']/..//button[@aria-label='Bearbeiten'])[1]" }, badge: 'left' },
+    ],
+    alt: 'Schichtplanung, Reiter Stammdaten: links die Standorte, rechts die Arbeitsplätze Anmeldung und Labor mit Namensfeld, Farbwähler und Knopf „Hinzufügen“',
+  },
+  {
+    id: 'pl-schicht-einweisungen',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/shift-planning',
+    settings: { shift_planning_enabled: true },
+    prepare: [
+      { click: { role: 'button', name: 'Einweisungen', exact: true } },
+      { waitFor: { role: 'columnheader', name: 'Labor', exact: true } },
+    ],
+    crop: 'main',
+    markers: [
+      { n: 1, id: 'arbeitsplatz', locator: { role: 'columnheader', name: 'Labor', exact: true }, badge: 'left' },
+      { n: 2, id: 'haken', locator: { css: "main input[aria-label='Maria Hoffmann – Anmeldung']" }, badge: 'left' },
+      { n: 3, id: 'kein-haken', locator: { css: "main input[aria-label='Maria Hoffmann – Labor']" }, badge: 'right' },
+    ],
+    alt: 'Schichtplanung, Reiter Einweisungen: Tabelle mit den Mitarbeitenden in den Zeilen und den Arbeitsplätzen Anmeldung und Labor in den Spalten, Häkchen bei eingewiesenen Personen',
+  },
+  {
+    id: 'pl-schicht-editor',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/shift-planning',
+    settings: { shift_planning_enabled: true },
+    prepare: [
+      { click: { css: "main button:has-text('Wochenplan Praxis')" } },
+      { waitFor: { role: 'heading', name: 'Wochenplan Praxis', exact: true } },
+    ],
+    crop: 'main',
+    markers: [
+      { n: 1, id: 'neuer-plan', locator: { css: "xpath=//main//label[normalize-space()='Neuer Plan']/.." }, badge: 'left' },
+      // Die Werkzeugleiste läuft bei 1440 px über den Kartenrand hinaus (Papierkorb außerhalb): nur Knöpfe im Fenster markieren.
+      { n: 2, id: 'aktiv', locator: { css: "main button:text-matches('^(Aktiv schalten|Deaktivieren)$')" }, badge: 'left' },
+      { n: 3, id: 'bearbeiten', locator: { role: 'button', name: 'Bearbeiten', exact: true, within: 'main' }, badge: 'top' },
+      { n: 4, id: 'pdf', locator: { role: 'button', name: 'PDF', exact: true, within: 'main' }, badge: 'top' },
+      { n: 5, id: 'woche-tag', locator: { css: "xpath=//main//button[normalize-space()='Woche']/.." }, badge: 'left' },
+      { n: 6, id: 'mitarbeiter', locator: { role: 'heading', name: 'Mitarbeiter', exact: true, within: 'main' }, badge: 'corner' },
+    ],
+    alt: 'Schichtplanung, Plan „Wochenplan Praxis“: Werkzeugleiste mit Deaktivieren, Slot, Automatisch füllen, Bearbeiten, PDF und Duplizieren, darunter das Wochenraster und rechts die Mitarbeitenden',
+  },
+  {
+    id: 'pl-schicht-slot',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/shift-planning',
+    settings: { shift_planning_enabled: true },
+    prepare: [
+      { click: { css: "main button:has-text('Wochenplan Praxis')" } },
+      { waitFor: { role: 'heading', name: 'Wochenplan Praxis', exact: true } },
+      { click: { role: 'button', name: 'Slot', exact: true, within: 'main' } },
+      { waitFor: { role: 'heading', name: 'Neuer Zeitslot', exact: true } },
+    ],
+    crop: { around: ['arbeitsplatz', 'zugewiesen'], pad: 130 },
+    markers: [
+      { n: 1, id: 'arbeitsplatz', locator: { label: 'Arbeitsplatz' }, badge: 'left' },
+      { n: 2, id: 'wochentag', locator: { label: 'Wochentag' }, badge: 'left' },
+      { n: 3, id: 'von-bis', locator: { css: "xpath=//label[starts-with(normalize-space(),'Von')]/ancestor::div[contains(@class,'grid')][1]" }, badge: 'left' },
+      { n: 4, id: 'mindest', locator: { label: 'Mindestbesetzung' }, badge: 'left' },
+      { n: 5, id: 'hinweis', locator: { label: 'Hinweis (optional)' }, badge: 'left' },
+      { n: 6, id: 'zugewiesen', locator: { css: "xpath=//span[normalize-space()='Zugewiesene Mitarbeiter']/following-sibling::div[1]" }, badge: 'left' },
+    ],
+    alt: 'Dialog „Neuer Zeitslot“ mit Arbeitsplatz, Wochentag, Von und Bis, Mindestbesetzung, Hinweis und der Liste der zugewiesenen Mitarbeitenden',
+  },
+  {
+    id: 'pl-schicht-plan-einstellungen',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/shift-planning',
+    settings: { shift_planning_enabled: true },
+    prepare: [
+      { click: { css: "main button:has-text('Wochenplan Praxis')" } },
+      { waitFor: { role: 'heading', name: 'Wochenplan Praxis', exact: true } },
+      { click: { role: 'button', name: 'Bearbeiten', exact: true, within: 'main' } },
+      { waitFor: { role: 'heading', name: 'Plan-Einstellungen', exact: true } },
+    ],
+    crop: { around: ['name', 'speichern'], pad: 110 },
+    markers: [
+      { n: 1, id: 'name', locator: { label: 'Name' }, badge: 'left' },
+      { n: 2, id: 'zeitraum', locator: { css: "xpath=//label[starts-with(normalize-space(),'von')]/ancestor::div[contains(@class,'grid')][1]" }, badge: 'left' },
+      { n: 3, id: 'sichtbar', locator: { css: "xpath=//span[starts-with(normalize-space(),'Für Mitarbeitende sichtbar')]/ancestor::label[1]" }, badge: 'left' },
+      { n: 4, id: 'speichern', locator: { css: "xpath=//form[.//span[starts-with(normalize-space(),'Für Mitarbeitende sichtbar')]]//button[normalize-space()='Speichern']" }, badge: 'right' },
+    ],
+    alt: 'Dialog „Plan-Einstellungen“ mit Name, Beschreibung, dem Zeitraum für die automatische Aktivierung und dem Haken „Für Mitarbeitende sichtbar“',
+  },
+  {
+    id: 'pl-schicht-fuellen',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/shift-planning',
+    settings: { shift_planning_enabled: true },
+    prepare: [
+      { click: { css: "main button:has-text('Wochenplan Praxis')" } },
+      { waitFor: { role: 'heading', name: 'Wochenplan Praxis', exact: true } },
+      { click: { role: 'button', name: 'Automatisch füllen', exact: true, within: 'main' } },
+      { waitFor: { css: "xpath=//h3[normalize-space()='Automatisch füllen']" } },
+    ],
+    crop: { around: ['zielwoche', 'generieren'], pad: 210 },
+    markers: [
+      { n: 1, id: 'zielwoche', locator: { label: 'Zielwoche (für Abwesenheiten/Stunden)' }, badge: 'left' },
+      { n: 2, id: 'modus', locator: { css: "xpath=//span[normalize-space()='Modus']/.." }, badge: 'left' },
+      { n: 3, id: 'generieren', locator: { css: "xpath=//button[normalize-space()='Generieren']" }, badge: 'right' },
+    ],
+    alt: 'Dialog „Automatisch füllen“ mit der Zielwoche, der Wahl zwischen „Alle Zuweisungen neu verteilen“ und „Nur Lücken auffüllen“ und dem Knopf „Generieren“',
   },
 ];
 
@@ -1980,7 +2197,7 @@ export const praxisleitung: Handbook = {
             ['Urlaubsgenehmigung', 'Genehmigungspflicht für Urlaub', '[Urlaubsgenehmigung](#urlaubsgenehmigung)'],
             ['Pflicht-Pause-Ausnahme', 'Ausnahme bei fehlender Pause erlauben', '[Pflicht-Pause-Ausnahme](#pflicht-pause-ausnahme)'],
             ['Onboarding / Willkommens-Tour', 'Tour beim ersten Login', '[Tour und Schichtplanung](#tour-schichtplanung)'],
-            ['Schichtplanung', 'Planungswerkzeug ein- oder ausschalten', '[Tour und Schichtplanung](#tour-schichtplanung)'],
+            ['Schichtplanung', 'Planungswerkzeug ein- oder ausschalten', '[Tour und Schichtplanung](#tour-schichtplanung), [Wochentage](#schicht-wochentage)'],
             ['Betriebsferien & Urlaub', 'überzählige Betriebsferien als Überstundenabbau', '[Betriebsferien länger als der Urlaub](#betriebsferien-ueberstundenabbau)'],
             ['Überstunden-Projektion zum Jahresende', 'Anzeige des voraussichtlichen Saldos', '[Saldo zum Jahresende](#jahresende-projektion)'],
             ['Soll-Arbeitszeit-Fenster', 'Puffer an den Rändern der Arbeitszeit-Blöcke', '[Puffer einstellen](#puffer-einstellen)'],
@@ -2309,6 +2526,517 @@ export const praxisleitung: Handbook = {
           text:
             '**Bestätigung = Vorschau, neu gerechnet:** Höchstarbeitszeit, Pause und Überschneidungen rechnet die Bestätigung noch einmal und überspringt betroffene Tage oder Zeilen – die Hinweise der Vorschau übernimmt das Ergebnis nicht ungeprüft. ' +
             'Überschreibt der Import einen **anerkannten** Eintrag, steht in der Kurzinfo „Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.“',
+        },
+      ],
+    },
+
+    // ── 14 ──────────────────────────────────────────────────────────────────
+    {
+      id: 'protokoll-fehler-monitoring',
+      title: 'Protokoll & Fehler-Monitoring',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'protokoll',
+          text:
+            'Das **Änderungsprotokoll** hält fest, wer wann an Zeiteinträgen, Abwesenheiten und Verwaltungseinstellungen etwas geändert hat. Es dient als Nachweis nach § 16 Abs. 2 ArbZG. ' +
+            'PraxisZeit selbst kann Zeilen nur anfügen, nie ändern oder löschen; jede Zeile trägt eine Prüfsumme. Daneben zeigen **Konto-Vorgänge** die sicherheitsrelevanten Handlungen und das **Fehler-Monitoring** technische Störungen.',
+        },
+        {
+          kind: 'task',
+          id: 'protokoll-lesen',
+          title: 'Wie lese ich das Änderungsprotokoll?',
+          intro: 'Klicken Sie in der Navigation auf [[Änderungsprotokoll]]. Die Tabelle zeigt die Änderungen des gewählten Monats, die neuesten zuerst. Ihre Spalten: **Zeitpunkt**, **Mitarbeiter** (die Person, deren Eintrag sich geändert hat), **Geändert von** (die handelnde Person), **Aktion**, **Quelle** sowie **Alte Werte** und **Neue Werte**.',
+          shot: 'pl-protokoll',
+          steps: [
+            { n: 1, text: '**Monat wählen:** mit den Pfeilen neben dem Monatsnamen. [[Zum aktuellen Monat springen]] bringt Sie zurück.' },
+            { n: 2, text: '**Person filtern:** Die Auswahl steht auf „Alle Mitarbeitende“; wählen Sie eine Person, sehen Sie nur ihre Zeilen.' },
+            { n: 3, text: '**Quelle** zeigt, auf welchem Weg die Änderung entstand, zum Beispiel „Manuell“, „Ausstempeln“, „Antrag“, „Import“, „Jahresabschluss“, „Einstellungen“ oder „Stundenänderung“. Wurde die Person unter **Geändert von** später endgültig gelöscht (Art. 17 DSGVO), steht dort „Gelöschte Person“.' },
+            { n: 4, text: '**Alte Werte** und **Neue Werte** zeigen Datum, Zeiten, Pause und Notiz vorher und nachher; bei einer Einstellung steht dort der Wert vor und nach der Änderung.' },
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['Was PraxisZeit protokolliert', 'Beispiele'],
+          rows: [
+            ['Zeiteinträge', 'Erstellen, Ändern, Löschen, Ausstempeln – auch Einträge, die Mitarbeitende selbst am selben Tag anlegen'],
+            ['Abwesenheiten', 'neue Abwesenheiten, Stornierungen'],
+            ['Anträge', 'Korrekturanträge stellen, genehmigen, ablehnen'],
+            ['Arbeitszeit-Änderungen und Anerkennungen', 'je Änderung eine Sammelzeile (Wirkungsdatum, neu berechnete Einträge, Grund), dazu eine Zeile je neu berechnetem Eintrag; Quelle „Stundenänderung“, „Neukappung (Arbeitszeit-Änderung)“ oder „Anrechnung anerkannt“'],
+            ['Pflicht-Pause-Ausnahmen', 'die erfasste § 4-Ausnahme samt Begründung (Quelle „Pausen-Verzicht“)'],
+            ['Überträge und Jahresabschluss', 'manuell gesetzte Überträge und je Person der Übertrag beim Anlegen oder Löschen eines Jahresabschlusses'],
+            ['Einstellungen, Feiertage, verkürzte Tage', 'jede geänderte Einstellung mit altem und neuem Wert („Einstellung geändert“)'],
+            ['Benutzerangaben mit Wirkung auf Auswertungen', '„Ausgenommen nach § 18 ArbZG“, „Nachtarbeitnehmer“, erster und letzter Arbeitstag („Benutzerangabe geändert“)'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Tatsächliche Stempel:** Weichen die angerechnete und die gestempelte Zeit eines Eintrags voneinander ab, nennt die Zeile beide, zum Beispiel „07:45 - 16:15“ und darunter „gestempelt 06:00 - 18:00“. Das gilt auch beim Löschen.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Das Protokoll ist kein unveränderbares Archiv.** Es macht nachträgliche Veränderungen **erkennbar**, verhindern kann sie nur der Schutz des Servers. Bewahren Sie deshalb auch die Datensicherungen auf, siehe [Datensicherung](#sicherung-einrichten).',
+        },
+        {
+          kind: 'task',
+          id: 'protokoll-pruefen',
+          title: 'Wie prüfe ich, ob das Protokoll unverändert ist?',
+          intro: 'Unter der Tabelle steht die Karte **Prüfung des Änderungsprotokolls**. PraxisZeit prüft jede Nacht (03:15 Uhr) jede Zeile gegen ihre Prüfsumme, versiegelt neue Zeilen zu einer Kette und prüft, ob Glieder fehlen.',
+          shot: 'pl-protokoll-pruefung',
+          steps: [
+            { n: 1, text: 'Klicken Sie auf [[Jetzt prüfen]], wenn Sie nicht bis zur nächsten Nacht warten möchten.' },
+            { n: 2, text: 'Die Zeile **Letzte Prüfung** nennt Zeitpunkt und Ergebnis. Solange noch keine Prüfung gelaufen ist, steht dort „Noch keine Prüfung gelaufen.“' },
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['Ergebnis', 'Bedeutung und was Sie tun'],
+          rows: [
+            ['**in Ordnung**', 'Keine Zeile verändert, keine entfernt. Ältere Zeilen ohne prüfbare Prüfsumme (Altbestand) werden nur gezählt.'],
+            ['**Abweichung gefunden**', 'Zeilen wurden außerhalb von PraxisZeit verändert oder entfernt, zum Beispiel direkt in der Datenbank. Der Vorgang steht zusätzlich unter „Konto-Vorgänge“ und im Fehler-Monitoring. Bewahren Sie die Datensicherungen auf und informieren Sie den Support.'],
+            ['**Kettenende fehlt** oder **ungültig**', 'Der versiegelte Abschluss der Kette ist weg oder verändert. PraxisZeit legt ihn **nicht** von selbst neu an. Bis zur Klärung sind das endgültige Löschen von Personen und das automatische Entfernen nach der Aufbewahrungsfrist gesperrt. Erst wenn die Ursache geklärt ist (zum Beispiel eine Datensicherung geprüft), setzen Sie ihn mit [[Kettenende neu setzen…]] und einem **Grund** (mindestens 10 Zeichen) neu. Das Neusetzen steht danach dauerhaft im Protokoll.'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Der Schlüssel SECRET_KEY gehört zur Prüfung:** Die Prüfsummen hängen am geheimen Schlüssel des Servers. Geht er verloren (zum Beispiel bei einer Neuinstallation ohne die Datei config/.secret-key), lassen sich die Prüfsummen nicht mehr prüfen. Bewahren Sie ihn getrennt von den Sicherungen auf.',
+        },
+        {
+          kind: 'task',
+          id: 'konto-vorgaenge',
+          title: 'Wo sehe ich Konto-Vorgänge?',
+          intro: 'Die Liste **Konto-Vorgänge** steht ganz unten auf der Seite [[Änderungsprotokoll]]: Konten, Rollen, Passwörter, Zwei-Faktor und Datenbank-Sicherungen, also wer wann was getan hat. Sie zeigt die neuesten 200 Vorgänge und ist nicht gefiltert.',
+          shot: 'pl-konto-vorgaenge',
+          steps: [
+            { n: 1, text: 'Die Liste beginnt mit dem neuesten Vorgang. **Zeitpunkt** nennt Datum und Uhrzeit, **Konto** die betroffene Person, **Detail** ergänzt Einzelheiten, zum Beispiel die Rolle eines neuen Kontos.' },
+            { n: 2, text: '**Vorgang** nennt, was geschah, zum Beispiel „Konto angelegt“, „Konto deaktiviert“, „Rolle geändert“, „Sicherung erstellt“, „Sicherung heruntergeladen“ oder „Sicherung gelöscht“.' },
+            { n: 3, text: '**Durch** nennt die handelnde Stelle. Bei Notfall-Vorgängen auf dem Server steht dort „Kommandozeile (Benutzer@Rechner)“, siehe [Admin-Passwort verloren](#passwort-zuruecksetzen).' },
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['In den Konto-Vorgängen stehen', 'Hinweis'],
+          rows: [
+            ['Konten angelegt (mit Rolle), Benutzernamen geändert, Konten deaktiviert oder reaktiviert, Rolle gewechselt', 'Admin ↔ Mitarbeitende'],
+            ['fremdes Passwort durch die Verwaltung gesetzt', 'Das eigene Passwort ändern Sie unter **Profil → Passwort ändern**, nicht über die Benutzerverwaltung.'],
+            ['Zwei-Faktor im Profil ein- oder abgeschaltet, durch die Verwaltung zurückgesetzt, falsche Zwei-Faktor-Codes', 'Nach 10 falschen Codes in einer Stunde ist die Anmeldung des Kontos für eine Stunde gesperrt.'],
+            ['Abmeldung nach 5 falschen Passworteingaben in einer offenen Sitzung', 'zum Beispiel beim Passwort ändern oder beim Herunterladen einer Sicherung'],
+            ['Datenbank-Sicherungen erstellt, heruntergeladen, gelöscht, Einstellungen geändert', 'Die geplante tägliche Sicherung steht nicht darin.'],
+            ['Notfall-Vorgänge auf dem Server (Passwort-Reset, Zwei-Faktor abschalten, Reaktivieren)', 'Siehe das letzte Kapitel dieses Handbuchs.'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Fehlgeschlagene Anmeldungen stehen hier nicht.** Sie stehen im Protokoll des Servers (AUTH login_failed …), nicht im Änderungsprotokoll.',
+        },
+        {
+          kind: 'task',
+          id: 'fehler-monitoring',
+          title: 'Wie lese ich das Fehler-Monitoring?',
+          intro: 'Klicken Sie in der Navigation auf [[Fehler-Monitoring]]. Die Seite zeigt technische Fehler, die im Betrieb aufgetreten sind.',
+          shot: 'pl-fehler-monitoring',
+          steps: [
+            { n: 1, text: '[[Aktualisieren]] lädt die Liste und die Zähler neu. Liegen Fehler vor, zeigen Zähler oben die Anzahl je Status (open, ignored, resolved).' },
+            { n: 2, text: 'Die Reiter [[Alle]], [[Offen]], [[Ignoriert]] und [[Behoben]] filtern die Liste. Am Reiter „Offen“ steht die Zahl der offenen Fehler, sobald es welche gibt.' },
+            { n: 3, text: 'Die Liste zeigt jeden Fehler als eigene Karte. Gibt es keinen, steht hier „Keine Fehler gefunden“, wie im Bild.' },
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['Jeder Eintrag zeigt', 'Bedeutung'],
+          rows: [
+            ['Stufe (zum Beispiel ERROR)', 'Schweregrad des Fehlers'],
+            ['×Zahl', 'wie oft derselbe Fehler aufgetreten ist; einmalige Fehler sind meist unkritisch'],
+            ['Methode und Pfad', 'welcher Aufruf betroffen war'],
+            ['Meldung', 'die Fehlermeldung, oft mit verständlicher Beschreibung'],
+            ['Zuerst und Zuletzt', 'wann der Fehler zum ersten und zum letzten Mal auftrat'],
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['Symbol am Eintrag', 'Wirkung'],
+          rows: [
+            ['Häkchen („Als behoben markieren“)', 'setzt den Fehler auf „Behoben“'],
+            ['durchgestrichenes Auge („Ignorieren“)', 'blendet einen offenen Fehler aus der Liste „Offen“ aus'],
+            ['Warndreieck („Wieder öffnen“)', 'setzt einen behobenen oder ignorierten Fehler zurück auf „Offen“'],
+            ['Papierkorb („Löschen“)', 'entfernt den Eintrag nach Rückfrage'],
+            ['Pfeil', 'klappt Stack Trace und GitHub-Issue auf'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Was tun bei Fehlern?** Lesen Sie die Meldung, prüfen Sie die Häufigkeit und notieren Sie bei wiederkehrenden Fehlern Zeitstempel und Meldung. Wenden Sie sich an Ihren IT-Support oder melden Sie den Fehler als GitHub-Issue: Im aufgeklappten Eintrag öffnet [[Issue auf GitHub erstellen]] ein vorbereitetes Issue; die Adresse eines bestehenden Issues können Sie dort eintragen und speichern.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Datenschutz (Art. 28 DSGVO):** Fehlermeldungen können personenbezogene Daten enthalten. Prüfen Sie vor der Übertragung zu GitHub, ob der Stack Trace sensible Angaben enthält; GitHub ist als Auftragsverarbeiter einzustufen. Die Seite weist im aufgeklappten Eintrag selbst darauf hin.',
+        },
+      ],
+    },
+
+    // ── 15 ──────────────────────────────────────────────────────────────────
+    {
+      id: 'datensicherung',
+      title: 'Datensicherung',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'datensicherung',
+          text:
+            'PraxisZeit speichert alle Zeitdaten in einer Datenbank. **§ 16 ArbZG verlangt, Zeitaufzeichnungen mindestens 2 Jahre aufzubewahren.** Unter **Datensicherung** erstellen und verwalten Sie Sicherungen ohne Kommandozeile, in der Docker- **und** in der nativen Installation. ' +
+            'Stellen Sie die Aufbewahrungsdauer entsprechend ein, halten Sie eine Kopie **außerhalb** des Servers vor und sichern Sie vor jedem Update zusätzlich.',
+        },
+        {
+          kind: 'task',
+          id: 'sicherung-einrichten',
+          title: 'Wie sichere ich jetzt und wie richte ich die tägliche Sicherung ein?',
+          intro: 'Klicken Sie in der Navigation auf [[Datensicherung]]. Eine Sicherung ist ein komprimierter Datenbank-Dump (praxiszeit_<Zeitstempel>.sql.gz).',
+          shot: 'pl-datensicherung',
+          steps: [
+            { n: 1, text: '[[Jetzt sichern]] erstellt sofort eine vollständige Sicherung. Sie erscheint danach in der Liste.' },
+            { n: 2, text: 'Haken bei [[Tägliche automatische Sicherung aktivieren]], wenn PraxisZeit täglich selbst sichern soll.' },
+            { n: 3, text: '**Uhrzeit (Stunde, 0–23):** lokale Zeit (Europe/Berlin); die Sicherung läuft um HH:30.' },
+            { n: 4, text: '**Aufbewahrung (Tage):** ältere Sicherungen löscht PraxisZeit automatisch. Für § 16 ArbZG sind mindestens 2 Jahre (730 Tage) nötig, sonst zusätzlich Jahresarchive außerhalb des Servers ablegen.' },
+            { n: 5, text: '**Speicherort (optional):** leer bedeutet Standardverzeichnis. Der Pfad muss für den Dienst beschreibbar sein.' },
+            { n: 6, text: 'Klicken Sie auf [[Einstellungen speichern]]. Erst dann gelten Uhrzeit, Aufbewahrung und Speicherort.' },
+            { n: 7, text: 'Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Wo die Sicherungen liegen:** Docker im Volume praxiszeit_backups, nativ im Verzeichnis data/backups/. **Native Installation:** Die *geplante* Sicherung läuft dort weiterhin über den Timer des Betriebssystems (Linux: täglich 02:00 über systemd, Windows: täglich 03:00 als geplante Aufgabe, macOS: täglich 03:00 über launchd). ' +
+            'Die Einstellung auf dieser Seite steuert die Docker-Variante; „Jetzt sichern“ und die Liste funktionieren überall. Die Aufbewahrungsdauer der nativen Timer steht in config/praxiszeit.conf (retention_days, Standard 31 Tage).',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Herunterladen und Löschen:** In der Liste lädt das Symbol „Herunterladen“ die Datei auf Ihren PC; vorher fragt PraxisZeit nach **Ihrem Passwort** (Dialog „Sicherung herunterladen“), weil die Datei die gesamte Datenbank mit allen Gesundheitsdaten enthält. Das Symbol „Löschen“ entfernt eine Sicherung nach Rückfrage endgültig. ' +
+            'Erstellen, Herunterladen, Löschen und geänderte Einstellungen stehen unter „Konto-Vorgänge“, siehe [Konto-Vorgänge](#konto-vorgaenge).',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Sicherungen sind nicht verschlüsselt:** Sie enthalten die ganze Datenbank einschließlich Krankheitstagen. Legen Sie eine Kopie außer Haus nur verschlüsselt ab, zum Beispiel als 7-Zip-Archiv mit AES-256 oder auf einem BitLocker-USB-Stick, und löschen Sie heruntergeladene Dateien danach aus dem Download-Ordner. Spielen Sie nur eigene Sicherungen ein.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Speicherort:** PraxisZeit lehnt Netzwerkpfade (\\\\Server\\Freigabe), Netzlaufwerke, für alle Konten lesbare Ordner, Systemordner und Laufwerkswurzeln ab, unter Windows auch alles unter C:\\Users, C:\\ProgramData und C:\\Program Files. ' +
+            'Tragen Sie unter Windows am besten einen **neuen** Ordnernamen ein: PraxisZeit legt ihn an und gibt ihm die Rechte „nur SYSTEM und Administratoren“. Die Rechte eines bestehenden Ordners ändert PraxisZeit nicht; ist er für andere Konten zugänglich, erscheint ein Hinweis.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Den Schlüssel SECRET_KEY mitsichern:** Für einen neuen Rechner reicht die Datenbanksicherung nicht. Der Schlüssel (nativ config/.secret-key, Docker SECRET_KEY in der .env) verschlüsselt die Zwei-Faktor-Geheimnisse und bildet die Prüfsummen des Änderungsprotokolls. Bewahren Sie ihn einmalig, verschlüsselt und **getrennt** von den Sicherungen auf, zum Beispiel im Passwort-Safe der Praxis. Ohne ihn müssen alle die Zwei-Faktor-Anmeldung neu einrichten.',
+        },
+        {
+          kind: 'prose',
+          text:
+            '**Wiederherstellen:** Die Oberfläche kann Sicherungen erstellen, laden und löschen, aber nicht einspielen. Das Einspielen geschieht auf dem Server mit einem Kommando. Eingespielt wird nur eine Sicherung mit passender **Signatur**: PraxisZeit signiert jede Sicherung mit dem SECRET_KEY der Installation. ' +
+            'Eine Sicherung einer älteren Version oder vom alten Rechner geht nur mit dem Zusatz --force-unverified, und nur, wenn sie sicher aus der eigenen Praxis stammt. Bei der nativen Installation bricht das Einspielen ab, wenn die Sicherung von einer **neueren** Version stammt oder das Einspielen scheitert; die bisherige Datenbank bleibt dann unverändert.',
+        },
+        {
+          kind: 'table',
+          head: ['Installation', 'Befehl zum Einspielen'],
+          rows: [
+            ['Docker (neben der docker-compose.yml)', 'bash restore.sh <datei>'],
+            ['Linux nativ, 1. Dienst anhalten', 'sudo systemctl stop praxiszeit'],
+            ['Linux nativ, 2. Sicherung einspielen', 'sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<datei>.sql.gz'],
+            ['Linux nativ, 3. Dienst starten', 'sudo systemctl start praxiszeit'],
+            ['macOS nativ (Dienstkonto _praxiszeit)', 'sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore /usr/local/praxiszeit/data/backups/<datei>.sql.gz'],
+            ['Windows nativ (Eingabeaufforderung als Administrator im Installationsordner)', 'restore-backup.bat data\\backups\\<datei>.sql.gz'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Nach dem Einspielen** startet das Backend neu; erst dieser Start hebt eine Sicherung einer älteren Version per Migration auf den Stand der installierten Version. Nativ unter Linux und macOS muss der Dienst vor dem Einspielen **angehalten** sein, sonst bricht das Kommando ab, ohne etwas anzufassen. Führen Sie es als Dienstkonto aus, nicht als root. ' +
+            'Alle Kommandozeilen-Varianten, auch das Sichern ohne Oberfläche, stehen in docs/BACKUP.md.',
+        },
+      ],
+    },
+
+    // ── 16 ──────────────────────────────────────────────────────────────────
+    {
+      id: 'schichtplanung',
+      title: 'Schichtplanung',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'schichtplan',
+          text:
+            'Mit der **Schichtplanung** erstellen Sie wöchentliche Einsatzpläne: wer steht wann an welchem Arbeitsplatz. Sie ist ein **reines Planungswerkzeug** und verändert **nicht** Zeiterfassung, Soll und Ist, ArbZG-Prüfungen, Urlaub oder Überstunden. ' +
+            'Das Modul ist nach der Installation **aus**; nur Admins können es einschalten, den Schalter beschreibt [Tour und Schichtplanung](#tour-schichtplanung). Erst danach erscheinen die Menüpunkte und die Dashboard-Karte „Deine Einteilung heute“.',
+        },
+        {
+          kind: 'table',
+          head: ['Begriff', 'Bedeutung'],
+          rows: [
+            ['Standort', 'optionale Gruppierung für Arbeitsplätze, zum Beispiel Hauptstelle oder Filiale'],
+            ['Arbeitsplatz', 'ein zu besetzender Platz (Anmeldung, Labor, Springer …) mit Farbe für die Wochenansicht'],
+            ['Schichtplan', 'ein benannter Wochenplan, zum Beispiel „Normalzustand“ oder „Azubis Schulferien“; beliebig viele'],
+            ['Zeitslot', 'ein Arbeitsplatz an einem Wochentag in einem Zeitfenster, mit optionaler Mindestbesetzung'],
+            ['Einweisung', 'für welche Arbeitsplätze eine Person eingewiesen ist'],
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'schicht-wochentage',
+          title: 'Wie lege ich die geplanten Wochentage fest?',
+          intro: 'Bei eingeschalteter Schichtplanung steht unter dem Schalter in den [[Einstellungen]] der Bereich **Geplante Wochentage**. Standard ist Montag bis Freitag.',
+          shot: 'pl-schicht-wochentage',
+          steps: [
+            { n: 1, text: 'Klicken Sie die Wochentage an, die der Schichtplaner anzeigen und planen soll. Samstag, Sonntag oder ein Schließtag lassen sich einzeln zu- und abschalten; **mindestens ein Tag** muss aktiv bleiben.' },
+            { n: 2, text: 'Klicken Sie auf [[Wochentage speichern]].' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Ein abgeschalteter Tag verschwindet aus der Wochenansicht, nimmt keine neuen Slots auf und wird beim automatischen Füllen übersprungen. Bereits angelegte Slots bleiben erhalten und kehren zurück, sobald Sie den Tag wieder aktivieren.',
+        },
+        {
+          kind: 'task',
+          id: 'schicht-stammdaten',
+          title: 'Wie lege ich Standorte und Arbeitsplätze an?',
+          intro: 'Klicken Sie in der Navigation auf [[Schichtplanung]] und wählen Sie den Reiter [[Stammdaten]]. Links stehen die **Standorte**, rechts die **Arbeitsplätze**.',
+          shot: 'pl-schicht-stammdaten',
+          steps: [
+            { n: 1, text: '**Standorte** sind optional: Tragen Sie unter **Neuer Standort** einen Namen ein, zum Beispiel „Hauptstelle“, und bestätigen Sie mit dem Plus-Knopf. Arbeitsplätze können auch ohne Standort („global“) bestehen.' },
+            { n: 2, text: '**Arbeitsplätze:** Tragen Sie unter **Name** zum Beispiel „Anmeldung“ oder „Labor“ ein; **Standort (optional)** ordnet ihn einem Standort zu.' },
+            { n: 3, text: 'Wählen Sie die **Farbe**, in der der Arbeitsplatz in der Wochenansicht erscheint.' },
+            { n: 4, text: 'Klicken Sie auf [[Hinzufügen]]. Der Arbeitsplatz erscheint in der Liste darunter.' },
+            { n: 5, text: 'In der Liste ändern Sie einen Eintrag mit dem Stift-Symbol („Bearbeiten“) oder entfernen ihn mit dem Papierkorb („Löschen“).' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Löschen geht nur, solange nichts daran hängt: ein Standort nur, wenn kein Arbeitsplatz ihm zugeordnet ist, ein Arbeitsplatz nur, wenn er in keinem Slot verwendet wird.',
+        },
+        {
+          kind: 'task',
+          id: 'schicht-einweisungen',
+          title: 'Wie halte ich fest, wer für welchen Arbeitsplatz eingewiesen ist?',
+          intro: 'Wählen Sie in der [[Schichtplanung]] den Reiter [[Einweisungen]]. Die Tabelle zeigt die Mitarbeitenden in den Zeilen und die Arbeitsplätze in den Spalten.',
+          shot: 'pl-schicht-einweisungen',
+          steps: [
+            { n: 1, text: 'Jede Spalte ist ein **Arbeitsplatz**, hier zum Beispiel „Labor“.' },
+            { n: 2, text: 'Ein **Häkchen** bedeutet: Die Person ist für diesen Arbeitsplatz eingewiesen. Die Änderung wird sofort gespeichert.' },
+            { n: 3, text: 'Ohne Häkchen ist die Person nicht eingewiesen. Ziehen Sie sie trotzdem auf einen Slot dieses Arbeitsplatzes, erscheint die **gelbe Warnung „nicht eingewiesen“**.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Die Warnung blockiert nicht. Sie entscheiden bewusst, zum Beispiel bei einer Einarbeitung unter Aufsicht. Mitarbeitende sehen ihre eigenen Einweisungen im Profil unter „Meine Einweisungen“.',
+        },
+        {
+          kind: 'task',
+          id: 'schicht-plan-bearbeiten',
+          title: 'Wie lege ich einen Schichtplan an und bearbeite ihn?',
+          intro: 'Im Reiter [[Schichtpläne]] steht links die Liste der Pläne, rechts der Editor des gewählten Plans. Die ausklappbare **Jahresübersicht** darüber zeigt als Zeitstrahl, welcher Plan in welchem Zeitraum des Jahres läuft.',
+          shot: 'pl-schicht-editor',
+          steps: [
+            { n: 1, text: 'Tragen Sie unter **Neuer Plan** einen Namen ein, zum Beispiel „Normalzustand“, und legen Sie den Plan mit dem Plus-Knopf an. Ein Klick auf einen Plan in der Liste öffnet ihn; ein Punkt oder Haken zeigt, ob er aktiv ist.' },
+            { n: 2, text: '[[Aktiv schalten]] macht den Plan für alle sichtbar; bei einem aktiven Plan, wie im Bild, heißt der Knopf [[Deaktivieren]]. **Mehrere Pläne können gleichzeitig aktiv** sein, zum Beispiel einer je Standort.' },
+            { n: 3, text: '[[Bearbeiten]] öffnet die Plan-Einstellungen mit Name, Zeitraum und Freigabe, siehe [Plan freigeben](#schicht-plan-einstellungen).' },
+            { n: 4, text: '[[PDF]] erzeugt einen Aushang im Querformat mit einer Tabelle Arbeitsplatz × Wochentag, zum Aushängen am Schwarzen Brett.' },
+            { n: 5, text: 'Der Umschalter [[Woche]] / [[Tag]] wechselt zwischen der Wochenansicht und einem einzelnen Wochentag in voller Breite; das ist beim Einrichten übersichtlich. Im Raster ziehen Sie einen Slot per Drag & Drop auf einen anderen Tag oder eine andere Uhrzeit (15-Minuten-Raster); ein Klick auf eine freie Fläche legt einen Slot an, ein Klick auf einen Slot bearbeitet ihn.' },
+            { n: 6, text: 'Rechts stehen die **Mitarbeitenden**. Ziehen Sie eine Person auf einen Slot, um sie zuzuweisen. Unter jedem Namen zeigt die **Auslastung** die zugewiesenen Schichtstunden zur Wochenarbeitszeit, zum Beispiel „15,25 / 17 h“: grün bei ±30 Minuten, gelb bei ±1 Stunde, sonst rot.' },
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['Weitere Knöpfe der Werkzeugleiste', 'Wirkung'],
+          rows: [
+            ['[[Slot]]', 'legt einen Zeitslot an, siehe [Zeitslot anlegen](#schicht-slot)'],
+            ['[[Automatisch füllen]]', 'besetzt die Slots selbst, siehe [Automatisch füllen](#schicht-fuellen)'],
+            ['[[Duplizieren]]', 'kopiert den Plan als Entwurf, siehe den Tipp darunter'],
+            ['Papierkorb („Plan löschen“)', 'löscht den Plan samt Slots und Zuweisungen nach Rückfrage'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Duplizieren** kopiert einen Plan mit allen Slots und Zuweisungen. Die Kopie ist ein **inaktiver Entwurf** ohne Zeitraum und ohne Freigabe für Mitarbeitende; so leiten Sie Varianten wie „Sommer“ oder „Schulferien“ aus einem Bestandsplan ab. Arbeitsplätze und Einweisungen gehören keinem Plan und werden nicht mitkopiert.',
+        },
+        {
+          kind: 'task',
+          id: 'schicht-slot',
+          title: 'Wie lege ich einen Zeitslot an?',
+          intro: 'Klicken Sie im Editor auf [[Slot]]. Der Dialog **Neuer Zeitslot** öffnet sich; ein vorhandener Slot heißt im Dialog **Zeitslot bearbeiten**.',
+          shot: 'pl-schicht-slot',
+          steps: [
+            { n: 1, text: 'Wählen Sie den **Arbeitsplatz**.' },
+            { n: 2, text: 'Wählen Sie den **Wochentag**.' },
+            { n: 3, text: 'Tragen Sie **Von** und **Bis** ein.' },
+            { n: 4, text: '**Mindestbesetzung:** 0 bedeutet keine Mindestbesetzung; sonst markiert PraxisZeit den Slot bei Unterbesetzung. Das ist eine **weiche Warnung**, Speichern und Aktivieren bleiben möglich.' },
+            { n: 5, text: '**Hinweis (optional):** bis zu 500 Zeichen, zum Beispiel „Einarbeitung Azubi“. Er erscheint mit vorangestelltem **»** im Wochenraster, im PDF-Aushang und auf der Dashboard-Karte „Deine Einteilung heute“.' },
+            { n: 6, text: 'Haken Sie unter **Zugewiesene Mitarbeiter** die Personen an. Wer nicht eingewiesen ist, trägt das Kennzeichen „nicht eingewiesen“. Zum Schluss speichern Sie den Slot mit [[Speichern]].' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Der Hinweis ist für alle sichtbar:** Alle Mitarbeitenden, die den Plan sehen dürfen, lesen ihn, und der PDF-Aushang druckt ihn mit; ein Schwarzes Brett hängt oft an einem Ort, den auch Patientinnen und Patienten einsehen. Tragen Sie dort **keine Gesundheitsangaben** oder andere sensible Daten ein.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Slot kopieren:** Beim Bearbeiten eines Slots legt „Auf Wochentage kopieren“ ihn auf weiteren Wochentagen zusätzlich an, mit Arbeitsplatz, Zeit, Mindestbesetzung, Zuweisungen **und Hinweis**. Bei einem personenbezogenen Hinweis wie „Vertretung für Frau Schmidt“ bedenken Sie, dass er mitkopiert wird.',
+        },
+        {
+          kind: 'task',
+          id: 'schicht-fuellen',
+          title: 'Wie lasse ich einen Plan automatisch füllen?',
+          intro: 'Klicken Sie im Editor auf [[Automatisch füllen]]. Der Dialog besetzt die Slots mit eingewiesenen, verfügbaren Mitarbeitenden, ausgewogen nach Auslastung und Überstundenkonto.',
+          shot: 'pl-schicht-fuellen',
+          steps: [
+            { n: 1, text: 'Wählen Sie die **Zielwoche**. Sie bestimmt, welche Abwesenheiten und Stunden berücksichtigt werden; der Dialog nennt darunter den Montag der Woche.' },
+            { n: 2, text: 'Wählen Sie den **Modus**: „Alle Zuweisungen neu verteilen“ oder „Nur Lücken auffüllen (vorhandene behalten)“.' },
+            { n: 3, text: 'Klicken Sie auf [[Generieren]]. Das Ergebnis ist ein **Entwurf** zum Prüfen; der Plan wird dabei **nicht** aktiviert.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Der Generator liest Abwesenheiten, Wochenstunden und Überstundenkonto nur und verändert daran nichts. Er setzt niemanden ein, der an dem Tag abwesend oder außerhalb seines Beschäftigungsfensters ist, und keine Person auf zwei überlappende Slots. Slots, die sich nicht besetzen lassen, bleiben offen; eine Meldung und die Unterbesetzungs-Markierung sagen es Ihnen.',
+        },
+        {
+          kind: 'task',
+          id: 'schicht-plan-einstellungen',
+          title: 'Wie gebe ich einen Plan für Mitarbeitende frei?',
+          intro: 'Klicken Sie im Editor auf [[Bearbeiten]]. Der Dialog **Plan-Einstellungen** öffnet sich.',
+          shot: 'pl-schicht-plan-einstellungen',
+          steps: [
+            { n: 1, text: 'Ändern Sie bei Bedarf den **Namen** und die Beschreibung.' },
+            { n: 2, text: '**Automatisch aktiv im Zeitraum (optional):** Liegt das heutige Datum zwischen **von** und **bis**, gilt der Plan automatisch als aktiv, zusätzlich zum Knopf „Aktiv schalten“. Eine offene Grenze ist erlaubt.' },
+            { n: 3, text: 'Mit dem Haken **Für Mitarbeitende sichtbar** erscheint der Plan in der Mitarbeiteransicht, auch wenn er heute noch nicht gilt, zum Beispiel um einen ab September geltenden Plan früh bekannt zu machen.' },
+            { n: 4, text: 'Klicken Sie auf [[Speichern]].' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Falle bei befristeten Plänen:** Die Freigabe gilt in beide Richtungen. Ein befristeter Plan, zum Beispiel ein Sommerplan Juli bis August, bleibt für Mitarbeitende sichtbar, solange der Haken gesetzt ist, auch Wochen nach Ablauf; dort steht er dann mit dem Vermerk „Nicht mehr gültig“. Nehmen Sie die Freigabe selbst zurück. ' +
+            'Ein heute aktiver Plan ist ohnehin sichtbar. Eine **Kopie** übernimmt die Freigabe nicht. Welche Pläne freigegeben sind, sehen Sie am Augen-Symbol in der Planliste und am Abzeichen „Sichtbar“ im Kopf des geöffneten Plans.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**PDF-Aushang:** Gilt der gedruckte Plan gerade nicht (Vorschau oder abgelaufen), steht fett in der Kopfzeile „Vorschau — gilt derzeit nicht“ beziehungsweise „Nicht mehr gültig“, damit er am Schwarzen Brett nicht mit dem geltenden Plan verwechselt wird. Haben alle Arbeitsplätze denselben Standort, steht er einmal in der Kopfzeile, sonst hinter dem Namen jedes Arbeitsplatzes. Auch Mitarbeitende können den Plan, den sie sehen, mit dem Knopf „PDF“ drucken. Mitarbeitende sehen ihre heutige Einteilung auf dem Dashboard; ihre Seite beschreibt das Handbuch für Mitarbeitende.',
+        },
+      ],
+    },
+
+    // ── 17 ──────────────────────────────────────────────────────────────────
+    {
+      id: 'admin-passwort-verloren',
+      title: 'Admin-Passwort verloren',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'passwort',
+          text:
+            'Kommt niemand mehr mit einem Administrator-Konto in die Anwendung, hilft ein Kommando **auf dem Server selbst**. Es setzt das Passwort direkt in der Datenbank neu und braucht dafür **keine Anmeldung**. Dieses Kapitel hat keine Bildschirmfotos, weil es keine Oberfläche dafür gibt: Sie arbeiten in einer Eingabeaufforderung oder einem Terminal auf dem Server.',
+        },
+        {
+          kind: 'task',
+          id: 'passwort-zuruecksetzen',
+          title: 'Wie setze ich das Admin-Passwort zurück?',
+          intro: 'Führen Sie den Befehl für Ihre Installation aus. Die lange Form ist nötig: praxiszeit-server.py liegt nicht im Suchpfad, und die Programmbibliotheken stecken nur im mitgelieferten Python unter bin/python.',
+          steps: [
+            { n: 1, text: 'Öffnen Sie auf dem Server ein Terminal (Windows: Eingabeaufforderung **als Administrator** im Installationsordner).' },
+            { n: 2, text: 'Führen Sie den Befehl aus der Tabelle aus.' },
+            { n: 3, text: 'Geben Sie das neue Passwort zweimal ein. Es wird nicht mit eingetippt, damit es nicht in der Befehls-Historie landet. PraxisZeit prüft dieselben Regeln wie die Anwendung: mindestens 10 Zeichen, Groß- und Kleinbuchstabe, Ziffer.' },
+            { n: 4, text: 'Melden Sie sich mit dem Benutzernamen und dem neuen Passwort an. Alle laufenden Sitzungen dieses Kontos sind danach ungültig; wer damit angemeldet war, muss sich neu anmelden.' },
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['Installation', 'Befehl'],
+          rows: [
+            ['Linux (Standardordner /opt/praxiszeit)', 'sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py reset-admin-password'],
+            ['macOS (Standardordner /usr/local/praxiszeit, Dienstkonto _praxiszeit mit Unterstrich)', 'sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py reset-admin-password'],
+            ['Windows (Installationsordner zum Beispiel C:\\PraxisZeit)', 'bin\\python\\python.exe praxiszeit-server.py reset-admin-password'],
+            ['Docker (neben der docker-compose.yml)', 'docker compose exec backend python -m app.cli.reset_admin_password'],
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['Option (hinten anhängen)', 'Wirkung'],
+          rows: [
+            ['--username <name>', 'setzt das Passwort eines anderen Kontos als admin'],
+            ['--reactivate', 'ist das Konto **deaktiviert**, genügt ein neues Passwort nicht, die Anmeldung bleibt gesperrt (Meldung „Das Konto ist derzeit deaktiviert und bleibt es auch“); mit dieser Option setzt das Kommando das Passwort neu **und** aktiviert das Konto wieder'],
+            ['--disable-2fa', 'ist auch das Handy mit der Zwei-Faktor-Anmeldung weg, verlangt der Login nach dem neuen Passwort weiter einen Code; diese Option schaltet die Zwei-Faktor-Anmeldung ab, danach richten Sie im Profil eine neue ein'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Alles wird protokolliert:** Jeder solche Vorgang wird dauerhaft festgehalten, mit Zeitpunkt, betroffenem Konto und dem Betriebssystem-Konto, das ihn ausgelöst hat (Nachweispflicht nach Art. 5 Abs. 2 DSGVO). Sie finden ihn unter „Konto-Vorgänge“ mit der handelnden Stelle „Kommandozeile (Benutzer@Rechner)“, siehe [Konto-Vorgänge](#konto-vorgaenge). Ein Eingriff von Hand in die Datenbank ist weder nötig noch empfohlen; dabei entfiele die Protokollzeile.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Der Eintrag [admin] password in config/praxiszeit.conf ist keine Antwort:** Er ist nur der Startwert der Erstinstallation und wird bei einer späteren Passwortänderung nicht nachgeführt. Nach einem Reset überschreibt ihn das Kommando mit einem Zufallswert. Löschen Sie den Eintrag nicht, die Anwendung setzt das Feld beim Start voraus.',
+        },
+        {
+          kind: 'task',
+          id: 'zwei-faktor-zuruecksetzen',
+          title: 'Wie setze ich die Zwei-Faktor-Anmeldung einer Mitarbeiterin zurück?',
+          intro: 'Das geht ohne Kommandozeile: Hat eine Person ihr Handy verloren, setzen Sie die Zwei-Faktor-Anmeldung in der [[Benutzerverwaltung]] zurück.',
+          steps: [
+            { n: 1, text: 'Klicken Sie in der Zeile der Person auf das Schild-Symbol [[Zwei-Faktor zurücksetzen]]. Es erscheint nur bei Personen mit aktiver Zwei-Faktor-Anmeldung.' },
+            { n: 2, text: 'Bestätigen Sie mit **Ihrem** Passwort.' },
+            { n: 3, text: 'PraxisZeit schaltet die Zwei-Faktor-Anmeldung der Person ab und meldet sie ab. Sie meldet sich danach nur mit dem Passwort an und richtet Zwei-Faktor im Profil neu ein. Der Vorgang steht unter „Konto-Vorgänge“.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Die **eigene** Zwei-Faktor-Anmeldung setzen Sie so nicht zurück. Das geht im Profil, mit Passwort und Code; ein zweites Admin-Konto kann es für Sie übernehmen.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Vorher prüfen: Ist das Passwort wirklich falsch?** Die Anmeldung geht nur mit dem **Benutzernamen**, nicht mit der E-Mail-Adresse; Passwortmanager tragen gern die E-Mail ein. ' +
+            'Nach **5 Fehlversuchen in 15 Minuten von demselben Rechner** sperrt PraxisZeit den Benutzer an diesem Rechner vorübergehend („Konto vorübergehend gesperrt“), an anderen Rechnern geht die Anmeldung weiter; erst nach **50 Fehlversuchen insgesamt** ist der Benutzer überall gesperrt, dann hilft Warten oder ein Neustart des Dienstes. ' +
+            'Nach **10 falschen Zwei-Faktor-Codes in einer Stunde** ist die Anmeldung des Kontos für eine Stunde gesperrt; dann ist das Passwort bekannt geworden, ändern Sie es. ' +
+            'Welcher Fall vorliegt, steht im Protokoll des Servers: AUTH login_failed user=<name> reason=bad_password heißt Passwort falsch, reason=unknown_user heißt Benutzername unbekannt **oder Konto deaktiviert**, dann hilft --reactivate.',
         },
       ],
     },

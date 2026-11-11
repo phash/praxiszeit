@@ -17,6 +17,9 @@ import { SceneGruende } from './SceneGruende';
 import { SceneEinstellungen } from './SceneEinstellungen';
 import { SceneJahresabschluss } from './SceneJahresabschluss';
 import { SceneImport } from './SceneImport';
+import { SceneProtokoll } from './SceneProtokoll';
+import { SceneDatensicherung } from './SceneDatensicherung';
+import { ScenePasswort } from './ScenePasswort';
 
 /** Comic-Szenen der Broschüre, adressiert über den Schlüssel `scene` in den Handbuch-Inhalten. */
 export const COMIC_SCENES: Record<string, ComponentType> = {
@@ -38,4 +41,7 @@ export const COMIC_SCENES: Record<string, ComponentType> = {
   einstellungen: SceneEinstellungen,
   jahresabschluss: SceneJahresabschluss,
   import: SceneImport,
+  protokoll: SceneProtokoll,
+  datensicherung: SceneDatensicherung,
+  passwort: ScenePasswort,
 };

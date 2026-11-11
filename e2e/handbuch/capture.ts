@@ -260,6 +260,7 @@ async function runPrepare(page: Page, baseUrl: string, steps: PrepareStep[], sho
       if (!file.startsWith(ROOT + sep)) throw new Error(`${ctx}: Datei ausserhalb des Repos: ${step.file}`);
       if (!existsSync(file)) throw new Error(`${ctx}: Datei fehlt: ${step.file}`);
       const input = buildLocator(page, step.upload);
+      await input.first().waitFor({ state: 'attached', timeout: 15_000 });
       const n = await input.count();
       if (n !== 1) throw new Error(`${ctx} ${describe(step.upload)}: ${n} Treffer — Locator muss genau ein Dateifeld treffen`);
       await input.setInputFiles(file);

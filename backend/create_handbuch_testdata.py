@@ -34,6 +34,7 @@ from app.models import (
 )
 from app.models.absence import AbsenceReason
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
+from app.models.security_event import EVENT_USER_CREATED, SecurityEvent
 from app.models.user import UserRole
 from app.models.vacation_request import VacationRequestStatus
 from app.services import auth_service
@@ -306,6 +307,11 @@ def _purge_existing(db, usernames) -> None:
                                      ).update({VacationRequest.reviewed_by: None}, synchronize_session=False)
     for model in (ChangeRequest, VacationRequest, WorkingHoursChange, TimeEntry, Absence, YearCarryover):
         db.query(model).filter(model.tenant_id == t, model.user_id.in_(ids)).delete(synchronize_session=False)
+    # Konto-Vorgänge des Seeds (subject_user_id wäre sonst nur SET NULL: Wiederholung verdoppelte sie)
+    db.query(SecurityEvent).filter(
+        SecurityEvent.tenant_id == t, SecurityEvent.event == EVENT_USER_CREATED,
+        SecurityEvent.subject_user_id.in_(ids),
+    ).delete(synchronize_session=False)
     db.flush()
     for u in existing:
         db.delete(u)
@@ -860,6 +866,27 @@ def create_shift_plan(db, users: list, admin) -> None:
 
 # ── Ablauf ────────────────────────────────────────────────────────────────────
 
+
+def create_security_events(db, users: list, admin, stichtag: date) -> None:
+    """Konto-Vorgänge („Konto angelegt“) wie ``admin_users.create_user`` sie schreibt:
+    die Verwalterin hat die Demo-Konten in der ersten Woche der Demodaten angelegt.
+    Aufnahme ``pl-konto-vorgaenge``; ohne Zeilen bliebe die Liste leer."""
+    first = data_start(stichtag) + timedelta(days=4)  # nicht der Neujahrstag
+    while first.weekday() >= 5:
+        first += timedelta(days=1)
+    for i, u in enumerate(users):
+        db.add(SecurityEvent(
+            tenant_id=TENANT_ID,
+            event=EVENT_USER_CREATED,
+            subject_user_id=u.id,
+            actor=f"user:{admin.id}",
+            detail="Konto angelegt, Rolle Mitarbeitende",
+            created_at=_berlin(first, 9, 5 + 7 * i),
+        ))
+    db.commit()
+    print(f"  ✓ {len(users)} Konto-Vorgänge")
+
+
 def seed_all(db, stichtag: date) -> None:
     start = data_start(stichtag)
     horizon = stichtag + timedelta(days=70)
@@ -893,6 +920,9 @@ def seed_all(db, stichtag: date) -> None:
 
     print("\n9. Schichtplan...")
     create_shift_plan(db, users, admin)
+
+    print("\n10. Konto-Vorgänge...")
+    create_security_events(db, users, admin, stichtag)
 
 
 def main(argv=None):

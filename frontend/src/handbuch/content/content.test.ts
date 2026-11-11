@@ -12,6 +12,8 @@ const manifest = manifestJson as unknown as Manifest;
 const NO_SHOT_CHAPTERS: readonly string[] = [
   // Häufige Fragen: kurze Text-Antworten; Bilder stehen in den Fachkapiteln.
   'mitarbeitende:haeufige-fragen',
+  // Admin-Passwort verloren: Kommandozeile auf dem Server (praxiszeit-server.py reset-admin-password), keine Oberfläche; Befehle stehen in Tabellen.
+  'praxisleitung:admin-passwort-verloren',
 ];
 
 /** Alle Zeichenketten eines Objekts (Texte, Titel, Alt-Texte, Locator-Namen …). */

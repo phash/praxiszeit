@@ -76,7 +76,7 @@ def _cleanup(conn):
     # Abwesenheitsgründen, alles vor den Konten (created_by/user_id).
     # Schichtplan (Einteilungen/Schichten vor dem Plan, Einweisungen vor den Arbeitsplätzen;
     # shift_plans.created_by verweist auf die Verwalterin)
-    for table in ("shift_assignments", "shift_slots", "shift_plans", "workstation_qualifications",
+    for table in ("security_events", "shift_assignments", "shift_slots", "shift_plans", "workstation_qualifications",
                   "workstations",
                   "change_requests", "vacation_requests", "time_entries", "absences",
                   "company_closures", "absence_reasons", "reduced_days",
@@ -573,6 +573,25 @@ def test_seed_is_rerunnable(full_tenant, app_engine, monkeypatch):
     assert closures == 1, "Wiederholung darf keine zweite Betriebsferien-Zeile hinterlassen"
     users = _read(app_engine, lambda db: db.query(User).filter(User.tenant_id == TENANT_ID).count())
     assert users == 6
+
+
+def test_seed_creates_account_events_once(full_tenant, app_engine, monkeypatch):
+    """Aufnahme ``pl-konto-vorgaenge``: je Demo-Konto eine Zeile „Konto angelegt“ der Verwalterin;
+    ein zweiter Lauf lässt sie nicht doppelt zurück."""
+    from app.models.security_event import EVENT_USER_CREATED, SecurityEvent
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+    _run_seed(app_engine, seed, monkeypatch)
+
+    def rows(db):
+        return [(e.event, e.actor, e.detail, e.subject_user_id is not None)
+                for e in db.query(SecurityEvent).filter(SecurityEvent.tenant_id == TENANT_ID)]
+
+    got = _read(app_engine, rows)
+    assert len(got) == 5, got
+    assert {g[0] for g in got} == {EVENT_USER_CREATED}
+    assert {g[1] for g in got} == {f"user:{ADMIN_ID}"}
+    assert all(g[2] == "Konto angelegt, Rolle Mitarbeitende" and g[3] for g in got)
 
 
 def test_main_prints_stichtag_as_last_line(full_tenant, app_engine, monkeypatch, capsys):

@@ -1562,6 +1562,63 @@
       }
     }
   },
+  "pl-datensicherung": {
+    "file": "pl-datensicherung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 326,
+      "y": 108,
+      "w": 1044,
+      "h": 740
+    },
+    "markers": {
+      "aufbewahrung": {
+        "x": 856,
+        "y": 406,
+        "w": 404,
+        "h": 86
+      },
+      "jetzt-sichern": {
+        "x": 436,
+        "y": 218,
+        "w": 150,
+        "h": 40
+      },
+      "liste": {
+        "x": 436,
+        "y": 710,
+        "w": 824,
+        "h": 28
+      },
+      "speichern": {
+        "x": 436,
+        "y": 606,
+        "w": 231,
+        "h": 40
+      },
+      "speicherort": {
+        "x": 436,
+        "y": 508,
+        "w": 824,
+        "h": 82
+      },
+      "taeglich": {
+        "x": 436,
+        "y": 371.5,
+        "w": 13,
+        "h": 13
+      },
+      "uhrzeit": {
+        "x": 436,
+        "y": 406,
+        "w": 404,
+        "h": 86
+      }
+    }
+  },
   "pl-eigene-feiertage": {
     "file": "pl-eigene-feiertage.webp",
     "width": 1440,
@@ -1646,6 +1703,39 @@
         "y": 100,
         "w": 1120,
         "h": 82
+      }
+    }
+  },
+  "pl-fehler-monitoring": {
+    "file": "pl-fehler-monitoring.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 232,
+      "y": 0,
+      "w": 1208,
+      "h": 382
+    },
+    "markers": {
+      "aktualisieren": {
+        "x": 1254,
+        "y": 32,
+        "w": 154,
+        "h": 42
+      },
+      "liste": {
+        "x": 288,
+        "y": 184,
+        "w": 1120,
+        "h": 142
+      },
+      "reiter": {
+        "x": 347,
+        "y": 122,
+        "w": 71,
+        "h": 38
       }
     }
   },
@@ -1922,6 +2012,39 @@
         "y": 562,
         "w": 130,
         "h": 40
+      }
+    }
+  },
+  "pl-konto-vorgaenge": {
+    "file": "pl-konto-vorgaenge.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 241,
+      "y": 438,
+      "w": 902.2,
+      "h": 309.5
+    },
+    "markers": {
+      "durch": {
+        "x": 849.3,
+        "y": 621,
+        "w": 203.9,
+        "h": 36.5
+      },
+      "kopf": {
+        "x": 331,
+        "y": 528,
+        "w": 535,
+        "h": 44
+      },
+      "vorgang": {
+        "x": 491.5,
+        "y": 621,
+        "w": 174.2,
+        "h": 36.5
       }
     }
   },
@@ -2279,6 +2402,72 @@
       }
     }
   },
+  "pl-protokoll": {
+    "file": "pl-protokoll.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "monat": {
+        "x": 288,
+        "y": 100,
+        "w": 276,
+        "h": 40
+      },
+      "person": {
+        "x": 580,
+        "y": 101,
+        "w": 168,
+        "h": 38
+      },
+      "quelle": {
+        "x": 847.4,
+        "y": 165,
+        "w": 117,
+        "h": 40.5
+      },
+      "werte": {
+        "x": 964.4,
+        "y": 165,
+        "w": 221.3,
+        "h": 40.5
+      }
+    }
+  },
+  "pl-protokoll-pruefung": {
+    "file": "pl-protokoll-pruefung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 249,
+      "y": 331,
+      "w": 1191,
+      "h": 195
+    },
+    "markers": {
+      "ergebnis": {
+        "x": 305,
+        "y": 450,
+        "w": 1086,
+        "h": 20
+      },
+      "jetzt-pruefen": {
+        "x": 1286,
+        "y": 387,
+        "w": 105,
+        "h": 32
+      }
+    }
+  },
   "pl-puffer": {
     "file": "pl-puffer.webp",
     "width": 1440,
@@ -2381,6 +2570,285 @@
         "y": 251,
         "w": 306,
         "h": 36
+      }
+    }
+  },
+  "pl-schicht-editor": {
+    "file": "pl-schicht-editor.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "aktiv": {
+        "x": 609,
+        "y": 301,
+        "w": 153,
+        "h": 40
+      },
+      "bearbeiten": {
+        "x": 1031,
+        "y": 301,
+        "w": 141,
+        "h": 40
+      },
+      "mitarbeiter": {
+        "x": 1191,
+        "y": 411,
+        "w": 200,
+        "h": 20
+      },
+      "neuer-plan": {
+        "x": 305,
+        "y": 233,
+        "w": 178,
+        "h": 66
+      },
+      "pdf": {
+        "x": 1180,
+        "y": 301,
+        "w": 89,
+        "h": 40
+      },
+      "woche-tag": {
+        "x": 609,
+        "y": 369,
+        "w": 119,
+        "h": 30
+      }
+    }
+  },
+  "pl-schicht-einweisungen": {
+    "file": "pl-schicht-einweisungen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "arbeitsplatz": {
+        "x": 1142,
+        "y": 267,
+        "w": 249,
+        "h": 36.5
+      },
+      "haken": {
+        "x": 950.8,
+        "y": 350,
+        "w": 16,
+        "h": 16
+      },
+      "kein-haken": {
+        "x": 1258.5,
+        "y": 350,
+        "w": 16,
+        "h": 16
+      }
+    }
+  },
+  "pl-schicht-fuellen": {
+    "file": "pl-schicht-fuellen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 302,
+      "y": 215.5,
+      "w": 836,
+      "h": 650
+    },
+    "markers": {
+      "generieren": {
+        "x": 786,
+        "y": 615.5,
+        "w": 142,
+        "h": 40
+      },
+      "modus": {
+        "x": 512,
+        "y": 507.5,
+        "w": 416,
+        "h": 84
+      },
+      "zielwoche": {
+        "x": 512,
+        "y": 425.5,
+        "w": 416,
+        "h": 42
+      }
+    }
+  },
+  "pl-schicht-plan-einstellungen": {
+    "file": "pl-schicht-plan-einstellungen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 370,
+      "y": 137,
+      "w": 700,
+      "h": 711
+    },
+    "markers": {
+      "name": {
+        "x": 480,
+        "y": 247,
+        "w": 480,
+        "h": 42
+      },
+      "sichtbar": {
+        "x": 493,
+        "y": 589,
+        "w": 454,
+        "h": 72
+      },
+      "speichern": {
+        "x": 854,
+        "y": 698,
+        "w": 106,
+        "h": 40
+      },
+      "zeitraum": {
+        "x": 480,
+        "y": 442,
+        "w": 480,
+        "h": 66
+      }
+    }
+  },
+  "pl-schicht-slot": {
+    "file": "pl-schicht-slot.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 350,
+      "y": 16,
+      "w": 740,
+      "h": 884
+    },
+    "markers": {
+      "arbeitsplatz": {
+        "x": 480,
+        "y": 146,
+        "w": 480,
+        "h": 41
+      },
+      "hinweis": {
+        "x": 480,
+        "y": 516,
+        "w": 480,
+        "h": 66
+      },
+      "mindest": {
+        "x": 480,
+        "y": 390,
+        "w": 480,
+        "h": 42
+      },
+      "von-bis": {
+        "x": 480,
+        "y": 284,
+        "w": 480,
+        "h": 66
+      },
+      "wochentag": {
+        "x": 480,
+        "y": 227,
+        "w": 480,
+        "h": 41
+      },
+      "zugewiesen": {
+        "x": 480,
+        "y": 657,
+        "w": 480,
+        "h": 192
+      }
+    }
+  },
+  "pl-schicht-stammdaten": {
+    "file": "pl-schicht-stammdaten.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 223,
+      "y": 133,
+      "w": 1217,
+      "h": 368
+    },
+    "markers": {
+      "bearbeiten": {
+        "x": 1331,
+        "y": 387,
+        "w": 24,
+        "h": 24
+      },
+      "farbe": {
+        "x": 885,
+        "y": 301,
+        "w": 64,
+        "h": 62
+      },
+      "hinzufuegen": {
+        "x": 961,
+        "y": 323,
+        "w": 142,
+        "h": 40
+      },
+      "name": {
+        "x": 885,
+        "y": 223,
+        "w": 243,
+        "h": 66
+      },
+      "standort": {
+        "x": 313,
+        "y": 223,
+        "w": 348,
+        "h": 66
+      }
+    }
+  },
+  "pl-schicht-wochentage": {
+    "file": "pl-schicht-wochentage.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 222,
+      "y": 426,
+      "w": 1218,
+      "h": 266
+    },
+    "markers": {
+      "speichern-wt": {
+        "x": 312,
+        "y": 562,
+        "w": 225,
+        "h": 40
+      },
+      "wochentage": {
+        "x": 312,
+        "y": 516,
+        "w": 1072,
+        "h": 30
       }
     }
   },
