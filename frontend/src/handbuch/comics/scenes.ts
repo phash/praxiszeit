@@ -13,6 +13,10 @@ import { SceneNeuImTeam } from './SceneNeuImTeam';
 import { SceneBloecke } from './SceneBloecke';
 import { SceneSondertage } from './SceneSondertage';
 import { ScenePause } from './ScenePause';
+import { SceneGruende } from './SceneGruende';
+import { SceneEinstellungen } from './SceneEinstellungen';
+import { SceneJahresabschluss } from './SceneJahresabschluss';
+import { SceneImport } from './SceneImport';
 
 /** Comic-Szenen der Broschüre, adressiert über den Schlüssel `scene` in den Handbuch-Inhalten. */
 export const COMIC_SCENES: Record<string, ComponentType> = {
@@ -30,4 +34,8 @@ export const COMIC_SCENES: Record<string, ComponentType> = {
   bloecke: SceneBloecke,
   sondertage: SceneSondertage,
   pause: ScenePause,
+  gruende: SceneGruende,
+  einstellungen: SceneEinstellungen,
+  jahresabschluss: SceneJahresabschluss,
+  import: SceneImport,
 };

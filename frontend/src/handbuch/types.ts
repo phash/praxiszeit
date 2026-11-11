@@ -9,7 +9,11 @@ export type LocatorSpec =
 export type PrepareStep =
   /** `fill.value` darf Datums-Platzhalter enthalten ({{stichtag}}, {{werktag-N}} …, siehe dates.ts). */
   | { goto: string } | { click: LocatorSpec } | { fill: LocatorSpec; value: string }
-  | { monthBack: number } | { waitFor: LocatorSpec } | { scrollTo: LocatorSpec };
+  | { monthBack: number } | { waitFor: LocatorSpec } | { scrollTo: LocatorSpec }
+  /** Option einer Auswahlliste wählen (`value` = Beschriftung der Option). */
+  | { select: LocatorSpec; value: string }
+  /** Datei in ein Dateifeld legen (`file` relativ zur Repo-Wurzel, z. B. `e2e/test-data/…xls`). */
+  | { upload: LocatorSpec; file: string };
 /** `badge`: Lage des Nummernkreises (Ruling R18), Standard `left`. */
 export interface MarkerDef { n: number; id: string; locator: LocatorSpec; badge?: 'left' | 'corner' | 'right' | 'top' }
 export interface ShotDef {

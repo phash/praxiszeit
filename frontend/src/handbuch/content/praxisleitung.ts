@@ -1,7 +1,7 @@
 import type { Handbook, PrepareStep, ShotDef } from '../types';
 
 /**
- * Handbuch für die Praxisleitung (Kapitel 1–9; Task 10 ergänzt 10–17).
+ * Handbuch für die Praxisleitung (Kapitel 1–13; Task 10b ergänzt 14–17).
  * Quelle: docs/handbuch/HANDBUCH-ADMIN.md, docs/handbuch/SCHNELLSTART.md und die
  * Seiten in frontend/src/pages/admin. Reine Daten (R5). Aufgaben-IDs sind
  * Sprungmarken der Kontexthilfe – nicht umbenennen.
@@ -10,6 +10,19 @@ import type { Handbook, PrepareStep, ShotDef } from '../types';
 /** Sarahs Zeile in der Benutzerverwaltung (Arbeitszeit-Dialog, Monatsjournal). */
 const SARAH_HOURS = { role: 'button', name: 'Arbeitszeit & Wochenstunden für Sarah Klein', exact: true } as const;
 const PETRA_HOURS = { role: 'button', name: 'Arbeitszeit & Wochenstunden für Petra Schulz', exact: true } as const;
+
+const JULIA_HOURS = { role: 'button', name: 'Arbeitszeit & Wochenstunden für Julia Meyer', exact: true } as const;
+
+/** Import: Petra, Beispieldatei aus e2e/test-data (Januar 2026). Die Vorschau schreibt nichts, bestätigt wird nie. */
+const IMPORT_UPLOAD: PrepareStep[] = [
+  { select: { css: 'main select' }, value: 'Petra Schulz (petra)' },
+  { upload: { css: "main input[type='file']" }, file: 'e2e/test-data/timerec_20260101_20260131_e11_p03.xls' },
+];
+const IMPORT_PREVIEW: PrepareStep[] = [
+  ...IMPORT_UPLOAD,
+  { click: { css: "main button:has-text('Datei analysieren')" } },
+  { waitFor: { css: "main >> text=/Einträge gefunden/" } },
+];
 
 /** Rückwirkende Änderung für Sarah: Montag-Nachmittag endet ab Stichtag − 14 Tage um 15:30. Nur Vorschau, nie speichern. */
 const RETRO_PREPARE: PrepareStep[] = [
@@ -579,6 +592,265 @@ const shots: ShotDef[] = [
       },
     ],
     alt: 'Einstellungen, Abschnitt „Pflicht-Pause-Ausnahme“: Schalter „Ausnahme Pflicht-Pause war nicht möglich erlauben“ und „Genehmigung erforderlich“ mit Erklärtext und Speichern',
+  },
+
+  // ── 10. Eigene Abwesenheitsgründe, Kind krank, Minijob ───────────────────
+  {
+    id: 'pl-abwesenheitsgrund',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    // nur ausgefüllt, nie auf „Hinzufügen“ geklickt
+    prepare: [{ fill: { css: "main input[placeholder='z. B. Schule']" }, value: 'Berufsschule' }],
+    crop: { around: ['bezeichnung', 'liste'], pad: 90 },
+    markers: [
+      { n: 1, id: 'bezeichnung', locator: { css: "main input[placeholder='z. B. Schule']" }, badge: 'left' },
+      { n: 2, id: 'verhalten', locator: { css: "xpath=//main//label[normalize-space()='Verhalten']/following-sibling::select" }, badge: 'left' },
+      { n: 3, id: 'hinzufuegen', locator: { css: "xpath=(//main//button[normalize-space()='Hinzufügen'])[1]" }, badge: 'top' },
+      { n: 4, id: 'vorlagen', locator: { css: "xpath=//main//p[normalize-space()='Vorlagen (1-Klick aktivieren)']/following-sibling::div[1]" }, badge: 'left' },
+      { n: 5, id: 'liste', locator: { css: "main li:has(input[value='Fortbildung extern'])" }, badge: 'left' },
+    ],
+    alt: 'Einstellungen, Bereich „Eigene Abwesenheitsgründe“: Eingabezeile mit Bezeichnung, Verhalten, Farbe und Hinzufügen, darunter die Vorlagen und der vorhandene Grund „Fortbildung extern“ mit „Zählt als gearbeitet“',
+  },
+  {
+    id: 'pl-kind-krank-grund',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    prepare: [
+      { select: { css: "xpath=//main//label[normalize-space()='Verhalten']/following-sibling::select" }, value: 'Unbezahlt frei' },
+      { waitFor: { css: "main label:has-text('Gegen das Kind-krank-Jahreslimit')" } },
+    ],
+    crop: { around: ['verhalten', 'haken', 'vorlage'], pad: 90 },
+    markers: [
+      // die ganze Reihe der Vorlagen; „+ Kind krank“ steht links in der Reihe
+      { n: 1, id: 'vorlage', locator: { css: "xpath=//main//p[normalize-space()='Vorlagen (1-Klick aktivieren)']/following-sibling::div[1]" }, badge: 'left' },
+      { n: 2, id: 'verhalten', locator: { css: "xpath=//main//label[normalize-space()='Verhalten']/following-sibling::select" }, badge: 'left' },
+      { n: 3, id: 'haken', locator: { css: "main label:has-text('Gegen das Kind-krank-Jahreslimit') >> input[type='checkbox']" }, badge: 'left' },
+    ],
+    alt: 'Eigene Abwesenheitsgründe mit Verhalten „Unbezahlt frei“: darunter der Haken „Gegen das Kind-krank-Jahreslimit zählen (§45 SGB V)“ und in der Reihe der Vorlagen der Knopf „Kind krank“',
+  },
+  {
+    id: 'pl-kind-krank-limit',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    prepare: [{ scrollTo: { role: 'heading', name: 'Kind-krank-Standardanspruch', exact: true } }],
+    crop: { around: ['anspruch', 'mindestlohn'], pad: 90 },
+    markers: [
+      { n: 1, id: 'anspruch', locator: { label: 'Standard Kind-krank-Tage/Jahr', within: 'main' }, badge: 'left' },
+      { n: 2, id: 'speichern', locator: { css: "xpath=//main//input[@id='child-sick-default']/ancestor::div[contains(@class,'items-end')][1]//button" }, badge: 'right' },
+      { n: 3, id: 'mindestlohn', locator: { css: "xpath=//main//h2[normalize-space()='Gesetzlicher Mindestlohn']/following-sibling::p[1]" }, badge: 'left' },
+    ],
+    alt: 'Einstellungen: Bereich „Kind-krank-Standardanspruch“ mit dem Feld „Standard Kind-krank-Tage/Jahr“ (15) und Speichern, darunter „Gesetzlicher Mindestlohn“ mit 13,90 €/h seit 1.1.2026',
+  },
+  {
+    id: 'pl-minijob-konto',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/users',
+    // nur Entwurf, nie speichern (der Dialog bleibt bei „Gültig ab“ = heute; Minijob-Felder gelten nur ab Monatserstem)
+    prepare: [
+      { click: JULIA_HOURS },
+      { waitFor: { label: 'Vereinbarte Monatsarbeitszeit (h)', within: 'dialog' } },
+      { fill: { label: 'Vereinbarte Monatsarbeitszeit (h)', within: 'dialog' }, value: '43' },
+      { scrollTo: { css: "[role='dialog']:not([aria-hidden='true']) >> text=/^Statt aus Wochenstunden/" } },
+    ],
+    crop: { around: ['konto', 'monat', 'fest'], pad: 56 },
+    markers: [
+      { n: 1, id: 'konto', locator: { css: '#wh-milog_working_time_account' }, badge: 'left' },
+      { n: 2, id: 'monat', locator: { label: 'Vereinbarte Monatsarbeitszeit (h)', within: 'dialog' }, badge: 'left' },
+      { n: 3, id: 'fest', locator: { css: '#wh-use_fixed_monthly_target' }, badge: 'left' },
+    ],
+    alt: 'Dialog „Arbeitszeit & Wochenstunden“ von Julia Meyer, Abschnitt „Urlaub und Abrechnung“: Haken „Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)“, Vereinbarte Monatsarbeitszeit 43 Stunden mit 50-%-Grenze und Haken „Feste Monatsarbeitszeit“',
+  },
+
+  // ── 11. Einstellungen ────────────────────────────────────────────────────
+  {
+    id: 'pl-eigene-feiertage',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    // nur ausgefüllt, nie auf „Hinzufügen“ geklickt (Stichtag 28.10.2026 → 20.07.2026)
+    prepare: [
+      { scrollTo: { css: "main thead th:has-text('Typ')" } },
+      { fill: { css: '#new-holiday-name' }, value: 'Schützenfest' },
+      { fill: { css: '#new-holiday-date' }, value: '{{stichtag-100d}}' },
+    ],
+    crop: { around: ['jahr', 'name', 'hinzufuegen'], pad: 90 },
+    markers: [
+      { n: 1, id: 'jahr', locator: { css: '#holiday-year' }, badge: 'left' },
+      { n: 2, id: 'name', locator: { css: '#new-holiday-name' }, badge: 'left' },
+      { n: 3, id: 'datum', locator: { css: '#new-holiday-date' }, badge: 'top' },
+      { n: 4, id: 'hinzufuegen', locator: { css: "xpath=//main//input[@id='new-holiday-date']/ancestor::div[contains(@class,'flex-wrap')][1]//button" }, badge: 'right' },
+    ],
+    alt: 'Einstellungen, Bereich „Eigene Feiertage“: Jahresauswahl, Eingabezeile mit Name „Schützenfest“, Datum 20.07.2026 und dem Knopf „Hinzufügen“',
+  },
+  {
+    id: 'pl-urlaubsgenehmigung',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    prepare: [{ scrollTo: { role: 'heading', name: 'Urlaubsgenehmigung', exact: true } }],
+    crop: 'main',
+    markers: [
+      { n: 1, id: 'schalter', locator: { css: '#approval-toggle' }, badge: 'right' },
+      { n: 2, id: 'speichern', locator: { css: "xpath=//main//button[@id='approval-toggle']/ancestor::div[contains(@class,'max-w-sm')][1]/following-sibling::div[1]//button" }, badge: 'right' },
+    ],
+    alt: 'Einstellungen, Bereich „Urlaubsgenehmigung“: Schalter „Genehmigung erforderlich“ mit Erklärtext und dem Knopf „Speichern“',
+  },
+  {
+    id: 'pl-onboarding-schichtplanung',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    prepare: [{ scrollTo: { role: 'heading', name: 'Onboarding / Willkommens-Tour', exact: true } }],
+    crop: 'main',
+    markers: [
+      { n: 1, id: 'tour', locator: { css: '#onboarding-toggle' }, badge: 'right' },
+      { n: 2, id: 'schichtplanung', locator: { css: '#shift-planning-toggle' }, badge: 'right' },
+    ],
+    alt: 'Einstellungen: Bereiche „Onboarding / Willkommens-Tour“ mit dem Schalter „Willkommens-Tour anzeigen“ und „Schichtplanung“ mit dem Schalter „Schichtplanung aktivieren“, beide mit eigenem Speichern',
+  },
+  {
+    id: 'pl-projektion',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    prepare: [{ scrollTo: { role: 'heading', name: 'Überstunden-Projektion zum Jahresende', exact: true } }],
+    crop: 'main',
+    markers: [
+      { n: 1, id: 'mitarbeiter', locator: { css: '#employee-year-end-projection-toggle' }, badge: 'right' },
+      { n: 2, id: 'admin', locator: { css: '#admin-year-end-projection-toggle' }, badge: 'right' },
+      { n: 3, id: 'speichern', locator: { css: "xpath=//main//button[@id='admin-year-end-projection-toggle']/ancestor::div[contains(@class,'space-y-5')][1]/following-sibling::div[1]//button" }, badge: 'right' },
+    ],
+    alt: 'Einstellungen, Bereich „Überstunden-Projektion zum Jahresende“: zwei Schalter „Im Mitarbeiter-Dashboard anzeigen“ und „Im Admin-Dashboard anzeigen“ mit Erklärtexten und Speichern',
+  },
+  {
+    id: 'pl-puffer',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    prepare: [{ scrollTo: { role: 'heading', name: 'Soll-Arbeitszeit-Fenster', exact: true } }],
+    crop: 'main',
+    markers: [
+      { n: 1, id: 'puffer', locator: { css: '#grace-minutes' }, badge: 'right' },
+      { n: 2, id: 'speichern', locator: { css: "xpath=//main//input[@id='grace-minutes']/ancestor::div[contains(@class,'items-end')][1]//button" }, badge: 'right' },
+    ],
+    alt: 'Einstellungen, Bereich „Soll-Arbeitszeit-Fenster“: Erklärtext zum Puffer, das Feld „Puffer für Soll-Arbeitszeit-Fenster (Min.)“ mit 15 und der Knopf „Speichern“',
+  },
+  {
+    id: 'pl-farben',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/settings',
+    prepare: [{ scrollTo: { css: "xpath=//main//h2[normalize-space()='Farben']/following-sibling::div[last()]//button" } }],
+    crop: 'main',
+    markers: [
+      { n: 1, id: 'farben', locator: { css: "xpath=//main//h2[normalize-space()='Farben']/following-sibling::div[contains(@class,'grid')]" }, badge: 'right' },
+      { n: 2, id: 'speichern', locator: { css: "xpath=//main//h2[normalize-space()='Farben']/following-sibling::div[last()]//button" }, badge: 'right' },
+    ],
+    alt: 'Einstellungen, Bereich „Farben“: je Anwesenheits- und Abwesenheitstyp ein Farbfeld mit „Aa“-Vorschau, darunter der Knopf „Speichern“',
+  },
+
+  // ── 12. Jahresabschluss ──────────────────────────────────────────────────
+  {
+    id: 'pl-jahresuebersicht',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin',
+    prepare: [{ scrollTo: { css: 'main th:has-text("Resturlaub")' } }],
+    crop: 'main',
+    markers: [
+      { n: 1, id: 'jahr', locator: { css: '#year-select' }, badge: 'left' },
+      { n: 2, id: 'abschluss', locator: { css: "main button[title='Jahresabschluss 2026 erstellen']" }, badge: 'top' },
+      { n: 3, id: 'loeschen', locator: { css: "main button[title='Jahresabschluss 2026 löschen']" }, badge: 'top' },
+      { n: 4, id: 'resturlaub', locator: { css: 'main th:has-text("Resturlaub")' }, badge: 'top' },
+    ],
+    alt: 'Jahresübersicht auf dem Admin-Dashboard: Jahr 2026 mit den Knöpfen Jahresabschluss, Abschluss löschen und Berichte, darunter die gelbe Jahresend-Warnung und die Tabelle mit Urlaub, Resturlaub, Krank und Überstunden',
+  },
+  {
+    id: 'pl-jahresabschluss-dialog',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin',
+    // nur der Bestätigungsdialog; „Jahresabschluss erstellen“ wird nie angeklickt
+    prepare: [
+      { click: { css: "main button[title='Jahresabschluss 2026 erstellen']" } },
+      { waitFor: { css: "[role='alertdialog']" } },
+    ],
+    crop: { around: ['text', 'bestaetigen'], pad: 90 },
+    markers: [
+      { n: 1, id: 'text', locator: { css: "[role='alertdialog'] #confirm-dialog-desc" }, badge: 'left' },
+      { n: 2, id: 'abbrechen', locator: { css: "[role='alertdialog'] button:text-is('Abbrechen')" }, badge: 'top' },
+      { n: 3, id: 'bestaetigen', locator: { css: "[role='alertdialog'] button:text-is('Jahresabschluss erstellen')" }, badge: 'top' },
+    ],
+    alt: 'Bestätigungsdialog „Jahresabschluss 2026“: Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter werden als Übernahme in 2027 gespeichert, bestehende Übernahmen werden überschrieben; Knöpfe Abbrechen und Jahresabschluss erstellen',
+  },
+  {
+    id: 'pl-uebernahme',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/users',
+    // nur geöffnet, nie gespeichert
+    prepare: [
+      { click: { css: "main tr:has-text('Hoffmann') button[title='Vorjahresübernahme']" } },
+      { waitFor: { css: "div.fixed.inset-0:has(h3:has-text('Vorjahresübernahme')) >> select" } },
+    ],
+    crop: { around: ['jahr', 'speichern'], pad: 200 },
+    markers: [
+      { n: 1, id: 'jahr', locator: { css: "div.fixed.inset-0:has(h3:has-text('Vorjahresübernahme')) >> select" }, badge: 'left' },
+      { n: 2, id: 'ueberstunden', locator: { css: "div.fixed.inset-0:has(h3:has-text('Vorjahresübernahme')) >> input[type='number'] >> nth=0" }, badge: 'left' },
+      { n: 3, id: 'resturlaub', locator: { css: "div.fixed.inset-0:has(h3:has-text('Vorjahresübernahme')) >> input[type='number'] >> nth=1" }, badge: 'left' },
+      { n: 4, id: 'speichern', locator: { css: "div.fixed.inset-0:has(h3:has-text('Vorjahresübernahme')) >> button:has-text('Speichern')" }, badge: 'left' },
+    ],
+    alt: 'Dialog „Vorjahresübernahme“ von Maria Hoffmann: Auswahl des Jahres, Überstunden aus dem Vorjahr in Stunden, Resturlaub aus dem Vorjahr in Tagen und der Knopf „Speichern“',
+  },
+
+  // ── 13. Import ───────────────────────────────────────────────────────────
+  {
+    id: 'pl-import-hochladen',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/import',
+    // Beispieldatei aus e2e/test-data; die Vorschau schreibt nichts
+    prepare: IMPORT_UPLOAD,
+    crop: { around: ['benutzer', 'datei', 'analysieren'], pad: 48 },
+    markers: [
+      { n: 1, id: 'benutzer', locator: { css: 'main select' }, badge: 'left' },
+      { n: 2, id: 'datei', locator: { css: 'main div.border-dashed' }, badge: 'right' },
+      { n: 3, id: 'analysieren', locator: { css: "main button:has-text('Datei analysieren')" }, badge: 'right' },
+    ],
+    alt: 'Import, Schritt „Hochladen“: Auswahl der Person Petra Schulz, das gestrichelte Feld mit der gewählten TimeRec-Datei im Format xls und der Knopf „Datei analysieren“',
+  },
+  {
+    id: 'pl-import-vorschau',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/import',
+    prepare: IMPORT_PREVIEW,
+    crop: { around: ['zahlen', 'konflikt', 'neu'], pad: 80 },
+    markers: [
+      { n: 1, id: 'zahlen', locator: { css: 'main div.flex-wrap.text-sm' }, badge: 'top' },
+      { n: 2, id: 'konflikt', locator: { css: "main tr:has-text('Konflikt') >> nth=0 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
+      { n: 3, id: 'hinweis', locator: { css: "main tr:has-text('Hinweis') >> nth=1 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
+      { n: 4, id: 'neu', locator: { css: "main tr:has-text('Neu') >> nth=1 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
+    ],
+    alt: 'Import, Schritt „Vorschau“: 20 Einträge gefunden, 1 Konflikt und 14 Hinweise; in der Tabelle die Zeilen mit Datum, Von, Bis, Pause, Netto und Status „Konflikt“, „Hinweis“ oder „Neu“',
+  },
+  {
+    id: 'pl-import-bestaetigen',
+    persona: 'admin',
+    viewport: 'desktop',
+    route: '/admin/import',
+    prepare: [...IMPORT_PREVIEW, { scrollTo: { css: "main button:has-text('Import bestätigen')" } }],
+    crop: { around: ['ueberschreiben', 'zurueck', 'bestaetigen'], pad: 80 },
+    markers: [
+      { n: 1, id: 'ueberschreiben', locator: { css: "main label:has-text('Konflikte überschreiben') >> span" }, badge: 'right' },
+      { n: 2, id: 'zurueck', locator: { css: "main button:has-text('Zurück')" }, badge: 'left' },
+      { n: 3, id: 'bestaetigen', locator: { css: "main button:has-text('Import bestätigen')" }, badge: 'right' },
+    ],
+    alt: 'Import, Ende der Vorschau: Haken „Konflikte überschreiben (1 Einträge)“ und die Knöpfe „Zurück“ und „Import bestätigen“ unter der Tabelle der gefundenen Einträge',
   },
 ];
 
@@ -1527,6 +1799,515 @@ export const praxisleitung: Handbook = {
             ['§ 6: Nachtarbeitnehmer über 8 Stunden', 'Warnung'],
             ['Arbeit an Sonn- und Feiertagen', 'Warnung; ohne Ausnahmegrund nach § 10 ArbZG fordert PraxisZeit ihn an (Feld auch beim Ausstempeln)'],
           ],
+        },
+      ],
+    },
+
+    // ── 10 ──────────────────────────────────────────────────────────────────
+    {
+      id: 'gruende-kind-krank-minijob',
+      title: 'Eigene Abwesenheitsgründe, Kind krank, Minijob',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'gruende',
+          text:
+            'Nicht jede Abwesenheit passt zu Urlaub, Krank oder Fortbildung. Mit **eigenen Gründen** – etwa „Berufsschule“ oder „Kind krank“ – bilden Sie solche Fälle ab; ' +
+            'das **Verhalten** des Grundes sagt PraxisZeit, wie die Tage zu rechnen sind. Für Minijobs auf Arbeitszeitkonto gibt es zusätzlich Hinweise nach dem Mindestlohngesetz.',
+        },
+        {
+          kind: 'task',
+          id: 'eigenen-grund-anlegen',
+          title: 'Wie lege ich einen eigenen Abwesenheitsgrund an?',
+          intro: 'Klicken Sie auf [[Einstellungen]]. Der Bereich **Eigene Abwesenheitsgründe** steht ganz oben.',
+          shot: 'pl-abwesenheitsgrund',
+          steps: [
+            { n: 1, text: 'Tragen Sie die **Bezeichnung** ein, zum Beispiel „Berufsschule“ (höchstens 80 Zeichen).' },
+            { n: 2, text: 'Wählen Sie das **Verhalten**. Es bestimmt die Berechnung und lässt sich nach dem Anlegen **nicht mehr ändern**. Die **Farbe** daneben dürfen Sie jederzeit ändern.' },
+            { n: 3, text: 'Klicken Sie auf [[Hinzufügen]]. Der Grund erscheint in der Liste und steht beim Eintragen einer Abwesenheit in der Typ-Auswahl unter „Eigene Gründe“.' },
+            { n: 4, text: 'Die **Vorlagen (1-Klick aktivieren)** legen gängige Gründe mit einem Klick an, siehe [Kind krank und Sonderurlaub](#kind-krank-vorlage).' },
+            { n: 5, text: 'In der Liste ändern Sie Farbe und Bezeichnung (Eingabe verlassen = speichern) und schalten mit dem Haken [[aktiv]] einen Grund ein oder aus. Der Papierkorb löscht ihn.' },
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['Verhalten', 'Wirkung', 'Typisch für'],
+          rows: [
+            ['Zählt als gearbeitet', 'Die geplanten Stunden werden als Arbeitszeit gutgeschrieben (wie Fortbildung), es entstehen keine Stundenverluste', 'Berufsschule (Arbeitszeit nach § 15 JArbSchG)'],
+            ['Bezahlt frei', 'Das Tagessoll wird 0 (saldoneutral), kein Urlaubsabzug – der Arbeitgeber zahlt weiter', 'Todesfall, Hochzeit, Geburt'],
+            ['Unbezahlt frei', 'Das Tagessoll wird 0 (saldoneutral), kein Urlaubsabzug, aber unbezahlt (Lohn gekürzt)', 'Kind krank (§ 45 SGB V), unbezahlter Sonderurlaub'],
+            ['Überstundenabbau', 'Das Überstundenkonto sinkt um das Tagessoll', 'Freizeitausgleich mit eigener Bezeichnung'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Deaktivieren statt löschen:** Deaktivierte Gründe stehen beim Buchen nicht mehr zur Auswahl, bleiben aber an bestehenden Abwesenheiten erhalten. ' +
+            'Löschen geht nur, solange keine Abwesenheit den Grund nutzt – sonst fordert PraxisZeit Sie auf, ihn zu deaktivieren. ' +
+            'Berechnet wird ausschließlich nach dem Verhalten; Farbe und Bezeichnung ändern nichts an den Zahlen.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Datenschutz:** Ein eigener Grund kann sensibel sein (z. B. „Reha“). Im Team-Kalender sehen andere Mitarbeitende eine Abwesenheit mit eigenem Grund nur als „abwesend“; ' +
+            'die Bezeichnung sehen Admins und die betroffene Person selbst.',
+        },
+        {
+          kind: 'task',
+          id: 'kind-krank-vorlage',
+          title: 'Wie richte ich „Kind krank“ und andere Sonderurlaub-Gründe ein?',
+          intro:
+            'Unter der Eingabezeile stehen die **Vorlagen**: Kind krank, Todesfall naher Angehöriger, Eigene Hochzeit, Geburt eines Kindes, Umzug (betrieblich), Arztbesuch (unvermeidbar) und Pflege naher Angehöriger.',
+          shot: 'pl-kind-krank-grund',
+          steps: [
+            { n: 1, text: 'Klicken Sie auf die Vorlage [[+ Kind krank]]. PraxisZeit legt den Grund sofort an: Verhalten **Unbezahlt frei**, mit Zählung gegen das Jahreslimit. Eine aktivierte Vorlage verschwindet aus der Reihe.' },
+            { n: 2, text: 'Wollen Sie einen Grund selbst anlegen, der gegen das Limit zählt, wählen Sie als **Verhalten** [[Unbezahlt frei]].' },
+            { n: 3, text: 'Dann erscheint der Haken [[Gegen das Kind-krank-Jahreslimit zählen (§45 SGB V)]]. Setzen Sie ihn, bevor Sie auf [[Hinzufügen]] klicken – nur Gründe mit diesem Haken zählen.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Die Vorlagen sind Vorschläge.** Bezahlt oder unbezahlt hängt von Ihrem Betrieb ab – die rechtliche Einordnung (etwa ob § 616 BGB im Arbeitsvertrag ausgeschlossen ist) liegt bei Ihnen. ' +
+            'Weil das Verhalten nach dem Anlegen feststeht, legen Sie einen Grund mit anderem Verhalten selbst an. PraxisZeit bildet nur die Zeiterfassung ab; die Meldung an Krankenkasse und Lohnbuchhaltung erfolgt außerhalb.',
+        },
+        {
+          kind: 'task',
+          id: 'kind-krank-anspruch',
+          title: 'Wie viele Kind-krank-Tage stehen Mitarbeitenden zu?',
+          intro: 'PraxisZeit zählt die Tage eines Kind-krank-Grundes je Kalenderjahr. Den Standardanspruch stellen Sie unter [[Einstellungen]] im Bereich **Kind-krank-Standardanspruch** ein.',
+          shot: 'pl-kind-krank-limit',
+          steps: [
+            { n: 1, text: 'Tragen Sie unter [[Standard Kind-krank-Tage/Jahr]] die Zahl der Tage ein (Voreinstellung 15). Sie gilt für alle ohne eigenen Wert.' },
+            { n: 2, text: 'Klicken Sie auf [[Speichern]].' },
+            { n: 3, text: 'Darunter zeigt der Bereich **Gesetzlicher Mindestlohn** den aktuellen Wert und die nächste Stufe an (13,90 € pro Stunde seit 1.1.2026, 14,60 € ab 1.1.2027). Das ist nur eine Anzeige.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Eigener Wert je Person:** Im Formular zum Bearbeiten einer Person gibt es das Feld „Kind-krank-Tage/Jahr (§45 SGB V)“; leer gilt der Standard, siehe [Mitarbeiter bearbeiten](#mitarbeiter-bearbeiten).',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Nur ein Hinweis, keine Sperre:** Wird der Anspruch beim Buchen überschritten, weist PraxisZeit darauf hin – die Abwesenheit wird **trotzdem erfasst**, denn der Fehltag muss dokumentiert werden. ' +
+            'Das gilt beim Eintragen, im Monatsjournal und bei der Genehmigung eines Änderungsantrags. Den Jahresverbrauch sehen Sie in der **Benutzerverwaltung** unter dem Namen („Kind krank: 2.0/15“, rot bei Überschreitung), sobald ein Tag verbraucht ist.',
+        },
+        {
+          kind: 'task',
+          id: 'minijob-konto',
+          title: 'Wie führe ich eine Minijob-Beschäftigte auf Arbeitszeitkonto?',
+          intro:
+            'Für Minijobber:innen auf **Arbeitszeitkonto** (§ 2 Abs. 2 MiLoG, „sonstige flexible Arbeitszeitregelung“) stellen Sie die Felder beim Anlegen im Formular ein, bei bestehenden Mitarbeitenden über [[Arbeitszeit anpassen…]] im Abschnitt **Urlaub und Abrechnung**, siehe [Vertragsverlauf](#vertragsverlauf). Im Bild: Julia Meyer, 10 Stunden pro Woche.',
+          shot: 'pl-minijob-konto',
+          steps: [
+            { text: '**Gültig ab:** Minijob-Einstellungen gelten immer ab dem Monatsersten. Ein anderes Datum lehnt PraxisZeit mit „Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten.“ ab.' },
+            { n: 1, text: 'Setzen Sie den Haken [[Arbeitszeitkonto (§ 2 Abs. 2 MiLoG) – 50-%-Prüfung & 12-Monats-Ausgleichsfrist]]. Er setzt aktive Stundenzählung voraus.' },
+            { n: 2, text: 'Tragen Sie die **Vereinbarte Monatsarbeitszeit (h)** ein, im Bild 43. Bleibt das Feld leer, rechnet PraxisZeit Wochenstunden × 13/3 (bei 10 Stunden etwa 43,3). Die Zeile darunter nennt den aktuellen Mindestlohn und die Obergrenze des Kontos: die Hälfte, hier etwa 21,5 Stunden im Monat.' },
+            { n: 3, text: 'Optional: [[Feste Monatsarbeitszeit (Monats-Soll = vereinbarte Monatsarbeitszeit)]]. Der Haken erscheint nur bei aktivem Arbeitszeitkonto und macht die vereinbarte Monatsarbeitszeit zur Pflichtangabe.' },
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['Hinweis', 'Regel', 'Wo erscheint er?'],
+          rows: [
+            ['50-%-Regel', 'Die auf das Konto eingestellten Plusstunden dürfen pro Monat 50 % der vereinbarten Arbeitszeit nicht übersteigen. Beispiel 10 h/Woche: Monatszeit etwa 43,33 h, Grenze 21,67 h', 'beim Buchen und Ausstempeln, im eigenen Überstundenkonto, in der Benutzerverwaltung (Kennzeichen „MiLoG“)'],
+            ['12-Monats-Ausgleichsfrist', 'Zeitguthaben auf dem Konto muss binnen 12 Kalendermonaten ausgeglichen werden; bei Überfälligkeit erscheint ein Hinweis', 'wie oben'],
+            ['Monatszeit überschritten', 'Nur bei fester Monatsarbeitszeit: das Monats-Ist inklusive Gutschriften übersteigt die vereinbarte Monatsarbeitszeit', 'wie oben'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Alle Hinweise sind weich, nichts wird blockiert.** Die 50-%-Grenze bindet nur die mindestlohnwirksamen Stunden; wird über dem Mindestlohn vergütet, sind mehr Stunden möglich. ' +
+            'PraxisZeit speichert **keine Lohndaten** und prüft die Verdienstgrenze von 603 € nicht – das bleibt der Lohnbuchhaltung.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Wozu die vereinbarte Monatsarbeitszeit dient:** Sie ist die Bezugsgröße der 50-%-Prüfung. Die 12-Monats-Frist rechnet dagegen bewusst gegen das tatsächliche Monats-Soll, ' +
+            'damit Urlaub und Feiertage das Konto nicht belasten.',
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Feste Monatsarbeitszeit:** Das Monats-Soll ist jeden Monat die vereinbarte Monatsarbeitszeit – egal, ob der Monat vier oder fünf Montage hat; bei Ein- oder Austritt im Monat anteilig nach Kalendertagen. ' +
+            'Die Tagesstunden heißen dann „Geplante Anwesenheit“ und bestimmen nur noch, wie viele Stunden an Feiertagen, Urlaubs- und Freistellungstagen als Ist gutgeschrieben werden. ' +
+            'Unbezahlt entschuldigte Tage (Typ „Sonstiges“, z. B. Kind krank) mindern stattdessen das Monats-Soll um die geplanten Stunden. ' +
+            'Im Monatsjournal heißt die Spalte dann „Geplant“, einen Tages-Saldo gibt es nicht; **verbindlich ist die Monatsübersicht**.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Bekannte Grenze:** Fällt ein **ganzer Monat** durch Urlaub oder Krankheit aus, schreibt PraxisZeit nur den geplanten Anteil gut. Der flexible Rest bleibt als Defizit auf dem Konto stehen; ' +
+            'dann ist eine manuelle Korrektur nötig, etwa über das Überstundenkonto oder den Jahresübertrag. Bei einzelnen Fehltagen rechnet PraxisZeit korrekt von selbst.',
+        },
+      ],
+    },
+
+    // ── 11 ──────────────────────────────────────────────────────────────────
+    {
+      id: 'einstellungen',
+      title: 'Einstellungen',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'einstellungen',
+          text:
+            'Unter **Einstellungen** legen Sie fest, wie PraxisZeit für die ganze Praxis arbeitet. **Jeder Bereich hat einen eigenen Speichern-Knopf** – eine Änderung gilt erst, wenn Sie ihn drücken. ' +
+            'Die Tabelle zeigt, wo Sie die Bereiche in diesem Handbuch finden.',
+        },
+        {
+          kind: 'table',
+          head: ['Bereich in den Einstellungen', 'Wofür', 'Mehr dazu'],
+          rows: [
+            ['Eigene Abwesenheitsgründe', 'zusätzliche Gründe mit eigenem Verhalten, Vorlagen', '[Eigenen Grund anlegen](#eigenen-grund-anlegen)'],
+            ['Feiertage', 'Bundesland der gesetzlichen Feiertage', '[Bundesland einstellen](#bundesland-einstellen)'],
+            ['Eigene Feiertage', 'regionale Feiertage wie Schützenfest', '[Regionalen Feiertag anlegen](#eigene-feiertage)'],
+            ['Sondertage (24./31.12.)', 'Modus je Tag: Arbeitstag, Halbtag, Frei, Verkürzt', '[Sondertage](#sondertage-einstellen)'],
+            ['Verkürzte Tage', 'einzelne Tage mit Höchststunden', '[Verkürzte Tage](#verkuerzte-tage)'],
+            ['Urlaubsgenehmigung', 'Genehmigungspflicht für Urlaub', '[Urlaubsgenehmigung](#urlaubsgenehmigung)'],
+            ['Pflicht-Pause-Ausnahme', 'Ausnahme bei fehlender Pause erlauben', '[Pflicht-Pause-Ausnahme](#pflicht-pause-ausnahme)'],
+            ['Onboarding / Willkommens-Tour', 'Tour beim ersten Login', '[Tour und Schichtplanung](#tour-schichtplanung)'],
+            ['Schichtplanung', 'Planungswerkzeug ein- oder ausschalten', '[Tour und Schichtplanung](#tour-schichtplanung)'],
+            ['Betriebsferien & Urlaub', 'überzählige Betriebsferien als Überstundenabbau', '[Betriebsferien länger als der Urlaub](#betriebsferien-ueberstundenabbau)'],
+            ['Überstunden-Projektion zum Jahresende', 'Anzeige des voraussichtlichen Saldos', '[Saldo zum Jahresende](#jahresende-projektion)'],
+            ['Soll-Arbeitszeit-Fenster', 'Puffer an den Rändern der Arbeitszeit-Blöcke', '[Puffer einstellen](#puffer-einstellen)'],
+            ['Kind-krank-Standardanspruch', 'Tage je Jahr', '[Kind-krank-Anspruch](#kind-krank-anspruch)'],
+            ['Gesetzlicher Mindestlohn', 'reine Anzeige', '[Kind-krank-Anspruch](#kind-krank-anspruch)'],
+            ['Farben', 'Farbe je Anwesenheits- und Abwesenheitstyp', '[Farben ändern](#farben)'],
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'eigene-feiertage',
+          title: 'Wie lege ich einen regionalen Feiertag an?',
+          intro: 'Im Bereich **Eigene Feiertage** unter [[Einstellungen]]. Gesetzliche Feiertage stehen dort nur zur Information und lassen sich nicht ändern.',
+          shot: 'pl-eigene-feiertage',
+          steps: [
+            { n: 1, text: 'Wählen Sie oben rechts das **Jahr**; darüber blättern Sie auch durch die Liste der Feiertage.' },
+            { n: 2, text: 'Tragen Sie den **Namen** ein, zum Beispiel „Schützenfest“.' },
+            { n: 3, text: 'Wählen Sie das **Datum**.' },
+            { n: 4, text: 'Klicken Sie auf [[Hinzufügen]]. In der Liste bearbeiten Sie einen eigenen Feiertag mit dem Stift und löschen ihn mit dem Papierkorb.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Eigene Feiertage senken das Soll wie gesetzliche Feiertage und bleiben erhalten, wenn Sie das Bundesland wechseln.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Liegt der Tag in einem abgeschlossenen Jahr,** weist PraxisZeit auf den veralteten Übertrag hin, sobald Sie einen eigenen Feiertag anlegen, verschieben oder löschen; ein reines Umbenennen löst keinen Hinweis aus. ' +
+            'Stehen am Tag schon Zeiteinträge von Mitarbeitenden mit Arbeitszeit-Blöcken, nennt PraxisZeit sie – sie behalten ihre Anrechnung, bis Sie sie unverändert neu speichern. Siehe [Übertrag korrigieren](#vorjahresuebernahme).',
+        },
+        {
+          kind: 'task',
+          id: 'urlaubsgenehmigung',
+          title: 'Müssen Urlaubsanträge genehmigt werden?',
+          intro: 'Im Bereich **Urlaubsgenehmigung** unter [[Einstellungen]].',
+          shot: 'pl-urlaubsgenehmigung',
+          steps: [
+            { n: 1, text: 'Schalten Sie [[Genehmigung erforderlich]] an oder aus. **Aus** (Standard): Mitarbeitende buchen Urlaub direkt. **An:** Urlaubsanträge landen als „Offen“ unter [[Anträge]] bei Ihnen.' },
+            { n: 2, text: 'Klicken Sie auf [[Speichern]].' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Denselben Schalter finden Sie oben auf der Seite „Abwesenheitsanträge“, siehe [Urlaubsantrag genehmigen](#urlaubsantrag-genehmigen).',
+        },
+        {
+          kind: 'task',
+          id: 'tour-schichtplanung',
+          title: 'Wie schalte ich die Willkommens-Tour und die Schichtplanung ein oder aus?',
+          intro: 'Die beiden Bereiche **Onboarding / Willkommens-Tour** und **Schichtplanung** stehen untereinander. Jeder hat seinen eigenen Speichern-Knopf.',
+          shot: 'pl-onboarding-schichtplanung',
+          steps: [
+            { n: 1, text: '[[Willkommens-Tour anzeigen]] (Standard: an): Neue Mitarbeitende und Admins sehen beim ersten Login eine kurze Tour mit den wichtigsten Bereichen. Bereits gesehene Touren erscheinen nicht erneut.' },
+            { n: 2, text: '[[Schichtplanung aktivieren]] (Standard: aus): Erst dann gibt es Wochen-Schichtpläne, Arbeitsplätze und Standorte. Solange der Schalter aus ist, sehen weder Admins noch Mitarbeitende die Schichtplanung.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Die Schichtplanung ist ein reines Planungswerkzeug und verändert **keine** Zeiterfassungs-, Urlaubs- oder Überstundendaten. Ist sie eingeschaltet, wählen Sie darunter die **geplanten Wochentage** (Standard Montag bis Freitag, mindestens ein Tag bleibt aktiv) und klicken auf [[Wochentage speichern]]. ' +
+            'Eine Anleitung für die Ersteinrichtung finden Sie jederzeit über den Knopf [[Schnellstart]] unten links in der Seitenleiste.',
+        },
+        {
+          kind: 'task',
+          id: 'jahresende-projektion',
+          title: 'Wie blende ich den voraussichtlichen Saldo zum Jahresende aus?',
+          intro: 'Im Bereich **Überstunden-Projektion zum Jahresende** unter [[Einstellungen]]. Beide Anzeigen sind standardmäßig an.',
+          shot: 'pl-projektion',
+          steps: [
+            { n: 1, text: '[[Im Mitarbeiter-Dashboard anzeigen]]: Aus, sehen Mitarbeitende die Vorschau-Zeile in ihrem eigenen Überstundenkonto nicht mehr; die Berechnung entfällt dann ganz.' },
+            { n: 2, text: '[[Im Admin-Dashboard anzeigen]]: Aus, entfällt die Spalte „Überstd. Jahresende“ im Monats- und Wochenbericht. Sie erscheint ohnehin nur im laufenden Monat und nur, wenn mindestens eine Person schon künftigen Ausgleich gebucht hat.' },
+            { n: 3, text: 'Klicken Sie auf [[Speichern]].' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Was die Projektion zeigt:** den Saldo bis heute, abzüglich der Stunden aller bereits gebuchten künftigen **Überstundenausgleich**-Tage. Urlaub, Krankheit und Fortbildung sind saldoneutral und fließen nicht ein. ' +
+            'Beide Schalter wirken nur auf die Anzeige – das Überstundenkonto selbst rechnet PraxisZeit unverändert weiter.',
+        },
+        {
+          kind: 'task',
+          id: 'puffer-einstellen',
+          title: 'Wie stelle ich den Puffer für die Arbeitszeit-Blöcke ein?',
+          intro: 'Im Bereich **Soll-Arbeitszeit-Fenster** unter [[Einstellungen]]. Der Puffer entscheidet, wie viel gestempelte Zeit vor, nach und zwischen den Arbeitszeit-Blöcken noch angerechnet wird.',
+          shot: 'pl-puffer',
+          steps: [
+            { n: 1, text: 'Tragen Sie im Feld [[Puffer für Soll-Arbeitszeit-Fenster (Min.)]] die Minuten ein (Standard 15, zulässig 0 bis 1439). Der Puffer gilt an jedem Blockrand, auch zwischen zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet. Stempelzeit weiter außerhalb zählt nicht. Ab 1439 Minuten, einem ganzen Tag, kappt PraxisZeit nichts mehr.' },
+            { n: 2, text: 'Klicken Sie auf [[Speichern]].' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Eine Änderung wirkt nur auf neue Einträge.** Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn, auch wenn er später bearbeitet wird; gespeicherte Einträge ändern sich durch das Speichern allein nicht. ' +
+            'Einträge aus der Zeit vor Version 1.20.0 tragen keinen gespeicherten Puffer und werden bei einer Bearbeitung mit dem aktuellen gekappt. ' +
+            'Nur eine Arbeitszeit-Änderung mit Neuberechnung kappt die betroffenen Einträge mit dem dann gültigen Puffer neu – die Vorschau nennt ihn; verliert ein Eintrag dabei angerechnete Zeit, gilt der Verkürzungsschutz, siehe [Rückwirkend ändern](#rueckwirkend-aendern).',
+        },
+        {
+          kind: 'task',
+          id: 'farben',
+          title: 'Wie ändere ich die Farben der Abwesenheitstypen?',
+          intro: 'Im Bereich **Farben** unter [[Einstellungen]]: je Typ eine Farbe – Arbeit/Anwesenheit, Fortbildung, Urlaub, Krank, Überstundenausgleich, Sonstiges und Bezahlte Freistellung. Sie gelten im Kalender, in den Übersichten und bei der Zeiterfassung.',
+          shot: 'pl-farben',
+          steps: [
+            { n: 1, text: 'Klicken Sie neben dem Typ auf das Farbfeld und wählen Sie die Farbe. Die kleine „Aa“-Vorschau zeigt, ob die Schrift auf der gewählten Farbe lesbar bleibt.' },
+            { n: 2, text: 'Klicken Sie auf [[Speichern]].' },
+          ],
+        },
+      ],
+    },
+
+    // ── 12 ──────────────────────────────────────────────────────────────────
+    {
+      id: 'jahresabschluss',
+      title: 'Jahresabschluss',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'jahresabschluss',
+          text:
+            'Zum Jahreswechsel berechnet PraxisZeit für alle aktiven Mitarbeitenden den **Überstunden-Saldo zum 31.12.** und den **Resturlaub** und trägt beides als **Übernahme** ins Folgejahr ein. ' +
+            'Diesen Schritt lösen Sie selbst aus – am besten, wenn alle Anträge für das Jahr entschieden sind.',
+        },
+        {
+          kind: 'task',
+          id: 'jahresuebersicht',
+          title: 'Wo finde ich den Jahresabschluss?',
+          intro: 'Auf dem [[Admin-Dashboard]] unterhalb der Monatsübersicht steht die **Jahresübersicht** mit Urlaubs- und Krankheitstagen aller Mitarbeitenden – und den Knöpfen für den Abschluss.',
+          shot: 'pl-jahresuebersicht',
+          steps: [
+            { n: 1, text: 'Wählen Sie im Feld [[Jahr]] das Jahr, das Sie abschließen oder prüfen wollen.' },
+            { n: 2, text: 'Der orangefarbene Knopf [[Jahresabschluss]] startet den Abschluss, siehe [Jahresabschluss erstellen](#jahresabschluss-erstellen).' },
+            { n: 3, text: 'Der rote Knopf [[Abschluss löschen]] nimmt ihn zurück, siehe [Jahresabschluss löschen](#jahresabschluss-loeschen).' },
+            { n: 4, text: 'Die Spalte **Resturlaub** zeigt die offenen Urlaubstage: grün über 5 Tage, gelb bis 5 Tage, rot bei 0 oder weniger.' },
+            { text: 'Im letzten Quartal des laufenden Jahres erscheint die gelbe **Jahresend-Warnung: Offene Urlaubstage** mit allen, die noch mindestens einen ganzen Urlaubstag offen haben, und dem Verfallsdatum.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Kleine Reste lösen keine Warnung aus:** Bruchteile unter einem Tag – typisch bei Teilzeit, etwa 0,3 oder 0,5 Tage – lassen sich nicht als ganzer Tag nehmen und werden im Folgejahr üblicherweise mit weiteren Bruchteilen zusammengelegt. ' +
+            'In der Tabelle, im Urlaubskonto und beim Jahresabschluss zählen sie unverändert mit. Das Verfallsdatum ist in der Regel der 31.03. des Folgejahres, sonst die für die Person hinterlegte Frist; bei unterschiedlichen Fristen steht das Datum hinter jedem Namen. ' +
+            'Dieselbe Schwelle und dasselbe Datum gelten für den Hinweis im Urlaubskonto auf dem Dashboard der Mitarbeitenden.',
+        },
+        {
+          kind: 'task',
+          id: 'jahresabschluss-erstellen',
+          title: 'Wie erstelle ich den Jahresabschluss?',
+          intro: 'Wählen Sie in der Jahresübersicht das Jahr und klicken Sie auf [[Jahresabschluss]]. Es öffnet sich ein Bestätigungsdialog; erst Ihre Bestätigung löst den Abschluss aus.',
+          shot: 'pl-jahresabschluss-dialog',
+          steps: [
+            { n: 1, text: 'Lesen Sie den Text: Überstunden-Saldo und Resturlaub aller **aktiven** Mitarbeitenden werden berechnet und als Übernahme ins Folgejahr gespeichert. **Bestehende Übernahmen für das Folgejahr werden überschrieben.**' },
+            { n: 2, text: 'Mit [[Abbrechen]] geschieht nichts.' },
+            { n: 3, text: 'Mit [[Jahresabschluss erstellen]] bestätigen Sie. Die Meldung nennt, wie viele Mitarbeitende nach dem Folgejahr übernommen wurden.' },
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['PraxisZeit berechnet', 'Bedeutung im Folgejahr'],
+          rows: [
+            ['Überstunden-Saldo zum 31.12. des Jahres (immer der volle Zeitraum, nicht „bis heute“)', 'Startwert des Überstundenkontos'],
+            ['Resturlaub in Tagen', 'wird dem Jahresurlaub des Folgejahres hinzugerechnet'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            'Der Abschluss schließt auch Mitarbeitende **ohne Stundenzählung** ein: Für sie ist der Überstundenwert 0, der Resturlaub wird tagebasiert übernommen – sonst ginge er beim Jahreswechsel verloren.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**PraxisZeit lehnt den Abschluss ab, solange offene Anträge das Jahr betreffen:** noch nicht entschiedene Änderungsanträge oder offene Urlaubsanträge. ' +
+            'Die Meldung lautet zum Beispiel „Jahresabschluss 2026 abgelehnt: es gibt noch 2 offene Änderungsanträge für dieses Jahr. Bitte erst bearbeiten, dann erneut versuchen.“ ' +
+            'Ein später genehmigter Antrag würde sonst den eingefrorenen Saldo verschieben. Entscheiden Sie die Anträge unter [[Änderungsanträge]] und [[Anträge]] und starten Sie den Abschluss dann erneut.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Erneut ausführen überschreibt:** Ein zweiter Abschluss für dasselbe Jahr ersetzt die Übernahmen **aller** aktiven Mitarbeitenden für das Folgejahr – auch von Hand eingetragene. Die Zeile gilt danach wieder als Abschluss-Zeile.',
+        },
+        {
+          kind: 'task',
+          id: 'jahresabschluss-loeschen',
+          title: 'Wie nehme ich einen Jahresabschluss zurück?',
+          intro: 'Das geht, wenn ein Abschluss versehentlich erstellt wurde. Die Löschung ist **unwiderruflich**.',
+          steps: [
+            { n: 1, text: 'Wählen Sie in der Jahresübersicht das Jahr, dessen Abschluss Sie löschen möchten.' },
+            { n: 2, text: 'Klicken Sie auf den roten Knopf [[Abschluss löschen]].' },
+            { n: 3, text: 'Lesen Sie den Dialog „Jahresabschluss … löschen“ sorgfältig: Alle Übernahmen für das Folgejahr, die durch diesen Jahresabschluss erzeugt wurden, werden gelöscht – für alle Mitarbeitenden.' },
+            { n: 4, text: 'Bestätigen Sie mit [[Jahresabschluss löschen]]. Gibt es keinen Abschluss für das Jahr, meldet PraxisZeit „Kein Jahresabschluss für … gefunden“.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Von Hand eingetragene Übernahmen bleiben stehen.** Das Löschen entfernt nur Übernahmen, die der Jahresabschluss erzeugt hat – Werte, die Sie in der Vorjahresübernahme eingetragen oder korrigiert haben, nicht.',
+        },
+        {
+          kind: 'task',
+          id: 'vorjahresuebernahme',
+          title: 'Wie trage ich einen Übertrag von Hand ein oder korrigiere ihn?',
+          intro: 'Für einzelne Personen, etwa beim Start mit PraxisZeit oder nach einer Korrektur. Klicken Sie in der [[Benutzerverwaltung]] in der Zeile der Person auf den Knopf [[Vorjahresübernahme]].',
+          shot: 'pl-uebernahme',
+          steps: [
+            { n: 1, text: 'Wählen Sie das **Jahr**. Die Werte gelten als Übernahme **in** das gewählte Jahr.' },
+            { n: 2, text: '**Überstunden aus Vorjahr (Stunden):** positiv ist ein Guthaben, negativ sind Minusstunden.' },
+            { n: 3, text: '**Resturlaub aus Vorjahr (Tage):** wird zum Jahresurlaub des gewählten Jahres addiert.' },
+            { n: 4, text: 'Klicken Sie auf [[Speichern]]. Unter „Gespeicherte Übernahmen“ stehen alle Jahre der Person; ein Klick auf eine Zeile lädt ihre Werte ins Formular.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Rückwirkende Änderungen rechnet PraxisZeit nie von selbst nach.** Ändert sich etwas in einem bereits abgeschlossenen Jahr – Bundesland-Wechsel, Storno eines genehmigten Urlaubs, gelöschte Betriebsferien, geänderte Sondertage oder eigene Feiertage –, ' +
+            'meldet PraxisZeit zum Beispiel „Jahresabschluss 2025 bereits erfolgt — Carryover 2026 ist nun veraltet, bitte Jahresabschluss erneut ausführen.“ Eine automatische Neuberechnung würde Ihre von Hand korrigierten Werte überschreiben. ' +
+            'Prüfen Sie den Übertrag und führen Sie den Abschluss bei Bedarf erneut aus, danach tragen Sie Handkorrekturen noch einmal ein.',
+        },
+      ],
+    },
+
+    // ── 13 ──────────────────────────────────────────────────────────────────
+    {
+      id: 'import',
+      title: 'Import',
+      blocks: [
+        {
+          kind: 'comic',
+          scene: 'import',
+          text:
+            'Unter **Import** übernehmen Sie historische **Zeiteinträge** aus einer TimeRec-Datei, zum Beispiel Altdaten aus Ihrer bisherigen Zeiterfassung. ' +
+            'Gedacht ist der Import für die einmalige Datenübernahme bei der Einführung. **Abwesenheiten** (Urlaub, Krank usw.) werden nicht importiert.',
+        },
+        {
+          kind: 'table',
+          head: ['Anforderung', 'Wert'],
+          rows: [
+            ['Format', 'echtes .xls (TimeRec-Export, BIFF) – keine .xlsx- und keine CSV-Dateien'],
+            ['Größe', 'höchstens 5 MB'],
+            ['Tabellenblatt', '„Zeiterfassung“ mit den Spalten Datum, Tag, Total, Ein, Aus, Tagesnotiz'],
+            ['Vorlage', 'Es gibt keine Vorlagendatei zum Herunterladen.'],
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'import-hochladen',
+          title: 'Wie lade ich eine TimeRec-Datei hoch?',
+          intro: 'Klicken Sie in der Navigation auf [[Import]]. Der Assistent hat drei Schritte: [[Hochladen]], [[Vorschau]] und [[Ergebnis]].',
+          shot: 'pl-import-hochladen',
+          steps: [
+            { n: 1, text: 'Wählen Sie unter **Benutzer** die Person, der die Einträge zugeordnet werden.' },
+            { n: 2, text: 'Ziehen Sie die .xls-Datei in das gestrichelte Feld oder klicken Sie hinein und wählen Sie die Datei aus. Der Dateiname erscheint im Feld.' },
+            { n: 3, text: 'Klicken Sie auf [[Datei analysieren]]. Dabei wird die Datei nur gelesen – gespeichert ist noch nichts.' },
+          ],
+        },
+        {
+          kind: 'task',
+          id: 'import-vorschau',
+          title: 'Wie lese ich die Vorschau?',
+          intro: 'Die Vorschau zeigt alle gefundenen Einträge mit Datum, Von, Bis, Pause und Netto. Die Netto-Stunden rechnet der Server so, wie er sie anschließend speichert.',
+          shot: 'pl-import-vorschau',
+          steps: [
+            { n: 1, text: 'Über der Tabelle stehen die Zahl der **Einträge**, der **Konflikte** (rot) und der **Hinweise** (gelb).' },
+            { n: 2, text: '**Konflikt:** Ein Eintrag mit demselben Beginn am selben Tag ist schon vorhanden. Ob er ersetzt wird, entscheiden Sie im nächsten Schritt.' },
+            { n: 3, text: '**Hinweis:** Fahren Sie mit der Maus über das Kennzeichen – die Kurzinfo nennt den genauen Text. Das sind ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit), bei hinterlegten Arbeitszeit-Blöcken die Kappung der importierten Zeit und die Gründe, aus denen eine Zeile übersprungen wird.' },
+            { n: 4, text: '**Neu:** Die Zeile wird ohne Beanstandung importiert. Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit, zum Beispiel „2:30 h nicht angerechnet“.' },
+          ],
+        },
+        {
+          kind: 'table',
+          head: ['Der Import überspringt …', 'Kurzinfo in der Vorschau'],
+          rows: [
+            ['einen ganzen Tag, an dem sich die Pause nach § 4 ArbZG nicht abziehen lässt', '„Wird übersprungen — die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht abziehen (es fehlen 10 Min). Bitte den Tag von Hand erfassen.“'],
+            ['einen Tag mit mehr als 10 Stunden angerechneter Arbeitszeit', '„Wird übersprungen — die Tagesarbeitszeit beträgt 11:15 h und überschreitet die Höchstgrenze von 10 h nach § 3 ArbZG. Bitte den Tag von Hand erfassen.“'],
+            ['eine Zeile, die sich mit einem vorhandenen Eintrag oder einer früheren Zeile des Tages überschneidet', '„Wird übersprungen — die Zeile überschneidet sich mit dem Eintrag 08:00–12:00 (Zeiteinträge einer Person dürfen sich nicht überschneiden).“'],
+            ['Zeilen vor dem ersten oder nach dem letzten Arbeitstag der Person', '„Wird übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).“'],
+            ['Zeilen mit einem Datum nach heute', '„Wird übersprungen — Datum liegt in der Zukunft.“'],
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Die Pause rechnet der Import je Tag:** Mehrere Zeilen desselben Tages (z. B. ein geteilter Dienst) und dort schon vorhandene Einträge zählen zusammen; ein Abstand von mindestens 15 Minuten zwischen zwei Einträgen deckt die Pausenpflicht ab. ' +
+            'Abgezogen wird nur, was dann noch fehlt – an der längsten Zeile des Tages. Reicht das nicht, übernimmt der Import den Tag **nicht**, auch wenn die Ausnahme „Pflicht-Pause war nicht möglich“ erlaubt ist, denn der Import kennt keine Begründung. Erfassen Sie solche Tage von Hand.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Altdaten:** Prüfen Sie vorher, dass als **Erster Arbeitstag** der tatsächliche Eintritt eingetragen ist und nicht der Starttag von PraxisZeit – Zeilen davor überspringt der Import. ' +
+            'Eine Zeile ganz außerhalb der Arbeitszeit-Blöcke (z. B. 18:00–20:00 bei einem Block 08:00–12:00) übernimmt er dagegen wie jeden gestempelten Eintrag: angerechnet werden 0 Stunden, die Zeiten bleiben als Rohstempel gespeichert.',
+        },
+        {
+          kind: 'task',
+          id: 'import-bestaetigen',
+          title: 'Wie bestätige ich den Import und was steht im Ergebnis?',
+          intro: 'Unter der Tabelle entscheiden Sie über Konflikte und starten den Import.',
+          shot: 'pl-import-bestaetigen',
+          steps: [
+            { n: 1, text: '[[Konflikte überschreiben]] (nur sichtbar, wenn es Konflikte gibt): Angekreuzt ersetzt der Import die vorhandenen Einträge, sonst bleiben sie stehen und zählen für die Pause des Tages mit. Die Vorschau rechnet jeden Konflikt als überschrieben.' },
+            { n: 2, text: '[[← Zurück]] bringt Sie zur Auswahl von Person und Datei.' },
+            { n: 3, text: 'Klicken Sie auf [[Import bestätigen]]. Sollen vorhandene Einträge überschrieben werden, fragt PraxisZeit noch einmal nach („Einträge überschreiben?“).' },
+            { text: 'Das **Ergebnis** nennt die Zahl der importierten, überschriebenen und übersprungenen Einträge. Die **Hinweise** klappen Sie auf: Ruhezeit (§ 5) und Nachtarbeit (§ 6), die der Server bei der Bestätigung prüft, eine angepasste Pause („Pause an den Tag angepasst (0 → 30 Min)“) und der Grund jeder übersprungenen Zeile. Der Import steht im **Änderungsprotokoll**. Mit [[Weiteren Import starten]] beginnen Sie von vorn.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Bestätigung = Vorschau, neu gerechnet:** Höchstarbeitszeit, Pause und Überschneidungen rechnet die Bestätigung noch einmal und überspringt betroffene Tage oder Zeilen – die Hinweise der Vorschau übernimmt das Ergebnis nicht ungeprüft. ' +
+            'Überschreibt der Import einen **anerkannten** Eintrag, steht in der Kurzinfo „Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.“',
         },
       ],
     },

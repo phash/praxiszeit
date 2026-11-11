@@ -250,6 +250,15 @@ async function runPrepare(page: Page, baseUrl: string, steps: PrepareStep[], sho
       await single(page, step.waitFor, ctx);
     } else if ('scrollTo' in step) {
       await (await single(page, step.scrollTo, ctx)).scrollIntoViewIfNeeded();
+    } else if ('select' in step) {
+      const sel = await single(page, step.select, ctx);
+      await sel.focus(); // manche Auswahllisten laden ihre Optionen erst beim Fokus (Import: Benutzerliste)
+      await sel.selectOption({ label: step.value });
+    } else if ('upload' in step) {
+      // Dateifelder sind oft versteckt (`hidden`): Playwright setzt die Datei trotzdem.
+      const file = resolve(ROOT, step.file);
+      if (!existsSync(file)) throw new Error(`${ctx}: Datei fehlt: ${step.file}`);
+      await buildLocator(page, step.upload).setInputFiles(file);
     }
     await settle(page);
   }

@@ -1025,6 +1025,51 @@
       }
     }
   },
+  "pl-abwesenheitsgrund": {
+    "file": "pl-abwesenheitsgrund.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 222,
+      "y": 151,
+      "w": 1218,
+      "h": 356
+    },
+    "markers": {
+      "bezeichnung": {
+        "x": 312,
+        "y": 241,
+        "w": 704,
+        "h": 20
+      },
+      "hinzufuegen": {
+        "x": 1268,
+        "y": 227,
+        "w": 116,
+        "h": 36
+      },
+      "liste": {
+        "x": 312,
+        "y": 373,
+        "w": 1072,
+        "h": 44
+      },
+      "verhalten": {
+        "x": 1024,
+        "y": 241,
+        "w": 180,
+        "h": 20
+      },
+      "vorlagen": {
+        "x": 312,
+        "y": 331,
+        "w": 1072,
+        "h": 26
+      }
+    }
+  },
   "pl-admin-dashboard": {
     "file": "pl-admin-dashboard.webp",
     "width": 1440,
@@ -1517,6 +1562,72 @@
       }
     }
   },
+  "pl-eigene-feiertage": {
+    "file": "pl-eigene-feiertage.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 238,
+      "y": 115,
+      "w": 1202,
+      "h": 375
+    },
+    "markers": {
+      "datum": {
+        "x": 1049,
+        "y": 358,
+        "w": 170,
+        "h": 42
+      },
+      "hinzufuegen": {
+        "x": 1231,
+        "y": 360,
+        "w": 137,
+        "h": 40
+      },
+      "jahr": {
+        "x": 1299,
+        "y": 205,
+        "w": 85,
+        "h": 41
+      },
+      "name": {
+        "x": 328,
+        "y": 358,
+        "w": 709,
+        "h": 42
+      }
+    }
+  },
+  "pl-farben": {
+    "file": "pl-farben.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "farben": {
+        "x": 312,
+        "y": 624,
+        "w": 576,
+        "h": 164
+      },
+      "speichern": {
+        "x": 312,
+        "y": 804,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
   "pl-fehlende-buchungen": {
     "file": "pl-fehlende-buchungen.webp",
     "width": 1440,
@@ -1535,6 +1646,144 @@
         "y": 100,
         "w": 1120,
         "h": 82
+      }
+    }
+  },
+  "pl-import-bestaetigen": {
+    "file": "pl-import-bestaetigen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 220,
+      "y": 681,
+      "w": 480,
+      "h": 219
+    },
+    "markers": {
+      "bestaetigen": {
+        "x": 421,
+        "y": 805,
+        "w": 186,
+        "h": 38
+      },
+      "ueberschreiben": {
+        "x": 337,
+        "y": 761,
+        "w": 228,
+        "h": 20
+      },
+      "zurueck": {
+        "x": 313,
+        "y": 805,
+        "w": 96,
+        "h": 38
+      }
+    }
+  },
+  "pl-import-hochladen": {
+    "file": "pl-import-hochladen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 265,
+      "y": 229,
+      "w": 768,
+      "h": 264
+    },
+    "markers": {
+      "analysieren": {
+        "x": 313,
+        "y": 405,
+        "w": 181,
+        "h": 40
+      },
+      "benutzer": {
+        "x": 313,
+        "y": 277,
+        "w": 324,
+        "h": 38
+      },
+      "datei": {
+        "x": 661,
+        "y": 277,
+        "w": 324,
+        "h": 104
+      }
+    }
+  },
+  "pl-import-vorschau": {
+    "file": "pl-import-vorschau.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 233,
+      "y": 165,
+      "w": 1207,
+      "h": 702
+    },
+    "markers": {
+      "hinweis": {
+        "x": 1189.9,
+        "y": 397,
+        "w": 74,
+        "h": 20
+      },
+      "konflikt": {
+        "x": 1189.9,
+        "y": 767,
+        "w": 73,
+        "h": 20
+      },
+      "neu": {
+        "x": 1189.9,
+        "y": 471,
+        "w": 53,
+        "h": 20
+      },
+      "zahlen": {
+        "x": 313,
+        "y": 245,
+        "w": 1070,
+        "h": 20
+      }
+    }
+  },
+  "pl-jahresabschluss-dialog": {
+    "file": "pl-jahresabschluss-dialog.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 486,
+      "y": 287,
+      "w": 524,
+      "h": 362
+    },
+    "markers": {
+      "abbrechen": {
+        "x": 602,
+        "y": 521,
+        "w": 106,
+        "h": 38
+      },
+      "bestaetigen": {
+        "x": 720,
+        "y": 521,
+        "w": 200,
+        "h": 38
+      },
+      "text": {
+        "x": 576,
+        "y": 377,
+        "w": 344,
+        "h": 120
       }
     }
   },
@@ -1568,6 +1817,111 @@
         "y": 138,
         "w": 672,
         "h": 50
+      }
+    }
+  },
+  "pl-jahresuebersicht": {
+    "file": "pl-jahresuebersicht.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "abschluss": {
+        "x": 882,
+        "y": 263,
+        "w": 183,
+        "h": 40
+      },
+      "jahr": {
+        "x": 777,
+        "y": 262,
+        "w": 93,
+        "h": 42
+      },
+      "loeschen": {
+        "x": 1077,
+        "y": 263,
+        "w": 197,
+        "h": 40
+      },
+      "resturlaub": {
+        "x": 591.1,
+        "y": 503,
+        "w": 143.2,
+        "h": 40.5
+      }
+    }
+  },
+  "pl-kind-krank-grund": {
+    "file": "pl-kind-krank-grund.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 222,
+      "y": 151,
+      "w": 1218,
+      "h": 320
+    },
+    "markers": {
+      "haken": {
+        "x": 312,
+        "y": 280.5,
+        "w": 13,
+        "h": 13
+      },
+      "verhalten": {
+        "x": 1024,
+        "y": 241,
+        "w": 180,
+        "h": 20
+      },
+      "vorlage": {
+        "x": 312,
+        "y": 355,
+        "w": 1072,
+        "h": 26
+      }
+    }
+  },
+  "pl-kind-krank-limit": {
+    "file": "pl-kind-krank-limit.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 222,
+      "y": 470,
+      "w": 1218,
+      "h": 350
+    },
+    "markers": {
+      "anspruch": {
+        "x": 312,
+        "y": 560,
+        "w": 112,
+        "h": 42
+      },
+      "mindestlohn": {
+        "x": 312,
+        "y": 710,
+        "w": 1072,
+        "h": 20
+      },
+      "speichern": {
+        "x": 536,
+        "y": 562,
+        "w": 130,
+        "h": 40
       }
     }
   },
@@ -1607,6 +1961,39 @@
         "y": 454,
         "w": 94,
         "h": 18
+      }
+    }
+  },
+  "pl-minijob-konto": {
+    "file": "pl-minijob-konto.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 347,
+      "y": 542,
+      "w": 746,
+      "h": 299
+    },
+    "markers": {
+      "fest": {
+        "x": 403,
+        "y": 769,
+        "w": 16,
+        "h": 16
+      },
+      "konto": {
+        "x": 403,
+        "y": 598,
+        "w": 16,
+        "h": 16
+      },
+      "monat": {
+        "x": 403,
+        "y": 648,
+        "w": 634,
+        "h": 42
       }
     }
   },
@@ -1799,6 +2186,33 @@
       }
     }
   },
+  "pl-onboarding-schichtplanung": {
+    "file": "pl-onboarding-schichtplanung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "schichtplanung": {
+        "x": 652,
+        "y": 808,
+        "w": 44,
+        "h": 24
+      },
+      "tour": {
+        "x": 652,
+        "y": 536,
+        "w": 44,
+        "h": 24
+      }
+    }
+  },
   "pl-pflicht-pause": {
     "file": "pl-pflicht-pause.webp",
     "width": 1440,
@@ -1827,6 +2241,66 @@
       "speichern": {
         "x": 312,
         "y": 768,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-projektion": {
+    "file": "pl-projektion.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "admin": {
+        "x": 844,
+        "y": 651,
+        "w": 44,
+        "h": 24
+      },
+      "mitarbeiter": {
+        "x": 844,
+        "y": 558,
+        "w": 44,
+        "h": 24
+      },
+      "speichern": {
+        "x": 312,
+        "y": 705,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-puffer": {
+    "file": "pl-puffer.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "puffer": {
+        "x": 312,
+        "y": 648,
+        "w": 112,
+        "h": 42
+      },
+      "speichern": {
+        "x": 595,
+        "y": 650,
         "w": 130,
         "h": 40
       }
@@ -2009,6 +2483,45 @@
       }
     }
   },
+  "pl-uebernahme": {
+    "file": "pl-uebernahme.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 288,
+      "y": 111.5,
+      "w": 864,
+      "h": 737
+    },
+    "markers": {
+      "jahr": {
+        "x": 488,
+        "y": 311.5,
+        "w": 464,
+        "h": 41
+      },
+      "resturlaub": {
+        "x": 488,
+        "y": 514.5,
+        "w": 464,
+        "h": 42
+      },
+      "speichern": {
+        "x": 488,
+        "y": 600.5,
+        "w": 464,
+        "h": 48
+      },
+      "ueberstunden": {
+        "x": 488,
+        "y": 412.5,
+        "w": 464,
+        "h": 42
+      }
+    }
+  },
   "pl-urlaubsantraege": {
     "file": "pl-urlaubsantraege.webp",
     "width": 1440,
@@ -2033,6 +2546,33 @@
         "y": 156,
         "w": 44,
         "h": 24
+      }
+    }
+  },
+  "pl-urlaubsgenehmigung": {
+    "file": "pl-urlaubsgenehmigung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "schalter": {
+        "x": 652,
+        "y": 516,
+        "w": 44,
+        "h": 24
+      },
+      "speichern": {
+        "x": 312,
+        "y": 556,
+        "w": 130,
+        "h": 40
       }
     }
   },

@@ -6,8 +6,8 @@ import { COMIC_SCENES } from './scenes';
 describe('COMIC_SCENES', () => {
   it('enthält die Broschüren-Szenen und die Szenen der Handbücher', () => {
     expect(Object.keys(COMIC_SCENES).sort()).toEqual([
-      'antrag', 'bloecke', 'einrichtung', 'handy', 'hero', 'nachweise', 'neuimteam', 'pause', 'schichtplan', 'sondertage',
-      'stempeln', 'uebersicht', 'urlaub', 'zweifaktor',
+      'antrag', 'bloecke', 'einrichtung', 'einstellungen', 'gruende', 'handy', 'hero', 'import', 'jahresabschluss', 'nachweise',
+      'neuimteam', 'pause', 'schichtplan', 'sondertage', 'stempeln', 'uebersicht', 'urlaub', 'zweifaktor',
     ]);
   });
 
