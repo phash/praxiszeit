@@ -12,7 +12,7 @@
 #   handbuch_md – docs/handbuch/*.md und frontend/public/help/*.md der drei
 #              Handbücher stimmen mit dem Generator überein (frontend/src/handbuch)
 #   handbuch_pzweb – pzweb-Kopie des Handbuch-Codes stimmt mit dem Sync-Skript
-#              überein (übersprungen ohne pzweb-Checkout mit Handbuch)
+#              überein (ohne PZWEB_DIR übersprungen, wenn ../pzweb kein Handbuch hat; mit PZWEB_DIR Fehler)
 #   links    – jeder In-Page-Link (#anker) der Handbücher hat ein Ziel
 #   weitere  – je Doku-Fläche Pflicht- und Verbotsbegriffe (eine Gruppe je Fläche)
 #
@@ -1399,12 +1399,19 @@ group_handbuch_md() {
 # CI hat kein pzweb-Checkout). Verglichen wird gegen den Stand, der ausgeliefert wird.
 group_handbuch_pzweb() {
   local pz="${PZWEB_DIR:-../pzweb}" tmp
+  # Ausdrücklich gesetztes PZWEB_DIR: fehlendes Handbuch ist ein Fehler, kein Überspringen.
+  if [ -n "${PZWEB_DIR:-}" ] && [ ! -d "$pz/frontend/src/handbuch" ]; then
+    echo "FEHLT     handbuch_pzweb: PZWEB_DIR=$pz hat kein frontend/src/handbuch"
+    FAIL=1
+    return
+  fi
   if [ ! -d "$pz" ] || [ ! -d "$pz/frontend/src/handbuch" ]; then
     echo "handbuch_pzweb: übersprungen (kein pzweb-Checkout mit frontend/src/handbuch unter $pz)"
     return 0
   fi
   tmp="$(mktemp -d)"
   mkdir -p "$tmp/frontend/src/handbuch" "$tmp/frontend/public/handbuch/img"
+  echo "{}" > "$tmp/frontend/package.json"
   bash scripts/sync-handbuch-to-pzweb.sh "$tmp" >/dev/null || { FAIL=1; rm -rf "$tmp"; return; }
   if ! diff -r "$tmp/frontend/src/handbuch" "$pz/frontend/src/handbuch" \
      || ! diff -r "$tmp/frontend/public/handbuch/img" "$pz/frontend/public/handbuch/img"; then

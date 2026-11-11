@@ -17,6 +17,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="${1:-${PZWEB_DIR:-$ROOT/../pzweb}}"
 [ -d "$DEST" ] || { echo "pzweb-Pfad nicht gefunden: $DEST" >&2; exit 2; }
 DEST="$(cd "$DEST" && pwd)"
+# Schutz: rsync --delete darf nie auf Wurzel, das App-Repo selbst oder ein Nicht-pzweb zielen.
+if [ "$DEST" = "/" ] || [ "$DEST" = "$ROOT" ] || [ ! -f "$DEST/frontend/package.json" ]; then
+  echo "Ziel ist kein pzweb-Checkout (verweigert): $DEST — erwartet <pzweb>/frontend/package.json, nicht / und nicht das App-Repo" >&2
+  exit 1
+fi
 
 SRC="$ROOT/frontend/src/handbuch"
 IMG="$ROOT/frontend/public/help/img"

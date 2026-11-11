@@ -1,7 +1,7 @@
 import type { ComponentType, MouseEvent } from 'react';
 import { renderInline } from '../inline';
 import type { InlineOpts } from '../inline';
-import type { Block, Handbook, Manifest } from '../types';
+import type { Block, Handbook, HandbookId, Manifest } from '../types';
 import ComicSlot from './ComicSlot';
 import TaskCard from './TaskCard';
 import TipBox from './TipBox';
@@ -12,6 +12,8 @@ export interface HandbookPageProps {
   manifest: Manifest;
   imgBase: string;
   linkBase: string;
+  /** Abweichende URL-Segmente je Handbuch für `handbuch:`-Links (Standard: die Handbuch-ID). */
+  slugs?: Partial<Record<HandbookId, string>>;
   variant: 'wide' | 'narrow';
   comics?: Record<string, ComponentType>;
   diagrams?: Record<string, ComponentType>;
@@ -20,9 +22,9 @@ export interface HandbookPageProps {
 }
 
 export default function HandbookPage({
-  handbook, manifest, imgBase, linkBase, variant, comics, diagrams, onInternalLink,
+  handbook, manifest, imgBase, linkBase, slugs, variant, comics, diagrams, onInternalLink,
 }: HandbookPageProps) {
-  const opts: InlineOpts = { linkBase, onInternalLink };
+  const opts: InlineOpts = { linkBase, slugs, onInternalLink };
 
   const renderBlock = (b: Block, key: string) => {
     switch (b.kind) {

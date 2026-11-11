@@ -166,4 +166,19 @@ describe('HandbookPage internal link handler', () => {
     fireEvent.click(container.querySelector('a[href="https://example.org/"]')!);
     expect(calls).toEqual([]);
   });
+  it('applies slugs to handbuch: links and the href passed to onInternalLink', () => {
+    const hb = { ...handbook, lead: 'Siehe [Rechnen](handbuch:so-rechnet#x)' };
+    const calls: string[] = [];
+    const { container } = render(
+      <HandbookPage {...props} handbook={hb} slugs={{ 'so-rechnet': 'so-rechnet-praxiszeit' }}
+        onInternalLink={(href) => { calls.push(href); }} />,
+    );
+    fireEvent.click(container.querySelector('a[href="/handbuch/so-rechnet-praxiszeit#x"]')!);
+    expect(calls).toEqual(['/handbuch/so-rechnet-praxiszeit#x']);
+  });
+  it('keeps the handbook id as slug without slugs', () => {
+    const hb = { ...handbook, lead: 'Siehe [Rechnen](handbuch:so-rechnet#x)' };
+    const { container } = render(<HandbookPage {...props} handbook={hb} />);
+    expect(container.querySelector('a[href="/handbuch/so-rechnet#x"]')).not.toBeNull();
+  });
 });
