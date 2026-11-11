@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### 🐛 Behoben (Funde beim Schreiben der Handbücher)
+
+**Enthält die Datenbank-Migration `077_legacy_half_day`.** Vor dem Update wie immer eine Sicherung anlegen.
+
+- **Löschung einer vergangenen Abwesenheit beantragen.** Mitarbeitende konnten eine Abwesenheit eines vergangenen Tages weder löschen noch die Löschung beantragen: „Löschen“ im Journal tat an reinen Abwesenheitstagen nichts, der Link „per Antrag“ im Abwesenheitskalender führte ins Journal. Jetzt steht an der Abwesenheit „Löschung beantragen“ (Kalender und Journal, Begründung Pflicht); die Verwaltung entscheidet über den Antrag. Betriebsferien-Tage ändert weiterhin nur die Verwaltung.
+- **Urlaubsverbrauch alter Buchungen driftet nicht mehr.** Abwesenheiten von vor 1.9.0 trugen keine Halbtags-Angabe und zählten als „Stunden ÷ heutiges Tagessoll“ – nach einer Arbeitszeit-Änderung verschob sich dadurch der Urlaubsverbrauch (z. B. Vorschau „3 → 3,1 Tage“ ohne betroffene Abwesenheit). Migration 077 trägt die Angabe nach, wo sie eindeutig ist (Stunden = Tagessoll bzw. halbes Tagessoll); der Verbrauch ändert sich dabei nicht.
+- **„Rückwirkend …“ / „Ab heute …“ lassen sich über den Text auswählen.** Im Kasten „Verkürzung“ wählte nur ein Klick auf den Radioknopf die Option; ein Klick auf den Text sprang im Dialog nach oben.
+- **Admin-Dashboard nennt den Monat deutsch** („Oktober 2026“ statt „October 2026“) in der Kachel „Monat“ und im Detail-Dialog.
+- **Barrierefreiheit:** Der Plus-Knopf „Neuer Eintrag“ der Zeiterfassung hat auch am Handy einen Namen; der Schalter „Abwesenheitsanträge genehmigungspflichtig“ trägt seine Überschrift als Namen.
+- **Formular „Neue:r Benutzer:in“:** Platzhalter der E-Mail `name@praxis.example` statt einer echten fremden Domain.
+
 ## [1.23.0] - 2026-11-07
 
 ### ✨ Neu
