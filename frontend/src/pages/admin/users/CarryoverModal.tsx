@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import DialogFocusTrap from '../../../components/DialogFocusTrap';
 import apiClient from '../../../api/client';
 import { Save, X } from 'lucide-react';
@@ -24,6 +24,7 @@ interface CarryoverModalProps {
 }
 
 export default function CarryoverModal({ userId, userName, onClose, onSaved }: CarryoverModalProps) {
+  const titleId = useId();
   const toast = useToast();
   const [carryovers, setCarryovers] = useState<YearCarryover[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -92,9 +93,9 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <DialogFocusTrap focusTrapOptions={{ allowOutsideClick: true, onDeactivate: onClose, initialFocus: false }}>
-        <div className="bg-white rounded-xl shadow-lg max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+        <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="bg-white rounded-xl shadow-lg max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 id={titleId} className="text-lg font-semibold text-gray-900">
               Vorjahresübernahme: {userName}
             </h3>
             <button

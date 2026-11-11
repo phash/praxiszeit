@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useId, useState, useCallback, useMemo, useRef } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -134,6 +134,7 @@ export function buildMovedSlotPayload(
 }
 
 export default function AdminShiftPlanning() {
+  const duplicateTitleId = useId();
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   // #371: configured planner weekdays — drive the week grid, day picker and slot dialog.
@@ -756,10 +757,13 @@ export default function AdminShiftPlanning() {
         <DialogFocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: () => setDuplicateState(null) }}>
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <form
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={duplicateTitleId}
               onSubmit={(e) => { e.preventDefault(); confirmDuplicate(); }}
               className="bg-white rounded-xl shadow-lg w-full max-w-md p-5"
             >
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Schichtplan duplizieren</h3>
+              <h3 id={duplicateTitleId} className="text-lg font-semibold text-gray-900 mb-2">Schichtplan duplizieren</h3>
               <p className="text-sm text-gray-500 mb-3">
                 Kopiert alle Zeitslots und Zuweisungen. Die Kopie ist zunächst <strong>inaktiv</strong>.
               </p>

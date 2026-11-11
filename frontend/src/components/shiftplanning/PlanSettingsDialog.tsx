@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import DialogFocusTrap from '../DialogFocusTrap';
 import { X } from 'lucide-react';
 import Button from '../Button';
@@ -21,6 +21,7 @@ interface Props {
  * Aktiv-Datums-Fenster (KW-Planung) eines Schichtplans bearbeiten.
  */
 export default function PlanSettingsDialog({ isOpen, plan, onSaved, onClose }: Props) {
+  const titleId = useId();
   const toast = useToast();
   const [name, setName] = useState(plan.name);
   const [description, setDescription] = useState(plan.description ?? '');
@@ -69,9 +70,9 @@ export default function PlanSettingsDialog({ isOpen, plan, onSaved, onClose }: P
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <DialogFocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: onClose }}>
-        <div className="bg-white rounded-xl shadow-lg w-full max-w-lg">
+        <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="bg-white rounded-xl shadow-lg w-full max-w-lg">
           <div className="flex items-center justify-between border-b border-gray-200 p-4">
-            <h3 className="text-lg font-semibold text-gray-900">Plan-Einstellungen</h3>
+            <h3 id={titleId} className="text-lg font-semibold text-gray-900">Plan-Einstellungen</h3>
             <button onClick={onClose} aria-label="Schließen" className="text-gray-400 hover:text-gray-600">
               <X size={20} />
             </button>
