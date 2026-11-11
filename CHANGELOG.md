@@ -10,6 +10,8 @@
 
 ### 🐛 Behoben (Funde beim Schreiben der Handbücher)
 
+- **Ruhezeitbericht (§ 5 ArbZG) erkennt Verstöße über die Monats- und Jahresgrenze.** Spätdienst am 30.04. und Frühdienst am 01.05. mit weniger als 11 h Ruhe erscheinen jetzt im Bericht für Mai (bzw. für Januar/das neue Jahr bei 31.12./01.01.); vorher fehlten sie in jedem Bericht.
+- **Zeiterfassung: Monatsliste zeigt alle Einträge.** Die Liste war auf 100 Einträge begrenzt und schnitt Monate mit vielen Teilstempeln still ab (Summe zu niedrig); Standard jetzt 500, ein Limit unter 1 wird mit 422 abgelehnt.
 - **Mitarbeiter-Dashboard: Abwesenheits-Kachel zählt nach Tagen.** Krank, Fortbildung, Überstundenausgleich und Sonstiges werden serverseitig tagebasiert gezählt (Tagessoll des jeweiligen Tages, Halbtage 0,5, auch ohne Stundenzählung); neu ist die Kachel „Bez. Freistellung“. Vorher rechnete die Seite mit dem heutigen Tagessoll und ließ bezahlte Freistellung weg.
 - **Mitarbeiter-Dashboard bleibt bei Teilausfällen benutzbar.** Fällt ein Nebenendpunkt aus, bleiben Soll/Ist/Saldo sichtbar und ein Hinweis bietet „Neu laden“; bei Totalausfall erscheint ein Fehlerblock mit „Erneut laden“. Auch die Aktualisierung nach dem Stempeln übernimmt jede erfolgreiche Quelle einzeln.
 - **Monatsjournal protokolliert das Lesen von Gesundheitsdaten nur einmal je Admin, Person und Monat und 10 Minuten.** Bisher erzeugte jedes Neuladen nach dem Speichern eine eigene Zeile im Änderungsprotokoll.

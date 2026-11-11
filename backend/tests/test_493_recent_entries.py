@@ -113,3 +113,20 @@ def test_nur_eigene_eintraege_des_eigenen_mandanten(db, test_user, test_admin):
 
     body = _client(db, test_user).get("/api/time-entries/?limit=5").json()
     assert _ranges(body) == [("2026-10-01", "08:00")]
+
+
+def test_monatsliste_schneidet_bei_mehr_als_100_eintraegen_nicht_ab(db, test_user):
+    """zeit-06: Standard-Limit 100 schnitt Monate mit vielen Teilstempeln still ab."""
+    for i in range(120):
+        db.add(_entry(test_user, dt.date(2026, 3, 1 + i % 28),
+                      dt.time(5 + i // 28, (i % 28) * 2), None))
+    db.commit()
+    r = _client(db, test_user).get("/api/time-entries/?month=2026-03")
+    assert r.status_code == 200, r.text
+    assert len(r.json()) == 120
+
+
+@pytest.mark.parametrize("bad", ["0", "-1"])
+def test_limit_ohne_untergrenze_ist_422(db, test_user, bad):
+    r = _client(db, test_user).get(f"/api/time-entries/?limit={bad}")
+    assert r.status_code == 422
