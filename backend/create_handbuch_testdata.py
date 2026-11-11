@@ -55,6 +55,9 @@ REASON_NAME = "Fortbildung extern"
 CLOSURE_NAME = "Teamklausur"
 REDUCED_DAY_LABEL = "Brückentag"
 REDUCED_DAY_MAX_HOURS = Decimal("4.00")
+# Maria hat an diesem Werktag vor dem Stichtag vergessen zu stempeln (kein
+# Eintrag) — Handbuch-Aufnahme ``ma-vergangener-tag`` füllt {{werktag-4}}.
+MARIA_FORGOTTEN_WORKDAY = 4
 
 # Sarah: Arbeitszeit-Blöcke Mo–Do 08–12 + 15–16, Fr 08–13 (25 h)
 SARAH_BLOCKS = [
@@ -170,6 +173,17 @@ def pick_run(start: date, n: int, holiday_dates) -> list:
                 and not any(is_half_special_day(x) for x in run) and run[-1].weekday() < 5:
             return run
         d += timedelta(days=1)
+
+
+def workday_before(stichtag: date, n: int) -> date:
+    """N-ter Werktag (Mo–Fr, Feiertage zählen mit) vor dem Stichtag — Spiegel
+    von ``workdayBefore`` in frontend/src/handbuch/dates.ts ({{werktag-N}})."""
+    d = stichtag
+    while n > 0:
+        d -= timedelta(days=1)
+        if d.weekday() < 5:
+            n -= 1
+    return d
 
 
 def prev_workday(d: date, holiday_dates) -> date:
@@ -537,6 +551,10 @@ def create_time_entries_for_user(db, user: User, holiday_dates: set, start: date
         if _is_workday(d, holiday_dates) and d not in absence_dates and _day_target(db, user, d) > 0:
             days.append(d)
         d += timedelta(days=1)
+
+    if stichtag and user.username == "maria":
+        forgotten = workday_before(stichtag, MARIA_FORGOTTEN_WORKDAY)
+        days = [x for x in days if x != forgotten]
 
     through_days = set()
     if getattr(user, "work_blocks", None):

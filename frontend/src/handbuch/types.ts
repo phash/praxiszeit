@@ -7,9 +7,11 @@ export type LocatorSpec =
   | { text: string; within?: 'main' | 'dialog' }
   | { css: string };
 export type PrepareStep =
+  /** `fill.value` darf Datums-Platzhalter enthalten ({{stichtag}}, {{werktag-N}} …, siehe dates.ts). */
   | { goto: string } | { click: LocatorSpec } | { fill: LocatorSpec; value: string }
   | { monthBack: number } | { waitFor: LocatorSpec } | { scrollTo: LocatorSpec };
-export interface MarkerDef { n: number; id: string; locator: LocatorSpec }
+/** `badge`: Lage des Nummernkreises (Ruling R18), Standard `left`. */
+export interface MarkerDef { n: number; id: string; locator: LocatorSpec; badge?: 'left' | 'corner' | 'right' | 'top' }
 export interface ShotDef {
   id: string; persona: Persona; viewport: 'desktop' | 'mobile'; route: string;
   prepare?: PrepareStep[]; crop?: 'full' | 'main' | 'dialog' | { around: string[]; pad: number };

@@ -71,13 +71,31 @@ export function boxInside(inner: Box, outer: Box, tol = 0.5): boolean {
   );
 }
 
+/** Lage des Nummernkreises zum Rahmen (Ruling R18). */
+export type BadgePlacement = 'left' | 'corner' | 'right' | 'top';
+
 /**
- * Mittelpunkt des Nummernkreises (Radius `r`) zu einer Marker-Box (Ruling R15):
- * obere linke Ecke des Rahmens, um 0,6·r nach aussen (links und oben)
- * verschoben, dann so geklemmt, dass der ganze Kreis im Ausschnitt `crop` liegt.
- * Eine Regel fuer alle Marker; gemeinsam fuer ShotFigure und die Kontaktseite.
+ * Mittelpunkt des Nummernkreises (Radius `r`) zu einer Marker-Box (Ruling R18,
+ * ersetzt R15). Standard `left`: links neben dem Rahmen, senkrecht mittig
+ * (cx = x − 1,3 r, cy = y + h/2). `right`: rechts daneben, mittig; `top`: über
+ * der Mitte (cy = y − 1,3 r). Passt der ganze Kreis an dieser Stelle nicht in
+ * den Ausschnitt `crop`, gilt die Ecke aus R15: obere linke Ecke um 0,6 r nach
+ * außen, in den Ausschnitt geklemmt (`corner` erzwingt sie).
+ * Eine Regel für ShotFigure und die Kontaktseite.
  */
-export function markerBadgePosition(box: Box, r: number, crop: Box): { cx: number; cy: number } {
+export function markerBadgePosition(
+  box: Box, r: number, crop: Box, badge: BadgePlacement = 'left',
+): { cx: number; cy: number } {
+  const fits = (cx: number, cy: number) =>
+    cx - r >= crop.x - 0.01 && cx + r <= crop.x + crop.w + 0.01 &&
+    cy - r >= crop.y - 0.01 && cy + r <= crop.y + crop.h + 0.01;
+  const mid = box.y + box.h / 2;
+  const wanted =
+    badge === 'left' ? { cx: box.x - 1.3 * r, cy: mid }
+      : badge === 'right' ? { cx: box.x + box.w + 1.3 * r, cy: mid }
+        : badge === 'top' ? { cx: box.x + box.w / 2, cy: box.y - 1.3 * r }
+          : null;
+  if (wanted && fits(wanted.cx, wanted.cy)) return wanted;
   const clamp = (v: number, lo: number, hi: number) => (hi < lo ? (lo + hi) / 2 : Math.min(Math.max(v, lo), hi));
   return {
     cx: clamp(box.x - 0.6 * r, crop.x + r, crop.x + crop.w - r),

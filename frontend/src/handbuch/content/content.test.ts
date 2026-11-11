@@ -30,10 +30,9 @@ describe('Handbuch-Inhalte', () => {
       expect(validateHandbook(h, manifest)).toEqual([]);
     });
 
-    it(`${h.id}: jedes Kapitel mit Aufgaben hat mindestens eine Aufgabe mit Screenshot`, () => {
+    it(`${h.id}: jedes Kapitel hat eine Aufgabe mit Screenshot oder steht in NO_SHOT_CHAPTERS`, () => {
       const missing = h.chapters
         .filter((ch) => !NO_SHOT_CHAPTERS.includes(ch.id))
-        .filter((ch) => ch.blocks.some((b) => b.kind === 'task'))
         .filter((ch) => !ch.blocks.some((b) => b.kind === 'task' && b.shot))
         .map((ch) => ch.id);
       expect(missing).toEqual([]);

@@ -36,7 +36,7 @@ export default function ShotFigure({ shotId, def, m, imgBase, active = null }: S
           if (!r) return null;
           const state = active == null ? '' : active === mk.n ? ' hb-act' : ' hb-dim';
           const radius = 17 * k;
-          const { cx, cy } = markerBadgePosition(r, radius, m.crop);
+          const { cx, cy } = markerBadgePosition(r, radius, m.crop, mk.badge);
           return (
             <g key={mk.id} data-marker={mk.n} className={`hb-g${state}`}>
               <rect className="hb-hl" x={r.x} y={r.y} width={r.w} height={r.h} rx={10 * k} strokeWidth={(active === mk.n ? 5 : 3) * k} />

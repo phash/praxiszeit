@@ -662,4 +662,29 @@ def test_no_entry_of_the_stichtag_ends_after_capture_time(full_tenant, app_engin
 
     rows = _read(app_engine, collect)
     assert not [r for r in rows if r[2] is not None and r[2] > time(10, 30)]
+    assert not [r for r in rows if r[1] > time(10, 30)], "Beginn nach der Aufnahmezeit"
     assert sorted((r[0], r[1]) for r in rows if r[2] is None) == [("maria", time(7, 45)), ("sarah", time(8, 0))]
+
+
+def test_maria_forgot_to_stamp_on_the_fourth_workday_before(full_tenant, app_engine, monkeypatch):
+    """Aufnahme ``ma-vergangener-tag`` füllt {{werktag-4}}: an diesem Werktag hat
+    Maria weder Eintrag noch Abwesenheit (Einstempeln vergessen); die Tage
+    davor und danach sind belegt. Spiegel von dates.ts::workdayBefore."""
+    from app.models import Absence, TimeEntry
+    seed = _load_seed()
+    assert seed.workday_before(date(2026, 10, 28), 4) == date(2026, 10, 22)
+    assert seed.workday_before(date(2026, 11, 2), 1) == date(2026, 10, 30)
+    _run_seed(app_engine, seed, monkeypatch)
+    day = seed.workday_before(STICHTAG, seed.MARIA_FORGOTTEN_WORKDAY)
+
+    def collect(db):
+        maria = db.query(User).filter(User.tenant_id == TENANT_ID, User.username == "maria").one()
+        entries = {e.date for e in db.query(TimeEntry).filter(
+            TimeEntry.tenant_id == TENANT_ID, TimeEntry.user_id == maria.id)}
+        absences = {a.date for a in db.query(Absence).filter(
+            Absence.tenant_id == TENANT_ID, Absence.user_id == maria.id)}
+        return entries, absences
+
+    entries, absences = _read(app_engine, collect)
+    assert day not in entries and day not in absences
+    assert seed.workday_before(STICHTAG, 3) in entries and seed.workday_before(STICHTAG, 5) in entries

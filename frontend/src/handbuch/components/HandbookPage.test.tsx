@@ -103,17 +103,17 @@ describe('HandbookPage', () => {
     expect(r(1400)).toBeCloseTo(2 * r(700));
     expect(r(700)).toBeCloseTo(17);
   });
-  it('number circle sits up and left of the frame corner (R15)', () => {
+  it('number circle sits left of the frame, vertically centred (R18)', () => {
     const mf = { ...manifest, s1: { ...manifest.s1, crop: { x: 256, y: 0, w: 1184, h: 900 },
       markers: { ...manifest.s1.markers, b: { x: 600, y: 164, w: 40, h: 40 } } } };
     const { container } = render(<HandbookPage {...props} manifest={mf} />);
     const g = container.querySelector('g[data-marker="2"]')!;
     const rect = g.querySelector('rect')!;
     const circle = g.querySelector('circle')!;
-    const [x, y] = ['x', 'y'].map((a) => Number(rect.getAttribute(a)));
+    const [x, y, h] = ['x', 'y', 'height'].map((a) => Number(rect.getAttribute(a)));
     const [cx, cy, r] = ['cx', 'cy', 'r'].map((a) => Number(circle.getAttribute(a)));
-    expect(cx).toBeCloseTo(x - 0.6 * r);
-    expect(cy).toBeCloseTo(y - 0.6 * r);
+    expect(cx).toBeCloseTo(x - 1.3 * r);
+    expect(cy).toBeCloseTo(y + h / 2);
     expect(Number(g.querySelector('text')!.getAttribute('x'))).toBe(cx);
     expect(Number(g.querySelector('text')!.getAttribute('y'))).toBe(cy);
   });

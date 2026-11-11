@@ -21,6 +21,7 @@ import { ALL_SHOTS } from '../../frontend/src/handbuch/content/index';
 import { assertSingleVisible, boxInside, computeCrop, type Box } from '../../frontend/src/handbuch/geometry';
 import type { LocatorSpec, Manifest, ManifestShot, Persona, PrepareStep, ShotDef } from '../../frontend/src/handbuch/types';
 import { planSettingsRestore } from '../../frontend/src/handbuch/settingsRestore';
+import { expandDateTokens } from '../../frontend/src/handbuch/dates';
 import { writeContactSheet } from './contact-sheet';
 
 const ROOT = resolve(__dirname, '../..');
@@ -230,7 +231,7 @@ async function settle(page: Page) {
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
 }
 
-async function runPrepare(page: Page, baseUrl: string, steps: PrepareStep[], shotId: string) {
+async function runPrepare(page: Page, baseUrl: string, steps: PrepareStep[], shotId: string, stichtag: string) {
   for (const [i, step] of steps.entries()) {
     const ctx = `${shotId} prepare[${i}]`;
     if ('goto' in step) {
@@ -238,7 +239,7 @@ async function runPrepare(page: Page, baseUrl: string, steps: PrepareStep[], sho
     } else if ('click' in step) {
       await (await single(page, step.click, ctx)).click();
     } else if ('fill' in step) {
-      await (await single(page, step.fill, ctx)).fill(step.value);
+      await (await single(page, step.fill, ctx)).fill(expandDateTokens(step.value, stichtag));
     } else if ('monthBack' in step) {
       for (let k = 0; k < step.monthBack; k++) {
         await (await single(page, { role: 'button', name: 'Vorheriger Monat', exact: true }, ctx)).click();
@@ -372,7 +373,7 @@ async function captureShot(browser: Browser, def: ShotDef, baseUrl: string, stic
     if (def.settings && Object.keys(def.settings).length) restore = await applySettings(baseUrl, def.settings);
     await page.goto(`${baseUrl}${def.route}`);
     await settle(page);
-    await runPrepare(page, baseUrl, def.prepare ?? [], def.id);
+    await runPrepare(page, baseUrl, def.prepare ?? [], def.id, stichtag);
     await calm(page);
     if (def.crop === 'dialog') {
       await stretchForDialog(page, def.id);

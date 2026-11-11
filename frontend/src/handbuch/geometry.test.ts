@@ -86,23 +86,39 @@ describe('boxInside', () => {
   });
 });
 
-describe('markerBadgePosition', () => {
+describe('markerBadgePosition (R18)', () => {
   const crop = { x: 0, y: 0, w: 1440, h: 900 };
   const r = 20;
+  const b = { x: 300, y: 100, w: 160, h: 60 };
 
-  it('centre is the top-left corner shifted outward by 0.6 r', () => {
-    expect(markerBadgePosition({ x: 300, y: 100, w: 160, h: 60 }, r, crop)).toEqual({ cx: 288, cy: 88 });
+  it('default: left of the frame, vertically centred', () => {
+    expect(markerBadgePosition(b, r, crop)).toEqual({ cx: 274, cy: 130 });
+    expect(markerBadgePosition(b, r, crop, 'left')).toEqual({ cx: 274, cy: 130 });
   });
 
-  it('small element: centre lies outside the rect, up and left of its corner', () => {
-    const b = { x: 288, y: 164, w: 40, h: 40 };
-    const p = markerBadgePosition(b, r, crop);
-    expect(p.cx).toBeLessThan(b.x);
-    expect(p.cy).toBeLessThan(b.y);
-    expect(p).toEqual({ cx: 276, cy: 152 });
+  it('right: right of the frame, vertically centred', () => {
+    expect(markerBadgePosition(b, r, crop, 'right')).toEqual({ cx: 486, cy: 130 });
   });
 
-  it('clamps at the crop edge so the whole circle stays inside', () => {
+  it('top: above the centre of the frame', () => {
+    expect(markerBadgePosition(b, r, crop, 'top')).toEqual({ cx: 380, cy: 74 });
+  });
+
+  it('corner: top-left corner shifted outward by 0.6 r (R15)', () => {
+    expect(markerBadgePosition(b, r, crop, 'corner')).toEqual({ cx: 288, cy: 88 });
+  });
+
+  it('falls back to the corner when the circle does not fit at the wanted place', () => {
+    const c = { x: 256, y: 0, w: 1184, h: 900 };
+    // links ist kein Platz (x − 1,3 r − r < crop.x)
+    expect(markerBadgePosition({ x: 270, y: 100, w: 40, h: 40 }, r, c)).toEqual({ cx: 276, cy: 88 });
+    // rechts ist kein Platz
+    expect(markerBadgePosition({ x: 1380, y: 100, w: 50, h: 40 }, r, c, 'right')).toEqual({ cx: 1368, cy: 88 });
+    // oben ist kein Platz
+    expect(markerBadgePosition({ x: 600, y: 10, w: 100, h: 40 }, r, c, 'top')).toEqual({ cx: 588, cy: 20 });
+  });
+
+  it('corner fallback is clamped so the whole circle stays inside', () => {
     const c = { x: 256, y: 0, w: 1184, h: 900 };
     expect(markerBadgePosition({ x: 270, y: 10, w: 40, h: 40 }, r, c)).toEqual({ cx: 276, cy: 20 });
     expect(markerBadgePosition({ x: 1436, y: 895, w: 4, h: 5 }, r, c)).toEqual({ cx: 1420, cy: 880 });
