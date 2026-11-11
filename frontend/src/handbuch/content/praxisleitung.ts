@@ -394,7 +394,7 @@ const shots: ShotDef[] = [
       { n: 4, id: 'typ', locator: { css: 'main form select' }, badge: 'top' },
       { n: 5, id: 'speichern', locator: { css: "main form button[type='submit']" }, badge: 'left' },
     ],
-    alt: 'Seite „Abwesenheiten verwalten“: Mitarbeiterin Sarah Klein gewählt, darunter das Formular „Abwesenheit eintragen“ mit Datum, Typ Urlaub, Stunden und Speichern',
+    alt: 'Seite „Abwesenheiten verwalten“: Mitarbeiterin Sarah Klein gewählt, darunter das Formular „Abwesenheit eintragen“ mit Datum, Typ Urlaub, ausgegrautem Stundenfeld mit Hinweis zum Tagessoll und Speichern',
   },
   {
     id: 'pl-betriebsferien',
@@ -1183,7 +1183,7 @@ export const praxisleitung: Handbook = {
             { n: 2, text: 'Mehrere Tage? Setzen Sie den Haken bei [[Zeitraum (mehrere Tage)]]. Für einen einzelnen Tag gibt es [[Halber Tag (zählt als 0,5 Tag)]] – nicht bei Krank und Überstundenausgleich.' },
             { n: 3, text: 'Wählen Sie das **Datum** – beim Zeitraum **Von** und **Bis**. Anders als die Mitarbeitenden tragen Sie auch vergangene Tage direkt ein.' },
             { n: 4, text: '**Typ:** Urlaub, Krank, Fortbildung (außer Haus), Überstundenausgleich, Bezahlte Freistellung (kein Urlaubsabzug), Sonstiges – oder unter „Eigene Gründe“ ein Grund Ihrer Praxis.' },
-            { text: '**Stunden:** Gebucht wird immer das Tagessoll des Tages; nur beim Überstundenausgleich zählt der eingetragene Wert – er geht vom Überstundenkonto ab.' },
+            { text: '**Stunden:** Das Feld bleibt ausgegraut, solange es nichts einzutragen gibt – gebucht wird immer das Tagessoll des Tages laut Vertrag („Es wird das Tagessoll laut Vertrag gebucht“). Nur beim Überstundenausgleich ist das Feld frei: Der eingetragene Wert geht vom Überstundenkonto ab.' },
             { n: 5, text: 'Klicken Sie auf [[Speichern]].' },
           ],
         },
