@@ -343,6 +343,8 @@ def get_journal(
                     "hours": float(Decimal(str(a.hours)).quantize(Decimal("0.01"))),
                     "start_time": a.start_time.strftime("%H:%M") if a.start_time else None,
                     "end_time": a.end_time.strftime("%H:%M") if a.end_time else None,
+                    # P1.1: Betriebsferien-Tag — Mitarbeitende beantragen hier keine Löschung.
+                    "closure_day": a.closure_id is not None,
                 }
                 for a in day_absences
             ],

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { format } from 'date-fns';
 import MonthlyJournal, { isJournalData } from './MonthlyJournal';
 import { AUTO_CLOSED_HINT } from '../utils/creditOverride';
@@ -937,5 +937,51 @@ describe('<MonthlyJournal /> Überschneidung (Audit 2026-11-07)', () => {
     fireEvent.click(screen.getByTitle('Hinzufügen'));
     expect(await screen.findByRole('alert')).toHaveTextContent(detail);
     expect(toastError).toHaveBeenCalledWith(detail);
+  });
+});
+
+// P1.1: an einem vergangenen Tag mit Abwesenheit lief „Löschen" für
+// Mitarbeitende ins Leere (handleEmployeeDelete kannte nur Zeiteinträge).
+describe('<MonthlyJournal /> Löschung einer vergangenen Abwesenheit beantragen (P1.1)', () => {
+  const sickDay = {
+    ...validDay, date: '2026-06-03', weekday: 'Mi', type: 'sick' as const,
+    absences: [{ id: 'a1', type: 'sick', hours: 8, start_time: null, end_time: null }],
+  };
+
+  it('bietet an der Abwesenheit „Löschung beantragen" an und sendet absence_id', async () => {
+    mockJournal([sickDay]);
+    postMock.mockResolvedValue({ data: {} });
+    render(<MonthlyJournal />);
+    fireEvent.click(await screen.findByTitle('Löschung beantragen: Krank'));
+    const dialog = await screen.findByRole('dialog', { name: 'Änderungsantrag: Löschung beantragen' });
+    fireEvent.change(within(dialog).getByLabelText(/Begründung/), { target: { value: 'War im Dienst' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Antrag stellen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/change-requests/', {
+      request_type: 'delete', entry_kind: 'absence', absence_id: 'a1', reason: 'War im Dienst',
+    }));
+  });
+
+  it('„Löschen" im Bearbeitungsmodus öffnet denselben Antrag', async () => {
+    mockJournal([sickDay]);
+    render(<MonthlyJournal />);
+    fireEvent.click(await screen.findByTitle('Krank bearbeiten'));
+    fireEvent.click(screen.getByTitle('Löschen'));
+    expect(await screen.findByRole('dialog', { name: 'Änderungsantrag: Löschung beantragen' })).toBeInTheDocument();
+  });
+
+  it('nicht an Betriebsferien-Tagen (ändert nur die Verwaltung)', async () => {
+    mockJournal([{ ...sickDay, type: 'vacation' as const,
+      absences: [{ id: 'c1', type: 'vacation', hours: 8, start_time: null, end_time: null, closure_day: true }] }]);
+    render(<MonthlyJournal />);
+    fireEvent.click(await screen.findByTitle('Urlaub bearbeiten'));
+    expect(screen.queryByTitle('Löschung beantragen: Urlaub')).toBeNull();
+    expect(screen.queryByTitle('Löschen')).toBeNull();
+  });
+
+  it('Admins löschen weiter direkt (kein Antrag)', async () => {
+    mockJournal([sickDay]);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByTitle('Krank bearbeiten');
+    expect(screen.queryByTitle('Löschung beantragen: Krank')).toBeNull();
   });
 });
