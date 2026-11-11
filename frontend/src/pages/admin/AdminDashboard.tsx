@@ -102,8 +102,31 @@ function readViewMode(): 'month' | 'week' {
   }
 }
 
+
+// calc-13: Die Berichte liefern Listen; die Zahl ausgeblendeter Personen mit Daten
+// im Zeitraum steht im Antwortkopf (wie `hidden_with_data_count` der ArbZG-Berichte).
+function hiddenCountFromHeaders(headers: unknown): number {
+  const raw = (headers as Record<string, unknown> | undefined)?.['x-hidden-with-data-count'];
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function HiddenStaffHint({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <p className="mb-3 text-sm text-amber-700" data-testid="hidden-staff-hint">
+      {count === 1 ? '1 ausgeblendete:r Mitarbeiter:in' : `${count} ausgeblendete Mitarbeitende`} mit Einträgen im
+      Zeitraum {count === 1 ? 'ist' : 'sind'} nicht enthalten – in den Dateien unter „Berichte“ lassen sie sich
+      über „Ausgeblendete Mitarbeitende einbeziehen“ aufnehmen.
+    </p>
+  );
+}
+
 export default function AdminDashboard() {
   const [report, setReport] = useState<EmployeeReport[]>([]);
+  // calc-13: ausgeblendete Personen mit Daten im Zeitraum (Antwortkopf der Berichte)
+  const [hiddenReport, setHiddenReport] = useState(0);
+  const [hiddenYearly, setHiddenYearly] = useState(0);
   // #159: leitende MA (§18) verzerren den Schnitt — standardmäßig aus dem Ø ausschließen.
   const [includeExemptInAvg, setIncludeExemptInAvg] = useState(false);
   const [yearlyAbsences, setYearlyAbsences] = useState<YearlyAbsences[]>([]);
@@ -208,6 +231,7 @@ export default function AdminDashboard() {
       // calls report.filter/.map unconditionally and would white-screen.
       const rows: EmployeeReport[] = Array.isArray(response.data) ? response.data : [];
       setReport(rows);
+      setHiddenReport(hiddenCountFromHeaders(response.headers));
       return rows;
     } catch (error) {
       if (seq === reportSeq.current) toast.error('Fehler beim Laden des Berichts');
@@ -228,6 +252,7 @@ export default function AdminDashboard() {
       if (seq !== yearlySeq.current) return;
       // #382: same guard — yearlyAbsences.filter/.map run unconditionally in render.
       setYearlyAbsences(Array.isArray(response.data) ? response.data : []);
+      setHiddenYearly(hiddenCountFromHeaders(response.headers));
       setYearlyAbsencesYear(year);
     } catch (error) {
       if (seq === yearlySeq.current) toast.error('Fehler beim Laden der Jahresübersicht');
@@ -715,6 +740,8 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      <HiddenStaffHint count={hiddenReport} />
+
       {/* Employee Table */}
       <div className="bg-white rounded-xl shadow-xs border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-4 flex-wrap">
@@ -1021,6 +1048,7 @@ export default function AdminDashboard() {
 
       {/* Yearly Absences Overview */}
       <div className="mt-8">
+        <HiddenStaffHint count={hiddenYearly} />
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold text-gray-900">Jahresübersicht</h2>
           <div className="flex items-center space-x-3">

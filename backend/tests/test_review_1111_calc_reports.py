@@ -102,3 +102,19 @@ def test_departed_user_without_data_stays_out(db, test_user, test_admin):
     db.commit()
     c = _client(db, test_admin)
     assert not any(r["user_id"] == str(test_user.id) for r in c.get("/api/admin/reports/monthly?month=2026-06").json())
+
+
+def test_hidden_with_data_count_header_on_screen_reports(db, test_user, test_admin):
+    """calc-13 (Nachtrag): Zahl ausgeblendeter Personen mit Daten im Antwortkopf."""
+    c = _client(db, test_admin)
+    assert c.get("/api/admin/reports/monthly?month=2026-06").headers["X-Hidden-With-Data-Count"] == "0"
+    test_user.is_hidden = True
+    db.add(_entry(test_user, date(2026, 6, 2)))
+    db.commit()
+    for url in ("/api/admin/reports/monthly?month=2026-06",
+                f"/api/admin/reports/weekly?week_start={WK_MON.isoformat()}",
+                "/api/admin/reports/yearly-absences?year=2026"):
+        r = c.get(url)
+        assert r.status_code == 200, r.text
+        assert r.headers["X-Hidden-With-Data-Count"] == "1", url
+        assert not any(e["user_id"] == str(test_user.id) for e in r.json())

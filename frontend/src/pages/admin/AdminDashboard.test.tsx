@@ -509,3 +509,18 @@ describe('AdminDashboard ohne Speicherzugriff (calc-09)', () => {
     }
   });
 });
+
+// calc-13: Zahl ausgeblendeter Personen mit Daten kommt im Antwortkopf.
+describe('AdminDashboard Hinweis auf ausgeblendete Personen (calc-13)', () => {
+  it('zeigt den Hinweis bei Header > 0 und sonst keinen', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith('/admin/reports/yearly-absences')) return Promise.resolve({ data: [], headers: { 'x-hidden-with-data-count': '2' } });
+      if (url.startsWith('/admin/reports/')) return Promise.resolve({ data: [], headers: { 'x-hidden-with-data-count': '0' } });
+      return Promise.resolve({ data: null });
+    });
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    const hint = await screen.findByTestId('hidden-staff-hint');
+    expect(hint).toHaveTextContent('2 ausgeblendete Mitarbeitende');
+    expect(screen.getAllByTestId('hidden-staff-hint')).toHaveLength(1);
+  });
+});

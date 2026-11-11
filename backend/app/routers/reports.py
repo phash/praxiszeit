@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from starlette.requests import Request
@@ -33,7 +33,10 @@ IncludeHidden = Annotated[bool, Query(description="Ausgeblendete Mitarbeitende e
 router = APIRouter(prefix="/api/admin/reports", tags=["admin-reports"], dependencies=[Depends(require_admin)])
 
 
-def _report_users(db: Session, tenant_id, start: date, end: date) -> list:
+HIDDEN_COUNT_HEADER = "X-Hidden-With-Data-Count"
+
+
+def _report_users(db: Session, tenant_id, start: date, end: date, response: Response = None) -> list:
     """calc-13: Personen der Bildschirmberichte — dieselbe Auswahl wie die
     §16-Dateien (``export_service.export_users``): aktive, nicht ausgeblendete
     Mitarbeitende PLUS Ausgeschiedene mit Daten im Zeitraum. Sonst widersprechen
@@ -41,6 +44,13 @@ def _report_users(db: Session, tenant_id, start: date, end: date) -> list:
 
     F-026: ``export_users`` filtert explizit nach Mandant.
     """
+    if response is not None:
+        # Die Bildschirmberichte liefern Listen; die Zahl der ausgeblendeten
+        # Personen mit Daten (wie ``hidden_with_data_count`` der ArbZG-Berichte)
+        # reist deshalb im Antwortkopf.
+        response.headers[HIDDEN_COUNT_HEADER] = str(
+            export_service.hidden_users_with_data_count(db, tenant_id, start, end)
+        )
     return export_service.export_users(db, tenant_id, start, end, include_hidden=False)
 
 
@@ -97,6 +107,7 @@ def get_monthly_report(
         "bis_heute",
         description="#313 Soll-Basis: 'bis_heute' (bis zum letzten abgeschlossenen Arbeitstag) oder 'monatsende' (voller Monat)",
     ),
+    response: Response = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -138,7 +149,7 @@ def get_monthly_report(
         db.flush()
 
     month_start, month_end = date(year, month_num, 1), date(year, month_num, monthrange(year, month_num)[1])
-    users = _report_users(db, current_user.tenant_id, month_start, month_end)
+    users = _report_users(db, current_user.tenant_id, month_start, month_end, response)
     wh_by_user = _wh_changes_by_user(db, current_user.tenant_id, users)
 
     show_year_end_projection = get_bool_setting(db, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, tenant_id=current_user.tenant_id, default=True, )
@@ -247,6 +258,7 @@ def get_weekly_report(
         "bis_heute",
         description="#313 Soll-Basis: 'bis_heute' (bis letzter abgeschlossener Arbeitstag) oder 'monatsende' (volle Woche)",
     ),
+    response: Response = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -288,7 +300,7 @@ def get_weekly_report(
         # L-2: nur flushen — Commit erst nach erfolgreichem Aufbau (siehe /monthly).
         db.flush()
 
-    users = _report_users(db, current_user.tenant_id, wk_start, wk_end)
+    users = _report_users(db, current_user.tenant_id, wk_start, wk_end, response)
     wh_by_user = _wh_changes_by_user(db, current_user.tenant_id, users)
 
     show_year_end_projection = get_bool_setting(db, SHOW_YEAR_END_OVERTIME_ADMIN_DASHBOARD, tenant_id=current_user.tenant_id, default=True, )
@@ -377,6 +389,7 @@ def get_weekly_report(
 def get_yearly_absences(
     year: int = Query(..., ge=2000, le=2100, description="Year (e.g., 2025)"),
     include_health_data: bool = Query(False, description="Krankheitsdaten einschließen (Art. 9 DSGVO)"),
+    response: Response = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin)
 ):
@@ -404,7 +417,7 @@ def get_yearly_absences(
         # (siehe get_monthly_report).
         db.flush()
 
-    users = _report_users(db, current_user.tenant_id, date(year, 1, 1), date(year, 12, 31))
+    users = _report_users(db, current_user.tenant_id, date(year, 1, 1), date(year, 12, 31), response)
 
     results = []
     _today = today_local()  # #501: Gate der Jahresend-Warnung (Q4 des laufenden Jahres)

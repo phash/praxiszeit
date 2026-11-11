@@ -785,7 +785,7 @@ const shots: ShotDef[] = [
       { n: 2, id: 'abbrechen', locator: { css: "[role='alertdialog'] button:text-is('Abbrechen')" }, badge: 'top' },
       { n: 3, id: 'bestaetigen', locator: { css: "[role='alertdialog'] button:text-is('Jahresabschluss erstellen')" }, badge: 'top' },
     ],
-    alt: 'Bestätigungsdialog „Jahresabschluss 2026“: Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter werden als Übernahme in 2027 gespeichert, Warnung, dass das Jahr noch nicht zu Ende ist, bestehende Übernahmen werden überschrieben; Knöpfe Abbrechen und Jahresabschluss erstellen',
+    alt: 'Bestätigungsdialog „Jahresabschluss 2026“: Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter werden als Übernahme in 2027 gespeichert, bestehende Übernahmen werden überschrieben; Knöpfe Abbrechen und Jahresabschluss erstellen',
   },
   {
     id: 'pl-uebernahme',
@@ -1998,7 +1998,7 @@ export const praxisleitung: Handbook = {
           head: ['Auswertung unter Berichte', 'Prüft'],
           rows: [
             ['Ruhezeitprüfung', '§ 5: mindestens 11 Stunden Ruhezeit zwischen zwei Arbeitstagen (Mindestruhezeit einstellbar)'],
-            ['Sonntagsarbeit §11 ArbZG', 'gearbeitete und freie Sonntage – mindestens 15 Sonntage im Jahr müssen frei sein'],
+            ['Sonntagsarbeit §11 ArbZG', 'gearbeitete und freie Sonntage – mindestens 15 Sonntage im Jahr müssen frei sein; bei Eintritt oder Austritt im Jahr zählen nur die Sonntage im Beschäftigungszeitraum, und die Mindestzahl gilt anteilig (aufgerundet, Hinweis „Teiljahr“)'],
             ['Nachtarbeit §6 ArbZG', 'Nachtarbeitstage und Nachtarbeitnehmer, mit Monatsdurchschnitt je Werktag'],
             ['Ersatzruhetage §11 ArbZG', 'Ersatzruhetag innerhalb von 2 Wochen nach Sonntags- und 8 Wochen nach Feiertagsarbeit'],
             ['24-Wochen-Durchschnitt §3 ArbZG', 'höchstens 8 Stunden je Werktag im Schnitt über 24 Wochen'],
