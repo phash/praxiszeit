@@ -1,0 +1,13 @@
+# Wegwerf-Instanz fuer die Handbuch-Screenshots (Compose-Projekt pzhandbuch).
+# Nur db, backend, frontend; erreichbar unter http://127.0.0.1:8099.
+services:
+  frontend:
+    ports: !override
+      - "127.0.0.1:8099:80"
+    depends_on: !override
+      backend:
+        condition: service_healthy
+    # nginx.conf proxyt /grafana/ auf den Host "grafana" und loest ihn beim
+    # Start auf. Grafana laeuft hier nicht -> Platzhalter, sonst startet nginx nicht.
+    extra_hosts:
+      - "grafana:127.0.0.1"

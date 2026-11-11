@@ -95,3 +95,7 @@ feedback/
 backend/test.db
 backend/test.db-shm
 backend/test.db-wal
+
+# Handbuch-Wegwerfinstanz (Secrets, Stichtag)
+e2e/handbuch/.env
+e2e/handbuch/.state
