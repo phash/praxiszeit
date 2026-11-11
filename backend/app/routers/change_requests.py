@@ -153,7 +153,10 @@ def create_change_request(
             # Zukunft lassen sich direkt bzw. per Urlaubsantrag ändern, nicht per
             # Änderungsantrag „umbuchen".
             if absence is not None and absence.date >= today_local():
-                raise HTTPException(status_code=400, detail="Heutige Einträge können direkt bearbeitet werden")
+                _msg = ("Heutige Einträge können direkt bearbeitet werden"
+                        if absence.date == today_local()
+                        else "Künftige Abwesenheiten können nicht per Änderungsantrag geändert werden")
+                raise HTTPException(status_code=400, detail=_msg)
             # Validate absence type is valid
             try:
                 AbsenceType(data.proposed_absence_type)

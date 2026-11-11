@@ -803,7 +803,7 @@ export default function AdminChangeRequests() {
                         <div className="flex space-x-2">
                           <button
                             onClick={() => handleReject(cr.id)}
-                              disabled={busyId !== null}
+                            disabled={busyId !== null}
                             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition"
                           >
                             Ablehnen

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { format } from 'date-fns';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ChangeRequestForm from './ChangeRequestForm';
 import { useSystemStore } from '../stores/systemStore';
@@ -90,6 +91,6 @@ describe('<ChangeRequestForm /> Review 2026-11-11', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('nur für vergangene Tage');
     const max = (screen.getByLabelText('Datum') as HTMLInputElement).max;
     expect(max).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(max < new Date().toISOString().slice(0, 10) || max === new Date(Date.now() - 864e5).toISOString().slice(0, 10)).toBe(true);
+    expect(max < format(new Date(), 'yyyy-MM-dd')).toBe(true);
   });
 });
