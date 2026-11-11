@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import type { ComponentType, MouseEvent } from 'react';
 import { renderInline } from '../inline';
 import type { InlineOpts } from '../inline';
 import type { Block, Handbook, Manifest } from '../types';
@@ -15,12 +15,14 @@ export interface HandbookPageProps {
   variant: 'wide' | 'narrow';
   comics?: Record<string, ComponentType>;
   diagrams?: Record<string, ComponentType>;
+  /** Klick auf einen internen Link (aufgelöster href); der Aufrufer navigiert, z. B. per Router. */
+  onInternalLink?: (href: string, e: MouseEvent<HTMLAnchorElement>) => void;
 }
 
 export default function HandbookPage({
-  handbook, manifest, imgBase, linkBase, variant, comics, diagrams,
+  handbook, manifest, imgBase, linkBase, variant, comics, diagrams, onInternalLink,
 }: HandbookPageProps) {
-  const opts: InlineOpts = { linkBase };
+  const opts: InlineOpts = { linkBase, onInternalLink };
 
   const renderBlock = (b: Block, key: string) => {
     switch (b.kind) {

@@ -1,12 +1,16 @@
 import type { ReactNode } from 'react';
+import type { HandbookId } from '../handbuch/types';
 
 interface HelpEntry {
   title: string;
+  /** Kapitel oder Aufgabe im Handbuch. Seiten, die auch Praxisleitungen nutzen, verlinken das Mitarbeitenden-Handbuch (beide Rollen dürfen es öffnen). */
+  handbook?: { book: HandbookId; anchor: string };
   content: ReactNode;
 }
 
 export const helpContent: Record<string, HelpEntry> = {
   '/': {
+    handbook: { book: 'mitarbeitende', anchor: 'dashboard-ueberblick' },
     title: 'Dashboard',
     content: (
       <div className="space-y-4">
@@ -36,6 +40,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/time-tracking': {
+    handbook: { book: 'mitarbeitende', anchor: 'zeiterfassung-stempeln-eintraege' },
     title: 'Zeiterfassung',
     content: (
       <div className="space-y-4">
@@ -93,6 +98,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/absences': {
+    handbook: { book: 'mitarbeitende', anchor: 'urlaub-und-abwesenheit' },
     title: 'Abwesenheiten',
     content: (
       <div className="space-y-4">
@@ -134,6 +140,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/profile': {
+    handbook: { book: 'mitarbeitende', anchor: 'profil-passwort-2fa' },
     title: 'Profil',
     content: (
       <div className="space-y-4">
@@ -166,6 +173,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/admin': {
+    handbook: { book: 'praxisleitung', anchor: 'dashboard-teamuebersicht' },
     title: 'Admin-Dashboard',
     content: (
       <div className="space-y-4">
@@ -194,6 +202,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/admin/users': {
+    handbook: { book: 'praxisleitung', anchor: 'benutzerliste' },
     title: 'Benutzerverwaltung',
     content: (
       <div className="space-y-4">
@@ -227,6 +236,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/admin/reports': {
+    handbook: { book: 'praxisleitung', anchor: 'berichte-exporte' },
     title: 'Berichte & Exporte',
     content: (
       <div className="space-y-4">
@@ -260,6 +270,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/admin/change-requests': {
+    handbook: { book: 'praxisleitung', anchor: 'antraege-genehmigen' },
     title: 'Änderungsanträge',
     content: (
       <div className="space-y-4">
@@ -289,6 +300,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/admin/audit-log': {
+    handbook: { book: 'praxisleitung', anchor: 'protokoll-lesen' },
     title: 'Änderungsprotokoll',
     content: (
       <div className="space-y-4">
@@ -318,6 +330,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/admin/team-schedule': {
+    handbook: { book: 'praxisleitung', anchor: 'arbeitszeiten-im-team' },
     title: 'Arbeitszeiten im Team',
     content: (
       <div className="space-y-4">
@@ -339,6 +352,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/admin/absences': {
+    handbook: { book: 'praxisleitung', anchor: 'abwesenheit-fuer-person' },
     title: 'Abwesenheiten (Admin)',
     content: (
       <div className="space-y-4">
@@ -364,6 +378,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/admin/settings': {
+    handbook: { book: 'praxisleitung', anchor: 'einstellungen' },
     title: 'Einstellungen',
     content: (
       <div className="space-y-4">
@@ -380,6 +395,7 @@ export const helpContent: Record<string, HelpEntry> = {
   },
 
   '/admin/errors': {
+    handbook: { book: 'praxisleitung', anchor: 'fehler-monitoring' },
     title: 'Fehler-Monitoring',
     content: (
       <div className="space-y-4">

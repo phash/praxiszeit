@@ -732,7 +732,8 @@ interface DocViewerContentProps {
 }
 
 export function DocViewerContent({ isAdmin, initialTab = 'cheatsheet', onTabChange, handbuch }: DocViewerContentProps) {
-  const [activeTab, setActiveTab] = useState<DocTab>(initialTab);
+  // Ohne Handbuch-Inhalt gibt es den Reiter nicht: initialTab='handbuch' fällt auf die Kurzanleitung zurück.
+  const [activeTab, setActiveTab] = useState<DocTab>(initialTab === 'handbuch' && !handbuch ? 'cheatsheet' : initialTab);
 
   function handleTab(tab: DocTab) {
     setActiveTab(tab);

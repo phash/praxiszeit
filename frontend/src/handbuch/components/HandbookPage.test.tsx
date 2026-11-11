@@ -137,3 +137,33 @@ describe('HandbookPage', () => {
     expect(container.querySelector('table')).not.toBeNull();
   });
 });
+
+describe('HandbookPage internal link handler', () => {
+  const linked: Handbook = {
+    ...handbook,
+    lead: 'Siehe [Kapitel](handbuch:praxisleitung#pl-x) und [extern](https://example.org/)',
+  };
+  it('renders a plain anchor without a handler', () => {
+    const { container } = render(<HandbookPage {...props} handbook={linked} />);
+    const a = container.querySelector('a[href="/handbuch/praxisleitung#pl-x"]');
+    expect(a).not.toBeNull();
+  });
+  it('calls the handler with the resolved href for internal links and prevents default', () => {
+    const calls: string[] = [];
+    const { container } = render(
+      <HandbookPage {...props} handbook={linked} onInternalLink={(href, e) => { calls.push(href); e.preventDefault(); }} />,
+    );
+    const a = container.querySelector('a[href="/handbuch/praxisleitung#pl-x"]')!;
+    const notPrevented = fireEvent.click(a);
+    expect(calls).toEqual(['/handbuch/praxisleitung#pl-x']);
+    expect(notPrevented).toBe(false);
+  });
+  it('does not route external links through the handler', () => {
+    const calls: string[] = [];
+    const { container } = render(
+      <HandbookPage {...props} handbook={linked} onInternalLink={(href) => { calls.push(href); }} />,
+    );
+    fireEvent.click(container.querySelector('a[href="https://example.org/"]')!);
+    expect(calls).toEqual([]);
+  });
+});

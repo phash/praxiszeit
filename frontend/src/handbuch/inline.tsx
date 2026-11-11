@@ -1,8 +1,13 @@
 import { Fragment } from 'react';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import type { HandbookId, Inline } from './types';
 
-export type InlineOpts = { linkBase: string; slugs?: Partial<Record<HandbookId, string>> };
+export type InlineOpts = {
+  linkBase: string;
+  slugs?: Partial<Record<HandbookId, string>>;
+  /** Optional: Klick auf einen internen Link (nicht https://). Ohne Handler bleibt es ein einfaches <a href>. */
+  onInternalLink?: (href: string, e: MouseEvent<HTMLAnchorElement>) => void;
+};
 
 export const MD_FILES: Record<HandbookId, string> = {
   mitarbeitende: 'HANDBUCH-MITARBEITER.md',
@@ -57,6 +62,14 @@ function resolveHref(href: string, opts: InlineOpts): string {
   return `${opts.linkBase}/${slug}${hb.anchor}`;
 }
 
+function InternalLink({ href, onInternalLink, children }: {
+  href: string; onInternalLink?: InlineOpts['onInternalLink']; children: ReactNode;
+}) {
+  return onInternalLink
+    ? <a href={href} onClick={(e) => onInternalLink(href, e)}>{children}</a>
+    : <a href={href}>{children}</a>;
+}
+
 export function renderInline(text: Inline, opts: InlineOpts): ReactNode {
   return tokenize(text).map((tok, i) => {
     switch (tok.t) {
@@ -69,7 +82,7 @@ export function renderInline(text: Inline, opts: InlineOpts): ReactNode {
         return external ? (
           <a key={i} href={tok.href} target="_blank" rel="noopener">{tok.v}</a>
         ) : (
-          <a key={i} href={resolveHref(tok.href, opts)}>{tok.v}</a>
+          <InternalLink key={i} href={resolveHref(tok.href, opts)} onInternalLink={opts.onInternalLink}>{tok.v}</InternalLink>
         );
       }
       case 'badlink':

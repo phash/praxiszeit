@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { Link, Navigate, useLocation, useParams } from 'react-router-dom';
+import { useEffect, type MouseEvent } from 'react';
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { HelpCircle } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import HandbookPage from '../handbuch/components/HandbookPage';
@@ -13,7 +13,7 @@ import '../handbuch/handbuch.css';
 const ADMIN_BOOKS: HandbookId[] = ['praxisleitung', 'mitarbeitende', 'so-rechnet'];
 const EMPLOYEE_BOOKS: HandbookId[] = ['mitarbeitende', 'so-rechnet'];
 
-export function defaultBook(isAdmin: boolean): HandbookId {
+function defaultBook(isAdmin: boolean): HandbookId {
   return isAdmin ? 'praxisleitung' : 'mitarbeitende';
 }
 
@@ -21,6 +21,7 @@ export default function Help() {
   const { user } = useAuthStore();
   const { book } = useParams<{ book?: string }>();
   const { hash } = useLocation();
+  const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
   const allowed = isAdmin ? ADMIN_BOOKS : EMPLOYEE_BOOKS;
   const valid = !!book && (allowed as string[]).includes(book);
@@ -29,10 +30,22 @@ export default function Help() {
   // Die App scrollt in <main>, nicht im Dokument: Ankersprung per scrollIntoView
   // (beim Laden, Buchwechsel und Klick auf einen #-Link).
   useEffect(() => {
-    if (!valid || !hash) return;
+    if (!valid) return;
+    if (!hash) {
+      // Buchwechsel ohne Anker: <main> an den Anfang (sonst bleibt die Scrollposition des alten Buchs).
+      document.querySelector('main')?.scrollTo?.({ top: 0 });
+      return;
+    }
     const el = document.getElementById(decodeURIComponent(hash.slice(1)));
     el?.scrollIntoView();
   }, [hash, valid, current]);
+
+  // Interne Handbuchlinks (handbuch:… -> /help/<buch>#…) per Router statt Seitenneuladen.
+  const onInternalLink = (href: string, e: MouseEvent<HTMLAnchorElement>) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    navigate(href);
+  };
 
   if (!valid) {
     return <Navigate to={`/help/${defaultBook(isAdmin)}${hash}`} replace />;
@@ -70,6 +83,7 @@ export default function Help() {
         variant="wide"
         comics={COMIC_SCENES}
         diagrams={DIAGRAMS}
+        onInternalLink={onInternalLink}
       />
     </div>
   );

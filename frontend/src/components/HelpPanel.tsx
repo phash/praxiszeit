@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { X, HelpCircle, ExternalLink, Bug } from 'lucide-react';
+import { X, HelpCircle, ExternalLink, Bug, BookOpen } from 'lucide-react';
 import { helpContent, getFallbackHelp } from '../constants/helpContent';
 import FeedbackDialog from './FeedbackDialog';
 
@@ -112,6 +112,16 @@ export default function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
             <Bug size={14} />
             <span>Fehler melden / Feedback</span>
           </button>
+          {entry.handbook && (
+            <Link
+              to={`/help/${entry.handbook.book}#${entry.handbook.anchor}`}
+              onClick={onClose}
+              className="flex items-center space-x-2 text-sm text-primary hover:text-primary-dark font-medium transition-colors"
+            >
+              <BookOpen size={14} />
+              <span>Im Handbuch ansehen →</span>
+            </Link>
+          )}
           <Link
             to="/help"
             onClick={onClose}
