@@ -50,14 +50,19 @@ beforeEach(() => {
 });
 
 describe('Teamübersicht der Arbeitszeiten', () => {
-  it('schneidet keine Beschriftung ab: schmaler Balken zeigt nur den Beginn, die volle Zeit steht im Titel', async () => {
+  it('schneidet keine Beschriftung ab: nach Breite voll, nur Beginn oder leer; die volle Zeit steht in Titel und aria-label', async () => {
     renderPage();
     await screen.findByText('Arzt, Anna');
-    const wide = screen.getByTitle('Arzt, Anna · Mo 07:30–13:00');
-    expect(wide).toHaveTextContent('7:30–13');
-    const narrow = screen.getByTitle('Arzt, Anna · Mo 15:00–18:00');
-    expect(narrow).toHaveTextContent(/^15$/);
-    expect(narrow).toHaveAttribute('aria-label', 'Arzt, Anna · Mo 15:00–18:00');
+    const full = screen.getByTitle('Berg, Bert · Di 08:00–12:00');
+    expect(full).toHaveTextContent(/^8–12$/);
+    const startOnly = screen.getByTitle('Arzt, Anna · Mo 07:30–13:00');
+    expect(startOnly).toHaveTextContent(/^7:30–$/);
+    const none = screen.getByTitle('Arzt, Anna · Mo 15:00–18:00');
+    expect(none).toHaveTextContent(/^$/);
+    for (const [el, t] of [[full, 'Berg, Bert · Di 08:00–12:00'], [startOnly, 'Arzt, Anna · Mo 07:30–13:00'], [none, 'Arzt, Anna · Mo 15:00–18:00']] as const) {
+      expect(el).toHaveAttribute('role', 'img');
+      expect(el).toHaveAttribute('aria-label', t);
+    }
   });
 
   it('zeigt alle Personen mit ihren Blöcken und die nächste Änderung', async () => {

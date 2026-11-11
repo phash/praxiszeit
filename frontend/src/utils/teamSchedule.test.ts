@@ -100,17 +100,34 @@ describe('sameWeek', () => {
 });
 
 describe('blockLabel', () => {
-  const axis = 720; // 7–19 Uhr
+  const axis = 720; // 7–19 Uhr, Spalte min. 117 px → 1 Minute = 0,1625 px
+  // Mindestbreite eines Balkens in Minuten: (Zeichen × 7 + 10) / 117 × 720
+  const minutesFor = (chars: number) => ((chars * 7 + 10) / 117) * axis;
   it('breit: volle Kurzform', () => {
     expect(blockLabel('08:00', '12:00', 240, axis)).toBe('8–12');
     expect(blockLabel('08:00', '16:00', 480, axis)).toBe('8–16');
+    expect(blockLabel('07:30', '14:00', 390, axis)).toBe('7:30–14');
   });
-  it('mittel: nur der Beginn, nie eine abgeschnittene Zeit', () => {
-    expect(blockLabel('13:00', '16:30', 210, axis)).toBe('13');
-    expect(blockLabel('14:30', '18:45', 255, axis)).toBe('14:30');
+  it('Grenze voll: knapp darunter nur Beginn, genau/darüber voll', () => {
+    const m = minutesFor('13–16'.length); // 276,9 Min.
+    expect(blockLabel('13:00', '16:00', Math.ceil(m), axis)).toBe('13–16');
+    expect(blockLabel('13:00', '16:00', Math.floor(m) - 1, axis)).toBe('13–');
+  });
+  it('mittel: nur der Beginn mit Strich, nie eine abgeschnittene Zeit', () => {
+    expect(blockLabel('13:00', '16:30', 210, axis)).toBe('13–');
+    expect(blockLabel('14:30', '18:45', 330, axis)).toBe('14:30–');
+  });
+  it('Grenze Beginn: knapp darunter leer, darüber der Beginn', () => {
+    const m = minutesFor('13–'.length); // 191,2 Min.
+    expect(blockLabel('13:00', '17:00', Math.ceil(m), axis)).toBe('13–');
+    expect(blockLabel('13:00', '17:00', Math.floor(m) - 1, axis)).toBe('');
   });
   it('schmal: keine Beschriftung', () => {
     expect(blockLabel('15:00', '16:00', 60, axis)).toBe('');
     expect(blockLabel('15:00', '15:15', 15, axis)).toBe('');
+  });
+  it('längste Form „10:30–13:30“ braucht die volle Breite', () => {
+    expect(blockLabel('10:30', '13:30', 180, axis)).toBe('');
+    expect(blockLabel('10:30', '13:30', Math.ceil(minutesFor(11)), axis)).toBe('10:30–13:30');
   });
 });
