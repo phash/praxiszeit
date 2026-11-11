@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ToastProvider } from '../../../contexts/ToastContext';
@@ -280,6 +281,47 @@ describe('#383 Übertrag Urlaubstage', () => {
     await waitFor(() => expect(putMock).toHaveBeenCalled()); // the user PUT itself
     const carryoverCall = putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'));
     expect(carryoverCall).toBeUndefined();
+  });
+});
+
+describe('Review 2026-11-11: Übertrag-Felder', () => {
+  const editUser2026 = {
+    id: 'u1', username: 'mj', first_name: 'M', last_name: 'J', role: 'employee',
+    weekly_hours: 40, vacation_days: 30, work_days_per_week: 5, track_hours: true,
+    is_active: true, first_work_day: '2026-06-01',
+  };
+
+  it('user-02: Speichern ohne Änderung am Übertrag schreibt keinen Übertrag neu (Jahresabschluss bleibt year_closing)', async () => {
+    getMock.mockResolvedValue({ data: [{ year: 2026, overtime_hours: 5, vacation_days: 8 }] });
+    render(<ToastProvider><UserForm onSaved={() => {}} editUser={editUser2026 as never} /></ToastProvider>);
+    const field = await screen.findByLabelText(/Übertrag Urlaubstage/i);
+    await waitFor(() => expect((field as HTMLInputElement).value).toBe('8'));
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'))).toBeUndefined();
+  });
+
+  it('user-16: Arbeitstag-Datumsfelder sind mit ihrem Label verknüpft, Kalenderfarbe ist eine benannte Gruppe', async () => {
+    getMock.mockResolvedValue({ data: [] });
+    render(<ToastProvider><UserForm onSaved={() => {}} editUser={editUser2026 as never} /></ToastProvider>);
+    expect(await screen.findByLabelText('Erster Arbeitstag')).toHaveAttribute('type', 'date');
+    expect(screen.getByLabelText('Letzter Arbeitstag')).toHaveAttribute('type', 'date');
+    expect(screen.getByRole('group', { name: /Kalenderfarbe/ })).toBeInTheDocument();
+  });
+
+  it('user-05: „-12.5“ ist im Anfangssaldo eintippbar und wird gespeichert', async () => {
+    getMock.mockResolvedValue({ data: [] });
+    render(<ToastProvider><UserForm onSaved={() => {}} editUser={editUser2026 as never} /></ToastProvider>);
+    const field = await screen.findByLabelText(/Anfangssaldo Überstunden/i) as HTMLInputElement;
+    const user = userEvent.setup();
+    await user.clear(field);
+    await user.type(field, '-12.5');
+    expect(field.value).toBe('-12.5');
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    await waitFor(() => {
+      const call = putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'));
+      expect(call![1]).toMatchObject({ overtime_hours: -12.5 });
+    });
   });
 });
 

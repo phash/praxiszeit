@@ -1,5 +1,6 @@
 import { useSystemStore } from '../../../stores/systemStore';
 import { formatDayNumber, formatFixedDe } from '../../../utils/formatters';
+import DecimalInput from '../../../components/DecimalInput';
 import { MAX_VACATION_DAYS } from './workingHoursTypes';
 import type { ContractTerms } from './workingHoursTypes';
 
@@ -42,17 +43,13 @@ export default function ContractTermsFields({
         <label htmlFor={vacationId} className="block text-sm font-medium text-gray-700 mb-1">
           {mode === 'change' ? 'Urlaubsanspruch pro Jahr ab diesem Datum' : 'Urlaubstage'}
         </label>
-        <input
+        <DecimalInput
           id={vacationId}
-          type="number"
           // Leer bleibt im Dialog leer (NaN) — er sperrt dann das Speichern,
-          // statt still 0 Tage zu senden.
-          value={Number.isFinite(value.vacation_days) ? value.vacation_days : ''}
-          onChange={(e) => set({
-            vacation_days: mode === 'change'
-              ? (e.target.value === '' ? Number.NaN : parseFloat(e.target.value))
-              : (parseFloat(e.target.value) || 0),
-          })}
+          // statt still 0 Tage zu senden. Roher Text-Zustand (user-17).
+          value={value.vacation_days}
+          emptyAs={mode === 'change' ? null : 0}
+          onValue={(n) => set({ vacation_days: n ?? Number.NaN })}
           required
           min="0"
           max={MAX_VACATION_DAYS}
@@ -110,7 +107,7 @@ export default function ContractTermsFields({
             checked={value.milog_working_time_account}
             onChange={(e) => set(e.target.checked
               ? { milog_working_time_account: true }
-              : { milog_working_time_account: false, use_fixed_monthly_target: false })}
+              : { milog_working_time_account: false, use_fixed_monthly_target: false, agreed_monthly_hours: null })}
             className="w-4 h-4 text-amber-600 border-gray-300 rounded-sm focus:ring-amber-500"
           />
           <label
@@ -126,9 +123,8 @@ export default function ContractTermsFields({
             <label htmlFor={fieldId('agreed-monthly')} className="block text-sm font-medium text-gray-700 mb-1">
               Vereinbarte Monatsarbeitszeit (h){value.use_fixed_monthly_target ? ' *' : ''}
             </label>
-            <input
+            <DecimalInput
               id={fieldId('agreed-monthly')}
-              type="number"
               // Bug-Tracker #4: `0.5` wies u. a. den eigenen Vorschlagswert
               // (Wochenstunden × 13/3, eine Nachkommastelle) als Schrittfehler
               // ab. `0.1` = Genauigkeit der Spalte `Numeric(5, 1)`; feiner
@@ -141,11 +137,12 @@ export default function ContractTermsFields({
                   ? 'Pflichtfeld – festes Monats-Soll'
                   : `aus Wochenstunden ≈ ${formatFixedDe(derivedMonthly, 1)}`
               }
-              value={value.agreed_monthly_hours ?? ''}
-              onChange={(e) => set({
+              value={value.agreed_monthly_hours}
+              onValue={(n) => set({
                 // #377 2a: 0/negativ/leer = „keine Monatszahl vereinbart" → null
                 // (aus Wochenstunden ableiten). Backend akzeptiert nur > 0.
-                agreed_monthly_hours: parseFloat(e.target.value) > 0 ? parseFloat(e.target.value) : null,
+                // Das Feld hält den getippten Text selbst („0,5“ bleibt tippbar, user-17).
+                agreed_monthly_hours: n !== null && n > 0 ? n : null,
               })}
               required={value.use_fixed_monthly_target}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary ${

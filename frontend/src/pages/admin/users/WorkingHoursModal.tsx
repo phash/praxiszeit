@@ -806,9 +806,11 @@ export default function WorkingHoursModal({
 
   return (
     <>
+      {/* user-09: kein Schließen per Klick auf den Hintergrund — ein Fehlklick
+          verwarf Blockplan, Verkürzungsgrund und Notiz ohne Rückfrage. */}
       <div
+        data-testid="wh-backdrop"
         className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-        onClick={onClose}
       >
         <DialogFocusTrap
           focusTrapOptions={{
