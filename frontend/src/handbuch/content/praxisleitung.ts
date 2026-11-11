@@ -2540,7 +2540,7 @@ export const praxisleitung: Handbook = {
           scene: 'protokoll',
           text:
             'Das **Änderungsprotokoll** hält fest, wer wann an Zeiteinträgen, Abwesenheiten und Verwaltungseinstellungen etwas geändert hat. Es dient als Nachweis nach § 16 Abs. 2 ArbZG. ' +
-            'PraxisZeit selbst kann Zeilen nur anfügen, nie ändern oder löschen; jede Zeile trägt eine Prüfsumme. Daneben zeigen **Konto-Vorgänge** die sicherheitsrelevanten Handlungen und das **Fehler-Monitoring** technische Störungen.',
+            'Im laufenden Betrieb wird das Protokoll nur ergänzt; jede Zeile trägt eine Prüfsumme. Entfernt werden Zeilen nur beim endgültigen Löschen einer Person (Art. 17 DSGVO) und bei Anträgen nach 730 Tagen; beides wird selbst protokolliert, und bei der Anonymisierung einer Person wird Klartext in Notizen ersetzt. Daneben zeigen **Konto-Vorgänge** die sicherheitsrelevanten Handlungen und das **Fehler-Monitoring** technische Störungen.',
         },
         {
           kind: 'task',
@@ -2707,8 +2707,8 @@ export const praxisleitung: Handbook = {
           steps: [
             { n: 1, text: '[[Jetzt sichern]] erstellt sofort eine vollständige Sicherung. Sie erscheint danach in der Liste.' },
             { n: 2, text: 'Haken bei [[Tägliche automatische Sicherung aktivieren]], wenn PraxisZeit täglich selbst sichern soll.' },
-            { n: 3, text: '**Uhrzeit (Stunde, 0–23):** lokale Zeit (Europe/Berlin); die Sicherung läuft um HH:30.' },
-            { n: 4, text: '**Aufbewahrung (Tage):** ältere Sicherungen löscht PraxisZeit automatisch. Für § 16 ArbZG sind mindestens 2 Jahre (730 Tage) nötig, sonst zusätzlich Jahresarchive außerhalb des Servers ablegen.' },
+            { n: 3, text: '**Uhrzeit (Stunde, 0–23):** lokale Zeit (Europe/Berlin); die Sicherung läuft um HH:30. Das gilt für die Docker-Installation; nativ sichert der Timer des Betriebssystems (Linux 02:00, Windows und macOS 03:00).' },
+            { n: 4, text: '**Aufbewahrung (Tage):** ältere Sicherungen löscht PraxisZeit automatisch. Für § 16 ArbZG sind mindestens 2 Jahre (730 Tage) nötig; die Seite schlägt zunächst 30 Tage vor. Sonst zusätzlich Jahresarchive außerhalb des Servers ablegen.' },
             { n: 5, text: '**Speicherort (optional):** leer bedeutet Standardverzeichnis. Der Pfad muss für den Dienst beschreibbar sein.' },
             { n: 6, text: 'Klicken Sie auf [[Einstellungen speichern]]. Erst dann gelten Uhrzeit, Aufbewahrung und Speicherort.' },
             { n: 7, text: 'Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.' },
@@ -2757,11 +2757,13 @@ export const praxisleitung: Handbook = {
           kind: 'table',
           head: ['Installation', 'Befehl zum Einspielen'],
           rows: [
-            ['Docker (neben der docker-compose.yml)', 'bash restore.sh <datei>'],
+            ['Docker (neben der docker-compose.yml)', 'bash restore.sh backups/praxiszeit_<zeitstempel>.sql.gz'],
             ['Linux nativ, 1. Dienst anhalten', 'sudo systemctl stop praxiszeit'],
             ['Linux nativ, 2. Sicherung einspielen', 'sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/<datei>.sql.gz'],
             ['Linux nativ, 3. Dienst starten', 'sudo systemctl start praxiszeit'],
-            ['macOS nativ (Dienstkonto _praxiszeit)', 'sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore /usr/local/praxiszeit/data/backups/<datei>.sql.gz'],
+            ['macOS nativ, 1. Dienst anhalten', 'sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist'],
+            ['macOS nativ, 2. Sicherung einspielen (Dienstkonto _praxiszeit)', 'sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore /usr/local/praxiszeit/data/backups/<datei>.sql.gz'],
+            ['macOS nativ, 3. Dienst starten', 'sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist'],
             ['Windows nativ (Eingabeaufforderung als Administrator im Installationsordner)', 'restore-backup.bat data\\backups\\<datei>.sql.gz'],
           ],
         },
