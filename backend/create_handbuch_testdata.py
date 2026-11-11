@@ -481,8 +481,11 @@ def create_absences(db, users: list, admin, stichtag: date, holiday_dates) -> No
         hours = _day_target(db, user, d)
         if hours <= 0:
             return False
+        # half_day ausdrücklich False wie alle Buchungspfade der App; NULL hieße
+        # Altzeile von vor 1.9.0 (#205): Verbrauch = Stunden ÷ NEUES Tagessoll,
+        # retarget überspringt sie — die Vorschau zeigte dann „3 → 3,1 Tage“.
         db.add(Absence(tenant_id=TENANT_ID, user_id=user.id, date=d, end_date=None,
-                       type=absence_type, hours=hours, note=note, **extra))
+                       type=absence_type, hours=hours, half_day=False, note=note, **extra))
         return True
 
     maria, thomas, sarah = by_name.get("maria"), by_name.get("thomas"), by_name.get("sarah")

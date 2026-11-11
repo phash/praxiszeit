@@ -261,7 +261,7 @@ const shots: ShotDef[] = [
       { n: 4, id: 'plus', locator: { role: 'button', name: 'Mo: Block hinzufügen', exact: true, within: 'dialog' }, badge: 'top' },
       { n: 5, id: 'pause', locator: { label: 'Mo Pause innerhalb der Blöcke (Min)', within: 'dialog' }, badge: 'top' },
     ],
-    alt: 'Block-Editor im Dialog „Arbeitszeit & Wochenstunden“ für Sarah Klein: Montag bis Donnerstag 08:00–12:00 und 15:00–16:00, Freitag 08:00–13:00, darunter die Wochensumme',
+    alt: 'Block-Editor im Dialog „Arbeitszeit & Wochenstunden“ für Sarah Klein: Gültig ab, Modus „Nach Arbeitsblöcken“ und Montag und Dienstag mit den Blöcken 08:00–12:00 und 15:00–16:00 samt Pause',
   },
   {
     id: 'pl-rueckwirkend',
@@ -372,7 +372,7 @@ const shots: ShotDef[] = [
       { n: 2, id: 'karte', locator: { role: 'checkbox', name: 'Antrag von Maria Hoffmann auswählen', exact: true }, badge: 'left' },
       { n: 3, id: 'sammel', locator: { css: "main button:has-text('genehmigen, davon')" }, badge: 'top' },
     ],
-    alt: 'Zwei offene Änderungsanträge ausgewählt; oben die Knöpfe „2 genehmigen, davon 1 mit Anerkennen“ und „2 ablehnen“',
+    alt: 'Zwei offene Änderungsanträge ausgewählt („2 ausgewählt“); oben der Knopf „2 genehmigen, davon 1 mit Anerkennen“',
   },
 ];
 
@@ -744,7 +744,8 @@ export const praxisleitung: Handbook = {
           kind: 'tip',
           tone: 'warn',
           text:
-            '**Werktag ohne Block = 0 Stunden:** Hat eine Person Blöcke, aber an einem Werktag keinen, wird dort gestempelte Zeit gespeichert, aber nicht angerechnet – erst wenn Sie den Eintrag anerkennen. ' +
+            '**Werktag ohne Block = 0 Stunden:** Hat eine Person Blöcke, aber an einem Werktag keinen, wird dort gestempelte Zeit gespeichert, aber nicht angerechnet – erst wenn Sie den Eintrag anerkennen oder den Antrag „Anrechnung beantragen“ mit [[Genehmigen und anerkennen]] annehmen. ' +
+            'Ein aus früheren Versionen übernommenes Arbeitszeit-Fenster ist davon nicht betroffen: Ein Tag ohne Fenster wird dort weiter nicht gekappt. ' +
             'An Wochenenden, Feiertagen und als „frei“ eingestellten Sondertagen wird nichts gekappt. Mitarbeitende ohne Stundenzählung und anerkannte Einträge sind ausgenommen; ' +
             'bei § 18-befreiten Personen wird trotzdem gekappt.',
         },
@@ -757,7 +758,7 @@ export const praxisleitung: Handbook = {
             'Im Beispiel endet Sarahs Montagnachmittag rückwirkend um 15:30 statt 16:00.',
           shot: 'pl-rueckwirkend',
           steps: [
-            { n: 1, text: '**Verkürzung:** Verliert ein Eintrag angerechnete Zeit oder sinkt das Überstundenkonto, erscheint dieser Kasten mit den Gründen, z. B. „2 Einträge verlieren angerechnete Zeit (zusammen 0:30 h)“.' },
+            { n: 1, text: '**Verkürzung:** Verliert ein Eintrag angerechnete Zeit, sinkt das Überstundenkonto im Wirkungsbereich oder sinkt die Gutschrift einer Abwesenheit an einem Tag mit Arbeit stärker als das Tagessoll, erscheint dieser Kasten mit den Gründen, z. B. „2 Einträge verlieren angerechnete Zeit (zusammen 0:30 h)“.' },
             { n: 2, text: '**Ab heute … wirksam** (Standard): Die Änderung gilt ab dem frühesten Tag, an dem nichts verloren geht. Vergangene Einträge bleiben unverändert; ein Grund ist nicht nötig.' },
             { n: 3, text: '**Rückwirkend ab … mit Neuberechnung:** nur mit Grund, Begründung und Bestätigung.' },
             { n: 4, text: '**Grund:** „Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)“, „Mit der beschäftigten Person vereinbart“ oder „Sonstiges“.' },
@@ -792,7 +793,8 @@ export const praxisleitung: Handbook = {
           tone: 'info',
           text:
             '**Auch eine Erhöhung kann eine Verkürzung sein:** Steigt das Soll rückwirkend (längere Blöcke, mehr Wochenstunden), sinkt das Überstundenkonto – dann gelten dieselben Regeln. ' +
-            'Reicht die Änderung in ein abgeschlossenes Jahr, weist der Dialog darauf hin; führen Sie danach den Jahresabschluss für dieses Jahr erneut aus.',
+            'Reicht die Änderung in ein abgeschlossenes Jahr, weist der Dialog darauf hin. Führen Sie danach den Jahresabschluss für **jedes** genannte Jahr erneut aus, vom frühesten an. ' +
+            '**Achtung:** Ein erneuter Jahresabschluss überschreibt die Überträge **aller** Mitarbeitenden für das Folgejahr – auch von Hand korrigierte Werte in der **Vorjahresübernahme**; tragen Sie solche Korrekturen danach erneut ein.',
         },
         {
           kind: 'tip',
@@ -899,7 +901,7 @@ export const praxisleitung: Handbook = {
           tone: 'info',
           text:
             'Die Genehmigung prüft dieselben Regeln wie ein direkter Eintrag: Arbeitszeit-Blöcke, Pausen nach § 4 ArbZG und den Beschäftigungszeitraum. ' +
-            'Liegt ein neuer Tag nach einem inzwischen eingetragenen letzten Arbeitstag, lehnt PraxisZeit die Genehmigung ab – lehnen Sie den Antrag dann ab. ' +
+            'Liegt der Tag eines neuen Eintrags – oder das neue Datum eines verschobenen – vor dem ersten oder nach dem inzwischen eingetragenen letzten Arbeitstag, lehnt PraxisZeit die Genehmigung ab – lehnen Sie den Antrag dann ab. ' +
             'Ein Abwesenheits-Antrag für einen vergangenen Tag ersetzt bei Genehmigung die Zeiteinträge dieses Tages.',
         },
         {

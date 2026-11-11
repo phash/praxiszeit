@@ -870,3 +870,20 @@ def test_contract_history_and_vacation_request_have_realistic_timestamps(full_te
     assert len(pending) == 1
     p = pending[0].astimezone(berlin)
     assert p.date() < STICHTAG and p.weekday() < 5
+
+
+def test_seed_absences_are_never_legacy_rows(full_tenant, app_engine, monkeypatch):
+    """Keine Abwesenheit mit ``half_day IS NULL`` (Altzeile vor #205): sonst zählt
+    der Urlaubsverbrauch Stunden ÷ neues Tagessoll und die Rückrechnung überspringt
+    sie (Vorschau „Urlaub verbraucht 3 → 3,1 Tage“)."""
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+
+    def count(db):
+        return db.execute(text(
+            "SELECT count(*) FILTER (WHERE half_day IS NULL), count(*) FROM absences WHERE tenant_id = :t"
+        ), {"t": str(TENANT_ID)}).one()
+
+    legacy, total = _read(app_engine, count)
+    assert total > 0
+    assert legacy == 0
