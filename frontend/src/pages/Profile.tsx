@@ -12,9 +12,15 @@ import { getErrorMessage } from '../utils/errorMessage';
 import { useToast } from '../contexts/ToastContext';
 import { PASTEL_COLORS, DEFAULT_CALENDAR_COLOR } from '../utils/calendarColors';
 
+type FlashMessage = { type: 'success' | 'error'; text: string };
+const flashClass = (m: FlashMessage) =>
+  m.type === 'error' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700';
+
 export default function Profile() {
   const toast = useToast();
-  const { user, setUser, setTokens } = useAuthStore();
+  const { user, setUser, setTokens, impersonation } = useAuthStore();
+  // auth-08: „Login als“ ist schreibgeschützt — Schreibsteuerelemente ausblenden statt 403 zu provozieren.
+  const readOnly = !!impersonation;
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [profileData, setProfileData] = useState({
@@ -28,13 +34,15 @@ export default function Profile() {
     confirm_password: '',
   });
   const [selectedColor, setSelectedColor] = useState(user?.calendar_color || DEFAULT_CALENDAR_COLOR);
-  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [colorMessage, setColorMessage] = useState('');
-  const [profileMessage, setProfileMessage] = useState('');
+  // auth-03: Meldungen tragen ihre Art, damit Fehler nie im grünen Erfolgskasten stehen.
+  const [colorMessage, setColorMessage] = useState<FlashMessage | null>(null);
+  const [profileMessage, setProfileMessage] = useState<FlashMessage | null>(null);
   // Guards against double-submit on the password and profile forms.
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [profileSubmitting, setProfileSubmitting] = useState(false);
+  // auth-13: Doppelklick-Schutz der 2FA-Schritte (jedes /totp/setup erzeugt ein neues Secret).
+  const [totpBusy, setTotpBusy] = useState(false);
 
   // F-019: TOTP 2FA state
   const [totpEnabled, setTotpEnabled] = useState(user?.totp_enabled ?? false);
@@ -64,7 +72,7 @@ export default function Profile() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 512_000) {
-      setProfileMessage('Bild zu groß (max. 500 KB)');
+      setProfileMessage({ type: 'error', text: 'Bild zu groß (max. 500 KB)' });
       return;
     }
     const formData = new FormData();
@@ -74,10 +82,10 @@ export default function Profile() {
         headers: { 'Content-Type': undefined },
       });
       setUser(response.data);
-      setProfileMessage('Profilbild aktualisiert');
-      setTimeout(() => setProfileMessage(''), 4000);
+      setProfileMessage({ type: 'success', text: 'Profilbild aktualisiert' });
+      setTimeout(() => setProfileMessage(null), 4000);
     } catch (err: any) {
-      setProfileMessage(getErrorMessage(err, 'Fehler beim Hochladen'));
+      setProfileMessage({ type: 'error', text: getErrorMessage(err, 'Fehler beim Hochladen') });
     }
     // Reset input so re-uploading the same file triggers onChange
     e.target.value = '';
@@ -87,16 +95,15 @@ export default function Profile() {
     try {
       const response = await apiClient.delete('/auth/profile-picture');
       setUser(response.data);
-      setProfileMessage('Profilbild entfernt');
-      setTimeout(() => setProfileMessage(''), 4000);
+      setProfileMessage({ type: 'success', text: 'Profilbild entfernt' });
+      setTimeout(() => setProfileMessage(null), 4000);
     } catch (err: any) {
-      setProfileMessage(getErrorMessage(err, 'Fehler beim Entfernen'));
+      setProfileMessage({ type: 'error', text: getErrorMessage(err, 'Fehler beim Entfernen') });
     }
   };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage('');
     setError('');
 
     if (passwordData.new_password !== passwordData.confirm_password) {
@@ -132,7 +139,8 @@ export default function Profile() {
       if (response.data.access_token && user) {
         setTokens(response.data.access_token, user);
       }
-      setMessage('Passwort erfolgreich geändert');
+      // auth-02: das Formular klappt zu — die Rückmeldung muss außerhalb davon erscheinen.
+      toast.success('Passwort erfolgreich geändert');
       setPasswordData({ current_password: '', new_password: '', confirm_password: '' });
       setShowPasswordForm(false);
     } catch (err: any) {
@@ -144,21 +152,26 @@ export default function Profile() {
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setProfileMessage('');
+    setProfileMessage(null);
     if (profileSubmitting) return;
+    // auth-15: leere Pflichtnamen nicht still verwerfen (der Server behielte den alten Wert).
+    if (!profileData.first_name.trim() || !profileData.last_name.trim()) {
+      setProfileMessage({ type: 'error', text: 'Vorname und Nachname dürfen nicht leer sein.' });
+      return;
+    }
     setProfileSubmitting(true);
     try {
       const response = await apiClient.put('/auth/profile', {
-        first_name: profileData.first_name || undefined,
-        last_name: profileData.last_name || undefined,
+        first_name: profileData.first_name.trim(),
+        last_name: profileData.last_name.trim(),
         email: profileData.email,
       });
       setUser(response.data);
-      setProfileMessage('Daten erfolgreich aktualisiert');
+      setProfileMessage({ type: 'success', text: 'Daten erfolgreich aktualisiert' });
       setShowProfileEdit(false);
-      setTimeout(() => setProfileMessage(''), 4000);
+      setTimeout(() => setProfileMessage(null), 4000);
     } catch (err: any) {
-      setProfileMessage(getErrorMessage(err, 'Fehler beim Speichern'));
+      setProfileMessage({ type: 'error', text: getErrorMessage(err, 'Fehler beim Speichern') });
     } finally {
       setProfileSubmitting(false);
     }
@@ -180,18 +193,21 @@ export default function Profile() {
   };
 
   const handleColorChange = async (color: string) => {
+    const previousColor = selectedColor;
     setSelectedColor(color);
-    setColorMessage('');
+    setColorMessage(null);
 
     try {
       const response = await apiClient.put('/auth/calendar-color', {
         calendar_color: color,
       });
       setUser(response.data);
-      setColorMessage('Kalenderfarbe erfolgreich aktualisiert');
-      setTimeout(() => setColorMessage(''), 3000);
+      setColorMessage({ type: 'success', text: 'Kalenderfarbe erfolgreich aktualisiert' });
+      setTimeout(() => setColorMessage(null), 3000);
     } catch (err: any) {
-      setColorMessage('Fehler beim Speichern der Farbe');
+      // auth-03: Auswahl zurücksetzen — die Anzeige darf nicht eine nie gespeicherte Farbe zeigen.
+      setSelectedColor(previousColor);
+      setColorMessage({ type: 'error', text: getErrorMessage(err, 'Fehler beim Speichern der Farbe') });
     }
   };
 
@@ -199,8 +215,10 @@ export default function Profile() {
 
   const handleTotpSetup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (totpBusy) return;
     setTotpError('');
     setTotpMessage('');
+    setTotpBusy(true);
     try {
       const response = await apiClient.post('/auth/totp/setup', {
         password: totpSetupPassword,
@@ -211,6 +229,8 @@ export default function Profile() {
       setShowTotpSetup(true);
     } catch (err: any) {
       setTotpError(getErrorMessage(err, 'Fehler beim Starten der 2FA-Einrichtung'));
+    } finally {
+      setTotpBusy(false);
     }
   };
 
@@ -225,7 +245,9 @@ export default function Profile() {
 
   const handleTotpVerify = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (totpBusy) return;
     setTotpError('');
+    setTotpBusy(true);
     try {
       const response = await apiClient.post('/auth/totp/verify', { code: totpVerifyCode });
       setUser(response.data);
@@ -238,17 +260,28 @@ export default function Profile() {
     } catch (err: any) {
       setTotpError(getErrorMessage(err, 'Ungültiger Code. Bitte erneut versuchen.'));
       setTotpVerifyCode('');
+    } finally {
+      setTotpBusy(false);
     }
   };
 
   const handleTotpDisable = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (totpBusy) return;
     setTotpError('');
+    setTotpBusy(true);
     try {
       const response = await apiClient.delete('/auth/totp/disable', {
         data: { password: totpDisablePassword, code: totpDisableCode },
       });
-      setUser(response.data);
+      // auth-01: das Backend hebt token_version an und liefert ein frisches Access-Token mit —
+      // ohne dieses endet die eigene Sitzung beim nächsten Aufruf mit 401 und Abmeldung.
+      const { access_token: newToken, ...updatedUser } = response.data;
+      if (newToken) {
+        setTokens(newToken, updatedUser);
+      } else {
+        setUser(updatedUser);
+      }
       setTotpEnabled(false);
       setShowTotpDisable(false);
       setTotpDisablePassword('');
@@ -257,14 +290,21 @@ export default function Profile() {
       setTimeout(() => setTotpMessage(''), 5000);
     } catch (err: any) {
       setTotpError(getErrorMessage(err, 'Fehler beim Deaktivieren der 2FA'));
+    } finally {
+      setTotpBusy(false);
     }
   };
 
-  const handleCopySecret = () => {
-    if (totpSetupData?.secret) {
-      navigator.clipboard.writeText(totpSetupData.secret);
+  const handleCopySecret = async () => {
+    if (!totpSetupData?.secret) return;
+    // auth-12: navigator.clipboard fehlt in unsicheren Kontexten (On-Prem per http://).
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(totpSetupData.secret);
       setSecretCopied(true);
       setTimeout(() => setSecretCopied(false), 2000);
+    } catch {
+      toast.info('Kopieren ist hier nicht möglich. Bitte markieren Sie den Schlüssel und kopieren Sie ihn von Hand.');
     }
   };
 
@@ -272,11 +312,17 @@ export default function Profile() {
     <div>
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Profil</h1>
 
+      {readOnly && (
+        <div role="status" className="mb-6 px-4 py-3 rounded-lg text-sm border bg-amber-50 border-amber-200 text-amber-800">
+          Sie sehen das Profil in der Mitarbeiteransicht („Login als“). Änderungen sind hier nicht möglich.
+        </div>
+      )}
+
       {/* User Info */}
       <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
         <div className="flex items-start justify-between mb-6">
           <div className="flex items-center space-x-4">
-            <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+            <div className={`relative group ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => { if (!readOnly) fileInputRef.current?.click(); }}>
               {user?.profile_picture ? (
                 <img src={user.profile_picture} className="w-20 h-20 rounded-full object-cover" alt="Profilbild" />
               ) : (
@@ -284,9 +330,11 @@ export default function Profile() {
                   {user?.first_name?.[0]}{user?.last_name?.[0]}
                 </div>
               )}
-              <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <Camera size={24} className="text-white" />
-              </div>
+              {!readOnly && (
+                <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Camera size={24} className="text-white" />
+                </div>
+              )}
               <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleFileUpload} />
             </div>
             <div>
@@ -297,7 +345,7 @@ export default function Profile() {
               {user?.email && (
                 <p className="text-gray-500 text-sm">{user.email}</p>
               )}
-              {user?.profile_picture && (
+              {user?.profile_picture && !readOnly && (
                 <button
                   onClick={handleDeleteProfilePicture}
                   className="flex items-center space-x-1 text-xs text-red-500 hover:text-red-700 mt-1"
@@ -308,18 +356,29 @@ export default function Profile() {
               )}
             </div>
           </div>
-          <button
-            onClick={() => { setShowProfileEdit(!showProfileEdit); setProfileMessage(''); }}
+          {!readOnly && <button
+            onClick={() => {
+              // auth-15: beim Öffnen frisch aus dem Konto füllen — verworfene Entwürfe nicht wiederbeleben.
+              if (!showProfileEdit) {
+                setProfileData({
+                  first_name: user?.first_name || '',
+                  last_name: user?.last_name || '',
+                  email: user?.email || '',
+                });
+              }
+              setShowProfileEdit(!showProfileEdit);
+              setProfileMessage(null);
+            }}
             className="flex items-center space-x-1 text-sm text-primary hover:text-primary-dark font-medium"
           >
             <UserIcon size={15} />
             <span>{showProfileEdit ? 'Abbrechen' : 'Bearbeiten'}</span>
-          </button>
+          </button>}
         </div>
 
         {profileMessage && (
-          <div className={`mb-4 px-4 py-3 rounded-lg text-sm border ${profileMessage.includes('Fehler') ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
-            {profileMessage}
+          <div role={profileMessage.type === 'error' ? 'alert' : 'status'} className={`mb-4 px-4 py-3 rounded-lg text-sm border ${flashClass(profileMessage)}`}>
+            {profileMessage.text}
           </div>
         )}
 
@@ -327,8 +386,9 @@ export default function Profile() {
           <form onSubmit={handleProfileUpdate} className="space-y-4 mb-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Vorname</label>
+                <label htmlFor="profile-first-name" className="block text-sm font-medium text-gray-700 mb-1">Vorname</label>
                 <input
+                  id="profile-first-name"
                   type="text"
                   value={profileData.first_name}
                   onChange={e => setProfileData(p => ({ ...p, first_name: e.target.value }))}
@@ -336,8 +396,9 @@ export default function Profile() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nachname</label>
+                <label htmlFor="profile-last-name" className="block text-sm font-medium text-gray-700 mb-1">Nachname</label>
                 <input
+                  id="profile-last-name"
                   type="text"
                   value={profileData.last_name}
                   onChange={e => setProfileData(p => ({ ...p, last_name: e.target.value }))}
@@ -345,8 +406,9 @@ export default function Profile() {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">E-Mail (optional)</label>
+                <label htmlFor="profile-email" className="block text-sm font-medium text-gray-700 mb-1">E-Mail (optional)</label>
                 <input
+                  id="profile-email"
                   type="email"
                   value={profileData.email}
                   onChange={e => setProfileData(p => ({ ...p, email: e.target.value }))}
@@ -401,7 +463,7 @@ export default function Profile() {
             <Lock size={20} />
             <span>Passwort ändern</span>
           </h3>
-          {!showPasswordForm && (
+          {!showPasswordForm && !readOnly && (
             <button
               onClick={() => setShowPasswordForm(true)}
               className="text-primary hover:text-primary-dark text-sm font-medium"
@@ -413,11 +475,6 @@ export default function Profile() {
 
         {showPasswordForm && (
           <form onSubmit={handlePasswordChange} className="space-y-4">
-            {message && (
-              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
-                {message}
-              </div>
-            )}
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
                 {error}
@@ -425,10 +482,11 @@ export default function Profile() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="pw-current" className="block text-sm font-medium text-gray-700 mb-1">
                 Aktuelles Passwort
               </label>
               <PasswordInput
+                id="pw-current"
                 value={passwordData.current_password}
                 onChange={(e) =>
                   setPasswordData({ ...passwordData, current_password: e.target.value })
@@ -439,8 +497,9 @@ export default function Profile() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Neues Passwort</label>
+              <label htmlFor="pw-new" className="block text-sm font-medium text-gray-700 mb-1">Neues Passwort</label>
               <PasswordInput
+                id="pw-new"
                 value={passwordData.new_password}
                 onChange={(e) => setPasswordData({ ...passwordData, new_password: e.target.value })}
                 required
@@ -452,10 +511,11 @@ export default function Profile() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="pw-confirm" className="block text-sm font-medium text-gray-700 mb-1">
                 Passwort bestätigen
               </label>
               <PasswordInput
+                id="pw-confirm"
                 value={passwordData.confirm_password}
                 onChange={(e) =>
                   setPasswordData({ ...passwordData, confirm_password: e.target.value })
@@ -561,7 +621,7 @@ export default function Profile() {
                   )}
                 </div>
 
-                {!totpEnabled && !showTotpSetup && !showTotpPasswordPrompt && (
+                {!readOnly && !totpEnabled && !showTotpSetup && !showTotpPasswordPrompt && (
                   <button
                     onClick={() => { setShowTotpPasswordPrompt(true); setTotpError(''); setTotpMessage(''); }}
                     className="flex items-center gap-1.5 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm font-medium"
@@ -570,7 +630,7 @@ export default function Profile() {
                     2FA aktivieren
                   </button>
                 )}
-                {totpEnabled && !showTotpDisable && (
+                {!readOnly && totpEnabled && !showTotpDisable && (
                   <button
                     onClick={() => { setShowTotpDisable(true); setTotpError(''); }}
                     className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-700 px-4 py-2 rounded-lg transition text-sm font-medium border border-red-200"
@@ -599,7 +659,7 @@ export default function Profile() {
                     <div className="flex gap-3">
                       <button
                         type="submit"
-                        disabled={!totpSetupPassword}
+                        disabled={!totpSetupPassword || totpBusy}
                         className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Weiter
@@ -665,7 +725,7 @@ export default function Profile() {
                     <div className="flex gap-3">
                       <button
                         type="submit"
-                        disabled={totpVerifyCode.length !== 6}
+                        disabled={totpVerifyCode.length !== 6 || totpBusy}
                         className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Bestätigen & 2FA aktivieren
@@ -712,7 +772,7 @@ export default function Profile() {
                     <div className="flex gap-3">
                       <button
                         type="submit"
-                        disabled={!totpDisablePassword || totpDisableCode.length !== 6}
+                        disabled={!totpDisablePassword || totpDisableCode.length !== 6 || totpBusy}
                         className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50"
                       >
                         2FA deaktivieren
@@ -741,8 +801,8 @@ export default function Profile() {
               </p>
 
               {colorMessage && (
-                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm mb-4">
-                  {colorMessage}
+                <div role={colorMessage.type === 'error' ? 'alert' : 'status'} className={`px-4 py-3 rounded-lg text-sm mb-4 border ${flashClass(colorMessage)}`}>
+                  {colorMessage.text}
                 </div>
               )}
 
@@ -768,6 +828,7 @@ export default function Profile() {
                     key={color.hex}
                     type="button"
                     onClick={() => handleColorChange(color.hex)}
+                    disabled={readOnly}
                     aria-label={`Farbe ${color.name}`}
                     aria-pressed={selectedColor === color.hex}
                     className={`relative h-10 w-10 shrink-0 rounded-lg transition-all hover:scale-110 ${

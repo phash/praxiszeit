@@ -79,6 +79,17 @@
 - **Datenauskunft (Art. 15): Vertragswerte im Kopf stimmen mit dem Verlauf überein** (user-19). Wochenstunden, Urlaubsanspruch, Stundenzählung, Tagesplan und Arbeitstage stammen aus dem heute gültigen Vertragsstand, nicht aus der nachgezogenen Benutzerzeile; eine zukunftsdatierte Änderung widerspricht dem Export nicht mehr.
 - **Löschkandidaten rechnen wie das Löschen** (user-10). Die (noch nicht angezeigte) Liste berücksichtigt auch Abwesenheiten für die Aufbewahrungsfrist und rechnet die Sperrfrist wie die Anonymisierung nach Berliner Datum.
 
+### 🐛 Behoben (Review 2026-11-11: Anmeldung, Profil, Navigation)
+
+- **2FA im Profil abschalten beendet die eigene Sitzung nicht mehr** (auth-01). Das Abschalten macht andere Sitzungen ungültig; die eigene bekommt dabei ein neues Zugangstoken, statt beim nächsten Klick abgemeldet zu werden.
+- **Passwort ändern meldet den Erfolg** (auth-02), Profil: Fehlermeldungen (Bild zu groß, Farbe nicht gespeichert) erscheinen rot und die zuvor gewählte Farbe kommt zurück (auth-03); Beschriftungen sind mit den Feldern verknüpft (auth-14); leere oder nur aus Leerzeichen bestehende Namen werden abgewiesen, „Bearbeiten“ startet immer mit den aktuellen Daten (auth-15); „Kopieren“ des 2FA-Schlüssels funktioniert auch ohne Zwischenablage-Zugriff (http-Installationen) mit Hinweis (auth-12); die 2FA-Schritte sind gegen Doppelklick geschützt (auth-13).
+- **„Login als“: keine Willkommens-Tour und keine Schreibsteuerelemente im Profil** (auth-08), mit Hinweis, dass Änderungen dort nicht möglich sind.
+- **Kurzer Netz- oder Serverfehler meldet nicht mehr ab** (auth-04). Nur eine tatsächlich abgelehnte Sitzung (401/403) führt zur Abmeldung; bei Netzfehler, Neustart des Servers oder Anfragelimit bleiben Sitzung und ungespeicherte Eingaben erhalten. Ein fehlgeschlagenes Neuladen der Systemeinstellungen setzt die Navigation nicht mehr auf Standardwerte zurück (auth-09).
+- **Anmeldung führt zurück zur Seite, von der man kam;** eine bestehende Sitzung wird von `/login` weggeleitet (auth-06). Ein Wechsel des Benutzernamens nimmt das 2FA-Feld zurück und das Erscheinen wird Screenreadern angesagt (auth-21).
+- **Einstellungen: Bundesland-Wechsel** meldet bei einem Fehler korrekt „nichts gespeichert“ (ohne technischen Text) (auth-05); Kind-krank-Anspruch und Puffer werden nur als ganze Zahl im erlaubten Bereich gespeichert (0–366 bzw. 0–1439), mit deutschen Fehlertexten (auth-16).
+- **Navigation und Hilfe:** Journal-Tab auf dem Handy wird markiert (auth-17); „Escape“ im Feedback-Dialog schließt nur den Dialog, der Fokus kehrt beim Schließen der Hilfe zurück (auth-10); der Download im Mitarbeiter-Handbuch-Fenster passt zum gezeigten Reiter (auth-07); geschlossene Schublade und Seitenleiste sind per Tab nicht mehr erreichbar, das Handbuch wird erst beim Öffnen gerendert (auth-18); die Zähler für offene Anträge laden bei Seitenwechsel nach und pausieren im Hintergrund-Tab (auth-19).
+- **Fehlerprotokoll darf Antworten nicht verdrängen** (auth-11): ist die Datenbank nicht erreichbar, liefert `/api/health` weiterhin seine 503-Antwort; toter Lizenz-Code entfernt (auth-20).
+
 ## [1.23.0] - 2026-11-07
 
 ### ✨ Neu

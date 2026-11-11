@@ -24,6 +24,11 @@ function getDownloadUrl(tab: DocTab): string {
 
 export function DocModal({ open, onClose, initialTab = 'cheatsheet' }: DocModalProps) {
   const [activeTab, setActiveTab] = useState<DocTab>(initialTab);
+  // auth-07: Reiter mit initialTab synchron halten (Modal bleibt auf der Login-Seite gemountet) —
+  // sonst lädt der Download-Button die Datei des zuvor gezeigten Reiters.
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const triggerElementRef = useRef<Element | null>(null);
