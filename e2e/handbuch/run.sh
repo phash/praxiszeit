@@ -93,7 +93,7 @@ cmd_down() {
   else
     docker compose -p "$PROJECT" down -v --remove-orphans
   fi
-  rm -f "$STATE_FILE"
+  rm -f "$STATE_FILE" "$FT_ENV"
 }
 
 case "${1:-}" in

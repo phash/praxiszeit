@@ -99,3 +99,4 @@ backend/test.db-wal
 # Handbuch-Wegwerfinstanz (Secrets, Stichtag)
 e2e/handbuch/.env
 e2e/handbuch/.state
+e2e/handbuch/.faketime.env
