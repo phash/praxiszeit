@@ -90,6 +90,17 @@
 - **Navigation und Hilfe:** Journal-Tab auf dem Handy wird markiert (auth-17); „Escape“ im Feedback-Dialog schließt nur den Dialog, der Fokus kehrt beim Schließen der Hilfe zurück (auth-10); der Download im Mitarbeiter-Handbuch-Fenster passt zum gezeigten Reiter (auth-07); geschlossene Schublade und Seitenleiste sind per Tab nicht mehr erreichbar, das Handbuch wird erst beim Öffnen gerendert (auth-18); die Zähler für offene Anträge laden bei Seitenwechsel nach und pausieren im Hintergrund-Tab (auth-19).
 - **Fehlerprotokoll darf Antworten nicht verdrängen** (auth-11): ist die Datenbank nicht erreichbar, liefert `/api/health` weiterhin seine 503-Antwort; toter Lizenz-Code entfernt (auth-20).
 
+### 🐛 Behoben (Review 2026-11-11: Betrieb – Import, Sicherung, Updates, Protokolle)
+
+- **XLS-Import: Fehler beim Import meldet den Grund.** Scheiterte der Import (z. B. Sperre, Zeitüberschreitung), kam „Fehler beim Import“ ohne Begründung (HTTP 500); jetzt erscheint die Meldung der Verwaltung als Klartext (HTTP 400). Fehlertexte bei ungültigen Eingaben (422) werden ebenfalls als Text angezeigt.
+- **XLS-Import: Vorschau zeigt übersprungene Zeilen deutlich.** Zeilen, die „Import bestätigen“ überspringt, tragen das rote Kennzeichen „Wird übersprungen“ mit sichtbarem Grund, und die Zusammenfassung nennt „x Einträge werden importiert, y übersprungen“. Die Dateiauswahl ist per Tastatur bedienbar, die Benutzerliste ist sofort gefüllt.
+- **Datensicherung: Speicherort lässt sich auf den Standard zurücksetzen.** Leeren des Felds „Speicherort“ und Speichern setzt auf den Standardordner zurück; ein bloßes Ändern von Uhrzeit oder Aufbewahrung schreibt den Standardpfad nicht mehr als eigenen Ort fest. Relative Pfade werden abgelehnt („Bitte einen absoluten Pfad angeben“). Zahlenfelder lassen sich leeren, ohne zu 0 zu springen; die Seite lädt nach Aktionen ohne Vollbild-Spinner. Ist die letzte Sicherung älter als 36 Stunden, erscheint eine Warnung.
+- **Datensicherung: zwei Sicherungen in derselben Sekunde überschreiben sich nicht mehr**, und eine fehlgeschlagene zweite Sicherung löscht die gelungene erste nicht. Die geplante Sicherung (Docker) holt einen Lauf nach, den ein Neustart um HH:30 verdrängt hat. Native Installationen: die nächtliche Sicherung hängt bei einer fremden Tabellensperre nicht mehr endlos, ein Fehler beim Aufräumen alter Sicherungen bricht sie nicht ab; die Hinweise auf der Seite nennen den Standardordner.
+- **Fehler-Monitoring: „Ändern“ der GitHub-Issue-URL funktioniert**, mit „Abbrechen“. Die Liste zeigt „x von y“ mit „Mehr laden“, die volle Meldung steht im aufgeklappten Bereich, späte Antworten beim Tabwechsel überschreiben die Liste nicht mehr, und Fehlergründe des Servers (z. B. falsches URL-Format) werden angezeigt.
+- **Änderungsprotokoll: richtige Zeilen beim schnellen Wechsel von Monat und Person**, und der Personenfilter enthält auch ausgeschiedene und ausgeblendete Mitarbeitende. Die Karten auf Handy und Tablet zeigen wie die Tabelle Pause, tatsächliche Stempel und Anwesenheitsende.
+- **Update-Prüfung: „Server nicht erreichbar“ ist nicht mehr „aktuell“.** Eine fehlgeschlagene Prüfung wird gemeldet und nicht für die Browser-Sitzung gemerkt; Sonderzeichen in der Lizenz-ID verfälschen die Abfrage nicht mehr; ein gesperrter Browserspeicher lässt das Dashboard nicht mehr abstürzen.
+- **Fehlermeldung beim Bug-Melden:** antwortet der Meldeserver mit einem unerwarteten JSON-Format, erscheint kein „Interner Fehler“ mehr, obwohl die Meldung angekommen ist.
+
 ## [1.23.0] - 2026-11-07
 
 ### ✨ Neu
