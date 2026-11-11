@@ -2,6 +2,7 @@ import { act, render, screen, fireEvent, waitFor, within } from '@testing-librar
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ToastProvider } from '../../contexts/ToastContext';
 import TeamSchedule from './TeamSchedule';
+import { todayBerlin } from '../../utils/absenceRules';
 import type { WeekBlocks } from '../../types/workBlocks';
 
 const getMock = vi.fn();
@@ -169,6 +170,42 @@ describe('Teamübersicht der Arbeitszeiten', () => {
     chip.focus();
     fireEvent.click(chip);   // neues Rendern
     expect(document.activeElement).toBe(chip);
+  });
+
+  it('user-03: bei vergangenem „Stand am" schlägt der Dialog „Gültig ab" frühestens heute vor', async () => {
+    renderPage();
+    await screen.findByText('Arzt, Anna');
+    fireEvent.change(screen.getByLabelText('Stand am'), { target: { value: '2026-01-05' } });
+    await waitFor(() => expect(getMock).toHaveBeenLastCalledWith('/admin/team-schedule', { params: { date: '2026-01-05' } }));
+    await screen.findByText('Arzt, Anna');
+    fireEvent.click(screen.getByRole('switch', { name: 'Bearbeiten' }));
+    fireEvent.keyDown(screen.getByRole('button', { name: /Arzt, Anna · Mo 15:00–18:00/ }), { key: 'ArrowRight' });
+    fireEvent.click(within(screen.getByTestId('team-row-a')).getByRole('button', { name: 'Änderung speichern…' }));
+    const props = modalProps[modalProps.length - 1];
+    expect(props.initialEffectiveFrom).toBe(todayBerlin());
+  });
+
+  it('user-04: Tab (keine Pfeiltaste) merkt sich keinen Fokus und holt ihn später nicht zurück', async () => {
+    renderPage();
+    await screen.findByText('Arzt, Anna');
+    fireEvent.click(screen.getByRole('switch', { name: 'Bearbeiten' }));
+    fireEvent.keyDown(screen.getByRole('button', { name: /Arzt, Anna · Mo 07:30–13:00/ }), { key: 'Tab' });
+    const chip = screen.getByRole('button', { name: 'Ärzte' });
+    chip.focus();
+    fireEvent.click(chip);
+    expect(document.activeElement).toBe(chip);
+  });
+
+  it('user-18: Personen ohne Stundenzählung verbreitern die Zeitachse nicht', async () => {
+    const early = [day([['05:00', '23:00']]), day(), day(), day(), day()];
+    getMock.mockResolvedValue({ data: [
+      ...rows().slice(0, 2),
+      { ...rows()[1], user_id: 'z', first_name: 'Zora', last_name: 'Zett', track_hours: false, blocks: early },
+    ] });
+    renderPage();
+    await screen.findByText('Zett, Zora');
+    expect(screen.queryAllByText('5')).toHaveLength(0);
+    expect(screen.queryAllByText('22')).toHaveLength(0);
   });
 
   it('Verwerfen setzt den Entwurf zurück', async () => {

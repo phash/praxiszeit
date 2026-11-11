@@ -70,6 +70,7 @@
 ### 🐛 Behoben (Review 2026-11-11: Benutzerverwaltung)
 
 - **Benutzerliste: vollständig, ehrlich und sicher bedienbar** (user-06/07/13/14/15/21). Die Liste fordert bis zu 500 Konten an (vorher stilles Kürzen auf 100); fällt die Urlaubs-/Überstundenübersicht aus, steht dort „Erneut laden“ statt endlosem „Lädt…“; schnelles Umschalten von „Inaktive anzeigen“ lässt keine alte Antwort mehr die Liste überschreiben; „Bearbeiten“ scrollt zum Formular und fragt vor dem Wechsel auf eine andere Person nach; „Passwort setzen“ und „Deaktivieren“ fehlen in der eigenen Zeile; Jahr und Fristen rechnen nach Berliner Datum.
+- **Teamübersicht: kein rückwirkender Stichtag vorgeschlagen, Besetzung ohne Platzhalter, Fokus nur nach Pfeiltasten** (user-03/04/18/21). Bei einem vergangenen „Stand am“ schlägt „Änderung speichern…“ als „Gültig ab“ frühestens heute vor (mit Hinweis); Personen ohne Stundenzählung zählen nicht mehr in Besetzung und Zeitachse; Tab/Escape holen den Fokus später nicht mehr auf den Block zurück; „heute“ nach Berliner Datum.
 
 ## [1.23.0] - 2026-11-07
 
