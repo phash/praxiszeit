@@ -120,3 +120,21 @@ export function sameWeek(a: WeekBlocks | null | undefined, b: WeekBlocks | null 
     : null);
   return key(a) === key(b);
 }
+
+/** Geschätzte Spaltenbreite (px) des Tagesfelds bei 1440 px mit Seitenleiste —
+ * bewusst eher knapp, damit eine Beschriftung nie abgeschnitten wird. */
+const REF_COLUMN_PX = 140;
+const CHAR_PX = 6.5;
+const LABEL_PAD_PX = 10;
+
+/** Beschriftung eines Balkens je nach Breite (reine Minutenrechnung, kein
+ * DOM-Messen): breit → „13–16:30“, mittel → nur der Beginn „13“, schmal → leer.
+ * Die volle Zeit steht immer in `title`/`aria-label`. */
+export function blockLabel(start: string, end: string, spanMinutes: number, axisMinutes: number): string {
+  const px = (spanMinutes / axisMinutes) * REF_COLUMN_PX - LABEL_PAD_PX;
+  const full = compactSpan(start, end);
+  if (px >= full.length * CHAR_PX) return full;
+  const from = full.split('–')[0];
+  if (px >= from.length * CHAR_PX) return from;
+  return '';
+}

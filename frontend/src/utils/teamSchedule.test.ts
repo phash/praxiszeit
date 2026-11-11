@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  axisRange, compactSpan, coverage, departmentsOf, moveBlock, resizeBlock, sameWeek, snapMinutes,
+  axisRange, blockLabel, compactSpan, coverage, departmentsOf, moveBlock, resizeBlock, sameWeek, snapMinutes,
 } from './teamSchedule';
 import type { WeekBlocks } from '../types/workBlocks';
 
@@ -96,5 +96,21 @@ describe('sameWeek', () => {
     expect(sameWeek(w, week([['08:00', '12:00']]))).toBe(true);
     expect(sameWeek(w, moveBlock(w, 0, 0, 15))).toBe(false);
     expect(sameWeek(null, null)).toBe(true);
+  });
+});
+
+describe('blockLabel', () => {
+  const axis = 720; // 7–19 Uhr
+  it('breit: volle Kurzform', () => {
+    expect(blockLabel('08:00', '12:00', 240, axis)).toBe('8–12');
+    expect(blockLabel('08:00', '16:00', 480, axis)).toBe('8–16');
+  });
+  it('mittel: nur der Beginn, nie eine abgeschnittene Zeit', () => {
+    expect(blockLabel('13:00', '16:30', 210, axis)).toBe('13');
+    expect(blockLabel('14:30', '18:45', 255, axis)).toBe('14:30');
+  });
+  it('schmal: keine Beschriftung', () => {
+    expect(blockLabel('15:00', '16:00', 60, axis)).toBe('');
+    expect(blockLabel('15:00', '15:15', 15, axis)).toBe('');
   });
 });

@@ -16,7 +16,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { blocksOf, formatWeekBlocks, hhmmToMinutes, validateWeekBlocks, WEEKDAY_LABELS } from '../../utils/workBlocks';
 import {
-  axisRange, compactSpan, coverage, departmentsOf, DRAG_SNAP_MINUTES, moveBlock, resizeBlock, sameWeek, snapMinutes,
+  axisRange, blockLabel, coverage, departmentsOf, DRAG_SNAP_MINUTES, moveBlock, resizeBlock, sameWeek, snapMinutes,
 } from '../../utils/teamSchedule';
 import type { WeekBlocks } from '../../types/workBlocks';
 import type { ScheduleToday } from '../../types/user';
@@ -400,6 +400,7 @@ export default function TeamSchedule() {
                         const e = Math.min(axis.end, hhmmToMinutes(b.end));
                         if (e <= s) return null;
                         const text = `${personName(r)} · ${label} ${b.start}–${b.end}`;
+                        const spanText = blockLabel(b.start, b.end, e - s, span);
                         const key = `${r.user_id}-${day}-${idx}`;
                         const style = {
                           left: `${((s - axis.start) / span) * 100}%`,
@@ -424,11 +425,11 @@ export default function TeamSchedule() {
                             onPointerCancel={onPointerUp}
                             onKeyDown={(ev) => { focusKey.current = key; onKeyDown(ev, r, day, idx); }}
                           >
-                            <span className="pointer-events-none">{compactSpan(b.start, b.end)}</span>
+                            <span className="pointer-events-none">{spanText}</span>
                           </button>
                         ) : (
-                          <div key={key} title={text} style={style} className={cls}>
-                            <span>{compactSpan(b.start, b.end)}</span>
+                          <div key={key} title={text} aria-label={text} role="img" style={style} className={cls}>
+                            <span aria-hidden="true">{spanText}</span>
                           </div>
                         );
                       })}

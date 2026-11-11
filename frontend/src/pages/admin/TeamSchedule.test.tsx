@@ -50,6 +50,16 @@ beforeEach(() => {
 });
 
 describe('Teamübersicht der Arbeitszeiten', () => {
+  it('schneidet keine Beschriftung ab: schmaler Balken zeigt nur den Beginn, die volle Zeit steht im Titel', async () => {
+    renderPage();
+    await screen.findByText('Arzt, Anna');
+    const wide = screen.getByTitle('Arzt, Anna · Mo 07:30–13:00');
+    expect(wide).toHaveTextContent('7:30–13');
+    const narrow = screen.getByTitle('Arzt, Anna · Mo 15:00–18:00');
+    expect(narrow).toHaveTextContent(/^15$/);
+    expect(narrow).toHaveAttribute('aria-label', 'Arzt, Anna · Mo 15:00–18:00');
+  });
+
   it('zeigt alle Personen mit ihren Blöcken und die nächste Änderung', async () => {
     renderPage();
     expect(await screen.findByText('Arzt, Anna')).toBeInTheDocument();
