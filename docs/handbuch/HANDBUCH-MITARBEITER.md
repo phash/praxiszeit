@@ -221,7 +221,7 @@ Klicken Sie in der Navigation auf `Abwesenheiten`. Der Tab `Kalender` zeigt die 
 1. Mit `Monat` und `Jahr` wechseln Sie die Ansicht.
 2. Mit den Pfeilen neben dem Monatsnamen blättern Sie weiter. Die **Legende** unter dem Kalender erklärt die Farben.
 
-> **Gut zu wissen:** **Datenschutz:** Bei Kolleginnen und Kollegen sehen Sie nur Urlaub und Fortbildung mit ihrer Art. Krankheit, bezahlte Freistellung, Sonstiges und eigene Gründe der Praxis erscheinen neutral als **Abwesend**. Ihre eigenen Abwesenheiten sehen Sie immer mit der echten Art.
+> **Gut zu wissen:** **Datenschutz:** Bei Kolleginnen und Kollegen sehen Sie nur Urlaub, Fortbildung und Überstundenausgleich mit ihrer Art. Krankheit, bezahlte Freistellung, Sonstiges und eigene Gründe der Praxis erscheinen neutral als **Abwesend**. Ihre eigenen Abwesenheiten sehen Sie immer mit der echten Art.
 
 > **Gut zu wissen:** **Verkürzte Tage und Sondertage:** Ein verkürzter Tag steht im Kalender z. B. als „Brückentag: verkürzter Tag (max. 4 h)“. An diesem Tag ist Ihr Tagessoll höchstens so hoch wie angegeben, Urlaub kostet einen halben Tag. Mehr dazu: [So rechnet PraxisZeit: Sondertage und verkürzte Tage](SO-RECHNET-PRAXISZEIT.md#sondertage).
 

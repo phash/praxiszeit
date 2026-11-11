@@ -1421,6 +1421,19 @@ group_handbuch_pzweb() {
   rm -rf "$tmp"
 }
 
+# DSGVO Art. 17 (Schlussreview): der Löschweg Deaktivieren -> Anonymisieren -> Löschen
+# gehört ins Praxisleitungs-Buch; Fristen und Beschriftungen stehen im Code.
+group_dsgvo_art17() {
+  need_code "Anonymisieren (DSGVO Art. 17)"
+  need_code "Endgültig löschen (DSGVO Art. 17)"
+  need_code "if days_since_deactivation < 14:"
+  need_code "if days_since < 730:"
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Wie entferne ich eine Person endgültig (DSGVO Art. 17)?'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Sperrfrist von 14 Tagen'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'mindestens 730 Tage'
+  need docs/handbuch/HANDBUCH-ADMIN.md '**Anonymisieren**'
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {

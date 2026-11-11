@@ -978,6 +978,22 @@ describe('<MonthlyJournal /> Löschung einer vergangenen Abwesenheit beantragen 
     expect(screen.queryByTitle('Löschen')).toBeNull();
   });
 
+  it('nicht für heute und künftige Tage (dort löscht die Person direkt im Kalender)', async () => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const future = format(new Date(Date.now() + 3 * 86400000), 'yyyy-MM-dd');
+    mockJournal([
+      { ...sickDay, type: 'training' as const,
+        absences: [{ id: 'a-past', type: 'training', hours: 8, start_time: null, end_time: null }] },
+      { ...sickDay, date: today, absences: [{ id: 'a-today', type: 'sick', hours: 8, start_time: null, end_time: null }] },
+      { ...sickDay, date: future, absences: [{ id: 'a-future', type: 'vacation', hours: 8, start_time: null, end_time: null }] },
+    ]);
+    render(<MonthlyJournal />);
+    // Der vergangene Tag bietet den Antrag an, heute und der künftige Tag nicht.
+    expect(await screen.findByTitle('Löschung beantragen: Fortbildung')).toBeInTheDocument();
+    expect(screen.queryByTitle('Löschung beantragen: Krank')).toBeNull();
+    expect(screen.queryByTitle('Löschung beantragen: Urlaub')).toBeNull();
+  });
+
   it('mehrere Abwesenheiten am Tag: kein „Löschen" im Bearbeitungsmodus, Auswahl am Papierkorb je Abwesenheit', async () => {
     mockJournal([{ ...sickDay, absences: [
       { id: 'a1', type: 'sick', hours: 4, start_time: null, end_time: null },

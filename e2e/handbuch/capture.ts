@@ -21,6 +21,7 @@ import { ALL_SHOTS } from '../../frontend/src/handbuch/content/index';
 import { assertSingleVisible, boxInside, computeCrop, type Box } from '../../frontend/src/handbuch/geometry';
 import type { LocatorSpec, Manifest, ManifestShot, Persona, PrepareStep, ShotDef } from '../../frontend/src/handbuch/types';
 import { planSettingsRestore } from '../../frontend/src/handbuch/settingsRestore';
+import { orderShots } from '../../frontend/src/handbuch/shotOrder';
 import { expandDateTokens } from '../../frontend/src/handbuch/dates';
 import { writeContactSheet } from './contact-sheet';
 
@@ -74,6 +75,10 @@ function readState(): { baseUrl: string; stichtag: string } {
     if (m) kv[m[1]] = m[2].trim();
   }
   if (!kv.BASE_URL) throw new Error('.state: BASE_URL fehlt');
+  // Die Aufnahme aendert Einstellungen: nie gegen einen fremden Host.
+  if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(kv.BASE_URL)) {
+    throw new Error(`.state: BASE_URL ${kv.BASE_URL} ist nicht localhost — Aufnahme verweigert`);
+  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(kv.STICHTAG ?? '')) throw new Error('.state: STICHTAG fehlt — run.sh seed ausfuehren');
   return { baseUrl: kv.BASE_URL.replace(/\/$/, ''), stichtag: kv.STICHTAG };
 }
@@ -472,7 +477,7 @@ async function main() {
     const unknown = only.filter((id) => !ids.has(id));
     if (unknown.length) throw new Error(`Unbekannte Shot-IDs: ${unknown.join(', ')}`);
   }
-  const defs = only ? ALL_SHOTS.filter((s) => only.includes(s.id)) : ALL_SHOTS;
+  const defs = orderShots(only ? ALL_SHOTS.filter((s) => only.includes(s.id)) : ALL_SHOTS);
   console.log(`Aufnahme: ${defs.length} Shot(s) gegen ${baseUrl}, Stichtag ${stichtag} ${CLOCK_TIME} ${TZ}`);
 
   const browser = await chromium.launch();

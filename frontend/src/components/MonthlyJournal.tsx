@@ -18,6 +18,7 @@ import ChangeRequestForm from './ChangeRequestForm';
 import AbsenceDeleteRequestDialog from './AbsenceDeleteRequestDialog';
 import type { AbsenceToDelete } from './AbsenceDeleteRequestDialog';
 import { editableEnd, stampNoteProps } from '../utils/workBlocks';
+import { mayDeleteAbsenceByDate } from '../utils/absenceRules';
 import { myReasons } from '../api/absenceReasons';
 import type { AbsenceReason } from '../api/absenceReasons';
 
@@ -626,8 +627,15 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   }
 
 
+  // Antrag nur für vergangene Tage (heute und Zukunft löscht die Person direkt im
+  // Abwesenheitskalender, wie AbsenceCalendarPage.canRequestAbsenceDeletion) und nie
+  // für Betriebsferien-Tage.
+  function mayRequestAbsenceDeletion(day: JournalDay, a: AbsenceItem): boolean {
+    return !a.closure_day && !mayDeleteAbsenceByDate(false, day.date, format(new Date(), 'yyyy-MM-dd'));
+  }
+
   function employeeDeletableAbsences(day: JournalDay): AbsenceItem[] {
-    return day.absences.filter((a) => !a.closure_day);
+    return day.absences.filter((a) => mayRequestAbsenceDeletion(day, a));
   }
 
   function requestAbsenceDeletion(day: JournalDay, absence: AbsenceItem) {
@@ -1066,7 +1074,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                         <Pencil size={13} />
                                       </button>
                                       {/* P1.1: eigene Abwesenheit eines vergangenen Tages — Löschung per Antrag. */}
-                                      {!isAdminView && !a.closure_day && (
+                                      {!isAdminView && mayRequestAbsenceDeletion(day, a) && (
                                         <button
                                           onClick={() => requestAbsenceDeletion(day, a)}
                                           className="p-1.5 text-red-300 hover:text-red-600"

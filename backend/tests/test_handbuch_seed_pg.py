@@ -61,6 +61,12 @@ FOREIGN_MARIA_ID = uuid.UUID("b9b90000-0000-4000-8000-000000000302")
 SEED_PATH = Path(__file__).resolve().parent.parent / "create_handbuch_testdata.py"
 
 
+@pytest.fixture(autouse=True)
+def _seed_flag(monkeypatch):
+    # Der Seed verweigert sich ohne ausdrueckliche Freigabe (test_handbuch_seed_guard.py).
+    monkeypatch.setenv("HANDBUCH_SEED", "1")
+
+
 def _load_seed():
     spec = importlib.util.spec_from_file_location("handbuch_seed_under_test", SEED_PATH)
     module = importlib.util.module_from_spec(spec)

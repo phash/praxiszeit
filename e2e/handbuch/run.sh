@@ -63,7 +63,7 @@ cmd_seed() {
   [ -n "$cid" ] || { echo "Backend-Container laeuft nicht" >&2; exit 1; }
   # 1. Stichtag auf der ECHTEN Uhr berechnen (R14), noch ohne Datenbankfaelschung noetig
   docker cp backend/create_handbuch_testdata.py "$cid:/app/create_handbuch_testdata.py"
-  if ! out="$(dc exec -T backend env -u LD_PRELOAD -u FAKETIME python create_handbuch_testdata.py --print-stichtag </dev/null 2>&1)"; then
+  if ! out="$(dc exec -T -e HANDBUCH_SEED=1 backend env -u LD_PRELOAD -u FAKETIME python create_handbuch_testdata.py --print-stichtag </dev/null 2>&1)"; then
     printf '%s\n' "$out" >&2
     echo "Stichtag-Berechnung fehlgeschlagen" >&2
     exit 1
@@ -77,7 +77,7 @@ cmd_seed() {
   cid="$(dc ps -q backend)"
   docker cp backend/create_handbuch_testdata.py "$cid:/app/create_handbuch_testdata.py"
   # Bei Fehlschlag trotzdem die Ausgabe zeigen (set -e bricht sonst vor dem printf ab).
-  if ! out="$(dc exec -T backend python create_handbuch_testdata.py --stichtag "$day" </dev/null 2>&1)"; then
+  if ! out="$(dc exec -T -e HANDBUCH_SEED=1 backend python create_handbuch_testdata.py --stichtag "$day" </dev/null 2>&1)"; then
     printf '%s\n' "$out" >&2
     echo "Seed fehlgeschlagen" >&2
     exit 1
@@ -104,6 +104,7 @@ PY
     --build-arg BASE=pzhandbuch-backend -t pzhandbuch-backend-faketime e2e/handbuch >/dev/null
   docker build -q -f e2e/handbuch/Dockerfile.db-faketime -t pzhandbuch-db-faketime e2e/handbuch >/dev/null
   dc up -d --no-build --force-recreate db backend
+  dc restart frontend   # nginx loest den Upstream backend:8000 nur beim Start auf
   wait_ready || exit 1
   echo "Serveruhr: ${day} 10:30 (libfaketime, Versatz ${off} s, Backend und Datenbank)"
 }
@@ -149,7 +150,6 @@ case "${1:-}" in
   all)
     cmd_up
     cmd_seed
-    # HOOK_CAPTURE: Aufnahme (Playwright capture.ts) wird spaeter hier eingehaengt.
     ;;
   *) echo "Aufruf: $0 up|seed|down|all" >&2; exit 2 ;;
 esac

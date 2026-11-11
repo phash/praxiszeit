@@ -36,8 +36,14 @@ export default function Help() {
       document.querySelector('main')?.scrollTo?.({ top: 0 });
       return;
     }
-    const el = document.getElementById(decodeURIComponent(hash.slice(1)));
-    el?.scrollIntoView();
+    // Ein kaputtes Fragment (#%E0) darf die Seite nicht abwerfen: dann der rohe Anker.
+    let id = hash.slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      /* roher Anker */
+    }
+    document.getElementById(id)?.scrollIntoView();
   }, [hash, valid, current]);
 
   // Buchübergreifende Links (/help/<buch>#…) per Router statt Seitenneuladen. #-Links bleiben

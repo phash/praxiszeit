@@ -291,7 +291,7 @@ export const soRechnet: Handbook = {
           ],
         },
         { kind: 'prose', text:
-            'Ein Urlaubstag kostet einen Tag, egal wie lang der Tag laut Vertrag ist; ein Halbtag kostet 0,5. Wochenenden, Feiertage und Tage ohne Soll kosten nichts. 30 Tage Anspruch sind ein Beispiel für einen vertraglichen Anspruch. Die Eintritts-Rechnung ist die taggenaue Regel von PraxisZeit; gesetzliche und vertragliche Regeln können abweichen. Die Praxisleitung kann für einzelne Personen eine andere Frist hinterlegen. **Frist:** Das ist die Voreinstellung von PraxisZeit. Ob Resturlaub tatsächlich verfällt, setzt nach § 7 Abs. 3 BUrlG voraus, dass die Praxis ihre Mitarbeitenden rechtzeitig auf den drohenden Verfall hingewiesen und zum Urlaubnehmen aufgefordert hat; die Warnung in PraxisZeit ersetzt diesen Hinweis nicht.' },
+            'Ein Urlaubstag kostet einen Tag, egal wie lang der Tag laut Vertrag ist; ein Halbtag kostet 0,5. Wochenenden, Feiertage und Tage ohne Soll kosten nichts. 30 Tage Anspruch sind ein Beispiel für einen vertraglichen Anspruch. Die Eintritts-Rechnung ist die taggenaue Regel von PraxisZeit; gesetzliche und vertragliche Regeln können abweichen. Die Praxisleitung kann für einzelne Personen eine andere Frist hinterlegen (ein festes Datum, das für alle Jahre gilt). **Frist:** Das ist die Voreinstellung von PraxisZeit. Ob Resturlaub tatsächlich verfällt, setzt nach § 7 Abs. 3 BUrlG voraus, dass die Praxis ihre Mitarbeitenden rechtzeitig auf den drohenden Verfall hingewiesen und zum Urlaubnehmen aufgefordert hat; die Warnung in PraxisZeit ersetzt diesen Hinweis nicht.' },
         {
           kind: 'task',
           id: 'urlaubskonto-dashboard',

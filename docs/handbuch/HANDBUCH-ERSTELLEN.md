@@ -76,6 +76,10 @@ bash e2e/handbuch/run.sh down       # Instanz samt Volumes entfernen
 
 Die Demodaten bringt `backend/create_handbuch_testdata.py` mit (Admin „Dr. Andrea Werner“, Benutzer `admin`). Die Instanz ist wegwerfbar; das Passwort steht in `e2e/handbuch/capture.ts`.
 
+- **Den Seed nie gegen eine echte Instanz laufen lassen:** er löscht die Konten `maria`, `thomas`, `sarah`, `petra`, `julia`, benennt den Admin um und setzt dessen Passwort auf einen öffentlichen Wert. Er bricht deshalb ohne `HANDBUCH_SEED=1` ab; nur `run.sh seed` und die PostgreSQL-Tests setzen es. Das Release-Paket für Kunden (Docker-Bundle) enthält die Datei nicht.
+- **Ein zweites `seed` auf derselben Instanz scheitert** an einem Fremdschlüssel im Änderungsprotokoll: vorher `run.sh down`, dann `up` und `seed` (oder `all`).
+- **Reihenfolge der Aufnahme:** Shots, die das Änderungsprotokoll zeigen (`/admin/audit-log`), laufen zuerst (`frontend/src/handbuch/shotOrder.ts`); sonst hinge ihr Bild davon ab, welche Shots mit Einstellungsänderung vorher liefen. Ein `--only`-Lauf und der volle Lauf liefern so dieselben Protokollbilder.
+
 ### 4. Markdown erzeugen
 
 ```bash

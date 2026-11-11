@@ -81,6 +81,12 @@ describe('Help page (graphic handbook)', () => {
     await waitFor(() => expect(window.HTMLElement.prototype.scrollIntoView).toHaveBeenCalled());
   });
 
+  it('a malformed fragment does not crash the page', () => {
+    renderAt('/help/mitarbeitende#%E0', 'employee');
+    expect(tabNav()).toBeInTheDocument();
+    expect(window.HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+
   it('cross-book /help/ link navigates in-app without a reload', async () => {
     renderAt('/help/mitarbeitende', 'employee');
     const a = screen.getByRole('link', { name: 'XBook' });

@@ -45,6 +45,12 @@ const props = { handbook, manifest, imgBase: '/help/img', linkBase: '/handbuch',
   comics: { vergessen: Comic }, diagrams: { d1: Diagram } };
 
 describe('HandbookPage', () => {
+  it('loads shot images lazily: <img loading="lazy"> in a foreignObject, also in the prerendered HTML', () => {
+    const html = renderToString(<HandbookPage {...props} />);
+    expect(html).toMatch(/<foreignObject[^>]*><img [^>]*loading="lazy"[^>]*src="\/help\/img\/s1\.webp"|<foreignObject[^>]*><img [^>]*src="\/help\/img\/s1\.webp"[^>]*loading="lazy"/);
+    expect(html).not.toContain('<image');
+  });
+
   it('renders via renderToString without effects', () => {
     const html = renderToString(<HandbookPage {...props} />);
     expect(html).toContain('Überblick');
@@ -124,7 +130,7 @@ describe('HandbookPage', () => {
   });
   it('image href uses imgBase', () => {
     const { container } = render(<HandbookPage {...props} />);
-    expect(container.querySelector('image')!.getAttribute('href')).toBe('/help/img/s1.webp');
+    expect(container.querySelector('foreignObject img')!.getAttribute('src')).toBe('/help/img/s1.webp');
     expect(container.querySelector('a[target="_blank"]')!.getAttribute('href')).toBe('/help/img/s1.webp');
     expect(container.querySelector('svg[role="img"]')!.getAttribute('aria-label')).toContain('Zeiterfassung');
   });

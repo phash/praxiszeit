@@ -30,7 +30,19 @@ export default function ShotFigure({ shotId, def, m, imgBase, active = null }: S
         aria-label={def.alt}
         className="block h-auto w-full"
       >
-        <image href={src} x={0} y={0} width={m.width} height={m.height} />
+        {/* SVG-<image> kennt kein loading="lazy" (ein Kapitel zog ~9 MB auf einmal): <img> in einem
+            foreignObject laedt nativ erst in Sichtweite, auch im vorab gerenderten HTML ohne JS. */}
+        <foreignObject x={0} y={0} width={m.width} height={m.height}>
+          <img
+            src={src}
+            alt=""
+            width={m.width}
+            height={m.height}
+            loading="lazy"
+            decoding="async"
+            className="block h-auto max-w-none"
+          />
+        </foreignObject>
         {def.markers.map((mk) => {
           const box = m.markers[mk.id];
           if (!box) return null;

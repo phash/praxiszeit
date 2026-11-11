@@ -16,6 +16,7 @@ vorbei, sonst fehlt der Mandantenkontext). Im Superadmin-Kontext greift RLS
 nicht — jede Abfrage filtert den Mandanten selbst.
 """
 import argparse
+import os
 import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone, time as dt_time
@@ -935,7 +936,24 @@ def create_security_events(db, users: list, admin, stichtag: date) -> None:
     print(f"  ✓ {len(users)} Konto-Vorgänge")
 
 
+SEED_FLAG = "HANDBUCH_SEED"
+
+
+def require_seed_flag() -> None:
+    """Der Seed loescht Konten (maria, thomas, sarah, petra, julia), benennt den Admin
+    um und setzt dessen Passwort auf einen oeffentlichen Wert. Auf einer echten
+    Instanz waere das ein Aussperren: nur mit ausdruecklichem HANDBUCH_SEED=1
+    (setzt e2e/handbuch/run.sh seed und die PG-Tests)."""
+    if os.environ.get(SEED_FLAG) != "1":
+        raise SystemExit(
+            "Abbruch: create_handbuch_testdata.py ueberschreibt Konten und das Admin-Passwort "
+            f"und darf nur auf einer Wegwerf-Instanz laufen (e2e/handbuch/run.sh seed). "
+            f"Zum Freischalten {SEED_FLAG}=1 setzen."
+        )
+
+
 def seed_all(db, stichtag: date) -> None:
+    require_seed_flag()
     start = data_start(stichtag)
     horizon = stichtag + timedelta(days=70)
 
@@ -979,6 +997,7 @@ def main(argv=None):
     parser.add_argument("--print-stichtag", action="store_true",
                         help="nur den Stichtag berechnen und als STICHTAG=... ausgeben (schreibt nichts außer fehlenden Feiertagen)")
     args = parser.parse_args(argv)
+    require_seed_flag()
 
     db = SessionLocal()
     # Superadmin-Kontext: INSERTs in mandantengebundene Tabellen ohne RLS-Hürde.

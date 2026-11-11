@@ -10,15 +10,19 @@ export const BROSCHUERE_SHOTS: BroschuereShot[] = [
     caption: 'Die Stempeluhr auf dem Smartphone: Arbeitszeit des Tages auf einen Blick, Ausstempeln mit einem Tipp.',
     shot: {
       id: 'br-stempeln',
-      persona: 'maria',
+      persona: 'sarah',
       viewport: 'mobile',
       route: '/',
       prepare: [
         { click: { role: 'button', name: 'Eingestempelt – Stempeluhr öffnen', exact: true } },
         { waitFor: { text: 'Arbeitszeit heute', within: 'dialog' } },
       ],
-      crop: 'full',
-      markers: [],
+      // Ausschnitt um das Blatt der Stempeluhr: die abgedunkelte Seite dahinter bleibt draußen.
+      crop: { around: ['zeit', 'ausstempeln'], pad: 70 },
+      markers: [
+        { n: 1, id: 'zeit', locator: { text: 'Arbeitszeit heute', within: 'dialog' }, badge: 'right' },
+        { n: 2, id: 'ausstempeln', locator: { role: 'button', name: 'Ausstempeln', exact: true, within: 'dialog' }, badge: 'right' },
+      ],
       alt: 'Stempeluhr auf dem Smartphone mit der Arbeitszeit des heutigen Tages und dem Knopf „Ausstempeln“ für laufenden Eintrag',
     },
   },

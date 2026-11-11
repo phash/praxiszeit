@@ -909,7 +909,7 @@ export const mitarbeitende: Handbook = {
           kind: 'tip',
           tone: 'info',
           text:
-            '**Datenschutz:** Bei Kolleginnen und Kollegen sehen Sie nur Urlaub und Fortbildung mit ihrer Art. ' +
+            '**Datenschutz:** Bei Kolleginnen und Kollegen sehen Sie nur Urlaub, Fortbildung und Überstundenausgleich mit ihrer Art. ' +
             'Krankheit, bezahlte Freistellung, Sonstiges und eigene Gründe der Praxis erscheinen neutral als **Abwesend**. ' +
             'Ihre eigenen Abwesenheiten sehen Sie immer mit der echten Art.',
         },

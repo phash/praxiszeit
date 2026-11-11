@@ -150,7 +150,18 @@ Die Symbole stehen rechts in der Spalte **Aktionen**; ist das Fenster schmal, sc
 
 > **Gut zu wissen:** Weitere Symbole: **Passwort setzen**, **Vorjahresübernahme**, **Ausblenden** und **Als diese:n Mitarbeiter:in ansehen (nur Lesen)**. Diese Ansicht zeigt PraxisZeit aus Sicht der Person, ändern lässt sich dort nichts; ein Banner führt mit `Zurück zu Admin` zurück. Jede solche Sitzung wird protokolliert, Gesundheitsdaten erscheinen dort nur als „Abwesend“.
 
-> **Achtung:** **Nicht löschen, deaktivieren:** Arbeitszeitaufzeichnungen sind mindestens 2 Jahre aufzubewahren (§ 16 ArbZG). Das letzte aktive Admin-Konto lässt sich weder deaktivieren noch herabstufen – ernennen Sie vorher eine weitere Person zum Admin.
+> **Achtung:** **Nicht löschen, deaktivieren:** Arbeitszeitaufzeichnungen sind mindestens 2 Jahre aufzubewahren (§ 16 ArbZG). Das letzte aktive Admin-Konto lässt sich weder deaktivieren noch herabstufen – ernennen Sie vorher eine weitere Person zum Admin. Wenn eine Person ihr Recht auf Löschung geltend macht, gehen Sie wie unten beschrieben vor.
+
+<a id="mitarbeiter-loeschen"></a>
+### Wie entferne ich eine Person endgültig (DSGVO Art. 17)?
+
+Für das Recht auf Löschung gibt es zwei Stufen. Sie lösen den Konflikt zwischen Löschpflicht und der Aufbewahrungspflicht für Arbeitszeitaufzeichnungen (§ 16 ArbZG, mindestens 2 Jahre). Beide setzen voraus, dass das Konto zuerst deaktiviert wurde.
+
+1. **Deaktivieren** Sie die Person in der Aktionsspalte. Damit beginnt eine **Sperrfrist von 14 Tagen**; in der Liste zeigt ein Schloss mit der Zahl der Resttage, wie lange die Anonymisierung noch gesperrt ist.
+2. Blenden Sie über `Inaktive anzeigen` die deaktivierten Konten ein. Nach der Sperrfrist erscheint das Symbol **Anonymisieren**. Es entfernt Name, Benutzername, E-Mail und weitere persönliche Angaben und löscht die Abwesenheiten; die **Zeiteinträge bleiben** für die Aufbewahrungspflicht erhalten.
+3. **Endgültig löschen** (Papierkorb-Symbol) gibt es erst für das anonymisierte Konto, und nur wenn die jüngste aufbewahrungspflichtige Aufzeichnung **mindestens 730 Tage** alt ist. Es entfernt die Person samt Zeiteinträgen, Abwesenheiten und Anträgen unwiderruflich; vorher blockiert PraxisZeit mit einem Hinweis auf die Frist.
+
+> **Gut zu wissen:** Beide Vorgänge lassen sich nicht rückgängig machen und stehen im Änderungsprotokoll (Rechenschaftspflicht nach Art. 5 Abs. 2 DSGVO).
 
 <a id="mitarbeiter-anlegen"></a>
 ### Wie lege ich eine neue Person an?
