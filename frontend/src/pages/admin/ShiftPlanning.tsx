@@ -24,7 +24,7 @@ import {
   Printer,
   Eye,
 } from 'lucide-react';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from '../../components/DialogFocusTrap';
 import apiClient from '../../api/client';
 import Button from '../../components/Button';
 import FormInput from '../../components/FormInput';
@@ -753,7 +753,7 @@ export default function AdminShiftPlanning() {
       {/* #338: Plan duplizieren — Name der Kopie (Focus-Trap + Enter/Escape wie die
           übrigen Dialoge, ADM round2 #4) */}
       {duplicateState && (
-        <FocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: () => setDuplicateState(null) }}>
+        <DialogFocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: () => setDuplicateState(null) }}>
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <form
               onSubmit={(e) => { e.preventDefault(); confirmDuplicate(); }}
@@ -785,7 +785,7 @@ export default function AdminShiftPlanning() {
               </div>
             </form>
           </div>
-        </FocusTrap>
+        </DialogFocusTrap>
       )}
     </div>
   );

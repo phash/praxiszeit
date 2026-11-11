@@ -33,6 +33,8 @@ describe('ConfirmDialog', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(dialog).toHaveAttribute('aria-labelledby', 'confirm-dialog-title');
     expect(dialog).toHaveAttribute('aria-describedby', 'confirm-dialog-desc');
+    // P2.1: über DialogFocusTrap selbst fokussierbar — Klick auf den Text lässt den Fokus im Dialog.
+    expect(dialog).toHaveAttribute('tabindex', '-1');
     expect(screen.getByRole('heading', { name: 'Eintrag löschen' })).toBeInTheDocument();
     expect(screen.getByText(/Dies kann nicht rückgängig gemacht werden/)).toBeInTheDocument();
   });

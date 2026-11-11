@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from './DialogFocusTrap';
 import { Bug, Send, X } from 'lucide-react';
 import apiClient from '../api/client';
 import { useToast } from '../contexts/ToastContext';
@@ -55,7 +55,7 @@ export default function FeedbackDialog({ onClose }: FeedbackDialogProps) {
       className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]"
       onClick={onClose}
     >
-      <FocusTrap
+      <DialogFocusTrap
         focusTrapOptions={{
           allowOutsideClick: true,
           escapeDeactivates: true,
@@ -162,7 +162,7 @@ export default function FeedbackDialog({ onClose }: FeedbackDialogProps) {
             Abbrechen
           </button>
         </div>
-      </FocusTrap>
+      </DialogFocusTrap>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from './DialogFocusTrap';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
 import { formatIsoDateDe, formatHoursHM } from '../utils/formatters';
@@ -70,7 +70,7 @@ export default function AbsenceDeleteRequestDialog({ absence, onClose, onSuccess
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <FocusTrap focusTrapOptions={{ allowOutsideClick: true, initialFocus: false }}>
+      <DialogFocusTrap focusTrapOptions={{ allowOutsideClick: true, initialFocus: false }}>
         <div
           role="dialog"
           aria-modal="true"
@@ -139,7 +139,7 @@ export default function AbsenceDeleteRequestDialog({ absence, onClose, onSuccess
             </div>
           </form>
         </div>
-      </FocusTrap>
+      </DialogFocusTrap>
     </div>
   );
 }

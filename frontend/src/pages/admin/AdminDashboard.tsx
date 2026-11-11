@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Link } from 'react-router-dom';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from '../../components/DialogFocusTrap';
 import apiClient from '../../api/client';
 import { trackHoursToday, vacationDaysToday } from '../../utils/contractToday';
 import { Users, Clock, TrendingUp, X, Calendar, FileText, ChevronRight, Mail, Briefcase, ArrowUp, ArrowDown, Search, Plus, Trash2, Save, ScrollText, BookCheck } from 'lucide-react';
@@ -1301,7 +1301,7 @@ export default function AdminDashboard() {
           className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
           onClick={closeDetail}
         >
-          <FocusTrap
+          <DialogFocusTrap
             focusTrapOptions={{
               allowOutsideClick: true,
               escapeDeactivates: true,
@@ -1703,7 +1703,7 @@ export default function AdminDashboard() {
               </button>
             </div>
           </div>
-          </FocusTrap>
+          </DialogFocusTrap>
         </div>
       )}
     </div>

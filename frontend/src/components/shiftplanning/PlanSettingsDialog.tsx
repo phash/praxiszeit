@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from '../DialogFocusTrap';
 import { X } from 'lucide-react';
 import Button from '../Button';
 import FormInput from '../FormInput';
@@ -68,7 +68,7 @@ export default function PlanSettingsDialog({ isOpen, plan, onSaved, onClose }: P
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <FocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: onClose }}>
+      <DialogFocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: onClose }}>
         <div className="bg-white rounded-xl shadow-lg w-full max-w-lg">
           <div className="flex items-center justify-between border-b border-gray-200 p-4">
             <h3 className="text-lg font-semibold text-gray-900">Plan-Einstellungen</h3>
@@ -133,7 +133,7 @@ export default function PlanSettingsDialog({ isOpen, plan, onSaved, onClose }: P
             </div>
           </form>
         </div>
-      </FocusTrap>
+      </DialogFocusTrap>
     </div>
   );
 }

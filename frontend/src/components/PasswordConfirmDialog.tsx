@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { KeyRound } from 'lucide-react';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from './DialogFocusTrap';
 import PasswordInput from './PasswordInput';
 
 /**
@@ -46,7 +46,7 @@ export default function PasswordConfirmDialog({
   return (
     <div className="fixed inset-0 z-10000 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={close} aria-hidden="true" />
-      <FocusTrap focusTrapOptions={{ escapeDeactivates: true, onDeactivate: close, allowOutsideClick: true }}>
+      <DialogFocusTrap focusTrapOptions={{ escapeDeactivates: true, onDeactivate: close, allowOutsideClick: true }}>
         <form
           role="dialog"
           aria-modal="true"
@@ -91,7 +91,7 @@ export default function PasswordConfirmDialog({
             </button>
           </div>
         </form>
-      </FocusTrap>
+      </DialogFocusTrap>
     </div>
   );
 }

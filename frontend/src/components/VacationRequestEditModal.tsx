@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from './DialogFocusTrap';
 import apiClient from '../api/client';
 import { useToast } from '../contexts/ToastContext';
 import { getErrorMessage } from '../utils/errorMessage';
@@ -97,7 +97,7 @@ export default function VacationRequestEditModal({
         onClick={onClose}
         aria-hidden="true"
       />
-      <FocusTrap
+      <DialogFocusTrap
         focusTrapOptions={{
           escapeDeactivates: true,
           onDeactivate: onClose,
@@ -220,7 +220,7 @@ export default function VacationRequestEditModal({
             </div>
           </form>
         </div>
-      </FocusTrap>
+      </DialogFocusTrap>
     </div>
   );
 }

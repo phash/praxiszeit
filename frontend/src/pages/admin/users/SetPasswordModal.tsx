@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from '../../../components/DialogFocusTrap';
 import apiClient from '../../../api/client';
 import { Key, X } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
@@ -34,7 +34,7 @@ export default function SetPasswordModal({ userId, userName, onClose }: SetPassw
       className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
       onClick={onClose}
     >
-      <FocusTrap
+      <DialogFocusTrap
         focusTrapOptions={{
           allowOutsideClick: true,
           escapeDeactivates: true,
@@ -105,7 +105,7 @@ export default function SetPasswordModal({ userId, userName, onClose }: SetPassw
             Abbrechen
           </button>
         </div>
-      </FocusTrap>
+      </DialogFocusTrap>
     </div>
   );
 }
