@@ -15,7 +15,7 @@
  */
 import { chromium, request, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, sep } from 'path';
 import sharp from 'sharp';
 import { ALL_SHOTS } from '../../frontend/src/handbuch/content/index';
 import { assertSingleVisible, boxInside, computeCrop, type Box } from '../../frontend/src/handbuch/geometry';
@@ -255,10 +255,14 @@ async function runPrepare(page: Page, baseUrl: string, steps: PrepareStep[], sho
       await sel.focus(); // manche Auswahllisten laden ihre Optionen erst beim Fokus (Import: Benutzerliste)
       await sel.selectOption({ label: step.value });
     } else if ('upload' in step) {
-      // Dateifelder sind oft versteckt (`hidden`): Playwright setzt die Datei trotzdem.
+      // Dateifelder sind oft versteckt (`hidden`): genau EIN Treffer im DOM genuegt (sichtbar muss es nicht sein).
       const file = resolve(ROOT, step.file);
+      if (!file.startsWith(ROOT + sep)) throw new Error(`${ctx}: Datei ausserhalb des Repos: ${step.file}`);
       if (!existsSync(file)) throw new Error(`${ctx}: Datei fehlt: ${step.file}`);
-      await buildLocator(page, step.upload).setInputFiles(file);
+      const input = buildLocator(page, step.upload);
+      const n = await input.count();
+      if (n !== 1) throw new Error(`${ctx} ${describe(step.upload)}: ${n} Treffer — Locator muss genau ein Dateifeld treffen`);
+      await input.setInputFiles(file);
     }
     await settle(page);
   }

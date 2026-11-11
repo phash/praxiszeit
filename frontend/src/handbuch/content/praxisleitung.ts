@@ -763,7 +763,7 @@ const shots: ShotDef[] = [
     crop: 'main',
     markers: [
       { n: 1, id: 'jahr', locator: { css: '#year-select' }, badge: 'left' },
-      { n: 2, id: 'abschluss', locator: { css: "main button[title='Jahresabschluss 2026 erstellen']" }, badge: 'top' },
+      { n: 2, id: 'abschluss', locator: { css: "main button[title='Jahresabschluss 2026 erstellen']" }, badge: 'corner' },
       { n: 3, id: 'loeschen', locator: { css: "main button[title='Jahresabschluss 2026 löschen']" }, badge: 'top' },
       { n: 4, id: 'resturlaub', locator: { css: 'main th:has-text("Resturlaub")' }, badge: 'top' },
     ],
@@ -844,7 +844,7 @@ const shots: ShotDef[] = [
     viewport: 'desktop',
     route: '/admin/import',
     prepare: [...IMPORT_PREVIEW, { scrollTo: { css: "main button:has-text('Import bestätigen')" } }],
-    crop: { around: ['ueberschreiben', 'zurueck', 'bestaetigen'], pad: 80 },
+    crop: { around: ['ueberschreiben', 'zurueck', 'bestaetigen'], pad: 140 },
     markers: [
       { n: 1, id: 'ueberschreiben', locator: { css: "main label:has-text('Konflikte überschreiben') >> span" }, badge: 'right' },
       { n: 2, id: 'zurueck', locator: { css: "main button:has-text('Zurück')" }, badge: 'left' },
@@ -1897,7 +1897,7 @@ export const praxisleitung: Handbook = {
           tone: 'warn',
           text:
             '**Nur ein Hinweis, keine Sperre:** Wird der Anspruch beim Buchen überschritten, weist PraxisZeit darauf hin – die Abwesenheit wird **trotzdem erfasst**, denn der Fehltag muss dokumentiert werden. ' +
-            'Das gilt beim Eintragen, im Monatsjournal und bei der Genehmigung eines Änderungsantrags. Den Jahresverbrauch sehen Sie in der **Benutzerverwaltung** unter dem Namen („Kind krank: 2.0/15“, rot bei Überschreitung), sobald ein Tag verbraucht ist.',
+            'Das gilt beim Eintragen, im Monatsjournal und bei der Genehmigung eines Änderungsantrags. Den Jahresverbrauch sehen Sie in der **Benutzerverwaltung** unter dem Namen („Kind krank“ mit genommenen Tagen und Anspruch, rot bei Überschreitung), sobald ein Tag verbraucht ist.',
         },
         {
           kind: 'task',
