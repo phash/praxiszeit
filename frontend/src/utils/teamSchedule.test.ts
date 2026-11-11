@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  axisRange, blockLabel, compactSpan, coverage, departmentsOf, moveBlock, resizeBlock, sameWeek, snapMinutes,
+  axisRange, blockLabel, dayColumnPx, compactSpan, coverage, departmentsOf, moveBlock, resizeBlock, sameWeek, snapMinutes,
 } from './teamSchedule';
 import type { WeekBlocks } from '../types/workBlocks';
 
@@ -129,5 +129,23 @@ describe('blockLabel', () => {
   it('längste Form „10:30–13:30“ braucht die volle Breite', () => {
     expect(blockLabel('10:30', '13:30', 180, axis)).toBe('');
     expect(blockLabel('10:30', '13:30', Math.ceil(minutesFor(11)), axis)).toBe('10:30–13:30');
+  });
+});
+
+describe('blockLabel mit gemessener Breite', () => {
+  it('200 px: volle Zeit für 8–12 und 15–18', () => {
+    expect(blockLabel('08:00', '12:00', 240, 720, 200)).toBe('8–12');
+    expect(blockLabel('15:00', '18:00', 180, 720, 200)).toBe('15–18');
+    expect(blockLabel('15:00', '16:30', 90, 720, 200)).toBe(''); // 15 px nutzbar < „15–“
+    expect(blockLabel('15:00', '16:30', 90, 720, 400)).toBe('15–'); // 40 px < 8×7, aber ≥ 3×7
+    expect(blockLabel('15:00', '16:30', 90, 720, 700)).toBe('15–16:30'); // 77,5 px ≥ 56
+  });
+  it('ohne Messung gilt die Mindestbreite', () => {
+    expect(blockLabel('08:00', '12:00', 240, 720)).toBe(blockLabel('08:00', '12:00', 240, 720, 117));
+  });
+  it('dayColumnPx: Raster − Personenspalte, geteilt durch 5, abzüglich Rand und Einzug; nie unter dem Minimum', () => {
+    expect(dayColumnPx(896)).toBeCloseTo(117.4, 1);
+    expect(dayColumnPx(1424)).toBeCloseTo(223, 0);
+    expect(dayColumnPx(300)).toBe(117);
   });
 });

@@ -1,5 +1,5 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ToastProvider } from '../../contexts/ToastContext';
 import TeamSchedule from './TeamSchedule';
 import type { WeekBlocks } from '../../types/workBlocks';
@@ -47,6 +47,35 @@ function renderPage() {
 beforeEach(() => {
   modalProps.length = 0;
   getMock.mockReset().mockResolvedValue({ data: rows() });
+});
+
+describe('Teamübersicht: gemessene Breite', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('füllt die Beschriftung nach der gemessenen Rasterbreite (ResizeObserver)', async () => {
+    let cb: ResizeObserverCallback = () => {};
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(c: ResizeObserverCallback) { cb = c; }
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    });
+    renderPage();
+    await screen.findByText('Arzt, Anna');
+    // Ohne Messung (Mindestbreite): Anna Mo 07:30–13:00 nur „7:30–“
+    const el = screen.getByTitle('Arzt, Anna · Mo 07:30–13:00');
+    expect(el).toHaveTextContent(/^7:30–$/);
+    act(() => { cb([{ contentRect: { width: 1424 } } as ResizeObserverEntry], {} as ResizeObserver); });
+    expect(screen.getByTitle('Arzt, Anna · Mo 07:30–13:00')).toHaveTextContent(/^7:30–13$/);
+    expect(screen.getByTitle('Arzt, Anna · Mo 15:00–18:00')).toHaveTextContent(/^15–18$/);
+  });
+
+  it('ohne ResizeObserver (Rückfall) bleibt die Mindestbreite', async () => {
+    vi.stubGlobal('ResizeObserver', undefined);
+    renderPage();
+    await screen.findByText('Arzt, Anna');
+    expect(screen.getByTitle('Arzt, Anna · Mo 07:30–13:00')).toHaveTextContent(/^7:30–$/);
+  });
 });
 
 describe('Teamübersicht der Arbeitszeiten', () => {

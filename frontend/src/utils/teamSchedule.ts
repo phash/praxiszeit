@@ -121,12 +121,18 @@ export function sameWeek(a: WeekBlocks | null | undefined, b: WeekBlocks | null 
   return key(a) === key(b);
 }
 
-/** Untere Grenze der Tagesfeld-Breite (px). Herleitung aus TeamSchedule.tsx:
+/** Untere Grenze der Tagesfeld-Breite (px, Rückfall ohne Messung). Herleitung aus TeamSchedule.tsx:
  * Raster `min-w-[56rem]` (896 px) − Personenspalte `14rem` (224 px) = 672 px /
  * 5 Tage = 134,4 px je Tag; abzüglich `border-l` (1 px) und `inset-x-2`
  * (2 × 8 px) bleiben ≈ 117 px. Darunter scrollt das Raster, die Spalte wird
  * also nie schmaler. Ändert sich das Layout, hier mitziehen. */
-const REF_COLUMN_PX = 117;
+export const MIN_COLUMN_PX = 117;
+
+/** Nutzbare Breite des Tagesfelds aus der gemessenen Breite des Rasters:
+ * (Breite − Personenspalte 14rem = 224 px) / 5 Tage − `border-l` − `inset-x-2`. */
+export function dayColumnPx(gridWidth: number): number {
+  return Math.max(MIN_COLUMN_PX, (gridWidth - 224) / 5 - 17);
+}
 /** Zeichenbreite bei 11 px Schrift, großzügig (Ziffern ≈ 6,1 px, Gedankenstrich ≈ 6 px). */
 const CHAR_PX = 7;
 /** Innenabstand des Balkens: `px-1` (2 × 4 px) + Rahmen (2 × 1 px). */
@@ -134,9 +140,11 @@ const LABEL_PAD_PX = 10;
 
 /** Beschriftung eines Balkens je nach Breite (reine Minutenrechnung, kein
  * DOM-Messen): breit → „13–16:30“, mittel → nur der Beginn mit Strich „13–“, schmal → leer.
- * Die volle Zeit steht immer in `title`/`aria-label`. */
-export function blockLabel(start: string, end: string, spanMinutes: number, axisMinutes: number): string {
-  const px = (spanMinutes / axisMinutes) * REF_COLUMN_PX - LABEL_PAD_PX;
+ * `columnPx` = gemessene Breite des Tagesfelds (`dayColumnPx`), ohne Messung
+ * die Mindestbreite. Die volle Zeit steht immer in `title`/`aria-label`. */
+export function blockLabel(start: string, end: string, spanMinutes: number, axisMinutes: number,
+  columnPx: number = MIN_COLUMN_PX): string {
+  const px = (spanMinutes / axisMinutes) * columnPx - LABEL_PAD_PX;
   const full = compactSpan(start, end);
   if (px >= full.length * CHAR_PX) return full;
   const from = `${full.split('–')[0]}–`;
