@@ -25,6 +25,10 @@ export default function HandbookPage({
   handbook, manifest, imgBase, linkBase, slugs, variant, comics, diagrams, onInternalLink,
 }: HandbookPageProps) {
   const opts: InlineOpts = { linkBase, slugs, onInternalLink };
+  // Erstes Bild des Buchs sofort (im vorab gerenderten HTML), alle weiteren erst in Sichtweite.
+  const firstShot = handbook.chapters
+    .flatMap((c) => c.blocks)
+    .find((b) => b.kind === 'task' && b.shot && manifest[b.shot]);
 
   const renderBlock = (b: Block, key: string) => {
     switch (b.kind) {
@@ -42,6 +46,7 @@ export default function HandbookPage({
             imgBase={imgBase}
             opts={opts}
             variant={variant}
+            eager={b === firstShot}
           />
         );
       }

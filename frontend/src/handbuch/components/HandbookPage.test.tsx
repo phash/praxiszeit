@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderToString } from 'react-dom/server';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, act } from '@testing-library/react';
 import HandbookPage from './HandbookPage';
 import ShotFigure from './ShotFigure';
 import type { Handbook, Manifest } from '../types';
@@ -46,18 +46,56 @@ const props = { handbook, manifest, imgBase: '/help/img', linkBase: '/handbuch',
   comics: { vergessen: Comic }, diagrams: { d1: Diagram } };
 
 describe('HandbookPage', () => {
-  it('loads shot images lazily: <img loading="lazy"> in a foreignObject, also in the prerendered HTML', () => {
+  it('prerender: the first shot of a book is in the HTML (eager), no foreignObject', () => {
     const html = renderToString(<HandbookPage {...props} />);
-    expect(html).toMatch(/<foreignObject[^>]*><img [^>]*loading="lazy"[^>]*src="\/help\/img\/s1\.webp"|<foreignObject[^>]*><img [^>]*src="\/help\/img\/s1\.webp"[^>]*loading="lazy"/);
-    expect(html).not.toContain('<image');
+    expect(html).toContain('<image href="/help/img/s1.webp"');
+    expect(html).not.toContain('foreignObject');
   });
 
-  it('ShotFigure with eager loads immediately (brochure/print)', () => {
+  it('ShotFigure without eager renders no <image> in the prerendered HTML', () => {
     const html = renderToString(
-      <ShotFigure shotId="s1" def={handbook.shots[0]} m={manifest.s1} imgBase="/help/img" eager />,
+      <ShotFigure shotId="s1" def={handbook.shots[0]} m={manifest.s1} imgBase="/help/img" />,
     );
-    expect(html).toContain('loading="eager"');
-    expect(html).not.toContain('loading="lazy"');
+    expect(html).not.toContain('<image');
+    expect(html).toContain('data-marker="1"');
+  });
+
+  it('ShotFigure loads the image once it comes near the viewport (IntersectionObserver)', () => {
+    let trigger: ((entries: { isIntersecting: boolean }[]) => void) | null = null;
+    const observe = vi.fn();
+    class IO {
+      constructor(cb: (entries: { isIntersecting: boolean }[]) => void) { trigger = cb; }
+      observe = observe;
+      disconnect = vi.fn();
+    }
+    vi.stubGlobal('IntersectionObserver', IO);
+    try {
+      const { container } = render(
+        <ShotFigure shotId="s1" def={handbook.shots[0]} m={manifest.s1} imgBase="/help/img" />,
+      );
+      expect(observe).toHaveBeenCalled();
+      expect(container.querySelector('image')).toBeNull();
+      act(() => trigger!([{ isIntersecting: false }]));
+      expect(container.querySelector('image')).toBeNull();
+      act(() => trigger!([{ isIntersecting: true }]));
+      expect(container.querySelector('image')!.getAttribute('href')).toBe('/help/img/s1.webp');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('ShotFigure shows the image for printing (beforeprint)', () => {
+    vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
+    try {
+      const { container } = render(
+        <ShotFigure shotId="s1" def={handbook.shots[0]} m={manifest.s1} imgBase="/help/img" />,
+      );
+      expect(container.querySelector('image')).toBeNull();
+      act(() => { window.dispatchEvent(new Event('beforeprint')); });
+      expect(container.querySelector('image')).not.toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('renders via renderToString without effects', () => {
@@ -139,7 +177,7 @@ describe('HandbookPage', () => {
   });
   it('image href uses imgBase', () => {
     const { container } = render(<HandbookPage {...props} />);
-    expect(container.querySelector('foreignObject img')!.getAttribute('src')).toBe('/help/img/s1.webp');
+    expect(container.querySelector('image')!.getAttribute('href')).toBe('/help/img/s1.webp');
     expect(container.querySelector('a[target="_blank"]')!.getAttribute('href')).toBe('/help/img/s1.webp');
     expect(container.querySelector('svg[role="img"]')!.getAttribute('aria-label')).toContain('Zeiterfassung');
   });

@@ -14,9 +14,11 @@ export interface TaskCardProps {
   imgBase: string;
   opts: InlineOpts;
   variant: 'wide' | 'narrow';
+  /** Bild ohne Warten auf Sichtbarkeit laden (erstes Bild des Handbuchs). */
+  eager?: boolean;
 }
 
-export default function TaskCard({ id, title, intro, steps, shot, imgBase, opts, variant }: TaskCardProps) {
+export default function TaskCard({ id, title, intro, steps, shot, imgBase, opts, variant, eager }: TaskCardProps) {
   const [active, setActive] = useState<number | null>(null);
   const layout =
     shot && variant === 'wide'
@@ -28,7 +30,7 @@ export default function TaskCard({ id, title, intro, steps, shot, imgBase, opts,
       {intro && <p className="m-0 mb-4 text-slate-500">{renderInline(intro, opts)}</p>}
       <div className={layout}>
         {shot && (
-          <ShotFigure shotId={shot.shotId} def={shot.def} m={shot.m} imgBase={imgBase} active={active} />
+          <ShotFigure shotId={shot.shotId} def={shot.def} m={shot.m} imgBase={imgBase} active={active} eager={eager} />
         )}
         <StepList steps={steps} opts={opts} active={active} onActive={setActive} />
       </div>

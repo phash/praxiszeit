@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { markerBadgePosition, paddedMarkerBox } from '../geometry';
 import type { ManifestShot, ShotDef } from '../types';
 
@@ -7,7 +8,12 @@ export interface ShotFigureProps {
   m: ManifestShot;
   imgBase: string;
   active?: number | null;
-  /** Sofort laden (Broschüre: wird gedruckt/als PDF gespeichert, wenige kleine Bilder). Sonst lazy. */
+  /**
+   * Bild sofort (auch im vorab gerenderten HTML) statt erst in Sichtweite: Broschüre (wird gedruckt,
+   * wenige Bilder) und das erste Bild eines Handbuchs. Alle anderen erscheinen erst, wenn die
+   * Abbildung nahe an den Bildschirm kommt (SVG-<image> kennt kein loading="lazy"; ein Kapitel zog
+   * sonst ~9 MB auf einmal, und <img loading="lazy"> im foreignObject lädt in Chromium trotzdem sofort).
+   */
   eager?: boolean;
 }
 
@@ -16,6 +22,28 @@ export const MARKER_REF_WIDTH = 700;
 
 export default function ShotFigure({ shotId, def, m, imgBase, active = null, eager = false }: ShotFigureProps) {
   const src = `${imgBase}/${m.file}`;
+  const ref = useRef<SVGSVGElement>(null);
+  // Server-Render und erster Client-Render: nur `eager` zeigt das Bild (pzweb rendert per createRoot,
+  // keine Hydration). Ohne IntersectionObserver (alte Browser, jsdom) gleich laden.
+  const [show, setShow] = useState(eager);
+  useEffect(() => {
+    if (show) return;
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setShow(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) { setShow(true); io.disconnect(); }
+      },
+      { rootMargin: '800px 0px' },
+    );
+    io.observe(el);
+    const onPrint = () => setShow(true); // gedruckt wird alles
+    window.addEventListener('beforeprint', onPrint);
+    return () => { io.disconnect(); window.removeEventListener('beforeprint', onPrint); };
+  }, [show]);
   const { x, y, w, h } = m.crop;
   const k = w / MARKER_REF_WIDTH;
   return (
@@ -27,24 +55,13 @@ export default function ShotFigure({ shotId, def, m, imgBase, active = null, eag
       data-shot={shotId}
     >
       <svg
+        ref={ref}
         viewBox={`${x} ${y} ${w} ${h}`}
         role="img"
         aria-label={def.alt}
         className="block h-auto w-full"
       >
-        {/* SVG-<image> kennt kein loading="lazy" (ein Kapitel zog ~9 MB auf einmal): <img> in einem
-            foreignObject laedt nativ erst in Sichtweite, auch im vorab gerenderten HTML ohne JS. */}
-        <foreignObject x={0} y={0} width={m.width} height={m.height}>
-          <img
-            src={src}
-            alt=""
-            width={m.width}
-            height={m.height}
-            loading={eager ? 'eager' : 'lazy'}
-            decoding="async"
-            className="block h-auto max-w-none"
-          />
-        </foreignObject>
+        {show && <image href={src} x={0} y={0} width={m.width} height={m.height} />}
         {def.markers.map((mk) => {
           const box = m.markers[mk.id];
           if (!box) return null;
