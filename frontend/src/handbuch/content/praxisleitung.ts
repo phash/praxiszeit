@@ -2540,7 +2540,7 @@ export const praxisleitung: Handbook = {
           scene: 'protokoll',
           text:
             'Das **Änderungsprotokoll** hält fest, wer wann an Zeiteinträgen, Abwesenheiten und Verwaltungseinstellungen etwas geändert hat. Es dient als Nachweis nach § 16 Abs. 2 ArbZG. ' +
-            'Im laufenden Betrieb wird das Protokoll nur ergänzt; jede Zeile trägt eine Prüfsumme. Entfernt werden Zeilen nur beim endgültigen Löschen einer Person (Art. 17 DSGVO) und bei Anträgen nach 730 Tagen; beides wird selbst protokolliert, und bei der Anonymisierung einer Person wird Klartext in Notizen ersetzt. Daneben zeigen **Konto-Vorgänge** die sicherheitsrelevanten Handlungen und das **Fehler-Monitoring** technische Störungen.',
+            'Im laufenden Betrieb wird das Protokoll nur ergänzt; jede Zeile trägt eine Prüfsumme. Entfernt werden Zeilen nur beim endgültigen Löschen einer Person (Art. 17 DSGVO, selbst protokolliert) und durch die Aufbewahrungsfrist: Protokollzeilen zu Anträgen werden nach 730 Tagen gelöscht. Bei der Anonymisierung einer Person wird Klartext in Notizen ersetzt. Daneben zeigen **Konto-Vorgänge** die sicherheitsrelevanten Handlungen und das **Fehler-Monitoring** technische Störungen.',
         },
         {
           kind: 'task',
@@ -2707,10 +2707,10 @@ export const praxisleitung: Handbook = {
           steps: [
             { n: 1, text: '[[Jetzt sichern]] erstellt sofort eine vollständige Sicherung. Sie erscheint danach in der Liste.' },
             { n: 2, text: 'Haken bei [[Tägliche automatische Sicherung aktivieren]], wenn PraxisZeit täglich selbst sichern soll.' },
-            { n: 3, text: '**Uhrzeit (Stunde, 0–23):** lokale Zeit (Europe/Berlin); die Sicherung läuft um HH:30. Das gilt für die Docker-Installation; nativ sichert der Timer des Betriebssystems (Linux 02:00, Windows und macOS 03:00).' },
-            { n: 4, text: '**Aufbewahrung (Tage):** ältere Sicherungen löscht PraxisZeit automatisch. Für § 16 ArbZG sind mindestens 2 Jahre (730 Tage) nötig; die Seite schlägt zunächst 30 Tage vor. Sonst zusätzlich Jahresarchive außerhalb des Servers ablegen.' },
-            { n: 5, text: '**Speicherort (optional):** leer bedeutet Standardverzeichnis. Der Pfad muss für den Dienst beschreibbar sein.' },
-            { n: 6, text: 'Klicken Sie auf [[Einstellungen speichern]]. Erst dann gelten Uhrzeit, Aufbewahrung und Speicherort.' },
+            { n: 3, text: '**Uhrzeit (Stunde, 0–23), nur Docker:** lokale Zeit (Europe/Berlin); die Sicherung läuft um HH:30. Das gilt für die Docker-Installation; nativ sichert der Timer des Betriebssystems (Linux 02:00, Windows und macOS 03:00).' },
+            { n: 4, text: '**Aufbewahrung (Tage), nur Docker:** ältere Sicherungen löscht PraxisZeit automatisch. Für § 16 ArbZG sind mindestens 2 Jahre (730 Tage) nötig; die Seite schlägt zunächst 30 Tage vor. Nativ gilt stattdessen retention_days im Abschnitt [backup] der Datei config/praxiszeit.conf (Standard 31 Tage). Sonst zusätzlich Jahresarchive außerhalb des Servers ablegen.' },
+            { n: 5, text: '**Speicherort (optional, nur Docker):** leer bedeutet Standardverzeichnis. Der Pfad muss für den Dienst beschreibbar sein.' },
+            { n: 6, text: 'Klicken Sie auf [[Einstellungen speichern]]. Erst dann gelten Uhrzeit, Aufbewahrung und Speicherort, und zwar nur in der Docker-Installation; nativ steuert der Timer des Betriebssystems die geplante Sicherung.' },
             { n: 7, text: 'Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.' },
           ],
         },
