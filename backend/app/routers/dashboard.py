@@ -5,9 +5,10 @@ from decimal import Decimal
 from typing import List, Optional
 from app.database import get_db
 from app.models import User, TimeEntry, UserRole, WorkingHoursChange
-from app.models.absence import Absence
+from app.models.absence import Absence, AbsenceType
+from app.services.date_filters import date_in_year
 from app.middleware.auth import get_current_user
-from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry, WeeklyOverviewRow
+from app.schemas.reports import AbsenceYearSummary, MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry, WeeklyOverviewRow
 from app.services import calculation_service, milog_service, reclamp_audit
 from app.services.calculation_service import get_schedule_for_date, get_daily_target_for_date
 from app.services.holiday_service import is_holiday
@@ -363,6 +364,53 @@ def get_ytd_overtime(
     return YtdOvertime(
         year=year,
         **summary
+    )
+
+
+@router.get("/absence-summary", response_model=AbsenceYearSummary)
+def get_absence_summary(
+    year: Optional[int] = Query(None, ge=2000, le=2100, description="Year (default: current year)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """calc-03: Abwesenheitstage des Jahres für die Kachel im Mitarbeiter-Dashboard.
+
+    Alle Spalten tagebasiert über ``calculation_service.absence_days`` (Tagessoll
+    DES TAGES, Halbtag, MA ohne Stundenzählung), Urlaub wie im Urlaubskonto — dieselben
+    Zahlen wie ``/admin/reports/yearly-absences``.
+    """
+    year = year or now_local().year
+    absences = db.query(Absence).filter(
+        Absence.user_id == current_user.id,
+        Absence.tenant_id == current_user.tenant_id,  # F-026
+        date_in_year(Absence.date, year),
+    ).all()
+    by_type: dict = {}
+    for a in absences:
+        by_type.setdefault(a.type, []).append(a)
+
+    def _days(absence_type) -> float:
+        return float(
+            calculation_service.absence_days(
+                db, current_user, by_type.get(absence_type, [])
+            ).quantize(Decimal('0.1'))
+        )
+
+    vacation_days = float(calculation_service.get_vacation_account(db, current_user, year)['used_days'])
+    sick = _days(AbsenceType.SICK)
+    training = _days(AbsenceType.TRAINING)
+    overtime = _days(AbsenceType.OVERTIME)
+    other = _days(AbsenceType.OTHER)
+    paid = _days(AbsenceType.PAID_LEAVE)
+    return AbsenceYearSummary(
+        year=year,
+        vacation_days=vacation_days,
+        sick_days=sick,
+        training_days=training,
+        overtime_days=overtime,
+        other_days=other,
+        paid_leave_days=paid,
+        total_days=vacation_days + sick + training + overtime + other + paid,
     )
 
 

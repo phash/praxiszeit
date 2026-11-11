@@ -3,7 +3,7 @@
 import logging
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from app.database import get_db
 from app.models import User, TimeEntryAuditLog
@@ -15,6 +15,9 @@ from app.schemas.journal import JournalResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["journal"])
+
+# calc-12: Entprellfenster des Art.-9-Leseprotokolls je (Admin, Person, Monat).
+HEALTH_READ_AUDIT_DEBOUNCE = timedelta(minutes=10)
 
 
 @router.get("/admin/users/{user_id}/journal", response_model=JournalResponse)
@@ -56,21 +59,34 @@ def get_user_journal(
             "DSGVO-Datenzugriff: Monatsjournal %s-%02d von %s gelesen von Admin %s",
             year, month, user.username, current_user.username,
         )
-        db.add(TimeEntryAuditLog(
-            time_entry_id=None,
-            # Security-Review 2026-10-26: ``user_id`` = betroffene Person (wie
-            # absences.list_absences), ``changed_by`` = lesender Admin.
-            user_id=user.id,
-            changed_by=current_user.id,
-            action="health_data_read",
-            source="dsgvo",
-            new_note=(
-                f"Monatsjournal {year}-{month:02d} von {user.username} "
-                f"(inkl. Krankheitsdaten) gelesen von Admin: {current_user.username}"
-            ),
-            tenant_id=current_user.tenant_id,
-        ))
-        db.commit()
+        note = (
+            f"Monatsjournal {year}-{month:02d} von {user.username} "
+            f"(inkl. Krankheitsdaten) gelesen von Admin: {current_user.username}"
+        )
+        # calc-12: das Journal lädt nach jedem Speichern neu — ein Bearbeitungs-
+        # vorgang soll EIN Protokollzeile (Admin, Person, Monat) ergeben, nicht
+        # eine je Neuladen. Innerhalb des Fensters wird nicht erneut protokolliert.
+        recent = db.query(TimeEntryAuditLog.id).filter(
+            TimeEntryAuditLog.tenant_id == current_user.tenant_id,  # F-026
+            TimeEntryAuditLog.action == "health_data_read",
+            TimeEntryAuditLog.user_id == user.id,
+            TimeEntryAuditLog.changed_by == current_user.id,
+            TimeEntryAuditLog.new_note == note,
+            TimeEntryAuditLog.created_at >= datetime.now(timezone.utc) - HEALTH_READ_AUDIT_DEBOUNCE,
+        ).first()
+        if recent is None:
+            db.add(TimeEntryAuditLog(
+                time_entry_id=None,
+                # Security-Review 2026-10-26: ``user_id`` = betroffene Person (wie
+                # absences.list_absences), ``changed_by`` = lesender Admin.
+                user_id=user.id,
+                changed_by=current_user.id,
+                action="health_data_read",
+                source="dsgvo",
+                new_note=note,
+                tenant_id=current_user.tenant_id,
+            ))
+            db.commit()
 
     return result
 

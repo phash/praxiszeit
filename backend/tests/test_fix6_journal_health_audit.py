@@ -81,3 +81,43 @@ def test_service_default_shows_sick_for_own_view(db, default_tenant):
     day = next(d for d in result["days"] if d["date"] == "2026-03-10")
     assert day["type"] == "sick"
     assert _audit_count(db) == 0
+
+
+# calc-12: ein Bearbeitungsvorgang (Laden nach jedem Speichern) = EIN Zugriff.
+def _read(db, admin, emp, month):
+    return get_user_journal(
+        str(emp.id), year=2026, month=month, include_health_data=True,
+        db=db, current_user=admin,
+    )
+
+
+def test_repeated_reads_within_window_write_one_audit(db, default_tenant):
+    admin = _user(db, "c12_admin", role=UserRole.ADMIN)
+    emp = _user(db, "c12_emp")
+    _read(db, admin, emp, 3)
+    _read(db, admin, emp, 3)
+    _read(db, admin, emp, 3)
+    assert _audit_count(db) == 1
+    _read(db, admin, emp, 4)  # anderer Monat = neuer Zugriff
+    assert _audit_count(db) == 2
+
+
+def test_read_after_window_writes_new_audit(db, default_tenant):
+    from datetime import datetime, timedelta, timezone
+    admin = _user(db, "c12b_admin", role=UserRole.ADMIN)
+    emp = _user(db, "c12b_emp")
+    _read(db, admin, emp, 3)
+    row = db.query(TimeEntryAuditLog).filter(TimeEntryAuditLog.action == "health_data_read").one()
+    row.created_at = datetime.now(timezone.utc) - timedelta(minutes=11)
+    db.commit()
+    _read(db, admin, emp, 3)
+    assert _audit_count(db) == 2
+
+
+def test_other_admin_reading_same_month_is_logged(db, default_tenant):
+    a1 = _user(db, "c12c_admin1", role=UserRole.ADMIN)
+    a2 = _user(db, "c12c_admin2", role=UserRole.ADMIN)
+    emp = _user(db, "c12c_emp")
+    _read(db, a1, emp, 3)
+    _read(db, a2, emp, 3)
+    assert _audit_count(db) == 2

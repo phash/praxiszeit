@@ -686,7 +686,7 @@ export const mitarbeitende: Handbook = {
           shot: 'ma-jahresuebersicht',
           steps: [
             { n: 1, text: '**Stunden 01.01. bis heute:** Soll, Ist und Überstunden seit Jahresbeginn.' },
-            { n: 2, text: '**Abwesenheiten:** Ihre Tage im laufenden Jahr nach Art – Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges.' },
+            { n: 2, text: '**Abwesenheiten:** Ihre Tage im laufenden Jahr nach Art – Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges, Bez. Freistellung. Gezählt wird nach Tagen (halber Tag = 0,5), nicht nach Stunden.' },
             { n: 3, text: '**Geplante Abwesenheiten im Team:** wer in den nächsten 3 Monaten fehlt.' },
           ],
         },

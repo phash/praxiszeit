@@ -10,6 +10,10 @@
 
 ### 🐛 Behoben (Funde beim Schreiben der Handbücher)
 
+- **Mitarbeiter-Dashboard: Abwesenheits-Kachel zählt nach Tagen.** Krank, Fortbildung, Überstundenausgleich und Sonstiges werden serverseitig tagebasiert gezählt (Tagessoll des jeweiligen Tages, Halbtage 0,5, auch ohne Stundenzählung); neu ist die Kachel „Bez. Freistellung“. Vorher rechnete die Seite mit dem heutigen Tagessoll und ließ bezahlte Freistellung weg.
+- **Mitarbeiter-Dashboard bleibt bei Teilausfällen benutzbar.** Fällt ein Nebenendpunkt aus, bleiben Soll/Ist/Saldo sichtbar und ein Hinweis bietet „Neu laden“; bei Totalausfall erscheint ein Fehlerblock mit „Erneut laden“. Auch die Aktualisierung nach dem Stempeln übernimmt jede erfolgreiche Quelle einzeln.
+- **Monatsjournal protokolliert das Lesen von Gesundheitsdaten nur einmal je Admin, Person und Monat und 10 Minuten.** Bisher erzeugte jedes Neuladen nach dem Speichern eine eigene Zeile im Änderungsprotokoll.
+
 - **„Buchung fehlt“ ignoriert freie Sondertage.** Ein freier 24./31.12. (Soll 0) erscheint im Dashboard und im Team-Widget nicht mehr als fehlende Buchung.
 - **Sonntagsauswertung (§ 11 ArbZG) rechnet im Beschäftigungszeitraum.** Wer im Jahr ein- oder austritt, wird nur mit den Sonntagen seines Beschäftigungszeitraums gezählt; die Pflicht freier Sonntage gilt dann anteilig (aufgerundet), die Zeile trägt den Hinweis „Teiljahr“.
 - **Ruhezeitprüfung: Mindestruhezeit 1–24 Stunden.** Ein leeres Feld oder 0 sperrt „Prüfen“ (vorher meldete die Prüfung mit 0 h „keine Verstöße“, die Antwort nannte aber 11 h); die Antwort nennt den tatsächlich geprüften Wert.

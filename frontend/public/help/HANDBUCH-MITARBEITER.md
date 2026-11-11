@@ -100,7 +100,7 @@ Klicken Sie unter der Tabelle auf `Details anzeigen (Jahresübersicht & Team-Kal
 ![Aufgeklappte Jahresübersicht mit Stunden seit dem 1. Januar, Abwesenheitstagen nach Art und den geplanten Abwesenheiten im Team](/help/img/ma-jahresuebersicht.webp)
 
 1. **Stunden 01.01. bis heute:** Soll, Ist und Überstunden seit Jahresbeginn.
-2. **Abwesenheiten:** Ihre Tage im laufenden Jahr nach Art – Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges.
+2. **Abwesenheiten:** Ihre Tage im laufenden Jahr nach Art – Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges, Bez. Freistellung. Gezählt wird nach Tagen (halber Tag = 0,5), nicht nach Stunden.
 3. **Geplante Abwesenheiten im Team:** wer in den nächsten 3 Monaten fehlt.
 
 > **Gut zu wissen:** **Keine Stundenzählung für Sie?** Dann fehlen die Stempelkarte mit der Tagesanzeige („x von y h heute“), Monatssaldo und Überstundenkonto – das ist so eingestellt und kein Fehler. Ihr Urlaubskonto wird trotzdem geführt.

@@ -74,6 +74,18 @@ class YtdOvertime(BaseModel):
     carryover_hours: float = 0.0
 
 
+class AbsenceYearSummary(BaseModel):
+    """calc-03: Abwesenheitstage des eigenen Jahres, tagebasiert (Tagesprinzip)."""
+    year: int
+    vacation_days: float
+    sick_days: float
+    training_days: float
+    overtime_days: float
+    other_days: float
+    paid_leave_days: float
+    total_days: float
+
+
 class VacationAccount(BaseModel):
     """Vacation account for a year."""
     year: int

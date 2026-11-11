@@ -1,0 +1,55 @@
+"""calc-03: GET /api/dashboard/absence-summary — tagebasierte Jahreszusammenfassung."""
+from datetime import date
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.database import get_db
+from app.middleware.auth import get_current_user
+from app.models import Absence, AbsenceType
+from tests.conftest import DEFAULT_TENANT_ID
+
+
+def _client(db, user):
+    from app.routers import dashboard
+    app = FastAPI()
+    app.include_router(dashboard.router)
+
+    def override_db():
+        yield db
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = lambda: user
+    return TestClient(app)
+
+
+def _abs(db, user, d, typ, hours, **kw):
+    db.add(Absence(user_id=user.id, tenant_id=DEFAULT_TENANT_ID, date=d, type=typ, hours=hours, **kw))
+
+
+def test_counts_days_per_type_including_paid_leave(db, test_user):
+    _abs(db, test_user, date(2026, 3, 2), AbsenceType.SICK, 8.0)
+    _abs(db, test_user, date(2026, 3, 3), AbsenceType.SICK, 8.0)
+    _abs(db, test_user, date(2026, 3, 4), AbsenceType.TRAINING, 8.0)
+    _abs(db, test_user, date(2026, 3, 5), AbsenceType.PAID_LEAVE, 8.0)
+    _abs(db, test_user, date(2026, 3, 6), AbsenceType.OTHER, 4.0, half_day=True)
+    _abs(db, test_user, date(2025, 3, 3), AbsenceType.SICK, 8.0)  # anderes Jahr
+    db.commit()
+    r = _client(db, test_user).get("/api/dashboard/absence-summary?year=2026")
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["sick_days"] == pytest.approx(2.0)
+    assert d["training_days"] == pytest.approx(1.0)
+    assert d["paid_leave_days"] == pytest.approx(1.0)
+    assert d["other_days"] == pytest.approx(0.5)
+    assert d["total_days"] == pytest.approx(d["vacation_days"] + 2.0 + 1.0 + 1.0 + 0.5 + d["overtime_days"])
+
+
+def test_untracked_user_counts_days_not_hours(db, test_user):
+    test_user.track_hours = False
+    _abs(db, test_user, date(2026, 3, 2), AbsenceType.SICK, 0.0)
+    _abs(db, test_user, date(2026, 3, 3), AbsenceType.TRAINING, 0.0)
+    db.commit()
+    d = _client(db, test_user).get("/api/dashboard/absence-summary?year=2026").json()
+    assert d["sick_days"] == pytest.approx(1.0)
+    assert d["training_days"] == pytest.approx(1.0)

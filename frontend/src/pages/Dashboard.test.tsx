@@ -671,3 +671,46 @@ describe('Dashboard Stempelkarte: verkürzter Tag', () => {
     expect(screen.queryByText(/verkürzter Tag/)).not.toBeInTheDocument();
   });
 });
+
+// calc-03 / calc-04 (Code-Review 2026-11-11)
+describe('Dashboard Abwesenheitskachel und Teilausfälle', () => {
+
+  it('zeigt die serverseitig gezählten Tage inkl. bezahlter Freistellung', async () => {
+    const orig = getMock.getMockImplementation()!;
+    getMock.mockImplementation((url: string) =>
+      url === '/dashboard/absence-summary'
+        ? Promise.resolve({ data: {
+            year: 2026, vacation_days: 3.5, sick_days: 2, training_days: 1, overtime_days: 0,
+            other_days: 0.5, paid_leave_days: 2, total_days: 9,
+          } })
+        : orig(url));
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: /Details anzeigen/ }));
+    const label = await screen.findByText('Bez. Freistellung');
+    expect(label.previousElementSibling?.textContent).toBe('2,0');
+    expect(getMock).toHaveBeenCalledWith('/dashboard/absence-summary', { params: { year: new Date().getFullYear() } });
+    expect(getMock).not.toHaveBeenCalledWith('/absences', expect.anything());
+  });
+
+  it('ein ausgefallener Nebenendpunkt lässt Urlaubskonto stehen und bietet Neu laden an', async () => {
+    const orig = getMock.getMockImplementation()!;
+    getMock.mockImplementation((url: string) =>
+      url === '/absences/team/upcoming' ? Promise.reject(new Error('500')) : orig(url));
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText('Urlaubskonto')).toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent('Ein Teil des Dashboards konnte nicht geladen werden');
+    expect(screen.getByRole('button', { name: 'Neu laden' })).toBeInTheDocument();
+  });
+
+  it('bei Totalausfall: Fehlerblock mit „Erneut laden“, das neu abruft', async () => {
+    const orig = getMock.getMockImplementation()!;
+    let fail = true;
+    getMock.mockImplementation((url: string) =>
+      fail ? Promise.reject(new Error('down')) : orig(url));
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    const btn = await screen.findByRole('button', { name: 'Erneut laden' });
+    fail = false;
+    fireEvent.click(btn);
+    await waitFor(() => expect(screen.getByText('Urlaubskonto')).toBeInTheDocument());
+  });
+});
