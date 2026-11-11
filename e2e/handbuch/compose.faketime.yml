@@ -1,0 +1,9 @@
+# Wird von run.sh nur eingebunden, wenn .faketime.env existiert (nach `run.sh seed`).
+# Das Backend laeuft dann mit der Uhr des Stichtags (laufend, nicht eingefroren).
+services:
+  backend:
+    image: pzhandbuch-backend-faketime
+    build: !reset null
+    environment:
+      LD_PRELOAD: /usr/local/lib/libfaketime.so.1
+      FAKETIME: ${FAKETIME}
