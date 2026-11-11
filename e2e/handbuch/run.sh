@@ -51,7 +51,12 @@ cmd_seed() {
   cid="$(dc ps -q backend)"
   [ -n "$cid" ] || { echo "Backend-Container laeuft nicht" >&2; exit 1; }
   docker cp backend/create_handbuch_testdata.py "$cid:/app/create_handbuch_testdata.py"
-  out="$(dc exec -T backend python create_handbuch_testdata.py </dev/null)"
+  # Bei Fehlschlag trotzdem die Ausgabe zeigen (set -e bricht sonst vor dem printf ab).
+  if ! out="$(dc exec -T backend python create_handbuch_testdata.py </dev/null 2>&1)"; then
+    printf '%s\n' "$out" >&2
+    echo "Seed fehlgeschlagen" >&2
+    exit 1
+  fi
   printf '%s\n' "$out"
   # Letzte Zeile der Ausgabe: STICHTAG=YYYY-MM-DD
   stichtag="$(printf '%s\n' "$out" | tail -n 1)"

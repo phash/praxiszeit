@@ -28,6 +28,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import uuid
+from datetime import date, time
 from pathlib import Path
 
 import pytest
@@ -71,7 +72,11 @@ def _cleanup(conn):
     # Abhängige Zeilen BEIDER Mandanten zuerst: die Gegenproben hängen Zeilen des
     # fremden Mandanten an Konten des Zielmandanten (user_id ohne ON DELETE).
     tids = {"a": str(TENANT_ID), "b": str(FOREIGN_TENANT_ID)}
-    for table in ("change_requests", "time_entries", "absences", "public_holidays", "users"):
+    # Reihenfolge nach FK-Abhängigkeit: Abwesenheiten vor Betriebsferien und
+    # Abwesenheitsgründen, alles vor den Konten (created_by/user_id).
+    for table in ("change_requests", "vacation_requests", "time_entries", "absences",
+                  "company_closures", "absence_reasons", "reduced_days",
+                  "working_hours_changes", "system_settings", "public_holidays", "users"):
         conn.execute(text(f"DELETE FROM {table} WHERE tenant_id IN (:a, :b)"), tids)
     conn.execute(text("DELETE FROM tenants WHERE id IN (:a, :b)"), tids)
 
@@ -108,9 +113,9 @@ def seeded(admin_engine):
                     :first, :last, :role, 40, 30, 5, true)
         """)
         for uid, username, first, last, role in (
-            (MARIA_ID, "maria.hoffmann", "Maria", "Hoffmann", "EMPLOYEE"),
-            (THOMAS_ID, "thomas.bauer", "Thomas", "Bauer", "EMPLOYEE"),
-            (ADMIN_ID, "admin", "Andreas", "Werner", "ADMIN"),
+            (MARIA_ID, "maria", "Maria", "Hoffmann", "EMPLOYEE"),
+            (THOMAS_ID, "thomas", "Thomas", "Bauer", "EMPLOYEE"),
+            (ADMIN_ID, "admin", "Andrea", "Werner", "ADMIN"),
         ):
             conn.execute(insert_user, {
                 "id": str(uid), "tid": str(TENANT_ID), "username": username,
@@ -150,7 +155,7 @@ def test_seed_creates_both_change_requests(seeded, app_engine, monkeypatch, caps
         set_superadmin_context(db)
         users = db.query(User).filter(User.tenant_id == TENANT_ID).all()
         reviewer = next(u for u in users if u.username == "admin")
-        seed.create_change_requests(db, users, reviewer=reviewer)
+        seed.create_change_requests(db, users, date(2026, 2, 11), reviewer=reviewer)
     finally:
         db.close()
 
@@ -222,7 +227,7 @@ def foreign_tenant(admin_engine):
                     'Fremd', 'Konto', :role, 40, 30, 5, true)
         """)
         for uid, username, role in ((FOREIGN_ADMIN_ID, "admin", "ADMIN"),
-                                    (FOREIGN_MARIA_ID, "maria.hoffmann", "EMPLOYEE")):
+                                    (FOREIGN_MARIA_ID, "maria", "EMPLOYEE")):
             conn.execute(insert_user, {"id": str(uid), "tid": str(FOREIGN_TENANT_ID),
                                        "username": username,
                                        "email": f"{username}@b9-fremd.invalid", "role": role})
@@ -267,12 +272,10 @@ def test_admin_update_stays_in_own_tenant(foreign_tenant, admin_engine, app_engi
 
 
 def test_holidays_come_from_own_tenant(foreign_tenant, app_engine, monkeypatch):
-    from datetime import date
-
     seed = _load_seed()
     db = _seed_session(app_engine, seed, monkeypatch)
     try:
-        assert seed.get_holiday_dates(db) == {date(2026, 1, 6)}
+        assert seed.get_holiday_dates(db, date(2026, 1, 1), date(2026, 2, 27)) == {date(2026, 1, 6)}
     finally:
         db.close()
 
@@ -285,11 +288,12 @@ def test_employees_are_created_in_own_tenant(foreign_tenant, admin_engine, app_e
         users = seed.create_employees(db)
         assert {u.tenant_id for u in users} == {TENANT_ID}
         assert len(users) == len(seed.EMPLOYEES)
+        assert sorted(u.username for u in users) == ["julia", "maria", "petra", "sarah", "thomas"]
     finally:
         db.close()
     # Die gleichnamige fremde Mitarbeiterin bleibt unberührt.
     first_name, email, _, weekly_hours = _foreign_user(admin_engine, FOREIGN_MARIA_ID)
-    assert (first_name, email, float(weekly_hours)) == ("Fremd", "maria.hoffmann@b9-fremd.invalid", 40.0)
+    assert (first_name, email, float(weekly_hours)) == ("Fremd", "maria@b9-fremd.invalid", 40.0)
 
 
 # ── Zeilen mit falsch gesetzter tenant_id ───────────────────────────────────
@@ -318,8 +322,8 @@ def misfiled_rows(foreign_tenant, admin_engine):
             VALUES (:id, :tid, :username, :email, 'not-a-real-hash',
                     :first, :last, 'EMPLOYEE', 40, 30, 5, true)
         """)
-        for uid, username, first, last in ((OWN_MARIA_ID, "maria.hoffmann", "Maria", "Hoffmann"),
-                                           (OWN_THOMAS_ID, "thomas.bauer", "Thomas", "Bauer")):
+        for uid, username, first, last in ((OWN_MARIA_ID, "maria", "Maria", "Hoffmann"),
+                                           (OWN_THOMAS_ID, "thomas", "Thomas", "Bauer")):
             conn.execute(insert_user, {"id": str(uid), "tid": str(TENANT_ID), "username": username,
                                        "email": f"{username}@b9-seed.invalid",
                                        "first": first, "last": last})
@@ -342,15 +346,13 @@ def _own_users(db):
 
 
 def test_foreign_absence_does_not_skip_own_workday(misfiled_rows, app_engine, monkeypatch):
-    from datetime import date
-
     from app.models import TimeEntry
 
     seed = _load_seed()
     db = _seed_session(app_engine, seed, monkeypatch)
     try:
         maria = next(u for u in _own_users(db) if u.id == OWN_MARIA_ID)
-        seed.create_time_entries_for_user(db, maria, set())
+        seed.create_time_entries_for_user(db, maria, set(), date(2026, 1, 5), date(2026, 1, 9))
         own_days = {
             e.date for e in db.query(TimeEntry).filter(
                 TimeEntry.tenant_id == TENANT_ID, TimeEntry.user_id == OWN_MARIA_ID,
@@ -365,7 +367,7 @@ def test_change_requests_ignore_foreign_entries(misfiled_rows, app_engine, monke
     seed = _load_seed()
     db = _seed_session(app_engine, seed, monkeypatch)
     try:
-        seed.create_change_requests(db, _own_users(db))
+        seed.create_change_requests(db, _own_users(db), date(2026, 2, 11))
         n = db.query(ChangeRequest).filter(
             ChangeRequest.user_id.in_([OWN_MARIA_ID, OWN_THOMAS_ID]),
         ).count()
@@ -373,3 +375,201 @@ def test_change_requests_ignore_foreign_entries(misfiled_rows, app_engine, monke
         db.close()
     assert "0 Change Requests erstellt" in capsys.readouterr().out
     assert n == 0
+
+
+# ── Demodaten relativ zum Stichtag (Handbuch grafisch, Task 4) ─────────────
+
+STICHTAG = date(2026, 3, 11)  # Mittwoch
+SEED_HOLIDAY = date(2026, 3, 2)  # Montag, nur in diesem Testmandanten Feiertag
+
+
+def test_default_stichtag_is_wednesday():
+    seed = _load_seed()
+    assert seed.default_stichtag(date(2026, 11, 10)) == date(2026, 10, 28)
+    # Feiertag am Mittwoch -> naechster Werktag (Donnerstag)
+    assert seed.default_stichtag(date(2026, 11, 10), {date(2026, 10, 28)}) == date(2026, 10, 29)
+
+
+@pytest.fixture
+def full_tenant(admin_engine):
+    """Mandant mit Verwalterin ``admin`` (wie nach dem Bootstrap) und einem
+    Feiertag im Demo-Zeitraum."""
+    with admin_engine.connect() as conn:
+        _cleanup(conn)
+        conn.execute(text(
+            "INSERT INTO tenants (id, name, slug, is_active, mode) "
+            "VALUES (:id, 'B9 Seed-Test', 'b9-seed-test', true, 'multi')"
+        ), {"id": str(TENANT_ID)})
+        conn.execute(text("""
+            INSERT INTO users (id, tenant_id, username, email, password_hash,
+                               first_name, last_name, role, weekly_hours,
+                               vacation_days, work_days_per_week, is_active)
+            VALUES (:id, :tid, 'admin', 'admin@b9-seed.invalid', 'x', 'Andrea', 'Werner',
+                    'ADMIN', 40, 30, 5, true)
+        """), {"id": str(ADMIN_ID), "tid": str(TENANT_ID)})
+        conn.execute(text(
+            "INSERT INTO public_holidays (id, tenant_id, date, name, year) "
+            "VALUES (:id, :tid, :dt, 'Testfeiertag', 2026)"
+        ), {"id": str(uuid.uuid4()), "tid": str(TENANT_ID), "dt": str(SEED_HOLIDAY)})
+    yield
+    with admin_engine.connect() as conn:
+        _cleanup(conn)
+
+
+def _run_seed(app_engine, seed, monkeypatch, stichtag=STICHTAG):
+    monkeypatch.setattr(seed, "TENANT_ID", str(TENANT_ID))
+    db = SessionLocal(bind=app_engine)
+    try:
+        set_superadmin_context(db)
+        seed.seed_all(db, stichtag)
+    finally:
+        db.close()
+
+
+def _read(app_engine, fn):
+    db = SessionLocal(bind=app_engine)
+    try:
+        set_superadmin_context(db)
+        return fn(db)
+    finally:
+        db.close()
+
+
+def test_seed_relative_to_stichtag(full_tenant, app_engine, monkeypatch):
+    from app.models import Absence, TimeEntry
+    from app.models.company_closure import CompanyClosure
+    from app.models.vacation_request import VacationRequest
+
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+
+    def collect(db):
+        users = {u.username: u for u in db.query(User).filter(User.tenant_id == TENANT_ID)}
+        entries = db.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID).all()
+        maria = users["maria"]
+        return {
+            "usernames": set(users),
+            "maria_dates": {e.date for e in entries if e.user_id == maria.id},
+            "all_dates": {e.date for e in entries},
+            "open": [e.date for e in entries if e.user_id == maria.id and e.end_time is None],
+            "open_start": [e.start_time for e in entries if e.user_id == maria.id and e.end_time is None],
+            "first_date": min(e.date for e in entries),
+            "last_date": max(e.date for e in entries),
+            "vr": [(v.user_id, v.status, v.date, v.end_date) for v in
+                   db.query(VacationRequest).filter(VacationRequest.tenant_id == TENANT_ID)],
+            "thomas_id": users["thomas"].id,
+            "closures": [(c.start_date, c.end_date) for c in
+                         db.query(CompanyClosure).filter(CompanyClosure.tenant_id == TENANT_ID)],
+            "absence_dates": {(a.user_id, a.date) for a in
+                              db.query(Absence).filter(Absence.tenant_id == TENANT_ID)},
+            "entry_keys": {(e.user_id, e.date) for e in entries},
+        }
+
+    r = _read(app_engine, collect)
+    assert r["usernames"] == {"admin", "maria", "sarah", "thomas", "petra", "julia"}
+    assert date(2026, 3, 10) in r["maria_dates"]
+    assert r["open"] == [STICHTAG] and r["open_start"] == [time(7, 45)]
+    assert r["first_date"] >= date(2026, 2, 1) and r["last_date"] <= STICHTAG
+    assert not [d for d in r["all_dates"] if d.weekday() >= 5], "Eintrag am Wochenende"
+    assert SEED_HOLIDAY not in r["all_dates"], "Eintrag am Feiertag"
+    # kein Eintrag am Tag einer Abwesenheit derselben Person
+    assert not (r["absence_dates"] & r["entry_keys"])
+    pending = [v for v in r["vr"] if v[1] == "pending"]
+    assert pending and all(v[0] == r["thomas_id"] and v[2] > STICHTAG for v in pending)
+    assert r["closures"] and all(c[0] > STICHTAG for c in r["closures"])
+
+
+def test_seed_creates_new_feature_objects(full_tenant, app_engine, monkeypatch):
+    from datetime import timedelta
+    from decimal import Decimal
+
+    from app.models import Absence, TimeEntry, WorkingHoursChange
+    from app.models.absence import AbsenceReason, AbsenceType
+    from app.models.reduced_day import ReducedDay
+    from app.models.system_setting import SystemSetting
+
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+
+    def collect(db):
+        users = {u.username: u for u in db.query(User).filter(User.tenant_id == TENANT_ID)}
+        by_id = {u.id: u.username for u in users.values()}
+        month_start = STICHTAG.replace(day=1)
+        prev_month_start = (month_start - timedelta(days=1)).replace(day=1)
+        return {
+            "by_id": by_id,
+            "reduced": [(r.date, r.max_hours) for r in db.query(ReducedDay).filter(ReducedDay.tenant_id == TENANT_ID)],
+            "settings": {s.key: s.value for s in db.query(SystemSetting).filter(SystemSetting.tenant_id == TENANT_ID)},
+            "reasons": [(r.name, r.base_behavior) for r in db.query(AbsenceReason).filter(AbsenceReason.tenant_id == TENANT_ID)],
+            "whc": sorted((by_id[w.user_id], w.effective_from, float(w.vacation_days), float(w.weekly_hours), w.blocks is not None)
+                          for w in db.query(WorkingHoursChange).filter(WorkingHoursChange.tenant_id == TENANT_ID)),
+            "absences": [(by_id[a.user_id], a.type, a.date, float(a.hours), a.reason_id is not None, a.closure_id is not None)
+                         for a in db.query(Absence).filter(Absence.tenant_id == TENANT_ID)],
+            "waiver": [(by_id[e.user_id], e.date, float(e.net_hours), e.break_minutes)
+                       for e in db.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID,
+                                                           TimeEntry.break_waiver_reason.isnot(None))],
+            "crs": sorted((by_id[c.user_id], c.status.value if hasattr(c.status, "value") else c.status)
+                          for c in db.query(ChangeRequest).filter(ChangeRequest.tenant_id == TENANT_ID)),
+            "month_start": month_start, "prev_month_start": prev_month_start,
+            "contract": {k: (float(u.weekly_hours), u.work_days_per_week, bool(u.milog_working_time_account), float(u.vacation_days))
+                         for k, u in users.items()},
+        }
+
+    r = _read(app_engine, collect)
+    assert len(r["reduced"]) == 1 and r["reduced"][0][0] < STICHTAG and r["reduced"][0][1] == Decimal("4.00")
+    assert r["settings"]["special_day_dec24_mode"] == "half_day"
+    assert r["settings"]["special_day_dec31_mode"] == "half_day"
+    assert ("Fortbildung extern", "worked") in r["reasons"]
+    # Petra: Anspruch ab Monatsanfang geaendert (Vertragsverlauf), Sarah: Aenderung im Vormonat
+    petra = [w for w in r["whc"] if w[0] == "petra"]
+    assert len(petra) == 2 and petra[-1][1] == r["month_start"] and petra[0][2] != petra[-1][2]
+    sarah = [w for w in r["whc"] if w[0] == "sarah"]
+    assert len(sarah) == 2 and all(w[4] for w in sarah) and sarah[-1][1].month == r["prev_month_start"].month
+    ab = r["absences"]
+    maria_vac = [a for a in ab if a[0] == "maria" and a[1] == AbsenceType.VACATION and not a[5]]
+    assert len(maria_vac) == 3 and all(a[2] < STICHTAG for a in maria_vac) and all(a[3] == 8.0 for a in maria_vac)
+    assert len([a for a in ab if a[0] == "sarah" and a[1] == AbsenceType.SICK]) == 2
+    assert any(a[0] == "thomas" and a[1] == AbsenceType.TRAINING and a[4] for a in ab)  # eigener Grund
+    closure_days = [a for a in ab if a[5]]
+    assert closure_days and all(a[2] > STICHTAG for a in closure_days)
+    assert {a[0] for a in closure_days} == {"maria", "thomas", "sarah", "petra", "julia"}
+    assert len(r["waiver"]) == 1 and r["waiver"][0][0] == "thomas"
+    assert r["waiver"][0][2] == 6.5 and r["waiver"][0][3] == 0
+    assert r["crs"] == [("maria", "pending"), ("thomas", "rejected")]
+    c = r["contract"]
+    assert c["maria"][:2] == (40.0, 5) and c["thomas"][0] == 38.5 and c["sarah"][0] == 25.0
+    assert c["petra"][:2] == (20.0, 4) and c["julia"][:3] == (10.0, 2, True)
+    assert c["maria"][3] == 30.0
+
+
+def test_seed_contains_no_legacy_domains(full_tenant, app_engine, monkeypatch):
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+    emails = _read(app_engine, lambda db: [u.email for u in db.query(User).filter(User.tenant_id == TENANT_ID)])
+    assert emails and not [e for e in emails if e.endswith("@praxis.de") or "example.de" in e]
+    assert sorted(e for e in emails if "lindenplatz" in e) == sorted([
+        "admin@praxis-lindenplatz.example", "maria.hoffmann@praxis-lindenplatz.example",
+        "thomas.bauer@praxis-lindenplatz.example", "sarah.klein@praxis-lindenplatz.example",
+        "petra.schulz@praxis-lindenplatz.example", "julia.meyer@praxis-lindenplatz.example"])
+
+
+def test_seed_is_rerunnable(full_tenant, app_engine, monkeypatch):
+    """Zweiter Lauf loescht die gleichnamigen Demo-Konten samt Daten und legt neu an."""
+    from app.models import TimeEntry
+    seed = _load_seed()
+    _run_seed(app_engine, seed, monkeypatch)
+    n1 = _read(app_engine, lambda db: db.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID).count())
+    _run_seed(app_engine, seed, monkeypatch)
+    n2 = _read(app_engine, lambda db: db.query(TimeEntry).filter(TimeEntry.tenant_id == TENANT_ID).count())
+    assert n1 == n2 > 0
+    users = _read(app_engine, lambda db: db.query(User).filter(User.tenant_id == TENANT_ID).count())
+    assert users == 6
+
+
+def test_main_prints_stichtag_as_last_line(full_tenant, app_engine, monkeypatch, capsys):
+    seed = _load_seed()
+    monkeypatch.setattr(seed, "TENANT_ID", str(TENANT_ID))
+    monkeypatch.setattr(seed, "SessionLocal", lambda: SessionLocal(bind=app_engine))
+    seed.main(["--stichtag", "2026-03-11"])
+    lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+    assert lines[-1] == "STICHTAG=2026-03-11"
