@@ -1536,13 +1536,17 @@ Bewusst ausgenommen:
   rückwirkend. Bei Bedarf korrigiert die Verwaltung die Zeile von Hand, indem sie die
   Abwesenheit löscht: An einem Tag ohne Soll zählt sie ohnehin nicht als Abwesenheitstag
   (`absence_days`), neu buchen lässt sie sich dort nicht.
-  **Migration 077** trägt `half_day` für eindeutige Alt-Zeilen nach: ganztägige Typen ohne
-  Uhrzeit (nicht Überstundenausgleich), Werktag mit Stundenzählung und Tagessoll > 0 laut
-  Snapshot des Datums; `hours` = Tagessoll → `false`, = Tagessoll/2 → `true` (Toleranz
-  0,005 h). Der 24./31.12., verkürzte Tage, Zeiträume und abweichende Stunden (z. B. schon
-  gedriftete Werte) bleiben NULL und folgen weiter dieser Regel. Für die nachgetragenen Zeilen
-  ändert sich der Verbrauch nicht (1,0 bzw. 0,5 wie zuvor `hours ÷ Tagessoll`), er bleibt aber
-  bei späteren Arbeitszeit-Änderungen stehen, und die Rückrechnung zieht die Stunden mit.
+  **Migration 077** setzt `half_day = false` für Alt-Zeilen, deren `hours` genau dem
+  Tagessoll laut Snapshot des Datums entsprechen (Toleranz 0,005 h): ganztägige Typen ohne
+  Uhrzeit (nicht Überstundenausgleich), Werktag mit Stundenzählung und Tagessoll > 0, je
+  Mandant ohne 24./31.12. und ohne verkürzte Tage. Das ist streng ergebnis-neutral — NULL
+  wirkt in Soll-Minderung, fester Monats-Deckung und Anwesenheits-Soll wie `false`, und die
+  Legacy-Formel ergibt dort 1,0 —, der Verbrauch bleibt danach aber bei späteren
+  Arbeitszeit-Änderungen stehen, und die Rückrechnung zieht die Stunden mit. **Halbe Tage
+  werden nicht nachgetragen** (`true` halbierte das Soll des Tages, statt es ganz abzuziehen —
+  rückwirkend auch Saldo und abgeschlossene Jahre; 1.8.0 buchte Halbtage ohne Kennzeichen, und
+  ein voller Tag unter einem später verdoppelten Tagessoll sähe gleich aus). Sie und alle
+  übrigen Alt-Zeilen bleiben NULL und folgen weiter dieser Regel.
 
 `half_day` halbiert die Umrechnung. Der **#146/#394-Sondertagsfaktor (24./31.12.) wird hier
 bewusst NICHT angewandt**: die Rückrechnung schreibt das **ungewichtete** Tagessoll des Tages

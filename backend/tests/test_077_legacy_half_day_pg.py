@@ -1,9 +1,13 @@
 """P1.7 (Handbuch-Funde 2026-11-11, Postgres-only): Migration 077 auf echtem PostgreSQL.
 
-077 trägt ``absences.half_day`` für Altzeilen (vor #205/1.9.0, ``half_day IS
-NULL``) nach — nur wo die Stunden eindeutig ein voller Tag (``hours ==
-Tagessoll``) oder ein Halbtag (``hours == Tagessoll / 2``) laut Vertrags-
-Snapshot des Datums sind. Alles andere bleibt NULL.
+077 trägt ``absences.half_day = false`` für Altzeilen (vor #205/1.9.0,
+``half_day IS NULL``) nach — nur wo ``hours`` dem Tagessoll des Datums laut
+Vertrags-Snapshot entspricht (Ruling R24). Halbtage und alles andere bleiben NULL.
+
+Neutralität über die App-Schicht: Urlaubsverbrauch, Überstundenkonto und
+Monats-Soll jeder Person sind vor und nach dem Upgrade identisch (mit dem
+verworfenen ``true``-Zweig für Halbtage stieg das Soll um 0,5 × Tagessoll).
+Zweiter Mandant mit eigenem verkürzten Tag: die Ausschlüsse gelten je Mandant.
 
 Läuft in einer EIGENEN Wegwerf-Datenbank (Muster ``test_075_contract_history_pg.py``):
 Upgrade 076 → 077, Downgrade (bewusst ohne Rückänderung), erneutes Upgrade
@@ -31,6 +35,7 @@ if not ADMIN_URL or not ADMIN_URL.startswith("postgresql"):
     )
 
 TENANT = "00000000-0000-0000-0000-000000000001"  # legt Migration 027 an
+TENANT_B = "00000000-0000-0000-0000-0000000000b2"
 BASE_REV = "076_audit_chain"
 HEAD_REV = "077_legacy_half_day"
 
@@ -39,14 +44,16 @@ def _uid(n: int) -> str:
     return str(uuid.UUID(int=0x7777_0000_0000_4000_8000_0000_0000_0000 + n))
 
 
-EVEN, DAILY, UNTRACKED = _uid(1), _uid(2), _uid(3)
+EVEN, DAILY, UNTRACKED, EVEN_B = _uid(1), _uid(2), _uid(3), _uid(4)
+PEOPLE = {EVEN: TENANT, DAILY: TENANT, UNTRACKED: TENANT, EVEN_B: TENANT_B}
 
 # (Schlüssel, Person, Datum, Typ, Stunden, start_time, end_date, half_day vorher, erwartet nach 077)
+# Halbtage bleiben NULL (R24): ``true`` halbierte das Soll, statt es ganz abzuziehen.
 # 2026-01-05 = Montag.
 ROWS = [
     # Gleichmäßig 40 h / 5 Tage, ohne Verlauf → Tagessoll 8,00 laut User-Zeile
     ("voll", EVEN, "2026-01-05", "VACATION", "8.00", None, None, None, False),
-    ("halb", EVEN, "2026-01-06", "VACATION", "4.00", None, None, None, True),
+    ("halb", EVEN, "2026-01-06", "VACATION", "4.00", None, None, None, None),
     ("krank_voll", EVEN, "2026-01-07", "SICK", "8.00", None, None, None, False),
     ("uneindeutig", EVEN, "2026-01-08", "VACATION", "5.00", None, None, None, None),
     ("ueberstunden", EVEN, "2026-01-09", "OVERTIME", "8.00", None, None, None, None),
@@ -61,31 +68,47 @@ ROWS = [
     # gedrifteter Altwert und bleiben NULL.
     ("vor_verlauf", DAILY, "2026-02-02", "VACATION", "5.00", None, None, None, None),
     ("tagesplan_voll", DAILY, "2026-03-02", "VACATION", "4.50", None, None, None, False),
-    ("tagesplan_halb", DAILY, "2026-03-03", "VACATION", "2.00", None, None, None, True),
-    ("ungerader_cent", DAILY, "2026-03-04", "VACATION", "3.63", None, None, None, True),
+    ("tagesplan_halb", DAILY, "2026-03-03", "VACATION", "2.00", None, None, None, None),
+    ("ungerader_cent", DAILY, "2026-03-04", "VACATION", "3.63", None, None, None, None),
     ("freier_tag", DAILY, "2026-03-05", "VACATION", "0.00", None, None, None, None),
     # Ohne Stundenzählung (Snapshot) → nie anfassen
     ("ohne_zaehlung", UNTRACKED, "2026-01-05", "VACATION", "0.00", None, None, None, None),
+    # Verkürzte Tage gelten je Mandant: A hat 16.02., B hat 16.02. und 17.02.
+    ("a_fremd_verkuerzt", EVEN, "2026-02-17", "VACATION", "8.00", None, None, None, False),
+    ("b_verkuerzt_gleich", EVEN_B, "2026-02-16", "VACATION", "8.00", None, None, None, None),
+    ("b_verkuerzt", EVEN_B, "2026-02-17", "VACATION", "8.00", None, None, None, None),
+    ("b_voll", EVEN_B, "2026-02-18", "VACATION", "8.00", None, None, None, False),
 ]
 ABS = {key: _uid(100 + i) for i, (key, *_rest) in enumerate(ROWS)}
 
 
-def _user(conn, uid, name, *, daily=False, track=True):
+def _user(conn, uid, name, *, daily=False, track=True, tenant=TENANT):
     conn.execute(text(
         "INSERT INTO users (id, tenant_id, username, email, password_hash, first_name, last_name, role, "
         "weekly_hours, work_days_per_week, use_daily_schedule, hours_monday, hours_tuesday, "
         "hours_wednesday, hours_thursday, hours_friday, track_hours, vacation_days, is_active) VALUES "
         "(:id, :t, :n, :e, 'h', :n, 'T', 'EMPLOYEE', :w, 5, :daily, :mo, :di, :mi, :do, :fr, :track, 30, true)"
-    ), {"id": uid, "t": TENANT, "n": name, "e": f"{name}@x.de", "w": 18.75 if daily else 40,
+    ), {"id": uid, "t": tenant, "n": name, "e": f"{name}@x.de", "w": 18.75 if daily else 40,
         "daily": daily, "mo": 4.5 if daily else None, "di": 4 if daily else None,
         "mi": 7.25 if daily else None, "do": 0 if daily else None, "fr": 3 if daily else None,
         "track": track})
 
 
 def _seed(conn):
+    conn.execute(text(
+        "INSERT INTO tenants (id, name, slug, is_active, mode, plan, subscription_status) "
+        "VALUES (:id, 'Praxis B', 'praxis-b', true, 'multi', 'trial', 'active')"
+    ), {"id": TENANT_B})
     _user(conn, EVEN, "gleich")
     _user(conn, DAILY, "tagesplan", daily=True)
     _user(conn, UNTRACKED, "ohne", track=False)
+    _user(conn, EVEN_B, "gleich_b", tenant=TENANT_B)
+    # Ein Zeiteintrag je Person: das Überstundenkonto beginnt damit (Dezember 2025).
+    for i, (uid, tid) in enumerate(PEOPLE.items()):
+        conn.execute(text(
+            "INSERT INTO time_entries (id, tenant_id, user_id, date, start_time, end_time, break_minutes) "
+            "VALUES (:id, :t, :u, '2025-12-01', '08:00', '12:00', 0)"
+        ), {"id": _uid(200 + i), "t": tid, "u": uid})
     conn.execute(text(
         "INSERT INTO working_hours_changes (id, tenant_id, user_id, effective_from, weekly_hours, "
         "use_daily_schedule, hours_monday, hours_tuesday, hours_wednesday, hours_thursday, hours_friday, "
@@ -93,21 +116,42 @@ def _seed(conn):
         "use_fixed_monthly_target, note) VALUES "
         "(:id, :t, :u, '2026-03-01', 18.75, true, 4.5, 4, 7.25, 0, 3, 4, 30, true, false, false, 'plan')"
     ), {"id": _uid(50), "t": TENANT, "u": DAILY})
-    conn.execute(text(
-        "INSERT INTO reduced_days (tenant_id, date, label, max_hours) "
-        "VALUES (:t, '2026-02-16', 'Rosenmontag', 4)"
-    ), {"t": TENANT})
+    for tid, day in ((TENANT, "2026-02-16"), (TENANT_B, "2026-02-16"), (TENANT_B, "2026-02-17")):
+        conn.execute(text(
+            "INSERT INTO reduced_days (tenant_id, date, label, max_hours) VALUES (:t, :d, 'Verkürzt', 4)"
+        ), {"t": tid, "d": day})
     for key, uid, day, typ, hours, start, end, before, _exp in ROWS:
         conn.execute(text(
             "INSERT INTO absences (id, tenant_id, user_id, date, end_date, type, hours, start_time, "
             "end_time, half_day, note) VALUES (:id, :t, :u, :d, :end, :typ, :h, :s, :e, :hd, :n)"
-        ), {"id": ABS[key], "t": TENANT, "u": uid, "d": day, "end": end, "typ": typ, "h": hours,
+        ), {"id": ABS[key], "t": PEOPLE[uid], "u": uid, "d": day, "end": end, "typ": typ, "h": hours,
             "s": start, "e": "12:00" if start else None, "hd": before, "n": key})
 
 
 def _half_days(conn) -> dict:
     rows = conn.execute(text("SELECT note, half_day FROM absences")).all()
     return dict(rows)
+
+
+def _accounts(engine) -> dict:
+    """App-Schicht (in-process, als Superuser an RLS vorbei): je Person Urlaubs-
+    verbrauch 2025/2026, Überstundenkonto bis März 2026 und Monats-Soll Dez–Mär."""
+    from sqlalchemy.orm import Session
+    from app.models import User
+    from app.services import calculation_service as calc
+
+    out = {}
+    with Session(engine) as db:
+        for uid in PEOPLE:
+            user = db.get(User, uuid.UUID(uid))
+            out[uid] = (
+                calc.get_vacation_account(db, user, 2025)["used_days"],
+                calc.get_vacation_account(db, user, 2026)["used_days"],
+                calc.get_overtime_account(db, user, 2026, 3),
+                tuple(calc.get_monthly_target(db, user, y, m)
+                      for y, m in ((2025, 12), (2026, 1), (2026, 2), (2026, 3))),
+            )
+    return out
 
 
 def _expected() -> dict:
@@ -153,12 +197,15 @@ def test_round_trip_077_076_077(scratch):
     with engine.connect() as conn:
         before = _other_columns(conn)
         assert before[0] == len(ROWS)
+    accounts_before = _accounts(engine)
 
     out = _alembic(url, "upgrade", HEAD_REV)
-    assert "077: 14 Altzeilen ohne half_day: 3 ganztaegig, 3 halbtaegig, 8 unveraendert" in out, out
+    assert "077: 18 Altzeilen ohne half_day: 5 als ganztaegig gesetzt, 13 unveraendert" in out, out
     with engine.connect() as conn:
         assert _half_days(conn) == _expected()
         assert _other_columns(conn) == before  # nur half_day geändert
+    # R24: streng ergebnis-neutral über die App-Schicht
+    assert _accounts(engine) == accounts_before
 
     # Downgrade: bewusst keine Rückänderung (reine Datenergänzung)
     _alembic(url, "downgrade", BASE_REV)
@@ -168,7 +215,7 @@ def test_round_trip_077_076_077(scratch):
 
     # Erneutes Upgrade: idempotent, die gesetzten Zeilen sind keine Kandidaten mehr
     out = _alembic(url, "upgrade", HEAD_REV)
-    assert "077: 8 Altzeilen ohne half_day: 0 ganztaegig, 0 halbtaegig, 8 unveraendert" in out, out
+    assert "077: 13 Altzeilen ohne half_day: 0 als ganztaegig gesetzt, 13 unveraendert" in out, out
     with engine.connect() as conn:
         assert _half_days(conn) == _expected()
         assert _other_columns(conn) == before
@@ -199,6 +246,6 @@ def test_backfill_as_non_superuser_owner_under_force_rls(owner_scratch):
             "absences": True, "users": True, "working_hours_changes": True, "reduced_days": True}
 
     out = _alembic(owner_url, "upgrade", HEAD_REV)
-    assert "3 ganztaegig, 3 halbtaegig" in out, out
+    assert "5 als ganztaegig gesetzt" in out, out
     with engine.connect() as conn:  # Superuser: liest an RLS vorbei
         assert _half_days(conn) == _expected()

@@ -1,47 +1,48 @@
-"""Altzeilen ohne ``half_day`` (gebucht vor #205/1.9.0) eindeutig nachtragen.
+"""Altzeilen ohne ``half_day`` (gebucht vor #205/1.9.0): volle Tage nachtragen.
 
 Migration 052 hat ``absences.half_day`` bewusst NULLABLE angelegt: Zeilen von
-davor behalten NULL und zählen weiter stundenbasiert (``hours ÷ Tagessoll``,
-``calculation_service.get_vacation_account`` / ``absence_days``), die
-Rückrechnung ``retarget_absence_hours`` überspringt sie (C1). Ändert eine
-Arbeitszeit-Änderung später das Tagessoll ihres Datums, driften der Urlaubs-
-verbrauch und der Resturlaub um ``h/neu − 1`` je Tag (Handbuch-Fund
-2026-11-11: Vorschau „Urlaub verbraucht 3 → 3,1" bei 0 betroffenen
-Abwesenheiten).
+davor behalten NULL und zählen im Urlaubskonto stundenbasiert (``hours ÷
+Tagessoll``, ``calculation_service.get_vacation_account`` / ``absence_days``),
+die Rückrechnung ``retarget_absence_hours`` überspringt sie (C1). Ändert eine
+Arbeitszeit-Änderung später das Tagessoll ihres Datums, driften Urlaubs-
+verbrauch und Resturlaub um ``h/neu − 1`` je Tag (Handbuch-Fund 2026-11-11:
+Vorschau „Urlaub verbraucht 3 → 3,1" bei 0 betroffenen Abwesenheiten).
 
-Diese Migration setzt ``half_day`` NUR dort, wo die Zuordnung eindeutig ist —
-gemessen am Tagessoll des Datums laut Vertrags-Snapshot (dieselbe Regel wie
-``calculation_service.get_schedule_for_date`` + ``get_daily_target_for_date``,
-hier in reinem Python nachgebaut, weil Migrationen keine App-Services importieren):
+Diese Migration setzt NUR ``half_day = false``, und nur wo ``hours`` dem
+Tagessoll des Datums laut Vertrags-Snapshot entspricht (Toleranz 0,005 h;
+dieselbe Regel wie ``get_schedule_for_date`` + ``get_daily_target_for_date``,
+hier in reinem Python nachgebaut, weil Migrationen keine App-Services
+importieren).
 
-* ``hours == Tagessoll``     → ``False`` (voller Tag)
-* ``hours == Tagessoll / 2`` → ``True``  (Halbtag)
-* sonst                      → bleibt NULL (Legacy-Formel wie bisher)
+Streng ergebnis-neutral (Ruling R24): Überall sonst gilt NULL wie ``false`` —
+in der Soll-Minderung (``_soll_reducing_absence_half_map``: ``is_half = a.half_day
+is True``), in der Deckung des festen Monats-Solls (``fixed_day_covered_hours``)
+und im Anwesenheits-Soll; im Urlaubskonto ergibt die Legacy-Formel bei ``hours ==
+Tagessoll`` genau 1,0. Ab jetzt bleibt der Wert bei späteren Arbeitszeit-
+Änderungen stehen, und die Rückrechnung zieht die Stunden mit.
 
-Toleranz 0,005 h (``hours`` ist ``Numeric(4,2)``; ein Halbtag bei ungeradem
-Cent-Tagessoll, z. B. 7,25 / 2 = 3,625, steht als 3,62 oder 3,63 da).
+**Halbtage werden NICHT nachgetragen** (bleiben NULL): ``half_day = true``
+halbiert das Soll des Tages, statt es ganz abzuziehen — Soll, Saldo, Journal,
+§16-Exporte und abgeschlossene Jahre änderten sich rückwirkend. 1.8.0
+(#167/#170) buchte halbe Urlaubstage als ``hours = 0,5 × Tagessoll`` ohne
+Kennzeichen, und ein voller Tag unter einem später verdoppelten Tagessoll sähe
+genauso aus — die Zuordnung ist nicht eindeutig.
 
-Nicht angefasst (bleiben NULL): Überstundenausgleich (``OVERTIME`` trägt
-explizite Stunden), Abwesenheiten mit Uhrzeit (``start_time``), Zeiträume
-(``end_date`` ≠ ``date``), Wochenenden, Tage ohne Stundenzählung oder mit
-Tagessoll 0 laut Snapshot sowie der 24./31.12. und die verkürzten Tage des
-Mandanten (``reduced_days``) — dort kostet ein tagebasierter Tag 0,5
-(``half_special_day_weight``), die Legacy-Formel zählt dagegen ``hours ÷
-Tagessoll``; ein Nachtrag dort würde den heutigen Verbrauch verändern.
-
-Ergebnis-neutral: für jede nachgetragene Zeile liefert die tagebasierte Zählung
-heute denselben Wert wie die Legacy-Formel (1,0 bzw. 0,5). Ab jetzt bleibt er
-bei späteren Arbeitszeit-Änderungen stehen, und ``retarget_absence_hours``
-zieht die Stunden mit.
+Ebenfalls NULL bleiben: Überstundenausgleich (``OVERTIME`` trägt explizite
+Stunden), Abwesenheiten mit Uhrzeit (``start_time``), Zeiträume (``end_date`` ≠
+``date``), Wochenenden, Tage ohne Stundenzählung oder mit Tagessoll 0 laut
+Snapshot sowie der 24./31.12. und die verkürzten Tage des jeweiligen Mandanten
+(``reduced_days``) — dort kostet ein tagebasierter Tag 0,5
+(``half_special_day_weight``), die Legacy-Formel zählt ``hours ÷ Tagessoll``.
 
 Mandantenübergreifend: auf PostgreSQL ``SET LOCAL app.is_superadmin`` (FORCE
 RLS, Muster 073/075), sonst träfe die Migration als Nicht-Superuser-Eigentümerin
 keine Zeile.
 
 Downgrade: bewusst KEINE Rückänderung. Die Migration ergänzt nur Daten, das
-Schema bleibt gleich; 052 ff. lesen ``True``/``False`` seit 1.9.0. Welche Zeilen
-077 gesetzt hat, ist nicht markiert — ein Zurücksetzen auf NULL träfe auch
-Zeilen, die eine Buchung seither gesetzt hat, und brächte die Drift zurück.
+Schema bleibt gleich; 052 ff. lesen ``false`` seit 1.9.0. Welche Zeilen 077
+gesetzt hat, ist nicht markiert — ein Zurücksetzen auf NULL träfe auch Zeilen,
+die eine Buchung seither gesetzt hat, und brächte die Drift zurück.
 """
 from decimal import Decimal
 
@@ -120,7 +121,7 @@ def upgrade() -> None:
         changes.setdefault(str(row["user_id"]), []).append(dict(row))
     reduced = {(str(t), d) for t, d in conn.execute(sa.text("SELECT tenant_id, date FROM reduced_days")).all()}
 
-    updates = {True: [], False: []}
+    full_days = []
     for a in candidates:
         d = a["date"]
         if a["end_date"] is not None and a["end_date"] != d:
@@ -137,20 +138,19 @@ def upgrade() -> None:
         if target <= 0:
             continue
         hours = _dec(a["hours"])
+        # R24: nur der volle Tag — ein Halbtag (hours == Tagessoll/2) bleibt NULL.
         if abs(hours - target) <= TOLERANCE:
-            updates[False].append(a["id"])
-        elif abs(hours - target / 2) <= TOLERANCE:
-            updates[True].append(a["id"])
+            full_days.append(a["id"])
 
-    stmt = sa.text("UPDATE absences SET half_day = :v WHERE id = :id AND half_day IS NULL")
-    for value, ids in updates.items():
-        if ids:
-            conn.execute(stmt, [{"v": value, "id": i} for i in ids])
+    if full_days:
+        conn.execute(
+            sa.text("UPDATE absences SET half_day = false WHERE id = :id AND half_day IS NULL"),
+            [{"id": i} for i in full_days],
+        )
 
-    full, half = len(updates[False]), len(updates[True])
-    rest = len(candidates) - full - half
-    print(f"077: {len(candidates)} Altzeilen ohne half_day: {full} ganztaegig, {half} halbtaegig, "
-          f"{rest} unveraendert (nicht eindeutig)")
+    full = len(full_days)
+    print(f"077: {len(candidates)} Altzeilen ohne half_day: {full} als ganztaegig gesetzt, "
+          f"{len(candidates) - full} unveraendert")
 
 
 def downgrade() -> None:
