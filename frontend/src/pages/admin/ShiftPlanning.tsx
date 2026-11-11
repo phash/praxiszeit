@@ -515,7 +515,7 @@ export default function AdminShiftPlanning() {
       {tab === 'plans' && (
         <>
         <YearTimeline plans={plans} />
-        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-6">
           {/* Plan list */}
           <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 h-fit">
             <form onSubmit={createPlan} className="flex items-end gap-2 mb-4">
@@ -617,7 +617,7 @@ export default function AdminShiftPlanning() {
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       variant={planDetail.is_active ? 'secondary' : 'primary'}
                       icon={planDetail.is_active ? PowerOff : Power}
@@ -689,7 +689,7 @@ export default function AdminShiftPlanning() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 xl:grid-cols-[1fr_200px] gap-4">
+                <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_200px] gap-4">
                   <WeekGrid
                     slots={planDetail.slots}
                     editable
