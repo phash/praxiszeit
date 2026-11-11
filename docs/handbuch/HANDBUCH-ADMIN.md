@@ -1,1455 +1,1191 @@
-# PraxisZeit – Handbuch für Administratoren
+<!-- Erzeugt aus frontend/src/handbuch — nicht von Hand bearbeiten -->
 
-**Version 2.9 | Stand: Oktober 2026 (für PraxisZeit 1.20.0)**
+# Handbuch für die Praxisleitung
 
----
+**Stand:** PraxisZeit 1.23.0
 
-## Inhaltsverzeichnis
+So richten Sie PraxisZeit ein, behalten Ihr Team im Blick, pflegen Verträge und Arbeitszeiten und entscheiden über Anträge. Jede Aufgabe beginnt mit einer Frage – suchen Sie sich die passende heraus.
 
-1. [Einleitung](#1-einleitung)
-2. [Login und Zugangsdaten](#2-login-und-zugangsdaten)
-3. [Admin-Dashboard](#3-admin-dashboard)
-4. [Benutzerverwaltung](#4-benutzerverwaltung)
-5. [Abwesenheitskalender](#5-abwesenheitskalender)
-6. [Berichte und Exporte](#6-berichte-und-exporte)
-7. [Abwesenheitsanträge genehmigen](#7-abwesenheitsanträge-genehmigen)
-8. [Korrekturanträge prüfen](#8-korrekturanträge-prüfen)
-9. [Änderungsprotokoll (Audit-Log)](#9-änderungsprotokoll-audit-log)
-10. [Fehler-Monitoring](#10-fehler-monitoring)
-11. [Betriebsferien verwalten](#11-betriebsferien-verwalten)
-12. [Import](#12-import)
-13. [Einstellungen](#13-einstellungen)
-    - [Feiertage / Eigene Feiertage](#feiertage)
-    - [Sondertage 24./31.12.](#sondertage-2431-12)
-    - [Urlaubsgenehmigung](#urlaubsgenehmigung)
-    - [Pflicht-Pause-Ausnahme](#pflicht-pause-ausnahme)
-    - [Soll-Arbeitszeit-Fenster (Puffer)](#soll-arbeitszeit-fenster-puffer)
-    - [Farben](#farben)
-14. [ArbZG-Compliance-Berichte](#14-arbzg-compliance-berichte)
-15. [Überstundenausgleich](#15-überstundenausgleich)
-16. [Änderungsanträge für Abwesenheiten](#16-änderungsanträge-für-abwesenheiten)
-17. [Rechtliche Grundlagen](#17-rechtliche-grundlagen)
-18. [Berechnungsgrundlagen (Anhang)](#18-berechnungsgrundlagen-anhang)
-19. [Datensicherung (Backup & Restore)](#19-datensicherung-backup--restore)
-20. [Admin-Passwort verloren](#20-admin-passwort-verloren)
-- [Schichtplanung (optional)](#schichtplanung-optional-standardmäßig-deaktiviert)
+<a id="erste-einrichtung"></a>
+## Erste Einrichtung
 
----
+*Einmal einrichten, dann läuft es: Einstellungen prüfen, das Team anlegen, die Arbeitszeiten hinterlegen. Als Praxisleitung sehen Sie alles, was Ihre Mitarbeitenden sehen – und zusätzlich den Bereich **Administration**.*
 
-## 1. Einleitung
+<a id="verwaltung-finden"></a>
+### Wo finde ich die Verwaltung?
 
-Dieses Handbuch richtet sich an **Administratoren** von PraxisZeit. Als Admin haben Sie Zugriff auf alle Bereiche der Anwendung – von der Benutzerverwaltung über Berichte bis hin zu gesetzlichen Compliance-Auswertungen.
+Melden Sie sich mit den Admin-Zugangsdaten an, die bei der Installation gesetzt wurden. Oben in der Seitenleiste steht Ihre eigene Zeiterfassung, darunter der Abschnitt **Administration**.
 
-**Navigation:** In der linken Seitenleiste finden Sie zwei Bereiche:
-- **Mitarbeiter-Bereich**: Dashboard, Zeiterfassung, Abwesenheiten, Profil (Ihre eigene Zeiterfassung)
-- **Administration**: Admin-Dashboard, Benutzerverwaltung, Änderungsanträge, Berichte, Abwesenheiten, Änderungsprotokoll, Fehler-Monitoring, Anträge, Import, Einstellungen
+![Seitenleiste der Praxisleitung: unter „Administration“ Admin-Dashboard, Benutzerverwaltung und Arbeitszeiten im Team, unten der Knopf „Schnellstart“](img/pl-navigation.webp)
 
-**Rechtliche Verantwortung:** Als Admin sind Sie für die gesetzeskonforme Dokumentation der Arbeitszeiten gemäß dem **Arbeitszeitgesetz (ArbZG)** verantwortlich. PraxisZeit unterstützt Sie mit automatischen Prüfungen und Berichten.
+1. `Admin-Dashboard`: Soll, Ist und Saldo des ganzen Teams für den Monat oder die Woche.
+2. `Benutzerverwaltung`: Mitarbeitende anlegen, bearbeiten, deaktivieren, Arbeitszeit anpassen.
+3. `Arbeitszeiten im Team`: wer laut Arbeitszeit-Blöcken wann arbeitet. Darunter folgen u. a. `Änderungsanträge`, `Berichte`, `Anträge` und `Einstellungen`.
+4. `Schnellstart` öffnet die Kurzanleitung für die ersten Schritte. Daneben stehen `Cheat-Sheet` und `Admin-Handbuch`.
 
----
+> **Gut zu wissen:** Eine rote Zahl neben `Änderungsanträge` oder `Anträge` zeigt, wie viele Anträge auf Ihre Entscheidung warten.
 
-## 2. Login und Zugangsdaten
+<a id="erste-schritte-checkliste"></a>
+### Was richte ich zuerst ein?
 
-![Login-Seite](screenshots/01-ma-login.png)
+Die Reihenfolge aus dem Schnellstart – einmal durchgehen, danach läuft die Zeiterfassung.
 
-**Zugang:**
-- **URL:** `http://[Ihre-Server-Adresse]/login`
-- **Benutzername:** Ihr Administrator-Benutzername
-- **Passwort:** Ihr Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer)
+1. **Eigenes Passwort ändern:** `Profil` → `Passwort ändern`.
+2. **Einstellungen:** Bundesland für die Feiertage, Genehmigungspflicht für Urlaub, Sondertage 24./31.12. und die Willkommens-Tour für neue Mitarbeitende.
+3. **Team anlegen:** je Person ein Konto mit Wochenstunden, Arbeitstagen und Urlaubsanspruch, siehe [Neue Person anlegen](#mitarbeiter-anlegen).
+4. **Arbeitszeit hinterlegen:** gleichmäßig, nach Tagen oder als Arbeitszeit-Blöcke, siehe [Arbeitszeit-Blöcke hinterlegen](#bloecke-hinterlegen).
+5. **Erste Zeiterfassung prüfen:** Die Mitarbeitenden melden sich an und stempeln; im `Admin-Dashboard` sehen Sie Stunden, Salden und fehlende Buchungen.
 
-Nach erfolgreichem Login werden Sie automatisch zum Dashboard weitergeleitet. Die Admin-Navigation erscheint unter dem Abschnitt **„Administration"** in der linken Seitenleiste.
+<a id="bundesland-einstellen"></a>
+### Wie stelle ich das Bundesland für die Feiertage ein?
 
----
+Klicken Sie in der Navigation auf `Einstellungen`.
 
-## 3. Admin-Dashboard
+![Einstellungen, Abschnitt Feiertage: Auswahl des Bundeslands (Bayern) für die gesetzlichen Feiertage mit dem Knopf „Speichern“](img/pl-bundesland.webp)
 
-Das Admin-Dashboard gibt Ihnen eine sofortige **Gesamtübersicht über Ihr gesamtes Team**.
+1. Scrollen Sie zum Abschnitt **Feiertage**.
+2. Wählen Sie Ihr **Bundesland**. PraxisZeit trägt dessen gesetzliche Feiertage ein; an Feiertagen gibt es kein Soll.
+3. Klicken Sie auf `Speichern`.
 
-![Admin-Dashboard](screenshots/14-admin-dashboard.png)
+> **Achtung:** **Später das Bundesland wechseln?** Dann berechnet PraxisZeit die gesetzlichen Feiertage aller Jahre neu – auch zurückliegender; Soll und Salden dieser Jahre ändern sich entsprechend. Eigene Feiertage bleiben erhalten. Betrifft die Änderung ein bereits abgeschlossenes Jahr, weist PraxisZeit auf den veralteten Übertrag hin.
 
-### Teamübersicht
+> **Gut zu wissen:** **Aufbewahrungspflicht (§ 16 ArbZG):** Arbeitszeitaufzeichnungen sind mindestens 2 Jahre aufzubewahren. Sorgen Sie von Anfang an für Datensicherungen.
 
-Das Admin-Dashboard zeigt alle aktiven Mitarbeiter mit ihren aktuellen Monatsdaten:
+<a id="dashboard-teamuebersicht"></a>
+## Dashboard & Teamübersicht
 
-| Spalte | Bedeutung |
-|--------|-----------|
-| **Name** | Vor- und Nachname des Mitarbeiters |
-| **Wochenstd.** | Aktuell gültige Wochenstunden |
-| **Soll** | Zu leistende Stunden im aktuellen Monat |
-| **Ist** | Angerechnete Stunden im aktuellen Monat (bei Arbeitszeit-Blöcken nach der Kappung) inkl. Gutschrift für Krankheit/Fortbildung |
-| **Saldo** | Differenz Ist – Soll (H:MM, + = Überstunden, – = Fehlstunden) |
-| **Übersto. Kum.** | Kumulierter Jahressaldo |
-| **Urlaub** | Verbleibende Urlaubstage (Ampelfarbe) |
-| **Krank** | Kranktage im aktuellen Monat |
+*Das **Admin-Dashboard** zeigt Soll, Ist und Saldo aller Mitarbeitenden. **Arbeitszeiten im Team** zeigt, wer laut Vertrag wann da ist – so fallen Lücken in der Besetzung sofort auf.*
 
-### Statistiken (oben)
+<a id="fehlende-buchungen-team"></a>
+### Wer hat vergessen zu stempeln?
 
-- **Mitarbeitende:** Anzahl aktiver Mitarbeiter
-- **Ø Saldo (Monat):** Durchschnittlicher Monatssaldo aller Mitarbeiter
-- **Monat:** Aktuell angezeigter Monat
+Auf Ihrem eigenen `Dashboard` steht oben ein gelber Kasten, sobald im Team etwas fehlt.
 
-**Monat wechseln:** Mit den Pfeilen `<` und `>` wechseln Sie den angezeigten Monat.
+![Gelber Kasten „Fehlende Buchungen im Team“ auf dem Dashboard der Praxisleitung mit dem Eintrag „Thomas Bauer: 22.10.“](img/pl-fehlende-buchungen.webp)
 
-**Monat ↔ Woche umschalten (#329):** Über den Umschalter **„Monat / Woche"** oben neben dem Zeitraum wechseln Sie zwischen der Monats- und einer **Wochenansicht**. In der Wochenansicht steht statt „Juni 2026" die Kalenderwoche, z. B. **„22.–28.06.2026 (KW 26)"**; mit den Pfeilen blättern Sie wochenweise. Die Spalten sind dieselben wie im Monat. So erhalten Sie eine schnelle Plausibilitätsübersicht, wer zu viel oder zu wenig gearbeitet hat. Ihre Auswahl (Monat oder Woche) bleibt **pro Browser/Gerät** gespeichert. In der Wochenansicht heißt die zweite Option der Soll-Basis entsprechend **„volle Woche"** statt „Monatsende". Mitarbeitende haben auf ihrem eigenen Dashboard denselben Umschalter (letzte 8 Wochen, Soll-Basis „bis heute") – für dieselbe Woche zeigen beide Ansichten dieselben Zahlen.
+1. **Fehlende Buchungen im Team** erscheint nur, wenn bei mindestens einer Person etwas fehlt. Er nennt je Person die Tage: ein vergangener Arbeitstag des laufenden Monats ohne Zeiteintrag und ohne Abwesenheit, oder „(offen)“ für einen Eintrag eines früheren Tages ohne Ende. Feiertage und Tage ohne Tagessoll zählen nicht.
 
-**Soll-Basis umschalten (#313):** Über das Dropdown **„Soll: bis heute / Monatsende"** in der Monatsübersicht steuern Sie, wie das Monats-**Soll** gezählt wird:
-- **bis heute** (Standard): nur bis zum **letzten abgeschlossenen Arbeitstag** des laufenden Monats — so startet der Saldo nicht mit einem Monatsanfangs-Minus.
-- **Monatsende**: der **volle** Monat.
-Für **abgeschlossene** Monate sind beide identisch. (Technisch: der Bericht `/admin/reports/monthly` nimmt den Parameter `soll_basis=bis_heute|monatsende`.) Der Stichtag betrifft **ausschließlich** diese Live-Übersichten (MA-Dashboard, Admin-Team-Tabelle, Benutzerübersicht, Überstundenkonto samt Diagramm, Jahres-bis-heute-Summe). Die heruntergeladenen §16-Exporte, das **Monatsjournal** und der **Jahresabschluss** (Carryover) rechnen bewusst immer den **vollen** Monat bzw. das volle Jahr – das sind Rechtsbelege, die sich nicht rückwirkend ändern sollen, je nachdem, an welchem Tag man sie sich ansieht.
+> **Gut zu wissen:** Die Mitarbeitenden sehen denselben Hinweis als roten Kasten „Buchung fehlt“ auf ihrem Dashboard und tragen den Tag per Antrag nach. Den Antrag entscheiden Sie unter `Änderungsanträge`, siehe [Korrekturantrag prüfen](#korrekturantrag-pruefen).
 
-**Suche:** Nutzen Sie das Suchfeld, um nach einem bestimmten Mitarbeiter zu filtern.
+<a id="team-monatsuebersicht"></a>
+### Wie steht mein Team in diesem Monat?
 
-**Detailansicht:** Klicken Sie auf den Pfeil am Ende einer Zeile, um die Detailansicht des Mitarbeiters zu öffnen. Sie listet die Einträge mit Netto-Spalte; unter der Uhrzeit steht bei gekappten Einträgen die Zusatzzeile zur nicht angerechneten Zeit, in der Spalte „Aktionen" der Knopf **„Anerkennen"** (→ [Nicht angerechnete Zeit erkennen und anerkennen](#nicht-angerechnet-anerkennen)).
+Klicken Sie in der Navigation auf `Admin-Dashboard`. Die Monatsübersicht zeigt alle aktiven Mitarbeitenden.
 
-> **Tipp:** Der Ampelindikator beim Urlaub zeigt auf einen Blick, wer dringend Urlaub nehmen sollte.
+![Admin-Dashboard, Monatsübersicht Oktober: je Person Wochenstunden, Soll, Ist, Saldo, kumulierte Überstunden, Urlaub und Krank](img/pl-admin-dashboard.webp)
 
-### Jahresabschluss
+1. Mit `Monat` und `Woche` schalten Sie zwischen Monats- und Wochenansicht um. Ihre Wahl merkt sich der Browser.
+2. Mit den Pfeilen blättern Sie monats- bzw. wochenweise.
+3. **Soll:** `bis heute` zählt das Soll nur bis zum letzten abgeschlossenen Arbeitstag, `Monatsende` den vollen Monat (in der Woche: `volle Woche`). Für abgeschlossene Monate sind beide gleich.
+4. **Saldo** ist Ist minus Soll (Plus = Überstunden, Minus = Fehlstunden); **Überstd. kum.** ist der Stand des Überstundenkontos.
+5. Der Pfeil am Zeilenende öffnet die Details der Person.
 
-Unterhalb der Monatsübersicht finden Sie die **Jahresübersicht** mit Urlaubs- und Krankheitstagen aller Mitarbeiter. Hier können Sie den Jahresabschluss durchführen.
+> **Gut zu wissen:** **Ist** ist die angerechnete Zeit – bei Arbeitszeit-Blöcken nach der Kappung – samt Gutschrift für Krankheit und Fortbildung. Die Einstellung „bis heute“ gilt nur für die Live-Übersichten. Datei-Exporte, Monatsjournal und Jahresabschluss rechnen immer den vollen Monat bzw. das volle Jahr.
 
-> **Jahresend-Warnung (ab Oktober):** Im letzten Quartal des laufenden Jahres erscheint über der Jahresübersicht der gelbe Hinweis **„Jahresend-Warnung: Offene Urlaubstage"** mit allen Mitarbeitenden, die noch **mindestens einen ganzen Urlaubstag** offen haben. Kleinere Reste – typisch bei Teilzeit, z. B. 0,3 oder 0,5 Tage – lösen bewusst **keine** Warnung aus: sie lassen sich nicht als ganzer Tag nehmen und werden üblicherweise im Folgejahr mit weiteren Bruchteilen zusammengelegt. In der Tabelle, im Urlaubskonto und beim Jahresabschluss zählen sie unverändert mit. Der Hinweis nennt auch das Verfallsdatum (in der Regel den 31.03. des Folgejahres, sonst die für die Person hinterlegte Frist); haben die genannten Personen unterschiedliche Fristen, steht das Datum hinter jedem Namen. Dieselbe Schwelle und dasselbe Datum gelten für den Hinweis im Urlaubskonto auf dem Mitarbeiter-Dashboard.
+<a id="mitarbeiter-details-ansehen"></a>
+### Wie sehe ich die Einträge einer Person?
 
-#### Jahresabschluss erstellen
+Klicken Sie im Admin-Dashboard am Ende der Zeile auf den Pfeil.
 
-1. Wählen Sie das gewünschte **Jahr** im Zahlenfeld aus
-2. Klicken Sie auf den orangefarbenen Button **Jahresabschluss**
-3. Im Bestätigungsdialog werden Sie informiert, dass Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter berechnet und als Übernahme ins Folgejahr gespeichert werden
-4. Bestätigen Sie mit **Jahresabschluss erstellen**
+![Detailansicht von Maria Hoffmann im Admin-Dashboard mit Benutzerinformationen, Soll, Ist, Saldo und der Liste ihrer Zeiteinträge](img/pl-mitarbeiter-details.webp)
 
-Der Jahresabschluss berechnet für jeden aktiven Mitarbeiter:
-- **Überstunden-Saldo** zum 31.12. des gewählten Jahres
-- **Resturlaub** (nicht genommene Urlaubstage)
+1. Oben stehen Benutzerinformationen sowie Soll, Ist, Saldo und Überstunden kum. des gewählten Monats.
+2. `Neuer Eintrag` legt für die Person einen Zeiteintrag oder eine Abwesenheit an.
+3. In der Liste der Zeiteinträge bearbeiten (Stift) oder löschen (Papierkorb) Sie einzelne Einträge. Ist Zeit nicht angerechnet, steht hier auch `Anerkennen`.
 
-Diese Werte werden als Vorjahresübernahme für das Folgejahr gespeichert und fließen dort in die Stunden- und Urlaubsberechnung ein.
+<a id="arbeitszeiten-im-team"></a>
+### Wer arbeitet laut Vertrag wann?
 
-#### Jahresabschluss löschen
+Klicken Sie in der Navigation auf `Arbeitszeiten im Team`. Je Person stehen die Arbeitszeit-Blöcke von Montag bis Freitag als Balken in ihrer Kalenderfarbe.
 
-Falls ein Jahresabschluss versehentlich erstellt wurde, können Sie ihn wieder löschen:
+![Übersicht „Arbeitszeiten im Team“: je Person die Arbeitszeit-Blöcke von Montag bis Freitag als Balken, darüber die Besetzung je halbe Stunde](img/pl-team-arbeitszeiten.webp)
 
-1. Wählen Sie das Jahr, dessen Abschluss Sie löschen möchten
-2. Klicken Sie auf den roten Button **Abschluss löschen**
-3. Lesen Sie den Bestätigungsdialog sorgfältig — die Löschung ist **unwiderruflich**
-4. Bestätigen Sie mit **Jahresabschluss löschen**
+1. **Stand am:** Gezeigt werden die Blöcke, die an diesem Tag gelten. Ein späterer Tag zeigt schon eingetragene künftige Arbeitszeiten.
+2. `Alle` oder eine Abteilung filtert die Liste. Die Auswahl entsteht aus dem Feld „Abteilung/Bereich“ der Mitarbeitenden.
+3. **Besetzung** zeigt je halbe Stunde, wie viele der gefilterten Personen eingeplant sind – der Tooltip nennt die Namen.
+4. Je Person: Name, Wochenstunden und die Blöcke. Personen ohne Blöcke stehen mit „keine Arbeitszeit-Blöcke“ in der Liste.
 
-> **Wichtig:** Das Löschen entfernt die vom Jahresabschluss erzeugten Übernahmen für das Folgejahr. Von Hand eingetragene oder in der **Vorjahresübernahme** korrigierte Werte bleiben stehen.
+> **Gut zu wissen:** Steht bei einer Person „ab … neu“, ist für sie eine spätere Änderung hinterlegt; die neuen Zeiten stehen im Tooltip. Wer am gewählten Tag außerhalb seines Beschäftigungszeitraums liegt, wird nicht aufgeführt.
 
----
+<a id="team-arbeitszeiten-bearbeiten"></a>
+### Kann ich Blöcke direkt in der Übersicht verschieben?
 
-## 4. Benutzerverwaltung
+Ja, als Entwurf. Gespeichert wird immer über den Dialog „Arbeitszeit \& Wochenstunden“ – mit Vorschau und denselben Schutzregeln wie jede Arbeitszeit-Änderung.
 
-Die Benutzerverwaltung ist das Herzstück der Admin-Funktion.
+![Arbeitszeiten im Team mit eingeschaltetem Schieber „Bearbeiten“: Hinweis zum Ziehen der Blöcke und bei jeder Person der Link „Ändern…“](img/pl-team-bearbeiten.webp)
 
-![Benutzerverwaltung](screenshots/15-admin-benutzer.png)
+1. Schalten Sie rechts oben den Schieber `Bearbeiten` ein. Vorher lässt sich nichts verschieben.
+2. Einen Block **ziehen** verschiebt ihn; am linken oder rechten Rand ziehen ändert Beginn bzw. Ende, im 15-Minuten-Raster. Geänderte Zeilen sind gelb hinterlegt; `Verwerfen` stellt den gespeicherten Stand wieder her.
+3. `Ändern…` unter dem Namen öffnet den Dialog direkt – für Personen ohne Blöcke der einzige Weg. Nach dem Ziehen steht dort `Änderung speichern…`: Der Dialog öffnet mit den neuen Blöcken, „Gültig ab“ ist der Tag unter „Stand am“.
 
-### Übersicht aller Mitarbeiter
+> **Gut zu wissen:** Per Tastatur: Block anwählen, Pfeiltasten verschieben um 15 Minuten, mit Umschalt ändert sich das Ende. Feinere Zeiten (5-Minuten-Raster), weitere Blöcke und die Pause innerhalb der Blöcke stellen Sie im Dialog ein. Solange Änderungen offen sind, ist „Stand am“ gesperrt.
 
-Die Liste zeigt alle aktiven Mitarbeiter mit:
-- **Name** und **Benutzername** (Kürzel)
-- **Rolle** (Mitarbeiter:in / Admin)
-- **Wochenstd.** und **Arbeitstage**
-- **Urlaubskonto** (Budget, Genommen, Übrig – mit Ampelfarbe)
+<a id="mitarbeitende-vertrag"></a>
+## Mitarbeitende anlegen, Vertragsdaten und Vertragsverlauf
 
-**Filter:** Aktivieren Sie **„Inaktive anzeigen"** oder **„Ausgeblendete anzeigen"** um deaktivierte Mitarbeiter einzublenden.
+*Jede Person bekommt ein eigenes Konto. Wochenstunden, Arbeitstage, Urlaubsanspruch und Stundenzählung bilden ihren **Vertrag** – und jede spätere Änderung gilt ab einem Datum, damit frühere Monate stimmen.*
 
-**Monatsjournal (#311):** Über das Buch-Symbol in der Aktionsspalte öffnen Sie das **Monatsjournal** des Mitarbeiters. Die Überschrift trägt jetzt den Namen der Person – **„Monatsjournal: Vorname Nachname"** –, damit beim Wechsel zwischen Mitarbeitern sofort klar ist, wessen Journal angezeigt wird. Einträge können Sie dort **auch an Wochenend- und Feiertagen** anlegen und bearbeiten (seit 1.19.2, z. B. KV-Dienst am Sonntag); Mitarbeitende stellen dafür im eigenen Journal einen Antrag. An Sonn- und Feiertagen erscheint unter der Zeile das Feld **„Ausnahmegrund (§10 ArbZG)"** — beim Direkteintrag ebenso wie im Antrag. Der Grund steht danach unter der Uhrzeit (*„§10: Notdienst"*), beim Antrag in der Liste der Änderungsanträge und in der Bemerkungsspalte der Exporte. Bis Version 1.19.2 ging er auf diesen Wegen verloren.
+<a id="benutzerliste"></a>
+### Wo sehe ich alle Mitarbeitenden?
 
-**„Login als …" – Ansicht als Mitarbeiter:in (#370):** Über das Anmelde-Symbol in der Aktionsspalte (nur bei **aktiven Mitarbeitenden**, nicht bei Admins) öffnen Sie die Anwendung aus der Perspektive dieser Person – praktisch, um das individuelle Dashboard zu beurteilen oder ein gemeldetes Problem nachzustellen. Die Ansicht ist **ausschließlich lesend**: Stempeln, Anträge stellen und jegliche Änderungen sind gesperrt (der Server weist Schreibversuche ab). Ein dauerhaftes Hinweisbanner am oberen Rand zeigt **„Sie sehen PraxisZeit als … – nur Lesen"**; über **„Zurück zu Admin"** kehren Sie jederzeit zu Ihrem eigenen Konto zurück.
+Klicken Sie in der Navigation auf `Benutzerverwaltung`.
 
-> **Datenschutz:** Jede „Login als"-Sitzung wird protokolliert (welcher Admin, welche Person, Beginn und Ende) – Rechenschaftspflicht nach Art. 5 Abs. 2 DSGVO. Da keine Änderungen möglich sind, kann keine Aktion fälschlich der/dem Mitarbeitenden zugerechnet werden (§ 16 ArbZG). Gesundheitsdaten der Person (Krank, Sonstiges, bezahlte Freistellung und eigene Abwesenheitsgründe) zeigt die Ansicht nur als **„Abwesend"** ohne Notiz – im Monatsjournal, in der Abwesenheitsliste, im Kalender, in der Teamübersicht und in den eigenen Urlaubs- und Änderungsanträgen (dort ohne Begründung). Brauchen Sie die Gründe, öffnen Sie die Abwesenheiten über die Verwaltung; dieser Zugriff wird protokolliert.
+![Benutzerverwaltung: Liste aller Mitarbeitenden mit Benutzername, Rolle, Wochenstunden, Arbeitstagen, Urlaubskonto und Überstunden seit Jahresbeginn](img/pl-benutzerliste.webp)
 
-### Neuen Mitarbeiter anlegen
+1. Oben rechts: `Inaktive anzeigen` bzw. `Ausgeblendete anzeigen` blendet deaktivierte bzw. ausgeblendete Konten ein; `Neue:r Mitarbeiter:in` öffnet das Anlegeformular.
+2. **Urlaubskonto:** Budget, genommen und übrig in Tagen, mit Ampelbalken.
+3. **Überstunden (JTD):** der Überstundensaldo seit Jahresbeginn. Bei Mitarbeitenden ohne Stundenzählung steht hier „—“.
 
-![Neuen Benutzer anlegen](screenshots/16-admin-benutzer-formular.png)
+<a id="benutzer-aktionen"></a>
+### Welche Aktionen gibt es je Person?
 
-Klicken Sie auf **„Neue:r Mitarbeiter:in"** und füllen Sie das Formular aus:
+Die Symbole stehen rechts in der Spalte **Aktionen**; ist das Fenster schmal, scrollen Sie die Tabelle nach rechts.
 
-**Pflichtfelder:**
-| Feld | Beschreibung |
-|------|-------------|
-| **Benutzername** | Eindeutiger Login-Name (z. B. `m.hoffmann`) |
-| **Passwort** | Initiales Passwort (mind. 10 Zeichen, Groß-/Kleinbuchstabe, Ziffer) |
-| **Rolle** | Mitarbeiter:in oder Admin |
-| **Wochenstunden** | Vertraglich vereinbarte Wochenstunden (Standard: 40), direkt eingegeben in Viertelstunden-Schritten (z. B. 20,25). Im Modus **„Nach Tagen"** (ebenfalls Viertelstunden je Wochentag) übernimmt das System die Wochenstunden automatisch als Summe der Tageswerte – der Eingabewert im Feld selbst spielt dann keine Rolle. Im Modus **„Nach Arbeitsblöcken"** leitet das System Wochenstunden, Tagesstunden und Arbeitstage aus den Blöcken ab (→ [Arbeitszeit-Blöcke](#arbeitszeit-bloecke)). |
-| **Arbeitstage pro Woche** | Anzahl der Arbeitstage 1–7 (Standard: 5). Bestimmt den anteiligen Urlaubsvorschlag. Im Modus **„Nach Arbeitsblöcken"** schreibgeschützt: die Zahl der Tage mit Blöcken (wie die Wochenstunden mit dem Hinweis „Aus den Arbeitszeit-Blöcken abgeleitet"). |
-| **Urlaubstage** | Jährlicher Urlaubsanspruch in **Tagen**. Vorschlag anteilig nach Arbeitstagen: `30 × Arbeitstage ÷ 5` (5 Tage → 30, 3 Tage → 18). Überschreibbar. |
+![Aktionsspalte einer Person in der Benutzerverwaltung mit den Symbolen für Monatsjournal, Bearbeiten, Arbeitszeit und Deaktivieren](img/pl-benutzer-aktionen.webp)
 
-**Optionale Felder:**
-| Feld | Beschreibung |
-|------|-------------|
-| **E-Mail** | Für Kontaktzwecke (optional) |
-| **Vorname / Nachname** | Anzeigename |
-| **Stundenzählung aktiv (Soll-Stunden werden berechnet)** | Standardmäßig aktiv. Deaktivieren Sie diese Option für **Mitarbeiter ohne Stundenzählung** – siehe eigener Abschnitt unten. |
-| **ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende Angestellte)** | Setzt die ArbZG-Prüfungen für diese Person aus. **Eigenständige, von der Stundenzählung unabhängige Einstellung** – siehe Hinweis unten. |
-| **Nachtarbeitnehmer** | § 6 ArbZG – 8h-Tageslimit bei Nachtarbeit |
-| **Nimmt an Betriebsferien teil** | Standardmäßig aktiv. Bestimmt, ob der/die Mitarbeitende bei angelegten Betriebsferien automatisch Abwesenheitseinträge erhält – **unabhängig von der Rolle**. Für reine Verwaltungs-Accounts (Admin ohne eigene Zeiterfassung) abwählbar. Siehe eigener Abschnitt unten. |
-| **Erster / Letzter Arbeitstag** | Eintrittsdatum und ggf. geplantes Austrittsdatum. Das **Soll wird nur innerhalb dieses Zeitraums** berechnet – vor dem Eintritt bzw. nach dem Austritt entsteht kein Stundensoll, und auch tatsächlich erfasste Zeiten außerhalb des Beschäftigungszeitraums erzeugen keine Überstunden. Der **Urlaubsanspruch wird anteilig** berechnet (für ein unterjähriges Eintritts-/Austrittsjahr). In den Monats- und Jahresexporten (Excel, ODS, PDF) tragen Tage außerhalb dieses Zeitraums Soll und Ist 0 und sind mit dem Hinweis **„Außerhalb des Beschäftigungszeitraums"** gekennzeichnet; erfasste Stempelzeiten bleiben dort sichtbar. |
-| **Arbeitszeit** (Modus) | **„Gleichmäßig"** (Wochenstunden + Arbeitstage pro Woche), **„Nach Tagen"** (abweichende Stunden je Wochentag Mo–Fr) oder **„Nach Arbeitsblöcken"** (Zeitblöcke je Wochentag, siehe unten). Die Auswahl erscheint nur bei aktiver Stundenzählung. |
-| **Abteilung/Bereich** | Optionale Zuordnung (Freitext); ermöglicht Filterung im Abwesenheitskalender |
-| **Anfangssaldo Überstunden** | Übernommener Überstundensaldo zum Startjahr (kann +/- sein; nur bei aktiver Stundenzählung) |
-| **Übertrag Urlaubstage** | Alt-/Vorjahres-Resturlaub, der dem **Urlaubsbudget des Startjahres** zugerechnet wird (z. B. beim Systemwechsel bei unterjährigem Eintritt der Resturlaub aus den Monaten vor dem Eintritt). Minus und Kommastellen möglich; gilt für **alle** MA (auch ohne Stundenzählung). |
-| **Arbeitszeit-Blöcke** | Im Modus **„Nach Arbeitsblöcken"**: je Wochentag (Mo–Fr) bis zu drei Blöcke „von–bis" plus **„Pause innerhalb der Blöcke"** – daraus folgen Tagessoll und Anrechnung, siehe [„Arbeitszeit-Blöcke"](#arbeitszeit-bloecke) unten. |
+1. **Monatsjournal anzeigen** (Buch): jeder Tag des Monats mit Zeiteinträgen und Abwesenheiten. Hier tragen Sie auch an Wochenend- und Feiertagen ein.
+2. **Bearbeiten** (Stift): Name, Rolle, E-Mail, Abteilung, Ein- und Austritt.
+3. **Arbeitszeit \& Wochenstunden** (Uhr): Arbeitszeit und Vertragsdaten mit Wirkungsdatum ändern.
+4. **Deaktivieren** (Person mit X): Die Person kann sich nicht mehr anmelden, ihre Daten bleiben erhalten. Über `Inaktive anzeigen` holen Sie sie mit „Reaktivieren“ zurück.
 
-> **Wichtig – zwei getrennte Einstellungen, bitte nicht verwechseln:**
-> - **„Stundenzählung aktiv"** steuert nur, **ob** für diese Person Soll-/Ist-Stunden und Überstunden geführt werden. Sie hat **nichts** mit dem § 18 ArbZG zu tun.
-> - **„ArbZG-Prüfungen aussetzen (§ 18 ArbZG)"** ist eine eigene Checkbox und setzt die arbeitszeitrechtlichen Prüfungen aus. Diese betrifft ausschließlich leitende Angestellte im Sinne des § 18 ArbZG.
->
-> Beide Optionen lassen sich frei und unabhängig kombinieren. Aktivieren Sie das § 18-Flag nur für Personen, die tatsächlich unter § 18 ArbZG fallen.
+> **Gut zu wissen:** Weitere Symbole: **Passwort setzen**, **Vorjahresübernahme**, **Ausblenden** und **Als diese:n Mitarbeiter:in ansehen (nur Lesen)**. Diese Ansicht zeigt PraxisZeit aus Sicht der Person, ändern lässt sich dort nichts; ein Banner führt mit `Zurück zu Admin` zurück. Jede solche Sitzung wird protokolliert, Gesundheitsdaten erscheinen dort nur als „Abwesend“.
 
-> **Überstunden-Übersicht:** Die Benutzerübersicht zeigt pro Mitarbeiter:in zusätzlich zum Urlaubskonto den **aktuellen Überstundensaldo (Jahr bis heute)** in der Spalte **„Überstunden (JTD)"**. Bei Mitarbeitern ohne Stundenzählung erscheint hier „—" (→ [Abschnitt „Mitarbeiter ohne Stundenzählung"](#mitarbeiter-ohne-stundenzählung)).
+> **Achtung:** **Nicht löschen, deaktivieren:** Arbeitszeitaufzeichnungen sind mindestens 2 Jahre aufzubewahren (§ 16 ArbZG). Das letzte aktive Admin-Konto lässt sich weder deaktivieren noch herabstufen – ernennen Sie vorher eine weitere Person zum Admin.
 
-> ⚠️ **Wichtig bei unterjährigem Eintritt:** Tragen Sie für Mitarbeitende, die **nicht seit dem 1. Januar** im System sind, unbedingt den **„Ersten Arbeitstag"** ein. Ohne dieses Datum zählt das System das Stundensoll für den Eintrittsmonat (bzw. die JTD-Überstunden ab dem 1. Januar) auch für Tage **vor** dem tatsächlichen Eintritt mit – es entstehen **Phantom-Minusstunden**. Mit gesetztem Eintrittsdatum bleibt das Überstundenkonto korrekt.
+<a id="mitarbeiter-anlegen"></a>
+### Wie lege ich eine neue Person an?
 
-> **So wird Urlaub berechnet (Tagesprinzip, § 3 BUrlG / BAG):** Der Urlaub wird **nach Arbeitstagen** geführt, nicht nach Stunden. Ein freier Arbeitstag verbraucht **genau 1 Urlaubstag**, unabhängig von der Tagesstundenzahl – ein langer Tag (z. B. 9 h) kostet so viel wie ein kurzer (z. B. 4 h): einen Tag. Ein **halber freier Tag** (Halbtags-Abwesenheit) kostet **0,5 Urlaubstage**. Auch bei **individuellen Tagesstunden** kostet jeder Arbeitstag gleich viel (Montag = Dienstag). Der Jahresanspruch wird anteilig nach Arbeitstagen vorgeschlagen (`30 × Arbeitstage ÷ 5`) und bei unterjährigem Eintritt/Austritt zeitanteilig berechnet. Intern speichert das System Stunden (für die Soll-/Ist-Berechnung); der **Verbrauch wird tagebasiert** gezählt und im Urlaubskonto in Tagen angezeigt.
+Klicken Sie in der Benutzerverwaltung auf `Neue:r Mitarbeiter:in`. Über der Liste erscheint das Formular.
 
-### Mitarbeiter ohne Stundenzählung
+![Formular „Neue:n Benutzer:in anlegen“ für Lena Wagner mit Benutzername, Passwort, 30 Wochenstunden, 4 Arbeitstagen und der Urlaubs-Empfehlung 24 Tage](img/pl-neu-anlegen.webp)
 
-Über die Checkbox **„Stundenzählung aktiv (Soll-Stunden werden berechnet)"** (standardmäßig aktiv; beim Anlegen im Formular, bei bestehenden Mitarbeitenden nur über „Arbeitszeit anpassen…“, Abschnitt „Urlaub und Abrechnung“, gültig ab dem Gültig-ab-Datum) legen Sie fest, ob für eine Person die Arbeitszeit ausgewertet wird. Deaktivieren Sie die Checkbox, wird der/die Mitarbeitende zu einem **Mitarbeiter ohne Stundenzählung**.
+1. **Benutzername:** eindeutiger Login-Name, z. B. „lena“. Dazu optional E-Mail, Vor- und Nachname.
+2. **Passwort:** Startpasswort mit mindestens 10 Zeichen, einem Groß- und einem Kleinbuchstaben und einer Ziffer. Die Person ändert es danach selbst.
+3. **Wochenstunden:** vertraglich vereinbart, in Viertelstunden-Schritten (z. B. 20,25).
+4. **Arbeitstage pro Woche** (1–7).
+5. **Urlaubstage:** Jahresanspruch in Tagen. Der Vorschlag rechnet 30 × Arbeitstage ÷ 5 – bei 4 Tagen also 24; `Übernehmen` trägt ihn ein, Sie können ihn überschreiben.
 
-**Was sich ändert, wenn die Stundenzählung deaktiviert ist:**
-- **Keine Soll-/Ist-Stundenberechnung** und **keine Überstundenberechnung.** In der Benutzerübersicht erscheint in der Spalte „Überstunden (JTD)" ein „—".
-- Die Felder „Anfangssaldo Überstunden", die Auswahl **„Arbeitszeit"** (Tagesplan bzw. Arbeitszeit-Blöcke) und das Soll-/Ist-Dashboard entfallen für diese Person.
-- **Urlaub und Krankheit werden trotzdem geführt** – und zwar **tagebasiert**: 1 genommener freier Arbeitstag = 1 Urlaubstag, ein halber freier Tag = 0,5 Urlaubstage. Ein „Frei + zählt als Urlaub"-Sondertag (z. B. Heiligabend) zählt 1 Tag; ein als **„halber Feiertag"** konfigurierter Sondertag (24./31.12.) und ein **verkürzter Tag** zählen **0,5 Tage** (seit #394 bzw. 1.22.0). Der Urlaubsanspruch bleibt anteilig nach Arbeitstagen und behält die Vorjahresübernahme.
+<a id="mitarbeiter-optionen"></a>
+### Was bedeuten die weiteren Felder im Anlegeformular?
 
-**Wofür gedacht:** z. B. Personen, deren Arbeitszeit nicht erfasst, deren Urlaub aber dennoch verwaltet werden soll.
+Scrollen Sie im Formular nach unten.
 
-> **Abgrenzung (bitte nicht verwechseln):** „Mitarbeiter ohne Stundenzählung" hat **nichts** mit § 18 ArbZG zu tun. Die § 18-Ausnahme („ArbZG-Prüfungen aussetzen") ist eine **separate, unabhängige Checkbox** und betrifft ausschließlich leitende Angestellte. Eine Person kann z. B. Stundenzählung haben **und** § 18-befreit sein – oder umgekehrt.
->
-> **Hinweis zu Halbtagen:** Auch ohne Stundenzählung zählt ein halber freier Tag (Option „Halber Tag") **0,5 Urlaubstage** – wie bei Mitarbeitenden mit Stundenzählung; Stunden werden dabei nicht verrechnet.
+![Unterer Teil des Anlegeformulars: erster und letzter Arbeitstag, Abteilung/Bereich, die Wahl der Arbeitszeit (Gleichmäßig, Nach Tagen, Nach Arbeitsblöcken) und Speichern](img/pl-neu-anlegen-optionen.webp)
 
-<a id="arbeitszeit-bloecke"></a>
-### Arbeitszeit-Blöcke (Soll-Arbeitszeit je Wochentag)
+1. **Stundenzählung aktiv** (weiter oben): Haken weg für Mitarbeitende ohne Stundenzählung – kein Soll und Ist, keine Überstunden; Urlaub und Krankheit werden trotzdem tagebasiert geführt.
+2. **ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende Angestellte):** nur für Personen, die tatsächlich unter § 18 ArbZG fallen. Darunter: **Nachtarbeitnehmer** (§ 6 ArbZG).
+3. **Nimmt an Betriebsferien teil:** Die Person bekommt bei Betriebsferien automatisch die Abwesenheiten – unabhängig von der Rolle. Für reine Verwaltungskonten abwählbar.
+4. **Erster / Letzter Arbeitstag:** Soll wird nur innerhalb dieses Zeitraums berechnet, der Urlaubsanspruch im Ein- und Austrittsjahr anteilig.
+5. **Arbeitszeit:** `Gleichmäßig`, `Nach Tagen` (Stunden je Wochentag) oder `Nach Arbeitsblöcken` (Zeiten je Wochentag).
+6. Klicken Sie auf `Speichern`.
 
-Seit Version 1.20.0 hinterlegen Sie die Soll-Arbeitszeit einer Person je Wochentag (Montag bis Freitag) als **bis zu drei Arbeitszeit-Blöcke**, z. B. Montag 08:00–12:00 und 15:00–18:00, und dazu eine **„Pause innerhalb der Blöcke"** in Minuten. Aus den Blöcken folgt zweierlei:
+> **Achtung:** **Eintritt im laufenden Jahr:** Tragen Sie den **Ersten Arbeitstag** ein. Ohne ihn zählt PraxisZeit das Soll auch für die Tage vor dem Eintritt – es entstehen Minusstunden, die es nicht gibt.
 
-- **Das Tagessoll:** Tagessoll = Summe der Blockdauern − Pause innerhalb der Blöcke. Beispiel: 08:00–12:00 und 15:00–18:00 mit 30 Minuten Pause ergeben 7:00 h − 0:30 h = **6:30 h**. Wochenstunden, Tagesstunden und Arbeitstage pro Woche leitet PraxisZeit daraus ab; ein Wochentag ohne Block ist kein Arbeitstag (Tagessoll 0). Eine zweite Pflegestelle für das Soll gibt es nicht.
-- **Die Anrechnung:** Gestempelte Zeit **vor dem ersten Block, nach dem letzten Block und zwischen den Blöcken** wird nicht angerechnet. An **jedem** Blockrand – auch an den inneren – gilt der Puffer aus den Einstellungen (Standard 15 Minuten, → [Abschnitt 13](#soll-arbeitszeit-fenster-puffer)).
+> **Gut zu wissen:** **Zwei getrennte Haken:** „Stundenzählung aktiv“ entscheidet nur, ob Soll und Ist geführt werden; mit § 18 ArbZG hat das nichts zu tun. Die § 18-Ausnahme ist eine eigene Einstellung – beide lassen sich frei kombinieren. Wer aus einem anderen System kommt, trägt den bisherigen Stand unter **Anfangssaldo Überstunden** und **Übertrag Urlaubstage** ein.
 
-Blöcke werden im 5-Minuten-Raster erfasst (z. B. 08:05), dürfen sich nicht überschneiden und nicht direkt aneinanderstoßen – zwei Blöcke 08:00–12:00 und 12:00–16:00 erfassen Sie als einen Block 08:00–16:00. Blöcke gibt es nur Montag bis Freitag und nicht über Mitternacht. Gepflegt werden sie ausschließlich mit Wirkungsdatum über **„Arbeitszeit anpassen…"** (→ [Mitarbeiter bearbeiten](#mitarbeiter-bearbeiten)); beim **Anlegen** wählen Sie im Formular den Modus **„Nach Arbeitsblöcken"**.
+<a id="mitarbeiter-bearbeiten"></a>
+### Warum kann ich die Wochenstunden im Bearbeiten-Formular nicht ändern?
 
-**Beispiel – durchgestempelt über die Mittagslücke:** Blöcke Mo 08:00–12:00 und 15:00–18:00, Pause 0, Puffer 15 Minuten. Wer von 08:00 bis 18:00 durchstempelt, bekommt **08:00–12:15 und 14:45–18:00 = 7:30 h** angerechnet. Die Lücke zwischen den Blöcken schrumpft um den Puffer an beiden Rändern auf 12:15–14:45; diese **2:30 h werden nicht angerechnet**. Die gestempelten Zeiten 08:00 und 18:00 bleiben unverändert gespeichert (§ 16 ArbZG). Wer um 12:05 ausstempelt, verliert keine Minute – der Puffer deckt es. Eine Lücke, die nicht länger ist als der doppelte Puffer (z. B. 12:00–12:30 bei 15 Minuten Puffer), verschwindet ganz und wird voll angerechnet; eine geplante Pause erfassen Sie deshalb als „Pause innerhalb der Blöcke", nicht als kurze Lücke.
+Klicken Sie in der Aktionsspalte auf **Bearbeiten**. Alles, was das Soll oder den Urlaub bestimmt, gilt ab einem Datum und wird deshalb nicht hier geändert.
 
-**Was wo gilt:**
-- **Beginn und Ende außerhalb der Blöcke** werden wie bisher auf den ersten Block minus Puffer bzw. den letzten Block plus Puffer gekürzt; der gestempelte Wert bleibt als Rohstempel erhalten. Liegt ein Eintrag ganz vor dem ersten Block (minus Puffer) oder ganz nach dem letzten Block (plus Puffer), werden 0 Stunden angerechnet.
-- **Zeit in der Lücke** wird nicht verschoben, sondern als „nicht angerechnet" vom Eintrag abgezogen. Die gestempelten Zeiten bleiben stehen.
-- **Wochentag ohne Block = 0 Stunden:** Hat eine Person Arbeitszeit-Blöcke, aber an einem Werktag (Mo–Fr) keinen Block, arbeitet sie laut Vertrag an diesem Tag nicht. Stempelt sie dort trotzdem, wird die Zeit gespeichert, aber **nicht angerechnet** – erst wenn Sie den Eintrag anerkennen oder ihren Antrag „Anrechnung beantragen“ mit „Genehmigen und anerkennen“ annehmen. Hinweis beim Speichern: *„An diesem Tag sind keine Arbeitszeit-Blöcke hinterlegt — angerechnet werden 0 Stunden. Die gestempelte Zeit bleibt gespeichert.“* Bis Version 1.20.3 wurde Arbeit an einem solchen Tag voll angerechnet; bestehende Einträge rechnet PraxisZeit nicht von selbst neu. Wird ein solcher Eintrag gespeichert, rechnet PraxisZeit ihn nach der neuen Regel (0 h) und zeigt den Hinweis; „Anerkennen“ behält die volle Zeit. Ein aus früheren Versionen übernommenes Arbeitszeit-Fenster ist nicht betroffen: Ein Tag ohne Fenster wird dort weiter nicht gekappt.
-- **Kein Block, keine Kappung:** An Wochenenden, gesetzlichen Feiertagen und an Sondertagen (24./31.12.), die als **„frei"** eingestellt sind, wird nichts gekappt – Arbeit dort (z. B. ein Notdienst am Ostermontag) wird voll angerechnet. Ein Sondertag als **„halber Feiertag"** und ein **verkürzter Tag** behalten die Blöcke ihres Wochentags. Bis Version 1.19.2 wurde ein Feiertag auf einem Werktag wie ein normaler Arbeitstag gekappt. Solche Einträge bleiben gespeichert, wie sie sind; öffnen Sie einen davon im Admin-Dashboard oder Monatsjournal und speichern ihn unverändert, wird er mit der tatsächlich gestempelten Zeit neu berechnet. Dasselbe gilt, wenn Sie **nachträglich** ändern, ob ein Tag frei ist – einen eigenen Feiertag anlegen, verschieben oder löschen, das Bundesland wechseln oder einen Sondertag zwischen „frei" und Arbeitstag umstellen: Bestehende Einträge dieser Tage rechnet PraxisZeit nicht von selbst neu (das wäre eine rückwirkende Änderung der angerechneten Zeit ohne Vorschau), sondern nennt sie nach dem Speichern: *„Zeiteinträge an geänderten Tagen behalten ihre bisherige Anrechnung gegen die Arbeitszeit-Blöcke (1 Eintrag: 24.12.2025). Neu berechnet wird ein Eintrag, wenn Sie ihn im Admin-Dashboard oder Monatsjournal öffnen und unverändert speichern (fehlt dann eine gesetzliche Pause, ergänzen Sie sie)."* Das betrifft einen über die Lücke zwischen zwei Blöcken durchgestempelten Dienst: Wird sein Tag frei, zählt die Lücke nicht mehr als Pause, und ohne eingetragene Pause lehnt das Speichern nach §4 ArbZG ab. Das gilt in beide Richtungen: Ein neuer freier Tag rechnet danach die volle gestempelte Zeit an, ein wieder normaler Arbeitstag kappt gegen die Blöcke.
-- **Ausgenommen** sind Mitarbeitende ohne Stundenzählung und Einträge, die die Verwaltung **anerkannt** hat (siehe unten). Bei **§ 18-befreiten** Mitarbeitenden (ArbZG-Prüfungen ausgesetzt) wird trotzdem gekappt – die Kappung ist eine Anrechnungsregel, keine ArbZG-Prüfung.
-- **Vergessen auszustempeln:** Schließt PraxisZeit einen offenen Eintrag eines vergangenen Tages automatisch (um 23:59; Prüfung, Vermerk und Dashboard-Karte → [Abschnitt 14](#automatische-warnungen-im-alltag)), wird er jetzt ebenfalls gekappt – angerechnet wird bis zum Ende des letzten Blocks plus Puffer, nicht mehr der ganze Abend. Ein solcher Eintrag ist als „automatisch geschlossen" gekennzeichnet; das automatisch gesetzte 23:59 gilt nicht als echter Stempel. Beim Bearbeiten zeigt das Formular das angerechnete Ende (z. B. 18:15); wird es unverändert gespeichert (etwa nur mit ergänzter Pause), bleibt die Kennzeichnung. Tragen Sie das tatsächliche Ende ein (Mitarbeitende per Änderungsantrag), entfällt sie. Auch ein tatsächliches Ende um **23:59** (z. B. nach einem Spät- oder Notdienst) lässt sich eintragen – es gilt dann als echter Stempel, wird wie jedes andere Ende gegen die Blöcke gekappt und nach „Anerkennen" bis 23:59 angerechnet. An einem Werktag ohne Block (bei Personen mit Blöcken) zählt der automatisch geschlossene Eintrag 0 h. Ausnahme: Hat das automatische Schließen nichts gekappt (Person ohne Arbeitszeit-Blöcke, Wochenende/Feiertag, ohne Stundenzählung), steht als Ende schon 23:59; ein erneut gespeichertes 23:59 lässt sich dann nicht vom automatischen Wert unterscheiden, und die Kennzeichnung bleibt. Ebenso bleibt die Kennzeichnung, wenn das eingetragene Ende genau dem angerechneten Ende entspricht (z. B. 18:15) – auch wenn die Person tatsächlich um diese Zeit gegangen ist: PraxisZeit kann es nicht vom automatisch gesetzten Wert unterscheiden. „Anerkennen" lehnt PraxisZeit für diesen Eintrag dann ab (*„Automatisch geschlossener Eintrag: Bitte zuerst das tatsächliche Ende eintragen."*), und Mitarbeitende können für ihn keine Anrechnung beantragen.
-- Die Kappung greift an **allen** Wegen: Ein- und Ausstempeln, eigene Einträge, Korrekturen der Verwaltung, genehmigte Änderungsanträge, XLS-Import (dort schon in der Vorschau sichtbar, → [Abschnitt 12](#12-import)).
+![Formular „Benutzer bearbeiten“ von Petra Schulz: Wochenstunden als Anzeige mit dem Knopf „Arbeitszeit anpassen…“ und darunter „Urlaub und Abrechnung“](img/pl-bearbeiten.webp)
 
-**Was beim Speichern erscheint** (Hinweise blockieren nie, der Eintrag wird gespeichert):
-- Beginn oder Ende gekürzt (wie bisher): *„Die eingetragene Zeit wurde auf das hinterlegte Arbeitszeit-Fenster gekappt (Beginn 07:37 → 07:45; Puffer 15 Minuten)."* Kommt eine Lücke dazu, folgt *„Zusätzlich werden zwischen den Arbeitsblöcken (12:15–14:45) 2:30 h nicht angerechnet."*
-- nur Lücke: *„Zwischen den Arbeitsblöcken (12:15–14:45, Puffer 15 Minuten eingerechnet) werden 2:30 h nicht angerechnet. Die gestempelte Zeit bleibt unverändert gespeichert."*
-- Eintrag ganz in der Lücke: *„Die eingetragene Zeit (12:30–14:30) liegt vollständig zwischen zwei Arbeitsblöcken (Lücke 12:15–14:45, Puffer 15 Minuten) — angerechnet werden 0 Stunden. Die gestempelte Zeit bleibt gespeichert."*
-- Einstempeln in der Lücke: *„Eingestempelt zwischen zwei Arbeitsblöcken (Lücke 12:15–14:45, Puffer 15 Minuten) — angerechnet wird erst ab 14:45."*
+1. **Wochenstunden** und Arbeitstage stehen nur als Anzeige da – immer die heute gültigen Werte.
+2. `Arbeitszeit anpassen…` öffnet den Dialog „Arbeitszeit \& Wochenstunden“; dort ändern Sie mit Wirkungsdatum.
+3. **Urlaub und Abrechnung:** Urlaubsanspruch, Stundenzählung und Minijob-Einstellungen, ebenfalls nur Anzeige („Ändern über „Arbeitszeit anpassen…““).
+4. **Resturlaub verfällt am:** eine eigene Verfallsfrist für diese Person. Es ist ein festes Datum für alle Jahre – nach Ablauf anpassen oder leeren; leer gilt der 31.03. des Folgejahres. Liegt das Datum in der Vergangenheit, warnt das Formular (Speichern bleibt möglich). Das Datum steht im Urlaubskonto der Person und in der Jahresend-Warnung der Verwaltung.
 
-Mitarbeitende lesen an den Lückenhinweisen zu geschlossenen Einträgen (nicht beim Einstempeln) zusätzlich *„Haben Sie in dieser Zeit gearbeitet, beantragen Sie die Anrechnung (Zeiterfassung → Eintrag → „Anrechnung beantragen“)."* Bei einem Blockbeginn zur vollen Stunde und dem Standardpuffer von 15 Minuten landet eine zu frühe Eingabe auf `hh:45` – das ist die Grenze aus Block und Puffer, keine Rundung; Eingaben sind immer minutengenau möglich.
+<a id="vertragsverlauf"></a>
+### Wie ändere ich den Urlaubsanspruch oder die Arbeitszeit ab einem Datum?
 
-**Pausen und Lücke:** Bleiben von der Lücke nach Abzug des Puffers an beiden Rändern mindestens 15 Minuten, zählen sie für die Pausenpflicht (§ 4 ArbZG) als Pause – die Lücke ist eine im Voraus feststehende Ruhepause. Wird zusätzlich eine Pause eingetragen, obwohl über die Lücke durchgestempelt wurde, wird beides abgezogen; dann erscheint *„Pause in der Lücke wird zusätzlich abgezogen: 30 Min Pause und 2:30 h nicht angerechnet zwischen den Arbeitsblöcken. Lag die Pause in der Lücke, bitte die Pause auf 0 setzen."* Hinweise zur tatsächlichen Anwesenheit laut Stempel stehen in [Abschnitt 14](#automatische-warnungen-im-alltag).
+Klicken Sie auf `Arbeitszeit anpassen…` oder in der Benutzerliste auf das Uhr-Symbol. Jede Änderung wird zu einer Zeile im **Verlauf** – dem Vertragsverlauf der Person.
 
-**Bisherige Arbeitszeit-Fenster:** Das Update auf 1.20.0 übernimmt jedes bisher hinterlegte Soll-Arbeitszeit-Fenster (Soll-Beginn/Soll-Ende) als einen Block je Tag. Diese Fenster kappen weiter wie vorher – neu auch automatisch geschlossene Einträge (siehe „Vergessen auszustempeln" oben) –, ändern das Soll aber nicht. Im Dialog erscheinen sie als **„Arbeitszeit-Fenster (Altbestand, nur Kappung)"** mit den Aktionen **„In Arbeitszeit-Blöcke umwandeln"** (öffnet den Block-Modus mit den Zeiten des Fensters vorbefüllt; Sie tragen die Pause ein und passen Zeiten außerhalb des 5-Minuten-Rasters an, z. B. 07:37 oder 23:59; danach folgt das Soll aus den Blöcken; nur bei aktiver Stundenzählung) und **„Fenster entfernen"** (ab dem Gültig-ab-Datum wird nicht mehr gekappt). Eine Änderung im Modus „Gleichmäßig" oder „Nach Tagen" übernimmt ein Altfenster, solange Sie es nicht entfernen.
+![Dialog „Arbeitszeit & Wochenstunden“ von Petra Schulz: Gültig ab, Urlaubsanspruch 18 Tage und der Verlauf mit zwei Zeilen (16 und 18 Tage/Jahr)](img/pl-vertragsverlauf.webp)
+
+1. **Gültig ab:** ab wann die neue Regelung gilt.
+2. Unter **Urlaub und Abrechnung** stehen „Urlaubsanspruch pro Jahr ab diesem Datum“, „Stundenzählung aktiv“ und die Minijob-Einstellungen. Ändern Sie die Arbeitstage, schlägt der Dialog einen neuen Anspruch vor (`Vorschlag übernehmen (N)`).
+3. Prüfen Sie die Auswirkung über dem Knopf und klicken Sie auf `Speichern`. Solange die Eingabe dem Stand entspricht, der an diesem Datum ohnehin gilt, bleibt der Knopf gesperrt.
+4. **Verlauf:** jede Regelung als „Ab … bis …“; die jüngste läuft „bis heute“.
+
+> **Gut zu wissen:** **Anspruch wechselt im Jahr:** Dann rechnet PraxisZeit jeden Abschnitt anteilig nach Monaten. Beispiel: 16 Tage bis September, 18 Tage ab 1. Oktober ergeben 16 × 9/12 + 18 × 3/12 = **16,5 Tage** für das Jahr, ab dem Folgejahr 18.
+
+> **Achtung:** **Minijob-Einstellungen** (MiLoG-Arbeitszeitkonto, vereinbarte Monatsarbeitszeit, festes Monats-Soll) lassen sich nur zum **Monatsersten** ändern. Sinkt der Urlaubsanspruch rückwirkend, ist das eine Verkürzung und braucht einen Grund, siehe [Rückwirkend ändern](#rueckwirkend-aendern).
+
+<a id="arbeitszeit-bloecke-aenderungen"></a>
+## Arbeitszeit-Blöcke & Änderungen
+
+***Arbeitszeit-Blöcke** legen je Wochentag fest, wann eine Person laut Vertrag arbeitet – z. B. 08:00–12:00 und 15:00–16:00. Daraus folgen das Tagessoll und die Anrechnung: Zeit vor, nach und zwischen den Blöcken zählt nur bis zum Puffer.*
+
+<a id="bloecke-hinterlegen"></a>
+### Wie hinterlege ich Arbeitszeit-Blöcke?
+
+Öffnen Sie den Dialog „Arbeitszeit \& Wochenstunden“ (Uhr-Symbol in der Benutzerliste oder `Arbeitszeit anpassen…`).
+
+![Block-Editor im Dialog „Arbeitszeit & Wochenstunden“ für Sarah Klein: Gültig ab, Modus „Nach Arbeitsblöcken“ und Montag und Dienstag mit den Blöcken 08:00–12:00 und 15:00–16:00 samt Pause](img/pl-bloecke.webp)
+
+1. **Gültig ab:** ab wann die Blöcke gelten.
+2. Wählen Sie `Nach Arbeitsblöcken`. Den Modus gibt es nur bei aktiver Stundenzählung.
+3. Je Wochentag (Mo–Fr) tragen Sie „von–bis“ ein, im 5-Minuten-Raster. Blöcke dürfen sich nicht überschneiden und nicht direkt aneinanderstoßen – 08:00–12:00 und 12:00–16:00 erfassen Sie als einen Block.
+4. `+ Block` fügt einen weiteren Block hinzu (höchstens drei je Tag), das **×** entfernt einen. Ein Tag ohne Block ist kein Arbeitstag.
+5. **Pause innerhalb** der Blöcke in Minuten. Tagessoll = Summe der Blöcke minus diese Pause; der Dialog zeigt es je Tag live.
+6. Unter dem Freitag steht die Woche mit Gesamtzeit, Wochensoll und Arbeitstagen. Prüfen Sie die Auswirkung und speichern Sie.
+
+> **Gut zu wissen:** **Beispiel:** Blöcke 08:00–12:00 und 15:00–18:00, Pause 0, Puffer 15 Minuten. Wer von 08:00 bis 18:00 durchstempelt, bekommt 08:00–12:15 und 14:45–18:00 = **7:30 h** angerechnet; die 2:30 h dazwischen werden nicht angerechnet. Die gestempelten Zeiten bleiben unverändert gespeichert (§ 16 ArbZG). Eine geplante Pause erfassen Sie als „Pause innerhalb der Blöcke“, nicht als kurze Lücke – eine Lücke bis zum doppelten Puffer verschwindet ganz.
+
+> **Achtung:** **Werktag ohne Block = 0 Stunden:** Hat eine Person Blöcke, aber an einem Werktag keinen, wird dort gestempelte Zeit gespeichert, aber nicht angerechnet – erst wenn Sie den Eintrag anerkennen oder den Antrag „Anrechnung beantragen“ mit `Genehmigen und anerkennen` annehmen. Ein aus früheren Versionen übernommenes Arbeitszeit-Fenster ist davon nicht betroffen: Ein Tag ohne Fenster wird dort weiter nicht gekappt. An Wochenenden, Feiertagen und als „frei“ eingestellten Sondertagen wird nichts gekappt. Mitarbeitende ohne Stundenzählung und anerkannte Einträge sind ausgenommen; bei § 18-befreiten Personen wird trotzdem gekappt.
+
+<a id="rueckwirkend-aendern"></a>
+### Was passiert, wenn ich die Arbeitszeit rückwirkend ändere?
+
+Liegt „Gültig ab“ in der Vergangenheit, rechnet PraxisZeit die erfassten Zeiteinträge an den geänderten Wochentagen neu – immer vom Stempel aus – und danach die gebuchten Abwesenheiten. Im Beispiel endet Sarahs Montagnachmittag rückwirkend um 15:30 statt 16:00.
+
+![Kasten „Verkürzung“ bei einer rückwirkenden Arbeitszeit-Änderung: Wahl zwischen „Ab heute“ und „Rückwirkend mit Neuberechnung“, darunter Grund und Begründung](img/pl-rueckwirkend.webp)
+
+1. **Verkürzung:** Verliert ein Eintrag angerechnete Zeit, sinkt das Überstundenkonto im Wirkungsbereich oder sinkt die Gutschrift einer Abwesenheit an einem Tag mit Arbeit stärker als das Tagessoll, erscheint dieser Kasten mit den Gründen, z. B. „2 Einträge verlieren angerechnete Zeit (zusammen 0:30 h)“.
+2. **Ab heute … wirksam** (Standard): Die Änderung gilt ab dem frühesten Tag, an dem nichts verloren geht. Vergangene Einträge bleiben unverändert; ein Grund ist nicht nötig.
+3. **Rückwirkend ab … mit Neuberechnung:** nur mit Grund, Begründung und Bestätigung.
+4. **Grund:** „Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)“, „Mit der beschäftigten Person vereinbart“ oder „Sonstiges“.
+5. **Begründung:** 10 bis 400 Zeichen. Danach bestätigen Sie den Haken zum gewählten Grund.
+
+<a id="auswirkung-pruefen"></a>
+### Was zeigt mir die Auswirkung vor dem Speichern?
+
+Ist „Gültig ab“ rückwirkend oder betrifft die Änderung schon Erfasstes, steht über `Speichern` ein Auswirkungs-Kasten. Er zeigt die gewählte Variante – hier die rückwirkende.
+
+![Auswirkungs-Kasten einer rückwirkenden Änderung: Wirkungsbereich, Tagessoll vorher und nachher, zwei neu berechnete Einträge und die Tabelle für Soll, Überstunden und Urlaub](img/pl-auswirkung.webp)
+
+1. **Überschrift:** der Anlass und der Wirkungsbereich, z. B. „Rückwirkende Änderung: 14.10.2026 – …“. Darunter Puffer, geänderte Tage und das Tagessoll je Wochentag vorher → nachher.
+2. **Zeiteinträge:** wie viele neu berechnet werden, je Monat mit der angerechneten Zeit vorher → nachher; übersprungene mit Grund. Danach die Zahl der Abwesenheiten, deren Stunden umgestellt werden.
+3. **Tabelle** mit den Spalten bisher, neu und Δ: **Überstunden** und **Urlaub verbraucht** (bei geändertem Anspruch auch **Urlaubsanspruch**) mit allen drei Werten; für **Soll im Zeitraum** und **Angerechnet** steht nur die Differenz Δ.
+4. `Einzelheiten` listet jeden Eintrag mit seinen Zeiten vorher → nachher.
+5. Setzen Sie den Haken `Ich habe die Auswirkungen geprüft und möchte speichern` und klicken Sie auf `Speichern`. PraxisZeit meldet danach, wie viele Einträge neu berechnet wurden.
+
+> **Achtung:** **Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit.** Eine rückwirkende Arbeitszeit-Änderung berichtigt nur eine falsch hinterlegte Arbeitszeit. Bei „Sonstiges“ warnt der Dialog zusätzlich: Eine einseitige rückwirkende Kürzung deckt das Direktionsrecht nicht (§ 106 GewO); geleistete Arbeit bleibt zu vergüten.
+
+> **Gut zu wissen:** **Auch eine Erhöhung kann eine Verkürzung sein:** Steigt das Soll rückwirkend (längere Blöcke, mehr Wochenstunden), sinkt das Überstundenkonto – dann gelten dieselben Regeln. Reicht die Änderung in ein abgeschlossenes Jahr, weist der Dialog darauf hin. Führen Sie danach den Jahresabschluss für **jedes** genannte Jahr erneut aus, vom frühesten an. **Achtung:** Ein erneuter Jahresabschluss überschreibt die Überträge **aller** Mitarbeitenden für das Folgejahr – auch von Hand korrigierte Werte in der **Vorjahresübernahme**; tragen Sie solche Korrekturen danach erneut ein.
+
+> **Gut zu wissen:** **Änderung löschen:** Das Papierkorb-Symbol steht nur an der jüngsten Zeile des Verlaufs. Das Löschen rechnet Einträge und Abwesenheiten zurück; verkürzt es, setzt PraxisZeit standardmäßig ab heute auf den vorherigen Stand zurück (`Zurücksetzen`) – rückwirkend nur mit Grund.
+
+> **Gut zu wissen:** **Wer davon erfährt:** Die Person sieht nach jeder Arbeitszeit-Änderung 30 Tage lang den Kasten „Hinweis zu Ihrer Arbeitszeit“ auf ihrem Dashboard – bei einer rückwirkenden Verkürzung mit dem Grundtyp, nie mit Ihrer Begründung. Das Änderungsprotokoll hält jede Neuberechnung fest.
 
 <a id="nicht-angerechnet-anerkennen"></a>
-#### Nicht angerechnete Zeit erkennen und anerkennen
+### Wie rechne ich Zeit außerhalb der Blöcke doch an?
 
-Nicht angerechnete Zeit ist nie still. Unter der Uhrzeit eines Eintrags steht im **Admin-Dashboard** (Detailansicht), im **Monatsjournal** und in der **Zeiterfassung** eine Zusatzzeile:
+Nicht angerechnete Zeit steht als Zusatzzeile unter der Uhrzeit – im Monatsjournal (Buch-Symbol in der Benutzerliste) und in der Detailansicht des Admin-Dashboards.
 
-| Lage | Zusatzzeile |
-|------|-------------|
-| nur Beginn oder Ende gekürzt | *„gestempelt 07:30 · angerechnet ab 07:45"* (bzw. „… angerechnet bis …") |
-| durchgestempelt über die Lücke | *„gestempelt 08:00–18:00 · angerechnet 7:30 h · 2:30 h zwischen den Blöcken nicht angerechnet"* |
-| zusätzlich Beginn/Ende gekürzt | *„gestempelt 07:00–19:00 · angerechnet 8:00 h (07:45–18:15) · 4:00 h nicht angerechnet, davon 2:30 h zwischen den Blöcken"* |
-| mit eingetragener Pause | „angerechnet 7:00 h" erhält den Zusatz *„nach 0:30 h Pause"* |
-| automatisch geschlossen | *„eingestempelt 08:00, nicht ausgestempelt – automatisch geschlossen · angerechnet 7:45 h (08:00–18:15) · 2:30 h zwischen den Blöcken nicht angerechnet"*; ohne Kappung *„… automatisch geschlossen um 23:59"* |
-| anerkannt | Kennzeichen *„anerkannt"*, keine Zusatzzeile |
+![Zeile im Monatsjournal von Sarah Klein: gestempelt 08:00–16:00, angerechnet 5:30 h, 2:30 h zwischen den Blöcken nicht angerechnet, darunter der Knopf „Anerkennen“](img/pl-anerkennen.webp)
 
-„Angerechnet" ist immer die Zeit, die ins Ist und in den Saldo eingeht (nach Pause und Lücke). „Nicht angerechnet" ist die Lücke **plus** die vor dem ersten bzw. nach dem letzten Block abgeschnittene Zeit. Das **Monatsjournal** zeigt die Monatssumme als Zeile *„Anwesenheit nicht angerechnet: 7:30 h"* (nur wenn etwas anfällt); die Datei-Exporte führen sie in der letzten Spalte **„Nicht angerechnet (Min)"** (→ [Abschnitt 6](#6-berichte-und-exporte)).
+1. Die Zusatzzeile nennt Stempel, angerechnete Zeit und den nicht angerechneten Teil, z. B. „gestempelt 08:00–16:00 · angerechnet 5:30 h · 2:30 h zwischen den Blöcken nicht angerechnet“.
+2. Wurde in dieser Zeit tatsächlich gearbeitet, klicken Sie auf `Anerkennen` und bestätigen. Dann wird die gesamte gestempelte Zeit angerechnet – dauerhaft, auch bei späteren Neuberechnungen. Der Vorgang wird protokolliert.
 
-**Anerkennen:** Wurde vor, nach oder zwischen den Blöcken tatsächlich gearbeitet, klicken Sie am Eintrag (Admin-Dashboard, Detailansicht, oder Monatsjournal) auf **„Anerkennen"**. Die Bestätigung lautet: *„Die gesamte gestempelte Zeit (08:00–18:00) wird angerechnet. Sie bleibt angerechnet — auch bei späteren Neuberechnungen und wenn die Verwaltung die Zeiten ändert; Mitarbeitende können den Eintrag danach nur noch per Änderungsantrag ändern. Wurde nur ein Teil der Zeit gearbeitet, den Eintrag besser aufteilen oder korrigieren. Der Vorgang wird protokolliert."* Ein anerkannter Eintrag wird nie wieder gekappt, auch nicht bei späteren Arbeitszeit-Änderungen; ändern Sie seine Zeiten (Bearbeiten, Antrag, XLS-Import), werden auch die neuen Zeiten ungekappt angerechnet. Eine Rücknahme der Anerkennung gibt es nicht. Ein offener Eintrag lässt sich erst nach dem Ausstempeln anerkennen, ein **automatisch geschlossener** erst, wenn das tatsächliche Ende eingetragen ist (*„Automatisch geschlossener Eintrag: Bitte zuerst das tatsächliche Ende eintragen."*). Anerkennen blockiert nie an § 3 oder § 4 ArbZG; Verstöße erscheinen als Hinweis. Einen anerkannten Eintrag über 10 Stunden oder ohne ausreichende Pause können Sie danach weiter bearbeiten – und einen Änderungsantrag dazu genehmigen –, solange Datum, Zeiten und Pause gleich bleiben (z. B. nur die Notiz); wer Zeiten oder Pause ändert, wird wieder voll nach § 3 und § 4 geprüft. Im Änderungsprotokoll steht der Vorgang als **„Anrechnung anerkannt"**. Steht am selben Tag zusätzlich eine Abwesenheit (z. B. vormittags gearbeitet, dann krank), gleicht PraxisZeit deren Gutschrift an: Arbeit und Gutschrift zusammen überschreiten das Tagessoll nicht – wie beim Buchen der Abwesenheit und gleich, ob Sie zuerst buchen oder zuerst anerkennen. Auch das steht unter „Anrechnung anerkannt" im Protokoll (z. B. *„Krank 5,25 h"* → *„Krank 4,0 h — an die anerkannte Arbeitszeit des Tages angeglichen"*).
+> **Achtung:** **Anerkennen lässt sich nicht zurücknehmen.** Wurde nur ein Teil der Zeit gearbeitet, teilen oder korrigieren Sie den Eintrag besser. Ein offener Eintrag lässt sich erst nach dem Ausstempeln anerkennen, ein automatisch geschlossener erst, wenn das tatsächliche Ende eingetragen ist. Nichtanrechnung ersetzt keine Vergütungsentscheidung: angeordnete, gebilligte oder geduldete Arbeit ist zu vergüten.
 
-**Anrechnung beantragen:** Mitarbeitende können an einem eigenen Eintrag mit nicht angerechneter Zeit über **„Anrechnung beantragen"** einen Änderungsantrag mit Begründung stellen. Die Antragsprüfung (→ [Abschnitt 8](#8-korrekturanträge-prüfen)) bietet dafür **„Genehmigen und anerkennen"** und **„Ohne Anerkennen genehmigen"** an. Auch Admins finden die Aktion an ihren eigenen Einträgen in der Zeiterfassung; einen eigenen Antrag genehmigt – wie jeden Änderungsantrag – eine weitere Admin, sofern es eine gibt.
+<a id="antraege-genehmigen"></a>
+## Anträge genehmigen: Urlaub und Korrektur
 
-> **Vergütung:** Nichtanrechnung ersetzt keine Vergütungsentscheidung. Tatsächlich geleistete Arbeit, die angeordnet, gebilligt oder geduldet wurde oder zur Erledigung der Arbeit notwendig war, ist zu vergüten (§ 611a Abs. 2, § 612 Abs. 1 BGB; MiLoG). Wurde vor, nach oder zwischen den Blöcken gearbeitet, nutzen Sie „Anerkennen"; wurde nur ein Teil gearbeitet, den Eintrag aufteilen oder korrigieren statt die ganze Zeit anzuerkennen.
+*Urlaubsanträge landen unter **Anträge**, Korrekturen an Zeiteinträgen unter **Änderungsanträge**. Eine rote Zahl in der Navigation zeigt, was offen ist.*
 
-> **Jugendliche:** Für Jugendliche gelten strengere Pausen- und Schichtzeitregeln (§§ 11, 12 JArbSchG: 30 Min Pause ab 4,5 h, 60 Min ab 6 h, höchstens 4,5 h ohne Pause, Schichtzeit inklusive Lücke höchstens 10 h); PraxisZeit prüft diese nicht.
+<a id="urlaubsantrag-genehmigen"></a>
+### Wie genehmige ich einen Urlaubsantrag?
 
-**Bekannte Grenze:** Arbeit in der Lücke bleibt in der angerechneten Zeit unsichtbar, bis sie anerkannt wird. Die Nachtarbeits-Erkennung (§ 6 ArbZG) rechnet weiter mit den gespeicherten (gekappten) Zeiten; eine Erkennung auf den Rohstempeln folgt separat. In den Exportdateien bleiben Von/Bis/Netto die angerechneten Werte; die tatsächlichen Stempel stehen in der Spalte **„Gestempelt (Von–Bis)"** (PDF: „Gestempelt (Anwesenheit)").
+Klicken Sie in der Navigation auf `Anträge`. Die Seite heißt „Abwesenheitsanträge“.
 
-> **Rechtlicher Hinweis:** Die Nichtanrechnung von Zeit vor, nach und zwischen den Blöcken ist eine **Anrechnungsregel des Betriebs**, keine gesetzliche Vorgabe. Der erhaltene Rohstempel dokumentiert gemäß § 16 ArbZG die tatsächliche Anwesenheit.
+![Seite „Abwesenheitsanträge“: Schalter für die Genehmigungspflicht und der offene Urlaubsantrag von Thomas Bauer über 5 Arbeitstage](img/pl-urlaubsantraege.webp)
 
-### Arbeitszeiten im Team
+1. **Abwesenheitsanträge genehmigungspflichtig:** Ist der Schalter an, landen Urlaubsanträge hier als „Offen“. Aus, buchen die Mitarbeitenden direkt. Krankmeldungen brauchen nie eine Freigabe.
+2. Mit `Offen`, `Genehmigt`, `Abgelehnt` und `Alle` filtern Sie die Anträge.
+3. **Arbeitstage** auf der Karte: was der Antrag nach der Genehmigung tatsächlich kostet – nur Tage, an denen die Person laut ihrem Arbeitsplan arbeitet; Wochenenden, Feiertage und freie Sondertage zählen nicht, ein halber Tag 0,5.
+4. `Genehmigen` trägt die Abwesenheiten für diese Arbeitstage ein und zieht sie vom Urlaubskonto ab.
+5. `Bearbeiten` ändert den Zeitraum vor der Entscheidung, z. B. wenn er über den letzten Arbeitstag hinausgeht.
+6. `Ablehnen` öffnet ein Feld für den Ablehnungsgrund (optional); bestätigen Sie mit `Ablehnen`. Die Person sieht den Grund unter „Meine Anträge“.
 
-Menü **„Arbeitszeiten im Team"** zeigt für alle aktiven Mitarbeitenden auf einen Blick, wer laut Arbeitszeit-Blöcken wann arbeitet – je Wochentag (Mo–Fr) als Balken auf einer Zeitachse, in der Kalenderfarbe der Person.
+> **Achtung:** **Vorhandene Zeiteinträge** an den genehmigten Tagen werden durch die Abwesenheit ersetzt (im Änderungsprotokoll dokumentiert). Zeigt die Karte **0** Arbeitstage, lehnt PraxisZeit die Genehmigung ab – lehnen Sie den Antrag dann ab oder passen Sie ihn an.
 
-- **Stand am:** Gezeigt werden die Blöcke, die am gewählten Tag gelten. Wählen Sie einen späteren Tag, sehen Sie schon eingetragene künftige Arbeitszeiten. Steht bei einer Person **„ab 02.11.2026 neu"**, ist für sie eine spätere Änderung hinterlegt (die neuen Zeiten stehen im Tooltip).
-- **Filter:** **„Alle"** oder eine Abteilung. Die Auswahl entsteht aus dem Feld **„Abteilung/Bereich"** der Mitarbeitenden (z. B. „MFA", „Ärzte") – tragen Sie es unter Benutzerverwaltung → Bearbeiten ein.
-- **Besetzung:** Die Zeile unter den Wochentagen zeigt je halbe Stunde, wie viele der gefilterten Personen eingeplant sind (Tooltip, z. B. *„Di 13:00–13:30: niemand"*). So fallen Lücken in der Besetzung sofort auf.
-- Wer am gewählten Tag außerhalb seines Beschäftigungszeitraums liegt (schon ausgeschieden oder noch nicht angefangen, → Erster/Letzter Arbeitstag), wird nicht aufgeführt.
-- Personen ohne Blöcke (Soll nur nach Stunden) stehen mit „keine Arbeitszeit-Blöcke" in der Liste; ein aus früheren Versionen übernommenes Fenster ist grau gestrichelt, Mitarbeitende ohne Stundenzählung ebenso.
+<a id="urlaub-stornieren-admin"></a>
+### Wie nehme ich einen genehmigten Urlaub zurück?
 
-**Bearbeiten:** Schalten Sie zuerst rechts oben den Schieber **„Bearbeiten"** ein – vorher lässt sich nichts verschieben, ein versehentliches Ziehen ist ausgeschlossen. Dann gilt:
+Das geht, solange der Urlaub noch nicht begonnen hat.
 
-1. Einen Block **ziehen** verschiebt ihn; an seinem **linken oder rechten Rand** ziehen ändert Beginn bzw. Ende. Gezogen wird im 15-Minuten-Raster. Per Tastatur: Block anwählen, **Pfeiltasten** verschieben um 15 Minuten, mit **Umschalt** ändert sich das Ende.
-2. Geänderte Zeilen sind gelb hinterlegt. **„Verwerfen"** stellt den gespeicherten Stand wieder her.
-3. **„Änderung speichern…"** öffnet den Dialog **„Arbeitszeit & Wochenstunden"** (→ [Mitarbeiter bearbeiten](#mitarbeiter-bearbeiten)) mit den neuen Blöcken; **„Gültig ab"** ist der unter „Stand am" gewählte Tag und lässt sich dort ändern. Erst mit dem Speichern im Dialog ändern sich Tagessoll und Anrechnung – mit derselben Vorschau und denselben Schutzregeln wie jede Arbeitszeit-Änderung (rückwirkend nur mit Grund). Feinere Zeiten (5-Minuten-Raster), weitere Blöcke und die Pause innerhalb der Blöcke stellen Sie ebenfalls im Dialog ein.
+1. Wählen Sie auf der Seite „Abwesenheitsanträge“ den Filter `Genehmigt`.
+2. Klicken Sie am Antrag auf `Urlaub stornieren` und bestätigen Sie mit `Stornieren`.
+3. Die zugehörigen Abwesenheitstage werden gelöscht; der Antrag steht danach als „Zurückgezogen“ da.
 
-Personen ohne Blöcke, ohne Stundenzählung oder mit übernommenem Fenster lassen sich nicht ziehen; **„Ändern…"** öffnet für sie direkt den Dialog. Solange Änderungen offen sind, ist „Stand am" gesperrt; den Schieber auszuschalten verwirft sie nach Rückfrage.
+<a id="korrekturantrag-pruefen"></a>
+### Wie prüfe ich einen Korrekturantrag?
 
-### Mitarbeiter bearbeiten
+Klicken Sie in der Navigation auf `Änderungsanträge`. Mitarbeitende beantragen hier Änderungen, Löschungen und Nachträge für vergangene Tage.
 
-![Mitarbeiter bearbeiten](screenshots/17-admin-benutzer-bearbeiten.png)
+![Offener Änderungsantrag: aktuell 09:15–17:30, gewünscht 08:00–16:45, darunter die Begründung und die Knöpfe Genehmigen und Ablehnen](img/pl-korrekturantrag.webp)
 
-Klicken Sie in der Benutzerliste auf den Namen des Mitarbeiters.
+1. Mit `Offen`, `Genehmigt`, `Abgelehnt` und `Alle` filtern Sie; die Auswahl darunter zeigt nur eine Person.
+2. **Aktuell:** der Eintrag, wie er heute gespeichert ist.
+3. **Gewünscht:** die beantragten Werte.
+4. Lesen Sie die **Begründung** – sie ist Pflicht.
+5. `Genehmigen` übernimmt die Werte in den Zeiteintrag. `Ablehnen` fragt nach einem optionalen Ablehnungsgrund.
 
-**Arbeitszeit ändern:**
-Wochenstunden, Tagesstunden, der Modus, die Arbeitstage pro Woche und die Arbeitszeit-Blöcke werden im Bearbeiten-Formular nur **angezeigt** – für **alle** Mitarbeitenden. Unter **„Arbeitszeit heute"** stehen die heute gültigen Blöcke, z. B. *„Mo 08:00–12:00 + 15:00–18:00 · Di 08:00–12:00 · Do 08:00–12:00"* (ohne Blöcke: *„Keine Arbeitszeit-Blöcke hinterlegt"*). Alle diese Werte sind die **heute gültigen** – auch nach dem Wirkungsdatum einer zukunftsdatierten Änderung. Gelten heute Arbeitszeit-Blöcke, heißt der Modus **„Nach Arbeitsblöcken"**, und die Wochenstunden stehen wie im Kopf des Dialogs mit den Blöcken, z. B. *„Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–12:00 = 10,5 h/Woche"*. Urlaubsanspruch, Stundenzählung und Minijob-Einstellungen zeigt das Bearbeiten-Formular ebenfalls nur an, mit dem Hinweis *„Ändern über „Arbeitszeit anpassen…""*; der Server lehnt Änderungen dieser Felder über das Formular ab. Neben den Wochenstunden steht der Button **„Arbeitszeit anpassen…"**. Er öffnet denselben Dialog **„Arbeitszeit & Wochenstunden"** wie das Uhr-Symbol in der Benutzerliste; der Kopf des Dialogs nennt die heute gültige Regelung.
+> **Gut zu wissen:** Die Genehmigung prüft dieselben Regeln wie ein direkter Eintrag: Arbeitszeit-Blöcke, Pausen nach § 4 ArbZG und den Beschäftigungszeitraum. Liegt der Tag eines neuen Eintrags – oder das neue Datum eines verschobenen – vor dem ersten oder nach dem inzwischen eingetragenen letzten Arbeitstag, lehnt PraxisZeit die Genehmigung ab – lehnen Sie den Antrag dann ab. Ein Abwesenheits-Antrag für einen vergangenen Tag ersetzt bei Genehmigung die Zeiteinträge dieses Tages.
 
-So ändern Sie die Arbeitszeit (Teilzeitumstellung, neuer Tagesplan, neue Blöcke):
+<a id="anrechnung-beantragt"></a>
+### Eine Person beantragt die Anrechnung – was tue ich?
 
-1. Name/Kürzel des Mitarbeiters öffnen
-2. Button **„Arbeitszeit anpassen…"** klicken (alternativ: Uhr-Symbol in der Benutzerliste)
-3. **„Gültig ab"**-Datum angeben (ab wann gilt die neue Regelung)
-4. Modus wählen:
-   - **„Gleichmäßig"** – Wochenstunden und Arbeitstage pro Woche
-   - **„Nach Tagen"** – Stunden je Wochentag (Mo–Fr); Wochensumme und Arbeitstage errechnet der Dialog (Arbeitstage = Wochentage mit eingetragenen Stunden)
-   - **„Nach Arbeitsblöcken"** – je Wochentag bis zu drei Zeilen „von–bis" (weitere Zeile über **„+ Block"**) und **„Pause innerhalb der Blöcke"** in Minuten. Der Dialog zeigt je Tag live *„Gesamtzeit 9:00 h · Pause 1:00 h · Tagessoll 8:00 h"* und darunter die Wochensumme (bei **fester Monatsarbeitszeit** steht „geplant" statt „Tagessoll" bzw. „Wochensoll" – die Werte sind dann geplante Anwesenheit). Tagessoll, Wochenstunden und Arbeitstage folgen aus den Blöcken (→ [Arbeitszeit-Blöcke](#arbeitszeit-bloecke)). Für Mitarbeitende **ohne Stundenzählung** bietet der Dialog diesen Modus nicht an.
-5. Abschnitt **„Urlaub und Abrechnung"** prüfen: Hier stehen **„Urlaubsanspruch pro Jahr ab diesem Datum"** (Tage), **„Stundenzählung aktiv"** und die Minijob-Einstellungen (MiLoG-Arbeitszeitkonto, vereinbarte Monatszeit, festes Monats-Soll). Ändern Sie die Arbeitstage pro Woche, schlägt der Dialog den Anspruch vor (alter Anspruch × neue Arbeitstage ÷ alte Arbeitstage, gerundet auf 0,1) und folgt Ihren Änderungen, bis Sie das Feld selbst bearbeiten; danach bleibt Ihr Wert stehen, und daneben erscheint **„Vorschlag übernehmen (N)"** (z. B. „Vorschlag übernehmen (30)"). Der Anspruch gilt **ab dem Gültig-ab-Datum**; wechselt er im Jahr, rechnet PraxisZeit jeden Abschnitt anteilig nach Monaten (z. B. 24 × 10/12 + 30 × 2/12 = **25,0 Tage** für 2026, 30 ab 2027). **Minijob-Einstellungen** lassen sich nur zum **Monatsersten** ändern, sonst erscheint *„Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten."* (Fehler 422). Eine Korrektur an der **frühesten** Zeile ersetzt diese Zeile an Ort und Stelle.
-6. Optional eine **Notiz** eintragen (höchstens 500 Zeichen)
-7. Die **Auswirkung** über dem Knopf „Speichern" prüfen (siehe unten) und, wenn verlangt, bestätigen
-8. Speichern
+Hat eine Person an einem Eintrag mit nicht angerechneter Zeit `Anrechnung beantragen` gewählt, trägt ihr Antrag ein eigenes Kennzeichen. Vorbelegt sind die gestempelten Zeiten.
 
-Nach dem Speichern meldet PraxisZeit z. B. *„Gespeichert. 3 Zeiteinträge neu berechnet, 1 übersprungen, 1 Abwesenheit angepasst."* Solange die Eingabe dem Stand entspricht, der am Gültig-ab-Datum ohnehin gilt, bleibt „Speichern" gesperrt (*„Noch nichts zu speichern — die Eingabe entspricht dem Stand, der am … ohnehin gilt."*).
+![Antrag „Anrechnung beantragt“ von Sarah Klein: 2:30 h Lücke nicht angerechnet, gestempelt 08:00–16:00, Knöpfe „Genehmigen und anerkennen“ und „Ohne Anerkennen genehmigen“](img/pl-anrechnung-beantragt.webp)
 
-**Hinweise im Dialog** (blockieren nicht): Unter dem Editor stehen immer eine Kurzfassung des Hinweises zu Arbeitsrecht und Mitbestimmung (volle Fassung am Ende dieses Abschnitts) und der Hinweis zu Jugendlichen. Im Modus „Nach Arbeitsblöcken" weist der Dialog außerdem darauf hin, wenn die geplanten Pausen eines Tages für § 4 ArbZG nicht reichen, wenn eine Lücke so kurz ist, dass sie im Puffer verschwindet (*„Mo: Die Lücke 12:00–12:30 ist nicht länger als der doppelte Puffer (15 Min) und wird vollständig angerechnet. Eine geplante Pause bitte als „Pause innerhalb der Blöcke“ erfassen."*), oder wenn das Tagessoll über 10 bzw. 8 Stunden oder das Wochensoll über 48 Stunden liegt. Ein Tagessoll über 10 Stunden ist ein geplanter Verstoß gegen § 3 ArbZG – ein Eintrag nach diesem Plan wird beim Erfassen abgelehnt und beim Ausstempeln als Verstoß gemeldet. Wechseln Sie von Blöcken zu „Gleichmäßig" oder „Nach Tagen", nennt der Dialog vor dem Speichern: *„Die Arbeitszeit-Blöcke enden mit dieser Änderung; ab ‹Datum› wird nicht mehr gekappt."* Bei Mitarbeitenden ohne Stundenzählung stehen gespeicherte Blöcke als *„Arbeitszeit-Blöcke gespeichert, ohne Wirkung (keine Stundenzählung)"* im Dialog; sie enden mit der nächsten Arbeitszeit-Änderung.
+1. **Anrechnung beantragt:** das Kennzeichen des Antrags.
+2. Unter **Aktuell** stehen die nicht angerechnete Lücke und die Stempel des Eintrags. Weichen die beantragten Zeiten von den Stempeln ab, steht das rot unter **Gewünscht**.
+3. `Genehmigen und anerkennen` übernimmt den Antrag und rechnet die Zeiten ungekappt an – dauerhaft, wie `Anerkennen`.
+4. `Ohne Anerkennen genehmigen` übernimmt nur die Zeiten; die Zeit vor, nach oder zwischen den Blöcken bleibt nicht angerechnet.
 
-**Verlauf:** Unter dem Formular listet der Dialog jede Regelung als **„Ab … bis …"**; die vorherige Regelung endet am Vortag des neuen Gültigkeitsdatums, die jüngste läuft „bis heute" – z. B. „Ab 01.03.2026 bis heute: Mo 08:00–12:00 + 15:00–18:00 / Di 08:00–12:00 / Do 08:00–12:00 = 15,0 h/Woche", bei Tagesplan „Ab 01.03.2026 bis heute: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 Std/Woche · 3 Tage/Woche", bei gleichmäßiger Verteilung „… 20,0 Std/Woche · 5 Tage/Woche". Zeilen mit der Notiz *„Automatisch erfasster Ausgangswert vor der ersten Stundenänderung"* legt PraxisZeit selbst an: Sie halten die bis dahin gültige Regelung für die Vergangenheit fest, damit eine neue Änderung das Soll früherer Monate nicht still verschiebt.
+> **Gut zu wissen:** Auch bei einem gewöhnlichen Änderungsantrag zu einem Eintrag mit nicht angerechneter Zeit bietet die Prüfung neben `Genehmigen` zusätzlich `Genehmigen und anerkennen` an. Ihren eigenen Antrag genehmigt eine weitere Admin, sofern es eine gibt.
 
-##### Auswirkung prüfen
+<a id="sammel-genehmigung"></a>
+### Kann ich mehrere Anträge auf einmal genehmigen?
 
-> **Urlaub in der Vorschau (ab Vertragsverlauf):** Ändert die Regelung den Urlaubsanspruch, zeigt der Kasten **„Urlaubsanspruch {Jahr}"** vorher → nachher für das Wirkungsjahr und das Folgejahr (z. B. „Urlaubsanspruch 2026: 24 → 25 · 2027: 24 → 30") und **„Urlaub verbraucht {Jahr}"**. Sinkt der Anspruch rückwirkend, ist das eine **Verkürzung** und braucht einen Grund – das gilt auch, wenn Sie eine frühere Erhöhung löschen oder zurücksetzen.
+Ja – auf der Seite „Änderungsanträge“ im Filter `Offen`.
 
-Ist das Gültig-ab-Datum rückwirkend oder betrifft die Änderung bereits Erfasstes, zeigt der Dialog vor dem Speichern einen Auswirkungs-Kasten. Seine Überschrift nennt den Anlass und den **Wirkungsbereich**, z. B. *„Rückwirkende Änderung: 01.09.2026 – 08.10.2026"* (sonst „Betrifft bereits erfasste Zeiteinträge", „Betrifft bereits gebuchte Abwesenheiten" oder „Ändert Überstunden oder Urlaubsverbrauch"). Der Wirkungsbereich reicht vom Gültig-ab-Datum bis zum Tag vor der nächsten Änderung; gibt es keine spätere Änderung, bis zum letzten erfassten Eintrag bzw. zur letzten gebuchten Abwesenheit, mindestens bis heute. Der Kasten zeigt:
-- den Puffer der Neuberechnung und die geänderten Wochentage (*„Auswirkung (Puffer 15 Min) · geänderte Tage: Mo"*) sowie das **Tagessoll je Wochentag** vorher → nachher (z. B. „Mo 7:00 h → 6:00 h"; bei **fester Monatsarbeitszeit** heißt die Zeile „Geplante Anwesenheit je Wochentag" – wie im Block-Editor sind die Werte dann geplante Anwesenheit),
-- die **Zeiteinträge**, die neu berechnet werden, und die übersprungenen mit Grund (*„Zeiteinträge: 3 neu berechnet · 1 übersprungen (1 anerkannt)"*), je Monat mit der angerechneten Zeit vorher → nachher (*„Sep 2026 · 2 Einträge · 6:00 h → 4:30 h"*),
-- Einträge, die mangels Rohstempel nicht verlängert werden können, und offene Einträge vergangener Tage, die vorher geschlossen werden (siehe unten),
-- die Zahl der **Abwesenheiten**, deren Stunden auf das neue Tagessoll umgestellt werden,
-- eine Tabelle mit der Veränderung des **Solls** im Zeitraum und der **angerechneten Zeit** sowie dem **Überstundenkonto** und dem **Urlaubsverbrauch** des Jahres, jeweils bisher, neu und Differenz,
-- geänderte ArbZG-Befunde, falls sich etwas ändert (*„Tage > 10 h: angerechnet bisher …, neu … · laut Stempel …"*, ebenso für Wochen > 48 h).
+![Zwei offene Änderungsanträge ausgewählt („2 ausgewählt“); oben der Knopf „2 genehmigen, davon 1 mit Anerkennen“](img/pl-sammel-genehmigung.webp)
 
-Unter **„Einzelheiten"** stehen die einzelnen Einträge mit ihren Zeiten vorher → nachher, jeder übersprungene Eintrag mit Grund und jede gesenkte Abwesenheits-Gutschrift.
+1. Das Kästchen oben wählt alle offenen Anträge aus.
+2. Einzelne Anträge markieren oder abwählen Sie über das Kästchen an der Karte.
+3. Klicken Sie auf **… genehmigen** bzw. **… ablehnen**. Sind Anrechnungsanträge dabei, nennt der Knopf ihre Zahl („2 genehmigen, davon 1 mit Anerkennen“) und fragt vor dem Absenden nach; diese werden dann anerkannt.
 
-Werden Zeiteinträge neu berechnet, sind Abwesenheiten betroffen oder ändern sich Überstundenkonto bzw. Urlaubsverbrauch, ist der Haken **„Ich habe die Auswirkungen geprüft und möchte speichern"** Pflicht – auch bei Wirkungsdatum heute; bei einem Gültig-ab-Datum in der Vergangenheit immer. Berührt der Zeitraum ein bereits **abgeschlossenes Jahr**, weist der Kasten darauf hin; der eingefrorene Jahresabschluss wird nicht automatisch neu berechnet, den Übertrag prüfen Sie von Hand (→ [Jahresabschluss](#jahresabschluss)).
+> **Gut zu wissen:** Einen Anrechnungsantrag ohne Anerkennen zu genehmigen geht nur einzeln. Hinweise wie bei der Einzel-Genehmigung (Kappung, Wochen- oder Nachtarbeitszeit) erscheinen auch hier, jeweils mit dem Namen der Person. Prüfen Sie Anträge zeitnah, damit die Salden aktuell bleiben.
 
-##### Rückwirkende Änderungen: Neuberechnung
+<a id="abwesenheiten-betriebsferien"></a>
+## Abwesenheiten & Betriebsferien
 
-Liegt das Gültig-ab-Datum in der Vergangenheit, rechnet PraxisZeit die bereits erfassten Zeiteinträge im Wirkungsbereich neu:
-- **Nur geänderte Wochentage:** Neu gekappt werden Einträge an Wochentagen, deren Blöcke sich geändert haben. Eine reine Pausenänderung kappt nichts neu – sie ändert nur das Tagessoll.
-- **Grundlage ist der Stempel:** Neu gekappt wird immer vom ursprünglich gestempelten Wert aus, nie von einer schon gekappten Zeit. Eine Verlängerung gibt so vorher abgeschnittene Zeit wieder frei. Fehlt der Rohstempel – bei Einträgen aus der Zeit vor Version 1.19.1 oder am Ende eines automatisch geschlossenen Eintrags (das 23:59 war kein Stempel) –, nennt die Auswirkung den Eintrag als „nicht erweiterbar", z. B. *„1 Eintrag ohne Rohstempel – nicht erweiterbar (14.09.2026, Ende 18:15)"*; er wird nicht über die gespeicherte Zeit hinaus verlängert. Das gilt auch, wenn ein Altfenster entfernt wird.
-- **Aktueller Puffer:** Die Neuberechnung nimmt den heute eingestellten Puffer (die Auswirkung nennt ihn) und merkt ihn sich an jedem geprüften Eintrag. War ein neu berechneter Eintrag mit einem anderen Puffer gekappt, nennt das Änderungsprotokoll beide Werte (z. B. „Puffer 15 → 10 Min").
-- **Übersprungen und einzeln genannt:** der offene Eintrag von heute, Sonn- und Feiertage sowie „freie" Sondertage, Mitarbeitende ohne Stundenzählung, Tage außerhalb des Beschäftigungszeitraums, anerkannte Einträge und Einträge, die nach der Kappung mit einem anderen Eintrag desselben Tages kollidieren würden. Offene Einträge **vergangener** Tage (vergessenes Ausstempeln) schließt PraxisZeit vorher automatisch (*„1 offener Eintrag eines vergangenen Tages wird vorher automatisch geschlossen."*) und rechnet sie danach regulär neu. In der Tabelle zählen sie beim Überstundenkonto schon unter „bisher" – die Differenz zeigt nur, was die Änderung selbst bewirkt.
-- **Danach die Abwesenheiten:** Erst nach den Zeiteinträgen werden die Stunden bereits gebuchter Abwesenheiten im Wirkungsbereich auf das neue Tagessoll umgestellt (ein Halbtag zur Hälfte) – bei rückwirkendem **und** bei zukunftsdatiertem Wirkungsdatum, denn Urlaub, Betriebsferien und Fortbildungen sind oft im Voraus gebucht. Bei Tagesplan und Blöcken betrifft das nur Wochentage, deren Tagessoll sich ändert – mit einer Ausnahme für den Bestand: Kranken- und Fortbildungstage, die aus der Zeit vor Version 1.20.0 noch ihre alten Stunden an einem Wochentag ohne Soll tragen (z. B. nachdem eine frühere Änderung den Dienstag frei gemacht hat), setzt jede Änderung, deren Wirkungsbereich den Tag umfasst, auf 0, auch wenn sie diesen Wochentag gar nicht ändert. Liegt der Tag in der Vergangenheit, sinkt dabei das Überstundenkonto um diese Stunden, und es gilt der Verkürzungsschutz (siehe unten); „Ab heute" lässt solche vergangenen Tage unverändert. Abwesenheiten, die vor dem Update auf Version 1.10.0 gebucht wurden (über einen Änderungsantrag: vor dem Update auf 1.16.0), stellt PraxisZeit nie um, auch nicht auf 0: Ein solcher Kranken- oder Fortbildungstag an einem Wochentag ohne Soll zählt weiter zum Überstundenkonto – löschen Sie die Abwesenheit bei Bedarf von Hand (an einem Tag ohne Soll zählt sie ohnehin nicht als Abwesenheitstag). Ausgenommen sind Überstundenausgleich (dort zählen die beantragten Stunden weiter) und Mitarbeitende ohne Stundenzählung; die **Urlaubstage selbst ändern sich nie** (Tagesprinzip). An einem Tag mit Abwesenheit **und** Arbeit (z. B. halber Tag krank, halber Tag gearbeitet) wird die Gutschrift so angeglichen, dass Arbeit und Gutschrift zusammen das Tagessoll nicht überschreiten – im ganzen Wirkungsbereich, auch an unveränderten Wochentagen (*„1 Abwesenheit an einem Misch-Tag angeglichen (Arbeit und Gutschrift am selben Tag)"*).
+*Unter **Abwesenheiten** im Bereich Administration tragen Sie Urlaub, Krankheit oder Fortbildung für eine Person ein. **Betriebsferien** schließen die ganze Praxis – PraxisZeit bucht die Tage für alle Teilnehmenden auf einmal.*
 
-##### Verlängerung und Verkürzung
+<a id="abwesenheit-fuer-person"></a>
+### Wie trage ich eine Abwesenheit für eine Person ein?
 
-**Verlängerung** heißt: Weder die angerechnete Zeit eines Eintrags noch das Überstundenkonto sinken (z. B. längere Blöcke bei gleichem Tagessoll, oder ein niedrigeres Soll). Dann genügt – wo verlangt – der Bestätigungshaken.
+Klicken Sie in der Navigation unter Administration auf `Abwesenheiten`. Die Seite heißt „Abwesenheiten verwalten“; der Tab `Mitarbeiter-Abwesenheiten` listet alle Personen mit ihren Abwesenheiten im gewählten Monat.
 
-**Verkürzung** liegt vor, sobald mindestens eines zutrifft:
-1. ein erfasster Eintrag verliert angerechnete Zeit;
-2. das Überstundenkonto sinkt im Wirkungsbereich – auch durch ein rückwirkend **höheres** Soll (längere Blöcke, kleinere Pause, mehr Wochenstunden) oder durch ein höheres Soll für den heutigen Tag, während die Person eingestempelt ist;
-3. eine Abwesenheits-Gutschrift an einem Tag mit Arbeit und Abwesenheit sinkt stärker als das Tagessoll des Tages.
+![Seite „Abwesenheiten verwalten“: Mitarbeiterin Sarah Klein gewählt, darunter das Formular „Abwesenheit eintragen“ mit Datum, Typ Urlaub, ausgegrautem Stundenfeld mit Hinweis zum Tagessoll und Speichern](img/pl-abwesenheit-eintragen.webp)
 
-Das gilt für jede Änderung in diesem Dialog – auch für eine reine Wochenstunden- oder Tagesplan-Änderung ohne Blöcke –, beim Anlegen wie beim Löschen. Der Dialog zeigt dann über der Auswirkung einen Kasten **„Verkürzung"** (mit Warnsymbol) mit den zutreffenden Gründen, z. B. *„3 Einträge verlieren angerechnete Zeit (zusammen 2:15 h)"*, *„Das Überstundenkonto sinkt im Wirkungsbereich um 3:45 h (höheres Soll), obwohl kein Eintrag angerechnete Zeit verliert"* oder *„Heute steigt das Soll um 1:00 h, während die Person eingestempelt ist – das Überstundenkonto sinkt beim Ausstempeln."*, und zwei Möglichkeiten; die Auswirkung darunter zeigt jeweils die gewählte:
+1. Wählen Sie unter **Mitarbeiter** die Person – oder klicken Sie in der Liste bei ihr auf `+ Eintragen`. Oben rechts steht dann `Abwesenheit eintragen`.
+2. Mehrere Tage? Setzen Sie den Haken bei `Zeitraum (mehrere Tage)`. Für einen einzelnen Tag gibt es `Halber Tag (zählt als 0,5 Tag)` – nicht bei Krank und Überstundenausgleich.
+3. Wählen Sie das **Datum** – beim Zeitraum **Von** und **Bis**. Anders als die Mitarbeitenden tragen Sie auch vergangene Tage direkt ein.
+4. **Typ:** Urlaub, Krank, Fortbildung (außer Haus), Überstundenausgleich, Bezahlte Freistellung (kein Urlaubsabzug), Sonstiges – oder unter „Eigene Gründe“ ein Grund Ihrer Praxis.
+5. **Stunden:** Das Feld bleibt ausgegraut, solange es nichts einzutragen gibt – gebucht wird immer das Tagessoll des Tages laut Vertrag („Es wird das Tagessoll laut Vertrag gebucht“). Nur beim Überstundenausgleich (auch als eigener Grund „Überstundenabbau“) ist das Feld frei: Der eingetragene Wert geht vom Überstundenkonto ab – bei Personen mit Tagesplan bucht das System stattdessen das Tagessoll des Tages.
+6. Klicken Sie auf `Speichern`.
 
-- **„Ab heute (TT.MM.JJJJ) wirksam – vergangene Einträge bleiben unverändert"** (Standard; verliert kein Eintrag angerechnete Zeit, sondern sinken nur das Überstundenkonto oder eine Abwesenheits-Gutschrift, endet die Beschriftung mit „vergangene Tage bleiben unverändert"). Die Änderung gilt ab dem frühesten Datum, ab dem nichts verloren geht – meist heute; morgen (Beschriftung dann „Ab TT.MM.JJJJ wirksam – …"), wenn heute schon ein Eintrag verliert, der heutige Tag bereits Saldo oder Gutschrift verliert oder das Soll von heute steigt, während die Person eingestempelt ist. Vergangene Einträge werden nicht neu berechnet, und auch spätere Bearbeitungen alter Einträge rechnen mit der damals gültigen Arbeitszeit. Dafür ist kein Grund nötig.
-- **„Rückwirkend ab ‹Datum› mit Neuberechnung"** – nur mit **Grund**, **Begründung** (10 bis 400 Zeichen) und **Bestätigung**:
-  - Grund **„Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)"**, **„Mit der beschäftigten Person vereinbart"** oder **„Sonstiges"**. Unter der Auswahl steht immer: *„Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit."* Das heißt: Falsch gestempelte Zeiten korrigieren Sie am Zeiteintrag selbst (Bearbeiten im Admin-Dashboard oder im Monatsjournal), Mitarbeitende per Änderungsantrag. Eine rückwirkende Arbeitszeit-Änderung berichtigt nur eine falsch **hinterlegte** Arbeitszeit.
-  - Bestätigung je Grund: *„Ich habe geprüft, dass die hinterlegte Arbeitszeit falsch war (Fehlerkorrektur)."* bzw. *„Ich habe geprüft, dass die rückwirkende Änderung mit der beschäftigten Person vereinbart ist."* bzw. *„Ich habe die Gründe geprüft."* Jeder Text endet mit *„Tatsächlich geleistete Arbeit, die angeordnet, gebilligt oder geduldet wurde, ist unabhängig von der Anrechnung zu vergüten (§ 611a, § 612 BGB). Auf den Mindestlohn für geleistete Stunden kann nicht verzichtet werden (§ 3 MiLoG)."*
-  - Bei **„Sonstiges"** zusätzlich die rote Warnung *„Eine einseitige rückwirkende Kürzung deckt das Direktionsrecht nicht (§ 106 GewO wirkt nur für die Zukunft); geleistete Arbeit bleibt zu vergüten."* und ein zweiter Haken *„Mir ist bewusst, dass eine einseitige rückwirkende Kürzung vom Direktionsrecht nicht gedeckt ist."*
-  - Bei jeder rückwirkenden Verkürzung der Hinweis *„Bei Minijob oder Vergütung in Mindestlohnhöhe kann die Kürzung Mindestlohnansprüche (§§ 1, 3 MiLoG) und die Aufzeichnung nach § 17 MiLoG berühren."* – bei Personen mit Minijob-Arbeitszeitkonto oder vereinbarter Monatsarbeitszeit zusätzlich ein Hinweis zum Kontostand und zur 12-Monats-Ausgleichsfrist.
-  - Im Änderungsprotokoll steht der Grund als Kürzel **„[Erfassungsfehler korrigiert]"**, **„[Einvernehmlich vereinbart]"** bzw. **„[Sonstiges]"**, gefolgt von Ihrer Begründung. Grund, Begründung und eine eventuelle Notiz speichert PraxisZeit zusammen im Notizfeld der Änderung (höchstens 500 Zeichen); passen sie nicht hinein, meldet der Dialog *„Notiz und Begründung zusammen höchstens 500 Zeichen."*, und „Speichern" bleibt gesperrt.
-- Reicht eine rückwirkende Verkürzung in ein **abgeschlossenes Jahr** hinein (ein Jahr, für das der Jahresabschluss ausgeführt wurde), ist sie trotzdem möglich – mit Grund, Begründung und Bestätigung wie oben. Der Dialog weist darauf hin: *„Die Verkürzung reicht in das abgeschlossene Jahr 2025. Gespeichert wird mit Begründung; danach bitte den Jahresabschluss 2025 erneut ausführen."* Nach dem Speichern erscheint zusätzlich *„Jahresabschluss … bereits erfolgt — Carryover … ist nun veraltet, bitte Jahresabschluss erneut ausführen.“* (bei mehreren Jahren mit allen Jahren). Führen Sie den Jahresabschluss für **jedes** genannte Jahr erneut aus, vom frühesten an, damit die Überträge stimmen. Achtung: Ein erneuter Jahresabschluss überschreibt die Überträge **aller** Mitarbeitenden für das Folgejahr, auch von Hand korrigierte Werte in der **Vorjahresübernahme** – tragen Sie solche Korrekturen danach erneut ein. Bis 1.21.0 war die Verkürzung hier gesperrt. Von Hand eingetragene Überträge (**Vorjahresübernahme** am Mitarbeiter) gelten seit 1.21.1 nicht als Jahresabschluss; wird ein vom Jahresabschluss erzeugter Übertrag dort korrigiert, zählt er ebenfalls als von Hand eingetragen.
-- Liegt die Änderung vollständig vor einer späteren Änderung, entfällt der Standard: *„Die Änderung liegt vollständig vor der Änderung ab ‹Datum›; nur rückwirkend mit Begründung oder abbrechen."*
+> **Achtung:** **Nur an Arbeitstagen:** Wochenenden, Feiertage, als „frei“ eingestellte Sondertage und Tage ohne geplante Arbeitszeit (freie Wochentage, 0 Wochenstunden etwa in der Elternzeit) bleiben ausgenommen; bei Mitarbeitenden ohne Stundenzählung zählt jeder Werktag. Zeiteinträge der eingetragenen Tage werden ersetzt, Einträge an ausgenommenen Tagen bleiben stehen. Liegt im Zeitraum kein einziger Tag mit geplanter Arbeitszeit, lehnt PraxisZeit die Buchung ab.
 
-> ⚠️ **Neu in 1.20.0:** Auch eine rückwirkende **Erhöhung** der Wochenstunden oder des Tagesplans braucht jetzt Grund und Bestätigung, wenn das Überstundenkonto dadurch sinkt – bisher genügte der Bestätigungshaken. Ab dem frühesten Tag ohne Verlust (meist heute; morgen, wenn die Person heute schon gestempelt hat oder eingestempelt ist) bleibt die Änderung ohne Grund möglich.
+> **Gut zu wissen:** **Löschen:** Ohne gewählte Person klappt ein Klick auf den Namen die Abwesenheiten auf; der Papierkorb (`Löschen`) löscht eine Abwesenheit. Mitarbeitende beantragen die Löschung einer vergangenen Abwesenheit mit `Löschung beantragen` – der Antrag kommt als **Löschung** unter `Änderungsanträge` zu Ihnen. Betriebsferien-Tage ändert nur die Verwaltung.
 
-##### Änderung löschen
+<a id="betriebsferien-anlegen"></a>
+### Wie lege ich Betriebsferien an?
 
-Das Papierkorb-Symbol **„Löschen"** steht nur an der jüngsten Zeile des Verlaufs. Ältere Zeilen – auch die **früheste**, die die davor gültige Regelung festhält – lassen sich erst löschen, wenn die späteren gelöscht sind. Ein Klick öffnet oberhalb der Verlaufszeilen den Bereich *„Arbeitszeit-Änderung ab ‹Datum› löschen"* mit derselben Auswirkung (*„Auswirkung des Löschens: …"*). Das Löschen rechnet Zeiteinträge und Abwesenheiten symmetrisch zurück; ein automatisch geschlossener Eintrag wird dabei nicht wieder bis 23:59 angerechnet, denn das war kein Stempel. Verkürzt das Löschen nicht, bestätigen Sie mit **„Löschen"**. Eine Änderung, die erst nach heute beginnt, verkürzt beim Löschen nichts (in ihrem Zeitraum gibt es noch keine Zeiteinträge); dort genügt „Löschen". Verkürzt es (z. B. das Löschen einer Änderung, die das Soll gesenkt hatte), gelten dieselben Regeln wie beim Anlegen:
-- **„Ab ‹Datum› auf den vorherigen Stand zurücksetzen"** (Standard, Knopf **„Zurücksetzen"**): Statt zu löschen entsteht eine neue Verlaufszeile mit dem vorherigen Stand – *„Die Änderung ab ‹Gültig ab› bleibt bis ‹Vortag› wirksam und im Verlauf stehen; ab ‹Datum› gilt wieder der vorherige Stand."* ‹Datum› ist wie beim Anlegen das früheste Datum, ab dem nichts verloren geht: meist heute, bei einer Änderung, die heute beginnt, morgen. Vergangene Einträge werden dabei nicht neu berechnet; die Auswirkung zeigt *„Auswirkung der Rücksetzung: …"*.
-- **„Rückwirkend löschen mit Neuberechnung"** – nur mit Grund, Begründung und Bestätigung wie oben; reicht es in ein abgeschlossenes Jahr, danach den Jahresabschluss erneut ausführen.
+Wechseln Sie auf derselben Seite zum Tab `Betriebsferien` und klicken Sie oben rechts auf `Betriebsferien erstellen`.
 
-Hat sich der Verlauf seit dem Öffnen geändert – etwa weil inzwischen eine weitere Änderung dazwischen angelegt wurde (z. B. in einem zweiten Fenster) –, lehnt PraxisZeit die Rücksetzung ab, statt den Vertrag dieser Änderung zu überschreiben: *„Der vorherige Stand hat sich inzwischen geändert – bitte die Vorschau neu laden."* Der Bereich lädt die Auswirkung dann neu. Nach dem Löschen meldet PraxisZeit z. B. *„Gelöscht. 1 Zeiteintrag neu berechnet."*
+![Formular „Betriebsferien erstellen“ mit Bezeichnung „Umbau Empfang“, Von und Bis, der Verrechnung „Als Urlaub werten“ oder „Bezahlte Freistellung“ und dem Knopf zum Erstellen](img/pl-betriebsferien.webp)
 
-##### Wer davon erfährt
+1. **Bezeichnung**, z. B. „Weihnachtsschließzeit 2026“.
+2. **Von** und **Bis**: der Zeitraum der Schließung.
+3. **Verrechnung:** `Als Urlaub werten` (Standard) zieht jeden gebuchten Schließtag vom Urlaubskonto ab – 1 Tag je Arbeitstag. `Bezahlte Freistellung` wirkt wie ein Feiertag: kein Urlaubsabzug, das Überstundenkonto bleibt unberührt.
+4. Klicken Sie auf `Betriebsferien erstellen & Urlaub eintragen`. Jede teilnehmende Person bekommt für jeden ihrer Arbeitstage im Zeitraum eine Abwesenheit; vorhandene Zeiteinträge dieser Tage werden ersetzt (im Änderungsprotokoll dokumentiert).
 
-- **Mitarbeitende:** Nach **jeder** Arbeitszeit-Änderung, die sie betrifft – auch „ab heute", zukunftsdatiert, gelöscht oder zurückgesetzt –, steht 30 Tage lang auf ihrem Dashboard der Kasten **„Hinweis zu Ihrer Arbeitszeit"** mit dem Link „Arbeitszeit im Profil ansehen". Beispiele:
-  - *„Ihre Arbeitszeit wurde ab 01.09.2026 geändert (neu: Mo 08:00–12:00 + 15:00–17:00 / Di 08:00–12:00 / Do 08:00–12:00). 3 Einträge neu berechnet, angerechnete Zeit −2:15 h. Überstundenkonto im Zeitraum +1:45 h. Rückwirkende Verkürzung – Grund: Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)."*
-  - *„Ihre Arbeitszeit ändert sich ab 01.11.2026 (neu: 25,0 h/Woche)."* – ändern sich dabei die Arbeitstage, steht das mit dabei, z. B. „(neu: 40,0 h/Woche auf 4 Arbeitstage)".
-  - *„Die Arbeitszeit-Änderung ab 01.09.2026 wurde ab 09.10.2026 auf den vorherigen Stand zurückgesetzt (neu: …)."* bzw. nach dem Löschen *„Die Arbeitszeit-Änderung ab 01.09.2026 wurde zurückgenommen."*
+> **Gut zu wissen:** **Wer bekommt die Tage?** Alle aktiven Mitarbeitenden mit dem Haken **Nimmt an Betriebsferien teil** (Standard) – unabhängig von der Rolle. Kein Eintrag entsteht an Wochenenden, Feiertagen, „frei“ eingestellten Sondertagen, Tagen ohne geplante Arbeitszeit, außerhalb des Beschäftigungszeitraums und an Tagen mit einer anderen Abwesenheit. Fällt diese später weg, bucht PraxisZeit den Schließtag nach – außer es steht inzwischen ein Zeiteintrag am Tag. Setzen Sie den Haken nachträglich, trägt PraxisZeit die laufenden und künftigen Betriebsferien automatisch nach.
 
-  Bei einer rückwirkenden Verkürzung nennt der Hinweis nur den Grundtyp, nie Ihre Begründung. Unter **Profil → „Meine Arbeitszeit"** sehen die Mitarbeitenden die heute gültigen Blöcke und den Verlauf.
-- **Änderungsprotokoll:** je neu berechnetem Eintrag eine Zeile **„Neukappung (Arbeitszeit-Änderung)"** mit alten und neuen Zeiten; je Änderung und je Löschung eine Sammelzeile derselben Art mit Wirkungsdatum, Anzahl, Differenz der angerechneten Zeit, Saldo-Differenz, Puffer, Grund und Vertrag alt → neu – auch ohne betroffene Einträge, z. B. „Arbeitszeit-Änderung ab 01.09.2026: 3 Einträge neu berechnet, Δ -135 Min, Saldo Δ +105 Min, 1 übersprungen (1 anerkannt) · Puffer 15 Min · Verkürzung · Grund: [Erfassungsfehler korrigiert] … · Vertrag: … → …"; sind Abwesenheiten betroffen, zusätzlich eine Sammelzeile **„Stundenänderung"** ohne Datum (z. B. „Arbeitszeit-Änderung zum 2026-09-01: 2 Abwesenheit(en) im Zeitraum 2026-09-01–2026-10-09 auf neues Tagessoll nachgezogen", beim Löschen „Löschung der Arbeitszeit-Änderung zum 2026-09-01: … auf den davor gültigen Wert zurückgerechnet") und je nachgezogener Abwesenheit eine Zeile **„Stundenänderung"** mit altem und neuem Stundenwert (z. B. „Krank 8,0 h" → „Krank 4,0 h — Arbeitszeit-Änderung ab 15.03.2026"). Der beim Buchen erfasste Stundenwert bleibt daneben intern unverändert gespeichert – eine Rückversicherung, falls sich eine Berechnung nachträglich als falsch herausstellt.
-- **Berichte:** Monats- und Jahresbericht zeigen als Wochenstunden den **zu Zeitraumsbeginn** gültigen Wert und daneben die Änderung, z. B. „ab 15.03.2026: 20,0 Std/Woche", bei Tagesplan „ab 01.03.2026: Mo 8,0 / Di 5,0 / Mi 4,0 = 17,0 h/Woche", bei Blöcken „ab 01.09.2026: Mo 08:00–12:00 + 15:00–18:00 (Pause 30 Min) / Di 08:00–13:00 = 11,5 h/Woche" (ein Altfenster mit dem Zusatz „(nur Kappung)", entfernte Blöcke mit „· ohne Arbeitszeit-Blöcke"). Das gilt für das Admin-Dashboard und die Excel-, ODS- und PDF-Exporte (Jahresübersicht: Spalte **Stundenänderungen**).
+<a id="betriebsferien-aendern"></a>
+### Wie ändere oder lösche ich Betriebsferien?
 
-> ⚠️ **Fallstrick – die Wochenstundenzahl allein verrät nicht jede Änderung.** Ändern Sie im Modus „Gleichmäßig" nur die Arbeitstage pro Woche bei gleichbleibenden Wochenstunden (z. B. 40 h auf 5 Tage → 40 h auf 4 Tage), nennt der Verlauf bzw. Bericht die neue Arbeitstage-Zahl zwar zusätzlich (z. B. „ab 16.03.2026: 40,0 Std/Woche auf 4 Arbeitstage") – die **Wochenstundenzahl selbst bleibt unverändert**, das **Tagessoll** verschiebt sich aber still (8 h/Tag → 10 h/Tag). Verschieben Sie im Modus „Nach Tagen" oder „Nach Arbeitsblöcken" Stunden von einem Wochentag auf einen anderen, ohne die Wochensumme zu ändern, bleibt das Tagessoll der übrigen Tage gleich – dafür ändert sich der **Urlaubsverbrauch**: War am wegfallenden Wochentag bereits ein Urlaubstag gebucht, zählt er rückwirkend nicht mehr, weil dort kein Tagessoll mehr anfällt. Prüfen Sie deshalb immer die Auswirkung, nicht nur die Wochenstundenzahl.
+Unter dem Tab `Betriebsferien` stehen alle Schließungen als Tabelle.
 
-> **Arbeitsrecht und Mitbestimmung:** Ändert sich durch die Blöcke der Umfang der Arbeitszeit (Tagessoll/Wochenstunden), ist das eine Vertragsänderung und braucht das Einverständnis der beschäftigten Person (sonst Änderungskündigung, § 2 KSchG; bei Teilzeit §§ 8, 9 TzBfG). Die Lage kann, soweit der Vertrag sie nicht festlegt, im Rahmen des Direktionsrechts (§ 106 GewO) nach billigem Ermessen und mit angemessener Ankündigung nur für die Zukunft geändert werden (Arbeit auf Abruf: mindestens 4 Tage vorher, § 12 Abs. 3 TzBfG). Vereinbarte Arbeitszeiten und Ruhepausen sind wesentliche Vertragsbedingungen (§ 2 Abs. 1 Satz 2 Nr. 7 NachwG); eine Änderung ist spätestens am Tag des Wirksamwerdens schriftlich mitzuteilen (§ 3 NachwG). Mit Betriebsrat sind Lage, Verteilung und Pausen (§ 87 Abs. 1 Nr. 2 BetrVG), vorübergehende Änderungen der betriebsüblichen Arbeitszeit (Nr. 3) und die Kappung als technische Einrichtung (Nr. 6) mitbestimmungspflichtig; ohne Zustimmung ist die Maßnahme gegenüber den Beschäftigten unwirksam. PraxisZeit prüft das nicht.
->
-> Der Dialog zeigt dazu eine Kurzfassung unter dem Editor.
+![Tabelle der Betriebsferien: „Teamklausur“ mit Zeitraum, Verrechnung Urlaub, Zahl der betroffenen Mitarbeitenden und in der Spalte Aktion den Symbolen Bearbeiten und Löschen](img/pl-betriebsferien-liste.webp)
 
-**Mitarbeiter deaktivieren:**
-Klicken Sie in der Benutzerliste in der Aktionsspalte auf **„Deaktivieren"** (Symbol Person mit X). Deaktivierte Mitarbeiter können sich nicht mehr einloggen, historische Daten bleiben erhalten. Über **„Inaktive anzeigen"** und **„Reaktivieren"** holen Sie ein Konto zurück.
+1. Je Schließung: Bezeichnung, Zeitraum, Verrechnung und unter **Betroffene MA**, für wie viele Personen Tage gebucht sind.
+2. In der Spalte **Aktion**: **Bearbeiten** (Stift) – Ändern Sie den Zeitraum, bekommen neu hinzukommende Arbeitstage einen Eintrag und entfallene werden entfernt; eine umgestellte Verrechnung ändert den Typ der Einträge. Abweichende Einträge einzelner Personen bleiben unberührt. Speichern mit `Änderungen speichern`. Das erneute Speichern entfernt auch alte 0-Stunden-Einträge (Betriebsferien von vor 1.20.0) an Tagen ohne Soll; liegen sie in einem abgeschlossenen Jahr, prüfen Sie danach den Übertrag. **Löschen** (Papierkorb) – Die Abwesenheiten werden bei allen Personen entfernt.
 
-**Das letzte Admin-Konto bleibt aktiv:** Das letzte aktive Admin-Konto der Praxis lässt sich weder deaktivieren noch zur Mitarbeiterin bzw. zum Mitarbeiter herabstufen – sonst käme niemand mehr in die Verwaltung. Ernennen Sie vorher eine weitere Person zum Admin. Wer wann welches Konto deaktiviert, reaktiviert oder umgestuft hat, steht im Änderungsprotokoll unter **„Konto-Vorgänge"** (→ [Abschnitt 9](#9-änderungsprotokoll-audit-log)).
+> **Achtung:** **Abgeschlossenes Jahr:** Ändert das Anlegen, Speichern oder Löschen Buchungen in einem Jahr mit Jahresabschluss, meldet PraxisZeit z. B. „Jahresabschluss 2026 bereits erfolgt — Carryover 2027 ist nun veraltet, bitte Jahresabschluss erneut ausführen.“ Der Übertrag ändert sich nicht von selbst: Prüfen und korrigieren Sie ihn oder führen Sie den Jahresabschluss erneut aus (dabei werden von Hand korrigierte Überträge überschrieben). Reines Umbenennen löst den Hinweis nicht aus.
 
-> **Rechtlicher Hinweis (§16 ArbZG):** Arbeitszeitaufzeichnungen müssen **mindestens 2 Jahre** aufbewahrt werden. Löschen Sie daher niemals Mitarbeiterdaten – deaktivieren Sie die Konten.
+<a id="betriebsferien-ueberstundenabbau"></a>
+### Die Betriebsferien sind länger als der Resturlaub – was passiert?
 
-### DSGVO: Anonymisierung & endgültige Löschung (Art. 17)
+Das steuert ein Schalter unter `Einstellungen` → **Betriebsferien \& Urlaub**. Er gilt nur für Betriebsferien, die als Urlaub zählen.
 
-Für das **Recht auf Löschung** (Art. 17 DSGVO) gibt es zwei Stufen, die das gesetzliche Spannungsfeld zwischen Löschpflicht und der **Aufbewahrungspflicht** für Arbeitszeitaufzeichnungen (§16 ArbZG) auflösen. Beide setzen voraus, dass das Konto **zuvor deaktiviert** wurde.
+![Einstellungen, Abschnitt „Betriebsferien & Urlaub“: Erklärtext, Hinweis zum erneuten Speichern und der Schalter „Überzählige Betriebsferien als Überstundenabbau“](img/pl-betriebsferien-urlaub.webp)
 
-**Ablauf in Kürze:**
+1. **Überzählige Betriebsferien als Überstundenabbau** – aus (Standard): Alle Schließtage zählen als Urlaub, reicht der Resturlaub nicht, entstehen Minus-Urlaubstage. An: Erst wird der Urlaub aufgezehrt, die übrigen Tage bucht PraxisZeit als Überstundenausgleich – das Überstundenkonto darf dabei ins Minus gehen.
+2. Klicken Sie auf `Speichern`.
+3. Der Schalter wirkt beim Anlegen und erneuten Speichern. Bereits eingetragene Betriebsferien öffnen Sie einmal und speichern sie erneut – dann rechnet PraxisZeit sie nach derselben Regel neu.
 
-1. **Deaktivieren** Sie den/die Mitarbeiter:in (Knopf „Deaktivieren" in der Aktionsspalte). Damit startet eine **14-tägige Sperrfrist**.
-2. Nach Ablauf der Sperrfrist kann **anonymisiert** werden.
-3. **Endgültig löschen** lässt sich ein Datensatz erst, wenn die **730-tägige (2-Jahre-)Aufbewahrungsfrist** abgelaufen ist.
+> **Gut zu wissen:** **Pflichturlaub darf ins Minus:** Betriebsferien werden zwingend gebucht, auch über das Urlaubsbudget hinaus – anders als ein Urlaubsantrag oder eine direkte Buchung, die PraxisZeit bei fehlendem Resturlaub ablehnt. Mit eingeschaltetem Schalter verteilt PraxisZeit den Urlaub nach Datum (frühere Schließung zuerst); privater Urlaub im selben Jahr geht immer vor.
 
-| Aktion | Was passiert | Voraussetzung |
-|--------|--------------|---------------|
-| **Anonymisieren** | Personenbezogene Daten werden entfernt (Name → „Gelöschter Benutzer", Benutzername/E-Mail, Lichtbild, Abteilung, 2FA-Geheimnis). Die **Zeiteinträge bleiben** erhalten (Pflicht nach §16 ArbZG), Abwesenheiten werden gelöscht. Der Datensatz selbst und die Aufzeichnungen bleiben bestehen. | Konto deaktiviert **und** 14-tägige Sperrfrist abgelaufen |
-| **Endgültig löschen (Purge)** | **Vollständige, unwiderrufliche Löschung** des Benutzers samt aller zugehörigen Daten (Zeiteinträge, Abwesenheiten, Anträge). | Konto deaktiviert **und** die jüngste aufbewahrungspflichtige Aufzeichnung (Zeiteintrag oder Abwesenheit) ist **mindestens 730 Tage** alt |
+<a id="sondertage-verkuerzte-tage"></a>
+## Sondertage & verkürzte Tage
 
-- Die **Anonymisierung** ist der Regelweg, wenn die Aufbewahrungsfrist noch läuft: Die Person wird anonymisiert, die gesetzlich aufzubewahrenden Aufzeichnungen bleiben aber erhalten.
-- Die **endgültige Löschung** wird vom System blockiert, solange noch aufbewahrungspflichtige Aufzeichnungen jünger als 730 Tage existieren. Ein anonymisierter Benutzer kann also **erst nach Ablauf der 730 Tage** endgültig gelöscht werden.
-- Beide Vorgänge werden im **Änderungsprotokoll** dokumentiert (DSGVO-Rechenschaftspflicht, Art. 5 Abs. 2).
+*Heiligabend und Silvester sind keine gesetzlichen Feiertage. Ob dort voll, halb oder gar nicht gearbeitet wird, legen Sie selbst fest – ebenso einzelne **verkürzte Tage** wie Rosenmontag oder einen Betriebsausflug.*
 
-> **Wo?** Blenden Sie über **„Inaktive anzeigen"** die deaktivierten Konten ein. Das System zeigt je Konto die verbleibende Sperrfrist sowie an, ob eine Anonymisierung bzw. endgültige Löschung bereits möglich ist.
+<a id="sondertage-einstellen"></a>
+### Wie stelle ich den 24. und 31.12. ein?
 
----
+Klicken Sie auf `Einstellungen` und scrollen Sie zum Abschnitt **Sondertage (24./31.12.)**. Beide Tage stellen Sie getrennt ein.
 
-## 5. Abwesenheitskalender
+![Einstellungen, Abschnitt „Sondertage (24./31.12.)“: 24.12. im Modus Halbtag, 31.12. im Modus Frei mit der Anrechnung Urlaub, darunter Speichern](img/pl-sondertage.webp)
 
-![Abwesenheitskalender Admin](screenshots/18-admin-abwesenheitskalender.png)
+1. **Modus** je Tag: `Arbeitstag` (Standard), `Halbtag`, `Frei` oder `Verkürzt auf X Stunden`. Bei „Verkürzt“ erscheint daneben **Höchstens (Stunden)**: 0,25 bis 12 Stunden in Schritten von 0,25.
+2. **Anrechnung** (nur bei „Frei“): `Urlaub` zieht den freien Tag vom Urlaubskonto ab, `Bezahlte Freistellung` nicht – wie ein Feiertag.
+3. Klicken Sie auf `Speichern`. Der Knopf wird erst aktiv, wenn Sie etwas geändert haben.
 
-### Kalenderansicht
+| Modus | Tagessoll | Ein Urlaubstag an diesem Tag kostet |
+| --- | --- | --- |
+| Arbeitstag | volles Tagessoll | 1 Tag |
+| Halbtag | halbes Tagessoll | 0,5 Tage |
+| Frei | 0, wie ein Feiertag | mit Anrechnung „Urlaub“ zieht der Tag selbst 1 Urlaubstag ab; mit „Bezahlte Freistellung“ nichts |
+| Verkürzt auf X Stunden | die kleinere Zahl aus Tagessoll und X | 0,5 Tage |
 
-Abwesenheiten werden farbcodiert nach Typ dargestellt (z. B. Urlaub, Krankheit, Fortbildung, Überstundenausgleich, Sonstiges). Die genauen Farben sind unter **Einstellungen → „Farben"** je Typ frei konfigurierbar (→ [Abschnitt 13](#farben)). Jeder Mitarbeitende hat zusätzlich eine **eigene Kalenderfarbe** im Teamkalender. Diese kann der Mitarbeiter selbst unter **Profil → Kalenderfarbe** wählen oder der Administrator im **Benutzerformular** (Feld **Kalenderfarbe**) für ihn vorgeben.
+> **Gut zu wissen:** Die Einstellung gilt für **alle Jahre**, auch zurückliegende. Betroffene Betriebsferien bucht PraxisZeit beim Speichern selbst neu; ändert sich ein Jahr mit Jahresabschluss, erscheint dort nur der Hinweis auf den veralteten Übertrag. Wechselt ein Tag zwischen „Frei“ und Arbeitstag bzw. Halbtag, nennt PraxisZeit bestehende Zeiteinträge dieses Tages, deren Anrechnung sich ändern müsste – unverändert neu speichern berechnet sie neu.
 
-**Sondertage und Feiertage im Kalender:**
-- **Gesetzliche Feiertage** und arbeitsfreie **Sondertage** (24./31.12. im Modus „Frei") werden **grau** hinterlegt und sind nicht buchbar.
-- **Halbe Sondertage** (24./31.12. im Modus „Halbtag") werden **amber/gelb** hinterlegt.
-- **Verkürzte Tage** (24./31.12. im Modus „Verkürzt auf X Stunden" und Einträge unter „Verkürzte Tage") tragen den Hinweis **„verkürzter Tag (max. 4 h)"** (bei X = 4); sie bleiben buchbar.
+<a id="verkuerzte-tage"></a>
+### Wie verkürze ich einen einzelnen Tag, z. B. Rosenmontag?
 
-Die Anzeige folgt der Konfiguration unter **Einstellungen → „Sondertage (24./31.12.)"** (→ [Abschnitt 13](#sondertage-2431-12)).
+Unter `Einstellungen` → **Verkürzte Tage**, direkt unter den Sondertagen.
 
-### Als Admin Abwesenheit eintragen
+![Einstellungen, Abschnitt „Verkürzte Tage“: Eingabe Datum, Bezeichnung „Betriebsausflug“ und Höchstens 5 Stunden, darunter der eingetragene Brückentag mit höchstens 4 Stunden](img/pl-verkuerzte-tage.webp)
 
-1. Klicken Sie auf **„Abwesenheit eintragen"**
-2. Wählen Sie den **Mitarbeiter** aus dem Dropdown
-3. Wählen Sie Datum, Typ und ggf. Zeitraum
-4. Speichern
+1. Wählen Sie oben rechts das **Jahr**.
+2. Tragen Sie in der Eingabezeile das **Datum** des Tages ein (für den 24. und 31.12. nimmt PraxisZeit keinen Eintrag an – dafür gibt es die Sondertage), eine **Bezeichnung** wie „Rosenmontag“ oder „Betriebsausflug“ und **Höchstens (Stunden)**: 0,25 bis 12, in Schritten von 0,25. Klicken Sie auf `Hinzufügen`. Je Datum gibt es genau einen Eintrag.
+3. Eingetragene Tage stehen darunter. Ein Klick auf die Bezeichnung macht sie änderbar, ebenso die Stunden; danach erscheint `Speichern`. `Löschen` entfernt den Tag.
 
-Eingetragen wird nur an den **Arbeitstagen** der Person: Wochenenden, Feiertage, als „frei" eingestellte Sondertage (24./31.12.) und Tage ohne geplante Arbeitszeit – freie Wochentage laut Tagesplan, Zeiträume mit **0 Wochenstunden** (z. B. Elternzeit) – bleiben ausgenommen (bei Mitarbeitenden ohne Stundenzählung zählt jeder Werktag). Zeiteinträge an einem ausgenommenen Tag – etwa eine Vertretung am freien Wochentag – bleiben in jedem Fall stehen; ersetzt werden höchstens die Einträge der eingetragenen Tage. Liegt im Zeitraum kein einziger Tag mit geplanter Arbeitszeit, lehnt PraxisZeit die Buchung ab: *„Für ‹Tage› sind 0 Stunden geplant — an einem Tag ohne geplante Arbeitszeit kann keine Abwesenheit gebucht werden."*
+> **Gut zu wissen:** **So wirkt ein verkürzter Tag:** Das Soll ist die kleinere Zahl aus Tagessoll und Höchstwert – wer ohnehin weniger Soll hat, behält es. Ein Feiertag geht vor, am Wochenende wirkt der Tag nicht. Urlaub kostet 0,5 Tage; Krank und Fortbildung zählen anteilig (8 h Soll, höchstens 4 h → 4 h Soll und 4 h Gutschrift, Saldo 0). Angerechnet wird weiter die gestempelte Zeit, sie wird nicht auf den Höchstwert gekappt; die Arbeitszeit-Blöcke bleiben unverändert.
 
-### Betriebsferien im Kalender
+> **Gut zu wissen:** Mitarbeitende sehen den Tag im Kalender als „Brückentag: verkürzter Tag (max. 4 h)“ und auf der Stempelkarte als „verkürzter Tag (max. 4 h)“. Auch jede Änderung hier bucht betroffene Betriebsferien neu; in abgeschlossenen Jahren erscheint nur der Hinweis.
 
-Betriebsferien werden als gesonderte Einträge angezeigt und betreffen alle aktiven Mitarbeiter gleichzeitig (→ [Abschnitt 11](#11-betriebsferien-verwalten)).
+<a id="berichte-exporte"></a>
+## Berichte & Exporte
 
----
+*Für Lohnbuchhaltung, Steuerberatung und Betriebsprüfung exportieren Sie Monats- und Jahresberichte als Excel, ODS oder PDF. Die Dateien sind Ihr Nachweis nach § 16 ArbZG.*
 
-## 6. Berichte und Exporte
+<a id="monatsreport-exportieren"></a>
+### Wie exportiere ich den Monatsreport?
 
-![Berichte](screenshots/19-admin-berichte.png)
+Klicken Sie in der Navigation auf `Berichte`. Die Seite heißt „Berichte \& Export“; oben steht **Monatsreport exportieren**.
 
-### Monatsreport
+![Berichte & Export, Monatsreport: Monat auswählen, Knöpfe Excel, ODS und PDF, darunter „Krankheitsdaten einschließen“ und „Ausgeblendete Mitarbeitende einbeziehen“](img/pl-monatsreport.webp)
 
-- **Inhalt:** Tägliche Zeiteinträge aller Mitarbeiter im gewählten Monat
-- **Format:** Excel (.xlsx), ODS (.ods) oder PDF (.pdf)
-- **Spalten je Tag:** Datum, Wochentag, Von, Bis, Pause (Min), Netto (Std), Soll (Std), Differenz, Abwesenheit, Bemerkung – in Excel und ODS zusätzlich **Unterbrechung (Min)** und **Zeiteinträge**, dann in Excel, ODS und PDF **Nicht angerechnet (Min)** und dahinter die tatsächlichen Stempel: in Excel und ODS **Gestempelt (Von–Bis)**, **Anwesenheit laut Stempel (Std)** und **Pausenausnahme (§4 ArbZG)**, im PDF die Spalte **Gestempelt (Anwesenheit)** (alle hinten angehängt; die übrigen Spalten stehen unverändert an ihrem Platz, damit bestehende Auswertungen weiter funktionieren)
-- **Zusammenfassung pro Mitarbeiter:** Soll-/Ist-Stunden, Saldo Monat, Überstunden kumuliert, Urlaub, Nachtarbeitstage
+1. Wählen Sie unter **Monat auswählen** den Monat.
+2. Optional: `Krankheitsdaten einschließen (Art. 9 DSGVO)`. Ohne den Haken steht im Export „Abwesenheit“ statt „Krank“.
+3. Optional: `Ausgeblendete Mitarbeitende einbeziehen` – etwa die Praxisinhaberin, wenn sie stempelt. Ausgeschiedene sind immer enthalten, wenn sie im Zeitraum Einträge oder Abwesenheiten haben.
+4. Klicken Sie auf das Format – die Markierung sitzt am Knopf `PDF (.pdf)`, daneben stehen `Excel (.xlsx)` und `ODS (.ods)`. Die Datei wird heruntergeladen – je Person ein Blatt mit allen Tagen und einer Zusammenfassung.
 
-**So lesen Sie eine Tageszeile:**
+> **Achtung:** **Krankheitsdaten (Art. 9 DSGVO)** sind besondere Kategorien personenbezogener Daten; jeder Export mit dem Haken wird im Änderungsprotokoll vermerkt. Ohne den Haken steht auch bei eigenen Abwesenheitsgründen „Abwesenheit“ (die Notiz entfällt), und das Kennzeichen „Nachtarbeitnehmer“ im Kopf jedes Blatts zeigt „–“. „Sonstiges“/„unbezahlt frei“ und „Bez. Freistellung“ stehen immer im Klartext.
 
-- **Netto (Std)** ist die **angerechnete Arbeitszeit** der Zeiteinträge des Tages. Hat die Person [Arbeitszeit-Blöcke](#arbeitszeit-bloecke), ist das die Zeit nach der Kappung: „Von"/„Bis" zeigen die vor dem ersten bzw. nach dem letzten Block gekürzten Zeiten, und Zeit zwischen den Blöcken ist von Netto abgezogen; der ursprüngliche Stempel steht in der Spalte „Gestempelt (Von–Bis)" (siehe unten). An einem Krank- oder Fortbildungstag ohne Zeiteintrag steht hier 0, außerhalb des Beschäftigungszeitraums ebenfalls (die Stempel bleiben dort sichtbar).
-- **Differenz** ist der Saldo des Tages: Netto **plus Gutschrift für Krankheit/Fortbildung** minus Soll. Ein Krank- oder Fortbildungstag ist damit **±0** – das Soll bleibt stehen, die Stunden aus der Spalte „Abwesenheit" werden gutgeschrieben. Die Summe der Spalte entspricht dem „Saldo Monat" der Zusammenfassung. **Ausnahme:** Mitarbeitende mit fester Monatsarbeitszeit (Minijob-Modus, → [Abschnitt 13](#13-einstellungen)) – dort ist das Monats-Soll fest und nicht die Summe der Tage; verbindlich ist dann nur die Zusammenfassung.
-- **Geteilte Dienste** (mehrere Zeiteinträge an einem Tag, z. B. 07:45–12:00 und 14:15–17:00): In Excel/ODS zeigen „Von"/„Bis" den Rahmen des Tages (erster Beginn, letztes Ende), **Unterbrechung (Min)** die Zeit zwischen den Einträgen und **Zeiteinträge** die einzelnen Einträge („07:45–12:00, 14:15–17:00"). Damit geht die Zeile auf: Bis − Von − Pause − Unterbrechung = Netto – solange nichts zwischen zwei Arbeitszeit-Blöcken gestempelt wurde; sonst ist Netto zusätzlich um diese nicht angerechnete Lückenzeit kleiner. **Ausnahmen:** Überschneiden sich zwei Einträge, zählt Netto die Überschneidung doppelt – die Spalte „Zeiteinträge" zeigt sie; läuft ein Eintrag des Tages noch (nicht ausgestempelt), fehlt seine Zeit in Netto und in „Bis"; außerhalb des Beschäftigungszeitraums ist Netto 0. Im **PDF** stehen die Einträge in „Von"/„Bis" untereinander, die Unterbrechung in einer eigenen Spalte direkt neben der Pause.
-- **Nicht angerechnet (Min)** (13. Spalte, ab 1.20.0) nennt je Tag die gestempelte, aber nicht angerechnete Zeit in Minuten: die Zeit zwischen den Arbeitszeit-Blöcken **und** die vor dem ersten bzw. nach dem letzten Block abgeschnittene Zeit, die in „Von"/„Bis" schon fehlt. Beispiel: gestempelt 07:00–19:00 bei Blöcken 08:00–12:00 + 15:00–18:00 und 15 Minuten Puffer → Von 07:45, Bis 18:15, Netto 8,00, Nicht angerechnet 240 (davon 150 zwischen den Blöcken). Die Abendzeit eines automatisch auf 23:59 geschlossenen Eintrags zählt nicht mit (23:59 ist kein echter Stempel); ein anerkannter Eintrag hat hier 0. Die Zusammenfassung nennt die Summe des Monats, der Jahresreport Detailliert je Mitarbeiter die Summe des Jahres.
-- **Gestempelt (Von–Bis)** listet jeden Zeiteintrag des Tages mit der tatsächlich gestempelten Zeit, z. B. „07:00–19:00" – auch wenn „Von"/„Bis" wegen der Arbeitszeit-Blöcke 07:45–18:15 zeigen. Bei einem automatisch geschlossenen Eintrag steht das angerechnete Ende mit dem Zusatz „(automatisch geschlossen)", denn 23:59 ist kein echter Stempel. **Anwesenheit laut Stempel (Std)** ist die gestempelte Zeit abzüglich erfasster Pausen (wie im 24-Wochen-Bericht); mehr als 10 Stunden sind in Excel rot, in ODS fett hervorgehoben. **Pausenausnahme (§4 ArbZG)** nennt die Begründung, wenn an diesem Tag eine Pflicht-Pause-Ausnahme erfasst wurde. Im **PDF** stehen Stempel und Anwesenheit in der Spalte „Gestempelt (Anwesenheit)", die Begründung der Pausenausnahme in der Bemerkung („§4-Ausnahme: …").
+| Spalte (Tageszeile) | Bedeutung |
+| --- | --- |
+| Von / Bis | Rahmen des Tages: erster Beginn, letztes Ende – bei Arbeitszeit-Blöcken die gekappten Zeiten |
+| Pause (Min) | die erfasste Pause |
+| Netto (Std) | die angerechnete Arbeitszeit der Zeiteinträge |
+| Soll (Std) | das Tagessoll |
+| Differenz | Netto plus Gutschrift für Krankheit und Fortbildung minus Soll – ein Krank- oder Fortbildungstag ist ±0; die Summe ist der „Saldo Monat“ |
+| Abwesenheit, Bemerkung | Art der Abwesenheit und Notizen |
+| Unterbrechung (Min), Zeiteinträge | nur Excel und ODS: Zeit zwischen den Einträgen eines Tages und die Einträge einzeln, z. B. „07:45–12:00, 14:15–17:00“ |
+| Nicht angerechnet (Min) | gestempelte, aber nicht angerechnete Zeit vor, nach und zwischen den Arbeitszeit-Blöcken |
+| Gestempelt (Von–Bis), Anwesenheit laut Stempel (Std), Pausenausnahme (§4 ArbZG) | die tatsächlichen Stempel, die Anwesenheit abzüglich Pausen (über 10 h hervorgehoben) und die Begründung einer Pausenausnahme; im PDF als Spalte „Gestempelt (Anwesenheit)“ und in der Bemerkung |
 
-**Verwendung:** Gehaltsabrechnung, monatliche Kontrolle, Dokumentation
+> **Gut zu wissen:** Neue Spalten hängt PraxisZeit immer hinten an – bestehende Auswertungen funktionieren weiter. Die **Zusammenfassung** je Person nennt Soll- und Ist-Stunden, Saldo Monat, Überstunden kumuliert, Urlaub und Nachtarbeitstage. Bei fester Monatsarbeitszeit (Minijob-Modus) ist nur die Zusammenfassung verbindlich, denn das Monats-Soll ist dort nicht die Summe der Tage.
 
-### Jahresreport Classic
+<a id="jahresreport-exportieren"></a>
+### Wie exportiere ich einen Jahresbericht?
 
-- **Format:** Excel (.xlsx) oder ODS (.ods)
-- **Inhalt:** Pro Mitarbeiter ein Tabellenblatt mit den 12 Monatswerten – in Excel die Monate als Spalten, in ODS eine Zeile je Monat
-- **Details:** Soll, Ist, Saldo, Urlaub und Krankheit in Stunden (ODS zusätzlich Fortbildung und die übrigen Abwesenheitsarten), Überstunden kumuliert, Resturlaub
+Weiter unten auf derselben Seite: **Jahresreport exportieren**. Krankheitsdaten und ausgeblendete Mitarbeitende wählen Sie dort genauso.
 
-**Verwendung:** Jahresüberblick, schnelle Kontrolle
+![Berichte & Export, Jahresreport: Jahr auswählen und die beiden Formate „Classic“ und „Detailliert“ mit je einem Knopf für Excel und ODS](img/pl-jahresreport.webp)
 
-### Jahresreport Detailliert
+1. Tragen Sie unter **Jahr auswählen** das Jahr ein.
+2. **Classic Format** (`Excel` oder `ODS`): je Person ein Blatt mit den 12 Monatswerten – Soll, Ist, Saldo, Urlaub und Krankheit in Stunden, Überstunden kumuliert und Resturlaub.
+3. **Detailliertes Format** (`Excel` oder `ODS`): jeder Tag des Jahres je Person, mit denselben Tagesspalten wie der Monatsreport. Die Erstellung dauert einige Sekunden.
 
-- **Format:** Excel (.xlsx) oder ODS (.ods)
-- **Inhalt:** Jeden Tag des Jahres pro Mitarbeiter – mit denselben Tagesspalten wie der Monatsreport (inkl. Unterbrechung, Zeiteinträge und Nicht angerechnet sowie Gestempelt, Anwesenheit laut Stempel und Pausenausnahme; die Differenz enthält die Gutschrift für Krankheit/Fortbildung)
-- **Hinweis:** Generierungszeit 3–5 Sekunden
+> **Achtung:** **Aufbewahrung (§ 16 ArbZG):** Exportieren Sie regelmäßig, mindestens jährlich, und bewahren Sie die Dateien **2 Jahre** sicher auf. Das PDF-Format gibt es nur für den Monatsreport.
 
-**Verwendung:** Detaillierte Jahresauswertung, Steuerberater, Betriebsprüfung
+<a id="arbzg-pruefung"></a>
+## ArbZG-Prüfung & §4-Ausnahme
 
-> **Hinweis:** Das **PDF**-Format gibt es nur für den **Monatsreport**. Die Jahresreports stehen als **Excel** und **ODS** zur Verfügung.
+*PraxisZeit prüft beim Erfassen das Arbeitszeitgesetz und warnt oder sperrt. Unter **Berichte** werten Sie nachträglich aus – und unter **Einstellungen** legen Sie fest, ob es die Ausnahme „Pflicht-Pause war nicht möglich“ gibt.*
 
-### Bericht erstellen
+| Auswertung unter Berichte | Prüft |
+| --- | --- |
+| Ruhezeitprüfung | § 5: mindestens 11 Stunden Ruhezeit zwischen zwei Arbeitstagen (Mindestruhezeit einstellbar) |
+| Sonntagsarbeit §11 ArbZG | gearbeitete und freie Sonntage – mindestens 15 Sonntage im Jahr müssen frei sein |
+| Nachtarbeit §6 ArbZG | Nachtarbeitstage und Nachtarbeitnehmer, mit Monatsdurchschnitt je Werktag |
+| Ersatzruhetage §11 ArbZG | Ersatzruhetag innerhalb von 2 Wochen nach Sonntags- und 8 Wochen nach Feiertagsarbeit |
+| 24-Wochen-Durchschnitt §3 ArbZG | höchstens 8 Stunden je Werktag im Schnitt über 24 Wochen |
+| Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG | Tage über 10 Stunden, Wochen über 48 Stunden, Pausenausnahmen und zu kurze Pausen |
 
-1. Wählen Sie den **Berichtstyp**
-2. Wählen Sie **Monat** oder **Jahr**
-3. Optional: **„Krankheitsdaten einschließen" (Art. 9 DSGVO)** – nimmt Krankheitsstunden bzw. -tage in den Export auf. Krankheitsdaten sind besondere Kategorien personenbezogener Daten (Art. 9 DSGVO); jeder Export mit dieser Option wird im **Änderungsprotokoll** vermerkt. Ohne diese Option steht im Export „Abwesenheit" statt „Krank" (ebenso bei eigenen Abwesenheitsgründen, die Notiz entfällt), und das Kennzeichen „Nachtarbeitnehmer (§6 Abs. 2 ArbZG)" im Kopf jedes Blatts zeigt „–" – in allen Dateiformaten gleich. „Sonstiges"/„unbezahlt frei" und „Bez. Freistellung" stehen immer im Klartext; die einzelnen Nachtarbeitstage ebenfalls.
-4. Optional: **„Ausgeblendete Mitarbeitende einbeziehen"** – nimmt auch Personen auf, die Sie in der Benutzerverwaltung ausgeblendet haben (z. B. die Praxisinhaberin, wenn sie stempelt). Ohne diese Option fehlen sie im Export. Ausgeschiedene (inaktive) Mitarbeitende sind immer enthalten, wenn sie im Zeitraum Einträge oder Abwesenheiten haben.
-5. Klicken Sie auf das gewünschte Format – **Excel (.xlsx)**, **ODS (.ods)** oder (beim Monatsreport) **PDF (.pdf)**
-6. Die Datei wird automatisch heruntergeladen
+> **Gut zu wissen:** **Wer erscheint?** Alle aktiven Mitarbeitenden und ausgeschiedene, die im Zeitraum Einträge oder Abwesenheiten haben. Ausgeblendete nur mit `Ausgeblendete Mitarbeitende einbeziehen` über den Auswertungen; § 18-befreite Mitarbeitende erscheinen nie.
 
-> **Rechtlicher Hinweis (§16 ArbZG):** Exportieren Sie regelmäßig (mindestens jährlich) und sichern Sie die Dateien sicher für **2 Jahre**.
+<a id="arbzg-24-wochen"></a>
+### Hält mein Team den 8-Stunden-Durchschnitt ein?
 
----
+Auf der Seite „Berichte \& Export“ im Abschnitt **24-Wochen-Durchschnitt §3 ArbZG**.
 
-## 7. Abwesenheitsanträge genehmigen
+![Auswertung „24-Wochen-Durchschnitt §3 ArbZG“ zum Stichtag: je Person Durchschnitt angerechnet und laut Stempel je Werktag, Summen, Wochen über 48 Stunden, Tage über 8 Stunden und Status](img/pl-arbzg-24wochen.webp)
 
-Wenn die Genehmigungspflicht aktiviert ist, landen Urlaubsanträge von Mitarbeitern zur Prüfung beim Admin.
+1. **Stichtag** (Standard heute): ausgewertet werden die 24 Wochen bis zu diesem Tag.
+2. Klicken Sie auf `Prüfen`. Über der Tabelle stehen der Zeitraum und, falls jemand die Grenze überschreitet, die Zahl der nicht konformen Mitarbeitenden.
+3. **Ø angerechnet / Werktag** und **Status** rechnen mit der angerechneten Zeit, geteilt durch die Werktage – Montag bis Samstag ohne Feiertage und ohne Tage mit Urlaub, Krankheit, Fortbildung, Sonstiges oder Freistellung. **Anwesenheit laut Stempel** ist die gestempelte Zeit abzüglich Pausen; liegt ihr Schnitt über 8 Stunden, ist sie rot hervorgehoben.
 
-### Genehmigungspflicht konfigurieren
+<a id="arbzg-hoechstarbeitszeit"></a>
+### Wo sehe ich lange Tage und dokumentierte Pausenausnahmen?
 
-**Admin-Navigation → Anträge** (Seitentitel: „Abwesenheitsanträge")
+Im Abschnitt **Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG**.
 
-Oben auf der Seite befindet sich ein Toggle **„Abwesenheitsanträge genehmigungspflichtig"**:
+![Auswertung „Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG“: Zähler je Befund und aufgeklappt eine dokumentierte Pausenausnahme von Thomas Bauer mit Zeit, Pause und Begründung](img/pl-arbzg-hoechstarbeitszeit.webp)
 
-| Toggle | Verhalten |
-|--------|-----------|
-| **Aus** (Standard) | Mitarbeiter buchen Urlaub direkt |
-| **Ein** | Urlaubsanträge landen als „Offen" beim Admin |
-
-### Antrag genehmigen
-
-1. Antragskarte aufrufen – zeigt Mitarbeitername, Zeitraum, **Arbeitstage**, Notiz
-2. Klicken Sie auf **„Genehmigen"** (grüner Button)
-3. Das System trägt automatisch Abwesenheiten für alle Arbeitstage der Person ein (Wochenenden, Feiertage, als „frei" eingestellte Sondertage 24./31.12., freie Wochentage laut Tagesplan und Zeiträume mit 0 Wochenstunden ausgeschlossen). An einem **verkürzten Tag** kostet der Urlaub 0,5 Urlaubstage; das Soll des Tages sinkt dabei auf die kleinere Zahl aus Tagessoll und X. Vorhandene Zeiteinträge an diesen Tagen werden ersetzt (im Änderungsprotokoll dokumentiert); an den ausgeschlossenen Tagen bleiben sie stehen.
-
-**„Arbeitstage" auf der Antragskarte** zeigt, wie viele Tage der Antrag nach der Genehmigung tatsächlich kostet – nach genau denselben Regeln wie die Buchung und das Urlaubskonto:
-
-- Es zählen nur Tage, an denen die Person laut ihrem **zum jeweiligen Datum gültigen** Arbeitsplan arbeitet. Bei einer 4-Tage-Woche mit freiem Mittwoch kostet eine Woche Montag bis Freitag **4** Tage, nicht 5. Liegt im Zeitraum eine Arbeitszeit-Änderung, gilt für jeden Tag der Plan, der an diesem Tag gültig ist.
-- Wochenenden, Feiertage und als „frei" eingestellte Sondertage (24./31.12.) zählen nicht.
-- Ein **halber Tag** zählt **0,5**; ein als **„halber Feiertag"** eingestellter 24./31.12. ebenfalls **0,5**.
-- Tage nach einem inzwischen eingetragenen **letzten Arbeitstag** zählen nicht mit – ein solcher Antrag lässt sich so aber nicht mehr genehmigen (Fehlermeldung „Datum liegt nach dem letzten Arbeitstag"). Kürzen Sie ihn vorher über **„Bearbeiten"** auf den Beschäftigungszeitraum.
-- Zeigt die Karte **0**, deckt der Antrag keinen Tag, an dem die Person arbeitet. Die Genehmigung lehnt PraxisZeit dann ab – bei Tagen ohne geplante Arbeitszeit mit *„Für ‹Tage› sind 0 Stunden geplant — an einem Tag ohne geplante Arbeitszeit kann keine Abwesenheit gebucht werden."* –, und der Antrag bleibt offen. Lehnen Sie ihn ab oder passen Sie ihn über **„Bearbeiten"** an.
-
-Dieselbe Zahl sehen Mitarbeitende im Tab **„Meine Anträge"**. Bis Version 1.19.3 zählte die Anzeige stumpf Montag bis Freitag ohne Feiertage und widersprach damit bei Teilzeitkräften mit Tagesplan, bei Halbtagen und bei freien Sondertagen dem, was die Genehmigung danach verbucht.
-
-### Genehmigten Antrag stornieren
-
-Eine Genehmigung lässt sich rückgängig machen, solange der Urlaubszeitraum **noch nicht begonnen hat** (Beginn in der Zukunft). Wechseln Sie dazu in den Filter **„Genehmigt"**, öffnen Sie den Antrag und klicken Sie auf **„Urlaub stornieren"**.
-
-- Die durch die Genehmigung erzeugten **Abwesenheitseinträge werden automatisch entfernt** – ein manuelles Löschen ist nicht nötig.
-- Der Antrag wird auf **„Zurückgezogen"** gesetzt und bleibt für die Nachvollziehbarkeit im Änderungsprotokoll erhalten.
-
-> **Hinweis:** Bereits begonnene oder vergangene Urlaube können nicht storniert werden. Offene Anträge können vor der Entscheidung jederzeit storniert werden.
-
-### Antrag ablehnen
-
-1. Klicken Sie auf **„Ablehnen"** (roter Button)
-2. Optional: Ablehnungsgrund eingeben
-3. Bestätigen
-
-Der Mitarbeiter sieht den Ablehnungsgrund im Tab „Meine Anträge".
-
----
-
-## 8. Korrekturanträge prüfen
-
-Mitarbeiter können Korrekturanträge stellen, wenn Zeiteinträge nachträglich geändert werden müssen.
-
-![Korrekturanträge Admin](screenshots/20-admin-korrekturantraege.png)
-
-### Antrag prüfen und entscheiden
-
-![Korrekturantrag Details](screenshots/21-admin-korrekturantrag-details.png)
-
-1. Klicken Sie auf den Antrag oder **„Prüfen"**
-2. Das Formular zeigt den aktuellen und den gewünschten Eintrag im Vergleich
-3. Lesen Sie die Begründung des Mitarbeiters
-4. Entscheiden Sie:
-   - **„Genehmigen"**: Zeiteintrag wird automatisch geändert
-   - **„Ablehnen"**: Optionalen Ablehnungsgrund eingeben
-
-**Filter-Tabs:** Alle / Offen / Genehmigt / Abgelehnt
-
-**Ein- oder Austritt nachträglich eingetragen:** Die Genehmigung prüft den Beschäftigungszeitraum erneut. Liegt der Tag eines neuen Eintrags – oder das neue Datum eines verschobenen – vor dem ersten bzw. nach dem inzwischen eingetragenen letzten Arbeitstag, lehnt PraxisZeit die Genehmigung ab (*„Datum liegt nach dem letzten Arbeitstag"*); lehnen Sie den Antrag dann ab. Ein Antrag, der einen bestehenden Eintrag an dessen Tag korrigiert, bleibt genehmigbar. Bis Version 1.19.3 entstand ein solcher Eintrag ohne Prüfung und zählte im Saldo nicht mit.
-
-**Mehrere Anträge auf einmal:** Markieren Sie offene Anträge über die Kästchen links (oder alle über das Kästchen oben) und klicken Sie auf **„… genehmigen"** bzw. **„… ablehnen"**. Hinweise, die bei einer einzelnen Genehmigung erscheinen (Kappung durch die Arbeitszeit-Blöcke, Wochen- oder Nachtarbeitszeit, Kind-krank-Kontingent), erscheinen auch hier, jeweils mit dem Namen der Person davor. Bis Version 1.19.2 zeigte die Sammel-Genehmigung keine dieser Hinweise.
-
-**Anrechnung beantragt (ab 1.20.0):** Stellt eine Mitarbeiterin bzw. ein Mitarbeiter einen Antrag über **„Anrechnung beantragen"**, trägt er in der Prüfung das Kennzeichen **„Anrechnung beantragt"** und hat zwei Knöpfe: **„Genehmigen und anerkennen"** übernimmt den Antrag und rechnet die beantragten Zeiten – vorbelegt sind die gestempelten – ungekappt an, dauerhaft (→ [Anerkennen](#nicht-angerechnet-anerkennen)); **„Ohne Anerkennen genehmigen"** übernimmt nur die beantragten Zeiten, die Zeit vor, nach oder zwischen den Blöcken bleibt dann nicht angerechnet. Bei einem automatisch geschlossenen Eintrag enthält der Antrag das tatsächliche Ende. Damit Sie sehen, was Sie anerkennen, nennt die Prüfung unter **„Aktuell"** die nicht angerechnete Lücke (*„Nicht angerechnet (Lücke): 2:30 h"*) und die Stempel des Eintrags (*„gestempelt 08:00–18:00 · nicht angerechnet aktuell 2:30 h"*); weichen die beantragten Zeiten davon ab, steht unter **„Gewünscht"** rot *„Zeiten weichen von den Stempeln ab (gestempelt 08:00–18:00)"*. Übernimmt ein Antrag die angerechneten Zeiten unverändert (etwa weil er nur Pause oder Notiz korrigiert), ist das keine Abweichung: Die Genehmigung rechnet dann mit den Stempeln weiter, und auch **„Genehmigen und anerkennen"** erkennt die Stempel an. Bei jedem anderen Änderungsantrag zu einem Eintrag mit nicht angerechneter Zeit bietet die Prüfung neben **„Genehmigen"** zusätzlich **„Genehmigen und anerkennen"** an (bei einem automatisch geschlossenen Eintrag nur, wenn der Antrag ein tatsächliches Ende enthält). **Sammel-Genehmigung:** Sind unter den ausgewählten Anträgen Anrechnungsanträge, nennt der Knopf ihre Zahl (z. B. „3 genehmigen, davon 1 mit Anerkennen") und fragt vor dem Absenden nach (*„Genehmigen mit Anerkennen"* → **„Alle genehmigen"**); alle ausgewählten Anrechnungsanträge werden dann anerkannt. Einen davon ohne Anerkennen zu genehmigen geht nur einzeln. Ist der Eintrag bereits anerkannt, steht in der Prüfung *„Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet."*
-
-> **Empfehlung:** Prüfen Sie Korrekturanträge zeitnah, damit der Monatssaldo der Mitarbeiter aktuell bleibt.
-
----
-
-## 9. Änderungsprotokoll (Audit-Log)
-
-Das Audit-Log protokolliert die Änderungen an Zeiteinträgen, Abwesenheiten und Verwaltungseinstellungen. Jede Zeile trägt eine Prüfsumme, die Zeilen werden jede Nacht zu einer Kette versiegelt, und PraxisZeit selbst kann Zeilen nur anfügen, nie ändern oder löschen. Eine nachträgliche Veränderung oder Entfernung außerhalb von PraxisZeit (z. B. direkt in der Datenbank) wird dadurch **erkannt** – verhindern kann sie nur der Schutz des Servers (→ [Prüfung des Änderungsprotokolls](#prüfung-des-änderungsprotokolls)).
-
-![Audit-Log](screenshots/22-admin-auditlog.png)
-
-### Was wird protokolliert?
-
-| Aktion | Beispiel |
-|--------|---------|
-| **Zeiteinträge** | Erstellen, Ändern, Löschen |
-| **Abwesenheiten** | Neue Abwesenheiten, Stornierungen |
-| **Konto-Vorgänge** | Konten angelegt oder umbenannt, Deaktivieren, Reaktivieren, Rollenwechsel, durch die Verwaltung gesetzte Passwörter, Zwei-Faktor im Profil ein-/abgeschaltet oder durch die Verwaltung zurückgesetzt, falsche Zwei-Faktor-Codes, Abmeldung nach zu vielen falschen Passworteingaben, Datenbank-Sicherungen, Notfall-Vorgänge über die Kommandozeile – eigene Liste unten auf der Seite (siehe unten) |
-| **Korrekturanträge** | Stellen, Genehmigen, Ablehnen |
-| **Betriebsferien** | Anlegen und Löschen |
-| **Arbeitszeit-Änderungen** | Je Änderung und je Löschung eine Sammelzeile (Wirkungsdatum, neu berechnete Einträge, Differenz der angerechneten Zeit, Saldo-Differenz, Puffer, Grund, Vertrag alt → neu) und je neu berechnetem Eintrag eine Zeile mit alten und neuen Zeiten (Quelle „wh_reclamp", Anzeige „Neukappung (Arbeitszeit-Änderung)"); sind Abwesenheiten betroffen, zusätzlich eine Sammelzeile ohne Datum (z. B. „Arbeitszeit-Änderung zum 2026-09-01: 2 Abwesenheit(en) im Zeitraum 2026-09-01–2026-10-09 auf neues Tagessoll nachgezogen", beim Löschen „… auf den davor gültigen Wert zurückgerechnet") und je nachgezogener Abwesenheit eine Zeile mit altem/neuem Stundenwert (beide Quelle „wh_change", Anzeige „Stundenänderung"). Alle Zeilen stehen im Monat, in dem die Änderung gespeichert wurde. |
-| **Anerkennungen** | Anerkannte Einträge mit vorher und nachher angerechneter Zeit (Quelle „credit_override", Anzeige „Anrechnung anerkannt"); steht am selben Tag eine Abwesenheit, zusätzlich je angeglichener Abwesenheit eine Zeile ohne Zeiten, nur mit Datum und altem/neuem Stundenwert (z. B. „Krank 5,25 h" → „Krank 4,0 h — an die anerkannte Arbeitszeit des Tages angeglichen", ebenfalls Anzeige „Anrechnung anerkannt") |
-| **Pflicht-Pause-Ausnahmen** | Erfasste § 4-Ausnahmen samt Begründung (Quelle „break_waiver") |
-| **Überträge und Jahresabschluss** | Manuell gesetzte Überträge („Übertrag gesetzt", Quelle „Übertrag (manuell)") sowie je Person der Übertrag beim Anlegen und Löschen eines Jahresabschlusses (Quelle „Jahresabschluss"), jeweils mit Überstunden und Urlaubstagen vorher → nachher, z. B. „Übertrag 2027: Überstunden 40,00 h, Urlaub 3,0 Tage (manuell)" |
-| **Einstellungen, Feiertage, verkürzte Tage** | Jede geänderte Einstellung mit altem und neuem Wert (z. B. „work_window_grace_minutes = 15" → „= 10", Anzeige „Einstellung geändert"), eigene Feiertage („Feiertag geändert") und verkürzte Tage („Verkürzter Tag geändert"); die Zeile steht bei der Person, die geändert hat |
-| **Benutzerangaben mit Wirkung auf Auswertungen** | Änderungen an „Ausgenommen nach § 18 ArbZG", „Nachtarbeitnehmer", erstem und letztem Arbeitstag mit altem und neuem Wert (z. B. „Ausgenommen nach § 18 ArbZG: nein" → „ja", Anzeige „Benutzerangabe geändert", Quelle „Benutzerverwaltung"); die Zeile steht bei der betroffenen Person. § 18 nimmt die Person aus allen ArbZG-Berichten heraus, auch für zurückliegende Zeiträume – so bleibt nachweisbar, wer das wann eingestellt hat. Bis Version 1.22.0 hinterließen diese Änderungen keine Spur. |
-
-**Anlegen und Bearbeiten in der Zeiterfassung:** Auch wer einen Eintrag über die **Zeiterfassung** anlegt oder ändert – Mitarbeitende am selben Tag, Admins an ihren eigenen Einträgen jedes Tages –, hinterlässt eine Zeile mit alten und neuen Werten; „Geändert von" nennt die handelnde Person. Bis Version 1.19.3 entstand dort nur bei einer Pflicht-Pause-Ausnahme eine Zeile; korrigierte eine Admin einen eigenen Eintrag eines vergangenen Tages, blieb das ohne Spur. Löschen und Ausstempeln wurden schon vorher protokolliert. Die Spalte **„Quelle"** zeigt bei solchen Zeilen – wie bei Korrekturen durch die Verwaltung – „Manuell" (mit Pflicht-Pause-Ausnahme „Pausen-Verzicht"), beim Ausstempeln „Ausstempeln" und bei einem automatisch geschlossenen Eintrag „Automatisch geschlossen". Bis Version 1.19.3 stand statt „Manuell" dort „Admin", auch wenn Mitarbeitende selbst gehandelt hatten; wer gehandelt hat, nennt immer „Geändert von".
-
-**Tatsächliche Stempel:** Zeilen zu Zeiteinträgen nennen neben der angerechneten Zeit auch die tatsächlich gestempelte, sobald beide abweichen (z. B. „07:45 - 16:15" und darunter „gestempelt 06:00 - 18:00") – auch bei einer Löschung. Bis Version 1.22.0 stand nur die angerechnete Zeit im Protokoll; nach dem Löschen eines gekappten Eintrags war die tatsächliche Arbeitszeit dort nicht mehr belegt.
-
-**Gelöschte Person:** Wird eine Person endgültig gelöscht (Art. 17 DSGVO), bleiben die Zeilen, die sie an Einträgen **anderer** geändert hat, stehen; „Geändert von" zeigt dann *„Gelöschte Person"*. Bis Version 1.22.0 wurden solche Zeilen auf die löschende Verwaltung umgeschrieben. Ihre **eigenen** Zeilen entfernt die Löschung; an ihrer Stelle steht eine Zeile **„Protokollzeilen entfernt"**, die die entfernten Kettenglieder nennt. Dasselbe gilt für Antragszeilen, die nach 730 Tagen automatisch entfernt werden (Quelle „Aufbewahrungsfrist").
-
-### Prüfung des Änderungsprotokolls
-
-Unter der Tabelle steht die Karte **„Prüfung des Änderungsprotokolls"**. PraxisZeit prüft jede Nacht (03:15 Uhr) jede Zeile gegen ihre Prüfsumme, versiegelt die neuen Zeilen zur Kette und prüft, ob Glieder fehlen. Die Karte zeigt das Ergebnis der letzten Prüfung; **„Jetzt prüfen"** prüft sofort.
-
-- **„In Ordnung"**: keine Zeile verändert, keine entfernt. Ältere Zeilen ohne prüfbare Prüfsumme (Altbestand aus der Zeit vor der Prüfsumme bzw. Zeilen eines vor dem Update gelöschten Eintrags) werden nur gezählt.
-- **„Abweichung gefunden"**: Zeilen wurden außerhalb von PraxisZeit verändert oder entfernt. Der Vorgang steht zusätzlich unter **„Konto-Vorgänge"** (*„Änderungsprotokoll: Prüfung fehlgeschlagen"*) und im **Fehler-Monitoring**. Bewahren Sie die Datensicherungen auf und informieren Sie den Support.
-- **„Kettenende fehlt" bzw. „Kettenende ungültig"**: Der gesiegelte Abschluss der Kette ist weg oder verändert — so ließe sich das Entfernen der neuesten Zeilen verdecken. PraxisZeit legt ihn deshalb **nicht** von selbst neu an. Bis zur Klärung sind das **endgültige Löschen** von Personen und das automatische Entfernen nach der Aufbewahrungsfrist **gesperrt** (Meldung mit Hinweis auf diese Karte), und neue Zeilen werden nicht versiegelt. Erst wenn die Ursache geklärt ist (z. B. Datensicherung geprüft), setzen Sie es mit **„Kettenende neu setzen…"** und einem **Grund** (mindestens 10 Zeichen) neu. Das Neusetzen steht danach dauerhaft im Protokoll (*„Kettenende neu gesetzt"*, mit Grund) und unter „Konto-Vorgänge"; ob vorher Zeilen entfernt wurden, lässt sich nicht mehr feststellen.
-
-Die Prüfsummen hängen am geheimen Schlüssel des Servers (`SECRET_KEY`). Geht er verloren (z. B. Neuinstallation ohne die Datei `config/.secret-key`), lassen sich die Prüfsummen nicht mehr prüfen.
-
-### Konto-Vorgänge
-
-Unter der Tabelle der Zeiteintrags-Änderungen steht die Liste **„Konto-Vorgänge"**: wer wann welches Konto **deaktiviert**, **reaktiviert**, die **Rolle gewechselt** (Admin ↔ Mitarbeitende) oder ein **fremdes Passwort neu gesetzt** hat, sowie wer seine **Zwei-Faktor-Anmeldung im Profil ein- oder abgeschaltet** hat. Seit 1.23.0 stehen dort außerdem: **neu angelegte Konten** (mit Rolle) und **geänderte Benutzernamen**, die durch die Verwaltung **zurückgesetzte Zwei-Faktor-Anmeldung**, jeder **falsche Zwei-Faktor-Code** (*„Falscher Zwei-Faktor-Code“*, bei der Anmeldung mit der Absender-Adresse als *„Anmeldeversuch (…)“*) und die Sperre nach 10 falschen Codes in einer Stunde, die **Abmeldung nach 5 falschen Passworteingaben** in einer offenen Sitzung (Passwort ändern, Zwei-Faktor einrichten/abschalten, Sicherung herunterladen) sowie **Erstellen, Herunterladen und Löschen von Datenbank-Sicherungen** und geänderte Sicherungs-Einstellungen. Das **eigene** Passwort setzen Sie nicht über die Benutzerverwaltung, sondern unter **Profil → Passwort ändern** (mit dem bisherigen Passwort). Dazu kommen die Notfall-Vorgänge auf dem Server (Passwort-Reset, Abschalten der Zwei-Faktor-Anmeldung, Reaktivieren über die Kommandozeile, → [Abschnitt 20](#20-admin-passwort-verloren)); dort steht als handelnde Stelle *„Kommandozeile (Benutzer@Rechner)"*. Bis Version 1.19.2 wurden Deaktivierungen nirgends protokolliert – nachvollziehbar war nur noch, *dass* ein Konto deaktiviert war, nicht durch wen.
-
-### Filter und Suche
-
-- **Monat**: Monatswähler über der Tabelle
-- **Mitarbeitende**: Nur Einträge einer bestimmten Person
-
-Die Liste **„Konto-Vorgänge"** ist nicht gefiltert, sie zeigt die neuesten 200 Vorgänge. Fehlgeschlagene Anmeldungen stehen nicht im Änderungsprotokoll, sondern im Protokoll des Servers (`AUTH login_failed …`, → [Abschnitt 20](#20-admin-passwort-verloren)).
-
-> **Rechtlicher Hinweis:** Das Audit-Log dokumentiert Änderungen an der Arbeitszeitaufzeichnung nach § 16 Abs. 2 ArbZG und kann bei Betriebsprüfungen als Nachweis dienen. Es macht nachträgliche Veränderungen erkennbar; ein revisionssicheres Archiv (unveränderbarer Speicher) ersetzt es nicht.
-
----
-
-## 10. Fehler-Monitoring
-
-Das Fehler-Monitoring zeigt technische Fehler, die im Betrieb aufgetreten sind.
-
-![Fehler-Monitoring](screenshots/23-admin-fehlermonitoring.png)
-
-### Fehler-Liste
-
-Jeder Eintrag zeigt:
-- **Zeitstempel** des Fehlers
-- **Fehlertyp** und Beschreibung
-- **Häufigkeit** (wie oft ist dieser Fehler aufgetreten?)
-- **Benutzerkontext** (welcher Benutzer war betroffen?)
-
-### Was tun bei Fehlern?
-
-1. **Lesen Sie die Fehlermeldung** – oft gibt es eine verständliche Beschreibung
-2. **Prüfen Sie die Häufigkeit** – einmalige Fehler sind meist unkritisch
-3. **Bei wiederkehrenden Fehlern**: Zeitstempel und Fehlermeldung notieren, IT-Support kontaktieren oder direkt als GitHub Issue melden (Button in der Detailansicht)
-
----
-
-## 11. Betriebsferien verwalten
-
-Betriebsferien sind betriebsweite Schließzeiten, die für alle Mitarbeiter automatisch als Abwesenheit eingetragen werden.
-
-![Betriebsferien](screenshots/24-admin-betriebsferien.png)
-
-### Wofür werden Betriebsferien verwendet?
-
-- Weihnachtsschließzeiten
-- Sommerferien-Schließzeiten
-- Brückentage (wenn die gesamte Praxis geschlossen ist)
-
-### Betriebsferien anlegen
-
-Navigieren Sie zu **Abwesenheiten → Tab „Betriebsferien"** und klicken Sie auf **„Neue Betriebsferien"**:
-
-1. **Bezeichnung** (z. B. „Weihnachtsschließzeit 2026")
-2. **Von** (Startdatum) und **Bis** (Enddatum)
-3. **Verrechnung** wählen (siehe nächster Abschnitt)
-4. Speichern
-
-**Was passiert automatisch:**
-- Alle aktiven Mitarbeiter **mit der Option „Nimmt an Betriebsferien teil"** (Standard) erhalten für jeden ihrer **tatsächlichen Arbeitstage** im Zeitraum einen Abwesenheitseintrag – unabhängig von der Rolle, also auch Admins, die zugleich als Mitarbeiter geführt werden. Reine Verwaltungs-Accounts können die Option in der Benutzerverwaltung abwählen.
-- Vorhandene Arbeitszeit-Einträge an diesen Tagen werden ersetzt (im Änderungsprotokoll dokumentiert).
-
-**Es wird _kein_ Eintrag gebucht an:**
-- Wochenenden und gesetzlichen **Feiertagen**
-- **freien Wochentagen** von Teilzeitkräften mit individuellem Tagesplan (Tagessoll an diesem Wochentag = 0) und Zeiträumen, in denen die Arbeitszeit auf **0 Wochenstunden** steht (z. B. Elternzeit) – dort gibt es nichts zu schließen, es wird also auch kein Urlaubstag abgezogen. Betriebsferien, die vor Version 1.20.0 eingetragen wurden, können an solchen Tagen noch Einträge mit 0 Stunden enthalten: die Betriebsferien einmal öffnen und **erneut speichern**, dann werden diese Einträge entfernt (im Änderungsprotokoll vermerkt). Liegen sie in einem Jahr mit Jahresabschluss, prüfen Sie danach den Übertrag (→ [Betriebsferien in einem abgeschlossenen Jahr](#betriebsferien-in-einem-abgeschlossenen-jahr))
-- als **„Frei" konfigurierten Sondertagen** (24./31.12.)
-- Tagen **außerhalb des Beschäftigungszeitraums**: noch nicht eingetretene (Eintrittsdatum in der Zukunft) oder bereits ausgetretene Mitarbeiter bekommen für die betreffenden Tage **keine** Betriebsferien-Einträge
-- Tagen, an denen die Mitarbeiterin bereits eine andere Abwesenheit hat (diese wird nicht überschrieben). Fällt diese Abwesenheit später weg – Urlaubsantrag zurückgezogen oder storniert, Abwesenheit gelöscht oder per Änderungsantrag gelöscht oder auf einen anderen Tag verschoben –, bucht PraxisZeit den Schließtag automatisch nach. Ausnahme: Am Tag steht inzwischen ein Arbeitszeit-Eintrag, dann bleibt die Arbeit stehen. Einen Schließtag, den Sie selbst löschen, bucht PraxisZeit nicht wieder nach.
-
-### Verrechnung: Urlaub oder bezahlte Freistellung
-
-Beim Anlegen legen Sie unter **„Verrechnung"** fest, wie die Schließtage verbucht werden:
-
-| Auswahl | Wirkung |
-|---|---|
-| **Als Urlaub werten** (Standard) | Jeder gebuchte Schließtag wird vom **Urlaubskonto** der Mitarbeiter abgezogen (1 Tag pro Arbeitstag, Tagesprinzip). |
-| **Bezahlte Freistellung** | Wie ein Feiertag: das Tagessoll entfällt, es wird **kein** Urlaubstag abgezogen und das **Überstundenkonto** bleibt unberührt (saldoneutral). |
-
-> **Tipp – nachträglich Berechtigte ergänzen:** Aktivieren Sie die Option „Nimmt an Betriebsferien teil" bei einem Mitarbeiter und speichern Sie die Benutzer-Änderung. Die Abwesenheiten werden **automatisch** für alle laufenden und künftigen Betriebsferien nachgetragen – ein erneutes Speichern der Betriebsferien ist nicht mehr nötig, und bereits erfasste Arbeitszeiten bleiben erhalten. (Bereits abgelaufene Betriebsferien werden bewusst nicht rückwirkend ergänzt.)
-
-### Betriebsferien länger als der Jahresurlaub (#314)
-
-Sind die **als Urlaub** zählenden Betriebsferien länger als das **Resturlaub-Budget** einer Mitarbeiterin, hängt das Verhalten vom globalen Schalter **„Überzählige Betriebsferien als Überstundenabbau"** ab (unter **Einstellungen → „Betriebsferien & Urlaub"**, standardmäßig **aus**):
-
-- **Schalter AUS (Standard):** Alle Schließtage zählen als Urlaub. Übersteigen die Betriebsferien den Resturlaub, entstehen **Minus-Urlaubstage** (Pflichturlaub – die Schließung wird zwingend gebucht).
-- **Schalter AN:** Pro Mitarbeiter wird **erst der Urlaub aufgezehrt, dann auf Überstundenabbau** umgestellt. Die überzähligen Tage werden als **Überstundenausgleich** gebucht (das Soll bleibt, der Tag zählt als 0 Stunden → das Überstundenkonto sinkt um das Tagessoll und **darf ins Minus gehen**). So entsteht **nie Minus-Urlaub**.
-
-Wenn der Schalter aktiv ist, gilt zusätzlich:
-
-- **Kalenderreihenfolge:** Der Jahresurlaub wird den Betriebsferien **chronologisch nach Datum** zugeteilt (frühere Schließung zuerst) – **unabhängig davon, in welcher Reihenfolge Sie die Betriebsferien eingegeben haben**. Die Überstunden-Tage landen damit immer auf der **letzten** Schließung des Jahres.
-- **Privater Urlaub** im selben Jahr reduziert den für die Betriebsferien verfügbaren Urlaub mit – auch wenn er erst später im Jahr (z. B. im Sommer) gebucht ist. Urlaub wird also immer **zuerst** verbraucht, die Betriebsferien greifen nur auf den verbleibenden Rest zu.
-
-> **Wichtig – nachträglich aktivierter Schalter:** Der Schalter wirkt **beim Anlegen bzw. erneuten Speichern** von Betriebsferien. Für **bereits eingetragene** Betriebsferien öffnen Sie diese einmal unter „Betriebsferien" und **speichern erneut** – dann werden die Tage nach derselben Regel neu berechnet (Urlaub zuerst, danach Überstundenabbau).
-
-### Betriebsferien löschen
-
-Klicken Sie auf das Löschen-Symbol. Die Abwesenheitseinträge werden bei allen Mitarbeitern automatisch entfernt.
-
-### Betriebsferien in einem abgeschlossenen Jahr
-
-Ändert das Anlegen, Speichern oder Löschen von Betriebsferien Buchungen in einem Jahr, für das der Jahresabschluss bereits erstellt ist – etwa das erneute Speichern, das alte Einträge mit 0 Stunden entfernt, oder eine nachgetragene Schließung –, meldet PraxisZeit danach z. B. *„Jahresabschluss 2026 bereits erfolgt — Carryover 2027 ist nun veraltet, bitte Jahresabschluss erneut ausführen."* Der eingefrorene Übertrag ins Folgejahr ändert sich nicht von selbst. Prüfen Sie ihn unter [Jahresabschluss](#jahresabschluss) und korrigieren Sie ihn von Hand, oder erstellen Sie den Jahresabschluss für dieses Jahr erneut (dabei werden von Hand korrigierte Überträge überschrieben). Ein reines Umbenennen ändert keine Buchung und löst den Hinweis nicht aus.
-
----
-
-## 12. Import
-
-Unter **Import** übernehmen Sie historische **Zeiteinträge** aus einer **TimeRec-Datei im `.xls`-Format**. Der Bereich ist für die einmalige Datenübernahme bei der Einführung von PraxisZeit gedacht (z. B. Altdaten aus der bisherigen Zeiterfassung).
-
-> **Wichtig:** Importiert werden **ausschließlich Zeiteinträge** (Arbeitszeiten). **Abwesenheiten** (Urlaub, Krank usw.) werden **nicht** importiert. Es gibt **keine** Vorlagendatei zum Herunterladen und es werden **keine** CSV- oder `.xlsx`-Dateien unterstützt – nur das echte `.xls`-Format (BIFF) mit einem Tabellenblatt namens **„Zeiterfassung"**.
-
-**Anforderungen an die Datei:**
-
-- Format **`.xls`** (TimeRec-Export), maximal **5 MB**
-- Tabellenblatt **„Zeiterfassung"** mit den Spalten Datum, Tag, Total, Ein, Aus, Tagesnotiz
-
-**Vorgehensweise (Assistent in drei Schritten):**
-
-1. **Hochladen:** Wählen Sie den/die **Mitarbeiter:in** aus, dem/der die Einträge zugeordnet werden, und laden Sie die `.xls`-Datei hoch (Drag & Drop oder Klick). Klicken Sie auf **„Datei analysieren"**.
-2. **Vorschau:** Das System zeigt alle gefundenen Einträge in einer Tabelle mit Datum, Von/Bis, Pause und Netto-Stunden. **Konflikte** (bereits vorhandene Einträge am selben Tag) werden rot, **Hinweise** gelb markiert — das sind ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit) und, wenn Arbeitszeit-Blöcke hinterlegt sind, die Kappung der importierten Zeit (auch die nicht angerechnete Zeit zwischen den Blöcken) sowie die Hinweise zur Anwesenheit laut Stempel (→ [Abschnitt 14](#automatische-warnungen-im-alltag)). Den genauen Text zeigt das Kennzeichen **„Hinweis"** als Kurzinfo. Eine Konfliktzeile kann beide Kennzeichen tragen – überschreibt der Import dort einen anerkannten Eintrag, steht in der Kurzinfo *„Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet."* Über die Option **„Konflikte überschreiben"** entscheiden Sie, ob vorhandene Einträge ersetzt werden – andernfalls werden sie übersprungen. Klicken Sie auf **„Import bestätigen"**. Die Netto-Stunden der Vorschau rechnet der Server so, wie er sie anschließend speichert; unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit (z. B. „2:30 h nicht angerechnet"). Die Vorschau rechnet dabei jeden Konflikt als überschrieben. Ohne **„Konflikte überschreiben"** bleiben die vorhandenen Einträge stehen und zählen für die Pause des Tages mit – weicht die gespeicherte Pause deshalb von der Vorschau ab, nennt das Ergebnis die Anpassung, z. B. *„Pause an den Tag angepasst (0 → 30 Min)"*. Die automatische Pause rechnet der Import je **Tag**: Mehrere Zeilen desselben Tages (z. B. ein geteilter Dienst) und dort schon vorhandene Einträge zählen zusammen, ein Abstand von mindestens 15 Minuten zwischen zwei Einträgen deckt die Pausenpflicht ebenso ab wie die Lücke zwischen den Blöcken. Abgezogen wird nur, was dann noch fehlt – an der längsten Zeile des Tages, höchstens so viel, wie die Zeile lang ist; reicht sie nicht, kommen die nächstlängeren dazu (jedes Stück mindestens 15 Minuten). Können die Zeilen der Datei die Pause nicht tragen – etwa eine kurze Zeile neben einem langen vorhandenen Eintrag –, übernimmt der Import diesen Tag nicht, auch wenn die Ausnahme „Pflicht-Pause war nicht möglich" erlaubt ist (der Import kennt keine Begründung). Die Vorschau kennzeichnet die Zeilen des Tages, z. B. *„Wird übersprungen — die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht abziehen (es fehlen 10 Min). Bitte den Tag von Hand erfassen."*, das Ergebnis nennt den Tag unter den Hinweisen; die Zeilen ersetzen keinen vorhandenen Eintrag und zählen für keinen Tag mit. Erfassen Sie einen solchen Tag von Hand. Ebenso übernimmt der Import einen Tag nicht, dessen angerechnete Arbeitszeit (mit den schon vorhandenen Einträgen und der automatischen Pause) **mehr als 10 Stunden** beträgt – wie an allen anderen Erfassungswegen ist das die harte Grenze des § 3 ArbZG (*„Wird übersprungen — die Tagesarbeitszeit beträgt 11:15 h und überschreitet die Höchstgrenze von 10 h nach § 3 ArbZG. Bitte den Tag von Hand erfassen."*). Eine Zeile, die sich mit einem vorhandenen Eintrag (der nicht überschrieben wird) oder einer früheren Zeile desselben Tages überschneidet, überspringt der Import einzeln (*„Wird übersprungen — die Zeile überschneidet sich mit dem Eintrag 08:00–12:00 (Zeiteinträge einer Person dürfen sich nicht überschneiden)."*). Ergibt sich die fehlende Pause erst bei der Bestätigung (vorhandene Einträge haben sich geändert oder Konflikte werden nicht überschrieben), übernimmt der Import den Tag ebenfalls nicht und nennt denselben Grund. Höchstarbeitszeit und Pause meldet die Vorschau einmal je Tag an dessen letzter Zeile, ebenso die Hinweise zur Anwesenheit laut Stempel für den Tag; die Ruhezeit an der ersten – gemessen ab dem Arbeitsende des vorigen Arbeitstags (auch aus schon vorhandenen Einträgen), nicht ab der vorigen Zeile desselben Tages. Besteht der nächste Arbeitstag nur aus schon vorhandenen Einträgen, meldet die letzte Zeile des Tages die Ruhezeit bis zu dessen Beginn (*„… nächster vorhandener Eintrag beginnt 02.06.2026 05:00"*). Zeilen der Datei, deren Ende nicht nach dem Beginn liegt (maßgeblich sind die Zeiten der Datei, nicht die gekappten), überspringt der Import – auch mit **„Konflikte überschreiben"** ersetzen sie keinen vorhandenen Eintrag, und sie zählen weder für die Pause noch für die Ruhezeit. Eine Zeile, die ganz außerhalb der Arbeitszeit-Blöcke liegt (z. B. 18:00–20:00 bei einem Block 08:00–12:00), übernimmt der Import dagegen wie jeden gestempelten Eintrag: angerechnet werden 0 Stunden, die Zeiten der Datei bleiben als Rohstempel gespeichert. Ebenso überspringt der Import Zeilen, deren Datum vor dem ersten oder nach dem letzten Arbeitstag der Person liegt (Feld **„Erster / Letzter Arbeitstag"**, → [Abschnitt 4](#4-benutzerverwaltung)): Die Vorschau nennt den Grund als Kurzinfo, z. B. *„Wird übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026)."*, das Ergebnis unter den Hinweisen (*„29.09.2026: übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026)."*). Auch diese Zeilen ersetzen keinen vorhandenen Eintrag und zählen für keinen Tag mit. Übernehmen Sie Altdaten aus der Zeit vor PraxisZeit, prüfen Sie vorher, dass als erster Arbeitstag der tatsächliche Eintritt eingetragen ist und nicht der Starttag von PraxisZeit. Zeilen mit einem Datum nach heute überspringt der Import auf dieselbe Weise (*„Wird übersprungen — Datum liegt in der Zukunft."*) – Zeiteinträge für künftige Tage legt PraxisZeit an keiner Stelle an.
-3. **Ergebnis:** Sie sehen, wie viele Einträge importiert, überschrieben oder übersprungen wurden, und darunter die **Hinweise** – Ruhezeit (§ 5) und Nachtarbeit (§ 6), die der Server bei der Bestätigung selbst prüft, eine gegenüber der Vorschau angepasste Pause und den Grund jeder übersprungenen Zeile (außer bei nicht überschriebenen Konflikten). Die Hinweise der Vorschau übernimmt das Ergebnis nicht mehr ungeprüft; Höchstarbeitszeit, Pause und Überschneidungen rechnet die Bestätigung neu und überspringt betroffene Tage bzw. Zeilen. Der Import wird im **Änderungsprotokoll** dokumentiert.
-
----
-
-## 13. Einstellungen
-
-Unter **Einstellungen** konfigurieren Sie alle systemweiten Parameter. Jeder Bereich hat einen eigenen **Speichern**-Button – Änderungen werden erst durch Klick darauf wirksam.
-
-<a id="onboarding"></a>
-### Onboarding / Willkommens-Tour
-
-Beim **ersten Login** sehen neue Mitarbeitende und Admins eine kurze, rollenspezifische **Willkommens-Tour** mit den wichtigsten Bereichen. Im Bereich **„Onboarding / Willkommens-Tour"** schalten Sie diese mit dem Schalter **„Willkommens-Tour anzeigen"** praxisweit ein oder aus (Standard: **an**). Bereits gesehene Touren erscheinen ohnehin nicht erneut. Eine eigene **Schnellstart**-Anleitung für die Ersteinrichtung erreichen Sie jederzeit über den Button **„Schnellstart"** unten links in der Seitenleiste.
-
-<a id="feiertage"></a>
-### Feiertage / Eigene Feiertage
-
-**Feiertage:** Wählen Sie das **Bundesland**, dessen gesetzliche Feiertage gelten sollen. Nach dem Speichern werden die gesetzlichen Feiertage **aller Jahre** automatisch neu berechnet – auch zurückliegender Jahre; Soll, Überstundenkonto und Exporte dieser Jahre richten sich danach. Betrifft das ein Jahr, für das der Jahresabschluss schon erfolgt ist, weist PraxisZeit auf den veralteten Übertrag hin („Jahresabschluss 2025 bereits erfolgt — Carryover 2026 ist nun veraltet, bitte Jahresabschluss erneut ausführen.") – den Übertrag unter „Jahresabschluss" prüfen und ggf. von Hand korrigieren; er wird nie automatisch neu berechnet. Feiertage reduzieren das Stundensoll und werden im Kalender grau dargestellt. Stehen an einem weggefallenen oder neuen Feiertag schon Zeiteinträge von Mitarbeitenden mit [Arbeitszeit-Blöcken](#arbeitszeit-bloecke), nennt PraxisZeit sie nach dem Speichern – sie behalten ihre bisherige Anrechnung, bis Sie sie unverändert neu speichern.
-
-**Eigene Feiertage:** Legen Sie zusätzlich lokale/regionale Feiertage an (z. B. Schützenfest, Karneval) – mit **Name** und **Datum**. Eigene Feiertage reduzieren die Soll-Zeit wie gesetzliche Feiertage und können bearbeitet oder gelöscht werden. Liegt ein eigener Feiertag, den Sie anlegen, verschieben oder löschen, in einem Jahr, für das der Jahresabschluss schon erfolgt ist, erscheint derselbe Hinweis auf den veralteten Übertrag wie beim Bundesland-Wechsel; ein reines Umbenennen löst ihn nicht aus. Ebenso nennt PraxisZeit Zeiteinträge an diesem Tag, deren Anrechnung gegen die [Arbeitszeit-Blöcke](#arbeitszeit-bloecke) sich dadurch ändern müsste. Gesetzliche Feiertage werden nur zur Information angezeigt und lassen sich nicht ändern. Über das Jahr-Auswahlfeld blättern Sie zwischen den Jahren. Eigene Feiertage bleiben erhalten, wenn Sie das Bundesland wechseln.
-
-<a id="sondertage-2431-12"></a>
-### Sondertage 24./31.12.
-
-Heiligabend (24.12.) und Silvester (31.12.) sind keine gesetzlichen Feiertage. Im Bereich **„Sondertage (24./31.12.)"** legen Sie für **jeden** der beiden Tage getrennt fest, wie er behandelt wird.
-
-**Modus** (Auswahlfeld pro Tag):
-| Modus | Bedeutung |
-|-------|-----------|
-| **Arbeitstag** (Standard) | Voller Arbeitstag, normales Tagessoll |
-| **Halbtag** | Halbes Tagessoll; im Kalender amber/gelb hinterlegt |
-| **Frei** | Arbeitsfrei (wie ein Feiertag), Tagessoll 0; im Kalender grau hinterlegt |
-| **Verkürzt auf X Stunden** | Das Tagessoll beträgt höchstens X Stunden; im Kalender als „verkürzter Tag (max. 4 h)" gekennzeichnet |
-
-**Höchstens (Stunden)** (zusätzliches Feld, erscheint nur bei „Verkürzt auf X Stunden"): erlaubt sind 0,25 bis 12 Stunden in Schritten von 0,25; ist nichts Gültiges gespeichert, gilt 4 Stunden. Das Soll des Tages ist **die kleinere Zahl aus dem normalen Tagessoll und X** – wer an dem Tag ohnehin weniger Soll hat (z. B. 3 h bei X = 4), behält es. Urlaub an einem verkürzten Tag kostet **0,5 Tage**, Krank und Fortbildung zählen mit dem passenden Anteil (8 h Soll, X = 4 → 4 h Soll und 4 h Gutschrift, Saldo bleibt 0). Angerechnet wird weiterhin die gestempelte Zeit, sie wird nicht auf X gekappt; die Arbeitszeit-Blöcke des Wochentags gelten unverändert. Betriebsferien buchen an einem solchen Tag das verkürzte Soll und verbrauchen 0,5 Urlaubstage.
-
-**Anrechnung** (zusätzliches Auswahlfeld, erscheint nur bei Modus „Frei"):
-| Auswahl | Bedeutung |
-|---------|-----------|
-| **Urlaub** | Der freie Tag wird vom Urlaubskonto abgezogen |
-| **Bezahlte Freistellung** | Kein Abzug vom Urlaubskonto (wie ein Feiertag) |
-
-Die Einstellung wirkt sich automatisch auf **Stundensoll**, **Urlaubskonto** und die **Kalenderdarstellung** aus. Klicken Sie nach Änderungen auf **Speichern**. Sie gilt für **alle Jahre**, auch zurückliegende. Ändert sie Soll oder Urlaubskonto eines Jahres, für das der Jahresabschluss schon erfolgt ist (der Tag fällt dort auf einen Werktag ohne Feiertag), erscheint nach dem Speichern derselbe Hinweis auf den veralteten Übertrag wie beim Bundesland-Wechsel – den Übertrag unter „Jahresabschluss“ prüfen und ggf. von Hand korrigieren. Wechselt ein Tag zwischen „Frei" und Arbeitstag bzw. Halbtag, nennt PraxisZeit außerdem bestehende Zeiteinträge an diesem Tag, deren Anrechnung gegen die [Arbeitszeit-Blöcke](#arbeitszeit-bloecke) sich dadurch ändern müsste – unverändert neu speichern berechnet sie neu.
-
-**Betriebsferien werden automatisch neu gebucht:** Ändern Sie die Einstellung für den 24./31.12. oder einen verkürzten Tag, bucht PraxisZeit die betroffenen **Betriebsferien** beim Speichern selbst neu (nur aktive Teilnehmende an Tagen ohne Zeiteintrag; andere Zeilen bleiben stehen) (im Änderungsprotokoll: „Sondertag oder verkürzter Tag geändert, wird neu gebucht"). Bis Version 1.21.1 mussten Sie die Betriebsferien dafür von Hand erneut speichern. In **abgeschlossenen Jahren** wird nichts neu gebucht, dort erscheint nur der Hinweis auf den veralteten Übertrag.
-
-#### Verkürzte Tage
-
-Für einzelne Tage außerhalb von 24./31.12. (z. B. Rosenmontag, Betriebsfeier) gibt es unter **Einstellungen → „Verkürzte Tage"** eine eigene Liste. Wählen Sie das **Jahr**, tragen Sie **Datum**, **Bezeichnung** und **Höchstens (Stunden)** ein und klicken Sie auf **Hinzufügen**; eine Zeile ändern Sie durch Anklicken, löschen mit dem Papierkorb. Es gilt dieselbe Regel wie bei „Verkürzt auf X Stunden": Soll = die kleinere Zahl aus Tagessoll und X, ein Feiertag geht vor, am Wochenende wirkt der Tag nicht, Urlaub kostet 0,5 Tage. Für den 24. und 31.12. nimmt PraxisZeit keinen Eintrag an – dort steht die Meldung „Für den 24. und 31.12. bitte die Einstellung Sondertage verwenden." Die Stundenzahl muss zwischen 0,25 und 12 liegen (in Schritten von 0,25). Pro Datum gibt es genau einen Eintrag. Auch jede Änderung hier bucht betroffene Betriebsferien neu; in abgeschlossenen Jahren erscheint nur der Hinweis.
-
-Mitarbeitende sehen den Tag im Kalender als **„verkürzter Tag (max. 4 h)"** (bei benanntem Tag: „Rosenmontag: verkürzter Tag (max. 4 h)"), auf der Stempelkarte als „verkürzter Tag (max. 4 h)" ohne Namen.
-
-<a id="urlaubsgenehmigung"></a>
-### Urlaubsgenehmigung
-
-Der Schalter **„Genehmigung erforderlich"** steuert, ob Urlaubsanträge von einem Admin genehmigt werden müssen, bevor sie wirksam werden:
-- **Aus** (Standard): Mitarbeiter buchen Urlaub direkt.
-- **Ein**: Urlaubsanträge landen als „Offen" im Bereich **Anträge** beim Admin (→ [Abschnitt 7](#7-abwesenheitsanträge-genehmigen)).
-
-Diese Einstellung lässt sich alternativ auch direkt im Bereich „Abwesenheitsanträge" umschalten.
-
-<a id="betriebsferien-urlaub"></a>
-### Betriebsferien & Urlaub
-
-Der Schalter **„Überzählige Betriebsferien als Überstundenabbau"** steuert, was passiert, wenn als Urlaub zählende Betriebsferien länger sind als der Resturlaub einer Mitarbeiterin (Standard: **aus**):
-
-- **Aus:** Alle Schließtage zählen als Urlaub. Reicht der Resturlaub nicht, entstehen **Minus-Urlaubstage**.
-- **Ein:** Zuerst wird der Urlaub aufgezehrt, die überzähligen Tage werden als **Überstundenausgleich** gebucht (das Überstundenkonto darf ins Minus gehen) – statt Minus-Urlaub.
-
-Die Option ist **global** und gilt nur für Betriebsferien, die als Urlaub gewertet werden. Sie wirkt **beim Anlegen bzw. erneuten Speichern** von Betriebsferien; bereits eingetragene Betriebsferien aktualisieren Sie durch erneutes Speichern (→ [Abschnitt 11](#11-betriebsferien-verwalten)).
+1. Wählen Sie das **Jahr**, optional einen **Monat**, und klicken Sie auf `Prüfen`.
+2. Die Zähler: Tage \> 10 h, Wochen \> 48 h, Pausenausnahmen und Pause zu kurz. Es erscheinen nur Personen mit mindestens einem Befund.
+3. Ein Klick auf die Person klappt die Einzelheiten auf.
+4. **Pausenausnahmen:** jeder Eintrag mit dokumentierter Ausnahme mit Zeit, erfasster Pause und Begründung. **Pause zu kurz** zeigt Tage, an denen die Pause nicht reicht und keine Ausnahme anerkannt ist – etwa weil die beantragte Ausnahme noch offen ist oder abgelehnt wurde.
 
 <a id="pflicht-pause-ausnahme"></a>
-### Pflicht-Pause-Ausnahme
+### Wie lege ich fest, ob eine fehlende Pause begründet werden darf?
 
-> **Hinweis:** Hintergrund zur Pausenpflicht selbst (§ 4 ArbZG) siehe [Abschnitt 14 → „Pflicht-Pause-Ausnahme"](#pflicht-pause-ausnahme-§4-arbzg).
+Klicken Sie auf `Einstellungen` und scrollen Sie zum Abschnitt **Pflicht-Pause-Ausnahme**.
 
-Konnte eine gesetzlich vorgeschriebene Pause (§ 4 ArbZG) nicht eingelegt werden, kann ein Eintrag mit einer **Pflicht-Begründung** („Pflicht-Pause war nicht möglich") trotzdem erfasst werden, statt ihn zu blockieren.
+![Einstellungen, Abschnitt „Pflicht-Pause-Ausnahme“: Schalter „Ausnahme Pflicht-Pause war nicht möglich erlauben“ und „Genehmigung erforderlich“ mit Erklärtext und Speichern](img/pl-pflicht-pause.webp)
 
-Der Schalter **„Ausnahme ‚Pflicht-Pause war nicht möglich' erlauben"** (Standard: **an**) legt fest, ob es diese Ausnahme in Ihrer Praxis überhaupt gibt:
-- **An** (Standard): Mitarbeitende und Admins können eine fehlende Pause begründen – beim Ausstempeln, in der Zeiterfassung, im Monatsjournal und in Änderungsanträgen.
-- **Aus**: Die Auswahl verschwindet an all diesen Stellen, und der Server lehnt jede Ausnahme ab – **auch für Admins**. Ein Tag über 6 bzw. 9 Stunden lässt sich dann nur noch mit eingetragener Pause speichern oder ausstempeln. Sinnvoll, wenn in Ihrer Praxis immer eine Pause möglich ist und die Pausenzeit in jedem Fall abgezogen werden soll. Bereits erfasste Ausnahmen bleiben unverändert stehen. Ein noch **offener** Ausnahme-Antrag gilt nach dem Abschalten als Antrag **ohne** Ausnahme: Die Genehmigung prüft die Pause des Tages erneut und klappt nur noch, wenn sie jetzt reicht – sonst lehnen Sie ihn ab, damit er mit Pause neu gestellt wird.
+1. `Ausnahme „Pflicht-Pause war nicht möglich“ erlauben` (Standard: an): Mitarbeitende und Admins können eine fehlende Pause begründen. Aus: Die Auswahl verschwindet überall, PraxisZeit lehnt jede Ausnahme ab – auch für Admins; ein Tag über 6 bzw. 9 Stunden lässt sich nur mit eingetragener Pause speichern.
+2. `Genehmigung erforderlich` (Standard: aus): Ist er an, wird eine Ausnahme aus der Zeiterfassung erst nach Ihrer Genehmigung gespeichert (4-Augen-Prinzip). Beim Ausstempeln wird der Eintrag sofort mit der echten Zeit geschlossen, die Ausnahme ist nur beantragt: Es entsteht ein Änderungsantrag mit unveränderten Zeiten und der Begründung.
+3. Klicken Sie auf `Speichern`.
 
-Eine Begründung muss nachvollziehbar sein: PraxisZeit verlangt an allen Stellen **mindestens 10 Zeichen** (*„Die Begründung ist zu kurz – bitte in mindestens 10 Zeichen angeben, warum die Pflicht-Pause nicht möglich war."*). Bis Version 1.22 genügte ein einzelnes Zeichen.
+> **Achtung:** **§ 4 ArbZG:** mindestens 30 Minuten Pause bei mehr als 6 Stunden, 45 Minuten bei mehr als 9 Stunden. Maßstab ist der ganze Tag; eine Unterbrechung zählt erst ab 15 Minuten als Pause. Fehlt die Pause, sperrt PraxisZeit an jedem Erfassungsweg – auch beim Ausstempeln –, bis eine Pause eingetragen oder, falls erlaubt, eine Ausnahme mit mindestens 10 Zeichen begründet ist.
 
-Ist die Ausnahme erlaubt, steuert der Schalter **„Genehmigung erforderlich"**, was mit einer Ausnahme geschieht, die Mitarbeitende in der **Zeiterfassung** begründen (Eintrag anlegen oder bearbeiten) oder **beim Ausstempeln**:
-- **Aus** (Standard): Der Eintrag wird sofort gespeichert; die Abweichung wird als Warnung gemeldet und im Änderungsprotokoll dokumentiert.
-- **Ein**: Die Ausnahme wird erst nach **Admin-Genehmigung** wirksam (**4-Augen-Prinzip**). In der Zeiterfassung wird der Eintrag erst dann gespeichert. **Beim Ausstempeln** wird der Eintrag dagegen sofort mit der tatsächlichen Ausstempelzeit geschlossen – die Arbeitszeit ist geleistet und muss aufgezeichnet werden (§ 16 ArbZG) –, die Ausnahme ist aber nur **beantragt**: Es entsteht ein Änderungsantrag mit unveränderten Zeiten und der Begründung. Genehmigen Sie ihn, steht die Ausnahme am Eintrag (Quelle „break_waiver" im Änderungsprotokoll, siehe [Abschnitt 9](#9-änderungsprotokoll-audit-log)); lehnen Sie ihn ab, bleibt der Eintrag ohne Ausnahme stehen. Bis Version 1.22 wirkte eine Begründung beim Ausstempeln immer sofort.
+> **Gut zu wissen:** **Beantragte Ausnahme entscheiden:** Den Antrag finden Sie unter `Änderungsanträge`. Genehmigt, steht die Ausnahme am Eintrag; abgelehnt, bleibt der Eintrag ohne Ausnahme und erscheint unter „Pause zu kurz“. Ihre **eigene** Ausnahme genehmigt ein weiteres Admin-Konto. Gibt es nur eines, lässt sie sich nur ablehnen – brauchen Sie dann selbst Ausnahmen, schalten Sie „Genehmigung erforderlich“ aus.
 
-Soll beim Ausstempeln gar keine Ausnahme möglich sein, schalten Sie die Ausnahme ganz ab. Änderungsanträge gehen ohnehin immer zur Genehmigung an Sie; Korrekturen durch Admins wirken sofort.
+| Automatische Prüfung | Verhalten |
+| --- | --- |
+| § 3: mehr als 10 Stunden am Tag | beim Ausstempeln Warnung (die Zeit ist geleistet), bei manueller Eingabe und im Antrag Sperre |
+| § 3: mehr als 8 Stunden am Tag, mehr als 48 Stunden in der Woche | Warnung |
+| § 4: Pause fehlt | Sperre, auch beim Ausstempeln; Ausnahme mit Begründung, sofern erlaubt |
+| § 5: weniger als 11 Stunden Ruhezeit | Warnung beim Einstempeln |
+| § 6: Nachtarbeitnehmer über 8 Stunden | Warnung |
+| Arbeit an Sonn- und Feiertagen | Warnung; ohne Ausnahmegrund nach § 10 ArbZG fordert PraxisZeit ihn an (Feld auch beim Ausstempeln) |
 
-Bearbeiten Mitarbeitende einen Eintrag, ohne Datum, Zeiten oder Pause zu ändern (z. B. nur die Notiz), ist das keine neue Ausnahme: Der Eintrag wird sofort gespeichert, eine schon dokumentierte Begründung bleibt unverändert stehen – auch bei Genehmigungspflicht oder abgeschalteter Ausnahme. Erst eine geänderte Begründung, Zeit oder Pause wird wieder nach § 4 geprüft.
+<a id="gruende-kind-krank-minijob"></a>
+## Eigene Abwesenheitsgründe, Kind krank, Minijob
 
-> **4-Augen-Prinzip:** Ein Admin darf seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen** – sie muss von einem anderen Admin geprüft werden. **Praxis mit nur einem Admin:** Dort lässt sich ein solcher eigener Antrag nur **ablehnen** (die Meldung beim Genehmigen weist darauf hin). Der Eintrag bleibt dann ohne anerkannte Ausnahme und erscheint in der Auswertung „Höchstarbeitszeit und Pausenausnahmen" unter **„Pause zu kurz"**. Wer als einziger Admin beim Ausstempeln selbst Ausnahmen braucht, schaltet „Genehmigung erforderlich" aus – dann gilt die begründete Ausnahme sofort.
+*Nicht jede Abwesenheit passt zu Urlaub, Krank oder Fortbildung. Mit **eigenen Gründen** – etwa „Berufsschule“ oder „Kind krank“ – bilden Sie solche Fälle ab; das **Verhalten** des Grundes sagt PraxisZeit, wie die Tage zu rechnen sind. Für Minijobs auf Arbeitszeitkonto gibt es zusätzlich Hinweise nach dem Mindestlohngesetz.*
 
-<a id="soll-arbeitszeit-fenster-puffer"></a>
-### Soll-Arbeitszeit-Fenster (Puffer)
+<a id="eigenen-grund-anlegen"></a>
+### Wie lege ich einen eigenen Abwesenheitsgrund an?
 
-Im Bereich **„Soll-Arbeitszeit-Fenster"** legen Sie im Feld **„Puffer für Soll-Arbeitszeit-Fenster (Min.)"** den systemweiten Puffer für die Arbeitszeit-Blöcke fest (Standard: **15** Minuten, zulässig 0 bis 1439 Minuten – ab 1439 Minuten, einem ganzen Tag, kappt PraxisZeit nichts mehr). Er gilt an jedem Blockrand, auch zwischen zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet. Gestempelte Zeit weiter außerhalb wird nicht angerechnet – Details und Beispiel: [Abschnitt 4 → „Arbeitszeit-Blöcke"](#arbeitszeit-bloecke).
+Klicken Sie auf `Einstellungen`. Der Bereich **Eigene Abwesenheitsgründe** steht ganz oben.
 
-Eine Änderung des Puffers wirkt auf neue Einträge. Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn, auch wenn er später bearbeitet wird. Nur eine Arbeitszeit-Änderung mit Neuberechnung kappt die betroffenen Einträge mit dem dann gültigen Puffer neu; die Vorschau nennt ihn, und verliert dabei ein Eintrag angerechnete Zeit, gilt der Verkürzungsschutz. Einträge aus der Zeit vor Version 1.20.0 tragen keinen gespeicherten Puffer und werden bei einer Bearbeitung mit dem aktuellen Puffer gekappt. Bereits gespeicherte Einträge ändern sich durch das Speichern dieser Einstellung allein nicht.
+![Einstellungen, Bereich „Eigene Abwesenheitsgründe“: Eingabezeile mit Bezeichnung, Verhalten, Farbe und Hinzufügen, darunter die Vorlagen und der vorhandene Grund „Fortbildung extern“ mit „Zählt als gearbeitet“](img/pl-abwesenheitsgrund.webp)
+
+1. Tragen Sie die **Bezeichnung** ein, zum Beispiel „Berufsschule“ (höchstens 80 Zeichen).
+2. Wählen Sie das **Verhalten**. Es bestimmt die Berechnung und lässt sich nach dem Anlegen **nicht mehr ändern**. Die **Farbe** daneben dürfen Sie jederzeit ändern.
+3. Klicken Sie auf `Hinzufügen`. Der Grund erscheint in der Liste und steht beim Eintragen einer Abwesenheit in der Typ-Auswahl unter „Eigene Gründe“.
+4. Die **Vorlagen (1-Klick aktivieren)** legen gängige Gründe mit einem Klick an, siehe [Kind krank und Sonderurlaub](#kind-krank-vorlage).
+5. In der Liste ändern Sie Farbe und Bezeichnung (Eingabe verlassen = speichern) und schalten mit dem Haken `aktiv` einen Grund ein oder aus. Der Papierkorb löscht ihn.
+
+| Verhalten | Wirkung | Typisch für |
+| --- | --- | --- |
+| Zählt als gearbeitet | Die geplanten Stunden werden als Arbeitszeit gutgeschrieben (wie Fortbildung), es entstehen keine Stundenverluste | Berufsschule (Arbeitszeit nach § 15 JArbSchG) |
+| Bezahlt frei | Das Tagessoll wird 0 (saldoneutral), kein Urlaubsabzug – der Arbeitgeber zahlt weiter | Todesfall, Hochzeit, Geburt |
+| Unbezahlt frei | Das Tagessoll wird 0 (saldoneutral), kein Urlaubsabzug, aber unbezahlt (Lohn gekürzt) | Kind krank (§ 45 SGB V), unbezahlter Sonderurlaub |
+| Überstundenabbau | Das Überstundenkonto sinkt um das Tagessoll | Freizeitausgleich mit eigener Bezeichnung |
+
+> **Gut zu wissen:** **Deaktivieren statt löschen:** Deaktivierte Gründe stehen beim Buchen nicht mehr zur Auswahl, bleiben aber an bestehenden Abwesenheiten erhalten. Löschen geht nur, solange keine Abwesenheit den Grund nutzt – sonst fordert PraxisZeit Sie auf, ihn zu deaktivieren. Berechnet wird ausschließlich nach dem Verhalten; Farbe und Bezeichnung ändern nichts an den Zahlen.
+
+> **Gut zu wissen:** **Datenschutz:** Ein eigener Grund kann sensibel sein (z. B. „Reha“). Im Team-Kalender sehen andere Mitarbeitende eine Abwesenheit mit eigenem Grund nur als „abwesend“; die Bezeichnung sehen Admins und die betroffene Person selbst.
+
+<a id="kind-krank-vorlage"></a>
+### Wie richte ich „Kind krank“ und andere Sonderurlaub-Gründe ein?
+
+Unter der Eingabezeile stehen die **Vorlagen**: Kind krank, Todesfall naher Angehöriger, Eigene Hochzeit, Geburt eines Kindes, Umzug (betrieblich), Arztbesuch (unvermeidbar) und Pflege naher Angehöriger.
+
+![Eigene Abwesenheitsgründe mit Verhalten „Unbezahlt frei“: darunter der Haken „Gegen das Kind-krank-Jahreslimit zählen (§45 SGB V)“ und in der Reihe der Vorlagen der Knopf „Kind krank“](img/pl-kind-krank-grund.webp)
+
+1. Klicken Sie auf die Vorlage `+ Kind krank`. PraxisZeit legt den Grund sofort an: Verhalten **Unbezahlt frei**, mit Zählung gegen das Jahreslimit. Eine aktivierte Vorlage verschwindet aus der Reihe.
+2. Wollen Sie einen Grund selbst anlegen, der gegen das Limit zählt, wählen Sie als **Verhalten** `Unbezahlt frei`.
+3. Dann erscheint der Haken `Gegen das Kind-krank-Jahreslimit zählen (§45 SGB V)`. Setzen Sie ihn, bevor Sie auf `Hinzufügen` klicken – nur Gründe mit diesem Haken zählen.
+
+> **Gut zu wissen:** **Die Vorlagen sind Vorschläge.** Bezahlt oder unbezahlt hängt von Ihrem Betrieb ab – die rechtliche Einordnung (etwa ob § 616 BGB im Arbeitsvertrag ausgeschlossen ist) liegt bei Ihnen. Weil das Verhalten nach dem Anlegen feststeht, legen Sie einen Grund mit anderem Verhalten selbst an. PraxisZeit bildet nur die Zeiterfassung ab; die Meldung an Krankenkasse und Lohnbuchhaltung erfolgt außerhalb.
+
+<a id="kind-krank-anspruch"></a>
+### Wie viele Kind-krank-Tage stehen Mitarbeitenden zu?
+
+PraxisZeit zählt die Tage eines Kind-krank-Grundes je Kalenderjahr. Den Standardanspruch stellen Sie unter `Einstellungen` im Bereich **Kind-krank-Standardanspruch** ein.
+
+![Einstellungen: Bereich „Kind-krank-Standardanspruch“ mit dem Feld „Standard Kind-krank-Tage/Jahr“ (15) und Speichern, darunter „Gesetzlicher Mindestlohn“ mit 13,90 €/h seit 1.1.2026](img/pl-kind-krank-limit.webp)
+
+1. Tragen Sie unter `Standard Kind-krank-Tage/Jahr` die Zahl der Tage ein (Voreinstellung 15). Sie gilt für alle ohne eigenen Wert.
+2. Klicken Sie auf `Speichern`.
+3. Darunter zeigt der Bereich **Gesetzlicher Mindestlohn** den aktuellen Wert und die nächste Stufe an (13,90 € pro Stunde seit 1.1.2026, 14,60 € ab 1.1.2027). Das ist nur eine Anzeige.
+
+> **Gut zu wissen:** **Eigener Wert je Person:** Im Formular zum Bearbeiten einer Person gibt es das Feld „Kind-krank-Tage/Jahr (§45 SGB V)“; leer gilt der Standard, siehe [Mitarbeiter bearbeiten](#mitarbeiter-bearbeiten).
+
+> **Achtung:** **Nur ein Hinweis, keine Sperre:** Wird der Anspruch beim Buchen überschritten, weist PraxisZeit darauf hin – die Abwesenheit wird **trotzdem erfasst**, denn der Fehltag muss dokumentiert werden. Das gilt beim Eintragen, im Monatsjournal und bei der Genehmigung eines Änderungsantrags. Den Jahresverbrauch sehen Sie in der **Benutzerverwaltung** unter dem Namen („Kind krank“ mit genommenen Tagen und Anspruch, rot bei Überschreitung), sobald ein Tag verbraucht ist.
+
+<a id="minijob-konto"></a>
+### Wie führe ich eine Minijob-Beschäftigte auf Arbeitszeitkonto?
+
+Für Minijobber:innen auf **Arbeitszeitkonto** (§ 2 Abs. 2 MiLoG, „sonstige flexible Arbeitszeitregelung“) stellen Sie die Felder beim Anlegen im Formular ein, bei bestehenden Mitarbeitenden über `Arbeitszeit anpassen…` im Abschnitt **Urlaub und Abrechnung**, siehe [Vertragsverlauf](#vertragsverlauf). Im Bild: Julia Meyer, 10 Stunden pro Woche.
+
+![Dialog „Arbeitszeit & Wochenstunden“ von Julia Meyer, Abschnitt „Urlaub und Abrechnung“: Haken „Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)“, Vereinbarte Monatsarbeitszeit 43 Stunden mit 50-%-Grenze und Haken „Feste Monatsarbeitszeit“](img/pl-minijob-konto.webp)
+
+1. **Gültig ab:** Minijob-Einstellungen gelten immer ab dem Monatsersten. Ein anderes Datum lehnt PraxisZeit mit „Änderungen an Minijob-Einstellungen gelten immer ab dem Monatsersten.“ ab.
+2. Setzen Sie den Haken `Arbeitszeitkonto (§ 2 Abs. 2 MiLoG) – 50-%-Prüfung & 12-Monats-Ausgleichsfrist`. Er setzt aktive Stundenzählung voraus.
+3. Tragen Sie die **Vereinbarte Monatsarbeitszeit (h)** ein, im Bild 43. Bleibt das Feld leer, rechnet PraxisZeit Wochenstunden × 13/3 (bei 10 Stunden etwa 43,3). Die Zeile darunter nennt den aktuellen Mindestlohn und die Obergrenze des Kontos: die Hälfte, hier etwa 21,5 Stunden im Monat.
+4. Optional: `Feste Monatsarbeitszeit (Monats-Soll = vereinbarte Monatsarbeitszeit)`. Der Haken erscheint nur bei aktivem Arbeitszeitkonto und macht die vereinbarte Monatsarbeitszeit zur Pflichtangabe.
+
+| Hinweis | Regel | Wo erscheint er? |
+| --- | --- | --- |
+| 50-%-Regel | Die auf das Konto eingestellten Plusstunden dürfen pro Monat 50 % der vereinbarten Arbeitszeit nicht übersteigen. Beispiel 10 h/Woche: Monatszeit etwa 43,33 h, Grenze 21,67 h | beim Buchen und Ausstempeln, im eigenen Überstundenkonto, in der Benutzerverwaltung (Kennzeichen „MiLoG“) |
+| 12-Monats-Ausgleichsfrist | Zeitguthaben auf dem Konto muss binnen 12 Kalendermonaten ausgeglichen werden; bei Überfälligkeit erscheint ein Hinweis | wie oben |
+| Monatszeit überschritten | Nur bei fester Monatsarbeitszeit: das Monats-Ist inklusive Gutschriften übersteigt die vereinbarte Monatsarbeitszeit | wie oben |
+
+> **Achtung:** **Alle Hinweise sind weich, nichts wird blockiert.** Die 50-%-Grenze bindet nur die mindestlohnwirksamen Stunden; wird über dem Mindestlohn vergütet, sind mehr Stunden möglich. PraxisZeit speichert **keine Lohndaten** und prüft die Verdienstgrenze von 603 € nicht – das bleibt der Lohnbuchhaltung.
+
+> **Gut zu wissen:** **Wozu die vereinbarte Monatsarbeitszeit dient:** Sie ist die Bezugsgröße der 50-%-Prüfung. Die 12-Monats-Frist rechnet dagegen bewusst gegen das tatsächliche Monats-Soll, damit Urlaub und Feiertage das Konto nicht belasten.
+
+> **Gut zu wissen:** **Feste Monatsarbeitszeit:** Das Monats-Soll ist jeden Monat die vereinbarte Monatsarbeitszeit – egal, ob der Monat vier oder fünf Montage hat; bei Ein- oder Austritt im Monat anteilig nach Kalendertagen. Die Tagesstunden heißen dann „Geplante Anwesenheit“ und bestimmen nur noch, wie viele Stunden an Feiertagen, Urlaubs- und Freistellungstagen als Ist gutgeschrieben werden. Unbezahlt entschuldigte Tage (Typ „Sonstiges“, z. B. Kind krank) mindern stattdessen das Monats-Soll um die geplanten Stunden. Im Monatsjournal heißt die Spalte dann „Geplant“, einen Tages-Saldo gibt es nicht; **verbindlich ist die Monatsübersicht**.
+
+> **Achtung:** **Bekannte Grenze:** Fällt ein **ganzer Monat** durch Urlaub oder Krankheit aus, schreibt PraxisZeit nur den geplanten Anteil gut. Der flexible Rest bleibt als Defizit auf dem Konto stehen; dann ist eine manuelle Korrektur nötig, etwa über das Überstundenkonto oder den Jahresübertrag. Bei einzelnen Fehltagen rechnet PraxisZeit korrekt von selbst.
+
+<a id="einstellungen"></a>
+## Einstellungen
+
+*Unter **Einstellungen** legen Sie fest, wie PraxisZeit für die ganze Praxis arbeitet. **Jeder Bereich hat einen eigenen Speichern-Knopf** – eine Änderung gilt erst, wenn Sie ihn drücken. Die Tabelle zeigt, wo Sie die Bereiche in diesem Handbuch finden.*
+
+| Bereich in den Einstellungen | Wofür | Mehr dazu |
+| --- | --- | --- |
+| Eigene Abwesenheitsgründe | zusätzliche Gründe mit eigenem Verhalten, Vorlagen | [Eigenen Grund anlegen](#eigenen-grund-anlegen) |
+| Feiertage | Bundesland der gesetzlichen Feiertage | [Bundesland einstellen](#bundesland-einstellen) |
+| Eigene Feiertage | regionale Feiertage wie Schützenfest | [Regionalen Feiertag anlegen](#eigene-feiertage) |
+| Sondertage (24./31.12.) | Modus je Tag: Arbeitstag, Halbtag, Frei, Verkürzt | [Sondertage](#sondertage-einstellen) |
+| Verkürzte Tage | einzelne Tage mit Höchststunden | [Verkürzte Tage](#verkuerzte-tage) |
+| Urlaubsgenehmigung | Genehmigungspflicht für Urlaub | [Urlaubsgenehmigung](#urlaubsgenehmigung) |
+| Pflicht-Pause-Ausnahme | Ausnahme bei fehlender Pause erlauben | [Pflicht-Pause-Ausnahme](#pflicht-pause-ausnahme) |
+| Onboarding / Willkommens-Tour | Tour beim ersten Login | [Tour und Schichtplanung](#tour-schichtplanung) |
+| Schichtplanung | Planungswerkzeug ein- oder ausschalten | [Tour und Schichtplanung](#tour-schichtplanung), [Wochentage](#schicht-wochentage) |
+| Betriebsferien \& Urlaub | überzählige Betriebsferien als Überstundenabbau | [Betriebsferien länger als der Urlaub](#betriebsferien-ueberstundenabbau) |
+| Überstunden-Projektion zum Jahresende | Anzeige des voraussichtlichen Saldos | [Saldo zum Jahresende](#jahresende-projektion) |
+| Soll-Arbeitszeit-Fenster | Puffer an den Rändern der Arbeitszeit-Blöcke | [Puffer einstellen](#puffer-einstellen) |
+| Kind-krank-Standardanspruch | Tage je Jahr | [Kind-krank-Anspruch](#kind-krank-anspruch) |
+| Gesetzlicher Mindestlohn | reine Anzeige | [Kind-krank-Anspruch](#kind-krank-anspruch) |
+| Farben | Farbe je Anwesenheits- und Abwesenheitstyp | [Farben ändern](#farben) |
+
+<a id="eigene-feiertage"></a>
+### Wie lege ich einen regionalen Feiertag an?
+
+Im Bereich **Eigene Feiertage** unter `Einstellungen`. Gesetzliche Feiertage stehen dort nur zur Information und lassen sich nicht ändern.
+
+![Einstellungen, Bereich „Eigene Feiertage“: Jahresauswahl, Eingabezeile mit Name „Schützenfest“, Datum 20.07.2026 und dem Knopf „Hinzufügen“](img/pl-eigene-feiertage.webp)
+
+1. Wählen Sie oben rechts das **Jahr**; darüber blättern Sie auch durch die Liste der Feiertage.
+2. Tragen Sie den **Namen** ein, zum Beispiel „Schützenfest“.
+3. Wählen Sie das **Datum**.
+4. Klicken Sie auf `Hinzufügen`. In der Liste bearbeiten Sie einen eigenen Feiertag mit dem Stift und löschen ihn mit dem Papierkorb.
+
+> **Gut zu wissen:** Eigene Feiertage senken das Soll wie gesetzliche Feiertage und bleiben erhalten, wenn Sie das Bundesland wechseln.
+
+> **Achtung:** **Liegt der Tag in einem abgeschlossenen Jahr,** weist PraxisZeit auf den veralteten Übertrag hin, sobald Sie einen eigenen Feiertag anlegen, verschieben oder löschen; ein reines Umbenennen löst keinen Hinweis aus. Stehen am Tag schon Zeiteinträge von Mitarbeitenden mit Arbeitszeit-Blöcken, nennt PraxisZeit sie – sie behalten ihre Anrechnung, bis Sie sie unverändert neu speichern. Siehe [Übertrag korrigieren](#vorjahresuebernahme).
+
+<a id="urlaubsgenehmigung"></a>
+### Müssen Urlaubsanträge genehmigt werden?
+
+Im Bereich **Urlaubsgenehmigung** unter `Einstellungen`.
+
+![Einstellungen, Bereich „Urlaubsgenehmigung“: Schalter „Genehmigung erforderlich“ mit Erklärtext und dem Knopf „Speichern“](img/pl-urlaubsgenehmigung.webp)
+
+1. Schalten Sie `Genehmigung erforderlich` an oder aus. **Aus** (Standard): Mitarbeitende buchen Urlaub direkt. **An:** Urlaubsanträge landen als „Offen“ unter `Anträge` bei Ihnen.
+2. Klicken Sie auf `Speichern`.
+
+> **Gut zu wissen:** Denselben Schalter finden Sie oben auf der Seite „Abwesenheitsanträge“, siehe [Urlaubsantrag genehmigen](#urlaubsantrag-genehmigen).
+
+<a id="tour-schichtplanung"></a>
+### Wie schalte ich die Willkommens-Tour und die Schichtplanung ein oder aus?
+
+Die beiden Bereiche **Onboarding / Willkommens-Tour** und **Schichtplanung** stehen untereinander. Jeder hat seinen eigenen Speichern-Knopf.
+
+![Einstellungen: Bereiche „Onboarding / Willkommens-Tour“ mit dem Schalter „Willkommens-Tour anzeigen“ und „Schichtplanung“ mit dem Schalter „Schichtplanung aktivieren“, beide mit eigenem Speichern](img/pl-onboarding-schichtplanung.webp)
+
+1. `Willkommens-Tour anzeigen` (Standard: an): Neue Mitarbeitende und Admins sehen beim ersten Login eine kurze Tour mit den wichtigsten Bereichen. Bereits gesehene Touren erscheinen nicht erneut.
+2. `Schichtplanung aktivieren` (Standard: aus): Erst dann gibt es Wochen-Schichtpläne, Arbeitsplätze und Standorte. Solange der Schalter aus ist, sehen weder Admins noch Mitarbeitende die Schichtplanung.
+
+> **Gut zu wissen:** Die Schichtplanung ist ein reines Planungswerkzeug und verändert **keine** Zeiterfassungs-, Urlaubs- oder Überstundendaten. Ist sie eingeschaltet, wählen Sie darunter die **geplanten Wochentage** (Standard Montag bis Freitag, mindestens ein Tag bleibt aktiv) und klicken auf `Wochentage speichern`. Eine Anleitung für die Ersteinrichtung finden Sie jederzeit über den Knopf `Schnellstart` unten links in der Seitenleiste.
+
+<a id="jahresende-projektion"></a>
+### Wie blende ich den voraussichtlichen Saldo zum Jahresende aus?
+
+Im Bereich **Überstunden-Projektion zum Jahresende** unter `Einstellungen`. Beide Anzeigen sind standardmäßig an.
+
+![Einstellungen, Bereich „Überstunden-Projektion zum Jahresende“: zwei Schalter „Im Mitarbeiter-Dashboard anzeigen“ und „Im Admin-Dashboard anzeigen“ mit Erklärtexten und Speichern](img/pl-projektion.webp)
+
+1. `Im Mitarbeiter-Dashboard anzeigen`: Aus, sehen Mitarbeitende die Vorschau-Zeile in ihrem eigenen Überstundenkonto nicht mehr; die Berechnung entfällt dann ganz.
+2. `Im Admin-Dashboard anzeigen`: Aus, entfällt die Spalte „Überstd. Jahresende“ im Monats- und Wochenbericht. Sie erscheint ohnehin nur im laufenden Monat und nur, wenn mindestens eine Person schon künftigen Ausgleich gebucht hat.
+3. Klicken Sie auf `Speichern`.
+
+> **Gut zu wissen:** **Was die Projektion zeigt:** den Saldo bis heute, abzüglich der Stunden aller bereits gebuchten künftigen **Überstundenausgleich**-Tage. Urlaub, Krankheit und Fortbildung sind saldoneutral und fließen nicht ein. Beide Schalter wirken nur auf die Anzeige – das Überstundenkonto selbst rechnet PraxisZeit unverändert weiter.
+
+<a id="puffer-einstellen"></a>
+### Wie stelle ich den Puffer für die Arbeitszeit-Blöcke ein?
+
+Im Bereich **Soll-Arbeitszeit-Fenster** unter `Einstellungen`. Der Puffer entscheidet, wie viel gestempelte Zeit vor, nach und zwischen den Arbeitszeit-Blöcken noch angerechnet wird.
+
+![Einstellungen, Bereich „Soll-Arbeitszeit-Fenster“: Erklärtext zum Puffer, das Feld „Puffer für Soll-Arbeitszeit-Fenster (Min.)“ mit 15 und der Knopf „Speichern“](img/pl-puffer.webp)
+
+1. Tragen Sie im Feld `Puffer für Soll-Arbeitszeit-Fenster (Min.)` die Minuten ein (Standard 15, zulässig 0 bis 1439). Der Puffer gilt an jedem Blockrand, auch zwischen zwei Blöcken; eine Lücke bis zum doppelten Puffer wird angerechnet. Stempelzeit weiter außerhalb zählt nicht. Ab 1439 Minuten, einem ganzen Tag, kappt PraxisZeit nichts mehr.
+2. Klicken Sie auf `Speichern`.
+
+> **Achtung:** **Eine Änderung wirkt nur auf neue Einträge.** Jeder gekappte Eintrag merkt sich seinen Puffer und behält ihn, auch wenn er später bearbeitet wird; gespeicherte Einträge ändern sich durch das Speichern allein nicht. Einträge aus der Zeit vor Version 1.20.0 tragen keinen gespeicherten Puffer und werden bei einer Bearbeitung mit dem aktuellen gekappt. Nur eine Arbeitszeit-Änderung mit Neuberechnung kappt die betroffenen Einträge mit dem dann gültigen Puffer neu – die Vorschau nennt ihn; verliert ein Eintrag dabei angerechnete Zeit, gilt der Verkürzungsschutz, siehe [Rückwirkend ändern](#rueckwirkend-aendern).
 
 <a id="farben"></a>
-### Farben
+### Wie ändere ich die Farben der Abwesenheitstypen?
 
-Im Bereich **„Farben"** legen Sie für jeden Anwesenheits- und Abwesenheitstyp eine eigene Farbe fest (Arbeit/Anwesenheit, Fortbildung, Urlaub, Krank, Überstundenausgleich, Sonstiges, Bezahlte Freistellung). Die Farben werden im Kalender, in den Übersichten und bei der Zeiterfassung verwendet. Eine kleine „Aa"-Vorschau zeigt, ob die Schrift auf der gewählten Farbe lesbar bleibt.
+Im Bereich **Farben** unter `Einstellungen`: je Typ eine Farbe – Arbeit/Anwesenheit, Fortbildung, Urlaub, Krank, Überstundenausgleich, Sonstiges und Bezahlte Freistellung. Sie gelten im Kalender, in den Übersichten und bei der Zeiterfassung.
 
-### Eigene Abwesenheitsgründe (#312)
+![Einstellungen, Bereich „Farben“: je Anwesenheits- und Abwesenheitstyp ein Farbfeld mit „Aa“-Vorschau, darunter der Knopf „Speichern“](img/pl-farben.webp)
 
-Im Bereich **„Eigene Abwesenheitsgründe"** legen Sie zusätzliche, frei benannte Gründe an (z. B. **„Schule"** für Auszubildende mit Berufsschultagen) – mit eigener Farbe. Jeder Grund hat ein **Basis-Verhalten**, das die Berechnung bestimmt:
+1. Klicken Sie neben dem Typ auf das Farbfeld und wählen Sie die Farbe. Die kleine „Aa“-Vorschau zeigt, ob die Schrift auf der gewählten Farbe lesbar bleibt.
+2. Klicken Sie auf `Speichern`.
 
-| Basis-Verhalten | Wirkung |
-|---|---|
-| **Zählt als gearbeitet** | Die geplanten Stunden werden als Arbeitszeit gutgeschrieben (wie Fortbildung) – passend für **Berufsschule** (Arbeitszeit nach § 15 JArbSchG), es entstehen keine Stundenverluste. |
-| **Bezahlt frei** | Das Tagessoll wird auf 0 gesetzt (saldoneutral), **kein** Urlaubsabzug – der Arbeitgeber zahlt weiter. |
-| **Unbezahlt frei** | Das Tagessoll wird auf 0 gesetzt (saldoneutral), **kein** Urlaubsabzug, aber **unbezahlt** (Lohn gekürzt) – für **Kind krank** (§45 SGB V) oder unbezahlten Sonderurlaub. |
-| **Überstundenabbau** | Das Überstundenkonto sinkt um das Tagessoll. |
+<a id="jahresabschluss"></a>
+## Jahresabschluss
 
-Das Basis-Verhalten ist **nach dem Anlegen fix**. Gründe lassen sich umbenennen, umfärben und deaktivieren (deaktivierte stehen beim Buchen nicht mehr zur Auswahl, bleiben aber an bestehenden Abwesenheiten erhalten). Beim Eintragen einer Abwesenheit erscheinen die eigenen Gründe unter **„Eigene Gründe"** in der Typ-Auswahl.
+*Zum Jahreswechsel berechnet PraxisZeit für alle aktiven Mitarbeitenden den **Überstunden-Saldo zum 31.12.** und den **Resturlaub** und trägt beides als **Übernahme** ins Folgejahr ein. Diesen Schritt lösen Sie selbst aus – am besten, wenn alle Anträge für das Jahr entschieden sind.*
 
-> **Datenschutz:** Da ein eigener Grund sensibel sein kann (z. B. „Reha"), werden Abwesenheiten mit eigenem Grund im Team-Kalender für andere Mitarbeitende nur als **„abwesend"** angezeigt – nur Admins sehen die Bezeichnung.
+<a id="jahresuebersicht"></a>
+### Wo finde ich den Jahresabschluss?
 
-#### Kind krank & Sonderurlaub-Vorlagen (#376)
+Auf dem `Admin-Dashboard` unterhalb der Monatsübersicht steht die **Jahresübersicht** mit Urlaubs- und Krankheitstagen aller Mitarbeitenden – und den Knöpfen für den Abschluss.
 
-Über die Schaltflächen unter **„Vorlagen (1-Klick aktivieren)"** legen Sie gängige Gründe direkt an – **Kind krank** (unbezahlt frei), **Todesfall naher Angehöriger**, **Eigene Hochzeit**, **Geburt eines Kindes**, **Umzug (betrieblich)**, **Arztbesuch**, **Pflege naher Angehöriger**. Das voreingestellte Verhalten (bezahlt/unbezahlt) können Sie je Betrieb frei anpassen – die rechtliche Einordnung (z. B. ob § 616 BGB im Arbeitsvertrag ausgeschlossen ist) liegt bei Ihnen.
+![Jahresübersicht auf dem Admin-Dashboard: Jahr 2026 mit den Knöpfen Jahresabschluss, Abschluss löschen und Berichte, darunter die gelbe Jahresend-Warnung und die Tabelle mit Urlaub, Resturlaub, Krank und Überstunden](img/pl-jahresuebersicht.webp)
 
-**Kind-krank-Jahreslimit (§45 SGB V):** Für den Grund **„Kind krank"** zählt PraxisZeit die genommenen Tage pro Kalenderjahr. Den Standard-Jahresanspruch stellen Sie unter **Einstellungen → „Kind-krank-Standardanspruch"** ein (Voreinstellung 15 Tage); pro Mitarbeiter:in lässt sich im Benutzerformular ein **individueller Wert** hinterlegen (Feld „Kind-krank-Tage/Jahr", leer = Standard). Wird der Anspruch beim Buchen überschritten, erscheint ein **Hinweis** – die Abwesenheit wird **trotzdem erfasst** (nicht blockiert), da der Fehltag dokumentiert werden muss (die Krankenkasse zahlt Kinderkrankengeld ggf. nicht mehr). Den Verbrauch je Mitarbeiter:in sehen Sie in der **Benutzerübersicht**.
+1. Wählen Sie im Feld `Jahr` das Jahr, das Sie abschließen oder prüfen wollen.
+2. Der orangefarbene Knopf `Jahresabschluss` startet den Abschluss, siehe [Jahresabschluss erstellen](#jahresabschluss-erstellen).
+3. Der rote Knopf `Abschluss löschen` nimmt ihn zurück, siehe [Jahresabschluss löschen](#jahresabschluss-loeschen).
+4. Die Spalte **Resturlaub** zeigt die offenen Urlaubstage: grün über 5 Tage, gelb bis 5 Tage, rot bei 0 oder weniger.
+5. Im letzten Quartal des laufenden Jahres erscheint die gelbe **Jahresend-Warnung: Offene Urlaubstage** mit allen, die noch mindestens einen ganzen Urlaubstag offen haben, und dem Verfallsdatum.
 
-> **Hinweis:** PraxisZeit bildet die reine Zeiterfassung ab. Die Meldung an Krankenkasse und Lohnbuchhaltung erfolgt außerhalb der Software.
+> **Gut zu wissen:** **Kleine Reste lösen keine Warnung aus:** Bruchteile unter einem Tag – typisch bei Teilzeit, etwa 0,3 oder 0,5 Tage – lassen sich nicht als ganzer Tag nehmen und werden im Folgejahr üblicherweise mit weiteren Bruchteilen zusammengelegt. In der Tabelle, im Urlaubskonto und beim Jahresabschluss zählen sie unverändert mit. Das Verfallsdatum ist in der Regel der 31.03. des Folgejahres, sonst die für die Person hinterlegte Frist; bei unterschiedlichen Fristen steht das Datum hinter jedem Namen. Dieselbe Schwelle und dasselbe Datum gelten für den Hinweis im Urlaubskonto auf dem Dashboard der Mitarbeitenden.
 
-### Minijob / Arbeitszeitkonto (§ 2 Abs. 2 MiLoG) (#377)
+<a id="jahresabschluss-erstellen"></a>
+### Wie erstelle ich den Jahresabschluss?
 
-Für Minijobber:innen, die **auf Arbeitszeitkonto** geführt werden („sonstige flexible Arbeitszeitregelung"), aktivieren Sie die Checkbox **„Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)"** (beim Anlegen im Formular, bei bestehenden Mitarbeitenden nur über „Arbeitszeit anpassen…“, Abschnitt „Urlaub und Abrechnung“, gültig ab dem Gültig-ab-Datum und nur zum Monatsersten). PraxisZeit prüft dann zwei gesetzliche Grenzen als **weiche Hinweise** (nichts wird blockiert):
+Wählen Sie in der Jahresübersicht das Jahr und klicken Sie auf `Jahresabschluss`. Es öffnet sich ein Bestätigungsdialog; erst Ihre Bestätigung löst den Abschluss aus.
 
-- **50-%-Regel:** Die auf das Konto eingestellten Plusstunden dürfen pro Monat **50 % der vertraglich vereinbarten Arbeitszeit** nicht übersteigen. Bei aktivem Arbeitszeitkonto erscheint das Feld **„Vereinbarte Monatsarbeitszeit (h)"** — tragen Sie dort die vereinbarte Monatszahl direkt ein (z. B. **33** → max. 16,5 h Konto/Monat). Bleibt das Feld leer, wird die Monatszeit wie bisher aus den Wochenstunden abgeleitet (× 13/3, z. B. 7,62 h/Woche ≈ 33 h/Monat). Die eingegebene Monatszahl ist die vertragliche Bezugsgröße für die **50-%-Prüfung**. Das **12-Monats-Aging** bleibt bewusst Soll-basiert (rechnet gegen das tatsächliche Monats-Soll, damit Urlaub/Feiertage das Konto nicht belasten). Der Hinweis erscheint beim Buchen/Ausstempeln, im **eigenen Überstundenkonto** der/des MA und in der **Benutzerübersicht**.
-- **12-Monats-Ausgleichsfrist:** Konto-Stunden müssen binnen 12 Kalendermonaten ausgeglichen werden — bei Überfälligkeit ein Hinweis.
+![Bestätigungsdialog „Jahresabschluss 2026“: Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter werden als Übernahme in 2027 gespeichert, bestehende Übernahmen werden überschrieben; Knöpfe Abbrechen und Jahresabschluss erstellen](img/pl-jahresabschluss-dialog.webp)
 
-Der **aktuelle gesetzliche Mindestlohn** (§ 1 MiLoG) wird unter **Einstellungen → „Gesetzlicher Mindestlohn"** angezeigt.
+1. Lesen Sie den Text: Überstunden-Saldo und Resturlaub aller **aktiven** Mitarbeitenden werden berechnet und als Übernahme ins Folgejahr gespeichert. **Bestehende Übernahmen für das Folgejahr werden überschrieben.**
+2. Mit `Abbrechen` geschieht nichts.
+3. Mit `Jahresabschluss erstellen` bestätigen Sie. Die Meldung nennt, wie viele Mitarbeitende nach dem Folgejahr übernommen wurden.
 
-> **Wichtig:** Die 50-%-Grenze bindet nur die **mindestlohnwirksamen** Stunden. Wird über dem Mindestlohn vergütet, sind mehr Stunden möglich — der Hinweis ist dann ggf. unkritisch, bitte prüfen. PraxisZeit speichert **keine Lohndaten** und prüft daher **nicht** die 603-€-Verdienstgrenze; das bleibt der Lohnbuchhaltung vorbehalten. Die vereinbarte **Monatsarbeitszeit** kann im Feld „Vereinbarte Monatsarbeitszeit (h)" direkt eingegeben werden (siehe oben); sie ist die vertragliche Bezugsgröße für die **50-%-Prüfung**. Das **12-Monats-Aging** bleibt bewusst Soll-basiert (siehe oben) und ändert sich dadurch nicht.
+| PraxisZeit berechnet | Bedeutung im Folgejahr |
+| --- | --- |
+| Überstunden-Saldo zum 31.12. des Jahres (immer der volle Zeitraum, nicht „bis heute“) | Startwert des Überstundenkontos |
+| Resturlaub in Tagen | wird dem Jahresurlaub des Folgejahres hinzugerechnet |
 
-#### Feste Monatsarbeitszeit (Minijob-Modus, #377 Baustein 2b)
+> **Gut zu wissen:** Der Abschluss schließt auch Mitarbeitende **ohne Stundenzählung** ein: Für sie ist der Überstundenwert 0, der Resturlaub wird tagebasiert übernommen – sonst ginge er beim Jahreswechsel verloren.
 
-Für Minijobber:innen mit einer **fest vereinbarten Monatsarbeitszeit**, die jeden Monat **gleich** sein soll (statt aus Wochenstunden/Arbeitstagen zu schwanken), aktivieren Sie zusätzlich zum Arbeitszeitkonto die Checkbox **„Feste Monatsarbeitszeit (Monats-Soll = vereinbarte Monatsarbeitszeit)"** (wie oben nur über „Arbeitszeit anpassen…" bzw. beim Anlegen). Sie erscheint nur, wenn „Arbeitszeitkonto (§ 2 Abs. 2 MiLoG)" bereits aktiv ist, und macht das Feld „Vereinbarte Monatsarbeitszeit (h)" zur **Pflichtangabe**.
+> **Achtung:** **PraxisZeit lehnt den Abschluss ab, solange offene Anträge das Jahr betreffen:** noch nicht entschiedene Änderungsanträge oder offene Urlaubsanträge. Die Meldung lautet zum Beispiel „Jahresabschluss 2026 abgelehnt: es gibt noch 2 offene Änderungsanträge für dieses Jahr. Bitte erst bearbeiten, dann erneut versuchen.“ Ein später genehmigter Antrag würde sonst den eingefrorenen Saldo verschieben. Entscheiden Sie die Anträge unter `Änderungsanträge` und `Anträge` und starten Sie den Abschluss dann erneut.
 
-Mit aktivem Modus gilt:
+> **Achtung:** **Erneut ausführen überschreibt:** Ein zweiter Abschluss für dasselbe Jahr ersetzt die Übernahmen **aller** aktiven Mitarbeitenden für das Folgejahr – auch von Hand eingetragene. Die Zeile gilt danach wieder als Abschluss-Zeile.
 
-- **Monats-Soll ist fix:** Statt der Tagessoll-Summe über die Arbeitstage des Monats zählt jeden Monat exakt die vereinbarte Monatsarbeitszeit als Soll — egal ob der Monat 4 oder 5 Montage hat. Bei unterjährigem Ein-/Austritt wird das Soll **anteilig nach Kalendertagen** des Beschäftigungsfensters im Monat berechnet.
-- **Individuelle Tagesstunden werden zur geplanten Anwesenheit:** Die Tagesstunden je Wochentag (Mo–Fr, Modus „Nach Tagen") heißen in diesem Modus „Geplante Anwesenheit" und steuern **nicht mehr das Soll**, sondern nur noch, wie viele Stunden an Feiertags-/Fehltagen gutgeschrieben werden. Sie dürfen frei bzw. lückenhaft gesetzt sein (z. B. nur Montag und Mittwoch). Beim **Anlegen** tragen Sie die Werte direkt im Formular ein; bei einer **bestehenden** Mitarbeiterin/einem bestehenden Mitarbeiter ändern Sie sie ausschließlich über „Arbeitszeit anpassen…" (Modus „Nach Tagen") mit Wirkungsdatum – eine Tagesstunden-Matrix im Bearbeiten-Formular selbst gibt es seit der Stundenhistorie für individuellen Tagesplan nicht mehr. Mit Arbeitszeit-Blöcken gilt dasselbe: der Block-Editor beschriftet die Werte je Tag und Woche als „geplant".
-- **Feiertag, Urlaub oder bezahlte Freistellung auf einem geplanten Tag** schreiben die geplanten Stunden dieses Wochentags dem **Ist** gut, als wäre gearbeitet worden (Konto-Wirkung: neutral statt Minus). Krankheit und Fortbildung waren bereits vorher als Ist gutgeschrieben und ändern sich nicht.
-- **Unbezahlt entschuldigte Tage** (Typ „Sonstiges", z. B. ein „unbezahlt frei"-Grund wie Kind krank) **mindern stattdessen das feste Monats-Soll** um die geplanten Stunden — es gibt keine Vergütungspflicht, also auch keine Ist-Gutschrift.
-- **Monatsjournal in diesem Modus (#463):** Die Tagestabelle heißt hier nicht mehr „Soll", sondern **„Geplant"** — sie zeigt die geplante Anwesenheit des Wochentags, nicht ein Tages-Soll (ein solches gibt es im festen Monats-Soll nicht). Der **Tages-Saldo entfällt** ganz, weil er ohne Tages-Soll keine definierte Bedeutung hätte. Ein Urlaubs- oder Feiertag auf einem geplanten Tag zeigt die geplanten Stunden sowohl unter „Geplant" als auch unter „Ist" — genau die Gutschrift aus dem Punkt darüber. **Verbindlich ist die Monatsübersicht unter der Tabelle**; ein entsprechender Hinweis steht über dem Journal.
-- Übersteigt das erfasste Monats-Ist (inkl. Gutschriften) die vereinbarte Monatsarbeitszeit, erscheint eine **weiche Warnung** (nicht blockierend) — beim Buchen, im eigenen Überstundenkonto und in der Benutzerübersicht, wie die übrigen MiLoG-Hinweise.
+<a id="jahresabschluss-loeschen"></a>
+### Wie nehme ich einen Jahresabschluss zurück?
 
-> **⚠️ Bekannte Grenze — volle Fehlmonate:** Liegen die geplanten Tagesstunden deutlich **unter** der vereinbarten Monatszeit (weil ein Teil der Zeit flexibel, ohne festen Plan, gearbeitet wird), deckt die automatische Gutschrift bei einem **einzelnen** Fehltag (Feiertag, ein Urlaubstag) korrekt den geplanten Anteil ab. Fällt jedoch ein **kompletter Monat** durch Urlaub oder Krankheit ganz aus, wird nur der geplante Anteil gutgeschrieben — der **flexible Rest** bleibt als Konto-Defizit stehen. In diesem seltenen Fall ist eine **manuelle Korrektur** durch den Betrieb nötig (z. B. über das Überstundenkonto oder den Jahresübertrag). Für den Regelfall einzelner Fehltage ist die Berechnung vollautomatisch korrekt.
+Das geht, wenn ein Abschluss versehentlich erstellt wurde. Die Löschung ist **unwiderruflich**.
 
-Ist der Modus **nicht** aktiviert, bleibt das Verhalten für alle Mitarbeitenden unverändert (das bestehende Tages-Soll-Modell).
+1. Wählen Sie in der Jahresübersicht das Jahr, dessen Abschluss Sie löschen möchten.
+2. Klicken Sie auf den roten Knopf `Abschluss löschen`.
+3. Lesen Sie den Dialog „Jahresabschluss … löschen“ sorgfältig: Alle Übernahmen für das Folgejahr, die durch diesen Jahresabschluss erzeugt wurden, werden gelöscht – für alle Mitarbeitenden.
+4. Bestätigen Sie mit `Jahresabschluss löschen`. Gibt es keinen Abschluss für das Jahr, meldet PraxisZeit „Kein Jahresabschluss für … gefunden“.
 
----
+> **Gut zu wissen:** **Von Hand eingetragene Übernahmen bleiben stehen.** Das Löschen entfernt nur Übernahmen, die der Jahresabschluss erzeugt hat – Werte, die Sie in der Vorjahresübernahme eingetragen oder korrigiert haben, nicht.
 
-## 14. ArbZG-Compliance-Berichte
+<a id="vorjahresuebernahme"></a>
+### Wie trage ich einen Übertrag von Hand ein oder korrigiere ihn?
 
-PraxisZeit überwacht automatisch die Einhaltung des Arbeitszeitgesetzes.
+Für einzelne Personen, etwa beim Start mit PraxisZeit oder nach einer Korrektur. Klicken Sie in der `Benutzerverwaltung` in der Zeile der Person auf den Knopf `Vorjahresübernahme`.
 
-![ArbZG-Berichte](screenshots/25-admin-arbzg-berichte.png)
+![Dialog „Vorjahresübernahme“ von Maria Hoffmann: Auswahl des Jahres, Überstunden aus dem Vorjahr in Stunden, Resturlaub aus dem Vorjahr in Tagen und der Knopf „Speichern“](img/pl-uebernahme.webp)
 
-Die ArbZG-spezifischen Auswertungen finden Sie auf der **Berichte-Seite** weiter unten.
+1. Wählen Sie das **Jahr**. Die Werte gelten als Übernahme **in** das gewählte Jahr.
+2. **Überstunden aus Vorjahr (Stunden):** positiv ist ein Guthaben, negativ sind Minusstunden.
+3. **Resturlaub aus Vorjahr (Tage):** wird zum Jahresurlaub des gewählten Jahres addiert.
+4. Klicken Sie auf `Speichern`. Unter „Gespeicherte Übernahmen“ stehen alle Jahre der Person; ein Klick auf eine Zeile lädt ihre Werte ins Formular.
 
-**Wer erscheint?** Alle aktiven Mitarbeitenden und ausgeschiedene (inaktive), die im ausgewerteten Zeitraum Einträge oder Abwesenheiten haben – eine im November ausgeschiedene Person fehlt also nicht in der Auswertung des Jahres. Ausgeblendete Mitarbeitende erscheinen nur mit dem Schalter **„Ausgeblendete Mitarbeitende einbeziehen"** über den Auswertungen; fehlen welche mit Einträgen, nennt jede Auswertung ihre Zahl. § 18-befreite Mitarbeitende erscheinen nicht.
+> **Achtung:** **Rückwirkende Änderungen rechnet PraxisZeit nie von selbst nach.** Ändert sich etwas in einem bereits abgeschlossenen Jahr – Bundesland-Wechsel, Storno eines genehmigten Urlaubs, gelöschte Betriebsferien, geänderte Sondertage oder eigene Feiertage –, meldet PraxisZeit zum Beispiel „Jahresabschluss 2025 bereits erfolgt — Carryover 2026 ist nun veraltet, bitte Jahresabschluss erneut ausführen.“ Eine automatische Neuberechnung würde Ihre von Hand korrigierten Werte überschreiben. Prüfen Sie den Übertrag und führen Sie den Abschluss bei Bedarf erneut aus, danach tragen Sie Handkorrekturen noch einmal ein.
 
----
+<a id="import"></a>
+## Import
 
-### §5 ArbZG – Ruhezeitverstöße
+*Unter **Import** übernehmen Sie historische **Zeiteinträge** aus einer TimeRec-Datei, zum Beispiel Altdaten aus Ihrer bisherigen Zeiterfassung. Gedacht ist der Import für die einmalige Datenübernahme bei der Einführung. **Abwesenheiten** (Urlaub, Krank usw.) werden nicht importiert.*
 
-**Gesetzliche Anforderung:**
-Nach § 5 ArbZG müssen Arbeitnehmer nach Beendigung der täglichen Arbeitszeit eine ununterbrochene Ruhezeit von **mindestens 11 Stunden** haben.
+| Anforderung | Wert |
+| --- | --- |
+| Format | echtes .xls (TimeRec-Export, BIFF) – keine .xlsx- und keine CSV-Dateien |
+| Größe | höchstens 5 MB |
+| Tabellenblatt | „Zeiterfassung“ mit den Spalten Datum, Tag, Total, Ein, Aus, Tagesnotiz |
+| Vorlage | Es gibt keine Vorlagendatei zum Herunterladen. |
 
-[§5 ArbZG](https://www.gesetze-im-internet.de/arbzg/__5.html)
+<a id="import-hochladen"></a>
+### Wie lade ich eine TimeRec-Datei hoch?
 
-**Was der Bericht zeigt:**
-- Alle Fälle, bei denen die 11-Stunden-Ruhezeit unterschritten wurde
-- Mitarbeitername, betroffene Daten, tatsächliche Ruhezeit
+Klicken Sie in der Navigation auf `Import`. Der Assistent hat drei Schritte: `Hochladen`, `Vorschau` und `Ergebnis`.
 
-**Handlungsbedarf:**
-- Ruhezeitverstöße dokumentieren und Ursachen beseitigen
-- In Ausnahmefällen (§ 7 ArbZG) kann die Ruhezeit auf 9 Stunden verkürzt werden (Ausgleich innerhalb von 4 Wochen)
+![Import, Schritt „Hochladen“: Auswahl der Person Petra Schulz, das gestrichelte Feld mit der gewählten TimeRec-Datei im Format xls und der Knopf „Datei analysieren“](img/pl-import-hochladen.webp)
 
----
+1. Wählen Sie unter **Benutzer** die Person, der die Einträge zugeordnet werden.
+2. Ziehen Sie die .xls-Datei in das gestrichelte Feld oder klicken Sie hinein und wählen Sie die Datei aus. Der Dateiname erscheint im Feld.
+3. Klicken Sie auf `Datei analysieren`. Dabei wird die Datei nur gelesen – gespeichert ist noch nichts.
 
-### §6 ArbZG – Nachtarbeit-Auswertung
+<a id="import-vorschau"></a>
+### Wie lese ich die Vorschau?
 
-**Gesetzliche Anforderung:**
-Nachtarbeitnehmer (> 48 Nachtarbeitstage/Jahr, 23–6 Uhr) haben eine reduzierte Tageshöchstarbeitszeit von **8 Stunden**.
+Die Vorschau zeigt alle gefundenen Einträge mit Datum, Von, Bis, Pause und Netto. Die Netto-Stunden rechnet der Server so, wie er sie anschließend speichert.
 
-[§6 ArbZG](https://www.gesetze-im-internet.de/arbzg/__6.html)
+![Import, Schritt „Vorschau“: 20 Einträge gefunden, 1 Konflikt und 14 Hinweise; in der Tabelle die Zeilen mit Datum, Von, Bis, Pause, Netto und Status „Konflikt“, „Hinweis“ oder „Neu“](img/pl-import-vorschau.webp)
 
-**Was der Bericht zeigt:**
-- Mitarbeiter mit 48+ Nachtarbeitstagen im gewählten Jahr
-- Anzahl der Nachtarbeitstage und 8h-Warnungen
-- **Monatsdurchschnitt für Nachtarbeitnehmer (§ 6 Abs. 2 ArbZG):** für Personen mit gesetztem Kennzeichen „Nachtarbeitnehmer" oder mit mindestens 48 Nachtarbeitstagen im Jahr je Kalendermonat die Arbeitszeit im Durchschnitt je Werktag (Werktage wie beim [24-Wochen-Durchschnitt](#24-wochen-durchschnitt)), angerechnet und laut Stempel. Es erscheinen nur vergangene Monate mit Arbeit; ein Monat, in dem nur an Sonn- oder Feiertagen gearbeitet wurde, steht mit „kein Werktag" ohne Urteil. Über 8 Stunden steht „✗ Verstoß" – länger als 8 Stunden am Tag darf ein Nachtarbeitnehmer nur arbeiten, wenn der Monatsdurchschnitt 8 Stunden nicht übersteigt.
-- Hinweis **„Kennzeichen „Nachtarbeitnehmer" beim Benutzer noch nicht gesetzt"**, wenn jemand laut Zählung Nachtarbeitnehmer ist, das Kennzeichen (das die 8-Stunden-Warnung beim Erfassen auslöst) aber fehlt. PraxisZeit setzt es nicht selbst – bitte in der Benutzerverwaltung setzen.
+1. Über der Tabelle stehen die Zahl der **Einträge**, der **Konflikte** (rot) und der **Hinweise** (gelb).
+2. **Konflikt:** Ein Eintrag mit demselben Beginn am selben Tag ist schon vorhanden. Ob er ersetzt wird, entscheiden Sie im nächsten Schritt.
+3. **Hinweis:** Fahren Sie mit der Maus über das Kennzeichen – die Kurzinfo nennt den genauen Text. Das sind ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit), bei hinterlegten Arbeitszeit-Blöcken die Kappung der importierten Zeit und die Gründe, aus denen eine Zeile übersprungen wird.
+4. **Neu:** Die Zeile wird ohne Beanstandung importiert. Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit, zum Beispiel „2:30 h nicht angerechnet“.
 
-**Handlungsbedarf:**
-- Regelmäßige arbeitsmedizinische Untersuchung anbieten (§ 6 Abs. 3 ArbZG)
+| Der Import überspringt … | Kurzinfo in der Vorschau |
+| --- | --- |
+| einen ganzen Tag, an dem sich die Pause nach § 4 ArbZG nicht abziehen lässt | „Wird übersprungen — die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht abziehen (es fehlen 10 Min). Bitte den Tag von Hand erfassen.“ |
+| einen Tag mit mehr als 10 Stunden angerechneter Arbeitszeit | „Wird übersprungen — die Tagesarbeitszeit beträgt 11:15 h und überschreitet die Höchstgrenze von 10 h nach § 3 ArbZG. Bitte den Tag von Hand erfassen.“ |
+| eine Zeile, die sich mit einem vorhandenen Eintrag oder einer früheren Zeile des Tages überschneidet | „Wird übersprungen — die Zeile überschneidet sich mit dem Eintrag 08:00–12:00 (Zeiteinträge einer Person dürfen sich nicht überschneiden).“ |
+| Zeilen vor dem ersten oder nach dem letzten Arbeitstag der Person | „Wird übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).“ |
+| Zeilen mit einem Datum nach heute | „Wird übersprungen — Datum liegt in der Zukunft.“ |
 
----
+> **Gut zu wissen:** **Die Pause rechnet der Import je Tag:** Mehrere Zeilen desselben Tages (z. B. ein geteilter Dienst) und dort schon vorhandene Einträge zählen zusammen; ein Abstand von mindestens 15 Minuten zwischen zwei Einträgen deckt die Pausenpflicht ab. Abgezogen wird nur, was dann noch fehlt – an der längsten Zeile des Tages. Reicht das nicht, übernimmt der Import den Tag **nicht**, auch wenn die Ausnahme „Pflicht-Pause war nicht möglich“ erlaubt ist, denn der Import kennt keine Begründung. Erfassen Sie solche Tage von Hand.
 
-### §11 ArbZG – Sonntagsarbeit (15-freie-Sonntage-Regel)
+> **Achtung:** **Altdaten:** Prüfen Sie vorher, dass als **Erster Arbeitstag** der tatsächliche Eintritt eingetragen ist und nicht der Starttag von PraxisZeit – Zeilen davor überspringt der Import. Eine Zeile ganz außerhalb der Arbeitszeit-Blöcke (z. B. 18:00–20:00 bei einem Block 08:00–12:00) übernimmt er dagegen wie jeden gestempelten Eintrag: angerechnet werden 0 Stunden, die Zeiten bleiben als Rohstempel gespeichert.
 
-**Gesetzliche Anforderung:**
-Arbeitnehmer müssen mindestens **15 Sonntage pro Jahr** beschäftigungsfrei haben.
+<a id="import-bestaetigen"></a>
+### Wie bestätige ich den Import und was steht im Ergebnis?
 
-[§11 ArbZG](https://www.gesetze-im-internet.de/arbzg/__11.html)
+Unter der Tabelle entscheiden Sie über Konflikte und starten den Import.
 
-**Was der Bericht zeigt:**
-- Anzahl der gearbeiteten Sonntage pro Mitarbeiter im gewählten Jahr
-- Warnung bei Annäherung an oder Überschreitung der 37 Arbeitsonntage (52 − 15)
+![Import, Ende der Vorschau: Haken „Konflikte überschreiben (1 Eintrag)“ und die Knöpfe „Zurück“ und „Import bestätigen“ unter der Tabelle der gefundenen Einträge](img/pl-import-bestaetigen.webp)
 
----
+1. `Konflikte überschreiben` (nur sichtbar, wenn es Konflikte gibt): Angekreuzt ersetzt der Import die vorhandenen Einträge, sonst bleiben sie stehen und zählen für die Pause des Tages mit. Die Vorschau rechnet jeden Konflikt als überschrieben.
+2. `← Zurück` bringt Sie zur Auswahl von Person und Datei.
+3. Klicken Sie auf `Import bestätigen`. Sollen vorhandene Einträge überschrieben werden, fragt PraxisZeit noch einmal nach („Einträge überschreiben?“).
+4. Das **Ergebnis** nennt die Zahl der importierten, überschriebenen und übersprungenen Einträge. Die **Hinweise** klappen Sie auf: Ruhezeit (§ 5) und Nachtarbeit (§ 6), die der Server bei der Bestätigung prüft, eine angepasste Pause („Pause an den Tag angepasst (0 → 30 Min)“) und der Grund jeder übersprungenen Zeile. Der Import steht im **Änderungsprotokoll**. Mit `Weiteren Import starten` beginnen Sie von vorn.
 
-### §11 ArbZG – Ersatzruhetag-Tracking
+> **Gut zu wissen:** **Bestätigung = Vorschau, neu gerechnet:** Höchstarbeitszeit, Pause und Überschneidungen rechnet die Bestätigung noch einmal und überspringt betroffene Tage oder Zeilen – die Hinweise der Vorschau übernimmt das Ergebnis nicht ungeprüft. Überschreibt der Import einen **anerkannten** Eintrag, steht in der Kurzinfo „Eintrag ist anerkannt – die neuen Zeiten werden ungekappt angerechnet.“
 
-**Gesetzliche Anforderung:**
-Bei Sonntagsarbeit: Ersatzruhetag innerhalb von **2 Wochen**.
-Bei Feiertagsarbeit: Ersatzruhetag innerhalb von **8 Wochen**.
+<a id="protokoll-fehler-monitoring"></a>
+## Protokoll & Fehler-Monitoring
 
-**Was als Ersatzruhetag zählt:** ein Tag von Montag bis Samstag, an dem die Person **sonst gearbeitet hätte** und der frei war:
-- sonst Arbeitstag = laut Arbeitszeit ein Tag mit Soll-Stunden, oder ein Wochentag, an dem die Person in mindestens 2 der 4 Wochen davor gearbeitet hat (z. B. ohne Stundenzählung oder jeder zweite Samstag);
-- frei = kein Zeiteintrag, kein Feiertag, kein Urlaub, keine Krankheit, keine Fortbildung; eine Abwesenheit „Sonstiges", „Überstundenausgleich" oder „Bez. Freistellung" zählt als gewährter Ruhetag;
-- nur vergangene Tage im Beschäftigungszeitraum.
+*Das **Änderungsprotokoll** hält fest, wer wann an Zeiteinträgen, Abwesenheiten und Verwaltungseinstellungen etwas geändert hat. Es dient als Nachweis nach § 16 Abs. 2 ArbZG. Im laufenden Betrieb wird das Protokoll nur ergänzt; jede Zeile trägt eine Prüfsumme. Entfernt werden Zeilen nur beim endgültigen Löschen einer Person (Art. 17 DSGVO, selbst protokolliert) und durch die Aufbewahrungsfrist: Protokollzeilen zu Anträgen werden nach 730 Tagen gelöscht und hinterlassen je betroffener Person einen Vermerk (Quelle „Aufbewahrungsfrist“) mit den entfernten Kettengliedern. Bei der Anonymisierung einer Person wird Klartext in Notizen ersetzt. Daneben zeigen **Konto-Vorgänge** die sicherheitsrelevanten Handlungen und das **Fehler-Monitoring** technische Störungen.*
 
-Ein ohnehin freier Samstag einer Fünf-Tage-Kraft gleicht also **nichts** aus. Jeder Ruhetag gleicht genau **einen** Sonn- oder Feiertagseinsatz aus – zwei Sonntage hintereinander brauchen zwei Ruhetage. Einsätze aus den letzten 8 Wochen des Vorjahres verbrauchen Ruhetage im Januar mit.
+<a id="protokoll-lesen"></a>
+### Wie lese ich das Änderungsprotokoll?
 
-**Was der Bericht zeigt:**
-- Je Mitarbeiter:in die gearbeiteten Sonn- und Feiertage, die **Verstöße** mit Datum (Frist abgelaufen, kein Ersatzruhetag) und unter **„Frist läuft"** die Einsätze, deren Frist noch nicht vorbei ist, mit Fristende
+Klicken Sie in der Navigation auf `Änderungsprotokoll`. Die Tabelle zeigt die Änderungen des gewählten Monats, die neuesten zuerst. Ihre Spalten: **Zeitpunkt**, **Mitarbeiter** (die Person, deren Eintrag sich geändert hat), **Geändert von** (die handelnde Person), **Aktion**, **Quelle** sowie **Alte Werte** und **Neue Werte**.
 
-**Handlungsbedarf:**
-- Gewährte Ersatzruhetage als Abwesenheit (Typ: Sonstiges, Überstundenausgleich oder Bez. Freistellung) eintragen
+![Änderungsprotokoll: Monatswähler, Auswahl der Person und die Tabelle mit Zeitpunkt, Mitarbeiter, Geändert von, Aktion, Quelle sowie alten und neuen Werten](img/pl-protokoll.webp)
 
-Für einen Einsatz Ende Dezember sucht der Bericht den Ruhetag bis ins Folgejahr. Sind dessen Feiertage noch nicht angelegt, rechnet er mit den gesetzlichen Feiertagen des eingestellten Bundeslands – der Neujahrstag gilt also nie als Ersatzruhetag.
+1. **Monat wählen:** mit den Pfeilen neben dem Monatsnamen. `Zum aktuellen Monat springen` bringt Sie zurück.
+2. **Person filtern:** Die Auswahl steht auf „Alle Mitarbeitende“; wählen Sie eine Person, sehen Sie nur ihre Zeilen.
+3. **Quelle** zeigt, auf welchem Weg die Änderung entstand, zum Beispiel „Manuell“, „Ausstempeln“, „Antrag“, „Import“, „Jahresabschluss“, „Einstellungen“ oder „Stundenänderung“. Wurde die Person unter **Geändert von** später endgültig gelöscht (Art. 17 DSGVO), steht dort „Gelöschte Person“.
+4. **Alte Werte** und **Neue Werte** zeigen Datum, Zeiten, Pause und Notiz vorher und nachher; bei einer Einstellung steht dort der Wert vor und nach der Änderung.
 
----
+| Was PraxisZeit protokolliert | Beispiele |
+| --- | --- |
+| Zeiteinträge | Erstellen, Ändern, Löschen, Ausstempeln – auch Einträge, die Mitarbeitende selbst am selben Tag anlegen |
+| Abwesenheiten | neue Abwesenheiten, Stornierungen |
+| Anträge | Korrekturanträge stellen, genehmigen, ablehnen |
+| Arbeitszeit-Änderungen und Anerkennungen | je Änderung eine Sammelzeile (Wirkungsdatum, neu berechnete Einträge, Grund), dazu eine Zeile je neu berechnetem Eintrag; Quelle „Stundenänderung“, „Neukappung (Arbeitszeit-Änderung)“ oder „Anrechnung anerkannt“ |
+| Pflicht-Pause-Ausnahmen | die erfasste § 4-Ausnahme samt Begründung (Quelle „Pausen-Verzicht“) |
+| Überträge und Jahresabschluss | manuell gesetzte Überträge und je Person der Übertrag beim Anlegen oder Löschen eines Jahresabschlusses |
+| Einstellungen, Feiertage, verkürzte Tage | jede geänderte Einstellung mit altem und neuem Wert („Einstellung geändert“) |
+| Benutzerangaben mit Wirkung auf Auswertungen | „Ausgenommen nach § 18 ArbZG“, „Nachtarbeitnehmer“, erster und letzter Arbeitstag („Benutzerangabe geändert“) |
 
-### §3 ArbZG – Tageshöchstgrenze (10 Stunden)
+> **Gut zu wissen:** **Tatsächliche Stempel:** Weichen die angerechnete und die gestempelte Zeit eines Eintrags voneinander ab, nennt die Zeile beide, zum Beispiel „07:45 - 16:15“ und darunter „gestempelt 06:00 - 18:00“. Das gilt auch beim Löschen.
 
-Nach § 3 ArbZG darf die werktägliche Arbeitszeit 8 Stunden nicht überschreiten; sie darf auf bis zu **10 Stunden** verlängert werden, wenn innerhalb von 6 Kalendermonaten / 24 Wochen im Schnitt 8 Stunden eingehalten werden. PraxisZeit behandelt die 10-Stunden-Grenze je nach Erfassungsweg unterschiedlich:
+> **Achtung:** **Das Protokoll ist kein unveränderbares Archiv.** Es macht nachträgliche Veränderungen **erkennbar**, verhindern kann sie nur der Schutz des Servers. Bewahren Sie deshalb auch die Datensicherungen auf, siehe [Datensicherung](#sicherung-einrichten).
 
-- **Beim Live-Ausstempeln** wird ein Tag über 10 Stunden **nicht mehr blockiert** – die Arbeitszeit ist bereits tatsächlich geleistet und muss gemäß § 16 ArbZG dokumentiert werden. Der Eintrag wird gespeichert, und der § 3-Verstoß wird als **deutliche Warnung** gemeldet (und steht für die Compliance-Berichte zur Verfügung).
-- **Bei manueller Eingabe oder einem Antrag** (frei wählbare Start-/Endzeit) bleibt die 10-Stunden-Grenze eine **harte Sperre**: Ein solcher Eintrag kann nicht über 10 Stunden hinaus gespeichert werden.
+<a id="protokoll-pruefen"></a>
+### Wie prüfe ich, ob das Protokoll unverändert ist?
 
-Eine **8-Stunden-Warnung** weist bereits ab Überschreiten der Regelgrenze auf den nötigen Ausgleich hin. § 18-befreite Mitarbeitende sind von diesen Prüfungen ausgenommen.
+Unter der Tabelle steht die Karte **Prüfung des Änderungsprotokolls**. PraxisZeit prüft jede Nacht (03:15 Uhr) jede Zeile gegen ihre Prüfsumme, versiegelt neue Zeilen zu einer Kette und prüft, ob Glieder fehlen.
 
----
+![Karte „Prüfung des Änderungsprotokolls“ mit dem Knopf „Jetzt prüfen“ und der Zeile zum Ergebnis der letzten Prüfung](img/pl-protokoll-pruefung.webp)
 
-<a id="24-wochen-durchschnitt"></a>
-### §3 ArbZG – 24-Wochen-Durchschnitt
+1. Klicken Sie auf `Jetzt prüfen`, wenn Sie nicht bis zur nächsten Nacht warten möchten.
+2. Die Zeile **Letzte Prüfung** nennt Zeitpunkt und Ergebnis. Solange noch keine Prüfung gelaufen ist, steht dort „Noch keine Prüfung gelaufen.“
 
-Über 24 Wochen darf die Arbeitszeit im Durchschnitt 8 Stunden je Werktag nicht überschreiten. Die Auswertung **„24-Wochen-Durchschnitt §3 ArbZG"** auf der Berichte-Seite prüft das für die 24 Wochen bis zum gewählten **Stichtag** (Standard: heute) – je Mitarbeiter:in mit den Spalten „Ø angerechnet / Werktag", „Anwesenheit laut Stempel (Ø / Werktag)", „Angerechnet gesamt", „Anwesenheit laut Stempel gesamt", „Wochen > 48 h laut Stempel", „Tage > 8 h" und „Status". Über der Tabelle stehen der ausgewertete **Zeitraum** (z. B. „29.10.2025 – 15.04.2026") und, falls jemand die Grenze überschreitet, die Zahl der nicht konformen Mitarbeitenden; ein neuer Stichtag verwirft das alte Ergebnis bis zum nächsten „Prüfen".
+| Ergebnis | Bedeutung und was Sie tun |
+| --- | --- |
+| **in Ordnung** | Keine Zeile verändert, keine entfernt. Ältere Zeilen ohne prüfbare Prüfsumme (Altbestand) werden nur gezählt. |
+| **Abweichung gefunden** | Zeilen wurden außerhalb von PraxisZeit verändert oder entfernt, zum Beispiel direkt in der Datenbank. Der Vorgang steht zusätzlich unter „Konto-Vorgänge“ und im Fehler-Monitoring. Bewahren Sie die Datensicherungen auf und informieren Sie den Support. |
+| **Kettenende fehlt** oder **ungültig** | Der versiegelte Abschluss der Kette ist weg oder verändert. PraxisZeit legt ihn **nicht** von selbst neu an. Bis zur Klärung sind das endgültige Löschen von Personen und das automatische Entfernen nach der Aufbewahrungsfrist gesperrt. Erst wenn die Ursache geklärt ist (zum Beispiel eine Datensicherung geprüft), setzen Sie ihn mit `Kettenende neu setzen…` und einem **Grund** (mindestens 10 Zeichen) neu. Das Neusetzen steht danach dauerhaft im Protokoll. |
 
-- **„Ø angerechnet / Werktag"** und der **Status** („✓ Konform" / „✗ Verstoß") rechnen mit der angerechneten Zeit, geteilt durch die **Werktage** des Zeitraums: Montag bis Samstag ohne Feiertage und ohne Tage mit Urlaub, Krankheit, Fortbildung, „Sonstiges" oder bezahlter Freistellung, nur im Beschäftigungszeitraum – so rechnet das Gesetz („werktäglich"), auch für Teilzeitkräfte (drei Tage à 10 Stunden ergeben Ø 5 Stunden je Werktag). Urlaubs- und Krankheitszeiten verdünnen den Durchschnitt nicht (Art. 16 EU-Arbeitszeitrichtlinie). Überstundenausgleichstage bleiben Werktage – sie sind der Ausgleich. „Tage > 8 h" zählt Tage mit mehr als 8 Stunden angerechneter Zeit.
-- **„Anwesenheit laut Stempel"** (ab 1.20.0) ist die gestempelte Zeit abzüglich erfasster Pausen. Sie ändert sich nicht, wenn die Anrechnung später neu berechnet wird (Ausnahme: ein automatisch geschlossener Eintrag – für ihn zählt die Anwesenheit nur bis zum angerechneten Ende), und die Grenze gilt für die tatsächliche Arbeitszeit. Liegt ihr Durchschnitt über 8 Stunden, ist der Wert rot hervorgehoben; steht als Status trotzdem „✓ Konform", erscheint darunter zusätzlich „laut Stempel Ø > 8 h". „Wochen > 48 h laut Stempel" nennt die Zahl solcher Kalenderwochen mit Woche und Wert, z. B. „1 (KW 14/2026: 50:00 h)".
-- Hat eine Person im Zeitraum **keinen Werktag** (z. B. ganz außerhalb des Beschäftigungszeitraums), steht als Status „keine Werktage im Zeitraum" – ohne Durchschnitt und ohne Urteil. § 18-befreite Mitarbeitende erscheinen nicht.
+> **Achtung:** **Der Schlüssel SECRET\_KEY gehört zur Prüfung:** Die Prüfsummen hängen am geheimen Schlüssel des Servers. Geht er verloren (zum Beispiel bei einer Neuinstallation ohne die Datei config/.secret-key), lassen sich die Prüfsummen nicht mehr prüfen. Bewahren Sie ihn getrennt von den Sicherungen auf.
 
----
+<a id="konto-vorgaenge"></a>
+### Wo sehe ich Konto-Vorgänge?
 
-### §3/§4 ArbZG – Höchstarbeitszeit und Pausenausnahmen
+Die Liste **Konto-Vorgänge** steht ganz unten auf der Seite `Änderungsprotokoll`: Konten, Rollen, Passwörter, Zwei-Faktor und Datenbank-Sicherungen, also wer wann was getan hat. Sie zeigt die neuesten 200 Vorgänge und ist nicht gefiltert.
 
-Die Auswertung **„Höchstarbeitszeit und Pausenausnahmen §3/§4 ArbZG"** listet für ein Jahr oder einen Monat nachträglich:
+![Liste „Konto-Vorgänge“ unter dem Änderungsprotokoll mit den Spalten Zeitpunkt, Vorgang, Konto, Durch und Detail](img/pl-konto-vorgaenge.webp)
 
-- **Tage über 10 Stunden** – je Tag die Anwesenheit laut Stempel (abzüglich Pausen) und daneben die angerechnete Zeit; ein Tag erscheint, wenn einer der beiden Werte 10 Stunden übersteigt (genau 10:00 Stunden nicht). Solche Tage entstehen z. B. beim Live-Ausstempeln (dort nur Warnung), durch automatisch geschlossene Einträge (gekennzeichnet) oder durch Anerkennen.
-- **Wochen über 48 Stunden** laut Stempel (Kalenderwoche Mo–So, auch über einen Monatswechsel mit allen Tagen der Woche).
-- **Pausenausnahmen** – jeder Eintrag mit dokumentierter Pflicht-Pause-Ausnahme mit Zeit, erfasster Pause und Begründung.
-- **Pause zu kurz** – Tage, an denen die Pause nach § 4 über alle Einträge des Tages nicht reicht und keine Ausnahme anerkannt ist, mit Arbeitszeit, gemachter und nötiger Pause und dem Fehlbetrag. Das kommt vor, wenn beim Ausstempeln eine Ausnahme beantragt wurde und die Genehmigung noch offen ist oder abgelehnt wurde (Hinweis „Ausnahme beantragt, noch offen" bzw. „Ausnahme abgelehnt"), bei automatisch geschlossenen und bei anerkannten Einträgen. Bis Version 1.22.0 stand ein solcher Tag nur im Antragsverlauf.
+1. Die Liste beginnt mit dem neuesten Vorgang. **Zeitpunkt** nennt Datum und Uhrzeit, **Konto** die betroffene Person, **Detail** ergänzt Einzelheiten, zum Beispiel die Rolle eines neuen Kontos.
+2. **Vorgang** nennt, was geschah, zum Beispiel „Konto angelegt“, „Konto deaktiviert“, „Rolle geändert“, „Sicherung erstellt“, „Sicherung heruntergeladen“ oder „Sicherung gelöscht“.
+3. **Durch** nennt die handelnde Stelle. Bei Notfall-Vorgängen auf dem Server steht dort „Kommandozeile (Benutzer@Rechner)“, siehe [Admin-Passwort verloren](#passwort-zuruecksetzen).
 
-Es erscheinen nur Mitarbeitende mit mindestens einem Befund; ein Klick auf die Zeile zeigt die Einzelheiten. Die tatsächlichen Stempel und die Begründungen stehen zusätzlich in den Monats- und Jahresexporten (→ [Abschnitt 6](#6-berichte-und-exporte)).
+| In den Konto-Vorgängen stehen | Hinweis |
+| --- | --- |
+| Konten angelegt (mit Rolle), Benutzernamen geändert, Konten deaktiviert oder reaktiviert, Rolle gewechselt | Admin ↔ Mitarbeitende |
+| fremdes Passwort durch die Verwaltung gesetzt | Das eigene Passwort ändern Sie unter **Profil → Passwort ändern**, nicht über die Benutzerverwaltung. |
+| Zwei-Faktor im Profil ein- oder abgeschaltet, durch die Verwaltung zurückgesetzt, falsche Zwei-Faktor-Codes | Nach 10 falschen Codes in einer Stunde ist die Anmeldung des Kontos für eine Stunde gesperrt. |
+| Abmeldung nach 5 falschen Passworteingaben in einer offenen Sitzung | zum Beispiel beim Passwort ändern oder beim Herunterladen einer Sicherung |
+| Datenbank-Sicherungen erstellt, heruntergeladen, gelöscht, Einstellungen geändert | Die geplante tägliche Sicherung steht nicht darin. |
+| Notfall-Vorgänge auf dem Server (Passwort-Reset, Zwei-Faktor abschalten, Reaktivieren) | Siehe das letzte Kapitel dieses Handbuchs. |
 
----
+> **Gut zu wissen:** **Fehlgeschlagene Anmeldungen stehen hier nicht.** Sie stehen im Protokoll des Servers (AUTH login\_failed …), nicht im Änderungsprotokoll.
 
-<a id="pflicht-pause-ausnahme-§4-arbzg"></a>
-### §4 ArbZG – Pausenpflicht und Pflicht-Pause-Ausnahme
+<a id="fehler-monitoring"></a>
+### Wie lese ich das Fehler-Monitoring?
 
-Nach § 4 ArbZG ist die Arbeit durch im Voraus feststehende Ruhepausen zu unterbrechen: **mindestens 30 Minuten** bei mehr als 6 Stunden, **mindestens 45 Minuten** bei mehr als 9 Stunden Arbeitszeit.
+Klicken Sie in der Navigation auf `Fehler-Monitoring`. Die Seite zeigt technische Fehler, die im Betrieb aufgetreten sind.
 
-**Maßstab ist der ganze Tag.** PraxisZeit rechnet alle Einträge eines Tages zusammen. Eine Unterbrechung zählt nach § 4 Satz 2 ArbZG erst ab **15 Minuten** als Pause – wer um 13:59 aus- und sofort wieder einstempelt, hat keine Pause gemacht. Zwei aneinandergereihte Einträge (z. B. 08:49–13:59 und 13:59–18:00) werden deshalb wie ein durchgehender 9-Stunden-Tag behandelt.
+![Fehler-Monitoring: oben der Knopf „Aktualisieren“, darunter die Reiter Alle, Offen, Ignoriert und Behoben und der grüne Hinweis „Keine Fehler gefunden“](img/pl-fehler-monitoring.webp)
 
-Wird beim **Ausstempeln**, Erfassen, Korrigieren oder Genehmigen eines Eintrags die Pausenpflicht verletzt, lässt sich der Vorgang erst abschließen, wenn eine ausreichende Pause eingetragen ist – oder, falls die Pause im konkreten Fall nicht eingelegt werden konnte, mit einer **dokumentierten Ausnahme mit Pflicht-Begründung**. Die Begründung wird im Änderungsprotokoll festgehalten. Bis Version 1.19 meldete das Ausstempeln einen Verstoß nur als Warnung; seit #499 gilt dort dieselbe Sperre wie an allen anderen Erfassungswegen (anders als bei der 10-Stunden-Grenze kann die Person den Verstoß im selben Schritt beheben).
+1. `Aktualisieren` lädt die Liste und die Zähler neu. Liegen Fehler vor, zeigen Zähler oben die Anzahl je Status (Offen, Ignoriert, Behoben).
+2. Die Reiter `Alle`, `Offen`, `Ignoriert` und `Behoben` filtern die Liste. Am Reiter „Offen“ steht die Zahl der offenen Fehler, sobald es welche gibt.
+3. Die Liste zeigt jeden Fehler als eigene Karte. Gibt es keinen, steht hier „Keine Fehler gefunden“, wie im Bild.
 
-Ob es solche Ausnahmen in Ihrer Praxis gibt und ob sie sofort wirksam werden oder zuerst genehmigt werden müssen, steuern Sie unter **Einstellungen → „Pflicht-Pause-Ausnahme"** (→ [Abschnitt 13](#pflicht-pause-ausnahme)).
+| Jeder Eintrag zeigt | Bedeutung |
+| --- | --- |
+| Stufe (zum Beispiel ERROR) | Schweregrad des Fehlers |
+| ×Zahl | wie oft derselbe Fehler aufgetreten ist; einmalige Fehler sind meist unkritisch |
+| Methode und Pfad | welcher Aufruf betroffen war |
+| Meldung | die Fehlermeldung, oft mit verständlicher Beschreibung |
+| Zuerst und Zuletzt | wann der Fehler zum ersten und zum letzten Mal auftrat |
 
-> **4-Augen-Prinzip:** Ist die Genehmigungspflicht aktiv, darf ein Admin seine **eigene** Pflicht-Pause-Ausnahme **nicht selbst genehmigen**. Sie muss von einer zweiten Person geprüft werden; in einer Praxis mit nur einem Admin lässt sich ein solcher Antrag nur ablehnen.
+| Symbol am Eintrag | Wirkung |
+| --- | --- |
+| Häkchen („Als behoben markieren“) | setzt den Fehler auf „Behoben“ |
+| durchgestrichenes Auge („Ignorieren“) | blendet einen offenen Fehler aus der Liste „Offen“ aus |
+| Warndreieck („Wieder öffnen“) | setzt einen behobenen oder ignorierten Fehler zurück auf „Offen“ |
+| Papierkorb („Löschen“) | entfernt den Eintrag nach Rückfrage |
+| Pfeil | klappt Stack Trace und GitHub-Issue auf |
 
----
+> **Gut zu wissen:** **Was tun bei Fehlern?** Lesen Sie die Meldung, prüfen Sie die Häufigkeit und notieren Sie bei wiederkehrenden Fehlern Zeitstempel und Meldung. Wenden Sie sich an Ihren IT-Support oder melden Sie den Fehler als GitHub-Issue: Im aufgeklappten Eintrag öffnet `Issue auf GitHub erstellen` ein vorbereitetes Issue; die Adresse eines bestehenden Issues können Sie dort eintragen und speichern.
 
-### Automatische Warnungen im Alltag
+> **Achtung:** **Datenschutz (Art. 28 DSGVO):** Fehlermeldungen können personenbezogene Daten enthalten. Prüfen Sie vor der Übertragung zu GitHub, ob der Stack Trace sensible Angaben enthält; GitHub ist als Auftragsverarbeiter einzustufen. Die Seite weist im aufgeklappten Eintrag selbst darauf hin.
 
-| Warnung | Auslöser | Verhalten | Rechtsgrundlage |
-|---------|----------|-----------|----------------|
-| **Tageshöchstgrenze** | > 10h Arbeitszeit | Warnung beim Live-Ausstempeln; harte Sperre bei manueller Eingabe/Antrag; beim XLS-Import wird der Tag übersprungen | § 3 ArbZG |
-| **Überschneidung** | Eintrag überschneidet einen anderen Eintrag derselben Person am selben Tag (gestempelte Zeiten; laufender Eintrag bis jetzt) | Sperre mit Nennung des Eintrags an allen Erfassungswegen (beim XLS-Import wird die Zeile übersprungen); beim Ausstempeln nur Hinweis | § 16 ArbZG |
-| **Ende in der Zukunft** | Ende eines Eintrags von heute nach der aktuellen Uhrzeit; Pause so lang wie der Eintrag oder länger | Sperre | § 16 ArbZG |
-| **Automatisch geschlossen** | offener Eintrag eines vergangenen Tages (Ausstempeln vergessen) | Prüfung nach § 3/§ 4 mit Vermerk am Eintrag; Hinweis an die Person; Karte im Admin-Dashboard | §§ 3, 4, 16 ArbZG |
-| **8h-Warnung** | > 8h Arbeitszeit | Warnung | § 3 ArbZG |
-| **Pausenpflicht** | < 30 Min. bei > 6h / < 45 Min. bei > 9h (alle Einträge des Tages; Lücken < 15 Min. zählen nicht) | Sperre, auch beim Ausstempeln; dokumentierte Ausnahme mit Begründung möglich, sofern in den Einstellungen erlaubt | § 4 ArbZG |
-| **Sonntagsarbeit** | Eintrag an Sonntag oder Feiertag (auch Korrekturen der Verwaltung) | Warnung; ohne eingetragenen Ausnahmegrund mit Aufforderung, ihn anzugeben (Feld auch beim Ausstempeln) | § 9 ArbZG |
-| **Wochenhöchstgrenze** | > 48h/Woche | Warnung | § 3 ArbZG |
-| **8h-Warnung Nachtarbeit** | Nachtarbeitnehmer > 8h täglich | Warnung | § 6 ArbZG |
-| **Ruhezeitwarnung** | < 11h seit letztem Arbeitsende beim Einstempeln | Warnung | § 5 ArbZG |
-| **Anwesenheit über 10 h (laut Stempel)** | gestempelte Anwesenheit des Tages abzüglich erfasster Pausen > 10 h, angerechnet ≤ 10 h | Hinweis | § 3 ArbZG |
-| **Durchgestempelt ohne Pause (laut Stempel)** | > 6 h Anwesenheit ohne ausreichende erfasste Pause, obwohl die Pausenprüfung auf der angerechneten Zeit bestanden hat | Hinweis | § 4 ArbZG |
-| **Anwesenheit über 48 h/Woche (laut Stempel)** | gestempelte Anwesenheit der Kalenderwoche > 48 h, angerechnet ≤ 48 h | Hinweis | § 3 ArbZG |
-| **Pause in der Lücke** | Pause eingetragen **und** über die Lücke zwischen zwei Arbeitszeit-Blöcken durchgestempelt (beides wird abgezogen) | Hinweis | – |
+<a id="datensicherung"></a>
+## Datensicherung
 
-**Überschneidungen:** Einträge derselben Person am selben Tag dürfen sich nicht überschneiden – sonst zählte dieselbe Zeit doppelt (Ist, Saldo, § 3/§ 4, § 16-Exporte). Maßstab sind die gestempelten Zeiten (Rohstempel), ein laufender Eintrag reicht bis jetzt; aneinanderstoßende Einträge (12:00 Ende, 12:00 Beginn) sind erlaubt. Gesperrt wird beim Einstempeln, in der Zeiterfassung, im Monatsjournal, bei Änderungsanträgen (beim Stellen und erneut bei der Genehmigung) und im XLS-Import, jeweils mit Hinweis auf den kollidierenden Eintrag, z. B. *„Überschneidung mit dem Eintrag 08:00–12:00 am 02.06.2026: Zeiteinträge einer Person dürfen sich nicht überschneiden. Bitte die Zeiten anpassen oder den vorhandenen Eintrag bearbeiten."* Das Ausstempeln sperrt nie (die Zeit ist geleistet); es meldet eine bestehende Überschneidung als Hinweis. Bestehende Überschneidungen aus der Zeit vor Version 1.23 bleiben unverändert und lassen sich weiter bearbeiten (z. B. Notiz); geprüft wird erst, wenn sich die Zeiten des Eintrags ändern.
+*PraxisZeit speichert alle Zeitdaten in einer Datenbank. **§ 16 ArbZG verlangt, Zeitaufzeichnungen mindestens 2 Jahre aufzubewahren.** Unter **Datensicherung** erstellen und verwalten Sie Sicherungen ohne Kommandozeile, in der Docker- **und** in der nativen Installation. Stellen Sie die Aufbewahrungsdauer entsprechend ein, halten Sie eine Kopie **außerhalb** des Servers vor und sichern Sie vor jedem Update zusätzlich.*
 
-**Vergessenes Ausstempeln:** Schließt PraxisZeit einen offenen Eintrag eines vergangenen Tages automatisch, prüft es dabei Höchstarbeitszeit und Pause wie beim Ausstempeln und schreibt das Ergebnis als Vermerk in die Notiz des Eintrags (z. B. *„[auto-closed] Nicht ausgestempelt – automatisch geschlossen, angerechnet bis 23:59. Prüfung: Tagesarbeitszeit 15:59 h über der Höchstgrenze von 10 h (§ 3 ArbZG); Pflicht-Pause fehlt (§ 4 ArbZG)."*) – damit steht er auch im Änderungsprotokoll und in den Exporten. Stempelt die Person erst am nächsten Morgen aus, wird nicht ausgestempelt, sondern der alte Eintrag geschlossen; der Zeitpunkt des Ausstempelversuchs steht im Vermerk (*„Ausstempelversuch am 06.11.2026 um 06:12."*). Die Person sieht an der Stempeluhr einen Hinweis mit dem Knopf **Arbeitsende per Antrag nachtragen**. Im **Admin-Dashboard** listet die Karte **„Automatisch geschlossene Einträge – Ende fehlt"** jeden solchen Eintrag der letzten 90 Tage mit Person, angerechneter Zeit und den Befunden; „Antrag gestellt" zeigt, dass ein Änderungsantrag dazu wartet. Ein Eintrag verschwindet aus der Karte, sobald das tatsächliche Ende eingetragen ist (Monatsjournal oder genehmigter Antrag).
+<a id="sicherung-einrichten"></a>
+### Wie sichere ich jetzt und wie richte ich die tägliche Sicherung ein?
 
-**Keine Dienste über Mitternacht:** PraxisZeit erfasst und prüft je **Kalendertag**: Ein Eintrag endet spätestens um 23:59, ein Ende vor dem Beginn ist an keinem Weg möglich. Höchstarbeitszeit (§ 3), Pause (§ 4), Ruhezeit (§ 5) und Nachtarbeit (§ 6) werden je Kalendertag bewertet – zwei Einträge 18:00–23:59 und 00:00–06:00 gelten nicht als ein Dienst. In Arztpraxen ist Arbeit über Mitternacht nicht vorgesehen (Produktentscheidung); Notdienste über Mitternacht bildet PraxisZeit nicht ab.
+Klicken Sie in der Navigation auf `Datensicherung`. Eine Sicherung ist ein komprimierter Datenbank-Dump (praxiszeit\_\<Zeitstempel\>.sql.gz).
 
-**Angerechnete Zeit und tatsächliche Anwesenheit (ab 1.20.0):** Die Sperren nach § 3 (10 Stunden) und § 4 (Pausen) rechnen mit der **angerechneten** Zeit; ein Lückenabschnitt ab 15 Minuten zwischen zwei Arbeitszeit-Blöcken zählt dabei als Pause. Damit eine Kappung keinen Verstoß verdeckt, prüft PraxisZeit zusätzlich die **Anwesenheit laut Stempel** und meldet sie als Hinweis (nie blockierend), z. B. *„§4 ArbZG: Durchgehend über die Lücke zwischen den Arbeitsblöcken gestempelt – eine Ruhepause ist nicht erfasst (‹x› h Anwesenheit). Die Lücke gilt nur dann als Pause, wenn sie tatsächlich frei war."* oder *„§3 ArbZG: Laut Stempel ‹x› h anwesend (abzüglich erfasster Pausen) – mehr als 10 Stunden. Angerechnet werden ‹y› h; die Höchstgrenze gilt für die tatsächliche Arbeitszeit."* Die [24-Wochen-Auswertung](#24-wochen-durchschnitt) (§ 3 ArbZG) zeigt neben dem Durchschnitt der angerechneten Zeit einen zweiten Wert **„Anwesenheit laut Stempel"**, den keine Neuberechnung verändert (außer bei automatisch geschlossenen Einträgen, deren Anwesenheit nur bis zum angerechneten Ende zählt). Es gelten die Grenzen für Erwachsene; die strengeren Regeln für Jugendliche (§§ 11, 12 JArbSchG) prüft PraxisZeit nicht (→ [Arbeitszeit-Blöcke](#arbeitszeit-bloecke)).
+![Datensicherung: „Jetzt sichern“, die Einstellungen der geplanten Sicherung mit Uhrzeit, Aufbewahrung und Speicherort und darunter die Liste der vorhandenen Sicherungen](img/pl-datensicherung.webp)
 
----
+1. `Jetzt sichern` erstellt sofort eine vollständige Sicherung. Sie erscheint danach in der Liste.
+2. Haken bei `Tägliche automatische Sicherung aktivieren`, wenn PraxisZeit täglich selbst sichern soll. Ein Hinweis unter dem Haken sagt, dass die folgenden Einstellungen für die Docker-Installation gelten und native Installationen über das Betriebssystem sichern.
+3. **Uhrzeit (Stunde, 0–23), nur Docker:** lokale Zeit (Europe/Berlin); die Sicherung läuft um HH:30. Das gilt für die Docker-Installation; nativ sichert der Timer des Betriebssystems (Linux 02:00, Windows und macOS 03:00).
+4. **Aufbewahrung (Tage), nur Docker:** ältere Sicherungen löscht PraxisZeit automatisch. Für § 16 ArbZG sind mindestens 2 Jahre (730 Tage) nötig; die Seite schlägt zunächst 30 Tage vor. Nativ gilt stattdessen retention\_days im Abschnitt \[backup\] der Datei config/praxiszeit.conf (Standard 31 Tage). Sonst zusätzlich Jahresarchive außerhalb des Servers ablegen.
+5. **Speicherort (optional, nur Docker):** leer bedeutet Standardverzeichnis. Der Pfad muss für den Dienst beschreibbar sein.
+6. Klicken Sie auf `Einstellungen speichern`. Erst dann gelten Uhrzeit, Aufbewahrung und Speicherort, und zwar nur in der Docker-Installation; nativ steuert der Timer des Betriebssystems die geplante Sicherung.
+7. Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.
 
-## 15. Überstundenausgleich
+> **Gut zu wissen:** **Wo die Sicherungen liegen:** Docker im Volume praxiszeit\_backups, nativ im Verzeichnis data/backups/. **Native Installation:** Die \*geplante\* Sicherung läuft dort weiterhin über den Timer des Betriebssystems (Linux: täglich 02:00 über systemd, Windows: täglich 03:00 als geplante Aufgabe, macOS: täglich 03:00 über launchd). Die Einstellung auf dieser Seite steuert die Docker-Variante; „Jetzt sichern“ und die Liste funktionieren überall. Die Aufbewahrungsdauer der nativen Timer steht in config/praxiszeit.conf (retention\_days, Standard 31 Tage).
 
-Mitarbeiter können angesammelte Überstunden durch **Überstundenausgleich-Tage** abbauen.
+> **Gut zu wissen:** **Herunterladen und Löschen:** In der Liste lädt das Symbol „Herunterladen“ die Datei auf Ihren PC; vorher fragt PraxisZeit nach **Ihrem Passwort** (Dialog „Sicherung herunterladen“), weil die Datei die gesamte Datenbank mit allen Gesundheitsdaten enthält. Das Symbol „Löschen“ entfernt eine Sicherung nach Rückfrage endgültig. Erstellen, Herunterladen, Löschen und geänderte Einstellungen stehen unter „Konto-Vorgänge“, siehe [Konto-Vorgänge](#konto-vorgaenge).
 
-### Funktionsweise
+> **Achtung:** **Sicherungen sind nicht verschlüsselt:** Sie enthalten die ganze Datenbank einschließlich Krankheitstagen. Legen Sie eine Kopie außer Haus nur verschlüsselt ab, zum Beispiel als 7-Zip-Archiv mit AES-256 oder auf einem BitLocker-USB-Stick, und löschen Sie heruntergeladene Dateien danach aus dem Download-Ordner. Spielen Sie nur eigene Sicherungen ein.
 
-Wenn ein Überstundenausgleich-Tag eingetragen wird:
-- **Soll-Stunden** bleiben für den Tag erhalten (z. B. 8h)
-- **Ist-Stunden** werden auf 0h gesetzt
-- Das Überstundenkonto **sinkt** um die Tagessollzeit
+> **Achtung:** **Speicherort:** PraxisZeit lehnt Netzwerkpfade (\\\\Server\\Freigabe), Netzlaufwerke, für alle Konten lesbare Ordner, Systemordner und Laufwerkswurzeln ab, unter Windows auch alles unter C:\\Users, C:\\ProgramData und C:\\Program Files. Tragen Sie unter Windows am besten einen **neuen** Ordnernamen ein: PraxisZeit legt ihn an und gibt ihm die Rechte „nur SYSTEM und Administratoren“. Die Rechte eines bestehenden Ordners ändert PraxisZeit nicht; ist er für andere Konten zugänglich, erscheint ein Hinweis.
 
-**Beispiel:** Ein Mitarbeiter mit 40h/Woche (8h/Tag) nimmt einen Überstundenausgleich-Tag.
-→ Konto: -8h an diesem Tag → Überstunden werden effektiv abgebaut.
+> **Achtung:** **Den Schlüssel SECRET\_KEY mitsichern:** Für einen neuen Rechner reicht die Datenbanksicherung nicht. Der Schlüssel (nativ config/.secret-key, Docker SECRET\_KEY in der .env) verschlüsselt die Zwei-Faktor-Geheimnisse und bildet die Prüfsummen des Änderungsprotokolls. Bewahren Sie ihn einmalig, verschlüsselt und **getrennt** von den Sicherungen auf, zum Beispiel im Passwort-Safe der Praxis. Ohne ihn müssen alle die Zwei-Faktor-Anmeldung neu einrichten.
 
-### Eintragen
+**Wiederherstellen:** Die Oberfläche kann Sicherungen erstellen, laden und löschen, aber nicht einspielen. Das Einspielen geschieht auf dem Server mit einem Kommando. Eingespielt wird nur eine Sicherung mit passender **Signatur**: PraxisZeit signiert jede Sicherung mit dem SECRET\_KEY der Installation. Eine Sicherung einer älteren Version oder vom alten Rechner geht nur mit dem Zusatz --force-unverified, und nur, wenn sie sicher aus der eigenen Praxis stammt. Bei der nativen Installation bricht das Einspielen ab, wenn die Sicherung von einer **neueren** Version stammt oder das Einspielen scheitert; die bisherige Datenbank bleibt dann unverändert.
 
-1. **Abwesenheiten** → **Abwesenheit eintragen**
-2. **Typ:** „Überstundenausgleich" auswählen
-3. Datum(e) auswählen → Speichern
+| Installation | Befehl zum Einspielen |
+| --- | --- |
+| Docker (neben der docker-compose.yml) | bash restore.sh backups/praxiszeit\_\<zeitstempel\>.sql.gz |
+| Linux nativ, 1. Dienst anhalten | sudo systemctl stop praxiszeit |
+| Linux nativ, 2. Sicherung einspielen | sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py restore /opt/praxiszeit/data/backups/\<datei\>.sql.gz |
+| Linux nativ, 3. Dienst starten | sudo systemctl start praxiszeit |
+| macOS nativ, 1. Dienst anhalten | sudo launchctl unload /Library/LaunchDaemons/de.praxiszeit.server.plist |
+| macOS nativ, 2. Sicherung einspielen (Dienstkonto \_praxiszeit) | sudo -u \_praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py restore /usr/local/praxiszeit/data/backups/\<datei\>.sql.gz |
+| macOS nativ, 3. Dienst starten | sudo launchctl load /Library/LaunchDaemons/de.praxiszeit.server.plist |
+| Windows nativ (Eingabeaufforderung als Administrator im Installationsordner) | restore-backup.bat data\\backups\\\<datei\>.sql.gz |
 
-> **Hinweis:** Es gibt keine automatische Prüfung, ob das Überstundenkonto ausreichend gedeckt ist. Prüfen Sie den Kontostand im Admin-Dashboard.
+> **Gut zu wissen:** **Nach dem Einspielen** startet das Backend neu; erst dieser Start hebt eine Sicherung einer älteren Version per Migration auf den Stand der installierten Version. Nativ unter Linux und macOS muss der Dienst vor dem Einspielen **angehalten** sein, sonst bricht das Kommando ab, ohne etwas anzufassen. Führen Sie es als Dienstkonto aus, nicht als root. Alle Kommandozeilen-Varianten, auch das Sichern ohne Oberfläche, stehen in docs/BACKUP.md.
 
----
+<a id="schichtplanung"></a>
+## Schichtplanung
 
-## 16. Änderungsanträge für Abwesenheiten
-
-Mitarbeiter können nicht nur Zeiteinträge korrigieren, sondern auch **Abwesenheiten per Änderungsantrag beantragen** (z. B. Fortbildung, Urlaub).
-
-### Ablauf
-
-1. Mitarbeiter erstellt einen Änderungsantrag mit **Typ „Abwesenheit"**
-2. Der Antrag enthält: Datum, Abwesenheitstyp, optionale Start-/Endzeit, Begründung
-3. Admin prüft und genehmigt/lehnt ab
-4. Bei Genehmigung wird die Abwesenheit automatisch erstellt
-
-### Besonderheiten
-
-- **Krankmeldung per Antrag ist möglich** — typisch für einen vergangenen Tag, an dem schon Zeiteinträge stehen (dort können Mitarbeitende nicht direkt buchen). Abwesenheits-Anträge gibt es nur für vergangene Tage. **Bei Genehmigung werden die Zeiteinträge dieses Tages durch die Abwesenheit ersetzt** (gelöscht, im Protokoll als Löschung per Änderungsantrag) — vorher prüfen, ob der Tag wirklich ganz ausfiel
-- **Halbe Tage:** Abwesenheiten können optionale Start-/Endzeiten haben (z. B. „Fortbildung nachmittags 13:00–17:00")
-- **DSGVO:** Im Kalender sehen Nicht-Admins fremde Kranktage nur als „abwesend" (nicht als „krank")
-
----
-
-## 17. Rechtliche Grundlagen
-
-| Paragraph | Inhalt | Umsetzung in PraxisZeit |
-|-----------|--------|------------------------|
-| [§3](https://www.gesetze-im-internet.de/arbzg/__3.html) | Max. 8h/Tag (bis 10h mit Ausgleich); bei 6 Werktagen höchstens 48h/Woche | Warnung > 8h; > 10h: Warnung beim Live-Ausstempeln, harte Sperre bei manueller Eingabe/Antrag; Wochenwarnung > 48h |
-| [§4](https://www.gesetze-im-internet.de/arbzg/__4.html) | Ruhepausen: 30 Min. ab 6h, 45 Min. ab 9h | Automatische Pausenvalidierung; dokumentierte Ausnahme mit Begründung möglich (optional genehmigungspflichtig, 4-Augen-Prinzip) |
-| [§5](https://www.gesetze-im-internet.de/arbzg/__5.html) | Ruhezeit mind. 11h | Ruhezeitbericht im Admin-Bereich |
-| [§6](https://www.gesetze-im-internet.de/arbzg/__6.html) | Nachtarbeit 23–6 Uhr: max. 8h für Nachtarbeitnehmer | Nachtarbeit-Flag, 8h-Warnung, Nachtarbeit-Report |
-| [§9](https://www.gesetze-im-internet.de/arbzg/__9.html) | Sonn- und Feiertagsruhe | Warnung bei Eintrag an Sonntag/Feiertag |
-| [§10](https://www.gesetze-im-internet.de/arbzg/__10.html) | Ausnahmen Sonn-/Feiertagsarbeit | Pflichtfeld „Ausnahmegrund" |
-| [§11](https://www.gesetze-im-internet.de/arbzg/__11.html) | Min. 15 freie Sonntage/Jahr; Ersatzruhetag | 15-freie-Sonntage-Report; Ersatzruhetag-Tracking |
-| [§14](https://www.gesetze-im-internet.de/arbzg/__14.html) | Notfälle und außergewöhnliche Fälle: Abweichen von den Höchstgrenzen erlaubt, im Durchschnitt aber höchstens 48h/Woche | Keine eigene Prüfung; die Wochenwarnung > 48h (§3) gilt unverändert |
-| [§16](https://www.gesetze-im-internet.de/arbzg/__16.html) | Aufzeichnungspflicht: 2 Jahre Aufbewahrung | Excel-Exporte; Audit-Log |
-| [§18](https://www.gesetze-im-internet.de/arbzg/__18.html) | Ausnahmen für leitende Angestellte | `ArbZG-Prüfungen aussetzen`-Flag |
-
-**Arbeitszeit-Blöcke – weitere Rechtsgrundlagen:** Vergütung tatsächlich geleisteter, nicht angerechneter Arbeit (§ 611a Abs. 2, § 612 Abs. 1 BGB; §§ 1, 3, 17 MiLoG), Lage und Umfang der Arbeitszeit (§ 106 GewO; § 2 KSchG; §§ 8, 9, 12 Abs. 3 TzBfG; § 2 Abs. 1 Satz 2 Nr. 7 und § 3 NachwG), Mitbestimmung (§ 87 Abs. 1 Nr. 2, 3 und 6 BetrVG) und Jugendliche (§§ 11, 12 JArbSchG). Die Hinweise dazu stehen unter [„Arbeitszeit-Blöcke"](#arbeitszeit-bloecke) und [„Mitarbeiter bearbeiten"](#mitarbeiter-bearbeiten); PraxisZeit prüft diese Punkte nicht.
-
-### Admin-Pflichten im Überblick
-
-1. **Regelmäßige Datenexporte** (mindestens monatlich) und sichere Aufbewahrung für 2 Jahre
-2. **Zeitnahe Prüfung** von Korrekturanträgen
-3. **Überwachung der ArbZG-Berichte** – besonders §5 (Ruhezeit) und §11 (Sonntage)
-4. **Dokumentation von Ausnahmen** (Sonntagsarbeit, verlängerte Arbeitszeiten, Pflicht-Pause-Ausnahmen)
-5. **Aktuelle Benutzerdaten** – bei Arbeitszeit-Änderungen immer Wirkungsdatum eintragen; rückwirkende Verkürzungen nur mit Grund (Fehlerkorrektur oder Vereinbarung)
-6. **Abgleich Urlaubskonten** mit tatsächlichem Urlaubsanspruch
-7. **Nicht angerechnete Zeit prüfen** – Monatsjournal („Anwesenheit nicht angerechnet") bzw. Export-Spalte „Nicht angerechnet (Min)"; tatsächlich geleistete, geduldete Arbeit anerkennen
-
-> **Haftungshinweis:** PraxisZeit unterstützt Sie bei der Einhaltung des ArbZG, ersetzt aber keine Rechtsberatung. Bei arbeitsrechtlichen Fragen wenden Sie sich an einen Fachanwalt für Arbeitsrecht.
-
----
-
-## 18. Berechnungsgrundlagen (Anhang)
-
-> Dieser Anhang erklärt **vollständig und exakt**, wie PraxisZeit Soll-, Ist-, Überstunden- und Urlaubswerte ermittelt – auf dem tatsächlichen Rechenstand der Software (Version 1.20.0). Die ausführliche, code-nahe Referenz mit allen durchgerechneten Beispielen (Teilzeit, individueller Tagesplan, Pro-rata, Historie) steht in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
-
-### 18.1 Grundbegriffe
+*Mit der **Schichtplanung** erstellen Sie wöchentliche Einsatzpläne: wer steht wann an welchem Arbeitsplatz. Sie ist ein **reines Planungswerkzeug** und verändert **nicht** Zeiterfassung, Soll und Ist, ArbZG-Prüfungen, Urlaub oder Überstunden. Das Modul ist nach der Installation **aus**; nur Admins können es einschalten, den Schalter beschreibt [Tour und Schichtplanung](#tour-schichtplanung). Erst danach erscheinen die Menüpunkte und die Dashboard-Karte „Deine Einteilung heute“.*
 
 | Begriff | Bedeutung |
-|---------|-----------|
-| **Soll** | Stunden, die ein Mitarbeiter an einem Tag/Monat vertraglich arbeiten müsste |
-| **Ist** | Angerechnete Arbeitszeit der Zeiteinträge (bei Arbeitszeit-Blöcken nach der Kappung, → 18.3) + gutgeschriebene Abwesenheiten (Krank/Fortbildung) |
-| **Saldo / Überstunden** | Ist − Soll (positiv = Mehrarbeit, negativ = Minusstunden) |
-| **Tagessoll** | Soll-Stunden für einen einzelnen Arbeitstag |
-| **Tagesprinzip** | Urlaub wird in **Tagen** gezählt (§ 3 BUrlG): 1 freier Arbeitstag = 1 Urlaubstag |
-| **Carryover** | Jahresübertrag von Überstunden und Resturlaub ins Folgejahr |
+| --- | --- |
+| Standort | optionale Gruppierung für Arbeitsplätze, zum Beispiel Hauptstelle oder Filiale |
+| Arbeitsplatz | ein zu besetzender Platz (Anmeldung, Labor, Springer …) mit Farbe für die Wochenansicht |
+| Schichtplan | ein benannter Wochenplan, zum Beispiel „Normalzustand“ oder „Azubis Schulferien“; beliebig viele |
+| Zeitslot | ein Arbeitsplatz an einem Wochentag in einem Zeitfenster, mit optionaler Mindestbesetzung |
+| Einweisung | für welche Arbeitsplätze eine Person eingewiesen ist |
 
-### 18.2 Tagessoll
+<a id="schicht-wochentage"></a>
+### Wie lege ich die geplanten Wochentage fest?
 
-Bei gleichmäßiger Verteilung gilt:
+Bei eingeschalteter Schichtplanung steht unter dem Schalter in den `Einstellungen` der Bereich **Geplante Wochentage**. Standard ist Montag bis Freitag.
 
-> **Tagessoll = Wochenstunden ÷ Arbeitstage pro Woche**
+![Einstellungen, Bereich Schichtplanung: die Wochentage Montag bis Sonntag als Auswahlfelder mit dem Knopf „Wochentage speichern“](img/pl-schicht-wochentage.webp)
 
-⚠️ Der Divisor ist die **Arbeitstage pro Woche**, **nicht** fix 5. Ein Mitarbeiter mit 24 h auf 3 Tage hat **8 h/Tag**, nicht 4,8 h.
+1. Klicken Sie die Wochentage an, die der Schichtplaner anzeigen und planen soll. Samstag, Sonntag oder ein Schließtag lassen sich einzeln zu- und abschalten; **mindestens ein Tag** muss aktiv bleiben.
+2. Klicken Sie auf `Wochentage speichern`.
 
-| Wochenstunden | Arbeitstage/Woche | Tagessoll |
-|---|---|---|
-| 40 | 5 | 8,00 h |
-| 20 | 5 | 4,00 h |
-| 24 | 3 | 8,00 h |
-| 20 | 2 | 10,00 h |
+> **Gut zu wissen:** Ein abgeschalteter Tag verschwindet aus der Wochenansicht, nimmt keine neuen Slots auf und wird beim automatischen Füllen übersprungen. Bereits angelegte Slots bleiben erhalten und kehren zurück, sobald Sie den Tag wieder aktivieren.
 
-Bei **individuellen Tagesstunden** (z. B. Mo 10 h / Di 10 h / Mi 4 h) zählt der konkrete Wert des jeweiligen Wochentags. Wochenenden, Tage vor Eintritt / nach Austritt sowie Mitarbeiter ohne Stundenzählung haben Tagessoll 0.
+<a id="schicht-stammdaten"></a>
+### Wie lege ich Standorte und Arbeitsplätze an?
 
-Bei **Arbeitszeit-Blöcken** ist das Tagessoll die Summe der Blockdauern minus „Pause innerhalb der Blöcke", auf zwei Nachkommastellen gerundet (08:00–12:00 + 15:00–18:00, Pause 30 Min. → 6,50 h; 08:00–12:05 ohne Pause → 4,08 h).
+Klicken Sie in der Navigation auf `Schichtplanung` und wählen Sie den Reiter `Stammdaten`. Links stehen die **Standorte**, rechts die **Arbeitsplätze**.
 
-### 18.3 Ist-Stunden
+![Schichtplanung, Reiter Stammdaten: links die Standorte, rechts die Arbeitsplätze Anmeldung und Labor mit Namensfeld, Farbwähler und Knopf „Hinzufügen“](img/pl-schicht-stammdaten.webp)
 
-Pro Zeiteintrag: **Ist = (Ende − Beginn) − Pause − nicht angerechnete Zeit zwischen den Arbeitszeit-Blöcken**, auf 2 Nachkommastellen gerundet und **nie negativ**.
+1. **Standorte** sind optional: Tragen Sie unter **Neuer Standort** einen Namen ein, zum Beispiel „Hauptstelle“, und bestätigen Sie mit dem Plus-Knopf. Arbeitsplätze können auch ohne Standort („global“) bestehen.
+2. **Arbeitsplätze:** Tragen Sie unter **Name** zum Beispiel „Anmeldung“ oder „Labor“ ein; **Standort (optional)** ordnet ihn einem Standort zu.
+3. Wählen Sie die **Farbe**, in der der Arbeitsplatz in der Wochenansicht erscheint.
+4. Klicken Sie auf `Hinzufügen`. Der Arbeitsplatz erscheint in der Liste darunter.
+5. In der Liste ändern Sie einen Eintrag mit dem Stift-Symbol („Bearbeiten“) oder entfernen ihn mit dem Papierkorb („Löschen“).
 
-Sind **Arbeitszeit-Blöcke** hinterlegt (→ [Abschnitt 4, Arbeitszeit-Blöcke](#arbeitszeit-bloecke)), werden Beginn und Ende auf den ersten Block minus Puffer bzw. den letzten Block plus Puffer gekürzt und die Zeit zwischen den Blöcken (abzüglich Puffer) nicht angerechnet; der Rohstempel bleibt erhalten (§ 16 ArbZG), anerkannte Einträge zählen voll. Zusätzlich zählen **Krankheit** und **Fortbildung** mit ihren gebuchten Stunden als Ist (siehe Matrix).
+> **Gut zu wissen:** Löschen geht nur, solange nichts daran hängt: ein Standort nur, wenn kein Arbeitsplatz ihm zugeordnet ist, ein Arbeitsplatz nur, wenn er in keinem Slot verwendet wird.
 
-> **Die Gutschrift folgt dem Soll des Tages.** Krankheit und Fortbildung sollen den Saldo **nicht bewegen**: das Soll des Tages bleibt stehen, die Gutschrift gleicht es aus. Deshalb wird nur gutgeschrieben, soweit an diesem Tag überhaupt ein Soll steht:
->
-> | Tag | Gutschrift |
-> |-----|-----------|
-> | Regulärer Arbeitstag | volle gebuchte Stunden |
-> | Samstag / Sonntag | **keine** |
-> | Gesetzlicher Feiertag | **keine** |
-> | Sondertag 24./31.12. als „halber Feiertag" | **die Hälfte** |
-> | Sondertag 24./31.12. als „frei" | **keine** |
->
-> An einem Tag ohne Arbeitspflicht kann keine Arbeitspflicht ausfallen — für den Feiertag gilt die Feiertagsvergütung (§ 2 EntgFG), nicht zusätzlich die Entgeltfortzahlung wegen Krankheit (§ 3 EntgFG). **Beispiel:** Wer vom 24.12. bis 28.12. krankgeschrieben ist (24.12. halber Feiertag, 25./26.12. Feiertage, 27.12. Sonntag, 28.12. Arbeitstag), erhält 4 h + 0 h + 0 h + 0 h + 8 h = **12 h** gutgeschrieben — genau das Soll dieser Tage. Der Saldo bleibt bei 0.
->
-> **Wo der Fehler im Alltag auftrat.** PraxisZeit legt beim Buchen an Wochenenden und an den bereits eingetragenen Feiertagen gar keine Abwesenheit an — im Beispiel oben entstehen nur zwei Zeilen (24.12. und 28.12.). Der Regelfall war deshalb der **Halbtags-Sondertag**: eine ganz normale Krankmeldung am 24.12. brachte bis einschließlich Version 1.17.0 4 h Soll gegen 8 h Gutschrift, also **+4 Überstunden aus dem Nichts**. Auf einem **Feiertag** kann eine Abwesenheit nachträglich landen — wenn Sie das Bundesland umstellen, einen eigenen Feiertag auf ein bereits gebuchtes Datum legen oder in ein Jahr gebucht wurde, für das die Feiertage noch nicht synchronisiert waren; dann kam je solchem Tag ein volles Tagessoll dazu.
->
-> **Was das Update repariert — und was nicht.** Laufende und noch **nicht abgeschlossene** Jahre rechnen sich von selbst richtig, weil PraxisZeit die Salden bei jedem Aufruf neu berechnet. Für ein bereits per **Jahresabschluss** abgeschlossenes Jahr gilt das **nicht**: der Abschluss ist ein eingefrorener Übertrag, und PraxisZeit rechnet ihn bewusst nie automatisch neu (sonst würden manuelle Korrekturen still überschrieben). Da der Fehler naturgemäß im Dezember auftrat, betrifft das den wahrscheinlichsten Fall. **Prüfen Sie deshalb nach dem Update den Übertrag** betroffener Mitarbeiter:innen unter *Jahresabschluss* und korrigieren Sie ihn dort von Hand (→ [Abschnitt 3, Jahresabschluss](#jahresabschluss)).
->
-> Eine Fortbildung, die **länger** dauerte als der Arbeitstag, bleibt dagegen unangetastet echte Mehrarbeit — gedeckelt wird nicht.
+<a id="schicht-einweisungen"></a>
+### Wie halte ich fest, wer für welchen Arbeitsplatz eingewiesen ist?
 
-### 18.4 Monats-Soll
+Wählen Sie in der `Schichtplanung` den Reiter `Einweisungen`. Die Tabelle zeigt die Mitarbeitenden in den Zeilen und die Arbeitsplätze in den Spalten.
 
-PraxisZeit geht jeden Kalendertag des Monats durch und addiert das Tagessoll – **außer** an: Wochenenden, Feiertagen, Tagen außerhalb des Beschäftigungszeitraums und Abwesenheitstagen, die das Soll reduzieren (siehe Matrix). Sondertage 24./31.12. wirken mit Faktor 0,5 (Halbtag) bzw. 0 (frei); „Verkürzt auf X Stunden" und verkürzte Tage begrenzen das Tagessoll auf die kleinere Zahl aus Tagessoll und X.
+![Schichtplanung, Reiter Einweisungen: Tabelle mit den Mitarbeitenden in den Zeilen und den Arbeitsplätzen Anmeldung und Labor in den Spalten, Häkchen bei eingewiesenen Personen](img/pl-schicht-einweisungen.webp)
 
-### 18.5 Abwesenheits-Typen-Matrix
+1. Jede Spalte ist ein **Arbeitsplatz**, hier zum Beispiel „Labor“.
+2. Ein **Häkchen** bedeutet: Die Person ist für diesen Arbeitsplatz eingewiesen. Die Änderung wird sofort gespeichert.
+3. Ohne Häkchen ist die Person nicht eingewiesen. Ziehen Sie sie trotzdem auf einen Slot dieses Arbeitsplatzes, erscheint die **gelbe Warnung „nicht eingewiesen“**.
 
-| Typ | reduziert Soll? | zählt als Ist? | belastet Urlaub? | Effekt aufs Konto |
-|-----|:---:|:---:|:---:|---|
-| **Urlaub** | ✅ | ❌ | ✅ | saldo-neutral; zieht 1 Urlaubstag |
-| **Krank** | ❌ | ✅ | ❌ | saldo-neutral (Soll bleibt, Ist gutgeschrieben, § 3 EntgFG) |
-| **Fortbildung** | ❌ | ✅ | ❌ | saldo-neutral (zählt als gearbeitet) |
-| **Bezahlte Freistellung** | ✅ | ❌ | ❌ | saldo-neutral, aber **kein** Urlaubsverbrauch |
-| **Sonstige** | ✅ | ❌ | ❌ | saldo-neutral |
-| **Überstundenausgleich** | ❌ | ❌ (Ist = 0) | ❌ | Soll bleibt, Ist = 0 h → **Überstundenkonto sinkt** |
+> **Gut zu wissen:** Die Warnung blockiert nicht. Sie entscheiden bewusst, zum Beispiel bei einer Einarbeitung unter Aufsicht. Mitarbeitende sehen ihre eigenen Einweisungen im Profil unter „Meine Einweisungen“.
 
-> **Merksatz:** Krankheit & Fortbildung **füllen das Ist auf** (kein Saldo-Effekt). Urlaub, bezahlte Freistellung & Sonstige **senken das Soll**. Nur der Überstundenausgleich lässt das Soll stehen und baut so Überstunden ab.
+<a id="schicht-plan-bearbeiten"></a>
+### Wie lege ich einen Schichtplan an und bearbeite ihn?
 
-### 18.6 Saldo & Überstundenkonto
+Im Reiter `Schichtpläne` steht links die Liste der Pläne, rechts der Editor des gewählten Plans. Die ausklappbare **Jahresübersicht** darüber zeigt als Zeitstrahl, welcher Plan in welchem Zeitraum des Jahres läuft.
 
-**Monatssaldo = Monats-Ist − Monats-Soll.** Das kumulierte Überstundenkonto summiert die Monatssalden fortlaufend und startet beim **Jahresübertrag** (Carryover) des Jahres. Die Spalte „Überstunden (JTD)" in der Benutzerübersicht zeigt den Saldo vom 1. Januar bis heute zzgl. Carryover.
+![Schichtplanung, Plan „Wochenplan Praxis“: Werkzeugleiste mit Deaktivieren, Slot, Automatisch füllen, Bearbeiten, PDF und Duplizieren, darunter das Wochenraster](img/pl-schicht-editor.webp)
 
-**Voraussichtlicher Saldo zum Jahresende:** Daneben steht, wie das Konto zum 31.12. voraussichtlich aussieht – der Saldo bis heute abzüglich der Stunden aller bereits gebuchten künftigen **Überstundenausgleich**-Tage. Nur Ausgleichstage senken das Konto; Urlaub, Krankheit und Fortbildung sind saldo-neutral und fließen deshalb nicht in die Vorschau ein. Dieselbe Kennzahl sehen Mitarbeitende auf ihrem Dashboard.
+1. Tragen Sie unter **Neuer Plan** einen Namen ein, zum Beispiel „Normalzustand“, und legen Sie den Plan mit dem Plus-Knopf an. Ein Klick auf einen Plan in der Liste öffnet ihn; ein Punkt oder Haken zeigt, ob er aktiv ist.
+2. `Aktiv schalten` macht den Plan für alle sichtbar; bei einem aktiven Plan, wie im Bild, heißt der Knopf `Deaktivieren`. **Mehrere Pläne können gleichzeitig aktiv** sein, zum Beispiel einer je Standort.
+3. `Bearbeiten` öffnet die Plan-Einstellungen mit Name, Zeitraum und Freigabe, siehe [Plan freigeben](#schicht-plan-einstellungen).
+4. `PDF` erzeugt einen Aushang im Querformat mit einer Tabelle Arbeitsplatz × Wochentag, zum Aushängen am Schwarzen Brett.
+5. Der Umschalter `Woche` / `Tag` wechselt zwischen der Wochenansicht und einem einzelnen Wochentag in voller Breite; das ist beim Einrichten übersichtlich. Im Raster ziehen Sie einen Slot per Drag \& Drop auf einen anderen Tag oder eine andere Uhrzeit (15-Minuten-Raster); ein Klick auf eine freie Fläche legt einen Slot an, ein Klick auf einen Slot bearbeitet ihn.
 
-Beide Anzeigen lassen sich unter **Einstellungen → Überstunden-Projektion zum Jahresende** getrennt abschalten (#430, Standard jeweils **an** – bisheriges Verhalten bleibt erhalten):
-- **„Im Mitarbeiter-Dashboard anzeigen"** – aus: Mitarbeitende sehen die Vorschau-Zeile auf ihrem eigenen Dashboard nicht mehr; die Berechnung entfällt dann ganz.
-- **„Im Admin-Dashboard anzeigen"** – aus: Die Spalte „Überstd. Jahresende" im Monats- und Wochenbericht des Admin-Dashboards entfällt (dort ohnehin nur im laufenden Monat sichtbar, und nur, wenn mindestens ein/e Mitarbeiter:in bereits künftigen Ausgleich gebucht hat).
+> **Gut zu wissen:** Unter dem Raster (bei sehr breitem Fenster daneben) stehen die **Mitarbeitenden**. Ziehen Sie eine Person auf einen Slot, um sie zuzuweisen. Unter jedem Namen zeigt die **Auslastung** die zugewiesenen Schichtstunden zur Wochenarbeitszeit, zum Beispiel „15,25 / 17 h“: grün bei ±30 Minuten, gelb bei ±1 Stunde, sonst rot.
 
-Beide Schalter wirken nur auf die Anzeige – das Überstundenkonto selbst wird unverändert weitergerechnet.
+| Weitere Knöpfe der Werkzeugleiste | Wirkung |
+| --- | --- |
+| `Slot` | legt einen Zeitslot an, siehe [Zeitslot anlegen](#schicht-slot) |
+| `Automatisch füllen` | besetzt die Slots selbst, siehe [Automatisch füllen](#schicht-fuellen) |
+| `Duplizieren` | kopiert den Plan als Entwurf, siehe den Tipp darunter |
+| Papierkorb („Plan löschen“) | löscht den Plan samt Slots und Zuweisungen nach Rückfrage |
 
-### 18.7 Urlaubskonto (Tagesprinzip)
+> **Gut zu wissen:** **Duplizieren** kopiert einen Plan mit allen Slots und Zuweisungen. Die Kopie ist ein **inaktiver Entwurf** ohne Zeitraum und ohne Freigabe für Mitarbeitende; so leiten Sie Varianten wie „Sommer“ oder „Schulferien“ aus einem Bestandsplan ab. Arbeitsplätze und Einweisungen gehören keinem Plan und werden nicht mitkopiert.
 
-Urlaub wird grundsätzlich **in Tagen** geführt, nicht in Stunden (Tagesprinzip § 3 BUrlG). **Resturlaub = Anspruch − Verbrauch.**
+<a id="schicht-slot"></a>
+### Wie lege ich einen Zeitslot an?
 
-**Anspruch (Budget):**
-- **Jahresanspruch in Tagen** + Resturlaub-Vortrag (Carryover) aus dem Jahresabschluss.
-- **Anteilig (pro rata)** bei unterjährigem Eintritt/Austritt – nach den tatsächlichen Beschäftigungsmonaten.
-- **Teilzeit nach Arbeitstagen/Woche:** Anspruch = `30 × Arbeitstage pro Woche ÷ 5`. Wer weniger Tage pro Woche arbeitet, hat anteilig weniger Urlaubstage; wer 5 (kürzere) Tage arbeitet, behält den vollen Tagesanspruch von 30. Beispielwerte: 5 Tage → 30; 4 Tage → 24; 3 Tage → 18. Der Wert ist beim Anlegen **überschreibbar**.
+Klicken Sie im Editor auf `Slot`. Der Dialog **Neuer Zeitslot** öffnet sich; ein vorhandener Slot heißt im Dialog **Zeitslot bearbeiten**.
 
-**Verbrauch:**
-- Nur **Urlaub** belastet das Budget (bezahlte Freistellung, Krank, Fortbildung **nicht**). Jeder freie Arbeitstag kostet **1 Tag** (Halbtag 0,5) – unabhängig von der Stundenzahl des Tages.
-- Als **„Frei" + „zählt als Urlaub"** konfigurierte **Sondertage 24./31.12.** kosten je **1 Urlaubstag** – auch ohne eigenen Abwesenheitseintrag.
-- **Budget-Check** beim Antrag zählt **buchbare Arbeitstage** (Tagessoll > 0). Eine ganze Urlaubswoche kostet einen 3-Tage-Mitarbeiter nur 3 Tage.
+![Dialog „Neuer Zeitslot“ mit Arbeitsplatz, Wochentag, Von und Bis, Mindestbesetzung, Hinweis und der Liste der zugewiesenen Mitarbeitenden](img/pl-schicht-slot.webp)
 
-**Beschäftigungsfenster:** Vor dem ersten / nach dem letzten Arbeitstag entstehen **weder Anspruch noch Verbrauch**.
+1. Wählen Sie den **Arbeitsplatz**.
+2. Wählen Sie den **Wochentag**.
+3. Tragen Sie **Von** und **Bis** ein.
+4. **Mindestbesetzung:** 0 bedeutet keine Mindestbesetzung; sonst markiert PraxisZeit den Slot bei Unterbesetzung. Das ist eine **weiche Warnung**, Speichern und Aktivieren bleiben möglich.
+5. **Hinweis (optional):** bis zu 500 Zeichen, zum Beispiel „Einarbeitung Azubi“. Er erscheint mit vorangestelltem **»** im Wochenraster, im PDF-Aushang und auf der Dashboard-Karte „Deine Einteilung heute“.
+6. Haken Sie unter **Zugewiesene Mitarbeiter** die Personen an. Wer nicht eingewiesen ist, trägt das Kennzeichen „nicht eingewiesen“. Zum Schluss speichern Sie den Slot mit `Speichern`.
 
-**Live-Anzeige:** Die Konto-Anzeigen rechnen „bis heute" (Stichtag, siehe Abschnitt 18.6); rechtsverbindliche Datei-Exporte rechnen den vollen Zeitraum.
+> **Achtung:** **Der Hinweis ist für alle sichtbar:** Alle Mitarbeitenden, die den Plan sehen dürfen, lesen ihn, und der PDF-Aushang druckt ihn mit; ein Schwarzes Brett hängt oft an einem Ort, den auch Patientinnen und Patienten einsehen. Tragen Sie dort **keine Gesundheitsangaben** oder andere sensible Daten ein.
 
-### 18.8 Sonderfälle
+> **Gut zu wissen:** **Slot kopieren:** Beim Bearbeiten eines Slots legt „Auf Wochentage kopieren“ ihn auf weiteren Wochentagen zusätzlich an, mit Arbeitsplatz, Zeit, Mindestbesetzung, Zuweisungen **und Hinweis**. Bei einem personenbezogenen Hinweis wie „Vertretung für Frau Schmidt“ bedenken Sie, dass er mitkopiert wird.
 
-- **Mitarbeiter ohne Stundenzählung:** kein Soll/Ist/Überstunden; Urlaub trotzdem tagebasiert (voller Urlaubstag / „Frei"-Sondertag = 1 Tag, halber freier Tag, „halber Feiertag" 24./31.12. und verkürzter Tag = 0,5 Tag).
-- **Sondertage 24./31.12.:** je Tag Arbeitstag / Halbtag (Faktor 0,5) / Frei (Faktor 0) / Verkürzt auf X Stunden (Soll = min(Tagessoll, X), Urlaub 0,5 Tage). „Frei + zählt als Urlaub" zieht 1 Urlaubstag. Einzelne weitere Tage: Einstellungen → „Verkürzte Tage".
-- **Eintritt/Austritt:** vor dem ersten / nach dem letzten Arbeitstag entstehen weder Soll noch Ist; der Urlaubsanspruch wird anteilig berechnet.
-- **Arbeitszeit-Änderung (rückwirkend oder zukunftsdatiert):** alte Monate rechnen mit der damals gültigen Arbeitszeit (Verlauf / Gültig-ab-Datum). Rückwirkend werden erfasste Zeiteinträge an geänderten Wochentagen neu gekappt und danach die Stunden bereits gebuchter Abwesenheiten auf das neue Tagessoll umgestellt – Abwesenheiten auch bei einem Datum in der Zukunft (Ausnahme: Überstundenausgleich, MA ohne Stundenzählung); Urlaubs**tage** bleiben unberührt. Senkt eine rückwirkende Änderung angerechnete Zeit oder das Überstundenkonto, gilt der Verkürzungsschutz. Details in [Abschnitt 4 → „Mitarbeiter bearbeiten"](#mitarbeiter-bearbeiten).
-- **Betriebsferien:** je nach Verrechnung Urlaubsabzug oder bezahlte Freistellung; bei aktivem Schalter „Überzählige Betriebsferien als Überstundenabbau" zuerst Urlaub, dann Überstundenausgleich (kein Minus-Urlaub) – Details in [Abschnitt 11](#11-betriebsferien-verwalten).
-- **Feste Monatsarbeitszeit (Minijob-Modus, #377 Baustein 2b):** für MA mit aktiviertem Modus gilt statt 18.4/18.5 ein **festes** Monats-Soll (= vereinbarte Monatsarbeitszeit, kalendertag-pro-rata bei Ein-/Austritt); Feiertag/Urlaub/bezahlte Freistellung auf einem geplanten Tag schreiben die geplanten Stunden dem Ist gut, unbezahlte Fehltage mindern stattdessen das feste Soll. Details, Voraussetzungen und die bekannte Fehlmonat-Grenze in [Abschnitt 13 → „Feste Monatsarbeitszeit"](#13-einstellungen).
+<a id="schicht-fuellen"></a>
+### Wie lasse ich einen Plan automatisch füllen?
 
-### 18.9 Durchgerechnetes Beispiel (Vollzeit)
+Klicken Sie im Editor auf `Automatisch füllen`. Der Dialog besetzt die Slots mit eingewiesenen, verfügbaren Mitarbeitenden, ausgewogen nach Auslastung und Überstundenkonto.
 
-Profil: 40 h / 5 Tage → Tagessoll 8,00 h, 30 Urlaubstage. Beispielmonat mit 22 Werktagen, davon 1 Feiertag.
+![Dialog „Automatisch füllen“ mit der Zielwoche, der Wahl zwischen „Alle Zuweisungen neu verteilen“ und „Nur Lücken auffüllen“ und dem Knopf „Generieren“](img/pl-schicht-fuellen.webp)
 
-```
-Werktage 22 − 1 Feiertag − 4 Urlaubstage = 17 Soll-Tage
-Monats-Soll  = 17 × 8,00 h               = 136,00 h
-Ist (14 Tage à 8,0 h + 3 Tage à 8,5 h)   = 137,50 h
-Monatssaldo  = 137,50 − 136,00           = +1,50 h
-Urlaubskonto = 30 − 4                     = 26 Tage übrig
-```
+1. Wählen Sie die **Zielwoche**. Sie bestimmt, welche Abwesenheiten und Stunden berücksichtigt werden; der Dialog nennt darunter den Montag der Woche.
+2. Wählen Sie den **Modus**: „Alle Zuweisungen neu verteilen“ oder „Nur Lücken auffüllen (vorhandene behalten)“.
+3. Klicken Sie auf `Generieren`. Das Ergebnis ist ein **Entwurf** zum Prüfen; der Plan wird dabei **nicht** aktiviert.
 
-> Vollständige Beispiele für Teilzeit, individuellen Tagesplan, Pro-rata-Eintritt und rückwirkende Stundenänderung stehen in [`docs/BERECHNUNGEN.md`](../BERECHNUNGEN.md).
+> **Gut zu wissen:** Der Generator liest Abwesenheiten, Wochenstunden und Überstundenkonto nur und verändert daran nichts. Er setzt niemanden ein, der an dem Tag abwesend oder außerhalb seines Beschäftigungsfensters ist, und keine Person auf zwei überlappende Slots. Slots, die sich nicht besetzen lassen, bleiben offen; eine Meldung und die Unterbesetzungs-Markierung sagen es Ihnen.
 
----
+<a id="schicht-plan-einstellungen"></a>
+### Wie gebe ich einen Plan für Mitarbeitende frei?
 
-## 19. Datensicherung (Backup & Restore)
+Klicken Sie im Editor auf `Bearbeiten`. Der Dialog **Plan-Einstellungen** öffnet sich.
 
-Unter **Admin → Datensicherung** (ab Version 1.9.0) verwalten Sie Backups ohne Kommandozeile — in der Docker- **und** der nativen Installation:
+![Dialog „Plan-Einstellungen“ mit Name, Beschreibung, dem Zeitraum für die automatische Aktivierung und dem Haken „Für Mitarbeitende sichtbar“](img/pl-schicht-plan-einstellungen.webp)
 
-- **Jetzt sichern** — erstellt umgehend ein vollständiges, komprimiertes Backup (`praxiszeit_<Zeitstempel>.sql.gz`, Plain-SQL mit `--clean --if-exists`).
-- **Geplante Sicherung** — tägliche automatische Sicherung zur eingestellten Stunde aktivieren, mit Aufbewahrungsdauer (Tage) und optionalem Speicherort.
-- **Liste** — vorhandene Sicherungen **herunterladen** (für eine externe Kopie) oder löschen. Vor dem Herunterladen fragt PraxisZeit nach **Ihrem Passwort** (Dialog „Sicherung herunterladen“) – die Datei enthält die gesamte Datenbank mit allen Gesundheitsdaten. Erstellen, Herunterladen, Löschen und geänderte Einstellungen (Zeitplan, Aufbewahrung, Speicherort) stehen unter **„Konto-Vorgänge“** (→ [Abschnitt 9](#9-änderungsprotokoll-audit-log)); die geplante tägliche Sicherung nicht.
+1. Ändern Sie bei Bedarf den **Namen** und die Beschreibung.
+2. **Automatisch aktiv im Zeitraum (optional):** Liegt das heutige Datum zwischen **von** und **bis**, gilt der Plan automatisch als aktiv, zusätzlich zum Knopf „Aktiv schalten“. Eine offene Grenze ist erlaubt.
+3. Mit dem Haken **Für Mitarbeitende sichtbar** erscheint der Plan in der Mitarbeiteransicht, auch wenn er heute noch nicht gilt, zum Beispiel um einen ab September geltenden Plan früh bekannt zu machen.
+4. Klicken Sie auf `Speichern`.
 
-**Wo:** Docker im Volume `praxiszeit_backups`, native im `data/backups/`-Verzeichnis.
+> **Achtung:** **Falle bei befristeten Plänen:** Die Freigabe gilt in beide Richtungen. Ein befristeter Plan, zum Beispiel ein Sommerplan Juli bis August, bleibt für Mitarbeitende sichtbar, solange der Haken gesetzt ist, auch Wochen nach Ablauf; dort steht er dann mit dem Vermerk „Nicht mehr gültig“. Nehmen Sie die Freigabe selbst zurück. Ein heute aktiver Plan ist ohnehin sichtbar. Eine **Kopie** übernimmt die Freigabe nicht. Welche Pläne freigegeben sind, sehen Sie am Augen-Symbol in der Planliste und am Abzeichen „Sichtbar“ im Kopf des geöffneten Plans.
 
-**Speicherort:** Netzwerkpfade (`\\Server\Freigabe`), Netzlaufwerke, für alle Konten lesbare Ordner (z. B. `C:\Users\Public`), Systemordner und Laufwerkswurzeln werden abgelehnt, unter Windows auch alles unter `C:\Users`, `C:\ProgramData` und `C:\Program Files`. Unter Windows am besten einen **neuen** Ordnernamen eintragen: PraxisZeit legt ihn an und gibt ihm die Rechte „nur SYSTEM und Administratoren“. Die Rechte eines **bestehenden** Ordners ändert PraxisZeit nicht — ist er für andere Konten zugänglich, erscheint ein Hinweis.
+> **Gut zu wissen:** **PDF-Aushang:** Gilt der gedruckte Plan gerade nicht (Vorschau oder abgelaufen), steht fett in der Kopfzeile „Vorschau — gilt derzeit nicht“ beziehungsweise „Nicht mehr gültig“, damit er am Schwarzen Brett nicht mit dem geltenden Plan verwechselt wird. Haben alle Arbeitsplätze denselben Standort, steht er einmal in der Kopfzeile, sonst hinter dem Namen jedes Arbeitsplatzes. Auch Mitarbeitende können den Plan, den sie sehen, mit dem Knopf „PDF“ drucken. Mitarbeitende sehen ihre heutige Einteilung auf dem Dashboard; ihre Seite beschreibt das Handbuch für Mitarbeitende.
 
-**§16 ArbZG:** Zeitaufzeichnungen mindestens **2 Jahre** aufbewahren — Aufbewahrungsdauer entsprechend setzen, eine Kopie **außerhalb** des Servers vorhalten und vor jedem Update zusätzlich sichern.
+<a id="admin-passwort-verloren"></a>
+## Admin-Passwort verloren
 
-**Sicherungen sind nicht verschlüsselt:** Sie enthalten die ganze Datenbank einschließlich Krankheitstagen. Eine Kopie außer Haus nur verschlüsselt ablegen (z. B. 7-Zip mit AES-256, BitLocker-USB-Stick), heruntergeladene Dateien danach aus dem Download-Ordner löschen und nur eigene Sicherungen einspielen. Für einen neuen Rechner zusätzlich den Schlüssel `SECRET_KEY` (`config/.secret-key` bzw. `.env`) einmal getrennt und verschlüsselt aufbewahren — ohne ihn müssen alle die Zwei-Faktor-Anmeldung neu einrichten.
+*Kommt niemand mehr mit einem Administrator-Konto in die Anwendung, hilft ein Kommando **auf dem Server selbst**. Es setzt das Passwort direkt in der Datenbank neu und braucht dafür **keine Anmeldung**. Dieses Kapitel hat keine Bildschirmfotos, weil es keine Oberfläche dafür gibt: Sie arbeiten in einer Eingabeaufforderung oder einem Terminal auf dem Server.*
 
-> **Native:** Die *geplante* Sicherung läuft weiterhin über den OS-Timer (systemd/launchd/Task); der *manuelle* Trigger und die Liste funktionieren überall.
+<a id="passwort-zuruecksetzen"></a>
+### Wie setze ich das Admin-Passwort zurück?
 
-**Wiederherstellung:** im Docker-Betrieb mit `bash restore.sh <datei>` neben der `docker-compose.yml`. Das Script legt die Datenbank frisch an, spielt die Sicherung ein und startet das Backend neu – erst dieser Start hebt eine Sicherung einer älteren Version per Migration auf den Stand der installierten Version. Native unter Linux und macOS den Dienst anhalten, die Sicherung mit `praxiszeit-server.py restore <datei>` einspielen und den Dienst wieder starten – auch hier migriert erst dieser Start; scheitert das Einspielen, bleibt die bisherige Datenbank unverändert. Unter Windows `restore-backup.bat <datei>`. Eingespielt wird nur eine Sicherung mit passender **Signatur** (PraxisZeit signiert jede Sicherung mit dem `SECRET_KEY` der Installation); eine Sicherung einer älteren Version oder vom alten Rechner nur mit dem Zusatz `--force-unverified` — und nur, wenn sie sicher aus der eigenen Praxis stammt. Alle Kommandozeilen-Varianten: siehe [`docs/BACKUP.md`](../BACKUP.md).
+Führen Sie den Befehl für Ihre Installation aus. Die lange Form ist nötig: praxiszeit-server.py liegt nicht im Suchpfad, und die Programmbibliotheken stecken nur im mitgelieferten Python unter bin/python.
 
----
+1. Öffnen Sie auf dem Server ein Terminal (Windows: Eingabeaufforderung **als Administrator** im Installationsordner).
+2. Führen Sie den Befehl aus der Tabelle aus.
+3. Geben Sie das neue Passwort zweimal ein. Es wird nicht mit eingetippt, damit es nicht in der Befehls-Historie landet. PraxisZeit prüft dieselben Regeln wie die Anwendung: mindestens 10 Zeichen, Groß- und Kleinbuchstabe, Ziffer.
+4. Melden Sie sich mit dem Benutzernamen und dem neuen Passwort an. Alle laufenden Sitzungen dieses Kontos sind danach ungültig; wer damit angemeldet war, muss sich neu anmelden.
 
-## 20. Admin-Passwort verloren
+| Installation | Befehl |
+| --- | --- |
+| Linux (Standardordner /opt/praxiszeit) | sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py reset-admin-password |
+| macOS (Standardordner /usr/local/praxiszeit, Dienstkonto \_praxiszeit mit Unterstrich) | sudo -u \_praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py reset-admin-password |
+| Windows (Installationsordner zum Beispiel C:\\PraxisZeit) | bin\\python\\python.exe praxiszeit-server.py reset-admin-password |
+| Docker (neben der docker-compose.yml) | docker compose exec backend python -m app.cli.reset\_admin\_password |
 
-Kommt niemand mehr mit einem Administrator-Konto in die Anwendung, hilft ein Kommando **auf dem Server selbst** — es setzt das Passwort direkt in der Datenbank neu und braucht dafür keine Anmeldung.
+| Option (hinten anhängen) | Wirkung |
+| --- | --- |
+| \--username \<name\> | setzt das Passwort eines anderen Kontos als admin |
+| \--reactivate | ist das Konto **deaktiviert**, genügt ein neues Passwort nicht, die Anmeldung bleibt gesperrt (Meldung „Das Konto ist derzeit deaktiviert und bleibt es auch“); mit dieser Option setzt das Kommando das Passwort neu **und** aktiviert das Konto wieder |
+| \--disable-2fa | ist auch das Handy mit der Zwei-Faktor-Anmeldung weg, verlangt der Login nach dem neuen Passwort weiter einen Code; diese Option schaltet die Zwei-Faktor-Anmeldung ab, danach richten Sie im Profil eine neue ein |
 
-**Linux** (Standard-Installationsordner `/opt/praxiszeit`):
+> **Gut zu wissen:** **Alles wird protokolliert:** Jeder solche Vorgang wird dauerhaft festgehalten, mit Zeitpunkt, betroffenem Konto und dem Betriebssystem-Konto, das ihn ausgelöst hat (Nachweispflicht nach Art. 5 Abs. 2 DSGVO). Sie finden ihn unter „Konto-Vorgänge“ mit der handelnden Stelle „Kommandozeile (Benutzer@Rechner)“, siehe [Konto-Vorgänge](#konto-vorgaenge). Ein Eingriff von Hand in die Datenbank ist weder nötig noch empfohlen; dabei entfiele die Protokollzeile.
 
-```
-sudo -u praxiszeit /opt/praxiszeit/bin/python/bin/python3 /opt/praxiszeit/praxiszeit-server.py reset-admin-password
-```
+> **Achtung:** **Der Eintrag \[admin\] password in config/praxiszeit.conf ist keine Antwort:** Er ist nur der Startwert der Erstinstallation und wird bei einer späteren Passwortänderung nicht nachgeführt. Nach einem Reset überschreibt ihn das Kommando mit einem Zufallswert. Löschen Sie den Eintrag nicht, die Anwendung setzt das Feld beim Start voraus.
 
-**macOS** (Standard-Installationsordner `/usr/local/praxiszeit`; das Dienstkonto heißt hier `_praxiszeit` – mit Unterstrich):
+<a id="zwei-faktor-zuruecksetzen"></a>
+### Wie setze ich die Zwei-Faktor-Anmeldung einer Mitarbeiterin zurück?
 
-```
-sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 /usr/local/praxiszeit/praxiszeit-server.py reset-admin-password
-```
+Das geht ohne Kommandozeile: Hat eine Person ihr Handy verloren, setzen Sie die Zwei-Faktor-Anmeldung in der `Benutzerverwaltung` zurück.
 
-**Windows** (Eingabeaufforderung **als Administrator** im Installationsordner, z. B. `C:\PraxisZeit`):
+1. Klicken Sie in der Zeile der Person auf das Schild-Symbol `Zwei-Faktor zurücksetzen`. Es erscheint nur bei Personen mit aktiver Zwei-Faktor-Anmeldung.
+2. Bestätigen Sie mit **Ihrem** Passwort.
+3. PraxisZeit schaltet die Zwei-Faktor-Anmeldung der Person ab und meldet sie ab. Sie meldet sich danach nur mit dem Passwort an und richtet Zwei-Faktor im Profil neu ein. Der Vorgang steht unter „Konto-Vorgänge“.
 
-```
-bin\python\python.exe praxiszeit-server.py reset-admin-password
-```
+> **Gut zu wissen:** Die **eigene** Zwei-Faktor-Anmeldung setzen Sie so nicht zurück. Das geht im Profil, mit Passwort und Code; ein zweites Admin-Konto kann es für Sie übernehmen.
 
-Die lange Form ist nötig: `praxiszeit-server.py` liegt nicht im Suchpfad, und die Programmbibliotheken stecken nur im mitgelieferten Python unter `bin/python`. Ein kurzes `sudo praxiszeit-server.py …` (so stand es bis Version 1.19.2 hier) scheitert schon an der Kommandozeile.
-
-Das Kommando fragt das neue Passwort zweimal ab (es wird nicht mit eingetippt, damit es nicht in der Befehls-Historie landet) und prüft dieselben Regeln wie die Anwendung: mindestens 10 Zeichen, Groß- und Kleinbuchstabe, Ziffer. Danach sind **alle laufenden Sitzungen dieses Kontos ungültig** — wer damit angemeldet war, muss sich neu anmelden.
-
-**Ist das Konto deaktiviert**, genügt ein neues Passwort nicht: die Anmeldung bleibt gesperrt, und das Kommando meldet *„Das Konto ist derzeit deaktiviert und bleibt es auch"*. Dann den Befehl mit `--reactivate` wiederholen – er setzt das Passwort neu **und** aktiviert das Konto wieder (ebenfalls protokolliert).
-
-**Zwei-Faktor einer Mitarbeiterin zurücksetzen (Handy verloren):** In der **Benutzerverwaltung** steht bei Personen mit aktiver Zwei-Faktor-Anmeldung das Schild-Symbol **„Zwei-Faktor zurücksetzen“**. Nach Bestätigung mit **Ihrem** Passwort wird die Zwei-Faktor-Anmeldung abgeschaltet, die Person abgemeldet; sie meldet sich danach nur mit dem Passwort an und richtet Zwei-Faktor im Profil neu ein. Der Vorgang steht unter „Konto-Vorgänge“. Die eigene Zwei-Faktor-Anmeldung setzen Sie so nicht zurück (Profil, mit Passwort und Code), ein zweites Admin-Konto kann es für Sie tun.
-
-**Ist auch das Handy mit der Zwei-Faktor-Anmeldung weg**, reicht das neue Passwort nicht: der Login fragt weiterhin nach einem Code. Dann zusätzlich:
-
-```
-… reset-admin-password --disable-2fa
-```
-
-(dieselbe Befehlszeile wie oben, mit `--disable-2fa` am Ende)
-
-Danach im Profil eine neue Zwei-Faktor-Anmeldung einrichten.
-
-Betrifft es ein anderes Konto als `admin`, geben Sie den Benutzernamen mit an: `--username <name>`.
-
-**Was dabei protokolliert wird:** Jeder solche Vorgang wird mit Zeitpunkt, betroffenem Konto und dem Betriebssystem-Konto, das ihn ausgelöst hat, dauerhaft festgehalten (Nachweispflicht nach Art. 5 Abs. 2 DSGVO). Ein Passwort-Reset ist also kein stiller Vorgang.
-
-> **Vorher prüfen — ist das Passwort wirklich falsch?** Die Anmeldung geht nur mit dem **Benutzernamen**, nicht mit der E-Mail-Adresse; Passwortmanager setzen gern die E-Mail ein. Nach **5 Fehlversuchen in 15 Minuten von demselben Rechner** sperrt PraxisZeit den Benutzer an diesem Rechner vorübergehend („Konto vorübergehend gesperrt"), an anderen Rechnern geht die Anmeldung weiter; erst nach **50 Fehlversuchen insgesamt** ist der Benutzer überall gesperrt — dann hilft Warten oder ein Neustart des Dienstes. Ausgenommen sind Browser, in denen sich das Konto schon einmal erfolgreich angemeldet hat: Sie dürfen trotz fremder Fehlversuche weiter das Passwort eingeben (mit eigenen 5 Versuchen in 15 Minuten) – so sperren fremde Fehlversuche die Verwaltung nicht aus. Nach **10 falschen Zwei-Faktor-Codes in einer Stunde** ist die Anmeldung des Kontos für eine Stunde gesperrt (*„Zu viele falsche 2FA-Codes …“*); das übersteht auch einen Neustart – in dem Fall ist das Passwort bekannt geworden, ändern Sie es. Läuft die Docker-Installation hinter einem Reverse-Proxy auf dem Server (z. B. Caddy), erscheinen ohne Weiterreichen der echten Rechner-Adresse alle Rechner unter derselben Adresse — die Sperre „pro Rechner“ trifft dann alle Rechner zugleich; dafür muss der Proxy die echte IP weiterreichen und die mitgelieferte nginx-Konfiguration sie übernehmen (`set_real_ip_from`/`real_ip_header`, auskommentiert vorbereitet). Welcher Fall vorliegt, steht im Protokoll des Servers: `AUTH login_failed user=<name> reason=bad_password` (Passwort falsch) bzw. `reason=unknown_user` (Benutzername unbekannt **oder Konto deaktiviert** – dann hilft `--reactivate`, siehe oben). Bei `unknown_user` steht der Name nur verkürzt da (erste zwei Zeichen und eine Prüfkennung, z. B. `ad…#3f9c0a1b22d4`), weil ins Namensfeld oft versehentlich das Passwort getippt wird.
-
-> **Docker-Installation:** Dasselbe Werkzeug steckt auch im Backend-Abbild — dort lautet der Befehl `docker compose exec backend python -m app.cli.reset_admin_password` (mit `--username <name>`, `--disable-2fa` bzw. `--reactivate` wie oben). Ein Eingriff von Hand in die Datenbank ist weder nötig noch empfohlen: dabei entfiele die Protokollzeile.
-
-> **Der Eintrag `[admin] password` in `config/praxiszeit.conf` ist keine Antwort auf die Frage:** er ist nur der Startwert der Erstinstallation und wird bei einer späteren Passwortänderung nicht nachgeführt. Nach einem Reset überschreibt ihn das Kommando mit einem Zufallswert — er steht dann nur noch da, weil die Anwendung das Feld beim Start voraussetzt.
-
----
-
-## Schichtplanung (optional, standardmäßig deaktiviert)
-
-Mit der **Schichtplanung** erstellen Sie wöchentliche Einsatzpläne (wer steht
-wann an welchem Arbeitsplatz). Sie ist ein **reines Planungswerkzeug** und
-verändert **nicht** Zeiterfassung, Soll/Ist-Stunden, ArbZG-Prüfungen, Urlaub
-oder Überstunden.
-
-**Aktivieren:** **Einstellungen → Schichtplanung → „Schichtplanung aktivieren"
-→ Speichern.** Das Modul ist nach der Installation **aus**; nur Admins können es
-einschalten. Erst danach erscheinen die Menüpunkte und das Dashboard-Widget.
-
-**Geplante Wochentage (#371):** Direkt darunter (nur bei aktiver Schichtplanung)
-legen Sie fest, **welche Wochentage** der Planer anzeigt und plant – Standard
-**Mo–Fr**. Samstag/Sonntag oder ein Schließtag (z. B. Donnerstag) lassen sich
-einzeln zu-/abschalten (mindestens ein Tag muss aktiv bleiben). Ein abgeschalteter
-Tag verschwindet aus der Wochenansicht, nimmt keine neuen Slots auf und wird von
-der Auto-Generierung übersprungen; bereits angelegte Slots bleiben erhalten und
-kehren beim Reaktivieren des Tages zurück.
-
-**Stammdaten:** **Standorte** (optional) und **Arbeitsplätze** (Tresen, Labor,
-Springer … mit Farbe) anlegen. **Schichtpläne:** beliebig viele benannte
-Wochenpläne („Normalzustand", „Azubis Schulferien" …). Im **Wochen-Editor**
-Zeitslots per **Drag & Drop** oder Klick-Dialog über die Woche verteilen,
-**Mitarbeitende** per Drag auf einen Slot ziehen, optional eine
-**Mindestbesetzung** setzen (unterbesetzte Slots werden markiert – weiche
-Warnung, blockiert nicht).
-
-**Aktiv schalten** macht einen Plan für alle sichtbar; **mehrere Pläne können
-gleichzeitig aktiv** sein. Mitarbeitende sehen ihre heutige Einteilung im
-Dashboard.
-
-**Freigabe für Mitarbeitende:** Über den Knopf „Bearbeiten" (Stift-Symbol) in
-der Werkzeugleiste des Plan-Editors öffnen Sie die Plan-Einstellungen; dort
-gibt es zusätzlich den Schalter **„Für Mitarbeitende sichtbar"**. Er macht den
-Plan in der Mitarbeiteransicht sichtbar – **unabhängig vom Aktiv-Datums-Fenster**,
-in beide Richtungen: schon **vor** dessen Beginn (praktisch, um z. B. einen ab
-dem 1. September geltenden Plan schon vorher bekannt zu machen) genauso wie
-**nach** dessen Ende. **Achtung, Falle:** Ein befristeter Plan (z. B. ein
-Sommerplan Juli–August) bleibt für Mitarbeitende sichtbar, solange der Schalter
-gesetzt ist – auch Wochen nach Ablauf des Zeitfensters. Das Zurückschalten
-müssen Sie selbst erledigen, sonst sammeln sich in der Mitarbeiteransicht
-abgelaufene Pläne (dort dann als „Nicht mehr gültig" gekennzeichnet, siehe
-PDF-Ausdruck unten). Ein heute aktiver bzw. im Datums-Fenster liegender Plan
-ist ohnehin sichtbar, unabhängig vom Schalter. Eine **Kopie** („Duplizieren")
-übernimmt diese Freigabe **nicht** – sie startet wie jeder neue Entwurf
-unsichtbar, damit nicht versehentlich eine unfertige Variante bei den
-Mitarbeitenden auftaucht. Welche Pläne freigegeben sind, sehen Sie auf einen
-Blick am **Augen-Symbol** in der Planliste sowie am Abzeichen **„Sichtbar"**
-(ebenfalls mit Augen-Symbol) im Kopf des geöffneten Plans.
-
-**Hinweis je Einteilung:** Im Slot-Dialog gibt es das Feld **„Hinweis
-(optional)"** (bis zu 500 Zeichen), z. B. „Einarbeitung Azubi" oder „Vertretung
-für Frau Schmidt". Der Text erscheint mit vorangestelltem **»** im Wochenraster,
-im PDF-Ausdruck und auf der Dashboard-Karte „Deine Einteilung heute" der
-betroffenen Mitarbeitenden – rein informativ, ohne Auswirkung auf Soll/Ist, Urlaub
-oder Überstunden. **Achtung:** Der Hinweis ist für alle Mitarbeitenden sichtbar,
-die den Plan sehen dürfen, und wird beim PDF-Aushang mitgedruckt – tragen Sie
-dort keine Gesundheitsangaben oder anderen sensiblen Daten ein.
-
-**PDF-Ausdruck:** Der Knopf **„PDF"** in der Werkzeugleiste erzeugt einen
-Aushang im Querformat mit einer Tabelle Arbeitsplatz × Wochentag – zum
-Aushängen am Schwarzen Brett. Auch Mitarbeitende können darüber den Plan
-drucken, den sie in ihrer Ansicht sehen. Der Hinweistext je Einteilung wird
-dabei mitgedruckt – ein Aushang hängt oft an einem auch für Patientinnen und
-Patienten einsehbaren Ort, das gehört bei der Wahl des Hinweistexts bedacht.
-Gilt der gedruckte Plan gerade nicht (freigegebener Vorschau- oder bereits
-abgelaufener Plan), trägt der Ausdruck fett und an erster Stelle in der
-Kopfzeile einen Vermerk: **„Vorschau — gilt derzeit nicht"** bzw. **„Nicht mehr
-gültig"** – damit am Schwarzen Brett kein veralteter oder erst künftig
-geltender Plan mit dem aktuell gültigen verwechselt wird. Haben **alle**
-Arbeitsplätze des Plans denselben Standort, steht er einmal in der Kopfzeile
-(„Standort: Hauptstelle"); nutzt der Plan **unterschiedliche** Standorte (oder
-ist er bei einem Teil gar nicht gesetzt), steht er stattdessen hinter jedem
-betroffenen Arbeitsplatznamen, z. B. „Tresen (Hauptstelle)" – so ist bei zwei
-Aushängen für zwei Standorte am Schwarzen Brett klar, welcher gemeint ist.
-Der **Praxisname** in der Kopfzeile ist der bei der Installation angegebene –
-in der nativen Installation der Eintrag `name` im Abschnitt `[practice]` der
-Datei `config/praxiszeit.conf`, bei Docker `PRACTICE_NAME` in der `.env`.
-Ändern Sie ihn dort; er gilt nach einem Neustart des Dienstes (Docker:
-`docker compose up -d`). Ohne eigenen Eintrag steht dort der Vorgabewert
-„Praxis".
-
-Im Reiter **Einweisungen** legen Sie per Matrix (Mitarbeiter × Arbeitsplätze)
-fest, wer für welchen Arbeitsplatz eingewiesen ist. Beim Zuweisen einer nicht
-eingewiesenen Person erscheint die weiche Warnung „nicht eingewiesen" (blockiert
-nicht); Mitarbeitende sehen ihre Einweisungen im Profil.
-
-Über **Bearbeiten** setzen Sie pro Plan optional ein **Aktiv-Datums-Fenster**
-(„von/bis"), in dem der Plan automatisch aktiv wird (Jahresübersicht als
-Zeitstrahl). **Automatisch füllen** verteilt eingewiesene, verfügbare
-Mitarbeitende greedy auf die Slots (Zielwoche wählbar, ausgewogen nach
-Auslastung/Überstunden) — als Entwurf zum Review, ohne den Plan zu aktivieren.
-
-Mit dem **Woche/Tag**-Umschalter im Editor zeigen Sie wahlweise die ganze Woche
-oder einen einzelnen Wochentag in voller Breite an (#321). Beim **Bearbeiten**
-eines Slots kopiert **„Auf Wochentage kopieren"** die Schicht (Arbeitsplatz,
-Zeit, Mindestbesetzung, Zuweisungen **und Hinweis**) auf weitere Wochentage –
-praktisch für wiederkehrende Schichten (#322); ein für den Ursprungstag
-formulierter Hinweistext wandert also wortgleich mit, auf den Zieltagen ggf.
-anpassen. In der
-Mitarbeiterliste des Editors steht unter jedem Namen die **Auslastung** der
-zugewiesenen Schichtstunden zur Wochenarbeitszeit (z. B. **„15,25 / 17 h"**):
-grün bei ±30 Minuten zur Vertragszeit, gelb bei ±1 Stunde, sonst rot – das
-erleichtert eine ausgewogene Einteilung (#330).
-Details: [`docs/SCHICHTPLANUNG.md`](../SCHICHTPLANUNG.md).
-
----
-
-*PraxisZeit – Zeiterfassungssystem für Arztpraxen und kleine Unternehmen*
-*Stand: Oktober 2026 (für PraxisZeit 1.20.0)*
+> **Achtung:** **Vorher prüfen: Ist das Passwort wirklich falsch?** Die Anmeldung geht nur mit dem **Benutzernamen**, nicht mit der E-Mail-Adresse; Passwortmanager tragen gern die E-Mail ein. Nach **5 Fehlversuchen in 15 Minuten von demselben Rechner** sperrt PraxisZeit den Benutzer an diesem Rechner vorübergehend („Konto vorübergehend gesperrt“), an anderen Rechnern geht die Anmeldung weiter; erst nach **50 Fehlversuchen insgesamt** ist der Benutzer überall gesperrt, dann hilft Warten oder ein Neustart des Dienstes. Nach **10 falschen Zwei-Faktor-Codes in einer Stunde** ist die Anmeldung des Kontos für eine Stunde gesperrt; dann ist das Passwort bekannt geworden, ändern Sie es. Welcher Fall vorliegt, steht im Protokoll des Servers: AUTH login\_failed user=\<name\> reason=bad\_password heißt Passwort falsch, reason=unknown\_user heißt Benutzername unbekannt **oder Konto deaktiviert**, dann hilft --reactivate.
