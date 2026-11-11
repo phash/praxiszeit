@@ -103,17 +103,17 @@ describe('HandbookPage', () => {
     expect(r(1400)).toBeCloseTo(2 * r(700));
     expect(r(700)).toBeCloseTo(17);
   });
-  it('small element gets its number circle outside the highlight frame', () => {
+  it('number circle sits up and left of the frame corner (R15)', () => {
     const mf = { ...manifest, s1: { ...manifest.s1, crop: { x: 256, y: 0, w: 1184, h: 900 },
       markers: { ...manifest.s1.markers, b: { x: 600, y: 164, w: 40, h: 40 } } } };
     const { container } = render(<HandbookPage {...props} manifest={mf} />);
     const g = container.querySelector('g[data-marker="2"]')!;
     const rect = g.querySelector('rect')!;
     const circle = g.querySelector('circle')!;
-    const [x, y, w, h] = ['x', 'y', 'width', 'height'].map((a) => Number(rect.getAttribute(a)));
+    const [x, y] = ['x', 'y'].map((a) => Number(rect.getAttribute(a)));
     const [cx, cy, r] = ['cx', 'cy', 'r'].map((a) => Number(circle.getAttribute(a)));
-    const outside = cx + r <= x || cx - r >= x + w || cy + r <= y || cy - r >= y + h;
-    expect(outside).toBe(true);
+    expect(cx).toBeCloseTo(x - 0.6 * r);
+    expect(cy).toBeCloseTo(y - 0.6 * r);
     expect(Number(g.querySelector('text')!.getAttribute('x'))).toBe(cx);
     expect(Number(g.querySelector('text')!.getAttribute('y'))).toBe(cy);
   });

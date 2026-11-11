@@ -88,42 +88,23 @@ describe('boxInside', () => {
 
 describe('markerBadgePosition', () => {
   const crop = { x: 0, y: 0, w: 1440, h: 900 };
-  const r = 17;
-  const outside = (p: { cx: number; cy: number }, b: { x: number; y: number; w: number; h: number }) =>
-    p.cx + r <= b.x || p.cx - r >= b.x + b.w || p.cy + r <= b.y || p.cy - r >= b.y + b.h;
+  const r = 20;
 
-  it('large element keeps the badge on the top-left corner', () => {
-    expect(markerBadgePosition({ x: 300, y: 100, w: 160, h: 60 }, r, crop)).toEqual({ cx: 300, cy: 100 });
+  it('centre is the top-left corner shifted outward by 0.6 r', () => {
+    expect(markerBadgePosition({ x: 300, y: 100, w: 160, h: 60 }, r, crop)).toEqual({ cx: 288, cy: 88 });
   });
 
-  it('small element puts the badge left of the frame, vertically centred', () => {
+  it('small element: centre lies outside the rect, up and left of its corner', () => {
     const b = { x: 288, y: 164, w: 40, h: 40 };
     const p = markerBadgePosition(b, r, crop);
-    expect(p.cy).toBe(184);
-    expect(p.cx).toBeLessThan(b.x - r);
-    expect(outside(p, b)).toBe(true);
+    expect(p.cx).toBeLessThan(b.x);
+    expect(p.cy).toBeLessThan(b.y);
+    expect(p).toEqual({ cx: 276, cy: 152 });
   });
 
-  it('small element at the left crop edge puts the badge above', () => {
-    const b = { x: 10, y: 200, w: 40, h: 40 };
-    const p = markerBadgePosition(b, r, { x: 0, y: 0, w: 600, h: 400 });
-    expect(p.cx).toBe(30);
-    expect(p.cy).toBeLessThan(200 - r);
-    expect(outside(p, b)).toBe(true);
-  });
-
-  it('badge is always clamped inside the crop', () => {
-    const c = { x: 100, y: 50, w: 600, h: 400 };
-    for (const b of [
-      { x: 100, y: 50, w: 20, h: 20 },
-      { x: 680, y: 430, w: 20, h: 20 },
-      { x: 100, y: 50, w: 300, h: 200 },
-    ]) {
-      const p = markerBadgePosition(b, r, c);
-      expect(p.cx - r).toBeGreaterThanOrEqual(c.x);
-      expect(p.cy - r).toBeGreaterThanOrEqual(c.y);
-      expect(p.cx + r).toBeLessThanOrEqual(c.x + c.w);
-      expect(p.cy + r).toBeLessThanOrEqual(c.y + c.h);
-    }
+  it('clamps at the crop edge so the whole circle stays inside', () => {
+    const c = { x: 256, y: 0, w: 1184, h: 900 };
+    expect(markerBadgePosition({ x: 270, y: 10, w: 40, h: 40 }, r, c)).toEqual({ cx: 276, cy: 20 });
+    expect(markerBadgePosition({ x: 1436, y: 895, w: 4, h: 5 }, r, c)).toEqual({ cx: 1420, cy: 880 });
   });
 });
