@@ -5,6 +5,7 @@ import { getErrorMessage } from '../../utils/errorMessage';
 import { safeHttpUrl } from '../../utils/url';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { formatFixedDe } from '../../utils/formatters';
 
 interface BillingInfo {
   id: string;
@@ -308,7 +309,7 @@ export default function Billing() {
                 <div>
                   <p>{new Date(inv.created_at).toLocaleDateString('de-DE')}</p>
                   <p className="text-xs text-gray-500">
-                    {(inv.amount_cents / 100).toFixed(2)} {inv.currency.toUpperCase()} · {inv.status}
+                    {formatFixedDe((inv.amount_cents / 100), 2)} {inv.currency.toUpperCase()} · {inv.status}
                   </p>
                 </div>
                 {safeHttpUrl(inv.hosted_invoice_url) && (

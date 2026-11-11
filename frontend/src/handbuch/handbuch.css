@@ -1,0 +1,9 @@
+/* Handbuch-Stile. Von den Konsumenten (App /help, pzweb) importiert, nicht von den Komponenten. */
+.hb-ui { font-weight: 600; background: #eef2f7; padding: 1px 7px; border-radius: 6px; overflow-wrap: anywhere; }
+.hb-root a { color: #2c6f99; }
+.hb-hl { fill: rgba(245, 158, 11, 0.1); stroke: #f59e0b; transition: all 0.15s; }
+.hb-mk circle { fill: #f59e0b; stroke: #fff; }
+.hb-mk text { fill: #fff; font-family: "DM Sans", system-ui, sans-serif; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.hb-g.hb-dim .hb-hl { stroke-opacity: 0.25; fill: rgba(0, 0, 0, 0); }
+.hb-g.hb-dim .hb-mk { opacity: 0.35; }
+.hb-g.hb-act .hb-hl { fill: rgba(245, 158, 11, 0.18); }

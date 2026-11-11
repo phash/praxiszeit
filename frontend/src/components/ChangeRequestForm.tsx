@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, ArrowRight } from 'lucide-react';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from './DialogFocusTrap';
 import { format } from 'date-fns';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
@@ -186,7 +186,7 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <FocusTrap focusTrapOptions={{ allowOutsideClick: true, initialFocus: false }}>
+      <DialogFocusTrap focusTrapOptions={{ allowOutsideClick: true, initialFocus: false }}>
       {/* Gesamtreview 1.20 (Fund 16): als modaler Dialog angekündigt, Name = Überschrift. */}
       <div
         role="dialog"
@@ -388,7 +388,7 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
           </div>
         </form>
       </div>
-      </FocusTrap>
+      </DialogFocusTrap>
     </div>
   );
 }

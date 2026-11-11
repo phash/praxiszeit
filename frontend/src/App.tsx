@@ -140,7 +140,7 @@ function App() {
           <Route path="shift-planning" element={<ShiftPlanning />} />
           <Route path="journal" element={<Navigate to="/time-tracking?tab=journal" replace />} />
           <Route path="profile" element={<Profile />} />
-          <Route path="help" element={<Help />} />
+          <Route path="help/:book?" element={<Help />} />
         </Route>
 
         {/* Protected Admin Routes */}

@@ -95,3 +95,10 @@ feedback/
 backend/test.db
 backend/test.db-shm
 backend/test.db-wal
+
+# Handbuch-Wegwerfinstanz (Secrets, Stichtag)
+e2e/handbuch/.env
+e2e/handbuch/.state
+e2e/handbuch/.faketime.env
+e2e/handbuch/contact-sheet.html
+e2e/handbuch/contact-sheet.png

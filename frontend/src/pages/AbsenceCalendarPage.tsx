@@ -21,6 +21,8 @@ import MonthSelector from '../components/MonthSelector';
 import EmptyState from '../components/EmptyState';
 import { useAuthStore } from '../stores/authStore';
 import VacationRequestEditModal from '../components/VacationRequestEditModal';
+import AbsenceDeleteRequestDialog from '../components/AbsenceDeleteRequestDialog';
+import type { AbsenceToDelete } from '../components/AbsenceDeleteRequestDialog';
 import { Link } from 'react-router-dom';
 import {
   CHANGE_REQUEST_JOURNAL_PATH, PAST_DAY_ABSENCE_HINT, mayBookAbsenceDirectly, mayDeleteAbsenceByDate,
@@ -122,6 +124,8 @@ export default function AbsenceCalendarPage() {
   const [calendarEntries, setCalendarEntries] = useState<CalendarEntry[]>([]);
   const [departmentFilter, setDepartmentFilter] = useState<string>(''); // #162
   const [myAbsences, setMyAbsences] = useState<Absence[]>([]);
+  // P1.1: Lösch-Antrag für eine eigene Abwesenheit eines vergangenen Tages.
+  const [absenceDeleteRequest, setAbsenceDeleteRequest] = useState<AbsenceToDelete | null>(null);
   const [holidays, setHolidays] = useState<PublicHoliday[]>([]);
   const [specialDays, setSpecialDays] = useState<SpecialDaySettings | null>(null); // #188: 24./31.12.
   // Teil B: eigene verkürzte Tage (authentifizierter Endpunkt, nicht /settings).
@@ -241,6 +245,12 @@ export default function AbsenceCalendarPage() {
   // Audit 2026-11-07 (S1-01): ein vergangener Beginn geht für Mitarbeitende nur
   // per Änderungsantrag (Server: 409 ``PAST_DAY_ABSENCE_DETAIL``). Der Weg über
   // einen Urlaubsantrag (Genehmigungspflicht) bleibt davon unberührt.
+  // Nur Überstundenausgleich (auch als eigener Grund) behält eingegebene Stunden; alle
+  // anderen Typen bucht der Server mit dem Tagessoll laut Vertrag (create_absence).
+  const hoursEditable = formData.reasonId
+    ? reasons.find((r) => r.id === formData.reasonId)?.base_behavior === 'overtime_comp'
+    : formData.type === 'overtime';
+  const showHalfDay = !isDateRange && !hoursEditable && (!!formData.reasonId || formData.type !== 'sick');
   const goesToRequestFlow = !formData.reasonId && formData.type !== 'sick' && vacationApprovalRequired;
   const pastDayBlocked = !goesToRequestFlow
     && !mayBookAbsenceDirectly(currentUser?.role === 'admin', formData.date, format(new Date(), 'yyyy-MM-dd'));
@@ -259,7 +269,7 @@ export default function AbsenceCalendarPage() {
           hours: formData.hours,
           absence_type: formData.type,
           note: formData.note || null,
-          half_day: !isDateRange && formData.half_day,
+          half_day: showHalfDay && formData.half_day,
         });
         toast.success('Antrag gestellt – wartet auf Genehmigung');
         fetchMyVacationRequests();
@@ -277,7 +287,7 @@ export default function AbsenceCalendarPage() {
         hours: formData.hours,
         note: formData.note || null,
         refund_vacation: refundVacation,
-        half_day: !isDateRange && formData.half_day,
+        half_day: showHalfDay && formData.half_day,
         ...(formData.reasonId ? { reason_id: formData.reasonId } : {}), // #312 MA-ABS-03
       };
       const res = await apiClient.post('/absences', submitData);
@@ -345,6 +355,14 @@ export default function AbsenceCalendarPage() {
     );
   };
 
+  // P1.1: vergangene eigene Abwesenheit → Löschung per Änderungsantrag
+  // (Server 409 PAST_DAY_ABSENCE_DETAIL beim direkten Löschen). Betriebsferien-
+  // Tage ändert nur die Verwaltung (CLOSURE_ABSENCE_DELETE_DETAIL).
+  const canRequestAbsenceDeletion = (absence: Absence): boolean =>
+    currentUser?.role !== 'admin'
+    && !absence.closure_id
+    && !mayDeleteAbsenceByDate(false, absence.date, format(new Date(), 'yyyy-MM-dd'));
+
   const handleDelete = (id: string) => {
     confirm({
       title: 'Abwesenheit löschen',
@@ -410,6 +428,16 @@ export default function AbsenceCalendarPage() {
         onConfirm={handleConfirm}
         onCancel={handleCancel}
       />
+      {absenceDeleteRequest && (
+        <AbsenceDeleteRequestDialog
+          absence={absenceDeleteRequest}
+          onClose={() => setAbsenceDeleteRequest(null)}
+          onSuccess={() => {
+            setAbsenceDeleteRequest(null);
+            toast.success('Lösch-Antrag eingereicht');
+          }}
+        />
+      )}
       <div className="flex items-center justify-between gap-2 mb-6 min-w-0">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">Abwesenheiten</h1>
         {activeTab === 'calendar' && (
@@ -600,7 +628,7 @@ export default function AbsenceCalendarPage() {
             </div>
 
             {/* #167: halber Tag (nur Einzeltag, nicht für Überstunden/Krank) */}
-            {!isDateRange && formData.type !== 'overtime' && formData.type !== 'sick' && (
+            {showHalfDay && (
               <div className="flex items-center space-x-2 p-3 bg-gray-50 rounded-lg">
                 <input
                   type="checkbox"
@@ -673,29 +701,28 @@ export default function AbsenceCalendarPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="absence-hours" className="block text-sm font-medium text-gray-700 mb-1">
                   Stunden {isDateRange && '(pro Tag)'}
                 </label>
                 <input
+                  id="absence-hours"
                   type="number"
                   inputMode="numeric"
                   step="0.5"
-                  value={formData.hours}
+                  min="0.5"
+                  value={hoursEditable ? formData.hours : ''}
                   onChange={(e) => setFormData({ ...formData, hours: parseHours(e.target.value) })}
-                  required
-                  disabled={!isDateRange && formData.half_day}
+                  required={hoursEditable}
+                  disabled={!hoursEditable}
+                  placeholder={hoursEditable ? '' : '–'}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary disabled:bg-gray-100 disabled:text-gray-400"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  {!isDateRange && formData.half_day
-                    ? 'Halber Tag: 0,5 × Tagessoll wird automatisch gebucht (Stundenwert wird ignoriert)'
-                    : formData.type === 'vacation'
-                    ? 'Stunden = Regelarbeitszeit pro Tag (für Urlaubsberechnung)'
-                    : formData.type === 'overtime'
-                    ? 'Vorausgefüllt mit Ihren Sollstunden des Tages'
-                    : currentUser?.use_daily_schedule
-                    ? 'Stunden werden aus Ihrem Tagesplan übernommen'
-                    : 'Stunden, die als Abwesenheit angerechnet werden'}
+                  {hoursEditable
+                    ? 'Stunden, die vom Überstundenkonto abgebaut werden – bei Tagesplan wird das Tagessoll des Tages gebucht'
+                    : showHalfDay && formData.half_day
+                    ? 'Halber Tag: 0,5 × Tagessoll wird automatisch gebucht'
+                    : 'Es wird das Tagessoll laut Vertrag gebucht'}
                 </p>
               </div>
               {!isDateRange && (
@@ -1141,15 +1168,15 @@ export default function AbsenceCalendarPage() {
                         >
                           Löschen
                         </button>
-                      ) : currentUser?.role !== 'admin'
-                        && !mayDeleteAbsenceByDate(false, absence.date, format(new Date(), 'yyyy-MM-dd')) ? (
-                        <Link
-                          to={CHANGE_REQUEST_JOURNAL_PATH}
-                          className="text-gray-500 hover:text-gray-700 underline"
+                      ) : canRequestAbsenceDeletion(absence) ? (
+                        <button
+                          type="button"
+                          onClick={() => setAbsenceDeleteRequest(absence)}
+                          className="text-amber-700 hover:text-amber-900 underline"
                           title={PAST_DAY_ABSENCE_HINT}
                         >
-                          per Antrag
-                        </Link>
+                          Löschung beantragen
+                        </button>
                       ) : null}
                     </td>
                   </tr>
@@ -1184,7 +1211,7 @@ export default function AbsenceCalendarPage() {
                         </Badge>
                       </div>
                     </div>
-                    {canDeleteAbsence(absence) && (
+                    {canDeleteAbsence(absence) ? (
                       <button
                         onClick={() => handleDelete(absence.id)}
                         className="p-3 text-red-600 hover:bg-red-50 rounded-lg transition"
@@ -1192,7 +1219,15 @@ export default function AbsenceCalendarPage() {
                       >
                         <Trash2 size={18} />
                       </button>
-                    )}
+                    ) : canRequestAbsenceDeletion(absence) ? (
+                      <button
+                        type="button"
+                        onClick={() => setAbsenceDeleteRequest(absence)}
+                        className="p-2 text-sm text-amber-700 hover:text-amber-900 underline"
+                      >
+                        Löschung beantragen
+                      </button>
+                    ) : null}
                   </div>
 
                   <div className="space-y-2 text-sm">

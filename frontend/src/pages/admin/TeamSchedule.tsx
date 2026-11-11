@@ -16,7 +16,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { blocksOf, formatWeekBlocks, hhmmToMinutes, validateWeekBlocks, WEEKDAY_LABELS } from '../../utils/workBlocks';
 import {
-  axisRange, compactSpan, coverage, departmentsOf, DRAG_SNAP_MINUTES, moveBlock, resizeBlock, sameWeek, snapMinutes,
+  axisRange, blockLabel, dayColumnPx, MIN_COLUMN_PX, coverage, departmentsOf, DRAG_SNAP_MINUTES, moveBlock, resizeBlock, sameWeek, snapMinutes,
 } from '../../utils/teamSchedule';
 import type { WeekBlocks } from '../../types/workBlocks';
 import type { ScheduleToday } from '../../types/user';
@@ -117,6 +117,19 @@ export default function TeamSchedule() {
   );
   const axis = useMemo(() => axisRange(planned), [planned]);
   const span = axis.end - axis.start;
+  // Ein einziger Beobachter für die Rasterbreite → Beschriftung nach echter Breite.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [columnPx, setColumnPx] = useState(MIN_COLUMN_PX);
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? el.getBoundingClientRect().width;
+      if (w > 0) setColumnPx(dayColumnPx(w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loading]);
   const dirtyCount = Object.keys(drafts).length;
 
   const setDraft = (r: TeamRow, week: WeekBlocks) => {
@@ -285,7 +298,7 @@ export default function TeamSchedule() {
       )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
-        <div className="min-w-[56rem]">
+        <div ref={gridRef} className="min-w-[56rem]">
           {/* Kopf: Wochentage mit Stundenmarken */}
           <div className="grid grid-cols-[14rem_repeat(5,minmax(0,1fr))] border-b border-gray-200 bg-gray-50 text-xs text-gray-500">
             <div className="px-3 py-2 font-medium text-gray-700">Person</div>
@@ -400,6 +413,7 @@ export default function TeamSchedule() {
                         const e = Math.min(axis.end, hhmmToMinutes(b.end));
                         if (e <= s) return null;
                         const text = `${personName(r)} · ${label} ${b.start}–${b.end}`;
+                        const spanText = blockLabel(b.start, b.end, e - s, span, columnPx);
                         const key = `${r.user_id}-${day}-${idx}`;
                         const style = {
                           left: `${((s - axis.start) / span) * 100}%`,
@@ -424,11 +438,11 @@ export default function TeamSchedule() {
                             onPointerCancel={onPointerUp}
                             onKeyDown={(ev) => { focusKey.current = key; onKeyDown(ev, r, day, idx); }}
                           >
-                            <span className="pointer-events-none">{compactSpan(b.start, b.end)}</span>
+                            <span className="pointer-events-none">{spanText}</span>
                           </button>
                         ) : (
-                          <div key={key} title={text} style={style} className={cls}>
-                            <span>{compactSpan(b.start, b.end)}</span>
+                          <div key={key} title={text} aria-label={text} role="img" style={style} className={cls}>
+                            <span aria-hidden="true">{spanText}</span>
                           </div>
                         );
                       })}

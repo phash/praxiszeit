@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  axisRange, compactSpan, coverage, departmentsOf, moveBlock, resizeBlock, sameWeek, snapMinutes,
+  axisRange, blockLabel, dayColumnPx, compactSpan, coverage, departmentsOf, moveBlock, resizeBlock, sameWeek, snapMinutes,
 } from './teamSchedule';
 import type { WeekBlocks } from '../types/workBlocks';
 
@@ -96,5 +96,56 @@ describe('sameWeek', () => {
     expect(sameWeek(w, week([['08:00', '12:00']]))).toBe(true);
     expect(sameWeek(w, moveBlock(w, 0, 0, 15))).toBe(false);
     expect(sameWeek(null, null)).toBe(true);
+  });
+});
+
+describe('blockLabel', () => {
+  const axis = 720; // 7–19 Uhr, Spalte min. 117 px → 1 Minute = 0,1625 px
+  // Mindestbreite eines Balkens in Minuten: (Zeichen × 7 + 10) / 117 × 720
+  const minutesFor = (chars: number) => ((chars * 7 + 10) / 117) * axis;
+  it('breit: volle Kurzform', () => {
+    expect(blockLabel('08:00', '12:00', 240, axis)).toBe('8–12');
+    expect(blockLabel('08:00', '16:00', 480, axis)).toBe('8–16');
+    expect(blockLabel('07:30', '14:00', 390, axis)).toBe('7:30–14');
+  });
+  it('Grenze voll: knapp darunter nur Beginn, genau/darüber voll', () => {
+    const m = minutesFor('13–16'.length); // 276,9 Min.
+    expect(blockLabel('13:00', '16:00', Math.ceil(m), axis)).toBe('13–16');
+    expect(blockLabel('13:00', '16:00', Math.floor(m) - 1, axis)).toBe('13–');
+  });
+  it('mittel: nur der Beginn mit Strich, nie eine abgeschnittene Zeit', () => {
+    expect(blockLabel('13:00', '16:30', 210, axis)).toBe('13–');
+    expect(blockLabel('14:30', '18:45', 330, axis)).toBe('14:30–');
+  });
+  it('Grenze Beginn: knapp darunter leer, darüber der Beginn', () => {
+    const m = minutesFor('13–'.length); // 191,2 Min.
+    expect(blockLabel('13:00', '17:00', Math.ceil(m), axis)).toBe('13–');
+    expect(blockLabel('13:00', '17:00', Math.floor(m) - 1, axis)).toBe('');
+  });
+  it('schmal: keine Beschriftung', () => {
+    expect(blockLabel('15:00', '16:00', 60, axis)).toBe('');
+    expect(blockLabel('15:00', '15:15', 15, axis)).toBe('');
+  });
+  it('längste Form „10:30–13:30“ braucht die volle Breite', () => {
+    expect(blockLabel('10:30', '13:30', 180, axis)).toBe('');
+    expect(blockLabel('10:30', '13:30', Math.ceil(minutesFor(11)), axis)).toBe('10:30–13:30');
+  });
+});
+
+describe('blockLabel mit gemessener Breite', () => {
+  it('200 px: volle Zeit für 8–12 und 15–18', () => {
+    expect(blockLabel('08:00', '12:00', 240, 720, 200)).toBe('8–12');
+    expect(blockLabel('15:00', '18:00', 180, 720, 200)).toBe('15–18');
+    expect(blockLabel('15:00', '16:30', 90, 720, 200)).toBe(''); // 15 px nutzbar < „15–“
+    expect(blockLabel('15:00', '16:30', 90, 720, 400)).toBe('15–'); // 40 px < 8×7, aber ≥ 3×7
+    expect(blockLabel('15:00', '16:30', 90, 720, 700)).toBe('15–16:30'); // 77,5 px ≥ 56
+  });
+  it('ohne Messung gilt die Mindestbreite', () => {
+    expect(blockLabel('08:00', '12:00', 240, 720)).toBe(blockLabel('08:00', '12:00', 240, 720, 117));
+  });
+  it('dayColumnPx: Raster − Personenspalte, geteilt durch 5, abzüglich Rand und Einzug; nie unter dem Minimum', () => {
+    expect(dayColumnPx(896)).toBeCloseTo(117.4, 1);
+    expect(dayColumnPx(1424)).toBeCloseTo(223, 0);
+    expect(dayColumnPx(300)).toBe(117);
   });
 });

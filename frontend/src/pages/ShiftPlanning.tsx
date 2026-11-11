@@ -330,7 +330,7 @@ export default function ShiftPlanning() {
                       aria-label="Vorschau-Schichtplan wählen"
                       value={previewId ?? ''}
                       onChange={(e) => setPreviewId(e.target.value || null)}
-                      className="rounded-lg border-gray-300 text-sm py-1"
+                      className="rounded-lg border border-gray-300 text-sm py-1"
                     >
                       <option value="">Bitte wählen</option>
                       {selectablePreviews.map((p) => (

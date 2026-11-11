@@ -51,3 +51,15 @@ describe('<VacationApprovals /> Arbeitstage (#496)', () => {
     expect(screen.queryByText('0.5 Tage')).toBeNull();
   });
 });
+
+describe('<VacationApprovals /> Schalter Genehmigungspflicht (P1.4)', () => {
+  it('trägt die sichtbare Überschrift als zugänglichen Namen', async () => {
+    // Der Schalter war ein reiner Knopf mit role="switch" ohne Namen —
+    // Bildschirmleser lasen nur „Schalter, aus".
+    mockApi([]);
+    render(<VacationApprovals />);
+    expect(
+      await screen.findByRole('switch', { name: 'Abwesenheitsanträge genehmigungspflichtig' }),
+    ).toBeInTheDocument();
+  });
+});

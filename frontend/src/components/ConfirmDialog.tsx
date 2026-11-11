@@ -1,5 +1,5 @@
 import { AlertTriangle } from 'lucide-react';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from './DialogFocusTrap';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -51,7 +51,7 @@ export default function ConfirmDialog({
       />
 
       {/* Dialog */}
-      <FocusTrap
+      <DialogFocusTrap
         focusTrapOptions={{
           escapeDeactivates: true,
           onDeactivate: onCancel,
@@ -104,7 +104,7 @@ export default function ConfirmDialog({
             </button>
           </div>
         </div>
-      </FocusTrap>
+      </DialogFocusTrap>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from '../../../components/DialogFocusTrap';
 import apiClient from '../../../api/client';
 import { Save, X, Trash2, Info } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
@@ -810,13 +810,16 @@ export default function WorkingHoursModal({
         className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
         onClick={onClose}
       >
-        <FocusTrap
+        <DialogFocusTrap
           focusTrapOptions={{
             allowOutsideClick: true,
             escapeDeactivates: true,
             onDeactivate: onClose,
           }}
         >
+          {/* P1.6/P2.1: DialogFocusTrap macht diesen Container fokussierbar
+              (tabIndex=-1) — ein Klick auf den Text einer Option im Kasten
+              „Verkürzung" lässt den Fokus im Dialog, statt auf <main> zu springen. */}
           <div
             role="dialog"
             aria-modal="true"
@@ -1287,7 +1290,7 @@ export default function WorkingHoursModal({
               </div>
             </div>
           </div>
-        </FocusTrap>
+        </DialogFocusTrap>
       </div>
     </>
   );

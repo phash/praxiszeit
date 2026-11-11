@@ -1,0 +1,1458 @@
+{
+ "comment": "Gemeinsame Quelle der Beispielzahlen von „So rechnet PraxisZeit“. Backend: backend/tests/test_handbuch_rechenbeispiele.py rechnet jeden Fall mit dem echten Berechnungscode nach; vitest: rechenbeispiele.test.ts prüft Tabellen (so-rechnet.ts) und Diagramm-Konstanten (diagrams/values.ts). Abschnitte: docs/BERECHNUNGEN.md. Mär./Apr. sind erfundene Beispielwerte.",
+ "diagram_months": [
+  {
+   "name": "Jan.",
+   "saldo": 1.5,
+   "konto": 1.5
+  },
+  {
+   "name": "Feb.",
+   "saldo": -8,
+   "konto": -6.5
+  },
+  {
+   "name": "Mär.",
+   "saldo": 6,
+   "konto": -0.5
+  },
+  {
+   "name": "Apr.",
+   "saldo": 2.5,
+   "konto": 2
+  }
+ ],
+ "cases": [
+  {
+   "id": "tagessoll-vollzeit",
+   "topic": "tagessoll",
+   "section": "3.1",
+   "row": [
+    "Vollzeit, gleichmäßig",
+    "40 h ÷ 5 Tage",
+    "8,00 h"
+   ],
+   "values": {
+    "daily_target": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "tagessoll-teilzeit",
+   "topic": "tagessoll",
+   "section": "3.1",
+   "row": [
+    "Teilzeit, gleichmäßig",
+    "25 h ÷ 5 Tage",
+    "5,00 h"
+   ],
+   "values": {
+    "daily_target": {
+     "v": 5,
+     "text": "5,00 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "tagessoll-3-tage",
+   "topic": "tagessoll",
+   "section": "3.1",
+   "row": [
+    "Teilzeit an 3 Tagen",
+    "24 h ÷ 3 Tage",
+    "8,00 h"
+   ],
+   "values": {
+    "daily_target": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "tagessoll-tagesplan",
+   "topic": "tagessoll",
+   "section": "3.2",
+   "row": [
+    "Individueller Tagesplan",
+    "Mo, Di, Mi je 8 h; Do, Fr 0 h",
+    "Mo bis Mi 8,00 h · Do und Fr 0,00 h"
+   ],
+   "values": {
+    "mo": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 2
+    },
+    "mi": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 2
+    },
+    "do": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 2
+    },
+    "fr": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "tagessoll-bloecke",
+   "topic": "tagessoll",
+   "section": "3.3",
+   "row": [
+    "Arbeitszeit-Blöcke",
+    "08:00–12:00 und 15:00–18:00, Pause 30 min (7:00 h − 30 min)",
+    "6,50 h"
+   ],
+   "values": {
+    "daily_target": {
+     "v": 6.5,
+     "text": "6,50 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "tagessoll-bloecke-4-08",
+   "topic": "tagessoll",
+   "section": "3.3",
+   "row": [
+    "Arbeitszeit-Block",
+    "08:00–12:05, keine Pause (4:05 h)",
+    "4,08 h"
+   ],
+   "values": {
+    "daily_target": {
+     "v": 4.08,
+     "text": "4,08 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "ist-pause-30",
+   "topic": "ist-pausen",
+   "section": "4",
+   "row": [
+    "08:00–16:30",
+    "30 min",
+    "8,00 h"
+   ],
+   "values": {
+    "net_hours": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "ist-ohne-pause",
+   "topic": "ist-pausen",
+   "section": "4",
+   "row": [
+    "08:00–12:05",
+    "keine",
+    "4,08 h"
+   ],
+   "values": {
+    "net_hours": {
+     "v": 4.08,
+     "text": "4,08 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "ist-boden-null",
+   "topic": "ist-pausen",
+   "section": "4",
+   "row": [
+    "08:00–08:20",
+    "30 min",
+    "0,00 h"
+   ],
+   "values": {
+    "net_hours": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "kappung-durchgestempelt",
+   "topic": "bloecke-kappung",
+   "section": "4.1",
+   "row": [
+    "Durchgestempelt",
+    "08:00–18:00",
+    "08:00–18:00",
+    "150 min",
+    "7,50 h",
+    "150 min"
+   ],
+   "values": {
+    "stored": {
+     "v": "08:00–18:00",
+     "text": "08:00–18:00",
+     "col": 1
+    },
+    "uncredited": {
+     "v": 150,
+     "text": "150 min",
+     "col": 3
+    },
+    "net_hours": {
+     "v": 7.5,
+     "text": "7,50 h",
+     "col": 4
+    },
+    "not_credited": {
+     "v": 150,
+     "text": "150 min",
+     "col": 5
+    }
+   }
+  },
+  {
+   "id": "kappung-ausstempeln-12-05",
+   "topic": "bloecke-kappung",
+   "section": "4.1",
+   "row": [
+    "Ausstempeln um 12:05",
+    "08:00–12:05",
+    "08:00–12:05",
+    "0 min",
+    "4,08 h",
+    "0 min"
+   ],
+   "values": {
+    "stored": {
+     "v": "08:00–12:05",
+     "text": "08:00–12:05",
+     "col": 1
+    },
+    "uncredited": {
+     "v": 0,
+     "text": "0 min",
+     "col": 3
+    },
+    "net_hours": {
+     "v": 4.08,
+     "text": "4,08 h",
+     "col": 4
+    },
+    "not_credited": {
+     "v": 0,
+     "text": "0 min",
+     "col": 5
+    }
+   }
+  },
+  {
+   "id": "kappung-in-luecke",
+   "topic": "bloecke-kappung",
+   "section": "4.1",
+   "row": [
+    "Ganz in der Lücke",
+    "12:30–14:30",
+    "12:30–14:30",
+    "120 min",
+    "0,00 h",
+    "120 min"
+   ],
+   "values": {
+    "stored": {
+     "v": "12:30–14:30",
+     "text": "12:30–14:30",
+     "col": 1
+    },
+    "uncredited": {
+     "v": 120,
+     "text": "120 min",
+     "col": 3
+    },
+    "net_hours": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 4
+    },
+    "not_credited": {
+     "v": 120,
+     "text": "120 min",
+     "col": 5
+    }
+   }
+  },
+  {
+   "id": "kappung-huelle-und-luecke",
+   "topic": "bloecke-kappung",
+   "section": "4.1",
+   "row": [
+    "Vor und nach der Hülle, dazu die Lücke",
+    "07:00–19:00",
+    "07:45–18:15",
+    "150 min",
+    "8,00 h",
+    "240 min"
+   ],
+   "values": {
+    "stored": {
+     "v": "07:45–18:15",
+     "text": "07:45–18:15",
+     "col": 2
+    },
+    "uncredited": {
+     "v": 150,
+     "text": "150 min",
+     "col": 3
+    },
+    "net_hours": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 4
+    },
+    "not_credited": {
+     "v": 240,
+     "text": "240 min",
+     "col": 5
+    }
+   }
+  },
+  {
+   "id": "kappung-vor-huelle",
+   "topic": "bloecke-kappung",
+   "section": "4.1",
+   "row": [
+    "Ganz vor der Hülle",
+    "05:00–07:00",
+    "05:00–05:00 (Beginn = Ende)",
+    "0 min",
+    "0,00 h",
+    "120 min"
+   ],
+   "values": {
+    "stored": {
+     "v": "05:00–05:00",
+     "text": "05:00–05:00",
+     "col": 2
+    },
+    "uncredited": {
+     "v": 0,
+     "text": "0 min",
+     "col": 3
+    },
+    "net_hours": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 4
+    },
+    "not_credited": {
+     "v": 120,
+     "text": "120 min",
+     "col": 5
+    }
+   }
+  },
+  {
+   "id": "kappung-pause-30",
+   "topic": "bloecke-kappung",
+   "section": "4.1",
+   "row": [
+    "Durchgestempelt, 30 min Pause",
+    "08:00–18:00",
+    "08:00–18:00",
+    "150 min",
+    "7,00 h",
+    "150 min"
+   ],
+   "values": {
+    "stored": {
+     "v": "08:00–18:00",
+     "text": "08:00–18:00",
+     "col": 1
+    },
+    "uncredited": {
+     "v": 150,
+     "text": "150 min",
+     "col": 3
+    },
+    "net_hours": {
+     "v": 7,
+     "text": "7,00 h",
+     "col": 4
+    },
+    "not_credited": {
+     "v": 150,
+     "text": "150 min",
+     "col": 5
+    }
+   }
+  },
+  {
+   "id": "kappung-werktag-ohne-block",
+   "topic": "bloecke-kappung",
+   "section": "4.1",
+   "row": [
+    "Werktag ohne Arbeitszeit-Block (Dienstag)",
+    "09:00–12:00",
+    "09:00–09:00 (Beginn = Ende)",
+    "0 min",
+    "0,00 h",
+    "180 min"
+   ],
+   "values": {
+    "net_hours": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 4
+    },
+    "not_credited": {
+     "v": 180,
+     "text": "180 min",
+     "col": 5
+    }
+   }
+  },
+  {
+   "id": "kappung-puffer-07-30",
+   "topic": "bloecke-kappung",
+   "section": "4.1",
+   "values": {
+    "eff_start": {
+     "v": "07:45",
+     "text": "07:45"
+    },
+    "raw_start": {
+     "v": "07:30",
+     "text": "07:30"
+    }
+   }
+  },
+  {
+   "id": "diagram-eintrag-a",
+   "topic": "bloecke-kappung",
+   "section": "4.1",
+   "diagram": "tag-zeitstrahl",
+   "values": {
+    "eff_start": {
+     "v": "07:45",
+     "text": "07:45"
+    },
+    "eff_end": {
+     "v": "12:10",
+     "text": "12:10"
+    },
+    "uncredited": {
+     "v": 0,
+     "text": "0 min"
+    },
+    "net_hours": {
+     "v": 4.4167,
+     "text": "4:25 h"
+    },
+    "not_credited": {
+     "v": 15,
+     "text": "15 min"
+    }
+   }
+  },
+  {
+   "id": "diagram-eintrag-b",
+   "topic": "bloecke-kappung",
+   "section": "4.1",
+   "diagram": "tag-zeitstrahl",
+   "values": {
+    "eff_start": {
+     "v": "13:00",
+     "text": "13:00"
+    },
+    "eff_end": {
+     "v": "16:15",
+     "text": "16:15"
+    },
+    "uncredited": {
+     "v": 105,
+     "text": "105 min"
+    },
+    "net_hours": {
+     "v": 1.5,
+     "text": "1:30 h"
+    },
+    "not_credited": {
+     "v": 120,
+     "text": "120 min"
+    }
+   }
+  },
+  {
+   "id": "diagram-huelle-luecke",
+   "topic": "bloecke-kappung",
+   "section": "4.1",
+   "diagram": "tag-zeitstrahl",
+   "values": {
+    "hull_start": {
+     "v": "07:45",
+     "text": "07:45"
+    },
+    "hull_end": {
+     "v": "16:15",
+     "text": "16:15"
+    },
+    "gap_min": {
+     "v": 150,
+     "text": "150 min"
+    }
+   }
+  },
+  {
+   "id": "monat-soll",
+   "topic": "monatssaldo",
+   "section": "13.1",
+   "row": [
+    "Soll",
+    "22 Werktage − 1 Feiertag − 4 Urlaubstage = 17 Tage × 8,00 h",
+    "136,00 h"
+   ],
+   "diagram": "soll-ist",
+   "values": {
+    "soll_days": {
+     "v": 17,
+     "text": "17 Tage",
+     "col": 1
+    },
+    "soll": {
+     "v": 136,
+     "text": "136,00 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "monat-ist",
+   "topic": "monatssaldo",
+   "section": "13.1",
+   "row": [
+    "Ist",
+    "14 Tage × 8,00 h + 3 Tage × 8,50 h",
+    "137,50 h"
+   ],
+   "diagram": "soll-ist",
+   "values": {
+    "ist": {
+     "v": 137.5,
+     "text": "137,50 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "monat-saldo",
+   "topic": "monatssaldo",
+   "section": "13.1",
+   "row": [
+    "Saldo",
+    "137,50 h − 136,00 h",
+    "+1,50 h"
+   ],
+   "diagram": "soll-ist",
+   "values": {
+    "saldo": {
+     "v": 1.5,
+     "text": "+1,50 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "monat-ueberstundenausgleich",
+   "topic": "monatssaldo",
+   "section": "13.3",
+   "row": [
+    "Monat mit einem Tag Überstundenausgleich (Beispiel Februar)",
+    "19 Tage × 8,00 h gearbeitet, 1 Tag Ausgleich, Soll 20 × 8,00 h",
+    "−8,00 h"
+   ],
+   "values": {
+    "saldo": {
+     "v": -8,
+     "text": "−8,00 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "monat-konto",
+   "topic": "monatssaldo",
+   "section": "7.2",
+   "row": [
+    "Überstundenkonto",
+    "Januar +1,50 h, Februar −8,00 h",
+    "Ende Januar +1,50 h · Ende Februar −6,50 h"
+   ],
+   "values": {
+    "jan": {
+     "v": 1.5,
+     "text": "+1,50 h",
+     "col": 1
+    },
+    "feb": {
+     "v": -6.5,
+     "text": "−6,50 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "monat-stichtag-ausgestempelt",
+   "topic": "monatssaldo",
+   "section": "7.4",
+   "row": [
+    "Beispiel: Heute (11.03.) ist bereits ausgestempelt",
+    "11.03."
+   ],
+   "values": {
+    "cutoff": {
+     "v": "11.03.",
+     "text": "11.03.",
+     "col": 1
+    }
+   }
+  },
+  {
+   "id": "monat-stichtag-nicht",
+   "topic": "monatssaldo",
+   "section": "7.4",
+   "row": [
+    "Beispiel: Heute (11.03.) ist noch nicht ausgestempelt",
+    "10.03."
+   ],
+   "values": {
+    "cutoff": {
+     "v": "10.03.",
+     "text": "10.03.",
+     "col": 1
+    }
+   }
+  },
+  {
+   "id": "abw-urlaub",
+   "topic": "abwesenheiten",
+   "section": "6",
+   "row": [
+    "Urlaub",
+    "0,00 h",
+    "0,00 h",
+    "±0,00 h",
+    "1 Tag",
+    "Soll sinkt, ein Urlaubstag wird verbraucht"
+   ],
+   "values": {
+    "soll": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 1
+    },
+    "ist": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 2
+    },
+    "saldo": {
+     "v": 0,
+     "text": "±0,00 h",
+     "col": 3
+    },
+    "vacation_days": {
+     "v": 1,
+     "text": "1 Tag",
+     "col": 4
+    }
+   }
+  },
+  {
+   "id": "abw-krank",
+   "topic": "abwesenheiten",
+   "section": "6",
+   "row": [
+    "Krank",
+    "8,00 h",
+    "8,00 h",
+    "±0,00 h",
+    "0 Tage",
+    "Soll bleibt, die Stunden zählen als Ist"
+   ],
+   "values": {
+    "soll": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 1
+    },
+    "ist": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 2
+    },
+    "saldo": {
+     "v": 0,
+     "text": "±0,00 h",
+     "col": 3
+    },
+    "vacation_days": {
+     "v": 0,
+     "text": "0 Tage",
+     "col": 4
+    }
+   }
+  },
+  {
+   "id": "abw-fortbildung",
+   "topic": "abwesenheiten",
+   "section": "6",
+   "row": [
+    "Fortbildung",
+    "8,00 h",
+    "8,00 h",
+    "±0,00 h",
+    "0 Tage",
+    "Soll bleibt, die Stunden zählen als Ist"
+   ],
+   "values": {
+    "soll": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 1
+    },
+    "ist": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 2
+    },
+    "saldo": {
+     "v": 0,
+     "text": "±0,00 h",
+     "col": 3
+    },
+    "vacation_days": {
+     "v": 0,
+     "text": "0 Tage",
+     "col": 4
+    }
+   }
+  },
+  {
+   "id": "abw-freistellung",
+   "topic": "abwesenheiten",
+   "section": "6",
+   "row": [
+    "Bezahlte Freistellung",
+    "0,00 h",
+    "0,00 h",
+    "±0,00 h",
+    "0 Tage",
+    "Soll sinkt, kein Urlaubstag"
+   ],
+   "values": {
+    "soll": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 1
+    },
+    "ist": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 2
+    },
+    "saldo": {
+     "v": 0,
+     "text": "±0,00 h",
+     "col": 3
+    },
+    "vacation_days": {
+     "v": 0,
+     "text": "0 Tage",
+     "col": 4
+    }
+   }
+  },
+  {
+   "id": "abw-sonstige",
+   "topic": "abwesenheiten",
+   "section": "6",
+   "row": [
+    "Sonstiges (auch unbezahlt entschuldigt)",
+    "0,00 h",
+    "0,00 h",
+    "±0,00 h",
+    "0 Tage",
+    "Soll sinkt, kein Urlaubstag; ob die Zeit bezahlt wird, regelt der Vertrag"
+   ],
+   "values": {
+    "soll": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 1
+    },
+    "ist": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 2
+    },
+    "saldo": {
+     "v": 0,
+     "text": "±0,00 h",
+     "col": 3
+    },
+    "vacation_days": {
+     "v": 0,
+     "text": "0 Tage",
+     "col": 4
+    }
+   }
+  },
+  {
+   "id": "abw-ueberstundenausgleich",
+   "topic": "abwesenheiten",
+   "section": "6",
+   "row": [
+    "Überstundenausgleich",
+    "8,00 h",
+    "0,00 h",
+    "−8,00 h",
+    "0 Tage",
+    "Soll bleibt, Ist ist 0: das Überstundenkonto sinkt"
+   ],
+   "values": {
+    "soll": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 1
+    },
+    "ist": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 2
+    },
+    "saldo": {
+     "v": -8,
+     "text": "−8,00 h",
+     "col": 3
+    },
+    "vacation_days": {
+     "v": 0,
+     "text": "0 Tage",
+     "col": 4
+    }
+   }
+  },
+  {
+   "id": "urlaub-ohne-uebertrag",
+   "topic": "urlaubskonto",
+   "section": "13.4",
+   "row": [
+    "Beispiel Vollzeit, ohne Übertrag",
+    "30 Tage Anspruch − 4 Tage genommen",
+    "Rest 26 Tage"
+   ],
+   "values": {
+    "budget": {
+     "v": 30,
+     "text": "30 Tage",
+     "col": 1
+    },
+    "used": {
+     "v": 4,
+     "text": "4 Tage",
+     "col": 1
+    },
+    "rest": {
+     "v": 26,
+     "text": "26 Tage",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "urlaub-mit-uebertrag",
+   "topic": "urlaubskonto",
+   "section": "8.1",
+   "row": [
+    "Beispiel mit Übertrag (wie im Diagramm)",
+    "30 Tage Anspruch + 2 Tage Übertrag = 32 Tage Budget − 4 Tage genommen",
+    "Rest 28 Tage"
+   ],
+   "diagram": "urlaubskonto",
+   "values": {
+    "entitlement": {
+     "v": 30,
+     "text": "30 Tage",
+     "col": 1
+    },
+    "carryover": {
+     "v": 2,
+     "text": "2 Tage",
+     "col": 1
+    },
+    "budget": {
+     "v": 32,
+     "text": "32 Tage",
+     "col": 1
+    },
+    "used": {
+     "v": 4,
+     "text": "4 Tage",
+     "col": 1
+    },
+    "rest": {
+     "v": 28,
+     "text": "28 Tage",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "urlaub-anspruch-3-tage",
+   "topic": "urlaubskonto",
+   "section": "8.1",
+   "row": [
+    "Vorschlag beim Anlegen einer Person mit 3 Arbeitstagen pro Woche (überschreibbar)",
+    "30 × 3 ÷ 5",
+    "18 Tage"
+   ],
+   "values": {
+    "entitlement": {
+     "v": 18,
+     "text": "18 Tage",
+     "col": 2
+    },
+    "budget": {
+     "v": 18,
+     "text": "18 Tage",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "urlaub-halber-feiertag",
+   "topic": "urlaubskonto",
+   "section": "8.2",
+   "row": [
+    "Urlaub am 24.12. als „halber Feiertag“",
+    "Tagesprinzip: halber Tag",
+    "0,5 Tage"
+   ],
+   "values": {
+    "used": {
+     "v": 0.5,
+     "text": "0,5 Tage",
+     "col": 2
+    },
+    "report": {
+     "v": 0.5,
+     "text": "0,5 Tage",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "urlaub-eintritt-15-04",
+   "topic": "urlaubskonto",
+   "section": "8.1",
+   "row": [
+    "Beispiel: Eintritt am 15.04., Anspruch 30 Tage",
+    "30 × (8 + 16/30) ÷ 12, also 8 volle Monate plus 16 von 30 Tagen im April",
+    "21,3 Tage"
+   ],
+   "values": {
+    "budget": {
+     "v": 21.3,
+     "text": "21,3 Tage",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "urlaub-frist",
+   "topic": "urlaubskonto",
+   "section": "8.1",
+   "row": [
+    "Frist für den Resturlaub aus 2026 (Standard)",
+    "31. März des Folgejahres",
+    "31.03.2027"
+   ],
+   "values": {
+    "deadline": {
+     "v": "31.03.2027",
+     "text": "31.03.2027",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "urlaub-teilzeit-woche",
+   "topic": "urlaubskonto",
+   "section": "8.4",
+   "row": [
+    "Teilzeit Mo–Mi, eine ganze Urlaubswoche (Mo–Fr)",
+    "nur Tage mit Soll zählen",
+    "3 Tage"
+   ],
+   "values": {
+    "days": {
+     "v": 3,
+     "text": "3 Tage",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "betriebsferien-mo",
+   "topic": "betriebsferien",
+   "section": "9.4",
+   "row": [
+    "Mo",
+    "3 Tage",
+    "Urlaub",
+    "2 Tage"
+   ],
+   "diagram": "betriebsferien-split",
+   "values": {
+    "rest_before": {
+     "v": 3,
+     "text": "3 Tage",
+     "col": 1
+    },
+    "buchung": {
+     "v": "Urlaub",
+     "text": "Urlaub",
+     "col": 2
+    },
+    "rest_after": {
+     "v": 2,
+     "text": "2 Tage",
+     "col": 3
+    }
+   }
+  },
+  {
+   "id": "betriebsferien-di",
+   "topic": "betriebsferien",
+   "section": "9.4",
+   "row": [
+    "Di",
+    "2 Tage",
+    "Urlaub",
+    "1 Tag"
+   ],
+   "diagram": "betriebsferien-split",
+   "values": {
+    "rest_before": {
+     "v": 2,
+     "text": "2 Tage",
+     "col": 1
+    },
+    "buchung": {
+     "v": "Urlaub",
+     "text": "Urlaub",
+     "col": 2
+    },
+    "rest_after": {
+     "v": 1,
+     "text": "1 Tag",
+     "col": 3
+    }
+   }
+  },
+  {
+   "id": "betriebsferien-mi",
+   "topic": "betriebsferien",
+   "section": "9.4",
+   "row": [
+    "Mi",
+    "1 Tag",
+    "Urlaub",
+    "0 Tage"
+   ],
+   "diagram": "betriebsferien-split",
+   "values": {
+    "rest_before": {
+     "v": 1,
+     "text": "1 Tag",
+     "col": 1
+    },
+    "buchung": {
+     "v": "Urlaub",
+     "text": "Urlaub",
+     "col": 2
+    },
+    "rest_after": {
+     "v": 0,
+     "text": "0 Tage",
+     "col": 3
+    }
+   }
+  },
+  {
+   "id": "betriebsferien-do",
+   "topic": "betriebsferien",
+   "section": "9.4",
+   "row": [
+    "Do",
+    "0 Tage",
+    "Überstundenausgleich",
+    "0 Tage"
+   ],
+   "diagram": "betriebsferien-split",
+   "values": {
+    "rest_before": {
+     "v": 0,
+     "text": "0 Tage",
+     "col": 1
+    },
+    "buchung": {
+     "v": "Überstundenausgleich",
+     "text": "Überstundenausgleich",
+     "col": 2
+    },
+    "rest_after": {
+     "v": 0,
+     "text": "0 Tage",
+     "col": 3
+    }
+   }
+  },
+  {
+   "id": "betriebsferien-fr",
+   "topic": "betriebsferien",
+   "section": "9.4",
+   "row": [
+    "Fr",
+    "0 Tage",
+    "Überstundenausgleich",
+    "0 Tage"
+   ],
+   "diagram": "betriebsferien-split",
+   "values": {
+    "rest_before": {
+     "v": 0,
+     "text": "0 Tage",
+     "col": 1
+    },
+    "buchung": {
+     "v": "Überstundenausgleich",
+     "text": "Überstundenausgleich",
+     "col": 2
+    },
+    "rest_after": {
+     "v": 0,
+     "text": "0 Tage",
+     "col": 3
+    }
+   }
+  },
+  {
+   "id": "betriebsferien-konto",
+   "topic": "betriebsferien",
+   "section": "9.4",
+   "row": [
+    "Überstundenkonto nach der Schließung",
+    "2 Tage Überstundenausgleich × 8,00 h",
+    "−16,00 h"
+   ],
+   "diagram": "betriebsferien-split",
+   "values": {
+    "konto": {
+     "v": -16,
+     "text": "−16,00 h",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "betriebsferien-aus",
+   "topic": "betriebsferien",
+   "section": "9.4",
+   "row": [
+    "Einstellung aus",
+    "alle 5 Tage als Urlaub",
+    "Resturlaub −2 Tage"
+   ],
+   "values": {
+    "vacation_days": {
+     "v": 5,
+     "text": "5 Tage",
+     "col": 1
+    },
+    "rest": {
+     "v": -2,
+     "text": "−2 Tage",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "sondertag-arbeitstag",
+   "topic": "sondertage",
+   "section": "12.2",
+   "row": [
+    "Arbeitstag",
+    "8,00 h",
+    "1 Tag"
+   ],
+   "values": {
+    "soll": {
+     "v": 8,
+     "text": "8,00 h",
+     "col": 1
+    },
+    "vacation_cost": {
+     "v": 1,
+     "text": "1 Tag",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "sondertag-halb",
+   "topic": "sondertage",
+   "section": "12.2",
+   "row": [
+    "Halbtag (halber Feiertag)",
+    "4,00 h",
+    "0,5 Tage"
+   ],
+   "values": {
+    "soll": {
+     "v": 4,
+     "text": "4,00 h",
+     "col": 1
+    },
+    "vacation_cost": {
+     "v": 0.5,
+     "text": "0,5 Tage",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "sondertag-frei",
+   "topic": "sondertage",
+   "section": "12.2",
+   "row": [
+    "Frei, als Urlaub gewertet",
+    "0,00 h",
+    "Kein Urlaub zu buchen; 1 Tag wird automatisch vom Urlaubskonto abgezogen"
+   ],
+   "values": {
+    "soll": {
+     "v": 0,
+     "text": "0,00 h",
+     "col": 1
+    },
+    "vacation_cost": {
+     "v": 1,
+     "text": "1 Tag",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "sondertag-frei-ohne-urlaub",
+   "topic": "sondertage",
+   "section": "12.2",
+   "row": [
+    "Frei, als bezahlte Freistellung gewertet",
+    "0,00 h",
+    "Kein Urlaub zu buchen; 0 Tage werden abgezogen"
+   ],
+   "values": {
+    "vacation_cost": {
+     "v": 0,
+     "text": "0 Tage",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "sondertag-verkuerzt",
+   "topic": "sondertage",
+   "section": "12.2",
+   "row": [
+    "Verkürzt auf 4 Stunden",
+    "4,00 h",
+    "0,5 Tage"
+   ],
+   "values": {
+    "soll": {
+     "v": 4,
+     "text": "4,00 h",
+     "col": 1
+    },
+    "vacation_cost": {
+     "v": 0.5,
+     "text": "0,5 Tage",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "sondertag-krank-verkuerzt",
+   "topic": "sondertage",
+   "section": "12.2",
+   "row": [
+    "Krank am 24.12., verkürzt auf 4 Stunden",
+    "4,00 h",
+    "4,00 h",
+    "±0,00 h"
+   ],
+   "values": {
+    "soll": {
+     "v": 4,
+     "text": "4,00 h",
+     "col": 1
+    },
+    "ist": {
+     "v": 4,
+     "text": "4,00 h",
+     "col": 2
+    },
+    "saldo": {
+     "v": 0,
+     "text": "±0,00 h",
+     "col": 3
+    }
+   }
+  },
+  {
+   "id": "sondertag-verkuerzt-3h",
+   "topic": "sondertage",
+   "section": "12.2",
+   "values": {
+    "soll": {
+     "v": 3,
+     "text": "3,00 h"
+    }
+   }
+  },
+  {
+   "id": "minijob-50",
+   "topic": "minijob",
+   "section": "10.2",
+   "row": [
+    "Beispiel: 10 h pro Woche vereinbart, 66 h erfasst",
+    "Monatszeit 10 × 13 ÷ 3 = 43,33 h; Grenze 21,67 h; Plusstunden 66 − 43,33 = 22,67 h",
+    "Warnung"
+   ],
+   "values": {
+    "agreed": {
+     "v": 43.33,
+     "text": "43,33 h",
+     "col": 1
+    },
+    "cap": {
+     "v": 21.67,
+     "text": "21,67 h",
+     "col": 1
+    },
+    "account": {
+     "v": 22.67,
+     "text": "22,67 h",
+     "col": 1
+    },
+    "warning": {
+     "v": "ja",
+     "text": "Warnung",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "minijob-mindestlohn-2026",
+   "topic": "minijob",
+   "section": "10.1",
+   "row": [
+    "Gesetzlicher Mindestlohn ab 01.01.2026",
+    "13,90 € pro Stunde"
+   ],
+   "values": {
+    "wage": {
+     "v": 13.9,
+     "text": "13,90 €",
+     "col": 1
+    }
+   }
+  },
+  {
+   "id": "minijob-mindestlohn-2027",
+   "topic": "minijob",
+   "section": "10.1",
+   "row": [
+    "Gesetzlicher Mindestlohn ab 01.01.2027",
+    "14,60 € pro Stunde"
+   ],
+   "values": {
+    "wage": {
+     "v": 14.6,
+     "text": "14,60 €",
+     "col": 1
+    }
+   }
+  },
+  {
+   "id": "abschluss-erster-lauf",
+   "topic": "jahresabschluss",
+   "section": "11",
+   "row": [
+    "Erster Abschluss 2025",
+    "+1,00 h",
+    "26 Tage"
+   ],
+   "values": {
+    "overtime": {
+     "v": 1,
+     "text": "+1,00 h",
+     "col": 1
+    },
+    "vacation": {
+     "v": 26,
+     "text": "26 Tage",
+     "col": 2
+    }
+   }
+  },
+  {
+   "id": "abschluss-zweiter-lauf",
+   "topic": "jahresabschluss",
+   "section": "11",
+   "row": [
+    "Nach nachträglicher Änderung (+1,00 h) erneut abgeschlossen",
+    "+2,00 h",
+    "26 Tage"
+   ],
+   "values": {
+    "overtime": {
+     "v": 2,
+     "text": "+2,00 h",
+     "col": 1
+    },
+    "vacation": {
+     "v": 26,
+     "text": "26 Tage",
+     "col": 2
+    }
+   }
+  }
+ ]
+}

@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ToastProvider } from '../../../contexts/ToastContext';
 import { useSystemStore } from '../../../stores/systemStore';
 import UserForm from './UserForm';
@@ -50,7 +50,7 @@ describe('#377 UserForm MiLoG checkbox', () => {
     renderForm();
     fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/i));
     // Default weekly_hours 40 → Monatszeit ≈ 173.3 h → Cap ≈ 86.7 h; Mindestlohn 13,90
-    expect(screen.getByText(/13\.90 €\/h/)).toBeInTheDocument();
+    expect(screen.getByText(/13,90 €\/h/)).toBeInTheDocument();
     expect(screen.getByText(/max\. Konto/)).toBeInTheDocument();
   });
 
@@ -757,8 +757,8 @@ describe('Spec 2026-10-08 (12.2): Anlegen mit Arbeitszeit-Blöcken', () => {
     expect(screen.getByText(/6 Tage \(basierend auf 1 Arbeitstagen\/Woche\)/)).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/i));
     // 6,5 h × 13/3 ≈ 28,2 h
-    expect(screen.getByText(/aus den Wochenstunden \(≈ 28\.2 h\)/)).toBeInTheDocument();
-    expect(document.getElementById('f-agreed-monthly')).toHaveAttribute('placeholder', 'aus Wochenstunden ≈ 28.2');
+    expect(screen.getByText(/aus den Wochenstunden \(≈ 28,2 h\)/)).toBeInTheDocument();
+    expect(document.getElementById('f-agreed-monthly')).toHaveAttribute('placeholder', 'aus Wochenstunden ≈ 28,2');
     fireEvent.click(screen.getByLabelText(/Feste Monatsarbeitszeit/));
     // Die Blöcke hinterlegen die geplante Anwesenheit bereits.
     expect(screen.queryByText(/Empfehlung bei fester Monatsarbeitszeit/)).not.toBeInTheDocument();
@@ -950,5 +950,86 @@ describe('Bearbeiten: Anzeige aus schedule_today, keine Empfehlung/MiLoG-Schätz
     renderForm({ editUser: { ...rowUser, schedule_today: undefined } });
     expect(screen.getByText('20 Tage/Jahr')).toBeInTheDocument();
     expect(screen.getByText('Stundenzählung aktiv')).toBeInTheDocument();
+  });
+});
+
+describe('E-Mail-Platzhalter (P1.5)', () => {
+  it('nennt keine echte Domain, sondern eine reservierte Beispiel-TLD (RFC 2606)', () => {
+    renderForm();
+    const email = screen.getByLabelText(/E-Mail/) as HTMLInputElement;
+    expect(email.placeholder).toBe('name@praxis.example');
+    expect(email.placeholder).not.toMatch(/example\.de/);
+  });
+});
+
+// P4.4: individuelle Verfallsfrist Resturlaub (users.vacation_carryover_deadline).
+describe('UserForm: Verfallsdatum Resturlaub je Person (P4.4)', () => {
+  it('zeigt beim Bearbeiten das gespeicherte Datum (kein Edit-Reset auf leer)', () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2027-06-30' } });
+    expect(screen.getByLabelText(/Resturlaub verfällt am/)).toHaveValue('2027-06-30');
+  });
+
+  it('schickt Änderung und Leeren (null = Standard 31.03.) im PUT', async () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2027-06-30' } });
+    fireEvent.change(screen.getByLabelText(/Resturlaub verfällt am/), { target: { value: '2027-09-30' } });
+    fireEvent.submit(document.querySelector('form')!);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1].vacation_carryover_deadline).toBe('2027-09-30');
+
+    putMock.mockClear();
+    fireEvent.change(screen.getByLabelText(/Resturlaub verfällt am/), { target: { value: '' } });
+    fireEvent.submit(document.querySelector('form')!);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+    expect(putMock.mock.calls[0][1].vacation_carryover_deadline).toBeNull();
+  });
+
+  it('beim Anlegen gibt es das Feld nicht (Backend-UserCreate kennt es nicht)', () => {
+    renderForm();
+    expect(screen.queryByLabelText(/Resturlaub verfällt am/)).not.toBeInTheDocument();
+  });
+});
+
+describe('UserForm: Verfallsdatum ist ein festes Datum (P4.4, R28)', () => {
+  it('nennt im Hinweis die absolute Geltung für alle Jahre', () => {
+    renderForm({ editUser: baseEditUser });
+    expect(screen.getByText(/Gilt als festes Datum für alle Jahre; leer = 31\.03\. des Folgejahres\. Nach Ablauf bitte anpassen oder leeren\./)).toBeInTheDocument();
+  });
+
+  it('warnt (nicht blockierend) bei einem Datum in der Vergangenheit', async () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2020-03-31' } });
+    expect(screen.getByRole('status')).toHaveTextContent(/liegt in der Vergangenheit/);
+    fireEvent.submit(document.querySelector('form')!);
+    await waitFor(() => expect(putMock).toHaveBeenCalled());
+  });
+
+  it('warnt nicht bei einem Datum in der Zukunft oder leer', () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2999-03-31' } });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/Resturlaub verfällt am/), { target: { value: '' } });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+describe('UserForm: Vergangenheits-Warnung nutzt das lokale Datum (P4.4, R28 Runde 2)', () => {
+  const oldTz = process.env.TZ;
+  beforeEach(() => {
+    process.env.TZ = 'Europe/Berlin';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // 23:30 UTC = 00:30 am 12.11. in Berlin: UTC-Datum ist noch der 11.11.
+    vi.setSystemTime(new Date('2026-11-11T23:30:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    if (oldTz === undefined) delete process.env.TZ; else process.env.TZ = oldTz;
+  });
+
+  it('warnt bei einem Datum von „gestern“ (lokal), obwohl es in UTC noch heute ist', () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2026-11-11' } });
+    expect(screen.getByRole('status')).toHaveTextContent(/liegt in der Vergangenheit/);
+  });
+
+  it('warnt nicht bei dem lokalen heutigen Datum', () => {
+    renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2026-11-12' } });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

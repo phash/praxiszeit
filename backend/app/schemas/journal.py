@@ -27,6 +27,8 @@ class JournalAbsence(BaseModel):
     id: str
     type: str
     hours: float
+    # P1.1: Betriebsferien-Tag (closure_id gesetzt) — nur die Verwaltung ändert ihn.
+    closure_day: bool = False
 
 
 class JournalDay(BaseModel):

@@ -13,7 +13,8 @@ vi.mock('../../api/client', () => ({
     delete: vi.fn(),
   },
 }));
-vi.mock('../../api/absenceReasons', () => ({ myReasons: () => Promise.resolve([]) }));
+let reasonsData: unknown[] = [];
+vi.mock('../../api/absenceReasons', () => ({ myReasons: () => Promise.resolve(reasonsData) }));
 const toast = { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() };
 vi.mock('../../contexts/ToastContext', () => ({ useToast: () => toast }));
 
@@ -29,6 +30,7 @@ const STALE =
   'Jahresabschluss 2026 bereits erfolgt — Carryover 2027 ist nun veraltet, bitte Jahresabschluss erneut ausführen.';
 
 beforeEach(() => {
+  reasonsData = [];
   getMock.mockReset();
   postMock.mockReset();
   putMock.mockReset();
@@ -82,5 +84,91 @@ describe('<AdminAbsences /> Betriebsferien: Jahresabschluss-Warnung', () => {
 
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
     expect(toast.warning).not.toHaveBeenCalled();
+  });
+});
+
+// P3 (Handbuch-Grafik): Voll-Tag-Typen buchen das Tagessoll laut Vertrag (Server);
+// das Formular darf keine erfundene Zahl (8) vorbelegen. Nur OVERTIME behält Stunden.
+describe('<AdminAbsences /> Stundenfeld im Formular', () => {
+  async function openForm() {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/admin/users')
+        return Promise.resolve({
+          data: [{ id: 'u1', first_name: 'Anna', last_name: 'Test', is_active: true }],
+        });
+      return Promise.resolve({ data: [] });
+    });
+    render(<AdminAbsences />);
+    const select = await screen.findByTestId('absence-employee-filter');
+    await screen.findByRole('option', { name: 'Anna Test' });
+    fireEvent.change(select, { target: { value: 'u1' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Abwesenheit eintragen' }));
+    return screen.findByLabelText(/^Stunden/);
+  }
+
+  it('Urlaub: Feld gesperrt, leer, Hinweis auf Tagessoll', async () => {
+    const hours = (await openForm()) as HTMLInputElement;
+    expect(hours).toBeDisabled();
+    expect(hours.value).not.toBe('8');
+    expect(hours.value).toBe('');
+    expect(screen.getByText(/Tagessoll laut Vertrag/)).toBeInTheDocument();
+  });
+
+  it('Überstundenausgleich: Feld editierbar, Wert wird gesendet', async () => {
+    postMock.mockResolvedValue({ data: {} });
+    const hours = (await openForm()) as HTMLInputElement;
+    fireEvent.change(screen.getByDisplayValue('Urlaub'), { target: { value: 'overtime' } });
+    expect(hours).not.toBeDisabled();
+    expect(hours.value).toBe('');
+    fireEvent.change(hours, { target: { value: '3.5' } });
+    fireEvent.click(screen.getByRole('button', { name: "Speichern" }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ type: 'overtime', hours: 3.5, user_id: 'u1' });
+  });
+
+  it('Urlaub: sendet weiterhin einen gültigen Stundenwert (Server ignoriert ihn)', async () => {
+    postMock.mockResolvedValue({ data: {} });
+    await openForm();
+    fireEvent.click(screen.getByRole('button', { name: "Speichern" }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ type: 'vacation' });
+    expect(postMock.mock.calls[0][1].hours).toBeGreaterThan(0);
+  });
+
+  const reason = (id: string, base_behavior: string) => ({
+    id, name: `Grund ${id}`, color: null, base_behavior, is_active: true, sort_order: 0, tracks_child_sick_limit: false,
+  });
+
+  it('eigener Grund Überstundenabbau: Feld editierbar, Wert wird gesendet, kein Halbtag', async () => {
+    reasonsData = [reason('r1', 'overtime_comp')];
+    postMock.mockResolvedValue({ data: {} });
+    const hours = (await openForm()) as HTMLInputElement;
+    await screen.findByRole('option', { name: 'Grund r1' });
+    fireEvent.change(screen.getByDisplayValue('Urlaub'), { target: { value: 'reason:r1' } });
+    expect(hours).not.toBeDisabled();
+    expect(screen.queryByLabelText(/Halber Tag/)).toBeNull();
+    fireEvent.change(hours, { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][1]).toMatchObject({ reason_id: 'r1', hours: 2, half_day: false });
+  });
+
+  it('eigener Grund „bezahlt frei" nach Überstundenausgleich: Feld wieder gesperrt, Halbtag da', async () => {
+    reasonsData = [reason('r2', 'paid_free')];
+    const hours = (await openForm()) as HTMLInputElement;
+    await screen.findByRole('option', { name: 'Grund r2' });
+    fireEvent.change(screen.getByDisplayValue('Urlaub'), { target: { value: 'overtime' } });
+    expect(hours).not.toBeDisabled();
+    expect(screen.queryByLabelText(/Halber Tag/)).toBeNull();
+    fireEvent.change(screen.getByDisplayValue('Überstundenausgleich'), { target: { value: 'reason:r2' } });
+    expect(hours).toBeDisabled();
+    expect(hours.value).toBe('');
+    expect(screen.getByLabelText(/Halber Tag/)).toBeInTheDocument();
+  });
+
+  it('Hinweis beim Überstundenausgleich nennt den Tagesplan-Fall', async () => {
+    await openForm();
+    fireEvent.change(screen.getByDisplayValue('Urlaub'), { target: { value: 'overtime' } });
+    expect(screen.getByText(/bei Tagesplan wird das Tagessoll des Tages gebucht/)).toBeInTheDocument();
   });
 });

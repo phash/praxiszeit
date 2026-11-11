@@ -10,7 +10,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import Badge from '../../components/Badge';
 import { getErrorMessage } from '../../utils/errorMessage';
-import { deHoursExact, formatHoursHM } from '../../utils/formatters';
+import { deHoursExact, formatHoursHM, formatFixedDe, formatDecimalDe } from '../../utils/formatters';
 import SetPasswordModal from './users/SetPasswordModal';
 import PasswordConfirmDialog from '../../components/PasswordConfirmDialog';
 import CarryoverModal from './users/CarryoverModal';
@@ -584,13 +584,13 @@ export default function Users() {
                           <div className="flex items-center space-x-2">
                             <span className="text-gray-600">Budget:</span>
                             <span className="font-medium text-gray-900">
-                              {vacationInfo[user.id].budget_days} Tage
+                              {formatDecimalDe(vacationInfo[user.id].budget_days)} Tage
                             </span>
                           </div>
                           <div className="flex items-center space-x-2">
                             <span className="text-gray-600">Genommen:</span>
                             <span className="font-medium text-orange-600">
-                              {(vacationInfo[user.id].used_days ?? 0).toFixed(1)} Tage
+                              {formatFixedDe(vacationInfo[user.id].used_days ?? 0, 1)} Tage
                             </span>
                           </div>
                           <div className="flex items-center space-x-2">
@@ -602,7 +602,7 @@ export default function Users() {
                                 ? 'text-yellow-600'
                                 : 'text-red-600'
                             }`}>
-                              {(vacationInfo[user.id].remaining_days ?? 0).toFixed(1)} Tage
+                              {formatFixedDe(vacationInfo[user.id].remaining_days ?? 0, 1)} Tage
                             </span>
                           </div>
                           {/* Progress bar */}
@@ -668,9 +668,9 @@ export default function Users() {
                               ? 'text-red-600 font-medium'
                               : 'text-gray-500'
                           }`}
-                          title={`Kind krank (§45 SGB V): ${childSickInfo[user.id].used.toFixed(1)} von ${childSickInfo[user.id].cap} Tagen ${new Date().getFullYear()} verbraucht`}
+                          title={`Kind krank (§45 SGB V): ${formatFixedDe(childSickInfo[user.id].used, 1)} von ${childSickInfo[user.id].cap} Tagen ${new Date().getFullYear()} verbraucht`}
                         >
-                          Kind krank: {childSickInfo[user.id].used.toFixed(1)}/{childSickInfo[user.id].cap}
+                          Kind krank: {formatFixedDe(childSickInfo[user.id].used, 1)}/{childSickInfo[user.id].cap}
                         </div>
                       )}
                     </td>
@@ -879,7 +879,7 @@ export default function Users() {
                       <div className="space-y-1">
                         <div className="flex justify-between">
                           <span className="text-gray-600">Budget:</span>
-                          <span className="font-medium">{vacationInfo[user.id].budget_days} Tage</span>
+                          <span className="font-medium">{formatDecimalDe(vacationInfo[user.id].budget_days)} Tage</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Übrig:</span>
@@ -890,7 +890,7 @@ export default function Users() {
                               ? 'text-yellow-600'
                               : 'text-red-600'
                           }`}>
-                            {(vacationInfo[user.id].remaining_days ?? 0).toFixed(1)} Tage
+                            {formatFixedDe(vacationInfo[user.id].remaining_days ?? 0, 1)} Tage
                           </span>
                         </div>
                       </div>

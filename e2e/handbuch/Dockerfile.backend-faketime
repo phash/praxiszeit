@@ -1,0 +1,11 @@
+# Wegwerf-Instanz fuer Handbuch-Screenshots: Backend mit libfaketime (R12).
+# Baut auf dem normal gebauten Backend-Image auf (backend/Dockerfile bleibt unberuehrt).
+# Gebaut von run.sh seed: docker build --build-arg BASE=pzhandbuch-backend ...
+ARG BASE=pzhandbuch-backend
+FROM ${BASE}
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends faketime \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s "$(find /usr/lib -name libfaketime.so.1 | head -n 1)" /usr/local/lib/libfaketime.so.1
+USER appuser

@@ -94,6 +94,19 @@ describe('<Settings /> Pflicht-Pause-Ausnahme an/aus (#499)', () => {
   });
 });
 
+describe('<Settings /> Schalter haben Namen (P1.4)', () => {
+  it('jeder role="switch" trägt einen zugänglichen Namen', async () => {
+    mockSettings([]);
+    render(<Settings />);
+    await screen.findByRole('switch', { name: SWITCH });
+    const switches = screen.getAllByRole('switch');
+    expect(switches.length).toBeGreaterThan(3);
+    for (const s of switches) {
+      expect(s).toHaveAccessibleName();
+    }
+  });
+});
+
 describe('<Settings /> Puffer-Hinweis (Spec 2026-10-08, 12.3)', () => {
   it('nennt die Blockränder und dass Einträge ihren Puffer behalten', async () => {
     mockSettings([]);

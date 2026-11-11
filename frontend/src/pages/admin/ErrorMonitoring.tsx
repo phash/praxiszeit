@@ -46,11 +46,16 @@ function sanitizeGithubUrl(url: string | null | undefined): string | null {
   }
 }
 
+/** Anzeigenamen der Status; die API-Werte (open, ignored, resolved) bleiben unverändert. */
+export const STATUS_LABELS: Record<string, string> = {
+  open: 'Offen',
+  ignored: 'Ignoriert',
+  resolved: 'Behoben',
+};
+
 const STATUS_TABS = [
   { value: '', label: 'Alle' },
-  { value: 'open', label: 'Offen' },
-  { value: 'ignored', label: 'Ignoriert' },
-  { value: 'resolved', label: 'Behoben' },
+  ...Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label })),
 ];
 
 export default function ErrorMonitoring() {
@@ -93,7 +98,7 @@ export default function ErrorMonitoring() {
   const updateStatus = async (id: string, status: string) => {
     try {
       await apiClient.patch(`/admin/errors/${id}/status`, { status });
-      toast.success(`Status auf "${status}" gesetzt`);
+      toast.success(`Status auf "${STATUS_LABELS[status] ?? status}" gesetzt`);
       fetchErrors();
       fetchSummary();
     } catch {
@@ -164,7 +169,7 @@ export default function ErrorMonitoring() {
             ${status === 'open' ? 'bg-red-50 text-red-700 border-red-200' :
               status === 'ignored' ? 'bg-gray-50 text-gray-600 border-gray-200' :
               'bg-green-50 text-green-700 border-green-200'}`}>
-            {status}: {count}
+            {STATUS_LABELS[status] ?? status}: {count}
           </div>
         ))}
       </div>
@@ -223,7 +228,7 @@ export default function ErrorMonitoring() {
                     )}
                     {err.status !== 'open' && (
                       <span className={`text-xs px-2 py-0.5 rounded-full ${err.status === 'ignored' ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-700'}`}>
-                        {err.status === 'ignored' ? 'Ignoriert' : 'Behoben'}
+                        {STATUS_LABELS[err.status] ?? err.status}
                       </span>
                     )}
                     {sanitizeGithubUrl(err.github_issue_url) && (

@@ -127,7 +127,7 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 
 **Vergangener Tag:** nur per Antrag (Journal → **Antrag** in der Zeile des Tages) – *„Für vergangene Tage bitte einen Änderungsantrag stellen."*
 
-**Löschen:** Kalender-Eintrag anklicken → Löschen-Symbol (nur ab heute und nur selbst eingetragene; vergangene Tage per Lösch-Antrag)
+**Löschen:** Kalender-Eintrag anklicken → Löschen-Symbol (nur ab heute und nur selbst eingetragene; vergangene Tage: **„Löschung beantragen"** mit Begründung, auch im Journal am Papierkorb der Abwesenheit)
 
 ### Sondertage 24./31.12.
 Hat Ihre Praxis Heiligabend / Silvester als frei oder halben Tag eingestellt, sind diese im Kalender markiert (z. B. „Heiligabend (frei)" / „Silvester (½ Tag)") – wie ein Feiertag. **„verkürzter Tag (max. 4 h)"** = Soll an dem Tag höchstens so viele Stunden; Urlaub kostet einen halben Tag.

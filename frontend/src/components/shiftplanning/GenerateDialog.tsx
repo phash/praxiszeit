@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import FocusTrap from 'focus-trap-react';
+import { useId, useState } from 'react';
+import DialogFocusTrap from '../DialogFocusTrap';
 import { X, Wand2 } from 'lucide-react';
 import Button from '../Button';
 import FormInput from '../FormInput';
@@ -25,6 +25,7 @@ function thisMonday(): string {
  * und einen Modus; ruft den Greedy-Generator und meldet das Ergebnis.
  */
 export default function GenerateDialog({ planId, onGenerated, onClose }: Props) {
+  const titleId = useId();
   const toast = useToast();
   const [weekDate, setWeekDate] = useState(thisMonday());
   const [mode, setMode] = useState<'replace' | 'fill_gaps'>('replace');
@@ -54,10 +55,10 @@ export default function GenerateDialog({ planId, onGenerated, onClose }: Props) 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <FocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: onClose }}>
-        <div className="bg-white rounded-xl shadow-lg w-full max-w-md">
+      <DialogFocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: onClose }}>
+        <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="bg-white rounded-xl shadow-lg w-full max-w-md">
           <div className="flex items-center justify-between border-b border-gray-200 p-4">
-            <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+            <h3 id={titleId} className="flex items-center gap-2 text-lg font-semibold text-gray-900">
               <Wand2 size={18} className="text-primary" /> Automatisch füllen
             </h3>
             <button onClick={onClose} aria-label="Schließen" className="text-gray-400 hover:text-gray-600">
@@ -98,7 +99,7 @@ export default function GenerateDialog({ planId, onGenerated, onClose }: Props) 
             </div>
           </form>
         </div>
-      </FocusTrap>
+      </DialogFocusTrap>
     </div>
   );
 }

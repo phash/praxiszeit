@@ -1089,6 +1089,7 @@ if [ "$BUILD_DOCKER" = true ]; then
         --exclude='backend/htmlcov' \
         --exclude='backend/test.db*' --exclude='backend/.venv' --exclude='backend/venv' \
         --exclude='backend/.claude' --exclude='backend/backups' \
+        --exclude='backend/create_handbuch_testdata.py' \
         --exclude='*.pem' --exclude='*.key' --exclude='.env' --exclude='.env.*'
     # frontend/ ebenso gegen frontend/.dockerignore: node_modules, dist,
     # Agenten-Notizen, der leere root-eigene Rest eines Docker-Mounts

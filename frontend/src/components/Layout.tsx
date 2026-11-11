@@ -57,7 +57,7 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerTab, setDrawerTab] = useState<'schnellstart' | 'cheatsheet' | 'handbuch'>('cheatsheet');
+  const [drawerTab, setDrawerTab] = useState<'schnellstart' | 'cheatsheet'>('cheatsheet');
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [sheetClosing, setSheetClosing] = useState(false);
   const [pendingCRCount, setPendingCRCount] = useState(0);
@@ -374,13 +374,14 @@ export default function Layout() {
               <BookOpen size={13} />
               <span>Cheat-Sheet</span>
             </button>
-            <button
-              onClick={() => { setDrawerTab('handbuch'); setDrawerOpen(true); }}
+            <Link
+              to={user?.role === 'admin' ? '/help/praxisleitung' : '/help/mitarbeitende'}
+              onClick={() => setSidebarOpen(false)}
               className="flex items-center space-x-2 px-4 py-1.5 text-xs text-gray-500 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors w-full text-left"
             >
               <FileText size={13} />
               <span>{user?.role === 'admin' ? 'Admin-Handbuch' : 'Mitarbeiter-Handbuch'}</span>
-            </button>
+            </Link>
           </div>
 
           <Link

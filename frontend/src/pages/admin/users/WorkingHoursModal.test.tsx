@@ -2431,3 +2431,27 @@ describe('Teil A Task 13: Urlaub und Abrechnung', () => {
     expect((body.blocks as WeekBlocks)[0].blocks[1]).toEqual({ start: '15:00', end: '18:00' });
   });
 });
+
+// P1.6: Ein Klick auf den TEXT „Rückwirkend ab …" wählte die Option im Browser
+// nicht aus. Der Mausdruck auf den (nicht fokussierbaren) Text schob den Fokus
+// auf <body>; die Fokusfalle holte ihn auf das zuletzt fokussierte Feld (z. B.
+// „Mo Block 2 bis") zurück und scrollte den Dialog dorthin — der Klick landete
+// neben dem Label. Mit tabIndex=-1 bleibt der Fokus im Dialog. jsdom hat keine
+// Fokusfalle (setup.ts mockt sie), deshalb prüft der Test das Attribut und den
+// Textklick; den Browser-Nachweis führt der Bericht (Playwright).
+describe('P1.6: Klick auf den Optionstext im Kasten „Verkürzung"', () => {
+  it('der Dialog ist selbst fokussierbar (tabIndex -1), damit die Fokusfalle nicht zurückspringt', async () => {
+    renderModal();
+    const dialog = await screen.findByRole('dialog', { name: /Arbeitszeit/ });
+    expect(dialog).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('Klick auf den Text wählt „Rückwirkend" und zurück „Ab heute"', async () => {
+    mockShortening();
+    const region = await enterShortening();
+    fireEvent.click(within(region).getByText('Rückwirkend ab 01.06.2026 mit Neuberechnung'));
+    expect(within(region).getByRole('radio', { name: /^Rückwirkend ab 01\.06\.2026/ })).toBeChecked();
+    fireEvent.click(within(region).getByText(/^Ab heute \(26\.07\.2026\) wirksam/));
+    expect(within(region).getByRole('radio', { name: /^Ab heute \(26\.07\.2026\) wirksam/ })).toBeChecked();
+  });
+});

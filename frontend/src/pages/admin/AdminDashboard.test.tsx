@@ -439,3 +439,36 @@ describe('AdminDashboard Jahresabschluss löschen: Wortlaut (Teil A)', () => {
     expect(screen.queryByText(/gehen ebenfalls verloren/)).not.toBeInTheDocument();
   });
 });
+
+describe('AdminDashboard Monatsname (P1.3)', () => {
+  it('Kachel „Monat" und Detail-Kopf nennen den Monat deutsch', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.startsWith('/admin/reports/monthly')) {
+        return Promise.resolve({ data: [{
+          user_id: 'u1', first_name: 'Anna', last_name: 'Kern', weekly_hours: 40,
+          target_hours: 160, actual_hours: 160, balance: 0, overtime_cumulative: 0,
+          vacation_used_hours: 0, vacation_used_days: 0, sick_hours: 0, sick_days: 0,
+        }] });
+      }
+      if (url.startsWith('/admin/reports/')) return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: [] });
+    });
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    expect(await screen.findByText('Oktober 2026', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.queryByText(/October/)).toBeNull();
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Details für Kern, Anna anzeigen' }))[0]);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Oktober 2026 - Details')).toBeInTheDocument();
+  });
+});
+
+// P4.3: Jahresübersicht — Tage mit deutschem Komma, nie „10.0 Tage".
+describe('AdminDashboard Jahresübersicht: Tage mit Komma (P4.3)', () => {
+  it('zeigt Tageszahlen mit Komma', async () => {
+    mockEndpoints([yearlyRow('u2', 'Aura', 'Haiser', 3.5, false)]);
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    await screen.findAllByText(/Haiser/);
+    expect((await screen.findAllByText('10,0 Tage')).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/\d\.\d Tage/)).toHaveLength(0);
+  });
+});

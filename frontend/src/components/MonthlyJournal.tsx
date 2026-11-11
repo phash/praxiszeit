@@ -15,7 +15,10 @@ import LoadingSpinner from './LoadingSpinner';
 import { RawStampNote } from './RawStampNote';
 import CreditOverrideButton from './CreditOverrideButton';
 import ChangeRequestForm from './ChangeRequestForm';
+import AbsenceDeleteRequestDialog from './AbsenceDeleteRequestDialog';
+import type { AbsenceToDelete } from './AbsenceDeleteRequestDialog';
 import { editableEnd, stampNoteProps } from '../utils/workBlocks';
+import { mayDeleteAbsenceByDate } from '../utils/absenceRules';
 import { myReasons } from '../api/absenceReasons';
 import type { AbsenceReason } from '../api/absenceReasons';
 
@@ -43,6 +46,8 @@ interface AbsenceItem {
   hours: number;
   start_time: string | null;
   end_time: string | null;
+  /** P1.1: Betriebsferien-Tag — Mitarbeitende beantragen keine Löschung. */
+  closure_day?: boolean;
 }
 
 interface JournalDay {
@@ -222,6 +227,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [reloadKey, setReloadKey] = useState(0);
   // Spec P21: „Anrechnung beantragen" aus der Mitarbeiter-Ansicht.
   const [creditRequest, setCreditRequest] = useState<{ day: JournalDay; entry: TimeEntryItem } | null>(null);
+  // P1.1: Lösch-Antrag für eine eigene Abwesenheit eines vergangenen Tages.
+  const [absenceDeleteRequest, setAbsenceDeleteRequest] = useState<AbsenceToDelete | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -587,7 +594,16 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
 
   function handleEmployeeDelete(day: JournalDay) {
     const entry = editingEntryId ? day.time_entries.find(e => e.id === editingEntryId) : day.time_entries[0];
-    if (!entry) return;
+    if (!entry) {
+      // P1.1: reiner Abwesenheitstag — bisher kehrte die Funktion hier still
+      // zurück. Die Löschung wird beantragt (Server 409 PAST_DAY_ABSENCE_DETAIL
+      // für das direkte Löschen vergangener Tage).
+      // Fix-Runde 1: nur bei GENAU einer löschbaren Abwesenheit — bei mehreren
+      // wählt die Person über den Papierkorb an der jeweiligen Abwesenheit.
+      const deletable = employeeDeletableAbsences(day);
+      if (deletable.length === 1) requestAbsenceDeletion(day, deletable[0]);
+      return;
+    }
     confirm({
       title: 'Lösch-Antrag stellen',
       message: 'Einen Lösch-Antrag für diesen Eintrag einreichen?',
@@ -610,6 +626,21 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     });
   }
 
+
+  // Antrag nur für vergangene Tage (heute und Zukunft löscht die Person direkt im
+  // Abwesenheitskalender, wie AbsenceCalendarPage.canRequestAbsenceDeletion) und nie
+  // für Betriebsferien-Tage.
+  function mayRequestAbsenceDeletion(day: JournalDay, a: AbsenceItem): boolean {
+    return !a.closure_day && !mayDeleteAbsenceByDate(false, day.date, format(new Date(), 'yyyy-MM-dd'));
+  }
+
+  function employeeDeletableAbsences(day: JournalDay): AbsenceItem[] {
+    return day.absences.filter((a) => mayRequestAbsenceDeletion(day, a));
+  }
+
+  function requestAbsenceDeletion(day: JournalDay, absence: AbsenceItem) {
+    setAbsenceDeleteRequest({ id: absence.id, date: day.date, type: absence.type, hours: absence.hours });
+  }
 
   // #485: §10-Ausnahmegrund — eigene Zeile, damit das Feld auch auf schmalen
   // Bildschirmen Platz hat (die Zeitspalten sind dort ausgeblendet). Steht
@@ -722,6 +753,18 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           onSuccess={() => {
             setCreditRequest(null);
             toast.success('Antrag auf Anrechnung eingereicht');
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
+      {absenceDeleteRequest && (
+        <AbsenceDeleteRequestDialog
+          absence={absenceDeleteRequest}
+          onClose={() => setAbsenceDeleteRequest(null)}
+          onSuccess={() => {
+            setAbsenceDeleteRequest(null);
+            toast.success('Lösch-Antrag eingereicht');
+            cancelEdit();
             setReloadKey((k) => k + 1);
           }}
         />
@@ -993,7 +1036,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                               >
                                 <X size={15} />
                               </button>
-                              {(day.time_entries.length > 0 || day.absences.length > 0) && (
+                              {(day.time_entries.length > 0
+                                || (isAdminView ? day.absences.length > 0 : employeeDeletableAbsences(day).length === 1)) && (
                                 <button
                                   onClick={() => isAdminView ? void handleAdminDelete(day) : handleEmployeeDelete(day)}
                                   disabled={saving}
@@ -1029,6 +1073,17 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
                                       >
                                         <Pencil size={13} />
                                       </button>
+                                      {/* P1.1: eigene Abwesenheit eines vergangenen Tages — Löschung per Antrag. */}
+                                      {!isAdminView && mayRequestAbsenceDeletion(day, a) && (
+                                        <button
+                                          onClick={() => requestAbsenceDeletion(day, a)}
+                                          className="p-1.5 text-red-300 hover:text-red-600"
+                                          title={`Löschung beantragen: ${TYPE_LABELS[a.type] || a.type}`}
+                                          aria-label={`Löschung beantragen: ${TYPE_LABELS[a.type] || a.type}`}
+                                        >
+                                          <Trash2 size={13} aria-hidden="true" />
+                                        </button>
+                                      )}
                                     </div>
                                   ))}
                                 </div>

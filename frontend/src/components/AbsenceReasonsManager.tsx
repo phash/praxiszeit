@@ -123,7 +123,7 @@ export default function AbsenceReasonsManager() {
             onChange={(e) => setName(e.target.value)}
             maxLength={80}
             placeholder="z. B. Schule"
-            className="w-full rounded border-gray-300 text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary"
           />
         </div>
         <div className="min-w-[180px]">
@@ -131,7 +131,7 @@ export default function AbsenceReasonsManager() {
           <select
             value={behavior}
             onChange={(e) => setBehavior(e.target.value as AbsenceReasonBehavior)}
-            className="w-full rounded border-gray-300 text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary"
           >
             {BEHAVIORS.map((b) => (
               <option key={b} value={b}>{api.BEHAVIOR_LABELS[b]}</option>
@@ -141,7 +141,7 @@ export default function AbsenceReasonsManager() {
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Farbe</label>
           <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
-                 className="h-9 w-12 rounded border-gray-300" />
+                 className="h-9 w-12 rounded border border-gray-300" />
         </div>
         <button type="submit" disabled={busy || !name.trim()}
                 className="flex items-center gap-1 px-3 py-2 bg-primary text-white rounded-lg text-sm disabled:opacity-50">
@@ -191,7 +191,7 @@ export default function AbsenceReasonsManager() {
                 type="color"
                 value={r.color || '#888888'}
                 onChange={(e) => saveRow(r, { color: e.target.value })}
-                className="h-7 w-9 rounded border-gray-300 shrink-0"
+                className="h-7 w-9 rounded border border-gray-300 shrink-0"
                 title="Farbe ändern"
               />
               <input

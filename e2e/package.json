@@ -9,11 +9,14 @@
     "test:auth": "npx playwright test tests/auth/",
     "test:employee": "npx playwright test tests/employee/",
     "test:admin": "npx playwright test tests/admin/",
-    "test:shared": "npx playwright test tests/shared/"
+    "test:shared": "npx playwright test tests/shared/",
+    "handbuch:capture": "tsx handbuch/capture.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
     "@types/node": "^20.19.43",
+    "sharp": "^0.35.5",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3"
   }
 }

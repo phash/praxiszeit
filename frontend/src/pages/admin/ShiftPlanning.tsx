@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useId, useState, useCallback, useMemo, useRef } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -24,7 +24,7 @@ import {
   Printer,
   Eye,
 } from 'lucide-react';
-import FocusTrap from 'focus-trap-react';
+import DialogFocusTrap from '../../components/DialogFocusTrap';
 import apiClient from '../../api/client';
 import Button from '../../components/Button';
 import FormInput from '../../components/FormInput';
@@ -134,6 +134,7 @@ export function buildMovedSlotPayload(
 }
 
 export default function AdminShiftPlanning() {
+  const duplicateTitleId = useId();
   const toast = useToast();
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
   // #371: configured planner weekdays — drive the week grid, day picker and slot dialog.
@@ -514,7 +515,7 @@ export default function AdminShiftPlanning() {
       {tab === 'plans' && (
         <>
         <YearTimeline plans={plans} />
-        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-6">
           {/* Plan list */}
           <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-4 h-fit">
             <form onSubmit={createPlan} className="flex items-end gap-2 mb-4">
@@ -616,7 +617,7 @@ export default function AdminShiftPlanning() {
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       variant={planDetail.is_active ? 'secondary' : 'primary'}
                       icon={planDetail.is_active ? PowerOff : Power}
@@ -678,7 +679,7 @@ export default function AdminShiftPlanning() {
                     <select
                       value={dayWeekday}
                       onChange={(e) => setDayWeekday(Number(e.target.value))}
-                      className="rounded-lg border-gray-300 text-sm py-1"
+                      className="rounded-lg border border-gray-300 text-sm py-1"
                     >
                       {/* #371: only enabled weekdays are selectable */}
                       {planningWeekdays.map((i) => (
@@ -688,7 +689,7 @@ export default function AdminShiftPlanning() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 xl:grid-cols-[1fr_200px] gap-4">
+                <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_200px] gap-4">
                   <WeekGrid
                     slots={planDetail.slots}
                     editable
@@ -753,13 +754,16 @@ export default function AdminShiftPlanning() {
       {/* #338: Plan duplizieren — Name der Kopie (Focus-Trap + Enter/Escape wie die
           übrigen Dialoge, ADM round2 #4) */}
       {duplicateState && (
-        <FocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: () => setDuplicateState(null) }}>
+        <DialogFocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: () => setDuplicateState(null) }}>
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <form
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={duplicateTitleId}
               onSubmit={(e) => { e.preventDefault(); confirmDuplicate(); }}
               className="bg-white rounded-xl shadow-lg w-full max-w-md p-5"
             >
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Schichtplan duplizieren</h3>
+              <h3 id={duplicateTitleId} className="text-lg font-semibold text-gray-900 mb-2">Schichtplan duplizieren</h3>
               <p className="text-sm text-gray-500 mb-3">
                 Kopiert alle Zeitslots und Zuweisungen. Die Kopie ist zunächst <strong>inaktiv</strong>.
               </p>
@@ -785,7 +789,7 @@ export default function AdminShiftPlanning() {
               </div>
             </form>
           </div>
-        </FocusTrap>
+        </DialogFocusTrap>
       )}
     </div>
   );

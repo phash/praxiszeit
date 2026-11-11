@@ -84,6 +84,7 @@ if docker compose exec -T -e TZ=Europe/Berlin backend pytest tests/ -q --tb=shor
        --ignore=tests/test_074_reduced_days_pg.py \
        --ignore=tests/test_075_contract_history_pg.py \
        --ignore=tests/test_076_audit_chain_pg.py \
+       --ignore=tests/test_077_legacy_half_day_pg.py \
        --ignore=tests/test_net_hours_parity_pg.py \
        --ignore=tests/test_reclamp_concurrency.py \
        --ignore=tests/test_handbuch_seed_pg.py \
@@ -132,7 +133,7 @@ if docker compose exec -T -e TZ=Europe/Berlin backend pytest \
        tests/test_reclamp_concurrency.py tests/test_handbuch_seed_pg.py \
        tests/test_year_closing_lock_pg.py tests/test_074_reduced_days_pg.py \
        tests/test_075_contract_history_pg.py tests/test_076_audit_chain_pg.py \
-       tests/test_pg_log_privacy_pg.py \
+       tests/test_077_legacy_half_day_pg.py tests/test_pg_log_privacy_pg.py \
        -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Postgres integration verified"
 else
@@ -165,7 +166,8 @@ fi
 # (Gesamtreview 1.20), test_audit_1107_repo_config.py the PostgreSQL log
 # settings (compose + native postgresql.conf) and the nginx /api/metrics rule
 # (Audit 2026-11-07 S2-1/S2-9), test_backup_mac.py the backup signature parity
-# between praxiszeit-server.py and the backend (S3-03); all skip without the repo.
+# between praxiszeit-server.py and the backend (S3-03), test_handbuch_rechenbeispiele.py
+# the frontend/src/handbuch/content/rechenbeispiele.json numbers; all skip without the repo.
 step "Native PG lifecycle (praxiszeit-server.py)"
 if docker run --rm --user "$(id -u):$(id -g)" \
        -v "$(pwd)":/work -w /work/backend \
@@ -182,7 +184,7 @@ if docker run --rm --user "$(id -u):$(id -g)" \
          tests/test_native_restore.py tests/test_native_pg_port.py \
          tests/test_native_security_hardening.py \
          tests/test_audit_1107_repo_config.py \
-         tests/test_backup_mac.py \
+         tests/test_backup_mac.py tests/test_handbuch_rechenbeispiele.py \
          -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Native PG lifecycle verified"
 else
@@ -204,10 +206,12 @@ fi
 # 4b. E2E TypeScript (#503) — Playwright transpiles the specs without checking
 #     types, so stale fixture/API types only surface here. As the host user:
 #     e2e/node_modules is user-owned and npm install must not leave root files.
+#     The whole repo is mounted: e2e/handbuch/capture.ts imports the handbook
+#     types and content from frontend/src/handbuch.
 # -----------------------------------------------------------------------
 step "E2E TypeScript (tsc --noEmit)"
 if docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
-       -v "$(pwd)/e2e":/app -w /app node:20-alpine \
+       -v "$(pwd)":/repo -w /repo/e2e node:20-alpine \
        sh -c "npm install --no-audit --no-fund --silent && npx tsc --noEmit" 2>&1 | tail -5; then
     ok "E2E TypeScript clean"
 else

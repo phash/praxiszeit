@@ -1,102 +1,98 @@
-import { useState } from 'react';
+import { useEffect, type MouseEvent } from 'react';
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { HelpCircle } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
-import { Download, HelpCircle } from 'lucide-react';
-import {
-  Accordion,
-  CheatsheetMitarbeiter,
-  CheatsheetAdmin,
-  handbuchMitarbeiterSections,
-  handbuchAdminSections,
-} from '../components/DocViewer';
+import HandbookPage from '../handbuch/components/HandbookPage';
+import { HANDBOOKS } from '../handbuch/content';
+import { COMIC_SCENES } from '../handbuch/comics/scenes';
+import { DIAGRAMS } from '../handbuch/diagrams';
+import manifest from '../handbuch/manifest.json';
+import type { HandbookId, Manifest } from '../handbuch/types';
+import '../handbuch/handbuch.css';
 
-// ── Main Help page ─────────────────────────────────────────────────────────────
+const ADMIN_BOOKS: HandbookId[] = ['praxisleitung', 'mitarbeitende', 'so-rechnet'];
+const EMPLOYEE_BOOKS: HandbookId[] = ['mitarbeitende', 'so-rechnet'];
+
+function defaultBook(isAdmin: boolean): HandbookId {
+  return isAdmin ? 'praxisleitung' : 'mitarbeitende';
+}
 
 export default function Help() {
   const { user } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'cheatsheet' | 'handbuch'>('cheatsheet');
+  const { book } = useParams<{ book?: string }>();
+  const { hash } = useLocation();
+  const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
+  const allowed = isAdmin ? ADMIN_BOOKS : EMPLOYEE_BOOKS;
+  const valid = !!book && (allowed as string[]).includes(book);
+  const current = (valid ? book : defaultBook(isAdmin)) as HandbookId;
 
-  const cheatsheetFile = isAdmin
-    ? '/help/CHEATSHEET-ADMIN.md'
-    : '/help/CHEATSHEET-MITARBEITER.md';
-  const handbuchFile = isAdmin
-    ? '/help/HANDBUCH-ADMIN.md'
-    : '/help/HANDBUCH-MITARBEITER.md';
+  // Die App scrollt in <main>, nicht im Dokument: Ankersprung per scrollIntoView
+  // (beim Laden, Buchwechsel und Klick auf einen #-Link).
+  useEffect(() => {
+    if (!valid) return;
+    if (!hash) {
+      // Buchwechsel ohne Anker: <main> an den Anfang (sonst bleibt die Scrollposition des alten Buchs).
+      document.querySelector('main')?.scrollTo?.({ top: 0 });
+      return;
+    }
+    // Ein kaputtes Fragment (#%E0) darf die Seite nicht abwerfen: dann der rohe Anker.
+    let id = hash.slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      /* roher Anker */
+    }
+    document.getElementById(id)?.scrollIntoView();
+  }, [hash, valid, current]);
+
+  // Buchübergreifende Links (/help/<buch>#…) per Router statt Seitenneuladen. #-Links bleiben
+  // nativ (gleicher Anker zweimal springt erneut), sonstige Routen ebenfalls.
+  const onInternalLink = (href: string, e: MouseEvent<HTMLAnchorElement>) => {
+    if (!href.startsWith('/help/')) return;
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    navigate(href);
+  };
+
+  if (!valid) {
+    return <Navigate to={`/help/${defaultBook(isAdmin)}${hash}`} replace />;
+  }
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center space-x-3 mb-6">
+    // Unter lg überdeckt die feste Kopfzeile (pt-16 in <main>) den Sprungpunkt: Abstand erhöhen.
+    <div className="[&_[id]]:scroll-mt-20 lg:[&_[id]]:scroll-mt-5">
+      <div className="mb-4 flex items-center space-x-3">
         <HelpCircle size={28} className="text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Hilfe &amp; Dokumentation</h1>
-          <p className="text-sm text-gray-500">
-            {isAdmin ? 'Administratoren-Dokumentation' : 'Mitarbeiter-Dokumentation'}
-          </p>
-        </div>
+        <h1 className="text-2xl font-bold text-gray-900">Hilfe &amp; Dokumentation</h1>
       </div>
-
-      {/* Tab Bar */}
-      <div className="border-b border-gray-200 mb-6">
-        <div className="flex space-x-6">
-          {(['cheatsheet', 'handbuch'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab === 'cheatsheet' ? 'Kurzanleitung' : 'Handbuch'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Cheatsheet Tab */}
-      {activeTab === 'cheatsheet' && (
-        <div>
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-lg font-semibold text-gray-800">
-              {isAdmin ? 'Kurzanleitung für Administratoren' : 'Kurzanleitung für Mitarbeiter'}
-            </h2>
-            <a
-              href={cheatsheetFile}
-              download
-              className="flex items-center space-x-1.5 px-3 py-1.5 text-sm text-primary border border-primary rounded-lg hover:bg-primary hover:text-white transition-colors"
-            >
-              <Download size={14} />
-              <span>Herunterladen (.md)</span>
-            </a>
-          </div>
-          {isAdmin ? <CheatsheetAdmin /> : <CheatsheetMitarbeiter />}
-        </div>
-      )}
-
-      {/* Handbuch Tab */}
-      {activeTab === 'handbuch' && (
-        <div>
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-lg font-semibold text-gray-800">
-              {isAdmin ? 'Administrator-Handbuch' : 'Mitarbeiter-Handbuch'}
-            </h2>
-            <a
-              href={handbuchFile}
-              download
-              className="flex items-center space-x-1.5 px-3 py-1.5 text-sm text-primary border border-primary rounded-lg hover:bg-primary hover:text-white transition-colors"
-            >
-              <Download size={14} />
-              <span>Vollständiges Handbuch (.md)</span>
-            </a>
-          </div>
-          <p className="text-sm text-gray-500 mb-5">
-            Klicken Sie auf einen Abschnitt, um ihn aufzuklappen. Das vollständige Handbuch können Sie als Markdown-Datei herunterladen.
-          </p>
-          <Accordion items={isAdmin ? handbuchAdminSections : handbuchMitarbeiterSections} />
-        </div>
-      )}
+      <nav aria-label="Handbücher" className="mb-6 flex flex-wrap gap-x-6 border-b border-gray-200">
+        {allowed.map((id) => (
+          <Link
+            key={id}
+            to={`/help/${id}`}
+            aria-current={id === current ? 'page' : undefined}
+            className={`border-b-2 px-1 pb-3 text-sm font-medium transition-colors ${
+              id === current
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {HANDBOOKS[id].title}
+          </Link>
+        ))}
+      </nav>
+      <HandbookPage
+        key={current}
+        handbook={HANDBOOKS[current]}
+        manifest={manifest as Manifest}
+        imgBase="/help/img"
+        linkBase="/help"
+        variant="wide"
+        comics={COMIC_SCENES}
+        diagrams={DIAGRAMS}
+        onInternalLink={onInternalLink}
+      />
     </div>
   );
 }

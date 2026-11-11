@@ -334,11 +334,16 @@ def test_docker_bundle_laesst_was_die_dockerignore_ausschliesst_auch_weg(tmp_pat
     assert not durchgerutscht, durchgerutscht
     # Gegenprobe: was das Image braucht, ist da (tests/ laesst das Bundle
     # bewusst weg), und die .dockerignore selbst reist mit.
+    # Ausnahme: der Handbuch-Seed bleibt im Entwicklungs-Image (.dockerignore laesst ihn durch),
+    # reist aber nicht ins Kunden-Bundle (Schlussreview: er loescht Konten und setzt das
+    # Admin-Passwort; zusaetzlich verweigert er sich ohne HANDBUCH_SEED=1).
+    nur_dev = {"create_handbuch_testdata.py"}
     fehlt = sorted(
         f"backend/{p}" for p in BENOETIGT
-        if not p.startswith("tests/") and f"backend/{p}" not in staged
+        if not p.startswith("tests/") and p not in nur_dev and f"backend/{p}" not in staged
     )
     assert not fehlt, fehlt
+    assert "backend/create_handbuch_testdata.py" not in staged
     assert "backend/.dockerignore" in staged
 
 

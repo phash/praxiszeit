@@ -127,12 +127,26 @@ describe('<ImportXls /> Ergebnis: Hinweise statt „ArbZG-Warnungen"', () => {
     expect(await screen.findByText('Import abgeschlossen')).toBeInTheDocument();
 
     expect(screen.getByText(
-      '1 Einträge übersprungen (nicht überschriebene Konflikte; weitere Gründe bei den Hinweisen).',
+      '1 Eintrag übersprungen (nicht überschriebene Konflikte; weitere Gründe bei den Hinweisen).',
     )).toBeInTheDocument();
     const toggle = screen.getByRole('button', { name: /1 Hinweis\(e\)/ });
     fireEvent.click(toggle);
     expect(screen.getByText(SKIP)).toBeInTheDocument();
     expect(screen.queryByText(/ArbZG-Warn/)).not.toBeInTheDocument();
     expect(screen.queryByText(/bei den Warnungen/)).not.toBeInTheDocument();
+  });
+});
+
+// P4.2: Einzahl bei genau einem Eintrag / Konflikt / Hinweis.
+describe('<ImportXls /> Zähler in Einzahl (P4.2)', () => {
+  it('schreibt „1 Eintrag gefunden", „1 Konflikt", „1 Hinweis", „(1 Eintrag)"', async () => {
+    await analyze(
+      { start_time: '08:00:00', end_time: '16:30:00', has_conflict: true, net_hours: 8 },
+      { total: 1, conflicts: 1, arbzg_warnings: 1 },
+    );
+    expect(await screen.findByText(/Eintrag gefunden/)).toBeInTheDocument();
+    expect(screen.getByText(/1 Konflikt$/)).toBeInTheDocument();
+    expect(screen.getByText(/1 Hinweis$/)).toBeInTheDocument();
+    expect(screen.getByText('Konflikte überschreiben (1 Eintrag)')).toBeInTheDocument();
   });
 });

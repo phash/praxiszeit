@@ -67,6 +67,23 @@ export function formatIsoDateDe(iso: string): string {
   return `${d}.${m}.${y}`;
 }
 
+const MONTHS_DE = [
+  'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
+  'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
+];
+
+/**
+ * P1.3: 'YYYY-MM' → 'Oktober 2026'. Deutsch unabhängig von der Browsersprache
+ * (date-fns `format` ohne `locale: de` schrieb „October 2026"). Ungültige
+ * Eingaben kommen unverändert zurück.
+ */
+export function formatMonthYearDe(yyyyMm: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(yyyyMm);
+  if (!match) return yyyyMm;
+  const month = MONTHS_DE[Number(match[2]) - 1];
+  return month ? `${month} ${match[1]}` : yyyyMm;
+}
+
 /**
  * #415/#431: eine Vertragsänderung innerhalb eines Berichtszeitraums, so wie
  * `/admin/reports/monthly|weekly` sie liefert (Backend-Zwilling:
@@ -158,6 +175,23 @@ export function formatDayCount(days: number): string {
   const rounded = Math.round(days * 100) / 100;
   const text = String(rounded).replace('.', ',');
   return `${text} ${rounded === 1 ? 'Tag' : 'Tage'}`;
+}
+
+/**
+ * P4.2: Zähler mit Einzahl nur bei genau 1 — pluralDe(1, 'Eintrag', 'Einträge')
+ * → '1 Eintrag', pluralDe(3, …) → '3 Einträge'.
+ */
+export function pluralDe(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
+/**
+ * P4.3: feste Nachkommastellen mit deutschem Komma — formatFixedDe(13.9, 2)
+ * → '13,90', formatFixedDe(2, 1) → '2,0'. Ersatz für `toFixed(n)` in
+ * Anzeige-Strings (`toFixed` schreibt den englischen Dezimalpunkt).
+ */
+export function formatFixedDe(n: number, digits = 1): string {
+  return n.toFixed(digits).replace('.', ',');
 }
 
 /**

@@ -5,7 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import type { User } from '../../types/user';
-import { formatHoursHM } from '../../utils/formatters';
+import { formatHoursHM, pluralDe } from '../../utils/formatters';
 
 // ── Typen ────────────────────────────────────────────────────────────────────
 
@@ -301,12 +301,12 @@ export default function ImportXls() {
         {/* Zusammenfassung */}
         <div className="flex flex-wrap gap-4 mb-4 text-sm">
           <span className="text-gray-600">
-            <strong>{preview.total}</strong> Einträge gefunden
+            {pluralDe(preview.total, 'Eintrag', 'Einträge')} gefunden
           </span>
           {preview.conflicts > 0 && (
             <span className="text-red-600 font-medium">
               <XCircle size={14} className="inline mr-1" />
-              {preview.conflicts} Konflikte
+              {pluralDe(preview.conflicts, 'Konflikt', 'Konflikte')}
             </span>
           )}
           {preview.arbzg_warnings > 0 && (
@@ -314,7 +314,7 @@ export default function ImportXls() {
               <AlertTriangle size={14} className="inline mr-1" />
               {/* #462: Die Zeilen-Warnungen tragen seit dem Kappungs-Hinweis nicht mehr
                   nur ArbZG-Verstoesse — das Label darf das nicht laenger behaupten. */}
-              {preview.arbzg_warnings} Hinweise
+              {pluralDe(preview.arbzg_warnings, 'Hinweis', 'Hinweise')}
             </span>
           )}
         </div>
@@ -393,7 +393,7 @@ export default function ImportXls() {
               className="w-4 h-4 rounded-sm border-gray-300 text-primary focus:ring-primary"
             />
             <span className="text-gray-700">
-              Konflikte überschreiben ({preview.conflicts} Einträge)
+              Konflikte überschreiben ({pluralDe(preview.conflicts, 'Eintrag', 'Einträge')})
             </span>
           </label>
         )}
@@ -448,7 +448,7 @@ export default function ImportXls() {
             {/* Gesamtreview 1.20: übersprungen werden auch Zeilen mit Ende ≤ Beginn und
                 Zeilen außerhalb des Beschäftigungszeitraums — deren Grund steht in den
                 Hinweisen darunter („… übersprungen — …"). */}
-            {result.skipped} Einträge übersprungen (nicht überschriebene Konflikte; weitere Gründe bei den Hinweisen).
+            {pluralDe(result.skipped, 'Eintrag', 'Einträge')} übersprungen (nicht überschriebene Konflikte; weitere Gründe bei den Hinweisen).
           </p>
         )}
 

@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### ✨ Neu
+
+- **Grafisches Handbuch in der App.** Die Hilfe unter „Hilfe“ (`/help`) zeigt das Handbuch jetzt mit Bildschirmaufnahmen, Markierungen, Merkkästen, Zeichnungen und Beispielrechnungen statt als Textliste, in drei Büchern: „Praxisleitung“, „Mitarbeitende“ und „So rechnet PraxisZeit“ (Verwaltung sieht alle drei, Mitarbeitende die beiden letzten; Adresse `/help/<Buch>`). Der Menüpunkt „Hilfe“ in der Seitenleiste öffnet diese Seite. Im Schnellzugriff rechts bleiben Cheat-Sheet und Schnellstart; der Reiter „Handbuch“ dort entfällt, und der Download-Knopf bietet nur noch Cheat-Sheet bzw. Schnellstart als `.md` an (die Handbücher als `.md` stehen weiter unter `docs/handbuch/`). In der Kontexthilfe führt „Im Handbuch ansehen →“ direkt zum passenden Kapitel.
+
+- **Verfallsdatum des Resturlaubs je Person im Benutzerformular.** Beim Bearbeiten gibt es das Feld „Resturlaub verfällt am“ (ein festes Datum für alle Jahre – nach Ablauf anpassen oder leeren; leer = 31.03. des Folgejahres; ein Datum in der Vergangenheit wird mit einem Hinweis markiert); das Dashboard der Person und die Jahresend-Warnung der Verwaltung nutzen es bereits.
+
+### 🐛 Behoben (Funde beim Schreiben der Handbücher)
+
+**Enthält die Datenbank-Migration `077_legacy_half_day`.** Vor dem Update wie immer eine Sicherung anlegen.
+
+- **Teamübersicht „Arbeitszeiten im Team“: keine abgeschnittenen Beschriftungen mehr.** Schmale Balken zeigten Zeiten wie „13–16:3C“ oder ein einzelnes „15“. Jetzt zeigt der Balken je nach Breite die volle Kurzzeit, nur den Beginn oder nichts; die volle Zeit steht immer im Hover-Text und für Screenreader.
+- **Abwesenheit eintragen (Verwaltung und Mitarbeitende): keine erfundene Stundenvorbelegung mehr.** Das Stundenfeld war vorbelegt (Verwaltung: immer 8), obwohl der Server bei ganztägigen Arten das Tagessoll der Person bucht. Jetzt bleibt das Feld bei diesen Arten leer und gesperrt, mit dem Hinweis „Es wird das Tagessoll laut Vertrag gebucht“; nur beim Überstundenausgleich (auch als eigener Grund) ist es frei und der eingetragene Wert zählt – bei Personen mit Tagesplan bucht das System dort das Tagessoll des Tages. „Halber Tag“ richtet sich jetzt nach der tatsächlich gewählten Art, auch bei eigenen Gründen. Die Buchung selbst ändert sich nicht.
+- **Löschung einer vergangenen Abwesenheit beantragen.** Mitarbeitende konnten eine Abwesenheit eines vergangenen Tages weder löschen noch die Löschung beantragen: „Löschen“ im Journal tat an reinen Abwesenheitstagen nichts, der Link „per Antrag“ im Abwesenheitskalender führte ins Journal. Jetzt steht an der Abwesenheit „Löschung beantragen“ (Kalender und Journal, Begründung Pflicht); die Verwaltung entscheidet über den Antrag. Betriebsferien-Tage ändert weiterhin nur die Verwaltung (ein Antrag dafür wird abgelehnt).
+- **Urlaubsverbrauch alter Buchungen driftet bei ganzen Tagen nicht mehr.** Abwesenheiten von vor 1.9.0 trugen keine Halbtags-Angabe und zählten als „Stunden ÷ heutiges Tagessoll“ – nach einer Arbeitszeit-Änderung verschob sich dadurch der Urlaubsverbrauch (z. B. Vorschau „3 → 3,1 Tage“ ohne betroffene Abwesenheit). Migration 077 kennzeichnet solche Zeilen als ganzen Tag, wo die Stunden genau dem Tagessoll entsprechen; Soll, Saldo und Urlaubsverbrauch ändern sich dabei nicht; solche Zeilen folgen danach aber späteren Arbeitszeit-Änderungen (Rückrechnung und Vorschau) wie neuere Buchungen. Halbe Tage und alle nicht eindeutigen Zeilen bleiben unverändert.
+- **Ein Klick auf Text in einem Dialog lässt den Fokus nicht mehr springen.** In allen Dialogen sprang der Dialog nach oben, sobald man auf Text innerhalb eines Beschriftungs-Elements klickte; im Kasten „Verkürzung“ ließen sich deshalb „Rückwirkend …“ / „Ab heute …“ nur über den Radioknopf wählen. Jetzt wählt auch ein Klick auf den Text die Option.
+- **Schichtplanung: Werkzeugleiste und Wochenraster laufen bei 1440 px nicht mehr über die Karte.** Die Knöpfe (bis „Plan löschen“) brechen um; die Mitarbeitendenliste steht erst bei sehr breiten Fenstern neben dem Raster, sonst darunter, damit der Freitag sichtbar bleibt.
+- **Barrierefreiheit: Dialoge der Schichtplanung und „Vorjahresübernahme“ sind benannte Dialoge** (`role="dialog"`, modal, Name = Überschrift): Slot, Automatisch füllen, Plan-Einstellungen, Plan duplizieren.
+- **Fehler-Monitoring zeigt deutsche Statusnamen** (Offen, Ignoriert, Behoben) auch in den Zählern und der Bestätigung; bisher standen dort „open“, „ignored“, „resolved“.
+- **Datensicherung: Hinweis zur geplanten Sicherung getrennt nach Docker und nativ.** „Sicherung läuft um HH:30“ und die Einstellungen gelten nur für Docker; native Installationen sichern über den Zeitplan des Betriebssystems (Linux 02:00, Windows/macOS 03:00).
+- **Admin-Dashboard nennt den Monat deutsch** („Oktober 2026“ statt „October 2026“) in der Kachel „Monat“ und im Detail-Dialog.
+- **Barrierefreiheit:** Der Plus-Knopf „Neuer Eintrag“ der Zeiterfassung hat auch am Handy einen Namen; der Schalter „Abwesenheitsanträge genehmigungspflichtig“ trägt seine Überschrift als Namen.
+- **Formular „Neue:r Benutzer:in“:** Platzhalter der E-Mail `name@praxis.example` statt einer echten fremden Domain.
+- **Eigene Abwesenheitsgründe: Eingabefelder mit sichtbarem Rahmen.** „Bezeichnung“ und „Verhalten“ in den Einstellungen (und die Vorschau-Auswahl der Schichtplanung) hatten keinen erkennbaren Rahmen.
+- **Einzahl beim XLS-Import:** „1 Eintrag gefunden“, „1 Konflikt“, „1 Hinweis“, „(1 Eintrag)“ statt „1 Einträge“ usw.
+- **Dezimalkomma statt Punkt in Anzeigen:** gesetzlicher Mindestlohn („13,90 €/h“), Kind-krank-Anzeige („2,0/15“), Urlaubstage in Benutzerliste und Jahresübersicht („3,0 Tage“), Übertrags-Dialog, Datensicherungen, Rechnungen. Gespeichert wird weiterhin unverändert.
+
 ## [1.23.0] - 2026-11-07
 
 ### ✨ Neu

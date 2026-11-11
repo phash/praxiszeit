@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import FocusTrap from 'focus-trap-react';
+import { useState, useEffect, useId } from 'react';
+import DialogFocusTrap from '../../../components/DialogFocusTrap';
 import apiClient from '../../../api/client';
 import { Save, X } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { getErrorMessage } from '../../../utils/errorMessage';
+import { formatFixedDe } from '../../../utils/formatters';
 
 interface YearCarryover {
   id: string;
@@ -23,6 +24,7 @@ interface CarryoverModalProps {
 }
 
 export default function CarryoverModal({ userId, userName, onClose, onSaved }: CarryoverModalProps) {
+  const titleId = useId();
   const toast = useToast();
   const [carryovers, setCarryovers] = useState<YearCarryover[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -90,10 +92,10 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <FocusTrap focusTrapOptions={{ allowOutsideClick: true, onDeactivate: onClose, initialFocus: false }}>
-        <div className="bg-white rounded-xl shadow-lg max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+      <DialogFocusTrap focusTrapOptions={{ allowOutsideClick: true, onDeactivate: onClose, initialFocus: false }}>
+        <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="bg-white rounded-xl shadow-lg max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 id={titleId} className="text-lg font-semibold text-gray-900">
               Vorjahresübernahme: {userName}
             </h3>
             <button
@@ -185,9 +187,9 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
                     >
                       <td className="py-1.5 pr-4 font-medium">{c.year}</td>
                       <td className={`py-1.5 pr-4 ${c.overtime_hours >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {c.overtime_hours >= 0 ? '+' : ''}{c.overtime_hours.toFixed(1)}h
+                        {c.overtime_hours >= 0 ? '+' : ''}{formatFixedDe(c.overtime_hours, 1)}h
                       </td>
-                      <td className="py-1.5">{c.vacation_days.toFixed(1)} Tage</td>
+                      <td className="py-1.5">{formatFixedDe(c.vacation_days, 1)} Tage</td>
                     </tr>
                   ))}
                 </tbody>
@@ -202,7 +204,7 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
             Schließen
           </button>
         </div>
-      </FocusTrap>
+      </DialogFocusTrap>
     </div>
   );
 }

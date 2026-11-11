@@ -194,7 +194,7 @@ export default function VacationApprovals() {
       {/* Setting Toggle */}
       <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-5 mb-6 flex items-center justify-between">
         <div>
-          <p className="font-medium text-gray-900">Abwesenheitsanträge genehmigungspflichtig</p>
+          <p id="vacation-approval-required-label" className="font-medium text-gray-900">Abwesenheitsanträge genehmigungspflichtig</p>
           <p className="text-sm text-gray-500 mt-0.5">
             {approvalRequired
               ? 'Mitarbeiter müssen Abwesenheiten beantragen – Admin-Freigabe erforderlich (außer Krankmeldungen).'
@@ -209,6 +209,7 @@ export default function VacationApprovals() {
           } disabled:opacity-50`}
           role="switch"
           aria-checked={approvalRequired ?? false}
+          aria-labelledby="vacation-approval-required-label"
         >
           <span
             className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${

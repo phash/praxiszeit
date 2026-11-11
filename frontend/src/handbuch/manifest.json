@@ -1,0 +1,3349 @@
+{
+  "br-nachweise": {
+    "file": "br-nachweise.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "ausgeblendete": {
+        "x": 321,
+        "y": 419,
+        "w": 672,
+        "h": 20
+      },
+      "formate": {
+        "x": 859.4,
+        "y": 279,
+        "w": 133.6,
+        "h": 72
+      },
+      "monat": {
+        "x": 321,
+        "y": 301,
+        "w": 206,
+        "h": 50
+      }
+    }
+  },
+  "br-stempeln": {
+    "file": "br-stempeln.webp",
+    "width": 390,
+    "height": 844,
+    "pxWidth": 780,
+    "pxHeight": 1688,
+    "crop": {
+      "x": 0,
+      "y": 574,
+      "w": 390,
+      "h": 270
+    },
+    "markers": {
+      "ausstempeln": {
+        "x": 24,
+        "y": 764,
+        "w": 342,
+        "h": 56
+      },
+      "zeit": {
+        "x": 24,
+        "y": 644,
+        "w": 342,
+        "h": 20
+      }
+    }
+  },
+  "br-team": {
+    "file": "br-team.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 482
+    },
+    "markers": {
+      "besetzung": {
+        "x": 289,
+        "y": 218,
+        "w": 224,
+        "h": 32
+      },
+      "julia": {
+        "x": 321,
+        "y": 430,
+        "w": 77,
+        "h": 20
+      },
+      "stand-am": {
+        "x": 1097,
+        "y": 56,
+        "w": 170,
+        "h": 42
+      }
+    }
+  },
+  "br-uebersicht": {
+    "file": "br-uebersicht.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "monatssaldo": {
+        "x": 313,
+        "y": 269,
+        "w": 84,
+        "h": 20
+      },
+      "ueberstunden": {
+        "x": 599,
+        "y": 269,
+        "w": 121,
+        "h": 20
+      },
+      "urlaubskonto": {
+        "x": 885,
+        "y": 269,
+        "w": 85,
+        "h": 20
+      }
+    }
+  },
+  "br-urlaub": {
+    "file": "br-urlaub.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {}
+  },
+  "ma-2fa-einrichten": {
+    "file": "ma-2fa-einrichten.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 278,
+      "y": 0,
+      "w": 1140,
+      "h": 475
+    },
+    "markers": {
+      "code": {
+        "x": 334,
+        "y": 365,
+        "w": 1028,
+        "h": 54
+      },
+      "qr": {
+        "x": 746,
+        "y": 34,
+        "w": 204,
+        "h": 204
+      }
+    }
+  },
+  "ma-abwesenheit-eintragen": {
+    "file": "ma-abwesenheit-eintragen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 241,
+      "y": 160,
+      "w": 1199,
+      "h": 328
+    },
+    "markers": {
+      "datum": {
+        "x": 313,
+        "y": 376,
+        "w": 255.5,
+        "h": 42
+      },
+      "speichern": {
+        "x": 1127.5,
+        "y": 376,
+        "w": 255.5,
+        "h": 40
+      },
+      "typ": {
+        "x": 584.5,
+        "y": 376,
+        "w": 255.5,
+        "h": 41
+      },
+      "zeitraum": {
+        "x": 313,
+        "y": 232,
+        "w": 1070,
+        "h": 44
+      }
+    }
+  },
+  "ma-anmelden": {
+    "file": "ma-anmelden.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 378,
+      "y": 145.5,
+      "w": 684,
+      "h": 524
+    },
+    "markers": {
+      "anmelden": {
+        "x": 528,
+        "y": 471.5,
+        "w": 384,
+        "h": 48
+      },
+      "benutzername": {
+        "x": 528,
+        "y": 295.5,
+        "w": 384,
+        "h": 50
+      },
+      "passwort": {
+        "x": 528,
+        "y": 397.5,
+        "w": 384,
+        "h": 50
+      }
+    }
+  },
+  "ma-antraege-status": {
+    "file": "ma-antraege-status.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 264,
+      "y": 72,
+      "w": 1168,
+      "h": 490
+    },
+    "markers": {
+      "karte": {
+        "x": 288,
+        "y": 288,
+        "w": 1120,
+        "h": 250
+      },
+      "tab": {
+        "x": 1036,
+        "y": 96,
+        "w": 368,
+        "h": 36
+      },
+      "zurueckziehen": {
+        "x": 1248,
+        "y": 313,
+        "w": 135,
+        "h": 32
+      }
+    }
+  },
+  "ma-antrag-abgelehnt": {
+    "file": "ma-antrag-abgelehnt.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 233,
+      "y": 148,
+      "w": 1207,
+      "h": 495
+    },
+    "markers": {
+      "filter": {
+        "x": 542,
+        "y": 228,
+        "w": 99,
+        "h": 36
+      },
+      "grund": {
+        "x": 313,
+        "y": 517,
+        "w": 1070,
+        "h": 46
+      }
+    }
+  },
+  "ma-antrag-aendern": {
+    "file": "ma-antrag-aendern.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 384,
+      "y": 74.5,
+      "w": 672,
+      "h": 751
+    },
+    "markers": {
+      "aktuell": {
+        "x": 425,
+        "y": 176.5,
+        "w": 590,
+        "h": 24
+      },
+      "begruendung": {
+        "x": 408,
+        "y": 623.5,
+        "w": 624,
+        "h": 90
+      },
+      "senden": {
+        "x": 897,
+        "y": 761.5,
+        "w": 135,
+        "h": 40
+      },
+      "von": {
+        "x": 728,
+        "y": 369.5,
+        "w": 304,
+        "h": 42
+      }
+    }
+  },
+  "ma-antrag-knoepfe": {
+    "file": "ma-antrag-knoepfe.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 960,
+      "y": 224.5,
+      "w": 480,
+      "h": 256
+    },
+    "markers": {
+      "aendern": {
+        "x": 1347,
+        "y": 344.5,
+        "w": 16,
+        "h": 16
+      },
+      "loeschen": {
+        "x": 1367,
+        "y": 344.5,
+        "w": 16,
+        "h": 16
+      }
+    }
+  },
+  "ma-antrag-loeschen": {
+    "file": "ma-antrag-loeschen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 384,
+      "y": 225.5,
+      "w": 672,
+      "h": 449
+    },
+    "markers": {
+      "begruendung": {
+        "x": 408,
+        "y": 472.5,
+        "w": 624,
+        "h": 90
+      },
+      "eintrag": {
+        "x": 425,
+        "y": 327.5,
+        "w": 590,
+        "h": 24
+      },
+      "senden": {
+        "x": 897,
+        "y": 610.5,
+        "w": 135,
+        "h": 40
+      }
+    }
+  },
+  "ma-ausstempeln": {
+    "file": "ma-ausstempeln.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 817,
+      "y": 25,
+      "w": 623,
+      "h": 260
+    },
+    "markers": {
+      "abbrechen": {
+        "x": 1005,
+        "y": 137,
+        "w": 88,
+        "h": 36
+      },
+      "jetzt": {
+        "x": 1109,
+        "y": 125,
+        "w": 274,
+        "h": 60
+      },
+      "pause": {
+        "x": 917,
+        "y": 134,
+        "w": 80,
+        "h": 42
+      }
+    }
+  },
+  "ma-dashboard": {
+    "file": "ma-dashboard.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "countdown": {
+        "x": 1171,
+        "y": 269,
+        "w": 123,
+        "h": 20
+      },
+      "monatssaldo": {
+        "x": 313,
+        "y": 269,
+        "w": 84,
+        "h": 20
+      },
+      "stempelkarte": {
+        "x": 313,
+        "y": 127,
+        "w": 831,
+        "h": 20
+      },
+      "ueberstunden": {
+        "x": 599,
+        "y": 269,
+        "w": 121,
+        "h": 20
+      },
+      "urlaubskonto": {
+        "x": 885,
+        "y": 269,
+        "w": 85,
+        "h": 20
+      }
+    }
+  },
+  "ma-einstempeln": {
+    "file": "ma-einstempeln.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 267,
+      "y": 211,
+      "w": 1162,
+      "h": 152
+    },
+    "markers": {
+      "einstempeln": {
+        "x": 1167,
+        "y": 257,
+        "w": 216,
+        "h": 60
+      },
+      "status": {
+        "x": 313,
+        "y": 277,
+        "w": 838,
+        "h": 20
+      }
+    }
+  },
+  "ma-einteilung-heute": {
+    "file": "ma-einteilung-heute.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 264,
+      "y": 218,
+      "w": 1168,
+      "h": 246
+    },
+    "markers": {
+      "karte": {
+        "x": 288,
+        "y": 242,
+        "w": 1120,
+        "h": 198
+      }
+    }
+  },
+  "ma-eintraege": {
+    "file": "ma-eintraege.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "aktionen": {
+        "x": 1248.7,
+        "y": 229,
+        "w": 158.3,
+        "h": 40.5
+      },
+      "monat": {
+        "x": 288,
+        "y": 164,
+        "w": 40,
+        "h": 40
+      },
+      "netto": {
+        "x": 974.1,
+        "y": 229,
+        "w": 152.3,
+        "h": 40.5
+      },
+      "tab": {
+        "x": 292,
+        "y": 100,
+        "w": 368,
+        "h": 36
+      }
+    }
+  },
+  "ma-halber-tag": {
+    "file": "ma-halber-tag.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 241,
+      "y": 220,
+      "w": 1199,
+      "h": 270
+    },
+    "markers": {
+      "halbtag": {
+        "x": 313,
+        "y": 292,
+        "w": 1070,
+        "h": 44
+      },
+      "speichern": {
+        "x": 1127.5,
+        "y": 376,
+        "w": 255.5,
+        "h": 40
+      },
+      "stunden": {
+        "x": 856,
+        "y": 376,
+        "w": 255.5,
+        "h": 42
+      }
+    }
+  },
+  "ma-handy-start": {
+    "file": "ma-handy-start.webp",
+    "width": 390,
+    "height": 844,
+    "pxWidth": 780,
+    "pxHeight": 1688,
+    "crop": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    "markers": {
+      "leiste": {
+        "x": 0,
+        "y": 779.5,
+        "w": 79.5,
+        "h": 65
+      },
+      "menue": {
+        "x": 334,
+        "y": 11.5,
+        "w": 40,
+        "h": 40
+      },
+      "stempel": {
+        "x": 167,
+        "y": 767,
+        "w": 56,
+        "h": 56
+      }
+    }
+  },
+  "ma-handy-stempeluhr": {
+    "file": "ma-handy-stempeluhr.webp",
+    "width": 390,
+    "height": 844,
+    "pxWidth": 780,
+    "pxHeight": 1688,
+    "crop": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    "markers": {
+      "ausstempeln": {
+        "x": 24,
+        "y": 764,
+        "w": 342,
+        "h": 56
+      },
+      "uhr": {
+        "x": 24,
+        "y": 644,
+        "w": 342,
+        "h": 20
+      }
+    }
+  },
+  "ma-handy-zeiterfassung": {
+    "file": "ma-handy-zeiterfassung.webp",
+    "width": 390,
+    "height": 844,
+    "pxWidth": 780,
+    "pxHeight": 1688,
+    "crop": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    "markers": {
+      "aendern": {
+        "x": 33,
+        "y": 623,
+        "w": 158,
+        "h": 36
+      },
+      "antrag": {
+        "x": 224,
+        "y": 88,
+        "w": 82,
+        "h": 40
+      },
+      "neu": {
+        "x": 314,
+        "y": 90,
+        "w": 60,
+        "h": 36
+      }
+    }
+  },
+  "ma-jahresuebersicht": {
+    "file": "ma-jahresuebersicht.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "abwesenheiten": {
+        "x": 313,
+        "y": 228,
+        "w": 1070,
+        "h": 136
+      },
+      "stunden": {
+        "x": 329,
+        "y": 68,
+        "w": 1038,
+        "h": 20
+      },
+      "team": {
+        "x": 313,
+        "y": 438,
+        "w": 1070,
+        "h": 24
+      }
+    }
+  },
+  "ma-journal": {
+    "file": "ma-journal.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "saldo": {
+        "x": 1192.7,
+        "y": 297,
+        "w": 138.3,
+        "h": 32
+      },
+      "tab": {
+        "x": 664,
+        "y": 96,
+        "w": 368,
+        "h": 36
+      }
+    }
+  },
+  "ma-kalender": {
+    "file": "ma-kalender.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "monat": {
+        "x": 661,
+        "y": 163,
+        "w": 40,
+        "h": 40
+      }
+    }
+  },
+  "ma-loeschung-beantragen": {
+    "file": "ma-loeschung-beantragen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 722,
+      "y": 205,
+      "w": 718,
+      "h": 695
+    },
+    "markers": {
+      "knopf": {
+        "x": 1242,
+        "y": 725,
+        "w": 141,
+        "h": 20
+      }
+    }
+  },
+  "ma-meine-antraege": {
+    "file": "ma-meine-antraege.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 264,
+      "y": 68,
+      "w": 1168,
+      "h": 239
+    },
+    "markers": {
+      "karte": {
+        "x": 288,
+        "y": 159,
+        "w": 1120,
+        "h": 124
+      },
+      "tab": {
+        "x": 377,
+        "y": 92,
+        "w": 128,
+        "h": 42
+      },
+      "tage": {
+        "x": 309,
+        "y": 208,
+        "w": 326,
+        "h": 20
+      }
+    }
+  },
+  "ma-meine-arbeitszeit": {
+    "file": "ma-meine-arbeitszeit.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 272,
+      "y": 520,
+      "w": 1152,
+      "h": 368
+    },
+    "markers": {
+      "heute": {
+        "x": 312,
+        "y": 600,
+        "w": 1072,
+        "h": 116
+      },
+      "karte": {
+        "x": 288,
+        "y": 536,
+        "w": 1120,
+        "h": 336
+      },
+      "verlauf": {
+        "x": 312,
+        "y": 784,
+        "w": 1072,
+        "h": 64
+      }
+    }
+  },
+  "ma-navigation": {
+    "file": "ma-navigation.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 0,
+      "y": 97,
+      "w": 480,
+      "h": 252
+    },
+    "markers": {
+      "abwesenheiten": {
+        "x": 16,
+        "y": 225,
+        "w": 223,
+        "h": 48
+      },
+      "dashboard": {
+        "x": 16,
+        "y": 121,
+        "w": 223,
+        "h": 48
+      },
+      "profil": {
+        "x": 16,
+        "y": 277,
+        "w": 223,
+        "h": 48
+      },
+      "zeiterfassung": {
+        "x": 16,
+        "y": 173,
+        "w": 223,
+        "h": 48
+      }
+    }
+  },
+  "ma-neuer-eintrag": {
+    "file": "ma-neuer-eintrag.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 288,
+      "y": 164,
+      "w": 1120,
+      "h": 262
+    },
+    "markers": {
+      "bis": {
+        "x": 747.4,
+        "y": 257,
+        "w": 201.2,
+        "h": 42
+      },
+      "speichern": {
+        "x": 1181.8,
+        "y": 257,
+        "w": 201.2,
+        "h": 40
+      },
+      "von": {
+        "x": 530.2,
+        "y": 257,
+        "w": 201.2,
+        "h": 42
+      }
+    }
+  },
+  "ma-nicht-angerechnet": {
+    "file": "ma-nicht-angerechnet.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 257,
+      "y": 460.5,
+      "w": 1182,
+      "h": 169
+    },
+    "markers": {
+      "zeile": {
+        "x": 289,
+        "y": 492.5,
+        "w": 1118,
+        "h": 105
+      }
+    }
+  },
+  "ma-passwort-aendern": {
+    "file": "ma-passwort-aendern.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "aktuell": {
+        "x": 313,
+        "y": 491,
+        "w": 1070,
+        "h": 42
+      },
+      "bestaetigen": {
+        "x": 313,
+        "y": 675,
+        "w": 1070,
+        "h": 42
+      },
+      "neu": {
+        "x": 313,
+        "y": 573,
+        "w": 1070,
+        "h": 42
+      }
+    }
+  },
+  "ma-profil": {
+    "file": "ma-profil.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 249,
+      "y": 32,
+      "w": 1191,
+      "h": 868
+    },
+    "markers": {
+      "arbeitszeit": {
+        "x": 338,
+        "y": 507,
+        "w": 156,
+        "h": 28
+      },
+      "bearbeiten": {
+        "x": 1291,
+        "y": 72,
+        "w": 92,
+        "h": 20
+      },
+      "passwort": {
+        "x": 1336,
+        "y": 374,
+        "w": 47,
+        "h": 20
+      },
+      "weitere": {
+        "x": 289,
+        "y": 844,
+        "w": 1118,
+        "h": 56
+      }
+    }
+  },
+  "ma-schichtplan": {
+    "file": "ma-schichtplan.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "pdf": {
+        "x": 1302,
+        "y": 109,
+        "w": 89,
+        "h": 40
+      },
+      "plan": {
+        "x": 305,
+        "y": 115,
+        "w": 182,
+        "h": 28
+      }
+    }
+  },
+  "ma-vergangener-tag": {
+    "file": "ma-vergangener-tag.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 384,
+      "y": 167.5,
+      "w": 672,
+      "h": 565
+    },
+    "markers": {
+      "begruendung": {
+        "x": 408,
+        "y": 530.5,
+        "w": 624,
+        "h": 90
+      },
+      "datum": {
+        "x": 408,
+        "y": 276.5,
+        "w": 304,
+        "h": 42
+      },
+      "senden": {
+        "x": 897,
+        "y": 668.5,
+        "w": 135,
+        "h": 40
+      },
+      "von": {
+        "x": 728,
+        "y": 276.5,
+        "w": 304,
+        "h": 42
+      }
+    }
+  },
+  "ma-wochenuebersicht": {
+    "file": "ma-wochenuebersicht.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "kumuliert": {
+        "x": 1092.8,
+        "y": 191,
+        "w": 314.2,
+        "h": 40.5
+      },
+      "saldo": {
+        "x": 903.6,
+        "y": 191,
+        "w": 189.3,
+        "h": 40.5
+      },
+      "umschalter": {
+        "x": 1230,
+        "y": 132,
+        "w": 153,
+        "h": 38
+      }
+    }
+  },
+  "pl-abwesenheit-eintragen": {
+    "file": "pl-abwesenheit-eintragen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 215,
+      "y": 115,
+      "w": 1225,
+      "h": 675
+    },
+    "markers": {
+      "datum": {
+        "x": 313,
+        "y": 500,
+        "w": 255.5,
+        "h": 42
+      },
+      "mitarbeiter": {
+        "x": 305,
+        "y": 205,
+        "w": 794,
+        "h": 41
+      },
+      "speichern": {
+        "x": 313,
+        "y": 660,
+        "w": 1070,
+        "h": 40
+      },
+      "typ": {
+        "x": 584.5,
+        "y": 500,
+        "w": 255.5,
+        "h": 41
+      },
+      "zeitraum": {
+        "x": 313,
+        "y": 356,
+        "w": 1070,
+        "h": 44
+      }
+    }
+  },
+  "pl-abwesenheitsgrund": {
+    "file": "pl-abwesenheitsgrund.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 222,
+      "y": 134,
+      "w": 1218,
+      "h": 372
+    },
+    "markers": {
+      "bezeichnung": {
+        "x": 312,
+        "y": 224,
+        "w": 704,
+        "h": 38
+      },
+      "hinzufuegen": {
+        "x": 1268,
+        "y": 226,
+        "w": 116,
+        "h": 36
+      },
+      "liste": {
+        "x": 312,
+        "y": 372,
+        "w": 1072,
+        "h": 44
+      },
+      "verhalten": {
+        "x": 1024,
+        "y": 224,
+        "w": 180,
+        "h": 38
+      },
+      "vorlagen": {
+        "x": 312,
+        "y": 330,
+        "w": 1072,
+        "h": 26
+      }
+    }
+  },
+  "pl-admin-dashboard": {
+    "file": "pl-admin-dashboard.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 232,
+      "y": 195,
+      "w": 1208,
+      "h": 485.5
+    },
+    "markers": {
+      "details": {
+        "x": 1333.2,
+        "y": 567.5,
+        "w": 73.8,
+        "h": 57
+      },
+      "monat": {
+        "x": 689,
+        "y": 250,
+        "w": 40,
+        "h": 40
+      },
+      "saldo": {
+        "x": 807.3,
+        "y": 470,
+        "w": 96.5,
+        "h": 40.5
+      },
+      "soll-basis": {
+        "x": 683.5,
+        "y": 423,
+        "w": 103,
+        "h": 30
+      },
+      "umschalter": {
+        "x": 288,
+        "y": 251,
+        "w": 153,
+        "h": 38
+      }
+    }
+  },
+  "pl-anerkennen": {
+    "file": "pl-anerkennen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 563.6,
+      "y": 377,
+      "w": 480,
+      "h": 166
+    },
+    "markers": {
+      "anerkennen": {
+        "x": 643.6,
+        "y": 465,
+        "w": 85,
+        "h": 22
+      },
+      "zeile": {
+        "x": 643.6,
+        "y": 433,
+        "w": 320,
+        "h": 32
+      }
+    }
+  },
+  "pl-anrechnung-beantragt": {
+    "file": "pl-anrechnung-beantragt.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 277,
+      "y": 460,
+      "w": 599,
+      "h": 431
+    },
+    "markers": {
+      "anerkennen": {
+        "x": 313,
+        "y": 807,
+        "w": 246,
+        "h": 36
+      },
+      "kennzeichen": {
+        "x": 602,
+        "y": 508,
+        "w": 146,
+        "h": 20
+      },
+      "luecke": {
+        "x": 325,
+        "y": 682,
+        "w": 503,
+        "h": 20
+      },
+      "ohne": {
+        "x": 571,
+        "y": 807,
+        "w": 230,
+        "h": 36
+      }
+    }
+  },
+  "pl-arbzg-24wochen": {
+    "file": "pl-arbzg-24wochen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 223,
+      "y": 338,
+      "w": 1217,
+      "h": 562
+    },
+    "markers": {
+      "pruefen": {
+        "x": 499,
+        "y": 430,
+        "w": 105,
+        "h": 40
+      },
+      "stichtag": {
+        "x": 313,
+        "y": 428,
+        "w": 170,
+        "h": 42
+      },
+      "tabelle": {
+        "x": 313,
+        "y": 518,
+        "w": 1070,
+        "h": 379
+      }
+    }
+  },
+  "pl-arbzg-hoechstarbeitszeit": {
+    "file": "pl-arbzg-hoechstarbeitszeit.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 223,
+      "y": 373,
+      "w": 1217,
+      "h": 411
+    },
+    "markers": {
+      "ausnahmen": {
+        "x": 330,
+        "y": 642,
+        "w": 1036,
+        "h": 52
+      },
+      "filter": {
+        "x": 313,
+        "y": 463,
+        "w": 1070,
+        "h": 66
+      },
+      "person": {
+        "x": 314,
+        "y": 578,
+        "w": 1068,
+        "h": 48
+      },
+      "zahlen": {
+        "x": 313,
+        "y": 545,
+        "w": 1070,
+        "h": 20
+      }
+    }
+  },
+  "pl-auswirkung": {
+    "file": "pl-auswirkung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 334,
+      "y": 158,
+      "w": 772,
+      "h": 468
+    },
+    "markers": {
+      "bereich": {
+        "x": 390,
+        "y": 214,
+        "w": 660,
+        "h": 20
+      },
+      "bestaetigen": {
+        "x": 390,
+        "y": 550,
+        "w": 660,
+        "h": 20
+      },
+      "eintraege": {
+        "x": 390,
+        "y": 306,
+        "w": 660,
+        "h": 20
+      },
+      "einzelheiten": {
+        "x": 390,
+        "y": 522,
+        "w": 91,
+        "h": 20
+      },
+      "tabelle": {
+        "x": 390,
+        "y": 382,
+        "w": 660,
+        "h": 136
+      }
+    }
+  },
+  "pl-bearbeiten": {
+    "file": "pl-bearbeiten.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 281,
+      "y": 343,
+      "w": 1134,
+      "h": 364
+    },
+    "markers": {
+      "anpassen": {
+        "x": 1209,
+        "y": 375,
+        "w": 174,
+        "h": 38
+      },
+      "vertrag": {
+        "x": 313,
+        "y": 561,
+        "w": 1070,
+        "h": 114
+      }
+    }
+  },
+  "pl-benutzer-aktionen": {
+    "file": "pl-benutzer-aktionen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 960,
+      "y": 519,
+      "w": 480,
+      "h": 170
+    },
+    "markers": {
+      "arbeitszeit": {
+        "x": 1355,
+        "y": 575,
+        "w": 16,
+        "h": 16
+      },
+      "bearbeiten": {
+        "x": 1327,
+        "y": 575,
+        "w": 16,
+        "h": 16
+      },
+      "deaktivieren": {
+        "x": 1339,
+        "y": 617,
+        "w": 16,
+        "h": 16
+      },
+      "journal": {
+        "x": 1327,
+        "y": 554,
+        "w": 16,
+        "h": 16
+      }
+    }
+  },
+  "pl-benutzerliste": {
+    "file": "pl-benutzerliste.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "kopf": {
+        "x": 858,
+        "y": 32,
+        "w": 550,
+        "h": 40
+      },
+      "ueberstunden": {
+        "x": 1092,
+        "y": 197,
+        "w": 130,
+        "h": 56.5
+      },
+      "urlaubskonto": {
+        "x": 927,
+        "y": 197,
+        "w": 165,
+        "h": 56.5
+      }
+    }
+  },
+  "pl-betriebsferien": {
+    "file": "pl-betriebsferien.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 223,
+      "y": 203,
+      "w": 1217,
+      "h": 492
+    },
+    "markers": {
+      "bezeichnung": {
+        "x": 313,
+        "y": 293,
+        "w": 1070,
+        "h": 42
+      },
+      "erstellen": {
+        "x": 313,
+        "y": 565,
+        "w": 1070,
+        "h": 40
+      },
+      "verrechnung": {
+        "x": 313,
+        "y": 461,
+        "w": 1070,
+        "h": 88
+      },
+      "zeitraum": {
+        "x": 313,
+        "y": 351,
+        "w": 1070,
+        "h": 66
+      }
+    }
+  },
+  "pl-betriebsferien-liste": {
+    "file": "pl-betriebsferien-liste.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 199,
+      "y": 154,
+      "w": 1241,
+      "h": 281
+    },
+    "markers": {
+      "aktionen": {
+        "x": 1236.9,
+        "y": 284.5,
+        "w": 170.1,
+        "h": 60.5
+      },
+      "tabelle": {
+        "x": 289,
+        "y": 244,
+        "w": 1118,
+        "h": 40.5
+      }
+    }
+  },
+  "pl-betriebsferien-urlaub": {
+    "file": "pl-betriebsferien-urlaub.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "schalter": {
+        "x": 652,
+        "y": 638,
+        "w": 44,
+        "h": 24
+      },
+      "speichern": {
+        "x": 312,
+        "y": 678,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-bloecke": {
+    "file": "pl-bloecke.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 321,
+      "y": 199,
+      "w": 749,
+      "h": 370.3
+    },
+    "markers": {
+      "block": {
+        "x": 662.4,
+        "y": 486.7,
+        "w": 85.7,
+        "h": 26.7
+      },
+      "gueltig-ab": {
+        "x": 377,
+        "y": 255,
+        "w": 220.7,
+        "h": 42
+      },
+      "modus": {
+        "x": 628,
+        "y": 341,
+        "w": 158,
+        "h": 20
+      },
+      "pause": {
+        "x": 950,
+        "y": 414,
+        "w": 64,
+        "h": 26
+      },
+      "plus": {
+        "x": 886.8,
+        "y": 382,
+        "w": 58,
+        "h": 28
+      }
+    }
+  },
+  "pl-bundesland": {
+    "file": "pl-bundesland.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 576,
+      "w": 642,
+      "h": 153
+    },
+    "markers": {
+      "bundesland": {
+        "x": 312,
+        "y": 632,
+        "w": 384,
+        "h": 41
+      },
+      "speichern": {
+        "x": 712,
+        "y": 633,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-datensicherung": {
+    "file": "pl-datensicherung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 326,
+      "y": 108,
+      "w": 1044,
+      "h": 789
+    },
+    "markers": {
+      "aufbewahrung": {
+        "x": 856,
+        "y": 455,
+        "w": 404,
+        "h": 86
+      },
+      "jetzt-sichern": {
+        "x": 436,
+        "y": 218,
+        "w": 150,
+        "h": 40
+      },
+      "liste": {
+        "x": 436,
+        "y": 759,
+        "w": 824,
+        "h": 28
+      },
+      "speichern": {
+        "x": 436,
+        "y": 655,
+        "w": 231,
+        "h": 40
+      },
+      "speicherort": {
+        "x": 436,
+        "y": 557,
+        "w": 824,
+        "h": 82
+      },
+      "taeglich": {
+        "x": 436,
+        "y": 371.5,
+        "w": 13,
+        "h": 13
+      },
+      "uhrzeit": {
+        "x": 436,
+        "y": 455,
+        "w": 404,
+        "h": 86
+      }
+    }
+  },
+  "pl-eigene-feiertage": {
+    "file": "pl-eigene-feiertage.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 238,
+      "y": 115,
+      "w": 1202,
+      "h": 375
+    },
+    "markers": {
+      "datum": {
+        "x": 1049,
+        "y": 358,
+        "w": 170,
+        "h": 42
+      },
+      "hinzufuegen": {
+        "x": 1231,
+        "y": 360,
+        "w": 137,
+        "h": 40
+      },
+      "jahr": {
+        "x": 1299,
+        "y": 205,
+        "w": 85,
+        "h": 41
+      },
+      "name": {
+        "x": 328,
+        "y": 358,
+        "w": 709,
+        "h": 42
+      }
+    }
+  },
+  "pl-farben": {
+    "file": "pl-farben.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "farben": {
+        "x": 312,
+        "y": 624,
+        "w": 576,
+        "h": 164
+      },
+      "speichern": {
+        "x": 312,
+        "y": 804,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-fehlende-buchungen": {
+    "file": "pl-fehlende-buchungen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 264,
+      "y": 76,
+      "w": 1168,
+      "h": 130
+    },
+    "markers": {
+      "kasten": {
+        "x": 288,
+        "y": 100,
+        "w": 1120,
+        "h": 82
+      }
+    }
+  },
+  "pl-fehler-monitoring": {
+    "file": "pl-fehler-monitoring.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 232,
+      "y": 0,
+      "w": 1208,
+      "h": 382
+    },
+    "markers": {
+      "aktualisieren": {
+        "x": 1254,
+        "y": 32,
+        "w": 154,
+        "h": 42
+      },
+      "liste": {
+        "x": 288,
+        "y": 184,
+        "w": 1120,
+        "h": 142
+      },
+      "reiter": {
+        "x": 347,
+        "y": 122,
+        "w": 71,
+        "h": 38
+      }
+    }
+  },
+  "pl-import-bestaetigen": {
+    "file": "pl-import-bestaetigen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 173,
+      "y": 621,
+      "w": 574,
+      "h": 279
+    },
+    "markers": {
+      "bestaetigen": {
+        "x": 421,
+        "y": 805,
+        "w": 186,
+        "h": 38
+      },
+      "ueberschreiben": {
+        "x": 337,
+        "y": 761,
+        "w": 220,
+        "h": 20
+      },
+      "zurueck": {
+        "x": 313,
+        "y": 805,
+        "w": 96,
+        "h": 38
+      }
+    }
+  },
+  "pl-import-hochladen": {
+    "file": "pl-import-hochladen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 265,
+      "y": 229,
+      "w": 768,
+      "h": 264
+    },
+    "markers": {
+      "analysieren": {
+        "x": 313,
+        "y": 405,
+        "w": 181,
+        "h": 40
+      },
+      "benutzer": {
+        "x": 313,
+        "y": 277,
+        "w": 324,
+        "h": 38
+      },
+      "datei": {
+        "x": 661,
+        "y": 277,
+        "w": 324,
+        "h": 104
+      }
+    }
+  },
+  "pl-import-vorschau": {
+    "file": "pl-import-vorschau.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 233,
+      "y": 165,
+      "w": 1207,
+      "h": 702
+    },
+    "markers": {
+      "hinweis": {
+        "x": 1189.9,
+        "y": 397,
+        "w": 74,
+        "h": 20
+      },
+      "konflikt": {
+        "x": 1189.9,
+        "y": 767,
+        "w": 73,
+        "h": 20
+      },
+      "neu": {
+        "x": 1189.9,
+        "y": 471,
+        "w": 53,
+        "h": 20
+      },
+      "zahlen": {
+        "x": 313,
+        "y": 245,
+        "w": 1070,
+        "h": 20
+      }
+    }
+  },
+  "pl-jahresabschluss-dialog": {
+    "file": "pl-jahresabschluss-dialog.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 486,
+      "y": 287,
+      "w": 524,
+      "h": 362
+    },
+    "markers": {
+      "abbrechen": {
+        "x": 602,
+        "y": 521,
+        "w": 106,
+        "h": 38
+      },
+      "bestaetigen": {
+        "x": 720,
+        "y": 521,
+        "w": 200,
+        "h": 38
+      },
+      "text": {
+        "x": 576,
+        "y": 377,
+        "w": 344,
+        "h": 120
+      }
+    }
+  },
+  "pl-jahresreport": {
+    "file": "pl-jahresreport.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 231,
+      "y": 48,
+      "w": 852,
+      "h": 642
+    },
+    "markers": {
+      "classic": {
+        "x": 321,
+        "y": 300,
+        "w": 328,
+        "h": 300
+      },
+      "detailliert": {
+        "x": 665,
+        "y": 300,
+        "w": 328,
+        "h": 300
+      },
+      "jahr": {
+        "x": 321,
+        "y": 138,
+        "w": 672,
+        "h": 50
+      }
+    }
+  },
+  "pl-jahresuebersicht": {
+    "file": "pl-jahresuebersicht.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "abschluss": {
+        "x": 882,
+        "y": 263,
+        "w": 183,
+        "h": 40
+      },
+      "jahr": {
+        "x": 777,
+        "y": 262,
+        "w": 93,
+        "h": 42
+      },
+      "loeschen": {
+        "x": 1077,
+        "y": 263,
+        "w": 197,
+        "h": 40
+      },
+      "resturlaub": {
+        "x": 590.1,
+        "y": 503,
+        "w": 143.2,
+        "h": 40.5
+      }
+    }
+  },
+  "pl-kind-krank-grund": {
+    "file": "pl-kind-krank-grund.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 222,
+      "y": 134,
+      "w": 1218,
+      "h": 336
+    },
+    "markers": {
+      "haken": {
+        "x": 312,
+        "y": 279.5,
+        "w": 13,
+        "h": 13
+      },
+      "verhalten": {
+        "x": 1024,
+        "y": 224,
+        "w": 180,
+        "h": 38
+      },
+      "vorlage": {
+        "x": 312,
+        "y": 354,
+        "w": 1072,
+        "h": 26
+      }
+    }
+  },
+  "pl-kind-krank-limit": {
+    "file": "pl-kind-krank-limit.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 222,
+      "y": 470,
+      "w": 1218,
+      "h": 350
+    },
+    "markers": {
+      "anspruch": {
+        "x": 312,
+        "y": 560,
+        "w": 112,
+        "h": 42
+      },
+      "mindestlohn": {
+        "x": 312,
+        "y": 710,
+        "w": 1072,
+        "h": 20
+      },
+      "speichern": {
+        "x": 536,
+        "y": 562,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-konto-vorgaenge": {
+    "file": "pl-konto-vorgaenge.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 241,
+      "y": 438,
+      "w": 902.2,
+      "h": 309.5
+    },
+    "markers": {
+      "durch": {
+        "x": 849.3,
+        "y": 621,
+        "w": 203.9,
+        "h": 36.5
+      },
+      "kopf": {
+        "x": 331,
+        "y": 528,
+        "w": 535,
+        "h": 44
+      },
+      "vorgang": {
+        "x": 491.5,
+        "y": 621,
+        "w": 174.2,
+        "h": 36.5
+      }
+    }
+  },
+  "pl-korrekturantrag": {
+    "file": "pl-korrekturantrag.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 265,
+      "y": 406,
+      "w": 776,
+      "h": 256
+    },
+    "markers": {
+      "aktuell": {
+        "x": 356,
+        "y": 454,
+        "w": 86,
+        "h": 18
+      },
+      "begruendung": {
+        "x": 399,
+        "y": 526,
+        "w": 544,
+        "h": 18
+      },
+      "genehmigen": {
+        "x": 313,
+        "y": 578,
+        "w": 138,
+        "h": 36
+      },
+      "gewuenscht": {
+        "x": 899,
+        "y": 454,
+        "w": 94,
+        "h": 18
+      }
+    }
+  },
+  "pl-minijob-konto": {
+    "file": "pl-minijob-konto.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 347,
+      "y": 542,
+      "w": 746,
+      "h": 299
+    },
+    "markers": {
+      "fest": {
+        "x": 403,
+        "y": 769,
+        "w": 16,
+        "h": 16
+      },
+      "konto": {
+        "x": 403,
+        "y": 598,
+        "w": 16,
+        "h": 16
+      },
+      "monat": {
+        "x": 403,
+        "y": 648,
+        "w": 634,
+        "h": 42
+      }
+    }
+  },
+  "pl-mitarbeiter-details": {
+    "file": "pl-mitarbeiter-details.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 184,
+      "y": 384,
+      "w": 1072,
+      "h": 325.5
+    },
+    "markers": {
+      "aktionen": {
+        "x": 1060.1,
+        "y": 622,
+        "w": 146.9,
+        "h": 39.5
+      },
+      "kennzahlen": {
+        "x": 232,
+        "y": 432,
+        "w": 976,
+        "h": 80
+      },
+      "neuer-eintrag": {
+        "x": 1061,
+        "y": 549,
+        "w": 130,
+        "h": 28
+      }
+    }
+  },
+  "pl-monatsreport": {
+    "file": "pl-monatsreport.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 231,
+      "y": 211,
+      "w": 852,
+      "h": 318
+    },
+    "markers": {
+      "ausgeblendete": {
+        "x": 321,
+        "y": 419,
+        "w": 672,
+        "h": 20
+      },
+      "formate": {
+        "x": 859.4,
+        "y": 279,
+        "w": 133.6,
+        "h": 72
+      },
+      "krankheit": {
+        "x": 321,
+        "y": 367,
+        "w": 672,
+        "h": 20
+      },
+      "monat": {
+        "x": 321,
+        "y": 301,
+        "w": 206,
+        "h": 50
+      }
+    }
+  },
+  "pl-navigation": {
+    "file": "pl-navigation.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 0,
+      "y": 366,
+      "w": 480,
+      "h": 346
+    },
+    "markers": {
+      "admin-dashboard": {
+        "x": 16,
+        "y": 390,
+        "w": 223,
+        "h": 48
+      },
+      "benutzerverwaltung": {
+        "x": 16,
+        "y": 442,
+        "w": 223,
+        "h": 48
+      },
+      "schnellstart": {
+        "x": 16,
+        "y": 660,
+        "w": 223,
+        "h": 28
+      },
+      "team": {
+        "x": 16,
+        "y": 494,
+        "w": 223,
+        "h": 72
+      }
+    }
+  },
+  "pl-neu-anlegen": {
+    "file": "pl-neu-anlegen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 233,
+      "y": 117,
+      "w": 1207,
+      "h": 612
+    },
+    "markers": {
+      "arbeitstage": {
+        "x": 856,
+        "y": 463,
+        "w": 527,
+        "h": 42
+      },
+      "benutzername": {
+        "x": 313,
+        "y": 197,
+        "w": 527,
+        "h": 42
+      },
+      "passwort": {
+        "x": 313,
+        "y": 279,
+        "w": 527,
+        "h": 42
+      },
+      "urlaub": {
+        "x": 313,
+        "y": 615,
+        "w": 527,
+        "h": 34
+      },
+      "wochenstunden": {
+        "x": 313,
+        "y": 463,
+        "w": 527,
+        "h": 42
+      }
+    }
+  },
+  "pl-neu-anlegen-optionen": {
+    "file": "pl-neu-anlegen-optionen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 233,
+      "y": 104,
+      "w": 1207,
+      "h": 446
+    },
+    "markers": {
+      "erster-tag": {
+        "x": 313,
+        "y": 184,
+        "w": 527,
+        "h": 42
+      },
+      "modus": {
+        "x": 330,
+        "y": 341,
+        "w": 1036,
+        "h": 44
+      },
+      "speichern": {
+        "x": 313,
+        "y": 430,
+        "w": 1070,
+        "h": 40
+      }
+    }
+  },
+  "pl-onboarding-schichtplanung": {
+    "file": "pl-onboarding-schichtplanung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "schichtplanung": {
+        "x": 652,
+        "y": 808,
+        "w": 44,
+        "h": 24
+      },
+      "tour": {
+        "x": 652,
+        "y": 536,
+        "w": 44,
+        "h": 24
+      }
+    }
+  },
+  "pl-pflicht-pause": {
+    "file": "pl-pflicht-pause.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "erlauben": {
+        "x": 653.8,
+        "y": 584,
+        "w": 42.2,
+        "h": 24
+      },
+      "genehmigung": {
+        "x": 652,
+        "y": 728,
+        "w": 44,
+        "h": 24
+      },
+      "speichern": {
+        "x": 312,
+        "y": 768,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-projektion": {
+    "file": "pl-projektion.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "admin": {
+        "x": 844,
+        "y": 651,
+        "w": 44,
+        "h": 24
+      },
+      "mitarbeiter": {
+        "x": 844,
+        "y": 558,
+        "w": 44,
+        "h": 24
+      },
+      "speichern": {
+        "x": 312,
+        "y": 705,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-protokoll": {
+    "file": "pl-protokoll.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "monat": {
+        "x": 288,
+        "y": 100,
+        "w": 276,
+        "h": 40
+      },
+      "person": {
+        "x": 580,
+        "y": 101,
+        "w": 168,
+        "h": 38
+      },
+      "quelle": {
+        "x": 847.4,
+        "y": 165,
+        "w": 117,
+        "h": 40.5
+      },
+      "werte": {
+        "x": 964.4,
+        "y": 165,
+        "w": 221.3,
+        "h": 40.5
+      }
+    }
+  },
+  "pl-protokoll-pruefung": {
+    "file": "pl-protokoll-pruefung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 249,
+      "y": 331,
+      "w": 1191,
+      "h": 195
+    },
+    "markers": {
+      "ergebnis": {
+        "x": 305,
+        "y": 450,
+        "w": 1086,
+        "h": 20
+      },
+      "jetzt-pruefen": {
+        "x": 1286,
+        "y": 387,
+        "w": 105,
+        "h": 32
+      }
+    }
+  },
+  "pl-puffer": {
+    "file": "pl-puffer.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "puffer": {
+        "x": 312,
+        "y": 648,
+        "w": 112,
+        "h": 42
+      },
+      "speichern": {
+        "x": 595,
+        "y": 650,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-rueckwirkend": {
+    "file": "pl-rueckwirkend.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 346,
+      "y": 320,
+      "w": 748,
+      "h": 348
+    },
+    "markers": {
+      "ab-heute": {
+        "x": 414,
+        "y": 416,
+        "w": 486,
+        "h": 20
+      },
+      "begruendung": {
+        "x": 414,
+        "y": 574,
+        "w": 636,
+        "h": 50
+      },
+      "grund": {
+        "x": 414,
+        "y": 492,
+        "w": 636,
+        "h": 30
+      },
+      "rueckwirkend": {
+        "x": 414,
+        "y": 440,
+        "w": 305,
+        "h": 20
+      },
+      "verkuerzung": {
+        "x": 390,
+        "y": 364,
+        "w": 660,
+        "h": 20
+      }
+    }
+  },
+  "pl-sammel-genehmigung": {
+    "file": "pl-sammel-genehmigung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 253,
+      "y": 203,
+      "w": 1054,
+      "h": 206
+    },
+    "markers": {
+      "auswahl": {
+        "x": 301,
+        "y": 259,
+        "w": 110,
+        "h": 20
+      },
+      "karte": {
+        "x": 313,
+        "y": 345,
+        "w": 16,
+        "h": 16
+      },
+      "sammel": {
+        "x": 953,
+        "y": 251,
+        "w": 306,
+        "h": 36
+      }
+    }
+  },
+  "pl-schicht-editor": {
+    "file": "pl-schicht-editor.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "aktiv": {
+        "x": 609,
+        "y": 289,
+        "w": 153,
+        "h": 40
+      },
+      "bearbeiten": {
+        "x": 1076,
+        "y": 289,
+        "w": 141,
+        "h": 40
+      },
+      "neuer-plan": {
+        "x": 305,
+        "y": 233,
+        "w": 178,
+        "h": 66
+      },
+      "pdf": {
+        "x": 1225,
+        "y": 289,
+        "w": 89,
+        "h": 40
+      },
+      "woche-tag": {
+        "x": 609,
+        "y": 393,
+        "w": 119,
+        "h": 30
+      }
+    }
+  },
+  "pl-schicht-einweisungen": {
+    "file": "pl-schicht-einweisungen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "arbeitsplatz": {
+        "x": 1142,
+        "y": 267,
+        "w": 249,
+        "h": 36.5
+      },
+      "haken": {
+        "x": 950.8,
+        "y": 350,
+        "w": 16,
+        "h": 16
+      },
+      "kein-haken": {
+        "x": 1258.5,
+        "y": 350,
+        "w": 16,
+        "h": 16
+      }
+    }
+  },
+  "pl-schicht-fuellen": {
+    "file": "pl-schicht-fuellen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 302,
+      "y": 215.5,
+      "w": 836,
+      "h": 650
+    },
+    "markers": {
+      "generieren": {
+        "x": 786,
+        "y": 615.5,
+        "w": 142,
+        "h": 40
+      },
+      "modus": {
+        "x": 512,
+        "y": 507.5,
+        "w": 416,
+        "h": 84
+      },
+      "zielwoche": {
+        "x": 512,
+        "y": 425.5,
+        "w": 416,
+        "h": 42
+      }
+    }
+  },
+  "pl-schicht-plan-einstellungen": {
+    "file": "pl-schicht-plan-einstellungen.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 370,
+      "y": 137,
+      "w": 700,
+      "h": 711
+    },
+    "markers": {
+      "name": {
+        "x": 480,
+        "y": 247,
+        "w": 480,
+        "h": 42
+      },
+      "sichtbar": {
+        "x": 493,
+        "y": 589,
+        "w": 454,
+        "h": 72
+      },
+      "speichern": {
+        "x": 854,
+        "y": 698,
+        "w": 106,
+        "h": 40
+      },
+      "zeitraum": {
+        "x": 480,
+        "y": 442,
+        "w": 480,
+        "h": 66
+      }
+    }
+  },
+  "pl-schicht-slot": {
+    "file": "pl-schicht-slot.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 350,
+      "y": 16,
+      "w": 740,
+      "h": 884
+    },
+    "markers": {
+      "arbeitsplatz": {
+        "x": 480,
+        "y": 146,
+        "w": 480,
+        "h": 41
+      },
+      "hinweis": {
+        "x": 480,
+        "y": 516,
+        "w": 480,
+        "h": 66
+      },
+      "mindest": {
+        "x": 480,
+        "y": 390,
+        "w": 480,
+        "h": 42
+      },
+      "von-bis": {
+        "x": 480,
+        "y": 284,
+        "w": 480,
+        "h": 66
+      },
+      "wochentag": {
+        "x": 480,
+        "y": 227,
+        "w": 480,
+        "h": 41
+      },
+      "zugewiesen": {
+        "x": 480,
+        "y": 657,
+        "w": 480,
+        "h": 192
+      }
+    }
+  },
+  "pl-schicht-stammdaten": {
+    "file": "pl-schicht-stammdaten.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 223,
+      "y": 133,
+      "w": 1217,
+      "h": 368
+    },
+    "markers": {
+      "bearbeiten": {
+        "x": 1331,
+        "y": 387,
+        "w": 24,
+        "h": 24
+      },
+      "farbe": {
+        "x": 885,
+        "y": 301,
+        "w": 64,
+        "h": 62
+      },
+      "hinzufuegen": {
+        "x": 961,
+        "y": 323,
+        "w": 142,
+        "h": 40
+      },
+      "name": {
+        "x": 885,
+        "y": 223,
+        "w": 243,
+        "h": 66
+      },
+      "standort": {
+        "x": 313,
+        "y": 223,
+        "w": 348,
+        "h": 66
+      }
+    }
+  },
+  "pl-schicht-wochentage": {
+    "file": "pl-schicht-wochentage.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 222,
+      "y": 426,
+      "w": 1218,
+      "h": 266
+    },
+    "markers": {
+      "speichern-wt": {
+        "x": 312,
+        "y": 562,
+        "w": 225,
+        "h": 40
+      },
+      "wochentage": {
+        "x": 312,
+        "y": 516,
+        "w": 1072,
+        "h": 30
+      }
+    }
+  },
+  "pl-sondertage": {
+    "file": "pl-sondertage.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 242,
+      "y": 546,
+      "w": 792,
+      "h": 354
+    },
+    "markers": {
+      "anrechnung": {
+        "x": 765,
+        "y": 729,
+        "w": 199,
+        "h": 41
+      },
+      "modus": {
+        "x": 536,
+        "y": 616,
+        "w": 213,
+        "h": 41
+      },
+      "speichern": {
+        "x": 312,
+        "y": 802,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-team-arbeitszeiten": {
+    "file": "pl-team-arbeitszeiten.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "abteilung": {
+        "x": 288,
+        "y": 114,
+        "w": 49,
+        "h": 34
+      },
+      "besetzung": {
+        "x": 289,
+        "y": 218,
+        "w": 224,
+        "h": 32
+      },
+      "sarah": {
+        "x": 321,
+        "y": 449,
+        "w": 75,
+        "h": 20
+      },
+      "stand-am": {
+        "x": 1097,
+        "y": 56,
+        "w": 170,
+        "h": 42
+      }
+    }
+  },
+  "pl-team-bearbeiten": {
+    "file": "pl-team-bearbeiten.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "block": {
+        "x": 535.5,
+        "y": 575,
+        "w": 53.9,
+        "h": 32
+      },
+      "schalter": {
+        "x": 1364,
+        "y": 66,
+        "w": 44,
+        "h": 24
+      }
+    }
+  },
+  "pl-uebernahme": {
+    "file": "pl-uebernahme.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 288,
+      "y": 111.5,
+      "w": 864,
+      "h": 737
+    },
+    "markers": {
+      "jahr": {
+        "x": 488,
+        "y": 311.5,
+        "w": 464,
+        "h": 41
+      },
+      "resturlaub": {
+        "x": 488,
+        "y": 514.5,
+        "w": 464,
+        "h": 42
+      },
+      "speichern": {
+        "x": 488,
+        "y": 600.5,
+        "w": 464,
+        "h": 48
+      },
+      "ueberstunden": {
+        "x": 488,
+        "y": 412.5,
+        "w": 464,
+        "h": 42
+      }
+    }
+  },
+  "pl-urlaubsantraege": {
+    "file": "pl-urlaubsantraege.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "aktionen": {
+        "x": 313,
+        "y": 497,
+        "w": 1070,
+        "h": 53
+      },
+      "pflicht": {
+        "x": 1343,
+        "y": 156,
+        "w": 44,
+        "h": 24
+      }
+    }
+  },
+  "pl-urlaubsgenehmigung": {
+    "file": "pl-urlaubsgenehmigung.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "schalter": {
+        "x": 652,
+        "y": 516,
+        "w": 44,
+        "h": 24
+      },
+      "speichern": {
+        "x": 312,
+        "y": 556,
+        "w": 130,
+        "h": 40
+      }
+    }
+  },
+  "pl-verkuerzte-tage": {
+    "file": "pl-verkuerzte-tage.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 222,
+      "y": 339,
+      "w": 1218,
+      "h": 466
+    },
+    "markers": {
+      "eingabe": {
+        "x": 312,
+        "y": 542,
+        "w": 1072,
+        "h": 66
+      },
+      "jahr": {
+        "x": 1299,
+        "y": 429,
+        "w": 85,
+        "h": 41
+      },
+      "zeile": {
+        "x": 312,
+        "y": 660.5,
+        "w": 1072,
+        "h": 54.5
+      }
+    }
+  },
+  "pl-vertragsverlauf": {
+    "file": "pl-vertragsverlauf.webp",
+    "width": 1440,
+    "height": 1581,
+    "pxWidth": 2880,
+    "pxHeight": 3162,
+    "crop": {
+      "x": 336,
+      "y": 88,
+      "w": 768,
+      "h": 1405
+    },
+    "markers": {
+      "anspruch": {
+        "x": 390,
+        "y": 559,
+        "w": 324,
+        "h": 42
+      },
+      "speichern": {
+        "x": 725,
+        "y": 900,
+        "w": 338,
+        "h": 42
+      },
+      "verlauf": {
+        "x": 360,
+        "y": 1019,
+        "w": 720,
+        "h": 150
+      }
+    }
+  },
+  "sr-admin": {
+    "file": "sr-admin.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 553.7,
+      "y": 343,
+      "w": 480,
+      "h": 247.5
+    },
+    "markers": {
+      "saldo": {
+        "x": 807.3,
+        "y": 470,
+        "w": 96.5,
+        "h": 40.5
+      },
+      "soll-basis": {
+        "x": 683.5,
+        "y": 423,
+        "w": 103,
+        "h": 30
+      }
+    }
+  },
+  "sr-dashboard": {
+    "file": "sr-dashboard.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 193,
+      "y": 149,
+      "w": 647,
+      "h": 260
+    },
+    "markers": {
+      "monatssaldo": {
+        "x": 313,
+        "y": 269,
+        "w": 84,
+        "h": 20
+      },
+      "ueberstunden": {
+        "x": 599,
+        "y": 269,
+        "w": 121,
+        "h": 20
+      }
+    }
+  },
+  "sr-journal": {
+    "file": "sr-journal.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 256,
+      "y": 0,
+      "w": 1184,
+      "h": 900
+    },
+    "markers": {
+      "saldo": {
+        "x": 1192.7,
+        "y": 297,
+        "w": 138.3,
+        "h": 32
+      },
+      "tab": {
+        "x": 664,
+        "y": 96,
+        "w": 368,
+        "h": 36
+      }
+    }
+  },
+  "sr-urlaubskonto": {
+    "file": "sr-urlaubskonto.webp",
+    "width": 1440,
+    "height": 900,
+    "pxWidth": 2880,
+    "pxHeight": 1800,
+    "crop": {
+      "x": 687.5,
+      "y": 119,
+      "w": 480,
+      "h": 320
+    },
+    "markers": {
+      "urlaubskonto": {
+        "x": 885,
+        "y": 269,
+        "w": 85,
+        "h": 20
+      }
+    }
+  }
+}
