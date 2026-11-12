@@ -101,6 +101,18 @@
 - **Update-Prüfung: „Server nicht erreichbar“ ist nicht mehr „aktuell“.** Eine fehlgeschlagene Prüfung wird gemeldet und nicht für die Browser-Sitzung gemerkt; Sonderzeichen in der Lizenz-ID verfälschen die Abfrage nicht mehr; ein gesperrter Browserspeicher lässt das Dashboard nicht mehr abstürzen.
 - **Fehlermeldung beim Bug-Melden:** antwortet der Meldeserver mit einem unerwarteten JSON-Format, erscheint kein „Interner Fehler“ mehr, obwohl die Meldung angekommen ist.
 
+### 🐛 Behoben (Review 2026-11-11: Schichtplanung, Formulare, Navigation)
+
+- **Schichtplanung: Slot speichern ohne Duplikate.** Scheitert nach dem Anlegen die Zuweisung, meldet die Seite das, behält den Dialog im Bearbeiten-Modus (erneutes Speichern aktualisiert den Slot) und legt keinen zweiten an. „Auf Wochentage kopieren“ meldet je Tag, was kopiert wurde und was fehlt.
+- **Schichtplanung: Rückfragen und sichere Voreinstellung.** „Slot löschen“ und das Deaktivieren eines laufenden oder freigegebenen Plans fragen nach. „Automatisch füllen“ steht auf „Nur Lücken auffüllen“; „Alle Zuweisungen neu verteilen“ nennt die Folge und verlangt eine Bestätigung. Bei einem über sein Zeitfenster aktiven Plan heißt der Knopf „Dauerhaft aktiv schalten“.
+- **Schichtplanung: richtiger Plan, richtige Zeiten.** Eine späte Antwort des vorher gewählten Plans überschreibt den Editor nicht mehr; bei einem Ladefehler erscheint kein alter Plan. Ein Slot außerhalb 06:00–22:00 behält beim Ziehen auf einen anderen Tag seine Uhrzeiten. „Nicht eingewiesen“ erscheint erst, wenn die Einweisungen geladen sind (bei Ladefehler Hinweis); ein Ladefehler der Mitarbeiterliste wird gemeldet.
+- **Schichtplanung: Automatik und Zuweisung.** „Automatisch füllen“ überspringt Feiertage und freie Sondertage (Hinweis im Toast), beachtet zeitlich begrenzte Abwesenheiten und Einteilungen in anderen Plänen und rechnet das Überstundenkonto nur für Kandidaten (mit Saldo-Stichtag, im SAVEPOINT). Deaktivierte Personen lassen sich nicht mehr neu einteilen; Doppelbelegungen (überlappende Slots desselben Tages) werden rot markiert, Deaktivierte als „(inaktiv)“ gekennzeichnet.
+- **Schichtplanung: Bedienung.** Reiter und Woche/Tag-Umschalter tragen ARIA-Zustände und scrollen auf dem Handy; Datumsangaben im Editor und in der Jahresübersicht stehen als TT.MM.JJJJ (Sie-Form), die Jahresübersicht ist umschaltbar, zeigt den Zeitraum als Text und stellt manuell aktive Pläne als dauerhaft aktiv dar. Auf Touch-Geräten scrollt die Seite wieder über den Slots (Ziehen nach kurzem Halten); Standort umbenennen per Enter/Escape; Einweisungs-Häkchen behalten den Tastaturfokus.
+- **PDF-Aushang: Unicode-Namen und Seitenzahl.** Namen mit Zeichen außerhalb des Westeuropäischen („Małgorzata“, Kyrillisch) erscheinen nicht mehr als schwarze Kästchen; jede Seite trägt die Fußzeile „Planname · Seite x von y“.
+- **Pflichtfelder sind echte Pflichtfelder.** Formularfelder mit Stern reichen `required`/`aria-required` an das Feld weiter; die Feld-IDs bleiben über Neuzeichnungen stabil.
+- **Mobile Navigation und Stempeln.** Der Stempel-Knopf unten folgt dem Stempeln auf der Dashboard-Karte sofort (nicht erst nach bis zu 60 s). Das geöffnete Handy-Menü ist ein modaler Dialog mit Fokusfalle; die aktive Seite trägt `aria-current`, die Lücke in der unteren Leiste entfällt ohne Stempel-Knopf. Das Zeiteintrags-Formular ist nur auf dem Handy ein modales Sheet (Escape schließt); am Desktop ist es ein normaler Seitenblock. Das QR-Fenster hat eine Fokusfalle und schließt keine darüberliegenden Dialoge mit.
+- **Abwesenheiten und Datensicherung auf dem Handy.** Die Tabellen scrollen horizontal, damit „Notiz“, „Aktion“ und die Sicherungs-Aktionen erreichbar bleiben.
+
 ## [1.23.0] - 2026-11-07
 
 ### ✨ Neu
