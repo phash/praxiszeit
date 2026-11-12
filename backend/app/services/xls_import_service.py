@@ -2,6 +2,7 @@
 Service für den Import historischer Zeiterfassungsdaten aus TimeRec-XLS-Dateien.
 Dateiformat: Sheet "Zeiterfassung", Spalten: Datum, Tag, Total, Ein, Aus, Tagesnotiz
 """
+import logging
 import uuid
 import xlrd
 from bisect import bisect_left
@@ -9,7 +10,7 @@ from datetime import datetime, timedelta, date, time
 from types import SimpleNamespace
 from typing import Optional, Sequence
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, ValidationError, computed_field
 
 from app.models import TimeEntry, TimeEntryAuditLog, User
 from app.schemas.validators import MinuteTime
@@ -1062,6 +1063,11 @@ def _confirm_day_warnings(db: Session, user, day: date, written: list) -> list[s
     return out
 
 
+logger = logging.getLogger(__name__)
+
+IMPORT_FAILED_DETAIL = "Import fehlgeschlagen – Details stehen im Protokoll."
+
+
 def execute_import(
     user_id: uuid.UUID,
     entries: Sequence[ImportedEntryIn],
@@ -1109,8 +1115,15 @@ def execute_import(
             db.commit()
         except Exception:
             db.rollback()
-        # Re-raise as ValueError so the router translates to HTTP 400 cleanly
-        raise ValueError(f"Import fehlgeschlagen: {exc}") from exc
+        # Fachliche ValueError (bewusst geworfene deutsche Texte) gehen unverändert
+        # durch; alles andere (IntegrityError, RuntimeError, pydantic …) enthält
+        # SQL-/Constraint-Text und bleibt im Protokoll (SEC-03).
+        if type(exc) is ValueError or (
+            isinstance(exc, ValueError) and not isinstance(exc, ValidationError)
+        ):
+            raise
+        logger.exception("XLS-Import fehlgeschlagen (Datei %s)", filename)
+        raise ValueError(IMPORT_FAILED_DETAIL) from exc
 
 
 def _execute_import_inner(

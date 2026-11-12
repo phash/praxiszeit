@@ -73,6 +73,8 @@
 
 - **„Login als …“ verrät den Abwesenheitsgrund in Anträgen nicht mehr über die Grund-Kennung.** In maskierten Änderungsanträgen war der Grundname ausgeblendet, die Kennung des Grundes aber noch sichtbar und ließ sich nachschlagen; sie bleibt jetzt ebenfalls leer.
 
+- **Fehlgeschlagener XLS-Import zeigt keine Datenbank-Interna mehr.** Bei unerwarteten Fehlern erscheint nur noch „Import fehlgeschlagen – Details stehen im Protokoll.“; die Einzelheiten stehen im Server-Protokoll und in der Protokollzeile des Imports. Fachliche Meldungen (z. B. zur Pause) bleiben unverändert.
+
 ### 🐛 Behoben (Review 2026-11-11: Benutzerverwaltung)
 
 - **Benutzerliste: vollständig, ehrlich und sicher bedienbar** (user-06/07/13/14/15/21). Die Liste fordert bis zu 500 Konten an (vorher stilles Kürzen auf 100); fällt die Urlaubs-/Überstundenübersicht aus, steht dort „Erneut laden“ statt endlosem „Lädt…“; schnelles Umschalten von „Inaktive anzeigen“ lässt keine alte Antwort mehr die Liste überschreiben; „Bearbeiten“ scrollt zum Formular und fragt vor dem Wechsel auf eine andere Person nach; „Passwort setzen“ und „Deaktivieren“ fehlen in der eigenen Zeile; Jahr und Fristen rechnen nach Berliner Datum.
