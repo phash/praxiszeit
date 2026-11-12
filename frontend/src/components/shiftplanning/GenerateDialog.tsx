@@ -54,9 +54,11 @@ export default function GenerateDialog({ planId, assignmentCount, onGenerated, o
     try {
       const res = await api.generatePlan(planId, { target_monday: monday, mode });
       const unfilled = res.generation.unfilled_slot_ids.length;
+      const skipped = res.generation.skipped_slot_ids?.length ?? 0;
       toast.success(
         `${res.generation.assigned} Zuweisung(en) erstellt` +
-          (unfilled > 0 ? ` — ${unfilled} Slot(s) blieben unbesetzt` : ''),
+          (unfilled > 0 ? ` — ${unfilled} Slot(s) blieben unbesetzt` : '') +
+          (skipped > 0 ? ` — ${skipped} Slot(s) an Feiertagen/freien Tagen übersprungen` : ''),
       );
       onGenerated();
       onClose();

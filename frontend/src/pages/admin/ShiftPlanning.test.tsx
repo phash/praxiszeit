@@ -58,8 +58,9 @@ describe('buildMovedSlotPayload (admin/ShiftPlanning.tsx onDragEnd — #443 F-1)
   });
 
   it('entfernt die reinen Anzeige-Extrafelder von ShiftSlot aus der Nutzlast', () => {
-    const slot = baseSlot();
+    const slot = baseSlot({ double_booked: true });
     const payload = buildMovedSlotPayload(slot, 1, 8 * 60, 12 * 60) as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('double_booked');
     expect(payload).not.toHaveProperty('id');
     expect(payload).not.toHaveProperty('workstation_name');
     expect(payload).not.toHaveProperty('color');

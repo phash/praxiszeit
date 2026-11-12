@@ -132,6 +132,7 @@ export function buildMovedSlotPayload(
     color: _color,
     understaffed: _understaffed,
     unqualified: _unqualified,
+    double_booked: _doubleBooked,
     assignments: _assignments,
     ...unchanged
   } = slot;

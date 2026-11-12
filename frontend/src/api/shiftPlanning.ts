@@ -28,6 +28,8 @@ export interface ShiftAssignment {
   user_id: string;
   user_name: string;
   qualified?: boolean; // #305 M2d: trained for this slot's workstation
+  double_booked?: boolean; // ui-09: dieselbe Person in überlappenden Slots (nur Admin)
+  inactive?: boolean; // ui-09: Person ist inzwischen deaktiviert (nur Admin)
 }
 
 export interface ShiftSlot {
@@ -42,6 +44,7 @@ export interface ShiftSlot {
   note: string | null; // #443: Hinweis je Einteilung ("Einarbeitung Azubi")
   understaffed: boolean;
   unqualified?: boolean; // #305 M2d: ≥1 assigned person not trained for the workstation
+  double_booked?: boolean; // ui-09: ≥1 Person doppelt eingeteilt (nur Admin)
   assignments: ShiftAssignment[];
 }
 
@@ -176,7 +179,7 @@ export const duplicatePlan = (id: string, name: string) =>
 
 export interface GenerationResult {
   plan: PlanDetail;
-  generation: { assigned: number; unfilled_slot_ids: string[] };
+  generation: { assigned: number; unfilled_slot_ids: string[]; skipped_slot_ids?: string[] };
 }
 export const generatePlan = (id: string, body: { target_monday: string; mode: 'replace' | 'fill_gaps' }) =>
   apiClient.post<GenerationResult>(`${BASE}/plans/${id}/generate`, body).then((r) => r.data);

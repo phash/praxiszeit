@@ -617,7 +617,23 @@ def _build_plan_detail(db: Session, tid, plan: ShiftPlan, is_admin: bool) -> dic
             "id": str(a.id),
             "user_id": str(a.user_id),
             "user_name": f"{u.first_name} {u.last_name}".strip(),
+            "_inactive": not u.is_active,
         })
+
+    # ui-09: Doppelbelegung = dieselbe Person in zeitlich überlappenden Slots desselben
+    # Wochentags (nur dieser Plan; weiche Markierung, nur für Admins).
+    double_pairs: set = set()
+    if is_admin:
+        by_user: dict = {}
+        for sl in slots:
+            for a in assigns_by_slot.get(sl.id, []):
+                by_user.setdefault(a["user_id"], []).append(sl)
+        for uid, lst in by_user.items():
+            for i, x in enumerate(lst):
+                for y in lst[i + 1:]:
+                    if x.weekday == y.weekday and x.start_time < y.end_time and y.start_time < x.end_time:
+                        double_pairs.add((x.id, uid))
+                        double_pairs.add((y.id, uid))
 
     # #305 M2d: the per-person "trained / not trained" signal is HR-sensitive
     # competency data → ADMIN-ONLY. Non-admins (read-only view) get the
@@ -646,7 +662,13 @@ def _build_plan_detail(db: Session, tid, plan: ShiftPlan, is_admin: bool) -> dic
             ws_key = str(s.workstation_id)
             for a in a_list:
                 a["qualified"] = (a["user_id"], ws_key) in qual_pairs
+                a["double_booked"] = (s.id, a["user_id"]) in double_pairs
+                a["inactive"] = a["_inactive"]
+        for a in a_list:
+            a.pop("_inactive", None)
         d = _slot_dict(s, ws_map.get(s.workstation_id), a_list)
+        if is_admin:
+            d["double_booked"] = any(a["double_booked"] for a in a_list)
         if d["understaffed"]:
             understaffed_ids.append(d["id"])
         if is_admin and d["unqualified"]:
@@ -1172,6 +1194,23 @@ def set_assignments(
         found_map = {u.id: u for u in found}
         if len(found_map) != len(unique_ids):
             raise HTTPException(status_code=404, detail="Mindestens ein Mitarbeiter wurde nicht gefunden")
+        # ui-09: ausgeschiedene/versteckte Personen nicht NEU einteilen. Wer schon im
+        # Slot steht, darf bleiben (der Admin kann ihn erst entfernen); Entfernen ist immer erlaubt.
+        already = {
+            uid
+            for (uid,) in db.query(ShiftAssignment.user_id).filter(
+                ShiftAssignment.tenant_id == tid,
+                ShiftAssignment.shift_slot_id == slot.id,
+            )
+        }
+        unavailable = [
+            u for u in found if (not u.is_active or u.is_hidden) and u.id not in already
+        ]
+        if unavailable:
+            raise HTTPException(
+                status_code=400,
+                detail="Inaktive oder ausgeblendete Personen können nicht neu eingeteilt werden.",
+            )
     else:
         found_map = {}
 

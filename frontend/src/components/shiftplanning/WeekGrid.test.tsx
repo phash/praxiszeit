@@ -81,3 +81,17 @@ describe('WeekGrid', () => {
     expect(screen.queryByTitle(/über das Zeitfenster hinaus/i)).not.toBeInTheDocument();
   });
 });
+
+describe('WeekGrid Doppelbelegung und inaktive Personen (ui-09)', () => {
+  it('markiert doppelt eingeteilte Slots und deaktivierte Personen', () => {
+    const slot = {
+      id: 's1', workstation_id: 'w1', workstation_name: 'Tresen', color: null, weekday: 0,
+      start_time: '08:00', end_time: '12:00', min_staff: 1, note: null, understaffed: false,
+      double_booked: true,
+      assignments: [{ id: 'a1', user_id: 'u1', user_name: 'Anna A', inactive: true, double_booked: true }],
+    };
+    render(<WeekGrid slots={[slot as never]} />);
+    expect(screen.getByLabelText('Doppelt eingeteilt')).toBeInTheDocument();
+    expect(screen.getByText('Anna A (inaktiv)')).toBeInTheDocument();
+  });
+});

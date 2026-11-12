@@ -15,14 +15,20 @@ interface WeekGridProps {
 }
 
 function SlotBody({ slot }: { slot: ShiftSlot }) {
-  const names = slot.assignments.map((a) => a.user_name).join(', ');
+  // ui-09: deaktivierte Personen im Plan kenntlich machen
+  const names = slot.assignments.map((a) => (a.inactive ? `${a.user_name} (inaktiv)` : a.user_name)).join(', ');
   return (
     <>
       <div className="flex items-start justify-between gap-1">
         {/* #443: kein truncate mehr — der Name bricht um. Bei mehreren parallelen
             Slots wird die Spur schmal, vertikal ist aber Platz. */}
         <span className="font-semibold break-words">{slot.workstation_name}</span>
-        {slot.understaffed && <AlertTriangle size={12} className="shrink-0 mt-0.5" aria-label="Unterbesetzt" />}
+        <span className="flex shrink-0 items-center gap-0.5">
+          {slot.double_booked && (
+            <AlertTriangle size={12} className="mt-0.5 text-red-600" aria-label="Doppelt eingeteilt" />
+          )}
+          {slot.understaffed && <AlertTriangle size={12} className="shrink-0 mt-0.5" aria-label="Unterbesetzt" />}
+        </span>
       </div>
       <div className="opacity-90">
         {slot.start_time}–{slot.end_time}
@@ -60,8 +66,9 @@ function blockStyle(slot: ShiftSlot, box: SlotBox): React.CSSProperties {
     // #443: sagt an, dass die Blockhöhe hier nicht mehr die Uhrzeit meint.
     borderBottom: box.grown ? `1px dashed ${color}` : undefined,
     // #305 M2d: dashed amber outline when ≥1 assigned person is not trained.
-    outline: slot.unqualified ? '1px dashed #d97706' : undefined,
-    outlineOffset: slot.unqualified ? '-2px' : undefined,
+    // ui-09: doppelt eingeteilt = rote Markierung (vor „nicht eingewiesen“)
+    outline: slot.double_booked ? '1px dashed #dc2626' : slot.unqualified ? '1px dashed #d97706' : undefined,
+    outlineOffset: slot.double_booked || slot.unqualified ? '-2px' : undefined,
   };
 }
 
