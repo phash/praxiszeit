@@ -2,7 +2,7 @@
 
 # So rechnet PraxisZeit
 
-**Stand:** PraxisZeit 1.23.0
+**Stand:** PraxisZeit 1.24.0
 
 Wie aus Stempelzeiten, Verträgen und Abwesenheiten Soll, Ist, Saldo und Urlaubskonto werden. Jedes Thema beginnt mit einem Satz, zeigt ein Bild und rechnet ein Beispiel vor; die Rechenbeispiele sind mit der echten Berechnung geprüft. PraxisZeit rechnet, was eingestellt und vereinbart ist; ob etwas rechtlich zulässig ist, regeln Gesetz, Arbeitsvertrag und Betriebsvereinbarung. Das Handbuch ersetzt keine Rechtsberatung.
 
