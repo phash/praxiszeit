@@ -149,11 +149,12 @@ const shots: ShotDef[] = [
     viewport: 'desktop',
     route: '/time-tracking',
     prepare: [{ click: { role: 'button', name: 'Neuer Eintrag', exact: true, within: 'main' } }],
-    crop: 'dialog',
+    // ui-17: ab 768 px steht das Formular als Seitenbereich (kein Dialog) über der Liste.
+    crop: { mainTo: ['speichern'], pad: 150 },
     markers: [
-      { n: 1, id: 'von', locator: { label: 'Von', within: 'dialog' }, badge: 'top' },
-      { n: 2, id: 'bis', locator: { label: 'Bis', within: 'dialog' }, badge: 'top' },
-      { n: 3, id: 'speichern', locator: { role: 'button', name: 'Speichern', exact: true, within: 'dialog' }, badge: 'top' },
+      { n: 1, id: 'von', locator: { label: 'Von', within: 'main' }, badge: 'top' },
+      { n: 2, id: 'bis', locator: { label: 'Bis', within: 'main' }, badge: 'top' },
+      { n: 3, id: 'speichern', locator: { role: 'button', name: 'Speichern', exact: true, within: 'main' }, badge: 'top' },
     ],
     alt: 'Formular „Neuer Zeiteintrag“ mit den Feldern Datum, Von, Bis, Pause (Min.) und Notiz sowie dem Knopf „Speichern“',
   },

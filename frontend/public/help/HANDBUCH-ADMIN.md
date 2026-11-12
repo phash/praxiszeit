@@ -865,14 +865,13 @@ Klicken Sie in der Navigation auf `Import`. Der Assistent hat drei Schritte: `Ho
 
 Die Vorschau zeigt alle gefundenen Einträge mit Datum, Von, Bis, Pause und Netto. Die Netto-Stunden rechnet der Server so, wie er sie anschließend speichert.
 
-![Import, Schritt „Vorschau“: 20 Einträge gefunden, 1 Konflikt und 14 Hinweise; in der Tabelle die Zeilen mit Datum, Von, Bis, Pause, Netto und Status „Konflikt“, „Hinweis“ oder „Neu“](/help/img/pl-import-vorschau.webp)
+![Import, Schritt „Vorschau“: 20 Einträge gefunden, 6 werden importiert, 14 übersprungen, 1 Konflikt; in der Tabelle Zeilen mit Datum, Von, Bis, Pause, Netto und Status „Wird übersprungen“ samt Grund oder „Neu“](/help/img/pl-import-vorschau.webp)
 
-1. Über der Tabelle stehen die Zahl der **Einträge**, der **Konflikte** (rot) und der **Hinweise** (gelb).
-2. **Konflikt:** Ein Eintrag mit demselben Beginn am selben Tag ist schon vorhanden. Ob er ersetzt wird, entscheiden Sie im nächsten Schritt.
-3. **Hinweis:** Fahren Sie mit der Maus über das Kennzeichen – die Kurzinfo nennt den genauen Text. Das sind ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit), bei hinterlegten Arbeitszeit-Blöcken die Kappung der importierten Zeit und die Gründe, aus denen eine Zeile übersprungen wird.
-4. **Neu:** Die Zeile wird ohne Beanstandung importiert. Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit, zum Beispiel „2:30 h nicht angerechnet“.
+1. Über der Tabelle stehen die Zahl der **Einträge**, wie viele davon importiert und wie viele **übersprungen** werden, die **Konflikte** (rot) und die **Hinweise** (gelb). **Konflikt** heißt: Ein Eintrag mit demselben Beginn am selben Tag ist schon vorhanden. Ob er ersetzt wird, entscheiden Sie im nächsten Schritt.
+2. **Wird übersprungen:** Diese Zeile übernimmt der Import nicht. Der Grund steht direkt darunter (siehe Tabelle unten). **Hinweise** (gelb) stehen ebenso als Text in der Zeile: ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit) und bei hinterlegten Arbeitszeit-Blöcken die Kappung der importierten Zeit.
+3. **Neu:** Die Zeile wird ohne Beanstandung importiert. Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit, zum Beispiel „2:30 h nicht angerechnet“.
 
-| Der Import überspringt … | Kurzinfo in der Vorschau |
+| Der Import überspringt … | Text in der Vorschau |
 | --- | --- |
 | einen ganzen Tag, an dem sich die Pause nach § 4 ArbZG nicht abziehen lässt | „Wird übersprungen — die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht abziehen (es fehlen 10 Min). Bitte den Tag von Hand erfassen.“ |
 | einen Tag mit mehr als 10 Stunden angerechneter Arbeitszeit | „Wird übersprungen — die Tagesarbeitszeit beträgt 11:15 h und überschreitet die Höchstgrenze von 10 h nach § 3 ArbZG. Bitte den Tag von Hand erfassen.“ |

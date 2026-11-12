@@ -829,14 +829,15 @@ const shots: ShotDef[] = [
     viewport: 'desktop',
     route: '/admin/import',
     prepare: IMPORT_PREVIEW,
-    crop: { around: ['zahlen', 'konflikt', 'neu'], pad: 80 },
+    // ops-04: Gründe stehen als Text in der Zeile; die Konflikt-Zeile liegt dadurch
+    // unterhalb des Fensters — ihr Zähler steht in Marker 1, der Haken im nächsten Shot.
+    crop: { around: ['zahlen', 'uebersprungen', 'neu'], pad: 80 },
     markers: [
       { n: 1, id: 'zahlen', locator: { css: 'main div.flex-wrap.text-sm' }, badge: 'top' },
-      { n: 2, id: 'konflikt', locator: { css: "main tr:has-text('Konflikt') >> nth=0 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
-      { n: 3, id: 'hinweis', locator: { css: "main tr:has-text('Hinweis') >> nth=1 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
-      { n: 4, id: 'neu', locator: { css: "main tr:has-text('Neu') >> nth=1 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
+      { n: 2, id: 'uebersprungen', locator: { css: "main tr:has-text('Wird übersprungen') >> nth=0 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
+      { n: 3, id: 'neu', locator: { css: "main tr:has-text('Neu') >> nth=0 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
     ],
-    alt: 'Import, Schritt „Vorschau“: 20 Einträge gefunden, 1 Konflikt und 14 Hinweise; in der Tabelle die Zeilen mit Datum, Von, Bis, Pause, Netto und Status „Konflikt“, „Hinweis“ oder „Neu“',
+    alt: 'Import, Schritt „Vorschau“: 20 Einträge gefunden, 6 werden importiert, 14 übersprungen, 1 Konflikt; in der Tabelle Zeilen mit Datum, Von, Bis, Pause, Netto und Status „Wird übersprungen“ samt Grund oder „Neu“',
   },
   {
     id: 'pl-import-bestaetigen',
@@ -952,7 +953,7 @@ const shots: ShotDef[] = [
     route: '/admin/shift-planning',
     settings: { shift_planning_enabled: true },
     prepare: [
-      { click: { role: 'button', name: 'Stammdaten', exact: true } },
+      { click: { role: 'tab', name: 'Stammdaten', exact: true } },
       { waitFor: { role: 'heading', name: 'Arbeitsplätze', exact: true } },
     ],
     crop: { around: ['standort', 'bearbeiten'], pad: 90 },
@@ -972,7 +973,7 @@ const shots: ShotDef[] = [
     route: '/admin/shift-planning',
     settings: { shift_planning_enabled: true },
     prepare: [
-      { click: { role: 'button', name: 'Einweisungen', exact: true } },
+      { click: { role: 'tab', name: 'Einweisungen', exact: true } },
       { waitFor: { role: 'columnheader', name: 'Labor', exact: true } },
     ],
     crop: 'main',
@@ -2565,15 +2566,14 @@ export const praxisleitung: Handbook = {
           intro: 'Die Vorschau zeigt alle gefundenen Einträge mit Datum, Von, Bis, Pause und Netto. Die Netto-Stunden rechnet der Server so, wie er sie anschließend speichert.',
           shot: 'pl-import-vorschau',
           steps: [
-            { n: 1, text: 'Über der Tabelle stehen die Zahl der **Einträge**, der **Konflikte** (rot) und der **Hinweise** (gelb).' },
-            { n: 2, text: '**Konflikt:** Ein Eintrag mit demselben Beginn am selben Tag ist schon vorhanden. Ob er ersetzt wird, entscheiden Sie im nächsten Schritt.' },
-            { n: 3, text: '**Hinweis:** Fahren Sie mit der Maus über das Kennzeichen – die Kurzinfo nennt den genauen Text. Das sind ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit), bei hinterlegten Arbeitszeit-Blöcken die Kappung der importierten Zeit und die Gründe, aus denen eine Zeile übersprungen wird.' },
-            { n: 4, text: '**Neu:** Die Zeile wird ohne Beanstandung importiert. Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit, zum Beispiel „2:30 h nicht angerechnet“.' },
+            { n: 1, text: 'Über der Tabelle stehen die Zahl der **Einträge**, wie viele davon importiert und wie viele **übersprungen** werden, die **Konflikte** (rot) und die **Hinweise** (gelb). **Konflikt** heißt: Ein Eintrag mit demselben Beginn am selben Tag ist schon vorhanden. Ob er ersetzt wird, entscheiden Sie im nächsten Schritt.' },
+            { n: 2, text: '**Wird übersprungen:** Diese Zeile übernimmt der Import nicht. Der Grund steht direkt darunter (siehe Tabelle unten). **Hinweise** (gelb) stehen ebenso als Text in der Zeile: ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit) und bei hinterlegten Arbeitszeit-Blöcken die Kappung der importierten Zeit.' },
+            { n: 3, text: '**Neu:** Die Zeile wird ohne Beanstandung importiert. Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit, zum Beispiel „2:30 h nicht angerechnet“.' },
           ],
         },
         {
           kind: 'table',
-          head: ['Der Import überspringt …', 'Kurzinfo in der Vorschau'],
+          head: ['Der Import überspringt …', 'Text in der Vorschau'],
           rows: [
             ['einen ganzen Tag, an dem sich die Pause nach § 4 ArbZG nicht abziehen lässt', '„Wird übersprungen — die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht abziehen (es fehlen 10 Min). Bitte den Tag von Hand erfassen.“'],
             ['einen Tag mit mehr als 10 Stunden angerechneter Arbeitszeit', '„Wird übersprungen — die Tagesarbeitszeit beträgt 11:15 h und überschreitet die Höchstgrenze von 10 h nach § 3 ArbZG. Bitte den Tag von Hand erfassen.“'],
