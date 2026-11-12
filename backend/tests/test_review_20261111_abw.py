@@ -126,7 +126,12 @@ def test_request_over_existing_absence_conflicts_up_front(_db_session, employee_
     r = employee_client.post("/api/vacation-requests/", json={
         "date": FUTURE.isoformat(), "hours": 8, "absence_type": "training"})
     assert r.status_code == 409, r.text
-    assert "existiert bereits eine Abwesenheit" in r.json()["detail"]
+    # api-01 (Release-Review 1.24.0): die Meldung nennt die Art nicht — unter
+    # Impersonation verriet sie sonst „sick“ (Art. 9, #514).
+    assert r.json()["detail"] == (
+        f"Am {FUTURE.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit."
+    )
+    assert "sick" not in r.json()["detail"]
 
 
 def test_request_for_future_day_still_works(employee_user, employee_client, approval_on,
