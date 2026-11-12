@@ -386,6 +386,12 @@ def get_absence_summary(
         Absence.tenant_id == current_user.tenant_id,  # F-026
         date_in_year(Absence.date, year),
     ).all()
+    impersonating = getattr(request.state, "is_impersonating", False)
+    if impersonating:
+        # Art. 9: auch Abwesenheiten mit eigenem Grund (z. B. „Reha“) sind
+        # sensibel — dieselbe Regel wie absences._is_sensitive.
+        from app.routers.absences import _is_sensitive
+        absences = [a for a in absences if not _is_sensitive(a)]
     by_type: dict = {}
     for a in absences:
         by_type.setdefault(a.type, []).append(a)
@@ -403,7 +409,7 @@ def get_absence_summary(
     overtime = _days(AbsenceType.OVERTIME)
     other = _days(AbsenceType.OTHER)
     paid = _days(AbsenceType.PAID_LEAVE)
-    if getattr(request.state, "is_impersonating", False):
+    if impersonating:
         # Art. 9 DSGVO (wie absences.py, #514): unter „Login als …" liest ein Admin
         # ohne Protokollzeile — Krank/Sonstiges/Bez. Freistellung werden nicht
         # ausgeliefert (null) und zählen nicht in „Gesamt".

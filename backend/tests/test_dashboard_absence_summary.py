@@ -83,3 +83,33 @@ def test_impersonation_masks_sensitive_counts(db, test_user):
     assert d["paid_leave_days"] is None
     assert d["training_days"] == pytest.approx(1.0)
     assert d["total_days"] == pytest.approx(d["vacation_days"] + 1.0 + d["overtime_days"])
+
+
+def test_impersonation_excludes_custom_reason_absences(db, test_user):
+    """SEC-01 Nachtrag: Abwesenheit mit eigenem Grund zählt unter Impersonation nirgends."""
+    import uuid
+    from fastapi import Request
+    from app.models import AbsenceReason
+    from app.routers import dashboard
+    reason = AbsenceReason(tenant_id=DEFAULT_TENANT_ID, name="Reha", base_behavior="worked", is_active=True)
+    db.add(reason)
+    db.commit()
+    _abs(db, test_user, date(2026, 3, 4), AbsenceType.TRAINING, 8.0, reason_id=reason.id)
+    _abs(db, test_user, date(2026, 3, 5), AbsenceType.TRAINING, 8.0)
+    db.commit()
+    app = FastAPI()
+    app.include_router(dashboard.router)
+
+    def override_db():
+        yield db
+
+    def impersonated(request: Request):
+        request.state.is_impersonating = True
+        return test_user
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = impersonated
+    d = TestClient(app).get("/api/dashboard/absence-summary?year=2026").json()
+    assert d["training_days"] == pytest.approx(1.0)
+    # Gegenprobe: ohne Impersonation zählen beide
+    d2 = _client(db, test_user).get("/api/dashboard/absence-summary?year=2026").json()
+    assert d2["training_days"] == pytest.approx(2.0)
