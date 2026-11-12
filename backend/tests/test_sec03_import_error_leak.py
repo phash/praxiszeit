@@ -40,3 +40,14 @@ def test_domain_value_error_passes_through(db, test_user, test_admin, monkeypatc
         raise ValueError("Die Pause nach § 4 ArbZG fehlt")
     monkeypatch.setattr(svc, "_execute_import_inner", boom)
     assert _run(db, test_user, test_admin).detail == "Die Pause nach § 4 ArbZG fehlt"
+
+
+@pytest.mark.parametrize("exc", [
+    UnicodeDecodeError("utf-8", b"\xff\xfe secret", 0, 1, "invalid start byte"),
+    __import__("json").JSONDecodeError("Expecting value", '{"secret": x}', 11),
+])
+def test_value_error_subclasses_are_not_leaked(db, test_user, test_admin, monkeypatch, exc):
+    def boom(**kw):
+        raise exc
+    monkeypatch.setattr(svc, "_execute_import_inner", boom)
+    assert _run(db, test_user, test_admin).detail == svc.IMPORT_FAILED_DETAIL

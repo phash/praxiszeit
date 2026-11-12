@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, date, time
 from types import SimpleNamespace
 from typing import Optional, Sequence
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, ValidationError, computed_field
+from pydantic import BaseModel, computed_field
 
 from app.models import TimeEntry, TimeEntryAuditLog, User
 from app.schemas.validators import MinuteTime
@@ -1115,12 +1115,12 @@ def execute_import(
             db.commit()
         except Exception:
             db.rollback()
-        # Fachliche ValueError (bewusst geworfene deutsche Texte) gehen unverändert
-        # durch; alles andere (IntegrityError, RuntimeError, pydantic …) enthält
-        # SQL-/Constraint-Text und bleibt im Protokoll (SEC-03).
-        if type(exc) is ValueError or (
-            isinstance(exc, ValueError) and not isinstance(exc, ValidationError)
-        ):
+        # Nur fachliche ValueError (bewusst geworfene deutsche Texte, exakt der Typ
+        # ValueError) gehen unverändert durch. Alles andere — IntegrityError,
+        # RuntimeError, aber auch ValueError-Unterklassen wie pydantic-
+        # ValidationError, UnicodeDecodeError oder JSONDecodeError — trägt
+        # Fremdtext und bleibt im Protokoll (SEC-03).
+        if type(exc) is ValueError:
             raise
         logger.exception("XLS-Import fehlgeschlagen (Datei %s)", filename)
         raise ValueError(IMPORT_FAILED_DETAIL) from exc
