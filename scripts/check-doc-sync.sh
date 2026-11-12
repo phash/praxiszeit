@@ -1388,8 +1388,31 @@ group_db_port() {
 
 # Erzeugte Handbuch-Markdowns (frontend/src/handbuch -> docs/handbuch, public/help):
 # der Generator vergleicht im --check-Modus, schreibt nichts.
+# TOOL-1 (Release-Review 1.24.0): local-ci Schritt 0 läuft vor jeder
+# Installation; im frischen Checkout (oder mit root-eigenem, älterem
+# node_modules ohne tsx) fehlt tsx. Dann prüft ein node:20-Container: Repo nur
+# lesend, Kopie von frontend/ + docs/handbuch/ nach /tmp, dort `npm ci` — der
+# Host-Checkout bleibt unberührt. Ohne Docker wird die Gruppe mit Hinweis
+# übersprungen, statt mit Exit 127 das ganze Gate abzubrechen.
 group_handbuch_md() {
-  (cd frontend && npm run -s handbuch:md -- --check) || FAIL=1
+  if [ -x frontend/node_modules/.bin/tsx ]; then
+    (cd frontend && npm run -s handbuch:md -- --check) || FAIL=1
+    return
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "ÜBERSPRUNGEN handbuch_md: frontend/node_modules/.bin/tsx fehlt und Docker ist nicht verfügbar"
+    echo "             → installieren: docker run --rm --user \$(id -u):\$(id -g) -e HOME=/tmp -v \"\$PWD/frontend\":/app -w /app node:20-alpine npm ci"
+    return
+  fi
+  echo "handbuch_md: tsx fehlt in frontend/node_modules — prüfe im node:20-Container (npm ci, ~1–2 min)"
+  docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_update_notifier=false \
+    -v "$PWD":/repo:ro node:20-alpine sh -c '
+      set -e
+      mkdir -p /tmp/r
+      tar -C /repo --exclude=frontend/node_modules --exclude=frontend/dist -cf - frontend docs/handbuch | tar -C /tmp/r -xf -
+      cd /tmp/r/frontend
+      npm ci --silent --ignore-scripts --no-audit --no-fund >/dev/null
+      npm run -s handbuch:md -- --check' || FAIL=1
 }
 
 # pzweb-Kopie des Handbuch-Codes (scripts/sync-handbuch-to-pzweb.sh): das Skript
