@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+**Enthält die Datenbank-Migration `077_legacy_half_day`.** Vor dem Update wie immer eine Sicherung anlegen.
+
 ### ✨ Neu
 
 - **Grafisches Handbuch in der App.** Die Hilfe unter „Hilfe“ (`/help`) zeigt das Handbuch jetzt mit Bildschirmaufnahmen, Markierungen, Merkkästen, Zeichnungen und Beispielrechnungen statt als Textliste, in drei Büchern: „Praxisleitung“, „Mitarbeitende“ und „So rechnet PraxisZeit“ (Verwaltung sieht alle drei, Mitarbeitende die beiden letzten; Adresse `/help/<Buch>`). Der Menüpunkt „Hilfe“ in der Seitenleiste öffnet diese Seite. Im Schnellzugriff rechts bleiben Cheat-Sheet und Schnellstart; der Reiter „Handbuch“ dort entfällt, und der Download-Knopf bietet nur noch Cheat-Sheet bzw. Schnellstart als `.md` an (die Handbücher als `.md` stehen weiter unter `docs/handbuch/`). In der Kontexthilfe führt „Im Handbuch ansehen →“ direkt zum passenden Kapitel.
@@ -37,8 +39,6 @@
 - **Ausgeschiedene Personen mit Daten stehen auch in Monats-, Wochen- und Jahres-Abwesenheitsbericht** (wie in den Dateien desselben Zeitraums). Ausgeblendete Personen mit Daten fehlen dort weiterhin, ein Hinweis nennt jetzt ihre Zahl.
 - **Gesundheitsdaten-Export: Protokollzeile erst nach erfolgreicher Erzeugung.** Scheitert ein Export, bleibt kein „exportiert“ ohne Lieferung stehen.
 - **Berichte & Export:** Ergebnisse der ArbZG-Auswertungen werden beim Ändern von Jahr, Monat oder „Ausgeblendete einbeziehen“ verworfen, ein geleertes Jahresfeld sendet kein `year=NaN` mehr, und Exportfehler zeigen den Grund (z. B. zu viele Anfragen) statt „Export fehlgeschlagen“.
-
-**Enthält die Datenbank-Migration `077_legacy_half_day`.** Vor dem Update wie immer eine Sicherung anlegen.
 
 - **Teamübersicht „Arbeitszeiten im Team“: keine abgeschnittenen Beschriftungen mehr.** Schmale Balken zeigten Zeiten wie „13–16:3C“ oder ein einzelnes „15“. Jetzt zeigt der Balken je nach Breite die volle Kurzzeit, nur den Beginn oder nichts; die volle Zeit steht immer im Hover-Text und für Screenreader.
 - **Abwesenheit eintragen (Verwaltung und Mitarbeitende): keine erfundene Stundenvorbelegung mehr.** Das Stundenfeld war vorbelegt (Verwaltung: immer 8), obwohl der Server bei ganztägigen Arten das Tagessoll der Person bucht. Jetzt bleibt das Feld bei diesen Arten leer und gesperrt, mit dem Hinweis „Es wird das Tagessoll laut Vertrag gebucht“; nur beim Überstundenausgleich (auch als eigener Grund) ist es frei und der eingetragene Wert zählt – bei Personen mit Tagesplan bucht das System dort das Tagessoll des Tages. „Halber Tag“ richtet sich jetzt nach der tatsächlich gewählten Art, auch bei eigenen Gründen. Die Buchung selbst ändert sich nicht.
@@ -128,12 +128,11 @@
 - **Änderungsanträge (Verwaltung): Ein Fehler bei „Weitere Anträge laden“ ersetzt die Liste nicht mehr.** Die bereits geladenen Anträge bleiben stehen, der Knopf bleibt zum erneuten Versuch.
 - **Meine Änderungsanträge: bis zu 500 statt 100 Anträge.** Die Liste fragt jetzt mit dem Backend-Höchstwert ab; ältere Anträge werden nicht mehr stillschweigend abgeschnitten.
 - **Antragsformular: Obergrenze des Datums nach Berliner Kalendertag.** „Gestern“ kam aus dem Browserdatum und wich in anderen Zeitzonen um einen Tag ab.
-- **Benutzerverwaltung: Sperrfrist der Anonymisierung zählt Berliner Kalendertage** (14 Tage ab dem Berliner Tag der Deaktivierung), nicht Uhrzeitdifferenzen.
+- **Benutzerverwaltung: Sperrfrist der Anonymisierung zählt Berliner Kalendertage** (14 Tage ab dem Berliner Tag der Deaktivierung, nicht Uhrzeitdifferenzen oder das UTC-Datum); Anzeige, Frist-Ende und Prüfung rechnen einheitlich.
 - **Datumsanzeige: ungültige Kalenderdaten (z. B. 30.02.) erscheinen als „–“** statt als verschobenes Datum; eine Formatierungsroutine statt zwei.
 - **Abmelden: die nächste Person landet nicht auf der Seite der vorherigen.** Nach ausdrücklichem „Abmelden“ wird kein Rücksprungziel gemerkt; bei abgelaufener Sitzung bleibt es erhalten.
 - **Monatsjournal: Löschen einer Abwesenheit in einem abgeschlossenen Jahr zeigt die Warnung des Servers** (Urlaubsübertrag des Folgejahres bleibt unverändert) auch beim Ersetzen und bei Wechsel zu Arbeit.
 - **Urlaubsantrag über ein Wochenende mit alter Abwesenheit wird nicht mehr abgelehnt.** Die Vorabprüfung beim Beantragen prüft nur die Tage, die die Genehmigung auch bucht (Mo–Fr ohne Feiertage/freie Sondertage).
-- **Sperrfrist der Anonymisierung rechnet mit dem Berliner Tag der Deaktivierung** (Anzeige, Frist-Ende und Prüfung einheitlich), nicht mit dem UTC-Datum.
 - **Browser-Zugriff: Header `X-Hidden-With-Data-Count` ist für Cross-Origin-Aufrufe lesbar** (Berichte, Hinweis auf ausgeblendete Personen mit Daten).
 - **Datensicherung räumt bei Startfehlern auf.** Scheitert die Signatur oder der Start von pg_dump, bleibt keine 0-Byte-Sicherung und kein offener Dateideskriptor zurück.
 
