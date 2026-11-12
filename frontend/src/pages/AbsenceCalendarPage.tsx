@@ -792,7 +792,7 @@ export default function AbsenceCalendarPage() {
                 <Link to={CHANGE_REQUEST_JOURNAL_PATH} className="underline font-medium">
                   Zeiterfassung → Journal
                 </Link>
-                : in der Zeile des Tages auf „Antrag“ klicken.
+                : in der Zeile des Tages auf „+“ (Eintrag anlegen) klicken.
               </div>
             )}
 
