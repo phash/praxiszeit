@@ -21,9 +21,17 @@ Varianten (Native **und** Docker), ohne Kommandozeile:
 > herunter oder sichern das Volume/Verzeichnis zusätzlich extern (s. u.).
 >
 > **Native-Hinweis:** Die *geplante* Sicherung läuft nativ weiterhin über den
-> OS-Timer (systemd/launchd/Task, s. u.) — die In-App-Zeitplan-Einstellung steuert
-> die **Docker**-Variante. Der **manuelle** Trigger + die Liste funktionieren auf
-> beiden.
+> OS-Timer (systemd/launchd/Task, s. u.) — die In-App-Uhrzeit steuert nur die
+> **Docker**-Variante. Der **manuelle** Trigger + die Liste funktionieren auf
+> beiden. Nativ gelten **Aufbewahrung** und **Speicherort** der Seite trotzdem:
+> Jedes „Jetzt sichern“ löscht im Sicherungsordner alle `praxiszeit_*.sql.gz`,
+> die älter als die In-App-Aufbewahrung sind — auch die des OS-Timers (dessen
+> eigene Aufbewahrung ist `retention_days` in `praxiszeit.conf`, Standard 31 Tage;
+> die In-App-Aufbewahrung also nicht kürzer einstellen). Ein gesetzter
+> Speicherort lenkt „Jetzt sichern“, die Liste, Herunterladen und Löschen in
+> diesen Ordner; die Timer-Sicherungen bleiben in `data/backups/` und erscheinen
+> dann nicht mehr in der Liste (der Hinweis „älter als 36 Stunden“ kann dann
+> erscheinen, obwohl der Timer sichert).
 
 > **Speicherort (Audit 2026-11-07):** Netzwerkpfade (`\\Server\Freigabe`),
 > Netzlaufwerke, für alle Konten lesbare Ordner (z. B. `C:\Users\Public`),
