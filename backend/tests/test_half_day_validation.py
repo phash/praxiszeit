@@ -103,8 +103,15 @@ def _emp(db):
     return u
 
 
+def _future_monday():
+    # Mitarbeitende buchen keine vergangenen Tage: ein Montag mindestens 14 Tage voraus.
+    from app.services.timezone_service import today_local
+    base = today_local() + _td(days=14)
+    return base + _td(days=(7 - base.weekday()) % 7)
+
+
 def _half_day_request(db, user):
-    monday = _d(2026, 9, 14)
+    monday = _future_monday()
     vr = VacationRequest(
         user_id=user.id, tenant_id=DEFAULT_TENANT_ID, date=monday, end_date=None,
         hours=4.0, half_day=True, status=VacationRequestStatus.PENDING.value,
@@ -145,7 +152,7 @@ def test_patch_may_clear_half_day_together_with_the_range(db, default_tenant):
     )
     db.refresh(vr)
     assert vr.half_day is False
-    assert vr.end_date == _d(2026, 9, 18)
+    assert vr.end_date == vr.date + _td(days=4)
 
 
 def test_patch_keeps_half_day_on_a_single_day_edit(db, default_tenant):
@@ -159,4 +166,4 @@ def test_patch_keeps_half_day_on_a_single_day_edit(db, default_tenant):
     )
     db.refresh(vr)
     assert vr.half_day is True
-    assert vr.date == _d(2026, 9, 15)
+    assert vr.date == _future_monday() + _td(days=1)
