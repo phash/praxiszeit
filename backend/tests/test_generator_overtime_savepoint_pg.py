@@ -6,8 +6,8 @@ DELETE/INSERT des Generators mit ``InFailedSqlTransaction`` scheitern. Der
 Generator rechnet deshalb in ``db.begin_nested()``. SQLite hat dieses
 Abbruchverhalten nicht — dieser Beleg läuft nur mit PostgreSQL (Modul-Skip ohne
 ``DATABASE_URL_MIGRATIONS``/``ADMIN_DB_URL``; nicht in der SQLite-Suite lauffähig,
-nicht in ``local-ci.sh``/Workflow verdrahtet — bei Bedarf dort neben
-``test_year_closing_lock_pg.py`` aufnehmen).
+verdrahtet in ``local-ci.sh`` und im PG-Workflow neben
+``test_year_closing_lock_pg.py``).
 """
 from __future__ import annotations
 
