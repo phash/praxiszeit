@@ -69,6 +69,8 @@ def test_start_scheduler_registers_daily_cron_jobs():
                 fields = {f.name: str(f) for f in job.trigger.fields}
                 assert fields["minute"] == "30"
                 assert fields["hour"] == "*"
+                # ops-15: ein Neustart um HH:30 darf den Tageslauf nicht verwerfen
+                assert job.misfire_grace_time and job.misfire_grace_time >= 20 * 60
                 continue
             if job.id == scheduler_service.JOB_AUDIT_INTEGRITY_CHECK:
                 # #537: nach dem Aufbewahrungs-Lauf, damit dessen Vermerke

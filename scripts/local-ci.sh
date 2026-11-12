@@ -90,6 +90,7 @@ if docker compose exec -T -e TZ=Europe/Berlin backend pytest tests/ -q --tb=shor
        --ignore=tests/test_handbuch_seed_pg.py \
        --ignore=tests/test_year_closing_lock_pg.py \
        --ignore=tests/test_pg_log_privacy_pg.py \
+       --ignore=tests/test_generator_overtime_savepoint_pg.py \
        --ignore=tests/test_concurrency.py </dev/null 2>&1 | tail -5; then
     ok "Backend tests passed"
 else
@@ -134,6 +135,7 @@ if docker compose exec -T -e TZ=Europe/Berlin backend pytest \
        tests/test_year_closing_lock_pg.py tests/test_074_reduced_days_pg.py \
        tests/test_075_contract_history_pg.py tests/test_076_audit_chain_pg.py \
        tests/test_077_legacy_half_day_pg.py tests/test_pg_log_privacy_pg.py \
+       tests/test_generator_overtime_savepoint_pg.py \
        -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Postgres integration verified"
 else

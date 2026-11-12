@@ -321,7 +321,9 @@ def _client_as(db_session, user_id):
         yield db_session
 
     def _override_user():
-        return user
+        # Wie in Produktion je Anfrage frisch laden: der Endpunkt schliesst die
+        # Session (F-053), danach waere das alte Objekt abgekoppelt.
+        return db_session.query(User).filter(User.id == user_id).first()
 
     test_app.dependency_overrides[get_db] = _override_db
     test_app.dependency_overrides[get_current_user] = _override_user
@@ -602,6 +604,25 @@ class TestKlassischerJahresbericht:
 class TestNachweiszeile:
     """``health_export`` existiert repoweit nur als sieben Kopien desselben
     Blocks in ``reports.py``. Jede einzelne wird hier festgenagelt."""
+
+    @pytest.mark.parametrize("route", EXPORT_ROUTES, ids=_IDS)
+    def test_scheitert_die_erzeugung_bleibt_keine_nachweiszeile(
+            self, admin_client, _db_session, welt, route, monkeypatch):
+        """calc-08: Nachweis erst NACH erfolgreicher Erzeugung festschreiben."""
+        from app.services import export_service, ods_export_service
+
+        def _boom(*a, **k):
+            raise RuntimeError("Erzeugung scheitert")
+
+        for mod in (export_service, ods_export_service):
+            for name in dir(mod):
+                if name.startswith("generate_"):
+                    monkeypatch.setattr(mod, name, _boom)
+        _, path, params, _, _, _, _ = route
+        with pytest.raises(RuntimeError):
+            admin_client.get(path, params=_params(route, include_health_data="true"))
+        _db_session.rollback()
+        assert _health_export_rows(_db_session) == []
 
     @pytest.mark.parametrize("route", EXPORT_ROUTES, ids=_IDS)
     def test_mit_flag_genau_eine_nachweiszeile(self, admin_client, _db_session, welt, route):

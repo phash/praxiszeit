@@ -32,6 +32,7 @@ class PreviewResponse(BaseModel):
     total: int
     conflicts: int
     arbzg_warnings: int
+    will_skip: int = 0  # ops-04: Zeilen, die /confirm überspringt
 
 
 class ConfirmRequest(BaseModel):
@@ -85,6 +86,7 @@ def preview_import(
         total=len(entries),
         conflicts=sum(1 for e in entries if e.has_conflict),
         arbzg_warnings=sum(len(e.arbzg_warnings) for e in entries),
+        will_skip=sum(1 for e in entries if e.skip_reason is not None),
     )
 
 
@@ -106,12 +108,16 @@ def confirm_import(
     if not target_user:
         raise HTTPException(status_code=400, detail="Benutzer nicht gefunden")
 
-    return execute_import(
-        user_id=body.user_id,
-        entries=body.entries,
-        overwrite=body.overwrite,
-        db=db,
-        changed_by_id=current_admin.id,
-        filename=body.filename or "import.xls",
-        tenant_id=current_admin.tenant_id,
-    )
+    try:
+        return execute_import(
+            user_id=body.user_id,
+            entries=body.entries,
+            overwrite=body.overwrite,
+            db=db,
+            changed_by_id=current_admin.id,
+            filename=body.filename or "import.xls",
+            tenant_id=current_admin.tenant_id,
+        )
+    except ValueError as exc:
+        # execute_import meldet erwartbare Fehler als ValueError (ops-01)
+        raise HTTPException(status_code=400, detail=str(exc))

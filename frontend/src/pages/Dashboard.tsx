@@ -114,10 +114,11 @@ function readOverviewMode(): OverviewMode {
 
 interface YearlyAbsenceSummary {
   vacation_days: number;
-  sick_days: number;
+  paid_leave_days?: number | null;
+  sick_days?: number | null; // null = unter Impersonation maskiert (Art. 9)
   training_days: number;
   overtime_days: number;
-  other_days: number;
+  other_days?: number | null;
   total_days: number;
 }
 
@@ -154,18 +155,6 @@ const MONTH_NAMES = [
   'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
 ];
-
-interface AbsenceEntry {
-  type: 'vacation' | 'sick' | 'training' | 'overtime' | 'other';
-  hours: number;
-}
-
-function sumAbsenceDays(absences: AbsenceEntry[], type: AbsenceEntry['type'], dailyTarget: number): number {
-  if (!dailyTarget || dailyTarget <= 0) return 0;
-  return absences
-    .filter(a => a.type === type)
-    .reduce((sum, a) => sum + a.hours, 0) / dailyTarget;
-}
 
 interface RecentEntry {
   id: string;
@@ -244,6 +233,10 @@ export default function Dashboard() {
   const [missingBookings, setMissingBookings] = useState<Array<{ date: string; type: string; start_time?: string }>>([]);
   const [teamMissingBookings, setTeamMissingBookings] = useState<Array<{ user_id: string; first_name: string; last_name: string; entries: Array<{ date: string; type: string; start_time?: string }> }>>([]);
   const [loading, setLoading] = useState(true);
+  // calc-04: Totalausfall → Fehlerblock mit „Erneut laden“; Teilausfall → Hinweis.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [partialFailure, setPartialFailure] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [showDetails, setShowDetails] = useState(false);
   // #500: Übersicht Monat ↔ Woche (wie im Admin-Dashboard, #329).
   const [overviewMode, setOverviewMode] = useState<OverviewMode>(readOverviewMode);
@@ -287,26 +280,50 @@ export default function Dashboard() {
     let cancelled = false;
 
     const fetchData = async () => {
+      setLoading(true);
+      setLoadFailed(false);
       try {
         const currentYear = new Date().getFullYear();
-        const [dashboardRes, overtimeRes, vacationRes, teamAbsencesRes, absencesRes, nextVacationRes, ytdRes] = await Promise.all([
-          apiClient.get('/dashboard'),
-          apiClient.get('/dashboard/overtime'),
-          apiClient.get('/dashboard/vacation'),
-          apiClient.get('/absences/team/upcoming'),
-          apiClient.get('/absences', { params: { year: currentYear } }),
-          apiClient.get('/absences/next-vacation'),
-          apiClient.get('/dashboard/ytd-overtime'),
-        ]);
+        // calc-04: allSettled — ein ausgefallener Nebenendpunkt (Team-Abwesenheiten,
+        // nächster Urlaub …) darf Soll/Ist/Saldo nicht mit abräumen.
+        const [dashboardRes, overtimeRes, vacationRes, teamAbsencesRes, absenceSummaryRes, nextVacationRes, ytdRes] =
+          await Promise.allSettled([
+            apiClient.get('/dashboard'),
+            apiClient.get('/dashboard/overtime'),
+            apiClient.get('/dashboard/vacation'),
+            apiClient.get('/absences/team/upcoming'),
+            // calc-03: tagebasiert serverseitig (Tagessoll des Tages, Halbtag, paid_leave).
+            apiClient.get('/dashboard/absence-summary', { params: { year: currentYear } }),
+            apiClient.get('/absences/next-vacation'),
+            apiClient.get('/dashboard/ytd-overtime'),
+          ]);
 
         if (cancelled) return;
 
-        setDashboardData(dashboardRes.data);
-        setOvertimeAccount(overtimeRes.data);
-        setVacationAccount(vacationRes.data);
-        setTeamAbsences(teamAbsencesRes.data);
-        setNextVacation(nextVacationRes.data);
-        setYtdOvertime(ytdRes.data);
+        const all = [dashboardRes, overtimeRes, vacationRes, teamAbsencesRes, absenceSummaryRes, nextVacationRes, ytdRes];
+        const failedCount = all.filter((r) => r.status === 'rejected').length;
+        if (failedCount === all.length) {
+          setLoadFailed(true);
+          toast.error('Fehler beim Laden des Dashboards');
+          return;
+        }
+        if (failedCount > 0) {
+          console.warn('Dashboard partially loaded', all.filter((r) => r.status === 'rejected'));
+          toast.warning('Ein Teil des Dashboards konnte nicht geladen werden. Mit „Neu laden“ erneut versuchen.');
+          setPartialFailure(true);
+        } else {
+          setPartialFailure(false);
+        }
+
+        if (dashboardRes.status === 'fulfilled') setDashboardData(dashboardRes.value.data);
+        if (overtimeRes.status === 'fulfilled') setOvertimeAccount(overtimeRes.value.data);
+        if (vacationRes.status === 'fulfilled') setVacationAccount(vacationRes.value.data);
+        if (teamAbsencesRes.status === 'fulfilled') setTeamAbsences(teamAbsencesRes.value.data);
+        if (nextVacationRes.status === 'fulfilled') setNextVacation(nextVacationRes.value.data);
+        if (ytdRes.status === 'fulfilled') setYtdOvertime(ytdRes.value.data);
+        if (absenceSummaryRes.status === 'fulfilled' && absenceSummaryRes.value.data) {
+          setYearlyAbsences(absenceSummaryRes.value.data);
+        }
 
         // Fetch missing bookings
         try {
@@ -334,39 +351,6 @@ export default function Dashboard() {
         } catch (err) {
           if (!cancelled) console.warn('recent entries fetch failed', err);
         }
-
-        // Calculate yearly absence summary
-        const absences: AbsenceEntry[] = absencesRes.data;
-        const dailyTarget = user
-          ? user.weekly_hours / (user.work_days_per_week || 5)
-          : 8;
-
-        // Urlaub: autoritativ vom Backend (Tagesprinzip §3 BUrlG — zählt pro Tag
-        // mit dem Tagessoll DES TAGES). Die Client-Approximation Σ(Stunden) ÷
-        // Ø-Tagessoll ist für MA mit ungleichmäßigem Tagesplan (use_daily_schedule)
-        // systematisch falsch und darf für den legal relevanten Urlaub nicht
-        // genutzt werden. sick/training/overtime/other bleiben reine Anzeige-
-        // Näherungen (kein Budget, keine §-Pflicht).
-        const vacation_days = vacationRes.data?.used_days ?? sumAbsenceDays(absences, 'vacation', dailyTarget);
-        const sick_days = sumAbsenceDays(absences, 'sick', dailyTarget);
-        const training_days = sumAbsenceDays(absences, 'training', dailyTarget);
-        const overtime_days = sumAbsenceDays(absences, 'overtime', dailyTarget);
-        const other_days = sumAbsenceDays(absences, 'other', dailyTarget);
-        const summary = {
-          vacation_days,
-          sick_days,
-          training_days,
-          overtime_days,
-          other_days,
-          total_days: vacation_days + sick_days + training_days + overtime_days + other_days,
-        };
-
-        if (!cancelled) setYearlyAbsences(summary);
-      } catch (error) {
-        if (!cancelled) {
-          console.error('Dashboard load failed', error);
-          toast.error('Fehler beim Laden des Dashboards');
-        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -381,7 +365,7 @@ export default function Dashboard() {
     // update). toast and trackHours are stable refs / derived values so
     // they don't need to be in the deps list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, reloadKey]);
 
   // #494 (Gesamtreview B6): solange ein Eintrag läuft, einmal pro Minute neu
   // zeichnen. Hängt nur am Eingestempelt-Zustand — kein Abruf, keine Schleife.
@@ -403,7 +387,9 @@ export default function Dashboard() {
     if (stampVersion === 0 || !trackHours) return;
 
     let cancelled = false;
-    Promise.all([
+    // calc-04: allSettled — jede Quelle einzeln übernehmen, ein Ausfall hält
+    // die übrigen Karten nicht auf dem alten Stand.
+    Promise.allSettled([
       apiClient.get('/time-entries/clock-status'),
       apiClient.get('/dashboard'),
       apiClient.get('/dashboard/overtime'),
@@ -411,13 +397,13 @@ export default function Dashboard() {
       apiClient.get(RECENT_ENTRIES_URL),
     ]).then(([clockRes, dashRes, overtimeRes, ytdRes, entriesRes]) => {
       if (cancelled) return;
-      setClockStatus(clockRes.data);
-      setDashboardData(dashRes.data);
-      setOvertimeAccount(overtimeRes.data);
-      setYtdOvertime(ytdRes.data);
-      setRecentEntries(newestEntries(entriesRes.data));
-    }).catch((err) => {
-      if (!cancelled) console.warn('stamp-refresh failed', err);
+      if (clockRes.status === 'fulfilled') setClockStatus(clockRes.value.data);
+      if (dashRes.status === 'fulfilled') setDashboardData(dashRes.value.data);
+      if (overtimeRes.status === 'fulfilled') setOvertimeAccount(overtimeRes.value.data);
+      if (ytdRes.status === 'fulfilled') setYtdOvertime(ytdRes.value.data);
+      if (entriesRes.status === 'fulfilled') setRecentEntries(newestEntries(entriesRes.value.data));
+      const failed = [clockRes, dashRes, overtimeRes, ytdRes, entriesRes].filter((r) => r.status === 'rejected');
+      if (failed.length > 0) console.warn('stamp-refresh partially failed', failed);
     });
 
     return () => {
@@ -451,8 +437,28 @@ export default function Dashboard() {
   }
 
 
+  if (loadFailed) {
+    return (
+      <div role="alert" className="flex flex-col items-center justify-center h-64 gap-4 text-center">
+        <p className="text-text-primary">Das Dashboard konnte nicht geladen werden.</p>
+        <button
+          onClick={() => setReloadKey((k) => k + 1)}
+          className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg transition"
+        >
+          Erneut laden
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="page-enter">
+      {partialFailure && (
+        <div role="status" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          <span>Ein Teil des Dashboards konnte nicht geladen werden.</span>
+          <button onClick={() => setReloadKey((k) => k + 1)} className="font-medium underline">Neu laden</button>
+        </div>
+      )}
       {/* Greeting - Mobile */}
       <div className="md:hidden mb-6">
         <h1 className="text-2xl font-semibold text-text-primary">
@@ -648,7 +654,7 @@ export default function Dashboard() {
         </div>
         <div className="bg-surface rounded-2xl shadow-soft p-4 text-center">
           <div className="text-xl font-bold tabular-nums text-text-primary">
-            {yearlyAbsences?.sick_days != null ? deHoursExact(yearlyAbsences.sick_days) : '0'}
+            {yearlyAbsences?.sick_days != null ? deHoursExact(yearlyAbsences.sick_days) : (yearlyAbsences ? '—' : '0')}
           </div>
           <div className="text-xs text-text-secondary mt-1">Krank</div>
         </div>
@@ -1044,13 +1050,13 @@ export default function Dashboard() {
               {yearlyAbsences && (
                 <div>
                   <h3 className="text-sm font-medium text-text-secondary mb-3">Abwesenheiten</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="text-center">
                       <div className="text-3xl font-bold text-blue-600">{deHoursExact(yearlyAbsences.vacation_days)}</div>
                       <div className="text-sm text-gray-600 mt-1">Urlaub</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-danger">{deHoursExact(yearlyAbsences.sick_days)}</div>
+                      <div className="text-3xl font-bold text-danger">{yearlyAbsences.sick_days != null ? deHoursExact(yearlyAbsences.sick_days) : '—'}</div>
                       <div className="text-sm text-gray-600 mt-1">Krank</div>
                     </div>
                     <div className="text-center">
@@ -1062,8 +1068,12 @@ export default function Dashboard() {
                       <div className="text-sm text-gray-600 mt-1">Überstunden&shy;ausgleich</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-gray-600">{deHoursExact(yearlyAbsences.other_days)}</div>
+                      <div className="text-3xl font-bold text-gray-600">{yearlyAbsences.other_days != null ? deHoursExact(yearlyAbsences.other_days) : '—'}</div>
                       <div className="text-sm text-gray-600 mt-1">Sonstiges</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-gray-600">{yearlyAbsences.paid_leave_days != null ? deHoursExact(yearlyAbsences.paid_leave_days) : '—'}</div>
+                      <div className="text-sm text-gray-600 mt-1">Bez. Freistellung</div>
                     </div>
                     <div className="text-center">
                       <div className="text-3xl font-bold text-gray-900">{deHoursExact(yearlyAbsences.total_days)}</div>

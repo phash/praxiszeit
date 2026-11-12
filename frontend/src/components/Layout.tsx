@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { trackHoursToday } from '../utils/contractToday';
 import { useUIStore } from '../stores/uiStore';
+import DialogFocusTrap from './DialogFocusTrap';
 import { useSystemStore } from '../stores/systemStore';
 import TrialBanner from './TrialBanner';
 import BetaBadge from './BetaBadge';
@@ -49,11 +50,15 @@ export default function Layout() {
   // button). The backend middleware is the hard guarantee; this is UX.
   const isImpersonating = useAuthStore((s) => s.isImpersonating());
   const { isStampSheetOpen, openStampSheet, closeStampSheet, notifyStampChange } = useUIStore();
+  const requestVersion = useUIStore((st) => st.requestVersion);
+  // ui-18: Stempeln über eine Seiten-Karte (notifyStampChange) soll den FAB sofort umschalten.
+  const stampVersion = useUIStore((st) => st.stampVersion);
   const deploymentMode = useSystemStore((s) => s.info?.deployment_mode);
   const isBeta = useSystemStore((s) => s.info?.beta === true);
   const shiftPlanningEnabled = useSystemStore((s) => s.isShiftPlanningEnabled());
   const location = useLocation();
   const navigate = useNavigate();
+  const showFab = userTracksHours && !isImpersonating;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -65,33 +70,34 @@ export default function Layout() {
   const fabRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
 
-  // Pending change request count for admin badge
+  // Pending change request + vacation request counts for the admin badges.
+  // auth-19: neu laden bei Routenwechsel und uiStore-Ereignis (requestVersion), Abfrage im
+  // Hintergrund-Tab pausieren und beim Zurückkehren nachladen.
   useEffect(() => {
     if (user?.role !== 'admin') return;
-    const fetchCount = async () => {
+    const fetchCounts = async () => {
       try {
         const res = await apiClient.get('/admin/change-requests/pending-count');
         setPendingCRCount(res.data.count);
       } catch { /* ignore */ }
-    };
-    fetchCount();
-    const interval = setInterval(fetchCount, 60000);
-    return () => clearInterval(interval);
-  }, [user?.role]);
-
-  // Pending vacation request count for admin badge
-  useEffect(() => {
-    if (user?.role !== 'admin') return;
-    const fetchCount = async () => {
       try {
         const res = await apiClient.get('/admin/vacation-requests/pending-count');
         setPendingVRCount(res.data.count);
       } catch { /* ignore */ }
     };
-    fetchCount();
-    const interval = setInterval(fetchCount, 60000);
-    return () => clearInterval(interval);
-  }, [user?.role]);
+    fetchCounts();
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchCounts();
+    }, 60000);
+    const onVisible = () => {
+      if (!document.hidden) fetchCounts();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [user?.role, requestVersion, location.pathname]);
 
   // Clock status for FAB appearance
   useEffect(() => {
@@ -103,9 +109,18 @@ export default function Layout() {
       } catch { /* ignore */ }
     };
     checkStatus();
-    const interval = setInterval(checkStatus, 60000);
-    return () => clearInterval(interval);
-  }, [userTracksHours]);
+    const interval = setInterval(() => {
+      if (!document.hidden) checkStatus();
+    }, 60000);
+    const onVisible = () => {
+      if (!document.hidden) checkStatus();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [userTracksHours, stampVersion]);
 
   const handleStampSuccess = () => {
     apiClient.get('/time-entries/clock-status').then(res => {
@@ -157,8 +172,8 @@ export default function Layout() {
   const handleLogout = async () => {
     // authStore.logout() now handles the backend /auth/logout call, clears
     // the in-memory access token, drops persist storage and wipes caches.
-    await logout();
-    navigate('/login');
+    await logout({ explicit: true });
+    navigate('/login', { replace: true });
   };
 
   const isActive = (path: string) => {
@@ -250,13 +265,20 @@ export default function Layout() {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar (ui-19: geöffnet auf Mobil = modaler Dialog mit Fokusfalle, Fokus zurück zum Menü-Knopf) */}
+      <DialogFocusTrap
+        active={sidebarOpen}
+        focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: false, returnFocusOnDeactivate: true, fallbackFocus: '#main-content' }}
+      >
       <aside
+        role={sidebarOpen ? 'dialog' : undefined}
+        aria-modal={sidebarOpen ? 'true' : undefined}
+        aria-label={sidebarOpen ? 'Hauptmenü' : undefined}
         className={`
           w-64 bg-surface border-r border-border flex flex-col
           fixed lg:relative inset-y-0 left-0 z-50
-          transition-transform duration-300 ease-in-out
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+          transition-[transform,visibility] duration-300 ease-in-out
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full max-lg:invisible lg:translate-x-0'}
         `}
       >
         {/* Logo/Title */}
@@ -287,6 +309,7 @@ export default function Layout() {
               <Link
                 key={item.path}
                 to={item.path}
+                aria-current={active ? 'page' : undefined}
                 className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                   active
                     ? 'bg-primary-light text-primary-dark'
@@ -314,6 +337,7 @@ export default function Layout() {
                   <Link
                     key={item.path}
                     to={item.path}
+                    aria-current={active ? 'page' : undefined}
                     className={`flex items-center justify-between gap-2 px-4 py-3 rounded-lg transition-colors ${
                       active
                         ? 'bg-primary text-white'
@@ -427,6 +451,7 @@ export default function Layout() {
           </a>
         </div>
       </aside>
+      </DialogFocusTrap>
 
       {/* Main Content */}
       <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:pt-0 pt-16 pb-20 lg:pb-0 bg-background" tabIndex={-1}>
@@ -455,7 +480,7 @@ export default function Layout() {
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="relative">
           {/* FAB - Centered Stamp Button */}
-          {userTracksHours && !isImpersonating && (
+          {showFab && (
             <button
               ref={fabRef}
               onClick={openStampSheet}
@@ -478,17 +503,22 @@ export default function Layout() {
                 { to: '/journal', icon: Clock, label: 'Journal' },
               ].map((item) => {
                 const Icon = item.icon;
-                const active = item.exact ? location.pathname === item.to : location.pathname.startsWith(item.to);
+                // auth-17: /journal leitet auf /time-tracking?tab=journal um — dort gilt der Reiter als aktiv.
+                const onJournalTab = location.pathname === '/time-tracking'
+                  && new URLSearchParams(location.search).get('tab') === 'journal';
+                const active = item.to === '/journal'
+                  ? location.pathname.startsWith('/journal') || onJournalTab
+                  : item.exact ? location.pathname === item.to : location.pathname.startsWith(item.to);
                 return (
-                  <Link key={item.to} to={item.to} className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 min-w-[44px] min-h-[44px] transition-colors ${active ? 'text-primary' : 'text-text-secondary'}`}>
+                  <Link key={item.to} to={item.to} aria-current={active ? 'page' : undefined} className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 min-w-[44px] min-h-[44px] transition-colors ${active ? 'text-primary' : 'text-text-secondary'}`}>
                     <Icon size={22} strokeWidth={1.75} />
                     <span className="text-[10px] font-medium">{item.label}</span>
                     {active && <div className="w-1 h-1 rounded-full bg-primary" />}
                   </Link>
                 );
               })}
-              {/* FAB spacer */}
-              <div className="w-[72px] shrink-0" />
+              {/* FAB spacer (ui-19: nur, wenn der FAB auch gerendert wird) */}
+              {showFab && <div className="w-[72px] shrink-0" />}
               {[
                 { to: '/absences', icon: Calendar, label: 'Abwes.' },
                 { to: '/profile', icon: User, label: 'Profil' },
@@ -496,7 +526,7 @@ export default function Layout() {
                 const Icon = item.icon;
                 const active = location.pathname.startsWith(item.to);
                 return (
-                  <Link key={item.to} to={item.to} className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 min-w-[44px] min-h-[44px] transition-colors ${active ? 'text-primary' : 'text-text-secondary'}`}>
+                  <Link key={item.to} to={item.to} aria-current={active ? 'page' : undefined} className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 min-w-[44px] min-h-[44px] transition-colors ${active ? 'text-primary' : 'text-text-secondary'}`}>
                     <Icon size={22} strokeWidth={1.75} />
                     <span className="text-[10px] font-medium">{item.label}</span>
                     {active && <div className="w-1 h-1 rounded-full bg-primary" />}

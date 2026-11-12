@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { ToastProvider } from '../../contexts/ToastContext';
 import Users from './Users';
+import { useAuthStore } from '../../stores/authStore';
 import type { User } from '../../types/user';
 import type { WeekBlocks } from '../../types/workBlocks';
 
@@ -263,6 +264,8 @@ describe('Release-Review 1.17.0 Fund 2: editingUser-Sync darf offene Eingaben ni
     // fake's reset-on-new-reference is expected to fire here (unlike the
     // same-user background refetch above).
     fireEvent.click(screen.getAllByTitle('Bearbeiten')[1]);
+    // user-14: Wechsel bei offenem Formular fragt vorher nach
+    fireEvent.click(await screen.findByRole('button', { name: 'Wechseln' }));
     await waitFor(() => expect(screen.getByTestId('display-weekly-hours')).toHaveTextContent('30'));
     expect(screen.getByLabelText('Abteilung (unsaved)')).toHaveValue('');
   });
@@ -514,5 +517,67 @@ describe('Gesamtreview 1.20 Fund 14: feste Monatsarbeitszeit an den Dialog', () 
     await screen.findAllByText('Doe, Jane');
     fireEvent.click(screen.getAllByRole('button', { name: 'Arbeitszeit & Wochenstunden für Jane Doe' })[0]);
     expect(await screen.findByTestId('modal-fixed-monthly')).toHaveTextContent('true');
+  });
+});
+
+// Review 2026-11-11 (Slice user): user-06/07/13/15
+describe('Review 2026-11-11 Users-Liste', () => {
+  it('user-07: fordert bis zu 500 Konten an (Server-Default wäre 100)', async () => {
+    getMock.mockImplementation((url: string) => Promise.resolve({ data: String(url) === '/admin/users' ? [makeUser()] : [] }));
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    const call = getMock.mock.calls.find((c) => c[0] === '/admin/users');
+    expect(call?.[1]?.params?.limit).toBe(500);
+  });
+
+  it('user-06: Ausfall von users-overview zeigt „Erneut laden" statt endlosem „Lädt..."', async () => {
+    let overviewCalls = 0;
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/admin/users-overview')) {
+        overviewCalls += 1;
+        return overviewCalls === 1 ? Promise.reject(new Error('500')) : Promise.resolve({ data: [] });
+      }
+      return Promise.resolve({ data: String(url) === '/admin/users' ? [makeUser()] : [] });
+    });
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    const retry = (await screen.findAllByRole('button', { name: /Erneut laden/ }))[0];
+    expect(screen.queryByText('Lädt...')).not.toBeInTheDocument();
+    fireEvent.click(retry);
+    await waitFor(() => expect(overviewCalls).toBe(2));
+  });
+
+  it('user-13: eine späte Antwort des alten Filters überschreibt die neue Liste nicht', async () => {
+    let resolveFirst: (v: unknown) => void = () => {};
+    let usersCalls = 0;
+    getMock.mockImplementation((url: string, cfg?: { params?: Record<string, unknown> }) => {
+      if (String(url) === '/admin/users') {
+        usersCalls += 1;
+        if (usersCalls === 1) return new Promise((r) => { resolveFirst = r; });
+        return Promise.resolve({ data: [makeUser({ id: 'u2', last_name: 'Neu' })] });
+      }
+      void cfg;
+      return Promise.resolve({ data: [] });
+    });
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/Inaktive anzeigen/));
+    await screen.findAllByText('Neu, Jane');
+    resolveFirst({ data: [makeUser({ id: 'u1', last_name: 'Alt' })] });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText('Alt, Jane')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Neu, Jane').length).toBeGreaterThan(0);
+  });
+
+  it('user-15: eigene Zeile bietet weder „Passwort setzen" noch „Deaktivieren" an', async () => {
+    useAuthStore.setState({ user: { id: 'u1' } as never });
+    getMock.mockImplementation((url: string) => Promise.resolve({
+      data: String(url) === '/admin/users' ? [makeUser({ id: 'u1' }), makeUser({ id: 'u2', last_name: 'Zwei' })] : [],
+    }));
+    renderPage();
+    await screen.findAllByText('Doe, Jane');
+    // je Person Tabelle + Mobilkarte: nur die fremde Person behält die Knöpfe
+    expect(screen.getAllByTitle('Passwort setzen')).toHaveLength(2);
+    expect(screen.getAllByTitle('Deaktivieren')).toHaveLength(2);
+    useAuthStore.setState({ user: null });
   });
 });

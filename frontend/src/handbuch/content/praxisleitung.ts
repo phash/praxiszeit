@@ -829,14 +829,15 @@ const shots: ShotDef[] = [
     viewport: 'desktop',
     route: '/admin/import',
     prepare: IMPORT_PREVIEW,
-    crop: { around: ['zahlen', 'konflikt', 'neu'], pad: 80 },
+    // ops-04: Gründe stehen als Text in der Zeile; die Konflikt-Zeile liegt dadurch
+    // unterhalb des Fensters — ihr Zähler steht in Marker 1, der Haken im nächsten Shot.
+    crop: { around: ['zahlen', 'uebersprungen', 'neu'], pad: 80 },
     markers: [
       { n: 1, id: 'zahlen', locator: { css: 'main div.flex-wrap.text-sm' }, badge: 'top' },
-      { n: 2, id: 'konflikt', locator: { css: "main tr:has-text('Konflikt') >> nth=0 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
-      { n: 3, id: 'hinweis', locator: { css: "main tr:has-text('Hinweis') >> nth=1 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
-      { n: 4, id: 'neu', locator: { css: "main tr:has-text('Neu') >> nth=1 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
+      { n: 2, id: 'uebersprungen', locator: { css: "main tr:has-text('Wird übersprungen') >> nth=0 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
+      { n: 3, id: 'neu', locator: { css: "main tr:has-text('Neu') >> nth=0 >> td >> nth=-1 >> span >> nth=0" }, badge: 'right' },
     ],
-    alt: 'Import, Schritt „Vorschau“: 20 Einträge gefunden, 1 Konflikt und 14 Hinweise; in der Tabelle die Zeilen mit Datum, Von, Bis, Pause, Netto und Status „Konflikt“, „Hinweis“ oder „Neu“',
+    alt: 'Import, Schritt „Vorschau“: 20 Einträge gefunden, 6 werden importiert, 14 übersprungen, 1 Konflikt; in der Tabelle Zeilen mit Datum, Von, Bis, Pause, Netto und Status „Wird übersprungen“ samt Grund oder „Neu“',
   },
   {
     id: 'pl-import-bestaetigen',
@@ -952,7 +953,7 @@ const shots: ShotDef[] = [
     route: '/admin/shift-planning',
     settings: { shift_planning_enabled: true },
     prepare: [
-      { click: { role: 'button', name: 'Stammdaten', exact: true } },
+      { click: { role: 'tab', name: 'Stammdaten', exact: true } },
       { waitFor: { role: 'heading', name: 'Arbeitsplätze', exact: true } },
     ],
     crop: { around: ['standort', 'bearbeiten'], pad: 90 },
@@ -972,7 +973,7 @@ const shots: ShotDef[] = [
     route: '/admin/shift-planning',
     settings: { shift_planning_enabled: true },
     prepare: [
-      { click: { role: 'button', name: 'Einweisungen', exact: true } },
+      { click: { role: 'tab', name: 'Einweisungen', exact: true } },
       { waitFor: { role: 'columnheader', name: 'Labor', exact: true } },
     ],
     crop: 'main',
@@ -1998,7 +1999,7 @@ export const praxisleitung: Handbook = {
           head: ['Auswertung unter Berichte', 'Prüft'],
           rows: [
             ['Ruhezeitprüfung', '§ 5: mindestens 11 Stunden Ruhezeit zwischen zwei Arbeitstagen (Mindestruhezeit einstellbar)'],
-            ['Sonntagsarbeit §11 ArbZG', 'gearbeitete und freie Sonntage – mindestens 15 Sonntage im Jahr müssen frei sein'],
+            ['Sonntagsarbeit §11 ArbZG', 'gearbeitete und freie Sonntage – mindestens 15 Sonntage im Jahr müssen frei sein; bei Eintritt oder Austritt im Jahr zählen nur die Sonntage im Beschäftigungszeitraum, und die Mindestzahl gilt anteilig (aufgerundet, Hinweis „Teiljahr“)'],
             ['Nachtarbeit §6 ArbZG', 'Nachtarbeitstage und Nachtarbeitnehmer, mit Monatsdurchschnitt je Werktag'],
             ['Ersatzruhetage §11 ArbZG', 'Ersatzruhetag innerhalb von 2 Wochen nach Sonntags- und 8 Wochen nach Feiertagsarbeit'],
             ['24-Wochen-Durchschnitt §3 ArbZG', 'höchstens 8 Stunden je Werktag im Schnitt über 24 Wochen'],
@@ -2449,7 +2450,7 @@ export const praxisleitung: Handbook = {
           intro: 'Wählen Sie in der Jahresübersicht das Jahr und klicken Sie auf [[Jahresabschluss]]. Es öffnet sich ein Bestätigungsdialog; erst Ihre Bestätigung löst den Abschluss aus.',
           shot: 'pl-jahresabschluss-dialog',
           steps: [
-            { n: 1, text: 'Lesen Sie den Text: Überstunden-Saldo und Resturlaub aller **aktiven** Mitarbeitenden werden berechnet und als Übernahme ins Folgejahr gespeichert. **Bestehende Übernahmen für das Folgejahr werden überschrieben.**' },
+            { n: 1, text: 'Lesen Sie den Text: Überstunden-Saldo und Resturlaub aller **aktiven** Mitarbeitenden werden berechnet und als Übernahme ins Folgejahr gespeichert. **Bestehende Übernahmen für das Folgejahr werden überschrieben.** Der Dialog nennt, wie viele davon von Hand eingetragen wurden. Beim **laufenden Jahr** warnt er zusätzlich, dass das Jahr noch nicht zu Ende ist: Das Soll der verbleibenden Monate würde ohne Ist eingefroren. Schließen Sie ein Jahr deshalb erst nach seinem Ende ab; ein künftiges Jahr lässt sich gar nicht abschließen.' },
             { n: 2, text: 'Mit [[Abbrechen]] geschieht nichts.' },
             { n: 3, text: 'Mit [[Jahresabschluss erstellen]] bestätigen Sie. Die Meldung nennt, wie viele Mitarbeitende nach dem Folgejahr übernommen wurden.' },
           ],
@@ -2565,15 +2566,14 @@ export const praxisleitung: Handbook = {
           intro: 'Die Vorschau zeigt alle gefundenen Einträge mit Datum, Von, Bis, Pause und Netto. Die Netto-Stunden rechnet der Server so, wie er sie anschließend speichert.',
           shot: 'pl-import-vorschau',
           steps: [
-            { n: 1, text: 'Über der Tabelle stehen die Zahl der **Einträge**, der **Konflikte** (rot) und der **Hinweise** (gelb).' },
-            { n: 2, text: '**Konflikt:** Ein Eintrag mit demselben Beginn am selben Tag ist schon vorhanden. Ob er ersetzt wird, entscheiden Sie im nächsten Schritt.' },
-            { n: 3, text: '**Hinweis:** Fahren Sie mit der Maus über das Kennzeichen – die Kurzinfo nennt den genauen Text. Das sind ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit), bei hinterlegten Arbeitszeit-Blöcken die Kappung der importierten Zeit und die Gründe, aus denen eine Zeile übersprungen wird.' },
-            { n: 4, text: '**Neu:** Die Zeile wird ohne Beanstandung importiert. Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit, zum Beispiel „2:30 h nicht angerechnet“.' },
+            { n: 1, text: 'Über der Tabelle stehen die Zahl der **Einträge**, wie viele davon importiert und wie viele **übersprungen** werden, die **Konflikte** (rot) und die **Hinweise** (gelb). **Konflikt** heißt: Ein Eintrag mit demselben Beginn am selben Tag ist schon vorhanden. Ob er ersetzt wird, entscheiden Sie im nächsten Schritt.' },
+            { n: 2, text: '**Wird übersprungen:** Diese Zeile übernimmt der Import nicht. Der Grund steht direkt darunter (siehe Tabelle unten). **Hinweise** (gelb) stehen ebenso als Text in der Zeile: ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit) und bei hinterlegten Arbeitszeit-Blöcken die Kappung der importierten Zeit.' },
+            { n: 3, text: '**Neu:** Die Zeile wird ohne Beanstandung importiert. Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit, zum Beispiel „2:30 h nicht angerechnet“.' },
           ],
         },
         {
           kind: 'table',
-          head: ['Der Import überspringt …', 'Kurzinfo in der Vorschau'],
+          head: ['Der Import überspringt …', 'Text in der Vorschau'],
           rows: [
             ['einen ganzen Tag, an dem sich die Pause nach § 4 ArbZG nicht abziehen lässt', '„Wird übersprungen — die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht abziehen (es fehlen 10 Min). Bitte den Tag von Hand erfassen.“'],
             ['einen Tag mit mehr als 10 Stunden angerechneter Arbeitszeit', '„Wird übersprungen — die Tagesarbeitszeit beträgt 11:15 h und überschreitet die Höchstgrenze von 10 h nach § 3 ArbZG. Bitte den Tag von Hand erfassen.“'],
@@ -2798,9 +2798,9 @@ export const praxisleitung: Handbook = {
             { n: 2, text: 'Haken bei [[Tägliche automatische Sicherung aktivieren]], wenn PraxisZeit täglich selbst sichern soll. Ein Hinweis unter dem Haken sagt, dass die folgenden Einstellungen für die Docker-Installation gelten und native Installationen über das Betriebssystem sichern.' },
             { n: 3, text: '**Uhrzeit (Stunde, 0–23), nur Docker:** lokale Zeit (Europe/Berlin); die Sicherung läuft um HH:30. Das gilt für die Docker-Installation; nativ sichert der Timer des Betriebssystems (Linux 02:00, Windows und macOS 03:00).' },
             { n: 4, text: '**Aufbewahrung (Tage), nur Docker:** ältere Sicherungen löscht PraxisZeit automatisch. Für § 16 ArbZG sind mindestens 2 Jahre (730 Tage) nötig; die Seite schlägt zunächst 30 Tage vor. Nativ gilt stattdessen retention_days im Abschnitt [backup] der Datei config/praxiszeit.conf (Standard 31 Tage). Sonst zusätzlich Jahresarchive außerhalb des Servers ablegen.' },
-            { n: 5, text: '**Speicherort (optional, nur Docker):** leer bedeutet Standardverzeichnis. Der Pfad muss für den Dienst beschreibbar sein.' },
+            { n: 5, text: '**Speicherort (optional, nur Docker):** leer bedeutet Standardverzeichnis. Tragen Sie einen **absoluten Pfad** ein (relative Pfade lehnt PraxisZeit ab); er muss für den Dienst beschreibbar sein. Zum Zurücksetzen auf das Standardverzeichnis leeren Sie das Feld und speichern.' },
             { n: 6, text: 'Klicken Sie auf [[Einstellungen speichern]]. Erst dann gelten Uhrzeit, Aufbewahrung und Speicherort, und zwar nur in der Docker-Installation; nativ steuert der Timer des Betriebssystems die geplante Sicherung.' },
-            { n: 7, text: 'Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.' },
+            { n: 7, text: 'Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Ist die neueste Sicherung älter als 36 Stunden, erscheint oben ein Hinweis: Prüfen Sie dann den Zeitplan oder sichern Sie sofort. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.' },
           ],
         },
         {
@@ -3015,7 +3015,7 @@ export const praxisleitung: Handbook = {
           shot: 'pl-schicht-fuellen',
           steps: [
             { n: 1, text: 'Wählen Sie die **Zielwoche**. Sie bestimmt, welche Abwesenheiten und Stunden berücksichtigt werden; der Dialog nennt darunter den Montag der Woche.' },
-            { n: 2, text: 'Wählen Sie den **Modus**: „Alle Zuweisungen neu verteilen“ oder „Nur Lücken auffüllen (vorhandene behalten)“.' },
+            { n: 2, text: 'Wählen Sie den **Modus**: „Nur Lücken auffüllen (vorhandene behalten)“ (voreingestellt) oder „Alle Zuweisungen neu verteilen“. Das Neuverteilen löscht die bestehenden Zuweisungen des Plans und fragt vorher nach.' },
             { n: 3, text: 'Klicken Sie auf [[Generieren]]. Das Ergebnis ist ein **Entwurf** zum Prüfen; der Plan wird dabei **nicht** aktiviert.' },
           ],
         },

@@ -37,7 +37,6 @@ ALLOWED = {
     ("app/services/calculation_service.py", "get_daily_target"),        # legacy, classic export corner
     ("app/routers/admin_users.py", "_sync_user_from_change"),           # mirror
     ("app/routers/auth.py", "export_my_data"),                          # Art. 15/20 raw export
-    ("app/services/lifecycle_service.py", "_user_dict"),
     ("app/routers/superadmin.py", "_user_dict"),
 }
 

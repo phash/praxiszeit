@@ -284,6 +284,14 @@ Samstagsarbeit im Zähler stand (45 h in 5 Tagen = Ø 9 h statt 7,5 h; Teilzeit 
 statt 5 h). Derselbe Nenner speist den Monatsdurchschnitt für Nachtarbeitnehmer im §6-Bericht
 (Ø ≤ 8 h je Werktag im Kalendermonat; nur vergangene Monate mit Einträgen, ohne Werktag kein Urteil).
 
+**§11 Sonntagsauswertung bei Teiljahren (Review 2026-11-11, calc-05):** `reports.get_sunday_summary`
+zählt Sonntage und gearbeitete Sonntage nur im Beschäftigungsfenster der Person
+(`first_work_day`/`last_work_day`). Für ein Teiljahr (`partial_year = true`) gilt die
+Mindestzahl freier Sonntage anteilig: `min_free_sundays = aufrunden(15 × Sonntage im Fenster ÷
+Sonntage im Jahr)`; Ganzjahrespersonen behalten 15. Das Gesetz (§ 11 Abs. 1 ArbZG) nennt die 15
+nur je Kalenderjahr; die anteilige Regel ist eine Festlegung von PraxisZeit (Aufrunden = strengere
+Seite), keine Gesetzesvorgabe. Die Auswertung zeigt den Hinweis „Teiljahr“.
+
 **§11 Ersatzruhetag (A1-01):** Ein Tag zählt als Ersatzruhetag, wenn er Mo–Sa liegt, vorbei ist
 (vor heute), kein Feiertag, im Beschäftigungsfenster, ohne Zeiteintrag, ohne Abwesenheit außer
 `OTHER`/`OVERTIME`/`PAID_LEAVE` (so wird ein gewährter Ruhetag eingetragen) — und die Person sonst

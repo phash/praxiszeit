@@ -164,6 +164,14 @@ describe('Task 7: Stundenverlauf mit ab/bis + rückwirkende Vorschau', () => {
     expect(screen.getByText(/Ab 01\.03\.2026 bis heute: 40,0 Std\/Woche/)).toBeInTheDocument();
   });
 
+  it('user-09: Klick auf den Hintergrund schließt den Dialog nicht (Eingaben bleiben)', async () => {
+    const onClose = vi.fn();
+    renderModal({ onClose });
+    const backdrop = await screen.findByTestId('wh-backdrop');
+    fireEvent.click(backdrop);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('zukünftiges Datum OHNE betroffene Abwesenheiten zeigt keinen Hinweis', async () => {
     // Release-Review 1.17.0: hieß früher „zukünftiges Datum zeigt keinen
     // rückwirkenden Hinweis" und prüfte zusätzlich, dass für ein Datum ab heute

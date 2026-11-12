@@ -27,8 +27,11 @@ interface AuthState {
   isHydrating: boolean;
   // #370: non-null while impersonating an employee (read-only "Login als …").
   impersonation: { targetName: string } | null;
+  // Review F6: true nach „Abmelden“ durch die Person selbst (nicht nach Session-Ablauf):
+  // die Anmeldemaske darf dann kein Rücksprungziel der vorherigen Person übernehmen.
+  loggedOutExplicitly: boolean;
   login: (username: string, password: string, totpCode?: string) => Promise<void>;
-  logout: () => Promise<void>;
+  logout: (options?: { explicit?: boolean }) => Promise<void>;
   setTokens: (accessToken: string, user: User) => void;
   setUser: (user: User) => void;
   hydrate: () => Promise<void>;
@@ -44,6 +47,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isHydrating: true,
       impersonation: null,
+      loggedOutExplicitly: false,
 
       login: async (username: string, password: string, totpCode?: string) => {
         // #370: a fresh login must never inherit stale impersonation flags from a
@@ -64,6 +68,7 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: true,
           isHydrating: false,
           impersonation: null,
+          loggedOutExplicitly: false,
         });
 
         // Lazily fetch full profile (incl. profile_picture) — excluded
@@ -77,7 +82,7 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      logout: async () => {
+      logout: async (options) => {
         // #370: if impersonating, drop back to the ADMIN token first. Otherwise
         // the /auth/logout POST carries the impersonation token → the read-only
         // middleware 403s it (server session survives) AND, if it got through, it
@@ -116,6 +121,7 @@ export const useAuthStore = create<AuthState>()(
           user: null,
           isAuthenticated: false,
           isHydrating: false,
+          loggedOutExplicitly: options?.explicit === true,
         });
 
         // Explicitly drop the zustand persist entry — removeItem alone is
@@ -201,7 +207,15 @@ export const useAuthStore = create<AuthState>()(
           return;
         }
 
-        const token = await tryRefreshSession();
+        let token: string | null;
+        try {
+          token = await tryRefreshSession();
+        } catch {
+          // auth-04: Netzfehler/5xx/429 — gespeicherte Anmeldung behalten, die
+          // Oberfläche freigeben; der nächste 401 versucht den Refresh erneut.
+          set({ isHydrating: false });
+          return;
+        }
         if (!token) {
           // Refresh cookie gone/expired → wipe persisted user
           set({ user: null, isAuthenticated: false, isHydrating: false });

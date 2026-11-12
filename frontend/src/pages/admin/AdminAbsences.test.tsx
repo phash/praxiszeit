@@ -1,16 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { format } from 'date-fns';
 import AdminAbsences from './AdminAbsences';
 
 const getMock = vi.fn();
 const postMock = vi.fn();
 const putMock = vi.fn();
+const deleteMock = vi.fn();
 vi.mock('../../api/client', () => ({
   default: {
     get: (...args: unknown[]) => getMock(...args),
     post: (...args: unknown[]) => postMock(...args),
     put: (...args: unknown[]) => putMock(...args),
-    delete: vi.fn(),
+    delete: (...args: unknown[]) => deleteMock(...args),
   },
 }));
 let reasonsData: unknown[] = [];
@@ -34,6 +36,7 @@ beforeEach(() => {
   getMock.mockReset();
   postMock.mockReset();
   putMock.mockReset();
+  deleteMock.mockReset();
   Object.values(toast).forEach((f) => f.mockReset());
   getMock.mockImplementation((url: string) =>
     url === '/company-closures'
@@ -72,6 +75,8 @@ describe('<AdminAbsences /> Betriebsferien: Jahresabschluss-Warnung', () => {
     const [, bis] = Array.from(document.querySelectorAll('form input[type="date"]'));
     fireEvent.change(bis, { target: { value: '2026-12-31' } });
     fireEvent.click(screen.getByRole('button', { name: 'Betriebsferien erstellen & Urlaub eintragen' }));
+    // abw-04: Anlegen verlangt die ausdrückliche Bestätigung.
+    fireEvent.click(await screen.findByRole('button', { name: 'Anlegen' }));
 
     await waitFor(() => expect(postMock).toHaveBeenCalled());
     await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(STALE));
@@ -170,5 +175,81 @@ describe('<AdminAbsences /> Stundenfeld im Formular', () => {
     await openForm();
     fireEvent.change(screen.getByDisplayValue('Urlaub'), { target: { value: 'overtime' } });
     expect(screen.getByText(/bei Tagesplan wird das Tagessoll des Tages gebucht/)).toBeInTheDocument();
+  });
+});
+
+// Code-Review 2026-11-11 (Slice abw)
+describe('<AdminAbsences /> Review abw', () => {
+  const cur = format(new Date(), 'yyyy-MM');
+  const prevMonthLast = format(new Date(new Date().getFullYear(), new Date().getMonth(), 0), 'yyyy-MM-dd');
+
+  async function openEmployee(rows: unknown[]) {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/admin/users')
+        return Promise.resolve({ data: [{ id: 'u1', first_name: 'Anna', last_name: 'Test', is_active: true }] });
+      if (url.startsWith('/absences?')) return Promise.resolve({ data: rows });
+      return Promise.resolve({ data: [] });
+    });
+    render(<AdminAbsences />);
+    const select = await screen.findByTestId('absence-employee-filter');
+    await screen.findByRole('option', { name: 'Anna Test' });
+    fireEvent.change(select, { target: { value: 'u1' } });
+  }
+
+  const row = (id: string, date: string, end_date: string, note: string) => ({
+    id, date, end_date, type: 'vacation', hours: 8, note,
+  });
+
+  it('abw-01: Tage des Vormonats erscheinen nicht im Folgemonat (Einzeltage mit Spannen-Ende)', async () => {
+    await openEmployee([
+      row('a1', prevMonthLast, `${cur}-03`, 'VORMONAT'),
+      row('a2', `${cur}-02`, `${cur}-03`, 'DIESMONAT'),
+    ]);
+    expect(await screen.findByText('DIESMONAT')).toBeInTheDocument();
+    expect(screen.queryByText('VORMONAT')).toBeNull();
+  });
+
+  it('abw-08: zeigt je Zeile das konkrete Datum mit Wochentag, nie die Spanne', async () => {
+    await openEmployee([row('a2', `${cur}-02`, `${cur}-06`, 'X')]);
+    const cell = await screen.findByText(/\d{2}\.\d{2}\.\d{4}/);
+    expect(cell.textContent).toMatch(/^[A-Za-zäöüÄÖÜ]+, 02\.\d{2}\.\d{4}$/);
+    expect(cell.textContent).not.toContain('–');
+  });
+
+  it('abw-08: zeigt den Namen des eigenen Abwesenheitsgrunds statt „Sonstiges“', async () => {
+    reasonsData = [{ id: 'r1', name: 'Reha', color: null, base_behavior: 'paid_free', is_active: true, sort_order: 0, tracks_child_sick_limit: false }];
+    await openEmployee([{ ...row('a2', `${cur}-02`, `${cur}-02`, 'X'), type: 'other', reason_id: 'r1' }]);
+    expect(await screen.findByText('Reha', { selector: 'span' })).toBeInTheDocument();
+  });
+
+  it('abw-09: Löschfehler zeigt den Grund des Servers', async () => {
+    deleteMock.mockRejectedValue({ response: { status: 409, data: { detail: 'Betriebsferien-Tage löscht nur die Verwaltung.' } } });
+    await openEmployee([row('a2', `${cur}-02`, `${cur}-02`, 'X')]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Löschen' }));
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Löschen' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Betriebsferien-Tage löscht nur die Verwaltung.'));
+  });
+
+  it('abw-05: Löschen in abgeschlossenem Jahr zeigt die Warnung des Servers', async () => {
+    deleteMock.mockResolvedValue({ data: { warning: STALE } });
+    await openEmployee([row('a2', `${cur}-02`, `${cur}-02`, 'X')]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Löschen' }));
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Löschen' }));
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(STALE));
+  });
+
+  it('abw-04: Betriebsferien anlegen sendet erst nach der Bestätigung', async () => {
+    postMock.mockResolvedValue({ data: {} });
+    render(<AdminAbsences />);
+    fireEvent.click(screen.getByRole('button', { name: 'Betriebsferien' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Betriebsferien erstellen' }));
+    fireEvent.change(screen.getByPlaceholderText('z.B. Betriebsferien Sommer 2026'), { target: { value: 'Nachtrag' } });
+    const [, bis] = Array.from(document.querySelectorAll('form input[type="date"]'));
+    fireEvent.change(bis, { target: { value: '2026-12-31' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Betriebsferien erstellen & Urlaub eintragen' }));
+    expect(await screen.findByText(/gestempelten Zeiteinträge/)).toBeInTheDocument();
+    expect(postMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
   });
 });

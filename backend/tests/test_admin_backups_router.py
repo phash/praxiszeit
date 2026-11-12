@@ -147,3 +147,54 @@ def test_employee_forbidden(db, default_tenant):
             assert c.get("/api/admin/backups").status_code == 403
     finally:
         test_app.dependency_overrides.clear()
+
+
+# --- Code-Review 2026-11-11 (ops-02, ops-14, ops-16) ---
+
+def test_config_reports_override_separately_and_empty_resets(admin_client, tmp_path):
+    """ops-02: location_override getrennt vom wirksamen Pfad; '' setzt auf Standard zurück."""
+    client, _ = admin_client
+    cfg = client.get("/api/admin/backups").json()["config"]
+    assert cfg["location_override"] == str(tmp_path)
+    r = client.put("/api/admin/backups/config", json={"location": ""})
+    assert r.status_code == 200
+    assert r.json()["location_override"] == ""
+    # Zeit ändern lässt den Override leer (friert den Standardpfad nicht ein)
+    r = client.put("/api/admin/backups/config", json={"hour": 4})
+    assert r.json()["location_override"] == ""
+
+
+@pytest.mark.parametrize("loc", ["backups", "../x", "./sicherung"])
+def test_relative_location_rejected(admin_client, loc):
+    """ops-16: relative Pfade -> 400 mit Hinweis."""
+    client, _ = admin_client
+    r = client.put("/api/admin/backups/config", json={"location": loc})
+    assert r.status_code == 400
+    assert "absoluten Pfad" in r.json()["detail"]
+
+
+def test_two_backups_in_same_second_do_not_overwrite(admin_client, monkeypatch):
+    """ops-14: gleiche Sekunde -> zweite Datei mit Suffix, die erste bleibt unberührt."""
+    client, tmp_path = admin_client
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", "postgresql://" + "su:pw@db:5432/praxiszeit")
+    monkeypatch.setattr(bs.subprocess, "Popen", lambda *a, **k: _FakePopen())
+
+    from datetime import datetime as _dt
+
+    class _FixedNow(_dt):
+        @classmethod
+        def now(cls, tz=None):
+            return _dt(2026, 11, 11, 10, 0, 0, tzinfo=tz)
+
+    monkeypatch.setattr(bs, "datetime", _FixedNow)
+    a = client.post("/api/admin/backups")
+    first = (tmp_path / a.json()["filename"])
+    content = first.read_bytes()
+    monkeypatch.setattr(bs.subprocess, "Popen", lambda *a, **k: _FakePopen(rc=1, stderr=b"boom"))
+    b = client.post("/api/admin/backups")
+    assert b.status_code == 500
+    assert first.exists() and first.read_bytes() == content, "gute Sicherung darf nicht verloren gehen"
+    monkeypatch.setattr(bs.subprocess, "Popen", lambda *a, **k: _FakePopen())
+    c = client.post("/api/admin/backups")
+    assert c.json()["filename"] != a.json()["filename"]
+    assert bs._FILENAME_RE.match(c.json()["filename"])

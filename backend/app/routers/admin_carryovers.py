@@ -2,7 +2,7 @@
 
 import hashlib
 from datetime import date
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 from typing import List
@@ -11,6 +11,7 @@ from app.models import User, YearCarryover
 from app.middleware.auth import require_admin
 from app.schemas.year_carryover import YearCarryoverCreate, YearCarryoverResponse
 from app.services import admin_change_audit, calculation_service
+from app.services.timezone_service import today_local
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -121,9 +122,52 @@ def upsert_carryover(
     return carryover
 
 
+def _manual_carryover_count(db: Session, tenant_id, next_year: int) -> int:
+    return db.query(func.count(YearCarryover.id)).filter(
+        YearCarryover.tenant_id == tenant_id,  # F-026
+        YearCarryover.year == next_year,
+        YearCarryover.source == "manual",
+    ).scalar() or 0
+
+
+def _assert_year_closable(year: int) -> bool:
+    """calc-01 (R35): returns True when ``year`` is the still-running year.
+
+    Future years are refused (400). The current year is only allowed with an
+    explicit confirmation (checked by the caller): its Soll for the remaining
+    months would be frozen without Ist.
+    """
+    if year < 2000 or year > 2100:
+        raise HTTPException(status_code=400, detail=f"Ungültiges Jahr: {year} (erlaubt 2000–2100)")
+    current = today_local().year
+    if year > current:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Jahresabschluss {year} nicht möglich: das Jahr hat noch nicht begonnen.",
+        )
+    return year == current
+
+
+@router.get("/year-closing/{year}/preview")
+def preview_year_closing(
+    year: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Read-only facts for the confirm dialog of the year closing."""
+    is_open = _assert_year_closable(year)
+    return {
+        "year": year,
+        "next_year": year + 1,
+        "is_open_year": is_open,
+        "manual_carryover_count": _manual_carryover_count(db, current_user.tenant_id, year + 1),
+    }
+
+
 @router.post("/year-closing/{year}")
 def create_year_closing(
     year: int,
+    confirm_open_year: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -131,8 +175,14 @@ def create_year_closing(
     Create year-end closing: calculates overtime balance and remaining vacation
     for all active users at Dec 31 and creates carryover records for year+1.
     """
-    if year < 2000 or year > 2100:
-        raise HTTPException(status_code=400, detail=f"Ungültiges Jahr: {year} (erlaubt 2000–2100)")
+    if _assert_year_closable(year) and not confirm_open_year:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Das Jahr {year} ist noch nicht abgelaufen: das Soll der verbleibenden Monate "
+                f"würde ohne Ist als Übertrag eingefroren. Bitte den Abschluss ausdrücklich bestätigen."
+            ),
+        )
 
     # F-029: serialize year closing per (tenant, year), see lock_year_closing.
     lock_year_closing(db, current_user.tenant_id, year)

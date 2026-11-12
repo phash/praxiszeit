@@ -529,7 +529,7 @@ Weiter unten auf derselben Seite: **Jahresreport exportieren**. Krankheitsdaten 
 | Auswertung unter Berichte | Prüft |
 | --- | --- |
 | Ruhezeitprüfung | § 5: mindestens 11 Stunden Ruhezeit zwischen zwei Arbeitstagen (Mindestruhezeit einstellbar) |
-| Sonntagsarbeit §11 ArbZG | gearbeitete und freie Sonntage – mindestens 15 Sonntage im Jahr müssen frei sein |
+| Sonntagsarbeit §11 ArbZG | gearbeitete und freie Sonntage – mindestens 15 Sonntage im Jahr müssen frei sein; bei Eintritt oder Austritt im Jahr zählen nur die Sonntage im Beschäftigungszeitraum, und die Mindestzahl gilt anteilig (aufgerundet, Hinweis „Teiljahr“) |
 | Nachtarbeit §6 ArbZG | Nachtarbeitstage und Nachtarbeitnehmer, mit Monatsdurchschnitt je Werktag |
 | Ersatzruhetage §11 ArbZG | Ersatzruhetag innerhalb von 2 Wochen nach Sonntags- und 8 Wochen nach Feiertagsarbeit |
 | 24-Wochen-Durchschnitt §3 ArbZG | höchstens 8 Stunden je Werktag im Schnitt über 24 Wochen |
@@ -796,7 +796,7 @@ Wählen Sie in der Jahresübersicht das Jahr und klicken Sie auf `Jahresabschlus
 
 ![Bestätigungsdialog „Jahresabschluss 2026“: Überstunden-Saldo und Resturlaub aller aktiven Mitarbeiter werden als Übernahme in 2027 gespeichert, bestehende Übernahmen werden überschrieben; Knöpfe Abbrechen und Jahresabschluss erstellen](img/pl-jahresabschluss-dialog.webp)
 
-1. Lesen Sie den Text: Überstunden-Saldo und Resturlaub aller **aktiven** Mitarbeitenden werden berechnet und als Übernahme ins Folgejahr gespeichert. **Bestehende Übernahmen für das Folgejahr werden überschrieben.**
+1. Lesen Sie den Text: Überstunden-Saldo und Resturlaub aller **aktiven** Mitarbeitenden werden berechnet und als Übernahme ins Folgejahr gespeichert. **Bestehende Übernahmen für das Folgejahr werden überschrieben.** Der Dialog nennt, wie viele davon von Hand eingetragen wurden. Beim **laufenden Jahr** warnt er zusätzlich, dass das Jahr noch nicht zu Ende ist: Das Soll der verbleibenden Monate würde ohne Ist eingefroren. Schließen Sie ein Jahr deshalb erst nach seinem Ende ab; ein künftiges Jahr lässt sich gar nicht abschließen.
 2. Mit `Abbrechen` geschieht nichts.
 3. Mit `Jahresabschluss erstellen` bestätigen Sie. Die Meldung nennt, wie viele Mitarbeitende nach dem Folgejahr übernommen wurden.
 
@@ -865,14 +865,13 @@ Klicken Sie in der Navigation auf `Import`. Der Assistent hat drei Schritte: `Ho
 
 Die Vorschau zeigt alle gefundenen Einträge mit Datum, Von, Bis, Pause und Netto. Die Netto-Stunden rechnet der Server so, wie er sie anschließend speichert.
 
-![Import, Schritt „Vorschau“: 20 Einträge gefunden, 1 Konflikt und 14 Hinweise; in der Tabelle die Zeilen mit Datum, Von, Bis, Pause, Netto und Status „Konflikt“, „Hinweis“ oder „Neu“](img/pl-import-vorschau.webp)
+![Import, Schritt „Vorschau“: 20 Einträge gefunden, 6 werden importiert, 14 übersprungen, 1 Konflikt; in der Tabelle Zeilen mit Datum, Von, Bis, Pause, Netto und Status „Wird übersprungen“ samt Grund oder „Neu“](img/pl-import-vorschau.webp)
 
-1. Über der Tabelle stehen die Zahl der **Einträge**, der **Konflikte** (rot) und der **Hinweise** (gelb).
-2. **Konflikt:** Ein Eintrag mit demselben Beginn am selben Tag ist schon vorhanden. Ob er ersetzt wird, entscheiden Sie im nächsten Schritt.
-3. **Hinweis:** Fahren Sie mit der Maus über das Kennzeichen – die Kurzinfo nennt den genauen Text. Das sind ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit), bei hinterlegten Arbeitszeit-Blöcken die Kappung der importierten Zeit und die Gründe, aus denen eine Zeile übersprungen wird.
-4. **Neu:** Die Zeile wird ohne Beanstandung importiert. Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit, zum Beispiel „2:30 h nicht angerechnet“.
+1. Über der Tabelle stehen die Zahl der **Einträge**, wie viele davon importiert und wie viele **übersprungen** werden, die **Konflikte** (rot) und die **Hinweise** (gelb). **Konflikt** heißt: Ein Eintrag mit demselben Beginn am selben Tag ist schon vorhanden. Ob er ersetzt wird, entscheiden Sie im nächsten Schritt.
+2. **Wird übersprungen:** Diese Zeile übernimmt der Import nicht. Der Grund steht direkt darunter (siehe Tabelle unten). **Hinweise** (gelb) stehen ebenso als Text in der Zeile: ArbZG-Warnungen (z. B. Ruhezeit, Höchstarbeitszeit) und bei hinterlegten Arbeitszeit-Blöcken die Kappung der importierten Zeit.
+3. **Neu:** Die Zeile wird ohne Beanstandung importiert. Unter Netto steht bei gekappten Zeilen die nicht angerechnete Zeit, zum Beispiel „2:30 h nicht angerechnet“.
 
-| Der Import überspringt … | Kurzinfo in der Vorschau |
+| Der Import überspringt … | Text in der Vorschau |
 | --- | --- |
 | einen ganzen Tag, an dem sich die Pause nach § 4 ArbZG nicht abziehen lässt | „Wird übersprungen — die Pause nach § 4 ArbZG lässt sich mit den Zeilen dieses Tages nicht abziehen (es fehlen 10 Min). Bitte den Tag von Hand erfassen.“ |
 | einen Tag mit mehr als 10 Stunden angerechneter Arbeitszeit | „Wird übersprungen — die Tagesarbeitszeit beträgt 11:15 h und überschreitet die Höchstgrenze von 10 h nach § 3 ArbZG. Bitte den Tag von Hand erfassen.“ |
@@ -1017,9 +1016,9 @@ Klicken Sie in der Navigation auf `Datensicherung`. Eine Sicherung ist ein kompr
 2. Haken bei `Tägliche automatische Sicherung aktivieren`, wenn PraxisZeit täglich selbst sichern soll. Ein Hinweis unter dem Haken sagt, dass die folgenden Einstellungen für die Docker-Installation gelten und native Installationen über das Betriebssystem sichern.
 3. **Uhrzeit (Stunde, 0–23), nur Docker:** lokale Zeit (Europe/Berlin); die Sicherung läuft um HH:30. Das gilt für die Docker-Installation; nativ sichert der Timer des Betriebssystems (Linux 02:00, Windows und macOS 03:00).
 4. **Aufbewahrung (Tage), nur Docker:** ältere Sicherungen löscht PraxisZeit automatisch. Für § 16 ArbZG sind mindestens 2 Jahre (730 Tage) nötig; die Seite schlägt zunächst 30 Tage vor. Nativ gilt stattdessen retention\_days im Abschnitt \[backup\] der Datei config/praxiszeit.conf (Standard 31 Tage). Sonst zusätzlich Jahresarchive außerhalb des Servers ablegen.
-5. **Speicherort (optional, nur Docker):** leer bedeutet Standardverzeichnis. Der Pfad muss für den Dienst beschreibbar sein.
+5. **Speicherort (optional, nur Docker):** leer bedeutet Standardverzeichnis. Tragen Sie einen **absoluten Pfad** ein (relative Pfade lehnt PraxisZeit ab); er muss für den Dienst beschreibbar sein. Zum Zurücksetzen auf das Standardverzeichnis leeren Sie das Feld und speichern.
 6. Klicken Sie auf `Einstellungen speichern`. Erst dann gelten Uhrzeit, Aufbewahrung und Speicherort, und zwar nur in der Docker-Installation; nativ steuert der Timer des Betriebssystems die geplante Sicherung.
-7. Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.
+7. Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Ist die neueste Sicherung älter als 36 Stunden, erscheint oben ein Hinweis: Prüfen Sie dann den Zeitplan oder sichern Sie sofort. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.
 
 > **Gut zu wissen:** **Wo die Sicherungen liegen:** Docker im Volume praxiszeit\_backups, nativ im Verzeichnis data/backups/. **Native Installation:** Die \*geplante\* Sicherung läuft dort weiterhin über den Timer des Betriebssystems (Linux: täglich 02:00 über systemd, Windows: täglich 03:00 als geplante Aufgabe, macOS: täglich 03:00 über launchd). Die Einstellung auf dieser Seite steuert die Docker-Variante; „Jetzt sichern“ und die Liste funktionieren überall. Die Aufbewahrungsdauer der nativen Timer steht in config/praxiszeit.conf (retention\_days, Standard 31 Tage).
 
@@ -1149,7 +1148,7 @@ Klicken Sie im Editor auf `Automatisch füllen`. Der Dialog besetzt die Slots mi
 ![Dialog „Automatisch füllen“ mit der Zielwoche, der Wahl zwischen „Alle Zuweisungen neu verteilen“ und „Nur Lücken auffüllen“ und dem Knopf „Generieren“](img/pl-schicht-fuellen.webp)
 
 1. Wählen Sie die **Zielwoche**. Sie bestimmt, welche Abwesenheiten und Stunden berücksichtigt werden; der Dialog nennt darunter den Montag der Woche.
-2. Wählen Sie den **Modus**: „Alle Zuweisungen neu verteilen“ oder „Nur Lücken auffüllen (vorhandene behalten)“.
+2. Wählen Sie den **Modus**: „Nur Lücken auffüllen (vorhandene behalten)“ (voreingestellt) oder „Alle Zuweisungen neu verteilen“. Das Neuverteilen löscht die bestehenden Zuweisungen des Plans und fragt vorher nach.
 3. Klicken Sie auf `Generieren`. Das Ergebnis ist ein **Entwurf** zum Prüfen; der Plan wird dabei **nicht** aktiviert.
 
 > **Gut zu wissen:** Der Generator liest Abwesenheiten, Wochenstunden und Überstundenkonto nur und verändert daran nichts. Er setzt niemanden ein, der an dem Tag abwesend oder außerhalb seines Beschäftigungsfensters ist, und keine Person auf zwei überlappende Slots. Slots, die sich nicht besetzen lassen, bleiben offen; eine Meldung und die Unterbesetzungs-Markierung sagen es Ihnen.

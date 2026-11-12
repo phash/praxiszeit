@@ -2389,8 +2389,10 @@ def create_backup(config: dict):
     # Restore idempotent (DROP ... IF EXISTS vor jedem CREATE), auch in eine bereits
     # befuellte DB. "-w": nie nach Passwort fragen (fail fast statt Haenger).
     pg_dump = subprocess.Popen(
+        # --lock-wait-timeout wie im Web-Pfad (backup_service, S2-6): eine fremde
+        # Tabellensperre laesst den naechtlichen Lauf nicht endlos haengen.
         [str(pg_cmd("pg_dump")), "-w", "--clean", "--if-exists",
-         "-U", superuser, "-d", "praxiszeit"],
+         "--lock-wait-timeout=300s", "-U", superuser, "-d", "praxiszeit"],
         stdout=subprocess.PIPE,
         env={**pg_env(), "PGPASSWORD": su_password},
     )
@@ -2444,9 +2446,15 @@ def create_backup(config: dict):
     retention_days = get_config_value(config, "backup", "retention_days", 31)
     cutoff = time.time() - (retention_days * 86400)
     for old_backup in BACKUP_DIR.glob("praxiszeit_*.sql.gz"):
-        if old_backup.stat().st_mtime < cutoff:
-            old_backup.unlink()
-            logger.info(f"Removed old backup: {old_backup.name}")
+        # Ein Fehler an EINER Datei (gleichzeitig geloescht, gesperrt) darf die
+        # Aufbewahrung nicht abbrechen und das gerade gelungene Backup nicht
+        # als Fehlschlag erscheinen lassen.
+        try:
+            if old_backup.stat().st_mtime < cutoff:
+                old_backup.unlink()
+                logger.info(f"Removed old backup: {old_backup.name}")
+        except OSError as e:
+            logger.warning(f"Could not remove old backup {old_backup.name}: {e}")
 
     return backup_file
 

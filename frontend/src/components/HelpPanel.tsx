@@ -17,22 +17,28 @@ export default function HelpPanel({ isOpen, onClose }: HelpPanelProps) {
 
   const entry = helpContent[location.pathname] ?? getFallbackHelp();
 
-  // Focus close button when panel opens
-  useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => closeButtonRef.current?.focus(), 50);
-    }
-  }, [isOpen]);
-
-  // Escape key closes panel
+  // Focus close button when panel opens; auth-10: Fokus beim Schließen an den Auslöser zurückgeben
   useEffect(() => {
     if (!isOpen) return;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const timer = setTimeout(() => closeButtonRef.current?.focus(), 50);
+    return () => {
+      clearTimeout(timer);
+      trigger?.focus?.();
+    };
+  }, [isOpen]);
+
+  // Escape key closes panel — auth-10: nicht, solange der Feedback-Dialog offen ist
+  // (dessen Escape schließt nur ihn; sonst ginge ein halb getippter Bericht verloren).
+  useEffect(() => {
+    if (!isOpen || showFeedback) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      // defaultPrevented: die Fokusfalle des Dialogs hat Escape bereits für sich genommen.
+      if (e.key === 'Escape' && !e.defaultPrevented) onClose();
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [isOpen, onClose]);
+  }, [isOpen, showFeedback, onClose]);
 
   // Focus trap
   useEffect(() => {

@@ -1,5 +1,6 @@
 import type { ShiftSlot } from '../../api/shiftPlanning';
 import { timeToMinutes } from './weekGridUtils';
+import { formatDecimalDe } from '../../utils/formatters';
 
 /**
  * #330: assigned slot minutes per user across a plan's weekly template.
@@ -20,11 +21,8 @@ export function assignedMinutesByUser(slots: ShiftSlot[]): Map<string, number> {
   return byUser;
 }
 
-/** German number: comma decimal, up to 2 decimals, trailing zeros trimmed. */
-function fmtHours(h: number): string {
-  const rounded = Math.round(h * 100) / 100;
-  return rounded.toFixed(2).replace(/\.?0+$/, '').replace('.', ',');
-}
+// ui-22: eine Stelle für die deutsche Dezimalzahl (utils/formatters.ts).
+const fmtHours = formatDecimalDe;
 
 /** #330 display: e.g. "15,25 / 17 h" (assigned / contract). */
 export function formatLoad(assignedMinutes: number, weeklyHours: number): string {

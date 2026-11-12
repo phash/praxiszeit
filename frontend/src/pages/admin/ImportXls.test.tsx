@@ -15,13 +15,15 @@ vi.mock('../../api/client', () => ({
     post: (...a: unknown[]) => postMock(...a),
   },
 }));
+const toastError = vi.hoisted(() => vi.fn());
 vi.mock('../../contexts/ToastContext', () => ({
-  useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
+  useToast: () => ({ error: toastError, success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
 }));
 
 beforeEach(() => {
   getMock.mockReset();
   postMock.mockReset();
+  toastError.mockReset();
 });
 
 async function analyze(entry: Record<string, unknown>, summary: Record<string, unknown> = {}) {
@@ -148,5 +150,48 @@ describe('<ImportXls /> Zähler in Einzahl (P4.2)', () => {
     expect(screen.getByText(/1 Konflikt$/)).toBeInTheDocument();
     expect(screen.getByText(/1 Hinweis$/)).toBeInTheDocument();
     expect(screen.getByText('Konflikte überschreiben (1 Eintrag)')).toBeInTheDocument();
+  });
+});
+
+// Code-Review 2026-11-11: ops-04 (Überspringen sichtbar), ops-05 (422-Array), ops-18 (Tastatur, Labels, Laden beim Öffnen).
+describe('<ImportXls /> Überspringen, Fehlertexte, Tastatur (Review 2026-11-11)', () => {
+  it('ops-04: übersprungene Zeile mit rotem Kennzeichen, sichtbarem Grund und Zusammenfassung', async () => {
+    await analyze(
+      {
+        start_time: '08:00:00', end_time: '16:30:00', net_hours: 0,
+        arbzg_warnings: ['Wird übersprungen — Datum liegt nach dem letzten Arbeitstag (25.09.2026).'],
+        skip_reason: 'Datum liegt nach dem letzten Arbeitstag (25.09.2026).',
+      },
+      { total: 1, arbzg_warnings: 1, will_skip: 1 },
+    );
+    expect(await screen.findByText('Wird übersprungen')).toBeInTheDocument();
+    expect(screen.getByTestId('import-skip-reason')).toHaveTextContent('Datum liegt nach dem letzten Arbeitstag');
+    expect(screen.getByTestId('import-skip-summary')).toHaveTextContent('0 Einträge werden importiert, 1 übersprungen');
+    expect(screen.queryByText(/^1 Hinweis$/)).not.toBeInTheDocument();
+  });
+
+  it('ops-05: 422-detail als Array wird als Text gemeldet, nicht als Objekt gerendert', async () => {
+    await analyze({ start_time: '08:00:00', end_time: '16:30:00', net_hours: 8 });
+    postMock.mockRejectedValueOnce({
+      response: { status: 422, data: { detail: [{ msg: 'Zeit ungültig', loc: ['body', 'entries', 0] }] } },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Import bestätigen →' }));
+    await vi.waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastError).toHaveBeenCalledWith('Zeit ungültig');
+  });
+
+  it('ops-18: Benutzer werden beim Öffnen geladen, Labels sind verknüpft, Dropzone per Tastatur bedienbar', async () => {
+    getMock.mockResolvedValue({
+      data: [{ id: 'u1', first_name: 'Jane', last_name: 'Doe', username: 'jd', is_active: true }],
+    });
+    const { container } = render(<ImportXls />);
+    expect(await screen.findByRole('option', { name: 'Jane Doe (jd)' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Benutzer/)).toBeInTheDocument();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const clickSpy = vi.spyOn(input, 'click');
+    const zone = screen.getByRole('button', { name: 'XLS-Datei auswählen' });
+    fireEvent.keyDown(zone, { key: 'Enter' });
+    fireEvent.keyDown(zone, { key: ' ' });
+    expect(clickSpy).toHaveBeenCalledTimes(2);
   });
 });

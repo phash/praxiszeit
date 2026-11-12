@@ -86,7 +86,7 @@ export default function AbsenceDeleteRequestDialog({ absence, onClose, onSuccess
 
           <form onSubmit={handleSubmit} noValidate className="p-6 space-y-6">
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div role="alert" className="p-3 bg-red-50 border border-red-200 rounded-lg">
                 <p className="text-sm text-red-800">{error}</p>
               </div>
             )}

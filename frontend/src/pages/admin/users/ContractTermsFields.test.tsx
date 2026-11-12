@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useState } from 'react';
+import userEvent from '@testing-library/user-event';
 import { useSystemStore } from '../../../stores/systemStore';
 import ContractTermsFields from './ContractTermsFields';
 import type { ContractTerms } from './workingHoursTypes';
@@ -89,10 +90,29 @@ describe('ContractTermsFields', () => {
     const fixed = { ...BASE, milog_working_time_account: true, agreed_monthly_hours: 43.3, use_fixed_monthly_target: true };
     const { unmount } = render(<Harness initial={fixed} spy={spy} />);
     fireEvent.click(screen.getByLabelText(/Arbeitszeitkonto/));
-    expect(spy).toHaveBeenLastCalledWith({ ...fixed, milog_working_time_account: false, use_fixed_monthly_target: false });
+    // user-12: auch die dann verborgene vereinbarte Monatszahl wird geleert
+    expect(spy).toHaveBeenLastCalledWith({ ...fixed, milog_working_time_account: false, use_fixed_monthly_target: false, agreed_monthly_hours: null });
     unmount();
     render(<Harness initial={fixed} spy={spy} />);
     fireEvent.click(screen.getByLabelText(/Stundenzählung aktiv/));
     expect(spy).toHaveBeenLastCalledWith({ ...fixed, track_hours: false, use_fixed_monthly_target: false });
+  });
+
+  it('user-17: „0,5“ bleibt in der vereinbarten Monatsarbeitszeit tippbar (die 0 verschwindet nicht)', async () => {
+    const user = userEvent.setup();
+    render(<Harness initial={{ ...BASE, milog_working_time_account: true }} />);
+    const input = screen.getByLabelText(/Vereinbarte Monatsarbeitszeit/) as HTMLInputElement;
+    await user.type(input, '0.5');
+    expect(input.value).toBe('0.5');
+  });
+
+  it('user-17: create-Modus — Urlaubstage leeren und neu tippen ergibt „30“, nicht „030“', async () => {
+    const user = userEvent.setup();
+    render(<Harness mode="create" idPrefix="f-" />);
+    const input = screen.getByLabelText(/Urlaubstage/) as HTMLInputElement;
+    await user.clear(input);
+    expect(input.value).toBe('');
+    await user.type(input, '30');
+    expect(input.value).toBe('30');
   });
 });

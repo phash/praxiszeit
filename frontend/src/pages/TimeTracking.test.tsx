@@ -27,9 +27,9 @@ vi.mock('../api/client', () => ({
     delete: (...a: unknown[]) => deleteMock(...a),
   },
 }));
-vi.mock('../contexts/ToastContext', () => ({
-  useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
-}));
+const toastError = vi.fn();
+const toastObj = { error: toastError, success: vi.fn(), info: vi.fn(), warning: vi.fn() };
+vi.mock('../contexts/ToastContext', () => ({ useToast: () => toastObj }));
 // #502: Rolle je Test umschaltbar (Datumsfeld beim Bearbeiten nur fuer Admins).
 let mockRole: 'employee' | 'admin' = 'employee';
 vi.mock('../stores/authStore', () => ({
@@ -931,5 +931,48 @@ describe('<TimeTracking /> Überschneidung, Begründung, Pausen-Vorschlag (Audit
     fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
     await waitFor(() => expect(postMock).toHaveBeenCalled());
     expect(postMock.mock.calls[0][1]).toMatchObject({ break_minutes: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// zeit-01/02/08 (Code-Review 2026-11-11)
+// ---------------------------------------------------------------------------
+describe('<TimeTracking /> Review 2026-11-11', () => {
+  it('zeit-01: „Abbrechen“ im Kopf verwirft den Bearbeiten-Zustand — „Neuer Eintrag“ legt per POST an', async () => {
+    mockEntries([closedEntry]);
+    postMock.mockResolvedValue({ status: 201, data: { ...closedEntry, warnings: [] } });
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    expect(screen.getAllByText('Eintrag bearbeiten').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Neuer Eintrag' }));
+    expect(screen.queryByText('Eintrag bearbeiten')).not.toBeInTheDocument();
+    expect((screen.getByLabelText('Datum') as HTMLInputElement).disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText('Datum'), { target: { value: THURSDAY_BEFORE } });
+    fireEvent.change(screen.getByLabelText('Bis'), { target: { value: '12:00' } });
+    fireEvent.submit(document.getElementById('time-entry-form') as HTMLFormElement);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(putMock).not.toHaveBeenCalled();
+  });
+
+  it('zeit-02: ein Datumswechsel beim Bearbeiten lässt das gestempelte Ende stehen', async () => {
+    mockRole = 'admin';
+    mockEntries([{ ...closedEntry, end_time: '12:30:00', break_minutes: 0 }]);
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
+    fireEvent.change(screen.getByLabelText('Datum'), { target: { value: '2026-05-07' } });
+    expect((screen.getByLabelText('Bis') as HTMLInputElement).value).toBe('12:30');
+  });
+
+  it('zeit-08: der Löschfehler zeigt die Serverbegründung', async () => {
+    mockEntries([closedEntry]);
+    deleteMock.mockRejectedValue(Object.assign(new Error('x'), {
+      response: { status: 409, data: { detail: 'Anerkannter Eintrag – Änderung bitte per Änderungsantrag.' } },
+    }));
+    renderPage();
+    fireEvent.click(await screen.findByLabelText(/Eintrag vom .* löschen/));
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Löschen' }));
+    await waitFor(() => expect(deleteMock).toHaveBeenCalled());
+    expect(toastError).toHaveBeenCalledWith('Anerkannter Eintrag – Änderung bitte per Änderungsantrag.');
   });
 });

@@ -14,8 +14,10 @@ Textfunktion, kein Berechnungspfad.
 """
 from __future__ import annotations
 
+import logging
 from datetime import date
 from io import BytesIO
+from pathlib import Path
 from typing import Optional
 
 from reportlab.lib import colors
@@ -24,6 +26,8 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.services.export_service import escape_pdf_text
@@ -35,11 +39,109 @@ WEEKDAY_LABELS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Sa
 # genau dieses Zeichen prüfen kann, statt den kompletten Zellentext zu parsen.
 NOTE_MARKER = "»"
 
+logger = logging.getLogger(__name__)
+
+# ui-24: Die Standardschrift Helvetica (WinAnsi) kennt nur Westeuropa — „Małgorzata“,
+# „Işıl“ oder kyrillische Namen erschienen als schwarze Kästchen. Enthält der Plan
+# solche Zeichen, wird das ganze Dokument mit der eingebetteten DejaVu Sans gesetzt
+# (Lizenz: app/assets/fonts/LICENSE-DejaVu.txt). Ohne solche Zeichen bleibt alles
+# bei Helvetica (kleinere Datei, unverändertes Bild).
+_FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+_UNI_REGULAR = "PZDejaVuSans"
+_UNI_BOLD = "PZDejaVuSans-Bold"
+_unicode_font_ok: Optional[bool] = None
+
+
+def _register_unicode_font() -> bool:
+    """Registriert DejaVu Sans einmal je Prozess. Fehlt die Datei, bleibt Helvetica."""
+    global _unicode_font_ok
+    if _unicode_font_ok is None:
+        try:
+            pdfmetrics.registerFont(TTFont(_UNI_REGULAR, str(_FONT_DIR / "DejaVuSans.ttf")))
+            pdfmetrics.registerFont(TTFont(_UNI_BOLD, str(_FONT_DIR / "DejaVuSans-Bold.ttf")))
+            pdfmetrics.registerFontFamily(
+                _UNI_REGULAR, normal=_UNI_REGULAR, bold=_UNI_BOLD, italic=_UNI_REGULAR, boldItalic=_UNI_BOLD,
+            )
+            _unicode_font_ok = True
+        except Exception:  # noqa: BLE001 — Schrift ist Komfort, der Ausdruck darf nie daran scheitern
+            logger.warning("DejaVu Sans für den Schichtplan-PDF nicht ladbar, Helvetica bleibt", exc_info=True)
+            _unicode_font_ok = False
+    return _unicode_font_ok
+
+
+def _needs_unicode(texts) -> bool:
+    """True, wenn ein Text Zeichen enthält, die Helvetica/WinAnsi (cp1252) nicht darstellt."""
+    for t in texts:
+        if not t:
+            continue
+        try:
+            str(t).encode("cp1252")
+        except UnicodeEncodeError:
+            return True
+    return False
+
+
+def _detail_texts(detail: dict, practice_name, workstation_order, workstation_locations):
+    yield detail.get("name")
+    yield detail.get("description")
+    yield practice_name
+    yield from (workstation_order or [])
+    yield from (v for v in (workstation_locations or {}).values())
+    for s in detail.get("slots") or []:
+        yield s.get("workstation_name")
+        yield s.get("note")
+        for a in s.get("assignments") or []:
+            yield a.get("user_name")
+
+
 _TITLE = ParagraphStyle("PlanTitle", fontName="Helvetica-Bold", fontSize=14, leading=17)
 _META = ParagraphStyle("PlanMeta", fontName="Helvetica", fontSize=8.5, leading=11, textColor=colors.HexColor("#4b5563"))
 _HEAD = ParagraphStyle("PlanHead", fontName="Helvetica-Bold", fontSize=9, leading=11, alignment=TA_CENTER)
 _CELL = ParagraphStyle("PlanCell", fontName="Helvetica", fontSize=8, leading=10)
 _ROWHEAD = ParagraphStyle("PlanRowHead", fontName="Helvetica-Bold", fontSize=8.5, leading=10.5)
+
+
+def _styles_for(regular: str, bold: str):
+    """Die fünf Absatzformate in der gewählten Schrift (Helvetica = die Modulkonstanten)."""
+    if regular == "Helvetica":
+        return _TITLE, _META, _HEAD, _CELL, _ROWHEAD
+    return (
+        ParagraphStyle("PlanTitleU", parent=_TITLE, fontName=bold),
+        ParagraphStyle("PlanMetaU", parent=_META, fontName=regular),
+        ParagraphStyle("PlanHeadU", parent=_HEAD, fontName=bold),
+        ParagraphStyle("PlanCellU", parent=_CELL, fontName=regular),
+        ParagraphStyle("PlanRowHeadU", parent=_ROWHEAD, fontName=bold),
+    )
+
+
+def _numbered_canvas(label: str, font: str):
+    """Canvas mit Fußzeile „<Planname> · Seite x von y“ auf jeder Seite (ui-24)."""
+
+    class _Numbered(rl_canvas.Canvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._pz_saved: list = []
+
+        def showPage(self):
+            self._pz_saved.append(dict(self.__dict__))
+            self._startPage()
+
+        def save(self):
+            total = len(self._pz_saved)
+            for state in self._pz_saved:
+                self.__dict__.update(state)
+                self.saveState()
+                self.setFont(font, 7)
+                self.setFillColor(colors.HexColor("#6b7280"))
+                y = 6 * mm
+                width = self._pagesize[0]
+                self.drawString(12 * mm, y, label)
+                self.drawRightString(width - 12 * mm, y, f"Seite {self._pageNumber} von {total}")
+                self.restoreState()
+                super().showPage()
+            super().save()
+
+    return _Numbered
 
 
 def _fmt_date(iso: Optional[str]) -> str:
@@ -95,7 +197,7 @@ def _status_note(detail: dict, today: date) -> str:
     return "Vorschau — gilt derzeit nicht"
 
 
-def _name_markup(name: Optional[str], text_width: float) -> tuple[str, bool]:
+def _name_markup(name: Optional[str], text_width: float, cell_style: ParagraphStyle = _CELL) -> tuple[str, bool]:
     """Ein Name für die Zelle — Gesamtreview 1.20 (B7). Liefert das Markup und
     ob der Name samt folgendem Komma in eine Zeile der Spalte passt.
 
@@ -111,7 +213,7 @@ def _name_markup(name: Optional[str], text_width: float) -> tuple[str, bool]:
     """
     raw = name or ""
     text = escape_pdf_text(raw)
-    if pdfmetrics.stringWidth(f"{raw},", _CELL.fontName, _CELL.fontSize) <= text_width:
+    if pdfmetrics.stringWidth(f"{raw},", cell_style.fontName, cell_style.fontSize) <= text_width:
         return text.replace(" ", "\u00a0"), True
     return text, False
 
@@ -133,7 +235,7 @@ def _names_markup(names: list[tuple[str, bool]]) -> str:
     return "".join(parts)
 
 
-def _cell_paragraph(slots_of_cell: list[dict], *, text_width: float) -> Paragraph:
+def _cell_paragraph(slots_of_cell: list[dict], *, text_width: float, cell_style: ParagraphStyle = _CELL) -> Paragraph:
     """Eine Tabellenzelle: alle Einteilungen dieses Arbeitsplatzes an diesem Tag.
 
     Mehrere Einteilungen (z. B. Vormittag und Nachmittag) stapeln untereinander,
@@ -142,11 +244,11 @@ def _cell_paragraph(slots_of_cell: list[dict], *, text_width: float) -> Paragrap
     (``_name_markup``).
     """
     if not slots_of_cell:
-        return Paragraph("—", _CELL)
+        return Paragraph("—", cell_style)
     blocks = []
     for s in sorted(slots_of_cell, key=lambda x: x.get("start_time") or ""):
         lines = [f"<b>{escape_pdf_text(s.get('start_time'))}–{escape_pdf_text(s.get('end_time'))}</b>"]
-        names = [_name_markup(a.get("user_name"), text_width) for a in (s.get("assignments") or [])]
+        names = [_name_markup(a.get("user_name"), text_width, cell_style) for a in (s.get("assignments") or [])]
         min_staff = s.get("min_staff") or 0
         if names:
             lines.append(_names_markup(names))
@@ -172,7 +274,7 @@ def _cell_paragraph(slots_of_cell: list[dict], *, text_width: float) -> Paragrap
             # NICHT auf einen Pfeil zurückstellen — siehe test_shift_plan_pdf.py.
             lines.append(f"{NOTE_MARKER} {escape_pdf_text(note)}")
         blocks.append("<br/>".join(lines))
-    return Paragraph("<br/><br/>".join(blocks), _CELL)
+    return Paragraph("<br/><br/>".join(blocks), cell_style)
 
 
 def generate_plan_pdf(
@@ -221,6 +323,13 @@ def generate_plan_pdf(
     if not days:
         days = [0, 1, 2, 3, 4]
 
+    # ui-24: Schrift je nach Inhalt (Unicode nur wenn nötig und verfügbar)
+    use_unicode = _needs_unicode(
+        _detail_texts(detail, practice_name, workstation_order, workstation_locations)
+    ) and _register_unicode_font()
+    font_regular, font_bold = (_UNI_REGULAR, _UNI_BOLD) if use_unicode else ("Helvetica", "Helvetica-Bold")
+    style_title, style_meta, style_head, style_cell, style_rowhead = _styles_for(font_regular, font_bold)
+
     slots = [s for s in (detail.get("slots") or []) if s.get("weekday") in days]
 
     # Zeilen: erst die vorgegebene Reihenfolge, dann alles, was nur in den Slots
@@ -252,7 +361,7 @@ def generate_plan_pdf(
         title=f"Schichtplan {detail.get('name') or ''}".strip(),
     )
 
-    story = [Paragraph(escape_pdf_text(detail.get("name") or "Schichtplan"), _TITLE)]
+    story = [Paragraph(escape_pdf_text(detail.get("name") or "Schichtplan"), style_title)]
     # I-1 (Prüfrunde 2): fett + an erster Stelle, damit der Vermerk am
     # Schwarzen Brett sofort auffällt — kein escape_pdf_text hier, der Text
     # kommt aus _status_note() (fest verdrahtete Systemtexte), nicht von
@@ -268,7 +377,7 @@ def generate_plan_pdf(
         escape_pdf_text(_validity_text(detail)),
         f"Stand: {generated_on.strftime('%d.%m.%Y')}",
     ) if b]
-    story.append(Paragraph(" · ".join(meta_bits), _META))
+    story.append(Paragraph(" · ".join(meta_bits), style_meta))
     story.append(Spacer(1, 5 * mm))
 
     usable = landscape(A4)[0] - 24 * mm
@@ -278,7 +387,7 @@ def generate_plan_pdf(
     cell_pad = 4  # LEFTPADDING/RIGHTPADDING unten — die Zelle hat Breite − 2 × cell_pad
     text_width = day_width - 2 * cell_pad
 
-    header = [Paragraph("Arbeitsplatz", _HEAD)] + [Paragraph(WEEKDAY_LABELS[d], _HEAD) for d in days]
+    header = [Paragraph("Arbeitsplatz", style_head)] + [Paragraph(WEEKDAY_LABELS[d], style_head) for d in days]
     table_data = [header]
     for ws_name in rows_order:
         row_label = escape_pdf_text(ws_name)
@@ -289,12 +398,12 @@ def generate_plan_pdf(
             row_loc = row_locations.get(ws_name)
             if row_loc:
                 row_label = f"{row_label} ({escape_pdf_text(row_loc)})"
-        row = [Paragraph(row_label, _ROWHEAD)]
+        row = [Paragraph(row_label, style_rowhead)]
         for d in days:
             row.append(_cell_paragraph([
                 s for s in slots
                 if (s.get("workstation_name") or "(ohne Arbeitsplatz)") == ws_name and s.get("weekday") == d
-            ], text_width=text_width))
+            ], text_width=text_width, cell_style=style_cell))
         table_data.append(row)
 
     if len(table_data) == 1:
@@ -303,7 +412,7 @@ def generate_plan_pdf(
         # mit einer einzigen (Kopf-)Zeile bauen (es wirft nur bei GAR keiner Zeile,
         # Table([])); eine Tabelle ohne jede Dateninformation ist aber schlicht
         # unschön zu lesen — deshalb hier bewusst ein Fließtext statt der Tabelle.
-        story.append(Paragraph("Für diesen Plan sind keine Einteilungen hinterlegt.", _CELL))
+        story.append(Paragraph("Für diesen Plan sind keine Einteilungen hinterlegt.", style_cell))
     else:
         # C-1 (Prüfrunde 2): reportlab kann eine Tabellenzeile nicht über einen
         # Seitenumbruch teilen. Wird eine Zeile höher als der Rahmen (Querformat
@@ -326,6 +435,9 @@ def generate_plan_pdf(
         ]))
         story.append(table)
 
-    doc.build(story)
+    footer_label = (detail.get("name") or "Schichtplan")
+    if len(footer_label) > 90:
+        footer_label = footer_label[:89] + "…"
+    doc.build(story, canvasmaker=_numbered_canvas(footer_label, font_regular))
     buf.seek(0)
     return buf

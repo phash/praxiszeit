@@ -1,5 +1,5 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // #491 F4: das Antragsformular der Zeiterfassung fragt an Sonn- und Feiertagen
 // nach dem §10-Ausnahmegrund — wie das Monatsjournal.
@@ -295,5 +295,21 @@ describe('ChangeRequestForm — Datum der aktuellen Werte (Gesamtreview Fund 18)
     render(<ChangeRequestForm entry={ENTRY} requestType="delete" onClose={vi.fn()} onSuccess={vi.fn()} />);
     expect(screen.getByText('05.10.2026')).toBeInTheDocument();
     expect(screen.queryByText('2026-10-05')).not.toBeInTheDocument();
+  });
+});
+
+describe('ChangeRequestForm — Datumsobergrenze nach Berliner Tag (Review F3)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('nimmt „gestern“ vom Berliner Kalendertag, nicht vom Browserdatum', () => {
+    // 22:30 UTC am 10.06. = 00:30 Berlin am 11.06. → gestern = 10.06.
+    // Rot nur bei fremder Prozess-Zeitzone (z. B. `TZ=America/Los_Angeles npx vitest …`:
+    // lokal noch der 10.06. → altes Verhalten 09.06.); unter Berlin-Zeit grün wie zuvor.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-10T22:30:00Z'));
+    renderCreate();
+    expect(screen.getByLabelText('Datum')).toHaveAttribute('max', '2026-06-10');
   });
 });

@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timezone, date, timedelta
+import logging
+from app.services.timezone_service import LOCAL_TZ
 from app.database import get_db
 from app.models import User, TimeEntry, ChangeRequest, ChangeRequestStatus, ChangeRequestType, Absence, AbsenceType, AbsenceReason, PublicHoliday
 from app.middleware.auth import require_admin
@@ -19,6 +21,7 @@ from app.routers.admin_helpers import (
     _create_audit_log, _enrich_cr_response, _enrich_cr_responses, lock_user_row,
 )
 from app.routers.admin_users import _tenant_has_other_active_admin
+from app.routers.absences import CLOSURE_ABSENCE_DELETE_DETAIL
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
@@ -48,6 +51,8 @@ OWN_WAIVER_SOLE_ADMIN_HINT = (
     "bleibt ohne anerkannte Ausnahme und erscheint in der Auswertung "
     "„Höchstarbeitszeit und Pausenausnahmen“ unter „Pause zu kurz“."
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -168,7 +173,7 @@ def list_all_change_requests(
     date_from: Optional[date] = Query(None, description="Filter: created_at >= date_from"),
     date_to: Optional[date] = Query(None, description="Filter: created_at <= date_to"),
     skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -186,9 +191,11 @@ def list_all_change_requests(
     if user_id:
         query = query.filter(ChangeRequest.user_id == user_id)
     if date_from:
-        query = query.filter(ChangeRequest.created_at >= datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc))
+        # antrag-17: Tagesgrenzen in Ortszeit (Europe/Berlin), nicht UTC — die
+        # Anzeige läuft in Ortszeit, sonst rutscht 00:30 am Monatsersten in den Vormonat.
+        query = query.filter(ChangeRequest.created_at >= datetime.combine(date_from, datetime.min.time(), tzinfo=LOCAL_TZ).astimezone(timezone.utc))
     if date_to:
-        query = query.filter(ChangeRequest.created_at < datetime.combine(date_to + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc))
+        query = query.filter(ChangeRequest.created_at < datetime.combine(date_to + timedelta(days=1), datetime.min.time(), tzinfo=LOCAL_TZ).astimezone(timezone.utc))
     requests = query.order_by(ChangeRequest.created_at.desc()).offset(skip).limit(limit).all()
     return _enrich_cr_responses(requests, db)
 
@@ -676,6 +683,11 @@ def review_change_request(
             absence = db.query(Absence).filter(Absence.id == cr.absence_id, Absence.tenant_id == cr.tenant_id).first()
             if not absence:
                 raise HTTPException(status_code=404, detail="Abwesenheit nicht mehr vorhanden")
+            # antrag-04: Betriebsferien-Zeilen ändert nur die Verwaltung. Seit dem
+            # Stellen kann die Zeile (Re-Split, neue Schließung) eine closure_id
+            # bekommen haben — vor jeder Statusänderung ablehnen.
+            if absence.closure_id is not None:
+                raise HTTPException(status_code=400, detail=CLOSURE_ABSENCE_DELETE_DETAIL)
 
         # Arbeitszeitraum-Prüfung für Absence CREATE/UPDATE
         if cr.request_type in (ChangeRequestType.CREATE, ChangeRequestType.UPDATE):
@@ -801,8 +813,13 @@ def review_change_request(
                     "date": cr.proposed_date,
                     "start_time": eff_start,
                     "end_time": eff_end,
-                    "break_minutes": cr.proposed_break_minutes,
-                    "note": cr.proposed_note,
+                    # antrag-02: der Schreibzweig unten behält bei None den gespeicherten
+                    # Wert — das Protokoll muss denselben Wert festhalten, nicht NULL.
+                    "break_minutes": (
+                        cr.proposed_break_minutes
+                        if cr.proposed_break_minutes is not None else entry.break_minutes
+                    ),
+                    "note": cr.proposed_note if cr.proposed_note is not None else entry.note,
                 },
                 source=BREAK_WAIVER_SOURCE if waiver_reason is not None else "change_request",
                 change_request_id=cr.id,
@@ -1144,6 +1161,7 @@ def review_change_request(
                 tenant_id=cr_tenant_id,
             )
 
+            _type_before_update = absence.type
             if cr.proposed_absence_type:
                 absence.type = AbsenceType(cr.proposed_absence_type)
             # #312: only set the reason when the CR actually carried one — mirror the
@@ -1151,6 +1169,10 @@ def review_change_request(
             # does not silently clear an existing custom reason.
             if cr.proposed_reason_id is not None:
                 absence.reason_id = cr.proposed_reason_id
+            elif absence.type != _type_before_update:
+                # antrag-14: Typwechsel ohne neuen Grund — der alte Grund passt nicht
+                # mehr zum Typ (Label, Maskierung, Kind-krank-Zählung) → löschen.
+                absence.reason_id = None
             # H-1: Voll-Tag-Typen aufs Tagessoll des Tages umbuchen — identisch zum
             # CREATE-Pfad (Z.460-466), create_absence und review_vacation_request.
             # Bei Typwechsel (z.B. OVERTIME→VACATION) dürfen NICHT die alten
@@ -1280,9 +1302,17 @@ def review_change_request(
     if _resplit_years and settings_service.get_bool_setting(
         db, "closure_overtime_after_vacation", cr_tenant_id, False
     ):
-        for _yr in _resplit_years:
-            resplit_year_closures(db, cr_tenant_id, _yr)
-        db.commit()
+        # antrag-21: die Genehmigung ist oben schon committet — ein Fehler im
+        # Re-Split darf sie nicht als 500 („Fehler beim Genehmigen") melden.
+        try:
+            for _yr in _resplit_years:
+                resplit_year_closures(db, cr_tenant_id, _yr)
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception(
+                "Re-Split der Betriebsferien nach Antragsgenehmigung %s fehlgeschlagen", cr.id,
+            )
         db.refresh(cr)
 
     cr_response = _enrich_cr_response(cr, db)
@@ -1442,6 +1472,18 @@ def bulk_review_change_requests(
                 request_id=request_id,
                 status="failed",
                 error=str(exc.detail),
+            ))
+            failed += 1
+        except Exception:
+            # antrag-21: ein DB-Fehler (z. B. Rennen auf uq_tenant_user_date_start)
+            # bricht nicht die ganze Sammelgenehmigung ab — Eintrag als fehlgeschlagen
+            # melden, die schon genehmigten bleiben gemeldet.
+            db.rollback()
+            logger.exception("Sammelgenehmigung: Antrag %s fehlgeschlagen", request_id)
+            items.append(ChangeRequestBulkReviewItemResult(
+                request_id=request_id,
+                status="failed",
+                error="Unerwarteter Fehler beim Verarbeiten des Antrags.",
             ))
             failed += 1
 

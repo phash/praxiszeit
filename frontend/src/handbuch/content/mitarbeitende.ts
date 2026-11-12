@@ -149,11 +149,12 @@ const shots: ShotDef[] = [
     viewport: 'desktop',
     route: '/time-tracking',
     prepare: [{ click: { role: 'button', name: 'Neuer Eintrag', exact: true, within: 'main' } }],
-    crop: 'dialog',
+    // ui-17: ab 768 px steht das Formular als Seitenbereich (kein Dialog) über der Liste.
+    crop: { mainTo: ['speichern'], pad: 150 },
     markers: [
-      { n: 1, id: 'von', locator: { label: 'Von', within: 'dialog' }, badge: 'top' },
-      { n: 2, id: 'bis', locator: { label: 'Bis', within: 'dialog' }, badge: 'top' },
-      { n: 3, id: 'speichern', locator: { role: 'button', name: 'Speichern', exact: true, within: 'dialog' }, badge: 'top' },
+      { n: 1, id: 'von', locator: { label: 'Von', within: 'main' }, badge: 'top' },
+      { n: 2, id: 'bis', locator: { label: 'Bis', within: 'main' }, badge: 'top' },
+      { n: 3, id: 'speichern', locator: { role: 'button', name: 'Speichern', exact: true, within: 'main' }, badge: 'top' },
     ],
     alt: 'Formular „Neuer Zeiteintrag“ mit den Feldern Datum, Von, Bis, Pause (Min.) und Notiz sowie dem Knopf „Speichern“',
   },
@@ -686,7 +687,7 @@ export const mitarbeitende: Handbook = {
           shot: 'ma-jahresuebersicht',
           steps: [
             { n: 1, text: '**Stunden 01.01. bis heute:** Soll, Ist und Überstunden seit Jahresbeginn.' },
-            { n: 2, text: '**Abwesenheiten:** Ihre Tage im laufenden Jahr nach Art – Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges.' },
+            { n: 2, text: '**Abwesenheiten:** Ihre Tage im laufenden Jahr nach Art – Urlaub, Krank, Fortbildung, Überstundenausgleich, Sonstiges, Bez. Freistellung. Gezählt wird nach Tagen (halber Tag = 0,5), nicht nach Stunden.' },
             { n: 3, text: '**Geplante Abwesenheiten im Team:** wer in den nächsten 3 Monaten fehlt.' },
           ],
         },

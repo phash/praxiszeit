@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -39,6 +40,7 @@ CREDIT_OVERRIDE_ABSENCE_DETAIL = (
 # buchen (Urlaubskonto +1). Ersetzt die engere Regel der Security-Review
 # 2026-10-26 (nur Tage mit Zeiteinträgen). Wortlaut in HANDBUCH-MITARBEITER 4.1
 # und DocViewer (Doku-Gate check-doc-sync.sh).
+OVERTIME_HOURS_DETAIL = "Für Überstundenausgleich bitte die Stunden pro Tag angeben (mehr als 0)."
 PAST_DAY_ABSENCE_DETAIL = "Für vergangene Tage bitte einen Änderungsantrag stellen."
 # S1-01: Tage eines abgeschlossenen Jahres (Jahresabschluss, ``YearCarryover``
 # Y+1 mit ``source='year_closing'``) ändern Mitarbeitende nie selbst — der
@@ -115,7 +117,7 @@ def list_absences(
     year: Optional[int] = Query(None, ge=2000, le=2100, description="Filter by year"),
     user_id: Optional[str] = Query(None, description="Filter by user ID (admin only)"),
     skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=500, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -452,6 +454,10 @@ def create_absence(
             status_code=400,
             detail="Enddatum darf nicht vor dem Startdatum liegen"
         )
+
+    # abw-12: Überstundenausgleich mit 0 Stunden bucht 0-h-Zeilen ohne Wirkung.
+    if absence_data.type == AbsenceType.OVERTIME and float(absence_data.hours) <= 0:
+        raise HTTPException(status_code=400, detail=OVERTIME_HOURS_DETAIL)
 
     # Audit 2026-11-07 (S1-01): Mitarbeitende buchen vergangene Tage nur per
     # Änderungsantrag, Tage abgeschlossener Jahre gar nicht selbst. VOR jeder
@@ -890,8 +896,13 @@ def create_absence(
                     f"CHILD_SICK_LIMIT: Kind-krank-Anspruch überschritten "
                     f"({used:.1f} von {cap} Tagen {yr} verbraucht, §45 SGB V)."
                 )
+    # abw-05 (Fix #5): Admin-Direktbuchung in einem abgeschlossenen Jahr — der
+    # eingefrorene Übertrag ist danach veraltet. Nur melden, nie neu berechnen.
+    stale_warning = calculation_service.stale_year_closing_warning(
+        db, target_user.tenant_id, {a.date.year for a in created_absences})
+    all_warnings = child_sick_warnings + ([stale_warning] if stale_warning else [])
     for a in created_absences:
-        a.warnings = child_sick_warnings
+        a.warnings = all_warnings
 
     return created_absences
 
@@ -1071,6 +1082,11 @@ def delete_absence(
     _abs_date = absence.date
     _was_closure_day = absence.closure_id is not None
 
+    # abw-05 (Fix #5): Löschen in abgeschlossenem Jahr → 200 + {"warning"} wie
+    # ``delete_closure`` (nur die Verwaltung erreicht das; MA sind gesperrt).
+    stale_warning = calculation_service.stale_year_closing_warning(
+        db, absence.tenant_id, [absence.date.year])
+
     db.delete(absence)
     db.flush()
 
@@ -1093,4 +1109,6 @@ def delete_absence(
 
     db.commit()
 
+    if stale_warning:
+        return JSONResponse(status_code=200, content={"warning": stale_warning})
     return None

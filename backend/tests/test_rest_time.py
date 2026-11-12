@@ -86,14 +86,14 @@ def test_multiple_violations_in_month(db, test_user):
     assert "2026-03-20" in dates
 
 
-def test_month_filter_excludes_other_months(db, test_user):
-    """Prüft dass der Monatsfilter Einträge anderer Monate ausschliesst — verhindert falsche Cross-Month-Verstösse."""
+def test_month_filter_reports_only_pairs_ending_in_month(db, test_user):
+    """Der Monatsfilter meldet nur Paare, deren zweiter Tag im Monat liegt (zeit-05: der Vortag vor
+    dem Zeitraum zählt als Vorlauf, der Februar-Bericht meldet das Paar nicht)."""
     # Verstoß zwischen Feb 28 und Mar 1 – nur im März filtern
     _make_entry(db, test_user, date(2026, 2, 28), 8, 0, 22, 0)
     _make_entry(db, test_user, date(2026, 3, 1), 7, 0, 15, 0)
-    # Nur März geprüft → Feb-Eintrag nicht im Filter → kein Vortag für März-Eintrag
-    violations = check_rest_time_violations(db, test_user, 2026, month=3)
-    assert len(violations) == 0
+    assert len(check_rest_time_violations(db, test_user, 2026, month=3)) == 1
+    assert check_rest_time_violations(db, test_user, 2026, month=2) == []
 
 
 def test_no_month_filter_checks_full_year(db, test_user):
@@ -121,3 +121,29 @@ def test_single_entry_no_violation(db, test_user):
     _make_entry(db, test_user, date(2026, 3, 15), 8, 0, 17, 0)
     violations = check_rest_time_violations(db, test_user, 2026, month=3)
     assert violations == []
+
+
+# --- zeit-05: Verstöße über die Monats-/Jahresgrenze ---
+
+def test_violation_across_month_boundary_reported_in_later_month(db, test_user):
+    """30.04. bis 22:00, 01.05. ab 06:00 (8 h): der Mai-Bericht meldet den Verstoß."""
+    _make_entry(db, test_user, date(2026, 4, 30), 14, 0, 22, 0)
+    _make_entry(db, test_user, date(2026, 5, 1), 6, 0, 14, 0)
+    v = check_rest_time_violations(db, test_user, 2026, month=5)
+    assert [(x["day1_date"], x["day2_date"]) for x in v] == [("2026-04-30", "2026-05-01")]
+    # Der April-Bericht gehört nicht dazu: day2 liegt außerhalb des Zeitraums.
+    assert check_rest_time_violations(db, test_user, 2026, month=4) == []
+
+
+def test_violation_across_year_boundary_reported_in_next_year(db, test_user):
+    _make_entry(db, test_user, date(2025, 12, 31), 14, 0, 23, 0)
+    _make_entry(db, test_user, date(2026, 1, 1), 7, 0, 15, 0)
+    v = check_rest_time_violations(db, test_user, 2026)
+    assert len(v) == 1 and v[0]["day2_date"] == "2026-01-01"
+    assert check_rest_time_violations(db, test_user, 2025) == []
+
+
+def test_boundary_with_enough_rest_no_violation(db, test_user):
+    _make_entry(db, test_user, date(2026, 4, 30), 8, 0, 16, 0)
+    _make_entry(db, test_user, date(2026, 5, 1), 8, 0, 16, 0)
+    assert check_rest_time_violations(db, test_user, 2026, month=5) == []

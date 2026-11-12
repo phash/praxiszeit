@@ -42,6 +42,7 @@ class BackupConfigResponse(BaseModel):
     hour: int
     retention_days: int
     location: str
+    location_override: str = ""
 
 
 class BackupOverview(BaseModel):
@@ -75,6 +76,7 @@ def _log_backup_event(db: Session, current_user: User, event: str, detail: str) 
 def _cfg(c) -> BackupConfigResponse:
     return BackupConfigResponse(
         enabled=c.enabled, hour=c.hour, retention_days=c.retention_days, location=c.location,
+        location_override=c.location_override,
     )
 
 

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.models import User
 from app.middleware.auth import require_admin
 from app.config import settings
-from app.core.updater import check_for_updates, get_update_status, get_app_version
+from app.core.updater import check_for_updates, get_update_status, get_app_version, get_last_check_failure
 from app.core.license import get_current_license
 
 router = APIRouter(
@@ -40,8 +40,19 @@ def trigger_update_check(current_user: User = Depends(require_admin)):
             "update": update.to_dict(),
             "download_page": settings.DOWNLOAD_PAGE_URL,
         }
+    failure = get_last_check_failure()
+    if failure:
+        # ops-06: nicht als "aktuell" ausgeben; das Frontend cached das nicht.
+        return {
+            "update_available": False,
+            "check_failed": True,
+            "current_version": get_app_version(),
+            "download_page": settings.DOWNLOAD_PAGE_URL,
+            "message": "Die Update-Prüfung ist fehlgeschlagen: " + failure,
+        }
     return {
         "update_available": False,
+        "check_failed": False,
         "current_version": get_app_version(),
         "download_page": settings.DOWNLOAD_PAGE_URL,
         "message": "Keine Updates verfuegbar.",

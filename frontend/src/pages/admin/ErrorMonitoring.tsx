@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, CheckCircle, EyeOff, Trash2, Github, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { getErrorMessage } from '../../utils/errorMessage';
 
 interface ErrorLog {
   id: string;
@@ -46,6 +47,11 @@ function sanitizeGithubUrl(url: string | null | undefined): string | null {
   }
 }
 
+/** Wie der Server (error_logs.py): nur Issue-URLs dieses Formats werden gespeichert. */
+const GITHUB_ISSUE_URL_RE = /^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+$/;
+const PAGE_SIZE = 100;
+const MAX_LIMIT = 500;
+
 /** Anzeigenamen der Status; die API-Werte (open, ignored, resolved) bleiben unverändert. */
 export const STATUS_LABELS: Record<string, string> = {
   open: 'Offen',
@@ -66,24 +72,42 @@ export default function ErrorMonitoring() {
   const [filterStatus, setFilterStatus] = useState('open');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [githubUrlInput, setGithubUrlInput] = useState<Record<string, string>>({});
+  const [editingUrl, setEditingUrl] = useState<Record<string, boolean>>({});
   const [summary, setSummary] = useState<Record<string, number>>({});
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  // Nur die jüngste Antwort gilt (Tabwechsel / schnelle Klicks).
+  const requestId = useRef(0);
 
   useEffect(() => {
-    fetchErrors();
+    setLimit(PAGE_SIZE);
+    fetchErrors(PAGE_SIZE);
     fetchSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterStatus]);
 
-  const fetchErrors = async () => {
+  const fetchErrors = async (lim: number = limit) => {
+    const myId = ++requestId.current;
     setLoading(true);
     try {
-      const params = filterStatus ? `?status=${filterStatus}` : '';
-      const res = await apiClient.get(`/admin/errors/${params}`);
+      const qs = new URLSearchParams();
+      if (filterStatus) qs.set('status', filterStatus);
+      if (lim !== PAGE_SIZE) qs.set('limit', String(lim));
+      const q = qs.toString();
+      const res = await apiClient.get(`/admin/errors/${q ? `?${q}` : ''}`);
+      if (myId !== requestId.current) return;
       setErrors(res.data);
-    } catch {
-      toast.error('Fehler beim Laden');
+    } catch (error) {
+      if (myId !== requestId.current) return;
+      toast.error(getErrorMessage(error, 'Fehler beim Laden'));
     } finally {
-      setLoading(false);
+      if (myId === requestId.current) setLoading(false);
     }
+  };
+
+  const loadMore = () => {
+    const next = Math.min(MAX_LIMIT, limit + PAGE_SIZE);
+    setLimit(next);
+    fetchErrors(next);
   };
 
   const fetchSummary = async () => {
@@ -101,8 +125,8 @@ export default function ErrorMonitoring() {
       toast.success(`Status auf "${STATUS_LABELS[status] ?? status}" gesetzt`);
       fetchErrors();
       fetchSummary();
-    } catch {
-      toast.error('Fehler beim Aktualisieren');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Fehler beim Aktualisieren'));
     }
   };
 
@@ -118,22 +142,27 @@ export default function ErrorMonitoring() {
           toast.success('Fehler gelöscht');
           fetchErrors();
           fetchSummary();
-        } catch {
-          toast.error('Fehler beim Löschen');
+        } catch (error) {
+          toast.error(getErrorMessage(error, 'Fehler beim Löschen'));
         }
       },
     });
   };
 
   const saveGithubUrl = async (id: string) => {
-    const url = githubUrlInput[id];
+    const url = (githubUrlInput[id] || '').trim();
     if (!url) return;
+    if (!GITHUB_ISSUE_URL_RE.test(url)) {
+      toast.error('Bitte eine Issue-Adresse der Form https://github.com/<Konto>/<Projekt>/issues/<Nummer> eingeben.');
+      return;
+    }
     try {
       await apiClient.patch(`/admin/errors/${id}/github-url`, { github_issue_url: url });
       toast.success('GitHub Issue URL gespeichert');
+      setEditingUrl(p => ({ ...p, [id]: false }));
       fetchErrors();
-    } catch {
-      toast.error('Fehler beim Speichern');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Fehler beim Speichern'));
     }
   };
 
@@ -141,6 +170,11 @@ export default function ErrorMonitoring() {
     new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
 
   const totalOpen = summary['open'] || 0;
+  const totalForFilter = filterStatus
+    ? (summary[filterStatus] ?? 0)
+    : Object.values(summary).reduce((a, b) => a + b, 0);
+  const canLoadMore = !loading && errors.length >= limit && limit < MAX_LIMIT && totalForFilter > errors.length;
+  const truncated = !loading && totalForFilter > errors.length;
 
   return (
     <div>
@@ -155,6 +189,7 @@ export default function ErrorMonitoring() {
         </div>
         <button
           onClick={() => { fetchErrors(); fetchSummary(); }}
+          aria-label="Aktualisieren"
           className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
         >
           <RefreshCw size={16} />
@@ -254,6 +289,7 @@ export default function ErrorMonitoring() {
                     <button
                       onClick={() => updateStatus(err.id, 'resolved')}
                       title="Als behoben markieren"
+                      aria-label="Als behoben markieren"
                       className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
                     >
                       <CheckCircle size={18} />
@@ -263,6 +299,7 @@ export default function ErrorMonitoring() {
                     <button
                       onClick={() => updateStatus(err.id, 'ignored')}
                       title="Ignorieren"
+                      aria-label="Ignorieren"
                       className="p-2 text-gray-500 hover:bg-gray-50 rounded-lg transition"
                     >
                       <EyeOff size={18} />
@@ -272,6 +309,7 @@ export default function ErrorMonitoring() {
                     <button
                       onClick={() => updateStatus(err.id, 'open')}
                       title="Wieder öffnen"
+                      aria-label="Wieder öffnen"
                       className="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition"
                     >
                       <AlertTriangle size={18} />
@@ -280,12 +318,15 @@ export default function ErrorMonitoring() {
                   <button
                     onClick={() => deleteError(err.id, err.message)}
                     title="Löschen"
+                      aria-label="Löschen"
                     className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
                   >
                     <Trash2 size={18} />
                   </button>
                   <button
                     onClick={() => setExpanded(p => ({ ...p, [err.id]: !p[err.id] }))}
+                    aria-label={expanded[err.id] ? 'Details ausblenden' : 'Details anzeigen'}
+                    aria-expanded={!!expanded[err.id]}
                     className="p-2 text-gray-400 hover:bg-gray-50 rounded-lg transition"
                   >
                     {expanded[err.id] ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
@@ -296,6 +337,10 @@ export default function ErrorMonitoring() {
               {/* Expanded: traceback + GitHub */}
               {expanded[err.id] && (
                 <div className="border-t border-gray-100 p-4 bg-gray-50 space-y-3">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-1 uppercase">Meldung</p>
+                    <p className="text-sm text-gray-800 font-mono whitespace-pre-wrap break-words" data-testid="error-full-message">{err.message}</p>
+                  </div>
                   {err.traceback && (
                     <div>
                       <p className="text-xs font-semibold text-gray-500 mb-1 uppercase">Stack Trace</p>
@@ -311,7 +356,7 @@ export default function ErrorMonitoring() {
                     <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm px-2 py-1 mb-2">
                       ⚠ DSGVO-Hinweis (Art. 28): Fehlermeldungen können personenbezogene Daten enthalten. Prüfen Sie vor der GitHub-Übertragung, ob der Traceback sensible Informationen enthält. GitHub Inc. (USA) ist als Auftragsverarbeiter einzustufen.
                     </p>
-                    {sanitizeGithubUrl(err.github_issue_url) ? (
+                    {sanitizeGithubUrl(err.github_issue_url) && !editingUrl[err.id] ? (
                       <div className="flex items-center gap-2">
                         <a
                           href={sanitizeGithubUrl(err.github_issue_url)!}
@@ -324,6 +369,7 @@ export default function ErrorMonitoring() {
                         <button
                           onClick={() => {
                             setGithubUrlInput(p => ({ ...p, [err.id]: err.github_issue_url || '' }));
+                            setEditingUrl(p => ({ ...p, [err.id]: true }));
                           }}
                           className="text-xs text-gray-400 hover:text-gray-600"
                         >
@@ -345,7 +391,7 @@ export default function ErrorMonitoring() {
                         <div className="flex gap-1 flex-1">
                           <input
                             type="url"
-                            placeholder="GitHub Issue URL einfügen..."
+                            placeholder="https://github.com/<Konto>/<Projekt>/issues/<Nr.>"
                             value={githubUrlInput[err.id] || ''}
                             onChange={(e) => setGithubUrlInput(p => ({ ...p, [err.id]: e.target.value }))}
                             className="flex-1 text-sm px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
@@ -357,6 +403,14 @@ export default function ErrorMonitoring() {
                           >
                             Speichern
                           </button>
+                          {editingUrl[err.id] && (
+                            <button
+                              onClick={() => setEditingUrl(p => ({ ...p, [err.id]: false }))}
+                              className="text-sm text-gray-600 px-3 py-1 rounded-lg hover:bg-gray-100 transition"
+                            >
+                              Abbrechen
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -365,6 +419,20 @@ export default function ErrorMonitoring() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {truncated && (
+        <div className="mt-4 flex items-center justify-between gap-3 text-sm text-gray-600" data-testid="error-list-truncation">
+          <span>Es werden {errors.length} von {totalForFilter} Fehlern angezeigt.</span>
+          {canLoadMore && (
+            <button
+              onClick={loadMore}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            >
+              Mehr laden
+            </button>
+          )}
         </div>
       )}
 

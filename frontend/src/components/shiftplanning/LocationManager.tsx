@@ -61,6 +61,7 @@ export default function LocationManager({ locations, onChanged }: Props) {
       onConfirm: async () => {
         try {
           await api.deleteLocation(loc.id);
+          if (editId === loc.id) setEditId(null);
           toast.success('Standort gelöscht');
           onChanged();
         } catch (err) {
@@ -111,6 +112,17 @@ export default function LocationManager({ locations, onChanged }: Props) {
                     onChange={(e) => setEditName(e.target.value)}
                     autoFocus
                     maxLength={255}
+                    aria-label="Name des Standorts"
+                    onKeyDown={(e) => {
+                      // ui-14: Enter speichert, Escape bricht ab
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void saveEdit(loc);
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setEditId(null);
+                      }
+                    }}
                   />
                   <button onClick={() => saveEdit(loc)} aria-label="Speichern" className="text-green-600 p-1">
                     <Check size={18} />

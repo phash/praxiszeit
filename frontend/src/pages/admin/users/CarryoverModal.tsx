@@ -5,6 +5,7 @@ import { Save, X } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { getErrorMessage } from '../../../utils/errorMessage';
 import { formatFixedDe } from '../../../utils/formatters';
+import DecimalInput from '../../../components/DecimalInput';
 
 interface YearCarryover {
   id: string;
@@ -100,6 +101,7 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
             </h3>
             <button
               onClick={onClose}
+              aria-label="Dialog schließen"
               className="text-gray-400 hover:text-gray-600"
             >
               <X size={20} />
@@ -112,8 +114,9 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
 
           {/* Year selector */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>
+            <label htmlFor="co-year" className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>
             <select
+              id="co-year"
               value={formData.year}
               onChange={(e) => handleYearChange(parseInt(e.target.value))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
@@ -129,12 +132,13 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
 
           {/* Overtime hours */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Überstunden aus Vorjahr (Stunden)</label>
-            <input
-              type="number"
+            <label htmlFor="co-overtime" className="block text-sm font-medium text-gray-700 mb-1">Überstunden aus Vorjahr (Stunden)</label>
+            <DecimalInput
+              id="co-overtime"
               step="0.5"
               value={formData.overtime_hours}
-              onChange={(e) => setFormData({ ...formData, overtime_hours: parseFloat(e.target.value) || 0 })}
+              emptyAs={0}
+              onValue={(n) => setFormData({ ...formData, overtime_hours: n ?? 0 })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
             />
             <p className="text-xs text-gray-500 mt-1">
@@ -144,12 +148,13 @@ export default function CarryoverModal({ userId, userName, onClose, onSaved }: C
 
           {/* Vacation days */}
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Resturlaub aus Vorjahr (Tage)</label>
-            <input
-              type="number"
+            <label htmlFor="co-vacation" className="block text-sm font-medium text-gray-700 mb-1">Resturlaub aus Vorjahr (Tage)</label>
+            <DecimalInput
+              id="co-vacation"
               step="0.5"
               value={formData.vacation_days}
-              onChange={(e) => setFormData({ ...formData, vacation_days: parseFloat(e.target.value) || 0 })}
+              emptyAs={0}
+              onValue={(n) => setFormData({ ...formData, vacation_days: n ?? 0 })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
             />
             <p className="text-xs text-gray-500 mt-1">

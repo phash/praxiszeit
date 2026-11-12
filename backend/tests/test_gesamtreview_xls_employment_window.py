@@ -149,3 +149,13 @@ def test_rows_inside_the_window_are_unchanged(db, test_user, test_admin):
     assert all(r.arbzg_warnings == [] for r in rows), [r.arbzg_warnings for r in rows]
     result = _run(db, test_user, test_admin, rows)
     assert (result.imported, result.skipped, result.warnings) == (2, 0, [])
+
+
+def test_preview_skipped_row_has_explicit_skip_reason(db, test_user):
+    """ops-04: die Vorschau trägt den Überspringen-Grund als eigenes Feld."""
+    test_user.last_work_day = LAST
+    db.commit()
+    rows = parse_xls(_xls((_at(THU, 8), _at(THU, 12)), (_at(AFTER, 8), _at(AFTER, 12))),
+                     test_user.id, db, tenant_id=DEFAULT_TENANT_ID)
+    assert rows[0].skip_reason is None
+    assert rows[1].skip_reason == "Datum liegt nach dem letzten Arbeitstag (25.09.2026)."

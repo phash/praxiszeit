@@ -38,7 +38,7 @@ const EMPLOYEE_FEATURES: Feature[] = [
  * Layout mounten, kein Prop nötig.
  */
 export default function OnboardingModal() {
-  const { user, setUser } = useAuthStore();
+  const { user, setUser, impersonation } = useAuthStore();
   // Admin-Toggle (Default an): ein explizites false in /system/info unterdrückt die Tour.
   const onboardingEnabled = useSystemStore((s) => s.info?.onboarding_enabled !== false);
   // Erst nach geladenem /system/info entscheiden — sonst flackert die Tour kurz auf,
@@ -46,7 +46,11 @@ export default function OnboardingModal() {
   const systemLoaded = useSystemStore((s) => s.isLoaded);
   const [closed, setClosed] = useState(false);
 
-  const show = !!user && !closed && !user.onboarding_completed_at && onboardingEnabled && systemLoaded;
+  // auth-08: in „Login als“ (read-only) gehört die Tour der echten Person — nie anzeigen,
+  // ihr Abschluss würde von der Read-only-Sperre abgewiesen.
+  // Nur ein ausdrückliches null vom Server (/auth/me) zählt als „noch nicht gesehen“: die
+  // Login-Antwort trägt das Feld nicht, sonst blitzt die Tour bis zum Profil-Nachladen auf.
+  const show = !!user && !impersonation && !closed && user.onboarding_completed_at === null && onboardingEnabled && systemLoaded;
 
   const complete = useCallback(async () => {
     setClosed(true); // optimistisch sofort ausblenden

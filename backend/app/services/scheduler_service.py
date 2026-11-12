@@ -307,6 +307,9 @@ def start_scheduler(app: FastAPI):  # noqa: ARG001  (kept for future use)
         replace_existing=True,
         coalesce=True,
         max_instances=1,
+        # ops-15: ein Neustart/Blockade um HH:30 verwirft den Lauf sonst (Standard
+        # 1 s). Bis HH:59 nachholen; die Stundenprüfung im Job bleibt gültig.
+        misfire_grace_time=29 * 60,
     )
 
     # Fix #4: SaaS billing enforcement — these flip tenants to 'suspended' based

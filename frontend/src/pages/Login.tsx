@@ -1,5 +1,5 @@
 import { useState, FormEvent } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useSystemStore } from '../stores/systemStore';
 import { LogIn, FileText, Shield, Smartphone, AlertCircle } from 'lucide-react';
@@ -21,6 +21,14 @@ export default function Login() {
   const [qrOpen, setQrOpen] = useState(false);
 
   const { login } = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const location = useLocation();
+  // auth-06: Rücksprungziel aus ProtectedRoute (nur interne Pfade).
+  const fromState = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)?.from;
+  const target =
+    fromState?.pathname && fromState.pathname.startsWith('/') && !fromState.pathname.startsWith('//') && fromState.pathname !== '/login'
+      ? `${fromState.pathname}${fromState.search ?? ''}${fromState.hash ?? ''}`
+      : '/';
   const deploymentMode = useSystemStore((s) => s.info?.deployment_mode);
   const navigate = useNavigate();
 
@@ -32,7 +40,7 @@ export default function Login() {
 
     try {
       await login(username, password, totpRequired ? totpCode : undefined);
-      navigate('/');
+      navigate(target, { replace: true });
     } catch (err: any) {
       // F-019: backend signals "TOTP required" via X-Requires-TOTP header
       if (err.response?.headers?.['x-requires-totp'] === 'true') {
@@ -52,6 +60,9 @@ export default function Login() {
       setLoading(false);
     }
   };
+
+  // auth-06: eine bestehende Sitzung braucht kein Anmeldeformular (Zurück-Taste, Lesezeichen).
+  if (isAuthenticated) return <Navigate to={target} replace />;
 
   return (
     <div className="min-h-screen bg-linear-to-br from-primary to-primary-dark flex items-center justify-center p-4">
@@ -90,7 +101,14 @@ export default function Login() {
               id="username"
               type="text"
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(e) => {
+                setUsername(e.target.value);
+                // auth-21: ein anderes Konto hat womöglich keine 2FA — Codefeld zurücknehmen.
+                if (totpRequired) {
+                  setTotpRequired(false);
+                  setTotpCode('');
+                }
+              }}
               required
               autoComplete="username"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition"
@@ -116,6 +134,7 @@ export default function Login() {
           {/* F-019: TOTP field – revealed after first 401 with X-Requires-TOTP */}
           {totpRequired && (
             <div>
+              <p role="status" className="sr-only">Zwei-Faktor-Anmeldung aktiv: Bitte geben Sie den Code Ihrer Authenticator-App ein.</p>
               <label htmlFor="totp-code" className="block text-sm font-medium text-gray-700 mb-2">
                 <span className="flex items-center gap-1.5">
                   <Smartphone size={15} />

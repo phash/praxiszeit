@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../api/client';
 import { stripWarningCode } from '../../utils/arbzgWarnings';
@@ -16,6 +16,7 @@ import PasswordConfirmDialog from '../../components/PasswordConfirmDialog';
 import CarryoverModal from './users/CarryoverModal';
 import WorkingHoursModal from './users/WorkingHoursModal';
 import { contractToday } from './users/workingHoursTexts';
+import { todayBerlin, graceRemainingDays } from '../../utils/absenceRules';
 import UserForm from './users/UserForm';
 
 import type { ScheduleToday, User } from '../../types/user';
@@ -52,15 +53,6 @@ interface OvertimeInfo {
   track_hours: boolean;   // false = leitende MA ohne Stundenzählung
 }
 
-/** Verbleibende Grace-Period-Tage (0 = abgelaufen / kein deactivated_at). */
-function graceRemainingDays(user: User): number {
-  if (!user.deactivated_at) return 0;
-  const deactivated = new Date(user.deactivated_at);
-  const graceEnd = new Date(deactivated.getTime() + 14 * 24 * 60 * 60 * 1000);
-  const remaining = Math.ceil((graceEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  return Math.max(0, remaining);
-}
-
 export default function Users() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -76,6 +68,11 @@ export default function Users() {
   const [milogInfo, setMilogInfo] = useState<Record<string, string[]>>({}); // #377 §2 Abs.2 MiLoG
   const [childSickInfo, setChildSickInfo] = useState<Record<string, { used: number; cap: number }>>({}); // #376 Kind krank §45 SGB V
   const [loading, setLoading] = useState(true);
+  // user-06: Zustand des Sammelabrufs /admin/users-overview
+  const [overviewStatus, setOverviewStatus] = useState<'loading' | 'ok' | 'error'>('loading');
+  // user-13: nur die jüngste Antwort darf die Liste setzen
+  const fetchSeq = useRef(0);
+  const formRef = useRef<HTMLDivElement>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
@@ -92,25 +89,36 @@ export default function Users() {
   const [showInactive, setShowInactive] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
 
+  const firstFetch = useRef(true);
   useEffect(() => {
+    // Filterwechsel zeigt den Ladezustand, damit die alte Liste nicht als
+    // Ergebnis des neuen Filters steht (user-13).
+    if (!firstFetch.current) setLoading(true);
+    firstFetch.current = false;
     fetchUsers();
   }, [showInactive, showHidden]);
 
   const fetchUsers = async () => {
+    const seq = ++fetchSeq.current;
+    const isStale = () => seq !== fetchSeq.current;
     try {
-      const params: Record<string, boolean> = {};
+      // user-07: Serverobergrenze mitsenden — Default wäre 100 (stilles Kürzen)
+      const params: Record<string, boolean | number> = { limit: 500 };
       if (showInactive) params.include_inactive = true;
       if (showHidden) params.include_hidden = true;
       const response = await apiClient.get('/admin/users', { params });
+      if (isStale()) return;
       setUsers(response.data);
+      setOverviewStatus('loading');
 
       // #194: single bulk call for vacation + YTD overtime per user (replaces
       // the former per-user N+1 vacation fetch). Same filter params as the list.
-      const currentYear = new Date().getFullYear();
+      const currentYear = Number(todayBerlin().slice(0, 4));
       try {
         const overview = await apiClient.get('/admin/users-overview', {
           params: { ...params, year: currentYear },
         });
+        if (isStale()) return;
         const vMap: Record<string, VacationInfo> = {};
         const oMap: Record<string, OvertimeInfo> = {};
         const mMap: Record<string, string[]> = {};
@@ -132,19 +140,59 @@ export default function Users() {
         setOvertimeInfo(oMap);
         setMilogInfo(mMap);
         setChildSickInfo(csMap);
+        setOverviewStatus('ok');
       } catch {
-        // overview optional — the user list still renders without it
+        // overview optional — the user list still renders without it, aber der
+        // Fehler ist sichtbar (user-06): Toast + „Erneut laden" in den Zellen.
+        if (isStale()) return;
+        setOverviewStatus('error');
+        toast.error('Urlaubs- und Überstundenübersicht konnte nicht geladen werden');
       }
     } catch (error) {
+      if (isStale()) return;
       toast.error('Fehler beim Laden der Benutzer');
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   };
 
+  // user-06: Platzhalter einer Übersichtszelle ohne Daten.
+  const overviewPlaceholder = () => {
+    if (overviewStatus === 'loading') return <span className="text-gray-400">Lädt...</span>;
+    if (overviewStatus === 'error') {
+      return (
+        <button type="button" onClick={() => fetchUsers()} className="text-xs text-primary underline">
+          — Erneut laden
+        </button>
+      );
+    }
+    return <span className="text-gray-400">—</span>;
+  };
+
   const handleEdit = (user: User) => {
-    setEditingUser(user);
-    setShowForm(true);
+    // user-14: bei geändertem, ungespeichertem Formular erst nachfragen
+    const open = () => {
+      setEditingUser(user);
+      setShowForm(true);
+      // Formular liegt oberhalb der Tabelle: in den Blick holen und fokussieren
+      setTimeout(() => {
+        const el = formRef.current;
+        if (!el) return;
+        el.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+        el.querySelector<HTMLElement>('input, select, textarea')?.focus({ preventScroll: true });
+      }, 0);
+    };
+    if (showForm && editingUser && editingUser.id !== user.id) {
+      confirm({
+        title: 'Anderes Konto bearbeiten',
+        message: 'Ungespeicherte Eingaben im geöffneten Formular gehen verloren. Trotzdem wechseln?',
+        confirmLabel: 'Wechseln',
+        variant: 'warning',
+        onConfirm: open,
+      });
+      return;
+    }
+    open();
   };
 
   const handleFormSaved = () => {
@@ -293,7 +341,7 @@ export default function Users() {
       variant: currentlyHidden ? 'warning' : 'danger',
       onConfirm: async () => {
         try {
-          await apiClient.post(`/admin/users/${userId}/toggle-hidden`);
+          await apiClient.post(`/admin/users/${userId}/toggle-hidden`, null, { params: { hidden: !currentlyHidden } });
           toast.success(currentlyHidden ? `${name} ist jetzt sichtbar` : `${name} ausgeblendet`);
           fetchUsers();
         } catch (error: any) {
@@ -440,6 +488,7 @@ export default function Users() {
 
       {/* User Form */}
       {showForm && (
+        <div ref={formRef}>
         <UserForm
           editUser={editingUser}
           onSaved={handleFormSaved}
@@ -451,6 +500,7 @@ export default function Users() {
           displayBlocks={displayBlocks}
           displayContract={displayContract}
         />
+        </div>
       )}
 
       {/* Filter Input */}
@@ -629,7 +679,7 @@ export default function Users() {
                           </div>
                         </div>
                       ) : (
-                        <span className="text-gray-400">Lädt...</span>
+                        overviewPlaceholder()
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm">
@@ -649,7 +699,7 @@ export default function Users() {
                           <span className="text-gray-400" title="Keine Stundenzählung">—</span>
                         )
                       ) : (
-                        <span className="text-gray-400">Lädt...</span>
+                        overviewPlaceholder()
                       )}
                       {/* #377 §2 Abs.2 MiLoG: weiche Arbeitszeitkonto-Warnung */}
                       {milogInfo[user.id]?.length > 0 && (
@@ -668,7 +718,7 @@ export default function Users() {
                               ? 'text-red-600 font-medium'
                               : 'text-gray-500'
                           }`}
-                          title={`Kind krank (§45 SGB V): ${formatFixedDe(childSickInfo[user.id].used, 1)} von ${childSickInfo[user.id].cap} Tagen ${new Date().getFullYear()} verbraucht`}
+                          title={`Kind krank (§45 SGB V): ${formatFixedDe(childSickInfo[user.id].used, 1)} von ${childSickInfo[user.id].cap} Tagen ${todayBerlin().slice(0, 4)} verbraucht`}
                         >
                           Kind krank: {formatFixedDe(childSickInfo[user.id].used, 1)}/{childSickInfo[user.id].cap}
                         </div>
@@ -737,6 +787,7 @@ export default function Users() {
                       >
                         <ArrowLeftRight size={16} />
                       </button>
+{user.id !== currentUserId && (
                       <button
                         onClick={() => handleSetPassword(user.id, `${user.first_name} ${user.last_name}`)}
                         className="text-orange-600 hover:text-orange-800"
@@ -744,6 +795,7 @@ export default function Users() {
                       >
                         <Key size={16} />
                       </button>
+)}
                       {user.totp_enabled && user.id !== currentUserId && (
                         <button
                           onClick={() => setTotpResetUser(user)}
@@ -755,6 +807,7 @@ export default function Users() {
                         </button>
                       )}
                       {user.is_active ? (
+user.id !== currentUserId ? (
                         <button
                           onClick={() => handleDeactivate(user.id, `${user.first_name} ${user.last_name}`)}
                           className="text-red-600 hover:text-red-800"
@@ -762,6 +815,7 @@ export default function Users() {
                         >
                           <UserX size={16} />
                         </button>
+) : null
                       ) : (
                         <button
                           onClick={() => handleReactivate(user.id, `${user.first_name} ${user.last_name}`)}
@@ -779,7 +833,7 @@ export default function Users() {
                         {user.is_hidden ? <Eye size={16} /> : <EyeOff size={16} />}
                       </button>
                       {!user.is_active && !user.username.startsWith('deleted_') && (() => {
-                        const remaining = graceRemainingDays(user);
+                        const remaining = graceRemainingDays(user.deactivated_at);
                         return remaining > 0 ? (
                           <span
                             className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm px-1.5 py-0.5 cursor-default"
@@ -930,6 +984,7 @@ export default function Users() {
                     >
                       <ArrowLeftRight size={16} />
                     </button>
+{user.id !== currentUserId && (
                     <button
                       onClick={() => handleSetPassword(user.id, `${user.first_name} ${user.last_name}`)}
                       className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
@@ -938,6 +993,7 @@ export default function Users() {
                     >
                       <Key size={16} />
                     </button>
+)}
                     {user.totp_enabled && user.id !== currentUserId && (
                       <button
                         onClick={() => setTotpResetUser(user)}
@@ -949,6 +1005,7 @@ export default function Users() {
                       </button>
                     )}
                     {user.is_active ? (
+user.id !== currentUserId ? (
                       <button
                         onClick={() => handleDeactivate(user.id, `${user.first_name} ${user.last_name}`)}
                         className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition"
@@ -957,6 +1014,7 @@ export default function Users() {
                       >
                         <UserX size={16} />
                       </button>
+) : null
                     ) : (
                       <button
                         onClick={() => handleReactivate(user.id, `${user.first_name} ${user.last_name}`)}
@@ -976,7 +1034,7 @@ export default function Users() {
                       {user.is_hidden ? <Eye size={16} /> : <EyeOff size={16} />}
                     </button>
                     {!user.is_active && !user.username.startsWith('deleted_') && (() => {
-                      const remaining = graceRemainingDays(user);
+                      const remaining = graceRemainingDays(user.deactivated_at);
                       return remaining > 0 ? (
                         <div
                           className="flex items-center gap-1 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 cursor-default"

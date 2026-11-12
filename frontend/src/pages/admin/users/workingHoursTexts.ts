@@ -2,7 +2,7 @@
 // Wochenstunden" — an EINER Stelle, damit Dialog, Verkürzungs-Kasten und
 // Lösch-Dialog wortgleich bleiben. Die Grundtyp-SCHLÜSSEL sind eingefroren
 // (Backend `reclamp_audit.REASON_TYPES`), die Oberfläche zeigt nur die Beschriftungen.
-import { formatDayCount, formatDayNumber, formatHoursHM } from '../../../utils/formatters';
+import { formatDayCount, formatDayNumber, formatHoursHM, formatIsoDateDe } from '../../../utils/formatters';
 import { MAX_VACATION_DAYS } from './workingHoursTypes';
 import type { ContractTerms, WorkingHoursChangePreview } from './workingHoursTypes';
 
@@ -127,8 +127,7 @@ export function closedYearMessage(years: number[] | null | undefined): string | 
 
 /** "2026-09-07" → "07.09.2026" (reine Zeichenkette, keine Zeitzonen-Umrechnung). */
 export function formatDate(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split('-');
-  return `${d}.${m}.${y}`;
+  return formatIsoDateDe(iso.slice(0, 10));
 }
 
 /** "2026-09-07" → "07.09." (Listen in der Auswirkungs-Box). */

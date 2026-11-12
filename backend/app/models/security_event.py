@@ -44,6 +44,9 @@ EVENT_BACKUP_CREATED = "backup_created"              # S1-02
 EVENT_BACKUP_DOWNLOADED = "backup_downloaded"        # S1-02
 EVENT_BACKUP_DELETED = "backup_deleted"              # S1-02
 EVENT_BACKUP_CONFIG_CHANGED = "backup_config_changed"  # S1-02
+# Review 2026-11-11 (user-20): Ausblenden/Einblenden aus Berichten und Uebersichten.
+EVENT_USER_HIDDEN = "user_hidden"
+EVENT_USER_SHOWN = "user_shown"
 
 
 class SecurityEvent(Base):

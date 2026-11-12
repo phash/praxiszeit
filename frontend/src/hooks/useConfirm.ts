@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 interface ConfirmState {
   isOpen: boolean;
@@ -6,7 +6,7 @@ interface ConfirmState {
   message: string;
   confirmLabel?: string;
   variant?: 'danger' | 'warning' | 'info';
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 }
 
 const initialState: ConfirmState = {
@@ -25,16 +25,27 @@ export function useConfirm() {
       message: string;
       confirmLabel?: string;
       variant?: 'danger' | 'warning' | 'info';
-      onConfirm: () => void;
+      onConfirm: () => void | Promise<void>;
     }) => {
       setState({ isOpen: true, ...options });
     },
     []
   );
 
+  // zeit-08: Doppelklick-Schutz — der Dialog schließt sofort, ein zweiter Klick
+  // auf dieselbe Bestätigung (solange die Aktion läuft) wird verworfen.
+  const busy = useRef(false);
   const handleConfirm = useCallback(() => {
-    state.onConfirm();
+    if (busy.current) return;
+    busy.current = true;
+    const action = state.onConfirm;
     setState(initialState);
+    Promise.resolve()
+      .then(() => action())
+      .catch(() => {})
+      .finally(() => {
+        busy.current = false;
+      });
   }, [state]);
 
   const handleCancel = useCallback(() => {

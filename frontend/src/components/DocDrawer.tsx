@@ -20,6 +20,10 @@ function getDownloadUrl(isAdmin: boolean, tab: DocTab): string {
 
 export function DocDrawer({ open, onClose, isAdmin, initialTab = 'cheatsheet' }: DocDrawerProps) {
   const [activeTab, setActiveTab] = useState<DocTab>(initialTab);
+  const [mounted, setMounted] = useState(open);
+  useEffect(() => {
+    if (open) setMounted(true);
+  }, [open]);
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -104,13 +108,13 @@ export function DocDrawer({ open, onClose, isAdmin, initialTab = 'cheatsheet' }:
         aria-label="Dokumentation"
         aria-hidden={!open}
         className={`
-          fixed z-50 bg-white flex flex-col shadow-2xl transition-transform duration-300
+          fixed z-50 bg-white flex flex-col shadow-2xl transition-[transform,visibility] duration-300
           md:inset-y-0 md:right-0 md:w-[70%] md:max-w-2xl
           inset-x-0 bottom-0 h-[80vh] rounded-t-2xl
           md:rounded-none md:h-auto
           ${open
             ? 'md:translate-x-0 translate-y-0'
-            : 'md:translate-x-full translate-y-full'
+            : 'md:translate-x-full translate-y-full invisible'
           }
         `}
       >
@@ -142,12 +146,15 @@ export function DocDrawer({ open, onClose, isAdmin, initialTab = 'cheatsheet' }:
 
         {/* Content */}
         <div className="flex-1 overflow-hidden">
-          <DocViewerContent
-            key={initialTab}
-            isAdmin={isAdmin}
-            initialTab={initialTab}
-            onTabChange={setActiveTab}
-          />
+          {/* auth-18: erst ab dem ersten Öffnen rendern — das Handbuch gehört nicht auf jede Seite. */}
+          {mounted && (
+            <DocViewerContent
+              key={initialTab}
+              isAdmin={isAdmin}
+              initialTab={initialTab}
+              onTabChange={setActiveTab}
+            />
+          )}
         </div>
       </div>
     </>

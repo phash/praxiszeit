@@ -5,6 +5,7 @@ import apiClient from '../../api/client';
 import { downloadBlob } from '../../utils/downloadBlob';
 import { useToast } from '../../contexts/ToastContext';
 import { formatHoursHM, parseHours } from '../../utils/formatters';
+import { getBlobErrorMessage } from '../../utils/errorMessage';
 
 interface RestViolation {
   day1_date: string;
@@ -37,6 +38,8 @@ interface SundaySummaryEmployee {
   sundays_worked: number;
   free_sundays: number;
   total_sundays_in_year: number;
+  partial_year?: boolean;
+  min_free_sundays?: number;
   compliant: boolean;
 }
 
@@ -224,6 +227,14 @@ function HiddenToggle({ checked, onChange, id }: { checked: boolean; onChange: (
 
 const MONTH_NAMES_DE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 
+// calc-10: Jahresfelder der ArbZG-Auswertungen — geleert ergibt '' statt NaN.
+function yearInput(raw: string): number | '' {
+  const n = parseInt(raw, 10);
+  return Number.isNaN(n) ? '' : n;
+}
+const isValidYear = (y: number | ''): boolean => typeof y === 'number' && y >= 2000 && y <= 2100;
+const isValidMinRest = (h: number | ''): boolean => typeof h === 'number' && h >= 1 && h <= 24;
+
 export default function Reports() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -231,25 +242,25 @@ export default function Reports() {
   const toast = useToast();
 
   // Rest time violations
-  const [restYear, setRestYear] = useState(new Date().getFullYear());
+  const [restYear, setRestYear] = useState<number | ''>(new Date().getFullYear());
   const [restMonth, setRestMonth] = useState<number | ''>('');
-  const [minRestHours, setMinRestHours] = useState(11);
+  const [minRestHours, setMinRestHours] = useState<number | ''>(11);
   const [restViolations, setRestViolations] = useState<EmployeeViolations[] | null>(null);
   const [restLoading, setRestLoading] = useState(false);
   const [expandedViolations, setExpandedViolations] = useState<Record<string, boolean>>({});
 
   // Sunday summary (§11 ArbZG)
-  const [sundayYear, setSundayYear] = useState(new Date().getFullYear());
+  const [sundayYear, setSundayYear] = useState<number | ''>(new Date().getFullYear());
   const [sundaySummary, setSundaySummary] = useState<SundaySummary | null>(null);
   const [sundayLoading, setSundayLoading] = useState(false);
 
   // Night work summary (§6 ArbZG)
-  const [nightYear, setNightYear] = useState(new Date().getFullYear());
+  const [nightYear, setNightYear] = useState<number | ''>(new Date().getFullYear());
   const [nightSummary, setNightSummary] = useState<NightWorkSummary | null>(null);
   const [nightLoading, setNightLoading] = useState(false);
 
   // Compensatory rest (§11 ArbZG – Ersatzruhetag)
-  const [compRestYear, setCompRestYear] = useState(new Date().getFullYear());
+  const [compRestYear, setCompRestYear] = useState<number | ''>(new Date().getFullYear());
   const [compRest, setCompRest] = useState<CompensatoryRest | null>(null);
   const [compRestLoading, setCompRestLoading] = useState(false);
 
@@ -267,7 +278,7 @@ export default function Reports() {
   const hiddenParam = reportIncludeHidden ? '&include_hidden=true' : '';
 
   // A1-08: Tage > 10 h, Wochen > 48 h, Pausenausnahmen
-  const [limitsYear, setLimitsYear] = useState(new Date().getFullYear());
+  const [limitsYear, setLimitsYear] = useState<number | ''>(new Date().getFullYear());
   const [limitsMonth, setLimitsMonth] = useState<number | ''>('');
   const [limitsReport, setLimitsReport] = useState<LimitsReport | null>(null);
   const [limitsLoading, setLimitsLoading] = useState(false);
@@ -365,110 +376,37 @@ export default function Reports() {
     }
   };
 
-  const handleMonthlyExport = async () => {
+  // calc-11: EIN Export-Ablauf. Health-/Hidden-Parameter an einer Stelle; die
+  // Fehlerantwort eines Blob-Requests wird gelesen (Detailtext, 429 gesondert).
+  const runExport = async (path: string, query: string, filename: string, errorLabel: string) => {
     setLoading(true);
     try {
       const healthParam = (includeHealthData ? '&include_health_data=true' : '') + (exportIncludeHidden ? '&include_hidden=true' : '');
-      const response = await apiClient.get(`/admin/reports/export?month=${selectedMonth}${healthParam}`, {
+      const response = await apiClient.get(`/admin/reports/${path}?${query}${healthParam}`, {
         responseType: 'blob',
       });
-      downloadBlob(response.data, `PraxisZeit_Monatsreport_${selectedMonth}.xlsx`);
-    } catch {
-      toast.error('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleYearlyExport = async () => {
-    setLoading(true);
-    try {
-      const healthParam = (includeHealthData ? '&include_health_data=true' : '') + (exportIncludeHidden ? '&include_hidden=true' : '');
-      const response = await apiClient.get(`/admin/reports/export-yearly?year=${selectedYear}${healthParam}`, {
-        responseType: 'blob',
-      });
-      downloadBlob(response.data, `PraxisZeit_Jahresreport_${selectedYear}.xlsx`);
+      downloadBlob(response.data, filename);
     } catch (error) {
-      toast.error('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
+      toast.error(await getBlobErrorMessage(error, `${errorLabel} fehlgeschlagen. Bitte versuchen Sie es erneut.`));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleYearlyClassicExport = async () => {
-    setLoading(true);
-    try {
-      const healthParam = (includeHealthData ? '&include_health_data=true' : '') + (exportIncludeHidden ? '&include_hidden=true' : '');
-      const response = await apiClient.get(`/admin/reports/export-yearly-classic?year=${selectedYear}${healthParam}`, {
-        responseType: 'blob',
-      });
-      downloadBlob(response.data, `PraxisZeit_Jahresreport_Classic_${selectedYear}.xlsx`);
-    } catch (error) {
-      toast.error('Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMonthlyExportPdf = async () => {
-    setLoading(true);
-    try {
-      const healthParam = (includeHealthData ? '&include_health_data=true' : '') + (exportIncludeHidden ? '&include_hidden=true' : '');
-      const response = await apiClient.get(`/admin/reports/export-pdf?month=${selectedMonth}${healthParam}`, {
-        responseType: 'blob',
-      });
-      downloadBlob(response.data, `PraxisZeit_Monatsreport_${selectedMonth}.pdf`);
-    } catch {
-      toast.error('PDF-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMonthlyExportOds = async () => {
-    setLoading(true);
-    try {
-      const healthParam = (includeHealthData ? '&include_health_data=true' : '') + (exportIncludeHidden ? '&include_hidden=true' : '');
-      const response = await apiClient.get(`/admin/reports/export-ods?month=${selectedMonth}${healthParam}`, {
-        responseType: 'blob',
-      });
-      downloadBlob(response.data, `PraxisZeit_Monatsreport_${selectedMonth}.ods`);
-    } catch {
-      toast.error('ODS-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleYearlyExportOds = async () => {
-    setLoading(true);
-    try {
-      const healthParam = (includeHealthData ? '&include_health_data=true' : '') + (exportIncludeHidden ? '&include_hidden=true' : '');
-      const response = await apiClient.get(`/admin/reports/export-yearly-ods?year=${selectedYear}${healthParam}`, {
-        responseType: 'blob',
-      });
-      downloadBlob(response.data, `PraxisZeit_Jahresreport_${selectedYear}.ods`);
-    } catch {
-      toast.error('ODS-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleYearlyClassicExportOds = async () => {
-    setLoading(true);
-    try {
-      const healthParam = (includeHealthData ? '&include_health_data=true' : '') + (exportIncludeHidden ? '&include_hidden=true' : '');
-      const response = await apiClient.get(`/admin/reports/export-yearly-classic-ods?year=${selectedYear}${healthParam}`, {
-        responseType: 'blob',
-      });
-      downloadBlob(response.data, `PraxisZeit_Jahresreport_Classic_${selectedYear}.ods`);
-    } catch {
-      toast.error('ODS-Export fehlgeschlagen. Bitte versuchen Sie es erneut.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const handleMonthlyExport = () =>
+    runExport('export', `month=${selectedMonth}`, `PraxisZeit_Monatsreport_${selectedMonth}.xlsx`, 'Export');
+  const handleYearlyExport = () =>
+    runExport('export-yearly', `year=${selectedYear}`, `PraxisZeit_Jahresreport_${selectedYear}.xlsx`, 'Export');
+  const handleYearlyClassicExport = () =>
+    runExport('export-yearly-classic', `year=${selectedYear}`, `PraxisZeit_Jahresreport_Classic_${selectedYear}.xlsx`, 'Export');
+  const handleMonthlyExportPdf = () =>
+    runExport('export-pdf', `month=${selectedMonth}`, `PraxisZeit_Monatsreport_${selectedMonth}.pdf`, 'PDF-Export');
+  const handleMonthlyExportOds = () =>
+    runExport('export-ods', `month=${selectedMonth}`, `PraxisZeit_Monatsreport_${selectedMonth}.ods`, 'ODS-Export');
+  const handleYearlyExportOds = () =>
+    runExport('export-yearly-ods', `year=${selectedYear}`, `PraxisZeit_Jahresreport_${selectedYear}.ods`, 'ODS-Export');
+  const handleYearlyClassicExportOds = () =>
+    runExport('export-yearly-classic-ods', `year=${selectedYear}`, `PraxisZeit_Jahresreport_Classic_${selectedYear}.ods`, 'ODS-Export');
 
   return (
     <div>
@@ -715,7 +653,12 @@ export default function Reports() {
           Die Auswertungen enthalten alle aktiven Mitarbeitenden und ausgeschiedene, die im Zeitraum Einträge haben.
           § 18-befreite Mitarbeitende erscheinen nicht.
         </p>
-        <HiddenToggle id="report-hidden" checked={reportIncludeHidden} onChange={setReportIncludeHidden} />
+        <HiddenToggle id="report-hidden" checked={reportIncludeHidden} onChange={(v) => {
+          setReportIncludeHidden(v);
+          // calc-10: Ergebnisse gehören zur alten Auswahl → verwerfen.
+          setRestViolations(null); setSundaySummary(null); setNightSummary(null);
+          setCompRest(null); setLimitsReport(null); setAvgReport(null);
+        }} />
       </div>
 
       {/* Rest Time Violations */}
@@ -730,12 +673,12 @@ export default function Reports() {
         <div className="flex flex-wrap items-end gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>
-            <input type="number" value={restYear} onChange={e => setRestYear(parseInt(e.target.value))}
+            <input type="number" value={restYear} onChange={e => { setRestYear(yearInput(e.target.value)); setRestViolations(null); }}
               className="px-3 py-2 border border-gray-300 rounded-lg" min="2020" max="2030" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Monat (optional)</label>
-            <select value={restMonth} onChange={e => setRestMonth(e.target.value ? parseInt(e.target.value) : '')}
+            <select value={restMonth} onChange={e => { setRestMonth(e.target.value ? parseInt(e.target.value) : ''); setRestViolations(null); }}
               className="px-3 py-2 border border-gray-300 rounded-lg">
               <option value="">Ganzes Jahr</option>
               {Array.from({ length: 12 }, (_, i) => (
@@ -746,11 +689,11 @@ export default function Reports() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mindestruhezeit (h)</label>
-            <input type="number" value={minRestHours} onChange={e => setMinRestHours(parseHours(e.target.value))}
+            <label htmlFor="rest-min-hours" className="block text-sm font-medium text-gray-700 mb-1">Mindestruhezeit (h)</label>
+            <input id="rest-min-hours" type="number" value={minRestHours} onChange={e => { setMinRestHours(e.target.value === '' ? '' : parseHours(e.target.value)); setRestViolations(null); }}
               step="0.5" min="1" max="24" className="px-3 py-2 border border-gray-300 rounded-lg w-24" />
           </div>
-          <button onClick={checkRestViolations} disabled={restLoading}
+          <button onClick={checkRestViolations} disabled={restLoading || !isValidYear(restYear) || !isValidMinRest(minRestHours)}
             className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition disabled:opacity-50">
             <AlertTriangle size={18} />
             <span>{restLoading ? 'Prüfe...' : 'Prüfen'}</span>
@@ -826,10 +769,10 @@ export default function Reports() {
         <div className="flex flex-wrap items-end gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>
-            <input type="number" value={sundayYear} onChange={e => setSundayYear(parseInt(e.target.value))}
+            <input type="number" value={sundayYear} onChange={e => { setSundayYear(yearInput(e.target.value)); setSundaySummary(null); }}
               className="px-3 py-2 border border-gray-300 rounded-lg" min="2020" max="2030" />
           </div>
-          <button onClick={checkSundaySummary} disabled={sundayLoading}
+          <button onClick={checkSundaySummary} disabled={sundayLoading || !isValidYear(sundayYear)}
             className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition disabled:opacity-50">
             <Sun size={18} />
             <span>{sundayLoading ? 'Prüfe...' : 'Prüfen'}</span>
@@ -861,7 +804,14 @@ export default function Reports() {
               <tbody className="divide-y divide-gray-100">
                 {sundaySummary.employees.map(emp => (
                   <tr key={emp.user_id} className={`hover:bg-gray-50 ${!emp.compliant ? 'bg-red-50' : ''}`}>
-                    <td className="px-4 py-2 font-medium text-gray-900">{emp.first_name} {emp.last_name}</td>
+                    <td className="px-4 py-2 font-medium text-gray-900">
+                      {emp.first_name} {emp.last_name}
+                      {emp.partial_year && (
+                        <span className="block text-xs font-normal text-gray-500">
+                          Teiljahr: {emp.total_sundays_in_year} Sonntage im Beschäftigungszeitraum, Pflicht ≥ {emp.min_free_sundays} frei (anteilig)
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-right text-gray-700">{emp.sundays_worked}</td>
                     <td className="px-4 py-2 text-right font-medium">
                       <span className={emp.compliant ? 'text-green-700' : 'text-red-700'}>
@@ -914,10 +864,10 @@ export default function Reports() {
         <div className="flex flex-wrap items-end gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>
-            <input type="number" value={nightYear} onChange={e => setNightYear(parseInt(e.target.value))}
+            <input type="number" value={nightYear} onChange={e => { setNightYear(yearInput(e.target.value)); setNightSummary(null); }}
               className="px-3 py-2 border border-gray-300 rounded-lg" min="2020" max="2030" />
           </div>
-          <button onClick={checkNightWork} disabled={nightLoading}
+          <button onClick={checkNightWork} disabled={nightLoading || !isValidYear(nightYear)}
             className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition disabled:opacity-50">
             <Clock size={18} />
             <span>{nightLoading ? 'Prüfe...' : 'Auswerten'}</span>
@@ -1030,10 +980,10 @@ export default function Reports() {
         <div className="flex flex-wrap items-end gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>
-            <input type="number" value={compRestYear} onChange={e => setCompRestYear(parseInt(e.target.value))}
+            <input type="number" value={compRestYear} onChange={e => { setCompRestYear(yearInput(e.target.value)); setCompRest(null); }}
               className="px-3 py-2 border border-gray-300 rounded-lg" min="2020" max="2030" />
           </div>
-          <button onClick={checkCompensatoryRest} disabled={compRestLoading}
+          <button onClick={checkCompensatoryRest} disabled={compRestLoading || !isValidYear(compRestYear)}
             className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition disabled:opacity-50">
             <AlertTriangle size={18} />
             <span>{compRestLoading ? 'Prüfe...' : 'Prüfen'}</span>
@@ -1234,18 +1184,18 @@ export default function Reports() {
         <div className="flex flex-wrap items-end gap-4 mb-4">
           <div>
             <label htmlFor="limits-year" className="block text-sm font-medium text-gray-700 mb-1">Jahr</label>
-            <input id="limits-year" type="number" value={limitsYear} onChange={e => setLimitsYear(parseInt(e.target.value))}
+            <input id="limits-year" type="number" value={limitsYear} onChange={e => { setLimitsYear(yearInput(e.target.value)); setLimitsReport(null); }}
               className="px-3 py-2 border border-gray-300 rounded-lg" min="2020" max="2050" />
           </div>
           <div>
             <label htmlFor="limits-month" className="block text-sm font-medium text-gray-700 mb-1">Monat (optional)</label>
-            <select id="limits-month" value={limitsMonth} onChange={e => setLimitsMonth(e.target.value ? parseInt(e.target.value) : '')}
+            <select id="limits-month" value={limitsMonth} onChange={e => { setLimitsMonth(e.target.value ? parseInt(e.target.value) : ''); setLimitsReport(null); }}
               className="px-3 py-2 border border-gray-300 rounded-lg">
               <option value="">Ganzes Jahr</option>
               {MONTH_NAMES_DE.map((name, i) => <option key={i + 1} value={i + 1}>{name}</option>)}
             </select>
           </div>
-          <button onClick={checkLimits} disabled={limitsLoading} aria-label="Höchstarbeitszeit und Pausenausnahmen prüfen"
+          <button onClick={checkLimits} disabled={limitsLoading || !isValidYear(limitsYear)} aria-label="Höchstarbeitszeit und Pausenausnahmen prüfen"
             className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition disabled:opacity-50">
             <AlertTriangle size={18} />
             <span>{limitsLoading ? 'Prüfe...' : 'Prüfen'}</span>

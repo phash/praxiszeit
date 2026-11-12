@@ -7,6 +7,7 @@
 // Verkürzungsschutz, dem einzigen Schreibweg für Arbeitszeiten.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format, parseISO } from 'date-fns';
+import { todayBerlin } from '../../utils/absenceRules';
 import { CalendarClock, Info } from 'lucide-react';
 import apiClient from '../../api/client';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -47,8 +48,10 @@ type Drag = {
 const ALL = '';
 const SLOT = 30;
 
+// user-21: Kalendertag in Europe/Berlin wie der Server (today_local), nicht
+// nach der Browserzeitzone.
 function todayIso(): string {
-  return format(new Date(), 'yyyy-MM-dd');
+  return todayBerlin();
 }
 
 function hhmm(minutes: number): string {
@@ -112,7 +115,9 @@ export default function TeamSchedule() {
   // Altfenster (nur Kappung, oft 00:00/23:59-Platzhalter) sind keine Planung:
   // sie zählen weder für die Zeitachse noch für die Besetzung.
   const planned = useMemo(
-    () => shown.filter((r) => !r.legacy).map((r) => drafts[r.user_id] ?? r.blocks),
+    // user-18: Personen ohne Stundenzählung (Blöcke wirkungslos) zählen wie
+    // Altfenster weder für die Achse noch für die Besetzung.
+    () => shown.filter((r) => !r.legacy && r.track_hours).map((r) => drafts[r.user_id] ?? r.blocks),
     [shown, drafts],
   );
   const axis = useMemo(() => axisRange(planned), [planned]);
@@ -293,6 +298,7 @@ export default function TeamSchedule() {
             Block ziehen verschiebt ihn, an den Rändern ziehen ändert Beginn bzw. Ende (15-Minuten-Raster;
             per Tastatur: Pfeiltasten, mit Umschalt das Ende). Wirksam wird eine Änderung erst über
             „Änderung speichern…“ – mit Stichtag, Vorschau und den üblichen Schutzregeln.
+            {onDate < todayIso() && ' Der gewählte Tag liegt in der Vergangenheit: Der Stichtag der Änderung beginnt trotzdem heute.'}
           </p>
         </div>
       )}
@@ -436,7 +442,11 @@ export default function TeamSchedule() {
                             onPointerMove={(ev) => onPointerMove(ev, r)}
                             onPointerUp={onPointerUp}
                             onPointerCancel={onPointerUp}
-                            onKeyDown={(ev) => { focusKey.current = key; onKeyDown(ev, r, day, idx); }}
+                            onKeyDown={(ev) => {
+                              // user-04: Fokus nur nach verarbeiteten Pfeiltasten halten
+                              if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') focusKey.current = key;
+                              onKeyDown(ev, r, day, idx);
+                            }}
                           >
                             <span className="pointer-events-none">{spanText}</span>
                           </button>
@@ -474,7 +484,7 @@ export default function TeamSchedule() {
           currentContract={contractTermsOf(modalRow.schedule)}
           fixedMonthlyTarget={modalRow.use_fixed_monthly_target}
           initialBlocks={drafts[modalRow.user_id] ?? null}
-          initialEffectiveFrom={onDate}
+          initialEffectiveFrom={onDate < todayIso() ? todayIso() : onDate}
           onClose={() => setModalRow(null)}
           onChanged={() => { discard(modalRow.user_id); load(); }}
         />

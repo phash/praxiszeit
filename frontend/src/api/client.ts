@@ -80,6 +80,12 @@ async function performRefresh(): Promise<string> {
   return access_token;
 }
 
+/** auth-04: true, wenn der Server den Refresh ausdrücklich verweigert hat (401/403). */
+export function isRefreshRejection(err: unknown): boolean {
+  const status = (err as { response?: { status?: number } } | null)?.response?.status;
+  return status === 401 || status === 403;
+}
+
 // #382: systemic guard against a poisoned 200 body. In an auth/proxy/SPA-fallback
 // edge, an /api call can resolve HTTP 200 with the SPA's index.html (a string)
 // instead of JSON. Downstream code assumes JSON and does res.data.map/.toFixed/
@@ -152,6 +158,12 @@ apiClient.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return apiClient(originalRequest);
       } catch (refreshError) {
+        // auth-04: nur eine tatsächlich abgelehnte Sitzung (401/403) meldet ab.
+        // Netzfehler, 5xx (Neustart beim Update) und 429 lassen das gültige
+        // 7-Tage-Cookie und die Sitzung in Ruhe — der ursprüngliche Fehler geht durch.
+        if (!isRefreshRejection(refreshError)) {
+          return Promise.reject(error);
+        }
         // Refresh failed (expired or revoked) – drop token and signal
         // the auth store to clear state. A global event is used so this
         // module stays independent of the zustand store.
@@ -170,7 +182,7 @@ apiClient.interceptors.response.use(
 /**
  * Silently try to restore a session via the HttpOnly refresh cookie.
  * Returns the new access token on success, null if no valid cookie / refresh
- * failed. Safe to call during app hydration.
+ * was rejected (401/403); throws on transient errors. Safe to call during app hydration.
  */
 export async function tryRefreshSession(): Promise<string | null> {
   try {
@@ -180,9 +192,15 @@ export async function tryRefreshSession(): Promise<string | null> {
       });
     }
     return await refreshPromise;
-  } catch {
-    accessToken = null;
-    return null;
+  } catch (err) {
+    // auth-04: nur eine verweigerte Sitzung ergibt „kein Token“; vorübergehende
+    // Fehler (Netz, 5xx, 429) werden weitergereicht, damit der Aufrufer die
+    // gespeicherte Anmeldung behalten kann.
+    if (isRefreshRejection(err)) {
+      accessToken = null;
+      return null;
+    }
+    throw err;
   }
 }
 

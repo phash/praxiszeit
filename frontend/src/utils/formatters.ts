@@ -321,3 +321,27 @@ export function formatClockTime(
 ): string {
   return value ? value.substring(0, 5) : fallback;
 }
+
+/**
+ * antrag-10: TT.MM.JJJJ aus einem ISO-Datum (Mittag statt Mitternacht, damit die
+ * Zeitzone den Tag nicht verschiebt). Fehlt das Datum oder ist es ungültig,
+ * kommt „–“ statt einer RangeError, die die ganze Seite leert.
+ */
+export function formatDateDE(iso?: string | null): string {
+  if (!iso) return '–';
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return '–';
+  // Kalenderprüfung ohne Rollover (30.02. → ungültig statt 02.03.).
+  const probe = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  if (probe.getUTCFullYear() !== Number(m[1]) || probe.getUTCMonth() !== Number(m[2]) - 1 || probe.getUTCDate() !== Number(m[3])) return '–';
+  return formatIsoDateDe(iso);
+}
+
+/**
+ * antrag-10: Abwesenheitsstunden eines Antrags als „H:MM h“; `null` bei fehlendem
+ * Wert (Antrag mit Start-/Endzeit statt Stunden) — dann keine Zeile anzeigen.
+ */
+export function formatAbsenceHoursHM(hours?: number | null): string | null {
+  if (hours === null || hours === undefined || !Number.isFinite(hours)) return null;
+  return `${formatHoursHM(hours)} h`;
+}

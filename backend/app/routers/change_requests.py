@@ -14,13 +14,14 @@ from app.services.break_validation_service import validate_daily_break, break_wa
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
+    _assert_within_employment_window,
 )
 from app.services.arbzg_utils import is_night_work
 from app.services import credit_override_service, entry_guard_service, work_window_service
 # #219: single shared CR-enricher (was duplicated per-item here vs the batch in
 # admin_helpers). _enrich_cr_response wraps the batch _enrich_cr_responses([cr]).
 from app.routers.admin_helpers import (
-    _enrich_cr_response as _enrich_response, _enrich_cr_responses,
+    _enrich_cr_response as _enrich_response, _enrich_cr_responses, lock_user_row,
 )
 from app.routers.absences import CLOSURE_ABSENCE_DELETE_DETAIL, _MASKED_ABSENCE_TYPES
 
@@ -69,6 +70,8 @@ def _mask_health_data(request: Request, crs: List[ChangeRequest], responses: lis
         update = {
             "proposed_note": None, "original_note": None, "reason": MASKED_REASON_TEXT,
             "rejection_reason": None,
+            "proposed_reason_label": None,  # antrag-18: Grundname ist Gesundheitsdatum
+            "proposed_reason_id": None,  # SEC-02: die ID verrät den Grund über /api/absence-reasons
         }
         if cr.proposed_absence_type is not None:
             update["proposed_absence_type"] = "absent"
@@ -110,6 +113,11 @@ def create_change_request(
     if data.request_credit_override and data.entry_kind != "time_entry":
         raise HTTPException(status_code=400, detail=CREDIT_REQUEST_REJECTED_DETAIL)
 
+    # antrag-19: Ankersperre auf die EIGENE Benutzerzeile VOR den Dubletten-Proben —
+    # ein Doppelklick/Wiederholung läuft sonst parallel an der Probe vorbei
+    # (kein UNIQUE-Index). Die zweite Anfrage wartet und sieht den ersten Antrag.
+    lock_user_row(db, current_user.tenant_id, current_user.id)
+
     # --- Absence CR branch ---
     if data.entry_kind == "absence":
         # For UPDATE/DELETE: absence_id required, fetch and validate ownership
@@ -138,6 +146,18 @@ def create_change_request(
                 raise HTTPException(status_code=400, detail="Datum erforderlich")
             if data.proposed_date >= today_local():
                 raise HTTPException(status_code=400, detail="Änderungsanträge sind nur für vergangene Tage möglich")
+            # antrag-12: Beschäftigungsfenster schon beim Stellen (wie im Zeiteintrags-
+            # Zweig) — sonst bleibt ein Antrag offen, den die Genehmigung mit 400
+            # ablehnt und den die Verwaltung nur noch ablehnen kann.
+            _assert_within_employment_window(current_user, data.proposed_date)
+            # antrag-13: auch die bestehende Abwesenheit muss vergangen sein — heute/
+            # Zukunft lassen sich direkt bzw. per Urlaubsantrag ändern, nicht per
+            # Änderungsantrag „umbuchen".
+            if absence is not None and absence.date >= today_local():
+                _msg = ("Heutige Einträge können direkt bearbeitet werden"
+                        if absence.date == today_local()
+                        else "Künftige Abwesenheiten können nicht per Änderungsantrag geändert werden")
+                raise HTTPException(status_code=400, detail=_msg)
             # Validate absence type is valid
             try:
                 AbsenceType(data.proposed_absence_type)
@@ -504,6 +524,9 @@ def create_change_request(
         ChangeRequest.tenant_id == current_user.tenant_id,
         ChangeRequest.user_id == current_user.id,
         ChangeRequest.status == ChangeRequestStatus.PENDING,
+        # antrag-03: nur Zeiteintrags-Anträge — ein offener Abwesenheitsantrag
+        # desselben Tages blockiert keinen Nachtrag.
+        ChangeRequest.entry_kind == "time_entry",
     )
     if entry is not None:
         existing_pending = existing_pending.filter(
@@ -513,10 +536,19 @@ def create_change_request(
         existing_pending = existing_pending.filter(
             ChangeRequest.request_type == ChangeRequestType.CREATE,
             ChangeRequest.proposed_date == data.proposed_date,
+            # antrag-03: zwei Schichten am selben Tag sind zwei Nachträge.
+            ChangeRequest.proposed_start_time == data.proposed_start_time,
         )
     existing = existing_pending.first()
     if existing:
-        raise HTTPException(status_code=400, detail="Es existiert bereits ein offener Antrag für diesen Eintrag")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Es existiert bereits ein offener Antrag für dieses Datum und diese Uhrzeit"
+                if entry is None
+                else "Es existiert bereits ein offener Antrag für diesen Eintrag"
+            ),
+        )
 
     # Create the change request
     cr = ChangeRequest(
@@ -615,7 +647,7 @@ def list_change_requests(
     request: Request,
     request_status: Optional[str] = Query(None, alias="status", description="Filter by status"),
     skip: int = Query(0, ge=0, le=1_000_000),  # Audit 2026-11-07 (S2-2): OFFSET-Überlauf → 422
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

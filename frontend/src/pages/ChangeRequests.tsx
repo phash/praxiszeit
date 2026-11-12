@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import apiClient from '../api/client';
 import { Trash2, FileEdit } from 'lucide-react';
+import { formatDateDE, formatAbsenceHoursHM } from '../utils/formatters';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -22,6 +23,8 @@ interface ChangeRequest {
   proposed_break_minutes?: number;
   proposed_note?: string;
   proposed_sunday_exception_reason?: string | null; // #485 §10 ArbZG
+  break_waiver_reason?: string | null; // #144 §4 ArbZG
+  proposed_reason_label?: string | null; // antrag-18: eigener Abwesenheitsgrund
   proposed_absence_type?: string;
   proposed_absence_hours?: number;
   original_date?: string;
@@ -52,6 +55,11 @@ export default function ChangeRequests() {
   const toast = useToast();
   const [requests, setRequests] = useState<ChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  // antrag-11: Ladefehler statt „Keine Änderungsanträge“, späte Antworten verwerfen,
+  // Zurückziehen sperrt den Knopf während des Aufrufs.
+  const [loadError, setLoadError] = useState(false);
+  const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+  const requestSeq = useRef(0);
   const [filter, setFilter] = useState('');
   const { confirmState, confirm, handleConfirm, handleCancel } = useConfirm();
 
@@ -60,14 +68,20 @@ export default function ChangeRequests() {
   }, [filter]);
 
   const fetchRequests = async () => {
+    const seq = ++requestSeq.current;
+    setLoadError(false);
     try {
-      const params = filter ? `?status=${filter}` : '';
+      // Backend-Standard wäre 100 (stilles Abschneiden älterer Anträge); 500 ist die Obergrenze.
+      const params = filter ? `?status=${filter}&limit=500` : '?limit=500';
       const response = await apiClient.get(`/change-requests${params}`);
+      if (seq !== requestSeq.current) return; // Filter inzwischen gewechselt
       setRequests(response.data);
     } catch (error) {
+      if (seq !== requestSeq.current) return;
+      setLoadError(true);
       toast.error('Fehler beim Laden der Änderungsanträge');
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
   };
 
@@ -78,12 +92,15 @@ export default function ChangeRequests() {
       confirmLabel: 'Zurückziehen',
       variant: 'danger',
       onConfirm: async () => {
+        setWithdrawingId(id);
         try {
           await apiClient.delete(`/change-requests/${id}`);
           toast.success('Antrag zurückgezogen');
           fetchRequests();
         } catch (error) {
           toast.error('Fehler beim Zurückziehen');
+        } finally {
+          setWithdrawingId(null);
         }
       },
     });
@@ -133,9 +150,16 @@ export default function ChangeRequests() {
           <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-8 flex justify-center">
             <LoadingSpinner text="Lade Anträge..." />
           </div>
+        ) : loadError ? (
+          <div role="alert" className="bg-white rounded-xl shadow-xs border border-red-200 p-6 text-center">
+            <p className="text-red-800 mb-3">Die Änderungsanträge konnten nicht geladen werden.</p>
+            <Button variant="secondary" size="sm" onClick={() => { setLoading(true); fetchRequests(); }}>
+              Erneut versuchen
+            </Button>
+          </div>
         ) : requests.length === 0 ? (
           <div className="bg-white rounded-xl shadow-xs border border-gray-200">
-            <EmptyState icon={FileEdit} title="Keine Änderungsanträge" description="Neue Anträge stellst du über den 'Antrag'-Button in der Zeiterfassung." />
+            <EmptyState icon={FileEdit} title="Keine Änderungsanträge" description="Neue Anträge stellen Sie über den Button „Antrag“ in der Zeiterfassung." />
           </div>
         ) : (
           requests.map((cr) => {
@@ -178,7 +202,7 @@ export default function ChangeRequests() {
                     </span>
                   </div>
                   {cr.status === 'pending' && (
-                    <Button variant="danger" size="sm" icon={Trash2} onClick={() => handleWithdraw(cr.id)}>
+                    <Button variant="danger" size="sm" icon={Trash2} disabled={withdrawingId === cr.id} onClick={() => handleWithdraw(cr.id)}>
                       Zurückziehen
                     </Button>
                   )}
@@ -193,8 +217,8 @@ export default function ChangeRequests() {
                           <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Aktuell</h4>
                           <div className="text-sm space-y-1">
                             <p>Typ: <span className="font-medium">{absenceTypeLabel(cr.original_absence_type)}</span></p>
-                            <p>Datum: {format(new Date(cr.original_date + 'T12:00:00'), 'dd.MM.yyyy')}</p>
-                            <p>Stunden: <span className="font-medium">{cr.original_absence_hours}h</span></p>
+                            <p>Datum: {formatDateDE(cr.original_date)}</p>
+                            {formatAbsenceHoursHM(cr.original_absence_hours) && <p>Stunden: <span className="font-medium">{formatAbsenceHoursHM(cr.original_absence_hours)}</span></p>}
                           </div>
                         </div>
                       )}
@@ -205,8 +229,9 @@ export default function ChangeRequests() {
                           </h4>
                           <div className="text-sm space-y-1">
                             <p>Typ: <span className="font-medium">{absenceTypeLabel(cr.proposed_absence_type)}</span></p>
-                            <p>Datum: {format(new Date(cr.proposed_date + 'T12:00:00'), 'dd.MM.yyyy')}</p>
-                            <p>Stunden: <span className="font-medium">{cr.proposed_absence_hours}h</span></p>
+                            <p>Datum: {formatDateDE(cr.proposed_date)}</p>
+                            {formatAbsenceHoursHM(cr.proposed_absence_hours) && <p>Stunden: <span className="font-medium">{formatAbsenceHoursHM(cr.proposed_absence_hours)}</span></p>}
+                            {cr.proposed_reason_label && <p>Grund: <span className="font-medium">{cr.proposed_reason_label}</span></p>}
                             {cr.proposed_start_time && cr.proposed_end_time && (
                               <p>Zeit: <span className="font-medium">{cr.proposed_start_time?.substring(0, 5)} – {cr.proposed_end_time?.substring(0, 5)}</span></p>
                             )}
@@ -220,7 +245,7 @@ export default function ChangeRequests() {
                         <div className="bg-gray-50 rounded-lg p-3">
                           <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Aktuell</h4>
                           <div className="text-sm space-y-1">
-                            <p>Datum: {format(new Date(cr.original_date + 'T00:00:00'), 'dd.MM.yyyy')}</p>
+                            <p>Datum: {formatDateDE(cr.original_date)}</p>
                             <p>Von: {cr.original_start_time?.substring(0, 5)} - Bis: {cr.original_end_time?.substring(0, 5)}</p>
                             <p>Pause: {cr.original_break_minutes} min</p>
                             {cr.original_note && <p>Notiz: {cr.original_note}</p>}
@@ -233,11 +258,12 @@ export default function ChangeRequests() {
                             {cr.request_type === 'create' ? 'Neuer Eintrag' : 'Gewünscht'}
                           </h4>
                           <div className="text-sm space-y-1">
-                            <p>Datum: {format(new Date(cr.proposed_date + 'T00:00:00'), 'dd.MM.yyyy')}</p>
+                            <p>Datum: {formatDateDE(cr.proposed_date)}</p>
                             <p>Von: {cr.proposed_start_time?.substring(0, 5)} - Bis: {cr.proposed_end_time?.substring(0, 5)}</p>
                             <p>Pause: {cr.proposed_break_minutes} min</p>
                             {cr.proposed_note && <p>Notiz: {cr.proposed_note}</p>}
                             {cr.proposed_sunday_exception_reason && <p>§10-Ausnahmegrund: {cr.proposed_sunday_exception_reason}</p>}
+                            {cr.break_waiver_reason && <p>Pausenausnahme (§4 ArbZG): {cr.break_waiver_reason}</p>}
                           </div>
                         </div>
                       )}

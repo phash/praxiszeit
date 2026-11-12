@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X } from 'lucide-react';
+import DialogFocusTrap from './DialogFocusTrap';
 
 interface QrLinkModalProps {
   open: boolean;
@@ -17,15 +17,6 @@ interface QrLinkModalProps {
 export default function QrLinkModal({ open, onClose, url }: QrLinkModalProps) {
   const target = url ?? window.location.origin;
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
   if (!open) return null;
 
   return (
@@ -36,6 +27,8 @@ export default function QrLinkModal({ open, onClose, url }: QrLinkModalProps) {
       aria-modal="true"
       aria-label="Auf dem Smartphone öffnen"
     >
+      {/* ui-21: Fokusfalle mit Escape (nur der oberste Dialog reagiert) statt window-Listener */}
+      <DialogFocusTrap focusTrapOptions={{ allowOutsideClick: true, escapeDeactivates: true, onDeactivate: onClose }}>
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-6 text-center"
         onClick={(e) => e.stopPropagation()}
@@ -67,6 +60,7 @@ export default function QrLinkModal({ open, onClose, url }: QrLinkModalProps) {
           {target}
         </a>
       </div>
+      </DialogFocusTrap>
     </div>
   );
 }

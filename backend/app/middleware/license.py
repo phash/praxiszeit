@@ -6,8 +6,8 @@ rejected with HTTP 403.
 
 Implementing this as ASGI middleware (rather than per-endpoint dependencies)
 guarantees new write endpoints are covered by default — the review that
-triggered this module found `require_writable` existed but was attached to
-zero routes.
+triggered this module found a per-route dependency that was attached to
+zero routes (since removed).
 
 Auth endpoints stay writable so admins can still log in, refresh their
 session, and log out of an expired-license deployment.

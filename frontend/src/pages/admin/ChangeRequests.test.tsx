@@ -403,3 +403,79 @@ describe('<AdminChangeRequests /> Sperre der Genehmigung (Audit 2026-11-07)', ()
     expect(toast.error).toHaveBeenCalledWith(detail);
   });
 });
+
+// Review 2026-11-11 (antrag-01/08/10/11/16/18)
+describe('<AdminChangeRequests /> Review 2026-11-11', () => {
+  it('zeigt die Begründung der §4-Pausenausnahme hervorgehoben (antrag-01)', async () => {
+    mockApi([{ ...pendingCr, break_waiver_reason: 'Notfall, keine Vertretung' }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByText(/Notfall, keine Vertretung/)).toBeInTheDocument();
+    expect(screen.getByText(/Pausenausnahme \(§ 4 ArbZG\)/)).toBeInTheDocument();
+  });
+
+  it('weist in der Sammelauswahl auf Pausenausnahmen hin (antrag-01)', async () => {
+    mockApi([{ ...pendingCr, break_waiver_reason: 'Notfall, keine Vertretung' }]);
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByLabelText(/Antrag von Anna Meier auswählen/));
+    expect(screen.getByRole('status')).toHaveTextContent('1 der ausgewählten Anträge tragen eine Pausenausnahme');
+  });
+
+  it('zeigt den beantragten Abwesenheitsgrund und keine leere Stundenzeile (antrag-18/10)', async () => {
+    mockApi([{
+      ...pendingCr, entry_kind: 'absence', proposed_absence_type: 'paid_leave',
+      proposed_reason_label: 'Kind krank', proposed_start_time: '09:00:00', proposed_end_time: '12:00:00',
+    }]);
+    render(<AdminChangeRequests />);
+    expect(await screen.findByText('Kind krank')).toBeInTheDocument();
+    expect(screen.queryByText(/Stunden:/)).toBeNull();
+  });
+
+  it('zeigt bei einem Ladefehler Meldung und Wiederholen (antrag-11)', async () => {
+    getMock.mockRejectedValue(new Error('offline'));
+    render(<AdminChangeRequests />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('konnten nicht geladen werden');
+    expect(screen.queryByText('Keine Anträge vorhanden')).toBeNull();
+  });
+
+  it('lädt bei voller Seite weitere Anträge nach und zählt offene vom Server (antrag-08)', async () => {
+    const page1 = Array.from({ length: 100 }, (_, i) => ({ ...pendingCr, id: `p${i}`, user_last_name: `N${i}` }));
+    const page2 = [{ ...pendingCr, id: 'p100', user_last_name: 'Spaet' }];
+    getMock.mockImplementation((url: string) => {
+      if (url.includes('pending-count')) return Promise.resolve({ data: { count: 101 } });
+      if (url.includes('skip=100')) return Promise.resolve({ data: page2 });
+      return Promise.resolve({ data: page1 });
+    });
+    render(<AdminChangeRequests />);
+    expect(await screen.findByText('101 offene Anträge')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Weitere Anträge laden' }));
+    expect(await screen.findByText(/Spaet, Anna/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Weitere Anträge laden' })).toBeNull();
+  });
+
+  it('behält die Liste, wenn „Weitere Anträge laden“ fehlschlägt (Review F1)', async () => {
+    const page1 = Array.from({ length: 100 }, (_, i) => ({ ...pendingCr, id: `p${i}`, user_last_name: `N${i}` }));
+    getMock.mockImplementation((url: string) => {
+      if (url.includes('pending-count')) return Promise.resolve({ data: { count: 150 } });
+      if (url.includes('skip=100')) return Promise.reject(new Error('offline'));
+      return Promise.resolve({ data: page1 });
+    });
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Weitere Anträge laden' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText(/N5, Anna/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Weitere Anträge laden' })).toBeEnabled();
+  });
+
+  it('sperrt die Knöpfe sichtbar, solange ein Antrag verarbeitet wird (antrag-16)', async () => {
+    mockApi([pendingCr]);
+    let release: (v: unknown) => void = () => {};
+    postMock.mockImplementation(() => new Promise((res) => { release = res; }));
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Genehmigen$/ }));
+    expect(await screen.findByText('Wird verarbeitet…')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ablehnen/ })).toBeDisabled();
+    release({ data: {} });
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Antrag genehmigt'));
+  });
+});

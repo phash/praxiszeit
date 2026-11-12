@@ -1,4 +1,4 @@
-import { SelectHTMLAttributes, forwardRef, ReactNode } from 'react';
+import { useId, SelectHTMLAttributes, forwardRef, ReactNode } from 'react';
 
 interface FormSelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
@@ -10,7 +10,8 @@ interface FormSelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 
 const FormSelect = forwardRef<HTMLSelectElement, FormSelectProps>(
   ({ label, error, helperText, required, className = '', id, children, ...props }, ref) => {
-    const selectId = id || `select-${Math.random().toString(36).substring(7)}`;
+    const generatedId = useId();
+    const selectId = id || `select-${generatedId}`;
     const errorId = `${selectId}-error`;
     const helperId = `${selectId}-helper`;
 
@@ -27,6 +28,8 @@ const FormSelect = forwardRef<HTMLSelectElement, FormSelectProps>(
         )}
         <select
           ref={ref}
+          required={required}
+          aria-required={required ? 'true' : undefined}
           id={selectId}
           aria-invalid={error ? 'true' : 'false'}
           aria-describedby={

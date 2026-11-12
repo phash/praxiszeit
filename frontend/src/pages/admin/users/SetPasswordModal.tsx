@@ -30,9 +30,10 @@ export default function SetPasswordModal({ userId, userName, onClose }: SetPassw
   };
 
   return (
+    // user-09: Klick auf den Hintergrund schließt nicht (getipptes Passwort ginge verloren).
     <div
+      data-testid="password-backdrop"
       className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-      onClick={onClose}
     >
       <DialogFocusTrap
         focusTrapOptions={{

@@ -1,4 +1,4 @@
-import { TextareaHTMLAttributes, forwardRef } from 'react';
+import { useId, TextareaHTMLAttributes, forwardRef } from 'react';
 
 interface FormTextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
@@ -9,7 +9,8 @@ interface FormTextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> 
 
 const FormTextarea = forwardRef<HTMLTextAreaElement, FormTextareaProps>(
   ({ label, error, helperText, required, className = '', id, ...props }, ref) => {
-    const textareaId = id || `textarea-${Math.random().toString(36).substring(7)}`;
+    const generatedId = useId();
+    const textareaId = id || `textarea-${generatedId}`;
     const errorId = `${textareaId}-error`;
     const helperId = `${textareaId}-helper`;
 
@@ -26,6 +27,8 @@ const FormTextarea = forwardRef<HTMLTextAreaElement, FormTextareaProps>(
         )}
         <textarea
           ref={ref}
+          required={required}
+          aria-required={required ? 'true' : undefined}
           id={textareaId}
           aria-invalid={error ? 'true' : 'false'}
           aria-describedby={

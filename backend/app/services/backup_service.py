@@ -20,10 +20,12 @@ from __future__ import annotations
 
 import gzip
 import logging
+import ntpath
 import os
 import re
 import subprocess
 import tempfile
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,7 +54,7 @@ SETTING_LOCATION = "backup_location"     # optionaler Pfad-Override
 DEFAULT_RETENTION_DAYS = 30
 DEFAULT_HOUR = 2
 _BACKUP_GLOB = "praxiszeit_*.sql.gz"
-_FILENAME_RE = re.compile(r"^praxiszeit_\d{8}_\d{6}\.sql\.gz$")
+_FILENAME_RE = re.compile(r"^praxiszeit_\d{8}_\d{6}(-\d{1,2})?\.sql\.gz$")
 
 
 @dataclass
@@ -68,6 +70,9 @@ class BackupConfig:
     hour: int
     retention_days: int
     location: str  # der effektiv genutzte Pfad
+    # ops-02: nur der gespeicherte Override ("" = Standard). Das Frontend braucht
+    # beides getrennt, sonst friert jedes Speichern den Standardpfad ein.
+    location_override: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +451,12 @@ FORBIDDEN_LOCATION_DETAIL = (
 )
 
 
+RELATIVE_LOCATION_DETAIL = (
+    "Bitte einen absoluten Pfad angeben (z. B. /var/backups/praxiszeit oder "
+    "D:\\Sicherungen). Ein relativer Pfad hinge vom Startverzeichnis des Dienstes ab."
+)
+
+
 def get_backup_dir(db: Session) -> Path:
     """Effektives Backup-Verzeichnis: Setting-Override > Env > Docker-Default.
 
@@ -480,6 +491,9 @@ def get_config(db: Session) -> BackupConfig:
     return BackupConfig(
         enabled=enabled, hour=hour, retention_days=retention,
         location=str(get_backup_dir(db)),
+        location_override=(
+            settings_service.get_setting(db, SETTING_LOCATION, tenant_id=DEFAULT_TENANT_ID) or ""
+        ).strip(),
     )
 
 
@@ -499,6 +513,9 @@ def update_config(
         _set_setting(db, SETTING_RETENTION_DAYS, str(max(1, int(retention_days))))
     if location is not None:
         loc = location.strip()
+        if loc and not (os.path.isabs(loc) or ntpath.isabs(loc)):
+            # ops-16: ein relativer Pfad hinge am Arbeitsverzeichnis des Prozesses
+            raise BackupError(RELATIVE_LOCATION_DETAIL)
         reason = location_rejection_reason(loc) if loc else None
         if reason:
             raise BackupError(reason)
@@ -689,8 +706,31 @@ def _make_dir(path: Path) -> bool:
     return True
 
 
+# ops-14: Läufe nacheinander ausführen (Doppelklick, zwei Admins, Timer + manuell).
+_BACKUP_LOCK = threading.Lock()
+
+
 def create_backup(db: Session) -> BackupFile:
     """Erzeugt ein komprimiertes Plain-SQL-Backup. Wirft BackupError bei Fehlern."""
+    with _BACKUP_LOCK:
+        return _create_backup_locked(db)
+
+
+def _open_new_backup_file(backup_dir: Path, timestamp: str) -> tuple[Path, int]:
+    """Legt die Zieldatei exklusiv an (O_EXCL, ops-14): bei Namenskollision in
+    derselben Sekunde Suffix ``-2``, ``-3``, … statt die Datei eines anderen
+    Laufs zu überschreiben. 0o600 atomar (DSGVO Art. 32)."""
+    for n in range(1, 100):
+        name = f"praxiszeit_{timestamp}.sql.gz" if n == 1 else f"praxiszeit_{timestamp}-{n}.sql.gz"
+        path = backup_dir / name
+        try:
+            return path, os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+    raise BackupError("Backup-Dateiname nicht vergeben: zu viele Sicherungen in derselben Sekunde.")
+
+
+def _create_backup_locked(db: Session) -> BackupFile:
     conn = _pg_dump_conn()
     if not conn:
         raise BackupError(
@@ -699,20 +739,13 @@ def create_backup(db: Session) -> BackupFile:
         )
     conn_args, password = conn
 
-    backup_dir = get_backup_dir(db)
-    try:
-        created = _make_dir(backup_dir)
-    except OSError as e:
-        raise BackupError(f"Backup-Verzeichnis nicht beschreibbar: {e}") from e
-    # Windows: jeder Dump erbt die Rechte des Ordners (0o600 wirkt dort nicht).
-    # Kein Dump in einen Ordner, der für andere Konten lesbar ist; Rechte
-    # geändert werden nur an selbst angelegten Ordnern und am Standard-Ordner.
-    secure_backup_dir(backup_dir, created=created)
+    # Review B4: alles, was scheitern kann, VOR dem Anlegen der Zieldatei und dem
+    # Start von pg_dump — sonst bleibt eine 0-Byte-Datei samt offenem Deskriptor
+    # (und ein laufender Prozess) zurück.
+    from app.config import settings
+    from app.core.backup_mac import BackupMac
 
-    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
-    backup_file = backup_dir / f"praxiszeit_{timestamp}.sql.gz"
-    logger.info("Erstelle Backup: %s", backup_file)
-
+    signer = BackupMac(settings.SECRET_KEY)
     # '-w': nie nach Passwort fragen (Passwort kommt via PGPASSWORD ins env, NICHT
     # in die argv) -> fail fast statt Haenger im Dienst-Kontext. '--clean
     # --if-exists' -> idempotenter Restore.
@@ -728,6 +761,24 @@ def create_backup(db: Session) -> BackupFile:
         # S3-07: pg_dump darf das Passwort nur per SCRAM preisgeben, nie im
         # Klartext an einen Server, der sich an den freien Port gehängt hat.
         env["PGREQUIREAUTH"] = require_auth
+
+    backup_dir = get_backup_dir(db)
+    try:
+        created = _make_dir(backup_dir)
+    except OSError as e:
+        raise BackupError(f"Backup-Verzeichnis nicht beschreibbar: {e}") from e
+    # Windows: jeder Dump erbt die Rechte des Ordners (0o600 wirkt dort nicht).
+    # Kein Dump in einen Ordner, der für andere Konten lesbar ist; Rechte
+    # geändert werden nur an selbst angelegten Ordnern und am Standard-Ordner.
+    secure_backup_dir(backup_dir, created=created)
+
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+    try:
+        backup_file, _fd = _open_new_backup_file(backup_dir, timestamp)
+    except OSError as e:
+        raise BackupError(f"Backup-Verzeichnis nicht beschreibbar: {e}") from e
+    logger.info("Erstelle Backup: %s", backup_file)
+
     # Audit 2026-11-07 (S2-6): stderr in eine temporaere DATEI statt in eine
     # Pipe. Mit zwei Pipes las der Elternprozess nur stdout bis zum Ende —
     # schrieb pg_dump vorher mehr als den Pipe-Puffer (~64 KB) an Warnungen nach
@@ -737,23 +788,26 @@ def create_backup(db: Session) -> BackupFile:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errfile, env=env)
     except FileNotFoundError as e:
         errfile.close()
+        os.close(_fd)
+        backup_file.unlink(missing_ok=True)
         raise BackupError(
             f"pg_dump nicht gefunden ({_pg_dump_bin()}). Im Docker-Image fehlt "
             f"postgresql-client; nativ muss PRAXISZEIT_PG_DUMP gesetzt sein."
         ) from e
+    except BaseException:
+        # Jeder andere Startfehler (PermissionError, ...): nichts zurücklassen.
+        errfile.close()
+        os.close(_fd)
+        backup_file.unlink(missing_ok=True)
+        raise
 
     write_error: Optional[OSError] = None
     # Signaturzeile am Ende (Fix-Runde S3-03): ein Restore spielt eine Datei
     # ohne passende Signatur nur mit --force-unverified ein.
-    from app.config import settings
-    from app.core.backup_mac import BackupMac
-
-    signer = BackupMac(settings.SECRET_KEY)
     try:
         # DSGVO Art. 32: das Backup enthält personenbezogene Daten -> ATOMAR nur
         # Owner-lesbar anlegen (os.open mit 0o600), nicht erst gzip.open(umask 0644)
         # + nachträgliches chmod (dazwischen kurz world-readable).
-        _fd = os.open(backup_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(_fd, "wb") as _raw, gzip.GzipFile(fileobj=_raw, mode="wb") as gz:
             assert proc.stdout is not None
             while True:

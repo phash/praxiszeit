@@ -2,6 +2,7 @@
 Service für den Import historischer Zeiterfassungsdaten aus TimeRec-XLS-Dateien.
 Dateiformat: Sheet "Zeiterfassung", Spalten: Datum, Tag, Total, Ein, Aus, Tagesnotiz
 """
+import logging
 import uuid
 import xlrd
 from bisect import bisect_left
@@ -94,6 +95,9 @@ class ImportedEntry(ImportedEntryIn):
     # Spec 7.4 (PR2): Netto der Vorschau vom Server — ImportXls.tsx rechnet nicht
     # mehr selbst. Nur Anzeige; /confirm rechnet neu (wie ``uncredited_minutes``).
     net_hours: float = 0.0
+    # ops-04: Grund, warum ``/confirm`` diese Zeile überspringt (None = wird
+    # verarbeitet). Nur Anzeige; die Vorschau nannte das bisher nur im Hinweistext.
+    skip_reason: Optional[str] = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -751,6 +755,7 @@ def parse_xls(
                 note=note,
                 has_conflict=False,
                 arbzg_warnings=[f"Wird übersprungen — {skip_reason}."],
+                skip_reason=f"{skip_reason}.",
                 raw_start_time=raw_start_t,
                 raw_end_time=raw_end_t,
                 uncredited_minutes=r.uncredited_minutes,
@@ -1058,6 +1063,11 @@ def _confirm_day_warnings(db: Session, user, day: date, written: list) -> list[s
     return out
 
 
+logger = logging.getLogger(__name__)
+
+IMPORT_FAILED_DETAIL = "Import fehlgeschlagen – Details stehen im Protokoll."
+
+
 def execute_import(
     user_id: uuid.UUID,
     entries: Sequence[ImportedEntryIn],
@@ -1105,8 +1115,15 @@ def execute_import(
             db.commit()
         except Exception:
             db.rollback()
-        # Re-raise as ValueError so the router translates to HTTP 400 cleanly
-        raise ValueError(f"Import fehlgeschlagen: {exc}") from exc
+        # Nur fachliche ValueError (bewusst geworfene deutsche Texte, exakt der Typ
+        # ValueError) gehen unverändert durch. Alles andere — IntegrityError,
+        # RuntimeError, aber auch ValueError-Unterklassen wie pydantic-
+        # ValidationError, UnicodeDecodeError oder JSONDecodeError — trägt
+        # Fremdtext und bleibt im Protokoll (SEC-03).
+        if type(exc) is ValueError:
+            raise
+        logger.exception("XLS-Import fehlgeschlagen (Datei %s)", filename)
+        raise ValueError(IMPORT_FAILED_DETAIL) from exc
 
 
 def _execute_import_inner(

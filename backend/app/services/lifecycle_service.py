@@ -555,6 +555,14 @@ def _user_dict(db: Session, u: User) -> dict[str, Any]:
         .order_by(WorkingHoursChange.effective_from.asc())
         .all()
     )
+    # Review 2026-11-11 (user-19): die Kopf-Vertragswerte kommen aus dem heute
+    # gueltigen Snapshot, nie aus der User-Zeile — sie zieht eine zukunftsdatierte
+    # Aenderung erst beim naechsten Schreibvorgang nach und widersprach sonst der
+    # Liste ``working_hours_changes`` im selben Export.
+    from app.services import calculation_service
+    from app.services.timezone_service import today_local
+    sched = calculation_service.schedule_display_json(
+        calculation_service.get_schedule_for_date(db, u, today_local(), history))
     return {
         "id": str(u.id),
         "username": u.username,
@@ -562,23 +570,23 @@ def _user_dict(db: Session, u: User) -> dict[str, Any]:
         "first_name": u.first_name,
         "last_name": u.last_name,
         "role": u.role.value if hasattr(u.role, "value") else str(u.role),
-        "weekly_hours": float(u.weekly_hours) if u.weekly_hours is not None else None,
+        "weekly_hours": sched["weekly_hours"],
         # #408: vacation_days ist jetzt Numeric(4,1) → Decimal. json.dumps (unten,
         # export_as_json_bytes) kann Decimal nicht serialisieren → float casten
         # (wie weekly_hours darüber). Vorher Integer, daher kein Cast nötig.
-        "vacation_days": float(u.vacation_days) if u.vacation_days is not None else None,
-        "work_days_per_week": u.work_days_per_week,
-        "track_hours": u.track_hours,
+        "vacation_days": sched["vacation_days"],
+        "work_days_per_week": sched["work_days_per_week"],
+        "track_hours": sched["track_hours"],
         "calendar_color": u.calendar_color,
         "vacation_carryover_deadline": (
             u.vacation_carryover_deadline.isoformat() if u.vacation_carryover_deadline else None
         ),
-        "use_daily_schedule": u.use_daily_schedule,
-        "hours_monday": float(u.hours_monday) if u.hours_monday is not None else None,
-        "hours_tuesday": float(u.hours_tuesday) if u.hours_tuesday is not None else None,
-        "hours_wednesday": float(u.hours_wednesday) if u.hours_wednesday is not None else None,
-        "hours_thursday": float(u.hours_thursday) if u.hours_thursday is not None else None,
-        "hours_friday": float(u.hours_friday) if u.hours_friday is not None else None,
+        "use_daily_schedule": sched["use_daily_schedule"],
+        "hours_monday": sched["hours_monday"],
+        "hours_tuesday": sched["hours_tuesday"],
+        "hours_wednesday": sched["hours_wednesday"],
+        "hours_thursday": sched["hours_thursday"],
+        "hours_friday": sched["hours_friday"],
         # Spec 2026-10-08 (15.3, E72): Arbeitszeit-Blöcke wie gespeichert — Liste
         # aus Dicts mit "HH:MM"-Strings, JSON-fähig. Rückfallwert vor der ersten
         # Verlaufszeile; Ausgabe, keine Berechnung (Guard-Erlaubnisliste).

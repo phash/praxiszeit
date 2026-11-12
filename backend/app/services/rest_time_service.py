@@ -5,6 +5,7 @@ German law requires minimum 11 hours of rest between two working days.
 """
 from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.services.timezone_service import hours_between
 from app.services.date_filters import date_in_year, date_in_month
@@ -63,6 +64,25 @@ def check_rest_time_violations(
 
     entries = query.order_by(TimeEntry.date, TimeEntry.start_time).all()
 
+    # zeit-05: der letzte Arbeitstag VOR dem Zeitraum gehört in die Paarbildung,
+    # sonst bleibt ein Verstoß über die Monats-/Jahresgrenze (30.04. → 01.05.,
+    # 31.12. → 01.01.) in jedem Bericht unsichtbar. Gemeldet wird nur, wenn
+    # day2 im Zeitraum liegt (unten: der erste Tag der Liste ist Vorlauf).
+    period_start = date(year, month or 1, 1)
+    prev_day = db.query(func.max(TimeEntry.date)).filter(
+        TimeEntry.tenant_id == user.tenant_id,  # F-026
+        TimeEntry.user_id == user.id,
+        TimeEntry.end_time.isnot(None),
+        TimeEntry.date < period_start,
+    ).scalar()
+    if prev_day is not None:
+        entries = db.query(TimeEntry).filter(
+            TimeEntry.tenant_id == user.tenant_id,  # F-026
+            TimeEntry.user_id == user.id,
+            TimeEntry.end_time.isnot(None),
+            TimeEntry.date == prev_day,
+        ).all() + entries
+
     # Group entries by date: find the last end_time and first start_time per day.
     # This correctly handles split shifts (e.g. 08:00-12:00 + 14:00-18:00)
     # by not treating the intra-day gap as a rest-time violation.
@@ -92,6 +112,8 @@ def check_rest_time_violations(
     for i in range(1, len(sorted_days)):
         prev_date = sorted_days[i - 1]
         curr_date = sorted_days[i]
+        if curr_date < period_start:
+            continue
 
         # #540 (A1-10): über UTC — über die Zeitumstellung ±1 h richtig.
         rest_hours = hours_between(

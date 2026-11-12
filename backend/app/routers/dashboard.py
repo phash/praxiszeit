@@ -1,18 +1,19 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import List, Optional
 from app.database import get_db
 from app.models import User, TimeEntry, UserRole, WorkingHoursChange
-from app.models.absence import Absence
+from app.models.absence import Absence, AbsenceType
+from app.services.date_filters import date_in_year
 from app.middleware.auth import get_current_user
-from app.schemas.reports import MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry, WeeklyOverviewRow
+from app.schemas.reports import AbsenceYearSummary, MonthlyDashboard, OvertimeAccount, OvertimeHistory, VacationAccount, YtdOvertime, MissingBookings, MissingBookingEntry, WeeklyOverviewRow
 from app.services import calculation_service, milog_service, reclamp_audit
 from app.services.calculation_service import get_schedule_for_date, get_daily_target_for_date
 from app.services.holiday_service import is_holiday
+from app.services.special_days_service import get_special_day_config, special_day_target
 from app.services.timezone_service import today_local, now_local
-from sqlalchemy import extract, and_
 from app.services.settings_service import SHOW_YEAR_END_OVERTIME_EMPLOYEE_DASHBOARD, get_bool_setting
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -97,11 +98,16 @@ def _get_missing_bookings_for_user(db: Session, user: User, tenant_id=None,
             absence_dates.add(d)
             d += timedelta(days=1)
 
+    # calc-02: freie/verkuerzte Sondertage (24./31.12., Verkuerzungen) mitrechnen —
+    # ein Tag mit Sondertag-Soll 0 ist kein Tag mit fehlender Buchung.
+    special_cfg = get_special_day_config(db, tenant_id, today.year)
+
     # Check each day using calculation_service for correct per-date targets
     d = start_date
     while d <= end_date:
         schedule = get_schedule_for_date(db, user, d, wh_changes)
-        daily_target = float(get_daily_target_for_date(user, d, schedule))
+        daily_target = float(special_day_target(
+            d, get_daily_target_for_date(user, d, schedule), special_cfg))
         is_workday = daily_target > 0
         if is_workday and d not in entry_dates and d not in absence_dates:
             if not is_holiday(db, d, tenant_id=tenant_id):
@@ -358,6 +364,74 @@ def get_ytd_overtime(
     return YtdOvertime(
         year=year,
         **summary
+    )
+
+
+@router.get("/absence-summary", response_model=AbsenceYearSummary)
+def get_absence_summary(
+    request: Request,
+    year: Optional[int] = Query(None, ge=2000, le=2100, description="Year (default: current year)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """calc-03: Abwesenheitstage des Jahres für die Kachel im Mitarbeiter-Dashboard.
+
+    Alle Spalten tagebasiert über ``calculation_service.absence_days`` (Tagessoll
+    DES TAGES, Halbtag, MA ohne Stundenzählung), Urlaub wie im Urlaubskonto — dieselben
+    Zahlen wie ``/admin/reports/yearly-absences``.
+    """
+    year = year or now_local().year
+    absences = db.query(Absence).filter(
+        Absence.user_id == current_user.id,
+        Absence.tenant_id == current_user.tenant_id,  # F-026
+        date_in_year(Absence.date, year),
+    ).all()
+    impersonating = getattr(request.state, "is_impersonating", False)
+    if impersonating:
+        # Art. 9: auch Abwesenheiten mit eigenem Grund (z. B. „Reha“) sind
+        # sensibel — dieselbe Regel wie absences._is_sensitive.
+        from app.routers.absences import _is_sensitive
+        absences = [a for a in absences if not _is_sensitive(a)]
+    by_type: dict = {}
+    for a in absences:
+        by_type.setdefault(a.type, []).append(a)
+
+    def _days(absence_type) -> float:
+        return float(
+            calculation_service.absence_days(
+                db, current_user, by_type.get(absence_type, [])
+            ).quantize(Decimal('0.1'))
+        )
+
+    vacation_days = float(calculation_service.get_vacation_account(db, current_user, year)['used_days'])
+    sick = _days(AbsenceType.SICK)
+    training = _days(AbsenceType.TRAINING)
+    overtime = _days(AbsenceType.OVERTIME)
+    other = _days(AbsenceType.OTHER)
+    paid = _days(AbsenceType.PAID_LEAVE)
+    if impersonating:
+        # Art. 9 DSGVO (wie absences.py, #514): unter „Login als …" liest ein Admin
+        # ohne Protokollzeile — Krank/Sonstiges/Bez. Freistellung werden nicht
+        # ausgeliefert (null) und zählen nicht in „Gesamt".
+        return AbsenceYearSummary(
+            year=year,
+            vacation_days=vacation_days,
+            sick_days=None,
+            training_days=training,
+            overtime_days=overtime,
+            other_days=None,
+            paid_leave_days=None,
+            total_days=vacation_days + training + overtime,
+        )
+    return AbsenceYearSummary(
+        year=year,
+        vacation_days=vacation_days,
+        sick_days=sick,
+        training_days=training,
+        overtime_days=overtime,
+        other_days=other,
+        paid_leave_days=paid,
+        total_days=vacation_days + sick + training + overtime + other + paid,
     )
 
 

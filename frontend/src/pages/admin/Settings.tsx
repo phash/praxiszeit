@@ -89,6 +89,9 @@ function hoursInputOf(cfg: SpecialDaysConfig): Record<SpecialDayKey, string> {
 // F091: eine Stelle für DD.MM.YYYY (auch ReducedDaysCard).
 const formatGermanDate = formatIsoDateDe;
 
+// auth-16: Zahleneingaben nur als ganze Zahl im erlaubten Bereich speichern.
+const isWholeNumberInRange = (v: string, max: number) => /^\d+$/.test(v.trim()) && Number(v) <= max;
+
 export default function Settings() {
   const toast = useToast();
   const minWage = useSystemStore((s) => s.getMinimumWage()); // #377
@@ -1514,7 +1517,7 @@ const saveYearEndProjection = async () => {
           </div>
           <button
             onClick={saveGraceMinutes}
-            disabled={savingGrace || graceMinutes === originalGraceMinutes}
+            disabled={savingGrace || graceMinutes === originalGraceMinutes || !isWholeNumberInRange(graceMinutes, 1439)}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />
@@ -1543,6 +1546,7 @@ const saveYearEndProjection = async () => {
               id="child-sick-default"
               type="number"
               min="0"
+              max="366"
               value={childSickDefault}
               onChange={(e) => setChildSickDefault(e.target.value)}
               className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
@@ -1550,7 +1554,7 @@ const saveYearEndProjection = async () => {
           </div>
           <button
             onClick={saveChildSickDefault}
-            disabled={savingChildSick || childSickDefault === originalChildSickDefault}
+            disabled={savingChildSick || childSickDefault === originalChildSickDefault || !isWholeNumberInRange(childSickDefault, 366)}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Save size={16} />

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { format, subDays } from 'date-fns';
+import { format, subDays, addDays } from 'date-fns';
 import { MemoryRouter } from 'react-router-dom';
+import { de } from 'date-fns/locale';
 import AbsenceCalendarPage from './AbsenceCalendarPage';
 
 // F042 (Teil B, Spec B5 „Kalenderlabel"): der Kalender lädt die verkürzten Tage
@@ -20,7 +21,7 @@ vi.mock('../contexts/ToastContext', () => ({
 }));
 let reasonsData: unknown[] = [];
 vi.mock('../api/absenceReasons', () => ({ myReasons: () => Promise.resolve(reasonsData) }));
-const USER = {
+const USER: Record<string, any> = {
   id: 'u1', username: 'employee', first_name: 'Max', last_name: 'Muster', role: 'employee',
   weekly_hours: 40, vacation_days: 30, track_hours: true, use_daily_schedule: false,
 };
@@ -40,14 +41,14 @@ const weekday = (() => {
   throw new Error('kein Werktag');
 })();
 
-function mockApi({ settingsFail = false, absences = [] as unknown[] } = {}) {
+function mockApi({ settingsFail = false, absences = [] as unknown[], approval = false } = {}) {
   getMock.mockImplementation((raw: unknown) => {
     const url = String(raw);
     if (url.startsWith('/absences?year=')) return Promise.resolve({ data: absences });
     if (url === '/settings') {
       return settingsFail
         ? Promise.reject(new Error('offline'))
-        : Promise.resolve({ data: { vacation_approval_required: false, special_days: {
+        : Promise.resolve({ data: { vacation_approval_required: approval, special_days: {
           special_day_dec24_mode: 'working_day', special_day_dec24_counts_as_vacation: false,
           special_day_dec24_max_hours: 4, special_day_dec31_mode: 'working_day',
           special_day_dec31_counts_as_vacation: false, special_day_dec31_max_hours: 4,
@@ -159,5 +160,106 @@ describe('<AbsenceCalendarPage /> Stundenfeld im Formular', () => {
     fireEvent.change(screen.getByDisplayValue('Grund r1'), { target: { value: 'reason:r2' } });
     expect(hours).toBeDisabled();
     expect(screen.getByLabelText(/Halber Tag/)).toBeInTheDocument();
+  });
+});
+
+// Code-Review 2026-11-11 (Slice abw)
+describe('<AbsenceCalendarPage /> Review abw', () => {
+  const openFormEmpty = async (opts: Parameters<typeof mockApi>[0] = {}) => {
+    mockApi(opts);
+    render(<MemoryRouter><AbsenceCalendarPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Abwesenheit eintragen' }));
+    return (await screen.findByLabelText(/^Stunden/)) as HTMLInputElement;
+  };
+
+  it('abw-07: Öffnen des Formulars scrollt dorthin und fokussiert das Datum', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    await openFormEmpty();
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
+    const dateInput = document.querySelector('form input[type="date"]');
+    expect(document.activeElement).toBe(dateInput);
+  });
+
+  it('abw-11: Admin bucht bei Genehmigungspflicht direkt statt per Antrag', async () => {
+    USER.role = 'admin';
+    try {
+      postMock.mockResolvedValue({ data: [] });
+      await openFormEmpty({ approval: true });
+      fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+      await waitFor(() => expect(postMock).toHaveBeenCalled());
+      expect(postMock.mock.calls[0][0]).toBe('/absences');
+    } finally {
+      USER.role = 'employee';
+    }
+  });
+
+  it('abw-11: Mitarbeitende gehen bei Genehmigungspflicht weiter über den Antrag', async () => {
+    postMock.mockResolvedValue({ data: {} });
+    await openFormEmpty({ approval: true });
+    // /settings lädt asynchron — erst absenden, wenn die Pflicht bekannt ist.
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith('/settings'));
+    await new Promise((r) => setTimeout(r, 0));
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    expect(postMock.mock.calls[0][0]).toBe('/vacation-requests');
+  });
+
+  it('abw-03: Antrag für einen vergangenen Tag wird gar nicht erst gesendet', async () => {
+    await openFormEmpty({ approval: true });
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith('/settings'));
+    await new Promise((r) => setTimeout(r, 0));
+    const dateInput = document.querySelector('form input[type="date"]') as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: format(subDays(new Date(), 5), 'yyyy-MM-dd') } });
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('abw-08: jede Zeile zeigt ihr eigenes Datum, nicht die Gesamtspanne', async () => {
+    const day = addDays(new Date(), 3);
+    const span = { id: 'a9', user_id: 'u1', date: format(day, 'yyyy-MM-dd'), end_date: format(addDays(day, 4), 'yyyy-MM-dd'), type: 'training', hours: 8, note: null, closure_id: null };
+    mockApi({ absences: [span] });
+    render(<MemoryRouter><AbsenceCalendarPage /></MemoryRouter>);
+    const expected = format(day, 'EEEE, dd.MM.yyyy', { locale: de });
+    expect((await screen.findAllByText(expected)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(new RegExp(`${format(day, 'dd.MM.yyyy')} - `))).toBeNull();
+  });
+
+  it('abw-15: Monatswechsel im selben Jahr lädt die Jahresdaten nicht neu', async () => {
+    mockApi();
+    render(<MemoryRouter><AbsenceCalendarPage /></MemoryRouter>);
+    await screen.findByRole('button', { name: 'Vorheriger Monat' });
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith(`/absences?year=${year}`));
+    const yearCalls = () => getMock.mock.calls.filter((c) => String(c[0]).startsWith('/absences?year=')).length;
+    const calendarCalls = () => getMock.mock.calls.filter((c) => String(c[0]).startsWith('/absences/calendar')).length;
+    const before = yearCalls();
+    const calBefore = calendarCalls();
+    fireEvent.click(screen.getByRole('button', { name: now.getMonth() === 0 ? 'Nächster Monat' : 'Vorheriger Monat' }));
+    await waitFor(() => expect(calendarCalls()).toBeGreaterThan(calBefore));
+    expect(yearCalls()).toBe(before);
+  });
+
+  it('abw-10: Krankmeldung über den Jahreswechsel lädt das Nachbarjahr und fragt nach der Urlaubs-Rückgabe', async () => {
+    const nextYear = year + 1;
+    getMock.mockImplementation((raw: unknown) => {
+      const url = String(raw);
+      if (url === `/absences?year=${nextYear}`) {
+        return Promise.resolve({ data: [{ id: 'v1', date: `${nextYear}-01-02`, type: 'vacation', hours: 8, closure_id: null }] });
+      }
+      if (url === '/settings') return Promise.resolve({ data: { vacation_approval_required: false } });
+      return Promise.resolve({ data: [] });
+    });
+    postMock.mockResolvedValue({ data: [] });
+    render(<MemoryRouter><AbsenceCalendarPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Abwesenheit eintragen' }));
+    fireEvent.change(screen.getByDisplayValue('Urlaub'), { target: { value: 'sick' } });
+    fireEvent.click(screen.getByLabelText(/Zeitraum/));
+    const [von, bis] = Array.from(document.querySelectorAll('form input[type="date"]'));
+    fireEvent.change(von, { target: { value: format(addDays(new Date(), 1), 'yyyy-MM-dd') } });
+    fireEvent.change(bis, { target: { value: `${nextYear}-01-03` } });
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    expect(await screen.findByText(/Sollen diese Urlaubstage zurückerstattet werden/)).toBeInTheDocument();
+    expect(getMock).toHaveBeenCalledWith(`/absences?year=${nextYear}`);
   });
 });

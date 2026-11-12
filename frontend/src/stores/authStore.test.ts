@@ -39,7 +39,7 @@ const USER = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useAuthStore.setState({ user: null, isAuthenticated: false, isHydrating: true, impersonation: null });
+  useAuthStore.setState({ user: null, isAuthenticated: false, isHydrating: true, impersonation: null, loggedOutExplicitly: false });
 });
 
 afterEach(() => {
@@ -147,6 +147,18 @@ describe('hydrate', () => {
     expect(s.isAuthenticated).toBe(false);
     expect(s.isHydrating).toBe(false);
     expect(get).not.toHaveBeenCalled(); // no profile fetch after failed refresh
+  });
+
+  it('auth-04: keeps the persisted user when the refresh fails transiently', async () => {
+    useAuthStore.setState({ user: USER as any, isAuthenticated: true, isHydrating: true });
+    mockTryRefresh.mockRejectedValueOnce(new Error('Network Error'));
+
+    await useAuthStore.getState().hydrate();
+
+    const s = useAuthStore.getState();
+    expect(s.user).not.toBeNull();
+    expect(s.isAuthenticated).toBe(true);
+    expect(s.isHydrating).toBe(false);
   });
 });
 
@@ -305,5 +317,24 @@ describe('auth:session-expired listener', () => {
     });
     expect(post).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith('/auth/refresh/logout');
+  });
+});
+
+describe('loggedOutExplicitly (Review F6)', () => {
+  it('ist nach ausdrücklichem Abmelden gesetzt, nach Session-Ablauf nicht, nach Anmeldung wieder frei', async () => {
+    useAuthStore.setState({ user: USER as never, isAuthenticated: true, isHydrating: false });
+    post.mockResolvedValue({ data: {} });
+    await useAuthStore.getState().logout({ explicit: true });
+    expect(useAuthStore.getState().loggedOutExplicitly).toBe(true);
+
+    useAuthStore.setState({ user: USER as never, isAuthenticated: true });
+    await useAuthStore.getState().logout();
+    expect(useAuthStore.getState().loggedOutExplicitly).toBe(false);
+
+    useAuthStore.setState({ loggedOutExplicitly: true });
+    post.mockResolvedValueOnce({ data: { access_token: 'tok', user: USER } });
+    get.mockResolvedValueOnce({ data: {} });
+    await useAuthStore.getState().login('erika', 'pw');
+    expect(useAuthStore.getState().loggedOutExplicitly).toBe(false);
   });
 });

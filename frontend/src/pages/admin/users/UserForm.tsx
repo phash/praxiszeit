@@ -16,6 +16,7 @@ import type { ContractTerms } from './workingHoursTypes';
 import { BLOCKS_WITHOUT_EFFECT, LEGACY_WITHOUT_EFFECT } from './workingHoursTexts';
 
 import { format } from 'date-fns';
+import DecimalInput from '../../../components/DecimalInput';
 import type { User } from '../../../types/user';
 import type { WeekBlocks } from '../../../types/workBlocks';
 
@@ -109,8 +110,11 @@ export default function UserForm({
     overtime_carryover: 0, // #158: Anfangssaldo Überstunden (kein User-Feld, separater Carryover-Call)
     vacation_carryover: 0, // #383: Übertrag Urlaubstage (kein User-Feld, YearCarryover.vacation_days des Startjahres)
   });
-  // #158: vorhandener Vortrag zum Startjahr — wird beim Speichern erhalten.
-  const [hadCarryover, setHadCarryover] = useState(false);
+  // #158: zuletzt geladener Vortrag zum Startjahr. Review 2026-11-11 (user-02):
+  // geschrieben wird nur bei einer Abweichung — jedes Speichern des Formulars
+  // stellte sonst einen Jahresabschluss-Übertrag auf `manual` um und
+  // protokollierte eine Zeile.
+  const [loadedCarryover, setLoadedCarryover] = useState<{ overtime: number; vacation: number }>({ overtime: 0, vacation: 0 });
   // #383: das Jahr, für das die Carryover-Felder erfolgreich geladen wurden.
   // Nur wenn es == carryoverYear ist, dürfen die Feldwerte beim Speichern (Edit)
   // in dieses Jahr geschrieben werden — sonst (Ladefehler oder noch laufender
@@ -171,7 +175,7 @@ export default function UserForm({
   // aktuelle carryoverYear).
   useEffect(() => {
     if (!editUser) {
-      setHadCarryover(false);
+      setLoadedCarryover({ overtime: 0, vacation: 0 });
       setLoadedCarryoverYear(null);
       return;
     }
@@ -191,12 +195,12 @@ export default function UserForm({
           overtime_carryover: row ? row.overtime_hours : 0,
           vacation_carryover: row ? row.vacation_days : 0, // #383
         }));
-        setHadCarryover(!!row);
+        setLoadedCarryover({ overtime: row ? row.overtime_hours : 0, vacation: row ? row.vacation_days : 0 });
         setLoadedCarryoverYear(carryoverYear); // Felder repräsentieren jetzt carryoverYear
       } catch {
         /* Carryover optional — Fehler hier nicht blockierend */
         if (!cancelled) {
-          setHadCarryover(false);
+          setLoadedCarryover({ overtime: 0, vacation: 0 });
           setLoadedCarryoverYear(null); // unbekannter Stand → beim Speichern nicht schreiben
         }
       }
@@ -339,7 +343,7 @@ export default function UserForm({
         // repräsentieren), nie das ggf. voreilige live carryoverYear.
         if (
           loadedCarryoverYear !== null &&
-          (overtime_carryover !== 0 || vacation_carryover !== 0 || hadCarryover)
+          (overtime_carryover !== loadedCarryover.overtime || vacation_carryover !== loadedCarryover.vacation)
         ) {
           await writeCarryover(editUser.id, loadedCarryoverYear);
         } else if (
@@ -732,12 +736,12 @@ export default function UserForm({
               <label htmlFor="f-overtime-carryover" className="block text-sm font-medium text-gray-700 mb-1">
                 Anfangssaldo Überstunden (h)
               </label>
-              <input
+              <DecimalInput
                 id="f-overtime-carryover"
-                type="number"
                 step="0.25"
                 value={formData.overtime_carryover}
-                onChange={(e) => setFormData({ ...formData, overtime_carryover: parseFloat(e.target.value) || 0 })}
+                emptyAs={0}
+                onValue={(n) => setFormData({ ...formData, overtime_carryover: n ?? 0 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -754,14 +758,14 @@ export default function UserForm({
             <label htmlFor="f-vacation-carryover" className="block text-sm font-medium text-gray-700 mb-1">
               Übertrag Urlaubstage
             </label>
-            <input
+            <DecimalInput
               id="f-vacation-carryover"
-              type="number"
               step="0.01"
               min="-50"
               max="50"
               value={formData.vacation_carryover}
-              onChange={(e) => setFormData({ ...formData, vacation_carryover: parseFloat(e.target.value) || 0 })}
+              emptyAs={0}
+              onValue={(n) => setFormData({ ...formData, vacation_carryover: n ?? 0 })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
             />
             <p className="text-xs text-gray-500 mt-1">
@@ -812,14 +816,14 @@ export default function UserForm({
 
           {/* #297: Kalenderfarbe — vom Admin für jede:n Mitarbeiter:in setzbar
               (ergänzt die Selbst-Auswahl im Profil). */}
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+          <div className="md:col-span-2" role="group" aria-labelledby="f-calendar-color-label">
+            <div id="f-calendar-color-label" className="block text-sm font-medium text-gray-700 mb-2">
               Kalenderfarbe
               <span
                 className="ml-2 inline-block w-4 h-4 rounded-full align-middle border border-gray-300"
                 style={{ backgroundColor: formData.calendar_color }}
               />
-            </label>
+            </div>
             {/* Bug-Tracker #3: feste Kachelgröße statt `w-full aspect-square` im
                 Raster. Die Kachelhöhe hing vorher an der Spaltenbreite — in einem
                 breiten Formular (oder bei Browser-Zoom, wo `sm:` nicht mehr greift)
@@ -859,8 +863,9 @@ export default function UserForm({
 
           {/* First / Last Work Day */}
           <div>
-            <label className="block text-sm font-medium text-gray-700">Erster Arbeitstag</label>
+            <label htmlFor="f-first-work-day" className="block text-sm font-medium text-gray-700">Erster Arbeitstag</label>
             <input
+              id="f-first-work-day"
               type="date"
               value={formData.first_work_day}
               onChange={(e) => setFormData({ ...formData, first_work_day: e.target.value })}
@@ -868,8 +873,9 @@ export default function UserForm({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Letzter Arbeitstag</label>
+            <label htmlFor="f-last-work-day" className="block text-sm font-medium text-gray-700">Letzter Arbeitstag</label>
             <input
+              id="f-last-work-day"
               type="date"
               value={formData.last_work_day}
               onChange={(e) => setFormData({ ...formData, last_work_day: e.target.value })}
@@ -975,14 +981,14 @@ export default function UserForm({
                         return (
                           <div key={day} className="text-center">
                             <label htmlFor={`f-hours-${key}`} className="block text-xs font-medium text-gray-600 mb-1">{day}</label>
-                            <input
+                            <DecimalInput
                               id={`f-hours-${key}`}
-                              type="number"
                               step="0.25"
                               min="0"
                               max="24"
                               value={formData[key]}
-                              onChange={(e) => setFormData({ ...formData, [key]: parseFloat(e.target.value) || 0 })}
+                              emptyAs={0}
+                              onValue={(n) => setFormData({ ...formData, [key]: n ?? 0 })}
                               aria-label={`Stunden ${day}`}
                               className="w-full px-2 py-1 text-center border border-gray-300 rounded-sm focus:ring-2 focus:ring-primary text-sm"
                             />
