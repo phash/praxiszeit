@@ -221,8 +221,12 @@ export default function Backups() {
           Gilt für die <strong>Docker</strong>-Installation. Eine <strong>native</strong> Installation sichert
           über den Zeitplan des Betriebssystems (Linux täglich 02:00, Windows und macOS täglich 03:00,
           Aufbewahrung 31 Tage laut <span className="font-mono">praxiszeit.conf</span>) im Standardordner
-          <span className="font-mono"> data/backups</span>; Uhrzeit, Aufbewahrung und Speicherort unten
-          wirken dort nicht (der Speicherort gilt nur für „Jetzt sichern“).
+          <span className="font-mono"> data/backups</span>; die Uhrzeit unten wirkt dort nicht.
+          Aufbewahrung und Speicherort gelten nativ für „Jetzt sichern“ und die Liste: Jedes
+          „Jetzt sichern“ löscht im Sicherungsordner alle Sicherungen, die älter als die Aufbewahrung
+          sind, auch die des Betriebssystem-Zeitplans. Ein gesetzter Speicherort nimmt „Jetzt sichern“,
+          die Liste, Herunterladen und Löschen mit; die nächtlichen Sicherungen in
+          <span className="font-mono"> data/backups</span> erscheinen dann nicht mehr in der Liste.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>

@@ -386,7 +386,7 @@ export default function AbsenceCalendarPage() {
     if (currentUser?.role === 'admin') return true;
     if (absence.closure_id) return false;
     // Audit 2026-11-07 (S1-01): vergangene Tage nur per Änderungsantrag.
-    if (!mayDeleteAbsenceByDate(false, absence.date, format(new Date(), 'yyyy-MM-dd'))) return false;
+    if (!mayDeleteAbsenceByDate(false, absence.date, todayBerlin())) return false;
     if (absence.type === 'vacation' && vacationApprovalRequired) return false;
     // Anträge buchen auch Fortbildung, Überstundenausgleich, Sonstiges (absence_type).
     return !myVacationRequests.some(
@@ -404,7 +404,7 @@ export default function AbsenceCalendarPage() {
   const canRequestAbsenceDeletion = (absence: Absence): boolean =>
     currentUser?.role !== 'admin'
     && !absence.closure_id
-    && !mayDeleteAbsenceByDate(false, absence.date, format(new Date(), 'yyyy-MM-dd'));
+    && !mayDeleteAbsenceByDate(false, absence.date, todayBerlin());
 
   const handleDelete = (id: string) => {
     confirm({
@@ -414,8 +414,9 @@ export default function AbsenceCalendarPage() {
       variant: 'danger',
       onConfirm: async () => {
         try {
-          await apiClient.delete(`/absences/${id}`);
+          const res = await apiClient.delete(`/absences/${id}`);
           toast.success('Abwesenheit erfolgreich gelöscht');
+          showResponseWarning(toast, res?.data); // abgeschlossenes Jahr (abw-05)
           fetchData();
           fetchYearData();
         } catch (error) {
@@ -791,7 +792,7 @@ export default function AbsenceCalendarPage() {
                 <Link to={CHANGE_REQUEST_JOURNAL_PATH} className="underline font-medium">
                   Zeiterfassung → Journal
                 </Link>
-                : in der Zeile des Tages auf „Antrag“ klicken.
+                : in der Zeile des Tages auf „+“ (Eintrag anlegen) klicken.
               </div>
             )}
 

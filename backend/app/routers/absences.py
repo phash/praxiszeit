@@ -573,7 +573,7 @@ def create_absence(
             else:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Am {d.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit ({existing.type.value})"
+                    detail=f"Am {d.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit."
                 )
     dates_to_create = [d for d in dates_to_create if d not in skip_dates]
 

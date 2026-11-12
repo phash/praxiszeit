@@ -19,7 +19,7 @@ import ChangeRequestForm from './ChangeRequestForm';
 import AbsenceDeleteRequestDialog from './AbsenceDeleteRequestDialog';
 import type { AbsenceToDelete } from './AbsenceDeleteRequestDialog';
 import { editableEnd, stampNoteProps } from '../utils/workBlocks';
-import { mayDeleteAbsenceByDate } from '../utils/absenceRules';
+import { mayDeleteAbsenceByDate, todayBerlin } from '../utils/absenceRules';
 import { myReasons } from '../api/absenceReasons';
 import type { AbsenceReason } from '../api/absenceReasons';
 
@@ -49,6 +49,10 @@ interface AbsenceItem {
   end_time: string | null;
   /** P1.1: Betriebsferien-Tag — Mitarbeitende beantragen keine Löschung. */
   closure_day?: boolean;
+  /** FE-1 (1.24.0): `type` ist bei eigenem Grund dessen NAME. Grundtyp und
+   *  Grund-ID fürs Bearbeiten; `null`, wenn der Server maskiert (Art. 9). */
+  base_type?: string | null;
+  reason_id?: string | null;
 }
 
 interface JournalDay {
@@ -120,6 +124,28 @@ interface EditState {
 }
 
 // ---- Helper functions -----------------------------------------------------
+
+/** Werte, die `POST /absences` als `type` annimmt (backend AbsenceType). */
+const BOOKABLE_ABSENCE_TYPES = new Set(['vacation', 'sick', 'overtime', 'training', 'other', 'paid_leave']);
+
+/**
+ * FE-1 (1.24.0): Bearbeiten = DELETE + POST. Ein Wert, den der POST ablehnen
+ * würde, muss VOR dem DELETE auffallen — sonst ist die Abwesenheit weg
+ * (CLAUDE.md „Guard VOR dem DELETE“). Liefert die Fehlermeldung oder `null`.
+ */
+export function adminAbsenceSaveError(
+  entryType: string,
+  reasonId: string | null | undefined,
+  activeReasonIds: string[],
+): string | null {
+  if (!BOOKABLE_ABSENCE_TYPES.has(entryType)) {
+    return 'Diese Abwesenheit lässt sich hier nicht bearbeiten. Bitte unter „Abwesenheiten“ ändern.';
+  }
+  if (reasonId && !activeReasonIds.includes(reasonId)) {
+    return 'Der Abwesenheitsgrund ist nicht mehr aktiv. Bitte einen anderen Grund wählen.';
+  }
+  return null;
+}
 
 const TYPE_LABELS: Record<string, string> = {
   work: 'Arbeitszeit',
@@ -301,9 +327,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
       startTime: entry?.start_time ?? '',
       endTime: (entry ? editableEnd(entry) : null) ?? '',
       breakMinutes: String(entry?.break_minutes ?? 0),
-      entryType: hasAbsence ? (absence.type as EditState['entryType']) : 'work',
+      // FE-1: `type` trägt bei eigenem Grund dessen Namen — Grundtyp nehmen.
+      entryType: hasAbsence ? ((absence.base_type ?? absence.type) as EditState['entryType']) : 'work',
       absenceHours: hasAbsence ? String(absence.hours) : '8',
-      reasonId: (absence as { reason_id?: string | null } | null)?.reason_id ?? null, // #312
+      reasonId: hasAbsence ? absence.reason_id ?? null : null, // #312
       sundayReason: entry?.sunday_exception_reason ?? '', // #485
     });
   }
@@ -436,6 +463,13 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
     if (editState.entryType === 'work' && (!editState.startTime || !editState.endTime)) {
       toast.error('Von und Bis sind Pflichtfelder');
       return;
+    }
+    if (editState.entryType !== 'work') {
+      const invalid = adminAbsenceSaveError(editState.entryType, editState.reasonId, reasons.map(r => r.id));
+      if (invalid) {
+        toast.error(invalid);
+        return;
+      }
     }
 
     setSaving(true);
@@ -643,7 +677,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   // Abwesenheitskalender, wie AbsenceCalendarPage.canRequestAbsenceDeletion) und nie
   // für Betriebsferien-Tage.
   function mayRequestAbsenceDeletion(day: JournalDay, a: AbsenceItem): boolean {
-    return !a.closure_day && !mayDeleteAbsenceByDate(false, day.date, format(new Date(), 'yyyy-MM-dd'));
+    return !a.closure_day && !mayDeleteAbsenceByDate(false, day.date, todayBerlin());
   }
 
   function employeeDeletableAbsences(day: JournalDay): AbsenceItem[] {

@@ -73,7 +73,9 @@ def _assert_request_range_allowed(
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Am {existing.date.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit ({existing.type.value})",
+            # api-01: ohne Art — unter Impersonation (#514) verriet sie sonst
+            # Gesundheitsdaten (Art. 9), und der englische Enum-Wert stand im Toast.
+            detail=f"Am {existing.date.strftime('%d.%m.%Y')} existiert bereits eine Abwesenheit.",
         )
 
 

@@ -1,12 +1,18 @@
 # Changelog
 
-## [Unreleased]
+## [1.24.0] - 2026-11-12
+
+**Enthält die Datenbank-Migration `077_legacy_half_day`.** Vor dem Update wie immer eine Sicherung anlegen.
 
 ### ✨ Neu
 
 - **Grafisches Handbuch in der App.** Die Hilfe unter „Hilfe“ (`/help`) zeigt das Handbuch jetzt mit Bildschirmaufnahmen, Markierungen, Merkkästen, Zeichnungen und Beispielrechnungen statt als Textliste, in drei Büchern: „Praxisleitung“, „Mitarbeitende“ und „So rechnet PraxisZeit“ (Verwaltung sieht alle drei, Mitarbeitende die beiden letzten; Adresse `/help/<Buch>`). Der Menüpunkt „Hilfe“ in der Seitenleiste öffnet diese Seite. Im Schnellzugriff rechts bleiben Cheat-Sheet und Schnellstart; der Reiter „Handbuch“ dort entfällt, und der Download-Knopf bietet nur noch Cheat-Sheet bzw. Schnellstart als `.md` an (die Handbücher als `.md` stehen weiter unter `docs/handbuch/`). In der Kontexthilfe führt „Im Handbuch ansehen →“ direkt zum passenden Kapitel.
 
 - **Verfallsdatum des Resturlaubs je Person im Benutzerformular.** Beim Bearbeiten gibt es das Feld „Resturlaub verfällt am“ (ein festes Datum für alle Jahre – nach Ablauf anpassen oder leeren; leer = 31.03. des Folgejahres; ein Datum in der Vergangenheit wird mit einem Hinweis markiert); das Dashboard der Person und die Jahresend-Warnung der Verwaltung nutzen es bereits.
+
+### 🐛 Behoben (Release-Prüfung 1.24.0)
+
+- **Linux-Installation auf Arch/CachyOS mit OpenSSL 4.** Arch liefert seit November 2026 OpenSSL 4 (`libssl.so.4`); die mitgelieferte PostgreSQL braucht `libssl.so.3` und startete dort nicht. `install.sh` installiert in diesem Fall das Arch-Paket `openssl-3` mit (betrifft auch 1.23.0).
 
 ### 🐛 Behoben (Funde beim Schreiben der Handbücher)
 
@@ -38,8 +44,6 @@
 - **Gesundheitsdaten-Export: Protokollzeile erst nach erfolgreicher Erzeugung.** Scheitert ein Export, bleibt kein „exportiert“ ohne Lieferung stehen.
 - **Berichte & Export:** Ergebnisse der ArbZG-Auswertungen werden beim Ändern von Jahr, Monat oder „Ausgeblendete einbeziehen“ verworfen, ein geleertes Jahresfeld sendet kein `year=NaN` mehr, und Exportfehler zeigen den Grund (z. B. zu viele Anfragen) statt „Export fehlgeschlagen“.
 
-**Enthält die Datenbank-Migration `077_legacy_half_day`.** Vor dem Update wie immer eine Sicherung anlegen.
-
 - **Teamübersicht „Arbeitszeiten im Team“: keine abgeschnittenen Beschriftungen mehr.** Schmale Balken zeigten Zeiten wie „13–16:3C“ oder ein einzelnes „15“. Jetzt zeigt der Balken je nach Breite die volle Kurzzeit, nur den Beginn oder nichts; die volle Zeit steht immer im Hover-Text und für Screenreader.
 - **Abwesenheit eintragen (Verwaltung und Mitarbeitende): keine erfundene Stundenvorbelegung mehr.** Das Stundenfeld war vorbelegt (Verwaltung: immer 8), obwohl der Server bei ganztägigen Arten das Tagessoll der Person bucht. Jetzt bleibt das Feld bei diesen Arten leer und gesperrt, mit dem Hinweis „Es wird das Tagessoll laut Vertrag gebucht“; nur beim Überstundenausgleich (auch als eigener Grund) ist es frei und der eingetragene Wert zählt – bei Personen mit Tagesplan bucht das System dort das Tagessoll des Tages. „Halber Tag“ richtet sich jetzt nach der tatsächlich gewählten Art, auch bei eigenen Gründen. Die Buchung selbst ändert sich nicht.
 - **Löschung einer vergangenen Abwesenheit beantragen.** Mitarbeitende konnten eine Abwesenheit eines vergangenen Tages weder löschen noch die Löschung beantragen: „Löschen“ im Journal tat an reinen Abwesenheitstagen nichts, der Link „per Antrag“ im Abwesenheitskalender führte ins Journal. Jetzt steht an der Abwesenheit „Löschung beantragen“ (Kalender und Journal, Begründung Pflicht); die Verwaltung entscheidet über den Antrag. Betriebsferien-Tage ändert weiterhin nur die Verwaltung (ein Antrag dafür wird abgelehnt).
@@ -48,7 +52,7 @@
 - **Schichtplanung: Werkzeugleiste und Wochenraster laufen bei 1440 px nicht mehr über die Karte.** Die Knöpfe (bis „Plan löschen“) brechen um; die Mitarbeitendenliste steht erst bei sehr breiten Fenstern neben dem Raster, sonst darunter, damit der Freitag sichtbar bleibt.
 - **Barrierefreiheit: Dialoge der Schichtplanung und „Vorjahresübernahme“ sind benannte Dialoge** (`role="dialog"`, modal, Name = Überschrift): Slot, Automatisch füllen, Plan-Einstellungen, Plan duplizieren.
 - **Fehler-Monitoring zeigt deutsche Statusnamen** (Offen, Ignoriert, Behoben) auch in den Zählern und der Bestätigung; bisher standen dort „open“, „ignored“, „resolved“.
-- **Datensicherung: Hinweis zur geplanten Sicherung getrennt nach Docker und nativ.** „Sicherung läuft um HH:30“ und die Einstellungen gelten nur für Docker; native Installationen sichern über den Zeitplan des Betriebssystems (Linux 02:00, Windows/macOS 03:00).
+- **Datensicherung: Hinweis zur geplanten Sicherung getrennt nach Docker und nativ.** „Sicherung läuft um HH:30“ gilt nur für Docker; native Installationen sichern über den Zeitplan des Betriebssystems (Linux 02:00, Windows/macOS 03:00). Seite und Handbuch sagen jetzt auch, dass nativ Aufbewahrung und Speicherort der Seite für „Jetzt sichern“ und die Liste gelten: „Jetzt sichern“ löscht ältere Sicherungen im Sicherungsordner (auch die des Betriebssystem-Zeitplans), und ein gesetzter Speicherort blendet die nächtlichen Sicherungen aus der Liste aus.
 - **Admin-Dashboard nennt den Monat deutsch** („Oktober 2026“ statt „October 2026“) in der Kachel „Monat“ und im Detail-Dialog.
 - **Barrierefreiheit:** Der Plus-Knopf „Neuer Eintrag“ der Zeiterfassung hat auch am Handy einen Namen; der Schalter „Abwesenheitsanträge genehmigungspflichtig“ trägt seine Überschrift als Namen.
 - **Formular „Neue:r Benutzer:in“:** Platzhalter der E-Mail `name@praxis.example` statt einer echten fremden Domain.
@@ -57,6 +61,8 @@
 - **Dezimalkomma statt Punkt in Anzeigen:** gesetzlicher Mindestlohn („13,90 €/h“), Kind-krank-Anzeige („2,0/15“), Urlaubstage in Benutzerliste und Jahresübersicht („3,0 Tage“), Übertrags-Dialog, Datensicherungen, Rechnungen. Gespeichert wird weiterhin unverändert.
 - **Änderungsanträge: Nachtrag trotz offenem Abwesenheitsantrag, mehrere Schichten pro Tag.** Ein offener Abwesenheitsantrag blockiert keinen Zeiteintrags-Nachtrag desselben Tages mehr (vorher falsche Meldung „für diesen Eintrag“); zwei Nachträge mit unterschiedlicher Startzeit am selben Vortag sind möglich. Ein Doppelklick auf „Antrag stellen“ erzeugt keine zwei offenen Anträge mehr.
 - **Änderungsanträge für Abwesenheiten: Prüfung schon beim Stellen.** Ein Datum außerhalb des Beschäftigungszeitraums und das „Umbuchen“ einer heutigen oder künftigen Abwesenheit werden beim Stellen abgelehnt statt erst bei der Genehmigung; ein Antrag auf eine inzwischen zur Betriebsferien-Zeile gewordene Abwesenheit wird bei der Genehmigung mit 400 abgelehnt.
+- **Monatsjournal (Verwaltung): Bearbeiten einer Abwesenheit mit eigenem Grund löscht sie nicht mehr.** Bei einem eigenen Grund (z. B. „Kind krank“) schickte das Formular den Grundnamen als Art; der Server lehnte die Neubuchung ab, nachdem die alte Abwesenheit schon gelöscht war. Jetzt sind Grund und Art vorbelegt und bleiben beim Speichern erhalten; ein nicht mehr aktiver Grund wird vor jedem Löschen gemeldet.
+- **Urlaubsantrag über eine bestehende Abwesenheit: Meldung ohne Art.** „Am TT.MM.JJJJ existiert bereits eine Abwesenheit.“ statt des englischen Typnamens (z. B. „sick“); unter „Login als …“ verriet die Meldung sonst eine Krankmeldung.
 - **Änderungsprotokoll der Genehmigung zeigt Pause und Notiz korrekt.** Lässt ein Antrag Pause oder Notiz offen, behält der Eintrag den Wert, und das Protokoll hält ihn jetzt fest statt „leer“.
 - **Änderungsantrag mit Typwechsel entfernt den alten Abwesenheitsgrund.** Wechselt der Typ ohne neuen Grund, bleibt kein nicht mehr passender Grund (Kind-krank-Zählung, Ausblendung für Kollegen) am Eintrag.
 - **Verwaltung sieht den beantragten Abwesenheitsgrund.** Die Antragsliste nennt Grund-Namen (z. B. „Kind krank“) vor der Genehmigung.
@@ -126,12 +132,11 @@
 - **Änderungsanträge (Verwaltung): Ein Fehler bei „Weitere Anträge laden“ ersetzt die Liste nicht mehr.** Die bereits geladenen Anträge bleiben stehen, der Knopf bleibt zum erneuten Versuch.
 - **Meine Änderungsanträge: bis zu 500 statt 100 Anträge.** Die Liste fragt jetzt mit dem Backend-Höchstwert ab; ältere Anträge werden nicht mehr stillschweigend abgeschnitten.
 - **Antragsformular: Obergrenze des Datums nach Berliner Kalendertag.** „Gestern“ kam aus dem Browserdatum und wich in anderen Zeitzonen um einen Tag ab.
-- **Benutzerverwaltung: Sperrfrist der Anonymisierung zählt Berliner Kalendertage** (14 Tage ab dem Berliner Tag der Deaktivierung), nicht Uhrzeitdifferenzen.
+- **Benutzerverwaltung: Sperrfrist der Anonymisierung zählt Berliner Kalendertage** (14 Tage ab dem Berliner Tag der Deaktivierung, nicht Uhrzeitdifferenzen oder das UTC-Datum); Anzeige, Frist-Ende und Prüfung rechnen einheitlich.
 - **Datumsanzeige: ungültige Kalenderdaten (z. B. 30.02.) erscheinen als „–“** statt als verschobenes Datum; eine Formatierungsroutine statt zwei.
 - **Abmelden: die nächste Person landet nicht auf der Seite der vorherigen.** Nach ausdrücklichem „Abmelden“ wird kein Rücksprungziel gemerkt; bei abgelaufener Sitzung bleibt es erhalten.
 - **Monatsjournal: Löschen einer Abwesenheit in einem abgeschlossenen Jahr zeigt die Warnung des Servers** (Urlaubsübertrag des Folgejahres bleibt unverändert) auch beim Ersetzen und bei Wechsel zu Arbeit.
 - **Urlaubsantrag über ein Wochenende mit alter Abwesenheit wird nicht mehr abgelehnt.** Die Vorabprüfung beim Beantragen prüft nur die Tage, die die Genehmigung auch bucht (Mo–Fr ohne Feiertage/freie Sondertage).
-- **Sperrfrist der Anonymisierung rechnet mit dem Berliner Tag der Deaktivierung** (Anzeige, Frist-Ende und Prüfung einheitlich), nicht mit dem UTC-Datum.
 - **Browser-Zugriff: Header `X-Hidden-With-Data-Count` ist für Cross-Origin-Aufrufe lesbar** (Berichte, Hinweis auf ausgeblendete Personen mit Daten).
 - **Datensicherung räumt bei Startfehlern auf.** Scheitert die Signatur oder der Start von pg_dump, bleibt keine 0-Byte-Sicherung und kein offener Dateideskriptor zurück.
 

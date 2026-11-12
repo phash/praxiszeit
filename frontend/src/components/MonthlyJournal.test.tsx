@@ -1071,3 +1071,64 @@ describe('<MonthlyJournal /> Löschung einer vergangenen Abwesenheit beantragen 
     expect(screen.queryByTitle('Löschung beantragen: Krank')).toBeNull();
   });
 });
+
+// FE-1 (Release-Review 1.24.0): Bearbeiten einer Abwesenheit mit eigenem Grund.
+// `type` traegt dort den Grund-NAMEN — vorher ging der in den Re-POST
+// (422), nachdem die Abwesenheit schon geloescht war.
+describe('<MonthlyJournal /> eigener Abwesenheitsgrund bearbeiten (FE-1)', () => {
+  const reasonDay = {
+    ...validDay,
+    date: '2026-06-09',
+    type: 'other' as const,
+    absences: [{
+      id: 'ab1', type: 'Kind krank', base_type: 'other', reason_id: 'r1',
+      hours: 8, start_time: null, end_time: null,
+    }],
+  };
+
+  it('belegt Grund vor und schickt Grundtyp + reason_id', async () => {
+    const { myReasons } = await import('../api/absenceReasons');
+    vi.mocked(myReasons).mockResolvedValueOnce([
+      { id: 'r1', name: 'Kind krank', color: null, base_behavior: 'unpaid_free', is_active: true, sort_order: 0, tracks_child_sick_limit: true },
+    ]);
+    mockJournal([reasonDay]);
+    deleteMock.mockResolvedValue({});
+    postMock.mockResolvedValue({ data: [{ id: 'ab2', type: 'other', hours: 4 }] });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('Kind krank bearbeiten'));
+    const select = (await screen.findByDisplayValue('Kind krank')) as HTMLSelectElement;
+    expect(select.value).toBe('reason:r1');
+    fireEvent.change(screen.getByDisplayValue('8'), { target: { value: '4' } });
+    fireEvent.click(screen.getByTitle('Speichern'));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    const body = postMock.mock.calls[0][1] as { type: string; reason_id: string | null };
+    expect(body.type).toBe('other');
+    expect(body.reason_id).toBe('r1');
+  });
+
+  it('loescht nichts, wenn der Grund nicht mehr aktiv ist', async () => {
+    mockJournal([reasonDay]); // myReasons liefert [] — Grund inaktiv
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('Kind krank bearbeiten'));
+    fireEvent.click(screen.getByTitle('Speichern'));
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('loescht nichts bei einem maskierten Typ ohne Grundtyp', async () => {
+    mockJournal([{
+      ...reasonDay,
+      absences: [{ id: 'ab1', type: 'absent', base_type: null, reason_id: null, hours: 8, start_time: null, end_time: null }],
+    }]);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('Abwesend bearbeiten'));
+    fireEvent.click(screen.getByTitle('Speichern'));
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+});

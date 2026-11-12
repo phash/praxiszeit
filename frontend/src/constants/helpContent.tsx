@@ -111,7 +111,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Optional: Notiz</li>
             <li>Speichern</li>
           </ol>
-          <p className="text-sm text-gray-600 mt-2">Vergangene Tage nur per Antrag: Zeiterfassung → Journal, in der Zeile des Tages „Antrag".</p>
+          <p className="text-sm text-gray-600 mt-2">Vergangene Tage nur per Antrag: Zeiterfassung → Journal, über das „+" (Eintrag anlegen) in der Zeile des Tages.</p>
         </section>
         <section>
           <h3 className="font-semibold text-gray-800 mb-2">Abwesenheitstypen</h3>

@@ -10,14 +10,16 @@ import AbsenceCalendarPage from './AbsenceCalendarPage';
 
 const getMock = vi.fn();
 const postMock = vi.fn();
+const deleteMock = vi.fn();
+const toastWarning = vi.fn();
 vi.mock('../api/client', () => ({
   default: {
     get: (...a: unknown[]) => getMock(...a),
-    post: (...a: unknown[]) => postMock(...a), put: vi.fn(), delete: vi.fn(),
+    post: (...a: unknown[]) => postMock(...a), put: vi.fn(), delete: (...a: unknown[]) => deleteMock(...a),
   },
 }));
 vi.mock('../contexts/ToastContext', () => ({
-  useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
+  useToast: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: toastWarning }),
 }));
 let reasonsData: unknown[] = [];
 vi.mock('../api/absenceReasons', () => ({ myReasons: () => Promise.resolve(reasonsData) }));
@@ -62,7 +64,7 @@ function mockApi({ settingsFail = false, absences = [] as unknown[], approval = 
   });
 }
 
-beforeEach(() => { getMock.mockReset(); postMock.mockReset(); reasonsData = []; });
+beforeEach(() => { getMock.mockReset(); postMock.mockReset(); deleteMock.mockReset(); toastWarning.mockReset(); reasonsData = []; });
 
 describe('<AbsenceCalendarPage /> verkürzte Tage', () => {
   it('lädt /reduced-days für das angezeigte Jahr und zeigt das Label', async () => {
@@ -261,5 +263,26 @@ describe('<AbsenceCalendarPage /> Review abw', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
     expect(await screen.findByText(/Sollen diese Urlaubstage zurückerstattet werden/)).toBeInTheDocument();
     expect(getMock).toHaveBeenCalledWith(`/absences?year=${nextYear}`);
+  });
+});
+
+// api-02 (Release-Review 1.24.0): Löschen in einem abgeschlossenen Jahr liefert
+// 200 + {warning} (abw-05) — der Kalender zeigt sie wie AdminAbsences.
+describe('<AbsenceCalendarPage /> Löschen im abgeschlossenen Jahr', () => {
+  it('zeigt die Warnung der Löschantwort', async () => {
+    USER.role = 'admin';
+    try {
+      const past = format(subDays(new Date(), 3), 'yyyy-MM-dd');
+      mockApi({ absences: [{ id: 'a1', user_id: 'u1', date: past, end_date: null, type: 'training', hours: 8, note: null, closure_id: null }] });
+      deleteMock.mockResolvedValue({ data: { warning: 'Jahr ist abgeschlossen.' } });
+      render(<MemoryRouter><AbsenceCalendarPage /></MemoryRouter>);
+      fireEvent.click((await screen.findAllByRole('button', { name: 'Abwesenheit löschen' }))[0]);
+      const dialog = await screen.findByRole('alertdialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }));
+      await waitFor(() => expect(deleteMock).toHaveBeenCalledWith('/absences/a1'));
+      await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('Jahr ist abgeschlossen.'));
+    } finally {
+      USER.role = 'employee';
+    }
   });
 });

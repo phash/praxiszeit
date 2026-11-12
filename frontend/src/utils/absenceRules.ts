@@ -10,7 +10,7 @@
  */
 export const PAST_DAY_ABSENCE_HINT = 'Für vergangene Tage bitte einen Änderungsantrag stellen.';
 
-/** Ort des Antrags-Wegs (Zeiterfassung → Journal, Zeile des Tages → „Antrag"). */
+/** Ort des Antrags-Wegs (Zeiterfassung → Journal, Zeile des Tages → „+“ Eintrag anlegen). */
 export const CHANGE_REQUEST_JOURNAL_PATH = '/time-tracking?tab=journal';
 
 /** ``dateStr`` und ``todayStr`` als ``yyyy-MM-dd``. */

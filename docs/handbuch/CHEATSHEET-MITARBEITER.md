@@ -125,7 +125,7 @@ Zurückziehen: Button **Zurückziehen** bei offenen Anträgen
 
 > **Eigene Gründe:** Richtet Ihre Praxis weitere Gründe ein (z. B. „Schule"), erscheinen sie bei „Typ wählen" unter **„Eigene Gründe"**.
 
-**Vergangener Tag:** nur per Antrag (Journal → **Antrag** in der Zeile des Tages) – *„Für vergangene Tage bitte einen Änderungsantrag stellen."*
+**Vergangener Tag:** nur per Antrag (Journal → **+** (Eintrag anlegen) in der Zeile des Tages) – *„Für vergangene Tage bitte einen Änderungsantrag stellen."*
 
 **Löschen:** Kalender-Eintrag anklicken → Löschen-Symbol (nur ab heute und nur selbst eingetragene; vergangene Tage: **„Löschung beantragen"** mit Begründung, auch im Journal am Papierkorb der Abwesenheit)
 
