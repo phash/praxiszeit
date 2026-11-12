@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.24.0] - 2026-11-12
 
 **Enthält die Datenbank-Migration `077_legacy_half_day`.** Vor dem Update wie immer eine Sicherung anlegen.
 
