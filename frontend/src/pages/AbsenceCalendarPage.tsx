@@ -414,8 +414,9 @@ export default function AbsenceCalendarPage() {
       variant: 'danger',
       onConfirm: async () => {
         try {
-          await apiClient.delete(`/absences/${id}`);
+          const res = await apiClient.delete(`/absences/${id}`);
           toast.success('Abwesenheit erfolgreich gelöscht');
+          showResponseWarning(toast, res?.data); // abgeschlossenes Jahr (abw-05)
           fetchData();
           fetchYearData();
         } catch (error) {
