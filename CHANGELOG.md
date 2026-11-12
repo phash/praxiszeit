@@ -10,6 +10,10 @@
 
 - **Verfallsdatum des Resturlaubs je Person im Benutzerformular.** Beim Bearbeiten gibt es das Feld „Resturlaub verfällt am“ (ein festes Datum für alle Jahre – nach Ablauf anpassen oder leeren; leer = 31.03. des Folgejahres; ein Datum in der Vergangenheit wird mit einem Hinweis markiert); das Dashboard der Person und die Jahresend-Warnung der Verwaltung nutzen es bereits.
 
+### 🐛 Behoben (Release-Prüfung 1.24.0)
+
+- **Linux-Installation auf Arch/CachyOS mit OpenSSL 4.** Arch liefert seit November 2026 OpenSSL 4 (`libssl.so.4`); die mitgelieferte PostgreSQL braucht `libssl.so.3` und startete dort nicht. `install.sh` installiert in diesem Fall das Arch-Paket `openssl-3` mit (betrifft auch 1.23.0).
+
 ### 🐛 Behoben (Funde beim Schreiben der Handbücher)
 
 - **Ruhezeitbericht (§ 5 ArbZG) erkennt Verstöße über die Monats- und Jahresgrenze.** Spätdienst am 30.04. und Frühdienst am 01.05. mit weniger als 11 h Ruhe erscheinen jetzt im Bericht für Mai (bzw. für Januar/das neue Jahr bei 31.12./01.01.); vorher fehlten sie in jedem Bericht.

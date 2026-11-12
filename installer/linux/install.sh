@@ -121,9 +121,16 @@ install_runtime_deps() {
         # vorhandene Sync-DB. ACHTUNG: Rolling-Distros koennen libxml2 bereits
         # auf einen neueren Soname (libxml2.so.16) gehoben haben; theseus' PG
         # braucht libxml2.so.2 — dann unten der Hinweis.
-        pacman -S --needed --noconfirm \
-            libxml2 openssl krb5 zstd lz4 readline brotli \
-            || { error "pacman install fehlgeschlagen (ggf. zuerst 'pacman -Sy')"; exit 1; }
+        # Arch ist auf OpenSSL 4 umgestiegen (libssl.so.4); das gebuendelte PG
+        # braucht libssl.so.3 -> Paket openssl-3, NUR wenn die .so.3 fehlt. Ist sie
+        # da (openssl 3.x), kein OpenSSL-Paket nennen: `openssl` wuerde sonst auf 4
+        # gehoben (Partial-Upgrade-Bruch), `openssl-3` mit openssl 3.x kollidieren.
+        local arch_pkgs=(libxml2 krb5 zstd lz4 readline brotli)
+        if [[ " ${missing[*]} " == *" libssl.so.3 "* ]]; then
+            arch_pkgs+=(openssl-3)
+        fi
+        pacman -S --needed --noconfirm "${arch_pkgs[@]}" \
+            || { error "pacman install fehlgeschlagen (ggf. zuerst 'pacman -Syu')"; exit 1; }
     else
         error "Kein bekannter Paketmanager (apt-get, dnf, zypper, pacman) gefunden."
         error "Bitte installiere manuell: ${missing[*]}"

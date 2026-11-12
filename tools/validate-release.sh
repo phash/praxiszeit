@@ -53,7 +53,7 @@ for distro in "${DISTROS[@]}"; do
         archlinux:*)
             # Bewusst OHNE libxml2: Arch liefert nur .so.16; das gebuendelte
             # libxml2.so.2 muss den PG-Start tragen (#177). shadow ist in base.
-            INSTALL_CMD='pacman -Sy --noconfirm --needed openssl krb5 zstd lz4 readline brotli >/dev/null 2>&1'
+            INSTALL_CMD='pacman -Syu --noconfirm --needed openssl-3 krb5 zstd lz4 readline brotli >/dev/null 2>&1'
             ;;
         *)
             INSTALL_CMD='true'
