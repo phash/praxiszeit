@@ -16,7 +16,7 @@ import PasswordConfirmDialog from '../../components/PasswordConfirmDialog';
 import CarryoverModal from './users/CarryoverModal';
 import WorkingHoursModal from './users/WorkingHoursModal';
 import { contractToday } from './users/workingHoursTexts';
-import { todayBerlin } from '../../utils/absenceRules';
+import { todayBerlin, graceRemainingDays } from '../../utils/absenceRules';
 import UserForm from './users/UserForm';
 
 import type { ScheduleToday, User } from '../../types/user';
@@ -51,17 +51,6 @@ interface VacationInfo {
 interface OvertimeInfo {
   overtime: number;       // JTD-Saldo in Stunden (kann negativ sein)
   track_hours: boolean;   // false = leitende MA ohne Stundenzählung
-}
-
-/** Verbleibende Grace-Period-Tage (0 = abgelaufen / kein deactivated_at). */
-function graceRemainingDays(user: User): number {
-  if (!user.deactivated_at) return 0;
-  const deactivated = new Date(user.deactivated_at);
-  const graceEnd = new Date(deactivated.getTime() + 14 * 24 * 60 * 60 * 1000);
-  // user-21: „jetzt" nach Berliner Kalendertag, nicht nach der Browserzeitzone
-  const nowBerlin = new Date(`${todayBerlin()}T00:00:00Z`).getTime();
-  const remaining = Math.ceil((graceEnd.getTime() - nowBerlin) / (1000 * 60 * 60 * 24));
-  return Math.max(0, remaining);
 }
 
 export default function Users() {
@@ -844,7 +833,7 @@ user.id !== currentUserId ? (
                         {user.is_hidden ? <Eye size={16} /> : <EyeOff size={16} />}
                       </button>
                       {!user.is_active && !user.username.startsWith('deleted_') && (() => {
-                        const remaining = graceRemainingDays(user);
+                        const remaining = graceRemainingDays(user.deactivated_at);
                         return remaining > 0 ? (
                           <span
                             className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm px-1.5 py-0.5 cursor-default"
@@ -1045,7 +1034,7 @@ user.id !== currentUserId ? (
                       {user.is_hidden ? <Eye size={16} /> : <EyeOff size={16} />}
                     </button>
                     {!user.is_active && !user.username.startsWith('deleted_') && (() => {
-                      const remaining = graceRemainingDays(user);
+                      const remaining = graceRemainingDays(user.deactivated_at);
                       return remaining > 0 ? (
                         <div
                           className="flex items-center gap-1 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 cursor-default"

@@ -23,8 +23,9 @@ vi.mock('../api/client', () => ({
 }));
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
+const toastWarning = vi.fn();
 vi.mock('../contexts/ToastContext', () => ({
-  useToast: () => ({ error: toastError, success: toastSuccess, info: vi.fn(), warning: vi.fn() }),
+  useToast: () => ({ error: toastError, success: toastSuccess, info: vi.fn(), warning: toastWarning }),
 }));
 vi.mock('../api/absenceReasons', () => ({ myReasons: vi.fn().mockResolvedValue([]) }));
 
@@ -440,6 +441,24 @@ describe('<MonthlyJournal /> Eintragen an Wochenend-/Feiertagen (#479)', () => {
 
     await waitFor(() => expect(postMock).toHaveBeenCalled());
     expect(deleteMock).toHaveBeenCalledWith('/absences/ab1?rebook_closure=false');
+  });
+
+  it('zeigt die Warnung des Löschens in einem abgeschlossenen Jahr (Review B6)', async () => {
+    mockJournal([{
+      ...validDay,
+      date: '2026-06-09',
+      type: 'sick' as const,
+      absences: [{ id: 'ab1', type: 'sick', hours: 8, start_time: null, end_time: null }],
+    }]);
+    deleteMock.mockResolvedValue({ data: { warning: 'Jahr 2026 ist abgeschlossen.' } });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    fireEvent.click(await screen.findByTitle('Krank bearbeiten'));
+    fireEvent.click(await screen.findByTitle('Löschen'));
+    const confirmBtn = (await screen.findAllByRole('button', { name: 'Löschen' })).find((b) => !b.hasAttribute('title'));
+    fireEvent.click(confirmBtn!);
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Eintrag gelöscht'));
+    expect(toastWarning).toHaveBeenCalledWith('Jahr 2026 ist abgeschlossen.');
   });
 
   it('bietet an Wochenend-/Feiertagen fuer einen Zeiteintrag keine Abwesenheitstypen an', async () => {

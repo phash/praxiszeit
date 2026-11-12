@@ -37,3 +37,22 @@ export function todayBerlin(now: Date = new Date()): string {
   // sv-SE formatiert als ``yyyy-MM-dd``.
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(now);
 }
+
+/** Kalendertag (``yyyy-MM-dd``) eines Zeitstempels in Europe/Berlin. */
+export function berlinDateOf(timestamp: string | Date): string {
+  const d = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+  return todayBerlin(d);
+}
+
+/**
+ * Verbleibende Sperrfrist-Tage (14 Tage ab Deaktivierung) für die Anonymisierung —
+ * reiner Kalendertagsvergleich in Berliner Datum, wie ``_grace_days_since_deactivation``
+ * im Backend (kein Rechnen mit Uhrzeit/UTC-Tag).
+ */
+export function graceRemainingDays(deactivatedAt: string | null | undefined, today: string = todayBerlin()): number {
+  if (!deactivatedAt) return 0;
+  const start = Date.parse(`${berlinDateOf(deactivatedAt)}T00:00:00Z`);
+  const now = Date.parse(`${today}T00:00:00Z`);
+  const elapsed = Math.round((now - start) / 86_400_000);
+  return Math.max(0, 14 - elapsed);
+}

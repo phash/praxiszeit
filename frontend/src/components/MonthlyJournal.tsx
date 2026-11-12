@@ -7,7 +7,7 @@ import { getErrorMessage } from '../utils/errorMessage';
 import { formatHoursHM, formatHoursHMText, parseHours } from '../utils/formatters';
 import { submitWithBreakWaiver, isWaivableBreakMessage, breakWaiverReasonError } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
-import { showArbzgWarnings, collectAbsenceWarnings } from '../utils/arbzgWarnings';
+import { showArbzgWarnings, showResponseWarning, collectAbsenceWarnings } from '../utils/arbzgWarnings';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from './ConfirmDialog';
@@ -458,7 +458,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         );
         // (2) Die Abwesenheit ERST nach erfolgreichem Schreiben entfernen.
         if (switchingToWork && day.absences[0]) {
-          await apiClient.delete(`/absences/${day.absences[0].id}`);
+          const delRes = await apiClient.delete(`/absences/${day.absences[0].id}`);
+          showResponseWarning(toast, delRes?.data); // abgeschlossenes Jahr (abw-05)
         }
         // ArbZG-Warnungen der Admin-Schreibpfade anzeigen (§3 >8h/Tag, >48h/Woche,
         // §6 Nacht, BREAK_WAIVER) — analog zu den MA-Pfaden (StampWidget/TimeTracking).
@@ -475,7 +476,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         // rebook_closure=false: der freie Tag darf nicht sofort wieder mit dem
         // Betriebsferien-Tag belegt werden (#511), sonst scheitert der POST.
         if (hadAbsence && day.absences[0]) {
-          await apiClient.delete(`/absences/${day.absences[0].id}?rebook_closure=false`);
+          const delRes = await apiClient.delete(`/absences/${day.absences[0].id}?rebook_closure=false`);
+          showResponseWarning(toast, delRes?.data);
         }
         const res = await apiClient.post('/absences', {
           user_id: userId,
@@ -528,7 +530,8 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
             await apiClient.delete(`/admin/time-entries/${timeEntry.id}`);
           }
           if (absence) {
-            await apiClient.delete(`/absences/${absence.id}`);
+            const delRes = await apiClient.delete(`/absences/${absence.id}`);
+            showResponseWarning(toast, delRes?.data);
           }
           toast.success('Eintrag gelöscht');
           cancelEdit();

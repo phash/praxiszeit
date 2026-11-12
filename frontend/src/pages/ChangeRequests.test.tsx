@@ -107,6 +107,13 @@ describe('<ChangeRequests /> Review 2026-11-11', () => {
     expect(screen.getByRole('button', { name: 'Erneut versuchen' })).toBeInTheDocument();
   });
 
+  it('fragt die Liste mit der Backend-Obergrenze limit=500 ab (Review F2)', async () => {
+    mockRequests([creditCr]);
+    render(<ChangeRequests />);
+    await screen.findByText('Anrechnung beantragt');
+    expect(getMock.mock.calls[0][0]).toContain('limit=500');
+  });
+
   it('siezt im Leerzustand (antrag-20)', async () => {
     mockRequests([]);
     render(<ChangeRequests />);

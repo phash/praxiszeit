@@ -71,7 +71,8 @@ export default function ChangeRequests() {
     const seq = ++requestSeq.current;
     setLoadError(false);
     try {
-      const params = filter ? `?status=${filter}` : '';
+      // Backend-Standard wäre 100 (stilles Abschneiden älterer Anträge); 500 ist die Obergrenze.
+      const params = filter ? `?status=${filter}&limit=500` : '?limit=500';
       const response = await apiClient.get(`/change-requests${params}`);
       if (seq !== requestSeq.current) return; // Filter inzwischen gewechselt
       setRequests(response.data);

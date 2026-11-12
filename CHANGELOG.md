@@ -121,6 +121,16 @@
 - **Mobile Navigation und Stempeln.** Der Stempel-Knopf unten folgt dem Stempeln auf der Dashboard-Karte sofort (nicht erst nach bis zu 60 s). Das geöffnete Handy-Menü ist ein modaler Dialog mit Fokusfalle; die aktive Seite trägt `aria-current`, die Lücke in der unteren Leiste entfällt ohne Stempel-Knopf. Das Zeiteintrags-Formular ist nur auf dem Handy ein modales Sheet (Escape schließt); am Desktop ist es ein normaler Seitenblock. Das QR-Fenster hat eine Fokusfalle und schließt keine darüberliegenden Dialoge mit.
 - **Abwesenheiten und Datensicherung auf dem Handy.** Die Tabellen scrollen horizontal, damit „Notiz“, „Aktion“ und die Sicherungs-Aktionen erreichbar bleiben.
 
+### 🐛 Behoben (Code-Review 2026-11-11)
+
+- **Änderungsanträge (Verwaltung): Ein Fehler bei „Weitere Anträge laden“ ersetzt die Liste nicht mehr.** Die bereits geladenen Anträge bleiben stehen, der Knopf bleibt zum erneuten Versuch.
+- **Meine Änderungsanträge: bis zu 500 statt 100 Anträge.** Die Liste fragt jetzt mit dem Backend-Höchstwert ab; ältere Anträge werden nicht mehr stillschweigend abgeschnitten.
+- **Antragsformular: Obergrenze des Datums nach Berliner Kalendertag.** „Gestern“ kam aus dem Browserdatum und wich in anderen Zeitzonen um einen Tag ab.
+- **Benutzerverwaltung: Sperrfrist der Anonymisierung zählt Berliner Kalendertage** (14 Tage ab dem Berliner Tag der Deaktivierung), nicht Uhrzeitdifferenzen.
+- **Datumsanzeige: ungültige Kalenderdaten (z. B. 30.02.) erscheinen als „–“** statt als verschobenes Datum; eine Formatierungsroutine statt zwei.
+- **Abmelden: die nächste Person landet nicht auf der Seite der vorherigen.** Nach ausdrücklichem „Abmelden“ wird kein Rücksprungziel gemerkt; bei abgelaufener Sitzung bleibt es erhalten.
+- **Monatsjournal: Löschen einer Abwesenheit in einem abgeschlossenen Jahr zeigt die Warnung des Servers** (Urlaubsübertrag des Folgejahres bleibt unverändert) auch beim Ersetzen und bei Wechsel zu Arbeit.
+
 ## [1.23.0] - 2026-11-07
 
 ### ✨ Neu

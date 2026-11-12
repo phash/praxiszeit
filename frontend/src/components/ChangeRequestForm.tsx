@@ -7,6 +7,7 @@ import { getErrorMessage } from '../utils/errorMessage';
 import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
 import { breakWaiverReasonError, isWaivableBreakMessage } from '../utils/breakWaiverRetry';
 import { useSystemStore } from '../stores/systemStore';
+import { todayBerlin } from '../utils/absenceRules';
 import { editableEnd } from '../utils/workBlocks';
 
 interface TimeEntry {
@@ -114,7 +115,8 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
   // antrag-15: Obergrenze des Datumsfelds = gestern; Ausnahme ist ein Eintrag von
   // heute (Anrechnung bzw. Antrag auf anerkannten Eintrag, #502): dort bleibt
   // sein Tag wählbar.
-  const yesterday = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+  // Berliner Kalendertag wie der Server (today_local), nicht das Browserdatum.
+  const yesterday = format(subDays(new Date(`${todayBerlin()}T12:00:00`), 1), 'yyyy-MM-dd');
   const maxDate = entry && entry.date > yesterday ? entry.date : yesterday;
 
   const handleSubmit = async (e: React.FormEvent) => {

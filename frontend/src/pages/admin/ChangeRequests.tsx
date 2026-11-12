@@ -267,7 +267,8 @@ export default function AdminChangeRequests() {
       void fetchPendingTotal();
     } catch (error) {
       if (seq !== requestSeq.current) return;
-      setLoadError(true);
+      // Fehler beim Nachladen: bereits geladene Liste behalten (Knopf bleibt zum Wiederholen).
+      if (!append) setLoadError(true);
       toast.error('Fehler beim Laden der Änderungsanträge');
     } finally {
       if (seq === requestSeq.current) {

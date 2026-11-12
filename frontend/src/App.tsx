@@ -61,11 +61,14 @@ function ProtectedRoute({
 }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
+  const loggedOutExplicitly = useAuthStore((s) => s.loggedOutExplicitly);
   const location = useLocation();
 
   if (!isAuthenticated) {
-    // auth-06: Rücksprungziel mitgeben, damit die Anmeldung dort weitermacht.
-    return <Navigate to="/login" replace state={{ from: location }} />;
+    // auth-06: Rücksprungziel mitgeben, damit die Anmeldung dort weitermacht —
+    // nicht nach ausdrücklichem Abmelden (F6: die nächste Person landet sonst
+    // auf der Seite der vorherigen).
+    return <Navigate to="/login" replace state={loggedOutExplicitly ? undefined : { from: location }} />;
   }
 
   if (requiredRole && user?.role !== requiredRole) {

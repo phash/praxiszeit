@@ -452,6 +452,21 @@ describe('<AdminChangeRequests /> Review 2026-11-11', () => {
     expect(screen.queryByRole('button', { name: 'Weitere Anträge laden' })).toBeNull();
   });
 
+  it('behält die Liste, wenn „Weitere Anträge laden“ fehlschlägt (Review F1)', async () => {
+    const page1 = Array.from({ length: 100 }, (_, i) => ({ ...pendingCr, id: `p${i}`, user_last_name: `N${i}` }));
+    getMock.mockImplementation((url: string) => {
+      if (url.includes('pending-count')) return Promise.resolve({ data: { count: 150 } });
+      if (url.includes('skip=100')) return Promise.reject(new Error('offline'));
+      return Promise.resolve({ data: page1 });
+    });
+    render(<AdminChangeRequests />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Weitere Anträge laden' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText(/N5, Anna/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Weitere Anträge laden' })).toBeEnabled();
+  });
+
   it('sperrt die Knöpfe sichtbar, solange ein Antrag verarbeitet wird (antrag-16)', async () => {
     mockApi([pendingCr]);
     let release: (v: unknown) => void = () => {};

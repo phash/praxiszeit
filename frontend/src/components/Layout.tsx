@@ -172,8 +172,8 @@ export default function Layout() {
   const handleLogout = async () => {
     // authStore.logout() now handles the backend /auth/logout call, clears
     // the in-memory access token, drops persist storage and wipes caches.
-    await logout();
-    navigate('/login');
+    await logout({ explicit: true });
+    navigate('/login', { replace: true });
   };
 
   const isActive = (path: string) => {

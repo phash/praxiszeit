@@ -1,4 +1,3 @@
-import { format } from 'date-fns';
 import type { WeekBlocks } from '../types/workBlocks';
 import { formatBlocksText, isLegacyWeek } from './workBlocks';
 
@@ -330,8 +329,12 @@ export function formatClockTime(
  */
 export function formatDateDE(iso?: string | null): string {
   if (!iso) return '–';
-  const d = new Date(`${iso}T12:00:00`);
-  return Number.isNaN(d.getTime()) ? '–' : format(d, 'dd.MM.yyyy');
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return '–';
+  // Kalenderprüfung ohne Rollover (30.02. → ungültig statt 02.03.).
+  const probe = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  if (probe.getUTCFullYear() !== Number(m[1]) || probe.getUTCMonth() !== Number(m[2]) - 1 || probe.getUTCDate() !== Number(m[3])) return '–';
+  return formatIsoDateDe(iso);
 }
 
 /**

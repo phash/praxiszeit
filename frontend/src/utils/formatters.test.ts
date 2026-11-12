@@ -449,6 +449,9 @@ describe('formatDateDE / formatAbsenceHoursHM (antrag-10)', async () => {
     expect(formatDateDE('2026-06-01')).toBe('01.06.2026');
     expect(formatDateDE(undefined)).toBe('–');
     expect(formatDateDE('undefined')).toBe('–');
+    // Review F5: kein Datums-Rollover, Format wie formatIsoDateDe
+    expect(formatDateDE('2026-02-30')).toBe('–');
+    expect(formatDateDE('2026-06-01T10:00:00')).toBe('–');
   });
   it('liefert H:MM oder null', () => {
     expect(formatAbsenceHoursHM(7.6)).toBe('7:36 h');
