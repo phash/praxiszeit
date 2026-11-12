@@ -27,6 +27,11 @@ class JournalAbsence(BaseModel):
     id: str
     type: str
     hours: float
+    # FE-1 (1.24.0): ``type`` ist bei eigenem Grund dessen Name (kein AbsenceType).
+    # Das Bearbeiten-Formular braucht Grundtyp + Grund-ID für einen gültigen
+    # Re-POST. Beide ``None``, wenn die Abwesenheit maskiert ist (Art. 9 DSGVO).
+    base_type: Optional[str] = None
+    reason_id: Optional[str] = None
     # P1.1: Betriebsferien-Tag (closure_id gesetzt) — nur die Verwaltung ändert ihn.
     closure_day: bool = False
 

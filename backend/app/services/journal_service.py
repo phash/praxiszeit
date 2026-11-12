@@ -340,6 +340,12 @@ def get_journal(
                 {
                     "id": str(a.id),
                     "type": _abs_type_label(a),  # Fix #6: SICK masked unless requested
+                    # FE-1 (1.24.0): Grundtyp + eigener Grund fürs Bearbeiten-Formular
+                    # (``type`` trägt bei eigenem Grund dessen NAMEN). Maskiert wie ``type``.
+                    "base_type": None if _is_masked(a) else a.type.value,
+                    "reason_id": (
+                        str(a.reason_id) if a.reason_id is not None and not _is_masked(a) else None
+                    ),
                     "hours": float(Decimal(str(a.hours)).quantize(Decimal("0.01"))),
                     "start_time": a.start_time.strftime("%H:%M") if a.start_time else None,
                     "end_time": a.end_time.strftime("%H:%M") if a.end_time else None,
