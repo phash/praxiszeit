@@ -78,11 +78,11 @@ class AbsenceYearSummary(BaseModel):
     """calc-03: Abwesenheitstage des eigenen Jahres, tagebasiert (Tagesprinzip)."""
     year: int
     vacation_days: float
-    sick_days: float
+    sick_days: Optional[float] = None  # None = unter Impersonation maskiert (Art. 9)
     training_days: float
     overtime_days: float
-    other_days: float
-    paid_leave_days: float
+    other_days: Optional[float] = None
+    paid_leave_days: Optional[float] = None
     total_days: float
 
 

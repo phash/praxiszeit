@@ -53,3 +53,33 @@ def test_untracked_user_counts_days_not_hours(db, test_user):
     d = _client(db, test_user).get("/api/dashboard/absence-summary?year=2026").json()
     assert d["sick_days"] == pytest.approx(1.0)
     assert d["training_days"] == pytest.approx(1.0)
+
+
+def test_impersonation_masks_sensitive_counts(db, test_user):
+    """SEC-01: unter Impersonation keine Krank/Sonstiges/Bez.-Freistellung-Zahlen."""
+    from fastapi import Request
+    from app.routers import dashboard
+    _abs(db, test_user, date(2026, 3, 2), AbsenceType.SICK, 8.0)
+    _abs(db, test_user, date(2026, 3, 3), AbsenceType.PAID_LEAVE, 8.0)
+    _abs(db, test_user, date(2026, 3, 4), AbsenceType.OTHER, 8.0)
+    _abs(db, test_user, date(2026, 3, 5), AbsenceType.TRAINING, 8.0)
+    db.commit()
+    app = FastAPI()
+    app.include_router(dashboard.router)
+
+    def override_db():
+        yield db
+
+    def impersonated(request: Request):
+        request.state.is_impersonating = True
+        return test_user
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_user] = impersonated
+    r = TestClient(app).get("/api/dashboard/absence-summary?year=2026")
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["sick_days"] is None
+    assert d["other_days"] is None
+    assert d["paid_leave_days"] is None
+    assert d["training_days"] == pytest.approx(1.0)
+    assert d["total_days"] == pytest.approx(d["vacation_days"] + 1.0 + d["overtime_days"])

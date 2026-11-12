@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import date, timedelta
 from decimal import Decimal
@@ -369,6 +369,7 @@ def get_ytd_overtime(
 
 @router.get("/absence-summary", response_model=AbsenceYearSummary)
 def get_absence_summary(
+    request: Request,
     year: Optional[int] = Query(None, ge=2000, le=2100, description="Year (default: current year)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -402,6 +403,20 @@ def get_absence_summary(
     overtime = _days(AbsenceType.OVERTIME)
     other = _days(AbsenceType.OTHER)
     paid = _days(AbsenceType.PAID_LEAVE)
+    if getattr(request.state, "is_impersonating", False):
+        # Art. 9 DSGVO (wie absences.py, #514): unter „Login als …" liest ein Admin
+        # ohne Protokollzeile — Krank/Sonstiges/Bez. Freistellung werden nicht
+        # ausgeliefert (null) und zählen nicht in „Gesamt".
+        return AbsenceYearSummary(
+            year=year,
+            vacation_days=vacation_days,
+            sick_days=None,
+            training_days=training,
+            overtime_days=overtime,
+            other_days=None,
+            paid_leave_days=None,
+            total_days=vacation_days + training + overtime,
+        )
     return AbsenceYearSummary(
         year=year,
         vacation_days=vacation_days,

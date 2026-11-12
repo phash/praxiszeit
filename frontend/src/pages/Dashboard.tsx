@@ -114,11 +114,11 @@ function readOverviewMode(): OverviewMode {
 
 interface YearlyAbsenceSummary {
   vacation_days: number;
-  paid_leave_days?: number;
-  sick_days: number;
+  paid_leave_days?: number | null;
+  sick_days?: number | null; // null = unter Impersonation maskiert (Art. 9)
   training_days: number;
   overtime_days: number;
-  other_days: number;
+  other_days?: number | null;
   total_days: number;
 }
 
@@ -654,7 +654,7 @@ export default function Dashboard() {
         </div>
         <div className="bg-surface rounded-2xl shadow-soft p-4 text-center">
           <div className="text-xl font-bold tabular-nums text-text-primary">
-            {yearlyAbsences?.sick_days != null ? deHoursExact(yearlyAbsences.sick_days) : '0'}
+            {yearlyAbsences?.sick_days != null ? deHoursExact(yearlyAbsences.sick_days) : (yearlyAbsences ? '—' : '0')}
           </div>
           <div className="text-xs text-text-secondary mt-1">Krank</div>
         </div>
@@ -1056,7 +1056,7 @@ export default function Dashboard() {
                       <div className="text-sm text-gray-600 mt-1">Urlaub</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-danger">{deHoursExact(yearlyAbsences.sick_days)}</div>
+                      <div className="text-3xl font-bold text-danger">{yearlyAbsences.sick_days != null ? deHoursExact(yearlyAbsences.sick_days) : '—'}</div>
                       <div className="text-sm text-gray-600 mt-1">Krank</div>
                     </div>
                     <div className="text-center">
@@ -1068,11 +1068,11 @@ export default function Dashboard() {
                       <div className="text-sm text-gray-600 mt-1">Überstunden&shy;ausgleich</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-gray-600">{deHoursExact(yearlyAbsences.other_days)}</div>
+                      <div className="text-3xl font-bold text-gray-600">{yearlyAbsences.other_days != null ? deHoursExact(yearlyAbsences.other_days) : '—'}</div>
                       <div className="text-sm text-gray-600 mt-1">Sonstiges</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-3xl font-bold text-gray-600">{deHoursExact(yearlyAbsences.paid_leave_days ?? 0)}</div>
+                      <div className="text-3xl font-bold text-gray-600">{yearlyAbsences.paid_leave_days != null ? deHoursExact(yearlyAbsences.paid_leave_days) : '—'}</div>
                       <div className="text-sm text-gray-600 mt-1">Bez. Freistellung</div>
                     </div>
                     <div className="text-center">
