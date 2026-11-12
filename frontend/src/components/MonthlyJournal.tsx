@@ -19,7 +19,7 @@ import ChangeRequestForm from './ChangeRequestForm';
 import AbsenceDeleteRequestDialog from './AbsenceDeleteRequestDialog';
 import type { AbsenceToDelete } from './AbsenceDeleteRequestDialog';
 import { editableEnd, stampNoteProps } from '../utils/workBlocks';
-import { mayDeleteAbsenceByDate } from '../utils/absenceRules';
+import { mayDeleteAbsenceByDate, todayBerlin } from '../utils/absenceRules';
 import { myReasons } from '../api/absenceReasons';
 import type { AbsenceReason } from '../api/absenceReasons';
 
@@ -677,7 +677,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   // Abwesenheitskalender, wie AbsenceCalendarPage.canRequestAbsenceDeletion) und nie
   // für Betriebsferien-Tage.
   function mayRequestAbsenceDeletion(day: JournalDay, a: AbsenceItem): boolean {
-    return !a.closure_day && !mayDeleteAbsenceByDate(false, day.date, format(new Date(), 'yyyy-MM-dd'));
+    return !a.closure_day && !mayDeleteAbsenceByDate(false, day.date, todayBerlin());
   }
 
   function employeeDeletableAbsences(day: JournalDay): AbsenceItem[] {
