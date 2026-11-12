@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { markerBadgePosition, paddedMarkerBox } from '../geometry';
 import type { ManifestShot, ShotDef } from '../types';
 
@@ -26,6 +27,12 @@ export default function ShotFigure({ shotId, def, m, imgBase, active = null, eag
   // Server-Render und erster Client-Render: nur `eager` zeigt das Bild (pzweb rendert per createRoot,
   // keine Hydration). Ohne IntersectionObserver (alte Browser, jsdom) gleich laden.
   const [show, setShow] = useState(eager);
+  // Druck: Bilder gleich laden, wenn schon im Druckmodus gemountet (z. B. Druckvorschau).
+  // Erst im Effect (nie im Render) auf window zugreifen: SSR-sicher.
+  useEffect(() => {
+    if (show) return;
+    if (typeof window.matchMedia === 'function' && window.matchMedia('print').matches) setShow(true);
+  }, [show]);
   useEffect(() => {
     if (show) return;
     const el = ref.current;
@@ -40,7 +47,8 @@ export default function ShotFigure({ shotId, def, m, imgBase, active = null, eag
       { rootMargin: '800px 0px' },
     );
     io.observe(el);
-    const onPrint = () => setShow(true); // gedruckt wird alles
+    // gedruckt wird alles; flushSync, weil der Browser direkt nach beforeprint rendert
+    const onPrint = () => { flushSync(() => setShow(true)); };
     window.addEventListener('beforeprint', onPrint);
     return () => { io.disconnect(); window.removeEventListener('beforeprint', onPrint); };
   }, [show]);
