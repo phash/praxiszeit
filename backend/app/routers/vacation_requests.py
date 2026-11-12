@@ -59,12 +59,17 @@ def _assert_request_range_allowed(
         return
     if acting_user.role != UserRole.ADMIN:
         _assert_employee_may_book_range(db, acting_user, start, end)
+    # Nur Tage prüfen, die die Genehmigung wirklich bucht (Mo–Fr ohne Feiertage/
+    # ``free``-Sondertage, ``admin_vacations.review_vacation_request``): eine
+    # Alt-Abwesenheit an einem Wochenende/Feiertag blockiert den Antrag nicht.
+    from app.services import calculation_service
+    candidates = calculation_service.request_workday_candidates(
+        db, target_user.tenant_id, start, end)
     existing = db.query(Absence).filter(
         Absence.tenant_id == target_user.tenant_id,  # F-026
         Absence.user_id == target_user.id,
-        Absence.date >= start,
-        Absence.date <= end,
-    ).order_by(Absence.date).first()
+        Absence.date.in_(candidates),
+    ).order_by(Absence.date).first() if candidates else None
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

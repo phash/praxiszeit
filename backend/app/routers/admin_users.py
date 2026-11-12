@@ -14,7 +14,7 @@ from typing import Annotated, Any, List, NamedTuple, Optional, Tuple
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
 from pydantic import ValidationError
-from app.services.timezone_service import today_local
+from app.services.timezone_service import today_local, LOCAL_TZ
 from app.database import get_db
 from app.models import User, TimeEntry, Absence, AbsenceReason, WorkingHoursChange, ChangeRequest, VacationRequest, TimeEntryAuditLog, UserRole, PublicHoliday, YearCarryover
 from app.models.security_event import (
@@ -667,7 +667,20 @@ ANONYMIZED_REACTIVATE_DETAIL = "Ein anonymisiertes Konto kann nicht reaktiviert 
 def _grace_days_since_deactivation(user: User) -> int:
     """Tage seit der Deaktivierung nach dem Berliner Kalendertag — EINE Quelle
     fuer ``anonymize_user`` und ``get_deletion_candidates`` (user-10)."""
-    return (today_local() - user.deactivated_at.date()).days
+    return (today_local() - _deactivation_date_local(user)).days
+
+
+def _deactivation_date_local(user: User) -> date:
+    """Berliner Kalendertag der Deaktivierung (``deactivated_at`` ist UTC; ein
+    ``.date()`` darauf mischte UTC- und Berliner Tag)."""
+    ts = user.deactivated_at
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(LOCAL_TZ).date()
+
+
+def _grace_period_end(user: User) -> date:
+    return _deactivation_date_local(user) + timedelta(days=14)
 
 
 # ── User Management ──────────────────────────────────────────────────────
@@ -866,7 +879,7 @@ def get_deletion_candidates(
             days_deactivated = _grace_days_since_deactivation(user)
             if days_deactivated < 14:
                 grace_period_remaining = 14 - days_deactivated
-                grace_period_ends = (user.deactivated_at + timedelta(days=14)).date().isoformat()
+                grace_period_ends = _grace_period_end(user).isoformat()
                 in_grace_period = True
 
         result.append({
@@ -1009,7 +1022,7 @@ def anonymize_user(
         days_since_deactivation = _grace_days_since_deactivation(user)
         if days_since_deactivation < 14:
             remaining = 14 - days_since_deactivation
-            grace_end = (user.deactivated_at + timedelta(days=14)).strftime('%d.%m.%Y')
+            grace_end = _grace_period_end(user).strftime('%d.%m.%Y')
             raise HTTPException(
                 status_code=400,
                 detail=f"Sperrfrist läuft noch {remaining} Tag(e). Anonymisierung frühestens am {grace_end} möglich."

@@ -739,6 +739,29 @@ def _create_backup_locked(db: Session) -> BackupFile:
         )
     conn_args, password = conn
 
+    # Review B4: alles, was scheitern kann, VOR dem Anlegen der Zieldatei und dem
+    # Start von pg_dump — sonst bleibt eine 0-Byte-Datei samt offenem Deskriptor
+    # (und ein laufender Prozess) zurück.
+    from app.config import settings
+    from app.core.backup_mac import BackupMac
+
+    signer = BackupMac(settings.SECRET_KEY)
+    # '-w': nie nach Passwort fragen (Passwort kommt via PGPASSWORD ins env, NICHT
+    # in die argv) -> fail fast statt Haenger im Dienst-Kontext. '--clean
+    # --if-exists' -> idempotenter Restore.
+    # Audit 2026-11-07 (S2-6): '--lock-wait-timeout' -> eine fremde Tabellensperre
+    # laesst den (geplanten) Lauf nicht endlos haengen.
+    cmd = [_pg_dump_bin(), "-w", "--clean", "--if-exists",
+           f"--lock-wait-timeout={_PG_DUMP_LOCK_WAIT}", *conn_args]
+    env = os.environ.copy()
+    if password:
+        env["PGPASSWORD"] = password
+    require_auth = _pg_require_auth()
+    if require_auth:
+        # S3-07: pg_dump darf das Passwort nur per SCRAM preisgeben, nie im
+        # Klartext an einen Server, der sich an den freien Port gehängt hat.
+        env["PGREQUIREAUTH"] = require_auth
+
     backup_dir = get_backup_dir(db)
     try:
         created = _make_dir(backup_dir)
@@ -756,21 +779,6 @@ def _create_backup_locked(db: Session) -> BackupFile:
         raise BackupError(f"Backup-Verzeichnis nicht beschreibbar: {e}") from e
     logger.info("Erstelle Backup: %s", backup_file)
 
-    # '-w': nie nach Passwort fragen (Passwort kommt via PGPASSWORD ins env, NICHT
-    # in die argv) -> fail fast statt Haenger im Dienst-Kontext. '--clean
-    # --if-exists' -> idempotenter Restore.
-    # Audit 2026-11-07 (S2-6): '--lock-wait-timeout' -> eine fremde Tabellensperre
-    # laesst den (geplanten) Lauf nicht endlos haengen.
-    cmd = [_pg_dump_bin(), "-w", "--clean", "--if-exists",
-           f"--lock-wait-timeout={_PG_DUMP_LOCK_WAIT}", *conn_args]
-    env = os.environ.copy()
-    if password:
-        env["PGPASSWORD"] = password
-    require_auth = _pg_require_auth()
-    if require_auth:
-        # S3-07: pg_dump darf das Passwort nur per SCRAM preisgeben, nie im
-        # Klartext an einen Server, der sich an den freien Port gehängt hat.
-        env["PGREQUIREAUTH"] = require_auth
     # Audit 2026-11-07 (S2-6): stderr in eine temporaere DATEI statt in eine
     # Pipe. Mit zwei Pipes las der Elternprozess nur stdout bis zum Ende —
     # schrieb pg_dump vorher mehr als den Pipe-Puffer (~64 KB) an Warnungen nach
@@ -786,14 +794,16 @@ def _create_backup_locked(db: Session) -> BackupFile:
             f"pg_dump nicht gefunden ({_pg_dump_bin()}). Im Docker-Image fehlt "
             f"postgresql-client; nativ muss PRAXISZEIT_PG_DUMP gesetzt sein."
         ) from e
+    except BaseException:
+        # Jeder andere Startfehler (PermissionError, ...): nichts zurücklassen.
+        errfile.close()
+        os.close(_fd)
+        backup_file.unlink(missing_ok=True)
+        raise
 
     write_error: Optional[OSError] = None
     # Signaturzeile am Ende (Fix-Runde S3-03): ein Restore spielt eine Datei
     # ohne passende Signatur nur mit --force-unverified ein.
-    from app.config import settings
-    from app.core.backup_mac import BackupMac
-
-    signer = BackupMac(settings.SECRET_KEY)
     try:
         # DSGVO Art. 32: das Backup enthält personenbezogene Daten -> ATOMAR nur
         # Owner-lesbar anlegen (os.open mit 0o600), nicht erst gzip.open(umask 0644)

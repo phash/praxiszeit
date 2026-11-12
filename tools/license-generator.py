@@ -82,9 +82,9 @@ def cmd_generate_keypair(args):
     print(f"Public key:  {public_path}")
     print()
     print("Next steps:")
-    print(f"  1. Copy the public key into backend/app/core/license.py (_PUBLIC_KEY_PEM)")
-    print(f"  2. Set _PUBLIC_KEY_CONFIGURED = True in license.py")
-    print(f"  3. Store {private_path} securely (NOT in the repository!)")
+    print(f"  1. Add the public key at the FRONT of _PUBLIC_KEYS_PEM in backend/app/core/license.py (keep older keys)")
+    print(f"     and mirror it in installer/setup/.../LicenseValidator.cs (PublicKeysPem)")
+    print(f"  2. Store {private_path} securely (NOT in the repository!)")
 
 
 def cmd_generate(args):

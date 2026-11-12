@@ -130,6 +130,10 @@
 - **Datumsanzeige: ungültige Kalenderdaten (z. B. 30.02.) erscheinen als „–“** statt als verschobenes Datum; eine Formatierungsroutine statt zwei.
 - **Abmelden: die nächste Person landet nicht auf der Seite der vorherigen.** Nach ausdrücklichem „Abmelden“ wird kein Rücksprungziel gemerkt; bei abgelaufener Sitzung bleibt es erhalten.
 - **Monatsjournal: Löschen einer Abwesenheit in einem abgeschlossenen Jahr zeigt die Warnung des Servers** (Urlaubsübertrag des Folgejahres bleibt unverändert) auch beim Ersetzen und bei Wechsel zu Arbeit.
+- **Urlaubsantrag über ein Wochenende mit alter Abwesenheit wird nicht mehr abgelehnt.** Die Vorabprüfung beim Beantragen prüft nur die Tage, die die Genehmigung auch bucht (Mo–Fr ohne Feiertage/freie Sondertage).
+- **Sperrfrist der Anonymisierung rechnet mit dem Berliner Tag der Deaktivierung** (Anzeige, Frist-Ende und Prüfung einheitlich), nicht mit dem UTC-Datum.
+- **Browser-Zugriff: Header `X-Hidden-With-Data-Count` ist für Cross-Origin-Aufrufe lesbar** (Berichte, Hinweis auf ausgeblendete Personen mit Daten).
+- **Datensicherung räumt bei Startfehlern auf.** Scheitert die Signatur oder der Start von pg_dump, bleibt keine 0-Byte-Sicherung und kein offener Dateideskriptor zurück.
 
 ## [1.23.0] - 2026-11-07
 
