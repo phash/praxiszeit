@@ -71,6 +71,7 @@ def _mask_health_data(request: Request, crs: List[ChangeRequest], responses: lis
             "proposed_note": None, "original_note": None, "reason": MASKED_REASON_TEXT,
             "rejection_reason": None,
             "proposed_reason_label": None,  # antrag-18: Grundname ist Gesundheitsdatum
+            "proposed_reason_id": None,  # SEC-02: die ID verrät den Grund über /api/absence-reasons
         }
         if cr.proposed_absence_type is not None:
             update["proposed_absence_type"] = "absent"

@@ -208,3 +208,18 @@ def test_change_request_masks_delete_of_vanished_absence_under_impersonation(
     assert row["original_absence_type"] == "absent"
     assert row["original_note"] is None
     assert "Reha" not in row["reason"]
+
+
+def test_change_request_masks_reason_id_under_impersonation(
+        _db_session, employee_user, employee_client):
+    """SEC-02: die Grund-ID verrät den Gesundheitsgrund (Lookup über /api/absence-reasons)."""
+    reason = _reason(_db_session)
+    cr = _absence_cr(_db_session, employee_user, "paid_leave")
+    cr.proposed_reason_id = reason.id
+    _db_session.commit()
+    _impersonate(employee_user)
+    (row,) = employee_client.get("/api/change-requests/").json()
+    assert row["proposed_reason_id"] is None
+    assert row["proposed_reason_label"] is None
+    detail = employee_client.get(f"/api/change-requests/{cr.id}").json()
+    assert detail["proposed_reason_id"] is None
