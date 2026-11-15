@@ -844,10 +844,13 @@ function Set-NssmServiceOptions {
         # der PostgreSQL-Dienst gestoppt waren (Kundenfall 2026-11-15).
         @('AppStopMethodConsole', '30000'),
         # Neustart-Bremse bei wiederholten Startfehlern (Log-Audit A5: 5521
-        # Neustarts im 62-s-Takt). Laufzeit unter 150 s -> NSSM bremst, jeder
-        # Neustart wartet mindestens 15 s.
-        @('AppThrottle', '150000'),
-        @('AppRestartDelay', '15000'),
+        # Neustarts im 62-s-Takt): jeder Neustart wartet 60 s. AppThrottle
+        # ausdruecklich auf den NSSM-Standard 1500 ms - NSSM haelt den Dienst
+        # so lange in START_PENDING; mit 150000 (Vorabstand 1.24.1) stoppte
+        # Windows ihn nach rund 20 s per Ctrl+C mitten im Start. Der Wert
+        # repariert auch Rechner, auf denen 150000 schon steht.
+        @('AppThrottle', '1500'),
+        @('AppRestartDelay', '60000'),
         # Rotation auch im laufenden Betrieb (Log-Audit A11), nicht nur beim
         # Dienststart.
         @('AppRotateFiles', '1'),

@@ -316,8 +316,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "C:\acl-check.ps1" "C:\Praxi
 >> "%RES%" echo ===ACL_AUFGEWEICHT_END===
 
 >> "%RES%" echo [Gegenprobe] Dienst-Neustart - Selbstreparatur + Startfaehigkeit ...
+>> "%RES%" echo NEUSTART_START_ZEIT=%TIME%
 net stop PraxisZeit >> "%RES%" 2>&1
+>> "%RES%" echo NEUSTART_GESTOPPT_ZEIT=%TIME%
 net start PraxisZeit >> "%RES%" 2>&1
+>> "%RES%" echo NEUSTART_NETSTART_ZURUECK_ZEIT=%TIME%
 set "HC2=000"
 for /l %%i in (1,1,36) do (
     timeout /t 10 /nobreak >nul
@@ -326,6 +329,22 @@ for /l %%i in (1,1,36) do (
 )
 :verified2
 >> "%RES%" echo HEALTH_HTTP_NACH_NEUSTART=!HC2!
+>> "%RES%" echo NEUSTART_ENDE_ZEIT=%TIME%
+>> "%RES%" echo ===NEUSTART_DIAG_BEGIN===
+sc queryex PraxisZeit >> "%RES%" 2>&1
+sc queryex PraxisZeit-PostgreSQL >> "%RES%" 2>&1
+for %%k in (AppThrottle AppRestartDelay AppStopMethodConsole AppExit) do (
+    >> "%RES%" echo NSSM_%%k:
+    "C:\PraxisZeit\nssm.exe" get PraxisZeit %%k >> "%RES%" 2>&1
+)
+powershell -NoProfile -Command "Get-Content -Tail 60 'C:\PraxisZeit\logs\praxiszeit.log' -ErrorAction SilentlyContinue" >> "%RES%" 2>&1
+>> "%RES%" echo ----- service-stderr.log -----
+powershell -NoProfile -Command "Get-Content -Tail 40 'C:\PraxisZeit\logs\service-stderr.log' -ErrorAction SilentlyContinue" >> "%RES%" 2>&1
+>> "%RES%" echo ----- service-stdout.log -----
+powershell -NoProfile -Command "Get-Content -Tail 20 'C:\PraxisZeit\logs\service-stdout.log' -ErrorAction SilentlyContinue" >> "%RES%" 2>&1
+>> "%RES%" echo ----- System-Ereignisse nssm / Service Control Manager -----
+powershell -NoProfile -Command "Get-WinEvent -FilterHashtable @{LogName='System'; StartTime=(Get-Date).AddMinutes(-15)} -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -in 'nssm','Service Control Manager' } | Select-Object -First 15 | ForEach-Object { '{0:HH:mm:ss} {1} {2}' -f $_.TimeCreated, $_.ProviderName, ($_.Message -replace '\s+',' ') }" >> "%RES%" 2>&1
+>> "%RES%" echo ===NEUSTART_DIAG_END===
 for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" -X POST https://localhost/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"!PWKEY!\":\"!ADMPW!\"}"') do >> "%RES%" echo LOGIN_HTTP_NACH_NEUSTART=%%c
 >> "%RES%" echo ===ACL_REPARIERT_BEGIN===
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\acl-check.ps1" "C:\PraxisZeit\config\praxiszeit.conf" "C:\PraxisZeit\config\ssl\key.pem" >> "%RES%" 2>&1

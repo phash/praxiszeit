@@ -44,11 +44,12 @@ REM PostgreSQL lief beim Update weiter (Kundenfall 2026-11-15).
 "%NSSM%" set PraxisZeit AppStopMethodConsole 30000
 REM Neustart-Bremse (Log-Audit 2026-11-15 A5): bei einem Startfehler startete
 REM NSSM den Dienst im Minutentakt neu, 5521 Mal in 4 Tagen, die stderr-Datei
-REM wuchs auf 16 MB. Laeuft das Programm kuerzer als AppThrottle (150 s), bremst
-REM NSSM den naechsten Start; jeder Neustart wartet mindestens AppRestartDelay.
-REM Ein Lauf dauerte im Kundenfall 62 s - 60 s haette nicht gebremst.
-"%NSSM%" set PraxisZeit AppThrottle 150000
-"%NSSM%" set PraxisZeit AppRestartDelay 15000
+REM wuchs auf 16 MB. Bremse: jeder Neustart wartet AppRestartDelay (60 s).
+REM AppThrottle bleibt beim NSSM-Standard 1500 ms und wird ausdruecklich gesetzt:
+REM NSSM haelt den Dienst so lange in START_PENDING; mit 150000 stoppte Windows
+REM ihn nach rund 20 s per Ctrl+C mitten im Start (Windows-Emulator 1.24.1).
+"%NSSM%" set PraxisZeit AppThrottle 1500
+"%NSSM%" set PraxisZeit AppRestartDelay 60000
 REM Log-Rotation auch im laufenden Betrieb (Log-Audit A11): ohne AppRotateOnline
 REM rotiert NSSM nur beim Dienststart, Anmeldenamen und IP-Adressen aus
 REM fehlgeschlagenen Logins blieben monatelang in einer Datei.

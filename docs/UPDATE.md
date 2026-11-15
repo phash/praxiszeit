@@ -338,8 +338,8 @@ Reihenfolge:
 3. **Dienste stoppen:** vorher die Dienstwerte nachrüsten (idempotent, beim
    Start noch einmal): `AppExit 78 Exit`, `AppStopMethodConsole 30000` (30 s für
    den sauberen Shutdown; NSSM liest den Wert beim Dienststart, er wirkt also ab
-   dem nächsten Start), Neustart-Bremse `AppThrottle 150000` +
-   `AppRestartDelay 15000`, Log-Rotation im Betrieb (`AppRotateOnline`, ab
+   dem nächsten Start), Neustart-Bremse `AppRestartDelay 60000`
+   (`AppThrottle` ausdrücklich auf den Standard 1500), Log-Rotation im Betrieb (`AppRotateOnline`, ab
    10 MB). Dann zuerst „PraxisZeit“ stoppen, danach ausdrücklich
    „PraxisZeit-PostgreSQL“; ein noch laufender `python.exe` aus dem
    Installationsordner wird beendet. Der Zustand beider Dienste steht vor und
