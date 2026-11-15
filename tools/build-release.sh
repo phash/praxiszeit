@@ -910,7 +910,7 @@ PTHEOF
         (cd "${WIN_DIR}" && zip -qr "$_win_zip" .)
         # ZIP-Inhalt unter bin/ und app/ muss exakt dem Manifest entsprechen.
         if command -v unzip &>/dev/null; then
-            _zip_extra="$(comm -23 \
+            _zip_extra="$(LC_ALL=C comm -23 \
                 <(unzip -Z1 "$_win_zip" | grep -v '/$' | grep -E '^(bin|app)/' | grep -v '^bin/postgresql/' | LC_ALL=C sort) \
                 <(tr -d '\r' < "${WIN_DIR}/bin/payload-manifest.txt" | LC_ALL=C sort))"
             if [ -n "$_zip_extra" ]; then
