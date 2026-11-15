@@ -902,8 +902,23 @@ PTHEOF
     else
     info "Erstelle ZIP..."
     _win_zip="${DIST_DIR}/praxiszeit-${APP_VERSION}-windows-x64.zip"
+    # 1.24.1: zip -r ERGAENZT ein vorhandenes Archiv. Beim zweiten Bau derselben
+    # Version blieben Frontend-Assets des ersten Baus im ZIP, die nicht im
+    # payload-manifest stehen -> secure-install.ps1 sperrte das Update (Emulator).
+    rm -f "${_win_zip}"
     if command -v zip &>/dev/null; then
         (cd "${WIN_DIR}" && zip -qr "$_win_zip" .)
+        # ZIP-Inhalt unter bin/ und app/ muss exakt dem Manifest entsprechen.
+        if command -v unzip &>/dev/null; then
+            _zip_extra="$(comm -23 \
+                <(unzip -Z1 "$_win_zip" | grep -v '/$' | grep -E '^(bin|app)/' | grep -v '^bin/postgresql/' | LC_ALL=C sort) \
+                <(tr -d '\r' < "${WIN_DIR}/bin/payload-manifest.txt" | LC_ALL=C sort))"
+            if [ -n "$_zip_extra" ]; then
+                error "windows-x64.zip enthaelt Dateien ausserhalb von payload-manifest.txt:"
+                echo "$_zip_extra" | head -20 >&2
+                exit 1
+            fi
+        fi
     elif command -v powershell.exe &>/dev/null; then
         # Git Bash on Windows: use PowerShell Compress-Archive as fallback
         info "zip nicht verfuegbar — nutze PowerShell Compress-Archive"
