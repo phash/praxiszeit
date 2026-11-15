@@ -59,7 +59,12 @@ public sealed partial class UpdateDetector
         // hineinlegen - deshalb nur, wenn der Ordner Administratoren/SYSTEM
         // gehoert (eine abgebrochene Erstinstallation hat ihn so hinterlassen).
         // Sonst wie eine Erstinstallation: die Sperre meldet "nicht leer".
-        return _ownedByAdmins(targetDirectory) ? InstallMode.Resume : InstallMode.FreshInstall;
+        // Die eigentliche Absicherung folgt im Lauf: HardenInstallRootAsync vor
+        // dem Kopieren, secure-install.ps1 als Schritt 0 von setup.bat
+        // (Eigentuemer/DACL rekursiv, Manifest-Abgleich, Verknuepfungen -> Exit 2).
+        // Ein Ordner, der selbst eine Verknuepfung ist, wird nie fortgesetzt.
+        var isReparsePoint = new DirectoryInfo(targetDirectory).Attributes.HasFlag(FileAttributes.ReparsePoint);
+        return !isReparsePoint && _ownedByAdmins(targetDirectory) ? InstallMode.Resume : InstallMode.FreshInstall;
     }
 
     public string? DetectCurrentVersion(string targetDirectory)

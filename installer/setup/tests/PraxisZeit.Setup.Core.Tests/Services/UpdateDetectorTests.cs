@@ -128,4 +128,17 @@ public class UpdateDetectorTests : IDisposable
 
         new UpdateDetector(_ => false).DetectMode(_tempDir, "1.4.0").Should().Be(InstallMode.FreshInstall);
     }
+
+    [Fact]
+    public void DetectMode_never_resumes_into_a_symlinked_folder()
+    {
+        var real = Path.Combine(_tempDir, "real");
+        var updaterDir = Path.Combine(real, "app", "backend", "app", "core");
+        Directory.CreateDirectory(updaterDir);
+        File.WriteAllText(Path.Combine(updaterDir, "updater.py"), "APP_VERSION = \"1.4.0\"\n");
+        var link = Path.Combine(_tempDir, "link");
+        Directory.CreateSymbolicLink(link, real);
+
+        new UpdateDetector(_ => true).DetectMode(link, "1.4.0").Should().Be(InstallMode.FreshInstall);
+    }
 }
