@@ -116,4 +116,16 @@ public class UpdateDetectorTests : IDisposable
 
         _detector.DetectMode(_tempDir, "1.4.0").Should().Be(InstallMode.Resume);
     }
+
+    [Fact]
+    public void DetectMode_never_resumes_into_a_folder_not_owned_by_administrators()
+    {
+        // Sicherheitsreview 2026-11-15: ein Nicht-Admin legt C:\praxiszeit mit
+        // passender updater.py an - "Fortsetzen" haette S3-01 umgangen.
+        var updaterDir = Path.Combine(_tempDir, "app", "backend", "app", "core");
+        Directory.CreateDirectory(updaterDir);
+        File.WriteAllText(Path.Combine(updaterDir, "updater.py"), "APP_VERSION = \"1.4.0\"\n");
+
+        new UpdateDetector(_ => false).DetectMode(_tempDir, "1.4.0").Should().Be(InstallMode.FreshInstall);
+    }
 }

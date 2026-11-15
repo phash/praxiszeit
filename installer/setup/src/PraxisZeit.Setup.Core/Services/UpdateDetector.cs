@@ -1,3 +1,6 @@
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.RegularExpressions;
 using PraxisZeit.Setup.Core.Models;
 
@@ -18,6 +21,17 @@ public sealed partial class UpdateDetector
     [GeneratedRegex(@"APP_VERSION\s*=\s*""([^""]+)""")]
     private static partial Regex AppVersionRegex();
 
+    private readonly Func<string, bool> _ownedByAdmins;
+
+    /// <param name="ownedByAdmins">
+    /// Prueft, ob der Ordner Administratoren oder SYSTEM gehoert (Standard:
+    /// Windows-ACL; ausserhalb von Windows immer true). Ersetzbar fuer Tests.
+    /// </param>
+    public UpdateDetector(Func<string, bool>? ownedByAdmins = null)
+    {
+        _ownedByAdmins = ownedByAdmins ?? DefaultOwnedByAdmins;
+    }
+
     public InstallMode DetectMode(string targetDirectory, string installerVersion)
     {
         var currentVersion = DetectCurrentVersion(targetDirectory);
@@ -35,7 +49,17 @@ public sealed partial class UpdateDetector
         // Update-Wizard reparieren. Ohne Datenbank-Zugangsdaten ist setup.bat
         // nie durchgelaufen -> Erstinstallation fortsetzen (Review 2026-11-15).
         var credentials = Path.Combine(targetDirectory, "config", ".db-credentials");
-        return File.Exists(credentials) ? InstallMode.Repair : InstallMode.Resume;
+        if (File.Exists(credentials))
+        {
+            return InstallMode.Repair;
+        }
+
+        // "Fortsetzen" ueberspringt die Leerordner-Sperre (S3-01). Unter C:\
+        // darf jedes Konto Ordner anlegen und eine passende updater.py
+        // hineinlegen - deshalb nur, wenn der Ordner Administratoren/SYSTEM
+        // gehoert (eine abgebrochene Erstinstallation hat ihn so hinterlassen).
+        // Sonst wie eine Erstinstallation: die Sperre meldet "nicht leer".
+        return _ownedByAdmins(targetDirectory) ? InstallMode.Resume : InstallMode.FreshInstall;
     }
 
     public string? DetectCurrentVersion(string targetDirectory)
@@ -73,5 +97,31 @@ public sealed partial class UpdateDetector
         // "unbekannte Version" (= altes 1.2.x oder frueher)
         var serverScript = Path.Combine(targetDirectory, "praxiszeit-server.py");
         return File.Exists(serverScript) ? "unknown" : null;
+    }
+
+    private static bool DefaultOwnedByAdmins(string directory)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return true;
+        }
+        return WindowsOwnedByAdmins(directory);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool WindowsOwnedByAdmins(string directory)
+    {
+        try
+        {
+            var owner = new DirectoryInfo(directory).GetAccessControl(AccessControlSections.Owner)
+                .GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            return owner is not null
+                && (owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid)
+                    || owner.IsWellKnown(WellKnownSidType.LocalSystemSid));
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 }
