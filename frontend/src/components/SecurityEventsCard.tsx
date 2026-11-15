@@ -46,6 +46,9 @@ const EVENT_LABELS: Record<string, string> = {
   backup_downloaded: 'Sicherung heruntergeladen',
   backup_deleted: 'Sicherung gelöscht',
   backup_config_changed: 'Sicherungs-Einstellungen geändert',
+  // Log-Audit 2026-11-15 (Punkt 12, NET-4): Sperren sah der Admin bisher nicht
+  // (ein Konto war 4 Mal gesperrt, Hilfe erst nach Anruf).
+  account_locked: 'Anmeldung vorübergehend gesperrt (zu viele Fehlversuche) – ggf. Passwort zurücksetzen',
 };
 
 function formatWhen(iso: string): string {

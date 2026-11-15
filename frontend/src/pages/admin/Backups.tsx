@@ -9,6 +9,7 @@ import PasswordConfirmDialog from '../../components/PasswordConfirmDialog';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { formatFixedDe } from '../../utils/formatters';
+import { backupBannerState, newestBackupTime, publishBackupOverview, STALE_BACKUP_HOURS, type BackupLastResult } from '../../utils/backupStatus';
 
 interface BackupFile {
   filename: string;
@@ -24,9 +25,6 @@ interface BackupConfig {
   /** Nur der gespeicherte Override ('' = Standard); `location` ist der wirksame Pfad. */
   location_override?: string;
 }
-
-/** Ältester noch unauffälliger Stand der letzten Sicherung (Stunden). */
-const STALE_BACKUP_HOURS = 36;
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -44,6 +42,8 @@ export default function Backups() {
   // Audit 2026-11-07 (S1-02): Download nur nach Passwort-Rückfrage.
   const [downloadPrompt, setDownloadPrompt] = useState<string | null>(null);
   const [backups, setBackups] = useState<BackupFile[]>([]);
+  // Log-Audit 2026-11-15 (Punkt 7): Ergebnis des letzten Laufs (null = unbekannt).
+  const [lastResult, setLastResult] = useState<BackupLastResult | null>(null);
   const [config, setConfig] = useState<BackupConfig>({
     enabled: false, hour: 2, retention_days: 30, location: '', location_override: '',
   });
@@ -68,6 +68,9 @@ export default function Backups() {
       const res = await apiClient.get('/admin/backups');
       applyConfig(res.data.config);
       setBackups(res.data.backups);
+      setLastResult(res.data.last_result ?? null);
+      // Log-Audit 2026-11-15 (Punkt 7): Admin-Banner sofort angleichen.
+      publishBackupOverview(res.data, Date.now());
     } catch (error) {
       toast.error(getErrorMessage(error, 'Fehler beim Laden der Backups'));
     } finally {
@@ -87,6 +90,9 @@ export default function Backups() {
       await load();
     } catch (error) {
       toast.error(getErrorMessage(error, 'Backup fehlgeschlagen'));
+      // Review-Nachzug Log-Audit Punkt 7: der Fehlschlag steht jetzt in
+      // last_result — neu laden, damit Warnung und Admin-Banner sofort stimmen.
+      await load();
     } finally {
       setCreating(false);
     }
@@ -161,12 +167,12 @@ export default function Backups() {
 
   if (loading) return <LoadingSpinner />;
 
-  const newest = backups.reduce<number | null>((acc, b) => {
-    const t = new Date(b.created_at).getTime();
-    return acc === null || t > acc ? t : acc;
-  }, null);
-  const staleHours = newest === null ? null : (Date.now() - newest) / 3_600_000;
-  const stale = staleHours !== null && staleHours > STALE_BACKUP_HOURS;
+  // Dieselbe Regel wie das Admin-Banner (utils/backupStatus.ts); Fehlschlag hat Vorrang.
+  const newest = newestBackupTime(backups);
+  const bannerState = backupBannerState({ backups, last_result: lastResult }, Date.now());
+  const stale = bannerState?.kind === 'stale';
+  const failed = bannerState?.kind === 'failed';
+  const mirrorFailed = lastResult?.ok === true && lastResult.mirror_ok === false;
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6">
@@ -174,6 +180,30 @@ export default function Backups() {
         <Database className="w-6 h-6 text-blue-600" />
         <h1 className="text-2xl font-bold">Datensicherung</h1>
       </div>
+
+      {failed && (
+        <div role="alert" data-testid="backup-failed-warning"
+          className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>
+            Die letzte Sicherung ist fehlgeschlagen
+            {lastResult?.finished_at ? ` (${new Date(lastResult.finished_at).toLocaleString('de-DE')})` : ''}
+            {lastResult?.error ? `: ${lastResult.error}` : ''}. Bitte sichern Sie jetzt manuell und prüfen Sie
+            Speicherplatz und Zeitplan.
+          </span>
+        </div>
+      )}
+
+      {mirrorFailed && (
+        <div role="alert" data-testid="backup-mirror-warning"
+          className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>
+            Die letzte Sicherung wurde erstellt, die Kopie in das zweite Sicherungsziel ist aber
+            fehlgeschlagen. Bitte prüfen Sie, ob das Ziel (z. B. Netzlaufwerk oder USB-Platte) erreichbar ist.
+          </span>
+        </div>
+      )}
 
       {stale && (
         <div role="alert" data-testid="backup-stale-warning"

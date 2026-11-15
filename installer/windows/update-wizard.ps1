@@ -9,8 +9,10 @@
 #         config\ssl\key.pem, .db-credentials, .secret-key, license.key):
 #         Vererbung entfernen, nur SYSTEM + Administratoren berechtigen
 #         (idempotent; setzt voraus, dass update-wizard.bat Admin erzwingt)
-#      b) Datenbank-Backup (Service laeuft noch)
-#      c) Service stoppen
+#      b) Datenbank-Backup (Service laeuft noch); ohne neue Sicherungsdatei
+#         fragt die GUI nach, Headless bricht VOR dem Stopp ab (Log-Audit A4)
+#      c) Service stoppen, danach PraxisZeit-PostgreSQL und Reste von
+#         python.exe aus dem Installationsordner (Log-Audit A1)
 #      d) Dateien aktualisieren (robocopy mit Excludes)
 #      e) Service starten
 #      f) Scheduled Task "PraxisZeit-Backup" registrieren/aktualisieren
@@ -28,7 +30,12 @@ param(
     #   [PROGRESS] <0..100>
     #   [DONE] <success|fail>
     # Exit-Code 0 = success, 1 = failure.
-    [switch]$Headless
+    [switch]$Headless,
+    # -ContinueWithoutBackup: Update auch dann fortsetzen, wenn keine neue
+    # Sicherung entstanden ist (Log-Audit 2026-11-15 A4). Ohne den Schalter
+    # bricht der Headless-Lauf in diesem Fall VOR dem Dienststopp ab; die GUI
+    # fragt nach.
+    [switch]$ContinueWithoutBackup
 )
 
 if (-not $Headless) {
@@ -527,6 +534,118 @@ function Step-ACLFix {
     }
 }
 
+# Zustand fuer die Abschlussmeldung (Show-Done / Write-FailureGuidance).
+$script:BackupFile = $null
+$script:FilesCopied = $false
+$script:FailedStep = $null
+# Review 2026-11-15: PraxisZeit lief schon vor dem Wizard nicht (Reparieren
+# nach abgebrochenem Update, NSSM-Neustartschleife) - steuert die Abbruch-
+# und Abschlusstexte und die Backup-Ausnahme.
+$script:AppWasStopped = $false
+# Hat Step-Backup PraxisZeit-PostgreSQL selbst gestartet? Dann stoppt ein
+# Abbruch ihn wieder, statt den Cluster ohne App laufen zu lassen.
+$script:PgStartedForBackup = $false
+
+function Get-BackupFiles {
+    # Alle Sicherungen in data\backups mit Groesse - Vergleich vorher/nachher
+    # in Step-Backup (Log-Audit 2026-11-15 A4).
+    $dir = Join-Path $InstallDir 'data\backups'
+    if (-not (Test-Path $dir)) { return @() }
+    return @(Get-ChildItem -LiteralPath $dir -Filter '*.sql.gz' -File -ErrorAction SilentlyContinue)
+}
+
+function Invoke-ServerBackup([string]$arguments) {
+    # Fuehrt das (noch ALTE) praxiszeit-server.py der Installation aus.
+    # PowerShell 5.1 / .NET Framework hat KEIN ProcessStartInfo.ArgumentList
+    # (kam erst mit .NET Core 2.1) - der Argument-String kommt fertig gequotet.
+    $python = Join-Path $InstallDir 'bin\python\python.exe'
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $python
+    $psi.Arguments = $arguments
+    $psi.WorkingDirectory = $InstallDir
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    # stderr parallel lesen: das Serverskript loggt nach stderr; ein voller
+    # Puffer liesse den Prozess sonst haengen, waehrend wir auf stdout warten.
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $proc.WaitForExit()
+    $stderr = $errTask.Result
+    foreach ($line in (($stdout + "`n" + $stderr) -split "`r?`n")) {
+        if ($line.Trim()) { Write-Log "  $line" }
+    }
+    return @{ Rc = $proc.ExitCode; Stdout = $stdout; Stderr = $stderr }
+}
+
+function Resolve-BackupFailure([string]$reason, [bool]$appWasStopped) {
+    # Log-Audit 2026-11-15 A4: eine gescheiterte Sicherung war nur eine
+    # Warnung, das Update lief ohne Rueckfallpunkt weiter. Jetzt:
+    #   GUI      -> nachfragen (Ja = ohne Sicherung weiter, Nein = Abbruch)
+    #   Headless -> Abbruch VOR dem Dienststopp, ausser -ContinueWithoutBackup
+    #               oder PraxisZeit lief schon vor dem Wizard nicht
+    #               (abgebrochenes Update, Neustartschleife). Setup.exe ruft
+    #               immer -Headless ohne -ContinueWithoutBackup auf; steht die
+    #               Praxis ohnehin, schuetzt ein Abbruch nichts, und ohne diese
+    #               Ausnahme liesse sich genau das Update, das den Fehler
+    #               behebt, nie per "Reparieren" einspielen (Review 2026-11-15:
+    #               frueher nur mit Sicherung juenger als 24 h).
+    # Rueckgabe: $true = weiter, $false = Update abbrechen.
+    Write-Log "FEHLER: Keine neue Sicherung entstanden ($reason)."
+    $latest = Get-BackupFiles | Where-Object { $_.Length -gt 0 } |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($latest) {
+        Write-Log "  Letzte vorhandene Sicherung: $($latest.FullName) ($($latest.LastWriteTime))"
+    } else {
+        Write-Log '  Es ist keine Sicherung vorhanden.'
+    }
+    if ($Headless) {
+        if ($ContinueWithoutBackup) {
+            Write-Log 'WARNUNG: -ContinueWithoutBackup gesetzt - Update laeuft ohne neue Sicherung weiter.'
+            if ($latest) { $script:BackupFile = $latest.FullName }
+            return $true
+        }
+        if ($appWasStopped) {
+            if ($latest) {
+                Write-Log 'WARNUNG: PraxisZeit lief bereits nicht (abgebrochenes Update oder Neustartschleife) - Update laeuft weiter, es gilt die letzte Sicherung oben.'
+                $script:BackupFile = $latest.FullName
+            } else {
+                Write-Log 'WARNUNG: PraxisZeit lief bereits nicht (abgebrochenes Update oder Neustartschleife) - Update laeuft OHNE Sicherung weiter.'
+            }
+            return $true
+        }
+        Write-Log 'Das Update wird abgebrochen, BEVOR etwas veraendert wird: PraxisZeit laeuft unveraendert weiter.'
+        Write-Log 'Bitte die Ursache oben pruefen (z.B. Speicherplatz, Datenbankdienst) und das Setup erneut starten.'
+        return $false
+    }
+    $txt = "Vor dem Update konnte keine neue Datensicherung erstellt werden.`n`nGrund: $reason`n`n"
+    if ($latest) {
+        $txt += "Letzte vorhandene Sicherung:`n$($latest.FullName)`n($($latest.LastWriteTime))`n`n"
+    } else {
+        $txt += "Es ist KEINE Sicherung vorhanden.`n`n"
+    }
+    # Review 2026-11-15: lief PraxisZeit schon nicht, stimmt "laeuft
+    # unveraendert weiter" nicht.
+    $noTxt = if ($appWasStopped) { 'Update abbrechen, PraxisZeit ist weiterhin gestoppt' } else { 'Update abbrechen, PraxisZeit laeuft unveraendert weiter' }
+    $txt += "Ja = Update trotzdem ausfuehren (ohne neue Sicherung)`nNein = $noTxt"
+    $answer = [System.Windows.Forms.MessageBox]::Show(
+        $txt,
+        'PraxisZeit Update-Wizard',
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning,
+        [System.Windows.Forms.MessageBoxDefaultButton]::Button2
+    )
+    if ($answer -eq [System.Windows.Forms.DialogResult]::Yes) {
+        Write-Log 'WARNUNG: Update ohne neue Sicherung fortgesetzt (Bestaetigung im Dialog).'
+        if ($latest) { $script:BackupFile = $latest.FullName }
+        return $true
+    }
+    Write-Log 'Update abgebrochen (Auswahl im Dialog) - in diesem Lauf wurde nichts veraendert.'
+    return $false
+}
+
 function Step-Backup {
     Set-StepStatus 'backup' 'running'
     Write-Log 'Starte Datenbank-Backup (Service laeuft noch)...'
@@ -534,15 +653,14 @@ function Step-Backup {
 
     $python = Join-Path $InstallDir 'bin\python\python.exe'
     $server = Join-Path $InstallDir 'praxiszeit-server.py'
-    if (-not (Test-Path $python)) {
-        Write-Log "WARNUNG: Python nicht gefunden ($python) - Backup uebersprungen"
-        Set-StepStatus 'backup' 'warn'
-        return $true
-    }
-    if (-not (Test-Path $server)) {
-        Write-Log "WARNUNG: praxiszeit-server.py nicht gefunden - Backup uebersprungen"
-        Set-StepStatus 'backup' 'warn'
-        return $true
+    $appSvc = Get-Service -Name 'PraxisZeit' -ErrorAction SilentlyContinue
+    # Review 2026-11-15: jeder Zustand ausser Running zaehlt als gestoppt -
+    # in der NSSM-Neustartschleife steht der Dienst zwischen den Abstuerzen
+    # auf Paused/StartPending, nicht auf Stopped.
+    $appWasStopped = (-not $appSvc) -or ($appSvc.Status -ne 'Running')
+    $script:AppWasStopped = $appWasStopped
+    if ($appWasStopped -and $appSvc) {
+        Write-Log "PraxisZeit laeuft nicht (Status: $($appSvc.Status))."
     }
     # Ohne .db-credentials ist die DB nie initialisiert worden -> ein Backup
     # wuerde an der Passwort-Abfrage haengen (pg_dump ohne Passwort gegen scram).
@@ -553,47 +671,74 @@ function Step-Backup {
         Set-StepStatus 'backup' 'warn'
         return $true
     }
+    if (-not (Test-Path $python)) {
+        $ok = Resolve-BackupFailure "Python nicht gefunden ($python)" $appWasStopped
+        Set-StepStatus 'backup' $(if ($ok) { 'warn' } else { 'fail' })
+        return $ok
+    }
+    if (-not (Test-Path $server)) {
+        $ok = Resolve-BackupFailure 'praxiszeit-server.py nicht gefunden' $appWasStopped
+        Set-StepStatus 'backup' $(if ($ok) { 'warn' } else { 'fail' })
+        return $ok
+    }
     try {
+        # Reparieren nach abgebrochenem Update: beide Dienste stehen, "backup"
+        # braucht aber einen laufenden Cluster. Den Datenbankdienst nur fuer
+        # die Sicherung starten - Step-StopService stoppt ihn wieder.
+        if ($appWasStopped) {
+            $pgSvc = Get-Service -Name 'PraxisZeit-PostgreSQL' -ErrorAction SilentlyContinue
+            if ($pgSvc -and $pgSvc.Status -ne 'Running') {
+                Write-Log 'PraxisZeit ist gestoppt - starte den Datenbankdienst fuer die Sicherung...'
+                try {
+                    Start-Service -Name 'PraxisZeit-PostgreSQL' -ErrorAction Stop
+                    $script:PgStartedForBackup = $true
+                    $pgSvc.WaitForStatus('Running', (New-TimeSpan -Seconds 60))
+                    # Der Dienst meldet "Running" kurz bevor Verbindungen gehen.
+                    Start-Sleep -Seconds 5
+                } catch {
+                    Write-Log "WARNUNG: Datenbankdienst nicht startbar: $_"
+                }
+            }
+        }
         $env:PYTHONUTF8 = '1'
-        # PowerShell 5.1 / .NET Framework hat KEIN ProcessStartInfo.ArgumentList
-        # (kam erst mit .NET Core 2.1). Wir bauen den Argument-String selbst und
-        # quoten den server-Pfad, falls er Spaces enthaelt.
+        $before = @{}
+        foreach ($f in (Get-BackupFiles)) { $before[$f.Name] = $true }
         $quotedServer = if ($server -match '\s') { "`"$server`"" } else { $server }
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $python
+        # Log-Audit 2026-11-15 A14: die Sicherung vor einem Update traegt ein
+        # Kennzeichen und faellt nicht unter die 31-Tage-Aufbewahrung.
+        $label = 'preupdate-{0}-{1}' -f ($CurrentVersion -replace '[^0-9A-Za-z.]', ''), ($NewVersion -replace '[^0-9A-Za-z.]', '')
         # -I -S: kein site-packages, keine .pth/sitecustomize, keine PYTHON*-
         # Variablen - "backup" braucht nur die Standardbibliothek, und die
         # Dateien der Vorversion sind hier noch nicht abgeglichen (S3-01).
         # -X utf8 ersetzt das unter -I ignorierte PYTHONUTF8.
-        $psi.Arguments = "-I -S -X utf8 $quotedServer backup"
-        $psi.WorkingDirectory = $InstallDir
-        $psi.UseShellExecute = $false
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $psi.CreateNoWindow = $true
-        $proc = [System.Diagnostics.Process]::Start($psi)
-        $stdout = $proc.StandardOutput.ReadToEnd()
-        $stderr = $proc.StandardError.ReadToEnd()
-        $proc.WaitForExit()
-        $rc = $proc.ExitCode
-        foreach ($line in ($stdout -split "`r?`n")) {
-            if ($line.Trim()) { Write-Log "  $line" }
+        $res = Invoke-ServerBackup "-I -S -X utf8 $quotedServer backup --label $label"
+        $rc = $res.Rc
+        if ($rc -eq 2 -and ($res.Stderr -match 'unrecognized arguments|usage:')) {
+            # Hier laeuft noch das Serverskript der VORVERSION; aeltere
+            # Versionen kennen --label nicht (argparse: Exit 2) -> ohne Kennzeichen.
+            Write-Log 'Installierte Version kennt --label nicht - Sicherung ohne Kennzeichen.'
+            $res = Invoke-ServerBackup "-I -S -X utf8 $quotedServer backup"
+            $rc = $res.Rc
         }
-        if ($rc -eq 0) {
-            Write-Log 'Backup erfolgreich'
+        # Exit-Code allein reicht nicht: aeltere Versionen melden 0 auch, wenn
+        # pg_dump scheiterte (Log-Audit A4). Erfolg = neue Datei mit Inhalt.
+        $new = @(Get-BackupFiles | Where-Object { -not $before.ContainsKey($_.Name) -and $_.Length -gt 0 } |
+            Sort-Object LastWriteTime -Descending)
+        if ($rc -eq 0 -and $new.Count -gt 0) {
+            $script:BackupFile = $new[0].FullName
+            Write-Log "Backup erfolgreich: $($script:BackupFile) ($([Math]::Round($new[0].Length / 1KB)) KB)"
             Set-StepStatus 'backup' 'ok'
             return $true
         }
-        Write-Log "WARNUNG: Backup-Exit-Code $rc"
-        foreach ($line in ($stderr -split "`r?`n")) {
-            if ($line.Trim()) { Write-Log "  $line" }
-        }
-        Set-StepStatus 'backup' 'warn'
-        return $true  # Nicht-kritisch, Update geht weiter
+        $reason = if ($rc -ne 0) { "Exit-Code $rc" } else { 'keine neue Datei in data\backups' }
+        $ok = Resolve-BackupFailure $reason $appWasStopped
+        Set-StepStatus 'backup' $(if ($ok) { 'warn' } else { 'fail' })
+        return $ok
     } catch {
         Write-Log "FEHLER beim Backup: $_"
-        Set-StepStatus 'backup' 'warn'
-        return $true
+        $ok = Resolve-BackupFailure "$_" $appWasStopped
+        Set-StepStatus 'backup' $(if ($ok) { 'warn' } else { 'fail' })
+        return $ok
     }
 }
 
@@ -679,28 +824,147 @@ function Step-PipInstall {
     }
 }
 
+function Set-NssmServiceOptions {
+    # Dienst-Einstellungen idempotent nachruesten - auch fuer Installationen,
+    # die vor diesen Werten angelegt wurden (gleiche Werte wie
+    # install-service.bat). Laeuft vor dem Stopp UND vor dem Start: NSSM liest
+    # die Werte beim Dienststart, vor dem Stopp gesetzt schaden sie nicht und
+    # gelten spaetestens ab dem naechsten Start (Log-Audit 2026-11-15 A1).
+    $nssm = Join-Path $InstallDir 'nssm.exe'
+    if (-not (Test-Path $nssm)) {
+        Write-Log "WARNUNG: nssm.exe nicht gefunden ($nssm) - Dienst-Einstellungen nicht geprueft."
+        return
+    }
+    $settings = @(
+        # Exit-Code 78 = Konfigurationsfehler (z.B. ungueltiger Datenbank-Port):
+        # NSSM beendet den Dienst dann, statt ihn endlos neu zu starten.
+        @('AppExit', '78', 'Exit'),
+        # Nach Ctrl+C bis zu 30 s auf den sauberen Shutdown warten. Der
+        # NSSM-Standard (1500 ms) beendete den Dienst hart, bevor uvicorn und
+        # der PostgreSQL-Dienst gestoppt waren (Kundenfall 2026-11-15).
+        @('AppStopMethodConsole', '30000'),
+        # Neustart-Bremse bei wiederholten Startfehlern (Log-Audit A5: 5521
+        # Neustarts im 62-s-Takt). Laufzeit unter 150 s -> NSSM bremst, jeder
+        # Neustart wartet mindestens 15 s.
+        @('AppThrottle', '150000'),
+        @('AppRestartDelay', '15000'),
+        # Rotation auch im laufenden Betrieb (Log-Audit A11), nicht nur beim
+        # Dienststart.
+        @('AppRotateFiles', '1'),
+        @('AppRotateOnline', '1'),
+        @('AppRotateBytes', '10485760')
+    )
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        foreach ($set in $settings) {
+            $out = & $nssm set PraxisZeit @set 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                $msg = (($out | ForEach-Object { "$_" }) -join ' ') -replace [char]0, ''
+                Write-Log "WARNUNG: nssm set PraxisZeit $($set -join ' ') fehlgeschlagen (Exit $LASTEXITCODE): $msg"
+            }
+        }
+        Write-Log 'Dienst-Einstellungen geprueft (Stopp-Wartezeit, Neustart-Bremse, Log-Rotation).'
+    } catch {
+        Write-Log "WARNUNG: Dienst-Einstellungen nicht gesetzt: $_"
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+}
+
+function Write-ServiceStates([string]$when) {
+    # Zustand beider Dienste ins Protokoll (Log-Audit 2026-11-15 A1: beim
+    # Kundenfall war nicht nachvollziehbar, ob PostgreSQL beim Kopieren lief).
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        foreach ($name in @('PraxisZeit', 'PraxisZeit-PostgreSQL')) {
+            $out = @(& sc.exe query $name 2>&1 | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+            # Deutsches Windows schreibt "STATUS : 4  RUNNING" (Review
+            # 2026-11-15) - nur die Zustandszeile, nicht WIN32_EXIT_CODE usw.
+            $state = $out | Where-Object { $_ -match '^\s*(STATE|STATUS|ZUSTAND)\s*:' } | Select-Object -First 1
+            if (-not $state) { $state = $out -join ' ' }
+            Write-Log "  sc query $name ($when): $state"
+        }
+    } catch {
+        Write-Log "  sc query ($when) nicht moeglich: $_"
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+}
+
+function Stop-LeftoverPython {
+    # Nach dem Dienststopp darf kein python.exe aus <InstallDir>\bin\python
+    # mehr laufen - robocopy /MIR scheitert sonst an gesperrten Dateien oder
+    # mischt alte und neue Module (Log-Audit 2026-11-15 A1). Ein Rest heisst:
+    # NSSM hat den Prozessbaum nicht beendet (z.B. uvicorn-Kindprozess).
+    $pyRoot = (Join-Path $InstallDir 'bin\python').TrimEnd('\') + '\'
+    try {
+        $procs = @(Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe'" -ErrorAction Stop |
+            Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($pyRoot, [System.StringComparison]::OrdinalIgnoreCase) })
+    } catch {
+        Write-Log "WARNUNG: Prozessliste nicht lesbar: $_"
+        return
+    }
+    if ($procs.Count -eq 0) {
+        Write-Log '  Kein python.exe aus dem Installationsordner aktiv.'
+        return
+    }
+    foreach ($p in $procs) {
+        Write-Log "WARNUNG: python.exe laeuft nach dem Dienststopp noch (PID $($p.ProcessId)): $($p.CommandLine) - wird beendet."
+        try {
+            Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop
+        } catch {
+            Write-Log "WARNUNG: PID $($p.ProcessId) nicht beendet: $_"
+        }
+    }
+    Start-Sleep -Seconds 2
+}
+
 function Step-StopService {
     Set-StepStatus 'stop' 'running'
     Write-Log 'Stoppe PraxisZeit-Service...'
     if ($DryRun) { Start-Sleep -Seconds 1; Set-StepStatus 'stop' 'ok'; return $true }
+    # Kundenfall 2026-11-15 / Log-Audit A1: die Stopp-Wartezeit von 30 s wurde
+    # erst in Step-StartService gesetzt. NSSM liest die Werte beim Dienst-
+    # START ein - auch hier gesetzt wirken sie erst ab dem naechsten Start,
+    # dieser Stopp laeuft noch mit dem alten Wert (1500 ms). Fuer diesen
+    # Stopp sorgt der explizite Stopp von PraxisZeit-PostgreSQL unten.
+    Set-NssmServiceOptions
+    Write-ServiceStates 'vor dem Stopp'
     try {
         $svc = Get-Service -Name 'PraxisZeit' -ErrorAction SilentlyContinue
         if (-not $svc) {
             Write-Log "WARNUNG: Service 'PraxisZeit' nicht gefunden"
-            Set-StepStatus 'stop' 'warn'
-            return $true
-        }
-        if ($svc.Status -eq 'Stopped') {
+        } elseif ($svc.Status -eq 'Stopped') {
             Write-Log 'Service war bereits gestoppt'
         } else {
             Stop-Service -Name 'PraxisZeit' -Force -ErrorAction Stop
             $svc.WaitForStatus('Stopped', (New-TimeSpan -Seconds 90))
             Write-Log 'Service gestoppt'
         }
-        Set-StepStatus 'stop' 'ok'
+        # Der Prozessmanager stoppt PostgreSQL beim sauberen Shutdown selbst.
+        # Seit dem 26.07. hat kein Update PostgreSQL gestoppt (NSSM beendete
+        # den Manager vorher hart) - robocopy kopierte bin\postgresql dann bei
+        # laufendem Cluster. Laeuft der Datenbankdienst noch: explizit stoppen.
+        $pg = Get-Service -Name 'PraxisZeit-PostgreSQL' -ErrorAction SilentlyContinue
+        if ($pg -and $pg.Status -ne 'Stopped') {
+            Write-Log "Datenbankdienst PraxisZeit-PostgreSQL laeuft noch ($($pg.Status)) - wird gestoppt..."
+            Stop-Service -Name 'PraxisZeit-PostgreSQL' -Force -ErrorAction Stop
+            $pg.WaitForStatus('Stopped', (New-TimeSpan -Seconds 60))
+            Write-Log 'Datenbankdienst gestoppt'
+        }
+        Stop-LeftoverPython
+        Write-ServiceStates 'nach dem Stopp'
+        if (-not $svc) {
+            Set-StepStatus 'stop' 'warn'
+        } else {
+            Set-StepStatus 'stop' 'ok'
+        }
         return $true
     } catch {
         Write-Log "FEHLER beim Stoppen: $_"
+        Write-ServiceStates 'nach dem Fehler'
         Set-StepStatus 'stop' 'fail'
         return $false
     }
@@ -721,6 +985,9 @@ function Step-CopyFiles {
             if (-not (Test-Path $src)) { continue }
             $dst = Join-Path $InstallDir $sub
             Write-Log "  robocopy /MIR $src -> $dst"
+            # Ab hier ist die Installation ggf. teilweise neu - fuer die
+            # Abschlussmeldung zaehlt das als "nach dem Kopieren".
+            $script:FilesCopied = $true
             $mOut = & robocopy.exe $src $dst '/MIR' '/NFL' '/NDL' '/NJH' '/NJS' '/NC' '/NS' '/R:2' '/W:2' 2>&1
             if ($LASTEXITCODE -ge 8) {
                 Write-Log "FEHLER: robocopy /MIR $sub exit=$LASTEXITCODE"
@@ -747,6 +1014,7 @@ function Step-CopyFiles {
         $rc = $LASTEXITCODE
         # Robocopy: 0-7 = success variants, 8+ = failure
         if ($rc -lt 8) {
+            $script:FilesCopied = $true
             Write-Log "Dateien aktualisiert (robocopy exit=$rc)"
             Set-StepStatus 'copy' 'ok'
             return $true
@@ -840,30 +1108,18 @@ function Step-StartService {
     Write-Log 'Starte PraxisZeit-Service...'
     if ($DryRun) { Start-Sleep -Seconds 1; Set-StepStatus 'start' 'ok'; return $true }
     Invoke-InstallDirAcl
-    # Exit-Code 78 = Konfigurationsfehler (z.B. ungueltiger Datenbank-Port):
-    # NSSM beendet den Dienst dann, statt ihn endlos neu zu starten. Idempotent,
-    # auch fuer Installationen, die vor dieser Version angelegt wurden.
-    $nssm = Join-Path $InstallDir 'nssm.exe'
-    if (Test-Path $nssm) {
-        try {
-            & $nssm set PraxisZeit AppExit 78 Exit 2>&1 | Out-Null
-        } catch {
-            Write-Log "WARNUNG: nssm set AppExit 78 Exit fehlgeschlagen: $_"
-        }
-        # Nach Ctrl+C bis zu 30 s auf den sauberen Shutdown warten. Der
-        # NSSM-Standard (1500 ms) beendete den Dienst hart, bevor uvicorn und
-        # der PostgreSQL-Dienst gestoppt waren (Kundenfall 2026-11-15).
-        try {
-            & $nssm set PraxisZeit AppStopMethodConsole 30000 2>&1 | Out-Null
-        } catch {
-            Write-Log "WARNUNG: nssm set AppStopMethodConsole fehlgeschlagen: $_"
-        }
-    }
+    # Idempotent auch fuer aeltere Installationen (u.a. AppExit 78, 30 s
+    # Stopp-Wartezeit, Neustart-Bremse) - siehe Set-NssmServiceOptions.
+    Set-NssmServiceOptions
     try {
+        # Nur den Anwendungsdienst starten: praxiszeit-server.py startet den
+        # Datenbankdienst PraxisZeit-PostgreSQL selbst (mit Portabgleich und
+        # Startdiagnose) - ein eigener Start hier wuerde das umgehen.
         Start-Service -Name 'PraxisZeit' -ErrorAction Stop
         $svc = Get-Service -Name 'PraxisZeit'
         $svc.WaitForStatus('Running', (New-TimeSpan -Seconds 120))
         Write-Log 'Service laeuft (Migrationen werden beim Start ausgefuehrt)'
+        Write-ServiceStates 'nach dem Start'
         Set-StepStatus 'start' 'ok'
         return $true
     } catch {
@@ -884,6 +1140,25 @@ function Step-ScheduledTask {
         Set-StepStatus 'task' 'warn'
         return $true
     }
+    # Log-Audit 2026-11-15 A13: war der PC um 03:00 aus, fiel die Sicherung des
+    # Tages ersatzlos aus. StartWhenAvailable holt den Lauf nach dem
+    # Einschalten nach - schtasks /create kennt die Einstellung nicht. Das
+    # Update registriert die Aufgabe neu, so bekommen auch bestehende
+    # Installationen die Einstellung. AllowStartIfOnBatteries: sonst laeuft die
+    # Sicherung auf einem Notebook im Akkubetrieb nie.
+    try {
+        $action = New-ScheduledTaskAction -Execute $backupBat -WorkingDirectory $InstallDir
+        $trigger = New-ScheduledTaskTrigger -Daily -At '03:00'
+        $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+        $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+        Register-ScheduledTask -TaskName 'PraxisZeit-Backup' -Action $action -Trigger $trigger `
+            -Settings $settings -Principal $principal -Force -ErrorAction Stop | Out-Null
+        Write-Log 'Scheduled Task aktiv (holt verpasste Laeufe nach)'
+        Set-StepStatus 'task' 'ok'
+        return $true
+    } catch {
+        Write-Log "WARNUNG: Register-ScheduledTask fehlgeschlagen: $_ - Rueckfall auf schtasks (ohne Nachholen)."
+    }
     try {
         # schtasks via cmd /c fuer verlaessliches Quoting von /tr
         $trValue = '"\"' + $backupBat + '\""'
@@ -895,7 +1170,7 @@ function Step-ScheduledTask {
         }
         if ($rc -eq 0) {
             Write-Log 'Scheduled Task aktiv'
-            Set-StepStatus 'task' 'ok'
+            Set-StepStatus 'task' 'warn'
             return $true
         }
         Write-Log "WARNUNG: schtasks exit=$rc"
@@ -908,6 +1183,57 @@ function Step-ScheduledTask {
     }
 }
 
+function Write-FailureGuidance {
+    # Klarer naechster Schritt nach einem Fehler (Kundenfall 2026-11-15: nach
+    # dem gescheiterten Pruef-Schritt blieb der Dienst aus, ohne Hinweis, wie
+    # es weitergeht). Steht im Protokoll, das Setup schreibt es nach
+    # logs\setup-*.log.
+    $backupTxt = if ($script:BackupFile) { $script:BackupFile } else { "keine neue Sicherung - vorhandene unter $InstallDir\data\backups" }
+    $stepTxt = if ($script:FailedStep) { $script:FailedStep } else { 'siehe Protokoll oben' }
+    $lines = @()
+    if ($script:FilesCopied) {
+        $lines += 'UPDATE NICHT ABGESCHLOSSEN - PraxisZeit ist derzeit NICHT gestartet.'
+        $lines += "Fehlgeschlagen: $stepTxt (Ursache im Protokoll oben)."
+        if ($script:FailedStep -eq 'Service starten') {
+            # Review 2026-11-15: der Dienststart fuehrt die Datenbank-
+            # Migrationen aus - die Datenbank kann schon (teilweise) geaendert sein.
+            $lines += 'Beim Dienststart koennen bereits Datenbank-Migrationen gelaufen sein;'
+            $lines += 'Rueckfallpunkt ist die unten genannte Sicherung.'
+            $lines += 'Ihre Einstellungen in config\ (praxiszeit.conf, Zugangsdaten, Zertifikat) sind unveraendert.'
+        } else {
+            $lines += 'Ihre Daten (Datenbank, data\backups) und Ihre Einstellungen in config\'
+            $lines += '(praxiszeit.conf, Zugangsdaten, Zertifikat) sind unveraendert.'
+        }
+        $lines += 'So schliessen Sie das Update ab: Setup erneut starten -> "Reparieren".'
+        $lines += "Sicherung vor dem Update: $backupTxt"
+    } else {
+        $lines += "UPDATE ABGEBROCHEN: $stepTxt (Ursache im Protokoll oben)."
+        if ($script:AppWasStopped) {
+            # Review 2026-11-15: PraxisZeit lief schon vor dem Wizard nicht -
+            # ein frueherer, abgebrochener Lauf kann Dateien bereits ersetzt haben.
+            $lines += 'PraxisZeit ist weiterhin gestoppt (lief schon vor diesem Update nicht).'
+            $lines += 'In diesem Lauf wurden keine Programmdateien ersetzt; ein frueherer, abgebrochener'
+            $lines += 'Update-Lauf kann sie aber bereits ersetzt haben.'
+            $lines += 'Nach Behebung der Ursache: Setup erneut starten -> "Reparieren",'
+            $lines += 'oder den Dienst PraxisZeit in services.msc manuell starten.'
+        } else {
+            $lines += 'Es wurden keine Programmdateien ersetzt; Daten und Einstellungen sind unveraendert.'
+            $lines += 'Nach Behebung der Ursache das Update erneut starten.'
+        }
+        if ($script:BackupFile) { $lines += "Sicherung: $($script:BackupFile)" }
+    }
+    $lines += "Protokoll: $InstallDir\logs\setup-*.log"
+    foreach ($l in $lines) { Write-Log $l }
+    if (-not $Headless) {
+        [System.Windows.Forms.MessageBox]::Show(
+            ($lines -join "`r`n"),
+            'PraxisZeit Update-Wizard',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        ) | Out-Null
+    }
+}
+
 function Invoke-Update {
     Write-Log "Update: $CurrentVersion -> $NewVersion"
     Write-Log "Install: $InstallDir"
@@ -916,10 +1242,35 @@ function Invoke-Update {
 
     $ok1 = Step-ACLFix;        Update-Progress 8
     $ok2 = Step-Backup;        Update-Progress 22
+    if (-not $ok2) {
+        # Log-Audit 2026-11-15 A4: ohne Sicherung kein Update - Abbruch VOR
+        # dem Dienststopp, die bisherige Version laeuft weiter.
+        $script:FailedStep = 'Datenbank-Backup'
+        if ($script:PgStartedForBackup) {
+            # Review 2026-11-15: den nur fuer die Sicherung gestarteten
+            # Datenbankdienst wieder stoppen - die App bleibt ja gestoppt.
+            Write-Log 'Stoppe den fuer die Sicherung gestarteten Datenbankdienst wieder...'
+            try {
+                Stop-Service -Name 'PraxisZeit-PostgreSQL' -Force -ErrorAction Stop
+            } catch {
+                Write-Log "WARNUNG: Datenbankdienst nicht gestoppt: $_"
+            }
+        }
+        return $false
+    }
     $ok3 = Step-StopService;   Update-Progress 36
-    if (-not $ok3) { return $false }
+    if (-not $ok3) {
+        # Nichts kopiert: die bisherige Version wieder starten, statt die
+        # Praxis ohne Zeiterfassung zu lassen.
+        $script:FailedStep = 'Dienst stoppen'
+        Write-Log ''
+        Write-Log 'Versuche die bisherige Version wieder zu starten...'
+        Step-StartService | Out-Null
+        return $false
+    }
     $ok4 = Step-CopyFiles;     Update-Progress 55
     if (-not $ok4) {
+        $script:FailedStep = 'Dateien aktualisieren'
         Write-Log ''
         Write-Log 'Versuche Service trotzdem wieder zu starten...'
         Step-StartService | Out-Null
@@ -930,12 +1281,13 @@ function Invoke-Update {
     $null = Step-VcRedist;     Update-Progress 66
     $ok5 = Step-PipInstall;    Update-Progress 80
     if (-not $ok5) {
+        $script:FailedStep = 'Installation und Python-Dependencies pruefen'
         Write-Log ''
         Write-Log 'Pruefung der Installation fehlgeschlagen - der Service wird bewusst NICHT gestartet.'
-        Write-Log 'Ursache oben im Protokoll; danach das Update erneut ausfuehren.'
         return $false
     }
     $ok6 = Step-StartService;  Update-Progress 92
+    if (-not $ok6) { $script:FailedStep = 'Service starten' }
     $ok7 = Step-ScheduledTask; Update-Progress 100
 
     return ($ok6 -and $ok7)
@@ -948,7 +1300,8 @@ function Show-Done([bool]$success) {
         Write-Log "Update auf Version $NewVersion erfolgreich abgeschlossen."
     } else {
         Write-Log 'Update mit FEHLERN beendet. Siehe Protokoll oben.'
-        Write-Log "Backup liegt unter: $InstallDir\data\backups"
+        Write-Log '=================================================='
+        Write-FailureGuidance
     }
     Write-Log '=================================================='
 

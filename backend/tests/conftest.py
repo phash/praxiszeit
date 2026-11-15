@@ -10,6 +10,23 @@ from app.services import auth_service
 
 DEFAULT_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
+
+# Kundenfall 2026-11-15 (Review zu Log-Audit 8): ``praxiszeit.security`` laeuft
+# im Betrieb mit ``propagate = False`` (sonst doppelte AUTH-Zeilen unter der
+# nativen uvicorn-Logkonfiguration). caplog lauscht an der Wurzel — dieser
+# Handler reicht die Zeilen nur in den Tests dorthin weiter.
+import logging as _logging
+
+
+class _SecurityToRoot(_logging.Handler):
+    def emit(self, record):
+        _logging.getLogger().handle(record)
+
+
+_sec_logger = _logging.getLogger("praxiszeit.security")
+if not any(isinstance(h, _SecurityToRoot) for h in _sec_logger.handlers):
+    _sec_logger.addHandler(_SecurityToRoot())
+
 # Test database URL
 TEST_DATABASE_URL = "sqlite:///./test.db"
 

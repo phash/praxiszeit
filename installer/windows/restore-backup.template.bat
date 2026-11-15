@@ -75,6 +75,10 @@ del "%TEMP%\praxiszeit-restore-revision.txt" 2>nul
 SET "PYTHON=%DIR%\bin\python\python.exe"
 SET "PSQL=%DIR%\bin\postgresql\bin\psql.exe"
 SET "PG_CTL=%DIR%\bin\postgresql\bin\pg_ctl.exe"
+SET "PG_ISREADY=%DIR%\bin\postgresql\bin\pg_isready.exe"
+REM 1 = PostgreSQL wurde in Schritt 3 per pg_ctl gestartet (Rueckfall) und
+REM wird dann auch per pg_ctl gestoppt, sonst ueber den Dienst (:pg_stop).
+SET "PG_VIA_CTL=0"
 SET "PG_DATA=%DIR%\data\db"
 SET "RESTORE_DB=praxiszeit_restore"
 REM Der Datenbank-Port kommt aus config\praxiszeit.conf [database] port, Standard
@@ -146,7 +150,8 @@ echo.
 REM --- Schritt 2: Service stoppen ---
 echo Stoppe PraxisZeit Service...
 net stop PraxisZeit 2>nul
-timeout /t 3 /nobreak >nul
+REM ping statt timeout: timeout bricht bei umgeleiteter Eingabe sofort ab, Review 2026-11-15
+ping -n 4 127.0.0.1 >nul
 echo.
 
 REM --- Schritt 3: PostgreSQL starten ---
@@ -169,11 +174,17 @@ REM Unter Windows laeuft der Cluster als eigener Dienst (NetworkService).
 REM sync-db-port haelt ihn nach einem Portwechsel an, und pg_ctl start
 REM scheitert als Administrator ("Zugriff verweigert", Rechte von data\db).
 REM Deshalb zuerst den Dienst starten; laeuft er schon, meldet net start nur
-REM einen Fehler, der hier nichts bedeutet. pg_ctl bleibt als Rueckfall.
+REM einen Fehler, der hier nichts bedeutet. pg_ctl start nur noch als
+REM Rueckfall, wenn der Server danach nicht antwortet (Log-Audit 2026-11-15
+REM A18: frueher lief pg_ctl start immer zusaetzlich gegen den Dienst-Cluster).
 net start PraxisZeit-PostgreSQL >nul 2>&1
-echo Starte PostgreSQL...
+call :pg_wait
+if errorlevel 1 SET "PG_VIA_CTL=1"
+if "%PG_VIA_CTL%"=="1" (
+echo PostgreSQL antwortet nicht - Rueckfall: pg_ctl start ...
 "%PG_CTL%" -D "%PG_DATA%" -l "%DIR%\logs\pg-restore.log" start
-timeout /t 5 /nobreak >nul
+)
+if "%PG_VIA_CTL%"=="1" call :pg_wait
 echo.
 
 REM --- Schritt 4: in die Zwischendatenbank einspielen ---
@@ -207,8 +218,9 @@ echo.
 
 REM --- Schritt 7: PostgreSQL stoppen + Service starten ---
 echo Stoppe PostgreSQL...
-"%PG_CTL%" -D "%PG_DATA%" -m fast stop
-timeout /t 3 /nobreak >nul
+call :pg_stop
+REM ping statt timeout: timeout bricht bei umgeleiteter Eingabe sofort ab, Review 2026-11-15
+ping -n 4 127.0.0.1 >nul
 del "%BACKUP_DUMP%" 2>nul
 
 echo Starte PraxisZeit Service...
@@ -282,7 +294,7 @@ exit /b 1
 :bestand_unveraendert
 del "%REV_FILE%" 2>nul
 "%PSQL%" %PSQL_ARGS% -d postgres -c "DROP DATABASE IF EXISTS %RESTORE_DB% WITH (FORCE)" >nul 2>&1
-"%PG_CTL%" -D "%PG_DATA%" -m fast stop >nul 2>&1
+call :pg_stop
 del "%BACKUP_DUMP%" 2>nul
 echo.
 echo FEHLER: Einspielen fehlgeschlagen - siehe Meldung oben.
@@ -293,7 +305,7 @@ pause
 exit /b 1
 
 :tausch_gescheitert
-"%PG_CTL%" -D "%PG_DATA%" -m fast stop >nul 2>&1
+call :pg_stop
 del "%BACKUP_DUMP%" 2>nul
 echo.
 echo FEHLER: Die bisherige Datenbank ist entfernt, die eingespielten Daten liegen
@@ -304,7 +316,7 @@ pause
 exit /b 1
 
 :rechte_gescheitert
-"%PG_CTL%" -D "%PG_DATA%" -m fast stop >nul 2>&1
+call :pg_stop
 del "%BACKUP_DUMP%" 2>nul
 echo.
 echo FEHLER: Backup eingespielt, aber die Rechte der Anwendungsrolle liessen sich
@@ -321,3 +333,33 @@ echo Ursache in logs\service-stderr.log und logs\praxiszeit.log pruefen.
 echo.
 pause
 exit /b 1
+
+REM ============================================================
+REM Unterprogramme (per call, nicht per goto erreicht)
+REM ============================================================
+
+:pg_wait
+REM Bis zu 15 s warten, bis PostgreSQL auf dem Datenbank-Port antwortet.
+REM errorlevel 0 = bereit, 1 = keine Antwort (oder pg_isready fehlt).
+if not exist "%PG_ISREADY%" exit /b 1
+SET "PG_TRIES=0"
+:pg_wait_loop
+"%PG_ISREADY%" -q -h localhost -p %DB_PORT% >nul 2>&1
+if not errorlevel 1 exit /b 0
+SET /a PG_TRIES+=1
+if %PG_TRIES% GEQ 15 exit /b 1
+REM ping statt timeout: bei umgeleiteter Eingabe - Harness mit pz-confirm.txt - wartet timeout nicht, Review 2026-11-15
+ping -n 2 127.0.0.1 >nul
+goto :pg_wait_loop
+
+:pg_stop
+REM Log-Audit 2026-11-15 A18: der Dienst-Cluster wird ueber den Dienst
+REM gestoppt - pg_ctl stop als Administrator scheitert an den Rechten von
+REM data\db oder laesst den Dienst in einem falschen Zustand zurueck. Nur ein
+REM per pg_ctl gestarteter Cluster (Rueckfall in Schritt 3) per pg_ctl.
+if "%PG_VIA_CTL%"=="1" (
+"%PG_CTL%" -D "%PG_DATA%" -m fast stop >nul 2>&1
+exit /b 0
+)
+net stop PraxisZeit-PostgreSQL >nul 2>&1
+exit /b 0

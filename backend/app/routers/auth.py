@@ -23,7 +23,7 @@ from app.models import (
 )
 from app.models.tenant import Tenant
 from app.models.security_event import (
-    EVENT_PASSWORD_CHECK_LOCKOUT, EVENT_TOTP_DISABLED_SELF, EVENT_TOTP_ENABLED,
+    EVENT_ACCOUNT_LOCKED, EVENT_PASSWORD_CHECK_LOCKOUT, EVENT_TOTP_DISABLED_SELF, EVENT_TOTP_ENABLED,
     EVENT_TOTP_FAILED, EVENT_TOTP_LOCKED, SecurityEvent,
 )
 from app.services.timezone_service import now_local
@@ -252,6 +252,31 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _log_lockout_if_reached(db: Session, user: User, ip_key: tuple, user_key: tuple,
+                            client_ip: str, now: datetime) -> None:
+    """Kundenfall 2026-11-15 (Log-Audit 12, NET-4): hat DIESER Fehlversuch an
+    einem bestehenden Konto die Sperrgrenze erreicht, genau eine Zeile
+    ``account_locked`` nach ``security_events`` (Admin-Karte
+    „Sicherheitsereignisse"). Nur beim Erreichen (``==``), nicht bei jedem
+    weiteren gesperrten Versuch — sonst schriebe ein Angreifer die Tabelle voll.
+    Fuer unbekannte Namen keine Zeile: es gibt kein Konto, und ein Eintrag
+    verriete, welche Namen probiert wurden. ``actor`` wie bei ``totp_failed``
+    (``login:<ip>``), nie das Passwort."""
+    if _recent_attempts(ip_key, now) == _LOCKOUT_ATTEMPTS:
+        detail = (f"{_LOCKOUT_ATTEMPTS} falsche Anmeldeversuche von dieser Adresse – "
+                  "Anmeldung von dort für 15 Minuten gesperrt")
+    elif _recent_attempts(user_key, now) == _GLOBAL_LOCKOUT_ATTEMPTS:
+        detail = (f"{_GLOBAL_LOCKOUT_ATTEMPTS} falsche Anmeldeversuche – "
+                  "Anmeldung für 15 Minuten gesperrt")
+    else:
+        return
+    db.add(SecurityEvent(
+        tenant_id=user.tenant_id, event=EVENT_ACCOUNT_LOCKED, subject_user_id=user.id,
+        actor=f"login:{_safe_log_text(client_ip, 64)}", detail=detail, created_at=_utcnow(),
+    ))
+    db.commit()
+
+
 def _totp_failures_recent(db: Session, user: User) -> int:
     """S1-04: falsche 2FA-Codes des Kontos in der letzten Stunde (persistent)."""
     since = _utcnow() - _TOTP_FAILURE_WINDOW
@@ -477,7 +502,11 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
     # at most one → unchanged.
     matching_users = (
         db.query(User)
-        .filter(func.lower(User.username) == login_data.username.lower())
+        # Kundenfall 2026-11-15 (Review zu Log-Audit 12): die Eingabe ist getrimmt
+        # (LoginRequest), also auch den gespeicherten Namen trimmen — sonst waere ein
+        # Altkonto "manuel " nach dem Update ausgesperrt. Treffen dadurch zwei
+        # aktive Konten zu, greift die Mehrdeutigkeits-Sperre unten.
+        .filter(func.lower(func.trim(User.username)) == login_data.username.lower())
         .all()
     )
     active_matches = [u for u in matching_users if u.is_active]
@@ -530,6 +559,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
 
     if not auth_service.verify_password(login_data.password, user.password_hash):
         _record_failed_login(username_lower, client_ip, now, device_keys)
+        _log_lockout_if_reached(db, user, ip_key, user_key, client_ip, now)
         security_logger.warning(
             "AUTH login_failed user=%s reason=%s", _safe_log_text(username_lower), "bad_password",
         )
@@ -587,6 +617,7 @@ def login(request: Request, response: Response, login_data: LoginRequest, db: Se
         if accepted_counter is None:
             _record_failed_login(username_lower, client_ip, now, device_keys)
             _record_totp_failure(db, user, f"login:{_safe_log_text(client_ip, 64)}", "Anmeldung")
+            _log_lockout_if_reached(db, user, ip_key, user_key, client_ip, now)
             security_logger.warning(
                 "AUTH login_failed user=%s reason=%s", _safe_log_text(username_lower), "bad_totp",
             )

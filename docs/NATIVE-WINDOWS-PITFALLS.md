@@ -264,7 +264,37 @@ ein System-Python-User-Site) + Import-Verify (Build **und** `setup.bat`).
 
 **Loesung (neu):** `praxiszeit-server.py` unterscheidet eigenen und fremden Server (`pg_cluster_state()`: `pg_isready` antwortet, `pg_ctl status -D data\db` = 0 und `postmaster.pid` nennt den konfigurierten Port). Ein Fremdserver beendet den Start mit Exit 78 und der Meldung "Port {port} ist von einem anderen PostgreSQL belegt. In config\praxiszeit.conf unter [database] einen freien Port eintragen (z. B. 5433) und den Dienst neu starten." - noch vor jeder Cluster-Anlage. NSSM startet bei Exit 78 nicht neu (`AppExit 78 Exit`). Der Port steht in `config\praxiszeit.conf` unter `[database] port`, wird nur beim Prozessstart gelesen und beim Start in `data\db\postgresql.conf` nachgezogen.
 
-**Stolperfalle:** Ein Reparieren ueber den GUI-Installer schreibt die conf neu und setzt den Datenbank-Port auf den Wert des Feldes zurueck - den Port dort erneut eintragen.
+**Stolperfalle (bis 1.24.0):** Ein Reparieren ueber den GUI-Installer schrieb die conf neu und setzte den Datenbank-Port auf den Wert des Feldes zurueck - den Port dort erneut eintragen. Seit dem Kundenfall 2026-11-15 laeuft "Reparieren" wie ein Update und laesst `config\praxiszeit.conf` unangetastet.
+
+---
+
+## 14. NSSM-Stopp, Neustart-Schleife und Herunterfahren (Kundenfall 2026-11-15)
+
+**Symptome (Logs einer Kundeninstallation, April bis November 2026):**
+- Update bricht ab, PostgreSQL laeuft waehrend `robocopy bin\postgresql` weiter; seit Juli hatte kein Update PostgreSQL gestoppt.
+- "uvicorn hat sich beendet (Exitcode 0), Neustart 1 von 5" direkt nach "Received signal 2".
+- 5521 Neustarts im 62-s-Takt ueber 4 Tage, `service-stderr.log` 16 MB.
+- "PostgreSQL not responding, restarting" und "pg_ctl register failed ... Servicemanager nicht oeffnen" beim Herunterfahren von Windows.
+
+**Ursachen und Loesung:**
+- NSSM schickt Ctrl+C an die ganze Konsole und wartete nur 1,5 s (`AppStopMethodConsole` Standard). Jetzt 30 s; der Manager prueft den Stoppwunsch vor jedem Neustart. **NSSM liest `App*`-Werte nur beim Dienststart** - ein im Update gesetzter Wert gilt fuer den Stopp desselben Updates noch nicht. Der Update-Wizard stoppt deshalb `PraxisZeit-PostgreSQL` ausdruecklich und beendet uebrig gebliebene `python.exe` aus dem Installationsordner.
+- Keine Neustart-Bremse: `AppThrottle 150000` + `AppRestartDelay 15000` (60000 haette die 62-s-Laeufe nicht gebremst).
+- Beim Herunterfahren stoppt Windows den PostgreSQL-Dienst Sekunden vor dem Ctrl+C an PraxisZeit. Der Wachhund startet jetzt erst nach 3 Fehlpruefungen in Folge neu und nie waehrend des Herunterfahrens oder in `STOP_PENDING`/`START_PENDING`; `sc`-Fehler != 1060 heissen "unbekannt", nicht "fehlt".
+- NSSM rotiert nur beim Start und loescht nie: `AppRotateOnline 1` (ab 10 MB) + Loeschen alter Kopien nach `[logs] retention_days` (Vorgabe 30).
+- Die geplante Sicherung lief mit `schtasks /sc daily` nicht nach, wenn der PC um 03:00 aus war: jetzt `Register-ScheduledTask` mit `StartWhenAvailable`.
+
+**Sofort-Workaround (Bestandsinstallation vor einem Update mit einem aelteren Wizard):**
+```bat
+:: Eingabeaufforderung als Administrator, im Installationsordner
+sc query PraxisZeit
+sc query PraxisZeit-PostgreSQL
+nssm.exe set PraxisZeit AppStopMethodConsole 30000
+:: Neustart, damit NSSM den Wert einliest - der naechste Stopp ist dann sauber
+net stop PraxisZeit
+net start PraxisZeit
+```
+
+**Dateien:** `praxiszeit-server.py` (`watchdog_loop`, `_on_uvicorn_exit`, `_watchdog_may_restart_pg`), `installer/windows/install-service.bat`, `installer/windows/update-wizard.ps1` (`Set-NssmServiceOptions`, `Step-StopService`, `Step-Backup`). Details: [NATIVE-BETRIEB.md](NATIVE-BETRIEB.md#dienst-stopp-wachhund-sicherung-und-logs-log-auswertung-kundenfall-2026-11-15).
 
 ---
 
@@ -279,4 +309,7 @@ ein System-Python-User-Site) + Import-Verify (Build **und** `setup.bat`).
 - [ ] Backup-Restore: `restore-backup.bat` nutzt `pause` → fuer Automation anpassen
 - [ ] PostgreSQL-Port (5432 oder `[database] port`) ist nur auf localhost gebunden (sicher)
 - [ ] API-Endpoints testen: `POST /api/time-entries` darf nicht 405 geben
+- [ ] `nssm get PraxisZeit AppStopMethodConsole` = 30000, `AppThrottle` = 150000, `AppRotateOnline` = 1
+- [ ] Geplante Aufgabe `PraxisZeit-Backup`: "Aufgabe so schnell wie moeglich nach verpasstem Start" aktiv; `data\backups\.last-result.json` meldet `"ok": true`
+- [ ] Optional `[backup] mirror_dir` auf eine zweite Platte setzen (siehe BACKUP.md)
 - [ ] VC++ Runtime vorhanden (`setup.bat --install_runtimes 1` erledigt das automatisch; sonst `initdb.exe` Exit `0xC0000135`, siehe #11)

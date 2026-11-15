@@ -14,6 +14,10 @@ Varianten (Native **und** Docker), ohne Kommandozeile:
 - **Geplante Sicherung** — täglich zur eingestellten Stunde aktivieren, mit
   Aufbewahrungsdauer (Tage) und optionalem Speicherort.
 - **Liste** — vorhandene Backups herunterladen oder löschen.
+- **Hinweisband** — ist die letzte Sicherung fehlgeschlagen oder (bei
+  planmäßiger Sicherung) älter als 36 Stunden, sehen Admins oben auf **jeder**
+  Seite einen Hinweis mit dem Link „Zur Datensicherung“, siehe
+  [Ergebnis des letzten Laufs](#ergebnis-des-letzten-laufs-und-hinweisband).
 
 > **Wo liegen die Backups?** Docker: im Volume `praxiszeit_backups`
 > (`/app/backups` im Backend-Container). Native: im konfigurierten
@@ -172,7 +176,7 @@ dann prüft die Wiederherstellung auch die Signatur der alten Sicherungen.
 | Variante | Automatisch? | Wie / wann | Ablage |
 |----------|--------------|------------|--------|
 | **Native Linux** | ✅ ja | systemd-Timer `praxiszeit-backup.timer`, täglich **02:00** | `<install>/data/backups/` |
-| **Native Windows** | ✅ ja | Scheduled Task `PraxisZeit-Backup`, täglich **03:00** (ruft `backup.bat`) | `C:\PraxisZeit\data\backups\` |
+| **Native Windows** | ✅ ja | Scheduled Task `PraxisZeit-Backup`, täglich **03:00** (ruft `backup.bat`); war der PC um 03:00 aus, holt Windows den Lauf nach dem Einschalten nach, auch im Akkubetrieb | `C:\PraxisZeit\data\backups\` |
 | **Native macOS** | ✅ ja | launchd `de.praxiszeit.backup.plist`, täglich **03:00** | `/usr/local/praxiszeit/data/backups/` |
 | **Docker** | ✅ optional | In-App **Datensicherung** aktivieren (täglich), oder Host-Cron mit `backup.sh` (s. u.) | Volume `praxiszeit_backups` bzw. `./backups/` neben der `docker-compose.yml` |
 
@@ -180,7 +184,8 @@ dann prüft die Wiederherstellung auch die Signatur der alten Sicherungen.
 > muss dafür **nicht** gestoppt werden (Online-Dump, Plain-SQL `pg_dump` + gzip).
 > Standard-Aufbewahrung: **31 Tage** (`retention_days` in `praxiszeit.conf` → für
 > §16 auf z. B. `730` (= 2 Jahre) erhöhen, oder zusätzlich Jahresarchive extern
-> ablegen).
+> ablegen). Zusätzlich lässt sich jede Sicherung auf ein
+> [zweites Ziel](#zweites-sicherungsziel-nativ-mirror_dir) spiegeln.
 >
 > **Docker:** Ab 1.9.0 kann der Admin in **Datensicherung** eine tägliche
 > Sicherung aktivieren (läuft im Backend per Scheduler, Ablage im Volume
@@ -207,10 +212,34 @@ sudo -u _praxiszeit /usr/local/praxiszeit/bin/python/bin/python3 \
 ```
 
 ```bat
-:: Windows (als Administrator)
+:: Windows (als Administrator: Rechtsklick -> "Als Administrator ausführen")
 cd C:\PraxisZeit
 backup.bat
 ```
+
+Ohne Administratorrechte bricht `backup.bat` mit dem Hinweis „Keine Leserechte
+auf … – bitte als Administrator ausführen“ ab (die Zugangsdaten in `config\`
+und `data\` sind nur für SYSTEM, Administratoren und den Datenbankdienst
+lesbar).
+
+**Exitcodes** von `praxiszeit-server.py backup` (und damit `backup.bat`), für
+eigene Skripte und Überwachung:
+
+| Exitcode | Bedeutung |
+|----------|-----------|
+| `0` | Sicherung erstellt und [geprüft](#prüfung-nach-dem-schreiben) |
+| `1` | PostgreSQL läuft nicht, sein Zustand ist nicht feststellbar (z. B. ohne Administratorrechte, Server fährt gerade hoch) oder es fehlen Leserechte. Bei „Zustand nicht feststellbar“ entsteht **kein** Fehlerstatus im Hinweisband. |
+| `2` | Sicherung gescheitert (pg_dump-Fehler, Speicherplatz, Prüfung durchgefallen) |
+
+Bis zur Log-Auswertung 2026-11 endete auch eine gescheiterte Sicherung mit `0`.
+
+**Kennzeichen:** `backup --label <text>` hängt eine Bezeichnung an den
+Dateinamen an: `praxiszeit_<zeitstempel>_<text>.sql.gz` (erlaubt sind
+Kleinbuchstaben, Ziffern, Punkt und Bindestrich, höchstens 40 Zeichen). Der
+Windows-Update-Assistent sichert vor jedem Update mit
+`--label preupdate-<alte Version>-<neue Version>`. Die **drei jüngsten**
+Sicherungen mit `preupdate` im Namen löscht die Aufbewahrungsfrist nie — so
+bleibt der Stand vor dem letzten Update auch nach 31 Tagen erhalten.
 
 Backups anzeigen (`data/` ist nur fürs Dienstkonto lesbar — Linux mit `sudo`,
 Windows in einer Eingabeaufforderung **als Administrator**):
@@ -251,6 +280,80 @@ schreibt nach `backups/` daneben (git-Checkout: `tools/docker/backup.sh`, Ablage
 ```cron
 0 2 * * * bash /pfad/zu/praxiszeit/backup.sh && find /pfad/zu/praxiszeit/backups -name 'praxiszeit_*.sql.gz' -mtime +30 -delete
 ```
+
+---
+
+## Ergebnis des letzten Laufs und Hinweisband
+
+Nach jedem Sicherungslauf schreibt PraxisZeit das Ergebnis nach
+`data/backups/.last-result.json` (Docker: `/app/backups/.last-result.json`):
+
+```json
+{"ok": true, "finished_at": "2026-11-16T03:00:41+01:00", "file": "praxiszeit_20261116_030012.sql.gz",
+ "size_bytes": 181234, "error": null, "mirror_ok": true, "verified": true}
+```
+
+Geschrieben wird sie von der nativen Sicherung (OS-Zeitplan, `backup.bat`,
+`praxiszeit-server.py backup`), von „Jetzt sichern“ und vom Docker-Zeitplan.
+`GET /api/admin/backups` liefert den Inhalt als `last_result` (fehlt die Datei
+oder ist sie kaputt: `null`). Die Datei passt nicht auf `praxiszeit_*.sql.gz`;
+die Aufbewahrung lässt sie stehen.
+
+Daraus entsteht das **Hinweisband** für Admins oben auf jeder Seite:
+
+- „Die letzte Datensicherung ist fehlgeschlagen (…): <Fehler>.“ — immer, wenn
+  der letzte Lauf gescheitert ist.
+- „Die letzte Datensicherung ist älter als 36 Stunden (…).“ — nur, wenn
+  planmäßig gesichert wird: Zeitplan in der App eingeschaltet oder native
+  Installation (Zeitplan des Betriebssystems). Docker mit Host-Cron
+  (`tools/docker/backup.sh`, Ablage `./backups/`, nicht in der Liste) oder mit
+  abgeschaltetem Zeitplan sieht dieses Band nicht.
+
+Das Band fehlt im SaaS-Betrieb und während „Ansicht als Mitarbeiter“; der Stand
+wird höchstens alle 10 Minuten neu abgefragt, nach „Jetzt sichern“ sofort. Die
+Seite **Datensicherung** zeigt zusätzlich eine Warnung, wenn die Kopie in das
+zweite Sicherungsziel fehlgeschlagen ist.
+
+### Prüfung nach dem Schreiben
+
+Jede native Sicherung wird nach dem Schreiben vollständig zurückgelesen:
+Lesbarkeit des gzip-Stroms, die Schlusszeile von pg_dump
+(`PostgreSQL database dump complete`) und die
+[Signatur](#signatur-der-sicherungen). Fällt die Prüfung durch, gilt die
+Sicherung als gescheitert (Exitcode 2, Fehlerstatus): die Datei bleibt zur
+Untersuchung liegen, ältere Sicherungen werden in diesem Lauf **nicht**
+gelöscht. Ist eine Sicherung mehr als 50 % kleiner als die vorige, steht eine
+Warnung im Protokoll (`logs/praxiszeit.log`) — die Sicherung gilt trotzdem.
+
+### Zweites Sicherungsziel (nativ, `mirror_dir`)
+
+Alle Sicherungen liegen sonst auf derselben Platte wie die Datenbank. Mit
+`mirror_dir` kopiert PraxisZeit jede Sicherung zusätzlich in einen zweiten
+Ordner, etwa auf eine zweite Platte oder ein Netzlaufwerk:
+
+```toml
+[backup]
+retention_days = 730
+mirror_dir = "D:\\PraxisZeit-Sicherung"     # Windows; Linux z. B. "/mnt/sicherung/praxiszeit"
+```
+
+- Alternativ über die Umgebungsvariable `BACKUP_MIRROR_DIR`.
+- Ein relativer Pfad gilt ab dem Installationsordner.
+- Angelegt wird nur der **letzte** Ordner selbst; das übergeordnete Verzeichnis
+  (Laufwerk, Freigabe) muss existieren und für den Dienst beschreibbar sein —
+  unter Windows für das Konto SYSTEM, unter Linux/macOS für das Dienstkonto.
+- Scheitert die Kopie, bleibt die Sicherung in `data/backups/` gültig, im
+  Protokoll steht eine Warnung, und der Status meldet `mirror_ok: false`
+  (Warnung auf der Seite **Datensicherung**).
+- Im Spiegel gilt dieselbe Aufbewahrungsfrist (`retention_days`, die drei
+  jüngsten `preupdate`-Sicherungen bleiben).
+- Der Spiegel enthält dieselben **unverschlüsselten** Dumps: Zugriff auf das
+  Ziel auf die Praxisleitung beschränken (siehe
+  [Sicherheit der Sicherungen](#sicherheit-der-sicherungen)). Für die Kopie
+  außer Haus bleibt ein verschlüsseltes externes Medium die bessere Wahl.
+- Wirkt für die nativen Sicherungen (OS-Zeitplan, `backup.bat`,
+  `praxiszeit-server.py backup`); der Speicherort auf der Seite
+  **Datensicherung** ist eine eigene Einstellung.
 
 ---
 

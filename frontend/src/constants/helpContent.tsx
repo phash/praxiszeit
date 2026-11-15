@@ -312,7 +312,7 @@ export const helpContent: Record<string, HelpEntry> = {
             <li>Überträge, Jahresabschluss, Einstellungen, Feiertage und verkürzte Tage – jeweils alter und neuer Wert</li>
             <li>§ 18 ArbZG, Nachtarbeit sowie erster/letzter Arbeitstag einer Person (Benutzerangabe geändert)</li>
             <li>Bei Zeiteinträgen neben der angerechneten auch die tatsächlich gestempelte Zeit („gestempelt …"), auch bei Löschungen</li>
-            <li>Karte „Konto-Vorgänge": Konten angelegt/umbenannt, Deaktivieren, Reaktivieren, Rollenwechsel, von der Verwaltung gesetzte Passwörter, Zwei-Faktor im Profil ein-/abgeschaltet oder durch die Verwaltung zurückgesetzt, falsche Zwei-Faktor-Codes, Datenbank-Sicherungen sowie Notfall-Vorgänge per Kommandozeile (Passwort zurückgesetzt, Zwei-Faktor abgeschaltet)</li>
+            <li>Karte „Konto-Vorgänge": Konten angelegt/umbenannt, Deaktivieren, Reaktivieren, Rollenwechsel, von der Verwaltung gesetzte Passwörter, Zwei-Faktor im Profil ein-/abgeschaltet oder durch die Verwaltung zurückgesetzt, falsche Zwei-Faktor-Codes, vorübergehend gesperrte Anmeldungen (zu viele Fehlversuche), Datenbank-Sicherungen sowie Notfall-Vorgänge per Kommandozeile (Passwort zurückgesetzt, Zwei-Faktor abgeschaltet)</li>
           </ul>
         </section>
         <section>

@@ -307,25 +307,77 @@ sudo launchctl list | grep de.praxiszeit
 ### Windows
 
 ```bat
-:: Als Administrator. Backup vorher über die nächtliche Sicherung in data\backups\.
-:: Neues praxiszeit-<neu>-windows-x64.zip entpacken, dann:
+:: Als Administrator. Neues praxiszeit-<neu>-windows-x64.zip entpacken, dann:
 update-wizard.bat
+:: oder setup.exe aus dem Paket (Modus "Update" bzw. "Reparieren")
 ```
 
-Der Update-Wizard (`installer/windows/update-wizard.ps1`) stoppt den Dienst,
-sichert den Installationsordner ab (Eigentümer und Zugriffsrechte,
-`secure-install.ps1`), legt ein Backup an und spielt dann das neue Paket ein:
-`app` und `bin\python` werden **gespiegelt** (`robocopy /MIR` — Dateien der
-Vorversion, die das neue Paket nicht mehr hat, verschwinden), der Rest wird
-darüber kopiert. Es wird **nichts aus dem Internet geladen** und kein `pip`
-ausgeführt: die Python-Abhängigkeiten liegen fertig im Paket (`bin\python`).
-Danach gleicht `secure-install.ps1` `bin\` und `app\` mit der Paketliste
-`bin\payload-manifest.txt` ab. Liegt dort eine Datei, die nicht zum Paket gehört
-(Exit 2), startet der Wizard den Dienst **nicht** und nennt die Dateien — erst
-entfernen, dann den Wizard erneut ausführen. Anschließend installiert er bei
-Bedarf die VC++-Runtime nach und startet den Dienst neu.
-Konfiguration und Datenbank bleiben erhalten. Der Wizard setzt für den Dienst außerdem `AppExit 78 Exit`. Beim ersten Start der neuen Version kann die `port =`-Zeile in `data\db\postgresql.conf` auf den konfigurierten Port gesetzt werden (ohne `[database] port` bleibt 5432 unverändert) — dazu ist nichts zu tun. Details + Stolperfallen:
-[NATIVE-WINDOWS-PITFALLS.md](NATIVE-WINDOWS-PITFALLS.md).
+Der Update-Wizard (`installer/windows/update-wizard.ps1`) arbeitet in dieser
+Reihenfolge:
+
+1. **Zugriffsrechte** des Installationsordners absichern (Eigentümer und Rechte,
+   `secure-install.ps1`).
+2. **Sicherung** bei laufendem Dienst: `praxiszeit-server.py backup --label
+   preupdate-<alt>-<neu>` → `data\backups\praxiszeit_<zeitstempel>_preupdate-<alt>-<neu>.sql.gz`.
+   Die drei jüngsten `preupdate`-Sicherungen löscht die Aufbewahrungsfrist nie.
+   Kennt die **installierte** (alte) Version das Kennzeichen noch nicht, sichert
+   der Wizard ohne Kennzeichen. Ob eine neue Datei entstanden ist, prüft der
+   Wizard selbst. Entsteht keine neue Sicherung:
+   - **Grafischer Wizard:** Rückfrage „Ja = Update trotzdem ausführen (ohne neue
+     Sicherung) / Nein = Update abbrechen“. „Nein“ lässt alles unverändert.
+   - **`setup.exe` bzw. `-Headless`:** Abbruch, **bevor** etwas verändert wird;
+     PraxisZeit läuft unverändert weiter. Mit dem Schalter
+     `-ContinueWithoutBackup` geht es trotzdem weiter.
+   - **Ausnahme — PraxisZeit lief schon vorher nicht** (abgebrochenes Update,
+     Neustartschleife, Dienststatus „Angehalten“ oder „Startet“): das Update
+     läuft weiter, mit der neuesten vorhandenen Sicherung als Rückfallpunkt (egal
+     wie alt) oder notfalls ohne Sicherung, mit einer Warnung im Protokoll. So
+     lässt sich das Update, das den Fehler behebt, auch per „Reparieren“
+     einspielen. Den Datenbankdienst startet der Wizard dafür nur für die Dauer
+     der Sicherung und stoppt ihn bei einem Abbruch wieder.
+3. **Dienste stoppen:** vorher die Dienstwerte nachrüsten (idempotent, beim
+   Start noch einmal): `AppExit 78 Exit`, `AppStopMethodConsole 30000` (30 s für
+   den sauberen Shutdown; NSSM liest den Wert beim Dienststart, er wirkt also ab
+   dem nächsten Start), Neustart-Bremse `AppThrottle 150000` +
+   `AppRestartDelay 15000`, Log-Rotation im Betrieb (`AppRotateOnline`, ab
+   10 MB). Dann zuerst „PraxisZeit“ stoppen, danach ausdrücklich
+   „PraxisZeit-PostgreSQL“; ein noch laufender `python.exe` aus dem
+   Installationsordner wird beendet. Der Zustand beider Dienste steht vor und
+   nach dem Stopp im Setup-Protokoll. Lässt sich der Dienst nicht stoppen,
+   startet der Wizard die bisherige Version wieder. Für den Stopp dieses
+   Updates gilt noch die alte Wartezeit des Dienstes; dass beim Kopieren keine
+   Datenbank mehr läuft, stellt der ausdrückliche Stopp von
+   „PraxisZeit-PostgreSQL“ sicher.
+4. **Dateien kopieren:** `app` und `bin\python` werden **gespiegelt**
+   (`robocopy /MIR` — Dateien der Vorversion, die das neue Paket nicht mehr hat,
+   verschwinden), der Rest wird darüber kopiert. Es wird
+   **nichts aus dem Internet geladen** und kein `pip` ausgeführt: die
+   Python-Abhängigkeiten liegen fertig im Paket (`bin\python`).
+5. **VC++-Runtime** bei Bedarf nachinstallieren, dann **prüfen:**
+   `secure-install.ps1` gleicht `bin\` und `app\` mit der Paketliste
+   `bin\payload-manifest.txt` ab. Liegt dort eine Datei, die nicht zum Paket
+   gehört (Exit 2), startet der Wizard den Dienst **nicht** und nennt die
+   Dateien — erst entfernen, dann den Wizard erneut ausführen.
+6. **Dienst starten** und die geplante Aufgabe `PraxisZeit-Backup` neu anlegen
+   (täglich 03:00, holt einen verpassten Lauf nach, auch im Akkubetrieb; gelingt
+   das nicht, Rückfall auf `schtasks`, Schritt „warn“).
+
+Konfiguration und Datenbank bleiben erhalten. Beim ersten Start der neuen
+Version kann die `port =`-Zeile in `data\db\postgresql.conf` auf den
+konfigurierten Port gesetzt werden (ohne `[database] port` bleibt 5432
+unverändert) — dazu ist nichts zu tun.
+
+**Wenn ein Schritt nach dem Kopieren scheitert,** nennt der Wizard den Schritt
+und sagt, dass Datenbank, Sicherungen und Einstellungen in `config\`
+(`praxiszeit.conf`, Zugangsdaten, Zertifikat) unverändert sind und wo die
+Sicherung liegt. Abschließen: **Setup erneut starten → „Reparieren“** —
+„Reparieren“ läuft wie ein Update und fragt weder Ports noch Admin-Konto neu ab.
+Scheitert erst der Dienststart, können die Datenbank-Migrationen der neuen
+Version schon gelaufen sein; Rückfallpunkt ist dann die genannte Sicherung
+(siehe [Rollback](#rollback)). Das vollständige Protokoll steht in
+`logs\setup-JJJJMMTT-hhmmss.log`.
+
+Details + Stolperfallen: [NATIVE-WINDOWS-PITFALLS.md](NATIVE-WINDOWS-PITFALLS.md).
 
 ### Update-Hinweis in der App
 

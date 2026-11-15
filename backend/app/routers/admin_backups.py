@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
+from app.config import settings
 from app.database import get_db
 from app.middleware.auth import require_admin
 from app.models import User
@@ -45,9 +46,29 @@ class BackupConfigResponse(BaseModel):
     location_override: str = ""
 
 
+class BackupLastResult(BaseModel):
+    """Kundenfall 2026-11-15 (Log-Audit 7): Ergebnis des letzten Sicherungslaufs
+    (``.last-result.json``, Vertrag in ``backup_service``)."""
+    ok: bool
+    finished_at: str
+    file: Optional[str] = None
+    size_bytes: Optional[int] = None
+    error: Optional[str] = None
+    mirror_ok: Optional[bool] = None
+    verified: bool = False
+
+
 class BackupOverview(BaseModel):
     config: BackupConfigResponse
     backups: List[BackupFileResponse]
+    # None = Datei fehlt oder ist unlesbar (nie 500) — das Admin-Banner prueft
+    # dann nur das Alter der neuesten Sicherung.
+    last_result: Optional[BackupLastResult] = None
+    # Kundenfall 2026-11-15: nativ sichert praxiszeit-server.py bzw. die
+    # Windows-Aufgabe (03:00) unabhaengig vom In-App-Schalter, der dort meist
+    # aus ist - ohne das Feld warnte das Admin-Banner nie vor einer
+    # veralteten Sicherung. Docker: nur der In-App-Zeitplan.
+    scheduled_externally: bool = False
 
 
 class BackupConfigUpdate(BaseModel):
@@ -90,7 +111,17 @@ def list_backups(db: Session = Depends(get_db)):
     return BackupOverview(
         config=_cfg(backup_service.get_config(db)),
         backups=[_file(b) for b in backup_service.list_backups(db)],
+        last_result=_last_result(db),
+        scheduled_externally=bool(settings.SERVE_FRONTEND),
     )
+
+
+def _last_result(db: Session) -> Optional[BackupLastResult]:
+    try:
+        raw = backup_service.read_last_result(db)
+        return BackupLastResult(**raw) if raw else None
+    except Exception:  # noqa: BLE001 — eine kaputte Statusdatei darf die Seite nie kippen
+        return None
 
 
 @router.post("", response_model=BackupFileResponse, status_code=status.HTTP_201_CREATED)

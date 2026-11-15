@@ -230,7 +230,11 @@ def test_backup_file_is_0600_despite_umask(srv, tmp_path, monkeypatch):
 
     class _FakeDump:
         def __init__(self, *a, **kw):
-            self.stdout = io.BytesIO(b"-- dump\n" * 100)
+            # Schlusszeile wie bei pg_dump: die Rueckleseprobe (Log-Audit A15,
+            # Kundenfall 2026-11-15) verwirft Sicherungen ohne sie.
+            self.stdout = io.BytesIO(
+                b"-- dump\n" * 100 + b"--\n-- PostgreSQL database dump complete\n--\n"
+            )
             self.returncode = 0
 
         def wait(self):

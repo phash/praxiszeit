@@ -186,6 +186,14 @@ sc query PraxisZeit | findstr STATE >> "%RES%" 2>&1
 call :read_db_port
 call :own_check OWN_DETECTED_NACH_UPDATE
 call :nssm_appexit NSSM_APPEXIT_78_NACH_UPDATE
+REM Log-Audit 2026-11-15 (A1/A5/A11/A13): Dienst-Einstellungen, Zustand des
+REM Datenbankdienstes und Nachholen der Sicherungsaufgabe nach dem Update.
+call :nssm_get AppStopMethodConsole NSSM_APPSTOPCONSOLE_NACH_UPDATE
+call :nssm_get AppThrottle NSSM_APPTHROTTLE_NACH_UPDATE
+call :nssm_get AppRestartDelay NSSM_APPRESTARTDELAY_NACH_UPDATE
+call :nssm_get AppRotateOnline NSSM_APPROTATEONLINE_NACH_UPDATE
+sc query PraxisZeit-PostgreSQL | findstr STATE >> "%RES%" 2>&1
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "(Get-ScheduledTask -TaskName 'PraxisZeit-Backup').Settings.StartWhenAvailable"`) do >> "%RES%" echo TASK_START_WHEN_AVAILABLE=%%a
 REM Ohne [database] port darf der neue Code postgresql.conf nicht anfassen.
 call :pgconf_md5 PGCONF_MD5_NACH_UPDATE
 if "!PGCONF_MD5!"=="!PGCONF_MD5_NACH_UPDATE!" ( >> "%RES%" echo PGCONF_UNVERAENDERT=ja ) else ( >> "%RES%" echo PGCONF_UNVERAENDERT=nein )
@@ -422,6 +430,12 @@ for /l %%i in (1,1,36) do (
 for /f %%c in ('curl -k -s -o nul -w "%%{http_code}" -X POST https://localhost/api/auth/login -H "Content-Type: application/json" -d "{\"username\":\"admin\",\"!PWKEY!\":\"!ADMPW!\"}"') do >> "%RES%" echo LOGIN_HTTP_%~2=%%c
 if not "!HCR!"=="200" call :dump_logs %~2
 call :own_check OWN_DETECTED_%~2
+goto :eof
+
+:nssm_get
+REM %1 = NSSM-Parameter, %2 = Ergebnisschluessel. NSSM schreibt UTF-16;
+REM PowerShell entfernt die Nullbytes (wie :nssm_appexit).
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "$o = & 'C:\PraxisZeit\nssm.exe' get PraxisZeit %~1 2>&1; (($o -join ' ') -replace [char]0, '').Trim()"`) do >> "%RES%" echo %~2=%%a
 goto :eof
 
 :nssm_appexit
