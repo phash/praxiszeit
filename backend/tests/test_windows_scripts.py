@@ -352,3 +352,65 @@ def test_app_throttle_stays_short():
         values = [int(v) for v in re.findall(pattern, _text(name))]
         assert values, name
         assert all(v <= 10000 for v in values), (name, values)
+
+# --- Windows-Server-Update 2026-11-15 (Lauf 1 gescheitert, Lauf 2 ok) -------
+# Lauf 1: robocopy FEHLER 32 auf nssm.exe ohne Hinweis, wer die Datei sperrt;
+# ACL-Pruefung "Dem Client fehlt ein erforderliches Recht" ohne Details;
+# Abschlussmeldung "NICHT gestartet", obwohl der Dienst lief.
+
+
+def test_update_logs_environment_first():
+    upd = _function(_text("update-wizard.ps1"), "Invoke-Update")
+    assert upd.index("Write-Environment") < upd.index("Step-ACLFix")
+    env = _function(_text("update-wizard.ps1"), "Write-Environment")
+    for needle in ("Win32_OperatingSystem", "ProductType", "SessionId",
+                   "IsInRole", "PSVersion", "$env:TEMP", "Is64BitProcess"):
+        assert needle in env, needle
+
+
+def test_locked_files_name_the_locking_process():
+    text = _text("update-wizard.ps1")
+    who = _function(text, "Write-FileLockers")
+    assert "rstrtmgr.dll" in text
+    assert "RmGetList" in text
+    # Fallback ohne Restart Manager: Prozesse aus dem Installationsordner.
+    assert "Win32_Process" in who
+
+
+def test_copy_retries_once_after_lock_with_diagnosis():
+    body = _function(_text("update-wizard.ps1"), "Step-CopyFiles")
+    assert "Get-LockedPaths" in body
+    assert "Write-FileLockers" in body
+    assert "Stop-LeftoverInstallProcesses" in body
+    assert body.count("robocopy.exe @rcArgs") >= 2
+
+
+def test_leftover_processes_cover_whole_install_dir():
+    body = _function(_text("update-wizard.ps1"), "Stop-LeftoverInstallProcesses")
+    assert "ExecutablePath" in body and "ParentProcessId" in body
+    assert "$PID" in body
+    stop = _function(_text("update-wizard.ps1"), "Step-StopService")
+    assert "Stop-LeftoverInstallProcesses" in stop
+
+
+def test_start_waits_for_postgresql_before_logging_state():
+    body = _function(_text("update-wizard.ps1"), "Step-StartService")
+    assert "Wait-PostgresService" in body
+    assert body.index("Wait-PostgresService") < body.index("Write-ServiceStates 'nach dem Start'")
+
+
+def test_guidance_reports_the_real_service_state():
+    guide = _function(_text("update-wizard.ps1"), "Write-FailureGuidance")
+    assert "Get-Service -Name 'PraxisZeit'" in guide
+    assert "teilweise aktualisiert" in guide
+
+
+def test_secure_install_logs_add_type_details():
+    text = _text("secure-install.ps1")
+    catch = text[text.index("Add-Type -Language CSharp -TypeDefinition $PzFileLinksCode"):]
+    catch = catch[:catch.index("exit 1")]
+    assert "Write-PzAddTypeFailure $_.Exception" in catch
+    helper = _function(text, "Write-PzAddTypeFailure")
+    for needle in ("GetType().FullName", "HResult", "InnerException", "$env:TEMP"):
+        assert needle in helper, needle
+
