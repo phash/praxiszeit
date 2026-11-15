@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.24.1] - 2026-11-15
 
 ### 🐛 Behoben (Windows-Update, Kundenfall 2026-11-15)
 
