@@ -54,7 +54,16 @@ SETTING_LOCATION = "backup_location"     # optionaler Pfad-Override
 DEFAULT_RETENTION_DAYS = 30
 DEFAULT_HOUR = 2
 _BACKUP_GLOB = "praxiszeit_*.sql.gz"
-_FILENAME_RE = re.compile(r"^praxiszeit_\d{8}_\d{6}(-\d{1,2})?\.sql\.gz$")
+# Kundenfall 2026-11-15 (Log-Audit A14): praxiszeit-server.py ``backup --label``
+# schreibt praxiszeit_<ts>_<label>.sql.gz (Label [a-z0-9.-]{1,40}, z. B. die
+# Sicherung vor einem Update) - ohne den optionalen Teil fehlte sie in der
+# Uebersicht und war nicht herunterladbar.
+_FILENAME_RE = re.compile(r"^praxiszeit_\d{8}_\d{6}(-\d{1,2})?(_[a-z0-9.-]{1,40})?\.sql\.gz$")
+_LABEL_RE = re.compile(r"^praxiszeit_\d{8}_\d{6}(?:-\d{1,2})?_([a-z0-9.-]{1,40})\.sql\.gz$")
+# Wie PREUPDATE_KEEP in praxiszeit-server.py: die juengsten drei Sicherungen
+# vor einem Update verfallen nie (einzige Sicherung vor einer Migration).
+PREUPDATE_LABEL_PREFIX = "preupdate"
+PREUPDATE_KEEP = 3
 
 
 @dataclass
@@ -599,13 +608,33 @@ def delete_backup(db: Session, filename: str) -> bool:
     return True
 
 
+def _newest_preupdate_names(db: Session) -> set[str]:
+    """Namen der juengsten :data:`PREUPDATE_KEEP` Sicherungen mit Bezeichnung
+    ``preupdate*`` (nach mtime) - Log-Audit A14."""
+    backup_dir = get_backup_dir(db)
+    found = []
+    for b in list_backups(db):
+        m = _LABEL_RE.match(b.filename)
+        if not m or not m.group(1).startswith(PREUPDATE_LABEL_PREFIX):
+            continue
+        try:
+            found.append(((backup_dir / b.filename).stat().st_mtime, b.filename))
+        except OSError:
+            continue
+    found.sort(reverse=True)
+    return {name for _, name in found[:PREUPDATE_KEEP]}
+
+
 def prune_old_backups(db: Session, retention_days: Optional[int] = None) -> int:
     """Loescht Backups, deren mtime aelter als retention_days ist. Gibt Anzahl zurueck."""
     if retention_days is None:
         retention_days = get_config(db).retention_days
     cutoff = datetime.now(tz=timezone.utc).timestamp() - retention_days * 86400
     removed = 0
+    keep = _newest_preupdate_names(db)
     for b in list_backups(db):
+        if b.filename in keep:
+            continue
         path = resolve_backup_path(db, b.filename)
         if not path:
             continue
@@ -713,7 +742,141 @@ _BACKUP_LOCK = threading.Lock()
 def create_backup(db: Session) -> BackupFile:
     """Erzeugt ein komprimiertes Plain-SQL-Backup. Wirft BackupError bei Fehlern."""
     with _BACKUP_LOCK:
-        return _create_backup_locked(db)
+        try:
+            result = _create_backup_locked(db)
+        except BackupError as e:
+            # Kundenfall 2026-11-15 (Log-Audit 7): auch das In-App-Backup
+            # (Docker-Zeitplan, Knopf „Jetzt sichern") meldet sein Ergebnis
+            # fuer das Admin-Banner — gleiche Datei wie praxiszeit-server.py.
+            _write_last_result_quiet(db, ok=False, error=str(e))
+            raise
+        _write_last_result_quiet(db, ok=True, file=result.filename, size_bytes=result.size_bytes)
+        return result
+
+
+# ---------------------------------------------------------------------------
+# Kundenfall 2026-11-15, Log-Audit Punkt 7 (BO-2): Ergebnis des letzten Laufs.
+#
+# Vertrag (gemeinsam mit praxiszeit-server.py ``create_backup`` und dem
+# Frontend-Banner): ``<Backup-Ordner>/.last-result.json`` =
+# {"ok", "finished_at" (ISO-8601 Ortszeit mit Offset), "file", "size_bytes",
+#  "error", "mirror_ok" (null = kein Spiegel), "verified"}. Atomar geschrieben
+# (Temp-Datei + os.replace). Die Datei passt nicht auf ``_BACKUP_GLOB`` und
+# taucht deshalb nie als Sicherung auf.
+# ---------------------------------------------------------------------------
+LAST_RESULT_FILENAME = ".last-result.json"
+_LAST_RESULT_MAX_BYTES = 64 * 1024
+_LAST_RESULT_MAX_ERROR = 300
+
+
+def write_last_result(backup_dir: Path, *, ok: bool, file: Optional[str] = None,
+                      size_bytes: Optional[int] = None, error: Optional[str] = None,
+                      mirror_ok: Optional[bool] = None, verified: bool = False) -> None:
+    import json
+    data = {
+        "ok": bool(ok),
+        "finished_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "file": file,
+        "size_bytes": size_bytes,
+        "error": None if ok else ((error or "")[:_LAST_RESULT_MAX_ERROR] or "Sicherung fehlgeschlagen"),
+        "mirror_ok": mirror_ok,
+        "verified": bool(verified),
+    }
+    target = backup_dir / LAST_RESULT_FILENAME
+    tmp = backup_dir / f"{LAST_RESULT_FILENAME}.{os.getpid()}.tmp"
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False)
+        os.replace(tmp, target)
+    except OSError:
+        # Review-Fund (Kundenfall 2026-11-15): Windows-Ziel geoeffnet / Platte voll —
+        # keine .tmp-Reste im Sicherungsordner (wie write_backup_status nativ).
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _write_last_result_quiet(db: Session, **kwargs) -> None:
+    """Die Statusdatei darf eine Sicherung nie scheitern lassen."""
+    try:
+        backup_dir = get_backup_dir(db)
+        if backup_dir.is_dir():
+            write_last_result(backup_dir, **kwargs)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Ergebnis der Sicherung nicht gespeichert (%s): %s", LAST_RESULT_FILENAME, e)
+
+
+def _read_last_result_file(path: Path) -> Optional[dict]:
+    """Eine Statusdatei lesen; jede Abweichung vom Vertrag → None (nie eine Ausnahme)."""
+    import json
+    try:
+        if not path.is_file() or path.stat().st_size > _LAST_RESULT_MAX_BYTES:
+            return None
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(raw, dict) or not isinstance(raw.get("ok"), bool):
+        return None
+    finished = raw.get("finished_at")
+    if not isinstance(finished, str):
+        return None
+    try:
+        datetime.fromisoformat(finished)
+    except ValueError:
+        return None
+
+    def _typed(key, typ):
+        v = raw.get(key)
+        # bool ist eine int-Unterklasse — fuer size_bytes nicht gelten lassen.
+        if typ is int and isinstance(v, bool):
+            return None
+        return v if isinstance(v, typ) else None
+
+    error = _typed("error", str)
+    return {
+        "ok": raw["ok"],
+        "finished_at": finished,
+        "file": _typed("file", str),
+        "size_bytes": _typed("size_bytes", int),
+        "error": error[:_LAST_RESULT_MAX_ERROR] if error else error,
+        "mirror_ok": _typed("mirror_ok", bool),
+        "verified": raw.get("verified") is True,
+    }
+
+
+def read_last_result(db: Session) -> Optional[dict]:
+    """Ergebnis des letzten Laufs oder None. Gelesen werden der wirksame
+    Backup-Ordner (``get_backup_dir``) und — nativ — ``PRAXISZEIT_BACKUP_DIR``
+    (data/backups): praxiszeit-server.py sichert immer dorthin, auch wenn in der
+    Oberflaeche ein anderer Ort eingestellt ist. Das juengste Ergebnis gilt."""
+    dirs: list[Path] = []
+    try:
+        dirs.append(get_backup_dir(db))
+    except Exception:  # noqa: BLE001
+        pass
+    env_dir = os.environ.get("PRAXISZEIT_BACKUP_DIR", "").strip()
+    if env_dir:
+        dirs.append(Path(env_dir))
+    best: Optional[dict] = None
+    best_at: Optional[datetime] = None
+    seen: set[str] = set()
+    for d in dirs:
+        key = os.path.normcase(str(d))
+        if key in seen:
+            continue
+        seen.add(key)
+        res = _read_last_result_file(d / LAST_RESULT_FILENAME)
+        if res is None:
+            continue
+        at = datetime.fromisoformat(res["finished_at"])
+        if at.tzinfo is None:
+            at = at.astimezone()  # ohne Offset: als Ortszeit lesen
+        if best_at is None or at > best_at:
+            best, best_at = res, at
+    return best
 
 
 def _open_new_backup_file(backup_dir: Path, timestamp: str) -> tuple[Path, int]:

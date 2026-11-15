@@ -38,7 +38,22 @@ echo Installing PraxisZeit service...
 REM Exit-Code 78 = Konfigurationsfehler (z.B. ungueltiger Datenbank-Port): NSSM
 REM soll den Dienst dann beenden statt ihn endlos neu zu starten.
 "%NSSM%" set PraxisZeit AppExit 78 Exit
+REM Nach Ctrl+C bis zu 30 s auf den sauberen Shutdown warten (uvicorn_stop +
+REM PostgreSQL-Dienst stoppen). NSSM-Standard 1500 ms beendete den Dienst hart,
+REM PostgreSQL lief beim Update weiter (Kundenfall 2026-11-15).
+"%NSSM%" set PraxisZeit AppStopMethodConsole 30000
+REM Neustart-Bremse (Log-Audit 2026-11-15 A5): bei einem Startfehler startete
+REM NSSM den Dienst im Minutentakt neu, 5521 Mal in 4 Tagen, die stderr-Datei
+REM wuchs auf 16 MB. Laeuft das Programm kuerzer als AppThrottle (150 s), bremst
+REM NSSM den naechsten Start; jeder Neustart wartet mindestens AppRestartDelay.
+REM Ein Lauf dauerte im Kundenfall 62 s - 60 s haette nicht gebremst.
+"%NSSM%" set PraxisZeit AppThrottle 150000
+"%NSSM%" set PraxisZeit AppRestartDelay 15000
+REM Log-Rotation auch im laufenden Betrieb (Log-Audit A11): ohne AppRotateOnline
+REM rotiert NSSM nur beim Dienststart, Anmeldenamen und IP-Adressen aus
+REM fehlgeschlagenen Logins blieben monatelang in einer Datei.
 "%NSSM%" set PraxisZeit AppRotateFiles 1
+"%NSSM%" set PraxisZeit AppRotateOnline 1
 "%NSSM%" set PraxisZeit AppRotateBytes 10485760
 REM PYTHONUNBUFFERED: ohne das puffert Python stdout/stderr, und Startup-Fehler
 REM (z.B. ein haengendes DB-Setup) landen erst beim Prozess-Ende - oder nie - in
@@ -68,13 +83,24 @@ if not exist "%BACKUP_BAT%" (
     goto :task_done
 )
 
+REM StartWhenAvailable (Log-Audit 2026-11-15 A13): war der PC um 03:00 aus,
+REM fiel die Sicherung des Tages ersatzlos aus. Mit der Einstellung holt
+REM Windows den Lauf nach dem Einschalten nach - schtasks /create kennt sie
+REM nicht, deshalb Register-ScheduledTask. AllowStartIfOnBatteries: sonst
+REM laeuft die Sicherung auf einem Notebook im Akkubetrieb nie. Pfade kommen
+REM ueber Umgebungsvariablen in PowerShell, kein Quoting im Befehl.
 REM Einzeiler weil caret-Continuation im if-Block unreliable ist
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $a = New-ScheduledTaskAction -Execute $env:BACKUP_BAT -WorkingDirectory $env:INSTALL_DIR; $t = New-ScheduledTaskTrigger -Daily -At '03:00'; $s = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; $p = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest; Register-ScheduledTask -TaskName 'PraxisZeit-Backup' -Action $a -Trigger $t -Settings $s -Principal $p -Force -ErrorAction Stop | Out-Null; exit 0 } catch { Write-Host $_; exit 1 }"
+if not errorlevel 1 goto :task_ok
+REM Rueckfall (z.B. ohne ScheduledTasks-Modul): wie bisher, ohne Nachholen.
+echo WARNUNG: Register-ScheduledTask fehlgeschlagen - lege die Aufgabe per schtasks an.
 schtasks /create /tn "PraxisZeit-Backup" /tr "\"%BACKUP_BAT%\"" /sc daily /st 03:00 /ru SYSTEM /f
 if errorlevel 1 (
     echo WARNUNG: Scheduled Task konnte nicht angelegt werden.
-) else (
-    echo Scheduled Task "PraxisZeit-Backup" aktiv.
+    goto :task_done
 )
+:task_ok
+echo Scheduled Task "PraxisZeit-Backup" aktiv.
 
 :task_done
 

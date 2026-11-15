@@ -230,7 +230,11 @@ def test_backup_file_is_0600_despite_umask(srv, tmp_path, monkeypatch):
 
     class _FakeDump:
         def __init__(self, *a, **kw):
-            self.stdout = io.BytesIO(b"-- dump\n" * 100)
+            # Schlusszeile wie bei pg_dump: die Rueckleseprobe (Log-Audit A15,
+            # Kundenfall 2026-11-15) verwirft Sicherungen ohne sie.
+            self.stdout = io.BytesIO(
+                b"-- dump\n" * 100 + b"--\n-- PostgreSQL database dump complete\n--\n"
+            )
             self.returncode = 0
 
         def wait(self):
@@ -1164,6 +1168,8 @@ class TestBackupRole:
         monkeypatch.setenv("DATABASE_URL_BACKUP", scheme + "praxiszeit_backup" + ":pw@/praxiszeit")
         monkeypatch.setattr(srv.subprocess, "Popen", _popen)
         monkeypatch.setattr(srv, "port_is_occupied", lambda *a, **k: False)
+        # Sonst schreibt uvicorn_start data/uvicorn-log.json in den Repo-Baum.
+        monkeypatch.setattr(srv, "write_uvicorn_log_config", lambda path: None)
         with pytest.raises(RuntimeError, match="stop here"):
             srv.uvicorn_start({})
         assert "DATABASE_URL_MIGRATIONS" not in captured["env"]

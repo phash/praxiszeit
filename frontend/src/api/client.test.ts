@@ -282,3 +282,54 @@ describe('tryRefreshSession', () => {
     expect(getAccessToken()).toBe('keep');
   });
 });
+
+// Log-Audit 2026-11-15 (Punkt 17, NET-3): Basis-Routen ohne Schrägstrich
+// kosteten je eine 307-Umleitung; das Layout-Polling pausiert nach 401/403 bis
+// zur nächsten erfolgreichen Token-Erneuerung (Ereignis auth:refreshed).
+describe('Log-Audit 2026-11-15: Basis-Routen und auth:refreshed', () => {
+  it('hängt an Basis-Routen den Schrägstrich an, Abfrage bleibt', async () => {
+    const seen: string[] = [];
+    apiClient.defaults.adapter = (config) => {
+      seen.push(config.url as string);
+      return reply(config, 200, []);
+    };
+    await apiClient.get('/absences?year=2026');
+    await apiClient.get('/dashboard');
+    await apiClient.post('/time-entries', {});
+    await apiClient.get('/time-entries/clock-status');
+    await apiClient.get('/admin/backups');
+    expect(seen).toEqual([
+      '/absences/?year=2026',
+      '/dashboard/',
+      '/time-entries/',
+      '/time-entries/clock-status',
+      '/admin/backups',
+    ]);
+  });
+
+  it('meldet eine erfolgreiche Token-Erneuerung als auth:refreshed', async () => {
+    vi.spyOn(axios, 'post').mockResolvedValue({ data: { access_token: 'neu' } } as any);
+    const handler = vi.fn();
+    window.addEventListener('auth:refreshed', handler);
+    try {
+      await tryRefreshSession();
+    } finally {
+      window.removeEventListener('auth:refreshed', handler);
+    }
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('kein auth:refreshed bei abgelehnter Erneuerung', async () => {
+    vi.spyOn(axios, 'post').mockRejectedValue(
+      Object.assign(new Error('nope'), { response: { status: 401 } }),
+    );
+    const handler = vi.fn();
+    window.addEventListener('auth:refreshed', handler);
+    try {
+      await tryRefreshSession();
+    } finally {
+      window.removeEventListener('auth:refreshed', handler);
+    }
+    expect(handler).not.toHaveBeenCalled();
+  });
+});

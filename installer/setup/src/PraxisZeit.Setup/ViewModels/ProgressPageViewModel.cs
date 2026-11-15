@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using PraxisZeit.Setup.Core.Models;
 using PraxisZeit.Setup.Core.Services;
 
 namespace PraxisZeit.Setup.ViewModels;
@@ -66,7 +67,7 @@ public sealed partial class ProgressPageViewModel : WizardPageBase
     public void InitializeSteps(Core.Models.InstallMode mode)
     {
         Steps.Clear();
-        if (mode == Core.Models.InstallMode.FreshInstall || mode == Core.Models.InstallMode.Repair)
+        if (!mode.KeepsExistingInstallation())
         {
             Steps.Add(new StepItem { Id = "copy",    Title = "1. Installationsdateien kopieren" });
             Steps.Add(new StepItem { Id = "setup",   Title = "2. PostgreSQL und Python einrichten" });

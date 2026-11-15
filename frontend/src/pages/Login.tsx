@@ -39,7 +39,9 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await login(username, password, totpRequired ? totpCode : undefined);
+      // Log-Audit 2026-11-15 (Punkt 12, NET-4): Leerzeichen am Ende (Autovervollständigung
+      // am Handy) ergaben "falsches Passwort" und kosteten Sperrversuche.
+      await login(username.trim(), password, totpRequired ? totpCode : undefined);
       navigate(target, { replace: true });
     } catch (err: any) {
       // F-019: backend signals "TOTP required" via X-Requires-TOTP header

@@ -257,7 +257,16 @@ class TestClusterOwnership:
         monkeypatch.setattr(srv, "_win_service_exists", lambda name: True)
         monkeypatch.setattr(srv.time, "sleep", lambda s: None)
         monkeypatch.setattr(srv, "_watchdog_foreign_streak", 0)
+        monkeypatch.setattr(srv, "_watchdog_down_streak", 0)
         self.pg_data = pg_data
+
+    @staticmethod
+    def _allow_restart(srv, monkeypatch):
+        # Log-Audit A9 (Kundenfall 2026-11-15): der Wachhund startet erst nach
+        # WATCHDOG_PG_DOWN_LIMIT "down" in Folge neu und fragt vorher den
+        # Dienstzustand und das Herunterfahren von Windows ab.
+        monkeypatch.setattr(srv, "_win_service_state", lambda name: "STOPPED")
+        monkeypatch.setattr(srv, "_win_system_shutting_down", lambda: False)
 
     def _fake(self, srv, monkeypatch, isready, status=0):
         calls = []
@@ -460,8 +469,10 @@ class TestClusterOwnership:
         assert called == []
 
     def test_watchdog_down_resets_the_foreign_streak(self, srv, monkeypatch):
-        called = self._watch(srv, monkeypatch, ["foreign", "foreign", "down", "foreign", "foreign"])
-        for _ in range(5):
+        self._allow_restart(srv, monkeypatch)
+        states = ["foreign", "foreign"] + ["down"] * srv.WATCHDOG_PG_DOWN_LIMIT + ["foreign", "foreign"]
+        called = self._watch(srv, monkeypatch, states)
+        for _ in range(len(states)):
             srv._watchdog_check_pg()
         assert called == ["pg_start"]
 
@@ -485,9 +496,13 @@ class TestClusterOwnership:
         assert str(e.value) == _FOREIGN_5433
 
     def test_watchdog_restarts_own_cluster_when_down(self, srv, monkeypatch):
+        self._allow_restart(srv, monkeypatch)
         monkeypatch.setattr(srv, "pg_cluster_state", lambda: "down")
         called = []
         monkeypatch.setattr(srv, "pg_start", lambda: called.append("pg_start"))
+        for _ in range(srv.WATCHDOG_PG_DOWN_LIMIT - 1):
+            srv._watchdog_check_pg()
+        assert called == []
         srv._watchdog_check_pg()
         assert called == ["pg_start"]
 
@@ -501,6 +516,9 @@ class TestClusterOwnership:
         monkeypatch.setattr(srv, "pg_start", _start)
         monkeypatch.setattr(srv, "uvicorn_stop", lambda: called.append("uvicorn_stop"))
         monkeypatch.setattr(srv, "_remove_pid", lambda: called.append("_remove_pid"))
+        self._allow_restart(srv, monkeypatch)
+        for _ in range(srv.WATCHDOG_PG_DOWN_LIMIT - 1):
+            srv._watchdog_check_pg()
         with pytest.raises(SystemExit) as e:
             srv._watchdog_check_pg()
         assert e.value.code == 78
@@ -759,7 +777,17 @@ class TestWindowsScripts:
         assert "AppExit 78 Exit" in _win_text("install-service.bat")
 
     def test_update_wizard_sets_appexit_78(self):
-        assert "AppExit 78 Exit" in _win_text("update-wizard.ps1")
+        # Set-NssmServiceOptions fuehrt die Werte als Liste (Log-Audit 2026-11-15)
+        assert "@('AppExit', '78', 'Exit')" in _win_text("update-wizard.ps1")
+
+    def test_install_service_gives_clean_shutdown_time(self):
+        # Kundenfall 2026-11-15: NSSM wartet nach Ctrl+C nur 1500 ms, dann
+        # beendet es den Dienst hart - uvicorn_stop + pg_stop kommen nie dran,
+        # PostgreSQL laeuft waehrend des Updates weiter.
+        assert "AppStopMethodConsole 30000" in _win_text("install-service.bat")
+
+    def test_update_wizard_gives_clean_shutdown_time(self):
+        assert "@('AppStopMethodConsole', '30000')" in _win_text("update-wizard.ps1")
 
     def test_setup_bat_serverport_not_hardcoded(self):
         text = _win_text("setup.bat")

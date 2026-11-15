@@ -9,6 +9,8 @@ import TrialBanner from './TrialBanner';
 import BetaBadge from './BetaBadge';
 import ImpersonationBanner from './ImpersonationBanner';
 import apiClient from '../api/client';
+import { isAuthPollFailure, AUTH_REFRESHED_EVENT } from '../utils/polling';
+import BackupStatusBanner from './BackupStatusBanner';
 import {
   LayoutDashboard,
   Clock,
@@ -69,6 +71,25 @@ export default function Layout() {
   const [pendingVRCount, setPendingVRCount] = useState(0);
   const fabRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
+  // Log-Audit 2026-11-15 (Punkt 17, NET-3): nach einem 401/403, den der Client
+  // nicht per Refresh retten konnte, pausiert das Polling (vorher ~1400 Abfragen
+  // mit 401 nach Ablauf der Sitzung). Weiter geht es beim nächsten Seitenwechsel
+  // oder nach einer erfolgreichen Token-Erneuerung (auth:refreshed).
+  const pollPausedRef = useRef(false);
+
+  // Steht VOR den Polling-Effekten, damit der Neustart beim Seitenwechsel greift,
+  // bevor die Zähler neu geladen werden.
+  useEffect(() => {
+    pollPausedRef.current = false;
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const resume = () => {
+      pollPausedRef.current = false;
+    };
+    window.addEventListener(AUTH_REFRESHED_EVENT, resume);
+    return () => window.removeEventListener(AUTH_REFRESHED_EVENT, resume);
+  }, []);
 
   // Pending change request + vacation request counts for the admin badges.
   // auth-19: neu laden bei Routenwechsel und uiStore-Ereignis (requestVersion), Abfrage im
@@ -76,14 +97,22 @@ export default function Layout() {
   useEffect(() => {
     if (user?.role !== 'admin') return;
     const fetchCounts = async () => {
+      if (pollPausedRef.current) return;
       try {
         const res = await apiClient.get('/admin/change-requests/pending-count');
         setPendingCRCount(res.data.count);
-      } catch { /* ignore */ }
+      } catch (err) {
+        if (isAuthPollFailure(err)) {
+          pollPausedRef.current = true;
+          return;
+        }
+      }
       try {
         const res = await apiClient.get('/admin/vacation-requests/pending-count');
         setPendingVRCount(res.data.count);
-      } catch { /* ignore */ }
+      } catch (err) {
+        if (isAuthPollFailure(err)) pollPausedRef.current = true;
+      }
     };
     fetchCounts();
     const interval = setInterval(() => {
@@ -103,10 +132,13 @@ export default function Layout() {
   useEffect(() => {
     if (!userTracksHours) return;
     const checkStatus = async () => {
+      if (pollPausedRef.current) return;
       try {
         const res = await apiClient.get('/time-entries/clock-status');
         setIsClockedIn(res.data.is_clocked_in);
-      } catch { /* ignore */ }
+      } catch (err) {
+        if (isAuthPollFailure(err)) pollPausedRef.current = true;
+      }
     };
     checkStatus();
     const interval = setInterval(() => {
@@ -457,6 +489,8 @@ export default function Layout() {
       <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden lg:pt-0 pt-16 pb-20 lg:pb-0 bg-background" tabIndex={-1}>
         <ImpersonationBanner />
         <TrialBanner />
+        {/* Log-Audit 2026-11-15 (Punkt 7): Sicherung fehlgeschlagen/veraltet, nur Admins */}
+        <BackupStatusBanner />
         {/* #287: Arbeitsbereich nutzt die volle Breite neben dem Menü (kein
             max-w-7xl-Cap mehr, das auf breiten Screens ~die Hälfte leer ließ).
             Die responsive px-Polsterung lässt einen schmalen Rand ⇒ ~95 % Füllung.

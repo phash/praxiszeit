@@ -987,6 +987,67 @@ class TestAufgebenNachWiederholtenAbstuerzen:
         assert srv.should_give_up(zeiten, now=1001.0, limit=5, window=300) is False
 
 
+class TestWachhundBeimStoppen:
+    """Windows-Kundenfall 2026-11-15: NSSM schickt beim Dienst-Stopp Ctrl+C an
+    die ganze Konsole. uvicorn beendet sich darauf mit Exitcode 0, der Wachhund
+    hielt das fuer einen Absturz und startete uvicorn neu ("Neustart 1 von 5")
+    — der saubere Shutdown (uvicorn_stop, pg_stop) kam nie dran, NSSM beendete
+    den Dienst hart."""
+
+    def test_warten_endet_sofort_bei_stoppwunsch(self, srv):
+        geschlafen = []
+        stopp = {"jetzt": False}
+
+        def sleeper(s):
+            geschlafen.append(s)
+            stopp["jetzt"] = True
+
+        assert srv.watchdog_wait(lambda: stopp["jetzt"], interval=5.0, step=0.5,
+                                 sleeper=sleeper) is True
+        assert sum(geschlafen) <= 0.5
+
+    def test_warten_ohne_stoppwunsch_dauert_das_intervall(self, srv):
+        geschlafen = []
+        assert srv.watchdog_wait(lambda: False, interval=5.0, step=0.5,
+                                 sleeper=geschlafen.append) is False
+        assert sum(geschlafen) == pytest.approx(5.0)
+
+    def test_beendetes_kind_nach_stoppwunsch_wird_nicht_neu_gestartet(self, srv):
+        stopp = {"jetzt": False}
+        neustarts = []
+
+        def warten():
+            # Ctrl+C trifft Manager und uvicorn gleichzeitig.
+            stopp["jetzt"] = True
+            return False  # Signal kam erst nach dem letzten Blick auf den Wunsch
+
+        srv.watchdog_loop(
+            is_stopping=lambda: stopp["jetzt"],
+            wait=warten,
+            child_exited=lambda: True,
+            on_child_exit=lambda: neustarts.append(1),
+            check_pg=lambda: None,
+        )
+        assert neustarts == []
+
+    def test_absturz_ohne_stoppwunsch_wird_neu_gestartet(self, srv):
+        runden = {"n": 0}
+        neustarts = []
+
+        def warten():
+            runden["n"] += 1
+            return runden["n"] > 1  # zweite Runde: Stoppwunsch
+
+        srv.watchdog_loop(
+            is_stopping=lambda: runden["n"] > 1,
+            wait=warten,
+            child_exited=lambda: True,
+            on_child_exit=lambda: neustarts.append(1),
+            check_pg=lambda: None,
+        )
+        assert neustarts == [1]
+
+
 class TestPortVorabpruefung:
     """#427: belegter Port soll als Klartext im Protokoll stehen, nicht als
     Folgefehler weit dahinter."""

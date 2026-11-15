@@ -80,6 +80,13 @@ class UserBase(BaseModel):
         return self
 
 
+def _strip_username_input(v):
+    """Kundenfall 2026-11-15 (Review zu Log-Audit 12): Namen mit Leerzeichen am
+    Rand (eingefuegt/kopiert) gar nicht erst speichern — der Login trimmt die
+    Eingabe. Nur in den Schreibschemas; Leseschemas zeigen den gespeicherten Wert."""
+    return v.strip() if isinstance(v, str) else v
+
+
 class UserCreate(UserBase):
     password: str = Field(..., min_length=10)
     role: UserRole = UserRole.EMPLOYEE
@@ -93,6 +100,11 @@ class UserCreate(UserBase):
     @classmethod
     def reject_legacy_window_fields(cls, data):
         return strip_legacy_window_fields(data)
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _strip_username(cls, v):
+        return _strip_username_input(v)
 
     @field_validator('vacation_days')
     @classmethod
@@ -183,6 +195,12 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=1, max_length=100)
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _strip_username(cls, v):
+        return _strip_username_input(v)
+
     role: Optional[UserRole] = None
     email: Optional[str] = None
     first_name: Optional[str] = Field(None, min_length=1, max_length=100)
@@ -370,6 +388,14 @@ class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=100)
     password: str = Field(..., min_length=1)
     totp_code: Optional[str] = Field(None, pattern=r'^\d{6}$')  # F-019: optional TOTP code
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _strip_username(cls, v):
+        # Kundenfall 2026-11-15 (Log-Audit 12, NET-4): Fehlversuche mit einem
+        # Leerzeichen am Ende des Namens (Autovervollstaendigung, Kopieren).
+        # Nur die Eingabe wird getrimmt — gespeicherte Namen bleiben, wie sie sind.
+        return v.strip() if isinstance(v, str) else v
 
 
 class LoginResponse(BaseModel):

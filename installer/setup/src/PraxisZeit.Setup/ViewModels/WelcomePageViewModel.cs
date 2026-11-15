@@ -32,13 +32,14 @@ public sealed partial class WelcomePageViewModel : WizardPageBase
     /// expliziten DB-Backup-Hinweis ("Bevor Dateien ersetzt werden, wird
     /// ein vollstaendiges Backup nach data\backups erstellt").
     /// </summary>
-    public bool ShowBackupCallout => Mode == InstallMode.Update;
+    public bool ShowBackupCallout => Mode.KeepsExistingInstallation();
 
     public override string NextButtonText => Mode switch
     {
         InstallMode.FreshInstall => "Installation starten",
         InstallMode.Update => "Update starten",
         InstallMode.Repair => "Reparieren",
+        InstallMode.Resume => "Installation fortsetzen",
         _ => "Weiter",
     };
 
@@ -48,7 +49,8 @@ public sealed partial class WelcomePageViewModel : WizardPageBase
         {
             InstallMode.FreshInstall => "Es wird eine neue PraxisZeit-Installation eingerichtet. PostgreSQL, Python-Dependencies, Service und Firewall-Regeln werden konfiguriert.",
             InstallMode.Update => $"Bestehende Installation ({CurrentVersion}) wird auf {TargetVersion} aktualisiert. Datenbank, Config und Secrets bleiben unangetastet.",
-            InstallMode.Repair => "Bestehende Installation wird repariert. Binaries werden neu kopiert, Config bleibt.",
+            InstallMode.Repair => $"Bestehende Installation ({CurrentVersion}) wird repariert: Datenbank-Sicherung, Dateien neu kopieren, Installation prüfen, Service starten. Datenbank, Config und Admin-Konto bleiben unangetastet.",
+            InstallMode.Resume => $"Eine frühere Erstinstallation von PraxisZeit {CurrentVersion} wurde nicht abgeschlossen (Datenbank nie eingerichtet). Die Einrichtung wird fortgesetzt: Ports und Admin-Konto abfragen, PostgreSQL und Service einrichten.",
             _ => string.Empty,
         };
         OnPropertyChanged(nameof(NextButtonText));

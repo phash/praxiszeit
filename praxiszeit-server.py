@@ -411,10 +411,18 @@ def pg_cluster_state() -> str:
             [str(pg_cmd("pg_isready")), "-h", host, "-p", str(pg_port())],
             capture_output=True, timeout=5, env=pg_env(),
         )
-        answers = result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        answers = False
-    if not answers:
+    except subprocess.TimeoutExpired:
+        # Log-Audit A9 (Fehlalarme 05.07.): PostgreSQL lief, pg_isready hat
+        # nur nicht rechtzeitig geantwortet — das ist kein Beleg fuer "down".
+        return "unknown"
+    except FileNotFoundError:
+        return "down"
+    if result.returncode == 1:
+        # pg_isready Exit 1 = Server lehnt Verbindungen ab: er faehrt gerade
+        # hoch, herunter oder macht eine Recovery. Kein Grund fuer einen
+        # Neustart durch den Wachhund (Log-Audit A9).
+        return "unknown"
+    if result.returncode != 0:
         return "down"
     if not IS_WINDOWS:
         return "own"
@@ -450,7 +458,8 @@ def pg_is_running() -> bool:
     return pg_cluster_state() == "own"
 
 
-def _database_url(user: str, password: str, db: str) -> str:
+def _database_url(user: str, password: str, db: str,
+                  application_name: str | None = None) -> str:
     """Build the SQLAlchemy/psycopg2 connection URL for the bundled cluster.
 
     Unix: the cluster is socket-only (``listen_addresses = ''``), so we connect
@@ -462,6 +471,11 @@ def _database_url(user: str, password: str, db: str) -> str:
     Windows has no unix sockets; the cluster runs as a TCP service, so the URL
     points at ``localhost:<pg_port()>`` - the port from ``[database] port`` in
     praxiszeit.conf, 5432 without an entry.
+
+    ``application_name`` (Log-Audit A16, Kundenfall 2026-11-15): erscheint im
+    PostgreSQL-Log (``%a`` in log_line_prefix) und in pg_stat_activity - sonst
+    ist nicht erkennbar, ob eine Meldung von der App, der Sicherung oder den
+    Migrationen stammt. Ohne Angabe bleibt die URL wie bisher.
     """
     from urllib.parse import quote, quote_plus
     # Build the userinfo (user:password) as a separate token so the source
@@ -478,10 +492,20 @@ def _database_url(user: str, password: str, db: str) -> str:
         # eines Servers, den ein lokales Konto an den freien Port gehaengt hat
         # (PG abgestuerzt), mit dem Passwort im Klartext. libpq >= 16 noetig;
         # psycopg2-binary 2.9.13 (cp313-win_amd64) bringt libpq 17 mit.
-        return (f"postgresql://{cred}@localhost:{pg_port()}/{db}"
-                f"?require_auth={PG_REQUIRE_AUTH}")
-    sock = quote_plus(str(DATA_DIR / "run"))
-    return f"postgresql://{cred}@/{db}?host={sock}"
+        url = (f"postgresql://{cred}@localhost:{pg_port()}/{db}"
+               f"?require_auth={PG_REQUIRE_AUTH}")
+    else:
+        sock = quote_plus(str(DATA_DIR / "run"))
+        url = f"postgresql://{cred}@/{db}?host={sock}"
+    if application_name:
+        url += f"&application_name={quote_plus(application_name)}"
+    return url
+
+
+# application_name je Verbindungsart (Log-Audit A16): im PostgreSQL-Log als %a.
+APPNAME_APP = "praxiszeit-app"
+APPNAME_BACKUP = "praxiszeit-backup"
+APPNAME_MIGRATE = "praxiszeit-migrate"
 
 
 # Temporary file that hands the superuser password to initdb (--pwfile). Lives
@@ -702,11 +726,129 @@ def _quarantine_pg_data() -> Path:
 
 # --- Windows service helpers (PostgreSQL runs as its own service) ---
 
-def _win_service_exists(name: str) -> bool:
-    """True if a Windows service with the given name is registered."""
-    result = subprocess.run(["sc", "query", name], capture_output=True, text=True)
-    # sc query returns 1060 (ERROR_SERVICE_DOES_NOT_EXIST) -> non-zero rc
-    return result.returncode == 0
+# sc.exe: ERROR_SERVICE_DOES_NOT_EXIST. Nur dieser Code heisst "Dienst fehlt".
+WIN_ERROR_SERVICE_DOES_NOT_EXIST = 1060
+
+# Zustandsnamen aus ``sc query``. Die Beschriftungen sind uebersetzt
+# ("STATE" / "STATUS"), die Zustandsnamen selbst bleiben englisch.
+_SC_STATE_RE = re.compile(
+    r":\s*\d+\s+(STOPPED|START_PENDING|STOP_PENDING|RUNNING|CONTINUE_PENDING|"
+    r"PAUSE_PENDING|PAUSED)\b"
+)
+
+
+def _win_service_state(name: str, runner=None) -> str:
+    """Zustand eines Windows-Dienstes laut ``sc query``.
+
+    ``"missing"`` nur bei Rueckgabecode 1060, sonst der Zustandsname
+    (``"RUNNING"``, ``"STOP_PENDING"``, ...) oder ``"unknown"``.
+
+    Log-Audit A9 (Kundenfall 2026-11-15, LC-6): waehrend Windows herunterfaehrt
+    scheitert ``sc query`` mit anderen Codes (z. B. 1115). Frueher galt jeder
+    Fehler als "Dienst fehlt" — der Wachhund rief daraufhin ``pg_ctl register``
+    fuer einen vorhandenen Dienst auf und beendete sich mit Exit 1.
+    """
+    runner = runner or subprocess.run
+    try:
+        result = runner(["sc", "query", name], capture_output=True, text=True,
+                        errors="replace")
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    if result.returncode == WIN_ERROR_SERVICE_DOES_NOT_EXIST:
+        return "missing"
+    if result.returncode != 0:
+        return "unknown"
+    match = _SC_STATE_RE.search(result.stdout or "")
+    return match.group(1) if match else "unknown"
+
+
+def _win_service_exists(name: str, runner=None) -> bool:
+    """True, solange der Dienst nicht nachweislich fehlt (sc-Code 1060).
+
+    Ein unbekannter Zustand zaehlt als vorhanden: lieber ein ``net start``, das
+    scheitert und protokolliert wird, als ein ``pg_ctl register`` fuer einen
+    vorhandenen Dienst (Log-Audit A9)."""
+    return _win_service_state(name, runner=runner) != "missing"
+
+
+def _win_system_shutting_down() -> bool:
+    """Faehrt Windows gerade herunter? (``GetSystemMetrics(SM_SHUTTINGDOWN)``)
+
+    Zusatzsignal fuer den PostgreSQL-Wachhund (Log-Audit A9): beim
+    Herunterfahren stoppt der Dienststeuerungs-Manager PostgreSQL parallel zu
+    PraxisZeit. Ohne Urteil (kein Windows, ctypes-Fehler) ``False``."""
+    if not IS_WINDOWS:
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.user32.GetSystemMetrics(0x2000))
+    except Exception:  # noqa: BLE001 — nur ein Zusatzsignal
+        return False
+
+
+def _win_net_start(name: str, runner=None) -> int:
+    """``net start <name>``; Rueckgabecode und Ausgabe landen bei einem Fehler
+    im Protokoll (Log-Audit A6, Kundenfall 2026-11-15: der Startfehler des
+    PostgreSQL-Dienstes stand in keinem Log). "Bereits gestartet" (2182) ist
+    kein Fehler und bleibt still."""
+    runner = runner or subprocess.run
+    try:
+        result = runner(["net", "start", name], capture_output=True, text=True,
+                        errors="replace")
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning("net start %s nicht ausfuehrbar: %s", name, e)
+        return -1
+    rc = result.returncode
+    output = f"{result.stdout or ''}\n{result.stderr or ''}".strip()
+    if rc != 0 and "2182" not in output:
+        logger.warning("net start %s fehlgeschlagen (rc=%s):\n%s", name, rc, output)
+    return rc
+
+
+def _log_win_service_details(name: str, runner=None) -> None:
+    """``sc queryex`` ins Protokoll (STATE, WIN32_EXIT_CODE, SERVICE_EXIT_CODE),
+    wenn der PostgreSQL-Dienst nicht hochkommt (Log-Audit A6)."""
+    runner = runner or subprocess.run
+    try:
+        result = runner(["sc", "queryex", name], capture_output=True, text=True,
+                        errors="replace")
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.error("sc queryex %s nicht ausfuehrbar: %s", name, e)
+        return
+    output = f"{result.stdout or ''}\n{result.stderr or ''}".strip()
+    logger.error("Dienstzustand %s (sc queryex, rc=%s):\n%s", name, result.returncode, output)
+
+
+# Ereignisquelle von ``pg_ctl register`` ohne ``-e``; Eintraege der letzten
+# zehn Minuten, neueste zuerst.
+_WIN_PG_EVENTLOG_QUERY = (
+    "*[System[Provider[@Name='PostgreSQL'] and TimeCreated[timediff(@SystemTime) <= 600000]]]"
+)
+
+
+def _dump_win_pg_eventlog(runner=None) -> bool:
+    """Die letzten PostgreSQL-Eintraege des Application-Eventlogs ausgeben.
+
+    Log-Audit A6 (Kundenfall 2026-11-15, PG-1): als Dienst schreibt der
+    Postmaster seine Startfehler (FATAL vor dem logging_collector) ins
+    Windows-Eventlog, nicht nach logs\\. ``True``, wenn etwas gefunden wurde.
+    """
+    runner = runner or subprocess.run
+    try:
+        result = runner(
+            ["wevtutil", "qe", "Application", f"/q:{_WIN_PG_EVENTLOG_QUERY}",
+             "/c:10", "/rd:true", "/f:text"],
+            capture_output=True, text=True, errors="replace", timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.warning("Windows-Eventlog nicht lesbar (wevtutil): %s", e)
+        return False
+    text = (result.stdout or "").strip()
+    if result.returncode != 0 or not text:
+        return False
+    logger.error("Windows-Eventlog (Application, Quelle PostgreSQL, neueste zuerst):\n%s",
+                 text[:4000])
+    return True
 
 
 def _build_icacls_grant_args(path: Path, perms: str = "F") -> list[str]:
@@ -797,10 +939,58 @@ def _win_pg_register_and_start():
             result.returncode, result.stdout, result.stderr,
         )
         sys.exit(1)
-    subprocess.run(["net", "start", PG_SERVICE_NAME], capture_output=True, text=True)
+    _win_net_start(PG_SERVICE_NAME)
 
 
-def _dump_pg_startup_log() -> bool:
+PG_STARTUP_LOG = "postgresql-startup.log"
+
+
+def _retire_stale_startup_log() -> bool:
+    """Windows: ein vorhandenes ``postgresql-startup.log`` einmal zur Seite legen.
+
+    Der Windows-Dienstpfad schreibt diese Datei nie (nur ``pg_ctl start -l``
+    unter Unix bzw. Versionen vor 1.5.2). Kundenfall 26.05. (Log-Audit A6):
+    bei jedem Startfehler wurde der Stand vom 03.05. ausgegeben und der
+    VC++-Hinweis dadurch unterdrueckt. ``True``, wenn umbenannt wurde.
+    """
+    if not IS_WINDOWS:
+        return False
+    stale = LOG_DIR / PG_STARTUP_LOG
+    if not stale.exists():
+        return False
+    try:
+        stale.replace(LOG_DIR / (PG_STARTUP_LOG + ".old"))
+    except OSError as e:
+        logger.warning("%s nicht umbenennbar: %s", stale, e)
+        return False
+    logger.info("Veraltetes %s nach %s.old umbenannt (Windows schreibt es nicht mehr).",
+                PG_STARTUP_LOG, PG_STARTUP_LOG)
+    return True
+
+
+def _pg_log_candidates() -> list[str]:
+    """Dateien, in denen ein Startfehler stehen kann: das Unix-Startlog, die
+    juengste Datei des Wochenrings (``postgresql-%a.log``, Log-Audit A16) und
+    das alte ``postgresql.log`` von Clustern vor dem Wochenring."""
+    names = [PG_STARTUP_LOG]
+    ring = []
+    for path in LOG_DIR.glob("postgresql-*.log"):
+        if path.name[len("postgresql-"):-len(".log")] not in _PG_LOG_WEEKDAYS:
+            continue
+        try:
+            ring.append((path.stat().st_mtime, path.name))
+        except OSError:
+            continue
+    if ring:
+        names.append(max(ring)[1])
+    names.append("postgresql.log")
+    return names
+
+
+_PG_LOG_WEEKDAYS = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+
+
+def _dump_pg_startup_log(since: float | None = None) -> bool:
     """Log the tail of the PostgreSQL log(s) for debugging.
 
     Unix writes a startup log via ``pg_ctl start -l``; the Windows service path
@@ -810,10 +1000,21 @@ def _dump_pg_startup_log() -> bool:
     Returns ``True`` if a non-empty log was found and dumped. An empty result
     on Windows is itself a signal: postgres.exe never wrote a line, so it likely
     never executed (see the VC++-runtime hint in :func:`pg_start`).
+
+    ``since`` (Zeitpunkt des Startversuchs): nur Dateien, die seitdem
+    geschrieben wurden, zaehlen. Eine alte Datei ist keine Diagnose dieses
+    Versuchs (Log-Audit A6, Kundenfall 26.05.: ausgegeben wurde ein Stand vom
+    03.05.).
     """
-    for name in ("postgresql-startup.log", "postgresql.log"):
+    for name in _pg_log_candidates():
         log_file = LOG_DIR / name
-        if log_file.exists() and log_file.stat().st_size > 0:
+        try:
+            stat = log_file.stat()
+        except OSError:
+            continue
+        if since is not None and stat.st_mtime < since:
+            continue
+        if stat.st_size > 0:
             logger.error(f"PostgreSQL log ({name}):\n{log_file.read_text(errors='replace')[-2000:]}")
             return True
     return False
@@ -893,6 +1094,193 @@ def sync_managed_pg_port(conf_path: Path, port: int) -> bool:
         return False
     _write_conf_atomically(conf_path, new_text)
     return True
+
+
+# Log-Audit A16 (Kundenfall 2026-11-15): die Log-Einstellungen aus pg_init
+# galten nur fuer neu angelegte Cluster, und mit einem festen Dateinamen
+# rotierte PostgreSQL nie wirklich (postgresql.log wuchs seit April). Dieser
+# Block wird bei jedem Start geschrieben, steht am Dateiende (die letzte
+# Zeile gewinnt) und ergibt einen Wochenring: je Wochentag eine Datei. PostgreSQL
+# leert sie nur bei der Zeitrotation um Mitternacht, nie beim Start - auf einem
+# Praxis-PC, der abends ausgeschaltet wird, leert deshalb zusaetzlich
+# reset_stale_pg_ring_logs beim Dienststart veraltete Ringdateien. Das Praefix nennt
+# Benutzer, Datenbank und application_name (praxiszeit-app/-backup/-migrate).
+PG_LOG_BLOCK_BEGIN = "# PraxisZeit logging (verwaltet, wird bei jedem Start neu geschrieben)"
+PG_LOG_BLOCK_END = "# Ende PraxisZeit logging"
+PG_MANAGED_LOG_SETTINGS = (
+    "log_filename = 'postgresql-%a.log'",
+    "log_truncate_on_rotation = on",
+    "log_rotation_age = 1d",
+    # Groessenrotation aus: mit Wochentagsnamen haengte sie nur an dieselbe
+    # Datei an (PostgreSQL leert nur bei der Zeitrotation).
+    "log_rotation_size = 0",
+    "log_line_prefix = '%m [%p] %q%u@%d/%a '",
+)
+
+
+def sync_managed_pg_logging(conf_path: Path) -> bool:
+    """Den verwalteten Log-Block in postgresql.conf schreiben (A16).
+
+    Reine Dateiaenderung wie :func:`sync_managed_pg_port`; Zeilenenden und
+    Kodierung bleiben erhalten. ``True`` nur, wenn sich der Inhalt aenderte.
+    Ein vorhandener Block (auch veraltet oder nicht mehr am Ende) wird
+    entfernt und am Dateiende neu angehaengt."""
+    raw = conf_path.read_bytes()
+    text = raw.decode("utf-8", errors="surrogateescape")
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(nl)
+    begin = next((i for i, ln in enumerate(lines) if ln.strip() == PG_LOG_BLOCK_BEGIN), None)
+    if begin is not None:
+        end = next((i for i in range(begin + 1, len(lines))
+                    if lines[i].strip() == PG_LOG_BLOCK_END), None)
+        if end is None:
+            # Ende-Markierung fehlt (Handbearbeitung): nur die eigenen Zeilen
+            # direkt nach dem Anfang gehoeren zum Block.
+            end = begin
+            while end + 1 < len(lines) and lines[end + 1].strip() in PG_MANAGED_LOG_SETTINGS:
+                end += 1
+        del lines[begin:end + 1]
+    body = nl.join(lines)
+    # Leerzeilen am Ende (vom zuvor angehaengten Block) nicht anhaeufen
+    while body.endswith(nl + nl):
+        body = body[:-len(nl)]
+    if body and not body.endswith(nl):
+        body += nl
+    block = nl.join((PG_LOG_BLOCK_BEGIN, *PG_MANAGED_LOG_SETTINGS, PG_LOG_BLOCK_END))
+    new_text = f"{body}{nl}{block}{nl}" if body else f"{block}{nl}"
+    if new_text == text:
+        return False
+    _write_conf_atomically(conf_path, new_text)
+    return True
+
+
+def apply_pg_logging() -> bool:
+    """Den Log-Block (A16) fuer einen vorhandenen Cluster angleichen.
+
+    Laeuft der Cluster schon (Windows-Dienst bleibt ueber einen Neustart von
+    PraxisZeit hinweg an), genuegt ein Reload: alle diese Parameter sind zur
+    Laufzeit aenderbar, und der Logging-Collector wechselt bei neuem
+    log_filename sofort die Datei. Fehler blockieren den Start nie."""
+    conf = PG_DATA / "postgresql.conf"
+    try:
+        if not conf.exists() or not sync_managed_pg_logging(conf):
+            return False
+    except OSError as e:
+        logger.warning("PostgreSQL-Log-Einstellungen nicht angepasst (%s): %s", conf, e)
+        return False
+    logger.info("PostgreSQL-Log auf Wochenring postgresql-<Wochentag>.log umgestellt "
+                "(rund eine Woche, je Wochentag eine Datei).")
+    if pg_is_running():
+        try:
+            result = subprocess.run(
+                [str(pg_cmd("pg_ctl")), "reload", "-D", str(PG_DATA)],
+                env=pg_env(), capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                logger.warning("pg_ctl reload fehlgeschlagen (%s) - die Log-Einstellungen "
+                               "gelten ab dem naechsten Neustart von PostgreSQL.",
+                               (result.stderr or "").strip()[:200])
+        except (OSError, subprocess.SubprocessError) as e:
+            logger.warning("pg_ctl reload nicht moeglich (%s) - die Log-Einstellungen "
+                           "gelten ab dem naechsten Neustart von PostgreSQL.", e)
+    return True
+
+
+# Ab diesem Alter (Kalendertage) gehoert eine Ringdatei zur Vorwoche.
+PG_RING_STALE_DAYS = 6
+
+
+def reset_stale_pg_ring_logs(log_dir: Path | None = None,
+                             now: float | None = None) -> list[str]:
+    """Ringdateien ``postgresql-<Wochentag>.log`` leeren, die zuletzt vor
+    mindestens PG_RING_STALE_DAYS Kalendertagen geschrieben wurden.
+
+    Review-Fund zu A16 (Kundenfall 2026-11-15): ``log_truncate_on_rotation``
+    greift nur bei der Zeitrotation um Mitternacht, nicht beim Start. Laeuft
+    PostgreSQL nie ueber Mitternacht (PC abends aus, der Dienst mit Starttyp
+    auto oeffnet die Datei des Tages beim Hochfahren im Anhaengemodus), wuchs
+    jede Datei endlos. Sechs Tage statt sieben: so ist die Datei von morgen
+    schon leer, bevor PostgreSQL sie morgen frueh vor PraxisZeit oeffnet - der
+    Ring haelt damit sechs volle Tage plus heute. Die Datei, in die PostgreSQL
+    gerade schreibt, ist nie so alt (dort wirkt O_APPEND ohnehin weiter).
+    Geleert statt geloescht: die Rechte fuer NetworkService bleiben. Fehler
+    blockieren den Start nie; liefert die geleerten Dateinamen."""
+    from datetime import date
+    log_dir = LOG_DIR if log_dir is None else log_dir
+    if not log_dir.is_dir():
+        return []
+    today = date.fromtimestamp(time.time() if now is None else now)
+    cleared = []
+    for path in sorted(log_dir.glob("postgresql-*.log")):
+        if path.name[len("postgresql-"):-len(".log")] not in _PG_LOG_WEEKDAYS:
+            continue
+        try:
+            st = path.stat()
+            if st.st_size == 0:
+                continue
+            if (today - date.fromtimestamp(st.st_mtime)).days < PG_RING_STALE_DAYS:
+                continue
+            with open(path, "r+b") as f:
+                f.truncate(0)
+        except OSError as e:
+            logger.warning("PostgreSQL-Logdatei %s nicht geleert: %s", path.name, e)
+            continue
+        cleared.append(path.name)
+    if cleared:
+        logger.info("PostgreSQL-Logdateien der Vorwoche geleert: %s", ", ".join(cleared))
+    return cleared
+
+
+# Log-Audit A11 (Kundenfall 2026-11-15): NSSM rotiert service-stdout.log und
+# service-stderr.log beim Dienststart in service-std*-<zeitstempel>.log und
+# loescht die Kopien nie. IP-Adressen und Benutzernamen fehlgeschlagener
+# Anmeldungen lagen so seit April auf der Platte (Speicherbegrenzung DSGVO).
+# Die aktiven Dateien (ohne Zeitstempel) bleiben immer unangetastet.
+LOG_RETENTION_DEFAULT_DAYS = 30
+_ROTATED_LOG_GLOBS = ("service-stdout-*.log", "service-stderr-*.log")
+# Seit dem Wochenring (A16) nicht mehr geschrieben; verfaellt wie die Kopien.
+_RETIRED_LOG_FILES = ("postgresql.log",)
+
+
+def _log_retention_days(config: dict) -> int:
+    raw = get_config_value(config, "logs", "retention_days", LOG_RETENTION_DEFAULT_DAYS)
+    try:
+        if isinstance(raw, bool):
+            raise ValueError
+        days = int(raw)
+        if days < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        logger.warning("[logs] retention_days = %r ist ungueltig - es gelten %d Tage.",
+                       raw, LOG_RETENTION_DEFAULT_DAYS)
+        return LOG_RETENTION_DEFAULT_DAYS
+    return days
+
+
+def cleanup_rotated_service_logs(config: dict, log_dir: Path | None = None,
+                                 now: float | None = None) -> list[str]:
+    """Rotierte Dienstlogs aelter als ``[logs] retention_days`` (Vorgabe 30,
+    0 = nie loeschen) entfernen; liefert die geloeschten Dateinamen."""
+    log_dir = LOG_DIR if log_dir is None else log_dir
+    days = _log_retention_days(config)
+    if days == 0 or not log_dir.is_dir():
+        return []
+    cutoff = (time.time() if now is None else now) - days * 86400
+    candidates = [p for pattern in _ROTATED_LOG_GLOBS for p in log_dir.glob(pattern)]
+    candidates += [log_dir / name for name in _RETIRED_LOG_FILES]
+    removed = []
+    for path in candidates:
+        try:
+            if not path.is_file() or path.stat().st_mtime >= cutoff:
+                continue
+            path.unlink()
+        except OSError as e:
+            logger.warning("Altes Log %s nicht geloescht: %s", path.name, e)
+            continue
+        removed.append(path.name)
+    if removed:
+        logger.info("Logs aelter als %d Tage geloescht: %s", days, ", ".join(sorted(removed)))
+    return removed
 
 
 def neutralize_auto_conf_port(auto_conf: Path) -> bool:
@@ -980,8 +1368,11 @@ def pg_start():
         # weil PostgreSQL Tablespace-Dateien dort selbst verwaltet.
         _win_grant_networkservice(LOG_DIR, perms="M")
         _win_grant_networkservice(PG_DATA, perms="F")
+        _retire_stale_startup_log()
+        # Etwas Spielraum fuer die Aufloesung der Datei-Zeitstempel.
+        attempt_started = time.time() - 2
         if _win_service_exists(PG_SERVICE_NAME):
-            subprocess.run(["net", "start", PG_SERVICE_NAME], capture_output=True, text=True)
+            _win_net_start(PG_SERVICE_NAME)
         else:
             _win_pg_register_and_start()
         # 60s statt 30s: auf manchen Windows-Maschinen ist der PG-Start langsam
@@ -1005,7 +1396,12 @@ def pg_start():
             time.sleep(1)
         logger.error(
             f"PostgreSQL service failed to start within {PG_START_TIMEOUT_SECONDS} seconds")
-        if not _dump_pg_startup_log():
+        # Log-Audit A6: Dienstzustand (WIN32_EXIT_CODE) und Eventlog, denn der
+        # Postmaster schreibt Startfehler als Dienst nicht nach logs\.
+        _log_win_service_details(PG_SERVICE_NAME)
+        found_log = _dump_pg_startup_log(since=attempt_started)
+        _dump_win_pg_eventlog()
+        if not found_log:
             # No server log at all => postgres.exe almost certainly never ran
             # (the service start failed before any logging). On a fresh Windows
             # that is overwhelmingly the missing VC++ runtime — same root cause
@@ -1014,7 +1410,8 @@ def pg_start():
             logger.error(_vc_runtime_hint("postgres.exe"))
         sys.exit(1)
 
-    log_file = LOG_DIR / "postgresql-startup.log"
+    log_file = LOG_DIR / PG_STARTUP_LOG
+    attempt_started = time.time() - 2
 
     subprocess.run(
         [
@@ -1034,7 +1431,7 @@ def pg_start():
         time.sleep(1)
 
     logger.error("PostgreSQL failed to start within 30 seconds")
-    _dump_pg_startup_log()
+    _dump_pg_startup_log(since=attempt_started)
     sys.exit(1)
 
 
@@ -1593,8 +1990,10 @@ def pg_setup_database(config: dict, su_password: str | None = None,
 
     # Store connection strings as environment variables for the backend.
     # _database_url() picks unix-socket (Unix) vs TCP (Windows) — see #174.
-    os.environ["DATABASE_URL"] = _database_url(app_user, app_password, db_name)
-    os.environ["DATABASE_URL_MIGRATIONS"] = _database_url(superuser, su_password, db_name)
+    os.environ["DATABASE_URL"] = _database_url(app_user, app_password, db_name,
+                                               application_name=APPNAME_APP)
+    os.environ["DATABASE_URL_MIGRATIONS"] = _database_url(superuser, su_password, db_name,
+                                                          application_name=APPNAME_MIGRATE)
 
     # Save passwords to a secure file for future starts
     _save_credentials(su_password, app_password)
@@ -1643,14 +2042,39 @@ def _save_credentials(su_password: str, app_password: str):
         )
 
 
+CREDENTIALS_PERMISSION_HINT = (
+    "Keine Leserechte auf {path} - bitte als Administrator ausfuehren "
+    "(Rechtsklick auf die Eingabeaufforderung -> 'Als Administrator ausfuehren'; "
+    "Linux/macOS: mit sudo)."
+)
+
+
+def _read_credentials_text(creds_file: Path) -> str | None:
+    """Inhalt von .db-credentials (None, wenn es sie nicht gibt); ohne
+    Leserechte Hinweis + Exit 1.
+
+    Log-Audit A19 (Kundenfall 2026-11-15): ``backup.bat`` ohne Adminrechte
+    endete in einem rohen PermissionError-Traceback. Die Datei ist bewusst nur
+    fuer SYSTEM/Administratoren bzw. das Dienstkonto lesbar; unter Windows
+    scheitert schon der stat()-Aufruf von is_file()."""
+    try:
+        if not creds_file.is_file():
+            return None
+        return creds_file.read_text()
+    except PermissionError:
+        logger.error(CREDENTIALS_PERMISSION_HINT.format(path=creds_file))
+        sys.exit(1)
+
+
 def pg_load_credentials():
     """Load saved database credentials for subsequent starts."""
     creds_file = CONFIG_DIR / ".db-credentials"
-    if not creds_file.is_file():
+    text = _read_credentials_text(creds_file)
+    if text is None:
         return None, None
 
     creds = {}
-    for line in creds_file.read_text().strip().split("\n"):
+    for line in text.strip().split("\n"):
         if "=" in line:
             key, value = line.split("=", 1)
             creds[key.strip()] = value.strip()
@@ -1675,8 +2099,9 @@ BACKUP_ROLE = "praxiszeit_backup"
 def _read_credentials_file() -> dict:
     creds_file = CONFIG_DIR / ".db-credentials"
     creds = {}
-    if creds_file.is_file():
-        for line in creds_file.read_text().strip().split("\n"):
+    text = _read_credentials_text(creds_file)
+    if text is not None:
+        for line in text.strip().split("\n"):
             if "=" in line:
                 key, value = line.split("=", 1)
                 creds[key.strip()] = value.strip()
@@ -1746,7 +2171,8 @@ def ensure_backup_role(config: dict, su_password: str) -> str | None:
             "naechtliche Sicherung des Dienstes laeuft weiter.", BACKUP_ROLE, detail,
         )
         return None
-    return _database_url(BACKUP_ROLE, password, "praxiszeit")
+    return _database_url(BACKUP_ROLE, password, "praxiszeit",
+                         application_name=APPNAME_BACKUP)
 
 
 # --- Alembic Migrations ---
@@ -1786,13 +2212,21 @@ _CONF_TO_ENV = {
     ("backup", "enabled"): "BACKUP_ENABLED",
     ("backup", "schedule"): "BACKUP_SCHEDULE",
     ("backup", "retention_days"): "BACKUP_RETENTION_DAYS",
+    # Log-Audit A7 (Kundenfall 2026-11-15): zweites Sicherungsziel; auch fuer
+    # den Webprozess sichtbar (Pfad relativ zur Installation aufgeloest).
+    ("backup", "mirror_dir"): "BACKUP_MIRROR_DIR",
     # Optional: "production" (Vorgabe nativ, siehe native_environment) oder
     # "development" (API-Doku unter /docs, schwaches Admin-Passwort nur Warnung).
     ("server", "environment"): "ENVIRONMENT",
+    # Log-Audit D/NET-8 (Kundenfall 2026-11-15): Host-Header-Schutz
+    # (TrustedHostMiddleware). Ohne Eintrag gilt "*" und das Backend warnt bei
+    # jedem Start — nativ gab es dafuer bisher keinen Konfigurationsschluessel.
+    # Kommagetrennt oder als TOML-Liste.
+    ("server", "allowed_hosts"): "ALLOWED_HOSTS",
 }
 
 # Konfigurationswerte, die Dateipfade sind (relativ zu BASE_DIR aufloesen)
-_PATH_KEYS = {"LICENSE_KEY_PATH"}
+_PATH_KEYS = {"LICENSE_KEY_PATH", "BACKUP_MIRROR_DIR"}
 
 
 def apply_config_env(config: dict, env) -> None:
@@ -1806,10 +2240,39 @@ def apply_config_env(config: dict, env) -> None:
         val = get_config_value(config, section, key)
         if val is None:
             continue
-        str_val = str(val).lower() if isinstance(val, bool) else str(val)
+        if isinstance(val, bool):
+            str_val = str(val).lower()
+        elif isinstance(val, (list, tuple)):
+            str_val = ",".join(str(v).strip() for v in val if str(v).strip())
+        else:
+            str_val = str(val)
         if env_name in _PATH_KEYS and not Path(str_val).is_absolute():
             str_val = str(BASE_DIR / str_val)
         env[env_name] = str_val
+    if env.get("ALLOWED_HOSTS"):
+        env["ALLOWED_HOSTS"] = _allowed_hosts_with_local(env["ALLOWED_HOSTS"])
+
+
+# Hosts, unter denen der Manager selbst (Gesundheitspruefung in uvicorn_start,
+# Neustart-Pruefung) und der Update-Assistent das Backend fragen.
+_LOCAL_PROBE_HOSTS = ("localhost", "127.0.0.1")
+
+
+def _allowed_hosts_with_local(value: str) -> str:
+    """``ALLOWED_HOSTS`` um localhost/127.0.0.1 ergaenzen (ausser bei ``*``).
+
+    Review-Fund zu D/NET-8 (Kundenfall 2026-11-15): mit z. B.
+    ``allowed_hosts = "praxis-pc,192.168.1.10"`` beantwortete TrustedHost die
+    eigene Pruefung ``http://localhost:<port>/api/health`` mit 400 - der Start
+    galt als gescheitert, NSSM startete den Dienst in einer Schleife neu.
+    TrustedHost vergleicht exakt (der Port wird abgeschnitten), daher die
+    Eintraege in der Schreibweise, die die Pruefung sendet. ``::1`` fehlt
+    bewusst: TrustedHost schneidet ``[::1]:8080`` am ersten Doppelpunkt ab."""
+    hosts = [h.strip() for h in value.split(",") if h.strip()]
+    if not hosts or "*" in hosts:
+        return value
+    hosts += [h for h in _LOCAL_PROBE_HOSTS if h not in hosts]
+    return ",".join(hosts)
 
 
 def resolve_secret_key(config: dict, *, persist: bool) -> str:
@@ -2185,6 +2648,84 @@ def native_environment(env) -> str:
     return "production"
 
 
+_UVICORN_LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
+
+
+def uvicorn_log_config() -> dict:
+    """Logkonfiguration fuer uvicorn (``--log-config``) mit Uhrzeit.
+
+    Log-Audit A8 (Kundenfall 2026-11-15, NET-1): uvicorn lief mit seiner
+    Standardkonfiguration ohne ``asctime``, und ``praxiszeit.security``
+    (AUTH login_failed/account_locked) hatte gar keinen Handler (Pythons
+    lastResort, nur die Meldung). In service-stderr.log liess sich deshalb
+    nichts datieren. Aufbau wie uvicorn.config.LOGGING_CONFIG; das
+    Zugriffsprotokoll bleibt (stdout), die Wurzel bekommt einen Handler auf
+    WARNING — dieselbe Schwelle wie lastResort, nur mit Uhrzeit und Logger-Name.
+    """
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "()": "uvicorn.logging.DefaultFormatter",
+                "fmt": "%(asctime)s %(levelprefix)s %(name)s: %(message)s",
+                "datefmt": _UVICORN_LOG_DATEFMT,
+                "use_colors": False,
+            },
+            "access": {
+                "()": "uvicorn.logging.AccessFormatter",
+                "fmt": '%(asctime)s %(levelprefix)s %(client_addr)s - '
+                       '"%(request_line)s" %(status_code)s',
+                "datefmt": _UVICORN_LOG_DATEFMT,
+                "use_colors": False,
+            },
+        },
+        "handlers": {
+            "default": {
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stderr",
+            },
+            "access": {
+                "formatter": "access",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            },
+        },
+        "loggers": {
+            "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": False},
+            "uvicorn.error": {"level": "INFO"},
+            "uvicorn.access": {"handlers": ["access"], "level": "INFO", "propagate": False},
+            # Review-Fund zu A8: der eigene Handler aus app/core/log_setup.py
+            # (mit ip=) ist die einzige Ausgabe. Weitergereicht an die Wurzel
+            # erschien jede AUTH-Zeile doppelt, INFO-Zeilen ebenso (ein
+            # weitergereichter Datensatz prueft die Wurzel-Stufe nicht).
+            # Ohne "handlers": dictConfig laeuft vor dem App-Import, der Handler
+            # kommt erst danach dazu.
+            "praxiszeit.security": {"level": "INFO", "propagate": False},
+        },
+        "root": {"handlers": ["default"], "level": "WARNING"},
+    }
+
+
+def write_uvicorn_log_config(path: Path) -> Path | None:
+    """Schreibt :func:`uvicorn_log_config` als JSON nach ``path``.
+
+    ``None`` bei einem Schreibfehler — uvicorn startet dann mit seiner
+    Standardkonfiguration (ohne Uhrzeit), aber er startet."""
+    text = json.dumps(uvicorn_log_config(), indent=2) + "\n"
+    try:
+        if not (path.is_file() and path.read_text(encoding="utf-8") == text):
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_text(text, encoding="utf-8")
+            tmp.replace(path)
+    except OSError as e:
+        logger.warning("uvicorn-Logkonfiguration nicht schreibbar (%s): %s - "
+                       "uvicorn startet ohne Uhrzeit in den Meldungen.", path, e)
+        return None
+    return path
+
+
 def uvicorn_start(config: dict):
     """Start uvicorn with the FastAPI app."""
     global _uvicorn_process
@@ -2206,6 +2747,11 @@ def uvicorn_start(config: dict):
         "--proxy-headers",
         "--forwarded-allow-ips", "127.0.0.1,::1",
     ]
+
+    # Log-Audit A8: Uhrzeit in service-stderr/stdout (uvicorn + App-Logger).
+    log_config = write_uvicorn_log_config(DATA_DIR / "uvicorn-log.json")
+    if log_config is not None:
+        cmd.extend(["--log-config", str(log_config)])
 
     # Add SSL if configured
     # F-053 (1.3.4): Relative paths in praxiszeit.conf like "config/ssl/cert.pem"
@@ -2358,12 +2904,211 @@ def uvicorn_stop():
 
 # --- Database Backup ---
 
-def create_backup(config: dict):
-    """Create a compressed database backup."""
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+# Log-Audit A7 (Kundenfall 2026-11-15): Ergebnis des letzten Laufs fuer das
+# Admin-Banner. Vertrag gemeinsam mit backend/app/services/backup_service.py
+# (write_last_result) und dem Frontend: {"ok", "finished_at" (ISO-8601
+# Ortszeit mit Offset), "file", "size_bytes", "error", "mirror_ok" (null =
+# kein Spiegel), "verified"}; atomar (Temp-Datei + os.replace).
+BACKUP_LAST_RESULT_FILE = ".last-result.json"
+BACKUP_GLOB = "praxiszeit_*.sql.gz"
+# A14: Sicherungen vor einem Update (backup --label preupdate-<von>-<nach>)
+# verfielen nach 31 Tagen - die einzige Sicherung vor Migration 073 waere
+# beim Kunden am 19.11. geloescht worden. Die juengsten drei bleiben immer.
+PREUPDATE_LABEL_PREFIX = "preupdate"
+PREUPDATE_KEEP = 3
+_BACKUP_LABEL_MAX = 40
+# A15: Warnschwelle fuer eine Sicherung, die deutlich kleiner ist als die vorige.
+BACKUP_SHRINK_WARN_RATIO = 0.5
 
+
+def write_backup_status(*, ok: bool, file: str | None = None, size_bytes: int | None = None,
+                        error: str | None = None, mirror_ok: bool | None = None,
+                        verified: bool = False, backup_dir: Path | None = None) -> None:
+    """Statusdatei schreiben; ein Fehler dabei laesst die Sicherung nie scheitern."""
+    from datetime import datetime
+    backup_dir = BACKUP_DIR if backup_dir is None else backup_dir
+    data = {
+        "ok": bool(ok),
+        "finished_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "file": file,
+        "size_bytes": size_bytes,
+        "error": None if ok else ((error or "")[:300] or "Sicherung fehlgeschlagen"),
+        "mirror_ok": mirror_ok,
+        "verified": bool(verified),
+    }
+    tmp = backup_dir / f"{BACKUP_LAST_RESULT_FILE}.{os.getpid()}.tmp"
+    try:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False)
+        os.replace(tmp, backup_dir / BACKUP_LAST_RESULT_FILE)
+    except OSError as e:
+        logger.warning("Ergebnis der Sicherung nicht gespeichert (%s): %s",
+                       BACKUP_LAST_RESULT_FILE, e)
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def sanitize_backup_label(raw) -> str | None:
+    """``--label`` auf ``[a-z0-9.-]`` (hoechstens 40 Zeichen) bringen; leer -> None."""
+    if not raw:
+        return None
+    label = re.sub(r"[^a-z0-9.-]+", "-", str(raw).strip().lower())
+    label = re.sub(r"-{2,}", "-", label).strip("-.")
+    label = label[:_BACKUP_LABEL_MAX].strip("-.")
+    return label or None
+
+
+def _backup_label_of(name: str) -> str | None:
+    m = re.match(r"^praxiszeit_\d{8}_\d{6}(?:-\d{1,2})?_([a-z0-9.-]+)\.sql\.gz$", name)
+    return m.group(1) if m else None
+
+
+def _backup_mirror_dir(config: dict) -> Path | None:
+    """``BACKUP_MIRROR_DIR`` bzw. ``[backup] mirror_dir``; relativ = zur Installation."""
+    raw = os.environ.get("BACKUP_MIRROR_DIR", "").strip() or str(
+        get_config_value(config, "backup", "mirror_dir", "") or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    return path if path.is_absolute() else BASE_DIR / path
+
+
+def apply_backup_retention(directory: Path, retention_days, now: float | None = None) -> None:
+    """Sicherungen aelter als ``retention_days`` loeschen - ausser den
+    juengsten :data:`PREUPDATE_KEEP` mit Bezeichnung ``preupdate*`` (A14)."""
+    try:
+        days = float(retention_days)
+    except (TypeError, ValueError):
+        days = 31
+    # Release-Review 1.24.1: 0 oder negativ hiess "alles loeschen" - auch die
+    # gerade geschriebene Sicherung und ihre Spiegelkopie. Mindestens 1 Tag,
+    # wie die Aufbewahrung im Backend.
+    if not days or days < 1 or days != days:
+        days = 1
+    cutoff = (time.time() if now is None else now) - days * 86400
+    entries = []
+    for path in directory.glob(BACKUP_GLOB):
+        try:
+            entries.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    preupdate = sorted(
+        (e for e in entries
+         if (_backup_label_of(e[1].name) or "").startswith(PREUPDATE_LABEL_PREFIX)),
+        key=lambda e: e[0], reverse=True,
+    )
+    protected = {p for _, p in preupdate[:PREUPDATE_KEEP]}
+    for mtime, old_backup in entries:
+        if old_backup in protected or mtime >= cutoff:
+            continue
+        # Ein Fehler an EINER Datei (gleichzeitig geloescht, gesperrt) darf die
+        # Aufbewahrung nicht abbrechen und das gerade gelungene Backup nicht
+        # als Fehlschlag erscheinen lassen.
+        try:
+            old_backup.unlink()
+            logger.info(f"Removed old backup: {old_backup.name}")
+        except OSError as e:
+            logger.warning(f"Could not remove old backup {old_backup.name}: {e}")
+
+
+class _TailReader:
+    """Stream-Huelle, die die letzten Bytes fuer die Schlusszeilen-Pruefung behaelt."""
+
+    def __init__(self, stream, keep: int = 4096):
+        self._stream = stream
+        self._keep = keep
+        self.tail = b""
+
+    def read(self, size: int = -1) -> bytes:
+        data = self._stream.read(size)
+        if data:
+            self.tail = (self.tail + data)[-self._keep:]
+        return data
+
+
+def verify_backup_file(path: Path, secret_key: str | None) -> tuple[bool, str | None]:
+    """A15: die fertige Sicherung vollstaendig gestreamt zuruecklesen.
+
+    Verlangt ein lesbares gzip bis zum Ende, die Schlusszeile von pg_dump
+    (ohne sie lehnt auch restore die Datei ab) und - mit SECRET_KEY - eine
+    passende Signatur. Liefert (ok, Fehlertext)."""
+    import gzip
+    try:
+        with gzip.open(path, "rb") as gz:
+            reader = _TailReader(gz)
+            if secret_key:
+                mac_status = verify_backup_mac(reader, secret_key)
+            else:
+                mac_status = "ok"
+                while reader.read(1024 * 1024):
+                    pass
+    except (OSError, EOFError) as e:
+        return False, f"Sicherung nicht lesbar ({type(e).__name__}: {e})"
+    if _PG_DUMP_TRAILER not in reader.tail:
+        return False, "Schlusszeile von pg_dump fehlt - die Sicherung ist unvollständig"
+    if mac_status != "ok":
+        return False, "Signatur der Sicherung passt nicht"
+    return True, None
+
+
+def _newest_backup(directory: Path, exclude: Path | None = None) -> Path | None:
+    newest = None
+    for path in directory.glob(BACKUP_GLOB):
+        if exclude is not None and path == exclude:
+            continue
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if newest is None or mtime > newest[0]:
+            newest = (mtime, path)
+    return newest[1] if newest else None
+
+
+def _mirror_backup(backup_file: Path, mirror_dir: Path, retention_days) -> bool:
+    """A7: Kopie in ``mirror_dir`` (zweite Platte, Netzlaufwerk). Der Ordner
+    wird nur selbst angelegt, nie ein ganzer Pfad - fehlt das Laufwerk,
+    entstuende sonst still eine "Spiegelung" auf derselben Platte."""
+    tmp = mirror_dir / f".{backup_file.name}.tmp"
+    try:
+        mirror_dir.mkdir(exist_ok=True)
+        shutil.copyfile(backup_file, tmp)
+        os.replace(tmp, mirror_dir / backup_file.name)
+    except OSError as e:
+        logger.warning("Spiegel-Kopie nach %s fehlgeschlagen: %s - die Sicherung selbst "
+                       "liegt in %s.", mirror_dir, e, backup_file.parent)
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False
+    logger.info("Sicherung gespiegelt nach %s", mirror_dir / backup_file.name)
+    apply_backup_retention(mirror_dir, retention_days)
+    return True
+
+
+def create_backup(config: dict, label: str | None = None):
+    """Create a compressed database backup.
+
+    Liefert den Pfad oder None; schreibt in jedem Fall die Statusdatei
+    (A7). ``label`` (A14) haengt eine Bezeichnung an den Dateinamen."""
+    try:
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.error(f"Backup directory {BACKUP_DIR} not usable: {e}")
+        write_backup_status(ok=False, error=f"Sicherungsordner nicht nutzbar: {e}")
+        return None
+    try:
+        su_password, _ = pg_load_credentials()
+    except SystemExit:
+        # A19: Hinweis ist geloggt; Status best effort (meist fehlt dasselbe Recht).
+        write_backup_status(ok=False, error="Keine Leserechte auf die Datenbank-Zugangsdaten")
+        raise
     superuser = get_config_value(config, "database", "superuser", "praxiszeit")
-    su_password, _ = pg_load_credentials()
 
     # Without credentials we cannot authenticate to the (scram) cluster. Bail
     # out instead of running pg_dump with no password — otherwise pg_dump blocks
@@ -2374,10 +3119,14 @@ def create_backup(config: dict):
             "No database credentials found (.db-credentials missing) — "
             "skipping backup. The database is not initialized yet."
         )
+        write_backup_status(ok=False, error="Keine Datenbank-Zugangsdaten (.db-credentials fehlt)")
         return None
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    backup_file = BACKUP_DIR / f"praxiszeit_{timestamp}.sql.gz"
+    clean_label = sanitize_backup_label(label)
+    suffix = f"_{clean_label}" if clean_label else ""
+    backup_file = BACKUP_DIR / f"praxiszeit_{timestamp}{suffix}.sql.gz"
+    previous = _newest_backup(BACKUP_DIR, exclude=backup_file)
 
     logger.info(f"Creating backup: {backup_file}")
 
@@ -2388,14 +3137,20 @@ def create_backup(config: dict):
     # "gunzip -c <datei>.sql.gz | psql" restorebar. "--clean --if-exists" macht den
     # Restore idempotent (DROP ... IF EXISTS vor jedem CREATE), auch in eine bereits
     # befuellte DB. "-w": nie nach Passwort fragen (fail fast statt Haenger).
-    pg_dump = subprocess.Popen(
-        # --lock-wait-timeout wie im Web-Pfad (backup_service, S2-6): eine fremde
-        # Tabellensperre laesst den naechtlichen Lauf nicht endlos haengen.
-        [str(pg_cmd("pg_dump")), "-w", "--clean", "--if-exists",
-         "--lock-wait-timeout=300s", "-U", superuser, "-d", "praxiszeit"],
-        stdout=subprocess.PIPE,
-        env={**pg_env(), "PGPASSWORD": su_password},
-    )
+    try:
+        pg_dump = subprocess.Popen(
+            # --lock-wait-timeout wie im Web-Pfad (backup_service, S2-6): eine fremde
+            # Tabellensperre laesst den naechtlichen Lauf nicht endlos haengen.
+            [str(pg_cmd("pg_dump")), "-w", "--clean", "--if-exists",
+             "--lock-wait-timeout=300s", "-U", superuser, "-d", "praxiszeit"],
+            stdout=subprocess.PIPE,
+            # PGAPPNAME (A16): im PostgreSQL-Log als praxiszeit-backup erkennbar.
+            env={**pg_env(), "PGPASSWORD": su_password, "PGAPPNAME": APPNAME_BACKUP},
+        )
+    except OSError as e:
+        logger.error(f"Backup failed: pg_dump not startable ({e})")
+        write_backup_status(ok=False, error=f"pg_dump nicht startbar: {e}")
+        return None
 
     import gzip
     write_error = None
@@ -2438,24 +3193,51 @@ def create_backup(config: dict):
             f"Backup failed (rc={pg_dump.returncode}, write_error={write_error})!"
         )
         backup_file.unlink(missing_ok=True)
+        if write_error is not None:
+            error = f"Schreibfehler: {write_error}"
+        elif pg_dump.returncode != 0:
+            error = f"pg_dump beendet mit Code {pg_dump.returncode} - Details im Protokoll"
+        else:
+            error = "pg_dump lieferte keine Daten"
+        write_backup_status(ok=False, error=error)
         return None
 
-    logger.info(f"Backup complete: {backup_file} ({backup_file.stat().st_size / 1024:.0f} KB)")
+    size = backup_file.stat().st_size
+    logger.info(f"Backup complete: {backup_file} ({size / 1024:.0f} KB)")
+
+    # A15: zuruecklesen. Eine Datei, die restore ablehnen wuerde, ist keine
+    # Sicherung. Sie bleibt zur Untersuchung liegen, gilt aber als Fehlschlag
+    # (Exit 2, Banner) - und die Aufbewahrung laeuft nicht, damit die
+    # aelteren, guten Sicherungen erhalten bleiben.
+    verified, verify_error = verify_backup_file(backup_file, secret_key)
+    if not verified:
+        logger.error(f"Backup verification failed for {backup_file.name}: {verify_error}")
+        write_backup_status(ok=False, file=backup_file.name, size_bytes=size,
+                            error=f"Prüfung fehlgeschlagen: {verify_error}", verified=False)
+        return None
+    if previous is not None:
+        try:
+            prev_size = previous.stat().st_size
+        except OSError:
+            prev_size = 0
+        if prev_size > 0 and size < prev_size * BACKUP_SHRINK_WARN_RATIO:
+            logger.warning(
+                f"Sicherung {backup_file.name} ist mit {size / 1024:.0f} KB mehr als 50 % "
+                f"kleiner als die vorige ({previous.name}, {prev_size / 1024:.0f} KB) - "
+                "bitte pruefen, ob Daten fehlen."
+            )
+
+    retention_days = get_config_value(config, "backup", "retention_days", 31)
+    mirror_ok = None
+    mirror_dir = _backup_mirror_dir(config)
+    if mirror_dir is not None:
+        mirror_ok = _mirror_backup(backup_file, mirror_dir, retention_days)
 
     # Cleanup old backups
-    retention_days = get_config_value(config, "backup", "retention_days", 31)
-    cutoff = time.time() - (retention_days * 86400)
-    for old_backup in BACKUP_DIR.glob("praxiszeit_*.sql.gz"):
-        # Ein Fehler an EINER Datei (gleichzeitig geloescht, gesperrt) darf die
-        # Aufbewahrung nicht abbrechen und das gerade gelungene Backup nicht
-        # als Fehlschlag erscheinen lassen.
-        try:
-            if old_backup.stat().st_mtime < cutoff:
-                old_backup.unlink()
-                logger.info(f"Removed old backup: {old_backup.name}")
-        except OSError as e:
-            logger.warning(f"Could not remove old backup {old_backup.name}: {e}")
+    apply_backup_retention(BACKUP_DIR, retention_days)
 
+    write_backup_status(ok=True, file=backup_file.name, size_bytes=size,
+                        mirror_ok=mirror_ok, verified=True)
     return backup_file
 
 
@@ -2468,6 +3250,72 @@ def _signal_handler(signum, frame):
     global _shutdown_requested
     logger.info(f"Received signal {signum}, shutting down...")
     _shutdown_requested = True
+
+
+def watchdog_wait(is_stopping, interval: float = 5.0, step: float = 0.5,
+                  sleeper=time.sleep) -> bool:
+    """Wartet bis zu ``interval`` Sekunden in kleinen Schritten und gibt
+    ``True`` zurueck, sobald ein Stopp gewuenscht ist.
+
+    Ein einziges ``time.sleep(5)`` laeuft unter Windows nach dem Ctrl+C von
+    NSSM weiter (PEP 475) — bis zu fuenf Sekunden, in denen NSSM den Dienst
+    laengst hart beendet hat."""
+    waited = 0.0
+    while waited < interval:
+        if is_stopping():
+            return True
+        chunk = min(step, interval - waited)
+        sleeper(chunk)
+        waited += chunk
+    return is_stopping()
+
+
+# Log-Audit A2 (Kundenfall 2026-11-15): Exitcodes, mit denen sich uvicorn nach
+# einem Ctrl+C selbst beendet — 0 (sauber), 3 (Lifespan-Abbruch beim Stoppen),
+# 0xC000013A STATUS_CONTROL_C_EXIT (Windows, vorzeichenlos/-behaftet) sowie
+# SIGINT/SIGTERM unter Unix. uvicorn sieht das Signal oft VOR dem Manager.
+_STOP_LIKE_EXIT_CODES = {0, 3, 0xC000013A, -signal.SIGINT, -signal.SIGTERM}
+CHILD_EXIT_STOP_GRACE_SECONDS = 3.0
+
+
+def stop_follows_child_exit(returncode, is_stopping, sleeper=time.sleep,
+                            grace: float = CHILD_EXIT_STOP_GRACE_SECONDS) -> bool:
+    """Gehoert das Ende von uvicorn zu einem Stopp? Dann nicht neu starten.
+
+    Log-Audit A2: In drei Faellen beendete sich uvicorn sauber, bevor der
+    Manager das Ctrl+C protokolliert hatte — der Python-Signalhandler laeuft
+    erst, wenn der Hauptthread aus einem blockierenden Aufruf (pg_isready bis
+    5 s) zurueck ist. Bei einem "Stopp-artigen" Exitcode wird deshalb bis zu
+    ``grace`` Sekunden auf den Stoppwunsch gewartet; ein Absturzcode startet
+    ohne Wartezeit neu."""
+    if is_stopping():
+        return True
+    if returncode is None:
+        return False
+    rc = returncode if -64 < returncode < 0 else returncode & 0xFFFFFFFF
+    if rc not in _STOP_LIKE_EXIT_CODES:
+        return False
+    return watchdog_wait(is_stopping, interval=grace, sleeper=sleeper)
+
+
+def watchdog_loop(*, is_stopping, wait, child_exited, on_child_exit, check_pg):
+    """Wachhund: haelt uvicorn und PostgreSQL am Leben, bis ein Stopp
+    gewuenscht ist.
+
+    Kundenfall 2026-11-15 (Windows): NSSM schickt beim Dienst-Stopp Ctrl+C an
+    die ganze Konsole, uvicorn beendet sich darauf selbst (Exitcode 0). Ohne
+    den zweiten Blick auf den Stoppwunsch hielt der Wachhund das fuer einen
+    Absturz und startete uvicorn neu — der saubere Shutdown kam nie dran."""
+    while not is_stopping():
+        if wait() or is_stopping():
+            break
+        if child_exited():
+            if is_stopping():
+                break
+            on_child_exit()
+        if is_stopping():
+            break
+        check_pg()
 
 
 PG_UPGRADE_RESTORE_MARKER = DATA_DIR / ".pg-upgrade-restore"
@@ -2562,19 +3410,78 @@ def _watchdog_foreign_exit(message: str) -> None:
 WATCHDOG_FOREIGN_LIMIT = 3
 _watchdog_foreign_streak = 0
 
+# Log-Audit A9 (Kundenfall 2026-11-15): PostgreSQL wird erst nach so vielen
+# "down"-Pruefungen in Folge neu gestartet (Abstand je Runde ~5 s). Beim
+# Herunterfahren stoppt Windows den PostgreSQL-Dienst einige Sekunden VOR dem
+# Ctrl+C an PraxisZeit; der Wachhund startete ihn beim ersten "down" neu.
+WATCHDOG_PG_DOWN_LIMIT = 3
+_watchdog_down_streak = 0
 
-def _watchdog_check_pg() -> None:
+# Dienstzustaende, in denen jemand anderes (Dienststeuerung, Verwaltung) den
+# PostgreSQL-Dienst gerade bewegt — dann nicht dazwischenstarten.
+_WIN_SERVICE_PENDING_STATES = {"STOP_PENDING", "START_PENDING"}
+
+
+def _watchdog_pg_service_missing() -> None:
+    """PostgreSQL-Dienst fehlt (sc 1060): nicht aus dem Wachhund registrieren.
+
+    Registrieren gehoert allein zum Dienststart (cmd_start -> pg_start). Der
+    Manager beendet sich mit 1, NSSM startet ihn neu (Log-Audit A9)."""
+    logger.error(
+        "Windows-Dienst %s ist nicht registriert - PraxisZeit beendet sich, der "
+        "Neustart des Dienstes registriert ihn neu.", PG_SERVICE_NAME,
+    )
+    uvicorn_stop()
+    _remove_pid()
+    sys.exit(1)
+
+
+def _watchdog_may_restart_pg(is_stopping) -> bool:
+    """Darf der Wachhund PostgreSQL jetzt neu starten? (Log-Audit A9)
+
+    Nein, wenn ein Stopp gewuenscht ist, Windows herunterfaehrt, der Dienst
+    gerade gestoppt/gestartet wird oder sein Zustand nicht feststellbar ist.
+    Der Stoppwunsch wird zuletzt gelesen, also direkt vor ``pg_start``: das
+    Ctrl+C kann waehrend der sc-Abfrage eintreffen."""
+    if is_stopping():
+        return False
+    if IS_WINDOWS:
+        if _win_system_shutting_down():
+            logger.info("Windows faehrt herunter - PostgreSQL wird nicht neu gestartet.")
+            return False
+        state = _win_service_state(PG_SERVICE_NAME)
+        if state == "missing":
+            _watchdog_pg_service_missing()
+        if state == "unknown":
+            logger.warning(
+                "Zustand des Dienstes %s nicht feststellbar (sc query) - "
+                "erneute Pruefung beim naechsten Durchlauf.", PG_SERVICE_NAME,
+            )
+            return False
+        if state in _WIN_SERVICE_PENDING_STATES:
+            logger.info(
+                "Dienst %s ist im Zustand %s - kein Neustart durch den Wachhund.",
+                PG_SERVICE_NAME, state,
+            )
+            return False
+    return not is_stopping()
+
+
+def _watchdog_check_pg(is_stopping=lambda: _shutdown_requested) -> None:
     """PostgreSQL-Pruefung der Watchdog-Schleife in cmd_start.
 
-    ``"down"`` → unseren Cluster neu starten; ``"foreign"`` → beenden (Exit 78),
-    nie gegen einen fremden Server weiterlaufen oder ihn stoppen. Beendet wird
-    erst, wenn "foreign" bei WATCHDOG_FOREIGN_LIMIT Pruefungen in Folge
-    herauskommt: Exit 78 ist endgueltig (NSSM AppExit 78 Exit), ein einzelner
-    Messfehler darf die Praxis nicht ohne Zeiterfassung lassen.
+    ``"down"`` → unseren Cluster neu starten, aber erst nach
+    WATCHDOG_PG_DOWN_LIMIT Pruefungen in Folge und nur, wenn
+    :func:`_watchdog_may_restart_pg` zustimmt; ``"foreign"`` → beenden
+    (Exit 78), nie gegen einen fremden Server weiterlaufen oder ihn stoppen.
+    Beendet wird erst, wenn "foreign" bei WATCHDOG_FOREIGN_LIMIT Pruefungen in
+    Folge herauskommt: Exit 78 ist endgueltig (NSSM AppExit 78 Exit), ein
+    einzelner Messfehler darf die Praxis nicht ohne Zeiterfassung lassen.
     """
-    global _watchdog_foreign_streak
+    global _watchdog_foreign_streak, _watchdog_down_streak
     state = pg_cluster_state()
     if state == "foreign":
+        _watchdog_down_streak = 0
         _watchdog_foreign_streak += 1
         if _watchdog_foreign_streak >= WATCHDOG_FOREIGN_LIMIT:
             _watchdog_foreign_exit(_foreign_pg_message(pg_port()))
@@ -2586,19 +3493,32 @@ def _watchdog_check_pg() -> None:
         return
     _watchdog_foreign_streak = 0
     if state == "unknown":
-        # pg_ctl status lief in die Zeitgrenze o. ae. (S3-08): weder neu
-        # starten noch beenden, beim naechsten Durchlauf erneut pruefen.
+        # pg_ctl status lief in die Zeitgrenze, pg_isready antwortete nicht
+        # rechtzeitig oder der Server lehnt ab (faehrt hoch/herunter, S3-08,
+        # Log-Audit A9): weder neu starten noch beenden, erneut pruefen.
         logger.warning(
-            "PostgreSQL-Port %s: Zustand nicht feststellbar (pg_ctl status) - "
+            "PostgreSQL-Port %s: Zustand nicht feststellbar - "
             "erneute Pruefung beim naechsten Durchlauf.", pg_port(),
         )
         return
-    if state == "down":
-        logger.error("PostgreSQL is not responding, restarting...")
-        try:
-            pg_start()
-        except ForeignPostgresError as e:
-            _watchdog_foreign_exit(str(e))
+    if state != "down":
+        _watchdog_down_streak = 0
+        return
+    _watchdog_down_streak += 1
+    if _watchdog_down_streak < WATCHDOG_PG_DOWN_LIMIT:
+        logger.warning(
+            "PostgreSQL antwortet nicht (%s von %s) - erneute Pruefung beim "
+            "naechsten Durchlauf.", _watchdog_down_streak, WATCHDOG_PG_DOWN_LIMIT,
+        )
+        return
+    if not _watchdog_may_restart_pg(is_stopping):
+        return
+    _watchdog_down_streak = 0
+    logger.error("PostgreSQL is not responding, restarting...")
+    try:
+        pg_start()
+    except ForeignPostgresError as e:
+        _watchdog_foreign_exit(str(e))
 
 
 def cmd_start(args):
@@ -2630,6 +3550,18 @@ def cmd_start(args):
     _ensure_install_dir_acl()
     # Linux/macOS: data, logs and backups only for the service account.
     _restrict_unix_data_dirs()
+
+    # Log-Audit A11: von NSSM rotierte Dienstlogs verfallen. Darf den Start
+    # nie verhindern.
+    try:
+        cleanup_rotated_service_logs(config)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Aufraeumen alter Logs fehlgeschlagen: %s", e)
+    # Review-Fund zu A16: Wochenring auch ohne Mitternachtsrotation.
+    try:
+        reset_stale_pg_ring_logs()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Leeren alter PostgreSQL-Logs fehlgeschlagen: %s", e)
 
     # 1. Initialize PostgreSQL if needed
     # Fremder Server auf unserem Port? Dann VOR jeder Entscheidung abbrechen
@@ -2714,6 +3646,8 @@ def cmd_start(args):
 
     # 2. Start PostgreSQL
     apply_pg_port()
+    # Log-Audit A16: Wochenring + Praefix auch fuer bestehende Cluster.
+    apply_pg_logging()
     pg_start()
 
     # 3. Setup database if needed (first run or missing credentials)
@@ -2725,9 +3659,10 @@ def cmd_start(args):
         if su_password and app_password:
             superuser = get_config_value(config, "database", "superuser", "praxiszeit")
             app_user = get_config_value(config, "database", "app_user", "praxiszeit_app")
-            os.environ["DATABASE_URL"] = _database_url(app_user, app_password, "praxiszeit")
+            os.environ["DATABASE_URL"] = _database_url(
+                app_user, app_password, "praxiszeit", application_name=APPNAME_APP)
             os.environ["DATABASE_URL_MIGRATIONS"] = _database_url(
-                superuser, su_password, "praxiszeit"
+                superuser, su_password, "praxiszeit", application_name=APPNAME_MIGRATE
             )
         else:
             logger.error("Database credentials not found. Run 'praxiszeit-server init' first.")
@@ -2775,41 +3710,50 @@ def cmd_start(args):
     # 7. Watchdog loop
     logger.info("PraxisZeit is running. Press Ctrl+C to stop.")
     uvicorn_restarts: list[float] = []
-    while not _shutdown_requested:
-        time.sleep(5)
 
-        # Check if uvicorn is still alive
-        if _uvicorn_process and _uvicorn_process.poll() is not None:
-            rc = _uvicorn_process.returncode
-            now = time.time()
-            uvicorn_restarts.append(now)
-            uvicorn_restarts = [t for t in uvicorn_restarts
-                                if now - t <= _UVICORN_RESTART_WINDOW_SECONDS]
-            # #427: Irgendwann ist Schluss. Ohne Obergrenze startet der Wachhund
-            # uvicorn endlos neu und bleibt dabei selbst am Leben — fuer systemd
-            # ist der Dienst dann ``active``, obwohl er in einer Absturzschleife
-            # steckt und nichts ausliefert. Mit ``Restart=on-failure`` und
-            # ``StartLimitBurst`` in der Unit endet der Dienst stattdessen
-            # ehrlich in ``failed``.
-            if should_give_up(uvicorn_restarts, now):
-                logger.error(
-                    "uvicorn hat sich %s mal in %s Minuten beendet (zuletzt mit "
-                    "Exitcode %s) — PraxisZeit gibt auf und beendet sich mit "
-                    "Fehler, damit der Dienst nicht faelschlich als laufend gilt.",
-                    len(uvicorn_restarts), _UVICORN_RESTART_WINDOW_SECONDS // 60, rc,
-                )
-                uvicorn_stop()
-                pg_stop()
-                _remove_pid()
-                sys.exit(1)
+    def _on_uvicorn_exit():
+        nonlocal uvicorn_restarts
+        rc = _uvicorn_process.returncode
+        # Log-Audit A2: uvicorn hat das Ctrl+C vor dem Manager gesehen — kurz
+        # auf den Stoppwunsch warten, statt mitten im Dienst-Stopp neu zu starten.
+        if stop_follows_child_exit(rc, lambda: _shutdown_requested):
+            logger.info("uvicorn hat sich beendet (Exitcode %s) - Stopp angefordert, "
+                        "kein Neustart.", rc)
+            return
+        now = time.time()
+        uvicorn_restarts.append(now)
+        uvicorn_restarts = [t for t in uvicorn_restarts
+                            if now - t <= _UVICORN_RESTART_WINDOW_SECONDS]
+        # #427: Irgendwann ist Schluss. Ohne Obergrenze startet der Wachhund
+        # uvicorn endlos neu und bleibt dabei selbst am Leben — fuer systemd
+        # ist der Dienst dann ``active``, obwohl er in einer Absturzschleife
+        # steckt und nichts ausliefert. Mit ``Restart=on-failure`` und
+        # ``StartLimitBurst`` in der Unit endet der Dienst stattdessen
+        # ehrlich in ``failed``.
+        if should_give_up(uvicorn_restarts, now):
             logger.error(
-                "uvicorn hat sich beendet (Exitcode %s), Neustart %s von %s...",
-                rc, len(uvicorn_restarts), _UVICORN_RESTART_LIMIT,
+                "uvicorn hat sich %s mal in %s Minuten beendet (zuletzt mit "
+                "Exitcode %s) — PraxisZeit gibt auf und beendet sich mit "
+                "Fehler, damit der Dienst nicht faelschlich als laufend gilt.",
+                len(uvicorn_restarts), _UVICORN_RESTART_WINDOW_SECONDS // 60, rc,
             )
-            uvicorn_start(config)
+            uvicorn_stop()
+            pg_stop()
+            _remove_pid()
+            sys.exit(1)
+        logger.error(
+            "uvicorn hat sich beendet (Exitcode %s), Neustart %s von %s...",
+            rc, len(uvicorn_restarts), _UVICORN_RESTART_LIMIT,
+        )
+        uvicorn_start(config)
 
-        # Check if PostgreSQL is still alive
-        _watchdog_check_pg()
+    watchdog_loop(
+        is_stopping=lambda: _shutdown_requested,
+        wait=lambda: watchdog_wait(lambda: _shutdown_requested),
+        child_exited=lambda: bool(_uvicorn_process and _uvicorn_process.poll() is not None),
+        on_child_exit=_on_uvicorn_exit,
+        check_pg=_watchdog_check_pg,
+    )
 
     # Shutdown
     logger.info("Shutting down PraxisZeit...")
@@ -2982,12 +3926,34 @@ def cmd_harden_permissions(args):
 
 
 def cmd_backup(args):
-    """Create a database backup."""
+    """Create a database backup.
+
+    Exitcodes (Log-Audit A4, Kundenfall 2026-11-15): 0 = Sicherung erstellt
+    und geprueft, 1 = PostgreSQL laeuft nicht bzw. keine Leserechte,
+    2 = Sicherung gescheitert. Bisher endete auch ein Fehlschlag mit 0, und
+    der Update-Assistent lief weiter."""
     config = load_config()
-    if not pg_is_running():
-        logger.error("PostgreSQL is not running. Start PraxisZeit first.")
+    # Review-Fund zu A19 (Kundenfall 2026-11-15): ohne Adminrechte scheitert
+    # unter Windows schon pg_ctl status (data\postgresql nur fuer NetworkService,
+    # SYSTEM, Administratoren) - die Meldung lautete dann "PostgreSQL is not
+    # running", und der Fehlerstatus landete im Admin-Banner. Deshalb zuerst
+    # die Leserechte pruefen (Hinweis + Exit 1 in _read_credentials_text).
+    _read_credentials_text(CONFIG_DIR / ".db-credentials")
+    state = pg_cluster_state()
+    if state == "unknown":
+        # Kein Beleg fuer "laeuft nicht" (fehlende Rechte, Zeitgrenze, Server
+        # faehrt gerade hoch): keinen Fehlerstatus schreiben.
+        logger.error(
+            "Zustand von PostgreSQL nicht feststellbar - keine Sicherung erstellt. "
+            "Bitte als Administrator ausfuehren bzw. in einer Minute erneut versuchen."
+        )
         sys.exit(1)
-    create_backup(config)
+    if state != "own":
+        logger.error("PostgreSQL is not running. Start PraxisZeit first.")
+        write_backup_status(ok=False, error="PostgreSQL läuft nicht - keine Sicherung erstellt")
+        sys.exit(1)
+    if create_backup(config, label=getattr(args, "label", None)) is None:
+        sys.exit(2)
 
 
 def bundled_python() -> str:
@@ -5097,7 +6063,13 @@ def main():
     subparsers.add_parser("stop", help="Stop PraxisZeit").set_defaults(func=cmd_stop)
     subparsers.add_parser("status", help="Show service status").set_defaults(func=cmd_status)
     subparsers.add_parser("init", help="First-time database initialization").set_defaults(func=cmd_init)
-    subparsers.add_parser("backup", help="Create database backup").set_defaults(func=cmd_backup)
+    p_backup = subparsers.add_parser("backup", help="Create database backup")
+    # A14: z. B. --label preupdate-1.24.0-1.24.1 (Update-Assistent, install.sh);
+    # die juengsten drei preupdate-Sicherungen verfallen nie.
+    p_backup.add_argument("--label", default=None,
+                          help="Bezeichnung im Dateinamen (a-z, 0-9, '.', '-'); "
+                               "'preupdate-...' bleibt ueber die Aufbewahrung hinaus erhalten")
+    p_backup.set_defaults(func=cmd_backup)
     subparsers.add_parser(
         "print-db-port",
         help="Datenbank-Port ausgeben (einzige Zeile auf stdout)",

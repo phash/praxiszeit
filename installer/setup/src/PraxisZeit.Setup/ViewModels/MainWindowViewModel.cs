@@ -129,11 +129,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         Pages.Clear();
         Pages.Add(_welcome);
         Pages.Add(_location);
-        if (mode is InstallMode.FreshInstall or InstallMode.Repair)
+        if (!mode.KeepsExistingInstallation())
         {
             Pages.Add(_ports);
         }
-        if (mode is InstallMode.FreshInstall or InstallMode.Repair)
+        if (!mode.KeepsExistingInstallation())
         {
             Pages.Add(_config);
         }
@@ -278,7 +278,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _progress.CanGoNext = false;
         RaiseShellChanged();
 
-        var sink = new Progress<RunnerEvent>(_progress.Apply);
+        // Protokoll zusaetzlich als Datei unter logs\ (Kundenfall 2026-11-15:
+        // nach dem Schliessen des Fensters war die FEHLER-Zeile weg).
+        // Erstinstallation: Protokoll zuerst nach %TEMP%, der Zielordner muss
+        // fuer InstallDirGuard leer bleiben (Review 2026-11-15).
+        var keepsInstall = _welcome.Mode.KeepsExistingInstallation();
+        var setupLog = keepsInstall
+            ? new SetupLog(new Progress<RunnerEvent>(_progress.Apply), _location.InstallPath, DateTime.Now)
+            : SetupLog.Deferred(new Progress<RunnerEvent>(_progress.Apply), Path.Combine(Path.GetTempPath(), "PraxisZeit-Setup"), DateTime.Now);
+        IProgress<RunnerEvent> sink = setupLog;
         bool success;
 
         try
@@ -312,7 +320,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             else
             {
                 var installDir = _location.InstallPath;
-                if (_welcome.Mode == InstallMode.Update)
+                if (_welcome.Mode.KeepsExistingInstallation())
                 {
                     success = await RunUpdateOnWindowsAsync(installDir, _extractedPayloadDir, sink)
                         .ConfigureAwait(true);
@@ -332,16 +340,25 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             success = false;
         }
 
+        if (!keepsInstall)
+        {
+            setupLog.RelocateTo(_location.InstallPath);
+        }
+
         // 3) Done-Page mit Ergebnis befuellen
         _done.Success = success;
         _done.Headline = success ? "Fertig!" : "Installation fehlgeschlagen";
         _done.Summary = success
-            ? (_welcome.Mode == InstallMode.Update
+            ? (_welcome.Mode.KeepsExistingInstallation()
                 ? $"PraxisZeit wurde erfolgreich auf Version {_welcome.TargetVersion} aktualisiert. Eine Datenbank-Sicherung liegt unter data\\backups."
                 : (_config is not null
                     ? $"PraxisZeit ist eingerichtet, der Service läuft. Sie können sich jetzt mit dem Admin-Account ({_config.AdminUsername}) anmelden."
                     : "PraxisZeit wurde eingerichtet, der Service läuft. Bevor Sie sich anmelden können, muss config\\praxiszeit.conf einmalig angepasst werden (Praxisname, Admin-E-Mail, Admin-Passwort)."))
-            : "Bitte prüfen Sie das Protokoll der Progress-Page und logs\\service-stderr.log im Installationsverzeichnis. Ein automatisches Datenbank-Backup wurde unter data\\backups abgelegt.";
+            : "Bitte prüfen Sie das Protokoll der Progress-Page"
+              + (setupLog.FilePath is { } logPath ? $" (gespeichert unter {logPath})" : string.Empty)
+              + " und logs\\service-stderr.log im Installationsverzeichnis."
+              + (keepsInstall ? " Ob vor diesem Lauf eine neue Datenbank-Sicherung entstand, steht im Protokoll; vorhandene Sicherungen liegen unter data\\backups. Brach das Update bei der Sicherung ab, läuft PraxisZeit unverändert weiter." : string.Empty)
+              + (_welcome.Mode.KeepsExistingInstallation() ? " Bitte keine Neuinstallation in diesen Ordner — das Setup erneut starten, es bietet dann „Reparieren“ an und behält Konfiguration und Daten." : string.Empty);
         var browserUrl = _ports.HttpsPort == 443
             ? "https://localhost/"
             : $"https://localhost:{_ports.HttpsPort}/";

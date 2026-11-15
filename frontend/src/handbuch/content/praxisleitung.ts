@@ -2716,6 +2716,7 @@ export const praxisleitung: Handbook = {
             ['fremdes Passwort durch die Verwaltung gesetzt', 'Das eigene Passwort ändern Sie unter **Profil → Passwort ändern**, nicht über die Benutzerverwaltung.'],
             ['Zwei-Faktor im Profil ein- oder abgeschaltet, durch die Verwaltung zurückgesetzt, falsche Zwei-Faktor-Codes', 'Nach 10 falschen Codes in einer Stunde ist die Anmeldung des Kontos für eine Stunde gesperrt.'],
             ['Abmeldung nach 5 falschen Passworteingaben in einer offenen Sitzung', 'zum Beispiel beim Passwort ändern oder beim Herunterladen einer Sicherung'],
+            ['Anmeldung vorübergehend gesperrt (zu viele Fehlversuche)', 'nach 5 falschen Anmeldungen von einer Adresse oder 50 insgesamt in 15 Minuten; ein Eintrag je Sperre mit dem betroffenen Konto. Häufen sich Sperren eines Kontos, setzen Sie das Passwort der Person zurück.'],
             ['Datenbank-Sicherungen erstellt, heruntergeladen, gelöscht, Einstellungen geändert', 'Die geplante tägliche Sicherung steht nicht darin.'],
             ['Notfall-Vorgänge auf dem Server (Passwort-Reset, Zwei-Faktor abschalten, Reaktivieren)', 'Siehe das letzte Kapitel dieses Handbuchs.'],
           ],
@@ -2724,7 +2725,7 @@ export const praxisleitung: Handbook = {
           kind: 'tip',
           tone: 'info',
           text:
-            '**Fehlgeschlagene Anmeldungen stehen hier nicht.** Sie stehen im Protokoll des Servers (AUTH login_failed …), nicht im Änderungsprotokoll.',
+            '**Einzelne fehlgeschlagene Anmeldungen stehen hier nicht,** nur die Sperre danach. Sie stehen mit Uhrzeit und Adresse (ip=…) im Protokoll des Servers (AUTH login_failed …), nicht im Änderungsprotokoll. Leerzeichen vor oder nach dem Benutzernamen ignoriert die Anmeldung.',
         },
         {
           kind: 'task',
@@ -2800,15 +2801,23 @@ export const praxisleitung: Handbook = {
             { n: 4, text: '**Aufbewahrung (Tage):** ältere Sicherungen löscht PraxisZeit automatisch, in Docker nach jeder Sicherung, nativ bei jedem [[Jetzt sichern]]. Nativ trifft das auch die Sicherungen des Betriebssystem-Zeitplans im selben Ordner; stellen Sie den Wert dort also nicht kürzer ein als retention_days im Abschnitt [backup] der Datei config/praxiszeit.conf (Standard 31 Tage), das der nächtliche Timer selbst anwendet. Für § 16 ArbZG sind mindestens 2 Jahre (730 Tage) nötig; die Seite schlägt zunächst 30 Tage vor. Sonst zusätzlich Jahresarchive außerhalb des Servers ablegen.' },
             { n: 5, text: '**Speicherort (optional):** leer bedeutet Standardverzeichnis. Tragen Sie einen **absoluten Pfad** ein (relative Pfade lehnt PraxisZeit ab); er muss für den Dienst beschreibbar sein. Zum Zurücksetzen auf das Standardverzeichnis leeren Sie das Feld und speichern. Nativ ändert der Speicherort, wohin [[Jetzt sichern]] schreibt und welchen Ordner die Liste zeigt (auch Herunterladen und Löschen). Die nächtlichen Sicherungen des Betriebssystems bleiben in data/backups und stehen dann nicht mehr in der Liste; der Hinweis „älter als 36 Stunden“ kann dann erscheinen, obwohl der Timer sichert.' },
             { n: 6, text: 'Klicken Sie auf [[Einstellungen speichern]]. Erst dann gelten Uhrzeit, Aufbewahrung und Speicherort. Die Uhrzeit wirkt nur in der Docker-Installation; nativ steuert der Timer des Betriebssystems die geplante Sicherung.' },
-            { n: 7, text: 'Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Ist die neueste Sicherung älter als 36 Stunden, erscheint oben ein Hinweis: Prüfen Sie dann den Zeitplan oder sichern Sie sofort. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.' },
+            { n: 7, text: 'Unter **Vorhandene Sicherungen** stehen Datei, Größe und Zeitpunkt. Ist die neueste Sicherung älter als 36 Stunden, erscheint oben ein Hinweis: Prüfen Sie dann den Zeitplan oder sichern Sie sofort. Ist der letzte Lauf fehlgeschlagen, steht oben eine rote Meldung mit dem Fehler; ist nur die Kopie in das zweite Sicherungsziel gescheitert, ein gelber Hinweis. Dort laden Sie eine Sicherung herunter oder löschen sie, siehe die Tipps unten.' },
           ],
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Hinweisband auf allen Seiten:** Ist die letzte Datensicherung fehlgeschlagen, sehen Admins oben auf jeder Seite „Die letzte Datensicherung ist fehlgeschlagen …“ mit dem Fehler und dem Link „Zur Datensicherung“. Wird planmäßig gesichert (Zeitplan auf dieser Seite eingeschaltet oder native Installation) und ist die neueste Sicherung älter als 36 Stunden, lautet der Hinweis „Die letzte Datensicherung ist älter als 36 Stunden …“. ' +
+            'Sichern Sie dann mit [[Jetzt sichern]] und prüfen Sie Speicherplatz und Zeitplan; danach verschwindet das Band. Während „Ansicht als Mitarbeiter“ erscheint es nicht.',
         },
         {
           kind: 'tip',
           tone: 'info',
           text:
             '**Wo die Sicherungen liegen:** Docker im Volume praxiszeit_backups, nativ im Verzeichnis data/backups/. **Native Installation:** Die *geplante* Sicherung läuft dort weiterhin über den Timer des Betriebssystems (Linux: täglich 02:00 über systemd, Windows: täglich 03:00 als geplante Aufgabe, macOS: täglich 03:00 über launchd). ' +
-            'Den Zeitplan auf dieser Seite nutzt nur die Docker-Variante; „Jetzt sichern“ und die Liste funktionieren überall. Nativ gelten Aufbewahrung und Speicherort dieser Seite für „Jetzt sichern“ und die Liste: Jedes „Jetzt sichern“ löscht ältere Sicherungen im Sicherungsordner, auch die des Timers, und ein gesetzter Speicherort blendet die Timer-Sicherungen in data/backups aus der Liste aus. Die Aufbewahrungsdauer der nativen Timer selbst steht in config/praxiszeit.conf (retention_days, Standard 31 Tage).',
+            'Den Zeitplan auf dieser Seite nutzt nur die Docker-Variante; „Jetzt sichern“ und die Liste funktionieren überall. Nativ gelten Aufbewahrung und Speicherort dieser Seite für „Jetzt sichern“ und die Liste: Jedes „Jetzt sichern“ löscht ältere Sicherungen im Sicherungsordner, auch die des Timers, und ein gesetzter Speicherort blendet die Timer-Sicherungen in data/backups aus der Liste aus. Die Aufbewahrungsdauer der nativen Timer selbst steht in config/praxiszeit.conf (retention_days, Standard 31 Tage). ' +
+            'Nativ bleibt die Sicherung vor einem Update (Name mit „preupdate“) länger: die drei jüngsten löscht die Aufbewahrung nie. Eine zweite Kopie jeder nativen Sicherung, etwa auf eine zweite Platte, richtet Ihre IT-Betreuung über mirror_dir im Abschnitt [backup] der Datei config/praxiszeit.conf ein.',
         },
         {
           kind: 'tip',

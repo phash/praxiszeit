@@ -9,8 +9,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 const h = vi.hoisted(() => ({
   get: vi.fn(),
   put: vi.fn(),
+  post: vi.fn(),
 }));
-vi.mock('../../api/client', () => ({ default: { get: h.get, put: h.put, post: vi.fn(), delete: vi.fn() } }));
+vi.mock('../../api/client', () => ({ default: { get: h.get, put: h.put, post: h.post, delete: vi.fn() } }));
 vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }),
 }));
@@ -27,6 +28,7 @@ const overview = (override: string, backups: unknown[] = []) => ({
 beforeEach(() => {
   h.get.mockReset();
   h.put.mockReset();
+  h.post.mockReset();
 });
 
 describe('Backups: Konfiguration', () => {
@@ -81,5 +83,51 @@ describe('Backups: Konfiguration', () => {
     render(<Backups />);
     await screen.findByText(/Vorhandene Sicherungen/);
     expect(screen.queryByTestId('backup-stale-warning')).toBeNull();
+  });
+
+  // Log-Audit 2026-11-15 (Punkt 7): Ergebnis des letzten Laufs (.last-result.json).
+  it('zeigt einen fehlgeschlagenen letzten Lauf mit Fehlertext', async () => {
+    const fresh = new Date(Date.now() - 2 * 3600_000).toISOString();
+    h.get.mockResolvedValue({ data: { ...overview('', [{ filename: 'a.sql.gz', size_bytes: 10, created_at: fresh }]).data,
+      last_result: { ok: false, finished_at: fresh, file: null, size_bytes: null, error: 'pg_dump fehlgeschlagen', mirror_ok: null, verified: false } } });
+    render(<Backups />);
+    expect(await screen.findByTestId('backup-failed-warning')).toHaveTextContent('pg_dump fehlgeschlagen');
+    expect(screen.queryByTestId('backup-stale-warning')).toBeNull();
+  });
+
+  it('warnt, wenn die Kopie ins zweite Ziel fehlschlug', async () => {
+    const fresh = new Date(Date.now() - 2 * 3600_000).toISOString();
+    h.get.mockResolvedValue({ data: { ...overview('', [{ filename: 'a.sql.gz', size_bytes: 10, created_at: fresh }]).data,
+      last_result: { ok: true, finished_at: fresh, file: 'a.sql.gz', size_bytes: 10, error: null, mirror_ok: false, verified: true } } });
+    render(<Backups />);
+    expect(await screen.findByTestId('backup-mirror-warning')).toBeInTheDocument();
+    expect(screen.queryByTestId('backup-failed-warning')).toBeNull();
+  });
+
+  it('ohne last_result (ältere Server) keine Zusatzwarnung', async () => {
+    const fresh = new Date(Date.now() - 2 * 3600_000).toISOString();
+    h.get.mockResolvedValue(overview('', [{ filename: 'a.sql.gz', size_bytes: 10, created_at: fresh }]));
+    render(<Backups />);
+    await screen.findByText(/Vorhandene Sicherungen/);
+    expect(screen.queryByTestId('backup-failed-warning')).toBeNull();
+    expect(screen.queryByTestId('backup-mirror-warning')).toBeNull();
+  });
+
+  // Review-Nachzug Log-Audit Punkt 7: nach fehlgeschlagenem "Sofort sichern"
+  // neu laden, damit last_result (ok=false) und das Banner sofort stimmen.
+  it('laedt nach fehlgeschlagenem "Sofort sichern" neu und zeigt den Fehlschlag', async () => {
+    const fresh = new Date(Date.now() - 2 * 3600_000).toISOString();
+    const base = overview('', [{ filename: 'a.sql.gz', size_bytes: 10, created_at: fresh }]);
+    h.get
+      .mockResolvedValueOnce(base)
+      .mockResolvedValueOnce({ data: { ...base.data,
+        last_result: { ok: false, finished_at: fresh, file: null, size_bytes: null, error: 'Platte voll', mirror_ok: null, verified: false } } });
+    h.post.mockRejectedValue(new Error('500'));
+    render(<Backups />);
+    await screen.findByText(/Vorhandene Sicherungen/);
+    expect(screen.queryByTestId('backup-failed-warning')).toBeNull();
+    fireEvent.click(screen.getByText('Jetzt sichern'));
+    expect(await screen.findByTestId('backup-failed-warning')).toHaveTextContent('Platte voll');
+    expect(h.get).toHaveBeenCalledTimes(2);
   });
 });

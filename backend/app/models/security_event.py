@@ -47,6 +47,9 @@ EVENT_BACKUP_CONFIG_CHANGED = "backup_config_changed"  # S1-02
 # Review 2026-11-11 (user-20): Ausblenden/Einblenden aus Berichten und Uebersichten.
 EVENT_USER_HIDDEN = "user_hidden"
 EVENT_USER_SHOWN = "user_shown"
+# Kundenfall 2026-11-15 (Log-Audit 12): Login-Sperre nach zu vielen falschen
+# Passwoertern/2FA-Codes — bisher nur im Dienstprotokoll, die Verwaltung sah sie nie.
+EVENT_ACCOUNT_LOCKED = "account_locked"
 
 
 class SecurityEvent(Base):

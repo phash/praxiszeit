@@ -48,4 +48,17 @@ describe('<SecurityEventsCard /> (#489)', () => {
     render(<SecurityEventsCard />);
     expect(await screen.findByText('Noch keine Konto-Vorgänge protokolliert.')).toBeInTheDocument();
   });
+
+  it('Log-Audit 2026-11-15: beschriftet gesperrte Anmeldungen (account_locked)', async () => {
+    getMock.mockResolvedValue({
+      data: [{
+        id: 'e3', created_at: '2026-11-15T08:12:00Z', event: 'account_locked',
+        subject_user_id: 'u1', subject_name: 'Anna Meier',
+        actor: 'ip:192.168.1.5', actor_name: 'ip:192.168.1.5', detail: '5 Fehlversuche in 15 Minuten',
+      }],
+    });
+    render(<SecurityEventsCard />);
+    expect((await screen.findAllByText(/Anmeldung vorübergehend gesperrt/)).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('account_locked')).toHaveLength(0);
+  });
 });

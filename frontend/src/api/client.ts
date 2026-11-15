@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { withCollectionSlash } from '../utils/apiPaths';
+import { AUTH_REFRESHED_EVENT } from '../utils/polling';
 
 // Security (F-023): the access token is held ONLY in module-scoped memory.
 // It is NEVER written to localStorage / sessionStorage so that an XSS attacker
@@ -45,6 +47,9 @@ const apiClient = axios.create({
 // X-CSRF-Token on unsafe methods — see Sprint 1.2.
 apiClient.interceptors.request.use(
   (config) => {
+    // Log-Audit 2026-11-15 (Punkt 17): Basis-Routen mit Schrägstrich rufen —
+    // sonst je Aufruf eine 307-Umleitung und eine zweite Anfrage.
+    config.url = withCollectionSlash(config.url);
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`;
     }
@@ -77,6 +82,11 @@ async function performRefresh(): Promise<string> {
   });
   const { access_token } = response.data as { access_token: string };
   accessToken = access_token;
+  // Log-Audit 2026-11-15 (Punkt 17): das Layout setzt sein nach 401/403
+  // pausiertes Polling erst nach einer erfolgreichen Erneuerung fort.
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(AUTH_REFRESHED_EVENT));
+  }
   return access_token;
 }
 

@@ -217,7 +217,9 @@ describe('<TimeTracking /> §10-Ausnahmegrund bei der Direkteingabe (#491 F4)', 
   });
 
   it('lässt das Feld beim Bearbeiten eines Werktags-Eintrags weg (bleibt unverändert)', async () => {
-    mockEntriesAndHolidays([closedEntry]);
+    // Fester Werktag statt "heute": an einem Sonntag (z. B. 2026-11-15) fragte
+    // das Formular zu Recht nach dem §10-Grund und der Test schlug fehl.
+    mockEntriesAndHolidays([{ ...closedEntry, date: THURSDAY_BEFORE }]);
     renderPage();
     fireEvent.click(await screen.findByLabelText(/bearbeiten/i));
     expect(screen.queryByLabelText(REASON)).not.toBeInTheDocument();

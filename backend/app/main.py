@@ -210,6 +210,12 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 Starting PraxisZeit backend...")
 
+    # 0. Kundenfall 2026-11-15 (Log-Audit 3, LC-7): nur unter Windows — ein
+    #    toter Listener ("Accept failed on a socket") beendet den Prozess, damit
+    #    der Wachhund neu startet; WinError 10054 beim Verbindungsende → DEBUG.
+    from app.core.loop_guard import install_loop_guard
+    install_loop_guard()
+
     # 1. Check database connection
     try:
         with engine.connect() as conn:
@@ -401,6 +407,13 @@ async def lifespan(app: FastAPI):
     # Shutdown
     print("👋 Shutting down PraxisZeit backend...")
     stop_scheduler()
+    # Kundenfall 2026-11-15 (Log-Audit D, PG-8): Verbindungen des Pools sauber
+    # schliessen — sonst meldet PostgreSQL bei jedem Dienststopp "unexpected
+    # EOF" bzw. unter Windows WinError 10054.
+    try:
+        engine.dispose()
+    except Exception as exc:  # noqa: BLE001 — Herunterfahren nie daran scheitern lassen
+        print(f"Datenbankverbindungen nicht geschlossen: {type(exc).__name__}")
 
 
 # Create FastAPI app (disable docs in production)
@@ -512,6 +525,16 @@ def _allowed_hosts() -> list[str]:
 # the Host header, so TrustedHost still gets to reject a bad Host before any
 # app logic runs.
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts())
+
+# Kundenfall 2026-11-15 (Log-Audit 8, NET-1): Client-IP je Anfrage fuer die
+# AUTH-Zeilen von ``praxiszeit.security`` (``ip=`` im Dienstprotokoll).
+from app.core.log_setup import (  # noqa: E402
+    ClientIpContextMiddleware, install_access_log_filter, install_security_log_handler,
+)
+app.add_middleware(ClientIpContextMiddleware)
+install_security_log_handler()
+# Log-Audit 17 (NET-3): 2xx-Zeilen der Polling-Endpunkte nicht ins Access-Log.
+install_access_log_filter()
 
 # Configure CORS. Registered LAST (Finding 11) so Starlette makes it the
 # OUTERMOST middleware — in Starlette, ``add_middleware`` builds the stack
@@ -683,7 +706,9 @@ async def capture_errors_middleware(request: Request, call_next):
             traceback_str=exception_frames(exc), status_code=500,
         )
         raise
-    if response.status_code >= 500:
+    if response.status_code >= 500 and not getattr(request.state, "db_unavailable", False):
+        # Kundenfall 2026-11-15 (Log-Audit 10): eine 503 wegen kurz fehlender
+        # Datenbank (db_errors.db_unavailable_handler) ist kein Programmfehler.
         _capture_error_row(
             request, level='error', status_code=response.status_code,
             message=f"HTTP {response.status_code} {request.method} {request.url.path}",

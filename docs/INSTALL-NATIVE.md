@@ -163,13 +163,17 @@ C:\PraxisZeit\                    (Windows)
 │   └── frontend/                 # React-Frontend (gebautes dist/)
 ├── data/
 │   ├── db/                       # PostgreSQL-Datenverzeichnis
-│   └── backups/                  # Automatische taegliche Backups
+│   ├── backups/                  # Automatische taegliche Backups (+ .last-result.json)
+│   └── uvicorn-log.json          # Logformat von uvicorn (wird beim Start geschrieben)
 ├── config/
 │   ├── praxiszeit.conf           # Hauptkonfiguration (TOML)
 │   ├── license.key               # Lizenzschluessel (optional)
 │   └── ssl/                      # SSL-Zertifikate (optional)
 ├── logs/
-│   └── praxiszeit.log            # Anwendungslog (rotiert, max 50 MB)
+│   ├── praxiszeit.log            # Anwendungslog (rotiert, max 50 MB)
+│   ├── postgresql-Mon.log …      # PostgreSQL-Log je Wochentag (Mon … Sun), ca. 1 Woche
+│   ├── service-stderr.log        # Windows: Dienstprotokoll (NSSM, rotiert ab 10 MB)
+│   └── setup-*.log               # Windows: Protokolle von Setup/Update-Wizard
 └── praxiszeit-server.py          # Process Manager
 ```
 
@@ -184,6 +188,10 @@ Die Datei `config/praxiszeit.conf` im TOML-Format:
 port = 443
 ssl_cert = "config/ssl/cert.pem"    # Leer = kein SSL
 ssl_key = "config/ssl/key.pem"
+# Optional: Hostnamen/IP-Adressen, unter denen die Praxis-PCs PraxisZeit aufrufen
+# (Host-Header-Schutz). Exakter Vergleich, klein geschrieben, ohne Port;
+# localhost und 127.0.0.1 ergaenzt PraxisZeit selbst. Ohne Eintrag gilt "*".
+# allowed_hosts = "praxis-pc,praxis-pc.praxis.local,192.168.1.10"
 
 [database]
 # Nur Windows: Port des PraxisZeit-PostgreSQL (Standard 5432, erlaubt 1024-65535).
@@ -221,6 +229,16 @@ server_url = "https://updates.mr-development.de"
 enabled = true
 schedule = "02:00"
 retention_days = 31
+# Optional: jede Sicherung zusaetzlich hierhin kopieren (zweite Platte,
+# Netzlaufwerk). Relativ = ab Installationsordner; nur der letzte Ordner wird
+# angelegt. Siehe docs/BACKUP.md "Zweites Sicherungsziel".
+# mirror_dir = "D:\\PraxisZeit-Sicherung"
+
+[logs]
+# Rotierte Dienstlogs (Windows: logs\service-stdout-*.log, service-stderr-*.log)
+# und das alte logs\postgresql.log werden beim Dienststart geloescht, wenn sie
+# aelter sind (enthalten IP-Adressen und Benutzernamen, DSGVO). 0 = nie loeschen.
+retention_days = 30
 ```
 
 Vollstaendiges Beispiel: `config/praxiszeit.conf.example`
@@ -290,6 +308,13 @@ sudo ls -la /opt/praxiszeit/data/backups/
 ```
 
 Aufbewahrung: 31 Tage. ArbZG §16 verlangt 2 Jahre — passen Sie `retention_days` entsprechend an.
+Die drei jüngsten Sicherungen vor einem Update (`…_preupdate-<alt>-<neu>.sql.gz`)
+bleiben unabhängig davon erhalten. `backup` endet mit Exitcode 0 (erstellt und
+geprüft), 1 (PostgreSQL läuft nicht / Zustand nicht feststellbar / keine
+Leserechte) oder 2 (Sicherung gescheitert); das Ergebnis steht zusätzlich in
+`data/backups/.last-result.json` und als Hinweisband in der Oberfläche. Details,
+Kennzeichen (`--label`) und zweites Sicherungsziel (`mirror_dir`):
+[BACKUP.md](BACKUP.md#ergebnis-des-letzten-laufs-und-hinweisband).
 
 **Backup einspielen** (ab 1.20.0) — Dienst anhalten, einspielen, Dienst starten:
 
@@ -385,7 +410,9 @@ praxiszeit-X.Y.Z-SHA256SUMS.txt
 
 | Problem | Loesung |
 |---------|---------|
-| PostgreSQL startet nicht | Logs pruefen: `logs/postgresql-startup.log` |
+| PostgreSQL startet nicht | Logs pruefen: `logs/postgresql-startup.log` und das PostgreSQL-Log des Tages (`logs/postgresql-<Wochentag>.log`, z. B. `postgresql-Mon.log`). **Windows:** Bei einem gescheiterten Start schreibt PraxisZeit Rückgabe und Ausgabe von `net start`, den Dienstzustand (`sc queryex PraxisZeit-PostgreSQL`) und die PostgreSQL-Einträge der letzten 10 Minuten aus dem Windows-Ereignisprotokoll (Anwendung) nach `logs\service-stderr.log`. Selbst abfragen: `wevtutil qe Application /q:"*[System[Provider[@Name='PostgreSQL']]]" /c:20 /rd:true /f:text`. Ein `postgresql-startup.log.old` ist ein veraltetes Startlog, das PraxisZeit einmalig beiseitegelegt hat |
+| Windows: Dienst startet in einer Schleife neu, im Log HTTP 400 bei der Startprüfung | `[server] allowed_hosts` prüfen: Namen exakt so eintragen, wie die Praxis-PCs PraxisZeit aufrufen (klein, ohne Port). `localhost` und `127.0.0.1` ergänzt PraxisZeit selbst |
+| Windows: `backup.bat` meldet „Keine Leserechte … bitte als Administrator ausfuehren“ | Rechtsklick → „Als Administrator ausführen“ bzw. eine Eingabeaufforderung als Administrator öffnen |
 | Backend startet nicht | Linux: `journalctl -u praxiszeit -n 50` / Windows: `logs\service-stderr.log` / macOS: `logs/stderr.log` |
 | Port belegt | Anderen Port in `praxiszeit.conf` setzen |
 | Windows: „Port 5432 ist von einem anderen PostgreSQL belegt“ (Dienst bleibt gestoppt) | Ein fremder PostgreSQL belegt den Port. In `config\praxiszeit.conf` unter `[database]` einen freien Port eintragen (z. B. `port = 5433`) und den Dienst neu starten. Die Meldung steht in `logs\service-stderr.log` (Ausdruck: „Port {port} ist von einem anderen PostgreSQL belegt“) |
