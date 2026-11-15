@@ -91,8 +91,8 @@ def test_bat_echo_in_block_has_no_closing_paren(name):
 _NSSM_SETTINGS = (
     "AppExit 78 Exit",
     "AppStopMethodConsole 30000",
-    "AppThrottle 150000",
-    "AppRestartDelay 15000",
+    "AppThrottle 1500",
+    "AppRestartDelay 60000",
     "AppRotateFiles 1",
     "AppRotateOnline 1",
     "AppRotateBytes 10485760",
@@ -339,3 +339,16 @@ def test_restore_waits_with_ping_not_timeout():
     for line in text.split("\r\n"):
         assert not line.strip().lower().startswith("timeout "), line
     assert "ping -n 2 127.0.0.1 >nul" in _label_block(text, "pg_wait_loop")
+
+
+def test_app_throttle_stays_short():
+    """Emulator 1.24.1: NSSM haelt den Dienst fuer AppThrottle in START_PENDING;
+    mit 150000 stoppte Windows ihn nach ~20 s per Ctrl+C mitten im Start."""
+    import re
+    for name, pattern in (
+        ("install-service.bat", r'set PraxisZeit AppThrottle (\d+)'),
+        ("update-wizard.ps1", r"@\('AppThrottle', '(\d+)'\)"),
+    ):
+        values = [int(v) for v in re.findall(pattern, _text(name))]
+        assert values, name
+        assert all(v <= 10000 for v in values), (name, values)

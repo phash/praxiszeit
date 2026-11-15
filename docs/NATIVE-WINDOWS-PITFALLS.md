@@ -278,7 +278,7 @@ ein System-Python-User-Site) + Import-Verify (Build **und** `setup.bat`).
 
 **Ursachen und Loesung:**
 - NSSM schickt Ctrl+C an die ganze Konsole und wartete nur 1,5 s (`AppStopMethodConsole` Standard). Jetzt 30 s; der Manager prueft den Stoppwunsch vor jedem Neustart. **NSSM liest `App*`-Werte nur beim Dienststart** - ein im Update gesetzter Wert gilt fuer den Stopp desselben Updates noch nicht. Der Update-Wizard stoppt deshalb `PraxisZeit-PostgreSQL` ausdruecklich und beendet uebrig gebliebene `python.exe` aus dem Installationsordner.
-- Keine Neustart-Bremse: `AppThrottle 150000` + `AppRestartDelay 15000` (60000 haette die 62-s-Laeufe nicht gebremst).
+- Keine Neustart-Bremse: jetzt `AppRestartDelay 60000`. `AppThrottle` bleibt beim Standard 1500 ms (ausdruecklich gesetzt): NSSM haelt den Dienst fuer die Dauer von `AppThrottle` in START_PENDING - mit 150000 stoppte Windows ihn nach rund 20 s per Ctrl+C mitten im Start (Emulator 1.24.1, `KeyboardInterrupt` in `_harden_install_dir`).
 - Beim Herunterfahren stoppt Windows den PostgreSQL-Dienst Sekunden vor dem Ctrl+C an PraxisZeit. Der Wachhund startet jetzt erst nach 3 Fehlpruefungen in Folge neu und nie waehrend des Herunterfahrens oder in `STOP_PENDING`/`START_PENDING`; `sc`-Fehler != 1060 heissen "unbekannt", nicht "fehlt".
 - NSSM rotiert nur beim Start und loescht nie: `AppRotateOnline 1` (ab 10 MB) + Loeschen alter Kopien nach `[logs] retention_days` (Vorgabe 30).
 - Die geplante Sicherung lief mit `schtasks /sc daily` nicht nach, wenn der PC um 03:00 aus war: jetzt `Register-ScheduledTask` mit `StartWhenAvailable`.
@@ -309,7 +309,7 @@ net start PraxisZeit
 - [ ] Backup-Restore: `restore-backup.bat` nutzt `pause` → fuer Automation anpassen
 - [ ] PostgreSQL-Port (5432 oder `[database] port`) ist nur auf localhost gebunden (sicher)
 - [ ] API-Endpoints testen: `POST /api/time-entries` darf nicht 405 geben
-- [ ] `nssm get PraxisZeit AppStopMethodConsole` = 30000, `AppThrottle` = 150000, `AppRotateOnline` = 1
+- [ ] `nssm get PraxisZeit AppStopMethodConsole` = 30000, `AppThrottle` = 1500, `AppRestartDelay` = 60000, `AppRotateOnline` = 1
 - [ ] Geplante Aufgabe `PraxisZeit-Backup`: "Aufgabe so schnell wie moeglich nach verpasstem Start" aktiv; `data\backups\.last-result.json` meldet `"ok": true`
 - [ ] Optional `[backup] mirror_dir` auf eine zweite Platte setzen (siehe BACKUP.md)
 - [ ] VC++ Runtime vorhanden (`setup.bat --install_runtimes 1` erledigt das automatisch; sonst `initdb.exe` Exit `0xC0000135`, siehe #11)
