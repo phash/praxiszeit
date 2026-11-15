@@ -223,7 +223,7 @@ Bestanden: `HP_FAILS=0`.
 | `ALEMBIC_VERSION` | der aktuelle Migrations-Kopf (z. B. `073_work_blocks`) |
 | `DB_PORT` | `5432` (`fresh`/`update`; im `update` vor dem Update mit „Rückfall", der Vorgänger kennt `print-db-port` nicht) bzw. `5433` (`foreignpg`) |
 | `OWN_DETECTED` (auch `_NACH_UPDATE`, `_NACH_RESTORE`, `_NACH_REBOOT`) | `1` — `praxiszeit-server.py status` erkennt den eigenen Cluster als eigenen (`pg_ctl status -D data\db` + Port aus `postmaster.pid`, aus der erhöhten Harness-Shell unter den gehärteten Ordnerrechten) |
-| `PGCONF_UNVERAENDERT` | nur `update`: `ja` — ohne `[database] port` fasst der neue Code `data\db\postgresql.conf` nicht an (MD5 vorher/nachher in `PGCONF_MD5*`) |
+| `PGCONF_UNVERAENDERT` | nur `update`: `ja` — ohne `[database] port` fasst der neue Code `data\db\postgresql.conf` nicht an (MD5 vorher/nachher in `PGCONF_MD5*`). **Ausnahme:** Beim ersten Update von einer Version vor 1.24.1 steht hier `nein`, weil der Server einmalig den Block „# PraxisZeit logging (verwaltet …)“ für die Log-Rotation ergänzt (Log-Audit A16); ab dem zweiten Update auf ≥ 1.24.1 wieder `ja` |
 | `NEUER_PORT_CODE` | nur `update`: `ja` (bei gleicher Versionsnummer der einzige Beleg, dass das neue Paket installiert ist) |
 | `FOREIGN_DETECTED` / `FOREIGN_SERVICE_STAYS_STOPPED` | nur `foreignpg`: `1` / `1` — Meldung im `service-stderr.log`, NSSM startet nicht neu |
 | `CLUSTER_MARKER_NACH_NEGATIVPROBE` / `CREDENTIALS_NACH_NEGATIVPROBE` | nur `foreignpg`: was der abgebrochene Erststart hinterlässt. Ein Marker ohne Zugangsdaten kann der nächste Start nicht übernehmen (`.db-credentials is missing …`) — erwartet ist `0` / `0` (der Abbruch kommt vor jeder Cluster-Anlage, es bleibt nichts zurück) |
