@@ -19,6 +19,10 @@
 - **Server nimmt nach einem Netzwerkfehler wieder Verbindungen an.** Nach „Accept failed on a socket“ (WinError 64) lief der Prozess weiter, nahm aber keine Verbindungen mehr an; PraxisZeit war nicht erreichbar, obwohl der Dienst lief. Jetzt beendet sich der Server und wird vom Dienst neu gestartet. Die vielen Meldungen WinError 10054 (Verbindung vom Browser zurückgesetzt) erscheinen nicht mehr im Dienstprotokoll.
 - **`restore-backup.bat` startet und stoppt die Datenbank über den Windows-Dienst**; `pg_ctl` dient nur noch als Rückfall, wenn der Dienst nicht antwortet. Die Wartezeit von bis zu 15 s auf die Datenbank gilt jetzt auch bei umgeleiteter Eingabe.
 - **`backup.bat` ohne Administratorrechte** meldet „Keine Leserechte auf … – bitte als Administrator ausführen“ (bzw. „Rechtsklick – Als Administrator ausführen“) statt eines Python-Tracebacks oder „PostgreSQL is not running“.
+- **Neuinstallation mit `setup.exe` scheitert nicht mehr an „Ordner ist nicht leer“.** Das Setup-Protokoll entsteht bei der Erstinstallation zuerst unter `%TEMP%\PraxisZeit-Setup` und wandert nach dem Lauf nach `logs\` (Release-Review 1.24.1; Fehler entstand mit dem Setup-Protokoll selbst).
+- **Abgebrochene Erstinstallation lässt sich fortsetzen.** Liegt die gleiche Version im Ordner, wurde die Datenbank aber nie eingerichtet (kein `config\.db-credentials`), bietet das Setup „Installation fortsetzen“ an und läuft wie eine Erstinstallation ohne Leerordner-Prüfung. Fehlt beim Reparieren nur der Windows-Dienst, registriert ihn der Update-Assistent über `install-service.bat`.
+- **`[backup] retention_days = 0` löscht nicht mehr alle Sicherungen**; Werte unter 1 gelten als 1 Tag.
+- **Hinweisband „Sicherung veraltet“** berücksichtigt den letzten erfolgreichen Lauf: mit eigenem Sicherungsort (der die nächtliche Sicherung in `data\backups` nicht listet) erschien es sonst dauerhaft.
 
 ### ✨ Neu (Betrieb, Log-Auswertung Kundenfall 2026-11-15)
 

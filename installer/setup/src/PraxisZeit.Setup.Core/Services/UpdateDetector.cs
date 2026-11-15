@@ -26,7 +26,16 @@ public sealed partial class UpdateDetector
             return InstallMode.FreshInstall;
         }
 
-        return currentVersion == installerVersion ? InstallMode.Repair : InstallMode.Update;
+        if (currentVersion != installerVersion)
+        {
+            return InstallMode.Update;
+        }
+
+        // Gleiche Version: nur eine fertige Installation laesst sich ueber den
+        // Update-Wizard reparieren. Ohne Datenbank-Zugangsdaten ist setup.bat
+        // nie durchgelaufen -> Erstinstallation fortsetzen (Review 2026-11-15).
+        var credentials = Path.Combine(targetDirectory, "config", ".db-credentials");
+        return File.Exists(credentials) ? InstallMode.Repair : InstallMode.Resume;
     }
 
     public string? DetectCurrentVersion(string targetDirectory)

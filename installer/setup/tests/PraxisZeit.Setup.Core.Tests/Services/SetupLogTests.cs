@@ -56,4 +56,46 @@ public class SetupLogTests : IDisposable
             File.Delete(blocker);
         }
     }
+
+    [Fact]
+    public void Deferred_log_leaves_install_dir_untouched_until_relocated()
+    {
+        // Review 2026-11-15: Bei der Erstinstallation legte das Protokoll
+        // logs\ an, bevor InstallDirGuard den Zielordner pruefte - jede
+        // Neuinstallation scheiterte an "Ordner ist nicht leer".
+        var inner = new Collect();
+        var temp = Path.Combine(_dir, "temp");
+        var install = Path.Combine(_dir, "install");
+        var log = SetupLog.Deferred(inner, temp, new DateTime(2026, 11, 15, 18, 0, 0));
+
+        log.Report(new RunnerLogEvent("Entpacke Installationspaket..."));
+
+        Directory.Exists(install).Should().BeFalse();
+        InstallDirGuard.FreshTargetProblem(install).Should().BeNull();
+
+        Directory.CreateDirectory(install);
+        log.RelocateTo(install);
+        log.Report(new RunnerLogEvent("danach"));
+
+        log.FilePath.Should().Be(Path.Combine(install, "logs", "setup-20261115-180000.log"));
+        var text = File.ReadAllText(log.FilePath!);
+        text.Should().Contain("Entpacke Installationspaket...");
+        text.Should().Contain("danach");
+        Directory.GetFiles(temp).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Relocate_without_install_dir_keeps_temp_file()
+    {
+        var inner = new Collect();
+        var temp = Path.Combine(_dir, "temp");
+        var log = SetupLog.Deferred(inner, temp, DateTime.Now);
+        log.Report(new RunnerLogEvent("x"));
+        var before = log.FilePath;
+
+        log.RelocateTo(Path.Combine(_dir, "missing"));
+
+        log.FilePath.Should().Be(before);
+        File.Exists(before!).Should().BeTrue();
+    }
 }

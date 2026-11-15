@@ -92,4 +92,26 @@ describe('backupBannerState', () => {
   it('Abfrage höchstens alle 10 Minuten', () => {
     expect(BACKUP_STATUS_MIN_INTERVAL_MS).toBe(10 * 60 * 1000);
   });
+
+  it('zählt einen erfolgreichen letzten Lauf mit (eigener Sicherungsort listet die Nachtsicherung nicht)', () => {
+    const now = Date.parse('2026-11-15T12:00:00Z');
+    const overview = {
+      backups: [{ created_at: '2026-11-01T03:00:00Z' }],
+      last_result: { ok: true, finished_at: '2026-11-15T03:00:00Z' },
+      config: { enabled: false },
+      scheduled_externally: true,
+    };
+    expect(backupBannerState(overview, now)).toBeNull();
+  });
+
+  it('meldet veraltet, wenn auch der letzte erfolgreiche Lauf älter als 36 h ist', () => {
+    const now = Date.parse('2026-11-15T12:00:00Z');
+    const overview = {
+      backups: [],
+      last_result: { ok: true, finished_at: '2026-11-12T03:00:00Z' },
+      scheduled_externally: true,
+      config: { enabled: false },
+    };
+    expect(backupBannerState(overview, now)).toEqual({ kind: 'stale', at: '2026-11-12T03:00:00Z', error: null });
+  });
 });

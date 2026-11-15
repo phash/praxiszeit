@@ -342,9 +342,19 @@ mirror_dir = "D:\\PraxisZeit-Sicherung"     # Windows; Linux z. B. "/mnt/sicheru
 - Angelegt wird nur der **letzte** Ordner selbst; das übergeordnete Verzeichnis
   (Laufwerk, Freigabe) muss existieren und für den Dienst beschreibbar sein —
   unter Windows für das Konto SYSTEM, unter Linux/macOS für das Dienstkonto.
+- **Linux (systemd):** Die Dienste laufen mit `ProtectSystem=strict` und dürfen
+  nur unter `data/`, `logs/` und `config/` schreiben. Den Spiegelordner einmalig
+  für beide Units freigeben, sonst scheitert jede Kopie:
+  ```bash
+  sudo systemctl edit praxiszeit.service          # und praxiszeit-backup.service
+  # [Service]
+  # ReadWritePaths=/mnt/sicherung/praxiszeit
+  sudo systemctl daemon-reload && sudo systemctl restart praxiszeit
+  ```
 - Scheitert die Kopie, bleibt die Sicherung in `data/backups/` gültig, im
   Protokoll steht eine Warnung, und der Status meldet `mirror_ok: false`
   (Warnung auf der Seite **Datensicherung**).
+- `retention_days` gilt mit mindestens 1 Tag (0 oder negativ = 1 Tag).
 - Im Spiegel gilt dieselbe Aufbewahrungsfrist (`retention_days`, die drei
   jüngsten `preupdate`-Sicherungen bleiben).
 - Der Spiegel enthält dieselben **unverschlüsselten** Dumps: Zugriff auf das

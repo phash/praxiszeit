@@ -15,20 +15,73 @@ public sealed class SetupLog : IProgress<RunnerEvent>
     private readonly object _lock = new();
     private bool _broken;
 
-    public string? FilePath { get; }
+    public string? FilePath { get; private set; }
 
+    private readonly string _fileName;
+
+    /// <summary>Protokoll direkt unter <c>&lt;installDir&gt;\logs</c> (Update/Reparatur).</summary>
     public SetupLog(IProgress<RunnerEvent> inner, string installDir, DateTime startedAt)
+        : this(inner, Path.Combine(installDir, "logs"), startedAt, isDirectory: true)
+    {
+    }
+
+    private SetupLog(IProgress<RunnerEvent> inner, string logDir, DateTime startedAt, bool isDirectory)
     {
         _inner = inner;
+        _fileName = $"setup-{startedAt:yyyyMMdd-HHmmss}.log";
         try
         {
-            var logs = Path.Combine(installDir, "logs");
-            Directory.CreateDirectory(logs);
-            FilePath = Path.Combine(logs, $"setup-{startedAt:yyyyMMdd-HHmmss}.log");
+            Directory.CreateDirectory(logDir);
+            FilePath = Path.Combine(logDir, _fileName);
         }
         catch (Exception)
         {
             _broken = true;
+        }
+    }
+
+    /// <summary>
+    /// Erstinstallation: zuerst in <paramref name="tempDir"/> schreiben. Der
+    /// Installationsordner muss bis zur Leerordner-Pruefung unberuehrt bleiben
+    /// (Review 2026-11-15: ein vorab angelegtes logs\ blockierte jede
+    /// Neuinstallation). Nach dem Lauf <see cref="RelocateTo"/> aufrufen.
+    /// </summary>
+    public static SetupLog Deferred(IProgress<RunnerEvent> inner, string tempDir, DateTime startedAt) =>
+        new(inner, tempDir, startedAt, isDirectory: true);
+
+    /// <summary>
+    /// Verschiebt das Protokoll nach <c>&lt;installDir&gt;\logs</c>, sofern der
+    /// Ordner existiert. Fehler werden geschluckt; das Protokoll bleibt dann
+    /// unter dem bisherigen Pfad.
+    /// </summary>
+    public void RelocateTo(string installDir)
+    {
+        lock (_lock)
+        {
+            if (FilePath is null || !Directory.Exists(installDir))
+            {
+                return;
+            }
+            try
+            {
+                var logs = Path.Combine(installDir, "logs");
+                var target = Path.Combine(logs, _fileName);
+                if (string.Equals(Path.GetFullPath(target), Path.GetFullPath(FilePath), StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+                Directory.CreateDirectory(logs);
+                if (File.Exists(FilePath))
+                {
+                    File.Move(FilePath, target, overwrite: true);
+                }
+                FilePath = target;
+                _broken = false;
+            }
+            catch (Exception)
+            {
+                // Protokoll bleibt am alten Ort.
+            }
         }
     }
 

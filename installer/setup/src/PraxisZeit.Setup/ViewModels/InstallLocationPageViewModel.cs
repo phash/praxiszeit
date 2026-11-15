@@ -77,6 +77,8 @@ public sealed partial class InstallLocationPageViewModel : WizardPageBase
             $"In diesem Verzeichnis liegt bereits PraxisZeit {DetectedVersion}.",
         InstallMode.Repair =>
             $"In diesem Verzeichnis liegt bereits PraxisZeit {DetectedVersion} (gleiche Version).",
+        InstallMode.Resume =>
+            $"In diesem Verzeichnis liegt eine nicht abgeschlossene Installation von PraxisZeit {DetectedVersion}.",
         _ => string.Empty,
     };
 
@@ -85,7 +87,8 @@ public sealed partial class InstallLocationPageViewModel : WizardPageBase
         + "(Datenbank, Konfiguration, Lizenz) überschreiben. Empfohlene Alternative: auf Update "
         + "umschalten — dann wird die Datenbank gesichert, nur Binaries werden ersetzt.";
 
-    public bool CanSwitchToUpdate => IsConflict && DetectedMode.KeepsExistingInstallation();
+    public bool CanSwitchToUpdate =>
+        IsConflict && (DetectedMode.KeepsExistingInstallation() || DetectedMode == InstallMode.Resume);
 
     public InstallLocationPageViewModel()
         : this(new UpdateDetector(), "1.0.0", string.Empty, InstallMode.FreshInstall)
@@ -105,7 +108,8 @@ public sealed partial class InstallLocationPageViewModel : WizardPageBase
         // Update-Modus: User darf den Pfad nicht aendern (Update muss in
         // den Pfad einer existierenden Installation laufen — sonst waere
         // es kein Update).
-        IsPathReadOnly = initialIntent == InstallMode.Update;
+        // Reparieren/Fortsetzen arbeiten ebenfalls im erkannten Ordner.
+        IsPathReadOnly = initialIntent != InstallMode.FreshInstall;
         Recompute();
     }
 
@@ -184,7 +188,9 @@ public sealed partial class InstallLocationPageViewModel : WizardPageBase
     [RelayCommand(CanExecute = nameof(CanSwitchToUpdate))]
     private void SwitchToUpdate()
     {
-        IntentMode = InstallMode.Update;
+        // Den erkannten Modus uebernehmen: Update, Reparieren oder (bei nie
+        // fertig eingerichteter Datenbank) Installation fortsetzen.
+        IntentMode = DetectedMode;
         IsPathReadOnly = true;
     }
 }

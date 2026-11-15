@@ -374,8 +374,9 @@ Sicherung liegt. Abschließen: **Setup erneut starten → „Reparieren“** —
 „Reparieren“ läuft wie ein Update und fragt weder Ports noch Admin-Konto neu ab.
 Scheitert erst der Dienststart, können die Datenbank-Migrationen der neuen
 Version schon gelaufen sein; Rückfallpunkt ist dann die genannte Sicherung
-(siehe [Rollback](#rollback)). Das vollständige Protokoll steht in
-`logs\setup-JJJJMMTT-hhmmss.log`.
+(siehe [Rollback](#rollback)). Lief das Update über `setup.exe`, steht das
+vollständige Protokoll in `logs\setup-JJJJMMTT-hhmmss.log`; beim direkten
+Aufruf von `update-wizard.bat` nur im Fenster des Wizards.
 
 Details + Stolperfallen: [NATIVE-WINDOWS-PITFALLS.md](NATIVE-WINDOWS-PITFALLS.md).
 

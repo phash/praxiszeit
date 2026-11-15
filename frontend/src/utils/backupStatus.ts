@@ -77,11 +77,18 @@ export function backupBannerState(
   const cfg = overview.config;
   if (cfg && cfg.enabled !== true && overview.scheduled_externally !== true) return null;
   const backups = overview.backups ?? [];
-  const newest = newestBackupTime(backups);
+  const newestListed = newestBackupTime(backups);
+  // Release-Review 1.24.1: Mit eigenem Sicherungsort listet die Seite nur
+  // diesen Ordner, die nächtliche native Sicherung schreibt aber nach
+  // data/backups. Ein erfolgreicher letzter Lauf zählt deshalb mit.
+  const lastOkAt = last && last.ok === true && last.finished_at ? new Date(last.finished_at).getTime() : NaN;
+  const lastOk = Number.isFinite(lastOkAt) ? lastOkAt : null;
+  const newest = newestListed === null ? lastOk : lastOk === null ? newestListed : Math.max(newestListed, lastOk);
   if (newest === null) return null;
   if ((now - newest) / 3_600_000 > STALE_BACKUP_HOURS) {
-    const newestEntry = backups.find((b) => new Date(b.created_at).getTime() === newest);
-    return { kind: 'stale', at: newestEntry?.created_at ?? null, error: null };
+    const at = newest === lastOk ? (last?.finished_at ?? null)
+      : (backups.find((b) => new Date(b.created_at).getTime() === newest)?.created_at ?? null);
+    return { kind: 'stale', at, error: null };
   }
   return null;
 }

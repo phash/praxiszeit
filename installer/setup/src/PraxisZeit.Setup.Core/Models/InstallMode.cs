@@ -17,6 +17,15 @@ public enum InstallMode
 
     /// <summary>Bestehende Installation mit identischer Version — Reparatur/Reinstall.</summary>
     Repair,
+
+    /// <summary>
+    /// Gleiche Version im Ordner, aber die Erstinstallation ist nie fertig
+    /// geworden (kein <c>config\.db-credentials</c>, z. B. initdb oder
+    /// setup.bat gescheitert). Laeuft wie die Erstinstallation (Ports,
+    /// Admin-Daten, setup.bat, install-service.bat), nur ohne die
+    /// Leerordner-Pruefung (Review 2026-11-15).
+    /// </summary>
+    Resume,
 }
 
 public static class InstallModeExtensions

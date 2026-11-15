@@ -530,3 +530,21 @@ def test_ring_schreibfehler_blockiert_nichts(srv, tmp_path, monkeypatch, caplog)
     with caplog.at_level(logging.WARNING, logger="praxiszeit"):
         assert srv.reset_stale_pg_ring_logs(log_dir=tmp_path, now=now) == []
     assert "postgresql-Mon.log" in caplog.text
+
+
+@pytest.mark.parametrize("days", [0, -5, "0"])
+def test_retention_zero_or_negative_never_deletes_the_fresh_backup(srv, tmp_path, days):
+    """Release-Review 1.24.1: retention_days = 0 loeschte jede Sicherung,
+    auch die gerade geschriebene und ihre Spiegelkopie."""
+    import os
+    import time
+    now = time.time()
+    fresh = tmp_path / "praxiszeit_20261115_030000.sql.gz"
+    fresh.write_bytes(b"x")
+    os.utime(fresh, (now - 60, now - 60))
+    old = tmp_path / "praxiszeit_20261101_030000.sql.gz"
+    old.write_bytes(b"x")
+    os.utime(old, (now - 3 * 86400, now - 3 * 86400))
+    srv.apply_backup_retention(tmp_path, days, now=now)
+    assert fresh.exists()
+    assert not old.exists()

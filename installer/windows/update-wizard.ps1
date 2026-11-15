@@ -1111,6 +1111,24 @@ function Step-StartService {
     # Idempotent auch fuer aeltere Installationen (u.a. AppExit 78, 30 s
     # Stopp-Wartezeit, Neustart-Bremse) - siehe Set-NssmServiceOptions.
     Set-NssmServiceOptions
+    if (-not (Get-Service -Name 'PraxisZeit' -ErrorAction SilentlyContinue)) {
+        # Review 2026-11-15: Reparieren nach einer Erstinstallation, die vor
+        # install-service.bat abbrach - der Dienst wurde nie registriert.
+        $svcBat = Join-Path $InstallDir 'install-service.bat'
+        if (Test-Path $svcBat) {
+            Write-Log 'Dienst PraxisZeit ist nicht registriert - fuehre install-service.bat aus...'
+            $env:PRAXISZEIT_NONINTERACTIVE = '1'
+            $prevEap = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                & cmd.exe /c "`"$svcBat`"" 2>&1 | ForEach-Object { if ("$_".Trim()) { Write-Log "  $_" } }
+                Write-Log "install-service.bat exit=$LASTEXITCODE"
+            } finally {
+                $ErrorActionPreference = $prevEap
+            }
+            Set-NssmServiceOptions
+        }
+    }
     try {
         # Nur den Anwendungsdienst starten: praxiszeit-server.py startet den
         # Datenbankdienst PraxisZeit-PostgreSQL selbst (mit Portabgleich und

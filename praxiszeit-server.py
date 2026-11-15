@@ -2984,6 +2984,11 @@ def apply_backup_retention(directory: Path, retention_days, now: float | None = 
         days = float(retention_days)
     except (TypeError, ValueError):
         days = 31
+    # Release-Review 1.24.1: 0 oder negativ hiess "alles loeschen" - auch die
+    # gerade geschriebene Sicherung und ihre Spiegelkopie. Mindestens 1 Tag,
+    # wie die Aufbewahrung im Backend.
+    if not days or days < 1 or days != days:
+        days = 1
     cutoff = (time.time() if now is None else now) - days * 86400
     entries = []
     for path in directory.glob(BACKUP_GLOB):

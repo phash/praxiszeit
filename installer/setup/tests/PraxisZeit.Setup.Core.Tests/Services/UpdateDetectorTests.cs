@@ -98,7 +98,22 @@ public class UpdateDetectorTests : IDisposable
         var updaterDir = Path.Combine(_tempDir, "app", "backend", "app", "core");
         Directory.CreateDirectory(updaterDir);
         File.WriteAllText(Path.Combine(updaterDir, "updater.py"), "APP_VERSION = \"1.4.0\"\n");
+        Directory.CreateDirectory(Path.Combine(_tempDir, "config"));
+        File.WriteAllText(Path.Combine(_tempDir, "config", ".db-credentials"), "x");
 
         _detector.DetectMode(_tempDir, "1.4.0").Should().Be(InstallMode.Repair);
+    }
+
+    [Fact]
+    public void DetectMode_returns_Resume_when_same_version_but_database_never_initialized()
+    {
+        // Review 2026-11-15: Erstinstallation brach nach dem Kopieren ab
+        // (setup.bat/initdb). Ohne config\.db-credentials kann der
+        // Update-Wizard nichts reparieren - die Erstinstallation muss weiterlaufen.
+        var updaterDir = Path.Combine(_tempDir, "app", "backend", "app", "core");
+        Directory.CreateDirectory(updaterDir);
+        File.WriteAllText(Path.Combine(updaterDir, "updater.py"), "APP_VERSION = \"1.4.0\"\n");
+
+        _detector.DetectMode(_tempDir, "1.4.0").Should().Be(InstallMode.Resume);
     }
 }
