@@ -1168,6 +1168,8 @@ class TestBackupRole:
         monkeypatch.setenv("DATABASE_URL_BACKUP", scheme + "praxiszeit_backup" + ":pw@/praxiszeit")
         monkeypatch.setattr(srv.subprocess, "Popen", _popen)
         monkeypatch.setattr(srv, "port_is_occupied", lambda *a, **k: False)
+        # Sonst schreibt uvicorn_start data/uvicorn-log.json in den Repo-Baum.
+        monkeypatch.setattr(srv, "write_uvicorn_log_config", lambda path: None)
         with pytest.raises(RuntimeError, match="stop here"):
             srv.uvicorn_start({})
         assert "DATABASE_URL_MIGRATIONS" not in captured["env"]
