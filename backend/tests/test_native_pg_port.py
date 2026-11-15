@@ -761,6 +761,15 @@ class TestWindowsScripts:
     def test_update_wizard_sets_appexit_78(self):
         assert "AppExit 78 Exit" in _win_text("update-wizard.ps1")
 
+    def test_install_service_gives_clean_shutdown_time(self):
+        # Kundenfall 2026-11-15: NSSM wartet nach Ctrl+C nur 1500 ms, dann
+        # beendet es den Dienst hart - uvicorn_stop + pg_stop kommen nie dran,
+        # PostgreSQL laeuft waehrend des Updates weiter.
+        assert "AppStopMethodConsole 30000" in _win_text("install-service.bat")
+
+    def test_update_wizard_gives_clean_shutdown_time(self):
+        assert "AppStopMethodConsole 30000" in _win_text("update-wizard.ps1")
+
     def test_setup_bat_serverport_not_hardcoded(self):
         text = _win_text("setup.bat")
         assert "--serverport 5432" not in text

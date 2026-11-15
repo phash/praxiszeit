@@ -85,7 +85,7 @@ public sealed partial class InstallLocationPageViewModel : WizardPageBase
         + "(Datenbank, Konfiguration, Lizenz) überschreiben. Empfohlene Alternative: auf Update "
         + "umschalten — dann wird die Datenbank gesichert, nur Binaries werden ersetzt.";
 
-    public bool CanSwitchToUpdate => IsConflict && DetectedMode == InstallMode.Update;
+    public bool CanSwitchToUpdate => IsConflict && DetectedMode.KeepsExistingInstallation();
 
     public InstallLocationPageViewModel()
         : this(new UpdateDetector(), "1.0.0", string.Empty, InstallMode.FreshInstall)

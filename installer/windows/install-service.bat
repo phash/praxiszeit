@@ -38,6 +38,10 @@ echo Installing PraxisZeit service...
 REM Exit-Code 78 = Konfigurationsfehler (z.B. ungueltiger Datenbank-Port): NSSM
 REM soll den Dienst dann beenden statt ihn endlos neu zu starten.
 "%NSSM%" set PraxisZeit AppExit 78 Exit
+REM Nach Ctrl+C bis zu 30 s auf den sauberen Shutdown warten (uvicorn_stop +
+REM PostgreSQL-Dienst stoppen). NSSM-Standard 1500 ms beendete den Dienst hart,
+REM PostgreSQL lief beim Update weiter (Kundenfall 2026-11-15).
+"%NSSM%" set PraxisZeit AppStopMethodConsole 30000
 "%NSSM%" set PraxisZeit AppRotateFiles 1
 "%NSSM%" set PraxisZeit AppRotateBytes 10485760
 REM PYTHONUNBUFFERED: ohne das puffert Python stdout/stderr, und Startup-Fehler

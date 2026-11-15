@@ -850,6 +850,14 @@ function Step-StartService {
         } catch {
             Write-Log "WARNUNG: nssm set AppExit 78 Exit fehlgeschlagen: $_"
         }
+        # Nach Ctrl+C bis zu 30 s auf den sauberen Shutdown warten. Der
+        # NSSM-Standard (1500 ms) beendete den Dienst hart, bevor uvicorn und
+        # der PostgreSQL-Dienst gestoppt waren (Kundenfall 2026-11-15).
+        try {
+            & $nssm set PraxisZeit AppStopMethodConsole 30000 2>&1 | Out-Null
+        } catch {
+            Write-Log "WARNUNG: nssm set AppStopMethodConsole fehlgeschlagen: $_"
+        }
     }
     try {
         Start-Service -Name 'PraxisZeit' -ErrorAction Stop

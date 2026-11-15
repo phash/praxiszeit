@@ -18,3 +18,18 @@ public enum InstallMode
     /// <summary>Bestehende Installation mit identischer Version — Reparatur/Reinstall.</summary>
     Repair,
 }
+
+public static class InstallModeExtensions
+{
+    /// <summary>
+    /// Update und Reparatur laufen ueber <c>update-wizard.ps1</c>: Backup,
+    /// Dienst stoppen, Dateien kopieren, pruefen, starten. Konfiguration,
+    /// Datenbank und Admin-Konto bleiben unangetastet. Nur die Erstinstallation
+    /// fragt Ports und Admin-Daten ab und schreibt <c>praxiszeit.conf</c>.
+    /// Kundenfall 2026-11-15: Ein abgebrochenes Update hinterliess schon die
+    /// neue Version im Ordner, Setup bot danach nur noch "Reparieren" an — und
+    /// die lief als Erstinstallation und haette die Konfiguration ueberschrieben.
+    /// </summary>
+    public static bool KeepsExistingInstallation(this InstallMode mode) =>
+        mode is InstallMode.Update or InstallMode.Repair;
+}

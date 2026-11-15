@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### 🐛 Behoben (Windows-Update, Kundenfall 2026-11-15)
+
+- **Dienst-Stopp unter Windows ist wieder sauber.** NSSM schickt beim Stoppen Ctrl+C an die ganze Konsole; uvicorn beendete sich darauf selbst, und der Wachhund hielt das für einen Absturz („uvicorn hat sich beendet (Exitcode 0), Neustart 1 von 5…“). Der saubere Shutdown (uvicorn und PostgreSQL-Dienst stoppen) kam nie dran, NSSM beendete den Dienst nach 1,5 s hart, PostgreSQL lief während jedes Updates weiter. Der Wachhund prüft den Stoppwunsch jetzt vor jedem Neustart und wartet in 0,5-s-Schritten; NSSM wartet bis zu 30 s auf den Shutdown (`AppStopMethodConsole 30000`, bei Neuinstallation und bei jedem Update gesetzt).
+- **„Reparieren“ überschreibt keine Konfiguration mehr.** Brach ein Update nach dem Kopieren ab, meldete der Ordner schon die neue Version, und Setup bot nur noch „Reparieren“ an. Das lief als Neuinstallation: Ports und Admin-Konto wurden neu abgefragt, `config\praxiszeit.conf` neu geschrieben. „Reparieren“ läuft jetzt wie ein Update (Sicherung, Dienst stoppen, Dateien kopieren, prüfen, starten) und lässt Datenbank, Konfiguration und Admin-Konto unangetastet.
+- **Setup-Protokoll als Datei.** Das Protokoll der Fortschrittsseite steht zusätzlich in `logs\setup-JJJJMMTT-hhmmss.log`; vorher war es mit dem Schließen des Fensters weg.
+
 ## [1.24.0] - 2026-11-12
 
 **Enthält die Datenbank-Migration `077_legacy_half_day`.** Vor dem Update wie immer eine Sicherung anlegen.

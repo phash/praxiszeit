@@ -2470,6 +2470,44 @@ def _signal_handler(signum, frame):
     _shutdown_requested = True
 
 
+def watchdog_wait(is_stopping, interval: float = 5.0, step: float = 0.5,
+                  sleeper=time.sleep) -> bool:
+    """Wartet bis zu ``interval`` Sekunden in kleinen Schritten und gibt
+    ``True`` zurueck, sobald ein Stopp gewuenscht ist.
+
+    Ein einziges ``time.sleep(5)`` laeuft unter Windows nach dem Ctrl+C von
+    NSSM weiter (PEP 475) — bis zu fuenf Sekunden, in denen NSSM den Dienst
+    laengst hart beendet hat."""
+    waited = 0.0
+    while waited < interval:
+        if is_stopping():
+            return True
+        chunk = min(step, interval - waited)
+        sleeper(chunk)
+        waited += chunk
+    return is_stopping()
+
+
+def watchdog_loop(*, is_stopping, wait, child_exited, on_child_exit, check_pg):
+    """Wachhund: haelt uvicorn und PostgreSQL am Leben, bis ein Stopp
+    gewuenscht ist.
+
+    Kundenfall 2026-11-15 (Windows): NSSM schickt beim Dienst-Stopp Ctrl+C an
+    die ganze Konsole, uvicorn beendet sich darauf selbst (Exitcode 0). Ohne
+    den zweiten Blick auf den Stoppwunsch hielt der Wachhund das fuer einen
+    Absturz und startete uvicorn neu — der saubere Shutdown kam nie dran."""
+    while not is_stopping():
+        if wait() or is_stopping():
+            break
+        if child_exited():
+            if is_stopping():
+                break
+            on_child_exit()
+        if is_stopping():
+            break
+        check_pg()
+
+
 PG_UPGRADE_RESTORE_MARKER = DATA_DIR / ".pg-upgrade-restore"
 
 
@@ -2775,41 +2813,44 @@ def cmd_start(args):
     # 7. Watchdog loop
     logger.info("PraxisZeit is running. Press Ctrl+C to stop.")
     uvicorn_restarts: list[float] = []
-    while not _shutdown_requested:
-        time.sleep(5)
 
-        # Check if uvicorn is still alive
-        if _uvicorn_process and _uvicorn_process.poll() is not None:
-            rc = _uvicorn_process.returncode
-            now = time.time()
-            uvicorn_restarts.append(now)
-            uvicorn_restarts = [t for t in uvicorn_restarts
-                                if now - t <= _UVICORN_RESTART_WINDOW_SECONDS]
-            # #427: Irgendwann ist Schluss. Ohne Obergrenze startet der Wachhund
-            # uvicorn endlos neu und bleibt dabei selbst am Leben — fuer systemd
-            # ist der Dienst dann ``active``, obwohl er in einer Absturzschleife
-            # steckt und nichts ausliefert. Mit ``Restart=on-failure`` und
-            # ``StartLimitBurst`` in der Unit endet der Dienst stattdessen
-            # ehrlich in ``failed``.
-            if should_give_up(uvicorn_restarts, now):
-                logger.error(
-                    "uvicorn hat sich %s mal in %s Minuten beendet (zuletzt mit "
-                    "Exitcode %s) — PraxisZeit gibt auf und beendet sich mit "
-                    "Fehler, damit der Dienst nicht faelschlich als laufend gilt.",
-                    len(uvicorn_restarts), _UVICORN_RESTART_WINDOW_SECONDS // 60, rc,
-                )
-                uvicorn_stop()
-                pg_stop()
-                _remove_pid()
-                sys.exit(1)
+    def _on_uvicorn_exit():
+        nonlocal uvicorn_restarts
+        rc = _uvicorn_process.returncode
+        now = time.time()
+        uvicorn_restarts.append(now)
+        uvicorn_restarts = [t for t in uvicorn_restarts
+                            if now - t <= _UVICORN_RESTART_WINDOW_SECONDS]
+        # #427: Irgendwann ist Schluss. Ohne Obergrenze startet der Wachhund
+        # uvicorn endlos neu und bleibt dabei selbst am Leben — fuer systemd
+        # ist der Dienst dann ``active``, obwohl er in einer Absturzschleife
+        # steckt und nichts ausliefert. Mit ``Restart=on-failure`` und
+        # ``StartLimitBurst`` in der Unit endet der Dienst stattdessen
+        # ehrlich in ``failed``.
+        if should_give_up(uvicorn_restarts, now):
             logger.error(
-                "uvicorn hat sich beendet (Exitcode %s), Neustart %s von %s...",
-                rc, len(uvicorn_restarts), _UVICORN_RESTART_LIMIT,
+                "uvicorn hat sich %s mal in %s Minuten beendet (zuletzt mit "
+                "Exitcode %s) — PraxisZeit gibt auf und beendet sich mit "
+                "Fehler, damit der Dienst nicht faelschlich als laufend gilt.",
+                len(uvicorn_restarts), _UVICORN_RESTART_WINDOW_SECONDS // 60, rc,
             )
-            uvicorn_start(config)
+            uvicorn_stop()
+            pg_stop()
+            _remove_pid()
+            sys.exit(1)
+        logger.error(
+            "uvicorn hat sich beendet (Exitcode %s), Neustart %s von %s...",
+            rc, len(uvicorn_restarts), _UVICORN_RESTART_LIMIT,
+        )
+        uvicorn_start(config)
 
-        # Check if PostgreSQL is still alive
-        _watchdog_check_pg()
+    watchdog_loop(
+        is_stopping=lambda: _shutdown_requested,
+        wait=lambda: watchdog_wait(lambda: _shutdown_requested),
+        child_exited=lambda: bool(_uvicorn_process and _uvicorn_process.poll() is not None),
+        on_child_exit=_on_uvicorn_exit,
+        check_pg=_watchdog_check_pg,
+    )
 
     # Shutdown
     logger.info("Shutting down PraxisZeit...")
