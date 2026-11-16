@@ -42,9 +42,8 @@ on:
 jobs:
   validate-macos-x64:
     name: macOS 15 (Intel x86_64)
-    # macos-13 ist deprecated (Stand 2026); macos-15-intel ist der aktuelle
-    # Intel-Runner. Falls jemand explizit gegen aelteres macOS testen will,
-    # auf macos-13 oder macos-14-large zurueckschalten.
+    # macos-13 und macos-14 gibt es auf GitHub nicht mehr; macos-15-intel ist
+    # der aktuelle Intel-Runner.
     runs-on: macos-15-intel
     timeout-minutes: 15
     steps:
