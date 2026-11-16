@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.24.3] - 2026-11-16
+
+### 🐛 Behoben (Windows-Server-Update 2026-11-16: PraxisZeit blieb nach dem Update gestoppt)
+
+- **Rechte-Prüfung braucht keinen C#-Compiler mehr.** `secure-install.ps1` übersetzte die Prüfung auf harte Links bisher mit `Add-Type`; dabei startet Windows `csc.exe` als Kindprozess. Auf einem Windows Server 2019 scheiterte dieser Start sporadisch mit „Dem Client fehlt ein erforderliches Recht“ (`Win32Exception`), am 15.11. im ersten Lauf, am 16.11. in jedem Lauf einschließlich „Reparieren“. Seit 1.24.2 startet das Update den Dienst nach einer gescheiterten Prüfung bewusst nicht, PraxisZeit stand deshalb still. Die beiden Windows-Aufrufe (`CreateFileW`, `GetFileInformationByHandle`) entstehen jetzt im Speicher (Reflection.Emit): kein Compiler, kein Kindprozess, keine Datei in `TEMP`. Die Prüfung bleibt streng: lässt sich die Zahl der harten Links nicht feststellen, gilt das weiter als Befund.
+
 ## [1.24.2] - 2026-11-16
 
 ### 🐛 Behoben (Windows-Server-Update 2026-11-15: erster Lauf gescheitert, zweiter erfolgreich)
