@@ -424,12 +424,30 @@ def test_guidance_reports_the_real_service_state():
     assert "teilweise aktualisiert" in guide
 
 
-def test_secure_install_logs_add_type_details():
+def test_secure_install_logs_loader_failure_details():
     text = _text("secure-install.ps1")
-    catch = text[text.index("Add-Type -Language CSharp -TypeDefinition $PzFileLinksCode"):]
+    catch = text[text.index("$script:PzFileLinks = New-PzFileLinksNative"):]
     catch = catch[:catch.index("exit 1")]
     assert "Write-PzAddTypeFailure $_.Exception" in catch
     helper = _function(text, "Write-PzAddTypeFailure")
     for needle in ("GetType().FullName", "HResult", "InnerException", "$env:TEMP"):
         assert needle in helper, needle
+
+
+def test_secure_install_never_compiles_csharp():
+    # Kundenfall 2026-11-15/16: Add-Type startet csc.exe als Kindprozess, der
+    # Start scheiterte sporadisch mit "Dem Client fehlt ein erforderliches
+    # Recht" und hielt das Update an. Die Pruefung muss ohne Compiler laufen.
+    text = _text("secure-install.ps1")
+    code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+    assert "Add-Type" not in code
+    assert "DefinePInvokeMethod('CreateFileW'" in code
+    assert "DefinePInvokeMethod('GetFileInformationByHandle'" in code
+    count = _function(text, "Get-PzLinkCount")
+    assert "ToUInt32($buf, 40)" in count
+    assert "return [long]-1" in count
+    # Probeaufruf im try: Laufzeitfehler der Aufrufe enden im exit-1-Pfad.
+    load = text[text.index("$script:PzFileLinks = New-PzFileLinksNative"):]
+    load = load[:load.index("} catch {")]
+    assert "Get-PzLinkCount $PSCommandPath" in load
 
