@@ -149,37 +149,55 @@ function Test-ReparsePoint([string]$Path) {
 # Anzahl harter Links einer Datei (GetFileInformationByHandle). Nur mit
 # FILE_READ_ATTRIBUTES geoeffnet, ohne einer Verknuepfung zu folgen; -1 = nicht
 # feststellbar (gilt als Befund). Ohne diese Pruefung keine Installation.
-$PzFileLinksCode = @'
-using System;
-using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
-public static class PzFileLinks {
-    [StructLayout(LayoutKind.Sequential)]
-    struct Info {
-        public uint Attributes;
-        public System.Runtime.InteropServices.ComTypes.FILETIME Created, Accessed, Written;
-        public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
-    }
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr sa,
-        uint disposition, uint flags, IntPtr template);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool GetFileInformationByHandle(SafeFileHandle h, out Info info);
-    public static long Count(string path) {
-        string p = path.StartsWith(@"\\") ? @"\\?\UNC\" + path.Substring(2) : @"\\?\" + path;
-        using (SafeFileHandle h = CreateFileW(p, 0x80, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)) {
-            if (h.IsInvalid) { return -1; }
-            Info i;
-            if (!GetFileInformationByHandle(h, out i)) { return -1; }
-            return i.Links;
-        }
+#
+# Kundenfall 2026-11-15/16 (Windows Server 2019): Add-Type uebersetzt C# mit
+# csc.exe als Kindprozess; dessen Start scheiterte sporadisch mit "Dem Client
+# fehlt ein erforderliches Recht" (Win32Exception) - das Update blieb stehen.
+# Die Aufrufe werden deshalb im Speicher per Reflection.Emit erzeugt: kein
+# Compiler, kein Kindprozess, keine Datei in TEMP.
+function New-PzFileLinksNative {
+    $name = New-Object System.Reflection.AssemblyName('PzFileLinksNative')
+    $asm = [System.AppDomain]::CurrentDomain.DefineDynamicAssembly($name,
+        [System.Reflection.Emit.AssemblyBuilderAccess]::Run)
+    $mod = $asm.DefineDynamicModule('PzFileLinksNative')
+    $tb = $mod.DefineType('PzFileLinksNative', [System.Reflection.TypeAttributes]'Public, Class, Abstract, Sealed')
+    $attrs = [System.Reflection.MethodAttributes]'Public, Static, PinvokeImpl, HideBySig'
+    $create = $tb.DefinePInvokeMethod('CreateFileW', 'kernel32.dll', $attrs,
+        [System.Reflection.CallingConventions]::Standard,
+        [Microsoft.Win32.SafeHandles.SafeFileHandle],
+        [Type[]]@([string], [uint32], [uint32], [IntPtr], [uint32], [uint32], [IntPtr]),
+        [System.Runtime.InteropServices.CallingConvention]::Winapi,
+        [System.Runtime.InteropServices.CharSet]::Unicode)
+    $create.SetImplementationFlags([System.Reflection.MethodImplAttributes]::PreserveSig)
+    # BY_HANDLE_FILE_INFORMATION als 52-Byte-Puffer; nNumberOfLinks ab Byte 40.
+    $info = $tb.DefinePInvokeMethod('GetFileInformationByHandle', 'kernel32.dll', $attrs,
+        [System.Reflection.CallingConventions]::Standard,
+        [bool],
+        [Type[]]@([Microsoft.Win32.SafeHandles.SafeFileHandle], [byte[]]),
+        [System.Runtime.InteropServices.CallingConvention]::Winapi,
+        [System.Runtime.InteropServices.CharSet]::Unicode)
+    $info.SetImplementationFlags([System.Reflection.MethodImplAttributes]::PreserveSig)
+    [void]$info.DefineParameter(2, [System.Reflection.ParameterAttributes]'In, Out', 'info')
+    return $tb.CreateType()
+}
+
+function Get-PzLinkCount([string]$Path) {
+    if ($Path.StartsWith('\\')) { $p = '\\?\UNC\' + $Path.Substring(2) } else { $p = '\\?\' + $Path }
+    # 0x80 = FILE_READ_ATTRIBUTES, 7 = alle Freigaben, 3 = OPEN_EXISTING,
+    # 0x02200000 = FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT
+    $h = $script:PzFileLinks::CreateFileW($p, 0x80, 7, [IntPtr]::Zero, 3, 0x02200000, [IntPtr]::Zero)
+    try {
+        if ($h.IsInvalid) { return [long]-1 }
+        $buf = New-Object byte[] 52
+        if (-not $script:PzFileLinks::GetFileInformationByHandle($h, $buf)) { return [long]-1 }
+        return [long][System.BitConverter]::ToUInt32($buf, 40)
+    } finally {
+        $h.Dispose()
     }
 }
-'@
+
 function Write-PzAddTypeFailure($ex) {
-    # Windows-Server-Update 2026-11-15: "Dem Client fehlt ein erforderliches
-    # Recht" ohne weitere Angaben. Add-Type uebersetzt in TEMP - Ausnahme,
-    # HResult und TEMP-Pfad nennen, damit die Ursache im Protokoll steht.
+    # Ausnahme, HResult und TEMP-Pfad nennen, damit die Ursache im Protokoll steht.
     Write-Output "  Ausnahme: $($ex.GetType().FullName), HResult 0x$('{0:X8}' -f $ex.HResult)"
     if ($ex.InnerException) {
         Write-Output "  Innere Ausnahme: $($ex.InnerException.GetType().FullName): $($ex.InnerException.Message)"
@@ -188,7 +206,7 @@ function Write-PzAddTypeFailure($ex) {
 }
 
 try {
-    Add-Type -Language CSharp -TypeDefinition $PzFileLinksCode -ErrorAction Stop
+    $script:PzFileLinks = New-PzFileLinksNative
 } catch {
     Write-Output "FEHLER: Die Pruefung auf harte Links liess sich nicht laden - $_"
     Write-PzAddTypeFailure $_.Exception
@@ -381,7 +399,7 @@ function Lock-TreeTopDown([string]$Dir) {
             }
             if ($item.PSIsContainer) {
                 $stack.Push($item.FullName)
-            } elseif ([PzFileLinks]::Count($item.FullName) -ne 1) {
+            } elseif ((Get-PzLinkCount $item.FullName) -ne 1) {
                 $hard.Add($item.FullName)
             }
         }
@@ -419,7 +437,7 @@ function Find-TreeFindings([string]$Dir) {
             }
             if ($item.PSIsContainer) {
                 $stack.Push($item.FullName)
-            } elseif ([PzFileLinks]::Count($item.FullName) -ne 1) {
+            } elseif ((Get-PzLinkCount $item.FullName) -ne 1) {
                 $hard.Add($item.FullName)
             }
         }
@@ -433,7 +451,7 @@ function Assert-SingleFile([string]$Path) {
     $hard = New-Object System.Collections.Generic.List[string]
     $odd = New-Object System.Collections.Generic.List[string]
     if (Test-OddName (Split-Path -Leaf $Path)) { $odd.Add($Path) }
-    elseif ([PzFileLinks]::Count($Path) -ne 1) { $hard.Add($Path) }
+    elseif ((Get-PzLinkCount $Path) -ne 1) { $hard.Add($Path) }
     Write-TreeFindings (Split-Path -Parent $Path) $none $hard $odd
 }
 

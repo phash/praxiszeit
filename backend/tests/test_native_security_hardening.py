@@ -832,7 +832,7 @@ def test_secure_install_ps1_scans_a_fresh_tree_read_only_before_step_1():
     assert "if (-not $evidence) { Find-TreeFindings $root }" in step0
     fn = _ps1_function(code, "Find-TreeFindings")
     assert "icacls" not in fn.lower() and "SetAccessControl" not in fn
-    assert "[PzFileLinks]::Count($item.FullName) -ne 1" in fn
+    assert "(Get-PzLinkCount $item.FullName) -ne 1" in fn
     assert "Test-OddName $item.Name" in fn
     assert "Write-TreeFindings $Dir $links $hard $odd" in fn
     main = code[code.index("try {\n    $root = (Resolve-Path"):]
@@ -859,7 +859,7 @@ def test_secure_install_ps1_locks_each_subtree_top_down_before_recursing():
     assert "if (Test-OddName $item.Name) { $odd.Add($item.FullName); continue }" in fn
     check = fn.index("-band [System.IO.FileAttributes]::ReparsePoint")
     assert check < fn.index("$links.Add($item.FullName)") < fn.index("$stack.Push($item.FullName)")
-    assert "elseif ([PzFileLinks]::Count($item.FullName) -ne 1) {" in fn
+    assert "elseif ((Get-PzLinkCount $item.FullName) -ne 1) {" in fn
     assert "exit 1" in fn and "Write-TreeFindings $Dir $links $hard $odd" in fn
     findings = _ps1_function(code, "Write-TreeFindings")
     assert findings.count("exit 2") == 1
@@ -870,9 +870,9 @@ def test_secure_install_ps1_locks_each_subtree_top_down_before_recursing():
     assert "Test-OddName" in code and "return ($Name -match '[ .]$')" in _ps1_function(code, "Test-OddName")
     # hard-link count: FILE_READ_ATTRIBUTES, no reparse following, \\?\ paths
     raw = _read("installer/windows/secure-install.ps1").decode("ascii")
-    assert "GetFileInformationByHandle" in raw and "CreateFileW(p, 0x80, 7, IntPtr.Zero, 3, 0x02200000" in raw
-    assert '@"\\\\?\\"' in raw
-    add = raw.index("Add-Type -Language CSharp -TypeDefinition $PzFileLinksCode -ErrorAction Stop")
+    assert "GetFileInformationByHandle" in raw and "CreateFileW($p, 0x80, 7, [IntPtr]::Zero, 3, 0x02200000" in raw
+    assert "$p = '\\\\?\\' + $Path" in raw
+    add = raw.index("$script:PzFileLinks = New-PzFileLinksNative")
     assert "exit 1" in raw[add:add + 300]
 
     lines = code.splitlines()
