@@ -176,10 +176,22 @@ public static class PzFileLinks {
     }
 }
 '@
+function Write-PzAddTypeFailure($ex) {
+    # Windows-Server-Update 2026-11-15: "Dem Client fehlt ein erforderliches
+    # Recht" ohne weitere Angaben. Add-Type uebersetzt in TEMP - Ausnahme,
+    # HResult und TEMP-Pfad nennen, damit die Ursache im Protokoll steht.
+    Write-Output "  Ausnahme: $($ex.GetType().FullName), HResult 0x$('{0:X8}' -f $ex.HResult)"
+    if ($ex.InnerException) {
+        Write-Output "  Innere Ausnahme: $($ex.InnerException.GetType().FullName): $($ex.InnerException.Message)"
+    }
+    Write-Output "  TEMP: $env:TEMP (Sitzung $([System.Diagnostics.Process]::GetCurrentProcess().SessionId))"
+}
+
 try {
     Add-Type -Language CSharp -TypeDefinition $PzFileLinksCode -ErrorAction Stop
 } catch {
     Write-Output "FEHLER: Die Pruefung auf harte Links liess sich nicht laden - $_"
+    Write-PzAddTypeFailure $_.Exception
     exit 1
 }
 

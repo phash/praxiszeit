@@ -875,6 +875,256 @@ function Set-NssmServiceOptions {
     }
 }
 
+function Write-Environment {
+    # Umgebung des Update-Laufs ins Protokoll (Windows-Server-Update
+    # 2026-11-15: Lauf 1 scheiterte, Lauf 2 in einer anderen RDP-Sitzung
+    # klappte - Sitzung, Rechte und TEMP standen nirgends).
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        Write-Log '--- Umgebung ---'
+        try {
+            $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+            # ProductType: 1 = Arbeitsplatz, 2 = Domaenencontroller, 3 = Server
+            Write-Log "  Windows: $($os.Caption) $($os.Version) Build $($os.BuildNumber) (ProductType $($os.ProductType), Sprache $($os.OSLanguage))"
+            Write-Log "  Letzter Systemstart: $($os.LastBootUpTime)"
+        } catch {
+            Write-Log "  Windows-Version nicht lesbar: $_"
+        }
+        $id = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        $admin = (New-Object System.Security.Principal.WindowsPrincipal($id)).IsInRole(
+            [System.Security.Principal.WindowsBuiltInRole]::Administrator)
+        $proc = [System.Diagnostics.Process]::GetCurrentProcess()
+        Write-Log "  Benutzer: $($id.Name) ($($id.User.Value)), Administrator (erhoeht): $admin"
+        Write-Log "  Sitzung: $($proc.SessionId), PID $PID, 64-Bit-Prozess: $([Environment]::Is64BitProcess)"
+        Write-Log "  PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition)), CLR $([Environment]::Version)"
+        Write-Log "  TEMP: $env:TEMP"
+        $probe = Join-Path $env:TEMP ("pz-probe-{0}.tmp" -f [guid]::NewGuid().ToString('N'))
+        try {
+            Set-Content -Path $probe -Value 'x' -ErrorAction Stop
+            Remove-Item -Path $probe -Force -ErrorAction SilentlyContinue
+            Write-Log '  TEMP beschreibbar: ja'
+        } catch {
+            Write-Log "  TEMP beschreibbar: NEIN - $_"
+        }
+        try {
+            $drive = Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='{0}'" -f $InstallDir.Substring(0, 2)) -ErrorAction Stop
+            Write-Log ("  Freier Speicher {0}: {1:N1} GB" -f $drive.DeviceID, ($drive.FreeSpace / 1GB))
+        } catch {
+            Write-Log "  Freier Speicher nicht lesbar: $_"
+        }
+        $privs = @(& whoami.exe /priv /fo csv 2>$null | ConvertFrom-Csv -ErrorAction SilentlyContinue)
+        if ($privs.Count -gt 0) {
+            $names = $privs | ForEach-Object { '{0}={1}' -f $_.PSObject.Properties.Value[0], $_.PSObject.Properties.Value[2] }
+            Write-Log "  Privilegien: $($names -join ', ')"
+        }
+        try {
+            $mp = Get-MpComputerStatus -ErrorAction Stop
+            Write-Log "  Defender Echtzeitschutz: $($mp.RealTimeProtectionEnabled)"
+        } catch {
+            Write-Log '  Defender-Status nicht lesbar (kein Defender oder kein Zugriff).'
+        }
+        Write-Log '----------------'
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+}
+
+$PzRestartManagerCode = @'
+#pragma warning disable 649
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class PzRm {
+    [StructLayout(LayoutKind.Sequential)]
+    struct UniqueProcess {
+        public int ProcessId;
+        public System.Runtime.InteropServices.ComTypes.FILETIME StartTime;
+    }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct ProcessInfo {
+        public UniqueProcess Process;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string AppName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string ServiceName;
+        public int AppType;
+        public uint AppStatus;
+        public uint SessionId;
+        [MarshalAs(UnmanagedType.Bool)] public bool Restartable;
+    }
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmStartSession(out uint session, int flags, StringBuilder key);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmEndSession(uint session);
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmRegisterResources(uint session, uint nFiles, string[] files,
+        uint nApps, IntPtr apps, uint nServices, string[] services);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmGetList(uint session, out uint needed, ref uint count,
+        [In, Out] ProcessInfo[] info, ref uint reasons);
+    public static string[] Who(string path) {
+        List<string> result = new List<string>();
+        uint session;
+        int rc = RmStartSession(out session, 0, new StringBuilder(64));
+        if (rc != 0) { result.Add("RmStartSession Fehler " + rc); return result.ToArray(); }
+        try {
+            rc = RmRegisterResources(session, 1, new string[] { path }, 0, IntPtr.Zero, 0, null);
+            if (rc != 0) { result.Add("RmRegisterResources Fehler " + rc); return result.ToArray(); }
+            uint needed, reasons = 0, count = 0;
+            rc = RmGetList(session, out needed, ref count, null, ref reasons);
+            if (rc == 234 && needed > 0) {
+                ProcessInfo[] info = new ProcessInfo[needed];
+                count = needed;
+                rc = RmGetList(session, out needed, ref count, info, ref reasons);
+                if (rc == 0) {
+                    for (int i = 0; i < count; i++) {
+                        result.Add("PID " + info[i].Process.ProcessId + " " + info[i].AppName
+                            + (string.IsNullOrEmpty(info[i].ServiceName) ? "" : " (Dienst " + info[i].ServiceName + ")")
+                            + " Sitzung " + info[i].SessionId + " Typ " + info[i].AppType);
+                    }
+                    return result.ToArray();
+                }
+            }
+            if (rc != 0) { result.Add("RmGetList Fehler " + rc); }
+            return result.ToArray();
+        } finally {
+            RmEndSession(session);
+        }
+    }
+}
+'@
+
+function Get-RobocopyErrorPaths([object[]]$robocopyOutput) {
+    # robocopy meldet "FEHLER 32 (0x00000020) Kopieren der Datei <Pfad>" -
+    # bei einer exklusiv gesperrten Quelle aber auch "ERROR 2 (0x00000002)
+    # Changing File Attributes <Pfad>" (Emulator-Lauf 2026-11-16). Darum jede
+    # Fehlerzeile mit Code und Pfad auswerten, nicht nur Code 32.
+    $paths = New-Object System.Collections.Generic.List[string]
+    foreach ($line in $robocopyOutput) {
+        $l = "$line"
+        if ($l -match '\(0x[0-9A-Fa-f]{8}\).*?\s([A-Za-z]:\\.+?)\s*$') {
+            if (-not $paths.Contains($Matches[1])) { $paths.Add($Matches[1]) }
+        }
+    }
+    return ,$paths.ToArray()
+}
+
+function Write-FileLockers([string[]]$paths) {
+    # Wer sperrt die Datei? Restart Manager (Windows-Bordmittel) fuer Quelle
+    # UND Ziel - robocopy nennt nur einen Pfad; gesperrt sein kann jede Seite
+    # (Dienst, Virenscanner auf der frisch entpackten Datei, zweite Sitzung).
+    $rmLoaded = $true
+    if (-not ('PzRm' -as [type])) {
+        try {
+            Add-Type -Language CSharp -TypeDefinition $PzRestartManagerCode -ErrorAction Stop
+        } catch {
+            $rmLoaded = $false
+            Write-Log "  Restart Manager nicht ladbar ($($_.Exception.GetType().FullName), HResult $($_.Exception.HResult)): $_"
+        }
+    }
+    foreach ($p in $paths) {
+        $candidates = @($p)
+        if ($p.StartsWith($WizardDirResolved, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $candidates += (Join-Path $InstallDir $p.Substring($WizardDirResolved.Length).TrimStart('\'))
+        }
+        foreach ($c in $candidates) {
+            if (-not (Test-Path -LiteralPath $c)) { Write-Log "  Gesperrt? $c - existiert nicht"; continue }
+            if (-not $rmLoaded) { continue }
+            try {
+                $who = @([PzRm]::Who($c))
+                if ($who.Count -eq 0) {
+                    Write-Log "  Gesperrt? $c - Restart Manager meldet keinen Prozess (Sperre schon weg oder Kernel/Treiber, z. B. Virenscanner)"
+                } else {
+                    foreach ($w in $who) { Write-Log "  Gesperrt: $c - $w" }
+                }
+            } catch {
+                Write-Log "  Restart-Manager-Abfrage fuer $c fehlgeschlagen: $_"
+            }
+        }
+    }
+    # Fallback und Ergaenzung: alle Prozesse, deren Programm im
+    # Installationsordner oder im entpackten Paket liegt.
+    try {
+        $roots = @(($InstallDir.TrimEnd('\') + '\'), ($WizardDirResolved.TrimEnd('\') + '\'))
+        $procs = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $exe = $_.ExecutablePath
+            $exe -and ($roots | Where-Object { $exe.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) })
+        })
+        if ($procs.Count -eq 0) {
+            Write-Log '  Kein Prozess aus Installationsordner oder Paket aktiv.'
+        }
+        foreach ($pr in $procs) {
+            Write-Log "  Prozess aktiv: PID $($pr.ProcessId) (Eltern $($pr.ParentProcessId), Sitzung $($pr.SessionId)) $($pr.ExecutablePath) - $($pr.CommandLine)"
+        }
+    } catch {
+        Write-Log "  Prozessliste nicht lesbar: $_"
+    }
+}
+
+function Stop-LeftoverInstallProcesses {
+    # Nach dem Dienststopp darf KEIN Programm aus dem Installationsordner mehr
+    # laufen (Windows-Server-Update 2026-11-15: nssm.exe blieb gesperrt,
+    # robocopy FEHLER 32). Erst bis zu 15 s auf ein eigenes Ende warten, dann
+    # beenden - jeder Prozess steht mit Kommandozeile und Elternprozess im Log.
+    $root = $InstallDir.TrimEnd('\') + '\'
+    $find = {
+        @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $_.ProcessId -ne $PID -and $_.ExecutablePath -and
+            $_.ExecutablePath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)
+        })
+    }
+    try {
+        $procs = & $find
+    } catch {
+        Write-Log "WARNUNG: Prozessliste nicht lesbar: $_"
+        return
+    }
+    if ($procs.Count -eq 0) {
+        Write-Log '  Kein Programm aus dem Installationsordner aktiv.'
+        return
+    }
+    foreach ($p in $procs) {
+        Write-Log "  Noch aktiv: PID $($p.ProcessId) (Eltern $($p.ParentProcessId), Sitzung $($p.SessionId)) $($p.ExecutablePath) - $($p.CommandLine)"
+    }
+    for ($i = 0; $i -lt 30; $i++) {
+        Start-Sleep -Milliseconds 500
+        try { $procs = & $find } catch { break }
+        if ($procs.Count -eq 0) {
+            Write-Log ("  Alle Programme aus dem Installationsordner nach {0:N1} s beendet." -f (($i + 1) / 2))
+            return
+        }
+    }
+    foreach ($p in $procs) {
+        Write-Log "WARNUNG: PID $($p.ProcessId) $($p.Name) laeuft nach 15 s noch - wird beendet."
+        try {
+            Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop
+        } catch {
+            Write-Log "WARNUNG: PID $($p.ProcessId) nicht beendet: $_"
+        }
+    }
+    Start-Sleep -Seconds 2
+}
+
+function Wait-PostgresService {
+    # praxiszeit-server.py startet PraxisZeit-PostgreSQL erst nach dem eigenen
+    # Dienststart - direkt danach meldete sc query "STOPPED", obwohl alles
+    # lief (Windows-Server-Update 2026-11-15). Bis zu 60 s warten und die
+    # Wartezeit protokollieren.
+    $pg = Get-Service -Name 'PraxisZeit-PostgreSQL' -ErrorAction SilentlyContinue
+    if (-not $pg) {
+        Write-Log '  Dienst PraxisZeit-PostgreSQL nicht registriert (wird beim ersten Start angelegt).'
+        return
+    }
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $pg.WaitForStatus('Running', (New-TimeSpan -Seconds 60))
+        Write-Log ("  PraxisZeit-PostgreSQL laeuft (nach {0:N1} s)." -f $sw.Elapsed.TotalSeconds)
+    } catch {
+        $pg.Refresh()
+        Write-Log "WARNUNG: PraxisZeit-PostgreSQL nach 60 s nicht gestartet (Status $($pg.Status)) - siehe logs\praxiszeit.log und logs\postgresql-*.log."
+    }
+}
+
 function Write-ServiceStates([string]$when) {
     # Zustand beider Dienste ins Protokoll (Log-Audit 2026-11-15 A1: beim
     # Kundenfall war nicht nachvollziehbar, ob PostgreSQL beim Kopieren lief).
@@ -958,6 +1208,7 @@ function Step-StopService {
             Write-Log 'Datenbankdienst gestoppt'
         }
         Stop-LeftoverPython
+        Stop-LeftoverInstallProcesses
         Write-ServiceStates 'nach dem Stopp'
         if (-not $svc) {
             Set-StepStatus 'stop' 'warn'
@@ -995,6 +1246,8 @@ function Step-CopyFiles {
             if ($LASTEXITCODE -ge 8) {
                 Write-Log "FEHLER: robocopy /MIR $sub exit=$LASTEXITCODE"
                 foreach ($line in $mOut) { Write-Log "  $line" }
+                $locked = Get-RobocopyErrorPaths $mOut
+                if ($locked.Count -gt 0) { Write-FileLockers $locked }
                 Set-StepStatus 'copy' 'fail'
                 return $false
             }
@@ -1015,6 +1268,30 @@ function Step-CopyFiles {
         Write-Log "  robocopy $WizardDirResolved -> $InstallDir"
         $out = & robocopy.exe @rcArgs 2>&1
         $rc = $LASTEXITCODE
+        if ($rc -ge 8) {
+            # Windows-Server-Update 2026-11-15: FEHLER 32 auf nssm.exe, ohne
+            # Hinweis, wer die Datei sperrt. Sperrer protokollieren, Reste aus
+            # dem Installationsordner beenden, einmal wiederholen.
+            Write-Log "WARNUNG: robocopy exit=$rc - Ursache wird untersucht, danach weitere Versuche."
+            foreach ($line in $out) { if ("$line".Trim()) { Write-Log "  $line" } }
+            $locked = Get-RobocopyErrorPaths $out
+            if ($locked.Count -gt 0) { Write-FileLockers $locked }
+            Stop-LeftoverInstallProcesses
+            # Bis zu drei weitere Versuche im Abstand von 10 s: eine kurze Sperre
+            # (Virenscanner auf der frisch entpackten Datei, auslaufender
+            # Prozess) ist danach meist weg. robocopy selbst wiederholt eine
+            # gesperrte Quelle nicht immer (ERROR 2 statt 32, Emulator 2026-11-16).
+            for ($attempt = 2; $attempt -le 4 -and $rc -ge 8; $attempt++) {
+                Start-Sleep -Seconds 10
+                Write-Log "  robocopy $WizardDirResolved -> $InstallDir ($attempt. Versuch)"
+                $out = & robocopy.exe @rcArgs 2>&1
+                $rc = $LASTEXITCODE
+                if ($rc -ge 8) {
+                    $locked = Get-RobocopyErrorPaths $out
+                    if ($locked.Count -gt 0) { Write-FileLockers $locked }
+                }
+            }
+        }
         # Robocopy: 0-7 = success variants, 8+ = failure
         if ($rc -lt 8) {
             $script:FilesCopied = $true
@@ -1140,6 +1417,7 @@ function Step-StartService {
         $svc = Get-Service -Name 'PraxisZeit'
         $svc.WaitForStatus('Running', (New-TimeSpan -Seconds 120))
         Write-Log 'Service laeuft (Migrationen werden beim Start ausgefuehrt)'
+        Wait-PostgresService
         Write-ServiceStates 'nach dem Start'
         Set-StepStatus 'start' 'ok'
         return $true
@@ -1213,7 +1491,14 @@ function Write-FailureGuidance {
     $stepTxt = if ($script:FailedStep) { $script:FailedStep } else { 'siehe Protokoll oben' }
     $lines = @()
     if ($script:FilesCopied) {
-        $lines += 'UPDATE NICHT ABGESCHLOSSEN - PraxisZeit ist derzeit NICHT gestartet.'
+        # Windows-Server-Update 2026-11-15: nach dem Kopierfehler startete der
+        # Wizard den Dienst wieder - die Meldung "NICHT gestartet" stimmte nicht.
+        $appSvc = Get-Service -Name 'PraxisZeit' -ErrorAction SilentlyContinue
+        if ($appSvc -and $appSvc.Status -eq 'Running') {
+            $lines += 'UPDATE NICHT ABGESCHLOSSEN - PraxisZeit laeuft, aber mit teilweise aktualisierten Programmdateien.'
+        } else {
+            $lines += 'UPDATE NICHT ABGESCHLOSSEN - PraxisZeit ist derzeit NICHT gestartet.'
+        }
         $lines += "Fehlgeschlagen: $stepTxt (Ursache im Protokoll oben)."
         if ($script:FailedStep -eq 'Service starten') {
             # Review 2026-11-15: der Dienststart fuehrt die Datenbank-
@@ -1256,6 +1541,7 @@ function Write-FailureGuidance {
 }
 
 function Invoke-Update {
+    Write-Environment
     Write-Log "Update: $CurrentVersion -> $NewVersion"
     Write-Log "Install: $InstallDir"
     Write-Log "Quelle:  $WizardDirResolved"
