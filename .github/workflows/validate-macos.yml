@@ -39,6 +39,10 @@ on:
         required: false
         type: string
 
+# Nur Lesen: gh release download braucht contents: read, sonst nichts.
+permissions:
+  contents: read
+
 jobs:
   validate-macos-x64:
     name: macOS 15 (Intel x86_64)
