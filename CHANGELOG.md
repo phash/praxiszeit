@@ -1,14 +1,19 @@
 # Changelog
 
-## [Unreleased]
+## [1.24.2] - 2026-11-16
 
 ### 🐛 Behoben (Windows-Server-Update 2026-11-15: erster Lauf gescheitert, zweiter erfolgreich)
 
-- **Gesperrte Dateien beim Update werden erklärt und abgefangen.** Scheitert das Kopieren an einer gesperrten Datei (robocopy `FEHLER 32`, im Fall `nssm.exe`; bei einer exklusiv gesperrten Quelle meldet robocopy auch `ERROR 2 … Changing File Attributes`, das Protokoll wertet deshalb jede robocopy-Fehlerzeile aus), nennt das Setup-Protokoll jetzt den sperrenden Prozess (Windows Restart Manager, für Paket- und Zielseite) und alle noch laufenden Programme aus dem Installationsordner und dem entpackten Paket (PID, Elternprozess, Sitzung, Kommandozeile). Danach beendet der Assistent Reste aus dem Installationsordner (erst nach 15 s Wartezeit) und versucht das Kopieren bis zu dreimal erneut, jeweils nach 10 s und mit erneuter Sperrer-Abfrage. Im Windows-Emulator nachgestellt: Sperrer erkannt („PID … Windows PowerShell Sitzung 1“), Update im nächsten Versuch abgeschlossen. Schon beim Dienststopp wartet er bis zu 15 s, bis kein Programm aus dem Installationsordner mehr läuft (bisher nur `python.exe`).
+- **Gesperrte Dateien beim Update werden erklärt und abgefangen.** Scheitert das Kopieren an einer gesperrten Datei (robocopy `FEHLER 32`, im Fall `nssm.exe`; bei einer exklusiv gesperrten Quelle meldet robocopy auch `ERROR 2 … Changing File Attributes`, das Protokoll wertet deshalb jede robocopy-Fehlerzeile aus), nennt das Setup-Protokoll jetzt den sperrenden Prozess (Windows Restart Manager, für Paket- und Zielseite) und alle noch laufenden Programme aus dem Installationsordner und dem entpackten Paket (PID, Elternprozess, Sitzung, Kommandozeile). Danach beendet der Assistent Reste aus dem Installationsordner (erst nach 15 s Wartezeit) und versucht das Kopieren bis zu dreimal erneut, jeweils nach 10 s und mit erneuter Sperrer-Abfrage (auch für die gespiegelten Ordner `bin\python` und `app`). Den eigenen Aufrufer (etwa ein `setup.exe`, das im Installationsordner liegt) beendet er dabei nie. Im Windows-Emulator nachgestellt: Sperrer erkannt („PID … Windows PowerShell Sitzung 1“), Update im nächsten Versuch abgeschlossen. Schon beim Dienststopp wartet er bis zu 15 s, bis kein Programm aus dem Installationsordner mehr läuft (bisher nur `python.exe`).
 - **Umgebung am Anfang des Setup-Protokolls:** Windows-Version und -Typ (Arbeitsplatz/Server), Benutzer, Administratorrechte, Sitzung, PowerShell-Version, `TEMP` (mit Schreibtest), freier Speicher, Privilegien und Status des Defender-Echtzeitschutzes.
 - **Rechte-Prüfung nicht ladbar:** die Meldung „Die Prüfung auf harte Links ließ sich nicht laden“ nennt jetzt Ausnahmetyp, HResult, innere Ausnahme, `TEMP` und Sitzung.
 - **Abschlussmeldung nach Kopierfehler stimmt:** Startet der Assistent den Dienst nach einem Kopierfehler wieder, heißt es „PraxisZeit läuft, aber mit teilweise aktualisierten Programmdateien“ statt „PraxisZeit ist derzeit NICHT gestartet“.
 - **Zustand von PraxisZeit-PostgreSQL nach dem Start:** der Assistent wartet bis zu 60 s, bis der Datenbankdienst läuft, und protokolliert die Wartezeit; bisher stand dort direkt nach dem Start „STOPPED“.
+
+### 🔧 Intern
+
+- **Handbuch-Aufnahme bricht nicht mehr am Monatsanfang ab:** Der Stichtag der Demodaten rückt eine Woche vor, wenn der „vergessene“ Werktag sonst im Vormonat läge (die Karte „Fehlende Buchungen im Team“ zeigt nur den laufenden Monat).
+- **macOS-Prüfung der Release-Pakete:** arm64 läuft auf `macos-15` (GitHub hat `macos-14` abgeschaltet); der Workflow-Token hat nur noch Leserechte.
 
 ## [1.24.1] - 2026-11-15
 

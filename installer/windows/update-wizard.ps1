@@ -899,8 +899,9 @@ function Write-Environment {
         Write-Log "  Sitzung: $($proc.SessionId), PID $PID, 64-Bit-Prozess: $([Environment]::Is64BitProcess)"
         Write-Log "  PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition)), CLR $([Environment]::Version)"
         Write-Log "  TEMP: $env:TEMP"
-        $probe = Join-Path $env:TEMP ("pz-probe-{0}.tmp" -f [guid]::NewGuid().ToString('N'))
         try {
+            if (-not $env:TEMP) { throw 'TEMP ist leer' }
+            $probe = Join-Path $env:TEMP ("pz-probe-{0}.tmp" -f [guid]::NewGuid().ToString('N'))
             Set-Content -Path $probe -Value 'x' -ErrorAction Stop
             Remove-Item -Path $probe -Force -ErrorAction SilentlyContinue
             Write-Log '  TEMP beschreibbar: ja'
@@ -924,6 +925,10 @@ function Write-Environment {
         } catch {
             Write-Log '  Defender-Status nicht lesbar (kein Defender oder kein Zugriff).'
         }
+        Write-Log '----------------'
+    } catch {
+        # Die Diagnose darf das Update nie abbrechen (Review 1.24.2).
+        Write-Log "  Umgebung nicht vollstaendig lesbar: $_"
         Write-Log '----------------'
     } finally {
         $ErrorActionPreference = $prevEap
@@ -1019,13 +1024,18 @@ function Write-FileLockers([string[]]$paths) {
             Add-Type -Language CSharp -TypeDefinition $PzRestartManagerCode -ErrorAction Stop
         } catch {
             $rmLoaded = $false
-            Write-Log "  Restart Manager nicht ladbar ($($_.Exception.GetType().FullName), HResult $($_.Exception.HResult)): $_"
+            Write-Log ("  Restart Manager nicht ladbar ({0}, HResult 0x{1:X8}): {2}" -f $_.Exception.GetType().FullName, $_.Exception.HResult, $_)
         }
     }
     foreach ($p in $paths) {
+        # robocopy nennt mal die Paket-, mal die Zielseite - beide abfragen.
         $candidates = @($p)
-        if ($p.StartsWith($WizardDirResolved, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $candidates += (Join-Path $InstallDir $p.Substring($WizardDirResolved.Length).TrimStart('\'))
+        $pkgRoot = $WizardDirResolved.TrimEnd('\') + '\'
+        $dstRoot = $InstallDir.TrimEnd('\') + '\'
+        if ($p.StartsWith($pkgRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $candidates += (Join-Path $InstallDir $p.Substring($pkgRoot.Length))
+        } elseif ($p.StartsWith($dstRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $candidates += (Join-Path $WizardDirResolved $p.Substring($dstRoot.Length))
         }
         foreach ($c in $candidates) {
             if (-not (Test-Path -LiteralPath $c)) { Write-Log "  Gesperrt? $c - existiert nicht"; continue }
@@ -1067,9 +1077,20 @@ function Stop-LeftoverInstallProcesses {
     # robocopy FEHLER 32). Erst bis zu 15 s auf ein eigenes Ende warten, dann
     # beenden - jeder Prozess steht mit Kommandozeile und Elternprozess im Log.
     $root = $InstallDir.TrimEnd('\') + '\'
+    # Nie den eigenen Prozess oder seine Aufrufer beenden - liegt setup.exe im
+    # Installationsordner, waere sie sonst ein "Rest" (Review 1.24.2).
+    $skip = @($PID)
+    try {
+        $pp = $PID
+        for ($n = 0; $n -lt 16; $n++) {
+            $pp = (Get-CimInstance Win32_Process -Filter "ProcessId=$pp" -ErrorAction Stop).ParentProcessId
+            if (-not $pp -or ($skip -contains $pp)) { break }
+            $skip += $pp
+        }
+    } catch { }
     $find = {
         @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
-            $_.ProcessId -ne $PID -and $_.ExecutablePath -and
+            ($skip -notcontains $_.ProcessId) -and $_.ExecutablePath -and
             $_.ExecutablePath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)
         })
     }
@@ -1088,7 +1109,11 @@ function Stop-LeftoverInstallProcesses {
     }
     for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Milliseconds 500
-        try { $procs = & $find } catch { break }
+        try { $procs = & $find } catch {
+            # Ohne frische Liste nichts beenden (PID koennte neu vergeben sein).
+            Write-Log "WARNUNG: Prozessliste nicht lesbar: $_ - nichts beendet."
+            return
+        }
         if ($procs.Count -eq 0) {
             Write-Log ("  Alle Programme aus dem Installationsordner nach {0:N1} s beendet." -f (($i + 1) / 2))
             return
@@ -1097,6 +1122,9 @@ function Stop-LeftoverInstallProcesses {
     foreach ($p in $procs) {
         Write-Log "WARNUNG: PID $($p.ProcessId) $($p.Name) laeuft nach 15 s noch - wird beendet."
         try {
+            # Gleiche PID, gleiches Programm? Sonst ist es ein anderer Prozess.
+            $live = Get-Process -Id $p.ProcessId -ErrorAction Stop
+            if (-not $live.Path -or -not $live.Path.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
             Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop
         } catch {
             Write-Log "WARNUNG: PID $($p.ProcessId) nicht beendet: $_"
@@ -1224,6 +1252,38 @@ function Step-StopService {
     }
 }
 
+function Invoke-RobocopyWithRetry([string]$label, [object[]]$rcArgs) {
+    # Windows-Server-Update 2026-11-15: FEHLER 32 auf nssm.exe, ohne Hinweis,
+    # wer die Datei sperrt. Bei einem Fehler: Ausgabe und Sperrer
+    # protokollieren, Reste aus dem Installationsordner beenden, dann bis zu
+    # drei weitere Versuche im Abstand von 10 s. Eine kurze Sperre
+    # (Virenscanner auf der frisch entpackten Datei, auslaufender Prozess) ist
+    # danach meist weg. robocopy selbst wiederholt eine gesperrte Quelle nicht
+    # immer (ERROR 2 statt 32, Emulator 2026-11-16). Gilt fuer die
+    # gespiegelten Ordner (bin\python mit vielen DLLs) und den Rest gleich.
+    Write-Log "  robocopy $label"
+    $out = & robocopy.exe @rcArgs 2>&1
+    $rc = $LASTEXITCODE
+    if ($rc -lt 8) { return $rc }
+    Write-Log "WARNUNG: robocopy exit=$rc - Ursache wird untersucht, danach weitere Versuche."
+    foreach ($line in $out) { if ("$line".Trim()) { Write-Log "  $line" } }
+    $locked = Get-RobocopyErrorPaths $out
+    if ($locked.Count -gt 0) { Write-FileLockers $locked }
+    Stop-LeftoverInstallProcesses
+    for ($attempt = 2; $attempt -le 4 -and $rc -ge 8; $attempt++) {
+        Start-Sleep -Seconds 10
+        Write-Log "  robocopy $label ($attempt. Versuch)"
+        $out = & robocopy.exe @rcArgs 2>&1
+        $rc = $LASTEXITCODE
+        if ($rc -ge 8) {
+            foreach ($line in $out) { if ("$line".Trim()) { Write-Log "  $line" } }
+            $locked = Get-RobocopyErrorPaths $out
+            if ($locked.Count -gt 0) { Write-FileLockers $locked }
+        }
+    }
+    return $rc
+}
+
 function Step-CopyFiles {
     Set-StepStatus 'copy' 'running'
     Write-Log 'Kopiere neue Dateien (robocopy mit Excludes)...'
@@ -1238,16 +1298,13 @@ function Step-CopyFiles {
             $src = Join-Path $WizardDirResolved $sub
             if (-not (Test-Path $src)) { continue }
             $dst = Join-Path $InstallDir $sub
-            Write-Log "  robocopy /MIR $src -> $dst"
             # Ab hier ist die Installation ggf. teilweise neu - fuer die
             # Abschlussmeldung zaehlt das als "nach dem Kopieren".
             $script:FilesCopied = $true
-            $mOut = & robocopy.exe $src $dst '/MIR' '/NFL' '/NDL' '/NJH' '/NJS' '/NC' '/NS' '/R:2' '/W:2' 2>&1
-            if ($LASTEXITCODE -ge 8) {
-                Write-Log "FEHLER: robocopy /MIR $sub exit=$LASTEXITCODE"
-                foreach ($line in $mOut) { Write-Log "  $line" }
-                $locked = Get-RobocopyErrorPaths $mOut
-                if ($locked.Count -gt 0) { Write-FileLockers $locked }
+            # Letzter Wert = Exitcode (falls ein Helfer doch etwas ausgibt).
+            $mrc = @(Invoke-RobocopyWithRetry "/MIR $src -> $dst" @($src, $dst, '/MIR', '/NFL', '/NDL', '/NJH', '/NJS', '/NC', '/NS', '/R:2', '/W:2'))[-1]
+            if ($mrc -ge 8) {
+                Write-Log "FEHLER: robocopy /MIR $sub exit=$mrc"
                 Set-StepStatus 'copy' 'fail'
                 return $false
             }
@@ -1265,33 +1322,7 @@ function Step-CopyFiles {
             # ueberschreibt ein Paket-Platzhalter das echte Cert des Betreibers.
             '/XF', 'praxiszeit.conf', '.db-credentials', '.secret-key', 'license.key', 'cert.pem', 'key.pem'
         )
-        Write-Log "  robocopy $WizardDirResolved -> $InstallDir"
-        $out = & robocopy.exe @rcArgs 2>&1
-        $rc = $LASTEXITCODE
-        if ($rc -ge 8) {
-            # Windows-Server-Update 2026-11-15: FEHLER 32 auf nssm.exe, ohne
-            # Hinweis, wer die Datei sperrt. Sperrer protokollieren, Reste aus
-            # dem Installationsordner beenden, einmal wiederholen.
-            Write-Log "WARNUNG: robocopy exit=$rc - Ursache wird untersucht, danach weitere Versuche."
-            foreach ($line in $out) { if ("$line".Trim()) { Write-Log "  $line" } }
-            $locked = Get-RobocopyErrorPaths $out
-            if ($locked.Count -gt 0) { Write-FileLockers $locked }
-            Stop-LeftoverInstallProcesses
-            # Bis zu drei weitere Versuche im Abstand von 10 s: eine kurze Sperre
-            # (Virenscanner auf der frisch entpackten Datei, auslaufender
-            # Prozess) ist danach meist weg. robocopy selbst wiederholt eine
-            # gesperrte Quelle nicht immer (ERROR 2 statt 32, Emulator 2026-11-16).
-            for ($attempt = 2; $attempt -le 4 -and $rc -ge 8; $attempt++) {
-                Start-Sleep -Seconds 10
-                Write-Log "  robocopy $WizardDirResolved -> $InstallDir ($attempt. Versuch)"
-                $out = & robocopy.exe @rcArgs 2>&1
-                $rc = $LASTEXITCODE
-                if ($rc -ge 8) {
-                    $locked = Get-RobocopyErrorPaths $out
-                    if ($locked.Count -gt 0) { Write-FileLockers $locked }
-                }
-            }
-        }
+        $rc = @(Invoke-RobocopyWithRetry "$WizardDirResolved -> $InstallDir" $rcArgs)[-1]
         # Robocopy: 0-7 = success variants, 8+ = failure
         if ($rc -lt 8) {
             $script:FilesCopied = $true
@@ -1300,7 +1331,6 @@ function Step-CopyFiles {
             return $true
         }
         Write-Log "FEHLER: robocopy exit=$rc"
-        foreach ($line in $out) { Write-Log "  $line" }
         Set-StepStatus 'copy' 'fail'
         return $false
     } catch {
@@ -1494,8 +1524,10 @@ function Write-FailureGuidance {
         # Windows-Server-Update 2026-11-15: nach dem Kopierfehler startete der
         # Wizard den Dienst wieder - die Meldung "NICHT gestartet" stimmte nicht.
         $appSvc = Get-Service -Name 'PraxisZeit' -ErrorAction SilentlyContinue
-        if ($appSvc -and $appSvc.Status -eq 'Running') {
+        if ($appSvc -and $appSvc.Status -eq 'Running' -and $script:FailedStep -eq 'Dateien aktualisieren') {
             $lines += 'UPDATE NICHT ABGESCHLOSSEN - PraxisZeit laeuft, aber mit teilweise aktualisierten Programmdateien.'
+        } elseif ($appSvc -and $appSvc.Status -eq 'Running') {
+            $lines += 'UPDATE NICHT ABGESCHLOSSEN - PraxisZeit laeuft, ein Schritt nach dem Kopieren ist fehlgeschlagen.'
         } else {
             $lines += 'UPDATE NICHT ABGESCHLOSSEN - PraxisZeit ist derzeit NICHT gestartet.'
         }
