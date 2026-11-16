@@ -400,6 +400,15 @@ def test_default_stichtag_is_wednesday():
     assert seed.default_stichtag(date(2026, 11, 10), {date(2026, 10, 28)}) == date(2026, 10, 29)
 
 
+def test_default_stichtag_keeps_forgotten_day_in_month():
+    # Mittwoch 2026-11-04: {{werktag-4}} waere der 29.10. (Vormonat) -> die
+    # Karte "Fehlende Buchungen im Team" bliebe leer. Eine Woche frueher.
+    seed = _load_seed()
+    d = seed.default_stichtag(date(2026, 11, 16))
+    assert d == date(2026, 10, 28)
+    assert seed.workday_before(d, seed.THOMAS_FORGOTTEN_WORKDAY).month == d.month
+
+
 @pytest.fixture
 def full_tenant(admin_engine):
     """Mandant mit Verwalterin ``admin`` (wie nach dem Bootstrap) und einem

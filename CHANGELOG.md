@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.24.2] - 2026-11-16
 
 ### 🐛 Behoben (Windows-Server-Update 2026-11-15: erster Lauf gescheitert, zweiter erfolgreich)
 
@@ -9,6 +9,11 @@
 - **Rechte-Prüfung nicht ladbar:** die Meldung „Die Prüfung auf harte Links ließ sich nicht laden“ nennt jetzt Ausnahmetyp, HResult, innere Ausnahme, `TEMP` und Sitzung.
 - **Abschlussmeldung nach Kopierfehler stimmt:** Startet der Assistent den Dienst nach einem Kopierfehler wieder, heißt es „PraxisZeit läuft, aber mit teilweise aktualisierten Programmdateien“ statt „PraxisZeit ist derzeit NICHT gestartet“.
 - **Zustand von PraxisZeit-PostgreSQL nach dem Start:** der Assistent wartet bis zu 60 s, bis der Datenbankdienst läuft, und protokolliert die Wartezeit; bisher stand dort direkt nach dem Start „STOPPED“.
+
+### 🔧 Intern
+
+- **Handbuch-Aufnahme bricht nicht mehr am Monatsanfang ab:** Der Stichtag der Demodaten rückt eine Woche vor, wenn der „vergessene“ Werktag sonst im Vormonat läge (die Karte „Fehlende Buchungen im Team“ zeigt nur den laufenden Monat).
+- **macOS-Prüfung der Release-Pakete:** arm64 läuft auf `macos-15` (GitHub hat `macos-14` abgeschaltet); der Workflow-Token hat nur noch Leserechte.
 
 ## [1.24.1] - 2026-11-15
 

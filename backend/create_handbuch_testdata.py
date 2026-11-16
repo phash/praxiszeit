@@ -204,12 +204,21 @@ def _is_workday(d: date, holiday_dates) -> bool:
 
 def default_stichtag(today: date, holiday_dates=()) -> date:
     """Mittwoch der Kalenderwoche, die 14 Tage vor ``today`` liegt; ist das ein
-    Feiertag, der nächste Werktag."""
+    Feiertag, der nächste Werktag.
+
+    Liegt Thomas' vergessener Werktag ({{werktag-4}}) dann im Vormonat, eine
+    Woche früher: das Dashboard zeigt fehlende Buchungen nur im laufenden
+    Monat, sonst bleibt die Karte „Fehlende Buchungen im Team“ leer (Aufnahme
+    1.24.2 am 2026-11-16 brach mit Stichtag 2026-11-04 ab)."""
     ref = today - timedelta(days=14)
-    d = ref - timedelta(days=ref.weekday()) + timedelta(days=2)
-    while not _is_workday(d, holiday_dates):
-        d += timedelta(days=1)
-    return d
+    wed = ref - timedelta(days=ref.weekday()) + timedelta(days=2)
+    while True:
+        d = wed
+        while not _is_workday(d, holiday_dates):
+            d += timedelta(days=1)
+        if workday_before(d, THOMAS_FORGOTTEN_WORKDAY).month == d.month:
+            return d
+        wed -= timedelta(days=7)
 
 
 def prev_month_start(stichtag: date) -> date:
