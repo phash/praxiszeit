@@ -446,4 +446,8 @@ def test_secure_install_never_compiles_csharp():
     count = _function(text, "Get-PzLinkCount")
     assert "ToUInt32($buf, 40)" in count
     assert "return [long]-1" in count
+    # Probeaufruf im try: Laufzeitfehler der Aufrufe enden im exit-1-Pfad.
+    load = text[text.index("$script:PzFileLinks = New-PzFileLinksNative"):]
+    load = load[:load.index("} catch {")]
+    assert "Get-PzLinkCount $PSCommandPath" in load
 

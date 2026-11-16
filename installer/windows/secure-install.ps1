@@ -207,6 +207,9 @@ function Write-PzAddTypeFailure($ex) {
 
 try {
     $script:PzFileLinks = New-PzFileLinksNative
+    # Probeaufruf: Bindungs- oder Marshalling-Fehler zeigen sich erst beim
+    # ersten Aufruf - hier landen sie im Protokoll statt mitten in der Pruefung.
+    if ((Get-PzLinkCount $PSCommandPath) -lt 1) { throw "Anzahl harter Links von $PSCommandPath nicht feststellbar" }
 } catch {
     Write-Output "FEHLER: Die Pruefung auf harte Links liess sich nicht laden - $_"
     Write-PzAddTypeFailure $_.Exception

@@ -873,7 +873,9 @@ def test_secure_install_ps1_locks_each_subtree_top_down_before_recursing():
     assert "GetFileInformationByHandle" in raw and "CreateFileW($p, 0x80, 7, [IntPtr]::Zero, 3, 0x02200000" in raw
     assert "$p = '\\\\?\\' + $Path" in raw
     add = raw.index("$script:PzFileLinks = New-PzFileLinksNative")
-    assert "exit 1" in raw[add:add + 300]
+    catch = raw[add:]
+    catch = catch[catch.index("} catch {"):]
+    assert "exit 1" in catch[:300]
 
     lines = code.splitlines()
     recursive = [i for i, line in enumerate(lines)
