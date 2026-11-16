@@ -994,13 +994,15 @@ public static class PzRm {
 }
 '@
 
-function Get-LockedPaths([object[]]$robocopyOutput) {
-    # robocopy meldet "FEHLER 32 (0x00000020) ... <Pfad>" bzw. "ERROR 32
-    # (0x00000020) Copying File <Pfad>" - den Pfad am Zeilenende herausziehen.
+function Get-RobocopyErrorPaths([object[]]$robocopyOutput) {
+    # robocopy meldet "FEHLER 32 (0x00000020) Kopieren der Datei <Pfad>" -
+    # bei einer exklusiv gesperrten Quelle aber auch "ERROR 2 (0x00000002)
+    # Changing File Attributes <Pfad>" (Emulator-Lauf 2026-11-16). Darum jede
+    # Fehlerzeile mit Code und Pfad auswerten, nicht nur Code 32.
     $paths = New-Object System.Collections.Generic.List[string]
     foreach ($line in $robocopyOutput) {
         $l = "$line"
-        if ($l -match '\(0x00000020\).*?\s([A-Za-z]:\\.+?)\s*$') {
+        if ($l -match '\(0x[0-9A-Fa-f]{8}\).*?\s([A-Za-z]:\\.+?)\s*$') {
             if (-not $paths.Contains($Matches[1])) { $paths.Add($Matches[1]) }
         }
     }
@@ -1244,7 +1246,7 @@ function Step-CopyFiles {
             if ($LASTEXITCODE -ge 8) {
                 Write-Log "FEHLER: robocopy /MIR $sub exit=$LASTEXITCODE"
                 foreach ($line in $mOut) { Write-Log "  $line" }
-                $locked = Get-LockedPaths $mOut
+                $locked = Get-RobocopyErrorPaths $mOut
                 if ($locked.Count -gt 0) { Write-FileLockers $locked }
                 Set-StepStatus 'copy' 'fail'
                 return $false
@@ -1270,18 +1272,24 @@ function Step-CopyFiles {
             # Windows-Server-Update 2026-11-15: FEHLER 32 auf nssm.exe, ohne
             # Hinweis, wer die Datei sperrt. Sperrer protokollieren, Reste aus
             # dem Installationsordner beenden, einmal wiederholen.
-            Write-Log "WARNUNG: robocopy exit=$rc - Ursache wird untersucht, danach ein zweiter Versuch."
+            Write-Log "WARNUNG: robocopy exit=$rc - Ursache wird untersucht, danach weitere Versuche."
             foreach ($line in $out) { if ("$line".Trim()) { Write-Log "  $line" } }
-            $locked = Get-LockedPaths $out
+            $locked = Get-RobocopyErrorPaths $out
             if ($locked.Count -gt 0) { Write-FileLockers $locked }
             Stop-LeftoverInstallProcesses
-            Start-Sleep -Seconds 5
-            Write-Log "  robocopy $WizardDirResolved -> $InstallDir (2. Versuch)"
-            $out = & robocopy.exe @rcArgs 2>&1
-            $rc = $LASTEXITCODE
-            if ($rc -ge 8) {
-                $locked = Get-LockedPaths $out
-                if ($locked.Count -gt 0) { Write-FileLockers $locked }
+            # Bis zu drei weitere Versuche im Abstand von 10 s: eine kurze Sperre
+            # (Virenscanner auf der frisch entpackten Datei, auslaufender
+            # Prozess) ist danach meist weg. robocopy selbst wiederholt eine
+            # gesperrte Quelle nicht immer (ERROR 2 statt 32, Emulator 2026-11-16).
+            for ($attempt = 2; $attempt -le 4 -and $rc -ge 8; $attempt++) {
+                Start-Sleep -Seconds 10
+                Write-Log "  robocopy $WizardDirResolved -> $InstallDir ($attempt. Versuch)"
+                $out = & robocopy.exe @rcArgs 2>&1
+                $rc = $LASTEXITCODE
+                if ($rc -ge 8) {
+                    $locked = Get-RobocopyErrorPaths $out
+                    if ($locked.Count -gt 0) { Write-FileLockers $locked }
+                }
             }
         }
         # Robocopy: 0-7 = success variants, 8+ = failure

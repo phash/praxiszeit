@@ -379,10 +379,21 @@ def test_locked_files_name_the_locking_process():
 
 def test_copy_retries_once_after_lock_with_diagnosis():
     body = _function(_text("update-wizard.ps1"), "Step-CopyFiles")
-    assert "Get-LockedPaths" in body
+    assert "Get-RobocopyErrorPaths" in body
     assert "Write-FileLockers" in body
     assert "Stop-LeftoverInstallProcesses" in body
     assert body.count("robocopy.exe @rcArgs") >= 2
+    # Kurze Sperren (Virenscanner) ueberstehen: mehrere Versuche mit Pause.
+    assert "$attempt -le 4" in body
+    assert "Start-Sleep -Seconds 10" in body
+
+
+def test_robocopy_error_paths_cover_every_error_code():
+    # Emulator-Lauf 2026-11-16: eine exklusiv gesperrte Quelle meldet robocopy
+    # als "ERROR 2 (0x00000002) Changing File Attributes", nicht als Code 32.
+    body = _function(_text("update-wizard.ps1"), "Get-RobocopyErrorPaths")
+    assert "0x[0-9A-Fa-f]{8}" in body
+    assert "0x00000020\\)" not in body
 
 
 def test_leftover_processes_cover_whole_install_dir():

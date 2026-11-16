@@ -65,6 +65,8 @@ tools/win-test/
     ├── nonadmin-probe.ps1   versucht als Standardkonto zu schreiben und zu lesen
     ├── hardening-probe.ps1  Negativfälle von secure-install.ps1 in Wegwerf-Ordnern (C:\hp)
     ├── post-reboot.bat      Nachprüfung nach dem Neustart (geplante Aufgabe)
+    ├── lock-holder.ps1      Sperrtest im update-Lauf: hält C:\PZNew\lock-probe.dat exklusiv offen
+    ├── lock-test.txt       ← vorhanden = Sperrtest einschalten (nicht im Repo)
     ├── mode.txt            ← fresh | update | foreignpg | portchange (nicht im Repo)
     ├── tree-old/           ← Vorgängerpaket für den Update-Lauf (nicht im Repo)
     ├── admin-password.txt  ← Admin-Kennwort der Test-VM (nicht im Repo)
@@ -110,6 +112,13 @@ echo fresh > share/mode.txt
 # … oder Portwechsel im Restore-Pfad
 #   echo portchange > share/mode.txt
 ```
+
+**Optional — Sperrtest im `update`-Lauf:** `touch share/lock-test.txt`. Dann hält
+`lock-holder.ps1` die Datei `C:\PZNew\lock-probe.dat` (legt `install.bat` im neuen Paket an; `nssm.exe` ist in Alt- und Neupaket gleich und wird nicht kopiert) exklusiv offen, bis der
+Assistent „Ursache wird untersucht“ meldet (Nachbau des Windows-Server-Updates
+vom 2026-11-15, robocopy `FEHLER 32`). Erwartet im Ergebnis: `WARNUNG: robocopy
+exit=…`, die Zeile mit dem Sperrer (PowerShell-Prozess, Restart Manager), ein
+weiterer Versuch (`2. Versuch`), danach `UPDATE_EXIT=0` und `RELEASED … marker_seen=True`.
 
 ⚠️ `build-release.sh` überschreibt `dist/praxiszeit-<version>-windows-x64.zip`,
 solange die Version nicht gehoben ist. Wer das veröffentlichte Paket als

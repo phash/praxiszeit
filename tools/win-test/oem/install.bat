@@ -169,8 +169,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\install-acl-c
 call :nssm_appexit NSSM_APPEXIT_78_VOR_UPDATE
 >> "%RES%" echo [Update] update-wizard.ps1 -Headless aus dem neuen Paket ...
 robocopy "\\host.lan\Data\tree" "C:\PZNew" /E /R:2 /W:2 /NFL /NDL /NJH /NJS >nul
+REM Optional (share\lock-test.txt): eine Datei des neuen Pakets exklusiv sperren,
+REM bis der Assistent den Kopierfehler meldet - prueft Sperrer-Protokoll + 2. Versuch.
+if exist "\\host.lan\Data\lock-test.txt" (
+    copy /Y "\\host.lan\Data\lock-holder.ps1" "C:\pz-harness\lock-holder.ps1" >nul
+    REM Neue Datei im Paket: robocopy muss sie kopieren (nssm.exe ist in Alt- und
+    REM Neupaket gleich und wird uebersprungen - Lauf 2026-11-16).
+    > "C:\PZNew\lock-probe.dat" echo Sperrtest
+    >> "%RES%" echo [Update] Sperrtest: C:\PZNew\lock-probe.dat wird exklusiv gesperrt
+    start "lockholder" /min powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\lock-holder.ps1"
+    timeout /t 8 /nobreak >nul
+    type C:\pz-harness\lock-holder.state >> "%RES%" 2>&1
+)
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\PZNew\update-wizard.ps1" -InstallDir "C:\PraxisZeit" -Headless >> "%RES%" 2>&1
 >> "%RES%" echo UPDATE_EXIT=!errorlevel!
+if exist "C:\pz-harness\lock-holder.state" type C:\pz-harness\lock-holder.state >> "%RES%" 2>&1
 findstr /C:"harden-permissions" "C:\PraxisZeit\praxiszeit-server.py" >nul && (>> "%RES%" echo NEUER_CODE=ja) || (>> "%RES%" echo NEUER_CODE=nein)
 findstr /C:"print-db-port" "C:\PraxisZeit\praxiszeit-server.py" >nul && (>> "%RES%" echo NEUER_PORT_CODE=ja) || (>> "%RES%" echo NEUER_PORT_CODE=nein)
 set "HCU=000"

@@ -15,3 +15,4 @@ share/install-result*.txt
 
 # Test-Admin-Passwort der VM — gehoert nicht ins Repo.
 share/admin-password.txt
+share/lock-test.txt
