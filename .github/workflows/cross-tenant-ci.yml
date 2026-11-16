@@ -16,8 +16,10 @@ jobs:
   backend-unit:
     runs-on: ubuntu-latest
     # Die SQLite-Suite allein braucht lokal ~12 min (2034 Tests); auf den
-    # GitHub-Runnern eher mehr. 15 min waren zu knapp bemessen.
-    timeout-minutes: 40
+    # GitHub-Runnern eher mehr. 15 min waren zu knapp bemessen. Ab November
+    # 2026 (~5100 Tests + PG-Suite) brauchte der Lauf 35-40 min; der
+    # Release-PR 1.24.2 wurde bei 79 % der PG-Tests nach 40 min abgebrochen.
+    timeout-minutes: 60
     services:
       postgres:
         # PostgreSQL 18 — seit 1.10.0 die ausgelieferte Fassung. Die CI lief
