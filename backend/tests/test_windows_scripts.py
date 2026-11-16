@@ -377,12 +377,17 @@ def test_locked_files_name_the_locking_process():
     assert "Win32_Process" in who
 
 
-def test_copy_retries_once_after_lock_with_diagnosis():
-    body = _function(_text("update-wizard.ps1"), "Step-CopyFiles")
+def test_copy_retries_after_lock_with_diagnosis():
+    text = _text("update-wizard.ps1")
+    body = _function(text, "Invoke-RobocopyWithRetry")
     assert "Get-RobocopyErrorPaths" in body
     assert "Write-FileLockers" in body
     assert "Stop-LeftoverInstallProcesses" in body
     assert body.count("robocopy.exe @rcArgs") >= 2
+    # Review 1.24.2: auch die gespiegelten Ordner (/MIR) laufen ueber die Wiederholung.
+    copy = _function(text, "Step-CopyFiles")
+    assert copy.count("Invoke-RobocopyWithRetry") == 2
+    assert "& robocopy.exe" not in copy
     # Kurze Sperren (Virenscanner) ueberstehen: mehrere Versuche mit Pause.
     assert "$attempt -le 4" in body
     assert "Start-Sleep -Seconds 10" in body
@@ -400,6 +405,9 @@ def test_leftover_processes_cover_whole_install_dir():
     body = _function(_text("update-wizard.ps1"), "Stop-LeftoverInstallProcesses")
     assert "ExecutablePath" in body and "ParentProcessId" in body
     assert "$PID" in body
+    # Review 1.24.2: Aufrufer-Kette (setup.exe im Installationsordner) bleibt verschont.
+    assert "$skip -notcontains $_.ProcessId" in body
+    assert "Get-Process -Id $p.ProcessId" in body
     stop = _function(_text("update-wizard.ps1"), "Step-StopService")
     assert "Stop-LeftoverInstallProcesses" in stop
 
