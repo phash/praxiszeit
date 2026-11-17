@@ -15,6 +15,13 @@ import pytest
 _REPO = Path(__file__).resolve().parents[2]
 _WIN = _REPO / "installer" / "windows"
 
+# Im Backend-Container ist nur backend/ eingehaengt; dort fehlt installer/.
+# GH-CI und scripts/local-ci.sh fahren die Datei mit dem ganzen Repo.
+pytestmark = pytest.mark.skipif(
+    not _WIN.is_dir(),
+    reason=f"installer/windows not reachable at {_WIN}",
+)
+
 _SCRIPTS = [
     "backup.bat",
     "install-service.bat",
