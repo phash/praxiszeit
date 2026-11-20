@@ -128,7 +128,7 @@ public static class ReportSanitizer
     }
 
     private static string NormalizeLines(string text) =>
-        text.Replace("\r\n", "\n").Replace('\r', '\n').Replace(' ', ' ');
+        text.Replace("\r\n", "\n").Replace('\r', '\n').Replace('\u00A0', ' ');
 
     private static string SanitizeCore(string text, HashSet<string>? hits)
     {

@@ -37,7 +37,7 @@ public static class SetupLogTail
                 read += n;
             }
             var text = new UTF8Encoding(false, false).GetString(buffer, 0, read);
-            if (text.Length > 0 && text[0] == '﻿')
+            if (text.Length > 0 && text[0] == '\uFEFF')
             {
                 text = text[1..];
             }

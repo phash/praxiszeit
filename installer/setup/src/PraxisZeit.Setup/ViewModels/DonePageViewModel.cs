@@ -164,7 +164,7 @@ public sealed partial class DonePageViewModel : WizardPageBase
             if (saved && !ReportSent)
             {
                 ReportStatus = "Meldung als Datei gespeichert.";
-                ReportDetail = HasReportKey ? null : NoKeyHint;
+                ReportDetail = null;
             }
         }
         catch (Exception)

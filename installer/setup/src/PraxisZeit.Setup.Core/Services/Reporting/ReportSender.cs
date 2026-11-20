@@ -66,7 +66,10 @@ public sealed class ReportSender(HttpMessageHandler? handler = null, TimeSpan? t
             using var content = BuildContent(report, key);
             try
             {
-                using var resp = await http.PostAsync(urls[i], content, deadline.Token).ConfigureAwait(false);
+                using var request = new HttpRequestMessage(HttpMethod.Post, urls[i]) { Content = content };
+                // Nur Header abwarten: ein unlesbarer Körper nach 201 darf die Meldung nicht als „nicht gesendet“ zeigen.
+                using var resp = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token)
+                    .ConfigureAwait(false);
                 return await InterpretAsync(resp, key, deadline.Token).ConfigureAwait(false);
             }
             catch (HttpRequestException ex) when (!deadline.IsCancellationRequested)
@@ -139,7 +142,7 @@ public sealed class ReportSender(HttpMessageHandler? handler = null, TimeSpan? t
         {
             body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         }
-        catch (Exception) when (status != 201)
+        catch (Exception)
         {
             body = string.Empty;
         }

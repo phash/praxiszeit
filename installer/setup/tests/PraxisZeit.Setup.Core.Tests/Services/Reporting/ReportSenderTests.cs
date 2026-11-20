@@ -33,6 +33,40 @@ public class ReportSenderTests
         ["09:40:02 FEHLER: robocopy exit=8"], new DateTime(2026, 11, 20, 9, 41, 7, DateTimeKind.Utc),
         "0f8fad5b-d9cb-469f-a165-70867728950e"));
 
+    private sealed class ThrowingContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            throw new IOException("body broke");
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
+
+    [Fact]
+    public async Task Created_WithUnreadableBody_StillOkWithoutRef()
+    {
+        var stub = new StubHandler((_, _, _) => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.Created) { Content = new ThrowingContent() }));
+
+        var result = await new ReportSender(stub).SendAsync(Report(), Key);
+
+        result.Should().Be(new ReportSendResult(true, 201, null, null));
+        stub.Requests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Created_WithInvalidJson_StillOkWithoutRef()
+    {
+        var stub = new StubHandler((_, _, _) => Task.FromResult(Json(HttpStatusCode.Created, "<html>")));
+
+        var result = await new ReportSender(stub).SendAsync(Report(), Key);
+
+        result.Should().Be(new ReportSendResult(true, 201, null, null));
+    }
+
     [Fact]
     public async Task Created_ReturnsRef()
     {
