@@ -78,7 +78,7 @@ public class ReportSanitizerTests
         ReportSanitizer.SharedRuleCount.Should().Be(sharedCount);
         ReportSanitizer.PraxisZeitRuleCount.Should().Be(pzCount);
         sharedCount.Should().Be(47);
-        pzCount.Should().Be(5);
+        pzCount.Should().Be(7);
         Shared.Value.Should().HaveCount(shared.RootElement.GetProperty("cases").GetArrayLength());
     }
 

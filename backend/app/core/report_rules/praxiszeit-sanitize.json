@@ -18,9 +18,9 @@
       "flags": [
         "i"
       ],
-      "pattern": "\\b(full_name|display_name|employee_name|employee|name)([ \\t]*[=:][ \\t]*)(\"(?:[^\"\\\\\\n]|\\\\.)*\"|\\'(?:[^\\'\\\\\\n]|\\\\.)*\\'|[^ \\t\\n<][^\\n]*)",
+      "pattern": "\\b(full_name|display_name|employee_name|praxis_name|practice_name|employee|name)([ \\t]*[=:][ \\t]*)(\"(?:[^\"\\\\\\n]|\\\\.)*\"|\\'(?:[^\\'\\\\\\n]|\\\\.)*\\'|[^ \\t\\n<][^\\n]*)",
       "replacement": "{1}{2}<user>",
-      "description": "Person name fields (full_name=..., name: ...): the rest of the line."
+      "description": "Person name fields (full_name=..., name: ..., praxis_name = Praxis Dr. ...): the rest of the line."
     },
     {
       "name": "pz_text_quoted",
@@ -41,6 +41,24 @@
       "pattern": "\\b(input_value|note|notes|comment|break_waiver_reason|sunday_exception_reason)([ \\t]*=[ \\t]*)(\"(?:[^\"\\\\\\n]|\\\\.)*\"|\\'(?:[^\\'\\\\\\n]|\\\\.)*\\')",
       "replacement": "{1}{2}<text>",
       "description": "Quoted free-text assignments (input_value='...' in Pydantic errors)."
+    },
+    {
+      "name": "pz_exception_message",
+      "category": "text",
+      "flags": [
+        "m"
+      ],
+      "pattern": "^([ \\t|+\\-]*(?:[A-Za-z_][A-Za-z0-9_]*\\.)*[A-Za-z_][A-Za-z0-9_]*(?:Error|Exception|Warning|Exit|Interrupt))(:[ \\t]+)[^\\n]+",
+      "replacement": "{1}{2}<text>",
+      "description": "Message of a Python exception line in native log tracebacks (KeyError: 'Weber'): may quote any input value; the type stays."
+    },
+    {
+      "name": "pz_import_filename",
+      "category": "text",
+      "flags": [],
+      "pattern": "(\\(Datei:?[ \\t]+)[^\\n]*",
+      "replacement": "{1}<text>)",
+      "description": "Uploaded file name in log lines (XLS-Import fehlgeschlagen (Datei <name>)): often carries an employee name."
     },
     {
       "name": "pz_query_value",
@@ -122,6 +140,54 @@
       "id": "pz-context-untouched",
       "input": "Fehler: HTTP 500 POST /api/time-entries — IntegrityError (23505 unique_violation)",
       "expected": "Fehler: HTTP 500 POST /api/time-entries — IntegrityError (23505 unique_violation)",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-message-quoted",
+      "input": "KeyError: 'Weber'",
+      "expected": "KeyError: <text>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-message-tail",
+      "input": "ValueError: invalid literal for int() with base 10: 'Anna Schmidt'",
+      "expected": "ValueError: <text>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-dotted-name",
+      "input": "sqlalchemy.exc.DataError: (psycopg.errors.InvalidTextRepresentation) Lisa Braun",
+      "expected": "sqlalchemy.exc.DataError: <text>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-group-indented",
+      "input": "  | UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in Zeiten Anna.xls",
+      "expected": "  | UnicodeDecodeError: <text>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-uvicorn-header-untouched",
+      "input": "ERROR:    Exception in ASGI application",
+      "expected": "ERROR:    Exception in ASGI application",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-db-summary-untouched",
+      "input": "IntegrityError (UniqueViolation: SQLSTATE 23505, constraint uq_tenant_user_date_start)",
+      "expected": "IntegrityError (UniqueViolation: SQLSTATE 23505, constraint uq_tenant_user_date_start)",
+      "patient_data": false
+    },
+    {
+      "id": "pz-import-filename",
+      "input": "2026-11-18 08:20:00 ERROR app.services.xls_import_service: XLS-Import fehlgeschlagen (Datei Zeiten Anna Schmidt (2).xls)",
+      "expected": "2026-11-18 08:20:00 ERROR app.services.xls_import_service: XLS-Import fehlgeschlagen (Datei <text>)",
+      "patient_data": false
+    },
+    {
+      "id": "pz-practice-name",
+      "input": "praxis_name = Praxis Dr. Weber",
+      "expected": "praxis_name = <user>",
       "patient_data": false
     }
   ]
