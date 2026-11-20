@@ -1,23 +1,40 @@
-"""Tests fuer In-App Bug-Reporting Proxy (#136).
+"""Tests für die In-App-Meldung (#136, #557): /api/feedback/preview + /send.
 
-Endpoint: POST /api/feedback/report  ->  pzweb POST /v1/bugs (multipart, httpx).
-Der Outbound-Call wird gemockt (kein echter pzweb-Call in Tests). Verifiziert:
-korrektes Multipart (license_id aus Lizenz, app_version/os ergaenzt, severity),
-Status-Mapping (201/403/429/Netzwerkfehler) und der "keine Lizenz"-Fall.
+Der ausgehende Call (``report_client.httpx.post``) wird immer gestubbt — kein
+echter Meldeserver in Tests. Verifiziert: Vorschau = gesendet, kein Schlüssel in
+Antworten, Admin-Sperren, Mandantenbezug der Fehlereinträge, 502-Mapping,
+Anhangprüfung, Nur-Lese-Lizenz und der Altweg ohne Lizenz.
 """
 
-import platform
-import types
+import json
+import uuid
+from datetime import datetime, timezone
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.config import settings
+from app.core import license as license_module
+from app.models.error_log import ErrorLog
+from app.services.report_payload import BOARD_URL
+
+REPORT_KEY = "mrk_praxiszeit_" + "Tok" + "en123456789abcdef"
+INSTALL_ID = "11111111-1111-4111-8111-111111111111"
+TENANT = uuid.UUID("00000000-0000-0000-0000-000000000001")
+OTHER = uuid.UUID("00000000-0000-0000-0000-000000000002")
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 32
+
+BASE_PREVIEW = {"kind": "bug", "title": "Es hakt", "text": "Beim Stempeln passiert X",
+                "severity": "high"}
+
 
 def _create_test_app() -> FastAPI:
     from app.routers import feedback
     from app.core.limiter import limiter
+    from app.middleware.license import LicenseReadOnlyMiddleware
     from slowapi import _rate_limit_exceeded_handler
     from slowapi.errors import RateLimitExceeded
 
@@ -25,19 +42,12 @@ def _create_test_app() -> FastAPI:
     limiter.enabled = False
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(LicenseReadOnlyMiddleware)
     app.include_router(feedback.router)
     return app
 
 
 _app = _create_test_app()
-
-_CUSTOMER_ID = "pz-00000000-0000-0000-0000-000000000001"
-VALID = {"title": "Es hakt", "description": "Beim Stempeln passiert X", "severity": "high"}
-
-
-class _FakeLicense:
-    def __init__(self, customer_id=_CUSTOMER_ID):
-        self.customer_id = customer_id
 
 
 class _Recorder:
@@ -53,132 +63,331 @@ class _Recorder:
             raise self._exc
         return self._response
 
+    def fields(self, i=0):
+        return {name: part[1] for name, part in self.calls[i]["kwargs"]["files"]
+                if part[0] is None}
+
+    def attachment(self, i=0):
+        found = [part for name, part in self.calls[i]["kwargs"]["files"] if name == "attachment"]
+        return found[0] if found else None
+
 
 def _patch_post(monkeypatch, response=None, exc=None):
-    from app.routers import feedback
+    from app.services import report_client
     rec = _Recorder(response=response, exc=exc)
-    monkeypatch.setattr(feedback.httpx, "post", rec)
+    monkeypatch.setattr(report_client.httpx, "post", rec)
     return rec
 
 
-@pytest.fixture
-def client():
+@pytest.fixture(autouse=True)
+def _env(monkeypatch):
+    from app.services import report_payload
+    monkeypatch.setattr(report_payload, "get_or_create_install_id", lambda: INSTALL_ID)
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "onprem")
+    monkeypatch.setattr(settings, "BETA_MODE", True)
+    monkeypatch.setattr(settings, "SERVE_FRONTEND", False)
+    monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", REPORT_KEY)
+    monkeypatch.setattr(license_module, "get_current_license", lambda: None)
+    yield
+
+
+def _client_for(db, user):
+    from app.database import get_db
     from app.middleware.auth import get_current_user
-    _app.dependency_overrides[get_current_user] = lambda: types.SimpleNamespace(
-        id="u", username="tester"
-    )
-    c = TestClient(_app)
-    yield c
+    _app.dependency_overrides[get_db] = lambda: db
+    _app.dependency_overrides[get_current_user] = lambda: user
+    return TestClient(_app)
+
+
+@pytest.fixture
+def admin_client(db, test_admin):
+    yield _client_for(db, test_admin)
     _app.dependency_overrides.clear()
 
 
 @pytest.fixture
-def mock_license(monkeypatch):
-    monkeypatch.setattr("app.core.license.get_current_license", lambda: _FakeLicense())
+def employee_client(db, test_user):
+    yield _client_for(db, test_user)
+    _app.dependency_overrides.clear()
 
 
-def test_happy_path_maps_201_to_200_and_sends_correct_multipart(client, mock_license, monkeypatch):
-    rec = _patch_post(
-        monkeypatch,
-        response=httpx.Response(201, json={"id": "bug-123", "status": "received"}),
-    )
-    resp = client.post("/api/feedback/report", json=VALID)
+def _send(client, payload, attachment=None):
+    files = {"attachment": attachment} if attachment is not None else None
+    return client.post("/api/feedback/send", data={"payload": json.dumps(payload)}, files=files)
 
-    assert resp.status_code == 200
+
+def _send_body(preview, **extra):
+    body = {"kind": "bug", "title": preview["title"], "description": preview["description"],
+            "severity": "high"}
+    body.update(extra)
+    return body
+
+
+def _error_row(db, tenant, **kw):
+    row = ErrorLog(tenant_id=tenant, level="error", logger="app", message="boom",
+                   fingerprint=kw.pop("fingerprint", "a" * 64), count=1, path="/api/x",
+                   method="GET", status_code=500, traceback="tb1\ntb2",
+                   last_seen=datetime.now(timezone.utc), **kw)
+    db.add(row)
+    db.commit()
+    return row
+
+
+# ---------------------------------------------------------------- preview
+
+def test_preview_returns_exact_fields_without_credential(admin_client):
+    resp = admin_client.post("/api/feedback/preview",
+                             json={**BASE_PREVIEW, "contact_email": "a@example.com"})
+    assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["status"] == "received"
-    assert body["id"] == "bug-123"
+    assert body["transport"] == "mrd-report-1"
+    assert body["credential_note"] == "mrk_praxiszeit_… (nicht angezeigt)"
+    assert body["board_url"] == BOARD_URL
+    assert body["contact_email_dropped"] is False
+    f = body["fields"]
+    assert "credential" not in f
+    assert REPORT_KEY not in resp.text
+    assert f["title"] == body["title"] == "Es hakt"
+    assert f["description"] == body["description"]
+    assert body["description"].startswith("Beim Stempeln passiert X\n\n---- Kontext (automatisch) ----")
+    assert f["protocol"] == "mrd-report-1" and f["product"] == "praxiszeit"
+    assert f["install_id"] == INSTALL_ID and f["kind"] == "bug" and f["severity"] == "high"
+    assert f["contact_email"] == "a@example.com" and f["license_id"] == "beta"
+    assert body["log_line_count"] == 0 and body["truncated"] is False
 
-    # Exactly one outbound call to {base}/v1/bugs as multipart with the right fields.
+
+def test_preview_reports_legacy_transport_without_key(admin_client, monkeypatch):
+    monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", "")
+    resp = admin_client.post("/api/feedback/preview",
+                             json={**BASE_PREVIEW, "contact_email": "a@example.com"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["transport"] == "legacy"
+    assert body["credential_note"] is None
+    assert body["contact_email_dropped"] is True
+    assert set(body["fields"]) == {"license_id", "title", "description", "app_version",
+                                   "os", "severity"}
+
+
+def test_preview_rejects_user_text_over_4000(admin_client):
+    resp = admin_client.post("/api/feedback/preview", json={**BASE_PREVIEW, "text": "x" * 4001})
+    assert resp.status_code == 422
+
+
+def test_preview_rejects_server_error_path_outside_api(admin_client):
+    resp = admin_client.post("/api/feedback/preview", json={
+        **BASE_PREVIEW, "kind": "crash",
+        "server_error": {"status": 500, "method": "GET", "path": "/etc/passwd"}})
+    assert resp.status_code == 422
+
+
+def test_preview_log_extract_masks_names_and_notes(admin_client, monkeypatch, tmp_path):
+    (tmp_path / "praxiszeit.log").write_text("\n".join([
+        "2026-11-18 08:15:02 WARNING praxiszeit.security: AUTH login_failed user=anna.schmidt "
+        "reason=bad_password ip=192.168.178.20",
+        "2026-11-18 08:16:00 INFO:     192.168.178.20:51234 - \"GET /api/admin/users?search="
+        "Schmidt&include_inactive=true HTTP/1.1\" 200",
+        "  String should have at most 500 characters [type=string_too_long, input_value="
+        "'Arzttermin bei Dr. Weber wegen Rücken', input_type=str]",
+        "{'type': 'string_too_long', 'loc': ('body', 'note'), 'msg': 'String should have at "
+        "most 500 characters', 'input': 'Kind krank, Schule angerufen'}",
+    ]) + "\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "SERVE_FRONTEND", True)
+    monkeypatch.setattr(settings, "REPORT_LOG_DIR", str(tmp_path))
+    resp = admin_client.post("/api/feedback/preview", json={**BASE_PREVIEW, "include_log": True})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    desc = body["description"]
+    assert "[praxiszeit.log]" in desc and body["log_line_count"] > 0
+    for needle in ("anna.schmidt", "Arzttermin", "Schmidt", "Kind krank"):
+        assert needle not in desc, needle
+
+
+def test_employee_cannot_include_log_or_send_crash(employee_client, db):
+    for extra in ({"include_log": True}, {"kind": "crash"},
+                  {"error_log_id": str(uuid.uuid4())},
+                  {"server_error": {"status": 500, "method": "GET", "path": "/api/x"}}):
+        resp = employee_client.post("/api/feedback/preview", json={**BASE_PREVIEW, **extra})
+        assert resp.status_code == 403, extra
+        assert resp.json()["detail"] == "Nur für Administratoren."
+    resp = _send(employee_client, {"kind": "crash", "title": "T", "description": "D"})
+    assert resp.status_code == 403
+    # a plain bug report stays allowed for employees
+    assert employee_client.post("/api/feedback/preview", json=BASE_PREVIEW).status_code == 200
+
+
+def test_error_log_id_of_other_tenant_is_404(admin_client, db, monkeypatch):
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "saas")
+    foreign = _error_row(db, OTHER)
+    resp = admin_client.post("/api/feedback/preview",
+                             json={**BASE_PREVIEW, "kind": "crash", "error_log_id": str(foreign.id)})
+    assert resp.status_code == 404
+    unknown = admin_client.post("/api/feedback/preview",
+                                json={**BASE_PREVIEW, "kind": "crash",
+                                      "error_log_id": str(uuid.uuid4())})
+    assert unknown.status_code == 404
+    own = _error_row(db, TENANT, fingerprint="b" * 64)
+    ok = admin_client.post("/api/feedback/preview",
+                           json={**BASE_PREVIEW, "kind": "crash", "error_log_id": str(own.id)})
+    assert ok.status_code == 200
+    assert ok.json()["fields"]["error_fingerprint"] == "b" * 64
+
+
+def test_error_log_id_onprem_finds_null_tenant_row(admin_client, db):
+    row = _error_row(db, None, fingerprint="c" * 64)
+    resp = admin_client.post("/api/feedback/preview",
+                             json={**BASE_PREVIEW, "kind": "crash", "error_log_id": str(row.id)})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["fields"]["error_fingerprint"] == "c" * 64
+    assert "Fehler: error HTTP 500 GET /api/x — boom" in body["description"]
+
+
+def test_preview_server_error_hint_matches_own_tenant_row(admin_client, db):
+    _error_row(db, TENANT, fingerprint="d" * 64)
+    resp = admin_client.post("/api/feedback/preview", json={
+        **BASE_PREVIEW, "kind": "crash",
+        "server_error": {"status": 500, "method": "GET", "path": "/api/x"}})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["fields"]["error_fingerprint"] == "d" * 64
+
+
+# ---------------------------------------------------------------- send
+
+def test_send_forwards_exactly_previewed_title_and_description(admin_client, monkeypatch):
+    rec = _patch_post(monkeypatch, response=httpx.Response(
+        201, json={"id": "r-1", "ref": "PZ-42", "status": "received"}))
+    preview = admin_client.post("/api/feedback/preview", json={
+        **BASE_PREVIEW, "title": "Fehler bei anna@example.org", "contact_email": "a@example.com"}).json()
+    assert "anna@example.org" not in preview["title"]
+    resp = _send(admin_client, _send_body(preview, contact_email="a@example.com"))
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"status": "received", "ref": "PZ-42", "id": "r-1",
+                           "board_url": BOARD_URL}
     assert len(rec.calls) == 1
-    call = rec.calls[0]
-    assert call["url"].endswith("/v1/bugs")
-    files = call["kwargs"]["files"]
-    from app.core.updater import APP_VERSION
-    assert files["license_id"][1] == _CUSTOMER_ID
-    assert files["title"][1] == "Es hakt"
-    assert files["description"][1] == "Beim Stempeln passiert X"
-    assert files["severity"][1] == "high"
-    assert files["app_version"][1] == APP_VERSION
-    assert files["os"][1] == platform.system().lower()
+    assert rec.calls[0]["url"] == "https://report.mr-development.de/v1/reports"
+    assert rec.fields() == {**preview["fields"], "credential": REPORT_KEY}
+    assert REPORT_KEY not in resp.text
 
 
-def test_default_severity_is_medium(client, mock_license, monkeypatch):
-    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
-    resp = client.post(
-        "/api/feedback/report",
-        json={"title": "T", "description": "D"},  # severity omitted
-    )
-    assert resp.status_code == 200
-    assert rec.calls[0]["kwargs"]["files"]["severity"][1] == "medium"
-
-
-def test_403_maps_to_409(client, mock_license, monkeypatch):
-    _patch_post(monkeypatch, response=httpx.Response(403, json={"detail": "inactive"}))
-    resp = client.post("/api/feedback/report", json=VALID)
-    assert resp.status_code == 409
-
-
-def test_429_maps_to_429(client, mock_license, monkeypatch):
-    _patch_post(monkeypatch, response=httpx.Response(429))
-    resp = client.post("/api/feedback/report", json=VALID)
-    assert resp.status_code == 429
-
-
-def test_network_error_maps_to_502(client, mock_license, monkeypatch):
-    _patch_post(monkeypatch, exc=httpx.ConnectError("boom"))
-    resp = client.post("/api/feedback/report", json=VALID)
+def test_send_maps_upstream_failure_to_502_with_status(admin_client, monkeypatch):
+    _patch_post(monkeypatch, response=httpx.Response(429, json={"detail": "slow down"}))
+    resp = _send(admin_client, {"kind": "bug", "title": "T", "description": "D"})
     assert resp.status_code == 502
+    assert resp.json() == {"detail": "slow down", "upstream_status": 429}
 
 
-def test_no_license_returns_400_and_does_not_call_pzweb(client, monkeypatch):
-    # Produktivpfad (BETA_MODE aus): ohne Lizenz -> 400, kein pzweb-Call.
-    from app.routers import feedback
-    monkeypatch.setattr(feedback.settings, "BETA_MODE", False)
-    monkeypatch.setattr("app.core.license.get_current_license", lambda: None)
+def test_send_offline_returns_502_without_upstream_status(admin_client, monkeypatch):
+    _patch_post(monkeypatch, exc=httpx.ConnectTimeout("timeout"))
+    resp = _send(admin_client, {"kind": "bug", "title": "T", "description": "D"})
+    assert resp.status_code == 502
+    body = resp.json()
+    assert body["upstream_status"] is None and body["detail"]
+
+
+def test_send_misconfigured_legacy_host_is_502(admin_client, monkeypatch):
+    monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", "")
+    monkeypatch.setattr(settings, "FEEDBACK_SERVER_URL", "https://evil.example.com")
     rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
-    resp = client.post("/api/feedback/report", json=VALID)
+    resp = _send(admin_client, {"kind": "bug", "title": "T", "description": "D"})
+    assert resp.status_code == 502
+    assert resp.json() == {"detail": "Meldeserver ist nicht korrekt konfiguriert.",
+                           "upstream_status": None}
+    assert rec.calls == []
+
+
+def test_send_rejects_non_image_attachment(admin_client, monkeypatch):
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
+    body = {"kind": "bug", "title": "T", "description": "D"}
+    for att in (("a.txt", b"hello", "text/plain"),
+                ("a.png", b"GIF89a....", "image/png"),          # wrong magic bytes
+                ("a.jpg", PNG, "image/jpeg"),                     # magic of the other type
+                ("a.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * (5 * 1024 * 1024), "image/png")):
+        resp = _send(admin_client, body, attachment=att)
+        assert resp.status_code == 422, att[0]
+        assert resp.json()["detail"] == "Nur PNG- oder JPEG-Bilder bis 5 MB."
+    assert rec.calls == []
+
+
+def test_send_renames_png_attachment(admin_client, monkeypatch):
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x", "ref": "R"}))
+    body = {"kind": "bug", "title": "T", "description": "D"}
+    resp = _send(admin_client, body, attachment=("Mein Bild (Anna).png", PNG, "image/png"))
+    assert resp.status_code == 200, resp.text
+    assert rec.attachment() == ("screenshot.png", PNG, "image/png")
+    resp = _send(admin_client, body, attachment=("x.jpeg", JPEG, "image/jpeg"))
+    assert resp.status_code == 200
+    assert rec.attachment(1) == ("screenshot.jpg", JPEG, "image/jpeg")
+
+
+def test_send_resanitizes_tampered_text(admin_client, monkeypatch):
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
+    resp = _send(admin_client, {"kind": "bug", "title": "Mail anna@example.org",
+                                "description": "Login user=anna.schmidt ip=192.168.178.20"})
+    assert resp.status_code == 200
+    sent = rec.fields()
+    assert "anna@example.org" not in sent["title"]
+    assert "192.168.178.20" not in sent["description"]
+
+
+def test_send_rejects_invalid_payload_json(admin_client, monkeypatch):
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
+    resp = admin_client.post("/api/feedback/send", data={"payload": "{nope"})
+    assert resp.status_code == 422
+    resp = _send(admin_client, {"kind": "bug", "title": "T", "description": "D",
+                                "error_fingerprint": "XYZ"})
+    assert resp.status_code == 422
+    resp = _send(admin_client, {"kind": "bug", "title": "T", "description": "x" * 20001})
+    assert resp.status_code == 422
+    assert rec.calls == []
+
+
+def test_feedback_routes_work_in_read_only_mode(admin_client, monkeypatch):
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x", "ref": "R"}))
+    license_module.set_license_state(None, read_only=True)
+    try:
+        assert license_module.is_read_only()
+        preview = admin_client.post("/api/feedback/preview", json=BASE_PREVIEW)
+        assert preview.status_code == 200, preview.text
+        resp = _send(admin_client, _send_body(preview.json()))
+        assert resp.status_code == 200, resp.text
+        assert len(rec.calls) == 1
+    finally:
+        license_module.set_license_state(None, read_only=False)
+
+
+def test_legacy_no_license_non_beta_returns_400_without_upstream_call(admin_client, monkeypatch):
+    monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", "")
+    monkeypatch.setattr(settings, "BETA_MODE", False)
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
+    preview = admin_client.post("/api/feedback/preview", json=BASE_PREVIEW)
+    assert preview.status_code == 200 and preview.json()["transport"] == "legacy"
+    resp = _send(admin_client, _send_body(preview.json()))
     assert resp.status_code == 400
-    assert rec.calls == []  # never reach out to pzweb without a license_id
+    assert resp.json()["detail"] == "Ohne hinterlegte Lizenz ist keine Bug-Meldung möglich."
+    assert rec.calls == []
 
 
-def test_beta_no_license_forwards_with_beta_id(client, monkeypatch):
-    # In der Beta (BETA_MODE=True) darf ein Bug-Report auch OHNE Lizenz raus —
-    # mit synthetischer license_id "beta".
-    from app.routers import feedback
-    monkeypatch.setattr(feedback.settings, "BETA_MODE", True)
-    monkeypatch.setattr("app.core.license.get_current_license", lambda: None)
+def test_legacy_beta_sends_license_id_beta_to_v1_bugs(admin_client, monkeypatch):
+    monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", "")
     rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "b-1"}))
-    resp = client.post("/api/feedback/report", json=VALID)
-    assert resp.status_code == 200
-    assert len(rec.calls) == 1
-    assert rec.calls[0]["kwargs"]["files"]["license_id"][1] == "beta"
+    resp = _send(admin_client, {"kind": "bug", "title": "T", "description": "D"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["id"] == "b-1" and resp.json()["ref"] is None
+    assert rec.calls[0]["url"].endswith("/v1/bugs")
+    assert rec.fields()["license_id"] == "beta"
+    assert "credential" not in rec.fields()
 
 
-def test_title_too_long_returns_422(client, mock_license, monkeypatch):
-    _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
-    resp = client.post("/api/feedback/report", json={**VALID, "title": "x" * 201})
-    assert resp.status_code == 422
-
-
-def test_invalid_severity_returns_422(client, mock_license, monkeypatch):
-    _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
-    resp = client.post("/api/feedback/report", json={**VALID, "severity": "urgent"})
-    assert resp.status_code == 422
-
-
-def test_description_too_long_returns_422(client, mock_license, monkeypatch):
-    # Security review F1: description must have an upper bound so a single
-    # authenticated user can't push multi-MB payloads through the proxy.
+def test_mrd_report_1_without_license_outside_beta_still_sends(admin_client, monkeypatch):
+    monkeypatch.setattr(settings, "BETA_MODE", False)
     rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
-    resp = client.post("/api/feedback/report", json={**VALID, "description": "x" * 4001})
-    assert resp.status_code == 422
-    assert rec.calls == []  # rejected before any outbound call
-
-
-def test_201_with_non_object_json_body_is_no_500(client, mock_license, monkeypatch):
-    """ops-17: pzweb/Proxy antwortet 201 mit JSON-Liste -> 200, id None, kein AttributeError."""
-    _patch_post(monkeypatch, response=httpx.Response(201, json=["x"]))
-    resp = client.post("/api/feedback/report", json=VALID)
+    resp = _send(admin_client, {"kind": "bug", "title": "T", "description": "D"})
     assert resp.status_code == 200
-    assert resp.json()["id"] is None
+    assert "license_id" not in rec.fields()
+
+
+def test_old_report_route_is_gone(admin_client):
+    resp = admin_client.post("/api/feedback/report",
+                             json={"title": "T", "description": "D", "severity": "low"})
+    assert resp.status_code == 404
