@@ -174,3 +174,61 @@ def test_truncation_drops_extract_before_traceback():
     p2 = build_preview(title="t", user_text="u", server=SRV, now_utc=NOW, error=big, log_lines=["only"])
     assert p2.truncated and "only" not in p2.description and len(p2.description) <= DESCRIPTION_MAX
     assert "T29 " in p2.description and "T0 " not in p2.description
+
+
+# --- Review F22: Installationsart „saas“ (Protokoll §7 docker|native|desktop|saas)
+
+def test_install_type_is_saas_in_saas_mode(monkeypatch):
+    monkeypatch.setattr(rp, "get_or_create_install_id", lambda: "iid")
+    monkeypatch.setattr(rp.license_module, "get_current_license", lambda: None)
+    monkeypatch.setattr(settings, "SERVE_FRONTEND", False)
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "saas")
+    assert collect_server_fields().install_type == "saas"
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "onprem")
+    assert collect_server_fields().install_type == "docker"
+
+
+# --- Review F14: Fehlerzeilen ohne HTTP-Bezug (DBErrorHandler, Prüfung 03:15)
+
+def test_error_context_without_http_columns_names_the_logger(db, default_tenant):
+    row = ErrorLog(tenant_id=TENANT, level="CRITICAL", logger="app.audit_integrity",
+                   message="Kette gebrochen", fingerprint="c" * 64, count=1,
+                   last_seen=NOW - timedelta(minutes=1))
+    db.add(row)
+    db.commit()
+    ctx = resolve_error_context(db, TENANT, error_log_id=row.id, server_error=None, now=NOW)
+    assert "None" not in ctx.line and "HTTP" not in ctx.line
+    assert ctx.line == ("CRITICAL app.audit_integrity — Kette gebrochen "
+                        "(1x, zuletzt 2026-11-18T08:14:02Z)")
+
+
+# --- Review F18: Kürzen hält Abschnittsköpfe und die neuesten Fehlerzeilen
+
+def _native_extract(width=140):
+    return (["[Fehler-Monitoring]"] + [f"err-new{i}" for i in range(20)]
+            + ["[praxiszeit.log]"] + [f"pz-old{i} " + "p" * width for i in range(90)]
+            + ["[service-stderr.log]"] + [f"st{i} " + "s" * width for i in range(88)])
+
+
+def test_room_cut_keeps_headers_and_newest_error_rows():
+    e = ErrorContext("HTTP 500 GET /x", "fp", [f"tb{i}" for i in range(10)])
+    p = build_preview(title="t", user_text="u", server=SRV, now_utc=NOW, error=e,
+                      log_lines=_native_extract(width=10))
+    d = p.description
+    assert not p.truncated and p.log_line_count == 200
+    assert "tb9\n[Fehler-Monitoring]\nerr-new0\n" in d
+    assert "[praxiszeit.log]\n" in d and "[service-stderr.log]\n" in d
+    assert "pz-old89 " in d and "st87 " in d
+    assert "pz-old0 " not in d  # älteste Zeilen der größten Datei zuerst
+
+
+def test_length_cut_keeps_headers_and_newest_error_rows():
+    p = build_preview(title="t", user_text="u", server=SRV, now_utc=NOW, error=None,
+                      log_lines=_native_extract())
+    d = p.description
+    assert p.truncated and len(d) <= DESCRIPTION_MAX
+    assert "Zeilen):\n[Fehler-Monitoring]\nerr-new0\n" in d
+    assert "err-new19\n" in d
+    assert "[praxiszeit.log]\n" in d and "[service-stderr.log]\n" in d
+    assert "pz-old89 " in d and "st87 " in d
+    assert "pz-old0 " not in d and "st0 " not in d

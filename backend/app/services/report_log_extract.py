@@ -2,10 +2,13 @@
 
 Sanitizing happens once over the fully composed description (Task 5).
 Never reads user free text: only error_logs (value-free) and native log tails.
+The native tails (service-stderr.log) can carry exception messages and uploaded
+file names; the PraxisZeit sanitizer rules mask those (Review F5).
 """
 from __future__ import annotations
 
 import os
+import re
 from datetime import timezone
 from pathlib import Path
 from uuid import UUID
@@ -103,3 +106,53 @@ def build_log_extract(db: Session, tenant_id: UUID | None, log_dir: Path | None)
         out.append(f"[{n}]")
         out.extend(tails[n][-(b - 1):])
     return out
+
+
+_FILE_HEADER = re.compile(r"^\[[^\]\n]+\.log\]$")
+
+
+def _is_header(line: str) -> bool:
+    return line == ERROR_HEADER or bool(_FILE_HEADER.match(line))
+
+
+def trim_extract(lines: list[str], keep: int) -> list[str]:
+    """Cut an extract from ``build_log_extract`` to at most ``keep`` lines (Review F18).
+
+    The extract is not chronological: ``[Fehler-Monitoring]`` rows are newest
+    first, the log tails oldest first. Cutting from the front dropped the newest
+    error rows and the section headers. Instead: drop the oldest line of the
+    largest log section (header-less leading lines count as a log section), and
+    only when no log lines are left the oldest (last) error row; a section whose
+    body becomes empty loses its header too."""
+    if keep <= 0:
+        return []
+    sections: list[list] = []  # [header or None, body]
+    for line in lines:
+        if _is_header(line):
+            sections.append([line, []])
+        elif sections:
+            sections[-1][1].append(line)
+        else:
+            sections.append([None, [line]])
+    total = len(lines)
+    while total > keep:
+        logs = [s for s in sections if s[0] != ERROR_HEADER and s[1]]
+        if logs:
+            target = max(logs, key=lambda s: len(s[1]))
+            target[1].pop(0)
+        else:
+            errs = [s for s in sections if s[0] == ERROR_HEADER and s[1]]
+            if not errs:
+                break
+            errs[-1][1].pop()
+        total -= 1
+        for s in [s for s in sections if not s[1]]:
+            sections.remove(s)
+            if s[0] is not None:
+                total -= 1
+    out: list[str] = []
+    for header, body in sections:
+        if header is not None:
+            out.append(header)
+        out.extend(body)
+    return out[-keep:] if len(out) > keep else out

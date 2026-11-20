@@ -5,7 +5,9 @@ nicht ins Frontend):
 
 * ``POST /api/feedback/preview`` baut die Meldung serverseitig (Kontextblock,
   optional bereinigter Protokollauszug, bereinigt über den PraxisZeit-Sanitizer)
-  und liefert exakt die Felder, die gesendet würden — ohne ``credential``.
+  und liefert exakt die Felder, die gesendet würden — ohne ``credential`` und
+  ohne ``license_id`` (beide nur als Hinweis ``credential_note``/``license_note``;
+  ``/send`` ergänzt sie serverseitig, Review F15).
 * ``POST /api/feedback/send`` nimmt Titel und Beschreibung aus der Vorschau
   zurück, bereinigt sie erneut (idempotent, Schutz gegen manipulierte Clients),
   setzt die Serverfelder neu und leitet über ``report_client.send_report`` weiter.
@@ -42,7 +44,8 @@ from app.services import report_client
 from app.services.report_log_extract import build_log_extract, native_log_dir
 from app.services.report_payload import (
     BOARD_URL, DESCRIPTION_MAX, TITLE_MAX, USER_TEXT_MAX, ServerErrorHint,
-    build_fields, build_preview, collect_server_fields, resolve_error_context,
+    build_fields, build_preview, collect_server_fields, legacy_kind_label,
+    resolve_error_context,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +53,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/feedback", tags=["feedback"])
 
 CREDENTIAL_NOTE = "mrk_praxiszeit_… (nicht angezeigt)"
+LICENSE_NOTE = "Lizenzkennung der Praxis (wird beim Senden ergänzt, nicht angezeigt)"
 ADMIN_ONLY_DETAIL = "Nur für Administratoren."
 NO_LICENSE_DETAIL = "Ohne hinterlegte Lizenz ist keine Bug-Meldung möglich."
 ERROR_LOG_NOT_FOUND_DETAIL = "Fehlereintrag nicht gefunden."
@@ -88,6 +92,7 @@ class FeedbackPreviewOut(BaseModel):
     description: str
     fields: Dict[str, str]
     credential_note: Optional[str]
+    license_note: Optional[str]
     log_line_count: int
     truncated: bool
     board_url: str
@@ -150,16 +155,18 @@ def preview_feedback(
         build_log_extract(db, scope, native_log_dir())
         if payload.include_log else None
     )
+    transport = report_client.current_transport()
     built = build_preview(
         title=payload.title, user_text=payload.text, server=server, now_utc=now,
         error=error, log_lines=log_lines,
+        kind_label=legacy_kind_label(transport, payload.kind),
     )
-    transport = report_client.current_transport()
     contact = str(payload.contact_email) if payload.contact_email else None
     fields = build_fields(
         transport=transport, kind=payload.kind, title=built.title,
         description=built.description, severity=payload.severity, contact_email=contact,
         error_fingerprint=error.fingerprint if error is not None else None, server=server,
+        include_license=False,
     )
     return FeedbackPreviewOut(
         transport=transport,
@@ -167,6 +174,7 @@ def preview_feedback(
         description=built.description,
         fields=fields,
         credential_note=CREDENTIAL_NOTE if transport == "mrd-report-1" else None,
+        license_note=LICENSE_NOTE if server.license_id else None,
         log_line_count=built.log_line_count,
         truncated=built.truncated,
         board_url=BOARD_URL,

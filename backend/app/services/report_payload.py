@@ -11,11 +11,12 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core import license as license_module
+from app.core.deployment import is_saas
 from app.core.report_sanitize_pz import sanitize_praxiszeit_text
 from app.core.updater import APP_VERSION
 from app.models.error_log import ErrorLog
 from app.services.error_log_service import _scope_to_tenant, _scrub_path
-from app.services.report_log_extract import MAX_EXTRACT_LINES
+from app.services.report_log_extract import MAX_EXTRACT_LINES, trim_extract
 from app.services.report_install_id import get_or_create_install_id
 
 PRODUCT = "praxiszeit"
@@ -77,7 +78,8 @@ def collect_server_fields() -> ServerFields:
         os=platform.system().lower()[:32],
         channel=channel,
         system=f"{platform.system()} {platform.release()}/{platform.machine()}",
-        install_type="native" if settings.SERVE_FRONTEND else "docker",
+        # Protokoll §7: docker|native|desktop|saas (Review F22)
+        install_type="saas" if is_saas() else ("native" if settings.SERVE_FRONTEND else "docker"),
         install_id=get_or_create_install_id(),
         license_id=license_id,
     )
@@ -125,17 +127,31 @@ def resolve_error_context(
         return None
     msg = (row.message or "").strip()
     first = msg.splitlines()[0] if msg else ""
+    # Review F14: Zeilen ohne HTTP-Bezug (DBErrorHandler, Integritätsprüfung)
+    # nennen den Logger statt „HTTP None None None“.
+    http = " ".join(str(v) for v in (row.status_code, row.method, row.path) if v)
+    origin = f"HTTP {http}" if http else (row.logger or "-")
     line = (
-        f"{row.level} HTTP {row.status_code} {row.method} {row.path} — {first} "
+        f"{row.level} {origin} — {first} "
         f"({row.count}x, zuletzt {_utc(row.last_seen):%Y-%m-%dT%H:%M:%SZ})"
     )
     tb = (row.traceback or "").splitlines()[-MAX_DETAIL_LINES:]
     return ErrorContext(line, (row.fingerprint or None) and row.fingerprint[:64], tb)
 
 
+KIND_LABELS = {"feedback": "Feedback", "crash": "Programmfehler (vom Programm vorgeschlagen)"}
+
+
+def legacy_kind_label(transport: str, kind: str) -> str | None:
+    """Review F21: ``/v1/bugs`` hat kein Feld ``kind`` (speichert alles als Bug).
+    Auf dem Altweg steht die Art deshalb als Zeile im Kontextblock — Vorschau =
+    Gesendetes; „Fehler“ (bug) braucht keine Zeile."""
+    return KIND_LABELS.get(kind) if transport == "legacy" else None
+
+
 def compose_description(
     user_text: str, *, server: ServerFields, now_utc: datetime,
-    error_line: str | None, log_lines: list[str] | None,
+    error_line: str | None, log_lines: list[str] | None, kind_label: str | None = None,
 ) -> str:
     parts = [
         f"{user_text}\n\n---- Kontext (automatisch) ----",
@@ -143,6 +159,8 @@ def compose_description(
         f"System: {server.system}, Installationsart: {server.install_type}",
         f"Zeit: {_utc(now_utc):%Y-%m-%dT%H:%M:%SZ}",
     ]
+    if kind_label:
+        parts.append(f"Meldungsart: {kind_label}")
     if error_line:
         parts.append(f"Fehler: {error_line}")
     if log_lines is not None:
@@ -153,28 +171,30 @@ def compose_description(
 
 def build_preview(
     *, title: str, user_text: str, server: ServerFields, now_utc: datetime,
-    error: ErrorContext | None, log_lines: list[str] | None,
+    error: ErrorContext | None, log_lines: list[str] | None, kind_label: str | None = None,
 ) -> ReportPreview:
     detail = list(error.detail_lines) if error is not None else []
     extract = list(log_lines) if log_lines is not None else None
     has_block = bool(detail) or extract is not None
     if extract is not None:
-        # Ruling PZ-R5: whole block <= MAX_EXTRACT_LINES, newest extract lines win.
+        # Ruling PZ-R5: whole block <= MAX_EXTRACT_LINES, newest extract lines win
+        # (section-aware, Review F18: headers and newest error rows stay).
         room = max(0, MAX_EXTRACT_LINES - len(detail))
-        extract = extract[-room:] if room else []
+        extract = trim_extract(extract, room)
     error_line = error.line if error else None
 
     def render(det, ext):
         ls = (det + (ext or [])) if has_block else None
         return sanitize_praxiszeit_text(compose_description(
-            user_text, server=server, now_utc=now_utc, error_line=error_line, log_lines=ls))
+            user_text, server=server, now_utc=now_utc, error_line=error_line, log_lines=ls,
+            kind_label=kind_label))
 
     detail = detail[-MAX_EXTRACT_LINES:]
     description = render(detail, extract)
     truncated = False
     while len(description) > DESCRIPTION_MAX and (extract or detail):
         if extract:
-            extract = extract[max(1, len(extract) // 4):]
+            extract = trim_extract(extract, len(extract) - max(1, len(extract) // 4))
         else:
             detail = detail[max(1, len(detail) // 4):]
         truncated = True
@@ -190,17 +210,22 @@ def build_preview(
 def build_fields(
     *, transport: Literal["mrd-report-1", "legacy"], kind: str, title: str, description: str,
     severity: str, contact_email: str | None, error_fingerprint: str | None,
-    server: ServerFields,
+    server: ServerFields, include_license: bool = True,
 ) -> dict[str, str]:
+    """``include_license=False`` für die Vorschau (Review F15): die Lizenzkennung
+    (``customer_id``, auf dem Altweg das Zugangsdatum) geht nie ans Frontend und
+    nie in eine gespeicherte Datei; ``/send`` ergänzt sie serverseitig."""
     if transport == "legacy":
-        return {
-            "license_id": server.license_id or "",
+        fields = {
             "title": title,
             "description": description,
             "app_version": server.app_version,
             "os": server.os,
             "severity": severity,
         }
+        if include_license:
+            fields = {"license_id": server.license_id or "", **fields}
+        return fields
     fields = {
         "protocol": "mrd-report-1",
         "product": PRODUCT,
@@ -213,7 +238,7 @@ def build_fields(
         "channel": server.channel,
         "severity": severity,
     }
-    if server.license_id:
+    if include_license and server.license_id:
         fields["license_id"] = server.license_id
     if contact_email:
         fields["contact_email"] = contact_email

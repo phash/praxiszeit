@@ -128,7 +128,10 @@ def test_preview_returns_exact_fields_without_credential(admin_client):
     assert body["description"].startswith("Beim Stempeln passiert X\n\n---- Kontext (automatisch) ----")
     assert f["protocol"] == "mrd-report-1" and f["product"] == "praxiszeit"
     assert f["install_id"] == INSTALL_ID and f["kind"] == "bug" and f["severity"] == "high"
-    assert f["contact_email"] == "a@example.com" and f["license_id"] == "beta"
+    assert f["contact_email"] == "a@example.com"
+    # Review F15: Lizenzkennung nie in Vorschau/Datei, erst beim Senden ergänzt
+    assert "license_id" not in f
+    assert body["license_note"] == "Lizenzkennung der Praxis (wird beim Senden ergänzt, nicht angezeigt)"
     assert body["log_line_count"] == 0 and body["truncated"] is False
 
 
@@ -141,8 +144,7 @@ def test_preview_reports_legacy_transport_without_key(admin_client, monkeypatch)
     assert body["transport"] == "legacy"
     assert body["credential_note"] is None
     assert body["contact_email_dropped"] is True
-    assert set(body["fields"]) == {"license_id", "title", "description", "app_version",
-                                   "os", "severity"}
+    assert set(body["fields"]) == {"title", "description", "app_version", "os", "severity"}
 
 
 def test_preview_rejects_user_text_over_4000(admin_client):
@@ -158,6 +160,17 @@ def test_preview_rejects_server_error_path_outside_api(admin_client):
 
 
 def test_preview_log_extract_masks_names_and_notes(admin_client, monkeypatch, tmp_path):
+    # Review F5: Ausnahmetexte und Importdateinamen landen in service-stderr.log
+    (tmp_path / "service-stderr.log").write_text("\n".join([
+        "2026-11-18 08:20:00 ERROR app.services.xls_import_service: XLS-Import fehlgeschlagen "
+        "(Datei Zeiten Anna Schmidt.xls)",
+        "Traceback (most recent call last):",
+        '  File "/app/app/services/xls_import_service.py", line 3, in parse',
+        "KeyError: 'Weber'",
+        "ValueError: invalid literal for int() with base 10: 'Anna Schmidt'",
+        "sqlalchemy.exc.DataError: (psycopg.errors.InvalidTextRepresentation) Lisa Braun",
+        "praxis_name = Praxis Dr. Weber",
+    ]) + "\n", encoding="utf-8")
     (tmp_path / "praxiszeit.log").write_text("\n".join([
         "2026-11-18 08:15:02 WARNING praxiszeit.security: AUTH login_failed user=anna.schmidt "
         "reason=bad_password ip=192.168.178.20",
@@ -175,8 +188,11 @@ def test_preview_log_extract_masks_names_and_notes(admin_client, monkeypatch, tm
     body = resp.json()
     desc = body["description"]
     assert "[praxiszeit.log]" in desc and body["log_line_count"] > 0
-    for needle in ("anna.schmidt", "Arzttermin", "Schmidt", "Kind krank"):
+    for needle in ("anna.schmidt", "Arzttermin", "Schmidt", "Kind krank", "Anna", "Weber",
+                   "Lisa Braun"):
         assert needle not in desc, needle
+    assert "XLS-Import fehlgeschlagen (Datei <text>)" in desc
+    assert "KeyError: <text>" in desc and "Traceback (most recent call last):" in desc
 
 
 def test_employee_cannot_include_log_or_send_crash(employee_client, db):
@@ -242,7 +258,10 @@ def test_send_forwards_exactly_previewed_title_and_description(admin_client, mon
                            "board_url": BOARD_URL}
     assert len(rec.calls) == 1
     assert rec.calls[0]["url"] == "https://report.mr-development.de/v1/reports"
-    assert rec.fields() == {**preview["fields"], "credential": REPORT_KEY}
+    # Vorschau = Gesendetes, plus die serverseitig ergänzten Zugangsdaten
+    # (Schlüssel, Lizenzkennung — Review F15), die nur als Hinweis sichtbar sind.
+    assert rec.fields() == {**preview["fields"], "credential": REPORT_KEY, "license_id": "beta"}
+    assert preview["license_note"] and preview["credential_note"]
     assert REPORT_KEY not in resp.text
 
 
@@ -402,3 +421,57 @@ def test_old_report_route_is_gone(admin_client):
     resp = admin_client.post("/api/feedback/report",
                              json={"title": "T", "description": "D", "severity": "low"})
     assert resp.status_code == 404
+
+
+# --- Review F15: Lizenzkennung (Altweg: Zugangsdatum) nie ans Frontend --------
+
+class _Lic:
+    customer_id = "pz-0f0e0d0c-geheim"
+
+
+@pytest.mark.parametrize("key", ["", REPORT_KEY])
+def test_license_customer_id_never_reaches_the_client_but_is_sent(
+    employee_client, monkeypatch, key
+):
+    monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", key)
+    monkeypatch.setattr(settings, "BETA_MODE", False)
+    monkeypatch.setattr(license_module, "get_current_license", lambda: _Lic())
+    preview = employee_client.post("/api/feedback/preview", json=BASE_PREVIEW)
+    assert preview.status_code == 200, preview.text
+    assert _Lic.customer_id not in preview.text
+    assert "license_id" not in preview.json()["fields"]
+    assert preview.json()["license_note"]
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x", "ref": "R"}))
+    resp = _send(employee_client, _send_body(preview.json()))
+    assert resp.status_code == 200, resp.text
+    assert _Lic.customer_id not in resp.text
+    assert rec.fields()["license_id"] == _Lic.customer_id
+
+
+def test_preview_without_any_license_has_no_license_note(admin_client, monkeypatch):
+    monkeypatch.setattr(settings, "BETA_MODE", False)
+    body = admin_client.post("/api/feedback/preview", json=BASE_PREVIEW).json()
+    assert body["license_note"] is None and "license_id" not in body["fields"]
+
+
+# --- Review F21: Altweg kennt kein ``kind`` — die Art steht im Kontextblock ----
+
+@pytest.mark.parametrize("kind,label", [("feedback", "Feedback"),
+                                        ("crash", "Programmfehler (vom Programm vorgeschlagen)")])
+def test_legacy_keeps_the_kind_in_the_description(admin_client, monkeypatch, kind, label):
+    monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", "")
+    body = admin_client.post("/api/feedback/preview",
+                             json={**BASE_PREVIEW, "kind": kind}).json()
+    assert body["description"].endswith(f"\nMeldungsart: {label}")
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "b"}))
+    _send(admin_client, _send_body(body, kind=kind))
+    assert f"Meldungsart: {label}" in rec.fields()["description"]
+
+
+def test_kind_line_only_on_legacy_and_not_for_bug(admin_client, monkeypatch):
+    mrd = admin_client.post("/api/feedback/preview",
+                            json={**BASE_PREVIEW, "kind": "feedback"}).json()
+    assert "Meldungsart" not in mrd["description"] and mrd["fields"]["kind"] == "feedback"
+    monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", "")
+    bug = admin_client.post("/api/feedback/preview", json=BASE_PREVIEW).json()
+    assert "Meldungsart" not in bug["description"]

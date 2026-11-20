@@ -76,6 +76,15 @@ def test_tail_handles_no_newlines_and_nul_bytes(tmp_path):
     assert all(len(l) <= MAX_LINE_CHARS + 1 and "\x00" not in l for l in lines)
 
 
+def test_tail_strips_nul_bytes_from_returned_lines(tmp_path):
+    # Review F12: der Test oben liefert [] (Teilzeile verworfen) und prüft nichts.
+    # pzweb lehnt jedes Feld mit NUL ab (422) — nach einem harten Abschalten steht
+    # oft ein NUL-aufgefüllter Block am Ende von praxiszeit.log.
+    p = tmp_path / "n.log"
+    p.write_bytes(b"a\x00b\n\x00\x00\x00\nline\x00 two\n")
+    assert tail_lines(p) == ["ab", "", "line two"]
+
+
 def test_tail_decodes_cp1252_bytes_without_error(tmp_path):
     p = tmp_path / "c.log"
     p.write_bytes("Grüße\r\nzweite\r\n".encode("cp1252"))
