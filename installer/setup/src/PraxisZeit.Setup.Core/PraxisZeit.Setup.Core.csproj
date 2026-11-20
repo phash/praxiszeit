@@ -17,4 +17,16 @@
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.5.1" />
   </ItemGroup>
 
+  <!-- mrd-report-1 (#557): Regeln der Bereinigung als eingebettete Ressourcen,
+       dieselben Dateien wie im Backend (gemeinsame Regeln + Testvektoren,
+       PraxisZeit-Regeln). ReportSanitizer liest sie einmal beim ersten Aufruf. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\..\backend\tests\data\mrd-report-1\sanitize-vectors.json" Visible="false">
+      <LogicalName>mrd-sanitize-vectors.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\..\..\backend\app\core\report_rules\praxiszeit-sanitize.json" Visible="false">
+      <LogicalName>praxiszeit-sanitize.json</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>
