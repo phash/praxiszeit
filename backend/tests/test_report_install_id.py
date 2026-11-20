@@ -76,3 +76,25 @@ def test_db_failure_returns_uuid_and_does_not_raise(caplog):
         value = get_or_create_install_id(broken)
     assert uuid.UUID(value).version == 4
     assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+def test_db_failure_twice_returns_the_same_id(monkeypatch):
+    """#557 D5: Vorschau und Senden im selben Prozess tragen dieselbe ID,
+    auch wenn die Datenbank nicht lesbar ist."""
+    monkeypatch.setattr(rid, "_process_id", None, raising=False)
+
+    def broken():
+        raise RuntimeError("down")
+
+    first = get_or_create_install_id(broken)
+    assert get_or_create_install_id(broken) == first
+
+
+def test_db_failure_after_success_returns_the_stored_id(db, monkeypatch):
+    monkeypatch.setattr(rid, "_process_id", None, raising=False)
+    stored = get_or_create_install_id(TestingSessionLocal)
+
+    def broken():
+        raise RuntimeError("down")
+
+    assert get_or_create_install_id(broken) == stored
