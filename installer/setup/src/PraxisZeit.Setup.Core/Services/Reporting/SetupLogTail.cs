@@ -41,6 +41,8 @@ public static class SetupLogTail
             {
                 text = text[1..];
             }
+            // NUL (z. B. UTF-16-Ausgabe von nssm im Protokoll) lehnt pzweb mit 422 ab.
+            text = text.Replace("\0", "");
             var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').ToList();
             if (start > 0 && lines.Count > 0)
             {

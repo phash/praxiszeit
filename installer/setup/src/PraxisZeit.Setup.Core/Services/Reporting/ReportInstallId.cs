@@ -2,8 +2,7 @@ namespace PraxisZeit.Setup.Core.Services.Reporting;
 
 /// <summary>
 /// Installations-ID (UUIDv4, klein) für Meldungen des Setup-Assistenten (#557).
-/// Ablage <c>%ProgramData%\PraxisZeit\report-install-id</c>, sonst
-/// <c>%LOCALAPPDATA%\PraxisZeit\report-install-id</c>, sonst eine frische ID nur
+/// Ablage <c>%LOCALAPPDATA%\PraxisZeit\report-install-id</c>, sonst eine frische ID nur
 /// im Speicher. Ungültiger Inhalt wird ersetzt. Wirft nie.
 /// </summary>
 public static class ReportInstallId
@@ -13,12 +12,7 @@ public static class ReportInstallId
     /// <param name="baseDir">Nur für Tests: ersetzt beide Standardorte.</param>
     public static string GetOrCreate(string? baseDir = null)
     {
-        IEnumerable<string> bases = baseDir is not null
-            ? [baseDir]
-            : [
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            ];
+        IEnumerable<string> bases = baseDir is not null ? [baseDir] : StorageBases();
         foreach (var b in bases.Where(b => !string.IsNullOrWhiteSpace(b)))
         {
             var id = TryAt(Path.Combine(b, "PraxisZeit", FileName));
@@ -30,14 +24,23 @@ public static class ReportInstallId
         return NewId();
     }
 
+    /// <summary>
+    /// Standardorte der ID-Datei. Bewusst NICHT <c>%ProgramData%</c>: dort legen
+    /// normale Benutzer Ordner an, die ihnen gehören — der erhöhte Setup-Prozess
+    /// ließe sich per Junction-Tausch (TOCTOU zwischen Prüfung und Schreiben) umlenken
+    /// und die ID ließe sich vorbelegen. <c>%LOCALAPPDATA%</c> des ausführenden
+    /// Kontos ist für andere Benutzer nicht beschreibbar (Review F23).
+    /// </summary>
+    public static IReadOnlyList<string> StorageBases() =>
+        [Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)];
+
     private static string? TryAt(string path)
     {
         var dir = Path.GetDirectoryName(path)!;
         string? temp = null;
         try
         {
-            // Das Setup läuft erhöht; %ProgramData% erlaubt Benutzern, Ordner
-            // anzulegen. Eine vorab gelegte Verknüpfung (Junction/Symlink) als
+            // Das Setup läuft erhöht. Eine vorab gelegte Verknüpfung (Junction/Symlink) als
             // Ordner oder Datei würde den Schreibzugriff umlenken -> Ort meiden.
             if (IsReparsePoint(dir) || IsReparsePoint(path))
             {

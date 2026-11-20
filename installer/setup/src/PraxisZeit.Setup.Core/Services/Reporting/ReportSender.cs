@@ -161,11 +161,19 @@ public sealed class ReportSender(HttpMessageHandler? handler = null, TimeSpan? t
             return new ReportSendResult(true, 201, StringProp(json, "ref"), null);
         }
         var detail = StringProp(json, "detail");
-        if (string.IsNullOrWhiteSpace(detail) || (key.Length > 0 && detail.Contains(key, StringComparison.Ordinal)))
+        var usable = !string.IsNullOrWhiteSpace(detail)
+            && !(key.Length > 0 && detail.Contains(key, StringComparison.Ordinal));
+        if (status == 400 && usable)
+        {
+            // Wie der Python-Client: 400 heißt „Protokoll unbekannt“ -> App-Update nötig.
+            var d = detail!.Trim();
+            detail = $"{(d.Length > 200 ? d[..200] : d)} – bitte PraxisZeit aktualisieren.";
+        }
+        else if (!usable)
         {
             detail = StatusDetail.GetValueOrDefault(status, DefaultDetail);
         }
-        return new ReportSendResult(false, status, null, detail.Length > DetailMax ? detail[..DetailMax] : detail);
+        return new ReportSendResult(false, status, null, detail!.Length > DetailMax ? detail[..DetailMax] : detail);
     }
 
     private static string? StringProp(JsonElement? json, string name) =>

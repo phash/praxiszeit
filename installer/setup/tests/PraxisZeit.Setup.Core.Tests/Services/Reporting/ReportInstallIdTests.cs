@@ -19,6 +19,16 @@ public class ReportInstallIdTests : IDisposable
         Guid.TryParseExact(s, "D", out _) && s == s.ToLowerInvariant() && s[14] == '4';
 
     [Fact]
+    public void DefaultStorage_IsPerUserOnly_NeverProgramData()
+    {
+        var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        ReportInstallId.StorageBases().Should().Equal(local);
+        ReportInstallId.StorageBases().Should().NotContain(common);
+    }
+
+    [Fact]
     public void CreatesOnceAndReuses()
     {
         var first = ReportInstallId.GetOrCreate(_dir);

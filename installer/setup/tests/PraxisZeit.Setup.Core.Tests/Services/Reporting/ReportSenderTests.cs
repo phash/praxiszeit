@@ -144,6 +144,19 @@ public class ReportSenderTests
     }
 
     [Fact]
+    public async Task BadRequest_ServerDetailGetsUpdateHint()
+    {
+        var withDetail = new StubHandler((_, _, _) => Task.FromResult(Json(HttpStatusCode.BadRequest,
+            "{\"detail\":\"Unbekanntes Protokoll\"}")));
+        var without = new StubHandler((_, _, _) => Task.FromResult(Json(HttpStatusCode.BadRequest, "{}")));
+
+        (await new ReportSender(withDetail).SendAsync(Report(), Key)).Detail
+            .Should().Be("Unbekanntes Protokoll – bitte PraxisZeit aktualisieren.");
+        (await new ReportSender(without).SendAsync(Report(), Key)).Detail
+            .Should().Be("Meldeprotokoll vom Server nicht unterstützt – bitte PraxisZeit aktualisieren.");
+    }
+
+    [Fact]
     public async Task ServerError_NoFallback()
     {
         var stub = new StubHandler((_, _, _) => Task.FromResult(Json(HttpStatusCode.InternalServerError, "oops")));

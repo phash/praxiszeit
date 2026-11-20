@@ -71,4 +71,13 @@ public class SetupLogTailTests : IDisposable
 
         SetupLogTail.Read(path).Should().Equal("12:00:00 eins", "12:00:01 zwei");
     }
+
+    [Fact]
+    public void StripsNulCharacters()
+    {
+        var path = Path.Combine(_dir, "nul.log");
+        File.WriteAllText(path, "ok\nn\0s\0s\0m\0 start\n", new UTF8Encoding(false));
+
+        SetupLogTail.Read(path).Should().Equal("ok", "nssm start");
+    }
 }
