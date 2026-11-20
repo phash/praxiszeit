@@ -17,6 +17,8 @@ export interface ReportRequest {
 interface ReportState {
   lastServerError: (ServerErrorHint & { at: number }) | null;
   recordServerError: (hint: ServerErrorHint, at?: number) => void;
+  /** Vergisst den Merker (nächste Fehlerantwort ohne 5xx, #557 D4). */
+  clearServerError: () => void;
   /** Liefert den Hinweis nur, wenn er höchstens `windowMs` alt ist — und nur einmal. */
   takeRecentServerError: (now?: number, windowMs?: number) => ServerErrorHint | null;
   request: ReportRequest | null;
@@ -29,6 +31,9 @@ export const useReportStore = create<ReportState>()((set, get) => ({
   lastServerError: null,
   recordServerError: (hint, at = Date.now()) =>
     set({ lastServerError: { status: hint.status, method: hint.method, path: hint.path, at } }),
+  clearServerError: () => {
+    if (get().lastServerError) set({ lastServerError: null });
+  },
   takeRecentServerError: (now = Date.now(), windowMs = RECENT_SERVER_ERROR_WINDOW_MS) => {
     const last = get().lastServerError;
     if (!last) return null;

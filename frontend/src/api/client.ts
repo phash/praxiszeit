@@ -126,11 +126,23 @@ export function serverErrorPath(baseURL: string | undefined, url: string | undef
   }
   let path: string;
   try {
-    // Wie Starlettes request.url.path: Prozent-Kodierung aufgelöst.
-    path = decodeURI(new URL(joined, 'http://local.invalid').pathname);
+    path = new URL(joined, 'http://local.invalid').pathname;
   } catch {
     return null;
   }
+  // Wie Starlettes request.url.path: Prozent-Kodierung je Segment aufgelöst,
+  // auch %2F/%3F/%23 (decodeURI ließe sie stehen, #557 D6). Ein kaputtes
+  // Segment bleibt, wie es ist.
+  path = path
+    .split('/')
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+    })
+    .join('/');
   if (!path.startsWith('/api/') || path.length > MAX_REPORT_PATH) return null;
   return path;
 }
@@ -141,7 +153,12 @@ function recordServerErrorFrom(error: unknown) {
     config?: { baseURL?: string; url?: string; method?: string };
   } | null;
   const status = err?.response?.status;
-  if (typeof status !== 'number' || status < 500 || status > 599) return;
+  if (typeof status !== 'number' || status < 500 || status > 599) {
+    // #557 D4: jede andere Fehlerantwort (4xx, Netzfehler) beendet das Fenster —
+    // sonst übernähme ihr Toast den Hinweis eines älteren 5xx (z. B. Hintergrundabfrage).
+    useReportStore.getState().clearServerError();
+    return;
+  }
   const config = err?.config;
   if (!config) return;
   const method = (config.method || 'get').toUpperCase();
