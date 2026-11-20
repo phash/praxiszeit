@@ -148,6 +148,8 @@ class Settings(BaseSettings):
     # Native mode: serve frontend static files directly from FastAPI (no nginx)
     SERVE_FRONTEND: bool = False
     FRONTEND_DIR: str = "../frontend/dist"
+    # Native mode: directory of praxiszeit.log / service-stderr.log (problem-report log extract, #557)
+    REPORT_LOG_DIR: str = "logs"
 
     # H2: whether to trust client-supplied X-Real-IP / X-Forwarded-For for
     # rate-limiting. Only safe when a reverse proxy WE control (nginx/Caddy)
