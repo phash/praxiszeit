@@ -1,6 +1,6 @@
 """Tests für die In-App-Meldung (#136, #557): /api/feedback/preview + /send.
 
-Der ausgehende Call (``report_client.httpx.post``) wird immer gestubbt — kein
+Der ausgehende Call (``report_client._transport``) wird immer gestubbt — kein
 echter Meldeserver in Tests. Verifiziert: Vorschau = gesendet, kein Schlüssel in
 Antworten, Admin-Sperren, Mandantenbezug der Fehlereinträge, 502-Mapping,
 Anhangprüfung, Nur-Lese-Lizenz und der Altweg ohne Lizenz.
@@ -50,33 +50,9 @@ def _create_test_app() -> FastAPI:
 _app = _create_test_app()
 
 
-class _Recorder:
-    """Records outbound httpx.post calls and returns a canned response (or raises)."""
-    def __init__(self, response=None, exc=None):
-        self.calls = []
-        self._response = response
-        self._exc = exc
-
-    def __call__(self, url, *args, **kwargs):
-        self.calls.append({"url": url, "kwargs": kwargs})
-        if self._exc is not None:
-            raise self._exc
-        return self._response
-
-    def fields(self, i=0):
-        return {name: part[1] for name, part in self.calls[i]["kwargs"]["files"]
-                if part[0] is None}
-
-    def attachment(self, i=0):
-        found = [part for name, part in self.calls[i]["kwargs"]["files"] if name == "attachment"]
-        return found[0] if found else None
-
-
 def _patch_post(monkeypatch, response=None, exc=None):
-    from app.services import report_client
-    rec = _Recorder(response=response, exc=exc)
-    monkeypatch.setattr(report_client.httpx, "post", rec)
-    return rec
+    from tests.report_transport_stub import install
+    return install(monkeypatch, exc if exc is not None else response)
 
 
 @pytest.fixture(autouse=True)

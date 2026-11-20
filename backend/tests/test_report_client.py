@@ -1,20 +1,23 @@
 """mrd-report-1-Client (#557, Task 6): Transport, Ausweichhost, Konfiguration.
 
-Kein echter Netzaufruf: ``report_client.httpx.post`` wird durch einen
-Recorder ersetzt (Muster ``test_feedback._Recorder``).
+Kein echter Netzaufruf: ``report_client._transport`` wird durch einen
+``httpx.MockTransport`` mit Recorder ersetzt (``tests/report_transport_stub``).
 """
 from __future__ import annotations
 
 import logging
 import socket
 import ssl
+import time
 import warnings
 
+import anyio
 import httpx
 import pytest
 
 from app.config import Settings, settings
 from app.services import report_client
+from tests.report_transport_stub import install
 
 KEY = "mrk_praxiszeit_Zufall123abc"
 FIELDS = {
@@ -46,30 +49,11 @@ def _resp(status, json_body=None, content=None):
     return httpx.Response(status, content=content or b"", request=req)
 
 
-def _phase_sum(t):
-    return t.connect + t.write + t.read
-
-
 def _wrapped(cls, cause, msg="boom"):
     """httpx-Fehler mit Ursache wie in httpx/httpcore (``raise … from exc``)."""
     exc = cls(msg)
     exc.__cause__ = cause
     return exc
-
-
-class _Recorder:
-    """Nimmt httpx.post-Aufrufe auf; ``outcomes`` = Antworten oder Ausnahmen der Reihe nach."""
-
-    def __init__(self, *outcomes):
-        self.calls = []
-        self._outcomes = list(outcomes)
-
-    def __call__(self, url, *args, **kwargs):
-        self.calls.append({"url": url, "kwargs": kwargs})
-        out = self._outcomes.pop(0) if len(self._outcomes) > 1 else self._outcomes[0]
-        if isinstance(out, BaseException):
-            raise out
-        return out
 
 
 @pytest.fixture
@@ -79,9 +63,7 @@ def mrd(monkeypatch):
 
 
 def _patch(monkeypatch, *outcomes):
-    rec = _Recorder(*outcomes)
-    monkeypatch.setattr(report_client.httpx, "post", rec)
-    return rec
+    return install(monkeypatch, *outcomes)
 
 
 # --- Transport mrd-report-1 ---------------------------------------------------
@@ -113,9 +95,6 @@ def test_sends_credential_protocol_and_all_fields_as_form_parts(monkeypatch, mrd
     assert as_dict["credential"] == (None, KEY)
     assert as_dict["protocol"] == (None, "mrd-report-1")
     assert as_dict["attachment"] == ("screenshot.png", b"\x89PNG...", "image/png")
-    assert kw["follow_redirects"] is False
-    assert isinstance(kw["timeout"], httpx.Timeout)
-    assert 0 < _phase_sum(kw["timeout"]) <= report_client.REPORT_TIMEOUT_SECONDS
 
 
 def test_dns_error_on_both_hosts_tries_each_once(monkeypatch, mrd):
@@ -142,57 +121,98 @@ def test_tls_error_falls_back_once_and_succeeds(monkeypatch, mrd):
     res = report_client.send_report(dict(FIELDS))
     assert len(rec.calls) == 2
     assert rec.calls[1]["url"] == "https://praxiszeit.mr-development.de/v1/reports"
-    # Restbudget, nie mehr als das Gesamtbudget
-    assert _phase_sum(rec.calls[1]["kwargs"]["timeout"]) <= report_client.REPORT_TIMEOUT_SECONDS
     assert res.ok is True and res.ref == "praxiszeit-8"
 
 
-class _Clock:
-    """Ersetzt ``report_client.time``; jeder httpx.post-Aufruf verbraucht ``step`` Sekunden."""
+# --- Gesamtbudget (Review F8/F11) und 201 mit unlesbarem Body (F16) ----------
+# httpx-Timeouts gelten je Socket-Operation, nicht für die ganze Anfrage: ein
+# langsamer Upload in vielen Stücken lief beliebig lange. Das Budget ist jetzt
+# eine Wanduhr-Frist über den ganzen Versand inklusive Ausweichversuch.
 
-    def __init__(self, step):
-        self.now = 1000.0
-        self.step = step
-
-    def monotonic(self):
-        return self.now
+BUDGET = 0.4
 
 
-def test_phased_timeout_sums_within_total_and_remaining_budget(monkeypatch, mrd):
-    clock = _Clock(step=4.0)
-    monkeypatch.setattr(report_client, "time", clock)
-    seen = []
-
-    def post(url, *args, **kwargs):
-        seen.append((url, kwargs["timeout"]))
-        clock.now += clock.step
-        if len(seen) == 1:
-            raise _wrapped(httpx.ConnectError, socket.gaierror(-2, "x"))
-        return _resp(201, {"id": "i", "ref": "r"})
-
-    monkeypatch.setattr(report_client.httpx, "post", post)
-    assert report_client.send_report(dict(FIELDS)).ok is True
-    first, second = seen[0][1], seen[1][1]
-    assert _phase_sum(first) <= report_client.REPORT_TIMEOUT_SECONDS + 1e-9
-    assert _phase_sum(first) > report_client.REPORT_TIMEOUT_SECONDS - 0.5
-    assert _phase_sum(second) <= report_client.REPORT_TIMEOUT_SECONDS - 4.0 + 1e-9
-    for t in (first, second):
-        assert t.pool == t.connect and min(t.connect, t.write, t.read) > 0
+@pytest.fixture
+def short_budget(monkeypatch):
+    monkeypatch.setattr(report_client, "REPORT_TIMEOUT_SECONDS", BUDGET)
 
 
-def test_no_fallback_when_budget_is_used_up(monkeypatch, mrd):
-    clock = _Clock(step=15.0)
-    monkeypatch.setattr(report_client, "time", clock)
-    calls = []
+def _slow(seconds, then=None):
+    async def handler(request):
+        await anyio.sleep(seconds)
+        if isinstance(then, BaseException):
+            raise then
+        return then if then is not None else _resp(201, {"id": "late", "ref": "late"})
+    return handler
 
-    def post(url, *args, **kwargs):
-        calls.append(url)
-        clock.now += clock.step
-        raise _wrapped(httpx.ConnectError, socket.gaierror(-2, "x"))
 
-    monkeypatch.setattr(report_client.httpx, "post", post)
+def _timed(fn):
+    t0 = time.monotonic()
+    res = fn()
+    return res, time.monotonic() - t0
+
+
+def test_slow_upstream_is_cut_at_the_total_budget(monkeypatch, mrd, short_budget):
+    rec = _patch(monkeypatch, _slow(5.0))
+    res, took = _timed(lambda: report_client.send_report(dict(FIELDS)))
+    assert took < BUDGET + 1.0
+    assert len(rec.calls) == 1
+    assert (res.ok, res.upstream_status, res.detail) == (False, None, "Meldeserver nicht erreichbar.")
+
+
+def test_total_budget_includes_the_fallback(monkeypatch, mrd, short_budget):
+    dns = _wrapped(httpx.ConnectError, socket.gaierror(-2, "x"))
+    rec = _patch(monkeypatch, _slow(BUDGET * 0.5, dns), _slow(5.0))
+    res, took = _timed(lambda: report_client.send_report(dict(FIELDS)))
+    assert len(rec.calls) == 2
+    assert took < BUDGET + 1.0
+    assert res.ok is False and res.upstream_status is None
+
+
+def test_no_fallback_when_budget_is_used_up(monkeypatch, mrd, short_budget):
+    dns = _wrapped(httpx.ConnectError, socket.gaierror(-2, "x"))
+    rec = _patch(monkeypatch, _slow(BUDGET + 0.2, dns))
     res = report_client.send_report(dict(FIELDS))
-    assert len(calls) == 1 and res.ok is False and res.upstream_status is None
+    assert len(rec.calls) == 1 and res.ok is False and res.upstream_status is None
+
+
+class _BrokenBody(httpx.AsyncByteStream):
+    def __init__(self, exc=None, stall=None):
+        self.exc, self.stall = exc, stall
+
+    async def __aiter__(self):
+        if self.stall:
+            await anyio.sleep(self.stall)
+        if self.exc:
+            raise self.exc
+        yield b'{"id": "x", "ref": "spaet"}'
+
+
+@pytest.mark.parametrize("exc", [
+    httpx.ReadTimeout("timed out"),
+    httpx.RemoteProtocolError("peer closed connection"),
+    httpx.ReadError("reset"),
+])
+def test_201_with_unreadable_body_counts_as_sent(monkeypatch, mrd, exc):
+    # PZ-R14 wie im C#-ReportSender: der Server hat gespeichert, ein erneutes
+    # Senden erzeugte eine Dublette.
+    _patch(monkeypatch, httpx.Response(201, stream=_BrokenBody(exc=exc)))
+    res = report_client.send_report(dict(FIELDS))
+    assert (res.ok, res.upstream_status, res.ref, res.report_id) == (True, 201, None, None)
+
+
+def test_201_with_body_stalling_past_the_budget_counts_as_sent(monkeypatch, mrd, short_budget):
+    _patch(monkeypatch, httpx.Response(201, stream=_BrokenBody(stall=5.0)))
+    res, took = _timed(lambda: report_client.send_report(dict(FIELDS)))
+    assert took < BUDGET + 1.0
+    assert (res.ok, res.upstream_status, res.ref) == (True, 201, None)
+
+
+def test_non_201_with_unreadable_body_keeps_the_status(monkeypatch, mrd):
+    _patch(monkeypatch, httpx.Response(429, stream=_BrokenBody(exc=httpx.ReadError("x"))))
+    res = report_client.send_report(dict(FIELDS))
+    assert (res.ok, res.upstream_status) == (False, 429)
+    assert res.detail == "Zu viele Meldungen, bitte später erneut versuchen."
 
 
 def test_tls_error_after_connect_never_falls_back(monkeypatch, mrd):
@@ -229,6 +249,22 @@ def test_timeout_and_http_status_never_fall_back(monkeypatch, mrd, outcome):
     else:
         assert res.upstream_status is None
         assert res.detail == "Meldeserver nicht erreichbar."
+
+
+@pytest.mark.parametrize("body", [
+    {"detail": "Unbekanntes Protokoll"},
+    {"detail": "irgendetwas anderes"},
+    None,
+])
+def test_400_always_asks_for_an_app_update(monkeypatch, mrd, body):
+    # Review F9 / README §3: „Programmlogik entscheidet allein am Statuscode“ —
+    # 400 = Server kennt mrd-report-1 nicht (mehr) -> „App-Update nötig“.
+    _patch(monkeypatch, _resp(400, body) if body is not None else _resp(400, content=b"<html>"))
+    res = report_client.send_report(dict(FIELDS))
+    assert (res.ok, res.upstream_status) == (False, 400)
+    assert "bitte PraxisZeit aktualisieren" in res.detail
+    if body and body["detail"] == "Unbekanntes Protokoll":
+        assert res.detail.startswith("Unbekanntes Protokoll")
 
 
 def test_status_mapping_uses_detail_when_string(monkeypatch, mrd):

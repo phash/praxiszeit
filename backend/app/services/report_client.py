@@ -10,22 +10,29 @@ Zwei Transporte:
 * ``legacy`` (kein Schlüssel): ``POST {FEEDBACK_SERVER_URL}/v1/bugs`` wie bisher,
   Host gegen ``updater._ALLOWED_UPDATE_HOSTS`` geprüft, ohne Ausweichhost.
 
-``send_report`` wirft nie; Gesamtbudget ``REPORT_TIMEOUT_SECONDS`` inklusive
-Ausweichversuch, je Versuch als ``httpx.Timeout`` mit aus dem Restbudget
-aufgeteilten Phasen (connect + write + read ≤ Rest). Protokolliert werden nur Statuscode, Host und Fehlerart — nie
+``send_report`` wirft nie. Gesamtbudget ``REPORT_TIMEOUT_SECONDS`` als echte
+Wanduhr-Frist über den ganzen Versand inklusive Ausweichversuch (Review F8/F11:
+httpx-Timeouts gelten je Socket-Operation, ein langsamer Upload lief sonst
+beliebig lange): der Versand läuft über ``httpx.AsyncClient`` unter
+``anyio.fail_after``; bei Fristablauf wird die Anfrage abgebrochen. Ein 201 ist
+endgültig — ist sein Body nicht lesbar (Abbruch, Timeout, Frist), gilt die
+Meldung trotzdem als angenommen, ohne ``ref`` (Review F16, wie PZ-R14 im
+C#-ReportSender), damit ein erneutes Senden keine Dublette erzeugt.
+Protokolliert werden nur Statuscode, Host und Fehlerart — nie
 Felder, Schlüssel oder Antworttext. Vertrag: pzweb
 ``docs/protocols/mrd-report-1/README.md``.
 """
 from __future__ import annotations
 
+import json
 import logging
 import socket
 import ssl
-import time
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlparse
 
+import anyio
 import httpx
 
 from app.config import REPORT_ALLOWED_HOSTS, settings
@@ -40,6 +47,7 @@ _DETAIL_MAX = 300
 _UNREACHABLE = "Meldeserver nicht erreichbar."
 _MISCONFIGURED = "Meldeserver ist nicht korrekt konfiguriert."
 _DEFAULT_DETAIL = "Meldeserver-Fehler, bitte später erneut versuchen."
+_UPDATE_HINT = "bitte PraxisZeit aktualisieren."
 _STATUS_DETAIL = {
     400: "Meldeprotokoll vom Server nicht unterstützt – bitte PraxisZeit aktualisieren.",
     403: "Meldung abgelehnt (Meldeschlüssel, Produkt oder Installation gesperrt).",
@@ -92,10 +100,10 @@ def _str_or_none(value) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _interpret(resp: httpx.Response, host: str) -> ReportResult:
-    status = resp.status_code
+def _interpret(status: int, content: bytes | None, host: str) -> ReportResult:
+    """``content`` None = Body nicht lesbar (nur der Status ist bekannt)."""
     try:
-        body = resp.json()
+        body = json.loads(content) if content else None
     except ValueError:
         body = None
     if status == 201:
@@ -109,16 +117,15 @@ def _interpret(resp: httpx.Response, host: str) -> ReportResult:
     logger.warning("Report to %s rejected with status %s", host, status)
     detail = body.get("detail") if isinstance(body, dict) else None
     key = settings.FEEDBACK_REPORT_KEY
-    if not isinstance(detail, str) or not detail.strip() or (key and key in detail):
+    usable = isinstance(detail, str) and detail.strip() and not (key and key in detail)
+    if status == 400:
+        # Review F9 / README §3: Reaktion allein am Statuscode — 400 heißt, der
+        # Server kennt das Protokoll nicht (mehr): „App-Update nötig“.
+        detail = (f"{detail.strip()[:200]} – {_UPDATE_HINT}" if usable
+                  else _STATUS_DETAIL[400])
+    elif not usable:
         detail = _STATUS_DETAIL.get(status, _DEFAULT_DETAIL)
     return _fail(status, detail[:_DETAIL_MAX])
-
-
-def _phased_timeout(remaining: float) -> httpx.Timeout:
-    """PZ-R8: Phasen aus dem Restbudget teilen, damit connect + write + read
-    zusammen nie über das Restbudget hinausgehen (Pool = Connect)."""
-    connect = remaining * 0.4
-    return httpx.Timeout(connect=connect, write=remaining * 0.2, read=remaining * 0.4, pool=connect)
 
 
 def _should_fall_back(exc: httpx.HTTPError) -> bool:
@@ -127,8 +134,9 @@ def _should_fall_back(exc: httpx.HTTPError) -> bool:
     return isinstance(exc, httpx.ConnectError) and is_dns_or_tls_error(exc)
 
 
-def _post(url: str, files: list, timeout: httpx.Timeout) -> httpx.Response:
-    return httpx.post(url, files=files, timeout=timeout, follow_redirects=False)
+def _transport() -> httpx.AsyncBaseTransport:
+    """Naht für Tests (``httpx.MockTransport``)."""
+    return httpx.AsyncHTTPTransport()
 
 
 def _targets() -> tuple[list[str], str] | None:
@@ -152,15 +160,18 @@ def _targets() -> tuple[list[str], str] | None:
 def send_report(
     fields: dict[str, str], attachment: tuple[str, bytes, str] | None = None
 ) -> ReportResult:
-    """Meldung senden. Wirft nie; Ergebnis für den Router (Task 7)."""
+    """Meldung senden. Wirft nie; Ergebnis für den Router (Task 7).
+
+    Synchron (der Router läuft im Threadpool); intern eine eigene Ereignisschleife,
+    damit die Gesamtfrist die laufende Anfrage wirklich abbrechen kann."""
     try:
-        return _send(fields, attachment)
+        return anyio.run(_send, fields, attachment)
     except Exception as exc:  # noqa: BLE001 — Meldeweg darf die App nie stören
         logger.warning("Report send failed unexpectedly (%s)", type(exc).__name__)
         return _fail(None, _UNREACHABLE)
 
 
-def _send(fields: dict[str, str], attachment) -> ReportResult:
+async def _send(fields: dict[str, str], attachment) -> ReportResult:
     targets = _targets()
     if targets is None:
         logger.warning("Report target rejected: host not in allowlist")
@@ -174,22 +185,50 @@ def _send(fields: dict[str, str], attachment) -> ReportResult:
     if attachment is not None:
         parts.append(("attachment", attachment))
 
-    deadline = time.monotonic() + REPORT_TIMEOUT_SECONDS
-    for index, url in enumerate(urls):
-        host = _host(url)
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
+    budget = REPORT_TIMEOUT_SECONDS
+    deadline = anyio.current_time() + budget
+    async with httpx.AsyncClient(
+        transport=_transport(), timeout=httpx.Timeout(budget), follow_redirects=False,
+    ) as client:
+        resp = None
+        host = ""
         try:
-            resp = _post(url, parts, _phased_timeout(remaining))
-        except httpx.HTTPError as exc:
-            dns_tls = _should_fall_back(exc)
-            logger.warning(
-                "Report to %s failed (%s%s)", host, type(exc).__name__,
-                ", dns/tls" if dns_tls else "",
-            )
-            if dns_tls and index + 1 < len(urls):
-                continue
+            with anyio.fail_after(budget):
+                for index, url in enumerate(urls):
+                    host = _host(url)
+                    try:
+                        request = client.build_request("POST", url, files=parts)
+                        resp = await client.send(request, stream=True)
+                        break
+                    except httpx.HTTPError as exc:
+                        dns_tls = _should_fall_back(exc)
+                        logger.warning(
+                            "Report to %s failed (%s%s)", host, type(exc).__name__,
+                            ", dns/tls" if dns_tls else "",
+                        )
+                        if dns_tls and index + 1 < len(urls):
+                            continue
+                        return _fail(None, _UNREACHABLE)
+        except TimeoutError:
+            if resp is None:
+                logger.warning(
+                    "Report to %s failed (total budget of %ss exceeded)", host, budget)
+                return _fail(None, _UNREACHABLE)
+        if resp is None:
             return _fail(None, _UNREACHABLE)
-        return _interpret(resp, host)
-    return _fail(None, _UNREACHABLE)
+
+        # Status steht fest. Den Body nur noch im Restbudget lesen; scheitert das,
+        # entscheidet allein der Status (201 = angenommen, ohne ref).
+        content = None
+        try:
+            with anyio.move_on_after(max(0.0, deadline - anyio.current_time())):
+                content = await resp.aread()
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "Report to %s: response body unreadable (%s, status %s)",
+                host, type(exc).__name__, resp.status_code,
+            )
+        finally:
+            with anyio.CancelScope(shield=True):
+                await resp.aclose()
+        return _interpret(resp.status_code, content, host)
