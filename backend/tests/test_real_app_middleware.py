@@ -1207,6 +1207,44 @@ class TestFeedbackSendOnRealApp:
         finally:
             session.close()
 
+    def test_internal_bug_in_send_path_is_logged_without_values(
+        self, client_factory, monkeypatch
+    ):
+        """#557 D7: der Auffang in ``send_report`` darf einen echten Programmfehler
+        nicht als Meldeserver-Ausfall tarnen — die Zeile im Fehler-Monitoring
+        bleibt (nur Typ + Stapel, nie die Meldung oder der Meldeschlüssel)."""
+        from app.models.error_log import ErrorLog
+        from app.services import report_client
+
+        key = "mrk_praxiszeit_" + "k" * 20
+        monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", key)
+
+        secret_message = "geheim-" + "Anna " + key  # Quelltextzeilen stehen im Stapel
+
+        async def broken(fields, attachment):
+            raise RuntimeError(secret_message)
+
+        monkeypatch.setattr(report_client, "_send", broken)
+        client = client_factory()
+        token = _login(client, ADMIN_USERNAME, ADMIN_PASSWORD)
+        payload = {"kind": "bug", "title": "T", "description": "D"}
+        response = client.post(
+            "/api/feedback/send", headers=_auth_headers(client, token),
+            data={"payload": __import__("json").dumps(payload)},
+        )
+        assert response.status_code == 502
+        assert response.json()["upstream_status"] is None
+        session = SessionLocal()
+        try:
+            rows = session.query(ErrorLog).filter(ErrorLog.path == "/api/feedback/send").all()
+            assert len(rows) == 1
+            row = rows[0]
+            assert "RuntimeError" in row.message and "RuntimeError" in row.traceback
+            for text in (row.message, row.traceback):
+                assert "geheim-Anna" not in text and key not in text
+        finally:
+            session.close()
+
 
 # ---------------------------------------------------------------------------
 # 8. Fehlerprotokollierung

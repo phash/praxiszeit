@@ -28,7 +28,7 @@ import json
 import logging
 import socket
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -64,6 +64,9 @@ class ReportResult:
     ref: str | None
     report_id: str | None
     detail: str | None
+    # #557 D7: gesetzt, wenn ein Programmfehler im Sendepfad (kein Netz-/HTTP-
+    # Fehler) aufgefangen wurde -> der Router protokolliert ihn in error_logs.
+    internal_error: BaseException | None = field(default=None, compare=False, repr=False)
 
 
 def current_transport() -> Literal["mrd-report-1", "legacy"]:
@@ -169,7 +172,7 @@ def send_report(
         return anyio.run(_send, fields, attachment)
     except Exception as exc:  # noqa: BLE001 — Meldeweg darf die App nie stören
         logger.warning("Report send failed unexpectedly (%s)", type(exc).__name__)
-        return _fail(None, _UNREACHABLE)
+        return replace(_fail(None, _UNREACHABLE), internal_error=exc)
 
 
 async def _send(fields: dict[str, str], attachment) -> ReportResult:

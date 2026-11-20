@@ -712,6 +712,17 @@ async def capture_errors_middleware(request: Request, call_next):
             traceback_str=exception_frames(exc), status_code=500,
         )
         raise
+    internal = getattr(request.state, "report_internal_error", None)
+    if internal is not None and response.status_code >= 500:
+        # #557 D7: Programmfehler, den /api/feedback/send in eine 502 übersetzt hat
+        # (der Nutzer bekommt „als Datei speichern“) — trotzdem protokollieren,
+        # wie eine unbehandelte Ausnahme nur Typ und Stapel ohne Meldung.
+        from app.services.error_log_service import exception_frames, exception_summary
+        _capture_error_row(
+            request, level='error', message=exception_summary(internal),
+            traceback_str=exception_frames(internal), status_code=response.status_code,
+        )
+        return response
     if (
         response.status_code >= 500
         and not getattr(request.state, "db_unavailable", False)

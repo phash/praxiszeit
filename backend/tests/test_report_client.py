@@ -300,6 +300,13 @@ def test_unexpected_exception_never_raises(monkeypatch, mrd):
     _patch(monkeypatch, RuntimeError("kaputt"))
     res = report_client.send_report(dict(FIELDS))
     assert res.ok is False and res.upstream_status is None
+    assert isinstance(res.internal_error, RuntimeError)  # D7: Router protokolliert ihn
+
+
+def test_network_failure_is_not_marked_internal(monkeypatch, mrd):
+    _patch(monkeypatch, httpx.ConnectTimeout("t"))
+    res = report_client.send_report(dict(FIELDS))
+    assert res.ok is False and res.internal_error is None
 
 
 # --- Transport legacy ---------------------------------------------------------

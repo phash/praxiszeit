@@ -229,7 +229,11 @@ def send_feedback(
     if not result.ok:
         # Review F3: Meldeserver nicht erreichbar/ablehnend ist ein Betriebszustand,
         # kein Programmfehler -> capture_errors_middleware schreibt keine error_logs-Zeile.
-        request.state.report_upstream_failure = True
+        # D7: ein aufgefangener Programmfehler im Sendepfad schon (Typ + Stapel).
+        if result.internal_error is not None:
+            request.state.report_internal_error = result.internal_error
+        else:
+            request.state.report_upstream_failure = True
         return JSONResponse(
             status_code=502,
             content={"detail": result.detail, "upstream_status": result.upstream_status},
