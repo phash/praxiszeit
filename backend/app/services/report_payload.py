@@ -16,7 +16,7 @@ from app.core.report_sanitize_pz import sanitize_praxiszeit_text
 from app.core.updater import APP_VERSION
 from app.models.error_log import ErrorLog
 from app.services.error_log_service import _scope_to_tenant, _scrub_path
-from app.services.report_log_extract import MAX_EXTRACT_LINES, trim_extract
+from app.services.report_log_extract import MAX_EXTRACT_LINES, _cut, trim_extract
 from app.services.report_install_id import get_or_create_install_id
 
 PRODUCT = "praxiszeit"
@@ -24,6 +24,8 @@ PRODUCT_NAME = "PraxisZeit"
 BOARD_URL = "https://praxiszeit.mr-development.de/app/bugs?product=praxiszeit"
 TITLE_MAX = 200
 DESCRIPTION_MAX = 20000
+# #557 D3: the „Fehler:“ line is never trimmed later, so its message is capped here.
+MAX_ERROR_MESSAGE_CHARS = 500
 USER_TEXT_MAX = 4000
 MAX_DETAIL_LINES = 60
 SERVER_ERROR_WINDOW = timedelta(minutes=10)
@@ -127,6 +129,8 @@ def resolve_error_context(
         return None
     msg = (row.message or "").strip()
     first = msg.splitlines()[0] if msg else ""
+    if len(first) > MAX_ERROR_MESSAGE_CHARS:
+        first = first[:MAX_ERROR_MESSAGE_CHARS] + "…"
     # Review F14: Zeilen ohne HTTP-Bezug (DBErrorHandler, Integritätsprüfung)
     # nennen den Logger statt „HTTP None None None“.
     http = " ".join(str(v) for v in (row.status_code, row.method, row.path) if v)
@@ -135,7 +139,7 @@ def resolve_error_context(
         f"{row.level} {origin} — {first} "
         f"({row.count}x, zuletzt {_utc(row.last_seen):%Y-%m-%dT%H:%M:%SZ})"
     )
-    tb = (row.traceback or "").splitlines()[-MAX_DETAIL_LINES:]
+    tb = [_cut(l) for l in (row.traceback or "").splitlines()[-MAX_DETAIL_LINES:]]
     return ErrorContext(line, (row.fingerprint or None) and row.fingerprint[:64], tb)
 
 

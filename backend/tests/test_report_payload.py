@@ -232,3 +232,19 @@ def test_length_cut_keeps_headers_and_newest_error_rows():
     assert "[praxiszeit.log]\n" in d and "[service-stderr.log]\n" in d
     assert "pz-old89 " in d and "st87 " in d
     assert "pz-old0 " not in d and "st0 " not in d
+
+
+# --- #557 D3: eine überlange Fehlermeldung sprengt die 20000 Zeichen nicht
+
+def test_overlong_error_message_is_cut_and_description_stays_in_limit(db, default_tenant):
+    row = _row(db, TENANT)
+    row.message = "x" * 30000
+    row.traceback = "tb " + "y" * 30000
+    db.commit()
+    ctx = resolve_error_context(db, TENANT, error_log_id=row.id, server_error=None, now=NOW)
+    p = build_preview(title="t", user_text="u" * 4000, server=SRV, now_utc=NOW,
+                      error=ctx, log_lines=None)
+    assert len(p.description) <= DESCRIPTION_MAX
+    assert len(ctx.line) <= rp.MAX_ERROR_MESSAGE_CHARS + 200
+    assert "…" in ctx.line and ctx.line.endswith("(2x, zuletzt 2026-11-18T08:14:02Z)")
+    assert all(len(l) <= 2001 for l in ctx.detail_lines)
