@@ -14,7 +14,8 @@ from app.core import license as license_module
 from app.core.report_sanitize_pz import sanitize_praxiszeit_text
 from app.core.updater import APP_VERSION
 from app.models.error_log import ErrorLog
-from app.services.error_log_service import _scrub_path
+from app.services.error_log_service import _scope_to_tenant, _scrub_path
+from app.services.report_log_extract import MAX_EXTRACT_LINES
 from app.services.report_install_id import get_or_create_install_id
 
 PRODUCT = "praxiszeit"
@@ -89,14 +90,16 @@ def _utc(ts: datetime) -> datetime:
 
 
 def resolve_error_context(
-    db: Session, tenant_id: UUID, *, error_log_id: UUID | None,
+    db: Session, tenant_id: UUID | None, *, error_log_id: UUID | None,
     server_error: ServerErrorHint | None, now: datetime,
 ) -> ErrorContext | None:
     row = None
     if error_log_id is not None:
+        # Same scope as the Fehler-Monitoring list: None = on-prem (no filter),
+        # tenant id = own rows plus NULL-tenant infrastructure rows.
         row = (
-            db.query(ErrorLog)
-            .filter(ErrorLog.id == error_log_id, ErrorLog.tenant_id == tenant_id)
+            _scope_to_tenant(db.query(ErrorLog), tenant_id)
+            .filter(ErrorLog.id == error_log_id)
             .first()
         )
         if row is None:
@@ -152,29 +155,36 @@ def build_preview(
     *, title: str, user_text: str, server: ServerFields, now_utc: datetime,
     error: ErrorContext | None, log_lines: list[str] | None,
 ) -> ReportPreview:
-    lines = None
-    if error is not None and error.detail_lines:
-        lines = list(error.detail_lines) + list(log_lines or [])
-    elif log_lines is not None:
-        lines = list(log_lines)
+    detail = list(error.detail_lines) if error is not None else []
+    extract = list(log_lines) if log_lines is not None else None
+    has_block = bool(detail) or extract is not None
+    if extract is not None:
+        # Ruling PZ-R5: whole block <= MAX_EXTRACT_LINES, newest extract lines win.
+        room = max(0, MAX_EXTRACT_LINES - len(detail))
+        extract = extract[-room:] if room else []
     error_line = error.line if error else None
 
-    def render(ls):
+    def render(det, ext):
+        ls = (det + (ext or [])) if has_block else None
         return sanitize_praxiszeit_text(compose_description(
             user_text, server=server, now_utc=now_utc, error_line=error_line, log_lines=ls))
 
-    description = render(lines)
+    detail = detail[-MAX_EXTRACT_LINES:]
+    description = render(detail, extract)
     truncated = False
-    while len(description) > DESCRIPTION_MAX and lines:
-        drop = max(1, len(lines) // 4)
-        lines = lines[drop:]
+    while len(description) > DESCRIPTION_MAX and (extract or detail):
+        if extract:
+            extract = extract[max(1, len(extract) // 4):]
+        else:
+            detail = detail[max(1, len(detail) // 4):]
         truncated = True
-        description = render(lines)
+        description = render(detail, extract)
     t = sanitize_praxiszeit_text(title.strip())
     if len(t) > TITLE_MAX:
         t = sanitize_praxiszeit_text(t[:TITLE_MAX - 1] + "…")
         t = t[:TITLE_MAX]
-    return ReportPreview(t, description, len(lines) if lines is not None else 0, truncated)
+    count = len(detail) + len(extract or []) if has_block else 0
+    return ReportPreview(t, description, count, truncated)
 
 
 def build_fields(

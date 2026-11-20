@@ -143,3 +143,34 @@ def test_collect_server_fields_beta_and_license(monkeypatch):
     monkeypatch.setattr(settings, "SERVE_FRONTEND", False)
     monkeypatch.setattr(settings, "ENVIRONMENT", "development")
     assert collect_server_fields().channel == "dev" and collect_server_fields().install_type == "docker"
+
+
+def test_resolve_by_id_uses_list_scope_null_tenant_and_onprem(db, default_tenant):
+    null_row = _row(db, None, fingerprint="n" * 64)
+    foreign = _row(db, OTHER, fingerprint="o" * 64)
+    assert resolve_error_context(db, TENANT, error_log_id=null_row.id, server_error=None, now=NOW)
+    with pytest.raises(LookupError):
+        resolve_error_context(db, TENANT, error_log_id=foreign.id, server_error=None, now=NOW)
+    # on-prem: tenant_id None = no filter
+    assert resolve_error_context(db, None, error_log_id=foreign.id, server_error=None, now=NOW)
+
+
+def test_block_capped_at_200_lines_total():
+    e = ErrorContext("HTTP 500 GET /x", "fp", [f"tb{i}" for i in range(60)])
+    p = build_preview(title="t", user_text="u", server=SRV, now_utc=NOW, error=e,
+                      log_lines=[f"log{i}" for i in range(200)])
+    assert p.log_line_count == 200 and "letzte 200 Zeilen" in p.description
+    assert "tb0\n" in p.description and "log59\n" not in p.description and "log199" in p.description
+
+
+def test_truncation_drops_extract_before_traceback():
+    e = ErrorContext("HTTP 500 GET /x", "fp", ["tb-keep-1", "tb-keep-2"])
+    lines = [f"log{i} " + "x " * 995 for i in range(100)]
+    p = build_preview(title="t", user_text="u", server=SRV, now_utc=NOW, error=e, log_lines=lines)
+    assert p.truncated and len(p.description) <= DESCRIPTION_MAX
+    assert "tb-keep-1\ntb-keep-2\n" in p.description
+    assert f"letzte {p.log_line_count} Zeilen" in p.description and p.log_line_count > 2
+    big = ErrorContext("e", "fp", ["T" + str(i) + " " + "y " * 995 for i in range(30)])
+    p2 = build_preview(title="t", user_text="u", server=SRV, now_utc=NOW, error=big, log_lines=["only"])
+    assert p2.truncated and "only" not in p2.description and len(p2.description) <= DESCRIPTION_MAX
+    assert "T29 " in p2.description and "T0 " not in p2.description
