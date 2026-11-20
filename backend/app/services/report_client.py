@@ -5,12 +5,14 @@ Zwei Transporte:
 * ``mrd-report-1`` (``FEEDBACK_REPORT_KEY`` gesetzt): ``POST
   {FEEDBACK_REPORT_BASE_URL}/v1/reports`` mit den Feldern plus ``credential``.
   Einmaliger Ausweichversuch auf ``REPORT_FALLBACK_BASE`` NUR bei einem DNS-
-  oder TLS-Fehler (nie bei HTTP-Status, Verbindungsabbruch oder Timeout).
+  oder TLS-Handshake-Fehler, also ``httpx.ConnectError`` (nie bei HTTP-Status,
+  Verbindungsabbruch, Lese-/Schreibfehler oder Timeout).
 * ``legacy`` (kein Schlüssel): ``POST {FEEDBACK_SERVER_URL}/v1/bugs`` wie bisher,
   Host gegen ``updater._ALLOWED_UPDATE_HOSTS`` geprüft, ohne Ausweichhost.
 
 ``send_report`` wirft nie; Gesamtbudget ``REPORT_TIMEOUT_SECONDS`` inklusive
-Ausweichversuch. Protokolliert werden nur Statuscode, Host und Fehlerart — nie
+Ausweichversuch, je Versuch als ``httpx.Timeout`` mit aus dem Restbudget
+aufgeteilten Phasen (connect + write + read ≤ Rest). Protokolliert werden nur Statuscode, Host und Fehlerart — nie
 Felder, Schlüssel oder Antworttext. Vertrag: pzweb
 ``docs/protocols/mrd-report-1/README.md``.
 """
@@ -112,7 +114,20 @@ def _interpret(resp: httpx.Response, host: str) -> ReportResult:
     return _fail(status, detail[:_DETAIL_MAX])
 
 
-def _post(url: str, files: list, timeout: float) -> httpx.Response:
+def _phased_timeout(remaining: float) -> httpx.Timeout:
+    """PZ-R8: Phasen aus dem Restbudget teilen, damit connect + write + read
+    zusammen nie über das Restbudget hinausgehen (Pool = Connect)."""
+    connect = remaining * 0.4
+    return httpx.Timeout(connect=connect, write=remaining * 0.2, read=remaining * 0.4, pool=connect)
+
+
+def _should_fall_back(exc: httpx.HTTPError) -> bool:
+    """PZ-R7: nur DNS-/TLS-Handshake-Fehler — beide erscheinen als ConnectError.
+    Ein TLS-Fehler beim Lesen/Schreiben (Body evtl. schon gesendet) zählt nicht."""
+    return isinstance(exc, httpx.ConnectError) and is_dns_or_tls_error(exc)
+
+
+def _post(url: str, files: list, timeout: httpx.Timeout) -> httpx.Response:
     return httpx.post(url, files=files, timeout=timeout, follow_redirects=False)
 
 
@@ -166,9 +181,9 @@ def _send(fields: dict[str, str], attachment) -> ReportResult:
         if remaining <= 0:
             break
         try:
-            resp = _post(url, parts, remaining)
+            resp = _post(url, parts, _phased_timeout(remaining))
         except httpx.HTTPError as exc:
-            dns_tls = is_dns_or_tls_error(exc)
+            dns_tls = _should_fall_back(exc)
             logger.warning(
                 "Report to %s failed (%s%s)", host, type(exc).__name__,
                 ", dns/tls" if dns_tls else "",

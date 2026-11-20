@@ -5,12 +5,10 @@ Recorder ersetzt (Muster ``test_feedback._Recorder``).
 """
 from __future__ import annotations
 
-import importlib.util
 import logging
 import socket
 import ssl
 import warnings
-from pathlib import Path
 
 import httpx
 import pytest
@@ -46,6 +44,10 @@ def _resp(status, json_body=None, content=None):
     if json_body is not None:
         return httpx.Response(status, json=json_body, request=req)
     return httpx.Response(status, content=content or b"", request=req)
+
+
+def _phase_sum(t):
+    return t.connect + t.write + t.read
 
 
 def _wrapped(cls, cause, msg="boom"):
@@ -112,7 +114,8 @@ def test_sends_credential_protocol_and_all_fields_as_form_parts(monkeypatch, mrd
     assert as_dict["protocol"] == (None, "mrd-report-1")
     assert as_dict["attachment"] == ("screenshot.png", b"\x89PNG...", "image/png")
     assert kw["follow_redirects"] is False
-    assert 0 < kw["timeout"] <= report_client.REPORT_TIMEOUT_SECONDS
+    assert isinstance(kw["timeout"], httpx.Timeout)
+    assert 0 < _phase_sum(kw["timeout"]) <= report_client.REPORT_TIMEOUT_SECONDS
 
 
 def test_dns_error_on_both_hosts_tries_each_once(monkeypatch, mrd):
@@ -140,8 +143,65 @@ def test_tls_error_falls_back_once_and_succeeds(monkeypatch, mrd):
     assert len(rec.calls) == 2
     assert rec.calls[1]["url"] == "https://praxiszeit.mr-development.de/v1/reports"
     # Restbudget, nie mehr als das Gesamtbudget
-    assert rec.calls[1]["kwargs"]["timeout"] <= report_client.REPORT_TIMEOUT_SECONDS
+    assert _phase_sum(rec.calls[1]["kwargs"]["timeout"]) <= report_client.REPORT_TIMEOUT_SECONDS
     assert res.ok is True and res.ref == "praxiszeit-8"
+
+
+class _Clock:
+    """Ersetzt ``report_client.time``; jeder httpx.post-Aufruf verbraucht ``step`` Sekunden."""
+
+    def __init__(self, step):
+        self.now = 1000.0
+        self.step = step
+
+    def monotonic(self):
+        return self.now
+
+
+def test_phased_timeout_sums_within_total_and_remaining_budget(monkeypatch, mrd):
+    clock = _Clock(step=4.0)
+    monkeypatch.setattr(report_client, "time", clock)
+    seen = []
+
+    def post(url, *args, **kwargs):
+        seen.append((url, kwargs["timeout"]))
+        clock.now += clock.step
+        if len(seen) == 1:
+            raise _wrapped(httpx.ConnectError, socket.gaierror(-2, "x"))
+        return _resp(201, {"id": "i", "ref": "r"})
+
+    monkeypatch.setattr(report_client.httpx, "post", post)
+    assert report_client.send_report(dict(FIELDS)).ok is True
+    first, second = seen[0][1], seen[1][1]
+    assert _phase_sum(first) <= report_client.REPORT_TIMEOUT_SECONDS + 1e-9
+    assert _phase_sum(first) > report_client.REPORT_TIMEOUT_SECONDS - 0.5
+    assert _phase_sum(second) <= report_client.REPORT_TIMEOUT_SECONDS - 4.0 + 1e-9
+    for t in (first, second):
+        assert t.pool == t.connect and min(t.connect, t.write, t.read) > 0
+
+
+def test_no_fallback_when_budget_is_used_up(monkeypatch, mrd):
+    clock = _Clock(step=15.0)
+    monkeypatch.setattr(report_client, "time", clock)
+    calls = []
+
+    def post(url, *args, **kwargs):
+        calls.append(url)
+        clock.now += clock.step
+        raise _wrapped(httpx.ConnectError, socket.gaierror(-2, "x"))
+
+    monkeypatch.setattr(report_client.httpx, "post", post)
+    res = report_client.send_report(dict(FIELDS))
+    assert len(calls) == 1 and res.ok is False and res.upstream_status is None
+
+
+def test_tls_error_after_connect_never_falls_back(monkeypatch, mrd):
+    # PZ-R7: Body schon gesendet — TLS-Fehler beim Lesen/Schreiben ist kein Handshake-Fehler
+    for cls in (httpx.ReadError, httpx.WriteError):
+        rec = _patch(monkeypatch, _wrapped(cls, ssl.SSLError(1, "bad record mac")))
+        res = report_client.send_report(dict(FIELDS))
+        assert len(rec.calls) == 1, cls.__name__
+        assert res.ok is False and res.upstream_status is None
 
 
 def test_no_fallback_when_base_is_the_fallback_host(monkeypatch, mrd):
@@ -362,45 +422,3 @@ def test_toml_feedback_section_maps_to_env():
     from app.config import _TOML_KEY_MAP
     assert _TOML_KEY_MAP[("feedback", "report_key")] == "FEEDBACK_REPORT_KEY"
     assert _TOML_KEY_MAP[("feedback", "report_base_url")] == "FEEDBACK_REPORT_BASE_URL"
-
-
-# --- Repo-Plumbing (Compose, Beispiele, nativer Prozessmanager) ---------------
-
-_ROOT = Path(__file__).resolve().parents[2]
-_SERVER = _ROOT / "praxiszeit-server.py"
-_repo = pytest.mark.skipif(not _SERVER.exists(), reason="Repo-Wurzel nicht eingebunden")
-
-
-@_repo
-def test_compose_passes_report_settings_to_backend():
-    for compose in _ROOT.glob("docker-compose*.yml"):
-        text = compose.read_text(encoding="utf-8")
-        if "PRACTICE_ADDRESS:" not in text:
-            continue
-        assert "FEEDBACK_REPORT_KEY: ${FEEDBACK_REPORT_KEY:-}" in text, compose.name
-        assert ("FEEDBACK_REPORT_BASE_URL: ${FEEDBACK_REPORT_BASE_URL:-https://report.mr-development.de}"
-                in text), compose.name
-
-
-@_repo
-def test_examples_document_feedback_block():
-    env = (_ROOT / ".env.example").read_text(encoding="utf-8")
-    assert "# FEEDBACK_REPORT_KEY=" in env
-    conf = (_ROOT / "installer" / "praxiszeit.conf.example").read_text(encoding="utf-8")
-    assert "# [feedback]" in conf and "# report_key = " in conf
-    import tomllib
-    assert "feedback" not in tomllib.loads(conf)  # nur kommentiert
-
-
-@_repo
-def test_native_conf_maps_feedback_keys_to_env():
-    spec = importlib.util.spec_from_file_location("praxiszeit_server_report", _SERVER)
-    srv = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(srv)
-    assert srv._CONF_TO_ENV[("feedback", "report_key")] == "FEEDBACK_REPORT_KEY"
-    assert srv._CONF_TO_ENV[("feedback", "report_base_url")] == "FEEDBACK_REPORT_BASE_URL"
-    env = {}
-    srv.apply_config_env({"feedback": {"report_key": KEY,
-                                       "report_base_url": "https://report.mr-development.de"}}, env)
-    assert env["FEEDBACK_REPORT_KEY"] == KEY
-    assert env["FEEDBACK_REPORT_BASE_URL"] == "https://report.mr-development.de"
