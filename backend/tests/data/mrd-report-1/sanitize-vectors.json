@@ -1,0 +1,1684 @@
+{
+  "protocol": "mrd-report-1",
+  "version": 1,
+  "about": "Shared sanitizer test vectors. Every client implementation of sanitize_report_text must turn each case.input into case.expected, and sanitize(expected) must equal expected. patient_data tells whether find_patient_data(input) is non-empty; find_patient_data(expected) must always be empty.",
+  "engine_notes": [
+    "Step 0, normalization (sanitize and find_patient_data): ANSI escape sequences are removed first, matching \\x1b\\[[0-9;:?]{0,64}[ -/]{0,8}[@-~]|\\x1b\\][^\\x07\\x1b\\n\\r]{0,256}(?:\\x07|\\x1b\\\\) (only complete sequences: CSI with at most 64 parameter and 8 intermediate bytes, OSC on one line with at most 256 bytes, terminated by BEL or ESC \\; anything longer is not removed); then what is left of other sequences, matching \\x1b\\[[0-9;:?]*[ -/]*[@-~]?|\\x1b (a CSI with huge parameters, a lone ESC, the ESC of an overlong or multi-line OSC), becomes a blank, so it can neither hide nor glue a label), so a coloured label reads like a plain one; then CRLF and lone CR become LF; U+00A0 (no-break space) becomes a space. Patterns therefore only know \\n as line end. Write the control characters and U+00A0 as escapes in port sources (pure ASCII source; javac/go/node otherwise depend on the platform encoding).",
+    "Passes: one pass applies all rules in order; sanitize repeats passes until the text no longer changes, at most 4 passes (a token can open a boundary that hid a field, e.g. <hex>patient-id 4711).",
+    "Within a pass, rules apply in the listed order, each over the whole text, matches replaced left to right, non-overlapping, leftmost-first alternation (Perl semantics; Go regexp default).",
+    "Patterns use no lookaround and no backreferences, so they run on Go RE2, Rust regex, Java, JavaScript and Python unchanged. On backtracking engines every pattern is linear: rules that start with an unbounded run are anchored on a delimiter group ({1} re-emits it), and no unbounded class is followed by a literal that the class can contain more than a bounded number of times per start (the JSON array body [^\\][{]* stops at the next bracket).",
+    "flags: i = case-insensitive (Go: (?i), Java: CASE_INSENSITIVE, Rust: (?i), JS: 'i'), m = ^ matches after \\n (Go: (?m), Java: MULTILINE, JS: 'm'). No inline flags in patterns. Python folds ASCII only; Go, Rust and JS-u use Unicode simple case folding, which additionally lets k/s match U+212A KELVIN SIGN and U+017F LONG S. Vectors avoid those characters; the difference only ever masks more.",
+    "Syntax: JS compiles the patterns with the u flag, not v (v rejects class syntax used here). Every '[' inside a character class is escaped (Java and Rust reject an unescaped one); '{' and '}' appear unescaped only inside classes.",
+    "\\b and character classes are ASCII-only: Python re.ASCII; Rust (?-u:\\b) or RegexBuilder.unicode(false) for \\b; Go is ASCII already; JS with the u flag is ASCII (with u+i, \\w also takes U+017F/U+212A); Java: \\b follows ASCII \\w from JDK 19 on (do not set UNICODE_CHARACTER_CLASS); on older JDKs \\b also treats non-ASCII letters as word characters. Verified 2026-11-18: all cases pass in Python 3.12, Go (RE2), Node (u flag) and Java 11; all patterns compile in Rust regex 1.x. Patterns may contain the literal non-ASCII character U+2019 (typographic apostrophe); negated classes match any non-ASCII character.",
+    "replacement: {n} is the text of group n, empty if the group did not take part. Everything else is literal.",
+    "condition: replace only if it holds, else leave the match as it is. ipv4_octets = exactly 4 dot-separated parts of 1-3 digits, each <= 255; contains_digit = match has a 0-9; upper_lower_digit = match has A-Z, a-z and 0-9; gdt_length = int(group 2) - 7 - len(group 4) is 0, 1 or 2, with len counted in characters or in UTF-8 bytes (either fits); gdt_length_prefix = d = int(group 2) - 7 is >= 6 and d - 2 <= max(characters of group 4, UTF-8 bytes of group 4).",
+    "find_patient_data(text) = the categories (gdt, dicom, patient; in this order) of the rules with a patient_value_group that either (a) match the normalized RAW text on their own (if the text contains ESC, also the raw text with every escape sequence matching the second step 0 pattern turned into a blank instead of removed, and the raw text with only ESC and a CSI head, matching \\x1b(?:\\[[0-9;:?]*[ -/]*)?, turned into a blank and the final byte kept (it may be the first letter of a label: ESC[PatientName=, ESC[0PatientID=), each then with line ends and U+00A0 normalized, so a sequence cannot hide a field from the gate), or (b) replace a value during the full multi-pass sanitize — in both cases only if the rule's condition holds and the value group (trailing spaces/tabs trimmed) is not the token <patient>. (a) catches values that an earlier rule turns into another token (token=0193101Mustermann); the server stores the raw text, so they count. find_patient_data(sanitize(x)) is always empty. Known limit: a crafted sequence whose final byte is the first letter of a label (ESC[PatientName=Doe) is flagged by the gate, but sanitize removes the letter and leaves the value (atientName=Doe).",
+    "Tokens: <email> <ip> <secret> <user> <patient>. No rule turns a token into something else, so sanitizing is idempotent.",
+    "Known trade-offs (pinned by cases): after a DICOM keyword or patient label the rest of the line is masked even in prose ('PatientID <patient>'); a Windows user name with a space at the end of an unquoted path keeps its last word; four-part versions with all parts <= 255 become <ip>; block rules (fhir_patient, cda_patient, csv_patient_header, csv_patient_header_last) mask the rest of the line and every following non-empty line up to a blank line, and their marker counts as patient data even without a value; db_error_row and sql_parameters mask row values and bound parameters of every table; firstName/lastName/... followed by = or : are masked outside a patient context too.",
+    "Attachments (server side, not part of the text vectors): images and compressed data are recognized by magic (PNG, JPEG, GIF, BMP with a valid DIB header, TIFF, Netpbm with a full header, TGA, PCX, WebP/RIFF, ICO, XBM, XPM, farbfeld with binary size, PDF, PostScript/EPS, gzip, bzip2, xz, 7z, rar, zstd) and reported as unchecked; so is text that embeds a binary: an SVG element with <image> or data:image/ inside it, or a base64 run of >= 200 characters (also base64url and JSON-escaped \\/; wrapped over lines by real line breaks or the JSON escapes \\n, \\r\\n, \\r, lines may be indented; every wrapped line as long as the first, the last at most as long) whose decoded start is an image, PDF/PostScript, compressed data, a ZIP, a DICOM file or a GDT patient record. Text is decoded as UTF-16 (BOM, or NUL pattern in the first 4096 bytes), else, after dropping trailing NUL runs and NUL runs next to a line end, and other NULs only if they are at most 1 % of the bytes, as UTF-8, else as cp1252 only if at least 70 % of the bytes are printable ASCII, at most 30 % are >= 0x80 and there is a line end every 1000 bytes on average; at most 1 % control characters (tab, line ends, form feed, ESC excluded), and text over 64 KiB needs a line end every 4096 characters on average. ZIP members with an image extension (.png .jpg .jpeg .gif .bmp .tif .tiff .webp .heic .svg .svgz .eps .ps and similar) are unchecked whatever their content. Size limits for medical products: 2 MiB of text per attachment and in total over all ZIP members, 256 KiB of member names (each plus 64 bytes), 64 MiB inflated; members beyond a limit are reported as too-large. ZIP archives: directory entries are checked by name (and by content if they have any); the archive comment and member comments are scanned like text attachments; bytes that no entry accounts for (data before, between or after the entries, overlapping entries) are reported as unchecked; any decompression or format error makes the ZIP corrupt. Anything unchecked or too-large is never passed as clean."
+  ],
+  "rules": [
+    {
+      "name": "auth_header",
+      "category": "secret",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b((?:Proxy-)?Authorization|Set-Cookie|Cookie|X-Api-Key|Api-Key|X-Auth-Token|X-Access-Token|X-Csrf-Token)(\"?[ \\t]*:[ \\t]*)[^\\n]+",
+      "replacement": "{1}{2}<secret>",
+      "description": "Credential headers (Authorization, Cookie, X-Api-Key, ...): everything after the colon to end of line."
+    },
+    {
+      "name": "bearer",
+      "category": "secret",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b(Bearer[ \\t]+)[A-Za-z0-9._~+/=-]+",
+      "replacement": "{1}<secret>",
+      "description": "Bearer <token>."
+    },
+    {
+      "name": "url_credentials",
+      "category": "secret",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(^|[^A-Za-z0-9+.-])([a-z][a-z0-9+.-]*://)[^ \\t\\n/:@]+:[^ \\t\\n/@]+@",
+      "replacement": "{1}{2}<user>:<secret>@",
+      "description": "scheme://user:password@ in URLs."
+    },
+    {
+      "name": "kv_secret",
+      "category": "secret",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(^|[^A-Za-z0-9_.-])([A-Za-z0-9_.-]*(?:password|passwd|pwd|token|secret|credential|signature|license_id|apikey|sessid|(?:api|secret|private|access|signing|encryption|client|master|session|ssh|gpg|pgp|app|account|storage)[_.-]?key|session[_.-]?id|[_.-]sig|[_.-]auth)s?[ \\t]*[=:][ \\t]*)(\"?)[^ \\t\\n&;\"]+",
+      "replacement": "{1}{2}{3}<secret>",
+      "description": "key=value or key: value where the key ends in password, passwd, pwd, token, secret, credential, signature, license_id, apikey, sessid, <api|secret|private|access|signing|encryption|client|master|session|ssh|gpg|pgp|app|account|storage>[_.-]key, session_id, _sig or _auth (optional plural s); an opening \" is kept; the value runs to whitespace, &, ; or \"."
+    },
+    {
+      "name": "kv_secret_short",
+      "category": "secret",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(^|[^A-Za-z0-9_.-])((?:key|sig|auth|session)[ \\t]*=[ \\t]*)(\"?)[^ \\t\\n&;\"]+",
+      "replacement": "{1}{2}{3}<secret>",
+      "description": "Whole keys key, sig, auth, session followed by = (query strings): the value. No colon form, so 'primary key: id' and 'Session: 3 open' stay."
+    },
+    {
+      "name": "json_secret",
+      "category": "secret",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(\"(?:[A-Za-z0-9_.-]*(?:password|passwd|pwd|token|secret|credential|signature|license_id|apikey|sessid|(?:api|secret|private|access|signing|encryption|client|master|session|ssh|gpg|pgp|app|account|storage)[_.-]?key|session[_.-]?id|[_.-]sig|[_.-]auth)s?|(?:key|sig|auth|session))\"[ \\t]*:[ \\t]*\")[^\"\\n]*\"",
+      "replacement": "{1}<secret>\"",
+      "description": "JSON \"<secret key>\": \"value\" (also the whole keys \"key\", \"auth\", \"sig\", \"session\")."
+    },
+    {
+      "name": "email",
+      "category": "email",
+      "flags": [],
+      "pattern": "(^|[ \\t\\n@<>()\\[\\]{},;:\"'\\\\/=|])[^ \\t\\n@<>()\\[\\]{},;:\"'\\\\/=|]+@[^ \\t\\n@<>()\\[\\]{},;:\"'\\\\/=|.]+(?:\\.[^ \\t\\n@<>()\\[\\]{},;:\"'\\\\/=|.]+)*\\.[A-Za-z]{2,}",
+      "replacement": "{1}<email>",
+      "description": "E-mail address, local part and domain labels may contain non-ASCII characters."
+    },
+    {
+      "name": "ipv4",
+      "category": "ip",
+      "flags": [],
+      "pattern": "\\b[0-9]+(?:\\.[0-9]+)+\\b",
+      "replacement": "<ip>",
+      "description": "Dotted number run; replaced only if it has exactly 4 parts of 1-3 digits each <= 255 (so 1.24.3, v18.6, 10.0.19045.1 survive).",
+      "condition": "ipv4_octets"
+    },
+    {
+      "name": "ipv6",
+      "category": "ip",
+      "flags": [],
+      "pattern": "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b|(?:\\b[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6})?::(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b)?",
+      "replacement": "<ip>",
+      "description": "Full 8-group or ::-compressed IPv6; replaced only if the match contains a digit 0-9 (so Foo::Bar and a bare :: survive). Times like 10:15:30 and MAC addresses never match.",
+      "condition": "contains_digit"
+    },
+    {
+      "name": "win_user_path_spaced",
+      "category": "path",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b([A-Z]:(?:\\\\+|/)Users(?:\\\\+|/))[^\\\\/ \\t\\n\"'<>|:*?,;]+(?: +[^\\\\/ \\t\\n\"'<>|:*?,;]+)+([\\\\/\"'])",
+      "replacement": "{1}<user>{2}",
+      "description": "C:\\Users\\<name with spaces> when a separator or quote follows the name."
+    },
+    {
+      "name": "win_user_path",
+      "category": "path",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b([A-Z]:(?:\\\\+|/)Users(?:\\\\+|/))[^\\\\/ \\t\\n\"'<>|:*?,;]+",
+      "replacement": "{1}<user>",
+      "description": "C:\\Users\\<name> (also C:/Users/ and JSON-escaped C:\\\\Users\\\\)."
+    },
+    {
+      "name": "unix_user_path_spaced",
+      "category": "path",
+      "flags": [],
+      "pattern": "(/(?:home|Users)/)[^\\\\/ \\t\\n\"'<>|:*?,;]+(?: +[^\\\\/ \\t\\n\"'<>|:*?,;]+)+([/\"'])",
+      "replacement": "{1}<user>{2}",
+      "description": "/home/<name with spaces> and /Users/<name with spaces> when / or a quote follows."
+    },
+    {
+      "name": "unix_user_path",
+      "category": "path",
+      "flags": [],
+      "pattern": "(/(?:home|Users)/)[^\\\\/ \\t\\n\"'<>|:*?,;]+",
+      "replacement": "{1}<user>",
+      "description": "/home/<name>, /Users/<name>."
+    },
+    {
+      "name": "gdt_line",
+      "category": "gdt",
+      "flags": [
+        "m"
+      ],
+      "pattern": "^([ \\t]*[0-9]{3}(?:3000|3101|3102|3103|3104|3105|3106|3107|3110|3112|3113))([^\\n]+)",
+      "replacement": "{1}<patient>",
+      "description": "GDT/BDT line (optionally indented) with a patient field id: content to end of line.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "gdt_inline",
+      "category": "gdt",
+      "flags": [],
+      "pattern": "([ \\t:|=>\"',;(\\[][0-9]{3}(?:3101|3102|3104|3105|3106|3107|3112|3113))([^ \\t\\n0-9,;.:/\\\\)\\]}&=<>|\"'][^\\n]*)",
+      "replacement": "{1}<patient>",
+      "description": "GDT name/title/insurance/address record inside a line (after space, tab, : | = > \" ' , ; ( [), content starting with neither a digit nor punctuation (id=1233104, survives): to end of line.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "gdt_inline_path_spaced",
+      "category": "gdt",
+      "flags": [],
+      "pattern": "([/\\\\])([0-9]{3})((?:3101|3102|3104|3105|3106|3107|3112|3113))([^ \\t\\n0-9/\\\\.<][^\\t\\n/\\\\.<]*)",
+      "replacement": "{1}{2}{3}<patient>",
+      "description": "GDT name/title/insurance/address record as a path segment after / or \\ (export/0253102Max Muster.txt): the content up to the next / \\ . < or line end, blanks included; replaced only if the 3-digit length fits the content (gdt_length).",
+      "condition": "gdt_length",
+      "patient_value_group": 4
+    },
+    {
+      "name": "gdt_inline_path",
+      "category": "gdt",
+      "flags": [],
+      "pattern": "([/\\\\])([0-9]{3})((?:3101|3102|3104|3105|3106|3107|3112|3113))([^ \\t\\n0-9/\\\\.<][^ \\t\\n/\\\\.<]*)",
+      "replacement": "{1}{2}{3}<patient>",
+      "description": "Same as gdt_inline_path_spaced, content up to the next blank as well (C:\\gdt\\0153101Muster.gdt, /0193101Mustermann and more); replaced only if the length fits (gdt_length). GET /api/items/1233104/ survives.",
+      "condition": "gdt_length",
+      "patient_value_group": 4
+    },
+    {
+      "name": "gdt_inline_city",
+      "category": "gdt",
+      "flags": [],
+      "pattern": "([ \\t:|=>\"',;(\\[/\\\\])([0-9]{3})(3106)([0-9]{4,5}[ \\t]+[^ \\t\\n0-9][^\\n]*)",
+      "replacement": "{1}{2}{3}<patient>",
+      "description": "GDT 3106 postcode and city inside a line (also after / or \\; \"0233106 80331 München\" without the blank after the id): to end of line; replaced only if the length prefix fits (gdt_length_prefix).",
+      "condition": "gdt_length_prefix",
+      "patient_value_group": 4
+    },
+    {
+      "name": "gdt_inline_numeric",
+      "category": "gdt",
+      "flags": [],
+      "pattern": "([ \\t:|=>\"',;(\\[/\\\\])([0-9]{3})(3000|3103|3105|3106|3110|3112|3113)( ?[0-9A-Za-z]+)",
+      "replacement": "{1}{2}{3}<patient>",
+      "description": "GDT number/birth date/insurance/sex/zip record inside a line (also after / or \\; one blank before the content allowed); replaced only if the 3-digit length fits the content (gdt_length).",
+      "condition": "gdt_length",
+      "patient_value_group": 4
+    },
+    {
+      "name": "dicom_json_object",
+      "category": "dicom",
+      "flags": [],
+      "pattern": "(\"0010,?(?:0010|0020|0030|0040|1000|1001|1005|1040|1060|2154)\\\\{0,3}\"[ \\t\\n]*:[ \\t\\n]*\\{[^{}]*\"(?:Value|InlineBinary)\\\\{0,3}\"[ \\t\\n]*:[ \\t\\n]*)(\\[[^\\]\\[{]*\\]|\\\\{0,3}\"[^\"\\n]*\"|[^ \\t\\n,{}\\[\\]\"][^,}\\n\"]*)",
+      "replacement": "{1}<patient>",
+      "description": "DICOM JSON / Orthanc object of a patient tag (may span lines; also escaped inside a JSON string, \\\"00100010\\\"): its \"Value\" (array, string or scalar) or \"InlineBinary\".",
+      "patient_value_group": 2
+    },
+    {
+      "name": "dicom_json",
+      "category": "dicom",
+      "flags": [],
+      "pattern": "(\"(?:0010,?(?:0010|0020|0030|0040|1000|1001|1005|1040|1060|2154)|Alphabetic|Ideographic|Phonetic)\\\\{0,3}\"[ \\t]*:[ \\t]*(?:\\n[ \\t]*)?)([^ \\t\\n{][^\\n]*)",
+      "replacement": "{1}<patient>",
+      "description": "DICOM JSON patient tag key or person-name component with a value (same or next line, not an object; the key may be escaped inside a JSON string): rest of the value line.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "dicom_xml_pn",
+      "category": "dicom",
+      "flags": [],
+      "pattern": "(<(?:FamilyName|GivenName|MiddleName|NamePrefix|NameSuffix)>)([^<\\n]+)",
+      "replacement": "{1}<patient>",
+      "description": "Person-name components of DICOM XML (native DICOM model): element text.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "dicom_tag",
+      "category": "dicom",
+      "flags": [],
+      "pattern": "([(\\[]0010,[ \\t]*(?:0010|0020|0030|0040|1000|1001|1005|1040|1060|2154)[)\\]][ \\t]*(?:[=:][ \\t]*)?)([^ \\t\\n][^\\n]*)",
+      "replacement": "{1}<patient>",
+      "description": "DICOM patient tag (0010,xxxx) or [0010,xxxx] (dcmtk/pydicom dumps): rest of line, including the VR.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "dicom_tag_bare",
+      "category": "dicom",
+      "flags": [],
+      "pattern": "\\b(0010,[ \\t]*(?:0010|0020|0030|0040|1000|1001|1005|1040|1060|2154)\\b(?:[ \\t]*[=:][ \\t]*|[ \\t]+))([^ \\t\\n\"][^\\n]*)",
+      "replacement": "{1}<patient>",
+      "description": "Bare DICOM patient tag 0010,xxxx followed by =, : or blanks: rest of line.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "dicom_keyword",
+      "category": "dicom",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(^|[^A-Za-z0-9])((?:PatientName|PatientID|PatientBirthDate|PatientSex|PatientAddress|PatientBirthName|PatientMotherBirthName|PatientTelephoneNumbers|OtherPatientIDs|OtherPatientNames))(\\\\{0,3}[\"']?[ \\t]*[=:>^][ \\t]*(?:\\n[ \\t]*){0,3}|[ \\t]+)([^ \\t\\n][^\\n]*)",
+      "replacement": "{1}{2}{3}<patient>",
+      "description": "DICOM keyword (any case, not glued to a letter or digit on the left) followed by =, :, >, ^ (value may be on the next line) or blanks: rest of the value line. Prose like 'PatientID missing' is masked too.",
+      "patient_value_group": 4
+    },
+    {
+      "name": "fhir_patient",
+      "category": "patient",
+      "flags": [],
+      "pattern": "(\\\\{0,3}\"resourceType\\\\{0,3}\"[ \\t\\n]*:[ \\t\\n]*\\\\{0,3}\"Patient\\\\{0,3}\")([^\\n]*(?:\\n[^\\n]+)*)",
+      "replacement": "{1}<patient>",
+      "description": "FHIR Patient resource as JSON (\"resourceType\": \"Patient\", also escaped or across a line break): the rest of the line and every following non-empty line. The marker counts as patient data even if nothing follows it.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "fhir_patient_xml",
+      "category": "patient",
+      "flags": [],
+      "pattern": "(<(?:[A-Za-z0-9_.-]+:)?Patient[ \\t]+xmlns=\\\\{0,3}\"http://hl7\\.org/fhir\\\\{0,3}\"[^<>\\n]*>|<(?:[A-Za-z0-9_.-]+:)?Patient(?:[ \\t][^<>\\n]*)?>(?:[ \\t\\n]*<!--(?:[^-\\n]|-[^-\\n]){0,200}-->){0,3}[ \\t\\n]*<(?:[A-Za-z0-9_.-]+:)?(?:id|meta|text|extension|modifierExtension|implicitRules|language|contained|identifier|active|name|telecom|gender|birthDate|deceasedBoolean|deceasedDateTime|address|maritalStatus|multipleBirthBoolean|multipleBirthInteger|photo|contact|communication|generalPractitioner|managingOrganization|link)[ \\t/>])([^\\n]*(?:\\n[^\\n]+)*)",
+      "replacement": "{1}<patient>",
+      "description": "FHIR Patient resource as XML: <Patient xmlns=\"http://hl7.org/fhir\" ...> always; an element <Patient> without its own xmlns (inside a Bundle; case-sensitive, namespace prefix and attributes allowed) when, after up to three comments, a FHIR Patient child element follows (id, meta, text, extension, identifier, active, name, telecom, gender, birthDate, address, contact, ...): the rest of the line and every following non-empty line. <Patient>text</Patient> is left to patient_xml.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "fhir_person_array",
+      "category": "patient",
+      "flags": [],
+      "pattern": "(\\\\{0,3}\"(?:name|address|telecom)\\\\{0,3}\"[ \\t]*:[ \\t\\n]*\\[[ \\t\\n]*\\{[ \\t\\n]*)([^{} \\t\\n][^{}]*)",
+      "replacement": "{1}<patient>",
+      "description": "FHIR HumanName/Address/ContactPoint array \"name\": [{...}] (also \"address\", \"telecom\"; may span lines): the content of its first object up to the next brace.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "fhir_kvid",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "([/:]kvid[A-Za-z0-9_.-]*\\\\{0,3}\"[ \\t]*,[ \\t\\n]*\\\\{0,3}\"value\\\\{0,3}\"[ \\t]*:[ \\t]*)([^ \\t\\n][^\\n]*)",
+      "replacement": "{1}<patient>",
+      "description": "FHIR identifier with a KVID system (http://fhir.de/sid/gkv/kvid-10, kvid after / or :) followed by its \"value\": rest of the value line.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "fhir_kvid_value_first",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(\\\\{0,3}\"value\\\\{0,3}\"[ \\t]*:[ \\t]*)(\\\\{0,3}\"[^\"\\n]*\"[ \\t]*,[ \\t\\n]*\\\\{0,3}\"system\\\\{0,3}\"[ \\t]*:[ \\t]*\\\\{0,3}\"[^\"\\n]*[/:]kvid[^\\n]*)",
+      "replacement": "{1}<patient>",
+      "description": "FHIR identifier \"value\" followed by a KVID \"system\" (value-before-system order): the value to end of line.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "fhir_kvid_xml",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "([/:]kvid[A-Za-z0-9_.-]*\\\\{0,3}\"[ \\t]*/?>[ \\t\\n]*<(?:[A-Za-z0-9_.-]+:)?value[ \\t]+value=\\\\{0,3}\")([^\"\\n]+)",
+      "replacement": "{1}<patient>",
+      "description": "FHIR XML identifier: <system value=\".../kvid-10\"/> followed by <value value=\"...\"/>: the value.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "fhir_xml_name",
+      "category": "patient",
+      "flags": [],
+      "pattern": "(<(?:[A-Za-z0-9_.-]+:)?(?:family|given)[ \\t]+value=\\\\{0,3}\")([^\"\\n]+)",
+      "replacement": "{1}<patient>",
+      "description": "FHIR XML name parts <family value=\"...\"/>, <given value=\"...\"/>: the attribute value.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "cda_patient",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(<(?:[A-Za-z0-9_.-]+:)?(?:recordTarget|patientRole)(?:[ \\t][^<>\\n]*)?>[ \\t]*(?:\\n[ \\t]*)?)([^\\n]*(?:\\n[^\\n]+)*)",
+      "replacement": "{1}<patient>",
+      "description": "HL7 CDA / eArztbrief <recordTarget> or <patientRole>: the rest of the line and every following non-empty line. The element counts as patient data even if nothing follows it.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "hl7_pid",
+      "category": "patient",
+      "flags": [
+        "m"
+      ],
+      "pattern": "^([ \\t]*PID\\|)([^\\n]*)",
+      "replacement": "{1}<patient>",
+      "description": "HL7 v2 PID segment (patient identification): the rest of the segment line.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "csv_patient_header",
+      "category": "patient",
+      "flags": [
+        "i",
+        "m"
+      ],
+      "pattern": "(^|[;\\t|,])( *\"?(?:(?:patient(?:(?:'s|’s)[ _.-]?|[ _.-])(?:name|id|birth[ _.-]?date|birth[ _.-]?name|sex|gender|address|dob|(?:first|last|given|family|middle|sur)[ _.-]?name)|patient(?:first|last|given|family|middle|sur)[ _.-]?name|patientgender|patientdob|birth[ _.-]?date|birth[ _.-]?time|date[ _.-]?of[ _.-]?birth|dob|patienten[ _.-]?(?:name|id|nummer|nr\\.?)|patient[ _.-]?(?:nummer|nr\\.?)|geburtsdatum|geburtstag|geb\\.?[ _.-]?datum|(?:name|vorname|nachname|telefon(?:nummer)?|adresse|anschrift|geburtsdatum)[ \\t]+de[rs][ \\t]+patient(?:en|in)|pat[ _.-]{0,2}nr\\.?|vers[ _.-]{0,2}nr\\.?|fall[ _.-]?(?:nr\\.?|nummer)|krankenversichertennummer|versichertennummer|versicherten[ _.-]?(?:nr\\.?|id)|kvnr|kvid|insurance[ _.-]?(?:number|no|id))|(?:patient|patientin|vorname|nachname|geburtsname|(?:first|last|given|family|middle|sur)[ _.-]?name))\"?)([ \\t]*(?:[;\\t|]|,[^ \\t\\n])[^\\n]*(?:\\n[^\\n]+)*)",
+      "replacement": "{1}{2}<patient>",
+      "description": "Delimited table header (; tab | or , without a blank after it) with a patient column followed by another cell: the rest of the header and every following non-empty line (the data rows).",
+      "patient_value_group": 3
+    },
+    {
+      "name": "csv_patient_header_last",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "((?:[;\\t|] *|,)\"?(?:(?:patient(?:(?:'s|’s)[ _.-]?|[ _.-])(?:name|id|birth[ _.-]?date|birth[ _.-]?name|sex|gender|address|dob|(?:first|last|given|family|middle|sur)[ _.-]?name)|patient(?:first|last|given|family|middle|sur)[ _.-]?name|patientgender|patientdob|birth[ _.-]?date|birth[ _.-]?time|date[ _.-]?of[ _.-]?birth|dob|patienten[ _.-]?(?:name|id|nummer|nr\\.?)|patient[ _.-]?(?:nummer|nr\\.?)|geburtsdatum|geburtstag|geb\\.?[ _.-]?datum|(?:name|vorname|nachname|telefon(?:nummer)?|adresse|anschrift|geburtsdatum)[ \\t]+de[rs][ \\t]+patient(?:en|in)|pat[ _.-]{0,2}nr\\.?|vers[ _.-]{0,2}nr\\.?|fall[ _.-]?(?:nr\\.?|nummer)|krankenversichertennummer|versichertennummer|versicherten[ _.-]?(?:nr\\.?|id)|kvnr|kvid|insurance[ _.-]?(?:number|no|id))|(?:patient|patientin|vorname|nachname|geburtsname|(?:first|last|given|family|middle|sur)[ _.-]?name))\"?)([ \\t]*\\n[^\\n]+(?:\\n[^\\n]+)*)",
+      "replacement": "{1}<patient>",
+      "description": "Delimited table header whose last cell is a patient column, followed by data rows: every following non-empty line.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "db_error_row",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b((?:Failing row contains|Fehlgeschlagene Zeile enthält)[ \\t]*|(?:Key|Schlüssel)[ \\t]*»?\\([^()\\n]*\\)[ \\t]*=[ \\t]*)(\\([^\\n]*)",
+      "replacement": "{1}<patient>",
+      "description": "PostgreSQL error DETAIL with row values (Failing row contains (...), Key (col)=(value), also German): the values to end of line, whatever the table.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "sql_parameters",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(\\[parameters:[ \\t]*|binding parameter[ \\t]*(?:\\[[0-9]+\\][ \\t]*as[ \\t]*\\[[A-Za-z_]*\\][ \\t]*-|\\([^()\\n]*\\)[ \\t]*<-)[ \\t]*)([^ \\t\\n][^\\n]*)",
+      "replacement": "{1}<patient>",
+      "description": "Bound SQL parameters (SQLAlchemy [parameters: ...], Hibernate binding parameter [1] as [VARCHAR] - [...] and (1:VARCHAR) <- [...]): the values to end of line, whatever the statement.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "patient_object",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(^|[^A-Za-z0-9])(patient(?:in)?[A-Za-z0-9_]{0,64}[ \\t]{0,8})([(\\[{][ \\t]*[A-Za-z_][A-Za-z0-9_]{0,64}[ \\t]*=[^\\n]*)",
+      "replacement": "{1}{2}<patient>",
+      "description": "toString of a patient object (Kotlin Patient(id=...), Java record Patient[id=...], Lombok PatientDto{id=...}, app_patient(...); at most 64 more word characters and 8 blanks before the bracket, so every start stays bounded): from the bracket to end of line.",
+      "patient_value_group": 3
+    },
+    {
+      "name": "birth_date_prose",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "((?:^|[^A-Za-z0-9])(?:geb\\.?|geboren)[ \\t]*(?:am[ \\t]+)?)([0-9]{1,2}\\.[ \\t]?[0-9]{1,2}\\.[ \\t]?[0-9]{2,4}|[0-9]{4}-[0-9]{2}-[0-9]{2})",
+      "replacement": "{1}<patient>",
+      "description": "Birth date in prose: geb. 12.08.1964, geboren am 12.08.1964 (also ISO dates): the date.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "birth_date_star",
+      "category": "patient",
+      "flags": [],
+      "pattern": "((?:\\(|,|[Gg]eb\\.|[A-Za-z])[ \\t]?\\*[ \\t]?)([0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{2,4})",
+      "replacement": "{1}<patient>",
+      "description": "Birth date as *12.08.1964 (one blank allowed on each side of the star) after (, a comma, Geb. or a letter (Max (* 12.08.1964), Muster, * 1.2.64, Geb. * 01.03.1980, Max Muster *01.03.1980): the date. Line-start bullets (* 17.11.2026), a star after a sentence dot (notes. * 17.11.2026) and ISO dates (*2026-11-17) stay.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "patient_label",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(^|[^A-Za-z0-9])((?:patient(?:(?:'s|’s)[ _.-]?|[ _.-])(?:name|id|birth[ _.-]?date|birth[ _.-]?name|sex|gender|address|dob|(?:first|last|given|family|middle|sur)[ _.-]?name)|patient(?:first|last|given|family|middle|sur)[ _.-]?name|patientgender|patientdob|birth[ _.-]?date|birth[ _.-]?time|date[ _.-]?of[ _.-]?birth|dob|patienten[ _.-]?(?:name|id|nummer|nr\\.?)|patient[ _.-]?(?:nummer|nr\\.?)|geburtsdatum|geburtstag|geb\\.?[ _.-]?datum|(?:name|vorname|nachname|telefon(?:nummer)?|adresse|anschrift|geburtsdatum)[ \\t]+de[rs][ \\t]+patient(?:en|in)|pat[ _.-]{0,2}nr\\.?|vers[ _.-]{0,2}nr\\.?|fall[ _.-]?(?:nr\\.?|nummer)|krankenversichertennummer|versichertennummer|versicherten[ _.-]?(?:nr\\.?|id)|kvnr|kvid|insurance[ _.-]?(?:number|no|id)))(\\\\{0,3}[\"']?[ \\t]*[=:>^][ \\t]*(?:\\n[ \\t]*){0,3}|[ \\t]+)([^ \\t\\n][^\\n]*)",
+      "replacement": "{1}{2}{3}<patient>",
+      "description": "Patient labels (patient_id, patient.name, Patient's Name, patientFirstName, birthDate, birthTime, date_of_birth, dob, Geburtsdatum, Geb.-Datum, Patienten-Nr., Pat.-Nr., Vers.-Nr., Fall-Nr., Versicherten-Nr., KVNR, KVID, insurance number, Name des Patienten, ...; any case, not glued to a letter or digit on the left) followed by =, :, >, ^ (key quote may be escaped; value may be up to three lines further down) or blanks: rest of the value line.",
+      "patient_value_group": 4
+    },
+    {
+      "name": "person_label",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(^|[^A-Za-z0-9])((?:patient|patientin|vorname|nachname|geburtsname|(?:first|last|given|family|middle|sur)[ _.-]?name))(\\\\{0,3}[\"']?[ \\t]*[=:][ \\t]*(?:\\n[ \\t]*){0,3})([^ \\t\\n][^\\n]*)",
+      "replacement": "{1}{2}{3}<patient>",
+      "description": "Patient, Patientin, Vorname, Nachname, Geburtsname, firstName/lastName/givenName/familyName/middle_name/surname followed by = or : (also as quoted, escaped JSON or dict key; value may be up to three lines further down): rest of the value line.",
+      "patient_value_group": 4
+    },
+    {
+      "name": "person_xml",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(<(?:[A-Za-z0-9_.-]+:)?(?:vorname|nachname|geburtsname|patientin|given|family)(?:[ \\t][^<>\\n]*)?>[ \\t]*(?:\\n[ \\t]*)?)([^ \\t\\n<][^<\\n]*)",
+      "replacement": "{1}<patient>",
+      "description": "XML elements <Vorname>, <Nachname>, <Geburtsname>, <Patientin> and the HL7 CDA name parts <given>, <family> (namespace prefix and attributes allowed, text may start on the next line): element text up to <.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "patient_xml",
+      "category": "patient",
+      "flags": [
+        "i"
+      ],
+      "pattern": "(<(?:[A-Za-z0-9_.-]+:)?patient(?:[ \\t][^<>\\n]*)?>[ \\t]*(?:\\n[ \\t]*)?)([^ \\t\\n<](?:[^<\\n]*[^ \\t\\n<])?)([ \\t]*(?:\\n[ \\t]*)?</(?:[A-Za-z0-9_.-]+:)?patient[ \\t]*>)",
+      "replacement": "{1}<patient>{3}",
+      "description": "XML element <Patient>...</Patient> (any case, namespace prefix and attributes allowed): its text. The closing tag is required, so the token <patient> itself never opens an element.",
+      "patient_value_group": 2
+    },
+    {
+      "name": "base64url_run",
+      "category": "secret",
+      "flags": [],
+      "pattern": "[A-Za-z0-9_-]{40,}",
+      "replacement": "<secret>",
+      "description": "base64url run of >= 40 chars; replaced only if it contains an uppercase letter, a lowercase letter and a digit (long identifiers survive).",
+      "condition": "upper_lower_digit"
+    },
+    {
+      "name": "hex_run",
+      "category": "secret",
+      "flags": [],
+      "pattern": "[0-9A-Fa-f]{32,}",
+      "replacement": "<secret>",
+      "description": "Hex run of >= 32 chars (git SHAs, hashes). UUIDs with dashes survive."
+    }
+  ],
+  "cases": [
+    {
+      "id": "email-basic",
+      "input": "Kontakt: max.mustermann+test@praxis-beispiel.de bitte",
+      "expected": "Kontakt: <email> bitte",
+      "patient_data": false
+    },
+    {
+      "id": "email-subdomain",
+      "input": "smtp sender noreply@mail.mr-development.de rejected",
+      "expected": "smtp sender <email> rejected",
+      "patient_data": false
+    },
+    {
+      "id": "ipv4-basic",
+      "input": "connect to 192.168.178.44:5432 failed",
+      "expected": "connect to <ip>:5432 failed",
+      "patient_data": false
+    },
+    {
+      "id": "ipv4-octet-over-255",
+      "input": "address 192.168.1.256 is not an ip",
+      "expected": "address 192.168.1.256 is not an ip",
+      "patient_data": false
+    },
+    {
+      "id": "version-three-parts",
+      "input": "PraxisZeit 1.24.3 (stable)",
+      "expected": "PraxisZeit 1.24.3 (stable)",
+      "patient_data": false
+    },
+    {
+      "id": "version-v-prefix",
+      "input": "PostgreSQL v18.6 and OpenSSL 3.5.9",
+      "expected": "PostgreSQL v18.6 and OpenSSL 3.5.9",
+      "patient_data": false
+    },
+    {
+      "id": "version-windows-build",
+      "input": "Windows 10.0.19045.5371 x64",
+      "expected": "Windows 10.0.19045.5371 x64",
+      "patient_data": false
+    },
+    {
+      "id": "version-v-four-parts",
+      "input": "setup v1.2.3.4 installed",
+      "expected": "setup v1.2.3.4 installed",
+      "patient_data": false
+    },
+    {
+      "id": "dicom-uid-survives",
+      "input": "SOPInstanceUID=1.2.840.10008.5.1.4.1.1.6.1 stored",
+      "expected": "SOPInstanceUID=1.2.840.10008.5.1.4.1.1.6.1 stored",
+      "patient_data": false
+    },
+    {
+      "id": "ipv6-loopback",
+      "input": "listening on [::1]:8000",
+      "expected": "listening on [<ip>]:8000",
+      "patient_data": false
+    },
+    {
+      "id": "ipv6-compressed",
+      "input": "peer fe80::1ff:fe23:4567:890a%eth0 up",
+      "expected": "peer <ip>%eth0 up",
+      "patient_data": false
+    },
+    {
+      "id": "ipv6-full",
+      "input": "client 2001:0db8:85a3:0000:0000:8a2e:0370:7334 accepted",
+      "expected": "client <ip> accepted",
+      "patient_data": false
+    },
+    {
+      "id": "ipv6-not-time-or-mac",
+      "input": "at 10:15:30 mac aa:bb:cc:dd:ee:ff Foo::Bar std::string",
+      "expected": "at 10:15:30 mac aa:bb:cc:dd:ee:ff Foo::Bar std::string",
+      "patient_data": false
+    },
+    {
+      "id": "kv-password",
+      "input": "db connect user=pz password=S3cr3t!x host=db",
+      "expected": "db connect user=pz password=<secret> host=db",
+      "patient_data": false
+    },
+    {
+      "id": "kv-query-string",
+      "input": "GET /api/x?token=abc123&license_id=PZ-0042;mode=1",
+      "expected": "GET /api/x?token=<secret>&license_id=<secret>;mode=1",
+      "patient_data": false
+    },
+    {
+      "id": "kv-prefixed-key-case",
+      "input": "DB_PASSWORD=hunter2 CLIENT_SECRET=\"zz\" ApiKey=k1",
+      "expected": "DB_PASSWORD=<secret> CLIENT_SECRET=\"<secret>\" ApiKey=<secret>",
+      "patient_data": false
+    },
+    {
+      "id": "json-secret",
+      "input": "{\"password\": \"hunter2\", \"user\": \"pz\", \"api_key\":\"k-1\"}",
+      "expected": "{\"password\": \"<secret>\", \"user\": \"pz\", \"api_key\":\"<secret>\"}",
+      "patient_data": false
+    },
+    {
+      "id": "authorization-header",
+      "input": "Authorization: Basic cHo6aHVudGVyMg==\nnext line",
+      "expected": "Authorization: <secret>\nnext line",
+      "patient_data": false
+    },
+    {
+      "id": "bearer-token",
+      "input": "request failed (Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig) 401",
+      "expected": "request failed (Bearer <secret>) 401",
+      "patient_data": false
+    },
+    {
+      "id": "url-credentials",
+      "input": "DATABASE_URL postgresql://praxiszeit:geheim@db:5432/pz",
+      "expected": "DATABASE_URL postgresql://<user>:<secret>@db:5432/pz",
+      "patient_data": false
+    },
+    {
+      "id": "hex-run-sha256",
+      "input": "checksum 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 ok",
+      "expected": "checksum <secret> ok",
+      "patient_data": false
+    },
+    {
+      "id": "hex-git-sha-is-secret",
+      "input": "built from commit 2d2992e1c0a4b5f6e7d8c9b0a1f2e3d4c5b6a7f8",
+      "expected": "built from commit <secret>",
+      "patient_data": false
+    },
+    {
+      "id": "hex-short-survives",
+      "input": "commit 2d2992e and id 7e05e52",
+      "expected": "commit 2d2992e and id 7e05e52",
+      "patient_data": false
+    },
+    {
+      "id": "uuid-survives",
+      "input": "install_id=550e8400-e29b-41d4-a716-446655440000 product=qm",
+      "expected": "install_id=550e8400-e29b-41d4-a716-446655440000 product=qm",
+      "patient_data": false
+    },
+    {
+      "id": "base64url-run",
+      "input": "session cookie dGhpcy1pcy1hLXNlY3JldC1zZXNzaW9uLXRva2VuX3gxMjM rotated",
+      "expected": "session cookie <secret> rotated",
+      "patient_data": false
+    },
+    {
+      "id": "long-identifier-survives",
+      "input": "in test_report_sanitize_vectors_roundtrip_is_stable_ok()",
+      "expected": "in test_report_sanitize_vectors_roundtrip_is_stable_ok()",
+      "patient_data": false
+    },
+    {
+      "id": "win-user-path",
+      "input": "Traceback File \"C:\\Users\\mmustermann\\AppData\\Local\\pz\\app.py\", line 3",
+      "expected": "Traceback File \"C:\\Users\\<user>\\AppData\\Local\\pz\\app.py\", line 3",
+      "patient_data": false
+    },
+    {
+      "id": "win-user-path-spaced",
+      "input": "log at C:\\Users\\Max Muster\\Documents\\x.log",
+      "expected": "log at C:\\Users\\<user>\\Documents\\x.log",
+      "patient_data": false
+    },
+    {
+      "id": "win-user-path-json-escaped",
+      "input": "{\"path\": \"c:\\\\users\\\\anna\\\\pz.db\"}",
+      "expected": "{\"path\": \"c:\\\\users\\\\<user>\\\\pz.db\"}",
+      "patient_data": false
+    },
+    {
+      "id": "unix-user-paths",
+      "input": "/home/manuel/.config/pz and /Users/anna/Library/Logs",
+      "expected": "/home/<user>/.config/pz and /Users/<user>/Library/Logs",
+      "patient_data": false
+    },
+    {
+      "id": "mixed-windows-unix-lines",
+      "input": "2026-11-17 10:00:01 open C:/Users/bob/pz.log\r\n2026-11-17 10:00:02 open /home/bob/pz.log\r\n",
+      "expected": "2026-11-17 10:00:01 open C:/Users/<user>/pz.log\n2026-11-17 10:00:02 open /home/<user>/pz.log\n",
+      "patient_data": false
+    },
+    {
+      "id": "gdt-block",
+      "input": "01380006310\r\n014810000254\r\n0123000477\r\n0193101Mustermann\r\n0123102Max\r\n017310301011970\r\n01031101\r\n0158315PRAXIS01\r\n",
+      "expected": "01380006310\n014810000254\n0123000<patient>\n0193101<patient>\n0123102<patient>\n0173103<patient>\n0103110<patient>\n0158315PRAXIS01\n",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-indented-line",
+      "input": "  0193101Özdemir",
+      "expected": "  0193101<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-inline-in-log",
+      "input": "2026-11-17 10:00 INFO recv: 0193101Mustermann 0123102Max",
+      "expected": "2026-11-17 10:00 INFO recv: 0193101<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-lookalike-numbers-survive",
+      "input": "epoch 1763101234 size 4563000 bytes",
+      "expected": "epoch 1763101234 size 4563000 bytes",
+      "patient_data": false
+    },
+    {
+      "id": "dicom-cstore-dump",
+      "input": "I: Received Store Request (MsgID 7, US)\n(0010,0010) PN [Mustermann^Max]  #  14, 1 PatientName\n(0010,0020) LO [4711]  #   4, 1 PatientID\n(0008,0060) CS [US]  #   2, 1 Modality",
+      "expected": "I: Received Store Request (MsgID 7, US)\n(0010,0010) <patient>\n(0010,0020) <patient>\n(0008,0060) CS [US]  #   2, 1 Modality",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-pydicom-dump",
+      "input": "(0010, 0030) Patient's Birth Date                DA: '19700101'",
+      "expected": "(0010, 0030) <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-keyword-kv",
+      "input": "C-STORE from SCU: PatientName=Mustermann^Max, Modality=US",
+      "expected": "C-STORE from SCU: PatientName=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-keyword-json",
+      "input": "{\"PatientID\": \"4711\", \"StudyDate\": \"20261117\"}",
+      "expected": "{\"PatientID\": <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-keyword-xml",
+      "input": "<PatientBirthDate>19700101</PatientBirthDate>",
+      "expected": "<PatientBirthDate><patient>",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-json-model",
+      "input": "\"00100010\": {\"vr\": \"PN\", \"Value\": [{\"Alphabetic\": \"Doe^John\"}]}",
+      "expected": "\"00100010\": {\"vr\": \"PN\", \"Value\": [{\"Alphabetic\": <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "patient-label-german",
+      "input": "Fehler beim Import: Geburtsdatum: 01.01.1970",
+      "expected": "Fehler beim Import: Geburtsdatum: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "patient-label-snake",
+      "input": "lookup patient_id=4711 failed",
+      "expected": "lookup patient_id=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-keyword-without-value-survives",
+      "input": "missing tag PatientName",
+      "expected": "missing tag PatientName",
+      "patient_data": false
+    },
+    {
+      "id": "already-masked",
+      "input": "user <email> from <ip> path /home/<user>/x C:\\Users\\<user>\\y token=<secret> Bearer <secret>\nAuthorization: <secret>\n0193101<patient>\n(0010,0010) <patient>\nPatientName: <patient>\ngeburtsdatum: <patient>",
+      "expected": "user <email> from <ip> path /home/<user>/x C:\\Users\\<user>\\y token=<secret> Bearer <secret>\nAuthorization: <secret>\n0193101<patient>\n(0010,0010) <patient>\nPatientName: <patient>\ngeburtsdatum: <patient>",
+      "patient_data": false
+    },
+    {
+      "id": "patient-field-with-email-value",
+      "input": "PatientName: max@example.org",
+      "expected": "PatientName: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "context-block",
+      "input": "Speichern schlägt fehl\n\n---- Kontext (automatisch) ----\nProdukt: PraxisZeit 1.24.3 (stable)\nSystem: linux/x86_64, Installationsart: docker\nZeit: 2026-11-17T10:00:00Z\nFehler: OperationalError at 10.0.0.5\nProtokoll (bereinigt, letzte N Zeilen):\nlogin admin@praxis.de from 10.0.0.7",
+      "expected": "Speichern schlägt fehl\n\n---- Kontext (automatisch) ----\nProdukt: PraxisZeit 1.24.3 (stable)\nSystem: linux/x86_64, Installationsart: docker\nZeit: 2026-11-17T10:00:00Z\nFehler: OperationalError at <ip>\nProtokoll (bereinigt, letzte N Zeilen):\nlogin <email> from <ip>",
+      "patient_data": false
+    },
+    {
+      "id": "dicom-json-pretty-lo",
+      "input": "\"00100020\": {\n  \"vr\": \"LO\",\n  \"Value\": [\n    \"4711\"\n  ]\n}",
+      "expected": "\"00100020\": {\n  \"vr\": \"LO\",\n  \"Value\": <patient>\n}",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-json-pretty-da",
+      "input": "\"00100030\": {\n  \"vr\": \"DA\",\n  \"Value\": [\n    \"19800301\"\n  ]\n}",
+      "expected": "\"00100030\": {\n  \"vr\": \"DA\",\n  \"Value\": <patient>\n}",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-json-pretty-pn",
+      "input": "\"00100010\": {\n  \"vr\": \"PN\",\n  \"Value\": [\n    {\n      \"Alphabetic\": \"Doe^John\"\n    }\n  ]\n}",
+      "expected": "\"00100010\": {\n  \"vr\": \"PN\",\n  \"Value\": [\n    {\n      \"Alphabetic\": <patient>\n    }\n  ]\n}",
+      "patient_data": true
+    },
+    {
+      "id": "orthanc-tag-object",
+      "input": "\"0010,0010\" : {\n  \"Name\" : \"PatientName\",\n  \"Type\" : \"String\",\n  \"Value\" : \"Doe^John\"\n}",
+      "expected": "\"0010,0010\" : {\n  \"Name\" : \"PatientName\",\n  \"Type\" : \"String\",\n  \"Value\" : <patient>\n}",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-tag-bare",
+      "input": "0010,0010 Doe^John",
+      "expected": "0010,0010 <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-tag-brackets",
+      "input": "[0010,0010] Doe^John",
+      "expected": "[0010,0010] <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-keyword-caret",
+      "input": "PatientName^Doe^John",
+      "expected": "PatientName^<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "keyword-json-camel-case",
+      "input": "{\"patientName\":\"Max Mustermann\",\"patientId\":\"4711\",\"birthDate\":\"1980-03-01\"}",
+      "expected": "{\"patientName\":<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "keyword-lowercase-colon",
+      "input": "patientname: Max Mustermann",
+      "expected": "patientname: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "keyword-uppercase",
+      "input": "PATIENTNAME=Max",
+      "expected": "PATIENTNAME=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "label-dotted",
+      "input": "patient.name=Mustermann",
+      "expected": "patient.name=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "label-dash-blank",
+      "input": "patient-id 4711",
+      "expected": "patient-id <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "label-typographic-apostrophe",
+      "input": "Patient’s Name: Doe",
+      "expected": "Patient’s Name: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "label-date-of-birth",
+      "input": "date_of_birth=1980-03-01 ok",
+      "expected": "date_of_birth=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "label-birthdate-only",
+      "input": "{\"birthDate\": \"1980-03-01\"}",
+      "expected": "{\"birthDate\": <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "value-on-next-line",
+      "input": "PatientName:\n  Mustermann^Max\nnext",
+      "expected": "PatientName:\n  <patient>\nnext",
+      "patient_data": true
+    },
+    {
+      "id": "prose-after-keyword-is-masked",
+      "input": "PatientID missing in request\ninvalid patient id in GDT file\nbirth date unknown",
+      "expected": "PatientID <patient>\ninvalid patient id <patient>\nbirth date <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-inline-json",
+      "input": "{\"line\":\"0193101Mustermann\"}",
+      "expected": "{\"line\":\"0193101<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-inline-csv",
+      "input": "csv,0193101Mustermann,x",
+      "expected": "csv,0193101<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-inline-insurance-number",
+      "input": "recv: 0193105A123456789",
+      "expected": "recv: 0193105<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-inline-numeric-length-checked",
+      "input": "recv: 0123000477 ok (01031101) 017310301011970",
+      "expected": "recv: 0123000<patient> ok (0103110<patient>) 0173103<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-line-zip-code",
+      "input": "0163112 80331\n0163113München",
+      "expected": "0163112<patient>\n0163113<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "lone-cr-normalized",
+      "input": "line1\rPatientName=Doe\r\nend",
+      "expected": "line1\nPatientName=<patient>\nend",
+      "patient_data": true
+    },
+    {
+      "id": "nbsp-separator",
+      "input": "PatientName Doe",
+      "expected": "PatientName <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "kv-secret-blanks-and-colon",
+      "input": "password = hunter2\npassword: hunter2",
+      "expected": "password = <secret>\npassword: <secret>",
+      "patient_data": false
+    },
+    {
+      "id": "secret-headers",
+      "input": "X-Api-Key: abcdef123\nCookie: session=abc; theme=dark",
+      "expected": "X-Api-Key: <secret>\nCookie: <secret>",
+      "patient_data": false
+    },
+    {
+      "id": "url-query-signature",
+      "input": "GET /dl?sig=abc123&key=xyz&lang=de",
+      "expected": "GET /dl?sig=<secret>&key=<secret>&lang=de",
+      "patient_data": false
+    },
+    {
+      "id": "email-non-ascii",
+      "input": "mail an jürgen.müller@praxis-müller.de. danke, müller@praxis.de",
+      "expected": "mail an <email>. danke, <email>",
+      "patient_data": false
+    },
+    {
+      "id": "win-user-path-spaced-quoted",
+      "input": "open \"C:\\Users\\Max Muster\" failed",
+      "expected": "open \"C:\\Users\\<user>\" failed",
+      "patient_data": false
+    },
+    {
+      "id": "win-user-path-spaced-unquoted-tradeoff",
+      "input": "profile C:\\Users\\Max Muster",
+      "expected": "profile C:\\Users\\<user> Muster",
+      "patient_data": false
+    },
+    {
+      "id": "second-pass-after-token",
+      "input": "commit 2d2992e1c0a4b5f6e7d8c9b0a1f2e3d4c5b6a7f8patient-id 4711",
+      "expected": "commit <secret>patient-id <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "keyword-value-after-blank-not-swallowed",
+      "input": "PatientID missing, PatientName Doe^John",
+      "expected": "PatientID <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "keyword-prose-value",
+      "input": "PatientName set to Doe^John",
+      "expected": "PatientName <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "label-prose-value",
+      "input": "patient name changed from Mustermann to Musterfrau",
+      "expected": "patient name <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-inline-postcode-city",
+      "input": "gdt: 023310680331 München\nrecv: 022310680331 Muenchen",
+      "expected": "gdt: 0233106<patient>\nrecv: 0223106<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-inline-numeric-blank",
+      "input": "recv: 0173103 01031980",
+      "expected": "recv: 0173103<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "secret-words-inside-words-survive",
+      "input": "Session: 3 open sessions\nprimary key: id, sort key: name\nmonkey=3 hotkey: F5\nOAuth: enabled\nauthor: Mustermann",
+      "expected": "Session: 3 open sessions\nprimary key: id, sort key: name\nmonkey=3 hotkey: F5\nOAuth: enabled\nauthor: Mustermann",
+      "patient_data": false
+    },
+    {
+      "id": "glued-keyword-underscore",
+      "input": "dcm_PatientName=Doe^John",
+      "expected": "dcm_PatientName=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "glued-label-underscore",
+      "input": "the_patient_name=Mustermann",
+      "expected": "the_patient_name=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "label-insurance-number",
+      "input": "Versicherten-Nr. A123456789\nKVNR: A123456789",
+      "expected": "Versicherten-Nr. <patient>\nKVNR: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "hex-glued-label-found",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaapatient-id 4711",
+      "expected": "<secret>patient-id <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-json-name-next-line",
+      "input": "\"00100010\": {\n  \"vr\": \"PN\",\n  \"Value\": [\n    {\n      \"Alphabetic\":\n        \"Doe^John\"\n    }\n  ]\n}",
+      "expected": "\"00100010\": {\n  \"vr\": \"PN\",\n  \"Value\": [\n    {\n      \"Alphabetic\":\n        <patient>\n    }\n  ]\n}",
+      "patient_data": true
+    },
+    {
+      "id": "orthanc-value-next-line",
+      "input": "\"0010,0010\" : {\n  \"Name\" : \"PatientName\",\n  \"Value\" : \n \"Doe^John\"\n}",
+      "expected": "\"0010,0010\" : {\n  \"Name\" : \"PatientName\",\n  \"Value\" : \n <patient>\n}",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-json-inline-binary",
+      "input": "\"00100020\": {\"vr\":\"LO\",\"InlineBinary\":\"NDcxMQ==\"}",
+      "expected": "\"00100020\": {\"vr\":\"LO\",\"InlineBinary\":<patient>}",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-xml-person-name",
+      "input": "<Alphabetic>\n<FamilyName>Doe</FamilyName>\n<GivenName>John</GivenName>\n</Alphabetic>",
+      "expected": "<Alphabetic>\n<FamilyName><patient></FamilyName>\n<GivenName><patient></GivenName>\n</Alphabetic>",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-xml-value-next-line",
+      "input": "<DicomAttribute tag=\"00100020\" vr=\"LO\" keyword=\"PatientID\">\n  <Value number=\"1\">4711</Value>",
+      "expected": "<DicomAttribute tag=\"00100020\" vr=\"LO\" keyword=\"PatientID\">\n  <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "person-labels-with-colon",
+      "input": "Patient: Max Mustermann\nVorname: Max\nNachname: Mustermann\nGeb.-Datum: 01.03.1980",
+      "expected": "Patient: <patient>\nVorname: <patient>\nNachname: <patient>\nGeb.-Datum: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "patient-name-parts",
+      "input": "patientFirstName=Max patientLastName=Mustermann",
+      "expected": "patientFirstName=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "patient-words-without-field-survive",
+      "input": "Patient list loaded\npatient_count=3",
+      "expected": "Patient list loaded\npatient_count=3",
+      "patient_data": false
+    },
+    {
+      "id": "raw-gate-secret-hides-gdt",
+      "input": "token=0193101Mustermann",
+      "expected": "token=<secret>",
+      "patient_data": true
+    },
+    {
+      "id": "raw-gate-secret-hides-dicom",
+      "input": "password=PatientName^Doe",
+      "expected": "password=<secret>",
+      "patient_data": true
+    },
+    {
+      "id": "raw-gate-email-hides-label",
+      "input": "Vorname:max@praxis.de",
+      "expected": "Vorname:<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "secret-key-suffixes",
+      "input": "SECRET_KEY=changeme123\nprivate_key=s3cr3tValue\naws_secret_access_key=wJalrXUtnFEMIK7MDENG\naccess_key=AKIAIOSFODNN7EXAMPLE\nsigning_key: abcdef\nsessionKey=abc123\nX-Signature: abc123\nX-Amz-Signature=abc123def\nPHPSESSID=abc123",
+      "expected": "SECRET_KEY=<secret>\nprivate_key=<secret>\naws_secret_access_key=<secret>\naccess_key=<secret>\nsigning_key: <secret>\nsessionKey=<secret>\nX-Signature: <secret>\nX-Amz-Signature=<secret>\nPHPSESSID=<secret>",
+      "patient_data": false
+    },
+    {
+      "id": "json-secret-key-suffixes-and-auth",
+      "input": "{\"secret_key\": \"changeme\", \"private_key\": \"abc\", \"auth\": \"dXNlcjpwYXNz\"}",
+      "expected": "{\"secret_key\": \"<secret>\", \"private_key\": \"<secret>\", \"auth\": \"<secret>\"}",
+      "patient_data": false
+    },
+    {
+      "id": "secret-key-lookalikes-survive",
+      "input": "primary key: id\nsort key: name\nhotkey: F5\nSession timeout=30\nauthor= Mustermann\nOAuth: enabled",
+      "expected": "primary key: id\nsort key: name\nhotkey: F5\nSession timeout=30\nauthor= Mustermann\nOAuth: enabled",
+      "patient_data": false
+    },
+    {
+      "id": "person-label-quoted-json",
+      "input": "{\"Vorname\":\"Max\",\"Nachname\":\"Mustermann\"}",
+      "expected": "{\"Vorname\":<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "person-label-json-spaced",
+      "input": "{\"patient\": \"Max Mustermann\"}\n\"Patient\" : \"Max\"",
+      "expected": "{\"patient\": <patient>\n\"Patient\" : <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "person-label-xml",
+      "input": "<Vorname>Max</Vorname>\n<Nachname>Mustermann</Nachname>",
+      "expected": "<Vorname><patient></Vorname>\n<Nachname><patient></Nachname>",
+      "patient_data": true
+    },
+    {
+      "id": "token-is-not-a-person-label",
+      "input": "0193101Doe\nnext line stays",
+      "expected": "0193101<patient>\nnext line stays",
+      "patient_data": true
+    },
+    {
+      "id": "person-words-without-separator-survive",
+      "input": "Vorname\nNachname fehlt\nPatienten: 3\npatients: []",
+      "expected": "Vorname\nNachname fehlt\nPatienten: 3\npatients: []",
+      "patient_data": false
+    },
+    {
+      "id": "gdt-city-length-prefix-mismatch-survives",
+      "input": "order 00031061234 shipped",
+      "expected": "order 00031061234 shipped",
+      "patient_data": false
+    },
+    {
+      "id": "gdt-inline-after-path-separator",
+      "input": "saved export/0193101Mustermann.txt and C:\\gdt\\0153101Muster.gdt",
+      "expected": "saved export/0193101<patient>.txt and C:\\gdt\\0153101<patient>.gdt",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-inline-path-spaced-segment",
+      "input": "open /exports/0233102Max Mustermann.txt failed",
+      "expected": "open /exports/0233102<patient>.txt failed",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-inline-path-then-prose",
+      "input": "file /0193101Mustermann and more",
+      "expected": "file /0193101<patient> and more",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-like-number-in-url-survives",
+      "input": "GET /api/items/1233104/ 200\nGET /api/items/1233104abc 200 and C:\\data\\1233101x.log\nid=1233104, ok",
+      "expected": "GET /api/items/1233104/ 200\nGET /api/items/1233104abc 200 and C:\\data\\1233101x.log\nid=1233104, ok",
+      "patient_data": false
+    },
+    {
+      "id": "patient-xml-element",
+      "input": "<Patient>Max Mustermann</Patient>\n<PATIENT>Erika</PATIENT>\n<patient>Max</patient>",
+      "expected": "<Patient><patient></Patient>\n<PATIENT><patient></PATIENT>\n<patient><patient></patient>",
+      "patient_data": true
+    },
+    {
+      "id": "patient-xml-element-ns-attr-multiline",
+      "input": "<ns:Patient lang=\"de\">\n  Max Mustermann\n</ns:Patient>",
+      "expected": "<ns:Patient lang=\"de\">\n  <patient>\n</ns:Patient>",
+      "patient_data": true
+    },
+    {
+      "id": "patient-token-is-not-an-xml-element",
+      "input": "Patient: <patient>\nPatientin <patient>\n<Patient></Patient>\n<patient>\n</patient>",
+      "expected": "Patient: <patient>\nPatientin <patient>\n<Patient></Patient>\n<patient>\n</patient>",
+      "patient_data": false
+    },
+    {
+      "id": "person-xml-ns-attr-next-line",
+      "input": "<Vorname >Max</Vorname>\n<ns:Nachname>Mustermann</ns:Nachname>\n<Geburtsname lang=\"de\">\nMeier\n</Geburtsname>\n<Vorname>\n</Vorname>",
+      "expected": "<Vorname ><patient></Vorname>\n<ns:Nachname><patient></ns:Nachname>\n<Geburtsname lang=\"de\">\n<patient>\n</Geburtsname>\n<Vorname>\n</Vorname>",
+      "patient_data": true
+    },
+    {
+      "id": "person-label-python-dict",
+      "input": "{'Vorname': 'Max', 'Nachname': 'Mustermann'}\n{'PatientName': 'Doe^John'}\n{'patient_id': 4711}",
+      "expected": "{'Vorname': <patient>\n{'PatientName': <patient>\n{'patient_id': <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "gdt-inline-path-utf8-length",
+      "input": "export /0163101Müller.txt and /0153101Müller.gdt",
+      "expected": "export /0163101<patient>.txt and /0153101<patient>.gdt",
+      "patient_data": true
+    },
+    {
+      "id": "patient-xml-trailing-blanks",
+      "input": "<patient>Max Mustermann   </patient>\n<Patient>\tErika\t</Patient>",
+      "expected": "<patient><patient>   </patient>\n<Patient>\t<patient>\t</Patient>",
+      "patient_data": true
+    },
+    {
+      "id": "dicom-tag-blank-run",
+      "input": "(0010,0010)      \n(0010,0020) =   4711",
+      "expected": "(0010,0010)      \n(0010,0020) =   <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "json-escaped-patient-fields",
+      "input": "{\"level\":\"error\",\"msg\":\"save failed\",\"body\":\"{\\\"patientName\\\":\\\"Max Mustermann\\\",\\\"birthDate\\\":\\\"1980-01-01\\\"}\"}",
+      "expected": "{\"level\":\"error\",\"msg\":\"save failed\",\"body\":\"{\\\"patientName\\\":<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "json-escaped-vorname",
+      "input": "{\"msg\":\"bad body\",\"body\":\"{\\\"vorname\\\":\\\"Max\\\",\\\"id\\\":7}\"}",
+      "expected": "{\"msg\":\"bad body\",\"body\":\"{\\\"vorname\\\":<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "json-escaped-dicom",
+      "input": "{\"req\":\"{\\\"00100010\\\":{\\\"vr\\\":\\\"PN\\\",\\\"Value\\\":[{\\\"Alphabetic\\\":\\\"Doe^John\\\"}]}}\"}",
+      "expected": "{\"req\":\"{\\\"00100010\\\":{\\\"vr\\\":\\\"PN\\\",\\\"Value\\\":[{\\\"Alphabetic\\\":<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "json-escaped-dicom-string-value",
+      "input": "{\"req\":\"{\\\"00100020\\\":{\\\"vr\\\":\\\"LO\\\",\\\"Value\\\":\\\"4711\\\"}}\"}",
+      "expected": "{\"req\":\"{\\\"00100020\\\":{\\\"vr\\\":\\\"LO\\\",\\\"Value\\\":<patient>}}\"}",
+      "patient_data": true
+    },
+    {
+      "id": "json-double-escaped-label",
+      "input": "\"outer\":\"{\\\\\\\"patient_id\\\\\\\":\\\\\\\"4711\\\\\\\"}\"",
+      "expected": "\"outer\":\"{\\\\\\\"patient_id\\\\\\\":<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "pg-failing-row",
+      "input": "ERROR:  null value in column \"kvnr\" violates not-null constraint\nDETAIL:  Failing row contains (4711, Mustermann, Max, 1960-01-01, A123456789, null).",
+      "expected": "ERROR:  null value in column \"kvnr\" violates not-null constraint\nDETAIL:  Failing row contains <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "pg-key-detail",
+      "input": "ERROR: duplicate key value violates unique constraint \"uq_kvnr\"\nDetail: Key (kvnr)=(A123456789) already exists.",
+      "expected": "ERROR: duplicate key value violates unique constraint \"uq_kvnr\"\nDetail: Key (kvnr)=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "pg-key-detail-german",
+      "input": "DETAIL:  Schlüssel »(kvnr)=(A123456789)« existiert bereits.",
+      "expected": "DETAIL:  Schlüssel »(kvnr)=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "sqlalchemy-positional-parameters",
+      "input": "[SQL: INSERT INTO patient (last_name, first_name, dob) VALUES (?, ?, ?)]\n[parameters: ('Mustermann', 'Max', '1960-01-01')]",
+      "expected": "[SQL: INSERT INTO patient (last_name, first_name, dob) VALUES (?, ?, ?)]\n[parameters: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "hibernate-binding-parameter",
+      "input": "TRACE o.h.t.d.s.BasicBinder - binding parameter [1] as [VARCHAR] - [Mustermann]",
+      "expected": "TRACE o.h.t.d.s.BasicBinder - binding parameter [1] as [VARCHAR] - <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "hibernate6-binding-parameter",
+      "input": "TRACE org.hibernate.orm.jdbc.bind - binding parameter (1:VARCHAR) <- [Mustermann]",
+      "expected": "TRACE org.hibernate.orm.jdbc.bind - binding parameter (1:VARCHAR) <- <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-patient-minified",
+      "input": "{\"resourceType\":\"Patient\",\"identifier\":[{\"system\":\"http://fhir.de/sid/gkv/kvid-10\",\"value\":\"A123456789\"}],\"name\":[{\"family\":\"Mustermann\",\"given\":[\"Max\"]}],\"gender\":\"male\",\"address\":[{\"city\":\"Berlin\",\"postalCode\":\"10115\"}]}",
+      "expected": "{\"resourceType\":\"Patient\"<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-patient-pretty",
+      "input": "{\n  \"resourceType\": \"Patient\",\n  \"identifier\": [ {\n    \"system\": \"http://fhir.de/sid/gkv/kvid-10\",\n    \"value\": \"A123456789\"\n  } ],\n  \"name\": [ {\n    \"family\": \"Mustermann\",\n    \"given\": [ \"Max\" ]\n  } ]\n}\n\nupload failed",
+      "expected": "{\n  \"resourceType\": \"Patient\"<patient>\n\nupload failed",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-patient-alphabetical",
+      "input": "{\"address\":[{\"city\":\"Berlin\",\"line\":[\"Hauptstr. 1\"]}],\"identifier\":[{\"system\":\"http://fhir.de/sid/gkv/kvid-10\",\"value\":\"A123456789\"}],\"name\":[{\"family\":\"Mustermann\",\"given\":[\"Max\"]}],\"resourceType\":\"Patient\"}",
+      "expected": "{\"address\":[{<patient>}],\"identifier\":[{\"system\":\"http://fhir.de/sid/gkv/kvid-10\",\"value\":<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-patient-xml",
+      "input": "<Patient xmlns=\"http://hl7.org/fhir\"><name><family value=\"Mustermann\"/></name></Patient>",
+      "expected": "<Patient xmlns=\"http://hl7.org/fhir\"><patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-first-last-name",
+      "input": "{\"firstName\":\"Max\",\"lastName\":\"Mustermann\",\"insuranceNumber\":\"A123456789\"}",
+      "expected": "{\"firstName\":<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-versicherten-id",
+      "input": "versichertenId: A123456789",
+      "expected": "versichertenId: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "ansi-structlog",
+      "input": "2026-11-17 [error    ] export failed \u001b[36mpatient_name\u001b[0m=\u001b[35mMax Mustermann\u001b[0m \u001b[36mbirth_date\u001b[0m=\u001b[35m1980-01-02\u001b[0m",
+      "expected": "2026-11-17 [error    ] export failed patient_name=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "ansi-tracing",
+      "input": "\u001b[2m2026-11-17T10:00:00Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[3mpatient_name\u001b[0m\u001b[2m=\u001b[0m\"Max Mustermann\" \u001b[3mdob\u001b[0m\u001b[2m=\u001b[0m1980-01-02",
+      "expected": "2026-11-17T10:00:00Z ERROR patient_name=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "ansi-geburtsdatum",
+      "input": "\u001b[36mGeburtsdatum\u001b[39m: 01.02.1980",
+      "expected": "Geburtsdatum: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "ansi-plain-log",
+      "input": "\u001b[32mINFO\u001b[0m sync done in 1.2 s \u001b]0;title\u001b\\ ok",
+      "expected": "INFO sync done in 1.2 s  ok",
+      "patient_data": false
+    },
+    {
+      "id": "patienten-nr-dot",
+      "input": "Export fehlgeschlagen, Patienten-Nr.: 4711",
+      "expected": "Export fehlgeschlagen, Patienten-Nr.: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "patienten-nr-dot-blank",
+      "input": "Patienten-Nr. 4711 nicht gefunden",
+      "expected": "Patienten-Nr. <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "patient-nr-dot",
+      "input": "Patient-Nr.: 4711",
+      "expected": "Patient-Nr.: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "patientnr-glued",
+      "input": "PatientNr=4711",
+      "expected": "PatientNr=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "pat-nr-abbrev",
+      "input": "Pat.-Nr.: 4711",
+      "expected": "Pat.-Nr.: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "vers-nr-abbrev",
+      "input": "Vers.-Nr. A123456789",
+      "expected": "Vers.-Nr. <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fall-nr",
+      "input": "Fall-Nr. 2026-0815 offen",
+      "expected": "Fall-Nr. <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "geb-date-prose",
+      "input": "Fehler bei Patientin Erika Mustermann, geb. 12.08.1964",
+      "expected": "Fehler bei Patientin Erika Mustermann, geb. <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "star-date-prose",
+      "input": "Mustermann, Max (*12.08.1964)",
+      "expected": "Mustermann, Max (*<patient>)",
+      "patient_data": true
+    },
+    {
+      "id": "geboren-am",
+      "input": "geboren am 1.2.1964 in Berlin",
+      "expected": "geboren am <patient> in Berlin",
+      "patient_data": true
+    },
+    {
+      "id": "tostring-kotlin",
+      "input": "IllegalStateException: cannot export Patient(id=4711, firstName=Max, lastName=Mustermann)",
+      "expected": "IllegalStateException: cannot export Patient<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "tostring-java-record",
+      "input": "Patient[id=4711, firstName=Max, lastName=Mustermann]",
+      "expected": "Patient<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "tostring-lombok",
+      "input": "PatientDto{id=4711, firstname='Max', lastname='Mustermann'}",
+      "expected": "PatientDto<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "name-des-patienten",
+      "input": "Name des Patienten: Max Mustermann",
+      "expected": "Name des Patienten: <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "label-empty-line",
+      "input": "Patient:\n\nMax Mustermann",
+      "expected": "Patient:\n\n<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "label-empty-line-crlf",
+      "input": "Geburtsdatum:\r\n\r\n01.01.1980",
+      "expected": "Geburtsdatum:\n\n<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "cda-record-target",
+      "input": "<recordTarget><patientRole><id extension=\"4711\"/><addr><streetAddressLine>Hauptstr. 1</streetAddressLine></addr><patient><name><given>Max</given><family>Mustermann</family></name><administrativeGenderCode code=\"M\"/><birthTime value=\"19800101\"/></patient></patientRole></recordTarget>",
+      "expected": "<recordTarget><patient>",
+      "patient_data": true
+    },
+    {
+      "id": "cda-pretty",
+      "input": "<recordTarget>\n  <patientRole>\n    <id extension=\"4711\"/>\n    <patient>\n      <name>\n        <given>Max</given>\n        <family>Mustermann</family>\n      </name>\n    </patient>\n  </patientRole>\n</recordTarget>\n\n<author>ok</author>",
+      "expected": "<recordTarget>\n  <patient>\n\n<author>ok</author>",
+      "patient_data": true
+    },
+    {
+      "id": "cda-given-family",
+      "input": "<name><given>Max</given><family>Mustermann</family></name>",
+      "expected": "<name><given><patient></given><family><patient></family></name>",
+      "patient_data": true
+    },
+    {
+      "id": "cda-birth-time",
+      "input": "<birthTime value=\"19800101\"/>",
+      "expected": "<birthTime <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "hl7-pid",
+      "input": "MSH|^~\\&|PVS|PRAXIS|||20261117||ADT^A08|1|P|2.5\nPID|1||4711^^^PVS||Mustermann^Max||19800101|M\nPV1|1|O",
+      "expected": "MSH|^~\\&|PVS|PRAXIS|||20261117||ADT^A08|1|P|2.5\nPID|<patient>\nPV1|1|O",
+      "patient_data": true
+    },
+    {
+      "id": "csv-semicolon",
+      "input": "Vorname;Nachname;Geburtsdatum;KVNR\nMax;Mustermann;01.01.1980;A123456789\nErika;Muster;02.02.1970;B1\n\nimport done",
+      "expected": "Vorname<patient>\n\nimport done",
+      "patient_data": true
+    },
+    {
+      "id": "csv-tab",
+      "input": "id\tfirst_name\tlast_name\n1\tMax\tMustermann",
+      "expected": "id\tfirst_name<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "csv-comma-last-column",
+      "input": "id,dob\n1,1980-01-01",
+      "expected": "id,dob<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "csv-pipe",
+      "input": "| Nachname | Status |\n| Mustermann | offen |",
+      "expected": "| Nachname<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "csv-prose-comma-blank",
+      "input": "Vorname, Nachname und Status werden geprüft",
+      "expected": "Vorname, Nachname und Status werden geprüft",
+      "patient_data": false
+    },
+    {
+      "id": "csv-sql-columns",
+      "input": "SELECT id, first_name, last_name FROM staff",
+      "expected": "SELECT id, first_name, last_name FROM staff",
+      "patient_data": false
+    },
+    {
+      "id": "ansi-osc-multiline-not-stripped",
+      "input": "\u001b]0;PatientName=Doe^John\n0193101Mustermann\n\u0007",
+      "expected": " ]0;PatientName=<patient>\n0193101<patient>\n\u0007",
+      "patient_data": true
+    },
+    {
+      "id": "ansi-osc-hides-field",
+      "input": "\u001b]0;PatientName=Doe^John\u0007 export ok",
+      "expected": " export ok",
+      "patient_data": true
+    },
+    {
+      "id": "ansi-osc-too-long",
+      "input": "\u001b]8;;xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx PatientName=Doe\u001b\\",
+      "expected": " ]8;;xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx PatientName=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "ansi-csi-huge-params",
+      "input": "\u001b[1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;mPatientName=Doe",
+      "expected": " PatientName=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "ansi-split-keyword",
+      "input": "Pat\u001b[0mientName=Doe",
+      "expected": "PatientName=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "ansi-esc-final-byte-label",
+      "input": "\u001b[PatientName=Doe",
+      "expected": "atientName=Doe",
+      "patient_data": true
+    },
+    {
+      "id": "ansi-esc-param-final-byte-label",
+      "input": "\u001b[0PatientID=4711",
+      "expected": "atientID=4711",
+      "patient_data": true
+    },
+    {
+      "id": "ansi-osc-then-label",
+      "input": "\u001b]0;x\u0007PatientName=Doe",
+      "expected": "PatientName=<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-xml-bundle-patient",
+      "input": "<Bundle xmlns=\"http://hl7.org/fhir\"><entry><resource><Patient><identifier><system value=\"http://fhir.de/sid/gkv/kvid-10\"/><value value=\"A123456789\"/></identifier><name><family value=\"Mustermann\"/><given value=\"Max\"/></name></Patient></resource></entry></Bundle>",
+      "expected": "<Bundle xmlns=\"http://hl7.org/fhir\"><entry><resource><Patient><identifier><patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-xml-kvid-pretty",
+      "input": "<identifier>\n  <system value=\"http://fhir.de/sid/gkv/kvid-10\"/>\n  <value value=\"A123456789\"/>\n</identifier>",
+      "expected": "<identifier>\n  <system value=\"http://fhir.de/sid/gkv/kvid-10\"/>\n  <value value=\"<patient>\"/>\n</identifier>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-xml-name-attributes",
+      "input": "<name><family value=\"Mustermann\"/><given value=\"Max\"/></name>",
+      "expected": "<name><family value=\"<patient>\"/><given value=\"<patient>\"/></name>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-kvid-value-before-system",
+      "input": "{\"identifier\":[{\"value\":\"A123456789\",\"system\":\"http://fhir.de/sid/gkv/kvid-10\"}]}",
+      "expected": "{\"identifier\":[{\"value\":<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-resource-type-next-line",
+      "input": "{\"resourceType\":\n  \"Patient\", \"id\": \"1\", \"gender\": \"male\"}",
+      "expected": "{\"resourceType\":\n  \"Patient\"<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "star-date-after-comma",
+      "input": "Muster, *1.2.64",
+      "expected": "Muster, *<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fp-bullet-iso-date",
+      "input": " * 2026-01-01 initial version",
+      "expected": " * 2026-01-01 initial version",
+      "patient_data": false
+    },
+    {
+      "id": "fp-changelog-star-date",
+      "input": "* 2026-11-17: deployed release 1.4",
+      "expected": "* 2026-11-17: deployed release 1.4",
+      "patient_data": false
+    },
+    {
+      "id": "fp-build-star-date",
+      "input": "Build *2026-11-17",
+      "expected": "Build *2026-11-17",
+      "patient_data": false
+    },
+    {
+      "id": "tostring-underscore-identifier",
+      "input": "Patient_record(id=4711, firstName=Max)",
+      "expected": "Patient_record<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fp-patient-underscore-run",
+      "input": "patient_patient_patient_count=3 ok",
+      "expected": "patient_patient_patient_count=3 ok",
+      "patient_data": false
+    },
+    {
+      "id": "fhir-xml-namespace-alone",
+      "input": "<Patient xmlns=\"http://hl7.org/fhir\">",
+      "expected": "<Patient xmlns=\"http://hl7.org/fhir\"><patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-xml-namespace-attrs",
+      "input": "<Patient xmlns=\"http://hl7.org/fhir\" id=\"p1\">\n  <name><family value=\"Mustermann\"/></name>\n</Patient>",
+      "expected": "<Patient xmlns=\"http://hl7.org/fhir\" id=\"p1\"><patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fhir-xml-bundle-comment-first",
+      "input": "<entry><resource><Patient><!-- KBV --><meta><profile value=\"x\"/></meta><identifier><value value=\"A123456789\"/></identifier></Patient>",
+      "expected": "<entry><resource><Patient><!-- KBV --><meta><patient>",
+      "patient_data": true
+    },
+    {
+      "id": "birth-star-comma-blank",
+      "input": "Mustermann, Max, * 12.08.1964",
+      "expected": "Mustermann, Max, * <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "birth-star-after-name",
+      "input": "Max Mustermann *12.08.1964",
+      "expected": "Max Mustermann *<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "birth-star-paren-blank",
+      "input": "Mustermann Max (* 12.08.1964)",
+      "expected": "Mustermann Max (* <patient>)",
+      "patient_data": true
+    },
+    {
+      "id": "birth-star-geb",
+      "input": "Geb. * 01.03.1980",
+      "expected": "Geb. * <patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fp-bullet-german-date",
+      "input": "* 17.11.2026 Release ausgeliefert",
+      "expected": "* 17.11.2026 Release ausgeliefert",
+      "patient_data": false
+    },
+    {
+      "id": "tostring-snake-prefix",
+      "input": "app_patient(id=1, name=Max)",
+      "expected": "app_patient<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "tostring-prefixed-class",
+      "input": "record_Patient(id=1, firstname=Max)",
+      "expected": "record_Patient<patient>",
+      "patient_data": true
+    },
+    {
+      "id": "fp-star-after-sentence-dot",
+      "input": "Siehe Notes. * 17.11.2026 ausgeliefert",
+      "expected": "Siehe Notes. * 17.11.2026 ausgeliefert",
+      "patient_data": false
+    },
+    {
+      "id": "birth-star-geb-glued",
+      "input": "Mustermann, Erika, geb.*01.03.1980",
+      "expected": "Mustermann, Erika, geb.*<patient>",
+      "patient_data": true
+    }
+  ]
+}
