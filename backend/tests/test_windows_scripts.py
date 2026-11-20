@@ -469,3 +469,6 @@ def test_environment_log_has_no_account_name_or_sid():
     assert "$id.User" not in body
     assert "Administrator (erhoeht): $admin" in body
     assert "$id.IsSystem" in body
+    # Die Beschriftung darf die Konto-Regel (pz_account_label) nicht
+    # ausloesen, sonst wird der Wert zu <user> (Re-Review Welle D).
+    assert "Konto:" not in body and "Benutzer:" not in body
