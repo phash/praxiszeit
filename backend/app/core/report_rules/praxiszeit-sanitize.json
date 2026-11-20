@@ -8,8 +8,8 @@
       "flags": [
         "i"
       ],
-      "pattern": "\\b(user|username|user_name|login)([ \\t]*=[ \\t]*)[^ \\t\\n,;]+",
-      "replacement": "{1}{2}<user>",
+      "pattern": "\\b(user|username|user_name|login)([ \\t]*=[ \\t]*)[^\\n]*?([ \\t]+[A-Za-z_]+=|[,;\\n]|$)",
+      "replacement": "{1}{2}<user>{3}",
       "description": "Login/user name assignments (user=anna.schmidt) in auth log lines."
     },
     {
@@ -18,7 +18,7 @@
       "flags": [
         "i"
       ],
-      "pattern": "\\b(full_name|display_name|employee_name|employee|name)([ \\t]*[=:][ \\t]*)([^ \\t\\n\"\\'<][^\\n]*)",
+      "pattern": "\\b(full_name|display_name|employee_name|employee|name)([ \\t]*[=:][ \\t]*)(\"(?:[^\"\\\\\\n]|\\\\.)*\"|\\'(?:[^\\'\\\\\\n]|\\\\.)*\\'|[^ \\t\\n<][^\\n]*)",
       "replacement": "{1}{2}<user>",
       "description": "Person name fields (full_name=..., name: ...): the rest of the line."
     },
@@ -98,6 +98,24 @@
       "id": "pz-full-name-line",
       "input": "2026-11-18 08:20:00 ERROR app.routers.time_entries: update failed full_name=Sarah Klein username=s.klein",
       "expected": "2026-11-18 08:20:00 ERROR app.routers.time_entries: update failed full_name=<user>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-auth-username-with-space",
+      "input": "2026-11-18 08:30:00 INFO praxiszeit.security: AUTH login_success user=anna schmidt reason=ok ip=192.168.178.20",
+      "expected": "2026-11-18 08:30:00 INFO praxiszeit.security: AUTH login_success user=<user> reason=ok ip=<ip>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-auth-username-with-space-eol",
+      "input": "2026-11-18 08:31:00 INFO praxiszeit.security: AUTH logout user=anna schmidt",
+      "expected": "2026-11-18 08:31:00 INFO praxiszeit.security: AUTH logout user=<user>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-full-name-quoted",
+      "input": "2026-11-18 08:32:00 ERROR app.routers.admin_users: update failed full_name='Sarah Klein' display_name=\"Sarah Klein\" id=7",
+      "expected": "2026-11-18 08:32:00 ERROR app.routers.admin_users: update failed full_name=<user> display_name=<user> id=7",
       "patient_data": false
     },
     {
