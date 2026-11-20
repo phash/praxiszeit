@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.error_log import ErrorLog
+from app.services.error_log_service import _scope_to_tenant
 
 MAX_EXTRACT_LINES = 200
 TAIL_BYTES = 256 * 1024
@@ -47,10 +48,11 @@ def tail_lines(path: Path, max_lines: int = MAX_EXTRACT_LINES, max_bytes: int = 
     return [_cut(l) for l in lines[-max_lines:]]
 
 
-def error_log_lines(db: Session, tenant_id: UUID, limit: int = 20) -> list[str]:
+def error_log_lines(db: Session, tenant_id: UUID | None, limit: int = 20) -> list[str]:
+    # Same scope as the Fehler-Monitoring list: tenant id = own + NULL-tenant
+    # infrastructure rows (F-026 in addition to RLS), None (on-prem) = no filter.
     rows = (
-        db.query(ErrorLog)
-        .filter(ErrorLog.tenant_id == tenant_id)  # F-026 (additional to RLS)
+        _scope_to_tenant(db.query(ErrorLog), tenant_id)
         .order_by(ErrorLog.last_seen.desc())
         .limit(limit)
         .all()
@@ -75,7 +77,7 @@ def native_log_dir() -> Path | None:
     return p if p.is_dir() else None
 
 
-def build_log_extract(db: Session, tenant_id: UUID, log_dir: Path | None) -> list[str]:
+def build_log_extract(db: Session, tenant_id: UUID | None, log_dir: Path | None) -> list[str]:
     out = [ERROR_HEADER] + error_log_lines(db, tenant_id)
     if log_dir is None:
         return out[:MAX_EXTRACT_LINES]

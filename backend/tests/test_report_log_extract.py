@@ -106,6 +106,20 @@ def test_error_log_lines_are_tenant_scoped_and_newest_first(db, default_tenant):
     assert not any("foreign" in l for l in lines)
 
 
+def test_error_log_lines_use_list_scope_null_tenant_and_onprem(db, default_tenant):
+    """Same scope as the Fehler-Monitoring list: tenant id = own + NULL-tenant
+    rows (DBErrorHandler), None (on-prem) = no filter."""
+    _add(db, TENANT, 1, message="own")
+    _add(db, None, 2, message="infra")
+    _add(db, OTHER, 3, message="foreign")
+    saas = error_log_lines(db, TENANT)
+    assert any(l.endswith("own") for l in saas) and any(l.endswith("infra") for l in saas)
+    assert not any("foreign" in l for l in saas)
+    onprem = error_log_lines(db, None)
+    assert len(onprem) == 3
+    assert any(l.endswith("infra") for l in build_log_extract(db, None, None))
+
+
 def test_error_log_lines_naive_last_seen_and_missing_fields(db, default_tenant):
     db.add(ErrorLog(tenant_id=TENANT, level="warning", logger="a", message="m",
                     fingerprint="f", count=1, last_seen=datetime(2026, 1, 2, 3, 4, 5)))

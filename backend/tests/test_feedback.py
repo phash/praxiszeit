@@ -270,6 +270,41 @@ def test_send_forwards_exactly_previewed_title_and_description(admin_client, mon
     assert REPORT_KEY not in resp.text
 
 
+def test_send_round_trip_long_title_with_email_is_byte_identical(admin_client, monkeypatch):
+    """PZ-R9: preview -> send with the returned strings -> outbound byte-identical.
+    The preview schema caps the title at 200 (brief), so a 250-char title is
+    422; the round trip uses the longest accepted title (200 chars + e-mail)."""
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
+    long_title = "Fehler bei anna.schmidt@example.org " + "x" * 250
+    too_long = admin_client.post("/api/feedback/preview",
+                                 json={**BASE_PREVIEW, "title": long_title[:250]})
+    assert too_long.status_code == 422
+    preview = admin_client.post("/api/feedback/preview", json={
+        **BASE_PREVIEW, "title": long_title[:200],
+        "text": "Kontakt anna.schmidt@example.org, Ä ö ü ß – „Zitat“ " + "z" * 3900}).json()
+    assert "anna.schmidt@example.org" not in preview["title"]
+    assert "anna.schmidt@example.org" not in preview["description"]
+    resp = _send(admin_client, _send_body(preview))
+    assert resp.status_code == 200, resp.text
+    sent = rec.fields()
+    assert sent["title"].encode() == preview["title"].encode()
+    assert sent["description"].encode() == preview["description"].encode()
+
+
+def test_send_drops_error_fingerprint_for_non_admin(employee_client, monkeypatch):
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
+    body = {"kind": "bug", "title": "T", "description": "D", "error_fingerprint": "a" * 64}
+    assert _send(employee_client, body).status_code == 200
+    assert "error_fingerprint" not in rec.fields(0)
+
+
+def test_send_keeps_error_fingerprint_for_admin(admin_client, monkeypatch):
+    rec = _patch_post(monkeypatch, response=httpx.Response(201, json={"id": "x"}))
+    body = {"kind": "crash", "title": "T", "description": "D", "error_fingerprint": "a" * 64}
+    assert _send(admin_client, body).status_code == 200
+    assert rec.fields()["error_fingerprint"] == "a" * 64
+
+
 def test_send_maps_upstream_failure_to_502_with_status(admin_client, monkeypatch):
     _patch_post(monkeypatch, response=httpx.Response(429, json={"detail": "slow down"}))
     resp = _send(admin_client, {"kind": "bug", "title": "T", "description": "D"})

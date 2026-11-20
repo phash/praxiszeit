@@ -130,11 +130,11 @@ def preview_feedback(
     now = datetime.now(timezone.utc)
     server = collect_server_fields()
 
+    # Gleicher Sichtbereich wie die Liste „Fehler-Monitoring“
+    # (routers/error_logs.py): on-prem ohne Filter, SaaS eigener Mandant + NULL.
+    scope = current_user.tenant_id if is_saas() else None
     error = None
     if payload.error_log_id is not None:
-        # Gleicher Sichtbereich wie die Liste „Fehler-Monitoring“
-        # (routers/error_logs.py): on-prem ohne Filter, SaaS eigener Mandant.
-        scope = current_user.tenant_id if is_saas() else None
         try:
             error = resolve_error_context(
                 db, scope, error_log_id=payload.error_log_id, server_error=None, now=now)
@@ -147,7 +147,7 @@ def preview_feedback(
             db, current_user.tenant_id, error_log_id=None, server_error=hint, now=now)
 
     log_lines = (
-        build_log_extract(db, current_user.tenant_id, native_log_dir())
+        build_log_extract(db, scope, native_log_dir())
         if payload.include_log else None
     )
     built = build_preview(
@@ -198,6 +198,8 @@ def send_feedback(
     except ValidationError as exc:
         raise RequestValidationError(exc.errors(include_url=False))
     _forbid_admin_only(current_user, crash=body.kind == "crash")
+    # PZ-R9: Fingerprints stammen nur aus admin-only Fehlerkontexten.
+    fingerprint = body.error_fingerprint if _is_admin(current_user) else None
 
     server = collect_server_fields()
     transport = report_client.current_transport()
@@ -213,7 +215,7 @@ def send_feedback(
         transport=transport, kind=body.kind, title=title, description=description,
         severity=body.severity,
         contact_email=str(body.contact_email) if body.contact_email else None,
-        error_fingerprint=body.error_fingerprint, server=server,
+        error_fingerprint=fingerprint, server=server,
     )
     result = report_client.send_report(fields, file_part)
     if not result.ok:
