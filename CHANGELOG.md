@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### ✨ Neu: Problem melden (#557, Protokoll mrd-report-1)
+
+- **Fenster „Problem melden“** (Hilfe → „Fehler melden / Feedback“) für alle: Art „Fehler“ oder „Feedback“, Titel, Beschreibung, optional Bildschirmfoto (PNG/JPEG bis 5 MB) und Rückmelde-E-Mail. **„Vorschau“** zeigt genau den Text, der gesendet wird; PraxisZeit bereinigt ihn vorher einmal über den ganzen Text (E-Mail- und IP-Adressen, Kennwörter und Schlüssel, Namen in Protokollzeilen, Notizen und Begründungen aus Zeiteinträgen). Nach dem Senden erscheinen die Nummer der Meldung und „Bekannte Probleme ansehen“. Scheitert das Senden: „Senden fehlgeschlagen – als Datei speichern?“ — die Eingaben bleiben erhalten, kein automatischer Neuversuch; „Als Datei speichern“ geht auch ohne Internet.
+- **Für Admins:** „An Entwickler schicken“ an roten Serverfehler-Meldungen und je Eintrag im Fehler-Monitoring (Art „Absturz“, Titel und Fehlerdaten vorausgefüllt); „Protokollauszug anhängen (bereinigt)“ hängt die letzten Fehler-Monitoring-Einträge und nativ die letzten Zeilen von `logs/praxiszeit.log`/`logs/service-stderr.log` an (höchstens 200 Zeilen).
+- **Neuer Meldeweg** `POST https://report.mr-development.de/v1/reports`, ersatzweise einmal `praxiszeit.mr-development.de` nur bei DNS- oder TLS-Fehler; höchstens 15 s. Aktiv nur mit Meldeschlüssel: `[feedback] report_key` (nativ) bzw. `FEEDBACK_REPORT_KEY` (Docker). Ohne Schlüssel bleibt der bisherige Meldeweg. Der Schlüssel erscheint nie in Logs, Vorschau oder gespeicherten Dateien. **Firewall ausgehend:** `report.mr-development.de:443`, ersatzweise und für Updates `praxiszeit.mr-development.de:443`.
+- **Windows-Einrichtungs-Assistent:** Scheitert Installation oder Update, zeigt die letzte Seite eine Vorschau mit dem bereinigten Setup-Protokoll sowie „An Entwickler schicken“ und „Als Datei speichern“; ohne eingebauten Schlüssel einen Hinweis, die Datei per E-Mail zu schicken.
+- `/api/feedback/` ist von der Lizenz-Schreibsperre ausgenommen (melden geht auch bei abgelaufener Lizenz). Die Meldung trägt eine Installations-ID (in der Datenbank, übersteht Updates).
+
 ## [1.24.3] - 2026-11-16
 
 ### 🐛 Behoben (Windows-Server-Update 2026-11-16: PraxisZeit blieb nach dem Update gestoppt)

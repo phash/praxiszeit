@@ -577,3 +577,14 @@ PraxisZeit prüft die Grenzen des Arbeitszeitgesetzes:
 ### Ich habe mein Passwort vergessen.
 
 1. Wenden Sie sich an Ihre Verwaltung. Sie setzt Ihr Passwort zurück.
+
+<a id="problem-melden"></a>
+### Problem melden: Wie schicke ich einen Fehler oder einen Vorschlag an die Entwickler?
+
+Klicken Sie unten links in der Seitenleiste auf `Hilfe` und dann unten in der Hilfe auf `Fehler melden / Feedback`. Es öffnet sich das Fenster **Problem melden**.
+
+1. Wählen Sie die Art: **Fehler**, wenn etwas nicht so funktioniert wie erwartet, oder **Feedback** für Vorschläge und Wünsche.
+2. Geben Sie einen **Titel** und eine **Beschreibung** ein: Was haben Sie getan, was ist passiert, was hätten Sie erwartet? Ein Bildschirmfoto und eine Rückmelde-E-Mail sind freiwillig. **Bitte keine Namen von Mitarbeitenden oder Notizen aus Zeiteinträgen eintragen.**
+3. Klicken Sie auf `Vorschau`. Sie sehen genau den Text, der übertragen wird; PraxisZeit hat ihn vorher bereinigt (zum Beispiel E-Mail-Adressen unkenntlich gemacht). Mit `Zurück` ändern Sie Ihre Angaben.
+4. Klicken Sie auf `Senden`. Nach dem Senden zeigt PraxisZeit eine **Nummer** der Meldung. Notieren Sie sie, wenn Sie später nachfragen möchten. Der Link `Bekannte Probleme ansehen` zeigt bereits gemeldete Probleme; die Seite verlangt eine Anmeldung auf praxiszeit.mr-development.de.
+5. **Ohne Internet oder wenn das Senden scheitert** („Senden fehlgeschlagen – als Datei speichern?“): Klicken Sie auf `Als Datei speichern` und geben Sie die Datei Ihrer Verwaltung. Ihre Eingaben bleiben im Fenster erhalten.

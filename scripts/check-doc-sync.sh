@@ -1457,6 +1457,26 @@ group_dsgvo_art17() {
   need docs/handbuch/HANDBUCH-ADMIN.md '**Anonymisieren**'
 }
 
+# Problem melden (mrd-report-1, #557): die zitierten Beschriftungen stehen im
+# Code, beide Handbücher und beide Kurzanleitungen nennen „Problem melden",
+# die Installationsanleitungen den ausgehenden Port des Meldewegs.
+group_report() {
+  need_code "An Entwickler schicken"
+  need_code "Als Datei speichern"
+  need_code "Protokollauszug anhängen (bereinigt)"
+  need_code "Bekannte Probleme ansehen"
+  local f
+  for f in docs/handbuch/HANDBUCH-MITARBEITER.md docs/handbuch/HANDBUCH-ADMIN.md \
+           docs/handbuch/CHEATSHEET-MITARBEITER.md docs/handbuch/CHEATSHEET-ADMIN.md; do
+    need "$f" "Problem melden"
+  done
+  for f in docs/INSTALLATION.md docs/INSTALL-NATIVE.md docs/INSTALL-DOCKER.md; do
+    need "$f" "report.mr-development.de:443"
+  done
+  need docs/NATIVE-BETRIEB.md "report_key"
+  need docs/INSTALL-DOCKER.md "FEEDBACK_REPORT_KEY"
+}
+
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---
 
 run_group() {

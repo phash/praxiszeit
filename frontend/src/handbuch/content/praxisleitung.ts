@@ -2757,6 +2757,7 @@ export const praxisleitung: Handbook = {
             ['Häkchen („Als behoben markieren“)', 'setzt den Fehler auf „Behoben“'],
             ['durchgestrichenes Auge („Ignorieren“)', 'blendet einen offenen Fehler aus der Liste „Offen“ aus'],
             ['Warndreieck („Wieder öffnen“)', 'setzt einen behobenen oder ignorierten Fehler zurück auf „Offen“'],
+            ['Papierflieger („An Entwickler schicken“)', 'öffnet **Problem melden** mit diesem Fehler, siehe [Problem melden](#pl-problem-melden)'],
             ['Papierkorb („Löschen“)', 'entfernt den Eintrag nach Rückfrage'],
             ['Pfeil', 'klappt Stack Trace und GitHub-Issue auf'],
           ],
@@ -2765,13 +2766,33 @@ export const praxisleitung: Handbook = {
           kind: 'tip',
           tone: 'info',
           text:
-            '**Was tun bei Fehlern?** Lesen Sie die Meldung, prüfen Sie die Häufigkeit und notieren Sie bei wiederkehrenden Fehlern Zeitstempel und Meldung. Wenden Sie sich an Ihren IT-Support oder melden Sie den Fehler als GitHub-Issue: Im aufgeklappten Eintrag öffnet [[Issue auf GitHub erstellen]] ein vorbereitetes Issue; die Adresse eines bestehenden Issues können Sie dort eintragen und speichern.',
+            '**Was tun bei Fehlern?** Lesen Sie die Meldung, prüfen Sie die Häufigkeit und notieren Sie bei wiederkehrenden Fehlern Zeitstempel und Meldung. Schicken Sie den Fehler mit **An Entwickler schicken** an die Entwickler ([Problem melden](#pl-problem-melden)), wenden Sie sich an Ihren IT-Support oder melden Sie ihn als GitHub-Issue: Im aufgeklappten Eintrag öffnet [[Issue auf GitHub erstellen]] ein vorbereitetes Issue; die Adresse eines bestehenden Issues können Sie dort eintragen und speichern.',
         },
         {
           kind: 'tip',
           tone: 'warn',
           text:
             '**Datenschutz (Art. 28 DSGVO):** Fehlermeldungen können personenbezogene Daten enthalten. Prüfen Sie vor der Übertragung zu GitHub, ob der Stack Trace sensible Angaben enthält; GitHub ist als Auftragsverarbeiter einzustufen. Die Seite weist im aufgeklappten Eintrag selbst darauf hin.',
+        },
+        {
+          kind: 'task',
+          id: 'pl-problem-melden',
+          title: 'Problem melden: Wie schicke ich einen Fehler an die Entwickler?',
+          intro: 'Fehler und Vorschläge melden Sie über [[Hilfe]] → [[Fehler melden / Feedback]]. Es öffnet sich das Fenster **Problem melden** mit den Arten **Fehler** und **Feedback**, wie im [Mitarbeiter-Handbuch](handbuch:mitarbeitende#problem-melden) beschrieben. Als Admin haben Sie zwei weitere Wege und können einen bereinigten Protokollauszug mitschicken.',
+          steps: [
+            { n: 1, text: '**Aus der Fehlermeldung:** Scheitert eine Aktion mit einem Serverfehler, trägt die rote Meldung den Knopf [[An Entwickler schicken]]. Er öffnet **Problem melden** mit Titel und Fehlerdaten schon ausgefüllt.' },
+            { n: 2, text: '**Aus dem Fehler-Monitoring:** Jede Karte hat das Symbol **An Entwickler schicken** (Papierflieger). Es meldet genau diesen Fehler.' },
+            { n: 3, text: '**Protokollauszug anhängen (bereinigt):** Das Häkchen ist voreingestellt. PraxisZeit hängt die letzten Einträge des Fehler-Monitorings und, bei einer Installation ohne Docker, die letzten Zeilen des Server-Protokolls an. Vorher macht PraxisZeit unkenntlich: **Namen in Protokollzeilen**, **Notizen und Begründungen aus Zeiteinträgen**, **E-Mail- und IP-Adressen** sowie **Kennwörter und Schlüssel**.' },
+            { n: 4, text: 'Klicken Sie auf [[Vorschau]]. Was dort steht, wird genau so übertragen. Prüfen Sie den Text; mit [[Zurück]] entfernen Sie das Häkchen oder ändern die Beschreibung. **Bitte keine Namen von Mitarbeitenden oder Notizen aus Zeiteinträgen eintragen.**' },
+            { n: 5, text: 'Klicken Sie auf [[Senden]]. Sie erhalten eine **Nummer** der Meldung und den Link [[Bekannte Probleme ansehen]] (Anmeldung auf praxiszeit.mr-development.de). Scheitert das Senden („Senden fehlgeschlagen – als Datei speichern?“), speichern Sie die Meldung mit [[Als Datei speichern]] und schicken die Datei per E-Mail an den Support. Ihre Eingaben bleiben dabei erhalten.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Installation und Update unter Windows:** Scheitert der Einrichtungs-Assistent, zeigt seine letzte Seite eine Vorschau der Meldung mit dem bereinigten Setup-Protokoll sowie [[An Entwickler schicken]] und [[Als Datei speichern]]. Fehlt der Knopf zum Senden, speichern Sie die Meldung als Datei und senden sie an die angezeigte E-Mail-Adresse. ' +
+            '**Firewall:** Zum Senden muss der Server ausgehend **report.mr-development.de** auf Port 443 erreichen; ersatzweise und für Updates **praxiszeit.mr-development.de** auf Port 443.',
         },
       ],
     },

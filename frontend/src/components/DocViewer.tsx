@@ -172,6 +172,13 @@ export function CheatsheetMitarbeiter() {
         <p className="text-sm text-gray-600">Profil → <strong>Passwort ändern</strong> → Ändern → Altes + Neues Passwort + Bestätigen → Speichern</p>
         <p className="text-sm text-gray-500 mt-1">Mind. 10 Zeichen, Groß- + Kleinbuchstabe + Ziffer.</p>
       </section>
+
+      {/* Problem melden (#557) */}
+      <section>
+        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">🐞 Problem melden</h3>
+        <p className="text-sm text-gray-600">Hilfe → <strong>Fehler melden / Feedback</strong> → „Fehler" oder „Feedback" → <strong>Vorschau</strong> (genau das wird gesendet) → <strong>Senden</strong>. Ohne Internet: <strong>Als Datei speichern</strong> und der Verwaltung geben.</p>
+        <p className="text-sm text-gray-500 mt-1">Keine Namen von Mitarbeitenden und keine Notizen aus Zeiteinträgen eintragen.</p>
+      </section>
     </div>
   );
 }
@@ -288,6 +295,13 @@ export function CheatsheetAdmin() {
           </tbody>
         </table>
         <p className="text-sm text-gray-500 mt-2">Mit Arbeitszeit-Blöcken rechnen die §3/§4-Sperren mit der <strong>angerechneten</strong> Zeit; zusätzlich (nie blockierend) Hinweise „laut Stempel": über die Lücke durchgestempelt ohne erfasste Pause (§4), Anwesenheit über 10 h am Tag bzw. 48 h in der Woche (§3).</p>
+      </section>
+
+      {/* Problem melden (#557) */}
+      <section>
+        <h3 className="text-base font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-3">🐞 Problem melden</h3>
+        <p className="text-sm text-gray-600">Hilfe → <strong>Fehler melden / Feedback</strong>; bei Serverfehlern und im Fehler-Monitoring zusätzlich <strong>An Entwickler schicken</strong>. <strong>Protokollauszug anhängen (bereinigt)</strong>: Namen, Notizen und Begründungen aus Zeiteinträgen, E-Mail- und IP-Adressen sowie Kennwörter werden unkenntlich gemacht. Vorschau = gesendeter Text; sonst <strong>Als Datei speichern</strong>.</p>
+        <p className="text-sm text-gray-500 mt-1">Firewall ausgehend: report.mr-development.de:443 (ersatzweise praxiszeit.mr-development.de:443).</p>
       </section>
     </div>
   );

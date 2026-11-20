@@ -214,7 +214,7 @@ Verdichteter Katalog (UC-Granularität, nicht jeder der 140 Endpoints einzeln). 
 | Betrieb | Fehler-Monitoring | 🔵 | `GET/PATCH/DELETE /api/admin/errors/...` |
 | Betrieb | Update-Status / Update-Check | 🔵 | `GET /api/admin/updates/status`, `POST /api/admin/updates/check` |
 | DSGVO | Eigener Datenexport (Art. 15/20) | 🟢 | `GET /api/auth/me/export`, `GET /api/me/data-export` |
-| Feedback | Bug/Feedback an pzweb melden | 🟢 | `POST /api/feedback/report` |
+| Feedback | „Problem melden“: Fehler/Feedback/Absturz an die Entwickler (Protokoll mrd-report-1, bereinigt; Vorschau = gesendeter Text) | 🟢 | `POST /api/feedback/preview`, `POST /api/feedback/send` |
 | SaaS-Billing | Usage/Billing/Rechnungen/Checkout/Portal | 🔵 | `…/api/tenant/usage`,`/billing`,`/invoices`, `POST /api/billing/checkout`,`/portal` |
 | SaaS-Lifecycle | Aussetzen/Löschen/Übertragen + Export + AVV | 🔵 | `…/api/tenant/suspend`,`/request-deletion`,`/transfer-ownership`,`/export`,`/avv` |
 | SaaS-Signup | Selbstregistrierung + E-Mail-Verifikation | ⚪ | `POST /api/public/signup`, `GET /api/public/verify-email`, `…/resend-verification` |

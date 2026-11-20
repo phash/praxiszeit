@@ -162,6 +162,11 @@ hostname -I
 sudo ufw allow 80/tcp
 ```
 
+Ausgehend (optional, nur fuer „Problem melden" und Updates): HTTPS zu
+`report.mr-development.de:443` (Meldungen), ersatzweise und fuer Updates
+`praxiszeit.mr-development.de:443`. Ohne diese Freigabe laesst sich eine Meldung
+in PraxisZeit nur „Als Datei speichern".
+
 ---
 
 ## Taeglicher Betrieb
