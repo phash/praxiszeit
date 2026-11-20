@@ -67,6 +67,24 @@
       "pattern": "([?&][A-Za-z0-9_.\\[\\]-]{1,64}=)[^ \\t\\n&#\"]+",
       "replacement": "{1}<text>",
       "description": "URL query parameter values."
+    },
+    {
+      "name": "pz_windows_sid",
+      "category": "person",
+      "flags": [],
+      "pattern": "\\bS-1-(?:5-21|12-1)(?:-[0-9]+)+",
+      "replacement": "<secret>",
+      "description": "Windows account SIDs (S-1-5-21-..., Azure AD S-1-12-1-...) in setup/update logs; well-known SIDs (S-1-5-18) stay."
+    },
+    {
+      "name": "pz_account_label",
+      "category": "person",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b(Benutzer|User|Konto)([ \\t]*:[ \\t]*)[^ \\t\\n(<](?:[^ \\t\\n(]|[ \\t]+[^ \\t\\n(])*",
+      "replacement": "{1}{2}<user>",
+      "description": "Account name after Benutzer:/User:/Konto: (Windows DOMAIN\\\\name in setup logs) up to an opening parenthesis or the line end."
     }
   ],
   "cases": [
@@ -188,6 +206,30 @@
       "id": "pz-practice-name",
       "input": "praxis_name = Praxis Dr. Weber",
       "expected": "praxis_name = <user>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-windows-account-line",
+      "input": "[2026-11-18 08:15:02] [INFO]   Benutzer: PRAXIS-PC\\Anna Schmidt (S-1-5-21-3623811015-3361044348-30300820-1001), Administrator (erhoeht): True",
+      "expected": "[2026-11-18 08:15:02] [INFO]   Benutzer: <user> (<secret>), Administrator (erhoeht): True",
+      "patient_data": false
+    },
+    {
+      "id": "pz-windows-account-eol",
+      "input": "User: CONTOSO\\a.weber\nKonto:  Lisa Braun",
+      "expected": "User: <user>\nKonto:  <user>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-windows-sid-bare",
+      "input": "Dienstkonto S-1-5-21-1004336348-1177238915-682003330-512 fehlt, Azure S-1-12-1-111-222-333-444",
+      "expected": "Dienstkonto <secret> fehlt, Azure <secret>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-windows-account-untouched",
+      "input": "  Administrator (erhoeht): True, Systemkonto S-1-5-18",
+      "expected": "  Administrator (erhoeht): True, Systemkonto S-1-5-18",
       "patient_data": false
     }
   ]

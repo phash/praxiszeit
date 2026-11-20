@@ -27,4 +27,4 @@ def test_pz_rules_keep_shared_guarantees(case):
 
 
 def test_pz_rules_file_ships_inside_app_package():
-    assert PZ_RULES_PATH.is_relative_to(Path(app.__file__).parent) and len(PZ_RULES) == 7
+    assert PZ_RULES_PATH.is_relative_to(Path(app.__file__).parent) and len(PZ_RULES) == 9
