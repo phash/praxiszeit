@@ -25,6 +25,11 @@
     <DebugType>embedded</DebugType>
   </PropertyGroup>
 
+  <!-- Meldeschluessel (mrd-report-1, #557): leer = nur "Als Datei speichern". -->
+  <ItemGroup>
+    <AssemblyMetadata Include="MrdReportKey" Value="$(MrdReportKey)" />
+  </ItemGroup>
+
   <ItemGroup>
     <Folder Include="Models\" />
     <AvaloniaResource Include="Assets\**" />

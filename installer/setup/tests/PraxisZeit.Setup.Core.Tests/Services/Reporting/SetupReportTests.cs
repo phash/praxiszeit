@@ -125,4 +125,18 @@ public class SetupReportTests
         SetupReport.FileName(new DateTime(2026, 11, 20, 9, 5, 0))
             .Should().Be("praxiszeit-setup-meldung-20261120-0905.txt");
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Preview_ShowsTitleDescriptionFieldsAndNeverTheKey(bool withKey)
+    {
+        var report = SetupReport.Build(Input(["09:40:02 FEHLER: robocopy exit=8"]));
+        var text = report.ToPreviewText(withKey);
+
+        text.Should().StartWith("Titel: " + report.Title).And.Contain(report.Description);
+        text.Should().Contain("component: setup").And.Contain("install_id: " + InstallId);
+        text.Should().NotContain("mrk_praxiszeit_test");
+        text.Contains("mrk_praxiszeit_… (nicht angezeigt)").Should().Be(withKey);
+    }
 }

@@ -51,6 +51,31 @@ public class ReportInstallIdTests : IDisposable
         IsUuidV4(ReportInstallId.GetOrCreate(_dir)).Should().BeTrue();
     }
 
+    [Fact]
+    public void SymlinkedFile_IsNeverWrittenThrough()
+    {
+        var victim = Path.Combine(_dir, "victim.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(IdFile)!);
+        File.WriteAllText(victim, "original");
+        File.CreateSymbolicLink(IdFile, victim);
+
+        IsUuidV4(ReportInstallId.GetOrCreate(_dir)).Should().BeTrue();
+
+        File.ReadAllText(victim).Should().Be("original");
+    }
+
+    [Fact]
+    public void SymlinkedFolder_IsAvoided()
+    {
+        var victimDir = Path.Combine(_dir, "victim");
+        Directory.CreateDirectory(victimDir);
+        Directory.CreateSymbolicLink(Path.Combine(_dir, "PraxisZeit"), victimDir);
+
+        IsUuidV4(ReportInstallId.GetOrCreate(_dir)).Should().BeTrue();
+
+        Directory.EnumerateFileSystemEntries(victimDir).Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData(null, null)]
     [InlineData("", null)]

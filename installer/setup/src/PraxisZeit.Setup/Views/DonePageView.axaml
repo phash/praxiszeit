@@ -113,6 +113,48 @@
             </StackPanel>
         </Border>
 
+        <!-- Problem melden (#557): nur nach einem Fehler -->
+        <Border IsVisible="{Binding ShowReportActions}"
+                Classes="card"
+                HorizontalAlignment="Center"
+                MaxWidth="640"
+                Padding="24,18">
+            <StackPanel Spacing="12">
+                <TextBlock Text="Problem melden"
+                           FontSize="16" FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                <Expander Header="Vorschau der Meldung">
+                    <TextBox Text="{Binding ReportPreviewText, Mode=OneWay}"
+                             IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                             MinHeight="160" MaxHeight="280"
+                             FontFamily="Consolas,Menlo,monospace" FontSize="12"/>
+                </Expander>
+                <TextBlock Text="{Binding NoKeyHintText}"
+                           IsVisible="{Binding ShowNoKeyHint}"
+                           TextWrapping="Wrap" FontSize="13"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button Content="An Entwickler schicken"
+                            IsVisible="{Binding HasReportKey}"
+                            Command="{Binding SendReportCommand}"/>
+                    <Button Content="Als Datei speichern"
+                            Command="{Binding SaveReportCommand}"/>
+                </StackPanel>
+                <TextBlock Text="{Binding ReportStatus}"
+                           IsVisible="{Binding ReportStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           TextWrapping="Wrap" FontSize="13"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock Text="{Binding ReportDetail}"
+                           IsVisible="{Binding ReportDetail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           TextWrapping="Wrap" FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                <Button Content="Bekannte Probleme ansehen"
+                        IsVisible="{Binding ReportSent}"
+                        Command="{Binding OpenBoardCommand}"
+                        HorizontalAlignment="Left"/>
+            </StackPanel>
+        </Border>
+
     </StackPanel>
     </ScrollViewer>
 

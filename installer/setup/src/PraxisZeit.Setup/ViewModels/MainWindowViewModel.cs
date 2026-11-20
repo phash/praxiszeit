@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using PraxisZeit.Setup.Core.Models;
 using PraxisZeit.Setup.Core.Platform;
 using PraxisZeit.Setup.Core.Services;
+using PraxisZeit.Setup.Core.Services.Reporting;
 
 namespace PraxisZeit.Setup.ViewModels;
 
@@ -359,6 +360,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
               + " und logs\\service-stderr.log im Installationsverzeichnis."
               + (keepsInstall ? " Ob vor diesem Lauf eine neue Datenbank-Sicherung entstand, steht im Protokoll; vorhandene Sicherungen liegen unter data\\backups. Brach das Update bei der Sicherung ab, läuft PraxisZeit unverändert weiter." : string.Empty)
               + (_welcome.Mode.KeepsExistingInstallation() ? " Bitte keine Neuinstallation in diesen Ordner — das Setup erneut starten, es bietet dann „Reparieren“ an und behält Konfiguration und Daten." : string.Empty);
+        // Problem melden (#557): bei einem Fehler die bereinigte Meldung mit dem
+        // Ende des Setup-Protokolls vorbereiten (Senden nur auf Klick).
+        if (!success)
+        {
+            PrepareFailureReport(setupLog.FilePath);
+        }
+
         var browserUrl = _ports.HttpsPort == 443
             ? "https://localhost/"
             : $"https://localhost:{_ports.HttpsPort}/";
@@ -387,6 +395,34 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _progress.CanGoNext = true;
         RaiseShellChanged();
     }
+
+    private void PrepareFailureReport(string? logPath)
+    {
+        try
+        {
+            var report = SetupReport.Build(new SetupReportInput(
+                AppVersion: _welcome.TargetVersion,
+                Os: System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+                InstallMode: ModeLabel(_welcome.Mode),
+                Headline: _done.Headline,
+                Summary: _done.Summary,
+                LogLines: SetupLogTail.Read(logPath),
+                UtcNow: DateTime.UtcNow,
+                InstallId: ReportInstallId.GetOrCreate()));
+            _done.PrepareReport(report, ReportKey.Value);
+        }
+        catch
+        {
+            // Die Meldung ist ein Zusatz; ihr Fehlen darf die Done-Page nicht stören.
+        }
+    }
+
+    private static string ModeLabel(InstallMode mode) => mode switch
+    {
+        InstallMode.Update => "Update",
+        InstallMode.Repair => "Reparatur",
+        _ => "Neuinstallation",
+    };
 
     [SupportedOSPlatform("windows")]
     private Task<bool> RunUpdateOnWindowsAsync(string installDir, string payloadDir, IProgress<RunnerEvent> sink) =>
