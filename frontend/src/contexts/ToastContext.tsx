@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
+import { useReportStore } from '../stores/reportStore';
+import { useAuthStore } from '../stores/authStore';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -25,12 +27,22 @@ function generateToastId(): string {
   return `toast-${Date.now()}-${_fallbackToastCounter}`;
 }
 
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface Toast {
   id: string;
   type: ToastType;
   message: string;
   duration?: number;
+  action?: ToastAction;
 }
+
+/** #557: Aktions-Toast nach einem Serverfehler bleibt länger stehen (bewusste Ausnahme vom Default). */
+const SERVER_ERROR_ACTION_DURATION = 15000;
+const SERVER_ERROR_ACTION_LABEL = 'An Entwickler schicken';
 
 interface ToastContextType {
   showToast: (type: ToastType, message: string, duration?: number) => void;
@@ -71,11 +83,11 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
     error: 8000,
   };
 
-  const showToast = useCallback(
-    (type: ToastType, message: string, duration?: number) => {
+  const pushToast = useCallback(
+    (type: ToastType, message: string, duration?: number, action?: (id: string) => ToastAction) => {
       const id = generateToastId();
       const resolvedDuration = duration ?? DEFAULT_DURATIONS[type];
-      const newToast: Toast = { id, type, message, duration: resolvedDuration };
+      const newToast: Toast = { id, type, message, duration: resolvedDuration, action: action?.(id) };
 
       setToasts((prev) => [...prev, newToast]);
 
@@ -86,13 +98,38 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
     [removeToast]
   );
 
+  const showToast = useCallback(
+    (type: ToastType, message: string, duration?: number) => {
+      pushToast(type, message, duration);
+    },
+    [pushToast]
+  );
+
   const success = useCallback((message: string, duration?: number) => {
     showToast('success', message, duration);
   }, [showToast]);
 
+  // #557: folgt der Fehler-Toast unmittelbar auf eine 5xx-Antwort, bekommen
+  // Admins die Aktion „An Entwickler schicken“ (Problemmeldung Art „crash“).
+  // Store-Zugriffe über getState(), damit der Provider-Wert stabil bleibt.
   const error = useCallback((message: string, duration?: number) => {
-    showToast('error', message, duration);
-  }, [showToast]);
+    const serverError = useReportStore.getState().takeRecentServerError();
+    const isAdmin = useAuthStore.getState().user?.role === 'admin';
+    if (!serverError || !isAdmin) {
+      pushToast('error', message, duration);
+      return;
+    }
+    pushToast('error', message, SERVER_ERROR_ACTION_DURATION, (id) => ({
+      label: SERVER_ERROR_ACTION_LABEL,
+      onClick: () => {
+        useReportStore.getState().openReport({
+          serverError,
+          initialTitle: `Serverfehler ${serverError.status} bei ${serverError.method} ${serverError.path}`,
+        });
+        removeToast(id);
+      },
+    }));
+  }, [pushToast, removeToast]);
 
   const info = useCallback((message: string, duration?: number) => {
     showToast('info', message, duration);
@@ -154,7 +191,18 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
             <div className="shrink-0 mt-0.5">
               {getIcon(toast.type)}
             </div>
-            <p className="flex-1 text-sm font-medium">{toast.message}</p>
+            <div className="flex-1">
+              <p className="text-sm font-medium">{toast.message}</p>
+              {toast.action && (
+                <button
+                  type="button"
+                  onClick={toast.action.onClick}
+                  className="mt-2 text-sm font-semibold underline hover:opacity-80 transition"
+                >
+                  {toast.action.label}
+                </button>
+              )}
+            </div>
             <button
               onClick={() => removeToast(toast.id)}
               className="shrink-0 text-current hover:opacity-70 transition"

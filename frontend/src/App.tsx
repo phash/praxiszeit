@@ -4,6 +4,7 @@ import { useAuthStore } from './stores/authStore';
 import { useSystemStore } from './stores/systemStore';
 import { useTypeColorsStore } from './stores/typeColorsStore';
 import { ToastProvider } from './contexts/ToastContext';
+import ReportDialogHost from './components/ReportDialogHost';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Verify from './pages/Verify';
@@ -178,6 +179,8 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </RouterAwareErrorBoundary>
+        {/* #557: Problemmeldung aus dem Fehler-Toast („An Entwickler schicken“) */}
+        <ReportDialogHost />
     </BrowserRouter>
     </ToastProvider>
   );
