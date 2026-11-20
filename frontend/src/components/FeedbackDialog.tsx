@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import DialogFocusTrap from './DialogFocusTrap';
 import { Bug, X } from 'lucide-react';
 import {
@@ -78,6 +78,13 @@ export default function FeedbackDialog({
   const [request, setRequest] = useState<FeedbackPreviewRequest | null>(null);
   const [result, setResult] = useState<FeedbackSendResult | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
+  // Doppelklick-Schutz: `busy` greift erst nach dem nächsten Rendern, die Ref sofort.
+  const inFlight = useRef(false);
+  // Vorschau/Fehlschlag: Hintergrundklick und Escape schließen nicht (Eingabe nie verwerfen).
+  // Ref, weil focus-trap seine Optionen beim Aktivieren übernimmt.
+  const lockedOpen = step === 'preview' || step === 'failed';
+  const lockedOpenRef = useRef(lockedOpen);
+  lockedOpenRef.current = lockedOpen;
 
   useEffect(() => {
     if (!screenshot) {
@@ -123,8 +130,9 @@ export default function FeedbackDialog({
   };
 
   const handlePreview = async () => {
-    if (!canPreview) return;
+    if (!canPreview || inFlight.current) return;
     const req = buildRequest();
+    inFlight.current = true;
     setBusy(true);
     setFormError(null);
     try {
@@ -132,25 +140,28 @@ export default function FeedbackDialog({
       setRequest(req);
       setPreview(p);
       setStep('preview');
-    } catch (error: any) {
+    } catch (error: unknown) {
       setFormError(getErrorMessage(error, 'Vorschau konnte nicht erstellt werden.'));
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
 
   const handleSend = async () => {
-    if (!preview || !request || busy) return;
+    if (!preview || !request || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setSendError(null);
     try {
       const r = await sendReport(preview, request, screenshot);
       setResult(r);
       setStep('done');
-    } catch (error: any) {
+    } catch (error: unknown) {
       setSendError(getErrorMessage(error, 'Die Meldung konnte nicht gesendet werden.'));
       setStep('failed');
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
@@ -172,13 +183,16 @@ export default function FeedbackDialog({
 
   return (
     <div
+      data-testid="feedback-backdrop"
       className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]"
-      onClick={onClose}
+      onClick={() => {
+        if (!lockedOpenRef.current) onClose();
+      }}
     >
       <DialogFocusTrap
         focusTrapOptions={{
           allowOutsideClick: true,
-          escapeDeactivates: true,
+          escapeDeactivates: () => !lockedOpenRef.current,
           onDeactivate: onClose,
         }}
       >

@@ -1,22 +1,48 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FeedbackPreview } from '../api/feedback';
 
-const { previewReport, sendReport, saveReportFile, authState } = vi.hoisted(() => ({
+const { previewReport, sendReport, saveReportFile, authState, trap } = vi.hoisted(() => ({
+  trap: { options: null as null | { escapeDeactivates?: boolean | ((e: KeyboardEvent) => boolean); onDeactivate?: () => void } },
   previewReport: vi.fn(),
   sendReport: vi.fn(),
   saveReportFile: vi.fn(),
   authState: { user: { id: 'u1', role: 'employee' } as { id: string; role: string } },
 }));
 
+// Fokusfalle als Durchreiche, die die Optionen festhält (Escape-Verhalten prüfbar).
+vi.mock('./DialogFocusTrap', () => ({
+  default: ({ children, focusTrapOptions }: { children: React.ReactNode; focusTrapOptions: typeof trap.options }) => {
+    trap.options = focusTrapOptions;
+    return children;
+  },
+}));
 vi.mock('../api/feedback', () => ({ previewReport, sendReport }));
 vi.mock('../utils/reportFile', () => ({ saveReportFile }));
 vi.mock('../stores/authStore', () => ({
   useAuthStore: (sel?: (s: typeof authState) => unknown) => (sel ? sel(authState) : authState),
 }));
 
+import type React from 'react';
 import FeedbackDialog from './FeedbackDialog';
+
+/** Escape so, wie focus-trap es auswertet: deaktiviert nur, wenn escapeDeactivates zustimmt. */
+function pressEscape() {
+  const opt = trap.options?.escapeDeactivates;
+  const ev = new KeyboardEvent('keydown', { key: 'Escape' });
+  const deactivates = typeof opt === 'function' ? opt(ev) : opt !== false;
+  if (deactivates) act(() => trap.options?.onDeactivate?.());
+}
+
+async function toFailed(user: ReturnType<typeof userEvent.setup>) {
+  previewReport.mockResolvedValue(preview());
+  sendReport.mockRejectedValue({ response: { status: 502, data: { detail: 'Meldeserver nicht erreichbar.' } } });
+  await fillAndPreview(user);
+  await screen.findByTestId('feedback-preview-description');
+  fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
+  await screen.findByText('Senden fehlgeschlagen – als Datei speichern?');
+}
 
 const SERVER_DESCRIPTION = 'Bereinigte Beschreibung\n\n--- Protokoll ---\nZeile <user>';
 
@@ -40,8 +66,9 @@ beforeEach(() => {
   sendReport.mockReset();
   saveReportFile.mockReset();
   authState.user = { id: 'u1', role: 'employee' };
-  (URL as any).createObjectURL = vi.fn(() => 'blob:thumb');
-  (URL as any).revokeObjectURL = vi.fn();
+  trap.options = null;
+  URL.createObjectURL = vi.fn(() => 'blob:thumb');
+  URL.revokeObjectURL = vi.fn();
 });
 
 afterEach(() => {
@@ -238,5 +265,95 @@ describe('FeedbackDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
     await waitFor(() => expect(sendReport).toHaveBeenCalled());
     expect(sendReport.mock.calls[0][2]).toBe(img);
+  });
+
+  it('escape and backdrop in failed step keep the dialog and preview text', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<FeedbackDialog onClose={onClose} />);
+    await toFailed(user);
+    pressEscape();
+    fireEvent.click(screen.getByTestId('feedback-backdrop'));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId('feedback-preview-description').textContent).toBe(SERVER_DESCRIPTION);
+  });
+
+  it('escape and backdrop in preview step keep the dialog', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    previewReport.mockResolvedValue(preview());
+    render(<FeedbackDialog onClose={onClose} />);
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    pressEscape();
+    fireEvent.click(screen.getByTestId('feedback-backdrop'));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId('feedback-preview-description')).toBeInTheDocument();
+  });
+
+  it('escape and backdrop in form step still close', () => {
+    const onClose = vi.fn();
+    render(<FeedbackDialog onClose={onClose} />);
+    fireEvent.click(screen.getByTestId('feedback-backdrop'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    pressEscape();
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('double click on Senden sends only once', async () => {
+    const user = userEvent.setup();
+    const p = preview();
+    previewReport.mockResolvedValue(p);
+    sendReport.mockResolvedValue({ status: 'received', ref: 'PZ-9', id: 'r', board_url: p.board_url });
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    const btn = screen.getByRole('button', { name: 'Senden' });
+    act(() => {
+      btn.click();
+      btn.click();
+    });
+    await screen.findByText('Danke! Ihre Meldung ist eingegangen: PZ-9.');
+    expect(sendReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('double click on Erneut senden sends only once', async () => {
+    const user = userEvent.setup();
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await toFailed(user);
+    sendReport.mockReset();
+    sendReport.mockRejectedValue({ response: { status: 502, data: { detail: 'wieder nicht' } } });
+    const btn = screen.getByRole('button', { name: 'Erneut senden' });
+    act(() => {
+      btn.click();
+      btn.click();
+    });
+    await screen.findByText('wieder nicht');
+    expect(sendReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('failed then Zurück keeps the form input', async () => {
+    const user = userEvent.setup();
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await toFailed(user);
+    fireEvent.click(screen.getByRole('button', { name: 'Zurück' }));
+    expect(screen.getByLabelText('Titel')).toHaveValue('Es hakt');
+    expect(screen.getByLabelText('Beschreibung')).toHaveValue('Beim Stempeln passiert X');
+  });
+
+  it.each([
+    [403, 'Nur für Administratoren.'],
+    [422, 'Titel ist zu lang'],
+  ])('preview error %i shows the message and keeps input', async (status, detail) => {
+    const user = userEvent.setup();
+    previewReport.mockRejectedValue({
+      response: { status, data: { detail: status === 422 ? [{ msg: detail }] : detail } },
+    });
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await fillAndPreview(user);
+    expect(await screen.findByText(detail)).toBeInTheDocument();
+    expect(screen.queryByTestId('feedback-preview-description')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Titel')).toHaveValue('Es hakt');
+    expect(screen.getByLabelText('Beschreibung')).toHaveValue('Beim Stempeln passiert X');
   });
 });
