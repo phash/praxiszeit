@@ -2814,6 +2814,9 @@ def uvicorn_start(config: dict):
     env["PYTHONUTF8"] = "1"  # Avoid cp1252 encoding errors on Windows
     # Native install: frontend lives at app/frontend/ (no dist/ subfolder)
     env["FRONTEND_DIR"] = str(APP_DIR / "frontend")
+    # #557: uvicorn laeuft mit cwd=BACKEND_DIR; das Problem-Melden-Log-Extract
+    # braucht den echten Logordner (BASE_DIR/logs), nicht "logs" relativ zum cwd.
+    env["REPORT_LOG_DIR"] = str(LOG_DIR)
     # Produktionsmodus als Vorgabe (API-Doku aus) — Ausnahmen siehe
     # native_environment.
     env["ENVIRONMENT"] = native_environment(env)
