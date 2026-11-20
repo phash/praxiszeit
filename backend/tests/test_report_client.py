@@ -458,3 +458,30 @@ def test_toml_feedback_section_maps_to_env():
     from app.config import _TOML_KEY_MAP
     assert _TOML_KEY_MAP[("feedback", "report_key")] == "FEEDBACK_REPORT_KEY"
     assert _TOML_KEY_MAP[("feedback", "report_base_url")] == "FEEDBACK_REPORT_BASE_URL"
+
+
+def test_send_honours_https_proxy_from_environment(monkeypatch):
+    """#557 D2: ein eigener Transport schaltet httpx' Umgebungs-Proxy ab
+    (``trust_env`` gilt nur ohne ``transport``). Praxisnetze mit Pflicht-Proxy
+    kämen sonst nicht mehr raus. Kein Netzaufruf: ``send`` bricht vorher ab."""
+    monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", KEY)
+    monkeypatch.setattr(settings, "FEEDBACK_REPORT_BASE_URL", "https://report.mr-development.de")
+    for name in ("HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.praxis.invalid:3128")
+    monkeypatch.setenv("https_proxy", "http://proxy.praxis.invalid:3128")
+    seen = []
+
+    class Probe(httpx.AsyncClient):
+        async def send(self, request, **kwargs):
+            seen.append(self._transport_for_url(request.url))
+            raise httpx.ReadTimeout("stop", request=request)
+
+    monkeypatch.setattr(report_client.httpx, "AsyncClient", Probe)
+    result = report_client.send_report(dict(FIELDS))
+
+    assert result.ok is False
+    assert len(seen) == 1
+    pool = getattr(seen[0], "_pool", None)
+    assert type(pool).__name__ == "AsyncHTTPProxy"
+    assert pool._proxy_url.host == b"proxy.praxis.invalid"

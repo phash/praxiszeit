@@ -134,9 +134,10 @@ def _should_fall_back(exc: httpx.HTTPError) -> bool:
     return isinstance(exc, httpx.ConnectError) and is_dns_or_tls_error(exc)
 
 
-def _transport() -> httpx.AsyncBaseTransport:
-    """Naht für Tests (``httpx.MockTransport``)."""
-    return httpx.AsyncHTTPTransport()
+def _transport() -> httpx.AsyncBaseTransport | None:
+    """Naht für Tests (``httpx.MockTransport``). Produktion: None — nur ohne eigenen
+    Transport wertet httpx ``HTTPS_PROXY``/``NO_PROXY`` aus (Praxisnetze mit Proxy)."""
+    return None
 
 
 def _targets() -> tuple[list[str], str] | None:
