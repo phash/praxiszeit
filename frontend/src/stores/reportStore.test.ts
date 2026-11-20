@@ -27,4 +27,11 @@ describe('reportStore', () => {
     useReportStore.getState().closeReport();
     expect(useReportStore.getState().request).toBeNull();
   });
+
+  it('F19: openReport does not replace an open report', () => {
+    const st = useReportStore.getState();
+    expect(st.openReport({ serverError: hint, initialTitle: 'a' })).toBe(true);
+    expect(st.openReport({ serverError: { ...hint, status: 503 }, initialTitle: 'b' })).toBe(false);
+    expect(useReportStore.getState().request?.initialTitle).toBe('a');
+  });
 });

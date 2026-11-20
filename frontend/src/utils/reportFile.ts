@@ -24,26 +24,36 @@ export function reportFileName(now: Date): string {
   return `praxiszeit-meldung-${date}-${time}.txt`;
 }
 
-export function formatReportFile(preview: FeedbackPreview, now: Date, screenshotName?: string): string {
+/** Neutraler Anhangname wie beim Senden (`/send` ersetzt den Dateinamen); der lokale Name verlässt den Rechner nie. */
+export function neutralScreenshotName(screenshot: { type: string }): string {
+  return screenshot.type === 'image/jpeg' ? 'screenshot.jpg' : 'screenshot.png';
+}
+
+export function formatReportFile(
+  preview: FeedbackPreview,
+  now: Date,
+  screenshot?: { type: string },
+): string {
   const lines = [
     'PraxisZeit – Problemmeldung (nicht gesendet)',
     `Erstellt: ${now.toISOString()}`,
     TARGETS[preview.transport] ?? TARGETS['mrd-report-1'],
   ];
   const keys = Object.keys(preview.fields)
-    .filter((k) => !SKIPPED_FIELDS.has(k) && !/credential/i.test(k))
+    .filter((k) => !SKIPPED_FIELDS.has(k) && !/credential|license/i.test(k))
     .sort();
   for (const key of keys) {
     lines.push(`${key}: ${preview.fields[key]}`);
   }
-  if (screenshotName) {
-    lines.push(`Anhang: ${screenshotName} (nicht in dieser Datei enthalten)`);
+  if (preview.license_note) lines.push(preview.license_note);
+  if (screenshot) {
+    lines.push(`Anhang: ${neutralScreenshotName(screenshot)} (nicht in dieser Datei enthalten)`);
   }
   lines.push('', `Titel: ${preview.title}`, '', preview.description);
   return lines.join('\n');
 }
 
-export function saveReportFile(preview: FeedbackPreview, screenshotName?: string): void {
+export function saveReportFile(preview: FeedbackPreview, screenshot?: { type: string }): void {
   const now = new Date();
-  downloadBlob(formatReportFile(preview, now, screenshotName), reportFileName(now), 'text/plain;charset=utf-8');
+  downloadBlob(formatReportFile(preview, now, screenshot), reportFileName(now), 'text/plain;charset=utf-8');
 }

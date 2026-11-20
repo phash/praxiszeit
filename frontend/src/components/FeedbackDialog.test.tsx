@@ -53,6 +53,7 @@ function preview(overrides: Partial<FeedbackPreview> = {}): FeedbackPreview {
     description: SERVER_DESCRIPTION,
     fields: { product: 'praxiszeit', app_version: '1.24.3', error_fingerprint: 'abc123' },
     credential_note: 'mrk_praxiszeit_… (nicht angezeigt)',
+    license_note: null,
     log_line_count: 1,
     truncated: false,
     board_url: 'https://praxiszeit.mr-development.de/app/bugs?product=praxiszeit',
@@ -355,5 +356,53 @@ describe('FeedbackDialog', () => {
     expect(screen.queryByTestId('feedback-preview-description')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Titel')).toHaveValue('Es hakt');
     expect(screen.getByLabelText('Beschreibung')).toHaveValue('Beim Stempeln passiert X');
+  });
+
+  it('F2: chosen screenshot stays visible and removable after Zurück', async () => {
+    const user = userEvent.setup();
+    previewReport.mockResolvedValue(preview());
+    sendReport.mockResolvedValue({ status: 'received', ref: 'PZ-2', id: 'r', board_url: 'x' });
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    const img = new File([new Uint8Array(10)], 'bild.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('Bildschirmfoto anhängen (optional)'), { target: { files: [img] } });
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    await user.click(screen.getByRole('button', { name: 'Zurück' }));
+    expect(screen.getByTestId('fb-shot-name').textContent).toContain('bild.png');
+    await user.click(screen.getByRole('button', { name: 'Entfernen' }));
+    expect(screen.queryByTestId('fb-shot-name')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Vorschau' }));
+    await screen.findByTestId('feedback-preview-description');
+    expect(screen.queryByAltText('Bildschirmfoto-Vorschau')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
+    await waitFor(() => expect(sendReport).toHaveBeenCalled());
+    expect(sendReport.mock.calls[0][2]).toBeUndefined();
+  });
+
+  it('F17: shows license note, never a license value', async () => {
+    const user = userEvent.setup();
+    previewReport.mockResolvedValue(
+      preview({
+        license_note: 'Lizenzkennung der Praxis (wird beim Senden ergänzt, nicht angezeigt)',
+        fields: { product: 'praxiszeit', license_id: 'CUST-4711' },
+      }),
+    );
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    expect(screen.getByText(/Lizenzkennung der Praxis/)).toBeInTheDocument();
+    expect(screen.queryByText('CUST-4711')).toBeNull();
+  });
+
+  it('F20: save passes the screenshot, not a file name string', async () => {
+    const user = userEvent.setup();
+    previewReport.mockResolvedValue(preview());
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    const img = new File([new Uint8Array(10)], 'Geheim_Name.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('Bildschirmfoto anhängen (optional)'), { target: { files: [img] } });
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    await user.click(screen.getByRole('button', { name: 'Als Datei speichern' }));
+    expect(saveReportFile.mock.calls[0][1]).not.toBe('Geheim_Name.png');
   });
 });

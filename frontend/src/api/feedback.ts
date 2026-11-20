@@ -33,6 +33,8 @@ export interface FeedbackPreview {
   description: string;
   fields: Record<string, string>;
   credential_note: string | null;
+  /** Hinweis, dass die Lizenzkennung beim Senden serverseitig ergänzt wird (nie ein Wert). */
+  license_note: string | null;
   log_line_count: number;
   truncated: boolean;
   board_url: string;

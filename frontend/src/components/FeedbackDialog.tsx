@@ -167,7 +167,7 @@ export default function FeedbackDialog({
   };
 
   const handleSave = () => {
-    if (preview) saveReportFile(preview, screenshot?.name);
+    if (preview) saveReportFile(preview, screenshot);
   };
 
   const backToForm = () => {
@@ -177,7 +177,7 @@ export default function FeedbackDialog({
 
   const fieldEntries = preview
     ? Object.entries(preview.fields)
-        .filter(([k]) => k !== 'title' && k !== 'description' && !/credential/i.test(k))
+        .filter(([k]) => k !== 'title' && k !== 'description' && !/credential|license/i.test(k))
         .sort(([a], [b]) => a.localeCompare(b))
     : [];
 
@@ -319,10 +319,25 @@ export default function FeedbackDialog({
                 <input
                   id="fb-shot"
                   type="file"
+                  key={screenshot ? 'has-file' : 'no-file'}
                   accept="image/png,image/jpeg"
                   onChange={(e) => handleScreenshot(e.target.files?.[0])}
                   className="w-full text-sm text-gray-700"
                 />
+                {screenshot && (
+                  <p className="text-sm text-gray-700 mt-1 flex items-center justify-between">
+                    <span data-testid="fb-shot-name" className="break-all">
+                      Angehängt: {screenshot.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleScreenshot(undefined)}
+                      className="text-red-600 hover:underline ml-2 shrink-0"
+                    >
+                      Entfernen
+                    </button>
+                  </p>
+                )}
                 {screenshotError && (
                   <p role="alert" className="text-sm text-red-600 mt-1">
                     {screenshotError}
@@ -399,6 +414,9 @@ export default function FeedbackDialog({
 
               {preview.credential_note && (
                 <p className="text-xs text-gray-600 mb-2">{preview.credential_note}</p>
+              )}
+              {preview.license_note && (
+                <p className="text-xs text-gray-600 mb-2">{preview.license_note}</p>
               )}
               {preview.contact_email_dropped && (
                 <p className="text-xs text-amber-700 mb-2">

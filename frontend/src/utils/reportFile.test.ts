@@ -19,6 +19,7 @@ function preview(overrides: Partial<FeedbackPreview> = {}): FeedbackPreview {
       kind: 'bug',
     },
     credential_note: 'mrk_praxiszeit_… (nicht angezeigt)',
+    license_note: null,
     log_line_count: 0,
     truncated: false,
     board_url: 'https://praxiszeit.mr-development.de/app/bugs?product=praxiszeit',
@@ -30,7 +31,7 @@ function preview(overrides: Partial<FeedbackPreview> = {}): FeedbackPreview {
 describe('reportFile', () => {
   it('formats header, fields, title and description', () => {
     const now = new Date('2026-11-20T09:05:00.000Z');
-    const text = formatReportFile(preview(), now, 'screenshot.png');
+    const text = formatReportFile(preview(), now, { type: 'image/png' });
     expect(text.split('\n')).toEqual([
       'PraxisZeit – Problemmeldung (nicht gesendet)',
       `Erstellt: ${now.toISOString()}`,
@@ -72,5 +73,21 @@ describe('reportFile', () => {
     expect(data).toContain('Titel: Es hakt');
     expect(name).toMatch(/^praxiszeit-meldung-\d{8}-\d{4}\.txt$/);
     expect(mime).toBe('text/plain;charset=utf-8');
+  });
+
+  it('writes a neutral attachment name, never the local file name', () => {
+    const f = new File([new Uint8Array(1)], 'Krankmeldung_Mueller_Petra.jpg', { type: 'image/jpeg' });
+    const text = formatReportFile(preview(), new Date(), f);
+    expect(text).toContain('Anhang: screenshot.jpg (nicht in dieser Datei enthalten)');
+    expect(text).not.toContain('Krankmeldung');
+  });
+
+  it('writes the license note but never a license value', () => {
+    const note = 'Lizenzkennung der Praxis (wird beim Senden ergänzt, nicht angezeigt)';
+    const p = preview({ license_note: note, fields: { product: 'praxiszeit', license_id: 'CUST-4711' } });
+    const text = formatReportFile(p, new Date());
+    expect(text).toContain(note);
+    expect(text).not.toContain('CUST-4711');
+    expect(text).not.toContain('license_id');
   });
 });

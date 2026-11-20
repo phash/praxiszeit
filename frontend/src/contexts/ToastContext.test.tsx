@@ -231,4 +231,28 @@ describe('Fehler-Toast mit „An Entwickler schicken“ (#557)', () => {
     });
     expect(screen.queryByText('Speichern fehlgeschlagen')).toBeNull();
   });
+
+  it('F13: title has no UUIDs/numeric ids and is capped at 200', () => {
+    setRole('admin');
+    const api = renderWithProvider();
+    const path = '/api/admin/users/3fa85f64-5717-4562-b3fc-2c963f66afa6/working-hours-changes/42/' + 'x'.repeat(300);
+    useReportStore.getState().recordServerError({ status: 500, method: 'PUT', path });
+    act(() => api.error('Speichern fehlgeschlagen'));
+    fireEvent.click(screen.getByRole('button', { name: 'An Entwickler schicken' }));
+    const title = useReportStore.getState().request!.initialTitle;
+    expect(title).toContain('/api/admin/users/<id>/working-hours-changes/<id>/');
+    expect(title).not.toContain('3fa85f64');
+    expect(title.length).toBeLessThanOrEqual(200);
+  });
+
+  it('F19: action of a newer toast keeps an open report and its toast', () => {
+    setRole('admin');
+    const api = renderWithProvider();
+    useReportStore.getState().openReport({ serverError: hint, initialTitle: 'offen' });
+    useReportStore.getState().recordServerError({ status: 503, method: 'GET', path: '/api/x/' });
+    act(() => api.error('Zweiter Fehler'));
+    fireEvent.click(screen.getByRole('button', { name: 'An Entwickler schicken' }));
+    expect(useReportStore.getState().request?.initialTitle).toBe('offen');
+    expect(screen.getByText('Zweiter Fehler')).toBeInTheDocument();
+  });
 });

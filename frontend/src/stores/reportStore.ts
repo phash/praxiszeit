@@ -20,7 +20,8 @@ interface ReportState {
   /** Liefert den Hinweis nur, wenn er höchstens `windowMs` alt ist — und nur einmal. */
   takeRecentServerError: (now?: number, windowMs?: number) => ServerErrorHint | null;
   request: ReportRequest | null;
-  openReport: (r: ReportRequest) => void;
+  /** false = es ist schon eine Meldung offen (wird nicht ersetzt, Eingabe bleibt). */
+  openReport: (r: ReportRequest) => boolean;
   closeReport: () => void;
 }
 
@@ -36,6 +37,10 @@ export const useReportStore = create<ReportState>()((set, get) => ({
     return { status: last.status, method: last.method, path: last.path };
   },
   request: null,
-  openReport: (r) => set({ request: r }),
+  openReport: (r) => {
+    if (get().request) return false;
+    set({ request: r });
+    return true;
+  },
   closeReport: () => set({ request: null }),
 }));

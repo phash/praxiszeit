@@ -52,6 +52,15 @@ interface ToastContextType {
   warning: (message: string, duration?: number) => void;
 }
 
+const REPORT_TITLE_MAX = 200;
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/** Titel-Vorschlag ohne Ressourcen-IDs (UUIDs, Zahlen) und höchstens 200 Zeichen — wie das Backend. */
+export function reportTitle(e: { status: number; method: string; path: string }): string {
+  const path = e.path.replace(UUID_RE, '<id>').replace(/\/\d+(?=\/|$)/g, '/<id>');
+  return `Serverfehler ${e.status} bei ${e.method} ${path}`.slice(0, REPORT_TITLE_MAX);
+}
+
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export const useToast = () => {
@@ -122,11 +131,12 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
     pushToast('error', message, SERVER_ERROR_ACTION_DURATION, (id) => ({
       label: SERVER_ERROR_ACTION_LABEL,
       onClick: () => {
-        useReportStore.getState().openReport({
+        // Ist schon eine Meldung offen, bleibt sie unangetastet (Eingabe nie verwerfen).
+        const opened = useReportStore.getState().openReport({
           serverError,
-          initialTitle: `Serverfehler ${serverError.status} bei ${serverError.method} ${serverError.path}`,
+          initialTitle: reportTitle(serverError),
         });
-        removeToast(id);
+        if (opened) removeToast(id);
       },
     }));
   }, [pushToast, removeToast]);
