@@ -1,0 +1,110 @@
+{
+  "protocol": "mrd-report-1",
+  "version": 1,
+  "rules": [
+    {
+      "name": "pz_user_token",
+      "category": "person",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b(user|username|user_name|login)([ \\t]*=[ \\t]*)[^ \\t\\n,;]+",
+      "replacement": "{1}{2}<user>",
+      "description": "Login/user name assignments (user=anna.schmidt) in auth log lines."
+    },
+    {
+      "name": "pz_person_line",
+      "category": "person",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b(full_name|display_name|employee_name|employee|name)([ \\t]*[=:][ \\t]*)([^ \\t\\n\"\\'<][^\\n]*)",
+      "replacement": "{1}{2}<user>",
+      "description": "Person name fields (full_name=..., name: ...): the rest of the line."
+    },
+    {
+      "name": "pz_text_quoted",
+      "category": "text",
+      "flags": [
+        "i"
+      ],
+      "pattern": "([\"\\'](?:note|notes|comment|description|input|input_value|reason|break_waiver_reason|sunday_exception_reason|rejection_reason|proposed_note|original_note|name|full_name|display_name|first_name|last_name|title)[\"\\'][ \\t]*:[ \\t]*)(\"(?:[^\"\\\\\\n]|\\\\.)*\"|\\'(?:[^\\'\\\\\\n]|\\\\.)*\\')",
+      "replacement": "{1}<text>",
+      "description": "Quoted free-text fields in JSON and Python dict dumps (note, reason, input, ...)."
+    },
+    {
+      "name": "pz_text_assign",
+      "category": "text",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b(input_value|note|notes|comment|break_waiver_reason|sunday_exception_reason)([ \\t]*=[ \\t]*)(\"(?:[^\"\\\\\\n]|\\\\.)*\"|\\'(?:[^\\'\\\\\\n]|\\\\.)*\\')",
+      "replacement": "{1}{2}<text>",
+      "description": "Quoted free-text assignments (input_value='...' in Pydantic errors)."
+    },
+    {
+      "name": "pz_query_value",
+      "category": "text",
+      "flags": [],
+      "pattern": "([?&][A-Za-z0-9_.\\[\\]-]{1,64}=)[^ \\t\\n&#\"]+",
+      "replacement": "{1}<text>",
+      "description": "URL query parameter values."
+    }
+  ],
+  "cases": [
+    {
+      "id": "pz-auth-login-failed",
+      "input": "2026-11-18 08:15:02 WARNING praxiszeit.security: AUTH login_failed user=anna.schmidt reason=bad_password ip=192.168.178.20",
+      "expected": "2026-11-18 08:15:02 WARNING praxiszeit.security: AUTH login_failed user=<user> reason=bad_password ip=<ip>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-auth-redacted",
+      "input": "2026-11-18 08:15:02 WARNING praxiszeit.security: AUTH login_failed user=an…#3f9a2c1b0d4e reason=unknown_user ip=10.0.0.5",
+      "expected": "2026-11-18 08:15:02 WARNING praxiszeit.security: AUTH login_failed user=<user> reason=unknown_user ip=<ip>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-access-query",
+      "input": "2026-11-18 08:16:00 INFO:     192.168.178.20:51234 - \"GET /api/admin/users?search=Schmidt&include_inactive=true HTTP/1.1\" 200",
+      "expected": "2026-11-18 08:16:00 INFO:     <ip>:51234 - \"GET /api/admin/users?search=<text>&include_inactive=<text> HTTP/1.1\" 200",
+      "patient_data": false
+    },
+    {
+      "id": "pz-pydantic-input-value",
+      "input": "  String should have at most 500 characters [type=string_too_long, input_value='Arzttermin bei Dr. Weber wegen Rücken', input_type=str]",
+      "expected": "  String should have at most 500 characters [type=string_too_long, input_value=<text>, input_type=str]",
+      "patient_data": false
+    },
+    {
+      "id": "pz-pydantic-dict",
+      "input": "{'type': 'string_too_long', 'loc': ('body', 'note'), 'msg': 'String should have at most 500 characters', 'input': 'Kind krank, Schule angerufen'}",
+      "expected": "{'type': 'string_too_long', 'loc': ('body', 'note'), 'msg': 'String should have at most 500 characters', 'input': <text>}",
+      "patient_data": false
+    },
+    {
+      "id": "pz-json-note",
+      "input": "{\"date\": \"2026-11-18\", \"start_time\": \"08:00\", \"note\": \"Arzttermin Dr. Weber\", \"break_waiver_reason\": \"Notfallpatient\"}",
+      "expected": "{\"date\": \"2026-11-18\", \"start_time\": \"08:00\", \"note\": <text>, \"break_waiver_reason\": <text>}",
+      "patient_data": false
+    },
+    {
+      "id": "pz-json-escaped-quote",
+      "input": "{\"note\": \"Sie sagte \\\"Kind krank\\\" am Telefon\", \"id\": 4}",
+      "expected": "{\"note\": <text>, \"id\": 4}",
+      "patient_data": false
+    },
+    {
+      "id": "pz-full-name-line",
+      "input": "2026-11-18 08:20:00 ERROR app.routers.time_entries: update failed full_name=Sarah Klein username=s.klein",
+      "expected": "2026-11-18 08:20:00 ERROR app.routers.time_entries: update failed full_name=<user>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-context-untouched",
+      "input": "Fehler: HTTP 500 POST /api/time-entries — IntegrityError (23505 unique_violation)",
+      "expected": "Fehler: HTTP 500 POST /api/time-entries — IntegrityError (23505 unique_violation)",
+      "patient_data": false
+    }
+  ]
+}
