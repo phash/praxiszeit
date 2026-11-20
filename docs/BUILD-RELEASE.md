@@ -70,6 +70,7 @@ dotnet publish src/PraxisZeit.Setup \
     -p:PublishSingleFile=true                  # Single-File-Exe für eine Plattform
 ```
 **Build-Dependency:** .NET 10 SDK (`dotnet --version` muss `10.x` zeigen).
+**Meldeschlüssel:** `MRD_REPORT_KEY` (Umgebungsvariable beim Build, `build-release.sh` reicht sie als `-p:MrdReportKey` durch) wird in die setup.exe eingebaut und nie ausgegeben; leer = kein Knopf „An Entwickler schicken“, nur „Als Datei speichern“ plus Hinweis auf projekt@phash.de.
 **Solution-Struktur:**
 - `src/PraxisZeit.Setup/` — Avalonia UI (WinExe, CommunityToolkit.Mvvm, Fluent-Theme)
 - `src/PraxisZeit.Setup.Core/` — Plattform-Services (Orchestrator, Pip, Alembic, Config, Backup, DB)

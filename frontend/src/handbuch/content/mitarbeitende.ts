@@ -1512,7 +1512,7 @@ export const mitarbeitende: Handbook = {
             { n: 2, text: 'Geben Sie einen **Titel** und eine **Beschreibung** ein: Was haben Sie getan, was ist passiert, was hätten Sie erwartet? Ein Bildschirmfoto und eine Rückmelde-E-Mail sind freiwillig. **Bitte keine Namen von Mitarbeitenden oder Notizen aus Zeiteinträgen eintragen.**' },
             { n: 3, text: 'Klicken Sie auf [[Vorschau]]. Sie sehen genau den Text, der übertragen wird; PraxisZeit hat ihn vorher bereinigt (zum Beispiel E-Mail-Adressen unkenntlich gemacht). Mit [[Zurück]] ändern Sie Ihre Angaben.' },
             { n: 4, text: 'Klicken Sie auf [[Senden]]. Nach dem Senden zeigt PraxisZeit eine **Nummer** der Meldung. Notieren Sie sie, wenn Sie später nachfragen möchten. Der Link [[Bekannte Probleme ansehen]] zeigt bereits gemeldete Probleme; die Seite verlangt eine Anmeldung auf praxiszeit.mr-development.de.' },
-            { n: 5, text: '**Ohne Internet oder wenn das Senden scheitert** („Senden fehlgeschlagen – als Datei speichern?“): Klicken Sie auf [[Als Datei speichern]] und geben Sie die Datei Ihrer Verwaltung. Ihre Eingaben bleiben im Fenster erhalten.' },
+            { n: 5, text: '**Ohne Internet oder wenn das Senden scheitert** („Senden fehlgeschlagen – als Datei speichern?“): Klicken Sie auf [[Als Datei speichern]] und geben Sie die Datei Ihrer Verwaltung. Ihre Eingaben bleiben im Fenster erhalten; der Knopf heißt nach einem Fehlschlag [[Erneut senden]], falls das Netz wieder da ist. Hat Ihre Praxis keinen Meldeschlüssel eingerichtet (älterer Meldeweg), wird die freiwillige Rückmelde-E-Mail nicht übertragen.' },
           ],
         },
       ],
