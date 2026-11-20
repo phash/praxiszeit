@@ -1,115 +1,242 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FeedbackPreview } from '../api/feedback';
 
-// apiClient.post + toast spies, hoisted so the vi.mock factories can use them.
-const { post, toastSuccess, toastError } = vi.hoisted(() => ({
-  post: vi.fn(),
-  toastSuccess: vi.fn(),
-  toastError: vi.fn(),
+const { previewReport, sendReport, saveReportFile, authState } = vi.hoisted(() => ({
+  previewReport: vi.fn(),
+  sendReport: vi.fn(),
+  saveReportFile: vi.fn(),
+  authState: { user: { id: 'u1', role: 'employee' } as { id: string; role: string } },
 }));
 
-vi.mock('../api/client', () => ({ default: { post } }));
-vi.mock('../contexts/ToastContext', () => ({
-  useToast: () => ({
-    success: toastSuccess,
-    error: toastError,
-    info: vi.fn(),
-    warning: vi.fn(),
-    showToast: vi.fn(),
-  }),
+vi.mock('../api/feedback', () => ({ previewReport, sendReport }));
+vi.mock('../utils/reportFile', () => ({ saveReportFile }));
+vi.mock('../stores/authStore', () => ({
+  useAuthStore: (sel?: (s: typeof authState) => unknown) => (sel ? sel(authState) : authState),
 }));
 
 import FeedbackDialog from './FeedbackDialog';
 
-beforeEach(() => {
-  post.mockReset();
-  toastSuccess.mockReset();
-  toastError.mockReset();
-});
+const SERVER_DESCRIPTION = 'Bereinigte Beschreibung\n\n--- Protokoll ---\nZeile <user>';
 
-function renderDialog() {
-  const onClose = vi.fn();
-  render(<FeedbackDialog onClose={onClose} />);
-  return { onClose };
+function preview(overrides: Partial<FeedbackPreview> = {}): FeedbackPreview {
+  return {
+    transport: 'mrd-report-1',
+    title: 'Es hakt (bereinigt)',
+    description: SERVER_DESCRIPTION,
+    fields: { product: 'praxiszeit', app_version: '1.24.3', error_fingerprint: 'abc123' },
+    credential_note: 'mrk_praxiszeit_… (nicht angezeigt)',
+    log_line_count: 1,
+    truncated: false,
+    board_url: 'https://praxiszeit.mr-development.de/app/bugs?product=praxiszeit',
+    contact_email_dropped: false,
+    ...overrides,
+  };
 }
 
-async function fillValid(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText(/Titel/i), 'Es hakt');
-  await user.type(screen.getByLabelText(/Beschreibung/i), 'Beim Stempeln passiert X');
+beforeEach(() => {
+  previewReport.mockReset();
+  sendReport.mockReset();
+  saveReportFile.mockReset();
+  authState.user = { id: 'u1', role: 'employee' };
+  (URL as any).createObjectURL = vi.fn(() => 'blob:thumb');
+  (URL as any).revokeObjectURL = vi.fn();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+async function fillAndPreview(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText('Titel'), 'Es hakt');
+  await user.type(screen.getByLabelText('Beschreibung'), 'Beim Stempeln passiert X');
+  await user.click(screen.getByRole('button', { name: 'Vorschau' }));
 }
 
 describe('FeedbackDialog', () => {
-  it('renders an accessible dialog with title, description, severity and version hint', () => {
-    renderDialog();
-    const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveAttribute('aria-modal', 'true');
-    expect(screen.getByLabelText(/Titel/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Beschreibung/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Schweregrad/i)).toBeInTheDocument();
-    // Transparenz: zeigt, dass die Version mitgeschickt wird.
-    expect(screen.getByText(/Version/i)).toBeInTheDocument();
+  it('renders the form with Sie-form copy', () => {
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByRole('heading', { name: 'Problem melden' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Fehler')).toBeChecked();
+    expect(screen.getByLabelText('Feedback')).toBeInTheDocument();
+    expect(screen.getByLabelText('Titel')).toHaveAttribute('maxLength', '200');
+    expect(screen.getByLabelText('Beschreibung')).toHaveAttribute('maxLength', '4000');
+    expect(screen.getByLabelText('Schweregrad')).toBeInTheDocument();
+    expect(screen.getByLabelText('Rückmelde-E-Mail (optional)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Bildschirmfoto anhängen (optional)')).toBeInTheDocument();
+    expect(
+      screen.getByText('Bitte keine Namen von Mitarbeitenden oder Notizen aus Zeiteinträgen eintragen.'),
+    ).toBeInTheDocument();
   });
 
-  it('disables submit until title AND description are filled', async () => {
+  it('preview shows exactly the server description', async () => {
     const user = userEvent.setup();
-    renderDialog();
-    const submit = screen.getByRole('button', { name: /senden/i });
-    expect(submit).toBeDisabled();
-    await user.type(screen.getByLabelText(/Titel/i), 'nur Titel');
-    expect(submit).toBeDisabled();
-    await user.type(screen.getByLabelText(/Beschreibung/i), 'jetzt auch Text');
-    expect(submit).toBeEnabled();
+    previewReport.mockResolvedValue(preview());
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await fillAndPreview(user);
+    const pre = await screen.findByTestId('feedback-preview-description');
+    expect(pre.tagName).toBe('PRE');
+    expect(pre.textContent).toBe(SERVER_DESCRIPTION);
+    expect(screen.getByText('Es hakt (bereinigt)')).toBeInTheDocument();
+    expect(screen.getByText('mrk_praxiszeit_… (nicht angezeigt)')).toBeInTheDocument();
+    expect(previewReport).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'bug', title: 'Es hakt', text: 'Beim Stempeln passiert X', severity: 'medium' }),
+    );
+    expect(previewReport.mock.calls[0][0].include_log).toBeFalsy();
   });
 
-  it('posts title/description/severity and shows success toast + closes on 200', async () => {
+  it('send posts previewed title and description unchanged', async () => {
     const user = userEvent.setup();
-    post.mockResolvedValue({ data: { status: 'received', id: 'bug-1' } });
-    const { onClose } = renderDialog();
-    await fillValid(user);
-    await user.selectOptions(screen.getByLabelText(/Schweregrad/i), 'high');
-    await user.click(screen.getByRole('button', { name: /senden/i }));
+    const p = preview();
+    previewReport.mockResolvedValue(p);
+    sendReport.mockResolvedValue({ status: 'received', ref: 'PZ-42', id: 'r1', board_url: p.board_url });
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
+    await waitFor(() => expect(sendReport).toHaveBeenCalledTimes(1));
+    const [sentPreview, req] = sendReport.mock.calls[0];
+    expect(sentPreview).toBe(p);
+    expect(sentPreview.title).toBe('Es hakt (bereinigt)');
+    expect(sentPreview.description).toBe(SERVER_DESCRIPTION);
+    expect(req).toMatchObject({ kind: 'bug', severity: 'medium' });
+  });
 
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    expect(post).toHaveBeenCalledWith('/feedback/report', {
-      title: 'Es hakt',
-      description: 'Beim Stempeln passiert X',
-      severity: 'high',
+  it('shows ref and board link on success', async () => {
+    const user = userEvent.setup();
+    const p = preview();
+    previewReport.mockResolvedValue(p);
+    sendReport.mockResolvedValue({ status: 'received', ref: 'PZ-42', id: 'r1', board_url: p.board_url });
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
+    expect(await screen.findByText('Danke! Ihre Meldung ist eingegangen: PZ-42.')).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'Bekannte Probleme ansehen' });
+    expect(link).toHaveAttribute('href', p.board_url);
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+
+  it('falls back to id when ref is missing', async () => {
+    const user = userEvent.setup();
+    const p = preview({ transport: 'legacy' });
+    previewReport.mockResolvedValue(p);
+    sendReport.mockResolvedValue({ status: 'received', ref: null, id: 'bug-7', board_url: p.board_url });
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
+    expect(await screen.findByText('Danke! Ihre Meldung ist eingegangen: bug-7.')).toBeInTheDocument();
+  });
+
+  it('shows save-file path when send fails with 502', async () => {
+    const user = userEvent.setup();
+    const p = preview();
+    previewReport.mockResolvedValue(p);
+    sendReport.mockRejectedValue({
+      response: { status: 502, data: { detail: 'Meldeserver nicht erreichbar.', upstream_status: null } },
     });
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
-    expect(onClose).toHaveBeenCalled();
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
+    expect(await screen.findByText('Senden fehlgeschlagen – als Datei speichern?')).toBeInTheDocument();
+    expect(screen.getByText('Meldeserver nicht erreichbar.')).toBeInTheDocument();
+    expect(screen.getByTestId('feedback-preview-description').textContent).toBe(SERVER_DESCRIPTION);
+    fireEvent.click(screen.getByRole('button', { name: 'Als Datei speichern' }));
+    expect(saveReportFile).toHaveBeenCalledWith(p, undefined);
+    expect(screen.getByRole('button', { name: 'Erneut senden' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Zurück' })).toBeInTheDocument();
+    // no automatic retry
+    expect(sendReport).toHaveBeenCalledTimes(1);
   });
 
-  it('defaults severity to medium', async () => {
+  it('back from preview keeps the input', async () => {
     const user = userEvent.setup();
-    post.mockResolvedValue({ data: { status: 'received' } });
-    renderDialog();
-    await fillValid(user);
-    await user.click(screen.getByRole('button', { name: /senden/i }));
-    await waitFor(() => expect(post).toHaveBeenCalled());
-    expect(post.mock.calls[0][1]).toMatchObject({ severity: 'medium' });
+    previewReport.mockResolvedValue(preview());
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    fireEvent.click(screen.getByRole('button', { name: 'Zurück' }));
+    expect(screen.getByLabelText('Titel')).toHaveValue('Es hakt');
+    expect(screen.getByLabelText('Beschreibung')).toHaveValue('Beim Stempeln passiert X');
   });
 
-  it('shows an error toast and stays open when the request fails', async () => {
+  it('employee sees no log checkbox', () => {
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    expect(screen.queryByLabelText('Protokollauszug anhängen (bereinigt)')).not.toBeInTheDocument();
+  });
+
+  it('admin sees log checkbox checked by default', () => {
+    authState.user = { id: 'a1', role: 'admin' };
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    expect(screen.getByLabelText('Protokollauszug anhängen (bereinigt)')).toBeChecked();
+  });
+
+  it('admin from error-log origin sends kind crash with error_log_id and include_log', async () => {
+    authState.user = { id: 'a1', role: 'admin' };
     const user = userEvent.setup();
-    post.mockRejectedValue({ response: { status: 409, data: { detail: 'Lizenz inaktiv' } } });
-    const { onClose } = renderDialog();
-    await fillValid(user);
-    await user.click(screen.getByRole('button', { name: /senden/i }));
-
-    await waitFor(() => expect(toastError).toHaveBeenCalled());
-    expect(onClose).not.toHaveBeenCalled();
+    const p = preview();
+    previewReport.mockResolvedValue(p);
+    sendReport.mockResolvedValue({ status: 'received', ref: 'PZ-1', id: 'r', board_url: p.board_url });
+    render(
+      <FeedbackDialog onClose={vi.fn()} origin="error-log" errorLogId="el-1" initialTitle="Serverfehler 500" />,
+    );
+    expect(screen.queryByLabelText('Fehler')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Feedback')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Titel')).toHaveValue('Serverfehler 500');
+    expect(screen.getByLabelText('Protokollauszug anhängen (bereinigt)')).toBeChecked();
+    await user.type(screen.getByLabelText('Beschreibung'), 'Beim Export');
+    await user.click(screen.getByRole('button', { name: 'Vorschau' }));
+    await screen.findByTestId('feedback-preview-description');
+    expect(previewReport).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'crash', error_log_id: 'el-1', include_log: true }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
+    await waitFor(() => expect(sendReport).toHaveBeenCalled());
+    expect(sendReport.mock.calls[0][1]).toMatchObject({ kind: 'crash' });
   });
 
-  it('enforces the 200-char title limit via maxLength', () => {
-    renderDialog();
-    expect(screen.getByLabelText(/Titel/i)).toHaveAttribute('maxLength', '200');
-  });
-
-  it('calls onClose when cancel is clicked', async () => {
+  it('legacy preview shows contact e-mail note', async () => {
     const user = userEvent.setup();
-    const { onClose } = renderDialog();
-    await user.click(screen.getByRole('button', { name: /abbrechen/i }));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    previewReport.mockResolvedValue(preview({ transport: 'legacy', credential_note: null, contact_email_dropped: true, truncated: true }));
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    await user.type(screen.getByLabelText('Rückmelde-E-Mail (optional)'), 'praxis@example.invalid');
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    expect(
+      screen.getByText('Hinweis: Die Rückmelde-E-Mail wird über den bisherigen Meldeweg nicht übertragen.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Protokollauszug gekürzt.')).toBeInTheDocument();
+    expect(previewReport.mock.calls[0][0]).toMatchObject({ contact_email: 'praxis@example.invalid' });
+  });
+
+  it('rejects screenshot over 5 MB before preview', async () => {
+    const user = userEvent.setup();
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    const big = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'gross.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('Bildschirmfoto anhängen (optional)'), { target: { files: [big] } });
+    expect(screen.getByText('Nur PNG- oder JPEG-Bilder bis 5 MB.')).toBeInTheDocument();
+    await fillAndPreview(user);
+    expect(previewReport).not.toHaveBeenCalled();
+  });
+
+  it('passes an accepted screenshot to send and shows a thumbnail', async () => {
+    const user = userEvent.setup();
+    const p = preview();
+    previewReport.mockResolvedValue(p);
+    sendReport.mockResolvedValue({ status: 'received', ref: 'PZ-2', id: 'r', board_url: p.board_url });
+    render(<FeedbackDialog onClose={vi.fn()} />);
+    const img = new File([new Uint8Array(10)], 'bild.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByLabelText('Bildschirmfoto anhängen (optional)'), { target: { files: [img] } });
+    await fillAndPreview(user);
+    await screen.findByTestId('feedback-preview-description');
+    expect(screen.getByAltText('Bildschirmfoto-Vorschau')).toHaveAttribute('src', 'blob:thumb');
+    fireEvent.click(screen.getByRole('button', { name: 'Senden' }));
+    await waitFor(() => expect(sendReport).toHaveBeenCalled());
+    expect(sendReport.mock.calls[0][2]).toBe(img);
   });
 });
