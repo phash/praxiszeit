@@ -16,7 +16,7 @@ from app.core.report_sanitize_pz import sanitize_praxiszeit_text
 from app.core.updater import APP_VERSION
 from app.models.error_log import ErrorLog
 from app.services.error_log_service import _scope_to_tenant, _scrub_path
-from app.services.report_log_extract import MAX_EXTRACT_LINES, _cut, trim_extract
+from app.services.report_log_extract import MAX_EXTRACT_LINES, MAX_LINE_CHARS, trim_extract
 from app.services.report_install_id import get_or_create_install_id
 
 PRODUCT = "praxiszeit"
@@ -87,6 +87,11 @@ def collect_server_fields() -> ServerFields:
     )
 
 
+def _cut_sanitized(text: str, limit: int) -> str:
+    text = sanitize_praxiszeit_text(text)
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
 def _utc(ts: datetime) -> datetime:
     if ts.tzinfo is None:
         return ts.replace(tzinfo=timezone.utc)
@@ -130,7 +135,10 @@ def resolve_error_context(
     msg = (row.message or "").strip()
     first = msg.splitlines()[0] if msg else ""
     if len(first) > MAX_ERROR_MESSAGE_CHARS:
-        first = first[:MAX_ERROR_MESSAGE_CHARS] + "…"
+        # Erst bereinigen, dann kürzen: ein abgeschnittener Wert (offenes
+        # Anführungszeichen) träfe keine Regel mehr. Die fertige Beschreibung
+        # wird danach trotzdem als Ganzes bereinigt.
+        first = _cut_sanitized(first, MAX_ERROR_MESSAGE_CHARS)
     # Review F14: Zeilen ohne HTTP-Bezug (DBErrorHandler, Integritätsprüfung)
     # nennen den Logger statt „HTTP None None None“.
     http = " ".join(str(v) for v in (row.status_code, row.method, row.path) if v)
@@ -139,7 +147,8 @@ def resolve_error_context(
         f"{row.level} {origin} — {first} "
         f"({row.count}x, zuletzt {_utc(row.last_seen):%Y-%m-%dT%H:%M:%SZ})"
     )
-    tb = [_cut(l) for l in (row.traceback or "").splitlines()[-MAX_DETAIL_LINES:]]
+    tb = [_cut_sanitized(l, MAX_LINE_CHARS) if len(l) > MAX_LINE_CHARS else l
+          for l in (row.traceback or "").splitlines()[-MAX_DETAIL_LINES:]]
     return ErrorContext(line, (row.fingerprint or None) and row.fingerprint[:64], tb)
 
 

@@ -248,3 +248,11 @@ def test_overlong_error_message_is_cut_and_description_stays_in_limit(db, defaul
     assert len(ctx.line) <= rp.MAX_ERROR_MESSAGE_CHARS + 200
     assert "…" in ctx.line and ctx.line.endswith("(2x, zuletzt 2026-11-18T08:14:02Z)")
     assert all(len(l) <= 2001 for l in ctx.detail_lines)
+
+
+def test_overlong_error_message_is_sanitized_before_the_cut(db, default_tenant):
+    row = _row(db, TENANT)
+    row.message = "a" * 470 + " input_value='Anna Schmidt aus Weiden'"
+    db.commit()
+    ctx = resolve_error_context(db, TENANT, error_log_id=row.id, server_error=None, now=NOW)
+    assert "Anna" not in ctx.line and "Schm" not in ctx.line
