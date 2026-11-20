@@ -67,6 +67,9 @@ services:
       PRACTICE_NAME: ${PRACTICE_NAME:-Praxis}
       PRACTICE_ADDRESS: ${PRACTICE_ADDRESS:-}
       HOLIDAY_STATE: ${HOLIDAY_STATE:-Bayern}
+      # #557 In-App-Meldung (mrd-report-1): Meldeschlüssel leer = Altweg /v1/bugs.
+      FEEDBACK_REPORT_KEY: ${FEEDBACK_REPORT_KEY:-}
+      FEEDBACK_REPORT_BASE_URL: ${FEEDBACK_REPORT_BASE_URL:-https://report.mr-development.de}
       # #213: Zielverzeichnis fuer DB-Backups (in das praxiszeit_backups-Volume).
       PRAXISZEIT_BACKUP_DIR: ${BACKUP_DIR:-/app/backups}
     volumes:

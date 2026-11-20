@@ -2223,6 +2223,9 @@ _CONF_TO_ENV = {
     # jedem Start — nativ gab es dafuer bisher keinen Konfigurationsschluessel.
     # Kommagetrennt oder als TOML-Liste.
     ("server", "allowed_hosts"): "ALLOWED_HOSTS",
+    # #557 In-App-Meldung (mrd-report-1): Meldeschluessel und Basis-URL.
+    ("feedback", "report_key"): "FEEDBACK_REPORT_KEY",
+    ("feedback", "report_base_url"): "FEEDBACK_REPORT_BASE_URL",
 }
 
 # Konfigurationswerte, die Dateipfade sind (relativ zu BASE_DIR aufloesen)
