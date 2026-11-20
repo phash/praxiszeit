@@ -895,7 +895,9 @@ function Write-Environment {
         $admin = (New-Object System.Security.Principal.WindowsPrincipal($id)).IsInRole(
             [System.Security.Principal.WindowsBuiltInRole]::Administrator)
         $proc = [System.Diagnostics.Process]::GetCurrentProcess()
-        Write-Log "  Benutzer: $($id.Name) ($($id.User.Value)), Administrator (erhoeht): $admin"
+        # Kein Kontoname, keine SID (#557): das Protokoll geht per "Problem
+        # melden" an den Entwickler, Kontonamen sind oft Personennamen.
+        Write-Log "  Administrator (erhoeht): $admin, SYSTEM-Konto: $($id.IsSystem)"
         Write-Log "  Sitzung: $($proc.SessionId), PID $PID, 64-Bit-Prozess: $([Environment]::Is64BitProcess)"
         Write-Log "  PowerShell: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition)), CLR $([Environment]::Version)"
         Write-Log "  TEMP: $env:TEMP"

@@ -458,3 +458,14 @@ def test_secure_install_never_compiles_csharp():
     load = load[:load.index("} catch {")]
     assert "Get-PzLinkCount $PSCommandPath" in load
 
+
+
+def test_environment_log_has_no_account_name_or_sid():
+    # #557 D1: das Update-Protokoll geht per "Problem melden" an den
+    # Entwickler; Kontonamen sind oft Personennamen, die SID identifiziert
+    # das Konto. Nur Rolle und SYSTEM-Kennzeichen ins Protokoll.
+    body = _function(_text("update-wizard.ps1"), "Write-Environment")
+    assert "$id.Name" not in body
+    assert "$id.User" not in body
+    assert "Administrator (erhoeht): $admin" in body
+    assert "$id.IsSystem" in body
