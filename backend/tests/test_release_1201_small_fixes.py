@@ -223,7 +223,11 @@ class TestImportSizeLimit:
         from app.middleware.static_serving import RequestSizeLimitMiddleware
         mw = next(m for m in real_app.user_middleware if m.cls is RequestSizeLimitMiddleware)
         assert mw.kwargs["max_size"] == 2 * self.MB
-        assert mw.kwargs["path_limits"] == {"/api/admin/import/": 6 * self.MB}
+        assert mw.kwargs["path_limits"] == {
+            "/api/admin/import/": 6 * self.MB,
+            # #557 (Review F1): Bildschirmfoto bis 5 MB + Formularfelder
+            "/api/feedback/send": 6 * self.MB,
+        }
 
     @pytest.mark.parametrize("conf", ["frontend/nginx.conf", "ssl/nginx-ssl.conf"])
     def test_nginx_import_location_allows_6m(self, conf):
@@ -235,3 +239,25 @@ class TestImportSizeLimit:
         block = text.split("location ^~ /api/admin/import/ {", 1)[1].split("}", 1)[0]
         assert "client_max_body_size 6M;" in block
         assert "proxy_set_header Host $http_host;" in block
+
+
+# #557 (Review F1/F6/F7/F10): /api/feedback/send nimmt ein Bildschirmfoto bis
+# 5 MB an — nginx braucht dieselbe pfadgenaue 6-MB-Ausnahme wie der Import,
+# mit identischen Proxy-Einstellungen (Host $http_host, CLAUDE.md).
+@pytest.mark.parametrize("conf", ["frontend/nginx.conf", "ssl/nginx-ssl.conf"])
+def test_nginx_feedback_send_location_allows_6m(conf):
+    path = Path(__file__).resolve().parents[2] / conf
+    if not path.exists():
+        pytest.skip(f"{conf} nicht im Container eingebunden")
+    text = path.read_text()
+    marker = "location ^~ /api/feedback/send {"
+    assert marker in text
+    block = text.split(marker, 1)[1].split("}", 1)[0]
+    imp = text.split("location ^~ /api/admin/import/ {", 1)[1].split("}", 1)[0]
+    assert "client_max_body_size 6M;" in block
+    assert "proxy_pass http://backend:8000/api/feedback/send;" in block
+    strip = lambda b: sorted(l.strip() for l in b.splitlines()
+                             if l.strip() and not l.strip().startswith("proxy_pass"))
+    assert strip(block) == strip(imp)
+    # vor der allgemeinen /api/-Location, damit der laengste Praefix sichtbar bleibt
+    assert text.index(marker) < text.index("location ^~ /api/ {")

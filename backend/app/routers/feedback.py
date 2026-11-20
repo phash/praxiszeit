@@ -219,6 +219,9 @@ def send_feedback(
     )
     result = report_client.send_report(fields, file_part)
     if not result.ok:
+        # Review F3: Meldeserver nicht erreichbar/ablehnend ist ein Betriebszustand,
+        # kein Programmfehler -> capture_errors_middleware schreibt keine error_logs-Zeile.
+        request.state.report_upstream_failure = True
         return JSONResponse(
             status_code=502,
             content={"detail": result.detail, "upstream_status": result.upstream_status},
