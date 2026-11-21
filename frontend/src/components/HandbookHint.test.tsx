@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import HandbookHint from './HandbookHint';
@@ -40,6 +40,34 @@ describe('HandbookHint', () => {
     fireEvent.click(btn);
     fireEvent.keyDown(btn, { key: 'Escape' });
     expect(screen.queryByRole('link', { name: /Mehr im Handbuch/ })).toBeNull();
+  });
+
+  it('Escape on the hint does not reach a surrounding dialog listening on document', () => {
+    // focus-trap (WorkingHoursModal) lauscht in der Bubble-Phase auf document – Esc darf dort nicht ankommen.
+    const parentEsc = vi.fn();
+    document.addEventListener('keydown', parentEsc);
+    try {
+      renderHint();
+      const btn = screen.getByRole('button', { name: `Hilfe: ${hint.title}` });
+      fireEvent.click(btn);
+      fireEvent.keyDown(btn, { key: 'Escape' });
+      expect(screen.queryByRole('link', { name: /Mehr im Handbuch/ })).toBeNull();
+      expect(parentEsc).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener('keydown', parentEsc);
+    }
+  });
+
+  it('lets Escape through to the surrounding dialog when the hint is closed', () => {
+    const parentEsc = vi.fn();
+    document.addEventListener('keydown', parentEsc);
+    try {
+      renderHint();
+      fireEvent.keyDown(screen.getByRole('button', { name: `Hilfe: ${hint.title}` }), { key: 'Escape' });
+      expect(parentEsc).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener('keydown', parentEsc);
+    }
   });
 
   it('closes on a click outside', () => {

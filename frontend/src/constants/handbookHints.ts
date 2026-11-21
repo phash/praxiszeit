@@ -23,7 +23,7 @@ const HINTS = {
     text:
       'Ab diesem Tag gilt die neue Arbeitszeit. ' +
       'Liegt das Datum in der Vergangenheit, rechnet PraxisZeit die Zeiteinträge und danach die Abwesenheiten ab diesem Tag neu. ' +
-      'Verliert dabei ein Eintrag angerechnete Zeit, brauchen Sie einen Grund.',
+      'Verliert dabei ein Eintrag angerechnete Zeit oder sinkt das Überstundenkonto, gilt die Änderung ab heute – rückwirkend nur mit Grund.',
   },
 } satisfies Record<string, HandbookHintEntry>;
 
