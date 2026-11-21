@@ -1251,4 +1251,56 @@ describe('<MonthlyJournal /> Sammel-Anerkennen (Plan 2026-11-21 Task 10)', () =>
     fireEvent.click(screen.getAllByRole('checkbox', { name: /02\.06\./ })[0]);
     expect(screen.getByRole('button', { name: 'Ausgewählte anerkennen (0)' })).toBeDisabled();
   });
+
+  // Branch-Review: beim Monats-/Personenwechsel hält `data` bis zur Antwort
+  // (bei einem Fehler dauerhaft) noch den alten Monat. Die Leiste darf dann
+  // nicht auf dessen Einträgen arbeiten — Anerkennen ist nicht rücknehmbar.
+  function mockFirstJournalThen(next: () => Promise<unknown>) {
+    let journalCalls = 0;
+    getMock.mockImplementation((url: string) => {
+      if (!url.includes('/journal')) return Promise.resolve({ data: [] });
+      journalCalls += 1;
+      return journalCalls === 1 ? Promise.resolve({ data: { ...validJournal, days } }) : next();
+    });
+  }
+
+  it('bietet während der Monat lädt kein Sammel-Anerkennen für den alten Monat an', async () => {
+    mockFirstJournalThen(() => new Promise(() => { /* lädt noch */ }));
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    fireEvent.click(screen.getByRole('button', { name: 'Alle nicht angerechneten auswählen' }));
+    expect(screen.getByRole('button', { name: 'Ausgewählte anerkennen (2)' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Nächster Monat' }));
+    await waitFor(() => expect(getMock.mock.calls.filter(([u]) => String(u).includes('/journal'))).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: /Alle nicht angerechneten auswählen/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Ausgewählte anerkennen/ })).toBeNull();
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    expect(screen.queryByText('01.06.')).toBeNull();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('bietet nach einem Ladefehler kein Sammel-Anerkennen für den alten Monat an', async () => {
+    mockFirstJournalThen(() => Promise.reject({ response: { status: 500, data: { detail: 'Serverfehler' } } }));
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    fireEvent.click(screen.getByRole('button', { name: 'Alle nicht angerechneten auswählen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Nächster Monat' }));
+    expect(await screen.findByText('Serverfehler')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Alle nicht angerechneten auswählen/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Ausgewählte anerkennen/ })).toBeNull();
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    // Die Tabelle des alten Monats steht nicht unter der neuen Überschrift.
+    expect(screen.queryByText('01.06.')).toBeNull();
+  });
+
+  it('bietet beim Personenwechsel kein Sammel-Anerkennen für die vorige Person an', async () => {
+    mockFirstJournalThen(() => new Promise(() => { /* lädt noch */ }));
+    const { rerender } = render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    rerender(<MonthlyJournal userId="u2" isAdminView />);
+    expect(screen.queryByRole('button', { name: /Alle nicht angerechneten auswählen/ })).toBeNull();
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    await waitFor(() => expect(getMock.mock.calls.filter(([u]) => String(u).includes('/journal'))).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: /Alle nicht angerechneten auswählen/ })).toBeNull();
+  });
 });

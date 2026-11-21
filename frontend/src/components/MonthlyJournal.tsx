@@ -235,6 +235,12 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(format(now, 'yyyy-MM'));
   const [data, setData] = useState<JournalData | null>(null);
+  // Branch-Review: für welchen Monat welcher Person `data` geladen wurde. Beim
+  // Monats-/Personenwechsel hält `data` bis zur Antwort (oder bei einem Fehler
+  // dauerhaft) noch den alten Monat — Tabelle und Sammel-Anerkennen dürfen ihn
+  // dann nicht mehr zeigen bzw. anbieten (Anerkennen ist nicht rücknehmbar).
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const requestKey = `${userId}|${selectedMonth}`;
   // #463: `=== true` statt truthy — fehlt das Feld (ältere Antwort), gilt das
   // bisherige Verhalten, nicht der Fix-Modus.
   const fixedMode = data?.use_fixed_monthly_target === true;
@@ -276,6 +282,7 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
   useEffect(() => {
     const controller = new AbortController();
     const [year, month] = selectedMonth.split('-').map(Number);
+    const key = `${userId}|${selectedMonth}`;
     const url = isAdminView
       // Fix #6: admins legitimately review absences (incl. SICK) in the journal;
       // request the health data explicitly so the backend serves it AND logs the
@@ -292,6 +299,7 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
         if (!isJournalData(res.data)) {
           // #382: non-journal 200 body → show the inline error, never crash.
           setData(null);
+          setLoadedKey(null);
           setError('Journal konnte nicht geladen werden.');
           return;
         }
@@ -312,6 +320,7 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
             ),
           })),
         });
+        setLoadedKey(key);
       })
       .catch((err) => {
         if (err?.code === 'ERR_CANCELED') return;
@@ -322,11 +331,17 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
     return () => controller.abort();
   }, [selectedMonth, userId, isAdminView, reloadKey]);
 
+  // Branch-Review: nur ein fertig geladener, fehlerfreier Stand des GEWÄHLTEN
+  // Monats der GEWÄHLTEN Person zählt (der Vergleich deckt auch den ersten
+  // Render nach dem Wechsel ab, bevor der Effekt `loading` setzt).
+  const journalFresh = !!data && !loading && !error && loadedKey === requestKey;
   // Anerkennbare Einträge des Monats in Journal-Reihenfolge; die Auswahl zählt
   // nur, was nach dem letzten Laden noch anerkennbar ist.
   const recognizableEntries = useMemo(
-    () => (isAdminView && data ? data.days.flatMap((d) => d.time_entries.filter(canRecognizeNow)) : []),
-    [data, isAdminView],
+    () => (isAdminView && data && journalFresh
+      ? data.days.flatMap((d) => d.time_entries.filter(canRecognizeNow))
+      : []),
+    [data, isAdminView, journalFresh],
   );
   const selectedEntries = recognizableEntries.filter((e) => selectedIds.has(e.id));
 
@@ -780,6 +795,7 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
               type="checkbox"
               checked={selectedIds.has(e.id)}
               onChange={() => toggleSelected(e.id)}
+              disabled={!journalFresh || bulkBusy}
               aria-label={`${e.start_time?.substring(0, 5) ?? ''}–${e.end_time?.substring(0, 5) ?? ''} am ${day.date.slice(8, 10)}.${day.date.slice(5, 7)}. zum Anerkennen auswählen`}
               className="rounded-sm border-gray-300"
             />
@@ -953,7 +969,7 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
         </div>
       )}
 
-      {data && !loading && (
+      {data && journalFresh && (
         <>
           {/* #463: Feste Monatsarbeitszeit — die Tageszeilen sind hier keine
               Soll/Ist-Abrechnung, sondern eine Anwesenheitsübersicht. Ohne
