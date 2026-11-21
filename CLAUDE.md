@@ -3,7 +3,7 @@
 **Repo:** https://github.com/phash/praxiszeit
 **Stack:** React 18 + TypeScript + Tailwind / FastAPI (Python 3.12) + PostgreSQL 18
 **Deployment:** Docker Compose (Entwicklung/Prod) ODER Native Installer (Kundenserver)
-**Aktuelle Version:** 1.24.3 (Stand 2026-11-17)
+**Aktuelle Version:** 1.25.0 (Stand 2026-11-21)
 **Lizenz/Updates:** ausgeliefert über [pzweb](https://github.com/phash/pzweb) — `praxiszeit.mr-development.de` (Shop) + `updates.mr-development.de` (Update-Server)
 
 > Regeln in Kurzform (Regel · Helfer/Datei · Test · Grund). Hintergrund, Fallgeschichten und ausführlicher Wortlaut: [docs/CLAUDE-HISTORIE.md](docs/CLAUDE-HISTORIE.md).
@@ -246,6 +246,8 @@ cd frontend && npm test                                          # Vitest Utils-
 - **`_ALLOWED_UPDATE_HOSTS` in `backend/app/core/updater.py`:** `updates.mr-development.de` + `praxiszeit.mr-development.de`; Host erst entfernen, wenn eine Version mit der Ersatzdomain durchgelaufen ist. `updates.praxiszeit.de` = Platzhalter.
 - **Nativer Dienststatus darf nicht lügen (#427):** `wait_until_healthy(process, probe, …)` in `praxiszeit-server.py` prüft zuerst `_child_alive(process)`, dann HTTP; `should_give_up()` (5 Abstürze/5 min → Exit 1); `port_is_occupied()` per `connect`, nicht `bind`. `StartLimitIntervalSec`/`StartLimitBurst` in `[Unit]` (in `[Service]` still ignoriert), drei Unit-Quellen synchron (`installer/linux/praxiszeit.service`, `install.sh`, `install-local.sh`); macOS/launchd unverändert. (→ docs/CLAUDE-HISTORIE.md#lizenz-native)
 - **Docker-Images werden bei `up` nie neu gezogen:** `postgres:18-alpine`-Updates per `docker compose pull db`; Frontend-Basis-Image (#491 DEP-4) per `build --pull` — die Backend-Basis ist per Digest fest, Debian-Updates nur per Digest-Bump (s. Lieferkette) — (`deploy.sh` mit WARN-Rückfall und Rollback über `:pre-deploy`); Update-Anleitungen (UPDATE.md, INSTALL-DOCKER, Bundle-README) nennen beides. Prometheus auf LTS 3.13.x gepinnt.
+- **npm-Overrides können den Service Worker still leeren (1.25.0):** `minimatch >= 11` unter glob 11 von `workbox-build` → `sw.js` lud seit 1.22.0 nur Icons + Manifest, Build grün. `scripts/check-sw-precache.sh` (in `local-ci.sh` + `build-release.sh`) bricht ohne `index.html`/mit < 10 Einträgen ab; bei jedem Override-Bump im Frontend frisches `npm ci` + diesen Check.
+- **PostgreSQL-Versionen getrennt (1.25.0):** `POSTGRESQL_VERSION` (theseus, Linux/macOS, `validate-release`) und `POSTGRESQL_WINDOWS_VERSION` + `PG_WINDOWS_SHA256` (EDB, Windows; nur Neuinstallationen, Update behält die vorhandene PG). theseus ≥ 18.7 braucht glibc 2.36 (bricht Ubuntu 22.04/Rocky 9) → Linux/macOS bleiben vorerst 18.6.
 - **macOS-Build:** `tools/macho_deps.py --prune` prüft Load-Commands (inkl. LC_RPATH) unter `bin/postgresql`, bricht bei Runner-/Homebrew-Pfaden ab (#482); nie ausgeführte Dateien → `PG_PRUNE`. Dienstkonto `_praxiszeit` — Doku mit `sudo -u praxiszeit …` braucht eine macOS-Zeile.
 - **Arch/CachyOS mit OpenSSL 4 (2026-11):** das gebündelte PG braucht `libssl.so.3` → `install.sh` zieht das Arch-Paket `openssl-3` NUR, wenn die `.so.3` fehlt; nie `openssl` in die pacman-Liste (hebt per Teil-Upgrade auf 4) und nie `openssl-3` neben openssl 3.x (Konflikt). `validate-release.sh` fährt Arch mit `-Syu`.
 - **fastapi `0.138.*` braucht `prometheus-fastapi-instrumentator>=8.0.1`** (Pin in `backend/requirements.txt`; 8.0.0 las `route.path` von `_IncludedRouter` → 500). Bei fastapi-Bumps echten Login + `/metrics` auf Realhost prüfen.
