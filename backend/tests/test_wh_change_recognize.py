@@ -234,7 +234,7 @@ def test_preview_rows_report_the_raw_stamp(db, test_user, test_admin):
     """Folgeauftrag zu Task 6: „gestempelt" in der Liste zeigt den Rohstempel VOR
     der Änderung, nicht die schon gekappte Zeit. Der Montag war vor der Änderung
     am Beginn gekappt (Stempel 07:35, angerechnet ab 07:40)."""
-    baseline, e = _customer_case(db, test_user)
+    baseline, _ = _customer_case(db, test_user)
     impact = _run(db, test_user, test_admin, baseline)
     rows = {r["date"]: r for r in svc.preview_fields(impact)["time_entry_changes"]}
     mon = rows[MON]
@@ -250,7 +250,7 @@ def test_preview_row_of_auto_closed_entry_reports_effective_end(db, test_user, t
     """Review PR1: das Rohende eines automatisch geschlossenen Eintrags (23:59)
     ist kein Stempel (P18) — „gestempelt" nennt das wirksame Ende
     (``work_window_service.presence_end``), den Rohbeginn aber weiter."""
-    baseline, e = _customer_case(db, test_user)
+    baseline, _ = _customer_case(db, test_user)
     wed2 = date(2026, 10, 14)
     entry(db, test_user, wed2, t(7, 50), t(12), raw_start=t(7, 45), raw_end=t(23, 59), auto_closed=True)
     impact = _run(db, test_user, test_admin, baseline)
