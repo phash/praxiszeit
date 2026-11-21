@@ -171,13 +171,14 @@
 - Create: `frontend/src/utils/firstWorkDayHint.ts`, `frontend/src/utils/firstWorkDayHint.test.ts`
 - Modify: `frontend/src/pages/admin/users/WorkingHoursModal.tsx` (neues Prop `firstWorkDay?: string | null`; Hinweis unter dem Datumsfeld ~`:860`)
 - Modify: `frontend/src/pages/admin/Users.tsx:1076`, `frontend/src/pages/admin/TeamSchedule.tsx:469` (Prop durchreichen)
+- Modify (umgesetzt, nachgetragen): `backend/app/schemas/team_schedule.py` (`TeamScheduleRow.first_work_day`) + Router-Zeile, die es füllt — TeamSchedule.tsx braucht den ersten Arbeitstag für das Prop; Test `test_row_carries_the_first_work_day`. Im PR-Text erwähnen.
 - Test: `frontend/src/pages/admin/users/WorkingHoursModal.test.tsx`
 
 **Interfaces:**
 - Consumes: Task 1 `WorkingHoursChange.is_baseline`.
-- Produces: `firstWorkDayHint(firstWorkDay: string | null | undefined, changes: WorkingHoursChange[], effectiveFrom: string): { applyFrom: string; until: string; source: WorkingHoursChange | null } | null`.
+- Produces: `firstWorkDayHint(firstWorkDay: string | null | undefined, changes: WorkingHoursChange[], effectiveFrom: string, fallback: ScheduleSnapshot, today: string): { applyFrom: string; until: string; source: WorkingHoursChange | null; startSchedule: ScheduleSnapshot } | null` (umgesetzt; `fallback` = Vertrag aus den Dialog-Props wie in `scheduleAt`, `today` = lokales Datum, `startSchedule` = Vertrag am ersten Arbeitstag für den Hinweistext).
   - **Fall A** (noch nichts gespeichert): Es gibt keine Zeile mit `!is_baseline`, und `effectiveFrom > firstWorkDay`. Dann `applyFrom = firstWorkDay`, `until = Vortag(effectiveFrom)`, `source = null` (Formular bleibt).
-  - **Fall B** (gespeichert): Es gibt genau eine Zeile mit `!is_baseline`. Sie liegt nach `firstWorkDay`, und keine `!is_baseline`-Zeile liegt auf oder vor `firstWorkDay`. Ihr Vertrag weicht laut `comparableSnapshot` von `scheduleAt(changes, firstWorkDay)` ab. Dann `source` = diese Zeile, `until = Vortag(source.effective_from)`.
+  - **Fall B** (gespeichert): Es gibt genau eine Zeile mit `!is_baseline` und `effective_from <= heute` (geplante Zukunftszeilen zählen nicht und werden nie `source`). Sie liegt nach `firstWorkDay`, und keine `!is_baseline`-Zeile liegt auf oder vor `firstWorkDay`. Ihr Vertrag weicht laut `comparableSnapshot` von `scheduleAt(changes, firstWorkDay)` ab. Dann `source` = diese Zeile, `until = Vortag(source.effective_from)`.
   - Sonst `null`.
   - `comparableSnapshot`, `scheduleAt` und `formFromSnapshot` werden dafür aus `WorkingHoursModal.tsx` in `frontend/src/pages/admin/users/workingHoursSnapshot.ts` verschoben und exportiert. Das Modal importiert sie von dort.
 
