@@ -51,6 +51,9 @@ _EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     # the accountability log (ended_at) can be closed even under a read-only
     # license — the session performs no data mutation.
     "/api/admin/impersonate/end",
+    # #557: Problem melden must work under a read-only license (that is when
+    # support is needed); preview/send write nothing but the install_id setting.
+    "/api/feedback/",
 )
 
 # DSGVO-Betroffenenrechte: muessen IMMER durchgelassen werden, auch bei

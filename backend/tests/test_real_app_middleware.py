@@ -1149,6 +1149,103 @@ class TestRequestSizeLimit:
         assert response.status_code == 413
 
 
+class TestFeedbackSendOnRealApp:
+    """#557 (Review F1/F6/F7/F10, F3): ``/api/feedback/send`` durch die ECHTE
+    Zwischenschicht. Der Dialog, der Router (``ATTACHMENT_MAX_BYTES``) und die
+    Handbuecher versprechen Bildschirmfotos bis 5 MB — die globale 2-MB-Grenze
+    der ``RequestSizeLimitMiddleware`` schnitt sie vorher mit 413 ab. Und ein
+    nicht erreichbarer Meldeserver (502) ist kein Programmfehler: er darf keine
+    Zeile im Fehler-Monitoring erzeugen."""
+
+    PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+    def _send(self, client, monkeypatch, result, size):
+        from app.services import report_client
+
+        monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", "mrk_praxiszeit_" + "x" * 20)
+        monkeypatch.setattr(report_client, "send_report", lambda fields, att=None: result)
+        token = _login(client, ADMIN_USERNAME, ADMIN_PASSWORD)
+        payload = {"kind": "bug", "title": "Bild", "description": "Mit Bildschirmfoto"}
+        image = self.PNG_MAGIC + b"\x00" * (size - len(self.PNG_MAGIC))
+        return client.post(
+            "/api/feedback/send",
+            headers=_auth_headers(client, token),
+            data={"payload": __import__("json").dumps(payload)},
+            files={"attachment": ("s.png", image, "image/png")},
+        )
+
+    def test_screenshot_between_2_and_5_mb_reaches_the_router(self, client_factory, monkeypatch):
+        from app.services.report_client import ReportResult
+
+        ok = ReportResult(ok=True, upstream_status=201, ref="praxiszeit-1",
+                          report_id="i", detail=None)
+        response = self._send(client_factory(), monkeypatch, ok, 5 * 1024 * 1024)
+        assert response.status_code == 200, response.text[:300]
+        assert response.json()["ref"] == "praxiszeit-1"
+
+    def test_send_body_stays_capped(self, client_factory, monkeypatch):
+        from app.services.report_client import ReportResult
+
+        ok = ReportResult(ok=True, upstream_status=201, ref="r", report_id="i", detail=None)
+        response = self._send(client_factory(), monkeypatch, ok, 6 * 1024 * 1024 + 1)
+        assert response.status_code == 413
+
+    def test_upstream_failure_is_not_logged_as_program_error(
+        self, client_factory, monkeypatch
+    ):
+        from app.models.error_log import ErrorLog
+        from app.services.report_client import ReportResult
+
+        failed = ReportResult(ok=False, upstream_status=None, ref=None, report_id=None,
+                              detail="Meldeserver nicht erreichbar.")
+        response = self._send(client_factory(), monkeypatch, failed, 1024)
+        assert response.status_code == 502
+        session = SessionLocal()
+        try:
+            rows = session.query(ErrorLog).filter(ErrorLog.path == "/api/feedback/send").all()
+            assert rows == []
+        finally:
+            session.close()
+
+    def test_internal_bug_in_send_path_is_logged_without_values(
+        self, client_factory, monkeypatch
+    ):
+        """#557 D7: der Auffang in ``send_report`` darf einen echten Programmfehler
+        nicht als Meldeserver-Ausfall tarnen — die Zeile im Fehler-Monitoring
+        bleibt (nur Typ + Stapel, nie die Meldung oder der Meldeschlüssel)."""
+        from app.models.error_log import ErrorLog
+        from app.services import report_client
+
+        key = "mrk_praxiszeit_" + "k" * 20
+        monkeypatch.setattr(settings, "FEEDBACK_REPORT_KEY", key)
+
+        secret_message = "geheim-" + "Anna " + key  # Quelltextzeilen stehen im Stapel
+
+        async def broken(fields, attachment):
+            raise RuntimeError(secret_message)
+
+        monkeypatch.setattr(report_client, "_send", broken)
+        client = client_factory()
+        token = _login(client, ADMIN_USERNAME, ADMIN_PASSWORD)
+        payload = {"kind": "bug", "title": "T", "description": "D"}
+        response = client.post(
+            "/api/feedback/send", headers=_auth_headers(client, token),
+            data={"payload": __import__("json").dumps(payload)},
+        )
+        assert response.status_code == 502
+        assert response.json()["upstream_status"] is None
+        session = SessionLocal()
+        try:
+            rows = session.query(ErrorLog).filter(ErrorLog.path == "/api/feedback/send").all()
+            assert len(rows) == 1
+            row = rows[0]
+            assert "RuntimeError" in row.message and "RuntimeError" in row.traceback
+            for text in (row.message, row.traceback):
+                assert "geheim-Anna" not in text and key not in text
+        finally:
+            session.close()
+
+
 # ---------------------------------------------------------------------------
 # 8. Fehlerprotokollierung
 # ---------------------------------------------------------------------------

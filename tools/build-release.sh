@@ -866,8 +866,14 @@ PTHEOF
             rm -rf "${_setup_publish}"
             # Windows-Pfad fuer MSBuild-Property (sonst missparst Git-Bash den Pfad)
             _payload_zip_win="$(cygpath -w "${_payload_zip}" 2>/dev/null || echo "${_payload_zip}")"
+            if [ -n "${MRD_REPORT_KEY:-}" ]; then
+                info "Meldeschluessel (MRD_REPORT_KEY) wird in setup.exe eingebaut."
+            else
+                info "Kein MRD_REPORT_KEY — setup.exe bietet nur 'Als Datei speichern'."
+            fi
             if dotnet publish "${_setup_proj}" \
                 -c Release -r win-x64 \
+                -p:MrdReportKey="${MRD_REPORT_KEY:-}" \
                 -p:PublishSingleFile=true \
                 --self-contained true \
                 -p:Version="${APP_VERSION}" \

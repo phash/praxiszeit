@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using PraxisZeit.Setup.Core.Services.Reporting;
 
 namespace PraxisZeit.Setup.ViewModels;
 
@@ -43,12 +44,155 @@ public sealed partial class DonePageViewModel : WizardPageBase
     public bool ShowBrowserCard => Success;
     public bool ShowErrorCard => !Success;
 
+    // ---- Problem melden (#557, mrd-report-1) --------------------------------
+
+    public const string BoardUrl = "https://praxiszeit.mr-development.de/app/bugs?product=praxiszeit";
+    public const string SendFailedText = "Senden fehlgeschlagen – als Datei speichern?";
+    public static readonly string NoKeyHint =
+        $"Bitte speichern Sie die Meldung als Datei und senden Sie sie an {LicensePageViewModel.LicenseContact}.";
+
+    private SetupReport? _report;
+    private string? _reportKey;
+    private ReportSender _sender = new();
+
+    /// <summary>
+    /// Speichert Text unter einem vom Nutzer gewählten Namen (Dateidialog der
+    /// View, <c>StorageProvider.SaveFilePickerAsync</c>). Rückgabe: gespeichert ja/nein.
+    /// </summary>
+    public Func<string, string, Task<bool>>? SaveFileHandler { get; set; }
+
+    /// <summary>Aktionen „An Entwickler schicken“ / „Als Datei speichern“ nur nach einem Fehler.</summary>
+    public bool ShowReportActions => !Success && _report is not null;
+
+    public string NoKeyHintText => NoKeyHint;
+
+    public bool HasReportKey => _reportKey is not null;
+
+    /// <summary>Ohne eingebauten Meldeschlüssel: Hinweis auf Datei + Mail.</summary>
+    public bool ShowNoKeyHint => ShowReportActions && !HasReportKey;
+
+    [ObservableProperty]
+    public partial string ReportPreviewText { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string? ReportStatus { get; set; }
+
+    [ObservableProperty]
+    public partial string? ReportDetail { get; set; }
+
+    [ObservableProperty]
+    public partial bool ReportSent { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsSendingReport { get; set; }
+
+    public bool CanSendReport => HasReportKey && !ReportSent && !IsSendingReport && _report is not null;
+
+    /// <summary>
+    /// Meldung für den fehlgeschlagenen Lauf vorbereiten. <paramref name="key"/>
+    /// bleibt privat (nie in Vorschau, Status oder Datei).
+    /// </summary>
+    public void PrepareReport(SetupReport report, string? key, ReportSender? sender = null)
+    {
+        _report = report;
+        _reportKey = ReportKey.Normalize(key);
+        _sender = sender ?? new ReportSender();
+        ReportSent = false;
+        ReportStatus = null;
+        ReportDetail = null;
+        ReportPreviewText = report.ToPreviewText(HasReportKey);
+        RaiseReportChanged();
+    }
+
+    private void RaiseReportChanged()
+    {
+        OnPropertyChanged(nameof(ShowReportActions));
+        OnPropertyChanged(nameof(HasReportKey));
+        OnPropertyChanged(nameof(ShowNoKeyHint));
+        OnPropertyChanged(nameof(CanSendReport));
+        SendReportCommand.NotifyCanExecuteChanged();
+        SaveReportCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnReportSentChanged(bool value) => RaiseReportChanged();
+
+    partial void OnIsSendingReportChanged(bool value) => RaiseReportChanged();
+
+    [RelayCommand(CanExecute = nameof(CanSendReport))]
+    private async Task SendReportAsync()
+    {
+        if (_report is null || _reportKey is null || IsSendingReport || ReportSent)
+        {
+            return;
+        }
+        IsSendingReport = true;
+        ReportStatus = "Meldung wird gesendet …";
+        ReportDetail = null;
+        try
+        {
+            var result = await _sender.SendAsync(_report, _reportKey).ConfigureAwait(true);
+            if (result.Ok)
+            {
+                ReportSent = true;
+                ReportStatus = string.IsNullOrEmpty(result.Ref) ? "Meldung gesendet." : $"Meldung gesendet: {result.Ref}.";
+            }
+            else
+            {
+                ReportStatus = SendFailedText;
+                ReportDetail = result.Detail;
+            }
+        }
+        finally
+        {
+            IsSendingReport = false;
+        }
+    }
+
+    private bool CanSaveReport => _report is not null;
+
+    [RelayCommand(CanExecute = nameof(CanSaveReport))]
+    private async Task SaveReportAsync()
+    {
+        if (_report is null || SaveFileHandler is null)
+        {
+            return;
+        }
+        try
+        {
+            var saved = await SaveFileHandler(SetupReport.FileName(DateTime.Now), _report.ToFileText())
+                .ConfigureAwait(true);
+            if (saved && !ReportSent)
+            {
+                ReportStatus = "Meldung als Datei gespeichert.";
+                ReportDetail = null;
+            }
+        }
+        catch (Exception)
+        {
+            ReportStatus = "Datei konnte nicht gespeichert werden.";
+        }
+    }
+
+    [RelayCommand]
+    private void OpenBoard()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = BoardUrl, UseShellExecute = true });
+        }
+        catch
+        {
+            // best-effort
+        }
+    }
+
     public string BrowserButtonText => IsServerReady ? "Im Browser öffnen" : "Startet…";
 
     partial void OnSuccessChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowBrowserCard));
         OnPropertyChanged(nameof(ShowErrorCard));
+        RaiseReportChanged();
     }
 
     partial void OnIsServerReadyChanged(bool value)

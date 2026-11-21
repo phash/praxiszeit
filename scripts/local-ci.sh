@@ -171,7 +171,9 @@ fi
 # settings (compose + native postgresql.conf) and the nginx /api/metrics rule
 # (Audit 2026-11-07 S2-1/S2-9), test_backup_mac.py the backup signature parity
 # between praxiszeit-server.py and the backend (S3-03), test_handbuch_rechenbeispiele.py
-# the frontend/src/handbuch/content/rechenbeispiele.json numbers; all skip without the repo.
+# the frontend/src/handbuch/content/rechenbeispiele.json numbers, test_report_repo_config.py
+# the mrd-report-1 settings in compose, the example configs and _CONF_TO_ENV
+# (#557); all skip without the repo.
 step "Native PG lifecycle (praxiszeit-server.py)"
 if docker run --rm --user "$(id -u):$(id -g)" \
        -v "$(pwd)":/work -w /work/backend \
@@ -187,7 +189,7 @@ if docker run --rm --user "$(id -u):$(id -g)" \
          tests/test_frontend_dockerignore.py tests/test_docker_restore.py \
          tests/test_native_restore.py tests/test_native_pg_port.py \
          tests/test_native_security_hardening.py \
-         tests/test_audit_1107_repo_config.py \
+         tests/test_audit_1107_repo_config.py tests/test_report_repo_config.py \
          tests/test_backup_mac.py tests/test_handbuch_rechenbeispiele.py \
          tests/test_native_log_audit.py tests/test_native_backup.py \
          tests/test_windows_scripts.py tests/test_collection_routes_frontend.py \

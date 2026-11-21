@@ -1,4 +1,5 @@
 import os
+import re
 import warnings
 from pathlib import Path
 from typing import Literal, Optional
@@ -56,7 +57,19 @@ _TOML_KEY_MAP = {
     ("backup", "enabled"): "BACKUP_ENABLED",
     ("backup", "schedule"): "BACKUP_SCHEDULE",
     ("backup", "retention_days"): "BACKUP_RETENTION_DAYS",
+    ("feedback", "report_key"): "FEEDBACK_REPORT_KEY",
+    ("feedback", "report_base_url"): "FEEDBACK_REPORT_BASE_URL",
 }
+
+# #557 mrd-report-1: erlaubte Ziele der In-App-Meldung (Basis + Ausweichhost).
+# Eigene Liste, NICHT updater._ALLOWED_UPDATE_HOSTS (die schützt Update-Downloads).
+REPORT_ALLOWED_HOSTS: frozenset[str] = frozenset(
+    {"report.mr-development.de", "praxiszeit.mr-development.de"}
+)
+
+# Meldeschlüssel mrk_<slug>_<zufall> (pzweb docs/protocols/mrd-report-1, ≤ 128).
+_REPORT_KEY_RE = re.compile(r"mrk_[a-z0-9-]{2,32}_\S+", re.ASCII)
+_REPORT_KEY_MAX = 128
 
 
 def _load_toml_config():
@@ -148,6 +161,8 @@ class Settings(BaseSettings):
     # Native mode: serve frontend static files directly from FastAPI (no nginx)
     SERVE_FRONTEND: bool = False
     FRONTEND_DIR: str = "../frontend/dist"
+    # Native mode: directory of praxiszeit.log / service-stderr.log (problem-report log extract, #557)
+    REPORT_LOG_DIR: str = "logs"
 
     # H2: whether to trust client-supplied X-Real-IP / X-Forwarded-For for
     # rate-limiting. Only safe when a reverse proxy WE control (nginx/Caddy)
@@ -192,6 +207,11 @@ class Settings(BaseSettings):
     # report endpoint proxies to (POST {url}/v1/bugs). Host must be in
     # updater._ALLOWED_UPDATE_HOSTS. See routers/feedback.py.
     FEEDBACK_SERVER_URL: str = "https://praxiszeit.mr-development.de"
+    # #557 mrd-report-1: Meldeschlüssel (leer → Altweg /v1/bugs) und Basis-URL
+    # (POST {url}/v1/reports, Host in REPORT_ALLOWED_HOSTS). Der Schlüssel wird
+    # nie protokolliert. Siehe services/report_client.py.
+    FEEDBACK_REPORT_KEY: str = ""
+    FEEDBACK_REPORT_BASE_URL: str = "https://report.mr-development.de"
 
     # SMTP — used by the self-service signup flow (Phase 3). If MAIL_HOST is
     # unset, mail_service.send() logs the email body and returns True; in
@@ -274,6 +294,43 @@ class Settings(BaseSettings):
                 "FEEDBACK_SERVER_URL must be a bare host (no path/query/fragment)"
             )
         return v.rstrip("/")
+
+    @field_validator("FEEDBACK_REPORT_BASE_URL")
+    @classmethod
+    def _validate_feedback_report_base_url(cls, v: str) -> str:
+        """#557: bare https origin, host in REPORT_ALLOWED_HOSTS (no port,
+        userinfo, path, query or fragment) — report_client appends '/v1/reports'."""
+        parsed = urlparse(v.strip())
+        if parsed.scheme != "https":
+            raise ValueError("FEEDBACK_REPORT_BASE_URL must use https://")
+        if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+            raise ValueError(
+                "FEEDBACK_REPORT_BASE_URL must be a bare host (no path/query/fragment)"
+            )
+        host = parsed.hostname or ""
+        if parsed.netloc.lower() != host or host not in REPORT_ALLOWED_HOSTS:
+            raise ValueError(
+                "FEEDBACK_REPORT_BASE_URL host not allowed (allowed: "
+                + ", ".join(sorted(REPORT_ALLOWED_HOSTS)) + ")"
+            )
+        return f"https://{host}"
+
+    @field_validator("FEEDBACK_REPORT_KEY")
+    @classmethod
+    def _validate_feedback_report_key(cls, v: str) -> str:
+        """#557: ein Tippfehler im Meldeschlüssel darf den Start nie verhindern —
+        ungültig → Warnung (ohne den Wert) und Altweg (leer)."""
+        v = (v or "").strip()
+        if not v:
+            return ""
+        if len(v) > _REPORT_KEY_MAX or not _REPORT_KEY_RE.fullmatch(v):
+            warnings.warn(
+                "FEEDBACK_REPORT_KEY is not a valid reporting key (mrk_<product>_<token>, "
+                "max. 128 characters) and is ignored; in-app reports use the legacy path.",
+                stacklevel=2,
+            )
+            return ""
+        return v
 
     # Organisation / DSGVO F-016: configurable practice info for Excel exports
     PRACTICE_NAME: str = "Praxis"

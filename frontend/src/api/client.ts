@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { withCollectionSlash } from '../utils/apiPaths';
 import { AUTH_REFRESHED_EVENT } from '../utils/polling';
+import { useReportStore } from '../stores/reportStore';
 
 // Security (F-023): the access token is held ONLY in module-scoped memory.
 // It is NEVER written to localStorage / sessionStorage so that an XSS attacker
@@ -108,6 +109,66 @@ function looksLikeHtml(data: unknown): boolean {
   return typeof data === 'string' && /^\s*(<!doctype html|<html[\s>])/i.test(data);
 }
 
+// #557: 5xx-Antworten für „An Entwickler schicken“ merken. Der Server findet die
+// error_logs-Zeile über Methode, Status und Pfad (request.url.path, ohne Abfrage),
+// daher wird genau dieser Pfad festgehalten — sonst nichts (keine Daten, keine Abfrage).
+const REPORTABLE_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const MAX_REPORT_PATH = 500;
+
+export function serverErrorPath(baseURL: string | undefined, url: string | undefined): string | null {
+  const rawUrl = url ?? '';
+  let joined: string;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(rawUrl)) {
+    joined = rawUrl;
+  } else {
+    const base = (baseURL ?? '').replace(/\/+$/, '');
+    joined = rawUrl ? `${base}/${rawUrl.replace(/^\/+/, '')}` : base;
+  }
+  let path: string;
+  try {
+    path = new URL(joined, 'http://local.invalid').pathname;
+  } catch {
+    return null;
+  }
+  // Wie Starlettes request.url.path: Prozent-Kodierung je Segment aufgelöst,
+  // auch %2F/%3F/%23 (decodeURI ließe sie stehen, #557 D6). Ein kaputtes
+  // Segment bleibt, wie es ist.
+  path = path
+    .split('/')
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+    })
+    .join('/');
+  if (!path.startsWith('/api/') || path.length > MAX_REPORT_PATH) return null;
+  return path;
+}
+
+function recordServerErrorFrom(error: unknown) {
+  const err = error as {
+    response?: { status?: number };
+    config?: { baseURL?: string; url?: string; method?: string };
+  } | null;
+  const status = err?.response?.status;
+  if (typeof status !== 'number' || status < 500 || status > 599) {
+    // #557 D4: jede andere Fehlerantwort (4xx, Netzfehler) beendet das Fenster —
+    // sonst übernähme ihr Toast den Hinweis eines älteren 5xx (z. B. Hintergrundabfrage).
+    useReportStore.getState().clearServerError();
+    return;
+  }
+  const config = err?.config;
+  if (!config) return;
+  const method = (config.method || 'get').toUpperCase();
+  if (!REPORTABLE_METHODS.has(method)) return;
+  if ((config.url || '').includes('/feedback/')) return;
+  const path = serverErrorPath(config.baseURL, config.url);
+  if (!path || path.includes('/feedback/')) return;
+  useReportStore.getState().recordServerError({ status, method, path });
+}
+
 // Response interceptor: Handle 401 errors with automatic token refresh
 apiClient.interceptors.response.use(
   (response) => {
@@ -119,6 +180,7 @@ apiClient.interceptors.response.use(
     return response;
   },
   async (error) => {
+    recordServerErrorFrom(error);
     const originalRequest = error.config;
 
     // Don't intercept auth endpoint errors (login / refresh / logout).

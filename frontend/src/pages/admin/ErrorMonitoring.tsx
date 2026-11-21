@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { AlertTriangle, CheckCircle, EyeOff, Trash2, Github, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, CheckCircle, EyeOff, Trash2, Github, RefreshCw, ChevronDown, ChevronUp, Send } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import FeedbackDialog from '../../components/FeedbackDialog';
 import { getErrorMessage } from '../../utils/errorMessage';
 
 interface ErrorLog {
@@ -75,6 +76,8 @@ export default function ErrorMonitoring() {
   const [editingUrl, setEditingUrl] = useState<Record<string, boolean>>({});
   const [summary, setSummary] = useState<Record<string, number>>({});
   const [limit, setLimit] = useState(PAGE_SIZE);
+  // #557: Problemmeldung zu genau dieser error_logs-Zeile.
+  const [reportFor, setReportFor] = useState<ErrorLog | null>(null);
   // Nur die jüngste Antwort gilt (Tabwechsel / schnelle Klicks).
   const requestId = useRef(0);
 
@@ -285,6 +288,14 @@ export default function ErrorMonitoring() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => setReportFor(err)}
+                    title="An Entwickler schicken"
+                    aria-label="An Entwickler schicken"
+                    className="p-2 text-primary hover:bg-blue-50 rounded-lg transition"
+                  >
+                    <Send size={18} />
+                  </button>
                   {err.status !== 'resolved' && (
                     <button
                       onClick={() => updateStatus(err.id, 'resolved')}
@@ -434,6 +445,16 @@ export default function ErrorMonitoring() {
             </button>
           )}
         </div>
+      )}
+
+      {reportFor && (
+        <FeedbackDialog
+          key={reportFor.id}
+          origin="error-log"
+          errorLogId={reportFor.id}
+          initialTitle={`Fehler: ${reportFor.message.slice(0, 80)}`}
+          onClose={() => setReportFor(null)}
+        />
       )}
 
       <ConfirmDialog

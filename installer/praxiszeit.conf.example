@@ -55,3 +55,10 @@ check_interval_hours = 12
 enabled = true
 schedule = "02:00"
 retention_days = 31
+
+# [feedback]
+# In-App-Meldung "Problem melden" (#557, Protokoll mrd-report-1).
+# Meldeschluessel aus pzweb; ohne Schluessel gilt der bisherige Weg (/v1/bugs).
+# Erlaubt: https://report.mr-development.de, https://praxiszeit.mr-development.de
+# report_key = "mrk_praxiszeit_..."
+# report_base_url = "https://report.mr-development.de"

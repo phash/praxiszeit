@@ -226,4 +226,13 @@ Zusätzlicher Schutz per Einmal-Code aus einer Authenticator-App (z. B. Google A
 
 ---
 
+## Problem melden
+
+- **Hilfe** (unten links) → **„Fehler melden / Feedback"** → Fenster **„Problem melden"**: Art **„Fehler"** oder **„Feedback"**, Titel, Beschreibung (Bildschirmfoto und Rückmelde-E-Mail freiwillig).
+- **Keine Namen von Mitarbeitenden und keine Notizen aus Zeiteinträgen** in den Text schreiben.
+- **„Vorschau"** zeigt genau, was gesendet wird → **„Senden"** → Nummer der Meldung notieren; **„Bekannte Probleme ansehen"** braucht eine Anmeldung auf praxiszeit.mr-development.de.
+- Kein Internet / Senden fehlgeschlagen → **„Als Datei speichern"** und die Datei der Verwaltung geben.
+
+---
+
 *PraxisZeit · Zeiterfassung nach ArbZG · [gesetze-im-internet.de/arbzg](https://www.gesetze-im-internet.de/arbzg/BJNR117100994.html)*

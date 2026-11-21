@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
+import { useReportStore } from '../stores/reportStore';
+import { useAuthStore } from '../stores/authStore';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -25,12 +27,22 @@ function generateToastId(): string {
   return `toast-${Date.now()}-${_fallbackToastCounter}`;
 }
 
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface Toast {
   id: string;
   type: ToastType;
   message: string;
   duration?: number;
+  action?: ToastAction;
 }
+
+/** #557: Aktions-Toast nach einem Serverfehler bleibt länger stehen (bewusste Ausnahme vom Default). */
+const SERVER_ERROR_ACTION_DURATION = 15000;
+const SERVER_ERROR_ACTION_LABEL = 'An Entwickler schicken';
 
 interface ToastContextType {
   showToast: (type: ToastType, message: string, duration?: number) => void;
@@ -38,6 +50,15 @@ interface ToastContextType {
   error: (message: string, duration?: number) => void;
   info: (message: string, duration?: number) => void;
   warning: (message: string, duration?: number) => void;
+}
+
+const REPORT_TITLE_MAX = 200;
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/** Titel-Vorschlag ohne Ressourcen-IDs (UUIDs, Zahlen) und höchstens 200 Zeichen — wie das Backend. */
+export function reportTitle(e: { status: number; method: string; path: string }): string {
+  const path = e.path.replace(UUID_RE, '<id>').replace(/\/\d+(?=\/|$)/g, '/<id>');
+  return `Serverfehler ${e.status} bei ${e.method} ${path}`.slice(0, REPORT_TITLE_MAX);
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -71,11 +92,11 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
     error: 8000,
   };
 
-  const showToast = useCallback(
-    (type: ToastType, message: string, duration?: number) => {
+  const pushToast = useCallback(
+    (type: ToastType, message: string, duration?: number, action?: (id: string) => ToastAction) => {
       const id = generateToastId();
       const resolvedDuration = duration ?? DEFAULT_DURATIONS[type];
-      const newToast: Toast = { id, type, message, duration: resolvedDuration };
+      const newToast: Toast = { id, type, message, duration: resolvedDuration, action: action?.(id) };
 
       setToasts((prev) => [...prev, newToast]);
 
@@ -86,13 +107,39 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
     [removeToast]
   );
 
+  const showToast = useCallback(
+    (type: ToastType, message: string, duration?: number) => {
+      pushToast(type, message, duration);
+    },
+    [pushToast]
+  );
+
   const success = useCallback((message: string, duration?: number) => {
     showToast('success', message, duration);
   }, [showToast]);
 
+  // #557: folgt der Fehler-Toast unmittelbar auf eine 5xx-Antwort, bekommen
+  // Admins die Aktion „An Entwickler schicken“ (Problemmeldung Art „crash“).
+  // Store-Zugriffe über getState(), damit der Provider-Wert stabil bleibt.
   const error = useCallback((message: string, duration?: number) => {
-    showToast('error', message, duration);
-  }, [showToast]);
+    const serverError = useReportStore.getState().takeRecentServerError();
+    const isAdmin = useAuthStore.getState().user?.role === 'admin';
+    if (!serverError || !isAdmin) {
+      pushToast('error', message, duration);
+      return;
+    }
+    pushToast('error', message, SERVER_ERROR_ACTION_DURATION, (id) => ({
+      label: SERVER_ERROR_ACTION_LABEL,
+      onClick: () => {
+        // Ist schon eine Meldung offen, bleibt sie unangetastet (Eingabe nie verwerfen).
+        const opened = useReportStore.getState().openReport({
+          serverError,
+          initialTitle: reportTitle(serverError),
+        });
+        if (opened) removeToast(id);
+      },
+    }));
+  }, [pushToast, removeToast]);
 
   const info = useCallback((message: string, duration?: number) => {
     showToast('info', message, duration);
@@ -154,7 +201,18 @@ export const ToastProvider = ({ children }: ToastProviderProps) => {
             <div className="shrink-0 mt-0.5">
               {getIcon(toast.type)}
             </div>
-            <p className="flex-1 text-sm font-medium">{toast.message}</p>
+            <div className="flex-1">
+              <p className="text-sm font-medium">{toast.message}</p>
+              {toast.action && (
+                <button
+                  type="button"
+                  onClick={toast.action.onClick}
+                  className="mt-2 text-sm font-semibold underline hover:opacity-80 transition"
+                >
+                  {toast.action.label}
+                </button>
+              )}
+            </div>
             <button
               onClick={() => removeToast(toast.id)}
               className="shrink-0 text-current hover:opacity-70 transition"

@@ -23,6 +23,15 @@
     <ProjectReference Include="..\..\src\PraxisZeit.Setup.Core\PraxisZeit.Setup.Core.csproj" />
   </ItemGroup>
 
+  <!-- mrd-report-1 (#557): dieselben Vektordateien wie das Backend, damit der
+       C#-Sanitizer gegen exakt dieselben Faelle laeuft (ReportSanitizerTests). -->
+  <ItemGroup>
+    <None Include="..\..\..\..\backend\tests\data\mrd-report-1\sanitize-vectors.json"
+          Link="vectors\sanitize-vectors.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\..\backend\app\core\report_rules\praxiszeit-sanitize.json"
+          Link="vectors\praxiszeit-sanitize.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Fixture-Payload: ein winziges ZIP mit zwei Test-Files, eingebettet
        als `praxiszeit_payload.zip` (gleicher LogicalName wie im Production-
        Build). Die Tests laden `Assembly.GetExecutingAssembly()` in den

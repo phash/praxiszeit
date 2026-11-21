@@ -53,6 +53,15 @@ Auslöser: Logs einer nativen Windows-Installation vom 07.04. bis 15.11.2026 (ge
 
 Offen (nicht umgesetzt): periodische Prüfung von `/api/health` im Wachhund (3 × 60 s); persistenter Fehlstart-Zähler mit Exit 78 nach N Fehlstarts; eigene Ereignisquelle über `pg_ctl register -e` (vorher im Emulator prüfen).
 
+## Problem melden (mrd-report-1, #557)
+
+- **Meldeschlüssel:** `[feedback] report_key` in `config/praxiszeit.conf` (Umgebung `FEEDBACK_REPORT_KEY`). Leer = bisheriger Meldeweg (`POST /v1/bugs` an `FEEDBACK_SERVER_URL`, Lizenz-ID nötig, in der Beta `beta`). Mit Schlüssel: `POST {report_base_url}/v1/reports` (Protokoll `mrd-report-1`). Ein ungültiger Schlüssel stoppt den Dienst nicht (Warnung ohne Wert, gilt als leer). Der Schlüssel erscheint nie in Logs, Fehlermeldungen, Vorschau oder gespeicherten Meldungen (Vorschau: `mrk_praxiszeit_… (nicht angezeigt)`). Änderung wirkt nach Neustart des Dienstes.
+- **Ziel:** `[feedback] report_base_url` (`FEEDBACK_REPORT_BASE_URL`), Standard `https://report.mr-development.de`; erlaubt nur `report.mr-development.de` und `praxiszeit.mr-development.de` (reiner `https://`-Ursprung, sonst Startfehler). Ersatzweg `praxiszeit.mr-development.de` genau einmal und **nur** bei DNS- oder TLS-Fehler, nie bei HTTP-Status, Verbindungsabbruch oder Zeitüberschreitung; insgesamt höchstens 15 s.
+- **Firewall ausgehend:** `report.mr-development.de:443`, ersatzweise und für Updates `praxiszeit.mr-development.de:443`.
+- **Protokollauszug (nur Admins, nativ):** letzte Zeilen von `logs/praxiszeit.log` und `logs/service-stderr.log` plus `error_logs`, jede Zeile durch `sanitize_praxiszeit_text` (Namen in Protokollzeilen, Notizen/Begründungen aus Zeiteinträgen, E-Mail-/IP-Adressen, Kennwörter/Schlüssel), höchstens 200 Zeilen. Docker hat keine Logdateien im Container → nur `error_logs`.
+- **`install_id`:** UUID in `system_settings` (`report_install_id`, Default-Mandant) — übersteht Updates, weil sie in der Datenbank liegt.
+- **Windows-Einrichtungs-Assistent:** Scheitert Installation oder Update, bietet die letzte Seite „An Entwickler schicken“ (nur mit beim Build eingebautem Schlüssel `MrdReportKey`) und „Als Datei speichern“; ohne Schlüssel fehlt der Knopf „An Entwickler schicken“ und die Seite zeigt den Hinweis, die Datei an die angezeigte Adresse (`projekt@phash.de`, `LicensePageViewModel.LicenseContact`) zu schicken. Eigene C#-Bereinigung mit denselben Regeln (`backend/app/core/report_rules/praxiszeit-sanitize.json`), Installations-ID in `%LOCALAPPDATA%\PraxisZeit\report-install-id` (je Benutzer; bewusst nicht `%ProgramData%`, dort könnten andere Benutzer Verknüpfungen vorlegen).
+
 ## Kontoübernahme bei verlorenem Admin-Passwort (#425)
 
 ```

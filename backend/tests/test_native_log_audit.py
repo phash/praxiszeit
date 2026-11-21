@@ -513,9 +513,11 @@ class TestUvicornLogKonfiguration:
 
 class _FakePopen:
     last = None
+    last_env = None
 
     def __init__(self, cmd, **kw):
         _FakePopen.last = cmd
+        _FakePopen.last_env = kw.get("env")
         self.returncode = None
 
     def poll(self):
@@ -573,6 +575,14 @@ class TestUvicornStart:
         i = cmd.index("--log-config")
         assert Path(cmd[i + 1]) == tmp_path / "uvicorn-log.json"
         assert (tmp_path / "uvicorn-log.json").is_file()
+
+    def test_report_log_dir_zeigt_auf_den_echten_logordner(self, srv, tmp_path, monkeypatch):
+        """#557: uvicorn laeuft mit cwd=BACKEND_DIR, 'logs' relativ waere der falsche
+        Ordner -> das Log-Extract der Problemmeldung bliebe leer."""
+        monkeypatch.setenv("REPORT_LOG_DIR", "vom-operator")
+        config = {"server": {"port": 18080, "bind_address": "127.0.0.1"}}
+        self._run(srv, tmp_path, monkeypatch, config)
+        assert _FakePopen.last_env["REPORT_LOG_DIR"] == str(srv.LOG_DIR)
 
 
 # --- D/NET-8: [server] allowed_hosts -----------------------------------------

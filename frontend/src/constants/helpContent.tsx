@@ -411,6 +411,10 @@ export const helpContent: Record<string, HelpEntry> = {
           <h3 className="font-semibold text-gray-800 mb-2">Fehler auflösen</h3>
           <p className="text-sm text-gray-600">Nach Behebung eines Fehlers auf „Auflösen" klicken – der Eintrag wird als erledigt markiert und taucht nicht mehr in der offenen Liste auf.</p>
         </section>
+        <section>
+          <h3 className="font-semibold text-gray-800 mb-2">An Entwickler schicken</h3>
+          <p className="text-sm text-gray-600">Das Papierflieger-Symbol öffnet „Problem melden“ für diesen Fehler. Mit „Protokollauszug anhängen (bereinigt)“ gehen die letzten Fehler mit; Namen, Notizen und Begründungen aus Zeiteinträgen, E-Mail- und IP-Adressen sowie Kennwörter werden vorher unkenntlich gemacht. Die Vorschau zeigt genau, was gesendet wird; ohne Internet „Als Datei speichern“.</p>
+        </section>
       </div>
     ),
   },

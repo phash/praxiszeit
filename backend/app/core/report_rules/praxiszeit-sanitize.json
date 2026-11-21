@@ -1,0 +1,236 @@
+{
+  "protocol": "mrd-report-1",
+  "version": 1,
+  "rules": [
+    {
+      "name": "pz_user_token",
+      "category": "person",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b(user|username|user_name|login)([ \\t]*=[ \\t]*)[^\\n]*?([ \\t]+[A-Za-z_]+=|[,;\\n]|$)",
+      "replacement": "{1}{2}<user>{3}",
+      "description": "Login/user name assignments (user=anna.schmidt) in auth log lines."
+    },
+    {
+      "name": "pz_person_line",
+      "category": "person",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b(full_name|display_name|employee_name|praxis_name|practice_name|employee|name)([ \\t]*[=:][ \\t]*)(\"(?:[^\"\\\\\\n]|\\\\.)*\"|\\'(?:[^\\'\\\\\\n]|\\\\.)*\\'|[^ \\t\\n<][^\\n]*)",
+      "replacement": "{1}{2}<user>",
+      "description": "Person name fields (full_name=..., name: ..., praxis_name = Praxis Dr. ...): the rest of the line."
+    },
+    {
+      "name": "pz_text_quoted",
+      "category": "text",
+      "flags": [
+        "i"
+      ],
+      "pattern": "([\"\\'](?:note|notes|comment|description|input|input_value|reason|break_waiver_reason|sunday_exception_reason|rejection_reason|proposed_note|original_note|name|full_name|display_name|first_name|last_name|title)[\"\\'][ \\t]*:[ \\t]*)(\"(?:[^\"\\\\\\n]|\\\\.)*\"|\\'(?:[^\\'\\\\\\n]|\\\\.)*\\')",
+      "replacement": "{1}<text>",
+      "description": "Quoted free-text fields in JSON and Python dict dumps (note, reason, input, ...)."
+    },
+    {
+      "name": "pz_text_assign",
+      "category": "text",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b(input_value|note|notes|comment|break_waiver_reason|sunday_exception_reason)([ \\t]*=[ \\t]*)(\"(?:[^\"\\\\\\n]|\\\\.)*\"|\\'(?:[^\\'\\\\\\n]|\\\\.)*\\')",
+      "replacement": "{1}{2}<text>",
+      "description": "Quoted free-text assignments (input_value='...' in Pydantic errors)."
+    },
+    {
+      "name": "pz_exception_message",
+      "category": "text",
+      "flags": [
+        "m"
+      ],
+      "pattern": "^([ \\t|+\\-]*(?:[A-Za-z_][A-Za-z0-9_]*\\.)*[A-Za-z_][A-Za-z0-9_]*(?:Error|Exception|Warning|Exit|Interrupt))(:[ \\t]+)[^\\n]+",
+      "replacement": "{1}{2}<text>",
+      "description": "Message of a Python exception line in native log tracebacks (KeyError: 'Weber'): may quote any input value; the type stays."
+    },
+    {
+      "name": "pz_import_filename",
+      "category": "text",
+      "flags": [],
+      "pattern": "(\\(Datei:?[ \\t]+)[^\\n]*",
+      "replacement": "{1}<text>)",
+      "description": "Uploaded file name in log lines (XLS-Import fehlgeschlagen (Datei <name>)): often carries an employee name."
+    },
+    {
+      "name": "pz_query_value",
+      "category": "text",
+      "flags": [],
+      "pattern": "([?&][A-Za-z0-9_.\\[\\]-]{1,64}=)[^ \\t\\n&#\"]+",
+      "replacement": "{1}<text>",
+      "description": "URL query parameter values."
+    },
+    {
+      "name": "pz_windows_sid",
+      "category": "person",
+      "flags": [],
+      "pattern": "\\bS-1-(?:5-21|12-1)(?:-[0-9]+)+",
+      "replacement": "<secret>",
+      "description": "Windows account SIDs (S-1-5-21-..., Azure AD S-1-12-1-...) in setup/update logs; well-known SIDs (S-1-5-18) stay."
+    },
+    {
+      "name": "pz_account_label",
+      "category": "person",
+      "flags": [
+        "i"
+      ],
+      "pattern": "\\b(Benutzer|User|Konto)([ \\t]*:[ \\t]*)[^ \\t\\n(<](?:[^ \\t\\n(]|[ \\t]+[^ \\t\\n(])*",
+      "replacement": "{1}{2}<user>",
+      "description": "Account name after Benutzer:/User:/Konto: (Windows DOMAIN\\\\name in setup logs) up to an opening parenthesis or the line end."
+    }
+  ],
+  "cases": [
+    {
+      "id": "pz-auth-login-failed",
+      "input": "2026-11-18 08:15:02 WARNING praxiszeit.security: AUTH login_failed user=anna.schmidt reason=bad_password ip=192.168.178.20",
+      "expected": "2026-11-18 08:15:02 WARNING praxiszeit.security: AUTH login_failed user=<user> reason=bad_password ip=<ip>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-auth-redacted",
+      "input": "2026-11-18 08:15:02 WARNING praxiszeit.security: AUTH login_failed user=an…#3f9a2c1b0d4e reason=unknown_user ip=10.0.0.5",
+      "expected": "2026-11-18 08:15:02 WARNING praxiszeit.security: AUTH login_failed user=<user> reason=unknown_user ip=<ip>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-access-query",
+      "input": "2026-11-18 08:16:00 INFO:     192.168.178.20:51234 - \"GET /api/admin/users?search=Schmidt&include_inactive=true HTTP/1.1\" 200",
+      "expected": "2026-11-18 08:16:00 INFO:     <ip>:51234 - \"GET /api/admin/users?search=<text>&include_inactive=<text> HTTP/1.1\" 200",
+      "patient_data": false
+    },
+    {
+      "id": "pz-pydantic-input-value",
+      "input": "  String should have at most 500 characters [type=string_too_long, input_value='Arzttermin bei Dr. Weber wegen Rücken', input_type=str]",
+      "expected": "  String should have at most 500 characters [type=string_too_long, input_value=<text>, input_type=str]",
+      "patient_data": false
+    },
+    {
+      "id": "pz-pydantic-dict",
+      "input": "{'type': 'string_too_long', 'loc': ('body', 'note'), 'msg': 'String should have at most 500 characters', 'input': 'Kind krank, Schule angerufen'}",
+      "expected": "{'type': 'string_too_long', 'loc': ('body', 'note'), 'msg': 'String should have at most 500 characters', 'input': <text>}",
+      "patient_data": false
+    },
+    {
+      "id": "pz-json-note",
+      "input": "{\"date\": \"2026-11-18\", \"start_time\": \"08:00\", \"note\": \"Arzttermin Dr. Weber\", \"break_waiver_reason\": \"Notfallpatient\"}",
+      "expected": "{\"date\": \"2026-11-18\", \"start_time\": \"08:00\", \"note\": <text>, \"break_waiver_reason\": <text>}",
+      "patient_data": false
+    },
+    {
+      "id": "pz-json-escaped-quote",
+      "input": "{\"note\": \"Sie sagte \\\"Kind krank\\\" am Telefon\", \"id\": 4}",
+      "expected": "{\"note\": <text>, \"id\": 4}",
+      "patient_data": false
+    },
+    {
+      "id": "pz-full-name-line",
+      "input": "2026-11-18 08:20:00 ERROR app.routers.time_entries: update failed full_name=Sarah Klein username=s.klein",
+      "expected": "2026-11-18 08:20:00 ERROR app.routers.time_entries: update failed full_name=<user>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-auth-username-with-space",
+      "input": "2026-11-18 08:30:00 INFO praxiszeit.security: AUTH login_success user=anna schmidt reason=ok ip=192.168.178.20",
+      "expected": "2026-11-18 08:30:00 INFO praxiszeit.security: AUTH login_success user=<user> reason=ok ip=<ip>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-auth-username-with-space-eol",
+      "input": "2026-11-18 08:31:00 INFO praxiszeit.security: AUTH logout user=anna schmidt",
+      "expected": "2026-11-18 08:31:00 INFO praxiszeit.security: AUTH logout user=<user>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-full-name-quoted",
+      "input": "2026-11-18 08:32:00 ERROR app.routers.admin_users: update failed full_name='Sarah Klein' display_name=\"Sarah Klein\" id=7",
+      "expected": "2026-11-18 08:32:00 ERROR app.routers.admin_users: update failed full_name=<user> display_name=<user> id=7",
+      "patient_data": false
+    },
+    {
+      "id": "pz-context-untouched",
+      "input": "Fehler: HTTP 500 POST /api/time-entries — IntegrityError (23505 unique_violation)",
+      "expected": "Fehler: HTTP 500 POST /api/time-entries — IntegrityError (23505 unique_violation)",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-message-quoted",
+      "input": "KeyError: 'Weber'",
+      "expected": "KeyError: <text>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-message-tail",
+      "input": "ValueError: invalid literal for int() with base 10: 'Anna Schmidt'",
+      "expected": "ValueError: <text>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-dotted-name",
+      "input": "sqlalchemy.exc.DataError: (psycopg.errors.InvalidTextRepresentation) Lisa Braun",
+      "expected": "sqlalchemy.exc.DataError: <text>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-group-indented",
+      "input": "  | UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in Zeiten Anna.xls",
+      "expected": "  | UnicodeDecodeError: <text>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-uvicorn-header-untouched",
+      "input": "ERROR:    Exception in ASGI application",
+      "expected": "ERROR:    Exception in ASGI application",
+      "patient_data": false
+    },
+    {
+      "id": "pz-exception-db-summary-untouched",
+      "input": "IntegrityError (UniqueViolation: SQLSTATE 23505, constraint uq_tenant_user_date_start)",
+      "expected": "IntegrityError (UniqueViolation: SQLSTATE 23505, constraint uq_tenant_user_date_start)",
+      "patient_data": false
+    },
+    {
+      "id": "pz-import-filename",
+      "input": "2026-11-18 08:20:00 ERROR app.services.xls_import_service: XLS-Import fehlgeschlagen (Datei Zeiten Anna Schmidt (2).xls)",
+      "expected": "2026-11-18 08:20:00 ERROR app.services.xls_import_service: XLS-Import fehlgeschlagen (Datei <text>)",
+      "patient_data": false
+    },
+    {
+      "id": "pz-practice-name",
+      "input": "praxis_name = Praxis Dr. Weber",
+      "expected": "praxis_name = <user>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-windows-account-line",
+      "input": "[2026-11-18 08:15:02] [INFO]   Benutzer: PRAXIS-PC\\Anna Schmidt (S-1-5-21-3623811015-3361044348-30300820-1001), Administrator (erhoeht): True",
+      "expected": "[2026-11-18 08:15:02] [INFO]   Benutzer: <user> (<secret>), Administrator (erhoeht): True",
+      "patient_data": false
+    },
+    {
+      "id": "pz-windows-account-eol",
+      "input": "User: CONTOSO\\a.weber\nKonto:  Lisa Braun",
+      "expected": "User: <user>\nKonto:  <user>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-windows-sid-bare",
+      "input": "Dienstkonto S-1-5-21-1004336348-1177238915-682003330-512 fehlt, Azure S-1-12-1-111-222-333-444",
+      "expected": "Dienstkonto <secret> fehlt, Azure <secret>",
+      "patient_data": false
+    },
+    {
+      "id": "pz-windows-account-untouched",
+      "input": "  Administrator (erhoeht): True, Systemkonto S-1-5-18",
+      "expected": "  Administrator (erhoeht): True, Systemkonto S-1-5-18",
+      "patient_data": false
+    }
+  ]
+}

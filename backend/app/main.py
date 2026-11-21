@@ -475,10 +475,16 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 # dieser Pfad bekommt 6 MB (Multipart-Overhead), alles andere bleibt bei 2 MB.
 # Gegenstueck: `location ^~ /api/admin/import/` in frontend/nginx.conf und
 # ssl/nginx-ssl.conf.
+# #557 (Review F1): „Problem melden“ nimmt ein Bildschirmfoto bis 5 MB an
+# (feedback.ATTACHMENT_MAX_BYTES) — /api/feedback/send ebenso 6 MB, Gegenstueck
+# `location ^~ /api/feedback/send` in beiden nginx-Konfigurationen.
 app.add_middleware(
     RequestSizeLimitMiddleware,
     max_size=2 * 1024 * 1024,  # 2MB
-    path_limits={"/api/admin/import/": 6 * 1024 * 1024},
+    path_limits={
+        "/api/admin/import/": 6 * 1024 * 1024,
+        "/api/feedback/send": 6 * 1024 * 1024,
+    },
 )
 # M-SEC2: attach unconditionally (was gated on SERVE_FRONTEND). It only *sets*
 # response headers, so it is harmless behind nginx (which sets the identical
@@ -706,9 +712,26 @@ async def capture_errors_middleware(request: Request, call_next):
             traceback_str=exception_frames(exc), status_code=500,
         )
         raise
-    if response.status_code >= 500 and not getattr(request.state, "db_unavailable", False):
+    internal = getattr(request.state, "report_internal_error", None)
+    if internal is not None and response.status_code >= 500:
+        # #557 D7: Programmfehler, den /api/feedback/send in eine 502 übersetzt hat
+        # (der Nutzer bekommt „als Datei speichern“) — trotzdem protokollieren,
+        # wie eine unbehandelte Ausnahme nur Typ und Stapel ohne Meldung.
+        from app.services.error_log_service import exception_frames, exception_summary
+        _capture_error_row(
+            request, level='error', message=exception_summary(internal),
+            traceback_str=exception_frames(internal), status_code=response.status_code,
+        )
+        return response
+    if (
+        response.status_code >= 500
+        and not getattr(request.state, "db_unavailable", False)
+        and not getattr(request.state, "report_upstream_failure", False)
+    ):
         # Kundenfall 2026-11-15 (Log-Audit 10): eine 503 wegen kurz fehlender
         # Datenbank (db_errors.db_unavailable_handler) ist kein Programmfehler.
+        # #557 (Review F3): ebenso wenig die 502 von /api/feedback/send, wenn
+        # der Meldeserver nicht erreichbar ist oder ablehnt (Betriebszustand).
         _capture_error_row(
             request, level='error', status_code=response.status_code,
             message=f"HTTP {response.status_code} {request.method} {request.url.path}",

@@ -93,6 +93,8 @@ PostgreSQL-18-Patchstand — `up` allein nimmt das bereits vorhandene Image;
 | `ADMIN_USERNAME` / `ADMIN_EMAIL` | Initialer Admin |
 | `PRACTICE_NAME` / `PRACTICE_ADDRESS` | Erscheint u.a. in Excel-Exporten (DSGVO); `PRACTICE_NAME` auch in der Kopfzeile des Schichtplan-Aushangs (PDF) |
 | `HOLIDAY_STATE` | Bundesland für Feiertage (z.B. `Bayern`) |
+| `FEEDBACK_REPORT_KEY` | Optional: Meldeschlüssel für „Problem melden“ (Protokoll mrd-report-1); leer = bisheriger Meldeweg. Erscheint nie in Logs, Vorschau oder gespeicherten Meldungen |
+| `FEEDBACK_REPORT_BASE_URL` | Optional, Standard `https://report.mr-development.de`; erlaubt ist nur dieser Host oder `https://praxiszeit.mr-development.de` |
 
 Das initiale Admin-Passwort **nach dem ersten Login** in der Benutzerverwaltung
 ändern.
@@ -108,6 +110,12 @@ Das initiale Admin-Passwort **nach dem ersten Login** in der Benutzerverwaltung
 | db (PostgreSQL 18) | intern 5432 | Datenbank (Volume `postgres_data`) |
 | prometheus | `127.0.0.1:9090` | Metriken (nur lokal) |
 | grafana | unter `/grafana/` | Dashboards (Passwort = `GRAFANA_ADMIN_PASSWORD`) |
+
+**Ausgehend** (optional, nur für „Problem melden“ und Updates): HTTPS zu
+`report.mr-development.de:443` (Meldungen), ersatzweise und für Updates
+`praxiszeit.mr-development.de:443`. Ohne diese Freigabe lässt sich eine Meldung
+nur „Als Datei speichern“. Nach einer Änderung an `.env`:
+`docker compose up -d backend`.
 
 Monitoring (Prometheus/Grafana) läuft mit — wer es nicht braucht, kann
 `docker compose stop prometheus grafana` ausführen.

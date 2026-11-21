@@ -243,6 +243,23 @@ retention_days = 30
 
 Vollstaendiges Beispiel: `config/praxiszeit.conf.example`
 
+**Problem melden (optional):**
+```toml
+[feedback]
+# Meldeschluessel fuer "Problem melden" (Protokoll mrd-report-1). Leer oder
+# nicht gesetzt = bisheriger Meldeweg. Der Schluessel erscheint nie in
+# Protokollen, Vorschau oder gespeicherten Meldungen.
+# report_key = "mrk_praxiszeit_..."
+# Nur report.mr-development.de oder praxiszeit.mr-development.de erlaubt.
+# report_base_url = "https://report.mr-development.de"
+```
+Aenderung wirkt nach Neustart des Dienstes.
+
+**Firewall ausgehend:** HTTPS zu
+`report.mr-development.de:443` (Meldungen), ersatzweise und fuer Updates
+`praxiszeit.mr-development.de:443`. Ohne diese Freigabe laesst sich eine Meldung
+in PraxisZeit nur „Als Datei speichern".
+
 ---
 
 ## SSL/HTTPS

@@ -8,6 +8,11 @@ vi.mock('../../contexts/ToastContext', () => ({
   useToast: () => ({ success: vi.fn(), error: h.toastError, warning: vi.fn(), info: vi.fn() }),
 }));
 
+const dialog = vi.hoisted(() => ({ props: null as null | Record<string, unknown> }));
+vi.mock('../../components/FeedbackDialog', () => ({
+  default: (p: Record<string, unknown>) => { dialog.props = p; return <div data-testid="feedback-dialog" />; },
+}));
+
 import ErrorMonitoring from './ErrorMonitoring';
 
 const mk = (i: number, extra: Record<string, unknown> = {}) => ({
@@ -69,5 +74,22 @@ describe('ErrorMonitoring Aktionen', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(screen.queryByText(/OFFENER-FEHLER/)).toBeNull();
+  });
+
+  it('row button opens dialog with error_log_id', async () => {
+    dialog.props = null;
+    h.get.mockImplementation(async (u: string) =>
+      u.startsWith('/admin/errors/summary') ? { data: { open: 1 } } : { data: [mk(7)] });
+    render(<ErrorMonitoring />);
+    expect(screen.queryByTestId('feedback-dialog')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'An Entwickler schicken' }));
+    expect(screen.getByTestId('feedback-dialog')).toBeInTheDocument();
+    expect(dialog.props).toMatchObject({
+      origin: 'error-log',
+      errorLogId: 'e7',
+      initialTitle: `Fehler: ${mk(7).message.slice(0, 80)}`,
+    });
+    (dialog.props!.onClose as () => void)();
+    await waitFor(() => expect(screen.queryByTestId('feedback-dialog')).toBeNull());
   });
 });

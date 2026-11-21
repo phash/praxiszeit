@@ -357,4 +357,14 @@ Ausgeschiedene mit Einträgen im Zeitraum erscheinen immer, Ausgeblendete nur mi
 
 ---
 
+## Problem melden
+
+- **Hilfe → „Fehler melden / Feedback"** öffnet **„Problem melden"** („Fehler" / „Feedback"); zusätzlich für Admins: Knopf **„An Entwickler schicken"** an roten Serverfehler-Meldungen und je Eintrag im **Fehler-Monitoring**.
+- **„Protokollauszug anhängen (bereinigt)"** (voreingestellt): letzte Fehler-Monitoring-Einträge, nativ zusätzlich Server-Protokoll. Unkenntlich gemacht: Namen in Protokollzeilen, Notizen und Begründungen aus Zeiteinträgen, E-Mail- und IP-Adressen, Kennwörter und Schlüssel.
+- **„Vorschau"** = genau das, was gesendet wird. Ohne Internet oder bei „Senden fehlgeschlagen – als Datei speichern?" → **„Als Datei speichern"**, Datei an den Support.
+- Windows-Einrichtungs-Assistent: bei Fehlschlag **„An Entwickler schicken"** (nur mit eingebautem Meldeschlüssel) / **„Als Datei speichern"** auf der letzten Seite; ohne Schlüssel Hinweis auf projekt@phash.de.
+- **Firewall ausgehend:** `report.mr-development.de:443`, ersatzweise und für Updates `praxiszeit.mr-development.de:443`. Meldeschlüssel: `[feedback] report_key` (nativ) bzw. `FEEDBACK_REPORT_KEY` (Docker); leer = bisheriger Meldeweg.
+
+---
+
 *PraxisZeit · ArbZG-Volltext: [gesetze-im-internet.de/arbzg](https://www.gesetze-im-internet.de/arbzg/BJNR117100994.html)*
