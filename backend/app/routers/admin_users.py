@@ -49,6 +49,8 @@ from app.services import (
 # vacation_requests.py/admin_change_requests.py — direkt aus dem Service
 # importiert (kein Router-Zirkelimport).
 from app.services.closure_split_service import resplit_year_closures
+from app.services.reclamp_audit import BASELINE_ROW_NOTE
+from app.routers.time_entries import ENTRY_NOT_FOUND
 from app.core.license import check_employee_limit
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -1964,9 +1966,6 @@ def _reset_matches(change_data: WorkingHoursChangeCreate, norm, reset_schedule) 
     )
 
 
-BASELINE_ROW_NOTE = "Automatisch erfasster Ausgangswert vor der ersten Stundenänderung"
-
-
 def _soll_coverage_start(db: Session, user: User, tenant_id) -> Optional[date]:
     """Frühester Tag, dessen Soll in einem Saldo zählt (2. Review Task 10);
     ``None`` = es gibt keinen (weder Buchung noch Jahresübertrag).
@@ -2181,14 +2180,39 @@ def _sync_user_to_current_change(db: Session, user: User, tenant_id) -> None:
         _sync_user_from_change(user, most_recent)
 
 
+def _assert_entries_of_user(db: Session, user: User, tenant_id, ids) -> None:
+    """Plan 2026-11-21 Task 4 (Spec 6.1 Nr. 2, P5): jede zum Anerkennen gewählte
+    ID gehört zu dieser Person und diesem Mandanten (F-026) — sonst 404
+    ``ENTRY_NOT_FOUND``, für fremde und unbekannte IDs gleich (#120). Bewusst
+    UNGESPERRT und VOR der Ankersperre: ein manipulierter Body darf weder die
+    Benutzerzeile noch fremde Eintragszeilen sperren (Timing-Orakel). Geteilt mit
+    dem Sammel-Anerkennen (Task 9), damit die Prüfreihenfolge nicht auseinanderläuft."""
+    wanted = {str(i) for i in ids}
+    if not wanted:
+        return
+    found = {str(row.id) for row in db.query(TimeEntry.id).filter(
+        TimeEntry.id.in_(list(ids)),
+        TimeEntry.user_id == user.id,
+        TimeEntry.tenant_id == tenant_id,  # F-026
+    ).all()}
+    if found != wanted:
+        raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
+
+
 def _log_reclamp(db: Session, *, user: User, admin: User, impact, effective_from: date, deleted: bool,
                  reason_type: Optional[str], reason_text: Optional[str], reset_of: Optional[date],
                  replaced_note: Optional[str] = None) -> None:
     """Spec 10.1/10.2 — je neu gekapptem Eintrag eine Zeile und IMMER genau eine
     Sammelzeile (P20: auch ohne Einträge, auch zukunftsdatiert). Per ``db.add``
-    (row_hash, #121), kein Bulk-UPDATE; die Vorschau ruft das nie (10.3)."""
+    (row_hash, #121), kein Bulk-UPDATE; die Vorschau ruft das nie (10.3).
+
+    Plan 2026-11-21 Task 4 (Spec 6.1, Variante b): im selben Schritt anerkannte
+    Einträge (``impact.logged_changes`` ohne sie) bekommen KEINE Zeile hier und
+    zählen nicht in der Sammelzeile — sie stehen nur in ihrer
+    ``credit_override``-Zeile. Der 30-Tage-Hinweis (``parse_summary_note``)
+    meldet so keinen Verlust, der nie gewirkt hat."""
     shortening = impact.is_shortening
-    changed = impact.reclamp.changed
+    changed = impact.logged_changes
     # Teil A, Task 7: geänderte Vertragsbedingungen (Urlaub, Stundenzählung,
     # Minijob) nach „Vertrag:" — nie geparst, ``contract_text`` bleibt der Hinweis.
     contract_before, contract_after = reclamp_audit.contract_pair(impact.old_schedule, impact.new_schedule)
@@ -2253,6 +2277,10 @@ def create_working_hours_change(
     test_wh_change_day_plan_create.py::test_change_actually_moves_the_daily_target)."""
     change_data = _parse_change_body(change_data)
     user = _get_user_in_tenant(db, user_id, current_user)
+    # Plan 2026-11-21 Task 4: gewählte Einträge gehören der Person — ungesperrt,
+    # VOR der Ankersperre (P5); die Zeilensperren nimmt ``run_change``.
+    recognize = frozenset(change_data.recognize_entry_ids)
+    _assert_entries_of_user(db, user, current_user.tenant_id, recognize)
     # E52/P5: Ankersperre ZUERST — vor Snapshot, clamp und jeder Zeilensperre;
     # parallele Schreiber warten und lösen danach den neuen Snapshot auf. Das
     # setzt das Neuladen voraus (#491 API-2): ``_get_user_in_tenant`` las
@@ -2293,8 +2321,15 @@ def create_working_hours_change(
         created["row"] = _insert_change_rows(db, user, current_user, change_data, norm, new_blocks, new_pauses,
                                              replace=replace_row)
 
-    impact = wh_change_service.run_change(
-        db, user, admin_id=current_user.id, effective_from=change_data.effective_from, apply=_apply)
+    try:
+        impact = wh_change_service.run_change(
+            db, user, admin_id=current_user.id, effective_from=change_data.effective_from, apply=_apply,
+            recognize_entry_ids=recognize, lock_recognized=True)
+    except HTTPException:
+        # Anerkennen abgelehnt (400 nicht betroffen/offen/automatisch geschlossen,
+        # 409 Kollision): die GANZE Änderung rollt zurück, nicht nur der Eintrag.
+        db.rollback()
+        raise
     error = wh_change_service.protection_error(impact, change_data, deleting=False, reset_offered=False)
     if error:
         db.rollback()  # verwirft Schritte 2–6 (9.3 Schritt 7)
@@ -2324,7 +2359,8 @@ def create_working_hours_change(
     db.refresh(change)
     # Die API-Zusage bleibt je eine ZAHL — die Einzelheiten stehen im Protokoll.
     change.adjusted_absences = len(impact.absences)
-    change.adjusted_time_entries = len(impact.reclamp.changed)
+    # Anerkannte Einträge zählen nicht als „neu berechnet" (wie die Sammelzeile).
+    change.adjusted_time_entries = len(impact.logged_changes)
     change.skipped_time_entries = len(impact.reclamp.skipped)
     change.warning = warning
     return change
@@ -2636,7 +2672,11 @@ def preview_working_hours_change(
     # mit identischem Snapshot verschiebt im Wirkungsbereich kein Tagessoll und
     # kappt nichts neu. Spec 11.3: der Vergleich schließt kanonische Blöcke und
     # Pausen ein — eine reine Blockänderung IST eine Änderung.
-    snapshot_unchanged = norm is not None and not blocked_reason and _comparable_snapshot(
+    # Plan 2026-11-21 Task 4: gewählte Einträge (Teil des Vorschau-Schlüssels).
+    recognize = frozenset(change_data.recognize_entry_ids) if change_data is not None else frozenset()
+    # Mit Auswahl kein Kurzschluss: ohne Neukappung ist jede gewählte ID „nicht
+    # betroffen" — die Vorschau meldet das wie das Speichern (blocked_reason).
+    snapshot_unchanged = norm is not None and not blocked_reason and not recognize and _comparable_snapshot(
         current_schedule.weekly_hours, current_schedule.use_daily_schedule,
         current_schedule.day_hours, current_schedule.work_days_per_week,
         current_schedule.blocks, current_schedule.block_pauses, _contract_of(current_schedule),
@@ -2660,16 +2700,32 @@ def preview_working_hours_change(
         # ``try`` (Review-Fund 3, Fix-Runde 1): auch ein Fehler schon beim Insert
         # läuft durch das ``finally`` — es gibt keinen Pfad an der
         # Rollback-Garantie vorbei. Protokolliert wird nie (10.3).
-        try:
+        def _run(ids: frozenset) -> tuple:
             before: list = []
             impact = wh_change_service.run_change(
                 db, user, admin_id=current_user.id, effective_from=effective_from,
                 apply=lambda: _insert_change_rows(db, user, current_user, change_data, norm,
                                                   new_blocks, new_pauses, replace=replace_row),
                 after_close=lambda: before.append(_preview_account(db, user, today, cutoff, vacation_year)),
+                recognize_entry_ids=ids, lock_recognized=False,  # Vorschau: keine Zeilensperre
             )
-            overtime_before, vacation_before = before[0]
-            overtime_after, vacation_after = _preview_account(db, user, today, cutoff, vacation_year)
+            return impact, before[0], _preview_account(db, user, today, cutoff, vacation_year)
+
+        try:
+            try:
+                impact, (overtime_before, vacation_before), (overtime_after, vacation_after) = _run(recognize)
+            except HTTPException as exc:
+                # Plan 2026-11-21 Task 4: das Speichern lehnte diese Auswahl ab
+                # (fremde/unbekannte ID 404, nicht betroffen/offen/automatisch
+                # geschlossen 400, Kollision 409). Die Vorschau wirft nie mitten
+                # im Dialog: derselbe Text wird ``blocked_reason``, und die Liste
+                # kommt aus einem zweiten Lauf OHNE Anerkennen — so kann die
+                # Admin die Auswahl korrigieren.
+                if not recognize:
+                    raise
+                db.rollback()
+                blocked_reason = str(exc.detail)
+                impact, (overtime_before, vacation_before), (overtime_after, vacation_after) = _run(frozenset())
             fields = wh_change_service.preview_fields(impact)
         finally:
             db.rollback()

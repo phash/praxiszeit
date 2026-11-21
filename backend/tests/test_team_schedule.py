@@ -105,3 +105,15 @@ def test_people_outside_their_employment_window_are_not_listed(_db_session, admi
     names = _rows(admin_client, date(2026, 10, 20))
     assert "Gegangen" not in names and "Neu" not in names
     assert "Neu" in _rows(admin_client, date(2026, 12, 1))
+
+
+def test_row_carries_the_first_work_day(_db_session, admin_client):
+    """Plan 2026-11-21 (Task 5): der Dialog „Arbeitszeit anpassen…" braucht den
+    ersten Arbeitstag für den Hinweis „Ab erstem Arbeitstag übernehmen"."""
+    fia = _person(_db_session, "Fia", "Frueh", blocks=NEW)
+    fia.first_work_day = date(2026, 10, 1)
+    _person(_db_session, "Ole", "Ohne", blocks=NEW)
+    _db_session.commit()
+    rows = _rows(admin_client, date(2026, 10, 20))
+    assert rows["Frueh"]["first_work_day"] == "2026-10-01"
+    assert rows["Ohne"]["first_work_day"] is None

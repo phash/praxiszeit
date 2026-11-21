@@ -55,6 +55,7 @@ Je MA und Wochentag (Mo–Fr) bis zu **3 Blöcke** „von–bis" + **„Pause in
 - **Pausen:** Lücke ab 15 Min. (nach Abzug des Puffers) zählt für §4 als Pause; Pause eingetragen **und** über die Lücke durchgestempelt → beides abgezogen (Hinweis „Pause in der Lücke wird zusätzlich abgezogen: …").
 - **Sichtbar:** Zusatzzeile am Eintrag („… 2:30 h zwischen den Blöcken nicht angerechnet"), Journal-Summe „Anwesenheit nicht angerechnet", Export-Spalte „Nicht angerechnet (Min)" (letzte Spalte).
 - **Anerkennen** (Admin-Dashboard-Detail, Monatsjournal): ganze gestempelte Zeit zählt, dauerhaft (keine Rücknahme), protokolliert („Anrechnung anerkannt"); offener Eintrag erst nach dem Ausstempeln, automatisch geschlossener erst mit tatsächlichem Ende. MA beantragen das per **„Anrechnung beantragen"**.
+- **Vertrag ab erstem Arbeitstag:** Gilt die Arbeitszeit erst ab heute, bietet der Dialog **„Ab {erster Arbeitstag} übernehmen"** an; Einträge, die dadurch Zeit verlieren (z. B. Aushilfe an einem „Tag ohne Block"), beim Speichern gleich mit anerkennen (**„Speichern und N Einträge anerkennen"**, keine Rücknahme).
 - **Altbestand:** frühere Soll-Fenster = „Arbeitszeit-Fenster (Altbestand, nur Kappung)" (kappen nur, ändern das Soll nicht) → im Dialog **„In Arbeitszeit-Blöcke umwandeln"** oder **„Fenster entfernen"**.
 - ⚖️ Nichtanrechnung ersetzt keine Vergütungsentscheidung (§ 611a, § 612 BGB; MiLoG) – geduldete Arbeit anerkennen. Mitbestimmung § 87 Abs. 1 Nr. 2, 3, 6 BetrVG; Jugendliche §§ 11, 12 JArbSchG – PraxisZeit prüft das nicht.
 

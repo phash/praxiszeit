@@ -32,3 +32,6 @@ class TeamScheduleRow(BaseModel):
     legacy: bool = False
     schedule: ScheduleTodayResponse
     next_change: Optional[TeamScheduleNextChange] = None
+    # Plan 2026-11-21 (Task 5): der Dialog bietet damit „Ab erstem Arbeitstag
+    # übernehmen" an, wenn der Vertrag zu spät beginnt.
+    first_work_day: Optional[date] = None

@@ -21,6 +21,8 @@ export interface WorkingHoursChange {
   created_at: string;
   /** Spec 11.1/11.5: locker gelesen — Altzeilen tragen 07:37/23:59 und Pause `null`. */
   blocks?: WeekBlocks | null;
+  /** Plan 2026-11-21: automatisch erfasste Ausgangszeile vor der ersten Stundenänderung. */
+  is_baseline?: boolean;
   // Teil A (075): die fünf Vertragsfelder der Zeile. Optional nur für ältere
   // Antworten/Testdoubles — der Server liefert sie immer.
   vacation_days?: number | null;
@@ -62,6 +64,24 @@ export interface TimeEntryChange {
   new_uncredited: number;
   new_net: number;
   not_extendable: 'start' | 'end' | 'both' | null;
+  // Plan 2026-11-21 Task 3/6 (Anerkennen im Dialog), erhoben VOR dem Anerkennen:
+  /** geschlossen, nicht automatisch geschlossen, vor dem Lauf nicht anerkannt. */
+  recognizable?: boolean;
+  /** in diesem Lauf anerkannt (die Werte oben bleiben die der Neukappung). */
+  recognized?: boolean;
+  /** Werktag ohne Arbeitszeit-Block — der Eintrag fällt auf 0 h. */
+  blockless_workday?: boolean;
+  /** der alte Vertrag kappte an diesem Tag nicht — die Kappung ist neu. */
+  newly_clamped?: boolean;
+  /** Rohstempel VOR der Änderung — `old_start`/`old_end` sind die damals angerechneten Zeiten. */
+  raw_start?: string | null;
+  raw_end?: string | null;
+}
+
+/** Plan 2026-11-21 Task 6: Zusatz zum Vorschau- UND Anlege-Body — die beim
+ * Speichern anzuerkennenden Einträge (fehlt = keine). */
+export interface RecognizeEntriesBody {
+  recognize_entry_ids?: string[];
 }
 
 /** P22: geänderte ArbZG-Befunde im Wirkungsbereich (`ArbzgFindingsOut`). */

@@ -800,6 +800,7 @@ def retarget_absence_hours(
     *,
     old_full_target_by_date: Dict[date, Decimal],
     old_tracked_by_date: Optional[Dict[date, bool]] = None,
+    old_kept_net_by_date: Optional[Dict[date, float]] = None,
     dry_run: bool = False,
 ) -> List[AbsenceRetarget]:
     """Setzt ``Absence.hours`` im Fenster ``[start, end]`` auf das Tagessoll des
@@ -865,6 +866,15 @@ def retarget_absence_hours(
     :func:`absence_full_targets`). Gesetzt wird es nur für SICK/TRAINING — nur
     dort ist ``hours`` eine Ist-Gutschrift (P27: „nehmen gutgeschriebene Zeit
     zurück"); geklemmt (``f1_clamped``) wird wie in ``create_absence`` jeder Typ.
+
+    ``old_kept_net_by_date`` (Branch-Review Plan 2026-11-21): für die hier
+    genannten Tage zählt (c) die GESAMTE Tagesgutschrift — Arbeit plus
+    Abwesenheit. Der Aufrufer nennt nur Tage mit einem im selben Lauf
+    anerkannten Eintrag (``wh_change_service.run_change``): dort hebt das
+    Anerkennen die Arbeit, die F1-Klemmung senkt die Gutschrift um höchstens
+    denselben Betrag — der Tag gewinnt, eine Verkürzung ist das nicht (Spec
+    6.1/6.2). Für alle übrigen Tage bleibt (c) beim Vergleich der Gutschrift
+    allein (Bestand, ``test_entry_gaining_on_a_mixed_day``).
 
     ``dry_run=True`` ermittelt nur (fuer die Vorschau vor dem Speichern).
 
@@ -1033,7 +1043,13 @@ def retarget_absence_hours(
                     # (``_IST_CREDITED_ABSENCE_TYPES``) — ihre Angleichung an den
                     # nicht gearbeiteten Rest kostet kein Saldo.
                     old_full = float(old_full_target_by_date[d])
-                    credit_reduction = (round((new_hours_f - old_hours_f) * w, 2)
+                    credit_delta = (new_hours_f - old_hours_f) * w
+                    old_kept = (old_kept_net_by_date or {}).get(d)
+                    if old_kept is not None:
+                        # Tag mit anerkanntem Eintrag: Arbeit + Gutschrift
+                        # zusammen (Gutschrifts-Einheiten; Arbeit trägt kein Gewicht).
+                        credit_delta += kept_net - old_kept
+                    credit_reduction = (round(credit_delta, 2)
                                         < round((full_target - old_full) * w, 2))
         new_hours = Decimal(str(new_hours_f)).quantize(Decimal('0.01'))
         old_hours = Decimal(str(a.hours)).quantize(Decimal('0.01'))

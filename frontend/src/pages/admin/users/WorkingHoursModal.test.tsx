@@ -53,6 +53,7 @@ type HistoryRow = {
   milog_working_time_account?: boolean;
   agreed_monthly_hours?: number | null;
   use_fixed_monthly_target?: boolean;
+  is_baseline?: boolean;
 };
 
 function historyResponse(rows: Array<HistoryRow>) {
@@ -2461,5 +2462,201 @@ describe('P1.6: Klick auf den Optionstext im Kasten „Verkürzung"', () => {
     expect(within(region).getByRole('radio', { name: /^Rückwirkend ab 01\.06\.2026/ })).toBeChecked();
     fireEvent.click(within(region).getByText(/^Ab heute \(26\.07\.2026\) wirksam/));
     expect(within(region).getByRole('radio', { name: /^Ab heute \(26\.07\.2026\) wirksam/ })).toBeChecked();
+  });
+});
+
+describe('Plan 2026-11-21 Task 5: Hinweis „Ab erstem Arbeitstag übernehmen"', () => {
+  const HINT = /^Vom 01\.10\.2026 \(erster Arbeitstag\) bis zum 19\.11\.2026 gilt noch der Vertrag vom Anlegen \(40,0 Std\/Woche · 5 Tage\/Woche\)\. Soll die heutige Arbeitszeit schon ab dem ersten Arbeitstag gelten\?$/;
+
+  it('Fall A: Hinweis erscheint, Klick setzt das Datum auf den ersten Arbeitstag', async () => {
+    vi.setSystemTime(new Date('2026-11-20T12:00:00Z'));
+    renderModal({ firstWorkDay: '2026-10-01' });
+    await screen.findByText('Keine Änderungen vorhanden');
+    expect(await screen.findByText(HINT)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ab 01.10.2026 übernehmen' }));
+    expect((screen.getByLabelText('Gültig ab') as HTMLInputElement).value).toBe('2026-10-01');
+    // Am ersten Arbeitstag ist nichts mehr vorzuziehen.
+    expect(screen.queryByRole('button', { name: 'Ab 01.10.2026 übernehmen' })).not.toBeInTheDocument();
+  });
+
+  it('kein Hinweis ohne ersten Arbeitstag', async () => {
+    vi.setSystemTime(new Date('2026-11-20T12:00:00Z'));
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    expect(screen.queryByText(/\(erster Arbeitstag\)/)).not.toBeInTheDocument();
+  });
+
+  it('Fall B: gespeicherte Zeile 20.11. (Mo + Di) wird mit ihrem Vertrag ab dem ersten Arbeitstag übernommen', async () => {
+    vi.setSystemTime(new Date('2026-11-21T12:00:00Z'));
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse([
+        { id: 'base', effective_from: '2026-10-01', weekly_hours: 40, is_baseline: true, vacation_days: 30 },
+        {
+          id: 'modi', effective_from: '2026-11-20', weekly_hours: 16, use_daily_schedule: true,
+          hours_monday: 8, hours_tuesday: 8, hours_wednesday: 0, hours_thursday: 0, hours_friday: 0,
+          work_days_per_week: 2, vacation_days: 12,
+        },
+      ]));
+    });
+    renderModal({
+      firstWorkDay: '2026-10-01', currentWeeklyHours: 16, currentUseDailySchedule: true,
+      currentDayHours: [8, 8, 0, 0, 0], currentWorkDays: 2,
+    });
+    expect(await screen.findByText(HINT)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ab 01.10.2026 übernehmen' }));
+    expect((screen.getByLabelText('Gültig ab') as HTMLInputElement).value).toBe('2026-10-01');
+    expect((screen.getByLabelText('Montag') as HTMLInputElement).value).toBe('8');
+    expect((screen.getByLabelText('Mittwoch') as HTMLInputElement).value).toBe('0');
+    // Die Vorschau läuft über den vorhandenen Debounce mit dem übernommenen Vertrag.
+    await waitFor(() => {
+      const last = transport.filter((t) => t.url.includes('/preview')).at(-1);
+      expect(last?.body).toMatchObject({
+        effective_from: '2026-10-01', use_daily_schedule: true, hours_monday: 8, hours_tuesday: 8,
+        hours_wednesday: 0, work_days_per_week: 2, vacation_days: 12,
+      });
+    });
+  });
+
+  it('Fall B: kein Hinweis, solange das Formular schon andere Eingaben trägt (nichts still verwerfen)', async () => {
+    vi.setSystemTime(new Date('2026-11-21T12:00:00Z'));
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse([
+        { id: 'base', effective_from: '2026-10-01', weekly_hours: 40, is_baseline: true, vacation_days: 30 },
+        {
+          id: 'modi', effective_from: '2026-11-20', weekly_hours: 16, use_daily_schedule: true,
+          hours_monday: 8, hours_tuesday: 8, hours_wednesday: 0, hours_thursday: 0, hours_friday: 0,
+          work_days_per_week: 2, vacation_days: 12,
+        },
+      ]));
+    });
+    renderModal({
+      firstWorkDay: '2026-10-01', currentWeeklyHours: 16, currentUseDailySchedule: true,
+      currentDayHours: [8, 8, 0, 0, 0], currentWorkDays: 2,
+    });
+    expect(await screen.findByText(HINT)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Montag'), { target: { value: '6' } });
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Montag'), { target: { value: '8' } });
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+  });
+});
+
+describe('Plan 2026-11-21 Task 6: Anerkennen-Liste im Dialog', () => {
+  const RECOG = (id: string, date: string) => ({
+    entry_id: id, date, old_start: '07:50:00', old_end: '12:05:00', old_uncredited: 0, old_net: 4.25,
+    new_start: '07:50:00', new_end: '07:50:00', new_uncredited: 0, new_net: 0, not_extendable: null,
+    recognizable: true, recognized: false, blockless_workday: true, newly_clamped: false,
+  });
+  const CHANGES = [RECOG('e-wed', '2026-06-03'), RECOG('e-thu', '2026-06-04')];
+
+  // Ohne Auswahl verkürzt die Änderung (beide Einträge fallen auf 0 h); sind
+  // beide gewählt, verliert nichts mehr — keine Verkürzung, kein Schutzpaket.
+  function mockRecognize() {
+    getMock.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (!String(url).includes('/preview')) return Promise.resolve(historyResponse([]));
+      const params = config?.params ?? {};
+      if (params.effective_from !== '2026-06-01') {
+        return Promise.resolve(previewResponse({ ...QUIET, is_shortening: false, shortening_reasons: [] }));
+      }
+      const ids = (params.recognize_entry_ids as string[] | undefined) ?? [];
+      const all = ids.length === 2;
+      return Promise.resolve(previewResponse({
+        ...SHORTENING,
+        affected_time_entries: 2 - ids.length,
+        is_shortening: !all,
+        shortening_reasons: all ? [] : ['entries'],
+        lost_credited_hours: all ? 0 : 8.5,
+        time_entry_changes: CHANGES.map((c) => ({ ...c, recognized: ids.includes(c.entry_id) })),
+      }));
+    });
+  }
+
+  async function enterChange() {
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    fireEvent.change(screen.getByLabelText('Gültig ab'), { target: { value: '2026-06-01' } });
+    fireEvent.change(screen.getByLabelText('Wochenstunden'), { target: { value: '20' } });
+    await flushDebounce();
+  }
+
+  it('Vorauswahl beider Einträge: kein Schutzpaket, Knopf „Speichern und 2 Einträge anerkennen", Body mit beiden IDs', async () => {
+    mockRecognize();
+    await enterChange();
+    const submit = await screen.findByRole(
+      'button', { name: 'Speichern und 2 Einträge anerkennen' }, { timeout: 3000 },
+    );
+    await waitFor(() => expect(lastPreviewParams().recognize_entry_ids).toEqual(['e-thu', 'e-wed']));
+    expect(screen.getByRole('checkbox', { name: /Mi 03\.06\./ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Do 04\.06\./ })).toBeChecked();
+    // Erst die Antwort der Vorschau MIT Auswahl abwarten (vorher steht noch die ohne).
+    await waitFor(() => {
+      expect(screen.queryByText('Prüfe Auswirkungen…')).not.toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: 'Verkürzung' })).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Auswirkungen geprüft/ }));
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    const body = postMock.mock.calls.at(-1)![1] as Record<string, unknown>;
+    expect(body).toMatchObject({ effective_from: '2026-06-01', weekly_hours: 20 });
+    expect(body.recognize_entry_ids).toEqual(['e-thu', 'e-wed']);
+    expect(body).not.toHaveProperty('retroactive_reason_type');
+  });
+
+  it('Abwählen löst eine neue Vorschau mit leerer Liste aus; die Verkürzung kommt zurück', async () => {
+    mockRecognize();
+    await enterChange();
+    await screen.findByRole('button', { name: 'Speichern und 2 Einträge anerkennen' }, { timeout: 3000 });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Mi 03\.06\./ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Do 04\.06\./ }));
+    await flushDebounce();
+    await waitFor(() => expect(lastPreviewParams()).toMatchObject({ effective_from: '2026-07-26' }));
+    const entered = getMock.mock.calls
+      .filter((c) => String(c[0]).includes('/preview') && c[1]?.params?.effective_from === '2026-06-01')
+      .at(-1)![1].params as Record<string, unknown>;
+    expect(entered.recognize_entry_ids ?? []).toEqual([]);
+    expect(await screen.findByRole('region', { name: 'Verkürzung' })).toBeInTheDocument();
+    // Die Liste bleibt stehen (sie kommt aus der Vorschau ohne Anerkennen), die Häkchen sind leer.
+    expect(screen.getByRole('checkbox', { name: /Mi 03\.06\./ })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Speichern' })).toBeInTheDocument();
+  });
+
+  it('Option 1 (verlustfrei) sendet keine IDs, der Knopf heißt nur „Speichern"', async () => {
+    mockRecognize();
+    await enterChange();
+    await screen.findByRole('button', { name: 'Speichern und 2 Einträge anerkennen' }, { timeout: 3000 });
+    // Einen abwählen → Verkürzung bleibt für den Rest, Standard ist Option 1.
+    fireEvent.click(screen.getByRole('checkbox', { name: /Do 04\.06\./ }));
+    await screen.findByRole('region', { name: 'Verkürzung' }, { timeout: 3000 });
+    const submit = screen.getByRole('button', { name: 'Speichern' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+    await waitFor(() => expect(postMock).toHaveBeenCalled());
+    const body = postMock.mock.calls.at(-1)![1] as Record<string, unknown>;
+    expect(body).toMatchObject({ effective_from: '2026-07-26' });
+    expect(body).not.toHaveProperty('recognize_entry_ids');
+  });
+  it('Branch-Review: ein Häkchen in Option 2 wirft die Wahl nicht auf Option 1 zurück', async () => {
+    mockRecognize();
+    await enterChange();
+    await screen.findByRole('button', { name: 'Speichern und 2 Einträge anerkennen' }, { timeout: 3000 });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Mi 03\.06\./ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Do 04\.06\./ }));
+    await flushDebounce();
+    const region = await screen.findByRole('region', { name: 'Verkürzung' }, { timeout: 3000 });
+    fireEvent.click(within(region).getByRole('radio', { name: 'Rückwirkend ab 01.06.2026 mit Neuberechnung' }));
+    const wed = screen.getByRole('checkbox', { name: /Mi 03\.06\./ });
+    await waitFor(() => expect(wed).toBeEnabled());
+    // Ein Eintrag wieder gewählt: es verkürzt weiter, die Wahl bleibt Option 2.
+    fireEvent.click(wed);
+    await flushDebounce();
+    await waitFor(() => expect(lastPreviewParams().recognize_entry_ids).toEqual(['e-wed']));
+    await waitFor(() => expect(screen.queryByText('Prüfe Auswirkungen…')).not.toBeInTheDocument());
+    const again = await screen.findByRole('region', { name: 'Verkürzung' });
+    expect(within(again).getByRole('radio', { name: /^Rückwirkend ab 01\.06\.2026/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Do 04\.06\./ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Speichern und 1 Eintrag anerkennen' })).toBeInTheDocument();
   });
 });

@@ -31,23 +31,27 @@ export default function UserJournal() {
 
   if (!userId) return null;
 
+  // Task 7: Zurück-Knopf und Titel stehen in der festen Leiste des Journals,
+  // damit beim Scrollen sichtbar bleibt, wessen Journal bearbeitet wird.
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => navigate('/admin/users')}
-          className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
-          aria-label="Zurück zur Benutzerverwaltung"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Monatsjournal{name ? `: ${name}` : ''}</h1>
-          <p className="text-sm text-gray-500">Zeiteinträge und Abwesenheiten im Überblick</p>
+    <MonthlyJournal
+      userId={userId}
+      isAdminView={true}
+      headerSlot={
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={() => navigate('/admin/users')}
+            className="shrink-0 p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+            aria-label="Zurück zur Benutzerverwaltung"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">Monatsjournal{name ? `: ${name}` : ''}</h1>
+            <p className="hidden sm:block text-sm text-gray-500 truncate">Zeiteinträge und Abwesenheiten im Überblick</p>
+          </div>
         </div>
-      </div>
-
-      <MonthlyJournal userId={userId} isAdminView={true} />
-    </div>
+      }
+    />
   );
 }

@@ -119,7 +119,7 @@ test.describe('Arbeitszeit-Blöcke (Spec 2026-10-08)', () => {
     // Ab dem Klick auf „Speichern" existiert das Konto — das `try` beginnt davor,
     // damit auch eine danach scheiternde Zusicherung (z. B. der Toast) aufräumt.
     try {
-      await adminPage.getByRole('button', { name: 'Speichern' }).click();
+      await adminPage.locator('#user-form').getByRole('button', { name: 'Speichern' }).click();
       // Genau die Erfolgsmeldung des Anlegens (UserForm) — ein loses „erstellt"
       // träfe jede Meldung, die das Wort zufällig enthält (Gesamtreview 1.20 B9).
       await expect(

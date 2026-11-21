@@ -51,7 +51,7 @@ test.describe('#377 Minijob MiLoG — UI', () => {
       const row = adminPage.locator('tr', { hasText: uname });
       await expect(row).toBeVisible({ timeout: 15000 });
       await row.getByRole('button', { name: 'Bearbeiten' }).click();
-      await expect(adminPage.getByRole('heading', { name: 'Benutzer bearbeiten' })).toBeVisible();
+      await expect(adminPage.getByRole('heading', { name: `Bearbeiten: E2EMilogUI T${stamp} (${uname})` })).toBeVisible();
     };
     {
       await adminPage.goto('/admin/users');

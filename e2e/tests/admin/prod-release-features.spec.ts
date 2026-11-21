@@ -66,7 +66,7 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
       // #189: Teilnahme an Betriebsferien abwählen
       await adminPage.locator('#receives_company_closures').uncheck();
 
-      await adminPage.getByRole('button', { name: 'Speichern' }).click();
+      await adminPage.locator('#user-form').getByRole('button', { name: 'Speichern' }).click();
       await expectCreatedToast(adminPage);
 
       // Persistenz über die API verifizieren
@@ -99,7 +99,7 @@ test.describe('Prod-Release-Features (Admin UI)', () => {
       // #191: Stundenzählung deaktivieren
       await adminPage.locator('#track_hours').uncheck();
 
-      await adminPage.getByRole('button', { name: 'Speichern' }).click();
+      await adminPage.locator('#user-form').getByRole('button', { name: 'Speichern' }).click();
       await expectCreatedToast(adminPage);
 
       // track_hours=false persistiert?

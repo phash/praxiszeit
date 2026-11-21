@@ -196,7 +196,7 @@ export default function WhImpactBox({ preview, plannedPresence = false }: {
             <ul className="pl-4 text-xs text-amber-900 space-y-0.5">
               {changes.map((c) => (
                 <li key={c.entry_id}>
-                  {`${formatDate(c.date)} ${clock(c.old_start)}–${clock(c.old_end)} → ${clock(c.new_start)}–${clock(c.new_end)} (${hm(c.old_net)} h → ${hm(c.new_net)} h)`}
+                  {`${formatDate(c.date)} ${clock(c.old_start)}–${clock(c.old_end)} → ${clock(c.new_start)}–${clock(c.new_end)} (${hm(c.old_net)} h → ${hm(c.new_net)} h)${c.recognized ? ' · wird anerkannt' : ''}`}
                 </li>
               ))}
               {skipped.map((s) => (

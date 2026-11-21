@@ -1132,3 +1132,22 @@ describe('<MonthlyJournal /> eigener Abwesenheitsgrund bearbeiten (FE-1)', () =>
     expect(postMock).not.toHaveBeenCalled();
   });
 });
+
+describe('Task 7: headerSlot in der festen Monatsleiste', () => {
+  it('rendert headerSlot im sticky-Container der Monatsnavigation', async () => {
+    getMock.mockResolvedValue({ data: validJournal });
+    render(<MonthlyJournal userId="u1" isAdminView headerSlot={<span>X</span>} />);
+    const slot = screen.getByText('X');
+    const bar = slot.closest('.sticky') as HTMLElement;
+    expect(bar).not.toBeNull();
+    expect(within(bar).getByRole('button', { name: 'Vorheriger Monat' })).toBeInTheDocument();
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+  });
+
+  it('die Monatsnavigation ist auch ohne headerSlot sticky', async () => {
+    getMock.mockResolvedValue({ data: validJournal });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    expect(screen.getByRole('button', { name: 'Vorheriger Monat' }).closest('.sticky')).not.toBeNull();
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+  });
+});
