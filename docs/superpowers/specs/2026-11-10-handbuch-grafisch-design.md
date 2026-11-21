@@ -274,9 +274,9 @@ handbuch/
    - master bekommt das Handbuch in einem Zug, wenn alle drei Teile und die App-Ablösung fertig sind.
    - Es braucht keinen Feature-Schalter. Alte und neue Prüfungen laufen nicht parallel über Releases hinweg.
 4. **Sichtbarkeit in `/help` richtet sich nach der Rolle** (Admin/Mitarbeitende).
-   - Teil A (Einzelrechte, Tillwich) stellt das später auf Rechte um. Das Handbuch der Praxisleitung wird dann je Kapitel nach Recht gefiltert.
+   - Teil A (Einzelrechte, Rechte-/Terminal-Konzept) stellt das später auf Rechte um. Das Handbuch der Praxisleitung wird dann je Kapitel nach Recht gefiltert.
    - Dafür trägt jedes Kapitel schon jetzt ein optionales Feld `requires` (heute ungenutzt).
 
 ## 11. Offene Frage an Manuel
 
-- Reihenfolge zu Tillwich Teil B/A: **Handbuch zuerst, Stand 1.23.0** (Freigabe 2026-11-10 „perfekt. Mach das“). Tillwich-PRs pflegen danach Inhalt und Screenshots als weitere Sync-Fläche mit; die CLAUDE.md-Regel kommt mit diesem Projekt.
+- Reihenfolge zu Rechte-/Terminal-Konzept Teil B/A: **Handbuch zuerst, Stand 1.23.0** (Freigabe 2026-11-10 „perfekt. Mach das“). PRs des Rechte-/Terminal-Konzepts pflegen danach Inhalt und Screenshots als weitere Sync-Fläche mit; die CLAUDE.md-Regel kommt mit diesem Projekt.
