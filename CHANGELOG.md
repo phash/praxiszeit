@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### ✨ Vertrag ab dem ersten Arbeitstag, Anerkennen im Dialog (Kundenfall 2026-11-20)
+
+- **Hinweis „Ab … übernehmen“ im Dialog „Arbeitszeit anpassen…“.** Wurde die vereinbarte Arbeitszeit einer neuen Person mit dem vorgeschlagenen Datum „heute“ gespeichert, galt vom ersten Arbeitstag bis gestern weiter der Vertrag vom Anlegen (im Fall: 8 h Soll an allen fünf Werktagen statt an zwei). Der Dialog erkennt das, auch nachträglich, und bietet an, die heutige Arbeitszeit ab dem ersten Arbeitstag gelten zu lassen. Die automatisch angelegte Ausgangszeile zählt dabei nicht als echte Änderung (`is_baseline` in der Verlaufsantwort).
+- **Einträge, die Zeit verlieren, beim Speichern anerkennen.** Die Vorschau listet jeden Eintrag, der durch die Änderung angerechnete Zeit verliert, mit Häkchen; vorausgewählt sind Einträge an einem „Tag ohne Block“ und an Tagen, die bisher nicht gekappt wurden. Gewählte Einträge erkennt PraxisZeit beim Speichern in derselben Transaktion an (`recognize_entry_ids`, Protokoll `credit_override` mit dem Wert vor der Änderung); Vorschau und Speichern rechnen über denselben Pfad. Sind alle Verluste anerkannt, entfällt die Verkürzungswahl; für nicht gewählte Verluste gilt sie wie bisher. Der Knopf heißt dann „Speichern und N Einträge anerkennen“. Anerkennen bleibt unumkehrbar.
+- **Name bleibt beim Scrollen sichtbar.** Das Benutzerformular hat eine feste Leiste „Bearbeiten: Name (Benutzername)“ mit Speichern und Abbrechen; im Monatsjournal der Verwaltung bleiben Name und Monatsnavigation oben stehen.
+- **Teamübersicht:** `GET /api/admin/team-schedule` liefert je Zeile `first_work_day`, damit der Hinweis auch aus der Teamübersicht erscheint.
+- **Handbuch:** neue Aufgabe „Die Arbeitszeit gilt erst ab heute – wie korrigiere ich sie ab dem ersten Arbeitstag?“ mit Rechenbeispiel; „Was zeigt mir die Auswirkung vor dem Speichern?“ und „Wie rechne ich Zeit außerhalb der Blöcke doch an?“ nennen die Anerkennen-Liste im Dialog.
+
 ## [1.24.3] - 2026-11-16
 
 ### 🐛 Behoben (Windows-Server-Update 2026-11-16: PraxisZeit blieb nach dem Update gestoppt)

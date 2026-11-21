@@ -1511,6 +1511,44 @@ export const praxisleitung: Handbook = {
         },
         {
           kind: 'task',
+          id: 'vertrag-ab-eintritt',
+          title: 'Die Arbeitszeit gilt erst ab heute – wie korrigiere ich sie ab dem ersten Arbeitstag?',
+          intro:
+            'Der Dialog „Arbeitszeit & Wochenstunden“ schlägt als „Gültig ab“ den heutigen Tag vor. Wird die vereinbarte Arbeitszeit einer neuen Person damit gespeichert, ' +
+            'gilt vom ersten Arbeitstag bis gestern weiter der Vertrag vom Anlegen. So korrigieren Sie das in einem Schritt:',
+          steps: [
+            { text: '**Symptom:** Im Monatsjournal stimmt das Soll vor dem Änderungsdatum nicht – z. B. 8 h an allen fünf Werktagen, obwohl zwei Tage vereinbart sind. Die Person hat dadurch Minusstunden.' },
+            {
+              text:
+                'Öffnen Sie [[Arbeitszeit anpassen…]]. Über „Ab diesem Datum gilt“ steht ein Hinweis, auch wenn die Änderung schon gespeichert ist, z. B. ' +
+                '„Vom 01.10.2026 (erster Arbeitstag) bis zum 19.11.2026 gilt noch der Vertrag vom Anlegen (40 Std/Woche · 5 Tage/Woche). Soll die heutige Arbeitszeit schon ab dem ersten Arbeitstag gelten?“ ' +
+                'Klicken Sie auf [[Ab 01.10.2026 übernehmen]]: „Gültig ab“ springt auf den ersten Arbeitstag, das Formular zeigt die heute gültige Arbeitszeit, und die Auswirkung wird neu berechnet.',
+            },
+            {
+              text:
+                '**Vorschau lesen:** Hat die Person an Tagen gestempelt, die nach dem neuen Vertrag keine Arbeitstage sind (z. B. als Aushilfe), stehen diese Einträge unter **Einträge, die Zeit verlieren** mit dem Kennzeichen „Tag ohne Block“. ' +
+                'Sie sind vorausgewählt. Lassen Sie den Haken bei jedem Eintrag, an dem tatsächlich gearbeitet wurde; [[Alle auswählen]] und [[Keine]] setzen bzw. entfernen alle Haken.',
+            },
+            { text: 'Setzen Sie den Haken [[Ich habe die Auswirkungen geprüft und möchte speichern]] und klicken Sie auf [[Speichern und 2 Einträge anerkennen]]. Sind alle Verluste anerkannt und sinkt das Überstundenkonto auch sonst nicht, fragt der Dialog nicht nach einem Grund.' },
+            { text: '**Ergebnis prüfen:** Im Monatsjournal steht vor dem Änderungsdatum jetzt das richtige Soll; die anerkannten Einträge tragen das Kennzeichen „anerkannt“ und zählen mit der ganzen gestempelten Zeit.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Rechenbeispiel:** Vereinbart sind 2 Tage à 8 h (Montag und Dienstag). Im Oktober hat die Person zusätzlich an zwei Mittwochen je 4 h als Aushilfe gearbeitet. ' +
+            'Ab dem ersten Arbeitstag sind die Mittwoche keine Arbeitstage mehr: Ohne Anerkennen werden die beiden Einträge mit **0 h** angerechnet, mit Anerkennen zählen sie voll, zusammen **+8 h** auf dem Überstundenkonto.',
+        },
+        {
+          kind: 'tip',
+          tone: 'warn',
+          text:
+            '**Anerkennen lässt sich nicht zurücknehmen** – auch nicht, wenn Sie die Arbeitszeit-Änderung später löschen. Entfernen Sie den Haken bei Einträgen, an denen nicht gearbeitet wurde; ' +
+            'für sie gilt dann die Verkürzung mit Grund und Begründung wie bei jeder rückwirkenden Änderung.',
+        },
+        {
+          kind: 'task',
           id: 'auswirkung-pruefen',
           title: 'Was zeigt mir die Auswirkung vor dem Speichern?',
           intro:
@@ -1522,6 +1560,13 @@ export const praxisleitung: Handbook = {
             { n: 2, text: '**Zeiteinträge:** wie viele neu berechnet werden, je Monat mit der angerechneten Zeit vorher → nachher; übersprungene mit Grund. Danach die Zahl der Abwesenheiten, deren Stunden umgestellt werden. Offene Einträge vergangener Tage (vergessenes Ausstempeln) schließt PraxisZeit vorher automatisch und rechnet sie danach regulär neu; beim Überstundenkonto zählen sie in der Tabelle schon unter „bisher“.' },
             { n: 3, text: '**Tabelle** mit den Spalten bisher, neu und Δ: **Überstunden** und **Urlaub verbraucht** (bei geändertem Anspruch auch **Urlaubsanspruch**) mit allen drei Werten; für **Soll im Zeitraum** und **Angerechnet** steht nur die Differenz Δ.' },
             { n: 4, text: '[[Einzelheiten]] listet jeden Eintrag mit seinen Zeiten vorher → nachher.' },
+            {
+              text:
+                '**Einträge, die Zeit verlieren:** Verliert ein Eintrag angerechnete Zeit, steht er mit Haken in dieser Liste, z. B. „Mi 07.10. · gestempelt 07:48–12:01 · bisher 4:13 h → neu 0:00 h“. ' +
+                'Gewählte Einträge werden beim Speichern anerkannt und verlieren nichts; die Auswirkung zeigt den Stand mit Anerkennen. Vorausgewählt sind Einträge an einem „Tag ohne Block“ und an Tagen, die bisher gar nicht gekappt wurden – ' +
+                'nicht dagegen Einträge, die nur am Rand eines bestehenden Blocks gekappt werden. Ein automatisch geschlossener Eintrag lässt sich hier nicht wählen. ' +
+                'Bleiben nicht gewählte Verluste, gilt für sie die Verkürzung wie bisher; wählen Sie dort „Ab heute … wirksam“, wird nichts anerkannt („Gilt nur mit dem eingegebenen Datum.“). Mit Auswahl heißt der Knopf z. B. [[Speichern und 2 Einträge anerkennen]].',
+            },
             { n: 5, text: 'Setzen Sie den Haken [[Ich habe die Auswirkungen geprüft und möchte speichern]] und klicken Sie auf [[Speichern]]. PraxisZeit meldet danach, wie viele Einträge neu berechnet wurden.' },
           ],
         },
@@ -1572,6 +1617,11 @@ export const praxisleitung: Handbook = {
               n: 2,
               text:
                 'Wurde in dieser Zeit tatsächlich gearbeitet, klicken Sie auf [[Anerkennen]] und bestätigen. Dann wird die gesamte gestempelte Zeit angerechnet – dauerhaft, auch bei späteren Neuberechnungen. Der Vorgang wird protokolliert.',
+            },
+            {
+              text:
+                '**Im Dialog beim Speichern:** Verlieren Einträge durch eine Arbeitszeit-Änderung Zeit, erkennen Sie sie direkt im Dialog „Arbeitszeit & Wochenstunden“ mit an – ' +
+                'über die Liste **Einträge, die Zeit verlieren**, siehe [Was zeigt mir die Auswirkung vor dem Speichern?](#auswirkung-pruefen) und [Arbeitszeit ab dem ersten Arbeitstag](#vertrag-ab-eintritt).',
             },
           ],
         },
