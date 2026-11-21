@@ -340,6 +340,13 @@ class TimeEntryChangeOut(BaseModel):
     recognized: bool = False
     blockless_workday: bool = False
     newly_clamped: bool = False
+    # Rohstempel VOR der Änderung (``raw_start_time or start_time`` bzw.
+    # ``raw_end_time or end_time`` aus ``impact.entries_before``) — ``old_*`` sind
+    # die damals angerechneten Zeiten, die Liste „Einträge, die Zeit verlieren"
+    # nennt unter „gestempelt" den Stempel. ``None``, wenn der Eintrag nicht im
+    # Vorher-Stand steht (z. B. offen).
+    raw_start: Optional[time] = None
+    raw_end: Optional[time] = None
 
 
 class SkippedEntryOut(BaseModel):

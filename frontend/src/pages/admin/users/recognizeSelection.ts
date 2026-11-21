@@ -40,9 +40,12 @@ export function pruneSelection(selected: Iterable<string>, changes: TimeEntryCha
 const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const clock = (t: string | null) => (t ? t.slice(0, 5) : '–');
 
-/** „Mi 07.10. · gestempelt 07:50–12:05 · bisher 4:15 h → neu 0:00 h". */
+/** „Mi 07.10. · gestempelt 07:50–12:05 · bisher 4:15 h → neu 0:00 h" —
+ * „gestempelt" = Rohstempel vor der Änderung (`raw_*`), sonst die angerechnete Zeit. */
 export function recognizeRowText(c: TimeEntryChange): string {
   const weekday = WEEKDAYS[new Date(`${c.date.slice(0, 10)}T00:00:00Z`).getUTCDay()];
-  return `${weekday} ${shortDate(c.date)} · gestempelt ${clock(c.old_start)}–${clock(c.old_end)}`
+  const start = c.raw_start ?? c.old_start;
+  const end = c.raw_end ?? c.old_end;
+  return `${weekday} ${shortDate(c.date)} · gestempelt ${clock(start)}–${clock(end)}`
     + ` · bisher ${formatHoursHM(c.old_net)} h → neu ${formatHoursHM(c.new_net)} h`;
 }

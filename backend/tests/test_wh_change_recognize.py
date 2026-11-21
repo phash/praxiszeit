@@ -230,6 +230,23 @@ def test_preview_fields_flags(db, test_user, test_admin):
         TimeEntryChangeOut(**row)
 
 
+
+def test_preview_rows_report_the_raw_stamp(db, test_user, test_admin):
+    """Folgeauftrag zu Task 6: „gestempelt" in der Liste zeigt den Rohstempel VOR
+    der Änderung, nicht die schon gekappte Zeit. Der Montag war vor der Änderung
+    am Beginn gekappt (Stempel 07:35, angerechnet ab 07:40)."""
+    baseline, e = _customer_case(db, test_user)
+    impact = _run(db, test_user, test_admin, baseline)
+    rows = {r["date"]: r for r in svc.preview_fields(impact)["time_entry_changes"]}
+    mon = rows[MON]
+    assert (mon["old_start"], mon["old_end"]) == (t(7, 40), t(12))
+    assert (mon["raw_start"], mon["raw_end"]) == (t(7, 35), t(12))
+    # Ungekappt vor der Änderung: Rohstempel = angerechnete Zeit.
+    assert (rows[WED]["raw_start"], rows[WED]["raw_end"]) == (t(7, 50), t(12, 5))
+    out = TimeEntryChangeOut(**mon)
+    assert (out.raw_start, out.raw_end) == (t(7, 35), t(12))
+
+
 class TestMixedDay:
     """Misch-Tag (Abwesenheit + Eintrag, gebucht mit ``keep_time_entries``):
     Anerkennen im Dialog == Speichern und danach einzeln anerkennen — dieselbe

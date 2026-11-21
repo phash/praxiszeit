@@ -524,6 +524,7 @@ def _change_out(c, impact: Optional[ChangeImpact] = None, recognized_keys: froze
     anerkannte IDs als Strings, einmal je Vorschau gebaut."""
     flags = impact.entry_flags.get(c.entry_id, {}) if impact is not None else {}
     recognized = str(c.entry_id) in recognized_keys
+    before = impact.entries_before.get(c.entry_id) if impact is not None else None
     return {
         "entry_id": str(c.entry_id), "date": c.date,
         "old_start": c.old_start, "old_end": c.old_end, "old_uncredited": c.old_uncredited,
@@ -533,6 +534,8 @@ def _change_out(c, impact: Optional[ChangeImpact] = None, recognized_keys: froze
         "recognized": recognized,
         "blockless_workday": bool(flags.get("blockless_workday", False)),
         "newly_clamped": bool(flags.get("newly_clamped", False)),
+        "raw_start": (before.raw_start_time or before.start_time) if before is not None else None,
+        "raw_end": (before.raw_end_time or before.end_time) if before is not None else None,
     }
 
 

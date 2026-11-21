@@ -73,6 +73,9 @@ export interface TimeEntryChange {
   blockless_workday?: boolean;
   /** der alte Vertrag kappte an diesem Tag nicht — die Kappung ist neu. */
   newly_clamped?: boolean;
+  /** Rohstempel VOR der Änderung — `old_start`/`old_end` sind die damals angerechneten Zeiten. */
+  raw_start?: string | null;
+  raw_end?: string | null;
 }
 
 /** Plan 2026-11-21 Task 6: Zusatz zum Vorschau- UND Anlege-Body — die beim

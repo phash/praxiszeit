@@ -32,6 +32,16 @@ describe('RecognizeEntriesList (Plan 2026-11-21 Task 6)', () => {
     expect(screen.getByText(RECOGNIZE_NOTE)).toBeInTheDocument();
   });
 
+  it('„gestempelt" zeigt den Rohstempel, nicht die schon gekappte Zeit', () => {
+    // Vor der Änderung am Beginn gekappt: Stempel 07:35, angerechnet ab 07:40.
+    const EDGE = change({
+      entry_id: 'edge', date: '2026-10-14', old_start: '07:40:00', old_end: '12:00:00', old_net: 4.33,
+      raw_start: '07:35:00', raw_end: '12:00:00', new_start: '07:55:00', new_net: 4.08,
+    });
+    render(<RecognizeEntriesList changes={[EDGE]} selected={new Set()} onChange={() => {}} />);
+    expect(screen.getByText('Mi 14.10. · gestempelt 07:35–12:00 · bisher 4:20 h → neu 4:05 h')).toBeInTheDocument();
+  });
+
   it('ein nicht anerkennbarer Eintrag hat ein deaktiviertes Häkchen mit Hinweis', () => {
     render(<RecognizeEntriesList changes={[WED, THU]} selected={new Set()} onChange={() => {}} />);
     const box = screen.getByRole('checkbox', { name: /Do 08\.10\./ });
