@@ -1207,8 +1207,35 @@ describe('<MonthlyJournal /> Sammel-Anerkennen (Plan 2026-11-21 Task 10)', () =>
       '/admin/users/u1/time-entries/credit-override', { entry_ids: ['te-a', 'te-b'] },
     ));
     await waitFor(() => expect(getMock.mock.calls.length).toBeGreaterThan(callsBefore));
-    expect(toastSuccess).toHaveBeenCalled();
+    expect(toastSuccess).toHaveBeenCalledWith('2 Einträge anerkannt');
     expect(toastWarning).toHaveBeenCalledWith('W1');
+  });
+
+  it('meldet „Bereits anerkannt", wenn ein paralleler Aufruf alles anerkannt hat', async () => {
+    mockJournal(days);
+    postMock.mockResolvedValue({ data: { recognized: 0, already: 2, warnings: [] } });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    fireEvent.click(screen.getByRole('button', { name: 'Alle nicht angerechneten auswählen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ausgewählte anerkennen (2)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Einträge anerkennen' }));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Bereits anerkannt'));
+  });
+
+  it('Fehler: zeigt die Serverzeile, behält die Auswahl und lädt neu', async () => {
+    mockJournal(days);
+    const detail = '03.06.2026: Automatisch geschlossener Eintrag: Bitte zuerst das tatsächliche Ende eintragen.';
+    postMock.mockRejectedValue({ response: { status: 400, data: { detail } } });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    fireEvent.click(screen.getByRole('button', { name: 'Alle nicht angerechneten auswählen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ausgewählte anerkennen (2)' }));
+    const callsBefore = getMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Einträge anerkennen' }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(detail));
+    await waitFor(() => expect(getMock.mock.calls.length).toBeGreaterThan(callsBefore));
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: 'Ausgewählte anerkennen (2)' })).toBeEnabled();
   });
 
   it('ein einzelnes Häkchen wählt einen Eintrag (1)', async () => {

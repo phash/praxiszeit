@@ -37,7 +37,7 @@
 2. **Gewählter Eintrag gehört einer anderen Person** (manipulierter Body). Erwartet: 404 ohne jede Zeilensperre, nichts gespeichert. Test in Task 4: `test_foreign_recognize_id_404_before_lock`.
 3. **Eintrag liegt außerhalb der Änderung** (z. B. September bei Wirkung ab 01.10.). Erwartet: 400 „… ist von dieser Änderung nicht betroffen“, nichts gespeichert. Test in Task 3: `test_recognize_id_outside_change_rejected`.
 4. **Zwei Einträge am selben Tag, Anerkennen würde den Beginn auf einen belegten Beginn legen.** Erwartet: 409 mit `start_taken_detail`, die ganze Arbeitszeit-Änderung wird zurückgerollt. Test in Task 4: `test_recognize_collision_rolls_back_change`.
-5. **Sammel-Anerkennen mit einem automatisch geschlossenen Eintrag in der Auswahl.** Erwartet: 400 `AUTO_CLOSED_DETAIL` mit Datum, kein anderer Eintrag anerkannt. Das Frontend bietet dort kein Häkchen an. Tests in Task 9 (`test_bulk_all_or_nothing_auto_closed`) und Task 10 (`isRecognizable` false bei `auto_closed`).
+5. **Sammel-Anerkennen mit einem automatisch geschlossenen Eintrag in der Auswahl.** Erwartet: 400 `AUTO_CLOSED_DETAIL` mit Datum, kein anderer Eintrag anerkannt. Das Frontend bietet dort kein Häkchen an. Tests in Task 9 (`test_bulk_all_or_nothing_auto_closed`) und Task 10 (`canRecognizeNow` false bei `auto_closed`; `isRecognizable` bleibt dort true, damit der Einzelknopf gesperrt sichtbar bleibt).
 
 ---
 

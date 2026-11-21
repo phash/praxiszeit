@@ -344,7 +344,13 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
     try {
       const res = await apiClient.post(`/admin/users/${userId}/time-entries/credit-override`, { entry_ids: ids });
       const recognized: number = res.data?.recognized ?? ids.length;
-      toast.success(recognized === 1 ? '1 Eintrag anerkannt' : `${recognized} Einträge anerkannt`);
+      const already: number = res.data?.already ?? 0;
+      // Hat ein paralleler Aufruf schon alles anerkannt, kein „0 Einträge anerkannt“.
+      if (recognized === 0 && already > 0) {
+        toast.success('Bereits anerkannt');
+      } else {
+        toast.success(recognized === 1 ? '1 Eintrag anerkannt' : `${recognized} Einträge anerkannt`);
+      }
       // P4: §3/§4/48 h und Anwesenheit kommen nur als weiche Warnung zurück.
       showArbzgWarnings(toast, res.data?.warnings);
       setSelectedIds(new Set());
@@ -916,7 +922,8 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
             cancelEdit();
           }}
         />
-        {/* Task 10: Sammel-Anerkennen — nur, wenn der Monat anerkennbare Einträge hat. */}
+        {/* Task 10: Sammel-Anerkennen — nur, wenn der Monat anerkennbare Einträge hat.
+            Der Knopf steht bei (0) gesperrt da, damit die Leiste nicht springt. */}
         {isAdminView && recognizableEntries.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             <button
