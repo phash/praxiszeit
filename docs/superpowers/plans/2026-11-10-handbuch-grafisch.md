@@ -31,7 +31,7 @@
 - **Inhalt erfindet nichts.** Jede fachliche Aussage stammt aus `docs/handbuch/*.md` (Stand master), `docs/BERECHNUNGEN.md` oder dem App-Verhalten.
 - **Arbeit auf `feat/handbuch-grafisch`** (Worktree `/home/manuel/claude/praxiszeit-handbuch`) und auf pzweb-Branch `feat/handbuch-grafisch`. Kein Merge nach master oder main, kein Push ohne Manuel.
 - **Speicher:** vitest, pytest, Playwright und `docker build` nie gleichzeitig. vitest mit `--pool=threads --maxWorkers=2`.
-- **Kapitel tragen optional `requires?: string`**, heute ungenutzt (Vorbereitung Tillwich Teil A).
+- **Kapitel tragen optional `requires?: string`**, heute ungenutzt (Vorbereitung Rechte-/Terminal-Konzept Teil A).
 
 **Abweichung vom Spec-Layout (Builder-Entscheidung laut Spec §9):** Das Spec nennt `handbuch/` in der Repo-Wurzel. Der Docker-Build-Kontext des Frontends ist aber `./frontend` (`docker-compose.yml:89`, `COPY . .`), Code außerhalb davon käme nicht ins Image. Deshalb gilt:
 - Quelle unter `frontend/src/handbuch/`
@@ -481,7 +481,7 @@
 - Modify: `scripts/check-doc-sync.sh` (Gruppen `mitarbeiter`, `admin_*`, `begriffe`, `mirror`, `versionen`, `links` auf die erzeugten Dateien und neuen Namen; Gruppe `mirror` vergleicht die Download-Dateien jetzt gegen den Generator statt gegen `docs/`)
 - Modify: `docs/handbuch/HANDBUCH-ERSTELLEN.md` (neuer Ablauf: `run.sh all`, `capture`, Kontaktseite, `handbuch:md`)
 - Delete: `docs/handbuch/screenshots/`, `tools/handbook/*.js`, `e2e/capture-handbook-screenshots.ts`, `e2e/capture-new-features.ts`
-- Modify: `CLAUDE.md` (Doku-Sync-Abschnitt: neue Quelle `frontend/src/handbuch/`, sechste Sync-Fläche pzweb-Kopie, Regel „neue oder geänderte UI → Shots neu aufnehmen“ für Tillwich-PRs)
+- Modify: `CLAUDE.md` (Doku-Sync-Abschnitt: neue Quelle `frontend/src/handbuch/`, sechste Sync-Fläche pzweb-Kopie, Regel „neue oder geänderte UI → Shots neu aufnehmen“ für PRs des Rechte-/Terminal-Konzepts)
 
 **Wortlaut-Regel:** Eine `need`-Prüfung darf nur entfallen, wenn der Inhalt den Sachverhalt bewusst nicht mehr nennt. Jede entfernte Prüfung kommt mit Grund in die PR-Beschreibung (Liste in `docs/superpowers/plans/2026-11-10-handbuch-grafisch-entfallene-pruefungen.md`).
 

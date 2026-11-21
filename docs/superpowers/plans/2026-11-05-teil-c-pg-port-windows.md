@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12/3.13 (server script, pytest via the backend image), Windows batch (CRLF, ASCII), PowerShell, .NET 10 + Avalonia + xunit/FluentAssertions (GUI installer), dockur/windows emulator (`tools/win-test`).
 
-**Spec:** `docs/superpowers/specs/2026-11-02-tillwich-rechte-terminal-pgport-design.md`, section 4 (Teil C). Code facts: survey `wf_b8191694-335` from 2026-11-05 on master 45447bd8 (1.22.0); line numbers below are from that state.
+**Spec:** `docs/superpowers/specs/2026-11-02-rechte-terminal-pgport-design.md`, section 4 (Teil C). Code facts: survey `wf_b8191694-335` from 2026-11-05 on master 45447bd8 (1.22.0); line numbers below are from that state.
 
 ## Global Constraints
 

@@ -253,7 +253,7 @@ fi
 # -----------------------------------------------------------------------
 step "Frontend production build (vite)"
 if docker run --rm -v "$(pwd)/frontend":/app -w /app node:20-alpine \
-       sh -c "npm run build" 2>&1 | tail -10; then
+       sh -c "npm run build" 2>&1 | tail -10 && bash scripts/check-sw-precache.sh frontend/dist; then
     ok "Frontend build successful"
 else
     fail "Frontend build failed"

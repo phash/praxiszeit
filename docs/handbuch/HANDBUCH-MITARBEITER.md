@@ -2,7 +2,7 @@
 
 # Handbuch für Mitarbeitende
 
-**Stand:** PraxisZeit 1.24.3
+**Stand:** PraxisZeit 1.25.0
 
 So erfassen Sie Ihre Arbeitszeit, behalten Saldo und Urlaub im Blick und tragen Abwesenheiten ein. Jede Aufgabe beginnt mit einer Frage – suchen Sie sich die passende heraus.
 

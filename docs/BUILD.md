@@ -17,7 +17,7 @@ Footguns, die in der Praxis zugeschlagen haben.
 |---|---|---|
 | `praxiszeit-<v>-linux-x64.tar.gz` | Nativer Installer + Python + PostgreSQL (flach entpackt) | theseus-rs PG **18.6** |
 | `praxiszeit-<v>-macos-x64/arm64.tar.gz` | Nativer Installer (Intel / Apple Silicon) | theseus-rs PG **18.6** |
-| `praxiszeit-<v>-windows-x64.zip` | `.bat`-Installer-Baum (setup.bat-Fallback) | EDB-Installer PG **18.6** |
+| `praxiszeit-<v>-windows-x64.zip` | `.bat`-Installer-Baum (setup.bat-Fallback) | EDB-Installer PG **18.7** |
 | `praxiszeit-<v>-setup-windows-x64.exe` | Avalonia-GUI-Single-File-Installer (#81) | (bettet das Paket ein) |
 | `praxiszeit-<v>-docker.tar.gz` | compose + Build-Kontext + backup/restore/update-pg-major | `postgres:18-alpine` |
 
@@ -111,13 +111,14 @@ am Ende ist **kosmetisch** (letztes `$BUILD_LINUX && cat <<EOF` liefert 1 bei fa
   **keinen echten Login**. Nach Dep-Bumps zusätzlich realen Login prüfen.
 
 ### Windows (x64) — der größte Footgun-Garten
-- **PostgreSQL = EDB-Installer (`postgresql-installer.exe`, PG 18.6)** — NICHT theseus.
+- **PostgreSQL = EDB-Installer (`postgresql-installer.exe`, PG 18.7, `POSTGRESQL_WINDOWS_VERSION`)** — NICHT theseus.
 - ⚠️ **PG-Installer ist SHA256-gepinnt (`PG_WINDOWS_SHA256` in build-release.sh) +
   wird per direktem EDB-Link auto-geladen + verifiziert.** Früher griff der Build blind
   die erste `~/Downloads/postgresql-*-windows-x64.exe` → **jede Maschine bundelte still
   eine andere PG-Version** (1.10.0-Windows war versehentlich PG 16.13 statt 18). Beim
-  PG-Bump `PG_WINDOWS_SHA256` an die zur `POSTGRESQL_VERSION` passende
-  `postgresql-<maj.min>-<suffix>-windows-x64.exe` mitziehen.
+  PG-Bump `PG_WINDOWS_SHA256` an die zur `POSTGRESQL_WINDOWS_VERSION` passende
+  `postgresql-<maj.min>-<suffix>-windows-x64.exe` mitziehen (seit 1.25.0 getrennt von
+  `POSTGRESQL_VERSION`, gleicher Major Pflicht).
 - **EDB-403:** Der Auto-Download kann zeitweise mit HTTP 403 blocken. Dann bricht der
   Build mit Manual-Hinweis + erwarteter SHA ab → Datei manuell laden, nach
   `build/cache/postgresql-windows-x64.exe` legen, neu bauen.
@@ -194,4 +195,4 @@ for f in praxiszeit-X.Y.Z-*.{tar.gz,zip,exe}; do sha256sum "$f" > "checksum_$f";
 - `validate-macos.yml` läuft nie (Privat-Repo) → lokale Mach-O-Prüfung ist der Gate.
 
 ---
-*Stand: 1.19.2 (PostgreSQL 18.6 auf allen Plattformen).*
+*Stand: 1.25.0 (PostgreSQL 18.6 Linux/macOS, 18.7 Windows).*

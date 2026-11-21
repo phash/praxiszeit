@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.25.0] - 2026-11-21
 
 ### ✨ Vertrag ab dem ersten Arbeitstag, Anerkennen im Dialog (Kundenfall 2026-11-20)
 
@@ -28,6 +28,18 @@
 - **Neuer Meldeweg** `POST https://report.mr-development.de/v1/reports`, ersatzweise einmal `praxiszeit.mr-development.de` nur bei DNS- oder TLS-Fehler; höchstens 15 s. Aktiv nur mit Meldeschlüssel: `[feedback] report_key` (nativ) bzw. `FEEDBACK_REPORT_KEY` (Docker). Ohne Schlüssel bleibt der bisherige Meldeweg. Der Schlüssel erscheint nie in Logs, Vorschau oder gespeicherten Dateien. **Firewall ausgehend:** `report.mr-development.de:443`, ersatzweise und für Updates `praxiszeit.mr-development.de:443`.
 - **Windows-Einrichtungs-Assistent:** Scheitert Installation oder Update, zeigt die letzte Seite eine Vorschau mit dem bereinigten Setup-Protokoll sowie „An Entwickler schicken“ und „Als Datei speichern“; ohne eingebauten Schlüssel einen Hinweis, die Datei per E-Mail zu schicken.
 - `/api/feedback/` ist von der Lizenz-Schreibsperre ausgenommen (melden geht auch bei abgelaufener Lizenz). Die Meldung trägt eine Installations-ID (in der Datenbank, übersteht Updates).
+
+### 🐛 Behoben (Offline-Cache der App seit 1.22.0 leer)
+
+- **Service Worker lud die App nicht mehr vor.** Seit 1.22.0 (npm-Override `minimatch >= 11.0.1`, #525) fanden die Glob-Muster von `workbox-build` (glob 11 erwartet minimatch 10) keine Dateien; `sw.js` enthielt nur Icons und Manifest, nicht `index.html` und die App-Dateien. Der Override setzt jetzt `glob ^14.0.2` unter `workbox-build` (glob 14 nutzt minimatch 11): 43 Dateien werden wieder vorgeladen, `npm audit` meldet keine Funde mehr (auch GHSA-3g3m-2fjr-6pw4 behoben).
+- Neuer Prüfschritt `scripts/check-sw-precache.sh` in `scripts/local-ci.sh` und `tools/build-release.sh`: Ohne `index.html` oder mit weniger als 10 vorgeladenen Dateien bricht der Build ab.
+
+### 🔒 Sicherheit (Abhängigkeiten)
+
+- Docker: Web-Server `nginx:1.31.9-alpine` (vorher 1.31.8) — behebt u. a. CVE-2026-125283 (Pufferüberlauf bei `try_files` + `alias`), CVE-2026-123007 und CVE-2026-123633 (HTTP/2).
+- Native Installation: python-build-standalone 20261110 (vorher 20261026), weiter CPython 3.13.18 und OpenSSL 3.5.9, jetzt mit expat 2.10.0 (CVE-2026-113351, -115506, -117610, -118370) und zlib 1.4.
+- Windows: PostgreSQL 18.7 (EDB-Installer, vorher 18.6) für Neuinstallationen — behebt die PostgreSQL-Sicherheitslücken vom 12.11.2026, u. a. CVE-2026-120154 (`INSERT … ON CONFLICT` liest Zeilen trotz Zeilenschutz). Linux und macOS bleiben vorerst bei PostgreSQL 18.6: das neue 18.7-Paket der Bezugsquelle startet nicht auf Ubuntu 22.04 und RHEL/Rocky 9. **Docker:** PostgreSQL 18.7 kommt mit `docker compose pull db` (siehe `docs/UPDATE.md`).
+- Backend (`pip-audit`, auch gegen das gebaute Image) und `npm audit` in `tools/` und `e2e/` ohne Befund; im Frontend-Build bleibt eine mittlere Meldung zu `glob` 11 (über `vite-plugin-pwa` → `workbox-build`, nur beim Bauen, behoben erst in glob 14).
 
 ## [1.24.3] - 2026-11-16
 

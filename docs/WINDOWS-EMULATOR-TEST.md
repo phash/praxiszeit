@@ -242,7 +242,7 @@ Bestanden: `HP_FAILS=0`.
 | `NSSM_APPEXIT_78_NACH_UPDATE` | nur `update`: `Exit` — der Update-Wizard hat `AppExit 78 Exit` gesetzt (`_VOR_UPDATE` zeigt den Stand der Vorgängerversion) |
 | `FOREIGN_PG_STILL_ON_5432` | nur `foreignpg`: `0` (`pg_isready`-Exitcode: der Fremdserver läuft nach Install, Sicherung und Restore weiter) |
 | `STDERR_LEAK_MIT_2NUL` / `STDERR_LEAK_OHNE_2NUL`, `STDERR_PROBE_*_ARGS` | **Messwert, keine Erwartung.** Prüft, ob `2^>nul` in der gequoteten `for /f`-Zeile (Form aus `setup.bat`/`uninstall.bat`) stderr unterdrückt. Befund Windows 11 (2026-11-06): `1` / `1` — cmd.exe reicht `2>nul` als **Argument** an das Programm weiter, statt umzuleiten (`setup.bat` meldet im selben Lauf `praxiszeit-server.py: error: unrecognized arguments: 2>nul`). `print-db-port` scheiterte in dieser Form; `setup.bat`/`uninstall.bat` nutzen seitdem `2>nul` ohne Caret innerhalb des äußeren Anführungszeichenpaars. Dafür erwartet: `STDERR_LEAK_NEUE_FORM=0`, `STDERR_PROBE_NEUE_FORM_ARGS=[]` und `DB_PORT_UNINSTALL_FORM` = konfigurierter Port (exakte Portzeile aus `uninstall.bat`) |
-| `psql (PostgreSQL)` | `18.6` — der gepinnte Stand, siehe `PG_WINDOWS_SHA256` |
+| `psql (PostgreSQL)` | `18.7` — der gepinnte Stand, siehe `POSTGRESQL_WINDOWS_VERSION`/`PG_WINDOWS_SHA256` |
 | `STATE` | `4  RUNNING` |
 | `HEALTH_HTTP_NACH_NEUSTART` / `LOGIN_HTTP_NACH_NEUSTART` | beide `200` (Dienst-Neustart) |
 | `UPDATE_EXIT` / `NEUER_CODE` | nur `update`: `0` / `ja` |

@@ -1,9 +1,9 @@
 # Erweiterte Rechte, Stempel-Terminal und PostgreSQL-Port (Windows)
 
-**Stand:** 2026-11-05 (Überarbeitung: Pausen-Schalter, Basis 1.22.0) · **Anlass:** Kundenanfrage Dr. Tillwich (Praxis Horb, Mails vom 01.11.2026), zweiter Kunde mit dem Wunsch nach einer Zwischenrolle (#190 wurde im Juni 2026 abgelehnt).
+**Stand:** 2026-11-05 (Überarbeitung: Pausen-Schalter, Basis 1.22.0) · **Anlass:** Kundenanfrage einer Praxis (Mails vom 01.11.2026), zweiter Kunde mit dem Wunsch nach einer Zwischenrolle (#190 wurde im Juni 2026 abgelehnt).
 **Grundlage:** Code-Erfassung vom 2026-11-02 (Workflow `wf_039a4c87-d52`, nur lesend; Zeilenangaben beziehen sich auf master @ 1bffd77 = 1.21.0). Seit 1.22.0 (Migrationen 074/075) können Zeilenangaben verschoben sein; jeder Umsetzungsplan prüft sie gegen den aktuellen master.
 
-Kennzeichnung: **[Manuel]** = von Manuel entschieden, **[Kunde]** = Wunsch von Dr. Tillwich, **[Claude]** = Entscheidung von Claude, beim Lesen prüfen. Ohne Kennzeichnung = Folge aus Code oder CLAUDE.md-Regel.
+Kennzeichnung: **[Manuel]** = von Manuel entschieden, **[Kunde]** = Wunsch der anfragenden Praxis, **[Claude]** = Entscheidung von Claude, beim Lesen prüfen. Ohne Kennzeichnung = Folge aus Code oder CLAUDE.md-Regel.
 
 ---
 
