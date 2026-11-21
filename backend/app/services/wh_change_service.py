@@ -535,7 +535,9 @@ def _change_out(c, impact: Optional[ChangeImpact] = None, recognized_keys: froze
         "blockless_workday": bool(flags.get("blockless_workday", False)),
         "newly_clamped": bool(flags.get("newly_clamped", False)),
         "raw_start": (before.raw_start_time or before.start_time) if before is not None else None,
-        "raw_end": (before.raw_end_time or before.end_time) if before is not None else None,
+        # Ende über ``presence_end``: beim ``auto_closed``-Eintrag ist das Rohende
+        # (23:59) kein Stempel (P18) — dort zählt das wirksame Ende.
+        "raw_end": work_window_service.presence_end(before) if before is not None else None,
     }
 
 

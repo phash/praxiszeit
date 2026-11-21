@@ -341,7 +341,8 @@ class TimeEntryChangeOut(BaseModel):
     blockless_workday: bool = False
     newly_clamped: bool = False
     # Rohstempel VOR der Änderung (``raw_start_time or start_time`` bzw.
-    # ``raw_end_time or end_time`` aus ``impact.entries_before``) — ``old_*`` sind
+    # ``work_window_service.presence_end`` aus ``impact.entries_before``; beim
+    # ``auto_closed``-Eintrag also das wirksame Ende, nie 23:59) — ``old_*`` sind
     # die damals angerechneten Zeiten, die Liste „Einträge, die Zeit verlieren"
     # nennt unter „gestempelt" den Stempel. ``None``, wenn der Eintrag nicht im
     # Vorher-Stand steht (z. B. offen).
