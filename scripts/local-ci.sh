@@ -126,7 +126,7 @@ fi
 # audit log append-only for the app role, trigger, definer functions, round
 # trip — + 3 PG log privacy, audit 2026-11-07 S2-1 — + 3 bulk credit override,
 # plan 2026-11-21 Task 9: parallel calls without deadlock, rollback, start collision); the 18
-# cross-tenant tests run inside step 1. Same thirteen files as the Actions step
+# cross-tenant tests run inside step 1. Same files as the Actions step
 # "Cross-tenant RLS + Art.17 purge + Race-Tests (real Postgres)".
 step "Backend Postgres integration (RLS + concurrency + Art.17 purge)"
 if docker compose exec -T -e TZ=Europe/Berlin backend pytest \

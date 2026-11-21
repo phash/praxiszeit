@@ -23,7 +23,7 @@ from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
     MAX_DAILY_HOURS_HARD, MAX_DAILY_HOURS_WARN, MAX_NIGHT_WORKER_DAILY_WARN, MAX_WEEKLY_HOURS_WARN,
     BREAK_WAIVER_SOURCE, _assert_within_employment_window,
-    auto_close_findings, uncorrected_auto_closed,
+    auto_close_findings, uncorrected_auto_closed, ENTRY_NOT_FOUND,
 )
 from app.routers import time_entries as _te
 from app.schemas.time_entry import AutoClosedEntryResponse
@@ -816,7 +816,7 @@ def admin_bulk_credit_override(
         # Rückversicherung: zwischen Prüfung und Sperre gelöscht.
         if entry is None or entry.user_id != user.id:
             db.rollback()
-            raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
+            raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
         day = entry.date
         try:
             changed = credit_override_service.apply_credit_override(
