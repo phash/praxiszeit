@@ -1112,6 +1112,11 @@ export const praxisleitung: Handbook = {
             'Eine rote Zahl neben [[Änderungsanträge]] oder [[Anträge]] zeigt, wie viele Anträge auf Ihre Entscheidung warten.',
         },
         {
+          kind: 'tip',
+          tone: 'info',
+          text: 'Das ?-Symbol neben einem Feld erklärt es kurz und führt zum passenden Abschnitt.',
+        },
+        {
           kind: 'task',
           id: 'erste-schritte-checkliste',
           title: 'Was richte ich zuerst ein?',

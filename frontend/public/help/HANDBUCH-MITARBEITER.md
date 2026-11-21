@@ -57,6 +57,8 @@ Am PC steht die Navigation links. Auf dem Smartphone liegt sie unten am Bildschi
 
 > **Gut zu wissen:** Unten links in der Seitenleiste: `Hilfe` öffnet die Hilfe zur aktuellen Seite; darüber stehen `Mitarbeiter-Handbuch` und `Cheat-Sheet`. `Abmelden` beendet Ihre Sitzung.
 
+> **Gut zu wissen:** Das ?-Symbol neben einem Feld erklärt es kurz und führt zum passenden Abschnitt.
+
 <a id="dashboard-saldo-urlaub"></a>
 ## Dashboard: Saldo, Urlaub, heute
 

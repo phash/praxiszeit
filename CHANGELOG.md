@@ -16,6 +16,11 @@
 - **Neuer Endpunkt `POST /api/admin/users/{user_id}/time-entries/credit-override`** (`entry_ids`, 1–200, alles oder nichts): Fremde oder unbekannte Eintrags-ID → 404 vor jeder Sperre; scheitert ein Eintrag, nennt der Fehler das Datum („07.10.2026: …“) und nichts wird gespeichert. Antwort `recognized`, `already` (schon anerkannt), `warnings`. Protokoll je Eintrag wie beim einzelnen Anerkennen (`credit_override`).
 - **Handbuch:** „Wie rechne ich Zeit außerhalb der Blöcke doch an?“ beschreibt das Anerkennen mehrerer Einträge auf einmal.
 
+### ✨ „?“-Kurzhilfen an den Feldern
+
+- **Kurzhilfe neben dem Feld.** An Feldern der Verwaltung (Benutzerformular, „Arbeitszeit anpassen…“, Monatsjournal, Einstellungen mit verkürzten Tagen und Abwesenheitsgründen, Admin-Dashboard) und der Mitarbeiterseiten (Dashboard, Stempelkarte, Änderungsantrag) steht ein „?“. Ein Klick öffnet eine kurze Erklärung mit dem Link „Mehr im Handbuch →“ auf den passenden Abschnitt; Esc, ein Klick daneben oder das Verlassen schließen sie, auf dem Smartphone erscheint sie unten am Bildschirmrand. Die Erklärungen stehen in einem Register (`constants/handbookHints.ts`); ein Test prüft, dass jedes Sprungziel im Handbuch existiert und jeder Eintrag auf einer Seite eingesetzt ist.
+- **Handbuch:** Beide Handbücher und die Hilfe „Hilfe & Navigation“ nennen das „?“-Symbol im Kapitel zur Navigation.
+
 ## [1.24.3] - 2026-11-16
 
 ### 🐛 Behoben (Windows-Server-Update 2026-11-16: PraxisZeit blieb nach dem Update gestoppt)

@@ -397,6 +397,12 @@ describe('Kontexthilfe entspricht der Oberfläche (Gesamtreview B6)', () => {
     // dort sieht nie jemand (HelpPanel schlägt den Pfad nach).
     expect(helpContent['/change-requests']).toBeUndefined();
   });
+
+  it('Fallback „Hilfe & Navigation“ nennt die ?-Kurzhilfen', () => {
+    expect(textOf(getFallbackHelp().content)).toContain(
+      'Das ?-Symbol neben einem Feld erklärt es kurz und führt zum passenden Abschnitt.',
+    );
+  });
 });
 
 // Gesamtreview 1.20 (migration-native): das Praxisleitungs-Handbuch nennt seit dem

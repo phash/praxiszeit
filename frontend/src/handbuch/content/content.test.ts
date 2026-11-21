@@ -59,6 +59,13 @@ describe('Handbuch-Inhalte', () => {
     expect(links.length).toBeGreaterThanOrEqual(4);
   });
 
+  it.each(['mitarbeitende', 'praxisleitung'] as const)('%s erklärt im Navigationskapitel die ?-Kurzhilfen', (id) => {
+    const nav = HANDBOOKS[id].chapters[0];
+    expect(allStrings(nav).join(' ')).toContain(
+      'Das ?-Symbol neben einem Feld erklärt es kurz und führt zum passenden Abschnitt.',
+    );
+  });
+
   it('ALL_SHOTS enthält jede Aufnahme jedes Handbuchs genau einmal', () => {
     const ids = ALL_SHOTS.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
