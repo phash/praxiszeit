@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import apiClient from '../../../api/client';
-import { Save } from 'lucide-react';
+import { Save, X } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAuthStore } from '../../../stores/authStore';
 import PasswordInput from '../../../components/PasswordInput';
@@ -64,11 +64,15 @@ interface UserFormProps {
   // F010: dieselbe Bauart für die fünf Vertragsfelder (Teil A) — der heute
   // gültige Stand, frisch aus Users.tsx. Nur Anzeige und Anzeige-Weichen.
   displayContract?: ContractTerms;
+  // Task 7 (Spec 2026-11-20): Abbrechen in der festen Leiste — dieselbe Aktion
+  // wie der Abbrechen-Knopf über der Liste (Users.tsx). Fehlt der Callback,
+  // zeigt die Leiste keinen Abbrechen-Knopf.
+  onCancel?: () => void;
 }
 
 export default function UserForm({
   editUser, onSaved, onOpenHoursHistory, displayWeeklyHours, displayDayHours,
-  displayWorkDays, displayUseDailySchedule, displayBlocks, displayContract,
+  displayWorkDays, displayUseDailySchedule, displayBlocks, displayContract, onCancel,
 }: UserFormProps) {
   const toast = useToast();
   const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
@@ -438,12 +442,42 @@ export default function UserForm({
       : `${weeklyHoursTotal} h/Woche`;
 
   return (
-    <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
-      <h3 className="text-lg font-semibold mb-4">
-        {editUser ? 'Benutzer bearbeiten' : 'Neue:n Benutzer:in anlegen'}
-      </h3>
+    <div className="bg-white rounded-xl shadow-xs border border-gray-200 px-6 pb-6 mb-6">
+      {/* Task 7: feste Leiste „wen bearbeite ich“ — bleibt beim Scrollen im
+          Scroll-Container <main> oben stehen (sticky innerhalb dieser Karte),
+          mit Speichern und Abbrechen. Sie ersetzt den früheren Speichern-Knopf
+          am Formularende: die Leiste ist immer sichtbar, ein zweiter Knopf mit
+          demselben Namen wäre für Screenreader (und Tests) nicht unterscheidbar. */}
+      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 -mx-6 px-6 py-3 mb-4 rounded-t-xl flex items-center gap-3">
+        <h3 className="text-lg font-semibold min-w-0 flex-1 truncate">
+          {editUser
+            ? `Bearbeiten: ${editUser.first_name} ${editUser.last_name} (${editUser.username})`
+            : 'Neue:n Benutzer:in anlegen'}
+        </h3>
+        <button
+          type="submit"
+          form="user-form"
+          aria-label="Speichern"
+          disabled={submitting || !!createBlocksError}
+          className="shrink-0 bg-primary hover:bg-primary-dark text-white px-3 py-2 sm:px-4 rounded-lg flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Save size={18} aria-hidden="true" />
+          <span className="hidden sm:inline">Speichern</span>
+        </button>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Abbrechen"
+            className="shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-50 px-3 py-2 sm:px-4 rounded-lg flex items-center gap-2 transition"
+          >
+            <X size={18} aria-hidden="true" />
+            <span className="hidden sm:inline">Abbrechen</span>
+          </button>
+        )}
+      </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <form id="user-form" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label htmlFor="f-username" className="block text-sm font-medium text-gray-700 mb-1">Benutzername *</label>
             <input
@@ -1053,16 +1087,6 @@ export default function UserForm({
             </div>
           )}
 
-          <div className="md:col-span-2">
-            <button
-              type="submit"
-              disabled={submitting || !!createBlocksError}
-              className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Save size={18} />
-              <span>Speichern</span>
-            </button>
-          </div>
         </form>
     </div>
   );

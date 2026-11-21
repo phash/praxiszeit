@@ -225,9 +225,12 @@ function isFutureDay(dateStr: unknown): boolean {
 interface MonthlyJournalProps {
   userId: string;
   isAdminView: boolean;
+  // Task 7: Inhalt links neben der Monatsnavigation in der festen Leiste
+  // (Admin-Journal: Zurück-Knopf und Name der Person).
+  headerSlot?: React.ReactNode;
 }
 
-export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalProps) {
+export default function MonthlyJournal({ userId, isAdminView, headerSlot }: MonthlyJournalProps) {
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(format(now, 'yyyy-MM'));
   const [data, setData] = useState<JournalData | null>(null);
@@ -834,13 +837,18 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           }}
         />
       )}
-      <MonthSelector
-        value={selectedMonth}
-        onChange={(month) => {
-          setSelectedMonth(month);
-          cancelEdit();
-        }}
-      />
+      {/* Task 7: Monatsnavigation (und ggf. wen das Journal zeigt) bleibt beim
+          Scrollen im Scroll-Container <main> oben stehen. */}
+      <div className="sticky top-0 z-20 bg-background py-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+        {headerSlot && <div className="min-w-0 flex-1">{headerSlot}</div>}
+        <MonthSelector
+          value={selectedMonth}
+          onChange={(month) => {
+            setSelectedMonth(month);
+            cancelEdit();
+          }}
+        />
+      </div>
 
       {loading && <LoadingSpinner />}
       {error && <p className="text-red-600">{error}</p>}

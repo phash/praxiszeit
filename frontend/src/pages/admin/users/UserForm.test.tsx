@@ -1,5 +1,5 @@
 import userEvent from '@testing-library/user-event';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ToastProvider } from '../../../contexts/ToastContext';
 import { useSystemStore } from '../../../stores/systemStore';
@@ -1073,5 +1073,54 @@ describe('UserForm: Vergangenheits-Warnung nutzt das lokale Datum (P4.4, R28 Run
   it('warnt nicht bei dem lokalen heutigen Datum', () => {
     renderForm({ editUser: { ...baseEditUser, vacation_carryover_deadline: '2026-11-12' } });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+describe('Task 7: feste Leiste „wen bearbeite ich“', () => {
+  const monika = {
+    id: 'u-ps', username: 'ps', first_name: 'Petra', last_name: 'Schulz', role: 'employee',
+    weekly_hours: 40, vacation_days: 30, work_days_per_week: 5, track_hours: true,
+    is_active: true, first_work_day: '2026-06-01',
+  };
+
+  it('zeigt Name und Benutzername in einer sticky Leiste', () => {
+    renderForm({ editUser: monika as never });
+    const title = screen.getByText('Bearbeiten: Petra Schulz (ps)');
+    expect(title.closest('.sticky')).not.toBeNull();
+  });
+
+  it('zeigt beim Anlegen „Neue:n Benutzer:in anlegen“ in der Leiste', () => {
+    renderForm();
+    expect(screen.getByText('Neue:n Benutzer:in anlegen').closest('.sticky')).not.toBeNull();
+  });
+
+  it('Speichern in der Leiste löst denselben Speicherweg aus', async () => {
+    const onSaved = vi.fn();
+    renderForm({ editUser: monika as never, onSaved });
+    const bar = screen.getByText('Bearbeiten: Petra Schulz (ps)').closest('.sticky') as HTMLElement;
+    const save = within(bar).getByRole('button', { name: 'Speichern' });
+    expect(save).toHaveAttribute('type', 'submit');
+    expect(save).toHaveAttribute('form', 'user-form');
+    fireEvent.click(save);
+    await waitFor(() => expect(putMock).toHaveBeenCalledWith('/admin/users/u-ps', expect.anything()));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+
+  it('Abbrechen in der Leiste ruft onCancel', () => {
+    const onCancel = vi.fn();
+    renderForm({ editUser: monika as never, onCancel });
+    const bar = screen.getByText('Bearbeiten: Petra Schulz (ps)').closest('.sticky') as HTMLElement;
+    fireEvent.click(within(bar).getByRole('button', { name: 'Abbrechen' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('ohne onCancel gibt es keinen Abbrechen-Knopf in der Leiste', () => {
+    renderForm({ editUser: monika as never });
+    expect(screen.queryByRole('button', { name: 'Abbrechen' })).not.toBeInTheDocument();
+  });
+
+  it('es gibt genau einen Speichern-Knopf (die Leiste bleibt beim Scrollen sichtbar)', () => {
+    renderForm({ editUser: monika as never });
+    expect(screen.getAllByRole('button', { name: 'Speichern' })).toHaveLength(1);
   });
 });

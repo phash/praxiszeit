@@ -492,6 +492,7 @@ export default function Users() {
         <UserForm
           editUser={editingUser}
           onSaved={handleFormSaved}
+          onCancel={handleFormCancel}
           onOpenHoursHistory={handleOpenHoursHistory}
           displayWeeklyHours={displayWeeklyHours}
           displayDayHours={displayDayHours}
