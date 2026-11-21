@@ -18,7 +18,11 @@ set -euo pipefail
 APP_VERSION="1.24.3"
 PYTHON_VERSION="3.13.18"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
-# 20261026 buendelt CPython 3.13.18 (Security-Punktrelease: tarfile, tempfile,
+# 20261110 buendelt weiter CPython 3.13.18 und OpenSSL 3.5.9, aber expat 2.10.0
+# (CVE-2026-113351, -115506 Billion Laughs, -117610, -118370) und zlib 1.4
+# (Dependency-Check 1.25.0; glibc-Bedarf unveraendert 2.17, macOS-Pakete ohne
+# Funde in tools/macho_deps.py). Davor 20261026 buendelte CPython 3.13.18
+# (Security-Punktrelease: tarfile, tempfile,
 # http.cookiejar, eMudhra-Denylist, expat 2.9.0; Release 1.20.2), glibc-Bedarf
 # unveraendert 2.17. Davor 20261021 = 3.13.17 (Security-Review 2026-10-26).
 # Davor 20261001 buendelte CPython 3.13.16 (u. a. SSLContext-Use-after-free behoben)
@@ -30,7 +34,7 @@ PYTHON_VERSION="3.13.18"
 # CPython-Punktversion hat ein python-build-standalone-Release) und danach am
 # gebauten Artefakt gegenmessen:
 #   build/release-<ver>/linux/bin/python/bin/python3 -c "import ssl; print(ssl.OPENSSL_VERSION)"
-PYTHON_STANDALONE_TAG="20261026"
+PYTHON_STANDALONE_TAG="20261110"
 # Audit 2026-11-07 S3-05: SHA256 jedes der vier Interpreter-Archive, gegen die
 # SHA256SUMS des python-build-standalone-Releases abgeglichen. Beim Anheben von
 # PYTHON_VERSION/PYTHON_STANDALONE_TAG mitziehen:
@@ -39,14 +43,20 @@ PYTHON_STANDALONE_TAG="20261026"
 # Der Build prueft jedes Archiv - auch einen Cache-Treffer - und bricht bei
 # Abweichung ab; ohne Pin kaeme ein veraenderter Interpreter in alle vier
 # nativen Kundenpakete.
-PYTHON_LINUX_SHA256="126343c54daff4068efc1ac269518d0cc202d57857794948103dd1454e8881be"
-PYTHON_WINDOWS_SHA256="ebe90cc1dce2dd2d7afa1f0aa9b6c269c7c0174aeabdc6a801381602b7283424"
-PYTHON_MACOS_X64_SHA256="708be9e7df297f68bdae589ea9e62a621db5abe7708f79e851c41410347452d1"
-PYTHON_MACOS_ARM64_SHA256="e5af2fde6a937a0e0c795a0c595c4efb70578d57463a2657c819992b9b9acbac"
+PYTHON_LINUX_SHA256="50c774f6674740739f791c05a9177ed03e2fe02abebda9bca3512eb7309b37cc"
+PYTHON_WINDOWS_SHA256="7e93813bd362c6413f30788b248590e2f169df2d17dcac81aafbcc7a6eeb542c"
+PYTHON_MACOS_X64_SHA256="a46bcdeecd28ba253522b321dcb3806da1b0ff581479fc1d27e9613e3ac44764"
+PYTHON_MACOS_ARM64_SHA256="1afd3983237c2a10277345f235be730e9cb49a123e0574ed252dbf3a841a24e4"
 # theseus-rs/postgresql-binaries — manylinux-Build, portable bis glibc 2.34
 # (Ubuntu 22.04, Debian 12, RHEL 9 und neuer). Releases:
 #   https://github.com/theseus-rs/postgresql-binaries/releases
 POSTGRESQL_VERSION="18.6.0"
+# ⚠️ theseus 18.7.0 (2026-11-12) ist KEIN Drop-in: neue Build-Basis Debian 12 ->
+# gebuendelte libstdc++/libcrypt/libexpat verlangen GLIBC_2.36 (postgres startet
+# auf Ubuntu 22.04 und Rocky/RHEL 9 nicht: "GLIBC_2.36 not found"), die
+# macOS-Pakete bringen ein PL/Python mit Homebrew-rpaths mit (79 Funde in
+# tools/macho_deps.py). Bis das geloest ist, bleibt Linux/macOS auf 18.6.0
+# (Dependency-Check 1.25.0); Windows (EDB) ist unabhaengig, siehe unten.
 # SHA256 der theseus-Archive, hier fest eingetragen (S3-05): die .sha256-Datei
 # neben dem Archiv stammt vom selben Server und schuetzt nur gegen kaputte
 # Downloads, nicht gegen ein ausgetauschtes Release. Beim PG-Bump mitziehen
@@ -61,8 +71,14 @@ POSTGRESQL_EDB_SUFFIX="1"
 # verschiedene Build-Maschinen bundelten still UNTERSCHIEDLICHE PG-Versionen
 # (lokal 16.13 vs. Büro-Build-Maschine abweichend, beide ungeprüft) -> 1.10.0-
 # Windows war PG 16.13 statt 18. Beim PG-Bump diese SHA mitziehen (zur
-# POSTGRESQL_VERSION passende postgresql-<maj.min>-<suffix>-windows-x64.exe).
-PG_WINDOWS_SHA256="cae561e98d09f3f4a1a95759249240f86f66d71dcf33d14b6f7be894078401d1"  # postgresql-18.6-1-windows-x64.exe
+# POSTGRESQL_WINDOWS_VERSION passende postgresql-<maj.min>-<suffix>-windows-x64.exe).
+PG_WINDOWS_SHA256="90bf244854a6c7f6d204b26934a32bd571b9953963b6137bb46d2fcd3f1a313e"  # postgresql-18.7-1-windows-x64.exe
+# Windows-PG-Version (Major.Minor) des EDB-Installers. Seit 1.25.0 getrennt von
+# POSTGRESQL_VERSION (theseus, Linux/macOS): EDB 18.7-1 behebt die
+# PostgreSQL-Sicherheitsluecken vom 2026-11-12 (u. a. CVE-2026-120154 RLS-Umgehung
+# per INSERT ... ON CONFLICT), theseus 18.7.0 ist dagegen nicht portabel (s. o.).
+# Gleicher Major Pflicht (Build prueft). Beim Bump PG_WINDOWS_SHA256 mitziehen.
+POSTGRESQL_WINDOWS_VERSION="18.7"
 NSSM_VERSION="2.24"
 
 # =============================================================================
@@ -162,7 +178,7 @@ echo "=============================================="
 echo "  PraxisZeit Release Builder"
 echo "  App: v${APP_VERSION}"
 echo "  Python: ${PYTHON_VERSION}"
-echo "  PostgreSQL: ${POSTGRESQL_VERSION}"
+echo "  PostgreSQL: ${POSTGRESQL_VERSION} (Windows/EDB: ${POSTGRESQL_WINDOWS_VERSION})"
 echo "  Plattformen:${PLATFORMS}"
 echo "=============================================="
 echo ""
@@ -213,10 +229,19 @@ if [ -n "$_lock_ver" ] && [ "$_lock_ver" != "$APP_VERSION" ]; then
     exit 1
 fi
 
-# POSTGRESQL_VERSION muss 3-komponentig sein (z.B. 18.4.0): die Windows-EDB-URL
-# leitet sich via ${POSTGRESQL_VERSION%.*} ab -> bei "18.4" käme die falsche URL.
+# POSTGRESQL_VERSION muss 3-komponentig sein (z.B. 18.4.0): die
+# (Legacy-)EDB-Linux-URL leitet sich via ${POSTGRESQL_VERSION%.*} ab -> bei "18.4"
+# käme die falsche URL. Windows nutzt POSTGRESQL_WINDOWS_VERSION (s. u.).
 if ! [[ "$POSTGRESQL_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo -e "${RED}[ERROR]${NC} POSTGRESQL_VERSION='${POSTGRESQL_VERSION}' muss drei Komponenten haben (z.B. 18.4.0)" >&2
+    exit 1
+fi
+# POSTGRESQL_WINDOWS_VERSION = Major.Minor (EDB-Dateiname) und gleicher Major
+# wie POSTGRESQL_VERSION — sonst bekaemen Windows-Kunden still eine andere
+# Major-Version als Linux/macOS (Sicherungen waeren nicht mehr austauschbar).
+if ! [[ "$POSTGRESQL_WINDOWS_VERSION" =~ ^[0-9]+\.[0-9]+$ ]] \
+   || [ "${POSTGRESQL_WINDOWS_VERSION%%.*}" != "${POSTGRESQL_VERSION%%.*}" ]; then
+    echo -e "${RED}[ERROR]${NC} POSTGRESQL_WINDOWS_VERSION='${POSTGRESQL_WINDOWS_VERSION}' muss Major.Minor mit Major ${POSTGRESQL_VERSION%%.*} sein (z.B. 18.7)" >&2
     exit 1
 fi
 
@@ -266,7 +291,7 @@ PG_LINUX_EDB_URL="${_EDB}/${_PGV_EDB}-linux-x64-binaries.tar.gz"
 # Windows: EDB Installer (.exe) — wird vom Build per direktem Link geladen +
 # SHA256-verifiziert (PG_WINDOWS_SHA256 oben). Fallback bei EDB-403: manuell laden.
 PG_WINDOWS_INSTALLER="postgresql-windows-x64.exe"
-PG_WINDOWS_URL="${_EDB}/postgresql-${POSTGRESQL_VERSION%.*}-${POSTGRESQL_EDB_SUFFIX}-windows-x64.exe"
+PG_WINDOWS_URL="${_EDB}/postgresql-${POSTGRESQL_WINDOWS_VERSION}-${POSTGRESQL_EDB_SUFFIX}-windows-x64.exe"
 # macOS: EDB Installer (.dmg) — muss manuell heruntergeladen werden
 # Download: https://www.enterprisedb.com/downloads/postgres-postgresql-downloads
 # Datei in build/cache/postgresql-macos.dmg ablegen
@@ -541,10 +566,10 @@ if [ "$BUILD_WINDOWS" = true ]; then
     # KEIN ungeprüfter ~/Downloads-Griff mehr — der bundelte je nach Maschine
     # still eine andere PG-Version (real: lokal 16.13 vs. Büro-Build abweichend).
     # Jetzt zentral gepinnt -> alle Build-Maschinen bundeln identisch PG
-    # ${POSTGRESQL_VERSION%.*}, sonst harter Abbruch.
+    # ${POSTGRESQL_WINDOWS_VERSION}, sonst harter Abbruch.
     _winpg="${CACHE_DIR}/${PG_WINDOWS_INSTALLER}"
     if [ -f "$_winpg" ] && [ "$(sha256sum "$_winpg" | cut -d' ' -f1)" = "$PG_WINDOWS_SHA256" ]; then
-        info "PostgreSQL Windows-Installer im Cache (SHA256 ok, PG ${POSTGRESQL_VERSION%.*})."
+        info "PostgreSQL Windows-Installer im Cache (SHA256 ok, PG ${POSTGRESQL_WINDOWS_VERSION})."
     else
         [ -f "$_winpg" ] && warn "Gecachter Windows-PG-Installer hat FALSCHE SHA256 (alte/fremde Version) — wird neu geladen."
         info "Lade EDB-PostgreSQL-Windows-Installer: ${PG_WINDOWS_URL}"
@@ -564,7 +589,7 @@ if [ "$BUILD_WINDOWS" = true ]; then
             error "  erhalten: ${_got}"
             exit 1
         fi
-        info "PostgreSQL Windows-Installer geladen + SHA256 verifiziert (PG ${POSTGRESQL_VERSION%.*})."
+        info "PostgreSQL Windows-Installer geladen + SHA256 verifiziert (PG ${POSTGRESQL_WINDOWS_VERSION})."
     fi
 fi
 
