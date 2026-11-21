@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.25.0] - 2026-11-21
 
 ### ✨ Vertrag ab dem ersten Arbeitstag, Anerkennen im Dialog (Kundenfall 2026-11-20)
 
