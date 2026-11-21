@@ -6,8 +6,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from './ConfirmDialog';
 import { getErrorMessage } from '../utils/errorMessage';
 import { showArbzgWarnings } from '../utils/arbzgWarnings';
-import { notCreditedMinutes, type CreditEntry } from '../utils/workBlocks';
-import { AUTO_CLOSED_HINT, creditConfirmText } from '../utils/creditOverride';
+import { AUTO_CLOSED_HINT, creditConfirmText, isRecognizable, type RecognizableEntry } from '../utils/creditOverride';
 
 /**
  * Spec 2026-10-08, 13.3 „Anerkennen": die gesamte gestempelte Zeit eines
@@ -17,10 +16,8 @@ import { AUTO_CLOSED_HINT, creditConfirmText } from '../utils/creditOverride';
  * Komponenten).
  */
 
-export interface CreditButtonEntry extends CreditEntry {
+export interface CreditButtonEntry extends RecognizableEntry {
   id: string;
-  not_credited_minutes?: number | null;
-  credit_override?: boolean | null;
 }
 
 interface CreditOverrideButtonProps {
@@ -36,8 +33,7 @@ export default function CreditOverrideButton({ entry, onDone, className }: Credi
 
   // Ohne nicht angerechnete Zeit, bei bereits anerkannten und bei offenen
   // Einträgen gibt es nichts anzuerkennen (der Server lehnt Offene mit 400 ab).
-  const notCredited = entry.not_credited_minutes ?? notCreditedMinutes(entry);
-  if (entry.credit_override || !entry.end_time || notCredited <= 0) return null;
+  if (!isRecognizable(entry)) return null;
 
   const hhmm = (t?: string | null) => (t ? t.substring(0, 5) : '');
   // Dieselbe Spanne, die der Server anrechnet (13.3 Schritt 3: raw_* or start/end).

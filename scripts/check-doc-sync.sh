@@ -1483,6 +1483,18 @@ group_vertrag_ab_eintritt() {
   need docs/handbuch/HANDBUCH-ADMIN.md 'Die Arbeitszeit gilt erst ab heute – wie korrigiere ich sie ab dem ersten Arbeitstag?'
   need docs/handbuch/HANDBUCH-ADMIN.md 'Soll die heutige Arbeitszeit schon ab dem ersten Arbeitstag gelten?'
   need docs/handbuch/CHEATSHEET-ADMIN.md 'Ab {erster Arbeitstag} übernehmen'
+  # Task 11: Sammel-Anerkennen im Monatsjournal (Knopf, Auswahl, Rückfrage).
+  local j=frontend/src/components/MonthlyJournal.tsx
+  local c=frontend/src/utils/creditOverride.ts
+  need "$j" '`Ausgewählte anerkennen (${selectedEntries.length})`'
+  need_code_label "$j" 'Alle nicht angerechneten auswählen'
+  need "$c" '`${subject} mit der ganzen gestempelten Zeit angerechnet (zusätzlich ${formatHoursHM(extraMinutes / 60)} h). `'
+  need "$c" "'Anerkennen lässt sich nicht zurücknehmen. Der Vorgang wird protokolliert.'"
+  need "$h" '[[Ausgewählte anerkennen (2)]]'
+  need "$h" '[[Alle nicht angerechneten auswählen]]'
+  need "$h" '„2 Einträge werden mit der ganzen gestempelten Zeit angerechnet (zusätzlich 3:00 h). Anerkennen lässt sich nicht zurücknehmen. Der Vorgang wird protokolliert.“'
+  need docs/handbuch/HANDBUCH-ADMIN.md 'Ausgewählte anerkennen (2)'
+  need docs/handbuch/CHEATSHEET-ADMIN.md 'Ausgewählte anerkennen (n)'
 }
 
 # --- weitere Gruppen werden oberhalb dieser Zeile eingefügt ---

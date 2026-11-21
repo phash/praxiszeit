@@ -10,6 +10,12 @@
 - **Teamübersicht:** `GET /api/admin/team-schedule` liefert je Zeile `first_work_day`, damit der Hinweis auch aus der Teamübersicht erscheint.
 - **Handbuch:** neue Aufgabe „Die Arbeitszeit gilt erst ab heute – wie korrigiere ich sie ab dem ersten Arbeitstag?“ mit Rechenbeispiel; „Was zeigt mir die Auswirkung vor dem Speichern?“ und „Wie rechne ich Zeit außerhalb der Blöcke doch an?“ nennen die Anerkennen-Liste im Dialog.
 
+### ✨ Mehrere Einträge im Monatsjournal auf einmal anerkennen
+
+- **Sammel-Anerkennen.** Im Monatsjournal der Verwaltung hat jeder Eintrag mit nicht angerechneter Zeit ein Häkchen „Auswählen“; „Alle nicht angerechneten auswählen“ wählt alle des Monats. „Ausgewählte anerkennen (n)“ fragt mit Zahl und zusätzlich angerechneter Zeit nach und erkennt alle gewählten Einträge in einer Transaktion an. Offene und automatisch geschlossene Einträge haben kein Häkchen.
+- **Neuer Endpunkt `POST /api/admin/users/{user_id}/time-entries/credit-override`** (`entry_ids`, 1–200, alles oder nichts): Fremde oder unbekannte Eintrags-ID → 404 vor jeder Sperre; scheitert ein Eintrag, nennt der Fehler das Datum („07.10.2026: …“) und nichts wird gespeichert. Antwort `recognized`, `already` (schon anerkannt), `warnings`. Protokoll je Eintrag wie beim einzelnen Anerkennen (`credit_override`).
+- **Handbuch:** „Wie rechne ich Zeit außerhalb der Blöcke doch an?“ beschreibt das Anerkennen mehrerer Einträge auf einmal.
+
 ## [1.24.3] - 2026-11-16
 
 ### 🐛 Behoben (Windows-Server-Update 2026-11-16: PraxisZeit blieb nach dem Update gestoppt)

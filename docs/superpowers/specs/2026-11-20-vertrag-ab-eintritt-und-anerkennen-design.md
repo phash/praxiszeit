@@ -135,7 +135,7 @@ Grund: Der 30-Tage-Hinweis auf dem Dashboard der Mitarbeitenden liest die Sammel
 **Frontend (`MonthlyJournal.tsx`, nur `isAdminView`):**
 - Neue Spalte mit Häkchen, nur an Einträgen, an denen `CreditOverrideButton` erscheint. Dieselbe Bedingung steht in `utils/creditOverride.ts` als Funktion `isRecognizable(entry)`, die der Knopf ebenfalls nutzt.
 - Kopfzeile: „Alle nicht angerechneten auswählen“.
-- Leiste mit „Ausgewählte anerkennen (n)“. Sie erscheint bei mindestens einer Auswahl.
+- Leiste mit „Ausgewählte anerkennen (n)“. Sie erscheint, sobald der Monat anerkennbare Einträge hat; ohne Auswahl steht der Knopf gesperrt bei (0), damit die Leiste neben „Alle nicht angerechneten auswählen“ nicht springt.
 - Bestätigungsdialog nennt Zahl, Summe der zusätzlich angerechneten Zeit und den Satz „lässt sich nicht zurücknehmen“.
 - Danach lädt das Journal neu, und Warnungen erscheinen über `showArbzgWarnings`.
 - Die Detailtabelle im Admin-Dashboard (`EmployeeTimeEntryTable.tsx`) bekommt **kein** Sammel-Anerkennen **(Entwurf)**. Das Journal ist der Ort für Monatsarbeit.

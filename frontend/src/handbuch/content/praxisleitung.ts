@@ -1627,6 +1627,12 @@ export const praxisleitung: Handbook = {
             },
             {
               text:
+                '**Mehrere auf einmal im Monatsjournal:** Setzen Sie bei jedem Eintrag, den Sie anerkennen möchten, das Häkchen **Auswählen** – oder klicken Sie auf [[Alle nicht angerechneten auswählen]]. ' +
+                'Der Knopf zählt mit, z. B. [[Ausgewählte anerkennen (2)]]. Nach dem Klick fragt PraxisZeit nach: „2 Einträge werden mit der ganzen gestempelten Zeit angerechnet (zusätzlich 3:00 h). Anerkennen lässt sich nicht zurücknehmen. Der Vorgang wird protokolliert.“ ' +
+                'PraxisZeit erkennt dann alle gewählten Einträge an oder keinen: Scheitert einer, nennt die Meldung den Tag, und nichts wird gespeichert. Offene und automatisch geschlossene Einträge haben kein Häkchen.',
+            },
+            {
+              text:
                 '**Im Dialog beim Speichern:** Verlieren Einträge durch eine Arbeitszeit-Änderung Zeit, erkennen Sie sie direkt im Dialog „Arbeitszeit & Wochenstunden“ mit an – ' +
                 'über die Liste **Einträge, die Zeit verlieren**, siehe [Was zeigt mir die Auswirkung vor dem Speichern?](#auswirkung-pruefen) und [Arbeitszeit ab dem ersten Arbeitstag](#vertrag-ab-eintritt).',
             },
