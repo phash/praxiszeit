@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import HandbookHint from '../../../components/HandbookHint';
 import { AUTO_CLOSED_HINT, OPEN_ENTRY_HINT } from '../../../utils/creditOverride';
 import type { TimeEntryChange } from './workingHoursTypes';
 import { losingEntries, recognizableLosingIds, recognizeRowText } from './recognizeSelection';
@@ -37,7 +38,10 @@ export default function RecognizeEntriesList({ changes, selected, onChange, disa
       className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 min-w-0 break-words"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 id={`${baseId}-title`} className="font-semibold">{RECOGNIZE_TITLE}</h4>
+        <div className="flex items-center gap-1">
+          <h4 id={`${baseId}-title`} className="font-semibold">{RECOGNIZE_TITLE}</h4>
+          <HandbookHint hintId="wh-recognize" />
+        </div>
         {anyRecognizable && !disabled && (
           <div className="flex gap-1 text-sm">
             <button

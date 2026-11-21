@@ -18,7 +18,11 @@ test.describe('#312 Eigene Abwesenheitsgründe', () => {
     await expect(adminPage.getByRole('heading', { name: 'Eigene Abwesenheitsgründe' })).toBeVisible();
 
     // fill the create form (scoped to the reasons section)
-    const section = adminPage.locator('div', { has: adminPage.getByRole('heading', { name: 'Eigene Abwesenheitsgründe' }) }).last();
+    // Die Karte (bg-white), nicht der innerste div um die Überschrift – dort steht seit den
+    // Kurzhilfen nur Überschrift + „?“-Knopf.
+    const section = adminPage
+      .locator('div.bg-white', { has: adminPage.getByRole('heading', { name: 'Eigene Abwesenheitsgründe' }) })
+      .last();
     await section.getByPlaceholder('z. B. Schule').fill(name);
     // behaviour select defaults to "Zählt als gearbeitet" (worked)
 

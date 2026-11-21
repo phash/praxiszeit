@@ -25,6 +25,8 @@ Melden Sie sich mit den Admin-Zugangsdaten an, die bei der Installation gesetzt 
 
 > **Gut zu wissen:** Eine rote Zahl neben `Änderungsanträge` oder `Anträge` zeigt, wie viele Anträge auf Ihre Entscheidung warten.
 
+> **Gut zu wissen:** Das ?-Symbol neben einem Feld erklärt es kurz und führt zum passenden Abschnitt.
+
 <a id="erste-schritte-checkliste"></a>
 ### Was richte ich zuerst ein?
 

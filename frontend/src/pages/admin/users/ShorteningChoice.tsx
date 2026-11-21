@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react';
+import HandbookHint from '../../../components/HandbookHint';
 import type { WorkingHoursChangePreview } from './workingHoursTypes';
 import {
   OTHER_CONFIRM, OTHER_WARNING, REASON_HELP, REASON_OPTIONS, shorteningHeadlines,
@@ -114,10 +115,13 @@ export default function ShorteningChoice({
       aria-labelledby={`${idPrefix}-title`}
       className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm min-w-0 break-words"
     >
-      <p id={`${idPrefix}-title`} className="flex items-center gap-1 font-semibold text-red-900">
-        <AlertTriangle size={16} className="shrink-0" aria-hidden="true" />
-        Verkürzung
-      </p>
+      <div className="flex items-center gap-1">
+        <p id={`${idPrefix}-title`} className="flex items-center gap-1 font-semibold text-red-900">
+          <AlertTriangle size={16} className="shrink-0" aria-hidden="true" />
+          Verkürzung
+        </p>
+        <HandbookHint hintId="wh-shortening" />
+      </div>
       <ul className="mt-1 list-disc pl-5 text-red-900">
         {shorteningHeadlines(preview).map((line) => <li key={line}>{line}</li>)}
       </ul>

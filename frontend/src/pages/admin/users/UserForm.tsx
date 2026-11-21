@@ -11,6 +11,7 @@ import {
   deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, isLegacyWeek, validateWeekBlocks,
 } from '../../../utils/workBlocks';
 import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
+import HandbookHint from '../../../components/HandbookHint';
 import ContractTermsFields from './ContractTermsFields';
 import type { ContractTerms } from './workingHoursTypes';
 import { BLOCKS_WITHOUT_EFFECT, LEGACY_WITHOUT_EFFECT } from './workingHoursTexts';
@@ -722,9 +723,12 @@ export default function UserForm({
             />
           )}
           <div>
-            <label htmlFor="f-child-sick" className="block text-sm font-medium text-gray-700 mb-1">
-              Kind-krank-Tage/Jahr (§45 SGB V)
-            </label>
+            <div className="flex items-center gap-1 mb-1">
+              <label htmlFor="f-child-sick" className="block text-sm font-medium text-gray-700">
+                Kind-krank-Tage/Jahr (§45 SGB V)
+              </label>
+              <HandbookHint hintId="user-child-sick-days" />
+            </div>
             <input
               id="f-child-sick"
               type="number"
@@ -744,9 +748,12 @@ export default function UserForm({
           </div>
           {editUser && (
             <div>
-              <label htmlFor="f-carryover-deadline" className="block text-sm font-medium text-gray-700 mb-1">
-                Resturlaub verfällt am
-              </label>
+              <div className="flex items-center gap-1 mb-1">
+                <label htmlFor="f-carryover-deadline" className="block text-sm font-medium text-gray-700">
+                  Resturlaub verfällt am
+                </label>
+                <HandbookHint hintId="user-carryover-deadline" />
+              </div>
               <input
                 id="f-carryover-deadline"
                 type="date"
@@ -767,9 +774,12 @@ export default function UserForm({
           )}
           {effTrackHours && (
             <div>
-              <label htmlFor="f-overtime-carryover" className="block text-sm font-medium text-gray-700 mb-1">
-                Anfangssaldo Überstunden (h)
-              </label>
+              <div className="flex items-center gap-1 mb-1">
+                <label htmlFor="f-overtime-carryover" className="block text-sm font-medium text-gray-700">
+                  Anfangssaldo Überstunden (h)
+                </label>
+                <HandbookHint hintId="user-carryover" />
+              </div>
               <DecimalInput
                 id="f-overtime-carryover"
                 step="0.25"
@@ -789,9 +799,12 @@ export default function UserForm({
           {/* #383: Übertrag Urlaubstage — gilt für ALLE MA (auch track_hours=false),
               daher NICHT hinter der Überstunden-track_hours-Gate. */}
           <div>
-            <label htmlFor="f-vacation-carryover" className="block text-sm font-medium text-gray-700 mb-1">
-              Übertrag Urlaubstage
-            </label>
+            <div className="flex items-center gap-1 mb-1">
+              <label htmlFor="f-vacation-carryover" className="block text-sm font-medium text-gray-700">
+                Übertrag Urlaubstage
+              </label>
+              <HandbookHint hintId="user-carryover" />
+            </div>
             <DecimalInput
               id="f-vacation-carryover"
               step="0.01"
@@ -820,6 +833,7 @@ export default function UserForm({
             <label htmlFor="exempt_from_arbzg" className="text-sm font-medium text-gray-700 cursor-pointer">
               ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende Angestellte)
             </label>
+            <HandbookHint hintId="user-arbzg-exempt" />
           </div>
 
           <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -833,6 +847,7 @@ export default function UserForm({
             <label htmlFor="is_night_worker" className="text-sm font-medium text-gray-700 cursor-pointer">
               Nachtarbeitnehmer (§6 ArbZG – 8h-Tageslimit bei Nachtarbeit)
             </label>
+            <HandbookHint hintId="user-night-worker" />
           </div>
 
           <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
@@ -846,6 +861,7 @@ export default function UserForm({
             <label htmlFor="receives_company_closures" className="text-sm font-medium text-gray-700 cursor-pointer">
               Nimmt an Betriebsferien teil (Betriebsferien werden automatisch eingetragen)
             </label>
+            <HandbookHint hintId="user-company-closures" />
           </div>
 
           {/* #297: Kalenderfarbe — vom Admin für jede:n Mitarbeiter:in setzbar
@@ -897,7 +913,10 @@ export default function UserForm({
 
           {/* First / Last Work Day */}
           <div>
-            <label htmlFor="f-first-work-day" className="block text-sm font-medium text-gray-700">Erster Arbeitstag</label>
+            {/* Label und Feld bleiben Geschwister: das Handbuch-Bild (Marker „erster-tag“) sucht das Feld
+                als following-sibling des Labels. */}
+            <label htmlFor="f-first-work-day" className="inline-block text-sm font-medium text-gray-700">Erster Arbeitstag</label>{' '}
+            <HandbookHint hintId="user-work-period" />
             <input
               id="f-first-work-day"
               type="date"
@@ -999,6 +1018,7 @@ export default function UserForm({
                         />
                         Nach Arbeitsblöcken
                       </label>
+                      <HandbookHint hintId="work-blocks" />
                     </div>
                   </fieldset>
                   {effFixedTarget && !createBlocksActive && !formData.use_daily_schedule && (

@@ -1,6 +1,7 @@
 import { useSystemStore } from '../../../stores/systemStore';
 import { formatDayNumber, formatFixedDe } from '../../../utils/formatters';
 import DecimalInput from '../../../components/DecimalInput';
+import HandbookHint from '../../../components/HandbookHint';
 import { MAX_VACATION_DAYS } from './workingHoursTypes';
 import type { ContractTerms } from './workingHoursTypes';
 
@@ -40,9 +41,12 @@ export default function ContractTermsFields({
   return (
     <>
       <div>
-        <label htmlFor={vacationId} className="block text-sm font-medium text-gray-700 mb-1">
-          {mode === 'change' ? 'Urlaubsanspruch pro Jahr ab diesem Datum' : 'Urlaubstage'}
-        </label>
+        <div className="flex items-center gap-1 mb-1">
+          <label htmlFor={vacationId} className="block text-sm font-medium text-gray-700">
+            {mode === 'change' ? 'Urlaubsanspruch pro Jahr ab diesem Datum' : 'Urlaubstage'}
+          </label>
+          {mode === 'change' ? <HandbookHint hintId="wh-vacation-days" /> : <HandbookHint hintId="user-vacation-days" />}
+        </div>
         <DecimalInput
           id={vacationId}
           // Leer bleibt im Dialog leer (NaN) — er sperrt dann das Speichern,
@@ -96,6 +100,7 @@ export default function ContractTermsFields({
         <label htmlFor={`${idPrefix}track_hours`} className="text-sm font-medium text-gray-700 cursor-pointer">
           Stundenzählung aktiv (Soll-Stunden werden berechnet)
         </label>
+        <HandbookHint hintId="user-track-hours" />
       </div>
 
       {/* #377 Minijob / Arbeitszeitkonto (§2 Abs.2 MiLoG) */}
@@ -116,6 +121,7 @@ export default function ContractTermsFields({
           >
             Arbeitszeitkonto (§ 2 Abs. 2 MiLoG) – 50-%-Prüfung & 12-Monats-Ausgleichsfrist
           </label>
+          <HandbookHint hintId="minijob-account" />
         </div>
         {value.milog_working_time_account && (
           <div className="mt-2">

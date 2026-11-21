@@ -4,6 +4,7 @@ import { useToast } from '../contexts/ToastContext';
 import { getErrorMessage } from '../utils/errorMessage';
 import { useConfirm } from '../hooks/useConfirm';
 import ConfirmDialog from './ConfirmDialog';
+import HandbookHint from './HandbookHint';
 import * as api from '../api/absenceReasons';
 import type { AbsenceReason, AbsenceReasonBehavior } from '../api/absenceReasons';
 
@@ -109,7 +110,10 @@ export default function AbsenceReasonsManager() {
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-2">Eigene Abwesenheitsgründe</h2>
+      <div className="flex items-center gap-2 mb-2">
+        <h2 className="text-lg font-semibold text-gray-900">Eigene Abwesenheitsgründe</h2>
+        <HandbookHint hintId="settings-absence-reasons" />
+      </div>
       <p className="text-sm text-gray-500 mb-4">
         Legen Sie eigene Gründe an (z. B. „Schule" für Azubis). Das <strong>Basis-Verhalten</strong> bestimmt die
         Berechnung und ist nach dem Anlegen fix. Gründe lassen sich umbenennen, umfärben und deaktivieren.
@@ -160,7 +164,10 @@ export default function AbsenceReasonsManager() {
       {/* #376: Vorlagen zum 1-Klick-Aktivieren (bereits aktivierte per Name ausgeblendet) */}
       {api.ABSENCE_REASON_PRESETS.some((p) => !reasons.some((r) => r.name === p.name)) && (
         <div className="mb-4">
-          <p className="text-xs font-medium text-gray-600 mb-1">Vorlagen (1-Klick aktivieren)</p>
+          {/* Inline neben dem Text: Das Handbuch-Bild (praxisleitung.ts, Marker „vorlagen“) sucht die
+              Knopfzeile als erstes div-Geschwister dieses <p>. */}
+          <p className="inline-block text-xs font-medium text-gray-600 mb-1">Vorlagen (1-Klick aktivieren)</p>{' '}
+          <HandbookHint hintId="settings-reason-presets" />
           <div className="flex flex-wrap gap-2">
             {api.ABSENCE_REASON_PRESETS.filter((p) => !reasons.some((r) => r.name === p.name)).map((p) => (
               <button

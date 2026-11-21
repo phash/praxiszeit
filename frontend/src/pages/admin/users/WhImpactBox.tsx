@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import HandbookHint from '../../../components/HandbookHint';
 import { formatDayCount } from '../../../utils/formatters';
 import { WEEKDAY_LABELS } from '../../../utils/workBlocks';
 import type { TimeEntryChange, WorkingHoursChangePreview } from './workingHoursTypes';
@@ -91,7 +92,10 @@ export default function WhImpactBox({ preview, plannedPresence = false }: {
   return (
     <div className="mt-1 space-y-1 break-words text-amber-900">
       {preview.grace_minutes !== undefined && (
-        <p>{`Auswirkung (Puffer ${preview.grace_minutes} Min)${changedDays ? ` · geänderte Tage: ${changedDays}` : ''}`}</p>
+        <div className="flex items-center gap-1">
+          <p>{`Auswirkung (Puffer ${preview.grace_minutes} Min)${changedDays ? ` · geänderte Tage: ${changedDays}` : ''}`}</p>
+          <HandbookHint hintId="wh-impact" align="end" />
+        </div>
       )}
       {dayTargets && <p className="text-amber-800">{dayTargets}</p>}
       {(entries > 0 || skipped.length > 0) && (

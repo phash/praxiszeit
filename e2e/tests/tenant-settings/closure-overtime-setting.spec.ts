@@ -23,8 +23,9 @@ test.describe('#314 Betriebsferien-Überstundenabbau-Schalter', () => {
       const saveResp = adminPage.waitForResponse(
         (r) => r.url().includes('/api/admin/settings/closure_overtime_after_vacation') && r.request().method() === 'PUT',
       );
-      // the section's own Speichern button (last "Betriebsferien & Urlaub" block)
-      await adminPage.locator('div', { has: adminPage.getByRole('heading', { name: 'Betriebsferien & Urlaub' }) })
+      // the section's own Speichern button: scope to the card (bg-white), not the innermost div
+      // around the heading – that one holds only the heading and its „?“ hint.
+      await adminPage.locator('div.bg-white', { has: adminPage.getByRole('heading', { name: 'Betriebsferien & Urlaub' }) })
         .last().getByRole('button', { name: 'Speichern' }).click();
       const resp = await saveResp;
       expect(resp.ok()).toBeTruthy();
