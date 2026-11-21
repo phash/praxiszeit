@@ -511,11 +511,12 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
     )
 
 
-def _change_out(c, impact: Optional[ChangeImpact] = None) -> dict:
+def _change_out(c, impact: Optional[ChangeImpact] = None, recognized_keys: frozenset = frozenset()) -> dict:
     """Ein neu gekappter Eintrag für die Vorschau; mit ``impact`` samt den
-    Kennzeichen zum Anerkennen (Plan 2026-11-21 Task 3)."""
+    Kennzeichen zum Anerkennen (Plan 2026-11-21 Task 3). ``recognized_keys`` =
+    anerkannte IDs als Strings, einmal je Vorschau gebaut."""
     flags = impact.entry_flags.get(c.entry_id, {}) if impact is not None else {}
-    recognized = impact is not None and str(c.entry_id) in {str(i) for i in impact.recognized_ids}
+    recognized = str(c.entry_id) in recognized_keys
     return {
         "entry_id": str(c.entry_id), "date": c.date,
         "old_start": c.old_start, "old_end": c.old_end, "old_uncredited": c.old_uncredited,
@@ -552,15 +553,16 @@ def preview_fields(impact: ChangeImpact) -> dict:
     Einträge (auch die anerkannten — die Liste bleibt stabil, während Häkchen
     gesetzt werden), Zähler und Verlust rechnen über ``logged_changes``."""
     changed = impact.logged_changes
+    recognized_keys = frozenset(str(i) for i in impact.recognized_ids)
     return {
         "changed_weekdays": impact.changed_weekdays,
         "affected_time_entries": len(changed),
         "time_entry_months": impact.months,
-        "time_entry_changes": [_change_out(c, impact) for c in impact.reclamp.changed],
+        "time_entry_changes": [_change_out(c, impact, recognized_keys) for c in impact.reclamp.changed],
         "skipped_time_entries": [
             {"entry_id": str(s.entry_id), "date": s.date, "reason": s.reason} for s in impact.reclamp.skipped],
         "not_extendable_count": len(impact.reclamp.flagged),
-        "not_extendable_entries": [_change_out(c, impact) for c in impact.reclamp.flagged],
+        "not_extendable_entries": [_change_out(c, impact, recognized_keys) for c in impact.reclamp.flagged],
         "is_shortening": impact.is_shortening,
         "shortening_reasons": impact.shortening_reasons,
         "shortening_closed_years": impact.shortening_closed_years,
