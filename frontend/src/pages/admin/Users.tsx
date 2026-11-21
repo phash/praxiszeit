@@ -1097,6 +1097,8 @@ user.id !== currentUserId ? (
           // heute gültigen Snapshots — Rückfall wie die Stunden oben. Daraus
           // liest der Dialog auch „geplante Anwesenheit" (Fund 14, F051).
           currentContract={contractToday(hoursModalUser)}
+          // Plan 2026-11-21 (Task 5): Hinweis „Ab erstem Arbeitstag übernehmen".
+          firstWorkDay={hoursModalUser.first_work_day}
           onClose={() => setHoursModalUser(null)}
           onChanged={fetchUsers}
         />

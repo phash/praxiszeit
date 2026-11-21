@@ -36,6 +36,8 @@ interface TeamRow {
   legacy: boolean;
   schedule: ScheduleToday;
   next_change: { effective_from: string; blocks: WeekBlocks | null } | null;
+  /** Plan 2026-11-21 (Task 5): für den Hinweis „Ab erstem Arbeitstag übernehmen". */
+  first_work_day?: string | null;
 }
 
 type Drag = {
@@ -485,6 +487,7 @@ export default function TeamSchedule() {
           fixedMonthlyTarget={modalRow.use_fixed_monthly_target}
           initialBlocks={drafts[modalRow.user_id] ?? null}
           initialEffectiveFrom={onDate < todayIso() ? todayIso() : onDate}
+          firstWorkDay={modalRow.first_work_day ?? null}
           onClose={() => setModalRow(null)}
           onChanged={() => { discard(modalRow.user_id); load(); }}
         />

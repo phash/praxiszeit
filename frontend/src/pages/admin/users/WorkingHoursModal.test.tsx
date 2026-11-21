@@ -53,6 +53,7 @@ type HistoryRow = {
   milog_working_time_account?: boolean;
   agreed_monthly_hours?: number | null;
   use_fixed_monthly_target?: boolean;
+  is_baseline?: boolean;
 };
 
 function historyResponse(rows: Array<HistoryRow>) {
@@ -2461,5 +2462,59 @@ describe('P1.6: Klick auf den Optionstext im Kasten „Verkürzung"', () => {
     expect(within(region).getByRole('radio', { name: /^Rückwirkend ab 01\.06\.2026/ })).toBeChecked();
     fireEvent.click(within(region).getByText(/^Ab heute \(26\.07\.2026\) wirksam/));
     expect(within(region).getByRole('radio', { name: /^Ab heute \(26\.07\.2026\) wirksam/ })).toBeChecked();
+  });
+});
+
+describe('Plan 2026-11-21 Task 5: Hinweis „Ab erstem Arbeitstag übernehmen"', () => {
+  const HINT = /^Vom 01\.10\.2026 \(erster Arbeitstag\) bis zum 19\.11\.2026 gilt noch der Vertrag vom Anlegen \(40,0 Std\/Woche · 5 Tage\/Woche\)\. Soll die heutige Arbeitszeit schon ab dem ersten Arbeitstag gelten\?$/;
+
+  it('Fall A: Hinweis erscheint, Klick setzt das Datum auf den ersten Arbeitstag', async () => {
+    vi.setSystemTime(new Date('2026-11-20T12:00:00Z'));
+    renderModal({ firstWorkDay: '2026-10-01' });
+    await screen.findByText('Keine Änderungen vorhanden');
+    expect(await screen.findByText(HINT)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ab 01.10.2026 übernehmen' }));
+    expect((screen.getByLabelText('Gültig ab') as HTMLInputElement).value).toBe('2026-10-01');
+    // Am ersten Arbeitstag ist nichts mehr vorzuziehen.
+    expect(screen.queryByRole('button', { name: 'Ab 01.10.2026 übernehmen' })).not.toBeInTheDocument();
+  });
+
+  it('kein Hinweis ohne ersten Arbeitstag', async () => {
+    vi.setSystemTime(new Date('2026-11-20T12:00:00Z'));
+    renderModal();
+    await screen.findByText('Keine Änderungen vorhanden');
+    expect(screen.queryByText(/\(erster Arbeitstag\)/)).not.toBeInTheDocument();
+  });
+
+  it('Fall B: gespeicherte Zeile 20.11. (Mo + Di) wird mit ihrem Vertrag ab dem ersten Arbeitstag übernommen', async () => {
+    vi.setSystemTime(new Date('2026-11-21T12:00:00Z'));
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse([
+        { id: 'base', effective_from: '2026-10-01', weekly_hours: 40, is_baseline: true, vacation_days: 30 },
+        {
+          id: 'modi', effective_from: '2026-11-20', weekly_hours: 16, use_daily_schedule: true,
+          hours_monday: 8, hours_tuesday: 8, hours_wednesday: 0, hours_thursday: 0, hours_friday: 0,
+          work_days_per_week: 2, vacation_days: 12,
+        },
+      ]));
+    });
+    renderModal({
+      firstWorkDay: '2026-10-01', currentWeeklyHours: 16, currentUseDailySchedule: true,
+      currentDayHours: [8, 8, 0, 0, 0], currentWorkDays: 2,
+    });
+    expect(await screen.findByText(HINT)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ab 01.10.2026 übernehmen' }));
+    expect((screen.getByLabelText('Gültig ab') as HTMLInputElement).value).toBe('2026-10-01');
+    expect((screen.getByLabelText('Montag') as HTMLInputElement).value).toBe('8');
+    expect((screen.getByLabelText('Mittwoch') as HTMLInputElement).value).toBe('0');
+    // Die Vorschau läuft über den vorhandenen Debounce mit dem übernommenen Vertrag.
+    await waitFor(() => {
+      const last = transport.filter((t) => t.url.includes('/preview')).at(-1);
+      expect(last?.body).toMatchObject({
+        effective_from: '2026-10-01', use_daily_schedule: true, hours_monday: 8, hours_tuesday: 8,
+        hours_wednesday: 0, work_days_per_week: 2, vacation_days: 12,
+      });
+    });
   });
 });

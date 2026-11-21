@@ -302,3 +302,14 @@ export function contractToday(user: {
 }): ContractTerms {
   return contractTermsOf(user.schedule_today) ?? (contractTermsOf(user) as ContractTerms);
 }
+
+// Plan 2026-11-21 (Task 5): Hinweis „Ab erstem Arbeitstag übernehmen" unter dem
+// Datumsfeld. `contract` ist der Vertrag, der am ersten Arbeitstag gilt, als Klartext.
+export function firstWorkDayHintText(firstWorkDay: string, until: string, contract: string): string {
+  return `Vom ${formatDate(firstWorkDay)} (erster Arbeitstag) bis zum ${formatDate(until)} gilt noch der Vertrag `
+    + `vom Anlegen (${contract}). Soll die heutige Arbeitszeit schon ab dem ersten Arbeitstag gelten?`;
+}
+
+export function firstWorkDayHintButton(firstWorkDay: string): string {
+  return `Ab ${formatDate(firstWorkDay)} übernehmen`;
+}
