@@ -113,7 +113,8 @@ test.describe('Vertrag ab dem ersten Arbeitstag (Plan 2026-11-21)', () => {
     if (wednesday.slice(0, 7) !== currentMonth()) {
       await adminPage.getByRole('button', { name: 'Vorheriger Monat' }).click();
     }
-    await expect(adminPage.locator('main').getByText('anerkannt', { exact: true }).first())
+    const wednesdayRow = adminPage.locator('main tr').filter({ hasText: shortDate(wednesday) }).first();
+    await expect(wednesdayRow.getByText('anerkannt', { exact: true }))
       .toBeVisible({ timeout: 10000 });
   });
 });
