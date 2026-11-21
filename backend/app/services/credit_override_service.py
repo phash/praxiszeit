@@ -72,6 +72,7 @@ def load_entry_locked(db: Session, tenant_id, entry_id) -> Optional[TimeEntry]:
 
 def apply_credit_override(
     db: Session, entry: TimeEntry, *, changed_by_id, on_request: bool, change_request_id=None,
+    audit_before: Optional[TimeEntry] = None,
 ) -> bool:
     """Spec 13.3 Schritte 2–5. ``False`` = war schon anerkannt (idempotent,
     kein Protokoll). Wirft 400 (offen, ``auto_closed``) bzw. 409 (Kollision).
@@ -81,7 +82,13 @@ def apply_credit_override(
     nicht gearbeiteten Rest neu geklemmt (F1, Spec 9.6) — sonst zählte das Ist
     die anerkannte Arbeit UND die beim Buchen gegen das gekappte Netto geklemmte
     Gutschrift. Eine Einzelzeile je angeglichener Abwesenheit, Quelle
-    ``credit_override`` wie die Zeile des Eintrags."""
+    ``credit_override`` wie die Zeile des Eintrags.
+
+    ``audit_before`` (Plan 2026-11-21 Task 2): transiente Kopie des Stands VOR
+    dem Schritt, in dem anerkannt wird (``wh_change_service._snapshot``). Ist
+    sie gesetzt, nimmt die Protokollzeile ``old_start_time``/``old_end_time``/
+    ``old_note`` daraus — beim Anerkennen innerhalb einer Arbeitszeit-Änderung
+    hat die Neukappung den Eintrag schon verändert. Sonst der aktuelle Eintrag."""
     if entry.end_time is None:
         raise HTTPException(status_code=400, detail=OPEN_ENTRY_DETAIL)
     if entry.auto_closed:
@@ -106,8 +113,9 @@ def apply_credit_override(
         if clash is not None:
             raise HTTPException(status_code=409, detail=start_taken_detail(new_start))
 
-    old_start, old_end = entry.start_time, entry.end_time
-    old_note = work_window_service.credit_summary_text(entry)
+    before = audit_before if audit_before is not None else entry
+    old_start, old_end = before.start_time, before.end_time
+    old_note = work_window_service.credit_summary_text(before)
     entry.start_time, entry.end_time = new_start, new_end
     entry.raw_start_time = None
     entry.raw_end_time = None
