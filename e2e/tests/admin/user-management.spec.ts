@@ -27,7 +27,7 @@ test.describe('Admin User Management', () => {
     await adminPage.locator('#f-vacation').fill('25');
 
     // Submit
-    await adminPage.getByRole('button', { name: 'Speichern' }).click();
+    await adminPage.locator('#user-form').getByRole('button', { name: 'Speichern' }).click();
 
     // Genau die Erfolgsmeldung des Anlegens (UserForm) — ein loses „erstellt"
     // träfe jede Meldung, die das Wort zufällig enthält (Gesamtreview 1.20 B9).

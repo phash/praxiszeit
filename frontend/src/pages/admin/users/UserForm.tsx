@@ -445,9 +445,9 @@ export default function UserForm({
     <div className="bg-white rounded-xl shadow-xs border border-gray-200 px-6 pb-6 mb-6">
       {/* Task 7: feste Leiste „wen bearbeite ich“ — bleibt beim Scrollen im
           Scroll-Container <main> oben stehen (sticky innerhalb dieser Karte),
-          mit Speichern und Abbrechen. Sie ersetzt den früheren Speichern-Knopf
-          am Formularende: die Leiste ist immer sichtbar, ein zweiter Knopf mit
-          demselben Namen wäre für Screenreader (und Tests) nicht unterscheidbar. */}
+          mit Speichern und Abbrechen. Der untere Speichern-Knopf am Formularende
+          bleibt (Spec §8); beide lösen dieselbe Aktion aus. Tests und E2E
+          greifen deshalb gezielt auf Leiste bzw. `#user-form` zu. */}
       <div className="sticky top-0 z-20 bg-white border-b border-gray-200 -mx-6 px-6 py-3 mb-4 rounded-t-xl flex items-center gap-3">
         <h3 className="text-lg font-semibold min-w-0 flex-1 truncate">
           {editUser
@@ -1087,6 +1087,16 @@ export default function UserForm({
             </div>
           )}
 
+          <div className="md:col-span-2">
+            <button
+              type="submit"
+              disabled={submitting || !!createBlocksError}
+              className="w-full bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Save size={18} />
+              <span>Speichern</span>
+            </button>
+          </div>
         </form>
     </div>
   );

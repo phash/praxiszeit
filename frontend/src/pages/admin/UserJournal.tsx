@@ -47,8 +47,8 @@ export default function UserJournal() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-gray-900 truncate">Monatsjournal{name ? `: ${name}` : ''}</h1>
-            <p className="text-sm text-gray-500 truncate">Zeiteinträge und Abwesenheiten im Überblick</p>
+            <h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">Monatsjournal{name ? `: ${name}` : ''}</h1>
+            <p className="hidden sm:block text-sm text-gray-500 truncate">Zeiteinträge und Abwesenheiten im Überblick</p>
           </div>
         </div>
       }

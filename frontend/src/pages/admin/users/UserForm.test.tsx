@@ -32,6 +32,13 @@ function renderForm(props: Record<string, unknown> = {}) {
   );
 }
 
+// Task 7: Leiste und Formularende tragen je einen Knopf „Speichern“ — die
+// bestehenden Tests meinen den unteren im Formular.
+function formSaveButton() {
+  return within(document.getElementById('user-form') as HTMLElement)
+    .getByRole('button', { name: /Speichern/i });
+}
+
 describe('#377 UserForm MiLoG checkbox', () => {
   beforeEach(() => {
     useSystemStore.setState({
@@ -99,7 +106,7 @@ describe('Teil A (Task 15): vertragsfelder beim Bearbeiten nur Anzeige', () => {
 
   it('edit PUT never sends the five contract fields', async () => {
     renderForm({ editUser: editMinijob });
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => {
       expect(putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])))).toBeTruthy();
     });
@@ -201,7 +208,7 @@ describe('#383 Übertrag Urlaubstage', () => {
     const field = await screen.findByLabelText(/Übertrag Urlaubstage/i);
     await waitFor(() => expect((field as HTMLInputElement).value).toBe('8'));
     fireEvent.change(field, { target: { value: '10' } });
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => {
       const call = putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'));
       expect(call).toBeTruthy();
@@ -221,7 +228,7 @@ describe('#383 Übertrag Urlaubstage', () => {
     const field = await screen.findByLabelText(/Übertrag Urlaubstage/i);
     await waitFor(() => expect((field as HTMLInputElement).value).toBe('2')); // loaded for current year
     fireEvent.change(field, { target: { value: '3.5' } });
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => {
       const call = putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'));
       expect(call).toBeTruthy();
@@ -239,7 +246,7 @@ describe('#383 Übertrag Urlaubstage', () => {
     );
     const field = await screen.findByLabelText(/Übertrag Urlaubstage/i);
     fireEvent.change(field, { target: { value: '7' } });
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => expect(putMock).toHaveBeenCalled()); // the user PUT
     // loadedCarryoverYear stayed null → carryover write is suppressed …
     expect(putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'))).toBeUndefined();
@@ -277,7 +284,7 @@ describe('#383 Übertrag Urlaubstage', () => {
       </ToastProvider>,
     );
     await screen.findByLabelText(/Übertrag Urlaubstage/i);
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => expect(putMock).toHaveBeenCalled()); // the user PUT itself
     const carryoverCall = putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'));
     expect(carryoverCall).toBeUndefined();
@@ -296,7 +303,7 @@ describe('Review 2026-11-11: Übertrag-Felder', () => {
     render(<ToastProvider><UserForm onSaved={() => {}} editUser={editUser2026 as never} /></ToastProvider>);
     const field = await screen.findByLabelText(/Übertrag Urlaubstage/i);
     await waitFor(() => expect((field as HTMLInputElement).value).toBe('8'));
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => expect(putMock).toHaveBeenCalled());
     expect(putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'))).toBeUndefined();
   });
@@ -317,7 +324,7 @@ describe('Review 2026-11-11: Übertrag-Felder', () => {
     await user.clear(field);
     await user.type(field, '-12.5');
     expect(field.value).toBe('-12.5');
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => {
       const call = putMock.mock.calls.find((c) => String(c[0]).includes('/carryovers/'));
       expect(call![1]).toMatchObject({ overtime_hours: -12.5 });
@@ -380,7 +387,7 @@ describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)'
     // Task 7 (#431): nicht nur weekly_hours — alle acht historisierten
     // Felder (Modus, Tagesstunden, Arbeitstage) sind seit Task 7 gesperrt.
     renderForm({ editUser: baseEditUser });
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => {
       const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
       expect(call).toBeTruthy();
@@ -402,7 +409,7 @@ describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)'
     fireEvent.change(screen.getByLabelText('Vorname'), { target: { value: 'New' } });
     fireEvent.change(screen.getByLabelText('Nachname'), { target: { value: 'User' } });
     fireEvent.change(document.getElementById('f-weekly-hours') as HTMLInputElement, { target: { value: '32' } });
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => {
       expect(postMock).toHaveBeenCalled();
       expect(postMock.mock.calls[0][1]).toMatchObject({ weekly_hours: 32 });
@@ -541,7 +548,7 @@ describe('Task 6+11: Wochenstunden/Tagesplan nur Anzeige beim Bearbeiten (#431)'
 
   it('sendet weekly_hours/Tagesplan-Felder beim Update NICHT mit, auch wenn ein individueller Tagesplan aktiv ist (I2-Ausnahme entfaellt seit #431)', async () => {
     renderForm({ editUser: { ...baseEditUser, use_daily_schedule: true } });
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => {
       const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
       expect(call).toBeTruthy();
@@ -622,7 +629,7 @@ describe('Spec 2026-10-08 (PR1): Arbeitszeit-Blöcke statt Soll-Fenster', () => 
     fireEvent.change(screen.getByLabelText('Passwort *'), { target: { value: 'TestPass123!' } });
     fireEvent.change(screen.getByLabelText('Vorname'), { target: { value: 'New' } });
     fireEvent.change(screen.getByLabelText('Nachname'), { target: { value: 'User' } });
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
   }
 
   it('zeigt keine Soll-Fenster-Felder mehr (Anlegen und Bearbeiten)', () => {
@@ -645,7 +652,7 @@ describe('Spec 2026-10-08 (PR1): Arbeitszeit-Blöcke statt Soll-Fenster', () => 
 
   it('PUT-Payload trägt weder scheduled_* noch work_blocks/work_blocks_today (sonst 400)', async () => {
     renderForm({ editUser: { ...baseEditUser, work_blocks: LEGACY, work_blocks_today: LEGACY } });
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => {
       const call = putMock.mock.calls.find((c) => /\/admin\/users\/u1$/.test(String(c[0])));
       expect(call).toBeTruthy();
@@ -759,7 +766,7 @@ describe('Spec 2026-10-08 (12.2): Anlegen mit Arbeitszeit-Blöcken', () => {
     renderForm({ editUser: null });
     fillBasics();
     enterAnnaMonday();
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => expect(postMock).toHaveBeenCalled());
     const body = postMock.mock.calls[0][1];
     expect(body).toMatchObject({
@@ -775,7 +782,7 @@ describe('Spec 2026-10-08 (12.2): Anlegen mit Arbeitszeit-Blöcken', () => {
     renderForm({ editUser: null });
     fireEvent.click(screen.getByRole('radio', { name: 'Nach Arbeitsblöcken' }));
     expect(screen.getByRole('alert')).toHaveTextContent('Mindestens ein Wochentag braucht einen Block.');
-    expect(screen.getByRole('button', { name: /Speichern/i })).toBeDisabled();
+    expect(formSaveButton()).toBeDisabled();
   });
 
   it('ohne Stundenzählung: Editor ausgeblendet, keine Blöcke im Payload', async () => {
@@ -784,7 +791,7 @@ describe('Spec 2026-10-08 (12.2): Anlegen mit Arbeitszeit-Blöcken', () => {
     enterAnnaMonday();
     fireEvent.click(screen.getByLabelText('Stundenzählung aktiv (Soll-Stunden werden berechnet)'));
     expect(screen.queryByRole('radio', { name: 'Nach Arbeitsblöcken' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/i }));
+    fireEvent.click(formSaveButton());
     await waitFor(() => expect(postMock).toHaveBeenCalled());
     expect(postMock.mock.calls[0][1]).not.toHaveProperty('work_blocks');
   });
@@ -1119,8 +1126,22 @@ describe('Task 7: feste Leiste „wen bearbeite ich“', () => {
     expect(screen.queryByRole('button', { name: 'Abbrechen' })).not.toBeInTheDocument();
   });
 
-  it('es gibt genau einen Speichern-Knopf (die Leiste bleibt beim Scrollen sichtbar)', () => {
-    renderForm({ editUser: monika as never });
-    expect(screen.getAllByRole('button', { name: 'Speichern' })).toHaveLength(1);
+  it('oberer und unterer Speichern-Knopf lösen denselben PUT- und onSaved-Pfad aus', async () => {
+    const onSaved = vi.fn();
+    renderForm({ editUser: monika as never, onSaved });
+    expect(screen.getAllByRole('button', { name: 'Speichern' })).toHaveLength(2);
+    const bar = screen.getByText('Bearbeiten: Petra Schulz (ps)').closest('.sticky') as HTMLElement;
+
+    fireEvent.click(within(bar).getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const topCall = putMock.mock.calls.find((c) => c[0] === '/admin/users/u-ps');
+    expect(topCall).toBeDefined();
+
+    putMock.mockClear();
+    fireEvent.click(formSaveButton());
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(2));
+    const bottomCall = putMock.mock.calls.find((c) => c[0] === '/admin/users/u-ps');
+    expect(bottomCall).toBeDefined();
+    expect(bottomCall![1]).toEqual(topCall![1]);
   });
 });
