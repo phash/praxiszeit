@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 import app.routers.admin_change_requests as acr
 import app.routers.admin_time_entries as ate
+import app.routers.admin_users as au
 import app.routers.time_entries as te
 from app.models import ChangeRequest, TimeEntry
 from app.models.change_request import ChangeRequestStatus, ChangeRequestType
@@ -31,7 +32,7 @@ def calls(monkeypatch):
         log.append(("lock", str(user_id)))
         return real_lock(db, tenant_id, user_id)
 
-    for mod in (te, ate, acr, admin_helpers):
+    for mod in (te, ate, acr, au, admin_helpers):
         monkeypatch.setattr(mod, "lock_user_row", spy_lock, raising=False)
     for name in ("clamp", "get_grace_minutes", "grace_for_entry", "get_scheduled_blocks"):
         real = getattr(wws, name)
@@ -399,3 +400,63 @@ def test_delete_sees_recognition_committed_before_lock(_db_session, employee_use
     assert resp.status_code == 409, resp.text
     _db_session.expire_all()
     assert _db_session.get(TimeEntry, entry_id) is not None
+
+
+# Plan 2026-11-21 Task 4: ``recognize_entry_ids`` beim Anlegen einer
+# Arbeitszeit-Änderung — Eigentümerprüfung ungesperrt VOR der Ankersperre,
+# danach Anker vor jeder Eintragszeile.
+_WH_TODAY = date(2026, 6, 10)
+
+
+def _wh_change_body(*ids) -> dict:
+    from tests.work_blocks_fixtures import block_week
+    # Ab Montag 01.06. nur Dienstag-Blöcke: der Montag wird Werktag ohne Block.
+    return {"effective_from": MON.isoformat(), "blocks": block_week(tue=[("08:00", "12:00")]),
+            "recognize_entry_ids": [str(i) for i in ids]}
+
+
+def test_foreign_recognize_id_404_before_lock(_db_session, employee_user, admin_client, calls, monkeypatch):
+    """Review Focus 2: ein manipulierter Body mit dem Eintrag einer anderen Person
+    derselben Praxis → 404 ohne Anker- und ohne Zeilensperre, nichts gespeichert."""
+    from tests.wh_change_helpers import freeze
+    freeze(monkeypatch, _WH_TODAY)
+    _setup(_db_session, employee_user)
+    own = _entry(_db_session, employee_user, time(8), time(11))
+    foreign = _entry(_db_session, _other_employee(_db_session), time(8), time(11))
+    resp = admin_client.post(f"/api/admin/users/{employee_user.id}/working-hours-changes",
+                             json=_wh_change_body(own.id, foreign.id))
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Zeiteintrag nicht gefunden"
+    assert not [c for c in calls if c[0] == "lock"], calls
+    assert ("row_lock",) not in calls, calls
+    _db_session.expire_all()
+    assert _db_session.get(TimeEntry, own.id).credit_override is False
+    assert _db_session.get(TimeEntry, foreign.id).credit_override is False
+
+
+def test_unknown_recognize_id_404_before_lock(_db_session, employee_user, admin_client, calls, monkeypatch):
+    from tests.wh_change_helpers import freeze
+    freeze(monkeypatch, _WH_TODAY)
+    _setup(_db_session, employee_user)
+    resp = admin_client.post(f"/api/admin/users/{employee_user.id}/working-hours-changes",
+                             json=_wh_change_body(uuid.uuid4()))
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Zeiteintrag nicht gefunden"
+    assert not [c for c in calls if c[0] == "lock"], calls
+    assert ("row_lock",) not in calls, calls
+
+
+def test_wh_change_recognize_locks_anchor_first(_db_session, employee_user, admin_client, calls, monkeypatch):
+    """Speichern mit Auswahl: Ankersperre zuerst, danach die Zeilensperre des
+    gewählten Eintrags (``load_entry_locked``)."""
+    from tests.wh_change_helpers import freeze
+    freeze(monkeypatch, _WH_TODAY)
+    _setup(_db_session, employee_user)
+    own = _entry(_db_session, employee_user, time(8), time(11))
+    resp = admin_client.post(f"/api/admin/users/{employee_user.id}/working-hours-changes",
+                             json=_wh_change_body(own.id))
+    assert resp.status_code == 201, resp.text
+    assert_lock_first(calls, employee_user.id)
+    assert_row_lock_seen(calls)
+    _db_session.expire_all()
+    assert _db_session.get(TimeEntry, own.id).credit_override is True

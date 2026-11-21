@@ -29,6 +29,12 @@ EFFECTIVE_FROM_MIN = date(2000, 1, 1)
 EFFECTIVE_FROM_MAX = date(2100, 12, 31)
 EFFECTIVE_FROM_RANGE_DETAIL = "Das Wirkungsdatum muss zwischen dem 01.01.2000 und dem 31.12.2100 liegen."
 
+# Plan 2026-11-21 Task 4: Einträge, die beim Speichern einer Arbeitszeit-Änderung
+# im selben Schritt anerkannt werden — höchstens so viele wie beim
+# Sammel-Anerkennen im Monatsjournal (Task 9).
+RECOGNIZE_LIMIT = 200
+RECOGNIZE_LIMIT_DETAIL = f"Es lassen sich höchstens {RECOGNIZE_LIMIT} Einträge in einem Schritt anerkennen."
+
 
 # Teil A: Vertragsfelder, deren ausdrückliches ``null`` 422 ist (nicht
 # ``agreed_monthly_hours``: dort heißt ``null`` „abgeleitet").
@@ -118,10 +124,23 @@ class WorkingHoursChangeCreate(WorkingHoursChangeBase, RetroReasonFields):
     blocks: Optional[List[DayBlocksIn]] = None
     remove_legacy_window: bool = False   # P2: Altfenster ausdrücklich entfernen
     reset_of_change_id: Optional[UUID] = None  # P13: „auf vorherigen Stand zurücksetzen"
+    # Plan 2026-11-21 Task 4: diese Einträge werden in ``run_change`` nach der
+    # Neukappung anerkannt (Vorschau und Speichern, ein Rechenpfad). Leer = wie
+    # bisher. Fremde/unbekannte IDs → 404 vor jeder Sperre (Router).
+    recognize_entry_ids: List[UUID] = Field(default_factory=list)
 
     def blocks_json(self) -> Optional[list]:
         """Kanonische JSON-Woche (Spec 3.1) oder ``None``."""
         return None if self.blocks is None else [d.model_dump() for d in self.blocks]
+
+    @field_validator('recognize_entry_ids')
+    @classmethod
+    def check_recognize_limit(cls, value: List[UUID]) -> List[UUID]:
+        """Deutscher Satz statt Pydantic-``max_length`` (``_schedule_input_error``
+        reicht ``value_error``-Texte unverändert durch)."""
+        if len(value) > RECOGNIZE_LIMIT:
+            raise ValueError(RECOGNIZE_LIMIT_DETAIL)
+        return value
 
     @field_validator('effective_from')
     @classmethod
