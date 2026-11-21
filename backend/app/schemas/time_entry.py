@@ -171,6 +171,28 @@ class TimeEntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BulkCreditOverrideRequest(BaseModel):
+    """Plan 2026-11-21 Task 9 (Spec 7): Sammel-Anerkennen im Monatsjournal —
+    1 bis ``credit_override_service.RECOGNIZE_LIMIT`` Einträge einer Person,
+    alles oder nichts. Doppelte IDs zählen einmal (Reihenfolge bleibt)."""
+    entry_ids: List[UUID] = Field(min_length=1)
+
+    @field_validator('entry_ids')
+    @classmethod
+    def dedupe_and_limit(cls, value: List[UUID]) -> List[UUID]:
+        # Lokal: ein Schema zieht beim Modulimport keine Services.
+        from app.services.credit_override_service import RECOGNIZE_LIMIT, RECOGNIZE_LIMIT_DETAIL
+        if len(value) > RECOGNIZE_LIMIT:
+            raise ValueError(RECOGNIZE_LIMIT_DETAIL)
+        return list(dict.fromkeys(value))
+
+
+class BulkCreditOverrideResponse(BaseModel):
+    recognized: int   # in diesem Aufruf anerkannt
+    already: int      # waren schon anerkannt (idempotent, kein Protokoll)
+    warnings: List[str] = []  # weiche Warnungen (override_warnings), dedupliziert
+
+
 class AutoClosedEntryResponse(BaseModel):
     """#540 (A1-04): Zeile der Verwaltungsliste „automatisch geschlossen, Ende
     fehlt" (``GET /api/admin/time-entries/auto-closed``)."""

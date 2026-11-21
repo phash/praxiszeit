@@ -91,6 +91,7 @@ if docker compose exec -T -e TZ=Europe/Berlin backend pytest tests/ -q --tb=shor
        --ignore=tests/test_year_closing_lock_pg.py \
        --ignore=tests/test_pg_log_privacy_pg.py \
        --ignore=tests/test_generator_overtime_savepoint_pg.py \
+       --ignore=tests/test_credit_override_bulk_pg.py \
        --ignore=tests/test_concurrency.py </dev/null 2>&1 | tail -5; then
     ok "Backend tests passed"
 else
@@ -123,7 +124,8 @@ fi
 # reduced_days + 1 purge, Teil B — + 2 migration-075, Teil A: round trip with
 # backfill, backfill as non-superuser owner under FORCE RLS — + 7 migration-076, #537:
 # audit log append-only for the app role, trigger, definer functions, round
-# trip — + 3 PG log privacy, audit 2026-11-07 S2-1); the 18
+# trip — + 3 PG log privacy, audit 2026-11-07 S2-1 — + 3 bulk credit override,
+# plan 2026-11-21 Task 9: parallel calls without deadlock, rollback, start collision); the 18
 # cross-tenant tests run inside step 1. Same thirteen files as the Actions step
 # "Cross-tenant RLS + Art.17 purge + Race-Tests (real Postgres)".
 step "Backend Postgres integration (RLS + concurrency + Art.17 purge)"
@@ -135,7 +137,7 @@ if docker compose exec -T -e TZ=Europe/Berlin backend pytest \
        tests/test_year_closing_lock_pg.py tests/test_074_reduced_days_pg.py \
        tests/test_075_contract_history_pg.py tests/test_076_audit_chain_pg.py \
        tests/test_077_legacy_half_day_pg.py tests/test_pg_log_privacy_pg.py \
-       tests/test_generator_overtime_savepoint_pg.py \
+       tests/test_generator_overtime_savepoint_pg.py tests/test_credit_override_bulk_pg.py \
        -q --tb=short </dev/null 2>&1 | tail -5; then
     ok "Postgres integration verified"
 else

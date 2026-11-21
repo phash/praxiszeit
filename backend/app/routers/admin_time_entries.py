@@ -10,10 +10,14 @@ from app.database import get_db
 from app.models import User, TimeEntry, TimeEntryAuditLog
 from app.middleware.auth import require_admin
 from app.schemas.time_entry import (
+    BulkCreditOverrideRequest, BulkCreditOverrideResponse,
     TimeEntryCreate, TimeEntryResponse, TimeEntryUpdate, assert_date_change_not_future,
 )
 from app.schemas.time_entry_audit_log import AuditLogResponse
 from app.routers.admin_helpers import _create_audit_log, _enrich_audit_response, _enrich_audit_responses, lock_user_row
+# Plan 2026-11-21 Task 9: dieselbe Personen- und ID-Prüfung wie beim Anerkennen
+# im Dialog der Arbeitszeit-Änderung (admin_users importiert diesen Router nicht).
+from app.routers.admin_users import _assert_entries_of_user, _get_user_in_tenant
 from app.services.break_validation_service import validate_daily_break, break_waiver_rejection
 from app.routers.time_entries import (
     _calculate_daily_net_hours, _calculate_weekly_net_hours,
@@ -779,6 +783,65 @@ def admin_credit_override(
         credit_override_service.override_warnings(db, owner, entry) if changed else []
     )
     return response
+
+
+@router.post("/users/{user_id}/time-entries/credit-override", response_model=BulkCreditOverrideResponse)
+def admin_bulk_credit_override(
+    user_id: str,
+    body: BulkCreditOverrideRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Plan 2026-11-21 Task 9 (Spec 7, Teil 2B): mehrere Einträge EINER Person
+    in einem Schritt anerkennen (Monatsjournal) — alles oder nichts.
+
+    Dieselben Schritte wie ``admin_credit_override`` je Eintrag, dieselbe
+    Prüfreihenfolge wie das Anerkennen beim Speichern einer Arbeitszeit-Änderung
+    (``admin_users._assert_entries_of_user``): alle IDs gehören der Person, sonst
+    404 VOR jeder Sperre (P5, #120); dann die Ankersperre, danach die
+    Eintragszeilen aufsteigend nach ID (gleiche Reihenfolge in jedem Aufruf, kein
+    40P01). Scheitert ein Eintrag (offen, automatisch geschlossen, Kollision),
+    wird alles zurückgerollt und der Fehler mit dem Datum davor gemeldet."""
+    user = _get_user_in_tenant(db, user_id, current_user)
+    ids = body.entry_ids
+    _assert_entries_of_user(db, user, current_user.tenant_id, ids)
+    # P5: Anker VOR den Eintragszeilen; danach den Stand der Person neu lesen
+    # (``_get_user_in_tenant`` las ungesperrt, #491 API-2).
+    lock_user_row(db, current_user.tenant_id, user.id)
+    db.refresh(user)
+
+    recognized, already = [], 0
+    for entry_id in sorted(ids, key=str):
+        entry = credit_override_service.load_entry_locked(db, current_user.tenant_id, entry_id)
+        # Rückversicherung: zwischen Prüfung und Sperre gelöscht.
+        if entry is None or entry.user_id != user.id:
+            db.rollback()
+            raise HTTPException(status_code=404, detail="Zeiteintrag nicht gefunden")
+        day = entry.date
+        try:
+            changed = credit_override_service.apply_credit_override(
+                db, entry, changed_by_id=current_user.id, on_request=False,
+            )
+        except HTTPException as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=exc.status_code, detail=f"{day.strftime('%d.%m.%Y')}: {exc.detail}",
+            ) from exc
+        if changed:
+            recognized.append(entry)
+        else:
+            already += 1
+    db.commit()
+
+    # Spec 13.3 Schritt 6 / P4: weiche Warnungen nach dem Commit, je anerkanntem
+    # Eintrag; gleiche Texte (z. B. derselbe Tag) nur einmal, Reihenfolge bleibt.
+    warnings: list = []
+    for entry in recognized:
+        db.refresh(entry)
+        for w in credit_override_service.override_warnings(db, user, entry):
+            if w not in warnings:
+                warnings.append(w)
+    return BulkCreditOverrideResponse(recognized=len(recognized), already=already, warnings=warnings)
 
 
 @router.delete("/time-entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
