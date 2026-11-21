@@ -256,7 +256,11 @@ class WorkingHoursChangeResponse(WorkingHoursChangeBase):
     blocks: Optional[Any] = None
     # Plan 2026-11-21 Task 1: die automatisch erfasste Ausgangszeile
     # (``reclamp_audit.BASELINE_ROW_NOTE``). Abgeleitet, nie aus der Eingabe —
-    # der Validator überschreibt jeden mitgeschickten Wert.
+    # der Validator überschreibt jeden mitgeschickten Wert. Erkannt allein am
+    # Notiztext (keine eigene Spalte): auch die Lückenzeile aus
+    # ``_freeze_gap_before`` trägt das Kennzeichen, es kann also mehrere
+    # geben; eine von Hand wortgleich eingetippte Notiz würde ebenfalls
+    # markiert (bewusst hingenommen).
     is_baseline: bool = False
 
     @model_validator(mode="after")
