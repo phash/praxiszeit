@@ -18,7 +18,7 @@
 
 ### ✨ „?“-Kurzhilfen an den Feldern
 
-- **Kurzhilfe neben dem Feld.** An Feldern der Verwaltung (Benutzerformular, „Arbeitszeit anpassen…“, Monatsjournal, Einstellungen mit verkürzten Tagen und Abwesenheitsgründen, Admin-Dashboard) und der Mitarbeiterseiten (Dashboard, Stempelkarte, Änderungsantrag) steht ein „?“. Ein Klick öffnet eine kurze Erklärung mit dem Link „Mehr im Handbuch →“ auf den passenden Abschnitt; Esc, ein Klick daneben oder das Verlassen schließen sie, auf dem Smartphone erscheint sie unten am Bildschirmrand. Die Erklärungen stehen in einem Register (`constants/handbookHints.ts`); ein Test prüft, dass jedes Sprungziel im Handbuch existiert und jeder Eintrag auf einer Seite eingesetzt ist.
+- **Kurzhilfe neben dem Feld.** An Feldern der Verwaltung (Benutzerformular, „Arbeitszeit anpassen…“, Monatsjournal, Einstellungen (u. a. Puffer, Feiertage, Sondertage, verkürzte Tage, Abwesenheitsgründe), Admin-Dashboard) und der Mitarbeiterseiten (Dashboard, Stempelkarte, Änderungsantrag) steht ein „?“. Ein Klick öffnet eine kurze Erklärung mit dem Link „Mehr im Handbuch →“ auf den passenden Abschnitt; Esc, ein Klick daneben oder ein Fokuswechsel aus der Erklärung hinaus (z. B. mit Tab) schließen sie, auf dem Smartphone erscheint sie unten am Bildschirmrand. Die Erklärungen stehen in einem Register (`constants/handbookHints.ts`); ein Test prüft, dass jedes Sprungziel im Handbuch existiert und jeder Eintrag auf einer Seite eingesetzt ist.
 - **Handbuch:** Beide Handbücher und die Hilfe „Hilfe & Navigation“ nennen das „?“-Symbol im Kapitel zur Navigation.
 
 ## [1.24.3] - 2026-11-16
