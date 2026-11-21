@@ -10,9 +10,13 @@ import { showResponseWarning } from '../../../utils/arbzgWarnings';
 import { blocksOf, deriveTargets, emptyWeek, formatBlocksText, validateWeekBlocks } from '../../../utils/workBlocks';
 import type { WeekBlocks } from '../../../types/workBlocks';
 import { DEFAULT_VACATION_DAYS, MAX_VACATION_DAYS } from './workingHoursTypes';
-import type { ContractTerms, WorkingHoursChange, WorkingHoursChangePreview } from './workingHoursTypes';
+import type {
+  ContractTerms, RecognizeEntriesBody, TimeEntryChange, WorkingHoursChange, WorkingHoursChangePreview,
+} from './workingHoursTypes';
 import ContractTermsFields from './ContractTermsFields';
 import WhImpactBox from './WhImpactBox';
+import RecognizeEntriesList from './RecognizeEntriesList';
+import { defaultSelection, losingEntries, pruneSelection } from './recognizeSelection';
 import ShorteningChoice from './ShorteningChoice';
 import WhDeletePanel from './WhDeletePanel';
 import {
@@ -24,7 +28,8 @@ import {
   BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT,
   NOTE_MAX_LENGTH, NOTE_TOO_LONG, closedYearMessage, composedNoteTooLong, dayBefore, firstWorkDayHintButton,
   firstWorkDayHintText, formatDate, losslessLabel,
-  modeSwitchHint, reasonComplete, reasonPayload, retroLabel, savedMessage, suggestEntitlement, type ReasonState,
+  modeSwitchHint, reasonComplete, reasonPayload, retroLabel, saveButtonLabel, savedMessage, suggestEntitlement,
+  type ReasonState,
   type ShorteningOption,
 } from './workingHoursTexts';
 
@@ -233,6 +238,13 @@ export default function WorkingHoursModal({
   const [losslessPreview, setLosslessPreview] = useState<WorkingHoursChangePreview | null>(null);
   const [losslessLoading, setLosslessLoading] = useState(false);
   const [losslessError, setLosslessError] = useState<string | null>(null);
+  // Plan 2026-11-21 Task 6: Anerkennen im Dialog. `recognizeCandidates` = die
+  // neu gekappten Einträge der letzten Vorschau, samt dem Schlüssel der Eingabe
+  // OHNE Auswahl, zu der sie gehören. Solange die Admin nichts angeklickt hat
+  // (`recognizeTouched`), folgt die Auswahl der Vorauswahl jeder neuen Vorschau.
+  const [recognizeCandidates, setRecognizeCandidates] = useState<{ key: string; changes: TimeEntryChange[] } | null>(null);
+  const [recognizeSelected, setRecognizeSelected] = useState<string[]>([]);
+  const [recognizeTouched, setRecognizeTouched] = useState(false);
 
   const dayValues = DAY_FIELDS.map((f) => formData[f.key]);
   const daySum = round2(dayValues.reduce((sum, h) => sum + h, 0));
@@ -325,7 +337,19 @@ export default function WorkingHoursModal({
   // also stabil über Renderläufe. Ein bei jedem Rendern neu erzeugtes Objekt im
   // Dependency-Array löste bei JEDEM Rendern eine Anfrage aus (Anfragesturm);
   // die Notiz gehört bewusst nicht dazu.
-  const previewKey = JSON.stringify({ effective_from: formData.effective_from, ...scheduleBody });
+  //
+  // Plan 2026-11-21 Task 6: die Auswahl zum Anerkennen gehört zum Schlüssel.
+  // Gesendet werden nur IDs aus der Vorschau DIESER Eingabe (`baseKey`): nach
+  // einer Änderung von Datum oder Vertrag läuft die Vorschau erst ohne
+  // Auswahl, ihre Liste schränkt die Auswahl ein, dann folgt die mit Auswahl —
+  // sonst wiese der Server eine nicht mehr betroffene ID mit 400 ab, und die
+  // Liste zum Abwählen wäre weg.
+  const baseKey = JSON.stringify({ effective_from: formData.effective_from, ...scheduleBody });
+  const candidateChanges = recognizeCandidates?.key === baseKey ? recognizeCandidates.changes : null;
+  const recognizeIds = candidateChanges ? pruneSelection(recognizeSelected, candidateChanges) : [];
+  const recognizeBody: RecognizeEntriesBody = recognizeIds.length ? { recognize_entry_ids: recognizeIds } : {};
+  const previewKey = JSON.stringify({ effective_from: formData.effective_from, ...scheduleBody, ...recognizeBody });
+  const showRecognizeList = !!candidateChanges && losingEntries(candidateChanges).some((c) => c.recognizable);
 
   useEffect(() => {
     fetchHoursChanges();
@@ -357,6 +381,11 @@ export default function WorkingHoursModal({
           if (cancelled) return;
           setPreview(res.data);
           setPreviewFor(previewKey);
+          // Task 6: die Kandidaten sind in jeder Vorschau dieselben (erhoben
+          // vor dem Anerkennen) — nur eine gültige Eingabe liefert sie.
+          if (res.data && !res.data.blocked_reason) {
+            setRecognizeCandidates({ key: baseKey, changes: res.data.time_entry_changes ?? [] });
+          }
         })
         .catch((error) => {
           if (cancelled) return;
@@ -371,7 +400,22 @@ export default function WorkingHoursModal({
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [userId, previewKey, previewRetryToken]);
+  }, [userId, previewKey, baseKey, previewRetryToken]);
+
+  // Task 6: neue Kandidaten → Vorauswahl (unberührt) bzw. Auswahl einschränken.
+  // Gleiche IDs behalten die alte Liste — der Schlüssel bleibt dann stehen.
+  useEffect(() => {
+    if (!recognizeCandidates) return;
+    const { changes } = recognizeCandidates;
+    setRecognizeSelected((prev) => {
+      const next = recognizeTouched ? pruneSelection(prev, changes) : [...defaultSelection(changes)].sort();
+      return next.join('\n') === prev.join('\n') ? prev : next;
+    });
+  }, [recognizeCandidates, recognizeTouched]);
+  const changeRecognizeSelection = (next: Set<string>) => {
+    setRecognizeTouched(true);
+    setRecognizeSelected([...next].sort());
+  };
 
   // Fund 3: gibt die frisch geladene Liste zurück (nicht nur über State), damit
   // der Formular-Reset nach dem Speichern SOFORT den neuen Stand nutzt.
@@ -424,8 +468,10 @@ export default function WorkingHoursModal({
   const needsReason = isShortening && !useLossless;
   // Spec 9.5: Notiz, Grund-Präfix und Begründung landen in EINER Spalte (≤ 500).
   const noteTooLong = needsReason && composedNoteTooLong(reason, formData.note);
+  // Task 6: Option 1 gilt erst ab einem Datum, an dem nichts verliert — ohne
+  // Auswahl zum Anerkennen (die IDs gehören zum eingegebenen Datum).
   const losslessKey = useLossless
-    ? JSON.stringify({ ...JSON.parse(previewKey), effective_from: losslessDate })
+    ? JSON.stringify({ ...JSON.parse(baseKey), effective_from: losslessDate })
     : null;
 
   // Option 1: zweite Vorschau für `earliest_lossless_date` (ohne Debounce — der
@@ -464,6 +510,9 @@ export default function WorkingHoursModal({
   const shownLoading = useLossless ? losslessLoading : previewLoading;
   const shownError = useLossless ? losslessError : previewError;
   const isRetroactive = sentDate < todayIso();
+  // Task 6: angerechnet wird die Auswahl nur mit dem eingegebenen Datum.
+  const sentRecognizeBody: RecognizeEntriesBody = useLossless ? {} : recognizeBody;
+  const sentRecognizeCount = sentRecognizeBody.recognize_entry_ids?.length ?? 0;
 
   // Release-Review 1.17.0: `blocked_reason` gilt für jedes Datum — der POST
   // weist unabhängig davon ab (Datum belegt, Blockfehler, …).
@@ -581,6 +630,9 @@ export default function WorkingHoursModal({
     setConfirmedRetroactive(false);
     setReason(EMPTY_REASON);
     setShorteningOption('lossless');
+    setRecognizeCandidates(null);
+    setRecognizeSelected([]);
+    setRecognizeTouched(false);
   };
 
   const handleAddHoursChange = async (e: React.FormEvent) => {
@@ -592,6 +644,7 @@ export default function WorkingHoursModal({
         effective_from: sentDate,
         note: formData.note,
         ...scheduleBody,
+        ...sentRecognizeBody,
         ...(needsReason ? reasonPayload(reason) : {}),
       });
       // Review Task 20: ein offenes Lösch-Panel ist ab jetzt veraltet — seine
@@ -948,6 +1001,17 @@ export default function WorkingHoursModal({
                     </ul>
                   )}
 
+                  {/* Plan 2026-11-21 Task 6: vor der Verkürzungswahl — sind alle
+                      Verluste anerkannt, entfällt sie. Die Liste kommt aus der
+                      Vorschau der EINGEGEBENEN Eingabe (auch bei Option 1). */}
+                  {showRecognizeList && candidateChanges && (
+                    <RecognizeEntriesList
+                      changes={candidateChanges}
+                      selected={new Set(recognizeIds)}
+                      onChange={changeRecognizeSelection}
+                    />
+                  )}
+
                   {/* Spec 12.1: vor der Box, damit der Haken das letzte Element vor „Speichern" bleibt. */}
                   {isShortening && preview && (
                     <ShorteningChoice
@@ -1060,7 +1124,7 @@ export default function WorkingHoursModal({
                       className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Save size={18} />
-                      <span>Speichern</span>
+                      <span>{saveButtonLabel(sentRecognizeCount)}</span>
                     </button>
                   </div>
                 </form>

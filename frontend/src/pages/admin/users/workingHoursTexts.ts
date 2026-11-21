@@ -166,6 +166,19 @@ export function signedDays(value: number): string {
   return v > 0 ? `+${text}` : v < 0 ? `−${text}` : text;
 }
 
+/** Plan 2026-11-21 Task 6: Überschrift der Anerkennen-Liste im Dialog. */
+export const RECOGNIZE_TITLE = 'Einträge, die Zeit verlieren';
+/** Plan 2026-11-21 (Global Constraints): Hinweis unter der Anerkennen-Liste, wörtlich. */
+export const RECOGNIZE_NOTE =
+  'Anerkannte Einträge zählen mit der ganzen gestempelten Zeit, auch bei späteren Änderungen. '
+  + 'Anerkennen lässt sich nicht zurücknehmen.';
+
+/** Plan 2026-11-21 (Global Constraints): Beschriftung des Speichern-Knopfs, `n` = gewählte Einträge. */
+export function saveButtonLabel(n: number): string {
+  if (n <= 0) return 'Speichern';
+  return n === 1 ? 'Speichern und 1 Eintrag anerkennen' : `Speichern und ${n} Einträge anerkennen`;
+}
+
 /** Spec 12.1 — Toast nach dem Speichern (bzw. Löschen, gleiche Zählung). */
 export function savedMessage(
   created: { adjusted_time_entries?: number; skipped_time_entries?: number; adjusted_absences?: number },
