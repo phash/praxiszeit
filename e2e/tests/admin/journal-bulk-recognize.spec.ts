@@ -26,6 +26,10 @@ function twoPastWorkdaysInOneMonth(): [string, string] {
   for (let n = 1; n <= 21; n += 1) {
     const iso = daysAgo(n);
     // weekdayFromNow(-n) springt nur bei Wochenende/Feiertag weiter.
+    // Annahme: die Feiertagsliste des Helpers deckt das Bundesland des
+    // Test-Mandanten ab. Ein regionaler Feiertag außerhalb dieser Liste
+    // (z. B. Buß- und Bettag in Sachsen) hätte keine Blöcke, also keine
+    // nicht angerechnete Zeit und keine Checkbox.
     if (weekdayFromNow(-n) !== iso) continue;
     const days = byMonth.get(iso.slice(0, 7)) ?? [];
     days.push(iso);
