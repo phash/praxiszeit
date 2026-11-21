@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.models import TimeEntry, TimeEntryAuditLog
-from app.schemas.working_hours_change import RECOGNIZE_LIMIT, RECOGNIZE_LIMIT_DETAIL
+from app.services.credit_override_service import RECOGNIZE_LIMIT, RECOGNIZE_LIMIT_DETAIL
 from app.services import calculation_service, credit_override_service as cos, reclamp_audit
 from tests.conftest import DEFAULT_TENANT_ID
 from tests.test_endpoints import test_app

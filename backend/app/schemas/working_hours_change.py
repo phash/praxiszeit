@@ -8,6 +8,8 @@ from uuid import UUID
 
 from app.schemas.validators import quantize_agreed_hours, quantize_one_decimal, validate_week_blocks
 from app.services import work_blocks_service
+# Plan 2026-11-21 Task 4: Obergrenze/Text des Anerkennens in einem Schritt (einzige Quelle).
+from app.services.credit_override_service import RECOGNIZE_LIMIT, RECOGNIZE_LIMIT_DETAIL
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +30,6 @@ RetroReasonType = Literal["erfassungsfehler", "einvernehmlich", "sonstiges"]
 EFFECTIVE_FROM_MIN = date(2000, 1, 1)
 EFFECTIVE_FROM_MAX = date(2100, 12, 31)
 EFFECTIVE_FROM_RANGE_DETAIL = "Das Wirkungsdatum muss zwischen dem 01.01.2000 und dem 31.12.2100 liegen."
-
-# Plan 2026-11-21 Task 4: Einträge, die beim Speichern einer Arbeitszeit-Änderung
-# im selben Schritt anerkannt werden — höchstens so viele wie beim
-# Sammel-Anerkennen im Monatsjournal (Task 9).
-RECOGNIZE_LIMIT = 200
-RECOGNIZE_LIMIT_DETAIL = f"Es lassen sich höchstens {RECOGNIZE_LIMIT} Einträge in einem Schritt anerkennen."
 
 
 # Teil A: Vertragsfelder, deren ausdrückliches ``null`` 422 ist (nicht

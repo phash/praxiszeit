@@ -28,6 +28,10 @@ _ON_REQUEST = "auf Antrag der beschäftigten Person von der Verwaltung anerkannt
 # Gesamtreview 1.20 (Fund 1): Auslöser der Einzelzeile, wenn das Anerkennen die
 # Gutschrift einer Abwesenheit am selben Tag neu klemmt (F1, Misch-Tag).
 MIXED_DAY_TRIGGER = "an die anerkannte Arbeitszeit des Tages angeglichen"
+# Plan 2026-11-21 Task 4/9: höchstens so viele Einträge in einem Schritt anerkennen
+# (Speichern einer Arbeitszeit-Änderung und Sammel-Anerkennen im Monatsjournal).
+RECOGNIZE_LIMIT = 200
+RECOGNIZE_LIMIT_DETAIL = f"Es lassen sich höchstens {RECOGNIZE_LIMIT} Einträge in einem Schritt anerkennen."
 
 
 def start_taken_detail(t: time) -> str:
