@@ -316,6 +316,15 @@ class TimeEntryChangeOut(BaseModel):
     new_uncredited: int = 0
     new_net: float = 0.0
     not_extendable: Optional[Literal["start", "end", "both"]] = None
+    # Plan 2026-11-21 Task 3 (Anerkennen im Dialog): ``recognizable`` = geschlossen,
+    # nicht ``auto_closed``, vor dem Lauf nicht anerkannt; ``recognized`` = in
+    # diesem Lauf anerkannt; ``blockless_workday`` = Werktag ohne Block
+    # (``credit_blocks == []``, fällt auf 0 h); ``newly_clamped`` = der alte
+    # Snapshot kappte an diesem Tag nicht.
+    recognizable: bool = False
+    recognized: bool = False
+    blockless_workday: bool = False
+    newly_clamped: bool = False
 
 
 class SkippedEntryOut(BaseModel):

@@ -17,14 +17,16 @@ rollt danach zurück und darf nichts festschreiben (E57).
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+from types import MappingProxyType
 from typing import Callable, Dict, List, NamedTuple, Optional
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models import TimeEntry, User, WorkingHoursChange
 from app.services import (
-    calculation_service, presence_service, reclamp_audit, timezone_service, work_blocks_service,
-    work_window_service,
+    calculation_service, credit_override_service, presence_service, reclamp_audit, timezone_service,
+    work_blocks_service, work_window_service,
 )
 
 SHORTENING_ENTRIES = "entries"
@@ -51,6 +53,10 @@ SONSTIGES_CONFIRM_DETAIL = (
 )
 _ASK = "Bitte Grund, Begründung und die Bestätigung zum Vergütungsrisiko angeben"
 _ZERO = Decimal("0")
+# Plan 2026-11-21 Task 3: eine zum Anerkennen gewählte ID, die die Neukappung
+# dieser Änderung nicht verändert hat (anderer Zeitraum, offen, unverändert).
+NOT_AFFECTED_DETAIL = "Der Eintrag vom {date} ist von dieser Änderung nicht betroffen."
+_NO_FLAGS = MappingProxyType({})
 
 
 class ChangeImpact(NamedTuple):
@@ -84,10 +90,22 @@ class ChangeImpact(NamedTuple):
     # Jahre, deren Anspruch rückwirkend sinkt — DIE eine Entscheidung aus
     # ``run_change`` (mit dessen „heute"), ``criteria_text`` liest sie (F071).
     entitlement_lost_years: tuple
+    # Plan 2026-11-21 Task 3: in diesem Lauf anerkannte Eintrags-IDs und je ID in
+    # ``reclamp.changed`` die Kennzeichen der Vorschau (``recognizable``,
+    # ``blockless_workday``, ``newly_clamped``).
+    recognized_ids: frozenset = frozenset()
+    entry_flags: dict = _NO_FLAGS
 
     @property
     def is_shortening(self) -> bool:
         return bool(self.shortening_reasons)
+
+    @property
+    def logged_changes(self) -> list:
+        """``reclamp.changed`` ohne die anerkannten Einträge — DIE Liste für
+        Verlust, Monatsstatistik, Protokoll und Zähler. Ein anerkannter Eintrag
+        verliert nichts und erscheint nur in seiner ``credit_override``-Zeile."""
+        return _without(self.reclamp.changed, self.recognized_ids)
 
 
 def _saldo_by_year(db: Session, user: User, start: date, end: date, cutoff: date) -> Dict[int, tuple]:
@@ -193,6 +211,88 @@ def _minijob_changed(old, new) -> bool:
     return any(norm(getattr(old, f)) != norm(getattr(new, f)) for f in _MINIJOB_FIELDS)
 
 
+def _without(changes, ids) -> list:
+    keys = {str(i) for i in ids}
+    return [c for c in changes if str(c.entry_id) not in keys]
+
+
+def _old_day_unclamped(old_schedule, old_tracked: dict, d: date) -> bool:
+    """Hätte der ALTE Snapshot am Tag ``d`` nicht gekappt? Ohne Stundenzählung
+    vorher, ohne Blockmodell (Stundenmodell, ``blocks`` None) oder ein Tag ohne
+    Fenster in einer Altzeile aus Migration 073 (``pause_minutes`` None) —
+    dieselbe Unterscheidung wie ``work_window_service.credit_blocks``. Ein
+    Werktag ohne Blöcke im Blockmodell kappte dagegen schon (auf 0 h)."""
+    if old_tracked.get(d) is False:
+        return True
+    if d.weekday() > 4 or old_schedule.blocks is None:
+        return True
+    day = old_schedule.blocks[d.weekday()]
+    return not day and any(p is None for p in (old_schedule.block_pauses or ()))
+
+
+def _recognize(db: Session, user: User, reclamp, wanted_ids, *, admin_id, before: dict,
+               lock: bool, old_schedule, old_tracked: dict, window) -> tuple:
+    """Plan 2026-11-21 Task 3 — Kennzeichen je neu gekapptem Eintrag und
+    Anerkennen der gewählten (nach Schritt 5, vor Schritt 6). Gibt
+    ``(entry_flags, recognized_ids)`` zurück.
+
+    Fremde oder unbekannte IDs weist der Router vorher mit 404 ab (vor jeder
+    Sperre, P5); eine ID, die die Neukappung nicht verändert hat, ergibt hier
+    400 ``NOT_AFFECTED_DETAIL`` mit ihrem Datum. Beim Speichern (``lock``)
+    nimmt jeder Eintrag seine Zeilensperre über ``load_entry_locked``,
+    aufsteigend nach ``id`` — die Ankersperre hält der Router. Die Vorschau
+    sperrt nicht. Offene/``auto_closed``-Einträge und Kollisionen lehnt
+    ``apply_credit_override`` mit seinen Texten ab. Die F1-Neuklemmung eines
+    Misch-Tags übernimmt Schritt 6 (``reapply_f1=False``) — sonst fehlte die
+    Abwesenheit in ``impact.absences``."""
+    ids = [c.entry_id for c in reclamp.changed]
+    entries = {}
+    if ids:
+        entries = {str(e.id): e for e in db.query(TimeEntry).filter(
+            TimeEntry.id.in_(ids),
+            TimeEntry.user_id == user.id,
+            TimeEntry.tenant_id == user.tenant_id,  # F-026
+        ).all()}
+    wh_changes = calculation_service.user_wh_changes(db, user)  # F-026
+    soll_free = work_window_service._soll_free_dates(db, user.tenant_id, window.start, window.end)
+    flags = {}
+    for c in reclamp.changed:
+        e = entries.get(str(c.entry_id))
+        flags[c.entry_id] = {
+            # Vor dem Anerkennen erhoben: „nicht schon anerkannt" meint den Stand vor dem Lauf.
+            "recognizable": bool(e is not None and e.end_time is not None
+                                 and not e.auto_closed and not e.credit_override),
+            "blockless_workday": work_window_service.credit_blocks(
+                db, user, c.date, wh_changes=wh_changes, soll_free_dates=soll_free) == [],
+            "newly_clamped": _old_day_unclamped(old_schedule, old_tracked, c.date),
+        }
+
+    wanted = {str(i): i for i in wanted_ids}
+    missing = [wanted[k] for k in sorted(wanted) if k not in entries]
+    if missing:
+        rows = db.query(TimeEntry.id, TimeEntry.date).filter(
+            TimeEntry.id.in_(missing),
+            TimeEntry.user_id == user.id,
+            TimeEntry.tenant_id == user.tenant_id,  # F-026
+        ).all()
+        if len(rows) < len(missing):
+            from app.routers.time_entries import ENTRY_NOT_FOUND  # lokal: kein Router-Import beim Laden
+            raise HTTPException(status_code=404, detail=ENTRY_NOT_FOUND)
+        first = min(r.date for r in rows)
+        raise HTTPException(status_code=400, detail=NOT_AFFECTED_DETAIL.format(date=f"{first:%d.%m.%Y}"))
+
+    recognized = set()
+    for key in sorted(wanted):
+        e = entries[key]
+        if lock:
+            e = credit_override_service.load_entry_locked(db, user.tenant_id, e.id)
+        if credit_override_service.apply_credit_override(
+                db, e, changed_by_id=admin_id, on_request=False, audit_before=before.get(e.id),
+                reapply_f1=False):  # Schritt 6 klemmt den Tag gleich danach (Misch-Tag)
+            recognized.add(e.id)
+    return flags, frozenset(recognized)
+
+
 def _next_change(db: Session, user: User, effective_from: date) -> Optional[WorkingHoursChange]:
     return db.query(WorkingHoursChange).filter(
         WorkingHoursChange.user_id == user.id,
@@ -203,9 +303,17 @@ def _next_change(db: Session, user: User, effective_from: date) -> Optional[Work
 
 def run_change(db: Session, user: User, *, admin_id, effective_from: date,
                apply: Callable[[], None],
-               after_close: Optional[Callable[[], None]] = None) -> ChangeImpact:
+               after_close: Optional[Callable[[], None]] = None,
+               recognize_entry_ids: frozenset = frozenset(),
+               lock_recognized: bool = False) -> ChangeImpact:
     """Spec 9.3 Schritte 2–7 (Docstring des Moduls). ``apply`` legt die neue Zeile
     an bzw. löscht die bestehende — ohne commit.
+
+    ``recognize_entry_ids`` (Plan 2026-11-21 Task 3): diese Einträge werden
+    nach der Neukappung (Schritt 5) und vor der Abwesenheits-Rückrechnung
+    (Schritt 6) anerkannt — die F1-Klemmung und die Klassifikation sehen so den
+    Endzustand. ``lock_recognized`` nur beim Speichern (Zeilensperre je
+    Eintrag); die Vorschau sperrt nicht und rollt zurück.
 
     ``after_close`` (Gesamtreview 1.20, Fund 10) läuft nach Schritt 2 und vor
     Schritt 3 — dort, wo auch der Saldo „vorher" entsteht. Die Vorschauen erheben
@@ -293,6 +401,12 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
             timezone_service.now_local().time(),
         )
 
+    # Plan 2026-11-21 Task 3: gewählte Einträge anerkennen (vor Schritt 6).
+    entry_flags, recognized = _recognize(
+        db, user, reclamp, recognize_entry_ids, admin_id=admin_id, before=before, lock=lock_recognized,
+        old_schedule=old_schedule, old_tracked=old_tracked, window=window)
+    logged = _without(reclamp.changed, recognized)
+
     # Schritt 6 (E51: erst Einträge, dann Abwesenheiten)
     absences = []
     if window.has_absences:
@@ -318,7 +432,7 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
     today_delta = (_day_saldo(db, user, today) - today_before) if (open_day or today_counts) else _ZERO
     open_day_delta = today_delta if open_day else _ZERO
 
-    losing = [c for c in reclamp.changed if c.new_net < c.old_net]
+    losing = [c for c in logged if c.new_net < c.old_net]
     reductions = [a for a in absences if a.credit_reduction]
     closed = calculation_service.closed_years_in_range(
         db, user.tenant_id, range(window.start.year, window.end.year + 1))
@@ -359,7 +473,7 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
             earliest = None
 
     months: Dict[str, list] = defaultdict(lambda: [0, _ZERO, _ZERO])
-    for c in reclamp.changed:
+    for c in logged:
         bucket = months[c.date.strftime("%Y-%m")]
         bucket[0] += 1
         bucket[1] += c.old_net
@@ -392,15 +506,25 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
         entitlement={y: (ent_before[y], ent_after[y]) for y in ent_years},
         entitlement_preview_years=(effective_from.year, effective_from.year + 1),
         entitlement_lost_years=tuple(ent_lost),
+        recognized_ids=recognized,
+        entry_flags=entry_flags,
     )
 
 
-def _change_out(c) -> dict:
+def _change_out(c, impact: Optional[ChangeImpact] = None) -> dict:
+    """Ein neu gekappter Eintrag für die Vorschau; mit ``impact`` samt den
+    Kennzeichen zum Anerkennen (Plan 2026-11-21 Task 3)."""
+    flags = impact.entry_flags.get(c.entry_id, {}) if impact is not None else {}
+    recognized = impact is not None and str(c.entry_id) in {str(i) for i in impact.recognized_ids}
     return {
         "entry_id": str(c.entry_id), "date": c.date,
         "old_start": c.old_start, "old_end": c.old_end, "old_uncredited": c.old_uncredited,
         "old_net": float(c.old_net), "new_start": c.new_start, "new_end": c.new_end,
         "new_uncredited": c.new_uncredited, "new_net": float(c.new_net), "not_extendable": c.not_extendable,
+        "recognizable": bool(flags.get("recognizable", False)),
+        "recognized": recognized,
+        "blockless_workday": bool(flags.get("blockless_workday", False)),
+        "newly_clamped": bool(flags.get("newly_clamped", False)),
     }
 
 
@@ -422,17 +546,21 @@ def milog_warnings(impact: ChangeImpact) -> List[str]:
 
 
 def preview_fields(impact: ChangeImpact) -> dict:
-    """Spec 11.3: die neuen Vorschau-Felder aus EINEM flush/Rollback-Lauf."""
-    changed = impact.reclamp.changed
+    """Spec 11.3: die neuen Vorschau-Felder aus EINEM flush/Rollback-Lauf.
+
+    Plan 2026-11-21 Task 3: ``time_entry_changes`` listet ALLE neu gekappten
+    Einträge (auch die anerkannten — die Liste bleibt stabil, während Häkchen
+    gesetzt werden), Zähler und Verlust rechnen über ``logged_changes``."""
+    changed = impact.logged_changes
     return {
         "changed_weekdays": impact.changed_weekdays,
         "affected_time_entries": len(changed),
         "time_entry_months": impact.months,
-        "time_entry_changes": [_change_out(c) for c in changed],
+        "time_entry_changes": [_change_out(c, impact) for c in impact.reclamp.changed],
         "skipped_time_entries": [
             {"entry_id": str(s.entry_id), "date": s.date, "reason": s.reason} for s in impact.reclamp.skipped],
         "not_extendable_count": len(impact.reclamp.flagged),
-        "not_extendable_entries": [_change_out(c) for c in impact.reclamp.flagged],
+        "not_extendable_entries": [_change_out(c, impact) for c in impact.reclamp.flagged],
         "is_shortening": impact.is_shortening,
         "shortening_reasons": impact.shortening_reasons,
         "shortening_closed_years": impact.shortening_closed_years,
@@ -490,7 +618,7 @@ def criteria_text(impact: ChangeImpact) -> str:
     +1:00 h während eingestempelt"."""
     parts = []
     if SHORTENING_ENTRIES in impact.shortening_reasons:
-        n = sum(1 for c in impact.reclamp.changed if c.new_net < c.old_net) + (1 if impact.open_entry_loses else 0)
+        n = sum(1 for c in impact.logged_changes if c.new_net < c.old_net) + (1 if impact.open_entry_loses else 0)
         parts.append("1 Eintrag verliert angerechnete Zeit" if n == 1 else f"{n} Einträge verlieren angerechnete Zeit")
     if SHORTENING_SALDO in impact.shortening_reasons:
         if impact.saldo_delta < 0:

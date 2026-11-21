@@ -72,7 +72,7 @@ def load_entry_locked(db: Session, tenant_id, entry_id) -> Optional[TimeEntry]:
 
 def apply_credit_override(
     db: Session, entry: TimeEntry, *, changed_by_id, on_request: bool, change_request_id=None,
-    audit_before: Optional[TimeEntry] = None,
+    audit_before: Optional[TimeEntry] = None, reapply_f1: bool = True,
 ) -> bool:
     """Spec 13.3 Schritte 2–5. ``False`` = war schon anerkannt (idempotent,
     kein Protokoll). Wirft 400 (offen, ``auto_closed``) bzw. 409 (Kollision).
@@ -88,7 +88,16 @@ def apply_credit_override(
     dem Schritt, in dem anerkannt wird (``wh_change_service._snapshot``). Ist
     sie gesetzt, nimmt die Protokollzeile ``old_start_time``/``old_end_time``/
     ``old_break_minutes``/``old_note`` daraus — beim Anerkennen innerhalb einer Arbeitszeit-Änderung
-    hat die Neukappung den Eintrag schon verändert. Sonst der aktuelle Eintrag."""
+    hat die Neukappung den Eintrag schon verändert. Sonst der aktuelle Eintrag.
+
+    ``reapply_f1=False`` (Plan 2026-11-21 Task 3): nur für das Anerkennen
+    innerhalb von ``wh_change_service.run_change``. Dort folgt die
+    Abwesenheits-Rückrechnung über das ganze Fenster unmittelbar danach (mit dem
+    vollen Tagessoll VOR der Änderung). Klemmte schon dieser Schritt neu, sähe
+    die Rückrechnung die Abwesenheit als unverändert: sie fehlte in
+    ``impact.absences`` (Klassifikation 9.5 (c), Protokoll ``wh_change``), und
+    stattdessen entstünde eine ``credit_override``-Zeile für sie. Die
+    Gutschrift ist in beiden Fällen dieselbe."""
     if entry.end_time is None:
         raise HTTPException(status_code=400, detail=OPEN_ENTRY_DETAIL)
     if entry.auto_closed:
@@ -155,7 +164,7 @@ def apply_credit_override(
     owner = db.query(User).filter(
         User.id == entry.user_id,
         User.tenant_id == entry.tenant_id,  # F-026
-    ).first()
+    ).first() if reapply_f1 else None
     if owner is not None:
         absence_retarget_audit.add_absence_retarget_rows(
             db, calculation_service.reapply_f1_for_day(db, owner, entry.date),
