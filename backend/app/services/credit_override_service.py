@@ -87,7 +87,7 @@ def apply_credit_override(
     ``audit_before`` (Plan 2026-11-21 Task 2): transiente Kopie des Stands VOR
     dem Schritt, in dem anerkannt wird (``wh_change_service._snapshot``). Ist
     sie gesetzt, nimmt die Protokollzeile ``old_start_time``/``old_end_time``/
-    ``old_note`` daraus — beim Anerkennen innerhalb einer Arbeitszeit-Änderung
+    ``old_break_minutes``/``old_note`` daraus — beim Anerkennen innerhalb einer Arbeitszeit-Änderung
     hat die Neukappung den Eintrag schon verändert. Sonst der aktuelle Eintrag."""
     if entry.end_time is None:
         raise HTTPException(status_code=400, detail=OPEN_ENTRY_DETAIL)
@@ -135,7 +135,7 @@ def apply_credit_override(
         old_date=entry.date,
         old_start_time=old_start,
         old_end_time=old_end,
-        old_break_minutes=entry.break_minutes,
+        old_break_minutes=before.break_minutes,
         old_note=old_note,
         new_date=entry.date,
         new_start_time=new_start,

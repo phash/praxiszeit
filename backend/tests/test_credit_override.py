@@ -791,3 +791,4 @@ def test_without_audit_before_old_values_stay_the_entry(_db_session, employee_us
     _db_session.commit()
     [log] = _override_logs(_db_session)
     assert (log.old_start_time, log.old_end_time) == (time(7, 48), time(7, 48))
+    assert log.old_note.startswith("angerechnet 0:00 h")
