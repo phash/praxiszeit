@@ -102,6 +102,25 @@ describe('HandbookHint', () => {
     expect(screen.getByRole('link', { name: /Mehr im Handbuch/ })).toBeInTheDocument();
   });
 
+  it('aligns the popover to the left edge by default and to the right edge with align="end"', () => {
+    const { unmount } = renderHint();
+    fireEvent.click(screen.getByRole('button', { name: `Hilfe: ${hint.title}` }));
+    expect(screen.getByRole('dialog', { name: hint.title }).className).toMatch(/(^|\s)sm:left-0(\s|$)/);
+    unmount();
+
+    render(
+      <MemoryRouter>
+        <HandbookHint hintId="wh-effective-date" align="end" />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: `Hilfe: ${hint.title}` }));
+    const cls = screen.getByRole('dialog', { name: hint.title }).className;
+    expect(cls).toMatch(/(^|\s)sm:right-0(\s|$)/);
+    expect(cls).not.toMatch(/(^|\s)sm:left-0(\s|$)/);
+    // das Bottom-Sheet unter 640 px bleibt
+    expect(cls).toMatch(/(^|\s)inset-x-0(\s|$)/);
+  });
+
   it('uses a bottom sheet below 640 px', () => {
     renderHint();
     fireEvent.click(screen.getByRole('button', { name: `Hilfe: ${hint.title}` }));

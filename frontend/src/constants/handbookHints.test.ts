@@ -38,10 +38,39 @@ describe('handbookHints register', () => {
     }
   });
 
-  // Task 13 schaltet diesen Test scharf, sobald die Kurzhilfen an den Seiten sitzen:
-  // jeder Schlüssel kommt in src/**/*.tsx als hintId="<schlüssel>" vor
-  // (import.meta.glob('/src/**/*.tsx', { query: '?raw', import: 'default', eager: true })).
-  it.todo('every hint id is used as hintId="<id>" in a .tsx source');
+  it('every hint id is used as hintId="<id>" in a .tsx source', () => {
+    // Quelltext aller Komponenten und Seiten, ohne Tests (dort steht nur der Testschlüssel).
+    const sources = import.meta.glob('/src/**/*.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+    const code = Object.entries(sources)
+      .filter(([path]) => !/\.test\.tsx$/.test(path))
+      .map(([, src]) => src)
+      .join('\n');
+    const unused = entries.map(([id]) => id).filter((id) => !code.includes(`hintId="${id}"`));
+    expect(unused, 'Registereinträge ohne Einsatzstelle').toEqual([]);
+  });
+
+  it('every hintId="…" in a .tsx source is a register key', () => {
+    const sources = import.meta.glob('/src/**/*.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+    const used = new Set<string>();
+    for (const [path, src] of Object.entries(sources)) {
+      if (/\.test\.tsx$/.test(path)) continue;
+      for (const m of src.matchAll(/hintId="([^"]+)"/g)) used.add(m[1]);
+    }
+    const unknown = [...used].filter((id) => !(id in handbookHints));
+    expect(unknown).toEqual([]);
+  });
+
+  it('employee-facing hints link the employee handbook or the calculation guide', () => {
+    // Mitarbeiterseiten (Dashboard, Zeiterfassung, Anträge) verlinken nie das Handbuch der Praxisleitung,
+    // das Mitarbeitende unter /help nicht öffnen können.
+    const employee: HintId[] = [
+      'stamp-card', 'dashboard-month-balance', 'dashboard-overtime', 'dashboard-vacation',
+      'not-credited', 'cr-create', 'cr-update', 'cr-delete', 'journal-balance',
+    ];
+    for (const id of employee) {
+      expect(['mitarbeitende', 'so-rechnet'], id).toContain(handbookHints[id].book);
+    }
+  });
 });
 
 describe('sentenceCount helper', () => {

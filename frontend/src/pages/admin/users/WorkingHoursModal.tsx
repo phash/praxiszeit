@@ -4,6 +4,7 @@ import apiClient from '../../../api/client';
 import { Save, X, Trash2, Info } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
+import HandbookHint from '../../../components/HandbookHint';
 import { getErrorMessage } from '../../../utils/errorMessage';
 import { parseHours, deHoursExact, formatDayNumber, formatDayPlan, formatDecimalDe } from '../../../utils/formatters';
 import { showResponseWarning } from '../../../utils/arbzgWarnings';
@@ -771,9 +772,12 @@ export default function WorkingHoursModal({
                 <form onSubmit={handleAddHoursChange} className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
-                      <label htmlFor="wh-effective-from" className="block text-sm font-medium text-gray-700 mb-1">
-                        Gültig ab
-                      </label>
+                      <div className="flex items-center gap-1 mb-1">
+                        <label htmlFor="wh-effective-from" className="block text-sm font-medium text-gray-700">
+                          Gültig ab
+                        </label>
+                        <HandbookHint hintId="wh-effective-date" />
+                      </div>
                       <input
                         id="wh-effective-from"
                         type="date"
@@ -802,11 +806,14 @@ export default function WorkingHoursModal({
                   {startHint && (
                     <div className="flex flex-col sm:flex-row sm:items-start gap-3 bg-white border border-amber-300 rounded-lg p-3">
                       <Info size={18} className="shrink-0 text-amber-600 mt-0.5" aria-hidden="true" />
-                      <p className="text-sm text-gray-800 flex-1">
-                        {firstWorkDayHintText(
-                          startHint.applyFrom, startHint.until, describeSchedule(startHint.startSchedule),
-                        )}
-                      </p>
+                      <div className="flex flex-1 items-start gap-1">
+                        <p className="text-sm text-gray-800">
+                          {firstWorkDayHintText(
+                            startHint.applyFrom, startHint.until, describeSchedule(startHint.startSchedule),
+                          )}
+                        </p>
+                        <HandbookHint hintId="wh-first-work-day" align="end" />
+                      </div>
                       <button
                         type="button"
                         onClick={applyStartHint}
@@ -842,6 +849,7 @@ export default function WorkingHoursModal({
                           {label}
                         </label>
                       ))}
+                      {(formTrackHours || formData.mode === 'blocks') && <HandbookHint hintId="work-blocks" />}
                     </div>
 
                     {formData.mode === 'blocks' ? (
@@ -1142,13 +1150,16 @@ export default function WorkingHoursModal({
               </div>
 
               <div>
-                <h3
-                  ref={historyHeadingRef}
-                  tabIndex={-1}
-                  className="font-semibold text-gray-900 mb-3 focus:outline-none"
-                >
-                  Verlauf
-                </h3>
+                <div className="flex items-center gap-1 mb-3">
+                  <h3
+                    ref={historyHeadingRef}
+                    tabIndex={-1}
+                    className="font-semibold text-gray-900 focus:outline-none"
+                  >
+                    Verlauf
+                  </h3>
+                  <HandbookHint hintId="wh-history" />
+                </div>
                 {/* Spec 12.1: das Panel gehört immer zur jüngsten Zeile. */}
                 {deleting && deleting.id === youngestId && (
                   <WhDeletePanel

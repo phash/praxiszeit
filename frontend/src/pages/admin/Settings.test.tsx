@@ -84,7 +84,8 @@ describe('<Settings /> Pflicht-Pause-Ausnahme an/aus (#499)', () => {
     fireEvent.click(toggle);
 
     const card = toggle.closest('div.bg-white') as HTMLElement;
-    fireEvent.click(card.querySelector('button:not([role="switch"])') as HTMLElement);
+    // erster Knopf der Karte ist die „?“-Kurzhilfe am Titel – gespeichert wird über „Speichern“
+    fireEvent.click(within(card).getByRole('button', { name: /Speichern/ }));
 
     await waitFor(() =>
       expect(putMock).toHaveBeenCalledWith('/admin/settings/break_exception_allowed', { value: 'false' }),
@@ -136,7 +137,7 @@ describe('<Settings /> Bundesland-Wechsel (Gesamtreview 1.20 B9)', () => {
     await waitFor(() => expect(select.value).toBe('Bayern'));
     fireEvent.change(select, { target: { value: 'Berlin' } });
     const card = select.closest('div.bg-white') as HTMLElement;
-    fireEvent.click(card.querySelector('button') as HTMLElement);
+    fireEvent.click(within(card).getByRole('button', { name: /Speichern/ }));
     await waitFor(() =>
       expect(putMock).toHaveBeenCalledWith('/admin/settings/holiday_state', { value: 'Berlin' }),
     );
@@ -198,7 +199,7 @@ describe('<Settings /> Sondertage im abgeschlossenen Jahr (Gesamtreview 1.20)', 
     fireEvent.change(await screen.findByLabelText('Modus', { selector: '#special-dec24-mode' }), {
       target: { value: 'free' },
     });
-    const card = screen.getByRole('heading', { name: 'Sondertage (24./31.12.)' }).parentElement!;
+    const card = screen.getByRole('heading', { name: 'Sondertage (24./31.12.)' }).closest('div.bg-white') as HTMLElement;
     fireEvent.click(within(card).getByRole('button', { name: /Speichern/ }));
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Sondertage (24./31.12.) gespeichert.'));
     expect(toastMock.warning).toHaveBeenCalledTimes(1);
@@ -211,7 +212,7 @@ describe('<Settings /> Sondertage im abgeschlossenen Jahr (Gesamtreview 1.20)', 
     fireEvent.change(await screen.findByLabelText('Modus', { selector: '#special-dec31-mode' }), {
       target: { value: 'half_day' },
     });
-    const card = screen.getByRole('heading', { name: 'Sondertage (24./31.12.)' }).parentElement!;
+    const card = screen.getByRole('heading', { name: 'Sondertage (24./31.12.)' }).closest('div.bg-white') as HTMLElement;
     fireEvent.click(within(card).getByRole('button', { name: /Speichern/ }));
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Sondertage (24./31.12.) gespeichert.'));
     expect(toastMock.warning).not.toHaveBeenCalled();
@@ -232,7 +233,7 @@ describe('<Settings /> Sondertage im abgeschlossenen Jahr (Gesamtreview 1.20)', 
     fireEvent.change(await screen.findByLabelText('Modus', { selector: '#special-dec24-mode' }), {
       target: { value: 'free' },
     });
-    const card = screen.getByRole('heading', { name: 'Sondertage (24./31.12.)' }).parentElement!;
+    const card = screen.getByRole('heading', { name: 'Sondertage (24./31.12.)' }).closest('div.bg-white') as HTMLElement;
     fireEvent.click(within(card).getByRole('button', { name: /Speichern/ }));
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('Sondertage (24./31.12.) gespeichert.'));
     expect(toastMock.warning).toHaveBeenCalledTimes(1);

@@ -15,6 +15,7 @@ import {
   DEFAULT_MAX_HOURS, MAX_HOURS_ERROR, MAX_MAX_HOURS, MIN_MAX_HOURS, isValidMaxHours, parseMaxHoursInput,
 } from '../../utils/specialDays';
 import ReducedDaysCard from '../../components/ReducedDaysCard';
+import HandbookHint from '../../components/HandbookHint';
 
 // #371: Wochentag-Labels (Index 0=Mo … 6=So) für den Schichtplaner-Wochentag-Picker.
 const SHIFT_WEEKDAY_LABELS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
@@ -724,7 +725,10 @@ const saveYearEndProjection = async () => {
 
       {/* Feiertage */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Feiertage</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Feiertage</h2>
+          <HandbookHint hintId="settings-holidays" />
+        </div>
         <p className="text-sm text-gray-500 mb-4">
           Wählen Sie das Bundesland aus, dessen gesetzliche Feiertage verwendet werden sollen.
           Bei Änderung werden die gesetzlichen Feiertage aller Jahre automatisch neu berechnet,
@@ -764,7 +768,10 @@ const saveYearEndProjection = async () => {
       {/* Eigene Feiertage */}
       <div className="bg-white rounded-xl shadow-sm p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Eigene Feiertage</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-gray-900">Eigene Feiertage</h2>
+            <HandbookHint hintId="settings-own-holidays" />
+          </div>
           <div>
             <label htmlFor="holiday-year" className="sr-only">
               Jahr
@@ -939,7 +946,10 @@ const saveYearEndProjection = async () => {
 
       {/* Sondertage 24./31.12. (#146) */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Sondertage (24./31.12.)</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Sondertage (24./31.12.)</h2>
+          <HandbookHint hintId="settings-special-days" />
+        </div>
         <p className="text-sm text-gray-500 mb-4">
           Legen Sie pro Tag fest, ob der 24.12. (Heiligabend) und der 31.12. (Silvester) ein
           ganzer Arbeitstag, ein Halbtag (halbe Sollzeit) oder frei sind. Bei „Frei" wählen Sie
@@ -1067,7 +1077,10 @@ const saveYearEndProjection = async () => {
 
       {/* Urlaubsgenehmigung */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Urlaubsgenehmigung</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Urlaubsgenehmigung</h2>
+          <HandbookHint hintId="settings-vacation-approval" />
+        </div>
         <p className="text-sm text-gray-500 mb-4">
           Wenn aktiviert, müssen Urlaubsanträge von einem Admin genehmigt werden, bevor sie wirksam
           werden.
@@ -1106,7 +1119,10 @@ const saveYearEndProjection = async () => {
 
       {/* Pflicht-Pause-Ausnahme (#144) */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Pflicht-Pause-Ausnahme</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Pflicht-Pause-Ausnahme</h2>
+          <HandbookHint hintId="settings-break-exception" />
+        </div>
         <p className="text-sm text-gray-500 mb-4">
           Konnte eine gesetzlich vorgeschriebene Pause (§4 ArbZG) nicht eingelegt werden, können
           Mitarbeiter den Eintrag mit einer Pflicht-Begründung („Pflicht-Pause war nicht möglich“)
@@ -1225,7 +1241,10 @@ const saveYearEndProjection = async () => {
 
       {/* Schichtplanung (#305) — Default deaktiviert */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Schichtplanung</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Schichtplanung</h2>
+          <HandbookHint hintId="settings-shift-planning" />
+        </div>
         <p className="text-sm text-gray-500 mb-4">
           Die Schichtplanung ist <strong>standardmäßig deaktiviert</strong>. Aktivieren Sie sie,
           um Wochen-Schichtpläne, Arbeitsplätze und Standorte anzulegen und Mitarbeitende auf
@@ -1313,7 +1332,10 @@ const saveYearEndProjection = async () => {
 
       {/* Betriebsferien über Urlaub hinaus (#314) — Default deaktiviert */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Betriebsferien &amp; Urlaub</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Betriebsferien &amp; Urlaub</h2>
+          <HandbookHint hintId="settings-closure-overtime" />
+        </div>
         <p className="text-sm text-gray-500 mb-4">
           Wenn die Betriebsferien (Praxis geschlossen) <strong>länger als der Jahresurlaub</strong> einer
           Mitarbeiterin sind: Mit dieser Option werden die überzähligen Tage <strong>nicht</strong> als
@@ -1362,9 +1384,12 @@ const saveYearEndProjection = async () => {
 
       {/* Voraussichtlicher Überstundensaldo zum Jahresende */}
 <div className="bg-white rounded-xl shadow-sm p-6">
-  <h2 className="text-lg font-semibold text-gray-900 mb-4">
-    Überstunden-Projektion zum Jahresende
-  </h2>
+  <div className="flex items-center gap-2 mb-4">
+    <h2 className="text-lg font-semibold text-gray-900">
+      Überstunden-Projektion zum Jahresende
+    </h2>
+    <HandbookHint hintId="settings-projection" />
+  </div>
 
   <p className="text-sm text-gray-500 mb-5">
     PraxisZeit kann den aktuellen Überstundensaldo um bereits
@@ -1483,7 +1508,10 @@ const saveYearEndProjection = async () => {
 
       {/* Soll-Fenster-Puffer (#201) */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Soll-Arbeitszeit-Fenster</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Soll-Arbeitszeit-Fenster</h2>
+          <HandbookHint hintId="settings-grace" />
+        </div>
         <p className="text-sm text-gray-500 mb-2">
           Anwesenheit vor dem ersten und nach dem letzten Arbeitszeit-Block zählt nur bis zu diesem Puffer zur
           Arbeitszeit; Stempel außerhalb werden auf diese Grenze gekürzt. Der Puffer gilt an jedem Blockrand, auch
@@ -1528,7 +1556,10 @@ const saveYearEndProjection = async () => {
 
       {/* Kind-krank-Standardanspruch (#376 §45 SGB V) */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Kind-krank-Standardanspruch</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Kind-krank-Standardanspruch</h2>
+          <HandbookHint hintId="settings-child-sick-default" />
+        </div>
         <p className="text-sm text-gray-500 mb-4">
           Standard-Jahresanspruch an Kind-krank-Tagen (§45 SGB V) für Mitarbeiter ohne
           individuellen Wert. Wird der Anspruch überschritten, erscheint beim Buchen ein

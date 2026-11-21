@@ -15,6 +15,7 @@ import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
 import { RawStampNote } from './RawStampNote';
 import CreditOverrideButton from './CreditOverrideButton';
+import HandbookHint from './HandbookHint';
 import { bulkConfirmText, canRecognizeNow, entryNotCreditedMinutes } from '../utils/creditOverride';
 import ChangeRequestForm from './ChangeRequestForm';
 import AbsenceDeleteRequestDialog from './AbsenceDeleteRequestDialog';
@@ -957,6 +958,7 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
             >
               {`Ausgewählte anerkennen (${selectedEntries.length})`}
             </button>
+            <HandbookHint hintId="journal-recognize" align="end" />
           </div>
         )}
       </div>
@@ -1426,7 +1428,10 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
               </p>
             </div>
             <div className={`rounded-lg p-3 ${data.monthly_summary.balance >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
-              <p className="text-xs text-gray-500 mb-1">Saldo (Monat)</p>
+              <div className="flex items-center gap-1 mb-1">
+                <p className="text-xs text-gray-500">Saldo (Monat)</p>
+                <HandbookHint hintId="journal-balance" />
+              </div>
               <p className={`text-lg font-semibold ${data.monthly_summary.balance >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                 {formatHours(data.monthly_summary.balance)}
               </p>
@@ -1440,9 +1445,12 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
           </div>
           {/* Spec 13.2: gestempelte, aber nicht angerechnete Zeit des Monats — nur wenn > 0. */}
           {(data.monthly_summary.not_credited_minutes_total ?? 0) > 0 && (
-            <p className="text-sm text-gray-600 mt-3">
-              {`Anwesenheit nicht angerechnet: ${formatHoursHM((data.monthly_summary.not_credited_minutes_total ?? 0) / 60)} h`}
-            </p>
+            <div className="flex items-center gap-1 mt-3">
+              <p className="text-sm text-gray-600">
+                {`Anwesenheit nicht angerechnet: ${formatHoursHM((data.monthly_summary.not_credited_minutes_total ?? 0) / 60)} h`}
+              </p>
+              {!isAdminView && <HandbookHint hintId="not-credited" />}
+            </div>
           )}
         </>
       )}

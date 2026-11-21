@@ -5,6 +5,11 @@ import { handbookHints, type HintId } from '../constants/handbookHints';
 
 interface HandbookHintProps {
   hintId: HintId;
+  /**
+   * Ab 640 px: Popover links bündig unter dem Knopf (`start`, Standard) oder rechts bündig (`end`),
+   * für Knöpfe am rechten Rand einer Leiste oder hinter langem Text – sonst ragt es aus dem Bild.
+   */
+  align?: 'start' | 'end';
 }
 
 /**
@@ -12,7 +17,7 @@ interface HandbookHintProps {
  * Schließt mit Esc, mit Klick daneben und wenn der Fokus das Popover verlässt.
  * Unter 640 px erscheint das Popover als Bottom-Sheet.
  */
-export default function HandbookHint({ hintId }: HandbookHintProps) {
+export default function HandbookHint({ hintId, align = 'start' }: HandbookHintProps) {
   const hint = handbookHints[hintId];
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLSpanElement>(null);
@@ -66,7 +71,9 @@ export default function HandbookHint({ hintId }: HandbookHintProps) {
         <div
           role="dialog"
           aria-labelledby={titleId}
-          className="fixed inset-x-0 bottom-0 z-50 rounded-t-lg border border-gray-200 bg-white p-4 shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-72 sm:rounded-lg sm:p-3 text-left font-normal normal-case"
+          className={`fixed inset-x-0 bottom-0 z-50 rounded-t-lg border border-gray-200 bg-white p-4 shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto ${
+            align === 'end' ? 'sm:right-0' : 'sm:left-0'
+          } sm:top-full sm:mt-1 sm:w-72 sm:rounded-lg sm:p-3 text-left font-normal normal-case`}
         >
           <p id={titleId} className="text-sm font-semibold text-gray-900">
             {hint.title}
