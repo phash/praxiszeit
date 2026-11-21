@@ -488,6 +488,8 @@ else
     info "Baue Frontend (vite build)..."
     (cd "${REPO_DIR}/frontend" && npm ci --silent && npm run build)
 fi
+# 1.25.0: leerer Service-Worker-Precache darf nie ausgeliefert werden.
+bash "${REPO_DIR}/scripts/check-sw-precache.sh" "${REPO_DIR}/frontend/dist" || { error "Service Worker ohne Precache"; exit 1; }
 
 # =============================================================================
 # Phase 2: Gemeinsame App-Dateien vorbereiten

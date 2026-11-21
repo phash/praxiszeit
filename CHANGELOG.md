@@ -29,6 +29,11 @@
 - **Windows-Einrichtungs-Assistent:** Scheitert Installation oder Update, zeigt die letzte Seite eine Vorschau mit dem bereinigten Setup-Protokoll sowie „An Entwickler schicken“ und „Als Datei speichern“; ohne eingebauten Schlüssel einen Hinweis, die Datei per E-Mail zu schicken.
 - `/api/feedback/` ist von der Lizenz-Schreibsperre ausgenommen (melden geht auch bei abgelaufener Lizenz). Die Meldung trägt eine Installations-ID (in der Datenbank, übersteht Updates).
 
+### 🐛 Behoben (Offline-Cache der App seit 1.22.0 leer)
+
+- **Service Worker lud die App nicht mehr vor.** Seit 1.22.0 (npm-Override `minimatch >= 11.0.1`, #525) fanden die Glob-Muster von `workbox-build` (glob 11 erwartet minimatch 10) keine Dateien; `sw.js` enthielt nur Icons und Manifest, nicht `index.html` und die App-Dateien. Der Override setzt jetzt `glob ^14.0.2` unter `workbox-build` (glob 14 nutzt minimatch 11): 43 Dateien werden wieder vorgeladen, `npm audit` meldet keine Funde mehr (auch GHSA-3g3m-2fjr-6pw4 behoben).
+- Neuer Prüfschritt `scripts/check-sw-precache.sh` in `scripts/local-ci.sh` und `tools/build-release.sh`: Ohne `index.html` oder mit weniger als 10 vorgeladenen Dateien bricht der Build ab.
+
 ### 🔒 Sicherheit (Abhängigkeiten)
 
 - Docker: Web-Server `nginx:1.31.9-alpine` (vorher 1.31.8) — behebt u. a. CVE-2026-125283 (Pufferüberlauf bei `try_files` + `alias`), CVE-2026-123007 und CVE-2026-123633 (HTTP/2).
