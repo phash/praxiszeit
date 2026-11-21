@@ -460,3 +460,28 @@ def test_wh_change_recognize_locks_anchor_first(_db_session, employee_user, admi
     assert_row_lock_seen(calls)
     _db_session.expire_all()
     assert _db_session.get(TimeEntry, own.id).credit_override is True
+
+
+def test_wh_change_preview_with_recognize_takes_no_lock(_db_session, employee_user, admin_client, calls, monkeypatch):
+    """Global Constraint „Vorschauen nehmen keine Sperren": die Vorschau mit
+    Auswahl rechnet das Anerkennen durch, nimmt aber weder die Ankersperre noch
+    eine Zeilensperre und hinterlässt nichts (Rollback)."""
+    from app.models import TimeEntryAuditLog
+    from app.services import credit_override_service as cos
+    from tests.wh_change_helpers import freeze
+    freeze(monkeypatch, _WH_TODAY)
+    _setup(_db_session, employee_user)
+    own = _entry(_db_session, employee_user, time(8), time(11))
+    resp = admin_client.post(f"/api/admin/users/{employee_user.id}/working-hours-changes/preview",
+                             json=_wh_change_body(own.id))
+    assert resp.status_code == 200, resp.text
+    [row] = [c for c in resp.json()["time_entry_changes"] if c["entry_id"] == str(own.id)]
+    assert row["recognized"] is True, "die Vorschau hat das Anerkennen durchgerechnet"
+    assert not [c for c in calls if c[0] == "lock"], calls
+    assert ("row_lock",) not in calls, calls
+    _db_session.expire_all()
+    assert _db_session.get(TimeEntry, own.id).credit_override is False
+    assert _db_session.query(TimeEntryAuditLog).filter(
+        TimeEntryAuditLog.tenant_id == DEFAULT_TENANT_ID,
+        TimeEntryAuditLog.source.in_([cos.CREDIT_OVERRIDE_SOURCE, "wh_reclamp"]),
+    ).count() == 0

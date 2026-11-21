@@ -217,8 +217,10 @@ export function shorteningHeadlines(p: WorkingHoursChangePreview): string[] {
     // verliert, sagt `open_entry_loses` — gezählt wie `criteria_text` in der
     // 400-Meldung (9.5 (a)). Sein Verlust ist nicht bezifferbar (das Ende ist
     // unbekannt), die Summe nennt nur die geschlossenen Einträge. `|| 1`: das
-    // Kriterium ist erfüllt, also verliert mindestens einer.
-    const closedLosing = (p.time_entry_changes ?? []).filter((c) => c.new_net < c.old_net).length;
+    // Kriterium ist erfüllt, also verliert mindestens einer. Anerkannte
+    // Einträge (Plan 2026-11-21) stehen mit ihren Kappungswerten in der Liste,
+    // verlieren aber nichts — gezählt wie `lost_credited_hours`.
+    const closedLosing = (p.time_entry_changes ?? []).filter((c) => !c.recognized && c.new_net < c.old_net).length;
     const n = closedLosing + (p.open_entry_loses ? 1 : 0) || 1;
     const lost = p.lost_credited_hours ?? 0;
     out.push(`${n === 1 ? '1 Eintrag verliert' : `${n} Einträge verlieren`} angerechnete Zeit`

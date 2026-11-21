@@ -42,16 +42,16 @@ def client(db, test_admin, monkeypatch):
 
 @pytest.fixture
 def case(db, test_user):
-    """Basiszeile ab 01.10. und drei geschlossene Einträge: Mi 07.10. 07:48–12:01,
-    Do 08.10. 07:48–12:36 (beide ungekappt), Mo 12.10. 07:40–12:00 (Stempel ab
+    """Basiszeile ab 01.10. und drei geschlossene Einträge: Mi 07.10. 07:50–12:05,
+    Do 08.10. 07:50–12:35 (beide ungekappt), Mo 12.10. 07:40–12:00 (Stempel ab
     07:35, von der Basis-Hülle gekappt — die Änderung gibt ihm 5 Minuten zurück)."""
     test_user.first_work_day = FIRST
     db.commit()
     add_row(db, test_user, FIRST, note=reclamp_audit.BASELINE_ROW_NOTE, week=BASE_WEEK)
     return SimpleNamespace(
         user=test_user,
-        wed=entry(db, test_user, WED, t(7, 48), t(12, 1)),
-        thu=entry(db, test_user, THU, t(7, 48), t(12, 36)),
+        wed=entry(db, test_user, WED, t(7, 50), t(12, 5)),
+        thu=entry(db, test_user, THU, t(7, 50), t(12, 35)),
         mon=entry(db, test_user, MON, t(7, 40), t(12), raw_start=t(7, 35)),
     )
 
@@ -102,8 +102,8 @@ def test_create_with_selection_needs_no_reason(client, db, case):
     assert j.status_code == 200, j.text
     days = {d["date"]: d for d in j.json()["days"]}
     assert days[WED.isoformat()]["target_hours"] == 0
-    assert days[WED.isoformat()]["actual_hours"] == pytest.approx(4.22, abs=0.005)
-    assert days[THU.isoformat()]["actual_hours"] == pytest.approx(4.8, abs=0.005)
+    assert days[WED.isoformat()]["actual_hours"] == pytest.approx(4.25, abs=0.005)
+    assert days[THU.isoformat()]["actual_hours"] == pytest.approx(4.75, abs=0.005)
 
 
 def test_without_selection_still_requires_reason(client, db, case):
@@ -164,8 +164,8 @@ def test_summary_row_excludes_recognized(client, db, case):
     assert [x.time_entry_id for x in reclamp_logs(db, case.user, summary=False)] == [case.mon.id]
     rows = _override_rows(db, case.user)
     assert set(rows) == {case.wed.id, case.thu.id}
-    assert (rows[case.wed.id].old_start_time, rows[case.wed.id].old_end_time) == (t(7, 48), t(12, 1))
-    assert (rows[case.thu.id].old_start_time, rows[case.thu.id].old_end_time) == (t(7, 48), t(12, 36))
+    assert (rows[case.wed.id].old_start_time, rows[case.wed.id].old_end_time) == (t(7, 50), t(12, 5))
+    assert (rows[case.thu.id].old_start_time, rows[case.thu.id].old_end_time) == (t(7, 50), t(12, 35))
 
 
 def test_recognize_collision_rolls_back_change(client, db, case):

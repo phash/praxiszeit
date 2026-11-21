@@ -113,7 +113,7 @@ Grund: Der 30-Tage-Hinweis auf dem Dashboard der Mitarbeitenden liest die Sammel
 ### 6.2 Frontend
 
 `WhImpactBox.tsx` / `WorkingHoursModal.tsx`:
-- Neuer Abschnitt **„Einträge, die Zeit verlieren“** über der heutigen Einzelheiten-Liste. Je Zeile ein Häkchen, Datum, Wochentag, „gestempelt 07:48–12:01 · bisher 4:13 h → neu 0:00 h“ und ein Kennzeichen „Tag ohne Block“.
+- Neuer Abschnitt **„Einträge, die Zeit verlieren“** über der heutigen Einzelheiten-Liste. Je Zeile ein Häkchen, Datum, Wochentag, „gestempelt 07:50–12:05 · bisher 4:15 h → neu 0:00 h“ und ein Kennzeichen „Tag ohne Block“.
 - **Vorauswahl (Entwurf):** Vorausgewählt sind Einträge an Werktagen, die nach der Änderung keinen Block haben (`blockless_workday`, Aushilfe-Fall). Ebenso Einträge, deren Tag **vor** der Änderung gar nicht gekappt wurde: Die Kappung ist dort neu, kein gewollter Randschnitt. Dafür liefert die Vorschau zusätzlich `newly_clamped: bool`, wenn `credit_blocks` vorher `None` war. Einträge, die nur am Rand eines schon bestehenden Blocks stärker gekappt werden, sind nicht vorausgewählt. Bleiben solche Verluste, erscheint das Schutzpaket für den Rest. Das ist gewollt: Es ist eine echte Verkürzung.
 - Darüber steht der Link „Alle auswählen / keine“.
 - Nicht anerkennbare Einträge (offen, automatisch geschlossen) haben ein deaktiviertes Häkchen und den Hinweis aus `utils/creditOverride.ts`.

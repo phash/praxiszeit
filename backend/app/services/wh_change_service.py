@@ -410,9 +410,16 @@ def run_change(db: Session, user: User, *, admin_id, effective_from: date,
     # Schritt 6 (E51: erst Einträge, dann Abwesenheiten)
     absences = []
     if window.has_absences:
+        # Branch-Review: an Tagen mit anerkanntem Eintrag misst (c) die ganze
+        # Tagesgutschrift (Arbeit vorher aus ``before``) — das Anerkennen hebt
+        # die Arbeit, die F1-Klemmung senkt die Abwesenheit um höchstens so viel.
+        recognized_keys = {str(i) for i in recognized}
+        recognized_days = {c.date for c in reclamp.changed if str(c.entry_id) in recognized_keys}
+        old_kept = {d: float(sum((s.net_hours for s in before.values() if s.date == d), Decimal("0")))
+                    for d in recognized_days}
         absences = calculation_service.retarget_absence_hours(
             db, user, window.start, window.end, old_full_target_by_date=old_full,
-            old_tracked_by_date=old_tracked)
+            old_tracked_by_date=old_tracked, old_kept_net_by_date=old_kept)
 
     # Schritt 7
     ent_after = _entitlements(db, user, ent_years)

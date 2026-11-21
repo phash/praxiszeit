@@ -2545,8 +2545,8 @@ describe('Plan 2026-11-21 Task 5: Hinweis „Ab erstem Arbeitstag übernehmen"',
 
 describe('Plan 2026-11-21 Task 6: Anerkennen-Liste im Dialog', () => {
   const RECOG = (id: string, date: string) => ({
-    entry_id: id, date, old_start: '07:48:00', old_end: '12:01:00', old_uncredited: 0, old_net: 4.22,
-    new_start: '07:48:00', new_end: '07:48:00', new_uncredited: 0, new_net: 0, not_extendable: null,
+    entry_id: id, date, old_start: '07:50:00', old_end: '12:05:00', old_uncredited: 0, old_net: 4.25,
+    new_start: '07:50:00', new_end: '07:50:00', new_uncredited: 0, new_net: 0, not_extendable: null,
     recognizable: true, recognized: false, blockless_workday: true, newly_clamped: false,
   });
   const CHANGES = [RECOG('e-wed', '2026-06-03'), RECOG('e-thu', '2026-06-04')];
@@ -2567,7 +2567,7 @@ describe('Plan 2026-11-21 Task 6: Anerkennen-Liste im Dialog', () => {
         affected_time_entries: 2 - ids.length,
         is_shortening: !all,
         shortening_reasons: all ? [] : ['entries'],
-        lost_credited_hours: all ? 0 : 8.44,
+        lost_credited_hours: all ? 0 : 8.5,
         time_entry_changes: CHANGES.map((c) => ({ ...c, recognized: ids.includes(c.entry_id) })),
       }));
     });
@@ -2637,5 +2637,26 @@ describe('Plan 2026-11-21 Task 6: Anerkennen-Liste im Dialog', () => {
     const body = postMock.mock.calls.at(-1)![1] as Record<string, unknown>;
     expect(body).toMatchObject({ effective_from: '2026-07-26' });
     expect(body).not.toHaveProperty('recognize_entry_ids');
+  });
+  it('Branch-Review: ein Häkchen in Option 2 wirft die Wahl nicht auf Option 1 zurück', async () => {
+    mockRecognize();
+    await enterChange();
+    await screen.findByRole('button', { name: 'Speichern und 2 Einträge anerkennen' }, { timeout: 3000 });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Mi 03\.06\./ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Do 04\.06\./ }));
+    await flushDebounce();
+    const region = await screen.findByRole('region', { name: 'Verkürzung' }, { timeout: 3000 });
+    fireEvent.click(within(region).getByRole('radio', { name: 'Rückwirkend ab 01.06.2026 mit Neuberechnung' }));
+    const wed = screen.getByRole('checkbox', { name: /Mi 03\.06\./ });
+    await waitFor(() => expect(wed).toBeEnabled());
+    // Ein Eintrag wieder gewählt: es verkürzt weiter, die Wahl bleibt Option 2.
+    fireEvent.click(wed);
+    await flushDebounce();
+    await waitFor(() => expect(lastPreviewParams().recognize_entry_ids).toEqual(['e-wed']));
+    await waitFor(() => expect(screen.queryByText('Prüfe Auswirkungen…')).not.toBeInTheDocument());
+    const again = await screen.findByRole('region', { name: 'Verkürzung' });
+    expect(within(again).getByRole('radio', { name: /^Rückwirkend ab 01\.06\.2026/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Do 04\.06\./ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Speichern und 1 Eintrag anerkennen' })).toBeInTheDocument();
   });
 });

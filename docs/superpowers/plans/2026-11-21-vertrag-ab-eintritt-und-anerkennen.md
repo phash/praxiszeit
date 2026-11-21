@@ -75,8 +75,8 @@
 - Produces: `apply_credit_override(db, entry, *, changed_by_id, on_request: bool, change_request_id=None, audit_before: Optional[TimeEntry] = None) -> bool`. Ist `audit_before` gesetzt, nimmt die Protokollzeile `old_start_time`, `old_end_time` und `old_note` (`work_window_service.credit_summary_text(audit_before)`) daraus statt aus dem aktuellen Eintrag. Alles andere bleibt unverändert.
 
 - [ ] **Step 1: Write the failing test.** `test_audit_before_sets_old_values`:
-  - Eintrag 07:48–12:01, danach per Hand auf start = end = 07:48 kollabiert (raw 07:48–12:01).
-  - Aufruf mit einer transienten Kopie des Zustands 07:48–12:01 (`wh_change_service._snapshot`).
+  - Eintrag 07:50–12:05, danach per Hand auf start = end = 07:50 kollabiert (raw 07:50–12:05).
+  - Aufruf mit einer transienten Kopie des Zustands 07:50–12:05 (`wh_change_service._snapshot`).
   - Die `credit_override`-Zeile hat `old_end_time == time(12,1)`, und `old_note` beginnt mit dem `credit_summary_text` der Kopie.
 - [ ] **Step 2:** `PYTEST tests/test_credit_override.py::test_audit_before_sets_old_values`. Erwartet: FAIL (unerwartetes Schlüsselwort).
 - [ ] **Step 3:** Parameter einbauen.
@@ -116,7 +116,7 @@
 
 - [ ] **Step 1: Write the failing tests** in `test_wh_change_recognize.py`. Kundenfall-Fixture `_customer_case(db)`:
   - `first_work_day=2026-10-01`, Basiszeile 5 Tage mit Blöcken 07:55–13:25 + 14:55–17:55 (Muster `tests/work_blocks_fixtures.block_week`).
-  - Geschlossene Einträge: Mi 07.10. 07:48–12:01, Do 08.10. 07:48–12:36, Mo 12.10. 07:47–12:00.
+  - Geschlossene Einträge: Mi 07.10. 07:50–12:05, Do 08.10. 07:50–12:35, Mo 12.10. 07:45–12:00.
   - `apply` legt eine Zeile ab 01.10. mit Blöcken nur Mo + Di an (Helper aus `tests/wh_change_helpers.py`).
   - `test_without_selection_is_entries_shortening`: `SHORTENING_ENTRIES in impact.shortening_reasons`, 07.10. hat `new_net == 0` und `entry_flags[id]["blockless_workday"] is True`.
   - `test_selection_removes_shortening`: Mit `recognize_entry_ids={07.10., 08.10.}` ist `SHORTENING_ENTRIES not in impact.shortening_reasons`. Beide Einträge haben `credit_override is True`, `net_hours == Decimal("4.22")` bzw. `Decimal("4.80")` (gestempelt, Pause 0). `impact.logged_changes` enthält sie nicht.
@@ -154,11 +154,11 @@
 `_log_reclamp` iteriert über `impact.logged_changes`. Die Sammelzeile zählt `count`/`delta_minutes` daraus. `adjusted_time_entries = len(impact.logged_changes)`.
 
 - [ ] **Step 1: Write the failing tests:**
-  - `test_create_with_selection_needs_no_reason`: Kundenfall über API. `POST` mit Blöcken Mo + Di ab 01.10. und `recognize_entry_ids=[07.10., 08.10.]`, ohne Grund → 201. Danach `GET /api/admin/users/{id}/journal?year=2026&month=10` (bzw. der vorhandene Journal-Endpunkt): Soll am 07.10. ist 0, Ist am 07.10. ist 4,22.
+  - `test_create_with_selection_needs_no_reason`: Kundenfall über API. `POST` mit Blöcken Mo + Di ab 01.10. und `recognize_entry_ids=[07.10., 08.10.]`, ohne Grund → 201. Danach `GET /api/admin/users/{id}/journal?year=2026&month=10` (bzw. der vorhandene Journal-Endpunkt): Soll am 07.10. ist 0, Ist am 07.10. ist 4,25.
   - `test_unselected_entry_still_requires_reason`: Nur 07.10. gewählt, 08.10. nicht → 400 mit dem `protection_error`-Text, nichts gespeichert (Eintrag 07.10. weiter `credit_override is False`).
   - `test_preview_equals_save`: Vorschau mit Auswahl, dann Speichern mit gleichem Body → `saldo_delta_hours` der Vorschau == Saldoänderung laut `get_overtime_account` vorher/nachher.
-  - `test_summary_row_excludes_recognized`: Die Sammelzeile `wh_reclamp` meldet über `reclamp_audit.parse_summary_note` `count == 1` (nur der 12.10.), die zwei anerkannten Einträge haben keine `wh_reclamp`-Zeile, und je eine `credit_override`-Zeile hat `old_end_time` 12:01 bzw. 12:36.
-  - `test_recognize_collision_rolls_back_change`: Zweiter Eintrag am 07.10. beginnt um 07:48 nach Anerkennen-Kollision → 409, kein `WorkingHoursChange` ab 01.10. gespeichert.
+  - `test_summary_row_excludes_recognized`: Die Sammelzeile `wh_reclamp` meldet über `reclamp_audit.parse_summary_note` `count == 1` (nur der 12.10.), die zwei anerkannten Einträge haben keine `wh_reclamp`-Zeile, und je eine `credit_override`-Zeile hat `old_end_time` 12:05 bzw. 12:35.
+  - `test_recognize_collision_rolls_back_change`: Zweiter Eintrag am 07.10. beginnt um 07:50 nach Anerkennen-Kollision → 409, kein `WorkingHoursChange` ab 01.10. gespeichert.
   - In `test_write_path_locks.py`: `test_foreign_recognize_id_404_before_lock`. Eintrag einer anderen Person derselben Praxis → 404, und `lock_user_row` wurde nicht aufgerufen (Muster `test_update_foreign_entry_takes_no_lock`).
 - [ ] **Step 2:** `PYTEST tests/test_wh_change_recognize_api.py`. Erwartet: FAIL.
 - [ ] **Step 3:** Implementieren.
@@ -211,7 +211,7 @@ Knopfaktion: Formular = `formFromSnapshot(source ? scheduleFromChange(source) : 
 - Produces:
   - `losingEntries(changes: TimeEntryChange[]): TimeEntryChange[]` liefert Einträge mit `new_net < old_net`.
   - `defaultSelection(changes): Set<string>` liefert verlierende Einträge mit `recognizable && (blockless_workday || newly_clamped)`.
-  - `<RecognizeEntriesList changes selected onChange />` rendert Zeilen im Format `Mi 07.10. · gestempelt 07:48–12:01 · bisher 4:13 h → neu 0:00 h` + Kennzeichen „Tag ohne Block“. Dazu „Alle auswählen“ / „Keine“, deaktivierte Häkchen mit `AUTO_CLOSED_HINT` bei `!recognizable` und den Hinweis aus Global Constraints. Zeitformat über `formatHoursHM`.
+  - `<RecognizeEntriesList changes selected onChange />` rendert Zeilen im Format `Mi 07.10. · gestempelt 07:50–12:05 · bisher 4:15 h → neu 0:00 h` + Kennzeichen „Tag ohne Block“. Dazu „Alle auswählen“ / „Keine“, deaktivierte Häkchen mit `AUTO_CLOSED_HINT` bei `!recognizable` und den Hinweis aus Global Constraints. Zeitformat über `formatHoursHM`.
 
 **Modal-Verhalten:**
 - Solange die Admin nichts angeklickt hat (`recognizeTouched=false`), übernimmt jede neue Vorschau `defaultSelection`.

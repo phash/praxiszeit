@@ -1084,14 +1084,14 @@ describe('UserForm: Vergangenheits-Warnung nutzt das lokale Datum (P4.4, R28 Run
 });
 
 describe('Task 7: feste Leiste „wen bearbeite ich“', () => {
-  const monika = {
+  const petra = {
     id: 'u-ps', username: 'ps', first_name: 'Petra', last_name: 'Schulz', role: 'employee',
     weekly_hours: 40, vacation_days: 30, work_days_per_week: 5, track_hours: true,
     is_active: true, first_work_day: '2026-06-01',
   };
 
   it('zeigt Name und Benutzername in einer sticky Leiste', () => {
-    renderForm({ editUser: monika as never });
+    renderForm({ editUser: petra as never });
     const title = screen.getByText('Bearbeiten: Petra Schulz (ps)');
     expect(title.closest('.sticky')).not.toBeNull();
   });
@@ -1103,7 +1103,7 @@ describe('Task 7: feste Leiste „wen bearbeite ich“', () => {
 
   it('Speichern in der Leiste löst denselben Speicherweg aus', async () => {
     const onSaved = vi.fn();
-    renderForm({ editUser: monika as never, onSaved });
+    renderForm({ editUser: petra as never, onSaved });
     const bar = screen.getByText('Bearbeiten: Petra Schulz (ps)').closest('.sticky') as HTMLElement;
     const save = within(bar).getByRole('button', { name: 'Speichern' });
     expect(save).toHaveAttribute('type', 'submit');
@@ -1115,20 +1115,20 @@ describe('Task 7: feste Leiste „wen bearbeite ich“', () => {
 
   it('Abbrechen in der Leiste ruft onCancel', () => {
     const onCancel = vi.fn();
-    renderForm({ editUser: monika as never, onCancel });
+    renderForm({ editUser: petra as never, onCancel });
     const bar = screen.getByText('Bearbeiten: Petra Schulz (ps)').closest('.sticky') as HTMLElement;
     fireEvent.click(within(bar).getByRole('button', { name: 'Abbrechen' }));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
   it('ohne onCancel gibt es keinen Abbrechen-Knopf in der Leiste', () => {
-    renderForm({ editUser: monika as never });
+    renderForm({ editUser: petra as never });
     expect(screen.queryByRole('button', { name: 'Abbrechen' })).not.toBeInTheDocument();
   });
 
   it('oberer und unterer Speichern-Knopf lösen denselben PUT- und onSaved-Pfad aus', async () => {
     const onSaved = vi.fn();
-    renderForm({ editUser: monika as never, onSaved });
+    renderForm({ editUser: petra as never, onSaved });
     expect(screen.getAllByRole('button', { name: 'Speichern' })).toHaveLength(2);
     const bar = screen.getByText('Bearbeiten: Petra Schulz (ps)').closest('.sticky') as HTMLElement;
 

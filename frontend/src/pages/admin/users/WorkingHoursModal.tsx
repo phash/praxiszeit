@@ -350,6 +350,10 @@ export default function WorkingHoursModal({
   const recognizeBody: RecognizeEntriesBody = recognizeIds.length ? { recognize_entry_ids: recognizeIds } : {};
   const previewKey = JSON.stringify({ effective_from: formData.effective_from, ...scheduleBody, ...recognizeBody });
   const showRecognizeList = !!candidateChanges && losingEntries(candidateChanges).length > 0;
+  // Branch-Review: die Eingabe (`baseKey`), für die Option und Bestätigungen
+  // zuletzt zurückgesetzt wurden — ein Häkchen in der Anerkennen-Liste ist
+  // keine neue Eingabe und darf Option 2 nicht auf Option 1 zurückwerfen.
+  const lastResetBaseKey = useRef<string | null>(null);
 
   useEffect(() => {
     fetchHoursChanges();
@@ -371,8 +375,14 @@ export default function WorkingHoursModal({
     // Neue Eingabe → neue Bewertung; Standard ist wieder Option 1 (12.1). Die
     // Bestätigungen des Schutzpakets gelten der bisherigen Änderung und fallen
     // wie der Haken der Auswirkungs-Box; Grund und Begründung bleiben stehen.
-    setShorteningOption('lossless');
-    setReason((r) => (r.wageConfirmed || r.otherConfirmed ? { ...r, wageConfirmed: false, otherConfirmed: false } : r));
+    // Branch-Review: nur bei neuem Datum/Vertrag (`baseKey`) — ändert sich
+    // allein die Auswahl zum Anerkennen, bleibt die gewählte Option stehen
+    // (sonst sperrte jedes Häkchen in Option 2 die Liste wieder).
+    if (lastResetBaseKey.current !== baseKey) {
+      lastResetBaseKey.current = baseKey;
+      setShorteningOption('lossless');
+      setReason((r) => (r.wageConfirmed || r.otherConfirmed ? { ...r, wageConfirmed: false, otherConfirmed: false } : r));
+    }
     let cancelled = false;
     const handle = setTimeout(() => {
       apiClient

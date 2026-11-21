@@ -4,8 +4,8 @@ import { defaultSelection, losingEntries, pruneSelection, recognizableLosingIds,
 
 // Plan 2026-11-21 Task 6: Kundenfall — Blöcke nur noch Mo + Di ab 01.10.2026.
 const change = (over: Partial<TimeEntryChange> & { entry_id: string; date: string }): TimeEntryChange => ({
-  old_start: '07:48:00', old_end: '12:01:00', old_uncredited: 0, old_net: 4.22,
-  new_start: '07:48:00', new_end: '07:48:00', new_uncredited: 0, new_net: 0, not_extendable: null,
+  old_start: '07:50:00', old_end: '12:05:00', old_uncredited: 0, old_net: 4.25,
+  new_start: '07:50:00', new_end: '07:50:00', new_uncredited: 0, new_net: 0, not_extendable: null,
   recognizable: true, recognized: false, blockless_workday: false, newly_clamped: false,
   ...over,
 });
@@ -44,6 +44,6 @@ describe('recognizeSelection (Plan 2026-11-21 Task 6)', () => {
   });
 
   it('row text: weekday, date, stamped span, before → after in H:MM', () => {
-    expect(recognizeRowText(BLOCKLESS)).toBe('Mi 07.10. · gestempelt 07:48–12:01 · bisher 4:13 h → neu 0:00 h');
+    expect(recognizeRowText(BLOCKLESS)).toBe('Mi 07.10. · gestempelt 07:50–12:05 · bisher 4:15 h → neu 0:00 h');
   });
 });

@@ -1529,7 +1529,13 @@ export const praxisleitung: Handbook = {
                 '**Vorschau lesen:** Hat die Person an Tagen gestempelt, die nach dem neuen Vertrag keine Arbeitstage sind (z. B. als Aushilfe), stehen diese Einträge unter **Einträge, die Zeit verlieren** mit dem Kennzeichen „Tag ohne Block“. ' +
                 'Sie sind vorausgewählt. Lassen Sie den Haken bei jedem Eintrag, an dem tatsächlich gearbeitet wurde; [[Alle auswählen]] und [[Keine]] setzen bzw. entfernen alle Haken.',
             },
-            { text: 'Setzen Sie den Haken [[Ich habe die Auswirkungen geprüft und möchte speichern]] und klicken Sie auf [[Speichern und 2 Einträge anerkennen]]. Sind alle Verluste anerkannt und sinkt das Überstundenkonto auch sonst nicht, fragt der Dialog nicht nach einem Grund.' },
+            {
+              text:
+                'Setzen Sie den Haken [[Ich habe die Auswirkungen geprüft und möchte speichern]] und klicken Sie auf [[Speichern und 2 Einträge anerkennen]]. ' +
+                'Der Dialog fragt nicht nach einem Grund, wenn kein Eintrag mehr Zeit verliert, das Überstundenkonto nicht sinkt und der Urlaubsanspruch nicht sinkt. ' +
+                'Wurde mit der Änderung auch der Urlaubsanspruch herabgesetzt (z. B. von 30 auf 12 Tage, weil 2 statt 5 Tage je Woche vereinbart sind), sinkt er jetzt schon ab dem ersten Arbeitstag. ' +
+                'Dann fragt der Dialog nach Grund und Begründung: Wählen Sie „Rückwirkend ab … mit Neuberechnung“ und als Grund in der Regel „Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)“.',
+            },
             { text: '**Ergebnis prüfen:** Im Monatsjournal steht vor dem Änderungsdatum jetzt das richtige Soll; die anerkannten Einträge tragen das Kennzeichen „anerkannt“ und zählen mit der ganzen gestempelten Zeit.' },
           ],
         },
@@ -1545,7 +1551,8 @@ export const praxisleitung: Handbook = {
           tone: 'warn',
           text:
             '**Anerkennen lässt sich nicht zurücknehmen** – auch nicht, wenn Sie die Arbeitszeit-Änderung später löschen. Entfernen Sie den Haken bei Einträgen, an denen nicht gearbeitet wurde; ' +
-            'für sie gilt dann die Verkürzung mit Grund und Begründung wie bei jeder rückwirkenden Änderung.',
+            'für sie gilt dann die Verkürzung wie bei jeder rückwirkenden Änderung. Vorgewählt ist dabei „Ab heute … wirksam“ – damit wird kein Eintrag anerkannt. ' +
+            'Damit die übrigen Haken gelten, wählen Sie „Rückwirkend ab … mit Neuberechnung“ und geben Grund und Begründung an.',
         },
         {
           kind: 'task',
@@ -1562,7 +1569,7 @@ export const praxisleitung: Handbook = {
             { n: 4, text: '[[Einzelheiten]] listet jeden Eintrag mit seinen Zeiten vorher → nachher.' },
             {
               text:
-                '**Einträge, die Zeit verlieren:** Verliert ein Eintrag angerechnete Zeit, steht er mit Haken in dieser Liste, z. B. „Mi 07.10. · gestempelt 07:48–12:01 · bisher 4:13 h → neu 0:00 h“. ' +
+                '**Einträge, die Zeit verlieren:** Verliert ein Eintrag angerechnete Zeit, steht er mit Haken in dieser Liste, z. B. „Mi 07.10. · gestempelt 07:50–12:05 · bisher 4:15 h → neu 0:00 h“. ' +
                 'Gewählte Einträge werden beim Speichern anerkannt und verlieren nichts; die Auswirkung zeigt den Stand mit Anerkennen. Vorausgewählt sind Einträge an einem „Tag ohne Block“ und an Tagen, die bisher gar nicht gekappt wurden – ' +
                 'nicht dagegen Einträge, die nur am Rand eines bestehenden Blocks gekappt werden. Ein automatisch geschlossener Eintrag lässt sich hier nicht wählen. ' +
                 'Bleiben nicht gewählte Verluste, gilt für sie die Verkürzung wie bisher; wählen Sie dort „Ab heute … wirksam“, wird nichts anerkannt („Gilt nur mit dem eingegebenen Datum.“). Mit Auswahl heißt der Knopf z. B. [[Speichern und 2 Einträge anerkennen]].',

@@ -34,15 +34,15 @@ MON_TUE = block_week(mon=_NEW_DAY, tue=_NEW_DAY)
 
 
 def _customer_case(db, user, *, base=None):
-    """Basiszeile ab 01.10. und drei geschlossene Einträge: Mi 07.10. 07:48–12:01,
-    Do 08.10. 07:48–12:36 (beide ungekappt), Mo 12.10. 07:40–12:00 (Stempel ab
+    """Basiszeile ab 01.10. und drei geschlossene Einträge: Mi 07.10. 07:50–12:05,
+    Do 08.10. 07:50–12:35 (beide ungekappt), Mo 12.10. 07:40–12:00 (Stempel ab
     07:35, von der Basis-Hülle 07:40 gekappt)."""
     user.first_work_day = FIRST
     db.commit()
     baseline = add_row(db, user, FIRST, note=reclamp_audit.BASELINE_ROW_NOTE, **(base or {"week": BASE_WEEK}))
     entries = SimpleNamespace(
-        wed=entry(db, user, WED, t(7, 48), t(12, 1)),
-        thu=entry(db, user, THU, t(7, 48), t(12, 36)),
+        wed=entry(db, user, WED, t(7, 50), t(12, 5)),
+        thu=entry(db, user, THU, t(7, 50), t(12, 35)),
         mon=entry(db, user, MON, t(7, 40), t(12), raw_start=t(7, 35)),
     )
     return baseline, entries
@@ -106,15 +106,15 @@ def test_selection_removes_shortening(db, test_user, test_admin):
         db.refresh(x)
         assert x.credit_override is True
         assert (x.raw_start_time, x.raw_end_time, x.uncredited_minutes) == (None, None, 0)
-    assert (_net(e.wed), _net(e.thu)) == (Decimal("4.22"), Decimal("4.80"))
+    assert (_net(e.wed), _net(e.thu)) == (Decimal("4.25"), Decimal("4.75"))
     assert {str(i) for i in impact.recognized_ids} == {str(e.wed.id), str(e.thu.id)}
     assert [c.date for c in impact.logged_changes] == [MON]
     # Die Liste der Kandidaten bleibt vollständig (stabil beim Setzen der Häkchen).
     assert sorted(c.date for c in impact.reclamp.changed) == [WED, THU, MON]
     # Protokoll fürs Anerkennen: Vorher = Stand VOR der Änderung (Task 2).
     rows = {r.time_entry_id: r for r in _override_rows(db, test_user)}
-    assert (rows[e.wed.id].old_start_time, rows[e.wed.id].old_end_time) == (t(7, 48), t(12, 1))
-    assert (rows[e.thu.id].old_start_time, rows[e.thu.id].old_end_time) == (t(7, 48), t(12, 36))
+    assert (rows[e.wed.id].old_start_time, rows[e.wed.id].old_end_time) == (t(7, 50), t(12, 5))
+    assert (rows[e.thu.id].old_start_time, rows[e.thu.id].old_end_time) == (t(7, 50), t(12, 35))
     assert len(rows) == 2
 
 
@@ -225,7 +225,7 @@ def test_preview_fields_flags(db, test_user, test_admin):
     assert (rows[MON]["recognized"], rows[MON]["blockless_workday"]) == (False, False)
     # Zahlen über die protokollierten Änderungen (ohne Anerkannte).
     assert fields["affected_time_entries"] == 2
-    assert fields["lost_credited_hours"] == pytest.approx(4.8)
+    assert fields["lost_credited_hours"] == pytest.approx(4.75)
     for row in fields["time_entry_changes"]:
         TimeEntryChangeOut(**row)
 
@@ -257,8 +257,8 @@ class TestMixedDay:
 
     def test_recognize_on_mixed_day_f1_matches_single(self, db, test_user, test_admin):
         baseline, e = _customer_case(db, test_user)
-        # Krank am 07.10. neben dem Eintrag: beim Buchen auf 8,5 − 4,22 h geklemmt.
-        sick = absence(db, test_user, WED, AbsenceType.SICK, 4.28)
+        # Krank am 07.10. neben dem Eintrag: beim Buchen auf 8,5 − 4,25 h geklemmt.
+        sick = absence(db, test_user, WED, AbsenceType.SICK, 4.25)
         dialog, single, overrides, in_absences = self._compare(
             db, test_user, test_admin, baseline, e.wed.id, sick.id)
         assert dialog == single
@@ -277,6 +277,35 @@ class TestMixedDay:
         assert dialog == single == Decimal("3.50")              # 8,5 − 5,0 (07:00–12:00)
         assert overrides == [mon19.id]
         assert in_absences
+
+    def test_all_recognised_on_mixed_monday_is_no_shortening(self, db, test_user, test_admin):
+        """Branch-Review: alle Einträge anerkannt, darunter der am Misch-Tag mit
+        Soll — die F1-Klemmung senkt die Krank-Gutschrift (4,17 → 3,50 h) nur um
+        das, was die Arbeit durchs Anerkennen gewinnt (4,33 → 5,0 h). Der Tag
+        verliert nichts: keine Verkürzung, kein Schutzpaket (Spec 6.1/6.2)."""
+        baseline, e = _customer_case(db, test_user)
+        d = date(2026, 10, 19)
+        mon19 = entry(db, test_user, d, t(7, 40), t(12), raw_start=t(7))
+        sick = absence(db, test_user, d, AbsenceType.SICK, 4.17)
+        impact = _run(db, test_user, test_admin, baseline, ids={e.wed.id, e.thu.id, mon19.id})
+        assert [(a.date, a.old_hours, a.new_hours, a.f1_clamped, a.credit_reduction) for a in impact.absences] == [
+            (d, Decimal("4.17"), Decimal("3.50"), True, False)]
+        assert (impact.shortening_reasons, impact.credit_reductions) == ([], [])
+        assert impact.earliest_lossless_date is None
+        assert svc.protection_error(impact, None, deleting=False, reset_offered=False) is None
+        assert _absence_hours(db, sick.id) == Decimal("3.50")
+
+    def test_unrecognised_gain_on_mixed_day_stays_criterion_c(self, db, test_user, test_admin):
+        """Kontrolle: ohne Anerkennen am Misch-Tag bleibt (c) wie im Bestand — die
+        Neukappung allein hebt die Arbeit (4,33 → 4,75 h), die Gutschrift sinkt
+        (``test_entry_gaining_on_a_mixed_day``)."""
+        baseline, e = _customer_case(db, test_user)
+        d = date(2026, 10, 19)
+        entry(db, test_user, d, t(7, 40), t(12), raw_start=t(7))
+        absence(db, test_user, d, AbsenceType.SICK, 4.17)
+        impact = _run(db, test_user, test_admin, baseline, ids={e.wed.id, e.thu.id})
+        assert impact.shortening_reasons == [svc.SHORTENING_ABSENCE_CREDIT]
+        assert [(a.date, a.new_hours) for a in impact.credit_reductions] == [(d, Decimal("3.75"))]
 
 
 def _absence_hours(db, absence_id) -> Decimal:
