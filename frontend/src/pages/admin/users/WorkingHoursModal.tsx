@@ -543,9 +543,17 @@ export default function WorkingHoursModal({
   // Plan 2026-11-21 (Task 5, Spec Teil 1): gilt die heutige Arbeitszeit erst
   // nach dem ersten Arbeitstag, ohne dass es dazwischen eine echte Änderung
   // gibt, bietet der Dialog an, sie ab dem ersten Arbeitstag gelten zu lassen.
-  const startHint = historyLoaded
-    ? firstWorkDayHint(firstWorkDay, hoursChanges, formData.effective_from, propsSchedule)
+  const rawStartHint = historyLoaded
+    ? firstWorkDayHint(firstWorkDay, hoursChanges, formData.effective_from, propsSchedule, todayIso())
     : null;
+  // Fall B ersetzt das Formular durch den gespeicherten Vertrag. Steht im
+  // Formular schon etwas anderes (eigene Eingaben, Entwurf aus der
+  // Teamübersicht), bliebe das still verloren → dann kein Hinweis.
+  const startHint = rawStartHint?.source
+    && comparableSnapshot(inputSchedule, compareBlocks)
+      !== comparableSnapshot(scheduleFromChange(rawStartHint.source, propsSchedule), compareBlocks)
+    ? null
+    : rawStartHint;
   const applyStartHint = () => {
     if (!startHint) return;
     const { applyFrom, source } = startHint;

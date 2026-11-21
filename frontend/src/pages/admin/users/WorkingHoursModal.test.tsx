@@ -2517,4 +2517,28 @@ describe('Plan 2026-11-21 Task 5: Hinweis „Ab erstem Arbeitstag übernehmen"',
       });
     });
   });
+
+  it('Fall B: kein Hinweis, solange das Formular schon andere Eingaben trägt (nichts still verwerfen)', async () => {
+    vi.setSystemTime(new Date('2026-11-21T12:00:00Z'));
+    getMock.mockImplementation((url: string) => {
+      if (String(url).includes('/preview')) return Promise.resolve(previewResponse());
+      return Promise.resolve(historyResponse([
+        { id: 'base', effective_from: '2026-10-01', weekly_hours: 40, is_baseline: true, vacation_days: 30 },
+        {
+          id: 'modi', effective_from: '2026-11-20', weekly_hours: 16, use_daily_schedule: true,
+          hours_monday: 8, hours_tuesday: 8, hours_wednesday: 0, hours_thursday: 0, hours_friday: 0,
+          work_days_per_week: 2, vacation_days: 12,
+        },
+      ]));
+    });
+    renderModal({
+      firstWorkDay: '2026-10-01', currentWeeklyHours: 16, currentUseDailySchedule: true,
+      currentDayHours: [8, 8, 0, 0, 0], currentWorkDays: 2,
+    });
+    expect(await screen.findByText(HINT)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Montag'), { target: { value: '6' } });
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Montag'), { target: { value: '8' } });
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+  });
 });

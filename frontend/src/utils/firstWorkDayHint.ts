@@ -5,9 +5,12 @@
 // Fall A (noch nichts gespeichert): kein Verlauf außer der automatisch erfassten
 //   Ausgangszeile, und das gewählte Wirkungsdatum liegt nach dem ersten
 //   Arbeitstag → das Formular bleibt, nur das Datum wird vorgezogen.
-// Fall B (schon gespeichert, der Kundenfall): genau eine echte Zeile, nach dem
-//   ersten Arbeitstag, und ihr Vertrag weicht von dem am ersten Arbeitstag ab
-//   → `source` ist diese Zeile; das Formular übernimmt ihren Vertrag.
+// Fall B (schon gespeichert, der Kundenfall): bis HEUTE genau eine echte Zeile,
+//   nach dem ersten Arbeitstag, und ihr (= der heute gültige) Vertrag weicht von
+//   dem am ersten Arbeitstag ab → `source` ist diese Zeile; das Formular
+//   übernimmt ihren Vertrag. Geplante Zeilen nach heute zählen dabei nicht mit
+//   (sie bleiben beim Speichern stehen), und eine geplante Zeile allein ist nie
+//   `source` — sonst schriebe der Knopf einen künftigen Vertrag rückwirkend fest.
 // Die Ausgangszeile erkennt das Frontend allein an `is_baseline` (kein Textvergleich).
 import { dayBefore } from '../pages/admin/users/workingHoursTexts';
 import {
@@ -29,12 +32,14 @@ export interface FirstWorkDayHint {
 /**
  * `fallback` ist der Vertrag aus den Props des Dialogs — derselbe Rückfall wie
  * überall in `scheduleAt` (vor der ersten Verlaufszeile gilt die User-Zeile).
+ * `today` ist das lokale Datum (`YYYY-MM-DD`) — Maßstab für „heute gültig".
  */
 export function firstWorkDayHint(
   firstWorkDay: string | null | undefined,
   changes: WorkingHoursChange[],
   effectiveFrom: string,
   fallback: ScheduleSnapshot,
+  today: string,
 ): FirstWorkDayHint | null {
   if (!firstWorkDay || !effectiveFrom || effectiveFrom <= firstWorkDay) return null;
   const real = changes.filter((c) => !c.is_baseline);
@@ -43,8 +48,9 @@ export function firstWorkDayHint(
   if (real.length === 0) {
     return { applyFrom: firstWorkDay, until: dayBefore(effectiveFrom), source: null, startSchedule };
   }
-  if (real.length !== 1) return null;
-  const source = real[0];
+  const realUntilToday = real.filter((c) => c.effective_from <= today);
+  if (realUntilToday.length !== 1) return null;
+  const source = realUntilToday[0];
   if (source.effective_from <= firstWorkDay) return null;
   const sourceSchedule = scheduleFromChange(source, fallback);
   // Blöcke zählen nur mit Stundenzählung (P24) — wie der Vergleich im Dialog.
