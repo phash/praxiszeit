@@ -156,7 +156,7 @@ const HINTS = {
     text:
       'Gewählte Einträge werden beim Speichern anerkannt und zählen mit der ganzen gestempelten Zeit; das lässt sich nicht zurücknehmen. ' +
       'Vorausgewählt sind Einträge an einem Tag ohne Block und an Tagen, die bisher gar nicht gekappt wurden. ' +
-      'Für nicht gewählte Einträge gilt die Verkürzung wie bisher.',
+      'Für nicht gewählte Einträge gilt die Verkürzung wie bisher; bei „Ab heute … wirksam“ wird nichts anerkannt.',
   },
   'wh-shortening': {
     book: 'praxisleitung',
