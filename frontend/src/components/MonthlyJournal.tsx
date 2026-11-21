@@ -929,9 +929,12 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
         />
       )}
       {/* Task 7: Monatsnavigation (und ggf. wen das Journal zeigt) bleibt beim
-          Scrollen im Scroll-Container <main> oben stehen. */}
+          Scrollen im Scroll-Container <main> oben stehen. Der headerSlot hat eine
+          Grundbreite von 20rem: reicht die Zeile nicht, rutschen Monatsauswahl und
+          Sammel-Anerkennen in die nächste Zeile, statt den Namen auf null zu
+          quetschen (mit `flex-1` blieb bei 375 px nur „M“ stehen). */}
       <div className="sticky top-0 z-20 bg-background py-2 flex flex-wrap items-center gap-x-3 gap-y-2">
-        {headerSlot && <div className="min-w-0 flex-1">{headerSlot}</div>}
+        {headerSlot && <div className="min-w-0 flex-[1_1_20rem]">{headerSlot}</div>}
         <MonthSelector
           value={selectedMonth}
           onChange={(month) => {
