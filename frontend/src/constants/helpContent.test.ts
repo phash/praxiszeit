@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { helpContent } from './helpContent';
 import { HANDBOOKS } from '../handbuch/content';
+import { anchorExists } from '../handbuch/validate';
 
 const ADMIN_ONLY = new Set(['praxisleitung']);
 
@@ -16,12 +17,7 @@ describe('helpContent handbook links', () => {
       const link = entry.handbook!;
       const book = HANDBOOKS[link.book];
       expect(book, `${route}: Buch ${link.book}`).toBeDefined();
-      const ids = new Set<string>();
-      for (const c of book.chapters) {
-        ids.add(c.id);
-        for (const b of c.blocks) if (b.kind === 'task') ids.add(b.id);
-      }
-      expect(ids.has(link.anchor), `${route}: Anker ${link.anchor} in ${link.book}`).toBe(true);
+      expect(anchorExists(link.book, link.anchor), `${route}: Anker ${link.anchor} in ${link.book}`).toBe(true);
     }
   });
 

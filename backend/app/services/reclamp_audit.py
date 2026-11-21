@@ -27,6 +27,11 @@ NOTE_TOO_LONG_DETAIL = "Notiz und Begründung zusammen höchstens 500 Zeichen."
 # Review Task 3: ohne Begründung steht die Notiz allein in der Spalte — „und
 # Begründung" wäre dort ein Satz über ein Feld, das niemand ausgefüllt hat.
 NOTE_ONLY_TOO_LONG_DETAIL = "Die Notiz darf höchstens 500 Zeichen lang sein."
+# Notiz der automatisch erfassten Ausgangszeile vor der ersten Stundenänderung
+# (``admin_users._frozen_row``). Die Verlaufsantwort erkennt die Zeile daran
+# (``WorkingHoursChangeResponse.is_baseline``) — Wortlaut nicht ändern, er steht
+# in bestehenden Zeilen.
+BASELINE_ROW_NOTE = "Automatisch erfasster Ausgangswert vor der ersten Stundenänderung"
 
 
 class ReasonType(NamedTuple):

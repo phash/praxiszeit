@@ -609,6 +609,11 @@ export const mitarbeitende: Handbook = {
             'Unten links in der Seitenleiste: [[Hilfe]] öffnet die Hilfe zur aktuellen Seite; darüber stehen [[Mitarbeiter-Handbuch]] und [[Cheat-Sheet]]. ' +
             '[[Abmelden]] beendet Ihre Sitzung.',
         },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text: 'Das ?-Symbol neben einem Feld erklärt es kurz und führt zum passenden Abschnitt.',
+        },
       ],
     },
 

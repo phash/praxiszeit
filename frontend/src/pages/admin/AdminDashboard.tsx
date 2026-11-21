@@ -9,6 +9,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../hooks/useConfirm';
 import { yearClosingMessage } from '../../utils/yearClosingTexts';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import HandbookHint from '../../components/HandbookHint';
 import MonthSelector from '../../components/MonthSelector';
 import WeekSelector, { isoWeekMonday, weekLabel } from '../../components/WeekSelector';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -747,18 +748,21 @@ export default function AdminDashboard() {
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-4 flex-wrap">
           <h2 className="text-lg font-semibold">{viewMode === 'week' ? 'Wochenübersicht' : 'Monatsübersicht'}</h2>
           {/* #313: Soll-Basis umschalten — bis heute (kein Anfangs-Minus) oder voller Zeitraum. */}
-          <label className="flex items-center gap-2 text-sm text-gray-600">
-            Soll:
-            <select
-              value={sollBasis}
-              onChange={(e) => setSollBasis(e.target.value as 'bis_heute' | 'monatsende')}
-              className="rounded border border-gray-300 text-sm py-1"
-              title="Soll nur bis zum letzten abgeschlossenen Arbeitstag oder für den vollen Zeitraum"
-            >
-              <option value="bis_heute">bis heute</option>
-              <option value="monatsende">{viewMode === 'week' ? 'volle Woche' : 'Monatsende'}</option>
-            </select>
-          </label>
+          <div className="flex items-center gap-1">
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              Soll:
+              <select
+                value={sollBasis}
+                onChange={(e) => setSollBasis(e.target.value as 'bis_heute' | 'monatsende')}
+                className="rounded border border-gray-300 text-sm py-1"
+                title="Soll nur bis zum letzten abgeschlossenen Arbeitstag oder für den vollen Zeitraum"
+              >
+                <option value="bis_heute">bis heute</option>
+                <option value="monatsende">{viewMode === 'week' ? 'volle Woche' : 'Monatsende'}</option>
+              </select>
+            </label>
+            <HandbookHint hintId="admin-target-basis" />
+          </div>
           {/* DSGVO Art. 9: Krankheitstage nur auf ausdrücklichen Opt-in zeigen
               (löst serverseitig einen Audit-Log-Eintrag aus). */}
           <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
@@ -1050,7 +1054,10 @@ export default function AdminDashboard() {
       <div className="mt-8">
         <HiddenStaffHint count={hiddenYearly} />
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold text-gray-900">Jahresübersicht</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl font-bold text-gray-900">Jahresübersicht</h2>
+            <HandbookHint hintId="admin-year-closing" />
+          </div>
           <div className="flex items-center space-x-3">
             <label htmlFor="year-select" className="sr-only">Jahr auswählen</label>
             <input

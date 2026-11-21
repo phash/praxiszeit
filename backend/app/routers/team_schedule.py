@@ -72,5 +72,6 @@ def team_schedule(
             legacy=schedule.block_pauses is not None and any(p is None for p in schedule.block_pauses),
             schedule=calculation_service.schedule_display_json(schedule),
             next_change=next_change,
+            first_work_day=user.first_work_day,
         ))
     return rows

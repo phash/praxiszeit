@@ -1,5 +1,6 @@
 import type { Block, BroschuereShot, Handbook, HandbookId, Inline, Manifest } from './types';
 import { HANDBOOK_IDS, parseHandbookLink, tokenize } from './inline';
+import { HANDBOOKS } from './content';
 
 const MIN_ALT = 40;
 const MAX_BROSCHUERE_MARKERS = 3;
@@ -25,6 +26,12 @@ export function anchorsOf(h: Handbook): Set<string> {
     for (const b of ch.blocks) if (b.kind === 'task') out.add(b.id);
   }
   return out;
+}
+
+/** Gibt es im Handbuch `book` die Sprungmarke `anchor` (Kapitel- oder Aufgaben-ID, ohne `#`)? */
+export function anchorExists(book: HandbookId, anchor: string): boolean {
+  const h = HANDBOOKS[book];
+  return h !== undefined && anchorsOf(h).has(anchor);
 }
 
 /**

@@ -11,6 +11,7 @@ import {
 } from '../utils/specialDays';
 import ConfirmDialog from './ConfirmDialog';
 import LoadingSpinner from './LoadingSpinner';
+import HandbookHint from './HandbookHint';
 
 interface ReducedDay {
   id: string;
@@ -163,7 +164,10 @@ export default function ReducedDaysCard() {
         onCancel={handleCancel}
       />
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Verkürzte Tage</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-gray-900">Verkürzte Tage</h2>
+          <HandbookHint hintId="settings-reduced-days" />
+        </div>
         <div>
           <label htmlFor="reduced-days-year" className="sr-only">Jahr</label>
           <select

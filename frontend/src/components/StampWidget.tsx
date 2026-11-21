@@ -14,6 +14,7 @@ import { gapSegments, hullClamp } from '../utils/workBlocks';
 import { stripWarningCode } from '../utils/arbzgWarnings';
 import { useSundayOrHoliday } from '../hooks/useSundayOrHoliday';
 import ChangeRequestForm from './ChangeRequestForm';
+import HandbookHint from './HandbookHint';
 import type { TimeBlock } from '../types/workBlocks';
 
 /** #540 (A1-04/A2-7): automatisch geschlossener Eintrag ohne tatsächliches Ende. */
@@ -487,11 +488,17 @@ export default function StampWidget({ variant = 'inline', onSuccess }: StampWidg
         <div className="flex-1 text-center sm:text-left">
           {isClockedIn ? (
             <>
-              <p className="text-sm text-success font-medium">Eingestempelt seit {startTime?.substring(0, 5)}</p>
+              <div className="flex items-center justify-center sm:justify-start gap-1">
+                <p className="text-sm text-success font-medium">Eingestempelt seit {startTime?.substring(0, 5)}</p>
+                <HandbookHint hintId="stamp-card" />
+              </div>
               <p className="text-3xl font-bold text-text-primary">{formatElapsed(elapsed)}</p>
             </>
           ) : (
-            <p className="text-sm text-text-secondary">Nicht eingestempelt</p>
+            <div className="flex items-center justify-center sm:justify-start gap-1">
+              <p className="text-sm text-text-secondary">Nicht eingestempelt</p>
+              <HandbookHint hintId="stamp-card" />
+            </div>
           )}
         </div>
 

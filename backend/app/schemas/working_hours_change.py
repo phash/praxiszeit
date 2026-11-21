@@ -8,6 +8,8 @@ from uuid import UUID
 
 from app.schemas.validators import quantize_agreed_hours, quantize_one_decimal, validate_week_blocks
 from app.services import work_blocks_service
+# Plan 2026-11-21 Task 4: Obergrenze/Text des Anerkennens in einem Schritt (einzige Quelle).
+from app.services.credit_override_service import RECOGNIZE_LIMIT, RECOGNIZE_LIMIT_DETAIL
 
 logger = logging.getLogger(__name__)
 
@@ -118,10 +120,23 @@ class WorkingHoursChangeCreate(WorkingHoursChangeBase, RetroReasonFields):
     blocks: Optional[List[DayBlocksIn]] = None
     remove_legacy_window: bool = False   # P2: Altfenster ausdrücklich entfernen
     reset_of_change_id: Optional[UUID] = None  # P13: „auf vorherigen Stand zurücksetzen"
+    # Plan 2026-11-21 Task 4: diese Einträge werden in ``run_change`` nach der
+    # Neukappung anerkannt (Vorschau und Speichern, ein Rechenpfad). Leer = wie
+    # bisher. Fremde/unbekannte IDs → 404 vor jeder Sperre (Router).
+    recognize_entry_ids: List[UUID] = Field(default_factory=list)
 
     def blocks_json(self) -> Optional[list]:
         """Kanonische JSON-Woche (Spec 3.1) oder ``None``."""
         return None if self.blocks is None else [d.model_dump() for d in self.blocks]
+
+    @field_validator('recognize_entry_ids')
+    @classmethod
+    def check_recognize_limit(cls, value: List[UUID]) -> List[UUID]:
+        """Deutscher Satz statt Pydantic-``max_length`` (``_schedule_input_error``
+        reicht ``value_error``-Texte unverändert durch)."""
+        if len(value) > RECOGNIZE_LIMIT:
+            raise ValueError(RECOGNIZE_LIMIT_DETAIL)
+        return value
 
     @field_validator('effective_from')
     @classmethod
@@ -254,6 +269,20 @@ class WorkingHoursChangeResponse(WorkingHoursChangeBase):
     # WorkingHoursChangeBase: das Create-Schema erbte sonst ein ungeprüftes
     # Eingabefeld (PR3 typisiert es).
     blocks: Optional[Any] = None
+    # Plan 2026-11-21 Task 1: die automatisch erfasste Ausgangszeile
+    # (``reclamp_audit.BASELINE_ROW_NOTE``). Abgeleitet, nie aus der Eingabe —
+    # der Validator überschreibt jeden mitgeschickten Wert. Erkannt allein am
+    # Notiztext (keine eigene Spalte): auch die Lückenzeile aus
+    # ``_freeze_gap_before`` trägt das Kennzeichen, es kann also mehrere
+    # geben; eine von Hand wortgleich eingetippte Notiz würde ebenfalls
+    # markiert (bewusst hingenommen).
+    is_baseline: bool = False
+
+    @model_validator(mode="after")
+    def flag_baseline_row(self):
+        from app.services.reclamp_audit import BASELINE_ROW_NOTE
+        self.is_baseline = self.note == BASELINE_ROW_NOTE
+        return self
 
     @field_validator('blocks')
     @classmethod
@@ -302,6 +331,23 @@ class TimeEntryChangeOut(BaseModel):
     new_uncredited: int = 0
     new_net: float = 0.0
     not_extendable: Optional[Literal["start", "end", "both"]] = None
+    # Plan 2026-11-21 Task 3 (Anerkennen im Dialog): ``recognizable`` = geschlossen,
+    # nicht ``auto_closed``, vor dem Lauf nicht anerkannt; ``recognized`` = in
+    # diesem Lauf anerkannt; ``blockless_workday`` = Werktag ohne Block
+    # (``credit_blocks == []``, fällt auf 0 h); ``newly_clamped`` = der alte
+    # Snapshot kappte an diesem Tag nicht.
+    recognizable: bool = False
+    recognized: bool = False
+    blockless_workday: bool = False
+    newly_clamped: bool = False
+    # Rohstempel VOR der Änderung (``raw_start_time or start_time`` bzw.
+    # ``work_window_service.presence_end`` aus ``impact.entries_before``; beim
+    # ``auto_closed``-Eintrag also das wirksame Ende, nie 23:59) — ``old_*`` sind
+    # die damals angerechneten Zeiten, die Liste „Einträge, die Zeit verlieren"
+    # nennt unter „gestempelt" den Stempel. ``None``, wenn der Eintrag nicht im
+    # Vorher-Stand steht (z. B. offen).
+    raw_start: Optional[time] = None
+    raw_end: Optional[time] = None
 
 
 class SkippedEntryOut(BaseModel):

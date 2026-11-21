@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### ✨ Vertrag ab dem ersten Arbeitstag, Anerkennen im Dialog (Kundenfall 2026-11-20)
+
+- **Hinweis „Ab … übernehmen“ im Dialog „Arbeitszeit anpassen…“.** Wurde die vereinbarte Arbeitszeit einer neuen Person mit dem vorgeschlagenen Datum „heute“ gespeichert, galt vom ersten Arbeitstag bis gestern weiter der Vertrag vom Anlegen (im Fall: 8 h Soll an allen fünf Werktagen statt an zwei). Der Dialog erkennt das, auch nachträglich, und bietet an, die heutige Arbeitszeit ab dem ersten Arbeitstag gelten zu lassen. Die automatisch angelegte Ausgangszeile zählt dabei nicht als echte Änderung (`is_baseline` in der Verlaufsantwort).
+- **Einträge, die Zeit verlieren, beim Speichern anerkennen.** Die Vorschau listet jeden Eintrag, der durch die Änderung angerechnete Zeit verliert, mit Häkchen; vorausgewählt sind Einträge an einem „Tag ohne Block“ und an Tagen, die bisher nicht gekappt wurden. Gewählte Einträge erkennt PraxisZeit beim Speichern in derselben Transaktion an (`recognize_entry_ids`, Protokoll `credit_override` mit dem Wert vor der Änderung); Vorschau und Speichern rechnen über denselben Pfad. Verliert danach kein Eintrag mehr Zeit und sinken weder Überstundenkonto noch Urlaubsanspruch, entfällt die Verkürzungswahl; für nicht gewählte Verluste (und z. B. einen ab dem ersten Arbeitstag gesenkten Urlaubsanspruch) gilt sie wie bisher. Der Knopf heißt dann „Speichern und N Einträge anerkennen“. Anerkennen bleibt unumkehrbar.
+- **Name bleibt beim Scrollen sichtbar.** Das Benutzerformular hat eine feste Leiste „Bearbeiten: Name (Benutzername)“ mit Speichern und Abbrechen; im Monatsjournal der Verwaltung bleiben Name und Monatsnavigation oben stehen.
+- **Teamübersicht:** `GET /api/admin/team-schedule` liefert je Zeile `first_work_day`, damit der Hinweis auch aus der Teamübersicht erscheint.
+- **Handbuch:** neue Aufgabe „Die Arbeitszeit gilt erst ab heute – wie korrigiere ich sie ab dem ersten Arbeitstag?“ mit Rechenbeispiel; „Was zeigt mir die Auswirkung vor dem Speichern?“ und „Wie rechne ich Zeit außerhalb der Blöcke doch an?“ nennen die Anerkennen-Liste im Dialog.
+
+### ✨ Mehrere Einträge im Monatsjournal auf einmal anerkennen
+
+- **Sammel-Anerkennen.** Im Monatsjournal der Verwaltung hat jeder Eintrag mit nicht angerechneter Zeit ein Häkchen „Auswählen“; „Alle nicht angerechneten auswählen“ wählt alle des Monats. „Ausgewählte anerkennen (n)“ fragt mit Zahl und zusätzlich angerechneter Zeit nach und erkennt alle gewählten Einträge in einer Transaktion an. Offene und automatisch geschlossene Einträge haben kein Häkchen.
+- **Neuer Endpunkt `POST /api/admin/users/{user_id}/time-entries/credit-override`** (`entry_ids`, 1–200, alles oder nichts): Fremde oder unbekannte Eintrags-ID → 404 vor jeder Sperre; scheitert ein Eintrag, nennt der Fehler das Datum („07.10.2026: …“) und nichts wird gespeichert. Antwort `recognized`, `already` (schon anerkannt), `warnings`. Protokoll je Eintrag wie beim einzelnen Anerkennen (`credit_override`).
+- **Handbuch:** „Wie rechne ich Zeit außerhalb der Blöcke doch an?“ beschreibt das Anerkennen mehrerer Einträge auf einmal.
+
+### ✨ „?“-Kurzhilfen an den Feldern
+
+- **Kurzhilfe neben dem Feld.** An Feldern der Verwaltung (Benutzerformular, „Arbeitszeit anpassen…“, Monatsjournal, Einstellungen (u. a. Puffer, Feiertage, Sondertage, verkürzte Tage, Abwesenheitsgründe), Admin-Dashboard) und der Mitarbeiterseiten (Dashboard, Stempelkarte, Änderungsantrag) steht ein „?“. Ein Klick öffnet eine kurze Erklärung mit dem Link „Mehr im Handbuch →“ auf den passenden Abschnitt; Esc, ein Klick daneben oder ein Fokuswechsel aus der Erklärung hinaus (z. B. mit Tab) schließen sie, auf dem Smartphone erscheint sie unten am Bildschirmrand. Die Erklärungen stehen in einem Register (`constants/handbookHints.ts`); ein Test prüft, dass jedes Sprungziel im Handbuch existiert und jeder Eintrag auf einer Seite eingesetzt ist.
+- **Handbuch:** Beide Handbücher und die Hilfe „Hilfe & Navigation“ nennen das „?“-Symbol im Kapitel zur Navigation.
+
 ### ✨ Neu: Problem melden (#557, Protokoll mrd-report-1)
 
 - **Fenster „Problem melden“** (Hilfe → „Fehler melden / Feedback“) für alle: Art „Fehler“ oder „Feedback“, Titel, Beschreibung, optional Bildschirmfoto (PNG/JPEG bis 5 MB) und Rückmelde-E-Mail. **„Vorschau“** zeigt genau den Text, der gesendet wird; PraxisZeit bereinigt ihn vorher einmal über den ganzen Text (E-Mail- und IP-Adressen, Kennwörter und Schlüssel, Namen in Protokollzeilen, Notizen und Begründungen aus Zeiteinträgen). Nach dem Senden erscheinen die Nummer der Meldung und „Bekannte Probleme ansehen“. Scheitert das Senden: „Senden fehlgeschlagen – als Datei speichern?“ — die Eingaben bleiben erhalten, kein automatischer Neuversuch; „Als Datei speichern“ geht auch ohne Internet.

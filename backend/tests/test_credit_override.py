@@ -755,3 +755,40 @@ def _s1_01_test_dates_count_as_future(monkeypatch):
     import datetime as _dt
     from app.routers import absences as _absences_router
     monkeypatch.setattr(_absences_router, "today_local", lambda: _dt.date(2020, 1, 1))
+
+
+def test_audit_before_sets_old_values(_db_session, employee_user, admin_user):
+    """Plan 2026-11-21 Task 2: ``audit_before`` liefert den Vorher-Stand der
+    Protokollzeile — die Neukappung im selben Schritt hat den Eintrag schon
+    kollabiert, das Protokoll soll aber den Stand VOR der Änderung zeigen."""
+    from app.services import wh_change_service, work_window_service
+
+    e = _entry(_db_session, employee_user, time(7, 50), time(12, 5))
+    before = wh_change_service._snapshot(e)
+    # Neukappung (Werktag ohne Blöcke): start = end, Rohstempel bleiben.
+    e.end_time = time(7, 50)
+    e.raw_start_time, e.raw_end_time = time(7, 50), time(12, 5)
+    _db_session.commit()
+
+    assert cos.apply_credit_override(
+        _db_session, e, changed_by_id=admin_user.id, on_request=False, audit_before=before)
+    _db_session.commit()
+    [log] = _override_logs(_db_session)
+    assert (log.old_start_time, log.old_end_time) == (time(7, 50), time(12, 5))
+    assert log.old_note.startswith(work_window_service.credit_summary_text(before))
+    assert log.old_note == "angerechnet 4:15 h"
+    assert (log.new_start_time, log.new_end_time) == (time(7, 50), time(12, 5))
+    _db_session.refresh(e)
+    assert (e.start_time, e.end_time, e.credit_override) == (time(7, 50), time(12, 5), True)
+
+
+def test_without_audit_before_old_values_stay_the_entry(_db_session, employee_user, admin_user):
+    """Ohne ``audit_before`` bleibt alles wie bisher: Vorher = aktueller Eintrag."""
+    e = _entry(_db_session, employee_user, time(7, 50), time(7, 50),
+               raw_start_time=time(7, 50), raw_end_time=time(12, 5))
+    assert cos.apply_credit_override(
+        _db_session, e, changed_by_id=admin_user.id, on_request=False)
+    _db_session.commit()
+    [log] = _override_logs(_db_session)
+    assert (log.old_start_time, log.old_end_time) == (time(7, 50), time(7, 50))
+    assert log.old_note.startswith("angerechnet 0:00 h")

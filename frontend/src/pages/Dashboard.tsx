@@ -10,6 +10,7 @@ import { useUIStore } from '../stores/uiStore';
 import { formatHoursHM } from '../utils/errorMessage';
 import { deHoursExact } from '../utils/formatters';
 import StampWidget from '../components/StampWidget';
+import HandbookHint from '../components/HandbookHint';
 import ShiftTodayCard from '../components/ShiftTodayCard';
 import ScheduleChangeNotices, { type ScheduleChangeNotice } from '../components/ScheduleChangeNotices';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -703,7 +704,10 @@ export default function Dashboard() {
         {/* Monthly Balance */}
         <div className="bg-surface rounded-2xl shadow-card border border-border p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-text-secondary">Monatssaldo</h3>
+            <div className="flex items-center gap-1">
+              <h3 className="text-sm font-medium text-text-secondary">Monatssaldo</h3>
+              <HandbookHint hintId="dashboard-month-balance" />
+            </div>
             <Calendar className="text-primary" size={24} />
           </div>
           {dashboardData && (
@@ -735,7 +739,10 @@ export default function Dashboard() {
         {/* Overtime Account */}
         <div className="bg-surface rounded-2xl shadow-card border border-border p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-text-secondary">Überstundenkonto</h3>
+            <div className="flex items-center gap-1">
+              <h3 className="text-sm font-medium text-text-secondary">Überstundenkonto</h3>
+              <HandbookHint hintId="dashboard-overtime" />
+            </div>
             {overtimeAccount && overtimeAccount.current_balance >= 0 ? (
               <TrendingUp className="text-success" size={24} />
             ) : (
@@ -783,7 +790,10 @@ export default function Dashboard() {
         {/* Vacation Account */}
         <div className="bg-surface rounded-2xl shadow-card border border-border p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-text-secondary">Urlaubskonto</h3>
+            <div className="flex items-center gap-1">
+              <h3 className="text-sm font-medium text-text-secondary">Urlaubskonto</h3>
+              <HandbookHint hintId="dashboard-vacation" />
+            </div>
             <Clock className="text-primary" size={24} />
           </div>
           {vacationAccount && (

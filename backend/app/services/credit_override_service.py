@@ -28,6 +28,10 @@ _ON_REQUEST = "auf Antrag der beschäftigten Person von der Verwaltung anerkannt
 # Gesamtreview 1.20 (Fund 1): Auslöser der Einzelzeile, wenn das Anerkennen die
 # Gutschrift einer Abwesenheit am selben Tag neu klemmt (F1, Misch-Tag).
 MIXED_DAY_TRIGGER = "an die anerkannte Arbeitszeit des Tages angeglichen"
+# Plan 2026-11-21 Task 4/9: höchstens so viele Einträge in einem Schritt anerkennen
+# (Speichern einer Arbeitszeit-Änderung und Sammel-Anerkennen im Monatsjournal).
+RECOGNIZE_LIMIT = 200
+RECOGNIZE_LIMIT_DETAIL = f"Es lassen sich höchstens {RECOGNIZE_LIMIT} Einträge in einem Schritt anerkennen."
 
 
 def start_taken_detail(t: time) -> str:
@@ -72,6 +76,7 @@ def load_entry_locked(db: Session, tenant_id, entry_id) -> Optional[TimeEntry]:
 
 def apply_credit_override(
     db: Session, entry: TimeEntry, *, changed_by_id, on_request: bool, change_request_id=None,
+    audit_before: Optional[TimeEntry] = None, reapply_f1: bool = True,
 ) -> bool:
     """Spec 13.3 Schritte 2–5. ``False`` = war schon anerkannt (idempotent,
     kein Protokoll). Wirft 400 (offen, ``auto_closed``) bzw. 409 (Kollision).
@@ -81,7 +86,22 @@ def apply_credit_override(
     nicht gearbeiteten Rest neu geklemmt (F1, Spec 9.6) — sonst zählte das Ist
     die anerkannte Arbeit UND die beim Buchen gegen das gekappte Netto geklemmte
     Gutschrift. Eine Einzelzeile je angeglichener Abwesenheit, Quelle
-    ``credit_override`` wie die Zeile des Eintrags."""
+    ``credit_override`` wie die Zeile des Eintrags.
+
+    ``audit_before`` (Plan 2026-11-21 Task 2): transiente Kopie des Stands VOR
+    dem Schritt, in dem anerkannt wird (``wh_change_service._snapshot``). Ist
+    sie gesetzt, nimmt die Protokollzeile ``old_start_time``/``old_end_time``/
+    ``old_break_minutes``/``old_note`` daraus — beim Anerkennen innerhalb einer Arbeitszeit-Änderung
+    hat die Neukappung den Eintrag schon verändert. Sonst der aktuelle Eintrag.
+
+    ``reapply_f1=False`` (Plan 2026-11-21 Task 3): nur für das Anerkennen
+    innerhalb von ``wh_change_service.run_change``. Dort folgt die
+    Abwesenheits-Rückrechnung über das ganze Fenster unmittelbar danach (mit dem
+    vollen Tagessoll VOR der Änderung). Klemmte schon dieser Schritt neu, sähe
+    die Rückrechnung die Abwesenheit als unverändert: sie fehlte in
+    ``impact.absences`` (Klassifikation 9.5 (c), Protokoll ``wh_change``), und
+    stattdessen entstünde eine ``credit_override``-Zeile für sie. Die
+    Gutschrift ist in beiden Fällen dieselbe."""
     if entry.end_time is None:
         raise HTTPException(status_code=400, detail=OPEN_ENTRY_DETAIL)
     if entry.auto_closed:
@@ -106,8 +126,9 @@ def apply_credit_override(
         if clash is not None:
             raise HTTPException(status_code=409, detail=start_taken_detail(new_start))
 
-    old_start, old_end = entry.start_time, entry.end_time
-    old_note = work_window_service.credit_summary_text(entry)
+    before = audit_before if audit_before is not None else entry
+    old_start, old_end = before.start_time, before.end_time
+    old_note = work_window_service.credit_summary_text(before)
     entry.start_time, entry.end_time = new_start, new_end
     entry.raw_start_time = None
     entry.raw_end_time = None
@@ -127,7 +148,7 @@ def apply_credit_override(
         old_date=entry.date,
         old_start_time=old_start,
         old_end_time=old_end,
-        old_break_minutes=entry.break_minutes,
+        old_break_minutes=before.break_minutes,
         old_note=old_note,
         new_date=entry.date,
         new_start_time=new_start,
@@ -147,7 +168,7 @@ def apply_credit_override(
     owner = db.query(User).filter(
         User.id == entry.user_id,
         User.tenant_id == entry.tenant_id,  # F-026
-    ).first()
+    ).first() if reapply_f1 else None
     if owner is not None:
         absence_retarget_audit.add_absence_retarget_rows(
             db, calculation_service.reapply_f1_for_day(db, owner, entry.date),

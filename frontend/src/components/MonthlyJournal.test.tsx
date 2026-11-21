@@ -1132,3 +1132,175 @@ describe('<MonthlyJournal /> eigener Abwesenheitsgrund bearbeiten (FE-1)', () =>
     expect(postMock).not.toHaveBeenCalled();
   });
 });
+
+describe('Task 7: headerSlot in der festen Monatsleiste', () => {
+  it('rendert headerSlot im sticky-Container der Monatsnavigation', async () => {
+    getMock.mockResolvedValue({ data: validJournal });
+    render(<MonthlyJournal userId="u1" isAdminView headerSlot={<span>X</span>} />);
+    const slot = screen.getByText('X');
+    const bar = slot.closest('.sticky') as HTMLElement;
+    expect(bar).not.toBeNull();
+    expect(within(bar).getByRole('button', { name: 'Vorheriger Monat' })).toBeInTheDocument();
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+  });
+
+  it('die Monatsnavigation ist auch ohne headerSlot sticky', async () => {
+    getMock.mockResolvedValue({ data: validJournal });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    expect(screen.getByRole('button', { name: 'Vorheriger Monat' }).closest('.sticky')).not.toBeNull();
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+  });
+});
+
+describe('<MonthlyJournal /> Sammel-Anerkennen (Plan 2026-11-21 Task 10)', () => {
+  const entry = (id: string, extra: Record<string, unknown> = {}) => ({
+    id, start_time: '08:00', end_time: '12:00', raw_start_time: '07:00', raw_end_time: null,
+    break_minutes: 0, net_hours: 4, uncredited_minutes: 0, not_credited_minutes: 60,
+    credit_override: false, auto_closed: false, ...extra,
+  });
+  const days = [
+    { ...validDay, date: '2026-06-01', time_entries: [entry('te-a')] },
+    { ...validDay, date: '2026-06-02', time_entries: [entry('te-b', { not_credited_minutes: 452 })] },
+    { ...validDay, date: '2026-06-03', time_entries: [entry('te-auto', { auto_closed: true, raw_end_time: '23:59' })] },
+    { ...validDay, date: '2026-06-04', time_entries: [entry('te-done', { credit_override: true })] },
+    { ...validDay, date: '2026-06-05', time_entries: [entry('te-full', { raw_start_time: null, not_credited_minutes: 0 })] },
+  ];
+
+  it('zeigt in der Mitarbeiteransicht keine Häkchen', async () => {
+    mockJournal(days);
+    render(<MonthlyJournal userId="u1" />);
+    await screen.findByText('01.06.');
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /Alle nicht angerechneten auswählen/ })).toBeNull();
+  });
+
+  it('bietet Häkchen nur an anerkennbaren Einträgen an (nicht bei auto_closed)', async () => {
+    mockJournal(days);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    // Desktop-Spalte und Mobilzeile tragen je ein Häkchen desselben Eintrags.
+    expect(screen.getAllByRole('checkbox', { name: /01\.06\./ }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('checkbox', { name: /02\.06\./ }).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole('checkbox', { name: /03\.06\./ })).toHaveLength(0);
+    expect(screen.queryAllByRole('checkbox', { name: /04\.06\./ })).toHaveLength(0);
+    expect(screen.queryAllByRole('checkbox', { name: /05\.06\./ })).toHaveLength(0);
+  });
+
+  it('„Alle … auswählen" zählt nur erlaubte; Bestätigen sendet die IDs', async () => {
+    mockJournal(days);
+    postMock.mockResolvedValue({ data: { recognized: 2, already: 0, warnings: ['W1'] } });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    const bulk = screen.getByRole('button', { name: 'Ausgewählte anerkennen (0)' });
+    expect(bulk).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Alle nicht angerechneten auswählen' }));
+    const bulk2 = screen.getByRole('button', { name: 'Ausgewählte anerkennen (2)' });
+    expect(bulk2).toBeEnabled();
+    fireEvent.click(bulk2);
+    expect(screen.getByText(
+      '2 Einträge werden mit der ganzen gestempelten Zeit angerechnet (zusätzlich 8:32 h). '
+      + 'Anerkennen lässt sich nicht zurücknehmen. Der Vorgang wird protokolliert.',
+    )).toBeInTheDocument();
+    const callsBefore = getMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Einträge anerkennen' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(
+      '/admin/users/u1/time-entries/credit-override', { entry_ids: ['te-a', 'te-b'] },
+    ));
+    await waitFor(() => expect(getMock.mock.calls.length).toBeGreaterThan(callsBefore));
+    expect(toastSuccess).toHaveBeenCalledWith('2 Einträge anerkannt');
+    expect(toastWarning).toHaveBeenCalledWith('W1');
+  });
+
+  it('meldet „Bereits anerkannt", wenn ein paralleler Aufruf alles anerkannt hat', async () => {
+    mockJournal(days);
+    postMock.mockResolvedValue({ data: { recognized: 0, already: 2, warnings: [] } });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    fireEvent.click(screen.getByRole('button', { name: 'Alle nicht angerechneten auswählen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ausgewählte anerkennen (2)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Einträge anerkennen' }));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Bereits anerkannt'));
+  });
+
+  it('Fehler: zeigt die Serverzeile, behält die Auswahl und lädt neu', async () => {
+    mockJournal(days);
+    const detail = '03.06.2026: Automatisch geschlossener Eintrag: Bitte zuerst das tatsächliche Ende eintragen.';
+    postMock.mockRejectedValue({ response: { status: 400, data: { detail } } });
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    fireEvent.click(screen.getByRole('button', { name: 'Alle nicht angerechneten auswählen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ausgewählte anerkennen (2)' }));
+    const callsBefore = getMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Einträge anerkennen' }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(detail));
+    await waitFor(() => expect(getMock.mock.calls.length).toBeGreaterThan(callsBefore));
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: 'Ausgewählte anerkennen (2)' })).toBeEnabled();
+  });
+
+  it('ein einzelnes Häkchen wählt einen Eintrag (1)', async () => {
+    mockJournal(days);
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /02\.06\./ })[0]);
+    expect(screen.getByRole('button', { name: 'Ausgewählte anerkennen (1)' })).toBeEnabled();
+    // Beide Häkchen desselben Eintrags zeigen denselben Zustand.
+    for (const cb of screen.getAllByRole('checkbox', { name: /02\.06\./ })) {
+      expect(cb).toBeChecked();
+    }
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /02\.06\./ })[0]);
+    expect(screen.getByRole('button', { name: 'Ausgewählte anerkennen (0)' })).toBeDisabled();
+  });
+
+  // Branch-Review: beim Monats-/Personenwechsel hält `data` bis zur Antwort
+  // (bei einem Fehler dauerhaft) noch den alten Monat. Die Leiste darf dann
+  // nicht auf dessen Einträgen arbeiten — Anerkennen ist nicht rücknehmbar.
+  function mockFirstJournalThen(next: () => Promise<unknown>) {
+    let journalCalls = 0;
+    getMock.mockImplementation((url: string) => {
+      if (!url.includes('/journal')) return Promise.resolve({ data: [] });
+      journalCalls += 1;
+      return journalCalls === 1 ? Promise.resolve({ data: { ...validJournal, days } }) : next();
+    });
+  }
+
+  it('bietet während der Monat lädt kein Sammel-Anerkennen für den alten Monat an', async () => {
+    mockFirstJournalThen(() => new Promise(() => { /* lädt noch */ }));
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    fireEvent.click(screen.getByRole('button', { name: 'Alle nicht angerechneten auswählen' }));
+    expect(screen.getByRole('button', { name: 'Ausgewählte anerkennen (2)' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Nächster Monat' }));
+    await waitFor(() => expect(getMock.mock.calls.filter(([u]) => String(u).includes('/journal'))).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: /Alle nicht angerechneten auswählen/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Ausgewählte anerkennen/ })).toBeNull();
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    expect(screen.queryByText('01.06.')).toBeNull();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('bietet nach einem Ladefehler kein Sammel-Anerkennen für den alten Monat an', async () => {
+    mockFirstJournalThen(() => Promise.reject({ response: { status: 500, data: { detail: 'Serverfehler' } } }));
+    render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    fireEvent.click(screen.getByRole('button', { name: 'Alle nicht angerechneten auswählen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Nächster Monat' }));
+    expect(await screen.findByText('Serverfehler')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Alle nicht angerechneten auswählen/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Ausgewählte anerkennen/ })).toBeNull();
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    // Die Tabelle des alten Monats steht nicht unter der neuen Überschrift.
+    expect(screen.queryByText('01.06.')).toBeNull();
+  });
+
+  it('bietet beim Personenwechsel kein Sammel-Anerkennen für die vorige Person an', async () => {
+    mockFirstJournalThen(() => new Promise(() => { /* lädt noch */ }));
+    const { rerender } = render(<MonthlyJournal userId="u1" isAdminView />);
+    await screen.findByText('01.06.');
+    rerender(<MonthlyJournal userId="u2" isAdminView />);
+    expect(screen.queryByRole('button', { name: /Alle nicht angerechneten auswählen/ })).toBeNull();
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    await waitFor(() => expect(getMock.mock.calls.filter(([u]) => String(u).includes('/journal'))).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: /Alle nicht angerechneten auswählen/ })).toBeNull();
+  });
+});

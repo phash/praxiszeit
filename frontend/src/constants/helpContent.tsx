@@ -444,6 +444,7 @@ export const getFallbackHelp = (): HelpEntry => ({
       <section>
         <h3 className="font-semibold text-gray-800 mb-2">Weiteres</h3>
         <p className="text-sm text-gray-600">Klicken Sie auf „Hilfe" in der Sidebar für die vollständige Kurzanleitung und das Handbuch.</p>
+        <p className="text-sm text-gray-600 mt-2">Das ?-Symbol neben einem Feld erklärt es kurz und führt zum passenden Abschnitt.</p>
       </section>
     </div>
   ),

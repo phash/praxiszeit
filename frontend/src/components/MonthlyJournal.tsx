@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { format, parseISO, isBefore, isAfter, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
@@ -15,6 +15,8 @@ import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
 import { RawStampNote } from './RawStampNote';
 import CreditOverrideButton from './CreditOverrideButton';
+import HandbookHint from './HandbookHint';
+import { bulkConfirmText, canRecognizeNow, entryNotCreditedMinutes } from '../utils/creditOverride';
 import ChangeRequestForm from './ChangeRequestForm';
 import AbsenceDeleteRequestDialog from './AbsenceDeleteRequestDialog';
 import type { AbsenceToDelete } from './AbsenceDeleteRequestDialog';
@@ -225,12 +227,21 @@ function isFutureDay(dateStr: unknown): boolean {
 interface MonthlyJournalProps {
   userId: string;
   isAdminView: boolean;
+  // Task 7: Inhalt links neben der Monatsnavigation in der festen Leiste
+  // (Admin-Journal: Zurück-Knopf und Name der Person).
+  headerSlot?: React.ReactNode;
 }
 
-export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalProps) {
+export default function MonthlyJournal({ userId, isAdminView, headerSlot }: MonthlyJournalProps) {
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(format(now, 'yyyy-MM'));
   const [data, setData] = useState<JournalData | null>(null);
+  // Branch-Review: für welchen Monat welcher Person `data` geladen wurde. Beim
+  // Monats-/Personenwechsel hält `data` bis zur Antwort (oder bei einem Fehler
+  // dauerhaft) noch den alten Monat — Tabelle und Sammel-Anerkennen dürfen ihn
+  // dann nicht mehr zeigen bzw. anbieten (Anerkennen ist nicht rücknehmbar).
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const requestKey = `${userId}|${selectedMonth}`;
   // #463: `=== true` statt truthy — fehlt das Feld (ältere Antwort), gilt das
   // bisherige Verhalten, nicht der Fix-Modus.
   const fixedMode = data?.use_fixed_monthly_target === true;
@@ -264,9 +275,15 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
   const [creditRequest, setCreditRequest] = useState<{ day: JournalDay; entry: TimeEntryItem } | null>(null);
   // P1.1: Lösch-Antrag für eine eigene Abwesenheit eines vergangenen Tages.
   const [absenceDeleteRequest, setAbsenceDeleteRequest] = useState<AbsenceToDelete | null>(null);
+  // Plan 2026-11-21 Task 10: Sammel-Anerkennen (nur Admin-Ansicht). Die Auswahl
+  // gilt für den angezeigten Monat der angezeigten Person.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  useEffect(() => { setSelectedIds(new Set()); }, [selectedMonth, userId]);
   useEffect(() => {
     const controller = new AbortController();
     const [year, month] = selectedMonth.split('-').map(Number);
+    const key = `${userId}|${selectedMonth}`;
     const url = isAdminView
       // Fix #6: admins legitimately review absences (incl. SICK) in the journal;
       // request the health data explicitly so the backend serves it AND logs the
@@ -283,6 +300,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         if (!isJournalData(res.data)) {
           // #382: non-journal 200 body → show the inline error, never crash.
           setData(null);
+          setLoadedKey(null);
           setError('Journal konnte nicht geladen werden.');
           return;
         }
@@ -303,6 +321,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
             ),
           })),
         });
+        setLoadedKey(key);
       })
       .catch((err) => {
         if (err?.code === 'ERR_CANCELED') return;
@@ -312,6 +331,66 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
 
     return () => controller.abort();
   }, [selectedMonth, userId, isAdminView, reloadKey]);
+
+  // Branch-Review: nur ein fertig geladener, fehlerfreier Stand des GEWÄHLTEN
+  // Monats der GEWÄHLTEN Person zählt (der Vergleich deckt auch den ersten
+  // Render nach dem Wechsel ab, bevor der Effekt `loading` setzt).
+  const journalFresh = !!data && !loading && !error && loadedKey === requestKey;
+  // Anerkennbare Einträge des Monats in Journal-Reihenfolge; die Auswahl zählt
+  // nur, was nach dem letzten Laden noch anerkennbar ist.
+  const recognizableEntries = useMemo(
+    () => (isAdminView && data && journalFresh
+      ? data.days.flatMap((d) => d.time_entries.filter(canRecognizeNow))
+      : []),
+    [data, isAdminView, journalFresh],
+  );
+  const selectedEntries = recognizableEntries.filter((e) => selectedIds.has(e.id));
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function runBulkRecognize(ids: string[]) {
+    if (bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const res = await apiClient.post(`/admin/users/${userId}/time-entries/credit-override`, { entry_ids: ids });
+      const recognized: number = res.data?.recognized ?? ids.length;
+      const already: number = res.data?.already ?? 0;
+      // Hat ein paralleler Aufruf schon alles anerkannt, kein „0 Einträge anerkannt“.
+      if (recognized === 0 && already > 0) {
+        toast.success('Bereits anerkannt');
+      } else {
+        toast.success(recognized === 1 ? '1 Eintrag anerkannt' : `${recognized} Einträge anerkannt`);
+      }
+      // P4: §3/§4/48 h und Anwesenheit kommen nur als weiche Warnung zurück.
+      showArbzgWarnings(toast, res.data?.warnings);
+      setSelectedIds(new Set());
+    } catch (err) {
+      // Alles oder nichts: der Server nennt den Tag, an dem es scheiterte.
+      toast.error(getErrorMessage(err, 'Anerkennen fehlgeschlagen'));
+    } finally {
+      setBulkBusy(false);
+      setReloadKey((k) => k + 1);
+    }
+  }
+
+  function startBulkRecognize() {
+    const ids = selectedEntries.map((e) => e.id);
+    if (ids.length === 0) return;
+    const extra = selectedEntries.reduce((sum, e) => sum + entryNotCreditedMinutes(e), 0);
+    confirm({
+      title: 'Ausgewählte Einträge anerkennen',
+      message: bulkConfirmText(ids.length, extra),
+      confirmLabel: 'Einträge anerkennen',
+      variant: 'warning',
+      onConfirm: () => runBulkRecognize(ids),
+    });
+  }
 
   const isNonWorkDay = (day: JournalDay) =>
     day.type === 'weekend' || day.type === 'holiday';
@@ -709,6 +788,21 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
               : undefined
           }
         />
+        {isAdminView && canRecognizeNow(e) && (
+          // Task 10: Häkchen fürs Sammel-Anerkennen; Desktop-Spalte und
+          // Mobilzeile teilen denselben Auswahlzustand.
+          <label className="mr-2 inline-flex items-center gap-1 text-xs text-gray-600">
+            <input
+              type="checkbox"
+              checked={selectedIds.has(e.id)}
+              onChange={() => toggleSelected(e.id)}
+              disabled={!journalFresh || bulkBusy}
+              aria-label={`${e.start_time?.substring(0, 5) ?? ''}–${e.end_time?.substring(0, 5) ?? ''} am ${day.date.slice(8, 10)}.${day.date.slice(5, 7)}. zum Anerkennen auswählen`}
+              className="rounded-sm border-gray-300"
+            />
+            <span aria-hidden="true">Auswählen</span>
+          </label>
+        )}
         {isAdminView && (
           <CreditOverrideButton entry={e} onDone={() => setReloadKey((k) => k + 1)} />
         )}
@@ -834,13 +928,43 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           }}
         />
       )}
-      <MonthSelector
-        value={selectedMonth}
-        onChange={(month) => {
-          setSelectedMonth(month);
-          cancelEdit();
-        }}
-      />
+      {/* Task 7: Monatsnavigation (und ggf. wen das Journal zeigt) bleibt beim
+          Scrollen im Scroll-Container <main> oben stehen. Der headerSlot hat eine
+          Grundbreite von 20rem: reicht die Zeile nicht, rutschen Monatsauswahl und
+          Sammel-Anerkennen in die nächste Zeile, statt den Namen auf null zu
+          quetschen (mit `flex-1` blieb bei 375 px nur „M“ stehen). */}
+      <div className="sticky top-0 z-20 bg-background py-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+        {headerSlot && <div className="min-w-0 flex-[1_1_20rem]">{headerSlot}</div>}
+        <MonthSelector
+          value={selectedMonth}
+          onChange={(month) => {
+            setSelectedMonth(month);
+            cancelEdit();
+          }}
+        />
+        {/* Task 10: Sammel-Anerkennen — nur, wenn der Monat anerkennbare Einträge hat.
+            Der Knopf steht bei (0) gesperrt da, damit die Leiste nicht springt. */}
+        {isAdminView && recognizableEntries.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set(recognizableEntries.map((e) => e.id)))}
+              className="text-xs px-2 py-1 rounded-sm border border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              Alle nicht angerechneten auswählen
+            </button>
+            <button
+              type="button"
+              disabled={selectedEntries.length === 0 || bulkBusy}
+              onClick={startBulkRecognize}
+              className="text-xs px-2 py-1 rounded-sm border border-amber-300 text-amber-800 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {`Ausgewählte anerkennen (${selectedEntries.length})`}
+            </button>
+            <HandbookHint hintId="journal-recognize" align="end" />
+          </div>
+        )}
+      </div>
 
       {loading && <LoadingSpinner />}
       {error && <p className="text-red-600">{error}</p>}
@@ -850,7 +974,7 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
         </div>
       )}
 
-      {data && !loading && (
+      {data && journalFresh && (
         <>
           {/* #463: Feste Monatsarbeitszeit — die Tageszeilen sind hier keine
               Soll/Ist-Abrechnung, sondern eine Anwesenheitsübersicht. Ohne
@@ -1307,7 +1431,10 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
               </p>
             </div>
             <div className={`rounded-lg p-3 ${data.monthly_summary.balance >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
-              <p className="text-xs text-gray-500 mb-1">Saldo (Monat)</p>
+              <div className="flex items-center gap-1 mb-1">
+                <p className="text-xs text-gray-500">Saldo (Monat)</p>
+                <HandbookHint hintId="journal-balance" />
+              </div>
               <p className={`text-lg font-semibold ${data.monthly_summary.balance >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                 {formatHours(data.monthly_summary.balance)}
               </p>
@@ -1321,9 +1448,12 @@ export default function MonthlyJournal({ userId, isAdminView }: MonthlyJournalPr
           </div>
           {/* Spec 13.2: gestempelte, aber nicht angerechnete Zeit des Monats — nur wenn > 0. */}
           {(data.monthly_summary.not_credited_minutes_total ?? 0) > 0 && (
-            <p className="text-sm text-gray-600 mt-3">
-              {`Anwesenheit nicht angerechnet: ${formatHoursHM((data.monthly_summary.not_credited_minutes_total ?? 0) / 60)} h`}
-            </p>
+            <div className="flex items-center gap-1 mt-3">
+              <p className="text-sm text-gray-600">
+                {`Anwesenheit nicht angerechnet: ${formatHoursHM((data.monthly_summary.not_credited_minutes_total ?? 0) / 60)} h`}
+              </p>
+              {!isAdminView && <HandbookHint hintId="not-credited" />}
+            </div>
           )}
         </>
       )}

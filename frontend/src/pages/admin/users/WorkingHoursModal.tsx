@@ -4,23 +4,33 @@ import apiClient from '../../../api/client';
 import { Save, X, Trash2, Info } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
+import HandbookHint from '../../../components/HandbookHint';
 import { getErrorMessage } from '../../../utils/errorMessage';
 import { parseHours, deHoursExact, formatDayNumber, formatDayPlan, formatDecimalDe } from '../../../utils/formatters';
 import { showResponseWarning } from '../../../utils/arbzgWarnings';
-import {
-  blocksOf, deriveTargets, emptyWeek, formatBlocksText, isLegacyWeek, validateWeekBlocks,
-} from '../../../utils/workBlocks';
+import { blocksOf, deriveTargets, emptyWeek, formatBlocksText, validateWeekBlocks } from '../../../utils/workBlocks';
 import type { WeekBlocks } from '../../../types/workBlocks';
 import { DEFAULT_VACATION_DAYS, MAX_VACATION_DAYS } from './workingHoursTypes';
-import type { ContractTerms, WorkingHoursChange, WorkingHoursChangePreview } from './workingHoursTypes';
+import type {
+  ContractTerms, RecognizeEntriesBody, TimeEntryChange, WorkingHoursChange, WorkingHoursChangePreview,
+} from './workingHoursTypes';
 import ContractTermsFields from './ContractTermsFields';
 import WhImpactBox from './WhImpactBox';
+import RecognizeEntriesList from './RecognizeEntriesList';
+import { defaultSelection, losingEntries, pruneSelection } from './recognizeSelection';
 import ShorteningChoice from './ShorteningChoice';
 import WhDeletePanel from './WhDeletePanel';
 import {
+  DAY_FIELDS, comparableSnapshot, formFromSnapshot, hasLegacyBlocks, hasNewBlocks, normaliseDayHours, round2,
+  scheduleAt, scheduleFromChange, type DayFieldKey, type FormState, type Mode, type ScheduleSnapshot,
+} from './workingHoursSnapshot';
+import { firstWorkDayHint } from '../../../utils/firstWorkDayHint';
+import {
   BLOCKS_WITHOUT_EFFECT, EMPTY_REASON, JARBSCHG_HINT, LEGACY_BOX_TITLE, LEGACY_WITHOUT_EFFECT, LEGAL_HINT,
-  NOTE_MAX_LENGTH, NOTE_TOO_LONG, closedYearMessage, composedNoteTooLong, dayBefore, formatDate, losslessLabel,
-  modeSwitchHint, reasonComplete, reasonPayload, retroLabel, savedMessage, suggestEntitlement, type ReasonState,
+  NOTE_MAX_LENGTH, NOTE_TOO_LONG, closedYearMessage, composedNoteTooLong, dayBefore, firstWorkDayHintButton,
+  firstWorkDayHintText, formatDate, losslessLabel,
+  modeSwitchHint, reasonComplete, reasonPayload, retroLabel, saveButtonLabel, savedMessage, suggestEntitlement,
+  type ReasonState,
   type ShorteningOption,
 } from './workingHoursTexts';
 
@@ -52,39 +62,14 @@ interface WorkingHoursModalProps {
   // wie jede Änderung hier — mit Vorschau und Verkürzungsschutz.
   initialBlocks?: WeekBlocks | null;
   initialEffectiveFrom?: string;
+  // Plan 2026-11-21 (Task 5): erster Arbeitstag der Person — für den Hinweis
+  // „Ab {erster Arbeitstag} übernehmen", wenn der Vertrag zu spät beginnt.
+  firstWorkDay?: string | null;
   onClose: () => void;
   onChanged: () => void;
 }
 
-// #431: Die fünf Wochentagsfelder an EINER Stelle — Feldname (= API-Feld),
-// Beschriftung des Eingabefelds und Kurzform.
-const DAY_FIELDS = [
-  { key: 'hours_monday', label: 'Montag', short: 'Mo' },
-  { key: 'hours_tuesday', label: 'Dienstag', short: 'Di' },
-  { key: 'hours_wednesday', label: 'Mittwoch', short: 'Mi' },
-  { key: 'hours_thursday', label: 'Donnerstag', short: 'Do' },
-  { key: 'hours_friday', label: 'Freitag', short: 'Fr' },
-] as const;
-
-type DayFieldKey = typeof DAY_FIELDS[number]['key'];
-
 const NO_DAY_HOURS: (number | null)[] = [null, null, null, null, null];
-
-/** Spec 12.1: „Gleichmäßig" / „Nach Tagen" / „Nach Arbeitsblöcken". */
-type Mode = 'even' | 'days' | 'blocks';
-
-/** #431 + Spec 3.1: der Vertrags-Snapshot, wie ihn Dialog und Backend sehen. */
-interface ScheduleSnapshot {
-  weekly_hours: number;
-  use_daily_schedule: boolean;
-  /** Fünf Werte, Index 0 = Montag. 0 = kein geplanter Arbeitstag (wie `null`). */
-  day_hours: number[];
-  work_days_per_week: number;
-  /** Blöcke der Zeile — neu (mit Pausen) oder Altfenster (Pausen NULL) — oder `null`. */
-  blocks: WeekBlocks | null;
-  /** Teil A: Urlaubsanspruch, Stundenzählung und Minijob-Felder der Zeile. */
-  contract: ContractTerms;
-}
 
 /** Teil A: ein Urlaubsanspruch, den der Server annimmt (0–50 Tage). */
 function entitlementValid(days: number): boolean {
@@ -92,108 +77,6 @@ function entitlementValid(days: number): boolean {
 }
 
 const ENTITLEMENT_INVALID = `Bitte einen Urlaubsanspruch von 0 bis ${MAX_VACATION_DAYS} Tagen eintragen.`;
-
-interface FormState {
-  effective_from: string;
-  mode: Mode;
-  weekly_hours: number;
-  hours_monday: number;
-  hours_tuesday: number;
-  hours_wednesday: number;
-  hours_thursday: number;
-  hours_friday: number;
-  work_days_per_week: number;
-  blocks: WeekBlocks;
-  /** P2: Altfenster ausdrücklich entfernen statt übernehmen. */
-  remove_legacy_window: boolean;
-  note: string;
-  /** Teil A: von der Admin geänderte Vertragsfelder. Was hier fehlt, folgt dem
-   * Stand am Wirkungsdatum (der Anspruch dem Vorschlag, solange es einen gibt). */
-  contract_edits: Partial<ContractTerms>;
-}
-
-function round2(value: number): number {
-  return Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
-}
-
-function normaliseDayHours(values: (number | null | undefined)[]): number[] {
-  return DAY_FIELDS.map((_, i) => {
-    const v = values[i];
-    return typeof v === 'number' && Number.isFinite(v) ? v : 0;
-  });
-}
-
-/** Die fünf Tageswerte eines Snapshots als Formularfelder. */
-function dayFieldsFromSnapshot(dayHours: number[]): Record<DayFieldKey, number> {
-  return {
-    hours_monday: dayHours[0],
-    hours_tuesday: dayHours[1],
-    hours_wednesday: dayHours[2],
-    hours_thursday: dayHours[3],
-    hours_friday: dayHours[4],
-  };
-}
-
-function hasNewBlocks(week: WeekBlocks | null): boolean {
-  return Array.isArray(week) && !isLegacyWeek(week);
-}
-
-function hasLegacyBlocks(week: WeekBlocks | null): boolean {
-  return Array.isArray(week) && isLegacyWeek(week);
-}
-
-/** Teil A: die fünf Vertragsfelder einer Zeile; was eine ältere Antwort nicht
- * trägt, kommt aus dem Rückfall. */
-function contractFromChange(change: WorkingHoursChange, fallback: ContractTerms): ContractTerms {
-  return {
-    vacation_days: change.vacation_days ?? fallback.vacation_days,
-    track_hours: change.track_hours ?? fallback.track_hours,
-    milog_working_time_account: change.milog_working_time_account ?? fallback.milog_working_time_account,
-    agreed_monthly_hours: change.agreed_monthly_hours !== undefined
-      ? change.agreed_monthly_hours
-      : fallback.agreed_monthly_hours,
-    use_fixed_monthly_target: change.use_fixed_monthly_target ?? fallback.use_fixed_monthly_target,
-  };
-}
-
-function scheduleFromChange(change: WorkingHoursChange, fallback: ScheduleSnapshot): ScheduleSnapshot {
-  const fallbackWorkDays = fallback.work_days_per_week;
-  return {
-    weekly_hours: change.weekly_hours,
-    use_daily_schedule: !!change.use_daily_schedule,
-    day_hours: normaliseDayHours([
-      change.hours_monday, change.hours_tuesday, change.hours_wednesday,
-      change.hours_thursday, change.hours_friday,
-    ]),
-    // NULL heißt beim Backend „Rückfall auf die User-Zeile" (Bestandszeilen vor
-    // #431) — hier ist das die Prop.
-    work_days_per_week: change.work_days_per_week ?? fallbackWorkDays,
-    blocks: Array.isArray(change.blocks) ? change.blocks : null,
-    contract: contractFromChange(change, fallback.contract),
-  };
-}
-
-// Fund 3 (Release-Review 1.17.0), #431: der zu einem Datum gültige Snapshot
-// kommt aus dem geladenen Verlauf (jüngste Zeile mit effective_from <= datum),
-// nicht aus den Props — die sind ein Stand von vor dem Öffnen des Dialogs und
-// werden von Users.tsx nach dem Speichern nicht nachgezogen. Genau die
-// Auflösung von `calculation_service.get_schedule_for_date`.
-function scheduleAt(
-  changes: WorkingHoursChange[], iso: string, fallback: ScheduleSnapshot,
-): ScheduleSnapshot {
-  let latest: WorkingHoursChange | null = null;
-  let earliest: WorkingHoursChange | null = null;
-  for (const c of changes) {
-    if (c.effective_from <= iso && (!latest || c.effective_from > latest.effective_from)) {
-      latest = c;
-    }
-    if (!earliest || c.effective_from < earliest.effective_from) earliest = c;
-  }
-  if (latest) return scheduleFromChange(latest, fallback);
-  // Teil A (Auflösungsregel der fünf Vertragsfelder): vor der ersten Zeile gilt
-  // deren Vertrag; die Stunden bleiben beim Rückfall (User-Zeile).
-  return earliest ? { ...fallback, contract: contractFromChange(earliest, fallback.contract) } : fallback;
-}
 
 /**
  * #431: Der Snapshot als Klartext — für die Kopfzeile und jede Verlaufszeile,
@@ -231,45 +114,6 @@ function blocksLine(week: WeekBlocks | null, trackHours: boolean): string | null
   return legacy ? `${LEGACY_BOX_TITLE}: ${text}` : null;
 }
 
-/** Kanonische Vergleichsform der Blöcke (Schlüsselreihenfolge egal). Ein
- * fehlender „blocks"-Schlüssel heißt „keine Blöcke" (`blocksOf`) — der Server
- * gibt eine solche Verlaufszeile unverändert aus (Gesamtreview B3). */
-function blocksKey(week: WeekBlocks | null): string | null {
-  if (!Array.isArray(week)) return null;
-  return JSON.stringify(week.map((d) => [blocksOf(d).map((b) => [b.start, b.end]), d?.pause_minutes ?? null]));
-}
-
-/**
- * #431 + Spec 12.1: DIE Definition von „hat sich etwas geändert" — wie
- * `admin_users._comparable_snapshot`, jetzt mit Blöcken und Pausen.
- *
- * Im gleichmäßigen Modus sind die Tageswerte inert (das Tagessoll liest sie
- * dort nicht) und werden ausgeblendet, sonst täuschte ein Rest aus einer
- * früheren Tagesplan-Phase eine Änderung vor. Ohne Stundenzählung zählen die
- * Blöcke nicht (sie wirken nicht; beendet werden sie von jeder echten
- * Änderung, P24) — außer beim ausdrücklichen Entfernen eines Altfensters
- * (`compareBlocks` im Aufrufer).
- *
- * Review Focus 5: verglichen wird über die auf 0,01 h gerundeten Tageswerte —
- * 7:55 h im Editor ist gespeichert 7,92 h, beides ist derselbe Stand.
- */
-function comparableSnapshot(s: ScheduleSnapshot, withBlocks: boolean): string {
-  return JSON.stringify([
-    round2(s.weekly_hours),
-    s.use_daily_schedule,
-    s.use_daily_schedule ? s.day_hours.map(round2) : [0, 0, 0, 0, 0],
-    s.work_days_per_week,
-    withBlocks ? blocksKey(s.blocks) : null,
-    // Teil A: auch eine reine Vertragsänderung (Anspruch, Stundenzählung,
-    // Minijob) ist eine Änderung.
-    Number.isFinite(s.contract.vacation_days) ? Math.round(s.contract.vacation_days * 10) / 10 : null,
-    s.contract.track_hours,
-    s.contract.milog_working_time_account,
-    s.contract.agreed_monthly_hours == null ? null : Math.round(s.contract.agreed_monthly_hours * 10) / 10,
-    s.contract.use_fixed_monthly_target,
-  ]);
-}
-
 /** Teil A: Vertragszeile einer Verlaufskarte — nur, was die Zeile selbst trägt. */
 function contractParts(change: WorkingHoursChange): string[] {
   const parts: string[] = [];
@@ -283,23 +127,6 @@ function contractParts(change: WorkingHoursChange): string[] {
     if (change.use_fixed_monthly_target) parts.push('festes Monats-Soll');
   }
   return parts;
-}
-
-/** Formularstand aus einem Snapshot: Block-Modus, sobald neue Blöcke gelten
- * (und Stunden gezählt werden, P24). */
-function formFromSnapshot(s: ScheduleSnapshot, effectiveFrom: string): FormState {
-  const blocksMode = s.contract.track_hours && hasNewBlocks(s.blocks);
-  return {
-    effective_from: effectiveFrom,
-    mode: blocksMode ? 'blocks' : s.use_daily_schedule ? 'days' : 'even',
-    weekly_hours: s.weekly_hours,
-    ...dayFieldsFromSnapshot(s.day_hours),
-    work_days_per_week: s.work_days_per_week,
-    blocks: blocksMode && s.blocks ? s.blocks : emptyWeek(),
-    remove_legacy_window: false,
-    note: '',
-    contract_edits: {},
-  };
 }
 
 /** Spec 4.4: Altfenster vorbefüllt in den Block-Modus — Werte unverändert
@@ -343,6 +170,7 @@ export default function WorkingHoursModal({
   fixedMonthlyTarget = false,
   initialBlocks = null,
   initialEffectiveFrom,
+  firstWorkDay = null,
   onClose,
   onChanged,
 }: WorkingHoursModalProps) {
@@ -354,6 +182,9 @@ export default function WorkingHoursModal({
   const trashRef = useRef<HTMLButtonElement>(null);
   const historyHeadingRef = useRef<HTMLHeadingElement>(null);
   const [hoursChanges, setHoursChanges] = useState<WorkingHoursChange[]>([]);
+  // Task 5: der Hinweis „ab erstem Arbeitstag" erst, wenn der Verlauf geladen
+  // ist — vorher sähe jede Person wie „noch nichts gespeichert" aus (Fall A).
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   // Schützt vor doppeltem Absenden (schneller Doppelklick legte zwei Zeilen an).
   const [submitting, setSubmitting] = useState(false);
 
@@ -408,6 +239,13 @@ export default function WorkingHoursModal({
   const [losslessPreview, setLosslessPreview] = useState<WorkingHoursChangePreview | null>(null);
   const [losslessLoading, setLosslessLoading] = useState(false);
   const [losslessError, setLosslessError] = useState<string | null>(null);
+  // Plan 2026-11-21 Task 6: Anerkennen im Dialog. `recognizeCandidates` = die
+  // neu gekappten Einträge der letzten Vorschau, samt dem Schlüssel der Eingabe
+  // OHNE Auswahl, zu der sie gehören. Solange die Admin nichts angeklickt hat
+  // (`recognizeTouched`), folgt die Auswahl der Vorauswahl jeder neuen Vorschau.
+  const [recognizeCandidates, setRecognizeCandidates] = useState<{ key: string; changes: TimeEntryChange[] } | null>(null);
+  const [recognizeSelected, setRecognizeSelected] = useState<string[]>([]);
+  const [recognizeTouched, setRecognizeTouched] = useState(false);
 
   const dayValues = DAY_FIELDS.map((f) => formData[f.key]);
   const daySum = round2(dayValues.reduce((sum, h) => sum + h, 0));
@@ -500,7 +338,23 @@ export default function WorkingHoursModal({
   // also stabil über Renderläufe. Ein bei jedem Rendern neu erzeugtes Objekt im
   // Dependency-Array löste bei JEDEM Rendern eine Anfrage aus (Anfragesturm);
   // die Notiz gehört bewusst nicht dazu.
-  const previewKey = JSON.stringify({ effective_from: formData.effective_from, ...scheduleBody });
+  //
+  // Plan 2026-11-21 Task 6: die Auswahl zum Anerkennen gehört zum Schlüssel.
+  // Gesendet werden nur IDs aus der Vorschau DIESER Eingabe (`baseKey`): nach
+  // einer Änderung von Datum oder Vertrag läuft die Vorschau erst ohne
+  // Auswahl, ihre Liste schränkt die Auswahl ein, dann folgt die mit Auswahl —
+  // sonst wiese der Server eine nicht mehr betroffene ID mit 400 ab, und die
+  // Liste zum Abwählen wäre weg.
+  const baseKey = JSON.stringify({ effective_from: formData.effective_from, ...scheduleBody });
+  const candidateChanges = recognizeCandidates?.key === baseKey ? recognizeCandidates.changes : null;
+  const recognizeIds = candidateChanges ? pruneSelection(recognizeSelected, candidateChanges) : [];
+  const recognizeBody: RecognizeEntriesBody = recognizeIds.length ? { recognize_entry_ids: recognizeIds } : {};
+  const previewKey = JSON.stringify({ effective_from: formData.effective_from, ...scheduleBody, ...recognizeBody });
+  const showRecognizeList = !!candidateChanges && losingEntries(candidateChanges).length > 0;
+  // Branch-Review: die Eingabe (`baseKey`), für die Option und Bestätigungen
+  // zuletzt zurückgesetzt wurden — ein Häkchen in der Anerkennen-Liste ist
+  // keine neue Eingabe und darf Option 2 nicht auf Option 1 zurückwerfen.
+  const lastResetBaseKey = useRef<string | null>(null);
 
   useEffect(() => {
     fetchHoursChanges();
@@ -522,8 +376,14 @@ export default function WorkingHoursModal({
     // Neue Eingabe → neue Bewertung; Standard ist wieder Option 1 (12.1). Die
     // Bestätigungen des Schutzpakets gelten der bisherigen Änderung und fallen
     // wie der Haken der Auswirkungs-Box; Grund und Begründung bleiben stehen.
-    setShorteningOption('lossless');
-    setReason((r) => (r.wageConfirmed || r.otherConfirmed ? { ...r, wageConfirmed: false, otherConfirmed: false } : r));
+    // Branch-Review: nur bei neuem Datum/Vertrag (`baseKey`) — ändert sich
+    // allein die Auswahl zum Anerkennen, bleibt die gewählte Option stehen
+    // (sonst sperrte jedes Häkchen in Option 2 die Liste wieder).
+    if (lastResetBaseKey.current !== baseKey) {
+      lastResetBaseKey.current = baseKey;
+      setShorteningOption('lossless');
+      setReason((r) => (r.wageConfirmed || r.otherConfirmed ? { ...r, wageConfirmed: false, otherConfirmed: false } : r));
+    }
     let cancelled = false;
     const handle = setTimeout(() => {
       apiClient
@@ -532,6 +392,11 @@ export default function WorkingHoursModal({
           if (cancelled) return;
           setPreview(res.data);
           setPreviewFor(previewKey);
+          // Task 6: die Kandidaten sind in jeder Vorschau dieselben (erhoben
+          // vor dem Anerkennen) — nur eine gültige Eingabe liefert sie.
+          if (res.data && !res.data.blocked_reason) {
+            setRecognizeCandidates({ key: baseKey, changes: res.data.time_entry_changes ?? [] });
+          }
         })
         .catch((error) => {
           if (cancelled) return;
@@ -546,7 +411,22 @@ export default function WorkingHoursModal({
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [userId, previewKey, previewRetryToken]);
+  }, [userId, previewKey, baseKey, previewRetryToken]);
+
+  // Task 6: neue Kandidaten → Vorauswahl (unberührt) bzw. Auswahl einschränken.
+  // Gleiche IDs behalten die alte Liste — der Schlüssel bleibt dann stehen.
+  useEffect(() => {
+    if (!recognizeCandidates) return;
+    const { changes } = recognizeCandidates;
+    setRecognizeSelected((prev) => {
+      const next = recognizeTouched ? pruneSelection(prev, changes) : [...defaultSelection(changes)].sort();
+      return next.join('\n') === prev.join('\n') ? prev : next;
+    });
+  }, [recognizeCandidates, recognizeTouched]);
+  const changeRecognizeSelection = (next: Set<string>) => {
+    setRecognizeTouched(true);
+    setRecognizeSelected([...next].sort());
+  };
 
   // Fund 3: gibt die frisch geladene Liste zurück (nicht nur über State), damit
   // der Formular-Reset nach dem Speichern SOFORT den neuen Stand nutzt.
@@ -555,6 +435,7 @@ export default function WorkingHoursModal({
       const response = await apiClient.get(`/admin/users/${userId}/working-hours-changes`);
       const list: WorkingHoursChange[] = Array.isArray(response.data) ? response.data : []; // #382
       setHoursChanges(list);
+      setHistoryLoaded(true);
       return list;
     } catch {
       toast.error('Fehler beim Laden der Stundenhistorie');
@@ -598,8 +479,10 @@ export default function WorkingHoursModal({
   const needsReason = isShortening && !useLossless;
   // Spec 9.5: Notiz, Grund-Präfix und Begründung landen in EINER Spalte (≤ 500).
   const noteTooLong = needsReason && composedNoteTooLong(reason, formData.note);
+  // Task 6: Option 1 gilt erst ab einem Datum, an dem nichts verliert — ohne
+  // Auswahl zum Anerkennen (die IDs gehören zum eingegebenen Datum).
   const losslessKey = useLossless
-    ? JSON.stringify({ ...JSON.parse(previewKey), effective_from: losslessDate })
+    ? JSON.stringify({ ...JSON.parse(baseKey), effective_from: losslessDate })
     : null;
 
   // Option 1: zweite Vorschau für `earliest_lossless_date` (ohne Debounce — der
@@ -638,6 +521,9 @@ export default function WorkingHoursModal({
   const shownLoading = useLossless ? losslessLoading : previewLoading;
   const shownError = useLossless ? losslessError : previewError;
   const isRetroactive = sentDate < todayIso();
+  // Task 6: angerechnet wird die Auswahl nur mit dem eingegebenen Datum.
+  const sentRecognizeBody: RecognizeEntriesBody = useLossless ? {} : recognizeBody;
+  const sentRecognizeCount = sentRecognizeBody.recognize_entry_ids?.length ?? 0;
 
   // Release-Review 1.17.0: `blocked_reason` gilt für jedes Datum — der POST
   // weist unabhängig davon ab (Datum belegt, Blockfehler, …).
@@ -714,6 +600,34 @@ export default function WorkingHoursModal({
     (isRetroactive && (shownLoading || !shown || !confirmedRetroactive)) ||
     (!isRetroactive && (shownLoading || (needsConfirmation && !confirmedRetroactive)));
 
+  // Plan 2026-11-21 (Task 5, Spec Teil 1): gilt die heutige Arbeitszeit erst
+  // nach dem ersten Arbeitstag, ohne dass es dazwischen eine echte Änderung
+  // gibt, bietet der Dialog an, sie ab dem ersten Arbeitstag gelten zu lassen.
+  const rawStartHint = historyLoaded
+    ? firstWorkDayHint(firstWorkDay, hoursChanges, formData.effective_from, propsSchedule, todayIso())
+    : null;
+  // Fall B ersetzt das Formular durch den gespeicherten Vertrag. Steht im
+  // Formular schon etwas anderes (eigene Eingaben, Entwurf aus der
+  // Teamübersicht), bliebe das still verloren → dann kein Hinweis.
+  const startHint = rawStartHint?.source
+    && comparableSnapshot(inputSchedule, compareBlocks)
+      !== comparableSnapshot(scheduleFromChange(rawStartHint.source, propsSchedule), compareBlocks)
+    ? null
+    : rawStartHint;
+  const applyStartHint = () => {
+    if (!startHint) return;
+    const { applyFrom, source } = startHint;
+    if (!source) {
+      // Fall A: das Formular bleibt, nur das Wirkungsdatum rückt vor.
+      setFormData((prev) => ({ ...prev, effective_from: applyFrom }));
+      return;
+    }
+    // Fall B: der Vertrag der gespeicherten Zeile — samt ihren fünf
+    // Vertragsfeldern, sonst folgten sie dem Stand am ersten Arbeitstag.
+    const sourceSchedule = scheduleFromChange(source, propsSchedule);
+    setFormData({ ...formFromSnapshot(sourceSchedule, applyFrom), contract_edits: { ...sourceSchedule.contract } });
+  };
+
   const setDayHours = (key: DayFieldKey, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: parseHours(value) }));
   };
@@ -727,6 +641,9 @@ export default function WorkingHoursModal({
     setConfirmedRetroactive(false);
     setReason(EMPTY_REASON);
     setShorteningOption('lossless');
+    setRecognizeCandidates(null);
+    setRecognizeSelected([]);
+    setRecognizeTouched(false);
   };
 
   const handleAddHoursChange = async (e: React.FormEvent) => {
@@ -738,6 +655,7 @@ export default function WorkingHoursModal({
         effective_from: sentDate,
         note: formData.note,
         ...scheduleBody,
+        ...sentRecognizeBody,
         ...(needsReason ? reasonPayload(reason) : {}),
       });
       // Review Task 20: ein offenes Lösch-Panel ist ab jetzt veraltet — seine
@@ -854,9 +772,12 @@ export default function WorkingHoursModal({
                 <form onSubmit={handleAddHoursChange} className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div>
-                      <label htmlFor="wh-effective-from" className="block text-sm font-medium text-gray-700 mb-1">
-                        Gültig ab
-                      </label>
+                      <div className="flex items-center gap-1 mb-1">
+                        <label htmlFor="wh-effective-from" className="block text-sm font-medium text-gray-700">
+                          Gültig ab
+                        </label>
+                        <HandbookHint hintId="wh-effective-date" />
+                      </div>
                       <input
                         id="wh-effective-from"
                         type="date"
@@ -881,6 +802,27 @@ export default function WorkingHoursModal({
                       />
                     </div>
                   </div>
+
+                  {startHint && (
+                    <div className="flex flex-col sm:flex-row sm:items-start gap-3 bg-white border border-amber-300 rounded-lg p-3">
+                      <Info size={18} className="shrink-0 text-amber-600 mt-0.5" aria-hidden="true" />
+                      <div className="flex flex-1 items-start gap-1">
+                        <p className="text-sm text-gray-800">
+                          {firstWorkDayHintText(
+                            startHint.applyFrom, startHint.until, describeSchedule(startHint.startSchedule),
+                          )}
+                        </p>
+                        <HandbookHint hintId="wh-first-work-day" align="end" />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={applyStartHint}
+                        className="shrink-0 px-3 py-2 text-sm font-medium border border-primary text-primary rounded-lg hover:bg-blue-50"
+                      >
+                        {firstWorkDayHintButton(startHint.applyFrom)}
+                      </button>
+                    </div>
+                  )}
 
                   {/* #431: Modus-Umschalter. Der Wechsel selbst ist eine
                       Vertragsänderung mit Wirkungsdatum. Spec 12.1/P24: den
@@ -907,6 +849,7 @@ export default function WorkingHoursModal({
                           {label}
                         </label>
                       ))}
+                      {(formTrackHours || formData.mode === 'blocks') && <HandbookHint hintId="work-blocks" />}
                     </div>
 
                     {formData.mode === 'blocks' ? (
@@ -1076,6 +1019,18 @@ export default function WorkingHoursModal({
                     </ul>
                   )}
 
+                  {/* Plan 2026-11-21 Task 6: vor der Verkürzungswahl — sind alle
+                      Verluste anerkannt, entfällt sie. Die Liste kommt aus der
+                      Vorschau der EINGEGEBENEN Eingabe (auch bei Option 1). */}
+                  {showRecognizeList && candidateChanges && (
+                    <RecognizeEntriesList
+                      changes={candidateChanges}
+                      selected={new Set(recognizeIds)}
+                      onChange={changeRecognizeSelection}
+                      disabled={useLossless}
+                    />
+                  )}
+
                   {/* Spec 12.1: vor der Box, damit der Haken das letzte Element vor „Speichern" bleibt. */}
                   {isShortening && preview && (
                     <ShorteningChoice
@@ -1188,20 +1143,23 @@ export default function WorkingHoursModal({
                       className="flex-1 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Save size={18} />
-                      <span>Speichern</span>
+                      <span>{saveButtonLabel(sentRecognizeCount)}</span>
                     </button>
                   </div>
                 </form>
               </div>
 
               <div>
-                <h3
-                  ref={historyHeadingRef}
-                  tabIndex={-1}
-                  className="font-semibold text-gray-900 mb-3 focus:outline-none"
-                >
-                  Verlauf
-                </h3>
+                <div className="flex items-center gap-1 mb-3">
+                  <h3
+                    ref={historyHeadingRef}
+                    tabIndex={-1}
+                    className="font-semibold text-gray-900 focus:outline-none"
+                  >
+                    Verlauf
+                  </h3>
+                  <HandbookHint hintId="wh-history" />
+                </div>
                 {/* Spec 12.1: das Panel gehört immer zur jüngsten Zeile. */}
                 {deleting && deleting.id === youngestId && (
                   <WhDeletePanel

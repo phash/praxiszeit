@@ -176,3 +176,18 @@ describe('shorteningHeadlines: vacation_entitlement', () => {
     expect(out).toEqual(['Der Urlaubsanspruch 2027 sinkt von 30 auf 28 Tage']);
   });
 });
+
+describe('shorteningHeadlines: entries', () => {
+  const p = (o: Partial<WorkingHoursChangePreview>) => o as WorkingHoursChangePreview;
+  const change = (id: string, recognized: boolean) => ({
+    entry_id: id, date: '2026-10-07', old_start: '07:00:00', old_end: '12:00:00', old_uncredited: 0, old_net: 5,
+    new_start: '07:00:00', new_end: '07:00:00', new_uncredited: 0, new_net: 0, not_extendable: null, recognized,
+  });
+  it('zählt anerkannte Einträge nicht als verlierend (wie lost_credited_hours)', () => {
+    expect(shorteningHeadlines(p({
+      shortening_reasons: ['entries'],
+      time_entry_changes: [change('a', true), change('b', true), change('c', false)],
+      lost_credited_hours: 0.22,
+    }))).toEqual(['1 Eintrag verliert angerechnete Zeit (zusammen 0:13 h)']);
+  });
+});

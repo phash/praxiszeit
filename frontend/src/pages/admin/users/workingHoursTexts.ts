@@ -166,6 +166,21 @@ export function signedDays(value: number): string {
   return v > 0 ? `+${text}` : v < 0 ? `−${text}` : text;
 }
 
+/** Plan 2026-11-21 Task 6: Überschrift der Anerkennen-Liste im Dialog. */
+export const RECOGNIZE_TITLE = 'Einträge, die Zeit verlieren';
+/** Plan 2026-11-21 (Global Constraints): Hinweis unter der Anerkennen-Liste, wörtlich. */
+export const RECOGNIZE_NOTE =
+  'Anerkannte Einträge zählen mit der ganzen gestempelten Zeit, auch bei späteren Änderungen. '
+  + 'Anerkennen lässt sich nicht zurücknehmen.';
+/** Plan 2026-11-21 Task 6: Option 1 (verlustfreies Datum) sendet keine Auswahl. */
+export const RECOGNIZE_LOSSLESS_NOTE = 'Gilt nur mit dem eingegebenen Datum.';
+
+/** Plan 2026-11-21 (Global Constraints): Beschriftung des Speichern-Knopfs, `n` = gewählte Einträge. */
+export function saveButtonLabel(n: number): string {
+  if (n <= 0) return 'Speichern';
+  return n === 1 ? 'Speichern und 1 Eintrag anerkennen' : `Speichern und ${n} Einträge anerkennen`;
+}
+
 /** Spec 12.1 — Toast nach dem Speichern (bzw. Löschen, gleiche Zählung). */
 export function savedMessage(
   created: { adjusted_time_entries?: number; skipped_time_entries?: number; adjusted_absences?: number },
@@ -202,8 +217,10 @@ export function shorteningHeadlines(p: WorkingHoursChangePreview): string[] {
     // verliert, sagt `open_entry_loses` — gezählt wie `criteria_text` in der
     // 400-Meldung (9.5 (a)). Sein Verlust ist nicht bezifferbar (das Ende ist
     // unbekannt), die Summe nennt nur die geschlossenen Einträge. `|| 1`: das
-    // Kriterium ist erfüllt, also verliert mindestens einer.
-    const closedLosing = (p.time_entry_changes ?? []).filter((c) => c.new_net < c.old_net).length;
+    // Kriterium ist erfüllt, also verliert mindestens einer. Anerkannte
+    // Einträge (Plan 2026-11-21) stehen mit ihren Kappungswerten in der Liste,
+    // verlieren aber nichts — gezählt wie `lost_credited_hours`.
+    const closedLosing = (p.time_entry_changes ?? []).filter((c) => !c.recognized && c.new_net < c.old_net).length;
     const n = closedLosing + (p.open_entry_loses ? 1 : 0) || 1;
     const lost = p.lost_credited_hours ?? 0;
     out.push(`${n === 1 ? '1 Eintrag verliert' : `${n} Einträge verlieren`} angerechnete Zeit`
@@ -301,4 +318,15 @@ export function contractToday(user: {
   schedule_today?: Parameters<typeof contractTermsOf>[0];
 }): ContractTerms {
   return contractTermsOf(user.schedule_today) ?? (contractTermsOf(user) as ContractTerms);
+}
+
+// Plan 2026-11-21 (Task 5): Hinweis „Ab erstem Arbeitstag übernehmen" unter dem
+// Datumsfeld. `contract` ist der Vertrag, der am ersten Arbeitstag gilt, als Klartext.
+export function firstWorkDayHintText(firstWorkDay: string, until: string, contract: string): string {
+  return `Vom ${formatDate(firstWorkDay)} (erster Arbeitstag) bis zum ${formatDate(until)} gilt noch der Vertrag `
+    + `vom Anlegen (${contract}). Soll die heutige Arbeitszeit schon ab dem ersten Arbeitstag gelten?`;
+}
+
+export function firstWorkDayHintButton(firstWorkDay: string): string {
+  return `Ab ${formatDate(firstWorkDay)} übernehmen`;
 }

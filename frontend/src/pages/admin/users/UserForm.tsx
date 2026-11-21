@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import apiClient from '../../../api/client';
-import { Save } from 'lucide-react';
+import { Save, X } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAuthStore } from '../../../stores/authStore';
 import PasswordInput from '../../../components/PasswordInput';
@@ -11,6 +11,7 @@ import {
   deriveTargets, emptyWeek, formatBlocksText, formatWeekBlocks, isLegacyWeek, validateWeekBlocks,
 } from '../../../utils/workBlocks';
 import WorkBlocksEditor from '../../../components/WorkBlocksEditor';
+import HandbookHint from '../../../components/HandbookHint';
 import ContractTermsFields from './ContractTermsFields';
 import type { ContractTerms } from './workingHoursTypes';
 import { BLOCKS_WITHOUT_EFFECT, LEGACY_WITHOUT_EFFECT } from './workingHoursTexts';
@@ -64,11 +65,15 @@ interface UserFormProps {
   // F010: dieselbe Bauart für die fünf Vertragsfelder (Teil A) — der heute
   // gültige Stand, frisch aus Users.tsx. Nur Anzeige und Anzeige-Weichen.
   displayContract?: ContractTerms;
+  // Task 7 (Spec 2026-11-20): Abbrechen in der festen Leiste — dieselbe Aktion
+  // wie der Abbrechen-Knopf über der Liste (Users.tsx). Fehlt der Callback,
+  // zeigt die Leiste keinen Abbrechen-Knopf.
+  onCancel?: () => void;
 }
 
 export default function UserForm({
   editUser, onSaved, onOpenHoursHistory, displayWeeklyHours, displayDayHours,
-  displayWorkDays, displayUseDailySchedule, displayBlocks, displayContract,
+  displayWorkDays, displayUseDailySchedule, displayBlocks, displayContract, onCancel,
 }: UserFormProps) {
   const toast = useToast();
   const { user: currentUser, setUser: setCurrentUser } = useAuthStore();
@@ -438,12 +443,42 @@ export default function UserForm({
       : `${weeklyHoursTotal} h/Woche`;
 
   return (
-    <div className="bg-white rounded-xl shadow-xs border border-gray-200 p-6 mb-6">
-      <h3 className="text-lg font-semibold mb-4">
-        {editUser ? 'Benutzer bearbeiten' : 'Neue:n Benutzer:in anlegen'}
-      </h3>
+    <div className="bg-white rounded-xl shadow-xs border border-gray-200 px-6 pb-6 mb-6">
+      {/* Task 7: feste Leiste „wen bearbeite ich“ — bleibt beim Scrollen im
+          Scroll-Container <main> oben stehen (sticky innerhalb dieser Karte),
+          mit Speichern und Abbrechen. Der untere Speichern-Knopf am Formularende
+          bleibt (Spec §8); beide lösen dieselbe Aktion aus. Tests und E2E
+          greifen deshalb gezielt auf Leiste bzw. `#user-form` zu. */}
+      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 -mx-6 px-6 py-3 mb-4 rounded-t-xl flex items-center gap-3">
+        <h3 className="text-lg font-semibold min-w-0 flex-1 truncate">
+          {editUser
+            ? `Bearbeiten: ${editUser.first_name} ${editUser.last_name} (${editUser.username})`
+            : 'Neue:n Benutzer:in anlegen'}
+        </h3>
+        <button
+          type="submit"
+          form="user-form"
+          aria-label="Speichern"
+          disabled={submitting || !!createBlocksError}
+          className="shrink-0 bg-primary hover:bg-primary-dark text-white px-3 py-2 sm:px-4 rounded-lg flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Save size={18} aria-hidden="true" />
+          <span className="hidden sm:inline">Speichern</span>
+        </button>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Abbrechen"
+            className="shrink-0 border border-gray-300 text-gray-700 hover:bg-gray-50 px-3 py-2 sm:px-4 rounded-lg flex items-center gap-2 transition"
+          >
+            <X size={18} aria-hidden="true" />
+            <span className="hidden sm:inline">Abbrechen</span>
+          </button>
+        )}
+      </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <form id="user-form" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label htmlFor="f-username" className="block text-sm font-medium text-gray-700 mb-1">Benutzername *</label>
             <input
@@ -688,9 +723,12 @@ export default function UserForm({
             />
           )}
           <div>
-            <label htmlFor="f-child-sick" className="block text-sm font-medium text-gray-700 mb-1">
-              Kind-krank-Tage/Jahr (§45 SGB V)
-            </label>
+            <div className="flex items-center gap-1 mb-1">
+              <label htmlFor="f-child-sick" className="block text-sm font-medium text-gray-700">
+                Kind-krank-Tage/Jahr (§45 SGB V)
+              </label>
+              <HandbookHint hintId="user-child-sick-days" />
+            </div>
             <input
               id="f-child-sick"
               type="number"
@@ -710,9 +748,12 @@ export default function UserForm({
           </div>
           {editUser && (
             <div>
-              <label htmlFor="f-carryover-deadline" className="block text-sm font-medium text-gray-700 mb-1">
-                Resturlaub verfällt am
-              </label>
+              <div className="flex items-center gap-1 mb-1">
+                <label htmlFor="f-carryover-deadline" className="block text-sm font-medium text-gray-700">
+                  Resturlaub verfällt am
+                </label>
+                <HandbookHint hintId="user-carryover-deadline" />
+              </div>
               <input
                 id="f-carryover-deadline"
                 type="date"
@@ -733,9 +774,12 @@ export default function UserForm({
           )}
           {effTrackHours && (
             <div>
-              <label htmlFor="f-overtime-carryover" className="block text-sm font-medium text-gray-700 mb-1">
-                Anfangssaldo Überstunden (h)
-              </label>
+              <div className="flex items-center gap-1 mb-1">
+                <label htmlFor="f-overtime-carryover" className="block text-sm font-medium text-gray-700">
+                  Anfangssaldo Überstunden (h)
+                </label>
+                <HandbookHint hintId="user-carryover" />
+              </div>
               <DecimalInput
                 id="f-overtime-carryover"
                 step="0.25"
@@ -755,9 +799,12 @@ export default function UserForm({
           {/* #383: Übertrag Urlaubstage — gilt für ALLE MA (auch track_hours=false),
               daher NICHT hinter der Überstunden-track_hours-Gate. */}
           <div>
-            <label htmlFor="f-vacation-carryover" className="block text-sm font-medium text-gray-700 mb-1">
-              Übertrag Urlaubstage
-            </label>
+            <div className="flex items-center gap-1 mb-1">
+              <label htmlFor="f-vacation-carryover" className="block text-sm font-medium text-gray-700">
+                Übertrag Urlaubstage
+              </label>
+              <HandbookHint hintId="user-carryover" />
+            </div>
             <DecimalInput
               id="f-vacation-carryover"
               step="0.01"
@@ -786,6 +833,7 @@ export default function UserForm({
             <label htmlFor="exempt_from_arbzg" className="text-sm font-medium text-gray-700 cursor-pointer">
               ArbZG-Prüfungen aussetzen (§18 ArbZG – leitende Angestellte)
             </label>
+            <HandbookHint hintId="user-arbzg-exempt" />
           </div>
 
           <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -799,6 +847,7 @@ export default function UserForm({
             <label htmlFor="is_night_worker" className="text-sm font-medium text-gray-700 cursor-pointer">
               Nachtarbeitnehmer (§6 ArbZG – 8h-Tageslimit bei Nachtarbeit)
             </label>
+            <HandbookHint hintId="user-night-worker" />
           </div>
 
           <div className="md:col-span-2 flex items-center space-x-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
@@ -812,6 +861,7 @@ export default function UserForm({
             <label htmlFor="receives_company_closures" className="text-sm font-medium text-gray-700 cursor-pointer">
               Nimmt an Betriebsferien teil (Betriebsferien werden automatisch eingetragen)
             </label>
+            <HandbookHint hintId="user-company-closures" />
           </div>
 
           {/* #297: Kalenderfarbe — vom Admin für jede:n Mitarbeiter:in setzbar
@@ -863,7 +913,10 @@ export default function UserForm({
 
           {/* First / Last Work Day */}
           <div>
-            <label htmlFor="f-first-work-day" className="block text-sm font-medium text-gray-700">Erster Arbeitstag</label>
+            {/* Label und Feld bleiben Geschwister: das Handbuch-Bild (Marker „erster-tag“) sucht das Feld
+                als following-sibling des Labels. */}
+            <label htmlFor="f-first-work-day" className="inline-block text-sm font-medium text-gray-700">Erster Arbeitstag</label>{' '}
+            <HandbookHint hintId="user-work-period" />
             <input
               id="f-first-work-day"
               type="date"
@@ -965,6 +1018,7 @@ export default function UserForm({
                         />
                         Nach Arbeitsblöcken
                       </label>
+                      <HandbookHint hintId="work-blocks" />
                     </div>
                   </fieldset>
                   {effFixedTarget && !createBlocksActive && !formData.use_daily_schedule && (

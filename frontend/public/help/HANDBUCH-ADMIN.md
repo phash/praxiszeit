@@ -25,6 +25,8 @@ Melden Sie sich mit den Admin-Zugangsdaten an, die bei der Installation gesetzt 
 
 > **Gut zu wissen:** Eine rote Zahl neben `Änderungsanträge` oder `Anträge` zeigt, wie viele Anträge auf Ihre Entscheidung warten.
 
+> **Gut zu wissen:** Das ?-Symbol neben einem Feld erklärt es kurz und führt zum passenden Abschnitt.
+
 <a id="erste-schritte-checkliste"></a>
 ### Was richte ich zuerst ein?
 
@@ -264,6 +266,21 @@ Liegt „Gültig ab“ in der Vergangenheit, rechnet PraxisZeit die erfassten Ze
 4. **Grund:** „Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)“, „Mit der beschäftigten Person vereinbart“ oder „Sonstiges“.
 5. **Begründung:** 10 bis 400 Zeichen. Danach bestätigen Sie den Haken zum gewählten Grund. Grund, Begründung und Notiz speichert PraxisZeit zusammen im Notizfeld der Änderung, höchstens 500 Zeichen; zu lang → „Notiz und Begründung zusammen höchstens 500 Zeichen.“, Speichern bleibt gesperrt – PraxisZeit kürzt nie.
 
+<a id="vertrag-ab-eintritt"></a>
+### Die Arbeitszeit gilt erst ab heute – wie korrigiere ich sie ab dem ersten Arbeitstag?
+
+Der Dialog „Arbeitszeit \& Wochenstunden“ schlägt als „Gültig ab“ den heutigen Tag vor. Wird die vereinbarte Arbeitszeit einer neuen Person damit gespeichert, gilt vom ersten Arbeitstag bis gestern weiter der Vertrag vom Anlegen. So korrigieren Sie das in einem Schritt:
+
+1. **Symptom:** Im Monatsjournal stimmt das Soll vor dem Änderungsdatum nicht – z. B. 8 h an allen fünf Werktagen, obwohl zwei Tage vereinbart sind. Die Person hat dadurch Minusstunden.
+2. Öffnen Sie `Arbeitszeit anpassen…`. Über „Ab diesem Datum gilt“ steht ein Hinweis, auch wenn die Änderung schon gespeichert ist, z. B. „Vom 01.10.2026 (erster Arbeitstag) bis zum 19.11.2026 gilt noch der Vertrag vom Anlegen (40 Std/Woche · 5 Tage/Woche). Soll die heutige Arbeitszeit schon ab dem ersten Arbeitstag gelten?“ Klicken Sie auf `Ab 01.10.2026 übernehmen`: „Gültig ab“ springt auf den ersten Arbeitstag, das Formular zeigt die heute gültige Arbeitszeit, und die Auswirkung wird neu berechnet.
+3. **Vorschau lesen:** Hat die Person an Tagen gestempelt, die nach dem neuen Vertrag keine Arbeitstage sind (z. B. als Aushilfe), stehen diese Einträge unter **Einträge, die Zeit verlieren** mit dem Kennzeichen „Tag ohne Block“. Sie sind vorausgewählt. Lassen Sie den Haken bei jedem Eintrag, an dem tatsächlich gearbeitet wurde; `Alle auswählen` und `Keine` setzen bzw. entfernen alle Haken.
+4. Setzen Sie den Haken `Ich habe die Auswirkungen geprüft und möchte speichern` und klicken Sie auf `Speichern und 2 Einträge anerkennen`. Der Dialog fragt nicht nach einem Grund, wenn kein Eintrag mehr Zeit verliert, das Überstundenkonto nicht sinkt und der Urlaubsanspruch nicht sinkt. Wurde mit der Änderung auch der Urlaubsanspruch herabgesetzt (z. B. von 30 auf 12 Tage, weil 2 statt 5 Tage je Woche vereinbart sind), sinkt er jetzt schon ab dem ersten Arbeitstag. Dann fragt der Dialog nach Grund und Begründung: Wählen Sie „Rückwirkend ab … mit Neuberechnung“ und als Grund in der Regel „Arbeitszeit war falsch hinterlegt (Fehlerkorrektur)“.
+5. **Ergebnis prüfen:** Im Monatsjournal steht vor dem Änderungsdatum jetzt das richtige Soll; die anerkannten Einträge tragen das Kennzeichen „anerkannt“ und zählen mit der ganzen gestempelten Zeit.
+
+> **Gut zu wissen:** **Rechenbeispiel:** Vereinbart sind 2 Tage à 8 h (Montag und Dienstag). Im Oktober hat die Person zusätzlich an zwei Mittwochen je 4 h als Aushilfe gearbeitet. Ab dem ersten Arbeitstag sind die Mittwoche keine Arbeitstage mehr: Ohne Anerkennen werden die beiden Einträge mit **0 h** angerechnet, mit Anerkennen zählen sie voll, zusammen **+8 h** auf dem Überstundenkonto.
+
+> **Achtung:** **Anerkennen lässt sich nicht zurücknehmen** – auch nicht, wenn Sie die Arbeitszeit-Änderung später löschen. Entfernen Sie den Haken bei Einträgen, an denen nicht gearbeitet wurde; für sie gilt dann die Verkürzung wie bei jeder rückwirkenden Änderung. Vorgewählt ist dabei „Ab heute … wirksam“ – damit wird kein Eintrag anerkannt. Damit die übrigen Haken gelten, wählen Sie „Rückwirkend ab … mit Neuberechnung“ und geben Grund und Begründung an.
+
 <a id="auswirkung-pruefen"></a>
 ### Was zeigt mir die Auswirkung vor dem Speichern?
 
@@ -275,7 +292,8 @@ Ist „Gültig ab“ rückwirkend oder betrifft die Änderung schon Erfasstes, s
 2. **Zeiteinträge:** wie viele neu berechnet werden, je Monat mit der angerechneten Zeit vorher → nachher; übersprungene mit Grund. Danach die Zahl der Abwesenheiten, deren Stunden umgestellt werden. Offene Einträge vergangener Tage (vergessenes Ausstempeln) schließt PraxisZeit vorher automatisch und rechnet sie danach regulär neu; beim Überstundenkonto zählen sie in der Tabelle schon unter „bisher“.
 3. **Tabelle** mit den Spalten bisher, neu und Δ: **Überstunden** und **Urlaub verbraucht** (bei geändertem Anspruch auch **Urlaubsanspruch**) mit allen drei Werten; für **Soll im Zeitraum** und **Angerechnet** steht nur die Differenz Δ.
 4. `Einzelheiten` listet jeden Eintrag mit seinen Zeiten vorher → nachher.
-5. Setzen Sie den Haken `Ich habe die Auswirkungen geprüft und möchte speichern` und klicken Sie auf `Speichern`. PraxisZeit meldet danach, wie viele Einträge neu berechnet wurden.
+5. **Einträge, die Zeit verlieren:** Verliert ein Eintrag angerechnete Zeit, steht er mit Haken in dieser Liste, z. B. „Mi 07.10. · gestempelt 07:50–12:05 · bisher 4:15 h → neu 0:00 h“. Gewählte Einträge werden beim Speichern anerkannt und verlieren nichts; die Auswirkung zeigt den Stand mit Anerkennen. Vorausgewählt sind Einträge an einem „Tag ohne Block“ und an Tagen, die bisher gar nicht gekappt wurden – nicht dagegen Einträge, die nur am Rand eines bestehenden Blocks gekappt werden. Ein automatisch geschlossener Eintrag lässt sich hier nicht wählen. Bleiben nicht gewählte Verluste, gilt für sie die Verkürzung wie bisher; wählen Sie dort „Ab heute … wirksam“, wird nichts anerkannt („Gilt nur mit dem eingegebenen Datum.“). Mit Auswahl heißt der Knopf z. B. `Speichern und 2 Einträge anerkennen`.
+6. Setzen Sie den Haken `Ich habe die Auswirkungen geprüft und möchte speichern` und klicken Sie auf `Speichern`. PraxisZeit meldet danach, wie viele Einträge neu berechnet wurden.
 
 > **Achtung:** **Falsche Stempelzeiten bitte am Zeiteintrag korrigieren, nicht über die Arbeitszeit.** Eine rückwirkende Arbeitszeit-Änderung berichtigt nur eine falsch hinterlegte Arbeitszeit. Bei „Sonstiges“ warnt der Dialog zusätzlich: Eine einseitige rückwirkende Kürzung deckt das Direktionsrecht nicht (§ 106 GewO); geleistete Arbeit bleibt zu vergüten.
 
@@ -294,6 +312,8 @@ Nicht angerechnete Zeit steht als Zusatzzeile unter der Uhrzeit – im Monatsjou
 
 1. Die Zusatzzeile nennt Stempel, angerechnete Zeit und den nicht angerechneten Teil, z. B. „gestempelt 08:00–16:00 · angerechnet 5:30 h · 2:30 h zwischen den Blöcken nicht angerechnet“.
 2. Wurde in dieser Zeit tatsächlich gearbeitet, klicken Sie auf `Anerkennen` und bestätigen. Dann wird die gesamte gestempelte Zeit angerechnet – dauerhaft, auch bei späteren Neuberechnungen. Der Vorgang wird protokolliert.
+3. **Mehrere auf einmal im Monatsjournal:** Setzen Sie bei jedem Eintrag, den Sie anerkennen möchten, das Häkchen **Auswählen** – oder klicken Sie auf `Alle nicht angerechneten auswählen`. Der Knopf zählt mit, z. B. `Ausgewählte anerkennen (2)`. Nach dem Klick fragt PraxisZeit nach: „2 Einträge werden mit der ganzen gestempelten Zeit angerechnet (zusätzlich 3:00 h). Anerkennen lässt sich nicht zurücknehmen. Der Vorgang wird protokolliert.“ PraxisZeit erkennt dann alle gewählten Einträge an oder keinen: Scheitert einer, nennt die Meldung den Tag, und nichts wird gespeichert. Offene und automatisch geschlossene Einträge haben kein Häkchen.
+4. **Im Dialog beim Speichern:** Verlieren Einträge durch eine Arbeitszeit-Änderung Zeit, erkennen Sie sie direkt im Dialog „Arbeitszeit \& Wochenstunden“ mit an – über die Liste **Einträge, die Zeit verlieren**, siehe [Was zeigt mir die Auswirkung vor dem Speichern?](#auswirkung-pruefen) und [Arbeitszeit ab dem ersten Arbeitstag](#vertrag-ab-eintritt).
 
 > **Achtung:** **Anerkennen lässt sich nicht zurücknehmen.** Wurde nur ein Teil der Zeit gearbeitet, teilen oder korrigieren Sie den Eintrag besser. Ein offener Eintrag lässt sich erst nach dem Ausstempeln anerkennen, ein automatisch geschlossener erst, wenn das tatsächliche Ende eingetragen ist. Nichtanrechnung ersetzt keine Vergütungsentscheidung: angeordnete, gebilligte oder geduldete Arbeit ist zu vergüten.
 

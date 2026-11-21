@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, ArrowRight } from 'lucide-react';
 import DialogFocusTrap from './DialogFocusTrap';
+import HandbookHint from './HandbookHint';
 import { format, subDays } from 'date-fns';
 import apiClient from '../api/client';
 import { getErrorMessage } from '../utils/errorMessage';
@@ -219,7 +220,10 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
           {/* For DELETE: show what will be deleted */}
           {requestType === 'delete' && entry && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <h3 className="font-semibold text-red-800 mb-2">Eintrag zum Löschen</h3>
+              <div className="flex items-center gap-1 mb-2">
+                <h3 className="font-semibold text-red-800">Eintrag zum Löschen</h3>
+                <HandbookHint hintId="cr-delete" />
+              </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div><span className="text-gray-500">Datum:</span> {formatEntryDate(entry.date)}</div>
                 <div><span className="text-gray-500">Von:</span> {entry.start_time?.substring(0, 5)}</div>
@@ -232,7 +236,10 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
           {/* For UPDATE: show old vs new side by side */}
           {requestType === 'update' && entry && (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <h3 className="font-semibold text-gray-700 mb-3">Aktuelle Werte</h3>
+              <div className="flex items-center gap-1 mb-3">
+                <h3 className="font-semibold text-gray-700">Aktuelle Werte</h3>
+                {!requestCredit && <HandbookHint hintId="cr-update" />}
+              </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div><span className="text-gray-500">Datum:</span> {formatEntryDate(entry.date)}</div>
                 <div><span className="text-gray-500">Von:</span> {entry.start_time?.substring(0, 5)}</div>
@@ -265,7 +272,10 @@ export default function ChangeRequestForm({ entry, requestType, requestCredit = 
           {requestType !== 'delete' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label htmlFor="cr-date" className="block text-sm font-medium text-gray-700 mb-1">Datum</label>
+                <div className="flex items-center gap-1 mb-1">
+                  <label htmlFor="cr-date" className="block text-sm font-medium text-gray-700">Datum</label>
+                  {requestType === 'create' && !requestCredit && <HandbookHint hintId="cr-create" />}
+                </div>
                 {/* Gesamtreview PR2 (Fund 3): die Anrechnung gilt dem Tag des
                     Eintrags — ein anderes Datum lehnt der Server mit 400 ab. */}
                 <input
