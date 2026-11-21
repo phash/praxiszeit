@@ -7,6 +7,8 @@
 
 /** P18: ein automatisch geschlossener Eintrag wird erst nach eingetragenem Ende anerkannt (wortgleich zum Server). */
 export const AUTO_CLOSED_HINT = 'Automatisch geschlossener Eintrag: Bitte zuerst das tatsächliche Ende eintragen.';
+/** Ein offener Eintrag wird erst nach dem Ausstempeln anerkannt (wortgleich `credit_override_service.OPEN_ENTRY_DETAIL`). */
+export const OPEN_ENTRY_HINT = 'Ein offener Eintrag kann erst nach dem Ausstempeln anerkannt werden.';
 
 /** Bestätigungstext vor dem Anerkennen; `rawSpan` = gestempelte Zeit „HH:MM–HH:MM". */
 export function creditConfirmText(rawSpan: string): string {

@@ -349,7 +349,7 @@ export default function WorkingHoursModal({
   const recognizeIds = candidateChanges ? pruneSelection(recognizeSelected, candidateChanges) : [];
   const recognizeBody: RecognizeEntriesBody = recognizeIds.length ? { recognize_entry_ids: recognizeIds } : {};
   const previewKey = JSON.stringify({ effective_from: formData.effective_from, ...scheduleBody, ...recognizeBody });
-  const showRecognizeList = !!candidateChanges && losingEntries(candidateChanges).some((c) => c.recognizable);
+  const showRecognizeList = !!candidateChanges && losingEntries(candidateChanges).length > 0;
 
   useEffect(() => {
     fetchHoursChanges();
@@ -1009,6 +1009,7 @@ export default function WorkingHoursModal({
                       changes={candidateChanges}
                       selected={new Set(recognizeIds)}
                       onChange={changeRecognizeSelection}
+                      disabled={useLossless}
                     />
                   )}
 

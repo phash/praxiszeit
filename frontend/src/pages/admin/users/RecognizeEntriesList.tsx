@@ -1,14 +1,16 @@
 import { useId } from 'react';
-import { AUTO_CLOSED_HINT } from '../../../utils/creditOverride';
+import { AUTO_CLOSED_HINT, OPEN_ENTRY_HINT } from '../../../utils/creditOverride';
 import type { TimeEntryChange } from './workingHoursTypes';
 import { losingEntries, recognizableLosingIds, recognizeRowText } from './recognizeSelection';
-import { RECOGNIZE_NOTE, RECOGNIZE_TITLE } from './workingHoursTexts';
+import { RECOGNIZE_LOSSLESS_NOTE, RECOGNIZE_NOTE, RECOGNIZE_TITLE } from './workingHoursTexts';
 
 interface RecognizeEntriesListProps {
   /** `time_entry_changes` der Vorschau (alle neu gekappten Einträge). */
   changes: TimeEntryChange[];
   selected: ReadonlySet<string>;
   onChange: (next: Set<string>) => void;
+  /** Option 1 (verlustfreies Datum): die Auswahl wird nicht gesendet — Liste gesperrt mit Hinweis. */
+  disabled?: boolean;
 }
 
 /**
@@ -16,11 +18,12 @@ interface RecognizeEntriesListProps {
  * verlierendem Eintrag ein Häkchen. Gewählte Einträge werden beim Speichern
  * der Arbeitszeit-Änderung anerkannt. Nicht anerkennbare (automatisch
  * geschlossene) Einträge haben ein deaktiviertes Häkchen mit dem Hinweis aus
- * `utils/creditOverride.ts`.
+ * `utils/creditOverride.ts` (offene Einträge: `OPEN_ENTRY_HINT`).
  */
-export default function RecognizeEntriesList({ changes, selected, onChange }: RecognizeEntriesListProps) {
+export default function RecognizeEntriesList({ changes, selected, onChange, disabled = false }: RecognizeEntriesListProps) {
   const baseId = useId();
   const losing = losingEntries(changes);
+  const anyRecognizable = losing.some((c) => c.recognizable);
   const toggle = (id: string, checked: boolean) => {
     const next = new Set(selected);
     if (checked) next.add(id);
@@ -35,36 +38,40 @@ export default function RecognizeEntriesList({ changes, selected, onChange }: Re
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h4 id={`${baseId}-title`} className="font-semibold">{RECOGNIZE_TITLE}</h4>
-        <div className="flex gap-1 text-sm">
-          <button
-            type="button"
-            onClick={() => onChange(new Set(recognizableLosingIds(changes)))}
-            className="font-medium underline hover:no-underline"
-          >
-            Alle auswählen
-          </button>
-          <span aria-hidden="true">/</span>
-          <button
-            type="button"
-            onClick={() => onChange(new Set())}
-            className="font-medium underline hover:no-underline"
-          >
-            Keine
-          </button>
-        </div>
+        {anyRecognizable && !disabled && (
+          <div className="flex gap-1 text-sm">
+            <button
+              type="button"
+              onClick={() => onChange(new Set(recognizableLosingIds(changes)))}
+              className="font-medium underline hover:no-underline"
+            >
+              Alle auswählen
+            </button>
+            <span aria-hidden="true">/</span>
+            <button
+              type="button"
+              onClick={() => onChange(new Set())}
+              className="font-medium underline hover:no-underline"
+            >
+              Keine
+            </button>
+          </div>
+        )}
       </div>
+      {disabled && <p className="mt-1 text-xs text-amber-800">{RECOGNIZE_LOSSLESS_NOTE}</p>}
       <ul className="mt-2 space-y-1">
         {losing.map((c) => {
           const hintId = `${baseId}-${c.entry_id}-hint`;
-          const enabled = !!c.recognizable;
+          const recognizable = !!c.recognizable;
+          const enabled = recognizable && !disabled;
           return (
             <li key={c.entry_id}>
               <label className={`flex items-start gap-2 ${enabled ? 'cursor-pointer' : 'cursor-not-allowed text-amber-800'}`}>
                 <input
                   type="checkbox"
-                  checked={enabled && selected.has(c.entry_id)}
+                  checked={recognizable && selected.has(c.entry_id)}
                   disabled={!enabled}
-                  aria-describedby={enabled ? undefined : hintId}
+                  aria-describedby={recognizable ? undefined : hintId}
                   onChange={(e) => toggle(c.entry_id, e.target.checked)}
                   className="w-4 h-4 mt-0.5 shrink-0 text-amber-600 border-gray-300 rounded-sm focus:ring-amber-500"
                 />
@@ -77,7 +84,11 @@ export default function RecognizeEntriesList({ changes, selected, onChange }: Re
                   )}
                 </span>
               </label>
-              {!enabled && <p id={hintId} className="ml-6 text-xs text-amber-800">{AUTO_CLOSED_HINT}</p>}
+              {!recognizable && (
+                <p id={hintId} className="ml-6 text-xs text-amber-800">
+                  {c.old_end === null ? OPEN_ENTRY_HINT : AUTO_CLOSED_HINT}
+                </p>
+              )}
             </li>
           );
         })}

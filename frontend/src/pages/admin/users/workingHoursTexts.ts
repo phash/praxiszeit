@@ -172,6 +172,8 @@ export const RECOGNIZE_TITLE = 'Einträge, die Zeit verlieren';
 export const RECOGNIZE_NOTE =
   'Anerkannte Einträge zählen mit der ganzen gestempelten Zeit, auch bei späteren Änderungen. '
   + 'Anerkennen lässt sich nicht zurücknehmen.';
+/** Plan 2026-11-21 Task 6: Option 1 (verlustfreies Datum) sendet keine Auswahl. */
+export const RECOGNIZE_LOSSLESS_NOTE = 'Gilt nur mit dem eingegebenen Datum.';
 
 /** Plan 2026-11-21 (Global Constraints): Beschriftung des Speichern-Knopfs, `n` = gewählte Einträge. */
 export function saveButtonLabel(n: number): string {

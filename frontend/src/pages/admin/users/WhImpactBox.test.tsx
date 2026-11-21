@@ -169,6 +169,17 @@ describe('WhImpactBox (Spec 12.1)', () => {
     expect(screen.getByText('Gutschrift 21.09.2026: 8:00 h → 4:00 h')).toBeInTheDocument();
   });
 
+  it('Einzelheiten: ein anerkannter Eintrag trägt „wird anerkannt" (Plan 2026-11-21 Task 6)', () => {
+    render(<WhImpactBox preview={{
+      ...FIRST_STATE,
+      affected_time_entries: 0,
+      time_entry_months: [],
+      time_entry_changes: [{ ...FIRST_STATE.time_entry_changes![0], recognized: true }],
+    }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Einzelheiten' }));
+    expect(screen.getByText('14.09.2026 15:00–18:00 → 15:00–17:15 (3:00 h → 2:15 h) · wird anerkannt')).toBeInTheDocument();
+  });
+
   it('Bestandsantwort ohne neue Felder: nur Abwesenheiten und Tabelle', () => {
     render(<WhImpactBox preview={BASE} />);
     expect(screen.getByText('1 Abwesenheit(en) betroffen.')).toBeInTheDocument();

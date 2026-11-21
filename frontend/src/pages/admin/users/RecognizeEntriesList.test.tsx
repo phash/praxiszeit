@@ -2,8 +2,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import RecognizeEntriesList from './RecognizeEntriesList';
 import type { TimeEntryChange } from './workingHoursTypes';
-import { AUTO_CLOSED_HINT } from '../../../utils/creditOverride';
-import { RECOGNIZE_NOTE } from './workingHoursTexts';
+import { AUTO_CLOSED_HINT, OPEN_ENTRY_HINT } from '../../../utils/creditOverride';
+import { RECOGNIZE_LOSSLESS_NOTE, RECOGNIZE_NOTE } from './workingHoursTexts';
 
 const change = (over: Partial<TimeEntryChange> & { entry_id: string; date: string }): TimeEntryChange => ({
   old_start: '07:48:00', old_end: '12:01:00', old_uncredited: 0, old_net: 4.22,
@@ -56,5 +56,27 @@ describe('RecognizeEntriesList (Plan 2026-11-21 Task 6)', () => {
     expect([...onChange.mock.calls.at(-1)![0]].sort()).toEqual(['mon', 'wed']);
     fireEvent.click(screen.getByRole('checkbox', { name: /Mi 07\.10\./ }));
     expect([...onChange.mock.calls.at(-1)![0]]).toEqual([]);
+  });
+
+  it('ein offener Eintrag nennt den Grund „offen", nicht „automatisch geschlossen"', () => {
+    const OPEN = change({ entry_id: 'open', date: '2026-10-09', old_end: null, recognizable: false });
+    render(<RecognizeEntriesList changes={[WED, OPEN]} selected={new Set()} onChange={() => {}} />);
+    expect(screen.getByRole('checkbox', { name: /Fr 09\.10\./ })).toHaveAccessibleDescription(OPEN_ENTRY_HINT);
+  });
+
+  it('ist nichts anerkennbar, bleibt die Liste mit Hinweis, aber ohne „Alle auswählen"', () => {
+    render(<RecognizeEntriesList changes={[THU]} selected={new Set()} onChange={() => {}} />);
+    expect(screen.getByRole('checkbox', { name: /Do 08\.10\./ })).toBeDisabled();
+    expect(screen.getByText(AUTO_CLOSED_HINT)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Alle auswählen' })).not.toBeInTheDocument();
+  });
+
+  it('gesperrt (Option 1): Häkchen deaktiviert, Auswahl sichtbar, Hinweis', () => {
+    render(<RecognizeEntriesList changes={[WED, MON]} selected={new Set(['wed'])} onChange={() => {}} disabled />);
+    const wed = screen.getByRole('checkbox', { name: /Mi 07\.10\./ });
+    expect(wed).toBeDisabled();
+    expect(wed).toBeChecked();
+    expect(screen.getByText(RECOGNIZE_LOSSLESS_NOTE)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Alle auswählen' })).not.toBeInTheDocument();
   });
 });
