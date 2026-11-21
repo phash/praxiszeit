@@ -21,6 +21,8 @@ export interface WorkingHoursChange {
   created_at: string;
   /** Spec 11.1/11.5: locker gelesen — Altzeilen tragen 07:37/23:59 und Pause `null`. */
   blocks?: WeekBlocks | null;
+  /** Plan 2026-11-21: automatisch erfasste Ausgangszeile vor der ersten Stundenänderung. */
+  is_baseline?: boolean;
   // Teil A (075): die fünf Vertragsfelder der Zeile. Optional nur für ältere
   // Antworten/Testdoubles — der Server liefert sie immer.
   vacation_days?: number | null;

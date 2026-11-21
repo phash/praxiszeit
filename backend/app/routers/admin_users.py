@@ -49,6 +49,7 @@ from app.services import (
 # vacation_requests.py/admin_change_requests.py — direkt aus dem Service
 # importiert (kein Router-Zirkelimport).
 from app.services.closure_split_service import resplit_year_closures
+from app.services.reclamp_audit import BASELINE_ROW_NOTE
 from app.core.license import check_employee_limit
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -1962,9 +1963,6 @@ def _reset_matches(change_data: WorkingHoursChangeCreate, norm, reset_schedule) 
         expected.blocks if expected else None, expected.pauses if expected else None,
         _contract_of(reset_schedule),
     )
-
-
-BASELINE_ROW_NOTE = "Automatisch erfasster Ausgangswert vor der ersten Stundenänderung"
 
 
 def _soll_coverage_start(db: Session, user: User, tenant_id) -> Optional[date]:

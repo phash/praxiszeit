@@ -254,6 +254,16 @@ class WorkingHoursChangeResponse(WorkingHoursChangeBase):
     # WorkingHoursChangeBase: das Create-Schema erbte sonst ein ungeprüftes
     # Eingabefeld (PR3 typisiert es).
     blocks: Optional[Any] = None
+    # Plan 2026-11-21 Task 1: die automatisch erfasste Ausgangszeile
+    # (``reclamp_audit.BASELINE_ROW_NOTE``). Abgeleitet, nie aus der Eingabe —
+    # der Validator überschreibt jeden mitgeschickten Wert.
+    is_baseline: bool = False
+
+    @model_validator(mode="after")
+    def flag_baseline_row(self):
+        from app.services.reclamp_audit import BASELINE_ROW_NOTE
+        self.is_baseline = self.note == BASELINE_ROW_NOTE
+        return self
 
     @field_validator('blocks')
     @classmethod
