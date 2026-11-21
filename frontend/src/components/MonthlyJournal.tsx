@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { format, parseISO, isBefore, isAfter, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Pencil, Plus, Trash2, Check, X } from 'lucide-react';
@@ -15,6 +15,7 @@ import MonthSelector from './MonthSelector';
 import LoadingSpinner from './LoadingSpinner';
 import { RawStampNote } from './RawStampNote';
 import CreditOverrideButton from './CreditOverrideButton';
+import { bulkConfirmText, canRecognizeNow, entryNotCreditedMinutes } from '../utils/creditOverride';
 import ChangeRequestForm from './ChangeRequestForm';
 import AbsenceDeleteRequestDialog from './AbsenceDeleteRequestDialog';
 import type { AbsenceToDelete } from './AbsenceDeleteRequestDialog';
@@ -267,6 +268,11 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
   const [creditRequest, setCreditRequest] = useState<{ day: JournalDay; entry: TimeEntryItem } | null>(null);
   // P1.1: Lösch-Antrag für eine eigene Abwesenheit eines vergangenen Tages.
   const [absenceDeleteRequest, setAbsenceDeleteRequest] = useState<AbsenceToDelete | null>(null);
+  // Plan 2026-11-21 Task 10: Sammel-Anerkennen (nur Admin-Ansicht). Die Auswahl
+  // gilt für den angezeigten Monat der angezeigten Person.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  useEffect(() => { setSelectedIds(new Set()); }, [selectedMonth, userId]);
   useEffect(() => {
     const controller = new AbortController();
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -315,6 +321,54 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
 
     return () => controller.abort();
   }, [selectedMonth, userId, isAdminView, reloadKey]);
+
+  // Anerkennbare Einträge des Monats in Journal-Reihenfolge; die Auswahl zählt
+  // nur, was nach dem letzten Laden noch anerkennbar ist.
+  const recognizableEntries = useMemo(
+    () => (isAdminView && data ? data.days.flatMap((d) => d.time_entries.filter(canRecognizeNow)) : []),
+    [data, isAdminView],
+  );
+  const selectedEntries = recognizableEntries.filter((e) => selectedIds.has(e.id));
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function runBulkRecognize(ids: string[]) {
+    if (bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const res = await apiClient.post(`/admin/users/${userId}/time-entries/credit-override`, { entry_ids: ids });
+      const recognized: number = res.data?.recognized ?? ids.length;
+      toast.success(recognized === 1 ? '1 Eintrag anerkannt' : `${recognized} Einträge anerkannt`);
+      // P4: §3/§4/48 h und Anwesenheit kommen nur als weiche Warnung zurück.
+      showArbzgWarnings(toast, res.data?.warnings);
+      setSelectedIds(new Set());
+    } catch (err) {
+      // Alles oder nichts: der Server nennt den Tag, an dem es scheiterte.
+      toast.error(getErrorMessage(err, 'Anerkennen fehlgeschlagen'));
+    } finally {
+      setBulkBusy(false);
+      setReloadKey((k) => k + 1);
+    }
+  }
+
+  function startBulkRecognize() {
+    const ids = selectedEntries.map((e) => e.id);
+    if (ids.length === 0) return;
+    const extra = selectedEntries.reduce((sum, e) => sum + entryNotCreditedMinutes(e), 0);
+    confirm({
+      title: 'Ausgewählte Einträge anerkennen',
+      message: bulkConfirmText(ids.length, extra),
+      confirmLabel: 'Einträge anerkennen',
+      variant: 'warning',
+      onConfirm: () => runBulkRecognize(ids),
+    });
+  }
 
   const isNonWorkDay = (day: JournalDay) =>
     day.type === 'weekend' || day.type === 'holiday';
@@ -712,6 +766,20 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
               : undefined
           }
         />
+        {isAdminView && canRecognizeNow(e) && (
+          // Task 10: Häkchen fürs Sammel-Anerkennen; Desktop-Spalte und
+          // Mobilzeile teilen denselben Auswahlzustand.
+          <label className="mr-2 inline-flex items-center gap-1 text-xs text-gray-600">
+            <input
+              type="checkbox"
+              checked={selectedIds.has(e.id)}
+              onChange={() => toggleSelected(e.id)}
+              aria-label={`${e.start_time?.substring(0, 5) ?? ''}–${e.end_time?.substring(0, 5) ?? ''} am ${day.date.slice(8, 10)}.${day.date.slice(5, 7)}. zum Anerkennen auswählen`}
+              className="rounded-sm border-gray-300"
+            />
+            <span aria-hidden="true">Auswählen</span>
+          </label>
+        )}
         {isAdminView && (
           <CreditOverrideButton entry={e} onDone={() => setReloadKey((k) => k + 1)} />
         )}
@@ -848,6 +916,26 @@ export default function MonthlyJournal({ userId, isAdminView, headerSlot }: Mont
             cancelEdit();
           }}
         />
+        {/* Task 10: Sammel-Anerkennen — nur, wenn der Monat anerkennbare Einträge hat. */}
+        {isAdminView && recognizableEntries.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set(recognizableEntries.map((e) => e.id)))}
+              className="text-xs px-2 py-1 rounded-sm border border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              Alle nicht angerechneten auswählen
+            </button>
+            <button
+              type="button"
+              disabled={selectedEntries.length === 0 || bulkBusy}
+              onClick={startBulkRecognize}
+              className="text-xs px-2 py-1 rounded-sm border border-amber-300 text-amber-800 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {`Ausgewählte anerkennen (${selectedEntries.length})`}
+            </button>
+          </div>
+        )}
       </div>
 
       {loading && <LoadingSpinner />}
