@@ -35,7 +35,7 @@ def _published(r):
 
 def test_vector_file_is_mrd_report_1():
     assert VECTORS["protocol"] == "mrd-report-1"
-    assert len(VECTORS["cases"]) >= 199 and len(VECTORS["rules"]) >= 47
+    assert len(VECTORS["cases"]) >= 259 and len(VECTORS["rules"]) >= 53
 
 
 def test_rule_table_matches_vector_file():
