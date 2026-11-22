@@ -1,4 +1,4 @@
-# Shared text sanitizer for mrd-report-1. Source: phash/pzweb backend/app/core/report_sanitize.py @ 0dcfa32 (text part only).
+# Shared text sanitizer for mrd-report-1. Source: phash/pzweb backend/app/core/report_sanitize.py @ 1b2a639 (text part only).
 # Update together with tests/data/mrd-report-1/sanitize-vectors.json.
 """Reference sanitizer for app reports (protocol mrd-report-1).
 
@@ -32,16 +32,19 @@ _Q = "'"  # kept out of raw strings: an escaped quote is rejected by Rust and JS
 # Characters that end a user name in a path.
 _NAME = r'[^\\/ \t\n"' + _Q + r'<>|:*?,;]'
 # Key endings whose value is a secret; the key may carry any prefix (DB_PASSWORD, client_secret,
-# X-Amz-Signature, aws_secret_access_key). "key" and "auth" count only after a known prefix or
-# separator, so primary key, hotkey, monkey, OAuth and author stay readable.
+# X-Amz-Signature, aws_secret_access_key, BACKUP_PASSPHRASE, DB_ENC_KEY, MRD_REPORT_KEY). "key" and "auth"
+# count only after a known prefix or separator, so primary key, hotkey, monkey, OAuth and author stay readable.
 _SECRET_KEYS = (
-    r'(?:password|passwd|pwd|token|secret|credential|signature|license_id|apikey|sessid'
-    r'|(?:api|secret|private|access|signing|encryption|client|master|session|ssh|gpg|pgp|app|account|storage)'
+    r'(?:password|passwd|pwd|passphrase|token|secret|credential|signature|license_id|apikey|sessid'
+    r'|(?:api|secret|private|access|signing|encryption|enc|report|client|master|session|ssh|gpg|pgp|app|account'
+    r'|storage)'
     r'[_.-]?key|session[_.-]?id|[_.-]sig|[_.-]auth)s?'
 )
 # Short keys that are secrets only as a whole key: key=, sig=, auth=, session= (query strings), and
 # "key"/"auth"/... as a whole JSON key (docker config "auth": "...").
 _SHORT_SECRET_KEYS = r'(?:key|sig|auth|session)'
+# Secret JSON key names, plain ("password") and escaped inside a JSON string (\"password\").
+_JSON_SECRET_KEYS = r'(?:[A-Za-z0-9_.-]*' + _SECRET_KEYS + r'|' + _SHORT_SECRET_KEYS + r')'
 # E-mail delimiters: the local part and the domain labels consist of everything else.
 _MAIL_DELIM = r' \t\n@<>()\[\]{},;:"' + _Q + r'\\/=|'
 _DICOM_PATIENT_TAGS = r'(?:0010|0020|0030|0040|1000|1001|1005|1040|1060|2154)'
@@ -78,6 +81,31 @@ _JQ = r'\\{0,3}"'
 _BLOCK = r'[^\n]*(?:\n[^\n]+)*'
 # Cell labels of a delimited table header (CSV, TSV, ; or | separated).
 _TABLE_LABELS = r'(?:' + _PATIENT_LABELS + r'|' + _PERSON_WORDS + r')'
+# Words that are a person column only as a whole cell of a header line made of cells (Nr;Name,
+# Mitarbeiterin|Stunden): in prose, as a key or in a SQL column list they stay readable ("name": "Export",
+# name=Export, Spalte Name fehlt, insert into t (id,name)).
+# Gender forms: -in, -innen, :in, *in, /in, _in, /-in, (in), (innen).
+_IN = r'(?:[:*/_]?in(?:nen)?|/-in(?:nen)?|\(in(?:nen)?\))?'
+_TABLE_PERSON_WORDS = (
+    r'(?:name|name[ _.-]?[0-9]|(?:full|display|voll(?:er)?)[ _.-]?name|vor-?[ \t]*(?:und|&)[ \t]*nachname'
+    r'|mitarbeiter' + _IN + r'(?:[ _.-]?name)?|mitarbeitende|employee(?:[ _.-]?name)?'
+    r'|user[ _.-]?name|benutzer(?:[ _.-]?name|\(name\))?|person(?:[ _.-]?name)?'
+    r'|versicherte(?:[rn]|\([rn]\)|\*r)?|kunde(?:n|\(n\)|/kundin)?'
+    r'|kund(?:[:*/_]?in(?:nen)?|\(in\))|kunden(?:[ _.-]?name)?'
+    r'|(?:zahn|fach|haus)?(?:arzt(?:/(?:ä|Ä|ae)rztin)?|(?:ä|Ä|ae)rzt(?:e|[:*/_]?in(?:nen)?|\(in\)))'
+    r'|patient(?:en|innen|[:*/_]in(?:nen)?|\(in(?:nen)?\))|pat\.?|(?:be)?nutzer' + _IN
+    + r'|(?:teilnehm|behandel)ende'
+    + r'|(?:behandler|bearbeiter|therapeut|teilnehmer|ansprechpartner|inhaber|klient|betreuer)' + _IN
+    + r'|customer|client|doctor|physician|staff)'
+)
+# Cells before such a word, from the line start: { } = only inside groups, ( ) [ ] only as balanced, not nested
+# groups, so
+# the word is no table header inside a SQL column list (id,name), a JSON array or after key=value; a
+# timestamp, [INFO], "label:" or a cell "Dauer (h)" before the header does not stop it (fails closed).
+# Linear: a group starts with ( or [, which the class run cannot contain, so every prefix has one parse. One class run (blanks included, no
+# separate leading [ \t]*: two overlapping runs would make a line of tabs quadratic), then a delimiter.
+_CELLS = r'[^\n(){}\[\]=]*(?:(?:\([^\n()]*\)|\[[^\n\[\]]*\])[^\n(){}\[\]=]*)*[;\t|,]'
+_HEADER_CELLS = r'^((?:' + _CELLS + r')?)'
 _VALUE = r'([^ \t\n][^\n]*)'
 # Left delimiter of an inline GDT record. "/" and "\" (paths, URLs) only for the rules with a
 # length condition: GET /api/items/1233104/ is no record.
@@ -197,11 +225,12 @@ RULES: tuple[Rule, ...] = (
     Rule("kv_secret", "secret",
          r'(^|[^A-Za-z0-9_.-])([A-Za-z0-9_.-]*' + _SECRET_KEYS + r'[ \t]*[=:][ \t]*)("?)[^ \t\n&;"]+',
          "{1}{2}{3}<secret>",
-         "key=value or key: value where the key ends in password, passwd, pwd, token, secret, credential, "
-         "signature, license_id, apikey, sessid, <api|secret|private|access|signing|encryption|client|master|"
-         "session|ssh|gpg|pgp|app|account|storage>[_.-]key, session_id, _sig or _auth (optional plural s); an "
-         "opening \" is kept; the value runs to whitespace, &, ; or \".",
-         ("i",)),
+         "key=value or key: value where the key ends in password, passwd, pwd, passphrase, token, secret, "
+         "credential, signature, license_id, apikey, sessid, <api|secret|private|access|signing|encryption|enc|"
+         "report|client|master|session|ssh|gpg|pgp|app|account|storage>[_.-]key, session_id, _sig or _auth "
+         "(optional plural s; DB_ENC_KEY, MRD_REPORT_KEY, set \"X_TOKEN=...\"); an opening \" is kept; the value "
+         "runs to whitespace, &, ; or \".",
+         ("i",), required=("=", ":")),
     Rule("kv_secret_short", "secret",
          r'(^|[^A-Za-z0-9_.-])(' + _SHORT_SECRET_KEYS + r'[ \t]*=[ \t]*)("?)[^ \t\n&;"]+',
          "{1}{2}{3}<secret>",
@@ -209,9 +238,30 @@ RULES: tuple[Rule, ...] = (
          "'primary key: id' and 'Session: 3 open' stay.",
          ("i",)),
     Rule("json_secret", "secret",
-         r'("(?:[A-Za-z0-9_.-]*' + _SECRET_KEYS + r'|' + _SHORT_SECRET_KEYS + r')"[ \t]*:[ \t]*")[^"\n]*"',
+         r'("' + _JSON_SECRET_KEYS + r'"[ \t]*:[ \t]*")[^"\n]*"',
          '{1}<secret>"',
          "JSON \"<secret key>\": \"value\" (also the whole keys \"key\", \"auth\", \"sig\", \"session\").", ("i",)),
+    Rule("json_secret_escaped", "secret",
+         r'(\\{1,3}"' + _JSON_SECRET_KEYS + r'\\{1,3}"[ \t]*:[ \t]*\\{1,3}")[^"\\\n]*(?:\\+[^"\\\n][^"\\\n]*)*',
+         "{1}<secret>",
+         "JSON inside a JSON string, \\\"<secret key>\\\":\\\"value\\\" (same keys as json_secret): the value up to "
+         "the escaped closing quote; escapes inside the value (\\\\u00e4) belong to it.", ("i",),
+         required=('\\"',)),
+    Rule("kv_passphrase", "secret",
+         r'(^|[^A-Za-z0-9_.-])([A-Za-z0-9_.-]*passphrases?' + _Q + r'?[ \t]*[=:][ \t]*)(["' + _Q + r']?)[^\n"]+',
+         "{1}{2}{3}<secret>",
+         "Passphrase key (BACKUP_PASSPHRASE=, passphrase:, set \"X_PASSPHRASE=...\", Python 'passphrase': ...) "
+         "followed by = or :: the value including blanks, up to a \" or end of line (kv_secret stops at the first "
+         "blank).", ("i",),
+         required=("passphrase",)),
+    Rule("cli_secret", "secret",
+         r'(^|[^A-Za-z0-9_.-])(--passphrase[ \t]+|setx(?:\.exe)?[ \t]+"?[A-Za-z0-9_.-]*' + _SECRET_KEYS
+         + r'"?[ \t]+|SetEnvironmentVariable[ \t]*\([ \t]*["' + _Q + r']?[A-Za-z0-9_.-]*' + _SECRET_KEYS + r'["' + _Q
+         + r']?[ \t]*,[ \t]*)("[^"\n]*"|' + _Q + r'[^' + _Q + r'\n]*' + _Q + r'|[^ \t\n"' + _Q + r',)]+)',
+         "{1}{2}<secret>",
+         "Secret as a command-line argument: gpg --passphrase <value>, setx <secret key> <value>, PowerShell "
+         "SetEnvironmentVariable(\"<secret key>\", <value>, ...): the value, quoted or up to the next blank.",
+         ("i",), required=("passphrase", "setx", "setenvironmentvariable")),
     # 2. e-mail
     Rule("email", "email",
          r'(^|[' + _MAIL_DELIM + r'])[^' + _MAIL_DELIM + r']+@[^' + _MAIL_DELIM + r'.]+(?:\.[^'
@@ -384,6 +434,28 @@ RULES: tuple[Rule, ...] = (
          "Delimited table header whose last cell is a patient column, followed by data rows: every following "
          "non-empty line.",
          ("i",), patient_value_group=2, required=(";", "\t", "|", ",")),
+    Rule("csv_person_header", "patient",
+         _HEADER_CELLS + r'( *["' + _Q + r']?' + _TABLE_PERSON_WORDS + r'["' + _Q + r']?)([ \t]*(?:[;\t|]|,[^ \t\n])' + _BLOCK + r')',
+         "{1}{2}<patient>",
+         "Header line made of cells (; tab | or , without a blank after it, so prose 'Name, Adresse fehlen' stays; "
+         "before the cell { } = only inside "
+         "groups and ( ) [ ] only as balanced, not nested groups, so a timestamp, [INFO], label: or Dauer (h) may "
+         "precede; the word may be quoted with \" or ') with a person "
+         "column Name, Name 1, Full/Display Name, Vor- und Nachname, Mitarbeiter(in), Mitarbeiter:innen, "
+         "Mitarbeitende, Employee, User Name, Benutzer, Benutzername, Benutzer(name), Nutzer(in), Person, "
+         "Versicherte, Versicherter, Versicherte(r), Versicherte*r, Kunde, Kunden, Kunde(n), Kunde/Kundin, Kund:in, "
+         "Kundenname, Arzt, Arzt/Ärztin, Ärzte, Ärzt:in, Zahn-/Fach-/Hausarzt, Patienten, Patientinnen, Patient:in, "
+         "Pat., Behandler(in), Bearbeiter(in), Therapeut(in), Teilnehmer(in), Teilnehmende, Behandelnde, "
+         "Ansprechpartner(in), Inhaber(in), Klient(in), Betreuer(in), Customer, Client, Doctor, Physician, Staff "
+         "(gender forms -in, -innen, :in, *in, /in, _in, /-in, (in), (innen)) followed by another cell: the rest of "
+         "the header and every following non-empty line.",
+         ("i", "m"), patient_value_group=3, required=(";", "\t", "|", ",")),
+    Rule("csv_person_header_last", "patient",
+         r'^(' + _CELLS + r')( *["' + _Q + r']?' + _TABLE_PERSON_WORDS + r'["' + _Q + r']?)([ \t]*\n[^\n]+(?:\n[^\n]+)*)',
+         "{1}{2}<patient>",
+         "Header line made of cells whose last cell is a person column (same words and cells as "
+         "csv_person_header, e.g. Nr;Name), followed by data rows: every following non-empty line.",
+         ("i", "m"), patient_value_group=3, required=(";", "\t", "|", ",")),
     Rule("db_error_row", "patient",
          r'\b((?:Failing row contains|Fehlgeschlagene Zeile enthält)[ \t]*'
          r'|(?:Key|Schlüssel)[ \t]*»?\([^()\n]*\)[ \t]*=[ \t]*)(\([^\n]*)',
@@ -448,6 +520,16 @@ RULES: tuple[Rule, ...] = (
          "closing tag is required, so the token <patient> itself never opens an element.",
          ("i",), patient_value_group=2),
     # 6. long runs
+    Rule("base64_run", "secret", r'(^|[^A-Za-z0-9_-])[A-Za-z0-9_-]*[A-Za-z0-9+/]{40,}[A-Za-z0-9+/_-]*', "{1}<secret>",
+         "Standard base64 run (with + and /) of >= 40 chars together with the base64url "
+         "characters (- _) glued to it on either side (token_<run> and <run>-tail become one <secret>); replaced "
+         "only if it contains an uppercase letter, a lowercase letter and a digit. Starts after any character "
+         "but A-Za-z0-9 - _ (also after / or +: a/b_<run> becomes a/<secret>); = padding stays (<secret>==), so a "
+         "name of 40+ characters that fails the condition cannot swallow the = before its value; runs before "
+         "base64url_run. A glued - or _ part counts for the condition, so a ticket key in a path (PZ-1234/...) can "
+         "make a lower-case path of 40+ characters <secret>. "
+         "Paths of 40+ characters without . - _ that mix upper case, lower case and digits are masked too.",
+         condition="upper_lower_digit"),
     Rule("base64url_run", "secret", r'[A-Za-z0-9_-]{40,}', "<secret>",
          "base64url run of >= 40 chars; replaced only if it contains an uppercase letter, a lowercase letter "
          "and a digit (long identifiers survive).",
@@ -552,5 +634,4 @@ def find_patient_data(text: str) -> list[str]:
     ``find_patient_data(sanitize_report_text(x)) == []`` holds for every x.
     """
     return sanitize_with_findings(text)[1]
-
 
