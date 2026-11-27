@@ -34,7 +34,7 @@ from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
     get_schedule_for_date, get_daily_target_for_date, get_vacation_account,
     counts_vacation_by_day_only, child_sick_cap, child_sick_days_used, half_special_day_weight,
-    f1_clamp_for_day, user_wh_changes, vacation_day_contribution,
+    f1_clamp_for_day, user_wh_changes, vacation_day_contribution, _within_employment_window,
 )
 from app.services import (
     credit_override_service, presence_service, settings_service, special_days_service,
@@ -1112,7 +1112,10 @@ def review_change_request(
                 _current_days = (
                     _vacation_day_contribution(db, _bud_user, absence.date, absence.half_day)
                     if (absence.type == AbsenceType.VACATION
-                        and absence.date.year == _target_year)
+                        and absence.date.year == _target_year
+                        # wie get_vacation_account: außerhalb des Fensters
+                        # zählt die Zeile nicht, gibt also nichts frei
+                        and _within_employment_window(_bud_user, absence.date))
                     else 0.0
                 )
                 _net_new = _post_days - _current_days

@@ -3977,6 +3977,15 @@ def _pending_change_request_vacation_days(db: Session, user: User, year: int) ->
         if cr.request_type == ChangeRequestType.CREATE:
             if cr.proposed_absence_type != AbsenceType.VACATION.value or not cr.proposed_date:
                 continue
+            # Steht am Tag schon eine Abwesenheit, kostet der Antrag nichts: die
+            # Genehmigung verknüpft bei gleichem Typ nur und lehnt einen anderen
+            # Typ mit 409 ab (Release-Review 1.26.0).
+            if db.query(Absence.id).filter(
+                Absence.tenant_id == user.tenant_id,  # F-026
+                Absence.user_id == user.id,
+                Absence.date == cr.proposed_date,
+            ).first():
+                continue
             if _bookable_vacation_day(cr.proposed_date):
                 total += Decimal(str(vacation_day_contribution(db, user, cr.proposed_date, False)))
             continue
@@ -3993,7 +4002,10 @@ def _pending_change_request_vacation_days(db: Session, user: User, year: int) ->
         if target_type == AbsenceType.VACATION.value and _bookable_vacation_day(target_date):
             post = vacation_day_contribution(db, user, target_date, absence.half_day)
         current = 0.0
-        if absence.type == AbsenceType.VACATION and absence.date.year == year:
+        # Eine Urlaubszeile außerhalb des Beschäftigungsfensters zählt das
+        # Konto nicht (get_vacation_account) — sie gibt also nichts frei.
+        if (absence.type == AbsenceType.VACATION and absence.date.year == year
+                and _within_employment_window(user, absence.date)):
             current = vacation_day_contribution(db, user, absence.date, absence.half_day)
         if post - current > 1e-9:
             total += Decimal(str(post - current))

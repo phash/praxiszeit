@@ -430,3 +430,39 @@ class TestAbsenceCRFreeSpecialDay:
         # Absence unverändert am Ursprungsdatum, keine Urlaubs-Umbuchung.
         db.refresh(absence)
         assert absence.date == orig_date
+
+
+class TestUpdateCrOutsideEmploymentWindow:
+    """Release-Review 1.26.0: eine Urlaubszeile außerhalb des
+    Beschäftigungsfensters zählt ``get_vacation_account`` nicht — ein UPDATE,
+    das sie ins Fenster verschiebt, kostet daher den vollen Tag und braucht
+    Budget (vorher rechnete die Genehmigung Netto 0)."""
+
+    def test_update_into_window_checks_budget(self, db):
+        from fastapi import HTTPException
+        from app.routers.admin_change_requests import review_change_request
+        from app.schemas.change_request import ChangeRequestReview
+
+        emp = _make_user(
+            db, username="win_emp_update", email="winemp@test.de",
+            vacation_days=1, last_work_day=date(2026, 6, 30),
+        )
+        admin = _make_user(db, username="win_admin", email="winadmin@test.de", role=UserRole.ADMIN)
+        _make_absence(db, emp, date(2026, 6, 10), AbsenceType.VACATION, 8.0)
+        outside = _make_absence(db, emp, date(2026, 7, 6), AbsenceType.VACATION, 8.0)
+        acc = calculation_service.get_vacation_account(db, emp, 2026)
+        assert float(acc["remaining_days"]) < 1.0, acc
+
+        cr = _make_absence_cr(
+            db, emp, request_type=ChangeRequestType.UPDATE, absence_id=outside.id,
+            proposed_date=date(2026, 6, 11), proposed_absence_type="vacation",
+            proposed_absence_hours=8.0,
+        )
+        with pytest.raises(HTTPException) as exc:
+            review_change_request(
+                request_id=str(cr.id), review=ChangeRequestReview(action="approve"),
+                db=db, current_user=admin,
+            )
+        assert exc.value.status_code == 400
+        db.refresh(outside)
+        assert outside.date == date(2026, 7, 6)
