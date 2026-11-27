@@ -34,7 +34,7 @@ from app.services.arbzg_utils import is_night_work
 from app.services.calculation_service import (
     get_schedule_for_date, get_daily_target_for_date, get_vacation_account,
     counts_vacation_by_day_only, child_sick_cap, child_sick_days_used, half_special_day_weight,
-    f1_clamp_for_day, user_wh_changes,
+    f1_clamp_for_day, user_wh_changes, vacation_day_contribution,
 )
 from app.services import (
     credit_override_service, presence_service, settings_service, special_days_service,
@@ -63,28 +63,9 @@ GRANT_ONLY_UPDATE_DETAIL = (
 )
 
 
-def _vacation_day_contribution(db, user, d, half_day) -> float:
-    """Fix #4: tagebasierter Urlaubsverbrauch EINES VACATION-Tags am Datum ``d``,
-    exakt nach der Regel in ``get_vacation_account``: ohne Stundenzählung
-    (``counts_vacation_by_day_only``, allein ``track_hours=False``, B11) →
-    0,5/1,0; sonst Tagessoll-des-Tages ≤ 0 → 0, sonst 0,5 (Halbtag)
-    bzw. 1,0 (voller Tag). ``half_day=None`` (Legacy/CR-Default) zählt als voller
-    Tag (ein CR bucht ganztags). Wird für den Netto-Neuverbrauch-Vergleich im
-    UPDATE-Budget-Check verwendet und (Gesamtreview 1.20 B5) für die
-    Budget-Prüfung im CREATE-Zweig — beide Zweige legen die Zeile in jedem Fall
-    an, verlangt wird also genau, was das Konto für sie zählt."""
-    # #394: an einem Halbtags-Sondertag (24./31.12.) kostet der Urlaubstag 0,5 —
-    # exakt wie get_vacation_account/absence_days (zentraler Helper).
-    _cfg = special_days_service.get_special_day_config(db, user.tenant_id, d.year)
-    weight = float(half_special_day_weight(d, _cfg))
-    # EIN Preload der Verlaufszeilen fuer Modus und Tagessoll (statt zweier Aufloesungen).
-    wh_changes = user_wh_changes(db, user)
-    if counts_vacation_by_day_only(db, user, d, wh_changes):  # #191, Gesamtreview B11; Teil A: je Tag
-        return (0.5 if half_day else 1.0) * weight
-    dt = get_daily_target_for_date(user, d, get_schedule_for_date(db, user, d, wh_changes))
-    if dt <= 0:
-        return 0.0
-    return (0.5 if half_day else 1.0) * weight
+# #585: die Regel lebt jetzt in calculation_service (auch die Anzeige
+# „Beantragt (offen)" auf der Seite Abwesenheiten zählt damit).
+_vacation_day_contribution = vacation_day_contribution
 
 
 def _assert_absence_date_bookable(db, tenant_id, target_date) -> None:

@@ -24,6 +24,7 @@ import VacationRequestEditModal from '../components/VacationRequestEditModal';
 import AbsenceDeleteRequestDialog from '../components/AbsenceDeleteRequestDialog';
 import type { AbsenceToDelete } from '../components/AbsenceDeleteRequestDialog';
 import { Link } from 'react-router-dom';
+import VacationPlanningCard from '../components/VacationPlanningCard';
 import {
   CHANGE_REQUEST_JOURNAL_PATH, PAST_DAY_ABSENCE_HINT, mayBookAbsenceDirectly, mayDeleteAbsenceByDate, todayBerlin,
 } from '../utils/absenceRules';
@@ -883,6 +884,9 @@ export default function AbsenceCalendarPage() {
           </select>
         )}
       </div>
+
+      {/* #585: lädt neu, sobald sich eigene Abwesenheiten oder Anträge ändern */}
+      <VacationPlanningCard year={displayedYear} absences={myAbsences} requests={myVacationRequests} />
 
       {/* Calendar */}
       {viewMode === 'month' ? (

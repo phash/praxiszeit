@@ -227,6 +227,18 @@ Klicken Sie in der Navigation auf `Abwesenheiten`. Der Tab `Kalender` zeigt die 
 
 > **Gut zu wissen:** **Verkürzte Tage und Sondertage:** Ein verkürzter Tag steht im Kalender z. B. als „Brückentag: verkürzter Tag (max. 4 h)“. An diesem Tag ist Ihr Tagessoll höchstens so hoch wie angegeben, Urlaub kostet einen halben Tag. Mehr dazu: [So rechnet PraxisZeit: Sondertage und verkürzte Tage](SO-RECHNET-PRAXISZEIT.md#sondertage).
 
+<a id="urlaub-planen"></a>
+### Wie viele Urlaubstage kann ich noch verplanen?
+
+Über dem Kalender unter `Abwesenheiten` steht die Karte **Urlaub** für das angezeigte Jahr. Blättern Sie mit `Jahr` und den Pfeilen ins nächste Jahr, um Ihren Urlaub dort zu planen.
+
+1. **Anspruch:** Ihre Urlaubstage im Jahr, darunter ein Übertrag aus dem Vorjahr.
+2. **Gebucht:** eingetragener und genehmigter Urlaub, darunter die Tage aus **Betriebsferien**.
+3. **Beantragt (offen):** Urlaubsanträge und Änderungsanträge auf Urlaub, die die Verwaltung noch nicht genehmigt hat.
+4. **Noch verplanbar:** was nach Buchungen und offenen Anträgen übrig bleibt. Ein roter Wert heißt: Sie haben mehr geplant, als Ihnen zusteht.
+
+> **Gut zu wissen:** **Nächstes Jahr:** Ihr Resturlaub aus diesem Jahr kommt erst mit dem Jahresabschluss der Verwaltung dazu. Bis dahin zeigt die Karte nur den Anspruch des neuen Jahres.
+
 <a id="abwesenheit-eintragen"></a>
 ### Wie trage ich Urlaub oder eine andere Abwesenheit ein?
 

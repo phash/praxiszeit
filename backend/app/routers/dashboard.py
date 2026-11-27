@@ -479,11 +479,14 @@ def get_vacation_account(
         account["remaining_days"], year, today_local()
     )
 
+    planning = calculation_service.vacation_planning_figures(db, target_user, year, account)  # #585
+    fields = {**account, **planning}
+
     return VacationAccount(
         year=year,
         carryover_deadline=carryover_deadline,
         has_carryover_warning=has_warning,
-        **account
+        **fields
     )
 
 

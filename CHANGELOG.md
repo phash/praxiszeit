@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### ✨ Urlaub planen auf der Seite „Abwesenheiten“ (#585, Kundenwunsch)
+
+- **Karte „Urlaub {Jahr}“ über dem Kalender.** Mitarbeitende sehen für das angezeigte Jahr (Monatsansicht: Jahr des Monats, Jahresansicht: gewähltes Jahr) Anspruch und Übertrag, gebuchte Tage mit „davon Betriebsferien“, offene Urlaubs- und Änderungsanträge und „Noch verplanbar“ (Rest − offene Anträge; rot bei Überplanung). Für ein künftiges Jahr ohne Jahresabschluss steht der Hinweis „Resturlaub aus {Vorjahr} kommt erst mit dem Jahresabschluss dazu.“ Bisher gab es das Urlaubskonto nur für das laufende Jahr im Dashboard; das nächste Jahr sah nur die Verwaltung.
+- **`GET /api/dashboard/vacation`** liefert zusätzlich `entitlement_days`, `carryover_days`, `closure_days`, `pending_days` und `plannable_days` (`calculation_service.vacation_planning_figures`). Offene Urlaubsanträge zählen nach der Regel der Antrags-Vorprüfung (#496), über den Jahreswechsel nur mit dem Anteil im Jahr. Offene Änderungsanträge auf Abwesenheiten zählen wie bei der Budget-Prüfung der Genehmigung: neuer Urlaubstag = 1 Tag, Änderung = Netto-Neuverbrauch, Löschung gibt erst mit der Genehmigung frei (`calculation_service.vacation_day_contribution`, vorher `admin_change_requests._vacation_day_contribution`). Betriebsferien über `absence_days`. Die übrigen Felder bleiben unverändert.
+- **Handbuch Mitarbeitende:** neue Aufgabe „Wie viele Urlaubstage kann ich noch verplanen?“.
+
 ## [1.25.0] - 2026-11-21
 
 ### ✨ Vertrag ab dem ersten Arbeitstag, Anerkennen im Dialog (Kundenfall 2026-11-20)
