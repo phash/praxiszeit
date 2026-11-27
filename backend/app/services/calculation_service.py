@@ -6,7 +6,7 @@ from decimal import Decimal
 from calendar import monthrange
 from typing import Any, Dict, List, NamedTuple, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, or_
 from app.models import User, TimeEntry, Absence, AbsenceReason, PublicHoliday, AbsenceType, WorkingHoursChange, YearCarryover
 from app.services import special_days_service, settings_service, work_blocks_service
 
@@ -3912,7 +3912,8 @@ def request_day_count(
     return sum(cost.values(), Decimal('0'))
 
 
-def vacation_day_contribution(db: Session, user: User, d: date, half_day) -> float:
+def vacation_day_contribution(db: Session, user: User, d: date, half_day,
+                              wh_changes=None, special_cfg=None) -> float:
     """Fix #4: tagebasierter Urlaubsverbrauch EINES VACATION-Tags am Datum ``d``,
     exakt nach der Regel in ``get_vacation_account``: ohne Stundenzählung
     (``counts_vacation_by_day_only``, allein ``track_hours=False``, B11) →
@@ -3924,10 +3925,14 @@ def vacation_day_contribution(db: Session, user: User, d: date, half_day) -> flo
     an, verlangt wird also genau, was das Konto für sie zählt."""
     # #394: an einem Halbtags-Sondertag (24./31.12.) kostet der Urlaubstag 0,5 —
     # exakt wie get_vacation_account/absence_days (zentraler Helper).
-    _cfg = special_days_service.get_special_day_config(db, user.tenant_id, d.year)
+    # ``wh_changes``/``special_cfg`` (Konfiguration des Jahres von ``d``) darf ein
+    # Aufrufer mit vielen Tagen vorab laden (N+1, Folgeaufgabe 1.26.0).
+    _cfg = (special_cfg if special_cfg is not None
+            else special_days_service.get_special_day_config(db, user.tenant_id, d.year))
     weight = float(half_special_day_weight(d, _cfg))
     # EIN Preload der Verlaufszeilen fuer Modus und Tagessoll (statt zweier Aufloesungen).
-    wh_changes = user_wh_changes(db, user)
+    if wh_changes is None:
+        wh_changes = user_wh_changes(db, user)
     if counts_vacation_by_day_only(db, user, d, wh_changes):  # #191, Gesamtreview B11; Teil A: je Tag
         return (0.5 if half_day else 1.0) * weight
     dt = get_daily_target_for_date(user, d, get_schedule_for_date(db, user, d, wh_changes))
@@ -3963,14 +3968,51 @@ def _pending_change_request_vacation_days(db: Session, user: User, year: int) ->
     if not crs:
         return Decimal('0')
 
+    # Alles Nötige EINMAL laden (vorher je Antrag: Abwesenheit, Feiertag,
+    # Sondertage, Sondertag-Konfiguration, Vertragsverlauf — N+1).
+    absence_ids = {cr.absence_id for cr in crs if cr.absence_id}
+    create_dates = {
+        cr.proposed_date for cr in crs
+        if cr.request_type == ChangeRequestType.CREATE and cr.proposed_date
+        and cr.proposed_absence_type == AbsenceType.VACATION.value
+    }
+    absences_by_id: Dict = {}
+    occupied_dates: set = set()
+    if absence_ids or create_dates:
+        conds = []
+        if absence_ids:
+            conds.append(Absence.id.in_(absence_ids))
+        if create_dates:
+            conds.append(Absence.date.in_(create_dates))
+        for a in db.query(Absence).filter(
+            Absence.tenant_id == user.tenant_id,  # F-026
+            Absence.user_id == user.id,
+            or_(*conds),
+        ).all():
+            absences_by_id[a.id] = a
+            occupied_dates.add(a.date)
+    year_start, year_end = date(year, 1, 1), date(year, 12, 31)
+    holiday_dates = {
+        h for (h,) in db.query(PublicHoliday.date).filter(
+            PublicHoliday.tenant_id == user.tenant_id,  # F-026
+            PublicHoliday.date >= year_start,
+            PublicHoliday.date <= year_end,
+        ).all()
+    }
+    free_days = set(special_days_service.free_special_days_in_range(
+        db, user.tenant_id, year_start, year_end))
+    special_cfg = special_days_service.get_special_day_config(db, user.tenant_id, year)
+    wh_changes = user_wh_changes(db, user)  # F-026
+
     def _bookable_vacation_day(d: date) -> bool:
         if d.year != year or not _within_employment_window(user, d):
             return False
-        if db.query(PublicHoliday.id).filter(
-            PublicHoliday.tenant_id == user.tenant_id, PublicHoliday.date == d,
-        ).first():
-            return False
-        return d not in special_days_service.free_special_days_in_range(db, user.tenant_id, d, d)
+        return d not in holiday_dates and d not in free_days
+
+    def _contribution(d: date, half_day) -> float:
+        # Nur Tage in ``year`` (``_bookable_vacation_day`` bzw. ``absence.date.year``).
+        return vacation_day_contribution(db, user, d, half_day,
+                                         wh_changes=wh_changes, special_cfg=special_cfg)
 
     total = Decimal('0')
     for cr in crs:
@@ -3980,33 +4022,25 @@ def _pending_change_request_vacation_days(db: Session, user: User, year: int) ->
             # Steht am Tag schon eine Abwesenheit, kostet der Antrag nichts: die
             # Genehmigung verknüpft bei gleichem Typ nur und lehnt einen anderen
             # Typ mit 409 ab (Release-Review 1.26.0).
-            if db.query(Absence.id).filter(
-                Absence.tenant_id == user.tenant_id,  # F-026
-                Absence.user_id == user.id,
-                Absence.date == cr.proposed_date,
-            ).first():
+            if cr.proposed_date in occupied_dates:
                 continue
             if _bookable_vacation_day(cr.proposed_date):
-                total += Decimal(str(vacation_day_contribution(db, user, cr.proposed_date, False)))
+                total += Decimal(str(_contribution(cr.proposed_date, False)))
             continue
-        absence = db.query(Absence).filter(
-            Absence.tenant_id == user.tenant_id,  # F-026
-            Absence.user_id == user.id,
-            Absence.id == cr.absence_id,
-        ).first() if cr.absence_id else None
+        absence = absences_by_id.get(cr.absence_id) if cr.absence_id else None
         if absence is None:
             continue
         target_type = cr.proposed_absence_type or absence.type.value
         target_date = cr.proposed_date or absence.date
         post = 0.0
         if target_type == AbsenceType.VACATION.value and _bookable_vacation_day(target_date):
-            post = vacation_day_contribution(db, user, target_date, absence.half_day)
+            post = _contribution(target_date, absence.half_day)
         current = 0.0
         # Eine Urlaubszeile außerhalb des Beschäftigungsfensters zählt das
         # Konto nicht (get_vacation_account) — sie gibt also nichts frei.
         if (absence.type == AbsenceType.VACATION and absence.date.year == year
                 and _within_employment_window(user, absence.date)):
-            current = vacation_day_contribution(db, user, absence.date, absence.half_day)
+            current = _contribution(absence.date, absence.half_day)
         if post - current > 1e-9:
             total += Decimal(str(post - current))
     return total

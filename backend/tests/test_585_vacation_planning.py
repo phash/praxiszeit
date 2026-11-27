@@ -277,3 +277,96 @@ def test_cr_update_aus_dem_fenster_ins_fenster_zaehlt(db, test_user):
     db.commit()
 
     assert _get(db, test_user, 2027)["pending_days"] == pytest.approx(1)
+
+
+# --- N+1 (Release-Review 1.26.0, Folgeaufgabe) --------------------------------
+#
+# ``_pending_change_request_vacation_days`` lud je offenem Antrag Abwesenheit,
+# Feiertag, Sondertage, Sondertag-Konfiguration und Vertragsverlauf neu. Die
+# Abfragezahl darf nicht mit der Zahl der Anträge wachsen; das Ergebnis bleibt
+# bitgleich.
+
+from sqlalchemy import event
+
+from app.services import calculation_service
+
+
+class _CountQueries:
+    def __init__(self, bind):
+        self.bind = bind
+        self.count = 0
+
+    def _listener(self, *args, **kwargs):
+        self.count += 1
+
+    def __enter__(self):
+        event.listen(self.bind, "before_cursor_execute", self._listener)
+        return self
+
+    def __exit__(self, *exc):
+        event.remove(self.bind, "before_cursor_execute", self._listener)
+
+
+def _mixed_requests(db, user, days):
+    """Je Tag ein Antrag aus dem Mix CREATE frei / CREATE belegt / UPDATE
+    Krank→Urlaub / UPDATE Urlaub verschieben / UPDATE Urlaub ins Folgejahr."""
+    for i, day in enumerate(days):
+        kind = i % 5
+        if kind == 0:
+            _cr(db, user, ChangeRequestType.CREATE, day, "vacation")
+        elif kind == 1:
+            _absence(db, user, day, AbsenceType.SICK)
+            _cr(db, user, ChangeRequestType.CREATE, day, "vacation")
+        elif kind == 2:
+            sick = _absence(db, user, day, AbsenceType.SICK)
+            _cr(db, user, ChangeRequestType.UPDATE, absence_type="vacation", absence=sick)
+        elif kind == 3:
+            vac = _absence(db, user, day, AbsenceType.VACATION)
+            _cr(db, user, ChangeRequestType.UPDATE, proposed_date=day + dt.timedelta(days=1),
+                absence_type="vacation", absence=vac)
+        else:
+            vac = _absence(db, user, day, AbsenceType.VACATION)
+            _cr(db, user, ChangeRequestType.UPDATE, proposed_date=dt.date(2028, 1, 10),
+                absence_type="vacation", absence=vac)
+
+
+# Montage 2027 ohne Feiertag (bundesweit), je eine Woche Abstand.
+_MONDAYS_2027 = [dt.date(2027, 2, 1) + dt.timedelta(weeks=w) for w in range(10)]
+
+
+def test_cr_pending_days_ergebnis_fuer_gemischte_antraege(db, test_user, test_admin):
+    db.add(PublicHoliday(tenant_id=test_user.tenant_id, date=dt.date(2027, 5, 6),
+                         name="Christi Himmelfahrt", year=2027))
+    _cr(db, test_user, ChangeRequestType.CREATE, dt.date(2027, 5, 6), "vacation")  # Feiertag: 0
+    _mixed_requests(db, test_user, _MONDAYS_2027)
+    # Anträge einer anderen Person zählen nicht.
+    _cr(db, test_admin, ChangeRequestType.CREATE, dt.date(2027, 6, 14), "vacation")
+    db.commit()
+
+    # 10 Anträge: je 2× CREATE frei (1) + UPDATE Krank→Urlaub (1) = 4 Tage;
+    # belegter Tag, Verschieben und Folgejahr kosten 2027 nichts.
+    assert calculation_service._pending_change_request_vacation_days(
+        db, test_user, 2027) == Decimal("4.0")
+    # Für den Folgejahr-Zweig zählt 2028: 2 Anträge ins Folgejahr.
+    assert calculation_service._pending_change_request_vacation_days(
+        db, test_user, 2028) == Decimal("2.0")
+    assert calculation_service._pending_change_request_vacation_days(
+        db, test_admin, 2027) == Decimal("1.0")
+
+
+def test_cr_pending_days_abfragezahl_waechst_nicht_mit_den_antraegen(db, test_user):
+    from app.models.user import User
+
+    def count_for(n):
+        db.query(ChangeRequest).filter(ChangeRequest.user_id == test_user.id).delete()
+        db.query(Absence).filter(Absence.user_id == test_user.id).delete()
+        db.commit()
+        _mixed_requests(db, test_user, _MONDAYS_2027[:n])
+        db.commit()
+        user = db.query(User).filter(User.id == test_user.id).one()
+        with _CountQueries(db.get_bind()) as q:
+            calculation_service._pending_change_request_vacation_days(db, user, 2027)
+        return q.count
+
+    few, many = count_for(5), count_for(10)
+    assert many == few, f"Abfragen wachsen mit den Anträgen: 5 → {few}, 10 → {many}"
