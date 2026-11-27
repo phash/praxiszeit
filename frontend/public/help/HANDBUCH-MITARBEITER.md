@@ -2,7 +2,7 @@
 
 # Handbuch für Mitarbeitende
 
-**Stand:** PraxisZeit 1.25.0
+**Stand:** PraxisZeit 1.26.0
 
 So erfassen Sie Ihre Arbeitszeit, behalten Saldo und Urlaub im Blick und tragen Abwesenheiten ein. Jede Aufgabe beginnt mit einer Frage – suchen Sie sich die passende heraus.
 
@@ -232,10 +232,13 @@ Klicken Sie in der Navigation auf `Abwesenheiten`. Der Tab `Kalender` zeigt die 
 
 Über dem Kalender unter `Abwesenheiten` steht die Karte **Urlaub** für das angezeigte Jahr. Blättern Sie mit `Jahr` und den Pfeilen ins nächste Jahr, um Ihren Urlaub dort zu planen.
 
-1. **Anspruch:** Ihre Urlaubstage im Jahr, darunter ein Übertrag aus dem Vorjahr.
+![Karte „Urlaub“ über dem Abwesenheitskalender: Anspruch, gebuchte Tage mit Betriebsferien, offene Anträge, Rest nach Buchungen und „Noch verplanbar“](/help/img/ma-urlaub-planen.webp)
+
+1. **Anspruch:** Ihre Urlaubstage im Jahr, darunter ein Übertrag aus dem Vorjahr. Ein Übertrag mit Minus („Minusurlaub“) entsteht, wenn Sie im Vorjahr mehr Urlaub hatten, als Ihnen zustand, etwa durch Betriebsferien.
 2. **Gebucht:** eingetragener und genehmigter Urlaub, darunter die Tage aus **Betriebsferien**.
 3. **Beantragt (offen):** Urlaubsanträge und Änderungsanträge auf Urlaub, die die Verwaltung noch nicht genehmigt hat.
-4. **Noch verplanbar:** was nach Buchungen und offenen Anträgen übrig bleibt. Ein roter Wert heißt: Sie haben mehr geplant, als Ihnen zusteht.
+4. **Rest nach Buchungen:** Anspruch und Übertrag abzüglich des gebuchten Urlaubs, ohne die offenen Anträge.
+5. **Noch verplanbar:** was nach Buchungen und offenen Anträgen übrig bleibt. Ein roter Wert heißt: Sie haben mehr geplant, als Ihnen zusteht.
 
 > **Gut zu wissen:** **Nächstes Jahr:** Ihr Resturlaub aus diesem Jahr kommt erst mit dem Jahresabschluss der Verwaltung dazu. Bis dahin zeigt die Karte nur den Anspruch des neuen Jahres.
 

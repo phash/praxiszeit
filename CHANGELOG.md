@@ -1,12 +1,17 @@
 # Changelog
 
-## [Unreleased]
+## [1.26.0] - 2026-11-27
 
 ### ✨ Urlaub planen auf der Seite „Abwesenheiten“ (#585, Kundenwunsch)
 
 - **Karte „Urlaub {Jahr}“ über dem Kalender.** Mitarbeitende sehen für das angezeigte Jahr (Monatsansicht: Jahr des Monats, Jahresansicht: gewähltes Jahr) Anspruch und Übertrag, gebuchte Tage mit „davon Betriebsferien“, offene Urlaubs- und Änderungsanträge und „Noch verplanbar“ (Rest − offene Anträge; rot bei Überplanung). Für ein künftiges Jahr ohne Jahresabschluss steht der Hinweis „Resturlaub aus {Vorjahr} kommt erst mit dem Jahresabschluss dazu.“ Bisher gab es das Urlaubskonto nur für das laufende Jahr im Dashboard; das nächste Jahr sah nur die Verwaltung.
 - **`GET /api/dashboard/vacation`** liefert zusätzlich `entitlement_days`, `carryover_days`, `closure_days`, `pending_days` und `plannable_days` (`calculation_service.vacation_planning_figures`). Offene Urlaubsanträge zählen nach der Regel der Antrags-Vorprüfung (#496), über den Jahreswechsel nur mit dem Anteil im Jahr. Offene Änderungsanträge auf Abwesenheiten zählen wie bei der Budget-Prüfung der Genehmigung: neuer Urlaubstag = 1 Tag, Änderung = Netto-Neuverbrauch, Löschung gibt erst mit der Genehmigung frei (`calculation_service.vacation_day_contribution`, vorher `admin_change_requests._vacation_day_contribution`). Betriebsferien über `absence_days`. Die übrigen Felder bleiben unverändert.
 - **Handbuch Mitarbeitende:** neue Aufgabe „Wie viele Urlaubstage kann ich noch verplanen?“.
+- **Release-Review 1.26.0:** Ein offener Änderungsantrag auf Urlaub an einem Tag, an dem schon eine Abwesenheit steht, zählt nicht mehr als beantragt (die Genehmigung verknüpft dort nur oder lehnt mit 409 ab). Verschiebt ein Änderungsantrag eine Urlaubszeile von außerhalb des Beschäftigungsfensters hinein, kostet das jetzt in Karte und Genehmigung den vollen Tag (vorher Netto 0, obwohl das Konto die alte Zeile nie zählte). Ein negativer Übertrag erscheint als „− 2 Tage Übertrag (Minusurlaub aus {Vorjahr})“ statt „+ -2 Tage Übertrag“. Kontexthilfe „Abwesenheiten“, Handbuch (Kennzahl „Rest nach Buchungen“, Minusurlaub) und `docs/BERECHNUNGEN.md` §8.5 beschreiben die Planungszahlen.
+
+### 🔒 „Problem melden“: Bereinigungsregeln aus pzweb 1b2a639
+
+- Die gemeinsame Bereinigung (`app/core/report_sanitize.py`, wörtliche Kopie aus pzweb 1b2a639, und die C#-Kopie im Setup) entfernt zusätzlich Personennamen-Spalten in Tabellen-/CSV-Köpfen, Schlüssel wie `*_ENC_KEY`, `*PASSPHRASE*`, `REPORT_KEY`, Geheimnisse in maskiertem JSON, `gpg --passphrase`/`setx`/`SetEnvironmentVariable`-Formen und lange Base64-Folgen. Testvektoren: 259 Fälle, 53 Regeln.
 
 ## [1.25.0] - 2026-11-21
 
