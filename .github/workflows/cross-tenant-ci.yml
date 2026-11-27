@@ -106,6 +106,19 @@ jobs:
       # Die Verbindungszeichenkette wird aus Teilen gebaut: der
       # Geheimnis-Scanner des Repos lehnt zusammenhaengende
       # `schema://benutzer:passwort@host`-Literale ab, auch in Workflows.
+      # Die GitHub-Runner bringen psql mit, das act-Image der lokalen CI
+      # (tb-ci, catthehacker/ubuntu:act-latest) nicht. Ohne diesen Schritt
+      # bricht dort "Datenbank vorbereiten" mit "psql: command not found" ab
+      # und die PostgreSQL-Tests laufen nie.
+      - name: psql bereitstellen
+        run: |
+          if ! command -v psql >/dev/null; then
+            SUDO="$(command -v sudo || true)"
+            export DEBIAN_FRONTEND=noninteractive
+            $SUDO apt-get update -qq
+            $SUDO apt-get install -y -qq postgresql-client >/dev/null
+          fi
+          psql --version
       - name: Datenbank vorbereiten (App-Rolle ohne Eigentuemerrechte)
         working-directory: backend
         run: |
