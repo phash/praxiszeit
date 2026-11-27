@@ -149,3 +149,107 @@ def test_uebertrag_wird_ausgewiesen(db, test_user):
     assert data["carryover_days"] == pytest.approx(4.5)
     assert data["budget_days"] == pytest.approx(34.5)
     assert data["plannable_days"] == pytest.approx(34.5)
+
+
+# --- offene Änderungsanträge auf Abwesenheiten -------------------------------
+#
+# Mitarbeitende können Urlaub auch per Änderungsantrag (entry_kind="absence")
+# beantragen. Offene Anträge zählen wie bei der Budget-Prüfung der Genehmigung:
+# CREATE = der Tag, UPDATE = Netto-Neuverbrauch, DELETE = 0.
+
+from app.models.change_request import ChangeRequest, ChangeRequestStatus, ChangeRequestType
+from app.models.public_holiday import PublicHoliday
+
+
+def _cr(db, user, request_type, proposed_date=None, absence_type=None, absence=None,
+        status=ChangeRequestStatus.PENDING):
+    db.add(ChangeRequest(
+        tenant_id=user.tenant_id, user_id=user.id, request_type=request_type, status=status,
+        entry_kind="absence", absence_id=absence.id if absence else None,
+        proposed_date=proposed_date, proposed_absence_type=absence_type, reason="Test",
+    ))
+
+
+def _absence(db, user, day, absence_type):
+    a = Absence(tenant_id=user.tenant_id, user_id=user.id, date=day, type=absence_type,
+                hours=Decimal("8.0"), half_day=False)
+    db.add(a)
+    db.flush()
+    return a
+
+
+def test_cr_create_urlaub_zaehlt_als_beantragt(db, test_user):
+    _cr(db, test_user, ChangeRequestType.CREATE, dt.date(2027, 6, 14), "vacation")
+    db.commit()
+
+    data = _get(db, test_user, 2027)
+    assert data["pending_days"] == pytest.approx(1)
+    assert data["plannable_days"] == pytest.approx(29)
+
+
+@pytest.mark.parametrize("absence_type, status", [
+    ("sick", ChangeRequestStatus.PENDING),
+    ("vacation", ChangeRequestStatus.APPROVED),
+    ("vacation", ChangeRequestStatus.REJECTED),
+])
+def test_cr_create_andere_typen_oder_erledigt_zaehlen_nicht(db, test_user, absence_type, status):
+    _cr(db, test_user, ChangeRequestType.CREATE, dt.date(2027, 6, 14), absence_type, status=status)
+    db.commit()
+
+    assert _get(db, test_user, 2027)["pending_days"] == 0
+
+
+def test_cr_create_im_anderen_jahr_oder_am_feiertag_zaehlt_nicht(db, test_user):
+    db.add(PublicHoliday(tenant_id=test_user.tenant_id, date=dt.date(2027, 5, 6),
+                         name="Christi Himmelfahrt", year=2027))
+    _cr(db, test_user, ChangeRequestType.CREATE, dt.date(2027, 5, 6), "vacation")
+    _cr(db, test_user, ChangeRequestType.CREATE, dt.date(2028, 6, 14), "vacation")
+    db.commit()
+
+    assert _get(db, test_user, 2027)["pending_days"] == 0
+
+
+def test_cr_update_krank_zu_urlaub_zaehlt(db, test_user):
+    sick = _absence(db, test_user, dt.date(2027, 3, 1), AbsenceType.SICK)
+    _cr(db, test_user, ChangeRequestType.UPDATE, absence_type="vacation", absence=sick)
+    db.commit()
+
+    assert _get(db, test_user, 2027)["pending_days"] == pytest.approx(1)
+
+
+def test_cr_update_urlaub_verschieben_im_jahr_kostet_nichts(db, test_user):
+    vac = _absence(db, test_user, dt.date(2027, 3, 1), AbsenceType.VACATION)
+    _cr(db, test_user, ChangeRequestType.UPDATE, proposed_date=dt.date(2027, 3, 2),
+        absence_type="vacation", absence=vac)
+    db.commit()
+
+    data = _get(db, test_user, 2027)
+    assert data["pending_days"] == 0
+    assert data["plannable_days"] == pytest.approx(29)
+
+
+def test_cr_update_urlaub_ins_folgejahr_zaehlt_dort(db, test_user):
+    vac = _absence(db, test_user, dt.date(2027, 12, 20), AbsenceType.VACATION)
+    _cr(db, test_user, ChangeRequestType.UPDATE, proposed_date=dt.date(2028, 1, 10),
+        absence_type="vacation", absence=vac)
+    db.commit()
+
+    assert _get(db, test_user, 2027)["pending_days"] == 0  # Freigabe erst mit Genehmigung
+    assert _get(db, test_user, 2028)["pending_days"] == pytest.approx(1)
+
+
+def test_cr_delete_gibt_erst_mit_genehmigung_frei(db, test_user):
+    vac = _absence(db, test_user, dt.date(2027, 3, 1), AbsenceType.VACATION)
+    _cr(db, test_user, ChangeRequestType.DELETE, absence=vac)
+    db.commit()
+
+    data = _get(db, test_user, 2027)
+    assert data["pending_days"] == 0
+    assert data["plannable_days"] == pytest.approx(29)
+
+
+def test_cr_anderer_personen_zaehlen_nicht(db, test_user, test_admin):
+    _cr(db, test_admin, ChangeRequestType.CREATE, dt.date(2027, 6, 14), "vacation")
+    db.commit()
+
+    assert _get(db, test_user, 2027)["pending_days"] == 0

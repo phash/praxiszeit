@@ -937,7 +937,7 @@ export const mitarbeitende: Handbook = {
           steps: [
             { text: '**Anspruch:** Ihre Urlaubstage im Jahr, darunter ein Übertrag aus dem Vorjahr.' },
             { text: '**Gebucht:** eingetragener und genehmigter Urlaub, darunter die Tage aus **Betriebsferien**.' },
-            { text: '**Beantragt (offen):** Urlaubsanträge, die die Verwaltung noch nicht genehmigt hat.' },
+            { text: '**Beantragt (offen):** Urlaubsanträge und Änderungsanträge auf Urlaub, die die Verwaltung noch nicht genehmigt hat.' },
             { text: '**Noch verplanbar:** was nach Buchungen und offenen Anträgen übrig bleibt. Ein roter Wert heißt: Sie haben mehr geplant, als Ihnen zusteht.' },
           ],
         },

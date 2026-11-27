@@ -234,7 +234,7 @@ Klicken Sie in der Navigation auf `Abwesenheiten`. Der Tab `Kalender` zeigt die 
 
 1. **Anspruch:** Ihre Urlaubstage im Jahr, darunter ein Übertrag aus dem Vorjahr.
 2. **Gebucht:** eingetragener und genehmigter Urlaub, darunter die Tage aus **Betriebsferien**.
-3. **Beantragt (offen):** Urlaubsanträge, die die Verwaltung noch nicht genehmigt hat.
+3. **Beantragt (offen):** Urlaubsanträge und Änderungsanträge auf Urlaub, die die Verwaltung noch nicht genehmigt hat.
 4. **Noch verplanbar:** was nach Buchungen und offenen Anträgen übrig bleibt. Ein roter Wert heißt: Sie haben mehr geplant, als Ihnen zusteht.
 
 > **Gut zu wissen:** **Nächstes Jahr:** Ihr Resturlaub aus diesem Jahr kommt erst mit dem Jahresabschluss der Verwaltung dazu. Bis dahin zeigt die Karte nur den Anspruch des neuen Jahres.
