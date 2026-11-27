@@ -16,3 +16,6 @@ share/install-result*.txt
 # Test-Admin-Passwort der VM — gehoert nicht ins Repo.
 share/admin-password.txt
 share/lock-test.txt
+
+# Fertig-Marke fuer "tb-win run … --until done.txt" (install.bat/post-reboot.bat).
+share/done.txt

@@ -9,6 +9,10 @@ REM kopierten Paket gelesen (PAKET_VERSION) und zusaetzlich aus der laufenden
 REM Anwendung geprueft (SYSTEM_INFO_RAW). Eine hier gepflegte Zahl waere beim
 REM naechsten Release sofort veraltet und wuerde ein falsches Ergebnis behaupten.
 set "RES=\\host.lan\Data\install-result.txt"
+REM done.txt = Fertig-Marke fuer "tb-win run ... --until done.txt": steht erst,
+REM wenn der GANZE Lauf (auch nach dem Neustart, post-reboot.bat) durch ist.
+REM install-result.txt entsteht dagegen schon in der ersten Sekunde.
+del /f /q "\\host.lan\Data\done.txt" 2>nul
 > "%RES%" echo ===== PraxisZeit Windows-Install-Test (ACL-Haertung) =====
 >> "%RES%" echo Start: %date% %time%
 REM MODE=fresh (Vorgabe): Erstinstallation des Pakets aus share\tree.
@@ -31,7 +35,7 @@ robocopy "!SRC!" "C:\PraxisZeit" /E /R:2 /W:2 /NFL /NDL /NJH /NJS >nul
 if not exist "C:\PraxisZeit\setup.bat" ( >> "%RES%" echo FEHLER: Kopie unvollstaendig & goto :done )
 copy /Y "\\host.lan\Data\acl-check.ps1" "C:\acl-check.ps1" >nul
 mkdir "C:\pz-harness" 2>nul
-for %%f in (install-acl-check.ps1 run-probe.ps1 nonadmin-probe.ps1 hardening-probe.ps1 post-reboot.bat) do copy /Y "\\host.lan\Data\%%f" "C:\pz-harness\%%f" >nul
+for %%f in (install-acl-check.ps1 run-probe.ps1 nonadmin-probe.ps1 hardening-probe.ps1 seed-data.ps1 post-reboot.bat) do copy /Y "\\host.lan\Data\%%f" "C:\pz-harness\%%f" >nul
 cd /d C:\PraxisZeit
 set "PKGVER="
 for /f "usebackq tokens=2 delims==" %%v in (`findstr /B "APP_VERSION" "C:\PraxisZeit\app\backend\app\core\updater.py"`) do set "PKGVER=%%v"
@@ -51,6 +55,12 @@ set "PWKEY=!PWKEY!word"
 set "ADMPW="
 for /f "usebackq delims=" %%p in ("\\host.lan\Data\admin-password.txt") do if not defined ADMPW set "ADMPW=%%p"
 if not defined ADMPW ( >> "%RES%" echo FEHLER: \\host.lan\Data\admin-password.txt fehlt oder ist leer & goto :done )
+REM Ein Ausrufezeichen verschluckt EnableDelayedExpansion beim Einlesen: die
+REM Installation bekaeme ein anderes Kennwort als Seed/Login (Lauf 1.26.0: Login
+REM 401, Datenvergleich auf leerer DB). Die Pruefung liest die Datei selbst;
+REM [char]33 statt "!", das hier ebenfalls verschluckt wuerde.
+powershell -NoProfile -Command "if ((Get-Content '\\host.lan\Data\admin-password.txt' -TotalCount 1).Contains([string][char]33)) { exit 3 }"
+if errorlevel 3 ( >> "%RES%" echo FEHLER: admin-password.txt enthaelt ein Ausrufezeichen - DelayedExpansion verschluckt es, bitte ein Kennwort ohne Ausrufezeichen & goto :done )
 powershell -NoProfile -Command "(Get-Content 'config\praxiszeit.conf.example') -replace 'BITTE_AENDERN_min12zeichen','!ADMPW!' | Set-Content 'config\praxiszeit.conf' -Encoding utf8"
 
 >> "%RES%" echo [3/11] setup.bat (PostgreSQL 18 + Python-Deps) ...
@@ -167,6 +177,11 @@ REM ============================================================
 powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\install-acl-check.ps1" -InstallDir "C:\PraxisZeit" >> "%RES%" 2>&1
 >> "%RES%" echo ===INSTALLDIR_ACL_ALT_END===
 call :nssm_appexit NSSM_APPEXIT_78_VOR_UPDATE
+REM Testdaten auf der Vorgaengerversion anlegen (MA, Zeiteintraege, Abwesenheit)
+REM und Tabellen-Fingerabdruck sichern; VERIFY nach dem Update vergleicht.
+>> "%RES%" echo ===SEED_BEGIN===
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\seed-data.ps1" -Phase seed -Port !DB_PORT! >> "%RES%" 2>&1
+>> "%RES%" echo ===SEED_END===
 >> "%RES%" echo [Update] update-wizard.ps1 -Headless aus dem neuen Paket ...
 robocopy "\\host.lan\Data\tree" "C:\PZNew" /E /R:2 /W:2 /NFL /NDL /NJH /NJS >nul
 REM Optional (share\lock-test.txt): eine Datei des neuen Pakets exklusiv sperren,
@@ -210,6 +225,10 @@ for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "(Get-Schedule
 REM Ohne [database] port darf der neue Code postgresql.conf nicht anfassen.
 call :pgconf_md5 PGCONF_MD5_NACH_UPDATE
 if "!PGCONF_MD5!"=="!PGCONF_MD5_NACH_UPDATE!" ( >> "%RES%" echo PGCONF_UNVERAENDERT=ja ) else ( >> "%RES%" echo PGCONF_UNVERAENDERT=nein )
+REM Erwartet: VERIFY_ADMIN_LOGIN=200, VERIFY_MA_LOGIN=200, DATA_KEPT=ja.
+>> "%RES%" echo ===VERIFY_BEGIN===
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\seed-data.ps1" -Phase verify -Port !DB_PORT! >> "%RES%" 2>&1
+>> "%RES%" echo ===VERIFY_END===
 :after_update
 
 REM ============================================================
@@ -406,6 +425,7 @@ exit /b 0
 >> "%RES%" echo.
 >> "%RES%" echo Ende: %date% %time%
 >> "%RES%" echo ===== DONE =====
+> "\\host.lan\Data\done.txt" echo done
 endlocal
 exit /b 0
 
