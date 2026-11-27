@@ -37,8 +37,8 @@ test.describe('Schichtplanung M2 (#305)', () => {
     );
     await settingsModal.getByRole('button', { name: 'Speichern' }).click();
     expect((await putResp).ok()).toBeTruthy();
-    // the window is now shown in the editor header
-    await expect(adminPage.getByText(/Automatisch aktiv ab 2026-07-01 bis 2026-08-31/)).toBeVisible({ timeout: 10000 });
+    // the window is now shown in the editor header (deutsches Datumsformat)
+    await expect(adminPage.getByText(/Automatisch aktiv ab 01\.07\.2026 bis 31\.08\.2026/)).toBeVisible({ timeout: 10000 });
 
     // ── Auto-Generierung: Automatisch füllen → dialog → Generieren ──
     await adminPage.getByRole('button', { name: 'Automatisch füllen' }).click();

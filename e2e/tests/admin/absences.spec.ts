@@ -139,6 +139,13 @@ test.describe('Admin Absences', () => {
       // Submit
       await adminPage.getByRole('button', { name: /Betriebsferien erstellen/ }).click();
 
+      // abw-04 (1.25): Anlegen ersetzt gestempelte Zeiteinträge der Teilnehmenden —
+      // erst nach ausdrücklicher Bestätigung wird gespeichert.
+      const confirmDialog = adminPage.getByRole('alertdialog', { name: 'Betriebsferien anlegen' });
+      await expect(confirmDialog).toBeVisible();
+      await expect(confirmDialog).toContainText('durch Abwesenheitseinträge ersetzt');
+      await confirmDialog.getByRole('button', { name: 'Anlegen' }).click();
+
       // Genau die Erfolgsmeldung des Anlegens (AdminAbsences). Die frühere
       // Regex /Betriebsferien|eingetragen|erstellt/ traf auch die Fehlermeldung
       // „Fehler beim Laden der Betriebsferien" (Gesamtreview 1.20 B9).

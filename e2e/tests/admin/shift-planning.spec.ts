@@ -41,7 +41,8 @@ test.describe('Schichtplanung (#305)', () => {
     // 1. Stammdaten: create a workstation.
     await adminPage.goto('/admin/shift-planning');
     await expect(adminPage.getByRole('heading', { name: 'Schichtplanung' })).toBeVisible();
-    await adminPage.getByRole('button', { name: 'Stammdaten' }).click();
+    // Die Bereiche sind seit der a11y-Runde (ui-01…) echte Reiter (role="tab").
+    await adminPage.getByRole('tab', { name: 'Stammdaten' }).click();
 
     const main = adminPage.locator('main');
     // Scope to the "Arbeitsplätze" card via its heading — the "Standorte" card
@@ -59,7 +60,7 @@ test.describe('Schichtplanung (#305)', () => {
     await expect(wsCard.getByText(wsName)).toBeVisible();
 
     // 2. Schichtpläne: create a plan.
-    await adminPage.getByRole('button', { name: 'Schichtpläne' }).click();
+    await adminPage.getByRole('tab', { name: 'Schichtpläne' }).click();
     await main.getByLabel('Neuer Plan').fill(planName);
     const planCreate = adminPage.waitForResponse(
       (r) => r.url().endsWith('/api/shift-planning/plans') && r.request().method() === 'POST',
