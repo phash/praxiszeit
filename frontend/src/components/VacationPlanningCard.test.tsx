@@ -51,6 +51,14 @@ describe('VacationPlanningCard (#585)', () => {
     expect(screen.queryByText(/kommt erst mit dem Jahresabschluss/)).not.toBeInTheDocument();
   });
 
+  it('zeigt einen negativen Übertrag als Minusurlaub statt „+ -2"', async () => {
+    getMock.mockResolvedValue({ data: { ...account, budget_days: 28, carryover_days: -2, plannable_days: 22 } });
+    render(<VacationPlanningCard year={nextYear} />);
+
+    expect(await screen.findByText(`− 2 Tage Übertrag (Minusurlaub aus ${nextYear - 1})`)).toBeInTheDocument();
+    expect(screen.queryByText(/\+ -/)).not.toBeInTheDocument();
+  });
+
   it('markiert eine Überplanung rot', async () => {
     getMock.mockResolvedValue({ data: { ...account, plannable_days: -1.5 } });
     render(<VacationPlanningCard year={nextYear} />);

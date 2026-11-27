@@ -103,6 +103,12 @@ export const helpContent: Record<string, HelpEntry> = {
     content: (
       <div className="space-y-4">
         <section>
+          <h3 className="font-semibold text-gray-800 mb-2">Urlaub planen</h3>
+          <p className="text-sm text-gray-600">
+            Die Karte <span className="font-medium">„Urlaub"</span> über dem Kalender zeigt für das angezeigte Jahr Anspruch, gebuchten Urlaub (davon Betriebsferien), offene Anträge und was <span className="font-medium">noch verplanbar</span> ist. Mit „Jahr" ins nächste Jahr blättern, um dort zu planen.
+          </p>
+        </section>
+        <section>
           <h3 className="font-semibold text-gray-800 mb-2">Abwesenheit eintragen</h3>
           <ol className="space-y-1 text-sm text-gray-600 list-decimal list-inside">
             <li>Auf <span className="font-medium">„Abwesenheit eintragen"</span> klicken</li>

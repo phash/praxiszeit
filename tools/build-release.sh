@@ -15,7 +15,7 @@ set -euo pipefail
 # Konfiguration — Versionen der gebuendelten Binaries
 # =============================================================================
 
-APP_VERSION="1.25.0"
+APP_VERSION="1.26.0"
 PYTHON_VERSION="3.13.18"
 # python-build-standalone Release-Tag (Format: YYYYMMDD)
 # 20261110 buendelt weiter CPython 3.13.18 und OpenSSL 3.5.9, aber expat 2.10.0

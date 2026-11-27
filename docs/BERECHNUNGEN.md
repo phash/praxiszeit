@@ -793,7 +793,7 @@ rechnet mit demselben `vacation_day_cost_by_year`. Ob ein Tag zählt, entscheide
 `is_vacation_billable_day` — Tagessoll > 0 in **beiden** Modi, also auch nicht in einem
 Zeitraum mit 0 Wochenstunden. Der Änderungsantrag legt immer genau **eine** Zeile an (auch am
 Wochenende oder an einem Tag ohne Soll) und verlangt deshalb genau, was das Urlaubskonto für
-diese Zeile zählt (`_vacation_day_contribution`, derselbe Helfer im Anlege- und im
+diese Zeile zählt (`vacation_day_contribution`, derselbe Helfer im Anlege- und im
 Änderungszweig). Dieser Check ist **hart** (400 bei Überziehung) — anders als die
 Betriebsferien-Buchung (§9.5), die bewusst nicht cappt. Verglichen wird je Kalenderjahr und
 nur dort, wo die Buchung tatsächlich Urlaubstage kostet (`vacation_budget_shortfall`, gemeinsam
@@ -821,6 +821,30 @@ Beschäftigungsfensters aus (#496) — ein offener Antrag kann älter sein als e
 Austritt. Genehmigen lässt sich ein solcher Antrag erst, wenn er auf den Beschäftigungszeitraum
 gekürzt ist (die Genehmigung lehnt einen Zeitraum vor `first_work_day` oder über
 `last_work_day` hinaus mit 400 ab).
+
+### 8.5 Planungszahlen (Karte „Urlaub“, #585)
+
+Die Karte „Urlaub“ auf der Seite „Abwesenheiten“ zeigt das Konto des angezeigten Jahres
+(`GET /api/dashboard/vacation?year=`). Es gibt keine zweite Kontorechnung:
+`vacation_planning_figures` nimmt das Ergebnis von `get_vacation_account` für dasselbe Jahr.
+
+```
+carryover_days = budget_days − entitlement_days        (Übertrag, kann negativ sein)
+closure_days   = Verbrauch der VACATION-Zeilen mit closure_id im Jahr (Regel von used_days)
+pending_days   = offene Urlaubsanträge (nur der Anteil im Jahr)
+               + offene Änderungsanträge auf Abwesenheiten
+plannable_days = remaining_days − pending_days         (rot, wenn < 0)
+```
+
+Offene Urlaubsanträge kosten, was die Antrags-Vorprüfung verlangt (`request_workday_candidates`,
+Beschäftigungsfenster, `vacation_day_cost_by_year`, §8.4). Offene Änderungsanträge rechnen wie die
+Budget-Prüfung ihrer Genehmigung: ein CREATE mit Typ Urlaub kostet den Tag
+(`vacation_day_contribution`). Er kostet nichts an einem Feiertag, einem `free`-Sondertag,
+außerhalb des Beschäftigungsfensters oder an einem Tag, an dem schon eine Abwesenheit steht. Bei
+gleichem Typ verknüpft die Genehmigung dann nur, bei anderem Typ lehnt sie mit 409 ab. Ein UPDATE
+kostet den Netto-Neuverbrauch (nach der Änderung − was die bestehende Zeile im Jahr schon zählt;
+eine Zeile außerhalb des Beschäftigungsfensters zählt dabei 0, wie in `get_vacation_account`).
+Ein DELETE kostet 0, denn ein Antrag gibt erst mit der Genehmigung Tage frei.
 
 ---
 

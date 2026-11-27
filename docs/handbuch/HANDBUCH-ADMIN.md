@@ -2,7 +2,7 @@
 
 # Handbuch für die Praxisleitung
 
-**Stand:** PraxisZeit 1.25.0
+**Stand:** PraxisZeit 1.26.0
 
 So richten Sie PraxisZeit ein, behalten Ihr Team im Blick, pflegen Verträge und Arbeitszeiten und entscheiden über Anträge. Jede Aufgabe beginnt mit einer Frage – suchen Sie sich die passende heraus.
 

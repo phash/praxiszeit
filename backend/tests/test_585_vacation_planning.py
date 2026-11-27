@@ -253,3 +253,27 @@ def test_cr_anderer_personen_zaehlen_nicht(db, test_user, test_admin):
     db.commit()
 
     assert _get(db, test_user, 2027)["pending_days"] == 0
+
+
+# Release-Review 1.26.0: ein CR-CREATE an einem Tag, an dem schon eine
+# Abwesenheit steht, kostet nichts — die Genehmigung verknüpft bei gleichem
+# Typ nur und lehnt einen anderen Typ mit 409 ab.
+@pytest.mark.parametrize("existing_type", [AbsenceType.VACATION, AbsenceType.SICK])
+def test_cr_create_an_belegtem_tag_zaehlt_nicht(db, test_user, existing_type):
+    _absence(db, test_user, dt.date(2027, 6, 14), existing_type)
+    _cr(db, test_user, ChangeRequestType.CREATE, dt.date(2027, 6, 14), "vacation")
+    db.commit()
+
+    assert _get(db, test_user, 2027)["pending_days"] == 0
+
+
+# Release-Review 1.26.0: eine Urlaubszeile außerhalb des Beschäftigungsfensters
+# zählt das Konto nicht — ein UPDATE ins Fenster kostet also den vollen Tag.
+def test_cr_update_aus_dem_fenster_ins_fenster_zaehlt(db, test_user):
+    vac = _absence(db, test_user, dt.date(2027, 7, 5), AbsenceType.VACATION)
+    test_user.last_work_day = dt.date(2027, 6, 30)
+    _cr(db, test_user, ChangeRequestType.UPDATE, proposed_date=dt.date(2027, 6, 14),
+        absence_type="vacation", absence=vac)
+    db.commit()
+
+    assert _get(db, test_user, 2027)["pending_days"] == pytest.approx(1)

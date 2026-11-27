@@ -223,6 +223,22 @@ const shots: ShotDef[] = [
     alt: 'Abwesenheitskalender des Teams im Monat: farbige Kreise mit Kürzeln, Feiertag und ein verkürzter Tag sind beschriftet',
   },
   {
+    id: 'ma-urlaub-planen',
+    persona: 'maria',
+    viewport: 'desktop',
+    route: '/absences',
+    prepare: [{ waitFor: { css: 'main [data-testid="vacation-plannable"]' } }],
+    crop: { around: ['anspruch', 'verplanbar', 'rest'], pad: 40 },
+    markers: [
+      { n: 1, id: 'anspruch', locator: { css: 'main section[aria-label^="Urlaub"] dt:has-text("Anspruch")' }, badge: 'top' },
+      { n: 2, id: 'gebucht', locator: { css: 'main section[aria-label^="Urlaub"] dt:has-text("Gebucht")' }, badge: 'top' },
+      { n: 3, id: 'beantragt', locator: { css: 'main section[aria-label^="Urlaub"] dt:has-text("Beantragt (offen)")' }, badge: 'top' },
+      { n: 4, id: 'rest', locator: { css: 'main section[aria-label^="Urlaub"] dt:has-text("Rest nach Buchungen")' }, badge: 'top' },
+      { n: 5, id: 'verplanbar', locator: { css: 'main [data-testid="vacation-plannable"]' }, badge: 'right' },
+    ],
+    alt: 'Karte „Urlaub“ über dem Abwesenheitskalender: Anspruch, gebuchte Tage mit Betriebsferien, offene Anträge, Rest nach Buchungen und „Noch verplanbar“',
+  },
+  {
     id: 'ma-abwesenheit-eintragen',
     persona: 'maria',
     viewport: 'desktop',
@@ -931,14 +947,16 @@ export const mitarbeitende: Handbook = {
           kind: 'task',
           id: 'urlaub-planen',
           title: 'Wie viele Urlaubstage kann ich noch verplanen?',
+          shot: 'ma-urlaub-planen',
           intro:
             'Über dem Kalender unter [[Abwesenheiten]] steht die Karte **Urlaub** für das angezeigte Jahr. ' +
             'Blättern Sie mit [[Jahr]] und den Pfeilen ins nächste Jahr, um Ihren Urlaub dort zu planen.',
           steps: [
-            { text: '**Anspruch:** Ihre Urlaubstage im Jahr, darunter ein Übertrag aus dem Vorjahr.' },
-            { text: '**Gebucht:** eingetragener und genehmigter Urlaub, darunter die Tage aus **Betriebsferien**.' },
-            { text: '**Beantragt (offen):** Urlaubsanträge und Änderungsanträge auf Urlaub, die die Verwaltung noch nicht genehmigt hat.' },
-            { text: '**Noch verplanbar:** was nach Buchungen und offenen Anträgen übrig bleibt. Ein roter Wert heißt: Sie haben mehr geplant, als Ihnen zusteht.' },
+            { n: 1, text: '**Anspruch:** Ihre Urlaubstage im Jahr, darunter ein Übertrag aus dem Vorjahr. Ein Übertrag mit Minus („Minusurlaub“) entsteht, wenn Sie im Vorjahr mehr Urlaub hatten, als Ihnen zustand, etwa durch Betriebsferien.' },
+            { n: 2, text: '**Gebucht:** eingetragener und genehmigter Urlaub, darunter die Tage aus **Betriebsferien**.' },
+            { n: 3, text: '**Beantragt (offen):** Urlaubsanträge und Änderungsanträge auf Urlaub, die die Verwaltung noch nicht genehmigt hat.' },
+            { n: 4, text: '**Rest nach Buchungen:** Anspruch und Übertrag abzüglich des gebuchten Urlaubs, ohne die offenen Anträge.' },
+            { n: 5, text: '**Noch verplanbar:** was nach Buchungen und offenen Anträgen übrig bleibt. Ein roter Wert heißt: Sie haben mehr geplant, als Ihnen zusteht.' },
           ],
         },
         {

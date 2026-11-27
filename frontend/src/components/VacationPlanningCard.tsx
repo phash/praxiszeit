@@ -70,8 +70,13 @@ export default function VacationPlanningCard({ year, absences, requests }: Props
         <div>
           <dt className="text-gray-500">Anspruch</dt>
           <dd className="font-medium text-gray-900">{formatDayCount(entitlement)}</dd>
-          {carryover !== 0 && (
+          {carryover > 0 && (
             <dd className="text-xs text-gray-500">+ {formatDayCount(carryover)} Übertrag</dd>
+          )}
+          {carryover < 0 && (
+            <dd className="text-xs text-gray-500">
+              − {formatDayCount(-carryover)} Übertrag (Minusurlaub aus {year - 1})
+            </dd>
           )}
         </div>
         <div>
