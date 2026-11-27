@@ -3912,6 +3912,72 @@ def request_day_count(
     return sum(cost.values(), Decimal('0'))
 
 
+def vacation_planning_figures(db: Session, user: User, year: int, account: Dict) -> Dict:
+    """#585: Planungszahlen zum Urlaubskonto eines Jahres für die Seite
+    „Abwesenheiten" (Kundenwunsch: wie viele Tage kann ich im kommenden Jahr
+    noch verplanen?).
+
+    ``account`` ist das Ergebnis von :func:`get_vacation_account` für dasselbe
+    Jahr; hier entsteht keine zweite Kontorechnung.
+
+    - ``carryover_days``: Übertrag = Budget − Anspruch des Jahres.
+    - ``closure_days``: davon Betriebsferien — die gebuchten VACATION-Zeilen mit
+      ``closure_id``, gezählt über :func:`absence_days` (Regel von ``used_days``).
+    - ``pending_days``: offene Urlaubsanträge, nur der Anteil in ``year``, über
+      die Regel der Antrags-Vorprüfung (``request_workday_candidates`` +
+      Beschäftigungsfenster + :func:`vacation_day_cost_by_year`, #496).
+    - ``plannable_days``: Rest − offene Anträge.
+    """
+    from app.models.vacation_request import VacationRequest, VacationRequestStatus
+
+    wh_changes = user_wh_changes(db, user)  # F-026
+    closure_absences = db.query(Absence).filter(
+        Absence.tenant_id == user.tenant_id,  # F-026
+        Absence.user_id == user.id,
+        Absence.type == AbsenceType.VACATION,
+        Absence.closure_id.isnot(None),
+        date_in_year(Absence.date, year),
+    ).all()
+    closure_absences = [a for a in closure_absences if _within_employment_window(user, a.date)]
+    closure_days = absence_days(db, user, closure_absences, wh_changes=wh_changes)
+
+    year_start, year_end = date(year, 1, 1), date(year, 12, 31)
+    pending = db.query(VacationRequest).filter(
+        VacationRequest.tenant_id == user.tenant_id,  # F-026
+        VacationRequest.user_id == user.id,
+        VacationRequest.status == VacationRequestStatus.PENDING.value,
+        VacationRequest.absence_type == "vacation",
+        VacationRequest.date <= year_end,
+    ).all()
+    year_cache: dict = {}
+    pending_days = Decimal('0')
+    for vr in pending:
+        end = vr.end_date or vr.date
+        if end < year_start:
+            continue
+        dates = [
+            d for d in request_workday_candidates(
+                db, user.tenant_id, max(vr.date, year_start), min(end, year_end),
+                year_cache=year_cache,
+            )
+            if _within_employment_window(user, d)
+        ]
+        cost = vacation_day_cost_by_year(
+            db, user, dates, bool(vr.half_day), wh_changes=wh_changes, year_cache=year_cache
+        )
+        pending_days += cost.get(year, Decimal('0'))
+
+    carryover_days = Decimal(str(account["budget_days"])) - Decimal(str(account["entitlement_days"]))
+    remaining = Decimal(str(account["remaining_days"]))
+    return {
+        "entitlement_days": float(Decimal(str(account["entitlement_days"])).quantize(Decimal('0.1'))),
+        "carryover_days": float(carryover_days.quantize(Decimal('0.1'))),
+        "closure_days": float(closure_days.quantize(Decimal('0.1'))),
+        "pending_days": float(pending_days.quantize(Decimal('0.1'))),
+        "plannable_days": float((remaining - pending_days).quantize(Decimal('0.1'))),
+    }
+
+
 def closed_years_in_range(db: Session, tenant_id, years) -> List[int]:
     """Return, ascending, every year Y in ``years`` whose Jahresabschluss was
     already done — i.e. a ``YearCarryover`` for Y+1 with ``source='year_closing'``

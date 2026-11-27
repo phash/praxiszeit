@@ -98,6 +98,12 @@ class VacationAccount(BaseModel):
     # Year-end warning info
     carryover_deadline: Optional[date] = None  # Deadline to use remaining vacation
     has_carryover_warning: bool = False  # True if remaining vacation at year end
+    # #585: Planungszahlen (nur ``GET /api/dashboard/vacation``, sonst None)
+    entitlement_days: Optional[float] = None  # Anspruch des Jahres ohne Übertrag
+    carryover_days: Optional[float] = None    # Übertrag aus dem Vorjahr
+    closure_days: Optional[float] = None      # davon Betriebsferien (in used_days enthalten)
+    pending_days: Optional[float] = None      # offene Urlaubsanträge im Jahr
+    plannable_days: Optional[float] = None    # Rest − offene Anträge
 
 
 class AdminUserOverview(BaseModel):

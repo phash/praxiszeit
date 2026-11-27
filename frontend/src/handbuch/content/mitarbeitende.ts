@@ -929,6 +929,27 @@ export const mitarbeitende: Handbook = {
         },
         {
           kind: 'task',
+          id: 'urlaub-planen',
+          title: 'Wie viele Urlaubstage kann ich noch verplanen?',
+          intro:
+            'Über dem Kalender unter [[Abwesenheiten]] steht die Karte **Urlaub** für das angezeigte Jahr. ' +
+            'Blättern Sie mit [[Jahr]] und den Pfeilen ins nächste Jahr, um Ihren Urlaub dort zu planen.',
+          steps: [
+            { text: '**Anspruch:** Ihre Urlaubstage im Jahr, darunter ein Übertrag aus dem Vorjahr.' },
+            { text: '**Gebucht:** eingetragener und genehmigter Urlaub, darunter die Tage aus **Betriebsferien**.' },
+            { text: '**Beantragt (offen):** Urlaubsanträge, die die Verwaltung noch nicht genehmigt hat.' },
+            { text: '**Noch verplanbar:** was nach Buchungen und offenen Anträgen übrig bleibt. Ein roter Wert heißt: Sie haben mehr geplant, als Ihnen zusteht.' },
+          ],
+        },
+        {
+          kind: 'tip',
+          tone: 'info',
+          text:
+            '**Nächstes Jahr:** Ihr Resturlaub aus diesem Jahr kommt erst mit dem Jahresabschluss der Verwaltung dazu. ' +
+            'Bis dahin zeigt die Karte nur den Anspruch des neuen Jahres.',
+        },
+        {
+          kind: 'task',
           id: 'abwesenheit-eintragen',
           title: 'Wie trage ich Urlaub oder eine andere Abwesenheit ein?',
           intro: 'Klicken Sie oben rechts auf [[Abwesenheit eintragen]].',
