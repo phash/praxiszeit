@@ -34,7 +34,7 @@ test.describe('#377 Minijob MiLoG — UI', () => {
     await adminPage.goto('/admin/settings');
     await expect(adminPage.getByRole('heading', { name: 'Gesetzlicher Mindestlohn' })).toBeVisible();
     // aktueller gesetzlicher Wert (13,90 €/h ab 2026)
-    await expect(adminPage.locator('main').getByText(/13\.90 €\/h/)).toBeVisible();
+    await expect(adminPage.locator('main').getByText(/13,90 €\/h/)).toBeVisible();
   });
 
   test('UserForm: Arbeitszeitkonto aktivieren zeigt Infozeile und bleibt nach Speichern erhalten', async ({ adminPage, createUser }) => {
@@ -72,7 +72,7 @@ test.describe('#377 Minijob MiLoG — UI', () => {
       await expect(checkbox).toBeChecked();
       // Infozeile erscheint mit aktuellem Mindestlohn + abgeleitetem Konto-Cap
       await expect(dialog.getByText(/Aktueller Mindestlohn/)).toBeVisible();
-      await expect(dialog.getByText(/13\.90 €\/h/)).toBeVisible();
+      await expect(dialog.getByText(/13,90 €\/h/)).toBeVisible();
       await expect(dialog.getByText(/max\. Konto/)).toBeVisible();
       // Speichern + Persistenz sind backend-/API-seitig abgedeckt
       // (test_userlist_carries_milog…, minijob-milog.spec.ts) — hier der reine

@@ -34,9 +34,12 @@ test.describe('Eigene Urlaubsanträge bearbeiten (Genehmigungspflicht an)', () =
   }) => {
     const startDate = weekdayFromNow(48);
     const uniqueNote = `E2E self-edit ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // abw-06 (1.25): das Stundenfeld zeigt der Dialog nur noch bei
+    // Überstundenausgleich — Urlaub/Fortbildung buchen das Tagessoll des Tages.
     await createVacationRequest({
       date: startDate,
       hours: 8,
+      absence_type: 'overtime',
       note: uniqueNote,
     });
 
@@ -89,10 +92,12 @@ test.describe('Eigene Urlaubsanträge bearbeiten (Genehmigungspflicht an)', () =
     // Spec section 5: "Modal zeigt Initialwerte"
     const startDate = weekdayFromNow(54);
     const uniqueNote = `E2E prefill ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // Überstundenausgleich: der einzige Typ mit Stundenfeld (abw-06), so stehen
+    // alle vier Felder im Dialog.
     await createVacationRequest({
       date: startDate,
       hours: 7,
-      absence_type: 'training',
+      absence_type: 'overtime',
       note: uniqueNote,
     });
 
@@ -111,7 +116,7 @@ test.describe('Eigene Urlaubsanträge bearbeiten (Genehmigungspflicht an)', () =
     // All four user-facing fields must reflect the existing request.
     await expect(dialog.locator('input[type="date"]').first()).toHaveValue(startDate);
     await expect(dialog.locator('input[type="number"]').first()).toHaveValue('7');
-    await expect(dialog.locator('select').first()).toHaveValue('training');
+    await expect(dialog.locator('select').first()).toHaveValue('overtime');
     await expect(dialog.locator('input[type="text"]').first()).toHaveValue(uniqueNote);
 
     await dialog.getByRole('button', { name: 'Abbrechen' }).click();

@@ -58,4 +58,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "C:\pz-harness\run-probe.ps1
 >> "%RES%" echo.
 >> "%RES%" echo Ende: %date% %time%
 >> "%RES%" echo ===== DONE =====
+> "\\host.lan\Data\done.txt" echo done
 endlocal

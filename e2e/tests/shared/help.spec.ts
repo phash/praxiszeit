@@ -6,12 +6,16 @@ test.describe('Help & Info Pages', () => {
     await employeePage.goto('/help');
     await employeePage.waitForLoadState('networkidle');
 
-    // Help page has heading "Hilfe & Dokumentation"
-    await expect(employeePage.getByRole('heading', { name: /Hilfe/ })).toBeVisible();
-    // Should show the Kurzanleitung tab button (active by default)
-    await expect(employeePage.getByRole('button', { name: 'Kurzanleitung' })).toBeVisible();
+    // Seit dem grafischen Handbuch (1.24) leitet /help auf das Buch der Rolle um:
+    // Mitarbeitende landen im Handbuch für Mitarbeitende.
+    await employeePage.waitForURL('**/help/mitarbeitende');
+    await expect(employeePage.getByRole('heading', { name: 'Hilfe & Dokumentation' })).toBeVisible();
+    const books = employeePage.getByRole('navigation', { name: 'Handbücher' });
+    await expect(books.getByRole('link', { name: 'Handbuch für Mitarbeitende' })).toHaveAttribute('aria-current', 'page');
+    await expect(books.getByRole('link', { name: 'So rechnet PraxisZeit' })).toBeVisible();
     // Should show employee-specific content (not admin)
-    await expect(employeePage.getByRole('heading', { name: 'Kurzanleitung für Mitarbeiter' })).toBeVisible();
+    await expect(books.getByRole('link', { name: 'Handbuch für die Praxisleitung' })).toHaveCount(0);
+    await expect(employeePage.getByRole('heading', { level: 1, name: 'Handbuch für Mitarbeitende' })).toBeVisible();
   });
 
   test('privacy page loads', async ({ employeePage }) => {

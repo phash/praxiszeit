@@ -66,13 +66,15 @@ tools/win-test/
     ├── hardening-probe.ps1  Negativfälle von secure-install.ps1 in Wegwerf-Ordnern (C:\hp)
     ├── post-reboot.bat      Nachprüfung nach dem Neustart (geplante Aufgabe)
     ├── lock-holder.ps1      Sperrtest im update-Lauf: hält C:\PZNew\lock-probe.dat exklusiv offen
+    ├── seed-data.ps1        update-Lauf: Testdaten vor dem Update anlegen, danach vergleichen (SEED/VERIFY)
     ├── lock-test.txt       ← vorhanden = Sperrtest einschalten (nicht im Repo)
     ├── mode.txt            ← fresh | update | foreignpg | portchange (nicht im Repo)
     ├── tree-old/           ← Vorgängerpaket für den Update-Lauf (nicht im Repo)
     ├── admin-password.txt  ← Admin-Kennwort der Test-VM (nicht im Repo)
     ├── tree/               ← hier wird das Release-Paket entpackt (nicht im Repo)
     ├── aclprobe/           ← optionale .NET-Sonde (nicht im Repo)
-    └── install-result.txt  ← Ergebnis des Laufs (nicht im Repo)
+    ├── install-result.txt  ← Ergebnis des Laufs (nicht im Repo)
+    └── done.txt            ← Fertig-Marke, erst nach dem ganzen Lauf inkl. Neustart (nicht im Repo)
 ```
 
 Die Zuordnung in der VM:
@@ -98,7 +100,9 @@ mv share/install-result.txt share/install-result-<vorige-version>.txt 2>/dev/nul
 rm -rf share/tree && mkdir -p share/tree
 unzip -q ../../dist/praxiszeit-<version>-windows-x64.zip -d share/tree
 
-# Admin-Passwort der Test-VM (einmalig; die Datei ist gitignoriert)
+# Admin-Passwort der Test-VM (einmalig; die Datei ist gitignoriert).
+# KEIN Ausrufezeichen: install.bat läuft mit EnableDelayedExpansion und
+# verschluckt es (der Lauf bricht dann mit FEHLER: ab).
 head -c 12 /dev/urandom | base64 | tr -d '/+=' > share/admin-password.txt
 
 # Lauf wählen
@@ -112,6 +116,17 @@ echo fresh > share/mode.txt
 # … oder Portwechsel im Restore-Pfad
 #   echo portchange > share/mode.txt
 ```
+
+**Datenerhalt im `update`-Lauf:** `seed-data.ps1 -Phase seed` legt auf der
+Vorgängerversion eine Mitarbeiterin `seedma` mit zwei Zeiteinträgen und einer
+Krank-Abwesenheit an (drei vergangene Werktage ab 21 Tagen vor dem Lauf) und
+sichert je Tabelle `count(*)` + `md5` über die fachlichen Spalten (users,
+time_entries inkl. Rohstempel, `uncredited_minutes`, `credit_override`, absences,
+working_hours_changes inkl. Wochenstunden, Urlaubstage und Blöcke,
+public_holidays, time_entry_audit_logs). Nach dem Update
+meldet sich `-Phase verify` als Admin und als `seedma` an und vergleicht
+(`DATA_KEPT=ja`). Nichts vorzubereiten — das Kennwort von `seedma` leitet das
+Skript aus `admin-password.txt` ab.
 
 **Optional — Sperrtest im `update`-Lauf:** `touch share/lock-test.txt`. Dann hält
 `lock-holder.ps1` die Datei `C:\PZNew\lock-probe.dat` (legt `install.bat` im neuen Paket an; `nssm.exe` ist in Alt- und Neupaket gleich und wird nicht kopiert) exklusiv offen, bis der
@@ -146,6 +161,39 @@ Schritt und schreibt das ins Ergebnis.
 ---
 
 ## Lauf starten
+
+### Auf testbox mit `tb-win` (bevorzugt)
+
+`tb-win` nimmt eine Kopie der goldenen Win11-Platte (Minuten statt 45 min
+Windows-Einrichtung), führt `oem/install.bat` beim ersten Start aus und belegt
+einen tb-run-Slot. Je Lauf ein eigener Ordner, damit drei Läufe nicht dieselbe
+Ablage teilen:
+
+```bash
+R=~/work/praxiszeit            # Repo-Stand auf testbox (rsync, s. CLAUDE.md)
+for MODE in update fresh portchange; do
+  D=~/work/pz-win-$MODE
+  rsync -a --delete --exclude share/tree/ --exclude share/tree-old/ \
+        --exclude 'share/install-result*' "$R/tools/win-test/" "$D/"
+  rm -rf "$D/share/tree" && mkdir -p "$D/share/tree"
+  unzip -q "$R/dist/praxiszeit-<version>-windows-x64.zip" -d "$D/share/tree"
+  echo "$MODE" > "$D/share/mode.txt"
+  cp share/admin-password.txt "$D/share/"     # ohne Ausrufezeichen
+done
+# update zusätzlich: Vorgängerpaket nach ~/work/pz-win-update/share/tree-old entpacken
+
+tb-win run pz-update ~/work/pz-win-update --until done.txt --timeout 120
+```
+
+`--until done.txt` wartet auf die Fertig-Marke: `post-reboot.bat` schreibt sie
+als Letztes nach dem Neustart (bricht der Lauf vorher ab, `install.bat` in
+`:done`). `install-result.txt` taugt dafür nicht — die Datei entsteht in der
+ersten Sekunde des Laufs. `tb-win` legt eine alte `done.txt` vorher als
+`done.txt.prev` beiseite. Das Ergebnis steht danach in `share/install-result.txt`
+(Auswertung wie unten). Zuschauen: `ssh -L 8006:127.0.0.1:<port> testbox`,
+`tb-win status`, `tb-win stop <name>`.
+
+### Lokal mit docker compose
 
 ```bash
 docker compose -p pz-wintest down -v     # PFLICHT vor jedem erneuten Lauf
@@ -252,7 +300,11 @@ Bestanden: `HP_FAILS=0`.
 | `HEALTH_HTTP_NACH_REBOOT` / `LOGIN_HTTP_NACH_REBOOT` | beide `200` |
 | `ALEMBIC_VERSION_NACH_REBOOT` | wie `ALEMBIC_VERSION` |
 | jede Zeile `PROBE …` | `PROBE OK …` — kein `PROBE FAIL` |
-| `===== DONE =====` | vorhanden (sonst ist der Lauf abgebrochen, nicht bestanden) |
+| `SEED_ADMIN_LOGIN` / `SEED_USER_HTTP` / `SEED_TE1_HTTP` / `SEED_TE2_HTTP` / `SEED_ABS_HTTP` / `SEED_MA_LOGIN` | nur `update`: `200` / `201` / `201` / `201` / `201` / `200` (Testdaten auf der Vorgängerversion) |
+| `VERIFY_ADMIN_LOGIN` / `VERIFY_MA_LOGIN` | nur `update`: beide `200` nach dem Update |
+| `VERIFY_MA_TIME_ENTRIES_HTTP` | nur `update`: `200 seed_entries=2` |
+| `DATA_KEPT` | nur `update`: `ja` (je Phase sechs gültige Snapshot-Zeilen und `SNAP_PSQL_EXIT_*=0`, alle `SNAP_SEED`-Zeilen gleich `SNAP_VERIFY`; `DATA_time_entry_audit_logs` ist nur Hinweis — die Anmeldungen danach dürfen Zeilen anfügen). Ein leerer oder kaputter Snapshot ergibt `DATA_SNAPSHOT_UNGUELTIG …` und `nein` |
+| `===== DONE =====` | vorhanden (sonst ist der Lauf abgebrochen, nicht bestanden); `share/done.txt` existiert |
 
 ### Die Rechte-Blöcke
 
@@ -340,6 +392,11 @@ und Probe noch einmal und schreibt erst dann `===== DONE =====`.
   und `build-release.sh` prüft es im Paket. Mit LF findet `cmd.exe` keine
   Sprungmarken, mehrzeilige `()`-Blöcke brechen — und zwar lautlos, mit einer
   irreführenden Fehlermeldung am Ende (#286).
+- **Kein `!` in Kennwörtern.** `install.bat` läuft mit `EnableDelayedExpansion`;
+  ein Ausrufezeichen in `admin-password.txt` verschwindet beim Einlesen. Die
+  Installation bekäme ein anderes Kennwort als Anmeldung und Seed (Lauf 1.26.0:
+  Login 401, Datenvergleich auf fast leerer DB). `install.bat` bricht deshalb mit
+  `FEHLER:` ab, wenn die Datei eines enthält.
 - **`docker compose down -v` vergessen** → der Test läuft nicht, sieht aber aus
   wie „läuft noch".
 - **Nicht auf Prozessnamen warten.** Eine Warteschleife mit
